@@ -1345,10 +1345,12 @@ fn op_name(command: &Command) -> &'static str {
         Command::AddTexture { .. } => "add_texture",
         Command::SetTextureImage { .. } => "set_texture_image",
         Command::RemoveTexture { .. } => "remove_texture",
+        Command::SetCanvas { .. } => "set_canvas",
+        Command::RegenerateMesh { .. } => "regenerate_mesh",
     }
 }
 
-const OP_COUNT: usize = 30;
+const OP_COUNT: usize = 32;
 
 fn json_samples() -> Vec<Command> {
     let quad = fixtures::single_quad();
@@ -1471,6 +1473,18 @@ fn json_samples() -> Vec<Command> {
         },
         Command::RemoveTexture {
             name: "white".into(),
+        },
+        Command::SetCanvas {
+            width: 512.0,
+            height: 256.0,
+            origin: ugoe_core::Vec2::new(256.0, 200.0),
+        },
+        Command::RegenerateMesh {
+            id: "Quad".into(),
+            options: crate::AutoMeshOptions {
+                edge_spacing: 12.0,
+                ..crate::AutoMeshOptions::default()
+            },
         },
     ]
 }

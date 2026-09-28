@@ -3,6 +3,7 @@
 
 mod commands;
 mod project;
+mod psd;
 
 use std::sync::Mutex;
 
@@ -39,6 +40,7 @@ pub fn run() {
             project::save_project_as,
             project::export_bundle,
             project::get_model_bundle,
+            psd::import_psd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

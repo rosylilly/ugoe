@@ -60,6 +60,26 @@ ugoe render fixture:nested_masks -o out.png --scale 2 --background black --backe
 - **WSL2 の注意:** dzn (Vulkan on D3D12) ドライバは wgpu のインスタンスやデバイスの破棄時に SIGSEGV を起こすことがあるので、
   CLI はこれらを破棄せずにプロセスを終える (`render::Gpu::leak`)。
 
+### `ugoe import-psd`
+
+PSD を取り込んで新しい `.ugoeproj` プロジェクトに保存する。取り込みの規則はエディタと同じ
+([docs/editor.md#psd-の取り込み](../../docs/editor.md#psd-の取り込み))。キャンバスは PSD の大きさになる。
+
+```sh
+ugoe import-psd character.psd -o character.ugoeproj
+ugoe import-psd character.psd -o character.ugoeproj --bundle character.ugoe --edge-spacing 12
+ugoe render character.ugoe -o preview.png           # 取り込んだ結果を目で確かめる
+```
+
+| オプション | 内容 |
+| --- | --- |
+| `-o, --output <DIR>` | 保存する `.ugoeproj` ディレクトリ |
+| `--bundle <PATH>` | `.ugoe` バンドルにも書き出す |
+| `--name <NAME>` | プロジェクトと最上位のパーツの名前 (既定は PSD のファイル名) |
+| `--alpha-threshold` / `--margin` / `--edge-spacing` / `--interior-spacing` | 自動メッシュの設定 (`ugoe-mesher` の `MeshOptions`) |
+
+取り込みの警告は標準エラーに `warning: ...` で出す。
+
 ## テスト
 
 ```sh

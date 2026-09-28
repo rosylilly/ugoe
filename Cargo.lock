@@ -4210,6 +4210,7 @@ dependencies = [
  "png 0.18.1",
  "pollster",
  "serde_json",
+ "ugoe-editor-core",
  "ugoe-format",
  "ugoe-model",
  "ugoe-render",

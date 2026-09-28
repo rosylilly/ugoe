@@ -22,6 +22,22 @@ export interface ProjectStatus {
   modified: boolean;
 }
 
+/** ugoe_editor_core::AutoMeshOptions。省略したフィールドは既定値。 */
+export interface AutoMeshOptions {
+  alpha_threshold?: number;
+  margin?: number;
+  edge_spacing?: number;
+  interior_spacing?: number;
+  min_island_area?: number;
+}
+
+/** ugoe_editor_core::PsdImportWarning。 */
+export interface PsdImportWarning {
+  /** レイヤーの名前の列 (外側のグループから)。ドキュメント全体の警告では空。 */
+  path: string[];
+  message: string;
+}
+
 export const ipc = {
   appInfo: () => invoke<AppInfo>("app_info"),
   applyCommand: (command: EditCommand) => invoke<void>("apply_command", { command }),
@@ -37,4 +53,7 @@ export const ipc = {
   exportBundle: (path: string) => invoke<void>("export_bundle", { path }),
   /** 今のドキュメントの .ugoe バンドル (テクスチャ付き)。生のバイト列で届く。 */
   getModelBundle: async () => new Uint8Array(await invoke<ArrayBuffer>("get_model_bundle")),
+  /** apps/editor/src-tauri/src/psd.rs。PSD を今のドキュメントに取り込み、警告を返す。 */
+  importPsd: (path: string, meshOptions?: AutoMeshOptions) =>
+    invoke<PsdImportWarning[]>("import_psd", { path, meshOptions: meshOptions ?? null }),
 };

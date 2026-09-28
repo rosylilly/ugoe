@@ -48,8 +48,9 @@
 | パラメータ | `add_parameter`、`remove_parameter`、`set_parameter_range`、`rename_parameter`、`set_parameter_group` (`null` で外す)、`set_parameter_mirror` (`null` で外す。相手側は変えない。自分自身と対にすると値の符号を反転して対応させる) |
 | パーツ | `add_part`、`remove_part`、`rename_part`、`set_part_parent`、`set_part_keyforms` |
 | デフォーマ | `add_deformer`、`remove_deformer`、`rename_deformer`、`set_deformer_parent`、`set_deformer_part`、`set_warp_keyforms` (`rows` / `cols` は変えない)、`set_rotation_keyforms` |
-| メッシュ | `add_mesh` (`meshes` の末尾に追加)、`remove_mesh`、`rename_mesh`、`set_mesh_properties`、`set_mesh_parent`、`set_mesh_keyforms`、`set_mesh_keyform`、`reorder_mesh` |
+| メッシュ | `add_mesh` (`meshes` の末尾に追加)、`remove_mesh`、`rename_mesh`、`set_mesh_properties`、`set_mesh_parent`、`set_mesh_keyforms`、`set_mesh_keyform`、`reorder_mesh`、`regenerate_mesh` ([メッシュの再生成](#メッシュの再生成)) |
 | テクスチャ | `add_texture`、`set_texture_image`、`remove_texture` |
+| キャンバス | `set_canvas` (`width`・`height`・`origin`。大きさは 0 より大きい有限の値。要素の座標は変えない) |
 | その他 | `batch` |
 
 - `set_mesh_properties` は `part`・`texture`・`blend`・`culling`・`masks`・`mask_mode`・`mask_only` のうち、指定したフィールドだけを変えます。
@@ -76,10 +77,43 @@
 最初はスナップショット方式 (`Model` を丸ごと clone) で実装します。簡単で確実だからです。
 モデルが大きくなってメモリや時間が問題になったら、各コマンドが逆操作を返す方式に移行します ([ADR 0005](adr/0005-editor-command-model.md))。
 
+## PSD の取り込み
+
+`ugoe_editor_core::import::import_psd(model, bytes, options)` が、PSD (`ugoe-psd` の `LayerTree`) から
+**1 つの `batch` コマンド** (Undo の 1 単位) と警告の一覧を作ります。モデルは書き換えず、コマンドを返すだけです
+(エディタ・CLI・AI が同じ関数を使う)。読み込み済みの `LayerTree` からは `layer_tree_command` で作れます。
+
+| PSD | ugoe |
+| --- | --- |
+| ドキュメント全体 | 最上位のパーツを 1 つ作り (名前は `options.name`。エディタと CLI はファイル名)、すべてをその下に入れる |
+| キャンバス | モデルが空 (パーツ・メッシュ・デフォーマ・テクスチャがない) なら `set_canvas` で PSD の大きさにし、原点は中央。空でなければ変えず、大きさが違えば警告する。どちらでもレイヤーは PSD のピクセル座標に置く |
+| グループ | パーツ (階層を保つ)。不透明度をパーツのキーフォームの不透明度にする。非表示なら不透明度 0。通過 (`pass`) と通常 (`norm`) 以外のブレンドモードは警告して無視する |
+| ラスタレイヤー | テクスチャ 1 枚とメッシュ 1 つ。テクスチャはレイヤーの画像 (外接矩形で切り出したもの) の周りに `ceil(margin) + 1` px の透明な余白を足した PNG。メッシュは余白付きの画像から `ugoe-mesher` で作り、UV はそのテクスチャ上、頂点位置は「レイヤーの位置 − 余白 + メッシュの座標」(キャンバスのピクセル座標)。キーフォームは 1 つ (パラメータなし) |
+| 不透明度 | メッシュの不透明度 = レイヤーの不透明度 × 塗りの不透明度 |
+| 非表示のレイヤー | **取り込み、不透明度を 0 にする** (差分の絵 (閉じ目など) を後で使えるように)。元の不透明度は残らない |
+| 描画順 | ドキュメント全体で下から上へ、`draw_order = 1000 × (i + 1) / (n + 1)` (`i` は下から数えた番号、`n` はメッシュの数)。`meshes` にも下から上の順に並べる。既存のモデルに取り込むと、既存のメッシュと描画順が混ざるので、必要なら後で並べ直す |
+| ブレンドモード | `norm` → `normal`、`mul` → `multiply`、`lddg` (覆い焼き (リニア)) / `add` → `additive`。ほかは `normal` にして警告する |
+| クリッピング | クリッピングされたレイヤーは、同じ並びの中で下にある最も近いクリッピングでない要素 (土台) を通常マスク (`MaskRef { invert: false }`) にする。土台がグループなら、その中のすべてのメッシュ (和集合)。土台のレイヤーの不透明度 (非表示なら 0) をクリッピングされた側の不透明度に掛ける (Photoshop では土台の不透明度が掛かるため)。下に何もなければ無視し (Photoshop と同じ)、土台を取り込まなかった (空のレイヤーなど) なら警告してマスクなしにする。グループのクリッピングは警告して無視する |
+| 空のレイヤー・完全に透明なレイヤー・頂点が多すぎるレイヤー | 取り込まずに警告する |
+| 調整レイヤー・レイヤー効果など | `ugoe-psd` の警告をそのまま返す ([ugoe-psd](../crates/ugoe-psd/README.md#警告-layertreewarnings)) |
+
+- ID は名前から `ids` の規則で作ります。名前が英数字を 1 つも含まなければ (日本語だけの名前など)、PSD のレイヤー ID から `Layer12` / `Group8` (ID がなければ `Layer` / `Group`) にします。表示名 (`name`) には元の名前を残します。
+- テクスチャ名はメッシュの ID と同じにし、大文字小文字を区別せずに重なれば `_2`、… を付けます。
+- 自動メッシュの設定 (`AutoMeshOptions`、JSON で省略したフィールドは既定値) は `ugoe_mesher::MeshOptions` と同じです。不正な値なら取り込みをエラーにします。
+
+### メッシュの再生成
+
+`regenerate_mesh { id, options }` は、メッシュのテクスチャの画像から自動メッシュで作り直します。
+
+- すべてのキーフォームの頂点位置が同じ (キーフォームが 1 つの場合を含む) メッシュだけが対象です。キーフォームごとに頂点が動いていると、頂点が変わった後に変形を引き継げないので拒否します (`EditError::CannotRegenerateMesh`)。頂点番号を参照するグルーがあるメッシュ、頂点ごとの深度 (`depth`) を持つメッシュも拒否します。
+- 頂点位置は UV のアフィン写像になっていなければなりません (取り込んだメッシュは「テクスチャの左上 + UV × 寸法」)。現在の UV と頂点位置からこの写像を最小二乗で求め (ずれが位置の広がりの 1e-4 倍を超えれば拒否)、新しい頂点の位置を決めます。親デフォーマの局所座標でも同じです。
+- 各キーフォームの頂点位置以外の値 (不透明度・描画順・色など) と格子の軸は保ちます。
+- `margin` を取り込み時より大きくすると、輪郭がテクスチャの余白の外 (UV が 0〜1 の外) に出ることがあります。
+
 ## テクスチャ
 
 - `Document` はモデルと一緒に **テクスチャの画像** (`Textures` = テクスチャ名 → PNG のバイト列) を持ちます。モデルの `TextureRef` は名前と寸法だけで、画像はここにあります。画像はデコードせず、PNG ファイルのまま持ちます。
-- 画像の追加・差し替え・削除もコマンド (`add_texture` など) で行うので、Undo/Redo の対象になります。PSD の取り込み (T0605) はレイヤーごとに `add_texture` と `add_mesh` を `batch` にまとめて発行します。
+- 画像の追加・差し替え・削除もコマンド (`add_texture` など) で行うので、Undo/Redo の対象になります。[PSD の取り込み](#psd-の取り込み) はレイヤーごとに `add_texture` と `add_mesh` を `batch` にまとめて発行します。
 - スナップショットでは画像を `Arc<[u8]>` で共有するので、Undo のたびに画像のバイト列が複製されることはありません。
 - テクスチャ名は `textures/<name>.png` のファイル名になるので、`[A-Za-z0-9_.-]` だけからなり `.` で始まらないものに限り、大文字と小文字を区別せずに一意にします ([ファイル形式](spec/file-formats.md#名前と読み込み))。
 - `png` は JSON では数値の配列になります。大きな画像をフロントエンドから送ることは想定しておらず、バックエンドの中 (取り込み処理) から使います。
@@ -100,8 +134,9 @@
 | `save_project` | 開いた (前回保存した) 場所に保存する。保存先がなければエラー |
 | `save_project_as(path)` | 別の場所に保存し、以後の保存先にする。拡張子 `.ugoeproj` がなければ付け、名前をディレクトリ名にする |
 | `export_bundle(path)` | `.ugoe` ファイルに書き出す。保存状態は変えない |
+| `import_psd(path, mesh_options?)` | PSD ファイルを今のドキュメントに取り込み ([PSD の取り込み](#psd-の取り込み)、Undo の 1 単位)、警告 (`PsdImportWarning[]`) を返す。最上位のパーツの名前はファイル名。`src-tauri/src/psd.rs` |
 
-- ファイルのパスは、今はフロントエンドの入力欄で受け取ります (ファイルメニュー `src/lib/FileMenu.svelte`)。ファイルダイアログのプラグイン (`tauri-plugin-dialog` / `@tauri-apps/plugin-dialog`) は、依存の追加とライセンスの確認を別の作業に分けるため、まだ入れていません。入れるときは、入力欄をダイアログに置き換え、`capabilities/default.json` に `dialog:default` を足します。
+- ファイルのパスは、今はフロントエンドの入力欄で受け取ります (ファイルメニュー `src/lib/FileMenu.svelte`。「Import PSD…」も同じ。取り込みの警告はメニューの横に一覧で出す)。ファイルダイアログのプラグイン (`tauri-plugin-dialog` / `@tauri-apps/plugin-dialog`) は、依存の追加とライセンスの確認を別の作業に分けるため、まだ入れていません。入れるときは、入力欄をダイアログに置き換え、`capabilities/default.json` に `dialog:default` を足します。
 - 未保存の変更がある状態で「新規」「開く」を押すと、もう一度押すまで実行しません (確認のダイアログの代わり)。
 - 起動時は、白い 1×1 のテクスチャを付けた `single_quad` を、保存先のないプロジェクトとして開きます。
 

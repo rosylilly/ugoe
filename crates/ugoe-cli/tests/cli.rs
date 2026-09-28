@@ -86,3 +86,33 @@ fn render_rejects_bad_size() {
     ]);
     assert!(!output.status.success());
 }
+
+#[test]
+fn import_psd_writes_project_and_bundle() {
+    let psd = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../assets/fixtures/layers.psd");
+    let tmp = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
+    let project = tmp.join("layers-import.ugoeproj");
+    let bundle = tmp.join("layers-import.ugoe");
+    let _ = std::fs::remove_dir_all(&project);
+    let output = ugoe(&[
+        "import-psd",
+        psd.to_str().expect("utf-8 path"),
+        "-o",
+        project.to_str().expect("utf-8 path"),
+        "--bundle",
+        bundle.to_str().expect("utf-8 path"),
+    ]);
+    let out = stdout(&output);
+    assert!(out.contains("3 parts, 6 meshes, 64x48 canvas"), "{out}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("warning: レベル補正: adjustment"),
+        "{stderr}"
+    );
+    assert!(project.join("textures").is_dir());
+    assert_eq!(
+        stdout(&ugoe(&["validate", bundle.to_str().expect("utf-8 path")])).trim(),
+        "ok"
+    );
+}

@@ -47,6 +47,35 @@ enum Cmd {
     StandardParams,
     /// ヘッドレスの GPU でモデルを描画して PNG に書き出す。
     Render(RenderArgs),
+    /// PSD を取り込んで新しい `.ugoeproj` プロジェクトに保存する。
+    ImportPsd(ImportPsdArgs),
+}
+
+#[derive(Debug, Args)]
+struct ImportPsdArgs {
+    /// 取り込む PSD ファイル。
+    input: PathBuf,
+    /// 保存する `.ugoeproj` ディレクトリ。
+    #[arg(short, long)]
+    output: PathBuf,
+    /// `.ugoe` バンドルにも書き出す。
+    #[arg(long, value_name = "PATH")]
+    bundle: Option<PathBuf>,
+    /// プロジェクトと最上位のパーツの名前 (既定は PSD のファイル名)。
+    #[arg(long)]
+    name: Option<String>,
+    /// 自動メッシュ: この値以上のアルファを中身とする。
+    #[arg(long)]
+    alpha_threshold: Option<u8>,
+    /// 自動メッシュ: 輪郭を外に広げる距離 (px)。
+    #[arg(long)]
+    margin: Option<f32>,
+    /// 自動メッシュ: 輪郭上の頂点間隔 (px)。
+    #[arg(long)]
+    edge_spacing: Option<f32>,
+    /// 自動メッシュ: 内部点の間隔 (px。0 なら内部点なし)。
+    #[arg(long)]
+    interior_spacing: Option<f32>,
 }
 
 #[derive(Debug, Args)]
@@ -136,6 +165,59 @@ fn main() -> anyhow::Result<()> {
             }
         }
         Cmd::Render(args) => run_render(args)?,
+        Cmd::ImportPsd(args) => run_import_psd(args)?,
+    }
+    Ok(())
+}
+
+/// `ugoe import-psd`: 空のプロジェクトに PSD を取り込み、保存する。取り込みの規則は
+/// `ugoe_editor_core::import` (`docs/editor.md#psd-の取り込み`)。
+fn run_import_psd(args: ImportPsdArgs) -> anyhow::Result<()> {
+    use ugoe_editor_core::{AutoMeshOptions, Project, PsdImportOptions};
+
+    let bytes =
+        std::fs::read(&args.input).with_context(|| format!("reading {}", args.input.display()))?;
+    let name = args.name.unwrap_or_else(|| {
+        args.input
+            .file_stem()
+            .map_or_else(|| "PSD".to_owned(), |s| s.to_string_lossy().into_owned())
+    });
+    let defaults = AutoMeshOptions::default();
+    let options = PsdImportOptions {
+        name: name.clone(),
+        mesh: AutoMeshOptions {
+            alpha_threshold: args.alpha_threshold.unwrap_or(defaults.alpha_threshold),
+            margin: args.margin.unwrap_or(defaults.margin),
+            edge_spacing: args.edge_spacing.unwrap_or(defaults.edge_spacing),
+            interior_spacing: args.interior_spacing.unwrap_or(defaults.interior_spacing),
+            min_island_area: defaults.min_island_area,
+        },
+    };
+    let empty = Project::empty(name);
+    let mut document = empty.document();
+    let import = ugoe_editor_core::import::import_psd(document.model(), &bytes, &options)
+        .with_context(|| format!("importing {}", args.input.display()))?;
+    for warning in &import.warnings {
+        eprintln!("warning: {warning}");
+    }
+    document.apply(import.command)?;
+    let project = Project::from_document(empty.meta, &document, None, Vec::new(), Vec::new());
+    project
+        .save(&args.output)
+        .with_context(|| format!("saving {}", args.output.display()))?;
+    let model = document.model();
+    println!(
+        "wrote {} ({} parts, {} meshes, {}x{} canvas)",
+        args.output.display(),
+        model.parts.len(),
+        model.meshes.len(),
+        model.meta.canvas.width,
+        model.meta.canvas.height
+    );
+    if let Some(path) = args.bundle {
+        let bytes = ugoe_editor_core::export_bundle(&project)?;
+        std::fs::write(&path, bytes).with_context(|| format!("writing {}", path.display()))?;
+        println!("wrote {}", path.display());
     }
     Ok(())
 }

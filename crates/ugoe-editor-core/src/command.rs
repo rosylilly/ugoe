@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+use ugoe_core::Vec2;
 use ugoe_model::deformer::{RotationKeyform, WarpKeyform};
 use ugoe_model::mesh::MeshKeyform;
 use ugoe_model::part::PartKeyform;
@@ -8,6 +9,8 @@ use ugoe_model::{
     BlendMode, Deformer, DeformerId, KeyformGrid, MaskMode, MaskRef, Mesh, MeshId, ParamId,
     Parameter, Part, PartId,
 };
+
+use crate::automesh::AutoMeshOptions;
 
 /// キーフォーム格子の 1 セルの指定: 軸のパラメータ ID → その軸のキーの値。
 ///
@@ -179,5 +182,21 @@ pub enum Command {
     /// 後ろのテクスチャを指すメッシュの `texture` は 1 つ詰める。
     RemoveTexture {
         name: String,
+    },
+    /// キャンバスの大きさと原点を変える。要素の座標は変えない。
+    /// `width` と `height` は 0 より大きい有限の値。
+    SetCanvas {
+        width: f32,
+        height: f32,
+        origin: Vec2,
+    },
+    /// メッシュをテクスチャの画像から自動メッシュ (`ugoe-mesher`) で作り直す。
+    /// すべてのキーフォームの頂点位置が同じで、頂点位置が UV のアフィン写像になっている
+    /// メッシュだけが対象 (それ以外は拒否する)。キーフォームの頂点位置以外の値は保つ。
+    /// 規則は `docs/editor.md#メッシュの再生成`。
+    RegenerateMesh {
+        id: MeshId,
+        #[serde(default)]
+        options: AutoMeshOptions,
     },
 }

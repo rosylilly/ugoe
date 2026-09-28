@@ -3,11 +3,11 @@ use std::sync::Arc;
 
 use ugoe_model::deformer::DeformerKind;
 use ugoe_model::validate::{ValidationError, validate};
-use ugoe_model::{DeformerId, KeyformOrigin, MeshId, Model, ParamId, PartId, TextureRef};
+use ugoe_model::{Canvas, DeformerId, KeyformOrigin, MeshId, Model, ParamId, PartId, TextureRef};
 
-use crate::Command;
 use crate::grid::{self, CellError};
 use crate::texture::{Textures, is_valid_texture_name, png_size};
+use crate::{Command, automesh};
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum EditError {
@@ -46,6 +46,15 @@ pub enum EditError {
     /// テクスチャの画像が PNG でない (または IHDR が読めない)。
     #[error("texture `{name}`: image is not a PNG")]
     NotPng { name: String },
+    /// キャンバスの大きさが 0 以下か有限でない。
+    #[error("invalid canvas size {width}x{height}")]
+    InvalidCanvas { width: f32, height: f32 },
+    /// メッシュを作り直せない (`Command::RegenerateMesh` の条件を満たさない)。
+    #[error("mesh `{id}` cannot be regenerated: {reason}")]
+    CannotRegenerateMesh { id: String, reason: String },
+    /// 自動メッシュの生成に失敗した (画像が透明、設定が不正など)。
+    #[error("mesh `{id}`: automatic meshing failed: {message}")]
+    Mesher { id: String, message: String },
     /// 適用するとモデルが検証 (`ugoe_model::validate`) に通らなくなる。新たに生じるエラーの一覧。
     #[error("command would make the model invalid: {}", join(.0))]
     Invalid(Vec<ValidationError>),
@@ -363,6 +372,23 @@ fn apply_to(model: &mut Model, textures: &mut Textures, command: Command) -> Res
         Command::AddTexture { name, png } => add_texture(model, textures, name, png)?,
         Command::SetTextureImage { name, png } => set_texture_image(model, textures, name, png)?,
         Command::RemoveTexture { name } => remove_texture(model, textures, &name)?,
+        Command::SetCanvas {
+            width,
+            height,
+            origin,
+        } => {
+            if !(width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0) {
+                return Err(EditError::InvalidCanvas { width, height });
+            }
+            model.meta.canvas = Canvas {
+                width,
+                height,
+                origin,
+            };
+        }
+        Command::RegenerateMesh { id, options } => {
+            automesh::regenerate_mesh(model, textures, &id, &options)?;
+        }
     }
     Ok(())
 }
