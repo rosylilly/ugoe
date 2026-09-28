@@ -1,11 +1,11 @@
 ---
 id: T0611
 title: 推定・ミラーのエディタコマンド
-status: todo
+status: in-progress
 milestone: M2
 crates: [ugoe-editor-core]
 depends_on: [T0610, T0601, T0612]
-assignee:
+assignee: claude-worker-T0611
 ---
 
 # T0611: 推定・ミラーのエディタコマンド
