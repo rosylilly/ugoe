@@ -1342,10 +1342,13 @@ fn op_name(command: &Command) -> &'static str {
         Command::SetMeshKeyforms { .. } => "set_mesh_keyforms",
         Command::SetMeshKeyform { .. } => "set_mesh_keyform",
         Command::ReorderMesh { .. } => "reorder_mesh",
+        Command::AddTexture { .. } => "add_texture",
+        Command::SetTextureImage { .. } => "set_texture_image",
+        Command::RemoveTexture { .. } => "remove_texture",
     }
 }
 
-const OP_COUNT: usize = 27;
+const OP_COUNT: usize = 30;
 
 fn json_samples() -> Vec<Command> {
     let quad = fixtures::single_quad();
@@ -1457,6 +1460,17 @@ fn json_samples() -> Vec<Command> {
         Command::ReorderMesh {
             id: "Quad".into(),
             before: Some("Other".into()),
+        },
+        Command::AddTexture {
+            name: "hair".into(),
+            png: crate::texture::solid_png(1, 1, [0; 4]),
+        },
+        Command::SetTextureImage {
+            name: "white".into(),
+            png: crate::texture::solid_png(1, 1, [255; 4]),
+        },
+        Command::RemoveTexture {
+            name: "white".into(),
         },
     ]
 }

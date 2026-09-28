@@ -16,18 +16,43 @@
 
 ```
 character.ugoeproj/
-  project.json          プロジェクトのメタ情報 (形式のバージョン、エディタの設定)
+  project.json          プロジェクトのメタ情報 (形式のバージョン、名前、エディタの設定)
   model.json            ugoe_model::Model (整形済み JSON。キーの順序を固定する)
-  physics.json          PhysicsSettings (任意)
-  motions/*.motion.json
-  expressions/*.expression.json
-  textures/<name>.png   レイヤー単位の非乗算 RGBA 画像 (アトラス化する前の状態)
-  sources/*.psd         取り込み元の PSD (任意)
-  .ugoe-cache/          サムネイルなどのキャッシュ (git 管理外)
+  physics.json          PhysicsSettings (任意。ないときはファイルを置かない)
+  motions/<name>.motion.json          Motion (<name> は Motion::name)
+  expressions/<name>.expression.json  Expression (<name> は Expression::name)
+  textures/<name>.png   レイヤー単位の非乗算 RGBA 画像 (アトラス化する前の状態。<name> は TextureRef::name)
+  sources/*.psd         取り込み元の PSD (任意。保存では触れない)
+  .gitignore            `.ugoe-cache/` を書く
+  .ugoe-cache/          サムネイルなどのキャッシュ (git 管理外。保存・読み込みでは触れない)
 ```
 
-- JSON はすべて 2 スペースでインデントし、フィールドは型定義の順に出力します。浮動小数点は最短の往復表現で書きます (`serde_json` の既定)。こうすることで、エディタで保存するたびに無関係な差分が出るのを防ぎます。
+読み書きは `ugoe_editor_core::project` (`Project::save` / `Project::load`) が行います。
+
+### `project.json`
+
+| フィールド | 型 | 内容 |
+| --- | --- | --- |
+| `format_version` | u32 | プロジェクトの形式のバージョン (`PROJECT_FORMAT_VERSION`、現在 0)。ディレクトリ構成を変えたら上げる。モデルの `schema_version` とは別 |
+| `name` | string | プロジェクトの表示名。エディタで「別名で保存」するとディレクトリ名 (拡張子を除く) になる |
+| `editor` | object | エディタの設定 (自由な JSON)。空なら書き出さない |
+
+- `format_version` が読める版より新しければ、読み込みをエラーにします。
+
+### 出力の安定性
+
+- JSON はすべて 2 スペースでインデントし、フィールドは型定義の順に出力し、末尾に改行を 1 つ付けます。浮動小数点は最短の往復表現で書きます (`serde_json` の既定)。こうすることで、エディタで保存するたびに無関係な差分が出るのを防ぎます。同じ内容を保存すると、バイト単位で同じファイルになります。
+- 内容が変わらないファイルは書き直しません。書き直すファイルは、同じディレクトリの一時ファイル (`<file>.ugoe-tmp`) に書いてから名前を変えて置き換えます。書き込み中に落ちても、既存のファイルが途中までの中身で残ることはありません (複数のファイルをまたぐ原子性はありません)。`project.json` は最後に書きます。
+- 保存すると、今の内容にない `motions/*.motion.json`・`expressions/*.expression.json`・`textures/*.png` と `physics.json` を消します。それ以外のファイルには触れません。
+- 空でなく `project.json` もないディレクトリには保存しません (別のファイルを上書きしないため)。
+
+### 名前と読み込み
+
+- テクスチャ・モーション・表情の名前はファイル名になるので、`[A-Za-z0-9_.-]` だけからなり `.` で始まらない 128 バイト以下の文字列に限ります。大文字と小文字だけが違う名前は重複とみなします (大文字小文字を区別しないファイルシステムで衝突しないように)。保存の前にすべて検査し、違反があれば何も書きません。
+- 読み込みでは、モーションと表情をファイル名の順に並べます。`Model::textures` のすべてに `textures/<name>.png` (PNG のシグネチャを持つもの) が必要です。参照されない PNG は無視します。
+- モデルは読み込み時に検証しません (不正なモデルもエディタで開いて直せるように)。`schema_version` は検査します。
 - テクスチャのアトラス化はビルド時に行います。プロジェクト内では、レイヤーごとに別々の画像として持ちます。
+- `.ugoe` への書き出し (`ugoe_editor_core::export_bundle`) では、テクスチャを `Model::textures` の順に `TEXR` に入れ、物理・モーション・表情も含めます。
 
 ## バンドル (`.ugoe`)
 

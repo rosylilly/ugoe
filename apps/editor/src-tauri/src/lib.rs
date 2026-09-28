@@ -2,20 +2,26 @@
 //! 設計: `docs/editor.md`。
 
 mod commands;
+mod project;
 
 use std::sync::Mutex;
 
 use ugoe_editor_core::Document;
 
 /// アプリ全体の状態。現状は単一ドキュメント。
+/// 両方をロックするときは `document` → `project` の順にする。
 #[derive(Debug)]
 pub struct AppState {
     pub document: Mutex<Document>,
+    /// 開いているプロジェクトの保存先・メタ情報など (`Document` の外のもの)。
+    pub project: Mutex<project::ProjectSession>,
 }
 
 pub fn run() {
+    let (session, document) = project::initial_state();
     let state = AppState {
-        document: Mutex::new(Document::new(ugoe_model::fixtures::single_quad())),
+        document: Mutex::new(document),
+        project: Mutex::new(session),
     };
     #[allow(clippy::expect_used)]
     tauri::Builder::default()
@@ -26,6 +32,12 @@ pub fn run() {
             commands::get_model_json,
             commands::undo,
             commands::redo,
+            project::project_status,
+            project::new_project,
+            project::open_project,
+            project::save_project,
+            project::save_project_as,
+            project::export_bundle,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

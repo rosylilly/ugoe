@@ -1,11 +1,13 @@
 use std::fmt::Display;
+use std::sync::Arc;
 
 use ugoe_model::deformer::DeformerKind;
 use ugoe_model::validate::{ValidationError, validate};
-use ugoe_model::{DeformerId, KeyformOrigin, MeshId, Model, ParamId, PartId};
+use ugoe_model::{DeformerId, KeyformOrigin, MeshId, Model, ParamId, PartId, TextureRef};
 
 use crate::Command;
 use crate::grid::{self, CellError};
+use crate::texture::{Textures, is_valid_texture_name, png_size};
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum EditError {
@@ -38,6 +40,12 @@ pub enum EditError {
         id: String,
         error: CellError,
     },
+    /// テクスチャ名がファイル名に使えない (`crate::texture::is_valid_texture_name`)。
+    #[error("texture name `{name}` is invalid (use [A-Za-z0-9_.-], not starting with `.`)")]
+    InvalidTextureName { name: String },
+    /// テクスチャの画像が PNG でない (または IHDR が読めない)。
+    #[error("texture `{name}`: image is not a PNG")]
+    NotPng { name: String },
     /// 適用するとモデルが検証 (`ugoe_model::validate`) に通らなくなる。新たに生じるエラーの一覧。
     #[error("command would make the model invalid: {}", join(.0))]
     Invalid(Vec<ValidationError>),
@@ -51,27 +59,74 @@ fn join(errors: &[ValidationError]) -> String {
         .join("; ")
 }
 
-/// 編集中のモデルと履歴。
+/// 編集中のモデル・テクスチャと履歴。
 ///
 /// 暫定実装としてスナップショット方式の Undo を使う (`docs/adr/0005-editor-command-model.md`)。
+/// テクスチャの画像は `Arc` で共有するので、スナップショットでバイト列は複製されない。
 #[derive(Debug)]
 pub struct Document {
+    current: Snapshot,
+    undo: Vec<Snapshot>,
+    redo: Vec<Snapshot>,
+    /// 次に作る状態の番号。
+    next_state: u64,
+    /// 最後に保存した状態の番号 (未保存なら `None`)。
+    saved: Option<u64>,
+}
+
+/// ある時点のドキュメントの状態。`state` は状態ごとに一意な番号 (変更の有無の判定に使う)。
+#[derive(Debug, Clone)]
+struct Snapshot {
     model: Model,
-    undo: Vec<Model>,
-    redo: Vec<Model>,
+    textures: Textures,
+    state: u64,
 }
 
 impl Document {
+    /// テクスチャの画像を持たないドキュメント。
     pub fn new(model: Model) -> Self {
+        Self::with_textures(model, Textures::new())
+    }
+
+    /// モデルとテクスチャの画像 (`Model::textures` の名前 → PNG) からドキュメントを作る。
+    /// 作った時点の状態は「保存済み」とみなす。
+    pub fn with_textures(model: Model, textures: Textures) -> Self {
         Self {
-            model,
+            current: Snapshot {
+                model,
+                textures,
+                state: 0,
+            },
             undo: Vec::new(),
             redo: Vec::new(),
+            next_state: 1,
+            saved: Some(0),
         }
     }
 
     pub fn model(&self) -> &Model {
-        &self.model
+        &self.current.model
+    }
+
+    /// テクスチャ名 → PNG のバイト列。
+    pub fn textures(&self) -> &Textures {
+        &self.current.textures
+    }
+
+    /// 名前でテクスチャの PNG を引く。
+    pub fn texture(&self, name: &str) -> Option<&[u8]> {
+        self.current.textures.get(name).map(|png| &**png)
+    }
+
+    /// 最後に [`Document::mark_saved`] した (または作った) ときから状態が変わっているか。
+    /// Undo で保存時の状態に戻れば `false` に戻る。
+    pub fn is_modified(&self) -> bool {
+        self.saved != Some(self.current.state)
+    }
+
+    /// 現在の状態を「保存済み」にする。
+    pub fn mark_saved(&mut self) {
+        self.saved = Some(self.current.state);
     }
 
     /// コマンドを適用する。失敗時はモデルを変更しない。
@@ -80,17 +135,19 @@ impl Document {
     /// 検証エラーが生じたら [`EditError::Invalid`] で拒否する。検証を通るモデルに対しては、
     /// 成功した適用の後も必ず検証を通る。`Batch` は全体を適用した後に 1 回だけ検査する。
     pub fn apply(&mut self, command: Command) -> Result<(), EditError> {
-        let mut next = self.model.clone();
-        apply_to(&mut next, command)?;
-        let before = validate(&self.model);
-        let introduced: Vec<_> = validate(&next)
+        let mut next = self.current.clone();
+        apply_to(&mut next.model, &mut next.textures, command)?;
+        let before = validate(&self.current.model);
+        let introduced: Vec<_> = validate(&next.model)
             .into_iter()
             .filter(|e| !before.contains(e))
             .collect();
         if !introduced.is_empty() {
             return Err(EditError::Invalid(introduced));
         }
-        self.undo.push(std::mem::replace(&mut self.model, next));
+        next.state = self.next_state;
+        self.next_state += 1;
+        self.undo.push(std::mem::replace(&mut self.current, next));
         self.redo.clear();
         Ok(())
     }
@@ -98,7 +155,7 @@ impl Document {
     pub fn undo(&mut self) -> bool {
         match self.undo.pop() {
             Some(prev) => {
-                self.redo.push(std::mem::replace(&mut self.model, prev));
+                self.redo.push(std::mem::replace(&mut self.current, prev));
                 true
             }
             None => false,
@@ -108,7 +165,7 @@ impl Document {
     pub fn redo(&mut self) -> bool {
         match self.redo.pop() {
             Some(next) => {
-                self.undo.push(std::mem::replace(&mut self.model, next));
+                self.undo.push(std::mem::replace(&mut self.current, next));
                 true
             }
             None => false,
@@ -186,7 +243,7 @@ fn mesh<'a>(model: &'a mut Model, id: &MeshId) -> Result<&'a mut ugoe_model::Mes
     find_mut(&mut model.meshes, "mesh", id, |m| &m.id)
 }
 
-fn apply_to(model: &mut Model, command: Command) -> Result<(), EditError> {
+fn apply_to(model: &mut Model, textures: &mut Textures, command: Command) -> Result<(), EditError> {
     match command {
         Command::AddParameter { parameter } => {
             ensure_new(&model.parameters, "parameter", &parameter.id, |p| &p.id)?;
@@ -207,7 +264,7 @@ fn apply_to(model: &mut Model, command: Command) -> Result<(), EditError> {
         }
         Command::Batch { commands, .. } => {
             for c in commands {
-                apply_to(model, c)?;
+                apply_to(model, textures, c)?;
             }
         }
         Command::RenameParameter { id, name } => parameter(model, &id)?.name = name,
@@ -303,6 +360,9 @@ fn apply_to(model: &mut Model, command: Command) -> Result<(), EditError> {
             }
         }
         Command::ReorderMesh { id, before } => reorder_mesh(model, &id, before.as_ref())?,
+        Command::AddTexture { name, png } => add_texture(model, textures, name, png)?,
+        Command::SetTextureImage { name, png } => set_texture_image(model, textures, name, png)?,
+        Command::RemoveTexture { name } => remove_texture(model, textures, &name)?,
     }
     Ok(())
 }
@@ -488,5 +548,87 @@ fn reorder_mesh(model: &mut Model, id: &MeshId, before: Option<&MeshId>) -> Resu
         None => model.meshes.len(),
     };
     model.meshes.insert(to, moved);
+    Ok(())
+}
+
+/// PNG の寸法を読む。PNG でなければ [`EditError::NotPng`]。
+fn png_dimensions(name: &str, png: &[u8]) -> Result<(u32, u32), EditError> {
+    png_size(png).ok_or_else(|| EditError::NotPng {
+        name: name.to_owned(),
+    })
+}
+
+/// テクスチャを `Model::textures` の末尾に追加する。寸法は PNG から読む。
+///
+/// 名前は大文字と小文字を区別せずに重複を拒否する (大文字小文字を区別しないファイルシステムで
+/// `textures/<name>.png` が衝突しないように)。
+fn add_texture(
+    model: &mut Model,
+    textures: &mut Textures,
+    name: String,
+    png: Vec<u8>,
+) -> Result<(), EditError> {
+    if !is_valid_texture_name(&name) {
+        return Err(EditError::InvalidTextureName { name });
+    }
+    if model
+        .textures
+        .iter()
+        .any(|t| t.name.eq_ignore_ascii_case(&name))
+    {
+        return Err(EditError::DuplicateId {
+            kind: "texture",
+            id: name,
+        });
+    }
+    let (width, height) = png_dimensions(&name, &png)?;
+    model.textures.push(TextureRef {
+        name: name.clone(),
+        width,
+        height,
+    });
+    textures.insert(name, Arc::from(png));
+    Ok(())
+}
+
+/// テクスチャの画像を差し替える。`TextureRef` の寸法も PNG に合わせて更新する。
+fn set_texture_image(
+    model: &mut Model,
+    textures: &mut Textures,
+    name: String,
+    png: Vec<u8>,
+) -> Result<(), EditError> {
+    let (width, height) = png_dimensions(&name, &png)?;
+    let texture = find_mut(&mut model.textures, "texture", &name, |t| &t.name)?;
+    (texture.width, texture.height) = (width, height);
+    textures.insert(name, Arc::from(png));
+    Ok(())
+}
+
+/// テクスチャを削除する。使っているメッシュがあれば拒否する。
+/// 後ろのテクスチャを指すメッシュの `texture` (インデックス) は 1 つ詰める。
+fn remove_texture(model: &mut Model, textures: &mut Textures, name: &str) -> Result<(), EditError> {
+    let index = model
+        .textures
+        .iter()
+        .position(|t| t.name == name)
+        .ok_or_else(|| EditError::NotFound {
+            kind: "texture",
+            id: name.to_owned(),
+        })?;
+    let children = model
+        .meshes
+        .iter()
+        .filter(|m| usize::try_from(m.texture).is_ok_and(|t| t == index))
+        .map(|m| format!("mesh `{}`", m.id))
+        .collect();
+    ensure_no_children("texture", &name, children)?;
+    model.textures.remove(index);
+    for mesh in &mut model.meshes {
+        if usize::try_from(mesh.texture).is_ok_and(|t| t > index) {
+            mesh.texture -= 1;
+        }
+    }
+    textures.remove(name);
     Ok(())
 }

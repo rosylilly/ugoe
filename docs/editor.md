@@ -49,12 +49,15 @@
 | パーツ | `add_part`、`remove_part`、`rename_part`、`set_part_parent`、`set_part_keyforms` |
 | デフォーマ | `add_deformer`、`remove_deformer`、`rename_deformer`、`set_deformer_parent`、`set_deformer_part`、`set_warp_keyforms` (`rows` / `cols` は変えない)、`set_rotation_keyforms` |
 | メッシュ | `add_mesh` (`meshes` の末尾に追加)、`remove_mesh`、`rename_mesh`、`set_mesh_properties`、`set_mesh_parent`、`set_mesh_keyforms`、`set_mesh_keyform`、`reorder_mesh` |
+| テクスチャ | `add_texture`、`set_texture_image`、`remove_texture` |
 | その他 | `batch` |
 
 - `set_mesh_properties` は `part`・`texture`・`blend`・`culling`・`masks`・`mask_mode`・`mask_only` のうち、指定したフィールドだけを変えます。
 - `set_mesh_keyform` は格子の 1 セルを置き換え、そのセルの由来を `authored` にします。セルは「軸のパラメータ ID → キーの値」の対応で指定します (例: `"cell": {"AngleX": 30, "AngleY": 0}`)。格子のすべての軸を指定し、値はキーと完全に一致させます。軸のない格子は `{}` です。
 - `reorder_mesh` は `meshes` の中でメッシュを `before` の直前 (`null` なら末尾) に移します。描画順 (`draw_order`) が同じメッシュの前後関係が変わります。
 - `set_deformer_parent` と `set_mesh_parent` は親を付け替えるだけで、座標は変えません (子の座標は新しい親の局所座標として解釈されるので、見た目は変わりうる)。見た目を保つ付け替えは T0607 で作ります。
+
+- `add_texture` は `name` と `png` (PNG ファイルのバイト列) を受け取り、`Model::textures` の末尾に追加します。幅と高さは PNG の IHDR から読みます。名前の規則は下の「テクスチャ」を参照。`set_texture_image` は画像を差し替え、寸法も PNG に合わせます。`remove_texture` は使っているメッシュがあれば拒否し (`HasChildren`)、後ろのテクスチャを指すメッシュの `texture` (インデックス) を 1 つ詰めます。
 
 ### 削除の連鎖と拒否
 
@@ -72,6 +75,35 @@
 
 最初はスナップショット方式 (`Model` を丸ごと clone) で実装します。簡単で確実だからです。
 モデルが大きくなってメモリや時間が問題になったら、各コマンドが逆操作を返す方式に移行します ([ADR 0005](adr/0005-editor-command-model.md))。
+
+## テクスチャ
+
+- `Document` はモデルと一緒に **テクスチャの画像** (`Textures` = テクスチャ名 → PNG のバイト列) を持ちます。モデルの `TextureRef` は名前と寸法だけで、画像はここにあります。画像はデコードせず、PNG ファイルのまま持ちます。
+- 画像の追加・差し替え・削除もコマンド (`add_texture` など) で行うので、Undo/Redo の対象になります。PSD の取り込み (T0605) はレイヤーごとに `add_texture` と `add_mesh` を `batch` にまとめて発行します。
+- スナップショットでは画像を `Arc<[u8]>` で共有するので、Undo のたびに画像のバイト列が複製されることはありません。
+- テクスチャ名は `textures/<name>.png` のファイル名になるので、`[A-Za-z0-9_.-]` だけからなり `.` で始まらないものに限り、大文字と小文字を区別せずに一意にします ([ファイル形式](spec/file-formats.md#名前と読み込み))。
+- `png` は JSON では数値の配列になります。大きな画像をフロントエンドから送ることは想定しておらず、バックエンドの中 (取り込み処理) から使います。
+
+## プロジェクト
+
+- 保存形式は [`.ugoeproj/`](spec/file-formats.md#プロジェクト-ugoeproj) です。`ugoe_editor_core::Project` がプロジェクト 1 つ分の中身 (`ProjectMeta`・モデル・テクスチャ・物理・モーション・表情) を持ち、`save(dir)` / `load(dir)` で読み書きし、`export_bundle(&Project)` で `.ugoe` のバイト列を作ります。
+- 編集中は、モデルとテクスチャを `Document` が持ちます (`Project::document()` で作り、`Project::from_document` で保存用に戻す)。物理・モーション・表情はまだ編集コマンドがないので、`Document` の外 (Tauri の `ProjectSession`) に置いたまま保存・書き出しします。これらの編集コマンドを作るときに `Document` へ移します。
+- **未保存の変更:** `Document` は状態ごとに番号を振り、保存した状態の番号を覚えます。`is_modified()` は現在の状態が保存した状態と違うかを返すので、Undo で保存時の状態に戻ると「変更なし」に戻ります。失敗したコマンドは状態を変えません。
+
+### Tauri コマンド
+
+| コマンド | 内容 |
+| --- | --- |
+| `project_status` | 名前・保存先・未保存の変更の有無 (`ProjectStatus`) を返す |
+| `new_project` | 空のモデル (1024×1024 のキャンバス) の新しいプロジェクトにする |
+| `open_project(path)` | `.ugoeproj` ディレクトリを開く。失敗したら今のプロジェクトはそのまま |
+| `save_project` | 開いた (前回保存した) 場所に保存する。保存先がなければエラー |
+| `save_project_as(path)` | 別の場所に保存し、以後の保存先にする。拡張子 `.ugoeproj` がなければ付け、名前をディレクトリ名にする |
+| `export_bundle(path)` | `.ugoe` ファイルに書き出す。保存状態は変えない |
+
+- ファイルのパスは、今はフロントエンドの入力欄で受け取ります (ファイルメニュー `src/lib/FileMenu.svelte`)。ファイルダイアログのプラグイン (`tauri-plugin-dialog` / `@tauri-apps/plugin-dialog`) は、依存の追加とライセンスの確認を別の作業に分けるため、まだ入れていません。入れるときは、入力欄をダイアログに置き換え、`capabilities/default.json` に `dialog:default` を足します。
+- 未保存の変更がある状態で「新規」「開く」を押すと、もう一度押すまで実行しません (確認のダイアログの代わり)。
+- 起動時は、白い 1×1 のテクスチャを付けた `single_quad` を、保存先のないプロジェクトとして開きます。
 
 ## ビューポート
 

@@ -163,4 +163,21 @@ pub enum Command {
         id: MeshId,
         before: Option<MeshId>,
     },
+    /// テクスチャ (PNG) を `Model::textures` の末尾に追加する。寸法は PNG の IHDR から読む。
+    /// 名前は `[A-Za-z0-9_.-]` (`.` 始まりは不可) で、大文字小文字を区別せずに一意。
+    /// `png` は JSON では数値の配列になるので、主にバックエンド内 (PSD 取り込みなど) から使う。
+    AddTexture {
+        name: String,
+        png: Vec<u8>,
+    },
+    /// テクスチャの画像を差し替える。`TextureRef` の寸法も PNG に合わせる。
+    SetTextureImage {
+        name: String,
+        png: Vec<u8>,
+    },
+    /// テクスチャを削除する。使っているメッシュがあれば拒否する。
+    /// 後ろのテクスチャを指すメッシュの `texture` は 1 つ詰める。
+    RemoveTexture {
+        name: String,
+    },
 }

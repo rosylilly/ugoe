@@ -8,10 +8,16 @@ pub mod command;
 pub mod document;
 mod grid;
 pub mod ids;
+pub mod project;
+pub mod texture;
 
 pub use command::{Command, KeyformCell};
 pub use document::{Document, EditError};
 pub use grid::CellError;
+pub use project::{Project, ProjectError, ProjectMeta, export_bundle};
+pub use texture::Textures;
 
+#[cfg(test)]
+mod project_tests;
 #[cfg(test)]
 mod tests;

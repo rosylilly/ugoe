@@ -1,4 +1,5 @@
 <script lang="ts">
+import FileMenu from "./lib/FileMenu.svelte";
 import { type AppInfo, ipc } from "./lib/ipc";
 
 interface ParameterView {
@@ -12,6 +13,7 @@ interface ParameterView {
 let info = $state<AppInfo | null>(null);
 let parameters = $state<ParameterView[]>([]);
 let error = $state<string | null>(null);
+let fileMenu = $state<FileMenu>();
 
 async function refresh() {
   try {
@@ -19,6 +21,7 @@ async function refresh() {
     const model = JSON.parse(await ipc.getModelJson());
     parameters = model.parameters;
     error = null;
+    await fileMenu?.refresh();
   } catch (e) {
     error = String(e);
   }
@@ -41,6 +44,7 @@ refresh();
   <header>
     <strong>ugoe</strong>
     <span class="muted">{info ? `v${info.version}` : "…"}</span>
+    <FileMenu bind:this={fileMenu} onchange={refresh} />
     <span class="spacer"></span>
     <button onclick={undo}>Undo</button>
     <button onclick={redo}>Redo</button>

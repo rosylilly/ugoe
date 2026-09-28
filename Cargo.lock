@@ -4233,6 +4233,7 @@ dependencies = [
 name = "ugoe-editor-core"
 version = "0.0.0"
 dependencies = [
+ "png 0.18.1",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
