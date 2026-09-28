@@ -6,6 +6,12 @@
 
 pub mod command;
 pub mod document;
+mod grid;
+pub mod ids;
 
-pub use command::Command;
+pub use command::{Command, KeyformCell};
 pub use document::{Document, EditError};
+pub use grid::CellError;
+
+#[cfg(test)]
+mod tests;
