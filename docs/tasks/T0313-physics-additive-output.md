@@ -1,11 +1,11 @@
 ---
 id: T0313
 title: 物理の出力の加算モード
-status: todo
+status: in-progress
 milestone: M3.5
 crates: [ugoe-model, ugoe-physics, ugoe-editor-core, apps/editor, docs]
 depends_on: [T0312]
-assignee:
+assignee: claude-worker-T0313
 ---
 
 # T0313: 物理の出力の加算モード
