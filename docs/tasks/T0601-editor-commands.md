@@ -1,11 +1,11 @@
 ---
 id: T0601
 title: エディタのコマンド群
-status: todo
+status: in-progress
 milestone: M2
 crates: [ugoe-editor-core]
 depends_on: [T0102]
-assignee:
+assignee: claude-worker-T0601
 ---
 
 # T0601: エディタのコマンド群

@@ -1,11 +1,11 @@
 ---
 id: T0206
 title: 参照レンダラ: マスクアトラスの縮小
-status: todo
+status: in-progress
 milestone: M2
 crates: [ugoe-render]
 depends_on: [T0205]
-assignee:
+assignee: claude-worker-T0206
 ---
 
 # T0206: 参照レンダラ: マスクアトラスの縮小

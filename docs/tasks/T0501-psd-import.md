@@ -1,11 +1,11 @@
 ---
 id: T0501
 title: PSD 取り込み
-status: todo
+status: in-progress
 milestone: M2
 crates: [ugoe-psd]
 depends_on: []
-assignee:
+assignee: claude-worker-T0501
 ---
 
 # T0501: PSD 取り込み

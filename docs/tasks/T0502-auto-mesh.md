@@ -1,11 +1,11 @@
 ---
 id: T0502
 title: 自動メッシュ生成
-status: todo
+status: in-progress
 milestone: M2
 crates: [ugoe-mesher]
 depends_on: []
-assignee:
+assignee: claude-worker-T0502
 ---
 
 # T0502: 自動メッシュ生成

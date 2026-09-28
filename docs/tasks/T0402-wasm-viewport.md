@@ -1,11 +1,11 @@
 ---
 id: T0402
 title: wasm の WebPuppet とエディタのビューポート
-status: todo
+status: in-progress
 milestone: M2
 crates: [ugoe-wasm, apps/editor (src/ のみ)]
 depends_on: [T0201]
-assignee:
+assignee: claude-worker-T0402
 ---
 
 # T0402: wasm の WebPuppet とエディタのビューポート

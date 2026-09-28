@@ -1,11 +1,11 @@
 ---
 id: T0108
 title: キーフォーム推定のためのデータ定義
-status: todo
+status: in-progress
 milestone: M2
 crates: [ugoe-model, ugoe-format (テストの追従のみ)]
 depends_on: []
-assignee:
+assignee: claude-worker-T0108
 ---
 
 # T0108: キーフォーム推定のためのデータ定義
