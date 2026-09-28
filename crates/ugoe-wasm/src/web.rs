@@ -474,6 +474,15 @@ impl WebPuppet {
         self.evaluate();
         hit::hit_test(self.puppet.as_ref()?.instance(), [x, y])
     }
+
+    /// キャンバス座標 `(x, y)` にある表示中の要素の添字のすべて (手前から奥へ)。
+    pub fn hit_test_all(&mut self, x: f32, y: f32) -> Vec<u32> {
+        self.evaluate();
+        self.puppet
+            .as_ref()
+            .map(|p| hit::hit_test_all(p.instance(), [x, y]))
+            .unwrap_or_default()
+    }
 }
 
 impl WebPuppet {

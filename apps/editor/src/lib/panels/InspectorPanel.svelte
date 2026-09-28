@@ -6,6 +6,7 @@
 <script lang="ts">
 import type { EditorDocument } from "../document.svelte";
 import type { Selection } from "../selection.svelte";
+import MeshProperties from "./inspector/MeshProperties.svelte";
 
 interface Props {
   doc: EditorDocument;
@@ -18,6 +19,7 @@ let { doc, selection }: Props = $props();
 <h2>Inspector</h2>
 {#if selection.primary}
   <p>{selection.primary.kind}: {selection.primary.id}</p>
+  <MeshProperties {doc} {selection} />
 {:else}
   <p class="muted">Nothing selected (rev {doc.revision})</p>
 {/if}

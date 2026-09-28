@@ -27,26 +27,40 @@ pub fn drawable_bounds(instance: &ModelInstance) -> Vec<f32> {
 ///
 /// 三角形の内外だけで判定し、テクスチャの透明部分は考慮しない。不透明度 0 の要素は除く。
 pub fn hit_test(instance: &ModelInstance, point: [f32; 2]) -> Option<u32> {
-    let model = instance.compiled().model();
-    let drawables = instance.drawables();
-    instance.render_order().iter().rev().copied().find(|&i| {
-        let d = &drawables[i as usize];
-        if !d.visible || d.opacity <= 0.0 {
-            return false;
-        }
-        let p = &d.positions;
-        model.meshes[i as usize]
-            .indices
-            .as_chunks::<3>()
-            .0
-            .iter()
-            .any(|t| {
-                let [Some(a), Some(b), Some(c)] = t.map(|k| p.get(usize::from(k))) else {
-                    return false;
-                };
-                in_triangle(point, [a.x, a.y], [b.x, b.y], [c.x, c.y])
-            })
-    })
+    let mut hits = instance.render_order().iter().rev().copied();
+    hits.find(|&i| contains(instance, i, point))
+}
+
+/// キャンバス座標 `point` にある表示中の要素のすべて (手前から奥へ)。条件は [`hit_test`] と同じ。
+/// 重なった要素を順に選ぶ (Alt + クリック) のに使う。
+pub fn hit_test_all(instance: &ModelInstance, point: [f32; 2]) -> Vec<u32> {
+    instance
+        .render_order()
+        .iter()
+        .rev()
+        .copied()
+        .filter(|&i| contains(instance, i, point))
+        .collect()
+}
+
+/// 要素 `i` が表示中で、その三角形のどれかが `point` を含むか。
+fn contains(instance: &ModelInstance, i: u32, point: [f32; 2]) -> bool {
+    let d = &instance.drawables()[i as usize];
+    if !d.visible || d.opacity <= 0.0 {
+        return false;
+    }
+    let p = &d.positions;
+    instance.compiled().model().meshes[i as usize]
+        .indices
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .any(|t| {
+            let [Some(a), Some(b), Some(c)] = t.map(|k| p.get(usize::from(k))) else {
+                return false;
+            };
+            in_triangle(point, [a.x, a.y], [b.x, b.y], [c.x, c.y])
+        })
 }
 
 /// 点が三角形の内側 (辺の上を含む) にあるか。向きは問わない。
@@ -87,6 +101,16 @@ mod tests {
         assert_eq!(hit_test(&inst, [100.0, 100.0]), Some(0));
         assert_eq!(hit_test(&inst, [64.0, 64.0]), Some(0));
         assert_eq!(hit_test(&inst, [10.0, 100.0]), None);
+    }
+
+    #[test]
+    fn hit_test_all_lists_overlaps_front_to_back() {
+        // Sclera (描画順 400) < Iris (500) < Pupil (600)。宣言順は Pupil, Iris, Sclera。
+        let inst = ModelInstance::new(CompiledModel::compile(fixtures::nested_masks()).unwrap());
+        assert_eq!(hit_test_all(&inst, [128.0, 100.0]), vec![0, 1, 2]);
+        assert_eq!(hit_test(&inst, [128.0, 100.0]), Some(0));
+        assert_eq!(hit_test_all(&inst, [70.0, 100.0]), vec![2]);
+        assert_eq!(hit_test_all(&inst, [10.0, 10.0]), Vec::<u32>::new());
     }
 
     #[test]

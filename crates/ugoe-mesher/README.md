@@ -8,6 +8,12 @@
 let mesh = ugoe_mesher::generate(&rgba, width, height, &MeshOptions::default())?;
 ```
 
+エディタでメッシュを作り直すときは、与えた点群をそのまま三角形分割する
+`triangulate_points(&points, &constraints)` を使う (`ugoe-editor-core` の頂点の追加・削除と
+三角形の作り直し)。制約辺が空なら凸包全体のドロネー三角形分割、空でなければ制約付きドロネー
+三角形分割で、重心が制約辺の内側 (偶奇規則) にある三角形だけを残す。インデックスは入力の添字の
+ままで、三角形は画面 (Y 下向き) 上で反時計回り。同じ位置の点があれば `TriangulateError::Duplicate`。
+
 ## 守ること
 
 - 決定的であること (同じ画像とオプションからは同じメッシュ。乱数・ハッシュ順・並列処理を使わない)

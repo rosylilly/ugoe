@@ -1352,10 +1352,14 @@ fn op_name(command: &Command) -> &'static str {
         Command::MirrorKeyforms { .. } => "mirror_keyforms",
         Command::MarkKeyformAuthored { .. } => "mark_keyform_authored",
         Command::MarkKeyformDerived { .. } => "mark_keyform_derived",
+        Command::MoveMeshVertices { .. } => "move_mesh_vertices",
+        Command::AddMeshVertex { .. } => "add_mesh_vertex",
+        Command::RemoveMeshVertices { .. } => "remove_mesh_vertices",
+        Command::RetriangulateMesh { .. } => "retriangulate_mesh",
     }
 }
 
-const OP_COUNT: usize = 36;
+const OP_COUNT: usize = 40;
 
 fn json_samples() -> Vec<Command> {
     let quad = fixtures::single_quad();
@@ -1510,6 +1514,22 @@ fn json_samples() -> Vec<Command> {
             target: crate::KeyformTarget::Glue("Glue".into()),
             cells: vec![KeyformCell::new()],
         },
+        Command::MoveMeshVertices {
+            id: "Quad".into(),
+            moves: vec![crate::VertexMove {
+                index: 2,
+                delta: ugoe_core::Vec2::new(1.0, -2.0),
+            }],
+        },
+        Command::AddMeshVertex {
+            id: "Quad".into(),
+            position: ugoe_core::Vec2::new(100.0, 120.0),
+        },
+        Command::RemoveMeshVertices {
+            id: "Quad".into(),
+            indices: vec![1, 3],
+        },
+        Command::RetriangulateMesh { id: "Quad".into() },
     ]
 }
 

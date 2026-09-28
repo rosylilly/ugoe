@@ -43,6 +43,7 @@ export class WebPuppet {
   drawable_positions(index: number): Float32Array | undefined;
   render_order(): Uint32Array;
   hit_test(x: number, y: number): number | undefined;
+  hit_test_all(x: number, y: number): Uint32Array;
 }
 
 export function version(): string;

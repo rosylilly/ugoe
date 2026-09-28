@@ -240,6 +240,33 @@ pub enum Command {
         target: KeyformTarget,
         cells: Vec<KeyformCell>,
     },
+    /// メッシュの頂点をキャンバス座標で動かす (トポロジーと基準の形の編集)。
+    /// ずれは既定値のパラメータでの親デフォーマの変換で局所座標に直し、すべてのキーフォームに
+    /// 同じ量を加える。UV は、動かした先でのテクスチャの対応 (既定値の姿の三角形) から求め直す。
+    /// 式は `docs/editor.md#メッシュの編集`。
+    MoveMeshVertices {
+        id: MeshId,
+        moves: Vec<VertexMove>,
+    },
+    /// キャンバス座標 `position` に頂点を 1 つ足し (頂点の末尾に追加)、三角形を作り直す。
+    /// UV・各キーフォームの位置・深度は、その点を含む三角形 (外側なら最も近い境界辺の三角形) の
+    /// 重心座標で補間する。
+    AddMeshVertex {
+        id: MeshId,
+        #[ts(as = "ugoe_core::codegen::Vec2Repr")]
+        #[schemars(with = "ugoe_core::codegen::Vec2Repr")]
+        position: Vec2,
+    },
+    /// 頂点を削除し (後ろの頂点の番号は詰める)、三角形を作り直す。3 頂点未満になるなら拒否する。
+    /// グルーのペアのうち削除した頂点を使うものは消し、残りは番号を付け替える。
+    RemoveMeshVertices {
+        id: MeshId,
+        indices: Vec<u16>,
+    },
+    /// 今の輪郭を保ったまま、UV の制約付きドロネー三角形分割で三角形を作り直す。
+    RetriangulateMesh {
+        id: MeshId,
+    },
 }
 
 /// キーフォームの格子を持つ要素。JSON では `{"kind": "mesh", "id": "EyeL"}` と書く。
@@ -292,4 +319,15 @@ pub enum InferMethod {
     /// 深度からの回転 (`docs/spec/keyform-inference.md#深度からの回転`)。
     /// 格子の `inference` が `depth_rotation` でなければならない。
     DepthRotation,
+}
+
+/// [`Command::MoveMeshVertices`] の 1 頂点分の移動。
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS, JsonSchema)]
+pub struct VertexMove {
+    /// 頂点の番号 (`Mesh::uvs` の添字)。
+    pub index: u16,
+    /// キャンバス座標でのずれ。
+    #[ts(as = "ugoe_core::codegen::Vec2Repr")]
+    #[schemars(with = "ugoe_core::codegen::Vec2Repr")]
+    pub delta: Vec2,
 }

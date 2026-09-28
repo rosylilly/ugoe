@@ -2996,5 +2996,38 @@ export const commands: Command[] = [
       {},
       {}
     ]
+  },
+  {
+    "op": "move_mesh_vertices",
+    "id": "EyeL",
+    "moves": [
+      {
+        "index": 2,
+        "delta": [
+          4.0,
+          -8.0
+        ]
+      }
+    ]
+  },
+  {
+    "op": "add_mesh_vertex",
+    "id": "EyeL",
+    "position": [
+      512.0,
+      300.0
+    ]
+  },
+  {
+    "op": "remove_mesh_vertices",
+    "id": "EyeL",
+    "indices": [
+      0,
+      3
+    ]
+  },
+  {
+    "op": "retriangulate_mesh",
+    "id": "EyeL"
   }
 ];

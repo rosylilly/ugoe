@@ -49,7 +49,7 @@
 | パラメータ | `add_parameter`、`remove_parameter`、`set_parameter_range`、`rename_parameter`、`set_parameter_group` (`null` で外す)、`set_parameter_mirror` (`null` で外す。相手側は変えない。自分自身と対にすると値の符号を反転して対応させる) |
 | パーツ | `add_part`、`remove_part`、`rename_part`、`set_part_parent`、`set_part_keyforms` |
 | デフォーマ | `add_deformer`、`remove_deformer`、`rename_deformer`、`set_deformer_parent`、`set_deformer_part`、`set_warp_keyforms` (`rows` / `cols` は変えない)、`set_rotation_keyforms` |
-| メッシュ | `add_mesh` (`meshes` の末尾に追加)、`remove_mesh`、`rename_mesh`、`set_mesh_properties`、`set_mesh_parent`、`set_mesh_keyforms`、`set_mesh_keyform`、`reorder_mesh`、`regenerate_mesh` ([メッシュの再生成](#メッシュの再生成)) |
+| メッシュ | `add_mesh` (`meshes` の末尾に追加)、`remove_mesh`、`rename_mesh`、`set_mesh_properties`、`set_mesh_parent`、`set_mesh_keyforms`、`set_mesh_keyform`、`reorder_mesh`、`regenerate_mesh` ([メッシュの再生成](#メッシュの再生成))、`move_mesh_vertices`・`add_mesh_vertex`・`remove_mesh_vertices`・`retriangulate_mesh` ([メッシュの編集](#メッシュの編集)) |
 | テクスチャ | `add_texture`、`set_texture_image`、`remove_texture` |
 | キャンバス | `set_canvas` (`width`・`height`・`origin`。大きさは 0 より大きい有限の値。要素の座標は変えない) |
 | キーフォームの推定 | `infer_keyforms`、`mirror_keyforms`、`mark_keyform_authored`、`mark_keyform_derived` (下の「推定とミラー」) |
@@ -132,6 +132,56 @@
 - 各キーフォームの頂点位置以外の値 (不透明度・描画順・色など) と格子の軸は保ちます。
 - `margin` を取り込み時より大きくすると、輪郭がテクスチャの余白の外 (UV が 0〜1 の外) に出ることがあります。
 
+### メッシュの編集
+
+メッシュの **トポロジーと基準の形** を編集するコマンドです (実装は `crates/ugoe-editor-core/src/mesh_edit.rs`)。キーフォームごとの形の編集 (パラメータのキーでの変形) は T0608 で扱います。
+
+どのコマンドも、**既定値のパラメータで評価したメッシュ** (以下「基準の姿」。グルー適用後のキャンバス座標で、ビューポートに既定値で表示される形) を基準にします。評価はランタイム (`ugoe-runtime`) そのもので行います (モデルの複製に、評価用のメッシュを足して評価する)。モデルが評価できない (検証に通らない) ときは `EditError::MeshGeometry` で拒否します。
+
+| `op` | 内容 |
+| --- | --- |
+| `move_mesh_vertices { id, moves: [{ index, delta }] }` | 頂点をキャンバス座標のずれ `delta` だけ動かす。同じ頂点を 2 回指定するとエラー |
+| `add_mesh_vertex { id, position }` | キャンバス座標 `position` に頂点を 1 つ足し (頂点の末尾)、三角形を作り直す |
+| `remove_mesh_vertices { id, indices }` | 頂点を消し (後ろの番号は詰める)、三角形を作り直す。3 頂点未満になるなら拒否 (`EditError::TooFewVertices`) |
+| `retriangulate_mesh { id }` | 今の輪郭を保ったまま三角形を作り直す |
+
+移動・追加・削除はすべてのセルの頂点位置を変えるので、推定で作ったセル (`derived`) は適用の後に作り直します (`authored` のセルは変えない。[keyform-inference.md](spec/keyform-inference.md))。
+
+範囲外の頂点番号は `EditError::VertexOutOfRange`、形の上でできない編集 (退化した親・同じ UV の頂点・三角形が作れないなど) は `EditError::MeshGeometry` です。
+
+**頂点の移動** (`move_mesh_vertices`)。頂点 `i` の基準の姿での局所座標を `l`、親デフォーマのワールド変換 (局所 → キャンバス、[evaluation.md](spec/evaluation.md#3-デフォーマのワールド変換)) を `F` とします。
+
+```
+J       = ∂F/∂l (l での 2×2 のヤコビ行列。中心差分で求める)
+local   = J⁻¹ · delta                 // すべてのキーフォームの positions[i] に同じ量を足す
+uv[i]   = 基準の姿のテクスチャの対応で、キャンバスの点 world[i] + delta に当たる UV
+```
+
+- 親なしは `J = I`。親が回転デフォーマ (と祖先の回転) ならワールド変換はアフィンなので、`J` は厳密にその線形部分 (回転・拡大率・反転) です。差分の幅は 1px (アフィンなら中心差分は幅によらず厳密)。
+- 親がワープなら、`J` はその点でのセル単位の双線形写像の微分です (格子の外では外挿のアフィン近似の微分)。差分の幅は UV で 1e-3。双線形は一次式ではないので、大きく動かすと、評価後の位置は `delta` から交差項 (`∂²F/∂u∂v · Δu · Δv`) の分だけずれます。
+- `J` の行列式がほぼ 0 (潰れた親) なら拒否します。
+- すべてのキーフォームに同じ局所のずれを足すので、キーフォーム間の差 (動き) は保たれます。
+- **UV:** 基準の姿の三角形 (キャンバス座標) のうち、移動先の点を含むもの (なければ最も近いもの) の重心座標で UV を補間します (外側では外挿)。テクスチャはキャンバス上で動かず、メッシュだけがその上を動きます。
+- 三角形は作り直しません (必要なら `retriangulate_mesh`)。深度 (`depth`) は変えません。
+
+**頂点の追加** (`add_mesh_vertex`)。基準の姿で `position` を含む三角形 (辺の上を含む) を探し、その重心座標 `(w0, w1, w2)` で次の値を補間します。
+
+- UV、**各キーフォームの** `positions` (同じ重心座標を各キーフォームの三角形に当てる)、深度 (`depth` があれば)。
+- `position` がどの三角形にも入らなければ、最も近い **境界辺** を選び、その辺を持つ三角形の重心座標で外挿します。その境界辺は新しい頂点を通るように 2 本に分けます (輪郭が外に広がる)。境界辺の上の点も同じく輪郭に入れます。内側の点は内部の頂点になります。
+- 同じ UV の頂点がすでにあれば拒否します。
+
+**頂点の削除** (`remove_mesh_vertices`)。輪郭 (境界辺) を保つため、境界辺をたどって消した頂点を飛ばし、残る前後の頂点を直接つなぎます (輪郭上の頂点を消すと、そこは前後を結ぶ直線になる)。内部の頂点を消した穴は埋まります。
+
+- 各キーフォームの `positions`、`uvs`、`depth` から消した頂点を除きます。
+- **グルー:** このメッシュを使うグルーのペアのうち、消した頂点を使うものは削除し、残りは新しい番号に付け替えます。マスクと当たり判定はメッシュ単位の参照なので変わりません。
+- ミラー (`mirror`) の相手は変えません (頂点の対応は基準の位置から作るので、形が左右で変わると推定のときにエラーになりうる)。
+
+**三角形の作り直し** (`retriangulate_mesh`、および追加・削除の後)。`ugoe_mesher::triangulate_points` で、**UV** の点を制約付きドロネー三角形分割します。
+
+- 制約辺は今の輪郭 (1 つの三角形だけが使う辺)。重心が制約辺の内側 (偶奇規則) にある三角形だけを残すので、凹んだ輪郭と穴は保たれます。三角形がなければ (初めから空なら) 凸包全体を分割します。
+- 三角形の向きは元のメッシュに合わせます (UV で見た向きの合計が時計回りなら時計回り)。カリングの表裏が変わらないようにするためです。
+- どの三角形にも使われない頂点は残ります (輪郭の外にある頂点など)。
+
 ## テクスチャ
 
 - `Document` はモデルと一緒に **テクスチャの画像** (`Textures` = テクスチャ名 → PNG のバイト列) を持ちます。モデルの `TextureRef` は名前と寸法だけで、画像はここにあります。画像はデコードせず、PNG ファイルのまま持ちます。
@@ -170,6 +220,19 @@
 - パラメータスライダーの操作はフロントエンドの wasm の中だけで完結させます (IPC を往復しない)。これにより 60fps を保ちます。スライダーの値はドキュメントの状態ではなく、表示の状態です。
 - WebGPU が使えない WebView (Linux の WebKitGTK など) では、wgpu の WebGL2 バックエンドにフォールバックします。
 - 大きなモデルで、モデル全体を送るのが遅くなった場合は、差分パッチを送る方式を検討します。
+
+### ツール (選択・メッシュ編集)
+
+ビューポートの上の編集ツールは `src/lib/viewport/ToolOverlay.svelte` が切り替え、ツールの本体は `src/lib/viewport/tools/` に置きます。選択は共有の `Selection` (`src/lib/selection.svelte.ts`) に書きます (Undo の対象ではない)。
+
+- 評価後の頂点位置は wasm (`WebPuppet.drawable_positions`) から読みます (`tools/scene.svelte.ts`)。モデル・パラメータ・ビューが変わるたびに読み直します。幾何の補助 (最も近い頂点・矩形選択・辺) は `tools/geometry.ts` にあり、Vitest でテストします (`pnpm --filter @ugoe/editor test`)。
+- **選択:** クリックで、その点にあるいちばん手前のメッシュを選びます (三角形の内外で判定。テクスチャの透明部分は考えない)。Shift / Ctrl クリックで追加・解除、何もない所のクリックで解除。**Alt + クリック** は、その点に重なっているメッシュを手前から順に選びます (`WebPuppet.hit_test_all`)。選択中のメッシュには輪郭を描きます。
+- **メッシュ編集モード** (`tools/MeshEditTool.svelte`): メッシュを選んで「Edit mesh」かダブルクリックで入り、Esc か「Done」で抜けます (`Selection.meshEdit`)。コマンドは基準の姿を基準にするので、入るときにパラメータを既定値に戻します。
+  - 頂点と辺を表示します。クリックで頂点を選び (Shift で追加・解除)、何もない所からのドラッグで矩形選択 (Shift で追加)、Ctrl + A ですべて選びます。選んだ頂点は `Selection.vertices[meshId]` に入ります。
+  - 頂点のドラッグで選択中の頂点を動かします。ドラッグ中はフロントエンドでプレビューだけを描き、離したときに `move_mesh_vertices` を 1 つ送ります。
+  - Ctrl (Cmd) + クリックで頂点を追加 (`add_mesh_vertex`)、Delete / Backspace で選択中の頂点を削除 (`remove_mesh_vertices`)、「Retriangulate」で三角形を作り直します。
+  - パラメータを既定値から動かしたまま編集すると、プレビュー (今のパラメータでの位置) とコマンドの結果 (基準の姿での変換) がずれることがあります。
+- **インスペクタ** の `src/lib/panels/inspector/MeshProperties.svelte` は、選択中のメッシュのテクスチャ・合成モード・カリング・マスク (参照・反転・結合方法)・`mask_only` を `set_mesh_properties` で変えます。
 
 ## 画面構成 (M2 の目標)
 

@@ -90,7 +90,7 @@ tolerance?: number | null,
 /**
  * `true` なら先の `authored` のセルも上書きする。
  */
-overwrite_authored: boolean, } | { "op": "mark_keyform_authored", target: KeyformTarget, cells: Array<{ [key in string]: number }>, } | { "op": "mark_keyform_derived", target: KeyformTarget, cells: Array<{ [key in string]: number }>, };
+overwrite_authored: boolean, } | { "op": "mark_keyform_authored", target: KeyformTarget, cells: Array<{ [key in string]: number }>, } | { "op": "mark_keyform_derived", target: KeyformTarget, cells: Array<{ [key in string]: number }>, } | { "op": "move_mesh_vertices", id: string, moves: Array<VertexMove>, } | { "op": "add_mesh_vertex", id: string, position: Vec2, } | { "op": "remove_mesh_vertices", id: string, indices: Array<number>, } | { "op": "retriangulate_mesh", id: string, };
 
 export type Curve = { target: CurveTarget, segments: Array<Segment>, 
 /**
@@ -525,6 +525,19 @@ export type TextureRef = { name: string, width: number, height: number, };
  * 生成される型の名前は `Vec2`。
  */
 export type Vec2 = [number, number];
+
+/**
+ * [`Command::MoveMeshVertices`] の 1 頂点分の移動。
+ */
+export type VertexMove = { 
+/**
+ * 頂点の番号 (`Mesh::uvs` の添字)。
+ */
+index: number, 
+/**
+ * キャンバス座標でのずれ。
+ */
+delta: Vec2, };
 
 /**
  * ワープデフォーマ: (rows+1)×(cols+1) 個の制御点を持つ格子による自由変形。

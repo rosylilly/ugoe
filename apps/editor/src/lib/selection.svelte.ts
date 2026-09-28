@@ -17,6 +17,8 @@ export class Selection {
   items = $state<ElementRef[]>([]);
   /** メッシュごとの選択中の頂点インデックス (メッシュ編集ツール用)。 */
   vertices = $state<Record<string, number[]>>({});
+  /** メッシュ編集モードで編集中のメッシュの ID (モードでなければ null)。 */
+  meshEdit = $state<string | null>(null);
 
   get primary(): ElementRef | null {
     return this.items[0] ?? null;

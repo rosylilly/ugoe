@@ -17,7 +17,7 @@ use ugoe_model::physics::PhysicsSettings;
 use ugoe_model::{BlendMode, KeyformGrid, MaskMode, MaskRef, Model, fixtures};
 
 use crate::command::{InferMethod, KeyformTarget};
-use crate::{AutoMeshOptions, Command, KeyformCell};
+use crate::{AutoMeshOptions, Command, KeyformCell, VertexMove};
 
 /// チェックインした `Command` の JSON Schema (`schema/command.schema.json`)。AI のツール定義に使う。
 /// [`command_schema_json`] の出力と同じであることをテストで確かめる。
@@ -332,9 +332,25 @@ fn sample_commands() -> Vec<Command> {
             cells: vec![mesh_cell.clone()],
         },
         Command::MarkKeyformDerived {
-            target: KeyformTarget::Mesh(mesh_id),
+            target: KeyformTarget::Mesh(mesh_id.clone()),
             cells: vec![mesh_cell, KeyformCell::new()],
         },
+        Command::MoveMeshVertices {
+            id: mesh_id.clone(),
+            moves: vec![VertexMove {
+                index: 2,
+                delta: Vec2::new(4.0, -8.0),
+            }],
+        },
+        Command::AddMeshVertex {
+            id: mesh_id.clone(),
+            position: Vec2::new(512.0, 300.0),
+        },
+        Command::RemoveMeshVertices {
+            id: mesh_id.clone(),
+            indices: vec![0, 3],
+        },
+        Command::RetriangulateMesh { id: mesh_id },
     ]
 }
 

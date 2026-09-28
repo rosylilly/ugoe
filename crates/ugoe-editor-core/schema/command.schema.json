@@ -884,6 +884,99 @@
         "target",
         "cells"
       ]
+    },
+    {
+      "description": "メッシュの頂点をキャンバス座標で動かす (トポロジーと基準の形の編集)。\nずれは既定値のパラメータでの親デフォーマの変換で局所座標に直し、すべてのキーフォームに\n同じ量を加える。UV は、動かした先でのテクスチャの対応 (既定値の姿の三角形) から求め直す。\n式は `docs/editor.md#メッシュの編集`。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "moves": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VertexMove"
+          }
+        },
+        "op": {
+          "type": "string",
+          "const": "move_mesh_vertices"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "moves"
+      ]
+    },
+    {
+      "description": "キャンバス座標 `position` に頂点を 1 つ足し (頂点の末尾に追加)、三角形を作り直す。\nUV・各キーフォームの位置・深度は、その点を含む三角形 (外側なら最も近い境界辺の三角形) の\n重心座標で補間する。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "add_mesh_vertex"
+        },
+        "position": {
+          "$ref": "#/$defs/Vec2"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "position"
+      ]
+    },
+    {
+      "description": "頂点を削除し (後ろの頂点の番号は詰める)、三角形を作り直す。3 頂点未満になるなら拒否する。\nグルーのペアのうち削除した頂点を使うものは消し、残りは番号を付け替える。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "indices": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint16",
+            "maximum": 65535,
+            "minimum": 0
+          }
+        },
+        "op": {
+          "type": "string",
+          "const": "remove_mesh_vertices"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "indices"
+      ]
+    },
+    {
+      "description": "今の輪郭を保ったまま、UV の制約付きドロネー三角形分割で三角形を作り直す。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "retriangulate_mesh"
+        }
+      },
+      "required": [
+        "op",
+        "id"
+      ]
     }
   ],
   "$defs": {
@@ -1759,6 +1852,27 @@
           "type": "number",
           "format": "float"
         }
+      ]
+    },
+    "VertexMove": {
+      "description": "[`Command::MoveMeshVertices`] の 1 頂点分の移動。",
+      "type": "object",
+      "properties": {
+        "delta": {
+          "description": "キャンバス座標でのずれ。",
+          "$ref": "#/$defs/Vec2"
+        },
+        "index": {
+          "description": "頂点の番号 (`Mesh::uvs` の添字)。",
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        }
+      },
+      "required": [
+        "index",
+        "delta"
       ]
     },
     "WarpDeformer": {

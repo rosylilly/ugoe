@@ -4,15 +4,19 @@
 //! (marching squares) → 簡略化 (Douglas–Peucker)・再サンプリング → 内部点の配置 (六角格子) →
 //! 制約付きドロネー三角形分割 (`spade`) → 輪郭の内側の三角形だけを残す。
 //! 頂点数が `u16` に収まらなければ間隔を広げてやり直す。詳細はクレートの README を参照。
+//!
+//! エディタでメッシュを作り直すための、点群の三角形分割 ([`triangulate_points`]) も提供する。
 
 mod contour;
 mod mask;
+mod points;
 mod triangulate;
 
 use ugoe_core::Vec2;
 
 use crate::contour::P;
 use crate::mask::Mask;
+pub use crate::points::{TriangulateError, triangulate_points};
 
 /// 出力できる頂点数の上限。インデックス `0xFFFF` はプリミティブリスタートと衝突しうるので使わない。
 pub const MAX_VERTICES: usize = u16::MAX as usize;

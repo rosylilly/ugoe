@@ -8,6 +8,7 @@ use ugoe_rigging::{InferError, MirrorOptions};
 
 use crate::command::KeyformTarget;
 use crate::grid::{self, CellError};
+use crate::mesh_edit;
 use crate::texture::{Textures, is_valid_texture_name, png_size};
 use crate::{Command, automesh, inference};
 
@@ -57,6 +58,18 @@ pub enum EditError {
     /// 自動メッシュの生成に失敗した (画像が透明、設定が不正など)。
     #[error("mesh `{id}`: automatic meshing failed: {message}")]
     Mesher { id: String, message: String },
+    #[error("mesh `{id}`: vertex {index} out of range (vertices = {vertices})")]
+    VertexOutOfRange {
+        id: String,
+        index: u16,
+        vertices: usize,
+    },
+    /// 頂点の削除で、メッシュの頂点が 3 つ未満になる。
+    #[error("mesh `{id}`: only {remaining} vertices would remain (at least 3 are needed)")]
+    TooFewVertices { id: String, remaining: usize },
+    /// メッシュの形の編集ができない (退化した三角形・同じ UV の頂点・評価できないモデルなど)。
+    #[error("mesh `{id}`: {reason}")]
+    MeshGeometry { id: String, reason: String },
     /// 適用するとモデルが検証 (`ugoe_model::validate`) に通らなくなる。新たに生じるエラーの一覧。
     #[error("command would make the model invalid: {}", join(.0))]
     Invalid(Vec<ValidationError>),
@@ -450,6 +463,20 @@ fn apply_to(
             inference::mark(model, &target, &cells, KeyformOrigin::Derived)?;
             touched.push(target);
         }
+        // 頂点の編集はすべてのセルの位置を変えるので、`derived` のセルは作り直す。
+        Command::MoveMeshVertices { id, moves } => {
+            mesh_edit::move_vertices(model, &id, &moves)?;
+            touched.push(KeyformTarget::Mesh(id));
+        }
+        Command::AddMeshVertex { id, position } => {
+            mesh_edit::add_vertex(model, &id, position)?;
+            touched.push(KeyformTarget::Mesh(id));
+        }
+        Command::RemoveMeshVertices { id, indices } => {
+            mesh_edit::remove_vertices(model, &id, &indices)?;
+            touched.push(KeyformTarget::Mesh(id));
+        }
+        Command::RetriangulateMesh { id } => mesh_edit::retriangulate(model, &id)?,
     }
     Ok(())
 }
