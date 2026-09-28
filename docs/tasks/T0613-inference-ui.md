@@ -4,7 +4,7 @@ title: エディタ: 推定の操作と由来の表示
 status: todo
 milestone: M2
 crates: [apps/editor]
-depends_on: [T0611, T0602]
+depends_on: [T0611, T0602, T0608]
 assignee:
 ---
 
