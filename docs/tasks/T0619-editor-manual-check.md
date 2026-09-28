@@ -35,6 +35,10 @@ just editor
 - [ ] ミラー・深度のプリセット・深度からの回転 (T0613, T0617)
 - [ ] Undo / Redo
 - [ ] Windows (WebView2)・macOS (WKWebView)・Linux (WebKitGTK) のうち、手元で使える環境
+  - Windows・macOS 向けは、GitHub Actions の Editor build の成果物 (インストーラ) をダウンロードするか、
+    その OS の上でビルドする (WSL の中では Linux 向けしかできない)。手順は
+    [apps/editor/README.md の「各 OS でのビルド」](../../apps/editor/README.md#各-os-でのビルド)。
+    署名していないので、SmartScreen や Gatekeeper の警告を越えて起動する (同 README の「配布物の署名」)。
 
 ## メモ
 
