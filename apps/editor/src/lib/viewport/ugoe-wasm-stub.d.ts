@@ -45,6 +45,10 @@ export class WebPuppet {
   hit_test(x: number, y: number): number | undefined;
   hit_test_all(x: number, y: number): Uint32Array;
 
+  hit_area_ids(): string[];
+  hit_areas_at(x: number, y: number): string[];
+  hit_area_test(id: string, x: number, y: number): boolean;
+
   deformer_ids(): string[];
   warp_points(id: string): Float32Array | undefined;
   rotation_frame(id: string): Float32Array | undefined;

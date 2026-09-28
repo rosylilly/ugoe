@@ -33,6 +33,8 @@ pub struct CompiledModel {
     /// マスクとして参照されるメッシュの、マスクの依存順 (`mask_order`)。
     pub(crate) mask_order: Vec<u32>,
     pub(crate) glues: Vec<CompiledGlue>,
+    /// 当たり判定ごとの判定に使うメッシュ (`Model::hit_areas` の並び)。
+    pub(crate) hit_area_meshes: Vec<u32>,
     /// すべてのキーフォーム格子のうち最大の軸数。重みバッファの事前確保に使う。
     pub(crate) max_axes: usize,
 }
@@ -179,6 +181,12 @@ impl CompiledModel {
             })
             .collect::<Result<Vec<_>, CompileError>>()?;
 
+        let hit_area_meshes = model
+            .hit_areas
+            .iter()
+            .map(|h| lookup(&mesh_index, h.mesh.as_str()))
+            .collect::<Result<Vec<_>, CompileError>>()?;
+
         let part_order = topological_order(parts.iter().map(|p| p.parent));
         let deformer_order = topological_order(deformers.iter().map(|d| d.parent));
         let max_axes = parts
@@ -199,6 +207,7 @@ impl CompiledModel {
             meshes,
             mask_order,
             glues,
+            hit_area_meshes,
             max_axes,
         }))
     }
@@ -264,6 +273,20 @@ impl CompiledModel {
     /// 入れ子のマスクの切り抜き後の形を使える。
     pub fn mask_order(&self) -> &[u32] {
         &self.mask_order
+    }
+
+    /// ID が `id` の当たり判定の添字 (`Model::hit_areas` のインデックス)。
+    pub fn hit_area_index(&self, id: &str) -> Option<usize> {
+        self.model.hit_areas.iter().position(|h| h.id == id)
+    }
+
+    /// 当たり判定 `hit_area` の判定に使うメッシュ (`Model::meshes` のインデックス)。
+    ///
+    /// # Panics
+    ///
+    /// `hit_area` が範囲外のとき。
+    pub fn hit_area_mesh(&self, hit_area: usize) -> usize {
+        self.hit_area_meshes[hit_area] as usize
     }
 }
 

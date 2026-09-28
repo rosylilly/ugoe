@@ -71,6 +71,28 @@ impl Puppet {
         // TODO(T0303): ポーズ・リップシンク
         self.instance.update();
     }
+
+    /// キャンバス座標 `point` を含む当たり判定 (`Model::hit_areas`) の ID を、手前から順に並べる。
+    ///
+    /// 直前の [`Puppet::update`] で評価した変形後の形で判定する。判定の規則は
+    /// `docs/spec/evaluation.md#9-当たり判定` (不透明度 0 や非表示のメッシュでも当たる)。
+    pub fn hit_areas_at(&self, point: ugoe_core::Vec2) -> Vec<&str> {
+        let hit_areas = &self.instance.compiled().model().hit_areas;
+        self.instance
+            .hit_areas_at(point)
+            .into_iter()
+            .map(|h| hit_areas[h].id.as_str())
+            .collect()
+    }
+
+    /// ID が `hit_area` の当たり判定がキャンバス座標 `point` を含むか。未知の ID なら `false`。
+    /// 規則は [`Puppet::hit_areas_at`] と同じ。
+    pub fn hit_test(&self, hit_area: &str, point: ugoe_core::Vec2) -> bool {
+        self.instance
+            .compiled()
+            .hit_area_index(hit_area)
+            .is_some_and(|h| self.instance.hit_area_contains(h, point))
+    }
 }
 
 #[cfg(test)]
@@ -82,5 +104,26 @@ mod tests {
         let mut puppet = Puppet::new(ugoe_model::fixtures::single_quad()).unwrap();
         puppet.update(1.0 / 60.0);
         assert_eq!(puppet.instance().drawables().len(), 1);
+    }
+
+    #[test]
+    fn puppet_hit_areas_follow_parameters() {
+        let mut model = ugoe_model::fixtures::single_quad();
+        model.hit_areas.push(ugoe_model::HitArea {
+            id: "Body".into(),
+            mesh: "Quad".into(),
+        });
+        let mut puppet = Puppet::new(model).unwrap();
+        let point = ugoe_core::Vec2::new(220.0, 100.0);
+        assert!(puppet.hit_areas_at(point).is_empty());
+        assert!(!puppet.hit_test("Body", point));
+
+        let instance = puppet.instance_mut();
+        let x = instance.parameters().index_of("X").unwrap();
+        instance.parameters_mut().set(x, 1.0);
+        puppet.update(1.0 / 60.0);
+        assert_eq!(puppet.hit_areas_at(point), vec!["Body"]);
+        assert!(puppet.hit_test("Body", point));
+        assert!(!puppet.hit_test("Head", point));
     }
 }

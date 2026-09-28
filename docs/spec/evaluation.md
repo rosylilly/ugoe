@@ -254,3 +254,24 @@ UV とインデックスは静的なデータなので `CompiledModel` から取
 まだモデルにないデフォーマの写像 (エディタがデフォーマを作る前に子の座標を写し直すときなど) は、`WorldTransform::IDENTITY`、`from_affine(affine)`、`from_warp_points(points, cols, rows)` (キャンバス座標の制御点から) で作れます。作った写像も `update()` と同じ式で写します。
 
 逆写像 (キャンバス座標 → 局所座標。ワープの UV を求めるニュートン法など) はランタイムには置かず、エディタ (`ugoe-editor-core` の `space`) がこの `point` と `jacobian` を使って解きます。
+
+## 9. 当たり判定
+
+`Model::hit_areas` の各当たり判定は、参照するメッシュの **変形後の形** (直前の `update()` の `positions`) で判定します。タップ・クリックなどの判定用で、座標はキャンバス座標です。
+
+- 点がメッシュのいずれかの三角形 (`indices`) の内側にあれば当たりです。辺と頂点の上も含み、三角形の向き (時計回りか) は問いません。範囲外の頂点を指す三角形は無視します。
+- テクスチャの透明部分は考えません (外接矩形ではなく三角形で判定する)。
+- **可視性と不透明度は見ません。** 不透明度 0 のメッシュ、`visible` が `false` のメッシュ (マスク専用やパーツごと非表示) でも当たります。判定専用の透明なメッシュを置けるようにするためです。非表示のものを除きたいホストは、`drawables()[mesh].visible` を自分で確かめます。
+- 点を含む当たり判定を列挙するときは **手前から奥へ** 並べます。順序はメッシュの描画順 (`render_order` の逆) で、同じメッシュを参照する当たり判定どうしは `hit_areas` の宣言順です。
+- `update()` を呼ばずにパラメータを変えても、判定は前回の `update()` の形のままです。判定は評価済みの状態を読むだけで、再評価しません。
+
+| API | 内容 |
+| --- | --- |
+| `CompiledModel::hit_area_index(id)` / `hit_area_mesh(h)` | 当たり判定の添字 (`Model::hit_areas` のインデックス) / 判定に使うメッシュの添字 |
+| `ModelInstance::mesh_contains(m, p)` | メッシュ `m` の変形後の三角形が点 `p` を含むか (上の規則。エディタの要素選択も、これに可視性の条件を足して使う) |
+| `ModelInstance::hit_area_contains(h, p)` | 当たり判定 `h` が点 `p` を含むか |
+| `ModelInstance::hit_areas_at(p)` | 点 `p` を含む当たり判定の添字 (手前から) |
+| `Puppet::hit_areas_at(p)` / `Puppet::hit_test(id, p)` | 上の 2 つの ID 版。未知の ID は当たらない |
+| `WebPuppet.hit_area_ids()` / `hit_areas_at(x, y)` / `hit_area_test(id, x, y)` | wasm 版。問い合わせの前に、未反映のパラメータ変更を評価する |
+
+> 未決: アバタープロファイルの標準名 (`Head`・`Body`、`Model.avatar.hit_areas`、[avatar-profile.md](avatar-profile.md)) からの判定は、T0110 がモデルに対応を入れた後に `Puppet` へ足す。

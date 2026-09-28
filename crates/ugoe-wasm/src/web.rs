@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use ugoe::Puppet;
+use ugoe::core::Vec2;
 use ugoe::render::Renderer;
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
@@ -482,6 +483,40 @@ impl WebPuppet {
             .as_ref()
             .map(|p| hit::hit_test_all(p.instance(), [x, y]))
             .unwrap_or_default()
+    }
+
+    // --- 当たり判定 (`Model::hit_areas`、T0308、座標はキャンバス座標) ---
+
+    /// 当たり判定の ID (モデルの定義順)。
+    pub fn hit_area_ids(&self) -> Vec<String> {
+        self.puppet
+            .as_ref()
+            .map(|p| {
+                let model = p.instance().compiled().model();
+                model.hit_areas.iter().map(|h| h.id.clone()).collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// キャンバス座標 `(x, y)` を含む当たり判定の ID (手前から奥へ)。
+    /// 不透明度 0 や非表示のメッシュでも当たる (`docs/spec/evaluation.md#9-当たり判定`)。
+    pub fn hit_areas_at(&mut self, x: f32, y: f32) -> Vec<String> {
+        self.evaluate();
+        self.puppet
+            .as_ref()
+            .map(|p| {
+                let hits = p.hit_areas_at(Vec2::new(x, y));
+                hits.into_iter().map(str::to_string).collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// 当たり判定 `id` がキャンバス座標 `(x, y)` を含むか。未知の ID なら `false`。
+    pub fn hit_area_test(&mut self, id: &str, x: f32, y: f32) -> bool {
+        self.evaluate();
+        self.puppet
+            .as_ref()
+            .is_some_and(|p| p.hit_test(id, Vec2::new(x, y)))
     }
 
     // --- デフォーマのギズモ (T0607、座標はキャンバス座標) ---

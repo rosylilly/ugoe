@@ -11,7 +11,9 @@
 ## 仕様
 
 - [docs/spec/motion.md#フレーム内の適用順](../../docs/spec/motion.md#フレーム内の適用順)
+- [docs/spec/evaluation.md#9-当たり判定](../../docs/spec/evaluation.md#9-当たり判定) (`Puppet::hit_areas_at` / `hit_test`)
 
 ## 関連タスク
 
 - T0303 (`docs/tasks/T0303-*.md`)
+- T0308 (当たり判定)

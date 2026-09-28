@@ -10,6 +10,7 @@
 
 pub mod compile;
 mod deform;
+mod hit;
 pub mod instance;
 pub mod keyform;
 pub mod parameters;
