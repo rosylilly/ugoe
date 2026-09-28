@@ -1,11 +1,11 @@
 ---
 id: T0612
 title: ミラーと深度からの回転のアルゴリズム
-status: todo
+status: in-progress
 milestone: M2
 crates: [ugoe-rigging]
 depends_on: [T0610]
-assignee:
+assignee: claude-worker-T0612
 ---
 
 # T0612: ミラーと深度からの回転のアルゴリズム
