@@ -1,11 +1,11 @@
 ---
 id: T0613
 title: エディタ: 推定の操作と由来の表示
-status: todo
+status: in-progress
 milestone: M2
 crates: [apps/editor]
 depends_on: [T0611, T0602, T0608]
-assignee:
+assignee: claude-worker-T0613
 ---
 
 # T0613: エディタ: 推定の操作と由来の表示
