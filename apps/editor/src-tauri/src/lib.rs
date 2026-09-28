@@ -1,6 +1,7 @@
 //! エディタのバックエンド。ここは **薄い IPC 層** に保ち、編集ロジックは `ugoe-editor-core` に置く。
 //! 設計: `docs/editor.md`。
 
+pub mod bindings;
 mod commands;
 mod project;
 mod psd;

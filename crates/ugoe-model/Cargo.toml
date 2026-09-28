@@ -7,9 +7,18 @@ rust-version.workspace = true
 publish.workspace = true
 license.workspace = true
 
+# コード生成用 (T0603)。ランタイムは使わないので既定では無効。ugoe-editor-core が有効にする。
+[features]
+# schemars::JsonSchema を実装する (AI ツール定義の JSON Schema)
+schema = ["dep:schemars", "ugoe-core/schema"]
+# ts_rs::TS を実装する (エディタの TypeScript の型)
+ts = ["dep:ts-rs", "ugoe-core/ts"]
+
 [dependencies]
+schemars = { workspace = true, optional = true }
 serde.workspace = true
 thiserror.workspace = true
+ts-rs = { workspace = true, optional = true }
 ugoe-core.workspace = true
 
 [dev-dependencies]

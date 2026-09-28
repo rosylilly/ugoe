@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 
 /// リニアではなく sRGB 値の RGB (0.0..=1.0)。乗算色・スクリーン色に使う。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Rgb {
     pub r: f32,
     pub g: f32,

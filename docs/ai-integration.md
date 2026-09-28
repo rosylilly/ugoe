@@ -13,6 +13,7 @@ PSD を 1 枚渡すと、「顔の角度・目・口・呼吸・髪揺れが一�
 3. **プロバイダを差し替えられるようにします。** LLM や画像モデルの呼び出しは `ugoe_ai::Provider` トレイトの裏に隠します。既定のプロバイダは Anthropic の Claude API ですが、ローカルモデルも使えるようにします。
 4. **ネットワークなしでテストできるようにします。** テストでは、録画した応答を返す `FakeProvider` を使います。CI では実際の API を呼びません。
 5. **外部のエージェントからも操作できるようにします。** 将来、`ugoe-mcp` (MCP サーバ) で `Command` の JSON Schema をツールとして公開し、Claude Code などの外部エージェントがエディタを操作できるようにします。
+   - `Command` の JSON Schema は Rust から生成してリポジトリに置いてあります (`crates/ugoe-editor-core/schema/command.schema.json`、[型の生成](editor.md#型の生成))。`ugoe-ai` などからは `ugoe_editor_core::codegen::COMMAND_SCHEMA_JSON` (ファイルの中身) か `command_schema()` (その場で生成) で参照します。
 
 ## パイプライン
 

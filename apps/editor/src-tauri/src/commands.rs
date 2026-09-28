@@ -3,11 +3,12 @@
 
 use serde::Serialize;
 use tauri::State;
+use ts_rs::TS;
 use ugoe_editor_core::Command;
 
 use crate::AppState;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
 pub struct AppInfo {
     pub version: &'static str,
 }

@@ -5,6 +5,7 @@
 //! これにより Undo/Redo、操作ログ、AI による提案の差分プレビューが一元化される。
 
 pub mod automesh;
+pub mod codegen;
 pub mod command;
 pub mod document;
 mod grid;

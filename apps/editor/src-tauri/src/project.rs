@@ -7,6 +7,7 @@ use std::sync::{Arc, MutexGuard};
 
 use serde::Serialize;
 use tauri::State;
+use ts_rs::TS;
 use ugoe_editor_core::project::PROJECT_EXTENSION;
 use ugoe_editor_core::texture::solid_png;
 use ugoe_editor_core::{Document, Project, ProjectMeta, Textures};
@@ -67,7 +68,7 @@ pub fn initial_state() -> (ProjectSession, Document) {
 }
 
 /// フロントエンドに見せるプロジェクトの状態。
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
 pub struct ProjectStatus {
     pub name: String,
     /// 保存先のディレクトリ。未保存なら `null`。

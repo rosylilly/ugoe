@@ -1,16 +1,10 @@
 // バックエンドが持つドキュメント (モデルの正となる状態) の、フロントエンド側の写し。
 // 編集は必ず IPC の Command で行い、その後 refresh() で読み直す (docs/editor.md)。
-import { type EditCommand, ipc } from "./ipc";
+import { type Command, ipc, type Model, type Parameter } from "./ipc";
 import type { ViewportModel } from "./viewport/controller.svelte";
 
-/** パネルが使うパラメータの定義 (ugoe_model::Parameter の一部)。 */
-export interface ParameterDef {
-  id: string;
-  name: string;
-  min: number;
-  max: number;
-  default: number;
-}
+/** パネルが使うパラメータの定義 (ugoe_model::Parameter)。 */
+export type ParameterDef = Parameter;
 
 export class EditorDocument {
   /** ビューポートに渡すモデル (JSON と、テクスチャ付きの .ugoe バンドル)。refresh のたびに作り直す。 */
@@ -29,7 +23,7 @@ export class EditorDocument {
         return null;
       });
       this.model = { json, bundle };
-      this.parameters = JSON.parse(json).parameters;
+      this.parameters = (JSON.parse(json) as Model).parameters;
       this.error = null;
       this.revision += 1;
     } catch (e) {
@@ -37,7 +31,7 @@ export class EditorDocument {
     }
   }
 
-  async apply(command: EditCommand): Promise<void> {
+  async apply(command: Command): Promise<void> {
     await this.#run(() => ipc.applyCommand(command));
   }
 

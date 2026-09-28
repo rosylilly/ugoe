@@ -88,3 +88,37 @@ impl<'de, T> Deserialize<'de> for Id<T> {
         String::deserialize(deserializer).map(Self::new)
     }
 }
+
+/// TypeScript では単なる `string` (種類の区別は Rust 側だけ)。
+#[cfg(feature = "ts")]
+impl<T: 'static> ts_rs::TS for Id<T> {
+    type WithoutGenerics = Self;
+    type OptionInnerType = Self;
+
+    fn name(_: &ts_rs::Config) -> String {
+        "string".to_owned()
+    }
+
+    fn inline(cfg: &ts_rs::Config) -> String {
+        <Self as ts_rs::TS>::name(cfg)
+    }
+}
+
+/// JSON Schema では文字列 (`docs/spec/model.md#ID`)。
+#[cfg(feature = "schema")]
+impl<T> schemars::JsonSchema for Id<T> {
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Id".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "string",
+            "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+        })
+    }
+}

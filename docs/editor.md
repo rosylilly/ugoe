@@ -35,7 +35,8 @@
 - `Batch` は複数のコマンドを 1 つの Undo 単位にまとめます (AI の提案など)。
 - `Document::apply` は、コマンドの検証に失敗した場合にモデルを一切変更しません。
 - 対象は必ず ID で指定します。配列のインデックスは使いません (同時編集や AI の提案が古くなったときに、別の要素を壊さないようにするため)。
-- JSON Schema を schemars で生成し、AI のツール定義と TypeScript の型の元にします (T0603)。
+- `Command` の JSON Schema (AI のツール定義用) と TypeScript の型は Rust から生成します (下の「型の生成」)。
+- **コマンドを追加する手順:** `Command` の末尾にバリアントを足し、`Document::apply` とテストを書き、`codegen.rs` の `sample_commands` に例を 1 つ足して `just gen` を実行します。フロントエンドの `Command` 型には自動で現れます。
 - `Document::apply` は適用後のモデルを `ugoe_model::validate::validate` で検査し、**適用前になかった検証エラーが生じたら拒否します** (`EditError::Invalid` に新しいエラーの一覧が入る)。検証を通るモデルは、どのコマンドを適用した後も検証を通ります。読み込んだ時点で不正なモデルでも、エラーを増やさない編集 (エラーを直す編集を含む) はできます。`Batch` は全体を適用した後に 1 回だけ検査するので、途中の状態は不正でもかまいません。
 - 新しい要素の ID は `ugoe_editor_core::ids` (`new_part_id` など) で作ります。`[A-Za-z0-9_]` 以外の文字を `_` に直し、既存の ID と重なれば `_2`、`_3`、… を付けます。
 
@@ -198,7 +199,28 @@
 
 - Svelte 5 の runes (`$state`、`$derived`、`$effect`) を使います。ストアのライブラリは入れません。
 - バックエンドとの通信は `src/lib/ipc.ts` に集約します。コンポーネントから `invoke` を直接呼びません。
-- 型は将来 ts-rs で Rust から生成します。それまでは `ipc.ts` に手で書き、Rust 側を変えたら同じ PR で更新します。
+- IPC の引数・戻り値の型は Rust から生成したもの (`src/lib/generated/types.ts`) を使い、手で書きません。`ipc.ts` が再エクスポートするので、コンポーネントは `./ipc` から import します。
 - lint と整形は Biome、型検査は `svelte-check` で行います (`just web-check`)。
 - 表示や操作のロジックのうち DOM に依存しないもの (ツリーの組み立て、ドロップの可否など) は素の `.ts` に置き、
   Vitest で単体テストします (`*.test.ts`、`pnpm --filter @ugoe/editor test`。`just web-check` に含まれる)。
+
+## 型の生成
+
+Rust の型を正として、次のファイルを生成します。**生成物はリポジトリにコミットします** (Rust をビルドしなくてもフロントエンドを検査・ビルドでき、変更の差分がレビューで見えるように)。手で編集しません。
+
+| 生成物 | 元 | 使うところ |
+| --- | --- | --- |
+| `apps/editor/src/lib/generated/types.ts` | `Command`・`Model`・`Motion`・`Expression`・`PhysicsSettings` (とそれらが参照する型)、IPC の戻り値 (`AppInfo`・`ProjectStatus`) | フロントエンド (`ipc.ts` が再エクスポート) |
+| `apps/editor/src/lib/generated/samples.ts` | フィクスチャのモデルと、全バリアントのコマンドを serde で書き出した JSON | 型検査だけ (生成した型と serde の JSON が合うことを `svelte-check` で確かめる) |
+| `crates/ugoe-editor-core/schema/command.schema.json` | `Command` の JSON Schema (draft 2020-12) | AI のツール定義 (`ugoe_editor_core::codegen::COMMAND_SCHEMA_JSON`、`command_schema()`) |
+
+- **作り直す:** Rust の型 (`Command`・モデルの型・IPC の戻り値) を変えたら `just gen` を実行し、生成物も同じコミットに含めます。`just gen` は `apps/editor/src-tauri/examples/gen.rs` を実行します。
+- **検査:** `just test` の `generated_files_are_up_to_date` (src-tauri) と `checked_in_command_schema_is_up_to_date` (ugoe-editor-core) が、生成物が最新でなければ失敗します。CI はさらに `just gen` の後に `git diff --exit-code` で差分がないことを確かめます。
+- **道具:** TypeScript は [ts-rs](https://github.com/Aleph-Alpha/ts-rs)、JSON Schema は [schemars](https://github.com/GREsau/schemars) (どちらも MIT)。どちらも serde の属性 (`tag`・`rename_all`・`default`・`skip_serializing_if` など) を読むので、生成した型は serde の JSON と一致します。
+- **ランタイム層:** `ugoe-core` と `ugoe-model` は feature `ts` / `schema` の裏で `TS` / `JsonSchema` を実装します。有効にするのは `ugoe-editor-core` だけで、ランタイム (`ugoe-wasm` など) の依存には入りません。
+- **型の対応:**
+  - `Id<T>` (`ParamId` など) は `string`。`Vec2` は `[number, number]` (glam の serde 形式。フィールドに `ts(as = "crate::Vec2Repr")` と `schemars(with = ..)` を付ける)。`u64` も `number`。
+  - `skip_serializing_if` と `default` を持つフィールドは省略できる (`field?: T`)。`default` だけのフィールドは、書き出す JSON には必ずあるので必須にする。
+  - 未知の値 (`Unknown` のバリアント) は書き出せないので、型にもスキーマにも含めない (`ts(skip)` / `schemars(skip)`)。
+  - JSON Schema は読み込み側の形なので、`default` を持つフィールドは必須にしない。
+- モデルに型を追加したら、`#[cfg_attr(feature = "ts", derive(ts_rs::TS))]` と `#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]` を付けます (既存の型を参照)。

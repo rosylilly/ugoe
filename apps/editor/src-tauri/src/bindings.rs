@@ -1,0 +1,49 @@
+//! Rust から生成してリポジトリに置くファイル (フロントエンドの型と `Command` の JSON Schema)。
+//! `just gen` (`examples/gen.rs`) が書き出し、テストが最新かどうかを確かめる。
+//! 手順は `docs/editor.md#型の生成`。
+
+use std::path::{Path, PathBuf};
+
+use ugoe_editor_core::PsdImportWarning;
+use ugoe_editor_core::codegen::{TsBindings, command_schema_json, typescript_samples};
+
+use crate::commands::AppInfo;
+use crate::project::ProjectStatus;
+
+/// リポジトリのルート。
+pub fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")
+}
+
+/// 生成するファイル (リポジトリのルートからのパス → 中身)。
+pub fn generated_files() -> Result<Vec<(&'static str, String)>, serde_json::Error> {
+    let mut types = TsBindings::new().with_editor_types();
+    // IPC の戻り値 (apps/editor/src-tauri の型)
+    types.add::<AppInfo>();
+    types.add::<ProjectStatus>();
+    types.add::<PsdImportWarning>();
+    Ok(vec![
+        ("apps/editor/src/lib/generated/types.ts", types.render()),
+        (
+            "apps/editor/src/lib/generated/samples.ts",
+            typescript_samples("./types")?,
+        ),
+        (
+            "crates/ugoe-editor-core/schema/command.schema.json",
+            command_schema_json()?,
+        ),
+    ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generated_files_are_up_to_date() {
+        for (path, content) in generated_files().unwrap() {
+            let on_disk = std::fs::read_to_string(repo_root().join(path)).unwrap_or_default();
+            assert!(on_disk == content, "{path} is stale; run `just gen`");
+        }
+    }
+}

@@ -8,6 +8,8 @@ pub type DeformerId = Id<Deformer>;
 /// デフォーマ: 子 (デフォーマ / メッシュ) の頂点を変形する。
 /// 子の頂点座標は **親デフォーマの局所座標系** で表現される (`docs/spec/evaluation.md`)。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Deformer {
     pub id: DeformerId,
     pub name: String,
@@ -26,6 +28,8 @@ pub struct Deformer {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum DeformerKind {
     Warp(WarpDeformer),
@@ -33,12 +37,16 @@ pub enum DeformerKind {
     /// 未知の値 (新しい版のファイル)。恒等変換として扱う (子は親の変換だけを受ける)。
     /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
     #[serde(other, skip_serializing)]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    #[cfg_attr(feature = "schema", schemars(skip))]
     Unknown,
 }
 
 /// ワープデフォーマ: (rows+1)×(cols+1) 個の制御点を持つ格子による自由変形。
 /// 子の局所座標は格子全体を [0,1]² に正規化した UV 空間。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct WarpDeformer {
     pub rows: u16,
     pub cols: u16,
@@ -50,8 +58,12 @@ pub struct WarpDeformer {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct WarpKeyform {
     /// 行優先 (x が速い) の制御点。長さ `(rows+1)*(cols+1)`。親座標系。
+    #[cfg_attr(feature = "ts", ts(as = "Vec<crate::Vec2Repr>"))]
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<crate::Vec2Repr>"))]
     pub points: Vec<Vec2>,
     pub opacity: f32,
 }
@@ -59,13 +71,19 @@ pub struct WarpKeyform {
 /// 回転デフォーマ: 原点まわりの回転・拡縮・反転。
 /// 子の局所座標は原点を (0,0) とした回転前の座標 (単位はキャンバスピクセル)。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RotationDeformer {
     pub keyforms: KeyformGrid<RotationKeyform>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RotationKeyform {
     /// 親座標系での原点。
+    #[cfg_attr(feature = "ts", ts(as = "crate::Vec2Repr"))]
+    #[cfg_attr(feature = "schema", schemars(with = "crate::Vec2Repr"))]
     pub origin: Vec2,
     /// 度数法、時計回り正 (Y 下向き座標系)。
     pub angle: f32,

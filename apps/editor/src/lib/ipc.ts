@@ -1,67 +1,24 @@
-// Tauri バックエンド (apps/editor/src-tauri/src/commands.rs) への型付きラッパー。
+// Tauri バックエンド (apps/editor/src-tauri/src/commands.rs など) への型付きラッパー。
 // バックエンドのコマンドを変えたら、ここも同じ PR で更新すること。
-// TODO(T0603): ts-rs で Rust 型から自動生成した型に置き換える。
+// 引数・戻り値の型は Rust から生成した ./generated/types.ts を使う (`just gen`、docs/editor.md#型の生成)。
 import { invoke } from "@tauri-apps/api/core";
+import type {
+  AppInfo,
+  AutoMeshOptions,
+  Command,
+  ProjectStatus,
+  PsdImportWarning,
+} from "./generated/types";
 
-export interface AppInfo {
-  version: string;
-}
+export type * from "./generated/types";
 
-/** ugoe_editor_core::Command の JSON 表現 (一部)。 */
-export type EditCommand =
-  | { op: "set_parameter_range"; id: string; min: number; default: number; max: number }
-  | { op: "remove_parameter"; id: string }
-  | { op: "batch"; label: string; commands: EditCommand[] }
-  | {
-      op: "add_part";
-      part: {
-        id: string;
-        name: string;
-        parent: string | null;
-        keyforms: { bindings: []; keyforms: [{ opacity: number }] };
-      };
-    }
-  | { op: "remove_part"; id: string }
-  | { op: "rename_part"; id: string; name: string }
-  | { op: "set_part_parent"; id: string; parent: string | null }
-  | { op: "remove_deformer"; id: string }
-  | { op: "rename_deformer"; id: string; name: string }
-  | { op: "set_deformer_parent"; id: string; parent: string | null }
-  | { op: "set_deformer_part"; id: string; part: string }
-  | { op: "remove_mesh"; id: string }
-  | { op: "rename_mesh"; id: string; name: string }
-  | { op: "set_mesh_properties"; id: string; part?: string }
-  | { op: "set_mesh_parent"; id: string; parent: string | null }
-  | { op: "reorder_mesh"; id: string; before: string | null };
-
-/** apps/editor/src-tauri/src/project.rs の ProjectStatus。 */
-export interface ProjectStatus {
-  name: string;
-  /** 保存先の .ugoeproj ディレクトリ。未保存なら null。 */
-  path: string | null;
-  /** 最後に保存 (または開いた) ときから変更があるか。 */
-  modified: boolean;
-}
-
-/** ugoe_editor_core::AutoMeshOptions。省略したフィールドは既定値。 */
-export interface AutoMeshOptions {
-  alpha_threshold?: number;
-  margin?: number;
-  edge_spacing?: number;
-  interior_spacing?: number;
-  min_island_area?: number;
-}
-
-/** ugoe_editor_core::PsdImportWarning。 */
-export interface PsdImportWarning {
-  /** レイヤーの名前の列 (外側のグループから)。ドキュメント全体の警告では空。 */
-  path: string[];
-  message: string;
-}
+/** ugoe_editor_core::Command の JSON 表現。`Command` の別名 (既存のコードとの互換のため)。 */
+export type EditCommand = Command;
 
 export const ipc = {
   appInfo: () => invoke<AppInfo>("app_info"),
-  applyCommand: (command: EditCommand) => invoke<void>("apply_command", { command }),
+  applyCommand: (command: Command) => invoke<void>("apply_command", { command }),
+  /** ugoe_model::Model の JSON (JSON.parse すると `Model`)。 */
   getModelJson: () => invoke<string>("get_model_json"),
   undo: () => invoke<boolean>("undo"),
   redo: () => invoke<boolean>("redo"),
@@ -75,6 +32,7 @@ export const ipc = {
   /** 今のドキュメントの .ugoe バンドル (テクスチャ付き)。生のバイト列で届く。 */
   getModelBundle: async () => new Uint8Array(await invoke<ArrayBuffer>("get_model_bundle")),
   /** apps/editor/src-tauri/src/psd.rs。PSD を今のドキュメントに取り込み、警告を返す。 */
-  importPsd: (path: string, meshOptions?: AutoMeshOptions) =>
+  /** `meshOptions` の省略したフィールドは既定値。 */
+  importPsd: (path: string, meshOptions?: Partial<AutoMeshOptions>) =>
     invoke<PsdImportWarning[]>("import_psd", { path, meshOptions: meshOptions ?? null }),
 };

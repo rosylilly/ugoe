@@ -5,6 +5,8 @@ pub type ParamId = Id<Parameter>;
 
 /// モデルを動かす入力スカラー値 (例: 顔の角度 X, 目の開閉)。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Parameter {
     pub id: ParamId,
     pub name: String,
@@ -22,6 +24,8 @@ pub struct Parameter {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ParameterKind {
     #[default]
@@ -30,6 +34,8 @@ pub enum ParameterKind {
     /// 未知の値 (新しい版のファイル)。通常のパラメータとして扱う。
     /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
     #[serde(other, skip_serializing)]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    #[cfg_attr(feature = "schema", schemars(skip))]
     Unknown,
 }
 
@@ -45,6 +51,8 @@ impl ParameterKind {
 
 /// エディタ表示用のパラメータグループ。ランタイムの挙動には影響しない。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ParameterGroup {
     pub id: String,
     pub name: String,

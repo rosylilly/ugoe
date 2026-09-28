@@ -7,6 +7,8 @@ pub type MeshId = Id<Mesh>;
 
 /// 描画単位となるテクスチャ付き三角形メッシュ。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Mesh {
     pub id: MeshId,
     pub name: String,
@@ -16,6 +18,8 @@ pub struct Mesh {
     /// `Model::textures` のインデックス。
     pub texture: u32,
     /// テクスチャ座標 (0..1, 左上原点)。頂点数と同じ長さ。
+    #[cfg_attr(feature = "ts", ts(as = "Vec<crate::Vec2Repr>"))]
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<crate::Vec2Repr>"))]
     pub uvs: Vec<Vec2>,
     /// 三角形インデックス (3 の倍数)。
     pub indices: Vec<u16>,
@@ -48,8 +52,12 @@ pub struct Mesh {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct MeshKeyform {
     /// 親座標系での頂点位置。長さは `uvs` と同じ。
+    #[cfg_attr(feature = "ts", ts(as = "Vec<crate::Vec2Repr>"))]
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<crate::Vec2Repr>"))]
     pub positions: Vec<Vec2>,
     pub opacity: f32,
     /// 描画順 (大きいほど手前)。同値はモデル内の宣言順で解決。
@@ -65,6 +73,8 @@ pub struct MeshKeyform {
 
 /// マスクとして使うメッシュへの参照。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct MaskRef {
     pub mesh: MeshId,
     /// `true` なら反転マスク (メッシュの内側を隠す)。
@@ -92,6 +102,8 @@ impl MaskRef {
 
 /// 通常マスクの結合方法。式は `docs/spec/rendering.md#マスク`。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum MaskMode {
     /// 和集合 `1 − Π(1 − c)`。
@@ -102,6 +114,8 @@ pub enum MaskMode {
     /// 未知の値 (新しい版のファイル)。和集合として扱う。
     /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
     #[serde(other, skip_serializing)]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    #[cfg_attr(feature = "schema", schemars(skip))]
     Unknown,
 }
 
@@ -129,6 +143,8 @@ fn black() -> Rgb {
 
 /// 合成モード。式は `docs/spec/rendering.md`。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum BlendMode {
     #[default]
@@ -138,6 +154,8 @@ pub enum BlendMode {
     /// 未知の値 (新しい版のファイル)。通常の合成で描く。
     /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
     #[serde(other, skip_serializing)]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    #[cfg_attr(feature = "schema", schemars(skip))]
     Unknown,
 }
 
@@ -153,6 +171,8 @@ impl BlendMode {
 
 /// 2 つのメッシュの頂点同士を引き寄せて継ぎ目を防ぐ「接着」。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Glue {
     pub id: String,
     pub mesh_a: MeshId,
@@ -162,6 +182,8 @@ pub struct Glue {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct GluePair {
     pub a: u16,
     pub b: u16,
@@ -170,6 +192,8 @@ pub struct GluePair {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct GlueKeyform {
     pub intensity: f32,
 }

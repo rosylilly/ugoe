@@ -4,6 +4,8 @@ use crate::ParamId;
 
 /// 表情: モーションの上に重ねるパラメータ差分。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Expression {
     pub name: String,
     #[serde(default)]
@@ -14,6 +16,8 @@ pub struct Expression {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ExpressionParameter {
     pub parameter: ParamId,
     pub value: f32,
@@ -21,6 +25,8 @@ pub struct ExpressionParameter {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ExpressionOp {
     Add,
@@ -29,5 +35,7 @@ pub enum ExpressionOp {
     /// 未知の値 (新しい版のファイル)。その項目を無視する。
     /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
     #[serde(other, skip_serializing)]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    #[cfg_attr(feature = "schema", schemars(skip))]
     Unknown,
 }

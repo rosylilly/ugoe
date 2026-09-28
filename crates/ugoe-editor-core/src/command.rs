@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use ugoe_core::Vec2;
 use ugoe_model::deformer::{RotationKeyform, WarpKeyform};
 use ugoe_model::mesh::MeshKeyform;
@@ -25,10 +27,15 @@ pub type KeyformCell = BTreeMap<ParamId, f32>;
 /// - フィールドは ID で対象を指定する (インデックスは使わない)。
 /// - 適用前検証を [`crate::Document::apply`] 内で行い、失敗時はモデルを一切変更しない。
 /// - 新しいバリアントは末尾に追加する。
+/// - TypeScript の型と JSON Schema は Rust から生成する。変えたら `just gen` を実行する
+///   (`docs/editor.md#型の生成`)。
 ///
 /// 削除時の連鎖 (カスケード) と拒否の規則は `docs/editor.md#コマンド` にある。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, JsonSchema)]
 #[serde(tag = "op", rename_all = "snake_case")]
+#[schemars(
+    description = "エディタの編集操作。`op` で種類を選ぶ。1 コマンドが Undo の 1 単位で、対象は ID で指定する。"
+)]
 pub enum Command {
     AddParameter {
         parameter: Parameter,
@@ -188,6 +195,8 @@ pub enum Command {
     SetCanvas {
         width: f32,
         height: f32,
+        #[ts(as = "ugoe_core::codegen::Vec2Repr")]
+        #[schemars(with = "ugoe_core::codegen::Vec2Repr")]
         origin: Vec2,
     },
     /// メッシュをテクスチャの画像から自動メッシュ (`ugoe-mesher`) で作り直す。
@@ -236,7 +245,7 @@ pub enum Command {
 /// キーフォームの格子を持つ要素。JSON では `{"kind": "mesh", "id": "EyeL"}` と書く。
 ///
 /// どの要素も格子を 1 つだけ持つ (`ugoe_rigging::KeyformTarget` と同じ)。
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS, JsonSchema)]
 #[serde(tag = "kind", content = "id", rename_all = "snake_case")]
 pub enum KeyformTarget {
     Part(PartId),
@@ -272,7 +281,7 @@ impl std::fmt::Display for KeyformTarget {
 }
 
 /// [`Command::InferKeyforms`] の推定の方法。
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum InferMethod {
     /// 格子の `inference` の設定に従う (省略時は加算合成)。

@@ -86,6 +86,11 @@ wasm out="apps/editor/src/lib/viewport/generated":
     wasm-bindgen --target web --out-dir {{quote(out)}} \
         target/wasm32-unknown-unknown/release/ugoe_wasm.wasm
 
+# Rust の型から生成物を作り直す: エディタの TypeScript の型 (apps/editor/src/lib/generated/) と
+# Command の JSON Schema (crates/ugoe-editor-core/schema/)。生成物はコミットする (docs/editor.md#型の生成)。
+gen:
+    cargo run -q -p ugoe-editor --example gen
+
 # Cargo.lock に記録された wasm-bindgen の版 (wasm-bindgen-cli はこれと一致させる)
 wasm-bindgen-version:
     @awk '/^name = "wasm-bindgen"$/ { getline; gsub(/"/, "", $3); print $3 }' Cargo.lock

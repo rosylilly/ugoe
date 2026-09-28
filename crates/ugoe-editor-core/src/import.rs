@@ -8,6 +8,7 @@ use std::collections::HashSet;
 use std::fmt;
 
 use serde::Serialize;
+use ts_rs::TS;
 use ugoe_core::{Rgb, Vec2};
 use ugoe_mesher::MeshError;
 use ugoe_model::mesh::MeshKeyform;
@@ -53,7 +54,7 @@ pub struct PsdImport {
 }
 
 /// 取り込みの警告。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 pub struct PsdImportWarning {
     /// レイヤーの名前の列 (外側のグループから順に、最後がレイヤー自身)。
     /// ドキュメント全体についての警告では空。

@@ -15,6 +15,8 @@ pub const LIP_SYNC_GROUP: &str = "LipSync";
 
 /// エフェクト設定一式。
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct Effects {
     pub eye_blink: EyeBlink,
@@ -35,6 +37,8 @@ impl Effects {
 
 /// 目パチ。対象パラメータを 1 → 0 → 1 と動かす。時間はすべて秒。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct EyeBlink {
     /// エフェクトグループ `EyeBlink` の対象。
@@ -76,6 +80,8 @@ impl EyeBlink {
 
 /// 呼吸。各パラメータに `weight * (offset + peak * sin(2π t / cycle))` を加算する。
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct Breath {
     pub parameters: Vec<BreathParameter>,
@@ -104,6 +110,8 @@ impl Breath {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct BreathParameter {
     pub parameter: ParamId,
     /// 波の中心値。
@@ -118,6 +126,8 @@ pub struct BreathParameter {
 
 /// リップシンク。外部から与えた音量 (0〜1) を対象パラメータに書き込む。
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct LipSync {
     /// エフェクトグループ `LipSync` の対象。

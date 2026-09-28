@@ -9,6 +9,7 @@
 - アルゴリズム (補間・変形・再生) を置かない
 - 型を変えたら同じ PR で `docs/spec/model.md` を更新する。ファイル形式に影響する場合は `SCHEMA_VERSION` も更新する
 - `fixtures` の既存の関数の挙動を変えない (追加だけにする)
+- 型を追加したら `TS` / `JsonSchema` の derive (feature `ts` / `schema`) も付け、`just gen` を実行する ([型の生成](../../docs/editor.md#型の生成))
 
 ## 仕様
 

@@ -53,6 +53,9 @@ jobs:
         run: just lint
       - name: Test
         run: just test
+      # Rust から生成した TS の型と JSON Schema がコミット済みで最新か (docs/editor.md#型の生成)
+      - name: Generated files
+        run: just gen && git diff --exit-code
       - name: Layers
         run: just layers
       - name: Licenses

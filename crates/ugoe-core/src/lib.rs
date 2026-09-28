@@ -2,7 +2,12 @@
 //!
 //! このクレートは **依存ゼロに近い状態を保つ** こと。GPU・I/O・シリアライズ形式に
 //! 依存するものは置かない (serde の derive のみ許可)。
+//!
+//! 例外として、コード生成 (TypeScript の型と JSON Schema) のための実装を feature `ts` /
+//! `schema` の裏に置く。ランタイムはこれらを有効にしない (`docs/editor.md#型の生成`)。
 
+#[cfg(any(feature = "ts", feature = "schema"))]
+pub mod codegen;
 pub mod color;
 pub mod id;
 

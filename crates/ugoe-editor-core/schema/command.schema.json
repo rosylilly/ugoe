@@ -1,0 +1,1822 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Command",
+  "description": "エディタの編集操作。`op` で種類を選ぶ。1 コマンドが Undo の 1 単位で、対象は ID で指定する。",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "op": {
+          "type": "string",
+          "const": "add_parameter"
+        },
+        "parameter": {
+          "$ref": "#/$defs/Parameter"
+        }
+      },
+      "required": [
+        "op",
+        "parameter"
+      ]
+    },
+    {
+      "description": "パラメータを削除する。このパラメータを軸に持つキーフォーム格子は、その軸を\n既定値のキー (なければ最も近いキー) の断面に畳む。ミラーとエフェクトの参照も外す。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "remove_parameter"
+        }
+      },
+      "required": [
+        "op",
+        "id"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "default": {
+          "type": "number",
+          "format": "float"
+        },
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "max": {
+          "type": "number",
+          "format": "float"
+        },
+        "min": {
+          "type": "number",
+          "format": "float"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_parameter_range"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "min",
+        "default",
+        "max"
+      ]
+    },
+    {
+      "description": "複数コマンドを 1 つの Undo 単位にまとめる (AI の一括提案など)。",
+      "type": "object",
+      "properties": {
+        "commands": {
+          "type": "array",
+          "items": {
+            "$ref": "#"
+          }
+        },
+        "label": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "batch"
+        }
+      },
+      "required": [
+        "op",
+        "label",
+        "commands"
+      ]
+    },
+    {
+      "description": "パラメータの表示名を変える (ID は変えない)。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "rename_parameter"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "name"
+      ]
+    },
+    {
+      "description": "パラメータグループを設定する (`None` で外す)。グループは `parameter_groups` に存在すること。",
+      "type": "object",
+      "properties": {
+        "group": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_parameter_group"
+        }
+      },
+      "required": [
+        "op",
+        "id"
+      ]
+    },
+    {
+      "description": "左右で対になるパラメータを設定する (`None` で外す)。相手側は変更しない。\n自分自身を指定すると、値の符号を反転して対応させる (`docs/spec/keyform-inference.md#ミラー`)。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "mirror": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "op": {
+          "type": "string",
+          "const": "set_parameter_mirror"
+        }
+      },
+      "required": [
+        "op",
+        "id"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "op": {
+          "type": "string",
+          "const": "add_part"
+        },
+        "part": {
+          "$ref": "#/$defs/Part"
+        }
+      },
+      "required": [
+        "op",
+        "part"
+      ]
+    },
+    {
+      "description": "パーツを削除する。子パーツ・所属するデフォーマ・メッシュが残っていれば拒否する。\nポーズからは取り除く (空になったグループも消す)。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "remove_part"
+        }
+      },
+      "required": [
+        "op",
+        "id"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "rename_part"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "name"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_part_parent"
+        },
+        "parent": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "op",
+        "id"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "keyforms": {
+          "$ref": "#/$defs/KeyformGrid"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_part_keyforms"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "keyforms"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "deformer": {
+          "$ref": "#/$defs/Deformer"
+        },
+        "op": {
+          "type": "string",
+          "const": "add_deformer"
+        }
+      },
+      "required": [
+        "op",
+        "deformer"
+      ]
+    },
+    {
+      "description": "デフォーマを削除する。子 (デフォーマ・メッシュ) が残っていれば拒否する。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "remove_deformer"
+        }
+      },
+      "required": [
+        "op",
+        "id"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "rename_deformer"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "name"
+      ]
+    },
+    {
+      "description": "親デフォーマを付け替える。子の座標はそのまま (新しい親の局所座標として解釈される)。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_deformer_parent"
+        },
+        "parent": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "op",
+        "id"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_deformer_part"
+        },
+        "part": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "part"
+      ]
+    },
+    {
+      "description": "ワープデフォーマのキーフォーム格子を置き換える (`rows` / `cols` は変えない)。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "keyforms": {
+          "$ref": "#/$defs/KeyformGrid2"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_warp_keyforms"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "keyforms"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "keyforms": {
+          "$ref": "#/$defs/KeyformGrid3"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_rotation_keyforms"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "keyforms"
+      ]
+    },
+    {
+      "description": "メッシュを `meshes` の末尾 (同じ描画順の中で最も手前) に追加する。",
+      "type": "object",
+      "properties": {
+        "mesh": {
+          "$ref": "#/$defs/Mesh"
+        },
+        "op": {
+          "type": "string",
+          "const": "add_mesh"
+        }
+      },
+      "required": [
+        "op",
+        "mesh"
+      ]
+    },
+    {
+      "description": "メッシュを削除する。他のメッシュのマスク参照から外し、\nこのメッシュを使うグルーと当たり判定を削除する。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "remove_mesh"
+        }
+      },
+      "required": [
+        "op",
+        "id"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "rename_mesh"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "name"
+      ]
+    },
+    {
+      "description": "メッシュの属性を変える。省略した (`null` の) フィールドは変更しない。",
+      "type": "object",
+      "properties": {
+        "blend": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BlendMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "culling": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "mask_mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MaskMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mask_only": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "masks": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/MaskRef"
+          }
+        },
+        "op": {
+          "type": "string",
+          "const": "set_mesh_properties"
+        },
+        "part": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "texture": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "op",
+        "id"
+      ]
+    },
+    {
+      "description": "親デフォーマを付け替える。頂点座標はそのまま (新しい親の局所座標として解釈される)。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_mesh_parent"
+        },
+        "parent": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "op",
+        "id"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "keyforms": {
+          "$ref": "#/$defs/KeyformGrid4"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_mesh_keyforms"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "keyforms"
+      ]
+    },
+    {
+      "description": "メッシュのキーフォーム格子の 1 セルだけを置き換える。",
+      "type": "object",
+      "properties": {
+        "cell": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "float"
+          }
+        },
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "keyform": {
+          "$ref": "#/$defs/MeshKeyform"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_mesh_keyform"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "cell",
+        "keyform"
+      ]
+    },
+    {
+      "description": "`meshes` の中でメッシュを `before` の直前へ移す (`None` なら末尾)。\n描画順 (`draw_order`) が同じメッシュどうしの前後関係が変わる。",
+      "type": "object",
+      "properties": {
+        "before": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "reorder_mesh"
+        }
+      },
+      "required": [
+        "op",
+        "id"
+      ]
+    },
+    {
+      "description": "テクスチャ (PNG) を `Model::textures` の末尾に追加する。寸法は PNG の IHDR から読む。\n名前は `[A-Za-z0-9_.-]` (`.` 始まりは不可) で、大文字小文字を区別せずに一意。\n`png` は JSON では数値の配列になるので、主にバックエンド内 (PSD 取り込みなど) から使う。",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "add_texture"
+        },
+        "png": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "maximum": 255,
+            "minimum": 0
+          }
+        }
+      },
+      "required": [
+        "op",
+        "name",
+        "png"
+      ]
+    },
+    {
+      "description": "テクスチャの画像を差し替える。`TextureRef` の寸法も PNG に合わせる。",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_texture_image"
+        },
+        "png": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "maximum": 255,
+            "minimum": 0
+          }
+        }
+      },
+      "required": [
+        "op",
+        "name",
+        "png"
+      ]
+    },
+    {
+      "description": "テクスチャを削除する。使っているメッシュがあれば拒否する。\n後ろのテクスチャを指すメッシュの `texture` は 1 つ詰める。",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "remove_texture"
+        }
+      },
+      "required": [
+        "op",
+        "name"
+      ]
+    },
+    {
+      "description": "キャンバスの大きさと原点を変える。要素の座標は変えない。\n`width` と `height` は 0 より大きい有限の値。",
+      "type": "object",
+      "properties": {
+        "height": {
+          "type": "number",
+          "format": "float"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_canvas"
+        },
+        "origin": {
+          "$ref": "#/$defs/Vec2"
+        },
+        "width": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "op",
+        "width",
+        "height",
+        "origin"
+      ]
+    },
+    {
+      "description": "メッシュをテクスチャの画像から自動メッシュ (`ugoe-mesher`) で作り直す。\nすべてのキーフォームの頂点位置が同じで、頂点位置が UV のアフィン写像になっている\nメッシュだけが対象 (それ以外は拒否する)。キーフォームの頂点位置以外の値は保つ。\n規則は `docs/editor.md#メッシュの再生成`。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "regenerate_mesh"
+        },
+        "options": {
+          "$ref": "#/$defs/AutoMeshOptions",
+          "default": {
+            "alpha_threshold": 8,
+            "edge_spacing": 24.0,
+            "interior_spacing": 48.0,
+            "margin": 4.0,
+            "min_island_area": 0
+          }
+        }
+      },
+      "required": [
+        "op",
+        "id"
+      ]
+    },
+    {
+      "description": "`target` の格子の `derived` のセルを推定で作り直す (`docs/spec/keyform-inference.md#推定の実行`)。\n`authored` のセルは変えない。",
+      "type": "object",
+      "properties": {
+        "method": {
+          "$ref": "#/$defs/InferMethod",
+          "default": "from_grid"
+        },
+        "op": {
+          "type": "string",
+          "const": "infer_keyforms"
+        },
+        "target": {
+          "$ref": "#/$defs/KeyformTarget"
+        }
+      },
+      "required": [
+        "op",
+        "target"
+      ]
+    },
+    {
+      "description": "`source` のキーフォームを対称軸で反転して、`target` の格子のセルを作る\n(`docs/spec/keyform-inference.md#ミラー`)。作ったセルは `derived` になる。",
+      "type": "object",
+      "properties": {
+        "axis": {
+          "description": "対称軸 `x = a` の `a`。省略すると元の要素の `mirror_axis` (または親で決まる既定値)。",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "op": {
+          "type": "string",
+          "const": "mirror_keyforms"
+        },
+        "overwrite_authored": {
+          "description": "`true` なら先の `authored` のセルも上書きする。",
+          "type": "boolean",
+          "default": false
+        },
+        "source": {
+          "$ref": "#/$defs/KeyformTarget"
+        },
+        "target": {
+          "$ref": "#/$defs/KeyformTarget"
+        },
+        "tolerance": {
+          "description": "頂点の対応付けの許容距離 (元の要素の親座標系)。省略するとキャンバスの 1px。",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        }
+      },
+      "required": [
+        "op",
+        "source",
+        "target"
+      ]
+    },
+    {
+      "description": "格子のセルの由来を `authored` にする (値は変えない)。",
+      "type": "object",
+      "properties": {
+        "cells": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number",
+              "format": "float"
+            }
+          }
+        },
+        "op": {
+          "type": "string",
+          "const": "mark_keyform_authored"
+        },
+        "target": {
+          "$ref": "#/$defs/KeyformTarget"
+        }
+      },
+      "required": [
+        "op",
+        "target",
+        "cells"
+      ]
+    },
+    {
+      "description": "格子のセルの由来を `derived` にし、格子の推定の設定で作り直す。",
+      "type": "object",
+      "properties": {
+        "cells": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number",
+              "format": "float"
+            }
+          }
+        },
+        "op": {
+          "type": "string",
+          "const": "mark_keyform_derived"
+        },
+        "target": {
+          "$ref": "#/$defs/KeyformTarget"
+        }
+      },
+      "required": [
+        "op",
+        "target",
+        "cells"
+      ]
+    }
+  ],
+  "$defs": {
+    "AutoMeshOptions": {
+      "description": "[`ugoe_mesher::MeshOptions`] の JSON 表現。省略したフィールドは既定値になる。",
+      "type": "object",
+      "properties": {
+        "alpha_threshold": {
+          "description": "この値以上のアルファを中身とする (0..=255)。",
+          "type": "integer",
+          "format": "uint8",
+          "default": 8,
+          "maximum": 255,
+          "minimum": 0
+        },
+        "edge_spacing": {
+          "description": "輪郭上の頂点間隔の目安 (px)。",
+          "type": "number",
+          "format": "float",
+          "default": 24.0
+        },
+        "interior_spacing": {
+          "description": "内部頂点の間隔の目安 (px)。0 なら内部点を置かない。",
+          "type": "number",
+          "format": "float",
+          "default": 48.0
+        },
+        "margin": {
+          "description": "輪郭を外側に広げる距離 (px)。",
+          "type": "number",
+          "format": "float",
+          "default": 4.0
+        },
+        "min_island_area": {
+          "description": "画素数がこれ未満の島を捨てる。",
+          "type": "integer",
+          "format": "uint32",
+          "default": 0,
+          "minimum": 0
+        }
+      }
+    },
+    "BlendMode": {
+      "description": "合成モード。式は `docs/spec/rendering.md`。",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "normal",
+            "additive",
+            "multiply"
+          ]
+        }
+      ]
+    },
+    "Deformer": {
+      "description": "デフォーマ: 子 (デフォーマ / メッシュ) の頂点を変形する。\n子の頂点座標は **親デフォーマの局所座標系** で表現される (`docs/spec/evaluation.md`)。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/DeformerKind"
+        },
+        "mirror": {
+          "description": "ミラーで対にするデフォーマ (オーサリング用)。`None` と自分自身は「自分と対応する」。\n対は双方向に張る (`docs/spec/keyform-inference.md#ミラー`)。",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mirror_axis": {
+          "description": "ミラーの対称軸 (縦の直線) の x 座標。原点・制御点と同じ親座標系で表す (オーサリング用)。\n`None` なら親で決まる既定値 (`docs/spec/keyform-inference.md#対称軸`)。",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parent": {
+          "description": "`None` ならキャンバス座標直下。",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "part": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "part",
+        "kind"
+      ]
+    },
+    "DeformerKind": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "warp"
+            }
+          },
+          "$ref": "#/$defs/WarpDeformer",
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "rotation"
+            }
+          },
+          "$ref": "#/$defs/RotationDeformer",
+          "required": [
+            "type"
+          ]
+        }
+      ]
+    },
+    "DepthRotation": {
+      "description": "深度からの回転の設定。対象の深度はメッシュ・ワープデフォーマの `depth` に持つ。",
+      "type": "object",
+      "properties": {
+        "angle_scale": {
+          "description": "パラメータの値に掛けて角度 (度) にする係数。既定 1。",
+          "type": "number",
+          "format": "float",
+          "default": 1.0
+        },
+        "pitch": {
+          "description": "横軸まわりの回転 (pitch) に使う軸のパラメータ (通常 `AngleY`)。`None` なら回さない。",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pivot": {
+          "description": "回転の中心の位置 (対象の頂点・制御点と同じ親座標系)。",
+          "$ref": "#/$defs/Vec2"
+        },
+        "pivot_depth": {
+          "description": "回転の中心の深度 (キャンバスのピクセル単位、手前が正)。既定 0。",
+          "type": "number",
+          "format": "float",
+          "default": 0.0
+        },
+        "yaw": {
+          "description": "縦軸まわりの回転 (yaw) に使う軸のパラメータ (通常 `AngleX`)。`None` なら回さない。",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pivot"
+      ]
+    },
+    "InferMethod": {
+      "description": "[`Command::InferKeyforms`] の推定の方法。",
+      "oneOf": [
+        {
+          "description": "格子の `inference` の設定に従う (省略時は加算合成)。",
+          "type": "string",
+          "const": "from_grid"
+        },
+        {
+          "description": "加算合成 (`docs/spec/keyform-inference.md#加算合成`)。",
+          "type": "string",
+          "const": "additive"
+        },
+        {
+          "description": "深度からの回転 (`docs/spec/keyform-inference.md#深度からの回転`)。\n格子の `inference` が `depth_rotation` でなければならない。",
+          "type": "string",
+          "const": "depth_rotation"
+        }
+      ]
+    },
+    "KeyformBinding": {
+      "description": "1 本のパラメータ軸と、その軸上のキー位置 (昇順・重複なし)。",
+      "type": "object",
+      "properties": {
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "float"
+          }
+        },
+        "parameter": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        }
+      },
+      "required": [
+        "parameter",
+        "keys"
+      ]
+    },
+    "KeyformGrid": {
+      "description": "N 本のパラメータ軸の直積格子上に並んだキーフォーム。\n\n`keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。\n並びは **軸 0 が最も速く変化する** 行優先 (column-major 的) 順。\n格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。\n\n`origins` と `inference` はオーサリング用のデータで、ランタイムは読み飛ばす\n(`docs/spec/keyform-inference.md`)。",
+      "type": "object",
+      "properties": {
+        "bindings": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/KeyformBinding"
+          }
+        },
+        "inference": {
+          "description": "`derived` のセルを作り直すときの推定の設定。`None` なら加算合成 (`additive`)。",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KeyformInference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "keyforms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PartKeyform"
+          }
+        },
+        "origins": {
+          "description": "セルごとの由来。並びは `keyforms` と同じ。\n空ならすべて `authored`。空でなければ長さは `keyforms` と同じ。",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/KeyformOrigin"
+          }
+        }
+      },
+      "required": [
+        "keyforms"
+      ]
+    },
+    "KeyformGrid2": {
+      "description": "N 本のパラメータ軸の直積格子上に並んだキーフォーム。\n\n`keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。\n並びは **軸 0 が最も速く変化する** 行優先 (column-major 的) 順。\n格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。\n\n`origins` と `inference` はオーサリング用のデータで、ランタイムは読み飛ばす\n(`docs/spec/keyform-inference.md`)。",
+      "type": "object",
+      "properties": {
+        "bindings": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/KeyformBinding"
+          }
+        },
+        "inference": {
+          "description": "`derived` のセルを作り直すときの推定の設定。`None` なら加算合成 (`additive`)。",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KeyformInference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "keyforms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WarpKeyform"
+          }
+        },
+        "origins": {
+          "description": "セルごとの由来。並びは `keyforms` と同じ。\n空ならすべて `authored`。空でなければ長さは `keyforms` と同じ。",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/KeyformOrigin"
+          }
+        }
+      },
+      "required": [
+        "keyforms"
+      ]
+    },
+    "KeyformGrid3": {
+      "description": "N 本のパラメータ軸の直積格子上に並んだキーフォーム。\n\n`keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。\n並びは **軸 0 が最も速く変化する** 行優先 (column-major 的) 順。\n格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。\n\n`origins` と `inference` はオーサリング用のデータで、ランタイムは読み飛ばす\n(`docs/spec/keyform-inference.md`)。",
+      "type": "object",
+      "properties": {
+        "bindings": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/KeyformBinding"
+          }
+        },
+        "inference": {
+          "description": "`derived` のセルを作り直すときの推定の設定。`None` なら加算合成 (`additive`)。",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KeyformInference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "keyforms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RotationKeyform"
+          }
+        },
+        "origins": {
+          "description": "セルごとの由来。並びは `keyforms` と同じ。\n空ならすべて `authored`。空でなければ長さは `keyforms` と同じ。",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/KeyformOrigin"
+          }
+        }
+      },
+      "required": [
+        "keyforms"
+      ]
+    },
+    "KeyformGrid4": {
+      "description": "N 本のパラメータ軸の直積格子上に並んだキーフォーム。\n\n`keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。\n並びは **軸 0 が最も速く変化する** 行優先 (column-major 的) 順。\n格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。\n\n`origins` と `inference` はオーサリング用のデータで、ランタイムは読み飛ばす\n(`docs/spec/keyform-inference.md`)。",
+      "type": "object",
+      "properties": {
+        "bindings": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/KeyformBinding"
+          }
+        },
+        "inference": {
+          "description": "`derived` のセルを作り直すときの推定の設定。`None` なら加算合成 (`additive`)。",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KeyformInference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "keyforms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MeshKeyform"
+          }
+        },
+        "origins": {
+          "description": "セルごとの由来。並びは `keyforms` と同じ。\n空ならすべて `authored`。空でなければ長さは `keyforms` と同じ。",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/KeyformOrigin"
+          }
+        }
+      },
+      "required": [
+        "keyforms"
+      ]
+    },
+    "KeyformInference": {
+      "description": "格子の `derived` のセルを作る推定の方法と、その設定。\nJSON では `{\"method\": \"additive\"}` や `{\"method\": \"depth_rotation\", \"pivot\": .., ..}` と書く。",
+      "oneOf": [
+        {
+          "description": "加算合成 (`docs/spec/keyform-inference.md#加算合成`)。",
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "additive"
+            }
+          },
+          "required": [
+            "method"
+          ]
+        },
+        {
+          "description": "深度からの回転 (`docs/spec/keyform-inference.md#深度からの回転`)。",
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "depth_rotation"
+            }
+          },
+          "$ref": "#/$defs/DepthRotation",
+          "required": [
+            "method"
+          ]
+        }
+      ]
+    },
+    "KeyformOrigin": {
+      "description": "キーフォームのセルの由来 (`docs/spec/keyform-inference.md#セルの由来`)。",
+      "oneOf": [
+        {
+          "description": "人が作った (または手で修正した) セル。推定はこのセルを上書きしない。",
+          "type": "string",
+          "const": "authored"
+        },
+        {
+          "description": "推定で作ったセル。推定の元になったセルが変わると、エディタが作り直す。",
+          "type": "string",
+          "const": "derived"
+        }
+      ]
+    },
+    "KeyformTarget": {
+      "description": "キーフォームの格子を持つ要素。JSON では `{\"kind\": \"mesh\", \"id\": \"EyeL\"}` と書く。\n\nどの要素も格子を 1 つだけ持つ (`ugoe_rigging::KeyformTarget` と同じ)。",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "part"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "mesh"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ]
+        },
+        {
+          "description": "ワープデフォーマまたは回転デフォーマ。",
+          "type": "object",
+          "properties": {
+            "id": {
+              "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "deformer"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ]
+        },
+        {
+          "description": "グルー (`Glue::id`)。",
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "glue"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ]
+        }
+      ]
+    },
+    "MaskMode": {
+      "description": "通常マスクの結合方法。式は `docs/spec/rendering.md#マスク`。",
+      "oneOf": [
+        {
+          "description": "和集合 `1 − Π(1 − c)`。",
+          "type": "string",
+          "const": "union"
+        },
+        {
+          "description": "共通部分 `Π c`。",
+          "type": "string",
+          "const": "intersection"
+        }
+      ]
+    },
+    "MaskRef": {
+      "description": "マスクとして使うメッシュへの参照。",
+      "type": "object",
+      "properties": {
+        "invert": {
+          "description": "`true` なら反転マスク (メッシュの内側を隠す)。",
+          "type": "boolean",
+          "default": false
+        },
+        "mesh": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mesh"
+      ]
+    },
+    "Mesh": {
+      "description": "描画単位となるテクスチャ付き三角形メッシュ。",
+      "type": "object",
+      "properties": {
+        "blend": {
+          "$ref": "#/$defs/BlendMode",
+          "default": "normal"
+        },
+        "culling": {
+          "description": "裏面カリングするか。",
+          "type": "boolean",
+          "default": false
+        },
+        "depth": {
+          "description": "頂点ごとの深度 (キャンバスのピクセル単位、手前が正。オーサリング用)。長さは `uvs` と同じ。",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "float"
+          }
+        },
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "indices": {
+          "description": "三角形インデックス (3 の倍数)。",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint16",
+            "maximum": 65535,
+            "minimum": 0
+          }
+        },
+        "keyforms": {
+          "$ref": "#/$defs/KeyformGrid4"
+        },
+        "mask_mode": {
+          "description": "通常マスク (`invert = false` の参照) の結合方法。",
+          "$ref": "#/$defs/MaskMode",
+          "default": "union"
+        },
+        "mask_only": {
+          "description": "`true` なら色としては描画せず、マスクとしてだけ働く。",
+          "type": "boolean",
+          "default": false
+        },
+        "masks": {
+          "description": "クリッピングマスクの参照。意味論は `docs/spec/rendering.md#マスク`。",
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/MaskRef"
+          }
+        },
+        "mirror": {
+          "description": "ミラーで対にするメッシュ (オーサリング用)。`None` と自分自身は「自分と対応する」。\n対は双方向に張る (`docs/spec/keyform-inference.md#ミラー`)。",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mirror_axis": {
+          "description": "ミラーの対称軸 (縦の直線) の x 座標。頂点と同じ親座標系で表す (オーサリング用)。\n`None` なら親で決まる既定値 (`docs/spec/keyform-inference.md#対称軸`)。",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parent": {
+          "description": "`None` ならキャンバス座標直下。",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "part": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "texture": {
+          "description": "`Model::textures` のインデックス。",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "uvs": {
+          "description": "テクスチャ座標 (0..1, 左上原点)。頂点数と同じ長さ。",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vec2"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "part",
+        "texture",
+        "uvs",
+        "indices",
+        "keyforms"
+      ]
+    },
+    "MeshKeyform": {
+      "type": "object",
+      "properties": {
+        "draw_order": {
+          "description": "描画順 (大きいほど手前)。同値はモデル内の宣言順で解決。",
+          "type": "number",
+          "format": "float"
+        },
+        "mask_strength": {
+          "description": "マスクの効き具合 (0〜1、既定 1)。範囲外の値はランタイムがクランプする。",
+          "type": "number",
+          "format": "float",
+          "default": 1.0
+        },
+        "multiply_color": {
+          "$ref": "#/$defs/Rgb",
+          "default": {
+            "b": 1.0,
+            "g": 1.0,
+            "r": 1.0
+          }
+        },
+        "opacity": {
+          "type": "number",
+          "format": "float"
+        },
+        "positions": {
+          "description": "親座標系での頂点位置。長さは `uvs` と同じ。",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vec2"
+          }
+        },
+        "screen_color": {
+          "$ref": "#/$defs/Rgb",
+          "default": {
+            "b": 0.0,
+            "g": 0.0,
+            "r": 0.0
+          }
+        }
+      },
+      "required": [
+        "positions",
+        "opacity",
+        "draw_order"
+      ]
+    },
+    "Parameter": {
+      "description": "モデルを動かす入力スカラー値 (例: 顔の角度 X, 目の開閉)。",
+      "type": "object",
+      "properties": {
+        "default": {
+          "type": "number",
+          "format": "float"
+        },
+        "group": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "kind": {
+          "description": "ブレンドシェイプ用パラメータか (加算変形。`docs/spec/model.md`)。",
+          "$ref": "#/$defs/ParameterKind",
+          "default": "normal"
+        },
+        "max": {
+          "type": "number",
+          "format": "float"
+        },
+        "min": {
+          "type": "number",
+          "format": "float"
+        },
+        "mirror": {
+          "description": "左右ペア (例: EyeLOpen ↔ EyeROpen)。エディタのミラー機能・AI 自動設定で使う。",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "min",
+        "max",
+        "default"
+      ]
+    },
+    "ParameterKind": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "normal",
+            "blend_shape"
+          ]
+        }
+      ]
+    },
+    "Part": {
+      "description": "パーツ: メッシュ・デフォーマをまとめる論理グループ。不透明度は親子で乗算される。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "keyforms": {
+          "$ref": "#/$defs/KeyformGrid"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parent": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "keyforms"
+      ]
+    },
+    "PartKeyform": {
+      "type": "object",
+      "properties": {
+        "opacity": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "opacity"
+      ]
+    },
+    "Rgb": {
+      "description": "リニアではなく sRGB 値の RGB (0.0..=1.0)。乗算色・スクリーン色に使う。",
+      "type": "object",
+      "properties": {
+        "b": {
+          "type": "number",
+          "format": "float"
+        },
+        "g": {
+          "type": "number",
+          "format": "float"
+        },
+        "r": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "r",
+        "g",
+        "b"
+      ]
+    },
+    "RotationDeformer": {
+      "description": "回転デフォーマ: 原点まわりの回転・拡縮・反転。\n子の局所座標は原点を (0,0) とした回転前の座標 (単位はキャンバスピクセル)。",
+      "type": "object",
+      "properties": {
+        "keyforms": {
+          "$ref": "#/$defs/KeyformGrid3"
+        }
+      },
+      "required": [
+        "keyforms"
+      ]
+    },
+    "RotationKeyform": {
+      "type": "object",
+      "properties": {
+        "angle": {
+          "description": "度数法、時計回り正 (Y 下向き座標系)。",
+          "type": "number",
+          "format": "float"
+        },
+        "opacity": {
+          "type": "number",
+          "format": "float"
+        },
+        "origin": {
+          "description": "親座標系での原点。",
+          "$ref": "#/$defs/Vec2"
+        },
+        "reflect_x": {
+          "type": "boolean",
+          "default": false
+        },
+        "reflect_y": {
+          "type": "boolean",
+          "default": false
+        },
+        "scale": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "origin",
+        "angle",
+        "scale",
+        "opacity"
+      ]
+    },
+    "Vec2": {
+      "description": "[`crate::Vec2`] の JSON 表現 `[x, y]` (glam の serde 形式)。\n\nglam の型には `TS` / `JsonSchema` を実装できないので、`Vec2` のフィールドに\n`#[ts(as = \"ugoe_core::codegen::Vec2Repr\")]` や `#[schemars(with = \"..\")]` を付けて使う。\n生成される型の名前は `Vec2`。",
+      "type": "array",
+      "maxItems": 2,
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "type": "number",
+          "format": "float"
+        },
+        {
+          "type": "number",
+          "format": "float"
+        }
+      ]
+    },
+    "WarpDeformer": {
+      "description": "ワープデフォーマ: (rows+1)×(cols+1) 個の制御点を持つ格子による自由変形。\n子の局所座標は格子全体を [0,1]² に正規化した UV 空間。",
+      "type": "object",
+      "properties": {
+        "cols": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "depth": {
+          "description": "制御点ごとの深度 (キャンバスのピクセル単位、手前が正。オーサリング用)。\n並びは `WarpKeyform::points` と同じで、長さ `(rows+1)*(cols+1)`。",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "float"
+          }
+        },
+        "keyforms": {
+          "$ref": "#/$defs/KeyformGrid2"
+        },
+        "rows": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        }
+      },
+      "required": [
+        "rows",
+        "cols",
+        "keyforms"
+      ]
+    },
+    "WarpKeyform": {
+      "type": "object",
+      "properties": {
+        "opacity": {
+          "type": "number",
+          "format": "float"
+        },
+        "points": {
+          "description": "行優先 (x が速い) の制御点。長さ `(rows+1)*(cols+1)`。親座標系。",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vec2"
+          }
+        }
+      },
+      "required": [
+        "points",
+        "opacity"
+      ]
+    }
+  }
+}

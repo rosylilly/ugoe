@@ -21,6 +21,9 @@ pub mod validate;
 
 use serde::{Deserialize, Serialize};
 use ugoe_core::Vec2;
+/// `Vec2` のフィールドの生成用の型 (`#[ts(as = "crate::Vec2Repr")]` などで使う)。
+#[cfg(any(feature = "ts", feature = "schema"))]
+use ugoe_core::codegen::Vec2Repr;
 
 pub use deformer::{Deformer, DeformerId, DeformerKind};
 pub use effects::Effects;
@@ -35,6 +38,8 @@ pub const SCHEMA_VERSION: u32 = 0;
 
 /// 1 体のリグ付きモデル全体。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Model {
     pub schema_version: u32,
     pub meta: ModelMeta,
@@ -59,6 +64,8 @@ pub struct Model {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ModelMeta {
     pub name: String,
     pub canvas: Canvas,
@@ -67,15 +74,21 @@ pub struct ModelMeta {
 /// キャンバス。モデル座標系は「キャンバス左上原点・ピクセル単位・Y 下向き」。
 /// 表示時の正規化 (高さ 2.0 の NDC 相当など) は描画側の責務。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Canvas {
     pub width: f32,
     pub height: f32,
     /// 表示時の原点 (通常は足元中央など)。
+    #[cfg_attr(feature = "ts", ts(as = "crate::Vec2Repr"))]
+    #[cfg_attr(feature = "schema", schemars(with = "crate::Vec2Repr"))]
     pub origin: Vec2,
 }
 
 /// テクスチャ参照。実データはコンテナ (`ugoe-format`) 側が保持する。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TextureRef {
     pub name: String,
     pub width: u32,
@@ -84,6 +97,8 @@ pub struct TextureRef {
 
 /// 当たり判定領域。メッシュの変形後形状で判定する。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct HitArea {
     pub id: String,
     pub mesh: MeshId,

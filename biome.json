@@ -16,6 +16,7 @@
       "!**/node_modules",
       "!**/src-tauri",
       "!**/pkg",
+      "!apps/editor/src/lib/generated",
       "!.worktrees"
     ]
   },

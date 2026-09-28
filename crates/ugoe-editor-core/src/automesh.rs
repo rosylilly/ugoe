@@ -1,7 +1,9 @@
 //! 自動メッシュ (`ugoe-mesher`) の設定と、テクスチャからのメッシュの作り直し。
 //! 設計: `docs/editor.md#psd-の取り込み`、`docs/ai-integration.md#自動メッシュ`。
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use ugoe_core::Vec2;
 use ugoe_mesher::MeshOptions;
 use ugoe_model::Model;
@@ -11,7 +13,7 @@ use crate::document::EditError;
 use crate::texture::{Textures, decode_rgba_png};
 
 /// [`ugoe_mesher::MeshOptions`] の JSON 表現。省略したフィールドは既定値になる。
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS, JsonSchema)]
 #[serde(default)]
 pub struct AutoMeshOptions {
     /// この値以上のアルファを中身とする (0..=255)。

@@ -18,6 +18,7 @@ tauri-build.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tauri.workspace = true
+ts-rs.workspace = true
 ugoe-editor-core.workspace = true
 ugoe-format.workspace = true
 ugoe-model.workspace = true

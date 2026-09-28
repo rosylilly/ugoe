@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::{ParamId, PartId};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Motion {
     pub name: String,
     /// 秒。
@@ -24,6 +26,8 @@ pub struct Motion {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Curve {
     pub target: CurveTarget,
     pub segments: Vec<Segment>,
@@ -39,6 +43,8 @@ pub struct Curve {
 /// 隣接タグ付きの表現では `#[serde(other)]` が中身 (`id`) を読めないので、
 /// 読み込みは手で書く ([`CurveTarget::deserialize`])。
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", content = "id", rename_all = "snake_case")]
 pub enum CurveTarget {
     Parameter(ParamId),
@@ -48,6 +54,8 @@ pub enum CurveTarget {
     /// 未知の対象 (新しい版のファイル)。そのカーブを無視する。
     /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
     #[serde(skip_serializing)]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    #[cfg_attr(feature = "schema", schemars(skip))]
     Unknown,
 }
 
@@ -147,6 +155,8 @@ impl<'de> Deserialize<'de> for StringOrIgnored {
 
 /// 点 (time, value)。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Point {
     pub t: f32,
     pub v: f32,
@@ -154,6 +164,8 @@ pub struct Point {
 
 /// 連続するセグメント列。各セグメントの始点は直前セグメントの終点。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Segment {
     /// カーブの最初の点。先頭に 1 つだけ置く。
@@ -179,10 +191,14 @@ pub enum Segment {
     /// 未知の値 (新しい版のファイル)。そのカーブ全体を無視する。
     /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
     #[serde(other, skip_serializing)]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    #[cfg_attr(feature = "schema", schemars(skip))]
     Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct MotionEvent {
     pub t: f32,
     pub value: String,

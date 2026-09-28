@@ -9,6 +9,7 @@
 - UI・Tauri・GPU に依存しない
 - すべての編集は `Command` を通す。`Document::apply` は失敗時にモデルを変更しない
 - `Command` のバリアントは末尾に追加する
+- `Command` やモデルの型を変えたら `just gen` で生成物 (TS の型・`schema/command.schema.json`) を作り直す ([型の生成](../../docs/editor.md#型の生成))
 
 ## 仕様
 

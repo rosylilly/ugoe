@@ -6,8 +6,14 @@ use ugoe_core::Vec2;
 use crate::ParamId;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PhysicsSettings {
+    #[cfg_attr(feature = "ts", ts(as = "crate::Vec2Repr"))]
+    #[cfg_attr(feature = "schema", schemars(with = "crate::Vec2Repr"))]
     pub gravity: Vec2,
+    #[cfg_attr(feature = "ts", ts(as = "crate::Vec2Repr"))]
+    #[cfg_attr(feature = "schema", schemars(with = "crate::Vec2Repr"))]
     pub wind: Vec2,
     /// 固定ステップ実行の周波数 (Hz)。
     pub fps: f32,
@@ -15,6 +21,8 @@ pub struct PhysicsSettings {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PhysicsRig {
     pub id: String,
     pub name: String,
@@ -25,6 +33,8 @@ pub struct PhysicsRig {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum PhysicsSource {
     X,
@@ -33,10 +43,14 @@ pub enum PhysicsSource {
     /// 未知の値 (新しい版のファイル)。その入力・出力を無視する。
     /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
     #[serde(other, skip_serializing)]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    #[cfg_attr(feature = "schema", schemars(skip))]
     Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PhysicsInput {
     pub parameter: ParamId,
     pub source: PhysicsSource,
@@ -47,6 +61,8 @@ pub struct PhysicsInput {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PhysicsOutput {
     pub parameter: ParamId,
     /// 出力元となる粒子インデックス (その粒子と 1 つ前の粒子の成す角を使う)。
@@ -59,8 +75,12 @@ pub struct PhysicsOutput {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PhysicsParticle {
     /// 初期位置 (根元からの相対)。
+    #[cfg_attr(feature = "ts", ts(as = "crate::Vec2Repr"))]
+    #[cfg_attr(feature = "schema", schemars(with = "crate::Vec2Repr"))]
     pub position: Vec2,
     pub mobility: f32,
     pub delay: f32,
@@ -69,12 +89,16 @@ pub struct PhysicsParticle {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PhysicsNormalization {
     pub position: NormalizationRange,
     pub angle: NormalizationRange,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct NormalizationRange {
     pub min: f32,
     pub default: f32,
