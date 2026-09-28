@@ -45,6 +45,21 @@ impl ParameterValues {
         self.values[index.0 as usize]
     }
 
+    /// 値域の下限。
+    pub fn min(&self, index: ParamIndex) -> f32 {
+        self.min[index.0 as usize]
+    }
+
+    /// 値域の上限。
+    pub fn max(&self, index: ParamIndex) -> f32 {
+        self.max[index.0 as usize]
+    }
+
+    /// 既定値。
+    pub fn default_value(&self, index: ParamIndex) -> f32 {
+        self.default[index.0 as usize]
+    }
+
     /// 値域にクランプして設定する。
     pub fn set(&mut self, index: ParamIndex, value: f32) {
         let i = index.0 as usize;
@@ -63,5 +78,19 @@ impl ParameterValues {
 
     pub fn as_slice(&self) -> &[f32] {
         &self.values
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn range_accessors_return_model_values() {
+        let params = ParameterValues::from_model(&ugoe_model::fixtures::physics_hair());
+        let index = params.index_of(ugoe_model::standard::ANGLE_X).unwrap();
+        assert_eq!(params.min(index), -30.0);
+        assert_eq!(params.max(index), 30.0);
+        assert_eq!(params.default_value(index), 0.0);
     }
 }

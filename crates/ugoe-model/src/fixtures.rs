@@ -10,6 +10,10 @@ use crate::keyform::{DepthRotation, KeyformBinding, KeyformGrid, KeyformInferenc
 use crate::mesh::{BlendMode, Glue, GlueKeyform, GluePair, MaskMode, MaskRef, Mesh, MeshKeyform};
 use crate::parameter::{Parameter, ParameterKind};
 use crate::part::{Part, PartKeyform};
+use crate::physics::{
+    NormalizationRange, PhysicsInput, PhysicsNormalization, PhysicsOutput, PhysicsParticle,
+    PhysicsRig, PhysicsSettings, PhysicsSource,
+};
 use crate::pose::{DEFAULT_FADE_DURATION, PoseEntry, PoseGroup};
 use crate::standard;
 use crate::{Canvas, Effects, Model, ModelMeta, Pose, SCHEMA_VERSION, TextureRef};
@@ -871,6 +875,98 @@ pub fn keyform_inference() -> Model {
     model
 }
 
+// ---- 物理演算 (T0301) ----
+
+/// 物理のフィクスチャ [`physics_hair_settings`] と組で使うモデル。メッシュは持たない。
+///
+/// - 入力: `AngleX` / `AngleZ` (-30..30、既定 0)。
+/// - 出力: `HairFront` / `HairBack` (-1..1、既定 0)。
+pub fn physics_hair() -> Model {
+    base_model(
+        "physics_hair",
+        vec![
+            parameter(standard::ANGLE_X, -30.0, 0.0, 30.0),
+            parameter(standard::ANGLE_Z, -30.0, 0.0, 30.0),
+            parameter(standard::HAIR_FRONT, -1.0, 0.0, 1.0),
+            parameter(standard::HAIR_BACK, -1.0, 0.0, 1.0),
+        ],
+    )
+}
+
+/// [`physics_hair`] 用の物理設定。重力 `(0, 1)`、風なし、60 Hz。
+///
+/// 正規化の範囲は位置・角度とも -10..10 (`AngleX = 30` で根元が +10 動き、`AngleZ = 30` で +10 度回る)。
+///
+/// - リグ `HairFront`: 粒子 3 つ (長さ 3 と 12 の区間)。入力は `AngleX` → x (重み 60)、
+///   `AngleZ` → 角度 (重み 60)。粒子 1 の角度 (度) の 0.1 倍を `HairFront` に書く。
+/// - リグ `HairBack`: 粒子 2 つ (長さ 10 の区間)。入力は `AngleX` → x (重み 40、反転)、
+///   `AngleZ` → 角度 (重み 40)。粒子 1 の角度の 0.1 倍を `HairBack` に書く。
+pub fn physics_hair_settings() -> PhysicsSettings {
+    let input = |parameter: &str, source: PhysicsSource, weight: f32, reflect: bool| PhysicsInput {
+        parameter: parameter.into(),
+        source,
+        weight,
+        reflect,
+    };
+    let output = |parameter: &str| PhysicsOutput {
+        parameter: parameter.into(),
+        particle: 1,
+        source: PhysicsSource::Angle,
+        scale: 0.1,
+        weight: 100.0,
+        reflect: false,
+    };
+    let particle = |y: f32, mobility: f32, delay: f32, radius: f32| PhysicsParticle {
+        position: Vec2::new(0.0, y),
+        mobility,
+        delay,
+        acceleration: 1.5,
+        radius,
+    };
+    let range = NormalizationRange {
+        min: -10.0,
+        default: 0.0,
+        max: 10.0,
+    };
+    let normalization = PhysicsNormalization {
+        position: range,
+        angle: range,
+    };
+    PhysicsSettings {
+        gravity: Vec2::new(0.0, 1.0),
+        wind: Vec2::ZERO,
+        fps: 60.0,
+        rigs: vec![
+            PhysicsRig {
+                id: "HairFront".into(),
+                name: "前髪".into(),
+                inputs: vec![
+                    input(standard::ANGLE_X, PhysicsSource::X, 60.0, false),
+                    input(standard::ANGLE_Z, PhysicsSource::Angle, 60.0, false),
+                ],
+                outputs: vec![output(standard::HAIR_FRONT)],
+                particles: vec![
+                    particle(0.0, 1.0, 1.0, 0.0),
+                    particle(3.0, 0.95, 0.9, 3.0),
+                    particle(15.0, 0.9, 0.6, 12.0),
+                ],
+                normalization,
+            },
+            PhysicsRig {
+                id: "HairBack".into(),
+                name: "後ろ髪".into(),
+                inputs: vec![
+                    input(standard::ANGLE_X, PhysicsSource::X, 40.0, true),
+                    input(standard::ANGLE_Z, PhysicsSource::Angle, 40.0, false),
+                ],
+                outputs: vec![output(standard::HAIR_BACK)],
+                particles: vec![particle(0.0, 1.0, 1.0, 0.0), particle(10.0, 0.9, 0.8, 10.0)],
+                normalization,
+            },
+        ],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -913,6 +1009,7 @@ mod tests {
             mixed_masks(),
             intersection_masks(),
             keyform_inference(),
+            physics_hair(),
         ] {
             assert_eq!(
                 crate::validate::validate(&model),
@@ -924,6 +1021,14 @@ mod tests {
             let back: Model = serde_json::from_str(&json).unwrap();
             assert_eq!(model, back);
         }
+    }
+
+    #[test]
+    fn physics_hair_settings_roundtrip_json() {
+        let settings = physics_hair_settings();
+        let json = serde_json::to_string(&settings).unwrap();
+        let back: PhysicsSettings = serde_json::from_str(&json).unwrap();
+        assert_eq!(settings, back);
     }
 
     #[test]
