@@ -1,11 +1,11 @@
 ---
 id: T0703
 title: ビューア: MediaPipe の顔のトラッキングで表情を付ける
-status: todo
+status: in-progress
 milestone: M3
 crates: [apps/viewer, ugoe-wasm, docs]
-depends_on: [T0701, T0702, T0306]
-assignee:
+depends_on: [T0701, T0306]
+assignee: claude-worker-T0703
 ---
 
 # T0703: ビューア: MediaPipe の顔のトラッキングで表情を付ける
@@ -24,6 +24,10 @@ assignee:
 - [ ] 実際の人の顔の動画か画像で、目の開閉・口の開き・頭の向きが見本のモデル (T0702) に反映されることを確かめ、メモに書く。符号の約束 (`EyeBallX`・`MouthX`・`JawX`) を確かめられたら T0306 の未決の解消に使う
 - [ ] Tauri でカメラを使うための設定 (macOS の `NSCameraUsageDescription`、Linux の WebKitGTK・Windows の WebView2 での許可) を決めて書き、確かめられなかった OS は利用者の確認項目にする
 - [ ] `just ci`・`just licenses`・ビューアのビルドが通る
+
+## 進め方
+
+見本のモデル (T0702) は確認にだけ使うので、T0702 を待たずに着手する (オーケストレーターの判断)。T0702 が main に入るまでは `ugoe_model::fixtures::avatar_profile` などで確かめ、入ったら見本のモデルで確かめ直す。
 
 ## 参考
 
