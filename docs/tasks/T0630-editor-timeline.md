@@ -1,11 +1,11 @@
 ---
 id: T0630
 title: エディタ: タイムラインとモーションの編集
-status: todo
+status: in-progress
 milestone: M3
 crates: [ugoe-editor-core, apps/editor, docs/manual]
 depends_on: [T0303, T0309]
-assignee:
+assignee: claude-worker-T0630
 ---
 
 # T0630: エディタ: タイムラインとモーションの編集

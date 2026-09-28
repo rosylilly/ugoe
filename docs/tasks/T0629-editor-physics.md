@@ -1,11 +1,11 @@
 ---
 id: T0629
 title: エディタ: 物理の設定画面
-status: todo
+status: in-progress
 milestone: M3
 crates: [ugoe-editor-core, apps/editor, docs/manual]
 depends_on: [T0305, T0309]
-assignee:
+assignee: claude-worker-T0629
 ---
 
 # T0629: エディタ: 物理の設定画面
