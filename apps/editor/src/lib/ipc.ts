@@ -3,6 +3,7 @@
 // 引数・戻り値の型は Rust から生成した ./generated/types.ts を使う (`just gen`、docs/editor.md#型の生成)。
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  AnimationData,
   AppInfo,
   ApplyReport,
   AutoMeshOptions,
@@ -24,6 +25,8 @@ export const ipc = {
   applyCommand: (command: Command) => invoke<ApplyReport>("apply_command", { command }),
   /** ugoe_model::Model の JSON (JSON.parse すると `Model`)。 */
   getModelJson: () => invoke<string>("get_model_json"),
+  /** ドキュメントのモーションと表情 (タイムラインの表示用。編集は applyCommand)。 */
+  getAnimations: () => invoke<AnimationData>("get_animations"),
   undo: () => invoke<boolean>("undo"),
   redo: () => invoke<boolean>("redo"),
   projectStatus: () => invoke<ProjectStatus>("project_status"),

@@ -16,6 +16,7 @@ pub mod import;
 mod inference;
 pub mod keyform;
 mod mesh_edit;
+pub mod motion_edit;
 pub mod project;
 pub mod space;
 pub mod texture;
@@ -28,6 +29,7 @@ pub use grid::CellError;
 pub use import::{PsdImport, PsdImportError, PsdImportOptions, PsdImportWarning, import_psd};
 pub use inference::{MirrorReport, RederiveWarning};
 pub use keyform::Keyform;
+pub use motion_edit::{Animations, SegmentShape};
 pub use project::{Project, ProjectError, ProjectMeta, export_bundle};
 pub use texture::Textures;
 
@@ -45,6 +47,8 @@ mod inference_tests;
 mod keyform_tests;
 #[cfg(test)]
 mod mesh_edit_tests;
+#[cfg(test)]
+mod motion_edit_tests;
 #[cfg(test)]
 mod project_tests;
 #[cfg(test)]

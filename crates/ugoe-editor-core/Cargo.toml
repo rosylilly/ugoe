@@ -19,6 +19,7 @@ ugoe-core = { workspace = true, features = ["schema", "ts"] }
 ugoe-format.workspace = true
 ugoe-mesher.workspace = true
 ugoe-model = { workspace = true, features = ["schema", "ts"] }
+ugoe-motion.workspace = true
 ugoe-psd.workspace = true
 ugoe-rigging.workspace = true
 ugoe-runtime.workspace = true

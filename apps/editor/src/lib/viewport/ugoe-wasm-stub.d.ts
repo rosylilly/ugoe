@@ -91,4 +91,6 @@ export class WebPuppet {
 
 export function version(): string;
 
+export function sample_motion_json(json: string, t: number): string;
+
 export default function init(input?: unknown): Promise<unknown>;

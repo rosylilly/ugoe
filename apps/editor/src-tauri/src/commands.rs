@@ -5,6 +5,8 @@ use serde::Serialize;
 use tauri::State;
 use ts_rs::TS;
 use ugoe_editor_core::{ApplyReport, Command};
+use ugoe_model::expression::Expression;
+use ugoe_model::motion::Motion;
 
 use crate::AppState;
 
@@ -32,6 +34,23 @@ pub fn apply_command(state: State<'_, AppState>, command: Command) -> Result<App
 #[tauri::command]
 pub fn get_model_json(state: State<'_, AppState>) -> Result<String, String> {
     ugoe_format::model_to_json(lock(&state)?.model()).map_err(|e| e.to_string())
+}
+
+/// ドキュメントのモーションと表情 (`get_animations` の戻り値)。
+#[derive(Debug, Serialize, TS)]
+pub struct AnimationData {
+    pub motions: Vec<Motion>,
+    pub expressions: Vec<Expression>,
+}
+
+/// ドキュメントのモーションと表情を返す (タイムラインの表示用。編集は `apply_command`)。
+#[tauri::command]
+pub fn get_animations(state: State<'_, AppState>) -> Result<AnimationData, String> {
+    let document = lock(&state)?;
+    Ok(AnimationData {
+        motions: document.motions().to_vec(),
+        expressions: document.expressions().to_vec(),
+    })
 }
 
 #[tauri::command]

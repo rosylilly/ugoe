@@ -73,13 +73,7 @@ fn render(bundle: &Path, out: &Path, params: &[&str]) -> (Vec<u8>, Png) {
 #[test]
 fn renders_exported_bundle_at_diagonal_pose() {
     let wf = m2::run();
-    let project = Project::from_document(
-        ProjectMeta::new("m2"),
-        &wf.doc,
-        None,
-        Vec::new(),
-        Vec::new(),
-    );
+    let project = Project::from_document(ProjectMeta::new("m2"), &wf.doc, None);
     let dir = out_dir();
     let bundle = dir.join("m2.ugoe");
     std::fs::write(&bundle, export_bundle(&project).expect("export")).expect("write bundle");

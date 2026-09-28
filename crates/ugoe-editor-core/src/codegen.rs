@@ -11,8 +11,8 @@ use std::collections::BTreeMap;
 use ts_rs::{Config, TS, TypeVisitor};
 use ugoe_core::Vec2;
 use ugoe_model::deformer::DeformerKind;
-use ugoe_model::expression::Expression;
-use ugoe_model::motion::Motion;
+use ugoe_model::expression::{Expression, ExpressionOp, ExpressionParameter};
+use ugoe_model::motion::{Curve, CurveTarget, Motion, MotionEvent, Point, Segment};
 use ugoe_model::physics::PhysicsSettings;
 use ugoe_model::{
     BlendMode, DepthRotation, KeyformGrid, KeyformInference, MaskMode, MaskRef, MeshId, Model,
@@ -20,7 +20,9 @@ use ugoe_model::{
 };
 
 use crate::command::{ChildRef, InferMethod, KeyformTarget};
-use crate::{AutoMeshOptions, Command, DepthPreset, Keyform, KeyformCell, VertexMove};
+use crate::{
+    AutoMeshOptions, Command, DepthPreset, Keyform, KeyformCell, SegmentShape, VertexMove,
+};
 
 /// チェックインした `Command` の JSON Schema (`schema/command.schema.json`)。AI のツール定義に使う。
 /// [`command_schema_json`] の出力と同じであることをテストで確かめる。
@@ -461,7 +463,149 @@ fn sample_commands() -> Vec<Command> {
         },
         Command::RetriangulateMesh { id: mesh_id },
     ])
+    .chain(motion_sample_commands())
     .collect()
+}
+
+/// モーションと表情のコマンドの見本 (`docs/editor.md#モーションと表情の編集`)。
+/// `single_quad` のパラメータ `X` とパーツ `Root` を対象にする。
+pub(crate) fn motion_sample_commands() -> Vec<Command> {
+    let p = |t, v| Point { t, v };
+    let x = || CurveTarget::Parameter("X".into());
+    let motion = Motion {
+        name: "Idle".into(),
+        duration: 2.0,
+        looping: true,
+        fade_in: 0.5,
+        fade_out: 0.5,
+        curves: vec![Curve {
+            target: x(),
+            segments: vec![
+                Segment::Start { p: p(0.0, 0.0) },
+                Segment::Bezier {
+                    c1: p(0.3, 0.0),
+                    c2: p(0.7, 1.0),
+                    to: p(1.0, 1.0),
+                },
+                Segment::Linear { to: p(2.0, 0.0) },
+            ],
+            fade_in: None,
+            fade_out: Some(0.2),
+        }],
+        events: vec![MotionEvent {
+            t: 1.0,
+            value: "step".into(),
+        }],
+    };
+    let expression = Expression {
+        name: "Smile".into(),
+        fade_in: 0.3,
+        fade_out: 0.3,
+        parameters: vec![ExpressionParameter {
+            parameter: "X".into(),
+            value: 0.5,
+            op: ExpressionOp::Add,
+        }],
+    };
+    vec![
+        Command::AddMotion { motion },
+        Command::RemoveMotion {
+            name: "Idle".into(),
+        },
+        Command::RenameMotion {
+            name: "Idle".into(),
+            new_name: "Idle_2".into(),
+        },
+        Command::SetMotionProperties {
+            name: "Idle".into(),
+            duration: Some(3.0),
+            looping: Some(false),
+            fade_in: None,
+            fade_out: Some(1.0),
+        },
+        Command::AddMotionCurve {
+            motion: "Idle".into(),
+            curve: Curve {
+                target: CurveTarget::PartOpacity("Root".into()),
+                segments: vec![
+                    Segment::Start { p: p(0.0, 1.0) },
+                    Segment::Stepped { to: p(1.0, 0.0) },
+                    Segment::InverseStepped { to: p(1.5, 1.0) },
+                ],
+                fade_in: Some(0.1),
+                fade_out: None,
+            },
+        },
+        Command::RemoveMotionCurve {
+            motion: "Idle".into(),
+            target: CurveTarget::EffectGroup("EyeBlink".into()),
+        },
+        Command::SetMotionCurveFade {
+            motion: "Idle".into(),
+            target: x(),
+            fade_in: Some(0.25),
+            fade_out: None,
+        },
+        Command::SetMotionKey {
+            motion: "Idle".into(),
+            target: x(),
+            point: p(0.5, 0.25),
+        },
+        Command::MoveMotionKey {
+            motion: "Idle".into(),
+            target: x(),
+            t: 1.0,
+            to: p(1.2, 0.8),
+        },
+        Command::RemoveMotionKey {
+            motion: "Idle".into(),
+            target: x(),
+            t: 2.0,
+        },
+        Command::SetMotionSegment {
+            motion: "Idle".into(),
+            target: x(),
+            t: 1.0,
+            segment: SegmentShape::Bezier {
+                c1: Some(p(0.2, 0.0)),
+                c2: None,
+            },
+        },
+        Command::SetMotionSegment {
+            motion: "Idle".into(),
+            target: x(),
+            t: 2.0,
+            segment: SegmentShape::InverseStepped,
+        },
+        Command::SetMotionEvents {
+            motion: "Idle".into(),
+            events: vec![MotionEvent {
+                t: 0.5,
+                value: "blink".into(),
+            }],
+        },
+        Command::AddExpression { expression },
+        Command::RemoveExpression {
+            name: "Smile".into(),
+        },
+        Command::RenameExpression {
+            name: "Smile".into(),
+            new_name: "Happy".into(),
+        },
+        Command::SetExpressionProperties {
+            name: "Smile".into(),
+            fade_in: Some(0.1),
+            fade_out: None,
+        },
+        Command::SetExpressionParameters {
+            name: "Smile".into(),
+            parameters: vec![ExpressionParameter {
+                parameter: "X".into(),
+                value: 1.0,
+                op: ExpressionOp::Overwrite,
+            }],
+        },
+    ]
 }
 
 /// `set_keyform_cell` の見本。キーフォームの種類 (`Keyform`) ごとに 1 つ。

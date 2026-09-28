@@ -4065,5 +4065,242 @@ export const commands: Command[] = [
   {
     "op": "retriangulate_mesh",
     "id": "EyeL"
+  },
+  {
+    "op": "add_motion",
+    "motion": {
+      "name": "Idle",
+      "duration": 2.0,
+      "looping": true,
+      "fade_in": 0.5,
+      "fade_out": 0.5,
+      "curves": [
+        {
+          "target": {
+            "kind": "parameter",
+            "id": "X"
+          },
+          "segments": [
+            {
+              "type": "start",
+              "p": {
+                "t": 0.0,
+                "v": 0.0
+              }
+            },
+            {
+              "type": "bezier",
+              "c1": {
+                "t": 0.3,
+                "v": 0.0
+              },
+              "c2": {
+                "t": 0.7,
+                "v": 1.0
+              },
+              "to": {
+                "t": 1.0,
+                "v": 1.0
+              }
+            },
+            {
+              "type": "linear",
+              "to": {
+                "t": 2.0,
+                "v": 0.0
+              }
+            }
+          ],
+          "fade_in": null,
+          "fade_out": 0.2
+        }
+      ],
+      "events": [
+        {
+          "t": 1.0,
+          "value": "step"
+        }
+      ]
+    }
+  },
+  {
+    "op": "remove_motion",
+    "name": "Idle"
+  },
+  {
+    "op": "rename_motion",
+    "name": "Idle",
+    "new_name": "Idle_2"
+  },
+  {
+    "op": "set_motion_properties",
+    "name": "Idle",
+    "duration": 3.0,
+    "looping": false,
+    "fade_out": 1.0
+  },
+  {
+    "op": "add_motion_curve",
+    "motion": "Idle",
+    "curve": {
+      "target": {
+        "kind": "part_opacity",
+        "id": "Root"
+      },
+      "segments": [
+        {
+          "type": "start",
+          "p": {
+            "t": 0.0,
+            "v": 1.0
+          }
+        },
+        {
+          "type": "stepped",
+          "to": {
+            "t": 1.0,
+            "v": 0.0
+          }
+        },
+        {
+          "type": "inverse_stepped",
+          "to": {
+            "t": 1.5,
+            "v": 1.0
+          }
+        }
+      ],
+      "fade_in": 0.1,
+      "fade_out": null
+    }
+  },
+  {
+    "op": "remove_motion_curve",
+    "motion": "Idle",
+    "target": {
+      "kind": "effect_group",
+      "id": "EyeBlink"
+    }
+  },
+  {
+    "op": "set_motion_curve_fade",
+    "motion": "Idle",
+    "target": {
+      "kind": "parameter",
+      "id": "X"
+    },
+    "fade_in": 0.25
+  },
+  {
+    "op": "set_motion_key",
+    "motion": "Idle",
+    "target": {
+      "kind": "parameter",
+      "id": "X"
+    },
+    "point": {
+      "t": 0.5,
+      "v": 0.25
+    }
+  },
+  {
+    "op": "move_motion_key",
+    "motion": "Idle",
+    "target": {
+      "kind": "parameter",
+      "id": "X"
+    },
+    "t": 1.0,
+    "to": {
+      "t": 1.2,
+      "v": 0.8
+    }
+  },
+  {
+    "op": "remove_motion_key",
+    "motion": "Idle",
+    "target": {
+      "kind": "parameter",
+      "id": "X"
+    },
+    "t": 2.0
+  },
+  {
+    "op": "set_motion_segment",
+    "motion": "Idle",
+    "target": {
+      "kind": "parameter",
+      "id": "X"
+    },
+    "t": 1.0,
+    "segment": {
+      "type": "bezier",
+      "c1": {
+        "t": 0.2,
+        "v": 0.0
+      }
+    }
+  },
+  {
+    "op": "set_motion_segment",
+    "motion": "Idle",
+    "target": {
+      "kind": "parameter",
+      "id": "X"
+    },
+    "t": 2.0,
+    "segment": {
+      "type": "inverse_stepped"
+    }
+  },
+  {
+    "op": "set_motion_events",
+    "motion": "Idle",
+    "events": [
+      {
+        "t": 0.5,
+        "value": "blink"
+      }
+    ]
+  },
+  {
+    "op": "add_expression",
+    "expression": {
+      "name": "Smile",
+      "fade_in": 0.3,
+      "fade_out": 0.3,
+      "parameters": [
+        {
+          "parameter": "X",
+          "value": 0.5,
+          "op": "add"
+        }
+      ]
+    }
+  },
+  {
+    "op": "remove_expression",
+    "name": "Smile"
+  },
+  {
+    "op": "rename_expression",
+    "name": "Smile",
+    "new_name": "Happy"
+  },
+  {
+    "op": "set_expression_properties",
+    "name": "Smile",
+    "fade_in": 0.1
+  },
+  {
+    "op": "set_expression_parameters",
+    "name": "Smile",
+    "parameters": [
+      {
+        "parameter": "X",
+        "value": 1.0,
+        "op": "overwrite"
+      }
+    ]
   }
 ];

@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use ugoe_model::deformer::DeformerKind;
+use ugoe_model::expression::Expression;
+use ugoe_model::motion::Motion;
 use ugoe_model::validate::{ValidationError, validate};
 use ugoe_model::{Canvas, DeformerId, KeyformOrigin, MeshId, Model, ParamId, PartId, TextureRef};
 use ugoe_rigging::{InferError, InferScope, MirrorOptions};
@@ -12,6 +14,7 @@ use ugoe_rigging::{InferError, InferScope, MirrorOptions};
 use crate::command::KeyformTarget;
 use crate::grid::{self, CellError};
 use crate::inference::{MirrorReport, RederiveWarning};
+use crate::motion_edit::{self, Animations};
 use crate::texture::{Textures, is_valid_texture_name, png_size};
 use crate::{Command, automesh, inference, keyform};
 use crate::{deformer_edit, depth, mesh_edit};
@@ -118,6 +121,15 @@ pub enum EditError {
     /// 左右の対 (`mirror`) を持てない要素 (パーツ・グルー)。
     #[error("{target}: only meshes and deformers have mirror pairs")]
     MirrorPairNotSupported { target: String },
+    /// モーション・表情の名前がファイル名に使えない (`[A-Za-z0-9_.-]`、`.` 始まりは不可)。
+    #[error("{kind} name `{name}` is invalid (use [A-Za-z0-9_.-], not starting with `.`)")]
+    InvalidName { kind: &'static str, name: String },
+    /// 編集するとモーションに問題 (長さ・フェード・キーの時刻の順・取っ手の範囲など) が生じる。
+    #[error("motion `{motion}`: {reason}")]
+    InvalidMotion { motion: String, reason: String },
+    /// 編集すると表情に問題 (フェード・値・同じパラメータの重複など) が生じる。
+    #[error("expression `{expression}`: {reason}")]
+    InvalidExpression { expression: String, reason: String },
 }
 
 /// [`Document::apply_with_report`] の結果: コマンドは適用したが、利用者に知らせたいこと。
@@ -138,7 +150,7 @@ fn join(errors: &[ValidationError]) -> String {
         .join("; ")
 }
 
-/// 編集中のモデル・テクスチャと履歴。
+/// 編集中のモデル・テクスチャ・モーション・表情と履歴。
 ///
 /// 暫定実装としてスナップショット方式の Undo を使う (`docs/adr/0005-editor-command-model.md`)。
 /// テクスチャの画像は `Arc` で共有するので、スナップショットでバイト列は複製されない。
@@ -158,6 +170,7 @@ pub struct Document {
 struct Snapshot {
     model: Model,
     textures: Textures,
+    animations: Animations,
     state: u64,
 }
 
@@ -174,6 +187,7 @@ impl Document {
             current: Snapshot {
                 model,
                 textures,
+                animations: Animations::default(),
                 state: 0,
             },
             undo: Vec::new(),
@@ -183,8 +197,27 @@ impl Document {
         }
     }
 
+    /// 作ったばかりのドキュメントに、モーションと表情を持たせる (保存済みの状態のまま)。
+    pub fn with_animations(mut self, motions: Vec<Motion>, expressions: Vec<Expression>) -> Self {
+        self.current.animations = Animations {
+            motions,
+            expressions,
+        };
+        self
+    }
+
     pub fn model(&self) -> &Model {
         &self.current.model
+    }
+
+    /// モーション (保存・書き出しの順)。
+    pub fn motions(&self) -> &[Motion] {
+        &self.current.animations.motions
+    }
+
+    /// 表情 (保存・書き出しの順)。
+    pub fn expressions(&self) -> &[Expression] {
+        &self.current.animations.expressions
     }
 
     /// テクスチャ名 → PNG のバイト列。
@@ -231,6 +264,7 @@ impl Document {
         apply_to(
             &mut next.model,
             &mut next.textures,
+            &mut next.animations,
             command,
             &mut touched,
             &mut mirrored,
@@ -354,6 +388,7 @@ fn mesh<'a>(model: &'a mut Model, id: &MeshId) -> Result<&'a mut ugoe_model::Mes
 fn apply_to(
     model: &mut Model,
     textures: &mut Textures,
+    anim: &mut Animations,
     command: Command,
     touched: &mut Vec<KeyformTarget>,
     mirrored: &mut Vec<MirrorReport>,
@@ -378,7 +413,7 @@ fn apply_to(
         }
         Command::Batch { commands, .. } => {
             for c in commands {
-                apply_to(model, textures, c, touched, mirrored)?;
+                apply_to(model, textures, anim, c, touched, mirrored)?;
             }
         }
         Command::RenameParameter { id, name } => parameter(model, &id)?.name = name,
@@ -666,6 +701,76 @@ fn apply_to(
         Command::UnwrapDeformer { id } => {
             deformer_edit::unwrap(model, &id, touched)?;
             remove_deformer(model, &id)?;
+        }
+        Command::AddMotion { motion } => motion_edit::add_motion(anim, model, motion)?,
+        Command::RemoveMotion { name } => motion_edit::remove_motion(anim, &name)?,
+        Command::RenameMotion { name, new_name } => {
+            motion_edit::rename_motion(anim, &name, new_name)?;
+        }
+        Command::SetMotionProperties {
+            name,
+            duration,
+            looping,
+            fade_in,
+            fade_out,
+        } => {
+            let props = motion_edit::MotionProperties {
+                duration,
+                looping,
+                fade_in,
+                fade_out,
+            };
+            motion_edit::set_motion_properties(anim, &name, props)?;
+        }
+        Command::AddMotionCurve { motion, curve } => {
+            motion_edit::add_curve(anim, model, &motion, curve)?;
+        }
+        Command::RemoveMotionCurve { motion, target } => {
+            motion_edit::remove_curve(anim, &motion, &target)?;
+        }
+        Command::SetMotionCurveFade {
+            motion,
+            target,
+            fade_in,
+            fade_out,
+        } => motion_edit::set_curve_fade(anim, &motion, &target, fade_in, fade_out)?,
+        Command::SetMotionKey {
+            motion,
+            target,
+            point,
+        } => motion_edit::set_key(anim, model, &motion, &target, point)?,
+        Command::MoveMotionKey {
+            motion,
+            target,
+            t,
+            to,
+        } => motion_edit::move_key(anim, &motion, &target, t, to)?,
+        Command::RemoveMotionKey { motion, target, t } => {
+            motion_edit::remove_key(anim, &motion, &target, t)?;
+        }
+        Command::SetMotionSegment {
+            motion,
+            target,
+            t,
+            segment,
+        } => motion_edit::set_segment(anim, &motion, &target, t, segment)?,
+        Command::SetMotionEvents { motion, events } => {
+            motion_edit::set_motion_events(anim, &motion, events)?;
+        }
+        Command::AddExpression { expression } => {
+            motion_edit::add_expression(anim, model, expression)?;
+        }
+        Command::RemoveExpression { name } => motion_edit::remove_expression(anim, &name)?,
+        Command::RenameExpression { name, new_name } => {
+            motion_edit::rename_expression(anim, &name, new_name)?;
+        }
+        Command::SetExpressionProperties {
+            name,
+            fade_in,
+            fade_out,
+        } => motion_edit::set_expression_properties(anim, &name, fade_in, fade_out)?,
+        Command::SetExpressionParameters { name, parameters } => {
+            motion_edit::set_expression_parameters(anim, model, &name, parameters)?;
         }
     }
     Ok(())

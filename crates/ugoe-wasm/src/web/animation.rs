@@ -10,6 +10,13 @@ use wasm_bindgen::prelude::*;
 use super::{WebPuppet, js_error};
 use crate::animation;
 
+/// モーション (JSON) の各カーブを再生位置 `t` (秒) で評価した値 (フェードなし)。
+/// `[{"target": {"kind", "id"}, "value"}, …]` の JSON。エディタのタイムラインのシーク用。
+#[wasm_bindgen]
+pub fn sample_motion_json(json: &str, t: f32) -> Result<String, JsError> {
+    animation::sample_motion_json(json, t).map_err(js_error)
+}
+
 #[wasm_bindgen]
 impl WebPuppet {
     // --- モーション ---

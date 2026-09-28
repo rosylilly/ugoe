@@ -35,6 +35,7 @@ pub fn run() {
             commands::app_info,
             commands::apply_command,
             commands::get_model_json,
+            commands::get_animations,
             commands::undo,
             commands::redo,
             project::project_status,

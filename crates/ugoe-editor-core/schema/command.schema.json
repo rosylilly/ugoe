@@ -1368,6 +1368,423 @@
         "op",
         "id"
       ]
+    },
+    {
+      "description": "モーションを末尾に追加する。名前はファイル名に使える文字 (`[A-Za-z0-9_.-]`、`.` 始まりは不可) で、\n大文字小文字を区別せずに一意。カーブの対象はモデルにあること。",
+      "type": "object",
+      "properties": {
+        "motion": {
+          "$ref": "#/$defs/Motion"
+        },
+        "op": {
+          "type": "string",
+          "const": "add_motion"
+        }
+      },
+      "required": [
+        "op",
+        "motion"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "remove_motion"
+        }
+      },
+      "required": [
+        "op",
+        "name"
+      ]
+    },
+    {
+      "description": "モーションの名前 (ファイル名にもなる) を変える。",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "new_name": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "rename_motion"
+        }
+      },
+      "required": [
+        "op",
+        "name",
+        "new_name"
+      ]
+    },
+    {
+      "description": "長さ (秒、正)・ループ・フェード (秒、0 以上) を変える。省略したフィールドは変えない。",
+      "type": "object",
+      "properties": {
+        "duration": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "fade_in": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "fade_out": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "looping": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_motion_properties"
+        }
+      },
+      "required": [
+        "op",
+        "name"
+      ]
+    },
+    {
+      "description": "カーブを追加する。同じ対象のカーブがあれば拒否する。",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "$ref": "#/$defs/Curve"
+        },
+        "motion": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "add_motion_curve"
+        }
+      },
+      "required": [
+        "op",
+        "motion",
+        "curve"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "motion": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "remove_motion_curve"
+        },
+        "target": {
+          "$ref": "#/$defs/CurveTarget"
+        }
+      },
+      "required": [
+        "op",
+        "motion",
+        "target"
+      ]
+    },
+    {
+      "description": "カーブ個別のフェード (`None` ならモーション全体の値) を設定する。",
+      "type": "object",
+      "properties": {
+        "fade_in": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "fade_out": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "motion": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_motion_curve_fade"
+        },
+        "target": {
+          "$ref": "#/$defs/CurveTarget"
+        }
+      },
+      "required": [
+        "op",
+        "motion",
+        "target"
+      ]
+    },
+    {
+      "description": "時刻 `point.t` にキーを打つ。その時刻のキーがあれば値を変え、なければ加える (カーブがなければ作る)。\n区間の中に加えると区間を同じ種類の 2 つに分ける (ベジェは形を保って分ける)。",
+      "type": "object",
+      "properties": {
+        "motion": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_motion_key"
+        },
+        "point": {
+          "$ref": "#/$defs/Point"
+        },
+        "target": {
+          "$ref": "#/$defs/CurveTarget"
+        }
+      },
+      "required": [
+        "op",
+        "motion",
+        "target",
+        "point"
+      ]
+    },
+    {
+      "description": "時刻 `t` のキーを `to` へ動かす。隣のキーを越えられない。隣のベジェの取っ手も一緒に動く。",
+      "type": "object",
+      "properties": {
+        "motion": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "move_motion_key"
+        },
+        "t": {
+          "type": "number",
+          "format": "float"
+        },
+        "target": {
+          "$ref": "#/$defs/CurveTarget"
+        },
+        "to": {
+          "$ref": "#/$defs/Point"
+        }
+      },
+      "required": [
+        "op",
+        "motion",
+        "target",
+        "t",
+        "to"
+      ]
+    },
+    {
+      "description": "時刻 `t` のキーを消し、前後の区間をつなぐ。最後のキーならカーブを消す。",
+      "type": "object",
+      "properties": {
+        "motion": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "remove_motion_key"
+        },
+        "t": {
+          "type": "number",
+          "format": "float"
+        },
+        "target": {
+          "$ref": "#/$defs/CurveTarget"
+        }
+      },
+      "required": [
+        "op",
+        "motion",
+        "target",
+        "t"
+      ]
+    },
+    {
+      "description": "時刻 `t` のキーで終わる区間の種類 (直線・ベジェと取っ手・ステップ) を変える。\n取っ手の時刻は区間の中 (`docs/spec/motion.md#カーブ`)。",
+      "type": "object",
+      "properties": {
+        "motion": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_motion_segment"
+        },
+        "segment": {
+          "$ref": "#/$defs/SegmentShape"
+        },
+        "t": {
+          "type": "number",
+          "format": "float"
+        },
+        "target": {
+          "$ref": "#/$defs/CurveTarget"
+        }
+      },
+      "required": [
+        "op",
+        "motion",
+        "target",
+        "t",
+        "segment"
+      ]
+    },
+    {
+      "description": "イベントの一覧を置き換える (時刻の順に並べ直す)。時刻は 0 以上。",
+      "type": "object",
+      "properties": {
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MotionEvent"
+          }
+        },
+        "motion": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_motion_events"
+        }
+      },
+      "required": [
+        "op",
+        "motion",
+        "events"
+      ]
+    },
+    {
+      "description": "表情を末尾に追加する。名前の規則はモーションと同じ。パラメータはモデルにあること。",
+      "type": "object",
+      "properties": {
+        "expression": {
+          "$ref": "#/$defs/Expression"
+        },
+        "op": {
+          "type": "string",
+          "const": "add_expression"
+        }
+      },
+      "required": [
+        "op",
+        "expression"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "remove_expression"
+        }
+      },
+      "required": [
+        "op",
+        "name"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "new_name": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "rename_expression"
+        }
+      },
+      "required": [
+        "op",
+        "name",
+        "new_name"
+      ]
+    },
+    {
+      "description": "フェード (秒、0 以上) を変える。省略したフィールドは変えない。",
+      "type": "object",
+      "properties": {
+        "fade_in": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "fade_out": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "name": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_expression_properties"
+        }
+      },
+      "required": [
+        "op",
+        "name"
+      ]
+    },
+    {
+      "description": "表情のパラメータの一覧 (パラメータ・値・`add` / `multiply` / `overwrite`) を置き換える。\n同じパラメータは 1 回だけ。",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_expression_parameters"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ExpressionParameter"
+          }
+        }
+      },
+      "required": [
+        "op",
+        "name",
+        "parameters"
+      ]
     }
   ],
   "$defs": {
@@ -1453,6 +1870,97 @@
             "kind": {
               "type": "string",
               "const": "deformer"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ]
+        }
+      ]
+    },
+    "Curve": {
+      "type": "object",
+      "properties": {
+        "fade_in": {
+          "description": "カーブ個別のフェード (未指定ならモーション全体の値)。",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float",
+          "default": null
+        },
+        "fade_out": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float",
+          "default": null
+        },
+        "segments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Segment"
+          }
+        },
+        "target": {
+          "$ref": "#/$defs/CurveTarget"
+        }
+      },
+      "required": [
+        "target",
+        "segments"
+      ]
+    },
+    "CurveTarget": {
+      "description": "カーブの対象。JSON では `{\"kind\": \"parameter\", \"id\": \"ParamAngleX\"}` と書く。\n\n隣接タグ付きの表現では `#[serde(other)]` が中身 (`id`) を読めないので、\n読み込みは手で書く ([`CurveTarget::deserialize`])。",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "parameter"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "part_opacity"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ]
+        },
+        {
+          "description": "目パチ・リップシンク等の「エフェクトグループ」の重み。",
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "effect_group"
             }
           },
           "required": [
@@ -1645,6 +2153,68 @@
       },
       "required": [
         "pivot"
+      ]
+    },
+    "Expression": {
+      "description": "表情: モーションの上に重ねるパラメータ差分。",
+      "type": "object",
+      "properties": {
+        "fade_in": {
+          "type": "number",
+          "format": "float",
+          "default": 0.0
+        },
+        "fade_out": {
+          "type": "number",
+          "format": "float",
+          "default": 0.0
+        },
+        "name": {
+          "type": "string"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ExpressionParameter"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "parameters"
+      ]
+    },
+    "ExpressionOp": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "add",
+            "multiply",
+            "overwrite"
+          ]
+        }
+      ]
+    },
+    "ExpressionParameter": {
+      "type": "object",
+      "properties": {
+        "op": {
+          "$ref": "#/$defs/ExpressionOp"
+        },
+        "parameter": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "value": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "parameter",
+        "value",
+        "op"
       ]
     },
     "GlueKeyform": {
@@ -2360,6 +2930,67 @@
         "id"
       ]
     },
+    "Motion": {
+      "type": "object",
+      "properties": {
+        "curves": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Curve"
+          }
+        },
+        "duration": {
+          "description": "秒。",
+          "type": "number",
+          "format": "float"
+        },
+        "events": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/MotionEvent"
+          }
+        },
+        "fade_in": {
+          "type": "number",
+          "format": "float",
+          "default": 0.0
+        },
+        "fade_out": {
+          "type": "number",
+          "format": "float",
+          "default": 0.0
+        },
+        "looping": {
+          "type": "boolean",
+          "default": false
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "duration",
+        "curves"
+      ]
+    },
+    "MotionEvent": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "type": "number",
+          "format": "float"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "t",
+        "value"
+      ]
+    },
     "Parameter": {
       "description": "モデルを動かす入力スカラー値 (例: 顔の角度 X, 目の開閉)。",
       "type": "object",
@@ -2463,6 +3094,24 @@
         "opacity"
       ]
     },
+    "Point": {
+      "description": "点 (time, value)。",
+      "type": "object",
+      "properties": {
+        "t": {
+          "type": "number",
+          "format": "float"
+        },
+        "v": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "t",
+        "v"
+      ]
+    },
     "Rgb": {
       "description": "リニアではなく sRGB 値の RGB (0.0..=1.0)。乗算色・スクリーン色に使う。",
       "type": "object",
@@ -2532,6 +3181,176 @@
         "angle",
         "scale",
         "opacity"
+      ]
+    },
+    "Segment": {
+      "description": "連続するセグメント列。各セグメントの始点は直前セグメントの終点。",
+      "oneOf": [
+        {
+          "description": "カーブの最初の点。先頭に 1 つだけ置く。",
+          "type": "object",
+          "properties": {
+            "p": {
+              "$ref": "#/$defs/Point"
+            },
+            "type": {
+              "type": "string",
+              "const": "start"
+            }
+          },
+          "required": [
+            "type",
+            "p"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "to": {
+              "$ref": "#/$defs/Point"
+            },
+            "type": {
+              "type": "string",
+              "const": "linear"
+            }
+          },
+          "required": [
+            "type",
+            "to"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "c1": {
+              "$ref": "#/$defs/Point"
+            },
+            "c2": {
+              "$ref": "#/$defs/Point"
+            },
+            "to": {
+              "$ref": "#/$defs/Point"
+            },
+            "type": {
+              "type": "string",
+              "const": "bezier"
+            }
+          },
+          "required": [
+            "type",
+            "c1",
+            "c2",
+            "to"
+          ]
+        },
+        {
+          "description": "終点時刻まで始点の値を保つ。",
+          "type": "object",
+          "properties": {
+            "to": {
+              "$ref": "#/$defs/Point"
+            },
+            "type": {
+              "type": "string",
+              "const": "stepped"
+            }
+          },
+          "required": [
+            "type",
+            "to"
+          ]
+        },
+        {
+          "description": "始点直後から終点の値になる。",
+          "type": "object",
+          "properties": {
+            "to": {
+              "$ref": "#/$defs/Point"
+            },
+            "type": {
+              "type": "string",
+              "const": "inverse_stepped"
+            }
+          },
+          "required": [
+            "type",
+            "to"
+          ]
+        }
+      ]
+    },
+    "SegmentShape": {
+      "description": "[`crate::Command::SetMotionSegment`] で設定する区間の種類。",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "linear"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "3 次ベジェ。取っ手を省略すると、今の区間がベジェならその取っ手を保ち、そうでなければ\n区間の 1/3 と 2/3 の時刻に両端の値を置いた取っ手 (ゆっくり始まりゆっくり終わる) にする。",
+          "type": "object",
+          "properties": {
+            "c1": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Point"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "c2": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Point"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "bezier"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "stepped"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "inverse_stepped"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        }
       ]
     },
     "Vec2": {

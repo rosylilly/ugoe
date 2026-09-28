@@ -384,13 +384,7 @@ fn document_round_trip_and_modified_flag() {
     );
     assert!(!doc.is_modified());
 
-    let back = Project::from_document(
-        project.meta.clone(),
-        &doc,
-        project.physics.clone(),
-        project.motions.clone(),
-        project.expressions.clone(),
-    );
+    let back = Project::from_document(project.meta.clone(), &doc, project.physics.clone());
     assert_eq!(back.textures, project.textures);
     assert_eq!(back.model, project.model);
 }

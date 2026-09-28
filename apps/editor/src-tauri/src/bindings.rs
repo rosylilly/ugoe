@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use ugoe_editor_core::codegen::{TsBindings, command_schema_json, typescript_samples};
 use ugoe_editor_core::{ApplyReport, PsdImportWarning};
 
-use crate::commands::AppInfo;
+use crate::commands::{AnimationData, AppInfo};
 use crate::project::ProjectStatus;
 
 /// リポジトリのルート。
@@ -23,6 +23,7 @@ pub fn generated_files() -> Result<Vec<(&'static str, String)>, serde_json::Erro
     types.add::<ProjectStatus>();
     types.add::<PsdImportWarning>();
     types.add::<ApplyReport>();
+    types.add::<AnimationData>();
     Ok(vec![
         ("apps/editor/src/lib/generated/types.ts", types.render()),
         (

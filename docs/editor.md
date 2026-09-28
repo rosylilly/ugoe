@@ -54,6 +54,7 @@
 | テクスチャ | `add_texture`、`set_texture_image`、`remove_texture` |
 | キャンバス | `set_canvas` (`width`・`height`・`origin`。大きさは 0 より大きい有限の値。要素の座標は変えない) |
 | キーフォームの推定 | `infer_keyforms`、`mirror_keyforms`、`mark_keyform_authored`、`mark_keyform_derived`、`set_keyform_inference`、`set_mirror_pair` (下の「推定とミラー」)、`set_depth`・`apply_depth_preset` ([深度の編集](#深度の編集)) |
+| モーション・表情 | `add_motion`、`remove_motion`、`rename_motion`、`set_motion_properties`、`add_motion_curve`、`remove_motion_curve`、`set_motion_curve_fade`、`set_motion_key`、`move_motion_key`、`remove_motion_key`、`set_motion_segment`、`set_motion_events`、`add_expression`、`remove_expression`、`rename_expression`、`set_expression_properties`、`set_expression_parameters` ([モーションと表情の編集](#モーションと表情の編集)) |
 | その他 | `batch` |
 
 - `set_mesh_properties` は `part`・`texture`・`blend`・`culling`・`masks`・`mask_mode`・`mask_only` のうち、指定したフィールドだけを変えます。
@@ -145,12 +146,89 @@
 - 削除 (`remove_part`・`remove_deformer`・`remove_mesh`) で要素がなくなったら、その要素をミラー元 (`keyforms.mirror_source`) にしている格子から記録を外し、その格子の `mirror` のセルを `authored` にします (値は変えない)。
 
 - 拒否する場合は、先に子を削除するか付け替えます。まとめて行うなら `batch` を使います。
-- 物理・モーション・表情は `Model` の外のデータなので、`remove_parameter` はこれらを書き換えません。消したパラメータへの参照が残ることがあります。
+- 物理・モーション・表情は `Model` の外のデータなので、`remove_parameter` はこれらを書き換えません。消したパラメータへの参照が残ることがあります (ランタイムは無視する。タイムラインは `(missing)` の行として出す)。
 
 ### Undo
 
 最初はスナップショット方式 (`Model` を丸ごと clone) で実装します。簡単で確実だからです。
 モデルが大きくなってメモリや時間が問題になったら、各コマンドが逆操作を返す方式に移行します ([ADR 0005](adr/0005-editor-command-model.md))。
+
+## モーションと表情の編集
+
+モーションと表情 ([spec/motion.md](spec/motion.md)) は `Document` が持ち (Undo の対象)、次のコマンドで編集します (実装は `crates/ugoe-editor-core/src/motion_edit.rs`、テストは `motion_edit_tests.rs`)。
+
+- **指定の仕方:** モーション・表情は名前 (`name`)、カーブは対象 (`target`、`{"kind": "parameter", "id": "AngleX"}`)、キー (カーブの点) は時刻 `t` で指定します (完全に一致する時刻。JSON の `f32` の値はそのまま往復する)。
+- **名前:** プロジェクトのファイル名 (`motions/<name>.motion.json`) になるので、テクスチャ名と同じ規則 (`[A-Za-z0-9_.-]`、`.` で始まらない、128 バイト以下) で、大文字小文字を区別せずに一意にします (`InvalidName`・`DuplicateId`)。
+- **対象:** 新しいカーブ・表情の項目の対象はモデルにあること (パラメータ・パーツ・エフェクトグループ `EyeBlink` / `LipSync`。なければ `NotFound`)。同じ対象のカーブは 1 つ (`DuplicateId`)、表情の同じパラメータも 1 回だけ。
+- **検証:** 適用の後、編集したモーション・表情を検査し、**適用前になかった問題が生じたら拒否します** (`InvalidMotion` / `InvalidExpression`。モデルの検証と同じ考え方で、読み込んだ時点で不正なデータも問題を増やさない編集はできる)。
+  モーションの問題: 長さが正の有限の値でない、フェードが負か有限でない、先頭が `start` でない (か途中に `start`)、未知のセグメント・対象、キーの時刻が増え続けない (同じ時刻も不可)、値が有限でない、ベジェの取っ手の時刻が区間 `[p0.t, to.t]` の外、イベントの時刻が負。
+  表情の問題: フェードが負、値が有限でない、未知の op、同じパラメータの重複。
+
+| `op` | 内容 |
+| --- | --- |
+| `add_motion { motion }` | モーションを末尾に加える (完全な値) |
+| `remove_motion { name }`・`rename_motion { name, new_name }` | 削除・名前の変更 |
+| `set_motion_properties { name, duration?, looping?, fade_in?, fade_out? }` | 指定したフィールドだけを変える |
+| `add_motion_curve { motion, curve }`・`remove_motion_curve { motion, target }` | カーブの追加 (完全な値)・削除 |
+| `set_motion_curve_fade { motion, target, fade_in?, fade_out? }` | カーブ個別のフェード (`null` ならモーションの値) |
+| `set_motion_key { motion, target, point }` | 時刻 `point.t` にキーを打つ (下) |
+| `move_motion_key { motion, target, t, to }` | キーを `to` へ動かす (下) |
+| `remove_motion_key { motion, target, t }` | キーを消す (下) |
+| `set_motion_segment { motion, target, t, segment }` | 時刻 `t` のキーで **終わる** 区間の種類: `{"type": "linear" \| "stepped" \| "inverse_stepped"}` か `{"type": "bezier", "c1"?, "c2"?}` (下) |
+| `set_motion_events { motion, events }` | イベントの一覧を置き換え、時刻の順 (同じ時刻は指定の順) に並べる |
+| `add_expression { expression }`・`remove_expression { name }`・`rename_expression { name, new_name }` | 表情の追加 (完全な値)・削除・名前の変更 |
+| `set_expression_properties { name, fade_in?, fade_out? }` | フェード |
+| `set_expression_parameters { name, parameters }` | パラメータの一覧 (`parameter`・`value`・`op`) を置き換える |
+
+**キーを打つ** (`set_motion_key`)。カーブがなければ、そのキー 1 つのカーブを作ります。その時刻にキーがあれば値だけを変えます (隣のベジェのこのキーの側の取っ手も同じだけ動かす)。なければ:
+
+- 最初のキーより前: 新しい `start` にし、元の最初のキーへは最初の区間と同じ種類でつなぐ。
+- 最後のキーより後: 最後の区間と同じ種類で加える (区間がなければ直線)。
+- 区間の中: 区間を同じ種類の 2 つに分ける。ベジェは、その時刻の曲線上の点で de Casteljau 法で分け、新しいキーの側の 2 つの取っ手を、打った値と曲線の値の差だけ上下にずらす (曲線の上に打つと形が変わらない)。
+- 新しくできたベジェの区間の取っ手 (分けたときを除く) は、区間の 1/3 と 2/3 の時刻に両端の値を置いたもの (ゆっくり始まりゆっくり終わる)。
+
+**キーを動かす** (`move_motion_key`)。隣のキーを越える (同じ時刻を含む) 移動は拒否します。前後の区間がベジェなら、このキーの側の取っ手 (入る区間の `c2`・出る区間の `c1`) を同じだけ動かし、前後の区間のすべての取っ手の時刻を区間の中に収めます。
+
+**キーを消す** (`remove_motion_key`)。最初のキーなら次のキーを `start` にします。途中のキーなら前後の区間を、消したキーに **入る** 区間の種類で 1 つにします (ベジェなら入る区間の `c1` と、出る区間がベジェならその `c2`、でなければ既定の取っ手)。最後の 1 つのキーならカーブを消します。
+
+**区間の種類** (`set_motion_segment`)。最初のキーには入る区間がないので拒否します。ベジェの取っ手を省略すると、今の区間がベジェならその取っ手を保ち、そうでなければ既定の取っ手にします。取っ手は区間の外なら拒否します (画面は収めてから送る)。
+
+### タイムライン
+
+画面はビューポートの下のパネル (`src/lib/panels/timeline/`) です。「Motions」「Expressions」のタブを持ち、畳める (`localStorage`)。操作はすべて上のコマンドを送るだけで、表示の状態 (選んだモーション・再生位置・再生中・選んだ行とキー・表情のプレビュー) は `TimelineState` (`timeline.svelte.ts`) にあり、Undo の対象ではありません。
+
+| 場所 | 操作 |
+| --- | --- |
+| 上の段 | モーションの選択・「New motion」(`add_motion`、長さ 2 秒)・「Delete」・名前 (`rename_motion`)・長さ・「Loop」・フェード (`set_motion_properties`)・「Events」(`set_motion_events`) |
+| 再生の段 | 「Play」/「Stop」・「Repeat」(最後で折り返す。モーションの `looping` でも折り返す)・「◀」「▶」(1 フレーム)・時刻の欄・「◆ Key changed」・「Delete key」 |
+| 行 (ドープシート) | モデルのすべてのパラメータと、パラメータ以外のカーブ (パーツの不透明度・エフェクトの強さ。モデルにないパラメータのカーブは `(missing)`)。行の「◆」は今のスライダーの値でキーを打つ (`set_motion_key`)。ひし形はキーで、押すと選んで再生位置をその時刻にし、左右にドラッグすると時刻を変える (`move_motion_key`、1 フレームに揃える)。目盛りの押す・ドラッグでシーク (Shift で揃えない) |
+| カーブのグラフ (`CurveGraph.svelte`) | 選んだ行のカーブ。ベジェは (時刻, 値) の平面の 3 次ベジェなので SVG の `C` で描く。キーの円のドラッグ (`move_motion_key`)、取っ手の四角のドラッグ (`set_motion_segment` の `c1` / `c2`、区間の中に収める)、ダブルクリックでキー、選んだキーの時刻・値の欄、入る区間の種類のボタン、カーブのフェード (`set_motion_curve_fade`)、「Delete curve」 |
+| キーボード | パネルの中 (入力欄の外) で Space: 再生・停止、← / →: 1 フレーム、Delete / Backspace: 選んだキーを消す |
+
+- **「◆ Key changed」:** スライダーの値が、その時刻のカーブの値 (カーブがなければ既定値) と違うパラメータすべてに、今の値でキーを打つ (値域の 1e-4 倍までは同じとみなす)。複数なら 1 つの `batch` (Undo の 1 単位)。
+- **フレーム:** キーの時刻は 30 fps のフレームに揃えます (`snapToFrame`)。時刻の欄とキーの欄に数を入れれば、揃えない時刻も使えます。
+- **ドラッグ中** は表示だけを変え (ドープシートのひし形・グラフの曲線)、離したときに 1 つのコマンドを送ります。
+
+**再生とシーク:** `TimelineState` は、選んだモーションの各カーブをその時刻で評価した値 (wasm の `sample_motion_json(json, t)`、`ugoe_motion::curve::evaluate` そのもの。フェードなし) を、スライダーと同じ `ViewportController.setParameter` で書き込みます。再生は `requestAnimationFrame` の経過時間で再生位置を進めます (`advance`)。
+
+- WebPuppet のモーションの再生 (`start_motion_json` と `update`) は使いません。エディタは編集のたびにモデルを読み直し、そのとき WebPuppet の再生状態は初めからになる (T0309) ためです。この方式なら読み直しても再生位置は保たれ、同じ時刻は常に同じ姿になります。
+- そのため **プレビューはカーブの値だけ** で、フェード・目パチ・呼吸・物理・パーツの不透明度とエフェクトの強さのカーブは掛かりません (後続の候補)。
+- モーションを選んだり開いたりしただけではスライダーに書き込みません (リギング中の値を壊さないため)。シーク・再生・キーの操作の後だけ、編集 (と Undo) のたびに今の再生位置の姿を書き込み直します (`TimelineState.engaged`)。
+- 純粋な関数 (時刻とピクセルの変換・パス・行の一覧・キーのコマンドの組み立て・名前) は `timeline.ts` にあり、Vitest で検査します。
+
+### 表情
+
+「Expressions」のタブ (`ExpressionEditor.svelte`)。
+
+| 操作 | 内容 |
+| --- | --- |
+| 「New from sliders」 | 既定値から (値域の 1e-4 倍より大きく) 動かしたパラメータで表情を作る (`add_expression`、名前は `Expression`、`Expression_2`…、フェード 0.5 秒)。値は選んだ op で、既定値に重ねると今の値になるように: `add` は `今 − 既定`、`multiply` は `今 ÷ 既定` (既定値が 0 なら `add` にする)、`overwrite` は `今` |
+| 「Preview」/「End preview」 | 今のスライダーの値に表情を重み 1 で重ねて見せ (`applyExpression`。ランタイムの `ExpressionManager` と同じ式)、もう一度押すと重ねる前の値に戻す。表情を編集するとプレビューを作り直す |
+| 表 | パラメータごとの op と値 (`set_expression_parameters`)、「×」で外す、「Add parameter…」で足す (`add`、今の値と既定値の差)、「Set values from sliders」で今の値から作り直す (op は保つ) |
+| 上の段 | 名前 (`rename_expression`)・フェード (`set_expression_properties`)・「Delete」 |
+
+- プレビュー中の「New from sliders」「Set values from sliders」は、重ねる前の値を基準にします。
+- 純粋な関数は `expressions.ts` (Vitest)。
 
 ## PSD の取り込み
 
@@ -349,7 +427,7 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 ## プロジェクト
 
 - 保存形式は [`.ugoeproj/`](spec/file-formats.md#プロジェクト-ugoeproj) です。`ugoe_editor_core::Project` がプロジェクト 1 つ分の中身 (`ProjectMeta`・モデル・テクスチャ・物理・モーション・表情) を持ち、`save(dir)` / `load(dir)` で読み書きし、`export_bundle(&Project)` で `.ugoe` のバイト列を作ります。
-- 編集中は、モデルとテクスチャを `Document` が持ちます (`Project::document()` で作り、`Project::from_document` で保存用に戻す)。物理・モーション・表情はまだ編集コマンドがないので、`Document` の外 (Tauri の `ProjectSession`) に置いたまま保存・書き出しします。これらの編集コマンドを作るときに `Document` へ移します。
+- 編集中は、モデル・テクスチャ・モーション・表情を `Document` が持ちます (`Project::document()` で作り、`Project::from_document` で保存用に戻す。モーションと表情は T0630 で移した)。物理はまだ編集コマンドがないので、`Document` の外 (Tauri の `ProjectSession`) に置いたまま保存・書き出しします。編集コマンドを作るときに `Document` へ移します。
 - **未保存の変更:** `Document` は状態ごとに番号を振り、保存した状態の番号を覚えます。`is_modified()` は現在の状態が保存した状態と違うかを返すので、Undo で保存時の状態に戻ると「変更なし」に戻ります。失敗したコマンドは状態を変えません。
 
 ### Tauri コマンド
@@ -357,6 +435,7 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 | コマンド | 内容 |
 | --- | --- |
 | `project_status` | 名前・保存先・未保存の変更の有無 (`ProjectStatus`) を返す |
+| `get_animations` | ドキュメントのモーションと表情 (`AnimationData { motions, expressions }`) を返す。タイムラインの表示用 (編集は `apply_command`)。`src-tauri/src/commands.rs` |
 | `new_project` | 空のモデル (1024×1024 のキャンバス) の新しいプロジェクトにする |
 | `new_project_from_psd(path, mesh_options?)` | 空のプロジェクトを作って PSD を取り込み (キャンバスは PSD の大きさ、警告は `import_psd` と同じ)、それを今のプロジェクトにする。名前はファイル名 (拡張子を除く)、保存先はなし。取り込みは Undo の 1 単位で、未保存の状態から始まる (Undo すると空のプロジェクトに戻る)。失敗したら今のプロジェクトはそのまま |
 | `open_project(path)` | `.ugoeproj` ディレクトリを開く。失敗したら今のプロジェクトはそのまま |
@@ -441,7 +520,7 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 | 左 | パーツツリー、デフォーマツリー (ドラッグで親を付け替え) |
 | 中央 | ビューポート (メッシュ編集、デフォーマのギズモ、キーフォームの編集) |
 | 右 | インスペクタ (上) とパラメータ一覧 (下。スライダー、キーの追加と削除)。別々にスクロールし、間の区切り (`role=separator`) のドラッグか ↑ / ↓ / Home / End で高さの配分 (15〜85%) を変える。配分は表示の状態で、`localStorage` に覚える (`src/lib/layout.ts`、T0627) |
-| 下 | タイムライン (M3: モーションの編集)、AI の提案パネル (M5) |
+| 下 | タイムライン (モーションと表情。ビューポートの下、畳める。[タイムライン](#タイムライン))、AI の提案パネル (M5) |
 
 - **Undo / Redo のショートカット:** Ctrl + Z / Ctrl + Shift + Z / Ctrl + Y (macOS は Cmd + Z / Cmd + Shift + Z) を `App.svelte` がウィンドウで受けます。入力欄・選択欄・編集可能な要素の中では、その要素自身の取り消しに任せて何もしません。判定は `src/lib/shortcuts.ts` (Vitest)。
 - **要素の表記:** 要素を選ぶ選択欄 (ミラーの相手・ミラー元・マスク・テクスチャ) と見出し (インスペクタの先頭・デフォーマの親) は、表示名と ID を `顔 (Layer8)` の形で出します (名前が ID と同じなら ID だけ。テクスチャは使っているメッシュの名前を添える)。`src/lib/labels.ts` (Vitest)。
@@ -477,7 +556,7 @@ Rust の型を正として、次のファイルを生成します。**生成物�
 
 | 生成物 | 元 | 使うところ |
 | --- | --- | --- |
-| `apps/editor/src/lib/generated/types.ts` | `Command`・`Model`・`Motion`・`Expression`・`PhysicsSettings` (とそれらが参照する型)、IPC の戻り値 (`AppInfo`・`ProjectStatus`) | フロントエンド (`ipc.ts` が再エクスポート) |
+| `apps/editor/src/lib/generated/types.ts` | `Command`・`Model`・`Motion`・`Expression`・`PhysicsSettings` (とそれらが参照する型)、IPC の戻り値 (`AppInfo`・`ProjectStatus`・`AnimationData` など) | フロントエンド (`ipc.ts` が再エクスポート) |
 | `apps/editor/src/lib/generated/samples.ts` | フィクスチャのモデルと、全バリアントのコマンドを serde で書き出した JSON | 型検査だけ (生成した型と serde の JSON が合うことを `svelte-check` で確かめる) |
 | `crates/ugoe-editor-core/schema/command.schema.json` | `Command` の JSON Schema (draft 2020-12) | AI のツール定義 (`ugoe_editor_core::codegen::COMMAND_SCHEMA_JSON`、`command_schema()`) |
 

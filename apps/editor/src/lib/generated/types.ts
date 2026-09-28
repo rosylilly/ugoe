@@ -1,5 +1,10 @@
 // このファイルは生成物です。手で編集せず `just gen` で作り直してください (docs/editor.md#型の生成)。
 
+/**
+ * ドキュメントのモーションと表情 (`get_animations` の戻り値)。
+ */
+export type AnimationData = { motions: Array<Motion>, expressions: Array<Expression>, };
+
 export type AppInfo = { version: string, };
 
 /**
@@ -193,7 +198,7 @@ tolerance?: number | null,
 /**
  * `true` なら先の `authored` のセルも上書きする。
  */
-overwrite_authored: boolean, } | { "op": "mark_keyform_authored", target: KeyformTarget, cells: Array<{ [key in string]: number }>, } | { "op": "mark_keyform_derived", target: KeyformTarget, cells: Array<{ [key in string]: number }>, } | { "op": "move_mesh_vertices", id: string, moves: Array<VertexMove>, } | { "op": "add_mesh_vertex", id: string, position: Vec2, } | { "op": "remove_mesh_vertices", id: string, indices: Array<number>, } | { "op": "retriangulate_mesh", id: string, } | { "op": "add_keyform_key", target: KeyformTarget, parameter: string, key: number, } | { "op": "remove_keyform_key", target: KeyformTarget, parameter: string, key: number, } | { "op": "set_keyform_cell", target: KeyformTarget, cell: { [key in string]: number }, keyform: Keyform, } | { "op": "set_mesh_draw_order", id: string, draw_order: number, } | { "op": "create_warp_deformer", id?: string | null, name: string, children?: Array<ChildRef>, parts?: Array<string>, rows: number, cols: number, parent?: string | null, } | { "op": "create_rotation_deformer", id?: string | null, name: string, children?: Array<ChildRef>, parts?: Array<string>, origin?: Vec2 | null, parent?: string | null, } | { "op": "reparent_preserving_look", element: ChildRef, new_parent: string | null, } | { "op": "set_keyform_inference", target: KeyformTarget, inference?: KeyformInference | null, } | { "op": "set_mirror_pair", target: KeyformTarget, mirror?: string | null, axis?: number | null, } | { "op": "set_depth", target: ChildRef, depth?: Array<number> | null, } | { "op": "apply_depth_preset", target: ChildRef, preset: DepthPreset, } | { "op": "move_rotation_origin", id: string, delta: Vec2, } | { "op": "unwrap_deformer", id: string, };
+overwrite_authored: boolean, } | { "op": "mark_keyform_authored", target: KeyformTarget, cells: Array<{ [key in string]: number }>, } | { "op": "mark_keyform_derived", target: KeyformTarget, cells: Array<{ [key in string]: number }>, } | { "op": "move_mesh_vertices", id: string, moves: Array<VertexMove>, } | { "op": "add_mesh_vertex", id: string, position: Vec2, } | { "op": "remove_mesh_vertices", id: string, indices: Array<number>, } | { "op": "retriangulate_mesh", id: string, } | { "op": "add_keyform_key", target: KeyformTarget, parameter: string, key: number, } | { "op": "remove_keyform_key", target: KeyformTarget, parameter: string, key: number, } | { "op": "set_keyform_cell", target: KeyformTarget, cell: { [key in string]: number }, keyform: Keyform, } | { "op": "set_mesh_draw_order", id: string, draw_order: number, } | { "op": "create_warp_deformer", id?: string | null, name: string, children?: Array<ChildRef>, parts?: Array<string>, rows: number, cols: number, parent?: string | null, } | { "op": "create_rotation_deformer", id?: string | null, name: string, children?: Array<ChildRef>, parts?: Array<string>, origin?: Vec2 | null, parent?: string | null, } | { "op": "reparent_preserving_look", element: ChildRef, new_parent: string | null, } | { "op": "set_keyform_inference", target: KeyformTarget, inference?: KeyformInference | null, } | { "op": "set_mirror_pair", target: KeyformTarget, mirror?: string | null, axis?: number | null, } | { "op": "set_depth", target: ChildRef, depth?: Array<number> | null, } | { "op": "apply_depth_preset", target: ChildRef, preset: DepthPreset, } | { "op": "move_rotation_origin", id: string, delta: Vec2, } | { "op": "unwrap_deformer", id: string, } | { "op": "add_motion", motion: Motion, } | { "op": "remove_motion", name: string, } | { "op": "rename_motion", name: string, new_name: string, } | { "op": "set_motion_properties", name: string, duration?: number | null, looping?: boolean | null, fade_in?: number | null, fade_out?: number | null, } | { "op": "add_motion_curve", motion: string, curve: Curve, } | { "op": "remove_motion_curve", motion: string, target: CurveTarget, } | { "op": "set_motion_curve_fade", motion: string, target: CurveTarget, fade_in?: number | null, fade_out?: number | null, } | { "op": "set_motion_key", motion: string, target: CurveTarget, point: Point, } | { "op": "move_motion_key", motion: string, target: CurveTarget, t: number, to: Point, } | { "op": "remove_motion_key", motion: string, target: CurveTarget, t: number, } | { "op": "set_motion_segment", motion: string, target: CurveTarget, t: number, segment: SegmentShape, } | { "op": "set_motion_events", motion: string, events: Array<MotionEvent>, } | { "op": "add_expression", expression: Expression, } | { "op": "remove_expression", name: string, } | { "op": "rename_expression", name: string, new_name: string, } | { "op": "set_expression_properties", name: string, fade_in?: number | null, fade_out?: number | null, } | { "op": "set_expression_parameters", name: string, parameters: Array<ExpressionParameter>, };
 
 /**
  * 商用利用の範囲。
@@ -800,6 +805,11 @@ angle: number, scale: number, reflect_x: boolean, reflect_y: boolean, opacity: n
  * 連続するセグメント列。各セグメントの始点は直前セグメントの終点。
  */
 export type Segment = { "type": "start", p: Point, } | { "type": "linear", to: Point, } | { "type": "bezier", c1: Point, c2: Point, to: Point, } | { "type": "stepped", to: Point, } | { "type": "inverse_stepped", to: Point, };
+
+/**
+ * [`crate::Command::SetMotionSegment`] で設定する区間の種類。
+ */
+export type SegmentShape = { "type": "linear" } | { "type": "bezier", c1?: Point | null, c2?: Point | null, } | { "type": "stepped" } | { "type": "inverse_stepped" };
 
 /**
  * テクスチャ参照。実データはコンテナ (`ugoe-format`) 側が保持する。

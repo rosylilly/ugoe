@@ -1384,10 +1384,27 @@ fn op_name(command: &Command) -> &'static str {
         Command::ApplyDepthPreset { .. } => "apply_depth_preset",
         Command::MoveRotationOrigin { .. } => "move_rotation_origin",
         Command::UnwrapDeformer { .. } => "unwrap_deformer",
+        Command::AddMotion { .. } => "add_motion",
+        Command::RemoveMotion { .. } => "remove_motion",
+        Command::RenameMotion { .. } => "rename_motion",
+        Command::SetMotionProperties { .. } => "set_motion_properties",
+        Command::AddMotionCurve { .. } => "add_motion_curve",
+        Command::RemoveMotionCurve { .. } => "remove_motion_curve",
+        Command::SetMotionCurveFade { .. } => "set_motion_curve_fade",
+        Command::SetMotionKey { .. } => "set_motion_key",
+        Command::MoveMotionKey { .. } => "move_motion_key",
+        Command::RemoveMotionKey { .. } => "remove_motion_key",
+        Command::SetMotionSegment { .. } => "set_motion_segment",
+        Command::SetMotionEvents { .. } => "set_motion_events",
+        Command::AddExpression { .. } => "add_expression",
+        Command::RemoveExpression { .. } => "remove_expression",
+        Command::RenameExpression { .. } => "rename_expression",
+        Command::SetExpressionProperties { .. } => "set_expression_properties",
+        Command::SetExpressionParameters { .. } => "set_expression_parameters",
     }
 }
 
-const OP_COUNT: usize = 53;
+const OP_COUNT: usize = 70;
 
 fn json_samples() -> Vec<Command> {
     let quad = fixtures::single_quad();
@@ -1622,6 +1639,9 @@ fn json_samples() -> Vec<Command> {
         },
         Command::UnwrapDeformer { id: "Arm".into() },
     ]
+    .into_iter()
+    .chain(crate::codegen::motion_sample_commands())
+    .collect()
 }
 
 #[test]

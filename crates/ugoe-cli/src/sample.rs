@@ -146,8 +146,7 @@ pub fn build_avatar(psd: &[u8]) -> anyhow::Result<Project> {
     rig.rig_body(&layout)?;
     rig.rig_head(&layout)?;
 
-    let mut project =
-        Project::from_document(empty.meta, &rig.document, None, Vec::new(), Vec::new());
+    let mut project = Project::from_document(empty.meta, &rig.document, None);
     // TODO(T0631): `Model.avatar` と当たり判定を設定するコマンドができたら、コマンドで書く。
     let face = rig.mesh("face")?;
     let body = rig.mesh("topwear")?;

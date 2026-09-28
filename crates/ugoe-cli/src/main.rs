@@ -267,7 +267,7 @@ fn run_import_psd(args: ImportPsdArgs) -> anyhow::Result<()> {
         eprintln!("warning: {warning}");
     }
     document.apply(import.command)?;
-    let project = Project::from_document(empty.meta, &document, None, Vec::new(), Vec::new());
+    let project = Project::from_document(empty.meta, &document, None);
     project
         .save(&args.output)
         .with_context(|| format!("saving {}", args.output.display()))?;

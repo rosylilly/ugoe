@@ -4,8 +4,10 @@ import { isEmptyModel } from "./emptyState";
 import {
   type ApplyReport,
   type Command,
+  type Expression,
   ipc,
   type Model,
+  type Motion,
   type Parameter,
   type RederiveWarning,
 } from "./ipc";
@@ -19,6 +21,9 @@ export class EditorDocument {
   /** ビューポートに渡すモデル (JSON と、テクスチャ付きの .ugoe バンドル)。refresh のたびに作り直す。 */
   model = $state.raw<ViewportModel | null>(null);
   parameters = $state<ParameterDef[]>([]);
+  /** モーションと表情 (保存・書き出しの順)。refresh のたびに読み直す。 */
+  motions = $state.raw<Motion[]>([]);
+  expressions = $state.raw<Expression[]>([]);
   error = $state<string | null>(null);
   /**
    * 適用したコマンドの自動の作り直しで失敗したこと (ミラーのやり直しなど。docs/editor.md#推定とミラー)。
@@ -38,7 +43,10 @@ export class EditorDocument {
         console.warn("ugoe: showing the model without textures:", e);
         return null;
       });
+      const animations = await ipc.getAnimations();
       this.model = { json, bundle };
+      this.motions = animations.motions;
+      this.expressions = animations.expressions;
       const parsed = JSON.parse(json) as Model;
       this.parameters = parsed.parameters;
       this.empty = isEmptyModel(parsed);

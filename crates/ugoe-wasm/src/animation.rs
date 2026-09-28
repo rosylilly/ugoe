@@ -121,6 +121,26 @@ pub fn start_motion_json(
     Ok(puppet.start_motion(motion, priority))
 }
 
+/// モーション (JSON、`*.motion.json` の形) の各カーブを、再生位置 `t` (秒) で評価した値。
+///
+/// フェード・ループの折り返し・ほかの段は掛けない、カーブの値そのもの (`ugoe_motion::curve::evaluate`)。
+/// エディタのタイムラインがシーク・再生の表示に使う (`docs/editor.md#タイムライン`)。
+/// 戻り値は `[{"target": {"kind": "parameter", "id": "AngleX"}, "value": 7.5}, …]` の JSON で、
+/// 値のないカーブ (未知の対象・セグメント) は含めない。
+pub fn sample_motion_json(json: &str, t: f32) -> Result<String, AnimationError> {
+    let motion = ugoe::format::motion_from_json(json)?;
+    let values: Vec<serde_json::Value> = motion
+        .curves
+        .iter()
+        .filter(|c| c.target != ugoe::model::motion::CurveTarget::Unknown)
+        .filter_map(|c| {
+            let value = ugoe::motion::curve::evaluate(&c.segments, t)?;
+            Some(serde_json::json!({ "target": c.target, "value": value }))
+        })
+        .collect();
+    Ok(serde_json::to_string(&values)?)
+}
+
 /// JSON (`*.expression.json` の形) の表情だけにする。
 pub fn set_expression_json(puppet: &mut Puppet, json: &str) -> Result<(), AnimationError> {
     puppet.set_expression(ugoe::format::expression_from_json(json)?);
@@ -243,6 +263,21 @@ mod tests {
         assert!(start_motion_json(&mut puppet, "{", None).is_err());
         puppet.motions_mut().stop_all();
         assert!(!puppet.motions().is_playing());
+    }
+
+    #[test]
+    fn motion_json_is_sampled_without_fades() {
+        let json = MOTION.replace(r#""fade_in": 0.0"#, r#""fade_in": 5.0"#);
+        let sample = |t| -> serde_json::Value {
+            serde_json::from_str(&sample_motion_json(&json, t).unwrap()).unwrap()
+        };
+        let at = sample(0.25);
+        assert_eq!(at[0]["target"]["kind"], "parameter");
+        assert_eq!(at[0]["target"]["id"], "AngleX");
+        assert!((at[0]["value"].as_f64().unwrap() - 7.5).abs() < 1e-4);
+        // 範囲の外は端の値。
+        assert!((sample(3.0)[0]["value"].as_f64().unwrap() - 30.0).abs() < 1e-4);
+        assert!(sample_motion_json("{", 0.0).is_err());
     }
 
     #[test]

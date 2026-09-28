@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use ugoe_core::Vec2;
 use ugoe_model::deformer::{RotationKeyform, WarpKeyform};
+use ugoe_model::expression::{Expression, ExpressionParameter};
 use ugoe_model::mesh::MeshKeyform;
+use ugoe_model::motion::{Curve, CurveTarget, Motion, MotionEvent, Point};
 use ugoe_model::part::PartKeyform;
 use ugoe_model::{
     BlendMode, Deformer, DeformerId, KeyformGrid, KeyformInference, MaskMode, MaskRef, Mesh,
@@ -15,6 +17,7 @@ use ugoe_model::{
 use crate::automesh::AutoMeshOptions;
 use crate::depth::DepthPreset;
 use crate::keyform::Keyform;
+use crate::motion_edit::SegmentShape;
 
 /// キーフォーム格子の 1 セルの指定: 軸のパラメータ ID → その軸のキーの値。
 ///
@@ -395,6 +398,108 @@ pub enum Command {
     /// デフォーマを削除する。
     UnwrapDeformer {
         id: DeformerId,
+    },
+    // --- モーションと表情 (`docs/editor.md#モーションと表情の編集`) ---
+    /// モーションを末尾に追加する。名前はファイル名に使える文字 (`[A-Za-z0-9_.-]`、`.` 始まりは不可) で、
+    /// 大文字小文字を区別せずに一意。カーブの対象はモデルにあること。
+    AddMotion {
+        motion: Motion,
+    },
+    RemoveMotion {
+        name: String,
+    },
+    /// モーションの名前 (ファイル名にもなる) を変える。
+    RenameMotion {
+        name: String,
+        new_name: String,
+    },
+    /// 長さ (秒、正)・ループ・フェード (秒、0 以上) を変える。省略したフィールドは変えない。
+    SetMotionProperties {
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        duration: Option<f32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        looping: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fade_in: Option<f32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fade_out: Option<f32>,
+    },
+    /// カーブを追加する。同じ対象のカーブがあれば拒否する。
+    AddMotionCurve {
+        motion: String,
+        curve: Curve,
+    },
+    RemoveMotionCurve {
+        motion: String,
+        target: CurveTarget,
+    },
+    /// カーブ個別のフェード (`None` ならモーション全体の値) を設定する。
+    SetMotionCurveFade {
+        motion: String,
+        target: CurveTarget,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fade_in: Option<f32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fade_out: Option<f32>,
+    },
+    /// 時刻 `point.t` にキーを打つ。その時刻のキーがあれば値を変え、なければ加える (カーブがなければ作る)。
+    /// 区間の中に加えると区間を同じ種類の 2 つに分ける (ベジェは形を保って分ける)。
+    SetMotionKey {
+        motion: String,
+        target: CurveTarget,
+        point: Point,
+    },
+    /// 時刻 `t` のキーを `to` へ動かす。隣のキーを越えられない。隣のベジェの取っ手も一緒に動く。
+    MoveMotionKey {
+        motion: String,
+        target: CurveTarget,
+        t: f32,
+        to: Point,
+    },
+    /// 時刻 `t` のキーを消し、前後の区間をつなぐ。最後のキーならカーブを消す。
+    RemoveMotionKey {
+        motion: String,
+        target: CurveTarget,
+        t: f32,
+    },
+    /// 時刻 `t` のキーで終わる区間の種類 (直線・ベジェと取っ手・ステップ) を変える。
+    /// 取っ手の時刻は区間の中 (`docs/spec/motion.md#カーブ`)。
+    SetMotionSegment {
+        motion: String,
+        target: CurveTarget,
+        t: f32,
+        segment: SegmentShape,
+    },
+    /// イベントの一覧を置き換える (時刻の順に並べ直す)。時刻は 0 以上。
+    SetMotionEvents {
+        motion: String,
+        events: Vec<MotionEvent>,
+    },
+    /// 表情を末尾に追加する。名前の規則はモーションと同じ。パラメータはモデルにあること。
+    AddExpression {
+        expression: Expression,
+    },
+    RemoveExpression {
+        name: String,
+    },
+    RenameExpression {
+        name: String,
+        new_name: String,
+    },
+    /// フェード (秒、0 以上) を変える。省略したフィールドは変えない。
+    SetExpressionProperties {
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fade_in: Option<f32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fade_out: Option<f32>,
+    },
+    /// 表情のパラメータの一覧 (パラメータ・値・`add` / `multiply` / `overwrite`) を置き換える。
+    /// 同じパラメータは 1 回だけ。
+    SetExpressionParameters {
+        name: String,
+        parameters: Vec<ExpressionParameter>,
     },
 }
 

@@ -56,6 +56,7 @@ puppet.load_bundle(bytes);             // バンドルの物理・モーショ�
 puppet.motion_names();                 // バンドルのモーションの名前
 puppet.start_motion("idle", "idle");   // 優先度は "idle" | "normal" (既定) | "force"。開始しなければ false
 puppet.start_motion_json(json);        // *.motion.json の形。タイムラインのプレビュー用
+sample_motion_json(json, t);           // (関数) 各カーブの時刻 t の値 (フェードなし) の JSON。タイムラインのシーク用
 puppet.set_expression("smile");        // または set_expression_json(json)。stop_expressions()
 puppet.set_lip_sync_level(0.4);        // 0..1。undefined で口に触らない
 puppet.set_enabled("physics", false);  // "physics" | "eye_blink" | "breath" | "lip_sync" | "pose"
