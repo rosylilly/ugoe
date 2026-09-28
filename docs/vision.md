@@ -29,7 +29,7 @@ Cubism の機能と、ugoe での対応と、目標マイルストーン ([roadm
 | ワープデフォーマ | WarpDeformer | M1 |
 | 回転デフォーマ | RotationDeformer | M1 |
 | 描画順 | draw_order キーフォーム | M1 |
-| クリッピングマスク・反転マスク | masks / invert_mask | M1 |
+| クリッピングマスク・反転マスク | masks (`MaskRef`) / mask_mode / mask_only / mask_strength | M1 |
 | 合成モード (通常・加算・乗算) | BlendMode | M1 |
 | 乗算色・スクリーン色 | multiply_color / screen_color | M1 |
 | グルー | Glue | M2 |
@@ -47,5 +47,6 @@ ugoe 独自の拡張 (互換の範囲外):
 
 - キーフォーム軸の数に制限がない。
 - 標準パラメータ ID ([spec/model.md](spec/model.md#標準パラメータ)) を使って、モーションや物理プリセットをモデル間で使い回せる。
+- マスクの拡張 ([ADR 0009](adr/0009-clipping-mask-semantics.md)): マスク専用メッシュ、通常マスクと反転マスクの併用、共通部分、入れ子の継承、効き具合 (`mask_strength`) の調整。
 - すべての編集操作をコマンドとして記録・再生できる。
 - AI による自動リギング。

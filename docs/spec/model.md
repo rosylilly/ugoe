@@ -74,12 +74,17 @@
 | --- | --- |
 | `uvs` | テクスチャ座標 (0〜1、左上が原点)。頂点数を決める |
 | `indices` | 三角形の頂点インデックス。長さは 3 の倍数 |
-| `keyforms` | `MeshKeyform` の格子 (頂点位置・不透明度・描画順・乗算色・スクリーン色) |
+| `keyforms` | `MeshKeyform` の格子 (頂点位置・不透明度・描画順・乗算色・スクリーン色・`mask_strength`) |
 | `blend` | 合成モード ([rendering.md](rendering.md#合成モード)) |
 | `culling` | 裏面カリング。頂点がキャンバス座標で反時計回りに並ぶ三角形を表とする |
-| `masks` | マスクに使うメッシュ。複数あるときは **和集合** |
-| `invert_mask` | マスクを反転する (マスクの外側だけを描画する) |
+| `masks` | マスクの参照 `MaskRef { mesh, invert }` の列。`invert = true` は反転マスク |
+| `mask_mode` | 通常マスクの結合方法。`union` (既定、和集合) または `intersection` (共通部分) |
+| `mask_only` | `true` なら色としては描画せず、マスクとしてだけ働く (既定 `false`) |
 
+- マスクの意味論 (カバレッジ、入れ子の継承、`mask_strength`) は [rendering.md#マスク](rendering.md#マスク) にあります。
+  判断の経緯は [ADR 0009](../adr/0009-clipping-mask-semantics.md)。
+  > 実装待ち (T0107): コードはまだ旧形式 (`masks: Vec<MeshId>` と `invert_mask: bool`) です。
+- `MeshKeyform::mask_strength` (0〜1、既定 1) はマスクの効き具合です。マスクを持たないメッシュでは意味を持ちません。
 - 頂点数とトポロジー (`uvs` と `indices`) はキーフォーム間で共通です。キーフォームが持つのは位置だけです。
 - 描画順は 0〜1000 を慣例とします (既定値は 500)。
 
@@ -134,6 +139,7 @@
 - メッシュの `texture` が `textures` の範囲内にあること
 - グルーの頂点ペアのインデックスが、それぞれのメッシュの頂点数の範囲内にあること
 - パーツとデフォーマの親子関係に循環がないこと (自分自身を親にするのも循環)
+- マスクの参照が循環しないこと (自分自身をマスクにする場合を含む) ★ T0107 で実装
 - パラメータで `min <= default <= max` が成り立つこと
 - 同じパーツがポーズ全体で 2 回以上現れないこと (`part` と `links` を合わせて数える)
 - 時間と周期の値: ポーズの `fade_duration` と目パチの `closing` / `closed` / `opening` は 0 以上、目パチの `interval` と呼吸の `cycle` は 0 より大きいこと (いずれも有限値)
