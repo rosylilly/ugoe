@@ -1,11 +1,11 @@
 ---
 id: T0203
 title: GPU テストの CI (lavapipe)
-status: todo
+status: in-progress
 milestone: M1
 crates: [.github/workflows, justfile]
 depends_on: [T0201]
-assignee:
+assignee: claude-worker-T0203
 ---
 
 # T0203: GPU テストの CI (lavapipe)

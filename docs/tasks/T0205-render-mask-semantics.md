@@ -1,11 +1,11 @@
 ---
 id: T0205
 title: 参照レンダラ: マスクの意味論 (ADR 0009)
-status: todo
+status: in-progress
 milestone: M1
 crates: [ugoe-render]
 depends_on: [T0107]
-assignee:
+assignee: claude-worker-T0205
 ---
 
 # T0205: 参照レンダラ: マスクの意味論 (ADR 0009)

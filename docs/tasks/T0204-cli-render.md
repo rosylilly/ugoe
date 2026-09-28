@@ -1,11 +1,11 @@
 ---
 id: T0204
 title: CLI でのスナップショット描画
-status: todo
+status: in-progress
 milestone: M1
 crates: [ugoe-cli]
 depends_on: [T0201]
-assignee:
+assignee: claude-worker-T0204
 ---
 
 # T0204: CLI でのスナップショット描画
