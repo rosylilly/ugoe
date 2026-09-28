@@ -12,8 +12,9 @@ description: docs/tasks/ のタスクに着手する (担当の宣言、worktree
    - `depends_on` のタスクがすべて `done` である (`just tasks` で確認する)
 2. main の作業ツリーで、タスクファイルの `status: in-progress` と `assignee:` (自分のセッション名など) を更新し、そのファイルだけをコミットする (コミットメッセージは英語)。
    `git commit -m "chore(tasks): start <ID>" docs/tasks/<ID>-*.md`
-3. 自分がすでに隔離された worktree の中にいる場合 (サブエージェントを `isolation: "worktree"` で起動した場合など) は、ブランチ `task/<ID>-<slug>` を作るだけにする。そうでなければ次を実行する。
-   `git worktree add .worktrees/<ID> -b task/<ID>-<slug>` を実行し、以降はそのディレクトリで作業する。
-   worktree の中で `pnpm install --offline` を実行する (Git フックが worktree 内の node_modules を使うため)。
+3. 自分がすでにこのタスクの worktree の中にいる場合 (オーケストレーターが用意した場合) は、そのまま作業する。
+   そうでなければ main の作業ツリーで `just wt-add <ID>` を実行し、以降は `.worktrees/<ID>` で作業する。
+   (worktree とブランチの作成、main の target/ のコピー、`pnpm install --offline` まで行われる。
+   `git worktree add` を直接使うと、依存クレートを最初からビルドし直すことになるので使わない)
 4. 次の文書を読む: `AGENTS.md`、タスクファイルの「参考」、`crates:` に書かれた各クレートの `README.md`。
 5. 受け入れ条件を TODO リストに書き写してから、作業を始める。

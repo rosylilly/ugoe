@@ -67,6 +67,7 @@ assets/fixtures/    テスト用アセット (小さいものだけ)
 | `just fmt` | Rust と TS を整形 |
 | `just layers` | クレートの依存方向を検査 |
 | `just wasm-check` | wasm32 でビルドできるか (ランタイム層を触ったら実行) |
+| `just wt-add <ID>` / `just wt-remove <ID>` | タスク用 worktree の作成・削除 (main の `target/` をコピーしてビルドを省く) |
 | `just editor` | エディタを開発モードで起動 |
 | `just cli <args>` | CLI を実行 (例: `just cli fixture single-quad`) |
 
@@ -123,7 +124,7 @@ assets/fixtures/    テスト用アセット (小さいものだけ)
 詳細は [docs/workflow/multi-agent.md](docs/workflow/multi-agent.md)。
 
 - 作業は `docs/tasks/` のタスク単位で行う。1 タスク = 1 ブランチ = 1 PR。
-- 他のエージェントと並行するときは git worktree (`.worktrees/<task-id>`) で作業する。ブランチ名は `task/T0123-short-slug`。worktree を作ったら、その中で `pnpm install --offline` を実行する (Git フックが worktree 内の `node_modules` を使うため)。
+- 他のエージェントと並行するときは git worktree で作業する。worktree は `just wt-add T0123` で作る (`.worktrees/T0123` とブランチ `task/T0123-<slug>` を作り、main の `target/` のコピーと `pnpm install --offline` まで行う)。片付けは `just wt-remove T0123 --delete-branch`。
 - タスクファイルの `crates:` に書かれた範囲の外を編集しない。範囲外の変更が必要になったら、タスクファイルの「メモ」に書いて止まるか、新しいタスクを起票する。
 - `ugoe-core` / `ugoe-model` の公開 API 変更は影響が大きい。「インターフェースだけを先に入れる」小さな PR に分ける。
 - コミットの規約は下の「コミット」を参照。

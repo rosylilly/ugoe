@@ -29,7 +29,8 @@
       "Bash(git rebase main)",
       "Bash(pnpm install --offline)",
       "Bash(pnpm exec commitlint:*)",
-      "Bash(pnpm exec lefthook:*)"
+      "Bash(pnpm exec lefthook:*)",
+      "Bash(node scripts/worktree.mjs:*)"
     ]
   }
 }

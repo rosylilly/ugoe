@@ -44,6 +44,14 @@ crate name:
     cargo clippy -p {{name}} --all-targets -- -D warnings
     cargo test -p {{name}}
 
+# タスク用 worktree を作る (main の target/ をコピーしてビルドを省く): `just wt-add T0104`
+wt-add id *slug:
+    @node scripts/worktree.mjs add {{id}} {{slug}}
+
+# タスク用 worktree を削除する: `just wt-remove T0104 --delete-branch`
+wt-remove id *flags:
+    @node scripts/worktree.mjs remove {{id}} {{flags}}
+
 # タスク一覧 (`just tasks --ready` で着手可能なものだけ)
 tasks *args:
     @node scripts/tasks.mjs {{args}}

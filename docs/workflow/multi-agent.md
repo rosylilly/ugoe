@@ -35,13 +35,20 @@ todo ──(着手)──► in-progress ──(完了報告)──► review �
 #   assignee: <エージェント名やセッション名>
 git commit -m "chore(tasks): start T0104" docs/tasks/T0104-*.md
 
-# worktree を作る
-git worktree add .worktrees/T0104 -b task/T0104-deformers
+# worktree を作る (ブランチ task/T0104-<タスクファイルの slug> も作られる)
+just wt-add T0104
 cd .worktrees/T0104
-pnpm install --offline   # Git フック (lefthook / commitlint) が worktree 内の node_modules を使うため
 ```
 
-Claude Code では `task-start` スキルがこの手順を実行します。サブエージェントを `isolation: "worktree"` で起動した場合は、worktree の作成を省略できます。
+`just wt-add` (`scripts/worktree.mjs`) は次のことを行います。
+
+- `git worktree add .worktrees/<ID> -b task/<ID>-<slug> main`
+- main の作業ツリーの `target/` をコピーする。ワークスペースのクレートの incremental キャッシュは除き、更新時刻は保つ。これにより依存クレートのビルドを省ける (実測: 最初からビルドすると約 120 秒、コピーすると約 20 秒)
+- `pnpm install --offline` を実行する (Git フックが worktree 内の `node_modules` を使うため。pnpm のストアからハードリンクされるので約 1 秒)
+
+コピー元になる main の `target/` は、ツールチェインの更新などで古い成果物が溜まると大きくなり、コピーが遅くなります。肥大化したら main で `cargo clean` してから `just ci` で作り直してください。
+
+Claude Code では `task-start` スキルがこの手順を実行します。サブエージェントを `isolation: "worktree"` で起動すると `target/` のコピーが行われずビルドに時間がかかるので、オーケストレーターが `just wt-add` で worktree を作ってからワーカーに渡すことを推奨します。
 
 ### 3. 作業する
 
@@ -65,7 +72,7 @@ Claude Code では `task-finish` スキルがこの手順を実行します。
 
 - `just ci` が通っていることを確認し、main に squash merge する。squash 後のコミットメッセージも英語の Conventional Commits 形式にし、タスク ID を含める。
 - タスクファイルを `status: done` にする。
-- worktree を片付ける: `git worktree remove .worktrees/T0104 && git branch -D task/T0104-deformers`
+- worktree を片付ける: `just wt-remove T0104 --delete-branch` (未コミットの変更があれば git が削除を拒否する)
 
 ## 衝突を避けるための規約
 
