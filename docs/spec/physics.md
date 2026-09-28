@@ -106,35 +106,44 @@ value を出力パラメータの値域にクランプし、現在値に weight/
 
 判断の経緯は [ADR 0011](../adr/0011-dynamic-physics.md)。
 
-> 実装待ち: データ定義は T0304、実装は T0305 で行います。パラメータへの出力 (上の節) は T0301 で実装済みです。
+> 実装待ち: データ定義 (`ugoe_model::physics`) は T0304 で入れました。シミュレーションは T0305 で行います。パラメータへの出力 (上の節) は T0301 で実装済みです。
 > 振り子チェーンの積分 (`ugoe_physics::chain::Chain::step`) は、距離拘束の直後に粒子の位置を補正するフック (衝突体からの押し出し用) と、重力・風を引数に取るので、T0305 はこれを使います。
 
 ### 出力先
 
-`PhysicsOutput` の出力先 (`target`) を、パラメータ以外にも広げます。
+`PhysicsOutput::target` (`PhysicsTarget`) で出力先を選びます。パラメータ以外の出力先が動的物理です。
 
-| 出力先 | 内容 |
-| --- | --- |
-| `parameter` | 従来どおりパラメータに書き込む |
-| `deformer_angle` | 回転デフォーマの角度に、粒子の区間の角度 (の `scale` 倍) を足す。粒子の区間とデフォーマを 1 対 1 に対応させると、デフォーマの鎖が揺れもののボーンのように動く |
-| `deformer_offset` | 回転デフォーマの原点を、粒子の変位 (の `scale` 倍) だけずらす |
-| `vertices` | ワープデフォーマの制御点、またはメッシュの頂点を、重み付きで粒子の変位に追従させる。重みは頂点ごとに持つ (0〜1) |
+| 出力先 (`type`) | フィールド | 内容 |
+| --- | --- | --- |
+| `parameter` | `id` (パラメータ) | 従来どおりパラメータに書き込む |
+| `deformer_angle` | `deformer` (回転デフォーマ) | 回転デフォーマの角度に、粒子の区間の角度 (の `scale` 倍) を足す。粒子の区間とデフォーマを 1 対 1 に対応させると、デフォーマの鎖が揺れもののボーンのように動く |
+| `deformer_offset` | `deformer` (回転デフォーマ) | 回転デフォーマの原点を、粒子の変位 (の `scale` 倍) だけずらす |
+| `vertices` | `owner`、`weights` | ワープデフォーマの制御点 (`owner: {"warp": ID}`)、またはメッシュの頂点 (`owner: {"mesh": ID}`) を、重み付きで粒子の変位に追従させる。`weights` は頂点 (制御点) ごとの重み (0〜1) で、並びと長さは `Mesh::uvs` または `WarpKeyform::points` と同じ |
 
-足し込む値はデフォーマの局所座標系で表します。キーフォームで補間した値に加算します。
+```json
+{ "target": { "type": "deformer_angle", "deformer": "HairFront1" },
+  "particle": 1, "source": "angle", "scale": 1.0, "weight": 100.0 }
+{ "target": { "type": "vertices", "owner": { "mesh": "Skirt" }, "weights": [0.0, 0.5, 1.0] },
+  "particle": 2, "source": "x", "scale": 1.0, "weight": 100.0 }
+```
+
+- 足し込む値はデフォーマの局所座標系で表します。キーフォームで補間した値に加算します。
+- `particle`・`source`・`scale`・`weight`・`reflect` の意味はパラメータへの出力と同じです。
+- 旧形式 (`target` の代わりに `"parameter": "HairFront"` を持つ出力) も読めます。`parameter` 出力先として読み、書き出しは常に `target` を使います。両方あれば `target` を使います。
 
 ### 衝突体
 
-`PhysicsSettings::colliders` に、円 (`circle { center, radius }`) とカプセル (`capsule { a, b, radius }`) の衝突体を置けます。
+`PhysicsSettings::colliders` (`PhysicsCollider { id, name, attach, shape }`) に、円 (`{"type": "circle", "center", "radius"}`) とカプセル (`{"type": "capsule", "a", "b", "radius"}`。線分 a–b から `radius` 以内の領域) の衝突体を置けます。
 
-- 衝突体はデフォーマに取り付け (`attach`)、そのデフォーマのワールド変換で動きます。
+- 衝突体はデフォーマに取り付け (`attach`)、そのデフォーマのワールド変換で動きます。形状の位置 (`center`・`a`・`b`) は取り付け先の局所座標系で、半径はキャンバスのピクセル単位で表します。`attach` を省略するとキャンバスに固定します。
 - 各ステップの距離拘束の後、衝突体の内側に入った粒子を、衝突体の表面の最も近い点まで押し出します。
 - 粒子には衝突用の半径 (`PhysicsParticle::collision_radius`、既定 0) を持たせ、押し出しはこの半径を含めて行います。既存の `radius` は粒子の間の距離 (区間の長さ) なので、衝突には使いません。
-- 物理リグごとに、どの衝突体と衝突するかを選べます (`PhysicsRig::colliders`)。
+- 物理リグごとに、どの衝突体と衝突するかを衝突体の ID の列で選びます (`PhysicsRig::colliders`、既定は空)。
 
 ### 重力と風の基準
 
 `PhysicsRig::frame` に基準のデフォーマを指定すると、重力と風のベクトルをそのデフォーマの座標系で解釈します。
-たとえば頭の回転デフォーマを指定すると、頭を傾けたときに髪の垂れる向きも傾きます。既定 (`None`) はキャンバスの座標系です。
+たとえば頭の回転デフォーマを指定すると、頭を傾けたときに髪の垂れる向きも傾きます。既定 (省略、`None`) はキャンバスの座標系です。
 
 ### 評価との関係
 
@@ -143,3 +152,10 @@ value を出力パラメータの値域にクランプし、現在値に weight/
 ### 旧ランタイムでの扱い
 
 任意機能 `physics.dynamic` ([ADR 0013](../adr/0013-forward-compatibility.md)) です。知らないランタイムは、パラメータ以外への出力と衝突体を無視します (揺れない)。
+1.0 の基準の機能なので、1.0 以降のファイルでは宣言しません ([file-formats.md#10-の基準の機能](file-formats.md#10-の基準の機能))。
+
+1.0 より後に出力先や衝突体の形状が増えたときは、知らない `type` を `Unknown` として読み、その出力・衝突体を無視します ([file-formats.md#未知の値の読み込み](file-formats.md#未知の値の読み込み))。
+
+### 検証
+
+参照先と値の検査は `validate_physics` で行います ([model.md#物理の検証](model.md#物理の検証))。

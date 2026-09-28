@@ -1,6 +1,7 @@
 //! `PhysicsSystem` のテスト。入力は `ugoe_model::fixtures::physics_hair` とその物理設定。
 
 use ugoe_model::fixtures::{physics_hair, physics_hair_settings};
+use ugoe_model::physics::PhysicsTarget;
 use ugoe_model::standard::{ANGLE_X, ANGLE_Z, HAIR_BACK, HAIR_FRONT};
 
 use super::*;
@@ -238,7 +239,9 @@ fn missing_parameters_and_bad_particles_are_ignored() {
     let mut settings = physics_hair_settings();
     settings.rigs[0].inputs[0].parameter = "Missing".into();
     settings.rigs[0].outputs[0].particle = 99;
-    settings.rigs[1].outputs[0].parameter = "Missing".into();
+    settings.rigs[1].outputs[0].target = PhysicsTarget::Parameter {
+        id: "Missing".into(),
+    };
     settings.fps = 0.0;
     let mut physics = PhysicsSystem::new(settings);
     let mut params = ParameterValues::from_model(&physics_hair());

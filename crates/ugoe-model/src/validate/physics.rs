@@ -1,0 +1,437 @@
+//! 物理の設定の検査。検査項目は `docs/spec/model.md#物理の検証`。
+
+use super::{Refs, ValidationError, check_finite, check_non_negative, collect_ids};
+use crate::deformer::DeformerKind;
+use crate::physics::{ColliderShape, PhysicsSettings, PhysicsTarget, VertexOwner};
+use crate::{DeformerId, Model};
+
+/// 物理の設定を、参照先のモデルと合わせて検査する。検出したエラーを全て返す。
+///
+/// モデル自体の検査 ([`super::validate`]) は含まない。
+pub fn validate_physics(physics: &PhysicsSettings, model: &Model) -> Vec<ValidationError> {
+    let mut errors = Vec::new();
+
+    // モデル側の重複 ID は `validate` が報告するので、ここでは表を作るだけにする。
+    let mut ignored = Vec::new();
+    let params = collect_ids(
+        "parameter",
+        model.parameters.iter().map(|p| &p.id),
+        &mut ignored,
+    );
+    let deformers = collect_ids(
+        "deformer",
+        model.deformers.iter().map(|d| &d.id),
+        &mut ignored,
+    );
+    let meshes = collect_ids("mesh", model.meshes.iter().map(|m| &m.id), &mut ignored);
+
+    collect_ids(
+        "physics rig",
+        physics.rigs.iter().map(|r| &r.id),
+        &mut errors,
+    );
+    let colliders = collect_ids(
+        "physics collider",
+        physics.colliders.iter().map(|c| &c.id),
+        &mut errors,
+    );
+
+    for rig in &physics.rigs {
+        let refs = Refs {
+            kind: "physics rig",
+            id: &rig.id,
+        };
+        let path = format!("rigs[{}]", rig.id);
+        for input in &rig.inputs {
+            refs.check(
+                &params,
+                "inputs",
+                "parameter",
+                &input.parameter,
+                &mut errors,
+            );
+        }
+        for (index, output) in rig.outputs.iter().enumerate() {
+            match &output.target {
+                PhysicsTarget::Parameter { id } => {
+                    refs.check(&params, "outputs", "parameter", id, &mut errors);
+                }
+                PhysicsTarget::DeformerAngle { deformer }
+                | PhysicsTarget::DeformerOffset { deformer } => {
+                    let kind = refs
+                        .check(&deformers, "outputs", "deformer", deformer, &mut errors)
+                        .map(|d| &model.deformers[d].kind);
+                    if let Some(DeformerKind::Warp(_)) = kind {
+                        errors.push(kind_mismatch(&refs, deformer, "rotation"));
+                    }
+                }
+                PhysicsTarget::Vertices { owner, weights } => {
+                    let expected = match owner {
+                        VertexOwner::Mesh(mesh) => refs
+                            .check(&meshes, "outputs", "mesh", mesh, &mut errors)
+                            .map(|m| model.meshes[m].uvs.len()),
+                        VertexOwner::Warp(deformer) => {
+                            let found = refs.check(
+                                &deformers,
+                                "outputs",
+                                "deformer",
+                                deformer,
+                                &mut errors,
+                            );
+                            match found.map(|d| &model.deformers[d].kind) {
+                                Some(DeformerKind::Warp(warp)) => Some(
+                                    (usize::from(warp.rows) + 1) * (usize::from(warp.cols) + 1),
+                                ),
+                                Some(DeformerKind::Rotation(_)) => {
+                                    errors.push(kind_mismatch(&refs, deformer, "warp"));
+                                    None
+                                }
+                                // 未知の種類と存在しないデフォーマは、重みの数を検査しない。
+                                Some(DeformerKind::Unknown) | None => None,
+                            }
+                        }
+                    };
+                    if let Some(expected) = expected.filter(|&e| e != weights.len()) {
+                        errors.push(ValidationError::WeightCount {
+                            rig: rig.id.clone(),
+                            output: index,
+                            expected,
+                            actual: weights.len(),
+                        });
+                    }
+                    // 範囲外の重みは最初の 1 つだけ報告する。
+                    if let Some((w, &weight)) = weights
+                        .iter()
+                        .enumerate()
+                        .find(|(_, w)| !(0.0..=1.0).contains(*w))
+                    {
+                        errors.push(ValidationError::InvalidValue {
+                            field: format!("{path}.outputs[{index}].weights[{w}]"),
+                            value: weight,
+                            expected: "in 0..=1",
+                        });
+                    }
+                }
+                // 未知の出力先は無視する (`docs/spec/file-formats.md#未知の値の読み込み`)。
+                PhysicsTarget::Unknown => {}
+            }
+        }
+        for (index, particle) in rig.particles.iter().enumerate() {
+            check_non_negative(
+                &format!("{path}.particles[{index}].collision_radius"),
+                particle.collision_radius,
+                &mut errors,
+            );
+        }
+        for collider in &rig.colliders {
+            refs.check(
+                &colliders,
+                "colliders",
+                "physics collider",
+                collider,
+                &mut errors,
+            );
+        }
+        if let Some(frame) = &rig.frame {
+            refs.check(&deformers, "frame", "deformer", frame, &mut errors);
+        }
+    }
+
+    for collider in &physics.colliders {
+        let refs = Refs {
+            kind: "physics collider",
+            id: &collider.id,
+        };
+        if let Some(attach) = &collider.attach {
+            refs.check(&deformers, "attach", "deformer", attach, &mut errors);
+        }
+        let path = format!("colliders[{}].shape", collider.id);
+        let (points, radius) = match &collider.shape {
+            ColliderShape::Circle { center, radius } => (vec![("center", *center)], *radius),
+            ColliderShape::Capsule { a, b, radius } => (vec![("a", *a), ("b", *b)], *radius),
+            ColliderShape::Unknown => continue,
+        };
+        for (name, point) in points {
+            check_finite(&format!("{path}.{name}.x"), point.x, &mut errors);
+            check_finite(&format!("{path}.{name}.y"), point.y, &mut errors);
+        }
+        check_non_negative(&format!("{path}.radius"), radius, &mut errors);
+    }
+
+    errors
+}
+
+fn kind_mismatch(
+    refs: &Refs<'_>,
+    deformer: &DeformerId,
+    expected: &'static str,
+) -> ValidationError {
+    ValidationError::DeformerKindMismatch {
+        kind: refs.kind,
+        id: refs.id.to_owned(),
+        field: "outputs",
+        deformer: deformer.to_string(),
+        expected,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fixtures;
+    use crate::physics::{
+        NormalizationRange, PhysicsCollider, PhysicsInput, PhysicsNormalization, PhysicsOutput,
+        PhysicsParticle, PhysicsRig, PhysicsSource,
+    };
+    use ugoe_core::Vec2;
+
+    /// ワープ・回転デフォーマとメッシュを持つモデルと、その要素を参照する物理。
+    fn setup() -> (Model, PhysicsSettings) {
+        let model = fixtures::rotation_under_warp();
+        let find = |warp: bool| {
+            model
+                .deformers
+                .iter()
+                .find(|d| matches!(d.kind, DeformerKind::Warp(_)) == warp)
+                .unwrap()
+        };
+        let warp = find(true);
+        let DeformerKind::Warp(grid) = &warp.kind else {
+            unreachable!()
+        };
+        let points = (usize::from(grid.rows) + 1) * (usize::from(grid.cols) + 1);
+        let rotation = find(false).id.clone();
+        let mesh = &model.meshes[0];
+        let output = |target| PhysicsOutput {
+            target,
+            particle: 1,
+            source: PhysicsSource::Angle,
+            scale: 1.0,
+            weight: 100.0,
+            reflect: false,
+        };
+        let range = NormalizationRange {
+            min: -1.0,
+            default: 0.0,
+            max: 1.0,
+        };
+        let physics = PhysicsSettings {
+            gravity: Vec2::new(0.0, 1.0),
+            wind: Vec2::ZERO,
+            fps: 60.0,
+            rigs: vec![PhysicsRig {
+                id: "Hair".into(),
+                name: "Hair".into(),
+                inputs: vec![PhysicsInput {
+                    parameter: model.parameters[0].id.clone(),
+                    source: PhysicsSource::X,
+                    weight: 100.0,
+                    reflect: false,
+                }],
+                outputs: vec![
+                    output(PhysicsTarget::Parameter {
+                        id: model.parameters[0].id.clone(),
+                    }),
+                    output(PhysicsTarget::DeformerAngle {
+                        deformer: rotation.clone(),
+                    }),
+                    output(PhysicsTarget::DeformerOffset {
+                        deformer: rotation.clone(),
+                    }),
+                    output(PhysicsTarget::Vertices {
+                        owner: VertexOwner::Mesh(mesh.id.clone()),
+                        weights: vec![0.5; mesh.uvs.len()],
+                    }),
+                    output(PhysicsTarget::Vertices {
+                        owner: VertexOwner::Warp(warp.id.clone()),
+                        weights: vec![1.0; points],
+                    }),
+                ],
+                particles: vec![PhysicsParticle {
+                    position: Vec2::ZERO,
+                    mobility: 1.0,
+                    delay: 1.0,
+                    acceleration: 1.0,
+                    radius: 0.0,
+                    collision_radius: 2.0,
+                }],
+                normalization: PhysicsNormalization {
+                    position: range,
+                    angle: range,
+                },
+                colliders: vec!["Body".into()],
+                frame: Some(rotation.clone()),
+            }],
+            colliders: vec![PhysicsCollider {
+                id: "Body".into(),
+                name: "Body".into(),
+                attach: Some(warp.id.clone()),
+                shape: ColliderShape::Capsule {
+                    a: Vec2::new(0.0, 0.0),
+                    b: Vec2::new(0.0, 1.0),
+                    radius: 5.0,
+                },
+            }],
+        };
+        (model, physics)
+    }
+
+    #[test]
+    fn valid_dynamic_physics_passes() {
+        let (model, physics) = setup();
+        assert_eq!(validate_physics(&physics, &model), []);
+    }
+
+    #[test]
+    fn hair_fixture_is_valid() {
+        let physics = fixtures::physics_hair_settings();
+        assert_eq!(validate_physics(&physics, &fixtures::physics_hair()), []);
+    }
+
+    #[test]
+    fn reports_unknown_references() {
+        let (model, mut physics) = setup();
+        let rig = &mut physics.rigs[0];
+        rig.outputs[0].target = PhysicsTarget::Parameter { id: "Nope".into() };
+        rig.outputs[1].target = PhysicsTarget::DeformerAngle {
+            deformer: "Nope".into(),
+        };
+        rig.outputs[3].target = PhysicsTarget::Vertices {
+            owner: VertexOwner::Mesh("Nope".into()),
+            weights: vec![],
+        };
+        rig.colliders.push("Nope".into());
+        rig.frame = Some("Nope".into());
+        physics.colliders[0].attach = Some("Nope".into());
+        let fields: Vec<_> = validate_physics(&physics, &model)
+            .into_iter()
+            .map(|e| match e {
+                ValidationError::UnknownReference {
+                    kind,
+                    field,
+                    target_kind,
+                    ..
+                } => (kind, field, target_kind),
+                e => panic!("unexpected {e}"),
+            })
+            .collect();
+        assert_eq!(
+            fields,
+            [
+                ("physics rig", "outputs", "parameter"),
+                ("physics rig", "outputs", "deformer"),
+                ("physics rig", "outputs", "mesh"),
+                ("physics rig", "colliders", "physics collider"),
+                ("physics rig", "frame", "deformer"),
+                ("physics collider", "attach", "deformer"),
+            ]
+        );
+    }
+
+    #[test]
+    fn reports_wrong_deformer_kinds_and_weights() {
+        let (model, mut physics) = setup();
+        let rig = &mut physics.rigs[0];
+        let PhysicsTarget::Vertices {
+            owner: VertexOwner::Warp(warp),
+            ..
+        } = rig.outputs[4].target.clone()
+        else {
+            unreachable!()
+        };
+        let PhysicsTarget::DeformerAngle { deformer: rotation } = rig.outputs[1].target.clone()
+        else {
+            unreachable!()
+        };
+        rig.outputs[2].target = PhysicsTarget::DeformerOffset {
+            deformer: warp.clone(),
+        };
+        rig.outputs[4].target = PhysicsTarget::Vertices {
+            owner: VertexOwner::Warp(rotation.clone()),
+            weights: vec![],
+        };
+        if let PhysicsTarget::Vertices { weights, .. } = &mut rig.outputs[3].target {
+            weights.push(1.5);
+        }
+        rig.particles[0].collision_radius = -1.0;
+        physics.colliders[0].shape = ColliderShape::Circle {
+            center: Vec2::new(f32::INFINITY, 0.0),
+            radius: -1.0,
+        };
+        let errors = validate_physics(&physics, &model);
+        let vertices = model.meshes[0].uvs.len();
+        assert_eq!(
+            errors,
+            [
+                ValidationError::DeformerKindMismatch {
+                    kind: "physics rig",
+                    id: "Hair".into(),
+                    field: "outputs",
+                    deformer: warp.to_string(),
+                    expected: "rotation",
+                },
+                ValidationError::WeightCount {
+                    rig: "Hair".into(),
+                    output: 3,
+                    expected: vertices,
+                    actual: vertices + 1,
+                },
+                ValidationError::InvalidValue {
+                    field: format!("rigs[Hair].outputs[3].weights[{vertices}]"),
+                    value: 1.5,
+                    expected: "in 0..=1",
+                },
+                ValidationError::DeformerKindMismatch {
+                    kind: "physics rig",
+                    id: "Hair".into(),
+                    field: "outputs",
+                    deformer: rotation.to_string(),
+                    expected: "warp",
+                },
+                ValidationError::InvalidValue {
+                    field: "rigs[Hair].particles[0].collision_radius".into(),
+                    value: -1.0,
+                    expected: "finite and >= 0",
+                },
+                ValidationError::InvalidValue {
+                    field: "colliders[Body].shape.center.x".into(),
+                    value: f32::INFINITY,
+                    expected: "finite",
+                },
+                ValidationError::InvalidValue {
+                    field: "colliders[Body].shape.radius".into(),
+                    value: -1.0,
+                    expected: "finite and >= 0",
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn reports_duplicate_rig_and_collider_ids() {
+        let (model, mut physics) = setup();
+        physics.rigs.push(physics.rigs[0].clone());
+        physics.colliders.push(physics.colliders[0].clone());
+        assert_eq!(
+            validate_physics(&physics, &model),
+            [
+                ValidationError::DuplicateId {
+                    kind: "physics rig",
+                    id: "Hair".into(),
+                },
+                ValidationError::DuplicateId {
+                    kind: "physics collider",
+                    id: "Body".into(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn unknown_targets_and_shapes_are_not_errors() {
+        let (model, mut physics) = setup();
+        physics.rigs[0].outputs[1].target = PhysicsTarget::Unknown;
+        physics.colliders[0].shape = ColliderShape::Unknown;
+        assert_eq!(validate_physics(&physics, &model), []);
+    }
+}

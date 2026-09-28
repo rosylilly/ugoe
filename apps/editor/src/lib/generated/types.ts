@@ -164,6 +164,11 @@ origin: Vec2, };
 export type ChildRef = { "kind": "mesh", "id": string } | { "kind": "deformer", "id": string };
 
 /**
+ * 衝突体の形状。半径はキャンバスのピクセル単位。
+ */
+export type ColliderShape = { "type": "circle", center: Vec2, radius: number, } | { "type": "capsule", a: Vec2, b: Vec2, radius: number, };
+
+/**
  * 編集操作。JSON で表現でき、AI エージェントのツール呼び出しにそのまま対応する。
  *
  * 追加時のルール (`docs/editor.md#コマンド`):
@@ -603,6 +608,16 @@ export type Part = { id: string, name: string, parent: string | null, keyforms: 
 
 export type PartKeyform = { opacity: number, };
 
+/**
+ * 衝突体 (`docs/spec/physics.md#衝突体`)。
+ */
+export type PhysicsCollider = { id: string, name: string, 
+/**
+ * 取り付け先のデフォーマ。形状の位置はこのデフォーマの局所座標系で表し、
+ * そのワールド変換で動く。`None` ならキャンバスに固定する。
+ */
+attach?: string | null, shape: ColliderShape, };
+
 export type PhysicsInput = { parameter: string, source: PhysicsSource, 
 /**
  * 0..=100 (%)。
@@ -611,7 +626,17 @@ weight: number, reflect: boolean, };
 
 export type PhysicsNormalization = { position: NormalizationRange, angle: NormalizationRange, };
 
-export type PhysicsOutput = { parameter: string, 
+/**
+ * 物理の出力。
+ *
+ * 旧形式 (出力先が `parameter` フィールドのパラメータだけ) も読める。読み込みは手で書く
+ * ([`PhysicsOutput::deserialize`])。書き出しは常に `target` を使う。
+ */
+export type PhysicsOutput = { 
+/**
+ * 出力先 (`docs/spec/physics.md#出力先`)。
+ */
+target: PhysicsTarget, 
 /**
  * 出力元となる粒子インデックス (その粒子と 1 つ前の粒子の成す角を使う)。
  */
@@ -621,17 +646,50 @@ export type PhysicsParticle = {
 /**
  * 初期位置 (根元からの相対)。
  */
-position: Vec2, mobility: number, delay: number, acceleration: number, radius: number, };
+position: Vec2, mobility: number, delay: number, acceleration: number, 
+/**
+ * 1 つ前の粒子との距離 (区間の長さ)。衝突には使わない。
+ */
+radius: number, 
+/**
+ * 衝突用の半径。衝突体からこの半径を含めて押し出す。省略時は 0。
+ */
+collision_radius: number, };
 
-export type PhysicsRig = { id: string, name: string, inputs: Array<PhysicsInput>, outputs: Array<PhysicsOutput>, particles: Array<PhysicsParticle>, normalization: PhysicsNormalization, };
+export type PhysicsRig = { id: string, name: string, inputs: Array<PhysicsInput>, outputs: Array<PhysicsOutput>, particles: Array<PhysicsParticle>, normalization: PhysicsNormalization, 
+/**
+ * このリグの粒子と衝突する衝突体 (`PhysicsCollider::id`)。省略時はなし。
+ */
+colliders: Array<string>, 
+/**
+ * 重力と風を解釈する座標系の基準のデフォーマ。`None` ならキャンバスの座標系
+ * (`docs/spec/physics.md#重力と風の基準`)。
+ */
+frame?: string | null, };
 
 export type PhysicsSettings = { gravity: Vec2, wind: Vec2, 
 /**
  * 固定ステップ実行の周波数 (Hz)。
  */
-fps: number, rigs: Array<PhysicsRig>, };
+fps: number, rigs: Array<PhysicsRig>, 
+/**
+ * 衝突体。どのリグと衝突するかは `PhysicsRig::colliders` で選ぶ
+ * (`docs/spec/physics.md#衝突体`)。省略時はなし。
+ */
+colliders: Array<PhysicsCollider>, };
 
 export type PhysicsSource = "x" | "y" | "angle";
+
+/**
+ * 物理の出力先。JSON では `{"type": "deformer_angle", "deformer": "HairFront1"}` と書く。
+ * パラメータ以外の出力先は動的物理 (`docs/spec/physics.md#動的物理-揺れ用パラメータのいらない物理`)。
+ */
+export type PhysicsTarget = { "type": "parameter", id: string, } | { "type": "deformer_angle", deformer: string, } | { "type": "deformer_offset", deformer: string, } | { "type": "vertices", owner: VertexOwner, 
+/**
+ * 頂点 (制御点) ごとの重み (0..=1)。並びと長さは、メッシュなら `Mesh::uvs`、
+ * ワープなら `WarpKeyform::points` と同じ。
+ */
+weights: Array<number>, };
 
 /**
  * 点 (time, value)。
@@ -781,6 +839,11 @@ index: number,
  * キャンバス座標でのずれ。
  */
 delta: Vec2, };
+
+/**
+ * 頂点への出力の対象。JSON では `{"mesh": "Skirt"}` または `{"warp": "SkirtWarp"}` と書く。
+ */
+export type VertexOwner = { "mesh": string } | { "warp": string };
 
 /**
  * ワープデフォーマ: (rows+1)×(cols+1) 個の制御点を持つ格子による自由変形。

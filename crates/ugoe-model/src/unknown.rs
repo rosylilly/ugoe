@@ -14,7 +14,7 @@ use crate::keyform::{KeyformGrid, KeyformInference, KeyformOrigin};
 use crate::mesh::{BlendMode, MaskMode};
 use crate::motion::{CurveTarget, Motion, Segment};
 use crate::parameter::ParameterKind;
-use crate::physics::{PhysicsSettings, PhysicsSource};
+use crate::physics::{ColliderShape, PhysicsSettings, PhysicsSource, PhysicsTarget};
 
 /// モデルの中の未知の値の場所をすべて返す。
 pub fn in_model(model: &Model) -> Vec<String> {
@@ -94,9 +94,17 @@ pub fn in_physics(physics: &PhysicsSettings) -> Vec<String> {
             }
         }
         for (index, output) in rig.outputs.iter().enumerate() {
+            if output.target == PhysicsTarget::Unknown {
+                found.push(format!("rigs[{}].outputs[{index}].target", rig.id));
+            }
             if output.source == PhysicsSource::Unknown {
                 found.push(format!("rigs[{}].outputs[{index}].source", rig.id));
             }
+        }
+    }
+    for collider in &physics.colliders {
+        if collider.shape == ColliderShape::Unknown {
+            found.push(format!("colliders[{}].shape", collider.id));
         }
     }
     found
@@ -289,15 +297,33 @@ mod tests {
                 "id": "Hair",
                 "name": "Hair",
                 "inputs": [{ "parameter": "X", "source": "z", "weight": 100.0 }],
-                "outputs": [],
+                "outputs": [{
+                    "target": { "type": "spring" },
+                    "particle": 1,
+                    "source": "angle",
+                    "scale": 1.0,
+                    "weight": 100.0,
+                }],
                 "particles": [],
                 "normalization": {
                     "position": { "min": -1.0, "default": 0.0, "max": 1.0 },
                     "angle": { "min": -1.0, "default": 0.0, "max": 1.0 },
                 },
             }],
+            "colliders": [{
+                "id": "Body",
+                "name": "Body",
+                "shape": { "type": "polygon", "points": [] },
+            }],
         }))
         .unwrap();
-        assert_eq!(in_physics(&physics), ["rigs[Hair].inputs[0].source"]);
+        assert_eq!(
+            in_physics(&physics),
+            [
+                "rigs[Hair].inputs[0].source",
+                "rigs[Hair].outputs[0].target",
+                "colliders[Body].shape",
+            ]
+        );
     }
 }

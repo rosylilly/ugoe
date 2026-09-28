@@ -192,7 +192,7 @@
 
 拡張されうる enum (`BlendMode` `MaskMode` `DeformerKind` `ParameterKind` `KeyformOrigin` `KeyformInference`、
 アバタープロファイルの `AvatarPermission` `CommercialUsage` `CreditNotation` `Modification` `TrackingSource`、
-モーション・表情・物理の `CurveTarget` `Segment` `ExpressionOp` `PhysicsSource`) は `Unknown` のバリアントを持ち、
+モーション・表情・物理の `CurveTarget` `Segment` `ExpressionOp` `PhysicsSource` `PhysicsTarget` `ColliderShape`) は `Unknown` のバリアントを持ち、
 新しい版のファイルにある知らないタグを `Unknown` として読みます。元のタグと中身は捨てます。
 
 - `Unknown` にはその種類のフォールバックを適用します。一覧は [file-formats.md#未知の値の読み込み](file-formats.md#未知の値の読み込み)。
@@ -206,7 +206,6 @@
 
 | データ | 内容 | 仕様 | タスク |
 | --- | --- | --- | --- |
-| 物理の出力先・衝突体・重力の基準 | 動的物理 | [physics.md#動的物理](physics.md#動的物理-揺れ用パラメータのいらない物理) | T0304 |
 | `Model::slots` | 着せ替えのスロット | [modules.md](modules.md) | T0111 |
 | `TextureRef::normal_map`、`Model::lighting`、`Mesh::lit` | 法線マップとライティング | [rendering.md#ライティング](rendering.md#ライティング) | T0112 |
 
@@ -240,3 +239,14 @@
 - パラメータで `min <= default <= max` が成り立つこと
 - 同じパーツがポーズ全体で 2 回以上現れないこと (`part` と `links` を合わせて数える)
 - 時間と周期の値: ポーズの `fade_duration` と目パチの `closing` / `closed` / `opening` は 0 以上、目パチの `interval` と呼吸の `cycle` は 0 より大きいこと (いずれも有限値)
+
+### 物理の検証
+
+物理 (`PhysicsSettings`) は `Model` と別のデータなので、`ugoe_model::validate::validate_physics(&physics, &model)` で参照先のモデルと合わせて検査します。モデル自体の検査は含みません。
+
+- リグと衝突体の ID が、それぞれの中で一意であること
+- 参照先が存在すること: 入力のパラメータ、出力先 (パラメータ・デフォーマ・メッシュ)、リグの `colliders` (衝突体)・`frame` (デフォーマ)、衝突体の `attach` (デフォーマ)
+- 出力先のデフォーマの種類: `deformer_angle` / `deformer_offset` は回転デフォーマ、`vertices` の `warp` はワープデフォーマであること (`DeformerKindMismatch`。種類が未知のデフォーマは検査しない)
+- `vertices` の `weights` の長さが、メッシュの頂点数・ワープの制御点数と同じで (`WeightCount`)、すべて 0〜1 であること
+- 粒子の `collision_radius` と衝突体の `radius` が 0 以上の有限値で、衝突体の位置が有限値であること
+- 未知の出力先と形状 (`Unknown`) はエラーにしない

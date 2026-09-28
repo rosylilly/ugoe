@@ -79,6 +79,7 @@ fn sample_project() -> Project {
         wind: Vec2::new(0.1, 0.0),
         fps: 60.0,
         rigs: Vec::new(),
+        colliders: Vec::new(),
     });
     // 読み込みはファイル名の順なので、名前の順に並べておく。
     project.motions = vec![motion("idle"), motion("tap_body")];

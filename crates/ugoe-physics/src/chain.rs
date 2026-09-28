@@ -167,6 +167,7 @@ mod tests {
             delay: 0.9,
             acceleration: 1.5,
             radius,
+            collision_radius: 0.0,
         }
     }
 

@@ -272,7 +272,11 @@ fn write_outputs(
         let (Some(previous), Some(current)) = (*previous, *current) else {
             continue;
         };
-        let Some(index) = parameters.index_of(output.parameter.as_str()) else {
+        // パラメータ以外の出力先 (動的物理) は T0305 で扱う。
+        let Some(index) = output
+            .parameter()
+            .and_then(|parameter| parameters.index_of(parameter.as_str()))
+        else {
             continue;
         };
         let value =

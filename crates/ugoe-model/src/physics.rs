@@ -1,9 +1,10 @@
 //! 物理演算 (振り子チェーン) の設定データ。アルゴリズムは `ugoe-physics`、仕様は `docs/spec/physics.md`。
 
+use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
 use ugoe_core::Vec2;
 
-use crate::ParamId;
+use crate::{DeformerId, MeshId, ParamId};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -18,6 +19,10 @@ pub struct PhysicsSettings {
     /// 固定ステップ実行の周波数 (Hz)。
     pub fps: f32,
     pub rigs: Vec<PhysicsRig>,
+    /// 衝突体。どのリグと衝突するかは `PhysicsRig::colliders` で選ぶ
+    /// (`docs/spec/physics.md#衝突体`)。省略時はなし。
+    #[serde(default)]
+    pub colliders: Vec<PhysicsCollider>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -30,6 +35,13 @@ pub struct PhysicsRig {
     pub outputs: Vec<PhysicsOutput>,
     pub particles: Vec<PhysicsParticle>,
     pub normalization: PhysicsNormalization,
+    /// このリグの粒子と衝突する衝突体 (`PhysicsCollider::id`)。省略時はなし。
+    #[serde(default)]
+    pub colliders: Vec<String>,
+    /// 重力と風を解釈する座標系の基準のデフォーマ。`None` ならキャンバスの座標系
+    /// (`docs/spec/physics.md#重力と風の基準`)。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame: Option<DeformerId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,11 +72,16 @@ pub struct PhysicsInput {
     pub reflect: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// 物理の出力。
+///
+/// 旧形式 (出力先が `parameter` フィールドのパラメータだけ) も読める。読み込みは手で書く
+/// ([`PhysicsOutput::deserialize`])。書き出しは常に `target` を使う。
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PhysicsOutput {
-    pub parameter: ParamId,
+    /// 出力先 (`docs/spec/physics.md#出力先`)。
+    pub target: PhysicsTarget,
     /// 出力元となる粒子インデックス (その粒子と 1 つ前の粒子の成す角を使う)。
     pub particle: u32,
     pub source: PhysicsSource,
@@ -72,6 +89,134 @@ pub struct PhysicsOutput {
     pub weight: f32,
     #[serde(default)]
     pub reflect: bool,
+}
+
+impl PhysicsOutput {
+    /// 出力先がパラメータなら、その ID。
+    pub fn parameter(&self) -> Option<&ParamId> {
+        match &self.target {
+            PhysicsTarget::Parameter { id } => Some(id),
+            _ => None,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PhysicsOutput {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        /// `target` と旧形式の `parameter` の両方を受け付ける。両方あれば `target` を使う。
+        #[derive(Deserialize)]
+        struct Raw {
+            #[serde(default)]
+            target: Option<PhysicsTarget>,
+            #[serde(default)]
+            parameter: Option<ParamId>,
+            particle: u32,
+            source: PhysicsSource,
+            scale: f32,
+            weight: f32,
+            #[serde(default)]
+            reflect: bool,
+        }
+
+        let raw = Raw::deserialize(deserializer)?;
+        let target = match (raw.target, raw.parameter) {
+            (Some(target), _) => target,
+            (None, Some(id)) => PhysicsTarget::Parameter { id },
+            (None, None) => return Err(de::Error::missing_field("target")),
+        };
+        Ok(Self {
+            target,
+            particle: raw.particle,
+            source: raw.source,
+            scale: raw.scale,
+            weight: raw.weight,
+            reflect: raw.reflect,
+        })
+    }
+}
+
+/// 物理の出力先。JSON では `{"type": "deformer_angle", "deformer": "HairFront1"}` と書く。
+/// パラメータ以外の出力先は動的物理 (`docs/spec/physics.md#動的物理-揺れ用パラメータのいらない物理`)。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PhysicsTarget {
+    /// パラメータに書き込む (従来の出力)。
+    Parameter { id: ParamId },
+    /// 回転デフォーマの角度に足す。
+    DeformerAngle { deformer: DeformerId },
+    /// 回転デフォーマの原点をずらす。
+    DeformerOffset { deformer: DeformerId },
+    /// ワープデフォーマの制御点、またはメッシュの頂点を、重み付きで粒子の変位に追従させる。
+    Vertices {
+        owner: VertexOwner,
+        /// 頂点 (制御点) ごとの重み (0..=1)。並びと長さは、メッシュなら `Mesh::uvs`、
+        /// ワープなら `WarpKeyform::points` と同じ。
+        weights: Vec<f32>,
+    },
+    /// 未知の値 (新しい版のファイル)。その出力を無視する。
+    /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
+    #[serde(other, skip_serializing)]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    #[cfg_attr(feature = "schema", schemars(skip))]
+    Unknown,
+}
+
+/// 頂点への出力の対象。JSON では `{"mesh": "Skirt"}` または `{"warp": "SkirtWarp"}` と書く。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum VertexOwner {
+    /// メッシュの頂点。
+    Mesh(MeshId),
+    /// ワープデフォーマの制御点。
+    Warp(DeformerId),
+}
+
+/// 衝突体 (`docs/spec/physics.md#衝突体`)。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct PhysicsCollider {
+    pub id: String,
+    pub name: String,
+    /// 取り付け先のデフォーマ。形状の位置はこのデフォーマの局所座標系で表し、
+    /// そのワールド変換で動く。`None` ならキャンバスに固定する。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attach: Option<DeformerId>,
+    pub shape: ColliderShape,
+}
+
+/// 衝突体の形状。半径はキャンバスのピクセル単位。
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ColliderShape {
+    Circle {
+        #[cfg_attr(feature = "ts", ts(as = "crate::Vec2Repr"))]
+        #[cfg_attr(feature = "schema", schemars(with = "crate::Vec2Repr"))]
+        center: Vec2,
+        radius: f32,
+    },
+    /// 線分 `a`–`b` から `radius` 以内の領域。
+    Capsule {
+        #[cfg_attr(feature = "ts", ts(as = "crate::Vec2Repr"))]
+        #[cfg_attr(feature = "schema", schemars(with = "crate::Vec2Repr"))]
+        a: Vec2,
+        #[cfg_attr(feature = "ts", ts(as = "crate::Vec2Repr"))]
+        #[cfg_attr(feature = "schema", schemars(with = "crate::Vec2Repr"))]
+        b: Vec2,
+        radius: f32,
+    },
+    /// 未知の値 (新しい版のファイル)。その衝突体を無視する。
+    /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
+    #[serde(other, skip_serializing)]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    #[cfg_attr(feature = "schema", schemars(skip))]
+    Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -85,7 +230,11 @@ pub struct PhysicsParticle {
     pub mobility: f32,
     pub delay: f32,
     pub acceleration: f32,
+    /// 1 つ前の粒子との距離 (区間の長さ)。衝突には使わない。
     pub radius: f32,
+    /// 衝突用の半径。衝突体からこの半径を含めて押し出す。省略時は 0。
+    #[serde(default)]
+    pub collision_radius: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -103,4 +252,190 @@ pub struct NormalizationRange {
     pub min: f32,
     pub default: f32,
     pub max: f32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use serde_json::json;
+
+    fn rig_json(outputs: serde_json::Value) -> serde_json::Value {
+        json!({
+            "gravity": [0.0, 1.0],
+            "wind": [0.0, 0.0],
+            "fps": 60.0,
+            "rigs": [{
+                "id": "Hair",
+                "name": "Hair",
+                "inputs": [],
+                "outputs": outputs,
+                "particles": [
+                    { "position": [0.0, 0.0], "mobility": 1.0, "delay": 1.0,
+                      "acceleration": 1.0, "radius": 0.0 },
+                ],
+                "normalization": {
+                    "position": { "min": -1.0, "default": 0.0, "max": 1.0 },
+                    "angle": { "min": -1.0, "default": 0.0, "max": 1.0 },
+                },
+            }],
+        })
+    }
+
+    /// 動的物理のない旧形式 (パラメータへの出力だけ) を読める。
+    #[test]
+    fn reads_parameter_only_data() {
+        let physics: PhysicsSettings = serde_json::from_value(rig_json(json!([{
+            "parameter": "HairFront",
+            "particle": 1,
+            "source": "angle",
+            "scale": 1.5,
+            "weight": 100.0,
+        }])))
+        .unwrap();
+        let rig = &physics.rigs[0];
+        assert_eq!(
+            rig.outputs[0].target,
+            PhysicsTarget::Parameter {
+                id: "HairFront".into()
+            }
+        );
+        assert_eq!(rig.outputs[0].parameter(), Some(&"HairFront".into()));
+        assert!(physics.colliders.is_empty());
+        assert!(rig.colliders.is_empty());
+        assert_eq!(rig.frame, None);
+        assert_eq!(rig.particles[0].collision_radius, 0.0);
+
+        // 書き出しは新しい形式になり、読み直すと同じ値になる。
+        let value = serde_json::to_value(&physics).unwrap();
+        let output = &value["rigs"][0]["outputs"][0];
+        assert_eq!(
+            output["target"],
+            json!({ "type": "parameter", "id": "HairFront" })
+        );
+        assert!(output.get("parameter").is_none());
+        let back: PhysicsSettings = serde_json::from_value(value).unwrap();
+        assert_eq!(back, physics);
+    }
+
+    #[test]
+    fn output_without_target_is_an_error() {
+        let result: Result<PhysicsSettings, _> = serde_json::from_value(rig_json(json!([{
+            "particle": 1,
+            "source": "angle",
+            "scale": 1.0,
+            "weight": 100.0,
+        }])));
+        assert!(result.unwrap_err().to_string().contains("target"));
+    }
+
+    fn dynamic() -> PhysicsSettings {
+        let output = |target| PhysicsOutput {
+            target,
+            particle: 1,
+            source: PhysicsSource::Angle,
+            scale: 1.0,
+            weight: 100.0,
+            reflect: false,
+        };
+        let range = NormalizationRange {
+            min: -1.0,
+            default: 0.0,
+            max: 1.0,
+        };
+        PhysicsSettings {
+            gravity: Vec2::new(0.0, 1.0),
+            wind: Vec2::ZERO,
+            fps: 60.0,
+            rigs: vec![PhysicsRig {
+                id: "Hair".into(),
+                name: "Hair".into(),
+                inputs: vec![],
+                outputs: vec![
+                    output(PhysicsTarget::DeformerAngle {
+                        deformer: "Hair1".into(),
+                    }),
+                    output(PhysicsTarget::DeformerOffset {
+                        deformer: "Hair1".into(),
+                    }),
+                    output(PhysicsTarget::Vertices {
+                        owner: VertexOwner::Mesh("Skirt".into()),
+                        weights: vec![0.0, 0.5, 1.0],
+                    }),
+                    output(PhysicsTarget::Vertices {
+                        owner: VertexOwner::Warp("SkirtWarp".into()),
+                        weights: vec![1.0; 4],
+                    }),
+                ],
+                particles: vec![PhysicsParticle {
+                    position: Vec2::ZERO,
+                    mobility: 1.0,
+                    delay: 1.0,
+                    acceleration: 1.0,
+                    radius: 0.0,
+                    collision_radius: 4.0,
+                }],
+                normalization: PhysicsNormalization {
+                    position: range,
+                    angle: range,
+                },
+                colliders: vec!["Shoulder".into(), "Head".into()],
+                frame: Some("Head".into()),
+            }],
+            colliders: vec![
+                PhysicsCollider {
+                    id: "Shoulder".into(),
+                    name: "Shoulder".into(),
+                    attach: Some("Body".into()),
+                    shape: ColliderShape::Capsule {
+                        a: Vec2::new(-50.0, 0.0),
+                        b: Vec2::new(50.0, 0.0),
+                        radius: 10.0,
+                    },
+                },
+                PhysicsCollider {
+                    id: "Head".into(),
+                    name: "Head".into(),
+                    attach: None,
+                    shape: ColliderShape::Circle {
+                        center: Vec2::new(0.0, -100.0),
+                        radius: 80.0,
+                    },
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn dynamic_physics_round_trips() {
+        let physics = dynamic();
+        let value = serde_json::to_value(&physics).unwrap();
+        assert_eq!(
+            value["rigs"][0]["outputs"][0]["target"],
+            json!({ "type": "deformer_angle", "deformer": "Hair1" })
+        );
+        assert_eq!(
+            value["rigs"][0]["outputs"][2]["target"],
+            json!({ "type": "vertices", "owner": { "mesh": "Skirt" }, "weights": [0.0, 0.5, 1.0] })
+        );
+        assert_eq!(
+            value["colliders"][1]["shape"],
+            json!({ "type": "circle", "center": [0.0, -100.0], "radius": 80.0 })
+        );
+        assert_eq!(value["colliders"][1].get("attach"), None);
+        let back: PhysicsSettings = serde_json::from_value(value).unwrap();
+        assert_eq!(back, physics);
+    }
+
+    #[test]
+    fn unknown_targets_and_shapes_are_read_as_unknown() {
+        let mut value = serde_json::to_value(dynamic()).unwrap();
+        value["rigs"][0]["outputs"][0]["target"] = json!({ "type": "spring", "k": 2.0 });
+        value["colliders"][0]["shape"] = json!({ "type": "polygon", "points": [[0, 0]] });
+        let physics: PhysicsSettings = serde_json::from_value(value).unwrap();
+        assert_eq!(physics.rigs[0].outputs[0].target, PhysicsTarget::Unknown);
+        assert_eq!(physics.rigs[0].outputs[0].parameter(), None);
+        assert_eq!(physics.colliders[0].shape, ColliderShape::Unknown);
+        assert!(serde_json::to_string(&physics).is_err());
+    }
 }

@@ -13,7 +13,7 @@ use crate::parameter::{Parameter, ParameterKind};
 use crate::part::{Part, PartKeyform};
 use crate::physics::{
     NormalizationRange, PhysicsInput, PhysicsNormalization, PhysicsOutput, PhysicsParticle,
-    PhysicsRig, PhysicsSettings, PhysicsSource,
+    PhysicsRig, PhysicsSettings, PhysicsSource, PhysicsTarget,
 };
 use crate::pose::{DEFAULT_FADE_DURATION, PoseEntry, PoseGroup};
 use crate::standard;
@@ -912,7 +912,9 @@ pub fn physics_hair_settings() -> PhysicsSettings {
         reflect,
     };
     let output = |parameter: &str| PhysicsOutput {
-        parameter: parameter.into(),
+        target: PhysicsTarget::Parameter {
+            id: parameter.into(),
+        },
         particle: 1,
         source: PhysicsSource::Angle,
         scale: 0.1,
@@ -925,6 +927,7 @@ pub fn physics_hair_settings() -> PhysicsSettings {
         delay,
         acceleration: 1.5,
         radius,
+        collision_radius: 0.0,
     };
     let range = NormalizationRange {
         min: -10.0,
@@ -954,6 +957,8 @@ pub fn physics_hair_settings() -> PhysicsSettings {
                     particle(15.0, 0.9, 0.6, 12.0),
                 ],
                 normalization,
+                colliders: Vec::new(),
+                frame: None,
             },
             PhysicsRig {
                 id: "HairBack".into(),
@@ -965,8 +970,11 @@ pub fn physics_hair_settings() -> PhysicsSettings {
                 outputs: vec![output(standard::HAIR_BACK)],
                 particles: vec![particle(0.0, 1.0, 1.0, 0.0), particle(10.0, 0.9, 0.8, 10.0)],
                 normalization,
+                colliders: Vec::new(),
+                frame: None,
             },
         ],
+        colliders: Vec::new(),
     }
 }
 

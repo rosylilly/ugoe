@@ -9,6 +9,10 @@ use std::hash::Hash;
 use crate::deformer::DeformerKind;
 use crate::{KeyformGrid, KeyformInference, Model};
 
+mod physics;
+
+pub use physics::validate_physics;
+
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ValidationError {
     #[error("duplicate {kind} id `{id}`")]
@@ -130,6 +134,25 @@ pub enum ValidationError {
     DepthCount {
         kind: &'static str,
         id: String,
+        expected: usize,
+        actual: usize,
+    },
+    /// 参照先のデフォーマの種類が、参照元の求める種類 (`expected`) と違う。
+    #[error(
+        "{kind} `{id}`: {field} refers to deformer `{deformer}`, which is not a {expected} deformer"
+    )]
+    DeformerKindMismatch {
+        kind: &'static str,
+        id: String,
+        field: &'static str,
+        deformer: String,
+        expected: &'static str,
+    },
+    /// 物理の頂点への出力の重みの数が、頂点数 (メッシュ) または制御点数 (ワープ) と違う。
+    #[error("physics rig `{rig}`: outputs[{output}] has {actual} weights, expected {expected}")]
+    WeightCount {
+        rig: String,
+        output: usize,
         expected: usize,
         actual: usize,
     },

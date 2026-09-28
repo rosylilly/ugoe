@@ -585,7 +585,7 @@ mod tests {
     use ugoe_model::motion::{Curve, CurveTarget, MotionEvent, Point, Segment};
     use ugoe_model::physics::{
         NormalizationRange, PhysicsInput, PhysicsNormalization, PhysicsOutput, PhysicsParticle,
-        PhysicsRig, PhysicsSource,
+        PhysicsRig, PhysicsSource, PhysicsTarget,
     };
     use ugoe_model::{DepthRotation, KeyformGrid, KeyformInference, KeyformOrigin, TextureRef};
 
@@ -623,7 +623,7 @@ mod tests {
                     reflect: false,
                 }],
                 outputs: vec![PhysicsOutput {
-                    parameter: "X".into(),
+                    target: PhysicsTarget::Parameter { id: "X".into() },
                     particle: 1,
                     source: PhysicsSource::Angle,
                     scale: 1.5,
@@ -637,6 +637,7 @@ mod tests {
                         delay: 1.0,
                         acceleration: 1.0,
                         radius: 0.0,
+                        collision_radius: 0.0,
                     },
                     PhysicsParticle {
                         position: Vec2::new(0.0, 10.0),
@@ -644,13 +645,17 @@ mod tests {
                         delay: 0.8,
                         acceleration: 1.5,
                         radius: 10.0,
+                        collision_radius: 0.0,
                     },
                 ],
                 normalization: PhysicsNormalization {
                     position: range,
                     angle: range,
                 },
+                colliders: vec![],
+                frame: None,
             }],
+            colliders: vec![],
         }
     }
 
