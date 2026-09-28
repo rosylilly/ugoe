@@ -33,6 +33,7 @@ clap = { version = "4", features = ["derive"] }
 glam = { version = "0.33", features = ["serde", "bytemuck"] }
 insta = { version = "1", features = ["json"] }
 naga = { version = "30", features = ["wgsl-in"] }
+png = "0.18"
 pollster = "1"
 rmp-serde = "1"
 ruzstd = "0.9"

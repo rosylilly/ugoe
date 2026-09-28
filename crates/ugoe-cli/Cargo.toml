@@ -9,11 +9,21 @@ publish.workspace = true
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+png.workspace = true
+pollster.workspace = true
+serde_json.workspace = true
 ugoe-format.workspace = true
 ugoe-model.workspace = true
+ugoe-render.workspace = true
+ugoe-runtime.workspace = true
+wgpu.workspace = true
 
 [lints]
 workspace = true
+
+[features]
+# 実 GPU (またはソフトウェアラスタライザ) を必要とする描画テストを有効にする。
+gpu-tests = []
 
 [[bin]]
 name = "ugoe"

@@ -4179,8 +4179,14 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "png 0.18.1",
+ "pollster",
+ "serde_json",
  "ugoe-format",
  "ugoe-model",
+ "ugoe-render",
+ "ugoe-runtime",
+ "wgpu",
 ]
 
 [[package]]
