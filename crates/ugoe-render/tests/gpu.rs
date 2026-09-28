@@ -12,6 +12,7 @@ use ugoe_model::{BlendMode, MaskRef, Model, fixtures};
 use ugoe_render::{FrameStats, MaskAtlasOptions, RenderError, Renderer, RendererOptions, View};
 use ugoe_runtime::{CompiledModel, ModelInstance};
 
+/// 描画先の既定の一辺 (画素)。
 const SIZE: u32 = 64;
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 /// 8bit 量子化とラスタライザの差を吸収する許容誤差 (0..255)。
@@ -92,6 +93,10 @@ struct Scene {
     clear: wgpu::Color,
     view: View,
     options: RendererOptions,
+    /// 描画先の一辺 (画素、64 の倍数)。ビューはキャンバス全体をこれに写す。
+    size: u32,
+    /// 描画前に設定するパラメータ。
+    params: Vec<(&'static str, f32)>,
 }
 
 impl Scene {
@@ -103,6 +108,8 @@ impl Scene {
             clear: wgpu::Color::TRANSPARENT,
             view: normal_view(),
             options: RendererOptions::default(),
+            size: SIZE,
+            params: Vec::new(),
         }
     }
 
@@ -112,11 +119,12 @@ impl Scene {
 
     fn try_render(self) -> Result<Image, RenderError> {
         let Gpu { device, queue, .. } = gpu();
+        let size = self.size;
         let target = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("target"),
             size: wgpu::Extent3d {
-                width: SIZE,
-                height: SIZE,
+                width: size,
+                height: size,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -128,7 +136,12 @@ impl Scene {
         });
         let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let instance = ModelInstance::new(CompiledModel::compile(self.model).expect("compile"));
+        let mut instance = ModelInstance::new(CompiledModel::compile(self.model).expect("compile"));
+        for &(id, value) in &self.params {
+            let index = instance.parameters().index_of(id).expect("parameter");
+            instance.parameters_mut().set(index, value);
+        }
+        instance.update();
         let mut renderer = Renderer::with_options(device, FORMAT, self.options);
         if self.texture != [0; 4] {
             renderer.set_texture(device, queue, 0, 1, 1, &self.texture)?;
@@ -161,10 +174,10 @@ impl Scene {
             &instance,
         )?;
 
-        let bytes_per_row = SIZE * 4; // 256 = COPY_BYTES_PER_ROW_ALIGNMENT
+        let bytes_per_row = size * 4; // 256 (COPY_BYTES_PER_ROW_ALIGNMENT) の倍数
         let readback = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("readback"),
-            size: u64::from(bytes_per_row * SIZE),
+            size: u64::from(bytes_per_row * size),
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -175,7 +188,7 @@ impl Scene {
                 layout: wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(bytes_per_row),
-                    rows_per_image: Some(SIZE),
+                    rows_per_image: Some(size),
                 },
             },
             target.size(),
@@ -191,6 +204,7 @@ impl Scene {
             .to_vec();
         Ok(Image {
             pixels,
+            size,
             stats: renderer.last_frame_stats(),
         })
     }
@@ -198,12 +212,13 @@ impl Scene {
 
 struct Image {
     pixels: Vec<u8>,
+    size: u32,
     stats: FrameStats,
 }
 
 impl Image {
     fn at(&self, (x, y): (u32, u32)) -> [u8; 4] {
-        let i = ((y * SIZE + x) * 4) as usize;
+        let i = ((y * self.size + x) * 4) as usize;
         self.pixels[i..i + 4].try_into().expect("4 bytes")
     }
 
@@ -220,6 +235,15 @@ impl Image {
             ok,
             "pixel {at:?}: expected {expected:?}, got {actual:?} (tolerance {TOLERANCE})"
         );
+    }
+
+    fn count(&self, color: [u8; 4]) -> usize {
+        self.pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|&&p| p == color)
+            .count()
     }
 
     fn covered_pixels(&self, background: [u8; 4]) -> usize {
@@ -544,8 +568,9 @@ fn multiple_masks_are_united() {
 }
 
 #[test]
-fn overlapping_masks_saturate_at_full_coverage() {
-    // テクスチャのアルファ 0.75 + 0.75 は 1 に飽和する (min(1, Σ))。
+fn overlapping_masks_combine_as_union() {
+    // 和集合は 1 − Π(1 − c): テクスチャのアルファ 0.75 と 0.75 で 1 − 0.25² = 0.9375
+    // (T0202 の飽和加算 min(1, Σ) では 1 だった)。
     let mut scene = Scene::new(model_of(vec![
         red_quad("Content", [64.0, 64.0, 192.0, 192.0], &["A", "B"], false),
         mask_quad("A", [0.0, 0.0, 256.0, 256.0], 1.0),
@@ -558,7 +583,8 @@ fn overlapping_masks_saturate_at_full_coverage() {
     }
     scene.extra_textures = vec![[0, 0, 0, 191]];
     let image = scene.render();
-    image.assert_pixel((32, 32), RED);
+    let c = 1.0 - (1.0 - 191.0 / 255.0f32).powi(2);
+    image.assert_pixel((32, 32), [c, 0.0, 0.0, c]);
 }
 
 #[test]
@@ -712,10 +738,11 @@ fn assert_five_mask_sets(image: &Image, exact_edges: bool) {
 #[test]
 fn mask_sets_overflow_into_more_atlases() {
     let mut scene = five_mask_sets();
-    // 1 枚に 4 チャンネル × 1 セルしか入らないので、5 つ目の集合は 2 枚目に回る。
+    // 一辺 16 のアトラスには 1 チャンネルに 1 セル (10x16 に縮小) しか入らないので、
+    // 3 チャンネル分を超えた 4 つ目以降の集合は 2 枚目に回る。
     scene.options.mask_atlas = MaskAtlasOptions {
-        size: 32,
-        min_cell_size: 32,
+        max_size: 16,
+        ..MaskAtlasOptions::default()
     };
     let image = scene.render();
     assert_five_mask_sets(&image, false);
@@ -741,4 +768,285 @@ fn unmasked_frame_uses_no_atlas() {
             mask_atlases: 0,
         }
     );
+}
+
+// ---- マスクの意味論 (ADR 0009、T0205) ----
+
+const BLUE: [f32; 4] = [0.0, 0.0, 1.0, 1.0];
+const WHITE: [f32; 4] = [1.0; 4];
+
+fn mesh_mut<'a>(model: &'a mut Model, id: &str) -> &'a mut Mesh {
+    model
+        .meshes
+        .iter_mut()
+        .find(|m| m.id.as_str() == id)
+        .expect("mesh")
+}
+
+/// メッシュ `id` のすべてのキーフォームを書き換える。
+fn edit_keyforms(model: &mut Model, id: &str, f: impl Fn(&mut ugoe_model::mesh::MeshKeyform)) {
+    for kf in &mut mesh_mut(model, id).keyforms.keyforms {
+        f(kf);
+    }
+}
+
+fn tint(model: &mut Model, id: &str, [r, g, b]: [f32; 3]) {
+    edit_keyforms(model, id, |k| k.multiply_color = Rgb::new(r, g, b));
+}
+
+/// 1x1 のテクスチャ `[0, 0, 0, alpha]` を足し、メッシュ `ids` に割り当てる。
+fn use_alpha_texture(scene: &mut Scene, ids: &[&str], alpha: u8) {
+    let texture = scene.model.textures[0].clone();
+    scene.model.textures.push(texture);
+    let index = scene.model.textures.len() as u32 - 1;
+    for id in ids {
+        mesh_mut(&mut scene.model, id).texture = index;
+    }
+    scene.extra_textures.push([0, 0, 0, alpha]);
+}
+
+/// `c` 倍した赤 (乗算済み)。
+fn red(c: f32) -> [f32; 4] {
+    [c, 0.0, 0.0, c]
+}
+
+#[test]
+fn union_of_translucent_masks_is_one_minus_product() {
+    // A: 画素 x 16..32 (α = a)、B: 画素 x 24..48 (α = b)。赤い四角形は画素 16..48。
+    let mut scene = Scene::new(model_of(vec![
+        red_quad("Content", [64.0, 64.0, 192.0, 192.0], &["A", "B"], false),
+        mask_quad("A", [64.0, 0.0, 128.0, 256.0], 1.0),
+        mask_quad("B", [96.0, 0.0, 192.0, 256.0], 1.0),
+    ]));
+    use_alpha_texture(&mut scene, &["A"], 128);
+    use_alpha_texture(&mut scene, &["B"], 64);
+    let image = scene.render();
+    let (a, b) = (128.0 / 255.0, 64.0 / 255.0);
+    image.assert_pixel((20, 32), red(a));
+    image.assert_pixel((28, 32), red(1.0 - (1.0 - a) * (1.0 - b)));
+    image.assert_pixel((40, 32), red(b));
+    image.assert_pixel((52, 32), NONE);
+}
+
+#[test]
+fn intersection_keeps_common_area() {
+    let mut model = fixtures::intersection_masks();
+    tint(&mut model, "Face", [0.0, 0.0, 1.0]);
+    tint(&mut model, "Tongue", [1.0, 0.0, 0.0]);
+    let image = Scene::new(model).render();
+    // Tongue の見える範囲は (96,160)〜(192,192) = 画素 (24,40)〜(48,48)。
+    image.assert_pixel((24, 40), RED);
+    image.assert_pixel((47, 47), RED);
+    // 口の外 (顔の内側) と、顔の外 (口の範囲の外でもある) には出ない。
+    image.assert_pixel((40, 50), BLUE);
+    image.assert_pixel((52, 44), BLUE);
+    image.assert_pixel((58, 58), NONE);
+    assert_eq!(image.count([255, 0, 0, 255]), 24 * 8);
+    assert_eq!(image.stats.mask_sets, 1);
+    assert_eq!(image.stats.mask_draws, 2);
+}
+
+#[test]
+fn intersection_multiplies_translucent_coverage() {
+    // 共通部分は Π c。
+    let mut scene = Scene::new(model_of(vec![
+        red_quad("Content", [64.0, 64.0, 192.0, 192.0], &["A", "B"], false),
+        mask_quad("A", [64.0, 0.0, 128.0, 256.0], 1.0),
+        mask_quad("B", [96.0, 0.0, 192.0, 256.0], 1.0),
+    ]));
+    mesh_mut(&mut scene.model, "Content").mask_mode = ugoe_model::MaskMode::Intersection;
+    use_alpha_texture(&mut scene, &["A"], 128);
+    use_alpha_texture(&mut scene, &["B"], 64);
+    let image = scene.render();
+    let (a, b) = (128.0 / 255.0, 64.0 / 255.0);
+    image.assert_pixel((20, 32), NONE);
+    image.assert_pixel((28, 32), red(a * b));
+    image.assert_pixel((40, 32), NONE);
+}
+
+/// mixed_masks の Face を青、Brow を赤にし、Hair は色としては描かない (不透明度 0)。
+fn mixed_scene(strength: f32) -> Scene {
+    let mut model = fixtures::mixed_masks();
+    tint(&mut model, "Face", [0.0, 0.0, 1.0]);
+    tint(&mut model, "Brow", [1.0, 0.0, 0.0]);
+    edit_keyforms(&mut model, "Hair", |k| k.opacity = 0.0);
+    let mut scene = Scene::new(model);
+    scene.params = vec![("Strength", strength)];
+    scene
+}
+
+#[test]
+fn normal_and_inverted_masks_combine_on_one_mesh() {
+    let image = mixed_scene(1.0).render();
+    // Brow (画素 16..48 × 16..32) は顔の内側かつ髪 (画素 y 8..24) の外側 = y 24..32 だけ見える。
+    image.assert_pixel((20, 20), BLUE);
+    image.assert_pixel((20, 23), BLUE);
+    image.assert_pixel((20, 24), RED);
+    image.assert_pixel((47, 31), RED);
+    image.assert_pixel((32, 36), BLUE);
+    image.assert_pixel((4, 4), NONE);
+    assert_eq!(image.stats.mask_sets, 1);
+    assert_eq!(image.stats.mask_draws, 2);
+}
+
+#[test]
+fn mask_strength_lets_masked_area_show_through() {
+    // Strength 0.5 → mask_strength = 0.5 (fixtures::mixed_masks)。髪の下 (反転マスクの内側) も
+    // 1 − s = 0.5 だけ見える。k = 1 − s × (1 − m)。
+    let image = mixed_scene(0.5).render();
+    let over_blue = |k: f32| [k, 0.0, 1.0 - k, 1.0];
+    image.assert_pixel((20, 20), over_blue(0.5));
+    image.assert_pixel((20, 28), RED);
+    // 0 なら マスクは効かない (全体が見える)。
+    let image = mixed_scene(0.0).render();
+    image.assert_pixel((20, 20), RED);
+    image.assert_pixel((20, 28), RED);
+
+    // 通常マスクの外側も 1 − s だけ見える。
+    let mut scene = clipped_scene(false, 1.0);
+    edit_keyforms(&mut scene.model, "Content", |k| k.mask_strength = 0.25);
+    let image = scene.render();
+    image.assert_pixel((24, 32), red(0.75));
+    image.assert_pixel((40, 32), RED);
+}
+
+#[test]
+fn nested_masks_inherit_clipping() {
+    let mut model = fixtures::nested_masks();
+    tint(&mut model, "Iris", [0.0, 0.0, 1.0]);
+    tint(&mut model, "Pupil", [1.0, 0.0, 0.0]);
+    let image = Scene::new(model).render();
+    // Pupil (画素 28..36 × 10..30) は Iris で切り抜かれ、Iris は Sclera (画素 y 24..40) で
+    // 切り抜かれるので、Pupil は白目の外 (y < 24) に出ない。
+    image.assert_pixel((32, 12), NONE);
+    image.assert_pixel((32, 23), NONE);
+    image.assert_pixel((32, 24), RED);
+    image.assert_pixel((32, 29), RED);
+    image.assert_pixel((32, 30), BLUE);
+    image.assert_pixel((26, 26), BLUE);
+    image.assert_pixel((20, 32), WHITE);
+    assert_eq!(image.covered_pixels([0; 4]), 32 * 16);
+    // Iris と Pupil の 2 つの内容を、レベルごとに別のアトラスに描く。
+    assert_eq!(
+        image.stats,
+        FrameStats {
+            drawables: 3,
+            mask_sets: 2,
+            mask_draws: 2,
+            mask_atlases: 2,
+        }
+    );
+}
+
+#[test]
+fn nested_mask_strength_is_inherited() {
+    // Iris の mask_strength を 0.5 にすると、白目の外 (画素 y 16..24) の Iris は 0.5 だけ見え、
+    // Iris をマスクにする Pupil のカバレッジも 0.5 になる (入れ子の係数は mask_strength を含む)。
+    let mut model = fixtures::nested_masks();
+    tint(&mut model, "Iris", [0.0, 0.0, 1.0]);
+    tint(&mut model, "Pupil", [1.0, 0.0, 0.0]);
+    edit_keyforms(&mut model, "Iris", |k| k.mask_strength = 0.5);
+    let image = Scene::new(model).render();
+    image.assert_pixel((26, 20), [0.0, 0.0, 0.5, 0.5]);
+    // 0.5 の赤を 0.5 の青の上に normal 合成。
+    image.assert_pixel((32, 20), [0.5, 0.0, 0.25, 0.75]);
+    image.assert_pixel((32, 12), NONE);
+    // 白目の内側は変わらない。
+    image.assert_pixel((32, 26), RED);
+}
+
+#[test]
+fn mask_only_mesh_is_not_drawn_but_masks() {
+    let mut model = fixtures::intersection_masks();
+    tint(&mut model, "Face", [0.0, 0.0, 1.0]);
+    let image = Scene::new(model.clone()).render();
+    // MouthMask (画素 16..48 × 32..48、白) は描かれない。
+    image.assert_pixel((18, 34), BLUE);
+    assert_eq!(image.stats.drawables, 2);
+
+    // 普通のマスク用メッシュでも、mask_only にすれば描かれずにマスクとして働く。
+    let mut scene = clipped_scene(false, 1.0);
+    let mask = mesh_mut(&mut scene.model, "Mask");
+    mask.mask_only = true;
+    mask.blend = BlendMode::Normal;
+    let image = scene.render();
+    image.assert_pixel((40, 32), RED);
+    image.assert_pixel((24, 32), NONE);
+    image.assert_pixel((52, 32), NONE);
+    assert_eq!(image.covered_pixels([0; 4]), 16 * 32);
+    assert_eq!(image.stats.drawables, 1);
+    assert_eq!(image.stats.mask_draws, 1);
+
+    // 反転マスクとしても働く。
+    let mut scene = clipped_scene(true, 1.0);
+    mesh_mut(&mut scene.model, "Mask").mask_only = true;
+    let image = scene.render();
+    image.assert_pixel((24, 32), RED);
+    image.assert_pixel((40, 32), NONE);
+}
+
+/// 描画先 512 画素 (キャンバスの 2 倍) に、赤い四角形 20 個 (各 80x80 画素) を並べ、
+/// それぞれ別のマスクで左側 (縁は画素の途中 x0 + 26.6) だけ残す。
+fn many_sharp_masks() -> Scene {
+    let mut meshes = Vec::new();
+    for k in 0..20 {
+        let (x, y) = (8.0 + 48.0 * (k % 5) as f32, 8.0 + 48.0 * (k / 5) as f32);
+        let mask = format!("M{k}");
+        meshes.push(red_quad(
+            &format!("C{k}"),
+            [x, y, x + 40.0, y + 40.0],
+            &[&mask],
+            false,
+        ));
+        meshes.push(mask_quad(
+            &mask,
+            [x - 4.0, y - 4.0, x + 13.3, y + 44.0],
+            1.0,
+        ));
+    }
+    let mut scene = Scene::new(model_of(meshes));
+    scene.size = 512;
+    scene
+}
+
+/// 赤の画素ごとの値 (0..255)。
+fn red_values(image: &Image) -> Vec<u8> {
+    image
+        .pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|p| p[0])
+        .collect()
+}
+
+#[test]
+fn masks_are_as_sharp_as_the_screen_by_default() {
+    let image = many_sharp_masks().render();
+    // 既定の精度では、マスクは画面の画素と同じ解像度で描かれる。縁の画素も 0 か 1 になり、
+    // 残るのは中心が縁より左の画素 (各四角形で 27 列 × 80 行)。
+    let values = red_values(&image);
+    let partial = values.iter().filter(|&&v| v > 2 && v < 253).count();
+    assert_eq!(partial, 0);
+    assert_eq!(image.covered_pixels([0; 4]), 20 * 27 * 80);
+    assert_eq!(image.stats.mask_sets, 20);
+    assert_eq!(image.stats.mask_atlases, 1);
+}
+
+#[test]
+fn downscale_option_lowers_mask_resolution() {
+    let mut scene = many_sharp_masks();
+    scene.options.mask_atlas = MaskAtlasOptions {
+        downscale: 4,
+        ..MaskAtlasOptions::default()
+    };
+    let image = scene.render();
+    // 縁はぼやける (中間の値の画素がある) が、縁から離れた所は同じ。
+    let values = red_values(&image);
+    assert!(values.iter().any(|&v| v > 2 && v < 253));
+    let (x0, y0) = (16, 16);
+    image.assert_pixel((x0 + 4, y0 + 40), RED);
+    image.assert_pixel((x0 + 20, y0 + 40), RED);
+    image.assert_pixel((x0 + 34, y0 + 40), NONE);
+    image.assert_pixel((x0 + 70, y0 + 40), NONE);
 }

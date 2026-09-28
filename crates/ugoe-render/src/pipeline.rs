@@ -4,7 +4,7 @@ use ugoe_model::BlendMode;
 
 /// 本描画のパイプラインを区別するキー。
 ///
-/// マスクの有無と反転はユニフォーム (`mask_flags`) で切り替えるので、キーには含めない
+/// マスクの有無と読み方はユニフォーム (`mask_params` など) で切り替えるので、キーには含めない
 /// (`docs/spec/rendering.md` の「GPU リソースの方針」)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PipelineKey {
@@ -21,8 +21,19 @@ pub(crate) struct Pipelines {
     target_format: wgpu::TextureFormat,
     // 組み合わせは高々数十なので線形探索で十分。
     cache: Vec<(PipelineKey, wgpu::RenderPipeline)>,
-    /// マスクパス用 (マスクアトラスへの加算合成)。1 種類だけなので最初に作る。
-    mask: wgpu::RenderPipeline,
+    /// マスクパスの固定のパイプライン。種類が決まっているので最初に作る。
+    mask: MaskPipelines,
+}
+
+/// マスクパスのパイプライン (`docs/spec/rendering.md` の「実装方式」)。
+#[derive(Debug)]
+pub(crate) struct MaskPipelines {
+    /// マスク用メッシュを描き、書き込み先に `1 − c` を掛ける (乗算合成 dst × src)。
+    pub draw: wgpu::RenderPipeline,
+    /// セル全体の作業領域 (A) を 1 で埋める。
+    pub fill_scratch: wgpu::RenderPipeline,
+    /// セル全体で、チャンネル R/G/B (添字) に `1 − 作業領域` を掛ける。
+    pub resolve: [wgpu::RenderPipeline; 3],
 }
 
 /// マスクアトラスのテクスチャ形式。
@@ -34,8 +45,7 @@ const POSITION_ATTRIBUTES: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array!
 const UV_ATTRIBUTES: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![1 => Float32x2];
 
 impl Pipelines {
-    /// `layouts` は本描画のバインドグループレイアウト (group 0..4)。
-    /// マスクパスは先頭の 3 つ (globals・要素ごとのユニフォーム・テクスチャ) だけを使う。
+    /// `layouts` は本描画とマスクパスで共有するバインドグループレイアウト (group 0..4)。
     pub fn new(
         device: &wgpu::Device,
         target_format: wgpu::TextureFormat,
@@ -52,34 +62,86 @@ impl Pipelines {
             bind_group_layouts: &layouts,
             immediate_size: 0,
         });
-        let mask_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("ugoe mask pipeline layout"),
-            bind_group_layouts: &layouts[..3],
+        // 全面描画はバインドグループを使わない。
+        let fill_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("ugoe mask fill pipeline layout"),
+            bind_group_layouts: &[],
             immediate_size: 0,
         });
-        // 加算合成。RGBA8 に書くので和は 1 に飽和する (和集合 min(1, Σ))。
-        let add = wgpu::BlendComponent {
-            src_factor: wgpu::BlendFactor::One,
-            dst_factor: wgpu::BlendFactor::One,
+        let component = |src_factor, dst_factor| wgpu::BlendComponent {
+            src_factor,
+            dst_factor,
             operation: wgpu::BlendOperation::Add,
         };
-        let mask = create_pipeline(
+        // dst × src。
+        let multiply = component(wgpu::BlendFactor::Zero, wgpu::BlendFactor::Src);
+        let draw = create_pipeline(
             device,
             &PipelineDesc {
                 label: "ugoe mask pipeline",
-                layout: &mask_layout,
+                layout: &layout,
                 module: &module,
                 vs: "vs_mask",
                 fs: "fs_mask",
+                vertex_buffers: true,
                 format: MASK_ATLAS_FORMAT,
                 blend: wgpu::BlendState {
-                    color: add,
-                    alpha: add,
+                    color: multiply,
+                    alpha: multiply,
                 },
+                write_mask: wgpu::ColorWrites::ALL,
                 // マスクはカリングしない (マスク用メッシュの `culling` は本描画にだけ効く)。
                 cull_front_face: None,
             },
         );
+        let fill = |label, blend, write_mask| {
+            create_pipeline(
+                device,
+                &PipelineDesc {
+                    label,
+                    layout: &fill_layout,
+                    module: &module,
+                    vs: "vs_fill",
+                    fs: "fs_fill",
+                    vertex_buffers: false,
+                    format: MASK_ATLAS_FORMAT,
+                    blend,
+                    write_mask,
+                    cull_front_face: None,
+                },
+            )
+        };
+        let replace = component(wgpu::BlendFactor::One, wgpu::BlendFactor::Zero);
+        let fill_scratch = fill(
+            "ugoe mask fill scratch pipeline",
+            wgpu::BlendState {
+                color: replace,
+                alpha: replace,
+            },
+            wgpu::ColorWrites::ALPHA,
+        );
+        // dst × (1 − dst.a)。書き込みマスクで 1 チャンネルに限る。
+        let times_scratch = component(wgpu::BlendFactor::Zero, wgpu::BlendFactor::OneMinusDstAlpha);
+        let resolve = [
+            wgpu::ColorWrites::RED,
+            wgpu::ColorWrites::GREEN,
+            wgpu::ColorWrites::BLUE,
+        ]
+        .map(|write_mask| {
+            fill(
+                "ugoe mask resolve pipeline",
+                wgpu::BlendState {
+                    color: times_scratch,
+                    alpha: times_scratch,
+                },
+                write_mask,
+            )
+        });
+        let mask = MaskPipelines {
+            draw,
+            fill_scratch,
+            resolve,
+        };
         Self {
             module,
             layout,
@@ -89,7 +151,7 @@ impl Pipelines {
         }
     }
 
-    pub fn mask(&self) -> &wgpu::RenderPipeline {
+    pub fn mask(&self) -> &MaskPipelines {
         &self.mask
     }
 
@@ -114,8 +176,10 @@ impl Pipelines {
                 module: &self.module,
                 vs: "vs_main",
                 fs: "fs_main",
+                vertex_buffers: true,
                 format: self.target_format,
                 blend: blend_state(key.blend),
+                write_mask: wgpu::ColorWrites::ALL,
                 cull_front_face: key.cull_front_face,
             },
         )
@@ -128,8 +192,11 @@ struct PipelineDesc<'a> {
     module: &'a wgpu::ShaderModule,
     vs: &'a str,
     fs: &'a str,
+    /// 位置と UV の頂点バッファを使うか (全面描画は使わない)。
+    vertex_buffers: bool,
     format: wgpu::TextureFormat,
     blend: wgpu::BlendState,
+    write_mask: wgpu::ColorWrites,
     cull_front_face: Option<wgpu::FrontFace>,
 }
 
@@ -150,7 +217,7 @@ fn create_pipeline(device: &wgpu::Device, desc: &PipelineDesc<'_>) -> wgpu::Rend
             module: desc.module,
             entry_point: Some(desc.vs),
             compilation_options: Default::default(),
-            buffers: &buffers,
+            buffers: if desc.vertex_buffers { &buffers } else { &[] },
         },
         primitive: wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
@@ -167,7 +234,7 @@ fn create_pipeline(device: &wgpu::Device, desc: &PipelineDesc<'_>) -> wgpu::Rend
             targets: &[Some(wgpu::ColorTargetState {
                 format: desc.format,
                 blend: Some(desc.blend),
-                write_mask: wgpu::ColorWrites::ALL,
+                write_mask: desc.write_mask,
             })],
         }),
         multiview_mask: None,

@@ -10,14 +10,13 @@
 mod mask;
 mod pipeline;
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use ugoe_runtime::{CompiledModel, ModelInstance};
 use wgpu::util::DeviceExt;
 
 pub use crate::mask::MaskAtlasOptions;
-use crate::mask::MaskSlot;
+use crate::mask::{CellRequest, MaskContent, MaskSlot, MaskStep, MeshMask};
 use crate::pipeline::{MASK_ATLAS_FORMAT, PipelineKey, Pipelines, VEC2_SIZE};
 
 /// 参照シェーダの WGSL ソース。
@@ -63,6 +62,7 @@ impl View {
 /// [`Renderer`] の設定。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RendererOptions {
+    /// マスクアトラスの大きさの上限と、マスクを描く解像度 (`docs/spec/rendering.md` の「精度」)。
     pub mask_atlas: MaskAtlasOptions,
 }
 
@@ -71,9 +71,9 @@ pub struct RendererOptions {
 pub struct FrameStats {
     /// 本描画で描いた要素の数。
     pub drawables: u32,
-    /// マスクアトラスに描いたマスク集合の数 (同じ集合を使う要素は 1 つと数える)。
+    /// マスクアトラスに描いたマスクの内容の数 (同じ内容を使う要素は 1 つと数える)。
     pub mask_sets: u32,
-    /// マスクパスで描いたマスク用メッシュの数 (draw call 数)。
+    /// マスクパスでマスク用メッシュを描いた回数 (作業領域の全面描画は数えない)。
     pub mask_draws: u32,
     /// 使ったマスクアトラスの枚数。
     pub mask_atlases: u32,
@@ -92,9 +92,42 @@ struct GlobalsRaw {
 struct DrawUniformsRaw {
     multiply_color: [f32; 4],
     screen_color: [f32; 4],
-    mask_flags: [f32; 4],
     mask_rect: [f32; 4],
     mask_channel: [f32; 4],
+    mask_params: [f32; 4],
+    target_rect: [f32; 4],
+    target_channel: [f32; 4],
+}
+
+/// シェーダの `mask_rect`・`mask_channel`・`mask_params` (要素自身のマスクの読み方)。
+#[derive(Debug, Clone, Copy)]
+struct MaskRead {
+    rect: [f32; 4],
+    channel: [f32; 4],
+    params: [f32; 4],
+}
+
+impl MaskRead {
+    /// マスクを持たない (係数 1)。
+    const NONE: Self = Self {
+        rect: [0.0, 0.0, 1.0, 1.0],
+        channel: [0.0; 4],
+        params: [0.0; 4],
+    };
+
+    fn new(active: &ActiveMask, mask: MeshMask, strength: f32) -> Self {
+        let one_hot = active.slot.channel_mask();
+        let (offset, channel) = if mask.complement {
+            (1.0, one_hot.map(|v| -v))
+        } else {
+            (0.0, one_hot)
+        };
+        Self {
+            rect: active.transform,
+            channel,
+            params: [offset, strength, 0.0, 0.0],
+        }
+    }
 }
 
 const DRAW_UNIFORMS_SIZE: u64 = std::mem::size_of::<DrawUniformsRaw>() as u64;
@@ -108,13 +141,14 @@ struct Geometry {
     uvs: wgpu::Buffer,
     indices: wgpu::Buffer,
     meshes: Vec<MeshRange>,
-    /// マスク集合 (マスク用メッシュのインデックスを昇順・重複なしに並べたもの)。
-    /// モデルの静的なデータなので、ロード時に一度だけ求める。
-    mask_sets: Vec<Vec<u32>>,
-    /// マスク集合 `s` のマスク用メッシュのユニフォームを置く最初のスロット。
+    /// マスクの内容。モデルの静的なデータなので、ロード時に一度だけ求める。
+    masks: Vec<MaskContent>,
+    /// マスクの内容のインデックスを、レベルの大きい順に並べたもの (外接矩形の伝播に使う)。
+    masks_by_level_desc: Vec<u32>,
+    /// 内容 `c` の `Draw` の段のユニフォームを置く最初のスロット。
     mask_slot_base: Vec<u32>,
     /// 描画可能要素ごとのユニフォーム。要素 `i` はオフセット `i * draw_stride`。
-    /// その後ろに、マスクパスで描くマスク用メッシュの分を集合ごとに並べる。
+    /// その後ろに、マスクパスでマスク用メッシュを描く分を内容ごとに並べる。
     draws: wgpu::Buffer,
     draws_bind_group: wgpu::BindGroup,
     draw_stride: u64,
@@ -129,10 +163,8 @@ struct MeshRange {
     index_count: u32,
     texture: u32,
     culling: bool,
-    /// `Geometry::mask_sets` のインデックス。マスクを使わないなら `None`。
-    mask_set: Option<u32>,
-    /// すべての参照が反転マスクか (T0202 時点の、メッシュ単位の反転)。
-    invert_mask: bool,
+    /// 自身のマスクとして読む内容。マスクを持たないなら `None`。
+    mask: Option<MeshMask>,
 }
 
 /// マスクアトラス 1 枚。フレームをまたいで使い回す。
@@ -144,11 +176,11 @@ struct MaskAtlas {
     bind_group: wgpu::BindGroup,
 }
 
-/// 1 フレームで使うマスク集合の情報。
+/// 1 フレームで使うマスクの内容の情報。
 #[derive(Debug, Clone, Copy)]
-struct ActiveMaskSet {
-    /// `Geometry::mask_sets` のインデックス。
-    set: u32,
+struct ActiveMask {
+    /// `Geometry::masks` のインデックス。
+    content: u32,
     slot: MaskSlot,
     /// 画面 UV → アトラス UV の変換 (`mask_rect` ユニフォーム)。
     transform: [f32; 4],
@@ -174,10 +206,13 @@ pub struct Renderer {
     sampler: wgpu::Sampler,
     globals: wgpu::Buffer,
     globals_bind_group: wgpu::BindGroup,
-    /// マスクを使わない要素に束縛する 1x1 のダミー (`mask_flags.x = 0` なので値は読まれない)。
+    /// マスクを使わない要素に束縛する 1x1 のダミー (`mask_strength = 0` なので値は効かない)。
     no_mask_bind_group: wgpu::BindGroup,
+    mask_options: MaskAtlasOptions,
+    /// アトラスの一辺の上限 (設定とデバイスの上限の小さい方)。
+    mask_atlas_max_size: u32,
+    /// 今のアトラスの一辺。必要になれば大きくし、小さくはしない (0 はまだ作っていない)。
     mask_atlas_size: u32,
-    mask_atlas_max_grid: u32,
     mask_atlases: Vec<MaskAtlas>,
     stats: FrameStats,
     textures: Vec<Option<TextureSlot>>,
@@ -284,12 +319,12 @@ impl Renderer {
             }],
         });
 
-        // 内容は使われない (mask_flags.x = 0)。wgpu は未書き込みのテクスチャをゼロで初期化する。
+        // 内容は使われない (mask_strength = 0)。wgpu は未書き込みのテクスチャをゼロで初期化する。
         let no_mask_texture = device.create_texture(&texture_descriptor("ugoe no mask", 1, 1));
         let no_mask_bind_group =
             texture_bind_group(device, &texture_layout, &no_mask_texture, &sampler);
-        let (mask_atlas_size, mask_atlas_max_grid) =
-            mask::atlas_geometry(options.mask_atlas, device.limits().max_texture_dimension_2d);
+        let mask_atlas_max_size =
+            mask::max_atlas_size(options.mask_atlas, device.limits().max_texture_dimension_2d);
 
         Self {
             target_format,
@@ -300,8 +335,9 @@ impl Renderer {
             globals,
             globals_bind_group,
             no_mask_bind_group,
-            mask_atlas_size,
-            mask_atlas_max_grid,
+            mask_options: options.mask_atlas,
+            mask_atlas_max_size,
+            mask_atlas_size: 0,
             mask_atlases: Vec::new(),
             stats: FrameStats::default(),
             textures: Vec::new(),
@@ -366,6 +402,8 @@ impl Renderer {
     /// 描画先は読み込んだうえで上に重ねる (`LoadOp::Load`)。クリアはホストが行う。
     /// 非表示の要素は描画しない。描画する要素 (とそのマスク用メッシュ) のテクスチャが未登録なら
     /// エラーを返し、何も積まない。
+    ///
+    /// マスクの解像度は `target` のテクスチャの大きさ (画素) から決める (`docs/spec/rendering.md` の「精度」)。
     pub fn encode(
         &mut self,
         device: &wgpu::Device,
@@ -391,12 +429,18 @@ impl Renderer {
         };
         let drawables = instance.drawables();
         let m = view.view_proj;
+        let target_size = target.texture().size();
+        let target_pixels = [
+            target_size.width.max(1) as f32,
+            target_size.height.max(1) as f32,
+        ];
+        let mesh_bbox = |i: usize| screen_bbox(&m, &drawables[i].positions);
 
         // 描画する要素を決め、必要なテクスチャとパイプラインを先に揃える。
-        // マスク集合ごとに、対象要素の画面上の外接矩形 (画面 UV) も求める。
+        // マスクの内容ごとに、それを読む要素の画面上の外接矩形 (画面 UV) も求める。
         let front_face = view.front_face();
         let mut draws = Vec::with_capacity(drawables.len());
-        let mut bboxes: Vec<Option<[f32; 4]>> = vec![None; geometry.mask_sets.len()];
+        let mut bboxes: Vec<Option<[f32; 4]>> = vec![None; geometry.masks.len()];
         for &i in instance.render_order() {
             let (state, mesh) = (&drawables[i as usize], geometry.meshes[i as usize]);
             if !state.visible || mesh.index_count == 0 {
@@ -405,13 +449,8 @@ impl Renderer {
             if self.texture(mesh.texture).is_none() {
                 return Err(RenderError::MissingTexture(mesh.texture));
             }
-            if let Some(set) = mesh.mask_set {
-                let bbox = &mut bboxes[set as usize];
-                for p in &state.positions {
-                    let [u, v] = screen_uv(&m, [p.x, p.y]);
-                    let b = bbox.get_or_insert([u, v, u, v]);
-                    *b = [b[0].min(u), b[1].min(v), b[2].max(u), b[3].max(v)];
-                }
+            if let Some(mask) = mesh.mask {
+                union_bbox(&mut bboxes[mask.content as usize], mesh_bbox(i as usize));
             }
             let key = PipelineKey {
                 blend: state.blend,
@@ -421,43 +460,85 @@ impl Renderer {
             draws.push((i as usize, key));
         }
 
-        // 使うマスク集合にアトラスの場所を割り当てる。外接矩形が画面外か面積 0 の集合は
-        // 対象要素が画素を持たないので、集合ごと描かない。
-        let mut active_of_set: Vec<Option<usize>> = vec![None; geometry.mask_sets.len()];
-        let mut used_sets = Vec::new();
-        for (set, bbox) in bboxes.iter().enumerate() {
-            let Some(b) = bbox else { continue };
-            let b = b.map(|v| v.clamp(0.0, 1.0));
-            if b[2] <= b[0] || b[3] <= b[1] {
+        // 入れ子の継承: マスク用メッシュ自身のマスクは、そのメッシュが内容を描く範囲
+        // (メッシュの外接矩形と、描き込む内容の外接矩形の共通部分) で要る。
+        // 内容のレベルは、そのマスク用メッシュ自身の内容より必ず大きいので、大きい順に伝播する。
+        for &c in &geometry.masks_by_level_desc {
+            let Some(outer) = bboxes[c as usize].and_then(clip_bbox) else {
                 continue;
+            };
+            for &member in &geometry.masks[c as usize].members {
+                let Some(own) = geometry.meshes[member as usize].mask else {
+                    continue;
+                };
+                if let Some(b) = mesh_bbox(member as usize).and_then(|b| intersect_bbox(b, outer)) {
+                    union_bbox(&mut bboxes[own.content as usize], Some(b));
+                }
             }
+        }
+
+        // 使う内容にアトラスの場所を割り当てる。外接矩形が画面外か面積 0 の内容は
+        // 読む要素が画素を持たないので、描かない。外接矩形は画素の境界に広げて、
+        // 既定の解像度ではアトラスの texel と画面の画素が一致するようにする。
+        let mut active_of: Vec<Option<usize>> = vec![None; geometry.masks.len()];
+        let mut used = Vec::new();
+        let mut requests = Vec::new();
+        for (c, bbox) in bboxes.iter().enumerate() {
+            let Some(b) = bbox.and_then(|b| snap_bbox(b, target_pixels)) else {
+                continue;
+            };
+            let content = &geometry.masks[c];
             // マスク用メッシュは自分が非表示でも描くので、テクスチャが要る。
-            for &mask in &geometry.mask_sets[set] {
-                let mesh = geometry.meshes[mask as usize];
+            for &member in &content.members {
+                let mesh = geometry.meshes[member as usize];
                 if mesh.index_count > 0 && self.texture(mesh.texture).is_none() {
                     return Err(RenderError::MissingTexture(mesh.texture));
                 }
             }
-            active_of_set[set] = Some(used_sets.len());
-            used_sets.push((set as u32, b));
+            let [width, height] = mask::cell_size(
+                [
+                    (b[2] - b[0]) * target_pixels[0],
+                    (b[3] - b[1]) * target_pixels[1],
+                ],
+                self.mask_options.downscale,
+                self.mask_atlas_max_size,
+            );
+            active_of[c] = Some(used.len());
+            used.push((c as u32, b));
+            requests.push(CellRequest {
+                level: content.level,
+                width,
+                height,
+            });
         }
-        let atlas_size = self.mask_atlas_size;
-        let active: Vec<ActiveMaskSet> =
-            mask::allocate(used_sets.len(), atlas_size, self.mask_atlas_max_grid)
-                .into_iter()
-                .zip(used_sets)
-                .map(|(slot, (set, bbox))| ActiveMaskSet {
-                    set,
-                    slot,
-                    transform: slot.transform(atlas_size, bbox),
-                })
-                .collect();
+        let (atlas_size, slots) = if requests.is_empty() {
+            (self.mask_atlas_size, Vec::new())
+        } else {
+            mask::allocate(&requests, self.mask_atlas_size, self.mask_atlas_max_size)
+        };
+        let active: Vec<ActiveMask> = slots
+            .into_iter()
+            .zip(used)
+            .map(|(slot, (content, bbox))| ActiveMask {
+                content,
+                slot,
+                transform: slot.transform(atlas_size, bbox),
+            })
+            .collect();
         draws.retain(|&(i, _)| {
             geometry.meshes[i]
-                .mask_set
-                .is_none_or(|set| active_of_set[set as usize].is_some())
+                .mask
+                .is_none_or(|mask| active_of[mask.content as usize].is_some())
         });
-        let atlas_count = active.last().map_or(0, |a| a.slot.atlas as usize + 1);
+        let atlas_count = active
+            .iter()
+            .map(|a| a.slot.atlas as usize + 1)
+            .max()
+            .unwrap_or(0);
+        if atlas_size != self.mask_atlas_size {
+            self.mask_atlases.clear();
+            self.mask_atlas_size = atlas_size;
+        }
         while self.mask_atlases.len() < atlas_count {
             self.mask_atlases.push(MaskAtlas::new(
                 device,
@@ -481,6 +562,17 @@ impl Renderer {
             );
         }
 
+        // 要素 (またはマスク用メッシュ) `i` 自身のマスクの読み方。
+        let mask_read = |i: usize| {
+            geometry.meshes[i]
+                .mask
+                .and_then(|mask| {
+                    let a = &active[active_of[mask.content as usize]?];
+                    Some(MaskRead::new(a, mask, drawables[i].mask_strength))
+                })
+                .unwrap_or(MaskRead::NONE)
+        };
+
         // 要素ごとのユニフォームと、マスクパスで描くマスク用メッシュのユニフォーム。
         let stride = geometry.draw_stride as usize;
         self.draws_scratch.clear();
@@ -491,11 +583,7 @@ impl Renderer {
                 .copy_from_slice(bytemuck::bytes_of(&raw));
         };
         for (i, state) in drawables.iter().enumerate() {
-            let mesh = geometry.meshes[i];
-            let mask = mesh
-                .mask_set
-                .and_then(|set| active_of_set[set as usize])
-                .map(|a| &active[a]);
+            let read = mask_read(i);
             write_draw(
                 i,
                 DrawUniformsRaw {
@@ -511,29 +599,40 @@ impl Renderer {
                         state.screen_color.b,
                         0.0,
                     ],
-                    mask_flags: [
-                        f32::from(u8::from(mask.is_some())),
-                        f32::from(u8::from(mesh.invert_mask)),
-                        0.0,
-                        0.0,
-                    ],
-                    mask_rect: mask.map_or([0.0, 0.0, 1.0, 1.0], |a| a.transform),
-                    mask_channel: mask.map_or([0.0; 4], |a| a.slot.channel_mask()),
+                    mask_rect: read.rect,
+                    mask_channel: read.channel,
+                    mask_params: read.params,
+                    target_rect: [0.0; 4],
+                    target_channel: [0.0; 4],
                 },
             );
         }
         for a in &active {
-            let base = geometry.mask_slot_base[a.set as usize] as usize;
-            for j in 0..geometry.mask_sets[a.set as usize].len() {
-                // カバレッジはテクスチャのアルファだけで決まる (不透明度・色は使わない)。
+            let base = geometry.mask_slot_base[a.content as usize] as usize;
+            let draw_steps = geometry.masks[a.content as usize]
+                .steps
+                .iter()
+                .filter_map(|step| match *step {
+                    MaskStep::Draw { mesh, scratch } => Some((mesh, scratch)),
+                    _ => None,
+                });
+            for (j, (mesh, scratch)) in draw_steps.enumerate() {
+                // カバレッジはテクスチャのアルファと自身のマスク係数だけで決まる (不透明度・色は使わない)。
+                let read = mask_read(mesh as usize);
                 write_draw(
                     base + j,
                     DrawUniformsRaw {
                         multiply_color: [1.0; 4],
                         screen_color: [0.0; 4],
-                        mask_flags: [0.0; 4],
-                        mask_rect: a.transform,
-                        mask_channel: a.slot.channel_mask(),
+                        mask_rect: read.rect,
+                        mask_channel: read.channel,
+                        mask_params: read.params,
+                        target_rect: a.transform,
+                        target_channel: if scratch {
+                            [0.0, 0.0, 0.0, 1.0]
+                        } else {
+                            a.slot.channel_mask()
+                        },
                     },
                 );
             }
@@ -547,7 +646,9 @@ impl Renderer {
         };
         queue.write_buffer(&self.globals, 0, bytemuck::bytes_of(&globals));
 
-        // マスクパス: アトラスごとに 1 パス。各集合はシザー矩形で自分のセルだけに描く。
+        // マスクパス: アトラスごとに 1 パス (レベルの小さいアトラスから)。各内容はシザー矩形で
+        // 自分のセルだけに描く。アトラスは 1 でクリアし、乗算合成で値を作る。
+        let pipelines = self.pipelines.mask();
         let mut mask_draws = 0;
         for (index, atlas) in self.mask_atlases[..atlas_count].iter().enumerate() {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -557,7 +658,7 @@ impl Renderer {
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -566,28 +667,55 @@ impl Renderer {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            pass.set_pipeline(self.pipelines.mask());
-            pass.set_bind_group(0, &self.globals_bind_group, &[]);
             for a in active.iter().filter(|a| a.slot.atlas as usize == index) {
                 let [x, y, w, h] = a.slot.cell;
                 pass.set_scissor_rect(x, y, w, h);
-                let base = geometry.mask_slot_base[a.set as usize] as usize;
-                for (j, &mask) in geometry.mask_sets[a.set as usize].iter().enumerate() {
-                    let mesh = geometry.meshes[mask as usize];
-                    let Some(texture) = self.texture(mesh.texture) else {
-                        continue;
-                    };
-                    if mesh.index_count == 0 {
-                        continue;
+                let base = geometry.mask_slot_base[a.content as usize] as usize;
+                let mut j = 0;
+                for step in &geometry.masks[a.content as usize].steps {
+                    match *step {
+                        MaskStep::FillScratch => {
+                            pass.set_pipeline(&pipelines.fill_scratch);
+                            pass.draw(0..3, 0..1);
+                        }
+                        MaskStep::Resolve => {
+                            pass.set_pipeline(&pipelines.resolve[a.slot.channel as usize]);
+                            pass.draw(0..3, 0..1);
+                        }
+                        MaskStep::Draw { mesh: member, .. } => {
+                            let slot = base + j;
+                            j += 1;
+                            let mesh = geometry.meshes[member as usize];
+                            let Some(texture) = self.texture(mesh.texture) else {
+                                continue;
+                            };
+                            // 自身のマスクの内容が描かれていなければ、このメッシュは
+                            // 内容のセルの範囲に画素を持たない (カバレッジ 0 と同じなので描かない)。
+                            let own_mask = match mesh.mask {
+                                None => &self.no_mask_bind_group,
+                                Some(own) => match active_of[own.content as usize] {
+                                    Some(o) => {
+                                        &self.mask_atlases[active[o].slot.atlas as usize].bind_group
+                                    }
+                                    None => continue,
+                                },
+                            };
+                            if mesh.index_count == 0 {
+                                continue;
+                            }
+                            pass.set_pipeline(&pipelines.draw);
+                            pass.set_bind_group(0, &self.globals_bind_group, &[]);
+                            pass.set_bind_group(
+                                1,
+                                &geometry.draws_bind_group,
+                                &[(slot * stride) as u32],
+                            );
+                            pass.set_bind_group(2, &texture.bind_group, &[]);
+                            pass.set_bind_group(3, own_mask, &[]);
+                            geometry.draw_mesh(&mut pass, mesh);
+                            mask_draws += 1;
+                        }
                     }
-                    pass.set_bind_group(
-                        1,
-                        &geometry.draws_bind_group,
-                        &[((base + j) * stride) as u32],
-                    );
-                    pass.set_bind_group(2, &texture.bind_group, &[]);
-                    geometry.draw_mesh(&mut pass, mesh);
-                    mask_draws += 1;
                 }
             }
         }
@@ -617,7 +745,7 @@ impl Renderer {
             else {
                 continue;
             };
-            let mask_bind_group = match mesh.mask_set.and_then(|set| active_of_set[set as usize]) {
+            let mask_bind_group = match mesh.mask.and_then(|m| active_of[m.content as usize]) {
                 Some(a) => &self.mask_atlases[active[a].slot.atlas as usize].bind_group,
                 None => &self.no_mask_bind_group,
             };
@@ -650,11 +778,11 @@ impl Geometry {
         compiled: &Arc<CompiledModel>,
     ) -> Self {
         let model = compiled.model();
-        let (mesh_mask_sets, mask_sets) = mask_sets(model);
+        let (mesh_masks, masks) = mask::build(compiled);
         let mut uvs: Vec<[f32; 2]> = Vec::new();
         let mut indices: Vec<u16> = Vec::new();
         let mut meshes = Vec::with_capacity(model.meshes.len());
-        for (mesh, &mask_set) in model.meshes.iter().zip(&mesh_mask_sets) {
+        for (mesh, &mask) in model.meshes.iter().zip(&mesh_masks) {
             let vertex_offset = uvs.len() as u64 * VEC2_SIZE;
             let index_offset = indices.len() as u64 * 2;
             uvs.extend(mesh.uvs.iter().map(|uv| [uv.x, uv.y]));
@@ -672,10 +800,7 @@ impl Geometry {
                 index_count,
                 texture: mesh.texture,
                 culling: mesh.culling,
-                mask_set,
-                // TODO(T0205): 参照ごとの反転・共通部分 (`mask_mode`)・入れ子の継承・`mask_strength` を実装する。
-                // 今は、通常と反転が混ざる場合は全参照を通常マスクとして、`intersection` は和集合として扱う。
-                invert_mask: !mesh.masks.is_empty() && mesh.masks.iter().all(|r| r.invert),
+                mask,
             });
         }
 
@@ -698,12 +823,14 @@ impl Geometry {
 
         let alignment = u64::from(device.limits().min_uniform_buffer_offset_alignment);
         let draw_stride = DRAW_UNIFORMS_SIZE.div_ceil(alignment) * alignment;
-        let mut mask_slot_base = Vec::with_capacity(mask_sets.len());
+        let mut mask_slot_base = Vec::with_capacity(masks.len());
         let mut slots = meshes.len() as u32;
-        for set in &mask_sets {
+        for content in &masks {
             mask_slot_base.push(slots);
-            slots += set.len() as u32;
+            slots += content.draw_count() as u32;
         }
+        let mut masks_by_level_desc: Vec<u32> = (0..masks.len() as u32).collect();
+        masks_by_level_desc.sort_by_key(|&c| std::cmp::Reverse(masks[c as usize].level));
         let draws = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("ugoe draw uniforms"),
             size: draw_stride * u64::from(slots.max(1)),
@@ -729,7 +856,8 @@ impl Geometry {
             uvs,
             indices,
             meshes,
-            mask_sets,
+            masks,
+            masks_by_level_desc,
             mask_slot_base,
             draws,
             draws_bind_group,
@@ -753,43 +881,6 @@ impl Geometry {
     }
 }
 
-/// メッシュごとのマスク集合と、マスク集合の一覧を求める。
-///
-/// マスク集合はマスク用メッシュのインデックスの集合で、`masks` の並びや重複は区別しない。
-/// 反転の有無も区別しない (反転は本描画でカバレッジを読むときに行う)。
-/// 存在しないメッシュを指す ID は無視する (`ugoe_model::validate` が検出する)。
-fn mask_sets(model: &ugoe_model::Model) -> (Vec<Option<u32>>, Vec<Vec<u32>>) {
-    let index_of: HashMap<_, u32> = model
-        .meshes
-        .iter()
-        .enumerate()
-        .map(|(i, mesh)| (&mesh.id, i as u32))
-        .collect();
-    let mut sets: Vec<Vec<u32>> = Vec::new();
-    let mut set_of: HashMap<Vec<u32>, u32> = HashMap::new();
-    let per_mesh = model
-        .meshes
-        .iter()
-        .map(|mesh| {
-            let mut key: Vec<u32> = mesh
-                .masks
-                .iter()
-                .filter_map(|r| index_of.get(&r.mesh).copied())
-                .collect();
-            key.sort_unstable();
-            key.dedup();
-            if key.is_empty() {
-                return None;
-            }
-            Some(*set_of.entry(key).or_insert_with_key(|key| {
-                sets.push(key.clone());
-                sets.len() as u32 - 1
-            }))
-        })
-        .collect();
-    (per_mesh, sets)
-}
-
 impl MaskAtlas {
     fn new(
         device: &wgpu::Device,
@@ -808,6 +899,57 @@ impl MaskAtlas {
             _texture: texture,
         }
     }
+}
+
+/// 頂点列の画面 UV での外接矩形 `[x0, y0, x1, y1]` (画面で切り詰めない)。頂点がなければ `None`。
+fn screen_bbox(m: &[[f32; 3]; 3], positions: &[ugoe_core::Vec2]) -> Option<[f32; 4]> {
+    let mut bbox = None;
+    for p in positions {
+        let [u, v] = screen_uv(m, [p.x, p.y]);
+        union_bbox(&mut bbox, Some([u, v, u, v]));
+    }
+    bbox
+}
+
+fn union_bbox(bbox: &mut Option<[f32; 4]>, other: Option<[f32; 4]>) {
+    let Some(o) = other else { return };
+    let b = bbox.get_or_insert(o);
+    *b = [
+        b[0].min(o[0]),
+        b[1].min(o[1]),
+        b[2].max(o[2]),
+        b[3].max(o[3]),
+    ];
+}
+
+/// 面積のある矩形なら `Some`。
+fn non_empty(b: [f32; 4]) -> Option<[f32; 4]> {
+    (b[2] > b[0] && b[3] > b[1]).then_some(b)
+}
+
+fn intersect_bbox(a: [f32; 4], b: [f32; 4]) -> Option<[f32; 4]> {
+    non_empty([
+        a[0].max(b[0]),
+        a[1].max(b[1]),
+        a[2].min(b[2]),
+        a[3].min(b[3]),
+    ])
+}
+
+/// 画面 (0..1) で切り詰める。面積が 0 なら `None`。
+fn clip_bbox(b: [f32; 4]) -> Option<[f32; 4]> {
+    non_empty(b.map(|v| v.clamp(0.0, 1.0)))
+}
+
+/// 画面で切り詰め、画素の境界まで外側に広げる。面積が 0 なら `None`。
+fn snap_bbox(b: [f32; 4], [w, h]: [f32; 2]) -> Option<[f32; 4]> {
+    let b = clip_bbox(b)?;
+    non_empty([
+        (b[0] * w).floor() / w,
+        (b[1] * h).floor() / h,
+        (b[2] * w).ceil() / w,
+        (b[3] * h).ceil() / h,
+    ])
 }
 
 /// キャンバス座標を画面 UV (0..1、左上原点) に写す。シェーダの `to_screen_uv` と同じ。
