@@ -38,6 +38,8 @@ export class ViewportController {
 
   #puppet: WebPuppet | null = null;
   #model: ViewportModel | null = null;
+  /** 次に読み込むモデルでパラメータを既定値から始める (resetParametersOnNextModel)。 */
+  #resetOnLoad = false;
   #size = { width: 1, height: 1, dpr: 1 };
   #background: [number, number, number, number] = [0, 0, 0, 0];
   #frame = 0;
@@ -107,6 +109,14 @@ export class ViewportController {
       this.parameterValues[id] = this.#puppet.parameter(id) ?? value;
       this.requestRender();
     }
+  }
+
+  /**
+   * 次に読み込むモデル (setModel) では、今の値を引き継がずにパラメータを既定値から始める。
+   * 別のモデルに替わるとき (新規・PSD から新規・開く) に、読み直しの前に呼ぶ。
+   */
+  resetParametersOnNextModel(): void {
+    this.#resetOnLoad = true;
   }
 
   resetParameters(): void {
@@ -206,10 +216,16 @@ export class ViewportController {
         ? puppet.load_bundle(model.bundle)
         : puppet.load_json(model.json);
       for (const warning of warnings) console.warn("ugoe:", warning);
-      // 表示中の値を新しいモデルに写す (WebPuppet も同じ ID の値を引き継ぐが、
-      // 作り直した WebPuppet では失われているため)。
-      for (const [id, value] of Object.entries(this.parameterValues)) {
-        puppet.set_parameter(id, value);
+      if (this.#resetOnLoad) {
+        // WebPuppet は同じ ID の値を引き継ぐので、既定値に戻す。
+        this.#resetOnLoad = false;
+        puppet.reset_parameters();
+      } else {
+        // 表示中の値を新しいモデルに写す (WebPuppet も同じ ID の値を引き継ぐが、
+        // 作り直した WebPuppet では失われているため)。
+        for (const [id, value] of Object.entries(this.parameterValues)) {
+          puppet.set_parameter(id, value);
+        }
       }
       this.#syncParameters();
       if (this.status === "error") {

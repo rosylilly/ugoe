@@ -536,6 +536,74 @@ pub(crate) fn reparent(
     Ok(())
 }
 
+/// デフォーマ `id` の直接の子 (デフォーマ、メッシュの順)。
+fn children_of(model: &Model, id: &DeformerId) -> Vec<ChildRef> {
+    let deformers = model
+        .deformers
+        .iter()
+        .filter(|d| d.parent.as_ref() == Some(id))
+        .map(|d| ChildRef::Deformer(d.id.clone()));
+    let meshes = model
+        .meshes
+        .iter()
+        .filter(|m| m.parent.as_ref() == Some(id))
+        .map(|m| ChildRef::Mesh(m.id.clone()));
+    deformers.chain(meshes).collect()
+}
+
+/// `MoveRotationOrigin`: すべてのセルの原点に `delta` を足し、直接の子を基準の姿で見た目が変わらないように
+/// 写し直す (子の座標系は `古い枠⁻¹` から `新しい枠⁻¹` へ。どちらもアフィンなので写し直しは厳密)。
+///
+/// 子の格子は回転デフォーマの格子と軸が別なので、補正できるのは 1 つの姿 (基準の姿) だけ。他のセルでは
+/// 子が新しい原点のまわりで回る (中心を動かしたときに期待される動き)。
+pub(crate) fn move_rotation_origin(
+    model: &mut Model,
+    id: &DeformerId,
+    delta: Vec2,
+    touched: &mut Vec<KeyformTarget>,
+) -> Result<(), EditError> {
+    if !delta.is_finite() {
+        return Err(failed("delta is not finite"));
+    }
+    if !matches!(find_deformer(model, id)?.kind, DeformerKind::Rotation(_)) {
+        return Err(EditError::DeformerKindMismatch {
+            id: id.to_string(),
+            expected: "rotation",
+        });
+    }
+    let from = Rest::new(model)?.frame(Some(id));
+    if let Some(Deformer {
+        kind: DeformerKind::Rotation(r),
+        ..
+    }) = model.deformers.iter_mut().find(|d| &d.id == id)
+    {
+        for kf in &mut r.keyforms.keyforms {
+            kf.origin += delta;
+        }
+    }
+    let to = Rest::new(model)?.frame(Some(id));
+    for child in children_of(model, id) {
+        reexpress(model, &child, &from, &to)?;
+        touched.push(target(&child));
+    }
+    touched.push(KeyformTarget::Deformer(id.clone()));
+    Ok(())
+}
+
+/// `UnwrapDeformer` の前半: デフォーマ `id` の直接の子を、見た目を保ってその親へ付け替える。
+/// デフォーマの削除は呼び出し側 (`document.rs`) が行う。
+pub(crate) fn unwrap(
+    model: &mut Model,
+    id: &DeformerId,
+    touched: &mut Vec<KeyformTarget>,
+) -> Result<(), EditError> {
+    let parent = find_deformer(model, id)?.parent.clone();
+    for child in children_of(model, id) {
+        reparent(model, &child, parent.as_ref(), touched)?;
+    }
+    Ok(())
+}
+
 /// 作るデフォーマの種類ごとの指定。
 pub(crate) enum NewKind {
     Warp {

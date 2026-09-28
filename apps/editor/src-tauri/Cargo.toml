@@ -19,6 +19,7 @@ serde.workspace = true
 serde_json.workspace = true
 tauri.workspace = true
 tauri-plugin-dialog.workspace = true
+tauri-plugin-opener.workspace = true
 ts-rs.workspace = true
 ugoe-editor-core.workspace = true
 ugoe-format.workspace = true

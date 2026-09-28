@@ -623,6 +623,13 @@ fn apply_to(
         Command::ApplyDepthPreset { target, preset } => {
             touched.push(depth::apply_preset(model, &target, &preset)?);
         }
+        Command::MoveRotationOrigin { id, delta } => {
+            deformer_edit::move_rotation_origin(model, &id, delta, touched)?;
+        }
+        Command::UnwrapDeformer { id } => {
+            deformer_edit::unwrap(model, &id, touched)?;
+            remove_deformer(model, &id)?;
+        }
     }
     Ok(())
 }

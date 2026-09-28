@@ -2,6 +2,7 @@
   パラメータ一覧。スライダーの値は表示の状態なので、ViewportController (wasm) を直接操作する (IPC を通らない)。
   パラメータの定義 (作成・削除・名前・値域・既定値) とキーの追加・削除は EditorDocument.apply で Command を送る。
   選択中の要素のキーをスライダーの上に印で示す (docs/editor.md#キーフォームの編集)。
+  値の欄に数を入力するとスライダーをその値にする (値域の外は拒否)。◆ はその値にキーを足す。
 -->
 <script lang="ts">
 import type { EditorDocument, ParameterDef } from "../document.svelte";
@@ -14,6 +15,7 @@ import {
   parseModel,
   snapToKeys,
 } from "./inspector/keyforms/keyforms";
+import { duplicateKeyError, formatValue, parseValue } from "./parameterValue";
 
 interface Props {
   parameters: ParameterDef[];
@@ -33,9 +35,30 @@ let editing = $state<string | null>(null);
 let draft = $state({ name: "", min: 0, default: 0, max: 0 });
 let creating = $state(false);
 let fresh = $state({ id: "", name: "", min: -1, default: 0, max: 1 });
+/** 値の入力やキーの追加の誤り (パラメータごとに 1 つ)。 */
+let valueError = $state<{ id: string; message: string } | null>(null);
 
 function onInput(id: string, e: Event) {
   viewport.setParameter(id, (e.currentTarget as HTMLInputElement).valueAsNumber);
+  if (valueError?.id === id) valueError = null;
+}
+
+/** 値の欄の入力を確定する (Enter・フォーカスが外れたとき)。読めなければ表示を今の値に戻す。 */
+function onValueChange(p: ParameterDef, e: Event) {
+  const input = e.currentTarget as HTMLInputElement;
+  const parsed = parseValue(input.value, p);
+  if (!parsed.ok) {
+    valueError = { id: p.id, message: parsed.error };
+    input.value = formatValue(viewport.parameterValues[p.id] ?? p.default);
+    return;
+  }
+  valueError = null;
+  viewport.setParameter(p.id, parsed.value);
+  input.value = formatValue(viewport.parameterValues[p.id] ?? parsed.value);
+}
+
+function onValueKeyDown(e: KeyboardEvent) {
+  if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
 }
 
 function keysOf(id: string): number[] {
@@ -102,6 +125,14 @@ async function create(e: SubmitEvent) {
 async function toggleKey(p: ParameterDef, onKey: number | undefined) {
   if (!element) return;
   const value = viewport.parameterValues[p.id] ?? p.default;
+  if (onKey === undefined) {
+    const error = duplicateKeyError(value, keysOf(p.id), p);
+    if (error) {
+      valueError = { id: p.id, message: error };
+      return;
+    }
+  }
+  valueError = null;
   await doc.apply(
     onKey === undefined
       ? { op: "add_keyform_key", target: element.target, parameter: p.id, key: value }
@@ -148,14 +179,23 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
       <span class="row">
         <button class="name" onclick={() => openEditor(p)} title="Edit {p.id}">{p.name}</button>
         <span class="row">
-          <span class="muted">{value.toFixed(2)}</span>
+          <input
+            class="value"
+            type="text"
+            inputmode="decimal"
+            value={formatValue(value)}
+            aria-label="{p.name} value"
+            title="Type a value between {p.min} and {p.max}, then press Enter"
+            onchange={(e) => onValueChange(p, e)}
+            onkeydown={onValueKeyDown}
+          />
           {#if element}
             <button
               class="key"
               class:on={onKey !== undefined}
               onclick={() => toggleKey(p, onKey)}
               title={onKey === undefined
-                ? `Add a key at ${value.toFixed(2)} to ${element.target.id}`
+                ? `Add a key at ${formatValue(value)} to ${element.target.id}`
                 : `Remove the key ${onKey} from ${element.target.id}`}>◆</button
             >
           {/if}
@@ -182,6 +222,7 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
           ></button>
         {/each}
       </span>
+      {#if valueError?.id === p.id}<p class="error">{valueError.message}</p>{/if}
       {#if editing === p.id}
         <div class="editor">
           <label>Name <input bind:value={draft.name} /></label>
@@ -230,6 +271,11 @@ li {
   color: inherit;
   cursor: pointer;
   text-align: left;
+}
+
+.value {
+  width: 5em;
+  text-align: right;
 }
 
 .key {

@@ -4,6 +4,7 @@
   - 選択中のメッシュ・デフォーマ (複数可) を包むワープ (行数・列数を指定) か回転デフォーマを作る
     (create_warp_deformer / create_rotation_deformer)。子は見た目を保って付け替わり、作ったデフォーマを選択する。
   - デフォーマの形の編集はビューポートのギズモ (viewport/tools/deformer/DeformerGizmo.svelte) で行う。
+  - 「Unwrap」: 子を見た目を保って親へ戻し、デフォーマを削除する (unwrap_deformer)。子を選択する。
 -->
 <script lang="ts">
 import type { EditorDocument } from "../../document.svelte";
@@ -66,6 +67,25 @@ async function create(kind: "warp" | "rotation"): Promise<void> {
     busy = false;
   }
 }
+
+async function unwrap(id: string): Promise<void> {
+  if (busy || !model) return;
+  busy = true;
+  try {
+    const kids: ChildRef[] = [
+      ...model.deformers
+        .filter((d) => d.parent === id)
+        .map((d) => ({ kind: "deformer" as const, id: d.id })),
+      ...model.meshes
+        .filter((m) => m.parent === id)
+        .map((m) => ({ kind: "mesh" as const, id: m.id })),
+    ];
+    await doc.apply({ op: "unwrap_deformer", id });
+    if (!doc.error) selection.set(kids);
+  } finally {
+    busy = false;
+  }
+}
 </script>
 
 {#if deformer}
@@ -81,6 +101,10 @@ async function create(kind: "warp" | "rotation"): Promise<void> {
       · {deformer.kind.keyforms.keyforms.length} keyforms · parent {deformer.parent ?? "(none)"}
     </p>
     <p class="muted hint">Edit the shape with the gizmo in the viewport.</p>
+    <div class="row">
+      <span class="muted hint">Move the children to the parent (keeping their look) and delete this</span>
+      <button disabled={busy} onclick={() => unwrap(deformer.id)}>Unwrap</button>
+    </div>
   </section>
 {/if}
 

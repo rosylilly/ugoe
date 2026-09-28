@@ -48,7 +48,7 @@
 | --- | --- |
 | パラメータ | `add_parameter`、`remove_parameter`、`set_parameter_range`、`rename_parameter`、`set_parameter_group` (`null` で外す)、`set_parameter_mirror` (`null` で外す。相手側は変えない。自分自身と対にすると値の符号を反転して対応させる) |
 | パーツ | `add_part`、`remove_part`、`rename_part`、`set_part_parent`、`set_part_keyforms` |
-| デフォーマ | `add_deformer`、`remove_deformer`、`rename_deformer`、`set_deformer_parent`、`set_deformer_part`、`set_warp_keyforms` (`rows` / `cols` は変えない)、`set_rotation_keyforms`、`create_warp_deformer`・`create_rotation_deformer`・`reparent_preserving_look` ([デフォーマの編集](#デフォーマの編集)) |
+| デフォーマ | `add_deformer`、`remove_deformer`、`rename_deformer`、`set_deformer_parent`、`set_deformer_part`、`set_warp_keyforms` (`rows` / `cols` は変えない)、`set_rotation_keyforms`、`create_warp_deformer`・`create_rotation_deformer`・`reparent_preserving_look`・`move_rotation_origin`・`unwrap_deformer` ([デフォーマの編集](#デフォーマの編集)) |
 | メッシュ | `add_mesh` (`meshes` の末尾に追加)、`remove_mesh`、`rename_mesh`、`set_mesh_properties`、`set_mesh_parent`、`set_mesh_keyforms`、`set_mesh_keyform`、`reorder_mesh`、`regenerate_mesh` ([メッシュの再生成](#メッシュの再生成))、`move_mesh_vertices`・`add_mesh_vertex`・`remove_mesh_vertices`・`retriangulate_mesh` ([メッシュの編集](#メッシュの編集)) |
 | キーフォーム | `add_keyform_key`、`remove_keyform_key`、`set_keyform_cell`、`set_mesh_draw_order` ([キーフォームの編集](#キーフォームの編集)) |
 | テクスチャ | `add_texture`、`set_texture_image`、`remove_texture` |
@@ -262,9 +262,9 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 
 | 場所 | 操作 |
 | --- | --- |
-| パラメータ一覧 (`ParametersPanel.svelte`) | 「+」でパラメータを作る (ID・名前・最小・既定・最大)。名前を押すと名前・値域・既定値の編集と削除 (`rename_parameter` と `set_parameter_range` を `batch` で 1 つの Undo に)。スライダーの下に、主な選択の要素のキーを ◆ で示し (押すとそのキーへ)、「Snap to keys」で要素のすべての軸を最も近いキーへ動かす。行の ◆ ボタンで、今の値にキーを追加 (今の値がキーならそのキーを削除)。スライダーは表示の状態なので IPC を通らない |
+| パラメータ一覧 (`ParametersPanel.svelte`) | 「+」でパラメータを作る (ID・名前・最小・既定・最大)。名前を押すと名前・値域・既定値の編集と削除 (`rename_parameter` と `set_parameter_range` を `batch` で 1 つの Undo に)。スライダーの下に、主な選択の要素のキーを ◆ で示し (押すとそのキーへ)、「Snap to keys」で要素のすべての軸を最も近いキーへ動かす。行の値の欄に数を入力して Enter (またはフォーカスを外す) でスライダーをその値にする (数でない・値域の外なら理由を出して拒否)。行の ◆ ボタンで、今の値にキーを追加 (今の値がキーならそのキーを削除。キーの上とみなす許容差の中に別のキーがあれば拒否)。スライダーは表示の状態なので IPC を通らない |
 | インスペクタ (`inspector/keyforms/KeyformInspector.svelte`) | 主な選択の要素の軸とキー (× で削除、押すとそのキーへ移動、「+ 値」で今の値にキーを追加)、軸のないパラメータへの軸の追加、セルの格子 (1 軸は 1 行、2 軸は表、3 軸目以降は今の値に最も近いキーの断面)。メッシュでは描画順を表示し、「Set for all cells」で `set_mesh_draw_order` を送る。セルは記号と色で由来を示し ([推定の画面での操作](#推定の画面での操作))、今の値がすべての軸でキーの上にあればそのセルを枠で示す。キーの上になければ「Move to nearest key」を出す |
-| ビューポート (`viewport/tools/form/FormTool.svelte`) | 「Form edit」で切り替える。主な選択の要素のうち、メッシュは頂点、ワープは制御点、回転デフォーマは原点をハンドルで示す (主な選択がデフォーマのときは、代わりに [デフォーマのギズモ](#デフォーマの編集) を出す)。ドラッグ中はオーバーレイだけでプレビューし、離したときに `canvas_to_local` で親の座標系に直してから `set_keyform_cell` を 1 つ送る (Undo の 1 単位)。Shift を押しながらドラッグするとすべての点を同じだけ動かす |
+| ビューポート (`viewport/tools/form/FormTool.svelte`) | 「Form edit」で切り替える。主な選択の要素のうち、メッシュは頂点、ワープは制御点、回転デフォーマは原点をハンドルで示す (主な選択がデフォーマのときは、代わりに [デフォーマのギズモ](#デフォーマの編集) を出す)。点のクリックで選び (Shift で追加・解除)、要素の内側 (メッシュの三角形・ワープの格子) の何もない所からのドラッグで矩形選択 (Shift で追加)、クリックで選択を解く。要素の外側のクリックは下の選択レイヤー (メッシュの選択) に通す。「All」/ Ctrl + A ですべて、Esc で解く。選んだ点のドラッグで選んだ点をまとめて同じだけ動かす (選んでいない点を押すと、その点だけを選んで動かす)。ドラッグ中はオーバーレイだけでプレビューし、離したときに `canvas_to_local` で親の座標系に直してから `set_keyform_cell` を 1 つ送る (Undo の 1 単位)。選択は要素ごとにフォーム編集の中だけで持つ (選択の補助は `viewport/tools/form/form.ts`) |
 
 - **キーの上でだけ編集できる:** 今のパラメータ値がどれかの軸でキーの上にないと、どのセルに書くか決まらないので編集を拒否し (ハンドルを出さない)、「Move to nearest key」を出します。
 - キーの上かどうかは、パラメータの値域の 1e-6 倍 (最小 1e-6) の差まで同じとみなして判定します (スライダーの値は wasm の `f32` を経由するので、`0.1` のようなキーと完全には一致しない)。送るセルの値はキーの値そのものです。
@@ -280,6 +280,8 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 | `create_warp_deformer { id?, name, children, rows, cols, parent? }` | `children` (`{"kind": "mesh" \| "deformer", "id"}` の配列) を包むワープ (`rows` × `cols` セル、1〜64) を作り、子を付け替える |
 | `create_rotation_deformer { id?, name, children, origin?, parent? }` | `children` を包む回転デフォーマ (角度 0・拡大率 1) を作り、子を付け替える。`origin` はキャンバス座標で、省略すると子の外接矩形の中心 |
 | `reparent_preserving_look { element, new_parent }` | メッシュかデフォーマ (`element`) の親デフォーマを `new_parent` (`null` で最上位) にし、キーフォームを新しい親の座標系へ写し直す |
+| `move_rotation_origin { id, delta }` | 回転デフォーマ `id` の格子の **すべてのセル** の原点に `delta` (親の座標系) を足し、直接の子を基準の姿で見た目が変わらないように写し直す (下の「回転の中心の移動」) |
+| `unwrap_deformer { id }` | デフォーマ `id` を外す: 直接の子を `reparent_preserving_look` と同じ規則でデフォーマの親へ付け替え、デフォーマを `remove_deformer` と同じ規則で削除する (ミラーの対も外す)。1 つの Undo の単位 |
 
 - **作るデフォーマ:** `id` を省略すると `name` から作ります (`ids::new_deformer_id`)。`parent` を省略すると、子の親の最も近い共通の祖先 (共通の祖先がなければ最上位)。パーツは子のパーツの最も近い共通の祖先 (なければ最初の子のパーツ)。格子は定数 (軸なし) です。
 - **ワープの格子:** 子とその子孫の基準の姿の点 (メッシュの頂点・ワープの制御点・回転デフォーマの原点) を親の座標系へ写し (`F_parent⁻¹`)、その外接矩形に長い辺の 5% の余白を付け (点が 1 つなら 1px、親がワープなら UV で 0.01)、`rows` × `cols` に等分した点を制御点にします。一方の辺だけ 0 の矩形 (一列に並んだ点) は正方形に近づけます。
@@ -296,12 +298,22 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
   - 親の違う子をまとめて包むと、共通の祖先より下の親の動きには追従しなくなります (付け替えなので)。
 - 他の拒否: 子がない・同じ子を 2 回指定・行数や列数が範囲外・`origin` が有限でない (`DeformerEdit`)、存在しない要素 (`NotFound`)、使用中の `id` (`DuplicateId`)、`parent` / `new_parent` が付け替える要素自身かその子孫 (循環、`DeformerEdit`)。
 
+### 回転の中心の移動
+
+キーを作った後で回転デフォーマの原点をギズモで動かすと、今のセルの原点だけが変わります (そのセルで子ごと平行移動する。動きを付けるための編集)。リガーが「回転の中心を置き直したい」ときに期待するのは、**絵を動かさずに中心だけを動かす** ことなので、`move_rotation_origin` を用意しました。
+
+- すべてのセルの原点に同じ `delta` (親の座標系) を足します。セルどうしの原点の違い (動き) は保たれます。
+- 直接の子は、回転デフォーマの基準の姿のワールド変換を `F_old` (動かす前)・`F_new` (動かした後) として、[子の写し直し](#デフォーマの編集) と同じく `p' = F_new⁻¹(F_old(p))` で写し直します (どちらもアフィンなので厳密)。孫は変えません。
+- 子の格子は回転デフォーマの格子と軸が別なので、補正できるのは基準の姿だけです。基準の姿 (既定値のパラメータ) では見た目が変わらず、他のセルでは子が **新しい中心のまわりに** 回ります (基準の姿の角度が 0・拡大率 1 なら、角度 θ のセルでの子のずれは `(I - R(θ))·delta`)。これが中心を動かしたときに期待する動きです。
+- 回転デフォーマでない (`DeformerKindMismatch`)、`delta` が有限でない (`DeformerEdit`) なら拒否します。
+- 画面: ギズモのバーの「Origin: all cells」を付けるか、Shift を押しながら原点をドラッグすると、今のセルでの移動量 (`canvas_to_local` で親の座標系に直した原点の差) をこのコマンドで送ります。
+
 ### ギズモとデフォーマの作成 (画面)
 
 | 場所 | 操作 |
 | --- | --- |
-| インスペクタ (`inspector/DeformerProperties.svelte`) | 選択中のメッシュ・デフォーマ (複数可) を「Wrap in deformer」で包む。行数・列数を指定して「Warp」、または「Rotation」(原点は選択の中心)。作ったデフォーマを選択する。デフォーマを選ぶと種類・格子・キーフォームの数・親を示す |
-| ビューポート (`viewport/tools/deformer/DeformerGizmo.svelte`) | 主な選択がデフォーマのとき、フォーム編集の代わりに出す。ワープは格子と制御点を示し、クリックで選択 (Shift で追加・解除)、格子の内側からのドラッグで矩形選択 (Shift で追加)、「All」/ Ctrl + A ですべて、選んだ点のドラッグでまとめて動かす。回転デフォーマは原点 (円)・回転の取っ手 (局所座標の上の向き)・拡大率の取っ手 (局所座標の右の向きの四角) を示し、原点の移動・回転 (Shift で 15 度刻み)・拡大率の変更 (原点からの距離の比) を行う |
+| インスペクタ (`inspector/DeformerProperties.svelte`) | 選択中のメッシュ・デフォーマ (複数可) を「Wrap in deformer」で包む。行数・列数を指定して「Warp」、または「Rotation」(原点は選択の中心)。作ったデフォーマを選択する。デフォーマを選ぶと種類・格子・キーフォームの数・親を示し、「Unwrap」で `unwrap_deformer` を送って元の子を選択する |
+| ビューポート (`viewport/tools/deformer/DeformerGizmo.svelte`) | 主な選択がデフォーマのとき、フォーム編集の代わりに出す。ワープは格子と制御点を示し、クリックで選択 (Shift で追加・解除)、格子の内側からのドラッグで矩形選択 (Shift で追加)、「All」/ Ctrl + A ですべて、選んだ点のドラッグでまとめて動かす。回転デフォーマは原点 (円)・回転の取っ手 (局所座標の上の向き)・拡大率の取っ手 (局所座標の右の向きの四角) を示し、原点の移動・回転 (Shift で 15 度刻み)・拡大率の変更 (原点からの距離の比) を行う。原点の移動は今のセルだけで、「Origin: all cells」か Shift + ドラッグなら [すべてのセル](#回転の中心の移動) |
 | ツリー | デフォーマ・メッシュを別のデフォーマへドラッグすると `reparent_preserving_look` |
 
 - ギズモの形は wasm の `WebPuppet.warp_points(id)` (キャンバス座標の制御点) と `rotation_frame(id)` (`[ox, oy, ax, ay, bx, by]`: 原点と局所座標の x 軸・y 軸の単位ベクトルの像) から読みます (今のパラメータ値。`deformer_ids()` で一覧)。wasm は表示中のインスタンスを評価し、ランタイムが公開するワールド変換 (`warp_world_points`・`rotation_world_frame`) をそのまま返します (`crates/ugoe-wasm/src/gizmo.rs`)。
@@ -341,6 +353,9 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 - ファイルメニューは「New」「New from PSD…」「Open…」「Save」「Save As…」「Export…」「Import PSD…」です。
 - 未保存の変更がある状態で「New」「New from PSD…」「Open…」を押すと、もう一度押すまで実行しません (確認のダイアログの代わり)。
 - 新規・開く・取り込みの後は、ビューポートをキャンバス全体の表示 (Fit) に戻します。
+- 別のモデルに替わったとき (「New」「New from PSD…」「Open…」) は、パラメータのスライダーを新しいモデルの既定値に戻します
+  (`ViewportController.resetParametersOnNextModel`。WebPuppet は同じ ID の値を引き継ぐので、読み込んだ後に既定値へ戻す)。
+  「Import PSD…」は今のモデルに足すだけなので、値を保ちます。
 - **起動時は空のプロジェクト** (`new_project` と同じ。名前は `Untitled`、1024×1024 のキャンバス、保存先なし) です。
   空のモデルへの「Import PSD…」はキャンバスを PSD の大きさにするので、起動直後の取り込みは「New from PSD…」と同じ結果になります
   (名前だけが `Untitled` のまま)。
@@ -370,6 +385,15 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 - コード: ダイアログの呼び出しは `src/lib/fileDialogs.ts` (`FileDialogs`)、フィルタ・拡張子・パスの整形は `src/lib/filePaths.ts` (Vitest)。
 - **差し替え (テスト用):** `window.__UGOE_FILE_DIALOGS__` に `FileDialogs` (`openFile`・`openDirectory`・`saveFile`・`defaultDirectory`) を置くと、
   ダイアログの代わりにそれを呼ぶ。ヘッドレスのブラウザでは、IPC の差し替え (`window.__TAURI_INTERNALS__`) と一緒に固定のパスを返すものを置く。
+
+### ヘルプ
+
+ヘッダーの「Help」は、操作マニュアル (`docs/manual/README.md` の GitHub の URL) を OS の既定のブラウザで開きます
+(`tauri-plugin-opener` / `@tauri-apps/plugin-opener`、MIT OR Apache-2.0。Tauri v2 の WebView は `target="_blank"` のリンクを開かないため)。
+
+- 権限は `opener:allow-open-url` を **`https://github.com/rosylilly/ugoe/*` だけ** に限っています (`capabilities/default.json`)。ほかの URL・ファイルは開けません。
+- 開けなかったときは、理由と URL を選んで写せる形で出します (`src/lib/HelpButton.svelte`)。
+- **差し替え (テスト用):** `window.__UGOE_OPEN_URL__` に `(url) => Promise<void>` を置くと、プラグインの代わりにそれを呼びます (`src/lib/help.ts`)。
 
 ## ビューポート
 

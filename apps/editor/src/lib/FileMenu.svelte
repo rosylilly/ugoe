@@ -14,8 +14,11 @@ import {
 import { ipc, type ProjectStatus, type PsdImportWarning } from "./ipc";
 
 interface Props {
-  /** 新規作成・開く・PSD の取り込みでモデルが変わったときに呼ぶ。 */
-  onchange: () => void;
+  /**
+   * 新規作成・開く・PSD の取り込みでモデルが変わったときに呼ぶ。`replaced` は別のモデルに替わったこと
+   * (新規・PSD から新規・開く。パラメータのスライダーを既定値に戻す)。PSD の取り込みは `false`。
+   */
+  onchange: (replaced: boolean) => void;
 }
 
 let { onchange }: Props = $props();
@@ -46,16 +49,19 @@ export async function refresh() {
   }
 }
 
+/** 成功した後のモデルの読み直し: しない、同じモデルの続き (取り込み)、別のモデルに替わった。 */
+type Reload = "none" | "same" | "replaced";
+
 /** 成功したら `true`。失敗はメッセージに出す。 */
 async function run(
   task: () => Promise<ProjectStatus | undefined>,
-  reload: boolean,
+  reload: Reload,
 ): Promise<boolean> {
   try {
     const result = await task();
     if (result) status = result;
     message = null;
-    if (reload) onchange();
+    if (reload !== "none") onchange(reload === "replaced");
     return true;
   } catch (e) {
     message = String(e);
@@ -75,7 +81,7 @@ function discardConfirmed(kind: DiscardAction): boolean {
 
 function newProject() {
   notice = null;
-  if (discardConfirmed("new")) run(ipc.newProject, true);
+  if (discardConfirmed("new")) run(ipc.newProject, "replaced");
 }
 
 /** ダイアログの最初の場所: 最後に選んだ場所、プロジェクトの隣、ドキュメント (なければホーム) の順。 */
@@ -133,27 +139,27 @@ function perform(kind: PathAction, path: string): Promise<boolean> {
         warnings = [];
         warnings = await ipc.newProjectFromPsd(path);
         return ipc.projectStatus();
-      }, true);
+      }, "replaced");
     case "importPsd":
       return run(async () => {
         warnings = [];
         warnings = await ipc.importPsd(path);
         return ipc.projectStatus();
-      }, true);
+      }, "same");
     case "open":
-      return run(() => ipc.openProject(path), true);
+      return run(() => ipc.openProject(path), "replaced");
     case "saveAs":
       return run(async () => {
         const result = await ipc.saveProjectAs(path);
         notice = `Saved to ${result.path ?? path}`;
         return result;
-      }, false);
+      }, "none");
     case "export":
       return run(async () => {
         await ipc.exportBundle(path);
         notice = `Exported to ${path}`;
         return undefined;
-      }, false);
+      }, "none");
   }
 }
 
@@ -175,7 +181,7 @@ async function pick(kind: PathAction) {
 
 function save() {
   notice = null;
-  if (status?.path) run(ipc.saveProject, false);
+  if (status?.path) run(ipc.saveProject, "none");
   else pick("saveAs");
 }
 

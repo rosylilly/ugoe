@@ -1,8 +1,11 @@
 <!--
   フォーム編集ツール (docs/editor.md#キーフォームの編集)。主な選択の要素について、今のパラメータ値の
-  セルのキーフォームをビューポートで編集する: メッシュの頂点・ワープの制御点・回転デフォーマの原点をドラッグし、
-  離したときに set_keyform_cell を 1 つ送る (ドラッグ中はオーバーレイだけでプレビューする)。
-  Shift を押しながらドラッグすると、すべての点を同じだけ動かす。
+  セルのキーフォームをビューポートで編集する: メッシュの頂点・ワープの制御点・回転デフォーマの原点を選んで
+  ドラッグし、離したときに set_keyform_cell を 1 つ送る (ドラッグ中はオーバーレイだけでプレビューする)。
+
+  - 点のクリックで選ぶ (Shift で追加・解除)。要素の内側 (メッシュの三角形・ワープの格子) の何もない所からの
+    ドラッグで矩形選択 (Shift で追加)、クリックで選択を解く。外側のクリックは下の選択レイヤーに通す。
+  - 選んだ点のドラッグで、選んだ点をまとめて同じだけ動かす。「All」・Ctrl (Cmd) + A ですべて選ぶ。Esc で解く。
 
   パラメータ値がどれかの軸でキーの上にないときは編集しない (どのセルに書くか決まらないため)。
   代わりに「最も近いキーへ移動」を出す。
@@ -25,6 +28,9 @@ import {
 } from "../../../panels/inspector/keyforms/keyforms";
 import type { Selection } from "../../../selection.svelte";
 import type { ViewportController } from "../../controller.svelte";
+import { flatten, gridOutline, movePoints } from "../deformer/gizmo";
+import { type Box, updateVertexSelection, verticesInBox } from "../geometry";
+import { pressPoint, trianglesPath, validIndices } from "./form";
 
 interface Props {
   controller: ViewportController;
@@ -38,14 +44,17 @@ let enabled = $state(false);
 /** 今のセルの点のキャンバス座標 (バックエンドで変換した結果)。 */
 let canvasPoints = $state<Point[] | null>(null);
 let error = $state<string | null>(null);
-let drag = $state<{
-  pointerId: number;
-  index: number;
-  all: boolean;
-  start: Point;
-  delta: Point;
-} | null>(null);
+/** これより動かなければクリックとみなす (CSS ピクセル)。 */
+const CLICK_SLOP = 3;
+
+type Drag =
+  | { kind: "points"; pointerId: number; start: Point; delta: Point }
+  | { kind: "box"; pointerId: number; box: Box; toggle: boolean };
+
+let drag = $state<Drag | null>(null);
 let busy = $state(false);
+/** 選んだ点 (要素ごと。キーは `種類:ID`)。 */
+let selected = $state<{ key: string; indices: number[] } | null>(null);
 
 const model = $derived(doc.model ? parseModel(doc.model.json) : null);
 const element = $derived.by(() => {
@@ -61,6 +70,17 @@ const keyform = $derived.by(() => {
   return (element.grid.keyforms[index] as Record<string, unknown> | undefined) ?? null;
 });
 const localPoints = $derived(element && keyform ? editablePoints(element.kind, keyform) : []);
+const selectionKey = $derived(element ? `${element.target.kind}:${element.target.id}` : "");
+const picked = $derived(
+  selected && selected.key === selectionKey
+    ? validIndices(selected.indices, localPoints.length)
+    : [],
+);
+const pickedSet = $derived(new Set(picked));
+
+function setPicked(indices: number[]): void {
+  selected = { key: selectionKey, indices };
+}
 
 // 表示する点を変換し直す (モデル・選択・パラメータ値が変わるたび)。古い要求の結果は捨てる。
 let request = 0;
@@ -87,18 +107,26 @@ $effect(() => {
     });
 });
 
-/** ドラッグ中のプレビューを反映したキャンバス座標。 */
-const shown = $derived.by(() => {
-  const points = canvasPoints;
-  if (!points || !drag) return points;
-  const [dx, dy] = drag.delta;
-  return points.map((p, i): Point => (drag?.all || i === drag?.index ? [p[0] + dx, p[1] + dy] : p));
-});
-
-const screen = $derived.by(() => {
+/** キャンバス座標の点の画面上の位置 (CSS ピクセル)。 */
+const base = $derived.by(() => {
   // transform が変わったとき (ズーム・パン) にも描き直す。
   void controller.transform;
-  return (shown ?? []).map((p) => controller.canvasToScreen(p[0], p[1]) ?? [0, 0]);
+  return (canvasPoints ?? []).map((p): Point => controller.canvasToScreen(p[0], p[1]) ?? [0, 0]);
+});
+
+/** ドラッグ中のプレビューを反映した画面上の位置。 */
+const screen = $derived(drag?.kind === "points" ? movePoints(base, picked, drag.delta) : base);
+
+/** この内側のドラッグで矩形選択する (メッシュの三角形・ワープの格子の外周)。外側は選択レイヤーに通す。 */
+const area = $derived.by(() => {
+  if (!element) return "";
+  if (element.kind === "mesh") return trianglesPath(base, element.indices ?? []);
+  if (element.kind === "warp") {
+    const ring = gridOutline(element.cols ?? 0, element.rows ?? 0).map((i) => base[i]);
+    if (ring.some((p) => !p)) return "";
+    return `M${ring.map((p) => `${p?.[0]},${p?.[1]}`).join("L")}Z`;
+  }
+  return "";
 });
 
 /** 点どうしを結ぶ線 (メッシュの三角形の辺・ワープの格子)。 */
@@ -129,45 +157,87 @@ const edges = $derived.by((): [number, number][] => {
   return [];
 });
 
-function canvasAt(e: PointerEvent): Point | null {
+function local(e: PointerEvent): Point {
   const svg = (e.currentTarget as Element).closest("svg");
-  if (!svg) return null;
-  const rect = svg.getBoundingClientRect();
-  return controller.screenToCanvas(e.clientX - rect.left, e.clientY - rect.top);
+  const r = svg?.getBoundingClientRect();
+  return r ? [e.clientX - r.left, e.clientY - r.top] : [e.clientX, e.clientY];
 }
 
-function onPointerDown(index: number, e: PointerEvent) {
-  if (e.button !== 0 || e.altKey || busy) return;
-  const start = canvasAt(e);
-  if (!start) return;
+/** 押した要素 (点・内側) にポインタを捕まえる。移動と離す操作はその要素で受ける。 */
+function capture(e: PointerEvent): void {
   e.preventDefault();
   e.stopPropagation();
   (e.currentTarget as Element).setPointerCapture(e.pointerId);
-  drag = { pointerId: e.pointerId, index, all: e.shiftKey, start, delta: [0, 0] };
+}
+
+function onPointPointerDown(index: number, e: PointerEvent) {
+  // 中ボタンと Alt + ドラッグはビューポートのパン (Viewport.svelte) に任せる。
+  if (e.button !== 0 || e.altKey || busy) return;
+  capture(e);
+  const next = pressPoint(picked, index, e.shiftKey);
+  setPicked(next.picked);
+  const start = local(e);
+  if (next.drag) drag = { kind: "points", pointerId: e.pointerId, start, delta: [0, 0] };
+}
+
+function onAreaPointerDown(e: PointerEvent) {
+  if (e.button !== 0 || e.altKey || busy) return;
+  capture(e);
+  const [x, y] = local(e);
+  drag = {
+    kind: "box",
+    pointerId: e.pointerId,
+    box: { x0: x, y0: y, x1: x, y1: y },
+    toggle: e.shiftKey,
+  };
 }
 
 function onPointerMove(e: PointerEvent) {
   if (drag?.pointerId !== e.pointerId) return;
-  const p = canvasAt(e);
-  if (p) drag.delta = [p[0] - drag.start[0], p[1] - drag.start[1]];
+  const [x, y] = local(e);
+  if (drag.kind === "points") {
+    drag.delta = [x - drag.start[0], y - drag.start[1]];
+  } else {
+    drag.box.x1 = x;
+    drag.box.y1 = y;
+  }
 }
 
 async function onPointerUp(e: PointerEvent) {
   const d = drag;
   if (d?.pointerId !== e.pointerId) return;
-  if ((d.delta[0] === 0 && d.delta[1] === 0) || !element || !cell || !keyform || !canvasPoints) {
+  if (d.kind === "box") {
+    drag = null;
+    const { box } = d;
+    if (Math.hypot(box.x1 - box.x0, box.y1 - box.y0) < CLICK_SLOP) {
+      if (!d.toggle) setPicked([]);
+    } else {
+      setPicked(updateVertexSelection(picked, verticesInBox(flatten(base), box), d.toggle));
+    }
+    return;
+  }
+  const scale = controller.transform?.scale ?? 1;
+  if (
+    Math.hypot(d.delta[0], d.delta[1]) < CLICK_SLOP ||
+    picked.length === 0 ||
+    !element ||
+    !cell ||
+    !keyform ||
+    !canvasPoints
+  ) {
     drag = null;
     return;
   }
   busy = true;
   try {
-    const indices = d.all ? localPoints.map((_, i) => i) : [d.index];
+    const indices = picked;
+    const delta: Point = [d.delta[0] / scale, d.delta[1] / scale];
     const targets = indices.map((i): Point => {
       const p = canvasPoints?.[i] ?? [0, 0];
-      return [p[0] + d.delta[0], p[1] + d.delta[1]];
+      return [p[0] + delta[0], p[1] + delta[1]];
     });
     const guesses = indices.map((i): Point => localPoints[i] ?? [0, 0]);
-    const local = await ipc.canvasToLocal(
+    const mapped = await ipc.canvasToLocal(
       element.target,
       $state.snapshot(controller.parameterValues),
       targets,
@@ -175,7 +245,7 @@ async function onPointerUp(e: PointerEvent) {
     );
     let next: Record<string, unknown> = keyform;
     indices.forEach((index, k) => {
-      const point: Point = local[k] ?? guesses[k] ?? [0, 0];
+      const point: Point = mapped[k] ?? guesses[k] ?? [0, 0];
       next = withPoint(element.kind, next, index, point);
     });
     await doc.apply({
@@ -185,12 +255,27 @@ async function onPointerUp(e: PointerEvent) {
       // 形はモデルの JSON のセルをそのまま写したもの (点だけを置き換えた)。
       keyform: { ...next, kind: element.kind } as unknown as Keyform,
     });
-    error = null;
+    error = doc.error;
   } catch (err) {
     error = String(err);
   } finally {
     busy = false;
     drag = null;
+  }
+}
+
+function selectAll(): void {
+  setPicked(localPoints.map((_, i) => i));
+}
+
+function onKeyDown(e: KeyboardEvent): void {
+  if (!enabled || !element || !cell) return;
+  const target = e.target as HTMLElement | null;
+  if (target?.closest("input, textarea, select, [contenteditable]")) return;
+  if (e.key === "Escape" && picked.length > 0) setPicked([]);
+  else if (e.key === "a" && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    selectAll();
   }
 }
 
@@ -203,6 +288,8 @@ function moveToNearestKey() {
 }
 </script>
 
+<svelte:window onkeydown={onKeyDown} />
+
 <div class="bar">
   <button class:active={enabled} onclick={() => (enabled = !enabled)} title="Edit the keyform of the current cell">
     Form edit
@@ -213,6 +300,10 @@ function moveToNearestKey() {
         {element.target.id}
         {bindings.map((b) => `${b.parameter}=${cell[b.parameter]}`).join(" ") || "(no axes)"}
       </span>
+      {#if localPoints.length > 1}
+        <button onclick={selectAll} title="Select every point (Ctrl+A)">All</button>
+        <span class="muted">{picked.length} / {localPoints.length} selected</span>
+      {/if}
     {:else}
       <span class="warn">Not on a key: editing would not know which cell to write.</span>
       <button onclick={moveToNearestKey}>Move to nearest key</button>
@@ -223,8 +314,17 @@ function moveToNearestKey() {
   {#if error}<span class="error">{error}</span>{/if}
 </div>
 
-{#if enabled && element && cell && shown}
-  <svg class="form" role="presentation">
+{#if enabled && element && cell && canvasPoints}
+  <svg class="form" role="presentation" onpointermove={onPointerMove} onpointerup={onPointerUp}>
+    {#if area}
+      <path
+        class="area"
+        d={area}
+        role="presentation"
+        onpointerdown={onAreaPointerDown}
+        onpointercancel={() => (drag = null)}
+      />
+    {/if}
     {#each edges as [a, b], i (i)}
       {@const p = screen[a]}
       {@const q = screen[b]}
@@ -234,17 +334,25 @@ function moveToNearestKey() {
       <circle
         class="handle"
         class:origin={element.kind === "rotation"}
-        class:active={drag !== null && (drag.all || drag.index === i)}
+        class:selected={pickedSet.has(i)}
         cx={p[0]}
         cy={p[1]}
         r={element.kind === "rotation" ? 7 : 4}
         role="presentation"
-        onpointerdown={(e) => onPointerDown(i, e)}
-        onpointermove={onPointerMove}
-        onpointerup={onPointerUp}
+        onpointerdown={(e) => onPointPointerDown(i, e)}
         onpointercancel={() => (drag = null)}
       />
     {/each}
+    {#if drag?.kind === "box"}
+      {@const b = drag.box}
+      <rect
+        class="box"
+        x={Math.min(b.x0, b.x1)}
+        y={Math.min(b.y0, b.y1)}
+        width={Math.abs(b.x1 - b.x0)}
+        height={Math.abs(b.y1 - b.y0)}
+      />
+    {/if}
   </svg>
 {/if}
 
@@ -291,8 +399,22 @@ line {
   cursor: move;
 }
 
-.handle.active {
-  fill: var(--accent);
+.handle.selected {
+  fill: #f59e0b;
+  stroke: #b45309;
+}
+
+.area {
+  fill: transparent;
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+.box {
+  fill: color-mix(in srgb, var(--accent) 12%, transparent);
+  stroke: var(--accent);
+  stroke-dasharray: 4 3;
+  pointer-events: none;
 }
 
 /* 塗りを透明にしても当たり判定が残るように、fill は none にしない。 */

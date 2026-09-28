@@ -6,6 +6,7 @@
 import { EditorDocument } from "./lib/document.svelte";
 import { EMPTY_VIEWPORT_HINT } from "./lib/emptyState";
 import FileMenu from "./lib/FileMenu.svelte";
+import HelpButton from "./lib/HelpButton.svelte";
 import { type AppInfo, ipc } from "./lib/ipc";
 import InspectorPanel from "./lib/panels/InspectorPanel.svelte";
 import ParametersPanel from "./lib/panels/ParametersPanel.svelte";
@@ -20,8 +21,6 @@ const viewport = new ViewportController();
 const selection = new Selection();
 let info = $state<AppInfo | null>(null);
 let fileMenu = $state<FileMenu>();
-/** 操作マニュアル (docs/manual/)。WebView から開けない環境もあるので、URL を選んで写せるように出す。 */
-const MANUAL_URL = "https://github.com/rosylilly/ugoe/blob/main/docs/manual/README.md";
 
 ipc.appInfo().then((i) => {
   info = i;
@@ -41,18 +40,16 @@ $effect(() => {
     <!-- 別のモデルになったら (新規・開く・取り込み) キャンバス全体を表示し直す。 -->
     <FileMenu
       bind:this={fileMenu}
-      onchange={() => {
+      onchange={(replaced) => {
         viewport.fit();
+        if (replaced) viewport.resetParametersOnNextModel();
         doc.refresh();
       }}
     />
     <span class="spacer"></span>
     <button onclick={() => doc.undo()}>Undo</button>
     <button onclick={() => doc.redo()}>Redo</button>
-    <details class="help">
-      <summary>Help</summary>
-      <p>Manual: <a href={MANUAL_URL} target="_blank" rel="noreferrer">{MANUAL_URL}</a></p>
-    </details>
+    <HelpButton />
   </header>
   <aside class="left">
     <TreePanel {doc} {selection} />
@@ -70,20 +67,3 @@ $effect(() => {
     <ParametersPanel parameters={doc.parameters} {viewport} {doc} {selection} />
   </aside>
 </div>
-
-<style>
-  .help {
-    position: relative;
-  }
-  .help p {
-    position: absolute;
-    right: 0;
-    z-index: 10;
-    margin: 4px 0 0;
-    padding: 8px;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    white-space: nowrap;
-    user-select: text;
-  }
-</style>

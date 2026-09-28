@@ -7,6 +7,8 @@
     選んだ点のドラッグでまとめて動かす。「All」ですべて選ぶ。選んだ点は Selection.controlPoints に持つ
     (インスペクタの深度の節が「選んだ点の深度」に使う)。
   - 回転デフォーマ: 原点 (円) のドラッグで移動、上の取っ手で回転 (Shift で 15 度刻み)、右の四角で拡大率。
+    原点は今のセルだけを動かす。「All cells」を付けるか Shift を押しながらドラッグすると、すべてのセルの原点を
+    同じだけ動かし、子の絵は動かさない (回転の中心だけを動かす。move_rotation_origin)。
 
   形は wasm (WebPuppet.warp_points / rotation_frame) で評価した今のパラメータ値でのキャンバス座標。
   書き込む点はバックエンドで親の座標系に直す (ipc.canvasToLocal)。
@@ -60,13 +62,15 @@ const HANDLE_LENGTH = 60;
 type Drag =
   | { kind: "points"; id: number; start: Point; delta: Point }
   | { kind: "box"; id: number; box: Box; toggle: boolean }
-  | { kind: "origin"; id: number; start: Point; delta: Point }
+  | { kind: "origin"; id: number; start: Point; delta: Point; all: boolean }
   | { kind: "rotate"; id: number; start: Point; now: Point; snap: boolean }
   | { kind: "scale"; id: number; start: Point; now: Point };
 
 let svg = $state<SVGSVGElement>();
 let drag = $state<Drag | null>(null);
 let busy = $state(false);
+/** 原点のドラッグをすべてのセルに適用する (Shift を押しながらのドラッグも同じ)。 */
+let originAllCells = $state(false);
 let error = $state<string | null>(null);
 /** WebPuppet が新しいモデル・パラメータを反映した後に読み直すための印。 */
 let tick = $state(0);
@@ -197,7 +201,7 @@ function onPointerDown(e: PointerEvent): void {
     capture(e);
     drag =
       kind === "origin"
-        ? { kind, id, start: p, delta: [0, 0] }
+        ? { kind, id, start: p, delta: [0, 0], all: originAllCells || e.shiftKey }
         : kind === "rotate"
           ? { kind, id, start: p, now: p, snap: e.shiftKey }
           : { kind, id, start: p, now: p };
@@ -301,8 +305,15 @@ async function commit(d: Drag): Promise<void> {
     } else if (d.kind === "origin" && rotationCanvas) {
       const o = rotationCanvas.origin;
       const moved: Point = [o[0] + d.delta[0] / scale, o[1] + d.delta[1] / scale];
-      const [origin] = await ipc.canvasToLocal(target, values, [moved], [kf.origin as Point]);
-      if (origin) next = { ...kf, origin };
+      const current = kf.origin as Point;
+      const [origin] = await ipc.canvasToLocal(target, values, [moved], [current]);
+      if (origin && d.all) {
+        // 今のセルでの移動量 (親の座標系) を、すべてのセルに加える。
+        const delta: Point = [origin[0] - current[0], origin[1] - current[1]];
+        await doc.apply({ op: "move_rotation_origin", id: deformerId, delta });
+      } else if (origin) {
+        next = { ...kf, origin };
+      }
     } else if (d.kind === "rotate" && handles && rotationCanvas) {
       const sense = rotationSense(rotationCanvas, !!kf.reflect_x, !!kf.reflect_y);
       next = { ...kf, angle: (kf.angle as number) + sense * previewAngle(handles.origin, d) };
@@ -361,6 +372,10 @@ function onKeyDown(e: KeyboardEvent): void {
     </span>
     {#if element?.kind === "warp"}
       <button onclick={selectAll}>All</button>
+    {:else if element?.kind === "rotation"}
+      <label title="Move the origin in every cell and keep the children in place (or hold Shift)">
+        <input type="checkbox" bind:checked={originAllCells} /> Origin: all cells
+      </label>
     {/if}
   {:else if element}
     <span class="warn">Not on a key: editing would not know which cell to write.</span>
@@ -432,6 +447,18 @@ function onKeyDown(e: KeyboardEvent): void {
 
 .warn {
   color: #b45309;
+}
+
+.bar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.bar label input {
+  width: auto;
+  margin: 0;
 }
 
 .gizmo {

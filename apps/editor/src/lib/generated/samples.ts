@@ -3231,6 +3231,18 @@ export const commands: Command[] = [
     "new_parent": null
   },
   {
+    "op": "move_rotation_origin",
+    "id": "Neck",
+    "delta": [
+      0.0,
+      12.5
+    ]
+  },
+  {
+    "op": "unwrap_deformer",
+    "id": "Neck"
+  },
+  {
     "op": "set_keyform_inference",
     "target": {
       "kind": "mesh",

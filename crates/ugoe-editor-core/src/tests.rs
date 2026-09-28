@@ -1367,10 +1367,12 @@ fn op_name(command: &Command) -> &'static str {
         Command::SetMirrorPair { .. } => "set_mirror_pair",
         Command::SetDepth { .. } => "set_depth",
         Command::ApplyDepthPreset { .. } => "apply_depth_preset",
+        Command::MoveRotationOrigin { .. } => "move_rotation_origin",
+        Command::UnwrapDeformer { .. } => "unwrap_deformer",
     }
 }
 
-const OP_COUNT: usize = 51;
+const OP_COUNT: usize = 53;
 
 fn json_samples() -> Vec<Command> {
     let quad = fixtures::single_quad();
@@ -1597,6 +1599,11 @@ fn json_samples() -> Vec<Command> {
             target: ChildRef::Deformer("Cloth".into()),
             preset: crate::DepthPreset::Dome { peak: 12.0 },
         },
+        Command::MoveRotationOrigin {
+            id: "Arm".into(),
+            delta: ugoe_core::Vec2::new(4.0, -2.0),
+        },
+        Command::UnwrapDeformer { id: "Arm".into() },
     ]
 }
 

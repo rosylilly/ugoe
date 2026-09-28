@@ -394,6 +394,11 @@ fn sample_commands() -> Vec<Command> {
             element: ChildRef::Mesh(mesh_id.clone()),
             new_parent: None,
         },
+        Command::MoveRotationOrigin {
+            id: "Neck".into(),
+            delta: Vec2::new(0.0, 12.5),
+        },
+        Command::UnwrapDeformer { id: "Neck".into() },
         Command::SetKeyformInference {
             target: KeyformTarget::Mesh(mesh_id.clone()),
             inference: Some(KeyformInference::DepthRotation(DepthRotation {

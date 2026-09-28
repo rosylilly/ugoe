@@ -1316,6 +1316,46 @@
         "target",
         "preset"
       ]
+    },
+    {
+      "description": "回転デフォーマの原点を、格子のすべてのセルで `delta` (親の局所座標) だけ動かす。\n子 (メッシュ・デフォーマ) の局所座標は、既定値のパラメータで見た目が変わらないように写し直す\n(絵はそのままで回転の中心だけが動く)。式は `docs/editor.md#デフォーマの編集`。",
+      "type": "object",
+      "properties": {
+        "delta": {
+          "$ref": "#/$defs/Vec2"
+        },
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "move_rotation_origin"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "delta"
+      ]
+    },
+    {
+      "description": "デフォーマを外す: 子を見た目を保ってデフォーマの親へ付け替え (`ReparentPreservingLook` と同じ)、\nデフォーマを削除する。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "unwrap_deformer"
+        }
+      },
+      "required": [
+        "op",
+        "id"
+      ]
     }
   ],
   "$defs": {

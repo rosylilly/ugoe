@@ -371,6 +371,20 @@ pub enum Command {
         target: ChildRef,
         preset: DepthPreset,
     },
+    /// 回転デフォーマの原点を、格子のすべてのセルで `delta` (親の局所座標) だけ動かす。
+    /// 子 (メッシュ・デフォーマ) の局所座標は、既定値のパラメータで見た目が変わらないように写し直す
+    /// (絵はそのままで回転の中心だけが動く)。式は `docs/editor.md#デフォーマの編集`。
+    MoveRotationOrigin {
+        id: DeformerId,
+        #[ts(as = "ugoe_core::codegen::Vec2Repr")]
+        #[schemars(with = "ugoe_core::codegen::Vec2Repr")]
+        delta: Vec2,
+    },
+    /// デフォーマを外す: 子を見た目を保ってデフォーマの親へ付け替え (`ReparentPreservingLook` と同じ)、
+    /// デフォーマを削除する。
+    UnwrapDeformer {
+        id: DeformerId,
+    },
 }
 
 /// デフォーマの子になれる要素。JSON では `{"kind": "mesh", "id": "EyeL"}` と書く
