@@ -1,11 +1,11 @@
 ---
 id: T0614
 title: 推定したセルの由来 (推定の方法) を記録する
-status: todo
+status: in-progress
 milestone: M2
 crates: [ugoe-model, ugoe-rigging, ugoe-editor-core]
 depends_on: [T0611]
-assignee:
+assignee: claude-worker-T0614
 ---
 
 # T0614: 推定したセルの由来 (推定の方法) を記録する
