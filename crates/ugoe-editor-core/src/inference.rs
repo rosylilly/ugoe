@@ -1,13 +1,24 @@
 //! キーフォームの推定のコマンドと、`derived` のセルの自動の作り直し
 //! (`docs/spec/keyform-inference.md#推定の実行`、`docs/editor.md#推定とミラー`)。
 
+use std::collections::{HashMap, VecDeque};
+
 use ugoe_model::deformer::DeformerKind;
-use ugoe_model::{KeyformBinding, KeyformGrid, KeyformInference, KeyformOrigin, Model};
-use ugoe_rigging::{MirrorOptions, infer_additive_target, infer_depth_rotation, mirror_keyforms};
+use ugoe_model::{
+    Deformer, Glue, KeyformBinding, KeyformGrid, KeyformInference, KeyformOrigin, Mesh,
+    MirrorSource, Model, Part,
+};
+use ugoe_rigging::{
+    InferScope, MirrorOptions, infer_additive_target, infer_depth_rotation, mirror_keyforms,
+};
 
 use crate::command::{InferMethod, KeyformCell, KeyformTarget};
 use crate::document::EditError;
 use crate::grid;
+
+/// 自動の作り直しで、1 つの格子を作り直す回数の上限。ミラーが循環する (A が B を、B が A を
+/// ミラー元にする) と作り直しが往復するので、値が変わらなくなるか、この回数で止める。
+const MAX_PASSES: usize = 8;
 
 /// 型によらない格子の見え方 (軸・セル数・由来・推定の設定)。
 struct GridView<'a> {
@@ -15,26 +26,34 @@ struct GridView<'a> {
     len: usize,
     origins: &'a mut Vec<KeyformOrigin>,
     inference: Option<&'a KeyformInference>,
+    mirror_source: &'a mut Option<MirrorSource>,
+    /// セルを作り直す推定の方法 (`KeyformGrid::derivation` の値) の一覧。重複なし。
+    methods: Vec<KeyformOrigin>,
 }
 
 impl<'a> GridView<'a> {
     fn new<T>(grid: &'a mut KeyformGrid<T>) -> Self {
+        let mut methods = Vec::new();
+        for method in (0..grid.keyforms.len()).filter_map(|i| grid.derivation(i)) {
+            if !methods.contains(&method) {
+                methods.push(method);
+            }
+        }
         let KeyformGrid {
             bindings,
             keyforms,
             origins,
             inference,
+            mirror_source,
         } = grid;
         Self {
             bindings,
             len: keyforms.len(),
             origins,
             inference: inference.as_ref(),
+            mirror_source,
+            methods,
         }
-    }
-
-    fn has_derived(&self) -> bool {
-        self.origins.contains(&KeyformOrigin::Derived)
     }
 }
 
@@ -95,14 +114,19 @@ fn grid_method(inference: Option<&KeyformInference>) -> Option<InferMethod> {
     }
 }
 
-/// `method` で `target` の格子の `derived` のセルを作り直す。`FromGrid` は呼び出し側で解決しておく。
-fn run(model: &mut Model, target: &KeyformTarget, method: InferMethod) -> Result<(), EditError> {
+/// `method` で `target` の格子の `scope` のセルを作り直す。`FromGrid` は呼び出し側で解決しておく。
+fn run(
+    model: &mut Model,
+    target: &KeyformTarget,
+    method: InferMethod,
+    scope: InferScope,
+) -> Result<(), EditError> {
     let rigging_target = target.into();
     let result = match method {
         InferMethod::FromGrid | InferMethod::Additive => {
-            infer_additive_target(model, &rigging_target)
+            infer_additive_target(model, &rigging_target, scope)
         }
-        InferMethod::DepthRotation => infer_depth_rotation(model, &rigging_target),
+        InferMethod::DepthRotation => infer_depth_rotation(model, &rigging_target, scope),
     };
     result.map(drop).map_err(|error| EditError::Inference {
         target: target.to_string(),
@@ -110,11 +134,12 @@ fn run(model: &mut Model, target: &KeyformTarget, method: InferMethod) -> Result
     })
 }
 
-/// [`crate::Command::InferKeyforms`]。
+/// [`crate::Command::InferKeyforms`]。`overwrite_derived` なら別の方法で作ったセルも書き換える。
 pub(crate) fn infer_keyforms(
     model: &mut Model,
     target: &KeyformTarget,
     method: InferMethod,
+    overwrite_derived: bool,
 ) -> Result<(), EditError> {
     let method = match method {
         InferMethod::FromGrid => {
@@ -129,10 +154,16 @@ pub(crate) fn infer_keyforms(
             method
         }
     };
-    run(model, target, method)
+    let scope = if overwrite_derived {
+        InferScope::AllDerived
+    } else {
+        InferScope::Own
+    };
+    run(model, target, method, scope)
 }
 
-/// [`crate::Command::MirrorKeyforms`]。
+/// [`crate::Command::MirrorKeyforms`]。先の `authored` 以外のセルをすべて書き換える
+/// (`options.scope` は無視する)。
 pub(crate) fn mirror(
     model: &mut Model,
     source: &KeyformTarget,
@@ -141,6 +172,10 @@ pub(crate) fn mirror(
 ) -> Result<(), EditError> {
     grid_view(model, source)?;
     grid_view(model, target)?;
+    let options = MirrorOptions {
+        scope: InferScope::AllDerived,
+        ..options
+    };
     mirror_keyforms(model, &source.into(), &target.into(), &options)
         .map(drop)
         .map_err(|error| EditError::Inference {
@@ -181,25 +216,234 @@ pub(crate) fn mark(
     Ok(())
 }
 
-/// コマンドが編集した格子 (`touched`) の `derived` のセルを、格子の推定の設定で作り直す。
+/// コマンドが編集した格子 (`touched`) の `derived` のセルを、セルごとに記録した推定の方法で作り直し、
+/// その格子をミラー元にする格子のミラーのセルも作り直す (`docs/spec/keyform-inference.md#推定の実行`)。
 ///
 /// [`crate::Document::apply`] がコマンド (`Batch` なら全体) を適用した後に呼ぶ。
-/// `derived` のセルがない格子、未知の推定の方法の格子、コマンドの途中で削除された要素は飛ばす。
+///
+/// - 編集した格子では、加算合成・深度からの回転のセルを作り直す。ミラーのセルは、ミラー元が
+///   自分自身 (左右対称な 1 つの要素) のときだけ作り直す。
+/// - 格子が変わったら、その格子を `mirror_source` にする格子 (依存する格子) のミラーのセルを
+///   作り直し、続けてその格子の加算合成・深度からの回転のセルも作り直す。依存する格子が変われば、
+///   さらにその先へ伝える。循環は、値が変わらなくなるか [`MAX_PASSES`] 回で止める。
+/// - ミラーのやり直しに失敗したら (頂点が対応しなくなったなど)、その格子のミラーのセルはそのまま
+///   にする。加算合成・深度からの回転に失敗したら、コマンドを拒否する。
+/// - 作り直す方法のセルがない格子と、コマンドの途中で削除された要素は飛ばす。方法を記録していない
+///   `derived` のセルは格子の `inference` の方法で作り直し、`inference` が未知なら作り直さない。
+///   `depth_rotation` のセルは、格子の `inference` が深度からの回転でなければ作り直さない。
 pub(crate) fn rederive(model: &mut Model, touched: &[KeyformTarget]) -> Result<(), EditError> {
-    for (i, target) in touched.iter().enumerate() {
-        if touched[..i].contains(target) {
+    // (格子, ミラー元が変わったか)。
+    let mut queue: VecDeque<(KeyformTarget, bool)> = VecDeque::new();
+    for target in touched {
+        enqueue(&mut queue, target, false);
+    }
+    let mut passes: HashMap<KeyformTarget, usize> = HashMap::new();
+    while let Some((target, source_changed)) = queue.pop_front() {
+        let pass = passes.entry(target.clone()).or_default();
+        if *pass >= MAX_PASSES {
             continue;
         }
-        let Ok(view) = grid_view(model, target) else {
+        *pass += 1;
+        // 編集した格子は、作り直しで値が変わらなくても依存する格子へ伝える。
+        let edited = *pass == 1 && touched.contains(&target);
+        let Some(before) = Snapshot::of(model, &target) else {
             continue;
         };
-        if !view.has_derived() {
-            continue;
+        rederive_grid(model, &target, source_changed)?;
+        if edited || Snapshot::of(model, &target).as_ref() != Some(&before) {
+            for dependent in dependents(model, &target) {
+                enqueue(&mut queue, &dependent, true);
+            }
         }
-        let Some(method) = grid_method(view.inference) else {
-            continue;
-        };
-        run(model, target, method)?;
     }
     Ok(())
+}
+
+fn enqueue(queue: &mut VecDeque<(KeyformTarget, bool)>, target: &KeyformTarget, changed: bool) {
+    match queue.iter_mut().find(|(t, _)| t == target) {
+        Some((_, c)) => *c |= changed,
+        None => queue.push_back((target.clone(), changed)),
+    }
+}
+
+/// 1 つの格子を作り直す。`source_changed` ならミラーのセルもミラー元から作り直す。
+fn rederive_grid(
+    model: &mut Model,
+    target: &KeyformTarget,
+    source_changed: bool,
+) -> Result<(), EditError> {
+    let Ok(view) = grid_view(model, target) else {
+        return Ok(());
+    };
+    let methods = view.methods;
+    let depth = matches!(view.inference, Some(KeyformInference::DepthRotation(_)));
+    let mirror = view
+        .mirror_source
+        .clone()
+        .filter(|source| source_changed || source.id == element_id(target));
+    if let (true, Some(source)) = (methods.contains(&KeyformOrigin::Mirror), mirror) {
+        let options = MirrorOptions {
+            axis: source.axis,
+            tolerance: source.tolerance,
+            overwrite_authored: false,
+            scope: InferScope::Own,
+        };
+        let from = same_kind(target, &source.id);
+        // 失敗してもエラーのときはモデルを変えないので、ミラーのセルは前の値のまま残る。
+        let _ = mirror_keyforms(model, &(&from).into(), &target.into(), &options);
+    }
+    if depth && methods.contains(&KeyformOrigin::DepthRotation) {
+        run(model, target, InferMethod::DepthRotation, InferScope::Own)?;
+    }
+    if methods.contains(&KeyformOrigin::Additive) {
+        run(model, target, InferMethod::Additive, InferScope::Own)?;
+    }
+    Ok(())
+}
+
+/// `source` をミラー元 (`mirror_source`) にする、同じ種類の別の要素の格子。
+fn dependents(model: &mut Model, source: &KeyformTarget) -> Vec<KeyformTarget> {
+    let id = element_id(source);
+    let depends = |grid: Option<&MirrorSource>| grid.is_some_and(|s| s.id == id);
+    let ids: Vec<String> = match source {
+        KeyformTarget::Part(_) => model
+            .parts
+            .iter()
+            .filter(|p| depends(p.keyforms.mirror_source.as_ref()))
+            .map(|p| p.id.to_string())
+            .collect(),
+        KeyformTarget::Mesh(_) => model
+            .meshes
+            .iter()
+            .filter(|m| depends(m.keyforms.mirror_source.as_ref()))
+            .map(|m| m.id.to_string())
+            .collect(),
+        KeyformTarget::Deformer(_) => model
+            .deformers
+            .iter()
+            .filter(|d| match &d.kind {
+                DeformerKind::Warp(w) => depends(w.keyforms.mirror_source.as_ref()),
+                DeformerKind::Rotation(r) => depends(r.keyforms.mirror_source.as_ref()),
+                DeformerKind::Unknown => false,
+            })
+            .map(|d| d.id.to_string())
+            .collect(),
+        KeyformTarget::Glue(_) => model
+            .glues
+            .iter()
+            .filter(|g| depends(g.keyforms.mirror_source.as_ref()))
+            .map(|g| g.id.clone())
+            .collect(),
+    };
+    ids.into_iter()
+        .filter(|dependent| *dependent != id)
+        .map(|dependent| same_kind(source, &dependent))
+        .collect()
+}
+
+/// 削除などで存在しなくなった要素をミラー元にしている格子から、ミラー元の記録を外す。
+/// その格子のミラーのセルは作り直せなくなるので `authored` にする (値は変えない)。
+pub(crate) fn forget_missing_mirror_sources(model: &mut Model) {
+    let targets: Vec<KeyformTarget> = model
+        .parts
+        .iter()
+        .map(|p| KeyformTarget::Part(p.id.clone()))
+        .chain(
+            model
+                .meshes
+                .iter()
+                .map(|m| KeyformTarget::Mesh(m.id.clone())),
+        )
+        .chain(
+            model
+                .deformers
+                .iter()
+                .map(|d| KeyformTarget::Deformer(d.id.clone())),
+        )
+        .chain(
+            model
+                .glues
+                .iter()
+                .map(|g| KeyformTarget::Glue(g.id.clone())),
+        )
+        .collect();
+    for target in targets {
+        let Some(source) = grid_view(model, &target)
+            .ok()
+            .and_then(|view| view.mirror_source.clone())
+        else {
+            continue;
+        };
+        if Snapshot::of(model, &same_kind(&target, &source.id)).is_some() {
+            continue;
+        }
+        if let Ok(view) = grid_view(model, &target) {
+            *view.mirror_source = None;
+            for origin in view.origins.iter_mut() {
+                if *origin == KeyformOrigin::Mirror {
+                    *origin = KeyformOrigin::Authored;
+                }
+            }
+        }
+    }
+}
+
+/// 要素の ID の文字列。
+fn element_id(target: &KeyformTarget) -> String {
+    match target {
+        KeyformTarget::Part(id) => id.to_string(),
+        KeyformTarget::Mesh(id) => id.to_string(),
+        KeyformTarget::Deformer(id) => id.to_string(),
+        KeyformTarget::Glue(id) => id.clone(),
+    }
+}
+
+/// `target` と同じ種類の、ID が `id` の要素。
+fn same_kind(target: &KeyformTarget, id: &str) -> KeyformTarget {
+    match target {
+        KeyformTarget::Part(_) => KeyformTarget::Part(id.into()),
+        KeyformTarget::Mesh(_) => KeyformTarget::Mesh(id.into()),
+        KeyformTarget::Deformer(_) => KeyformTarget::Deformer(id.into()),
+        KeyformTarget::Glue(_) => KeyformTarget::Glue(id.to_owned()),
+    }
+}
+
+/// 作り直しの前後で格子が変わったかを比べるための、要素の複製。
+#[derive(PartialEq)]
+enum Snapshot {
+    Part(Part),
+    Mesh(Mesh),
+    Deformer(Deformer),
+    Glue(Glue),
+}
+
+impl Snapshot {
+    fn of(model: &Model, target: &KeyformTarget) -> Option<Self> {
+        match target {
+            KeyformTarget::Part(id) => model
+                .parts
+                .iter()
+                .find(|p| &p.id == id)
+                .cloned()
+                .map(Self::Part),
+            KeyformTarget::Mesh(id) => model
+                .meshes
+                .iter()
+                .find(|m| &m.id == id)
+                .cloned()
+                .map(Self::Mesh),
+            KeyformTarget::Deformer(id) => model
+                .deformers
+                .iter()
+                .find(|d| &d.id == id)
+                .cloned()
+                .map(Self::Deformer),
+            KeyformTarget::Glue(id) => model
+                .glues
+                .iter()
+                .find(|g| &g.id == id)
+                .cloned()
+                .map(Self::Glue),
+        }
+    }
 }

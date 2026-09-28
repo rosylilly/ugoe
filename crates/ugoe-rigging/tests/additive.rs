@@ -7,7 +7,7 @@ use ugoe_model::part::PartKeyform;
 use ugoe_model::{
     DeformerKind, KeyformBinding, KeyformGrid, KeyformOrigin, Model, Parameter, fixtures,
 };
-use ugoe_rigging::{InferError, KeyformTarget, infer_additive, infer_additive_target};
+use ugoe_rigging::{InferError, InferScope, KeyformTarget, infer_additive, infer_additive_target};
 
 const EPS: f32 = 1e-4;
 
@@ -92,7 +92,7 @@ fn one_axis_interpolates_between_authored_cells() {
         vec![binding("A", &[-2.0, -1.0, 0.0, 1.0, 2.0])],
         &[(0, -40.0), (2, 0.0), (4, 20.0)],
     );
-    let report = infer_additive(&model, &mut grid).unwrap();
+    let report = infer_additive(&model, &mut grid, InferScope::AllDerived).unwrap();
     assert_eq!(report.written, vec![1, 3]);
     assert_close(&angles(&grid), &[-40.0, -20.0, 0.0, 10.0, 20.0]);
 }
@@ -102,7 +102,7 @@ fn one_axis_interpolates_with_uneven_keys() {
     let model = model();
     // 基準 (0) と 4 の間の 1 は 1/4 の位置。
     let mut grid = angle_grid(vec![binding("A", &[0.0, 1.0, 4.0])], &[(0, 0.0), (2, 40.0)]);
-    infer_additive(&model, &mut grid).unwrap();
+    infer_additive(&model, &mut grid, InferScope::AllDerived).unwrap();
     assert_close(&angles(&grid), &[0.0, 10.0, 40.0]);
 }
 
@@ -114,7 +114,7 @@ fn one_axis_extrapolates_from_the_nearest_two_authored_cells() {
         vec![binding("A", &[0.0, 1.0, 2.0, 4.0])],
         &[(0, 0.0), (1, 10.0), (2, 30.0)],
     );
-    infer_additive(&model, &mut grid).unwrap();
+    infer_additive(&model, &mut grid, InferScope::AllDerived).unwrap();
     assert_close(&angles(&grid), &[0.0, 10.0, 30.0, 70.0]);
 
     // 片側に基準のセルと 1 つだけ: 基準と組んで外挿する。
@@ -122,7 +122,7 @@ fn one_axis_extrapolates_from_the_nearest_two_authored_cells() {
         vec![binding("A", &[-2.0, -1.0, 0.0, 1.0])],
         &[(2, 5.0), (3, 15.0)],
     );
-    infer_additive(&model, &mut grid).unwrap();
+    infer_additive(&model, &mut grid, InferScope::AllDerived).unwrap();
     assert_close(&angles(&grid), &[-15.0, -5.0, 5.0, 15.0]);
 }
 
@@ -130,7 +130,7 @@ fn one_axis_extrapolates_from_the_nearest_two_authored_cells() {
 fn one_axis_with_only_the_base_copies_the_base() {
     let model = model();
     let mut grid = angle_grid(vec![binding("A", &[-1.0, 0.0, 1.0])], &[(1, 7.0)]);
-    infer_additive(&model, &mut grid).unwrap();
+    infer_additive(&model, &mut grid, InferScope::AllDerived).unwrap();
     assert_close(&angles(&grid), &[7.0, 7.0, 7.0]);
 }
 
@@ -142,7 +142,7 @@ fn neutral_key_follows_the_parameter_default() {
         vec![binding("E", &[0.0, 1.0, 2.0])],
         &[(1, 10.0), (2, 30.0)],
     );
-    infer_additive(&model, &mut grid).unwrap();
+    infer_additive(&model, &mut grid, InferScope::AllDerived).unwrap();
     assert_close(&angles(&grid), &[-10.0, 10.0, 30.0]);
 }
 
@@ -171,7 +171,7 @@ fn two_axis_diagonal_adds_the_one_axis_changes() {
         grid.keyforms[i] = kf;
         grid.origins[i] = KeyformOrigin::Authored;
     }
-    let report = infer_additive(&model, &mut grid).unwrap();
+    let report = infer_additive(&model, &mut grid, InferScope::AllDerived).unwrap();
     assert_eq!(report.written, vec![0, 2, 6, 8]);
     for (i, expected) in [
         (0, offset(-10.0, -5.0, -27.0)),
@@ -195,7 +195,7 @@ fn two_axis_diagonal_uses_inferred_one_axis_cells() {
         vec![binding("A", &[0.0, 1.0, 2.0]), binding("B", &[0.0, 1.0])],
         &[(0, 0.0), (1, 10.0), (3, 100.0)],
     );
-    infer_additive(&model, &mut grid).unwrap();
+    infer_additive(&model, &mut grid, InferScope::AllDerived).unwrap();
     assert_close(&angles(&grid), &[0.0, 10.0, 20.0, 100.0, 110.0, 120.0]);
 }
 
@@ -221,7 +221,7 @@ fn authored_two_axis_correction_propagates_into_three_axis_cells() {
             (corner(&[0, 1]), 1016.0),
         ],
     );
-    let report = infer_additive(&model, &mut grid).unwrap();
+    let report = infer_additive(&model, &mut grid, InferScope::AllDerived).unwrap();
     assert_eq!(
         report.written,
         vec![corner(&[0, 2]), corner(&[1, 2]), corner(&[0, 1, 2])]
@@ -256,7 +256,7 @@ fn interaction_terms_are_defined_recursively() {
             (corner(&[0, 1, 2]), 126.0),
         ],
     );
-    infer_additive(&model, &mut grid).unwrap();
+    infer_additive(&model, &mut grid, InferScope::AllDerived).unwrap();
     let a = angles(&grid);
     // BC は authored でないので R(BC) = 0。
     assert_close(&[a[corner(&[1, 2])]], &[110.0]);
@@ -308,7 +308,7 @@ fn mesh_fields_are_added_and_clamped() {
         KeyformOrigin::Authored,
         KeyformOrigin::Derived,
     ];
-    infer_additive(&model, &mut grid).unwrap();
+    infer_additive(&model, &mut grid, InferScope::AllDerived).unwrap();
     let kf = &grid.keyforms[3];
     // 位置と描画順はクランプしない。
     assert_close(
@@ -323,7 +323,7 @@ fn mesh_fields_are_added_and_clamped() {
     assert_close(&[kf.mask_strength], &[0.5]);
 
     grid.keyforms[1].mask_strength = 0.0;
-    infer_additive(&model, &mut grid).unwrap();
+    infer_additive(&model, &mut grid, InferScope::AllDerived).unwrap();
     // 0.5 - 0.5 - 0.5 -> 0
     assert_close(&[grid.keyforms[3].mask_strength], &[0.0]);
 }
@@ -348,7 +348,7 @@ fn rotation_scale_is_clamped_and_booleans_come_from_the_base() {
         KeyformOrigin::Authored,
         KeyformOrigin::Derived,
     ];
-    infer_additive(&model, &mut grid).unwrap();
+    infer_additive(&model, &mut grid, InferScope::AllDerived).unwrap();
     // 1 - 0.8 - 0.7 -> 0
     assert_eq!(grid.keyforms[3].scale, 0.0);
     assert!(!grid.keyforms[3].reflect_x);
@@ -372,7 +372,7 @@ fn part_and_glue_values_are_clamped() {
         KeyformOrigin::Authored,
         KeyformOrigin::Derived,
     ];
-    infer_additive(&model, &mut part).unwrap();
+    infer_additive(&model, &mut part, InferScope::AllDerived).unwrap();
     // 0.2 + 2 * 0.5 = 1.2 -> 1
     assert_eq!(part.keyforms[2].opacity, 1.0);
 
@@ -385,7 +385,7 @@ fn part_and_glue_values_are_clamped() {
         ],
     );
     glue.origins = part.origins.clone();
-    infer_additive(&model, &mut glue).unwrap();
+    infer_additive(&model, &mut glue, InferScope::AllDerived).unwrap();
     // 0.5 - 2 * 0.3 = -0.1 -> 0
     assert_eq!(glue.keyforms[2].intensity, 0.0);
 }
@@ -404,15 +404,23 @@ fn authored_cells_are_never_overwritten() {
     ];
     let mut grid = angle_grid(vec![binding("A", &keys), binding("B", &keys)], &authored);
     let before = grid.clone();
-    let report = infer_additive(&model, &mut grid).unwrap();
+    let report = infer_additive(&model, &mut grid, InferScope::AllDerived).unwrap();
     assert_eq!(report.written, vec![0, 2, 6]);
-    assert_eq!(grid.origins, before.origins);
+    // 書いたセルは方法 (`additive`) を記録し、`authored` のセルの由来は変えない。
+    for (i, origin) in grid.origins.iter().enumerate() {
+        let expected = if report.written.contains(&i) {
+            KeyformOrigin::Additive
+        } else {
+            before.origins[i]
+        };
+        assert_eq!(*origin, expected, "cell {i}");
+    }
     for (i, _) in authored {
         assert_eq!(grid.keyforms[i], before.keyforms[i], "cell {i}");
     }
     // 何度実行しても同じ結果 (決定的)。
     let once = grid.clone();
-    infer_additive(&model, &mut grid).unwrap();
+    infer_additive(&model, &mut grid, InferScope::AllDerived).unwrap();
     assert_eq!(grid, once);
 }
 
@@ -421,7 +429,7 @@ fn grid_without_origins_is_all_authored() {
     let model = model();
     let mut grid = KeyformGrid::new(vec![binding("A", &[0.0, 1.0])], vec![rot(0.0), rot(123.0)]);
     let before = grid.clone();
-    let report = infer_additive(&model, &mut grid).unwrap();
+    let report = infer_additive(&model, &mut grid, InferScope::AllDerived).unwrap();
     assert!(report.written.is_empty());
     assert_eq!(grid, before);
     assert!(grid.origins.is_empty());
@@ -435,7 +443,7 @@ fn axis_without_neutral_key_is_an_error() {
         &[(0, 0.0)],
     );
     let before = grid.clone();
-    let err = infer_additive(&model, &mut grid).unwrap_err();
+    let err = infer_additive(&model, &mut grid, InferScope::AllDerived).unwrap_err();
     assert_eq!(
         err,
         InferError::MissingNeutralKey {
@@ -452,7 +460,7 @@ fn unknown_parameter_is_an_error() {
     let model = model();
     let mut grid = angle_grid(vec![binding("Nope", &[0.0, 1.0])], &[(0, 0.0)]);
     assert_eq!(
-        infer_additive(&model, &mut grid),
+        infer_additive(&model, &mut grid, InferScope::AllDerived),
         Err(InferError::UnknownParameter {
             parameter: "Nope".into()
         })
@@ -479,7 +487,7 @@ fn mismatched_vertex_counts_are_an_error() {
     ];
     let before = grid.clone();
     assert_eq!(
-        infer_additive(&model, &mut grid),
+        infer_additive(&model, &mut grid, InferScope::AllDerived),
         Err(InferError::ShapeMismatch {
             cell: 1,
             expected: 2,
@@ -494,14 +502,14 @@ fn derived_base_and_malformed_grids_are_errors() {
     let model = model();
     let mut grid = angle_grid(vec![binding("A", &[0.0, 1.0])], &[(1, 0.0)]);
     assert_eq!(
-        infer_additive(&model, &mut grid),
+        infer_additive(&model, &mut grid, InferScope::AllDerived),
         Err(InferError::BaseNotAuthored { cell: 0 })
     );
 
     let mut grid = angle_grid(vec![binding("A", &[0.0, 1.0])], &[(0, 0.0)]);
     grid.keyforms.pop();
     assert_eq!(
-        infer_additive(&model, &mut grid),
+        infer_additive(&model, &mut grid, InferScope::AllDerived),
         Err(InferError::GridSizeMismatch {
             expected: 2,
             found: 1
@@ -511,7 +519,7 @@ fn derived_base_and_malformed_grids_are_errors() {
     let mut grid = angle_grid(vec![binding("A", &[0.0, 1.0])], &[(0, 0.0)]);
     grid.origins.pop();
     assert_eq!(
-        infer_additive(&model, &mut grid),
+        infer_additive(&model, &mut grid, InferScope::AllDerived),
         Err(InferError::OriginsLengthMismatch {
             expected: 2,
             found: 1
@@ -551,7 +559,7 @@ fn fixture_face_warp_is_inferred_by_target() {
     grid.origins[7] = KeyformOrigin::Authored;
 
     let target = KeyformTarget::Deformer("Face".into());
-    let report = infer_additive_target(&mut model, &target).unwrap();
+    let report = infer_additive_target(&mut model, &target, InferScope::AllDerived).unwrap();
     assert_eq!(report.written, vec![0, 1, 2, 3, 6, 8]);
     let grid = face(&model);
     // 添字 a + 3 * b の期待する移動量。-30 側は基準と +30 から外挿する。
@@ -567,7 +575,7 @@ fn fixture_face_warp_is_inferred_by_target() {
         for (p, e) in grid.keyforms[i].points.iter().zip(&expected.points) {
             assert!((*p - *e).length() < EPS, "cell {i}: {p} vs {e}");
         }
-        assert_eq!(grid.origins[i], KeyformOrigin::Derived);
+        assert_eq!(grid.origins[i], KeyformOrigin::Additive);
     }
 }
 
@@ -580,7 +588,7 @@ fn targets_resolve_every_element_kind() {
         KeyformTarget::Deformer("Face".into()),
     ] {
         assert!(
-            infer_additive_target(&mut model, &target).is_ok(),
+            infer_additive_target(&mut model, &target, InferScope::AllDerived).is_ok(),
             "{target:?}"
         );
     }
@@ -591,12 +599,69 @@ fn targets_resolve_every_element_kind() {
         KeyformTarget::Glue("Nope".into()),
     ] {
         assert_eq!(
-            infer_additive_target(&mut model, &target),
+            infer_additive_target(&mut model, &target, InferScope::AllDerived),
             Err(InferError::UnknownTarget(target.clone()))
         );
     }
 
     let mut model = fixtures::glued_quads();
     let glue = model.glues[0].id.clone();
-    assert!(infer_additive_target(&mut model, &KeyformTarget::Glue(glue)).is_ok());
+    assert!(
+        infer_additive_target(
+            &mut model,
+            &KeyformTarget::Glue(glue),
+            InferScope::AllDerived
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn own_scope_keeps_cells_of_other_methods_as_sources() {
+    let model = model();
+    let keys = [-1.0, 0.0, 1.0];
+    // 基準は `mirror`、A = -1 は `mirror`、A = 1 は `additive`、B = ±1 は `authored`。
+    let mut grid = angle_grid(
+        vec![binding("A", &keys), binding("B", &keys)],
+        &[(4, 0.0), (3, -3.0), (5, 3.0), (1, 1.0), (7, -1.0)],
+    );
+    grid.origins[4] = KeyformOrigin::Mirror;
+    grid.origins[3] = KeyformOrigin::Mirror;
+    grid.origins[5] = KeyformOrigin::Additive;
+    grid.keyforms[5] = rot(999.0);
+    // 方法を記録していない `derived` のセル (角) は格子の方法 (加算合成) のセル。
+    let report = infer_additive(&model, &mut grid, InferScope::Own).unwrap();
+    // A = 1 (セル 5) は A = -1 と基準から外挿し直す (-3 → 0 → 3)。
+    assert_eq!(report.written, vec![0, 2, 5, 6, 8]);
+    assert!((grid.keyforms[5].angle - 3.0).abs() < EPS);
+    assert_eq!(grid.origins[3], KeyformOrigin::Mirror);
+    assert_eq!(grid.origins[4], KeyformOrigin::Mirror);
+    assert_eq!(grid.origins[0], KeyformOrigin::Additive);
+
+    // `AllDerived` ではミラーのセルも書き換える (基準がミラーのセルならエラー)。
+    let mut all = grid.clone();
+    all.origins[4] = KeyformOrigin::Authored;
+    let report = infer_additive(&model, &mut all, InferScope::AllDerived).unwrap();
+    assert!(report.written.contains(&3));
+    assert_eq!(all.origins[3], KeyformOrigin::Additive);
+    let mut all = grid.clone();
+    assert_eq!(
+        infer_additive(&model, &mut all, InferScope::AllDerived),
+        Err(InferError::BaseNotAuthored { cell: 4 })
+    );
+
+    // 深度からの回転の格子では、方法を記録していない `derived` のセルは加算合成のセルではない。
+    let mut depth = grid.clone();
+    depth.inference = Some(ugoe_model::KeyformInference::DepthRotation(
+        ugoe_model::DepthRotation {
+            angle_scale: 1.0,
+            pivot: Vec2::ZERO,
+            pivot_depth: 0.0,
+            yaw: None,
+            pitch: None,
+        },
+    ));
+    depth.origins[5] = KeyformOrigin::Derived;
+    let report = infer_additive(&model, &mut depth, InferScope::Own).unwrap();
+    assert_eq!(report.written, vec![0, 2, 6, 8]);
 }

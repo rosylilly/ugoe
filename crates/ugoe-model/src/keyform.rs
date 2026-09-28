@@ -22,7 +22,7 @@ pub struct KeyformBinding {
 /// 並びは **軸 0 が最も速く変化する** 行優先 (column-major 的) 順。
 /// 格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。
 ///
-/// `origins` と `inference` はオーサリング用のデータで、ランタイムは読み飛ばす
+/// `origins`・`inference`・`mirror_source` はオーサリング用のデータで、ランタイムは読み飛ばす
 /// (`docs/spec/keyform-inference.md`)。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -35,9 +35,12 @@ pub struct KeyformGrid<T> {
     /// 空ならすべて `authored`。空でなければ長さは `keyforms` と同じ。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub origins: Vec<KeyformOrigin>,
-    /// `derived` のセルを作り直すときの推定の設定。`None` なら加算合成 (`additive`)。
+    /// 方法を記録していない `derived` のセルを作り直すときの推定の設定。`None` なら加算合成 (`additive`)。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inference: Option<KeyformInference>,
+    /// `mirror` のセルのミラー元と、ミラーの設定。ミラーで作ったセルがあれば記録する。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mirror_source: Option<MirrorSource>,
 }
 
 impl<T> KeyformGrid<T> {
@@ -48,6 +51,7 @@ impl<T> KeyformGrid<T> {
             keyforms,
             origins: Vec::new(),
             inference: None,
+            mirror_source: None,
         }
     }
 
@@ -69,6 +73,24 @@ impl<T> KeyformGrid<T> {
             origin => origin,
         }
     }
+
+    /// 線形インデックス `index` のセルを作り直す推定の方法
+    /// (`docs/spec/keyform-inference.md#セルの由来`)。
+    ///
+    /// 方法を記録したセル (`additive` / `depth_rotation` / `mirror`) はその由来を返す。
+    /// 方法を記録していない `derived` のセルは格子の `inference` の方法 (`None` なら `additive`) を返し、
+    /// `inference` が未知なら `None` (作り直さない)。`authored` と未知の由来も `None`。
+    pub fn derivation(&self, index: usize) -> Option<KeyformOrigin> {
+        match self.origin(index) {
+            KeyformOrigin::Derived => match &self.inference {
+                None | Some(KeyformInference::Additive) => Some(KeyformOrigin::Additive),
+                Some(KeyformInference::DepthRotation(_)) => Some(KeyformOrigin::DepthRotation),
+                Some(KeyformInference::Unknown) => None,
+            },
+            KeyformOrigin::Authored | KeyformOrigin::Unknown => None,
+            origin => Some(origin),
+        }
+    }
 }
 
 /// キーフォームのセルの由来 (`docs/spec/keyform-inference.md#セルの由来`)。
@@ -80,14 +102,46 @@ pub enum KeyformOrigin {
     /// 人が作った (または手で修正した) セル。推定はこのセルを上書きしない。
     #[default]
     Authored,
-    /// 推定で作ったセル。推定の元になったセルが変わると、エディタが作り直す。
+    /// 推定で作ったセル (方法の記録なし)。格子の `inference` の方法で作ったものとして扱う。
+    /// 方法を記録しなかった版 (T0614 より前) のファイルと、`MarkKeyformDerived` がこの由来を書く。
     Derived,
+    /// 加算合成で作ったセル (`docs/spec/keyform-inference.md#加算合成`)。
+    Additive,
+    /// 深度からの回転で作ったセル (`docs/spec/keyform-inference.md#深度からの回転`)。
+    DepthRotation,
+    /// ミラーで作ったセル (`docs/spec/keyform-inference.md#ミラー`)。
+    /// ミラー元は格子の `mirror_source` に記録する。
+    Mirror,
     /// 未知の値 (新しい版のファイル)。`authored` として扱う (推定で上書きしない)。
     /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
     #[serde(other, skip_serializing)]
     #[cfg_attr(feature = "ts", ts(skip))]
     #[cfg_attr(feature = "schema", schemars(skip))]
     Unknown,
+}
+
+impl KeyformOrigin {
+    /// 推定で作ったセル (`authored` と未知の由来以外) か。
+    pub fn is_derived(self) -> bool {
+        !matches!(self, KeyformOrigin::Authored | KeyformOrigin::Unknown)
+    }
+}
+
+/// ミラーで作ったセル (`KeyformOrigin::Mirror`) のミラー元と、ミラーの設定
+/// (`docs/spec/keyform-inference.md#ミラー`)。エディタがミラーをやり直すときに使う。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct MirrorSource {
+    /// ミラー元の要素の ID。格子を持つ要素と同じ種類 (メッシュならメッシュ、デフォーマならデフォーマ)。
+    /// 自分自身の ID なら、左右対称な 1 つの要素の中で写し合ったセル。
+    pub id: String,
+    /// 対称軸 `x = a` の `a` を明示した場合の値。`None` なら元の要素の `mirror_axis` (または既定値)。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub axis: Option<f32>,
+    /// 頂点の対応付けの許容距離を明示した場合の値。`None` ならキャンバスの 1px。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tolerance: Option<f32>,
 }
 
 /// 格子の `derived` のセルを作る推定の方法と、その設定。
@@ -134,4 +188,79 @@ pub struct DepthRotation {
 
 fn one() -> f32 {
     1.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn grid(origins: Vec<KeyformOrigin>, inference: Option<KeyformInference>) -> KeyformGrid<u8> {
+        let mut grid = KeyformGrid::new(Vec::new(), vec![0; origins.len()]);
+        grid.origins = origins;
+        grid.inference = inference;
+        grid
+    }
+
+    #[test]
+    fn derivation_of_each_origin() {
+        use KeyformOrigin::*;
+        let origins = vec![Authored, Derived, Additive, DepthRotation, Mirror, Unknown];
+        let g = grid(origins.clone(), None);
+        let expected = [
+            None,
+            Some(Additive),
+            Some(Additive),
+            Some(DepthRotation),
+            Some(Mirror),
+        ];
+        for (i, e) in expected.into_iter().chain([None]).enumerate() {
+            assert_eq!(g.derivation(i), e, "cell {i}");
+        }
+        // 方法を記録していない `derived` のセルは、格子の `inference` の方法で作り直す。
+        let depth = KeyformInference::DepthRotation(super::DepthRotation {
+            angle_scale: 1.0,
+            pivot: Vec2::new(0.0, 0.0),
+            pivot_depth: 0.0,
+            yaw: None,
+            pitch: None,
+        });
+        assert_eq!(
+            grid(origins.clone(), Some(depth)).derivation(1),
+            Some(DepthRotation)
+        );
+        let unknown = grid(origins, Some(KeyformInference::Unknown));
+        assert_eq!(unknown.derivation(1), None);
+        assert_eq!(unknown.derivation(2), Some(Additive));
+        assert!(Mirror.is_derived() && Derived.is_derived());
+        assert!(!Authored.is_derived() && !Unknown.is_derived());
+    }
+
+    #[test]
+    fn origins_and_mirror_source_json() {
+        // 方法を記録しない古いファイル (`derived` だけ) もそのまま読める。
+        let json = r#"{"keyforms":[0,0,0,0,0],
+            "origins":["authored","derived","additive","depth_rotation","mirror"],
+            "mirror_source":{"id":"EyeL","axis":0.5}}"#;
+        let g: KeyformGrid<u8> = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            g.origins,
+            [
+                KeyformOrigin::Authored,
+                KeyformOrigin::Derived,
+                KeyformOrigin::Additive,
+                KeyformOrigin::DepthRotation,
+                KeyformOrigin::Mirror,
+            ]
+        );
+        let source = g.mirror_source.clone().unwrap();
+        assert_eq!(
+            (source.id.as_str(), source.axis, source.tolerance),
+            ("EyeL", Some(0.5), None)
+        );
+        let back: KeyformGrid<u8> =
+            serde_json::from_value(serde_json::to_value(&g).unwrap()).unwrap();
+        assert_eq!(back, g);
+        let plain = serde_json::to_value(KeyformGrid::constant(0u8)).unwrap();
+        assert!(plain.get("mirror_source").is_none());
+    }
 }

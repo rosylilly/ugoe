@@ -163,7 +163,7 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
         &mut errors,
     );
     let meshes = collect_ids("mesh", model.meshes.iter().map(|m| &m.id), &mut errors);
-    collect_ids("glue", model.glues.iter().map(|g| &g.id), &mut errors);
+    let glues = collect_ids("glue", model.glues.iter().map(|g| &g.id), &mut errors);
     collect_ids(
         "hit area",
         model.hit_areas.iter().map(|h| &h.id),
@@ -201,7 +201,8 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
         if let Some(parent) = &part.parent {
             refs.check(&parts, "parent", "part", parent, &mut errors);
         }
-        check_grid(&refs, &params, &part.keyforms, &mut errors);
+        let exists = |id: &str| parts.keys().any(|p| p.as_str() == id);
+        check_grid(&refs, &params, &exists, &part.keyforms, &mut errors);
     }
     check_cycles(
         "part",
@@ -224,9 +225,10 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
         }
         let path = format!("deformers[{id}]");
         check_mirror_axis(&path, deformer.mirror_axis, &mut errors);
+        let exists = |id: &str| deformers.keys().any(|d| d.as_str() == id);
         match &deformer.kind {
             DeformerKind::Warp(warp) => {
-                check_grid(&refs, &params, &warp.keyforms, &mut errors);
+                check_grid(&refs, &params, &exists, &warp.keyforms, &mut errors);
                 let expected = (usize::from(warp.rows) + 1) * (usize::from(warp.cols) + 1);
                 check_depth(&refs, &path, warp.depth.as_deref(), expected, &mut errors);
                 if warp.rows == 0 || warp.cols == 0 {
@@ -247,7 +249,7 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
                 }
             }
             DeformerKind::Rotation(rotation) => {
-                check_grid(&refs, &params, &rotation.keyforms, &mut errors);
+                check_grid(&refs, &params, &exists, &rotation.keyforms, &mut errors);
             }
             // 未知の種類は中身を持たない (恒等変換として扱う) ので、検査することがない。
             DeformerKind::Unknown => {}
@@ -290,7 +292,8 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
                 textures: model.textures.len(),
             });
         }
-        check_grid(&refs, &params, &mesh.keyforms, &mut errors);
+        let exists = |id: &str| meshes.keys().any(|m| m.as_str() == id);
+        check_grid(&refs, &params, &exists, &mesh.keyforms, &mut errors);
         let path = format!("meshes[{id}]");
         check_mirror_axis(&path, mesh.mirror_axis, &mut errors);
         check_depth(
@@ -349,7 +352,8 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
         };
         let a = refs.check(&meshes, "mesh_a", "mesh", &glue.mesh_a, &mut errors);
         let b = refs.check(&meshes, "mesh_b", "mesh", &glue.mesh_b, &mut errors);
-        check_grid(&refs, &params, &glue.keyforms, &mut errors);
+        let exists = |id: &str| glues.contains_key(&id.to_owned());
+        check_grid(&refs, &params, &exists, &glue.keyforms, &mut errors);
         // 参照先メッシュが存在する側だけ頂点インデックスを検査する。
         let sides = [
             (
@@ -538,10 +542,12 @@ impl Refs<'_> {
     }
 }
 
-/// キーフォーム格子の共通検査: キーフォーム数、キーが空でないこと・昇順・重複なし、パラメータの参照と重複。
+/// キーフォーム格子の共通検査: キーフォーム数、キーが空でないこと・昇順・重複なし、パラメータの参照と重複、
+/// ミラー元の参照。`same_kind` は格子を持つ要素と同じ種類の要素に、その ID があるか。
 fn check_grid<T>(
     refs: &Refs<'_>,
     params: &HashMap<&crate::ParamId, usize>,
+    same_kind: &dyn Fn(&str) -> bool,
     grid: &KeyformGrid<T>,
     errors: &mut Vec<ValidationError>,
 ) {
@@ -598,6 +604,24 @@ fn check_grid<T>(
             expected: grid.keyforms.len(),
             actual: grid.origins.len(),
         });
+    }
+    if let Some(source) = &grid.mirror_source {
+        if !same_kind(&source.id) {
+            errors.push(ValidationError::UnknownReference {
+                kind: refs.kind,
+                id: refs.id.to_owned(),
+                field: "keyforms.mirror_source",
+                target_kind: refs.kind,
+                target: source.id.clone(),
+            });
+        }
+        let path = format!("{}[{}].keyforms.mirror_source", plural(refs.kind), refs.id);
+        let values = [("axis", source.axis), ("tolerance", source.tolerance)];
+        for (name, value) in values {
+            if let Some(value) = value {
+                check_finite(&format!("{path}.{name}"), value, errors);
+            }
+        }
     }
     if let Some(KeyformInference::DepthRotation(rotation)) = &grid.inference {
         let path = format!("{}[{}].keyforms.inference", plural(refs.kind), refs.id);
@@ -839,7 +863,9 @@ mod tests {
     use crate::mesh::{Glue, GlueKeyform, GluePair, MaskRef};
     use crate::part::{Part, PartKeyform};
     use crate::pose::{PoseEntry, PoseGroup};
-    use crate::{Effects, HitArea, KeyformBinding, KeyformOrigin, ParameterGroup, TextureRef};
+    use crate::{
+        Effects, HitArea, KeyformBinding, KeyformOrigin, MirrorSource, ParameterGroup, TextureRef,
+    };
 
     fn part(id: &str, parent: Option<&str>) -> Part {
         Part {
@@ -1539,6 +1565,57 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn mirror_source_reference() {
+        let mut model = keyform_inference();
+        // 同じ種類の要素ならよい (自分自身も)。
+        model.meshes[1].keyforms.mirror_source = Some(MirrorSource {
+            id: model.meshes[0].id.to_string(),
+            axis: None,
+            tolerance: None,
+        });
+        face_warp(&mut model).keyforms.mirror_source = Some(MirrorSource {
+            id: "Face".into(),
+            axis: Some(0.5),
+            tolerance: None,
+        });
+        assert_eq!(validate(&model), vec![]);
+
+        // 別の種類の要素の ID や存在しない ID は、参照が壊れている。
+        model.meshes[1].keyforms.mirror_source = Some(MirrorSource {
+            id: "Face".into(),
+            axis: None,
+            tolerance: Some(f32::NAN),
+        });
+        face_warp(&mut model).keyforms.mirror_source = Some(MirrorSource {
+            id: "Missing".into(),
+            axis: None,
+            tolerance: None,
+        });
+        let mesh = model.meshes[1].id.to_string();
+        let errors = validate(&model);
+        assert_eq!(errors.len(), 3, "{errors:?}");
+        assert!(errors.contains(&ValidationError::UnknownReference {
+            kind: "deformer",
+            id: "Face".into(),
+            field: "keyforms.mirror_source",
+            target_kind: "deformer",
+            target: "Missing".into(),
+        }));
+        assert!(errors.contains(&ValidationError::UnknownReference {
+            kind: "mesh",
+            id: mesh.clone(),
+            field: "keyforms.mirror_source",
+            target_kind: "mesh",
+            target: "Face".into(),
+        }));
+        assert!(errors.iter().any(|e| matches!(
+            e,
+            ValidationError::InvalidValue { field, .. }
+                if *field == format!("meshes[{mesh}].keyforms.mirror_source.tolerance")
+        )));
     }
 
     #[test]

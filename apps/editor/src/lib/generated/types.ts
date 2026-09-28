@@ -78,7 +78,7 @@ origin: Vec2, };
  *
  * 削除時の連鎖 (カスケード) と拒否の規則は `docs/editor.md#コマンド` にある。
  */
-export type Command = { "op": "add_parameter", parameter: Parameter, } | { "op": "remove_parameter", id: string, } | { "op": "set_parameter_range", id: string, min: number, default: number, max: number, } | { "op": "batch", label: string, commands: Array<Command>, } | { "op": "rename_parameter", id: string, name: string, } | { "op": "set_parameter_group", id: string, group: string | null, } | { "op": "set_parameter_mirror", id: string, mirror: string | null, } | { "op": "add_part", part: Part, } | { "op": "remove_part", id: string, } | { "op": "rename_part", id: string, name: string, } | { "op": "set_part_parent", id: string, parent: string | null, } | { "op": "set_part_keyforms", id: string, keyforms: KeyformGrid<PartKeyform>, } | { "op": "add_deformer", deformer: Deformer, } | { "op": "remove_deformer", id: string, } | { "op": "rename_deformer", id: string, name: string, } | { "op": "set_deformer_parent", id: string, parent: string | null, } | { "op": "set_deformer_part", id: string, part: string, } | { "op": "set_warp_keyforms", id: string, keyforms: KeyformGrid<WarpKeyform>, } | { "op": "set_rotation_keyforms", id: string, keyforms: KeyformGrid<RotationKeyform>, } | { "op": "add_mesh", mesh: Mesh, } | { "op": "remove_mesh", id: string, } | { "op": "rename_mesh", id: string, name: string, } | { "op": "set_mesh_properties", id: string, part?: string | null, texture?: number | null, blend?: BlendMode | null, culling?: boolean | null, masks?: Array<MaskRef> | null, mask_mode?: MaskMode | null, mask_only?: boolean | null, } | { "op": "set_mesh_parent", id: string, parent: string | null, } | { "op": "set_mesh_keyforms", id: string, keyforms: KeyformGrid<MeshKeyform>, } | { "op": "set_mesh_keyform", id: string, cell: { [key in string]: number }, keyform: MeshKeyform, } | { "op": "reorder_mesh", id: string, before: string | null, } | { "op": "add_texture", name: string, png: Array<number>, } | { "op": "set_texture_image", name: string, png: Array<number>, } | { "op": "remove_texture", name: string, } | { "op": "set_canvas", width: number, height: number, origin: Vec2, } | { "op": "regenerate_mesh", id: string, options: AutoMeshOptions, } | { "op": "infer_keyforms", target: KeyformTarget, method: InferMethod, } | { "op": "mirror_keyforms", source: KeyformTarget, target: KeyformTarget, 
+export type Command = { "op": "add_parameter", parameter: Parameter, } | { "op": "remove_parameter", id: string, } | { "op": "set_parameter_range", id: string, min: number, default: number, max: number, } | { "op": "batch", label: string, commands: Array<Command>, } | { "op": "rename_parameter", id: string, name: string, } | { "op": "set_parameter_group", id: string, group: string | null, } | { "op": "set_parameter_mirror", id: string, mirror: string | null, } | { "op": "add_part", part: Part, } | { "op": "remove_part", id: string, } | { "op": "rename_part", id: string, name: string, } | { "op": "set_part_parent", id: string, parent: string | null, } | { "op": "set_part_keyforms", id: string, keyforms: KeyformGrid<PartKeyform>, } | { "op": "add_deformer", deformer: Deformer, } | { "op": "remove_deformer", id: string, } | { "op": "rename_deformer", id: string, name: string, } | { "op": "set_deformer_parent", id: string, parent: string | null, } | { "op": "set_deformer_part", id: string, part: string, } | { "op": "set_warp_keyforms", id: string, keyforms: KeyformGrid<WarpKeyform>, } | { "op": "set_rotation_keyforms", id: string, keyforms: KeyformGrid<RotationKeyform>, } | { "op": "add_mesh", mesh: Mesh, } | { "op": "remove_mesh", id: string, } | { "op": "rename_mesh", id: string, name: string, } | { "op": "set_mesh_properties", id: string, part?: string | null, texture?: number | null, blend?: BlendMode | null, culling?: boolean | null, masks?: Array<MaskRef> | null, mask_mode?: MaskMode | null, mask_only?: boolean | null, } | { "op": "set_mesh_parent", id: string, parent: string | null, } | { "op": "set_mesh_keyforms", id: string, keyforms: KeyformGrid<MeshKeyform>, } | { "op": "set_mesh_keyform", id: string, cell: { [key in string]: number }, keyform: MeshKeyform, } | { "op": "reorder_mesh", id: string, before: string | null, } | { "op": "add_texture", name: string, png: Array<number>, } | { "op": "set_texture_image", name: string, png: Array<number>, } | { "op": "remove_texture", name: string, } | { "op": "set_canvas", width: number, height: number, origin: Vec2, } | { "op": "regenerate_mesh", id: string, options: AutoMeshOptions, } | { "op": "infer_keyforms", target: KeyformTarget, method: InferMethod, overwrite_derived: boolean, } | { "op": "mirror_keyforms", source: KeyformTarget, target: KeyformTarget, 
 /**
  * 対称軸 `x = a` の `a`。省略すると元の要素の `mirror_axis` (または親で決まる既定値)。
  */
@@ -231,7 +231,7 @@ export type KeyformBinding = { parameter: string, keys: Array<number>, };
  * 並びは **軸 0 が最も速く変化する** 行優先 (column-major 的) 順。
  * 格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。
  *
- * `origins` と `inference` はオーサリング用のデータで、ランタイムは読み飛ばす
+ * `origins`・`inference`・`mirror_source` はオーサリング用のデータで、ランタイムは読み飛ばす
  * (`docs/spec/keyform-inference.md`)。
  */
 export type KeyformGrid<T> = { bindings: Array<KeyformBinding>, keyforms: Array<T>, 
@@ -241,9 +241,13 @@ export type KeyformGrid<T> = { bindings: Array<KeyformBinding>, keyforms: Array<
  */
 origins?: Array<KeyformOrigin>, 
 /**
- * `derived` のセルを作り直すときの推定の設定。`None` なら加算合成 (`additive`)。
+ * 方法を記録していない `derived` のセルを作り直すときの推定の設定。`None` なら加算合成 (`additive`)。
  */
-inference?: KeyformInference | null, };
+inference?: KeyformInference | null, 
+/**
+ * `mirror` のセルのミラー元と、ミラーの設定。ミラーで作ったセルがあれば記録する。
+ */
+mirror_source?: MirrorSource | null, };
 
 /**
  * 格子の `derived` のセルを作る推定の方法と、その設定。
@@ -254,7 +258,7 @@ export type KeyformInference = { "method": "additive" } | { "method": "depth_rot
 /**
  * キーフォームのセルの由来 (`docs/spec/keyform-inference.md#セルの由来`)。
  */
-export type KeyformOrigin = "authored" | "derived";
+export type KeyformOrigin = "authored" | "derived" | "additive" | "depth_rotation" | "mirror";
 
 /**
  * キーフォームの格子を持つ要素。JSON では `{"kind": "mesh", "id": "EyeL"}` と書く。
@@ -350,6 +354,25 @@ draw_order: number, multiply_color: Rgb, screen_color: Rgb,
  * マスクの効き具合 (0〜1、既定 1)。範囲外の値はランタイムがクランプする。
  */
 mask_strength: number, };
+
+/**
+ * ミラーで作ったセル (`KeyformOrigin::Mirror`) のミラー元と、ミラーの設定
+ * (`docs/spec/keyform-inference.md#ミラー`)。エディタがミラーをやり直すときに使う。
+ */
+export type MirrorSource = { 
+/**
+ * ミラー元の要素の ID。格子を持つ要素と同じ種類 (メッシュならメッシュ、デフォーマならデフォーマ)。
+ * 自分自身の ID なら、左右対称な 1 つの要素の中で写し合ったセル。
+ */
+id: string, 
+/**
+ * 対称軸 `x = a` の `a` を明示した場合の値。`None` なら元の要素の `mirror_axis` (または既定値)。
+ */
+axis?: number | null, 
+/**
+ * 頂点の対応付けの許容距離を明示した場合の値。`None` ならキャンバスの 1px。
+ */
+tolerance?: number | null, };
 
 /**
  * 1 体のリグ付きモデル全体。

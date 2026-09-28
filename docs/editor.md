@@ -69,18 +69,18 @@
 
 | `op` | 内容 |
 | --- | --- |
-| `infer_keyforms` | `target` の格子の `derived` のセルを作り直す。`method` は `from_grid` (既定。格子の `inference` に従い、省略なら加算合成)・`additive`・`depth_rotation` (格子の `inference` が `depth_rotation` であること) |
-| `mirror_keyforms` | `source` を反転して `target` のセルを作る (`derived`)。`axis` (対称軸)・`tolerance` (頂点の許容距離) は省略できる。`overwrite_authored: true` で先の `authored` のセルも上書きする |
+| `infer_keyforms` | `target` の格子の `derived` のセルを作り直す。`method` は `from_grid` (既定。格子の `inference` に従い、省略なら加算合成)・`additive`・`depth_rotation` (格子の `inference` が `depth_rotation` であること)。書き換えるのはその方法で作ったセルだけで、`overwrite_derived: true` なら別の方法 (ミラーなど) で作ったセルも書き換える |
+| `mirror_keyforms` | `source` を反転して `target` のセルを作る (由来は `mirror`)。先の `authored` 以外のセルをすべて書き換え、`source` を先の格子の `mirror_source` に記録する。`axis` (対称軸)・`tolerance` (頂点の許容距離) は省略できる (指定すれば記録する)。`overwrite_authored: true` で先の `authored` のセルも上書きする |
 | `mark_keyform_authored` | `cells` (セルの指定の配列。形は `set_mesh_keyform` の `cell` と同じ) の由来を `authored` にする。値は変えない |
 | `mark_keyform_derived` | `cells` の由来を `derived` にし、格子の推定の設定で作り直す。基準のセルは `derived` にできない (推定のエラーで拒否) |
 
 - 推定のエラー (中立のキーがない、基準のセルが `derived`、ミラーの対でない、など) は `EditError::Inference` で拒否し、モデルは変えません。
-- **自動の作り直し:** 格子のセル (値や由来) を変えたコマンドの後、`Document::apply` はその格子の `derived` のセルを格子の `inference` の方法で作り直します。同じ Undo 単位に含まれ、`batch` では全体を適用した後にまとめて行います。作り直せなければコマンドを拒否します。`derived` のセルがない格子と、未知の方法の格子は作り直しません。
-  - 対象は `set_*_keyforms`・`set_mesh_keyform`・`mark_keyform_*` です。新しいコマンドは、格子のセルを変えたら `apply_to` の `touched` に要素を積むことで対象になります (`crates/ugoe-editor-core/src/document.rs`)。
-  - `infer_keyforms` と `mirror_keyforms` は推定そのものなので積みません (書いた結果を格子の方法で上書きしないため)。
+- **自動の作り直し:** 格子のセル (値や由来) を変えたコマンドの後、`Document::apply` はその格子の `derived` のセルを **セルに記録した推定の方法で** 作り直し、その格子をミラー元 (`mirror_source`) にする格子のミラーのセルもミラーし直します。同じ Undo 単位に含まれ、`batch` では全体を適用した後にまとめて行います。加算合成・深度からの回転で作り直せなければコマンドを拒否します (ミラーのやり直しの失敗は、ミラーのセルをそのままにして続ける)。規則は [spec/keyform-inference.md#自動の作り直し](spec/keyform-inference.md#自動の作り直し)。
+  - 対象は `set_*_keyforms`・`set_mesh_keyform`・`mark_keyform_*`・`infer_keyforms`・`mirror_keyforms` です。新しいコマンドは、格子のセルを変えたら `apply_to` の `touched` に要素を積むことで対象になります (`crates/ugoe-editor-core/src/document.rs`)。
+  - 推定のコマンドも積みます。作り直しはセルごとの方法で行うので推定の結果を別の方法で上書きせず、その格子をミラー元にする格子へ変化を伝えます。
   - パラメータの範囲の変更など、セルを変えないコマンドでは作り直しません。必要なら `infer_keyforms` を実行します。
-- **`derived` のセルの編集:** セルを書き換えるコマンドは、書き換えた `derived` のセルを `authored` にします。`set_*_keyforms` で格子を丸ごと置き換えるときは、軸が同じなら、値が変わったのに `derived` と指定されたセルを `authored` にします。
-- ミラーで作ったセルは格子の由来では推定の方法と区別できないので、元の要素を編集しても自動では作り直しません (`mirror_keyforms` を再度実行する)。先の格子のセルを編集すると、その格子の方法で作り直されます。
+- **`derived` のセルの編集:** セルを書き換えるコマンドは、書き換えた `derived` のセルを `authored` にします。`set_*_keyforms` で格子を丸ごと置き換えるときは、軸が同じなら、値が変わったのに `derived` (方法を問わない) と指定されたセルを `authored` にします。
+- ミラーで作ったセル (`mirror`) は、ミラー元の格子が変わるとミラーし直され、先の格子を編集しても上書きされません。方法を記録していない版 (T0614 より前) のファイルでミラーしたセルは `derived` のままなので、以前と同じく格子の方法で作り直されます (`mirror_keyforms` を再度実行すると `mirror` になる)。
 
 ### 削除の連鎖と拒否
 
@@ -90,6 +90,8 @@
 | `remove_part` | 子パーツ・所属するデフォーマ・所属するメッシュが残っていれば **拒否する** (`EditError::HasChildren` に子の一覧が入る)。ポーズからは取り除く: そのパーツの要素を消し、他の要素の `links` からも外し、空になったグループは消す |
 | `remove_deformer` | 子デフォーマ・子メッシュが残っていれば **拒否する**。他のデフォーマの `mirror` からは外す |
 | `remove_mesh` | **連鎖して直す。** 他のメッシュの `masks` と `mirror` から外し、このメッシュを使うグルーと当たり判定を削除する |
+
+- 削除 (`remove_part`・`remove_deformer`・`remove_mesh`) で要素がなくなったら、その要素をミラー元 (`keyforms.mirror_source`) にしている格子から記録を外し、その格子の `mirror` のセルを `authored` にします (値は変えない)。
 
 - 拒否する場合は、先に子を削除するか付け替えます。まとめて行うなら `batch` を使います。
 - 物理・モーション・表情は `Model` の外のデータなので、`remove_parameter` はこれらを書き換えません。消したパラメータへの参照が残ることがあります。

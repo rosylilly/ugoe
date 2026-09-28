@@ -1106,7 +1106,7 @@ fn set_mesh_keyforms() {
 
 #[test]
 fn set_mesh_keyform_marks_cell_authored() {
-    use ugoe_model::KeyformOrigin::{Authored, Derived};
+    use ugoe_model::KeyformOrigin::{Additive, Authored, Derived};
     let mut model = fixtures::single_quad();
     // 基準のセル (X = 0) は推定の元なので `authored` のまま。
     model.meshes[0].keyforms.origins = vec![Derived, Authored, Derived];
@@ -1121,7 +1121,7 @@ fn set_mesh_keyform_marks_cell_authored() {
     );
     assert_eq!(
         after.meshes[0].keyforms.origins,
-        vec![Derived, Authored, Authored]
+        vec![Additive, Authored, Authored]
     );
 }
 
@@ -1498,6 +1498,7 @@ fn json_samples() -> Vec<Command> {
         Command::InferKeyforms {
             target: crate::KeyformTarget::Deformer("Face".into()),
             method: crate::InferMethod::DepthRotation,
+            overwrite_derived: true,
         },
         Command::MirrorKeyforms {
             source: crate::KeyformTarget::Mesh("EyeL".into()),

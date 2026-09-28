@@ -312,6 +312,7 @@ fn sample_commands() -> Vec<Command> {
         Command::InferKeyforms {
             target: KeyformTarget::Mesh(mesh_id.clone()),
             method: InferMethod::DepthRotation,
+            overwrite_derived: true,
         },
         Command::MirrorKeyforms {
             source: KeyformTarget::Deformer(deformers[0].id.clone()),

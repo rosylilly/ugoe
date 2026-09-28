@@ -8,19 +8,46 @@
 
 ## セルの由来
 
-キーフォーム格子の各セルは、次のどちらかの由来を持ちます (`KeyformGrid::origins`、型は `KeyformOrigin`)。
+キーフォーム格子の各セルは由来を持ちます (`KeyformGrid::origins`、型は `KeyformOrigin`)。
 `origins` が空なら、すべてのセルが `authored` です。空でなければ `keyforms` と同じ長さ・同じ並びです。
+推定で作ったセルは、**どの方法で作ったか** を由来に記録します (T0614)。
 
 | 由来 | 意味 |
 | --- | --- |
 | `authored` | 人が作った (または手で修正した) セル。推定はこのセルを上書きしない |
-| `derived` | 推定で作ったセル。推定の元になったセルが変わると、エディタが作り直す |
+| `additive` | 加算合成で作ったセル |
+| `depth_rotation` | 深度からの回転で作ったセル |
+| `mirror` | ミラーで作ったセル。ミラー元は格子の `mirror_source` に記録する |
+| `derived` | 推定で作ったセル (方法の記録なし)。格子の `inference` の方法で作ったものとして扱う |
 
-`derived` のセルを手で編集すると、そのセルは `authored` になります。`authored` のセルを `derived` に戻す (推定をやり直す) コマンドも用意します。
+`authored` 以外をまとめて **`derived` のセル** (推定で作ったセル) と呼びます。
 
-`derived` のセルを作り直すときに使う方法は `KeyformGrid::inference` (型は `KeyformInference`) に持ちます。
-`method` が `additive` なら加算合成、`depth_rotation` なら深度からの回転 (設定は [回転と投影](#回転と投影)) です。省略すると加算合成です。
-ミラーで作ったセルの作り直しは、格子の設定ではなく要素の `mirror` と対称軸で決まります。
+- `derived` のセルを手で編集すると、そのセルは `authored` になります。`authored` のセルを推定に戻すコマンド (`MarkKeyformDerived`) は由来を `derived` (方法の記録なし) にし、格子の方法で作り直します。作り直したセルには方法が記録されます。
+- 方法を記録していない `derived` のセルを作り直す方法は `KeyformGrid::inference` (型は `KeyformInference`) で決まります。
+  `method` が `additive` なら加算合成、`depth_rotation` なら深度からの回転 (設定は [回転と投影](#回転と投影)) です。省略すると加算合成です。
+  方法を記録しなかった版 (T0614 より前) のファイルはすべてのセルがこの扱いになり、以前と同じに作り直されます。
+- `inference` が未知の方法 (新しい版のファイル) なら、方法を記録していない `derived` のセルは作り直しません。未知の由来のセルは `authored` として扱います (上書きせず、推定の元にする)。
+- `depth_rotation` のセルの設定 (回転の中心など) は格子の `inference` にあります。`inference` が深度からの回転でない格子では、`depth_rotation` のセルは作り直しません (値をそのまま使う)。
+
+### ミラー元の記録
+
+ミラーでセルを作ると、先の格子の `mirror_source` に、元の要素の ID (`id`) と、実行時に明示した対称軸 (`axis`)・許容距離 (`tolerance`) を記録します (省略したものは記録しない)。
+元の要素は格子を持つ要素と同じ種類です (メッシュならメッシュ、デフォーマならデフォーマ)。左右対称な 1 つの要素では自分自身の ID になります。
+ミラーを実行しても 1 つもセルを書かなければ、記録は変えません。`validate` は `id` の要素が存在することを検査します。
+`mirror` のセルがあっても `mirror_source` がなければ、そのセルは作り直しません。
+
+### 方法ごとの書き換えの範囲
+
+推定は、書き換えるセルの範囲 (`ugoe_rigging::InferScope`) を指定して実行します。
+
+| 範囲 | 書き換えるセル |
+| --- | --- |
+| `own` | その方法の `derived` のセル (方法を記録していないセルは、格子の `inference` の方法ならその方法のセル) |
+| `all_derived` | `authored` 以外のすべてのセル |
+
+- どちらでも `authored` のセルは書き換えません (ミラーの `overwrite_authored` を除く)。書いたセルの由来はその方法になります。
+- **書き換えないセルは、`authored` のセルと同じく推定の元にします。** たとえばミラーで作った `AngleX = -30` のセルは、加算合成で斜めのセルを作るときの 1 軸セルになります。基準のセルもミラーで作ったセルでかまいません。基準のセルが書き換えるセルならエラーです。
+- エディタの自動の作り直しは `own` で行います。明示的なコマンドの範囲は [推定の実行](#推定の実行) にあります。
 
 由来と推定の設定はオーサリング用のデータで、ランタイムは読み飛ばします ([ADR 0013](../adr/0013-forward-compatibility.md) の任意機能 `authoring.keyform_origins`)。
 
@@ -106,9 +133,10 @@ derived(c) = B + Σ_{k∈S(c)} Δ_k(c) + Σ_{U ⊆ S(c), |U| ≥ 2} R(U, c)
 - 回転デフォーマ: 原点を反転し、角度の符号を反転する。拡大率と `reflect_x` / `reflect_y` はそのまま写す (`F·R(θ)·S·F = R(−θ)·S` なので、反転した子に対して正しい)。
 - それ以外のフィールド (不透明度・描画順・色など) はそのまま写す。
 
-作ったセルは `derived` になります。書き込みの規則は次のとおりです。
+作ったセルの由来は `mirror` になり、先の格子にミラー元を記録します ([ミラー元の記録](#ミラー元の記録))。書き込みの規則は次のとおりです。
 
-- 先の `authored` のセルは書きません。明示的な指定 (`MirrorOptions::overwrite_authored`) があれば上書きし、`derived` にします。
+- 先の `authored` のセルは書きません。明示的な指定 (`MirrorOptions::overwrite_authored`) があれば上書きし、`mirror` にします。
+- 先の `derived` のセルは、範囲 (`MirrorOptions::scope`) が `all_derived` ならすべて、`own` なら `mirror` のセルだけを書きます。
 - 元のセルは、実行前の値を読みます (結果は書き込む順に依存しない)。
 - 元と先が同じ要素 (左右対称な 1 つの要素) のときは、自分自身に写るセル (自分自身と対にした軸がすべて中立のセルなど) と、元のセルが `derived` のセルは書きません。推定したセルから推定しないので、何度実行しても同じ結果になります。
 - 対になった別の要素では、元のセルが `derived` でも写します。
@@ -159,7 +187,8 @@ R_x(φ) = [[1, 0, 0], [0, cos φ, −sin φ], [0, sin φ, cos φ]]
 
 #### 格子のセルの作り方
 
-格子のすべてのセル (中間・斜めを含む) を作り、`derived` にします。手で直したセルは `authored` になり、上書きしません。
+格子のすべてのセル (中間・斜めを含む) を作り、由来を `depth_rotation` にします。手で直したセルは `authored` になり、上書きしません。
+下の式の「`authored` のセル」は、推定の元にするセル (書き換えないセル。[方法ごとの書き換えの範囲](#方法ごとの書き換えの範囲)) を指します。加算合成でも同じです。
 
 セル `c` の `yaw` / `pitch` の値で基準のセルを回した形を `Rot(c)` とし、次のように作ります。
 
@@ -180,9 +209,19 @@ derived(c) = Rot(c) + 加算合成(E)(c)                  // E を加算合成�
 
 | コマンド | 内容 |
 | --- | --- |
-| `InferKeyforms { target, method }` | 指定した格子の `derived` のセルを作り直す。`method` は `from_grid` (既定。格子の `inference` に従う) / `additive` / `depth_rotation` |
-| `MirrorKeyforms { source, target, axis, tolerance, overwrite_authored }` | ミラーで対応するセルを作る (`MirrorOptions`) |
+| `InferKeyforms { target, method, overwrite_derived }` | 指定した格子の `derived` のセルを作り直す。`method` は `from_grid` (既定。格子の `inference` に従う) / `additive` / `depth_rotation`。範囲は `own` で、`overwrite_derived` なら `all_derived` (別の方法で作ったセルも書き換える) |
+| `MirrorKeyforms { source, target, axis, tolerance, overwrite_authored }` | ミラーで対応するセルを作る (`MirrorOptions`)。範囲は `all_derived` (先の `authored` 以外のセルをすべて書き換える) |
 | `MarkKeyformAuthored { target, cells }` / `MarkKeyformDerived { target, cells }` | 由来を変える。`derived` にしたセルは格子の推定の設定で作り直す |
 
-推定の元のセルを変えるコマンドを実行したとき、エディタはその格子の `derived` のセルを格子の `inference` の方法で自動で作り直します (同じ Undo 単位に含める)。
-ミラーで作ったセルは、元の要素を変えても自動では作り直しません (`MirrorKeyforms` を再度実行する)。
+### 自動の作り直し
+
+セルを変えるコマンド (推定のコマンドを含む) を実行したとき、エディタは変わった格子の `derived` のセルを **セルに記録した方法で** 作り直します (範囲は `own`。同じ Undo 単位に含める)。
+
+1. 変わった格子の `additive` と `depth_rotation` のセル (方法を記録していないセルは格子の方法のもの) を作り直す。深度からの回転を先に、加算合成を後に行う。
+   `mirror` のセルは、ミラー元が自分自身 (左右対称な 1 つの要素) のときだけミラーし直す。ミラー元が別の要素なら、先の格子を編集しても `mirror` のセルは変えない。
+2. 変わった格子を `mirror_source` にしている格子 (依存する格子) の `mirror` のセルを、記録した `axis` / `tolerance` でミラーし直し、続けてその格子の `additive` / `depth_rotation` のセルを作り直す。
+3. 依存する格子の値が変われば、さらにその格子に依存する格子へ伝える。
+
+- 循環 (A が B を、B が A をミラー元にする) では、値が変わらなくなるまで伝えます。値が往復し続ける場合に備えて、1 つの格子を作り直すのは 1 回のコマンドにつき 8 回までです。
+- ミラーのやり直しに失敗したら (元の頂点を動かして対応しなくなった、対を外した、など)、その格子の `mirror` のセルは前の値のまま残します (コマンドは拒否しない)。明示的に `MirrorKeyforms` を実行すればエラーが分かります。加算合成・深度からの回転に失敗したら、コマンドを拒否します。
+- ミラー元の要素を削除すると、依存する格子の `mirror_source` を外し、その格子の `mirror` のセルを `authored` にします (値は変えない)。

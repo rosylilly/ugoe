@@ -4,10 +4,10 @@ use ugoe_core::Vec2;
 use ugoe_model::deformer::{RotationDeformer, RotationKeyform, WarpDeformer, WarpKeyform};
 use ugoe_model::mesh::MeshKeyform;
 use ugoe_model::{
-    Deformer, DeformerKind, KeyformBinding, KeyformGrid, KeyformOrigin, Mesh, Model, Parameter,
-    fixtures,
+    Deformer, DeformerKind, KeyformBinding, KeyformGrid, KeyformOrigin, Mesh, MirrorSource, Model,
+    Parameter, fixtures,
 };
-use ugoe_rigging::{InferError, KeyformTarget, MirrorOptions, mirror_keyforms};
+use ugoe_rigging::{InferError, InferScope, KeyformTarget, MirrorOptions, mirror_keyforms};
 
 const EPS: f32 = 1e-4;
 
@@ -141,10 +141,19 @@ fn mesh_pair_reflects_matched_vertices_and_self_mirrored_keys() {
     assert_eq!(
         right.origins,
         vec![
-            KeyformOrigin::Derived,
+            KeyformOrigin::Mirror,
             KeyformOrigin::Authored,
-            KeyformOrigin::Derived
+            KeyformOrigin::Mirror
         ]
+    );
+    // ミラー元を先の格子に記録する。
+    assert_eq!(
+        right.mirror_source,
+        Some(MirrorSource {
+            id: "EyeL".into(),
+            axis: None,
+            tolerance: None,
+        })
     );
     // EyeL の頂点 (0.2,0.4) (0.4,0.4) (0.4,0.5) (0.2,0.5) を x = 0.5 で反転すると
     // EyeR の頂点 (0.6,0.4) (0.8,0.4) (0.8,0.5) (0.6,0.5) の 1 0 3 2 番目に重なる。
@@ -387,7 +396,49 @@ fn authored_target_cells_are_kept_unless_overwrite_is_set() {
     assert_eq!(report.written, vec![0, 1, 2]);
     let right = &mesh(&model, "EyeR").keyforms;
     assert_eq!(right.keyforms[2].opacity, 1.0);
-    assert_eq!(right.origins, vec![KeyformOrigin::Derived; 3]);
+    assert_eq!(right.origins, vec![KeyformOrigin::Mirror; 3]);
+}
+
+#[test]
+fn own_scope_rewrites_only_mirrored_cells() {
+    let mut model = eye_model();
+    {
+        let right = &mut mesh_mut(&mut model, "EyeR").keyforms;
+        // AngleX = -30 は加算合成で作ったセル、+30 はミラーで作ったセル。
+        right.origins[0] = KeyformOrigin::Additive;
+        right.origins[2] = KeyformOrigin::Mirror;
+        right.keyforms[0].opacity = 0.25;
+    }
+    let options = MirrorOptions {
+        axis: Some(0.5),
+        tolerance: Some(0.01),
+        scope: InferScope::Own,
+        ..Default::default()
+    };
+    let report = mirror_keyforms(&mut model, &target("EyeL"), &target("EyeR"), &options).unwrap();
+    assert_eq!(report.written, vec![2]);
+    let right = &mesh(&model, "EyeR").keyforms;
+    assert_eq!(right.keyforms[0].opacity, 0.25);
+    assert_eq!(right.origins[0], KeyformOrigin::Additive);
+    assert_eq!(
+        right.mirror_source,
+        Some(MirrorSource {
+            id: "EyeL".into(),
+            axis: Some(0.5),
+            tolerance: Some(0.01),
+        })
+    );
+
+    // 方法を記録していない `derived` のセルは格子の方法 (加算合成) のセルなので、`Own` では書かない。
+    // 1 つも書かなければ、ミラー元の記録も変えない。
+    let mut model = eye_model();
+    let options = MirrorOptions {
+        scope: InferScope::Own,
+        ..Default::default()
+    };
+    let report = mirror_keyforms(&mut model, &target("EyeL"), &target("EyeR"), &options).unwrap();
+    assert!(report.written.is_empty());
+    assert_eq!(mesh(&model, "EyeR").keyforms.mirror_source, None);
 }
 
 #[test]

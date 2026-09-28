@@ -134,9 +134,7 @@ pub(crate) fn set_authored<T>(grid: &mut KeyformGrid<T>, index: usize) {
 pub(crate) fn replace<T: PartialEq>(grid: &mut KeyformGrid<T>, mut next: KeyformGrid<T>) {
     if next.bindings == grid.bindings && next.keyforms.len() == grid.keyforms.len() {
         for index in 0..next.keyforms.len() {
-            if next.origin(index) == KeyformOrigin::Derived
-                && next.keyforms[index] != grid.keyforms[index]
-            {
+            if next.origin(index).is_derived() && next.keyforms[index] != grid.keyforms[index] {
                 set_authored(&mut next, index);
             }
         }

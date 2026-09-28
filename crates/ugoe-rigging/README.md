@@ -15,6 +15,8 @@
 
 - 決定的であること (同じモデルと格子からは同じ結果)
 - `authored` のセルを上書きしない。書き込むのは `derived` のセルだけ (ミラーの `overwrite_authored` を明示したときを除く)
+- 書いたセルの由来に推定の方法 (`additive` / `depth_rotation` / `mirror`) を記録し、ミラーは元を `mirror_source` に記録する。
+  `InferScope::Own` では別の方法で作ったセルを書き換えず、推定の元にする (T0614)
 - モデルの型は `ugoe-model` に置き、このクレートはアルゴリズムだけを持つ
 - 編集は `ugoe_editor_core::Command` から呼ぶ。このクレートは Undo を知らない
 

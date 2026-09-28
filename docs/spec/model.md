@@ -139,8 +139,17 @@
 
 | フィールド | 説明 |
 | --- | --- |
-| `origins` | セルごとの由来 `authored` / `derived` の列。並びは `keyforms` と同じ。空 (既定) ならすべて `authored` で、空でなければ長さは `keyforms` と同じ |
-| `inference` | `derived` のセルを作り直すときの推定の設定。省略すると加算合成 |
+| `origins` | セルごとの由来の列 (下の表)。並びは `keyforms` と同じ。空 (既定) ならすべて `authored` で、空でなければ長さは `keyforms` と同じ |
+| `inference` | 方法を記録していない `derived` のセルを作り直すときの推定の設定。省略すると加算合成 |
+| `mirror_source` | `mirror` のセルのミラー元: `id` (同じ種類の要素の ID。自分自身も可)、`axis` (明示した対称軸)・`tolerance` (明示した許容距離) は省略できる |
+
+由来 (`KeyformOrigin`) は `authored` と、推定で作ったセルの由来 (推定の方法) です ([keyform-inference.md#セルの由来](keyform-inference.md#セルの由来))。
+
+| 由来 | 意味 |
+| --- | --- |
+| `authored` | 人が作ったセル |
+| `derived` | 推定で作ったセル (方法の記録なし)。格子の `inference` の方法で作ったものとして扱う。T0614 より前のファイルと `mark_keyform_derived` がこの値を書く |
+| `additive` / `depth_rotation` / `mirror` | 加算合成・深度からの回転・ミラーで作ったセル。ミラー元は `mirror_source` |
 
 `inference` は `method` で方法を選ぶタグ付きの値です。
 
@@ -153,8 +162,9 @@
 "keyforms": {
   "bindings": [ ... ],
   "keyforms": [ ... ],
-  "origins": ["derived", "authored", "derived"],
-  "inference": { "method": "depth_rotation", "pivot": [128, 128], "yaw": "AngleX" }
+  "origins": ["depth_rotation", "authored", "mirror"],
+  "inference": { "method": "depth_rotation", "pivot": [128, 128], "yaw": "AngleX" },
+  "mirror_source": { "id": "Face" }
 }
 ```
 
@@ -205,6 +215,7 @@
   - 軸のパラメータが存在し、同じ格子で同じパラメータを 2 回使っていないこと
   - `origins` が空か、長さがキーフォーム数と同じであること
   - 深度からの回転の設定: `angle_scale`・`pivot`・`pivot_depth` が有限値で、`yaw` / `pitch` のパラメータが存在し、その格子の軸であること
+  - `mirror_source` の `id` が、格子を持つ要素と同じ種類の要素に存在すること (`UnknownReference`、`field` は `keyforms.mirror_source`)。`axis` と `tolerance` は指定されていれば有限値であること
 - メッシュのインデックスが 3 の倍数で、範囲内にあること
 - キーフォームの頂点数 = `uvs` の長さ
 - ワープのキーフォームの制御点数 = `(rows+1)*(cols+1)`

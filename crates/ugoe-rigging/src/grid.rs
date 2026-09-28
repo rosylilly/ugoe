@@ -2,7 +2,7 @@
 
 use ugoe_model::{KeyformGrid, KeyformOrigin, Parameter};
 
-use crate::{InferError, InferReport, KeyformValues};
+use crate::{InferError, InferReport, InferScope, KeyformValues};
 
 /// 中立のキーとパラメータの `default` を等しいとみなす誤差。キーどうしの比較にも使う。
 pub(crate) const KEY_EPSILON: f32 = 1e-5;
@@ -124,25 +124,45 @@ impl<'a> Layout<'a> {
     }
 }
 
-/// セルごとに `authored` かどうか。
-pub(crate) fn authored_cells<T>(grid: &KeyformGrid<T>, layout: &Layout<'_>) -> Vec<bool> {
+/// セル `index` を、方法 `method` (由来 `additive` / `depth_rotation` / `mirror`) の推定で
+/// 書き換えるか (`docs/spec/keyform-inference.md#セルの由来`)。`authored` のセルは書き換えない。
+pub(crate) fn rewrites<T>(
+    grid: &KeyformGrid<T>,
+    index: usize,
+    method: KeyformOrigin,
+    scope: InferScope,
+) -> bool {
+    match scope {
+        InferScope::Own => grid.derivation(index) == Some(method),
+        InferScope::AllDerived => grid.origin(index).is_derived(),
+    }
+}
+
+/// セルごとに、推定の元にする (書き換えない) かどうか。`authored` のセルと、`scope` で書き換えない
+/// 別の方法の `derived` のセルが元になる。
+pub(crate) fn source_cells<T>(
+    grid: &KeyformGrid<T>,
+    layout: &Layout<'_>,
+    method: KeyformOrigin,
+    scope: InferScope,
+) -> Vec<bool> {
     (0..layout.len)
-        .map(|i| grid.origin(i) == KeyformOrigin::Authored)
+        .map(|i| !rewrites(grid, i, method, scope))
         .collect()
 }
 
-/// 推定の元にする格子を検査する: 基準のセルが `authored` で、`authored` のセルの形が基準と揃っていること。
+/// 推定の元にする格子を検査する: 基準のセルが元のセルで、元のセルの形が基準と揃っていること。
 pub(crate) fn check_sources<T: KeyformValues>(
     grid: &KeyformGrid<T>,
-    authored: &[bool],
+    sources: &[bool],
     base: usize,
 ) -> Result<(), InferError> {
-    if !authored[base] {
+    if !sources[base] {
         return Err(InferError::BaseNotAuthored { cell: base });
     }
     let shape = grid.keyforms[base].shape_len();
     for (cell, kf) in grid.keyforms.iter().enumerate() {
-        if authored[cell] && kf.shape_len() != shape {
+        if sources[cell] && kf.shape_len() != shape {
             return Err(InferError::ShapeMismatch {
                 cell,
                 expected: shape,
@@ -153,8 +173,12 @@ pub(crate) fn check_sources<T: KeyformValues>(
     Ok(())
 }
 
-/// 作ったセルを格子に書き込み、`derived` にする。
-pub(crate) fn apply<T>(grid: &mut KeyformGrid<T>, mut writes: Vec<(usize, T)>) -> InferReport {
+/// 作ったセルを格子に書き込み、由来を推定の方法 `method` にする。
+pub(crate) fn apply<T>(
+    grid: &mut KeyformGrid<T>,
+    mut writes: Vec<(usize, T)>,
+    method: KeyformOrigin,
+) -> InferReport {
     if grid.origins.is_empty() && !writes.is_empty() {
         grid.origins = vec![KeyformOrigin::Authored; grid.keyforms.len()];
     }
@@ -162,7 +186,7 @@ pub(crate) fn apply<T>(grid: &mut KeyformGrid<T>, mut writes: Vec<(usize, T)>) -
     let mut report = InferReport::default();
     for (cell, kf) in writes {
         grid.keyforms[cell] = kf;
-        grid.origins[cell] = KeyformOrigin::Derived;
+        grid.origins[cell] = method;
         report.written.push(cell);
     }
     report

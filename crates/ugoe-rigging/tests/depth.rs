@@ -6,7 +6,7 @@ use ugoe_model::{
     Deformer, DeformerKind, DepthRotation, KeyformBinding, KeyformGrid, KeyformInference,
     KeyformOrigin, Model, Parameter, fixtures,
 };
-use ugoe_rigging::{InferError, KeyformTarget, infer_depth_rotation};
+use ugoe_rigging::{InferError, InferScope, KeyformTarget, infer_depth_rotation};
 
 const EPS: f32 = 1e-3;
 
@@ -109,7 +109,7 @@ fn rotated(yaw: f32, pitch: f32, o: [f32; 3]) -> Vec<Vec2> {
 #[test]
 fn every_cell_follows_the_rotation_formula() {
     let mut model = model();
-    let report = infer_depth_rotation(&mut model, &face()).unwrap();
+    let report = infer_depth_rotation(&mut model, &face(), InferScope::AllDerived).unwrap();
     assert_eq!(report.written.len(), 24);
     let o = [128.0, 128.0, 0.0];
     for (x, y) in [
@@ -149,7 +149,7 @@ fn every_cell_follows_the_rotation_formula() {
 fn zero_depth_is_a_flat_card() {
     let mut model = model();
     warp_mut(&mut model, "Face").depth = Some(vec![0.0; 4]);
-    infer_depth_rotation(&mut model, &face()).unwrap();
+    infer_depth_rotation(&mut model, &face(), InferScope::AllDerived).unwrap();
     let (c30, c15) = (30f32.to_radians().cos(), 15f32.to_radians().cos());
     // 深度が 0 なら平らな板を回すだけ: yaw だけなら横、pitch だけなら縦に、中心に向かって cos 倍縮む。
     let square = |sx: f32, sy: f32| {
@@ -192,7 +192,7 @@ fn pivot_position_and_depth_are_honoured() {
         s.pivot_depth = 16.0;
         s.angle_scale = 0.5;
     }
-    infer_depth_rotation(&mut model, &face()).unwrap();
+    infer_depth_rotation(&mut model, &face(), InferScope::AllDerived).unwrap();
     let o = [64.0, 64.0, 16.0];
     // angle_scale 0.5: AngleX = 30 は 15 度。
     let p = points(&mut model, cell(30.0, -30.0));
@@ -203,7 +203,7 @@ fn pivot_position_and_depth_are_honoured() {
     settings(&mut model).pivot_depth = 16.0;
     warp_mut(&mut model, "Face").depth = Some(vec![16.0; 4]);
     settings(&mut model).pivot = Vec2::new(192.0, 192.0);
-    infer_depth_rotation(&mut model, &face()).unwrap();
+    infer_depth_rotation(&mut model, &face(), InferScope::AllDerived).unwrap();
     for c in 0..25 {
         assert_points(&points(&mut model, c)[3..], &[Vec2::new(192.0, 192.0)]);
     }
@@ -248,7 +248,7 @@ fn other_axes_and_authored_corrections_are_added() {
         grid.keyforms[i] = kf;
         grid.origins[i] = KeyformOrigin::Authored;
     }
-    infer_depth_rotation(&mut model, &face()).unwrap();
+    infer_depth_rotation(&mut model, &face(), InferScope::AllDerived).unwrap();
 
     let o = [128.0, 128.0, 0.0];
     let plus = |v: Vec<Vec2>, d: Vec2| v.into_iter().map(|p| p + d).collect::<Vec<_>>();
@@ -303,7 +303,7 @@ fn mesh_needs_an_affine_parent() {
     // 親が顔のワープ (UV 空間) なのでエラー。
     let before = model.clone();
     assert_eq!(
-        infer_depth_rotation(&mut model, &eye),
+        infer_depth_rotation(&mut model, &eye, InferScope::AllDerived),
         Err(InferError::NonAffineParent(eye.clone()))
     );
     assert_eq!(model, before);
@@ -334,7 +334,7 @@ fn mesh_needs_an_affine_parent() {
         .unwrap();
     mesh.parent = Some("Head".into());
     let base = mesh.keyforms.keyforms[0].positions.clone();
-    infer_depth_rotation(&mut model, &eye).unwrap();
+    infer_depth_rotation(&mut model, &eye, InferScope::AllDerived).unwrap();
     let mesh = model.meshes.iter().find(|m| m.id == "EyeL".into()).unwrap();
     let expected: Vec<Vec2> = base
         .iter()
@@ -348,14 +348,14 @@ fn configuration_errors() {
     let mut model = model();
     warp_mut(&mut model, "Face").keyforms.inference = None;
     assert_eq!(
-        infer_depth_rotation(&mut model, &face()),
+        infer_depth_rotation(&mut model, &face(), InferScope::AllDerived),
         Err(InferError::NotDepthRotation(face()))
     );
 
     let mut model = self::model();
     settings(&mut model).pitch = Some("EyeOpen".into());
     assert_eq!(
-        infer_depth_rotation(&mut model, &face()),
+        infer_depth_rotation(&mut model, &face(), InferScope::AllDerived),
         Err(InferError::MissingRotationAxis {
             parameter: "EyeOpen".into()
         })
@@ -364,12 +364,12 @@ fn configuration_errors() {
     let mut model = self::model();
     warp_mut(&mut model, "Face").depth = None;
     assert_eq!(
-        infer_depth_rotation(&mut model, &face()),
+        infer_depth_rotation(&mut model, &face(), InferScope::AllDerived),
         Err(InferError::MissingDepth(face()))
     );
     warp_mut(&mut model, "Face").depth = Some(vec![0.0; 3]);
     assert_eq!(
-        infer_depth_rotation(&mut model, &face()),
+        infer_depth_rotation(&mut model, &face(), InferScope::AllDerived),
         Err(InferError::DepthLengthMismatch {
             expected: 4,
             found: 3
@@ -378,7 +378,11 @@ fn configuration_errors() {
 
     let mut model = self::model();
     assert_eq!(
-        infer_depth_rotation(&mut model, &KeyformTarget::Part("Root".into())),
+        infer_depth_rotation(
+            &mut model,
+            &KeyformTarget::Part("Root".into()),
+            InferScope::AllDerived
+        ),
         Err(InferError::UnsupportedTarget(KeyformTarget::Part(
             "Root".into()
         )))

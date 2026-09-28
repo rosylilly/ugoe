@@ -16,7 +16,9 @@ use ugoe_model::{
     Deformer, DeformerKind, DepthRotation, KeyformBinding, KeyformGrid, KeyformInference,
     KeyformOrigin, Mesh, Model, fixtures,
 };
-use ugoe_rigging::{KeyformTarget, MirrorOptions, infer_depth_rotation, mirror_keyforms};
+use ugoe_rigging::{
+    InferScope, KeyformTarget, MirrorOptions, infer_depth_rotation, mirror_keyforms,
+};
 
 const KEYS: [f32; 5] = [-30.0, -15.0, 0.0, 15.0, 30.0];
 
@@ -68,7 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     pair_eyes(&mut model);
 
     let face = KeyformTarget::Deformer("Face".into());
-    let report = infer_depth_rotation(&mut model, &face)?;
+    let report = infer_depth_rotation(&mut model, &face, InferScope::AllDerived)?;
     eprintln!("face warp: {} derived cells", report.written.len());
     let report = mirror_keyforms(
         &mut model,

@@ -1,8 +1,8 @@
 //! 加算合成 (`docs/spec/keyform-inference.md#加算合成`)。
 
-use ugoe_model::{KeyformGrid, Model, Parameter};
+use ugoe_model::{KeyformGrid, KeyformOrigin, Model, Parameter};
 
-use crate::grid::{Axis, Layout, apply, authored_cells, build, check_sources, flatten};
+use crate::grid::{Axis, Layout, apply, build, check_sources, flatten, source_cells};
 use crate::{InferError, KeyformValues};
 
 /// 推定の結果。
@@ -12,24 +12,41 @@ pub struct InferReport {
     pub written: Vec<usize>,
 }
 
+/// 推定で書き換えるセルの範囲 (`docs/spec/keyform-inference.md#セルの由来`)。
+///
+/// どちらでも `authored` のセルは書き換えない。書き換えないセルは推定の元にする。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum InferScope {
+    /// その方法で作ったセルだけを書き換える。方法を記録していない `derived` のセルは、格子の
+    /// `inference` の方法ならその方法のセルとみなす。別の方法で作ったセルは書き換えない。
+    /// エディタの自動の作り直しが使う。
+    Own,
+    /// `authored` 以外のすべてのセルを書き換える (明示的に実行した推定)。
+    #[default]
+    AllDerived,
+}
+
 /// 格子の `derived` のセルを加算合成で作り直す (`docs/spec/keyform-inference.md#加算合成`)。
 ///
-/// 軸のパラメータは `model` から引く。`authored` のセルは変えない。
-/// 格子の `inference` の設定は見ない (どの方法で作り直すかは呼び出し側が決める)。
+/// 軸のパラメータは `model` から引く。書き換えるのは `scope` のセルで、書いたセルの由来は
+/// `additive` になる。`authored` のセルは変えない。
+/// 格子の `inference` の設定は `scope` の判定にだけ使う (どの方法で作り直すかは呼び出し側が決める)。
 /// エラーのときは格子を変えない。
 pub fn infer_additive<T: KeyformValues>(
     model: &Model,
     grid: &mut KeyformGrid<T>,
+    scope: InferScope,
 ) -> Result<InferReport, InferError> {
-    infer_additive_with(&model.parameters, grid)
+    infer_additive_with(&model.parameters, grid, scope)
 }
 
 pub(crate) fn infer_additive_with<T: KeyformValues>(
     parameters: &[Parameter],
     grid: &mut KeyformGrid<T>,
+    scope: InferScope,
 ) -> Result<InferReport, InferError> {
     let layout = Layout::new(parameters, grid)?;
-    let authored = authored_cells(grid, &layout);
+    let authored = source_cells(grid, &layout, KeyformOrigin::Additive, scope);
     let base = layout.base();
     check_sources(grid, &authored, base)?;
 
@@ -44,12 +61,12 @@ pub(crate) fn infer_additive_with<T: KeyformValues>(
         .into_iter()
         .map(|(cell, v)| (cell, build(base_kf, &v)))
         .collect();
-    Ok(apply(grid, writes))
+    Ok(apply(grid, writes, KeyformOrigin::Additive))
 }
 
 /// 加算合成の本体。値の列 (`KeyformValues::write_values` の並び) の上で計算する。
 ///
-/// `values` は `authored` のセルだけが `Some`。`finish` は推定した生の値を、セルに書く値に直す
+/// `authored` は推定の元にする (書き換えない) セルで、`values` はそのセルだけが `Some`。`finish` は推定した生の値を、セルに書く値に直す
 /// (クランプなど)。1 軸セルは直した値を多軸セルの `Δ_k` に使う。
 /// 戻り値は作った (`derived` の) セルと、その直した値。
 pub(crate) fn combine(

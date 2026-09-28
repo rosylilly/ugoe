@@ -2948,7 +2948,8 @@ export const commands: Command[] = [
       "kind": "mesh",
       "id": "EyeL"
     },
-    "method": "depth_rotation"
+    "method": "depth_rotation",
+    "overwrite_derived": true
   },
   {
     "op": "mirror_keyforms",

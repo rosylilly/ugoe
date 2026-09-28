@@ -4,7 +4,7 @@ use std::sync::Arc;
 use ugoe_model::deformer::DeformerKind;
 use ugoe_model::validate::{ValidationError, validate};
 use ugoe_model::{Canvas, DeformerId, KeyformOrigin, MeshId, Model, ParamId, PartId, TextureRef};
-use ugoe_rigging::{InferError, MirrorOptions};
+use ugoe_rigging::{InferError, InferScope, MirrorOptions};
 
 use crate::command::KeyformTarget;
 use crate::grid::{self, CellError};
@@ -166,8 +166,9 @@ impl Document {
     /// 検証エラーが生じたら [`EditError::Invalid`] で拒否する。検証を通るモデルに対しては、
     /// 成功した適用の後も必ず検証を通る。`Batch` は全体を適用した後に 1 回だけ検査する。
     ///
-    /// 検査の前に、コマンドが編集したキーフォーム格子の `derived` のセルを格子の推定の設定で
-    /// 作り直す (同じ Undo 単位。`docs/editor.md#推定とミラー`)。作り直せなければ拒否する。
+    /// 検査の前に、コマンドが編集したキーフォーム格子の `derived` のセルをセルに記録した推定の方法で
+    /// 作り直し、その格子をミラー元にする格子のミラーのセルも作り直す (同じ Undo 単位。
+    /// `docs/editor.md#推定とミラー`)。作り直せなければ拒否する。
     pub fn apply(&mut self, command: Command) -> Result<(), EditError> {
         let mut next = self.current.clone();
         let mut touched = Vec::new();
@@ -284,7 +285,8 @@ fn mesh<'a>(model: &'a mut Model, id: &MeshId) -> Result<&'a mut ugoe_model::Mes
 /// キーフォーム格子のセル (値や由来) を変えたコマンドは、その格子の要素を `touched` に積む。
 /// 積んだ格子の `derived` のセルは、[`Document::apply`] が適用の後にまとめて作り直す
 /// ([`inference::rederive`])。新しいコマンドもセルを変えたら積むこと。推定そのもの
-/// (`InferKeyforms`・`MirrorKeyforms`) は、書いた結果を上書きしないように積まない。
+/// (`InferKeyforms`・`MirrorKeyforms`) も積む: 作り直しはセルに記録した方法で行うので、推定の結果を
+/// 別の方法で上書きせず、その格子をミラー元にする格子にも変化を伝える。
 fn apply_to(
     model: &mut Model,
     textures: &mut Textures,
@@ -321,7 +323,10 @@ fn apply_to(
             ensure_new(&model.parts, "part", &part.id, |p| &p.id)?;
             model.parts.push(part);
         }
-        Command::RemovePart { id } => remove_part(model, &id)?,
+        Command::RemovePart { id } => {
+            remove_part(model, &id)?;
+            inference::forget_missing_mirror_sources(model);
+        }
         Command::RenamePart { id, name } => part(model, &id)?.name = name,
         Command::SetPartParent { id, parent } => part(model, &id)?.parent = parent,
         Command::SetPartKeyforms { id, keyforms } => {
@@ -332,7 +337,10 @@ fn apply_to(
             ensure_new(&model.deformers, "deformer", &deformer.id, |d| &d.id)?;
             model.deformers.push(deformer);
         }
-        Command::RemoveDeformer { id } => remove_deformer(model, &id)?,
+        Command::RemoveDeformer { id } => {
+            remove_deformer(model, &id)?;
+            inference::forget_missing_mirror_sources(model);
+        }
         Command::RenameDeformer { id, name } => deformer(model, &id)?.name = name,
         Command::SetDeformerParent { id, parent } => deformer(model, &id)?.parent = parent,
         Command::SetDeformerPart { id, part } => deformer(model, &id)?.part = part,
@@ -364,7 +372,10 @@ fn apply_to(
             ensure_new(&model.meshes, "mesh", &mesh.id, |m| &m.id)?;
             model.meshes.push(mesh);
         }
-        Command::RemoveMesh { id } => remove_mesh(model, &id)?,
+        Command::RemoveMesh { id } => {
+            remove_mesh(model, &id)?;
+            inference::forget_missing_mirror_sources(model);
+        }
         Command::RenameMesh { id, name } => mesh(model, &id)?.name = name,
         Command::SetMeshProperties {
             id,
@@ -438,8 +449,13 @@ fn apply_to(
         Command::RegenerateMesh { id, options } => {
             automesh::regenerate_mesh(model, textures, &id, &options)?;
         }
-        Command::InferKeyforms { target, method } => {
-            inference::infer_keyforms(model, &target, method)?;
+        Command::InferKeyforms {
+            target,
+            method,
+            overwrite_derived,
+        } => {
+            inference::infer_keyforms(model, &target, method, overwrite_derived)?;
+            touched.push(target);
         }
         Command::MirrorKeyforms {
             source,
@@ -452,8 +468,10 @@ fn apply_to(
                 axis,
                 tolerance,
                 overwrite_authored,
+                scope: InferScope::AllDerived,
             };
             inference::mirror(model, &source, &target, options)?;
+            touched.push(target);
         }
         Command::MarkKeyformAuthored { target, cells } => {
             inference::mark(model, &target, &cells, KeyformOrigin::Authored)?;

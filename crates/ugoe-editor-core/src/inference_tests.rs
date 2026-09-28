@@ -4,12 +4,12 @@
 use ugoe_core::Vec2;
 use ugoe_model::mesh::MeshKeyform;
 use ugoe_model::{KeyformGrid, KeyformInference, KeyformOrigin, Mesh, Model, fixtures};
-use ugoe_rigging::{InferError, MirrorOptions};
+use ugoe_rigging::{InferError, InferScope, MirrorOptions};
 
 use crate::tests::{applied, binding, cell, rejected};
 use crate::{CellError, Command, Document, EditError, InferMethod, KeyformTarget};
 
-use KeyformOrigin::{Authored, Derived};
+use KeyformOrigin::{Additive, Authored, DepthRotation, Derived, Mirror};
 
 const EPS: f32 = 1e-5;
 const KEYS: [f32; 3] = [-30.0, 0.0, 30.0];
@@ -92,7 +92,12 @@ fn stale_model() -> Model {
 /// [`stale_model`] の角のセルを推定済みにしたモデル。
 fn model() -> Model {
     let mut model = stale_model();
-    ugoe_rigging::infer_additive_target(&mut model, &(&target("EyeL")).into()).unwrap();
+    ugoe_rigging::infer_additive_target(
+        &mut model,
+        &(&target("EyeL")).into(),
+        InferScope::AllDerived,
+    )
+    .unwrap();
     model
 }
 
@@ -127,11 +132,12 @@ fn infer_keyforms_additive() {
             Command::InferKeyforms {
                 target: target("EyeL"),
                 method,
+                overwrite_derived: false,
             },
         );
         assert_shift(eye_cell(&after, 30.0, 30.0), &base, 0.02, 0.03);
         assert_shift(eye_cell(&after, -30.0, -30.0), &base, -0.05, -0.01);
-        assert_eq!(eye_origin(&after, 30.0, 30.0), Derived);
+        assert_eq!(eye_origin(&after, 30.0, 30.0), Additive);
     }
 }
 
@@ -139,7 +145,8 @@ fn infer_keyforms_additive() {
 fn infer_keyforms_depth_rotation_on_fixture() {
     let model = fixtures::keyform_inference();
     let mut expected = model.clone();
-    ugoe_rigging::infer_depth_rotation(&mut expected, &(&face()).into()).unwrap();
+    ugoe_rigging::infer_depth_rotation(&mut expected, &(&face()).into(), InferScope::AllDerived)
+        .unwrap();
     assert_ne!(expected, model, "the fixture's derived cells must change");
     for method in [InferMethod::FromGrid, InferMethod::DepthRotation] {
         let after = applied(
@@ -147,6 +154,7 @@ fn infer_keyforms_depth_rotation_on_fixture() {
             Command::InferKeyforms {
                 target: face(),
                 method,
+                overwrite_derived: false,
             },
         );
         assert_eq!(after, expected);
@@ -162,6 +170,7 @@ fn infer_keyforms_rejects_invalid_targets() {
             Command::InferKeyforms {
                 target: target("Missing"),
                 method: InferMethod::FromGrid,
+                overwrite_derived: false,
             },
         ),
         EditError::NotFound {
@@ -180,6 +189,7 @@ fn infer_keyforms_rejects_invalid_targets() {
             Command::InferKeyforms {
                 target: face(),
                 method: InferMethod::DepthRotation,
+                overwrite_derived: false,
             },
         ),
         inference_error(&face(), InferError::NotDepthRotation((&face()).into()))
@@ -191,6 +201,7 @@ fn infer_keyforms_rejects_invalid_targets() {
             Command::InferKeyforms {
                 target: target("EyeL"),
                 method: InferMethod::DepthRotation,
+                overwrite_derived: false,
             },
         ),
         inference_error(
@@ -207,6 +218,7 @@ fn infer_keyforms_rejects_invalid_targets() {
             Command::InferKeyforms {
                 target: target("EyeL"),
                 method: InferMethod::Additive,
+                overwrite_derived: false,
             },
         ),
         inference_error(&target("EyeL"), InferError::BaseNotAuthored { cell: 4 })
@@ -220,6 +232,7 @@ fn infer_keyforms_rejects_invalid_targets() {
             Command::InferKeyforms {
                 target: target("EyeL"),
                 method: InferMethod::FromGrid,
+                overwrite_derived: false,
             },
         ),
         EditError::UnsupportedInference {
@@ -268,7 +281,7 @@ fn mirror_keyforms_through_command() {
     assert_eq!(after, expected);
     let right = &mesh(&after, "EyeR").keyforms;
     assert_eq!(right.origin(4), Authored);
-    assert_eq!(right.origin(index(-30.0, 0.0)), Derived);
+    assert_eq!(right.origin(index(-30.0, 0.0)), Mirror);
     // AngleX = -30 の左目 (x −0.05) を反転すると、右目は x +0.05。
     assert_shift(
         &right.keyforms[index(-30.0, 0.0)],
@@ -286,6 +299,7 @@ fn mirror_keyforms_passes_options() {
         axis: Some(0.5),
         tolerance: Some(0.01),
         overwrite_authored: true,
+        scope: InferScope::AllDerived,
     };
     ugoe_rigging::mirror_keyforms(
         &mut expected,
@@ -305,7 +319,7 @@ fn mirror_keyforms_passes_options() {
         },
     );
     assert_eq!(after, expected);
-    assert_eq!(mesh(&after, "EyeR").keyforms.origins, vec![Derived; 9]);
+    assert_eq!(mesh(&after, "EyeR").keyforms.origins, vec![Mirror; 9]);
 }
 
 #[test]
@@ -350,7 +364,7 @@ fn mark_keyform_derived_reinfers_the_cells() {
             cells: vec![xy(30.0, 0.0)],
         },
     );
-    assert_eq!(eye_origin(&after, 30.0, 0.0), Derived);
+    assert_eq!(eye_origin(&after, 30.0, 0.0), Additive);
     // AngleX の正の側に `authored` のセルがないので、基準と -30 (x −0.05) から外挿する。
     assert_shift(eye_cell(&after, 30.0, 0.0), &base, 0.05, 0.0);
     // 角のセルも作り直した 1 軸のセルを使う。
@@ -369,8 +383,9 @@ fn mark_keyform_derived_on_a_grid_without_origins() {
             cells: vec![xy(30.0, 30.0)],
         },
     );
+    // 格子の方法 (加算合成) で作り直し、方法を記録する。
     let mut origins = vec![Authored; 9];
-    origins[index(30.0, 30.0)] = Derived;
+    origins[index(30.0, 30.0)] = Additive;
     assert_eq!(mesh(&after, "EyeL").keyforms.origins, origins);
 }
 
@@ -400,7 +415,7 @@ fn mark_keyform_authored_keeps_values() {
     );
     assert_eq!(eye_origin(&after, 30.0, 30.0), Authored);
     assert_eq!(eye_origin(&after, -30.0, -30.0), Authored);
-    assert_eq!(eye_origin(&after, 30.0, -30.0), Derived);
+    assert_eq!(eye_origin(&after, 30.0, -30.0), Additive);
     let eye = &mesh(&after, "EyeL").keyforms;
     assert_eq!(eye.keyforms, mesh(&model, "EyeL").keyforms.keyforms);
 
@@ -526,7 +541,7 @@ fn replacing_a_grid_makes_edited_derived_cells_authored() {
     assert_eq!(eye_origin(&after, 30.0, 30.0), Authored);
     assert_shift(eye_cell(&after, 30.0, 30.0), &base, 0.2, 0.2);
     // 変えていない `derived` のセルは `derived` のまま作り直される。
-    assert_eq!(eye_origin(&after, -30.0, 30.0), Derived);
+    assert_eq!(eye_origin(&after, -30.0, 30.0), Additive);
     assert_shift(eye_cell(&after, -30.0, 30.0), &base, -0.05, 0.1);
 }
 
@@ -550,7 +565,8 @@ fn rederivation_failure_rejects_the_edit() {
 #[test]
 fn depth_rotation_grids_rederive_with_their_own_method() {
     let mut model = fixtures::keyform_inference();
-    ugoe_rigging::infer_depth_rotation(&mut model, &(&face()).into()).unwrap();
+    ugoe_rigging::infer_depth_rotation(&mut model, &(&face()).into(), InferScope::AllDerived)
+        .unwrap();
     let mut keyforms = match &model.deformers[0].kind {
         ugoe_model::DeformerKind::Warp(warp) => warp.keyforms.clone(),
         _ => panic!("Face is a warp deformer"),
@@ -571,7 +587,7 @@ fn depth_rotation_grids_rederive_with_their_own_method() {
         panic!("Face is a warp deformer");
     };
     assert_eq!(warp.keyforms.origin(5), Authored);
-    assert_eq!(warp.keyforms.origin(8), Derived);
+    assert_eq!(warp.keyforms.origin(8), DepthRotation);
     for (a, b) in warp.keyforms.keyforms[8]
         .points
         .iter()
@@ -616,6 +632,7 @@ fn inference_commands_json() {
         Command::InferKeyforms {
             target: face(),
             method: InferMethod::FromGrid,
+            overwrite_derived: false,
         }
     );
     let cmd: Command = serde_json::from_str(
@@ -645,4 +662,314 @@ fn inference_commands_json() {
             cells: vec![cell(&[("AngleX", 30.0)])],
         }
     );
+}
+
+// ---- セルの由来 (推定の方法) ごとの作り直し ----
+
+/// [`mirror_model`] の `EyeR` を `EyeL` からミラーし、角 (AngleX = 30, AngleY = 30) を加算合成の
+/// セルにしたモデル。`EyeR` は基準が `authored`、角が `additive`、それ以外が `mirror`。
+fn mirrored_model() -> Model {
+    let mut doc = Document::new(mirror_model());
+    doc.apply(Command::MirrorKeyforms {
+        source: target("EyeL"),
+        target: target("EyeR"),
+        axis: None,
+        tolerance: None,
+        overwrite_authored: false,
+    })
+    .unwrap();
+    doc.apply(Command::MarkKeyformDerived {
+        target: target("EyeR"),
+        cells: vec![xy(30.0, 30.0)],
+    })
+    .unwrap();
+    doc.model().clone()
+}
+
+fn right_cell(model: &Model, x: f32, y: f32) -> &MeshKeyform {
+    &mesh(model, "EyeR").keyforms.keyforms[index(x, y)]
+}
+
+fn right_origin(model: &Model, x: f32, y: f32) -> KeyformOrigin {
+    mesh(model, "EyeR").keyforms.origin(index(x, y))
+}
+
+#[test]
+fn mirror_records_the_method_and_the_source() {
+    let model = mirrored_model();
+    let right = &mesh(&model, "EyeR").keyforms;
+    assert_eq!(
+        right.mirror_source,
+        Some(ugoe_model::MirrorSource {
+            id: "EyeL".into(),
+            axis: None,
+            tolerance: None,
+        })
+    );
+    assert_eq!(right_origin(&model, 0.0, 0.0), Authored);
+    assert_eq!(right_origin(&model, 30.0, 30.0), Additive);
+    for (x, y) in [(-30.0, 0.0), (30.0, 0.0), (0.0, 30.0), (-30.0, -30.0)] {
+        assert_eq!(right_origin(&model, x, y), Mirror, "({x}, {y})");
+    }
+    // 右目の AngleX = 30 は左目 (x +0.02) の反転で x −0.02、AngleY = 30 は y +0.03。
+    let base = right_cell(&model, 0.0, 0.0).clone();
+    assert_shift(right_cell(&model, 30.0, 30.0), &base, -0.02, 0.03);
+}
+
+#[test]
+fn mirrored_cells_survive_edits_of_the_target_grid() {
+    let model = mirrored_model();
+    let base = right_cell(&model, 0.0, 0.0).clone();
+    let after = applied(
+        &model,
+        Command::SetMeshKeyform {
+            id: "EyeR".into(),
+            cell: xy(0.0, 0.0),
+            keyform: shifted(&base, 0.0, 0.1),
+        },
+    );
+    // ミラーのセルは加算合成で上書きしない (ミラー元の左目は変わっていない)。
+    for (x, y) in [(-30.0, 0.0), (30.0, 0.0), (0.0, 30.0), (-30.0, -30.0)] {
+        assert_eq!(
+            right_cell(&after, x, y),
+            right_cell(&model, x, y),
+            "({x}, {y})"
+        );
+        assert_eq!(right_origin(&after, x, y), Mirror);
+    }
+    // 加算合成のセルは作り直す: 新しい基準 + (ミラーのセル − 新しい基準) の和。
+    assert_eq!(right_origin(&after, 30.0, 30.0), Additive);
+    assert_shift(right_cell(&after, 30.0, 30.0), &base, -0.02, 0.03 - 0.1);
+}
+
+#[test]
+fn editing_the_source_remirrors_its_targets() {
+    let model = mirrored_model();
+    let left = base(&model);
+    let right = right_cell(&model, 0.0, 0.0).clone();
+    let after = applied(
+        &model,
+        Command::SetMeshKeyform {
+            id: "EyeL".into(),
+            cell: xy(-30.0, 0.0),
+            keyform: shifted(&left, -0.2, 0.0),
+        },
+    );
+    // 左目の加算合成のセルを作り直し、右目のミラーのセルをミラーし直す (同じ Undo 単位)。
+    assert_shift(eye_cell(&after, -30.0, -30.0), &left, -0.2, -0.01);
+    assert_shift(right_cell(&after, -30.0, 0.0), &right, 0.2, 0.0);
+    assert_shift(right_cell(&after, -30.0, -30.0), &right, 0.2, -0.01);
+    assert_eq!(right_origin(&after, -30.0, -30.0), Mirror);
+    // 右目の加算合成のセルの元 (AngleX = 30、AngleY = 30) は変わらない。
+    assert_shift(right_cell(&after, 30.0, 30.0), &right, -0.02, 0.03);
+}
+
+#[test]
+fn inference_keeps_cells_of_other_methods_unless_asked() {
+    let model = mirrored_model();
+    let infer = |overwrite_derived| Command::InferKeyforms {
+        target: target("EyeR"),
+        method: InferMethod::Additive,
+        overwrite_derived,
+    };
+    let after = applied(&model, infer(false));
+    assert_eq!(after, model);
+    let after = applied(&model, infer(true));
+    // 基準だけが `authored` なので、加算合成ではすべてのセルが基準と同じになる。
+    let base = right_cell(&model, 0.0, 0.0).clone();
+    for (x, y) in [(-30.0, 0.0), (30.0, 30.0)] {
+        assert_eq!(right_origin(&after, x, y), Additive);
+        assert_shift(right_cell(&after, x, y), &base, 0.0, 0.0);
+    }
+}
+
+#[test]
+fn legacy_derived_cells_use_the_grid_method() {
+    // 方法を記録しない版のミラー (由来は `derived`、ミラー元の記録なし) は、格子の方法で作り直す。
+    let mut model = mirror_model();
+    ugoe_rigging::mirror_keyforms(
+        &mut model,
+        &(&target("EyeL")).into(),
+        &(&target("EyeR")).into(),
+        &MirrorOptions::default(),
+    )
+    .unwrap();
+    let right = &mut mesh_mut(&mut model, "EyeR").keyforms;
+    right.mirror_source = None;
+    for origin in &mut right.origins {
+        if *origin == Mirror {
+            *origin = Derived;
+        }
+    }
+    let base = right_cell(&model, 0.0, 0.0).clone();
+    let after = applied(
+        &model,
+        Command::SetMeshKeyform {
+            id: "EyeR".into(),
+            cell: xy(0.0, 0.0),
+            keyform: shifted(&base, 0.0, 0.1),
+        },
+    );
+    assert_eq!(right_origin(&after, -30.0, 0.0), Additive);
+    assert_shift(right_cell(&after, -30.0, 0.0), &base, 0.0, 0.1);
+}
+
+/// `EyeL` と `EyeR` を AngleX (キー -30 0 30) の 1 軸の格子にし、互いにミラー元にしたモデル。
+/// 左目は AngleX = -30 を右目から、右目は AngleX = 30 を左目からミラーする。
+fn cycle_model() -> Model {
+    let mut model = fixtures::keyform_inference();
+    let left = mesh(&model, "EyeL").keyforms.keyforms[0].clone();
+    let right = mesh(&model, "EyeR").keyforms.keyforms[0].clone();
+    let axis = || vec![binding("AngleX", &KEYS)];
+    let eye = mesh_mut(&mut model, "EyeL");
+    eye.keyforms = KeyformGrid::new(
+        axis(),
+        vec![left.clone(), left.clone(), shifted(&left, 0.02, 0.0)],
+    );
+    eye.keyforms.origins = vec![Derived, Authored, Authored];
+    let eye = mesh_mut(&mut model, "EyeR");
+    eye.keyforms = KeyformGrid::new(
+        axis(),
+        vec![shifted(&right, 0.04, 0.0), right.clone(), right.clone()],
+    );
+    eye.keyforms.origins = vec![Authored, Authored, Derived];
+    let mut doc = Document::new(model);
+    for (source, to) in [("EyeR", "EyeL"), ("EyeL", "EyeR")] {
+        doc.apply(Command::MirrorKeyforms {
+            source: target(source),
+            target: target(to),
+            axis: None,
+            tolerance: None,
+            overwrite_authored: false,
+        })
+        .unwrap();
+    }
+    doc.model().clone()
+}
+
+#[test]
+fn mirror_cycles_between_two_grids() {
+    let model = cycle_model();
+    let cells = |model: &Model, id: &str| mesh(model, id).keyforms.keyforms.clone();
+    let origins = |model: &Model, id: &str| mesh(model, id).keyforms.origins.clone();
+    assert_eq!(origins(&model, "EyeL"), vec![Mirror, Authored, Authored]);
+    assert_eq!(origins(&model, "EyeR"), vec![Authored, Authored, Mirror]);
+    let (left, right) = (cells(&model, "EyeL"), cells(&model, "EyeR"));
+    assert_shift(&left[0], &left[1], -0.04, 0.0);
+    assert_shift(&right[2], &right[1], -0.02, 0.0);
+
+    // 左目の AngleX = 30 を直すと右目の AngleX = 30 をミラーし直し、右目の変化は左目へ戻る
+    // (左目の AngleX = -30 の元は変わらないので、そこで止まる)。
+    let after = applied(
+        &model,
+        Command::SetMeshKeyform {
+            id: "EyeL".into(),
+            cell: cell(&[("AngleX", 30.0)]),
+            keyform: shifted(&left[1], 0.1, 0.0),
+        },
+    );
+    assert_shift(&cells(&after, "EyeR")[2], &right[1], -0.1, 0.0);
+    assert_eq!(cells(&after, "EyeL")[0], left[0]);
+
+    // 右目の AngleX = -30 を直すと、左目の AngleX = -30 をミラーし直す。
+    let after = applied(
+        &model,
+        Command::SetMeshKeyform {
+            id: "EyeR".into(),
+            cell: cell(&[("AngleX", -30.0)]),
+            keyform: shifted(&right[1], 0.3, 0.0),
+        },
+    );
+    assert_shift(&cells(&after, "EyeL")[0], &left[1], -0.3, 0.0);
+    assert_eq!(cells(&after, "EyeR")[2], right[2]);
+
+    // 両方がミラーのセルで互いを元にしていても (値の元がない循環)、作り直しは止まる。
+    let mut degenerate = model.clone();
+    mesh_mut(&mut degenerate, "EyeR").keyforms.origins[0] = Mirror;
+    let after = applied(
+        &degenerate,
+        Command::SetMeshKeyform {
+            id: "EyeL".into(),
+            cell: cell(&[("AngleX", 0.0)]),
+            keyform: shifted(&left[1], 0.0, 0.001),
+        },
+    );
+    assert_eq!(origins(&after, "EyeR"), vec![Mirror, Authored, Mirror]);
+}
+
+#[test]
+fn self_mirrored_cells_follow_edits_of_the_same_grid() {
+    let mut model = fixtures::keyform_inference();
+    model.parameters[0].mirror = Some("AngleX".into());
+    let base = mesh(&model, "Nose").keyforms.keyforms[0].clone();
+    let nose = mesh_mut(&mut model, "Nose");
+    nose.keyforms = KeyformGrid::new(
+        vec![binding("AngleX", &KEYS)],
+        vec![base.clone(), base.clone(), shifted(&base, 0.02, 0.0)],
+    );
+    nose.keyforms.origins = vec![Derived, Authored, Authored];
+    let mut doc = Document::new(model);
+    doc.apply(Command::MirrorKeyforms {
+        source: target("Nose"),
+        target: target("Nose"),
+        axis: None,
+        tolerance: None,
+        overwrite_authored: false,
+    })
+    .unwrap();
+    let model = doc.model().clone();
+    let nose = &mesh(&model, "Nose").keyforms;
+    assert_eq!(nose.origins[0], Mirror);
+    assert_shift(&nose.keyforms[0], &base, -0.02, 0.0);
+
+    let after = applied(
+        &model,
+        Command::SetMeshKeyform {
+            id: "Nose".into(),
+            cell: cell(&[("AngleX", 30.0)]),
+            keyform: shifted(&base, 0.05, 0.0),
+        },
+    );
+    assert_shift(
+        &mesh(&after, "Nose").keyforms.keyforms[0],
+        &base,
+        -0.05,
+        0.0,
+    );
+}
+
+#[test]
+fn removing_a_mirror_source_freezes_the_mirrored_cells() {
+    let model = mirrored_model();
+    let after = applied(&model, Command::RemoveMesh { id: "EyeL".into() });
+    let right = &mesh(&after, "EyeR").keyforms;
+    assert_eq!(right.mirror_source, None);
+    assert!(!right.origins.contains(&Mirror));
+    assert_eq!(right.keyforms, mesh(&model, "EyeR").keyforms.keyforms);
+    assert_eq!(right_origin(&after, -30.0, 0.0), Authored);
+    assert_eq!(right_origin(&after, 30.0, 30.0), Additive);
+}
+
+#[test]
+fn dangling_mirror_sources_are_rejected() {
+    let model = mirrored_model();
+    let mut keyforms = mesh(&model, "EyeR").keyforms.clone();
+    if let Some(source) = &mut keyforms.mirror_source {
+        source.id = "Missing".into();
+    }
+    let error = rejected(
+        &model,
+        Command::SetMeshKeyforms {
+            id: "EyeR".into(),
+            keyforms,
+        },
+    );
+    let EditError::Invalid(errors) = error else {
+        panic!("expected a validation error: {error:?}");
+    };
+    assert!(errors.iter().any(|e| matches!(
+        e,
+        ugoe_model::validate::ValidationError::UnknownReference { field, target, .. }
+            if *field == "keyforms.mirror_source" && target == "Missing"
+    )));
 }

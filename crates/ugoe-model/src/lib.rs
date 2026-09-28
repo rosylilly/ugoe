@@ -27,7 +27,9 @@ use ugoe_core::codegen::Vec2Repr;
 
 pub use deformer::{Deformer, DeformerId, DeformerKind};
 pub use effects::Effects;
-pub use keyform::{DepthRotation, KeyformBinding, KeyformGrid, KeyformInference, KeyformOrigin};
+pub use keyform::{
+    DepthRotation, KeyformBinding, KeyformGrid, KeyformInference, KeyformOrigin, MirrorSource,
+};
 pub use mesh::{BlendMode, Glue, MaskMode, MaskRef, Mesh, MeshId};
 pub use parameter::{ParamId, Parameter, ParameterGroup};
 pub use part::{Part, PartId};

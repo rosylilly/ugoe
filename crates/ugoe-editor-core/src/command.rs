@@ -209,14 +209,19 @@ pub enum Command {
         options: AutoMeshOptions,
     },
     /// `target` の格子の `derived` のセルを推定で作り直す (`docs/spec/keyform-inference.md#推定の実行`)。
-    /// `authored` のセルは変えない。
+    /// `authored` のセルは変えない。書き換えるのは `method` で作ったセル (方法を記録していないセルは
+    /// 格子の `inference` の方法のもの) だけで、`overwrite_derived` なら別の方法で作ったセルも書き換える。
     InferKeyforms {
         target: KeyformTarget,
         #[serde(default)]
         method: InferMethod,
+        #[serde(default)]
+        overwrite_derived: bool,
     },
     /// `source` のキーフォームを対称軸で反転して、`target` の格子のセルを作る
-    /// (`docs/spec/keyform-inference.md#ミラー`)。作ったセルは `derived` になる。
+    /// (`docs/spec/keyform-inference.md#ミラー`)。先の `authored` 以外のセルをすべて書き換え、
+    /// 作ったセルは `mirror` になる。`source` と `axis` / `tolerance` は先の格子の `mirror_source` に記録し、
+    /// 以後 `source` の格子が変わると自動でミラーし直す。
     MirrorKeyforms {
         source: KeyformTarget,
         target: KeyformTarget,
@@ -235,7 +240,7 @@ pub enum Command {
         target: KeyformTarget,
         cells: Vec<KeyformCell>,
     },
-    /// 格子のセルの由来を `derived` にし、格子の推定の設定で作り直す。
+    /// 格子のセルの由来を `derived` (方法の記録なし) にし、格子の推定の設定で作り直す。
     MarkKeyformDerived {
         target: KeyformTarget,
         cells: Vec<KeyformCell>,

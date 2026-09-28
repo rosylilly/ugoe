@@ -1,20 +1,23 @@
 //! 深度からの回転 (`docs/spec/keyform-inference.md#深度からの回転`)。
 
 use ugoe_core::Vec2;
-use ugoe_model::{DeformerId, DeformerKind, KeyformGrid, KeyformInference, Model, Parameter};
+use ugoe_model::{
+    DeformerId, DeformerKind, KeyformGrid, KeyformInference, KeyformOrigin, Model, Parameter,
+};
 
 use crate::additive::combine;
-use crate::grid::{Layout, apply, authored_cells, build, check_sources, flatten};
+use crate::grid::{Layout, apply, build, check_sources, flatten, source_cells};
 use crate::space::{SpaceKind, parent_space};
 use crate::values::Points;
-use crate::{InferError, InferReport, KeyformTarget};
+use crate::{InferError, InferReport, InferScope, KeyformTarget};
 
 /// `target` の格子の `derived` のセルを深度からの回転で作り直す
 /// (`docs/spec/keyform-inference.md#深度からの回転`)。
 ///
 /// 設定は格子の `inference` (`depth_rotation`)、深度は要素の `depth` から読む。
 /// 対象はワープデフォーマ (推奨) とメッシュで、親の座標系がアフィン (親なし・回転デフォーマ) で
-/// なければならない。`authored` のセルは変えない。エラーのときはモデルを変えない。
+/// なければならない。書き換えるのは `scope` のセルで、書いたセルの由来は `depth_rotation` になる。
+/// `authored` のセルは変えない。エラーのときはモデルを変えない。
 ///
 /// セル `c` の形は、基準のセルを `c` の `yaw` / `pitch` の角度で回した形 `Rot(c)` に、
 /// `authored` のセルと `Rot` の差 (手で直した分) を加算合成したものを足して作る。
@@ -23,6 +26,7 @@ use crate::{InferError, InferReport, KeyformTarget};
 pub fn infer_depth_rotation(
     model: &mut Model,
     target: &KeyformTarget,
+    scope: InferScope,
 ) -> Result<InferReport, InferError> {
     let unknown = || InferError::UnknownTarget(target.clone());
     match target {
@@ -37,13 +41,20 @@ pub fn infer_depth_rotation(
                 .depth
                 .as_deref()
                 .ok_or_else(|| InferError::MissingDepth(target.clone()))?;
-            let writes = rotate_grid(&model.parameters, &mesh.keyforms, depth, unit, target)?;
+            let writes = rotate_grid(
+                &model.parameters,
+                &mesh.keyforms,
+                depth,
+                unit,
+                target,
+                scope,
+            )?;
             let mesh = model
                 .meshes
                 .iter_mut()
                 .find(|m| &m.id == id)
                 .ok_or_else(unknown)?;
-            Ok(apply(&mut mesh.keyforms, writes))
+            Ok(apply(&mut mesh.keyforms, writes, DEPTH))
         }
         KeyformTarget::Deformer(id) => {
             let deformer = model
@@ -60,20 +71,30 @@ pub fn infer_depth_rotation(
                 .depth
                 .as_deref()
                 .ok_or_else(|| InferError::MissingDepth(target.clone()))?;
-            let writes = rotate_grid(&model.parameters, &warp.keyforms, depth, unit, target)?;
+            let writes = rotate_grid(
+                &model.parameters,
+                &warp.keyforms,
+                depth,
+                unit,
+                target,
+                scope,
+            )?;
             if let Some(DeformerKind::Warp(warp)) = model
                 .deformers
                 .iter_mut()
                 .find(|d| &d.id == id)
                 .map(|d| &mut d.kind)
             {
-                return Ok(apply(&mut warp.keyforms, writes));
+                return Ok(apply(&mut warp.keyforms, writes, DEPTH));
             }
             Err(unknown())
         }
         _ => Err(InferError::UnsupportedTarget(target.clone())),
     }
 }
+
+/// 深度からの回転で作ったセルの由来。
+const DEPTH: KeyformOrigin = KeyformOrigin::DepthRotation;
 
 /// 親の座標系の 1 単位のピクセル数。親がワープ (アフィンでない) ならエラー。
 fn affine_unit(
@@ -96,12 +117,13 @@ fn rotate_grid<T: Points>(
     depth: &[f32],
     unit: f32,
     target: &KeyformTarget,
+    scope: InferScope,
 ) -> Result<Vec<(usize, T)>, InferError> {
     let Some(KeyformInference::DepthRotation(settings)) = &grid.inference else {
         return Err(InferError::NotDepthRotation(target.clone()));
     };
     let layout = Layout::new(parameters, grid)?;
-    let authored = authored_cells(grid, &layout);
+    let authored = source_cells(grid, &layout, DEPTH, scope);
     let base = layout.base();
     check_sources(grid, &authored, base)?;
     let base_kf = &grid.keyforms[base];

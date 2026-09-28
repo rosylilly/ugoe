@@ -767,7 +767,7 @@
       ]
     },
     {
-      "description": "`target` の格子の `derived` のセルを推定で作り直す (`docs/spec/keyform-inference.md#推定の実行`)。\n`authored` のセルは変えない。",
+      "description": "`target` の格子の `derived` のセルを推定で作り直す (`docs/spec/keyform-inference.md#推定の実行`)。\n`authored` のセルは変えない。書き換えるのは `method` で作ったセル (方法を記録していないセルは\n格子の `inference` の方法のもの) だけで、`overwrite_derived` なら別の方法で作ったセルも書き換える。",
       "type": "object",
       "properties": {
         "method": {
@@ -777,6 +777,10 @@
         "op": {
           "type": "string",
           "const": "infer_keyforms"
+        },
+        "overwrite_derived": {
+          "type": "boolean",
+          "default": false
         },
         "target": {
           "$ref": "#/$defs/KeyformTarget"
@@ -788,7 +792,7 @@
       ]
     },
     {
-      "description": "`source` のキーフォームを対称軸で反転して、`target` の格子のセルを作る\n(`docs/spec/keyform-inference.md#ミラー`)。作ったセルは `derived` になる。",
+      "description": "`source` のキーフォームを対称軸で反転して、`target` の格子のセルを作る\n(`docs/spec/keyform-inference.md#ミラー`)。先の `authored` 以外のセルをすべて書き換え、\n作ったセルは `mirror` になる。`source` と `axis` / `tolerance` は先の格子の `mirror_source` に記録し、\n以後 `source` の格子が変わると自動でミラーし直す。",
       "type": "object",
       "properties": {
         "axis": {
@@ -858,7 +862,7 @@
       ]
     },
     {
-      "description": "格子のセルの由来を `derived` にし、格子の推定の設定で作り直す。",
+      "description": "格子のセルの由来を `derived` (方法の記録なし) にし、格子の推定の設定で作り直す。",
       "type": "object",
       "properties": {
         "cells": {
@@ -1191,7 +1195,7 @@
       ]
     },
     "KeyformGrid": {
-      "description": "N 本のパラメータ軸の直積格子上に並んだキーフォーム。\n\n`keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。\n並びは **軸 0 が最も速く変化する** 行優先 (column-major 的) 順。\n格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。\n\n`origins` と `inference` はオーサリング用のデータで、ランタイムは読み飛ばす\n(`docs/spec/keyform-inference.md`)。",
+      "description": "N 本のパラメータ軸の直積格子上に並んだキーフォーム。\n\n`keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。\n並びは **軸 0 が最も速く変化する** 行優先 (column-major 的) 順。\n格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。\n\n`origins`・`inference`・`mirror_source` はオーサリング用のデータで、ランタイムは読み飛ばす\n(`docs/spec/keyform-inference.md`)。",
       "type": "object",
       "properties": {
         "bindings": {
@@ -1202,7 +1206,7 @@
           }
         },
         "inference": {
-          "description": "`derived` のセルを作り直すときの推定の設定。`None` なら加算合成 (`additive`)。",
+          "description": "方法を記録していない `derived` のセルを作り直すときの推定の設定。`None` なら加算合成 (`additive`)。",
           "anyOf": [
             {
               "$ref": "#/$defs/KeyformInference"
@@ -1218,6 +1222,17 @@
             "$ref": "#/$defs/PartKeyform"
           }
         },
+        "mirror_source": {
+          "description": "`mirror` のセルのミラー元と、ミラーの設定。ミラーで作ったセルがあれば記録する。",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MirrorSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "origins": {
           "description": "セルごとの由来。並びは `keyforms` と同じ。\n空ならすべて `authored`。空でなければ長さは `keyforms` と同じ。",
           "type": "array",
@@ -1231,7 +1246,7 @@
       ]
     },
     "KeyformGrid2": {
-      "description": "N 本のパラメータ軸の直積格子上に並んだキーフォーム。\n\n`keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。\n並びは **軸 0 が最も速く変化する** 行優先 (column-major 的) 順。\n格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。\n\n`origins` と `inference` はオーサリング用のデータで、ランタイムは読み飛ばす\n(`docs/spec/keyform-inference.md`)。",
+      "description": "N 本のパラメータ軸の直積格子上に並んだキーフォーム。\n\n`keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。\n並びは **軸 0 が最も速く変化する** 行優先 (column-major 的) 順。\n格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。\n\n`origins`・`inference`・`mirror_source` はオーサリング用のデータで、ランタイムは読み飛ばす\n(`docs/spec/keyform-inference.md`)。",
       "type": "object",
       "properties": {
         "bindings": {
@@ -1242,7 +1257,7 @@
           }
         },
         "inference": {
-          "description": "`derived` のセルを作り直すときの推定の設定。`None` なら加算合成 (`additive`)。",
+          "description": "方法を記録していない `derived` のセルを作り直すときの推定の設定。`None` なら加算合成 (`additive`)。",
           "anyOf": [
             {
               "$ref": "#/$defs/KeyformInference"
@@ -1258,6 +1273,17 @@
             "$ref": "#/$defs/WarpKeyform"
           }
         },
+        "mirror_source": {
+          "description": "`mirror` のセルのミラー元と、ミラーの設定。ミラーで作ったセルがあれば記録する。",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MirrorSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "origins": {
           "description": "セルごとの由来。並びは `keyforms` と同じ。\n空ならすべて `authored`。空でなければ長さは `keyforms` と同じ。",
           "type": "array",
@@ -1271,7 +1297,7 @@
       ]
     },
     "KeyformGrid3": {
-      "description": "N 本のパラメータ軸の直積格子上に並んだキーフォーム。\n\n`keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。\n並びは **軸 0 が最も速く変化する** 行優先 (column-major 的) 順。\n格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。\n\n`origins` と `inference` はオーサリング用のデータで、ランタイムは読み飛ばす\n(`docs/spec/keyform-inference.md`)。",
+      "description": "N 本のパラメータ軸の直積格子上に並んだキーフォーム。\n\n`keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。\n並びは **軸 0 が最も速く変化する** 行優先 (column-major 的) 順。\n格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。\n\n`origins`・`inference`・`mirror_source` はオーサリング用のデータで、ランタイムは読み飛ばす\n(`docs/spec/keyform-inference.md`)。",
       "type": "object",
       "properties": {
         "bindings": {
@@ -1282,7 +1308,7 @@
           }
         },
         "inference": {
-          "description": "`derived` のセルを作り直すときの推定の設定。`None` なら加算合成 (`additive`)。",
+          "description": "方法を記録していない `derived` のセルを作り直すときの推定の設定。`None` なら加算合成 (`additive`)。",
           "anyOf": [
             {
               "$ref": "#/$defs/KeyformInference"
@@ -1298,6 +1324,17 @@
             "$ref": "#/$defs/RotationKeyform"
           }
         },
+        "mirror_source": {
+          "description": "`mirror` のセルのミラー元と、ミラーの設定。ミラーで作ったセルがあれば記録する。",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MirrorSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "origins": {
           "description": "セルごとの由来。並びは `keyforms` と同じ。\n空ならすべて `authored`。空でなければ長さは `keyforms` と同じ。",
           "type": "array",
@@ -1311,7 +1348,7 @@
       ]
     },
     "KeyformGrid4": {
-      "description": "N 本のパラメータ軸の直積格子上に並んだキーフォーム。\n\n`keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。\n並びは **軸 0 が最も速く変化する** 行優先 (column-major 的) 順。\n格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。\n\n`origins` と `inference` はオーサリング用のデータで、ランタイムは読み飛ばす\n(`docs/spec/keyform-inference.md`)。",
+      "description": "N 本のパラメータ軸の直積格子上に並んだキーフォーム。\n\n`keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。\n並びは **軸 0 が最も速く変化する** 行優先 (column-major 的) 順。\n格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。\n\n`origins`・`inference`・`mirror_source` はオーサリング用のデータで、ランタイムは読み飛ばす\n(`docs/spec/keyform-inference.md`)。",
       "type": "object",
       "properties": {
         "bindings": {
@@ -1322,7 +1359,7 @@
           }
         },
         "inference": {
-          "description": "`derived` のセルを作り直すときの推定の設定。`None` なら加算合成 (`additive`)。",
+          "description": "方法を記録していない `derived` のセルを作り直すときの推定の設定。`None` なら加算合成 (`additive`)。",
           "anyOf": [
             {
               "$ref": "#/$defs/KeyformInference"
@@ -1337,6 +1374,17 @@
           "items": {
             "$ref": "#/$defs/MeshKeyform"
           }
+        },
+        "mirror_source": {
+          "description": "`mirror` のセルのミラー元と、ミラーの設定。ミラーで作ったセルがあれば記録する。",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MirrorSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "origins": {
           "description": "セルごとの由来。並びは `keyforms` と同じ。\n空ならすべて `authored`。空でなければ長さは `keyforms` と同じ。",
@@ -1391,9 +1439,24 @@
           "const": "authored"
         },
         {
-          "description": "推定で作ったセル。推定の元になったセルが変わると、エディタが作り直す。",
+          "description": "推定で作ったセル (方法の記録なし)。格子の `inference` の方法で作ったものとして扱う。\n方法を記録しなかった版 (T0614 より前) のファイルと、`MarkKeyformDerived` がこの由来を書く。",
           "type": "string",
           "const": "derived"
+        },
+        {
+          "description": "加算合成で作ったセル (`docs/spec/keyform-inference.md#加算合成`)。",
+          "type": "string",
+          "const": "additive"
+        },
+        {
+          "description": "深度からの回転で作ったセル (`docs/spec/keyform-inference.md#深度からの回転`)。",
+          "type": "string",
+          "const": "depth_rotation"
+        },
+        {
+          "description": "ミラーで作ったセル (`docs/spec/keyform-inference.md#ミラー`)。\nミラー元は格子の `mirror_source` に記録する。",
+          "type": "string",
+          "const": "mirror"
         }
       ]
     },
@@ -1662,6 +1725,35 @@
         "positions",
         "opacity",
         "draw_order"
+      ]
+    },
+    "MirrorSource": {
+      "description": "ミラーで作ったセル (`KeyformOrigin::Mirror`) のミラー元と、ミラーの設定\n(`docs/spec/keyform-inference.md#ミラー`)。エディタがミラーをやり直すときに使う。",
+      "type": "object",
+      "properties": {
+        "axis": {
+          "description": "対称軸 `x = a` の `a` を明示した場合の値。`None` なら元の要素の `mirror_axis` (または既定値)。",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "id": {
+          "description": "ミラー元の要素の ID。格子を持つ要素と同じ種類 (メッシュならメッシュ、デフォーマならデフォーマ)。\n自分自身の ID なら、左右対称な 1 つの要素の中で写し合ったセル。",
+          "type": "string"
+        },
+        "tolerance": {
+          "description": "頂点の対応付けの許容距離を明示した場合の値。`None` ならキャンバスの 1px。",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        }
+      },
+      "required": [
+        "id"
       ]
     },
     "Parameter": {

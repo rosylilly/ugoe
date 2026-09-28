@@ -467,6 +467,7 @@ fn vertex_edits_rederive_derived_cells() {
     let infer = Command::InferKeyforms {
         target: KeyformTarget::Mesh("Quad".into()),
         method: InferMethod::FromGrid,
+        overwrite_derived: false,
     };
     let model = applied(&model, infer.clone());
     for command in [

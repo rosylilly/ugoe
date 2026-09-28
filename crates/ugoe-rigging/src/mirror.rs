@@ -1,12 +1,12 @@
 //! ミラー (`docs/spec/keyform-inference.md#ミラー`)。
 
 use ugoe_core::Vec2;
-use ugoe_model::{DeformerKind, KeyformGrid, KeyformOrigin, Model, Parameter};
+use ugoe_model::{DeformerKind, KeyformGrid, KeyformOrigin, MirrorSource, Model, Parameter};
 
-use crate::grid::{KEY_EPSILON, Layout, apply};
+use crate::grid::{KEY_EPSILON, Layout, apply, rewrites};
 use crate::space::parent_space;
 use crate::values::Points;
-use crate::{InferError, InferReport, KeyformTarget, KeyformValues};
+use crate::{InferError, InferReport, InferScope, KeyformTarget, KeyformValues};
 
 /// ミラーの設定。
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -17,8 +17,10 @@ pub struct MirrorOptions {
     /// 頂点の対応付けの許容距離 (元の要素の親座標系)。
     /// `None` ならキャンバスの 1px にあたる距離 (親がワープなら UV 空間に換算する)。
     pub tolerance: Option<f32>,
-    /// `true` なら先の `authored` のセルも上書きする (書いたセルは `derived` になる)。
+    /// `true` なら先の `authored` のセルも上書きする (書いたセルは `mirror` になる)。
     pub overwrite_authored: bool,
+    /// 先の `derived` のセルのうち書き換えるもの。`Own` ならミラーで作ったセル (`mirror`) だけ。
+    pub scope: InferScope,
 }
 
 /// `source` のキーフォームを対称軸で反転して、`target` の格子のセルを作る
@@ -26,8 +28,10 @@ pub struct MirrorOptions {
 ///
 /// - `target` は `source` の `mirror` で対にした要素でなければならない。`mirror` が省略または自分自身
 ///   なら `target` は `source` 自身 (左右対称な 1 つの要素) で、格子の中で左右のセルを写し合う。
-/// - 先のセル `t` は、軸ごとにパラメータを対応させた元のセル `s` を反転して作る。書いたセルは
-///   `derived` になる。先の `authored` のセルは `overwrite_authored` がなければ変えない。
+/// - 先のセル `t` は、軸ごとにパラメータを対応させた元のセル `s` を反転して作る。書いたセルの由来は
+///   `mirror` になり、先の格子の `mirror_source` に元の要素と `axis` / `tolerance` を記録する
+///   (セルを 1 つも書かなければ変えない)。先の `authored` のセルは `overwrite_authored` がなければ
+///   変えない。`derived` のセルは `scope` のものだけを書き換える。
 /// - `source` と `target` が同じなら、自分自身に写るセル (`s == t`) と、元のセルが `derived` の
 ///   セルは書かない (推定したセルから推定しない。何度実行しても同じ結果になる)。
 /// - 対象はメッシュ・ワープデフォーマ・回転デフォーマ。エラーのときはモデルを変えない。
@@ -72,27 +76,20 @@ pub fn mirror_keyforms(
             let src_base = base_cell(params, &src.keyforms)?;
             let dst_base = base_cell(params, &dst.keyforms)?;
             let map = match_vertices(src_base.points(), dst_base.points(), axis, tolerance)?;
-            let writes = mirror_grid(
-                params,
-                &src.keyforms,
-                &dst.keyforms,
-                same,
-                options.overwrite_authored,
-                |kf| {
-                    let mut out = kf.clone();
-                    out.positions = map
-                        .iter()
-                        .map(|&i| reflect(kf.positions[i], axis))
-                        .collect();
-                    out
-                },
-            )?;
+            let writes = mirror_grid(params, &src.keyforms, &dst.keyforms, same, options, |kf| {
+                let mut out = kf.clone();
+                out.positions = map
+                    .iter()
+                    .map(|&i| reflect(kf.positions[i], axis))
+                    .collect();
+                out
+            })?;
             let dst = model
                 .meshes
                 .iter_mut()
                 .find(|m| &m.id == t)
                 .ok_or_else(|| unknown(target))?;
-            Ok(apply(&mut dst.keyforms, writes))
+            Ok(record(&mut dst.keyforms, writes, source, options))
         }
         (KeyformTarget::Deformer(s), KeyformTarget::Deformer(t)) => {
             let src = model
@@ -114,7 +111,6 @@ pub fn mirror_keyforms(
                 .or(src.mirror_axis)
                 .unwrap_or_else(|| space.default_axis(model));
             let params = &model.parameters;
-            let overwrite = options.overwrite_authored;
             // 未知の種類 (前方互換で読み飛ばしたもの) はミラーできない。
             if let (DeformerKind::Warp(sw), DeformerKind::Warp(dw)) = (&src.kind, &dst.kind) {
                 if (sw.rows, sw.cols) != (dw.rows, dw.cols) {
@@ -137,7 +133,7 @@ pub fn mirror_keyforms(
                     });
                 }
                 let writes =
-                    mirror_grid(params, &sw.keyforms, &dw.keyforms, same, overwrite, |kf| {
+                    mirror_grid(params, &sw.keyforms, &dw.keyforms, same, options, |kf| {
                         let mut out = kf.clone();
                         for (i, p) in out.points.iter_mut().enumerate() {
                             // 列を左右反転する: (行 r, 列 c) ← (行 r, 列 cols − c)。
@@ -152,14 +148,14 @@ pub fn mirror_keyforms(
                     .find(|d| &d.id == t)
                     .map(|d| &mut d.kind)
                 {
-                    return Ok(apply(&mut dw.keyforms, writes));
+                    return Ok(record(&mut dw.keyforms, writes, source, options));
                 }
                 return Err(unknown(target));
             }
             if let (DeformerKind::Rotation(sr), DeformerKind::Rotation(dr)) = (&src.kind, &dst.kind)
             {
                 let writes =
-                    mirror_grid(params, &sr.keyforms, &dr.keyforms, same, overwrite, |kf| {
+                    mirror_grid(params, &sr.keyforms, &dr.keyforms, same, options, |kf| {
                         let mut out = *kf;
                         out.origin = reflect(kf.origin, axis);
                         out.angle = -kf.angle;
@@ -171,7 +167,7 @@ pub fn mirror_keyforms(
                     .find(|d| &d.id == t)
                     .map(|d| &mut d.kind)
                 {
-                    return Ok(apply(&mut dr.keyforms, writes));
+                    return Ok(record(&mut dr.keyforms, writes, source, options));
                 }
                 return Err(unknown(target));
             }
@@ -180,6 +176,30 @@ pub fn mirror_keyforms(
         (KeyformTarget::Mesh(_) | KeyformTarget::Deformer(_), _) => Err(incompatible()),
         _ => Err(InferError::UnsupportedTarget(source.clone())),
     }
+}
+
+/// 作ったセルを先の格子に書き込み、由来を `mirror` にして、ミラー元を記録する。
+fn record<T>(
+    grid: &mut KeyformGrid<T>,
+    writes: Vec<(usize, T)>,
+    source: &KeyformTarget,
+    options: &MirrorOptions,
+) -> InferReport {
+    if writes.is_empty() {
+        return InferReport::default();
+    }
+    let id = match source {
+        KeyformTarget::Part(id) => id.to_string(),
+        KeyformTarget::Mesh(id) => id.to_string(),
+        KeyformTarget::Deformer(id) => id.to_string(),
+        KeyformTarget::Glue(id) => id.clone(),
+    };
+    grid.mirror_source = Some(MirrorSource {
+        id,
+        axis: options.axis,
+        tolerance: options.tolerance,
+    });
+    apply(grid, writes, KeyformOrigin::Mirror)
 }
 
 /// 対称軸 `x = axis` での反転。
@@ -240,7 +260,7 @@ fn mirror_grid<T: KeyformValues>(
     source: &KeyformGrid<T>,
     target: &KeyformGrid<T>,
     same: bool,
-    overwrite_authored: bool,
+    options: &MirrorOptions,
     mirror: impl Fn(&T) -> T,
 ) -> Result<Vec<(usize, T)>, InferError> {
     let src = Layout::new(parameters, source)?;
@@ -291,7 +311,11 @@ fn mirror_grid<T: KeyformValues>(
     let shape = source.keyforms[src.base()].shape_len();
     let mut writes = Vec::new();
     for t in 0..dst.len {
-        if target.origin(t) == KeyformOrigin::Authored && !overwrite_authored {
+        let write = match target.origin(t) {
+            KeyformOrigin::Authored => options.overwrite_authored,
+            _ => rewrites(target, t, KeyformOrigin::Mirror, options.scope),
+        };
+        if !write {
             continue;
         }
         let coords = dst.coords(t);

@@ -20,8 +20,9 @@ pub enum InferError {
     /// `origins` が空でなく、長さが `keyforms` と合わない。
     #[error("grid has {found} origins, expected {expected}")]
     OriginsLengthMismatch { expected: usize, found: usize },
-    /// 基準のセル (すべての軸が中立のセル) が `authored` でない。
-    #[error("base cell {cell} must be authored")]
+    /// 基準のセル (すべての軸が中立のセル) が推定の元にならない (`authored` でも、別の方法で
+    /// 作ったセルでもなく、この推定で書き換えるセル)。
+    #[error("base cell {cell} must be authored (or derived by another method)")]
     BaseNotAuthored { cell: usize },
     /// `authored` のセルの頂点 (制御点) の数が基準のセルと合わない。
     #[error("cell {cell} has {found} vertices, expected {expected} (as the base cell)")]
