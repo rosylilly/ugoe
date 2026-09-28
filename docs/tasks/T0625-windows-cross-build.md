@@ -40,3 +40,4 @@ WSL2 で開発している人が、Windows に切り替えずに Windows 向け�
 - **CI:** クロスビルドのジョブは足さなかった。CI の Windows ランナーのネイティブビルドが MSI と NSIS の両方を作るので、
   NSIS だけのクロスビルドを重ねる意味が薄い。また CI で MSVC CRT/SDK のライセンスに自動で同意することになる。
 - **後続の候補:** Windows 向けのコード署名 (Linux からは `bundle.windows.signCommand` で osslsigncode などを使える)。
+- 利用者の確認 (2026-09-28): NSIS のインストーラで Windows にインストールして起動し、`character.psd` の読み込みまで成功した。

@@ -63,3 +63,8 @@ just editor
 - パラメータの作成などの操作方法が分からなかった。操作マニュアルが欲しい。 → T0624
 - Windows 向けのビルドは WSL2 上でもできるはず (署名なし)。 → T0625
 
+### 2026-09-28 Windows での確認 (利用者)
+
+- WSL2 からクロスビルドした NSIS のインストーラ (`just editor-build-windows`、T0625) で Windows にインストールし、起動できた。
+- `assets/fixtures/character.psd` の読み込みまで成功した (WebView2)。
+
