@@ -27,15 +27,15 @@ just editor
 
 - [x] ビューポートにモデルが表示される (WebGPU が使える環境では WebGPU、使えない環境では WebGL2。どちらで描いているかは開発者ツールのコンソールに出る)
 - [ ] File > Import PSD… で `assets/fixtures/layers.psd` を取り込み、ビューポートとツリーに表示される (T0605)
-- [ ] File > Import PSD… で `assets/fixtures/character.psd` を取り込み、キャラクターの絵 (髪・顔・両目・頬・口・服) が崩れずに表示され、ツリーが `体` / `頭` / `目` のグループになる (T0620)
-- [ ] Photoshop (あれば) で `assets/fixtures/layers.psd` と `assets/fixtures/character.psd` を開ける。レイヤーパネルのグループ・クリッピング・非表示・不透明度が `assets/fixtures/README.md` の説明どおりか。開けなければエラーの文言を T0620 のメモに書く (T0620)
-- [ ] File > Save As / Open / Export が動き、`.ugoeproj` を開き直すと同じ状態に戻る (T0604)
+- [x] File > Import PSD… で `assets/fixtures/character.psd` を取り込み、キャラクターの絵 (髪・顔・両目・頬・口・服) が崩れずに表示され、ツリーが `体` / `頭` / `目` のグループになる (T0620)
+- [x] Photoshop (あれば) で `assets/fixtures/layers.psd` と `assets/fixtures/character.psd` を開ける。レイヤーパネルのグループ・クリッピング・非表示・不透明度が `assets/fixtures/README.md` の説明どおりか。開けなければエラーの文言を T0620 のメモに書く (T0620)
+- [x] File > Save As / Open / Export が動き、`.ugoeproj` を開き直すと同じ状態に戻る (T0604)
 - [ ] ツリーでの選択・名前の変更・ドラッグでの付け替え (見た目が変わらない) (T0602, T0607)
-- [ ] ビューポートでのメッシュの選択と、メッシュ編集モード (頂点の移動・追加・削除) (T0606)
+- [x] ビューポートでのメッシュの選択と、メッシュ編集モード (頂点の移動・追加・削除) (T0606)
 - [ ] デフォーマで包む操作と、ワープの制御点・回転のギズモ (T0607)
 - [ ] パラメータの作成・キーの追加・キーの上での形の編集、斜めのセルが自動で推定されること (T0608, T0617)
 - [ ] ミラー・深度のプリセット・深度からの回転 (T0613, T0617)
-- [ ] Undo / Redo
+- [x] Undo / Redo
 - [ ] Windows (WebView2)・macOS (WKWebView)・Linux (WebKitGTK) のうち、手元で使える環境
   - Windows・macOS 向けは、GitHub Actions の Editor build の成果物 (インストーラ) をダウンロードするか、
     その OS の上でビルドする (WSL の中では Linux 向けしかできない)。手順は
@@ -52,3 +52,13 @@ just editor
   - Photoshop で開くと「対応していない形式」になった。取り込みのエラー処理を試すための偽の中身 (未対応の圧縮方式、偽のレイヤー効果・調整レイヤー) と不正確な合成画像を含み、仕様に沿っていないためと考えられる (原因の特定は T0620)。
   - ugoe の PSD の読み込みは、自作のファイルと ImageMagick の出力でしか検証されていない。 → T0620
 - Windows・macOS 向けのビルドのコマンドがなく未確認。 → T0621
+
+### 2026-09-28 WSL2 での 2 回目の確認 (利用者)
+
+- `layers.psd` と `character.psd` を Photoshop でもエディタでも開けた (T0620 で解決)。
+- Import PSD で警告が出た: `the PSD canvas (320x400) differs from the model canvas (256x256); layers keep their PSD pixel positions`。
+  起動時にサンプルのモデル (256x256) を開いているため、PSD がそこに追加された。 → T0623
+- Save As → Open、メッシュ編集、Undo / Redo は正常に動いた。
+- パラメータの作成などの操作方法が分からなかった。操作マニュアルが欲しい。 → T0624
+- Windows 向けのビルドは WSL2 上でもできるはず (署名なし)。 → T0625
+
