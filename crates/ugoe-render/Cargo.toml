@@ -11,6 +11,7 @@ bytemuck.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 ugoe-core.workspace = true
+ugoe-model.workspace = true
 ugoe-runtime.workspace = true
 wgpu.workspace = true
 
@@ -26,4 +27,3 @@ gpu-tests = []
 [dev-dependencies]
 naga.workspace = true
 pollster.workspace = true
-ugoe-model.workspace = true

@@ -14,6 +14,12 @@ wgpu による参照レンダラと参照シェーダ (WGSL)。
 
 - [docs/spec/rendering.md](../../docs/spec/rendering.md)
 
+## テスト
+
+- `just test-gpu` でオフスクリーン描画の画素を検証する (`tests/gpu.rs`、`gpu-tests` feature)。
+- アダプタが見つからなければ失敗する。GPU がない環境では Mesa の lavapipe (Vulkan) か llvmpipe (GL) を使う。
+  バックエンドは `WGPU_BACKEND=vulkan` / `WGPU_BACKEND=gl` などで選べる。
+
 ## 関連タスク
 
 - T0201 (`docs/tasks/T0201-*.md`)
