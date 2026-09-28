@@ -33,6 +33,7 @@ ugoe render fixture:single_quad -o out.png
 ugoe render model.ugoe -o out.png --param AngleX=10 --param EyeLOpen=0 --width 512
 ugoe render model.json -o out.png --size 800x600 --background '#ffffff' --texture 0=atlas.png
 ugoe render fixture:nested_masks -o out.png --scale 2 --background black --backend gl
+ugoe render model.ugoe -o shake.png --motion Shake --time 0.25   # モーションの 0.25 秒の絵 (物理も進める)
 ```
 
 | オプション | 内容 |
@@ -45,6 +46,12 @@ ugoe render fixture:nested_masks -o out.png --scale 2 --background black --backe
 | `--fit contain\|stretch` | `contain` (既定) は縦横比を保って中央に収める。`stretch` は出力全体に引き伸ばす |
 | `--background <COLOR>` | `transparent` (既定)、`white`、`black`、`#RRGGBB`、`#RRGGBBAA` |
 | `--texture INDEX=PATH` | テクスチャを PNG で差し替える (複数可) |
+| `--time <SECONDS>` | `ugoe::Puppet` でこの秒数だけ時間を進めてから描く (物理・モーション・表情・目パチ・呼吸・ポーズ) |
+| `--motion <NAME\|PATH>` | 再生するモーション。バンドルのモーションの名前か `.motion.json` のパス。未知の名前はエラー (既知の名前を列挙する) |
+| `--expression <NAME\|PATH>` | 使う表情。バンドルの表情の名前か `.expression.json` のパス |
+| `--physics <PATH>` | 物理の設定の JSON。省略するとバンドルの物理を使う。モデルと合わなければエラー |
+| `--no-physics` / `--no-effects` | 時間を進めるときに物理 / 目パチと呼吸を止める |
+| `--fps <N>` | 時間を進めるときの 1 秒あたりの `update` の回数 (既定 60) |
 | `--backend <NAME>` | wgpu のバックエンド (`vulkan` `metal` `dx12` `gl`、カンマ区切り)。省略時は `WGPU_BACKEND`、それも無ければ wgpu の既定 |
 
 成功すると標準出力に 1 行 (`wrote out.png (256x256, adapter: ...)`) を書く。警告は標準エラーに `warning: ...` で出す。
@@ -55,7 +62,13 @@ ugoe render fixture:nested_masks -o out.png --scale 2 --background black --backe
   PNG に書くときストレートアルファに戻す (アルファ 0 の画素は RGB も 0)。
 - **背景:** 既定は透明。透明な背景の上に描いた結果は、そのまま別の画像に合成できる。
 - **ビュー:** キャンバス座標 (Y 下向き) を出力画像の上を上として写す。
-- **パラメータ:** 物理・モーション・ポーズのフェードは適用しない。指定した値 (と既定値) で 1 回 `update` した状態を描く。
+- **パラメータ:** `--time`・`--motion`・`--expression` のどれも無ければ、物理・モーション・ポーズのフェードは適用しない。
+  指定した値 (と既定値) で 1 回 `update` した状態を描く。
+- **時間を進める (`src/animate.rs`):** `--time`・`--motion`・`--expression` のどれかがあれば、`--param` の値を基準値にして
+  `Puppet::update(1 / fps)` を `floor(time * fps)` 回、余りがあればもう 1 回その長さで呼んでから描く (`--time` を省略すると 0 秒で、
+  `update(0)` を 1 回)。モーションは優先度 `Force` で 0 秒から再生する。適用順は `docs/spec/motion.md#フレーム内の適用順`。
+  固定の刻みで進めるので、同じ引数からは常に同じ絵になる。標準出力に `advanced 0.25s in 15 update(s)` も書く。
+  手順は `docs/testing.md#モーションの途中の絵を確かめる`。
 - **GPU:** サーフェス無しでアダプタを要求する。見つからなければエラー。GPU の無い環境では Mesa の lavapipe (Vulkan) か llvmpipe (GL) を使う。
   `WGPU_POWER_PREF` も参照する。
 - **WSL2 の注意:** dzn (Vulkan on D3D12) ドライバは wgpu のインスタンスやデバイスの破棄時に SIGSEGV を起こすことがあるので、

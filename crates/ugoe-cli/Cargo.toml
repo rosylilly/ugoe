@@ -13,6 +13,7 @@ clap.workspace = true
 png.workspace = true
 pollster.workspace = true
 serde_json.workspace = true
+ugoe.workspace = true
 ugoe-core.workspace = true
 ugoe-editor-core.workspace = true
 ugoe-format.workspace = true

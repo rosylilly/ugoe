@@ -153,3 +153,38 @@ fn import_psd_writes_project_and_bundle() {
         "ok"
     );
 }
+
+/// M3 の受け入れ (T0310): コミットした見本のアバター (T0702) がアバタープロファイルの検査を通る。
+#[test]
+fn committed_avatar_sample_passes_the_avatar_profile() {
+    let sample = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../assets/samples/avatar.ugoe"
+    );
+    let out = stdout(&ugoe(&["validate", sample, "--profile", "avatar"]));
+    let lines: Vec<&str> = out.lines().collect();
+    // 見本は T0704 で作り直すので、レベルは固定しない (主張したレベルを満たしていればよい)。
+    let (claimed, satisfied) = lines[0]
+        .strip_prefix("avatar profile: claims level ")
+        .and_then(|rest| rest.split_once(", satisfies level "))
+        .unwrap_or_else(|| panic!("{out}"));
+    assert_eq!(claimed, satisfied, "{out}");
+    assert_eq!(lines[1..], ["ok"]);
+}
+
+#[test]
+fn render_rejects_unknown_motion_before_touching_gpu() {
+    let out = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("never.png");
+    let output = ugoe(&[
+        "render",
+        "fixture:single_quad",
+        "-o",
+        out.to_str().expect("utf-8 path"),
+        "--motion",
+        "Idle",
+    ]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("no motion named `Idle`"), "{stderr}");
+    assert!(!out.exists());
+}

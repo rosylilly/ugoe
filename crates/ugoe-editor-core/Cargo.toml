@@ -24,5 +24,9 @@ ugoe-psd.workspace = true
 ugoe-rigging.workspace = true
 ugoe-runtime.workspace = true
 
+[dev-dependencies]
+# M3 の受け入れテスト (tests/m3_workflow.rs) で、書き出したバンドルをランタイム SDK で再生する
+ugoe.workspace = true
+
 [lints]
 workspace = true

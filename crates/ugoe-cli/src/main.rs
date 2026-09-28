@@ -1,5 +1,6 @@
 //! `ugoe` コマンド。人間と AI エージェントの双方が、GUI 無しでモデルを検査・変換・確認するための道具。
 
+mod animate;
 mod fixtures;
 mod image;
 mod render;
@@ -11,7 +12,6 @@ use anyhow::{Context, bail};
 use clap::{Args, Parser, Subcommand};
 use ugoe_format::{TextureData, TextureFormat};
 use ugoe_model::Model;
-use ugoe_runtime::{CompiledModel, ModelInstance};
 
 use crate::image::Rgba8;
 use crate::render::Fit;
@@ -144,6 +144,28 @@ struct RenderArgs {
     /// テクスチャを PNG ファイルで差し替える (複数指定可)。
     #[arg(long = "texture", value_name = "INDEX=PATH", value_parser = render::parse_texture)]
     textures: Vec<(u32, PathBuf)>,
+    /// この秒数だけ `ugoe::Puppet` で時間を進めてから描く (物理・モーション・表情・目パチ・呼吸・ポーズ)。
+    /// `--motion` / `--expression` だけを指定すると 0 秒。どれも無ければ時間を進めずにパラメータだけで描く。
+    #[arg(long, value_name = "SECONDS", value_parser = animate::parse_time)]
+    time: Option<f32>,
+    /// 再生するモーション: バンドルのモーションの名前か、`.motion.json` のパス。
+    #[arg(long, value_name = "NAME|PATH")]
+    motion: Option<String>,
+    /// 使う表情: バンドルの表情の名前か、`.expression.json` のパス。
+    #[arg(long, value_name = "NAME|PATH")]
+    expression: Option<String>,
+    /// 物理の設定 (JSON) のパス。省略するとバンドルの物理を使う。
+    #[arg(long, value_name = "PATH", conflicts_with = "no_physics")]
+    physics: Option<PathBuf>,
+    /// 時間を進めるときに物理を使わない。
+    #[arg(long)]
+    no_physics: bool,
+    /// 時間を進めるときに目パチと呼吸を止める。
+    #[arg(long)]
+    no_effects: bool,
+    /// 時間を進めるときの 1 秒あたりの `update` の回数。
+    #[arg(long, default_value = "60", value_parser = animate::parse_fps)]
+    fps: f32,
     /// wgpu のバックエンド (vulkan / metal / dx12 / gl。カンマ区切りで複数)。
     /// 省略時は環境変数 `WGPU_BACKEND`、それも無ければ wgpu の既定。
     #[arg(long)]
@@ -315,6 +337,8 @@ struct Input {
     model: Model,
     /// バンドルのテクスチャ (`model.textures` と同じ順)。JSON とフィクスチャでは空。
     textures: Vec<TextureData>,
+    /// バンドルの物理・モーション・表情。JSON とフィクスチャでは空。
+    animation: animate::Animation,
 }
 
 /// `fixture:<name>`、`.ugoe` バンドル (先頭のマジックで判別)、モデル JSON のいずれかを読む。
@@ -323,6 +347,7 @@ fn load_input(input: &str) -> anyhow::Result<Input> {
         return Ok(Input {
             model: fixtures::by_name(name)?,
             textures: Vec::new(),
+            animation: animate::Animation::default(),
         });
     }
     let path = Path::new(input);
@@ -333,6 +358,11 @@ fn load_input(input: &str) -> anyhow::Result<Input> {
         return Ok(Input {
             model: bundle.model,
             textures: bundle.textures,
+            animation: animate::Animation {
+                physics: bundle.physics,
+                motions: bundle.motions,
+                expressions: bundle.expressions,
+            },
         });
     }
     let json = String::from_utf8(bytes).with_context(|| {
@@ -346,6 +376,7 @@ fn load_input(input: &str) -> anyhow::Result<Input> {
     Ok(Input {
         model,
         textures: Vec::new(),
+        animation: animate::Animation::default(),
     })
 }
 
@@ -372,21 +403,56 @@ fn info_json(m: &Model) -> serde_json::Value {
 
 fn run_render(args: RenderArgs) -> anyhow::Result<()> {
     // GPU を使う前に入力をすべて検査する (GPU の無い環境でも引数の誤りを報告できるように)。
-    let Input { model, textures } = load_input(&args.input)?;
+    let Input {
+        model,
+        textures,
+        animation,
+    } = load_input(&args.input)?;
     let canvas = (model.meta.canvas.width, model.meta.canvas.height);
     let size = render::output_size(canvas, args.size, args.width, args.height, args.scale)?;
     let view = render::fit_view(canvas, size, args.fit);
     let mut warnings = Vec::new();
     let textures = resolve_textures(&model, &textures, &args.textures, &mut warnings)?;
-    let compiled = CompiledModel::compile(model).context("compiling model")?;
-    let mut instance = ModelInstance::new(compiled);
-    warnings.extend(render::apply_params(&mut instance, &args.params)?);
+    let (mut puppet, w) = animate::puppet(model, &args.params)?;
+    warnings.extend(w);
+    if args.time.is_some() || args.motion.is_some() || args.expression.is_some() {
+        let physics = match (&args.physics, args.no_physics) {
+            (Some(path), _) => Some(animate::read_physics(path)?),
+            (None, false) => animation.physics,
+            (None, true) => None,
+        };
+        let playback = animate::Playback {
+            time: args.time.unwrap_or(0.0),
+            fps: args.fps,
+            motion: args
+                .motion
+                .as_deref()
+                .map(|m| animate::resolve_motion(m, &animation.motions))
+                .transpose()?,
+            expression: args
+                .expression
+                .as_deref()
+                .map(|e| animate::resolve_expression(e, &animation.expressions))
+                .transpose()?,
+            physics,
+            effects: !args.no_effects,
+        };
+        let time = playback.time;
+        let updates = animate::advance(&mut puppet, playback)?;
+        println!("advanced {time}s in {updates} update(s)");
+    } else if args.physics.is_some() || args.no_physics || args.no_effects {
+        warnings.push(
+            "--physics, --no-physics and --no-effects only apply with --time, --motion \
+             or --expression"
+                .to_owned(),
+        );
+    }
     for w in &warnings {
         eprintln!("warning: {w}");
     }
 
     let gpu = render::Gpu::new(args.backend.as_deref())?;
-    let result = gpu.render(&instance, &textures, size, &view, args.background);
+    let result = gpu.render(puppet.instance(), &textures, size, &view, args.background);
     let adapter = format!("{} ({:?})", gpu.adapter_info.name, gpu.adapter_info.backend);
     gpu.leak();
     let image = result?;

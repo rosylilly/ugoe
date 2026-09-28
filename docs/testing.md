@@ -67,6 +67,29 @@ WGPU_BACKEND=gl LIBGL_ALWAYS_SOFTWARE=1 just test-gpu -- --nocapture
 WSL2 では環境変数を付けないと dzn (Vulkan on D3D12) が選ばれることがあります。dzn はインスタンスの破棄時に SIGSEGV を起こすので、テストはデバイスを static に置いて破棄しないようにしています (`crates/ugoe-render/tests/gpu.rs`)。
 
 
+## モーションの途中の絵を確かめる
+
+モーション・物理・表情の結果は、自動テスト (`crates/ugoe/tests/m3_puppet.rs`・`crates/ugoe-editor-core/tests/m3_workflow.rs`) が
+パラメータと頂点の値で確かめます。見た目は次の手順で PNG にして目で確かめます (GPU が無ければ lavapipe / llvmpipe で動きます)。
+
+```sh
+# エディタで作ったモデル (物理・モーション・表情を含む .ugoe) の、モーション `Shake` の途中のコマ
+just cli render model.ugoe -o shake-0.25.png --scale 2 --motion Shake --time 0.25
+just cli render model.ugoe -o shake-0.50.png --scale 2 --motion Shake --time 0.5
+# 同じ時刻を物理なしで描き、髪の遅れ (物理の効果) を見比べる
+just cli render model.ugoe -o shake-0.25-still.png --scale 2 --motion Shake --time 0.25 --no-physics
+# 表情だけ・物理だけ (頭を 30 にした直後から 0.2 秒揺らす)
+just cli render model.ugoe -o smile.png --expression Smile --no-effects
+just cli render model.ugoe -o swing.png --param AngleX=30 --time 0.2
+```
+
+- `--time` は `Puppet::update(1 / fps)` を繰り返して進めるので (既定 60 fps)、物理の揺れもその時刻のものになります。
+  `--param` の値は基準値になり、モーションの対象のパラメータはモーションの値で上書きされます。
+- 目パチは乱数のシードで決まるので同じ時刻なら同じ絵ですが、見比べるときは `--no-effects` で止めると分かりやすくなります。
+- 連番のコマは、`--time` を変えて繰り返し呼びます (例: `for t in 0 0.1 0.2 0.3; do just cli render m.ugoe -o f-$t.png --motion Shake --time $t; done`)。
+- 自動の描画テスト `crates/ugoe-cli/tests/m3_render_gpu.rs` (`just test-gpu`) も同じ手順で `shake-*.png` などを
+  一時ディレクトリの `ugoe-m3-render/` に残します。
+
 ## AI 関連
 
 - 実際の API は CI で呼びません。`FakeProvider` に録画した応答を読ませてテストします。
