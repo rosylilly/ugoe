@@ -18,6 +18,20 @@ export type ViewportStatus = "loading" | "ready" | "unbuilt" | "error";
 /** WebPuppet の段 (`set_enabled` の名前)。 */
 export type PuppetStage = "physics" | "eye_blink" | "breath" | "lip_sync" | "pose";
 
+/**
+ * ビューポートを毎フレーム動かすもの (プレビューモード、lib/preview/)。設定している間はモデルを
+ * `update(dt)` で動かし続け、編集用のパラメータの値 (`parameterValues`) を WebPuppet に書かない。
+ */
+export interface FrameDriver {
+  /** 動かす段 (`set_enabled`)。モデルを読み直すたびにも設定し直す。 */
+  readonly stages: Record<PuppetStage, boolean>;
+  /** モデルを読み込んだ直後 (設定した時と、読み直し・作り直しの後)。値や再生の設定を渡し直す。 */
+  loaded(puppet: WebPuppet): void;
+  /** `update(dt)` の直前と直後 (描画の前)。 */
+  beforeUpdate?(puppet: WebPuppet, dt: number): void;
+  afterUpdate(puppet: WebPuppet): void;
+}
+
 /** 1 フレームに進める時間の上限 (秒)。タブが裏に回って戻ったときに大きく跳ばないように。 */
 const MAX_FRAME_DT = 0.1;
 
@@ -46,6 +60,11 @@ export class ViewportController {
    * 物理を進めて描き続ける。止めると物理を外し、編集中の姿 (スライダーの値) に戻す。
    */
   previewingPhysics = $state(false);
+  /**
+   * `FrameDriver` (プレビューモード) で動かしているか (docs/editor.md#プレビューモード)。
+   * 動かしている間、編集のパネルがスライダーの値を変えても表示に出さない。
+   */
+  driven = $state(false);
   /** プレビューで 1 フレーム進めるたびに増える (オーバーレイが評価結果を読み直すため)。 */
   animationFrame = $state(0);
 
@@ -61,6 +80,7 @@ export class ViewportController {
   /** 前のプレビューのフレームの時刻 (ms)。0 なら最初のフレーム。 */
   #lastTime = 0;
   #animation = 0;
+  #driver: FrameDriver | null = null;
 
   /** 描画中の WebPuppet (ヒットテストなどの問い合わせ用)。 */
   get puppet(): WebPuppet | null {
@@ -124,6 +144,8 @@ export class ViewportController {
 
   setParameter(id: string, value: number): void {
     this.parameterValues[id] = value;
+    // プレビューモードの値は別に持つ。編集用の値は抜けたときに WebPuppet へ書き戻す。
+    if (this.#driver) return;
     if (this.#puppet?.set_parameter(id, value)) {
       this.parameterValues[id] = this.#puppet.parameter(id) ?? value;
       this.requestRender();
@@ -135,7 +157,7 @@ export class ViewportController {
    * パラメータ (スライダー) や頭のデフォーマを動かすと揺れる。
    */
   startPhysicsPreview(): void {
-    if (this.previewingPhysics) return;
+    if (this.previewingPhysics || this.#driver) return;
     this.previewingPhysics = true;
     this.#lastTime = 0;
     this.#puppet?.reset_physics();
@@ -163,6 +185,39 @@ export class ViewportController {
   }
 
   /**
+   * 毎フレーム動かすもの (プレビューモード) を設定する。物理のプレビューは止める。
+   * `null` で外すと、モデルを読み直して (物理・モーション・表情・目パチなどの状態を初めからにして)
+   * 編集中の姿 (`parameterValues`) に戻す。
+   */
+  setDriver(driver: FrameDriver | null): void {
+    if (driver === this.#driver) return;
+    this.stopPhysicsPreview();
+    this.#driver = driver;
+    this.driven = driver !== null;
+    cancelAnimationFrame(this.#animation);
+    this.#animation = 0;
+    this.#lastTime = 0;
+    const puppet = this.#puppet;
+    if (driver) {
+      if (puppet?.has_model()) {
+        puppet.reset_physics();
+        this.#applyStages();
+        driver.loaded(puppet);
+      }
+      this.#scheduleAnimation();
+    } else if (this.#model) {
+      this.#load(this.#model);
+    }
+    this.animationFrame += 1;
+    this.requestRender();
+  }
+
+  /** 段の有効・無効を設定し直す (FrameDriver の `stages` を変えた後に呼ぶ)。 */
+  applyStages(): void {
+    this.#applyStages();
+  }
+
+  /**
    * 次に読み込むモデル (setModel) では、今の値を引き継がずにパラメータを既定値から始める。
    * 別のモデルに替わるとき (新規・PSD から新規・開く) に、読み直しの前に呼ぶ。
    */
@@ -171,6 +226,7 @@ export class ViewportController {
   }
 
   resetParameters(): void {
+    if (this.#driver) return;
     this.#puppet?.reset_parameters();
     this.#syncParameters();
     this.requestRender();
@@ -265,7 +321,7 @@ export class ViewportController {
   #applyStages(): void {
     const puppet = this.#puppet;
     if (!puppet?.has_model()) return;
-    const stages: Record<PuppetStage, boolean> = {
+    const stages: Record<PuppetStage, boolean> = this.#driver?.stages ?? {
       physics: this.previewingPhysics,
       eye_blink: false,
       breath: false,
@@ -282,7 +338,7 @@ export class ViewportController {
   }
 
   #scheduleAnimation(): void {
-    if (this.#animation || !this.previewingPhysics) return;
+    if (this.#animation || !(this.previewingPhysics || this.#driver)) return;
     this.#animation = requestAnimationFrame((now) => {
       this.#animation = 0;
       this.#animate(now);
@@ -292,11 +348,16 @@ export class ViewportController {
   /** プレビューの 1 フレーム: 経過時間だけ物理を進めて描く。 */
   #animate(now: number): void {
     const puppet = this.#puppet;
-    if (!puppet || !this.previewingPhysics) return;
+    const driver = this.#driver;
+    if (!puppet || !(this.previewingPhysics || driver)) return;
     const dt = this.#lastTime ? Math.min((now - this.#lastTime) / 1000, MAX_FRAME_DT) : 0;
     this.#lastTime = now;
     try {
-      puppet.update(dt);
+      if (puppet.has_model()) {
+        driver?.beforeUpdate?.(puppet, dt);
+        puppet.update(dt);
+        driver?.afterUpdate(puppet);
+      }
     } catch (e) {
       console.warn("ugoe:", e);
     }
@@ -314,7 +375,10 @@ export class ViewportController {
         : puppet.load_json(model.json);
       for (const warning of warnings) console.warn("ugoe:", warning);
       this.#applyStages();
-      if (this.#resetOnLoad) {
+      if (this.#driver) {
+        // プレビュー中の読み直し (別の WebPuppet への作り直しなど)。値はプレビューのものを渡す。
+        this.#driver.loaded(puppet);
+      } else if (this.#resetOnLoad) {
         // WebPuppet は同じ ID の値を引き継ぐので、既定値に戻す。
         this.#resetOnLoad = false;
         puppet.reset_parameters();
@@ -325,7 +389,7 @@ export class ViewportController {
           puppet.set_parameter(id, value);
         }
       }
-      this.#syncParameters();
+      if (!this.#driver) this.#syncParameters();
       if (this.status === "error") {
         this.status = "ready";
         this.message = null;

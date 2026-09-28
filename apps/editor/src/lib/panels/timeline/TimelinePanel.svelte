@@ -3,7 +3,7 @@
   状態 (選択中のモーション・再生位置など) は TimelineState、編集は Command (docs/editor.md#タイムライン)。
 -->
 <script lang="ts">
-import { onDestroy } from "svelte";
+import { onDestroy, untrack } from "svelte";
 import type { EditorDocument } from "../../document.svelte";
 import type { ViewportController } from "../../viewport/controller.svelte";
 import ExpressionEditor from "./ExpressionEditor.svelte";
@@ -21,6 +21,17 @@ let { doc, viewport }: Props = $props();
 // svelte-ignore state_referenced_locally
 const timeline = new TimelineState(doc, viewport);
 onDestroy(() => timeline.dispose());
+
+// プレビューモード (lib/preview/) に入ったら、再生と表情のプレビューを止める。表情のプレビューは
+// 重ねる前の値 (編集中の姿) に戻すので、プレビューを出たときにもその姿に戻る。
+$effect(() => {
+  if (viewport.driven) {
+    untrack(() => {
+      timeline.stop();
+      timeline.endPreview();
+    });
+  }
+});
 
 const STORAGE_KEY = "ugoe.timeline";
 let tab = $state<"motions" | "expressions">("motions");

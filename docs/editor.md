@@ -281,6 +281,46 @@
 - 始めるときと止めるときに `reset_physics` で粒子を静止姿勢に戻します。止めると物理の段を止め (動的物理の加算量が 0 に戻る)、物理が書き込んだパラメータをスライダーの値に戻すので、編集中の姿に戻ります。
 - プレビュー中に編集すると、モデルと物理を読み直し、揺れは静止した姿からやり直します。
 
+## プレビューモード
+
+組み上げたモデルがランタイムでどう動くか (物理・目パチ・呼吸・モーション・表情を掛けた仕上がり) を、すべての
+パラメータのスライダーで確かめるモード (T0635)。コードは `apps/editor/src/lib/preview/`。
+
+- ヘッダーの「Preview」で入り、同じボタン (「Exit preview」) で出ます。プレビュー中は左の列・タイムライン・右の列
+  (インスペクタ・物理・パラメータ) とビューポートの編集のツール (選択・ギズモ・物理の表示) を隠し、右にプレビューの
+  パネル (`PreviewPanel.svelte`) を出します。編集のパネルは壊さずに CSS で隠すので、出ると元の状態に戻ります。
+- **コマンドは送りません。** Undo / Redo のボタンを隠し、ショートカットも受けません。ファイルメニューは使えますが、
+  モデルが変わる操作 (新規・開く・取り込み) の後はプレビューを出ます。
+- **動かし方:** `PreviewMode` (`preview.svelte.ts`) を `ViewportController.setDriver` に渡すと、ビューポートは
+  `requestAnimationFrame` ごとに `WebPuppet.update(dt)` (1 フレーム最大 0.1 秒) を呼んで描きます
+  (`FrameDriver`。`update` の前後に `beforeUpdate` / `afterUpdate`、モデルを読み込むたびに `loaded`)。
+  適用順と手で動かした値との関係は [spec/motion.md](spec/motion.md#フレーム内の適用順) のとおりです
+  (たとえば、再生中のモーションの対象はスライダーで動かしても上書きされる)。
+- **段:** 物理・目パチ・呼吸・リップシンク・ポーズをそれぞれ `set_enabled` で切り替えます。最初はリップシンクだけ止め、
+  ほかは有効です (リップシンクは音量を与えると口のパラメータを上書きするため)。リップシンクの音量はパネルの
+  スライダー (0〜1) で与え、段を止めると `set_lip_sync_level(undefined)` に戻します。モデル (`effects`・`pose`) や
+  物理の設定の無い段には「(not set up)」と出します。物理の「Reset」は `reset_physics`。
+- **モーション・表情:** ドキュメントのもの (`EditorDocument.motions` / `expressions`、保存前のものも) を JSON で
+  `start_motion_json(json, "force")`・`set_expression_json` に渡します。モーションはフェード・ループ・イベント込みで
+  再生し (発火したイベントを最近の 5 つまで出す)、「Stop」は `stop_motions` (フェードアウト)。表情は 1 つだけ選び、
+  「(none)」で `stop_expressions`。
+- **物理の設定:** バンドル (`get_model_bundle`) にはドキュメントの物理が入っています。バンドルが作れず JSON で表示している
+  ときは物理が無いので、`WebPuppet` に物理が無ければ `set_physics_json` でドキュメントの物理を渡します。
+- **値を別に持つ:** プレビューのスライダーの値 (`PreviewMode.values`) は、編集用の値
+  (`ViewportController.parameterValues`) と別です。入るときに編集用の値を写して始め、毎フレーム `update` の後の値
+  (物理・呼吸などを掛けた値) を表示します。プレビュー中は `ViewportController.setParameter` が編集用の値を書き換えても
+  `WebPuppet` に渡しません。出ると `setDriver(null)` がモデルを読み直し (物理・モーション・表情・目パチの状態を
+  初めからにする)、段をすべて止めて編集用の値を書き戻すので、入る前の姿に戻ります (ヘッドレスの Chrome で、
+  入る前と出た後のビューポートの画像がバイト単位で一致することを確かめた)。次に入るとまた編集中の姿から始めます。
+- **ほかのプレビューとの優先:** プレビューモードが優先です。入ると物理のプレビュー (T0629) を止め
+  (`setDriver` が `stopPhysicsPreview` を呼ぶ)、タイムラインの再生と表情のプレビューを止めます (`TimelinePanel` が
+  `ViewportController.driven` を見て `stop`・`endPreview`)。プレビュー中は物理のプレビューを始められません。
+- スライダーは値域の 1/1000 程度のきりのよい刻み、値の欄は編集のパネルと同じ検査 (`parseValue`) で、値域の外は拒否します。
+  並びはパラメータグループの定義順 (区切りの中はモデルの順、グループの無いものは最後の「Other」)。純粋な関数は
+  `preview.ts` (Vitest)。
+- **まだ無いもの:** フェイストラッキング (ビューアの T0703 の仕組み) は T0636 で足す (`FrameDriver.beforeUpdate` で入力を渡す想定)。目パチ・呼吸・リップシンクの
+  設定 (`Model.effects`) を編集するコマンドと画面はまだ無い (読み込んだモデルの設定で動く)。
+
 ## PSD の取り込み
 
 `ugoe_editor_core::import::import_psd(model, bytes, options)` が、PSD (`ugoe-psd` の `LayerTree`) から

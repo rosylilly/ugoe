@@ -5,6 +5,7 @@
   右の列はインスペクタ (上) とパラメータ (下) に分け、区切りをドラッグ (または矢印キー) で動かす (lib/layout.ts)。
   上の区画は「Inspector」「Physics」(lib/panels/physics/)「Verify」(lib/panels/verify/) をタブで切り替える。
   Undo / Redo のショートカット (lib/shortcuts.ts) もここで受ける。
+  プレビューモード (lib/preview/) では、左の列・タイムライン・編集のツールと右の列を隠し、右にプレビューのパネルを出す。
 -->
 <script lang="ts">
 import { EditorDocument } from "./lib/document.svelte";
@@ -21,6 +22,8 @@ import TreePanel from "./lib/panels/TreePanel.svelte";
 import TimelinePanel from "./lib/panels/timeline/TimelinePanel.svelte";
 import VerifyPanel from "./lib/panels/verify/VerifyPanel.svelte";
 import { VerifyView } from "./lib/panels/verify/verifyView.svelte";
+import PreviewPanel from "./lib/preview/PreviewPanel.svelte";
+import { PreviewMode } from "./lib/preview/preview.svelte";
 import { Selection } from "./lib/selection.svelte";
 import { historyShortcut, isMac, isTextEntry } from "./lib/shortcuts";
 import { ViewportController } from "./lib/viewport/controller.svelte";
@@ -32,6 +35,7 @@ const viewport = new ViewportController();
 const selection = new Selection();
 const physics = new PhysicsView();
 const verify = new VerifyView();
+const preview = new PreviewMode(doc, viewport);
 let info = $state<AppInfo | null>(null);
 let fileMenu = $state<FileMenu>();
 
@@ -47,7 +51,7 @@ const redoKeys = mac ? "Cmd+Shift+Z" : "Ctrl+Shift+Z / Ctrl+Y";
 /** Undo / Redo のショートカット。入力欄の中では、入力欄自身の取り消しに任せる。 */
 function onKeydown(e: KeyboardEvent): void {
   const action = historyShortcut(e, mac);
-  if (!action || isTextEntry(e.target)) return;
+  if (!action || isTextEntry(e.target) || preview.active) return;
   e.preventDefault();
   if (action === "undo") doc.undo();
   else doc.redo();
@@ -91,7 +95,7 @@ $effect(() => {
 
 <svelte:window onkeydown={onKeydown} />
 
-<div class="shell">
+<div class="shell" class:previewing={preview.active}>
   <header>
     <strong>ugoe</strong>
     <span class="muted">{info ? `v${info.version}` : "…"}</span>
@@ -99,14 +103,22 @@ $effect(() => {
     <FileMenu
       bind:this={fileMenu}
       onchange={(replaced) => {
+        preview.exit();
         viewport.fit();
         if (replaced) viewport.resetParametersOnNextModel();
         doc.refresh();
       }}
     />
     <span class="spacer"></span>
-    <button onclick={() => doc.undo()} title="Undo ({undoKeys})">Undo</button>
-    <button onclick={() => doc.redo()} title="Redo ({redoKeys})">Redo</button>
+    <button class:active={preview.active} onclick={() => preview.toggle()}
+      title={preview.active
+        ? "Leave the preview and go back to the pose you were editing"
+        : "Preview the model with the runtime (physics, eye blink, breath, motions) and all parameters"}
+      >{preview.active ? "Exit preview" : "Preview"}</button>
+    {#if !preview.active}
+      <button onclick={() => doc.undo()} title="Undo ({undoKeys})">Undo</button>
+      <button onclick={() => doc.redo()} title="Redo ({redoKeys})">Redo</button>
+    {/if}
     <HelpButton />
   </header>
   <aside class="left">
@@ -116,11 +128,11 @@ $effect(() => {
     <div class="viewport-area">
       <Viewport controller={viewport} model={doc.model} hint={doc.empty ? EMPTY_VIEWPORT_HINT : null}>
         {#snippet overlay(controller)}
-          <ToolOverlay {controller} {doc} {selection} {physics} {verify} />
+          {#if !preview.active}<ToolOverlay {controller} {doc} {selection} {physics} {verify} />{/if}
         {/snippet}
       </Viewport>
     </div>
-    <TimelinePanel {doc} {viewport} />
+    <div class="timeline-slot"><TimelinePanel {doc} {viewport} /></div>
   </main>
   <aside class="right" bind:this={rightColumn}>
     <div class="pane inspector" style:flex-basis="{split * 100}%">
@@ -165,9 +177,35 @@ $effect(() => {
       <ParametersPanel parameters={doc.parameters} {viewport} {doc} {selection} />
     </div>
   </aside>
+  {#if preview.active}
+    <aside class="preview">
+      <PreviewPanel {preview} {doc} {viewport} />
+    </aside>
+  {/if}
 </div>
 
 <style>
+  /* プレビュー中は編集の列を隠す (中身は壊さず、出たときに元の状態で戻る)。 */
+  .shell.previewing {
+    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-areas: "header header" "viewport preview";
+  }
+  .shell.previewing .left,
+  .shell.previewing .right,
+  .shell.previewing .timeline-slot {
+    display: none;
+  }
+  .timeline-slot {
+    display: contents;
+  }
+  .preview {
+    grid-area: preview;
+    border-left: 1px solid var(--border);
+  }
+  header button.active {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
   .center {
     display: flex;
     flex-direction: column;
