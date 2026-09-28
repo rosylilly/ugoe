@@ -1,11 +1,11 @@
 ---
 id: T0106
 title: 評価結果の変更フラグ
-status: todo
+status: in-progress
 milestone: M1
 crates: [ugoe-runtime]
 depends_on: [T0104]
-assignee:
+assignee: claude-worker-T0106
 ---
 
 # T0106: 評価結果の変更フラグ
