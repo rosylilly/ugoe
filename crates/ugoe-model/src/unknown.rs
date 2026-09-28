@@ -10,7 +10,7 @@ use crate::avatar::{
 };
 use crate::deformer::DeformerKind;
 use crate::expression::{Expression, ExpressionOp};
-use crate::keyform::{KeyformGrid, KeyformInference, KeyformOrigin};
+use crate::keyform::{KeyformGrid, KeyformInference, KeyformInterpolation, KeyformOrigin};
 use crate::mesh::{BlendMode, MaskMode};
 use crate::motion::{CurveTarget, Motion, Segment};
 use crate::parameter::ParameterKind;
@@ -148,6 +148,16 @@ fn check_grid<T>(path: &str, grid: &KeyformGrid<T>, found: &mut Vec<String>) {
     if let Some(KeyformInference::Unknown) = grid.inference {
         found.push(format!("{path}.keyforms.inference"));
     }
+    if grid.interpolation == KeyformInterpolation::Unknown {
+        found.push(format!("{path}.keyforms.interpolation"));
+    }
+    for (index, shape) in grid.blend_shapes.iter().enumerate() {
+        check_grid(
+            &format!("{path}.keyforms.blend_shapes[{index}]"),
+            shape,
+            found,
+        );
+    }
 }
 
 #[cfg(test)]
@@ -170,6 +180,7 @@ mod tests {
         mesh["mask_mode"] = json!("xor");
         mesh["keyforms"]["origins"] = json!(["authored", "predicted", "derived"]);
         mesh["keyforms"]["inference"] = json!({ "method": "neural", "weights": [1, 2] });
+        mesh["keyforms"]["interpolation"] = json!("bezier");
         value["parameters"][0]["kind"] = json!("vector");
         value["deformers"] = json!([{
             "id": "Bend",
@@ -191,6 +202,10 @@ mod tests {
         assert_eq!(mesh.keyforms.origins[1], KeyformOrigin::Unknown);
         assert_eq!(mesh.keyforms.origin(1), KeyformOrigin::Authored);
         assert_eq!(mesh.keyforms.inference, Some(KeyformInference::Unknown));
+        assert_eq!(
+            mesh.keyforms.interpolation.effective(),
+            KeyformInterpolation::Linear
+        );
         assert_eq!(model.parameters[0].kind.effective(), ParameterKind::Normal);
         assert_eq!(model.deformers[0].kind, DeformerKind::Unknown);
         assert_eq!(
@@ -202,6 +217,7 @@ mod tests {
                 "meshes[Quad].mask_mode",
                 "meshes[Quad].keyforms.origins[1]",
                 "meshes[Quad].keyforms.inference",
+                "meshes[Quad].keyforms.interpolation",
             ]
         );
         // 未知の値は検証エラーにしない。

@@ -29,6 +29,22 @@ export interface KeyformGrid<T = Record<string, unknown>> {
   inference?: KeyformInference | null;
   /** mirror のセルのミラー元。 */
   mirror_source?: MirrorSource | null;
+  /** キーの間の補間の種類 (ugoe_model::KeyformInterpolation)。省略なら linear。 */
+  interpolation?: string;
+}
+
+/** 格子の補間の種類の表示用の分類。知らない値 (新しい版のファイル) は `unknown` (ランタイムは線形で補間する)。 */
+export type Interpolation = "linear" | "smooth" | "unknown";
+
+/** 格子の補間の種類 (docs/spec/evaluation.md#曲線補間)。 */
+export function gridInterpolation(grid: KeyformGrid): Interpolation {
+  const value = grid.interpolation ?? "linear";
+  return value === "linear" || value === "smooth" ? value : "unknown";
+}
+
+/** 曲線補間を設定できる種類か (形を持つメッシュ・ワープ・回転。パーツは形を持たない)。 */
+export function supportsSmooth(kind: KeyformKind): boolean {
+  return kind !== "part";
 }
 
 export interface MeshKeyformData {

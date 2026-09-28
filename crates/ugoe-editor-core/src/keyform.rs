@@ -11,7 +11,7 @@ use ugoe_model::deformer::{DeformerKind, RotationKeyform, WarpKeyform};
 use ugoe_model::mesh::{GlueKeyform, MeshKeyform};
 use ugoe_model::parameter::ParameterKind;
 use ugoe_model::part::PartKeyform;
-use ugoe_model::{KeyformGrid, KeyformInference, Model, ParamId};
+use ugoe_model::{KeyformGrid, KeyformInference, KeyformInterpolation, Model, ParamId};
 use ugoe_rigging::{InferScope, KeyformValues, infer_additive_target};
 
 use crate::command::{KeyformCell, KeyformTarget};
@@ -136,6 +136,41 @@ fn cell_error(target: &KeyformTarget) -> impl Fn(CellError) -> EditError + '_ {
             error,
         }
     }
+}
+
+/// `Command::SetKeyformInterpolation` を適用する (`docs/spec/evaluation.md#曲線補間`)。
+///
+/// `blend_shape` を指定すると、そのパラメータを軸に持つブレンドシェイプ格子に設定する。
+pub(crate) fn set_interpolation(
+    model: &mut Model,
+    target: &KeyformTarget,
+    blend_shape: Option<&ParamId>,
+    interpolation: KeyformInterpolation,
+) -> Result<(), EditError> {
+    let grid = grid_mut(model, target)?;
+    // パーツとグルーの格子は形を持たないので、曲線補間は効かない (ランタイムはいつも線形で補間する)。
+    let shapeless = matches!(grid, GridMut::Part(_) | GridMut::Glue(_));
+    if interpolation == KeyformInterpolation::Unknown
+        || (shapeless && interpolation == KeyformInterpolation::Smooth)
+    {
+        return Err(EditError::UnsupportedInterpolation {
+            target: target.to_string(),
+            interpolation,
+        });
+    }
+    with_grid!(grid, |g| {
+        let g = match blend_shape {
+            None => g,
+            Some(parameter) => {
+                let index = g
+                    .blend_shape_index(parameter)
+                    .ok_or_else(|| not_found("blend shape grid", parameter.as_str()))?;
+                &mut g.blend_shapes[index]
+            }
+        };
+        g.interpolation = interpolation;
+    });
+    Ok(())
 }
 
 /// `Command::AddKeyformKey` を適用する (`docs/spec/keyform-inference.md#キーの追加とセルの由来`)。

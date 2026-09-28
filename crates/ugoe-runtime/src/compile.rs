@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::Arc;
 
-use ugoe_model::{DeformerKind, KeyformGrid, MaskMode, Model};
+use ugoe_model::{DeformerKind, KeyformGrid, KeyformInterpolation, MaskMode, Model};
 
 use crate::blend_shape::CompiledBlendShape;
 use crate::keyform::ResolvedBinding;
@@ -36,8 +36,8 @@ pub struct CompiledModel {
     pub(crate) glues: Vec<CompiledGlue>,
     /// 当たり判定ごとの判定に使うメッシュ (`Model::hit_areas` の並び)。
     pub(crate) hit_area_meshes: Vec<u32>,
-    /// すべてのキーフォーム格子のうち最大の軸数。重みバッファの事前確保に使う。
-    pub(crate) max_axes: usize,
+    /// すべてのキーフォーム格子のうち最大の重みの個数。重みバッファの事前確保に使う。
+    pub(crate) max_weights: usize,
 }
 
 #[derive(Debug)]
@@ -109,7 +109,8 @@ impl CompiledModel {
                         .as_ref()
                         .map(|id| lookup(&part_index, id.as_str()))
                         .transpose()?,
-                    bindings: resolve(&params, &p.keyforms)?,
+                    // パーツとグルーのフィールドは形ではないので、いつも線形で補間する。
+                    bindings: resolve_linear(&params, &p.keyforms)?,
                 })
             })
             .collect::<Result<Vec<_>, CompileError>>()?;
@@ -189,7 +190,7 @@ impl CompiledModel {
                 Ok(CompiledGlue {
                     mesh_a: lookup(&mesh_index, g.mesh_a.as_str())?,
                     mesh_b: lookup(&mesh_index, g.mesh_b.as_str())?,
-                    bindings: resolve(&params, &g.keyforms)?,
+                    bindings: resolve_linear(&params, &g.keyforms)?,
                 })
             })
             .collect::<Result<Vec<_>, CompileError>>()?;
@@ -202,19 +203,29 @@ impl CompiledModel {
 
         let part_order = topological_order(parts.iter().map(|p| p.parent));
         let deformer_order = topological_order(deformers.iter().map(|d| d.parent));
-        let shape_axes = |shapes: &[CompiledBlendShape]| {
-            shapes.iter().map(|s| s.bindings.len()).max().unwrap_or(0)
+        // 軸ごとの重みの個数 (線形は 2、曲線は最大 4) の積。
+        let grid_weights = |bindings: &[ResolvedBinding]| {
+            bindings
+                .iter()
+                .fold(1usize, |n, b| n.saturating_mul(b.max_weights()))
         };
-        let max_axes = parts
+        let shape_weights = |shapes: &[CompiledBlendShape]| {
+            shapes
+                .iter()
+                .map(|s| grid_weights(&s.bindings))
+                .max()
+                .unwrap_or(1)
+        };
+        let max_weights = parts
             .iter()
-            .map(|p| p.bindings.len())
-            .chain(deformers.iter().map(|d| d.bindings.len()))
-            .chain(deformers.iter().map(|d| shape_axes(&d.blend_shapes)))
-            .chain(meshes.iter().map(|m| m.bindings.len()))
-            .chain(meshes.iter().map(|m| shape_axes(&m.blend_shapes)))
-            .chain(glues.iter().map(|g| g.bindings.len()))
+            .map(|p| grid_weights(&p.bindings))
+            .chain(deformers.iter().map(|d| grid_weights(&d.bindings)))
+            .chain(deformers.iter().map(|d| shape_weights(&d.blend_shapes)))
+            .chain(meshes.iter().map(|m| grid_weights(&m.bindings)))
+            .chain(meshes.iter().map(|m| shape_weights(&m.blend_shapes)))
+            .chain(glues.iter().map(|g| grid_weights(&g.bindings)))
             .max()
-            .unwrap_or(0);
+            .unwrap_or(1);
 
         Ok(Arc::new(Self {
             model,
@@ -226,7 +237,7 @@ impl CompiledModel {
             mask_order,
             glues,
             hit_area_meshes,
-            max_axes,
+            max_weights,
         }))
     }
 
@@ -401,16 +412,29 @@ fn resolve<T>(
     params: &ParameterValues,
     grid: &KeyformGrid<T>,
 ) -> Result<Vec<ResolvedBinding>, CompileError> {
+    resolve_with(params, grid, grid.interpolation)
+}
+
+/// 格子の補間の種類によらず、線形の軸として解決する。
+fn resolve_linear<T>(
+    params: &ParameterValues,
+    grid: &KeyformGrid<T>,
+) -> Result<Vec<ResolvedBinding>, CompileError> {
+    resolve_with(params, grid, KeyformInterpolation::Linear)
+}
+
+fn resolve_with<T>(
+    params: &ParameterValues,
+    grid: &KeyformGrid<T>,
+    interpolation: KeyformInterpolation,
+) -> Result<Vec<ResolvedBinding>, CompileError> {
     grid.bindings
         .iter()
         .map(|b| {
             let param: ParamIndex = params
                 .index_of(b.parameter.as_str())
                 .ok_or_else(|| CompileError::UnknownParameter(b.parameter.to_string()))?;
-            Ok(ResolvedBinding {
-                param,
-                keys: b.keys.clone(),
-            })
+            Ok(ResolvedBinding::new(param, b.keys.clone(), interpolation))
         })
         .collect()
 }

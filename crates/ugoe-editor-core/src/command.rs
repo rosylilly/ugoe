@@ -13,8 +13,8 @@ use ugoe_model::physics::{
     PhysicsCollider, PhysicsInput, PhysicsNormalization, PhysicsOutput, PhysicsParticle, PhysicsRig,
 };
 use ugoe_model::{
-    BlendMode, Deformer, DeformerId, KeyformGrid, KeyformInference, MaskMode, MaskRef, Mesh,
-    MeshId, ParamId, Parameter, Part, PartId,
+    BlendMode, Deformer, DeformerId, KeyformGrid, KeyformInference, KeyformInterpolation, MaskMode,
+    MaskRef, Mesh, MeshId, ParamId, Parameter, Part, PartId,
 };
 
 use crate::automesh::AutoMeshOptions;
@@ -582,6 +582,16 @@ pub enum Command {
     /// 衝突体 (`collider.id` のもの) の名前・取り付け先・形状を置き換える。
     SetPhysicsCollider {
         collider: PhysicsCollider,
+    },
+    /// 格子のキーの間の補間の種類 (`KeyformGrid::interpolation`) を設定する
+    /// (`docs/spec/evaluation.md#曲線補間`)。セルの値は変えない。
+    /// `blend_shape` を指定すると、そのパラメータを軸に持つブレンドシェイプ格子に設定する。
+    /// 未知の値と、形を持たないパーツ・グルーの格子への `smooth` は拒否する。
+    SetKeyformInterpolation {
+        target: KeyformTarget,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        blend_shape: Option<ParamId>,
+        interpolation: KeyformInterpolation,
     },
 }
 

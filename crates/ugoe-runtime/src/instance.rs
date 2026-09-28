@@ -9,7 +9,7 @@ use ugoe_model::{BlendMode, DeformerKind};
 use crate::blend_shape;
 use crate::deform::{Rotation, Transform, Warp};
 use crate::dynamic::{Dynamic, DynamicOffsets};
-use crate::keyform::{self, Weights};
+use crate::keyform::{self, GridWeights, Weights};
 use crate::{CompiledModel, ParameterValues};
 
 /// 描画可能要素 (メッシュ) 1 つの評価結果。座標はキャンバス座標系。
@@ -189,9 +189,9 @@ pub struct ModelInstance {
     render_order_changed: bool,
     /// 次の `update` で、比較せずにすべてを変更ありとして報告する。
     report_all: bool,
-    scratch: Weights,
+    scratch: GridWeights,
     /// ブレンドシェイプ格子の重み (`scratch` と同時に使う)。
-    shape_scratch: Weights,
+    shape_scratch: GridWeights,
     /// 祖先を掛け合わせたパーツの不透明度。
     part_opacity: Vec<f32>,
     /// パーツ自身の不透明度の上書き `(値, 重み)` ([`ModelInstance::set_part_opacity_override`])。
@@ -249,8 +249,8 @@ impl ModelInstance {
                 DeformerKind::Rotation(_) | DeformerKind::Unknown => Vec::new(),
             })
             .collect();
-        // 重みの個数は軸数 N に対して最大 2^N (`keyform::weights`)。
-        let max_weights = 1usize << compiled.max_axes.min(20);
+        // 重みの個数は、線形の軸 2 つ・曲線の軸 4 つまでの積 (`keyform::weights`)。
+        let max_weights = compiled.max_weights.min(1 << 20);
         // 番号は一意であればよい (順序は使わない) ので Relaxed で足りる。
         static NEXT_ID: AtomicU64 = AtomicU64::new(0);
         let mut instance = Self {
@@ -264,8 +264,8 @@ impl ModelInstance {
             render_order_changed: true,
             report_all: true,
             drawables,
-            scratch: Weights::with_capacity(max_weights),
-            shape_scratch: Weights::with_capacity(max_weights),
+            scratch: GridWeights::with_capacity(max_weights),
+            shape_scratch: GridWeights::with_capacity(max_weights),
             part_opacity: vec![1.0; model.parts.len()],
             part_opacity_overrides: vec![(1.0, 0.0); model.parts.len()],
             deformer_opacity: vec![1.0; model.deformers.len()],
@@ -456,11 +456,9 @@ impl ModelInstance {
         for &p in &compiled.part_order {
             let p = p as usize;
             let part = &compiled.parts[p];
-            keyform::weights(&part.bindings, values, &mut self.scratch);
+            let (_, weights) = self.scratch.compute(&part.bindings, values);
             let own =
-                keyform::blend_scalar(&compiled.model.parts[p].keyforms, &self.scratch, |k| {
-                    k.opacity
-                });
+                keyform::blend_scalar(&compiled.model.parts[p].keyforms, weights, |k| k.opacity);
             let (value, weight) = self.part_opacity_overrides[p];
             let own = own + (value - own) * weight;
             let parent = part.parent.map_or(1.0, |i| self.part_opacity[i as usize]);
@@ -500,8 +498,8 @@ impl ModelInstance {
                 }
             }
             let offsets = dynamic.as_deref().map(|d| &d.offsets);
-            keyform::weights(&deformer.bindings, values, &mut self.scratch);
-            let weights = &self.scratch;
+            // 形 (制御点・原点・角度・拡大率) は `weights`、それ以外は `linear` の重みで補間する。
+            let (weights, linear) = self.scratch.compute(&deformer.bindings, values);
             let own_opacity = match &model.deformers[d].kind {
                 DeformerKind::Warp(warp) => {
                     // 自分の制御点を取り出して親の変換を借りる (空の Vec との交換なので確保は起きない)。
@@ -512,19 +510,24 @@ impl ModelInstance {
                             *p += *q * w;
                         }
                     }
-                    let mut opacity = keyform::blend_scalar(&warp.keyforms, weights, |k| k.opacity);
+                    let mut opacity = keyform::blend_scalar(&warp.keyforms, linear, |k| k.opacity);
                     let shapes = warp
                         .keyforms
                         .blend_shapes
                         .iter()
                         .zip(&deformer.blend_shapes);
                     for (grid, shape) in shapes {
-                        if !shape.weights(values, &mut self.shape_scratch) {
+                        let Some((current, current_linear)) =
+                            shape.weights(values, &mut self.shape_scratch)
+                        else {
                             continue;
-                        }
-                        let (current, rest) = (&self.shape_scratch, &shape.rest);
+                        };
+                        let (rest, rest_linear) = (&shape.rest, &shape.rest_linear);
                         blend_shape::add_points(&mut points, grid, current, rest, |k| &k.points);
-                        opacity += blend_shape::delta_scalar(grid, current, rest, |k| k.opacity);
+                        opacity +=
+                            blend_shape::delta_scalar(grid, current_linear, rest_linear, |k| {
+                                k.opacity
+                            });
                     }
                     let parent = world_transform(
                         compiled,
@@ -549,21 +552,26 @@ impl ModelInstance {
                         origin: keyform::blend_vec2(grid, weights, |k| k.origin),
                         angle: keyform::blend_scalar(grid, weights, |k| k.angle),
                         scale: keyform::blend_scalar(grid, weights, |k| k.scale),
-                        reflect_x: keyform::blend_bool(grid, weights, |k| k.reflect_x),
-                        reflect_y: keyform::blend_bool(grid, weights, |k| k.reflect_y),
+                        reflect_x: keyform::blend_bool(grid, linear, |k| k.reflect_x),
+                        reflect_y: keyform::blend_bool(grid, linear, |k| k.reflect_y),
                     };
-                    let mut opacity = keyform::blend_scalar(grid, weights, |k| k.opacity);
+                    let mut opacity = keyform::blend_scalar(grid, linear, |k| k.opacity);
                     // 反転 (真偽値) は差分を持たない。
                     for (shape_grid, shape) in grid.blend_shapes.iter().zip(&deformer.blend_shapes)
                     {
-                        if !shape.weights(values, &mut self.shape_scratch) {
+                        let Some((current, current_linear)) =
+                            shape.weights(values, &mut self.shape_scratch)
+                        else {
                             continue;
-                        }
-                        let (g, current, rest) = (shape_grid, &self.shape_scratch, &shape.rest);
+                        };
+                        let (g, rest) = (shape_grid, &shape.rest);
                         local.origin += blend_shape::delta_vec2(g, current, rest, |k| k.origin);
                         local.angle += blend_shape::delta_scalar(g, current, rest, |k| k.angle);
                         local.scale += blend_shape::delta_scalar(g, current, rest, |k| k.scale);
-                        opacity += blend_shape::delta_scalar(g, current, rest, |k| k.opacity);
+                        opacity +=
+                            blend_shape::delta_scalar(g, current_linear, &shape.rest_linear, |k| {
+                                k.opacity
+                            });
                     }
                     if let Some(offsets) = offsets {
                         local.angle += offsets.angle(d);
@@ -599,17 +607,20 @@ impl ModelInstance {
         let values = self.parameters.as_slice();
         for (i, mesh) in model.meshes.iter().enumerate() {
             let cm = &compiled.meshes[i];
-            keyform::weights(&cm.bindings, values, &mut self.scratch);
+            // 頂点位置は `weights`、それ以外は `linear` の重みで補間する (線形の格子では同じ列)。
+            let (weights, linear) = self.scratch.compute(&cm.bindings, values);
             let grid = &mesh.keyforms;
             let out = &mut self.drawables[i];
             out.positions.fill(Vec2::ZERO);
-            let mut mul = [0.0f32; 3];
-            let mut scr = [0.0f32; 3];
-            for &(k, w) in &self.scratch {
-                let kf = &grid.keyforms[k];
-                for (p, q) in out.positions.iter_mut().zip(&kf.positions) {
+            for &(k, w) in weights {
+                for (p, q) in out.positions.iter_mut().zip(&grid.keyforms[k].positions) {
                     *p += *q * w;
                 }
+            }
+            let mut mul = [0.0f32; 3];
+            let mut scr = [0.0f32; 3];
+            for &(k, w) in linear {
+                let kf = &grid.keyforms[k];
                 mul[0] += kf.multiply_color.r * w;
                 mul[1] += kf.multiply_color.g * w;
                 mul[2] += kf.multiply_color.b * w;
@@ -617,15 +628,20 @@ impl ModelInstance {
                 scr[1] += kf.screen_color.g * w;
                 scr[2] += kf.screen_color.b * w;
             }
-            let mut own = keyform::blend_scalar(grid, &self.scratch, |k| k.opacity);
-            let mut draw_order = keyform::blend_scalar(grid, &self.scratch, |k| k.draw_order);
-            let mut mask_strength = keyform::blend_scalar(grid, &self.scratch, |k| k.mask_strength);
+            let mut own = keyform::blend_scalar(grid, linear, |k| k.opacity);
+            let mut draw_order = keyform::blend_scalar(grid, linear, |k| k.draw_order);
+            let mut mask_strength = keyform::blend_scalar(grid, linear, |k| k.mask_strength);
             for (shape_grid, shape) in grid.blend_shapes.iter().zip(&cm.blend_shapes) {
-                if !shape.weights(values, &mut self.shape_scratch) {
+                let Some((current_shape, current)) = shape.weights(values, &mut self.shape_scratch)
+                else {
                     continue;
-                }
-                let (g, current, rest) = (shape_grid, &self.shape_scratch, &shape.rest);
-                blend_shape::add_points(&mut out.positions, g, current, rest, |k| &k.positions);
+                };
+                let g = shape_grid;
+                blend_shape::add_points(&mut out.positions, g, current_shape, &shape.rest, |k| {
+                    &k.positions
+                });
+                // 形以外のフィールドは線形の重みで差分を求める。
+                let rest = &shape.rest_linear;
                 own += blend_shape::delta_scalar(g, current, rest, |k| k.opacity);
                 draw_order += blend_shape::delta_scalar(g, current, rest, |k| k.draw_order);
                 let colors: [fn(&MeshKeyform) -> f32; 6] = [
@@ -675,8 +691,8 @@ impl ModelInstance {
         let compiled = &*self.compiled;
         let values = self.parameters.as_slice();
         for (glue, cg) in compiled.model.glues.iter().zip(&compiled.glues) {
-            keyform::weights(&cg.bindings, values, &mut self.scratch);
-            let intensity = keyform::blend_scalar(&glue.keyforms, &self.scratch, |k| k.intensity);
+            let (_, weights) = self.scratch.compute(&cg.bindings, values);
+            let intensity = keyform::blend_scalar(&glue.keyforms, weights, |k| k.intensity);
             let (a, b) = (cg.mesh_a as usize, cg.mesh_b as usize);
             for pair in &glue.pairs {
                 let (ia, ib) = (usize::from(pair.a), usize::from(pair.b));
@@ -807,10 +823,11 @@ impl ModelInstance {
             }
         }
         let shapes = &self.compiled.meshes[mesh].blend_shapes;
+        let mut scratch = GridWeights::default();
         for (shape_grid, shape) in grid.blend_shapes.iter().zip(shapes) {
-            if shape.weights(self.parameters.as_slice(), &mut weights) {
+            if let Some((current, _)) = shape.weights(self.parameters.as_slice(), &mut scratch) {
                 let rest = &shape.rest;
-                blend_shape::add_points(&mut out, shape_grid, &weights, rest, |k| &k.positions);
+                blend_shape::add_points(&mut out, shape_grid, current, rest, |k| &k.positions);
             }
         }
         out
@@ -826,28 +843,28 @@ impl ModelInstance {
             return None;
         };
         let grid = &rotation.keyforms;
-        let mut weights = Weights::new();
-        keyform::weights(
-            &self.compiled.deformers[deformer].bindings,
-            self.parameters.as_slice(),
-            &mut weights,
-        );
+        let values = self.parameters.as_slice();
+        let mut scratch = GridWeights::default();
+        let (weights, linear) =
+            scratch.compute(&self.compiled.deformers[deformer].bindings, values);
         let mut out = RotationKeyform {
-            origin: keyform::blend_vec2(grid, &weights, |k| k.origin),
-            angle: keyform::blend_scalar(grid, &weights, |k| k.angle),
-            scale: keyform::blend_scalar(grid, &weights, |k| k.scale),
-            reflect_x: keyform::blend_bool(grid, &weights, |k| k.reflect_x),
-            reflect_y: keyform::blend_bool(grid, &weights, |k| k.reflect_y),
-            opacity: keyform::blend_scalar(grid, &weights, |k| k.opacity),
+            origin: keyform::blend_vec2(grid, weights, |k| k.origin),
+            angle: keyform::blend_scalar(grid, weights, |k| k.angle),
+            scale: keyform::blend_scalar(grid, weights, |k| k.scale),
+            reflect_x: keyform::blend_bool(grid, linear, |k| k.reflect_x),
+            reflect_y: keyform::blend_bool(grid, linear, |k| k.reflect_y),
+            opacity: keyform::blend_scalar(grid, linear, |k| k.opacity),
         };
         let shapes = &self.compiled.deformers[deformer].blend_shapes;
+        let mut shape_scratch = GridWeights::default();
         for (g, shape) in grid.blend_shapes.iter().zip(shapes) {
-            if shape.weights(self.parameters.as_slice(), &mut weights) {
+            if let Some((current, current_linear)) = shape.weights(values, &mut shape_scratch) {
                 let rest = &shape.rest;
-                out.origin += blend_shape::delta_vec2(g, &weights, rest, |k| k.origin);
-                out.angle += blend_shape::delta_scalar(g, &weights, rest, |k| k.angle);
-                out.scale += blend_shape::delta_scalar(g, &weights, rest, |k| k.scale);
-                out.opacity += blend_shape::delta_scalar(g, &weights, rest, |k| k.opacity);
+                out.origin += blend_shape::delta_vec2(g, current, rest, |k| k.origin);
+                out.angle += blend_shape::delta_scalar(g, current, rest, |k| k.angle);
+                out.scale += blend_shape::delta_scalar(g, current, rest, |k| k.scale);
+                let rest = &shape.rest_linear;
+                out.opacity += blend_shape::delta_scalar(g, current_linear, rest, |k| k.opacity);
             }
         }
         Some(out)
@@ -957,7 +974,10 @@ mod tests {
             id(&instance.previous),
             id(&instance.previous_render_order),
             id(&instance.changes),
-            id(&instance.scratch),
+            id(&instance.scratch.shape),
+            id(&instance.scratch.linear),
+            id(&instance.shape_scratch.shape),
+            id(&instance.shape_scratch.linear),
             id(&instance.part_opacity),
             id(&instance.deformer_opacity),
             id(&instance.deformer_affine),
@@ -1021,6 +1041,7 @@ mod tests {
             fixtures::intersection_masks(),
             fixtures::keyform_inference(),
             fixtures::blend_shapes(),
+            fixtures::smooth_arc(),
         ]
     }
 

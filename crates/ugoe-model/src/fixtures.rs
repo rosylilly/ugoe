@@ -7,7 +7,10 @@ use crate::avatar::{AvatarMeta, AvatarProfile};
 use crate::deformer::{
     Deformer, DeformerKind, RotationDeformer, RotationKeyform, WarpDeformer, WarpKeyform,
 };
-use crate::keyform::{DepthRotation, KeyformBinding, KeyformGrid, KeyformInference, KeyformOrigin};
+use crate::keyform::{
+    DepthRotation, KeyformBinding, KeyformGrid, KeyformInference, KeyformInterpolation,
+    KeyformOrigin,
+};
 use crate::mesh::{BlendMode, Glue, GlueKeyform, GluePair, MaskMode, MaskRef, Mesh, MeshKeyform};
 use crate::parameter::{Parameter, ParameterKind};
 use crate::part::{Part, PartKeyform};
@@ -978,6 +981,94 @@ pub fn blend_shapes() -> Model {
     ];
     model
 }
+
+/// 曲線補間 (`interpolation = smooth`) の格子を持つモデル (`docs/spec/evaluation.md#曲線補間`)。
+///
+/// - パラメータ `AngleX` (-30..30、既定 0) のキー -30・0・30 で、要素が中心 (128, 128) から半径
+///   [`SMOOTH_ARC_RADIUS`] の円弧の上を動く (角度 = `AngleX` 度、0 で真上)。
+///   - メッシュ `Cheek` (親なし): 四角形の中心が円弧の上。不透明度は `[1, 1, 0]`、描画順は `[500, 500, 600]`
+///   - ワープ `Face` (1×1): 格子全体が円弧に沿って平行移動する
+///   - 回転 `Jaw`: 原点が円弧の上、角度は `AngleX`
+/// - `Cheek` はブレンドシェイプ格子 `Squash` (0..1、キー 0・0.5・1、曲線補間) を持ち、
+///   `Squash = s` で頂点を下へ `40 s²` 動かす (キーの上の値は 0・10・40)。
+///
+/// すべての格子を `linear` にすると、直線で補間する同じモデルになる。
+pub fn smooth_arc() -> Model {
+    let squash = Parameter {
+        kind: ParameterKind::BlendShape,
+        ..parameter("Squash", 0.0, 0.0, 1.0)
+    };
+    let mut model = base_model(
+        "smooth_arc",
+        vec![parameter("AngleX", -30.0, 0.0, 30.0), squash],
+    );
+    let keys = [-30.0, 0.0, 30.0];
+    let on_arc = |angle: f32| {
+        let (sin, cos) = angle.to_radians().sin_cos();
+        Vec2::new(
+            128.0 + SMOOTH_ARC_RADIUS * sin,
+            128.0 - SMOOTH_ARC_RADIUS * cos,
+        )
+    };
+    let square = |c: Vec2, dy: f32| {
+        let mut r = rect(c.x - 8.0, c.y - 8.0, c.x + 8.0, c.y + 8.0);
+        for p in &mut r {
+            p.y += dy;
+        }
+        r
+    };
+
+    let mut cheek = grid1(
+        "AngleX",
+        &keys,
+        keys.iter()
+            .zip([(1.0, 500.0), (1.0, 500.0), (0.0, 600.0)])
+            .map(|(&a, (opacity, order))| mesh_keyform(square(on_arc(a), 0.0), opacity, order))
+            .collect(),
+    );
+    cheek.interpolation = KeyformInterpolation::Smooth;
+    let mut squash = grid1(
+        "Squash",
+        &[0.0, 0.5, 1.0],
+        [0.0, 10.0, 40.0]
+            .map(|dy| mesh_keyform(square(on_arc(0.0), dy), 1.0, 500.0))
+            .to_vec(),
+    );
+    squash.interpolation = KeyformInterpolation::Smooth;
+    cheek.blend_shapes = vec![squash];
+
+    let mut face = grid1(
+        "AngleX",
+        &keys,
+        keys.iter()
+            .map(|&a| {
+                let d = on_arc(a) - on_arc(0.0);
+                WarpKeyform {
+                    points: warp_points(1, 1, |x, y| {
+                        Vec2::new(64.0 + 128.0 * f32::from(x), 64.0 + 128.0 * f32::from(y)) + d
+                    }),
+                    opacity: 1.0,
+                }
+            })
+            .collect(),
+    );
+    face.interpolation = KeyformInterpolation::Smooth;
+    let mut jaw = grid1(
+        "AngleX",
+        &keys,
+        keys.iter()
+            .map(|&a| rotation_keyform(on_arc(a), a, 1.0))
+            .collect(),
+    );
+    jaw.interpolation = KeyformInterpolation::Smooth;
+
+    model.deformers = vec![warp("Face", None, 1, 1, face), rotation("Jaw", None, jaw)];
+    model.meshes = vec![quad_mesh("Cheek", "Root", None, cheek)];
+    model
+}
+
+/// [`smooth_arc`] の円弧の半径 (px)。
+pub const SMOOTH_ARC_RADIUS: f32 = 100.0;
 
 // ---- 物理演算 (T0301) ----
 

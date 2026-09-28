@@ -99,6 +99,12 @@ pub enum EditError {
     /// 格子の推定の方法が未知 (新しい版のファイル) なので、その設定では推定できない。
     #[error("{target}: keyform inference method is not supported by this version")]
     UnsupportedInference { target: String },
+    /// 格子に設定できない補間の種類 (未知の値、パーツ・グルーの格子への曲線補間)。
+    #[error("{target}: keyform interpolation `{interpolation:?}` is not supported for this grid")]
+    UnsupportedInterpolation {
+        target: String,
+        interpolation: ugoe_model::KeyformInterpolation,
+    },
     /// デフォーマの作成・付け替え・セルの編集ができない (子がない、循環する、座標を写せないなど)。
     #[error("deformer edit failed: {reason}")]
     DeformerEdit { reason: String },
@@ -824,6 +830,12 @@ fn apply_to(
         | Command::AddPhysicsCollider { .. }
         | Command::RemovePhysicsCollider { .. }
         | Command::SetPhysicsCollider { .. }) => physics_edit::apply(model, physics, command)?,
+        // 補間の種類はセルの値を変えないので、推定で作り直さない。
+        Command::SetKeyformInterpolation {
+            target,
+            blend_shape,
+            interpolation,
+        } => keyform::set_interpolation(model, &target, blend_shape.as_ref(), interpolation)?,
     }
     Ok(())
 }

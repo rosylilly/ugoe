@@ -64,6 +64,8 @@ impl<'a> GridView<'a> {
             origins,
             inference,
             mirror_source,
+            // 補間の種類はセルの値に影響しない (推定はセルだけを作る)。
+            interpolation: _,
             // 推定はブレンドシェイプ格子を扱わない (`docs/spec/keyform-inference.md`)。
             blend_shapes: _,
         } = grid;

@@ -172,6 +172,7 @@ FeatureTable {
 | `modules` | 着せ替えのスロット ([modules.md](modules.md)) | スロットを無視し、本体だけを表示する |
 | `avatar.profile` | アバタープロファイル ([avatar-profile.md](avatar-profile.md)) | 読み飛ばす (アプリの連携機能が使えないだけ) |
 | `deform.blend_shape` | ブレンドシェイプ格子 ([model.md#ブレンドシェイプ](model.md#ブレンドシェイプ)) | ブレンドシェイプ格子を無視する (ブレンドシェイプのパラメータが既定値のときの形になる) |
+| `deform.smooth_interpolation` | キーフォームの曲線補間 ([evaluation.md#曲線補間](evaluation.md#曲線補間)) | 線形で補間する (キーの上の形は同じで、キーの間の道筋が直線になる) |
 
 上の表はすべて 1.0 の基準の機能です。
 
@@ -194,6 +195,7 @@ FeatureTable {
 | `Parameter::kind` (`ParameterKind`) | 通常のパラメータとして扱う。格子の種類は置き場所 (`blend_shapes`) で決まるので評価は変わらず、検証はどちらの格子の軸にも置けるものとする | 検証・エディタ |
 | `KeyformGrid::origins` の要素 (`KeyformOrigin`) | `authored` として扱う (推定で上書きしない) | エディタ |
 | `KeyformGrid::inference` (`KeyformInference`) | 推定で作り直さない (`derived` のセルをそのまま使う) | エディタ |
+| `KeyformGrid::interpolation` (`KeyformInterpolation`) | 線形で補間する | ランタイム・エディタ |
 | `Curve::target` (`CurveTarget`) | そのカーブを無視する | モーション |
 | `Curve::segments` の要素 (`Segment`) | そのカーブ全体を無視する | モーション |
 | `ExpressionParameter::op` (`ExpressionOp`) | その項目を無視する | 表情 |

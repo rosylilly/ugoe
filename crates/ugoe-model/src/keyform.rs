@@ -36,6 +36,9 @@ pub struct KeyformGrid<T> {
     #[serde(default)]
     pub bindings: Vec<KeyformBinding>,
     pub keyforms: Vec<T>,
+    /// キーの間の補間の種類 (`docs/spec/evaluation.md#曲線補間`)。既定は線形。
+    #[serde(default, skip_serializing_if = "KeyformInterpolation::is_linear")]
+    pub interpolation: KeyformInterpolation,
     /// セルごとの由来。並びは `keyforms` と同じ。
     /// 空ならすべて `authored`。空でなければ長さは `keyforms` と同じ。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -59,6 +62,7 @@ impl<T> KeyformGrid<T> {
         Self {
             bindings,
             keyforms,
+            interpolation: KeyformInterpolation::Linear,
             origins: Vec::new(),
             inference: None,
             mirror_source: None,
@@ -125,6 +129,41 @@ impl<T> KeyformGrid<T> {
             KeyformOrigin::Authored | KeyformOrigin::Unknown => None,
             origin => Some(origin),
         }
+    }
+}
+
+/// キーフォーム格子のキーの間の補間の種類 (`docs/spec/evaluation.md#曲線補間`)。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum KeyformInterpolation {
+    /// 各軸で隣り合う 2 つのキーの間を直線で補間する (多重線形)。
+    #[default]
+    Linear,
+    /// キーが 3 つ以上の軸で、キーを通る滑らかな曲線 (3 次エルミート) で補間する。
+    /// 形 (頂点・制御点・回転の原点・角度・拡大率) だけに効き、不透明度・描画順・色などは線形のまま。
+    Smooth,
+    /// 未知の値 (新しい版のファイル)。線形として扱う。
+    /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
+    #[serde(other, skip_serializing)]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    #[cfg_attr(feature = "schema", schemars(skip))]
+    Unknown,
+}
+
+impl KeyformInterpolation {
+    /// フォールバックを適用した値 (`Unknown` は `Linear`)。
+    pub fn effective(self) -> Self {
+        match self {
+            Self::Unknown => Self::Linear,
+            interpolation => interpolation,
+        }
+    }
+
+    /// 既定値 (`Linear`) か。書き出しの省略に使う (`Unknown` は省略しない)。
+    pub fn is_linear(&self) -> bool {
+        *self == Self::Linear
     }
 }
 
@@ -297,5 +336,28 @@ mod tests {
         assert_eq!(back, g);
         let plain = serde_json::to_value(KeyformGrid::constant(0u8)).unwrap();
         assert!(plain.get("mirror_source").is_none());
+    }
+
+    #[test]
+    fn interpolation_json() {
+        // 省略 (古いファイル) は線形で、線形は書き出さない。
+        let g: KeyformGrid<u8> = serde_json::from_str(r#"{"keyforms":[0]}"#).unwrap();
+        assert_eq!(g.interpolation, KeyformInterpolation::Linear);
+        assert!(
+            serde_json::to_value(&g)
+                .unwrap()
+                .get("interpolation")
+                .is_none()
+        );
+        let json = r#"{"keyforms":[0],"interpolation":"smooth"}"#;
+        let mut g: KeyformGrid<u8> = serde_json::from_str(json).unwrap();
+        assert_eq!(g.interpolation, KeyformInterpolation::Smooth);
+        assert_eq!(serde_json::to_value(&g).unwrap()["interpolation"], "smooth");
+        // 未知の値は線形として扱い、書き出せない。
+        let json = r#"{"keyforms":[0],"interpolation":"bezier"}"#;
+        g = serde_json::from_str(json).unwrap();
+        assert_eq!(g.interpolation, KeyformInterpolation::Unknown);
+        assert_eq!(g.interpolation.effective(), KeyformInterpolation::Linear);
+        assert!(serde_json::to_value(&g).is_err());
     }
 }

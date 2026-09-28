@@ -1415,10 +1415,11 @@ fn op_name(command: &Command) -> &'static str {
         Command::AddPhysicsCollider { .. } => "add_physics_collider",
         Command::RemovePhysicsCollider { .. } => "remove_physics_collider",
         Command::SetPhysicsCollider { .. } => "set_physics_collider",
+        Command::SetKeyformInterpolation { .. } => "set_keyform_interpolation",
     }
 }
 
-const OP_COUNT: usize = 84;
+const OP_COUNT: usize = 85;
 
 fn json_samples() -> Vec<Command> {
     let quad = fixtures::single_quad();
@@ -1652,6 +1653,16 @@ fn json_samples() -> Vec<Command> {
             delta: ugoe_core::Vec2::new(4.0, -2.0),
         },
         Command::UnwrapDeformer { id: "Arm".into() },
+        Command::SetKeyformInterpolation {
+            target: crate::KeyformTarget::Mesh("Quad".into()),
+            blend_shape: None,
+            interpolation: ugoe_model::KeyformInterpolation::Smooth,
+        },
+        Command::SetKeyformInterpolation {
+            target: crate::KeyformTarget::Mesh("Mouth".into()),
+            blend_shape: Some("Smile".into()),
+            interpolation: ugoe_model::KeyformInterpolation::Linear,
+        },
     ]
     .into_iter()
     .chain(crate::codegen::motion_sample_commands())

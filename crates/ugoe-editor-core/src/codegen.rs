@@ -15,8 +15,8 @@ use ugoe_model::expression::{Expression, ExpressionOp, ExpressionParameter};
 use ugoe_model::motion::{Curve, CurveTarget, Motion, MotionEvent, Point, Segment};
 use ugoe_model::physics::PhysicsSettings;
 use ugoe_model::{
-    BlendMode, DepthRotation, KeyformGrid, KeyformInference, MaskMode, MaskRef, MeshId, Model,
-    fixtures,
+    BlendMode, DepthRotation, KeyformGrid, KeyformInference, KeyformInterpolation, MaskMode,
+    MaskRef, MeshId, Model, fixtures,
 };
 
 use crate::command::{ChildRef, InferMethod, KeyformTarget};
@@ -128,6 +128,7 @@ pub fn typescript_samples(types_module: &str) -> Result<String, serde_json::Erro
         fixtures::mixed_masks(),
         fixtures::keyform_inference(),
         fixtures::blend_shapes(),
+        fixtures::smooth_arc(),
     ];
     let mut out = GENERATED_HEADER.to_owned();
     out.push_str(&format!(
@@ -461,7 +462,19 @@ fn sample_commands() -> Vec<Command> {
                 value: 8.0,
             },
         },
-        Command::RetriangulateMesh { id: mesh_id },
+        Command::RetriangulateMesh {
+            id: mesh_id.clone(),
+        },
+        Command::SetKeyformInterpolation {
+            target: KeyformTarget::Mesh(mesh_id),
+            blend_shape: None,
+            interpolation: KeyformInterpolation::Smooth,
+        },
+        Command::SetKeyformInterpolation {
+            target: KeyformTarget::Deformer(deformers[0].id.clone()),
+            blend_shape: Some("Smile".into()),
+            interpolation: KeyformInterpolation::Linear,
+        },
     ])
     .chain(motion_sample_commands())
     .chain(physics_samples())

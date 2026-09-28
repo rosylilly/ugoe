@@ -2089,6 +2089,34 @@
         "op",
         "collider"
       ]
+    },
+    {
+      "description": "格子のキーの間の補間の種類 (`KeyformGrid::interpolation`) を設定する\n(`docs/spec/evaluation.md#曲線補間`)。セルの値は変えない。\n`blend_shape` を指定すると、そのパラメータを軸に持つブレンドシェイプ格子に設定する。\n未知の値と、形を持たないパーツ・グルーの格子への `smooth` は拒否する。",
+      "type": "object",
+      "properties": {
+        "blend_shape": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "interpolation": {
+          "$ref": "#/$defs/KeyformInterpolation"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_keyform_interpolation"
+        },
+        "target": {
+          "$ref": "#/$defs/KeyformTarget"
+        }
+      },
+      "required": [
+        "op",
+        "target",
+        "interpolation"
+      ]
     }
   ],
   "$defs": {
@@ -2725,6 +2753,10 @@
             }
           ]
         },
+        "interpolation": {
+          "description": "キーの間の補間の種類 (`docs/spec/evaluation.md#曲線補間`)。既定は線形。",
+          "$ref": "#/$defs/KeyformInterpolation"
+        },
         "keyforms": {
           "type": "array",
           "items": {
@@ -2782,6 +2814,10 @@
               "type": "null"
             }
           ]
+        },
+        "interpolation": {
+          "description": "キーの間の補間の種類 (`docs/spec/evaluation.md#曲線補間`)。既定は線形。",
+          "$ref": "#/$defs/KeyformInterpolation"
         },
         "keyforms": {
           "type": "array",
@@ -2841,6 +2877,10 @@
             }
           ]
         },
+        "interpolation": {
+          "description": "キーの間の補間の種類 (`docs/spec/evaluation.md#曲線補間`)。既定は線形。",
+          "$ref": "#/$defs/KeyformInterpolation"
+        },
         "keyforms": {
           "type": "array",
           "items": {
@@ -2898,6 +2938,10 @@
               "type": "null"
             }
           ]
+        },
+        "interpolation": {
+          "description": "キーの間の補間の種類 (`docs/spec/evaluation.md#曲線補間`)。既定は線形。",
+          "$ref": "#/$defs/KeyformInterpolation"
         },
         "keyforms": {
           "type": "array",
@@ -2957,6 +3001,21 @@
           "required": [
             "method"
           ]
+        }
+      ]
+    },
+    "KeyformInterpolation": {
+      "description": "キーフォーム格子のキーの間の補間の種類 (`docs/spec/evaluation.md#曲線補間`)。",
+      "oneOf": [
+        {
+          "description": "各軸で隣り合う 2 つのキーの間を直線で補間する (多重線形)。",
+          "type": "string",
+          "const": "linear"
+        },
+        {
+          "description": "キーが 3 つ以上の軸で、キーを通る滑らかな曲線 (3 次エルミート) で補間する。\n形 (頂点・制御点・回転の原点・角度・拡大率) だけに効き、不透明度・描画順・色などは線形のまま。",
+          "type": "string",
+          "const": "smooth"
         }
       ]
     },

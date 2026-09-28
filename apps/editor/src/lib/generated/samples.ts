@@ -3040,6 +3040,505 @@ export const models: Model[] = [
         "parameters": []
       }
     }
+  },
+  {
+    "schema_version": 0,
+    "meta": {
+      "name": "smooth_arc",
+      "canvas": {
+        "width": 256.0,
+        "height": 256.0,
+        "origin": [
+          128.0,
+          128.0
+        ]
+      }
+    },
+    "parameters": [
+      {
+        "id": "AngleX",
+        "name": "AngleX",
+        "min": -30.0,
+        "max": 30.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "Squash",
+        "name": "Squash",
+        "min": 0.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "blend_shape",
+        "mirror": null,
+        "group": null
+      }
+    ],
+    "parameter_groups": [],
+    "parts": [
+      {
+        "id": "Root",
+        "name": "Root",
+        "parent": null,
+        "keyforms": {
+          "bindings": [],
+          "keyforms": [
+            {
+              "opacity": 1.0
+            }
+          ]
+        }
+      }
+    ],
+    "deformers": [
+      {
+        "id": "Face",
+        "name": "Face",
+        "part": "Root",
+        "parent": null,
+        "kind": {
+          "type": "warp",
+          "rows": 1,
+          "cols": 1,
+          "keyforms": {
+            "bindings": [
+              {
+                "parameter": "AngleX",
+                "keys": [
+                  -30.0,
+                  0.0,
+                  30.0
+                ]
+              }
+            ],
+            "keyforms": [
+              {
+                "points": [
+                  [
+                    14.0,
+                    77.39746
+                  ],
+                  [
+                    142.0,
+                    77.39746
+                  ],
+                  [
+                    14.0,
+                    205.39746
+                  ],
+                  [
+                    142.0,
+                    205.39746
+                  ]
+                ],
+                "opacity": 1.0
+              },
+              {
+                "points": [
+                  [
+                    64.0,
+                    64.0
+                  ],
+                  [
+                    192.0,
+                    64.0
+                  ],
+                  [
+                    64.0,
+                    192.0
+                  ],
+                  [
+                    192.0,
+                    192.0
+                  ]
+                ],
+                "opacity": 1.0
+              },
+              {
+                "points": [
+                  [
+                    114.0,
+                    77.39746
+                  ],
+                  [
+                    242.0,
+                    77.39746
+                  ],
+                  [
+                    114.0,
+                    205.39746
+                  ],
+                  [
+                    242.0,
+                    205.39746
+                  ]
+                ],
+                "opacity": 1.0
+              }
+            ],
+            "interpolation": "smooth"
+          }
+        }
+      },
+      {
+        "id": "Jaw",
+        "name": "Jaw",
+        "part": "Root",
+        "parent": null,
+        "kind": {
+          "type": "rotation",
+          "keyforms": {
+            "bindings": [
+              {
+                "parameter": "AngleX",
+                "keys": [
+                  -30.0,
+                  0.0,
+                  30.0
+                ]
+              }
+            ],
+            "keyforms": [
+              {
+                "origin": [
+                  78.0,
+                  41.39746
+                ],
+                "angle": -30.0,
+                "scale": 1.0,
+                "reflect_x": false,
+                "reflect_y": false,
+                "opacity": 1.0
+              },
+              {
+                "origin": [
+                  128.0,
+                  28.0
+                ],
+                "angle": 0.0,
+                "scale": 1.0,
+                "reflect_x": false,
+                "reflect_y": false,
+                "opacity": 1.0
+              },
+              {
+                "origin": [
+                  178.0,
+                  41.39746
+                ],
+                "angle": 30.0,
+                "scale": 1.0,
+                "reflect_x": false,
+                "reflect_y": false,
+                "opacity": 1.0
+              }
+            ],
+            "interpolation": "smooth"
+          }
+        }
+      }
+    ],
+    "meshes": [
+      {
+        "id": "Cheek",
+        "name": "Cheek",
+        "part": "Root",
+        "parent": null,
+        "texture": 0,
+        "uvs": [
+          [
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0
+          ],
+          [
+            1.0,
+            1.0
+          ],
+          [
+            0.0,
+            1.0
+          ]
+        ],
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "blend": "normal",
+        "culling": false,
+        "masks": [],
+        "mask_mode": "union",
+        "mask_only": false,
+        "keyforms": {
+          "bindings": [
+            {
+              "parameter": "AngleX",
+              "keys": [
+                -30.0,
+                0.0,
+                30.0
+              ]
+            }
+          ],
+          "keyforms": [
+            {
+              "positions": [
+                [
+                  70.0,
+                  33.39746
+                ],
+                [
+                  86.0,
+                  33.39746
+                ],
+                [
+                  86.0,
+                  49.39746
+                ],
+                [
+                  70.0,
+                  49.39746
+                ]
+              ],
+              "opacity": 1.0,
+              "draw_order": 500.0,
+              "multiply_color": {
+                "r": 1.0,
+                "g": 1.0,
+                "b": 1.0
+              },
+              "screen_color": {
+                "r": 0.0,
+                "g": 0.0,
+                "b": 0.0
+              },
+              "mask_strength": 1.0
+            },
+            {
+              "positions": [
+                [
+                  120.0,
+                  20.0
+                ],
+                [
+                  136.0,
+                  20.0
+                ],
+                [
+                  136.0,
+                  36.0
+                ],
+                [
+                  120.0,
+                  36.0
+                ]
+              ],
+              "opacity": 1.0,
+              "draw_order": 500.0,
+              "multiply_color": {
+                "r": 1.0,
+                "g": 1.0,
+                "b": 1.0
+              },
+              "screen_color": {
+                "r": 0.0,
+                "g": 0.0,
+                "b": 0.0
+              },
+              "mask_strength": 1.0
+            },
+            {
+              "positions": [
+                [
+                  170.0,
+                  33.39746
+                ],
+                [
+                  186.0,
+                  33.39746
+                ],
+                [
+                  186.0,
+                  49.39746
+                ],
+                [
+                  170.0,
+                  49.39746
+                ]
+              ],
+              "opacity": 0.0,
+              "draw_order": 600.0,
+              "multiply_color": {
+                "r": 1.0,
+                "g": 1.0,
+                "b": 1.0
+              },
+              "screen_color": {
+                "r": 0.0,
+                "g": 0.0,
+                "b": 0.0
+              },
+              "mask_strength": 1.0
+            }
+          ],
+          "interpolation": "smooth",
+          "blend_shapes": [
+            {
+              "bindings": [
+                {
+                  "parameter": "Squash",
+                  "keys": [
+                    0.0,
+                    0.5,
+                    1.0
+                  ]
+                }
+              ],
+              "keyforms": [
+                {
+                  "positions": [
+                    [
+                      120.0,
+                      20.0
+                    ],
+                    [
+                      136.0,
+                      20.0
+                    ],
+                    [
+                      136.0,
+                      36.0
+                    ],
+                    [
+                      120.0,
+                      36.0
+                    ]
+                  ],
+                  "opacity": 1.0,
+                  "draw_order": 500.0,
+                  "multiply_color": {
+                    "r": 1.0,
+                    "g": 1.0,
+                    "b": 1.0
+                  },
+                  "screen_color": {
+                    "r": 0.0,
+                    "g": 0.0,
+                    "b": 0.0
+                  },
+                  "mask_strength": 1.0
+                },
+                {
+                  "positions": [
+                    [
+                      120.0,
+                      30.0
+                    ],
+                    [
+                      136.0,
+                      30.0
+                    ],
+                    [
+                      136.0,
+                      46.0
+                    ],
+                    [
+                      120.0,
+                      46.0
+                    ]
+                  ],
+                  "opacity": 1.0,
+                  "draw_order": 500.0,
+                  "multiply_color": {
+                    "r": 1.0,
+                    "g": 1.0,
+                    "b": 1.0
+                  },
+                  "screen_color": {
+                    "r": 0.0,
+                    "g": 0.0,
+                    "b": 0.0
+                  },
+                  "mask_strength": 1.0
+                },
+                {
+                  "positions": [
+                    [
+                      120.0,
+                      60.0
+                    ],
+                    [
+                      136.0,
+                      60.0
+                    ],
+                    [
+                      136.0,
+                      76.0
+                    ],
+                    [
+                      120.0,
+                      76.0
+                    ]
+                  ],
+                  "opacity": 1.0,
+                  "draw_order": 500.0,
+                  "multiply_color": {
+                    "r": 1.0,
+                    "g": 1.0,
+                    "b": 1.0
+                  },
+                  "screen_color": {
+                    "r": 0.0,
+                    "g": 0.0,
+                    "b": 0.0
+                  },
+                  "mask_strength": 1.0
+                }
+              ],
+              "interpolation": "smooth"
+            }
+          ]
+        }
+      }
+    ],
+    "glues": [],
+    "textures": [
+      {
+        "name": "white",
+        "width": 1,
+        "height": 1
+      }
+    ],
+    "hit_areas": [],
+    "pose": {
+      "fade_duration": 0.5,
+      "groups": []
+    },
+    "effects": {
+      "eye_blink": {
+        "parameters": [],
+        "interval": 4.0,
+        "closing": 0.1,
+        "closed": 0.05,
+        "opening": 0.15,
+        "seed": 0
+      },
+      "breath": {
+        "parameters": []
+      },
+      "lip_sync": {
+        "parameters": []
+      }
+    }
   }
 ];
 
@@ -4065,6 +4564,23 @@ export const commands: Command[] = [
   {
     "op": "retriangulate_mesh",
     "id": "EyeL"
+  },
+  {
+    "op": "set_keyform_interpolation",
+    "target": {
+      "kind": "mesh",
+      "id": "EyeL"
+    },
+    "interpolation": "smooth"
+  },
+  {
+    "op": "set_keyform_interpolation",
+    "target": {
+      "kind": "deformer",
+      "id": "Arm"
+    },
+    "blend_shape": "Smile",
+    "interpolation": "linear"
   },
   {
     "op": "add_motion",

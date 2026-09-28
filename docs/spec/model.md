@@ -161,6 +161,22 @@ ARKit のブレンドシェイプ (52 種) のように、互いに独立した�
 - `AvatarProfile` と `AvatarMeta` のフィールドは省略でき、省略すると既定値になります。許諾の既定値は最も制限の強い値です。
 - ランタイムは `avatar` を読み飛ばせます (機能 `avatar.profile`、[file-formats.md](file-formats.md#機能とフォールバックの一覧))。そのため、構造の検証 (`validate`) は `avatar` を検査しません。準拠の検査は `avatar::check::check_profile` (`ugoe validate --profile avatar`) で行います ([avatar-profile.md#準拠の検査](avatar-profile.md#準拠の検査))。
 
+## キーフォームの補間
+
+`KeyformGrid::interpolation` (`KeyformInterpolation`) は格子のキーの間の補間の種類です ([evaluation.md#曲線補間](evaluation.md#曲線補間))。
+
+| 値 | 意味 |
+| --- | --- |
+| `linear` | 既定。各軸で隣り合う 2 つのキーの間を直線で補間する (多重線形) |
+| `smooth` | キーが 3 つ以上の軸を、キーを通る滑らかな曲線で補間する (Cubism の「拡張補間」に相当)。形 (頂点・制御点・回転の原点・角度・拡大率) だけに効き、不透明度・描画順・色などは線形のまま |
+
+```json
+"keyforms": { "bindings": [ ... ], "keyforms": [ ... ], "interpolation": "smooth" }
+```
+
+- 格子ごとに持ちます。ブレンドシェイプ格子もそれぞれ持てます。パーツとグルーの格子は形を持たないので、`smooth` でも線形で補間します (エディタは設定を拒否する)。
+- 省略でき、`linear` のときは書き出しません。これを含まない既存のデータは `linear` として読めます (`SCHEMA_VERSION` は変えていません)。未知の値は `linear` として扱います (`effective()`)。
+
 ## キーフォーム推定のデータ
 
 キーフォームの推定 ([keyform-inference.md](keyform-inference.md)) のためのデータです。
@@ -215,13 +231,13 @@ ARKit のブレンドシェイプ (52 種) のように、互いに独立した�
 
 ## 未知の値
 
-拡張されうる enum (`BlendMode` `MaskMode` `DeformerKind` `ParameterKind` `KeyformOrigin` `KeyformInference`、
+拡張されうる enum (`BlendMode` `MaskMode` `DeformerKind` `ParameterKind` `KeyformOrigin` `KeyformInference` `KeyformInterpolation`、
 アバタープロファイルの `AvatarPermission` `CommercialUsage` `CreditNotation` `Modification` `TrackingSource`、
 モーション・表情・物理の `CurveTarget` `Segment` `ExpressionOp` `PhysicsSource` `PhysicsTarget` `ColliderShape`) は `Unknown` のバリアントを持ち、
 新しい版のファイルにある知らないタグを `Unknown` として読みます。元のタグと中身は捨てます。
 
 - `Unknown` にはその種類のフォールバックを適用します。一覧は [file-formats.md#未知の値の読み込み](file-formats.md#未知の値の読み込み)。
-  値で置き換えられる種類は `effective()` (`BlendMode` `MaskMode` `ParameterKind` と許諾の 4 つ) や `KeyformGrid::origin` がフォールバック後の値を返します。
+  値で置き換えられる種類は `effective()` (`BlendMode` `MaskMode` `ParameterKind` `KeyformInterpolation` と許諾の 4 つ) や `KeyformGrid::origin` がフォールバック後の値を返します。
 - `Unknown` は **書き出せません** (シリアライズがエラーになる)。別の値として黙って保存しないためです。
 - 検証 (`validate`) は `Unknown` をエラーにしません。場所は `ugoe_model::unknown` (`in_model` など) で調べられます。
 

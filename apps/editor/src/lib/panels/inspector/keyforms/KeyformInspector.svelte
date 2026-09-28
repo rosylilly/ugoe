@@ -17,12 +17,14 @@ import {
   cellOrigin,
   currentCell,
   elementGrid,
+  gridInterpolation,
   keyAt,
   keyTolerance,
   type ParameterData,
   parameterValue,
   parseModel,
   snapToKeys,
+  supportsSmooth,
 } from "./keyforms";
 
 interface Props {
@@ -55,6 +57,18 @@ let drawOrderInput = $state<number | null>(null);
 $effect(() => {
   drawOrderInput = drawOrder;
 });
+
+const interpolation = $derived(element ? gridInterpolation(element.grid) : "linear");
+
+/** キーの間を曲線で補間するか (set_keyform_interpolation、docs/spec/evaluation.md#曲線補間)。 */
+async function setSmooth(smooth: boolean) {
+  if (!element) return;
+  await doc.apply({
+    op: "set_keyform_interpolation",
+    target: element.target,
+    interpolation: smooth ? "smooth" : "linear",
+  });
+}
 
 /** 描画順をメッシュのすべてのセルで同じ値にする (set_mesh_draw_order)。 */
 async function setDrawOrder() {
@@ -175,6 +189,21 @@ async function removeKey(parameter: string, key: number) {
         </li>
       {/each}
     </ul>
+
+    {#if supportsSmooth(element.kind)}
+      <label
+        class="interpolation"
+        title="Interpolate shapes along a smooth curve through the keys (axes with 3 or more keys). Opacity, draw order and colors stay linear."
+      >
+        <input
+          type="checkbox"
+          checked={interpolation === "smooth"}
+          onchange={(event) => setSmooth(event.currentTarget.checked)}
+        />
+        Smooth curve between keys
+        {#if interpolation === "unknown"}<span class="muted">(unknown mode; evaluated as linear)</span>{/if}
+      </label>
+    {/if}
 
     {#if unbound.length > 0}
       <span class="add-axis">
@@ -333,6 +362,13 @@ h3 {
 .cell.selected {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+.interpolation {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-bottom: 6px;
 }
 
 .draw-order {

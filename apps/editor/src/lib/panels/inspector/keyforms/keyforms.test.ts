@@ -5,12 +5,14 @@ import {
   cellOrigin,
   currentCell,
   elementGrid,
+  gridInterpolation,
   isDerived,
   type KeyformBinding,
   type ModelData,
   nearestKey,
   type ParameterData,
   snapToKeys,
+  supportsSmooth,
   withPoint,
 } from "./keyforms";
 
@@ -143,5 +145,20 @@ describe("withPoint", () => {
       origin: [2, 2],
       angle: 3,
     });
+  });
+});
+
+describe("gridInterpolation / supportsSmooth", () => {
+  it("reads linear by default and flags unknown values", () => {
+    expect(gridInterpolation({ keyforms: [] })).toBe("linear");
+    expect(gridInterpolation({ keyforms: [], interpolation: "smooth" })).toBe("smooth");
+    expect(gridInterpolation({ keyforms: [], interpolation: "bezier" })).toBe("unknown");
+  });
+
+  it("offers smooth only for grids with shapes", () => {
+    expect(supportsSmooth("mesh")).toBe(true);
+    expect(supportsSmooth("warp")).toBe(true);
+    expect(supportsSmooth("rotation")).toBe(true);
+    expect(supportsSmooth("part")).toBe(false);
   });
 });

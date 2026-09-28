@@ -1,7 +1,11 @@
 //! キーフォーム格子の編集の補助。格子の並びは `ugoe_model::KeyformGrid` の doc コメントを参照。
 
-use ugoe_model::{KeyformBinding, KeyformGrid, KeyformInference, KeyformOrigin, ParamId};
+use ugoe_model::{
+    KeyformBinding, KeyformGrid, KeyformInference, KeyformInterpolation, KeyformOrigin, ParamId,
+};
 use ugoe_rigging::KeyformValues;
+use ugoe_runtime::ParamIndex;
+use ugoe_runtime::keyform::{ResolvedBinding, Weights};
 
 use crate::command::KeyformCell;
 
@@ -154,6 +158,8 @@ pub(crate) fn add_key<T: KeyformValues>(
     let pos = keys.partition_point(|&k| k < key);
     let (seg, t) = locate(&keys, key);
     let n = keys.len();
+    // 曲線補間の格子では、新しいセルの形の値を曲線の上に置く (キーを足しても見た目がなるべく変わらないように)。
+    let smooth = smooth_axis_weights(grid.interpolation, &keys, key);
     let stride: usize = grid.bindings[..axis].iter().map(|b| b.keys.len()).product();
     let outer = grid.keyforms.len() / (stride * n).max(1);
     let mut after = grid.bindings.clone();
@@ -178,7 +184,12 @@ pub(crate) fn add_key<T: KeyformValues>(
                 if c == pos {
                     let (a, b) = (old(seg), old((seg + 1).min(n - 1)));
                     added.push(keyforms.len());
-                    keyforms.push(lerp_keyform(&grid.keyforms[a], &grid.keyforms[b], t));
+                    let mut keyform = lerp_keyform(&grid.keyforms[a], &grid.keyforms[b], t);
+                    if let Some(weights) = &smooth {
+                        let cells = weights.iter().map(|&(k, w)| (&grid.keyforms[old(k)], w));
+                        overwrite_shape(&mut keyform, cells);
+                    }
+                    keyforms.push(keyform);
                     // `t == 0` なら `a` の値そのもの (範囲の外)。
                     let from_derived =
                         old_origin(a).is_derived() || (t != 0.0 && old_origin(b).is_derived());
@@ -496,6 +507,43 @@ fn locate(keys: &[f32], v: f32) -> (usize, f32) {
     }
     let seg = keys.partition_point(|&k| k <= v) - 1;
     (seg, (v - keys[seg]) / (keys[seg + 1] - keys[seg]))
+}
+
+/// 曲線補間の格子 (`interpolation`) で、キー `keys` の軸の値 `v` での 1 軸の重み (キーのインデックス, 重み)。
+/// 線形の格子、キーが 2 つ以下の軸、キーの上と範囲の外では `None` (線形の補間と同じ)。
+fn smooth_axis_weights(
+    interpolation: KeyformInterpolation,
+    keys: &[f32],
+    v: f32,
+) -> Option<Weights> {
+    let binding = ResolvedBinding::new(ParamIndex(0), keys.to_vec(), interpolation);
+    if !binding.is_smooth() || locate(keys, v).1 == 0.0 {
+        return None;
+    }
+    let mut weights = Weights::new();
+    ugoe_runtime::keyform::weights(std::slice::from_ref(&binding), &[v], &mut weights);
+    Some(weights)
+}
+
+/// `keyform` の形の値 (`KeyformValues::smooth_len`) を、セル `cells` の値を重みで足した値で上書きする
+/// (`docs/spec/evaluation.md#曲線補間`)。形以外の値はそのまま。
+fn overwrite_shape<'a, T: KeyformValues + 'a>(
+    keyform: &mut T,
+    cells: impl Iterator<Item = (&'a T, f32)>,
+) {
+    let len = keyform.smooth_len();
+    let mut values = Vec::new();
+    keyform.write_values(&mut values);
+    values[..len].fill(0.0);
+    let mut cell_values = Vec::new();
+    for (cell, w) in cells {
+        cell_values.clear();
+        cell.write_values(&mut cell_values);
+        for (v, c) in values[..len].iter_mut().zip(&cell_values) {
+            *v += c * w;
+        }
+    }
+    keyform.read_values(&values);
 }
 
 /// `a` と `b` を重み `1 - t`・`t` で補間したキーフォーム。

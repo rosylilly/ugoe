@@ -22,6 +22,11 @@ pub trait KeyformValues: Clone {
     /// `values` は `shape_len` が同じキーフォームの `write_values` が書いたのと同じ長さ。
     fn read_values(&mut self, values: &[f32]);
 
+    /// `write_values` が書く値のうち、先頭の形の値 (頂点・制御点・回転の原点・角度・拡大率) の個数。
+    /// 曲線補間の格子 (`KeyformInterpolation::Smooth`) はこの値だけを曲線で補間し、残りは線形で補間する
+    /// (`docs/spec/evaluation.md#曲線補間`)。
+    fn smooth_len(&self) -> usize;
+
     /// 値を有効な範囲にクランプする (不透明度・色・`mask_strength` は 0〜1、拡大率は 0 以上)。
     fn clamp(&mut self);
 }
@@ -78,6 +83,10 @@ fn clamp_rgb(c: &mut Rgb) {
 }
 
 impl KeyformValues for MeshKeyform {
+    fn smooth_len(&self) -> usize {
+        2 * self.positions.len()
+    }
+
     fn shape_len(&self) -> usize {
         self.positions.len()
     }
@@ -113,6 +122,10 @@ impl KeyformValues for MeshKeyform {
 }
 
 impl KeyformValues for PartKeyform {
+    fn smooth_len(&self) -> usize {
+        0
+    }
+
     fn shape_len(&self) -> usize {
         0
     }
@@ -131,6 +144,10 @@ impl KeyformValues for PartKeyform {
 }
 
 impl KeyformValues for WarpKeyform {
+    fn smooth_len(&self) -> usize {
+        2 * self.points.len()
+    }
+
     fn shape_len(&self) -> usize {
         self.points.len()
     }
@@ -156,6 +173,11 @@ impl KeyformValues for WarpKeyform {
 }
 
 impl KeyformValues for RotationKeyform {
+    fn smooth_len(&self) -> usize {
+        // origin (2)・angle・scale
+        4
+    }
+
     fn shape_len(&self) -> usize {
         0
     }
@@ -180,6 +202,10 @@ impl KeyformValues for RotationKeyform {
 }
 
 impl KeyformValues for GlueKeyform {
+    fn smooth_len(&self) -> usize {
+        0
+    }
+
     fn shape_len(&self) -> usize {
         0
     }

@@ -69,6 +69,12 @@ pub const FEATURES: &[Feature] = &[
         fallback: "ブレンドシェイプ格子を無視する (ブレンドシェイプのパラメータが既定値のときの形になる)",
         baseline: true,
     },
+    Feature {
+        id: "deform.smooth_interpolation",
+        description: "キーフォームの曲線補間",
+        fallback: "線形で補間する (キーの上の形は同じで、キーの間の道筋が直線になる)",
+        baseline: true,
+    },
 ];
 
 /// ID から知っている機能を探す。

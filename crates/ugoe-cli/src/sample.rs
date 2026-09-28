@@ -33,7 +33,7 @@ use ugoe_model::physics::{
 use ugoe_model::standard as sp;
 use ugoe_model::{
     AvatarProfile, DeformerId, DeformerKind, DepthRotation, HitArea, KeyformGrid, KeyformInference,
-    MaskRef, MeshId, Model, ParamId, Parameter,
+    KeyformInterpolation, MaskRef, MeshId, Model, ParamId, Parameter,
 };
 
 /// 既定の入力 (リポジトリのルートからの相対パス)。
@@ -915,6 +915,7 @@ impl Rig {
     }
 
     /// ワープ `id` に深度 `depth` を与え、`AngleX` / `AngleY` のセルを深度からの回転で作る。
+    /// キーの間は曲線補間にする (中間の角度でも回転の道筋に沿う。`docs/spec/evaluation.md#曲線補間`)。
     /// 回転の中心は `pivot` (親の座標系。省略すると基準の姿の制御点の中心) で、使った中心を返す。
     fn depth_rotation(
         &mut self,
@@ -964,9 +965,14 @@ impl Rig {
             cells,
         })?;
         self.apply(Command::InferKeyforms {
-            target,
+            target: target.clone(),
             method: InferMethod::DepthRotation,
             overwrite_derived: true,
+        })?;
+        self.apply(Command::SetKeyformInterpolation {
+            target,
+            blend_shape: None,
+            interpolation: KeyformInterpolation::Smooth,
         })?;
         Ok(pivot)
     }

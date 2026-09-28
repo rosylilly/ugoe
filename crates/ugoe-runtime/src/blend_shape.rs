@@ -6,14 +6,16 @@
 use ugoe_core::Vec2;
 use ugoe_model::KeyformGrid;
 
-use crate::keyform::{self, ResolvedBinding, Weights};
+use crate::keyform::{self, GridWeights, ResolvedBinding, Weights};
 
 /// ロード時に解決したブレンドシェイプ格子。
 #[derive(Debug)]
 pub(crate) struct CompiledBlendShape {
     pub(crate) bindings: Vec<ResolvedBinding>,
-    /// パラメータがすべて既定値のときの重み。
+    /// パラメータがすべて既定値のときの重み (形のフィールド用)。
     pub(crate) rest: Weights,
+    /// パラメータがすべて既定値のときの線形の重み (形以外のフィールド用。線形の格子では `rest` と同じ)。
+    pub(crate) rest_linear: Weights,
 }
 
 impl CompiledBlendShape {
@@ -21,13 +23,24 @@ impl CompiledBlendShape {
     pub(crate) fn new(bindings: Vec<ResolvedBinding>, defaults: &[f32]) -> Self {
         let mut rest = Weights::new();
         keyform::weights(&bindings, defaults, &mut rest);
-        Self { bindings, rest }
+        let mut rest_linear = Weights::new();
+        keyform::linear_weights(&bindings, defaults, &mut rest_linear);
+        Self {
+            bindings,
+            rest,
+            rest_linear,
+        }
     }
 
-    /// 現在の値 `values` での重みを `out` に求める。既定値での重みと同じ (差分を加えない) なら `false`。
-    pub(crate) fn weights(&self, values: &[f32], out: &mut Weights) -> bool {
-        keyform::weights(&self.bindings, values, out);
-        *out != self.rest
+    /// 現在の値 `values` での重み `(形の重み, 形以外の重み)` を `out` に求める。
+    /// どちらも既定値での重みと同じ (差分を加えない) なら `None`。
+    pub(crate) fn weights<'a>(
+        &self,
+        values: &[f32],
+        out: &'a mut GridWeights,
+    ) -> Option<(&'a Weights, &'a Weights)> {
+        let (shape, linear) = out.compute(&self.bindings, values);
+        (*shape != self.rest || *linear != self.rest_linear).then_some((shape, linear))
     }
 }
 

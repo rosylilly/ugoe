@@ -30,7 +30,8 @@ pub use avatar::AvatarProfile;
 pub use deformer::{Deformer, DeformerId, DeformerKind};
 pub use effects::Effects;
 pub use keyform::{
-    DepthRotation, KeyformBinding, KeyformGrid, KeyformInference, KeyformOrigin, MirrorSource,
+    DepthRotation, KeyformBinding, KeyformGrid, KeyformInference, KeyformInterpolation,
+    KeyformOrigin, MirrorSource,
 };
 pub use mesh::{BlendMode, Glue, MaskMode, MaskRef, Mesh, MeshId};
 pub use parameter::{ParamId, Parameter, ParameterGroup};

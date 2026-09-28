@@ -45,6 +45,8 @@ mod import_tests;
 #[cfg(test)]
 mod inference_tests;
 #[cfg(test)]
+mod interpolation_tests;
+#[cfg(test)]
 mod keyform_tests;
 #[cfg(test)]
 mod mesh_edit_tests;
