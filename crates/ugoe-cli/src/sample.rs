@@ -1,13 +1,15 @@
 //! `ugoe sample avatar`: アバタープロファイル (`docs/spec/avatar-profile.md`) に準拠した見本のモデルを、
-//! PSD から組み立てる (T0702)。
+//! PSD から組み立てる (T0702、T0704 でバストアップの PSD に作り直した)。
 //!
 //! リグはすべて `ugoe_editor_core::Command` の列で組む (エディタで手で組むのと同じ操作)。
 //! 部位はレイヤーの名前で見つけ、変形の量はその部位の外接矩形の大きさに対する割合で決めるので、
-//! 座標の定数は持たない。`Model.avatar` だけは設定するコマンドがまだないので、組み終えたモデルに
-//! 直接書く ([`avatar_profile`])。
+//! 座標の定数は持たない。`Model.avatar` と当たり判定だけは設定するコマンドがまだないので、組み終えた
+//! モデルに直接書く ([`avatar_profile`])。
 //!
-//! 入力は `assets/fixtures/psd-real/comfyui-see-through-full-body-parts.psd` (全身の立ち絵を
-//! 目・白目・まつげ・眉・口などに分けたもの)。全身の絵なので、キャンバスを胸から上に切り詰める。
+//! 入力は `assets/fixtures/psd-real/comfyui-see-through-bustup-parts.psd` (胸から上の絵を
+//! 目・白目・まつげ・眉・口などに分けたもの)。目は開き (`eyewhite`・`irides`・`eyelash`) と
+//! 閉じ (`eyeclose`)、口は閉じ (`mouth-close`) と開き (`mouth-open`) の別のレイヤーがあるので、
+//! 不透明度と変形でつなぐ。
 
 use std::collections::BTreeMap;
 
@@ -24,6 +26,10 @@ use ugoe_model::avatar::{
 };
 use ugoe_model::deformer::{RotationKeyform, WarpKeyform};
 use ugoe_model::mesh::MeshKeyform;
+use ugoe_model::physics::{
+    NormalizationRange, PhysicsInput, PhysicsNormalization, PhysicsOutput, PhysicsParticle,
+    PhysicsRig, PhysicsSource, PhysicsTarget, VertexOwner,
+};
 use ugoe_model::standard as sp;
 use ugoe_model::{
     AvatarProfile, DeformerId, DeformerKind, DepthRotation, HitArea, KeyformGrid, KeyformInference,
@@ -31,7 +37,7 @@ use ugoe_model::{
 };
 
 /// 既定の入力 (リポジトリのルートからの相対パス)。
-pub const DEFAULT_PSD: &str = "assets/fixtures/psd-real/comfyui-see-through-full-body-parts.psd";
+pub const DEFAULT_PSD: &str = "assets/fixtures/psd-real/comfyui-see-through-bustup-parts.psd";
 
 /// 見本のモデルの名前 (プロジェクト名と `Model.avatar.meta.name`)。
 const NAME: &str = "ugoe sample avatar";
@@ -61,6 +67,7 @@ const PARAMETERS: &[&str] = &[
     sp::MOUTH_OPEN_Y,
     sp::MOUTH_FORM,
     sp::MOUTH_X,
+    sp::JAW_X,
     sp::MOUTH_PUCKER,
     sp::MOUTH_PRESS,
     sp::MOUTH_SHRUG,
@@ -74,6 +81,7 @@ const MIRRORS: &[(&str, &str)] = &[
     (sp::BODY_ANGLE_Z, sp::BODY_ANGLE_Z),
     (sp::EYE_BALL_X, sp::EYE_BALL_X),
     (sp::MOUTH_X, sp::MOUTH_X),
+    (sp::JAW_X, sp::JAW_X),
     (sp::EYE_L_OPEN, sp::EYE_R_OPEN),
     (sp::EYE_L_SMILE, sp::EYE_R_SMILE),
     (sp::EYE_L_WIDE, sp::EYE_R_WIDE),
@@ -87,19 +95,57 @@ const HEAD_LAYERS: &[&str] = &[
     "face",
     "ears-l",
     "ears-r",
-    "earwear",
+    "earwear-l",
+    "earwear-r",
     "nose",
-    "mouth",
+    "mouth-open",
+    "mouth-close",
     "eyewhite-l",
     "eyewhite-r",
     "irides-l",
     "irides-r",
     "eyelash-l",
     "eyelash-r",
+    "eyeclose-l",
+    "eyeclose-r",
     "eyebrow-l",
     "eyebrow-r",
     "front hair",
 ];
+
+/// 目の開き (`EyeLOpen`) による、開いた目と閉じた目の切り替え。
+///
+/// 開いた目は閉じる線へ縦につぶれていく (1 から `SQUASH_KEY` までで大きく)。つぶれて細くなった所で、閉じた目を先に不透明にしてから
+/// 開いた目を消すので、途中の値で目が消えたり、半透明の 2 つの目が重なったりしない。
+mod eye_fade {
+    /// 閉じる線の高さ (開いた目の外接矩形の上端 0〜下端 1)。
+    pub const LINE: f32 = 0.7;
+    /// 開いた目を大きくつぶすキーと、そこでの高さ (開いた目に対する割合)。
+    pub const SQUASH_KEY: f32 = 0.35;
+    pub const SQUASH_HEIGHT: f32 = 0.22;
+    /// 閉じた目 (笑い目 = 0) の弧を平らにする量 (閉じた目の絵の高さに対する割合)。
+    pub const FLATTEN: f32 = 0.5;
+    /// 閉じた目を平らなまま保つ笑い目の値。これより上で絵の笑った閉じ目へ移る。
+    pub const SMILE_FLAT: f32 = 0.5;
+    /// 閉じた目が現れ始める値 (これより上では透明)。
+    pub const CLOSED_IN: f32 = 0.36;
+    /// 閉じた目が不透明になる値。開いた目はここまで不透明。
+    pub const CLOSED_FULL: f32 = 0.3;
+    /// 開いた目が消える値。
+    pub const OPEN_OUT: f32 = 0.22;
+}
+
+/// 口の開き (`MouthOpenY`) による、閉じた口と開いた口の切り替え。
+///
+/// 開いた口は閉じた口の大きさの細い隙間から開く。隙間が閉じた口の下で不透明になってから、閉じた口を消す。
+mod mouth_fade {
+    /// 開いた口 (細い隙間) が不透明になる値。
+    pub const OPEN_FULL: f32 = 0.12;
+    /// 閉じた口が消え始める値 (開いた口が不透明になってから)。
+    pub const CLOSED_OUT_START: f32 = OPEN_FULL;
+    /// 閉じた口が消える値。
+    pub const CLOSED_OUT: f32 = 0.3;
+}
 
 /// 片目の部位と、その目のパラメータ。
 struct EyeSide {
@@ -141,7 +187,13 @@ pub fn build_avatar(psd: &[u8]) -> anyhow::Result<Project> {
     document.apply(import.command)?;
 
     let mut rig = Rig { document };
-    let layout = rig.crop_to_bust()?;
+    let layout = Layout {
+        face: rig.mesh_bounds("face")?,
+        canvas: Vec2::new(
+            rig.model().meta.canvas.width,
+            rig.model().meta.canvas.height,
+        ),
+    };
     rig.add_parameters()?;
     rig.rig_body(&layout)?;
     rig.rig_head(&layout)?;
@@ -170,7 +222,7 @@ fn avatar_profile() -> AvatarProfile {
         level: 3,
         meta: AvatarMeta {
             name: NAME.to_owned(),
-            version: Some("0.1.0".to_owned()),
+            version: Some("0.2.0".to_owned()),
             authors: vec!["ugoe contributors".to_owned()],
             references: vec![DEFAULT_PSD.to_owned()],
             license_url: Some("https://opensource.org/license/mit".to_owned()),
@@ -231,13 +283,6 @@ impl Rect {
         (self.min + self.max) * 0.5
     }
 
-    fn intersects(self, other: Self) -> bool {
-        self.min.x < other.max.x
-            && other.min.x < self.max.x
-            && self.min.y < other.max.y
-            && other.min.y < self.max.y
-    }
-
     /// 点 `p` の、矩形の中での位置 (左上 (0,0)〜右下 (1,1))。
     fn normalize(self, p: Vec2) -> Vec2 {
         let size = self.size().max(Vec2::splat(f32::EPSILON));
@@ -245,7 +290,17 @@ impl Rect {
     }
 }
 
-/// 切り詰めた後のキャンバスでの、変形の大きさの基準。
+/// 横の位置 `x` (0〜1) での、中ほどが 1・両端が 0 の弧。
+fn arc(x: f32) -> f32 {
+    1.0 - (2.0 * x - 1.0).powi(2)
+}
+
+/// 横の位置 `x` (0〜1) での、両端が 1・中ほどが 0 の重み (口角)。
+fn corner(x: f32) -> f32 {
+    (2.0 * x - 1.0).powi(2)
+}
+
+/// 変形の大きさの基準。
 struct Layout {
     /// 顔 (`face`) の外接矩形。
     face: Rect,
@@ -287,31 +342,41 @@ impl Rig {
 
     /// 要素の基準の姿 (すべてのパラメータが既定値) の点 (親の座標系) と、その格子の基準のセル。
     fn base(&self, target: &KeyformTarget) -> anyhow::Result<(Vec<Vec2>, Keyform, KeyformCell)> {
+        self.keyform_at(target, &[])
+    }
+
+    /// 要素の格子のセル `cell` (書かない軸は既定値) の点 (親の座標系)・キーフォームと、すべての軸を書いたセル。
+    fn keyform_at(
+        &self,
+        target: &KeyformTarget,
+        cell: &[(&str, f32)],
+    ) -> anyhow::Result<(Vec<Vec2>, Keyform, KeyformCell)> {
         let model = self.model();
-        let defaults: BTreeMap<ParamId, f32> = model
+        let mut values: BTreeMap<ParamId, f32> = model
             .parameters
             .iter()
             .map(|p| (p.id.clone(), p.default))
             .collect();
-        fn neutral<T: Clone>(
+        for (parameter, value) in cell {
+            values.insert(ParamId::new(*parameter), *value);
+        }
+        fn find<T: Clone>(
             grid: &KeyformGrid<T>,
-            defaults: &BTreeMap<ParamId, f32>,
+            values: &BTreeMap<ParamId, f32>,
         ) -> anyhow::Result<(T, KeyformCell)> {
             let mut index = 0;
             let mut stride = 1;
             let mut cell = KeyformCell::new();
             for binding in &grid.bindings {
-                let default = defaults.get(&binding.parameter).copied().unwrap_or(0.0);
+                let value = values.get(&binding.parameter).copied().unwrap_or(0.0);
                 let key = binding
                     .keys
                     .iter()
-                    .position(|k| *k == default)
-                    .ok_or_else(|| {
-                        anyhow!("axis {} has no key at its default", binding.parameter)
-                    })?;
+                    .position(|k| *k == value)
+                    .ok_or_else(|| anyhow!("axis {} has no key {value}", binding.parameter))?;
                 index += key * stride;
                 stride *= binding.keys.len();
-                cell.insert(binding.parameter.clone(), default);
+                cell.insert(binding.parameter.clone(), value);
             }
             Ok((grid.keyforms[index].clone(), cell))
         }
@@ -322,7 +387,7 @@ impl Rig {
                     .iter()
                     .find(|m| m.id == *id)
                     .ok_or_else(|| anyhow!("no mesh `{id}`"))?;
-                let (keyform, cell) = neutral(&mesh.keyforms, &defaults)?;
+                let (keyform, cell) = find(&mesh.keyforms, &values)?;
                 Ok((keyform.positions.clone(), Keyform::Mesh(keyform), cell))
             }
             KeyformTarget::Deformer(id) => {
@@ -333,11 +398,11 @@ impl Rig {
                     .ok_or_else(|| anyhow!("no deformer `{id}`"))?;
                 match &deformer.kind {
                     DeformerKind::Warp(warp) => {
-                        let (keyform, cell) = neutral(&warp.keyforms, &defaults)?;
+                        let (keyform, cell) = find(&warp.keyforms, &values)?;
                         Ok((keyform.points.clone(), Keyform::Warp(keyform), cell))
                     }
                     DeformerKind::Rotation(rotation) => {
-                        let (keyform, cell) = neutral(&rotation.keyforms, &defaults)?;
+                        let (keyform, cell) = find(&rotation.keyforms, &values)?;
                         Ok((vec![keyform.origin], Keyform::Rotation(keyform), cell))
                     }
                     DeformerKind::Unknown => bail!("deformer `{id}` has an unknown kind"),
@@ -390,15 +455,32 @@ impl Rig {
         Ok(())
     }
 
+    /// 格子のセル `cell` (書かない軸は既定値) を、そのセルの今のキーフォームを `edit` で変えたものにする。
+    fn set_cell(
+        &mut self,
+        target: &KeyformTarget,
+        cell: &[(&str, f32)],
+        edit: impl FnOnce(Keyform) -> anyhow::Result<Keyform>,
+    ) -> anyhow::Result<()> {
+        let (_, current, full_cell) = self.keyform_at(target, cell)?;
+        let keyform = edit(current)?;
+        self.apply(Command::SetKeyformCell {
+            target: target.clone(),
+            cell: full_cell,
+            keyform,
+        })
+    }
+
     /// 格子のセル `cell` (書かない軸は既定値) の形を、基準の姿の点をキャンバス座標で `offset` だけ
     /// ずらしたものにする。`offset` は点のキャンバス座標と、要素の外接矩形の中での位置 (0〜1) を受け取る。
+    /// 不透明度などの形以外の値はそのセルのまま。
     fn shape(
         &mut self,
         target: &KeyformTarget,
         cell: &[(&str, f32)],
         offset: impl Fn(Vec2, Vec2) -> Vec2,
     ) -> anyhow::Result<()> {
-        let (local, base, mut full_cell) = self.base(target)?;
+        let (local, ..) = self.base(target)?;
         let values = ParameterValues::new();
         let canvas = local_to_canvas(self.model(), target, &values, &local)?;
         let rect = Rect::of(&canvas).ok_or_else(|| anyhow!("{target} has no points"))?;
@@ -407,123 +489,42 @@ impl Rig {
             .map(|p| *p + offset(*p, rect.normalize(*p)))
             .collect();
         let points = canvas_to_local(self.model(), target, &values, &moved, &local)?;
-        let keyform = match base {
-            Keyform::Mesh(keyform) => Keyform::Mesh(MeshKeyform {
+        self.set_cell(target, cell, |base| match base {
+            Keyform::Mesh(keyform) => Ok(Keyform::Mesh(MeshKeyform {
                 positions: points,
                 ..keyform
-            }),
-            Keyform::Warp(keyform) => Keyform::Warp(WarpKeyform { points, ..keyform }),
+            })),
+            Keyform::Warp(keyform) => Ok(Keyform::Warp(WarpKeyform { points, ..keyform })),
             _ => bail!("{target} is not a mesh or a warp deformer"),
-        };
-        for (parameter, value) in cell {
-            full_cell.insert(ParamId::new(*parameter), *value);
-        }
-        self.apply(Command::SetKeyformCell {
-            target: target.clone(),
-            cell: full_cell,
-            keyform,
         })
+    }
+
+    /// メッシュ `id` の不透明度を、`parameter` のキーごとに `(キー, 不透明度)` の値にする
+    /// (他の軸は既定値のセル。形は変えない)。
+    fn fade(&mut self, id: &MeshId, parameter: &str, keys: &[(f32, f32)]) -> anyhow::Result<()> {
+        let target = KeyformTarget::Mesh(id.clone());
+        let values: Vec<f32> = keys.iter().map(|(key, _)| *key).collect();
+        self.add_keys(&target, parameter, &values)?;
+        for (key, opacity) in keys {
+            self.set_cell(&target, &[(parameter, *key)], |base| match base {
+                Keyform::Mesh(keyform) => Ok(Keyform::Mesh(MeshKeyform {
+                    opacity: *opacity,
+                    ..keyform
+                })),
+                _ => bail!("{target} is not a mesh"),
+            })?;
+        }
+        Ok(())
     }
 
     /// 回転デフォーマのセル `cell` の角度を `angle` 度にする。
     fn rotate(&mut self, id: &DeformerId, cell: &[(&str, f32)], angle: f32) -> anyhow::Result<()> {
         let target = KeyformTarget::Deformer(id.clone());
-        let (_, base, mut full_cell) = self.base(&target)?;
-        let Keyform::Rotation(keyform) = base else {
-            bail!("{target} is not a rotation deformer");
-        };
-        for (parameter, value) in cell {
-            full_cell.insert(ParamId::new(*parameter), *value);
-        }
-        self.apply(Command::SetKeyformCell {
-            target,
-            cell: full_cell,
-            keyform: Keyform::Rotation(RotationKeyform { angle, ..keyform }),
-        })
-    }
-
-    /// 全身の絵を、顔を中心にした胸から上に切り詰める。
-    ///
-    /// キャンバスの外に出るメッシュ (靴など) とそのテクスチャを消し、全体を回転デフォーマ `Root` で
-    /// 包んで平行移動し、キャンバスを小さくする。
-    fn crop_to_bust(&mut self) -> anyhow::Result<Layout> {
-        let face = self.mesh_bounds("face")?;
-        let head = face.union(self.mesh_bounds("front hair")?);
-        let width = (face.size().x * 2.6).round();
-        let height = (width * 1.2).round();
-        let min = Vec2::new(
-            (face.center().x - width / 2.0).round(),
-            (head.min.y - face.size().y * 0.15).round(),
-        );
-        let crop = Rect {
-            min,
-            max: min + Vec2::new(width, height),
-        };
-
-        let outside: Vec<(MeshId, u32)> = self
-            .model()
-            .meshes
-            .iter()
-            .filter(|m| {
-                let positions = &m.keyforms.keyforms[0].positions;
-                Rect::of(positions).is_none_or(|r| !r.intersects(crop))
-            })
-            .map(|m| (m.id.clone(), m.texture))
-            .collect();
-        for (id, _) in &outside {
-            self.apply(Command::RemoveMesh { id: id.clone() })?;
-        }
-        // 後ろのテクスチャから消す (消すと後ろの番号が詰まるため)。
-        let mut textures: Vec<u32> = outside.iter().map(|(_, t)| *t).collect();
-        textures.sort_unstable_by(|a, b| b.cmp(a));
-        textures.dedup();
-        for index in textures {
-            let name = self.model().textures[index as usize].name.clone();
-            self.apply(Command::RemoveTexture { name })?;
-        }
-
-        let root = self
-            .model()
-            .parts
-            .iter()
-            .find(|p| p.parent.is_none())
-            .map(|p| p.id.clone())
-            .ok_or_else(|| anyhow!("the import made no root part"))?;
-        let root_id = DeformerId::new("Root");
-        let origin = crop.center();
-        self.apply(Command::CreateRotationDeformer {
-            id: Some(root_id.clone()),
-            name: "Root".to_owned(),
-            children: Vec::new(),
-            parts: vec![root],
-            origin: Some(origin),
-            parent: None,
-        })?;
-        let target = KeyformTarget::Deformer(root_id);
-        let (_, base, cell) = self.base(&target)?;
-        let Keyform::Rotation(keyform) = base else {
-            bail!("Root is not a rotation deformer");
-        };
-        self.apply(Command::SetKeyformCell {
-            target,
-            cell,
-            keyform: Keyform::Rotation(RotationKeyform {
-                origin: origin - crop.min,
-                ..keyform
-            }),
-        })?;
-        let canvas = crop.size();
-        self.apply(Command::SetCanvas {
-            width: canvas.x,
-            height: canvas.y,
-            origin: canvas * 0.5,
-        })?;
-        Ok(Layout {
-            face: Rect {
-                min: face.min - crop.min,
-                max: face.max - crop.min,
-            },
-            canvas,
+        self.set_cell(&target, cell, |base| match base {
+            Keyform::Rotation(keyform) => {
+                Ok(Keyform::Rotation(RotationKeyform { angle, ..keyform }))
+            }
+            _ => bail!("{target} is not a rotation deformer"),
         })
     }
 
@@ -584,7 +585,7 @@ impl Rig {
         let target = KeyformTarget::Deformer(rotation.clone());
         self.add_keys(&target, sp::BODY_ANGLE_Z, &[-10.0, 10.0])?;
         for value in [-10.0, 10.0] {
-            self.rotate(&rotation, &[(sp::BODY_ANGLE_Z, value)], value * 0.5)?;
+            self.rotate(&rotation, &[(sp::BODY_ANGLE_Z, value)], value * 0.4)?;
         }
 
         // 変形の量は顔の大きさに対する割合。上 (頭の側) ほど大きく動かす。
@@ -653,25 +654,36 @@ impl Rig {
 
         let mut eye_warps = Vec::new();
         for eye in &EYES {
-            let id = DeformerId::new(format!("Eye{}Warp", eye.suffix.to_uppercase()));
+            let upper = eye.suffix.to_uppercase();
+            let open = DeformerId::new(format!("Eye{upper}Warp"));
             let parts = ["eyewhite", "irides", "eyelash"].map(|p| format!("{p}-{}", eye.suffix));
             let names: Vec<&str> = parts.iter().map(String::as_str).collect();
             self.apply(Command::CreateWarpDeformer {
-                id: Some(id.clone()),
-                name: format!("Eye {} warp", eye.suffix.to_uppercase()),
+                id: Some(open.clone()),
+                name: format!("Eye {upper} warp"),
                 children: self.meshes(&names)?,
                 parts: Vec::new(),
                 rows: 2,
-                cols: 2,
+                cols: 4,
                 parent: None,
             })?;
-            eye_warps.push(id);
+            let closed = DeformerId::new(format!("Eye{upper}CloseWarp"));
+            self.apply(Command::CreateWarpDeformer {
+                id: Some(closed.clone()),
+                name: format!("Eye {upper} close warp"),
+                children: self.meshes(&[format!("eyeclose-{}", eye.suffix).as_str()])?,
+                parts: Vec::new(),
+                rows: 2,
+                cols: 4,
+                parent: None,
+            })?;
+            eye_warps.push((open, closed));
         }
         let mouth = DeformerId::new("MouthWarp");
         self.apply(Command::CreateWarpDeformer {
             id: Some(mouth.clone()),
             name: "Mouth warp".to_owned(),
-            children: self.meshes(&["mouth"])?,
+            children: self.meshes(&["mouth-open", "mouth-close"])?,
             parts: Vec::new(),
             rows: 2,
             cols: 2,
@@ -694,12 +706,212 @@ impl Rig {
             Some(pivot),
         )?;
 
-        for (eye, warp) in EYES.iter().zip(&eye_warps) {
-            self.rig_eye(eye, warp)?;
+        for (eye, (open, closed)) in EYES.iter().zip(&eye_warps) {
+            self.rig_eye(eye, open, closed)?;
             self.rig_brow(eye, face)?;
         }
         self.rig_mouth(&mouth)?;
+        self.rig_physics(&head, &face_warp, &back_hair)?;
         Ok(())
+    }
+
+    /// 揺れもの: 前髪の毛先・後ろ髪・耳飾りを、動的物理 (`docs/spec/physics.md#動的物理-揺れ用パラメータのいらない物理`)
+    /// で頭の動きに遅れて揺らす。
+    ///
+    /// どのリグも根元を頭の回転デフォーマ (`frame`) に取り付け、振り子の先の粒子の横の変位を、ワープの制御点か
+    /// メッシュの頂点に重み付きで足す (`vertices`)。重みは根元側が 0・先が 1 なので、生え際や耳の金具は動かない。
+    /// 入力は `AngleX` (頭を横に向ける動きはデフォーマを動かさないので、根元の平行移動で与える)。`AngleZ` と
+    /// 体の動きは頭のデフォーマを動かすので、それだけで根元が動く。衝突体は使わない。
+    fn rig_physics(
+        &mut self,
+        head: &DeformerId,
+        face_warp: &DeformerId,
+        back_warp: &DeformerId,
+    ) -> anyhow::Result<()> {
+        // 揺れの出力先のワープ (キーフォームは持たない)。
+        let front = DeformerId::new("FrontHairSwayWarp");
+        let back = DeformerId::new("BackHairSwayWarp");
+        for (id, name, layer, parent) in [
+            (&front, "Front hair sway warp", "front hair", face_warp),
+            (&back, "Back hair sway warp", "back hair", back_warp),
+        ] {
+            self.apply(Command::CreateWarpDeformer {
+                id: Some(id.clone()),
+                name: name.to_owned(),
+                children: self.meshes(&[layer])?,
+                parts: Vec::new(),
+                rows: 3,
+                cols: 3,
+                parent: Some(parent.clone()),
+            })?;
+        }
+
+        // 前髪: 生え際から毛先までの 1 区間。毛先だけを小さく揺らす (顔が読めるように)。
+        let rect = self.mesh_bounds("front hair")?;
+        let weights = self.sway_weights(&KeyformTarget::Deformer(front.clone()), rect, 0.4, 0.5)?;
+        self.add_pendulum(
+            "FrontHair",
+            "Front hair",
+            head,
+            Vec2::new(rect.center().x, rect.min.y),
+            &[0.8 * rect.size().y],
+            (0.9, 0.8, 1.5),
+            12.0,
+            VertexOwner::Warp(front),
+            weights,
+        )?;
+
+        // 後ろ髪: 顔の中ほどの高さから毛先までの 2 区間。前髪より大きくゆっくり揺らす。根元を頭頂に置くと、
+        // 頭を傾けたとき (`AngleZ`、あごが中心) に根元が大きく動きすぎるので、顔の中ほどに置く。
+        let rect = self.mesh_bounds("back hair")?;
+        let weights = self.sway_weights(&KeyformTarget::Deformer(back.clone()), rect, 0.3, 0.8)?;
+        let top = self.mesh_bounds("face")?.center().y;
+        let half = 0.5 * (rect.max.y - top);
+        self.add_pendulum(
+            "BackHair",
+            "Back hair",
+            head,
+            Vec2::new(rect.center().x, top),
+            &[half, half],
+            (0.93, 0.6, 1.5),
+            28.0,
+            VertexOwner::Warp(back),
+            weights,
+        )?;
+
+        // 耳飾り: 耳の金具 (上の 35%) は動かさず、下に垂れた飾りを揺らす。レイヤーには耳から離れた所に
+        // 数画素のごみがあるので、耳の横の範囲にある頂点だけを耳飾りとみなす。
+        for side in ["l", "r"] {
+            let ear = self.mesh_bounds(&format!("ears-{side}"))?;
+            let id = self.mesh(&format!("earwear-{side}"))?;
+            let points = self.canvas_points(&KeyformTarget::Mesh(id.clone()))?;
+            let on_ear = |p: &Vec2| p.x >= ear.min.x && p.x <= ear.max.x;
+            let rect = Rect::of(&points.iter().copied().filter(on_ear).collect::<Vec<_>>())
+                .ok_or_else(|| anyhow!("earwear-{side} has no vertices below the ear"))?;
+            let weights = points
+                .iter()
+                .map(|p| {
+                    if on_ear(p) {
+                        ((rect.normalize(*p).y - 0.35) / 0.65).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    }
+                })
+                .collect();
+            self.add_pendulum(
+                &format!("Earring{}", side.to_uppercase()),
+                &format!("Earring {}", side.to_uppercase()),
+                head,
+                Vec2::new(rect.center().x, rect.min.y),
+                &[rect.size().y],
+                // 短く硬い飾りなので、速く振れて (加速度が大きい) 遅れすぎないようにする。
+                (0.85, 1.0, 4.0),
+                10.0,
+                VertexOwner::Mesh(id),
+                weights,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// ワープの制御点ごとの揺れの重み: 要素 (`rect`) の上から `start` の割合までは 0、そこから下端へ
+    /// 2 乗で増えて `max` になる。
+    fn sway_weights(
+        &self,
+        warp: &KeyformTarget,
+        rect: Rect,
+        start: f32,
+        max: f32,
+    ) -> anyhow::Result<Vec<f32>> {
+        Ok(self
+            .canvas_points(warp)?
+            .iter()
+            .map(|p| {
+                let t = ((rect.normalize(*p).y - start) / (1.0 - start)).clamp(0.0, 1.0);
+                max * t * t
+            })
+            .collect())
+    }
+
+    /// 真下に垂れる振り子 (根元 `root` はキャンバス座標、区間の長さ `lengths`) の動的物理のリグを加える。
+    /// 根元は `head` に取り付け、先の粒子の横の変位を `owner` の頂点に `weights` の重みで足す。
+    /// `(mobility, delay, acceleration)` は揺れの減衰・速さ・重力の強さ、`shift` は `AngleX` = ±30 での根元の平行移動 (px)。
+    #[allow(clippy::too_many_arguments)]
+    fn add_pendulum(
+        &mut self,
+        id: &str,
+        name: &str,
+        head: &DeformerId,
+        root: Vec2,
+        lengths: &[f32],
+        (mobility, delay, acceleration): (f32, f32, f32),
+        shift: f32,
+        owner: VertexOwner,
+        weights: Vec<f32>,
+    ) -> anyhow::Result<()> {
+        // 根元の位置は頭の回転デフォーマの局所座標で書く (その子の `FaceWarp` の親の座標系)。
+        let local = canvas_to_local(
+            self.model(),
+            &KeyformTarget::Deformer(DeformerId::new("FaceWarp")),
+            &ParameterValues::new(),
+            &[root],
+            &[root],
+        )?[0];
+        let mut particles = vec![PhysicsParticle {
+            position: local,
+            mobility: 1.0,
+            delay: 1.0,
+            acceleration: 1.0,
+            radius: 0.0,
+            collision_radius: 0.0,
+        }];
+        let mut y = 0.0;
+        for length in lengths {
+            y += length;
+            particles.push(PhysicsParticle {
+                position: Vec2::new(0.0, y),
+                mobility,
+                delay,
+                acceleration,
+                radius: *length,
+                collision_radius: 0.0,
+            });
+        }
+        self.apply(Command::AddPhysicsRig {
+            rig: PhysicsRig {
+                id: id.to_owned(),
+                name: name.to_owned(),
+                inputs: vec![PhysicsInput {
+                    parameter: ParamId::new(sp::ANGLE_X),
+                    source: PhysicsSource::X,
+                    weight: 100.0,
+                    reflect: false,
+                }],
+                outputs: vec![PhysicsOutput {
+                    target: PhysicsTarget::Vertices { owner, weights },
+                    particle: lengths.len() as u32,
+                    source: PhysicsSource::X,
+                    scale: 1.0,
+                    weight: 100.0,
+                    reflect: false,
+                }],
+                particles,
+                normalization: PhysicsNormalization {
+                    position: NormalizationRange {
+                        min: -shift,
+                        default: 0.0,
+                        max: shift,
+                    },
+                    angle: NormalizationRange {
+                        min: -10.0,
+                        default: 0.0,
+                        max: 10.0,
+                    },
+                },
+                colliders: Vec::new(),
+                frame: Some(head.clone()),
+            },
+        })
     }
 
     /// ワープ `id` に深度 `depth` を与え、`AngleX` / `AngleY` のセルを深度からの回転で作る。
@@ -759,38 +971,84 @@ impl Rig {
         Ok(pivot)
     }
 
-    /// 目: 閉じる (`EyeLOpen` = 0)・笑い目 (`EyeLSmile`)・見開き (`EyeLWide`) と、黒目の移動 (`EyeBallX` / `EyeBallY`)。
-    fn rig_eye(&mut self, eye: &EyeSide, warp: &DeformerId) -> anyhow::Result<()> {
+    /// 目: 開閉 (`EyeLOpen`)・笑い目 (`EyeLSmile`)・見開き (`EyeLWide`) と、黒目の移動 (`EyeBallX` / `EyeBallY`)。
+    ///
+    /// 開いた目 (白目・黒目・まつげ) はワープ `open_warp`、閉じた目 (`eyeclose`) はワープ `closed_warp` に入れる。
+    /// 閉じた目の絵は上向きの弧 (笑った閉じ目) なので、`EyeLSmile` = 0 では弧を平らにしたふつうの閉じ目、
+    /// 1 で絵のままの笑った閉じ目にする。
+    fn rig_eye(
+        &mut self,
+        eye: &EyeSide,
+        open_warp: &DeformerId,
+        closed_warp: &DeformerId,
+    ) -> anyhow::Result<()> {
+        use eye_fade::*;
         let white = self.mesh(&format!("eyewhite-{}", eye.suffix))?;
-        let lash = self.bounds(&KeyformTarget::Mesh(
-            self.mesh(&format!("eyelash-{}", eye.suffix))?,
-        ))?;
+        let iris = self.mesh(&format!("irides-{}", eye.suffix))?;
+        let lash = self.mesh(&format!("eyelash-{}", eye.suffix))?;
+        let closed = self.mesh(&format!("eyeclose-{}", eye.suffix))?;
         let white_rect = self.bounds(&KeyformTarget::Mesh(white.clone()))?;
-        let rect = lash.union(white_rect);
-        let (top, h) = (rect.min.y, rect.size().y);
+        let rect = self
+            .bounds(&KeyformTarget::Mesh(lash.clone()))?
+            .union(white_rect);
+        let h = rect.size().y;
+        let closed_rect = self.bounds(&KeyformTarget::Mesh(closed.clone()))?;
+        // 閉じる線: 開いた目の下寄り (上まぶたが下りてきて下まぶたと合う所)。
+        let line = rect.min.y + LINE * h;
 
-        let target = KeyformTarget::Deformer(warp.clone());
-        self.add_keys(&target, eye.open, &[0.0])?;
+        let target = KeyformTarget::Deformer(open_warp.clone());
+        self.add_keys(&target, eye.open, &[0.0, SQUASH_KEY])?;
         self.add_keys(&target, eye.smile, &[1.0])?;
         self.add_keys(&target, eye.wide, &[1.0])?;
-        // 閉じた目: 上下を目の下寄りの細い帯に寄せ、中ほどを少し下げる (下向きの弧)。
-        self.shape(&target, &[(eye.open, 0.0)], |p, n| {
-            let arc = 1.0 - (2.0 * n.x - 1.0).powi(2);
-            let y = top + 0.62 * h + (n.y - 0.5) * 0.12 * h + 0.06 * h * arc;
-            Vec2::new(0.0, y - p.y)
-        })?;
-        // 笑い目: 下から押し上げ、中ほどを上げる (上向きの弧)。
-        self.shape(&target, &[(eye.smile, 1.0)], |p, n| {
-            let arc = 1.0 - (2.0 * n.x - 1.0).powi(2);
-            let y = top + 0.45 * h + (n.y - 0.5) * 0.15 * h - 0.12 * h * arc;
-            Vec2::new(0.0, y - p.y)
+        // 閉じていく目: 閉じる線へ縦につぶし、中ほどを少し下げる (下向きの弧)。
+        // 1 から `SQUASH_KEY` までで大きく細くなり、閉じた目と入れ替わる。
+        // 笑い目との組み合わせは加算合成では下まぶたがつぶれた目を越えて裏返るので、弧を上向きにした形を書く。
+        for (key, height) in [(0.0, 0.04), (SQUASH_KEY, SQUASH_HEIGHT)] {
+            for (smile, bend) in [(0.0, 0.04), (1.0, -0.06)] {
+                self.shape(&target, &[(eye.open, key), (eye.smile, smile)], |p, n| {
+                    let y = line + (p.y - line) * height + bend * h * arc(n.x);
+                    Vec2::new(0.0, y - p.y)
+                })?;
+            }
+        }
+        // 笑い目 (開いた目): 下まぶたを押し上げ、中ほどをより上げる (上向きの弧)。フェイストラッキングでは
+        // 真顔でも `EyeLSmile` が 0.5 前後になるので、開いた目では控えめにする (笑った閉じ目は閉じた目の絵)。
+        self.shape(&target, &[(eye.smile, 1.0)], |_, n| {
+            Vec2::new(0.0, -(0.18 + 0.08 * arc(n.x)) * h * n.y)
         })?;
         self.shape(&target, &[(eye.wide, 1.0)], |_, n| {
             Vec2::new(0.0, -0.18 * h * (1.0 - n.y))
         })?;
 
+        // 閉じた目の弧: 笑い目 = 1 が絵のまま。`SMILE_FLAT` 以下では中ほどを下げて平らにする。
+        // フェイストラッキングの `EyeLSmile` (`eyeSquint`) は瞬きのたびに 0.7 前後になるので、ふつうの瞬きが
+        // 笑った閉じ目にならないように、平らな形を `SMILE_FLAT` まで保つ。
+        // 基準のセルを最後に書き換える (`shape` は基準のセルからのずれで書くため)。
+        let target = KeyformTarget::Deformer(closed_warp.clone());
+        self.add_keys(&target, eye.smile, &[SMILE_FLAT, 1.0])?;
+        let (closed_center, closed_h) = (closed_rect.center().y, closed_rect.size().y);
+        for smile in [SMILE_FLAT, 0.0] {
+            self.shape(&target, &[(eye.smile, smile)], |p, n| {
+                let y = line + (p.y - closed_center) * 0.6 + (FLATTEN * arc(n.x) - 0.2) * closed_h;
+                Vec2::new(0.0, y - p.y)
+            })?;
+        }
+
+        // 開いた目と閉じた目の切り替え (`eye_fade`)。
+        for id in [&white, &iris, &lash] {
+            self.fade(
+                id,
+                eye.open,
+                &[(0.0, 0.0), (OPEN_OUT, 0.0), (CLOSED_FULL, 1.0), (1.0, 1.0)],
+            )?;
+        }
+        self.fade(
+            &closed,
+            eye.open,
+            &[(0.0, 1.0), (CLOSED_FULL, 1.0), (CLOSED_IN, 0.0), (1.0, 0.0)],
+        )?;
+
         // 黒目は白目で切り抜き、視線で動かす。`EyeBallX` は正でキャラクターの左 (画面の右)、`EyeBallY` は正で上。
-        let iris = self.mesh(&format!("irides-{}", eye.suffix))?;
         self.apply(Command::SetMeshProperties {
             id: iris.clone(),
             part: None,
@@ -817,27 +1075,14 @@ impl Rig {
     }
 
     /// 眉: 上下 (`BrowLY`)・傾き (`BrowLAngle`、正で外側が上がる)・内側の持ち上げ (`BrowInnerUp`)。
-    /// 眉は前髪に隠れないように前髪の手前に描く。
+    /// 眉は PSD のとおり前髪の奥に描く (手前に描くと髪の上に線が浮いて見えるため)。
     fn rig_brow(&mut self, eye: &EyeSide, face: Rect) -> anyhow::Result<()> {
         let id = self.mesh(&format!("eyebrow-{}", eye.suffix))?;
-        let hair = self.mesh("front hair")?;
-        let hair_order = self
-            .model()
-            .meshes
-            .iter()
-            .find(|m| m.id == hair)
-            .map_or(0.0, |m| m.keyforms.keyforms[0].draw_order);
-        self.apply(Command::SetMeshDrawOrder {
-            id: id.clone(),
-            draw_order: hair_order + 1.0,
-        })?;
 
         let target = KeyformTarget::Mesh(id);
         let brow = self.bounds(&target)?;
         let eye_height = self
-            .bounds(&KeyformTarget::Mesh(
-                self.mesh(&format!("eyelash-{}", eye.suffix))?,
-            ))?
+            .mesh_bounds(&format!("eyelash-{}", eye.suffix))?
             .size()
             .y;
         // 外側 (顔の中心から遠い側) が 1、内側が 0 になる位置。
@@ -854,153 +1099,112 @@ impl Rig {
         self.add_keys(&target, sp::BROW_INNER_UP, &[1.0])?;
         for sign in [-1.0, 1.0] {
             self.shape(&target, &[(eye.brow_y, sign)], |_, _| {
-                Vec2::new(0.0, -sign * 0.4 * eye_height)
+                Vec2::new(0.0, -sign * 0.3 * eye_height)
             })?;
             self.shape(&target, &[(eye.brow_angle, sign)], |_, n| {
                 Vec2::new(0.0, -sign * (along(n) - 0.5) * tilt)
             })?;
         }
         self.shape(&target, &[(sp::BROW_INNER_UP, 1.0)], |_, n| {
-            Vec2::new(0.0, -0.35 * eye_height * (1.0 - along(n)))
+            Vec2::new(0.0, -0.3 * eye_height * (1.0 - along(n)))
         })?;
         Ok(())
     }
 
-    /// 口: 開き (`MouthOpenY`)・形 (`MouthForm`、正で笑い)・左右 (`MouthX`)・すぼめ (`MouthPucker`)・
-    /// 押し付け (`MouthPress`)・口元の持ち上げ (`MouthShrug`)。
+    /// 口: 開き (`MouthOpenY`)・形 (`MouthForm`、正で笑い)・左右 (`MouthX`)・あごの左右 (`JawX`)・
+    /// すぼめ (`MouthPucker`)・押し付け (`MouthPress`)・口元の持ち上げ (`MouthShrug`)。
+    ///
+    /// 開いた口 (`mouth-open`) は、閉じた口 (`mouth-close`) の大きさの細い隙間から開く (`mouth_fade`)。
+    /// 口角は両方のメッシュを、閉じた口の高さを基準にした同じ量だけ曲げる。
     fn rig_mouth(&mut self, warp: &DeformerId) -> anyhow::Result<()> {
-        let lips = self.mesh_bounds("mouth")?;
-        let size = lips.size();
-        let inside = self.add_mouth_inside(warp, lips)?;
-        let target = KeyformTarget::Mesh(inside);
-        self.add_keys(&target, sp::MOUTH_OPEN_Y, &[1.0])?;
-        let (_, base, _) = self.base(&target)?;
-        let Keyform::Mesh(keyform) = base else {
-            bail!("{target} is not a mesh");
-        };
-        self.apply(Command::SetKeyformCell {
-            target,
-            cell: KeyformCell::from([(ParamId::new(sp::MOUTH_OPEN_Y), 1.0)]),
-            keyform: Keyform::Mesh(MeshKeyform {
-                opacity: 1.0,
-                ..keyform
-            }),
-        })?;
+        use mouth_fade::*;
+        let open_id = self.mesh("mouth-open")?;
+        let closed_id = self.mesh("mouth-close")?;
+        let open = self.bounds(&KeyformTarget::Mesh(open_id.clone()))?;
+        let closed = self.bounds(&KeyformTarget::Mesh(closed_id.clone()))?;
+        let bend = 0.45 * closed.size().y;
 
-        let target = KeyformTarget::Deformer(warp.clone());
-        self.add_keys(&target, sp::MOUTH_OPEN_Y, &[1.0])?;
+        // 閉じた口: 口角と、開きでの消え方。
+        let target = KeyformTarget::Mesh(closed_id.clone());
+        self.fade(
+            &closed_id,
+            sp::MOUTH_OPEN_Y,
+            &[(0.0, 1.0), (CLOSED_OUT_START, 1.0), (CLOSED_OUT, 0.0)],
+        )?;
         self.add_keys(&target, sp::MOUTH_FORM, &[-1.0, 1.0])?;
+        for sign in [-1.0, 1.0] {
+            self.shape(&target, &[(sp::MOUTH_FORM, sign)], |_, n| {
+                Vec2::new(0.0, -sign * bend * corner(n.x))
+            })?;
+        }
+
+        // 開いた口: すべてのセルを書く。細い隙間は閉じた口の横幅・高さの半分で、閉じた口の中心に置く。
+        let slit = Vec2::new(
+            closed.size().x / open.size().x,
+            0.5 * closed.size().y / open.size().y,
+        );
+        let target = KeyformTarget::Mesh(open_id.clone());
+        self.add_keys(&target, sp::MOUTH_OPEN_Y, &[OPEN_FULL, 1.0])?;
+        self.add_keys(&target, sp::MOUTH_FORM, &[-1.0, 1.0])?;
+        // 基準のセル (開き 0・形 0) は最後に書く (`shape` は基準のセルからのずれで書くため)。
+        for amount in [1.0, OPEN_FULL, 0.0] {
+            for form in [-1.0, 1.0, 0.0] {
+                self.shape(
+                    &target,
+                    &[(sp::MOUTH_OPEN_Y, amount), (sp::MOUTH_FORM, form)],
+                    |p, n| {
+                        let at = if amount >= 1.0 {
+                            p
+                        } else {
+                            closed.center() + (p - open.center()) * slit
+                        };
+                        at - p + Vec2::new(0.0, -form * bend * corner(n.x))
+                    },
+                )?;
+            }
+        }
+        // 不透明度は形の軸のすべてのセルに書く (書いたセルは加算合成で作り直されないため)。
+        for form in [-1.0, 0.0, 1.0] {
+            self.set_cell(
+                &target,
+                &[(sp::MOUTH_OPEN_Y, 0.0), (sp::MOUTH_FORM, form)],
+                |keyform| match keyform {
+                    Keyform::Mesh(keyform) => Ok(Keyform::Mesh(MeshKeyform {
+                        opacity: 0.0,
+                        ..keyform
+                    })),
+                    _ => bail!("mouth-open is not a mesh"),
+                },
+            )?;
+        }
+
+        // 口のまわり: 左右・すぼめ・押し付け・持ち上げはワープで両方の口を動かす。
+        let size = open.size();
+        let target = KeyformTarget::Deformer(warp.clone());
         self.add_keys(&target, sp::MOUTH_X, &[-1.0, 1.0])?;
+        self.add_keys(&target, sp::JAW_X, &[-1.0, 1.0])?;
         self.add_keys(&target, sp::MOUTH_PUCKER, &[1.0])?;
         self.add_keys(&target, sp::MOUTH_PRESS, &[1.0])?;
         self.add_keys(&target, sp::MOUTH_SHRUG, &[1.0])?;
-
-        self.shape(&target, &[(sp::MOUTH_OPEN_Y, 1.0)], |_, n| {
-            Vec2::new(-(n.x - 0.5) * 0.15 * size.x, (-0.2 + 1.0 * n.y) * size.y)
-        })?;
         for sign in [-1.0, 1.0] {
-            self.shape(&target, &[(sp::MOUTH_FORM, sign)], |_, n| {
-                let corner = (2.0 * n.x - 1.0).powi(2);
-                Vec2::new(0.0, -sign * 0.45 * size.y * corner)
-            })?;
             self.shape(&target, &[(sp::MOUTH_X, sign)], |_, _| {
-                Vec2::new(sign * 0.3 * size.x, 0.0)
+                Vec2::new(sign * 0.2 * size.x, 0.0)
+            })?;
+            // あご: 下ほど横に動かす (開いた口の下の唇が寄る)。
+            self.shape(&target, &[(sp::JAW_X, sign)], |_, n| {
+                Vec2::new(sign * 0.1 * size.x * n.y, 0.0)
             })?;
         }
         self.shape(&target, &[(sp::MOUTH_PUCKER, 1.0)], |_, n| {
-            Vec2::new(-(n.x - 0.5) * 0.45 * size.x, (n.y - 0.5) * 0.25 * size.y)
+            Vec2::new(-(n.x - 0.5) * 0.35 * size.x, (n.y - 0.5) * 0.1 * size.y)
         })?;
         self.shape(&target, &[(sp::MOUTH_PRESS, 1.0)], |_, n| {
-            Vec2::new(0.0, -(n.y - 0.5) * 0.5 * size.y)
+            Vec2::new(0.0, -(n.y - 0.5) * 0.3 * size.y)
         })?;
         self.shape(&target, &[(sp::MOUTH_SHRUG, 1.0)], |_, n| {
-            Vec2::new(0.0, -0.25 * size.y * n.y)
+            Vec2::new(0.0, -0.12 * size.y * n.y)
         })?;
         Ok(())
-    }
-
-    /// 口の中 (唇の間に見える暗い楕円) のメッシュを、唇の外接矩形 `lips` から作って口のワープに入れる。
-    /// PSD の唇は閉じた 1 枚の絵なので、開いたときに唇の間に見せる。既定では透明 (`MouthOpenY` で現れる)。
-    fn add_mouth_inside(&mut self, warp: &DeformerId, lips: Rect) -> anyhow::Result<MeshId> {
-        const W: u32 = 32;
-        const H: u32 = 16;
-        let mut rgba = Vec::with_capacity((W * H * 4) as usize);
-        for y in 0..H {
-            for x in 0..W {
-                let dx = (x as f32 + 0.5) / W as f32 * 2.0 - 1.0;
-                let dy = (y as f32 + 0.5) / H as f32 * 2.0 - 1.0;
-                let r = (dx * dx + dy * dy).sqrt();
-                // 縁を 1〜2 画素ぼかした楕円。
-                let alpha = ((1.0 - r) * 6.0).clamp(0.0, 1.0);
-                rgba.extend_from_slice(&[120, 40, 52, (alpha * 255.0).round() as u8]);
-            }
-        }
-        let name = "mouth_inside".to_owned();
-        self.apply(Command::AddTexture {
-            name: name.clone(),
-            png: ugoe_editor_core::texture::encode_rgba_png(W, H, &rgba),
-        })?;
-        let texture = self
-            .model()
-            .textures
-            .iter()
-            .position(|t| t.name == name)
-            .ok_or_else(|| anyhow!("texture `{name}` was not added"))? as u32;
-
-        let lips_id = self.mesh("mouth")?;
-        let lips_mesh = self
-            .model()
-            .meshes
-            .iter()
-            .find(|m| m.id == lips_id)
-            .ok_or_else(|| anyhow!("no mesh `{lips_id}`"))?;
-        let lips_keyform = lips_mesh.keyforms.keyforms[0].clone();
-        let part = lips_mesh.part.clone();
-        // 唇の合わせ目 (横 56%・縦 16%) を覆う四角形。
-        let center = lips.center();
-        let half = lips.size() * Vec2::new(0.28, 0.08);
-        let corners = [
-            center - half,
-            Vec2::new(center.x + half.x, center.y - half.y),
-            center + half,
-            Vec2::new(center.x - half.x, center.y + half.y),
-        ];
-        let id = MeshId::new("MouthInside");
-        self.apply(Command::AddMesh {
-            mesh: ugoe_model::Mesh {
-                id: id.clone(),
-                name: "mouth inside".to_owned(),
-                part,
-                parent: None,
-                texture,
-                uvs: vec![
-                    Vec2::new(0.0, 0.0),
-                    Vec2::new(1.0, 0.0),
-                    Vec2::new(1.0, 1.0),
-                    Vec2::new(0.0, 1.0),
-                ],
-                indices: vec![0, 1, 2, 0, 2, 3],
-                blend: Default::default(),
-                culling: false,
-                masks: Vec::new(),
-                mask_mode: Default::default(),
-                mask_only: false,
-                keyforms: KeyformGrid::constant(MeshKeyform {
-                    positions: corners.to_vec(),
-                    opacity: 0.0,
-                    draw_order: lips_keyform.draw_order + 1.0,
-                    ..lips_keyform
-                }),
-                mirror: None,
-                mirror_axis: None,
-                depth: None,
-            },
-        })?;
-        self.apply(Command::ReparentPreservingLook {
-            element: ChildRef::Mesh(id.clone()),
-            new_parent: Some(warp.clone()),
-        })?;
-        Ok(id)
     }
 }
 
@@ -1081,23 +1285,121 @@ mod tests {
         }
     }
 
+    /// メッシュの名前から、評価の結果 (`drawables` はメッシュの宣言順) の添字を引く。
+    fn index(model: &Model, name: &str) -> usize {
+        model.meshes.iter().position(|m| m.name == name).unwrap()
+    }
+
+    /// 目と口の開閉で、開いた絵と閉じた絵の少なくとも一方が途中の値でも不透明 (消えたり、半透明の 2 枚が
+    /// 重なったりしない) こと。
+    #[test]
+    fn open_and_closed_layers_never_vanish_or_double() {
+        let project = build();
+        let model = &project.model;
+        for (parameter, open, closed) in [
+            (sp::EYE_L_OPEN, "eyelash-l", "eyeclose-l"),
+            (sp::EYE_R_OPEN, "eyelash-r", "eyeclose-r"),
+            (sp::MOUTH_OPEN_Y, "mouth-open", "mouth-close"),
+        ] {
+            for step in 0..=100 {
+                let value = step as f32 / 100.0;
+                let posed = evaluate(model, &[(parameter, value)]);
+                let a = posed[index(model, open)].1;
+                let b = posed[index(model, closed)].1;
+                assert!(
+                    a >= 1.0 - 1e-4 || b >= 1.0 - 1e-4,
+                    "{parameter} = {value}: {open} {a}, {closed} {b}"
+                );
+            }
+            // 端では片方だけが見える (0 で閉じた絵、1 で開いた絵)。
+            let shown = |value: f32| {
+                let posed = evaluate(model, &[(parameter, value)]);
+                (posed[index(model, open)].1, posed[index(model, closed)].1)
+            };
+            assert_eq!(shown(0.0), (0.0, 1.0), "{parameter} = 0");
+            assert_eq!(shown(1.0), (1.0, 0.0), "{parameter} = 1");
+        }
+    }
+
+    /// 頭を横に振ると、動的物理で耳飾り・前髪の毛先・後ろ髪が遅れて揺れ、止めると元に戻る。
+    /// 前髪は顔が読めるように後ろ髪より小さく揺れ、静止しているときは物理のない評価と同じ姿になる。
+    #[test]
+    fn physics_sways_earrings_and_hair_after_a_head_shake() {
+        let project = build();
+        let model = &project.model;
+        let mut puppet = ugoe::Puppet::new(model.clone()).unwrap();
+        puppet.set_physics(project.physics.clone()).unwrap();
+        assert!(puppet.physics().unwrap().is_dynamic());
+        puppet.set_toggles(ugoe::Toggles {
+            eye_blink: false,
+            breath: false,
+            ..ugoe::Toggles::default()
+        });
+        let layers = ["earwear-l", "earwear-r", "front hair", "back hair"];
+        let angle = puppet
+            .instance()
+            .parameters()
+            .index_of(sp::ANGLE_X)
+            .unwrap();
+        // 物理のない評価からの、頂点の最大のずれ (px)。
+        let lag = |puppet: &ugoe::Puppet, value: f32| -> Vec<f32> {
+            let still = evaluate(model, &[(sp::ANGLE_X, value)]);
+            layers
+                .iter()
+                .map(|name| {
+                    let i = index(model, name);
+                    let (a, b) = (&puppet.instance().drawables()[i].positions, &still[i].0);
+                    a.iter()
+                        .zip(b)
+                        .map(|(p, q)| p.distance(*q))
+                        .fold(0.0, f32::max)
+                })
+                .collect()
+        };
+        const FPS: f32 = 60.0;
+        let mut peak = vec![0.0f32; layers.len()];
+        for frame in 0..(6.0 * FPS) as usize {
+            let t = frame as f32 / FPS;
+            // 0.8 秒周期で 2 往復 (±25) 振ってから止める。
+            let value = if t < 1.6 {
+                25.0 * (std::f32::consts::TAU * t / 0.8).sin()
+            } else {
+                0.0
+            };
+            puppet.instance_mut().parameters_mut().set(angle, value);
+            puppet.update(1.0 / FPS);
+            let now = lag(&puppet, value);
+            if frame == 0 {
+                assert!(now.iter().all(|d| *d < 0.01), "at rest: {now:?}");
+            }
+            for (p, d) in peak.iter_mut().zip(&now) {
+                *p = p.max(*d);
+            }
+        }
+        let [ear_l, ear_r, front, back] = peak[..] else {
+            unreachable!()
+        };
+        assert!(ear_l > 2.0 && ear_r > 2.0, "earrings: {peak:?}");
+        assert!(front > 2.0 && back > 2.0 * front, "hair: {peak:?}");
+        let settled = lag(&puppet, 0.0);
+        assert!(settled.iter().all(|d| *d < 0.5), "not settled: {settled:?}");
+    }
+
     #[test]
     fn eye_open_closes_only_its_own_eye() {
         let project = build();
         let model = &project.model;
-        let index = |name: &str| model.meshes.iter().position(|m| m.name == name).unwrap();
         let neutral = evaluate(model, &[]);
         let closed = evaluate(model, &[(sp::EYE_L_OPEN, 0.0)]);
-        let (left, _) = difference(
-            &neutral[index("eyelash-l")..=index("eyelash-l")],
-            &closed[index("eyelash-l")..=index("eyelash-l")],
-        );
-        let (right, _) = difference(
-            &neutral[index("eyelash-r")..=index("eyelash-r")],
-            &closed[index("eyelash-r")..=index("eyelash-r")],
-        );
-        assert!(left > 3.0, "{left}");
-        assert_eq!(right, 0.0);
+        let moved = |name: &str| {
+            let i = index(model, name);
+            difference(&neutral[i..=i], &closed[i..=i])
+        };
+        let (left, faded) = moved("eyelash-l");
+        assert!(left > 3.0 && faded == 1.0, "{left} {faded}");
+        assert_eq!(moved("eyeclose-l").1, 1.0);
+        assert_eq!(moved("eyelash-r"), (0.0, 0.0));
+        assert_eq!(moved("eyeclose-r"), (0.0, 0.0));
     }
 
     /// コミットした `assets/samples/avatar.ugoe` が、今のジェネレータの出力と (浮動小数点の誤差を除いて) 同じこと。
@@ -1105,8 +1407,14 @@ mod tests {
     #[test]
     fn committed_sample_is_up_to_date() {
         let bytes = std::fs::read(repo_path("assets/samples/avatar.ugoe")).unwrap();
-        let committed = ugoe_format::read_bundle(&bytes).unwrap().model;
-        let fresh = build().model;
+        let bundle = ugoe_format::read_bundle(&bytes).unwrap();
+        let committed = bundle.model;
+        let project = build();
+        assert_eq!(
+            bundle.physics, project.physics,
+            "regenerate assets/samples/avatar.ugoe"
+        );
+        let fresh = project.model;
         assert_eq!(check_profile(&committed).satisfied, 3);
         let ids = |m: &Model| {
             (
@@ -1132,9 +1440,10 @@ mod tests {
                 (sp::EYE_L_OPEN, 0.0),
             ],
             vec![
-                (sp::MOUTH_OPEN_Y, 1.0),
+                (sp::MOUTH_OPEN_Y, 0.2),
                 (sp::MOUTH_FORM, 1.0),
                 (sp::BROW_R_Y, 1.0),
+                (sp::EYE_R_OPEN, 0.35),
             ],
         ] {
             let (moved, faded) =

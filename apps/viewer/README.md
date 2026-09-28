@@ -34,7 +34,7 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
   いまは内部のクレートに依存していない。
 - 形式は中身で判別する (先頭が `UGOE` ならバンドル、`{` なら JSON)。
 - 見本のモデルはリポジトリの `assets/samples/avatar.ugoe` を写さずに使う。`vite.config.ts` の `sampleModel` が開発サーバーで
-  `samples/avatar.ugoe` として配り、ビルドの出力に入れる (約 630 KB)。ブラウザでは `?model=samples/avatar.ugoe` でも開ける。
+  `samples/avatar.ugoe` として配り、ビルドの出力に入れる (約 1.3 MB)。ブラウザでは `?model=samples/avatar.ugoe` でも開ける。
 - パラメータの値域・既定値・グループは `WebPuppet.parameters_json()` から得る。
 
 ## 使い方

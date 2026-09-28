@@ -530,10 +530,10 @@ fn avatar_sample_follows_arkit_tracking() {
     let overridden: Vec<&str> = avatar.tracking.iter().filter_map(|o| o.target()).collect();
 
     let model = bundle.model.clone();
+    // トラッキングからパラメータへの対応付けだけを見るため、物理は読み込まない。見本の物理 (髪と耳飾りの揺れ、
+    // T0704) は揺れが残って「中立に戻すと元の見た目に戻る」を 1 フレームでは満たさない。物理が読み込めて
+    // 頭の動きで揺れることは `crates/ugoe-cli/src/sample.rs` の `physics_sways_earrings_and_hair_after_a_head_shake` が確かめる。
     let mut puppet = Puppet::new(bundle.model).expect("compile the sample");
-    if let Some(physics) = bundle.physics {
-        puppet.set_physics(Some(physics)).expect("valid physics");
-    }
     // トラッキングの値だけを見るため、目パチと呼吸を止める (ビューアもトラッキング中は目パチを止める)。
     puppet.set_toggles(Toggles {
         eye_blink: false,

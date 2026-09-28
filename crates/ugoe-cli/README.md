@@ -108,7 +108,7 @@ ugoe sample avatar -o avatar.ugoe --psd path/to/parts.psd --project avatar.ugoep
 | オプション | 内容 |
 | --- | --- |
 | `-o, --output <PATH>` | 書き出す `.ugoe` バンドル |
-| `--psd <PATH>` | 入力の PSD (既定 `assets/fixtures/psd-real/comfyui-see-through-full-body-parts.psd`。レイヤー名 `face`・`eyelash-l` などで部位を探す) |
+| `--psd <PATH>` | 入力の PSD (既定 `assets/fixtures/psd-real/comfyui-see-through-bustup-parts.psd`。レイヤー名 `face`・`eyelash-l`・`eyeclose-l`・`mouth-open` などで部位を探す) |
 | `--project <DIR>` | `.ugoeproj` プロジェクトにも保存する (エディタで開いてリグを見る用) |
 
 ## テスト

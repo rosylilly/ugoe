@@ -11,7 +11,7 @@
 | `character.psd` | 320x400 の 8 ビット RGB の PSD。エディタに取り込んで目で確かめるための、単色の図形で描いた簡単なキャラクター。下から `背景`・`後ろ髪`・グループ `体` (通常: `首`・`服`)・グループ `頭` (通過: `顔`・`顔の影` (顔でクリッピング、乗算)・`頬` (不透明度 50%)・グループ `目` (`右目`・`左目`)・`口`・`口 (開き)` (非表示)・`前髪`)。合成画像はレイヤーから計算したもの | ugoe の自作 (同上。図形は `tests/common/shapes.rs` で描く) / MIT |
 | `psd-real/` | 実際のペイントツールや生成ツールが書き出した PSD を置く場所。置いたファイルは自動でテストされる。追加の手順とライセンスの記録は `psd-real/README.md` | 各ファイルの行を `psd-real/README.md` に書く |
 
-見本のモデル `assets/samples/avatar.ugoe` (`psd-real/` の PSD から `ugoe sample avatar` で作る。約 630KB、MIT) の
+見本のモデル `assets/samples/avatar.ugoe` (`psd-real/` の PSD から `ugoe sample avatar` で作る。約 1.3MB、MIT) の
 出所と作り方は `assets/samples/README.md` に書く。
 
 `layers.psd` と `character.psd` は Adobe の "Adobe Photoshop File Formats Specification" に沿って書き出し、
