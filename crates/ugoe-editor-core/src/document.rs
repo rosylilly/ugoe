@@ -7,7 +7,8 @@ use ts_rs::TS;
 use ugoe_model::deformer::DeformerKind;
 use ugoe_model::expression::Expression;
 use ugoe_model::motion::Motion;
-use ugoe_model::validate::{ValidationError, validate};
+use ugoe_model::physics::PhysicsSettings;
+use ugoe_model::validate::{ValidationError, validate, validate_physics};
 use ugoe_model::{Canvas, DeformerId, KeyformOrigin, MeshId, Model, ParamId, PartId, TextureRef};
 use ugoe_rigging::{InferError, InferScope, MirrorOptions};
 
@@ -17,7 +18,7 @@ use crate::inference::{MirrorReport, RederiveWarning};
 use crate::motion_edit::{self, Animations};
 use crate::texture::{Textures, is_valid_texture_name, png_size};
 use crate::{Command, automesh, inference, keyform};
-use crate::{deformer_edit, depth, mesh_edit};
+use crate::{deformer_edit, depth, mesh_edit, physics_edit};
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum EditError {
@@ -130,6 +131,9 @@ pub enum EditError {
     /// 編集すると表情に問題 (フェード・値・同じパラメータの重複など) が生じる。
     #[error("expression `{expression}`: {reason}")]
     InvalidExpression { expression: String, reason: String },
+    /// 物理の設定の値が不正 (有限でない、範囲外、粒子がないなど。`docs/editor.md#物理の編集`)。
+    #[error("invalid physics settings: {reason}")]
+    InvalidPhysics { reason: String },
 }
 
 /// [`Document::apply_with_report`] の結果: コマンドは適用したが、利用者に知らせたいこと。
@@ -150,7 +154,7 @@ fn join(errors: &[ValidationError]) -> String {
         .join("; ")
 }
 
-/// 編集中のモデル・テクスチャ・モーション・表情と履歴。
+/// 編集中のモデル・テクスチャ・物理の設定・モーション・表情と履歴。
 ///
 /// 暫定実装としてスナップショット方式の Undo を使う (`docs/adr/0005-editor-command-model.md`)。
 /// テクスチャの画像は `Arc` で共有するので、スナップショットでバイト列は複製されない。
@@ -171,6 +175,8 @@ struct Snapshot {
     model: Model,
     textures: Textures,
     animations: Animations,
+    /// 物理の設定 (`docs/editor.md#物理の編集`)。モデルと同じ Undo の単位で変える。
+    physics: Option<PhysicsSettings>,
     state: u64,
 }
 
@@ -188,6 +194,7 @@ impl Document {
                 model,
                 textures,
                 animations: Animations::default(),
+                physics: None,
                 state: 0,
             },
             undo: Vec::new(),
@@ -218,6 +225,17 @@ impl Document {
     /// 表情 (保存・書き出しの順)。
     pub fn expressions(&self) -> &[Expression] {
         &self.current.animations.expressions
+    }
+
+    /// 物理の設定を持たせる (作った時点の状態として。保存済みのまま)。
+    pub fn with_physics(mut self, physics: Option<PhysicsSettings>) -> Self {
+        self.current.physics = physics;
+        self
+    }
+
+    /// 物理の設定。
+    pub fn physics(&self) -> Option<&PhysicsSettings> {
+        self.current.physics.as_ref()
     }
 
     /// テクスチャ名 → PNG のバイト列。
@@ -268,14 +286,30 @@ impl Document {
             command,
             &mut touched,
             &mut mirrored,
+            &mut next.physics,
         )?;
         let mut warnings = inference::rederive(&mut next.model, &touched)?;
         inference::check_reparented_pairs(&self.current.model, &next.model, &mut warnings);
+        physics_edit::forget_removed(&self.current.model, &next.model, &mut next.physics);
         let before = validate(&self.current.model);
-        let introduced: Vec<_> = validate(&next.model)
+        let mut introduced: Vec<_> = validate(&next.model)
             .into_iter()
             .filter(|e| !before.contains(e))
             .collect();
+        // 物理の参照先と値の検査 (`docs/spec/model.md#物理の検証`)。
+        if let Some(physics) = &next.physics {
+            let before = self
+                .current
+                .physics
+                .as_ref()
+                .map(|p| validate_physics(p, &self.current.model))
+                .unwrap_or_default();
+            introduced.extend(
+                validate_physics(physics, &next.model)
+                    .into_iter()
+                    .filter(|e| !before.contains(e)),
+            );
+        }
         if !introduced.is_empty() {
             return Err(EditError::Invalid(introduced));
         }
@@ -392,6 +426,7 @@ fn apply_to(
     command: Command,
     touched: &mut Vec<KeyformTarget>,
     mirrored: &mut Vec<MirrorReport>,
+    physics: &mut Option<PhysicsSettings>,
 ) -> Result<(), EditError> {
     match command {
         Command::AddParameter { parameter } => {
@@ -413,7 +448,7 @@ fn apply_to(
         }
         Command::Batch { commands, .. } => {
             for c in commands {
-                apply_to(model, textures, anim, c, touched, mirrored)?;
+                apply_to(model, textures, anim, c, touched, mirrored, physics)?;
             }
         }
         Command::RenameParameter { id, name } => parameter(model, &id)?.name = name,
@@ -613,10 +648,12 @@ fn apply_to(
         }
         Command::AddMeshVertex { id, position } => {
             mesh_edit::add_vertex(model, &id, position)?;
+            physics_edit::vertex_added(model, physics, &id);
             touched.push(KeyformTarget::Mesh(id));
         }
         Command::RemoveMeshVertices { id, indices } => {
             mesh_edit::remove_vertices(model, &id, &indices)?;
+            physics_edit::vertices_removed(physics, &id, &indices);
             touched.push(KeyformTarget::Mesh(id));
         }
         Command::RetriangulateMesh { id } => mesh_edit::retriangulate(model, &id)?,
@@ -772,6 +809,21 @@ fn apply_to(
         Command::SetExpressionParameters { name, parameters } => {
             motion_edit::set_expression_parameters(anim, model, &name, parameters)?;
         }
+        // 物理 (T0629)。
+        command @ (Command::SetPhysicsWorld { .. }
+        | Command::AddPhysicsRig { .. }
+        | Command::CreatePhysicsRig { .. }
+        | Command::RemovePhysicsRig { .. }
+        | Command::RenamePhysicsRig { .. }
+        | Command::SetPhysicsInputs { .. }
+        | Command::SetPhysicsOutputs { .. }
+        | Command::SetPhysicsParticles { .. }
+        | Command::SetPhysicsNormalization { .. }
+        | Command::SetPhysicsRigColliders { .. }
+        | Command::SetPhysicsFrame { .. }
+        | Command::AddPhysicsCollider { .. }
+        | Command::RemovePhysicsCollider { .. }
+        | Command::SetPhysicsCollider { .. }) => physics_edit::apply(model, physics, command)?,
     }
     Ok(())
 }

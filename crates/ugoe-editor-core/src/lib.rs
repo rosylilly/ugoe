@@ -17,6 +17,7 @@ mod inference;
 pub mod keyform;
 mod mesh_edit;
 pub mod motion_edit;
+pub mod physics_edit;
 pub mod project;
 pub mod space;
 pub mod texture;
@@ -49,6 +50,8 @@ mod keyform_tests;
 mod mesh_edit_tests;
 #[cfg(test)]
 mod motion_edit_tests;
+#[cfg(test)]
+mod physics_edit_tests;
 #[cfg(test)]
 mod project_tests;
 #[cfg(test)]

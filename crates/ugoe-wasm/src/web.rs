@@ -6,6 +6,7 @@
 //! - 物理・モーション・表情・エフェクトの操作は [`animation`] に分けてある。
 
 mod animation;
+mod physics;
 
 use std::fmt::Display;
 use std::sync::Arc;

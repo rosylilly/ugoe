@@ -15,6 +15,12 @@ export interface ViewportModel {
 
 export type ViewportStatus = "loading" | "ready" | "unbuilt" | "error";
 
+/** WebPuppet の段 (`set_enabled` の名前)。 */
+export type PuppetStage = "physics" | "eye_blink" | "breath" | "lip_sync" | "pose";
+
+/** 1 フレームに進める時間の上限 (秒)。タブが裏に回って戻ったときに大きく跳ばないように。 */
+const MAX_FRAME_DT = 0.1;
+
 /** キャンバス座標 → CSS ピクセルの相似変換 (`css = offset + scale * canvas`)。 */
 export interface ViewTransform {
   scale: number;
@@ -35,6 +41,13 @@ export class ViewportController {
   generation = $state(0);
   /** 選択中のメッシュ・ワープの深度を色の点で重ねるか (インスペクタの深度の節で切り替える)。 */
   showDepth = $state(false);
+  /**
+   * 物理のプレビュー中か (docs/editor.md#物理のプレビュー)。プレビュー中は毎フレーム `update(dt)` で
+   * 物理を進めて描き続ける。止めると物理を外し、編集中の姿 (スライダーの値) に戻す。
+   */
+  previewingPhysics = $state(false);
+  /** プレビューで 1 フレーム進めるたびに増える (オーバーレイが評価結果を読み直すため)。 */
+  animationFrame = $state(0);
 
   #puppet: WebPuppet | null = null;
   #model: ViewportModel | null = null;
@@ -45,6 +58,9 @@ export class ViewportController {
   #frame = 0;
   /** "auto" で失敗したら "webgl2" で作り直す (1 つの canvas は WebGPU と WebGL2 を併用できないため)。 */
   #backendPreference: "auto" | "webgl2" = "auto";
+  /** 前のプレビューのフレームの時刻 (ms)。0 なら最初のフレーム。 */
+  #lastTime = 0;
+  #animation = 0;
 
   /** 描画中の WebPuppet (ヒットテストなどの問い合わせ用)。 */
   get puppet(): WebPuppet | null {
@@ -75,6 +91,7 @@ export class ViewportController {
       puppet.resize(this.#pixelWidth(), this.#pixelHeight());
       if (this.#model) this.#load(this.#model);
       this.requestRender();
+      this.#scheduleAnimation();
     } catch (e) {
       if (generation !== this.generation) return;
       if (this.#backendPreference === "auto") {
@@ -92,6 +109,8 @@ export class ViewportController {
   detach(): void {
     cancelAnimationFrame(this.#frame);
     this.#frame = 0;
+    cancelAnimationFrame(this.#animation);
+    this.#animation = 0;
     this.#puppet?.free();
     this.#puppet = null;
   }
@@ -109,6 +128,38 @@ export class ViewportController {
       this.parameterValues[id] = this.#puppet.parameter(id) ?? value;
       this.requestRender();
     }
+  }
+
+  /**
+   * 物理のプレビューを始める: 粒子を静止姿勢に置き直し、毎フレーム `update(dt)` で物理を進める。
+   * パラメータ (スライダー) や頭のデフォーマを動かすと揺れる。
+   */
+  startPhysicsPreview(): void {
+    if (this.previewingPhysics) return;
+    this.previewingPhysics = true;
+    this.#lastTime = 0;
+    this.#puppet?.reset_physics();
+    this.#applyStages();
+    this.#scheduleAnimation();
+  }
+
+  /** 物理のプレビューを止め、編集中の姿 (物理なし・スライダーの値) に戻す。 */
+  stopPhysicsPreview(): void {
+    if (!this.previewingPhysics) return;
+    this.previewingPhysics = false;
+    cancelAnimationFrame(this.#animation);
+    this.#animation = 0;
+    const puppet = this.#puppet;
+    if (puppet) {
+      puppet.reset_physics();
+      this.#applyStages();
+      // 物理が書き込んだパラメータ (揺れ用のパラメータ) を、スライダーの値に戻す。
+      for (const [id, value] of Object.entries(this.parameterValues)) {
+        puppet.set_parameter(id, value);
+      }
+    }
+    this.animationFrame += 1;
+    this.requestRender();
   }
 
   /**
@@ -192,7 +243,6 @@ export class ViewportController {
     const puppet = this.#puppet;
     if (!puppet) return;
     try {
-      // TODO(T0303): 物理・モーションを再生するときは update(dt) を毎フレーム呼んで描き続ける。
       puppet.render();
       this.#updateTransform();
     } catch (e) {
@@ -208,6 +258,53 @@ export class ViewportController {
     }
   }
 
+  /**
+   * 段の有効・無効を WebPuppet に設定する。編集中は物理・目パチなどを動かさず (`update` を呼ばないので
+   * 動かないが、呼ぶときのために止めておく)、物理のプレビュー中は物理だけを動かす。
+   */
+  #applyStages(): void {
+    const puppet = this.#puppet;
+    if (!puppet?.has_model()) return;
+    const stages: Record<PuppetStage, boolean> = {
+      physics: this.previewingPhysics,
+      eye_blink: false,
+      breath: false,
+      lip_sync: false,
+      pose: false,
+    };
+    for (const [stage, enabled] of Object.entries(stages)) {
+      try {
+        puppet.set_enabled(stage, enabled);
+      } catch (e) {
+        console.warn("ugoe:", e);
+      }
+    }
+  }
+
+  #scheduleAnimation(): void {
+    if (this.#animation || !this.previewingPhysics) return;
+    this.#animation = requestAnimationFrame((now) => {
+      this.#animation = 0;
+      this.#animate(now);
+    });
+  }
+
+  /** プレビューの 1 フレーム: 経過時間だけ物理を進めて描く。 */
+  #animate(now: number): void {
+    const puppet = this.#puppet;
+    if (!puppet || !this.previewingPhysics) return;
+    const dt = this.#lastTime ? Math.min((now - this.#lastTime) / 1000, MAX_FRAME_DT) : 0;
+    this.#lastTime = now;
+    try {
+      puppet.update(dt);
+    } catch (e) {
+      console.warn("ugoe:", e);
+    }
+    this.#render();
+    this.animationFrame += 1;
+    this.#scheduleAnimation();
+  }
+
   #load(model: ViewportModel): void {
     const puppet = this.#puppet;
     if (!puppet) return;
@@ -216,6 +313,7 @@ export class ViewportController {
         ? puppet.load_bundle(model.bundle)
         : puppet.load_json(model.json);
       for (const warning of warnings) console.warn("ugoe:", warning);
+      this.#applyStages();
       if (this.#resetOnLoad) {
         // WebPuppet は同じ ID の値を引き継ぐので、既定値に戻す。
         this.#resetOnLoad = false;

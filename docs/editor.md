@@ -55,6 +55,7 @@
 | キャンバス | `set_canvas` (`width`・`height`・`origin`。大きさは 0 より大きい有限の値。要素の座標は変えない) |
 | キーフォームの推定 | `infer_keyforms`、`mirror_keyforms`、`mark_keyform_authored`、`mark_keyform_derived`、`set_keyform_inference`、`set_mirror_pair` (下の「推定とミラー」)、`set_depth`・`apply_depth_preset` ([深度の編集](#深度の編集)) |
 | モーション・表情 | `add_motion`、`remove_motion`、`rename_motion`、`set_motion_properties`、`add_motion_curve`、`remove_motion_curve`、`set_motion_curve_fade`、`set_motion_key`、`move_motion_key`、`remove_motion_key`、`set_motion_segment`、`set_motion_events`、`add_expression`、`remove_expression`、`rename_expression`、`set_expression_properties`、`set_expression_parameters` ([モーションと表情の編集](#モーションと表情の編集)) |
+| 物理 | `set_physics_world`、`add_physics_rig`、`create_physics_rig`、`remove_physics_rig`、`rename_physics_rig`、`set_physics_inputs`、`set_physics_outputs`、`set_physics_particles`、`set_physics_normalization`、`set_physics_rig_colliders`、`set_physics_frame`、`add_physics_collider`、`remove_physics_collider`、`set_physics_collider` ([物理の編集](#物理の編集)) |
 | その他 | `batch` |
 
 - `set_mesh_properties` は `part`・`texture`・`blend`・`culling`・`masks`・`mask_mode`・`mask_only` のうち、指定したフィールドだけを変えます。
@@ -146,7 +147,7 @@
 - 削除 (`remove_part`・`remove_deformer`・`remove_mesh`) で要素がなくなったら、その要素をミラー元 (`keyforms.mirror_source`) にしている格子から記録を外し、その格子の `mirror` のセルを `authored` にします (値は変えない)。
 
 - 拒否する場合は、先に子を削除するか付け替えます。まとめて行うなら `batch` を使います。
-- 物理・モーション・表情は `Model` の外のデータなので、`remove_parameter` はこれらを書き換えません。消したパラメータへの参照が残ることがあります (ランタイムは無視する。タイムラインは `(missing)` の行として出す)。
+- 物理はドキュメントが持つので、パラメータ・デフォーマ・メッシュを消すと参照を外します ([物理の編集](#物理の編集))。モーション・表情は `Model` の外のデータなので、`remove_parameter` はこれらを書き換えません。消したパラメータへの参照が残ることがあります (ランタイムは無視する。タイムラインは `(missing)` の行として出す)。
 
 ### Undo
 
@@ -229,6 +230,55 @@
 
 - プレビュー中の「New from sliders」「Set values from sliders」は、重ねる前の値を基準にします。
 - 純粋な関数は `expressions.ts` (Vitest)。
+
+## 物理の編集
+
+物理の設定 (`PhysicsSettings`、[spec/physics.md](spec/physics.md)) を編集するコマンドです (実装は `crates/ugoe-editor-core/src/physics_edit.rs`、テストは `physics_edit_tests.rs`)。
+物理はモデルの外のデータですが、`Document` がモデルと一緒にスナップショットに持つので、同じ Undo の単位で変わります (`Document::physics()`・`with_physics`)。
+リグと衝突体は ID (`rig`・`id`) で指定します。入力・出力・粒子は ID を持たないので、並びごと置き換えます。
+
+| `op` | 内容 |
+| --- | --- |
+| `set_physics_world { gravity, wind, fps }` | 重力・風・ステップの周波数。物理の設定がなければ作る (リグなし) |
+| `add_physics_rig { rig }` | リグを末尾に追加する。物理の設定がなければ既定値 (重力 `(0, 1)`・風なし・60 Hz) で作る。使用中の ID は `DuplicateId` |
+| `create_physics_rig { id?, name, deformers }` | 回転デフォーマの鎖 (根元から順) に沿った動的物理のリグを作って追加する (下) |
+| `remove_physics_rig { id }`・`rename_physics_rig { id, name }` | リグの削除・表示名の変更 |
+| `set_physics_inputs { rig, inputs }`・`set_physics_outputs { rig, outputs }`・`set_physics_particles { rig, particles }`・`set_physics_normalization { rig, normalization }` | リグの入力・出力・粒子の鎖・正規化の範囲を置き換える |
+| `set_physics_rig_colliders { rig, colliders }` | リグと衝突する衝突体の ID の列 (重複は拒否) |
+| `set_physics_frame { rig, frame? }` | 重力と風の基準のデフォーマ (省略でキャンバス) |
+| `add_physics_collider { collider }`・`set_physics_collider { collider }`・`remove_physics_collider { id }` | 衝突体の追加・置き換え (`collider.id` のもの)・削除 (リグの `colliders` からも外す) |
+
+- **検証:** `Document::apply` は、適用後の物理を `validate_physics` で検査し、適用前になかったエラーが生じたら `EditError::Invalid` で拒否します (存在しない参照先・種類の違うデフォーマ・頂点の重みの数・負の半径など。モデルの検証と同じ規則)。
+  `validate_physics` が見ない値はコマンドが検査し、`EditError::InvalidPhysics` で拒否します: 有限でない値、`fps` が 0 以下、粒子が 0 個、`mobility` が 0〜1 の外、`delay`・`radius`・`collision_radius` が負、出力の `particle` が 0 (根元)、正規化の範囲が `min <= default <= max` でない、空の ID。
+- **モデルの編集との関係:** どのコマンドの後でも、そのコマンドが消したパラメータ・デフォーマ・メッシュ (`unwrap_deformer` を含む) を参照する入力・出力を削除し、重力の基準を外します。
+  取り付け先のデフォーマが消えた衝突体は取り付けを外し、形状の位置を消す前の基準の姿でのキャンバス座標に写します (見た目の位置を保つ)。
+  `add_mesh_vertex` は、そのメッシュへの頂点の出力の重みの末尾に 0 を足し、`remove_mesh_vertices` は消した頂点の重みを除きます。
+  頂点の数を変えるほかの編集 (`regenerate_mesh` など) は、重みの数が合わなくなるので検証で拒否します (先に出力を消す)。
+- **鎖からリグを作る (`create_physics_rig`):** `deformers` は回転デフォーマだけ (`DeformerKindMismatch`)、1 つ以上、重複なし。基準の姿での各デフォーマの原点を `o_k` とし、粒子 0 は最初のデフォーマの局所座標 `(0,0)` (根元はそのデフォーマに取り付く)、粒子 k (1 ≤ k < n) は `o_{k+1} - o_1`、粒子 n は最後のデフォーマの原点から重力の向きに、その子孫の点 (メッシュの頂点・ワープの制御点・回転デフォーマの原点) の最も深い所まで進んだ点 (1px 未満ならキャンバスの高さの 10%) です。鎖が重力の向きに並ぶので、静止姿勢は初期位置と一致し、出力の角度は 0 です。
+  `radius` は隣の粒子との距離、係数は `mobility` 0.9・`delay` 0.9・`acceleration` 1.5 (根元は 1・1)。出力は粒子 k の `angle` を k 番目のデフォーマの角度に足す (`deformer_angle`、倍率 1・重み 100%)。入力はなく、正規化の範囲は -10〜10。
+  `name` が空なら最初のデフォーマの名前、`id` を省略すると名前 (英数字を含まなければ `Physics` + 最初のデフォーマの ID) から `ids::unique_id` で作ります。
+
+### 物理の画面での操作
+
+| 場所 | 操作 |
+| --- | --- |
+| 物理のパネル (`panels/physics/PhysicsPanel.svelte`) | 右の列の上の区画の「Physics」タブ (「Inspector」と切り替える)。「Preview」/「Stop preview」、「World」(重力・風・周波数 → `set_physics_world`)、リグの一覧と「+ Rig」(空のリグ → `add_physics_rig`)、「+ From selected deformers」(ツリーで選んだ回転デフォーマを親から子の順に並べて `create_physics_rig`) |
+| リグの編集 (`panels/physics/RigEditor.svelte`) | 名前、「Gravity frame」、「Delete rig」、粒子 (「Length」`radius`・「Sway」`mobility`・「Speed」`delay`・「Settle」`acceleration`・「Hit r」`collision_radius`・位置。「+ Particle」は最後の区間と同じ向き・長さで足す)、入力、出力 (種類・書き込み先・粒子・成分・倍率・重み・反転。頂点の出力は作ったとき重みがすべて 1)、「Collides with」、「Input range」。欄を確定するたびにコマンドを 1 つ送る |
+| 衝突体 (`panels/physics/ColliderSection.svelte`) | 「+ Circle」「+ Capsule」(主な選択がデフォーマならその原点 (ワープは中心) に取り付け、なければキャンバスの中央)。名前・「Attach to」・「Shape」(どちらも今の見た目の位置を保って写し直す)・位置・半径・削除 |
+| ビューポート (`viewport/tools/physics/PhysicsOverlay.svelte`) | 物理のパネルを開いている間、衝突体 (青) と粒子の鎖 (オレンジ、根元は四角。選んだリグは濃い色) を重ねる。粒子は動的物理の設定のときだけ (物理空間がキャンバス座標なので)。衝突体をドラッグで動かし (カプセルは端の丸で端だけ)、離したときに `set_physics_collider` を 1 つ送る。鎖を押すとそのリグを選ぶ |
+
+- 衝突体と粒子の位置は wasm の `WebPuppet.deformer_point(id, x, y)` (デフォーマの局所座標 → キャンバス座標) で置き、ドラッグの逆写像は `deformer_jacobian` を使ったニュートン法です (`viewport/tools/physics/physicsGeometry.ts`、Vitest)。
+  止めているときの粒子は初期位置 (根元は取り付け先のデフォーマで写し、ほかは根元からの相対位置)、プレビュー中は `WebPuppet.physics_particles(rig)` の今の位置です。
+- パネルの組み立て (新しいリグ・衝突体・粒子の足し引き・出力先) は `panels/physics/physics.ts` の純粋な関数で、Vitest で検査します。
+
+### 物理のプレビュー
+
+`ViewportController.startPhysicsPreview()` / `stopPhysicsPreview()` (`viewport/controller.svelte.ts`)。
+
+- プレビュー中は `requestAnimationFrame` ごとに `WebPuppet.update(dt)` (1 フレーム最大 0.1 秒) を呼んで描き、`animationFrame` を増やしてオーバーレイに読み直させます。スライダー (`set_parameter`) は `Puppet::update` の基準値になるので、動かすと根元が動いて揺れます。
+- WebPuppet の段は、プレビュー中は物理だけを有効にし、それ以外 (目パチ・呼吸・リップシンク・ポーズ) は常に止めます (モデルを読み直すたびに設定し直す)。
+- 始めるときと止めるときに `reset_physics` で粒子を静止姿勢に戻します。止めると物理の段を止め (動的物理の加算量が 0 に戻る)、物理が書き込んだパラメータをスライダーの値に戻すので、編集中の姿に戻ります。
+- プレビュー中に編集すると、モデルと物理を読み直し、揺れは静止した姿からやり直します。
 
 ## PSD の取り込み
 
@@ -427,7 +477,8 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 ## プロジェクト
 
 - 保存形式は [`.ugoeproj/`](spec/file-formats.md#プロジェクト-ugoeproj) です。`ugoe_editor_core::Project` がプロジェクト 1 つ分の中身 (`ProjectMeta`・モデル・テクスチャ・物理・モーション・表情) を持ち、`save(dir)` / `load(dir)` で読み書きし、`export_bundle(&Project)` で `.ugoe` のバイト列を作ります。
-- 編集中は、モデル・テクスチャ・モーション・表情を `Document` が持ちます (`Project::document()` で作り、`Project::from_document` で保存用に戻す。モーションと表情は T0630 で移した)。物理はまだ編集コマンドがないので、`Document` の外 (Tauri の `ProjectSession`) に置いたまま保存・書き出しします。編集コマンドを作るときに `Document` へ移します。
+- 編集中は、モデル・テクスチャ・物理・モーション・表情を `Document` が持ちます (`Project::document()` で作り、`Project::from_document` で保存用に戻す。モーションと表情は T0630、物理は T0629 で移した)。
+- 物理の設定は Tauri の `get_physics` (`PhysicsSettings | null`) で読みます。ビューポートは `get_model_bundle` のバンドルに入った物理を使います。
 - **未保存の変更:** `Document` は状態ごとに番号を振り、保存した状態の番号を覚えます。`is_modified()` は現在の状態が保存した状態と違うかを返すので、Undo で保存時の状態に戻ると「変更なし」に戻ります。失敗したコマンドは状態を変えません。
 
 ### Tauri コマンド
@@ -519,7 +570,7 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 | --- | --- |
 | 左 | パーツツリー、デフォーマツリー (ドラッグで親を付け替え) |
 | 中央 | ビューポート (メッシュ編集、デフォーマのギズモ、キーフォームの編集) |
-| 右 | インスペクタ (上) とパラメータ一覧 (下。スライダー、キーの追加と削除)。別々にスクロールし、間の区切り (`role=separator`) のドラッグか ↑ / ↓ / Home / End で高さの配分 (15〜85%) を変える。配分は表示の状態で、`localStorage` に覚える (`src/lib/layout.ts`、T0627) |
+| 右 | インスペクタと物理のパネル (上。タブで切り替える) とパラメータ一覧 (下。スライダー、キーの追加と削除)。別々にスクロールし、間の区切り (`role=separator`) のドラッグか ↑ / ↓ / Home / End で高さの配分 (15〜85%) を変える。配分は表示の状態で、`localStorage` に覚える (`src/lib/layout.ts`、T0627) |
 | 下 | タイムライン (モーションと表情。ビューポートの下、畳める。[タイムライン](#タイムライン))、AI の提案パネル (M5) |
 
 - **Undo / Redo のショートカット:** Ctrl + Z / Ctrl + Shift + Z / Ctrl + Y (macOS は Cmd + Z / Cmd + Shift + Z) を `App.svelte` がウィンドウで受けます。入力欄・選択欄・編集可能な要素の中では、その要素自身の取り消しに任せて何もしません。判定は `src/lib/shortcuts.ts` (Vitest)。

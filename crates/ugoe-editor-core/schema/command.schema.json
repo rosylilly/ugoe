@@ -1785,6 +1785,310 @@
         "name",
         "parameters"
       ]
+    },
+    {
+      "description": "物理全体の重力・風・ステップの周波数を設定する。物理の設定がなければ作る (リグなし)。\n`fps` は 0 より大きい有限の値、`gravity`・`wind` は有限の値。",
+      "type": "object",
+      "properties": {
+        "fps": {
+          "type": "number",
+          "format": "float"
+        },
+        "gravity": {
+          "$ref": "#/$defs/Vec2"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_physics_world"
+        },
+        "wind": {
+          "$ref": "#/$defs/Vec2"
+        }
+      },
+      "required": [
+        "op",
+        "gravity",
+        "wind",
+        "fps"
+      ]
+    },
+    {
+      "description": "物理のリグを末尾に追加する。物理の設定がなければ既定値 (重力 `(0, 1)`・風なし・60 Hz) で作る。",
+      "type": "object",
+      "properties": {
+        "op": {
+          "type": "string",
+          "const": "add_physics_rig"
+        },
+        "rig": {
+          "$ref": "#/$defs/PhysicsRig"
+        }
+      },
+      "required": [
+        "op",
+        "rig"
+      ]
+    },
+    {
+      "description": "回転デフォーマの鎖 (`deformers`、根元から順) に沿った動的物理のリグを作り、末尾に追加する。\n粒子は基準の姿での各デフォーマの原点と、最後のデフォーマの原点から重力の向きに子孫の最も深い点まで\n進んだ先端に置き、粒子 k の角度を k 番目のデフォーマの角度に足す (`deformer_angle`)。`name` が空なら最初のデフォーマの名前、\n`id` を省略すると名前 (英数字を含まなければ最初のデフォーマの ID) から作る。",
+      "type": "object",
+      "properties": {
+        "deformers": {
+          "type": "array",
+          "items": {
+            "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+            "type": "string"
+          }
+        },
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "default": ""
+        },
+        "op": {
+          "type": "string",
+          "const": "create_physics_rig"
+        }
+      },
+      "required": [
+        "op",
+        "deformers"
+      ]
+    },
+    {
+      "description": "物理のリグを削除する。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "remove_physics_rig"
+        }
+      },
+      "required": [
+        "op",
+        "id"
+      ]
+    },
+    {
+      "description": "物理のリグの表示名を変える (ID は変えない)。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "rename_physics_rig"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "name"
+      ]
+    },
+    {
+      "description": "リグの入力を置き換える。入力・出力・粒子は ID を持たないので、並びごと置き換える。",
+      "type": "object",
+      "properties": {
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PhysicsInput"
+          }
+        },
+        "op": {
+          "type": "string",
+          "const": "set_physics_inputs"
+        },
+        "rig": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "rig",
+        "inputs"
+      ]
+    },
+    {
+      "description": "リグの出力を置き換える。",
+      "type": "object",
+      "properties": {
+        "op": {
+          "type": "string",
+          "const": "set_physics_outputs"
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PhysicsOutput"
+          }
+        },
+        "rig": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "rig",
+        "outputs"
+      ]
+    },
+    {
+      "description": "リグの粒子の鎖 (位置と係数) を置き換える。粒子は 1 つ以上。",
+      "type": "object",
+      "properties": {
+        "op": {
+          "type": "string",
+          "const": "set_physics_particles"
+        },
+        "particles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PhysicsParticle"
+          }
+        },
+        "rig": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "rig",
+        "particles"
+      ]
+    },
+    {
+      "description": "リグの入力の正規化の範囲を置き換える。",
+      "type": "object",
+      "properties": {
+        "normalization": {
+          "$ref": "#/$defs/PhysicsNormalization"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_physics_normalization"
+        },
+        "rig": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "rig",
+        "normalization"
+      ]
+    },
+    {
+      "description": "リグの粒子と衝突する衝突体 (`PhysicsCollider::id`) を置き換える。",
+      "type": "object",
+      "properties": {
+        "colliders": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "op": {
+          "type": "string",
+          "const": "set_physics_rig_colliders"
+        },
+        "rig": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "rig",
+        "colliders"
+      ]
+    },
+    {
+      "description": "リグの重力と風の基準のデフォーマを設定する (`None` でキャンバス)。",
+      "type": "object",
+      "properties": {
+        "frame": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "op": {
+          "type": "string",
+          "const": "set_physics_frame"
+        },
+        "rig": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "rig"
+      ]
+    },
+    {
+      "description": "衝突体を末尾に追加する。物理の設定がなければ `AddPhysicsRig` と同じ既定値で作る。",
+      "type": "object",
+      "properties": {
+        "collider": {
+          "$ref": "#/$defs/PhysicsCollider"
+        },
+        "op": {
+          "type": "string",
+          "const": "add_physics_collider"
+        }
+      },
+      "required": [
+        "op",
+        "collider"
+      ]
+    },
+    {
+      "description": "衝突体を削除し、リグの `colliders` からも外す。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "remove_physics_collider"
+        }
+      },
+      "required": [
+        "op",
+        "id"
+      ]
+    },
+    {
+      "description": "衝突体 (`collider.id` のもの) の名前・取り付け先・形状を置き換える。",
+      "type": "object",
+      "properties": {
+        "collider": {
+          "$ref": "#/$defs/PhysicsCollider"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_physics_collider"
+        }
+      },
+      "required": [
+        "op",
+        "collider"
+      ]
     }
   ],
   "$defs": {
@@ -1875,6 +2179,58 @@
           "required": [
             "kind",
             "id"
+          ]
+        }
+      ]
+    },
+    "ColliderShape": {
+      "description": "衝突体の形状。半径はキャンバスのピクセル単位。",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "center": {
+              "$ref": "#/$defs/Vec2"
+            },
+            "radius": {
+              "type": "number",
+              "format": "float"
+            },
+            "type": {
+              "type": "string",
+              "const": "circle"
+            }
+          },
+          "required": [
+            "type",
+            "center",
+            "radius"
+          ]
+        },
+        {
+          "description": "線分 `a`–`b` から `radius` 以内の領域。",
+          "type": "object",
+          "properties": {
+            "a": {
+              "$ref": "#/$defs/Vec2"
+            },
+            "b": {
+              "$ref": "#/$defs/Vec2"
+            },
+            "radius": {
+              "type": "number",
+              "format": "float"
+            },
+            "type": {
+              "type": "string",
+              "const": "capsule"
+            }
+          },
+          "required": [
+            "type",
+            "a",
+            "b",
+            "radius"
           ]
         }
       ]
@@ -2991,6 +3347,28 @@
         "value"
       ]
     },
+    "NormalizationRange": {
+      "type": "object",
+      "properties": {
+        "default": {
+          "type": "number",
+          "format": "float"
+        },
+        "max": {
+          "type": "number",
+          "format": "float"
+        },
+        "min": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "min",
+        "default",
+        "max"
+      ]
+    },
     "Parameter": {
       "description": "モデルを動かす入力スカラー値 (例: 顔の角度 X, 目の開閉)。",
       "type": "object",
@@ -3092,6 +3470,303 @@
       },
       "required": [
         "opacity"
+      ]
+    },
+    "PhysicsCollider": {
+      "description": "衝突体 (`docs/spec/physics.md#衝突体`)。",
+      "type": "object",
+      "properties": {
+        "attach": {
+          "description": "取り付け先のデフォーマ。形状の位置はこのデフォーマの局所座標系で表し、\nそのワールド変換で動く。`None` ならキャンバスに固定する。",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "shape": {
+          "$ref": "#/$defs/ColliderShape"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "shape"
+      ]
+    },
+    "PhysicsInput": {
+      "type": "object",
+      "properties": {
+        "parameter": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "reflect": {
+          "type": "boolean",
+          "default": false
+        },
+        "source": {
+          "$ref": "#/$defs/PhysicsSource"
+        },
+        "weight": {
+          "description": "0..=100 (%)。",
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "parameter",
+        "source",
+        "weight"
+      ]
+    },
+    "PhysicsNormalization": {
+      "type": "object",
+      "properties": {
+        "angle": {
+          "$ref": "#/$defs/NormalizationRange"
+        },
+        "position": {
+          "$ref": "#/$defs/NormalizationRange"
+        }
+      },
+      "required": [
+        "position",
+        "angle"
+      ]
+    },
+    "PhysicsOutput": {
+      "description": "物理の出力。\n\n旧形式 (出力先が `parameter` フィールドのパラメータだけ) も読める。読み込みは手で書く\n([`PhysicsOutput::deserialize`])。書き出しは常に `target` を使う。",
+      "type": "object",
+      "properties": {
+        "particle": {
+          "description": "出力元となる粒子インデックス (その粒子と 1 つ前の粒子の成す角を使う)。",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "reflect": {
+          "type": "boolean",
+          "default": false
+        },
+        "scale": {
+          "type": "number",
+          "format": "float"
+        },
+        "source": {
+          "$ref": "#/$defs/PhysicsSource"
+        },
+        "target": {
+          "description": "出力先 (`docs/spec/physics.md#出力先`)。",
+          "$ref": "#/$defs/PhysicsTarget"
+        },
+        "weight": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "target",
+        "particle",
+        "source",
+        "scale",
+        "weight"
+      ]
+    },
+    "PhysicsParticle": {
+      "type": "object",
+      "properties": {
+        "acceleration": {
+          "type": "number",
+          "format": "float"
+        },
+        "collision_radius": {
+          "description": "衝突用の半径。衝突体からこの半径を含めて押し出す。省略時は 0。",
+          "type": "number",
+          "format": "float",
+          "default": 0.0
+        },
+        "delay": {
+          "type": "number",
+          "format": "float"
+        },
+        "mobility": {
+          "type": "number",
+          "format": "float"
+        },
+        "position": {
+          "description": "初期位置 (根元からの相対)。",
+          "$ref": "#/$defs/Vec2"
+        },
+        "radius": {
+          "description": "1 つ前の粒子との距離 (区間の長さ)。衝突には使わない。",
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "position",
+        "mobility",
+        "delay",
+        "acceleration",
+        "radius"
+      ]
+    },
+    "PhysicsRig": {
+      "type": "object",
+      "properties": {
+        "colliders": {
+          "description": "このリグの粒子と衝突する衝突体 (`PhysicsCollider::id`)。省略時はなし。",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "frame": {
+          "description": "重力と風を解釈する座標系の基準のデフォーマ。`None` ならキャンバスの座標系\n(`docs/spec/physics.md#重力と風の基準`)。",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PhysicsInput"
+          }
+        },
+        "name": {
+          "type": "string"
+        },
+        "normalization": {
+          "$ref": "#/$defs/PhysicsNormalization"
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PhysicsOutput"
+          }
+        },
+        "particles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PhysicsParticle"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "inputs",
+        "outputs",
+        "particles",
+        "normalization"
+      ]
+    },
+    "PhysicsSource": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "x",
+            "y",
+            "angle"
+          ]
+        }
+      ]
+    },
+    "PhysicsTarget": {
+      "description": "物理の出力先。JSON では `{\"type\": \"deformer_angle\", \"deformer\": \"HairFront1\"}` と書く。\nパラメータ以外の出力先は動的物理 (`docs/spec/physics.md#動的物理-揺れ用パラメータのいらない物理`)。",
+      "oneOf": [
+        {
+          "description": "パラメータに書き込む (従来の出力)。",
+          "type": "object",
+          "properties": {
+            "id": {
+              "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "parameter"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ]
+        },
+        {
+          "description": "回転デフォーマの角度に足す。",
+          "type": "object",
+          "properties": {
+            "deformer": {
+              "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "deformer_angle"
+            }
+          },
+          "required": [
+            "type",
+            "deformer"
+          ]
+        },
+        {
+          "description": "回転デフォーマの原点をずらす。",
+          "type": "object",
+          "properties": {
+            "deformer": {
+              "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "deformer_offset"
+            }
+          },
+          "required": [
+            "type",
+            "deformer"
+          ]
+        },
+        {
+          "description": "ワープデフォーマの制御点、またはメッシュの頂点を、重み付きで粒子の変位に追従させる。",
+          "type": "object",
+          "properties": {
+            "owner": {
+              "$ref": "#/$defs/VertexOwner"
+            },
+            "type": {
+              "type": "string",
+              "const": "vertices"
+            },
+            "weights": {
+              "description": "頂点 (制御点) ごとの重み (0..=1)。並びと長さは、メッシュなら `Mesh::uvs`、\nワープなら `WarpKeyform::points` と同じ。",
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "float"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "owner",
+            "weights"
+          ]
+        }
       ]
     },
     "Point": {
@@ -3388,6 +4063,39 @@
       "required": [
         "index",
         "delta"
+      ]
+    },
+    "VertexOwner": {
+      "description": "頂点への出力の対象。JSON では `{\"mesh\": \"Skirt\"}` または `{\"warp\": \"SkirtWarp\"}` と書く。",
+      "oneOf": [
+        {
+          "description": "メッシュの頂点。",
+          "type": "object",
+          "properties": {
+            "mesh": {
+              "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "mesh"
+          ]
+        },
+        {
+          "description": "ワープデフォーマの制御点。",
+          "type": "object",
+          "properties": {
+            "warp": {
+              "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "warp"
+          ]
+        }
       ]
     },
     "WarpDeformer": {

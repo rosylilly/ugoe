@@ -62,7 +62,7 @@ fn saves_loads_exports_and_evaluates_bundle() {
     let mut wf = m2::run();
     let dir = TempDir::new("project");
     let project_dir = dir.path.join("m2.ugoeproj");
-    let project = Project::from_document(ProjectMeta::new("m2"), &wf.doc, None);
+    let project = Project::from_document(ProjectMeta::new("m2"), &wf.doc);
     project.save(&project_dir).expect("save project");
     wf.doc.mark_saved();
     assert!(!wf.doc.is_modified());

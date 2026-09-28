@@ -12,18 +12,16 @@ use ugoe_editor_core::project::PROJECT_EXTENSION;
 use ugoe_editor_core::{
     AutoMeshOptions, Document, Project, ProjectMeta, PsdImportOptions, PsdImportWarning, import,
 };
-use ugoe_model::physics::PhysicsSettings;
 
 use crate::AppState;
 
-/// 開いているプロジェクトのうち、`Document` の外にあるもの (保存先・メタ情報・物理)。
-/// モーションと表情は `Document` が持つ (編集コマンドと Undo の対象)。
+/// 開いているプロジェクトのうち、`Document` の外にあるもの (保存先・メタ情報)。
+/// モデル・物理・モーション・表情は `Document` が持つ (編集コマンドと Undo の対象)。
 #[derive(Debug)]
 pub struct ProjectSession {
     /// 保存先の `.ugoeproj` ディレクトリ。一度も保存していなければ `None`。
     path: Option<PathBuf>,
     meta: ProjectMeta,
-    physics: Option<PhysicsSettings>,
 }
 
 impl ProjectSession {
@@ -32,13 +30,12 @@ impl ProjectSession {
         let session = Self {
             path,
             meta: project.meta,
-            physics: project.physics,
         };
         (session, document)
     }
 
     fn to_project(&self, document: &Document) -> Project {
-        Project::from_document(self.meta.clone(), document, self.physics.clone())
+        Project::from_document(self.meta.clone(), document)
     }
 }
 

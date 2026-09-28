@@ -4302,5 +4302,338 @@ export const commands: Command[] = [
         "op": "overwrite"
       }
     ]
+  },
+  {
+    "op": "set_physics_world",
+    "gravity": [
+      0.0,
+      1.0
+    ],
+    "wind": [
+      0.2,
+      0.0
+    ],
+    "fps": 60.0
+  },
+  {
+    "op": "add_physics_rig",
+    "rig": {
+      "id": "Hair",
+      "name": "髪",
+      "inputs": [],
+      "outputs": [
+        {
+          "target": {
+            "type": "deformer_angle",
+            "deformer": "Hair1"
+          },
+          "particle": 1,
+          "source": "angle",
+          "scale": 1.0,
+          "weight": 100.0,
+          "reflect": false
+        },
+        {
+          "target": {
+            "type": "deformer_angle",
+            "deformer": "Hair2"
+          },
+          "particle": 2,
+          "source": "angle",
+          "scale": 1.0,
+          "weight": 100.0,
+          "reflect": false
+        },
+        {
+          "target": {
+            "type": "deformer_angle",
+            "deformer": "Hair3"
+          },
+          "particle": 3,
+          "source": "angle",
+          "scale": 1.0,
+          "weight": 100.0,
+          "reflect": false
+        }
+      ],
+      "particles": [
+        {
+          "position": [
+            0.0,
+            0.0
+          ],
+          "mobility": 0.9,
+          "delay": 0.9,
+          "acceleration": 1.5,
+          "radius": 0.0,
+          "collision_radius": 0.0
+        },
+        {
+          "position": [
+            0.0,
+            30.0
+          ],
+          "mobility": 0.9,
+          "delay": 0.9,
+          "acceleration": 1.5,
+          "radius": 30.0,
+          "collision_radius": 2.0
+        },
+        {
+          "position": [
+            0.0,
+            60.0
+          ],
+          "mobility": 0.9,
+          "delay": 0.9,
+          "acceleration": 1.5,
+          "radius": 30.0,
+          "collision_radius": 2.0
+        },
+        {
+          "position": [
+            0.0,
+            90.0
+          ],
+          "mobility": 0.9,
+          "delay": 0.9,
+          "acceleration": 1.5,
+          "radius": 30.0,
+          "collision_radius": 2.0
+        }
+      ],
+      "normalization": {
+        "position": {
+          "min": -10.0,
+          "default": 0.0,
+          "max": 10.0
+        },
+        "angle": {
+          "min": -10.0,
+          "default": 0.0,
+          "max": 10.0
+        }
+      },
+      "colliders": [
+        "Shoulder"
+      ]
+    }
+  },
+  {
+    "op": "create_physics_rig",
+    "name": "後ろ髪",
+    "deformers": [
+      "Hair1",
+      "Hair2"
+    ]
+  },
+  {
+    "op": "remove_physics_rig",
+    "id": "Hair"
+  },
+  {
+    "op": "rename_physics_rig",
+    "id": "Hair",
+    "name": "前髪"
+  },
+  {
+    "op": "set_physics_inputs",
+    "rig": "Skirt",
+    "inputs": [
+      {
+        "parameter": "AngleX",
+        "source": "x",
+        "weight": 100.0,
+        "reflect": false
+      }
+    ]
+  },
+  {
+    "op": "set_physics_outputs",
+    "rig": "Skirt",
+    "outputs": [
+      {
+        "target": {
+          "type": "vertices",
+          "owner": {
+            "warp": "Cloth"
+          },
+          "weights": [
+            0.0,
+            0.0,
+            1.0,
+            1.0
+          ]
+        },
+        "particle": 1,
+        "source": "x",
+        "scale": 1.0,
+        "weight": 100.0,
+        "reflect": false
+      },
+      {
+        "target": {
+          "type": "vertices",
+          "owner": {
+            "warp": "Cloth"
+          },
+          "weights": [
+            0.0,
+            0.0,
+            1.0,
+            1.0
+          ]
+        },
+        "particle": 1,
+        "source": "y",
+        "scale": 1.0,
+        "weight": 100.0,
+        "reflect": false
+      },
+      {
+        "target": {
+          "type": "vertices",
+          "owner": {
+            "mesh": "Ribbon"
+          },
+          "weights": [
+            0.0,
+            0.0,
+            1.0,
+            1.0
+          ]
+        },
+        "particle": 1,
+        "source": "x",
+        "scale": 1.0,
+        "weight": 100.0,
+        "reflect": false
+      }
+    ]
+  },
+  {
+    "op": "set_physics_particles",
+    "rig": "Hair",
+    "particles": [
+      {
+        "position": [
+          0.0,
+          0.0
+        ],
+        "mobility": 0.9,
+        "delay": 0.9,
+        "acceleration": 1.5,
+        "radius": 0.0,
+        "collision_radius": 0.0
+      },
+      {
+        "position": [
+          0.0,
+          30.0
+        ],
+        "mobility": 0.9,
+        "delay": 0.9,
+        "acceleration": 1.5,
+        "radius": 30.0,
+        "collision_radius": 2.0
+      },
+      {
+        "position": [
+          0.0,
+          60.0
+        ],
+        "mobility": 0.9,
+        "delay": 0.9,
+        "acceleration": 1.5,
+        "radius": 30.0,
+        "collision_radius": 2.0
+      },
+      {
+        "position": [
+          0.0,
+          90.0
+        ],
+        "mobility": 0.9,
+        "delay": 0.9,
+        "acceleration": 1.5,
+        "radius": 30.0,
+        "collision_radius": 2.0
+      }
+    ]
+  },
+  {
+    "op": "set_physics_normalization",
+    "rig": "Hair",
+    "normalization": {
+      "position": {
+        "min": -10.0,
+        "default": 0.0,
+        "max": 10.0
+      },
+      "angle": {
+        "min": -10.0,
+        "default": 0.0,
+        "max": 10.0
+      }
+    }
+  },
+  {
+    "op": "set_physics_rig_colliders",
+    "rig": "Hair",
+    "colliders": [
+      "Shoulder"
+    ]
+  },
+  {
+    "op": "set_physics_frame",
+    "rig": "Skirt",
+    "frame": "Body"
+  },
+  {
+    "op": "set_physics_frame",
+    "rig": "Hair"
+  },
+  {
+    "op": "add_physics_collider",
+    "collider": {
+      "id": "Arm",
+      "name": "肩",
+      "shape": {
+        "type": "capsule",
+        "a": [
+          -10.0,
+          -60.0
+        ],
+        "b": [
+          40.0,
+          -40.0
+        ],
+        "radius": 8.0
+      }
+    }
+  },
+  {
+    "op": "remove_physics_collider",
+    "id": "Arm"
+  },
+  {
+    "op": "set_physics_collider",
+    "collider": {
+      "id": "Shoulder",
+      "name": "肩",
+      "attach": "Body",
+      "shape": {
+        "type": "capsule",
+        "a": [
+          -10.0,
+          -60.0
+        ],
+        "b": [
+          40.0,
+          -40.0
+        ],
+        "radius": 8.0
+      }
+    }
   }
 ];

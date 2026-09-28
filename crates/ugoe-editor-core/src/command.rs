@@ -9,6 +9,9 @@ use ugoe_model::expression::{Expression, ExpressionParameter};
 use ugoe_model::mesh::MeshKeyform;
 use ugoe_model::motion::{Curve, CurveTarget, Motion, MotionEvent, Point};
 use ugoe_model::part::PartKeyform;
+use ugoe_model::physics::{
+    PhysicsCollider, PhysicsInput, PhysicsNormalization, PhysicsOutput, PhysicsParticle, PhysicsRig,
+};
 use ugoe_model::{
     BlendMode, Deformer, DeformerId, KeyformGrid, KeyformInference, MaskMode, MaskRef, Mesh,
     MeshId, ParamId, Parameter, Part, PartId,
@@ -500,6 +503,85 @@ pub enum Command {
     SetExpressionParameters {
         name: String,
         parameters: Vec<ExpressionParameter>,
+    },
+    // ---- 物理 (T0629)。規則は `docs/editor.md#物理の編集` ----
+    /// 物理全体の重力・風・ステップの周波数を設定する。物理の設定がなければ作る (リグなし)。
+    /// `fps` は 0 より大きい有限の値、`gravity`・`wind` は有限の値。
+    SetPhysicsWorld {
+        #[ts(as = "ugoe_core::codegen::Vec2Repr")]
+        #[schemars(with = "ugoe_core::codegen::Vec2Repr")]
+        gravity: Vec2,
+        #[ts(as = "ugoe_core::codegen::Vec2Repr")]
+        #[schemars(with = "ugoe_core::codegen::Vec2Repr")]
+        wind: Vec2,
+        fps: f32,
+    },
+    /// 物理のリグを末尾に追加する。物理の設定がなければ既定値 (重力 `(0, 1)`・風なし・60 Hz) で作る。
+    AddPhysicsRig {
+        rig: PhysicsRig,
+    },
+    /// 回転デフォーマの鎖 (`deformers`、根元から順) に沿った動的物理のリグを作り、末尾に追加する。
+    /// 粒子は基準の姿での各デフォーマの原点と、最後のデフォーマの原点から重力の向きに子孫の最も深い点まで
+    /// 進んだ先端に置き、粒子 k の角度を k 番目のデフォーマの角度に足す (`deformer_angle`)。`name` が空なら最初のデフォーマの名前、
+    /// `id` を省略すると名前 (英数字を含まなければ最初のデフォーマの ID) から作る。
+    CreatePhysicsRig {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+        #[serde(default)]
+        name: String,
+        deformers: Vec<DeformerId>,
+    },
+    /// 物理のリグを削除する。
+    RemovePhysicsRig {
+        id: String,
+    },
+    /// 物理のリグの表示名を変える (ID は変えない)。
+    RenamePhysicsRig {
+        id: String,
+        name: String,
+    },
+    /// リグの入力を置き換える。入力・出力・粒子は ID を持たないので、並びごと置き換える。
+    SetPhysicsInputs {
+        rig: String,
+        inputs: Vec<PhysicsInput>,
+    },
+    /// リグの出力を置き換える。
+    SetPhysicsOutputs {
+        rig: String,
+        outputs: Vec<PhysicsOutput>,
+    },
+    /// リグの粒子の鎖 (位置と係数) を置き換える。粒子は 1 つ以上。
+    SetPhysicsParticles {
+        rig: String,
+        particles: Vec<PhysicsParticle>,
+    },
+    /// リグの入力の正規化の範囲を置き換える。
+    SetPhysicsNormalization {
+        rig: String,
+        normalization: PhysicsNormalization,
+    },
+    /// リグの粒子と衝突する衝突体 (`PhysicsCollider::id`) を置き換える。
+    SetPhysicsRigColliders {
+        rig: String,
+        colliders: Vec<String>,
+    },
+    /// リグの重力と風の基準のデフォーマを設定する (`None` でキャンバス)。
+    SetPhysicsFrame {
+        rig: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        frame: Option<DeformerId>,
+    },
+    /// 衝突体を末尾に追加する。物理の設定がなければ `AddPhysicsRig` と同じ既定値で作る。
+    AddPhysicsCollider {
+        collider: PhysicsCollider,
+    },
+    /// 衝突体を削除し、リグの `colliders` からも外す。
+    RemovePhysicsCollider {
+        id: String,
+    },
+    /// 衝突体 (`collider.id` のもの) の名前・取り付け先・形状を置き換える。
+    SetPhysicsCollider {
+        collider: PhysicsCollider,
     },
 }
 

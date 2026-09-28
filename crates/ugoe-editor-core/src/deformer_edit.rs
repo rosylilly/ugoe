@@ -354,7 +354,7 @@ fn common_part(model: &Model, parts: &[PartId]) -> Option<PartId> {
 }
 
 /// 子 (とその子孫) の基準の姿でのキャンバス座標の点: メッシュの頂点、ワープの制御点、回転デフォーマの原点。
-fn subtree_points(model: &Model, rest: &Rest, child: &ChildRef, out: &mut Vec<Vec2>) {
+pub(crate) fn subtree_points(model: &Model, rest: &Rest, child: &ChildRef, out: &mut Vec<Vec2>) {
     match child {
         ChildRef::Mesh(id) => out.extend(rest.meshes.get(id).into_iter().flatten()),
         ChildRef::Deformer(id) => {

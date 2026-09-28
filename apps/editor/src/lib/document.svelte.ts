@@ -9,6 +9,7 @@ import {
   type Model,
   type Motion,
   type Parameter,
+  type PhysicsSettings,
   type RederiveWarning,
 } from "./ipc";
 import { mergeWarnings } from "./panels/inspector/inference/inference";
@@ -24,6 +25,8 @@ export class EditorDocument {
   /** モーションと表情 (保存・書き出しの順)。refresh のたびに読み直す。 */
   motions = $state.raw<Motion[]>([]);
   expressions = $state.raw<Expression[]>([]);
+  /** 物理の設定 (なければ null)。物理のパネルとビューポートの表示が読む。 */
+  physics = $state.raw<PhysicsSettings | null>(null);
   error = $state<string | null>(null);
   /**
    * 適用したコマンドの自動の作り直しで失敗したこと (ミラーのやり直しなど。docs/editor.md#推定とミラー)。
@@ -44,6 +47,7 @@ export class EditorDocument {
         return null;
       });
       const animations = await ipc.getAnimations();
+      this.physics = await ipc.getPhysics();
       this.model = { json, bundle };
       this.motions = animations.motions;
       this.expressions = animations.expressions;

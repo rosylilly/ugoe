@@ -394,4 +394,4 @@ just cli render /home/you/character.ugoe -o turn.png --param AngleX=30 --param E
 - 存在しないパラメータの ID を書くとエラーになり、使える ID の一覧が出ます。値域の外の値は範囲に収められ、警告が出ます。
 - オプションの一覧は [ugoe-cli の README](../../crates/ugoe-cli/README.md#ugoe-render) にあります。
 
-これでチュートリアルは終わりです。各機能の詳しい説明は [リファレンス](README.md#目次) を見てください。
+これでチュートリアルは終わりです。続けて髪を揺らすには [物理: 髪を揺らす](physics.md) に進んでください。各機能の詳しい説明は [リファレンス](README.md#目次) を見てください。

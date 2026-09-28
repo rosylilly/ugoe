@@ -3,6 +3,7 @@
   ViewportController (表示) に、各領域の中身は lib/panels/ と lib/viewport/ に置く。
   中央はビューポート (上) とタイムライン (下。モーションと表情、lib/panels/timeline/)。
   右の列はインスペクタ (上) とパラメータ (下) に分け、区切りをドラッグ (または矢印キー) で動かす (lib/layout.ts)。
+  上の区画は「Inspector」と「Physics」(lib/panels/physics/) をタブで切り替える。
   Undo / Redo のショートカット (lib/shortcuts.ts) もここで受ける。
 -->
 <script lang="ts">
@@ -14,6 +15,8 @@ import { type AppInfo, ipc } from "./lib/ipc";
 import { loadSplit, saveSplit, splitAt, splitByKey } from "./lib/layout";
 import InspectorPanel from "./lib/panels/InspectorPanel.svelte";
 import ParametersPanel from "./lib/panels/ParametersPanel.svelte";
+import PhysicsPanel from "./lib/panels/physics/PhysicsPanel.svelte";
+import { PhysicsView } from "./lib/panels/physics/physicsView.svelte";
 import TreePanel from "./lib/panels/TreePanel.svelte";
 import TimelinePanel from "./lib/panels/timeline/TimelinePanel.svelte";
 import { Selection } from "./lib/selection.svelte";
@@ -25,6 +28,7 @@ import Viewport from "./lib/viewport/Viewport.svelte";
 const doc = new EditorDocument();
 const viewport = new ViewportController();
 const selection = new Selection();
+const physics = new PhysicsView();
 let info = $state<AppInfo | null>(null);
 let fileMenu = $state<FileMenu>();
 
@@ -109,7 +113,7 @@ $effect(() => {
     <div class="viewport-area">
       <Viewport controller={viewport} model={doc.model} hint={doc.empty ? EMPTY_VIEWPORT_HINT : null}>
         {#snippet overlay(controller)}
-          <ToolOverlay {controller} {doc} {selection} />
+          <ToolOverlay {controller} {doc} {selection} {physics} />
         {/snippet}
       </Viewport>
     </div>
@@ -117,8 +121,18 @@ $effect(() => {
   </main>
   <aside class="right" bind:this={rightColumn}>
     <div class="pane inspector" style:flex-basis="{split * 100}%">
+      <div class="tabs" role="tablist">
+        <button role="tab" aria-selected={!physics.active} class:current={!physics.active}
+          onclick={() => (physics.active = false)}>Inspector</button>
+        <button role="tab" aria-selected={physics.active} class:current={physics.active}
+          onclick={() => (physics.active = true)}>Physics</button>
+      </div>
       {#if doc.error}<p class="error">{doc.error}</p>{/if}
-      <InspectorPanel {doc} {selection} {viewport} />
+      {#if physics.active}
+        <PhysicsPanel {doc} {selection} {viewport} view={physics} />
+      {:else}
+        <InspectorPanel {doc} {selection} {viewport} />
+      {/if}
     </div>
     <!-- フォーカスできる区切り (ARIA の separator) はキー操作を受ける部品。 -->
     <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
@@ -170,6 +184,26 @@ $effect(() => {
   }
   .pane.inspector {
     flex: 0 0 auto;
+  }
+  .tabs {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    gap: 4px;
+    padding: 8px 0 4px;
+    margin-bottom: 4px;
+    background: var(--panel, var(--bg));
+    border-bottom: 1px solid var(--border);
+  }
+  .tabs button {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    border-bottom: 2px solid transparent;
+  }
+  .tabs button.current {
+    border-bottom-color: var(--accent);
+    color: var(--accent);
   }
   .pane.parameters {
     flex: 1 1 0;

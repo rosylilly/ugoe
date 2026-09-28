@@ -1401,10 +1401,24 @@ fn op_name(command: &Command) -> &'static str {
         Command::RenameExpression { .. } => "rename_expression",
         Command::SetExpressionProperties { .. } => "set_expression_properties",
         Command::SetExpressionParameters { .. } => "set_expression_parameters",
+        Command::SetPhysicsWorld { .. } => "set_physics_world",
+        Command::AddPhysicsRig { .. } => "add_physics_rig",
+        Command::CreatePhysicsRig { .. } => "create_physics_rig",
+        Command::RemovePhysicsRig { .. } => "remove_physics_rig",
+        Command::RenamePhysicsRig { .. } => "rename_physics_rig",
+        Command::SetPhysicsInputs { .. } => "set_physics_inputs",
+        Command::SetPhysicsOutputs { .. } => "set_physics_outputs",
+        Command::SetPhysicsParticles { .. } => "set_physics_particles",
+        Command::SetPhysicsNormalization { .. } => "set_physics_normalization",
+        Command::SetPhysicsRigColliders { .. } => "set_physics_rig_colliders",
+        Command::SetPhysicsFrame { .. } => "set_physics_frame",
+        Command::AddPhysicsCollider { .. } => "add_physics_collider",
+        Command::RemovePhysicsCollider { .. } => "remove_physics_collider",
+        Command::SetPhysicsCollider { .. } => "set_physics_collider",
     }
 }
 
-const OP_COUNT: usize = 70;
+const OP_COUNT: usize = 84;
 
 fn json_samples() -> Vec<Command> {
     let quad = fixtures::single_quad();
@@ -1641,6 +1655,7 @@ fn json_samples() -> Vec<Command> {
     ]
     .into_iter()
     .chain(crate::codegen::motion_sample_commands())
+    .chain(crate::codegen::physics_samples())
     .collect()
 }
 

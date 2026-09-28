@@ -9,9 +9,12 @@
   - デフォーマのギズモ (T0607): tools/deformer/DeformerGizmo.svelte。主な選択がデフォーマのとき、
     フォーム編集の代わりに出す。
   - 深度の表示 (T0617): tools/depth/DepthOverlay.svelte。インスペクタの深度の節で切り替える (操作は受けない)。
+  - 物理の表示 (T0629): tools/physics/PhysicsOverlay.svelte。物理のパネルを開いている間、粒子と衝突体を重ね、
+    衝突体のドラッグを受ける (ほかのツールより上)。
 -->
 <script lang="ts">
 import type { EditorDocument } from "../document.svelte";
+import type { PhysicsView } from "../panels/physics/physicsView.svelte";
 import type { Selection } from "../selection.svelte";
 import type { ViewportController } from "./controller.svelte";
 import DeformerGizmo from "./tools/deformer/DeformerGizmo.svelte";
@@ -19,15 +22,17 @@ import DepthOverlay from "./tools/depth/DepthOverlay.svelte";
 import FormTool from "./tools/form/FormTool.svelte";
 import { boundaryEdges, cycleHit } from "./tools/geometry";
 import MeshEditTool from "./tools/MeshEditTool.svelte";
+import PhysicsOverlay from "./tools/physics/PhysicsOverlay.svelte";
 import { ViewportScene } from "./tools/scene.svelte";
 
 interface Props {
   controller: ViewportController;
   doc: EditorDocument;
   selection: Selection;
+  physics: PhysicsView;
 }
 
-let { controller, doc, selection }: Props = $props();
+let { controller, doc, selection, physics }: Props = $props();
 
 /** これより動かなければクリックとみなす (CSS ピクセル)。 */
 const CLICK_SLOP = 3;
@@ -44,6 +49,7 @@ $effect(() => {
   void doc.model;
   void controller.transform;
   void controller.status;
+  void controller.animationFrame;
   for (const value of Object.values(controller.parameterValues)) void value;
   queueMicrotask(() => scene.invalidate());
 });
@@ -171,8 +177,13 @@ function onKeyDown(e: KeyboardEvent): void {
 {/if}
 
 <DepthOverlay {controller} {doc} {selection} {scene} />
+<PhysicsOverlay {controller} {doc} view={physics} />
 
 <div class="toolbar">
+  {#if controller.previewingPhysics}
+    <button class="previewing" onclick={() => controller.stopPhysicsPreview()}
+      title="Stop the physics preview and return to the edit pose">Stop physics</button>
+  {/if}
   {#if editing === null}
     <button disabled={primaryMesh === null} onclick={enterMeshEdit} title="Double-click a mesh">
       Edit mesh
@@ -226,5 +237,10 @@ function onKeyDown(e: KeyboardEvent): void {
 
 .hint {
   font-size: 11px;
+}
+
+.previewing {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 </style>

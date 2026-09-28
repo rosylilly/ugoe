@@ -691,7 +691,7 @@ fn motions_and_expressions_are_saved_and_exported_from_the_document() {
         expression: expression("Smile"),
     })
     .unwrap();
-    let project = Project::from_document(ProjectMeta::new("p"), &doc, None);
+    let project = Project::from_document(ProjectMeta::new("p"), &doc);
     assert_eq!(project.motions, doc.motions());
     assert_eq!(project.expressions, doc.expressions());
 

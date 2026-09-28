@@ -384,9 +384,11 @@ fn document_round_trip_and_modified_flag() {
     );
     assert!(!doc.is_modified());
 
-    let back = Project::from_document(project.meta.clone(), &doc, project.physics.clone());
+    let back = Project::from_document(project.meta.clone(), &doc);
     assert_eq!(back.textures, project.textures);
     assert_eq!(back.model, project.model);
+    // 物理はドキュメントが持ち、そのまま戻る。
+    assert_eq!(back.physics, project.physics);
 }
 
 // ---- テクスチャのコマンド ----

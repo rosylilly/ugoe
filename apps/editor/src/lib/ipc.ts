@@ -9,6 +9,7 @@ import type {
   AutoMeshOptions,
   Command,
   KeyformTarget,
+  PhysicsSettings,
   ProjectStatus,
   PsdImportWarning,
 } from "./generated/types";
@@ -27,6 +28,8 @@ export const ipc = {
   getModelJson: () => invoke<string>("get_model_json"),
   /** ドキュメントのモーションと表情 (タイムラインの表示用。編集は applyCommand)。 */
   getAnimations: () => invoke<AnimationData>("get_animations"),
+  /** 物理の設定 (ugoe_model::physics::PhysicsSettings)。なければ null。 */
+  getPhysics: () => invoke<PhysicsSettings | null>("get_physics"),
   undo: () => invoke<boolean>("undo"),
   redo: () => invoke<boolean>("redo"),
   projectStatus: () => invoke<ProjectStatus>("project_status"),

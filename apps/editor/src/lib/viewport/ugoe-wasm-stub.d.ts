@@ -80,6 +80,7 @@ export class WebPuppet {
   has_physics(): boolean;
   is_dynamic_physics(): boolean;
   reset_physics(): void;
+  physics_particles(rig: number): Float32Array;
   standard_hit_area(name: string): string | undefined;
   hit_test_standard(name: string, x: number, y: number): boolean;
   standard_hit_areas_at(x: number, y: number): string[];
@@ -87,6 +88,8 @@ export class WebPuppet {
   deformer_ids(): string[];
   warp_points(id: string): Float32Array | undefined;
   rotation_frame(id: string): Float32Array | undefined;
+  deformer_point(id: string, x: number, y: number): Float32Array | undefined;
+  deformer_jacobian(id: string, x: number, y: number): Float32Array | undefined;
 }
 
 export function version(): string;

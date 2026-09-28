@@ -53,6 +53,14 @@ pub fn get_animations(state: State<'_, AppState>) -> Result<AnimationData, Strin
     })
 }
 
+/// 物理の設定 (`ugoe_model::physics::PhysicsSettings`)。なければ `null`。
+#[tauri::command]
+pub fn get_physics(
+    state: State<'_, AppState>,
+) -> Result<Option<ugoe_model::physics::PhysicsSettings>, String> {
+    Ok(lock(&state)?.physics().cloned())
+}
+
 #[tauri::command]
 pub fn undo(state: State<'_, AppState>) -> Result<bool, String> {
     Ok(lock(&state)?.undo())

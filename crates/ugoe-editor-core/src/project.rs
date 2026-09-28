@@ -105,8 +105,7 @@ impl ProjectMeta {
 
 /// プロジェクト 1 つ分の中身。
 ///
-/// 編集中は、モデル・テクスチャ・モーション・表情を [`Document`] が持つ (Undo の対象)。物理は
-/// まだ編集コマンドがないので、ここに置いたまま保存・書き出しする。
+/// 編集中は、モデル・テクスチャ・物理・モーション・表情を [`Document`] が持つ (Undo の対象)。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Project {
     pub meta: ProjectMeta,
@@ -162,25 +161,22 @@ impl Project {
     }
 
     /// 編集中のドキュメントの現在の状態から、保存・書き出し用のプロジェクトを作る。
-    pub fn from_document(
-        meta: ProjectMeta,
-        document: &Document,
-        physics: Option<PhysicsSettings>,
-    ) -> Self {
+    pub fn from_document(meta: ProjectMeta, document: &Document) -> Self {
         Self {
             meta,
             model: document.model().clone(),
             textures: document.textures().clone(),
-            physics,
+            physics: document.physics().cloned(),
             motions: document.motions().to_vec(),
             expressions: document.expressions().to_vec(),
         }
     }
 
-    /// モデル・テクスチャ・モーション・表情から編集用のドキュメントを作る (保存済みの状態として)。
+    /// モデル・テクスチャ・物理・モーション・表情から編集用のドキュメントを作る (保存済みの状態として)。
     pub fn document(&self) -> Document {
         Document::with_textures(self.model.clone(), self.textures.clone())
             .with_animations(self.motions.clone(), self.expressions.clone())
+            .with_physics(self.physics.clone())
     }
 
     /// `dir` にプロジェクトを保存する。`dir` がなければ作る。

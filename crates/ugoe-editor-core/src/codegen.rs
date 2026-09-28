@@ -464,6 +464,7 @@ fn sample_commands() -> Vec<Command> {
         Command::RetriangulateMesh { id: mesh_id },
     ])
     .chain(motion_sample_commands())
+    .chain(physics_samples())
     .collect()
 }
 
@@ -605,6 +606,66 @@ pub(crate) fn motion_sample_commands() -> Vec<Command> {
                 op: ExpressionOp::Overwrite,
             }],
         },
+    ]
+}
+
+/// 物理のコマンドの見本 (T0629)。`dynamic_hair` のフィクスチャの設定を使う。
+pub(crate) fn physics_samples() -> Vec<Command> {
+    let settings = fixtures::dynamic_hair_settings();
+    let hair = settings.rigs[0].clone();
+    let skirt = settings.rigs[1].clone();
+    let collider = settings.colliders[0].clone();
+    let mut capsule = collider.clone();
+    capsule.id = "Arm".into();
+    capsule.attach = None;
+    vec![
+        Command::SetPhysicsWorld {
+            gravity: Vec2::new(0.0, 1.0),
+            wind: Vec2::new(0.2, 0.0),
+            fps: 60.0,
+        },
+        Command::AddPhysicsRig { rig: hair.clone() },
+        Command::CreatePhysicsRig {
+            id: None,
+            name: "後ろ髪".into(),
+            deformers: vec!["Hair1".into(), "Hair2".into()],
+        },
+        Command::RemovePhysicsRig { id: "Hair".into() },
+        Command::RenamePhysicsRig {
+            id: "Hair".into(),
+            name: "前髪".into(),
+        },
+        Command::SetPhysicsInputs {
+            rig: skirt.id.clone(),
+            inputs: skirt.inputs.clone(),
+        },
+        Command::SetPhysicsOutputs {
+            rig: skirt.id.clone(),
+            outputs: skirt.outputs.clone(),
+        },
+        Command::SetPhysicsParticles {
+            rig: hair.id.clone(),
+            particles: hair.particles.clone(),
+        },
+        Command::SetPhysicsNormalization {
+            rig: hair.id.clone(),
+            normalization: hair.normalization,
+        },
+        Command::SetPhysicsRigColliders {
+            rig: hair.id.clone(),
+            colliders: hair.colliders.clone(),
+        },
+        Command::SetPhysicsFrame {
+            rig: skirt.id.clone(),
+            frame: Some("Body".into()),
+        },
+        Command::SetPhysicsFrame {
+            rig: hair.id,
+            frame: None,
+        },
+        Command::AddPhysicsCollider { collider: capsule },
+        Command::RemovePhysicsCollider { id: "Arm".into() },
+        Command::SetPhysicsCollider { collider },
     ]
 }
 

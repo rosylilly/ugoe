@@ -289,7 +289,7 @@ fn project_round_trip_keeps_textures() {
         std::process::id()
     ));
     let _ = std::fs::remove_dir_all(&dir);
-    let project = Project::from_document(ProjectMeta::new("layers"), &doc, None);
+    let project = Project::from_document(ProjectMeta::new("layers"), &doc);
     project.save(&dir).unwrap();
     let loaded = Project::load(&dir).unwrap();
     let _ = std::fs::remove_dir_all(&dir);

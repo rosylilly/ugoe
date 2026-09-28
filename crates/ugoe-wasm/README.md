@@ -19,6 +19,7 @@ WebAssembly バインディング。Web ビューア・ビューアのアプリ 
 | `view` | フィット・ズーム・パンと、キャンバス座標 ↔ 画面座標の変換 |
 | `tracking` | フェイストラッキングの入力 (ブレンドシェイプの名前と値・頭の回転) から `TrackingInput` を作る。JS への公開は `web/tracking.rs` |
 | `hit` | 評価済みの要素の外接矩形とヒットテスト (エディタの選択用。三角形の判定は `ModelInstance::mesh_contains`) |
+| `physics_view` | エディタの物理の表示用の問い合わせ: デフォーマの写像とヤコビ行列、粒子の今の位置 (JS への公開は `src/web/physics.rs`) |
 | `animation` | 物理・モーション・表情・エフェクトの JSON の受け渡し、バンドルのモーション・表情の名前の解決、モデルを読み直したときの物理と段の有効無効の引き継ぎ (JS への公開は `src/web/animation.rs`) |
 
 ## `WebPuppet` の使い方
@@ -69,6 +70,18 @@ puppet.hit_test_standard("Head", x, y); // Model.avatar.hit_areas の標準の�
 - 適用順とスライダー (`set_parameter`) との関係は `docs/spec/motion.md#フレーム内の適用順` と `#手で動かしたパラメータとの関係`。
 - `load_json` で読み直すと、物理の設定・モーションと表情の一覧・段の有効無効を引き継ぐ (新しいモデルと合わない物理は外して警告を返す)。`load_bundle` は物理・モーション・表情をバンドルのものに置き換える。
 - モーション・表情の再生状態は、モデルを読み直すと初めからになる。
+
+### エディタ向けの問い合わせ (ギズモ・物理の表示)
+
+```js
+puppet.warp_points("Cloth");              // ワープの制御点 (キャンバス座標)
+puppet.rotation_frame("Head");            // [ox, oy, ax, ay, bx, by]
+puppet.deformer_point("Head", 0, -40);    // デフォーマの局所座標の点 → キャンバス座標 [x, y]
+puppet.deformer_jacobian("Cloth", 0.5, 0.5); // その点でのヤコビ行列 [a, b, c, d] (列優先。逆写像用)
+puppet.physics_particles(0);              // リグ 0 の粒子の今の位置 [x0, y0, ...] (動的物理ならキャンバス座標)
+```
+
+- どれも今のパラメータ値 (と最後の `update`) で評価した値を返す (`src/gizmo.rs`・`src/physics_view.rs`)。T0629 (エディタの物理の画面) で追加。
 
 ## ビルド
 
