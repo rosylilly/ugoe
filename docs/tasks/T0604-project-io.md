@@ -1,11 +1,11 @@
 ---
 id: T0604
 title: プロジェクトの保存と読み込み
-status: todo
+status: in-progress
 milestone: M2
 crates: [ugoe-editor-core, apps/editor (src-tauri のみ)]
 depends_on: [T0105]
-assignee:
+assignee: claude-worker-T0604
 ---
 
 # T0604: プロジェクトの保存と読み込み
