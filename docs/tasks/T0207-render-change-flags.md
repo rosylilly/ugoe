@@ -1,11 +1,11 @@
 ---
 id: T0207
 title: 参照レンダラ: 変更フラグによる転送の省略
-status: todo
+status: in-progress
 milestone: M2
 crates: [ugoe-render]
 depends_on: [T0205]
-assignee:
+assignee: claude-worker-T0207
 ---
 
 # T0207: 参照レンダラ: 変更フラグによる転送の省略
