@@ -478,6 +478,7 @@ fn sample_commands() -> Vec<Command> {
     ])
     .chain(motion_sample_commands())
     .chain(physics_samples())
+    .chain(draw_clone_samples())
     .collect()
 }
 
@@ -687,6 +688,20 @@ pub(crate) fn physics_samples() -> Vec<Command> {
         Command::SetParameterInternal {
             id: "AngleX".into(),
             internal: true,
+        },
+    ]
+}
+
+/// 描画用の複製のコマンドの見本 (`docs/editor.md#描画用の複製`)。
+pub(crate) fn draw_clone_samples() -> Vec<Command> {
+    vec![
+        Command::CreateDrawClone {
+            source: "Quad".into(),
+            id: None,
+            name: String::new(),
+        },
+        Command::SyncDrawClone {
+            id: "Quad_Clone".into(),
         },
     ]
 }

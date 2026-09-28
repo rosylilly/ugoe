@@ -49,7 +49,7 @@
 | パラメータ | `add_parameter`、`remove_parameter`、`set_parameter_range`、`rename_parameter`、`set_parameter_group` (`null` で外す)、`set_parameter_mirror` (`null` で外す。対は双方向に張り、どちらかと対になっていたパラメータの対は外す (`set_mirror_pair` と同じ)。自分自身と対にすると値の符号を反転して対応させる)、`set_parameter_internal` (中継用のパラメータにする・戻す。[model.md#パラメータ](spec/model.md#パラメータ)) |
 | パーツ | `add_part`、`remove_part`、`rename_part`、`set_part_parent`、`set_part_keyforms` |
 | デフォーマ | `add_deformer`、`remove_deformer`、`rename_deformer`、`set_deformer_parent`、`set_deformer_part`、`set_warp_keyforms` (`rows` / `cols` は変えない)、`set_rotation_keyforms`、`create_warp_deformer`・`create_rotation_deformer`・`reparent_preserving_look`・`move_rotation_origin`・`unwrap_deformer` ([デフォーマの編集](#デフォーマの編集)) |
-| メッシュ | `add_mesh` (`meshes` の末尾に追加)、`remove_mesh`、`rename_mesh`、`set_mesh_properties`、`set_mesh_parent`、`set_mesh_keyforms`、`set_mesh_keyform`、`reorder_mesh`、`regenerate_mesh` ([メッシュの再生成](#メッシュの再生成))、`move_mesh_vertices`・`add_mesh_vertex`・`remove_mesh_vertices`・`retriangulate_mesh` ([メッシュの編集](#メッシュの編集)) |
+| メッシュ | `add_mesh` (`meshes` の末尾に追加)、`remove_mesh`、`rename_mesh`、`set_mesh_properties`、`set_mesh_parent`、`set_mesh_keyforms`、`set_mesh_keyform`、`reorder_mesh`、`regenerate_mesh` ([メッシュの再生成](#メッシュの再生成))、`move_mesh_vertices`・`add_mesh_vertex`・`remove_mesh_vertices`・`retriangulate_mesh` ([メッシュの編集](#メッシュの編集))、`create_draw_clone`・`sync_draw_clone` ([描画用の複製](#描画用の複製)) |
 | キーフォーム | `add_keyform_key`、`remove_keyform_key`、`set_keyform_cell`、`set_mesh_draw_order`、`set_keyform_interpolation` ([キーフォームの編集](#キーフォームの編集)) |
 | テクスチャ | `add_texture`、`set_texture_image`、`remove_texture` |
 | キャンバス | `set_canvas` (`width`・`height`・`origin`。大きさは 0 より大きい有限の値。要素の座標は変えない) |
@@ -142,7 +142,7 @@
 | `remove_parameter` | **連鎖して直す。** このパラメータを軸に持つキーフォーム格子 (パーツ・デフォーマ・メッシュ・グルー) から軸を取り除き、パラメータの `default` と等しいキーの断面を残す。等しいキーがなければ最も近いキー (等距離なら小さい方) の断面を残す。セルの由来 (`origins`) も同じセルを残す。深度からの回転の `yaw` / `pitch` がこのパラメータなら外す (回転の中心などの設定は残す)。他のパラメータの `mirror` は `null` にし、エフェクト (目パチ・呼吸・リップシンク) の対象からは取り除く |
 | `remove_part` | 子パーツ・所属するデフォーマ・所属するメッシュが残っていれば **拒否する** (`EditError::HasChildren` に子の一覧が入る)。ポーズからは取り除く: そのパーツの要素を消し、他の要素の `links` からも外し、空になったグループは消す |
 | `remove_deformer` | 子デフォーマ・子メッシュが残っていれば **拒否する**。他のデフォーマの `mirror` からは外す |
-| `remove_mesh` | **連鎖して直す。** 他のメッシュの `masks` と `mirror` から外し、このメッシュを使うグルーと当たり判定を削除する |
+| `remove_mesh` | **連鎖して直す。** 他のメッシュの `masks` と `mirror` から外し、このメッシュを使うグルーと当たり判定を削除する。描画用の複製の元を消すと、複製はつなぐグルーを失って普通のメッシュ (基準の形) として残る |
 
 - 削除 (`remove_part`・`remove_deformer`・`remove_mesh`) で要素がなくなったら、その要素をミラー元 (`keyforms.mirror_source`) にしている格子から記録を外し、その格子の `mirror` のセルを `authored` にします (値は変えない)。
 
@@ -363,6 +363,60 @@ uv[i]   = 基準の姿のテクスチャの対応で、キャンバスの点 wor
 - 制約辺は今の輪郭 (1 つの三角形だけが使う辺)。重心が制約辺の内側 (偶奇規則) にある三角形だけを残すので、凹んだ輪郭と穴は保たれます。三角形がなければ (初めから空なら) 凸包全体を分割します。
 - 三角形の向きは元のメッシュに合わせます (UV で見た向きの合計が時計回りなら時計回り)。カリングの表裏が変わらないようにするためです。
 - どの三角形にも使われない頂点は残ります (輪郭の外にある頂点など)。
+
+### 描画用の複製
+
+顔を大きく振ると、横髪や耳と輪郭の前後関係が入れ替わります。描画順をキーで切り替えると入れ替わる瞬間にちらつくので、
+同じ絵を複製して輪郭を「サンドイッチ」し、マスクで片方ずつ見せるのが定番の作り方です
+(参考: https://note.com/himono_vtuber/n/n19828b07b8a3 、https://note.com/himono_vtuber/n/ne6f7c0fdfdaa)。
+複製に元と同じ変形を手で付け直すのは手間で、食い違いの元になるので、エディタは **形を元と共有する複製** を作ります
+(実装は `crates/ugoe-editor-core/src/draw_clone.rs`)。モデルの形式は変えません。
+
+| `op` | 内容 |
+| --- | --- |
+| `create_draw_clone { source, id?, name }` | `source` の複製を作る。`id` を省略すると `<元の ID>_Clone` (重なれば `_2`…)、`name` が空なら `<元の名前>の複製`。`source` が複製なら、その元の複製を作る |
+| `sync_draw_clone { id }` | 複製を元に合わせ直す。`id` が複製ならその複製、元ならそのすべての複製。複製でも元でもなければ `EditError::NotDrawClone` |
+
+**複製の中身。** 元のメッシュの値をすべて写し (パーツ・親デフォーマ・テクスチャ・UV・三角形・合成・カリング・マスク・`mask_only`)、
+次の点だけを変えます。複製は `meshes` の中で元の直後 (同じ描画順なら元のすぐ手前) に置きます。
+
+- キーフォームは、元の格子をパラメータの既定値で補間した **基準の形 1 つ** (軸なし)。描画順・不透明度・色・`mask_strength` もその値。
+- `mirror`・`mirror_axis`・`depth` は持たない。
+
+**形の共有。** 複製の全頂点 `i` を元の頂点 `i` に一致させるグルーを `glues` の末尾に加えます。
+
+- ID は `DrawClone_<複製の ID>`、`mesh_a` が元、`mesh_b` が複製、ペアは全頂点の `(i, i, weight 0)`、強さ (`intensity`) は定数 1。
+- [evaluation.md](spec/evaluation.md#5-グルー) の式で `weight = 0` なら `target = pa` なので、`pa' = pa`、`pb' = pb + (pa - pb) · 1 = pa`。
+  複製の頂点は、元の頂点の **グルーの後** の位置 (浮動小数点の丸めで 1 ulp 程度の差はありうる) になり、元は動きません。
+- 複製のキーフォームの頂点位置は描画に効きません。パラメータのキーを付けて描画順・不透明度だけを変えてかまいません。
+- 動的物理の加算量 (デフォーマの角度・原点、ワープの制御点、メッシュの頂点) はすべてグルーの前に加わるので
+  ([evaluation.md](spec/evaluation.md#動的物理を使う場合-2-段階の評価))、複製にもそのまま伝わります。複製自身に物理の出力を付ける必要はありません。
+- 元が他のメッシュとグルーでつながっていても、複製のグルーはそれより後ろにあるので、複製はつながった後の位置に一致します。
+- 不透明度は、複製自身のキーフォーム × 複製のパーツ × 複製の親デフォーマで決まります (元の不透明度は伝わりません)。
+  親デフォーマは元と同じにそろえるので、デフォーマの不透明度は元と同じく掛かります。
+
+**複製と元の対応** はグルーの ID の規則だけで表します (`draw_clone::original_of`・`clones_of`、フロントエンドは
+`lib/panels/inspector/drawClone/drawClone.ts`)。ID が規則どおりでも、次のどれかを満たさない複製は「ずれている」とし
+(`draw_clone::is_in_sync`)、インスペクタが合わせ直し (`sync_draw_clone`) を促します。
+
+- UV・三角形・テクスチャ・親デフォーマが元と同じで、複製のすべてのセルの頂点数が元と同じ。
+- グルーのペアが全頂点の `(i, i, weight 0)` で、強さがすべてのセルで 1。
+- 元を使う他のグルーが、複製のグルーより後ろにない。
+
+**元の編集への追従。** `Document::apply` は、コマンドの適用の後 (推定のやり直しと検証の前) に、UV・三角形・テクスチャ・親の
+どれかが変わった元の複製を合わせ直します (`sync_draw_clone` と同じ処理)。コマンドの種類によらないので、頂点の移動・追加・削除、
+三角形の作り直し、メッシュの再生成、親の付け替え (`reparent_preserving_look`・デフォーマの作成など) のどれにも追従します。
+合わせ直しは同じ Undo の単位です。
+
+- 合わせ直しは、複製の UV・三角形・テクスチャ・親を写し、すべてのセル (ブレンドシェイプ格子を含む) の頂点位置を元の基準の形にし、
+  グルーのペアと強さを作り直して `glues` の末尾へ移します。複製の描画順・不透明度・色・マスク・パーツは変えません。
+- 複製の形の編集 (`move_mesh_vertices`・`add_mesh_vertex`・`remove_mesh_vertices`・`retriangulate_mesh`・`regenerate_mesh`) は
+  `EditError::DrawCloneShape` で拒否します。形は元を編集します。
+- `regenerate_mesh` は頂点番号を参照するグルーのあるメッシュを拒否しますが、元の描画用の複製のグルーは例外です (作り直した後に複製ごと合わせ直すため)。
+
+**画面。** インスペクタの「Draw clone」の節 (`DrawCloneSection.svelte`) で、メッシュの複製を作り (作った複製が選ばれる)、
+複製から元へ、元から複製へ選択を移せます。複製を選ぶと、ずれていれば「Resync」と、今のセルの不透明度・描画順の欄 (`set_keyform_cell`。描画順のキーを作るため) が出ます。
+マスクは「Mesh」の節で、普通のメッシュと同じく編集します。
 
 ## キーフォームの編集
 

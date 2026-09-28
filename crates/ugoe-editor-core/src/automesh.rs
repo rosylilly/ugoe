@@ -10,6 +10,7 @@ use ugoe_model::Model;
 use ugoe_model::mesh::Mesh;
 
 use crate::document::EditError;
+use crate::draw_clone;
 use crate::texture::{Textures, decode_rgba_png};
 
 /// [`ugoe_mesher::MeshOptions`] の JSON 表現。省略したフィールドは既定値になる。
@@ -95,7 +96,8 @@ pub(crate) fn regenerate_mesh(
     if model
         .glues
         .iter()
-        .any(|g| &g.mesh_a == id || &g.mesh_b == id)
+        // 描画用の複製のグルーは、作り直した後に複製ごと合わせ直すので妨げない。
+        .any(|g| (&g.mesh_a == id || &g.mesh_b == id) && !draw_clone::is_link(g))
     {
         return Err(reject("a glue refers to its vertices"));
     }

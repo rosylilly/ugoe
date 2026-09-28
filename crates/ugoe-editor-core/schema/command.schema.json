@@ -2162,6 +2162,53 @@
         "id",
         "internal"
       ]
+    },
+    {
+      "description": "`source` の描画用の複製を作る: UV・三角形・テクスチャ・親・マスクなどが同じで、キーフォームが\n基準の形 1 つのメッシュを元の直後に加え、全頂点を元に一致させるグルー\n(`DrawClone_<複製の ID>`、`weight = 0`・`intensity = 1`) を `glues` の末尾に張る。\n`source` が複製なら、その元の複製を作る。`id` を省略すると `<元の ID>_Clone`、\n`name` が空なら `<元の名前>の複製`。元の形・テクスチャ・親が変わると複製は自動で追従する。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "default": ""
+        },
+        "op": {
+          "type": "string",
+          "const": "create_draw_clone"
+        },
+        "source": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "source"
+      ]
+    },
+    {
+      "description": "描画用の複製を元に合わせ直す (`id` が複製ならその複製、元ならそのすべての複製)。\nUV・三角形・テクスチャ・親と、グルーのペア・強さ・順序を作り直す。\n描画順・不透明度・マスクなど複製が持つ値は変えない。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "sync_draw_clone"
+        }
+      },
+      "required": [
+        "op",
+        "id"
+      ]
     }
   ],
   "$defs": {

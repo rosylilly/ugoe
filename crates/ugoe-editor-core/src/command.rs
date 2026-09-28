@@ -605,6 +605,25 @@ pub enum Command {
         id: ParamId,
         internal: bool,
     },
+    // ---- 描画用の複製 (T0633)。規則は `docs/editor.md#描画用の複製` ----
+    /// `source` の描画用の複製を作る: UV・三角形・テクスチャ・親・マスクなどが同じで、キーフォームが
+    /// 基準の形 1 つのメッシュを元の直後に加え、全頂点を元に一致させるグルー
+    /// (`DrawClone_<複製の ID>`、`weight = 0`・`intensity = 1`) を `glues` の末尾に張る。
+    /// `source` が複製なら、その元の複製を作る。`id` を省略すると `<元の ID>_Clone`、
+    /// `name` が空なら `<元の名前>の複製`。元の形・テクスチャ・親が変わると複製は自動で追従する。
+    CreateDrawClone {
+        source: MeshId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<MeshId>,
+        #[serde(default)]
+        name: String,
+    },
+    /// 描画用の複製を元に合わせ直す (`id` が複製ならその複製、元ならそのすべての複製)。
+    /// UV・三角形・テクスチャ・親と、グルーのペア・強さ・順序を作り直す。
+    /// 描画順・不透明度・マスクなど複製が持つ値は変えない。
+    SyncDrawClone {
+        id: MeshId,
+    },
 }
 
 /// デフォーマの子になれる要素。JSON では `{"kind": "mesh", "id": "EyeL"}` と書く

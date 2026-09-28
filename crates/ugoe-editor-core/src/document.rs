@@ -18,7 +18,7 @@ use crate::inference::{MirrorReport, RederiveWarning};
 use crate::motion_edit::{self, Animations};
 use crate::texture::{Textures, is_valid_texture_name, png_size};
 use crate::{Command, automesh, inference, keyform};
-use crate::{deformer_edit, depth, mesh_edit, physics_edit};
+use crate::{deformer_edit, depth, draw_clone, mesh_edit, physics_edit};
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum EditError {
@@ -140,6 +140,13 @@ pub enum EditError {
     /// 物理の設定の値が不正 (有限でない、範囲外、粒子がないなど。`docs/editor.md#物理の編集`)。
     #[error("invalid physics settings: {reason}")]
     InvalidPhysics { reason: String },
+    /// 描画用の複製の形 (頂点・三角形) は元に従うので、直接は編集できない
+    /// (`docs/editor.md#描画用の複製`)。
+    #[error("mesh `{id}` is a draw clone of `{original}`; edit the shape of the original")]
+    DrawCloneShape { id: String, original: String },
+    /// 描画用の複製でも、複製を持つメッシュでもない。
+    #[error("mesh `{id}` is neither a draw clone nor has draw clones")]
+    NotDrawClone { id: String },
 }
 
 /// [`Document::apply_with_report`] の結果: コマンドは適用したが、利用者に知らせたいこと。
@@ -294,6 +301,8 @@ impl Document {
             &mut mirrored,
             &mut next.physics,
         )?;
+        // 形・テクスチャ・親が変わった元のメッシュに、描画用の複製を追従させる。
+        draw_clone::follow(&self.current.model, &mut next.model)?;
         let mut warnings = inference::rederive(&mut next.model, &touched)?;
         inference::check_reparented_pairs(&self.current.model, &next.model, &mut warnings);
         physics_edit::forget_removed(&self.current.model, &next.model, &mut next.physics);
@@ -601,6 +610,7 @@ fn apply_to(
             };
         }
         Command::RegenerateMesh { id, options } => {
+            draw_clone::reject_shape_edit(model, &id)?;
             automesh::regenerate_mesh(model, textures, &id, &options)?;
         }
         Command::InferKeyforms {
@@ -649,20 +659,26 @@ fn apply_to(
         }
         // 頂点の編集はすべてのセルの位置を変えるので、`derived` のセルは作り直す。
         Command::MoveMeshVertices { id, moves } => {
+            draw_clone::reject_shape_edit(model, &id)?;
             mesh_edit::move_vertices(model, &id, &moves)?;
             touched.push(KeyformTarget::Mesh(id));
         }
         Command::AddMeshVertex { id, position } => {
+            draw_clone::reject_shape_edit(model, &id)?;
             mesh_edit::add_vertex(model, &id, position)?;
             physics_edit::vertex_added(model, physics, &id);
             touched.push(KeyformTarget::Mesh(id));
         }
         Command::RemoveMeshVertices { id, indices } => {
+            draw_clone::reject_shape_edit(model, &id)?;
             mesh_edit::remove_vertices(model, &id, &indices)?;
             physics_edit::vertices_removed(physics, &id, &indices);
             touched.push(KeyformTarget::Mesh(id));
         }
-        Command::RetriangulateMesh { id } => mesh_edit::retriangulate(model, &id)?,
+        Command::RetriangulateMesh { id } => {
+            draw_clone::reject_shape_edit(model, &id)?;
+            mesh_edit::retriangulate(model, &id)?;
+        }
         Command::AddKeyformKey {
             target,
             parameter,
@@ -840,6 +856,10 @@ fn apply_to(
         Command::SetParameterInternal { id, internal } => {
             parameter(model, &id)?.internal = internal;
         }
+        Command::CreateDrawClone { source, id, name } => {
+            draw_clone::create(model, &source, id, name)?;
+        }
+        Command::SyncDrawClone { id } => draw_clone::sync(model, &id)?,
     }
     Ok(())
 }

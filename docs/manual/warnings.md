@@ -54,6 +54,7 @@
 | ``parameter `…` already exists`` | 同じ ID のパラメータがあります。別の ID にします |
 | ``… still has children: …`` | 子の残っているパーツ・デフォーマは削除できません。先に子を削除するか、ツリーのドラッグで別の親へ移します |
 | `only … vertices would remain (at least 3 are needed)` | メッシュの頂点は 3 つより少なくできません |
+| ``mesh `…` is a draw clone of `…`; edit the shape of the original`` | 描画用の複製の形は元に従います。元のメッシュの頂点を編集します ([マスク](masks.md#前後関係が入れ替わる部分の作り方)) |
 | `… cannot be reordered: change the draw order instead (…)` (ツリー) | 描画順の数字が違うメッシュどうしは、ドラッグで並べ替えられません。インスペクタの「Draw order」で数字を変えて「Set for all cells」を押します |
 
 ## 推定とミラーのエラー

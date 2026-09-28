@@ -1418,10 +1418,12 @@ fn op_name(command: &Command) -> &'static str {
         Command::SetKeyformInterpolation { .. } => "set_keyform_interpolation",
         Command::ReorderPhysicsRig { .. } => "reorder_physics_rig",
         Command::SetParameterInternal { .. } => "set_parameter_internal",
+        Command::CreateDrawClone { .. } => "create_draw_clone",
+        Command::SyncDrawClone { .. } => "sync_draw_clone",
     }
 }
 
-const OP_COUNT: usize = 87;
+const OP_COUNT: usize = 89;
 
 fn json_samples() -> Vec<Command> {
     let quad = fixtures::single_quad();
@@ -1669,6 +1671,7 @@ fn json_samples() -> Vec<Command> {
     .into_iter()
     .chain(crate::codegen::motion_sample_commands())
     .chain(crate::codegen::physics_samples())
+    .chain(crate::codegen::draw_clone_samples())
     .collect()
 }
 

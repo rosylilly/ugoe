@@ -5161,5 +5161,14 @@ export const commands: Command[] = [
     "op": "set_parameter_internal",
     "id": "AngleX",
     "internal": true
+  },
+  {
+    "op": "create_draw_clone",
+    "source": "Quad",
+    "name": ""
+  },
+  {
+    "op": "sync_draw_clone",
+    "id": "Quad_Clone"
   }
 ];

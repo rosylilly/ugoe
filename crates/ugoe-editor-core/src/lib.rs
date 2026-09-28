@@ -10,6 +10,7 @@ pub mod command;
 mod deformer_edit;
 pub mod depth;
 pub mod document;
+pub mod draw_clone;
 mod grid;
 pub mod ids;
 pub mod import;
@@ -41,6 +42,8 @@ mod blend_shape_tests;
 mod deformer_edit_tests;
 #[cfg(test)]
 mod depth_tests;
+#[cfg(test)]
+mod draw_clone_tests;
 #[cfg(test)]
 mod import_tests;
 #[cfg(test)]
