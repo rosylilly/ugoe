@@ -45,6 +45,7 @@
 | T2 エディタ中核 | `ugoe-editor-core` | ランタイム層, T1 (`ugoe-rigging` を含む) |
 | T3 自動化 | `ugoe-ai` | T2 以下 |
 | T4 アプリ | `ugoe-cli`, `apps/editor` (`ugoe-editor`) | すべて |
+| アプリ (ランタイムの見本) | `apps/viewer` (`ugoe-viewer`) | ランタイム層だけ。描画は webview の `ugoe-wasm` |
 
 層を分ける理由:
 
@@ -96,7 +97,8 @@
 | 法線マップによるライティング | [0015](adr/0015-lighting.md) |
 | 描画順を保ったまま描画を自動で統合する | [0016](adr/0016-draw-batching.md) |
 | すべての配布物を 1 つのコアから作る | [0017](adr/0017-single-runtime-distribution.md) |
-| ライブラリは MIT、エディタは GPL-3.0-only。1.0 は AI 連携を除く全機能 | [0018](adr/0018-licensing-and-1.0-scope.md) |
+| ライブラリは MIT、アプリ (エディタ・ビューア) は GPL-3.0-only。1.0 は AI 連携を除く全機能 | [0018](adr/0018-licensing-and-1.0-scope.md) |
+| ビューアもエディタと同じ GPL-3.0-only | [0019](adr/0019-viewer-license.md) |
 
 ## 座標系
 

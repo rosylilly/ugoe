@@ -23,6 +23,7 @@ const SCOPES = [
   "rigging",
   // apps/
   "editor",
+  "viewer",
   // docs/
   "spec",
   "adr",

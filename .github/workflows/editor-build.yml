@@ -1,9 +1,10 @@
 name: Editor build
 
-# エディタのインストーラを各 OS のランナーでビルドし、成果物 (artifact) として置く。
+# エディタとビューアのインストーラを各 OS のランナーでビルドし、成果物 (artifact) として置く。
 # Tauri は他の OS 向けのクロスビルドが難しいので、OS ごとにネイティブでビルドする。
 # (Linux から Windows 向けの NSIS だけを作る `just editor-build-windows` もあるが、MSI を作れないので CI では使わない。)
 # 署名はしていない (apps/editor/README.md#配布物の署名)。
+# ビューア (apps/viewer) も同じ手順でビルドできるので、アプリを行列に加えて一緒に作る (T0701)。
 on:
   workflow_dispatch:
   push:
@@ -18,25 +19,27 @@ env:
 
 jobs:
   build:
-    name: build (${{ matrix.name }})
+    name: build (${{ matrix.app }}, ${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
+        app: [editor, viewer]
+        platform: [linux-x86_64, windows-x86_64, macos-universal]
         include:
-          - name: linux-x86_64
+          - platform: linux-x86_64
             os: ubuntu-latest
             bundle-dir: target/release/bundle
             build-args: ""
             rust-targets: ""
-          - name: windows-x86_64
+          - platform: windows-x86_64
             os: windows-latest
             bundle-dir: target/release/bundle
             build-args: ""
             rust-targets: ""
           # Apple Silicon と Intel の両方で動く universal バイナリを 1 つの .dmg にする
-          - name: macos-universal
+          - platform: macos-universal
             os: macos-latest
             bundle-dir: target/universal-apple-darwin/release/bundle
             build-args: --target universal-apple-darwin
@@ -58,7 +61,7 @@ jobs:
         run: rustup target add ${{ matrix.rust-targets }}
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: editor-build-${{ matrix.name }}
+          shared-key: ${{ matrix.app }}-build-${{ matrix.platform }}
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -74,17 +77,18 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: wasm-bindgen@${{ steps.wasm-bindgen.outputs.version }}
+      # 出力先はアプリごとに違う (package.json の `wasm` スクリプト。エディタは `just wasm` と同じ)
       - name: Build ugoe-wasm
-        run: just wasm
-      # beforeBuildCommand (tauri.conf.json) でも `just wasm` が走るが、ビルド済みなのですぐ終わる。
+        run: pnpm --filter "@ugoe/${{ matrix.app }}" wasm
+      # beforeBuildCommand (tauri.conf.json) でも `pnpm wasm` が走るが、ビルド済みなのですぐ終わる。
       # Windows でも just はレシピを windows-shell (PowerShell) で実行するので、手元の Windows と同じ経路になる。
-      - name: Build editor
-        run: just editor-build ${{ matrix.build-args }}
+      - name: Build ${{ matrix.app }}
+        run: just ${{ matrix.app }}-build ${{ matrix.build-args }}
       - name: List bundles
         run: find "${{ matrix.bundle-dir }}" -maxdepth 2 -type f -exec ls -l {} +
       - uses: actions/upload-artifact@v7
         with:
-          name: ugoe-editor-${{ matrix.name }}
+          name: ugoe-${{ matrix.app }}-${{ matrix.platform }}
           if-no-files-found: error
           path: |
             ${{ matrix.bundle-dir }}/deb/*.deb

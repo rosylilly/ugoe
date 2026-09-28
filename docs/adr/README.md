@@ -28,3 +28,4 @@
 | [0016](0016-draw-batching.md) | 描画コストの自動最適化 | Accepted |
 | [0017](0017-single-runtime-distribution.md) | 単一ランタイムと 1 行導入 | Accepted |
 | [0018](0018-licensing-and-1.0-scope.md) | ライセンスと 1.0 の範囲 | Accepted |
+| [0019](0019-viewer-license.md) | ビューア (apps/viewer) のライセンスは GPL-3.0-only | Accepted |

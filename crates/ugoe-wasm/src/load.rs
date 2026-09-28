@@ -6,9 +6,10 @@
 
 use std::io::Cursor;
 
+use serde::Serialize;
 use ugoe::format::{Bundle, TextureData, TextureFormat};
-use ugoe::model::Model;
 use ugoe::model::physics::PhysicsSettings;
+use ugoe::model::{Model, Parameter, ParameterGroup};
 use ugoe::runtime::ModelInstance;
 
 #[derive(Debug, thiserror::Error)]
@@ -115,6 +116,24 @@ pub fn texture_count(model: &Model) -> usize {
         .max()
         .unwrap_or(0)
         .max(model.textures.len())
+}
+
+/// パラメータとパラメータグループの定義 (スライダーの一覧を作るため)。
+#[derive(Debug, Serialize)]
+struct ParameterList<'a> {
+    parameters: &'a [Parameter],
+    groups: &'a [ParameterGroup],
+}
+
+/// パラメータとグループの定義を JSON にする: `{ "parameters": [...], "groups": [...] }`。
+///
+/// 各要素はモデルの JSON 形式と同じ (`docs/spec/model.md`)。ビューアなどのホストが
+/// スライダーの値域・既定値・グループを知るために使う。
+pub fn parameters_json(model: &Model) -> Result<String, serde_json::Error> {
+    serde_json::to_string(&ParameterList {
+        parameters: &model.parameters,
+        groups: &model.parameter_groups,
+    })
 }
 
 /// `from` のパラメータ値のうち、同じ ID が `to` にもあるものを `to` へ写す (値域でクランプされる)。
@@ -237,6 +256,24 @@ mod tests {
             from_bundle(&bytes),
             Err(LoadError::Texture { index: 0, .. })
         ));
+    }
+
+    #[test]
+    fn parameters_json_lists_ranges_and_groups() {
+        let mut model = fixtures::single_quad();
+        model.parameter_groups.push(ParameterGroup {
+            id: "Face".into(),
+            name: "Face".into(),
+        });
+        model.parameters[0].group = Some("Face".into());
+        let json: serde_json::Value =
+            serde_json::from_str(&parameters_json(&model).unwrap()).unwrap();
+        let p = &json["parameters"][0];
+        assert_eq!(p["id"], "X");
+        assert_eq!(p["group"], "Face");
+        assert_eq!(p["min"].as_f64(), Some(f64::from(model.parameters[0].min)));
+        assert_eq!(p["max"].as_f64(), Some(f64::from(model.parameters[0].max)));
+        assert_eq!(json["groups"][0]["name"], "Face");
     }
 
     #[test]

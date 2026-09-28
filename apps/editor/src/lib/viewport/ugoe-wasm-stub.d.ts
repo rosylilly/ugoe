@@ -16,6 +16,7 @@ export class WebPuppet {
   canvas_size(): Float32Array;
 
   parameter_ids(): string[];
+  parameters_json(): string;
   set_parameter(id: string, value: number): boolean;
   parameter(id: string): number | undefined;
   reset_parameters(): void;

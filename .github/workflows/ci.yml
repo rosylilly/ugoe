@@ -123,6 +123,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm biome check .
       - run: pnpm --filter @ugoe/editor test
+      - run: pnpm --filter @ugoe/viewer test
       - name: Install Rust toolchain (rust-toolchain.toml, wasm32 target included)
         run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
@@ -141,3 +142,8 @@ jobs:
         run: just wasm
       - run: pnpm --filter @ugoe/editor check
       - run: pnpm --filter @ugoe/editor build
+      # ビューアは同じ wasm の JS バインディングを自分の src/lib/wasm/generated/ に生成する
+      - name: Build ugoe-wasm for the viewer
+        run: pnpm --filter @ugoe/viewer wasm
+      - run: pnpm --filter @ugoe/viewer check
+      - run: pnpm --filter @ugoe/viewer build

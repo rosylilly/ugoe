@@ -1,0 +1,18 @@
+{
+  "extends": "@tsconfig/svelte/tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "types": ["vite/client", "node"],
+    // `pnpm wasm` で生成した型があればそれを、無ければ手書きの宣言 (src/lib/wasm/stub.d.ts) を使う
+    "paths": {
+      "ugoe-wasm": ["./src/lib/wasm/generated/ugoe_wasm", "./src/lib/wasm/stub"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.svelte", "vite.config.ts"]
+}

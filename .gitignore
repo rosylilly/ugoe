@@ -4,9 +4,11 @@ dist/
 *.tsbuildinfo
 .DS_Store
 /apps/editor/src-tauri/gen/schemas/
+/apps/viewer/src-tauri/gen/schemas/
 /crates/ugoe-wasm/pkg/
 # `just wasm` の出力
 /apps/editor/src/lib/viewport/generated/
+/apps/viewer/src/lib/wasm/generated/
 # insta の未承認スナップショット
 *.snap.new
 *.pending-snap

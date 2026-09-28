@@ -5,8 +5,8 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 
 # Windows では PowerShell で実行する (bash なしでエディタをビルドできるように)。
 # Windows で動くのは、1 行に 1 コマンドのレシピと Node のスクリプトを呼ぶレシピ
-# (setup・wasm・wasm-bindgen-version・editor・editor-build・ci など)。
-# `@` で始まる引数が PowerShell の splatting と解釈されないよう、`@ugoe/editor` は引用符で囲む。
+# (setup・wasm・wasm-bindgen-version・editor・editor-build・viewer・viewer-build・ci など)。
+# `@` で始まる引数が PowerShell の splatting と解釈されないよう、`@ugoe/editor` などは引用符で囲む。
 # `test-gpu` と `commitlint` は bash の構文を使うので、Windows では Git Bash か WSL で実行する。
 set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
 
@@ -77,6 +77,7 @@ wasm-check:
     cargo clippy -p ugoe-wasm --target wasm32-unknown-unknown -- -D warnings
 
 # ugoe-wasm をビルドし、エディタが読む JS バインディングを生成する (出力は gitignore 済み)。
+# ビューアは `just wasm apps/viewer/src/lib/wasm/generated` (apps/viewer の `pnpm wasm`)。
 # wasm-bindgen-cli は Cargo.lock の wasm-bindgen と同じ版 (`just wasm-bindgen-version`) が必要:
 #   cargo install wasm-bindgen-cli --version <版> --locked
 wasm out="apps/editor/src/lib/viewport/generated":
@@ -96,6 +97,8 @@ web-check:
     pnpm biome check .
     pnpm --filter '@ugoe/editor' check
     pnpm --filter '@ugoe/editor' test
+    pnpm --filter '@ugoe/viewer' check
+    pnpm --filter '@ugoe/viewer' test
 
 # エディタを開発モードで起動
 editor:
@@ -111,6 +114,14 @@ editor-build *args:
 # 手順と前提は apps/editor/README.md の「Linux (WSL2) から Windows 向けにビルドする」
 editor-build-windows *args:
     @node scripts/editor-windows.mjs {{args}}
+
+# ビューアを開発モードで起動 (apps/viewer/README.md)
+viewer:
+    pnpm --filter '@ugoe/viewer' tauri dev
+
+# ビューアのリリースビルド。引数は tauri build に渡す: `just viewer-build --bundles deb`
+viewer-build *args:
+    pnpm --filter '@ugoe/viewer' tauri build {{args}}
 
 # CLI 実行: `just cli info model.json`
 cli *args:

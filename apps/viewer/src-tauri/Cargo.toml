@@ -1,0 +1,22 @@
+[package]
+name = "ugoe-viewer"
+description = "ugoe ビューア (Tauri バックエンド)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license = "GPL-3.0-only"
+
+[lib]
+name = "ugoe_viewer_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+tauri.workspace = true
+tauri-plugin-dialog.workspace = true
+
+[lints]
+workspace = true

@@ -35,6 +35,8 @@ const ALLOWED = {
   ugoe: without(RUNTIME_TIER, "ugoe"),
   "ugoe-ffi": RUNTIME_TIER,
   "ugoe-wasm": RUNTIME_TIER,
+  // ビューア (apps/viewer): 描画は webview の ugoe-wasm が行う。Rust 側はランタイム層だけに依存してよい
+  "ugoe-viewer": RUNTIME_TIER,
   // --- ツール層 ---
   "ugoe-psd": CORE,
   "ugoe-mesher": CORE,

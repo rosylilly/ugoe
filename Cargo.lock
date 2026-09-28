@@ -4867,11 +4867,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ugoe-viewer"
+version = "0.0.0"
+dependencies = [
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+]
+
+[[package]]
 name = "ugoe-wasm"
 version = "0.0.0"
 dependencies = [
  "console_error_panic_hook",
  "png 0.18.1",
+ "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "ugoe",
  "ugoe-render",

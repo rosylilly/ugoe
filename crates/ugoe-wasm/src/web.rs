@@ -229,6 +229,16 @@ impl WebPuppet {
             .unwrap_or_default()
     }
 
+    /// パラメータとグループの定義の JSON: `{ "parameters": [...], "groups": [...] }`。
+    /// 各要素はモデルの JSON 形式と同じ (id・name・min・max・default・kind・mirror・group)。
+    /// モデルが無ければ両方とも空。
+    pub fn parameters_json(&self) -> Result<String, JsError> {
+        match &self.puppet {
+            Some(p) => load::parameters_json(p.instance().compiled().model()).map_err(js_error),
+            None => Ok(r#"{"parameters":[],"groups":[]}"#.to_owned()),
+        }
+    }
+
     /// パラメータを設定する (値域にクランプされる)。ID が無ければ `false`。
     pub fn set_parameter(&mut self, id: &str, value: f32) -> bool {
         let Some(puppet) = &mut self.puppet else {

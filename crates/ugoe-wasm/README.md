@@ -2,7 +2,7 @@
 
 **層:** L5 バインディング (依存してよいクレートは `scripts/check-layers.mjs` を参照)
 
-WebAssembly バインディング。Web ビューアとエディタのビューポートで使う。
+WebAssembly バインディング。Web ビューア・ビューアのアプリ (`apps/viewer`)・エディタのビューポートで使う。
 
 ## 守ること
 
@@ -27,6 +27,7 @@ await init();
 const puppet = await WebPuppet.create(canvas, "auto"); // "auto" | "webgpu" | "webgl2"
 puppet.load_json(json);           // または load_bundle(bytes)。戻り値は警告の配列
 puppet.resize(canvas.clientWidth * devicePixelRatio, canvas.clientHeight * devicePixelRatio);
+puppet.parameters_json();         // 値域・既定値・グループ ({"parameters": [...], "groups": [...]})
 puppet.set_parameter("AngleX", 15);
 puppet.render();                  // 呼ばれたときだけ描く。ループはホストが回す
 ```
@@ -42,6 +43,7 @@ puppet.render();                  // 呼ばれたときだけ描く。ループ�
 ```sh
 cargo install wasm-bindgen-cli --version "$(just wasm-bindgen-version)" --locked  # 初回だけ
 just wasm        # apps/editor/src/lib/viewport/generated/ に出力 (gitignore 済み)
+just wasm apps/viewer/src/lib/wasm/generated  # ビューア用 (apps/viewer の `pnpm wasm`)
 just wasm-check  # wasm32 向けの clippy
 ```
 
