@@ -12,8 +12,9 @@ use crate::mesh::{BlendMode, Glue, GlueKeyform, GluePair, MaskMode, MaskRef, Mes
 use crate::parameter::{Parameter, ParameterKind};
 use crate::part::{Part, PartKeyform};
 use crate::physics::{
-    NormalizationRange, PhysicsInput, PhysicsNormalization, PhysicsOutput, PhysicsParticle,
-    PhysicsRig, PhysicsSettings, PhysicsSource, PhysicsTarget,
+    ColliderShape, NormalizationRange, PhysicsCollider, PhysicsInput, PhysicsNormalization,
+    PhysicsOutput, PhysicsParticle, PhysicsRig, PhysicsSettings, PhysicsSource, PhysicsTarget,
+    VertexOwner,
 };
 use crate::pose::{DEFAULT_FADE_DURATION, PoseEntry, PoseGroup};
 use crate::standard;
@@ -1078,6 +1079,210 @@ pub fn physics_hair_settings() -> PhysicsSettings {
     }
 }
 
+/// 動的物理のフィクスチャ [`dynamic_hair_settings`] と組で使うモデル
+/// (`docs/spec/physics.md#動的物理-揺れ用パラメータのいらない物理`)。揺れ用のパラメータは持たない。
+///
+/// - パラメータ `AngleX` / `AngleZ` (-30..30、既定 0)。
+/// - 回転 `Body` (親なし): 原点 `(128,200)`、角度 0。
+/// - 回転 `Head` (親なし): 原点 `(128 + AngleX, 100)`、角度 = `AngleZ` 度。
+/// - 回転 `Hair1` (親 `Head`、原点 `(20,0)`) → `Hair2` (親 `Hair1`、原点 `(0,30)`) →
+///   `Hair3` (親 `Hair2`、原点 `(0,30)`)。角度はすべて 0。既定の姿勢では原点のワールド位置が
+///   `(148,100)`・`(148,130)`・`(148,160)` の、真下に垂れた髪の房。
+/// - ワープ `Cloth` (親 `Body`、1×1 セル): 制御点は `Body` の局所座標で `(-40,0)`〜`(40,40)`。
+/// - メッシュ `Strand` (親 `Hair3`): `(-3,0)`〜`(3,30)`。
+/// - メッシュ `Skirt` (親 `Cloth`): UV `(0,0)`〜`(1,1)`。
+/// - メッシュ `Ribbon` (親 `Body`): `(-50,-10)`〜`(-40,20)`。
+pub fn dynamic_hair() -> Model {
+    let mut model = base_model(
+        "dynamic_hair",
+        vec![
+            parameter(standard::ANGLE_X, -30.0, 0.0, 30.0),
+            parameter(standard::ANGLE_Z, -30.0, 0.0, 30.0),
+        ],
+    );
+    let head = |x: f32, z: f32| rotation_keyform(Vec2::new(128.0 + x, 100.0), z, 1.0);
+    let still = |x: f32, y: f32| KeyformGrid::constant(rotation_keyform(Vec2::new(x, y), 0.0, 1.0));
+    model.deformers.extend([
+        rotation("Body", None, still(128.0, 200.0)),
+        rotation(
+            "Head",
+            None,
+            KeyformGrid::new(
+                vec![
+                    binding(standard::ANGLE_X, &[-30.0, 30.0]),
+                    binding(standard::ANGLE_Z, &[-30.0, 30.0]),
+                ],
+                vec![
+                    head(-30.0, -30.0),
+                    head(30.0, -30.0),
+                    head(-30.0, 30.0),
+                    head(30.0, 30.0),
+                ],
+            ),
+        ),
+        rotation("Hair1", Some("Head"), still(20.0, 0.0)),
+        rotation("Hair2", Some("Hair1"), still(0.0, 30.0)),
+        rotation("Hair3", Some("Hair2"), still(0.0, 30.0)),
+        warp(
+            "Cloth",
+            Some("Body"),
+            1,
+            1,
+            KeyformGrid::constant(WarpKeyform {
+                points: vec![
+                    Vec2::new(-40.0, 0.0),
+                    Vec2::new(40.0, 0.0),
+                    Vec2::new(-40.0, 40.0),
+                    Vec2::new(40.0, 40.0),
+                ],
+                opacity: 1.0,
+            }),
+        ),
+    ]);
+    let constant = |r: [Vec2; 4]| KeyformGrid::constant(mesh_keyform(r, 1.0, 500.0));
+    model.meshes.extend([
+        quad_mesh(
+            "Strand",
+            "Root",
+            Some("Hair3"),
+            constant(rect(-3.0, 0.0, 3.0, 30.0)),
+        ),
+        quad_mesh(
+            "Skirt",
+            "Root",
+            Some("Cloth"),
+            constant(rect(0.0, 0.0, 1.0, 1.0)),
+        ),
+        quad_mesh(
+            "Ribbon",
+            "Root",
+            Some("Body"),
+            constant(rect(-50.0, -10.0, -40.0, 20.0)),
+        ),
+    ]);
+    model
+}
+
+/// [`dynamic_hair`] 用の物理設定。重力 `(0, 1)`、風なし、60 Hz。
+///
+/// - 衝突体 `Shoulder`: `Body` に取り付けたカプセル。線分は `Body` の局所座標で `(-10,-60)`–`(40,-40)`
+///   (ワールドでは `(118,140)`–`(168,160)`)、半径 8。
+/// - リグ `Hair`: 粒子 4 つ (長さ 30 の区間が 3 つ、真下に並ぶ)。入力なし。粒子 1〜3 の角度を
+///   `Hair1`〜`Hair3` の角度に足す (`deformer_angle`)。衝突体 `Shoulder` と衝突し、粒子の衝突半径は 2。
+///   既定の姿勢では粒子 2 (`(148,160)`) が衝突体の内側にある。
+/// - リグ `Skirt`: 基準 `frame` は `Body`。粒子 2 つ (根元は `Body` の局所座標 `(0,0)`、長さ 30 の区間)。
+///   入力は `AngleX` → x (重み 100、正規化の範囲 -10..10)。粒子 1 の変位の x・y を `Cloth` の下の行の
+///   制御点 (重み `[0,0,1,1]`) に、x を `Ribbon` の下の 2 頂点 (重み `[0,0,1,1]`) に加える (`vertices`)。
+pub fn dynamic_hair_settings() -> PhysicsSettings {
+    let output = |target: PhysicsTarget, particle: u32, source: PhysicsSource| PhysicsOutput {
+        target,
+        particle,
+        source,
+        scale: 1.0,
+        weight: 100.0,
+        reflect: false,
+    };
+    let particle = |y: f32, radius: f32, collision_radius: f32| PhysicsParticle {
+        position: Vec2::new(0.0, y),
+        mobility: 0.9,
+        delay: 0.9,
+        acceleration: 1.5,
+        radius,
+        collision_radius,
+    };
+    let range = NormalizationRange {
+        min: -10.0,
+        default: 0.0,
+        max: 10.0,
+    };
+    let normalization = PhysicsNormalization {
+        position: range,
+        angle: range,
+    };
+    let angle = |deformer: &str, particle: u32| {
+        output(
+            PhysicsTarget::DeformerAngle {
+                deformer: deformer.into(),
+            },
+            particle,
+            PhysicsSource::Angle,
+        )
+    };
+    let bottom_row = vec![0.0, 0.0, 1.0, 1.0];
+    PhysicsSettings {
+        gravity: Vec2::new(0.0, 1.0),
+        wind: Vec2::ZERO,
+        fps: 60.0,
+        rigs: vec![
+            PhysicsRig {
+                id: "Hair".into(),
+                name: "髪".into(),
+                inputs: vec![],
+                outputs: vec![angle("Hair1", 1), angle("Hair2", 2), angle("Hair3", 3)],
+                particles: vec![
+                    particle(0.0, 0.0, 0.0),
+                    particle(30.0, 30.0, 2.0),
+                    particle(60.0, 30.0, 2.0),
+                    particle(90.0, 30.0, 2.0),
+                ],
+                normalization,
+                colliders: vec!["Shoulder".into()],
+                frame: None,
+            },
+            PhysicsRig {
+                id: "Skirt".into(),
+                name: "スカート".into(),
+                inputs: vec![PhysicsInput {
+                    parameter: standard::ANGLE_X.into(),
+                    source: PhysicsSource::X,
+                    weight: 100.0,
+                    reflect: false,
+                }],
+                outputs: vec![
+                    output(
+                        PhysicsTarget::Vertices {
+                            owner: VertexOwner::Warp("Cloth".into()),
+                            weights: bottom_row.clone(),
+                        },
+                        1,
+                        PhysicsSource::X,
+                    ),
+                    output(
+                        PhysicsTarget::Vertices {
+                            owner: VertexOwner::Warp("Cloth".into()),
+                            weights: bottom_row.clone(),
+                        },
+                        1,
+                        PhysicsSource::Y,
+                    ),
+                    output(
+                        PhysicsTarget::Vertices {
+                            owner: VertexOwner::Mesh("Ribbon".into()),
+                            weights: bottom_row,
+                        },
+                        1,
+                        PhysicsSource::X,
+                    ),
+                ],
+                particles: vec![particle(0.0, 0.0, 0.0), particle(30.0, 30.0, 0.0)],
+                normalization,
+                colliders: vec![],
+                frame: Some("Body".into()),
+            },
+        ],
+        colliders: vec![PhysicsCollider {
+            id: "Shoulder".into(),
+            name: "肩".into(),
+            attach: Some("Body".into()),
+            shape: ColliderShape::Capsule {
+                a: Vec2::new(-10.0, -60.0),
+                b: Vec2::new(40.0, -40.0),
+                radius: 8.0,
+            },
+        }],
+    }
+}
+
 /// `pose_and_effects` に拡張パラメータとアバタープロファイルを加えたもの。
 /// アバタープロファイルのレベル 3 を満たす (`docs/spec/avatar-profile.md`)。
 ///
@@ -1147,6 +1352,7 @@ mod tests {
             keyform_inference(),
             physics_hair(),
             blend_shapes(),
+            dynamic_hair(),
         ] {
             assert_eq!(
                 crate::validate::validate(&model),
@@ -1158,6 +1364,18 @@ mod tests {
             let back: Model = serde_json::from_str(&json).unwrap();
             assert_eq!(model, back);
         }
+    }
+
+    #[test]
+    fn dynamic_hair_settings_are_valid_and_roundtrip_json() {
+        let settings = dynamic_hair_settings();
+        assert_eq!(
+            crate::validate::validate_physics(&settings, &dynamic_hair()),
+            vec![]
+        );
+        let json = serde_json::to_string(&settings).unwrap();
+        let back: PhysicsSettings = serde_json::from_str(&json).unwrap();
+        assert_eq!(settings, back);
     }
 
     #[test]

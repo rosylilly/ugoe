@@ -69,19 +69,24 @@ impl Chain {
     /// 粒子を、各区間が力 (`gravity * acceleration + wind`) の向きに垂れた静止姿勢に置く。
     ///
     /// 読み込み直後やリセット後に、初期姿勢から揺れ始めないようにするために使う。
-    pub fn settle(&mut self, defs: &[PhysicsParticle], root: Vec2, gravity: Vec2, wind: Vec2) {
+    /// `constrain` は [`Chain::step`] と同じく粒子ごと (i >= 1) に呼ばれ、置いた位置を補正できる
+    /// (補正後の位置を次の粒子の親にする)。
+    pub fn settle(
+        &mut self,
+        defs: &[PhysicsParticle],
+        root: Vec2,
+        gravity: Vec2,
+        wind: Vec2,
+        mut constrain: impl FnMut(usize, &mut Vec2),
+    ) {
         let Some(first) = defs.first() else {
             return;
         };
         let mut prev = root + first.position;
         self.particles[0] = Particle::at_rest(prev);
         for i in 1..self.particles.len() {
-            let d = &defs[i];
-            let fallback = rest_direction(defs, i);
-            let dir = (gravity * d.acceleration + wind)
-                .try_normalize()
-                .unwrap_or(fallback);
-            prev += dir * d.radius;
+            prev += rest_segment(defs, i, gravity, wind);
+            constrain(i, &mut prev);
             self.particles[i] = Particle::at_rest(prev);
         }
     }
@@ -132,6 +137,23 @@ impl Chain {
             p.position = position;
         }
     }
+}
+
+/// 静止姿勢での粒子 i の、根元 (粒子 0) からの相対位置 (衝突体を考えない)。
+/// `i` が 0 か範囲外なら零ベクトル。動的物理の変位の基準に使う。
+pub fn rest_offset(defs: &[PhysicsParticle], i: usize, gravity: Vec2, wind: Vec2) -> Vec2 {
+    (1..=i.min(defs.len().saturating_sub(1)))
+        .map(|k| rest_segment(defs, k, gravity, wind))
+        .fold(Vec2::ZERO, |a, b| a + b)
+}
+
+/// 静止姿勢での区間 i (粒子 i-1 → i) のベクトル。力の向きが決まらなければ初期位置の向き。
+fn rest_segment(defs: &[PhysicsParticle], i: usize, gravity: Vec2, wind: Vec2) -> Vec2 {
+    let d = &defs[i];
+    let dir = (gravity * d.acceleration + wind)
+        .try_normalize()
+        .unwrap_or_else(|| rest_direction(defs, i));
+    dir * d.radius
 }
 
 /// 1 ステップで残す速度の割合。`mobility` は基準フレームあたりの割合なので、
@@ -263,11 +285,39 @@ mod tests {
     fn settle_hangs_along_force() {
         let defs = two_particles();
         let mut chain = Chain::new(&defs, Vec2::ZERO);
-        chain.settle(&defs, Vec2::new(1.0, 2.0), Vec2::Y, Vec2::new(1.5, 0.0));
+        chain.settle(
+            &defs,
+            Vec2::new(1.0, 2.0),
+            Vec2::Y,
+            Vec2::new(1.5, 0.0),
+            |_, _| {},
+        );
         let p = chain.particles();
         let dir = (p[1].position - p[0].position) / 10.0;
         // 力 = (0, 1.5) + (1.5, 0) なので 45 度。
         assert!((dir - Vec2::new(1.0, 1.0).normalize()).length() < 1e-4);
         assert_eq!(p[1].velocity, Vec2::ZERO);
+        let rest = rest_offset(&defs, 1, Vec2::Y, Vec2::new(1.5, 0.0));
+        assert!((p[1].position - p[0].position - rest).length() < 1e-4);
+        assert_eq!(rest_offset(&defs, 0, Vec2::Y, Vec2::ZERO), Vec2::ZERO);
+    }
+
+    #[test]
+    fn settle_applies_constrain_hook() {
+        let defs = vec![
+            particle(Vec2::ZERO, 0.0),
+            particle(Vec2::new(0.0, 10.0), 10.0),
+            particle(Vec2::new(0.0, 20.0), 10.0),
+        ];
+        let mut chain = Chain::new(&defs, Vec2::ZERO);
+        chain.settle(&defs, Vec2::ZERO, Vec2::Y, Vec2::ZERO, |i, p| {
+            if i == 1 {
+                p.x += 5.0;
+            }
+        });
+        // 補正した粒子 1 を親にして、粒子 2 を置く。
+        let p = chain.particles();
+        assert_eq!(p[1].position, Vec2::new(5.0, 10.0));
+        assert_eq!(p[2].position, Vec2::new(5.0, 20.0));
     }
 }

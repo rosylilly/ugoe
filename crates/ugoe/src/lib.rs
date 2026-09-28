@@ -88,8 +88,12 @@ impl Puppet {
         puppet
     }
 
+    /// 物理を設定する。動的物理 (`docs/spec/physics.md#動的物理-揺れ用パラメータのいらない物理`)
+    /// を使う設定なら、`update` の評価は 2 段階になる (`docs/spec/evaluation.md#2-評価の順序`)。
     pub fn with_physics(mut self, settings: ugoe_model::physics::PhysicsSettings) -> Self {
-        self.physics = Some(ugoe_physics::PhysicsSystem::new(settings));
+        let mut physics = ugoe_physics::PhysicsSystem::new(settings);
+        physics.bind(&mut self.instance);
+        self.physics = Some(physics);
         self
     }
 
@@ -182,6 +186,9 @@ impl Puppet {
     ///
     /// パーツの不透明度の上書き ([`ModelInstance::set_part_opacity_override`]) は
     /// `Puppet` が毎フレーム作り直す。
+    ///
+    /// 動的物理を使う設定では、物理の段で 1 段目の評価を行い、最後の `ModelInstance::update()` が
+    /// 2 段目になる (動的物理を使わなければ評価は 1 回)。
     pub fn update(&mut self, dt: f32) {
         let params = self.instance.parameters_mut();
 
@@ -215,9 +222,11 @@ impl Puppet {
         self.breath.advance(dt);
         self.breath.apply(params);
         // 8. 物理
+        // 動的物理を使う設定では、ここで 1 段目の評価を行い、11. の評価が 2 段目になる。
         if let Some(physics) = &mut self.physics {
-            physics.update(params, dt);
+            physics.update_instance(&mut self.instance, dt);
         }
+        let params = self.instance.parameters_mut();
         // 9. リップシンク
         let strength = self.motions.effect_group_weight(LIP_SYNC_GROUP);
         self.lip_sync.apply(params, strength);
@@ -582,6 +591,42 @@ mod tests {
             trace
         };
         assert_eq!(run(), run());
+    }
+
+    // 動的物理: 揺れ用のパラメータなしで髪のデフォーマが揺れる。評価は 1 フレームに 1 回と数える。
+    #[test]
+    fn puppet_runs_dynamic_physics() {
+        let mut puppet = Puppet::new(ugoe_model::fixtures::dynamic_hair())
+            .unwrap()
+            .with_physics(ugoe_model::fixtures::dynamic_hair_settings());
+        let hair1 = puppet
+            .instance()
+            .compiled()
+            .deformer_index("Hair1")
+            .unwrap();
+        puppet.update(1.0 / 60.0);
+        let rest = puppet.instance().rotation_world_frame(hair1).unwrap();
+        let x = puppet.instance().parameters().index_of("AngleX").unwrap();
+        puppet.instance_mut().parameters_mut().set(x, 30.0);
+        let count = puppet.instance().update_count();
+        for _ in 0..5 {
+            puppet.update(1.0 / 60.0);
+        }
+        assert_eq!(puppet.instance().update_count(), count + 5);
+        let moved = puppet.instance().rotation_world_frame(hair1).unwrap();
+        // 頭と一緒に平行移動するだけでなく、遅れて回る。
+        assert!(!moved.matrix2.abs_diff_eq(rest.matrix2, 1e-3));
+    }
+
+    #[test]
+    fn puppet_without_dynamic_physics_evaluates_once() {
+        let mut puppet = Puppet::new(ugoe_model::fixtures::physics_hair())
+            .unwrap()
+            .with_physics(ugoe_model::fixtures::physics_hair_settings());
+        let count = puppet.instance().update_count();
+        puppet.update(1.0 / 60.0);
+        assert_eq!(puppet.instance().update_count(), count + 1);
+        assert!(puppet.instance().dynamic_offsets().is_none());
     }
 
     #[test]

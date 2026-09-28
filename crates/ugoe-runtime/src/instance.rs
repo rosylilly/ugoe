@@ -8,6 +8,7 @@ use ugoe_model::{BlendMode, DeformerKind};
 
 use crate::blend_shape;
 use crate::deform::{Rotation, Transform, Warp};
+use crate::dynamic::{Dynamic, DynamicOffsets};
 use crate::keyform::{self, Weights};
 use crate::{CompiledModel, ParameterValues};
 
@@ -201,6 +202,21 @@ pub struct ModelInstance {
     deformer_affine: Vec<Affine2>,
     /// ワープデフォーマのワールド座標の制御点 (回転の要素は空)。
     warp_points: Vec<Vec<Vec2>>,
+    /// 動的物理の加算量と 2 段階の評価の状態。使わないモデルでは `None` のまま
+    /// (評価の費用は変わらない)。
+    pub(crate) dynamic: Option<Box<Dynamic>>,
+}
+
+/// デフォーマの評価の仕方。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Stage {
+    /// すべてを評価し、動的物理の加算量があれば加える。
+    Full,
+    /// 2 段階の評価の 1 段目: すべてを評価し、加算量は加えない。
+    First,
+    /// 2 段目: 加算量を受けるデフォーマ、1 段目からパラメータが変わったデフォーマと、
+    /// それらの子孫だけを評価し直す。
+    Second,
 }
 
 impl ModelInstance {
@@ -255,6 +271,7 @@ impl ModelInstance {
             deformer_opacity: vec![1.0; model.deformers.len()],
             deformer_affine: vec![Affine2::IDENTITY; model.deformers.len()],
             warp_points,
+            dynamic: None,
             compiled,
         };
         instance.update();
@@ -323,14 +340,55 @@ impl ModelInstance {
     /// 現在のパラメータ値からすべての描画可能要素を再計算する (`docs/spec/evaluation.md` の 2.)。
     ///
     /// ヒープ確保はしない (バッファは [`ModelInstance::new`] で確保したものを再利用する)。
+    ///
+    /// [`ModelInstance::update_first_stage`] の後に呼ぶと、2 段階の評価の 2 段目になる
+    /// (`docs/spec/evaluation.md#動的物理を使う場合-2-段階の評価`)。
     pub fn update(&mut self) {
+        let pending = self
+            .dynamic
+            .as_mut()
+            .is_some_and(|d| std::mem::take(&mut d.pending));
+        let stage = if pending { Stage::Second } else { Stage::Full };
         self.update_parts();
-        self.update_deformers();
+        self.update_deformers(stage);
         self.update_meshes();
         self.apply_glues();
         self.sort_render_order();
         self.detect_changes();
         self.update_count += 1;
+    }
+
+    /// 2 段階の評価の 1 段目: 今のパラメータ値でデフォーマだけを評価する
+    /// (`docs/spec/evaluation.md#動的物理を使う場合-2-段階の評価`)。
+    ///
+    /// 動的物理の加算量は加えない。この後、デフォーマのワールド変換 ([`ModelInstance::deformer_world`]
+    /// など) は 1 段目の結果を返す。物理がそれを読んで加算量 ([`ModelInstance::dynamic_offsets_mut`])
+    /// やパラメータを書き換えた後、[`ModelInstance::update`] を呼ぶと 2 段目として、加算量を受ける
+    /// デフォーマ・パラメータが変わったデフォーマとその子孫だけを評価し直してから、残りを計算する。
+    ///
+    /// 出力 (`drawables` など) と `update_count` は変わらない。最初の呼び出しで 2 段階の評価の
+    /// バッファを確保する。
+    pub fn update_first_stage(&mut self) {
+        let dynamic = self
+            .dynamic
+            .get_or_insert_with(|| Box::new(Dynamic::new(&self.compiled.model)));
+        dynamic.snapshot.copy_from_slice(self.parameters.as_slice());
+        dynamic.pending = true;
+        self.update_deformers(Stage::First);
+    }
+
+    /// 動的物理の加算量。最初の呼び出しでバッファを確保する (動的物理を使わないモデルでは
+    /// 呼ばないこと。呼ばなければ評価の費用は変わらない)。
+    pub fn dynamic_offsets_mut(&mut self) -> &mut DynamicOffsets {
+        &mut self
+            .dynamic
+            .get_or_insert_with(|| Box::new(Dynamic::new(&self.compiled.model)))
+            .offsets
+    }
+
+    /// 動的物理の加算量。[`ModelInstance::dynamic_offsets_mut`] を呼んでいなければ `None`。
+    pub fn dynamic_offsets(&self) -> Option<&DynamicOffsets> {
+        self.dynamic.as_ref().map(|d| &d.offsets)
     }
 
     /// 次の [`ModelInstance::update`] で、比較せずにすべての要素と描画順を変更ありとして報告させる。
@@ -411,13 +469,37 @@ impl ModelInstance {
     }
 
     /// デフォーマをトポロジカル順に評価し、ワールド変換と不透明度を作る。
-    fn update_deformers(&mut self) {
+    fn update_deformers(&mut self, stage: Stage) {
         let compiled = &*self.compiled;
         let model = &compiled.model;
         let values = self.parameters.as_slice();
+        // 加算量は 1 段目では加えない。
+        let mut dynamic = self.dynamic.as_deref_mut();
+        if stage == Stage::First {
+            dynamic = None;
+        }
         for &d in &compiled.deformer_order {
             let d = d as usize;
             let deformer = &compiled.deformers[d];
+            if stage == Stage::Second
+                && let Some(dynamic) = dynamic.as_deref_mut()
+            {
+                let changed = dynamic.offsets.targets[d]
+                    || deformer.parent.is_some_and(|p| dynamic.dirty[p as usize])
+                    || deformer
+                        .bindings
+                        .iter()
+                        .chain(deformer.blend_shapes.iter().flat_map(|s| &s.bindings))
+                        .any(|b| {
+                            let i = b.param.0 as usize;
+                            values[i].to_bits() != dynamic.snapshot[i].to_bits()
+                        });
+                dynamic.dirty[d] = changed;
+                if !changed {
+                    continue;
+                }
+            }
+            let offsets = dynamic.as_deref().map(|d| &d.offsets);
             keyform::weights(&deformer.bindings, values, &mut self.scratch);
             let weights = &self.scratch;
             let own_opacity = match &model.deformers[d].kind {
@@ -453,6 +535,11 @@ impl ModelInstance {
                     for p in &mut points {
                         *p = parent.apply(*p);
                     }
+                    if let Some(offsets) = offsets {
+                        for (p, o) in points.iter_mut().zip(offsets.warp_points(d)) {
+                            *p += *o;
+                        }
+                    }
                     self.warp_points[d] = points;
                     opacity
                 }
@@ -478,13 +565,20 @@ impl ModelInstance {
                         local.scale += blend_shape::delta_scalar(g, current, rest, |k| k.scale);
                         opacity += blend_shape::delta_scalar(g, current, rest, |k| k.opacity);
                     }
+                    if let Some(offsets) = offsets {
+                        local.angle += offsets.angle(d);
+                    }
                     let parent = world_transform(
                         compiled,
                         &self.deformer_affine,
                         &self.warp_points,
                         deformer.parent,
                     );
-                    self.deformer_affine[d] = parent.rotation_child(&local);
+                    let mut world = parent.rotation_child(&local);
+                    if let Some(offsets) = offsets {
+                        world.translation += offsets.origin(d);
+                    }
+                    self.deformer_affine[d] = world;
                     opacity
                 }
                 // 未知の種類は恒等変換で、不透明度も変えない。子は親の変換をそのまま受ける
@@ -555,6 +649,15 @@ impl ModelInstance {
             );
             for p in &mut out.positions {
                 *p = parent.apply(*p);
+            }
+            if let Some(dynamic) = &self.dynamic {
+                for (p, o) in out
+                    .positions
+                    .iter_mut()
+                    .zip(dynamic.offsets.mesh_positions(i))
+                {
+                    *p += *o;
+                }
             }
             let part = self.part_opacity[cm.part as usize];
             let deformer = cm.parent.map_or(1.0, |d| self.deformer_opacity[d as usize]);
@@ -711,6 +814,43 @@ impl ModelInstance {
             }
         }
         out
+    }
+
+    /// 回転デフォーマ `deformer` のキーフォームを今のパラメータ値で補間した値 (ブレンドシェイプの
+    /// 差分を含み、動的物理の加算量を加える前)。回転デフォーマでなければ `None`。
+    ///
+    /// [`ModelInstance::mesh_local_positions`] と同じく問い合わせ用で、呼ぶたびに補間し直す。
+    pub fn rotation_local_keyform(&self, deformer: usize) -> Option<RotationKeyform> {
+        let DeformerKind::Rotation(rotation) = &self.compiled.model.deformers.get(deformer)?.kind
+        else {
+            return None;
+        };
+        let grid = &rotation.keyforms;
+        let mut weights = Weights::new();
+        keyform::weights(
+            &self.compiled.deformers[deformer].bindings,
+            self.parameters.as_slice(),
+            &mut weights,
+        );
+        let mut out = RotationKeyform {
+            origin: keyform::blend_vec2(grid, &weights, |k| k.origin),
+            angle: keyform::blend_scalar(grid, &weights, |k| k.angle),
+            scale: keyform::blend_scalar(grid, &weights, |k| k.scale),
+            reflect_x: keyform::blend_bool(grid, &weights, |k| k.reflect_x),
+            reflect_y: keyform::blend_bool(grid, &weights, |k| k.reflect_y),
+            opacity: keyform::blend_scalar(grid, &weights, |k| k.opacity),
+        };
+        let shapes = &self.compiled.deformers[deformer].blend_shapes;
+        for (g, shape) in grid.blend_shapes.iter().zip(shapes) {
+            if shape.weights(self.parameters.as_slice(), &mut weights) {
+                let rest = &shape.rest;
+                out.origin += blend_shape::delta_vec2(g, &weights, rest, |k| k.origin);
+                out.angle += blend_shape::delta_scalar(g, &weights, rest, |k| k.angle);
+                out.scale += blend_shape::delta_scalar(g, &weights, rest, |k| k.scale);
+                out.opacity += blend_shape::delta_scalar(g, &weights, rest, |k| k.opacity);
+            }
+        }
+        Some(out)
     }
 
     fn world(&self, parent: Option<u32>) -> WorldTransform<'_> {
