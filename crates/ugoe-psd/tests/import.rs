@@ -6,7 +6,8 @@ mod common;
 
 use common::fixtures::{LAYERS_HEIGHT, LAYERS_WIDTH, fixture_path, layers_bytes};
 use common::{
-    Layer as W, levels_identity, pattern, write_flat_psd, write_psd, write_psd_unchecked,
+    Layer as W, Mask, levels_identity, pattern, write_flat_psd, write_psd, write_psd_unchecked,
+    write_psd16,
 };
 use ugoe_psd::{ImportWarning, Layer, LayerNode, PsdError, WarningKind, import};
 
@@ -120,11 +121,12 @@ fn warnings_carry_the_group_path() {
     let layers = vec![
         W::group_end(),
         W::group_end(),
+        W::raster("plain", 1, 1, 4, 4),
         W {
-            mask: true,
-            ..W::raster("masked", 1, 1, 4, 4)
+            // グループのマスクは取り込めない。
+            mask: Some(Mask::window(0, 0, 4, 4)),
+            ..W::group("inner")
         },
-        W::group("inner"),
         W {
             // 合成済みの画素を持たないスマートオブジェクト。
             extra: vec![(*b"SoLd", vec![0; 4])],
@@ -136,12 +138,12 @@ fn warnings_carry_the_group_path() {
     let (_, outer) = group(&tree.root[0]);
     assert_eq!(outer.len(), 1, "the smart object is skipped");
     let (_, inner) = group(&outer[0]);
-    assert_eq!(layer(&inner[0]).name, "masked");
+    assert_eq!(layer(&inner[0]).name, "plain");
     assert_eq!(
         tree.warnings,
         [
             ImportWarning {
-                path: vec!["outer".into(), "inner".into(), "masked".into()],
+                path: vec!["outer".into(), "inner".into()],
                 kind: WarningKind::LayerMaskIgnored,
             },
             ImportWarning {
@@ -152,7 +154,7 @@ fn warnings_carry_the_group_path() {
     );
     assert_eq!(
         tree.warnings[0].to_string(),
-        "outer / inner / masked: layer mask ignored"
+        "outer / inner: layer mask ignored"
     );
 }
 
@@ -224,23 +226,237 @@ fn empty_layers_are_kept() {
 }
 
 #[test]
-fn zip_compressed_layers_are_skipped_with_a_warning() {
-    // 中身は正しい zlib ストリーム (ZIP・予測付き ZIP)。取り込みは ZIP に対応していない。
+fn zip_compressed_layers_are_decoded() {
+    // ZIP・予測付き ZIP。
     for compression in [2, 3] {
-        let layers = vec![
-            W::raster("kept", 0, 0, 2, 2),
-            W {
-                compression,
-                ..W::raster("zip", 0, 0, 2, 2)
-            },
-        ];
+        let layers = vec![W {
+            compression,
+            ..W::raster("zip", -1, 1, 5, 3)
+        }];
         let tree = import(&write_psd(4, 4, &layers)).unwrap();
-        assert_eq!(tree.root.len(), 1);
+        assert_eq!(layer(&tree.root[0]).rgba, pattern(5, 3, 3), "{compression}");
+        assert!(tree.warnings.is_empty());
+    }
+}
+
+#[test]
+fn broken_zip_data_is_invalid() {
+    let bytes = write_psd(
+        4,
+        4,
+        &[W {
+            compression: 2,
+            ..W::raster("zip", 0, 0, 4, 4)
+        }],
+    );
+    // 最初のチャンネルの zlib ストリームの中ほどを壊す。
+    let start = bytes
+        .windows(4)
+        .position(|w| w == [0, 2, 0x78, 0x9c])
+        .unwrap();
+    for at in [start + 2, start + 5] {
+        let mut broken = bytes.clone();
+        broken[at] ^= 0xff;
+        let err = import(&broken).unwrap_err();
+        assert!(matches!(err, PsdError::Invalid(_)), "{err:?}");
+    }
+}
+
+#[test]
+fn unknown_compression_is_skipped_with_a_warning() {
+    let mut bytes = write_psd(
+        4,
+        4,
+        &[W {
+            compression: 0,
+            ..W::raster("odd", 0, 0, 2, 2)
+        }],
+    );
+    // 最初のチャンネル (アルファ) の圧縮方式を、仕様にない 7 に書き換える。
+    let end = layer_section_end(&bytes);
+    let at = bytes[..end]
+        .windows(6)
+        .position(|w| w == [0, 0, 0, 255, 0, 252])
+        .unwrap();
+    bytes[at + 1] = 7;
+    let tree = import(&bytes).unwrap();
+    assert!(tree.root.is_empty());
+    assert_eq!(
+        tree.warnings[0].kind,
+        WarningKind::UnsupportedCompression { compression: 7 }
+    );
+}
+
+/// 期待するアルファ: 模様のアルファに (濃度を掛けた) マスクの値を掛けて丸める。
+fn masked_alpha(rgba: &[u8], left: i32, top: i32, width: u32, mask: &Mask) -> Vec<u8> {
+    rgba.as_chunks::<4>()
+        .0
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let x = left + (i as u32 % width) as i32;
+            let y = top + (i as u32 / width) as i32;
+            let hide = 255 - u32::from(mask.value(x, y));
+            let m = 255 - (hide * u32::from(mask.density.unwrap_or(255)) + 127) / 255;
+            ((u32::from(p[3]) * m + 127) / 255) as u8
+        })
+        .collect()
+}
+
+fn alpha(rgba: &[u8]) -> Vec<u8> {
+    rgba.as_chunks::<4>().0.iter().map(|p| p[3]).collect()
+}
+
+#[test]
+fn layer_masks_are_applied_to_alpha() {
+    // レイヤー (1, 1)-(7, 6) に対して、左上にはみ出し、中の値が変化するマスク。
+    let gradient = Mask {
+        pixels: (0..5 * 4).map(|i| (i * 13) as u8).collect(),
+        default_color: 255,
+        ..Mask::window(-1, 0, 5, 4)
+    };
+    // レイヤーの中の 2x2 だけを見せるマスク。
+    let window = Mask::window(3, 2, 2, 2);
+    for mask in [gradient, window] {
+        for compression in [0, 1, 2, 3] {
+            let raw = W {
+                compression,
+                mask: Some(mask.clone()),
+                ..W::raster("masked", 1, 1, 6, 5)
+            };
+            let tree = import(&write_psd(8, 8, std::slice::from_ref(&raw))).unwrap();
+            assert!(tree.warnings.is_empty(), "{:?}", tree.warnings);
+            let got = layer(&tree.root[0]);
+            let written = raw.rgba.as_ref().unwrap();
+            assert_eq!(alpha(&got.rgba), masked_alpha(written, 1, 1, 6, &mask));
+            // 色はそのまま。
+            for (g, w) in got
+                .rgba
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .zip(written.as_chunks::<4>().0)
+            {
+                assert_eq!(g[..3], w[..3]);
+            }
+        }
+    }
+}
+
+#[test]
+fn mask_density_weakens_the_mask() {
+    let mask = Mask {
+        density: Some(100),
+        ..Mask::window(2, 2, 2, 2)
+    };
+    let raw = W {
+        mask: Some(mask.clone()),
+        ..W::raster("dense", 0, 0, 5, 5)
+    };
+    let tree = import(&write_psd(6, 6, std::slice::from_ref(&raw))).unwrap();
+    let got = alpha(&layer(&tree.root[0]).rgba);
+    assert_eq!(
+        got,
+        masked_alpha(raw.rgba.as_ref().unwrap(), 0, 0, 5, &mask)
+    );
+    // 隠す量が 100/255 になる: マスクの外の不透明な画素 (1, 0) は 255 - 100 = 155。
+    assert_eq!(got[1], 155);
+}
+
+/// ベクトルマスクと併用したレイヤーは、両方を合成した -3 だけを掛ける。
+#[test]
+fn real_user_mask_replaces_the_user_mask() {
+    let real = Mask {
+        pixels: (0..4 * 3).map(|i| (i * 20) as u8).collect(),
+        default_color: 255,
+        ..Mask::window(1, 1, 4, 3)
+    };
+    for compression in [1, 2] {
+        let raw = W {
+            compression,
+            // -2 は何も見せないマスク。-3 を使えばこれは効かない。
+            mask: Some(Mask::window(0, 0, 1, 1)),
+            real_mask: Some(real.clone()),
+            ..W::raster("both", 0, 0, 6, 5)
+        };
+        let tree = import(&write_psd(6, 6, std::slice::from_ref(&raw))).unwrap();
+        assert!(tree.warnings.is_empty());
         assert_eq!(
-            tree.warnings[0].kind,
-            WarningKind::UnsupportedCompression { compression }
+            alpha(&layer(&tree.root[0]).rgba),
+            masked_alpha(raw.rgba.as_ref().unwrap(), 0, 0, 6, &real)
         );
     }
+}
+
+#[test]
+fn disabled_and_empty_masks_are_ignored() {
+    for mask in [
+        Mask {
+            disabled: true,
+            ..Mask::window(0, 0, 2, 2)
+        },
+        Mask::window(0, 0, 0, 0),
+    ] {
+        let layers = vec![W {
+            mask: Some(mask),
+            ..W::raster("m", 0, 0, 3, 3)
+        }];
+        let tree = import(&write_psd(4, 4, &layers)).unwrap();
+        assert_eq!(layer(&tree.root[0]).rgba, pattern(3, 3, 1));
+        assert!(tree.warnings.is_empty());
+    }
+}
+
+#[test]
+fn legacy_names_are_decoded() {
+    let sjis = |s: &str| encoding_rs::SHIFT_JIS.encode(s).0.into_owned();
+    for (bytes, expected) in [
+        // SAI などの日本語の環境のツール: Shift-JIS (CP932 の丸数字も)。
+        (sjis("前髪①"), "前髪①"),
+        (sjis("ｱﾎ毛"), "ｱﾎ毛"),
+        // UTF-8 で書くツール。
+        ("後ろ髪".as_bytes().to_vec(), "後ろ髪"),
+        (b"face".to_vec(), "face"),
+        // どちらでもないバイト列は Windows-1252。
+        (vec![b'c', 0xe9, b'!'], "c\u{e9}!"),
+    ] {
+        let layers = vec![W {
+            unicode_name: false,
+            legacy_name: Some(bytes),
+            ..W::raster("ignored", 0, 0, 1, 1)
+        }];
+        let tree = import(&write_psd(2, 2, &layers)).unwrap();
+        assert_eq!(layer(&tree.root[0]).name, expected);
+    }
+    // `luni` があればそちらを使う。
+    let layers = vec![W {
+        legacy_name: Some(sjis("古い名前")),
+        ..W::raster("新しい名前", 0, 0, 1, 1)
+    }];
+    let tree = import(&write_psd(2, 2, &layers)).unwrap();
+    assert_eq!(layer(&tree.root[0]).name, "新しい名前");
+}
+
+/// 16 ビットの PSD (`Lr16`) は、同じ中身の 8 ビットの PSD と同じに取り込める。
+#[test]
+fn sixteen_bit_documents_match_eight_bit() {
+    let mut layers = common::fixtures::layers();
+    for (i, l) in layers.iter_mut().enumerate() {
+        l.compression = [0, 1, 2, 3][i % 4];
+    }
+    layers.push(W {
+        mask: Some(Mask {
+            pixels: (0..16).map(|i| (i * 17) as u8).collect(),
+            ..Mask::window(2, 2, 4, 4)
+        }),
+        compression: 3,
+        ..W::raster("masked", 0, 0, 8, 8)
+    });
+    let a = import(&write_psd(WIDTH, HEIGHT, &layers)).unwrap();
+    let b = import(&write_psd16(WIDTH, HEIGHT, &layers)).unwrap();
+    assert_eq!(format!("{:?}", a.root), format!("{:?}", b.root));
+    assert_eq!(a.warnings, b.warnings);
+    assert_eq!(b.root.len(), 4);
 }
 
 #[test]
@@ -282,7 +498,8 @@ fn rejects_unsupported_documents() {
         other => panic!("expected unsupported, got {other:?}"),
     };
     unsupported(&header_with(4, &[0, 2]), "psb");
-    unsupported(&header_with(22, &[0, 16]), "16-bit");
+    unsupported(&header_with(22, &[0, 32]), "32-bit");
+    unsupported(&header_with(22, &[0, 1]), "1-bit");
     unsupported(&header_with(24, &[0, 4]), "cmyk");
     unsupported(&header_with(24, &[0, 1]), "grayscale");
 }
@@ -328,11 +545,25 @@ fn truncated_input_is_an_error() {
     }
 }
 
+/// マスク・ZIP・予測付き ZIP を含む 16 ビットの PSD。
+fn feature_bytes() -> Vec<u8> {
+    let layers: Vec<W> = (0..4)
+        .map(|compression| W {
+            compression,
+            mask: Some(Mask {
+                density: Some(200),
+                ..Mask::window(1, 1, 3, 3)
+            }),
+            real_mask: (compression == 3).then(|| Mask::window(0, 0, 2, 2)),
+            ..W::raster("f", 0, 0, 5, 4)
+        })
+        .collect();
+    write_psd16(6, 6, &layers)
+}
+
 /// 決定的な擬似乱数でバイトを書き換えても、パニックしないこと。
 #[test]
 fn corrupted_input_does_not_panic() {
-    let original = fixture_bytes();
-    let end = layer_section_end(&original);
     let mut state: u64 = 0x9e37_79b9_7f4a_7c15;
     let mut next = || {
         state ^= state << 13;
@@ -340,12 +571,19 @@ fn corrupted_input_does_not_panic() {
         state ^= state << 17;
         state
     };
-    for _ in 0..3000 {
-        let mut bytes = original.clone();
-        for _ in 0..1 + next() % 4 {
-            let at = (next() as usize) % end;
-            bytes[at] = next() as u8;
+    for original in [fixture_bytes(), feature_bytes()] {
+        import(&original).unwrap();
+        let end = layer_section_end(&original);
+        for _ in 0..3000 {
+            let mut bytes = original.clone();
+            for _ in 0..1 + next() % 4 {
+                let at = (next() as usize) % end;
+                bytes[at] = next() as u8;
+            }
+            let _ = import(&bytes);
         }
-        let _ = import(&bytes);
+        for len in 0..end {
+            let _ = import(&original[..len]);
+        }
     }
 }

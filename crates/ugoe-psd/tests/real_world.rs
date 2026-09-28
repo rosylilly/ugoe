@@ -3,8 +3,8 @@
 //! ファイルの追加手順とライセンスの記録方法は `assets/fixtures/psd-real/README.md`。
 //! ファイルが無ければ何もしない。
 //!
-//! - 対応する形式 (8 ビット RGB の PSD) なら、取り込みが成功すること (警告はあってよい)
-//! - 対応しない形式 (PSB・8 ビット以外・RGB 以外) なら、`PsdError::Unsupported` になること
+//! - 対応する形式 (8/16 ビット RGB の PSD) なら、取り込みが成功すること (警告はあってよい)
+//! - 対応しない形式 (PSB・8/16 ビット以外・RGB 以外) なら、`PsdError::Unsupported` になること
 //! - ImageMagick (`identify`) があれば、画素を持つレイヤーの数が ImageMagick の見方と一致すること
 
 // テストの補助関数でも unwrap を使う (失敗はテストの失敗)。
@@ -26,12 +26,12 @@ fn corpus() -> Vec<PathBuf> {
     files
 }
 
-/// ヘッダが、取り込みが対応する形式 (版 1・8 ビット・RGB) か。
+/// ヘッダが、取り込みが対応する形式 (版 1・8/16 ビット・RGB) か。
 fn is_supported_format(bytes: &[u8]) -> bool {
     bytes.len() >= 26
         && bytes[..4] == *b"8BPS"
         && bytes[4..6] == [0, 1]
-        && bytes[22..24] == [0, 8]
+        && (bytes[22..24] == [0, 8] || bytes[22..24] == [0, 16])
         && bytes[24..26] == [0, 3]
 }
 

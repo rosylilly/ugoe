@@ -169,14 +169,14 @@ fn coverage(layer: &Layer, width: u32, height: u32) -> Vec<f32> {
     };
     for_each_pixel(layer, width, height, |i, j| {
         let mut a = unit(rgba[j * 4 + 3]);
-        if layer.mask {
+        // -3 があれば -3 だけが効く。
+        let mask = layer.real_mask.as_ref().or(layer.mask.as_ref());
+        if let Some(mask) = mask.filter(|m| !m.disabled) {
             let (x, y) = (
-                (j as u32 % layer.width) as i32,
-                (j as u32 / layer.width) as i32,
+                layer.left + (j as u32 % layer.width) as i32,
+                layer.top + (j as u32 / layer.width) as i32,
             );
-            if x >= 4 || y >= 4 {
-                a = 0.0;
-            }
+            a *= mask.coverage(x, y);
         }
         out[i] = a;
     });

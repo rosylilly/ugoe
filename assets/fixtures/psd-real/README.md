@@ -3,9 +3,9 @@
 Photoshop・CLIP STUDIO PAINT・Krita・SAI などが書き出した PSD を置く場所です。
 ここに置いた `*.psd` は `crates/ugoe-psd/tests/real_world.rs` が自動でテストします (ファイルが無ければ何もしません)。
 
-- 8 ビット RGB の PSD: 取り込みが成功すること (警告はあってよい)。ImageMagick (`identify`) があれば、
+- 8/16 ビット RGB の PSD: 取り込みが成功すること (警告はあってよい)。ImageMagick (`identify`) があれば、
   画素を持つレイヤーの数が ImageMagick の見方と一致すること
-- それ以外 (PSB・16/32 ビット・グレースケール・CMYK など): `PsdError::Unsupported` になること
+- それ以外 (PSB・32 ビット・グレースケール・CMYK など): `PsdError::Unsupported` になること
 
 実行: `cargo test -p ugoe-psd --test real_world -- --nocapture` (警告も表示される)
 

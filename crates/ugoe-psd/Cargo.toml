@@ -8,6 +8,8 @@ publish.workspace = true
 license.workspace = true
 
 [dependencies]
+encoding_rs.workspace = true
+miniz_oxide.workspace = true
 thiserror.workspace = true
 ugoe-core.workspace = true
 

@@ -261,3 +261,68 @@ fn imagemagick_reads_character_psd() {
     );
     check_character_composite(&rgb);
 }
+
+/// マスク・ZIP・16 ビットを含む PSD を、取り込みと ImageMagick の両方で読み、各レイヤーの画素
+/// (マスクを掛けた後) が一致すること。ImageMagick のマスクの掛け算の丸めの違いで 1 ずれてよい。
+///
+/// マスクの既定の色 (矩形の外の値) は 0 だけを使う。ImageMagick 6.9 は既定の色が 255 のとき、
+/// 矩形の外を 255 でなく約 55 (赤だけを 255 にした色の輝度) として扱うため。255 は `tests/import.rs` で試す。
+#[test]
+fn imagemagick_agrees_on_masks_zip_and_16_bit() {
+    if !imagemagick() {
+        return;
+    }
+    let gradient = common::Mask {
+        pixels: (0..6 * 5).map(|i| (i * 8) as u8).collect(),
+        ..common::Mask::window(-2, 1, 6, 5)
+    };
+    let layers: Vec<common::Layer> = (0..4)
+        .map(|compression| common::Layer {
+            compression,
+            mask: Some(if compression % 2 == 0 {
+                gradient.clone()
+            } else {
+                common::Mask::window(4 + compression as i32, 3, 3, 4)
+            }),
+            ..common::Layer::raster(&format!("layer {compression}"), 1, 2, 9, 7)
+        })
+        .collect();
+    let dir = std::env::temp_dir();
+    for (depth, bytes) in [
+        (8, common::write_psd(12, 10, &layers)),
+        (16, common::write_psd16(12, 10, &layers)),
+    ] {
+        let path = dir.join(format!("ugoe-psd-{}-{depth}.psd", std::process::id()));
+        std::fs::write(&path, &bytes).unwrap();
+        let tree = import(&bytes).unwrap();
+        assert!(tree.warnings.is_empty());
+        assert_eq!(identify_layers(&path), raster_geometry(&layers));
+        for (i, node) in tree.root.iter().enumerate() {
+            let ours = &layer(node).rgba;
+            let output = Command::new("convert")
+                .arg(format!("{}[{}]", path.display(), i + 1))
+                .args(["-depth", "8", "rgba:-"])
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+            let theirs = output.stdout;
+            assert_eq!(ours.len(), theirs.len());
+            for (p, (a, b)) in ours
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .zip(theirs.as_chunks::<4>().0)
+                .enumerate()
+            {
+                let channels = if a[3] == 0 { 3..4 } else { 0..4 };
+                for c in channels {
+                    assert!(
+                        a[c].abs_diff(b[c]) <= 1,
+                        "{depth}-bit layer {i} pixel {p}: {a:?} != {b:?}"
+                    );
+                }
+            }
+        }
+        std::fs::remove_file(&path).unwrap();
+    }
+}

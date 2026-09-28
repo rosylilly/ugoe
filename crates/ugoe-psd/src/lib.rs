@@ -10,7 +10,7 @@ use ugoe_core::Vec2;
 
 mod parse;
 
-use parse::{RawLayer, Section};
+use parse::{Mask, RawLayer, Section};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PsdError {
@@ -92,9 +92,10 @@ pub enum WarningKind {
     SmartObjectWithoutPixels,
     /// レイヤー効果 (ドロップシャドウなど)。効果を除いた画素だけを取り込む。
     LayerEffectsIgnored,
-    /// レイヤーマスク。マスクを掛けていない画素を取り込む。
+    /// レイヤーマスクを掛けられなかった (グループのマスク、マスクの画素がないなど)。
+    /// マスクを掛けていない画素を取り込む。
     LayerMaskIgnored,
-    /// 対応していない圧縮方式 (ZIP など) のチャンネル。取り込まない。
+    /// 対応していない圧縮方式のチャンネル。取り込まない。
     UnsupportedCompression { compression: u16 },
     /// 色チャンネルの画素がない。取り込まない。
     MissingPixels,
@@ -129,8 +130,9 @@ impl fmt::Display for ImportWarning {
 }
 
 /// 対応する色空間とビット深度。これ以外は [`PsdError::Unsupported`] になる。
-/// - 8 ビット RGB (アルファの有無は問わない)
+/// - 8 ビット・16 ビットの RGB (アルファの有無は問わない)。16 ビットは 8 ビットに丸める
 ///
+/// レイヤーマスク (チャンネル -2 / -3) はレイヤーのアルファに掛ける。
 /// 壊れた入力や途中で切れた入力は [`PsdError::Invalid`] を返し、パニックしない。
 pub fn import(bytes: &[u8]) -> Result<LayerTree, PsdError> {
     let doc = parse::parse(bytes)?;
@@ -179,6 +181,14 @@ pub fn import(bytes: &[u8]) -> Result<LayerTree, PsdError> {
                         w.path.insert(0, name.clone());
                         w
                     }));
+                // グループのマスクは合成したグループに掛かるもので、子のアルファに掛けても同じに
+                // ならないため、警告だけにする。
+                if raw.mask.is_some() || raw.real_mask.is_some() {
+                    parent.warnings.push(ImportWarning {
+                        path: vec![name.clone()],
+                        kind: WarningKind::LayerMaskIgnored,
+                    });
+                }
                 parent.nodes.push(group(raw, frame.nodes));
             }
             None => {
@@ -256,17 +266,26 @@ fn layer(raw: RawLayer) -> (Option<Layer>, Vec<WarningKind>) {
         return (None, vec![WarningKind::AdjustmentLayer { key }]);
     }
 
+    // 色やアルファのチャンネルが 1 つでも読めなければ、見た目が変わるので取り込まない。
+    if let Some(compression) = raw.unsupported_compression {
+        return (
+            None,
+            vec![WarningKind::UnsupportedCompression { compression }],
+        );
+    }
     let pixel_count = raw.width as usize * raw.height as usize;
+    let mut mask_ignored = false;
     let rgba = if pixel_count == 0 {
         Some(Vec::new())
     } else {
-        rgba(&raw, pixel_count)
+        rgba(&raw, pixel_count).map(|mut rgba| {
+            mask_ignored = !apply_masks(&raw, &mut rgba);
+            rgba
+        })
     };
     let Some(rgba) = rgba.filter(|p| !(p.is_empty() && has(SMART_OBJECT_KEYS).is_some())) else {
         let kind = if has(SMART_OBJECT_KEYS).is_some() {
             WarningKind::SmartObjectWithoutPixels
-        } else if let Some(compression) = raw.unsupported_compression {
-            WarningKind::UnsupportedCompression { compression }
         } else {
             WarningKind::MissingPixels
         };
@@ -277,7 +296,7 @@ fn layer(raw: RawLayer) -> (Option<Layer>, Vec<WarningKind>) {
     if has(EFFECT_KEYS).is_some() {
         warnings.push(WarningKind::LayerEffectsIgnored);
     }
-    if raw.has_mask {
+    if mask_ignored {
         warnings.push(WarningKind::LayerMaskIgnored);
     }
     let layer = Layer {
@@ -312,4 +331,47 @@ fn rgba(raw: &RawLayer, pixel_count: usize) -> Option<Vec<u8>> {
         out.extend_from_slice(&[r[i], g[i], b[i], a.map_or(255, |a| a[i])]);
     }
     Some(out)
+}
+
+/// レイヤーマスクをアルファに掛ける。掛けられない (マスクの画素がない) ときは false。
+///
+/// ベクトルマスクと併用したレイヤーでは、両方を合成した最終的なマスク (-3) だけを掛ける。
+fn apply_masks(raw: &RawLayer, rgba: &mut [u8]) -> bool {
+    let (id, mask) = match (&raw.real_mask, &raw.mask) {
+        (Some(real), _) => (-3, real),
+        (None, Some(user)) => (-2, user),
+        (None, None) => return true,
+    };
+    let pixels = raw
+        .channels
+        .iter()
+        .find(|c| c.id == id)
+        .and_then(|c| c.pixels.as_deref())
+        .filter(|p| p.len() == mask.width as usize * mask.height as usize);
+    match pixels {
+        Some(pixels) => {
+            apply_mask(raw, mask, pixels, rgba);
+            true
+        }
+        None => false,
+    }
+}
+
+/// マスクの値 (0 = 隠す、255 = 見せる) をアルファに掛ける。矩形の外は既定の色、
+/// 濃度が 255 未満なら隠す量をその割合に弱める。
+fn apply_mask(raw: &RawLayer, mask: &Mask, pixels: &[u8], rgba: &mut [u8]) {
+    let density = u32::from(mask.density);
+    let (mw, mh) = (i64::from(mask.width), i64::from(mask.height));
+    for (i, px) in rgba.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+        let x = i64::from(raw.rect.left) + (i % raw.width as usize) as i64;
+        let y = i64::from(raw.rect.top) + (i / raw.width as usize) as i64;
+        let (mx, my) = (x - i64::from(mask.rect.left), y - i64::from(mask.rect.top));
+        let m = if (0..mw).contains(&mx) && (0..mh).contains(&my) {
+            pixels[(my * mw + mx) as usize]
+        } else {
+            mask.default_color
+        };
+        let m = 255 - ((255 - u32::from(m)) * density + 127) / 255;
+        px[3] = ((u32::from(px[3]) * m + 127) / 255) as u8;
+    }
 }

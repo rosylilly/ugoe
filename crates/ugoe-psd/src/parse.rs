@@ -2,6 +2,7 @@
 //!
 //! 形式は Adobe の "Adobe Photoshop File Formats Specification" に従う。
 //! 読むのは、ヘッダ・レイヤーとマスクの情報・(レイヤーがない場合の) 合成画像だけ。
+//! 16 ビットのチャンネルは、読んだところで 8 ビットに丸める。
 
 use crate::PsdError;
 
@@ -46,8 +47,20 @@ impl Rect {
 pub(crate) struct Channel {
     pub id: i16,
     pub len: usize,
-    /// 圧縮を解いた画素 (チャンネル画像を読んだ後に入る)。
+    /// 圧縮を解いて 8 ビットにした画素 (チャンネル画像を読んだ後に入る)。
     pub pixels: Option<Vec<u8>>,
+}
+
+/// レイヤーマスク 1 つ (チャンネル -2 または -3 の置き場所と、外側の値)。
+pub(crate) struct Mask {
+    /// キャンバス上の矩形。
+    pub rect: Rect,
+    pub width: u32,
+    pub height: u32,
+    /// 矩形の外のマスクの値 (0 か 255)。
+    pub default_color: u8,
+    /// 濃度 (0..=255)。255 未満なら、マスクの隠す量をこの割合に弱める。
+    pub density: u8,
 }
 
 /// セクション区切り (`lsct` / `lsdk`)。
@@ -74,8 +87,11 @@ pub(crate) struct RawLayer {
     pub section: Option<Section>,
     /// `lsct` に書かれたブレンドモード (グループではこちらが本当の値)。
     pub section_blend_key: Option<[u8; 4]>,
-    /// 有効なユーザーマスクを持つ。
-    pub has_mask: bool,
+    /// 有効なユーザーマスク (チャンネル -2)。
+    pub mask: Option<Mask>,
+    /// ベクトルマスクと併用したときの、ベクトルマスクと画素のマスクを合成した最終的なマスク
+    /// (チャンネル -3)。あれば -2 の代わりに使う。
+    pub real_mask: Option<Mask>,
     /// 読んだ追加情報のキー (未対応機能の検出に使う)。
     pub keys: Vec<[u8; 4]>,
     /// チャンネル画像の圧縮方式のうち、対応していないもの。
@@ -140,6 +156,21 @@ impl<'a> Reader<'a> {
         Ok(i32::from_be_bytes(self.array(what)?))
     }
 
+    fn rect(&mut self, what: &str) -> Result<Rect, PsdError> {
+        Ok(Rect {
+            top: self.i32(what)?,
+            left: self.i32(what)?,
+            bottom: self.i32(what)?,
+            right: self.i32(what)?,
+        })
+    }
+
+    fn rest(&mut self) -> &'a [u8] {
+        let out = &self.data[self.pos..];
+        self.pos = self.data.len();
+        out
+    }
+
     /// 32 ビットの長さが前に付いたブロックを切り出す。
     fn block(&mut self, what: &str) -> Result<Reader<'a>, PsdError> {
         let len = self.u32(what)? as usize;
@@ -173,9 +204,9 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Document, PsdError> {
     if !(1..=MAX_DIMENSION).contains(&width) || !(1..=MAX_DIMENSION).contains(&height) {
         return Err(invalid(format!("invalid image size {width}x{height}")));
     }
-    if depth != 8 {
+    if depth != 8 && depth != 16 {
         return Err(PsdError::Unsupported(format!(
-            "{depth}-bit channels (only 8-bit is supported)"
+            "{depth}-bit channels (only 8-bit and 16-bit are supported)"
         )));
     }
     if mode != 3 {
@@ -188,16 +219,23 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Document, PsdError> {
     r.block("color mode data")?;
     r.block("image resources")?;
     let mut layer_and_mask = r.block("layer and mask information")?;
-    let layers = if layer_and_mask.remaining() == 0 {
+    let mut layers = if layer_and_mask.remaining() == 0 {
         Vec::new()
     } else {
         let mut info = layer_and_mask.block("layer info")?;
-        parse_layer_info(&mut info)?
+        parse_layer_info(&mut info, depth)?
     };
+    if layers.is_empty() && layer_and_mask.remaining() > 0 {
+        // 16 ビットの PSD では、レイヤー情報は空で、後ろの追加情報 `Lr16` に入る。
+        layer_and_mask.block("global layer mask info")?;
+        if let Some(mut info) = find_layer_info_block(&mut layer_and_mask, depth)? {
+            layers = parse_layer_info(&mut info, depth)?;
+        }
+    }
 
     // レイヤーを持たない PSD は、合成画像を 1 枚のレイヤーとして扱う。
     let composite = if layers.is_empty() {
-        Some(parse_composite(&mut r, width, height, channels)?)
+        Some(parse_composite(&mut r, width, height, channels, depth)?)
     } else {
         None
     };
@@ -222,7 +260,30 @@ fn color_mode_name(mode: u16) -> String {
     }
 }
 
-fn parse_layer_info(r: &mut Reader<'_>) -> Result<Vec<RawLayer>, PsdError> {
+/// レイヤーとマスクの情報の末尾の追加情報から、ビット深度に合うレイヤー情報
+/// (8 ビットは `Layr`、16 ビットは `Lr16`) を探す。
+fn find_layer_info_block<'a>(
+    r: &mut Reader<'a>,
+    depth: u16,
+) -> Result<Option<Reader<'a>>, PsdError> {
+    let wanted: &[u8; 4] = if depth == 16 { b"Lr16" } else { b"Layr" };
+    while r.remaining() >= 12 {
+        let sig = r.array::<4>("additional info signature")?;
+        if &sig != b"8BIM" && &sig != b"8B64" {
+            // 長さに含めない詰め物 (書き手によって 4 バイトに揃える) を 1 バイトずつ飛ばす。
+            r.pos -= 3;
+            continue;
+        }
+        let key = r.array::<4>("additional info key")?;
+        let data = r.block("additional info")?;
+        if &key == wanted {
+            return Ok(Some(data));
+        }
+    }
+    Ok(None)
+}
+
+fn parse_layer_info(r: &mut Reader<'_>, depth: u16) -> Result<Vec<RawLayer>, PsdError> {
     if r.remaining() == 0 {
         return Ok(Vec::new());
     }
@@ -233,18 +294,13 @@ fn parse_layer_info(r: &mut Reader<'_>) -> Result<Vec<RawLayer>, PsdError> {
         layers.push(parse_layer_record(r)?);
     }
     for layer in &mut layers {
-        read_channel_images(r, layer)?;
+        read_channel_images(r, layer, depth)?;
     }
     Ok(layers)
 }
 
 fn parse_layer_record(r: &mut Reader<'_>) -> Result<RawLayer, PsdError> {
-    let rect = Rect {
-        top: r.i32("layer bounds")?,
-        left: r.i32("layer bounds")?,
-        bottom: r.i32("layer bounds")?,
-        right: r.i32("layer bounds")?,
-    };
+    let rect = r.rect("layer bounds")?;
     let (width, height) = rect.size()?;
     let channel_count = r.u16("layer channel count")?;
     if channel_count > MAX_CHANNELS {
@@ -270,8 +326,9 @@ fn parse_layer_record(r: &mut Reader<'_>) -> Result<RawLayer, PsdError> {
     r.u8("filler")?;
     let mut extra = r.block("layer extra data")?;
 
-    let mut mask = extra.block("layer mask data")?;
-    let has_mask = parse_mask_enabled(&mut mask)?;
+    let mut mask_data = extra.block("layer mask data")?;
+    let has_real_mask = channels.iter().any(|c| c.id == -3);
+    let (mask, real_mask) = parse_masks(&mut mask_data, has_real_mask)?;
     extra.block("blending ranges")?;
     let name_len = usize::from(extra.u8("layer name")?);
     let name_bytes = extra.bytes(name_len, "layer name")?;
@@ -288,12 +345,13 @@ fn parse_layer_record(r: &mut Reader<'_>) -> Result<RawLayer, PsdError> {
         opacity,
         clipping,
         hidden: flags & 0x02 != 0,
-        name: String::from_utf8_lossy(name_bytes).into_owned(),
+        name: decode_legacy_name(name_bytes),
         id: None,
         fill_opacity: None,
         section: None,
         section_blend_key: None,
-        has_mask,
+        mask,
+        real_mask,
         keys: Vec::new(),
         unsupported_compression: None,
     };
@@ -301,22 +359,81 @@ fn parse_layer_record(r: &mut Reader<'_>) -> Result<RawLayer, PsdError> {
     Ok(layer)
 }
 
-/// ユーザーマスクがあり、無効化されていなければ true。
-fn parse_mask_enabled(r: &mut Reader<'_>) -> Result<bool, PsdError> {
-    if r.remaining() == 0 {
-        return Ok(false);
+/// レイヤーマスクの情報 (仕様の "Layer mask / adjustment layer data")。
+/// 返すのは (チャンネル -2 のマスク, チャンネル -3 のマスク) で、無効にしてあるものは `None`。
+///
+/// 並びは、矩形・既定の色・フラグの後に、(チャンネル -3 があれば) -3 の フラグ・既定の色・矩形、
+/// (フラグの bit 4 があれば) 濃度・ぼかしの値が続く。仕様書は濃度・ぼかしを先に書くが、
+/// 実際のファイルはこの順 (psd-tools の読み方と、その issue #693 に従った)。
+/// <https://github.com/psd-tools/psd-tools/blob/main/src/psd_tools/psd/layer_and_mask.py>
+fn parse_masks(
+    r: &mut Reader<'_>,
+    has_real_mask: bool,
+) -> Result<(Option<Mask>, Option<Mask>), PsdError> {
+    let size = r.remaining();
+    if size == 0 {
+        return Ok((None, None));
     }
-    let rect = Rect {
-        top: r.i32("mask bounds")?,
-        left: r.i32("mask bounds")?,
-        bottom: r.i32("mask bounds")?,
-        right: r.i32("mask bounds")?,
-    };
-    r.u8("mask default color")?;
+    let rect = r.rect("mask bounds")?;
+    let default_color = r.u8("mask default color")?;
     let flags = r.u8("mask flags")?;
-    let (w, h) = rect.size()?;
-    // bit 1: マスクを無効にしている。
-    Ok(flags & 0x02 == 0 && w > 0 && h > 0)
+    let real = if has_real_mask && size >= 36 {
+        let real_flags = r.u8("real mask flags")?;
+        let real_color = r.u8("real mask default color")?;
+        let real_rect = r.rect("real mask bounds")?;
+        mask(real_rect, real_color, real_flags, 255)?
+    } else {
+        None
+    };
+    let mut density = 255;
+    if flags & MASK_HAS_PARAMETERS != 0 && r.remaining() > 0 {
+        // bit 0: ユーザーマスクの濃度 (1 バイト)、bit 1: ユーザーマスクのぼかし (8 バイトの double)。
+        // bit 2・3 はベクトルマスクの濃度・ぼかし。ぼかしは読まない (掛けない)。
+        if r.u8("mask parameters")? & 0x01 != 0 {
+            density = r.u8("mask density")?;
+        }
+    }
+    Ok((mask(rect, default_color, flags, density)?, real))
+}
+
+/// マスクのフラグの bit 1: マスクを無効にしている。
+const MASK_DISABLED: u8 = 0x02;
+/// マスクのフラグの bit 4: 濃度・ぼかしの値が続く。
+const MASK_HAS_PARAMETERS: u8 = 0x10;
+
+fn mask(rect: Rect, default_color: u8, flags: u8, density: u8) -> Result<Option<Mask>, PsdError> {
+    let (width, height) = rect.size()?;
+    // 矩形が空のマスクは、何もしない書き手の出力とみなして無視する。
+    if flags & MASK_DISABLED != 0 || width == 0 || height == 0 {
+        return Ok(None);
+    }
+    Ok(Some(Mask {
+        rect,
+        width,
+        height,
+        default_color,
+        density,
+    }))
+}
+
+/// `luni` を持たないレイヤーの名前 (パスカル文字列) を読む。
+///
+/// 仕様では OS の文字コードで、日本語の環境のツール (SAI など) は Shift-JIS (CP932) で書く。
+/// UTF-8 として正しければ UTF-8 (ASCII もここに入る)、そうでなく Shift-JIS として正しければ
+/// Shift-JIS、どちらでもなければ Windows-1252 (西欧の環境の既定) として読む。
+fn decode_legacy_name(bytes: &[u8]) -> String {
+    if let Ok(name) = std::str::from_utf8(bytes) {
+        return name.to_owned();
+    }
+    if let Some(name) =
+        encoding_rs::SHIFT_JIS.decode_without_bom_handling_and_without_replacement(bytes)
+    {
+        return name.into_owned();
+    }
+    encoding_rs::WINDOWS_1252
+        .decode_without_bom_handling(bytes)
+        .0
+        .into_owned()
 }
 
 fn parse_additional_info(r: &mut Reader<'_>, layer: &mut RawLayer) -> Result<(), PsdError> {
@@ -361,43 +478,120 @@ fn parse_additional_info(r: &mut Reader<'_>, layer: &mut RawLayer) -> Result<(),
     Ok(())
 }
 
-fn read_channel_images(r: &mut Reader<'_>, layer: &mut RawLayer) -> Result<(), PsdError> {
-    let (width, height) = (layer.width, layer.height);
+fn read_channel_images(
+    r: &mut Reader<'_>,
+    layer: &mut RawLayer,
+    depth: u16,
+) -> Result<(), PsdError> {
     for channel in &mut layer.channels {
         let mut data = Reader::new(r.bytes(channel.len, "channel image data")?);
         if channel.len == 0 {
             continue;
         }
         let compression = data.u16("channel compression")?;
-        // マスクのチャンネル (-2, -3) はマスクの矩形の大きさを持つので読まない。
-        if channel.id < -1 {
+        // マスクのチャンネルは、マスクの矩形の大きさを持つ。
+        let size = match channel.id {
+            -2 => layer.mask.as_ref().map(|m| (m.width, m.height)),
+            -3 => layer.real_mask.as_ref().map(|m| (m.width, m.height)),
+            id if id < -3 => None,
+            _ => Some((layer.width, layer.height)),
+        };
+        let Some((width, height)) = size else {
+            continue;
+        };
+        if width == 0 || height == 0 {
             continue;
         }
-        let pixels = match compression {
-            0 => {
-                let n = width as usize * height as usize;
-                data.bytes(n, "raw channel data")?.to_vec()
-            }
-            1 => decode_rle(&mut data, width, height, 1)?,
-            c => {
-                layer.unsupported_compression = Some(c);
-                continue;
-            }
-        };
-        channel.pixels = Some(pixels);
+        match decode_plane(&mut data, compression, width, height, depth)? {
+            Some(pixels) => channel.pixels = Some(pixels),
+            // マスクのチャンネルが読めないときは、マスクを掛けずに取り込む (警告は取り込み側)。
+            None if channel.id < -1 => {}
+            None => layer.unsupported_compression = Some(compression),
+        }
     }
     Ok(())
 }
 
+/// 1 チャンネルの画素を読み、8 ビットにして返す。対応しない圧縮方式なら `None`。
+fn decode_plane(
+    r: &mut Reader<'_>,
+    compression: u16,
+    width: u32,
+    height: u32,
+    depth: u16,
+) -> Result<Option<Vec<u8>>, PsdError> {
+    let bytes_per_sample = usize::from(depth / 8);
+    let row = width as usize * bytes_per_sample;
+    let len = row.saturating_mul(height as usize);
+    let mut raw = match compression {
+        0 => r.bytes(len, "raw channel data")?.to_vec(),
+        1 => decode_rle(r, row, height, 1)?,
+        2 | 3 => inflate(r.rest(), len)?,
+        _ => return Ok(None),
+    };
+    if compression == 3 {
+        undo_prediction(&mut raw, row, depth);
+    }
+    Ok(Some(to_8bit(raw, depth)))
+}
+
+/// zlib ストリームを、ちょうど `len` バイトに展開する。
+fn inflate(data: &[u8], len: usize) -> Result<Vec<u8>, PsdError> {
+    let out = miniz_oxide::inflate::decompress_to_vec_zlib_with_limit(data, len)
+        .map_err(|e| invalid(format!("bad zip channel data ({:?})", e.status)))?;
+    if out.len() != len {
+        return Err(invalid(format!(
+            "zip channel data decodes to {} bytes, expected {len}",
+            out.len()
+        )));
+    }
+    Ok(out)
+}
+
+/// 予測付き ZIP の差分を戻す。各行で、左の標本との差 (8 ビットはバイト、16 ビットはビッグエンディアンの
+/// 16 ビット整数) が書いてある。
+fn undo_prediction(data: &mut [u8], row: usize, depth: u16) {
+    if row == 0 {
+        return;
+    }
+    for line in data.chunks_exact_mut(row) {
+        if depth == 16 {
+            let mut prev = 0u16;
+            for sample in line.as_chunks_mut::<2>().0 {
+                prev = prev.wrapping_add(u16::from_be_bytes(*sample));
+                *sample = prev.to_be_bytes();
+            }
+        } else {
+            let mut prev = 0u8;
+            for v in line {
+                prev = prev.wrapping_add(*v);
+                *v = prev;
+            }
+        }
+    }
+}
+
+/// ビッグエンディアンの標本を 8 ビットに丸める (16 ビットは 0..=65535 を 0..=255 に写す)。
+fn to_8bit(data: Vec<u8>, depth: u16) -> Vec<u8> {
+    if depth != 16 {
+        return data;
+    }
+    data.as_chunks::<2>()
+        .0
+        .iter()
+        .map(|&s| ((u32::from(u16::from_be_bytes(s)) * 255 + 32_767) / 65_535) as u8)
+        .collect()
+}
+
 /// PackBits で圧縮された `planes` 枚の平面を読む。先頭に全行のバイト数の表がある。
+/// `width` は 1 行のバイト数 (16 ビットでは画素数の 2 倍)。
 fn decode_rle(
     r: &mut Reader<'_>,
-    width: u32,
+    width: usize,
     height: u32,
     planes: u16,
 ) -> Result<Vec<u8>, PsdError> {
     let rows = height as usize * usize::from(planes);
-    let width = width as usize;
     let mut counts = Vec::with_capacity(rows);
     for _ in 0..rows {
         counts.push(usize::from(r.u16("rle byte counts")?));
@@ -458,6 +652,7 @@ fn parse_composite(
     width: u32,
     height: u32,
     channels: u16,
+    depth: u16,
 ) -> Result<Vec<u8>, PsdError> {
     if channels < 3 {
         return Err(invalid(format!(
@@ -465,15 +660,21 @@ fn parse_composite(
         )));
     }
     let plane = width as usize * height as usize;
+    let row = width as usize * usize::from(depth / 8);
     let planes = match r.u16("image data compression")? {
         0 => r
-            .bytes(plane.saturating_mul(usize::from(channels)), "image data")?
+            .bytes(
+                row.saturating_mul(height as usize)
+                    .saturating_mul(usize::from(channels)),
+                "image data",
+            )?
             .to_vec(),
-        1 => decode_rle(r, width, height, channels)?,
+        1 => decode_rle(r, row, height, channels)?,
         c => {
             return Err(PsdError::Unsupported(format!("image data compression {c}")));
         }
     };
+    let planes = to_8bit(planes, depth);
     let mut rgba = vec![255; plane * 4];
     for (c, src) in planes.chunks_exact(plane).take(4).enumerate() {
         for (px, &v) in rgba.as_chunks_mut::<4>().0.iter_mut().zip(src) {
@@ -494,6 +695,26 @@ mod tests {
         // リテラル 3 バイト、繰り返し 4 回、何もしない -128。
         unpack_bits(&[2, 1, 2, 3, 0xfd, 9, 0x80], 7, &mut out).unwrap();
         assert_eq!(out, [1, 2, 3, 9, 9, 9, 9]);
+    }
+
+    #[test]
+    fn sixteen_bit_samples_round_to_eight_bit() {
+        let samples: Vec<u8> = [0u16, 128, 129, 257, 32_767, 65_406, 65_535]
+            .iter()
+            .flat_map(|v| v.to_be_bytes())
+            .collect();
+        assert_eq!(to_8bit(samples, 16), [0, 0, 1, 1, 127, 254, 255]);
+    }
+
+    #[test]
+    fn prediction_is_undone_per_row() {
+        let mut bytes = vec![10, 1, 255, 5, 0, 2];
+        undo_prediction(&mut bytes, 3, 8);
+        assert_eq!(bytes, [10, 11, 10, 5, 5, 7]);
+        // 16 ビット: 0x0100, +0xFFFF (= -1) → 0x00FF。
+        let mut wide = vec![1, 0, 0xff, 0xff];
+        undo_prediction(&mut wide, 4, 16);
+        assert_eq!(wide, [1, 0, 0, 0xff]);
     }
 
     #[test]

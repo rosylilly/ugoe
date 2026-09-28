@@ -33,8 +33,10 @@ anyhow = "1"
 bytemuck = { version = "1", features = ["derive"] }
 clap = { version = "4", features = ["derive"] }
 console_error_panic_hook = "0.1"
+encoding_rs = "0.8"
 glam = { version = "0.33", features = ["serde", "bytemuck"] }
 insta = { version = "1", features = ["json"] }
+miniz_oxide = "0.9"
 naga = { version = "30", features = ["wgsl-in"] }
 png = "0.18"
 pollster = "1"

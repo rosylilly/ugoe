@@ -29,14 +29,21 @@ pub struct Layer {
     pub hidden: bool,
     pub blend: [u8; 4],
     /// チャンネルの圧縮方式。0 = 無圧縮、1 = PackBits、2 = ZIP、3 = 予測付き ZIP。
-    /// ZIP は圧縮しないブロック (deflate の stored block) だけの正しい zlib ストリームで書く。
+    /// ZIP は `miniz_oxide` で圧縮した zlib ストリームで書く。
     pub compression: u16,
     pub id: Option<u32>,
     pub fill_opacity: Option<u8>,
     /// `lsct` の種類と、(あれば) ブレンドモード。
     pub section: Option<(u32, Option<[u8; 4]>)>,
-    /// ユーザーマスク。レイヤーの左上の 4x4 を不透明 (255) にするマスクを、チャンネル -2 として書く。
-    pub mask: bool,
+    /// ユーザーマスク。チャンネル -2 として書く。
+    pub mask: Option<Mask>,
+    /// ベクトルマスクと併用したときの最終的なマスク。チャンネル -3 として書く (`mask` も要る)。
+    /// 見た目にはこちらだけが効く。
+    pub real_mask: Option<Mask>,
+    /// `luni` (Unicode の名前) を書く。false なら名前はパスカル文字列だけになる。
+    pub unicode_name: bool,
+    /// パスカル文字列の名前のバイト列。`None` なら `name` の ASCII 以外を `?` にしたもの。
+    pub legacy_name: Option<Vec<u8>>,
     /// そのほかの追加情報 (キーと中身)。
     pub extra: Vec<([u8; 4], Vec<u8>)>,
 }
@@ -58,7 +65,10 @@ impl Layer {
             id: None,
             fill_opacity: None,
             section: None,
-            mask: false,
+            mask: None,
+            real_mask: None,
+            unicode_name: true,
+            legacy_name: None,
             extra: Vec::new(),
         }
     }
@@ -109,6 +119,56 @@ impl Layer {
             Some((_, Some(blend))) => blend,
             _ => self.blend,
         }
+    }
+}
+
+/// レイヤーマスク (仕様の "Layer mask / adjustment layer data")。
+#[derive(Clone)]
+pub struct Mask {
+    /// キャンバス上の矩形。
+    pub left: i32,
+    pub top: i32,
+    pub width: u32,
+    pub height: u32,
+    /// 矩形の中の値 (0 = 隠す、255 = 見せる)。
+    pub pixels: Vec<u8>,
+    /// 矩形の外の値 (0 か 255)。
+    pub default_color: u8,
+    /// マスクを無効にしている (フラグの bit 1)。
+    pub disabled: bool,
+    /// 濃度 (フラグの bit 4 と、マスクの値の bit 0)。-2 のマスクだけで使う。
+    pub density: Option<u8>,
+}
+
+impl Mask {
+    /// `(left, top)` から `width` x `height` を見せ、外を隠すマスク。
+    pub fn window(left: i32, top: i32, width: u32, height: u32) -> Self {
+        Self {
+            left,
+            top,
+            width,
+            height,
+            pixels: vec![255; width as usize * height as usize],
+            default_color: 0,
+            disabled: false,
+            density: None,
+        }
+    }
+
+    /// キャンバス上の点のマスクの値。
+    pub fn value(&self, x: i32, y: i32) -> u8 {
+        let (mx, my) = (x - self.left, y - self.top);
+        if mx < 0 || my < 0 || mx >= self.width as i32 || my >= self.height as i32 {
+            self.default_color
+        } else {
+            self.pixels[my as usize * self.width as usize + mx as usize]
+        }
+    }
+
+    /// 濃度を掛けた、キャンバス上の点のマスクの値 (0..=1)。
+    pub fn coverage(&self, x: i32, y: i32) -> f32 {
+        let hide = 1.0 - f32::from(self.value(x, y)) / 255.0;
+        1.0 - hide * f32::from(self.density.unwrap_or(255)) / 255.0
     }
 }
 
@@ -211,34 +271,44 @@ pub fn pack_bits(row: &[u8]) -> Vec<u8> {
     out
 }
 
-/// 圧縮しないブロック (stored block) だけでできた zlib ストリーム (RFC 1950 / 1951)。
-pub fn zlib_stored(data: &[u8]) -> Vec<u8> {
-    // CMF = deflate・窓 32KB、FLG = 圧縮レベル 0 (CMF * 256 + FLG が 31 の倍数)。
-    let mut out = vec![0x78, 0x01];
-    let mut chunks = data.chunks(0xffff).peekable();
-    if chunks.peek().is_none() {
-        out.extend_from_slice(&[1, 0, 0, 0xff, 0xff]);
-    }
-    while let Some(chunk) = chunks.next() {
-        out.push(u8::from(chunks.peek().is_none()));
-        let len = chunk.len() as u16;
-        out.extend_from_slice(&len.to_le_bytes());
-        out.extend_from_slice(&(!len).to_le_bytes());
-        out.extend_from_slice(chunk);
-    }
-    let (mut a, mut b) = (1u32, 0u32);
-    for &v in data {
-        a = (a + u32::from(v)) % 65521;
-        b = (b + a) % 65521;
-    }
-    out.extend_from_slice(&((b << 16) | a).to_be_bytes());
-    out
+/// zlib ストリーム (RFC 1950 / 1951)。
+pub fn zlib(data: &[u8]) -> Vec<u8> {
+    miniz_oxide::deflate::compress_to_vec_zlib(data, 6)
 }
 
-/// 1 チャンネル分のデータ (圧縮方式の 2 バイトを含む)。
-fn channel_data(plane: &[u8], width: u32, height: u32, compression: u16) -> Vec<u8> {
+/// 1 チャンネル分のデータ (圧縮方式の 2 バイトを含む)。`plane` は 8 ビットの画素で、
+/// `depth` が 16 なら各値を 257 倍した (0..=65535 に広げた) ビッグエンディアンの 16 ビットで書く。
+fn channel_data(plane: &[u8], width: u32, height: u32, compression: u16, depth: u16) -> Vec<u8> {
     let mut out = Out(Vec::new());
     out.u16(compression);
+    if depth == 16 {
+        let wide: Vec<u8> = plane
+            .iter()
+            .flat_map(|&v| (u16::from(v) * 257).to_be_bytes())
+            .collect();
+        match compression {
+            // 行のバイト数が 2 倍になるだけで、PackBits はバイト単位。
+            0..=2 => {
+                let inner = channel_data(&wide, width * 2, height, compression, 8);
+                out.bytes(&inner[2..]);
+            }
+            3 => {
+                // 予測: 各行で、左の標本との差を 16 ビットで書く。
+                let mut delta = Vec::with_capacity(wide.len());
+                for row in wide.chunks(width.max(1) as usize * 2).take(height as usize) {
+                    let mut prev = 0u16;
+                    for s in row.as_chunks::<2>().0 {
+                        let v = u16::from_be_bytes(*s);
+                        delta.extend_from_slice(&v.wrapping_sub(prev).to_be_bytes());
+                        prev = v;
+                    }
+                }
+                out.bytes(&zlib(&delta));
+            }
+            c => panic!("compression {c} is not defined by the psd format"),
+        }
+        return out.0;
+    }
     let rows = || plane.chunks(width.max(1) as usize).take(height as usize);
     match compression {
         0 => out.bytes(plane),
@@ -251,7 +321,7 @@ fn channel_data(plane: &[u8], width: u32, height: u32, compression: u16) -> Vec<
                 out.bytes(row);
             }
         }
-        2 => out.bytes(&zlib_stored(plane)),
+        2 => out.bytes(&zlib(plane)),
         3 => {
             // 予測: 各行で、左の画素との差を書く。
             let mut delta = Vec::with_capacity(plane.len());
@@ -262,7 +332,7 @@ fn channel_data(plane: &[u8], width: u32, height: u32, compression: u16) -> Vec<
                     prev = v;
                 }
             }
-            out.bytes(&zlib_stored(&delta));
+            out.bytes(&zlib(&delta));
         }
         c => panic!("compression {c} is not defined by the psd format"),
     }
@@ -282,21 +352,36 @@ fn image_resource(out: &mut Out, id: u16, data: &[u8]) {
 /// 合成画像 (画像データのセクション) は [`compose::flatten`] でレイヤーから計算し、PackBits で書く。
 pub fn write_psd(width: u32, height: u32, layers: &[Layer]) -> Vec<u8> {
     let composite = compose::flatten(width, height, layers);
-    write(width, height, layers, &composite, 1)
+    write(width, height, layers, &composite, 1, 8)
+}
+
+/// 16 ビット RGB の PSD を書く。Photoshop と同じく、ヘッダの直後のレイヤー情報は空にし、
+/// レイヤーはレイヤーとマスクの情報の末尾の追加情報 `Lr16` に書く。
+/// 画素 (8 ビットで渡す) と合成画像は 257 倍して 16 ビットにする。
+pub fn write_psd16(width: u32, height: u32, layers: &[Layer]) -> Vec<u8> {
+    let composite = compose::flatten(width, height, layers);
+    write(width, height, layers, &composite, 1, 16)
 }
 
 /// 合成画像 (RGB8) を渡して書く。グループの対応が取れていないなど、合成できない (壊れた)
 /// レイヤーの並びを試すテストだけで使う。
 pub fn write_psd_unchecked(width: u32, height: u32, layers: &[Layer], rgb: &[u8]) -> Vec<u8> {
-    write(width, height, layers, rgb, 1)
+    write(width, height, layers, rgb, 1, 8)
 }
 
 /// レイヤーを持たない 8 ビット RGB の PSD を書く。`rgb` は RGB8 の画像。
 pub fn write_flat_psd(width: u32, height: u32, rgb: &[u8], compression: u16) -> Vec<u8> {
-    write(width, height, &[], rgb, compression)
+    write(width, height, &[], rgb, compression, 8)
 }
 
-fn write(width: u32, height: u32, layers: &[Layer], rgb: &[u8], compression: u16) -> Vec<u8> {
+fn write(
+    width: u32,
+    height: u32,
+    layers: &[Layer],
+    rgb: &[u8],
+    compression: u16,
+    depth: u16,
+) -> Vec<u8> {
     let plane = width as usize * height as usize;
     assert_eq!(rgb.len(), plane * 3);
     let mut out = Out(Vec::new());
@@ -307,7 +392,7 @@ fn write(width: u32, height: u32, layers: &[Layer], rgb: &[u8], compression: u16
     out.u16(3);
     out.u32(height);
     out.u32(width);
-    out.u16(8);
+    out.u16(depth);
     out.u16(3);
     out.u32(0); // カラーモードデータ (RGB では空)
     out.block(2, |res| {
@@ -327,9 +412,10 @@ fn write(width: u32, height: u32, layers: &[Layer], rgb: &[u8], compression: u16
         if layers.is_empty() {
             return;
         }
-        lm.block(2, |info| {
+        let layer_info = |info: &mut Out| {
             info.i16(layers.len() as i16);
-            let channels: Vec<Vec<(i16, Vec<u8>)>> = layers.iter().map(channels).collect();
+            let channels: Vec<Vec<(i16, Vec<u8>)>> =
+                layers.iter().map(|l| channels(l, depth)).collect();
             for (layer, channels) in layers.iter().zip(&channels) {
                 layer_record(info, layer, channels);
             }
@@ -338,25 +424,48 @@ fn write(width: u32, height: u32, layers: &[Layer], rgb: &[u8], compression: u16
                     info.bytes(data);
                 }
             }
-        });
+        };
+        if depth == 8 {
+            lm.block(2, layer_info);
+        } else {
+            lm.u32(0);
+        }
         // グローバルなレイヤーマスク情報: 重ねる色の色空間・色 4 つ・不透明度 100・種類
         // (128 = レイヤーごとの値を使う)・詰め物。
+        // 16 ビットでは空にする (ImageMagick は空の直後に `Lr16` があるときだけレイヤーを読む)。
         lm.block(2, |g| {
+            if depth != 8 {
+                return;
+            }
             g.u16(0);
             g.bytes(&[0; 8]);
             g.u16(100);
             g.u8(128);
         });
+        if depth == 16 {
+            // 追加情報: シグネチャ・キー・長さ (4 の倍数に揃える)・レイヤー情報 (長さを除いた本体)。
+            lm.bytes(b"8BIM");
+            lm.bytes(b"Lr16");
+            lm.block(4, layer_info);
+        }
     });
     // 画像データ: RRR GGG BBB の平面順。
     let planes: Vec<u8> = (0..3)
         .flat_map(|c| (0..plane).map(move |i| rgb[i * 3 + c]))
+        .flat_map(|v| {
+            if depth == 16 {
+                (u16::from(v) * 257).to_be_bytes().to_vec()
+            } else {
+                vec![v]
+            }
+        })
         .collect();
+    let row = width as usize * usize::from(depth / 8);
     out.u16(compression);
     match compression {
         0 => out.bytes(&planes),
         1 => {
-            let rows: Vec<Vec<u8>> = planes.chunks(width as usize).map(pack_bits).collect();
+            let rows: Vec<Vec<u8>> = planes.chunks(row).map(pack_bits).collect();
             for row in &rows {
                 out.u16(row.len() as u16);
             }
@@ -369,12 +478,7 @@ fn write(width: u32, height: u32, layers: &[Layer], rgb: &[u8], compression: u16
     out.0
 }
 
-/// マスクの矩形 (上・左・下・右)。
-fn mask_rect(layer: &Layer) -> [i32; 4] {
-    [layer.top, layer.left, layer.top + 4, layer.left + 4]
-}
-
-fn channels(layer: &Layer) -> Vec<(i16, Vec<u8>)> {
+fn channels(layer: &Layer, depth: u16) -> Vec<(i16, Vec<u8>)> {
     let mut out: Vec<(i16, Vec<u8>)> = [-1i16, 0, 1, 2]
         .iter()
         .map(|&id| {
@@ -382,7 +486,7 @@ fn channels(layer: &Layer) -> Vec<(i16, Vec<u8>)> {
                 Some(rgba) => {
                     let c = if id < 0 { 3 } else { id as usize };
                     let plane: Vec<u8> = rgba.as_chunks::<4>().0.iter().map(|p| p[c]).collect();
-                    channel_data(&plane, layer.width, layer.height, layer.compression)
+                    channel_data(&plane, layer.width, layer.height, layer.compression, depth)
                 }
                 // 矩形が空なので、中身は圧縮方式 (無圧縮) の 2 バイトだけ。
                 None => vec![0, 0],
@@ -390,8 +494,30 @@ fn channels(layer: &Layer) -> Vec<(i16, Vec<u8>)> {
             (id, data)
         })
         .collect();
-    if layer.mask {
-        out.push((-2, channel_data(&[255; 16], 4, 4, 0)));
+    if let Some(mask) = &layer.mask {
+        let data = channel_data(
+            &mask.pixels,
+            mask.width,
+            mask.height,
+            layer.compression,
+            depth,
+        );
+        out.push((-2, data));
+    }
+    if let Some(real) = &layer.real_mask {
+        assert!(
+            layer.mask.is_some(),
+            "{}: real mask needs a user mask",
+            layer.name
+        );
+        let data = channel_data(
+            &real.pixels,
+            real.width,
+            real.height,
+            layer.compression,
+            depth,
+        );
+        out.push((-3, data));
     }
     out
 }
@@ -424,15 +550,39 @@ fn layer_record(out: &mut Out, layer: &Layer, channels: &[(i16, Vec<u8>)]) {
     out.u8(flags);
     out.u8(0);
     out.block(1, |extra| {
-        if layer.mask {
-            // 矩形・既定の色 (0)・フラグ (0)・詰め物 2 バイトの 20 バイト。
-            extra.block(1, |m| {
-                for v in mask_rect(layer) {
-                    m.i32(v);
+        if let Some(mask) = &layer.mask {
+            // 矩形 (上・左・下・右)・既定の色・フラグ。-3 があれば -3 のフラグ・既定の色・矩形、
+            // 濃度があればマスクの値の種類 (bit 0 = 濃度) と濃度。何もなければ 2 バイトの詰め物で 20 バイト。
+            // 仕様書は濃度を -3 より前に書くが、実際のファイル (psd-tools の読み方) はこの順。
+            let flags = |m: &Mask| {
+                let mut f = if m.disabled { 0x02 } else { 0 };
+                if m.density.is_some() {
+                    f |= 0x10;
                 }
-                m.u8(0);
-                m.u8(0);
-                m.u16(0);
+                f
+            };
+            let rect = |out: &mut Out, m: &Mask| {
+                out.i32(m.top);
+                out.i32(m.left);
+                out.i32(m.top + m.height as i32);
+                out.i32(m.left + m.width as i32);
+            };
+            extra.block(1, |m| {
+                rect(m, mask);
+                m.u8(mask.default_color);
+                m.u8(flags(mask));
+                if let Some(real) = &layer.real_mask {
+                    m.u8(flags(real));
+                    m.u8(real.default_color);
+                    rect(m, real);
+                }
+                if let Some(density) = mask.density {
+                    m.u8(0x01);
+                    m.u8(density);
+                }
+                if m.0.len() == 18 {
+                    m.u16(0);
+                }
             });
         } else {
             extra.u32(0);
@@ -443,13 +593,15 @@ fn layer_record(out: &mut Out, layer: &Layer, channels: &[(i16, Vec<u8>)]) {
                 b.bytes(&[0, 0, 255, 255]);
             }
         });
-        // パスカル文字列の名前 (ASCII 以外は `?`)。長さのバイトを含めて 4 の倍数に揃える。
-        let ascii: Vec<u8> = layer
-            .name
-            .chars()
-            .map(|c| if c.is_ascii() { c as u8 } else { b'?' })
-            .take(255)
-            .collect();
+        // パスカル文字列の名前 (既定では ASCII 以外を `?`)。長さのバイトを含めて 4 の倍数に揃える。
+        let ascii: Vec<u8> = layer.legacy_name.clone().unwrap_or_else(|| {
+            layer
+                .name
+                .chars()
+                .map(|c| if c.is_ascii() { c as u8 } else { b'?' })
+                .take(255)
+                .collect()
+        });
         extra.u8(ascii.len() as u8);
         extra.bytes(&ascii);
         extra.bytes(&vec![0; (4 - (ascii.len() + 1) % 4) % 4]);
@@ -469,13 +621,15 @@ fn layer_record(out: &mut Out, layer: &Layer, channels: &[(i16, Vec<u8>)]) {
         }
         // Unicode 文字列: UTF-16 の単位数・文字列・終端の 0。
         let utf16: Vec<u16> = layer.name.encode_utf16().collect();
-        tagged(b"luni", &|d| {
-            d.u32(utf16.len() as u32);
-            for u in &utf16 {
-                d.u16(*u);
-            }
-            d.u16(0);
-        });
+        if layer.unicode_name {
+            tagged(b"luni", &|d| {
+                d.u32(utf16.len() as u32);
+                for u in &utf16 {
+                    d.u16(*u);
+                }
+                d.u16(0);
+            });
+        }
         if let Some(id) = layer.id {
             tagged(b"lyid", &|d| d.u32(id));
         }

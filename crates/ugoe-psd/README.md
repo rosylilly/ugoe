@@ -19,18 +19,52 @@ PSD から、PSD の形式に依存しない `LayerTree` を作る。
 | --- | --- |
 | グループ (セクション区切り `lsct`) | `LayerNode::Group` (名前・表示・不透明度・ブレンドモード・ID・クリッピング) |
 | ラスタレイヤー | `Layer`。外接矩形で切り出した非乗算 RGBA8 と、キャンバス上の位置 (`offset`) |
+| レイヤーマスク (チャンネル -2 / -3) | `Layer::rgba` のアルファに掛ける (下の「レイヤーマスク」) |
 | 表示 / 非表示 | `visible` |
 | 不透明度 / 塗りの不透明度 (`iOpa`) | `opacity` / `fill_opacity` (0..=1) |
 | ブレンドモード | `blend_mode` (PSD のキーから末尾の空白を除いたもの。例: `norm` `mul` `pass`) |
 | クリッピング | `clipping` (下のレイヤーでクリッピングされている) |
 | レイヤー ID (`lyid`) | `id` |
-| Unicode のレイヤー名 (`luni`) | `name` (なければパスカル文字列の名前) |
+| Unicode のレイヤー名 (`luni`) | `name` (なければパスカル文字列の名前。下の「`luni` のないレイヤー名」) |
 
 並び順は **下から上** (描画順) で、PSD のファイル内の順と同じ。
 
-対応する画像は 8 ビットの RGB だけ。PSB・16/32 ビット・CMYK・グレースケールなどは
+対応する画像は 8 ビットと 16 ビットの RGB。PSB・32 ビット・CMYK・グレースケールなどは
 `PsdError::Unsupported`、壊れた入力は `PsdError::Invalid` になる。
-チャンネルの圧縮は無圧縮と PackBits (RLE) に対応する (Photoshop が 8 ビットで書くのはこの 2 つ)。
+チャンネルの圧縮は、無圧縮・PackBits (RLE)・ZIP・予測付き ZIP (各行で左の標本との差) のすべてに対応する。
+ZIP は `miniz_oxide` で展開し、展開した大きさがレイヤーの大きさと合わなければ `Invalid` にする。
+
+### 16 ビット
+
+Photoshop は 16 ビットの PSD で、ヘッダの直後のレイヤー情報を空にし、レイヤーとマスクの情報の末尾の
+追加情報 `Lr16` にレイヤー情報を書く (8 ビットでも `Layr` に書く書き手がある)。レイヤー情報が空なら、
+これを探して読む。標本は 0..=65535 のビッグエンディアンで、読んだところで `round(v * 255 / 65535)` で
+8 ビットにする (取り込みの出力はいつも RGBA8)。合成画像 (レイヤーのない PSD) も同じ。
+
+### レイヤーマスク
+
+- マスクの矩形はキャンバスの座標 (レイヤーの位置によらない)。矩形の中はマスクの画素、外は既定の色
+  (0 か 255) で、0 は隠す・255 は見せる。レイヤーのアルファに `mask / 255` を掛ける (整数で丸める)。
+- 濃度 (マスクのフラグの bit 4 と、続く値の bit 0) が 255 未満なら、隠す量をその割合に弱める。
+  ぼかし (feather) は掛けない。
+- ベクトルマスクと併用したレイヤーでは、チャンネル -3 (両方を合成した最終的なマスク) だけを掛ける。
+  このときマスク情報は、矩形・既定の色・フラグ・-3 のフラグ・-3 の既定の色・-3 の矩形・濃度などの値の順に並ぶ。
+  仕様書は濃度などを -3 より前に書くが、実際のファイルはこの順
+  ([psd-tools](https://github.com/psd-tools/psd-tools/blob/main/src/psd_tools/psd/layer_and_mask.py)
+  の読み方。長さだけで -3 の有無を決めると誤る (psd-tools の issue #693) ので、-3 のチャンネルがあるときだけ読む)。
+- 無効にしたマスク (フラグの bit 1) と、矩形が空のマスクは掛けない。
+- ベクトルマスクだけ (`vmsk` / `vsms`、画素のマスクのないもの) は読まない (パスを塗る処理が要る)。
+- グループのマスクは、合成したグループに掛かるもので子のアルファに掛けても同じにならないため、
+  `LayerMaskIgnored` を警告して掛けない。
+
+### `luni` のないレイヤー名
+
+レイヤー名のパスカル文字列は、仕様では OS の文字コードで書く。`luni` を書かない古いツール (SAI など) の
+日本語の名前は Shift-JIS (CP932) になる。次の順に試し、最初に正しく読めたもので読む (`encoding_rs`)。
+
+1. UTF-8 (ASCII もここに入る。UTF-8 で書くツールもある)
+2. Shift-JIS (CP932)。日本語の Shift-JIS のバイト列が UTF-8 として正しくなることはほぼない
+3. Windows-1252 (西欧の環境の既定。どのバイト列も読める)
 
 ## 警告 (`LayerTree::warnings`)
 
@@ -41,8 +75,8 @@ PSD から、PSD の形式に依存しない `LayerTree` を作る。
 | `AdjustmentLayer` | 調整レイヤー・塗りつぶしレイヤー。取り込まない |
 | `SmartObjectWithoutPixels` | 合成済みの画素のないスマートオブジェクト。取り込まない (画素があればラスタとして取り込み、警告しない) |
 | `LayerEffectsIgnored` | レイヤー効果。効果を除いた画素を取り込む |
-| `LayerMaskIgnored` | レイヤーマスク。マスクを掛けていない画素を取り込む |
-| `UnsupportedCompression` | ZIP 圧縮などのチャンネル。取り込まない |
+| `LayerMaskIgnored` | 掛けられなかったレイヤーマスク (グループのマスク、マスクのチャンネルが読めないもの)。マスクを掛けていない画素を取り込む |
+| `UnsupportedCompression` | 仕様にない圧縮方式の色・アルファのチャンネル。取り込まない |
 | `MissingPixels` | 色チャンネルがない。取り込まない |
 | `FlattenedImage` | レイヤー情報がない PSD。合成画像を 1 枚のレイヤーにする |
 
@@ -59,21 +93,24 @@ PSD から、PSD の形式に依存しない `LayerTree` を作る。
     スマートオブジェクト・効果の検出に使う) を取り出す API がない。
 - 必要なのはヘッダ・レイヤーレコード・チャンネル画像 (無圧縮 / PackBits) だけで、自前でも小さい。
   依存を増やさず、すべての読み取りを境界検査付きにでき、ライセンスの心配もない。
-- ZIP 圧縮のチャンネルは 8 ビットの Photoshop の出力には現れないため、対応していない (警告して飛ばす)。
-  必要になったら `miniz_oxide` (MIT) などで足す。
+- ZIP 圧縮のチャンネルは T0622 で `miniz_oxide` (MIT / Zlib / Apache-2.0、`png` 経由で既に依存にあった) で対応した。
+  レイヤー名の Shift-JIS には `encoding_rs` ((Apache-2.0 OR MIT) AND BSD-3-Clause) を使う。
 
 ## テスト
 
 - `tests/common/mod.rs` はテスト用の PSD ライター。Adobe の仕様どおりに書き、偽の中身は書かない
-  (ZIP のチャンネルも、圧縮しないブロックだけの正しい zlib ストリームで書く)。合成画像は `tests/common/compose.rs`
-  でレイヤーから計算する。
+  (ZIP のチャンネルは `miniz_oxide` で圧縮する)。マスク (-2 / -3、濃度)・`luni` のない名前・16 ビット (`Lr16`) も書ける。
+  合成画像は `tests/common/compose.rs` でレイヤーから計算する。
 - `assets/fixtures/layers.psd` (構造を試す小さなもの) と `character.psd` (目で確かめる絵) は
   `tests/common/fixtures.rs` の定義から作り、コミットしたファイルと一致することをテストする
   (作り直すときは `UGOE_UPDATE_FIXTURES=1 cargo test -p ugoe-psd --test fixtures`)。
 - `tests/fixtures.rs` は、取り込みとは独立の ImageMagick (`identify` / `convert`) でも両方の PSD が読め、
   レイヤーの位置・大きさと合成画像の画素が期待どおりであることを確かめる (ImageMagick が無ければ飛ばす)。
-- 壊れた入力 (途中で切れたもの・ランダムに壊したもの・対応の取れないグループ) と未対応の中身
-  (ZIP・調整レイヤー・レイヤー効果・画素のないスマートオブジェクト) は、ファイルにせず `tests/import.rs` の中で作る。
+- `tests/fixtures.rs` の `imagemagick_agrees_on_masks_zip_and_16_bit` は、マスク・ZIP・予測付き ZIP・16 ビットの PSD を
+  その場で書き、各レイヤーのマスクを掛けた画素が ImageMagick と一致することを確かめる。ImageMagick 6.9 は -3・濃度を
+  読まず、既定の色 255 のマスクの外を正しく扱わないので、これらは `tests/import.rs` で値を確かめる。
+- 壊れた入力 (途中で切れたもの・ランダムに壊したもの・対応の取れないグループ・壊れた ZIP) と未対応の中身
+  (調整レイヤー・レイヤー効果・画素のないスマートオブジェクト・仕様にない圧縮方式) は、ファイルにせず `tests/import.rs` の中で作る。
 - `tests/real_world.rs` は `assets/fixtures/psd-real/*.psd` (実際のペイントツールの PSD) をすべて取り込む。
   置き方は `assets/fixtures/psd-real/README.md`。
 
