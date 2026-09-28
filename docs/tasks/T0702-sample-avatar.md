@@ -1,11 +1,11 @@
 ---
 id: T0702
 title: アバタープロファイルに準拠した見本のモデル
-status: todo
+status: in-progress
 milestone: M3
 crates: [ugoe-cli, assets, docs]
 depends_on: [T0110]
-assignee:
+assignee: claude-worker-T0702
 ---
 
 # T0702: アバタープロファイルに準拠した見本のモデル

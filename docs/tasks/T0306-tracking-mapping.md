@@ -1,11 +1,11 @@
 ---
 id: T0306
 title: トラッキングの対応付け (ARKit → パラメータ)
-status: todo
+status: in-progress
 milestone: M3
 crates: [ugoe, ugoe-motion]
 depends_on: [T0110, T0302]
-assignee:
+assignee: claude-worker-T0306
 ---
 
 # T0306: トラッキングの対応付け (ARKit → パラメータ)
