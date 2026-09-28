@@ -64,6 +64,8 @@ impl<'a> GridView<'a> {
             origins,
             inference,
             mirror_source,
+            // 推定はブレンドシェイプ格子を扱わない (`docs/spec/keyform-inference.md`)。
+            blend_shapes: _,
         } = grid;
         Self {
             bindings,

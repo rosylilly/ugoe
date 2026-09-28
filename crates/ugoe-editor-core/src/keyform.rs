@@ -2,16 +2,17 @@
 //!
 //! 要素は [`KeyformTarget`] (種類と ID、JSON では `{"kind": "mesh", "id": "Face"}`) で指定する。格子そのものの操作は `crate::grid` にある。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use ugoe_model::deformer::{DeformerKind, RotationKeyform, WarpKeyform};
 use ugoe_model::mesh::{GlueKeyform, MeshKeyform};
+use ugoe_model::parameter::ParameterKind;
 use ugoe_model::part::PartKeyform;
 use ugoe_model::{KeyformGrid, KeyformInference, Model, ParamId};
-use ugoe_rigging::{InferScope, infer_additive_target};
+use ugoe_rigging::{InferScope, KeyformValues, infer_additive_target};
 
 use crate::command::{KeyformCell, KeyformTarget};
 use crate::document::EditError;
@@ -152,11 +153,30 @@ pub(crate) fn add_key(
     }
     let defaults = parameter_defaults(model);
     let default_of = |p: &ParamId| defaults.get(p).copied();
+    let blend_shape = blend_shape_parameters(model).contains(parameter);
     let grid = grid_mut(model, target)?;
+    if blend_shape {
+        // ブレンドシェイプ格子は推定の対象にしない (組み合わせのセルも作り直さない)。
+        return with_grid!(grid, |g| grid::add_blend_shape_key(
+            g, parameter, key, default_of
+        ))
+        .map_err(cell_error(target));
+    }
     let added = with_grid!(grid, |g| grid::add_key(g, parameter, key, default_of))
         .map_err(cell_error(target))?;
     derive_combinations(model, target, &added);
     Ok(())
+}
+
+/// `kind = blend_shape` のパラメータの ID (`docs/spec/model.md#ブレンドシェイプ`)。
+/// キーの追加・削除とセルの指定は、これらのパラメータならブレンドシェイプ格子に振り分ける。
+pub(crate) fn blend_shape_parameters(model: &Model) -> HashSet<ParamId> {
+    model
+        .parameters
+        .iter()
+        .filter(|p| p.kind == ParameterKind::BlendShape)
+        .map(|p| p.id.clone())
+        .collect()
 }
 
 /// パラメータ ID → 既定値。
@@ -229,7 +249,12 @@ pub(crate) fn remove_key(
     parameter: &ParamId,
     key: f32,
 ) -> Result<(), EditError> {
+    let blend_shape = blend_shape_parameters(model).contains(parameter);
     let grid = grid_mut(model, target)?;
+    if blend_shape {
+        return with_grid!(grid, |g| grid::remove_blend_shape_key(g, parameter, key))
+            .map_err(cell_error(target));
+    }
     with_grid!(grid, |g| grid::remove_key(g, parameter, key)).map_err(cell_error(target))
 }
 
@@ -240,13 +265,14 @@ pub(crate) fn set_cell(
     cell: &KeyformCell,
     keyform: Keyform,
 ) -> Result<(), EditError> {
+    let shapes = blend_shape_parameters(model);
     let grid = grid_mut(model, target)?;
     let result = match (grid, keyform) {
-        (GridMut::Part(g), Keyform::Part(k)) => grid::set_cell(g, cell, k),
-        (GridMut::Warp(g), Keyform::Warp(k)) => grid::set_cell(g, cell, k),
-        (GridMut::Rotation(g), Keyform::Rotation(k)) => grid::set_cell(g, cell, k),
-        (GridMut::Mesh(g), Keyform::Mesh(k)) => grid::set_cell(g, cell, k),
-        (GridMut::Glue(g), Keyform::Glue(k)) => grid::set_cell(g, cell, k),
+        (GridMut::Part(g), Keyform::Part(k)) => set_routed(g, cell, k, &shapes),
+        (GridMut::Warp(g), Keyform::Warp(k)) => set_routed(g, cell, k, &shapes),
+        (GridMut::Rotation(g), Keyform::Rotation(k)) => set_routed(g, cell, k, &shapes),
+        (GridMut::Mesh(g), Keyform::Mesh(k)) => set_routed(g, cell, k, &shapes),
+        (GridMut::Glue(g), Keyform::Glue(k)) => set_routed(g, cell, k, &shapes),
         (grid, keyform) => {
             let (kind, id) = kind_and_id(target);
             return Err(EditError::KeyformKindMismatch {
@@ -258,4 +284,15 @@ pub(crate) fn set_cell(
         }
     };
     result.map_err(cell_error(target))
+}
+
+/// セル `cell` を、指定が指す格子 (`grid::cell_grid_mut`) で置き換える。
+fn set_routed<T: KeyformValues>(
+    grid: &mut KeyformGrid<T>,
+    cell: &KeyformCell,
+    value: T,
+    shapes: &HashSet<ParamId>,
+) -> Result<(), CellError> {
+    let grid = grid::cell_grid_mut(grid, cell, |p| shapes.contains(p))?;
+    grid::set_cell(grid, cell, value)
 }

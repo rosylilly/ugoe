@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use ugoe_model::{DeformerKind, KeyformGrid, MaskMode, Model};
 
+use crate::blend_shape::CompiledBlendShape;
 use crate::keyform::ResolvedBinding;
 use crate::{ParamIndex, ParameterValues};
 
@@ -49,6 +50,8 @@ pub(crate) struct CompiledPart {
 pub(crate) struct CompiledDeformer {
     pub(crate) parent: Option<u32>,
     pub(crate) bindings: Vec<ResolvedBinding>,
+    /// ブレンドシェイプ格子 (`KeyformGrid::blend_shapes` と同じ並び)。
+    pub(crate) blend_shapes: Vec<CompiledBlendShape>,
 }
 
 #[derive(Debug)]
@@ -56,6 +59,8 @@ pub(crate) struct CompiledMesh {
     pub(crate) part: u32,
     pub(crate) parent: Option<u32>,
     pub(crate) bindings: Vec<ResolvedBinding>,
+    /// ブレンドシェイプ格子 (`KeyformGrid::blend_shapes` と同じ並び)。
+    pub(crate) blend_shapes: Vec<CompiledBlendShape>,
     pub(crate) masks: Vec<ResolvedMaskRef>,
     /// マスクの依存の深さ (`mask_depth`)。
     pub(crate) mask_depth: u32,
@@ -113,18 +118,24 @@ impl CompiledModel {
             .deformers
             .iter()
             .map(|d| {
-                let bindings = match &d.kind {
+                let (bindings, blend_shapes) = match &d.kind {
                     DeformerKind::Warp(warp) => {
                         if warp.rows == 0 || warp.cols == 0 {
                             return Err(CompileError::Unsupported(
                                 "warp deformer with zero rows or cols",
                             ));
                         }
-                        resolve(&params, &warp.keyforms)?
+                        (
+                            resolve(&params, &warp.keyforms)?,
+                            resolve_blend_shapes(&params, &warp.keyforms)?,
+                        )
                     }
-                    DeformerKind::Rotation(rotation) => resolve(&params, &rotation.keyforms)?,
+                    DeformerKind::Rotation(rotation) => (
+                        resolve(&params, &rotation.keyforms)?,
+                        resolve_blend_shapes(&params, &rotation.keyforms)?,
+                    ),
                     // 未知の種類はキーフォームを持たない恒等変換 (`docs/spec/file-formats.md`)。
-                    DeformerKind::Unknown => Vec::new(),
+                    DeformerKind::Unknown => (Vec::new(), Vec::new()),
                 };
                 Ok(CompiledDeformer {
                     parent: d
@@ -133,6 +144,7 @@ impl CompiledModel {
                         .map(|id| lookup(&deformer_index, id.as_str()))
                         .transpose()?,
                     bindings,
+                    blend_shapes,
                 })
             })
             .collect::<Result<Vec<_>, CompileError>>()?;
@@ -149,6 +161,7 @@ impl CompiledModel {
                         .map(|id| lookup(&deformer_index, id.as_str()))
                         .transpose()?,
                     bindings: resolve(&params, &m.keyforms)?,
+                    blend_shapes: resolve_blend_shapes(&params, &m.keyforms)?,
                     masks: m
                         .masks
                         .iter()
@@ -189,11 +202,16 @@ impl CompiledModel {
 
         let part_order = topological_order(parts.iter().map(|p| p.parent));
         let deformer_order = topological_order(deformers.iter().map(|d| d.parent));
+        let shape_axes = |shapes: &[CompiledBlendShape]| {
+            shapes.iter().map(|s| s.bindings.len()).max().unwrap_or(0)
+        };
         let max_axes = parts
             .iter()
             .map(|p| p.bindings.len())
             .chain(deformers.iter().map(|d| d.bindings.len()))
+            .chain(deformers.iter().map(|d| shape_axes(&d.blend_shapes)))
             .chain(meshes.iter().map(|m| m.bindings.len()))
+            .chain(meshes.iter().map(|m| shape_axes(&m.blend_shapes)))
             .chain(glues.iter().map(|g| g.bindings.len()))
             .max()
             .unwrap_or(0);
@@ -393,6 +411,22 @@ fn resolve<T>(
                 param,
                 keys: b.keys.clone(),
             })
+        })
+        .collect()
+}
+
+/// ブレンドシェイプ格子の軸を解決し、既定値での重みを求める。
+fn resolve_blend_shapes<T>(
+    params: &ParameterValues,
+    grid: &KeyformGrid<T>,
+) -> Result<Vec<CompiledBlendShape>, CompileError> {
+    grid.blend_shapes
+        .iter()
+        .map(|shape| {
+            Ok(CompiledBlendShape::new(
+                resolve(params, shape)?,
+                params.as_slice(),
+            ))
         })
         .collect()
 }

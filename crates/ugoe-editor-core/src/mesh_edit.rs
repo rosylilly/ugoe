@@ -256,7 +256,7 @@ pub(crate) fn move_vertices(
     let mesh = &mut model.meshes[index];
     for (i, local, uv) in updates {
         mesh.uvs[i] = uv;
-        for kf in &mut mesh.keyforms.keyforms {
+        for kf in mesh.keyforms.all_keyforms_mut() {
             if let Some(p) = kf.positions.get_mut(i) {
                 *p += local;
             }
@@ -345,7 +345,7 @@ pub(crate) fn add_vertex(model: &mut Model, id: &MeshId, position: Vec2) -> Resu
     let mesh = &mut model.meshes[index];
     mesh.uvs = uvs;
     mesh.indices = new_indices;
-    for kf in &mut mesh.keyforms.keyforms {
+    for kf in mesh.keyforms.all_keyforms_mut() {
         if kf.positions.len() == n {
             let p = blend(tri.map(|i| kf.positions[i]), w);
             kf.positions.push(p);
@@ -432,7 +432,7 @@ pub(crate) fn remove_vertices(
     let mesh = &mut model.meshes[index];
     mesh.uvs = uvs;
     mesh.indices = indices;
-    for kf in &mut mesh.keyforms.keyforms {
+    for kf in mesh.keyforms.all_keyforms_mut() {
         if kf.positions.len() == n {
             kf.positions = keep(&kf.positions);
         }

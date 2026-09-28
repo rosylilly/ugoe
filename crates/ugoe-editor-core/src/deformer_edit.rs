@@ -402,7 +402,7 @@ fn reexpress(
                 .find(|m| &m.id == id)
                 .ok_or_else(|| not_found("mesh", id))?;
             let reference = centroid(mesh.keyforms.keyforms.first().map(|k| &k.positions[..]));
-            for kf in &mut mesh.keyforms.keyforms {
+            for kf in mesh.keyforms.all_keyforms_mut() {
                 for p in &mut kf.positions {
                     *p = map(*p)?;
                 }
@@ -420,7 +420,7 @@ fn reexpress(
             let reference = match &mut deformer.kind {
                 DeformerKind::Warp(w) => {
                     let reference = centroid(w.keyforms.keyforms.first().map(|k| &k.points[..]));
-                    for kf in &mut w.keyforms.keyforms {
+                    for kf in w.keyforms.all_keyforms_mut() {
                         for p in &mut kf.points {
                             *p = map(*p)?;
                         }
@@ -430,7 +430,7 @@ fn reexpress(
                 DeformerKind::Rotation(r) => {
                     let reference = r.keyforms.keyforms.first().map_or(Vec2::ZERO, |k| k.origin);
                     let mut first_turn = None;
-                    for kf in &mut r.keyforms.keyforms {
+                    for kf in r.keyforms.all_keyforms_mut() {
                         let origin = map(kf.origin)?;
                         let q =
                             to.rotation_linear(origin).inverse() * from.rotation_linear(kf.origin);
@@ -577,7 +577,7 @@ pub(crate) fn move_rotation_origin(
         ..
     }) = model.deformers.iter_mut().find(|d| &d.id == id)
     {
-        for kf in &mut r.keyforms.keyforms {
+        for kf in r.keyforms.all_keyforms_mut() {
             kf.origin += delta;
         }
     }

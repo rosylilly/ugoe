@@ -9,8 +9,15 @@ use crate::command::KeyformCell;
 ///
 /// `value` と等しいキーがなければ最も近いキー (等距離なら小さい方) の断面を残す。
 /// 深度からの回転の `yaw` / `pitch` がこのパラメータなら外す (回転の中心などの設定は残す)。
-/// 軸がなければ何もしない。
+/// 軸がなければ何もしない。ブレンドシェイプ格子も同じように畳み、軸がなくなった格子は取り除く
+/// (差分が常に 0 になるため)。
 pub(crate) fn collapse_axis<T>(grid: &mut KeyformGrid<T>, parameter: &ParamId, value: f32) {
+    if grid.blend_shape_index(parameter).is_some() {
+        for shape in &mut grid.blend_shapes {
+            collapse_axis(shape, parameter, value);
+        }
+        grid.blend_shapes.retain(|shape| !shape.bindings.is_empty());
+    }
     if let Some(KeyformInference::DepthRotation(rotation)) = &mut grid.inference {
         for axis in [&mut rotation.yaw, &mut rotation.pitch] {
             if axis.as_ref() == Some(parameter) {
@@ -395,6 +402,87 @@ pub(crate) fn set_cell<T: KeyformValues>(
     grid.keyforms[index] = value;
     set_authored(grid, index);
     Ok(())
+}
+
+/// 格子の、パラメータがすべて既定値 (`default_of`。わからなければ最初のキー) のときの補間値 (基準の形)。
+/// キーの範囲の外の既定値は端のキーの値 (`docs/spec/evaluation.md#1-軸の位置`)。
+pub(crate) fn rest_keyform<T: KeyformValues>(
+    grid: &KeyformGrid<T>,
+    default_of: impl Fn(&ParamId) -> Option<f32>,
+) -> Result<T, CellError> {
+    check_count(grid)?;
+    let mut rest = KeyformGrid::new(grid.bindings.clone(), grid.keyforms.clone());
+    for binding in &grid.bindings {
+        let Some(value) = default_of(&binding.parameter).or(binding.keys.first().copied()) else {
+            collapse_axis(&mut rest, &binding.parameter, 0.0);
+            continue;
+        };
+        if !binding.keys.contains(&value) {
+            add_key(&mut rest, &binding.parameter, value, |_| None)?;
+        }
+        collapse_axis(&mut rest, &binding.parameter, value);
+    }
+    rest.keyforms.pop().ok_or(CellError::KeyformCount {
+        expected: 1,
+        actual: 0,
+    })
+}
+
+/// ブレンドシェイプのパラメータ `parameter` の軸にキー `key` を加える
+/// (`docs/editor.md#ブレンドシェイプ`)。
+///
+/// そのパラメータを軸に持つブレンドシェイプ格子があれば、その格子に [`add_key`] で加える。
+/// なければ、軸がそのパラメータ 1 本で、キーが既定値と `key`、セルがすべて通常の格子の基準の形
+/// ([`rest_keyform`]) のブレンドシェイプ格子を末尾に加える (差分は 0 なので見た目は変わらない)。
+pub(crate) fn add_blend_shape_key<T: KeyformValues>(
+    grid: &mut KeyformGrid<T>,
+    parameter: &ParamId,
+    key: f32,
+    default_of: impl Fn(&ParamId) -> Option<f32>,
+) -> Result<(), CellError> {
+    if let Some(index) = grid.blend_shape_index(parameter) {
+        return add_key(&mut grid.blend_shapes[index], parameter, key, default_of).map(drop);
+    }
+    let mut shape = KeyformGrid::constant(rest_keyform(grid, &default_of)?);
+    add_key(&mut shape, parameter, key, &default_of)?;
+    if let Some(default) = default_of(parameter).filter(|&d| d != key) {
+        add_key(&mut shape, parameter, default, &default_of)?;
+    }
+    grid.blend_shapes.push(shape);
+    Ok(())
+}
+
+/// ブレンドシェイプのパラメータ `parameter` の軸からキー `key` を取り除く ([`remove_key`])。
+/// 軸がなくなったブレンドシェイプ格子は取り除く。
+pub(crate) fn remove_blend_shape_key<T>(
+    grid: &mut KeyformGrid<T>,
+    parameter: &ParamId,
+    key: f32,
+) -> Result<(), CellError> {
+    let index = grid
+        .blend_shape_index(parameter)
+        .ok_or_else(|| CellError::UnknownAxis(parameter.to_string()))?;
+    remove_key(&mut grid.blend_shapes[index], parameter, key)?;
+    if grid.blend_shapes[index].bindings.is_empty() {
+        grid.blend_shapes.remove(index);
+    }
+    Ok(())
+}
+
+/// セルの指定 `cell` が指す格子。ブレンドシェイプのパラメータ (`is_blend_shape`) を含む指定は、
+/// そのパラメータを軸に持つブレンドシェイプ格子を指し、含まなければ通常の格子を指す。
+pub(crate) fn cell_grid_mut<'a, T>(
+    grid: &'a mut KeyformGrid<T>,
+    cell: &KeyformCell,
+    is_blend_shape: impl Fn(&ParamId) -> bool,
+) -> Result<&'a mut KeyformGrid<T>, CellError> {
+    let Some(parameter) = cell.keys().find(|p| is_blend_shape(p)) else {
+        return Ok(grid);
+    };
+    let index = grid
+        .blend_shape_index(parameter)
+        .ok_or_else(|| CellError::UnknownAxis(parameter.to_string()))?;
+    Ok(&mut grid.blend_shapes[index])
 }
 
 /// 1 軸の位置 `(seg, t)` (`docs/spec/evaluation.md#1-軸の位置`)。`keys` は空でないこと。

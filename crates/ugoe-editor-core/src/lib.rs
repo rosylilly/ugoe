@@ -32,6 +32,8 @@ pub use project::{Project, ProjectError, ProjectMeta, export_bundle};
 pub use texture::Textures;
 
 #[cfg(test)]
+mod blend_shape_tests;
+#[cfg(test)]
 mod deformer_edit_tests;
 #[cfg(test)]
 mod depth_tests;

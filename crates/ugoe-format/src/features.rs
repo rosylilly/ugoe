@@ -63,6 +63,12 @@ pub const FEATURES: &[Feature] = &[
         fallback: "読み飛ばす (アプリの連携機能が使えないだけ)",
         baseline: true,
     },
+    Feature {
+        id: "deform.blend_shape",
+        description: "ブレンドシェイプ格子",
+        fallback: "ブレンドシェイプ格子を無視する (ブレンドシェイプのパラメータが既定値のときの形になる)",
+        baseline: true,
+    },
 ];
 
 /// ID から知っている機能を探す。

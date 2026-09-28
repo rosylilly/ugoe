@@ -7,7 +7,8 @@ use std::fmt::Display;
 use std::hash::Hash;
 
 use crate::deformer::DeformerKind;
-use crate::{KeyformGrid, KeyformInference, Model};
+use crate::parameter::ParameterKind;
+use crate::{KeyformGrid, KeyformInference, Model, Parameter};
 
 mod physics;
 
@@ -156,6 +157,25 @@ pub enum ValidationError {
         expected: usize,
         actual: usize,
     },
+    /// 格子の軸のパラメータの種類が、格子の種類と合わない。通常の格子の軸は `blend_shape` 以外、
+    /// ブレンドシェイプ格子の軸は `blend_shape` (`expected`)。未知の種類はどちらにも置ける。
+    #[error(
+        "{kind} `{id}`: parameter `{parameter}` of a keyform binding must be of kind {expected}"
+    )]
+    ParameterKindMismatch {
+        kind: &'static str,
+        id: String,
+        parameter: String,
+        expected: &'static str,
+    },
+    /// ブレンドシェイプ格子 (`keyforms.blend_shapes[index]`) の不正。`reason` は理由。
+    #[error("{kind} `{id}`: keyforms.blend_shapes[{index}] {reason}")]
+    InvalidBlendShape {
+        kind: &'static str,
+        id: String,
+        index: usize,
+        reason: &'static str,
+    },
     /// `field` は値の場所 (`pose.fade_duration`、`effects.breath[0].cycle` など)。
     #[error("{field} = {value} must be {expected}")]
     InvalidValue {
@@ -226,6 +246,8 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
         }
         let exists = |id: &str| parts.keys().any(|p| p.as_str() == id);
         check_grid(&refs, &params, &exists, &part.keyforms, &mut errors);
+        let kinds = Kinds::new(&params, &model.parameters, false);
+        check_blend_shapes(&refs, &kinds, &exists, &part.keyforms, &mut errors);
     }
     check_cycles(
         "part",
@@ -252,6 +274,8 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
         match &deformer.kind {
             DeformerKind::Warp(warp) => {
                 check_grid(&refs, &params, &exists, &warp.keyforms, &mut errors);
+                let kinds = Kinds::new(&params, &model.parameters, true);
+                check_blend_shapes(&refs, &kinds, &exists, &warp.keyforms, &mut errors);
                 let expected = (usize::from(warp.rows) + 1) * (usize::from(warp.cols) + 1);
                 check_depth(&refs, &path, warp.depth.as_deref(), expected, &mut errors);
                 if warp.rows == 0 || warp.cols == 0 {
@@ -261,7 +285,7 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
                         cols: warp.cols,
                     });
                 }
-                for kf in &warp.keyforms.keyforms {
+                for kf in warp.keyforms.all_keyforms() {
                     if kf.points.len() != expected {
                         errors.push(ValidationError::WarpPointCount {
                             id: id.clone(),
@@ -273,6 +297,8 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
             }
             DeformerKind::Rotation(rotation) => {
                 check_grid(&refs, &params, &exists, &rotation.keyforms, &mut errors);
+                let kinds = Kinds::new(&params, &model.parameters, true);
+                check_blend_shapes(&refs, &kinds, &exists, &rotation.keyforms, &mut errors);
             }
             // 未知の種類は中身を持たない (恒等変換として扱う) ので、検査することがない。
             DeformerKind::Unknown => {}
@@ -317,6 +343,8 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
         }
         let exists = |id: &str| meshes.keys().any(|m| m.as_str() == id);
         check_grid(&refs, &params, &exists, &mesh.keyforms, &mut errors);
+        let kinds = Kinds::new(&params, &model.parameters, true);
+        check_blend_shapes(&refs, &kinds, &exists, &mesh.keyforms, &mut errors);
         let path = format!("meshes[{id}]");
         check_mirror_axis(&path, mesh.mirror_axis, &mut errors);
         check_depth(
@@ -340,7 +368,8 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
                 vertices,
             });
         }
-        for (k, kf) in mesh.keyforms.keyforms.iter().enumerate() {
+        // ブレンドシェイプ格子のセルは、この格子のセルの後に続けて数える。
+        for (k, kf) in mesh.keyforms.all_keyforms().enumerate() {
             if kf.positions.len() != vertices {
                 errors.push(ValidationError::VertexCount {
                     id: id.clone(),
@@ -377,6 +406,8 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
         let b = refs.check(&meshes, "mesh_b", "mesh", &glue.mesh_b, &mut errors);
         let exists = |id: &str| glues.contains_key(&id.to_owned());
         check_grid(&refs, &params, &exists, &glue.keyforms, &mut errors);
+        let kinds = Kinds::new(&params, &model.parameters, false);
+        check_blend_shapes(&refs, &kinds, &exists, &glue.keyforms, &mut errors);
         // 参照先メッシュが存在する側だけ頂点インデックスを検査する。
         let sides = [
             (
@@ -675,6 +706,96 @@ fn check_grid<T>(
                 });
             }
         }
+    }
+}
+
+/// ブレンドシェイプ格子の検査に使う、パラメータの種類の表。
+struct Kinds<'a> {
+    params: &'a HashMap<&'a crate::ParamId, usize>,
+    parameters: &'a [Parameter],
+    /// 要素がブレンドシェイプ格子を持てるか (メッシュ・ワープ・回転デフォーマ)。
+    supported: bool,
+}
+
+impl<'a> Kinds<'a> {
+    fn new(
+        params: &'a HashMap<&'a crate::ParamId, usize>,
+        parameters: &'a [Parameter],
+        supported: bool,
+    ) -> Self {
+        Self {
+            params,
+            parameters,
+            supported,
+        }
+    }
+
+    /// パラメータの種類。存在しないパラメータは `None` (参照の検査で報告済み)。
+    fn of(&self, parameter: &crate::ParamId) -> Option<ParameterKind> {
+        self.params.get(parameter).map(|&i| self.parameters[i].kind)
+    }
+}
+
+/// ブレンドシェイプの検査 (`docs/spec/model.md#ブレンドシェイプ`): 通常の格子の軸に `blend_shape` の
+/// パラメータがないこと、ブレンドシェイプ格子の軸がすべて `blend_shape` のパラメータで 1 本以上あること、
+/// 入れ子がないこと、同じパラメータが 2 つのブレンドシェイプ格子の軸にならないこと、
+/// ブレンドシェイプ格子を持てない要素 (パーツ・グルー) が持たないこと。
+/// ブレンドシェイプ格子の格子としての検査 (キーフォーム数など) も行う。
+fn check_blend_shapes<T>(
+    refs: &Refs<'_>,
+    kinds: &Kinds<'_>,
+    same_kind: &dyn Fn(&str) -> bool,
+    grid: &KeyformGrid<T>,
+    errors: &mut Vec<ValidationError>,
+) {
+    let mismatch = |parameter: &crate::ParamId, expected| ValidationError::ParameterKindMismatch {
+        kind: refs.kind,
+        id: refs.id.to_owned(),
+        parameter: parameter.to_string(),
+        expected,
+    };
+    let invalid = |index, reason| ValidationError::InvalidBlendShape {
+        kind: refs.kind,
+        id: refs.id.to_owned(),
+        index,
+        reason,
+    };
+    // 未知の種類 (`ParameterKind::Unknown`) はどちらの格子にも置ける (未知の値は検証エラーにしない)。
+    for binding in &grid.bindings {
+        if kinds.of(&binding.parameter) == Some(ParameterKind::BlendShape) {
+            errors.push(mismatch(&binding.parameter, "normal"));
+        }
+    }
+    if !kinds.supported && !grid.blend_shapes.is_empty() {
+        errors.push(invalid(0, "is not supported on this element"));
+        return;
+    }
+    let mut earlier = HashSet::new();
+    for (index, shape) in grid.blend_shapes.iter().enumerate() {
+        check_grid(refs, kinds.params, same_kind, shape, errors);
+        if shape.bindings.is_empty() {
+            errors.push(invalid(index, "has no bindings"));
+        }
+        if !shape.blend_shapes.is_empty() {
+            errors.push(invalid(index, "must not have nested blend shape grids"));
+        }
+        for binding in &shape.bindings {
+            if kinds.of(&binding.parameter) == Some(ParameterKind::Normal) {
+                errors.push(mismatch(&binding.parameter, "blend_shape"));
+            }
+        }
+        // 同じ格子の中の重複は `check_grid` が報告するので、前の格子との重複だけを見る。
+        let mut reported = HashSet::new();
+        for binding in &shape.bindings {
+            if earlier.contains(&binding.parameter) && reported.insert(&binding.parameter) {
+                errors.push(ValidationError::DuplicateBinding {
+                    kind: refs.kind,
+                    id: refs.id.to_owned(),
+                    parameter: binding.parameter.to_string(),
+                });
+            }
+        }
+        earlier.extend(shape.bindings.iter().map(|b| &b.parameter));
     }
 }
 
@@ -1769,6 +1890,142 @@ mod tests {
                 },
             ]
         );
+    }
+
+    fn mismatch(
+        kind: &'static str,
+        id: &str,
+        parameter: &str,
+        expected: &'static str,
+    ) -> ValidationError {
+        ValidationError::ParameterKindMismatch {
+            kind,
+            id: id.into(),
+            parameter: parameter.into(),
+            expected,
+        }
+    }
+
+    fn invalid_shape(
+        kind: &'static str,
+        id: &str,
+        index: usize,
+        reason: &'static str,
+    ) -> ValidationError {
+        ValidationError::InvalidBlendShape {
+            kind,
+            id: id.into(),
+            index,
+            reason,
+        }
+    }
+
+    #[test]
+    fn blend_shape_fixture_is_valid() {
+        assert_eq!(validate(&crate::fixtures::blend_shapes()), vec![]);
+    }
+
+    // docs/spec/model.md#ブレンドシェイプ: 通常の格子とブレンドシェイプ格子のパラメータの種類
+    #[test]
+    fn blend_shape_parameter_kinds_must_match_grids() {
+        let mut model = crate::fixtures::blend_shapes();
+        let mouth = &mut model.meshes[0].keyforms;
+        // 通常の格子に blend_shape の軸、ブレンドシェイプ格子に通常の軸。
+        mouth.bindings[0].parameter = "Smile".into();
+        mouth.blend_shapes[1].bindings[0].parameter = "X".into();
+        // 未知の種類はどちらにも置ける。
+        model.parameters[2].kind = ParameterKind::Unknown;
+        let DeformerKind::Rotation(jaw) = &mut model.deformers[1].kind else {
+            panic!("not a rotation");
+        };
+        jaw.keyforms.bindings.push(KeyformBinding {
+            parameter: "Wide".into(),
+            keys: vec![0.0],
+        });
+        assert_eq!(
+            validate(&model),
+            vec![
+                mismatch("mesh", "Mouth", "Smile", "normal"),
+                mismatch("mesh", "Mouth", "X", "blend_shape"),
+            ]
+        );
+    }
+
+    #[test]
+    fn blend_shape_grid_structure() {
+        let mut model = crate::fixtures::blend_shapes();
+        let mouth = &mut model.meshes[0].keyforms;
+        // 軸なし・入れ子・キーフォーム数の不一致・頂点数の不一致。
+        let mut empty = KeyformGrid::constant(mouth.keyforms[1].clone());
+        empty.blend_shapes.push(mouth.blend_shapes[0].clone());
+        mouth.blend_shapes.push(empty);
+        mouth.blend_shapes[1].keyforms.pop();
+        mouth.blend_shapes[0].keyforms[1].positions.pop();
+        // 2 つのブレンドシェイプ格子に同じパラメータ (同じ格子の中の重複は 1 回だけ報告する)。
+        let DeformerKind::Warp(face) = &mut model.deformers[0].kind else {
+            panic!("not a warp");
+        };
+        let mut again = face.keyforms.blend_shapes[0].clone();
+        again.blend_shapes.clear();
+        face.keyforms.blend_shapes.push(again);
+        face.keyforms.blend_shapes[0].keyforms[0].points.pop();
+        assert_eq!(
+            validate(&model),
+            vec![
+                ValidationError::DuplicateBinding {
+                    kind: "deformer",
+                    id: "Face".into(),
+                    parameter: "Smile".into(),
+                },
+                ValidationError::WarpPointCount {
+                    id: "Face".into(),
+                    expected: 4,
+                    actual: 3,
+                },
+                ValidationError::KeyformCount {
+                    kind: "mesh",
+                    id: "Mouth".into(),
+                    expected: 2,
+                    actual: 1,
+                },
+                invalid_shape("mesh", "Mouth", 2, "has no bindings"),
+                invalid_shape("mesh", "Mouth", 2, "must not have nested blend shape grids"),
+                ValidationError::VertexCount {
+                    id: "Mouth".into(),
+                    expected: 4,
+                    actual: 3,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn blend_shapes_are_not_supported_on_parts_and_glues() {
+        let mut model = crate::fixtures::blend_shapes();
+        let shape = grid_on_smile(PartKeyform { opacity: 0.0 });
+        model.parts[0].keyforms.blend_shapes.push(shape);
+        let mut g = glue("Mouth", "Chin", vec![]);
+        g.keyforms
+            .blend_shapes
+            .push(grid_on_smile(GlueKeyform { intensity: 1.0 }));
+        model.glues.push(g);
+        assert_eq!(
+            validate(&model),
+            vec![
+                invalid_shape("part", "Root", 0, "is not supported on this element"),
+                invalid_shape("glue", "G", 0, "is not supported on this element"),
+            ]
+        );
+    }
+
+    fn grid_on_smile<T: Clone>(keyform: T) -> KeyformGrid<T> {
+        KeyformGrid::new(
+            vec![KeyformBinding {
+                parameter: "Smile".into(),
+                keys: vec![0.0, 1.0],
+            }],
+            vec![keyform.clone(), keyform],
+        )
     }
 
     #[test]

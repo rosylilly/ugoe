@@ -878,6 +878,106 @@ pub fn keyform_inference() -> Model {
     model
 }
 
+// ---- ブレンドシェイプ (T0307) ----
+
+/// ブレンドシェイプ格子を持つメッシュ・ワープ・回転デフォーマ (`docs/spec/evaluation.md#6-ブレンドシェイプ`)。
+///
+/// - パラメータ: `X` (通常、-1..1、既定 0)、`Smile` (ブレンドシェイプ、0..1、既定 0)、
+///   `Wide` (ブレンドシェイプ、0..1、既定 **0.5**)。
+/// - メッシュ `Mouth` (親なし): 通常の格子は `single_quad` と同じ (`X` で ±64px 平行移動、
+///   `X = 0` で `(64,64)`〜`(192,192)`)。ブレンドシェイプ格子は宣言順に:
+///   1. `Smile` (キー 0, 1): `Smile = 1` のセルは頂点 0 が `(-8,-16)` ずれ、不透明度 0.5、描画順 600、
+///      乗算色 `(1,0.5,0.5)`、スクリーン色 `(0,0,0.25)`、`mask_strength` 0.5。`Smile = 0` のセルは基準の形。
+///   2. `Wide` (キー 0, 1): 幅 96 (`x = 80..176`) と幅 160 (`x = 48..208`)。既定値 0.5 では基準の形
+///      (幅 128) なので、`Wide = 1` で左右に 16px ずつ広がり、`Wide = 0` で 16px ずつ狭まる。
+/// - ワープ `Face` (親なし、1×1 セル): 制御点 `(64,64)`〜`(192,192)`。ブレンドシェイプ格子 `Smile`
+///   (キー 0, 1) の `Smile = 1` のセルは下の行の制御点が 32px 下がり、不透明度 0.5。
+/// - メッシュ `Cheek` (親 `Face`): UV `(0.25,0.25)`〜`(0.75,0.75)`。
+/// - 回転 `Jaw` (親なし): 原点 `(128,128)`、角度 0、拡大率 1。ブレンドシェイプ格子 `Wide` (キー 0, 1) の
+///   セルは原点 `(120,128)`・角度 -10・拡大率 0.5・不透明度 1 と、原点 `(136,128)`・角度 10・拡大率 1.5・
+///   不透明度 0.5 (既定値 0.5 で基準の値。ただし不透明度の基準は 0.75)。
+/// - メッシュ `Chin` (親 `Jaw`): `(0,0)`〜`(16,16)`。
+pub fn blend_shapes() -> Model {
+    let blend_shape = |id: &str, default: f32| Parameter {
+        kind: ParameterKind::BlendShape,
+        ..parameter(id, 0.0, default, 1.0)
+    };
+    let mut model = base_model(
+        "blend_shapes",
+        vec![
+            parameter("X", -1.0, 0.0, 1.0),
+            blend_shape("Smile", 0.0),
+            blend_shape("Wide", 0.5),
+        ],
+    );
+    let rest = mesh_keyform(rect(64.0, 64.0, 192.0, 192.0), 1.0, 500.0);
+    let mut smile = rest.clone();
+    smile.positions[0] = Vec2::new(56.0, 48.0);
+    smile.opacity = 0.5;
+    smile.draw_order = 600.0;
+    smile.multiply_color = Rgb::new(1.0, 0.5, 0.5);
+    smile.screen_color = Rgb::new(0.0, 0.0, 0.25);
+    smile.mask_strength = 0.5;
+    let mut mouth = grid1(
+        "X",
+        &[-1.0, 0.0, 1.0],
+        [-64.0, 0.0, 64.0]
+            .map(|dx| mesh_keyform(rect(64.0 + dx, 64.0, 192.0 + dx, 192.0), 1.0, 500.0))
+            .to_vec(),
+    );
+    mouth.blend_shapes = vec![
+        grid1("Smile", &[0.0, 1.0], vec![rest, smile]),
+        grid1(
+            "Wide",
+            &[0.0, 1.0],
+            vec![
+                mesh_keyform(rect(80.0, 64.0, 176.0, 192.0), 1.0, 500.0),
+                mesh_keyform(rect(48.0, 64.0, 208.0, 192.0), 1.0, 500.0),
+            ],
+        ),
+    ];
+
+    let square = |dy: f32| WarpKeyform {
+        points: warp_points(1, 1, |x, y| {
+            Vec2::new(
+                64.0 + 128.0 * f32::from(x),
+                64.0 + 128.0 * f32::from(y) + dy * f32::from(y),
+            )
+        }),
+        opacity: 1.0,
+    };
+    let mut face = KeyformGrid::constant(square(0.0));
+    let mut lowered = square(32.0);
+    lowered.opacity = 0.5;
+    face.blend_shapes = vec![grid1("Smile", &[0.0, 1.0], vec![square(0.0), lowered])];
+
+    let mut jaw = KeyformGrid::constant(rotation_keyform(Vec2::new(128.0, 128.0), 0.0, 1.0));
+    let mut narrow = rotation_keyform(Vec2::new(120.0, 128.0), -10.0, 0.5);
+    narrow.opacity = 1.0;
+    let mut wide = rotation_keyform(Vec2::new(136.0, 128.0), 10.0, 1.5);
+    wide.opacity = 0.5;
+    jaw.blend_shapes = vec![grid1("Wide", &[0.0, 1.0], vec![narrow, wide])];
+
+    model.deformers = vec![warp("Face", None, 1, 1, face), rotation("Jaw", None, jaw)];
+    let constant = |positions| KeyformGrid::constant(mesh_keyform(positions, 1.0, 500.0));
+    model.meshes = vec![
+        quad_mesh("Mouth", "Root", None, mouth),
+        quad_mesh(
+            "Cheek",
+            "Root",
+            Some("Face"),
+            constant(rect(0.25, 0.25, 0.75, 0.75)),
+        ),
+        quad_mesh(
+            "Chin",
+            "Root",
+            Some("Jaw"),
+            constant(rect(0.0, 0.0, 16.0, 16.0)),
+        ),
+    ];
+    model
+}
+
 // ---- 物理演算 (T0301) ----
 
 /// 物理のフィクスチャ [`physics_hair_settings`] と組で使うモデル。メッシュは持たない。
@@ -1046,6 +1146,7 @@ mod tests {
             intersection_masks(),
             keyform_inference(),
             physics_hair(),
+            blend_shapes(),
         ] {
             assert_eq!(
                 crate::validate::validate(&model),
@@ -1151,11 +1252,23 @@ mod tests {
             assert!(!mesh.contains_key(key), "{key}");
         }
         let grid = json["meshes"][0]["keyforms"].as_object().unwrap();
-        for key in ["origins", "inference"] {
+        for key in ["origins", "inference", "blend_shapes"] {
             assert!(!grid.contains_key(key), "{key}");
         }
         let model: Model = serde_json::from_value(json).unwrap();
         assert_eq!(model, single_quad());
+    }
+
+    #[test]
+    fn blend_shape_json_format() {
+        let json = serde_json::to_value(blend_shapes()).unwrap();
+        assert_eq!(json["parameters"][1]["kind"], "blend_shape");
+        let shapes = &json["meshes"][0]["keyforms"]["blend_shapes"];
+        assert_eq!(shapes[0]["bindings"][0]["parameter"], "Smile");
+        assert_eq!(shapes[1]["bindings"][0]["parameter"], "Wide");
+        assert_eq!(shapes[0]["keyforms"][1]["opacity"], 0.5);
+        // ブレンドシェイプ格子自身の空の `blend_shapes` は書き出さない。
+        assert!(shapes[0].get("blend_shapes").is_none());
     }
 
     #[test]

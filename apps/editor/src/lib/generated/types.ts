@@ -357,6 +357,9 @@ export type KeyformBinding = { parameter: string, keys: Array<number>, };
  *
  * `origins`・`inference`・`mirror_source` はオーサリング用のデータで、ランタイムは読み飛ばす
  * (`docs/spec/keyform-inference.md`)。
+ *
+ * `blend_shapes` はブレンドシェイプ格子の列で、この格子の補間結果に差分を加算する
+ * (`docs/spec/evaluation.md#6-ブレンドシェイプ`)。
  */
 export type KeyformGrid<T> = { bindings: Array<KeyformBinding>, keyforms: Array<T>, 
 /**
@@ -371,7 +374,13 @@ inference?: KeyformInference | null,
 /**
  * `mirror` のセルのミラー元と、ミラーの設定。ミラーで作ったセルがあれば記録する。
  */
-mirror_source?: MirrorSource | null, };
+mirror_source?: MirrorSource | null, 
+/**
+ * ブレンドシェイプ格子 (`docs/spec/model.md#ブレンドシェイプ`)。軸はすべて `kind = blend_shape` の
+ * パラメータで、補間した値と既定値での値の差を、宣言順にこの格子の補間結果へ加える。
+ * ブレンドシェイプ格子自身は `blend_shapes` を持たない (入れ子にしない)。
+ */
+blend_shapes?: Array<KeyformGrid<T>>, };
 
 /**
  * 格子の `derived` のセルを作る推定の方法と、その設定。

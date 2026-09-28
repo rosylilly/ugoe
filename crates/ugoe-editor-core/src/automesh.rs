@@ -114,8 +114,7 @@ pub(crate) fn regenerate_mesh(
         return Err(reject("it has no keyforms"));
     };
     if m.keyforms
-        .keyforms
-        .iter()
+        .all_keyforms()
         .any(|k| k.positions != base.positions)
     {
         return Err(reject(
@@ -147,7 +146,7 @@ pub(crate) fn regenerate_mesh(
     let m = find_mesh_mut(model, id)?;
     m.uvs = uvs;
     m.indices = generated.indices;
-    for keyform in &mut m.keyforms.keyforms {
+    for keyform in m.keyforms.all_keyforms_mut() {
         keyform.positions.clone_from(&positions);
     }
     Ok(())

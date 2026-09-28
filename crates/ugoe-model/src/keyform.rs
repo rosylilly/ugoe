@@ -24,9 +24,14 @@ pub struct KeyformBinding {
 ///
 /// `origins`・`inference`・`mirror_source` はオーサリング用のデータで、ランタイムは読み飛ばす
 /// (`docs/spec/keyform-inference.md`)。
+///
+/// `blend_shapes` はブレンドシェイプ格子の列で、この格子の補間結果に差分を加算する
+/// (`docs/spec/evaluation.md#6-ブレンドシェイプ`)。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+// `blend_shapes` の `default` が既定で求める境界 (`T: Default`) を外す。
+#[serde(bound(deserialize = "T: Deserialize<'de>"))]
 pub struct KeyformGrid<T> {
     #[serde(default)]
     pub bindings: Vec<KeyformBinding>,
@@ -41,6 +46,11 @@ pub struct KeyformGrid<T> {
     /// `mirror` のセルのミラー元と、ミラーの設定。ミラーで作ったセルがあれば記録する。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mirror_source: Option<MirrorSource>,
+    /// ブレンドシェイプ格子 (`docs/spec/model.md#ブレンドシェイプ`)。軸はすべて `kind = blend_shape` の
+    /// パラメータで、補間した値と既定値での値の差を、宣言順にこの格子の補間結果へ加える。
+    /// ブレンドシェイプ格子自身は `blend_shapes` を持たない (入れ子にしない)。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blend_shapes: Vec<KeyformGrid<T>>,
 }
 
 impl<T> KeyformGrid<T> {
@@ -52,6 +62,7 @@ impl<T> KeyformGrid<T> {
             origins: Vec::new(),
             inference: None,
             mirror_source: None,
+            blend_shapes: Vec::new(),
         }
     }
 
@@ -63,6 +74,30 @@ impl<T> KeyformGrid<T> {
     /// 格子として期待されるキーフォーム数。
     pub fn expected_len(&self) -> usize {
         self.bindings.iter().map(|b| b.keys.len()).product()
+    }
+
+    /// この格子とブレンドシェイプ格子のすべてのキーフォーム (この格子のものが先、次にブレンドシェイプ格子の宣言順)。
+    /// 頂点数を変える編集など、すべてのセルに同じ操作をするときに使う。
+    pub fn all_keyforms(&self) -> impl Iterator<Item = &T> {
+        self.keyforms
+            .iter()
+            .chain(self.blend_shapes.iter().flat_map(|g| g.keyforms.iter()))
+    }
+
+    /// [`KeyformGrid::all_keyforms`] の可変版。
+    pub fn all_keyforms_mut(&mut self) -> impl Iterator<Item = &mut T> {
+        self.keyforms.iter_mut().chain(
+            self.blend_shapes
+                .iter_mut()
+                .flat_map(|g| g.keyforms.iter_mut()),
+        )
+    }
+
+    /// パラメータ `parameter` を軸に持つブレンドシェイプ格子の添字。
+    pub fn blend_shape_index(&self, parameter: &ParamId) -> Option<usize> {
+        self.blend_shapes
+            .iter()
+            .position(|g| g.bindings.iter().any(|b| &b.parameter == parameter))
     }
 
     /// 線形インデックス `index` のセルの由来。`origins` が空なら `authored`。

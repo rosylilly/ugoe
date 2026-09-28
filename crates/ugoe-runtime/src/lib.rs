@@ -8,6 +8,7 @@
 //!
 //! このクレートは GPU・I/O・スレッドに依存しない。決定的 (同入力 → 同出力) であること。
 
+mod blend_shape;
 pub mod compile;
 mod deform;
 mod hit;

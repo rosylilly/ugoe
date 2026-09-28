@@ -125,6 +125,7 @@ pub fn typescript_samples(types_module: &str) -> Result<String, serde_json::Erro
         fixtures::glued_quads(),
         fixtures::mixed_masks(),
         fixtures::keyform_inference(),
+        fixtures::blend_shapes(),
     ];
     let mut out = GENERATED_HEADER.to_owned();
     out.push_str(&format!(

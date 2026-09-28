@@ -490,16 +490,20 @@ fn apply_to(
             touched.push(KeyformTarget::Mesh(id));
         }
         Command::SetMeshKeyform { id, cell, keyform } => {
+            let shapes = keyform::blend_shape_parameters(model);
+            let invalid = |error| EditError::InvalidCell {
+                kind: "mesh",
+                id: id.to_string(),
+                error,
+            };
             let m = mesh(model, &id)?;
-            let index =
-                grid::cell_index(&m.keyforms, &cell).map_err(|error| EditError::InvalidCell {
-                    kind: "mesh",
-                    id: id.to_string(),
-                    error,
-                })?;
-            m.keyforms.keyforms[index] = keyform;
+            // ブレンドシェイプのパラメータを含む指定は、ブレンドシェイプ格子のセルを指す。
+            let g = grid::cell_grid_mut(&mut m.keyforms, &cell, |p| shapes.contains(p))
+                .map_err(invalid)?;
+            let index = grid::cell_index(g, &cell).map_err(invalid)?;
+            g.keyforms[index] = keyform;
             // 手で編集したセルは `authored` になる (`docs/spec/keyform-inference.md#セルの由来`)。
-            grid::set_authored(&mut m.keyforms, index);
+            grid::set_authored(g, index);
             touched.push(KeyformTarget::Mesh(id));
         }
         Command::ReorderMesh { id, before } => reorder_mesh(model, &id, before.as_ref())?,
@@ -607,7 +611,8 @@ fn apply_to(
                     draw_order,
                 });
             }
-            for keyform in &mut mesh(model, &id)?.keyforms.keyforms {
+            // ブレンドシェイプ格子のセルも揃えて、描画順の差分をなくす。
+            for keyform in mesh(model, &id)?.keyforms.all_keyforms_mut() {
                 keyform.draw_order = draw_order;
             }
         }
