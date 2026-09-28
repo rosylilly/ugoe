@@ -52,7 +52,7 @@ crates/             Rust クレート (ランタイム層とツール層。依�
   ugoe-cli            `ugoe` コマンド
 apps/editor/        Tauri エディタ (src/ = Svelte フロントエンド, src-tauri/ = Rust バックエンド)
 docs/               設計・仕様・ADR・タスク
-scripts/            補助スクリプト (check-layers.py 等)
+scripts/            補助スクリプト (check-layers.mjs 等)
 assets/fixtures/    テスト用アセット (小さいものだけ)
 ```
 
@@ -74,7 +74,7 @@ assets/fixtures/    テスト用アセット (小さいものだけ)
 
 ### アーキテクチャ
 
-1. **依存方向を守る。** ランタイム層 (`core` `model` `runtime` `format` `physics` `motion` `render` `ugoe` `ffi` `wasm`) は、ツール層 (`psd` `mesher` `editor-core` `ai` `cli` `editor`) に依存してはならない。`just layers` で検査される。新しいクレートを作ったら `scripts/check-layers.py` に登録する。
+1. **依存方向を守る。** ランタイム層 (`core` `model` `runtime` `format` `physics` `motion` `render` `ugoe` `ffi` `wasm`) は、ツール層 (`psd` `mesher` `editor-core` `ai` `cli` `editor`) に依存してはならない。`just layers` で検査される。新しいクレートを作ったら `scripts/check-layers.mjs` に登録する。
 2. **`ugoe-model` はデータだけを持つ。** 補間・変形・再生などのロジックは下流クレートに置く。
 3. **ランタイム層は GPU・ファイル I/O・スレッド・時刻取得に依存しない** (`ugoe-render` の GPU と `ugoe-format` のバイト列処理を除く)。`dt` は引数で受け取る。wasm32 でビルドできる状態を保つ。
 4. **エディタの編集はすべて `ugoe_editor_core::Command` を通す。** Tauri コマンドや CLI に編集ロジックを直接書かない。

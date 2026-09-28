@@ -1,6 +1,6 @@
 # ugoe-render
 
-**層:** L3 機能 (依存してよいクレートは `scripts/check-layers.py` を参照)
+**層:** L3 機能 (依存してよいクレートは `scripts/check-layers.mjs` を参照)
 
 wgpu による参照レンダラと参照シェーダ (WGSL)。
 

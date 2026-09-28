@@ -1,6 +1,6 @@
 # ugoe-ffi
 
-**層:** L5 バインディング (依存してよいクレートは `scripts/check-layers.py` を参照)
+**層:** L5 バインディング (依存してよいクレートは `scripts/check-layers.mjs` を参照)
 
 C ABI。Unity・Unreal・Godot などから使う。
 

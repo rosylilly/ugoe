@@ -1,6 +1,6 @@
 # ugoe-motion
 
-**層:** L3 機能 (依存してよいクレートは `scripts/check-layers.py` を参照)
+**層:** L3 機能 (依存してよいクレートは `scripts/check-layers.mjs` を参照)
 
 モーションの再生、表情、目パチ・呼吸・リップシンク・ポーズ。
 

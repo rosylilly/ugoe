@@ -1,6 +1,6 @@
 # ugoe-core
 
-**層:** L0 基盤 (依存してよいクレートは `scripts/check-layers.py` を参照)
+**層:** L0 基盤 (依存してよいクレートは `scripts/check-layers.mjs` を参照)
 
 全クレートが共有する最下層の型 (数学型の再エクスポート、文字列 ID `Id<T>`、`Rgb`)。
 

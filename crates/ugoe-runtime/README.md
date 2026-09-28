@@ -1,6 +1,6 @@
 # ugoe-runtime
 
-**層:** L2 評価 (依存してよいクレートは `scripts/check-layers.py` を参照)
+**層:** L2 評価 (依存してよいクレートは `scripts/check-layers.mjs` を参照)
 
 パラメータ値から描画可能要素の状態を計算する (`CompiledModel`、`ModelInstance`、`ParameterValues`)。
 

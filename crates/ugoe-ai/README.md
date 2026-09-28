@@ -1,6 +1,6 @@
 # ugoe-ai
 
-**層:** T3 自動化 (依存してよいクレートは `scripts/check-layers.py` を参照)
+**層:** T3 自動化 (依存してよいクレートは `scripts/check-layers.mjs` を参照)
 
 AI プロバイダの抽象 (`Provider`) と、自動リギングのパイプライン。
 

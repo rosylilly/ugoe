@@ -1,6 +1,6 @@
 # ugoe
 
-**層:** L4 SDK (依存してよいクレートは `scripts/check-layers.py` を参照)
+**層:** L4 SDK (依存してよいクレートは `scripts/check-layers.mjs` を参照)
 
 ランタイム SDK のファサード。`Puppet` が 1 体分の更新 (モーション → 物理 → 評価) をまとめる。下位のクレートを再エクスポートする。
 

@@ -1,6 +1,6 @@
 # ugoe-psd
 
-**層:** T1 素材処理 (依存してよいクレートは `scripts/check-layers.py` を参照)
+**層:** T1 素材処理 (依存してよいクレートは `scripts/check-layers.mjs` を参照)
 
 PSD から、PSD の形式に依存しない `LayerTree` を作る。
 

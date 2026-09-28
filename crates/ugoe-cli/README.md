@@ -1,6 +1,6 @@
 # ugoe-cli
 
-**層:** T4 アプリ (依存してよいクレートは `scripts/check-layers.py` を参照)
+**層:** T4 アプリ (依存してよいクレートは `scripts/check-layers.mjs` を参照)
 
 `ugoe` コマンド。モデルの検証・情報表示・フィクスチャの出力・(予定) 描画・変換。
 

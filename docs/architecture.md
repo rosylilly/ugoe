@@ -30,7 +30,7 @@
 
 ## レイヤーと依存ルール
 
-依存は **下向きにだけ** 張れます。`scripts/check-layers.py` (`just layers`) が検査し、CI で強制します。
+依存は **下向きにだけ** 張れます。`scripts/check-layers.mjs` (`just layers`) が検査し、CI で強制します。
 
 | 層 | クレート | 依存してよいもの |
 | --- | --- | --- |

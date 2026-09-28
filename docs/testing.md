@@ -9,7 +9,7 @@
 | スナップショットテスト | `insta` (`tests/snapshots/`) | `just test`。更新は `cargo insta review` |
 | 描画テスト (GPU) | `ugoe-render` の `gpu-tests` feature | `just test-gpu` |
 | フロントエンドの検査 | Biome + svelte-check | `just web-check` |
-| 依存方向の検査 | `scripts/check-layers.py` | `just layers` |
+| 依存方向の検査 | `scripts/check-layers.mjs` | `just layers` |
 
 `just ci` はこれらを (GPU テスト以外) すべて実行します。
 

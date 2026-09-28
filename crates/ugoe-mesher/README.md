@@ -1,6 +1,6 @@
 # ugoe-mesher
 
-**層:** T1 素材処理 (依存してよいクレートは `scripts/check-layers.py` を参照)
+**層:** T1 素材処理 (依存してよいクレートは `scripts/check-layers.mjs` を参照)
 
 アルファ付き画像から三角形メッシュを自動生成する。
 

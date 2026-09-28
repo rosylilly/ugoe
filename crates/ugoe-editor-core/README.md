@@ -1,6 +1,6 @@
 # ugoe-editor-core
 
-**層:** T2 エディタ中核 (依存してよいクレートは `scripts/check-layers.py` を参照)
+**層:** T2 エディタ中核 (依存してよいクレートは `scripts/check-layers.mjs` を参照)
 
 ヘッドレスなエディタの中核。`Document`、`Command`、Undo/Redo、プロジェクトの読み書き。
 

@@ -43,6 +43,9 @@ jobs:
       - name: Install Rust toolchain (rust-toolchain.toml)
         run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .tool-versions
       - uses: extractions/setup-just@v4
       - name: Format
         run: cargo fmt --all -- --check

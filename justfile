@@ -46,11 +46,11 @@ crate name:
 
 # タスク一覧 (`just tasks --ready` で着手可能なものだけ)
 tasks *args:
-    @python3 scripts/tasks.py {{args}}
+    @node scripts/tasks.mjs {{args}}
 
 # クレート依存方向の検査
 layers:
-    @python3 scripts/check-layers.py
+    @node scripts/check-layers.mjs
 
 # wasm ターゲットでビルドできるか
 wasm-check:

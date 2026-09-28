@@ -17,10 +17,10 @@ pre-commit:
       stage_fixed: true
     - name: layers
       glob: "*Cargo.toml"
-      run: python3 scripts/check-layers.py
+      run: node scripts/check-layers.mjs
     - name: tasks
       glob: "docs/tasks/*.md"
-      run: python3 scripts/tasks.py > /dev/null
+      run: node scripts/tasks.mjs > /dev/null
 
 commit-msg:
   jobs:

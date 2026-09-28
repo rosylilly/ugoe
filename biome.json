@@ -4,6 +4,7 @@
     "includes": [
       "apps/**",
       "packages/**",
+      "scripts/**",
       "*.json",
       "*.mjs",
       "!**/dist",

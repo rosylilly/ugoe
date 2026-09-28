@@ -1,6 +1,6 @@
 # ugoe-format
 
-**層:** L2 入出力 (依存してよいクレートは `scripts/check-layers.py` を参照)
+**層:** L2 入出力 (依存してよいクレートは `scripts/check-layers.mjs` を参照)
 
 `.ugoe` バンドルと JSON 形式の読み書き。
 

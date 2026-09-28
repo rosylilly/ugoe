@@ -1,6 +1,6 @@
 # ugoe-model
 
-**層:** L1 データ (依存してよいクレートは `scripts/check-layers.py` を参照)
+**層:** L1 データ (依存してよいクレートは `scripts/check-layers.mjs` を参照)
 
 モデル・物理・モーション・表情のデータ定義 (スキーマ)。検証 (`validate`) とテスト用のフィクスチャ (`fixtures`) を含む。
 
