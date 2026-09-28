@@ -1,0 +1,29 @@
+[package]
+name = "ugoe-render"
+description = "ugoe 参照レンダラ (wgpu)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+bytemuck.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+ugoe-core.workspace = true
+ugoe-runtime.workspace = true
+wgpu.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# Web で WebGPU 非対応環境 (Linux の WebKitGTK 等) 向けの WebGL2 フォールバック。
+webgl = ["wgpu/webgl"]
+# 実 GPU (またはソフトウェアラスタライザ) を必要とする描画テストを有効にする。
+gpu-tests = []
+
+[dev-dependencies]
+naga.workspace = true
+pollster.workspace = true
+ugoe-model.workspace = true

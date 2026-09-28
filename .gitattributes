@@ -1,0 +1,7 @@
+* text=auto eol=lf
+*.png binary
+*.psd binary
+*.ugoe binary
+*.ico binary
+Cargo.lock -diff linguist-generated
+pnpm-lock.yaml -diff linguist-generated

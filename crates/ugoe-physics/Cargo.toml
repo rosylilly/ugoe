@@ -1,0 +1,15 @@
+[package]
+name = "ugoe-physics"
+description = "ugoe 物理演算 (振り子チェーン)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+ugoe-core.workspace = true
+ugoe-model.workspace = true
+ugoe-runtime.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,17 @@
+{
+  "name": "ugoe-workspace",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "prepare": "lefthook install",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "commitlint": "commitlint"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
+    "@commitlint/cli": "^21.2.3",
+    "@commitlint/config-conventional": "^21.2.3",
+    "lefthook": "^2.1.14"
+  }
+}

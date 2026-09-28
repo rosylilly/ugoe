@@ -1,0 +1,20 @@
+[package]
+name = "ugoe-cli"
+description = "ugoe コマンドラインツール (検証・ビルド・スナップショット描画)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+ugoe-format.workspace = true
+ugoe-model.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "ugoe"
+path = "src/main.rs"

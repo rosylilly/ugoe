@@ -1,0 +1,16 @@
+[package]
+name = "ugoe-ai"
+description = "AI 連携: モデルプロバイダ抽象と自動リギングパイプライン"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+ugoe-editor-core.workspace = true
+
+[lints]
+workspace = true

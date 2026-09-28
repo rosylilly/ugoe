@@ -1,0 +1,79 @@
+//! ugoe の **データ定義 (スキーマ) クレート**。
+//!
+//! ここにはシリアライズ可能な「モデルが何であるか」の定義だけを置き、
+//! 「どう動かすか」(補間・変形・物理・モーション再生) は下流クレートが担う。
+//! 仕様は `docs/spec/model.md` を正とする。型を変更したら仕様書も同じ PR で更新すること。
+
+pub mod deformer;
+pub mod expression;
+pub mod fixtures;
+pub mod keyform;
+pub mod mesh;
+pub mod motion;
+pub mod parameter;
+pub mod part;
+pub mod physics;
+pub mod standard;
+pub mod validate;
+
+use serde::{Deserialize, Serialize};
+use ugoe_core::Vec2;
+
+pub use deformer::{Deformer, DeformerId, DeformerKind};
+pub use keyform::{KeyformBinding, KeyformGrid};
+pub use mesh::{BlendMode, Glue, Mesh, MeshId};
+pub use parameter::{ParamId, Parameter, ParameterGroup};
+pub use part::{Part, PartId};
+
+/// モデルデータのスキーマバージョン。互換性を壊す変更で上げる (`docs/spec/file-formats.md`)。
+pub const SCHEMA_VERSION: u32 = 0;
+
+/// 1 体のリグ付きモデル全体。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Model {
+    pub schema_version: u32,
+    pub meta: ModelMeta,
+    pub parameters: Vec<Parameter>,
+    #[serde(default)]
+    pub parameter_groups: Vec<ParameterGroup>,
+    pub parts: Vec<Part>,
+    #[serde(default)]
+    pub deformers: Vec<Deformer>,
+    pub meshes: Vec<Mesh>,
+    #[serde(default)]
+    pub glues: Vec<Glue>,
+    pub textures: Vec<TextureRef>,
+    #[serde(default)]
+    pub hit_areas: Vec<HitArea>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ModelMeta {
+    pub name: String,
+    pub canvas: Canvas,
+}
+
+/// キャンバス。モデル座標系は「キャンバス左上原点・ピクセル単位・Y 下向き」。
+/// 表示時の正規化 (高さ 2.0 の NDC 相当など) は描画側の責務。
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Canvas {
+    pub width: f32,
+    pub height: f32,
+    /// 表示時の原点 (通常は足元中央など)。
+    pub origin: Vec2,
+}
+
+/// テクスチャ参照。実データはコンテナ (`ugoe-format`) 側が保持する。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TextureRef {
+    pub name: String,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// 当たり判定領域。メッシュの変形後形状で判定する。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HitArea {
+    pub id: String,
+    pub mesh: MeshId,
+}

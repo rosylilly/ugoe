@@ -1,0 +1,38 @@
+# Git フック。`pnpm install` 時に `lefthook install` で自動的に有効になる。
+# git worktree で作業する場合は、その worktree でも `pnpm install --offline` を実行すること
+# (フックが worktree 内の node_modules から lefthook と commitlint を探すため)。
+#
+# フックを飛ばす (--no-verify) ことは禁止。CI でも同じ検査を行う。
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: rustfmt
+      glob: "*.rs"
+      run: rustfmt --edition 2024 {staged_files}
+      stage_fixed: true
+    - name: biome
+      glob: "*.{js,mjs,ts,svelte,json,jsonc,css}"
+      run: pnpm exec biome check --write --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}
+      stage_fixed: true
+    - name: layers
+      glob: "*Cargo.toml"
+      run: python3 scripts/check-layers.py
+    - name: tasks
+      glob: "docs/tasks/*.md"
+      run: python3 scripts/tasks.py > /dev/null
+
+commit-msg:
+  jobs:
+    - name: commitlint
+      run: pnpm exec commitlint --edit {1}
+
+pre-push:
+  parallel: true
+  jobs:
+    - name: clippy
+      run: cargo clippy --workspace --all-targets -- -D warnings
+    - name: test
+      run: cargo test --workspace
+    - name: web-check
+      run: pnpm --filter @ugoe/editor check

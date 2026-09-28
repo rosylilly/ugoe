@@ -1,0 +1,129 @@
+# AGENTS.md — ugoe で作業するエージェント (と人間) のためのガイド
+
+このファイルはリポジトリで作業する **すべてのコーディングエージェントが最初に読む** 規約です。
+短く保ち、詳細は `docs/` へリンクします。内容が古くなっていたら、気づいたエージェントが直してください。
+
+## プロジェクト概要
+
+ugoe は Live2D Cubism と **機能的に互換** な 2D リギング・アニメーションのエンジンとツールチェインです。
+
+- 実装言語は Rust。エディタは Tauri v2 + Svelte 5。
+- コアの描画は wgpu (WebGPU API) で、ネイティブ・Web・ゲームエンジンに移植できるようにする。
+- Live2D の **ファイル形式や内部機構との互換は目指さない**。できることは同等にするが、データ形式とアルゴリズムは独自のもの。
+- 将来は AI 連携 (PSD 取り込み → レイヤー意味分類 → 自動メッシュ → 自動パラメータ設定) を持つ。
+
+目標と非目標の詳細は [docs/vision.md](docs/vision.md)、全体構成は [docs/architecture.md](docs/architecture.md) にあります。
+
+## 最初に読むもの (作業内容別)
+
+| 作業 | 読むもの |
+| --- | --- |
+| どの作業でも | この文書、[docs/architecture.md](docs/architecture.md)、[docs/glossary.md](docs/glossary.md)、触るクレートの `README.md` |
+| タスクに着手する | [docs/workflow/multi-agent.md](docs/workflow/multi-agent.md)、[docs/tasks/README.md](docs/tasks/README.md) |
+| モデルのデータ構造 | [docs/spec/model.md](docs/spec/model.md) |
+| 変形・補間 | [docs/spec/evaluation.md](docs/spec/evaluation.md) |
+| 描画 | [docs/spec/rendering.md](docs/spec/rendering.md) |
+| 物理 / モーション | [docs/spec/physics.md](docs/spec/physics.md) / [docs/spec/motion.md](docs/spec/motion.md) |
+| ファイル形式 | [docs/spec/file-formats.md](docs/spec/file-formats.md) |
+| エディタ | [docs/editor.md](docs/editor.md) |
+| AI 連携 | [docs/ai-integration.md](docs/ai-integration.md) |
+| エンジン組み込み | [docs/portability.md](docs/portability.md) |
+| テスト | [docs/testing.md](docs/testing.md) |
+| 設計判断の経緯 | [docs/adr/](docs/adr/) |
+
+## リポジトリ構成
+
+```
+crates/             Rust クレート (ランタイム層とツール層。依存方向は docs/architecture.md)
+  ugoe-core           数学型・ID・色
+  ugoe-model          データ定義 (スキーマ)。アルゴリズムは持たない
+  ugoe-runtime        キーフォーム補間・デフォーマ変形 (CPU・決定的)
+  ugoe-physics        振り子物理
+  ugoe-motion         モーション・表情・目パチ・呼吸・リップシンク・ポーズ
+  ugoe-render         wgpu 参照レンダラ
+  ugoe-format         .ugoe バンドルと JSON 形式の読み書き
+  ugoe                ランタイム SDK ファサード (Puppet)
+  ugoe-ffi            C ABI
+  ugoe-wasm           WebAssembly バインディング
+  ugoe-psd            PSD 取り込み
+  ugoe-mesher         自動メッシュ生成
+  ugoe-editor-core    ヘッドレスなエディタ中核 (Document / Command / Undo)
+  ugoe-ai             AI プロバイダ抽象と自動リギング
+  ugoe-cli            `ugoe` コマンド
+apps/editor/        Tauri エディタ (src/ = Svelte フロントエンド, src-tauri/ = Rust バックエンド)
+docs/               設計・仕様・ADR・タスク
+scripts/            補助スクリプト (check-layers.py 等)
+assets/fixtures/    テスト用アセット (小さいものだけ)
+```
+
+## コマンド
+
+`just` がタスクランナーです (`just` だけで一覧を表示)。
+
+| コマンド | 内容 |
+| --- | --- |
+| `just ci` | **作業完了前に必ず通す。** fmt 検査・clippy (`-D warnings`)・全テスト・依存方向・フロントエンド検査 |
+| `just crate <name>` | 1 クレートだけ clippy とテスト (反復中はこれを使う) |
+| `just fmt` | Rust と TS を整形 |
+| `just layers` | クレートの依存方向を検査 |
+| `just wasm-check` | wasm32 でビルドできるか (ランタイム層を触ったら実行) |
+| `just editor` | エディタを開発モードで起動 |
+| `just cli <args>` | CLI を実行 (例: `just cli fixture single-quad`) |
+
+## 守るべきルール
+
+### アーキテクチャ
+
+1. **依存方向を守る。** ランタイム層 (`core` `model` `runtime` `format` `physics` `motion` `render` `ugoe` `ffi` `wasm`) は、ツール層 (`psd` `mesher` `editor-core` `ai` `cli` `editor`) に依存してはならない。`just layers` で検査される。新しいクレートを作ったら `scripts/check-layers.py` に登録する。
+2. **`ugoe-model` はデータだけを持つ。** 補間・変形・再生などのロジックは下流クレートに置く。
+3. **ランタイム層は GPU・ファイル I/O・スレッド・時刻取得に依存しない** (`ugoe-render` の GPU と `ugoe-format` のバイト列処理を除く)。`dt` は引数で受け取る。wasm32 でビルドできる状態を保つ。
+4. **エディタの編集はすべて `ugoe_editor_core::Command` を通す。** Tauri コマンドや CLI に編集ロジックを直接書かない。
+5. **AI はモデルを直接書き換えない。** `Command` の列を「提案」し、ユーザーが承認してから適用する。
+6. **レンダラはデバイスやサーフェスを所有しない。** ホストから `Device` / `Queue` / `TextureView` を受け取る。
+
+### コード
+
+- Rust edition 2024、toolchain は `rust-toolchain.toml` で固定。`unsafe` は禁止 (`ugoe-ffi` だけ例外)。
+- 依存クレートはルートの `Cargo.toml` の `[workspace.dependencies]` に追加し、各クレートでは `foo.workspace = true` と書く。1 行に 1 依存、アルファベット順に並べる (マージ衝突を減らすため)。
+- 新しい外部依存を入れるときは PR 本文に理由を書く。ランタイム層に重い依存を入れるなら ADR を書く。
+- ライブラリコードで `unwrap()` を使わない (テストでは可)。エラー型は `thiserror` で作り、`anyhow` はバイナリ (`ugoe-cli` 等) だけで使う。
+- 未実装の箇所は `todo!()` ではなく `// TODO(T0123): 説明` と書き、タスク ID を付ける。
+- コメントとドキュメントは日本語、識別子は英語。
+- 公開 API には doc コメントを付ける。仕様書と対応する箇所ではファイル名をコメントに書く (例: `docs/spec/evaluation.md`)。
+
+### 仕様とコードの同期
+
+- `ugoe-model` の型を変えたら **同じ PR で** `docs/spec/model.md` を更新する。ファイル形式に影響するなら `docs/spec/file-formats.md` と `SCHEMA_VERSION` も更新する。
+- Tauri の IPC コマンドを変えたら、同じ PR で `apps/editor/src/lib/ipc.ts` も更新する。
+- 既存の設計判断 (ADR) を覆すときは、新しい ADR を書いて古い ADR を `Superseded` にする。
+
+### テスト
+
+- 振る舞いを変えたらテストを書く。ランタイムの数値結果は `ugoe_model::fixtures` のフィクスチャを入力にしてテストする。
+- 浮動小数点の比較は許容誤差付きで行う (完全一致が保証されている場合を除く)。
+- 詳細は [docs/testing.md](docs/testing.md)。
+
+## コミット
+
+- 形式は [Conventional Commits](https://www.conventionalcommits.org/)。例: `feat(runtime): implement warp deformer (T0104)`
+- **コミットメッセージはすべて英語で書く** (件名・本文・フッターすべて)。日本語などの CJK 文字や全角文字を含むメッセージは拒否される。
+- type は `feat` `fix` `docs` `refactor` `perf` `test` `build` `ci` `chore` `style` `revert` のいずれか。
+- scope は省略できる。書く場合は `commitlint.config.mjs` の `SCOPES` から選ぶ (クレートは `ugoe-` を除いた名前。`ugoe` クレートは `sdk`)。新しいクレートを作ったら `SCOPES` にも追加する。
+- タスクに関するコミットは、件名の末尾にタスク ID を付ける: `(T0104)`。
+- 件名は 100 文字以内。命令形・小文字始まり・末尾にピリオドを付けない。
+- Git フックは lefthook で管理する (`lefthook.yml`)。`pnpm install` で有効になる。
+  - pre-commit: rustfmt と Biome による自動整形、依存方向の検査、タスクファイルの検査
+  - commit-msg: commitlint によるメッセージの検査
+  - pre-push: clippy、全テスト、svelte-check
+- **`--no-verify` でフックを飛ばしてはならない。** フックが失敗したら原因を直す。CI でも同じ検査を行う。
+- メッセージは事前に `just commitlint "feat(cli): add render command"` で検査できる。
+
+## マルチエージェント作業の要点
+
+詳細は [docs/workflow/multi-agent.md](docs/workflow/multi-agent.md)。
+
+- 作業は `docs/tasks/` のタスク単位で行う。1 タスク = 1 ブランチ = 1 PR。
+- 他のエージェントと並行するときは git worktree (`.worktrees/<task-id>`) で作業する。ブランチ名は `task/T0123-short-slug`。worktree を作ったら、その中で `pnpm install --offline` を実行する (Git フックが worktree 内の `node_modules` を使うため)。
+- タスクファイルの `crates:` に書かれた範囲の外を編集しない。範囲外の変更が必要になったら、タスクファイルの「メモ」に書いて止まるか、新しいタスクを起票する。
+- `ugoe-core` / `ugoe-model` の公開 API 変更は影響が大きい。「インターフェースだけを先に入れる」小さな PR に分ける。
+- コミットの規約は下の「コミット」を参照。

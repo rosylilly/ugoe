@@ -1,0 +1,60 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/editor/src-tauri"]
+default-members = ["crates/*"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.95"
+repository = "https://github.com/rosylilly/ugoe"
+publish = false
+
+# 依存は必ずここで宣言し、各クレートでは `foo.workspace = true` で参照する。
+# マージ衝突を減らすため 1 行 1 依存・アルファベット順を守ること。
+[workspace.dependencies]
+# --- internal ---
+ugoe = { path = "crates/ugoe" }
+ugoe-ai = { path = "crates/ugoe-ai" }
+ugoe-core = { path = "crates/ugoe-core" }
+ugoe-editor-core = { path = "crates/ugoe-editor-core" }
+ugoe-format = { path = "crates/ugoe-format" }
+ugoe-mesher = { path = "crates/ugoe-mesher" }
+ugoe-model = { path = "crates/ugoe-model" }
+ugoe-motion = { path = "crates/ugoe-motion" }
+ugoe-physics = { path = "crates/ugoe-physics" }
+ugoe-psd = { path = "crates/ugoe-psd" }
+ugoe-render = { path = "crates/ugoe-render" }
+ugoe-runtime = { path = "crates/ugoe-runtime" }
+# --- external ---
+anyhow = "1"
+bytemuck = { version = "1", features = ["derive"] }
+clap = { version = "4", features = ["derive"] }
+glam = { version = "0.33", features = ["serde", "bytemuck"] }
+insta = { version = "1", features = ["json"] }
+naga = { version = "30", features = ["wgsl-in"] }
+pollster = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-build = { version = "2", features = [] }
+thiserror = "2"
+tracing = "0.1"
+wasm-bindgen = "0.2"
+wgpu = "30"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = "thin"

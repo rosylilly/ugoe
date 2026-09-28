@@ -1,0 +1,18 @@
+[package]
+name = "ugoe-model"
+description = "ugoe のデータ定義 (モデル・物理・モーション・表情)。アルゴリズムは持たない"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+ugoe-core.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,13 @@
+/target
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+/apps/editor/src-tauri/gen/schemas/
+/crates/ugoe-wasm/pkg/
+# insta の未承認スナップショット
+*.snap.new
+*.pending-snap
+# ローカル設定
+.claude/settings.local.json
+/.worktrees/

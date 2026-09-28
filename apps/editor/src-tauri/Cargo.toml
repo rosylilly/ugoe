@@ -1,0 +1,25 @@
+[package]
+name = "ugoe-editor"
+description = "ugoe エディタ (Tauri バックエンド)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+name = "ugoe_editor_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+tauri.workspace = true
+ugoe-editor-core.workspace = true
+ugoe-format.workspace = true
+ugoe-model.workspace = true
+
+[lints]
+workspace = true
