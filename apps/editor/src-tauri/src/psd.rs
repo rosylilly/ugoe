@@ -3,8 +3,6 @@
 //! PSD から新しいプロジェクトを作る `new_project_from_psd` は `project.rs` にある。
 //! 引数・戻り値の型を変えたら `apps/editor/src/lib/ipc.ts` も同じ PR で更新すること。
 
-use std::path::Path;
-
 use tauri::State;
 use ugoe_editor_core::{AutoMeshOptions, PsdImportOptions, PsdImportWarning, import};
 
@@ -15,8 +13,8 @@ pub(crate) fn read_psd(
     path: &str,
     mesh_options: Option<AutoMeshOptions>,
 ) -> Result<(Vec<u8>, PsdImportOptions), String> {
-    let path = Path::new(path.trim());
-    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let path = crate::project::absolute_path(path)?;
+    let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
     let name = path
         .file_stem()
         .map_or_else(|| "PSD".to_owned(), |s| s.to_string_lossy().into_owned());

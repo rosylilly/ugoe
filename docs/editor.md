@@ -336,7 +336,8 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 | `export_bundle(path)` | `.ugoe` ファイルに書き出す。保存状態は変えない |
 | `import_psd(path, mesh_options?)` | PSD ファイルを今のドキュメントに取り込み ([PSD の取り込み](#psd-の取り込み)、Undo の 1 単位)、警告 (`PsdImportWarning[]`) を返す。最上位のパーツの名前はファイル名。`src-tauri/src/psd.rs` |
 
-- ファイルのパスは、今はフロントエンドの入力欄で受け取ります (ファイルメニュー `src/lib/FileMenu.svelte`。「Import PSD…」も同じ。取り込みの警告はメニューの横に一覧で出す)。ファイルダイアログのプラグイン (`tauri-plugin-dialog` / `@tauri-apps/plugin-dialog`) は、依存の追加とライセンスの確認を別の作業に分けるため、まだ入れていません。入れるときは、入力欄をダイアログに置き換え、`capabilities/default.json` に `dialog:default` を足します。
+- パスの引数は **絶対パスだけ** を受け付けます (相対パスは `path must be absolute: …` のエラー)。相対パスはプロセスの作業ディレクトリ
+  (開発時は `apps/editor/src-tauri`) を基準にしてしまい、思わぬ場所に保存されるためです (T0619)。パスは [ファイルダイアログ](#ファイルダイアログ) で選びます。
 - ファイルメニューは「New」「New from PSD…」「Open…」「Save」「Save As…」「Export…」「Import PSD…」です。
 - 未保存の変更がある状態で「New」「New from PSD…」「Open…」を押すと、もう一度押すまで実行しません (確認のダイアログの代わり)。
 - 新規・開く・取り込みの後は、ビューポートをキャンバス全体の表示 (Fit) に戻します。
@@ -346,6 +347,29 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 - 空のプロジェクト (パーツ・メッシュ・デフォーマ・テクスチャがない。取り込みの規則と同じ判定、`src/lib/emptyState.ts`) では、
   ビューポートの中央とツリーに「File > New from PSD… で始める」案内を出します。
 - 空のプロジェクトも保存・書き出しできます (メッシュのない `.ugoe` になる)。
+
+### ファイルダイアログ
+
+ファイルメニューのパスは OS のファイルダイアログ (`tauri-plugin-dialog` / `@tauri-apps/plugin-dialog`、MIT OR Apache-2.0) で選びます。
+パスの入力欄はありません (ダイアログが使えない環境の予備も置かない。ヘッドレスの確認では下の差し替えを使う)。
+取り込みの警告はメニューの横に一覧で、保存・書き出しの結果 (書いた場所の絶対パス) はメニューの横に出します。
+
+| 操作 | ダイアログ | フィルタ | 既定 |
+| --- | --- | --- | --- |
+| New from PSD… / Import PSD… | ファイルを開く | `.psd` | 最初の場所 |
+| Open… | **フォルダーを選ぶ** (`.ugoeproj` はディレクトリ) | なし | 最初の場所 |
+| Save As… (保存先のない Save も) | 保存 (新しいフォルダーを作れる) | `.ugoeproj` | 最初の場所に `<プロジェクト名>.ugoeproj` |
+| Export… | 保存 | `.ugoe` | 最初の場所に `<プロジェクト名>.ugoe` |
+
+- **最初の場所:** 最後にダイアログで選んで成功した場所 → 開いているプロジェクトの隣 → ドキュメント (`documentDir()`、なければホーム) の順。
+  プロジェクト名のうちファイル名に使えない文字は `_` にする。
+- 保存のダイアログで選んだ名前に拡張子 (`.ugoeproj` / `.ugoe`) がなければ付け足す (`save_project_as` も `.ugoeproj` を付ける)。
+- ダイアログを閉じた (取り消した) ときは何もしない。ダイアログを開いている間はメニューのボタンを押せない。
+- 権限 (`capabilities/default.json`) は `dialog:allow-open` と `dialog:allow-save` だけ (メッセージ・確認のダイアログは使わないので入れない)。
+  既定の場所を得る `@tauri-apps/api/path` は `core:default` に含まれる。
+- コード: ダイアログの呼び出しは `src/lib/fileDialogs.ts` (`FileDialogs`)、フィルタ・拡張子・パスの整形は `src/lib/filePaths.ts` (Vitest)。
+- **差し替え (テスト用):** `window.__UGOE_FILE_DIALOGS__` に `FileDialogs` (`openFile`・`openDirectory`・`saveFile`・`defaultDirectory`) を置くと、
+  ダイアログの代わりにそれを呼ぶ。ヘッドレスのブラウザでは、IPC の差し替え (`window.__TAURI_INTERNALS__`) と一緒に固定のパスを返すものを置く。
 
 ## ビューポート
 

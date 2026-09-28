@@ -109,12 +109,24 @@ fn lock_both<'a>(
     Ok((document, project))
 }
 
-/// 拡張子が `.ugoeproj` でなければ付け足す。
-fn project_dir(path: &str) -> Result<PathBuf, String> {
-    if path.trim().is_empty() {
+/// フロントエンドから受け取ったパス。絶対パスだけを受け付ける。
+/// 相対パスはプロセスの作業ディレクトリ (開発時は `apps/editor/src-tauri`) を基準にしてしまうため拒否する
+/// (パスはファイルダイアログで選ぶ。`docs/editor.md#ファイルダイアログ`)。
+pub(crate) fn absolute_path(path: &str) -> Result<PathBuf, String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
         return Err("path is empty".into());
     }
-    let path = PathBuf::from(path);
+    let path = PathBuf::from(trimmed);
+    if !path.is_absolute() {
+        return Err(format!("path must be absolute: {trimmed}"));
+    }
+    Ok(path)
+}
+
+/// 絶対パスで、拡張子が `.ugoeproj` でなければ付け足す。
+fn project_dir(path: &str) -> Result<PathBuf, String> {
+    let path = absolute_path(path)?;
     if path.extension().is_some_and(|e| e == PROJECT_EXTENSION) {
         return Ok(path);
     }
@@ -162,7 +174,7 @@ pub fn new_project_from_psd(
 /// `.ugoeproj` ディレクトリを開く。失敗したら今のプロジェクトはそのまま。
 #[tauri::command]
 pub fn open_project(state: State<'_, AppState>, path: String) -> Result<ProjectStatus, String> {
-    let dir = PathBuf::from(path);
+    let dir = absolute_path(&path)?;
     let project = Project::load(&dir).map_err(|e| e.to_string())?;
     let (mut document, mut session) = lock_both(&state)?;
     (*session, *document) = ProjectSession::from_project(project, Some(dir));
@@ -217,15 +229,13 @@ pub fn get_model_bundle(state: State<'_, AppState>) -> Result<tauri::ipc::Respon
 /// `.ugoe` バンドルとしてファイルに書き出す。プロジェクトの保存状態は変えない。
 #[tauri::command]
 pub fn export_bundle(state: State<'_, AppState>, path: String) -> Result<(), String> {
-    if path.trim().is_empty() {
-        return Err("path is empty".into());
-    }
+    let path = absolute_path(&path)?;
     let bytes = {
         let (document, session) = lock_both(&state)?;
         ugoe_editor_core::export_bundle(&session.to_project(&document))
             .map_err(|e| e.to_string())?
     };
-    std::fs::write(&path, bytes).map_err(|e| format!("{path}: {e}"))
+    std::fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 #[cfg(test)]
@@ -234,15 +244,26 @@ mod tests {
 
     #[test]
     fn project_dir_appends_extension() {
+        let dir = std::env::temp_dir();
         assert_eq!(
-            project_dir("/tmp/a").unwrap(),
-            PathBuf::from("/tmp/a.ugoeproj")
+            project_dir(&dir.join("a").display().to_string()).unwrap(),
+            dir.join("a.ugoeproj")
         );
         assert_eq!(
-            project_dir("/tmp/a.ugoeproj").unwrap(),
-            PathBuf::from("/tmp/a.ugoeproj")
+            project_dir(&dir.join("a.ugoeproj").display().to_string()).unwrap(),
+            dir.join("a.ugoeproj")
         );
         assert!(project_dir(" ").is_err());
+    }
+
+    #[test]
+    fn relative_paths_are_rejected() {
+        let err = absolute_path("test.ugoeproj").unwrap_err();
+        assert!(err.contains("must be absolute"), "{err}");
+        assert!(project_dir("test").is_err());
+        assert!(crate::psd::read_psd("layers.psd", None).is_err());
+        let dir = std::env::temp_dir();
+        assert_eq!(absolute_path(&format!(" {} ", dir.display())).unwrap(), dir);
     }
 
     #[test]
