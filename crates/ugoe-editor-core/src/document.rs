@@ -106,7 +106,8 @@ pub enum EditError {
 /// [`Document::apply_with_report`] の結果: コマンドは適用したが、利用者に知らせたいこと。
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 pub struct ApplyReport {
-    /// 自動の作り直しで失敗し、前の値のまま残したセルがある格子。
+    /// 自動の作り直しで失敗し、前の値のまま残したセルがある格子と、親を変えたことでミラーし直せなく
+    /// なった左右の対。
     pub warnings: Vec<RederiveWarning>,
 }
 
@@ -202,12 +203,14 @@ impl Document {
         self.apply_with_report(command).map(drop)
     }
 
-    /// [`Document::apply`] と同じく適用し、拒否しなかった問題 (ミラーのやり直しの失敗) を返す。
+    /// [`Document::apply`] と同じく適用し、拒否しなかった問題 (ミラーのやり直しの失敗と、親を変えた
+    /// ことでミラーし直せなくなった左右の対) を返す。
     pub fn apply_with_report(&mut self, command: Command) -> Result<ApplyReport, EditError> {
         let mut next = self.current.clone();
         let mut touched = Vec::new();
         apply_to(&mut next.model, &mut next.textures, command, &mut touched)?;
-        let warnings = inference::rederive(&mut next.model, &touched)?;
+        let mut warnings = inference::rederive(&mut next.model, &touched)?;
+        inference::check_reparented_pairs(&self.current.model, &next.model, &mut warnings);
         let before = validate(&self.current.model);
         let introduced: Vec<_> = validate(&next.model)
             .into_iter()

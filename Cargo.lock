@@ -4398,6 +4398,7 @@ dependencies = [
  "thiserror 2.0.21",
  "ugoe-core",
  "ugoe-model",
+ "ugoe-runtime",
 ]
 
 [[package]]

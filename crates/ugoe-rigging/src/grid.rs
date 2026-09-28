@@ -89,6 +89,15 @@ impl<'a> Layout<'a> {
             .collect()
     }
 
+    /// セル `index` の姿勢: 軸ごとのパラメータの ID と、そのセルでのキーの値。
+    pub fn pose(&self, index: usize) -> Vec<(&'a str, f32)> {
+        self.axes
+            .iter()
+            .zip(self.coords(index))
+            .map(|(a, i)| (a.parameter.id.as_str(), a.keys[i]))
+            .collect()
+    }
+
     /// 中立でない軸の集合 `S(c)` (ビット `k` が軸 `k`)。
     pub fn non_neutral(&self, coords: &[usize]) -> u64 {
         self.axes

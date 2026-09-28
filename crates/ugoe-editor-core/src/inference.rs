@@ -11,7 +11,8 @@ use ugoe_model::{
     MirrorSource, Model, Part,
 };
 use ugoe_rigging::{
-    InferScope, MirrorOptions, infer_additive_target, infer_depth_rotation, mirror_keyforms,
+    InferScope, MirrorOptions, check_mirror, infer_additive_target, infer_depth_rotation,
+    mirror_keyforms,
 };
 
 use crate::command::{InferMethod, KeyformCell, KeyformTarget};
@@ -24,8 +25,10 @@ const MAX_PASSES: usize = 8;
 
 /// 自動の作り直しで失敗したが、コマンドは拒否せずに続けたこと (`docs/editor.md#推定とミラー`)。
 ///
-/// いまはミラーのやり直しの失敗 (元の頂点が許容距離を超えて動いた、対を外した、など) だけを報告する。
+/// ミラーのやり直しの失敗 (元の頂点が許容距離を超えて動いた、対を外した、など) を報告する。
 /// そのとき `target` の格子の `mirror` のセルは前の値のまま残る。
+/// 対の片側の親を変えた (付け替えた、デフォーマで包んだ) 後に、その対がミラーし直せなくなった
+/// ことも報告する。このときセルは付け替えで写し直した値のまま。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct RederiveWarning {
     /// ミラーのセルを作り直せなかった格子の要素。
@@ -297,6 +300,106 @@ fn enqueue(queue: &mut VecDeque<(KeyformTarget, bool)>, target: &KeyformTarget, 
     match queue.iter_mut().find(|(t, _)| t == target) {
         Some((_, c)) => *c |= changed,
         None => queue.push_back((target.clone(), changed)),
+    }
+}
+
+/// 親が変わった要素の左右の対が、まだミラーし直せるかを確かめる
+/// (`docs/spec/keyform-inference.md#自動の作り直し`)。
+///
+/// `before` はコマンドの前、`after` は作り直しの後のモデル。親が変わったメッシュ・デフォーマごとに、
+/// 対の相手とのミラー (どちらかの格子が相手を `mirror_source` にし、`mirror` のセルを持つもの) を
+/// 記録した `axis` / `tolerance` で試す。前はミラーできたのに後はできなくなった組を `warnings` に
+/// 積む (すでに積んだ組は積まない)。モデルは変えない。
+pub(crate) fn check_reparented_pairs(
+    before: &Model,
+    after: &Model,
+    warnings: &mut Vec<RederiveWarning>,
+) {
+    let parents: HashMap<KeyformTarget, Option<&ugoe_model::DeformerId>> = before
+        .meshes
+        .iter()
+        .map(|m| (KeyformTarget::Mesh(m.id.clone()), m.parent.as_ref()))
+        .chain(
+            before
+                .deformers
+                .iter()
+                .map(|d| (KeyformTarget::Deformer(d.id.clone()), d.parent.as_ref())),
+        )
+        .collect();
+    let moved = after
+        .meshes
+        .iter()
+        .map(|m| {
+            (
+                KeyformTarget::Mesh(m.id.clone()),
+                m.parent.as_ref(),
+                m.mirror.as_ref().map(|id| id.to_string()),
+            )
+        })
+        .chain(after.deformers.iter().map(|d| {
+            (
+                KeyformTarget::Deformer(d.id.clone()),
+                d.parent.as_ref(),
+                d.mirror.as_ref().map(|id| id.to_string()),
+            )
+        }))
+        .filter(|(target, parent, _)| parents.get(target).is_some_and(|p| p != parent));
+    let mut pairs: Vec<(KeyformTarget, KeyformTarget)> = Vec::new();
+    for (element, _, mirror) in moved {
+        let Some(partner) = mirror.filter(|m| *m != element_id(&element)) else {
+            continue;
+        };
+        let partner = same_kind(&element, &partner);
+        for (from, to) in [(&element, &partner), (&partner, &element)] {
+            let pair = (from.clone(), to.clone());
+            if !pairs.contains(&pair) {
+                pairs.push(pair);
+            }
+        }
+    }
+    for (from, to) in pairs {
+        let Some(source) = mirrored_from(after, &to).filter(|s| s.id == element_id(&from)) else {
+            continue;
+        };
+        if warnings.iter().any(|w| w.target == to && w.source == from) {
+            continue;
+        }
+        let options = MirrorOptions {
+            axis: source.axis,
+            tolerance: source.tolerance,
+            overwrite_authored: false,
+            scope: InferScope::Own,
+        };
+        let (rigging_from, rigging_to) = ((&from).into(), (&to).into());
+        if check_mirror(before, &rigging_from, &rigging_to, &options).is_err() {
+            continue; // 前からミラーできなかった (そのときに警告済み)。
+        }
+        if let Err(error) = check_mirror(after, &rigging_from, &rigging_to, &options) {
+            warnings.push(RederiveWarning {
+                target: to,
+                source: from,
+                message: error.to_string(),
+            });
+        }
+    }
+}
+
+/// `target` の格子のミラー元の記録。`mirror` のセルがなければ `None` (ミラーし直さないので)。
+fn mirrored_from(model: &Model, target: &KeyformTarget) -> Option<MirrorSource> {
+    fn of<T>(grid: &KeyformGrid<T>) -> Option<MirrorSource> {
+        (0..grid.keyforms.len())
+            .any(|i| grid.derivation(i) == Some(KeyformOrigin::Mirror))
+            .then(|| grid.mirror_source.clone())
+            .flatten()
+    }
+    match target {
+        KeyformTarget::Mesh(id) => of(&model.meshes.iter().find(|m| &m.id == id)?.keyforms),
+        KeyformTarget::Deformer(id) => match &model.deformers.iter().find(|d| &d.id == id)?.kind {
+            DeformerKind::Warp(w) => of(&w.keyforms),
+            DeformerKind::Rotation(r) => of(&r.keyforms),
+            DeformerKind::Unknown => None,
+        },
+        KeyformTarget::Part(_) | KeyformTarget::Glue(_) => None,
     }
 }
 

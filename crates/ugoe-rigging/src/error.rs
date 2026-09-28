@@ -1,6 +1,6 @@
 use ugoe_model::{DeformerId, ParamId};
 
-use crate::KeyformTarget;
+use crate::{KeyformTarget, WorldError};
 
 /// 推定のエラー。エラーのときは格子を変えない。
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -70,6 +70,10 @@ pub enum InferError {
         vertices: Vec<usize>,
         tolerance: f32,
     },
+    /// 親が異なる対のミラーで、点を親の座標系とキャンバス座標の間で写せない
+    /// (`docs/spec/keyform-inference.md#親が異なる対`)。
+    #[error("cannot map through the parent deformers: {0}")]
+    ParentTransform(WorldError),
     /// 格子の推定の設定が深度からの回転 (`depth_rotation`) でない。
     #[error("target {0:?} is not configured for depth rotation")]
     NotDepthRotation(KeyformTarget),

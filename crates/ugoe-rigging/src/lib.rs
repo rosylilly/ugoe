@@ -14,10 +14,12 @@ mod mirror;
 mod space;
 mod target;
 mod values;
+mod world;
 
 pub use additive::{InferReport, InferScope, infer_additive};
 pub use depth::infer_depth_rotation;
 pub use error::InferError;
-pub use mirror::{MirrorOptions, mirror_keyforms};
+pub use mirror::{MirrorOptions, check_mirror, mirror_keyforms};
 pub use target::{KeyformTarget, infer_additive_target};
 pub use values::KeyformValues;
+pub use world::{ParentWorld, WorldError};

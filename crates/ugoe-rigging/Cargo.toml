@@ -11,6 +11,7 @@ license.workspace = true
 thiserror.workspace = true
 ugoe-core.workspace = true
 ugoe-model.workspace = true
+ugoe-runtime.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

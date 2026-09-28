@@ -172,7 +172,7 @@
 
 - `Mesh::mirror` / `Deformer::mirror` は、左右で対にする相手の ID です。省略 (既定) と自分自身は「自分と対応する」(左右対称な 1 つの要素) を表します。
 - 対は **双方向に張ります**。`A.mirror = B` なら `B.mirror = A` でなければなりません。
-- `mirror_axis` は対称軸 (縦の直線) の x 座標で、その要素の頂点・制御点・原点と同じ **親座標系** で表します。省略すると親で決まる既定値になります ([keyform-inference.md#対称軸](keyform-inference.md#対称軸))。
+- `mirror_axis` は対称軸 (縦の直線) の x 座標で、その要素の頂点・制御点・原点と同じ **親座標系** で表します。省略すると親で決まる既定値になります ([keyform-inference.md#対称軸](keyform-inference.md#対称軸))。左右の対の親が異なる場合は、この値をキャンバス座標へ写して使い、省略するとキャンバスの原点になります ([keyform-inference.md#親が異なる対](keyform-inference.md#親が異なる対))。
 
 ### 深度
 

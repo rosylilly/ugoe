@@ -1257,8 +1257,10 @@ fn reparenting_a_mirror_target_keeps_its_cells_and_source() {
         assert_positions(a, b.positions.iter().map(|&p| face_to_canvas(p)));
     }
 
-    // 片側だけ付け替えると対の座標系が食い違うので、ミラー元を編集してもミラーし直せない。
-    // 右目のミラーのセルは前の値のまま残り、警告を返す (格子を壊さない)。
+    // 片側だけ付け替えると対の親が異なる。T0615 の時点ではミラー元の座標系で反転した値をそのまま
+    // 書いたのでミラーし直せず警告を返したが、T0618 からはキャンバス座標を経由して反転するので、
+    // ミラー元を編集すると警告なしにミラーし直される。結果は、付け替えずに編集したものを
+    // キャンバス座標へ写したものと同じ (`Face` はどのセルでも同じ形なので、姿勢によらない)。
     let left = base(&after);
     let edit = Command::SetMeshKeyform {
         id: "EyeL".into(),
@@ -1267,13 +1269,19 @@ fn reparenting_a_mirror_target_keeps_its_cells_and_source() {
     };
     let mut doc = Document::new(after.clone());
     let report = doc.apply_with_report(edit.clone()).unwrap();
-    assert_eq!(report.warnings.len(), 1);
-    assert_eq!(report.warnings[0].target, target("EyeR"));
-    assert_eq!(report.warnings[0].source, target("EyeL"));
-    assert_eq!(
-        right_cell(doc.model(), -30.0, 0.0),
-        right_cell(&after, -30.0, 0.0)
-    );
+    assert_eq!(report.warnings, vec![]);
+    let mut unmoved = Document::new(model.clone());
+    unmoved.apply(edit.clone()).unwrap();
+    for (x, y) in [(-30.0, 0.0), (-30.0, -30.0), (30.0, 0.0)] {
+        assert_eq!(right_origin(doc.model(), x, y), Mirror);
+        assert_positions(
+            right_cell(doc.model(), x, y),
+            right_cell(unmoved.model(), x, y)
+                .positions
+                .iter()
+                .map(|&p| face_to_canvas(p)),
+        );
+    }
 
     // 左目も付け替えて座標系をそろえると、ミラー元の編集はまたミラーし直される。
     // 結果は、付け替えずに編集したものをキャンバス座標へ写したものと同じ。
@@ -1295,8 +1303,6 @@ fn reparenting_a_mirror_target_keeps_its_cells_and_source() {
         })
         .unwrap();
     assert_eq!(report.warnings, vec![]);
-    let mut unmoved = Document::new(model.clone());
-    unmoved.apply(edit).unwrap();
     for (x, y) in [(-30.0, 0.0), (-30.0, -30.0), (30.0, 0.0)] {
         assert_eq!(right_origin(doc.model(), x, y), Mirror);
         assert_positions(
@@ -1353,4 +1359,166 @@ fn reparenting_a_self_mirrored_element_remirrors_in_the_new_space() {
     for (b, a) in before.keyforms.iter().zip(&nose.keyforms) {
         assert_positions(a, b.positions.iter().map(|&p| face_to_canvas(p)));
     }
+}
+
+// ---- 親が異なる左右の対 (T0618) ----
+
+/// `mirrored_model` の右目のキャンバス座標 (既定値の姿勢)。
+fn right_canvas(model: &Model, x: f32, y: f32) -> Vec<Vec2> {
+    crate::space::local_to_canvas(
+        model,
+        &target("EyeR"),
+        &Default::default(),
+        &right_cell(model, x, y).positions,
+    )
+    .unwrap()
+}
+
+#[test]
+fn wrapping_one_side_in_a_new_warp_keeps_remirroring() {
+    // 右目だけを新しいワープで包む (親が `Face` と `New` に分かれる)。対は対応したままで警告なし。
+    let model = mirrored_model();
+    let wrap = Command::CreateWarpDeformer {
+        id: Some("New".into()),
+        name: "New".into(),
+        children: vec![crate::ChildRef::Mesh("EyeR".into())],
+        rows: 2,
+        cols: 2,
+        parent: None,
+    };
+    let mut doc = Document::new(model.clone());
+    assert_eq!(doc.apply_with_report(wrap).unwrap().warnings, vec![]);
+    assert_eq!(mesh(doc.model(), "EyeR").parent, Some("New".into()));
+
+    // ミラー元を編集すると、キャンバス座標を経由してミラーし直される。見た目は、付け替えずに
+    // 編集したときと同じ。
+    let edit = Command::SetMeshKeyform {
+        id: "EyeL".into(),
+        cell: xy(30.0, 0.0),
+        keyform: shifted(&base(&model), 0.07, -0.02),
+    };
+    assert_eq!(
+        doc.apply_with_report(edit.clone()).unwrap().warnings,
+        vec![]
+    );
+    let unmoved = applied(&model, edit);
+    for (x, y) in [(-30.0, 0.0), (-30.0, -30.0), (30.0, 0.0), (30.0, 30.0)] {
+        let expected: Vec<Vec2> = right_cell(&unmoved, x, y)
+            .positions
+            .iter()
+            .map(|&p| face_to_canvas(p))
+            .collect();
+        for (p, q) in right_canvas(doc.model(), x, y).iter().zip(&expected) {
+            assert!(p.abs_diff_eq(*q, 1e-2), "({x}, {y}): {p} != {q}");
+        }
+    }
+}
+
+/// `mirrored_model` の `Face` を x に −20 ずらし、目の `mirror_axis` を外したモデル。
+/// 左右の目は `Face` の UV 空間の u = 0.5 (キャンバスの x = 108) で対称で、キャンバスの原点
+/// (x = 128) では対称でない。
+fn off_center_model() -> Model {
+    let mut model = mirrored_model();
+    for id in ["EyeL", "EyeR"] {
+        mesh_mut(&mut model, id).mirror_axis = None;
+    }
+    let face = model
+        .deformers
+        .iter_mut()
+        .find(|d| d.id == "Face".into())
+        .unwrap();
+    if let ugoe_model::deformer::DeformerKind::Warp(w) = &mut face.kind {
+        for kf in &mut w.keyforms.keyforms {
+            kf.points.iter_mut().for_each(|p| p.x -= 20.0);
+        }
+    }
+    model
+}
+
+#[test]
+fn reparenting_breaks_an_off_center_pair_and_warns() {
+    // 親が同じなら対称軸の既定値は親の UV 空間の 0.5。右目を外に出すと親が異なり、既定値は
+    // キャンバスの原点になるので対応しなくなる。付け替えは見た目を保って行い、警告を返す。
+    let model = off_center_model();
+    let mut doc = Document::new(model.clone());
+    let report = doc.apply_with_report(reparent_to_root("EyeR")).unwrap();
+    assert_eq!(
+        report
+            .warnings
+            .iter()
+            .map(|w| (&w.target, &w.source))
+            .collect::<Vec<_>>(),
+        vec![(&target("EyeR"), &target("EyeL"))]
+    );
+    assert!(
+        report.warnings[0]
+            .message
+            .contains("no mirrored source vertex"),
+        "{}",
+        report.warnings[0].message
+    );
+    // `apply` は同じ結果になる (警告を捨てるだけ)。
+    assert_eq!(&applied(&model, reparent_to_root("EyeR")), doc.model());
+
+    // 元の対称軸を `Face` の UV 空間で指定すると (キャンバスへ写すと x = 108)、また対応する。
+    let report = doc
+        .apply_with_report(Command::SetMirrorPair {
+            target: target("EyeL"),
+            mirror: Some("EyeR".into()),
+            axis: Some(0.5),
+        })
+        .unwrap();
+    assert_eq!(report.warnings, vec![]);
+    let edit = Command::SetMeshKeyform {
+        id: "EyeL".into(),
+        cell: xy(30.0, 0.0),
+        keyform: shifted(&base(&model), 0.07, 0.0),
+    };
+    assert_eq!(doc.apply_with_report(edit).unwrap().warnings, vec![]);
+    // 右目の AngleX = 30 は、左目の AngleX = 30 (u +0.07) をキャンバスの x = 108 で反転したもの
+    // (このモデルの AngleX は対にしていない)。
+    let left: Vec<Vec2> = shifted(&base(&model), 0.07, 0.0)
+        .positions
+        .iter()
+        .map(|&p| Vec2::new(216.0 - (44.0 + p.x * 128.0), 64.0 + p.y * 128.0))
+        .collect();
+    let mut right = right_canvas(doc.model(), 30.0, 0.0);
+    right.sort_by(|a, b| (a.x, a.y).partial_cmp(&(b.x, b.y)).unwrap());
+    let mut left = left;
+    left.sort_by(|a, b| (a.x, a.y).partial_cmp(&(b.x, b.y)).unwrap());
+    for (p, q) in right.iter().zip(&left) {
+        assert!(p.abs_diff_eq(*q, 1e-2), "{p} != {q}");
+    }
+}
+
+#[test]
+fn reparenting_the_source_warns_once() {
+    // ミラー元を付け替えると、依存する格子をミラーし直す (失敗すれば警告)。付け替えの検査は
+    // 同じ組の警告を重ねない。
+    let model = off_center_model();
+    let (after, warnings) = warnings_of(&model, reparent_to_root("EyeL"));
+    assert_eq!(
+        warnings
+            .iter()
+            .map(|w| (&w.target, &w.source))
+            .collect::<Vec<_>>(),
+        vec![(&target("EyeR"), &target("EyeL"))]
+    );
+    assert_eq!(mesh(&after, "EyeR").keyforms, mesh(&model, "EyeR").keyforms);
+}
+
+#[test]
+fn reparenting_an_unpaired_or_already_broken_pair_does_not_warn() {
+    // 対のない要素 (`Nose`) の付け替えは検査しない。
+    let model = off_center_model();
+    let (_, warnings) = warnings_of(&model, reparent_to_root("Nose"));
+    assert_eq!(warnings, vec![]);
+    // 付け替えの前からミラーできない対は、付け替えでは警告しない (壊れたときに警告済み)。
+    let mut broken = model.clone();
+    mesh_mut(&mut broken, "EyeR").keyforms.keyforms[4]
+        .positions
+        .iter_mut()
+        .for_each(|p| p.y += 0.2);
+    let (_, warnings) = warnings_of(&broken, reparent_to_root("EyeR"));
+    assert_eq!(warnings, vec![]);
 }

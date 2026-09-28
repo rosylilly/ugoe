@@ -5,7 +5,8 @@
 キーフォームの推定を行う。推定の結果はふつうのキーフォームとして格子に焼き込み、ランタイムは推定を知らない。
 
 - 加算合成 (`infer_additive`、`infer_additive_target`)
-- ミラー (`mirror_keyforms`、設定は `MirrorOptions`)
+- ミラー (`mirror_keyforms`、設定は `MirrorOptions`。書き込まずに試す `check_mirror`)。親が異なる対は、ランタイムの
+  ワールド変換 (`ParentWorld`、逆はニュートン法) でキャンバス座標を経由して反転する
 - 深度からの回転 (`infer_depth_rotation`)。`yaw` / `pitch` 以外の軸と手で直したセルは加算合成で足し合わせる
 
 目視確認用に、深度からの回転とミラーで振り向きの顔を作る例がある
