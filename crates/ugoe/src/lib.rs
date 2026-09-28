@@ -17,7 +17,9 @@ pub use ugoe_runtime as runtime;
 use ugoe_model::effects::{EYE_BLINK_GROUP, Effects, LIP_SYNC_GROUP};
 use ugoe_model::expression::Expression;
 use ugoe_model::motion::{Motion, MotionEvent};
+use ugoe_model::physics::PhysicsSettings;
 use ugoe_model::pose::Pose;
+use ugoe_model::validate::ValidationError;
 use ugoe_motion::{
     BreathPlayer, ExpressionManager, EyeBlinkPlayer, LipSyncPlayer, MotionManager, PosePlayer,
     Priority, TrackingInput, TrackingMap,
@@ -26,6 +28,31 @@ use ugoe_runtime::{CompileError, CompiledModel, ModelInstance, ParamIndex};
 
 /// ランタイム SDK のバージョン。
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// [`Puppet::update`] の各段を動かすか (既定はすべて有効)。
+///
+/// 無効にした段はパラメータ・パーツの不透明度に触らない (`docs/spec/motion.md#段の有効無効`)。
+/// エディタのプレビューで、物理やエフェクトを切って確かめるために使う。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Toggles {
+    pub physics: bool,
+    pub eye_blink: bool,
+    pub breath: bool,
+    pub lip_sync: bool,
+    pub pose: bool,
+}
+
+impl Default for Toggles {
+    fn default() -> Self {
+        Self {
+            physics: true,
+            eye_blink: true,
+            breath: true,
+            lip_sync: true,
+            pose: true,
+        }
+    }
+}
 
 /// 1 体分の動作単位。
 ///
@@ -52,6 +79,7 @@ pub struct Puppet {
     /// モデルの `avatar.tracking` を解決したトラッキングの対応。
     tracking_map: TrackingMap,
     tracking: Option<TrackingInput>,
+    toggles: Toggles,
 }
 
 impl Puppet {
@@ -83,6 +111,7 @@ impl Puppet {
             output: values,
             tracking_map,
             tracking: None,
+            toggles: Toggles::default(),
         };
         puppet.set_pose(pose);
         puppet
@@ -90,11 +119,75 @@ impl Puppet {
 
     /// 物理を設定する。動的物理 (`docs/spec/physics.md#動的物理-揺れ用パラメータのいらない物理`)
     /// を使う設定なら、`update` の評価は 2 段階になる (`docs/spec/evaluation.md#2-評価の順序`)。
-    pub fn with_physics(mut self, settings: ugoe_model::physics::PhysicsSettings) -> Self {
-        let mut physics = ugoe_physics::PhysicsSystem::new(settings);
-        physics.bind(&mut self.instance);
-        self.physics = Some(physics);
+    ///
+    /// 参照先は検査しない (見つからない参照は実行時に無視する)。`.ugoe` の読み込み
+    /// (`ugoe_format::read_bundle`) は検査済みの設定を返す。検査するなら [`Puppet::set_physics`] を使う。
+    pub fn with_physics(mut self, settings: PhysicsSettings) -> Self {
+        self.replace_physics(Some(settings));
         self
+    }
+
+    /// 物理の設定を差し替える (`None` で外す)。粒子は次の `update` で、その時の入力に対する
+    /// 静止姿勢から始める。動的物理の加算量は 0 に戻す。
+    ///
+    /// 設定はモデルと合わせて `ugoe_model::validate::validate_physics` で検査し、エラーがあれば
+    /// 何も変えずにそれを返す。エディタで設定を変えながらプレビューするために使う。
+    pub fn set_physics(
+        &mut self,
+        settings: Option<PhysicsSettings>,
+    ) -> Result<(), Vec<ValidationError>> {
+        if let Some(settings) = &settings {
+            let errors =
+                ugoe_model::validate::validate_physics(settings, self.instance.compiled().model());
+            if !errors.is_empty() {
+                return Err(errors);
+            }
+        }
+        self.replace_physics(settings);
+        Ok(())
+    }
+
+    fn replace_physics(&mut self, settings: Option<PhysicsSettings>) {
+        self.clear_dynamic_offsets();
+        self.physics = settings.map(|settings| {
+            let mut physics = ugoe_physics::PhysicsSystem::new(settings);
+            physics.bind(&mut self.instance);
+            physics
+        });
+    }
+
+    /// 物理の状態 (設定は `physics().settings()`)。物理が無ければ `None`。
+    pub fn physics(&self) -> Option<&ugoe_physics::PhysicsSystem> {
+        self.physics.as_ref()
+    }
+
+    /// 物理の粒子を初期姿勢に戻す (次の `update` で静止姿勢に置き直す)。
+    pub fn reset_physics(&mut self) {
+        if let Some(physics) = &mut self.physics {
+            physics.reset();
+        }
+    }
+
+    /// 動的物理の加算量を 0 に戻す (物理を外したり止めたりしたとき、揺れた形のまま残さないため)。
+    fn clear_dynamic_offsets(&mut self) {
+        if self.instance.dynamic_offsets().is_some() {
+            self.instance.dynamic_offsets_mut().clear();
+        }
+    }
+
+    pub fn toggles(&self) -> Toggles {
+        self.toggles
+    }
+
+    /// 各段を動かすかを設定する。物理を止めると動的物理の加算量を 0 に戻し、
+    /// 再び動かすと粒子を静止姿勢から始める。止めた段は再開すると続きから動く
+    /// (目パチ・呼吸の時刻は止めている間は進まない)。
+    pub fn set_toggles(&mut self, toggles: Toggles) {
+        if self.toggles.physics != toggles.physics {
+            self.clear_dynamic_offsets();
+            self.reset_physics();
+        }
+        self.toggles = toggles;
     }
 
     pub fn instance(&self) -> &ModelInstance {
@@ -215,21 +308,27 @@ impl Puppet {
         // 5. 表情
         self.expressions.update(params, dt);
         // 6. 目パチ
-        self.eye_blink.advance(dt);
-        let strength = self.motions.effect_group_weight(EYE_BLINK_GROUP);
-        self.eye_blink.apply(params, strength);
+        if self.toggles.eye_blink {
+            self.eye_blink.advance(dt);
+            let strength = self.motions.effect_group_weight(EYE_BLINK_GROUP);
+            self.eye_blink.apply(params, strength);
+        }
         // 7. 呼吸
-        self.breath.advance(dt);
-        self.breath.apply(params);
+        if self.toggles.breath {
+            self.breath.advance(dt);
+            self.breath.apply(params);
+        }
         // 8. 物理
         // 動的物理を使う設定では、ここで 1 段目の評価を行い、11. の評価が 2 段目になる。
-        if let Some(physics) = &mut self.physics {
+        if let Some(physics) = self.physics.as_mut().filter(|_| self.toggles.physics) {
             physics.update_instance(&mut self.instance, dt);
         }
         let params = self.instance.parameters_mut();
         // 9. リップシンク
-        let strength = self.motions.effect_group_weight(LIP_SYNC_GROUP);
-        self.lip_sync.apply(params, strength);
+        if self.toggles.lip_sync {
+            let strength = self.motions.effect_group_weight(LIP_SYNC_GROUP);
+            self.lip_sync.apply(params, strength);
+        }
         self.output.copy_from_slice(params.as_slice());
 
         // 10. パーツの不透明度 (モーションのカーブとポーズ)
@@ -242,16 +341,21 @@ impl Puppet {
     /// モーションのパーツの不透明度のカーブとポーズを、パーツの不透明度の上書きに書き込む。
     ///
     /// ポーズの要素のパーツへのカーブはポーズへの表示の要求 (値 × 重み) として扱い、
-    /// それ以外のパーツへのカーブはそのまま上書きする。
+    /// それ以外のパーツへのカーブはそのまま上書きする。ポーズを止めているときは、
+    /// すべてのカーブをそのまま上書きし、ポーズは何も書かない。
     fn apply_part_opacities(&mut self, dt: f32) {
         self.instance.clear_part_opacity_overrides();
+        let pose = self.toggles.pose;
         let mut requests = Vec::new();
         for (part, value, weight) in self.motions.part_opacities() {
-            if self.pose.contains(&part) {
+            if pose && self.pose.contains(&part) {
                 requests.push((part, value * weight));
             } else if let Some(i) = self.instance.compiled().part_index(part.as_str()) {
                 self.instance.set_part_opacity_override(i, value, weight);
             }
+        }
+        if !pose {
+            return;
         }
         self.pose.update(dt, &requests);
         for ((_, opacity), part) in self.pose.opacities().zip(&self.pose_parts) {
@@ -281,6 +385,42 @@ impl Puppet {
             .compiled()
             .hit_area_index(hit_area)
             .is_some_and(|h| self.instance.hit_area_contains(h, point))
+    }
+
+    /// アバタープロファイルの標準の当たり判定の名前 (`Head`・`Body`、`Model.avatar.hit_areas`) に
+    /// 対応する当たり判定の ID。対応が無ければ `None` (`docs/spec/avatar-profile.md#アプリ向けの情報`)。
+    pub fn standard_hit_area(&self, name: &str) -> Option<&str> {
+        let avatar = self.instance.compiled().model().avatar.as_ref()?;
+        avatar
+            .hit_areas
+            .iter()
+            .find(|h| h.name == name)
+            .map(|h| h.hit_area.as_str())
+    }
+
+    /// 標準の名前 `name` の当たり判定がキャンバス座標 `point` を含むか。対応が無ければ `false`。
+    /// 規則は [`Puppet::hit_areas_at`] と同じ。
+    pub fn hit_test_standard(&self, name: &str, point: ugoe_core::Vec2) -> bool {
+        self.standard_hit_area(name)
+            .is_some_and(|id| self.hit_test(id, point))
+    }
+
+    /// キャンバス座標 `point` を含む当たり判定のうち、標準の名前を持つものの名前を手前から順に並べる。
+    /// 1 つの当たり判定に複数の名前があれば `Model.avatar.hit_areas` の順に並べる。
+    pub fn standard_hit_areas_at(&self, point: ugoe_core::Vec2) -> Vec<&str> {
+        let Some(avatar) = self.instance.compiled().model().avatar.as_ref() else {
+            return Vec::new();
+        };
+        self.hit_areas_at(point)
+            .into_iter()
+            .flat_map(|id| {
+                avatar
+                    .hit_areas
+                    .iter()
+                    .filter(move |h| h.hit_area == id)
+                    .map(|h| h.name.as_str())
+            })
+            .collect()
     }
 }
 
@@ -648,5 +788,132 @@ mod tests {
         assert_eq!(puppet.hit_areas_at(point), vec!["Body"]);
         assert!(puppet.hit_test("Body", point));
         assert!(!puppet.hit_test("Head", point));
+    }
+
+    #[test]
+    fn standard_hit_area_names_resolve_through_the_avatar_profile() {
+        use ugoe_model::avatar::{AvatarHitArea, AvatarProfile, HIT_AREA_BODY, HIT_AREA_HEAD};
+        let mut model = fixtures::single_quad();
+        model.hit_areas.push(ugoe_model::HitArea {
+            id: "QuadArea".into(),
+            mesh: "Quad".into(),
+        });
+        model.avatar = Some(AvatarProfile {
+            hit_areas: vec![AvatarHitArea {
+                name: HIT_AREA_BODY.into(),
+                hit_area: "QuadArea".into(),
+            }],
+            ..AvatarProfile::default()
+        });
+        let puppet = Puppet::new(model).unwrap();
+        let inside = ugoe_core::Vec2::new(100.0, 100.0);
+        assert_eq!(puppet.standard_hit_area(HIT_AREA_BODY), Some("QuadArea"));
+        assert_eq!(puppet.standard_hit_area(HIT_AREA_HEAD), None);
+        assert!(puppet.hit_test_standard(HIT_AREA_BODY, inside));
+        assert!(!puppet.hit_test_standard(HIT_AREA_HEAD, inside));
+        assert!(!puppet.hit_test_standard(HIT_AREA_BODY, ugoe_core::Vec2::new(10.0, 10.0)));
+        assert_eq!(puppet.standard_hit_areas_at(inside), vec![HIT_AREA_BODY]);
+
+        // アバタープロファイルが無ければ当たらない。
+        let puppet = Puppet::new(fixtures::single_quad()).unwrap();
+        assert!(puppet.standard_hit_areas_at(inside).is_empty());
+    }
+
+    #[test]
+    fn set_physics_validates_against_the_model() {
+        let mut puppet = Puppet::new(fixtures::physics_hair()).unwrap();
+        let mut bad = fixtures::physics_hair_settings();
+        bad.rigs[0].inputs[0].parameter = "Missing".into();
+        assert!(!puppet.set_physics(Some(bad)).unwrap_err().is_empty());
+        assert!(puppet.physics().is_none());
+        puppet
+            .set_physics(Some(fixtures::physics_hair_settings()))
+            .unwrap();
+        assert!(puppet.physics().is_some());
+        puppet.set_physics(None).unwrap();
+        assert!(puppet.physics().is_none());
+    }
+
+    /// 物理を止めると出力のパラメータは基準値に戻り、動的物理の加算量も 0 になる。
+    #[test]
+    fn physics_toggle_restores_outputs_and_offsets() {
+        let mut puppet = Puppet::new(fixtures::dynamic_hair())
+            .unwrap()
+            .with_physics(fixtures::dynamic_hair_settings());
+        puppet.update(DT);
+        set_param(&mut puppet, "AngleX", 30.0);
+        for _ in 0..5 {
+            puppet.update(DT);
+        }
+        let hair1 = puppet
+            .instance()
+            .compiled()
+            .deformer_index("Hair1")
+            .unwrap();
+        let swinging = puppet.instance().rotation_world_frame(hair1).unwrap();
+
+        puppet.set_toggles(Toggles {
+            physics: false,
+            ..Toggles::default()
+        });
+        puppet.update(DT);
+        let still = puppet.instance().rotation_world_frame(hair1).unwrap();
+        assert!(!swinging.matrix2.abs_diff_eq(still.matrix2, 1e-3));
+        // 物理なしで作ったものと同じ形になる。
+        let mut plain = Puppet::new(fixtures::dynamic_hair()).unwrap();
+        set_param(&mut plain, "AngleX", 30.0);
+        plain.update(DT);
+        let expected = plain.instance().rotation_world_frame(hair1).unwrap();
+        assert!(still.matrix2.abs_diff_eq(expected.matrix2, 1e-4));
+        assert!(still.translation.abs_diff_eq(expected.translation, 1e-3));
+    }
+
+    #[test]
+    fn disabled_effects_do_not_touch_parameters() {
+        let mut puppet = Puppet::new(fixtures::pose_and_effects()).unwrap();
+        puppet.set_toggles(Toggles {
+            breath: false,
+            eye_blink: false,
+            lip_sync: false,
+            ..Toggles::default()
+        });
+        puppet.set_lip_sync_level(Some(0.7));
+        for _ in 0..240 {
+            puppet.update(DT);
+            assert_eq!(param(&puppet, standard::ANGLE_X), 0.0);
+            assert_eq!(param(&puppet, standard::EYE_L_OPEN), 1.0);
+            assert_eq!(param(&puppet, standard::MOUTH_OPEN_Y), 0.0);
+        }
+        puppet.set_toggles(Toggles::default());
+        puppet.update(DT);
+        assert!(close(param(&puppet, standard::MOUTH_OPEN_Y), 0.7));
+    }
+
+    /// ポーズを止めると、ポーズの要素へのカーブもそのまま上書きになり、ポーズは何も書かない。
+    #[test]
+    fn disabled_pose_leaves_part_opacities_to_curves() {
+        let mut puppet = quiet_puppet();
+        puppet.set_toggles(Toggles {
+            pose: false,
+            ..Toggles::default()
+        });
+        let part = |puppet: &Puppet, id: &str| {
+            let i = puppet.instance().compiled().part_index(id).unwrap();
+            puppet.instance().part_opacity_override(i)
+        };
+        puppet.update(DT);
+        assert_eq!(part(&puppet, "ArmA").1, 0.0);
+        assert_eq!(part(&puppet, "ArmB").1, 0.0);
+        puppet.start_motion(
+            motion(
+                10.0,
+                true,
+                vec![constant(CurveTarget::PartOpacity("ArmB".into()), 1.0)],
+            ),
+            Priority::Normal,
+        );
+        puppet.update(DT);
+        assert_eq!(part(&puppet, "ArmB"), (1.0, 1.0));
+        assert_eq!(part(&puppet, "ArmA").1, 0.0);
     }
 }

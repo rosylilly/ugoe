@@ -9,6 +9,8 @@ use std::io::Cursor;
 use serde::Serialize;
 use ugoe::format::{Bundle, TextureData, TextureFormat};
 use ugoe::model::physics::PhysicsSettings;
+
+use crate::animation::Library;
 use ugoe::model::{Model, Parameter, ParameterGroup};
 use ugoe::runtime::ModelInstance;
 
@@ -45,11 +47,20 @@ impl Rgba8 {
 #[derive(Debug)]
 pub struct LoadedModel {
     pub model: Model,
-    pub physics: Option<PhysicsSettings>,
+    /// バンドルの物理・モーション・表情。JSON のモデルでは `None` (今の設定を引き継ぐ)。
+    pub animation: Option<BundleAnimation>,
     /// 描画に使うテクスチャ (添字 = テクスチャ番号)。足りない分はプレースホルダ。
     pub textures: Vec<Rgba8>,
     /// 読み込めたが注意が要ること (プレースホルダで代用したテクスチャなど)。
     pub warnings: Vec<String>,
+}
+
+/// バンドルに入っていた物理・モーション・表情。
+#[derive(Debug, Default)]
+pub struct BundleAnimation {
+    /// 読み込み時に `validate_physics` で検査済み (`ugoe_format::read_bundle`)。
+    pub physics: Option<PhysicsSettings>,
+    pub library: Library,
 }
 
 /// JSON のモデルを読む。テクスチャは持たないので、すべて白のプレースホルダにする。
@@ -58,7 +69,7 @@ pub fn from_json(json: &str) -> Result<LoadedModel, LoadError> {
     let textures = vec![Rgba8::placeholder(); texture_count(&model)];
     Ok(LoadedModel {
         model,
-        physics: None,
+        animation: None,
         textures,
         warnings: Vec::new(),
     })
@@ -69,6 +80,8 @@ pub fn from_bundle(bytes: &[u8]) -> Result<LoadedModel, LoadError> {
     let Bundle {
         model,
         physics,
+        motions,
+        expressions,
         textures: data,
         ..
     } = ugoe::format::read_bundle(bytes)?;
@@ -101,7 +114,13 @@ pub fn from_bundle(bytes: &[u8]) -> Result<LoadedModel, LoadError> {
         .collect::<Result<_, _>>()?;
     Ok(LoadedModel {
         model,
-        physics,
+        animation: Some(BundleAnimation {
+            physics,
+            library: Library {
+                motions,
+                expressions,
+            },
+        }),
         textures,
         warnings,
     })

@@ -9,6 +9,9 @@ pub mod bundle;
 pub mod features;
 
 use ugoe_model::Model;
+use ugoe_model::expression::Expression;
+use ugoe_model::motion::Motion;
+use ugoe_model::physics::PhysicsSettings;
 use ugoe_model::validate::ValidationError;
 
 pub use bundle::{
@@ -58,6 +61,9 @@ pub enum FormatError {
     TooLarge,
     #[error("model failed validation with {} error(s)", .0.len())]
     Invalid(Vec<ValidationError>),
+    /// 物理の設定が `validate_physics` の検査に通らない。
+    #[error("physics settings failed validation with {} error(s)", .0.len())]
+    InvalidPhysics(Vec<ValidationError>),
     /// 知らない必須の機能を宣言している (`docs/spec/file-formats.md#機能の宣言`)。
     #[error("unsupported required features: {}", .0.join(", "))]
     UnsupportedFeatures(Vec<String>),
@@ -91,6 +97,27 @@ pub fn model_from_json(json: &str) -> Result<Model, FormatError> {
     Ok(model)
 }
 
+/// 物理の設定 (`*.physics.json`) を JSON 表現から読み込む。参照先の検査
+/// (`ugoe_model::validate::validate_physics`) は、組み合わせるモデルが決まってから呼び出し側で行う。
+pub fn physics_from_json(json: &str) -> Result<PhysicsSettings, FormatError> {
+    Ok(serde_json::from_str(json)?)
+}
+
+/// 物理の設定を JSON 表現で書き出す。
+pub fn physics_to_json(physics: &PhysicsSettings) -> Result<String, FormatError> {
+    Ok(serde_json::to_string_pretty(physics)?)
+}
+
+/// モーション (`*.motion.json`) を JSON 表現から読み込む。
+pub fn motion_from_json(json: &str) -> Result<Motion, FormatError> {
+    Ok(serde_json::from_str(json)?)
+}
+
+/// 表情 (`*.expression.json`) を JSON 表現から読み込む。
+pub fn expression_from_json(json: &str) -> Result<Expression, FormatError> {
+    Ok(serde_json::from_str(json)?)
+}
+
 /// スキーマのバージョンが読める範囲か検査する (`docs/spec/file-formats.md` のバージョニング)。
 fn check_schema_version(model: &Model) -> Result<(), FormatError> {
     if model.schema_version > ugoe_model::SCHEMA_VERSION {
@@ -111,5 +138,12 @@ mod tests {
         let model = ugoe_model::fixtures::single_quad();
         let back = model_from_json(&model_to_json(&model).unwrap()).unwrap();
         assert_eq!(model, back);
+    }
+
+    #[test]
+    fn physics_json_roundtrip() {
+        let physics = ugoe_model::fixtures::physics_hair_settings();
+        let back = physics_from_json(&physics_to_json(&physics).unwrap()).unwrap();
+        assert_eq!(physics, back);
     }
 }

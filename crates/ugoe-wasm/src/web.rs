@@ -3,6 +3,9 @@
 //! - WebGPU が使えればそれを、使えなければ WebGL2 を使う (`docs/adr/0003-editor-viewport-in-webview.md`)。
 //! - クリアはホスト (ここ) の責務。レンダラは上に重ねるだけ (`docs/spec/rendering.md`)。
 //! - 画面座標は canvas の描画バッファの画素 (CSS ピクセル × `devicePixelRatio`)。
+//! - 物理・モーション・表情・エフェクトの操作は [`animation`] に分けてある。
+
+mod animation;
 
 use std::fmt::Display;
 use std::sync::Arc;
@@ -14,6 +17,7 @@ use ugoe::render::Renderer;
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
+use crate::animation::Library;
 use crate::load::{self, LoadError, LoadedModel};
 use crate::view::{Transform, ViewState};
 use crate::{gizmo, hit, view};
@@ -41,6 +45,8 @@ pub struct WebPuppet {
     backend: wgpu::Backend,
     renderer: Renderer,
     puppet: Option<Puppet>,
+    /// バンドルのモーションと表情 (名前で再生する)。
+    library: Library,
     view: ViewState,
     /// 乗算済みアルファの背景色。
     background: wgpu::Color,
@@ -165,6 +171,7 @@ impl WebPuppet {
             view_format,
             renderer,
             puppet: None,
+            library: Library::default(),
             view: ViewState::default(),
             background: wgpu::Color::TRANSPARENT,
             dirty: false,
@@ -191,20 +198,23 @@ impl WebPuppet {
     /// JSON のモデルを読む。テクスチャは白のプレースホルダになる。戻り値は警告の一覧。
     ///
     /// すでにモデルがあれば置き換え、同じ ID のパラメータの値は引き継ぐ。
+    /// 物理の設定・モーションと表情の一覧・段の有効無効も引き継ぐ (新しいモデルと合わない物理は外して警告する)。
     pub fn load_json(&mut self, json: &str) -> Result<Vec<String>, JsError> {
         self.load(load::from_json(json).map_err(js_error)?)
     }
 
     /// `.ugoe` バンドルを読む (PNG テクスチャをデコードする)。戻り値は警告の一覧。
     ///
-    /// すでにモデルがあれば置き換え、同じ ID のパラメータの値は引き継ぐ。
+    /// すでにモデルがあれば置き換え、同じ ID のパラメータの値と段の有効無効は引き継ぐ。
+    /// 物理・モーション・表情はバンドルのものに置き換える (物理は `validate_physics` で検査済み)。
     pub fn load_bundle(&mut self, bytes: &[u8]) -> Result<Vec<String>, JsError> {
         self.load(load::from_bundle(bytes).map_err(js_error)?)
     }
 
-    /// モデルを外す (背景だけを描くようになる)。
+    /// モデルを外す (背景だけを描くようになる)。モーションと表情の一覧も空にする。
     pub fn unload(&mut self) {
         self.puppet = None;
+        self.library = Library::default();
     }
 
     pub fn has_model(&self) -> bool {
@@ -561,9 +571,9 @@ impl WebPuppet {
         }
         let LoadedModel {
             model,
-            physics,
+            animation,
             textures,
-            warnings,
+            mut warnings,
         } = loaded;
         let max = self.device.limits().max_texture_dimension_2d;
         if let Some((i, t)) = textures
@@ -579,10 +589,21 @@ impl WebPuppet {
         let mut puppet = Puppet::new(model)
             .map_err(LoadError::from)
             .map_err(js_error)?;
-        if let Some(physics) = physics {
-            puppet = puppet.with_physics(physics);
-        }
+        let library = match animation {
+            Some(animation) => {
+                if let Some(physics) = animation.physics {
+                    puppet = puppet.with_physics(physics);
+                }
+                Some(animation.library)
+            }
+            None => None,
+        };
         if let Some(old) = &self.puppet {
+            warnings.extend(crate::animation::carry_over(
+                old,
+                &mut puppet,
+                library.is_none(),
+            ));
             load::carry_over_parameters(old.instance(), puppet.instance_mut());
         }
         for (i, t) in textures.iter().enumerate() {
@@ -598,6 +619,9 @@ impl WebPuppet {
                 .map_err(js_error)?;
         }
         self.puppet = Some(puppet);
+        if let Some(library) = library {
+            self.library = library;
+        }
         self.dirty = false;
         Ok(warnings)
     }

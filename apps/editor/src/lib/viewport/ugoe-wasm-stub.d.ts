@@ -50,6 +50,29 @@ export class WebPuppet {
   hit_areas_at(x: number, y: number): string[];
   hit_area_test(id: string, x: number, y: number): boolean;
 
+  motion_names(): string[];
+  start_motion(name: string, priority?: string | null): boolean;
+  start_motion_json(json: string, priority?: string | null): boolean;
+  stop_motions(): void;
+  is_motion_playing(): boolean;
+  motion_events(): string[];
+  expression_names(): string[];
+  set_expression(name: string): void;
+  set_expression_json(json: string): void;
+  stop_expressions(): void;
+  set_effects_json(json: string): void;
+  set_lip_sync_level(level?: number | null): void;
+  set_enabled(stage: string, enabled: boolean): void;
+  is_enabled(stage: string): boolean;
+  set_physics_json(json?: string | null): void;
+  physics_json(): string | undefined;
+  has_physics(): boolean;
+  is_dynamic_physics(): boolean;
+  reset_physics(): void;
+  standard_hit_area(name: string): string | undefined;
+  hit_test_standard(name: string, x: number, y: number): boolean;
+  standard_hit_areas_at(x: number, y: number): string[];
+
   deformer_ids(): string[];
   warp_points(id: string): Float32Array | undefined;
   rotation_frame(id: string): Float32Array | undefined;

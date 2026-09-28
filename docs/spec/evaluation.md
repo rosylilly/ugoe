@@ -298,5 +298,5 @@ UV とインデックスは静的なデータなので `CompiledModel` から取
 | `ModelInstance::hit_areas_at(p)` | 点 `p` を含む当たり判定の添字 (手前から) |
 | `Puppet::hit_areas_at(p)` / `Puppet::hit_test(id, p)` | 上の 2 つの ID 版。未知の ID は当たらない |
 | `WebPuppet.hit_area_ids()` / `hit_areas_at(x, y)` / `hit_area_test(id, x, y)` | wasm 版。問い合わせの前に、未反映のパラメータ変更を評価する |
-
-> 未決: アバタープロファイルの標準名 (`Head`・`Body`、`Model.avatar.hit_areas`、[avatar-profile.md](avatar-profile.md)) からの判定は、T0110 がモデルに対応を入れた後に `Puppet` へ足す。
+| `Puppet::standard_hit_area(name)` / `hit_test_standard(name, p)` / `standard_hit_areas_at(p)` | アバタープロファイルの標準の名前 (`Head`・`Body`、`Model.avatar.hit_areas`、[avatar-profile.md](avatar-profile.md#アプリ向けの情報)) で引く版。対応が無い名前は当たらない。`standard_hit_areas_at` は点を含む当たり判定の標準の名前を手前から並べる |
+| `WebPuppet.standard_hit_area(name)` / `hit_test_standard(name, x, y)` / `standard_hit_areas_at(x, y)` | その wasm 版 |

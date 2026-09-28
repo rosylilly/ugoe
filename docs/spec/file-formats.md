@@ -110,6 +110,7 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 - `TEXR` の数が `Model.textures` と一致しない、PNG / KTX2 でないテクスチャ
 - ペイロードのデコード失敗、`schema_version` が新しすぎる
 - `ugoe_model::validate::validate` がエラーを返すモデル (下流の変形・描画で範囲外アクセスを起こさないため、ここで弾く)
+- `PHYS` があり、`ugoe_model::validate::validate_physics` がエラーを返す物理の設定 (`InvalidPhysics`)
 
 ### API (`ugoe-format`)
 
@@ -122,6 +123,7 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
   `ReadReport { features, warnings }` の `features` は `FEAT` の宣言のまま、`warnings` は
   `ReadWarning::UnknownOptionalFeature(id)` (知らない任意の機能) と `ReadWarning::UnknownValue(場所)` (未知の値。場所は `MODL: meshes[Face].blend` や `MOTN#0: curves[1].target`) です。
 - 機能の一覧は `features::FEATURES` (`Feature { id, description, fallback, baseline }`)。下の表と一致することをテストで検査します。
+- 単体の JSON: `physics_from_json` / `physics_to_json`・`motion_from_json`・`expression_from_json` (`model_from_json` / `model_to_json` と並ぶ)。物理の参照先の検査は、組み合わせるモデルが決まってから呼び出し側で行います。
 - ファイルシステムには触れません。読み書きはバイト列で行います。
 
 > 未決: 読み込み時間を短くするため、`CompiledModel` をそのまま (ゼロコピーで) 読めるレイアウトにするか。まずは素直なシリアライズで実装し、計測してから判断する。

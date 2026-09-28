@@ -222,3 +222,5 @@ x と y を両方動かすには、`source` が `x` と `y` の出力を 1 つ�
 ### 検証
 
 参照先と値の検査は `validate_physics` で行います ([model.md#物理の検証](model.md#物理の検証))。
+`.ugoe` の読み込み (`ugoe_format::read_bundle`) は、`PHYS` があればモデルと合わせてこれを通し、エラーがあれば `FormatError::InvalidPhysics` で読み込みを失敗させます。
+実行中に設定を差し替える `Puppet::set_physics` も同じ検査を行います。検査を通さない `Puppet::with_physics` で渡した設定では、参照先が見つからない出力・衝突体を実行時に無視します。

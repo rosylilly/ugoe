@@ -288,7 +288,7 @@ pub fn read_bundle(bytes: &[u8]) -> Result<Bundle, FormatError> {
 ///
 /// コンテナの整合性 (マジック・版・範囲・境界・重なり・必須チャンク) を検査したうえで、
 /// 機能の宣言 (`FEAT`) を調べ、モデルのスキーマバージョンを検査し、最後に
-/// `ugoe_model::validate::validate` を通す。
+/// `ugoe_model::validate::validate` と (物理があれば) `validate_physics` を通す。
 /// 検証に失敗したモデルは下流 (変形・描画) でパニックしうるため、ここで弾く。
 ///
 /// - 知らない必須の機能があれば [`FormatError::UnsupportedFeatures`] で拒否する
@@ -371,6 +371,13 @@ pub(crate) fn read_with_known(
     let errors = ugoe_model::validate::validate(&model);
     if !errors.is_empty() {
         return Err(FormatError::Invalid(errors));
+    }
+    // 物理の参照先と値の検査 (`docs/spec/physics.md#検証`)。モデルと同じく、不正なものは弾く。
+    if let Some(physics) = &physics {
+        let errors = ugoe_model::validate::validate_physics(physics, &model);
+        if !errors.is_empty() {
+            return Err(FormatError::InvalidPhysics(errors));
+        }
     }
 
     let bundle = Bundle {
@@ -1105,6 +1112,18 @@ mod tests {
         assert_err(
             &assemble(&[model_chunk(&model), texture_chunk()]),
             |e| matches!(e, FormatError::Invalid(errors) if !errors.is_empty()),
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_physics() {
+        let mut bundle = model_only();
+        let mut physics = physics();
+        physics.rigs[0].inputs[0].parameter = "Missing".into();
+        bundle.physics = Some(physics);
+        assert_err(
+            &write_bundle(&bundle).unwrap(),
+            |e| matches!(e, FormatError::InvalidPhysics(errors) if !errors.is_empty()),
         );
     }
 
