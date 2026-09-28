@@ -1,11 +1,11 @@
 ---
 id: T0202
 title: 参照レンダラ: マスク
-status: todo
+status: in-progress
 milestone: M1
 crates: [ugoe-render]
 depends_on: [T0201]
-assignee:
+assignee: claude-worker-T0202
 ---
 
 # T0202: 参照レンダラ: マスク

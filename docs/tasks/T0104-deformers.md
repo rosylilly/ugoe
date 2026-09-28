@@ -1,11 +1,11 @@
 ---
 id: T0104
 title: デフォーマ・パーツ階層・グルーの評価
-status: todo
+status: in-progress
 milestone: M1
 crates: [ugoe-runtime, ugoe-model (fixtures の追加のみ)]
 depends_on: [T0102]
-assignee:
+assignee: claude-worker-T0104
 ---
 
 # T0104: デフォーマ・パーツ階層・グルーの評価
