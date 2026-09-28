@@ -5,6 +5,7 @@
 //! 仕様は `docs/spec/model.md` を正とする。型を変更したら仕様書も同じ PR で更新すること。
 
 pub mod deformer;
+pub mod effects;
 pub mod expression;
 pub mod fixtures;
 pub mod keyform;
@@ -13,6 +14,7 @@ pub mod motion;
 pub mod parameter;
 pub mod part;
 pub mod physics;
+pub mod pose;
 pub mod standard;
 pub mod validate;
 
@@ -20,10 +22,12 @@ use serde::{Deserialize, Serialize};
 use ugoe_core::Vec2;
 
 pub use deformer::{Deformer, DeformerId, DeformerKind};
+pub use effects::Effects;
 pub use keyform::{KeyformBinding, KeyformGrid};
 pub use mesh::{BlendMode, Glue, Mesh, MeshId};
 pub use parameter::{ParamId, Parameter, ParameterGroup};
 pub use part::{Part, PartId};
+pub use pose::Pose;
 
 /// モデルデータのスキーマバージョン。互換性を壊す変更で上げる (`docs/spec/file-formats.md`)。
 pub const SCHEMA_VERSION: u32 = 0;
@@ -45,6 +49,12 @@ pub struct Model {
     pub textures: Vec<TextureRef>,
     #[serde(default)]
     pub hit_areas: Vec<HitArea>,
+    /// 排他的なパーツ切り替え。省略時はグループなし (`docs/spec/model.md#ポーズ`)。
+    #[serde(default)]
+    pub pose: Pose,
+    /// 目パチ・呼吸・リップシンクの設定。省略時は対象なし (`docs/spec/motion.md#エフェクト`)。
+    #[serde(default)]
+    pub effects: Effects,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -1,6 +1,6 @@
 # モーション・表情・エフェクト仕様
 
-対応するコードは、データが `ugoe_model::{motion, expression}`、再生が `crates/ugoe-motion`、フレーム内の順序の管理が `crates/ugoe` (`Puppet`)。
+対応するコードは、データが `ugoe_model::{motion, expression, effects, pose}`、再生が `crates/ugoe-motion`、フレーム内の順序の管理が `crates/ugoe` (`Puppet`)。
 
 ## モーション
 
@@ -24,7 +24,7 @@
 | --- | --- |
 | `parameter` | パラメータの値 |
 | `part_opacity` | パーツの不透明度を上書きする |
-| `effect_group` | エフェクトグループ (`EyeBlink`、`LipSync` など) の強さ。エフェクトの出力に掛ける |
+| `effect_group` | エフェクトグループ (`EyeBlink`、`LipSync`。[エフェクトグループ](#エフェクトグループ)) の強さ。エフェクトの出力に掛ける |
 
 ### 再生とフェード
 
@@ -53,14 +53,48 @@
 
 ## エフェクト
 
+設定のデータは `Model.effects` (`ugoe_model::effects::Effects`) と `Model.pose` (`ugoe_model::pose::Pose`) です ([model.md](model.md#エフェクト設定))。再生は T0303 で実装します。
+
 | エフェクト | 挙動 |
 | --- | --- |
-| 目パチ | 対象パラメータ (既定は `EyeLOpen` と `EyeROpen`) を、ランダムな間隔 (平均 4 秒) で 1 → 0 → 1 と動かす。閉じるのに 0.1 秒、閉じたまま 0.05 秒、開くのに 0.15 秒 |
-| 呼吸 | 対象パラメータを `offset + peak * sin(2π t / cycle)` で動かす。既定の対象は `Breath`、`AngleX/Y/Z`、`BodyAngleX` |
-| リップシンク | 外部から与えられた音量 (0〜1) を対象パラメータ (既定は `MouthOpenY`) に書き込む |
-| ポーズ | 排他的なパーツのグループで、表示中のパーツを 1 つに保つ。切り替えは 0.5 秒でクロスフェードする |
+| 目パチ | 対象パラメータ (`eye_blink.parameters`) を、ランダムな間隔 (平均 `interval`) で 1 → 0 → 1 と動かす。閉じるのに `closing`、閉じたまま `closed`、開くのに `opening` 秒かける |
+| 呼吸 | `breath.parameters` の各要素について、対象パラメータに `weight * (offset + peak * sin(2π t / cycle))` を加算する |
+| リップシンク | 外部から与えられた音量 (0〜1) を対象パラメータ (`lip_sync.parameters`) に書き込む |
+| ポーズ | 排他的なパーツのグループで、表示中のパーツを 1 つに保つ。切り替えは `fade_duration` 秒でクロスフェードする。`links` のパーツはグループの要素と同じ不透明度にする |
 
-目パチの乱数は、シード付きの決定的な擬似乱数にします (テストで再現できるようにするため)。
+目パチの乱数は、シード (`eye_blink.seed`) 付きの決定的な擬似乱数にします (テストで再現できるようにするため)。間隔の分布は T0303 で決めます。
+
+### 既定値
+
+`Effects::default()` は対象パラメータを持たず (何もしない)、時間などは下の値を持ちます。`Effects::standard()` は標準パラメータを対象にした推奨設定です。
+
+| 項目 | `default()` | `standard()` |
+| --- | --- | --- |
+| 目パチの対象 | なし | `EyeLOpen`、`EyeROpen` |
+| 目パチの時間 | `interval` 4.0、`closing` 0.1、`closed` 0.05、`opening` 0.15 秒、`seed` 0 | 同左 |
+| リップシンクの対象 | なし | `MouthOpenY` |
+| ポーズの `fade_duration` | 0.5 秒 | — |
+
+`Breath::standard()` の呼吸 (周期は互いに割り切れない値にして、動きの繰り返しを目立たなくする):
+
+| パラメータ | `offset` | `peak` | `cycle` (秒) | `weight` |
+| --- | --- | --- | --- | --- |
+| `AngleX` | 0 | 15 | 6.5345 | 0.5 |
+| `AngleY` | 0 | 8 | 3.5345 | 0.5 |
+| `AngleZ` | 0 | 10 | 5.5345 | 0.5 |
+| `BodyAngleX` | 0 | 4 | 15.5345 | 0.5 |
+| `Breath` | 0.5 | 0.5 | 3.2345 | 1 |
+
+### エフェクトグループ
+
+モーションのカーブの対象 `effect_group` (`CurveTarget::EffectGroup`) は、次の名前でエフェクトの出力の強さを指定します (`ugoe_model::effects` の定数)。
+
+| 名前 | 定数 | 対象 |
+| --- | --- | --- |
+| `EyeBlink` | `EYE_BLINK_GROUP` | `eye_blink.parameters` |
+| `LipSync` | `LIP_SYNC_GROUP` | `lip_sync.parameters` |
+
+呼吸とポーズはエフェクトグループを持ちません。未知の名前のカーブは無視します。
 
 ## フレーム内の適用順
 

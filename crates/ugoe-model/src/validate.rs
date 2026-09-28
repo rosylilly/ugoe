@@ -94,6 +94,16 @@ pub enum ValidationError {
         default: f32,
         max: f32,
     },
+    /// 同じパーツがポーズ全体 (全グループの `part` と `links`) で 2 回以上現れた。
+    #[error("part `{part}` appears more than once in pose groups")]
+    DuplicatePosePart { part: String },
+    /// `field` は値の場所 (`pose.fade_duration`、`effects.breath[0].cycle` など)。
+    #[error("{field} = {value} must be {expected}")]
+    InvalidValue {
+        field: String,
+        value: f32,
+        expected: &'static str,
+    },
 }
 
 /// 検出したエラーを全て返す (最初の 1 件で止まらない)。
@@ -291,7 +301,106 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
         refs.check(&meshes, "mesh", "mesh", &hit_area.mesh, &mut errors);
     }
 
+    check_pose(model, &parts, &mut errors);
+    check_effects(model, &params, &mut errors);
+
     errors
+}
+
+/// ポーズの検査: パーツの参照、パーツの重複、フェード時間。
+fn check_pose(
+    model: &Model,
+    parts: &HashMap<&crate::PartId, usize>,
+    errors: &mut Vec<ValidationError>,
+) {
+    let pose = &model.pose;
+    check_non_negative("pose.fade_duration", pose.fade_duration, errors);
+    let mut seen = HashSet::new();
+    let mut reported = HashSet::new();
+    for (index, group) in pose.groups.iter().enumerate() {
+        let id = index.to_string();
+        let refs = Refs {
+            kind: "pose group",
+            id: &id,
+        };
+        for entry in &group.entries {
+            let targets = std::iter::once(("part", &entry.part))
+                .chain(entry.links.iter().map(|link| ("links", link)));
+            for (field, part) in targets {
+                refs.check(parts, field, "part", part, errors);
+                if !seen.insert(part) && reported.insert(part) {
+                    errors.push(ValidationError::DuplicatePosePart {
+                        part: part.to_string(),
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// エフェクトの検査: 対象パラメータの参照と時間・周期の値。
+fn check_effects(
+    model: &Model,
+    params: &HashMap<&crate::ParamId, usize>,
+    errors: &mut Vec<ValidationError>,
+) {
+    let effects = &model.effects;
+
+    let blink = &effects.eye_blink;
+    let refs = Refs {
+        kind: "effect",
+        id: "eye_blink",
+    };
+    for param in &blink.parameters {
+        refs.check(params, "parameters", "parameter", param, errors);
+    }
+    check_positive("effects.eye_blink.interval", blink.interval, errors);
+    check_non_negative("effects.eye_blink.closing", blink.closing, errors);
+    check_non_negative("effects.eye_blink.closed", blink.closed, errors);
+    check_non_negative("effects.eye_blink.opening", blink.opening, errors);
+
+    let refs = Refs {
+        kind: "effect",
+        id: "breath",
+    };
+    for (index, breath) in effects.breath.parameters.iter().enumerate() {
+        refs.check(params, "parameters", "parameter", &breath.parameter, errors);
+        check_positive(
+            &format!("effects.breath.parameters[{index}].cycle"),
+            breath.cycle,
+            errors,
+        );
+    }
+
+    let refs = Refs {
+        kind: "effect",
+        id: "lip_sync",
+    };
+    for param in &effects.lip_sync.parameters {
+        refs.check(params, "parameters", "parameter", param, errors);
+    }
+}
+
+/// 0 以上の有限値であること。
+fn check_non_negative(field: &str, value: f32, errors: &mut Vec<ValidationError>) {
+    if !(value.is_finite() && value >= 0.0) {
+        errors.push(ValidationError::InvalidValue {
+            field: field.to_owned(),
+            value,
+            expected: "finite and >= 0",
+        });
+    }
+}
+
+/// 0 より大きい有限値であること。
+fn check_positive(field: &str, value: f32, errors: &mut Vec<ValidationError>) {
+    if !(value.is_finite() && value > 0.0) {
+        errors.push(ValidationError::InvalidValue {
+            field: field.to_owned(),
+            value,
+            expected: "finite and > 0",
+        });
+    }
 }
 
 /// ID → 配列インデックスの表を作り、重複 ID を報告する (重複時は最初の要素を採る)。
@@ -454,10 +563,11 @@ mod tests {
 
     use super::*;
     use crate::deformer::{Deformer, RotationDeformer, RotationKeyform, WarpDeformer, WarpKeyform};
-    use crate::fixtures::single_quad;
+    use crate::fixtures::{pose_and_effects, single_quad};
     use crate::mesh::{Glue, GlueKeyform, GluePair};
     use crate::part::{Part, PartKeyform};
-    use crate::{HitArea, KeyformBinding, ParameterGroup, TextureRef};
+    use crate::pose::{PoseEntry, PoseGroup};
+    use crate::{Effects, HitArea, KeyformBinding, ParameterGroup, TextureRef};
 
     fn part(id: &str, parent: Option<&str>) -> Part {
         Part {
@@ -916,6 +1026,119 @@ mod tests {
                 }]
             );
         }
+    }
+
+    fn pose_entry(part: &str, links: &[&str]) -> PoseEntry {
+        PoseEntry {
+            part: part.into(),
+            links: links.iter().map(|&l| l.into()).collect(),
+        }
+    }
+
+    #[test]
+    fn unknown_pose_parts() {
+        let mut model = pose_and_effects();
+        model.pose.groups.push(PoseGroup {
+            entries: vec![pose_entry("NoPart", &["NoLink"])],
+        });
+        assert_eq!(
+            validate(&model),
+            vec![
+                unknown("pose group", "1", "part", "part", "NoPart"),
+                unknown("pose group", "1", "links", "part", "NoLink"),
+            ]
+        );
+    }
+
+    #[test]
+    fn part_in_multiple_pose_groups() {
+        let mut model = pose_and_effects();
+        // 同じグループ内での重複、別グループとの重複、リンクとの重複をそれぞれ 1 回だけ報告する。
+        model.pose.groups[0].entries.push(pose_entry("ArmB", &[]));
+        model.pose.groups.push(PoseGroup {
+            entries: vec![pose_entry("Root", &["SleeveA"]), pose_entry("ArmA", &[])],
+        });
+        model.pose.groups.push(PoseGroup {
+            entries: vec![pose_entry("ArmA", &[])],
+        });
+        assert_eq!(
+            validate(&model),
+            vec![
+                ValidationError::DuplicatePosePart {
+                    part: "ArmB".into()
+                },
+                ValidationError::DuplicatePosePart {
+                    part: "SleeveA".into()
+                },
+                ValidationError::DuplicatePosePart {
+                    part: "ArmA".into()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn unknown_effect_parameters() {
+        let mut model = single_quad();
+        model.effects = Effects::standard();
+        model.effects.breath.parameters.truncate(1);
+        assert_eq!(
+            validate(&model),
+            vec![
+                unknown("effect", "eye_blink", "parameters", "parameter", "EyeLOpen"),
+                unknown("effect", "eye_blink", "parameters", "parameter", "EyeROpen"),
+                unknown("effect", "breath", "parameters", "parameter", "AngleX"),
+                unknown(
+                    "effect",
+                    "lip_sync",
+                    "parameters",
+                    "parameter",
+                    "MouthOpenY"
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn invalid_durations() {
+        let invalid =
+            |field: &str, value: f32, expected: &'static str| ValidationError::InvalidValue {
+                field: field.into(),
+                value,
+                expected,
+            };
+        let mut model = pose_and_effects();
+        model.pose.fade_duration = -0.5;
+        let blink = &mut model.effects.eye_blink;
+        blink.interval = 0.0;
+        blink.closing = -0.1;
+        blink.closed = f32::INFINITY;
+        blink.opening = 0.0;
+        model.effects.breath.parameters[1].cycle = 0.0;
+        let errors = validate(&model);
+        assert_eq!(
+            errors,
+            vec![
+                invalid("pose.fade_duration", -0.5, "finite and >= 0"),
+                invalid("effects.eye_blink.interval", 0.0, "finite and > 0"),
+                invalid("effects.eye_blink.closing", -0.1, "finite and >= 0"),
+                invalid("effects.eye_blink.closed", f32::INFINITY, "finite and >= 0"),
+                invalid("effects.breath.parameters[1].cycle", 0.0, "finite and > 0"),
+            ]
+        );
+
+        // NaN は `PartialEq` で比較できないので、フィールド名だけ確かめる。
+        let mut model = pose_and_effects();
+        model.effects.breath.parameters[0].cycle = f32::NAN;
+        let errors = validate(&model);
+        assert!(
+            matches!(
+                errors.as_slice(),
+                [ValidationError::InvalidValue { field, .. }]
+                    if field == "effects.breath.parameters[0].cycle"
+            ),
+            "{errors:?}"
+        );
     }
 
     #[test]
