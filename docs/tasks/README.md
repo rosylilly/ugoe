@@ -20,6 +20,7 @@ just tasks --ready  # ready のタスクだけ
 | T04xx | バインディング (FFI・wasm) |
 | T05xx | 取り込み・メッシュ・AI |
 | T06xx | エディタ |
+| T07xx | ビューア |
 
 ## フロントマター
 

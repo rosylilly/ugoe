@@ -1,11 +1,11 @@
 ---
 id: T0302
 title: モーションカーブと再生
-status: todo
+status: in-progress
 milestone: M3
 crates: [ugoe-motion]
 depends_on: []
-assignee:
+assignee: claude-worker-T0302
 ---
 
 # T0302: モーションカーブと再生

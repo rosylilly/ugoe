@@ -1,11 +1,11 @@
 ---
 id: T0304
 title: 動的物理のデータ定義
-status: todo
+status: in-progress
 milestone: M3
 crates: [ugoe-model]
 depends_on: []
-assignee:
+assignee: claude-worker-T0304
 ---
 
 # T0304: 動的物理のデータ定義

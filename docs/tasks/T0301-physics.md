@@ -1,11 +1,11 @@
 ---
 id: T0301
 title: 物理演算
-status: todo
+status: in-progress
 milestone: M3
 crates: [ugoe-physics]
 depends_on: []
-assignee:
+assignee: claude-worker-T0301
 ---
 
 # T0301: 物理演算

@@ -4,7 +4,7 @@ title: トラッキングの対応付け (ARKit → パラメータ)
 status: todo
 milestone: M3
 crates: [ugoe, ugoe-motion]
-depends_on: [T0110]
+depends_on: [T0110, T0302]
 assignee:
 ---
 

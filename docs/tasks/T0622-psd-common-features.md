@@ -1,11 +1,11 @@
 ---
 id: T0622
 title: PSD のよく使われる未対応機能 (レイヤーマスク・Shift-JIS の名前・ZIP・16 ビット)
-status: todo
+status: in-progress
 milestone: M3
 crates: [ugoe-psd]
 depends_on: [T0620]
-assignee:
+assignee: claude-worker-T0622
 ---
 
 # T0622: PSD のよく使われる未対応機能

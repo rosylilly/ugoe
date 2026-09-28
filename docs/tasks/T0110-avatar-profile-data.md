@@ -1,11 +1,11 @@
 ---
 id: T0110
 title: アバタープロファイルのデータと検証
-status: todo
+status: in-progress
 milestone: M3
 crates: [ugoe-model, ugoe-format, ugoe-cli]
 depends_on: [T0109]
-assignee:
+assignee: claude-worker-T0110
 ---
 
 # T0110: アバタープロファイルのデータと検証
