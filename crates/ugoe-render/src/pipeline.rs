@@ -2,9 +2,10 @@
 
 use ugoe_model::BlendMode;
 
-/// パイプラインを区別するキー。
+/// 本描画のパイプラインを区別するキー。
 ///
-/// TODO(T0202): マスクの有無・反転の有無をキーに加える。
+/// マスクの有無と反転はユニフォーム (`mask_flags`) で切り替えるので、キーには含めない
+/// (`docs/spec/rendering.md` の「GPU リソースの方針」)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PipelineKey {
     pub blend: BlendMode,
@@ -20,7 +21,12 @@ pub(crate) struct Pipelines {
     target_format: wgpu::TextureFormat,
     // 組み合わせは高々数十なので線形探索で十分。
     cache: Vec<(PipelineKey, wgpu::RenderPipeline)>,
+    /// マスクパス用 (マスクアトラスへの加算合成)。1 種類だけなので最初に作る。
+    mask: wgpu::RenderPipeline,
 }
+
+/// マスクアトラスのテクスチャ形式。
+pub(crate) const MASK_ATLAS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
 /// 頂点 1 つ分の位置 (スロット 0) と UV (スロット 1) の大きさ。どちらも `vec2<f32>`。
 pub(crate) const VEC2_SIZE: u64 = 8;
@@ -28,10 +34,12 @@ const POSITION_ATTRIBUTES: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array!
 const UV_ATTRIBUTES: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![1 => Float32x2];
 
 impl Pipelines {
+    /// `layouts` は本描画のバインドグループレイアウト (group 0..4)。
+    /// マスクパスは先頭の 3 つ (globals・要素ごとのユニフォーム・テクスチャ) だけを使う。
     pub fn new(
         device: &wgpu::Device,
         target_format: wgpu::TextureFormat,
-        layouts: &[&wgpu::BindGroupLayout],
+        layouts: &[&wgpu::BindGroupLayout; 4],
     ) -> Self {
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("ugoe drawable shader"),
@@ -44,12 +52,45 @@ impl Pipelines {
             bind_group_layouts: &layouts,
             immediate_size: 0,
         });
+        let mask_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("ugoe mask pipeline layout"),
+            bind_group_layouts: &layouts[..3],
+            immediate_size: 0,
+        });
+        // 加算合成。RGBA8 に書くので和は 1 に飽和する (和集合 min(1, Σ))。
+        let add = wgpu::BlendComponent {
+            src_factor: wgpu::BlendFactor::One,
+            dst_factor: wgpu::BlendFactor::One,
+            operation: wgpu::BlendOperation::Add,
+        };
+        let mask = create_pipeline(
+            device,
+            &PipelineDesc {
+                label: "ugoe mask pipeline",
+                layout: &mask_layout,
+                module: &module,
+                vs: "vs_mask",
+                fs: "fs_mask",
+                format: MASK_ATLAS_FORMAT,
+                blend: wgpu::BlendState {
+                    color: add,
+                    alpha: add,
+                },
+                // マスクはカリングしない (マスク用メッシュの `culling` は本描画にだけ効く)。
+                cull_front_face: None,
+            },
+        );
         Self {
             module,
             layout,
             target_format,
             cache: Vec::new(),
+            mask,
         }
+    }
+
+    pub fn mask(&self) -> &wgpu::RenderPipeline {
+        &self.mask
     }
 
     /// キーに対応するパイプラインを (なければ作って) 用意する。
@@ -65,46 +106,73 @@ impl Pipelines {
     }
 
     fn create(&self, device: &wgpu::Device, key: PipelineKey) -> wgpu::RenderPipeline {
-        let vertex_layout = |attributes| wgpu::VertexBufferLayout {
-            array_stride: VEC2_SIZE,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes,
-        };
-        let buffers = [
-            Some(vertex_layout(&POSITION_ATTRIBUTES)),
-            Some(vertex_layout(&UV_ATTRIBUTES)),
-        ];
-        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("ugoe drawable pipeline"),
-            layout: Some(&self.layout),
-            vertex: wgpu::VertexState {
+        create_pipeline(
+            device,
+            &PipelineDesc {
+                label: "ugoe drawable pipeline",
+                layout: &self.layout,
                 module: &self.module,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &buffers,
+                vs: "vs_main",
+                fs: "fs_main",
+                format: self.target_format,
+                blend: blend_state(key.blend),
+                cull_front_face: key.cull_front_face,
             },
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                front_face: key.cull_front_face.unwrap_or(wgpu::FrontFace::Ccw),
-                cull_mode: key.cull_front_face.map(|_| wgpu::Face::Back),
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &self.module,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: self.target_format,
-                    blend: Some(blend_state(key.blend)),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            multiview_mask: None,
-            cache: None,
-        })
+        )
     }
+}
+
+struct PipelineDesc<'a> {
+    label: &'a str,
+    layout: &'a wgpu::PipelineLayout,
+    module: &'a wgpu::ShaderModule,
+    vs: &'a str,
+    fs: &'a str,
+    format: wgpu::TextureFormat,
+    blend: wgpu::BlendState,
+    cull_front_face: Option<wgpu::FrontFace>,
+}
+
+fn create_pipeline(device: &wgpu::Device, desc: &PipelineDesc<'_>) -> wgpu::RenderPipeline {
+    let vertex_layout = |attributes| wgpu::VertexBufferLayout {
+        array_stride: VEC2_SIZE,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes,
+    };
+    let buffers = [
+        Some(vertex_layout(&POSITION_ATTRIBUTES)),
+        Some(vertex_layout(&UV_ATTRIBUTES)),
+    ];
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(desc.label),
+        layout: Some(desc.layout),
+        vertex: wgpu::VertexState {
+            module: desc.module,
+            entry_point: Some(desc.vs),
+            compilation_options: Default::default(),
+            buffers: &buffers,
+        },
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            front_face: desc.cull_front_face.unwrap_or(wgpu::FrontFace::Ccw),
+            cull_mode: desc.cull_front_face.map(|_| wgpu::Face::Back),
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        fragment: Some(wgpu::FragmentState {
+            module: desc.module,
+            entry_point: Some(desc.fs),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: desc.format,
+                blend: Some(desc.blend),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    })
 }
 
 /// 合成モードに対応する BlendState (`docs/spec/rendering.md` の「合成モード」)。

@@ -6,9 +6,10 @@
 
 use std::sync::OnceLock;
 
-use ugoe_core::Rgb;
+use ugoe_core::{Rgb, Vec2};
+use ugoe_model::mesh::Mesh;
 use ugoe_model::{BlendMode, Model, fixtures};
-use ugoe_render::{RenderError, Renderer, View};
+use ugoe_render::{FrameStats, MaskAtlasOptions, RenderError, Renderer, RendererOptions, View};
 use ugoe_runtime::{CompiledModel, ModelInstance};
 
 const SIZE: u32 = 64;
@@ -84,9 +85,13 @@ fn normal_view() -> View {
 
 struct Scene {
     model: Model,
+    /// テクスチャ 0 (1x1)。`[0; 4]` なら登録しない。
     texture: [u8; 4],
+    /// テクスチャ 1 以降 (1x1)。
+    extra_textures: Vec<[u8; 4]>,
     clear: wgpu::Color,
     view: View,
+    options: RendererOptions,
 }
 
 impl Scene {
@@ -94,8 +99,10 @@ impl Scene {
         Self {
             model,
             texture: [255; 4],
+            extra_textures: Vec::new(),
             clear: wgpu::Color::TRANSPARENT,
             view: normal_view(),
+            options: RendererOptions::default(),
         }
     }
 
@@ -122,9 +129,12 @@ impl Scene {
         let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
 
         let instance = ModelInstance::new(CompiledModel::compile(self.model).expect("compile"));
-        let mut renderer = Renderer::new(device, FORMAT);
+        let mut renderer = Renderer::with_options(device, FORMAT, self.options);
         if self.texture != [0; 4] {
             renderer.set_texture(device, queue, 0, 1, 1, &self.texture)?;
+        }
+        for (i, texture) in self.extra_textures.iter().enumerate() {
+            renderer.set_texture(device, queue, i as u32 + 1, 1, 1, texture)?;
         }
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
@@ -179,12 +189,16 @@ impl Scene {
             .get_mapped_range(..)
             .expect("mapped range")
             .to_vec();
-        Ok(Image { pixels })
+        Ok(Image {
+            pixels,
+            stats: renderer.last_frame_stats(),
+        })
     }
 }
 
 struct Image {
     pixels: Vec<u8>,
+    stats: FrameStats,
 }
 
 impl Image {
@@ -412,4 +426,314 @@ fn render_order_follows_draw_order() {
     let image = Scene::new(model).render();
     // 描画順 500 の赤が最後に描かれる。
     image.assert_pixel(INSIDE, [1.0, 0.0, 0.0, 1.0]);
+}
+
+// ---- マスク ----
+//
+// キャンバス 256 → 画素 64 なので、画素座標はキャンバス座標の 1/4。
+
+const RED: [f32; 4] = [1.0, 0.0, 0.0, 1.0];
+const NONE: [f32; 4] = [0.0; 4];
+
+/// キャンバス上の矩形 `[x0, y0, x1, y1]` を覆う白い四角形 (single_quad のメッシュを複製)。
+fn quad(id: &str, [x0, y0, x1, y1]: [f32; 4]) -> Mesh {
+    let mut mesh = fixtures::single_quad().meshes.remove(0);
+    mesh.id = id.into();
+    mesh.name = id.into();
+    for kf in &mut mesh.keyforms.keyforms {
+        kf.positions = vec![
+            Vec2::new(x0, y0),
+            Vec2::new(x1, y0),
+            Vec2::new(x1, y1),
+            Vec2::new(x0, y1),
+        ];
+    }
+    mesh
+}
+
+/// 不透明な赤の四角形。`masks` のメッシュでクリッピングする。
+fn red_quad(id: &str, rect: [f32; 4], masks: &[&str], invert: bool) -> Mesh {
+    let mut mesh = quad(id, rect);
+    mesh.masks = masks.iter().map(|&m| m.into()).collect();
+    mesh.invert_mask = invert;
+    for kf in &mut mesh.keyforms.keyforms {
+        kf.multiply_color = Rgb::new(1.0, 0.0, 0.0);
+    }
+    mesh
+}
+
+/// マスク用メッシュ。白の乗算合成は描画先を変えないので、本描画の結果には現れない
+/// (マスクパスは合成モードと色を使わない)。描画順は赤い要素より奥。
+fn mask_quad(id: &str, rect: [f32; 4], opacity: f32) -> Mesh {
+    let mut mesh = quad(id, rect);
+    mesh.blend = BlendMode::Multiply;
+    for kf in &mut mesh.keyforms.keyforms {
+        kf.opacity = opacity;
+        kf.draw_order = 400.0;
+    }
+    mesh
+}
+
+fn model_of(meshes: Vec<Mesh>) -> Model {
+    let mut model = fixtures::single_quad();
+    model.meshes = meshes;
+    model
+}
+
+/// 赤い四角形 (画素 16..48) を、右側にずれたマスク (画素 x 32..56, y 8..56) で切り抜く。
+fn clipped_scene(invert: bool, mask_opacity: f32) -> Scene {
+    Scene::new(model_of(vec![
+        red_quad("Content", [64.0, 64.0, 192.0, 192.0], &["Mask"], invert),
+        mask_quad("Mask", [128.0, 32.0, 224.0, 224.0], mask_opacity),
+    ]))
+}
+
+#[test]
+fn mask_clips_drawable() {
+    let image = clipped_scene(false, 1.0).render();
+    image.assert_pixel((24, 32), NONE);
+    image.assert_pixel((31, 32), NONE);
+    image.assert_pixel((32, 32), RED);
+    image.assert_pixel((40, 32), RED);
+    image.assert_pixel((47, 47), RED);
+    // マスクだけの範囲には何も描かれない。
+    image.assert_pixel((52, 32), NONE);
+    assert_eq!(image.covered_pixels([0; 4]), 16 * 32);
+    assert_eq!(
+        image.stats,
+        FrameStats {
+            drawables: 2,
+            mask_sets: 1,
+            mask_draws: 1,
+            mask_atlases: 1,
+        }
+    );
+}
+
+#[test]
+fn inverted_mask_keeps_outside() {
+    let image = clipped_scene(true, 1.0).render();
+    image.assert_pixel((16, 32), RED);
+    image.assert_pixel((24, 32), RED);
+    image.assert_pixel((31, 32), RED);
+    image.assert_pixel((32, 32), NONE);
+    image.assert_pixel((40, 32), NONE);
+    image.assert_pixel((52, 32), NONE);
+    assert_eq!(image.covered_pixels([0; 4]), 16 * 32);
+}
+
+#[test]
+fn multiple_masks_are_united() {
+    let image = Scene::new(model_of(vec![
+        red_quad("Content", [64.0, 64.0, 192.0, 192.0], &["L", "R"], false),
+        mask_quad("L", [64.0, 0.0, 96.0, 256.0], 1.0),
+        mask_quad("R", [160.0, 0.0, 192.0, 256.0], 1.0),
+    ]))
+    .render();
+    image.assert_pixel((20, 32), RED);
+    image.assert_pixel((32, 32), NONE);
+    image.assert_pixel((44, 32), RED);
+    assert_eq!(image.covered_pixels([0; 4]), 2 * 8 * 32);
+    assert_eq!(image.stats.mask_sets, 1);
+    assert_eq!(image.stats.mask_draws, 2);
+}
+
+#[test]
+fn overlapping_masks_saturate_at_full_coverage() {
+    // テクスチャのアルファ 0.75 + 0.75 は 1 に飽和する (min(1, Σ))。
+    let mut scene = Scene::new(model_of(vec![
+        red_quad("Content", [64.0, 64.0, 192.0, 192.0], &["A", "B"], false),
+        mask_quad("A", [0.0, 0.0, 256.0, 256.0], 1.0),
+        mask_quad("B", [0.0, 0.0, 256.0, 256.0], 1.0),
+    ]));
+    let texture = scene.model.textures[0].clone();
+    scene.model.textures.push(texture);
+    for mesh in &mut scene.model.meshes[1..] {
+        mesh.texture = 1;
+    }
+    scene.extra_textures = vec![[0, 0, 0, 191]];
+    let image = scene.render();
+    image.assert_pixel((32, 32), RED);
+}
+
+#[test]
+fn mask_opacity_does_not_affect_coverage() {
+    // カバレッジはテクスチャのアルファだけで決まる (docs/spec/rendering.md)。
+    let reference = clipped_scene(false, 1.0).render();
+    let inverted_reference = clipped_scene(true, 1.0).render();
+    for opacity in [0.5, 0.0] {
+        let image = clipped_scene(false, opacity).render();
+        image.assert_pixel((40, 32), RED);
+        image.assert_pixel((24, 32), NONE);
+        assert!(image.pixels == reference.pixels, "opacity = {opacity}");
+
+        let image = clipped_scene(true, opacity).render();
+        image.assert_pixel((40, 32), NONE);
+        image.assert_pixel((24, 32), RED);
+        assert!(
+            image.pixels == inverted_reference.pixels,
+            "opacity = {opacity}"
+        );
+    }
+}
+
+#[test]
+fn mask_texture_alpha_scales_coverage() {
+    let mut scene = clipped_scene(false, 1.0);
+    let texture = scene.model.textures[0].clone();
+    scene.model.textures.push(texture);
+    scene.model.meshes[1].texture = 1;
+    // 50% 不透明の黒 (乗算済み)。マスクの色は使わず、アルファだけが効く。
+    scene.extra_textures = vec![[0, 0, 0, 128]];
+    let image = scene.render();
+    let a = 128.0 / 255.0;
+    image.assert_pixel((40, 32), [a, 0.0, 0.0, a]);
+    image.assert_pixel((24, 32), NONE);
+}
+
+#[test]
+fn invisible_mask_mesh_is_still_drawn_as_mask() {
+    // 不透明度 0 のマスク用メッシュは要素としては描かれないが、マスクパスでは同じように描く。
+    let image = clipped_scene(false, 0.0).render();
+    image.assert_pixel((24, 32), NONE);
+    image.assert_pixel((40, 32), RED);
+    assert_eq!(image.covered_pixels([0; 4]), 16 * 32);
+    assert_eq!(
+        image.stats,
+        FrameStats {
+            drawables: 1,
+            mask_sets: 1,
+            mask_draws: 1,
+            mask_atlases: 1,
+        }
+    );
+
+    let image = clipped_scene(true, 0.0).render();
+    image.assert_pixel((24, 32), RED);
+    image.assert_pixel((40, 32), NONE);
+    assert_eq!(image.covered_pixels([0; 4]), 16 * 32);
+}
+
+#[test]
+fn missing_mask_texture_is_an_error() {
+    let mut scene = clipped_scene(false, 1.0);
+    let texture = scene.model.textures[0].clone();
+    scene.model.textures.push(texture);
+    scene.model.meshes[1].texture = 1;
+    // マスク用メッシュが非表示でも、マスクとして描くのでテクスチャが要る。
+    for kf in &mut scene.model.meshes[1].keyforms.keyforms {
+        kf.opacity = 0.0;
+    }
+    assert!(matches!(
+        scene.try_render(),
+        Err(RenderError::MissingTexture(1))
+    ));
+}
+
+#[test]
+fn drawables_with_same_mask_set_share_mask() {
+    // 横帯 4 本 (画素 y 16..24, 24..32, 32..40, 40..48)。
+    // M1 は画素 x 16..32、M2 は画素 x 40..48。
+    let band = |i: f32| [64.0, 64.0 + 32.0 * i, 192.0, 96.0 + 32.0 * i];
+    let image = Scene::new(model_of(vec![
+        red_quad("A", band(0.0), &["M1"], false),
+        red_quad("B", band(1.0), &["M1"], true),
+        red_quad("C", band(2.0), &["M1", "M2"], false),
+        // 並びと重複は区別しないので C と同じ集合。
+        red_quad("D", band(3.0), &["M2", "M1", "M2"], false),
+        mask_quad("M1", [64.0, 0.0, 128.0, 256.0], 1.0),
+        mask_quad("M2", [160.0, 0.0, 192.0, 256.0], 1.0),
+    ]))
+    .render();
+    let rows = [
+        (20, [RED, NONE, NONE]),
+        (28, [NONE, RED, RED]),
+        (36, [RED, NONE, RED]),
+        (44, [RED, NONE, RED]),
+    ];
+    for (y, expected) in rows {
+        for (x, e) in [20, 36, 44].into_iter().zip(expected) {
+            image.assert_pixel((x, y), e);
+        }
+    }
+    // 集合は {M1} と {M1, M2} の 2 つ。マスク用メッシュの描画は 1 + 2 回。
+    assert_eq!(
+        image.stats,
+        FrameStats {
+            drawables: 6,
+            mask_sets: 2,
+            mask_draws: 3,
+            mask_atlases: 1,
+        }
+    );
+}
+
+/// 縦長の赤い四角形 5 本 (画素 x 4+12k..12+12k, y 16..48) を、それぞれ別のマスクで上半分だけ残す。
+fn five_mask_sets() -> Scene {
+    let mut meshes = Vec::new();
+    for k in 0..5 {
+        let x = 16.0 + 48.0 * k as f32;
+        let mask = format!("M{k}");
+        meshes.push(red_quad(
+            &format!("C{k}"),
+            [x, 64.0, x + 32.0, 192.0],
+            &[&mask],
+            false,
+        ));
+        meshes.push(mask_quad(&mask, [x, 64.0, x + 32.0, 128.0], 1.0));
+    }
+    Scene::new(model_of(meshes))
+}
+
+/// `exact_edges` が偽なら、マスクの縁の画素は検査しない
+/// (小さいアトラスでは縁がバイリニア補間でぼける)。
+fn assert_five_mask_sets(image: &Image, exact_edges: bool) {
+    for k in 0..5 {
+        let x = 8 + 12 * k;
+        image.assert_pixel((x, 20), RED);
+        image.assert_pixel((x, 28), RED);
+        image.assert_pixel((x, 36), NONE);
+        image.assert_pixel((x, 44), NONE);
+        if exact_edges {
+            image.assert_pixel((x, 31), RED);
+            image.assert_pixel((x, 32), NONE);
+        }
+    }
+    if exact_edges {
+        assert_eq!(image.covered_pixels([0; 4]), 5 * 8 * 16);
+    }
+}
+
+#[test]
+fn mask_sets_overflow_into_more_atlases() {
+    let mut scene = five_mask_sets();
+    // 1 枚に 4 チャンネル × 1 セルしか入らないので、5 つ目の集合は 2 枚目に回る。
+    scene.options.mask_atlas = MaskAtlasOptions {
+        size: 32,
+        min_cell_size: 32,
+    };
+    let image = scene.render();
+    assert_five_mask_sets(&image, false);
+    assert_eq!(image.stats.mask_sets, 5);
+    assert_eq!(image.stats.mask_draws, 5);
+    assert_eq!(image.stats.mask_atlases, 2);
+
+    // 既定の設定なら 1 枚に収まる。
+    let image = five_mask_sets().render();
+    assert_five_mask_sets(&image, true);
+    assert_eq!(image.stats.mask_atlases, 1);
+}
+
+#[test]
+fn unmasked_frame_uses_no_atlas() {
+    let image = Scene::new(fixtures::single_quad()).render();
+    assert_eq!(
+        image.stats,
+        FrameStats {
+            drawables: 1,
+            mask_sets: 0,
+            mask_draws: 0,
+            mask_atlases: 0,
+        }
+    );
 }
