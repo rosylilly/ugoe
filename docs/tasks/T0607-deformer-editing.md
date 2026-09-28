@@ -1,11 +1,11 @@
 ---
 id: T0607
 title: エディタ: デフォーマの作成とギズモ
-status: todo
+status: in-progress
 milestone: M2
 crates: [ugoe-editor-core, ugoe-wasm, apps/editor]
 depends_on: [T0606]
-assignee:
+assignee: claude-worker-T0607
 ---
 
 # T0607: エディタ: デフォーマの作成とギズモ
