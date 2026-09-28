@@ -224,6 +224,11 @@ impl CompiledModel {
             .position(|d| d.id.as_str() == id)
     }
 
+    /// ID が `id` のパーツの添字 (`Model::parts` のインデックス)。
+    pub fn part_index(&self, id: &str) -> Option<usize> {
+        self.model.parts.iter().position(|p| p.id.as_str() == id)
+    }
+
     /// ID が `id` のメッシュの添字 (`Model::meshes` のインデックス、`drawables` と同じ並び)。
     pub fn mesh_index(&self, id: &str) -> Option<usize> {
         self.model.meshes.iter().position(|m| m.id.as_str() == id)

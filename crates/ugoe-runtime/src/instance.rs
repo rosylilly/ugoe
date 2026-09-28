@@ -189,6 +189,8 @@ pub struct ModelInstance {
     scratch: Weights,
     /// 祖先を掛け合わせたパーツの不透明度。
     part_opacity: Vec<f32>,
+    /// パーツ自身の不透明度の上書き `(値, 重み)` ([`ModelInstance::set_part_opacity_override`])。
+    part_opacity_overrides: Vec<(f32, f32)>,
     /// 祖先を掛け合わせたデフォーマの不透明度。
     deformer_opacity: Vec<f32>,
     /// 回転デフォーマのワールド変換 (ワープの要素は使わない)。
@@ -244,6 +246,7 @@ impl ModelInstance {
             drawables,
             scratch: Weights::with_capacity(max_weights),
             part_opacity: vec![1.0; model.parts.len()],
+            part_opacity_overrides: vec![(1.0, 0.0); model.parts.len()],
             deformer_opacity: vec![1.0; model.deformers.len()],
             deformer_affine: vec![Affine2::IDENTITY; model.deformers.len()],
             warp_points,
@@ -283,6 +286,33 @@ impl ModelInstance {
 
     pub fn parameters_mut(&mut self) -> &mut ParameterValues {
         &mut self.parameters
+    }
+
+    /// パーツ `part` (`Model::parts` のインデックス) 自身の不透明度を、キーフォームで補間した値 `o` から
+    /// `lerp(o, value, weight)` に上書きする。子への伝播はこの値で行う。重み 0 で上書きしない (既定)。
+    ///
+    /// 次の [`ModelInstance::update`] から効き、変えるまで保たれる。モーションのパーツの不透明度と
+    /// ポーズが使う (`docs/spec/evaluation.md#2-評価の順序`)。
+    ///
+    /// # Panics
+    ///
+    /// `part` が範囲外のとき。
+    pub fn set_part_opacity_override(&mut self, part: usize, value: f32, weight: f32) {
+        self.part_opacity_overrides[part] = (value, weight.clamp(0.0, 1.0));
+    }
+
+    /// パーツ `part` の不透明度の上書き `(値, 重み)`。
+    ///
+    /// # Panics
+    ///
+    /// `part` が範囲外のとき。
+    pub fn part_opacity_override(&self, part: usize) -> (f32, f32) {
+        self.part_opacity_overrides[part]
+    }
+
+    /// すべてのパーツの不透明度の上書きをやめる。
+    pub fn clear_part_opacity_overrides(&mut self) {
+        self.part_opacity_overrides.fill((1.0, 0.0));
     }
 
     /// 現在のパラメータ値からすべての描画可能要素を再計算する (`docs/spec/evaluation.md` の 2.)。
@@ -368,6 +398,8 @@ impl ModelInstance {
                 keyform::blend_scalar(&compiled.model.parts[p].keyforms, &self.scratch, |k| {
                     k.opacity
                 });
+            let (value, weight) = self.part_opacity_overrides[p];
+            let own = own + (value - own) * weight;
             let parent = part.parent.map_or(1.0, |i| self.part_opacity[i as usize]);
             self.part_opacity[p] = own * parent;
         }
@@ -1037,6 +1069,56 @@ mod tests {
     fn assert_no_changes(instance: &ModelInstance) {
         assert!(instance.changes().iter().all(|c| c.is_empty()));
         assert!(!instance.render_order_changed());
+    }
+
+    /// パーツの不透明度の上書きは `lerp(own, value, weight)` で、子へ伝播する。
+    #[test]
+    fn part_opacity_override_replaces_own_opacity() {
+        let mut instance = instance(fixtures::part_opacity_hierarchy());
+        let child = instance.compiled().part_index("Child").unwrap();
+        let grandchild = instance.compiled().part_index("Grandchild").unwrap();
+        assert_eq!(instance.compiled().part_index("Missing"), None);
+
+        instance.set_part_opacity_override(child, 1.0, 1.0);
+        instance.update();
+        assert!((instance.part_opacity[child] - 1.0).abs() < 1e-6);
+        assert!((instance.part_opacity[grandchild] - 0.8).abs() < 1e-6);
+
+        // 重み 0.5 なら own = lerp(0.5, 0.0, 0.5) = 0.25。
+        instance.set_part_opacity_override(child, 0.0, 0.5);
+        instance.update();
+        assert!((instance.part_opacity[child] - 0.25).abs() < 1e-6);
+        assert_eq!(instance.part_opacity_override(child), (0.0, 0.5));
+
+        instance.clear_part_opacity_overrides();
+        instance.update();
+        assert!((instance.part_opacity[child] - 0.5).abs() < 1e-6);
+    }
+
+    /// 上書きを変えると、影響を受けるメッシュ (パーツ `Child` とその子孫) だけが変更ありになる。
+    #[test]
+    fn part_opacity_override_marks_affected_drawables() {
+        let mut instance = instance(fixtures::part_opacity_hierarchy());
+        instance.update();
+        instance.update();
+        assert_no_changes(&instance);
+
+        let child = instance.compiled().part_index("Child").unwrap();
+        instance.set_part_opacity_override(child, 1.0, 1.0);
+        instance.update();
+        let a = mesh_index(&instance, "A");
+        let c = mesh_index(&instance, "C");
+        for (i, changes) in instance.changes().iter().enumerate() {
+            if i == a || i == c {
+                assert_eq!(*changes, DrawableChanges::OPACITY, "mesh {i}");
+            } else {
+                assert!(changes.is_empty(), "mesh {i}");
+            }
+        }
+
+        // 同じ上書きのままなら変更なし。
+        instance.update();
+        assert_no_changes(&instance);
     }
 
     #[test]

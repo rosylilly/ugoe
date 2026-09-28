@@ -34,7 +34,7 @@ fn fade_out_weight(remaining: f32, duration: f32) -> f32 {
 }
 
 /// 経過時間 `elapsed`、終了時刻 `end` での `fade_in_weight * fade_out_weight`。
-fn fade_weight(fade_in: f32, fade_out: f32, elapsed: f32, end: Option<f32>) -> f32 {
+pub(crate) fn fade_weight(fade_in: f32, fade_out: f32, elapsed: f32, end: Option<f32>) -> f32 {
     let w_out = end.map_or(1.0, |end| fade_out_weight(end - elapsed, fade_out));
     fade_in_weight(elapsed, fade_in) * w_out
 }

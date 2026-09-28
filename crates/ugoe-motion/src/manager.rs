@@ -1,0 +1,317 @@
+//! 優先度付きのモーションマネージャ (クロスフェード)。
+//! 仕様: `docs/spec/motion.md#モーションマネージャ`。
+
+use ugoe_model::PartId;
+use ugoe_model::motion::{CurveTarget, Motion, MotionEvent};
+use ugoe_runtime::ParameterValues;
+
+use crate::MotionPlayer;
+
+/// モーションの優先度。`Idle < Normal < Force`。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Priority {
+    /// 待機モーション。ほかのモーションが再生中なら開始しない。
+    Idle,
+    /// アプリの操作などで再生する普通のモーション。
+    Normal,
+    /// 常に開始する。
+    Force,
+}
+
+/// 優先度とクロスフェードを持つモーションの再生管理。
+///
+/// 新しいモーションを開始すると、再生中のモーションは [`MotionPlayer::stop`] で自身の `fade_out`
+/// をかけてフェードアウトし、新しいモーションは自身の `fade_in` をかけてフェードインする。
+/// 適用は開始した順 (古いものが先) に `lerp` で重ねるので、重なっている間はクロスフェードになる。
+#[derive(Debug, Default)]
+pub struct MotionManager {
+    /// 再生中のプレイヤー (フェードアウト中のものを含む)。開始した順。
+    players: Vec<MotionPlayer>,
+    /// 現在のモーション (最後に開始し、止めていないもの) の優先度。なければ `None`。
+    priority: Option<Priority>,
+    /// 直前の [`update`](Self::update) で発火したイベント。
+    events: Vec<MotionEvent>,
+}
+
+impl MotionManager {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// `priority` でモーションを開始する。現在のモーションより低い優先度なら開始せず `false` を返す。
+    pub fn start(&mut self, motion: Motion, priority: Priority) -> bool {
+        if self.priority.is_some_and(|current| priority < current) {
+            return false;
+        }
+        for player in &mut self.players {
+            player.stop();
+        }
+        self.players.push(MotionPlayer::new(motion));
+        self.priority = Some(priority);
+        true
+    }
+
+    /// すべてのモーションをフェードアウトさせる。以降はどの優先度でも開始できる。
+    pub fn stop_all(&mut self) {
+        for player in &mut self.players {
+            player.stop();
+        }
+        self.priority = None;
+    }
+
+    /// 現在のモーションの優先度。現在のモーションが終わるか止めると `None` になる。
+    pub fn current_priority(&self) -> Option<Priority> {
+        self.priority
+    }
+
+    /// 現在のモーション (止めていないもの) が再生中か。
+    pub fn is_playing(&self) -> bool {
+        self.priority.is_some()
+    }
+
+    /// 再生中のプレイヤー (フェードアウト中のものを含む)。開始した順。
+    pub fn players(&self) -> &[MotionPlayer] {
+        &self.players
+    }
+
+    /// `dt` 秒進め、開始した順にパラメータへ適用する。終わったプレイヤーは取り除く。
+    pub fn update(&mut self, parameters: &mut ParameterValues, dt: f32) {
+        self.events.clear();
+        for player in &mut self.players {
+            player.advance(dt);
+            self.events.extend(player.fired_events().cloned());
+            player.apply(parameters, 1.0);
+        }
+        if self.players.last().is_some_and(MotionPlayer::is_finished) {
+            self.priority = None;
+        }
+        self.players.retain(|p| !p.is_finished());
+    }
+
+    /// 直前の [`update`](Self::update) で発火したイベント。開始した順のプレイヤーごとに、発火した順に並ぶ。
+    pub fn fired_events(&self) -> &[MotionEvent] {
+        &self.events
+    }
+
+    /// エフェクトグループ `name` の強さ (`docs/spec/motion.md#エフェクトグループ`)。
+    ///
+    /// 1 から始め、開始した順に各モーションのカーブの値を `lerp(s, value, w)` で重ねる
+    /// (`w` はカーブのフェードの重み)。対象のカーブがなければ 1。
+    pub fn effect_group_weight(&self, name: &str) -> f32 {
+        let mut s = 1.0;
+        for player in &self.players {
+            for (target, value, w) in player.curve_values() {
+                if matches!(target, CurveTarget::EffectGroup(g) if g == name) {
+                    s += (value - s) * w;
+                }
+            }
+        }
+        s
+    }
+
+    /// パーツの不透明度のカーブの値 `(パーツ, 値, 重み)`。パーツごとに 1 つ、最初に現れた順に並ぶ。
+    ///
+    /// 開始した順に各モーションのカーブを重ねる。値は `lerp(v, value, w)`、重みは
+    /// `1 - (1 - W)(1 - w)` で重ねる (どちらも最初は 0)。呼び出し側は、パーツ自身の不透明度 `o` を
+    /// `lerp(o, 値, 重み)` で上書きする。
+    pub fn part_opacities(&self) -> Vec<(PartId, f32, f32)> {
+        let mut out: Vec<(PartId, f32, f32)> = Vec::new();
+        for player in &self.players {
+            for (target, value, w) in player.curve_values() {
+                let CurveTarget::PartOpacity(part) = target else {
+                    continue;
+                };
+                let i = match out.iter().position(|(p, ..)| p == part) {
+                    Some(i) => i,
+                    None => {
+                        out.push((part.clone(), 0.0, 0.0));
+                        out.len() - 1
+                    }
+                };
+                let (_, v, weight) = &mut out[i];
+                // 重み W で上書きした上に、さらに w で上書きする: lerp(lerp(o, v, W), value, w)
+                // = lerp(o, v', W') となる v' と W' を求める。
+                let new_weight = 1.0 - (1.0 - *weight) * (1.0 - w);
+                if new_weight > 0.0 {
+                    *v = (*v * *weight * (1.0 - w) + value * w) / new_weight;
+                }
+                *weight = new_weight;
+            }
+        }
+        out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ugoe_model::effects::EYE_BLINK_GROUP;
+    use ugoe_model::fixtures;
+    use ugoe_model::motion::{Curve, Point, Segment};
+    use ugoe_runtime::ParamIndex;
+
+    use super::*;
+    use crate::easing;
+
+    const EPS: f32 = 1e-5;
+
+    fn close(a: f32, b: f32) -> bool {
+        (a - b).abs() <= EPS
+    }
+
+    fn constant(target: CurveTarget, v: f32) -> Curve {
+        Curve {
+            target,
+            segments: vec![Segment::Start {
+                p: Point { t: 0.0, v },
+            }],
+            fade_in: None,
+            fade_out: None,
+        }
+    }
+
+    fn motion(name: &str, value: f32, fade: f32) -> Motion {
+        Motion {
+            name: name.into(),
+            duration: 10.0,
+            looping: true,
+            fade_in: fade,
+            fade_out: fade,
+            curves: vec![constant(CurveTarget::Parameter("X".into()), value)],
+            events: vec![],
+        }
+    }
+
+    fn x(p: &ParameterValues) -> f32 {
+        p.get(ParamIndex(0))
+    }
+
+    fn params() -> ParameterValues {
+        ParameterValues::from_model(&fixtures::single_quad())
+    }
+
+    #[test]
+    fn lower_priority_request_is_ignored() {
+        let mut m = MotionManager::new();
+        assert!(m.start(motion("a", 1.0, 0.0), Priority::Normal));
+        assert!(!m.start(motion("b", 1.0, 0.0), Priority::Idle));
+        assert_eq!(m.players().len(), 1);
+        // 同じ優先度と高い優先度は開始できる。
+        assert!(m.start(motion("c", 1.0, 0.0), Priority::Normal));
+        assert!(m.start(motion("d", 1.0, 0.0), Priority::Force));
+        assert_eq!(m.current_priority(), Some(Priority::Force));
+        m.stop_all();
+        assert!(!m.is_playing());
+        assert!(m.start(motion("e", 1.0, 0.0), Priority::Idle));
+    }
+
+    /// 現在のモーションが終わると、低い優先度のモーションも開始できる。
+    #[test]
+    fn priority_clears_when_current_motion_finishes() {
+        let mut m = MotionManager::new();
+        let mut once = motion("once", 1.0, 0.0);
+        once.looping = false;
+        once.duration = 1.0;
+        m.start(once, Priority::Normal);
+        let mut p = params();
+        m.update(&mut p, 0.5);
+        assert_eq!(m.current_priority(), Some(Priority::Normal));
+        m.update(&mut p, 0.6);
+        assert_eq!(m.current_priority(), None);
+        assert!(m.players().is_empty());
+        assert!(m.start(motion("idle", 1.0, 0.0), Priority::Idle));
+    }
+
+    /// 古いモーションは自身の fade_out で、新しいモーションは fade_in でクロスフェードする。
+    #[test]
+    fn new_motion_cross_fades_with_old() {
+        let mut m = MotionManager::new();
+        m.start(motion("a", -1.0, 1.0), Priority::Normal);
+        let mut p = params();
+        m.update(&mut p, 2.0);
+        assert!(close(x(&p), -1.0));
+
+        m.start(motion("b", 1.0, 1.0), Priority::Normal);
+        let mut p = params();
+        m.update(&mut p, 0.25);
+        // a を重み easing(0.75) で、その上に b を easing(0.25) で重ねる。
+        let a = -easing(0.75);
+        let expected = a + (1.0 - a) * easing(0.25);
+        assert!(close(x(&p), expected), "{} != {expected}", x(&p));
+        assert_eq!(m.players().len(), 2);
+
+        let mut p = params();
+        m.update(&mut p, 1.0);
+        assert_eq!(m.players().len(), 1);
+        assert!(close(x(&p), 1.0));
+    }
+
+    #[test]
+    fn collects_events_from_all_players() {
+        let mut a = motion("a", 0.0, 1.0);
+        a.events = vec![MotionEvent {
+            t: 0.5,
+            value: "a".into(),
+        }];
+        let mut b = a.clone();
+        b.events[0].value = "b".into();
+        let mut m = MotionManager::new();
+        m.start(a, Priority::Normal);
+        m.start(b, Priority::Normal);
+        m.update(&mut params(), 0.5);
+        let names: Vec<_> = m.fired_events().iter().map(|e| e.value.as_str()).collect();
+        assert_eq!(names, ["a", "b"]);
+        m.update(&mut params(), 0.1);
+        assert!(m.fired_events().is_empty());
+    }
+
+    #[test]
+    fn effect_group_weight_blends_curves() {
+        let mut m = MotionManager::new();
+        assert_eq!(m.effect_group_weight(EYE_BLINK_GROUP), 1.0);
+        let mut a = motion("a", 0.0, 0.0);
+        a.fade_in = 1.0;
+        a.curves.push(constant(
+            CurveTarget::EffectGroup(EYE_BLINK_GROUP.into()),
+            0.0,
+        ));
+        m.start(a, Priority::Normal);
+        m.update(&mut params(), 0.5);
+        assert!(close(m.effect_group_weight(EYE_BLINK_GROUP), 0.5));
+        assert_eq!(m.effect_group_weight("Other"), 1.0);
+    }
+
+    #[test]
+    fn part_opacities_combine_weights() {
+        let target = CurveTarget::PartOpacity("P".into());
+        let mut a = motion("a", 0.0, 0.0);
+        a.curves.push(constant(target.clone(), 0.2));
+        let mut b = motion("b", 0.0, 1.0);
+        b.curves.push(constant(target, 0.8));
+        let mut m = MotionManager::new();
+        m.start(a, Priority::Normal);
+        m.update(&mut params(), 1.0);
+        let out = m.part_opacities();
+        assert_eq!(out.len(), 1);
+        assert!(close(out[0].1, 0.2) && close(out[0].2, 1.0));
+
+        // a は止めた直後 (fade_out 0 なので次の advance で終わる)。b を半分フェードインさせる。
+        m.players[0].stop();
+        m.players.push(MotionPlayer::new(b));
+        m.players[1].advance(0.5);
+        let out = m.part_opacities();
+        // a の重みは 0 (終わった)、b は easing(0.5) = 0.5。
+        assert!(close(out[0].1, 0.8) && close(out[0].2, 0.5), "{out:?}");
+
+        // 重ねた結果は lerp(lerp(o, 0.2, W1), 0.8, w2) と一致する。
+        let (v1, w1, v2, w2) = (0.2, 0.6, 0.8, 0.5);
+        let w = 1.0 - (1.0 - w1) * (1.0 - w2);
+        let v = (v1 * w1 * (1.0 - w2) + v2 * w2) / w;
+        for o in [0.0, 0.3, 1.0] {
+            let direct = {
+                let a = o + (v1 - o) * w1;
+                a + (v2 - a) * w2
+            };
+            assert!(close(o + (v - o) * w, direct));
+        }
+    }
+}
