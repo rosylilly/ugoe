@@ -35,9 +35,10 @@ lint:
 test *args:
     cargo test --workspace {{args}}
 
-# GPU を使う描画テスト (`gpu-tests` feature)
-test-gpu:
-    cargo test -p ugoe-render --features gpu-tests
+# GPU を使う描画テスト。`gpu-tests` feature を持つ全クレートが対象 (scripts/gpu-test-args.mjs)。
+# アダプタ情報も表示するには `just test-gpu -- --nocapture`
+test-gpu *args:
+    crates="$(node scripts/gpu-test-args.mjs)"; cargo test $crates {{args}}
 
 # 特定クレートだけを素早く検査: `just crate ugoe-runtime`
 crate name:
