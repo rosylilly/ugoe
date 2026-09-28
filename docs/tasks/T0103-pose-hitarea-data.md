@@ -1,11 +1,11 @@
 ---
 id: T0103
 title: ポーズとエフェクト設定のデータ定義
-status: todo
+status: in-progress
 milestone: M1
 crates: [ugoe-model]
 depends_on: []
-assignee:
+assignee: claude-worker-T0103
 ---
 
 # T0103: ポーズとエフェクト設定のデータ定義
