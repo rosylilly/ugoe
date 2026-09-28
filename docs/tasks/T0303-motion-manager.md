@@ -1,11 +1,11 @@
 ---
 id: T0303
 title: モーションマネージャ・表情・エフェクト
-status: todo
+status: in-progress
 milestone: M3
 crates: [ugoe-motion, ugoe]
 depends_on: [T0103, T0302]
-assignee:
+assignee: claude-worker-T0303
 ---
 
 # T0303: モーションマネージャ・表情・エフェクト
