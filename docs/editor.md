@@ -46,7 +46,7 @@
 
 | 対象 | `op` |
 | --- | --- |
-| パラメータ | `add_parameter`、`remove_parameter`、`set_parameter_range`、`rename_parameter`、`set_parameter_group` (`null` で外す)、`set_parameter_mirror` (`null` で外す。対は双方向に張り、どちらかと対になっていたパラメータの対は外す (`set_mirror_pair` と同じ)。自分自身と対にすると値の符号を反転して対応させる) |
+| パラメータ | `add_parameter`、`remove_parameter`、`set_parameter_range`、`rename_parameter`、`set_parameter_group` (`null` で外す)、`set_parameter_mirror` (`null` で外す。対は双方向に張り、どちらかと対になっていたパラメータの対は外す (`set_mirror_pair` と同じ)。自分自身と対にすると値の符号を反転して対応させる)、`set_parameter_internal` (中継用のパラメータにする・戻す。[model.md#パラメータ](spec/model.md#パラメータ)) |
 | パーツ | `add_part`、`remove_part`、`rename_part`、`set_part_parent`、`set_part_keyforms` |
 | デフォーマ | `add_deformer`、`remove_deformer`、`rename_deformer`、`set_deformer_parent`、`set_deformer_part`、`set_warp_keyforms` (`rows` / `cols` は変えない)、`set_rotation_keyforms`、`create_warp_deformer`・`create_rotation_deformer`・`reparent_preserving_look`・`move_rotation_origin`・`unwrap_deformer` ([デフォーマの編集](#デフォーマの編集)) |
 | メッシュ | `add_mesh` (`meshes` の末尾に追加)、`remove_mesh`、`rename_mesh`、`set_mesh_properties`、`set_mesh_parent`、`set_mesh_keyforms`、`set_mesh_keyform`、`reorder_mesh`、`regenerate_mesh` ([メッシュの再生成](#メッシュの再生成))、`move_mesh_vertices`・`add_mesh_vertex`・`remove_mesh_vertices`・`retriangulate_mesh` ([メッシュの編集](#メッシュの編集)) |
@@ -55,7 +55,7 @@
 | キャンバス | `set_canvas` (`width`・`height`・`origin`。大きさは 0 より大きい有限の値。要素の座標は変えない) |
 | キーフォームの推定 | `infer_keyforms`、`mirror_keyforms`、`mark_keyform_authored`、`mark_keyform_derived`、`set_keyform_inference`、`set_mirror_pair` (下の「推定とミラー」)、`set_depth`・`apply_depth_preset` ([深度の編集](#深度の編集)) |
 | モーション・表情 | `add_motion`、`remove_motion`、`rename_motion`、`set_motion_properties`、`add_motion_curve`、`remove_motion_curve`、`set_motion_curve_fade`、`set_motion_key`、`move_motion_key`、`remove_motion_key`、`set_motion_segment`、`set_motion_events`、`add_expression`、`remove_expression`、`rename_expression`、`set_expression_properties`、`set_expression_parameters` ([モーションと表情の編集](#モーションと表情の編集)) |
-| 物理 | `set_physics_world`、`add_physics_rig`、`create_physics_rig`、`remove_physics_rig`、`rename_physics_rig`、`set_physics_inputs`、`set_physics_outputs`、`set_physics_particles`、`set_physics_normalization`、`set_physics_rig_colliders`、`set_physics_frame`、`add_physics_collider`、`remove_physics_collider`、`set_physics_collider` ([物理の編集](#物理の編集)) |
+| 物理 | `set_physics_world`、`add_physics_rig`、`create_physics_rig`、`remove_physics_rig`、`rename_physics_rig`、`set_physics_inputs`、`set_physics_outputs`、`set_physics_particles`、`set_physics_normalization`、`set_physics_rig_colliders`、`set_physics_frame`、`add_physics_collider`、`remove_physics_collider`、`set_physics_collider`、`reorder_physics_rig` ([物理の編集](#物理の編集)) |
 | その他 | `batch` |
 
 - `set_mesh_properties` は `part`・`texture`・`blend`・`culling`・`masks`・`mask_mode`・`mask_only` のうち、指定したフィールドだけを変えます。
@@ -243,6 +243,7 @@
 | `add_physics_rig { rig }` | リグを末尾に追加する。物理の設定がなければ既定値 (重力 `(0, 1)`・風なし・60 Hz) で作る。使用中の ID は `DuplicateId` |
 | `create_physics_rig { id?, name, deformers }` | 回転デフォーマの鎖 (根元から順) に沿った動的物理のリグを作って追加する (下) |
 | `remove_physics_rig { id }`・`rename_physics_rig { id, name }` | リグの削除・表示名の変更 |
+| `reorder_physics_rig { id, before }` | リグを `before` の直前へ移す (`null` なら末尾)。リグは並びの順に処理されるので、中継 ([spec/physics.md#リグの順序と中継](spec/physics.md#リグの順序と中継)) の結果が変わる。見つからないリグは `NotFound`、自分自身の前は `SelfReference` |
 | `set_physics_inputs { rig, inputs }`・`set_physics_outputs { rig, outputs }`・`set_physics_particles { rig, particles }`・`set_physics_normalization { rig, normalization }` | リグの入力・出力・粒子の鎖・正規化の範囲を置き換える |
 | `set_physics_rig_colliders { rig, colliders }` | リグと衝突する衝突体の ID の列 (重複は拒否) |
 | `set_physics_frame { rig, frame? }` | 重力と風の基準のデフォーマ (省略でキャンバス) |
@@ -262,7 +263,7 @@
 
 | 場所 | 操作 |
 | --- | --- |
-| 物理のパネル (`panels/physics/PhysicsPanel.svelte`) | 右の列の上の区画の「Physics」タブ (「Inspector」と切り替える)。「Preview」/「Stop preview」、「World」(重力・風・周波数 → `set_physics_world`)、リグの一覧と「+ Rig」(空のリグ → `add_physics_rig`)、「+ From selected deformers」(ツリーで選んだ回転デフォーマを親から子の順に並べて `create_physics_rig`) |
+| 物理のパネル (`panels/physics/PhysicsPanel.svelte`) | 右の列の上の区画の「Physics」タブ (「Inspector」と切り替える)。「Preview」/「Stop preview」、「World」(重力・風・周波数 → `set_physics_world`)、リグの一覧 (上から処理する順。▲▼ で並べ替える → `reorder_physics_rig`。前のリグの出力を入力に読むリグには「relay」の印) と「+ Rig」(空のリグ → `add_physics_rig`)、「+ From selected deformers」(ツリーで選んだ回転デフォーマを親から子の順に並べて `create_physics_rig`) |
 | リグの編集 (`panels/physics/RigEditor.svelte`) | 名前、「Gravity frame」、「Delete rig」、粒子 (「Length」`radius`・「Sway」`mobility`・「Speed」`delay`・「Settle」`acceleration`・「Hit r」`collision_radius`・位置。「+ Particle」は最後の区間と同じ向き・長さで足す)、入力、出力 (種類・書き込み先・粒子・成分・倍率・重み・反転。頂点の出力は作ったとき重みがすべて 1)、「Collides with」、「Input range」。欄を確定するたびにコマンドを 1 つ送る |
 | 衝突体 (`panels/physics/ColliderSection.svelte`) | 「+ Circle」「+ Capsule」(主な選択がデフォーマならその原点 (ワープは中心) に取り付け、なければキャンバスの中央)。名前・「Attach to」・「Shape」(どちらも今の見た目の位置を保って写し直す)・位置・半径・削除 |
 | ビューポート (`viewport/tools/physics/PhysicsOverlay.svelte`) | 物理のパネルを開いている間、衝突体 (青) と粒子の鎖 (オレンジ、根元は四角。選んだリグは濃い色) を重ねる。粒子は動的物理の設定のときだけ (物理空間がキャンバス座標なので)。衝突体をドラッグで動かし (カプセルは端の丸で端だけ)、離したときに `set_physics_collider` を 1 つ送る。鎖を押すとそのリグを選ぶ |
@@ -406,7 +407,7 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 
 | 場所 | 操作 |
 | --- | --- |
-| パラメータ一覧 (`ParametersPanel.svelte`) | 「+」でパラメータを作る (ID・名前・最小・既定・最大)。名前を押すと名前・値域・既定値の編集と削除 (`rename_parameter` と `set_parameter_range` を `batch` で 1 つの Undo に)、左右の対の「Mirror」(なし / 自分自身 / 相手。選ぶとすぐ `set_parameter_mirror`。標準の命名から対を提案する。`panels/parameters/`)。スライダーの下に、主な選択の要素のキーを ◆ で示し (押すとそのキーへ)、「Snap to keys」で要素のすべての軸を最も近いキーへ動かす。行の値の欄に数を入力して Enter (またはフォーカスを外す) でスライダーをその値にする (数でない・値域の外なら理由を出して拒否)。行の ◆ ボタンで、今の値にキーを追加 (今の値がキーならそのキーを削除。キーの上とみなす許容差の中に別のキーがあれば拒否)。スライダーは表示の状態なので IPC を通らない |
+| パラメータ一覧 (`ParametersPanel.svelte`) | 「+」でパラメータを作る (ID・名前・最小・既定・最大)。名前を押すと名前・値域・既定値の編集と削除 (`rename_parameter` と `set_parameter_range` を `batch` で 1 つの Undo に)、左右の対の「Mirror」(なし / 自分自身 / 相手。選ぶとすぐ `set_parameter_mirror`。標準の命名から対を提案する。`panels/parameters/`)、「Relay (internal)」(切り替えるとすぐ `set_parameter_internal`)。中継用のパラメータは一覧に残し、名前を斜体にして「relay」の印を付ける。スライダーの下に、主な選択の要素のキーを ◆ で示し (押すとそのキーへ)、「Snap to keys」で要素のすべての軸を最も近いキーへ動かす。行の値の欄に数を入力して Enter (またはフォーカスを外す) でスライダーをその値にする (数でない・値域の外なら理由を出して拒否)。行の ◆ ボタンで、今の値にキーを追加 (今の値がキーならそのキーを削除。キーの上とみなす許容差の中に別のキーがあれば拒否)。スライダーは表示の状態なので IPC を通らない |
 | インスペクタ (`inspector/keyforms/KeyformInspector.svelte`) | 主な選択の要素の軸とキー (× で削除、押すとそのキーへ移動、「+ 値」で今の値にキーを追加)、軸のないパラメータへの軸の追加、セルの格子 (1 軸は 1 行、2 軸は表、3 軸目以降は今の値に最も近いキーの断面)。メッシュでは描画順を表示し、「Set for all cells」で `set_mesh_draw_order` を送る。メッシュ・ワープ・回転では「Smooth curve between keys」のチェックで `set_keyform_interpolation` (`smooth` / `linear`) を送る (未知の値なら線形として扱うことを添える。ブレンドシェイプ格子の切り替えはまだ画面にない)。セルは記号と色で由来を示し ([推定の画面での操作](#推定の画面での操作))、今の値がすべての軸でキーの上にあればそのセルを枠で示す。キーの上になければ「Move to nearest key」を出す |
 | ビューポート (`viewport/tools/form/FormTool.svelte`) | 「Form edit」で切り替える。主な選択の要素のうち、メッシュは頂点、ワープは制御点、回転デフォーマは原点をハンドルで示す (主な選択がデフォーマのときは、代わりに [デフォーマのギズモ](#デフォーマの編集) を出す)。点のクリックで選び (Shift で追加・解除)、要素の内側 (メッシュの三角形・ワープの格子) の何もない所からのドラッグで矩形選択 (Shift で追加)、クリックで選択を解く。要素の外側のクリックは下の選択レイヤー (メッシュの選択) に通す。「All」/ Ctrl + A ですべて、Esc で解く。選んだ点のドラッグで選んだ点をまとめて同じだけ動かす (選んでいない点を押すと、その点だけを選んで動かす)。ドラッグ中はオーバーレイだけでプレビューし、離したときに `canvas_to_local` で親の座標系に直してから `set_keyform_cell` を 1 つ送る (Undo の 1 単位)。選択は要素ごとにフォーム編集の中だけで持つ (選択の補助は `viewport/tools/form/form.ts`) |
 

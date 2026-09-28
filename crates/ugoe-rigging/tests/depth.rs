@@ -221,6 +221,7 @@ fn other_axes_and_authored_corrections_are_added() {
         kind: Default::default(),
         mirror: None,
         group: None,
+        internal: false,
     });
     let grid = &mut warp_mut(&mut model, "Face").keyforms;
     let base = grid.keyforms[12].clone();

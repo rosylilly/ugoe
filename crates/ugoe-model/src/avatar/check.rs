@@ -79,6 +79,10 @@ pub enum ProfileIssue {
         value: f32,
         expected: &'static str,
     },
+    /// トラッキング・視線の対象が中継用 (`internal`) のパラメータ。トラッキングはこのパラメータに書き込まない
+    /// (`docs/spec/model.md#パラメータ`)。
+    #[error("{field}: parameter `{id}` is internal, so tracking does not write it")]
+    InternalTrackingTarget { field: String, id: String },
 }
 
 impl ProfileIssue {
@@ -87,7 +91,8 @@ impl ProfileIssue {
         match self {
             Self::NewerProfileVersion { .. }
             | Self::ParameterRange { .. }
-            | Self::UnknownValue { .. } => Severity::Warning,
+            | Self::UnknownValue { .. }
+            | Self::InternalTrackingTarget { .. } => Severity::Warning,
             _ => Severity::Error,
         }
     }
@@ -186,6 +191,12 @@ pub fn check_profile(model: &Model) -> ProfileReport {
     }
 
     for param in &model.parameters {
+        if param.internal && TRACKED_PARAMETERS.contains(&param.id.as_str()) {
+            issues.push(ProfileIssue::InternalTrackingTarget {
+                field: format!("parameters[{}].internal", param.id),
+                id: param.id.to_string(),
+            });
+        }
         let Some(expected) = standard::range(param.id.as_str()) else {
             continue;
         };
@@ -261,7 +272,11 @@ fn check_tracking(model: &Model, avatar: &AvatarProfile, issues: &mut Vec<Profil
             });
         }
         match entry.target() {
-            Some(target) => check_param(model, &format!("{path}.parameter"), target, issues),
+            Some(target) => {
+                let field = format!("{path}.parameter");
+                check_param(model, &field, target, issues);
+                check_not_internal(model, field, target, issues);
+            }
             None => issues.push(ProfileIssue::MissingTrackingTarget {
                 field: path.clone(),
             }),
@@ -276,8 +291,13 @@ fn check_look_at(model: &Model, avatar: &AvatarProfile, issues: &mut Vec<Profile
     let Some(look_at) = &avatar.look_at else {
         return;
     };
-    check_param(model, "avatar.look_at.x", look_at.x.as_str(), issues);
-    check_param(model, "avatar.look_at.y", look_at.y.as_str(), issues);
+    for (field, id) in [
+        ("avatar.look_at.x", &look_at.x),
+        ("avatar.look_at.y", &look_at.y),
+    ] {
+        check_param(model, field, id.as_str(), issues);
+        check_not_internal(model, field.to_owned(), id.as_str(), issues);
+    }
     let ranges = [("range_x", look_at.range_x), ("range_y", look_at.range_y)];
     for (name, value) in ranges {
         if !(value.is_finite() && value > 0.0) {
@@ -321,6 +341,20 @@ fn check_param(model: &Model, field: &str, id: &str, issues: &mut Vec<ProfileIss
     }
 }
 
+/// パラメータ `id` が中継用 (`internal`) でないこと (警告)。
+fn check_not_internal(model: &Model, field: String, id: &str, issues: &mut Vec<ProfileIssue>) {
+    if model
+        .parameters
+        .iter()
+        .any(|p| p.internal && p.id.as_str() == id)
+    {
+        issues.push(ProfileIssue::InternalTrackingTarget {
+            field,
+            id: id.to_owned(),
+        });
+    }
+}
+
 /// 有限値であること。
 fn check_finite(field: &str, value: f32, issues: &mut Vec<ProfileIssue>) {
     if !value.is_finite() {
@@ -350,6 +384,7 @@ mod tests {
             kind: ParameterKind::Normal,
             mirror: None,
             group: None,
+            internal: false,
         }
     }
 
@@ -606,5 +641,42 @@ mod tests {
                 },
             ]
         );
+    }
+
+    /// 中継用 (`internal`) のパラメータはトラッキングが書き込まないので、トラッキングの対象なら警告する。
+    #[test]
+    fn internal_tracking_targets_are_warnings() {
+        let mut model = level_1();
+        model.parameters.push(Parameter {
+            internal: true,
+            ..param("Relay")
+        });
+        for p in &mut model.parameters {
+            if p.id.as_str() == standard::ANGLE_X {
+                p.internal = true;
+            }
+        }
+        avatar(&mut model).tracking = vec![TrackingOverride {
+            source: TrackingSource::BlendShape,
+            input: "jawForward".into(),
+            parameter: Some("Relay".into()),
+            scale: 1.0,
+            offset: 0.0,
+        }];
+        let report = check_profile(&model);
+        assert_eq!(
+            report.issues,
+            vec![
+                ProfileIssue::InternalTrackingTarget {
+                    field: "parameters[AngleX].internal".into(),
+                    id: standard::ANGLE_X.into(),
+                },
+                ProfileIssue::InternalTrackingTarget {
+                    field: "avatar.tracking[0].parameter".into(),
+                    id: "Relay".into(),
+                },
+            ]
+        );
+        assert!(report.is_conformant());
     }
 }

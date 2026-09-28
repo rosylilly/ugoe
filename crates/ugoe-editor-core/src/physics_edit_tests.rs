@@ -593,3 +593,84 @@ fn model_edits_that_break_physics_are_rejected() {
     );
     assert_eq!(physics(&doc), &fixtures::dynamic_hair_settings());
 }
+
+// ---- リグの順序と中継パラメータ (T0312) ----
+
+fn rig_ids(doc: &Document) -> Vec<&str> {
+    physics(doc).rigs.iter().map(|r| r.id.as_str()).collect()
+}
+
+fn reorder(id: &str, before: Option<&str>) -> Command {
+    Command::ReorderPhysicsRig {
+        id: id.into(),
+        before: before.map(Into::into),
+    }
+}
+
+#[test]
+fn reorder_rig_moves_before_and_undo_restores() {
+    let mut doc = doc();
+    assert_eq!(rig_ids(&doc), ["Hair", "Skirt"]);
+    doc.apply(reorder("Skirt", Some("Hair"))).unwrap();
+    assert_eq!(rig_ids(&doc), ["Skirt", "Hair"]);
+    doc.apply(reorder("Skirt", None)).unwrap();
+    assert_eq!(rig_ids(&doc), ["Hair", "Skirt"]);
+    assert!(doc.undo());
+    assert_eq!(rig_ids(&doc), ["Skirt", "Hair"]);
+    assert!(doc.undo());
+    assert_eq!(physics(&doc), &fixtures::dynamic_hair_settings());
+    assert!(doc.redo());
+    assert_eq!(rig_ids(&doc), ["Skirt", "Hair"]);
+}
+
+#[test]
+fn reorder_rig_rejects_unknown_and_self() {
+    let mut doc = doc();
+    assert!(matches!(
+        doc.apply(reorder("Nope", None)),
+        Err(EditError::NotFound { .. })
+    ));
+    assert!(matches!(
+        doc.apply(reorder("Hair", Some("Nope"))),
+        Err(EditError::NotFound { .. })
+    ));
+    assert!(matches!(
+        doc.apply(reorder("Hair", Some("Hair"))),
+        Err(EditError::SelfReference { .. })
+    ));
+    assert!(matches!(
+        Document::new(fixtures::dynamic_hair()).apply(reorder("Hair", None)),
+        Err(EditError::NotFound { .. })
+    ));
+    assert_eq!(physics(&doc), &fixtures::dynamic_hair_settings());
+}
+
+#[test]
+fn set_parameter_internal_and_undo() {
+    let mut doc = Document::new(fixtures::physics_relay())
+        .with_physics(Some(fixtures::physics_relay_settings()));
+    let internal = |doc: &Document, id: &str| {
+        doc.model()
+            .parameters
+            .iter()
+            .find(|p| p.id.as_str() == id)
+            .unwrap()
+            .internal
+    };
+    assert!(internal(&doc, fixtures::RELAY_FOLLOW));
+    doc.apply(Command::SetParameterInternal {
+        id: fixtures::RELAY_FOLLOW.into(),
+        internal: false,
+    })
+    .unwrap();
+    assert!(!internal(&doc, fixtures::RELAY_FOLLOW));
+    assert!(doc.undo());
+    assert!(internal(&doc, fixtures::RELAY_FOLLOW));
+    assert!(matches!(
+        doc.apply(Command::SetParameterInternal {
+            id: "Nope".into(),
+            internal: true,
+        }),
+        Err(EditError::NotFound { .. })
+    ));
+}

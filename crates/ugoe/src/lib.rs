@@ -93,10 +93,8 @@ impl Puppet {
         let pose = model.pose.clone();
         let instance = ModelInstance::new(compiled);
         let values = instance.parameters().as_slice().to_vec();
-        let tracking_map = TrackingMap::new(
-            instance.compiled().model().avatar.as_ref(),
-            instance.parameters(),
-        );
+        let tracking_map =
+            TrackingMap::for_model(instance.compiled().model(), instance.parameters());
         let mut puppet = Self {
             instance,
             physics: None,

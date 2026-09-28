@@ -29,6 +29,7 @@ fn parameter(id: &str, mirror: Option<&str>) -> Parameter {
         kind: Default::default(),
         mirror: mirror.map(Into::into),
         group: None,
+        internal: false,
     }
 }
 

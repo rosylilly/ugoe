@@ -361,3 +361,36 @@ export function chainOrder(model: Model, ids: readonly string[]): string[] {
     .sort((a, b) => a.depth - b.depth || a.i - b.i)
     .map((x) => x.id);
 }
+
+/**
+ * リグを 1 つ上 (`delta = -1`) か下 (`delta = 1`) へ動かすコマンド (reorder_physics_rig)。端なら null。
+ * リグは上から順に処理され、前のリグの出力を後ろのリグが同じステップで読む (docs/spec/physics.md#リグの順序と中継)。
+ */
+export function moveRigCommand(
+  settings: PhysicsSettings | null,
+  id: string,
+  delta: -1 | 1,
+): Command | null {
+  const ids = settings?.rigs.map((r) => r.id) ?? [];
+  const i = ids.indexOf(id);
+  const to = i + delta;
+  if (i < 0 || to < 0 || to >= ids.length) return null;
+  // 上へは 1 つ上のリグの前、下へは 2 つ下のリグの前 (なければ末尾)。
+  const before = (delta < 0 ? ids[to] : ids[to + 1]) ?? null;
+  return { op: "reorder_physics_rig", id, before };
+}
+
+/**
+ * リグ `index` の入力のうち、前のリグがパラメータに出力するパラメータ (中継) を読むものの ID
+ * (ugoe_physics の判定と同じ)。
+ */
+export function relayInputs(settings: PhysicsSettings, index: number): string[] {
+  const written = new Set(
+    settings.rigs
+      .slice(0, Math.max(index, 0))
+      .flatMap((r) => r.outputs)
+      .flatMap((o) => (o.target.type === "parameter" ? [o.target.id] : [])),
+  );
+  const rig = settings.rigs[index];
+  return rig ? [...new Set(rig.inputs.map((i) => i.parameter).filter((p) => written.has(p)))] : [];
+}

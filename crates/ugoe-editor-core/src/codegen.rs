@@ -679,6 +679,15 @@ pub(crate) fn physics_samples() -> Vec<Command> {
         Command::AddPhysicsCollider { collider: capsule },
         Command::RemovePhysicsCollider { id: "Arm".into() },
         Command::SetPhysicsCollider { collider },
+        // T0312
+        Command::ReorderPhysicsRig {
+            id: "Skirt".into(),
+            before: Some("Hair".into()),
+        },
+        Command::SetParameterInternal {
+            id: "AngleX".into(),
+            internal: true,
+        },
     ]
 }
 

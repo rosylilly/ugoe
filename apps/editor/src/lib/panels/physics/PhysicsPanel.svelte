@@ -5,6 +5,8 @@
   - 「Preview」で物理のプレビューを始める (ViewportController.startPhysicsPreview)。パラメータや頭を動かすと揺れる。
     「Stop」で止めると編集中の姿に戻る。
   - リグの一覧・選んだリグの編集 (RigEditor)・衝突体 (ColliderSection)。
+  - リグは上から順に処理される。▲▼ で並べ替える (reorder_physics_rig)。前のリグの出力を読むリグには「relay」と出す
+    (docs/spec/physics.md#リグの順序と中継)。
   - パネルを開いている間、ビューポートに粒子と衝突体を重ねる (viewport/tools/physics/PhysicsOverlay.svelte)。
 -->
 <script lang="ts">
@@ -20,7 +22,9 @@ import {
   DEFAULT_SETTINGS,
   finiteValue,
   isDynamicSettings,
+  moveRigCommand,
   newRig,
+  relayInputs,
   worldCommand,
 } from "./physics";
 import type { PhysicsView } from "./physicsView.svelte";
@@ -99,6 +103,11 @@ function setWorld(field: "gx" | "gy" | "wx" | "wy" | "fps", raw: number): void {
   void send(worldCommand(settings, patch));
 }
 
+function moveRig(id: string, delta: -1 | 1): void {
+  const command = moveRigCommand(settings, id, delta);
+  if (command) void send(command);
+}
+
 function togglePreview(): void {
   if (viewport.previewingPhysics) viewport.stopPhysicsPreview();
   else viewport.startPhysicsPreview();
@@ -153,13 +162,37 @@ function togglePreview(): void {
 <section>
   <h3>Rigs</h3>
   {#if settings && settings.rigs.length > 0}
+    <p class="muted hint">
+      Rigs run top to bottom. A rig that reads a parameter written by a rig above it gets that
+      value in the same step (relay).
+    </p>
     <ul class="list">
-      {#each settings.rigs as r (r.id)}
-        <li>
+      {#each settings.rigs as r, i (r.id)}
+        {@const relay = relayInputs(settings, i)}
+        <li class="rig">
           <button class="item" class:selected={r.id === view.rig} onclick={() => (view.rig = r.id)}>
             {elementLabel(r.name, r.id)}
             <span class="muted">· {r.particles.length} particles · {r.outputs.length} outputs</span>
+            {#if relay.length > 0}
+              <span class="relay" title="Reads {relay.join(', ')} from the rigs above in the same step"
+                >relay</span
+              >
+            {/if}
           </button>
+          <span class="order">
+            <button
+              disabled={busy || i === 0}
+              onclick={() => moveRig(r.id, -1)}
+              title="Move up (run earlier)"
+              aria-label="Move {elementLabel(r.name, r.id)} up">▲</button
+            >
+            <button
+              disabled={busy || i === settings.rigs.length - 1}
+              onclick={() => moveRig(r.id, 1)}
+              title="Move down (run later)"
+              aria-label="Move {elementLabel(r.name, r.id)} down">▼</button
+            >
+          </span>
         </li>
       {/each}
     </ul>
@@ -234,6 +267,36 @@ input[type="number"] {
 
 .item.selected {
   border-color: var(--accent);
+}
+
+.rig {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.rig .item {
+  flex: 1;
+  min-width: 0;
+}
+
+.order {
+  display: flex;
+  flex: none;
+}
+
+.order button {
+  padding: 0 4px;
+  font-size: 10px;
+}
+
+.relay {
+  margin-left: 4px;
+  padding: 0 4px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  color: var(--accent);
+  font-size: 10px;
 }
 
 button.active {

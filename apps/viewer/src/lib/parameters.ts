@@ -10,6 +10,8 @@ export interface ParameterDef {
   kind?: string;
   mirror?: string | null;
   group?: string | null;
+  /** 中継用 (内部) のパラメータ。スライダーの一覧では既定で隠す (docs/spec/model.md#パラメータ)。 */
+  internal?: boolean;
 }
 
 export interface ParameterGroupDef {
@@ -48,6 +50,33 @@ export function groupParameters(list: ParameterList, ungroupedName: string): Par
     (section ?? rest).parameters.push(p);
   }
   return [...sections.values(), rest].filter((s) => s.parameters.length > 0);
+}
+
+/**
+ * スライダーの一覧に出す区切り。`query` (前後の空白を除いて空でなければ) を ID か名前に含むパラメータだけを残し、
+ * `showInternal` が偽なら中継用のパラメータを隠す。空になった区切りは出さない。
+ */
+export function visibleSections(
+  sections: readonly ParameterSection[],
+  query: string,
+  showInternal: boolean,
+): ParameterSection[] {
+  const q = query.trim().toLowerCase();
+  return sections
+    .map((s) => ({
+      ...s,
+      parameters: s.parameters.filter(
+        (p) =>
+          (showInternal || !p.internal) &&
+          (q === "" || p.id.toLowerCase().includes(q) || p.name.toLowerCase().includes(q)),
+      ),
+    }))
+    .filter((s) => s.parameters.length > 0);
+}
+
+/** 中継用のパラメータの数。 */
+export function internalCount(sections: readonly ParameterSection[]): number {
+  return sections.reduce((n, s) => n + s.parameters.filter((p) => p.internal).length, 0);
 }
 
 /** スライダーの刻み。値域を 1000 等分した程度の、きりのよい大きさ。 */

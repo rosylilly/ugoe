@@ -7,9 +7,11 @@ import {
   isDynamicRig,
   isDynamicSettings,
   makeTarget,
+  moveRigCommand,
   newCollider,
   newOutput,
   newRig,
+  relayInputs,
   removeParticle,
   setParticleField,
   targetKind,
@@ -183,5 +185,55 @@ describe("colliders", () => {
     const capsule = newCollider(null, "capsule", null, [100, 50], 10);
     expect(capsule.attach).toBeUndefined();
     expect(capsule.shape).toEqual({ type: "capsule", a: [90, 50], b: [110, 50], radius: 10 });
+  });
+});
+
+describe("rig order", () => {
+  const rig = (id: string, inputs: string[], outputs: string[]): PhysicsRig => ({
+    ...newRig(null, id),
+    inputs: inputs.map((parameter) => ({ parameter, source: "x", weight: 100, reflect: false })),
+    outputs: outputs.map((id) => ({
+      target: { type: "parameter", id },
+      particle: 1,
+      source: "angle",
+      scale: 1,
+      weight: 100,
+      reflect: false,
+    })),
+  });
+  const settings: PhysicsSettings = {
+    gravity: [0, 1],
+    wind: [0, 0],
+    fps: 60,
+    rigs: [rig("A", ["AngleX"], ["Relay"]), rig("B", ["Relay", "AngleX"], []), rig("C", [], [])],
+    colliders: [],
+  };
+
+  it("moves a rig up or down with reorder_physics_rig", () => {
+    expect(moveRigCommand(settings, "B", -1)).toEqual({
+      op: "reorder_physics_rig",
+      id: "B",
+      before: "A",
+    });
+    expect(moveRigCommand(settings, "A", 1)).toEqual({
+      op: "reorder_physics_rig",
+      id: "A",
+      before: "C",
+    });
+    expect(moveRigCommand(settings, "B", 1)).toEqual({
+      op: "reorder_physics_rig",
+      id: "B",
+      before: null,
+    });
+    expect(moveRigCommand(settings, "A", -1)).toBeNull();
+    expect(moveRigCommand(settings, "C", 1)).toBeNull();
+    expect(moveRigCommand(settings, "Nope", 1)).toBeNull();
+    expect(moveRigCommand(null, "A", 1)).toBeNull();
+  });
+
+  it("finds inputs that read an earlier rig's output", () => {
+    expect(relayInputs(settings, 0)).toEqual([]);
+    expect(relayInputs(settings, 1)).toEqual(["Relay"]);
+    expect(relayInputs({ ...settings, rigs: [...settings.rigs].reverse() }, 1)).toEqual([]);
   });
 });

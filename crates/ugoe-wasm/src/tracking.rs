@@ -26,7 +26,7 @@ pub fn tracking_targets(puppet: &Puppet) -> Vec<String> {
     let instance = puppet.instance();
     let model = instance.compiled().model();
     let parameters = instance.parameters();
-    let map = TrackingMap::new(model.avatar.as_ref(), parameters);
+    let map = TrackingMap::for_model(model, parameters);
     let mut indices: Vec<u32> = map.targets().map(|i| i.0).collect();
     indices.sort_unstable();
     indices

@@ -542,6 +542,7 @@ impl Rig {
                     kind: Default::default(),
                     mirror: None,
                     group: None,
+                    internal: false,
                 },
             })?;
         }

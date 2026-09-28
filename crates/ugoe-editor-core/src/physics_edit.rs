@@ -161,6 +161,7 @@ pub(crate) fn apply(
                 })?;
             *existing = collider;
         }
+        Command::ReorderPhysicsRig { id, before } => reorder_rig(physics, &id, before.as_deref())?,
         // 物理のコマンドでない。
         _ => {}
     }
@@ -183,6 +184,38 @@ fn add_rig(physics: &mut Option<PhysicsSettings>, rig: PhysicsRig) -> Result<(),
     check_particles(&rig.particles)?;
     check_normalization(&rig.normalization)?;
     settings.rigs.push(rig);
+    Ok(())
+}
+
+/// リグ `id` を `before` の直前 (`None` なら末尾) へ移す。
+fn reorder_rig(
+    physics: &mut Option<PhysicsSettings>,
+    id: &str,
+    before: Option<&str>,
+) -> Result<(), EditError> {
+    if before == Some(id) {
+        return Err(EditError::SelfReference {
+            kind: "physics rig",
+            id: id.to_owned(),
+            field: "before",
+        });
+    }
+    let settings = physics.as_mut().ok_or_else(|| rig_not_found(id))?;
+    let from = settings
+        .rigs
+        .iter()
+        .position(|r| r.id == id)
+        .ok_or_else(|| rig_not_found(id))?;
+    if let Some(before) = before
+        && !settings.rigs.iter().any(|r| r.id == before)
+    {
+        return Err(rig_not_found(before));
+    }
+    let moved = settings.rigs.remove(from);
+    let to = before
+        .and_then(|before| settings.rigs.iter().position(|r| r.id == before))
+        .unwrap_or(settings.rigs.len());
+    settings.rigs.insert(to, moved);
     Ok(())
 }
 

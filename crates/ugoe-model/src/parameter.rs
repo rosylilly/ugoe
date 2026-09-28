@@ -21,6 +21,12 @@ pub struct Parameter {
     pub mirror: Option<ParamId>,
     #[serde(default)]
     pub group: Option<String>,
+    /// 中継用 (内部) のパラメータか。物理のリグの間で値を受け渡すためのもので
+    /// (`docs/spec/physics.md#リグの順序と中継`)、トラッキングは書き込まず、
+    /// ビューアなどのアプリの一覧では既定で隠す (`docs/spec/model.md#パラメータ`)。省略時は `false`。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    pub internal: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,4 +62,24 @@ impl ParameterKind {
 pub struct ParameterGroup {
     pub id: String,
     pub name: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `internal` は省略すると `false` で、`false` なら書き出さない。
+    #[test]
+    fn internal_defaults_to_false_and_is_skipped() {
+        let json = r#"{"id":"P","name":"P","min":0,"max":1,"default":0}"#;
+        let mut p: Parameter = serde_json::from_str(json).unwrap();
+        assert!(!p.internal);
+        let value = serde_json::to_value(&p).unwrap();
+        assert!(value.get("internal").is_none());
+
+        p.internal = true;
+        let value = serde_json::to_value(&p).unwrap();
+        assert_eq!(value["internal"], true);
+        assert_eq!(serde_json::from_value::<Parameter>(value).unwrap(), p);
+    }
 }

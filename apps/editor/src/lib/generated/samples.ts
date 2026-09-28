@@ -5151,5 +5151,15 @@ export const commands: Command[] = [
         "radius": 8.0
       }
     }
+  },
+  {
+    "op": "reorder_physics_rig",
+    "id": "Skirt",
+    "before": "Hair"
+  },
+  {
+    "op": "set_parameter_internal",
+    "id": "AngleX",
+    "internal": true
   }
 ];

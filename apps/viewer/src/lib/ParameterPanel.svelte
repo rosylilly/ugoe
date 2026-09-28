@@ -1,24 +1,15 @@
 <script lang="ts">
-// パラメータのスライダーの一覧 (グループごと)。
-import { formatValue, sliderStep } from "./parameters";
+// パラメータのスライダーの一覧 (グループごと)。中継用 (internal) のパラメータは既定で隠し、切り替えて出せる。
+import { formatValue, internalCount, sliderStep, visibleSections } from "./parameters";
 import type { Player } from "./player.svelte";
 
 let { player }: { player: Player } = $props();
 
 let filter = $state("");
+let showInternal = $state(false);
 
-let sections = $derived.by(() => {
-  const q = filter.trim().toLowerCase();
-  if (q === "") return player.sections;
-  return player.sections
-    .map((s) => ({
-      ...s,
-      parameters: s.parameters.filter(
-        (p) => p.id.toLowerCase().includes(q) || p.name.toLowerCase().includes(q),
-      ),
-    }))
-    .filter((s) => s.parameters.length > 0);
-});
+let hidden = $derived(internalCount(player.sections));
+let sections = $derived(visibleSections(player.sections, filter, showInternal));
 </script>
 
 <section class="panel parameters">
@@ -37,6 +28,15 @@ let sections = $derived.by(() => {
     </p>
   {:else}
     <input class="filter" type="search" placeholder="絞り込み (名前・ID)" bind:value={filter} />
+    {#if hidden > 0}
+      <label
+        class="internal-toggle"
+        title="物理のリグの間で値を受け渡す中継用のパラメータ。ふつうは動かしません"
+      >
+        <input type="checkbox" bind:checked={showInternal} />
+        中継用のパラメータも表示 ({hidden})
+      </label>
+    {/if}
     <div class="list">
       {#each sections as section (section.id ?? "")}
         <details open>
@@ -44,7 +44,7 @@ let sections = $derived.by(() => {
           {#each section.parameters as p (p.id)}
             {@const value = player.values[p.id] ?? p.default}
             {@const driven = player.driven.has(p.id)}
-            <div class="row" class:driven title={p.id}>
+            <div class="row" class:driven class:internal={p.internal} title={p.id}>
               <label for="param-{p.id}">{p.name || p.id}</label>
               <span class="value">{formatValue(value)}</span>
               <input
@@ -144,6 +144,18 @@ let sections = $derived.by(() => {
   .row .reset {
     grid-area: reset;
     padding: 0.1rem 0.4rem;
+  }
+  .internal-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-bottom: 0.4rem;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .row.internal label {
+    font-style: italic;
+    color: var(--muted);
   }
   .row.driven label::after {
     content: " (自動)";

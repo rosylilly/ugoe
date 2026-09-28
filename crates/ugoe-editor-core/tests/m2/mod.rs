@@ -197,6 +197,7 @@ fn additive_face(wf: &mut Workflow) {
                 kind: Default::default(),
                 mirror: None,
                 group: None,
+                internal: false,
             },
         });
     }

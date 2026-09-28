@@ -829,13 +829,17 @@ fn apply_to(
         | Command::SetPhysicsFrame { .. }
         | Command::AddPhysicsCollider { .. }
         | Command::RemovePhysicsCollider { .. }
-        | Command::SetPhysicsCollider { .. }) => physics_edit::apply(model, physics, command)?,
+        | Command::SetPhysicsCollider { .. }
+        | Command::ReorderPhysicsRig { .. }) => physics_edit::apply(model, physics, command)?,
         // 補間の種類はセルの値を変えないので、推定で作り直さない。
         Command::SetKeyformInterpolation {
             target,
             blend_shape,
             interpolation,
         } => keyform::set_interpolation(model, &target, blend_shape.as_ref(), interpolation)?,
+        Command::SetParameterInternal { id, internal } => {
+            parameter(model, &id)?.internal = internal;
+        }
     }
     Ok(())
 }

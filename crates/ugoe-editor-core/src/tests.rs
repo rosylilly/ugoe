@@ -1416,10 +1416,12 @@ fn op_name(command: &Command) -> &'static str {
         Command::RemovePhysicsCollider { .. } => "remove_physics_collider",
         Command::SetPhysicsCollider { .. } => "set_physics_collider",
         Command::SetKeyformInterpolation { .. } => "set_keyform_interpolation",
+        Command::ReorderPhysicsRig { .. } => "reorder_physics_rig",
+        Command::SetParameterInternal { .. } => "set_parameter_internal",
     }
 }
 
-const OP_COUNT: usize = 85;
+const OP_COUNT: usize = 87;
 
 fn json_samples() -> Vec<Command> {
     let quad = fixtures::single_quad();

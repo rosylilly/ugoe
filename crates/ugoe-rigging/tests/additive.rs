@@ -21,6 +21,7 @@ fn parameter(id: &str, default: f32) -> Parameter {
         kind: Default::default(),
         mirror: None,
         group: None,
+        internal: false,
     }
 }
 

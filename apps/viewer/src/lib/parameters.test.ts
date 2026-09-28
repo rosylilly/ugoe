@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { formatValue, groupParameters, parseParameterList, sliderStep } from "./parameters";
+import {
+  formatValue,
+  groupParameters,
+  internalCount,
+  parseParameterList,
+  sliderStep,
+  visibleSections,
+} from "./parameters";
 
 const param = (id: string, group?: string) => ({
   id,
@@ -55,5 +62,35 @@ describe("formatValue", () => {
     expect(formatValue(0.12345)).toBe("0.123");
     expect(formatValue(-0.0001)).toBe("0");
     expect(formatValue(30)).toBe("30");
+  });
+});
+
+describe("visibleSections", () => {
+  const sections = groupParameters(
+    {
+      parameters: [
+        param("AngleX", "Face"),
+        { ...param("PhysRelay", "Face"), internal: true },
+        { ...param("PhysOnly"), internal: true },
+      ],
+      groups: [{ id: "Face", name: "Face" }],
+    },
+    "Other",
+  );
+
+  it("hides internal parameters unless asked", () => {
+    const ids = (s: ReturnType<typeof visibleSections>) =>
+      s.map((x) => [x.name, x.parameters.map((p) => p.id)]);
+    expect(ids(visibleSections(sections, "", false))).toEqual([["Face", ["AngleX"]]]);
+    expect(ids(visibleSections(sections, "", true))).toEqual([
+      ["Face", ["AngleX", "PhysRelay"]],
+      ["Other", ["PhysOnly"]],
+    ]);
+    expect(internalCount(sections)).toBe(2);
+  });
+
+  it("filters by id or name", () => {
+    expect(visibleSections(sections, " relay ", true).map((s) => s.parameters.length)).toEqual([1]);
+    expect(visibleSections(sections, "relay", false)).toEqual([]);
   });
 });

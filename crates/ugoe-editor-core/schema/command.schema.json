@@ -2117,6 +2117,51 @@
         "target",
         "interpolation"
       ]
+    },
+    {
+      "description": "物理のリグを `before` の直前へ移す (`None` なら末尾)。リグは並びの順に処理するので、\n前のリグの出力を入力に読むリグ (中継) の結果が変わる。",
+      "type": "object",
+      "properties": {
+        "before": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "reorder_physics_rig"
+        }
+      },
+      "required": [
+        "op",
+        "id"
+      ]
+    },
+    {
+      "description": "パラメータを中継用 (内部) にする・戻す (`Parameter::internal`、`docs/spec/model.md#パラメータ`)。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "internal": {
+          "type": "boolean"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_parameter_internal"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "internal"
+      ]
     }
   ],
   "$defs": {
@@ -3446,6 +3491,10 @@
         "id": {
           "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
           "type": "string"
+        },
+        "internal": {
+          "description": "中継用 (内部) のパラメータか。物理のリグの間で値を受け渡すためのもので\n(`docs/spec/physics.md#リグの順序と中継`)、トラッキングは書き込まず、\nビューアなどのアプリの一覧では既定で隠す (`docs/spec/model.md#パラメータ`)。省略時は `false`。",
+          "type": "boolean"
         },
         "kind": {
           "description": "ブレンドシェイプ用パラメータか (加算変形。`docs/spec/model.md`)。",

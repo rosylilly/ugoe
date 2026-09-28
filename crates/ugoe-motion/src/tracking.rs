@@ -11,7 +11,7 @@
 use ugoe_model::avatar::{
     ARKIT_BLEND_SHAPES, AvatarProfile, HEAD_PITCH, HEAD_ROLL, HEAD_YAW, TrackingSource,
 };
-use ugoe_model::standard;
+use ugoe_model::{Model, standard};
 use ugoe_runtime::{ParamIndex, ParameterValues};
 
 /// ARKit のブレンドシェイプの数 ([`ARKIT_BLEND_SHAPES`] の長さ)。
@@ -425,6 +425,38 @@ impl TrackingMap {
             overrides,
             groups,
         }
+    }
+
+    /// `model` の上書き (`Model.avatar.tracking`) を解決する。`parameters` はモデルのパラメータ。
+    ///
+    /// [`Self::new`] と同じだが、中継用 (`Parameter::internal`) のパラメータには書き込まない
+    /// (`docs/spec/model.md#パラメータ`)。標準の対応でも上書きでも同じで、書き込み先が中継用の上書きは、
+    /// 標準の対応の置き換えは起こす (その標準の対応も書き込まない)。
+    pub fn for_model(model: &Model, parameters: &ParameterValues) -> Self {
+        let mut map = Self::new(model.avatar.as_ref(), parameters);
+        let internal: Vec<ParamIndex> = model
+            .parameters
+            .iter()
+            .filter(|p| p.internal)
+            .filter_map(|p| parameters.index_of(p.id.as_str()))
+            .collect();
+        if internal.is_empty() {
+            return map;
+        }
+        map.standard.retain(|(_, index)| !internal.contains(index));
+        let overrides = std::mem::take(&mut map.overrides);
+        let mut kept = Vec::new();
+        map.groups.retain_mut(|(index, start, end)| {
+            if internal.contains(index) {
+                return false;
+            }
+            let range = kept.len()..kept.len() + (*end - *start);
+            kept.extend_from_slice(&overrides[*start..*end]);
+            (*start, *end) = (range.start, range.end);
+            true
+        });
+        map.overrides = kept;
+        map
     }
 
     /// `input` から計算した値を `parameters` に書き込む (値域にクランプする)。
@@ -915,5 +947,49 @@ mod tests {
             map.apply(&input, &mut params);
             assert_eq!(value(&params, standard::ANGLE_X), expected, "{name}");
         }
+    }
+
+    /// 中継用 (`internal`) のパラメータには、標準の対応でも上書きでも書き込まない。
+    #[test]
+    fn for_model_skips_internal_parameters() {
+        let mut model = fixtures::avatar_profile();
+        for p in &mut model.parameters {
+            if [standard::ANGLE_X, standard::ANGLE_Y].contains(&p.id.as_str()) {
+                p.internal = true;
+            }
+        }
+        model.avatar.as_mut().unwrap().tracking = vec![
+            over(TrackingSource::Head, HEAD_ROLL, Some(standard::ANGLE_Y)),
+            over(
+                TrackingSource::BlendShape,
+                "jawLeft",
+                Some(standard::MOUTH_X),
+            ),
+        ];
+        let mut params = ParameterValues::from_model(&model);
+        let map = TrackingMap::for_model(&model, &params);
+        let targets: Vec<ParamIndex> = map.targets().collect();
+        for id in [standard::ANGLE_X, standard::ANGLE_Y] {
+            assert!(!targets.contains(&params.index_of(id).unwrap()), "{id}");
+        }
+        let mut input = input(&[("jawLeft", 0.5)]);
+        input.head = Rotation {
+            yaw: 10.0,
+            pitch: 20.0,
+            roll: 5.0,
+        };
+        map.apply(&input, &mut params);
+        assert_eq!(value(&params, standard::ANGLE_X), 0.0);
+        assert_eq!(value(&params, standard::ANGLE_Y), 0.0);
+        assert_eq!(value(&params, standard::ANGLE_Z), 5.0);
+        assert!(close(value(&params, standard::MOUTH_X), 0.5));
+
+        // 中継用のパラメータがなければ `new` と同じ。
+        let model = fixtures::avatar_profile();
+        let params = ParameterValues::from_model(&model);
+        assert_eq!(
+            TrackingMap::for_model(&model, &params),
+            TrackingMap::new(model.avatar.as_ref(), &params)
+        );
     }
 }

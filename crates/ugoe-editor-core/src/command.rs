@@ -593,6 +593,18 @@ pub enum Command {
         blend_shape: Option<ParamId>,
         interpolation: KeyformInterpolation,
     },
+    // ---- リグの順序と中継パラメータ (T0312)。`docs/spec/physics.md#リグの順序と中継` ----
+    /// 物理のリグを `before` の直前へ移す (`None` なら末尾)。リグは並びの順に処理するので、
+    /// 前のリグの出力を入力に読むリグ (中継) の結果が変わる。
+    ReorderPhysicsRig {
+        id: String,
+        before: Option<String>,
+    },
+    /// パラメータを中継用 (内部) にする・戻す (`Parameter::internal`、`docs/spec/model.md#パラメータ`)。
+    SetParameterInternal {
+        id: ParamId,
+        internal: bool,
+    },
 }
 
 /// デフォーマの子になれる要素。JSON では `{"kind": "mesh", "id": "EyeL"}` と書く

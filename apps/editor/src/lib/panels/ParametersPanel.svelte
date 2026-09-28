@@ -3,6 +3,8 @@
   パラメータの定義 (作成・削除・名前・値域・既定値) とキーの追加・削除は EditorDocument.apply で Command を送る。
   選択中の要素のキーをスライダーの上に印で示す (docs/editor.md#キーフォームの編集)。
   値の欄に数を入力するとスライダーをその値にする (値域の外は拒否)。◆ はその値にキーを足す。
+  中継用 (Parameter::internal) のパラメータは名前を斜体にして「relay」を付ける。編集欄で切り替える
+  (set_parameter_internal。docs/spec/model.md#パラメータ)。
 -->
 <script lang="ts">
 import type { EditorDocument, ParameterDef } from "../document.svelte";
@@ -96,6 +98,12 @@ async function saveEditor(p: ParameterDef) {
   if (!doc.error) editing = null;
 }
 
+async function setInternal(p: ParameterDef, internal: boolean) {
+  if (internal !== (p.internal ?? false)) {
+    await doc.apply({ op: "set_parameter_internal", id: p.id, internal });
+  }
+}
+
 async function remove(p: ParameterDef) {
   await doc.apply({ op: "remove_parameter", id: p.id });
   if (!doc.error) editing = null;
@@ -178,7 +186,15 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
     {@const onKey = keyAt(keys, value, keyTolerance(p))}
     <li>
       <span class="row">
-        <button class="name" onclick={() => openEditor(p)} title="Edit {p.id}">{p.name}</button>
+        <button
+          class="name"
+          class:internal={p.internal}
+          onclick={() => openEditor(p)}
+          title={p.internal
+            ? `Edit ${p.id} (relay parameter: tracking does not write it, and viewers hide it)`
+            : `Edit ${p.id}`}
+          >{p.name}{#if p.internal}<span class="tag">relay</span>{/if}</button
+        >
         <span class="row">
           <input
             class="value"
@@ -233,6 +249,17 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
             <label>Max <input type="number" step="any" bind:value={draft.max} /></label>
           </span>
           <ParameterMirror {doc} parameter={p} {parameters} />
+          <label
+            class="check"
+            title="A relay parameter passes values between physics rigs. Tracking does not write it, and viewers hide it by default."
+          >
+            <input
+              type="checkbox"
+              checked={p.internal ?? false}
+              onchange={(e) => setInternal(p, e.currentTarget.checked)}
+            />
+            Relay (internal)
+          </label>
           <span class="row">
             <button onclick={() => saveEditor(p)}>Apply</button>
             <button class="danger" onclick={() => remove(p)} title="Delete {p.id}">Delete</button>
@@ -273,6 +300,26 @@ li {
   color: inherit;
   cursor: pointer;
   text-align: left;
+}
+
+.name.internal {
+  font-style: italic;
+  color: var(--muted);
+}
+
+.tag {
+  margin-left: 4px;
+  padding: 0 4px;
+  border: 1px solid var(--muted);
+  border-radius: 3px;
+  font-size: 10px;
+  font-style: normal;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .value {

@@ -58,6 +58,7 @@ pub fn single_quad() -> Model {
             kind: ParameterKind::Normal,
             mirror: None,
             group: None,
+            internal: false,
         }],
         parameter_groups: vec![],
         parts: vec![Part {
@@ -128,6 +129,7 @@ pub fn pose_and_effects() -> Model {
                 kind: ParameterKind::Normal,
                 mirror: None,
                 group: None,
+                internal: false,
             }),
     );
     let part = |id: &str, opacity: f32| Part {
@@ -172,6 +174,7 @@ fn parameter(id: &str, min: f32, default: f32, max: f32) -> Parameter {
         kind: ParameterKind::Normal,
         mirror: None,
         group: None,
+        internal: false,
     }
 }
 
@@ -1165,6 +1168,132 @@ pub fn physics_hair_settings() -> PhysicsSettings {
                 colliders: Vec::new(),
                 frame: None,
             },
+        ],
+        colliders: Vec::new(),
+    }
+}
+
+/// 物理のリグの連鎖 (中継パラメータ) のフィクスチャ [`physics_relay_settings`] と組で使うモデル
+/// (`docs/spec/physics.md#リグの順序と中継`)。
+///
+/// - `BodyAngleX` (-10..10、既定 0): 入力。
+/// - `PhysBodyFollow` / `PhysBodyBounce` (-10..10、既定 0): 中継用 (`internal`) のパラメータ。
+/// - `BodyAngleZ` (-10..10、既定 0): 最後のリグの出力。
+pub fn physics_relay() -> Model {
+    let relay = |id: &str| Parameter {
+        internal: true,
+        ..parameter(id, -10.0, 0.0, 10.0)
+    };
+    base_model(
+        "physics_relay",
+        vec![
+            parameter(standard::BODY_ANGLE_X, -10.0, 0.0, 10.0),
+            relay(RELAY_FOLLOW),
+            relay(RELAY_BOUNCE),
+            parameter(standard::BODY_ANGLE_Z, -10.0, 0.0, 10.0),
+        ],
+    )
+}
+
+/// [`physics_relay`] の中継用のパラメータ。
+pub const RELAY_FOLLOW: &str = "PhysBodyFollow";
+pub const RELAY_BOUNCE: &str = "PhysBodyBounce";
+
+/// [`physics_relay`] 用の物理設定。体の追従 → 弾み → 角度の 3 つのリグを、この順に連鎖させる。
+/// 重力 `(0, 1)`、風なし、60 Hz。正規化の範囲は位置・角度とも -10..10。
+///
+/// - リグ `BodyFollow`: `BodyAngleX` → x (重み 100)。粒子 2 つ (長さ 10)。粒子 1 の区間の x を
+///   `PhysBodyFollow` に書く (体が遅れて付いてくる)。
+/// - リグ `BodyBounce`: `PhysBodyFollow` → x (重み 100)。粒子 2 つ (長さ 10、よく揺れる)。
+///   粒子 1 の角度 (度) の 0.2 倍を `PhysBodyBounce` に書く (弾み)。
+/// - リグ `BodyAngle`: `PhysBodyBounce` → 角度 (重み 100)。粒子 2 つ (長さ 10)。
+///   粒子 1 の角度を `BodyAngleZ` に書く (弾みから角度に戻る)。
+pub fn physics_relay_settings() -> PhysicsSettings {
+    let range = NormalizationRange {
+        min: -10.0,
+        default: 0.0,
+        max: 10.0,
+    };
+    let rig = |id: &str,
+               input: &str,
+               input_source: PhysicsSource,
+               output: &str,
+               output_source: PhysicsSource,
+               scale: f32,
+               mobility: f32| PhysicsRig {
+        id: id.into(),
+        name: id.into(),
+        inputs: vec![PhysicsInput {
+            parameter: input.into(),
+            source: input_source,
+            weight: 100.0,
+            reflect: false,
+        }],
+        outputs: vec![PhysicsOutput {
+            target: PhysicsTarget::Parameter { id: output.into() },
+            particle: 1,
+            source: output_source,
+            scale,
+            weight: 100.0,
+            reflect: false,
+        }],
+        particles: vec![
+            PhysicsParticle {
+                position: Vec2::ZERO,
+                mobility: 1.0,
+                delay: 1.0,
+                acceleration: 1.0,
+                radius: 0.0,
+                collision_radius: 0.0,
+            },
+            PhysicsParticle {
+                position: Vec2::new(0.0, 10.0),
+                mobility,
+                delay: 0.8,
+                acceleration: 1.5,
+                radius: 10.0,
+                collision_radius: 0.0,
+            },
+        ],
+        normalization: PhysicsNormalization {
+            position: range,
+            angle: range,
+        },
+        colliders: Vec::new(),
+        frame: None,
+    };
+    PhysicsSettings {
+        gravity: Vec2::new(0.0, 1.0),
+        wind: Vec2::ZERO,
+        fps: 60.0,
+        rigs: vec![
+            rig(
+                "BodyFollow",
+                standard::BODY_ANGLE_X,
+                PhysicsSource::X,
+                RELAY_FOLLOW,
+                PhysicsSource::X,
+                1.0,
+                0.85,
+            ),
+            rig(
+                "BodyBounce",
+                RELAY_FOLLOW,
+                PhysicsSource::X,
+                RELAY_BOUNCE,
+                PhysicsSource::Angle,
+                0.2,
+                0.95,
+            ),
+            rig(
+                "BodyAngle",
+                RELAY_BOUNCE,
+                PhysicsSource::Angle,
+                standard::BODY_ANGLE_Z,
+                PhysicsSource::Angle,
+                1.0,
+                0.85,
+            ),
         ],
         colliders: Vec::new(),
     }

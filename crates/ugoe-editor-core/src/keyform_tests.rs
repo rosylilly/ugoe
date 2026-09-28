@@ -243,6 +243,7 @@ fn parameter(id: &str) -> Command {
             kind: Default::default(),
             mirror: None,
             group: None,
+            internal: false,
         },
     }
 }

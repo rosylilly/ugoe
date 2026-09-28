@@ -27,6 +27,7 @@ fn blend_shape_parameter(id: &str) -> Command {
             kind: ParameterKind::BlendShape,
             mirror: None,
             group: None,
+            internal: false,
         },
     }
 }

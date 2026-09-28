@@ -40,6 +40,8 @@ pub struct PhysicsSystem {
     initialized: bool,
     /// 動的物理の機能 (パラメータ以外の出力先・衝突体・重力の基準) を使うリグがあるか。
     dynamic: bool,
+    /// 前のリグの出力を入力に読むリグ (中継) があるか (`docs/spec/physics.md#リグの順序と中継`)。
+    relay: bool,
     /// モデルの要素への参照を解決したもの (動的物理でだけ使う)。
     binding: Option<Binding>,
 }
@@ -48,8 +50,13 @@ pub struct PhysicsSystem {
 #[derive(Debug)]
 struct RigState {
     chain: Chain,
-    /// 最後に実行したステップの入力 (根元の姿勢)。
+    /// 最後に実行したステップの入力 (根元の姿勢)。中継の入力の分を含む。
     pose: RootPose,
+    /// `pose` のうち、フレームの始めのパラメータから求めた分 (中継の入力を除く)。
+    /// フレームの間の補間はこの姿勢で行う。
+    external: RootPose,
+    /// 入力ごとに、前のリグが出力するパラメータを読む (中継の入力) か。
+    relay_inputs: Vec<bool>,
     /// 直前 2 ステップの出力値 (出力ごと。無効な出力は `None`)。スカラーの出力先では `x` だけを使う。
     previous: Vec<Option<Vec2>>,
     current: Vec<Option<Vec2>>,
@@ -66,6 +73,13 @@ struct RootPose {
 }
 
 impl RootPose {
+    /// 中継の入力から求めた平行移動と角度を足す (基準のデフォーマの回転は足さない)。
+    fn with_relay(mut self, relay: RootPose) -> Self {
+        self.translation += relay.translation;
+        self.angle += relay.angle;
+        self
+    }
+
     fn lerp(self, other: Self, t: f32) -> Self {
         Self {
             translation: self.translation.lerp(other.translation, t),
@@ -137,23 +151,28 @@ enum Target {
 
 impl PhysicsSystem {
     pub fn new(settings: PhysicsSettings) -> Self {
-        let rigs = settings
+        let rigs: Vec<RigState> = settings
             .rigs
             .iter()
-            .map(|rig| RigState {
+            .enumerate()
+            .map(|(k, rig)| RigState {
                 chain: Chain::new(&rig.particles, Vec2::ZERO),
                 pose: RootPose::default(),
+                external: RootPose::default(),
+                relay_inputs: relay_inputs(&settings.rigs[..k], rig),
                 previous: vec![None; rig.outputs.len()],
                 current: vec![None; rig.outputs.len()],
             })
             .collect();
         let dynamic = settings.rigs.iter().any(is_dynamic_rig);
+        let relay = rigs.iter().any(|r| r.relay_inputs.contains(&true));
         Self {
             settings,
             rigs,
             accumulator: 0.0,
             initialized: false,
             dynamic,
+            relay,
             binding: None,
         }
     }
@@ -167,6 +186,12 @@ impl PhysicsSystem {
     /// `false` なら、[`Self::update_instance`] は [`Self::update`] と同じで、評価は 1 回で済む。
     pub fn is_dynamic(&self) -> bool {
         self.dynamic
+    }
+
+    /// 前のリグが出力するパラメータを入力に読むリグ (中継) があるか
+    /// (`docs/spec/physics.md#リグの順序と中継`)。
+    pub fn has_relay(&self) -> bool {
+        self.relay
     }
 
     /// リグ `rig` (`PhysicsSettings::rigs` の添字) の粒子チェーン。
@@ -337,6 +362,7 @@ impl PhysicsSystem {
         for (state, rig) in self.rigs.iter_mut().zip(&self.settings.rigs) {
             state.chain = Chain::new(&rig.particles, Vec2::ZERO);
             state.pose = RootPose::default();
+            state.external = RootPose::default();
             state.previous.fill(None);
             state.current.fill(None);
         }
@@ -413,6 +439,10 @@ impl PhysicsSystem {
 
     /// 入力と `frames` から根元の姿勢を求めて、`dt` 秒分のステップを進める。
     /// 出力の補間に使う割合 (`accumulator / step`) を返す。
+    ///
+    /// 各ステップでは、リグを `PhysicsSettings::rigs` の順に進める。中継の入力は、前のリグが
+    /// 同じステップで出した出力 (補間しない) を書き込んだパラメータから読む
+    /// (`docs/spec/physics.md#リグの順序と中継`)。
     fn advance(&mut self, frames: &[RigFrame], parameters: &ParameterValues, dt: f32) -> f32 {
         let step = self.step_duration();
         let time_scale = step * BASE_FPS;
@@ -424,7 +454,7 @@ impl PhysicsSystem {
             .zip(frames)
             .zip(&self.rigs)
             .map(|((rig, frame), state)| {
-                let mut pose = root_pose(rig, parameters);
+                let mut pose = root_pose(rig, parameters, |i| !state.relay_inputs[i]);
                 pose.translation += frame.anchor;
                 // 基準の回転は、前のステップから近い側に回ったとみなす (±180 度をまたいでも跳ばない)。
                 let frame_angle = if initialized {
@@ -445,6 +475,17 @@ impl PhysicsSystem {
             wind: rotate_deg(settings.wind, pose.frame_angle),
             time_scale,
         };
+        // 中継があるときだけ、ステップの中の出力を書き込むパラメータの写しを持つ。
+        let mut relay = self.relay.then(|| Relay::new(&settings.rigs, parameters));
+        // 中継の入力を足した姿勢。中継の入力がないリグでは `pose` のまま (結果を変えない)。
+        let with_relay =
+            |pose: RootPose, rig: &PhysicsRig, state: &RigState, relay: &Option<Relay>| match relay
+            {
+                Some(r) if state.relay_inputs.contains(&true) => {
+                    pose.with_relay(root_pose(rig, &r.values, |i| state.relay_inputs[i]))
+                }
+                _ => pose,
+            };
 
         if !self.initialized {
             self.initialized = true;
@@ -456,17 +497,22 @@ impl PhysicsSystem {
                 .zip(&targets)
                 .zip(frames)
             {
-                let input = step_input(*target, 0.0);
+                let pose = with_relay(*target, rig, state, &relay);
+                let input = step_input(pose, 0.0);
                 state.chain.settle(
                     &rig.particles,
-                    target.translation,
+                    pose.translation,
                     input.gravity,
                     input.wind,
                     |i, p| collide(&frame.colliders, rig, i, p),
                 );
-                state.pose = *target;
+                state.pose = pose;
+                state.external = *target;
                 state.current = outputs(rig, &state.chain, &input, &frame.references);
                 state.previous.clone_from(&state.current);
+                if let Some(r) = &mut relay {
+                    r.write(rig, &state.current);
+                }
             }
         }
 
@@ -479,24 +525,32 @@ impl PhysicsSystem {
         let steps = (whole as u32).min(MAX_STEPS_PER_UPDATE);
 
         if steps > 0 {
-            for (((state, rig), target), frame) in self
-                .rigs
-                .iter_mut()
-                .zip(&settings.rigs)
-                .zip(&targets)
-                .zip(frames)
-            {
-                let start = state.pose;
-                for k in 1..=steps {
+            let starts: Vec<RootPose> = self.rigs.iter().map(|s| s.external).collect();
+            for k in 1..=steps {
+                if let Some(r) = &mut relay {
+                    r.restore();
+                }
+                for (((state, rig), (start, target)), frame) in self
+                    .rigs
+                    .iter_mut()
+                    .zip(&settings.rigs)
+                    .zip(starts.iter().zip(&targets))
+                    .zip(frames)
+                {
                     // 入力はフレームの間で線形補間して、ステップごとに少しずつ動かす。
-                    let pose = start.lerp(*target, k as f32 / steps as f32);
+                    let external = start.lerp(*target, k as f32 / steps as f32);
+                    let pose = with_relay(external, rig, state, &relay);
                     let input = step_input(pose, pose.angle - state.pose.angle);
                     state.chain.step(&rig.particles, &input, |i, p| {
                         collide(&frame.colliders, rig, i, p);
                     });
                     state.pose = pose;
+                    state.external = external;
                     std::mem::swap(&mut state.previous, &mut state.current);
                     state.current = outputs(rig, &state.chain, &input, &frame.references);
+                    if let Some(r) = &mut relay {
+                        r.write(rig, &state.current);
+                    }
                 }
             }
         }
@@ -571,6 +625,54 @@ fn is_dynamic_rig(rig: &PhysicsRig) -> bool {
         })
 }
 
+/// 入力ごとに、`earlier` (前のリグ) のどれかがパラメータとして出力するパラメータを読むか
+/// (中継の入力、`docs/spec/physics.md#リグの順序と中継`)。
+fn relay_inputs(earlier: &[PhysicsRig], rig: &PhysicsRig) -> Vec<bool> {
+    rig.inputs
+        .iter()
+        .map(|input| {
+            earlier
+                .iter()
+                .flat_map(|r| &r.outputs)
+                .any(|o| o.parameter() == Some(&input.parameter))
+        })
+        .collect()
+}
+
+/// 中継のための、ステップの中でリグの出力を書き込むパラメータの写し。
+struct Relay {
+    values: ParameterValues,
+    /// パラメータへの出力先と、フレームの始めの値 (ステップの始めに戻す)。
+    bases: Vec<(ParamIndex, f32)>,
+}
+
+impl Relay {
+    fn new(rigs: &[PhysicsRig], parameters: &ParameterValues) -> Self {
+        let bases = rigs
+            .iter()
+            .flat_map(|r| &r.outputs)
+            .filter_map(|o| parameters.index_of(o.parameter()?.as_str()))
+            .map(|index| (index, parameters.get(index)))
+            .collect();
+        Self {
+            values: parameters.clone(),
+            bases,
+        }
+    }
+
+    /// 出力先のパラメータをフレームの始めの値に戻す。出力のブレンドは毎ステップ同じ値から始める。
+    fn restore(&mut self) {
+        for &(index, value) in &self.bases {
+            self.values.set(index, value);
+        }
+    }
+
+    /// リグのステップの出力 (補間しない) を書き込む。
+    fn write(&mut self, rig: &PhysicsRig, current: &[Option<Vec2>]) {
+        write_parameters(rig, current, current, 1.0, &mut self.values);
+    }
+}
+
 /// 粒子 i を、リグの衝突体の外へ押し出す。
 fn collide(colliders: &[WorldCollider], rig: &PhysicsRig, i: usize, p: &mut Vec2) {
     let margin = rig.particles[i].collision_radius.max(0.0);
@@ -598,9 +700,17 @@ fn wrap_degrees(degrees: f32) -> f32 {
 }
 
 /// 入力パラメータから根元の姿勢を求める (`docs/spec/physics.md#入力`)。
-fn root_pose(rig: &PhysicsRig, parameters: &ParameterValues) -> RootPose {
+/// `include(i)` が真の入力 (`rig.inputs` の添字) だけを使う。
+fn root_pose(
+    rig: &PhysicsRig,
+    parameters: &ParameterValues,
+    include: impl Fn(usize) -> bool,
+) -> RootPose {
     let mut pose = RootPose::default();
-    for input in &rig.inputs {
+    for (i, input) in rig.inputs.iter().enumerate() {
+        if !include(i) {
+            continue;
+        }
         let Some(index) = parameters.index_of(input.parameter.as_str()) else {
             continue;
         };
@@ -728,3 +838,6 @@ mod tests;
 
 #[cfg(test)]
 mod dynamic_tests;
+
+#[cfg(test)]
+mod relay_tests;
