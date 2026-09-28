@@ -3,6 +3,7 @@
 mod fixtures;
 mod image;
 mod render;
+mod sample;
 
 use std::path::{Path, PathBuf};
 
@@ -52,6 +53,28 @@ enum Cmd {
     Render(RenderArgs),
     /// PSD を取り込んで新しい `.ugoeproj` プロジェクトに保存する。
     ImportPsd(ImportPsdArgs),
+    /// 見本のモデルを生成する。
+    #[command(subcommand)]
+    Sample(SampleCmd),
+}
+
+#[derive(Debug, Subcommand)]
+enum SampleCmd {
+    /// アバタープロファイル (レベル 3) に準拠した見本のモデルを、PSD からコマンドの列で組み立てる。
+    Avatar(SampleAvatarArgs),
+}
+
+#[derive(Debug, Args)]
+struct SampleAvatarArgs {
+    /// 書き出す `.ugoe` バンドル。
+    #[arg(short, long)]
+    output: PathBuf,
+    /// 入力の PSD (既定はリポジトリのルートからの相対パス)。
+    #[arg(long, default_value = sample::DEFAULT_PSD)]
+    psd: PathBuf,
+    /// `.ugoeproj` プロジェクトにも保存する (エディタで開く用)。
+    #[arg(long, value_name = "DIR")]
+    project: Option<PathBuf>,
 }
 
 /// `ugoe validate --profile` で検査するプロファイル。
@@ -187,6 +210,7 @@ fn main() -> anyhow::Result<()> {
         }
         Cmd::Render(args) => run_render(args)?,
         Cmd::ImportPsd(args) => run_import_psd(args)?,
+        Cmd::Sample(SampleCmd::Avatar(args)) => run_sample_avatar(args)?,
     }
     Ok(())
 }
@@ -260,6 +284,28 @@ fn run_import_psd(args: ImportPsdArgs) -> anyhow::Result<()> {
         let bytes = ugoe_editor_core::export_bundle(&project)?;
         std::fs::write(&path, bytes).with_context(|| format!("writing {}", path.display()))?;
         println!("wrote {}", path.display());
+    }
+    Ok(())
+}
+
+/// `ugoe sample avatar`: 見本のモデルを組み立てて書き出す (`sample::build_avatar`)。
+fn run_sample_avatar(args: SampleAvatarArgs) -> anyhow::Result<()> {
+    let psd = std::fs::read(&args.psd).with_context(|| {
+        format!(
+            "reading {} (run from the repository root or pass --psd)",
+            args.psd.display()
+        )
+    })?;
+    let project = sample::build_avatar(&psd)?;
+    let bytes = ugoe_editor_core::export_bundle(&project)?;
+    std::fs::write(&args.output, &bytes)
+        .with_context(|| format!("writing {}", args.output.display()))?;
+    println!("wrote {} ({} bytes)", args.output.display(), bytes.len());
+    if let Some(dir) = args.project {
+        project
+            .save(&dir)
+            .with_context(|| format!("saving {}", dir.display()))?;
+        println!("wrote {}", dir.display());
     }
     Ok(())
 }

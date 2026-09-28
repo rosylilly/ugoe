@@ -81,6 +81,23 @@ ugoe render character.ugoe -o preview.png           # 取り込んだ結果を�
 
 取り込みの警告は標準エラーに `warning: ...` で出す。
 
+### `ugoe sample avatar`
+
+アバタープロファイル ([docs/spec/avatar-profile.md](../../docs/spec/avatar-profile.md)) のレベル 3 に準拠した見本のモデルを、
+PSD から `ugoe_editor_core::Command` の列で組み立てて `.ugoe` に書き出す (`src/sample.rs`)。
+組み立て方と出来上がりは [assets/samples/README.md](../../assets/samples/README.md)。
+
+```sh
+just cli sample avatar -o assets/samples/avatar.ugoe          # リポジトリのルートで実行する
+ugoe sample avatar -o avatar.ugoe --psd path/to/parts.psd --project avatar.ugoeproj
+```
+
+| オプション | 内容 |
+| --- | --- |
+| `-o, --output <PATH>` | 書き出す `.ugoe` バンドル |
+| `--psd <PATH>` | 入力の PSD (既定 `assets/fixtures/psd-real/comfyui-see-through-full-body-parts.psd`。レイヤー名 `face`・`eyelash-l` などで部位を探す) |
+| `--project <DIR>` | `.ugoeproj` プロジェクトにも保存する (エディタで開いてリグを見る用) |
+
 ## テスト
 
 ```sh
