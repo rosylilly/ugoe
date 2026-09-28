@@ -4,7 +4,7 @@ title: 推定・ミラーのエディタコマンド
 status: todo
 milestone: M2
 crates: [ugoe-editor-core]
-depends_on: [T0610, T0601]
+depends_on: [T0610, T0601, T0612]
 assignee:
 ---
 

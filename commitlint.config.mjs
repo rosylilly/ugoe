@@ -20,6 +20,7 @@ const SCOPES = [
   "editor-core",
   "ai",
   "cli",
+  "rigging",
   // apps/
   "editor",
   // docs/

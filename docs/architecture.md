@@ -41,7 +41,7 @@
 | L4 SDK | `ugoe` | L0〜L3 |
 | L5 バインディング | `ugoe-ffi`, `ugoe-wasm` | L0〜L4 |
 | T1 素材処理 | `ugoe-psd`, `ugoe-mesher` | core |
-| T1 リギング | `ugoe-rigging` (予定、T0610) | core, model, runtime, mesher |
+| T1 リギング | `ugoe-rigging` | core, model, runtime, mesher |
 | T2 エディタ中核 | `ugoe-editor-core` | ランタイム層, T1 (`ugoe-rigging` を含む) |
 | T3 自動化 | `ugoe-ai` | T2 以下 |
 | T4 アプリ | `ugoe-cli`, `apps/editor` (`ugoe-editor`) | すべて |

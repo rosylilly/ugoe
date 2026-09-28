@@ -1,0 +1,16 @@
+[package]
+name = "ugoe-rigging"
+description = "キーフォームの推定 (加算合成・ミラー・深度からの回転)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+ugoe-core.workspace = true
+ugoe-model.workspace = true
+
+[lints]
+workspace = true

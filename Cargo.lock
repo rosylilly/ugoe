@@ -4325,6 +4325,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ugoe-rigging"
+version = "0.0.0"
+dependencies = [
+ "thiserror 2.0.21",
+ "ugoe-core",
+ "ugoe-model",
+]
+
+[[package]]
 name = "ugoe-runtime"
 version = "0.0.0"
 dependencies = [

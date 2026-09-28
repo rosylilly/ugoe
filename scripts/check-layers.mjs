@@ -18,7 +18,9 @@ const RUNTIME_TIER = union(EVAL, [
   "ugoe-render",
   "ugoe",
 ]);
-const TOOL_BASE = union(RUNTIME_TIER, ["ugoe-psd", "ugoe-mesher", "ugoe-editor-core"]);
+const ASSETS = new Set(["ugoe-psd", "ugoe-mesher"]);
+const RIGGING = new Set(["ugoe-rigging"]);
+const TOOL_BASE = union(RUNTIME_TIER, ASSETS, RIGGING, ["ugoe-editor-core"]);
 
 // クレート -> 依存してよい内部クレート
 const ALLOWED = {
@@ -36,7 +38,8 @@ const ALLOWED = {
   // --- ツール層 ---
   "ugoe-psd": CORE,
   "ugoe-mesher": CORE,
-  "ugoe-editor-core": union(RUNTIME_TIER, ["ugoe-psd", "ugoe-mesher"]),
+  "ugoe-rigging": union(EVAL, ["ugoe-mesher"]),
+  "ugoe-editor-core": union(RUNTIME_TIER, ASSETS, RIGGING),
   "ugoe-ai": TOOL_BASE,
   "ugoe-cli": union(TOOL_BASE, ["ugoe-ai"]),
   "ugoe-editor": union(TOOL_BASE, ["ugoe-ai"]),

@@ -47,6 +47,7 @@ crates/             Rust クレート (ランタイム層とツール層。依�
   ugoe-wasm           WebAssembly バインディング
   ugoe-psd            PSD 取り込み
   ugoe-mesher         自動メッシュ生成
+  ugoe-rigging        キーフォームの推定 (加算合成・ミラー・深度からの回転)
   ugoe-editor-core    ヘッドレスなエディタ中核 (Document / Command / Undo)
   ugoe-ai             AI プロバイダ抽象と自動リギング
   ugoe-cli            `ugoe` コマンド
@@ -76,7 +77,7 @@ assets/fixtures/    テスト用アセット (小さいものだけ)
 
 ### アーキテクチャ
 
-1. **依存方向を守る。** ランタイム層 (`core` `model` `runtime` `format` `physics` `motion` `render` `ugoe` `ffi` `wasm`) は、ツール層 (`psd` `mesher` `editor-core` `ai` `cli` `editor`) に依存してはならない。`just layers` で検査される。新しいクレートを作ったら `scripts/check-layers.mjs` に登録する。
+1. **依存方向を守る。** ランタイム層 (`core` `model` `runtime` `format` `physics` `motion` `render` `ugoe` `ffi` `wasm`) は、ツール層 (`psd` `mesher` `rigging` `editor-core` `ai` `cli` `editor`) に依存してはならない。`just layers` で検査される。新しいクレートを作ったら `scripts/check-layers.mjs` に登録する。
 2. **`ugoe-model` はデータだけを持つ。** 補間・変形・再生などのロジックは下流クレートに置く。
 3. **ランタイム層は GPU・ファイル I/O・スレッド・時刻取得に依存しない** (`ugoe-render` の GPU と `ugoe-format` のバイト列処理を除く)。`dt` は引数で受け取る。wasm32 でビルドできる状態を保つ。
 4. **エディタの編集はすべて `ugoe_editor_core::Command` を通す。** Tauri コマンドや CLI に編集ロジックを直接書かない。

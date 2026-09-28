@@ -26,6 +26,7 @@ ugoe-motion = { path = "crates/ugoe-motion" }
 ugoe-physics = { path = "crates/ugoe-physics" }
 ugoe-psd = { path = "crates/ugoe-psd" }
 ugoe-render = { path = "crates/ugoe-render" }
+ugoe-rigging = { path = "crates/ugoe-rigging" }
 ugoe-runtime = { path = "crates/ugoe-runtime" }
 # --- external ---
 anyhow = "1"
