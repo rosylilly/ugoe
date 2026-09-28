@@ -1,11 +1,11 @@
 ---
 id: T0628
 title: リギング操作の使い勝手 (優先度 中・低)
-status: todo
+status: in-progress
 milestone: M3
 crates: [ugoe-editor-core, apps/editor, docs/manual]
-depends_on: [T0627]
-assignee:
+depends_on: [T0624]
+assignee: claude-worker-T0628
 ---
 
 # T0628: リギング操作の使い勝手 (優先度 中・低)
