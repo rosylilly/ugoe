@@ -17,13 +17,13 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v5
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
-          node-version: 25
+          node-version-file: .tool-versions
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Lint commit messages
@@ -35,7 +35,7 @@ jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Install Tauri system dependencies
         run: |
           sudo apt-get update
@@ -43,7 +43,7 @@ jobs:
       - name: Install Rust toolchain (rust-toolchain.toml)
         run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v3
+      - uses: extractions/setup-just@v4
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
@@ -60,11 +60,11 @@ jobs:
   web:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
-          node-version: 25
+          node-version-file: .tool-versions
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm biome check .
