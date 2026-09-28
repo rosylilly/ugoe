@@ -2,7 +2,7 @@
 
 判断の経緯は [ADR 0012](../adr/0012-avatar-profile.md)。
 
-> 実装待ち: トラッキングの対応付けの実装は T0306 で行います。データ定義 (`ugoe_model::avatar`) と検証 (`ugoe validate --profile avatar`) は実装済みです。
+> 実装: データ定義は `ugoe_model::avatar`、検証は `ugoe validate --profile avatar`、トラッキングの対応付けは `ugoe_motion::tracking` です。
 > この仕様は公開を前提に、ugoe の実装から独立して読めるように書きます。1.0 までは内容が変わりえます。
 > この仕様書のライセンスは MIT です ([ADR 0018](../adr/0018-licensing-and-1.0-scope.md))。
 
@@ -113,6 +113,8 @@ ARKit の 52 ブレンドシェイプ (0〜1) からの変換です。ARKit の 
 
 `head` の値の符号は、上の「向きの約束」と同じです (`yaw` は `AngleX`、`pitch` は `AngleY`、`roll` は `AngleZ` の向き)。
 知らない `source` の上書きは無視します (新しい版のファイル)。
+同じく、`input` が `source` の種類の入力として知られていない上書き、書き込むパラメータが決まらないかモデルにない上書き、`scale` か `offset` が有限値でない上書きも無視します。無視した上書きは、手順 2 の置き換えも起こしません (検証ツールはこれらをエラーにします)。
+標準の対応も、モデルにないパラメータには書き込みません。計算した値が有限値でない (入力が NaN など) ときは、そのパラメータに書き込みません。
 
 ```json
 "tracking": [
@@ -127,7 +129,20 @@ ARKit の 52 ブレンドシェイプ (0〜1) からの変換です。ARKit の 
 この表で使わない ARKit のブレンドシェイプ: `jawForward`、`mouthRollLower`、`mouthRollUpper`、`mouthDimpleLeft`、`mouthDimpleRight`、`mouthStretchLeft`、`mouthStretchRight`、`mouthLowerDownLeft`、`mouthLowerDownRight`、`mouthUpperUpLeft`、`mouthUpperUpRight`、`cheekSquintLeft`、`cheekSquintRight`。
 モデルは `Model.avatar.tracking` で、これらを独自のパラメータに対応させられます。
 
-> 未決: `MouthX` / `JawX` と、`EyeBallX` の符号が「キャラクターの左 = 正」で直感と合うか、実際のトラッキングで確かめる (T0306)。
+### 実装の範囲
+
+`ugoe_motion::tracking` (`TrackingInput`・`TrackingMap`) がこの節の対応付けを実装します。モデルごとに `TrackingMap` を 1 度作り、毎フレーム `apply` でパラメータに書き込みます。
+対応付けは入力の値をそのまま使います。次のことはアプリ (トラッキングの入力を作る側) が行います。
+
+- 平滑化 (揺れを抑えるフィルタ) と、トラッキングが途切れたときの扱い (値を保つ・中立に戻す)
+- キャリブレーション (利用者の中立の顔の向きや表情を差し引く)
+- トラッカーの出力 (回転行列など) から、上の「向きの約束」に合わせた頭の回転への変換
+- 鏡像にした映像を入力にした場合の `Left` / `Right` の入れ替え
+
+MediaPipe Face Landmarker のブレンドシェイプのカテゴリ名は ARKit の名前と同じなので、そのまま使えます (`_neutral` は対応しないので無視する)。
+MediaPipe の `Left` / `Right` は、入力画像に写った顔自身の左右で、入力を左右反転すると入れ替わると報告されています ([google-ai-edge/mediapipe#6368](https://github.com/google-ai-edge/mediapipe/issues/6368))。したがって反転していないカメラ映像を入力にすれば、この仕様の約束 (トラッキングされた人自身の左右) と一致します。
+
+> 未決: `MouthX` / `JawX` と、`EyeBallX` の符号が「キャラクターの左 = 正」で直感と合うか、実際のトラッキングで確かめる (T0306 では確かめられなかった。MediaPipe を使うビューア T0703 で確かめる)。
 
 ### 音声 (リップシンク)
 

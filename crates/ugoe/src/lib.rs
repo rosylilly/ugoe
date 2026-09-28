@@ -20,7 +20,7 @@ use ugoe_model::motion::{Motion, MotionEvent};
 use ugoe_model::pose::Pose;
 use ugoe_motion::{
     BreathPlayer, ExpressionManager, EyeBlinkPlayer, LipSyncPlayer, MotionManager, PosePlayer,
-    Priority,
+    Priority, TrackingInput, TrackingMap,
 };
 use ugoe_runtime::{CompileError, CompiledModel, ModelInstance, ParamIndex};
 
@@ -49,6 +49,9 @@ pub struct Puppet {
     base: Vec<f32>,
     /// 前フレームの `update` が最後に書き込んだパラメータ値 (ホストの書き換えの検出用)。
     output: Vec<f32>,
+    /// モデルの `avatar.tracking` を解決したトラッキングの対応。
+    tracking_map: TrackingMap,
+    tracking: Option<TrackingInput>,
 }
 
 impl Puppet {
@@ -62,6 +65,10 @@ impl Puppet {
         let pose = model.pose.clone();
         let instance = ModelInstance::new(compiled);
         let values = instance.parameters().as_slice().to_vec();
+        let tracking_map = TrackingMap::new(
+            instance.compiled().model().avatar.as_ref(),
+            instance.parameters(),
+        );
         let mut puppet = Self {
             instance,
             physics: None,
@@ -74,6 +81,8 @@ impl Puppet {
             pose_parts: Vec::new(),
             base: values.clone(),
             output: values,
+            tracking_map,
+            tracking: None,
         };
         puppet.set_pose(pose);
         puppet
@@ -136,6 +145,20 @@ impl Puppet {
         self.lip_sync.set_level(level);
     }
 
+    /// フェイストラッキングの入力を設定する。`None` (既定) の間はトラッキングでパラメータに触らない。
+    ///
+    /// 入力は次の [`Puppet::update`] から毎フレーム、モーションの直後にモデルの `avatar.tracking` に従って
+    /// パラメータに書き込む (`docs/spec/avatar-profile.md#フェイストラッキングとの対応`)。
+    /// 書き込んだ値は基準値に含まれるので、表情・目パチ・呼吸はその上に重なる。`None` に戻しても、
+    /// 最後に書き込んだ値は基準値として残る。平滑化などはホストが行ってから渡す。
+    pub fn set_tracking(&mut self, input: Option<TrackingInput>) {
+        self.tracking = input;
+    }
+
+    pub fn tracking(&self) -> Option<&TrackingInput> {
+        self.tracking.as_ref()
+    }
+
     /// ポーズの設定を差し替える (各グループは先頭の要素の表示から始める)。
     pub fn set_pose(&mut self, pose: Pose) {
         self.pose = PosePlayer::new(pose);
@@ -174,33 +197,36 @@ impl Puppet {
 
         // 2. モーション
         self.motions.update(params, dt);
-        // TODO(T0306): トラッキングの入力はここで書き込む (基準値に含める)。
+        // 3. トラッキング (基準値に含める)
+        if let Some(input) = &self.tracking {
+            self.tracking_map.apply(input, params);
+        }
 
-        // 3. 基準値を保存する。これより後の処理は毎フレーム基準値に重ねるので累積しない。
+        // 4. 基準値を保存する。これより後の処理は毎フレーム基準値に重ねるので累積しない。
         self.base.copy_from_slice(params.as_slice());
 
-        // 4. 表情
+        // 5. 表情
         self.expressions.update(params, dt);
-        // 5. 目パチ
+        // 6. 目パチ
         self.eye_blink.advance(dt);
         let strength = self.motions.effect_group_weight(EYE_BLINK_GROUP);
         self.eye_blink.apply(params, strength);
-        // 6. 呼吸
+        // 7. 呼吸
         self.breath.advance(dt);
         self.breath.apply(params);
-        // 7. 物理
+        // 8. 物理
         if let Some(physics) = &mut self.physics {
             physics.update(params, dt);
         }
-        // 8. リップシンク
+        // 9. リップシンク
         let strength = self.motions.effect_group_weight(LIP_SYNC_GROUP);
         self.lip_sync.apply(params, strength);
         self.output.copy_from_slice(params.as_slice());
 
-        // 9. パーツの不透明度 (モーションのカーブとポーズ)
+        // 10. パーツの不透明度 (モーションのカーブとポーズ)
         self.apply_part_opacities(dt);
 
-        // 10. 評価
+        // 11. 評価
         self.instance.update();
     }
 
@@ -273,6 +299,35 @@ mod tests {
     fn param(puppet: &Puppet, id: &str) -> f32 {
         let p = puppet.instance().parameters();
         p.get(p.index_of(id).unwrap())
+    }
+
+    #[test]
+    fn puppet_applies_tracking_into_the_base_values() {
+        let mut model = fixtures::avatar_profile();
+        // 目パチと呼吸を外し、トラッキングの値だけを見る。
+        model.effects = ugoe_model::effects::Effects::default();
+        let mut puppet = Puppet::new(model).unwrap();
+        let mut input = TrackingInput::default();
+        input.set_blend_shape("eyeBlinkLeft", 0.75);
+        input.head.yaw = 10.0;
+        puppet.set_tracking(Some(input));
+        puppet.update(DT);
+        assert!(close(param(&puppet, standard::EYE_L_OPEN), 0.25));
+        assert!(close(param(&puppet, standard::ANGLE_X), 10.0));
+
+        // 入力をやめると、最後の値が基準値として残る。
+        puppet.set_tracking(None);
+        puppet.update(DT);
+        assert!(close(param(&puppet, standard::EYE_L_OPEN), 0.25));
+        // ホストの書き換えはそのまま効く。
+        let eye = puppet
+            .instance()
+            .parameters()
+            .index_of(standard::EYE_L_OPEN)
+            .unwrap();
+        puppet.instance_mut().parameters_mut().set(eye, 0.5);
+        puppet.update(DT);
+        assert!(close(param(&puppet, standard::EYE_L_OPEN), 0.5));
     }
 
     fn set_param(puppet: &mut Puppet, id: &str, value: f32) {
