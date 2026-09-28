@@ -64,11 +64,21 @@ PSD から、PSD の形式に依存しない `LayerTree` を作る。
 
 ## テスト
 
-- `tests/common/mod.rs` はテスト用の最小限の PSD ライター。`assets/fixtures/layers.psd` もこれで作る
-  (作り直すときは `UGOE_UPDATE_FIXTURES=1 cargo test -p ugoe-psd`)。
-- 取り込みとは独立に、ImageMagick (`identify`) でもフィクスチャが読めることを確かめてある。
+- `tests/common/mod.rs` はテスト用の PSD ライター。Adobe の仕様どおりに書き、偽の中身は書かない
+  (ZIP のチャンネルも、圧縮しないブロックだけの正しい zlib ストリームで書く)。合成画像は `tests/common/compose.rs`
+  でレイヤーから計算する。
+- `assets/fixtures/layers.psd` (構造を試す小さなもの) と `character.psd` (目で確かめる絵) は
+  `tests/common/fixtures.rs` の定義から作り、コミットしたファイルと一致することをテストする
+  (作り直すときは `UGOE_UPDATE_FIXTURES=1 cargo test -p ugoe-psd --test fixtures`)。
+- `tests/fixtures.rs` は、取り込みとは独立の ImageMagick (`identify` / `convert`) でも両方の PSD が読め、
+  レイヤーの位置・大きさと合成画像の画素が期待どおりであることを確かめる (ImageMagick が無ければ飛ばす)。
+- 壊れた入力 (途中で切れたもの・ランダムに壊したもの・対応の取れないグループ) と未対応の中身
+  (ZIP・調整レイヤー・レイヤー効果・画素のないスマートオブジェクト) は、ファイルにせず `tests/import.rs` の中で作る。
+- `tests/real_world.rs` は `assets/fixtures/psd-real/*.psd` (実際のペイントツールの PSD) をすべて取り込む。
+  置き方は `assets/fixtures/psd-real/README.md`。
 
 ## 関連タスク
 
 - T0501 (`docs/tasks/T0501-*.md`)
 - T0605 (エディタでの取り込み。`clipping` はマスクに対応させる)
+- T0620 (仕様どおりのテスト用 PSD、実ファイルのテストの置き場所、未対応の機能の洗い出し)

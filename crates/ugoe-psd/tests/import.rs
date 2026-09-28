@@ -1,100 +1,20 @@
 //! `ugoe_psd::import` の結合テスト。入力は `common` のライターで組み立てる。
+//!
+//! 取り込みのエラー処理を試す壊れた入力・未対応の中身は、ファイルにせずここで組み立てる。
 
 mod common;
 
-use std::path::PathBuf;
-
-use common::{Layer as W, pattern, write_psd};
+use common::fixtures::{LAYERS_HEIGHT, LAYERS_WIDTH, fixture_path, layers_bytes};
+use common::{
+    Layer as W, levels_identity, pattern, write_flat_psd, write_psd, write_psd_unchecked,
+};
 use ugoe_psd::{ImportWarning, Layer, LayerNode, PsdError, WarningKind, import};
 
-const WIDTH: u32 = 64;
-const HEIGHT: u32 = 48;
-
-/// `assets/fixtures/layers.psd` の中身 (下から上)。
-fn fixture_layers() -> Vec<W> {
-    vec![
-        W {
-            id: Some(1),
-            ..W::raster("背景", 0, 0, WIDTH, HEIGHT)
-        },
-        W::group_end(),
-        W {
-            id: Some(3),
-            ..W::raster("胴", 10, 20, 20, 24)
-        },
-        W::group_end(),
-        W {
-            id: Some(5),
-            compression: 0,
-            ..W::raster("肌", 16, 4, 32, 20)
-        },
-        W {
-            id: Some(6),
-            clipping: true,
-            fill_opacity: Some(204),
-            blend: *b"mul ",
-            ..W::raster("影", 20, 8, 8, 8)
-        },
-        W {
-            id: Some(7),
-            hidden: true,
-            ..W::raster("目", 22, 10, 6, 4)
-        },
-        W {
-            id: Some(8),
-            ..W::group("顔")
-        },
-        W {
-            id: Some(9),
-            opacity: 230,
-            // 閉じたフォルダで、`lsct` にブレンドモードを持たない。
-            section: Some((2, None)),
-            ..W::group("体")
-        },
-        W {
-            id: Some(10),
-            opacity: 128,
-            extra: vec![(*b"lrFX", vec![0, 0, 0, 0])],
-            ..W::raster("メモ", -4, -2, 12, 8)
-        },
-        W {
-            id: Some(11),
-            extra: vec![(*b"levl", vec![0, 2])],
-            ..W::new("レベル補正")
-        },
-    ]
-}
+const WIDTH: u32 = LAYERS_WIDTH;
+const HEIGHT: u32 = LAYERS_HEIGHT;
 
 fn fixture_bytes() -> Vec<u8> {
-    // 合成画像は背景レイヤーをそのまま使う (取り込みでは読まない)。
-    let composite: Vec<u8> = pattern(WIDTH, HEIGHT, "背景".len() as u8)
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .flat_map(|p| [p[0], p[1], p[2]])
-        .collect();
-    write_psd(WIDTH, HEIGHT, &fixture_layers(), &composite)
-}
-
-fn fixture_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/fixtures/layers.psd")
-}
-
-/// コミットしたフィクスチャが、ライターの出力と一致すること。
-/// 作り直すときは `UGOE_UPDATE_FIXTURES=1 cargo test -p ugoe-psd`。
-#[test]
-fn committed_fixture_is_up_to_date() {
-    let bytes = fixture_bytes();
-    let path = fixture_path();
-    if std::env::var_os("UGOE_UPDATE_FIXTURES").is_some() {
-        // 並行して読むテストが途中の中身を見ないよう、書いてから置き換える。
-        let tmp = path.with_extension("psd.tmp");
-        std::fs::write(&tmp, &bytes).unwrap();
-        std::fs::rename(&tmp, &path).unwrap();
-    }
-    let committed = std::fs::read(&path).unwrap();
-    assert!(committed.len() < 1024 * 1024);
-    assert!(committed == bytes, "{} is stale", path.display());
+    layers_bytes()
 }
 
 fn group(node: &LayerNode) -> (&str, &[LayerNode]) {
@@ -113,7 +33,7 @@ fn layer(node: &LayerNode) -> &Layer {
 
 #[test]
 fn imports_fixture_tree() {
-    let tree = import(&std::fs::read(fixture_path()).unwrap()).unwrap();
+    let tree = import(&std::fs::read(fixture_path("layers.psd")).unwrap()).unwrap();
     assert_eq!((tree.width, tree.height), (WIDTH, HEIGHT));
 
     // 下から: 背景, 体, メモ (調整レイヤーは取り込まない)。
@@ -184,19 +104,13 @@ fn imports_fixture_tree() {
 
     assert_eq!(
         tree.warnings,
-        [
-            ImportWarning {
-                path: vec!["メモ".into()],
-                kind: WarningKind::LayerEffectsIgnored,
-            },
-            ImportWarning {
-                path: vec!["レベル補正".into()],
-                kind: WarningKind::AdjustmentLayer { key: "levl".into() },
-            },
-        ]
+        [ImportWarning {
+            path: vec!["レベル補正".into()],
+            kind: WarningKind::AdjustmentLayer { key: "levl".into() },
+        }]
     );
     assert_eq!(
-        tree.warnings[1].to_string(),
+        tree.warnings[0].to_string(),
         "レベル補正: adjustment or fill layer (levl) skipped"
     );
 }
@@ -218,7 +132,7 @@ fn warnings_carry_the_group_path() {
         },
         W::group("outer"),
     ];
-    let tree = import(&write_psd(8, 8, &layers, &[0; 8 * 8 * 3])).unwrap();
+    let tree = import(&write_psd(8, 8, &layers)).unwrap();
     let (_, outer) = group(&tree.root[0]);
     assert_eq!(outer.len(), 1, "the smart object is skipped");
     let (_, inner) = group(&outer[0]);
@@ -242,20 +156,67 @@ fn warnings_carry_the_group_path() {
     );
 }
 
+/// レイヤー効果は、追加情報のキーがあれば警告する。中身は読まないので、ここでは中身を省いた
+/// (仕様どおりでない) 追加情報で試す。
+#[test]
+fn layer_effects_are_ignored_with_a_warning() {
+    for key in [*b"lrFX", *b"lfx2"] {
+        let layers = vec![W {
+            opacity: 128,
+            extra: vec![(key, Vec::new())],
+            ..W::raster("fx", -1, -1, 3, 3)
+        }];
+        let tree = import(&write_psd(4, 4, &layers)).unwrap();
+        assert_eq!(layer(&tree.root[0]).rgba, pattern(3, 3, 2));
+        assert_eq!(
+            tree.warnings,
+            [ImportWarning {
+                path: vec!["fx".into()],
+                kind: WarningKind::LayerEffectsIgnored,
+            }]
+        );
+        assert_eq!(tree.warnings[0].to_string(), "fx: layer effects ignored");
+    }
+}
+
+#[test]
+fn adjustment_layers_are_skipped_with_a_warning() {
+    // 仕様どおりのレベル補正と、中身を省いた (壊れた) 追加情報のどちらでも、画素を持たないので飛ばす。
+    for (key, data) in [(*b"levl", levels_identity()), (*b"curv", vec![0, 1])] {
+        let layers = vec![
+            W::raster("kept", 0, 0, 2, 2),
+            W {
+                extra: vec![(key, data)],
+                ..W::new("adjust")
+            },
+        ];
+        let tree = import(&write_psd(4, 4, &layers)).unwrap();
+        assert_eq!(tree.root.len(), 1);
+        let key = String::from_utf8_lossy(&key).into_owned();
+        assert_eq!(
+            tree.warnings,
+            [ImportWarning {
+                path: vec!["adjust".into()],
+                kind: WarningKind::AdjustmentLayer { key },
+            }]
+        );
+    }
+}
+
 #[test]
 fn smart_object_with_pixels_is_imported() {
     let layers = vec![W {
         extra: vec![(*b"PlLd", vec![0; 4])],
         ..W::raster("placed", 0, 0, 2, 2)
     }];
-    let tree = import(&write_psd(4, 4, &layers, &[0; 4 * 4 * 3])).unwrap();
+    let tree = import(&write_psd(4, 4, &layers)).unwrap();
     assert_eq!(layer(&tree.root[0]).rgba, pattern(2, 2, 6));
     assert!(tree.warnings.is_empty());
 }
 
 #[test]
 fn empty_layers_are_kept() {
-    let tree = import(&write_psd(4, 4, &[W::new("empty")], &[0; 4 * 4 * 3])).unwrap();
+    let tree = import(&write_psd(4, 4, &[W::new("empty")])).unwrap();
     let empty = layer(&tree.root[0]);
     assert_eq!((empty.width, empty.height), (0, 0));
     assert!(empty.rgba.is_empty());
@@ -264,41 +225,47 @@ fn empty_layers_are_kept() {
 
 #[test]
 fn zip_compressed_layers_are_skipped_with_a_warning() {
-    let layers = vec![
-        W::raster("kept", 0, 0, 2, 2),
-        W {
-            compression: 2,
-            ..W::raster("zip", 0, 0, 2, 2)
-        },
-    ];
-    let tree = import(&write_psd(4, 4, &layers, &[0; 4 * 4 * 3])).unwrap();
-    assert_eq!(tree.root.len(), 1);
-    assert_eq!(
-        tree.warnings[0].kind,
-        WarningKind::UnsupportedCompression { compression: 2 }
-    );
+    // 中身は正しい zlib ストリーム (ZIP・予測付き ZIP)。取り込みは ZIP に対応していない。
+    for compression in [2, 3] {
+        let layers = vec![
+            W::raster("kept", 0, 0, 2, 2),
+            W {
+                compression,
+                ..W::raster("zip", 0, 0, 2, 2)
+            },
+        ];
+        let tree = import(&write_psd(4, 4, &layers)).unwrap();
+        assert_eq!(tree.root.len(), 1);
+        assert_eq!(
+            tree.warnings[0].kind,
+            WarningKind::UnsupportedCompression { compression }
+        );
+    }
 }
 
 #[test]
 fn flat_psd_becomes_one_layer() {
     let rgb: Vec<u8> = (0..3 * 3 * 2).map(|i| i as u8).collect();
-    let tree = import(&write_psd(3, 2, &[], &rgb)).unwrap();
-    let bg = layer(&tree.root[0]);
-    assert_eq!((bg.width, bg.height), (3, 2));
     let expected: Vec<u8> = rgb
         .as_chunks::<3>()
         .0
         .iter()
         .flat_map(|p| [p[0], p[1], p[2], 255])
         .collect();
-    assert_eq!(bg.rgba, expected);
-    assert_eq!(tree.warnings[0].kind, WarningKind::FlattenedImage);
+    // 無圧縮と PackBits。
+    for compression in [0, 1] {
+        let tree = import(&write_flat_psd(3, 2, &rgb, compression)).unwrap();
+        let bg = layer(&tree.root[0]);
+        assert_eq!((bg.width, bg.height), (3, 2));
+        assert_eq!(bg.rgba, expected);
+        assert_eq!(tree.warnings[0].kind, WarningKind::FlattenedImage);
+    }
 }
 
 #[test]
 fn unbalanced_groups_are_invalid() {
     let layers = vec![W::group_end(), W::raster("a", 0, 0, 1, 1)];
-    let err = import(&write_psd(2, 2, &layers, &[0; 12])).unwrap_err();
+    let err = import(&write_psd_unchecked(2, 2, &layers, &[0; 12])).unwrap_err();
     assert!(matches!(err, PsdError::Invalid(_)), "{err:?}");
 }
 
@@ -340,8 +307,13 @@ fn rejects_malformed_headers() {
 
 /// レイヤーとマスクの情報の終わりの位置 (この後は取り込みで読まない合成画像)。
 fn layer_section_end(bytes: &[u8]) -> usize {
-    let len = u32::from_be_bytes([bytes[34], bytes[35], bytes[36], bytes[37]]) as usize;
-    38 + len
+    let u32_at = |at: usize| {
+        u32::from_be_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]) as usize
+    };
+    // ヘッダ 26 バイトの後に、長さ付きのカラーモードデータ・画像リソース・レイヤーとマスクの情報が続く。
+    let resources = 26 + 4 + u32_at(26);
+    let layers = resources + 4 + u32_at(resources);
+    layers + 4 + u32_at(layers)
 }
 
 #[test]

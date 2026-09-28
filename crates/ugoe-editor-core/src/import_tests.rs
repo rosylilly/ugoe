@@ -228,10 +228,45 @@ fn reports_warnings() {
             .any(|m| m.starts_with("レベル補正: adjustment")),
         "{messages:?}"
     );
-    assert!(
-        messages.iter().any(|m| m == "メモ: layer effects ignored"),
-        "{messages:?}"
+    // レイヤー効果の警告は `ugoe-psd` のテストで試す (`layers.psd` は仕様どおりに書けない偽の効果を持たない)。
+    assert_eq!(messages.len(), 1, "{messages:?}");
+}
+
+/// 確認用の `character.psd` (T0620) も警告なしで取り込め、クリッピング・非表示・不透明度が写る。
+#[test]
+fn imports_character_fixture() {
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/fixtures/character.psd");
+    let mut doc = empty_document();
+    let import = import_psd(
+        doc.model(),
+        &std::fs::read(path).unwrap(),
+        &PsdImportOptions::new("character"),
+    )
+    .unwrap();
+    assert!(import.warnings.is_empty(), "{:?}", import.warnings);
+    doc.apply(import.command).unwrap();
+    let model = doc.model();
+    assert_eq!(validate(model), vec![]);
+    let names: Vec<&str> = model.parts.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(names, ["character", "体", "頭", "目"]);
+    assert_eq!(model.meshes.len(), 12);
+    let by_name = |name: &str| model.meshes.iter().find(|m| m.name == name).unwrap();
+    // 顔の影は顔でクリッピングし、乗算。頬は不透明度 50%。口 (開き) は非表示。
+    let face = by_name("顔").id.clone();
+    assert_eq!(
+        by_name("顔の影").masks,
+        vec![MaskRef::normal(face.as_str())]
     );
+    assert_eq!(by_name("顔の影").blend, BlendMode::Multiply);
+    assert!(close(
+        by_name("頬").keyforms.keyforms[0].opacity,
+        128.0 / 255.0
+    ));
+    assert!(close(
+        by_name("口 (開き)").keyforms.keyforms[0].opacity,
+        0.0
+    ));
 }
 
 #[test]

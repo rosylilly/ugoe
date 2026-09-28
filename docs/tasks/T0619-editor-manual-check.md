@@ -27,6 +27,8 @@ just editor
 
 - [x] ビューポートにモデルが表示される (WebGPU が使える環境では WebGPU、使えない環境では WebGL2。どちらで描いているかは開発者ツールのコンソールに出る)
 - [ ] File > Import PSD… で `assets/fixtures/layers.psd` を取り込み、ビューポートとツリーに表示される (T0605)
+- [ ] File > Import PSD… で `assets/fixtures/character.psd` を取り込み、キャラクターの絵 (髪・顔・両目・頬・口・服) が崩れずに表示され、ツリーが `体` / `頭` / `目` のグループになる (T0620)
+- [ ] Photoshop (あれば) で `assets/fixtures/layers.psd` と `assets/fixtures/character.psd` を開ける。レイヤーパネルのグループ・クリッピング・非表示・不透明度が `assets/fixtures/README.md` の説明どおりか。開けなければエラーの文言を T0620 のメモに書く (T0620)
 - [ ] File > Save As / Open / Export が動き、`.ugoeproj` を開き直すと同じ状態に戻る (T0604)
 - [ ] ツリーでの選択・名前の変更・ドラッグでの付け替え (見た目が変わらない) (T0602, T0607)
 - [ ] ビューポートでのメッシュの選択と、メッシュ編集モード (頂点の移動・追加・削除) (T0606)
