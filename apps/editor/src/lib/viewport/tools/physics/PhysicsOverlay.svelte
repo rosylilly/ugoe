@@ -12,7 +12,7 @@
 <script lang="ts">
 import type { EditorDocument } from "../../../document.svelte";
 import type { PhysicsCollider } from "../../../ipc";
-import { isDynamicSettings } from "../../../panels/physics/physics";
+import { isDynamicRig, isDynamicSettings } from "../../../panels/physics/physics";
 import type { PhysicsView } from "../../../panels/physics/physicsView.svelte";
 import type { ViewportController } from "../../controller.svelte";
 import type { Point } from "../geometry";
@@ -62,6 +62,8 @@ const chains = $derived.by(() => {
   if (!isDynamicSettings(settings)) return [];
   const map = puppetMap(puppet);
   return settings.rigs.flatMap((rig, i) => {
+    // パラメータにだけ出力するリグ (体の追従など) の粒子はキャンバス座標にないので出さない。
+    if (!isDynamicRig(rig)) return [];
     let points: Point[] | null = null;
     if (controller.previewingPhysics) {
       const live = toPoints(puppet.physics_particles(i));

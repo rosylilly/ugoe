@@ -21,6 +21,7 @@ use crate::automesh::AutoMeshOptions;
 use crate::depth::DepthPreset;
 use crate::keyform::Keyform;
 use crate::motion_edit::SegmentShape;
+use crate::physics_template::{PhysicsTemplate, PhysicsTemplateOptions};
 
 /// キーフォーム格子の 1 セルの指定: 軸のパラメータ ID → その軸のキーの値。
 ///
@@ -623,6 +624,14 @@ pub enum Command {
     /// 描画順・不透明度・マスクなど複製が持つ値は変えない。
     SyncDrawClone {
         id: MeshId,
+    },
+    // ---- 物理のテンプレート (T0634)。規則は `docs/editor.md#物理のテンプレート` ----
+    /// 定番の物理のリグの組 (体の追従・弾み・首の追従) を作る。[`crate::physics_template::commands`] が作る
+    /// コマンドの列 (パラメータの追加・リグの追加や置き換え・並べ替え) を、1 つの Undo 単位で適用する。
+    ApplyPhysicsTemplate {
+        template: PhysicsTemplate,
+        #[serde(default)]
+        options: PhysicsTemplateOptions,
     },
 }
 

@@ -20,6 +20,7 @@ mod mesh_edit;
 pub mod motion_edit;
 pub mod overflow;
 pub mod physics_edit;
+pub mod physics_template;
 pub mod project;
 pub mod space;
 pub mod texture;
@@ -33,6 +34,7 @@ pub use import::{PsdImport, PsdImportError, PsdImportOptions, PsdImportWarning, 
 pub use inference::{MirrorReport, RederiveWarning};
 pub use keyform::Keyform;
 pub use motion_edit::{Animations, SegmentShape};
+pub use physics_template::{PhysicsTemplate, PhysicsTemplateOptions};
 pub use project::{Project, ProjectError, ProjectMeta, export_bundle};
 pub use texture::Textures;
 
@@ -60,6 +62,8 @@ mod motion_edit_tests;
 mod overflow_tests;
 #[cfg(test)]
 mod physics_edit_tests;
+#[cfg(test)]
+mod physics_template_tests;
 #[cfg(test)]
 mod project_tests;
 #[cfg(test)]

@@ -2209,6 +2209,30 @@
         "op",
         "id"
       ]
+    },
+    {
+      "description": "定番の物理のリグの組 (体の追従・弾み・首の追従) を作る。[`crate::physics_template::commands`] が作る\nコマンドの列 (パラメータの追加・リグの追加や置き換え・並べ替え) を、1 つの Undo 単位で適用する。",
+      "type": "object",
+      "properties": {
+        "op": {
+          "type": "string",
+          "const": "apply_physics_template"
+        },
+        "options": {
+          "$ref": "#/$defs/PhysicsTemplateOptions",
+          "default": {
+            "blend": "add",
+            "create_missing": false
+          }
+        },
+        "template": {
+          "$ref": "#/$defs/PhysicsTemplate"
+        }
+      },
+      "required": [
+        "op",
+        "template"
+      ]
     }
   ],
   "$defs": {
@@ -3942,6 +3966,49 @@
           ]
         }
       ]
+    },
+    "PhysicsTemplate": {
+      "description": "物理のテンプレートの種類。",
+      "oneOf": [
+        {
+          "description": "体の追従: 頭の回転 (`AngleX/Y/Z`) に、体の回転 (`BodyAngleX/Y/Z`) が遅れて付いてきて、少し行き過ぎて戻る。",
+          "type": "string",
+          "const": "body_follow"
+        },
+        {
+          "description": "弾み: 頭の左右の動きを中継パラメータ `BodyBounce` に受け、もう 1 段の振り子で `BodyAngleX` に弾みを足す。",
+          "type": "string",
+          "const": "bounce"
+        },
+        {
+          "description": "首の追従: 頭の傾き (`AngleZ`) と左右 (`AngleX`) で、首の回転デフォーマを遅れて傾ける (動的物理)。",
+          "type": "string",
+          "const": "neck_follow"
+        }
+      ]
+    },
+    "PhysicsTemplateOptions": {
+      "description": "[`Command::ApplyPhysicsTemplate`] の選択。",
+      "type": "object",
+      "properties": {
+        "blend": {
+          "description": "体の回転に書き込む合成の方法。`add` (既定) はトラッキング・モーションの値に遅れと行き過ぎを足し、\n`overwrite` は物理の値で置き換える (体の回転を書かないホスト向け)。",
+          "$ref": "#/$defs/PhysicsBlend",
+          "default": "add"
+        },
+        "create_missing": {
+          "description": "モデルにない標準パラメータを、標準の値域で作るか。`false` なら、それを使うリグを作らない。\n中継パラメータ (`BodyBounce`) はこの選択によらず作る。",
+          "type": "boolean",
+          "default": false
+        },
+        "neck": {
+          "description": "首の追従で傾ける回転デフォーマ。省略すると、ID か名前に `neck` (大文字小文字を問わない) か\n`首` を含む最初の回転デフォーマ。",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
     },
     "Point": {
       "description": "点 (time, value)。",

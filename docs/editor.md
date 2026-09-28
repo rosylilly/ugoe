@@ -55,7 +55,7 @@
 | キャンバス | `set_canvas` (`width`・`height`・`origin`。大きさは 0 より大きい有限の値。要素の座標は変えない) |
 | キーフォームの推定 | `infer_keyforms`、`mirror_keyforms`、`mark_keyform_authored`、`mark_keyform_derived`、`set_keyform_inference`、`set_mirror_pair` (下の「推定とミラー」)、`set_depth`・`apply_depth_preset` ([深度の編集](#深度の編集)) |
 | モーション・表情 | `add_motion`、`remove_motion`、`rename_motion`、`set_motion_properties`、`add_motion_curve`、`remove_motion_curve`、`set_motion_curve_fade`、`set_motion_key`、`move_motion_key`、`remove_motion_key`、`set_motion_segment`、`set_motion_events`、`add_expression`、`remove_expression`、`rename_expression`、`set_expression_properties`、`set_expression_parameters` ([モーションと表情の編集](#モーションと表情の編集)) |
-| 物理 | `set_physics_world`、`add_physics_rig`、`create_physics_rig`、`remove_physics_rig`、`rename_physics_rig`、`set_physics_inputs`、`set_physics_outputs`、`set_physics_particles`、`set_physics_normalization`、`set_physics_rig_colliders`、`set_physics_frame`、`add_physics_collider`、`remove_physics_collider`、`set_physics_collider`、`reorder_physics_rig` ([物理の編集](#物理の編集)) |
+| 物理 | `set_physics_world`、`add_physics_rig`、`create_physics_rig`、`remove_physics_rig`、`rename_physics_rig`、`set_physics_inputs`、`set_physics_outputs`、`set_physics_particles`、`set_physics_normalization`、`set_physics_rig_colliders`、`set_physics_frame`、`add_physics_collider`、`remove_physics_collider`、`set_physics_collider`、`reorder_physics_rig`、`apply_physics_template` ([物理の編集](#物理の編集)・[物理のテンプレート](#物理のテンプレート)) |
 | その他 | `batch` |
 
 - `set_mesh_properties` は `part`・`texture`・`blend`・`culling`・`masks`・`mask_mode`・`mask_only` のうち、指定したフィールドだけを変えます。
@@ -259,14 +259,35 @@
   `radius` は隣の粒子との距離、係数は `mobility` 0.9・`delay` 0.9・`acceleration` 1.5 (根元は 1・1)。出力は粒子 k の `angle` を k 番目のデフォーマの角度に足す (`deformer_angle`、倍率 1・重み 100%)。入力はなく、正規化の範囲は -10〜10。
   `name` が空なら最初のデフォーマの名前、`id` を省略すると名前 (英数字を含まなければ `Physics` + 最初のデフォーマの ID) から `ids::unique_id` で作ります。
 
+### 物理のテンプレート
+
+`apply_physics_template { template, options }` (T0634) は、定番のリグの組を作ります (実装は `crates/ugoe-editor-core/src/physics_template.rs`、テストは `physics_template_tests.rs`)。
+`physics_template::commands` がコマンドの列 (`add_parameter`・`add_physics_rig`・`reorder_physics_rig`・`set_physics_*`) を作り、`Document::apply` がそれを `batch` と同じく 1 つの Undo 単位で適用します (途中で失敗すれば何も変えない)。
+AI や CLI は `commands` の結果を確かめてから `batch` として適用することもできます。
+
+| `template` | 作るリグ | 中身 |
+| --- | --- | --- |
+| `body_follow` | `BodyFollowX` / `Y` / `Z` | `AngleX/Y/Z` → 角度 (正規化の範囲 = 入力のパラメータの値域。値 = 根元の角度 (度)) → 粒子 1 の角度 × 0.3 を `BodyAngleX/Y/Z` へ。係数 `mobility` 0.65・`delay` 0.5・`acceleration` 1.5 (0.1 秒ほど遅れ、1 割ほど行き過ぎ、1 秒ほどで収まる) |
+| `bounce` | `BodyBounce` → `BodyBounceAngle` | 1 段目: `AngleX` → x → 粒子 1 の x を中継パラメータ `BodyBounce` へ (上書き、よく揺れる係数 0.95・0.8・1.0)。2 段目: `BodyBounce` → x (反転) → 粒子 1 の x × 0.4 を `BodyAngleX` へ |
+| `neck_follow` | `NeckFollow` | `AngleZ` → 角度、`AngleX` → x (重み 50%) → 粒子 1 の角度 × 0.3 を首の回転デフォーマの角度へ (`deformer_angle`。動的物理になる) |
+
+- **合成 (`options.blend`):** 体の回転への出力の合成の方法。既定の `add` は、トラッキング・モーションが書いた値に「振り子の角度 − 静止時の角度」を足すので、遅れと行き過ぎだけを加えて最後は元の値に戻ります ([spec/physics.md#合成の方法](spec/physics.md#合成の方法))。
+  トラッキングが体の回転を頭の回転 × 0.3 にしている ([avatar-profile.md#頭の向き](spec/avatar-profile.md#頭の向き)) と、体の追従の結果は振り子の角度 × 0.3 になり、`overwrite` と同じ動きです。体の回転を書かないホストでは `overwrite` を選びます。中継パラメータへの出力は常に `overwrite` です。
+- **ないパラメータ (`options.create_missing`):** `true` なら標準の値域 (`ugoe_model::standard::range`) で `add_parameter` を先に置きます。`false` (既定) なら、それを使う組 (体の追従は軸ごと、弾みは 2 つのリグ一緒、首は 1 つ) を作りません。作る組が 1 つもなければ `InvalidPhysics` で拒否します。
+  中継パラメータ `BodyBounce` (値域 -10〜10) はこの選択によらず、なければ内部用 (`internal`) で作ります。
+- **首 (`options.neck`):** 回転デフォーマの ID。省略すると、ID か名前に `neck` (大文字小文字を問わない) か `首` を含む最初の回転デフォーマです。なければ `InvalidPhysics`、回転デフォーマでなければ `DeformerKindMismatch`。
+- **同じ ID のリグ:** 並びの位置を保って中身 (名前・入力・出力・粒子・正規化の範囲) を置き換え、重力の基準と衝突体を外します。もう一度適用すると初期値に戻ります。
+- **並び:** 新しいリグは末尾に足します。ただし、そのリグが書くパラメータを読む既存のリグがあれば、その最初のものの直前に置きます (中継が同じステップで伝わるように。[spec/physics.md#リグの順序と中継](spec/physics.md#リグの順序と中継))。
+
 ### 物理の画面での操作
 
 | 場所 | 操作 |
 | --- | --- |
 | 物理のパネル (`panels/physics/PhysicsPanel.svelte`) | 右の列の上の区画の「Physics」タブ (「Inspector」と切り替える)。「Preview」/「Stop preview」、「World」(重力・風・周波数 → `set_physics_world`)、リグの一覧 (上から処理する順。▲▼ で並べ替える → `reorder_physics_rig`。前のリグの出力を入力に読むリグには「relay」の印) と「+ Rig」(空のリグ → `add_physics_rig`)、「+ From selected deformers」(ツリーで選んだ回転デフォーマを親から子の順に並べて `create_physics_rig`) |
+| テンプレート (`panels/physics/TemplateSection.svelte`) | 物理のパネルの「Templates」。「Create missing parameters」(`create_missing`、既定で入)・「Body blend」(`blend`)・「Neck」(首の回転デフォーマ。既定は名前から選ぶ)、「+ Body follow」「+ Bounce」「+ Neck follow」で `apply_physics_template` を 1 つ送り、作ったリグを選ぶ。ないパラメータを作るか飛ばすかを横に出す。説明とパラメータの確認は `templates.ts` (Vitest) |
 | リグの編集 (`panels/physics/RigEditor.svelte`) | 名前、「Gravity frame」、「Delete rig」、粒子 (「Length」`radius`・「Sway」`mobility`・「Speed」`delay`・「Settle」`acceleration`・「Hit r」`collision_radius`・位置。「+ Particle」は最後の区間と同じ向き・長さで足す)、入力、出力 (種類・書き込み先・粒子・成分・倍率・重み・反転・パラメータへの出力の合成の方法「Overwrite」/「Add」([physics.md#合成の方法](spec/physics.md#合成の方法))。頂点の出力は作ったとき重みがすべて 1)、「Collides with」、「Input range」。欄を確定するたびにコマンドを 1 つ送る |
 | 衝突体 (`panels/physics/ColliderSection.svelte`) | 「+ Circle」「+ Capsule」(主な選択がデフォーマならその原点 (ワープは中心) に取り付け、なければキャンバスの中央)。名前・「Attach to」・「Shape」(どちらも今の見た目の位置を保って写し直す)・位置・半径・削除 |
-| ビューポート (`viewport/tools/physics/PhysicsOverlay.svelte`) | 物理のパネルを開いている間、衝突体 (青) と粒子の鎖 (オレンジ、根元は四角。選んだリグは濃い色) を重ねる。粒子は動的物理の設定のときだけ (物理空間がキャンバス座標なので)。衝突体をドラッグで動かし (カプセルは端の丸で端だけ)、離したときに `set_physics_collider` を 1 つ送る。鎖を押すとそのリグを選ぶ |
+| ビューポート (`viewport/tools/physics/PhysicsOverlay.svelte`) | 物理のパネルを開いている間、衝突体 (青) と粒子の鎖 (オレンジ、根元は四角。選んだリグは濃い色) を重ねる。粒子は動的物理のリグのときだけ (物理空間がキャンバス座標なので。パラメータにだけ出力するリグは出さない)。衝突体をドラッグで動かし (カプセルは端の丸で端だけ)、離したときに `set_physics_collider` を 1 つ送る。鎖を押すとそのリグを選ぶ |
 
 - 衝突体と粒子の位置は wasm の `WebPuppet.deformer_point(id, x, y)` (デフォーマの局所座標 → キャンバス座標) で置き、ドラッグの逆写像は `deformer_jacobian` を使ったニュートン法です (`viewport/tools/physics/physicsGeometry.ts`、Vitest)。
   止めているときの粒子は初期位置 (根元は取り付け先のデフォーマで写し、ほかは根元からの相対位置)、プレビュー中は `WebPuppet.physics_particles(rig)` の今の位置です。

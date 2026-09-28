@@ -18,7 +18,7 @@ use crate::inference::{MirrorReport, RederiveWarning};
 use crate::motion_edit::{self, Animations};
 use crate::texture::{Textures, is_valid_texture_name, png_size};
 use crate::{Command, automesh, inference, keyform};
-use crate::{deformer_edit, depth, draw_clone, mesh_edit, physics_edit};
+use crate::{deformer_edit, depth, draw_clone, mesh_edit, physics_edit, physics_template};
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum EditError {
@@ -860,6 +860,12 @@ fn apply_to(
             draw_clone::create(model, &source, id, name)?;
         }
         Command::SyncDrawClone { id } => draw_clone::sync(model, &id)?,
+        Command::ApplyPhysicsTemplate { template, options } => {
+            let commands = physics_template::commands(model, physics.as_ref(), template, &options)?;
+            for c in commands {
+                apply_to(model, textures, anim, c, touched, mirrored, physics)?;
+            }
+        }
     }
     Ok(())
 }

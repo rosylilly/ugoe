@@ -1420,10 +1420,11 @@ fn op_name(command: &Command) -> &'static str {
         Command::SetParameterInternal { .. } => "set_parameter_internal",
         Command::CreateDrawClone { .. } => "create_draw_clone",
         Command::SyncDrawClone { .. } => "sync_draw_clone",
+        Command::ApplyPhysicsTemplate { .. } => "apply_physics_template",
     }
 }
 
-const OP_COUNT: usize = 89;
+const OP_COUNT: usize = 90;
 
 fn json_samples() -> Vec<Command> {
     let quad = fixtures::single_quad();

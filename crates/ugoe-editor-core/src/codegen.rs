@@ -13,7 +13,7 @@ use ugoe_core::Vec2;
 use ugoe_model::deformer::DeformerKind;
 use ugoe_model::expression::{Expression, ExpressionOp, ExpressionParameter};
 use ugoe_model::motion::{Curve, CurveTarget, Motion, MotionEvent, Point, Segment};
-use ugoe_model::physics::PhysicsSettings;
+use ugoe_model::physics::{PhysicsBlend, PhysicsSettings};
 use ugoe_model::{
     BlendMode, DepthRotation, KeyformGrid, KeyformInference, KeyformInterpolation, MaskMode,
     MaskRef, MeshId, Model, fixtures,
@@ -21,7 +21,8 @@ use ugoe_model::{
 
 use crate::command::{ChildRef, InferMethod, KeyformTarget};
 use crate::{
-    AutoMeshOptions, Command, DepthPreset, Keyform, KeyformCell, SegmentShape, VertexMove,
+    AutoMeshOptions, Command, DepthPreset, Keyform, KeyformCell, PhysicsTemplate,
+    PhysicsTemplateOptions, SegmentShape, VertexMove,
 };
 
 /// チェックインした `Command` の JSON Schema (`schema/command.schema.json`)。AI のツール定義に使う。
@@ -694,6 +695,19 @@ pub(crate) fn physics_samples() -> Vec<Command> {
         Command::SetParameterInternal {
             id: "AngleX".into(),
             internal: true,
+        },
+        // T0634
+        Command::ApplyPhysicsTemplate {
+            template: PhysicsTemplate::BodyFollow,
+            options: PhysicsTemplateOptions::default(),
+        },
+        Command::ApplyPhysicsTemplate {
+            template: PhysicsTemplate::NeckFollow,
+            options: PhysicsTemplateOptions {
+                create_missing: true,
+                blend: PhysicsBlend::Overwrite,
+                neck: Some("Body".into()),
+            },
         },
     ]
 }

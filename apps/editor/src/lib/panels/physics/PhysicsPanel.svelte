@@ -4,7 +4,7 @@
 
   - 「Preview」で物理のプレビューを始める (ViewportController.startPhysicsPreview)。パラメータや頭を動かすと揺れる。
     「Stop」で止めると編集中の姿に戻る。
-  - リグの一覧・選んだリグの編集 (RigEditor)・衝突体 (ColliderSection)。
+  - リグの一覧・テンプレート (TemplateSection)・選んだリグの編集 (RigEditor)・衝突体 (ColliderSection)。
   - リグは上から順に処理される。▲▼ で並べ替える (reorder_physics_rig)。前のリグの出力を読むリグには「relay」と出す
     (docs/spec/physics.md#リグの順序と中継)。
   - パネルを開いている間、ビューポートに粒子と衝突体を重ねる (viewport/tools/physics/PhysicsOverlay.svelte)。
@@ -29,6 +29,7 @@ import {
 } from "./physics";
 import type { PhysicsView } from "./physicsView.svelte";
 import RigEditor from "./RigEditor.svelte";
+import TemplateSection from "./TemplateSection.svelte";
 
 interface Props {
   doc: EditorDocument;
@@ -210,6 +211,15 @@ function togglePreview(): void {
     </button>
   </div>
 </section>
+
+{#if model}
+  <TemplateSection
+    {model}
+    {send}
+    {busy}
+    onApplied={(rigs) => (view.rig = rigs.find((id) => doc.physics?.rigs.some((r) => r.id === id)) ?? view.rig)}
+  />
+{/if}
 
 {#if rig && model}
   {#key rig.id}

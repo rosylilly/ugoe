@@ -5181,6 +5181,23 @@ export const commands: Command[] = [
     "internal": true
   },
   {
+    "op": "apply_physics_template",
+    "template": "body_follow",
+    "options": {
+      "create_missing": false,
+      "blend": "add"
+    }
+  },
+  {
+    "op": "apply_physics_template",
+    "template": "neck_follow",
+    "options": {
+      "create_missing": true,
+      "blend": "overwrite",
+      "neck": "Body"
+    }
+  },
+  {
     "op": "create_draw_clone",
     "source": "Quad",
     "name": ""
