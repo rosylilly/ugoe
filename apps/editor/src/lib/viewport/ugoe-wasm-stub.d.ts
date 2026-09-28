@@ -44,6 +44,10 @@ export class WebPuppet {
   render_order(): Uint32Array;
   hit_test(x: number, y: number): number | undefined;
   hit_test_all(x: number, y: number): Uint32Array;
+
+  deformer_ids(): string[];
+  warp_points(id: string): Float32Array | undefined;
+  rotation_frame(id: string): Float32Array | undefined;
 }
 
 export function version(): string;

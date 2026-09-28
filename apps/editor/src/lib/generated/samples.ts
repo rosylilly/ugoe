@@ -3191,6 +3191,46 @@ export const commands: Command[] = [
     ]
   },
   {
+    "op": "create_warp_deformer",
+    "name": "Body warp",
+    "children": [
+      {
+        "kind": "mesh",
+        "id": "EyeL"
+      },
+      {
+        "kind": "deformer",
+        "id": "Arm"
+      }
+    ],
+    "rows": 3,
+    "cols": 3
+  },
+  {
+    "op": "create_rotation_deformer",
+    "id": "Neck",
+    "name": "Neck",
+    "children": [
+      {
+        "kind": "mesh",
+        "id": "EyeL"
+      }
+    ],
+    "origin": [
+      512.0,
+      400.0
+    ],
+    "parent": "Body"
+  },
+  {
+    "op": "reparent_preserving_look",
+    "element": {
+      "kind": "mesh",
+      "id": "EyeL"
+    },
+    "new_parent": null
+  },
+  {
     "op": "retriangulate_mesh",
     "id": "EyeL"
   }

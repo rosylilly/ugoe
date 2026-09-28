@@ -6,12 +6,14 @@
     メッシュを手前から順に選ぶ。選択中のメッシュには輪郭を描く。ダブルクリックでメッシュ編集モードに入る。
   - メッシュ編集モード (T0606): tools/MeshEditTool.svelte。Esc で抜ける。
   - フォーム編集 (T0608): tools/form/FormTool.svelte。今のセルのキーフォームを編集する (メッシュ編集中は出さない)。
-  デフォーマのギズモ (T0607) もここに足す。
+  - デフォーマのギズモ (T0607): tools/deformer/DeformerGizmo.svelte。主な選択がデフォーマのとき、
+    フォーム編集の代わりに出す。
 -->
 <script lang="ts">
 import type { EditorDocument } from "../document.svelte";
 import type { Selection } from "../selection.svelte";
 import type { ViewportController } from "./controller.svelte";
+import DeformerGizmo from "./tools/deformer/DeformerGizmo.svelte";
 import FormTool from "./tools/form/FormTool.svelte";
 import { boundaryEdges, cycleHit } from "./tools/geometry";
 import MeshEditTool from "./tools/MeshEditTool.svelte";
@@ -48,6 +50,9 @@ const primaryMesh = $derived(
   selection.primary?.kind === "mesh" && scene.mesh(selection.primary.id)
     ? selection.primary.id
     : null,
+);
+const primaryDeformer = $derived(
+  selection.primary?.kind === "deformer" ? selection.primary.id : null,
 );
 const editing = $derived(
   selection.meshEdit !== null && selection.meshEdit === primaryMesh ? selection.meshEdit : null,
@@ -154,6 +159,10 @@ function onKeyDown(e: KeyboardEvent): void {
 {#if editing !== null}
   {#key editing}
     <MeshEditTool bind:this={meshTool} {scene} {doc} {selection} meshId={editing} />
+  {/key}
+{:else if primaryDeformer !== null}
+  {#key primaryDeformer}
+    <DeformerGizmo {controller} {doc} {selection} deformerId={primaryDeformer} />
   {/key}
 {:else}
   <FormTool {controller} {doc} {selection} />

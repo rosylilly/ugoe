@@ -13,6 +13,7 @@ use ugoe::render::Renderer;
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
+use crate::gizmo::DeformerProbe;
 use crate::load::{self, LoadError, LoadedModel};
 use crate::view::{Transform, ViewState};
 use crate::{hit, view};
@@ -45,6 +46,10 @@ pub struct WebPuppet {
     background: wgpu::Color,
     /// パラメータが変わり、評価し直す必要がある。
     dirty: bool,
+    /// デフォーマのギズモ用の評価 (モデルを読んだときに作る。作れなければ `None`)。
+    gizmo: Option<DeformerProbe>,
+    /// `gizmo` の評価が今のパラメータ値より古い。
+    gizmo_stale: bool,
     /// デバイスを失った (GPU プロセスのクラッシュなど)。ホストは作り直す必要がある。
     lost: Arc<AtomicBool>,
 }
@@ -167,6 +172,8 @@ impl WebPuppet {
             view: ViewState::default(),
             background: wgpu::Color::TRANSPARENT,
             dirty: false,
+            gizmo: None,
+            gizmo_stale: false,
             lost,
         })
     }
@@ -204,6 +211,7 @@ impl WebPuppet {
     /// モデルを外す (背景だけを描くようになる)。
     pub fn unload(&mut self) {
         self.puppet = None;
+        self.gizmo = None;
     }
 
     pub fn has_model(&self) -> bool {
@@ -239,6 +247,7 @@ impl WebPuppet {
         };
         params.set(index, value);
         self.dirty = true;
+        self.gizmo_stale = true;
         true
     }
 
@@ -253,6 +262,7 @@ impl WebPuppet {
         if let Some(puppet) = &mut self.puppet {
             puppet.instance_mut().parameters_mut().reset();
             self.dirty = true;
+            self.gizmo_stale = true;
         }
     }
 
@@ -261,6 +271,7 @@ impl WebPuppet {
         if let Some(puppet) = &mut self.puppet {
             puppet.update(dt);
             self.dirty = false;
+            self.gizmo_stale = true;
         }
     }
 
@@ -483,6 +494,28 @@ impl WebPuppet {
             .map(|p| hit::hit_test_all(p.instance(), [x, y]))
             .unwrap_or_default()
     }
+
+    // --- デフォーマのギズモ (T0607、座標はキャンバス座標) ---
+
+    /// ワープと回転デフォーマの ID (モデルの定義順)。
+    pub fn deformer_ids(&self) -> Vec<String> {
+        self.gizmo
+            .as_ref()
+            .map(DeformerProbe::ids)
+            .unwrap_or_default()
+    }
+
+    /// ワープ `id` の今のパラメータ値での制御点 `[x0, y0, ...]` (行優先、x が速い)。
+    /// ワープでなければ `undefined`。
+    pub fn warp_points(&mut self, id: &str) -> Option<Vec<f32>> {
+        self.gizmo()?.warp_points(id)
+    }
+
+    /// 回転デフォーマ `id` の今のパラメータ値でのワールド変換 `[ox, oy, ax, ay, bx, by]`
+    /// (原点と、局所座標の x 軸・y 軸の単位ベクトルの像)。回転デフォーマでなければ `undefined`。
+    pub fn rotation_frame(&mut self, id: &str) -> Option<Vec<f32>> {
+        self.gizmo()?.rotation_frame(id)
+    }
 }
 
 impl WebPuppet {
@@ -528,9 +561,21 @@ impl WebPuppet {
                 )
                 .map_err(js_error)?;
         }
+        self.gizmo = DeformerProbe::new(puppet.instance().compiled().model());
+        self.gizmo_stale = true;
         self.puppet = Some(puppet);
         self.dirty = false;
         Ok(warnings)
+    }
+
+    /// パラメータ値を写して評価し直したギズモ用の評価。
+    fn gizmo(&mut self) -> Option<&DeformerProbe> {
+        if self.gizmo_stale {
+            let puppet = self.puppet.as_ref()?;
+            self.gizmo.as_mut()?.update(puppet.instance().parameters());
+            self.gizmo_stale = false;
+        }
+        self.gizmo.as_ref()
     }
 
     fn evaluate(&mut self) {

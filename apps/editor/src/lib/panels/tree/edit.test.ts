@@ -59,7 +59,11 @@ describe("dropCommand into", () => {
       }),
     ).toEqual({
       ok: true,
-      command: { op: "set_deformer_parent", id: "EyeRot", parent: "FaceWarp" },
+      command: {
+        op: "reparent_preserving_look",
+        element: { kind: "deformer", id: "EyeRot" },
+        new_parent: "FaceWarp",
+      },
     });
     expect(
       dropCommand(index(), "deformers", [deformer("FaceWarp")], {
@@ -71,7 +75,11 @@ describe("dropCommand into", () => {
       dropCommand(index(), "deformers", [deformer("HeadRot")], { target: null, position: "into" }),
     ).toEqual({
       ok: true,
-      command: { op: "set_deformer_parent", id: "HeadRot", parent: null },
+      command: {
+        op: "reparent_preserving_look",
+        element: { kind: "deformer", id: "HeadRot" },
+        new_parent: null,
+      },
     });
   });
 
@@ -110,13 +118,21 @@ describe("dropCommand into", () => {
       }),
     ).toEqual({
       ok: true,
-      command: { op: "set_mesh_parent", id: "Skin", parent: "EyeRot" },
+      command: {
+        op: "reparent_preserving_look",
+        element: { kind: "mesh", id: "Skin" },
+        new_parent: "EyeRot",
+      },
     });
     expect(
       dropCommand(index(), "deformers", [mesh("Skin")], { target: null, position: "into" }),
     ).toEqual({
       ok: true,
-      command: { op: "set_mesh_parent", id: "Skin", parent: null },
+      command: {
+        op: "reparent_preserving_look",
+        element: { kind: "mesh", id: "Skin" },
+        new_parent: null,
+      },
     });
     expect(
       dropCommand(index(), "parts", [mesh("Skin")], { target: null, position: "into" }).ok,

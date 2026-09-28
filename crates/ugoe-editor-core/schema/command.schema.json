@@ -1087,6 +1087,130 @@
         "id",
         "draw_order"
       ]
+    },
+    {
+      "description": "`children` を包むワープデフォーマ (`rows` × `cols` セル) を作り、子を見た目を保って付け替える。\n制御点は、子の基準の姿の点の外接矩形 (と余白) を親の座標系で等分した格子になる。\n`id` を省略すると `name` から作る。`parent` を省略すると子の親の最も近い共通の祖先。\n式と制限は `docs/editor.md#デフォーマの編集`。",
+      "type": "object",
+      "properties": {
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ChildRef"
+          }
+        },
+        "cols": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "create_warp_deformer"
+        },
+        "parent": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rows": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        }
+      },
+      "required": [
+        "op",
+        "name",
+        "children",
+        "rows",
+        "cols"
+      ]
+    },
+    {
+      "description": "`children` を包む回転デフォーマ (角度 0・拡大率 1) を作り、子を見た目を保って付け替える。\n`origin` はキャンバス座標 (基準の姿) で、省略すると子の外接矩形の中心。\n`id`・`parent` の省略は `CreateWarpDeformer` と同じ。",
+      "type": "object",
+      "properties": {
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ChildRef"
+          }
+        },
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "create_rotation_deformer"
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Vec2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parent": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "op",
+        "name",
+        "children"
+      ]
+    },
+    {
+      "description": "メッシュまたはデフォーマの親を付け替え、すべてのキーフォームの局所座標を、既定値のパラメータで\n見た目が変わらないように新しい親の座標系へ写し直す (`None` でキャンバス直下)。\n他のパラメータ値では、親が変形すると見た目が変わりうる (`docs/editor.md#デフォーマの編集`)。",
+      "type": "object",
+      "properties": {
+        "element": {
+          "$ref": "#/$defs/ChildRef"
+        },
+        "new_parent": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "op": {
+          "type": "string",
+          "const": "reparent_preserving_look"
+        }
+      },
+      "required": [
+        "op",
+        "element"
+      ]
     }
   ],
   "$defs": {
@@ -1138,6 +1262,45 @@
             "normal",
             "additive",
             "multiply"
+          ]
+        }
+      ]
+    },
+    "ChildRef": {
+      "description": "デフォーマの子になれる要素。JSON では `{\"kind\": \"mesh\", \"id\": \"EyeL\"}` と書く\n([`KeyformTarget`] と同じ形)。",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "mesh"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "deformer"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
           ]
         }
       ]

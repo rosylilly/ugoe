@@ -7,6 +7,7 @@
 pub mod automesh;
 pub mod codegen;
 pub mod command;
+mod deformer_edit;
 pub mod document;
 mod grid;
 pub mod ids;
@@ -19,7 +20,7 @@ pub mod space;
 pub mod texture;
 
 pub use automesh::AutoMeshOptions;
-pub use command::{Command, InferMethod, KeyformCell, KeyformTarget, VertexMove};
+pub use command::{ChildRef, Command, InferMethod, KeyformCell, KeyformTarget, VertexMove};
 pub use document::{Document, EditError};
 pub use grid::CellError;
 pub use import::{PsdImport, PsdImportError, PsdImportOptions, PsdImportWarning, import_psd};
@@ -27,6 +28,8 @@ pub use keyform::Keyform;
 pub use project::{Project, ProjectError, ProjectMeta, export_bundle};
 pub use texture::Textures;
 
+#[cfg(test)]
+mod deformer_edit_tests;
 #[cfg(test)]
 mod import_tests;
 #[cfg(test)]

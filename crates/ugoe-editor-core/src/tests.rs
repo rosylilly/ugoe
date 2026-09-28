@@ -10,7 +10,7 @@ use ugoe_model::{
     ParameterGroup, Part, fixtures,
 };
 
-use crate::{CellError, Command, Document, EditError, KeyformCell};
+use crate::{CellError, ChildRef, Command, Document, EditError, KeyformCell};
 
 // ---- 要素を作る補助 ----
 
@@ -1360,10 +1360,13 @@ fn op_name(command: &Command) -> &'static str {
         Command::RemoveKeyformKey { .. } => "remove_keyform_key",
         Command::SetKeyformCell { .. } => "set_keyform_cell",
         Command::SetMeshDrawOrder { .. } => "set_mesh_draw_order",
+        Command::CreateWarpDeformer { .. } => "create_warp_deformer",
+        Command::CreateRotationDeformer { .. } => "create_rotation_deformer",
+        Command::ReparentPreservingLook { .. } => "reparent_preserving_look",
     }
 }
 
-const OP_COUNT: usize = 44;
+const OP_COUNT: usize = 47;
 
 fn json_samples() -> Vec<Command> {
     let quad = fixtures::single_quad();
@@ -1553,6 +1556,25 @@ fn json_samples() -> Vec<Command> {
         Command::SetMeshDrawOrder {
             id: "Quad".into(),
             draw_order: 250.0,
+        },
+        Command::CreateWarpDeformer {
+            id: None,
+            name: "Warp".into(),
+            children: vec![ChildRef::Mesh("Quad".into())],
+            rows: 2,
+            cols: 2,
+            parent: None,
+        },
+        Command::CreateRotationDeformer {
+            id: Some("Rot".into()),
+            name: "Rot".into(),
+            children: vec![ChildRef::Deformer("Arm".into())],
+            origin: Some(ugoe_core::Vec2::new(1.0, 2.0)),
+            parent: Some("Body".into()),
+        },
+        Command::ReparentPreservingLook {
+            element: ChildRef::Deformer("Arm".into()),
+            new_parent: Some("Body".into()),
         },
     ]
 }

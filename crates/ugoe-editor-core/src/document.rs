@@ -8,9 +8,9 @@ use ugoe_rigging::{InferError, InferScope, MirrorOptions};
 
 use crate::command::KeyformTarget;
 use crate::grid::{self, CellError};
-use crate::mesh_edit;
 use crate::texture::{Textures, is_valid_texture_name, png_size};
 use crate::{Command, automesh, inference, keyform};
+use crate::{deformer_edit, mesh_edit};
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum EditError {
@@ -91,6 +91,9 @@ pub enum EditError {
     /// 格子の推定の方法が未知 (新しい版のファイル) なので、その設定では推定できない。
     #[error("{target}: keyform inference method is not supported by this version")]
     UnsupportedInference { target: String },
+    /// デフォーマの作成・付け替え・セルの編集ができない (子がない、循環する、座標を写せないなど)。
+    #[error("deformer edit failed: {reason}")]
+    DeformerEdit { reason: String },
 }
 
 fn join(errors: &[ValidationError]) -> String {
@@ -536,6 +539,31 @@ fn apply_to(
                 keyform.draw_order = draw_order;
             }
         }
+        Command::CreateWarpDeformer {
+            id,
+            name,
+            children,
+            rows,
+            cols,
+            parent,
+        } => {
+            let kind = deformer_edit::NewKind::Warp { rows, cols };
+            deformer_edit::create(model, id, name, &children, parent, kind, touched)?;
+        }
+        Command::CreateRotationDeformer {
+            id,
+            name,
+            children,
+            origin,
+            parent,
+        } => {
+            let kind = deformer_edit::NewKind::Rotation { origin };
+            deformer_edit::create(model, id, name, &children, parent, kind, touched)?;
+        }
+        Command::ReparentPreservingLook {
+            element,
+            new_parent,
+        } => deformer_edit::reparent(model, &element, new_parent.as_ref(), touched)?,
     }
     Ok(())
 }

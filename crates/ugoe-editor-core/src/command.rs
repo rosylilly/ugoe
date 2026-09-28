@@ -301,6 +301,51 @@ pub enum Command {
         id: MeshId,
         draw_order: f32,
     },
+    /// `children` を包むワープデフォーマ (`rows` × `cols` セル) を作り、子を見た目を保って付け替える。
+    /// 制御点は、子の基準の姿の点の外接矩形 (と余白) を親の座標系で等分した格子になる。
+    /// `id` を省略すると `name` から作る。`parent` を省略すると子の親の最も近い共通の祖先。
+    /// 式と制限は `docs/editor.md#デフォーマの編集`。
+    CreateWarpDeformer {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<DeformerId>,
+        name: String,
+        children: Vec<ChildRef>,
+        rows: u16,
+        cols: u16,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent: Option<DeformerId>,
+    },
+    /// `children` を包む回転デフォーマ (角度 0・拡大率 1) を作り、子を見た目を保って付け替える。
+    /// `origin` はキャンバス座標 (基準の姿) で、省略すると子の外接矩形の中心。
+    /// `id`・`parent` の省略は `CreateWarpDeformer` と同じ。
+    CreateRotationDeformer {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<DeformerId>,
+        name: String,
+        children: Vec<ChildRef>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(as = "Option<ugoe_core::codegen::Vec2Repr>")]
+        #[schemars(with = "Option<ugoe_core::codegen::Vec2Repr>")]
+        origin: Option<Vec2>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent: Option<DeformerId>,
+    },
+    /// メッシュまたはデフォーマの親を付け替え、すべてのキーフォームの局所座標を、既定値のパラメータで
+    /// 見た目が変わらないように新しい親の座標系へ写し直す (`None` でキャンバス直下)。
+    /// 他のパラメータ値では、親が変形すると見た目が変わりうる (`docs/editor.md#デフォーマの編集`)。
+    ReparentPreservingLook {
+        element: ChildRef,
+        new_parent: Option<DeformerId>,
+    },
+}
+
+/// デフォーマの子になれる要素。JSON では `{"kind": "mesh", "id": "EyeL"}` と書く
+/// ([`KeyformTarget`] と同じ形)。
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS, JsonSchema)]
+#[serde(tag = "kind", content = "id", rename_all = "snake_case")]
+pub enum ChildRef {
+    Mesh(MeshId),
+    Deformer(DeformerId),
 }
 
 /// キーフォームの格子を持つ要素。JSON では `{"kind": "mesh", "id": "EyeL"}` と書く。

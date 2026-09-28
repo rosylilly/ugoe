@@ -16,7 +16,7 @@ use ugoe_model::motion::Motion;
 use ugoe_model::physics::PhysicsSettings;
 use ugoe_model::{BlendMode, KeyformGrid, MaskMode, MaskRef, MeshId, Model, fixtures};
 
-use crate::command::{InferMethod, KeyformTarget};
+use crate::command::{ChildRef, InferMethod, KeyformTarget};
 use crate::{AutoMeshOptions, Command, Keyform, KeyformCell, VertexMove};
 
 /// チェックインした `Command` の JSON Schema (`schema/command.schema.json`)。AI のツール定義に使う。
@@ -368,6 +368,28 @@ fn sample_commands() -> Vec<Command> {
         Command::RemoveMeshVertices {
             id: mesh_id.clone(),
             indices: vec![0, 3],
+        },
+        Command::CreateWarpDeformer {
+            id: None,
+            name: "Body warp".to_owned(),
+            children: vec![
+                ChildRef::Mesh(mesh_id.clone()),
+                ChildRef::Deformer("Arm".into()),
+            ],
+            rows: 3,
+            cols: 3,
+            parent: None,
+        },
+        Command::CreateRotationDeformer {
+            id: Some("Neck".into()),
+            name: "Neck".to_owned(),
+            children: vec![ChildRef::Mesh(mesh_id.clone())],
+            origin: Some(Vec2::new(512.0, 400.0)),
+            parent: Some("Body".into()),
+        },
+        Command::ReparentPreservingLook {
+            element: ChildRef::Mesh(mesh_id.clone()),
+            new_parent: None,
         },
         Command::RetriangulateMesh { id: mesh_id },
     ])

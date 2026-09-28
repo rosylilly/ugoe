@@ -48,7 +48,7 @@
 | --- | --- |
 | パラメータ | `add_parameter`、`remove_parameter`、`set_parameter_range`、`rename_parameter`、`set_parameter_group` (`null` で外す)、`set_parameter_mirror` (`null` で外す。相手側は変えない。自分自身と対にすると値の符号を反転して対応させる) |
 | パーツ | `add_part`、`remove_part`、`rename_part`、`set_part_parent`、`set_part_keyforms` |
-| デフォーマ | `add_deformer`、`remove_deformer`、`rename_deformer`、`set_deformer_parent`、`set_deformer_part`、`set_warp_keyforms` (`rows` / `cols` は変えない)、`set_rotation_keyforms` |
+| デフォーマ | `add_deformer`、`remove_deformer`、`rename_deformer`、`set_deformer_parent`、`set_deformer_part`、`set_warp_keyforms` (`rows` / `cols` は変えない)、`set_rotation_keyforms`、`create_warp_deformer`・`create_rotation_deformer`・`reparent_preserving_look` ([デフォーマの編集](#デフォーマの編集)) |
 | メッシュ | `add_mesh` (`meshes` の末尾に追加)、`remove_mesh`、`rename_mesh`、`set_mesh_properties`、`set_mesh_parent`、`set_mesh_keyforms`、`set_mesh_keyform`、`reorder_mesh`、`regenerate_mesh` ([メッシュの再生成](#メッシュの再生成))、`move_mesh_vertices`・`add_mesh_vertex`・`remove_mesh_vertices`・`retriangulate_mesh` ([メッシュの編集](#メッシュの編集)) |
 | キーフォーム | `add_keyform_key`、`remove_keyform_key`、`set_keyform_cell`、`set_mesh_draw_order` ([キーフォームの編集](#キーフォームの編集)) |
 | テクスチャ | `add_texture`、`set_texture_image`、`remove_texture` |
@@ -59,7 +59,7 @@
 - `set_mesh_properties` は `part`・`texture`・`blend`・`culling`・`masks`・`mask_mode`・`mask_only` のうち、指定したフィールドだけを変えます。
 - `set_mesh_keyform` は格子の 1 セルを置き換え、そのセルの由来を `authored` にします。セルは「軸のパラメータ ID → キーの値」の対応で指定します (例: `"cell": {"AngleX": 30, "AngleY": 0}`)。格子のすべての軸を指定し、値はキーと完全に一致させます。軸のない格子は `{}` です。
 - `reorder_mesh` は `meshes` の中でメッシュを `before` の直前 (`null` なら末尾) に移します。描画順 (`draw_order`) が同じメッシュの前後関係が変わります。
-- `set_deformer_parent` と `set_mesh_parent` は親を付け替えるだけで、座標は変えません (子の座標は新しい親の局所座標として解釈されるので、見た目は変わりうる)。見た目を保つ付け替えは T0607 で作ります。
+- `set_deformer_parent` と `set_mesh_parent` は親を付け替えるだけで、座標は変えません (子の座標は新しい親の局所座標として解釈されるので、見た目は変わりうる)。見た目を保つ付け替えは `reparent_preserving_look` です ([デフォーマの編集](#デフォーマの編集))。
 
 - `add_texture` は `name` と `png` (PNG ファイルのバイト列) を受け取り、`Model::textures` の末尾に追加します。幅と高さは PNG の IHDR から読みます。名前の規則は下の「テクスチャ」を参照。`set_texture_image` は画像を差し替え、寸法も PNG に合わせます。`remove_texture` は使っているメッシュがあれば拒否し (`HasChildren`)、後ろのテクスチャを指すメッシュの `texture` (インデックス) を 1 つ詰めます。
 
@@ -217,11 +217,50 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 | --- | --- |
 | パラメータ一覧 (`ParametersPanel.svelte`) | 「+」でパラメータを作る (ID・名前・最小・既定・最大)。名前を押すと名前・値域・既定値の編集と削除 (`rename_parameter` と `set_parameter_range` を `batch` で 1 つの Undo に)。スライダーの下に、主な選択の要素のキーを ◆ で示し (押すとそのキーへ)、「Snap to keys」で要素のすべての軸を最も近いキーへ動かす。行の ◆ ボタンで、今の値にキーを追加 (今の値がキーならそのキーを削除)。スライダーは表示の状態なので IPC を通らない |
 | インスペクタ (`inspector/keyforms/KeyformInspector.svelte`) | 主な選択の要素の軸とキー (× で削除、押すとそのキーへ移動、「+ 値」で今の値にキーを追加)、軸のないパラメータへの軸の追加、セルの格子 (1 軸は 1 行、2 軸は表、3 軸目以降は今の値に最も近いキーの断面)。メッシュでは描画順を表示し、「Set for all cells」で `set_mesh_draw_order` を送る。セルは `A` (authored) / `D` (推定: `derived`・`additive`・`depth_rotation`、破線) / `M` (`mirror`、破線) で由来を示し、今の値がすべての軸でキーの上にあればそのセルを枠で示す。キーの上になければ「Move to nearest key」を出す |
-| ビューポート (`viewport/tools/form/FormTool.svelte`) | 「Form edit」で切り替える。主な選択の要素のうち、メッシュは頂点、ワープは制御点、回転デフォーマは原点をハンドルで示す (回転の角度のギズモは T0607)。ドラッグ中はオーバーレイだけでプレビューし、離したときに `canvas_to_local` で親の座標系に直してから `set_keyform_cell` を 1 つ送る (Undo の 1 単位)。Shift を押しながらドラッグするとすべての点を同じだけ動かす |
+| ビューポート (`viewport/tools/form/FormTool.svelte`) | 「Form edit」で切り替える。主な選択の要素のうち、メッシュは頂点、ワープは制御点、回転デフォーマは原点をハンドルで示す (主な選択がデフォーマのときは、代わりに [デフォーマのギズモ](#デフォーマの編集) を出す)。ドラッグ中はオーバーレイだけでプレビューし、離したときに `canvas_to_local` で親の座標系に直してから `set_keyform_cell` を 1 つ送る (Undo の 1 単位)。Shift を押しながらドラッグするとすべての点を同じだけ動かす |
 
 - **キーの上でだけ編集できる:** 今のパラメータ値がどれかの軸でキーの上にないと、どのセルに書くか決まらないので編集を拒否し (ハンドルを出さない)、「Move to nearest key」を出します。
 - キーの上かどうかは、パラメータの値域の 1e-6 倍 (最小 1e-6) の差まで同じとみなして判定します (スライダーの値は wasm の `f32` を経由するので、`0.1` のようなキーと完全には一致しない)。送るセルの値はキーの値そのものです。
 - 判定などの純粋な関数は `inspector/keyforms/keyforms.ts` にあり、Vitest で検査します (`pnpm --filter @ugoe/editor test`、`just web-check` に含まれる)。
+
+## デフォーマの編集
+
+デフォーマを作るコマンドと、見た目を保つ親の付け替えです (実装は `crates/ugoe-editor-core/src/deformer_edit.rs`、テストは `deformer_edit_tests.rs`)。
+[メッシュの編集](#メッシュの編集) と同じく、**既定値のパラメータで評価した姿** (基準の姿) を基準にします。基準の姿での各デフォーマのワールド変換 `F_D` ([evaluation.md](spec/evaluation.md#3-デフォーマのワールド変換)) は、モデルの複製に評価用のメッシュを足してランタイムで 1 回評価して作ります (ワープは制御点と同じ格子のメッシュを親の下に、回転デフォーマは `(0,0)`・`(1,0)`・`(0,1)` のメッシュを子に置く)。
+
+| `op` | 内容 |
+| --- | --- |
+| `create_warp_deformer { id?, name, children, rows, cols, parent? }` | `children` (`{"kind": "mesh" \| "deformer", "id"}` の配列) を包むワープ (`rows` × `cols` セル、1〜64) を作り、子を付け替える |
+| `create_rotation_deformer { id?, name, children, origin?, parent? }` | `children` を包む回転デフォーマ (角度 0・拡大率 1) を作り、子を付け替える。`origin` はキャンバス座標で、省略すると子の外接矩形の中心 |
+| `reparent_preserving_look { element, new_parent }` | メッシュかデフォーマ (`element`) の親デフォーマを `new_parent` (`null` で最上位) にし、キーフォームを新しい親の座標系へ写し直す |
+
+- **作るデフォーマ:** `id` を省略すると `name` から作ります (`ids::new_deformer_id`)。`parent` を省略すると、子の親の最も近い共通の祖先 (共通の祖先がなければ最上位)。パーツは子のパーツの最も近い共通の祖先 (なければ最初の子のパーツ)。格子は定数 (軸なし) です。
+- **ワープの格子:** 子とその子孫の基準の姿の点 (メッシュの頂点・ワープの制御点・回転デフォーマの原点) を親の座標系へ写し (`F_parent⁻¹`)、その外接矩形に長い辺の 5% の余白を付け (点が 1 つなら 1px、親がワープなら UV で 0.01)、`rows` × `cols` に等分した点を制御点にします。一方の辺だけ 0 の矩形 (一列に並んだ点) は正方形に近づけます。
+- **子の写し直し:** 子の古い親の変換を `F_old`、新しい親を `F_new` として、各キーフォームの点 `p` (メッシュの頂点・ワープの制御点・回転デフォーマの原点) を `p' = F_new⁻¹(F_old(p))` に置き換えます。
+  - `F⁻¹` は、親なしなら恒等、回転デフォーマ (アフィン) なら逆行列、ワープならニュートン法 (初期値は四隅のアフィン近似の逆、収束しなければ各セルの中心。残差 1e-3px 以下で収束。歩幅は残差が減るまで半分にする) で求めます。潰れた格子など、逆に解けなければ `EditError::DeformerEdit` で拒否します。
+  - 回転デフォーマの子は、ワールドの線形部分 `A_old(o)·R(angle)·S` が変わらないように角度・拡大率・反転も直します。`A(o)` は親が回転なら親のアフィンの線形部分、ワープなら原点での向き `R(δ)`、親なしなら単位行列です。`Q = A_new(o')⁻¹·A_old(o)` (相似変換) を `s·R(φ)` (行列式が正) と分けて `angle += φ`、`scale *= s`。行列式が負なら `Q = s·R(φ)·diag(-1, 1)` と分けて `angle = φ - angle`、`reflect_x` を反転します。`φ` は最初のキーフォームの値に近い角度 (360 度の違いを除く) にそろえ、キーフォーム間の補間を変えません。
+  - 孫 (子の子) は変えません (子のワールド変換が保たれるので、孫の見た目も保たれる)。`mirror_axis` は、最初のキーフォームの点の重心の高さで同じ写像を通した x 座標にします (近似)。
+  - 付け替えた要素は格子のすべてのセルが変わるので、`touched` に積みます (`derived` のセルは作り直す)。未知の種類のデフォーマは付け替えられません (子の座標系が決まらないため)。
+- **見た目が保たれる範囲 (制限):** 写し直しは基準の姿での写像なので、次の場合に厳密です。それ以外では他のパラメータ値で見た目が変わりえます。
+  - 基準の姿では、写像が点ごとなので **キーフォームの補間と入れ替えられる** とき (写像がアフィン、または既定値がすべての軸でキーの上にある) に厳密です。ワープへの出入りで既定値がキーの間にあると、補間の分だけずれます。
+  - 他のパラメータ値では、古い親と新しい親の間にある (付け替えで経由しなくなる・新たに経由する) デフォーマがパラメータで変形すると変わります。たとえば子の親と同じ親の下にデフォーマを作るとき (`parent` の省略で子の親が同じ場合) は、親がアフィンな間はすべての値で厳密です。
+  - **ワープの中のワープ:** 新しいワープは親のワープの写像を制御点でしか標本化しないので、親のワープがアフィンでない姿 (台形など) では子の見た目が少し変わります (Cubism と同じ性質)。
+  - **ワープの子の回転デフォーマ:** 回転デフォーマはワープの伸縮を子に伝えない ([evaluation.md](spec/evaluation.md#回転デフォーマ)) ので、ワープの下に回転デフォーマを作ると、基準の姿以外ではワープの伸縮が子に伝わらなくなります。
+  - 親の違う子をまとめて包むと、共通の祖先より下の親の動きには追従しなくなります (付け替えなので)。
+- 他の拒否: 子がない・同じ子を 2 回指定・行数や列数が範囲外・`origin` が有限でない (`DeformerEdit`)、存在しない要素 (`NotFound`)、使用中の `id` (`DuplicateId`)、`parent` / `new_parent` が付け替える要素自身かその子孫 (循環、`DeformerEdit`)。
+
+### ギズモとデフォーマの作成 (画面)
+
+| 場所 | 操作 |
+| --- | --- |
+| インスペクタ (`inspector/DeformerProperties.svelte`) | 選択中のメッシュ・デフォーマ (複数可) を「Wrap in deformer」で包む。行数・列数を指定して「Warp」、または「Rotation」(原点は選択の中心)。作ったデフォーマを選択する。デフォーマを選ぶと種類・格子・キーフォームの数・親を示す |
+| ビューポート (`viewport/tools/deformer/DeformerGizmo.svelte`) | 主な選択がデフォーマのとき、フォーム編集の代わりに出す。ワープは格子と制御点を示し、クリックで選択 (Shift で追加・解除)、格子の内側からのドラッグで矩形選択 (Shift で追加)、「All」/ Ctrl + A ですべて、選んだ点のドラッグでまとめて動かす。回転デフォーマは原点 (円)・回転の取っ手 (局所座標の上の向き)・拡大率の取っ手 (局所座標の右の向きの四角) を示し、原点の移動・回転 (Shift で 15 度刻み)・拡大率の変更 (原点からの距離の比) を行う |
+| ツリー | デフォーマ・メッシュを別のデフォーマへドラッグすると `reparent_preserving_look` |
+
+- ギズモの形は wasm の `WebPuppet.warp_points(id)` (キャンバス座標の制御点) と `rotation_frame(id)` (`[ox, oy, ax, ay, bx, by]`: 原点と局所座標の x 軸・y 軸の単位ベクトルの像) から読みます (今のパラメータ値。`deformer_ids()` で一覧)。ランタイムはデフォーマのワールド変換を公開しないので、wasm は評価用のメッシュを足したモデルの複製を別のインスタンスで評価します (`crates/ugoe-wasm/src/gizmo.rs`)。
+- 編集は [フォーム編集](#キーフォームの編集) と同じく **今のパラメータ値のセル** に `set_keyform_cell` で書き込み (離したときに 1 つ、Undo の 1 単位)、キーの上にないときは編集を拒否して「Move to nearest key」を出します。制御点と原点は `canvas_to_local` で親の座標系に直します。角度は画面上の回転角を足します (親や自分の反転で向きが裏返っていれば符号を変える)。拡大率は正の値に限ります。
+- ドラッグ中はギズモだけをプレビューし、子の描画は離して読み直すまで変わりません。
+- 幾何の補助 (格子の辺・外周・取っ手の位置・角度・拡大率) は `viewport/tools/deformer/gizmo.ts` にあり、Vitest で検査します。
 
 ## テクスチャ
 
@@ -294,8 +333,9 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
   外から選択された要素は祖先を開いてスクロールします。Enter / F2 / ダブルクリックで名前の変更、Delete で削除 (確認あり)。
 - ドラッグ & ドロップ (ポインタイベントで実装。WebView のファイルのドロップと干渉しないように HTML5 の DnD は使いません):
   - パーツ / デフォーマ / メッシュを行に落とすと親を付け替えます (`set_part_parent`、`set_deformer_part`、
-    `set_deformer_parent`、`set_mesh_properties { part }`、`set_mesh_parent`)。空いた所に落とすと最上位 (親なし) へ。
-    循環はフロントエンドでも先に弾きます。付け替えは **見た目を保ちません** (座標は新しい親の局所座標として解釈される)。
+    `set_mesh_properties { part }`、デフォーマ・メッシュの親デフォーマは `reparent_preserving_look`)。空いた所に落とすと最上位 (親なし) へ。
+    循環はフロントエンドでも先に弾きます。親デフォーマの付け替えは **既定値のパラメータでの見た目を保ちます**
+    ([デフォーマの編集](#デフォーマの編集)。他のパラメータ値では変わりうる)。
   - 同じ親の中でメッシュの行の上半分 / 下半分に落とすと、その手前 / 奥へ並べ替えます (`reorder_mesh`)。
     `reorder_mesh` は描画順が同じメッシュどうしの前後しか変えられないので、描画順が違えば拒否します。
 

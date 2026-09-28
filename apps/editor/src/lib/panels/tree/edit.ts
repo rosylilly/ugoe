@@ -2,8 +2,8 @@
 // バックエンド (ugoe_editor_core::Document::apply) も検証するが、ドロップ先の可否は
 // ドラッグ中に示したいので、循環などはここで先に弾く。
 //
-// 親の付け替えは生の Command (set_*_parent など) を送るだけで、見た目は保たない
-// (座標は新しい親の局所座標として解釈される)。見た目を保つ付け替えは T0607。
+// デフォーマ・メッシュの親の付け替えは reparent_preserving_look で行い、既定値のパラメータでの
+// 見た目を保つ (docs/editor.md#デフォーマの編集)。パーツの付け替えは座標に関わらない。
 import type { EditCommand } from "../../ipc";
 import type { ElementRef } from "../../selection.svelte";
 import { ancestors, type ModelIndex, meshDrawOrder, type TreeView } from "./build";
@@ -49,6 +49,15 @@ export function combine(label: string, commands: EditCommand[]): EditCommand | n
   return { op: "batch", label, commands };
 }
 
+/** デフォーマ・メッシュを、見た目を保って別の親デフォーマ (null で最上位) へ移すコマンド。 */
+function reparent(item: ElementRef, parent: string | null): EditResult {
+  const element =
+    item.kind === "deformer"
+      ? { kind: "deformer" as const, id: item.id }
+      : { kind: "mesh" as const, id: item.id };
+  return { ok: true, command: { op: "reparent_preserving_look", element, new_parent: parent } };
+}
+
 /** 1 要素を `target` の中へ移すコマンド。 */
 function moveInto(
   index: ModelIndex,
@@ -77,7 +86,7 @@ function moveInto(
     if (target === null) {
       if (view === "parts") return reject(`a deformer must belong to a part`);
       if (d?.parent === null) return noop(`${what} is already at the top`);
-      return { ok: true, command: { op: "set_deformer_parent", id: item.id, parent: null } };
+      return reparent(item, null);
     }
     if (target.kind === "part") {
       if (d?.part === target.id) return noop(`${what} is already in ${label(index, target)}`);
@@ -90,7 +99,7 @@ function moveInto(
       return reject(`cannot move ${what} into itself or its descendant`);
     }
     if (d?.parent === target.id) return noop(`${what} is already under ${label(index, target)}`);
-    return { ok: true, command: { op: "set_deformer_parent", id: item.id, parent: target.id } };
+    return reparent(item, target.id);
   }
 
   if (item.kind === "mesh") {
@@ -98,7 +107,7 @@ function moveInto(
     if (target === null) {
       if (view === "parts") return reject(`a mesh must belong to a part`);
       if (m?.parent === null) return noop(`${what} is already at the top`);
-      return { ok: true, command: { op: "set_mesh_parent", id: item.id, parent: null } };
+      return reparent(item, null);
     }
     if (target.kind === "part") {
       if (m?.part === target.id) return noop(`${what} is already in ${label(index, target)}`);
@@ -106,7 +115,7 @@ function moveInto(
     }
     if (target.kind === "deformer") {
       if (m?.parent === target.id) return noop(`${what} is already under ${label(index, target)}`);
-      return { ok: true, command: { op: "set_mesh_parent", id: item.id, parent: target.id } };
+      return reparent(item, target.id);
     }
     return reject(`a mesh can only be moved into a part or a deformer`);
   }
