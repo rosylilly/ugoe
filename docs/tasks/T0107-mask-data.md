@@ -1,11 +1,11 @@
 ---
 id: T0107
 title: マスクのデータ定義とランタイム対応 (ADR 0009)
-status: todo
+status: in-progress
 milestone: M1
 crates: [ugoe-model, ugoe-runtime, ugoe-format (テストの追従のみ), ugoe-render (コンパイルを通す最小限の追従のみ)]
 depends_on: []
-assignee:
+assignee: claude-worker-T0107
 ---
 
 # T0107: マスクのデータ定義とランタイム対応 (ADR 0009)
