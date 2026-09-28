@@ -58,6 +58,30 @@ pub fn blend_scalar<T>(grid: &KeyformGrid<T>, weights: &Weights, f: impl Fn(&T) 
     weights.iter().map(|&(i, w)| f(&grid.keyforms[i]) * w).sum()
 }
 
+/// 重みでベクトルを合成する (和は重みの順序で取る)。
+pub fn blend_vec2<T>(
+    grid: &KeyformGrid<T>,
+    weights: &Weights,
+    f: impl Fn(&T) -> ugoe_core::Vec2,
+) -> ugoe_core::Vec2 {
+    let mut sum = ugoe_core::Vec2::ZERO;
+    for &(i, w) in weights {
+        sum += f(&grid.keyforms[i]) * w;
+    }
+    sum
+}
+
+/// 真偽値のフィールドを合成する: 重みが最大の要素の値 (同じ重みなら小さいインデックスを優先)。
+pub fn blend_bool<T>(grid: &KeyformGrid<T>, weights: &Weights, f: impl Fn(&T) -> bool) -> bool {
+    let mut best: Option<(usize, f32)> = None;
+    for &(i, w) in weights {
+        if best.is_none_or(|(bi, bw)| w > bw || (w == bw && i < bi)) {
+            best = Some((i, w));
+        }
+    }
+    best.is_some_and(|(i, _)| f(&grid.keyforms[i]))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -86,6 +110,22 @@ mod tests {
         assert_eq!(w, vec![(2, 1.0)]);
         weights(&b, &[-5.0], &mut w);
         assert_eq!(w, vec![(0, 1.0)]);
+    }
+
+    // evaluation.md 1. 多重線形の重み: 真偽値は重みが最大の要素、同じ重みなら小さいインデックス
+    #[test]
+    fn bool_uses_max_weight_with_lowest_index_on_tie() {
+        let grid = KeyformGrid {
+            bindings: vec![],
+            keyforms: vec![false, true, true],
+        };
+        assert!(!blend_bool(&grid, &vec![(1, 0.5), (0, 0.5)], |&b| b));
+        assert!(blend_bool(&grid, &vec![(0, 0.4), (1, 0.6)], |&b| b));
+        assert!(blend_bool(
+            &grid,
+            &vec![(2, 0.5), (0, 0.25), (1, 0.25)],
+            |&b| b
+        ));
     }
 
     #[test]

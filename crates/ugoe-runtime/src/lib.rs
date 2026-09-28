@@ -8,6 +8,7 @@
 //! このクレートは GPU・I/O・スレッドに依存しない。決定的 (同入力 → 同出力) であること。
 
 pub mod compile;
+mod deform;
 pub mod instance;
 pub mod keyform;
 pub mod parameters;

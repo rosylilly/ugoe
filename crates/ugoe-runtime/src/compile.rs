@@ -1,8 +1,10 @@
 //! オーサリング用 [`Model`] を評価しやすい形へ変換する (ID → インデックス解決、トポロジカル順序付け)。
 
+use std::collections::HashMap;
+use std::hash::Hash;
 use std::sync::Arc;
 
-use ugoe_model::{KeyformGrid, Model};
+use ugoe_model::{DeformerKind, KeyformGrid, Model};
 
 use crate::keyform::ResolvedBinding;
 use crate::{ParamIndex, ParameterValues};
@@ -21,7 +23,42 @@ pub enum CompileError {
 #[derive(Debug)]
 pub struct CompiledModel {
     pub(crate) model: Model,
-    pub(crate) mesh_bindings: Vec<Vec<ResolvedBinding>>,
+    pub(crate) parts: Vec<CompiledPart>,
+    /// パーツのトポロジカル順 (親が先)。
+    pub(crate) part_order: Vec<u32>,
+    pub(crate) deformers: Vec<CompiledDeformer>,
+    /// デフォーマのトポロジカル順 (親が先)。
+    pub(crate) deformer_order: Vec<u32>,
+    pub(crate) meshes: Vec<CompiledMesh>,
+    pub(crate) glues: Vec<CompiledGlue>,
+    /// すべてのキーフォーム格子のうち最大の軸数。重みバッファの事前確保に使う。
+    pub(crate) max_axes: usize,
+}
+
+#[derive(Debug)]
+pub(crate) struct CompiledPart {
+    pub(crate) parent: Option<u32>,
+    pub(crate) bindings: Vec<ResolvedBinding>,
+}
+
+#[derive(Debug)]
+pub(crate) struct CompiledDeformer {
+    pub(crate) parent: Option<u32>,
+    pub(crate) bindings: Vec<ResolvedBinding>,
+}
+
+#[derive(Debug)]
+pub(crate) struct CompiledMesh {
+    pub(crate) part: u32,
+    pub(crate) parent: Option<u32>,
+    pub(crate) bindings: Vec<ResolvedBinding>,
+}
+
+#[derive(Debug)]
+pub(crate) struct CompiledGlue {
+    pub(crate) mesh_a: u32,
+    pub(crate) mesh_b: u32,
+    pub(crate) bindings: Vec<ResolvedBinding>,
 }
 
 impl CompiledModel {
@@ -30,25 +67,150 @@ impl CompiledModel {
         if !errors.is_empty() {
             return Err(CompileError::Invalid(errors));
         }
-        // TODO(T0104): デフォーマ・パーツ階層・グルーのコンパイル。
-        if !model.deformers.is_empty() {
-            return Err(CompileError::Unsupported("deformers"));
-        }
         let params = ParameterValues::from_model(&model);
-        let mesh_bindings = model
+        let part_index = index_map(model.parts.iter().map(|p| p.id.as_str()));
+        let deformer_index = index_map(model.deformers.iter().map(|d| d.id.as_str()));
+        let mesh_index = index_map(model.meshes.iter().map(|m| m.id.as_str()));
+        // validate 済みなので参照先は必ず存在する。念のため見つからなければ Invalid 相当で失敗させる。
+        let lookup = |map: &HashMap<&str, u32>, id: &str| {
+            map.get(id)
+                .copied()
+                .ok_or(CompileError::Unsupported("dangling reference"))
+        };
+
+        let parts = model
+            .parts
+            .iter()
+            .map(|p| {
+                Ok(CompiledPart {
+                    parent: p
+                        .parent
+                        .as_ref()
+                        .map(|id| lookup(&part_index, id.as_str()))
+                        .transpose()?,
+                    bindings: resolve(&params, &p.keyforms)?,
+                })
+            })
+            .collect::<Result<Vec<_>, CompileError>>()?;
+
+        let deformers = model
+            .deformers
+            .iter()
+            .map(|d| {
+                let bindings = match &d.kind {
+                    DeformerKind::Warp(warp) => {
+                        if warp.rows == 0 || warp.cols == 0 {
+                            return Err(CompileError::Unsupported(
+                                "warp deformer with zero rows or cols",
+                            ));
+                        }
+                        resolve(&params, &warp.keyforms)?
+                    }
+                    DeformerKind::Rotation(rotation) => resolve(&params, &rotation.keyforms)?,
+                };
+                Ok(CompiledDeformer {
+                    parent: d
+                        .parent
+                        .as_ref()
+                        .map(|id| lookup(&deformer_index, id.as_str()))
+                        .transpose()?,
+                    bindings,
+                })
+            })
+            .collect::<Result<Vec<_>, CompileError>>()?;
+
+        let meshes = model
             .meshes
             .iter()
-            .map(|m| resolve(&params, &m.keyforms))
-            .collect::<Result<_, _>>()?;
+            .map(|m| {
+                Ok(CompiledMesh {
+                    part: lookup(&part_index, m.part.as_str())?,
+                    parent: m
+                        .parent
+                        .as_ref()
+                        .map(|id| lookup(&deformer_index, id.as_str()))
+                        .transpose()?,
+                    bindings: resolve(&params, &m.keyforms)?,
+                })
+            })
+            .collect::<Result<Vec<_>, CompileError>>()?;
+
+        let glues = model
+            .glues
+            .iter()
+            .map(|g| {
+                Ok(CompiledGlue {
+                    mesh_a: lookup(&mesh_index, g.mesh_a.as_str())?,
+                    mesh_b: lookup(&mesh_index, g.mesh_b.as_str())?,
+                    bindings: resolve(&params, &g.keyforms)?,
+                })
+            })
+            .collect::<Result<Vec<_>, CompileError>>()?;
+
+        let part_order = topological_order(parts.iter().map(|p| p.parent));
+        let deformer_order = topological_order(deformers.iter().map(|d| d.parent));
+        let max_axes = parts
+            .iter()
+            .map(|p| p.bindings.len())
+            .chain(deformers.iter().map(|d| d.bindings.len()))
+            .chain(meshes.iter().map(|m| m.bindings.len()))
+            .chain(glues.iter().map(|g| g.bindings.len()))
+            .max()
+            .unwrap_or(0);
+
         Ok(Arc::new(Self {
             model,
-            mesh_bindings,
+            parts,
+            part_order,
+            deformers,
+            deformer_order,
+            meshes,
+            glues,
+            max_axes,
         }))
     }
 
     pub fn model(&self) -> &Model {
         &self.model
     }
+
+    /// デフォーマの評価順 (親が先のトポロジカル順、`Model::deformers` のインデックス)。
+    pub fn deformer_order(&self) -> &[u32] {
+        &self.deformer_order
+    }
+}
+
+fn index_map<K: Eq + Hash>(ids: impl Iterator<Item = K>) -> HashMap<K, u32> {
+    ids.enumerate().map(|(i, id)| (id, i as u32)).collect()
+}
+
+/// 親が先になる順序。循環がないこと (validate で検査済み) を前提にする。
+///
+/// 配列順に要素を見て、未訪問の祖先を根の側から並べる。結果は入力だけで決まる (決定的)。
+fn topological_order(parents: impl Iterator<Item = Option<u32>>) -> Vec<u32> {
+    let parents: Vec<Option<u32>> = parents.collect();
+    let mut visited = vec![false; parents.len()];
+    let mut order = Vec::with_capacity(parents.len());
+    let mut chain = Vec::new();
+    for start in 0..parents.len() {
+        let mut cursor = Some(start as u32);
+        while let Some(i) = cursor {
+            // 循環があっても止まるように、要素数を超えたら打ち切る。
+            if visited[i as usize] || chain.len() > parents.len() {
+                break;
+            }
+            chain.push(i);
+            cursor = parents[i as usize];
+        }
+        for &i in chain.iter().rev() {
+            if !visited[i as usize] {
+                visited[i as usize] = true;
+                order.push(i);
+            }
+        }
+        chain.clear();
+    }
+    order
 }
 
 fn resolve<T>(
@@ -67,4 +229,16 @@ fn resolve<T>(
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn topological_order_puts_parents_first() {
+        // 0 → 2 → 1 (1 が根)、3 は独立
+        let order = topological_order([Some(2), None, Some(1), None].into_iter());
+        assert_eq!(order, vec![1, 2, 0, 3]);
+    }
 }
