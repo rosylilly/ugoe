@@ -1,11 +1,11 @@
 ---
 id: T0605
 title: エディタ: PSD の取り込みと自動メッシュ
-status: todo
+status: in-progress
 milestone: M2
 crates: [ugoe-editor-core, apps/editor]
 depends_on: [T0501, T0502, T0601, T0604]
-assignee:
+assignee: claude-worker-T0605
 ---
 
 # T0605: エディタ: PSD の取り込みと自動メッシュ
