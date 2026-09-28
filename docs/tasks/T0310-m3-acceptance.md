@@ -1,11 +1,11 @@
 ---
 id: T0310
 title: M3 の受け入れテスト
-status: todo
+status: in-progress
 milestone: M3
 crates: [ugoe, ugoe-editor-core, ugoe-cli, docs]
 depends_on: [T0303, T0305, T0306, T0307, T0308, T0309, T0629, T0630, T0703]
-assignee:
+assignee: claude-worker-T0310
 ---
 
 # T0310: M3 の受け入れテスト
