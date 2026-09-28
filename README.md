@@ -27,4 +27,7 @@ just cli fixture single-quad > /tmp/quad.json && just cli info /tmp/quad.json
 
 ## ライセンス
 
-未定。
+- ランタイム・ライブラリ・ツール (`crates/`)・文書 (`docs/`): [MIT](LICENSE)
+- エディタ (`apps/editor/`): [GPL-3.0-only](apps/editor/LICENSE)
+
+詳細と依存ライブラリの方針は [ADR 0018](docs/adr/0018-licensing-and-1.0-scope.md) にあります。

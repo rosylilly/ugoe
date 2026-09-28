@@ -12,7 +12,7 @@ setup:
     rustup show active-toolchain
 
 # CI と同じ検査一式
-ci: fmt-check lint test layers web-check
+ci: fmt-check lint test layers licenses web-check
 
 # コミットメッセージを検査: `just commitlint "feat(runtime): add foo"`
 commitlint message:
@@ -56,6 +56,10 @@ wt-remove id *flags:
 # タスク一覧 (`just tasks --ready` で着手可能なものだけ)
 tasks *args:
     @node scripts/tasks.mjs {{args}}
+
+# 依存クレートのライセンスの検査 (docs/adr/0018-licensing.md)
+licenses:
+    @node scripts/check-licenses.mjs
 
 # クレート依存方向の検査
 layers:

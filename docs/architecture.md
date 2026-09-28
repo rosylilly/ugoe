@@ -96,6 +96,7 @@
 | 法線マップによるライティング | [0015](adr/0015-lighting.md) |
 | 描画順を保ったまま描画を自動で統合する | [0016](adr/0016-draw-batching.md) |
 | すべての配布物を 1 つのコアから作る | [0017](adr/0017-single-runtime-distribution.md) |
+| ライブラリは MIT、エディタは GPL-3.0-only。1.0 は AI 連携を除く全機能 | [0018](adr/0018-licensing-and-1.0-scope.md) |
 
 ## 座標系
 

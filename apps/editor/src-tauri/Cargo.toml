@@ -5,6 +5,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
+license = "GPL-3.0-only"
 
 [lib]
 name = "ugoe_editor_lib"

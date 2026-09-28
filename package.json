@@ -1,6 +1,7 @@
 {
   "name": "ugoe-workspace",
   "private": true,
+  "license": "MIT",
   "packageManager": "pnpm@12.6.0",
   "scripts": {
     "prepare": "lefthook install",

@@ -16,7 +16,7 @@ assignee:
 
 ## 受け入れ条件
 
-- [ ] プロジェクトのライセンスが決まっている (決まっていなければ blocked にする)
+- [ ] ライセンス (MIT、ADR 0018) の表記と `LICENSE` をパッケージに含める
 - [ ] 公開するクレートの `publish`・`license`・`description`・`readme` を整える
 - [ ] `cargo publish --dry-run` が通る
 - [ ] タグで公開する CI のワークフローがある (手動の承認付き)

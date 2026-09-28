@@ -55,6 +55,8 @@ jobs:
         run: just test
       - name: Layers
         run: just layers
+      - name: Licenses
+        run: just licenses
       - name: Tasks
         run: just tasks > /dev/null
       - name: wasm32

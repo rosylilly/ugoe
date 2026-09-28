@@ -66,6 +66,7 @@ assets/fixtures/    テスト用アセット (小さいものだけ)
 | `just crate <name>` | 1 クレートだけ clippy とテスト (反復中はこれを使う) |
 | `just fmt` | Rust と TS を整形 |
 | `just layers` | クレートの依存方向を検査 |
+| `just licenses` | 依存するクレートのライセンスを検査 (MIT のクレートにコピーレフトを入れない) |
 | `just wasm-check` | wasm32 でビルドできるか (ランタイム層を触ったら実行) |
 | `just wt-add <ID>` / `just wt-remove <ID>` | タスク用 worktree の作成・削除 (main の `target/` をコピーしてビルドを省く) |
 | `just editor` | エディタを開発モードで起動 |
@@ -93,6 +94,9 @@ assets/fixtures/    テスト用アセット (小さいものだけ)
 - 公開 API には doc コメントを付ける。仕様書と対応する箇所ではファイル名をコメントに書く (例: `docs/spec/evaluation.md`)。
 
 ### 外部のコードとライセンス
+
+- **ライセンス:** `crates/` と `docs/` は MIT、`apps/editor/` は GPL-3.0-only ([ADR 0018](docs/adr/0018-licensing-and-1.0-scope.md))。新しいクレートは `license.workspace = true` を書く。
+- **MIT のクレートに、コピーレフト (MPL・LGPL・GPL など) のライブラリを依存させない。** `just licenses` (`just ci` に含まれる) が依存するクレートのライセンスを検査する。
 
 - **Live2D Cubism SDK などの外部 SDK のソースを、リポジトリの中に置かない (ダウンロードしない)。コードも写さない。** 挙動を調べるためにソースを読むのはよいが、読むときはリポジトリの外 (一時ディレクトリなど) で読む。
 - 調べて分かった挙動は、仕様書や ADR に「何をするか」として自分の言葉で書き、出典の URL を示す。

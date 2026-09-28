@@ -9,6 +9,7 @@ edition = "2024"
 rust-version = "1.98"
 repository = "https://github.com/rosylilly/ugoe"
 publish = false
+license = "MIT"
 
 # 依存は必ずここで宣言し、各クレートでは `foo.workspace = true` で参照する。
 # マージ衝突を減らすため 1 行 1 依存・アルファベット順を守ること。
