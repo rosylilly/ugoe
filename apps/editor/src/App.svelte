@@ -20,6 +20,8 @@ const viewport = new ViewportController();
 const selection = new Selection();
 let info = $state<AppInfo | null>(null);
 let fileMenu = $state<FileMenu>();
+/** 操作マニュアル (docs/manual/)。WebView から開けない環境もあるので、URL を選んで写せるように出す。 */
+const MANUAL_URL = "https://github.com/rosylilly/ugoe/blob/main/docs/manual/README.md";
 
 ipc.appInfo().then((i) => {
   info = i;
@@ -47,6 +49,10 @@ $effect(() => {
     <span class="spacer"></span>
     <button onclick={() => doc.undo()}>Undo</button>
     <button onclick={() => doc.redo()}>Redo</button>
+    <details class="help">
+      <summary>Help</summary>
+      <p>Manual: <a href={MANUAL_URL} target="_blank" rel="noreferrer">{MANUAL_URL}</a></p>
+    </details>
   </header>
   <aside class="left">
     <TreePanel {doc} {selection} />
@@ -64,3 +70,20 @@ $effect(() => {
     <ParametersPanel parameters={doc.parameters} {viewport} {doc} {selection} />
   </aside>
 </div>
+
+<style>
+  .help {
+    position: relative;
+  }
+  .help p {
+    position: absolute;
+    right: 0;
+    z-index: 10;
+    margin: 4px 0 0;
+    padding: 8px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    white-space: nowrap;
+    user-select: text;
+  }
+</style>

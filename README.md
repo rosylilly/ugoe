@@ -22,6 +22,7 @@ just cli fixture single-quad > /tmp/quad.json && just cli info /tmp/quad.json
 
 ## ドキュメント
 
+- [docs/manual/](docs/manual/README.md) — エディタの操作マニュアル (リガー向け。PSD から動くモデルを作るチュートリアル)
 - [AGENTS.md](AGENTS.md) — コントリビュータ (人間・AI エージェント) 向けの規約
 - [docs/](docs/README.md) — ビジョン・アーキテクチャ・仕様・ADR・ロードマップ・タスク
 

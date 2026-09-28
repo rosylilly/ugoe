@@ -15,6 +15,7 @@
 | [spec/avatar-profile.md](spec/avatar-profile.md) | 2D アバターの標準プロファイル (公開仕様) |
 | [spec/modules.md](spec/modules.md) | 着せ替えモジュール |
 | [editor.md](editor.md) | エディタの設計 |
+| [manual/](manual/README.md) | エディタの操作マニュアル (利用者向け) |
 | [ai-integration.md](ai-integration.md) | AI 連携の設計 |
 | [portability.md](portability.md) | ゲームエンジン・プラットフォームへの移植 |
 | [testing.md](testing.md) | テスト方針 |
