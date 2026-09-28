@@ -23,4 +23,4 @@ Photoshop・CLIP STUDIO PAINT・Krita・SAI などが書き出した PSD を置�
 
 | ファイル | ツール / バージョン | 含まれる機能 | 作者 / ライセンス / 出所 | メモ |
 | --- | --- | --- | --- | --- |
-| `ai-unknown-full-body-parts.psd` | AI の画像生成とパーツ分け / ツールと版は不明 (画像リソースは 2 つだけで、XMP などに書き出したツールの記録がない) | 1024x1024 の 8 ビット RGB、フラットな 23 レイヤー (グループ・マスク・クリッピングなし)、英語のレイヤー名 (`back hair`・`face`・`irides-l`・`front hair` など)、全身の立ち絵 | AI 生成 (リポジトリの管理者が用意) / MIT / 管理者の提供 | 1.8MB で上限を超えるが、実際の大きさと部位の数を試すため縮めずに置く (管理者の判断)。ugoe の描画は ImageMagick の合成画像と PSNR 約 42 dB で一致 |
+| `comfyui-see-through-full-body-parts.psd` | ChatGPT で生成した画像を ComfyUI の See-Through でパーツに分けて書き出したもの / 版は不明 (ファイルにツールの記録がない) | 1024x1024 の 8 ビット RGB、フラットな 23 レイヤー (グループ・マスク・クリッピングなし)、英語のレイヤー名 (`back hair`・`face`・`irides-l`・`front hair` など)、全身の立ち絵 | AI 生成 (リポジトリの管理者が用意) / MIT / 管理者の提供 | 1.8MB で上限を超えるが、実際の大きさと部位の数を試すため縮めずに置く (管理者の判断)。ugoe の描画は ImageMagick の合成画像と PSNR 約 42 dB で一致 |
