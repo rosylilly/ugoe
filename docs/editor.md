@@ -51,6 +51,7 @@
 | メッシュ | `add_mesh` (`meshes` の末尾に追加)、`remove_mesh`、`rename_mesh`、`set_mesh_properties`、`set_mesh_parent`、`set_mesh_keyforms`、`set_mesh_keyform`、`reorder_mesh`、`regenerate_mesh` ([メッシュの再生成](#メッシュの再生成)) |
 | テクスチャ | `add_texture`、`set_texture_image`、`remove_texture` |
 | キャンバス | `set_canvas` (`width`・`height`・`origin`。大きさは 0 より大きい有限の値。要素の座標は変えない) |
+| キーフォームの推定 | `infer_keyforms`、`mirror_keyforms`、`mark_keyform_authored`、`mark_keyform_derived` (下の「推定とミラー」) |
 | その他 | `batch` |
 
 - `set_mesh_properties` は `part`・`texture`・`blend`・`culling`・`masks`・`mask_mode`・`mask_only` のうち、指定したフィールドだけを変えます。
@@ -59,6 +60,26 @@
 - `set_deformer_parent` と `set_mesh_parent` は親を付け替えるだけで、座標は変えません (子の座標は新しい親の局所座標として解釈されるので、見た目は変わりうる)。見た目を保つ付け替えは T0607 で作ります。
 
 - `add_texture` は `name` と `png` (PNG ファイルのバイト列) を受け取り、`Model::textures` の末尾に追加します。幅と高さは PNG の IHDR から読みます。名前の規則は下の「テクスチャ」を参照。`set_texture_image` は画像を差し替え、寸法も PNG に合わせます。`remove_texture` は使っているメッシュがあれば拒否し (`HasChildren`)、後ろのテクスチャを指すメッシュの `texture` (インデックス) を 1 つ詰めます。
+
+### 推定とミラー
+
+キーフォームの推定 ([spec/keyform-inference.md](spec/keyform-inference.md)) のコマンドです。アルゴリズムは `ugoe-rigging` にあります。
+格子を持つ要素は `target` で `{"kind": "mesh", "id": "EyeL"}` のように指定します (`kind` は `part`・`mesh`・`deformer`・`glue`)。
+
+| `op` | 内容 |
+| --- | --- |
+| `infer_keyforms` | `target` の格子の `derived` のセルを作り直す。`method` は `from_grid` (既定。格子の `inference` に従い、省略なら加算合成)・`additive`・`depth_rotation` (格子の `inference` が `depth_rotation` であること) |
+| `mirror_keyforms` | `source` を反転して `target` のセルを作る (`derived`)。`axis` (対称軸)・`tolerance` (頂点の許容距離) は省略できる。`overwrite_authored: true` で先の `authored` のセルも上書きする |
+| `mark_keyform_authored` | `cells` (セルの指定の配列。形は `set_mesh_keyform` の `cell` と同じ) の由来を `authored` にする。値は変えない |
+| `mark_keyform_derived` | `cells` の由来を `derived` にし、格子の推定の設定で作り直す。基準のセルは `derived` にできない (推定のエラーで拒否) |
+
+- 推定のエラー (中立のキーがない、基準のセルが `derived`、ミラーの対でない、など) は `EditError::Inference` で拒否し、モデルは変えません。
+- **自動の作り直し:** 格子のセル (値や由来) を変えたコマンドの後、`Document::apply` はその格子の `derived` のセルを格子の `inference` の方法で作り直します。同じ Undo 単位に含まれ、`batch` では全体を適用した後にまとめて行います。作り直せなければコマンドを拒否します。`derived` のセルがない格子と、未知の方法の格子は作り直しません。
+  - 対象は `set_*_keyforms`・`set_mesh_keyform`・`mark_keyform_*` です。新しいコマンドは、格子のセルを変えたら `apply_to` の `touched` に要素を積むことで対象になります (`crates/ugoe-editor-core/src/document.rs`)。
+  - `infer_keyforms` と `mirror_keyforms` は推定そのものなので積みません (書いた結果を格子の方法で上書きしないため)。
+  - パラメータの範囲の変更など、セルを変えないコマンドでは作り直しません。必要なら `infer_keyforms` を実行します。
+- **`derived` のセルの編集:** セルを書き換えるコマンドは、書き換えた `derived` のセルを `authored` にします。`set_*_keyforms` で格子を丸ごと置き換えるときは、軸が同じなら、値が変わったのに `derived` と指定されたセルを `authored` にします。
+- ミラーで作ったセルは格子の由来では推定の方法と区別できないので、元の要素を編集しても自動では作り直しません (`mirror_keyforms` を再度実行する)。先の格子のセルを編集すると、その格子の方法で作り直されます。
 
 ### 削除の連鎖と拒否
 

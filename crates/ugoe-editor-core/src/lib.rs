@@ -10,11 +10,12 @@ pub mod document;
 mod grid;
 pub mod ids;
 pub mod import;
+mod inference;
 pub mod project;
 pub mod texture;
 
 pub use automesh::AutoMeshOptions;
-pub use command::{Command, KeyformCell};
+pub use command::{Command, InferMethod, KeyformCell, KeyformTarget};
 pub use document::{Document, EditError};
 pub use grid::CellError;
 pub use import::{PsdImport, PsdImportError, PsdImportOptions, PsdImportWarning, import_psd};
@@ -23,6 +24,8 @@ pub use texture::Textures;
 
 #[cfg(test)]
 mod import_tests;
+#[cfg(test)]
+mod inference_tests;
 #[cfg(test)]
 mod project_tests;
 #[cfg(test)]

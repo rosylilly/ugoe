@@ -1,6 +1,6 @@
 //! キーフォーム格子の編集の補助。格子の並びは `ugoe_model::KeyformGrid` の doc コメントを参照。
 
-use ugoe_model::{KeyformGrid, KeyformInference, ParamId};
+use ugoe_model::{KeyformBinding, KeyformGrid, KeyformInference, KeyformOrigin, ParamId};
 
 use crate::command::KeyformCell;
 
@@ -81,15 +81,24 @@ pub enum CellError {
 
 /// セルの指定から、`grid.keyforms` の線形インデックスを求める。
 pub(crate) fn cell_index<T>(grid: &KeyformGrid<T>, cell: &KeyformCell) -> Result<usize, CellError> {
+    cell_index_in(&grid.bindings, grid.keyforms.len(), cell)
+}
+
+/// 軸 `bindings`・セル数 `len` の格子で、セルの指定から線形インデックスを求める。
+pub(crate) fn cell_index_in(
+    bindings: &[KeyformBinding],
+    len: usize,
+    cell: &KeyformCell,
+) -> Result<usize, CellError> {
     if let Some(unknown) = cell
         .keys()
-        .find(|p| !grid.bindings.iter().any(|b| &b.parameter == *p))
+        .find(|p| !bindings.iter().any(|b| &b.parameter == *p))
     {
         return Err(CellError::UnknownAxis(unknown.to_string()));
     }
     let mut index = 0;
     let mut stride = 1;
-    for binding in &grid.bindings {
+    for binding in bindings {
         let value = *cell
             .get(&binding.parameter)
             .ok_or_else(|| CellError::MissingAxis(binding.parameter.to_string()))?;
@@ -104,13 +113,35 @@ pub(crate) fn cell_index<T>(grid: &KeyformGrid<T>, cell: &KeyformCell) -> Result
         index += key * stride;
         stride *= binding.keys.len();
     }
-    if index >= grid.keyforms.len() {
-        return Err(CellError::OutOfRange {
-            index,
-            len: grid.keyforms.len(),
-        });
+    if index >= len {
+        return Err(CellError::OutOfRange { index, len });
     }
     Ok(index)
+}
+
+/// セル `index` の由来を `authored` にする (`origins` が空ならすでにすべて `authored`)。
+///
+/// 格子のセルを手で書き換えるコマンドは、書き換えたセルにこれを呼ぶ
+/// (`docs/spec/keyform-inference.md#セルの由来`)。
+pub(crate) fn set_authored<T>(grid: &mut KeyformGrid<T>, index: usize) {
+    if let Some(origin) = grid.origins.get_mut(index) {
+        *origin = KeyformOrigin::Authored;
+    }
+}
+
+/// 格子を丸ごと置き換える。置き換え前と軸が同じなら、`next` で `derived` とされたセルのうち
+/// 値が変わったものを `authored` にする (手で編集した `derived` のセルは `authored` になる)。
+pub(crate) fn replace<T: PartialEq>(grid: &mut KeyformGrid<T>, mut next: KeyformGrid<T>) {
+    if next.bindings == grid.bindings && next.keyforms.len() == grid.keyforms.len() {
+        for index in 0..next.keyforms.len() {
+            if next.origin(index) == KeyformOrigin::Derived
+                && next.keyforms[index] != grid.keyforms[index]
+            {
+                set_authored(&mut next, index);
+            }
+        }
+    }
+    *grid = next;
 }
 
 #[cfg(test)]

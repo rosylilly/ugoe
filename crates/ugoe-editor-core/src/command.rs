@@ -199,4 +199,88 @@ pub enum Command {
         #[serde(default)]
         options: AutoMeshOptions,
     },
+    /// `target` の格子の `derived` のセルを推定で作り直す (`docs/spec/keyform-inference.md#推定の実行`)。
+    /// `authored` のセルは変えない。
+    InferKeyforms {
+        target: KeyformTarget,
+        #[serde(default)]
+        method: InferMethod,
+    },
+    /// `source` のキーフォームを対称軸で反転して、`target` の格子のセルを作る
+    /// (`docs/spec/keyform-inference.md#ミラー`)。作ったセルは `derived` になる。
+    MirrorKeyforms {
+        source: KeyformTarget,
+        target: KeyformTarget,
+        /// 対称軸 `x = a` の `a`。省略すると元の要素の `mirror_axis` (または親で決まる既定値)。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        axis: Option<f32>,
+        /// 頂点の対応付けの許容距離 (元の要素の親座標系)。省略するとキャンバスの 1px。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tolerance: Option<f32>,
+        /// `true` なら先の `authored` のセルも上書きする。
+        #[serde(default)]
+        overwrite_authored: bool,
+    },
+    /// 格子のセルの由来を `authored` にする (値は変えない)。
+    MarkKeyformAuthored {
+        target: KeyformTarget,
+        cells: Vec<KeyformCell>,
+    },
+    /// 格子のセルの由来を `derived` にし、格子の推定の設定で作り直す。
+    MarkKeyformDerived {
+        target: KeyformTarget,
+        cells: Vec<KeyformCell>,
+    },
+}
+
+/// キーフォームの格子を持つ要素。JSON では `{"kind": "mesh", "id": "EyeL"}` と書く。
+///
+/// どの要素も格子を 1 つだけ持つ (`ugoe_rigging::KeyformTarget` と同じ)。
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "id", rename_all = "snake_case")]
+pub enum KeyformTarget {
+    Part(PartId),
+    Mesh(MeshId),
+    /// ワープデフォーマまたは回転デフォーマ。
+    Deformer(DeformerId),
+    /// グルー (`Glue::id`)。
+    Glue(String),
+}
+
+impl From<&KeyformTarget> for ugoe_rigging::KeyformTarget {
+    fn from(target: &KeyformTarget) -> Self {
+        match target {
+            KeyformTarget::Part(id) => Self::Part(id.clone()),
+            KeyformTarget::Mesh(id) => Self::Mesh(id.clone()),
+            KeyformTarget::Deformer(id) => Self::Deformer(id.clone()),
+            KeyformTarget::Glue(id) => Self::Glue(id.clone()),
+        }
+    }
+}
+
+impl std::fmt::Display for KeyformTarget {
+    /// エラーメッセージ用の表記 (例: ``mesh `EyeL` ``)。
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (kind, id) = match self {
+            KeyformTarget::Part(id) => ("part", id.as_str()),
+            KeyformTarget::Mesh(id) => ("mesh", id.as_str()),
+            KeyformTarget::Deformer(id) => ("deformer", id.as_str()),
+            KeyformTarget::Glue(id) => ("glue", id.as_str()),
+        };
+        write!(f, "{kind} `{id}`")
+    }
+}
+
+/// [`Command::InferKeyforms`] の推定の方法。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InferMethod {
+    /// 格子の `inference` の設定に従う (省略時は加算合成)。
+    #[default]
+    FromGrid,
+    /// 加算合成 (`docs/spec/keyform-inference.md#加算合成`)。
+    Additive,
+    /// 深度からの回転 (`docs/spec/keyform-inference.md#深度からの回転`)。
+    /// 格子の `inference` が `depth_rotation` でなければならない。
+    DepthRotation,
 }

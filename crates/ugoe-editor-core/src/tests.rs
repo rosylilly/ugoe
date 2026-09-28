@@ -55,7 +55,7 @@ fn rotation_chain_deformer(id: &str) -> Deformer {
         .unwrap()
 }
 
-fn binding(parameter: &str, keys: &[f32]) -> KeyformBinding {
+pub(crate) fn binding(parameter: &str, keys: &[f32]) -> KeyformBinding {
     KeyformBinding {
         parameter: parameter.into(),
         keys: keys.to_vec(),
@@ -70,7 +70,7 @@ fn grid1<T: Clone>(parameter: &str, keys: &[f32], keyforms: Vec<T>) -> KeyformGr
     grid
 }
 
-fn cell(entries: &[(&str, f32)]) -> KeyformCell {
+pub(crate) fn cell(entries: &[(&str, f32)]) -> KeyformCell {
     entries.iter().map(|&(p, v)| (p.into(), v)).collect()
 }
 
@@ -82,7 +82,7 @@ fn mesh_ids(model: &Model) -> Vec<&str> {
 
 /// 適用に成功し、結果が検証を通り、Undo / Redo で前後を行き来できることを確かめて、適用後のモデルを返す。
 #[track_caller]
-fn applied(model: &Model, command: Command) -> Model {
+pub(crate) fn applied(model: &Model, command: Command) -> Model {
     assert!(validate(model).is_empty(), "fixture must be valid");
     let mut doc = Document::new(model.clone());
     doc.apply(command).unwrap();
@@ -97,7 +97,7 @@ fn applied(model: &Model, command: Command) -> Model {
 
 /// 適用に失敗し、モデルと履歴が変わらないことを確かめて、エラーを返す。
 #[track_caller]
-fn rejected(model: &Model, command: Command) -> EditError {
+pub(crate) fn rejected(model: &Model, command: Command) -> EditError {
     let mut doc = Document::new(model.clone());
     let err = doc.apply(command).unwrap_err();
     assert_eq!(doc.model(), model);
@@ -1108,7 +1108,8 @@ fn set_mesh_keyforms() {
 fn set_mesh_keyform_marks_cell_authored() {
     use ugoe_model::KeyformOrigin::{Authored, Derived};
     let mut model = fixtures::single_quad();
-    model.meshes[0].keyforms.origins = vec![Derived; 3];
+    // 基準のセル (X = 0) は推定の元なので `authored` のまま。
+    model.meshes[0].keyforms.origins = vec![Derived, Authored, Derived];
     let keyform = model.meshes[0].keyforms.keyforms[2].clone();
     let after = applied(
         &model,
@@ -1120,7 +1121,7 @@ fn set_mesh_keyform_marks_cell_authored() {
     );
     assert_eq!(
         after.meshes[0].keyforms.origins,
-        vec![Derived, Derived, Authored]
+        vec![Derived, Authored, Authored]
     );
 }
 
@@ -1347,10 +1348,14 @@ fn op_name(command: &Command) -> &'static str {
         Command::RemoveTexture { .. } => "remove_texture",
         Command::SetCanvas { .. } => "set_canvas",
         Command::RegenerateMesh { .. } => "regenerate_mesh",
+        Command::InferKeyforms { .. } => "infer_keyforms",
+        Command::MirrorKeyforms { .. } => "mirror_keyforms",
+        Command::MarkKeyformAuthored { .. } => "mark_keyform_authored",
+        Command::MarkKeyformDerived { .. } => "mark_keyform_derived",
     }
 }
 
-const OP_COUNT: usize = 32;
+const OP_COUNT: usize = 36;
 
 fn json_samples() -> Vec<Command> {
     let quad = fixtures::single_quad();
@@ -1485,6 +1490,25 @@ fn json_samples() -> Vec<Command> {
                 edge_spacing: 12.0,
                 ..crate::AutoMeshOptions::default()
             },
+        },
+        Command::InferKeyforms {
+            target: crate::KeyformTarget::Deformer("Face".into()),
+            method: crate::InferMethod::DepthRotation,
+        },
+        Command::MirrorKeyforms {
+            source: crate::KeyformTarget::Mesh("EyeL".into()),
+            target: crate::KeyformTarget::Mesh("EyeR".into()),
+            axis: Some(0.5),
+            tolerance: Some(0.01),
+            overwrite_authored: true,
+        },
+        Command::MarkKeyformAuthored {
+            target: crate::KeyformTarget::Part("Root".into()),
+            cells: vec![cell(&[("X", 1.0)])],
+        },
+        Command::MarkKeyformDerived {
+            target: crate::KeyformTarget::Glue("Glue".into()),
+            cells: vec![KeyformCell::new()],
         },
     ]
 }

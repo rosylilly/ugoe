@@ -4,10 +4,12 @@ use std::sync::Arc;
 use ugoe_model::deformer::DeformerKind;
 use ugoe_model::validate::{ValidationError, validate};
 use ugoe_model::{Canvas, DeformerId, KeyformOrigin, MeshId, Model, ParamId, PartId, TextureRef};
+use ugoe_rigging::{InferError, MirrorOptions};
 
+use crate::command::KeyformTarget;
 use crate::grid::{self, CellError};
 use crate::texture::{Textures, is_valid_texture_name, png_size};
-use crate::{Command, automesh};
+use crate::{Command, automesh, inference};
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum EditError {
@@ -58,6 +60,13 @@ pub enum EditError {
     /// 適用するとモデルが検証 (`ugoe_model::validate`) に通らなくなる。新たに生じるエラーの一覧。
     #[error("command would make the model invalid: {}", join(.0))]
     Invalid(Vec<ValidationError>),
+    /// キーフォームの推定 (ミラー・`derived` のセルの作り直しを含む) に失敗した。
+    /// `target` は書き込み先の格子の要素 (``mesh `EyeL` `` のような表記)。
+    #[error("{target}: keyform inference failed: {error}")]
+    Inference { target: String, error: InferError },
+    /// 格子の推定の方法が未知 (新しい版のファイル) なので、その設定では推定できない。
+    #[error("{target}: keyform inference method is not supported by this version")]
+    UnsupportedInference { target: String },
 }
 
 fn join(errors: &[ValidationError]) -> String {
@@ -143,9 +152,14 @@ impl Document {
     /// 適用後のモデルを `ugoe_model::validate::validate` で検査し、適用前になかった
     /// 検証エラーが生じたら [`EditError::Invalid`] で拒否する。検証を通るモデルに対しては、
     /// 成功した適用の後も必ず検証を通る。`Batch` は全体を適用した後に 1 回だけ検査する。
+    ///
+    /// 検査の前に、コマンドが編集したキーフォーム格子の `derived` のセルを格子の推定の設定で
+    /// 作り直す (同じ Undo 単位。`docs/editor.md#推定とミラー`)。作り直せなければ拒否する。
     pub fn apply(&mut self, command: Command) -> Result<(), EditError> {
         let mut next = self.current.clone();
-        apply_to(&mut next.model, &mut next.textures, command)?;
+        let mut touched = Vec::new();
+        apply_to(&mut next.model, &mut next.textures, command, &mut touched)?;
+        inference::rederive(&mut next.model, &touched)?;
         let before = validate(&self.current.model);
         let introduced: Vec<_> = validate(&next.model)
             .into_iter()
@@ -252,7 +266,18 @@ fn mesh<'a>(model: &'a mut Model, id: &MeshId) -> Result<&'a mut ugoe_model::Mes
     find_mut(&mut model.meshes, "mesh", id, |m| &m.id)
 }
 
-fn apply_to(model: &mut Model, textures: &mut Textures, command: Command) -> Result<(), EditError> {
+/// コマンドを適用する。
+///
+/// キーフォーム格子のセル (値や由来) を変えたコマンドは、その格子の要素を `touched` に積む。
+/// 積んだ格子の `derived` のセルは、[`Document::apply`] が適用の後にまとめて作り直す
+/// ([`inference::rederive`])。新しいコマンドもセルを変えたら積むこと。推定そのもの
+/// (`InferKeyforms`・`MirrorKeyforms`) は、書いた結果を上書きしないように積まない。
+fn apply_to(
+    model: &mut Model,
+    textures: &mut Textures,
+    command: Command,
+    touched: &mut Vec<KeyformTarget>,
+) -> Result<(), EditError> {
     match command {
         Command::AddParameter { parameter } => {
             ensure_new(&model.parameters, "parameter", &parameter.id, |p| &p.id)?;
@@ -273,7 +298,7 @@ fn apply_to(model: &mut Model, textures: &mut Textures, command: Command) -> Res
         }
         Command::Batch { commands, .. } => {
             for c in commands {
-                apply_to(model, textures, c)?;
+                apply_to(model, textures, c, touched)?;
             }
         }
         Command::RenameParameter { id, name } => parameter(model, &id)?.name = name,
@@ -286,7 +311,10 @@ fn apply_to(model: &mut Model, textures: &mut Textures, command: Command) -> Res
         Command::RemovePart { id } => remove_part(model, &id)?,
         Command::RenamePart { id, name } => part(model, &id)?.name = name,
         Command::SetPartParent { id, parent } => part(model, &id)?.parent = parent,
-        Command::SetPartKeyforms { id, keyforms } => part(model, &id)?.keyforms = keyforms,
+        Command::SetPartKeyforms { id, keyforms } => {
+            grid::replace(&mut part(model, &id)?.keyforms, keyforms);
+            touched.push(KeyformTarget::Part(id));
+        }
         Command::AddDeformer { deformer } => {
             ensure_new(&model.deformers, "deformer", &deformer.id, |d| &d.id)?;
             model.deformers.push(deformer);
@@ -295,24 +323,30 @@ fn apply_to(model: &mut Model, textures: &mut Textures, command: Command) -> Res
         Command::RenameDeformer { id, name } => deformer(model, &id)?.name = name,
         Command::SetDeformerParent { id, parent } => deformer(model, &id)?.parent = parent,
         Command::SetDeformerPart { id, part } => deformer(model, &id)?.part = part,
-        Command::SetWarpKeyforms { id, keyforms } => match &mut deformer(model, &id)?.kind {
-            DeformerKind::Warp(warp) => warp.keyforms = keyforms,
-            DeformerKind::Rotation(_) | DeformerKind::Unknown => {
-                return Err(EditError::DeformerKindMismatch {
-                    id: id.to_string(),
-                    expected: "warp",
-                });
+        Command::SetWarpKeyforms { id, keyforms } => {
+            match &mut deformer(model, &id)?.kind {
+                DeformerKind::Warp(warp) => grid::replace(&mut warp.keyforms, keyforms),
+                DeformerKind::Rotation(_) | DeformerKind::Unknown => {
+                    return Err(EditError::DeformerKindMismatch {
+                        id: id.to_string(),
+                        expected: "warp",
+                    });
+                }
             }
-        },
-        Command::SetRotationKeyforms { id, keyforms } => match &mut deformer(model, &id)?.kind {
-            DeformerKind::Rotation(rotation) => rotation.keyforms = keyforms,
-            DeformerKind::Warp(_) | DeformerKind::Unknown => {
-                return Err(EditError::DeformerKindMismatch {
-                    id: id.to_string(),
-                    expected: "rotation",
-                });
+            touched.push(KeyformTarget::Deformer(id));
+        }
+        Command::SetRotationKeyforms { id, keyforms } => {
+            match &mut deformer(model, &id)?.kind {
+                DeformerKind::Rotation(rotation) => grid::replace(&mut rotation.keyforms, keyforms),
+                DeformerKind::Warp(_) | DeformerKind::Unknown => {
+                    return Err(EditError::DeformerKindMismatch {
+                        id: id.to_string(),
+                        expected: "rotation",
+                    });
+                }
             }
-        },
+            touched.push(KeyformTarget::Deformer(id));
+        }
         Command::AddMesh { mesh } => {
             ensure_new(&model.meshes, "mesh", &mesh.id, |m| &m.id)?;
             model.meshes.push(mesh);
@@ -353,7 +387,10 @@ fn apply_to(model: &mut Model, textures: &mut Textures, command: Command) -> Res
             }
         }
         Command::SetMeshParent { id, parent } => mesh(model, &id)?.parent = parent,
-        Command::SetMeshKeyforms { id, keyforms } => mesh(model, &id)?.keyforms = keyforms,
+        Command::SetMeshKeyforms { id, keyforms } => {
+            grid::replace(&mut mesh(model, &id)?.keyforms, keyforms);
+            touched.push(KeyformTarget::Mesh(id));
+        }
         Command::SetMeshKeyform { id, cell, keyform } => {
             let m = mesh(model, &id)?;
             let index =
@@ -364,9 +401,8 @@ fn apply_to(model: &mut Model, textures: &mut Textures, command: Command) -> Res
                 })?;
             m.keyforms.keyforms[index] = keyform;
             // 手で編集したセルは `authored` になる (`docs/spec/keyform-inference.md#セルの由来`)。
-            if let Some(origin) = m.keyforms.origins.get_mut(index) {
-                *origin = KeyformOrigin::Authored;
-            }
+            grid::set_authored(&mut m.keyforms, index);
+            touched.push(KeyformTarget::Mesh(id));
         }
         Command::ReorderMesh { id, before } => reorder_mesh(model, &id, before.as_ref())?,
         Command::AddTexture { name, png } => add_texture(model, textures, name, png)?,
@@ -388,6 +424,31 @@ fn apply_to(model: &mut Model, textures: &mut Textures, command: Command) -> Res
         }
         Command::RegenerateMesh { id, options } => {
             automesh::regenerate_mesh(model, textures, &id, &options)?;
+        }
+        Command::InferKeyforms { target, method } => {
+            inference::infer_keyforms(model, &target, method)?;
+        }
+        Command::MirrorKeyforms {
+            source,
+            target,
+            axis,
+            tolerance,
+            overwrite_authored,
+        } => {
+            let options = MirrorOptions {
+                axis,
+                tolerance,
+                overwrite_authored,
+            };
+            inference::mirror(model, &source, &target, options)?;
+        }
+        Command::MarkKeyformAuthored { target, cells } => {
+            inference::mark(model, &target, &cells, KeyformOrigin::Authored)?;
+            touched.push(target);
+        }
+        Command::MarkKeyformDerived { target, cells } => {
+            inference::mark(model, &target, &cells, KeyformOrigin::Derived)?;
+            touched.push(target);
         }
     }
     Ok(())

@@ -20,3 +20,4 @@
 - T0601 (`docs/tasks/T0601-*.md`)
 - T0603 (`docs/tasks/T0603-*.md`)
 - T0604 (`docs/tasks/T0604-*.md`)
+- T0611 (推定・ミラーのコマンドと `derived` のセルの自動の作り直し。`src/inference.rs`)

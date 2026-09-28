@@ -2,7 +2,7 @@
 
 判断の経緯は [ADR 0010](../adr/0010-keyform-inference.md)。アルゴリズムはツール層のクレート `ugoe-rigging` (T0610) に置き、エディタのコマンド (T0611) から使う。
 
-> 実装待ち: AI による深度推定は T0505 で実装します。加算合成は `ugoe_rigging::infer_additive` (T0610)、ミラーは `ugoe_rigging::mirror_keyforms`、深度からの回転は `ugoe_rigging::infer_depth_rotation` (T0612) にあります。データ (由来・推定の設定・ミラー・深度) は `ugoe-model` に定義済みです ([model.md#キーフォーム推定のデータ](model.md#キーフォーム推定のデータ))。
+> 実装待ち: AI による深度推定は T0505 で実装します。加算合成は `ugoe_rigging::infer_additive` (T0610)、ミラーは `ugoe_rigging::mirror_keyforms`、深度からの回転は `ugoe_rigging::infer_depth_rotation` (T0612)、エディタのコマンドは `ugoe_editor_core` (T0611) にあります。データ (由来・推定の設定・ミラー・深度) は `ugoe-model` に定義済みです ([model.md#キーフォーム推定のデータ](model.md#キーフォーム推定のデータ))。
 
 推定はツールで行い、結果はふつうのキーフォームとしてモデルに焼き込みます。**ランタイムの評価 ([evaluation.md](evaluation.md)) は推定を知りません。**
 
@@ -176,12 +176,13 @@ derived(c) = Rot(c) + 加算合成(E)(c)                  // E を加算合成�
 
 ## 推定の実行
 
-推定は `ugoe_editor_core::Command` として実行します (Undo できる)。
+推定は `ugoe_editor_core::Command` として実行します (Undo できる)。JSON の形とエラーは [editor.md#推定とミラー](../editor.md#推定とミラー) にあります。
 
-| コマンド (予定) | 内容 |
+| コマンド | 内容 |
 | --- | --- |
-| `InferKeyforms { target, method }` | 指定した格子の `derived` のセルを作り直す。`method` は `additive` / `depth_rotation` |
-| `MirrorKeyforms { source, target, axis }` | ミラーで対応するセルを作る |
-| `MarkKeyformAuthored { target, cell }` / `MarkKeyformDerived { .. }` | 由来を変える |
+| `InferKeyforms { target, method }` | 指定した格子の `derived` のセルを作り直す。`method` は `from_grid` (既定。格子の `inference` に従う) / `additive` / `depth_rotation` |
+| `MirrorKeyforms { source, target, axis, tolerance, overwrite_authored }` | ミラーで対応するセルを作る (`MirrorOptions`) |
+| `MarkKeyformAuthored { target, cells }` / `MarkKeyformDerived { target, cells }` | 由来を変える。`derived` にしたセルは格子の推定の設定で作り直す |
 
-推定の元のセルを変えるコマンドを実行したとき、エディタは影響を受ける `derived` のセルを自動で作り直します (同じ Undo 単位に含める)。
+推定の元のセルを変えるコマンドを実行したとき、エディタはその格子の `derived` のセルを格子の `inference` の方法で自動で作り直します (同じ Undo 単位に含める)。
+ミラーで作ったセルは、元の要素を変えても自動では作り直しません (`MirrorKeyforms` を再度実行する)。
