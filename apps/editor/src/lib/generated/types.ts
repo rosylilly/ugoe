@@ -10,7 +10,11 @@ export type ApplyReport = {
  * 自動の作り直しで失敗し、前の値のまま残したセルがある格子と、親を変えたことでミラーし直せなく
  * なった左右の対。
  */
-warnings: Array<RederiveWarning>, };
+warnings: Array<RederiveWarning>, 
+/**
+ * 明示的に実行したミラー (`MirrorKeyforms`) ごとの、書いたセルと残したセルの数。
+ */
+mirrored: Array<MirrorReport>, };
 
 /**
  * [`ugoe_mesher::MeshOptions`] の JSON 表現。省略したフィールドは既定値になる。
@@ -106,7 +110,7 @@ tolerance?: number | null,
 /**
  * `true` なら先の `authored` のセルも上書きする。
  */
-overwrite_authored: boolean, } | { "op": "mark_keyform_authored", target: KeyformTarget, cells: Array<{ [key in string]: number }>, } | { "op": "mark_keyform_derived", target: KeyformTarget, cells: Array<{ [key in string]: number }>, } | { "op": "move_mesh_vertices", id: string, moves: Array<VertexMove>, } | { "op": "add_mesh_vertex", id: string, position: Vec2, } | { "op": "remove_mesh_vertices", id: string, indices: Array<number>, } | { "op": "retriangulate_mesh", id: string, } | { "op": "add_keyform_key", target: KeyformTarget, parameter: string, key: number, } | { "op": "remove_keyform_key", target: KeyformTarget, parameter: string, key: number, } | { "op": "set_keyform_cell", target: KeyformTarget, cell: { [key in string]: number }, keyform: Keyform, } | { "op": "set_mesh_draw_order", id: string, draw_order: number, } | { "op": "create_warp_deformer", id?: string | null, name: string, children: Array<ChildRef>, rows: number, cols: number, parent?: string | null, } | { "op": "create_rotation_deformer", id?: string | null, name: string, children: Array<ChildRef>, origin?: Vec2 | null, parent?: string | null, } | { "op": "reparent_preserving_look", element: ChildRef, new_parent: string | null, } | { "op": "set_keyform_inference", target: KeyformTarget, inference?: KeyformInference | null, } | { "op": "set_mirror_pair", target: KeyformTarget, mirror?: string | null, axis?: number | null, } | { "op": "set_depth", target: ChildRef, depth?: Array<number> | null, } | { "op": "apply_depth_preset", target: ChildRef, preset: DepthPreset, } | { "op": "move_rotation_origin", id: string, delta: Vec2, } | { "op": "unwrap_deformer", id: string, };
+overwrite_authored: boolean, } | { "op": "mark_keyform_authored", target: KeyformTarget, cells: Array<{ [key in string]: number }>, } | { "op": "mark_keyform_derived", target: KeyformTarget, cells: Array<{ [key in string]: number }>, } | { "op": "move_mesh_vertices", id: string, moves: Array<VertexMove>, } | { "op": "add_mesh_vertex", id: string, position: Vec2, } | { "op": "remove_mesh_vertices", id: string, indices: Array<number>, } | { "op": "retriangulate_mesh", id: string, } | { "op": "add_keyform_key", target: KeyformTarget, parameter: string, key: number, } | { "op": "remove_keyform_key", target: KeyformTarget, parameter: string, key: number, } | { "op": "set_keyform_cell", target: KeyformTarget, cell: { [key in string]: number }, keyform: Keyform, } | { "op": "set_mesh_draw_order", id: string, draw_order: number, } | { "op": "create_warp_deformer", id?: string | null, name: string, children?: Array<ChildRef>, parts?: Array<string>, rows: number, cols: number, parent?: string | null, } | { "op": "create_rotation_deformer", id?: string | null, name: string, children?: Array<ChildRef>, parts?: Array<string>, origin?: Vec2 | null, parent?: string | null, } | { "op": "reparent_preserving_look", element: ChildRef, new_parent: string | null, } | { "op": "set_keyform_inference", target: KeyformTarget, inference?: KeyformInference | null, } | { "op": "set_mirror_pair", target: KeyformTarget, mirror?: string | null, axis?: number | null, } | { "op": "set_depth", target: ChildRef, depth?: Array<number> | null, } | { "op": "apply_depth_preset", target: ChildRef, preset: DepthPreset, } | { "op": "move_rotation_origin", id: string, delta: Vec2, } | { "op": "unwrap_deformer", id: string, };
 
 export type Curve = { target: CurveTarget, segments: Array<Segment>, 
 /**
@@ -381,6 +385,34 @@ draw_order: number, multiply_color: Rgb, screen_color: Rgb,
  * マスクの効き具合 (0〜1、既定 1)。範囲外の値はランタイムがクランプする。
  */
 mask_strength: number, };
+
+/**
+ * 明示的に実行したミラー ([`crate::Command::MirrorKeyforms`]) の結果 (`ApplyReport::mirrored`)。
+ *
+ * 1 つもセルを書かなかったときに、エディタが理由を出すのに使う (`docs/editor.md#推定とミラー`)。
+ */
+export type MirrorReport = { 
+/**
+ * ミラー元の要素。
+ */
+source: KeyformTarget, 
+/**
+ * セルを書いた (書こうとした) 格子の要素。
+ */
+target: KeyformTarget, 
+/**
+ * 書いたセルの数。
+ */
+written: number, 
+/**
+ * 書いたセルのうち、未編集の `authored` のセル
+ * (`docs/spec/keyform-inference.md#未編集のセル`) だった数。
+ */
+unedited: number, 
+/**
+ * `overwrite_authored` なら書けたが、`authored` なので書かずに残したセルの数。
+ */
+kept_authored: number, };
 
 /**
  * ミラーで作ったセル (`KeyformOrigin::Mirror`) のミラー元と、ミラーの設定

@@ -11,7 +11,7 @@ use ugoe_rigging::{InferError, InferScope, MirrorOptions};
 
 use crate::command::KeyformTarget;
 use crate::grid::{self, CellError};
-use crate::inference::RederiveWarning;
+use crate::inference::{MirrorReport, RederiveWarning};
 use crate::texture::{Textures, is_valid_texture_name, png_size};
 use crate::{Command, automesh, inference, keyform};
 use crate::{deformer_edit, depth, mesh_edit};
@@ -126,6 +126,8 @@ pub struct ApplyReport {
     /// 自動の作り直しで失敗し、前の値のまま残したセルがある格子と、親を変えたことでミラーし直せなく
     /// なった左右の対。
     pub warnings: Vec<RederiveWarning>,
+    /// 明示的に実行したミラー (`MirrorKeyforms`) ごとの、書いたセルと残したセルの数。
+    pub mirrored: Vec<MirrorReport>,
 }
 
 fn join(errors: &[ValidationError]) -> String {
@@ -225,7 +227,14 @@ impl Document {
     pub fn apply_with_report(&mut self, command: Command) -> Result<ApplyReport, EditError> {
         let mut next = self.current.clone();
         let mut touched = Vec::new();
-        apply_to(&mut next.model, &mut next.textures, command, &mut touched)?;
+        let mut mirrored = Vec::new();
+        apply_to(
+            &mut next.model,
+            &mut next.textures,
+            command,
+            &mut touched,
+            &mut mirrored,
+        )?;
         let mut warnings = inference::rederive(&mut next.model, &touched)?;
         inference::check_reparented_pairs(&self.current.model, &next.model, &mut warnings);
         let before = validate(&self.current.model);
@@ -240,7 +249,7 @@ impl Document {
         self.next_state += 1;
         self.undo.push(std::mem::replace(&mut self.current, next));
         self.redo.clear();
-        Ok(ApplyReport { warnings })
+        Ok(ApplyReport { warnings, mirrored })
     }
 
     pub fn undo(&mut self) -> bool {
@@ -341,11 +350,13 @@ fn mesh<'a>(model: &'a mut Model, id: &MeshId) -> Result<&'a mut ugoe_model::Mes
 /// ([`inference::rederive`])。新しいコマンドもセルを変えたら積むこと。推定そのもの
 /// (`InferKeyforms`・`MirrorKeyforms`) も積む: 作り直しはセルに記録した方法で行うので、推定の結果を
 /// 別の方法で上書きせず、その格子をミラー元にする格子にも変化を伝える。
+/// 明示的に実行したミラーの結果は `mirrored` に積む。
 fn apply_to(
     model: &mut Model,
     textures: &mut Textures,
     command: Command,
     touched: &mut Vec<KeyformTarget>,
+    mirrored: &mut Vec<MirrorReport>,
 ) -> Result<(), EditError> {
     match command {
         Command::AddParameter { parameter } => {
@@ -367,12 +378,21 @@ fn apply_to(
         }
         Command::Batch { commands, .. } => {
             for c in commands {
-                apply_to(model, textures, c, touched)?;
+                apply_to(model, textures, c, touched, mirrored)?;
             }
         }
         Command::RenameParameter { id, name } => parameter(model, &id)?.name = name,
         Command::SetParameterGroup { id, group } => parameter(model, &id)?.group = group,
-        Command::SetParameterMirror { id, mirror } => parameter(model, &id)?.mirror = mirror,
+        Command::SetParameterMirror { id, mirror } => {
+            pair(
+                &mut model.parameters,
+                "parameter",
+                &id,
+                mirror,
+                |p| &p.id,
+                |p| &mut p.mirror,
+            )?;
+        }
         Command::AddPart { part } => {
             ensure_new(&model.parts, "part", &part.id, |p| &p.id)?;
             model.parts.push(part);
@@ -524,7 +544,7 @@ fn apply_to(
                 overwrite_authored,
                 scope: InferScope::AllDerived,
             };
-            inference::mirror(model, &source, &target, options)?;
+            mirrored.push(inference::mirror(model, &source, &target, options)?);
             touched.push(target);
         }
         Command::MarkKeyformAuthored { target, cells } => {
@@ -595,22 +615,34 @@ fn apply_to(
             id,
             name,
             children,
+            parts,
             rows,
             cols,
             parent,
         } => {
-            let kind = deformer_edit::NewKind::Warp { rows, cols };
-            deformer_edit::create(model, id, name, &children, parent, kind, touched)?;
+            let new = deformer_edit::NewDeformer {
+                id,
+                name,
+                parent,
+                kind: deformer_edit::NewKind::Warp { rows, cols },
+            };
+            deformer_edit::create(model, new, &children, &parts, touched)?;
         }
         Command::CreateRotationDeformer {
             id,
             name,
             children,
+            parts,
             origin,
             parent,
         } => {
-            let kind = deformer_edit::NewKind::Rotation { origin };
-            deformer_edit::create(model, id, name, &children, parent, kind, touched)?;
+            let new = deformer_edit::NewDeformer {
+                id,
+                name,
+                parent,
+                kind: deformer_edit::NewKind::Rotation { origin },
+            };
+            deformer_edit::create(model, new, &children, &parts, touched)?;
         }
         Command::ReparentPreservingLook {
             element,
@@ -644,29 +676,29 @@ fn set_mirror_pair(
 ) -> Result<Vec<KeyformTarget>, EditError> {
     match target {
         KeyformTarget::Mesh(id) => {
-            let mirror = mirror.map(MeshId::new);
-            let changed = pair(
+            let mut changed = pair(
                 &mut model.meshes,
                 "mesh",
                 id,
-                mirror,
-                axis,
+                mirror.map(MeshId::new),
                 |m| &m.id,
-                |m| (&mut m.mirror, &mut m.mirror_axis),
+                |m| &mut m.mirror,
             )?;
+            let item = mesh(model, id)?;
+            set_axis(&mut item.mirror_axis, axis, id, &mut changed);
             Ok(changed.into_iter().map(KeyformTarget::Mesh).collect())
         }
         KeyformTarget::Deformer(id) => {
-            let mirror = mirror.map(DeformerId::new);
-            let changed = pair(
+            let mut changed = pair(
                 &mut model.deformers,
                 "deformer",
                 id,
-                mirror,
-                axis,
+                mirror.map(DeformerId::new),
                 |d| &d.id,
-                |d| (&mut d.mirror, &mut d.mirror_axis),
+                |d| &mut d.mirror,
             )?;
+            let item = deformer(model, id)?;
+            set_axis(&mut item.mirror_axis, axis, id, &mut changed);
             Ok(changed.into_iter().map(KeyformTarget::Deformer).collect())
         }
         KeyformTarget::Part(_) | KeyformTarget::Glue(_) => Err(EditError::MirrorPairNotSupported {
@@ -675,17 +707,32 @@ fn set_mirror_pair(
     }
 }
 
-/// `items` の中で `id` と `mirror` を対にし (`None` なら対を外す)、`id` の対称軸を `axis` にする。
-/// どちらかと対になっていた要素の対は外す。`mirror`・`mirror_axis` が変わった要素の ID を返す。
+/// 対称軸を `axis` にし、変わったら `id` を `changed` に積む (積んでいなければ)。
 /// 対称軸が有限の値であることは、適用後の検証 (`validate`) が確かめる。
+fn set_axis<K: PartialEq + Clone>(
+    field: &mut Option<f32>,
+    axis: Option<f32>,
+    id: &K,
+    changed: &mut Vec<K>,
+) {
+    if *field != axis {
+        *field = axis;
+        if !changed.contains(id) {
+            changed.push(id.clone());
+        }
+    }
+}
+
+/// `items` の中で `id` と `mirror` を双方向の対にする (`None` なら対を外す。`mirror` が `id` 自身なら
+/// `id` だけを自分自身と対にする)。どちらかと対になっていた要素の対は外す。
+/// `mirror` が変わった要素の ID を返す。メッシュ・デフォーマ・パラメータの対で共通。
 fn pair<T, K: PartialEq + Clone + Display>(
     items: &mut [T],
     kind: &'static str,
     id: &K,
     mirror: Option<K>,
-    axis: Option<f32>,
     id_of: impl Fn(&T) -> &K,
-    fields: impl Fn(&mut T) -> (&mut Option<K>, &mut Option<f32>),
+    mirror_of: impl Fn(&mut T) -> &mut Option<K>,
 ) -> Result<Vec<K>, EditError> {
     find_mut(items, kind, id, &id_of)?;
     if let Some(mirror) = &mirror {
@@ -695,11 +742,10 @@ fn pair<T, K: PartialEq + Clone + Display>(
     let mut changed = Vec::new();
     for item in items.iter_mut() {
         let item_id = id_of(item).clone();
-        let (item_mirror, item_axis) = fields(item);
-        let before = (item_mirror.clone(), *item_axis);
+        let item_mirror = mirror_of(item);
+        let before = item_mirror.clone();
         if &item_id == id {
             *item_mirror = mirror.clone();
-            *item_axis = axis;
         } else if partner.as_ref() == Some(&item_id) {
             *item_mirror = Some(id.clone());
         } else if item_mirror
@@ -709,7 +755,7 @@ fn pair<T, K: PartialEq + Clone + Display>(
             // 張り直す 2 つのどちらかと対になっていた要素。
             *item_mirror = None;
         }
-        if (item_mirror.clone(), *item_axis) != before {
+        if *item_mirror != before {
             changed.push(item_id);
         }
     }

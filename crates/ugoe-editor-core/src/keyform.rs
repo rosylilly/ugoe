@@ -210,6 +210,18 @@ fn derive_combinations(model: &mut Model, target: &KeyformTarget, added: &[usize
     }
 }
 
+/// 要素の格子の未編集のセル (`grid::unedited_cells`) の線形インデックス。
+pub(crate) fn unedited_cells(
+    model: &mut Model,
+    target: &KeyformTarget,
+) -> Result<Vec<usize>, EditError> {
+    let defaults = parameter_defaults(model);
+    let grid = grid_mut(model, target)?;
+    Ok(with_grid!(grid, |g| grid::unedited_cells(g, |p| defaults
+        .get(p)
+        .copied())))
+}
+
 /// `Command::RemoveKeyformKey` を適用する。
 pub(crate) fn remove_key(
     model: &mut Model,

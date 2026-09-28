@@ -5,6 +5,7 @@
 <script lang="ts">
 import type { EditorDocument } from "../../document.svelte";
 import type { EditCommand } from "../../ipc";
+import { elementLabel, textureLabel } from "../../labels";
 import type { Selection } from "../../selection.svelte";
 import {
   type BlendMode,
@@ -27,6 +28,15 @@ const mesh = $derived(
     : null,
 );
 const maskCandidates = $derived(model.meshes.filter((m) => m.id !== mesh?.id));
+/** テクスチャの表記 (名前と、それを使うメッシュの表示名)。 */
+const textureLabels = $derived(
+  model.textures.map((name, i) =>
+    textureLabel(
+      name,
+      model.meshes.filter((m) => m.texture === i).map((m) => m.name),
+    ),
+  ),
+);
 
 type Changes = Omit<Extract<EditCommand, { op: "set_mesh_properties" }>, "op" | "id">;
 
@@ -64,8 +74,8 @@ function removeMask(index: number): void {
     <label class="row">
       <span>Texture</span>
       <select value={String(mesh.texture)} onchange={(e) => set({ texture: Number(value(e)) })}>
-        {#each model.textures as name, i (i)}
-          <option value={String(i)}>{name}</option>
+        {#each textureLabels as label, i (i)}
+          <option value={String(i)}>{label}</option>
         {/each}
       </select>
     </label>
@@ -108,7 +118,7 @@ function removeMask(index: number): void {
         <li class="row">
           <select value={mask.mesh} onchange={(e) => setMask(i, { mesh: value(e) })}>
             {#each maskCandidates as c (c.id)}
-              <option value={c.id}>{c.name}</option>
+              <option value={c.id}>{elementLabel(c.name, c.id)}</option>
             {/each}
           </select>
           <label>
@@ -133,6 +143,12 @@ function removeMask(index: number): void {
   justify-content: space-between;
   gap: 8px;
   margin: 4px 0;
+}
+
+.row select {
+  min-width: 0;
+  max-width: 100%;
+  flex: 0 1 auto;
 }
 
 ul {

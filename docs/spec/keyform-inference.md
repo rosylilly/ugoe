@@ -244,12 +244,26 @@ derived(c) = Rot(c) + 加算合成(E)(c)                  // E を加算合成�
 | コマンド | 内容 |
 | --- | --- |
 | `InferKeyforms { target, method, overwrite_derived }` | 指定した格子の `derived` のセルを作り直す。`method` は `from_grid` (既定。格子の `inference` に従う) / `additive` / `depth_rotation`。範囲は `own` で、`overwrite_derived` なら `all_derived` (別の方法で作ったセルも書き換える) |
-| `MirrorKeyforms { source, target, axis, tolerance, overwrite_authored }` | ミラーで対応するセルを作る (`MirrorOptions`)。範囲は `all_derived` (先の `authored` 以外のセルをすべて書き換える) |
+| `MirrorKeyforms { source, target, axis, tolerance, overwrite_authored }` | ミラーで対応するセルを作る (`MirrorOptions`)。範囲は `all_derived` (先の `authored` 以外のセルをすべて書き換える)。`overwrite_authored` がなくても、先の [未編集のセル](#未編集のセル) は書き換える |
 | `MarkKeyformAuthored { target, cells }` / `MarkKeyformDerived { target, cells }` | 由来を変える。`derived` にしたセルは格子の推定の設定で作り直す |
 | `SetKeyformInference { target, inference }` | 格子の推定の設定を置き換え、方法を記録していない `derived` のセルを新しい設定で作り直す |
 | `SetMirrorPair { target, mirror, axis }` | メッシュ・デフォーマの左右の対 (双方向) と対称軸を設定する |
 | `SetDepth { target, depth }` / `ApplyDepthPreset { target, preset }` | メッシュ・ワープの深度を設定する ([深度の入力](#深度の入力))。深度からの回転のセルを作り直す |
 | `AddKeyformKey { target, parameter, key }` | キーを加え、新しい組み合わせのセルをその場で推定する ([キーの追加とセルの由来](#キーの追加とセルの由来)) |
+
+### 未編集のセル
+
+キーを追加して埋めただけのセルは、中立のキーから推定の元を持たないので `authored` になります ([キーの追加とセルの由来](#キーの追加とセルの由来) の 2・3)。
+たとえば目のワープに `EyeROpen` の 1 と 0 のキーを追加すると、0 のセルは 1 のセルの写しの `authored` です。このままでは、`overwrite_authored` なしのミラーが 1 つもセルを書かず、何もしなかったように見えます (T0624 で見つかった問題)。
+
+そこでエディタの `MirrorKeyforms` は、先の格子の **未編集のセル** を `authored` でも書き換えます (T0627)。
+
+- 未編集のセルは、由来が `authored` で、基準のセル (すべての軸が中立のキーのセル) ではなく、値が基準のセルと見た目で変わらない (キーの追加の推定と同じ比べ方: 数値のフィールドが値の大きさに対して 1e-4 以内、それ以外が等しい) セルです。中立のキーがない軸があれば、未編集のセルはありません。
+- 未編集のセルは、ミラーの実行の間だけ書き換えるセルとして扱います。書いたセルは `mirror` になり、書かなかったセル (元と先が同じ要素で、元のセルも未編集のものなど) は `authored` に戻します。元と先が同じ要素では、未編集のセルは推定の元にもしません (`derived` のセルと同じ)。
+- 基準のセルは書き換えません (`overwrite_authored` を除く)。形を 1 度でも変えたセルは、基準と同じ値に戻したものを除いて書き換えません。基準と同じ値の `authored` のセルは、形として「変えない」ことを表していても、ミラーで上書きされます (Undo で戻せる)。
+- 自動の作り直し (ミラー元が変わったときのミラーし直し) は、これまでどおり `mirror` のセルだけを書きます。未編集のセルを書き換えるのは明示的な実行だけです。
+- エディタは、書いたセル・書いたうちの未編集のセル・`overwrite_authored` なら書けたが残したセルの数を返します (`MirrorReport`、[editor.md#推定とミラー](../editor.md#推定とミラー))。
+- 他の案として、キーの追加でできたセルに専用の由来を付ける方法もありますが、`ugoe-model` のファイル形式を変えることになるので採りませんでした。値を比べる方法なら、古いファイルのセルにも同じ規則が働きます。
 
 ### 自動の作り直し
 

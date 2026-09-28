@@ -15,6 +15,7 @@ import {
   parseModel,
   snapToKeys,
 } from "./inspector/keyforms/keyforms";
+import ParameterMirror from "./parameters/ParameterMirror.svelte";
 import { duplicateKeyError, formatValue, parseValue } from "./parameterValue";
 
 interface Props {
@@ -231,6 +232,7 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
             <label>Default <input type="number" step="any" bind:value={draft.default} /></label>
             <label>Max <input type="number" step="any" bind:value={draft.max} /></label>
           </span>
+          <ParameterMirror {doc} parameter={p} {parameters} />
           <span class="row">
             <button onclick={() => saveEditor(p)}>Apply</button>
             <button class="danger" onclick={() => remove(p)} title="Delete {p.id}">Delete</button>

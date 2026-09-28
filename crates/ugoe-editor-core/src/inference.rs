@@ -178,26 +178,104 @@ pub(crate) fn infer_keyforms(
     run(model, target, method, scope)
 }
 
+/// 明示的に実行したミラー ([`crate::Command::MirrorKeyforms`]) の結果 (`ApplyReport::mirrored`)。
+///
+/// 1 つもセルを書かなかったときに、エディタが理由を出すのに使う (`docs/editor.md#推定とミラー`)。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct MirrorReport {
+    /// ミラー元の要素。
+    pub source: KeyformTarget,
+    /// セルを書いた (書こうとした) 格子の要素。
+    pub target: KeyformTarget,
+    /// 書いたセルの数。
+    pub written: u32,
+    /// 書いたセルのうち、未編集の `authored` のセル
+    /// (`docs/spec/keyform-inference.md#未編集のセル`) だった数。
+    pub unedited: u32,
+    /// `overwrite_authored` なら書けたが、`authored` なので書かずに残したセルの数。
+    pub kept_authored: u32,
+}
+
 /// [`crate::Command::MirrorKeyforms`]。先の `authored` 以外のセルをすべて書き換える
-/// (`options.scope` は無視する)。
+/// (`options.scope` は無視する)。`overwrite_authored` がなくても、先の未編集の `authored` のセル
+/// (`crate::grid::unedited_cells`) は書き換える。
 pub(crate) fn mirror(
     model: &mut Model,
     source: &KeyformTarget,
     target: &KeyformTarget,
     options: MirrorOptions,
-) -> Result<(), EditError> {
+) -> Result<MirrorReport, EditError> {
     grid_view(model, source)?;
     grid_view(model, target)?;
     let options = MirrorOptions {
         scope: InferScope::AllDerived,
         ..options
     };
-    mirror_keyforms(model, &source.into(), &target.into(), &options)
-        .map(drop)
-        .map_err(|error| EditError::Inference {
-            target: target.to_string(),
-            error,
-        })
+    let error = |error| EditError::Inference {
+        target: target.to_string(),
+        error,
+    };
+    let (unedited, overwritable) = if options.overwrite_authored {
+        (Vec::new(), Vec::new())
+    } else {
+        // `authored` のセルも書けたら書いたセル (残したセルの数を知らせるため)。
+        let mut scratch = model.clone();
+        let all = MirrorOptions {
+            overwrite_authored: true,
+            ..options.clone()
+        };
+        let report =
+            mirror_keyforms(&mut scratch, &source.into(), &target.into(), &all).map_err(error)?;
+        (
+            crate::keyform::unedited_cells(model, target)?,
+            report.written,
+        )
+    };
+    // 未編集のセルは、書けるように一時的に `derived` にする。書かなかったものは後で戻す。
+    set_origins(model, target, &unedited, KeyformOrigin::Derived)?;
+    let written = mirror_keyforms(model, &source.into(), &target.into(), &options)
+        .map_err(error)?
+        .written;
+    let untouched: Vec<usize> = unedited
+        .iter()
+        .copied()
+        .filter(|i| !written.contains(i))
+        .collect();
+    set_origins(model, target, &untouched, KeyformOrigin::Authored)?;
+    let count = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
+    Ok(MirrorReport {
+        source: source.clone(),
+        target: target.clone(),
+        written: count(written.len()),
+        unedited: count(unedited.iter().filter(|i| written.contains(i)).count()),
+        kept_authored: count(overwritable.iter().filter(|i| !written.contains(i)).count()),
+    })
+}
+
+/// 格子のセル `indices` の由来を `origin` にする (値は変えない)。
+fn set_origins(
+    model: &mut Model,
+    target: &KeyformTarget,
+    indices: &[usize],
+    origin: KeyformOrigin,
+) -> Result<(), EditError> {
+    if indices.is_empty() {
+        return Ok(());
+    }
+    let view = grid_view(model, target)?;
+    if view.origins.is_empty() {
+        *view.origins = vec![KeyformOrigin::Authored; view.len];
+    }
+    for &index in indices {
+        if let Some(o) = view.origins.get_mut(index) {
+            *o = origin;
+        }
+    }
+    // すべて `authored` なら空に戻す (空はすべて `authored` の意味)。
+    if view.origins.iter().all(|o| *o == KeyformOrigin::Authored) {
+        view.origins.clear();
+    }
+    Ok(())
 }
 
 /// [`crate::Command::SetKeyformInference`]。格子を作り直すのは [`rederive`]。

@@ -4,9 +4,11 @@ import type {
   Command,
   KeyformInference,
   KeyformTarget,
+  MirrorReport,
   MirrorSource,
   RederiveWarning,
 } from "../../../generated/types";
+import { labelOf } from "../../../labels";
 import type {
   Cell,
   ElementGrid,
@@ -277,40 +279,93 @@ export interface MirrorChoice {
   label: string;
 }
 
+/** 要素と同じ種類の要素の一覧 (メッシュかデフォーマ。それ以外は空)。 */
+function sameKind(model: ModelData, target: KeyformTarget): readonly { id: string }[] {
+  if (target.kind === "mesh") return model.meshes;
+  if (target.kind === "deformer") return model.deformers;
+  return [];
+}
+
+/** 要素の表記 (表示名と ID)。 */
+export function targetName(model: ModelData, target: KeyformTarget): string {
+  return labelOf(sameKind(model, target), target.id);
+}
+
 /**
  * 「Mirror from…」の元の候補: 対の相手 (あれば) と自分自身 (左右対称な 1 つの要素)。
- * ミラーできない要素 (パーツ・グルー) なら空。
+ * ミラーできない要素 (パーツ・グルー) なら空。表示は名前と ID。
  */
 export function mirrorChoices(model: ModelData, element: ElementGrid): MirrorChoice[] {
   const pair = mirrorPair(model, element.target);
   if (!pair) return [];
   const { kind, id } = element.target;
+  const items = sameKind(model, element.target);
   const self: MirrorChoice = {
     source: element.target,
-    label: `${id} (itself, left ↔ right)`,
+    label: `${labelOf(items, id)} (itself, left ↔ right)`,
   };
   if (!pair.mirror || pair.mirror === id) return [self];
   const partner = { kind, id: pair.mirror } as KeyformTarget;
-  return [{ source: partner, label: `${pair.mirror} (mirror partner)` }, self];
+  return [{ source: partner, label: `${labelOf(items, pair.mirror)} (mirror partner)` }, self];
 }
 
-/** 対の相手の候補 (同じ種類の、自分以外の要素の ID)。 */
-export function partnerCandidates(model: ModelData, target: KeyformTarget): string[] {
-  if (target.kind === "mesh") return model.meshes.map((m) => m.id).filter((id) => id !== target.id);
-  if (target.kind === "deformer") {
-    return model.deformers.map((d) => d.id).filter((id) => id !== target.id);
-  }
-  return [];
+/** 対の相手の候補 (同じ種類の、自分以外の要素)。表示は名前と ID。 */
+export function partnerCandidates(
+  model: ModelData,
+  target: KeyformTarget,
+): { id: string; label: string }[] {
+  const items = sameKind(model, target);
+  return items
+    .filter((item) => item.id !== target.id)
+    .map((item) => ({ id: item.id, label: labelOf(items, item.id) }));
 }
 
-/** ミラー元の記録の説明。 */
-export function describeMirrorSource(source: MirrorSource, self: string): string {
+/** ミラー元の記録の説明。`label` は要素の ID から表記を作る (省略なら ID)。 */
+export function describeMirrorSource(
+  source: MirrorSource,
+  self: string,
+  label: (id: string) => string = (id) => id,
+): string {
   const options = [
     source.axis != null ? `axis ${source.axis}` : null,
     source.tolerance != null ? `tolerance ${source.tolerance}` : null,
   ].filter((s) => s !== null);
-  const from = source.id === self ? `${source.id} itself` : source.id;
+  const from = source.id === self ? `${label(source.id)} itself` : label(source.id);
   return `Mirrored cells come from ${from}${options.length ? ` (${options.join(", ")})` : ""}.`;
+}
+
+function cells(n: number): string {
+  return `${n} cell${n === 1 ? "" : "s"}`;
+}
+
+/**
+ * 「Mirror」の結果の説明 (docs/editor.md#推定とミラー)。1 つも書かなかったときは理由を書き、
+ * `overwrite` を真にする (authored のセルを上書きしてやり直す操作を出す)。
+ */
+export function describeMirrorReport(
+  report: MirrorReport,
+  label: (target: KeyformTarget) => string,
+): { text: string; overwrite: boolean } {
+  const from = label(report.source);
+  if (report.written > 0) {
+    const kept =
+      report.kept_authored > 0
+        ? ` Kept ${cells(report.kept_authored)} authored (not overwritten).`
+        : "";
+    return { text: `Mirrored ${cells(report.written)} from ${from}.${kept}`, overwrite: false };
+  }
+  if (report.kept_authored > 0) {
+    return {
+      text:
+        `Nothing was mirrored: all ${cells(report.kept_authored)} that ${from} maps to are ` +
+        "authored, and authored cells are kept unless overwritten.",
+      overwrite: true,
+    };
+  }
+  return {
+    text: `Nothing was mirrored: no cell of ${from} maps to a cell of this grid that can be written.`,
+    overwrite: false,
+  };
 }
 
 // ---- セルの選択 ----

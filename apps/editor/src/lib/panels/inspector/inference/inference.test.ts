@@ -3,6 +3,7 @@ import type { Command, KeyformTarget, RederiveWarning } from "../../../generated
 import type { ElementGrid, KeyformBinding, ModelData } from "../keyforms/keyforms";
 import {
   cellKey,
+  describeMirrorReport,
   describeMirrorSource,
   describeWarning,
   formError,
@@ -20,6 +21,7 @@ import {
   sameInference,
   setInferenceCommand,
   setMirrorPairCommand,
+  targetName,
   toggleCell,
 } from "./inference";
 
@@ -169,7 +171,7 @@ describe("mirror sources", () => {
   });
 
   it("lists partner candidates of the same kind", () => {
-    expect(partnerCandidates(model, eyeL)).toEqual(["EyeR", "Nose"]);
+    expect(partnerCandidates(model, eyeL).map((c) => c.id)).toEqual(["EyeR", "Nose"]);
     expect(partnerCandidates(model, { kind: "deformer", id: "Face" })).toEqual([]);
     expect(partnerCandidates(model, { kind: "part", id: "Root" })).toEqual([]);
   });
@@ -179,6 +181,33 @@ describe("mirror sources", () => {
     expect(describeMirrorSource({ id: "Nose", axis: 0.5, tolerance: 0.01 }, "Nose")).toBe(
       "Mirrored cells come from Nose itself (axis 0.5, tolerance 0.01).",
     );
+    expect(describeMirrorSource({ id: "Warp_2" }, "Warp_3", (id) => `左目 (${id})`)).toBe(
+      "Mirrored cells come from 左目 (Warp_2).",
+    );
+  });
+
+  it("labels elements with their display names", () => {
+    const named = {
+      ...model,
+      meshes: model.meshes.map((m) => (m.id === "EyeR" ? { ...m, name: "右目" } : m)),
+    };
+    expect(mirrorChoices(named, element(eyeL))[0]?.label).toBe("右目 (EyeR) (mirror partner)");
+    expect(partnerCandidates(named, eyeL)[0]).toEqual({ id: "EyeR", label: "右目 (EyeR)" });
+    expect(targetName(named, eyeR)).toBe("右目 (EyeR)");
+  });
+
+  it("explains the mirror result", () => {
+    const label = (t: KeyformTarget) => t.id;
+    const report = { source: eyeL, target: eyeR, written: 3, unedited: 1, kept_authored: 1 };
+    expect(describeMirrorReport(report, label)).toEqual({
+      text: "Mirrored 3 cells from EyeL. Kept 1 cell authored (not overwritten).",
+      overwrite: false,
+    });
+    const none = { ...report, written: 0, unedited: 0, kept_authored: 2 };
+    expect(describeMirrorReport(none, label).overwrite).toBe(true);
+    expect(describeMirrorReport(none, label).text).toContain("all 2 cells that EyeL maps to");
+    const nothing = { ...none, kept_authored: 0 };
+    expect(describeMirrorReport(nothing, label).overwrite).toBe(false);
   });
 });
 

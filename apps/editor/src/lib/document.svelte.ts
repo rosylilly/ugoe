@@ -1,7 +1,14 @@
 // バックエンドが持つドキュメント (モデルの正となる状態) の、フロントエンド側の写し。
 // 編集は必ず IPC の Command で行い、その後 refresh() で読み直す (docs/editor.md)。
 import { isEmptyModel } from "./emptyState";
-import { type Command, ipc, type Model, type Parameter, type RederiveWarning } from "./ipc";
+import {
+  type ApplyReport,
+  type Command,
+  ipc,
+  type Model,
+  type Parameter,
+  type RederiveWarning,
+} from "./ipc";
 import { mergeWarnings } from "./panels/inspector/inference/inference";
 import type { ViewportModel } from "./viewport/controller.svelte";
 
@@ -42,13 +49,17 @@ export class EditorDocument {
     }
   }
 
-  async apply(command: Command): Promise<void> {
+  /** コマンドを適用して読み直す。適用の報告 (ミラーの結果など) を返し、失敗したら null (`error` に理由)。 */
+  async apply(command: Command): Promise<ApplyReport | null> {
+    let applied: ApplyReport | null = null;
     await this.#run(async () => {
       const report = await ipc.applyCommand(command);
       if (report.warnings.length > 0) {
         this.warnings = mergeWarnings(this.warnings, report.warnings);
       }
+      applied = report;
     });
+    return applied;
   }
 
   dismissWarnings(): void {

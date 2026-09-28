@@ -3207,6 +3207,15 @@ export const commands: Command[] = [
     "cols": 3
   },
   {
+    "op": "create_warp_deformer",
+    "name": "",
+    "parts": [
+      "Head"
+    ],
+    "rows": 2,
+    "cols": 2
+  },
+  {
     "op": "create_rotation_deformer",
     "id": "Neck",
     "name": "Neck",

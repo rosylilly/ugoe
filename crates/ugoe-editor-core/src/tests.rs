@@ -397,6 +397,16 @@ fn set_parameter_group() {
 #[test]
 fn set_parameter_mirror() {
     let model = fixtures::pose_and_effects();
+    let mirror_of = |model: &Model, id: &str| {
+        model
+            .parameters
+            .iter()
+            .find(|p| p.id.as_str() == id)
+            .unwrap()
+            .mirror
+            .clone()
+    };
+    // 対は双方向に張る。
     let after = applied(
         &model,
         Command::SetParameterMirror {
@@ -404,12 +414,28 @@ fn set_parameter_mirror() {
             mirror: Some("EyeROpen".into()),
         },
     );
-    let left = after
-        .parameters
-        .iter()
-        .find(|p| p.id.as_str() == "EyeLOpen")
-        .unwrap();
-    assert_eq!(left.mirror, Some("EyeROpen".into()));
+    assert_eq!(mirror_of(&after, "EyeLOpen"), Some("EyeROpen".into()));
+    assert_eq!(mirror_of(&after, "EyeROpen"), Some("EyeLOpen".into()));
+    // 片方を自分自身と対にすると、前の相手の対は外れる。
+    let selfed = applied(
+        &after,
+        Command::SetParameterMirror {
+            id: "EyeROpen".into(),
+            mirror: Some("EyeROpen".into()),
+        },
+    );
+    assert_eq!(mirror_of(&selfed, "EyeROpen"), Some("EyeROpen".into()));
+    assert_eq!(mirror_of(&selfed, "EyeLOpen"), None);
+    // `None` で外すと、相手の対も外れる。
+    let cleared = applied(
+        &after,
+        Command::SetParameterMirror {
+            id: "EyeLOpen".into(),
+            mirror: None,
+        },
+    );
+    assert_eq!(mirror_of(&cleared, "EyeLOpen"), None);
+    assert_eq!(mirror_of(&cleared, "EyeROpen"), None);
     // 自分自身との対 (符号の反転) も許す。
     let after = applied(
         &model,
@@ -418,27 +444,16 @@ fn set_parameter_mirror() {
             mirror: Some("AngleX".into()),
         },
     );
-    let angle = after
-        .parameters
-        .iter()
-        .find(|p| p.id.as_str() == "AngleX")
-        .unwrap();
-    assert_eq!(angle.mirror, Some("AngleX".into()));
-    rejected_invalid(
-        &model,
-        Command::SetParameterMirror {
-            id: "EyeLOpen".into(),
-            mirror: Some("Nope".into()),
-        },
-        |e| {
-            matches!(
-                e,
-                ValidationError::UnknownReference {
-                    field: "mirror",
-                    ..
-                }
-            )
-        },
+    assert_eq!(mirror_of(&after, "AngleX"), Some("AngleX".into()));
+    assert_eq!(
+        rejected(
+            &model,
+            Command::SetParameterMirror {
+                id: "EyeLOpen".into(),
+                mirror: Some("Nope".into()),
+            },
+        ),
+        not_found("parameter", "Nope")
     );
 }
 
@@ -1567,6 +1582,7 @@ fn json_samples() -> Vec<Command> {
             id: None,
             name: "Warp".into(),
             children: vec![ChildRef::Mesh("Quad".into())],
+            parts: Vec::new(),
             rows: 2,
             cols: 2,
             parent: None,
@@ -1575,6 +1591,7 @@ fn json_samples() -> Vec<Command> {
             id: Some("Rot".into()),
             name: "Rot".into(),
             children: vec![ChildRef::Deformer("Arm".into())],
+            parts: Vec::new(),
             origin: Some(ugoe_core::Vec2::new(1.0, 2.0)),
             parent: Some("Body".into()),
         },

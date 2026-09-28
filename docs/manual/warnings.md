@@ -62,11 +62,12 @@
 
 | メッセージ (`failed:` の後) | 意味と対処 |
 | --- | --- |
-| `axis … has no one-to-one mirrored axis in the other grid` | ミラーの元と先で、軸 (パラメータ) が対応しません。パラメータの対 (`EyeLOpen` ↔ `EyeROpen`) を設定したか ([チュートリアルの 9.1](tutorial.md#91-パラメータの対を設定する-ファイルを直接書き換える))、先の要素にもキーを追加したかを確かめます |
+| `axis … has no one-to-one mirrored axis in the other grid` | ミラーの元と先で、軸 (パラメータ) が対応しません。パラメータの対 (`EyeLOpen` ↔ `EyeROpen`) を設定したか ([チュートリアルの 9.1](tutorial.md#91-パラメータの対を設定する))、先の要素にもキーを追加したかを確かめます |
 | `source axis … has no key … required by the mirror` | 先のキーに対応するキーが元にありません。自分自身と対にした `AngleX` なら、30 と -30 の両方のキーが要ります |
 | `… is not the mirror of …` | 元と先が対になっていません。「Mirror partner」の「Partner」で対にします |
 | `… cannot be mirrored from … (different kind or warp size)` | 種類が違うか、ワープの行数・列数が違います。同じ「Rows」「Cols」で作ったワープどうしをミラーします |
 | `target vertices [...] have no mirrored source vertex within …` | メッシュの頂点が左右で対応しません。「Tolerance」を大きくするか、頂点の位置をそろえます。ワープで包んでワープどうしをミラーすると、この問題は起きません |
+| `Nothing was mirrored: all … cells that … maps to are authored …` (エラーではなく「Mirror」の下に出る) | 書く先のセルがすべて `A` (手で作ったセル。基準のセルを含む) だったので、1 つも書きませんでした。上書きしてよければ、その下の「Overwrite authored cells and mirror」を押します (「Undo」で戻せます) |
 | `axis … has no neutral key (default … is not among its keys)` | 軸に既定値のキーがありません。既定値にスライダーを戻し (「Reset」)、「◆」でキーを追加します |
 | `base cell … must be authored (or derived by another method)` | 基準のセル (すべて既定値のセル) は推定に戻せません |
 | `… has no depth` | 深度からの回転に深度がありません。「Depth」で深度を設定します。`R` のセルが残っている要素の深度を外そうとしたときにも出ます |
@@ -78,11 +79,11 @@
 インスペクタの上に、次のような枠が出ることがあります。
 
 ```
-Could not re-mirror deformer Warp_3 from deformer Warp_2: .... Its mirrored cells keep their previous values.
+Could not re-mirror deformer WarpLayer12 from deformer WarpLayer13: .... Its mirrored cells keep their previous values.
 Run “Mirror” on the grid to retry, or fix the source.
 ```
 
-ミラー元 (この例では `Warp_2`) を編集した後、ミラーした要素を自動で作り直そうとして失敗しました。
+ミラー元 (この例では `WarpLayer13`、左目のワープ) を編集した後、ミラーした要素を自動で作り直そうとして失敗しました。
 編集は適用されていますが、ミラーしたセル (`M`) は前の形のままです。
 
 - よくある原因: ミラー元のメッシュの頂点を動かしすぎて、左右の頂点が対応しなくなった。左右の対を外した・付け替えた。

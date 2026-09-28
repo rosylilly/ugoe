@@ -170,7 +170,9 @@ export function removeSelected(): void {
 }
 
 export function retriangulate(): void {
-  run(() => doc.apply({ op: "retriangulate_mesh", id: meshId }));
+  run(async () => {
+    await doc.apply({ op: "retriangulate_mesh", id: meshId });
+  });
 }
 
 export function selectAll(): void {

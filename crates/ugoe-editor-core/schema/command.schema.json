@@ -140,7 +140,7 @@
       ]
     },
     {
-      "description": "左右で対になるパラメータを設定する (`None` で外す)。相手側は変更しない。\n自分自身を指定すると、値の符号を反転して対応させる (`docs/spec/keyform-inference.md#ミラー`)。",
+      "description": "左右で対になるパラメータを設定する (`None` で外す)。対は双方向に張り、`id` と `mirror` の\nどちらかと対になっていたパラメータの対は外す (`SetMirrorPair` と同じ)。\n自分自身を指定すると、値の符号を反転して対応させる (`docs/spec/keyform-inference.md#ミラー`)。",
       "type": "object",
       "properties": {
         "id": {
@@ -1089,7 +1089,7 @@
       ]
     },
     {
-      "description": "`children` を包むワープデフォーマ (`rows` × `cols` セル) を作り、子を見た目を保って付け替える。\n制御点は、子の基準の姿の点の外接矩形 (と余白) を親の座標系で等分した格子になる。\n`id` を省略すると `name` から作る。`parent` を省略すると子の親の最も近い共通の祖先。\n式と制限は `docs/editor.md#デフォーマの編集`。",
+      "description": "`children` を包むワープデフォーマ (`rows` × `cols` セル) を作り、子を見た目を保って付け替える。\n制御点は、子の基準の姿の点の外接矩形 (と余白) を親の座標系で等分した格子になる。\n`parts` のパーツ (と子孫のパーツ) のいちばん外側のメッシュ・デフォーマも子にする。\n`name` が空なら子の名前から作り (`顔のワープ`)、`id` を省略すると名前 (英数字を含まなければ\n子の ID: `WarpFace`) から作る。`parent` を省略すると子の親の最も近い共通の祖先。\n式と制限は `docs/editor.md#デフォーマの編集`。",
       "type": "object",
       "properties": {
         "children": {
@@ -1112,7 +1112,8 @@
           ]
         },
         "name": {
-          "type": "string"
+          "type": "string",
+          "default": ""
         },
         "op": {
           "type": "string",
@@ -1125,6 +1126,13 @@
             "null"
           ]
         },
+        "parts": {
+          "type": "array",
+          "items": {
+            "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+            "type": "string"
+          }
+        },
         "rows": {
           "type": "integer",
           "format": "uint16",
@@ -1134,14 +1142,12 @@
       },
       "required": [
         "op",
-        "name",
-        "children",
         "rows",
         "cols"
       ]
     },
     {
-      "description": "`children` を包む回転デフォーマ (角度 0・拡大率 1) を作り、子を見た目を保って付け替える。\n`origin` はキャンバス座標 (基準の姿) で、省略すると子の外接矩形の中心。\n`id`・`parent` の省略は `CreateWarpDeformer` と同じ。",
+      "description": "`children` を包む回転デフォーマ (角度 0・拡大率 1) を作り、子を見た目を保って付け替える。\n`origin` はキャンバス座標 (基準の姿) で、省略すると子の外接矩形の中心。\n`parts`・`name`・`id`・`parent` は `CreateWarpDeformer` と同じ。",
       "type": "object",
       "properties": {
         "children": {
@@ -1158,7 +1164,8 @@
           ]
         },
         "name": {
-          "type": "string"
+          "type": "string",
+          "default": ""
         },
         "op": {
           "type": "string",
@@ -1180,12 +1187,17 @@
             "string",
             "null"
           ]
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+            "type": "string"
+          }
         }
       },
       "required": [
-        "op",
-        "name",
-        "children"
+        "op"
       ]
     },
     {

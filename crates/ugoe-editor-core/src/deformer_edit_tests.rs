@@ -107,6 +107,7 @@ fn warp(children: Vec<ChildRef>, rows: u16, cols: u16) -> Command {
         id: Some("New".into()),
         name: "New".into(),
         children,
+        parts: Vec::new(),
         rows,
         cols,
         parent: None,
@@ -118,6 +119,7 @@ fn rotation(children: Vec<ChildRef>, origin: Option<Vec2>) -> Command {
         id: Some("New".into()),
         name: "New".into(),
         children,
+        parts: Vec::new(),
         origin,
         parent: None,
     }
@@ -274,6 +276,7 @@ fn create_warp_with_explicit_root_parent() {
         id: None,
         name: "Sleeve warp".into(),
         children: vec![mesh("Sleeve")],
+        parts: Vec::new(),
         rows: 1,
         cols: 1,
         parent: Some("Arm".into()),
@@ -304,6 +307,230 @@ fn create_warp_part_is_common_ancestor_part() {
 }
 
 // ---- CreateRotationDeformer ----
+
+/// `rotation_chain` に、`Root` の子のパーツ `Limb` (名前 `腕`) と、その子のパーツ `Fingers` を足す。
+/// `Arm`・`Cloth`・`Sleeve` を `Limb` に、`Hand`・`Palm` を `Fingers` に移す。
+fn chain_with_parts() -> Model {
+    let mut model = fixtures::rotation_chain();
+    let mut limb = model.parts[0].clone();
+    limb.id = "Limb".into();
+    limb.name = "腕".into();
+    limb.parent = Some("Root".into());
+    let mut fingers = limb.clone();
+    fingers.id = "Fingers".into();
+    fingers.name = "Fingers".into();
+    fingers.parent = Some("Limb".into());
+    model.parts.extend([limb, fingers]);
+    for d in &mut model.deformers {
+        d.part = if d.id.as_str() == "Hand" {
+            "Fingers"
+        } else {
+            "Limb"
+        }
+        .into();
+    }
+    for m in &mut model.meshes {
+        m.part = if m.id.as_str() == "Palm" {
+            "Fingers"
+        } else {
+            "Limb"
+        }
+        .into();
+    }
+    model
+}
+
+fn wrap_parts(parts: &[&str], name: &str) -> Command {
+    Command::CreateWarpDeformer {
+        id: None,
+        name: name.into(),
+        children: Vec::new(),
+        parts: parts.iter().map(|&p| p.into()).collect(),
+        rows: 2,
+        cols: 2,
+        parent: None,
+    }
+}
+
+#[test]
+fn create_warp_around_part_wraps_its_outermost_elements() {
+    let model = chain_with_parts();
+    let after = applied(&model, wrap_parts(&["Limb"], ""));
+    // 名前はパーツの名前 (日本語) から、ID はパーツの ID から作る。
+    let new = after.deformers.last().unwrap();
+    assert_eq!(new.id.as_str(), "WarpLimb");
+    assert_eq!(new.name, "腕のワープ");
+    assert_eq!(new.part.as_str(), "Limb");
+    // いちばん外側の `Arm` だけを包み、その下の `Hand`・`Cloth`・メッシュはそのまま。
+    assert_eq!(deformer(&after, "Arm").parent.as_ref(), Some(&new.id));
+    assert_eq!(
+        deformer(&after, "Hand").parent.as_ref().unwrap().as_str(),
+        "Arm"
+    );
+    assert_eq!(mesh_parent(&after, "Palm").as_deref(), Some("Hand"));
+    assert_same_look(
+        &model,
+        &after,
+        &[REST, &[("Angle", 30.0)], &[("Angle", -45.0), ("Flip", 1.0)]],
+    );
+}
+
+#[test]
+fn create_warp_around_sub_part_skips_elements_under_outside_deformers() {
+    // `Fingers` の `Hand` は `Arm` (パーツの外) の下にあるが、パーツの中ではいちばん外側。
+    let mut model = chain_with_parts();
+    // `Palm` を `Limb` に戻すと、`Fingers` の中は `Hand` だけになる。
+    model
+        .meshes
+        .iter_mut()
+        .find(|m| m.id.as_str() == "Palm")
+        .unwrap()
+        .part = "Limb".into();
+    let after = applied(
+        &model,
+        Command::CreateRotationDeformer {
+            id: None,
+            name: String::new(),
+            children: Vec::new(),
+            parts: vec!["Fingers".into()],
+            origin: None,
+            parent: None,
+        },
+    );
+    let new = after.deformers.last().unwrap();
+    assert_eq!(
+        (new.id.as_str(), new.name.as_str()),
+        ("RotationFingers", "Fingers rotation")
+    );
+    assert_eq!(new.parent.as_ref().unwrap().as_str(), "Arm");
+    assert_eq!(deformer(&after, "Hand").parent.as_ref(), Some(&new.id));
+    assert_eq!(mesh_parent(&after, "Palm").as_deref(), Some("Hand"));
+    assert_same_look(&model, &after, &[REST, &[("Angle", 30.0)]]);
+}
+
+#[test]
+fn create_warp_with_parts_and_children_deduplicates() {
+    let model = chain_with_parts();
+    // 子に `Arm` を明示し、パーツでも `Arm` が選ばれる。
+    let command = Command::CreateWarpDeformer {
+        id: Some("Both".into()),
+        name: "Both".into(),
+        children: vec![def("Arm")],
+        parts: vec!["Limb".into()],
+        rows: 2,
+        cols: 2,
+        parent: None,
+    };
+    let after = applied(&model, command);
+    assert_eq!(
+        deformer(&after, "Arm").parent.as_ref().unwrap().as_str(),
+        "Both"
+    );
+}
+
+#[test]
+fn create_names_deformers_from_the_first_child() {
+    let model = fixtures::single_quad();
+    // 名前が空なら子の名前 (ASCII) + 種類、ID は種類 + 子の ID。
+    let after = applied(
+        &model,
+        Command::CreateWarpDeformer {
+            id: None,
+            name: " ".into(),
+            children: vec![mesh("Quad")],
+            parts: Vec::new(),
+            rows: 1,
+            cols: 1,
+            parent: None,
+        },
+    );
+    let new = after.deformers.last().unwrap();
+    assert_eq!(
+        (new.id.as_str(), new.name.as_str()),
+        ("WarpQuad", "Quad warp")
+    );
+    // 英数字を含まない名前は名前に使い、ID は子から作る。
+    let mut japanese = model.clone();
+    japanese.meshes[0].name = "顔".into();
+    let after = applied(
+        &japanese,
+        Command::CreateRotationDeformer {
+            id: None,
+            name: "頭の回転".into(),
+            children: vec![mesh("Quad")],
+            parts: Vec::new(),
+            origin: None,
+            parent: None,
+        },
+    );
+    let new = after.deformers.last().unwrap();
+    assert_eq!(
+        (new.id.as_str(), new.name.as_str()),
+        ("RotationQuad", "頭の回転")
+    );
+    // 英数字を含む名前からは、これまでどおり名前から ID を作る。
+    let after = applied(&japanese, warp_named("Face warp"));
+    assert_eq!(after.deformers.last().unwrap().id.as_str(), "Face_warp");
+    // 空の名前で日本語の子なら `顔のワープ`。ID が重なれば番号を付ける。
+    let once = applied(&japanese, warp_named(""));
+    let new = once.deformers.last().unwrap();
+    assert_eq!(
+        (new.id.as_str(), new.name.as_str()),
+        ("WarpQuad", "顔のワープ")
+    );
+    // 作ったデフォーマを包むときは、種類の接頭辞を重ねない (`RotationQuad`)。
+    let wrapped = applied(
+        &once,
+        Command::CreateRotationDeformer {
+            id: None,
+            name: String::new(),
+            children: vec![def("WarpQuad")],
+            parts: Vec::new(),
+            origin: None,
+            parent: None,
+        },
+    );
+    let new = wrapped.deformers.last().unwrap();
+    assert_eq!(
+        (new.id.as_str(), new.name.as_str()),
+        ("RotationQuad", "顔のワープの回転")
+    );
+    let twice = applied(&once, warp_named(""));
+    // 2 回目の子は `Quad` (いまは `WarpQuad` の下) で、ID は `WarpQuad_2`。
+    assert_eq!(twice.deformers.last().unwrap().id.as_str(), "WarpQuad_2");
+}
+
+fn warp_named(name: &str) -> Command {
+    Command::CreateWarpDeformer {
+        id: None,
+        name: name.into(),
+        children: vec![mesh("Quad")],
+        parts: Vec::new(),
+        rows: 1,
+        cols: 1,
+        parent: None,
+    }
+}
+
+#[test]
+fn create_rejects_unknown_or_empty_parts() {
+    let model = chain_with_parts();
+    assert_eq!(
+        rejected(&model, wrap_parts(&["Nope"], "")),
+        EditError::NotFound {
+            kind: "part",
+            id: "Nope".into()
+        }
+    );
+    let mut empty = model.clone();
+    let mut part = empty.parts[1].clone();
+    part.id = "Empty".into();
+    empty.parts.push(part);
+    assert!(matches!(
+        rejected(&empty, wrap_parts(&["Empty"], "")),
+        EditError::DeformerEdit { reason } if reason.contains("no meshes or deformers")
+    ));
+}
 
 #[test]
 fn create_rotation_around_root_mesh_keeps_look_at_every_pose() {
@@ -534,6 +761,7 @@ fn create_rejects_invalid_requests() {
             id: None,
             name: "R".into(),
             children: vec![def("Arm")],
+            parts: Vec::new(),
             origin: None,
             parent: Some(parent.into()),
         };

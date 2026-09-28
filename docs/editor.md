@@ -46,7 +46,7 @@
 
 | 対象 | `op` |
 | --- | --- |
-| パラメータ | `add_parameter`、`remove_parameter`、`set_parameter_range`、`rename_parameter`、`set_parameter_group` (`null` で外す)、`set_parameter_mirror` (`null` で外す。相手側は変えない。自分自身と対にすると値の符号を反転して対応させる) |
+| パラメータ | `add_parameter`、`remove_parameter`、`set_parameter_range`、`rename_parameter`、`set_parameter_group` (`null` で外す)、`set_parameter_mirror` (`null` で外す。対は双方向に張り、どちらかと対になっていたパラメータの対は外す (`set_mirror_pair` と同じ)。自分自身と対にすると値の符号を反転して対応させる) |
 | パーツ | `add_part`、`remove_part`、`rename_part`、`set_part_parent`、`set_part_keyforms` |
 | デフォーマ | `add_deformer`、`remove_deformer`、`rename_deformer`、`set_deformer_parent`、`set_deformer_part`、`set_warp_keyforms` (`rows` / `cols` は変えない)、`set_rotation_keyforms`、`create_warp_deformer`・`create_rotation_deformer`・`reparent_preserving_look`・`move_rotation_origin`・`unwrap_deformer` ([デフォーマの編集](#デフォーマの編集)) |
 | メッシュ | `add_mesh` (`meshes` の末尾に追加)、`remove_mesh`、`rename_mesh`、`set_mesh_properties`、`set_mesh_parent`、`set_mesh_keyforms`、`set_mesh_keyform`、`reorder_mesh`、`regenerate_mesh` ([メッシュの再生成](#メッシュの再生成))、`move_mesh_vertices`・`add_mesh_vertex`・`remove_mesh_vertices`・`retriangulate_mesh` ([メッシュの編集](#メッシュの編集)) |
@@ -71,7 +71,7 @@
 | `op` | 内容 |
 | --- | --- |
 | `infer_keyforms` | `target` の格子の `derived` のセルを作り直す。`method` は `from_grid` (既定。格子の `inference` に従い、省略なら加算合成)・`additive`・`depth_rotation` (格子の `inference` が `depth_rotation` であること)。書き換えるのはその方法で作ったセルだけで、`overwrite_derived: true` なら別の方法 (ミラーなど) で作ったセルも書き換える |
-| `mirror_keyforms` | `source` を反転して `target` のセルを作る (由来は `mirror`)。先の `authored` 以外のセルをすべて書き換え、`source` を先の格子の `mirror_source` に記録する。`axis` (対称軸)・`tolerance` (頂点の許容距離) は省略できる (指定すれば記録する)。`overwrite_authored: true` で先の `authored` のセルも上書きする |
+| `mirror_keyforms` | `source` を反転して `target` のセルを作る (由来は `mirror`)。先の `authored` 以外のセルと、**未編集の `authored` のセル** (基準のセルと同じ値のまま。キーを追加しただけのセル。[keyform-inference.md#未編集のセル](spec/keyform-inference.md#未編集のセル)) を書き換え、`source` を先の格子の `mirror_source` に記録する。`axis` (対称軸)・`tolerance` (頂点の許容距離) は省略できる (指定すれば記録する)。`overwrite_authored: true` で先の `authored` のセルもすべて上書きする。書いたセルの数と残したセルの数を `ApplyReport::mirrored` で返す (下) |
 | `mark_keyform_authored` | `cells` (セルの指定の配列。形は `set_mesh_keyform` の `cell` と同じ) の由来を `authored` にする。値は変えない |
 | `mark_keyform_derived` | `cells` の由来を `derived` にし、格子の推定の設定で作り直す。基準のセルは `derived` にできない (推定のエラーで拒否) |
 | `set_keyform_inference` | `target` の格子の推定の設定 (`inference`、[`KeyformInference`](spec/keyform-inference.md#回転と投影)) を置き換える。省略 (`null`) なら加算合成。方法を記録していない `derived` のセルを新しい設定で作り直す (`depth_rotation` のセルも、設定が深度からの回転なら作り直す)。未知の方法は `UnsupportedInference`、`yaw` / `pitch` が格子の軸でなければ検証エラーで拒否する |
@@ -84,8 +84,11 @@
   - パラメータの範囲の変更など、セルを変えないコマンドでは作り直しません。必要なら `infer_keyforms` を実行します。
 - **ミラーのやり直しの失敗の警告:** 自動のミラーのやり直しに失敗した (ミラー元の頂点を許容距離を超えて動かした、対を外した、など) 格子は、コマンドを拒否せずミラーのセルを前の値のまま残し、`RederiveWarning { target, source, message }` (格子・ミラー元・`InferError` の文) を 1 組に 1 つ返します。
   親を変えたコマンド (付け替え・デフォーマで包む) で、その要素の左右の対がミラーし直せなくなった場合も、同じ警告を返します ([keyform-inference.md#自動の作り直し](spec/keyform-inference.md#自動の作り直し))。
-  `Document::apply_with_report` が `ApplyReport { warnings }` で返し、`Document::apply` は同じ適用をして警告を捨てます (CLI などの既存の呼び出し側はそのまま)。
+  `Document::apply_with_report` が `ApplyReport { warnings, mirrored }` で返し、`Document::apply` は同じ適用をして警告を捨てます (CLI などの既存の呼び出し側はそのまま)。
   Tauri の `apply_command` は `ApplyReport` を返し、エディタはインスペクタの上に閉じられる通知として出します ([画面での操作](#推定の画面での操作))。
+- **ミラーの結果:** 明示的に実行した `mirror_keyforms` ごとに、`ApplyReport::mirrored` に `MirrorReport { source, target, written, unedited, kept_authored }`
+  (書いたセルの数・そのうち未編集の `authored` だったセルの数・`overwrite_authored` なら書けたが `authored` なので残したセルの数) を積みます。
+  1 つも書かなかったときに、何もしなかったように見えないよう、エディタが理由と「上書きしてミラーする」ボタンを出すのに使います (T0627)。
 - **`derived` のセルの編集:** セルを書き換えるコマンドは、書き換えた `derived` のセルを `authored` にします。`set_*_keyforms` で格子を丸ごと置き換えるときは、軸が同じなら、値が変わったのに `derived` (方法を問わない) と指定されたセルを `authored` にします。
 - ミラーで作ったセル (`mirror`) は、ミラー元の格子が変わるとミラーし直され、先の格子を編集しても上書きされません。方法を記録していない版 (T0614 より前) のファイルでミラーしたセルは `derived` のままなので、以前と同じく格子の方法で作り直されます (`mirror_keyforms` を再度実行すると `mirror` になる)。
 
@@ -96,7 +99,7 @@
 | 場所 | 操作 |
 | --- | --- |
 | キーの格子 (`inspector/keyforms/KeyformInspector.svelte`) | セルの記号と色で由来を示す: `A` authored (実線) / `+` additive / `R` depth_rotation / `M` mirror / `D` 方法の記録のない derived (推定のセルは方法の色の破線と薄い地)。凡例は `inspector/inference/OriginLegend.svelte`。ツールチップに、`derived` なら作り直す方法、`mirror` ならミラー元を出す。セルを押すとそのセルへ移動して選び、Shift / Ctrl / Cmd で押すと選択に加える (外す) |
-| 推定 (`inspector/inference/InferenceSection.svelte`) | 格子の推定の設定 (加算合成 / 深度からの回転の `angle_scale`・`pivot`・`pivot_depth`・`yaw`・`pitch`。回転はメッシュとワープだけ。回転の中心の初期値は基準のセルの点の外接矩形の中心) を編集して「Apply settings」(`set_keyform_inference`)。「Infer」「Infer (overwrite derived)」(`infer_keyforms` の `from_grid`)。選んだセル (なければ今のセル) の「Mark authored」「Mark derived」。メッシュ・デフォーマでは「Mirror from…」(元は対の相手と自分自身。軸・許容距離・authored の上書きは任意) と、記録されたミラー元 (`mirror_source`) の表示、「Mirror partner」で対と対称軸の設定 (`set_mirror_pair`) |
+| 推定 (`inspector/inference/InferenceSection.svelte`) | 格子の推定の設定 (加算合成 / 深度からの回転の `angle_scale`・`pivot`・`pivot_depth`・`yaw`・`pitch`。回転はメッシュとワープだけ。回転の中心の初期値は基準のセルの点の外接矩形の中心) を編集して「Apply settings」(`set_keyform_inference`)。「Infer」「Infer (overwrite derived)」(`infer_keyforms` の `from_grid`)。選んだセル (なければ今のセル) の「Mark authored」「Mark derived」。メッシュ・デフォーマでは「Mirror from…」(元は対の相手と自分自身。軸・許容距離・authored の上書きは任意) と、記録されたミラー元 (`mirror_source`) の表示、「Mirror partner」で対と対称軸の設定 (`set_mirror_pair`)。「Mirror」の後は `MirrorReport` から結果 (`Mirrored 1 cell from 左目のワープ (Warp_2).` など) を出し、1 つも書かなければ理由 (残した `authored` のセルの数) と「Overwrite authored cells and mirror」を出す。要素の選択欄は表示名と ID (`左目のワープ (WarpLayer8)`) を出す |
 | 通知 (`inspector/inference/RederiveNotice.svelte`) | 適用したコマンドが返した `RederiveWarning` を、インスペクタの上に「Dismiss」で閉じるまで出す (同じ格子とミラー元の組は新しいもので置き換える) |
 
 - セルの選択 (`inspector/inference/cellSelection.svelte.ts`) は表示の状態で、Undo の対象にしません。別の格子のセルを選ぶと前の選択は消えます。
@@ -262,7 +265,7 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 
 | 場所 | 操作 |
 | --- | --- |
-| パラメータ一覧 (`ParametersPanel.svelte`) | 「+」でパラメータを作る (ID・名前・最小・既定・最大)。名前を押すと名前・値域・既定値の編集と削除 (`rename_parameter` と `set_parameter_range` を `batch` で 1 つの Undo に)。スライダーの下に、主な選択の要素のキーを ◆ で示し (押すとそのキーへ)、「Snap to keys」で要素のすべての軸を最も近いキーへ動かす。行の値の欄に数を入力して Enter (またはフォーカスを外す) でスライダーをその値にする (数でない・値域の外なら理由を出して拒否)。行の ◆ ボタンで、今の値にキーを追加 (今の値がキーならそのキーを削除。キーの上とみなす許容差の中に別のキーがあれば拒否)。スライダーは表示の状態なので IPC を通らない |
+| パラメータ一覧 (`ParametersPanel.svelte`) | 「+」でパラメータを作る (ID・名前・最小・既定・最大)。名前を押すと名前・値域・既定値の編集と削除 (`rename_parameter` と `set_parameter_range` を `batch` で 1 つの Undo に)、左右の対の「Mirror」(なし / 自分自身 / 相手。選ぶとすぐ `set_parameter_mirror`。標準の命名から対を提案する。`panels/parameters/`)。スライダーの下に、主な選択の要素のキーを ◆ で示し (押すとそのキーへ)、「Snap to keys」で要素のすべての軸を最も近いキーへ動かす。行の値の欄に数を入力して Enter (またはフォーカスを外す) でスライダーをその値にする (数でない・値域の外なら理由を出して拒否)。行の ◆ ボタンで、今の値にキーを追加 (今の値がキーならそのキーを削除。キーの上とみなす許容差の中に別のキーがあれば拒否)。スライダーは表示の状態なので IPC を通らない |
 | インスペクタ (`inspector/keyforms/KeyformInspector.svelte`) | 主な選択の要素の軸とキー (× で削除、押すとそのキーへ移動、「+ 値」で今の値にキーを追加)、軸のないパラメータへの軸の追加、セルの格子 (1 軸は 1 行、2 軸は表、3 軸目以降は今の値に最も近いキーの断面)。メッシュでは描画順を表示し、「Set for all cells」で `set_mesh_draw_order` を送る。セルは記号と色で由来を示し ([推定の画面での操作](#推定の画面での操作))、今の値がすべての軸でキーの上にあればそのセルを枠で示す。キーの上になければ「Move to nearest key」を出す |
 | ビューポート (`viewport/tools/form/FormTool.svelte`) | 「Form edit」で切り替える。主な選択の要素のうち、メッシュは頂点、ワープは制御点、回転デフォーマは原点をハンドルで示す (主な選択がデフォーマのときは、代わりに [デフォーマのギズモ](#デフォーマの編集) を出す)。点のクリックで選び (Shift で追加・解除)、要素の内側 (メッシュの三角形・ワープの格子) の何もない所からのドラッグで矩形選択 (Shift で追加)、クリックで選択を解く。要素の外側のクリックは下の選択レイヤー (メッシュの選択) に通す。「All」/ Ctrl + A ですべて、Esc で解く。選んだ点のドラッグで選んだ点をまとめて同じだけ動かす (選んでいない点を押すと、その点だけを選んで動かす)。ドラッグ中はオーバーレイだけでプレビューし、離したときに `canvas_to_local` で親の座標系に直してから `set_keyform_cell` を 1 つ送る (Undo の 1 単位)。選択は要素ごとにフォーム編集の中だけで持つ (選択の補助は `viewport/tools/form/form.ts`) |
 
@@ -277,13 +280,15 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 
 | `op` | 内容 |
 | --- | --- |
-| `create_warp_deformer { id?, name, children, rows, cols, parent? }` | `children` (`{"kind": "mesh" \| "deformer", "id"}` の配列) を包むワープ (`rows` × `cols` セル、1〜64) を作り、子を付け替える |
-| `create_rotation_deformer { id?, name, children, origin?, parent? }` | `children` を包む回転デフォーマ (角度 0・拡大率 1) を作り、子を付け替える。`origin` はキャンバス座標で、省略すると子の外接矩形の中心 |
+| `create_warp_deformer { id?, name, children?, parts?, rows, cols, parent? }` | `children` (`{"kind": "mesh" \| "deformer", "id"}` の配列) と `parts` のパーツの要素 (下) を包むワープ (`rows` × `cols` セル、1〜64) を作り、子を付け替える |
+| `create_rotation_deformer { id?, name, children?, parts?, origin?, parent? }` | `children` を包む回転デフォーマ (角度 0・拡大率 1) を作り、子を付け替える。`origin` はキャンバス座標で、省略すると子の外接矩形の中心 |
 | `reparent_preserving_look { element, new_parent }` | メッシュかデフォーマ (`element`) の親デフォーマを `new_parent` (`null` で最上位) にし、キーフォームを新しい親の座標系へ写し直す |
 | `move_rotation_origin { id, delta }` | 回転デフォーマ `id` の格子の **すべてのセル** の原点に `delta` (親の座標系) を足し、直接の子を基準の姿で見た目が変わらないように写し直す (下の「回転の中心の移動」) |
 | `unwrap_deformer { id }` | デフォーマ `id` を外す: 直接の子を `reparent_preserving_look` と同じ規則でデフォーマの親へ付け替え、デフォーマを `remove_deformer` と同じ規則で削除する (ミラーの対も外す)。1 つの Undo の単位 |
 
-- **作るデフォーマ:** `id` を省略すると `name` から作ります (`ids::new_deformer_id`)。`parent` を省略すると、子の親の最も近い共通の祖先 (共通の祖先がなければ最上位)。パーツは子のパーツの最も近い共通の祖先 (なければ最初の子のパーツ)。格子は定数 (軸なし) です。
+- **パーツを包む:** `parts` のパーツ (と子孫のパーツ) に属するメッシュ・デフォーマのうち、同じ集まりのデフォーマ (と `children` のデフォーマ) の下にない、いちばん外側のものを子に加えます (`children` と重なるものは 1 つにする)。パーツの中のデフォーマの下にある要素はそのデフォーマごと移るので、階層は保たれます。パーツの外のデフォーマの下にある要素も、パーツの中でいちばん外側なら子になります (新しいデフォーマは、子の親の最も近い共通の祖先の下にできる)。包むものがなければ `DeformerEdit`、存在しないパーツは `NotFound` で拒否します。
+- **名前と ID:** `name` が空なら、最初のパーツ (なければ最初の子) の名前から作ります。名前に ASCII 以外の文字 (日本語のレイヤー名など) があれば `顔のワープ` / `顔の回転`、なければ `Face warp` / `Face rotation` です。`id` を省略すると、名前に英数字があれば名前から (`Face_warp`)、なければ種類とその要素の ID から (`WarpLayer8`・`RotationHead`。要素がこの規則で作ったデフォーマなら種類の接頭辞を外して `RotationLayer8`) 作り、重なれば `_2`、`_3`… を付けます (`ids::new_deformer_id`)。
+- **作るデフォーマ:** `parent` を省略すると、子の親の最も近い共通の祖先 (共通の祖先がなければ最上位)。パーツは子のパーツの最も近い共通の祖先 (なければ最初の子のパーツ)。格子は定数 (軸なし) です。
 - **ワープの格子:** 子とその子孫の基準の姿の点 (メッシュの頂点・ワープの制御点・回転デフォーマの原点) を親の座標系へ写し (`F_parent⁻¹`)、その外接矩形に長い辺の 5% の余白を付け (点が 1 つなら 1px、親がワープなら UV で 0.01)、`rows` × `cols` に等分した点を制御点にします。一方の辺だけ 0 の矩形 (一列に並んだ点) は正方形に近づけます。
 - **子の写し直し:** 子の古い親の変換を `F_old`、新しい親を `F_new` として、各キーフォームの点 `p` (メッシュの頂点・ワープの制御点・回転デフォーマの原点) を `p' = F_new⁻¹(F_old(p))` に置き換えます。
   - `F⁻¹` は、親なしなら恒等、回転デフォーマ (アフィン) なら逆行列、ワープならニュートン法 (初期値は四隅のアフィン近似の逆、収束しなければ各セルの中心。残差 1e-3px 以下で収束。歩幅は残差が減るまで半分にする) で求めます。潰れた格子など、逆に解けなければ `EditError::DeformerEdit` で拒否します。
@@ -312,7 +317,7 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 
 | 場所 | 操作 |
 | --- | --- |
-| インスペクタ (`inspector/DeformerProperties.svelte`) | 選択中のメッシュ・デフォーマ (複数可) を「Wrap in deformer」で包む。行数・列数を指定して「Warp」、または「Rotation」(原点は選択の中心)。作ったデフォーマを選択する。デフォーマを選ぶと種類・格子・キーフォームの数・親を示し、「Unwrap」で `unwrap_deformer` を送って元の子を選択する |
+| インスペクタ (`inspector/DeformerProperties.svelte`) | 選択中のメッシュ・デフォーマ・パーツ (複数可。パーツは `parts` で、その中のいちばん外側の要素) を「Wrap in deformer」で包む。「Name」(空なら上の規則で自動) と行数・列数を指定して「Warp」、または「Rotation」(原点は選択の中心)。作ったデフォーマを選択する。デフォーマを選ぶと種類・格子・キーフォームの数・親 (表示名と ID) を示し、「Unwrap」で `unwrap_deformer` を送って元の子を選択する |
 | ビューポート (`viewport/tools/deformer/DeformerGizmo.svelte`) | 主な選択がデフォーマのとき、フォーム編集の代わりに出す。ワープは格子と制御点を示し、クリックで選択 (Shift で追加・解除)、格子の内側からのドラッグで矩形選択 (Shift で追加)、「All」/ Ctrl + A ですべて、選んだ点のドラッグでまとめて動かす。回転デフォーマは原点 (円)・回転の取っ手 (局所座標の上の向き)・拡大率の取っ手 (局所座標の右の向きの四角) を示し、原点の移動・回転 (Shift で 15 度刻み)・拡大率の変更 (原点からの距離の比) を行う。原点の移動は今のセルだけで、「Origin: all cells」か Shift + ドラッグなら [すべてのセル](#回転の中心の移動) |
 | ツリー | デフォーマ・メッシュを別のデフォーマへドラッグすると `reparent_preserving_look` |
 
@@ -423,8 +428,11 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 | --- | --- |
 | 左 | パーツツリー、デフォーマツリー (ドラッグで親を付け替え) |
 | 中央 | ビューポート (メッシュ編集、デフォーマのギズモ、キーフォームの編集) |
-| 右 | パラメータ一覧 (スライダー、キーの追加と削除)、インスペクタ |
+| 右 | インスペクタ (上) とパラメータ一覧 (下。スライダー、キーの追加と削除)。別々にスクロールし、間の区切り (`role=separator`) のドラッグか ↑ / ↓ / Home / End で高さの配分 (15〜85%) を変える。配分は表示の状態で、`localStorage` に覚える (`src/lib/layout.ts`、T0627) |
 | 下 | タイムライン (M3: モーションの編集)、AI の提案パネル (M5) |
+
+- **Undo / Redo のショートカット:** Ctrl + Z / Ctrl + Shift + Z / Ctrl + Y (macOS は Cmd + Z / Cmd + Shift + Z) を `App.svelte` がウィンドウで受けます。入力欄・選択欄・編集可能な要素の中では、その要素自身の取り消しに任せて何もしません。判定は `src/lib/shortcuts.ts` (Vitest)。
+- **要素の表記:** 要素を選ぶ選択欄 (ミラーの相手・ミラー元・マスク・テクスチャ) と見出し (インスペクタの先頭・デフォーマの親) は、表示名と ID を `顔 (Layer8)` の形で出します (名前が ID と同じなら ID だけ。テクスチャは使っているメッシュの名前を添える)。`src/lib/labels.ts` (Vitest)。
 
 ### ツリー (左)
 

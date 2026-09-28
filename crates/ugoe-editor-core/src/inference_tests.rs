@@ -7,7 +7,10 @@ use ugoe_model::{KeyformGrid, KeyformInference, KeyformOrigin, Mesh, Model, fixt
 use ugoe_rigging::{InferError, InferScope, MirrorOptions};
 
 use crate::tests::{applied, binding, cell, rejected};
-use crate::{CellError, Command, Document, EditError, InferMethod, KeyformTarget, RederiveWarning};
+use crate::{
+    CellError, Command, Document, EditError, InferMethod, KeyformTarget, MirrorReport,
+    RederiveWarning,
+};
 
 use KeyformOrigin::{Additive, Authored, DepthRotation, Derived, Mirror};
 
@@ -320,6 +323,162 @@ fn mirror_keyforms_passes_options() {
     );
     assert_eq!(after, expected);
     assert_eq!(mesh(&after, "EyeR").keyforms.origins, vec![Mirror; 9]);
+}
+
+/// [`mirror_model`] の `EyeR` のセルをすべて `authored` にしたモデル (キーを追加しただけの格子)。
+/// `edited` のセルだけは基準から動かしてある。
+fn authored_target_model(edited: &[(f32, f32)]) -> Model {
+    let mut model = mirror_model();
+    let eye = mesh_mut(&mut model, "EyeR");
+    eye.keyforms.origins = Vec::new();
+    let base = eye.keyforms.keyforms[4].clone();
+    for &(x, y) in edited {
+        eye.keyforms.keyforms[index(x, y)] = shifted(&base, 0.1, 0.0);
+    }
+    model
+}
+
+fn mirror_eyes(overwrite_authored: bool) -> Command {
+    Command::MirrorKeyforms {
+        source: target("EyeL"),
+        target: target("EyeR"),
+        axis: None,
+        tolerance: None,
+        overwrite_authored,
+    }
+}
+
+/// `command` を適用し、ミラーの結果を返す。
+fn mirror_report(model: &Model, command: Command) -> (Model, Vec<MirrorReport>) {
+    let mut doc = Document::new(model.clone());
+    let report = doc.apply_with_report(command).unwrap();
+    (doc.model().clone(), report.mirrored)
+}
+
+#[test]
+fn mirror_overwrites_unedited_authored_cells() {
+    let model = authored_target_model(&[]);
+    let (after, reports) = mirror_report(&model, mirror_eyes(false));
+    let right = &mesh(&after, "EyeR").keyforms;
+    // 基準のセルは `authored` のまま、キーの追加で埋めただけのセルはミラーする。
+    assert_eq!(right.origin(4), Authored);
+    for i in (0..9).filter(|&i| i != 4) {
+        assert_eq!(right.origin(i), Mirror, "cell {i}");
+    }
+    assert_shift(
+        &right.keyforms[index(-30.0, 0.0)],
+        &right.keyforms[4],
+        0.05,
+        0.0,
+    );
+    assert_eq!(
+        reports,
+        vec![MirrorReport {
+            source: target("EyeL"),
+            target: target("EyeR"),
+            written: 8,
+            unedited: 8,
+            kept_authored: 1,
+        }]
+    );
+}
+
+#[test]
+fn mirror_keeps_edited_authored_cells_and_reports_them() {
+    let model = authored_target_model(&[(-30.0, 0.0)]);
+    let (after, reports) = mirror_report(&model, mirror_eyes(false));
+    let right = &mesh(&after, "EyeR").keyforms;
+    assert_eq!(right.origin(index(-30.0, 0.0)), Authored);
+    assert_eq!(
+        right.keyforms[index(-30.0, 0.0)],
+        mesh(&model, "EyeR").keyforms.keyforms[index(-30.0, 0.0)]
+    );
+    assert_eq!(right.origin(index(30.0, 0.0)), Mirror);
+    assert_eq!(
+        (
+            reports[0].written,
+            reports[0].unedited,
+            reports[0].kept_authored
+        ),
+        (7, 7, 2)
+    );
+    // `overwrite_authored` なら、編集したセルも基準のセルも上書きする。
+    let (after, reports) = mirror_report(&model, mirror_eyes(true));
+    assert_eq!(mesh(&after, "EyeR").keyforms.origins, vec![Mirror; 9]);
+    assert_eq!(
+        (
+            reports[0].written,
+            reports[0].unedited,
+            reports[0].kept_authored
+        ),
+        (9, 0, 0)
+    );
+}
+
+#[test]
+fn mirror_that_writes_nothing_reports_the_kept_cells() {
+    let edited: Vec<(f32, f32)> = KEYS
+        .iter()
+        .flat_map(|&x| KEYS.iter().map(move |&y| (x, y)))
+        .filter(|&(x, y)| (x, y) != (0.0, 0.0))
+        .collect();
+    let model = authored_target_model(&edited);
+    let (after, reports) = mirror_report(&model, mirror_eyes(false));
+    // 何も書かなければ、由来もミラー元の記録も変えない。
+    assert_eq!(after, model);
+    assert_eq!(
+        (
+            reports[0].written,
+            reports[0].unedited,
+            reports[0].kept_authored
+        ),
+        (0, 0, 9)
+    );
+}
+
+#[test]
+fn self_mirror_fills_unedited_cells_from_edited_ones() {
+    // ワープ `Face` を AngleX だけの格子 (キー -30 0 30、すべて `authored`) にし、30 のセルだけを
+    // 編集する。ワープの制御点は並びで対応するので、左右対称な 1 つの要素としてミラーできる。
+    let mut model = fixtures::keyform_inference();
+    model
+        .parameters
+        .iter_mut()
+        .find(|p| p.id.as_str() == "AngleX")
+        .unwrap()
+        .mirror = Some("AngleX".into());
+    let ugoe_model::DeformerKind::Warp(warp) = &mut model.deformers[0].kind else {
+        panic!("Face is a warp deformer");
+    };
+    let base = warp.keyforms.keyforms[0].clone();
+    let mut turned = base.clone();
+    for p in &mut turned.points {
+        p.x += 0.02;
+    }
+    warp.keyforms = KeyformGrid::new(
+        vec![binding("AngleX", &KEYS)],
+        vec![base.clone(), base, turned],
+    );
+    let (after, reports) = mirror_report(
+        &model,
+        Command::MirrorKeyforms {
+            source: face(),
+            target: face(),
+            axis: None,
+            tolerance: None,
+            overwrite_authored: false,
+        },
+    );
+    assert_eq!(face_grid(&after).origins, vec![Mirror, Authored, Authored]);
+    // 編集した 30 のセルは、`overwrite_authored` なら -30 の反転で上書きされる (残したセル)。
+    assert_eq!(
+        (
+            reports[0].written,
+            reports[0].unedited,
+            reports[0].kept_authored
+        ),
+        (1, 1, 1)
+    );
 }
 
 #[test]
@@ -1382,6 +1541,7 @@ fn wrapping_one_side_in_a_new_warp_keeps_remirroring() {
         id: Some("New".into()),
         name: "New".into(),
         children: vec![crate::ChildRef::Mesh("EyeR".into())],
+        parts: Vec::new(),
         rows: 2,
         cols: 2,
         parent: None,

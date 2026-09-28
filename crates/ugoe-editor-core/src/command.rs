@@ -68,7 +68,8 @@ pub enum Command {
         id: ParamId,
         group: Option<String>,
     },
-    /// 左右で対になるパラメータを設定する (`None` で外す)。相手側は変更しない。
+    /// 左右で対になるパラメータを設定する (`None` で外す)。対は双方向に張り、`id` と `mirror` の
+    /// どちらかと対になっていたパラメータの対は外す (`SetMirrorPair` と同じ)。
     /// 自分自身を指定すると、値の符号を反転して対応させる (`docs/spec/keyform-inference.md#ミラー`)。
     SetParameterMirror {
         id: ParamId,
@@ -304,13 +305,19 @@ pub enum Command {
     },
     /// `children` を包むワープデフォーマ (`rows` × `cols` セル) を作り、子を見た目を保って付け替える。
     /// 制御点は、子の基準の姿の点の外接矩形 (と余白) を親の座標系で等分した格子になる。
-    /// `id` を省略すると `name` から作る。`parent` を省略すると子の親の最も近い共通の祖先。
+    /// `parts` のパーツ (と子孫のパーツ) のいちばん外側のメッシュ・デフォーマも子にする。
+    /// `name` が空なら子の名前から作り (`顔のワープ`)、`id` を省略すると名前 (英数字を含まなければ
+    /// 子の ID: `WarpFace`) から作る。`parent` を省略すると子の親の最も近い共通の祖先。
     /// 式と制限は `docs/editor.md#デフォーマの編集`。
     CreateWarpDeformer {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         id: Option<DeformerId>,
+        #[serde(default)]
         name: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         children: Vec<ChildRef>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        parts: Vec<PartId>,
         rows: u16,
         cols: u16,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -318,12 +325,16 @@ pub enum Command {
     },
     /// `children` を包む回転デフォーマ (角度 0・拡大率 1) を作り、子を見た目を保って付け替える。
     /// `origin` はキャンバス座標 (基準の姿) で、省略すると子の外接矩形の中心。
-    /// `id`・`parent` の省略は `CreateWarpDeformer` と同じ。
+    /// `parts`・`name`・`id`・`parent` は `CreateWarpDeformer` と同じ。
     CreateRotationDeformer {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         id: Option<DeformerId>,
+        #[serde(default)]
         name: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         children: Vec<ChildRef>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        parts: Vec<PartId>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(as = "Option<ugoe_core::codegen::Vec2Repr>")]
         #[schemars(with = "Option<ugoe_core::codegen::Vec2Repr>")]

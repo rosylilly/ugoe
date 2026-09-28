@@ -5,12 +5,13 @@
 -->
 <script lang="ts">
 import type { EditorDocument } from "../../../document.svelte";
-import type { Command } from "../../../ipc";
+import type { Command, KeyformTarget } from "../../../ipc";
 import type { Selection } from "../../../selection.svelte";
 import type { ViewportController } from "../../../viewport/controller.svelte";
 import { currentCell, editablePoints, elementGrid, parseModel } from "../keyforms/keyforms";
 import { cellSelection } from "./cellSelection.svelte";
 import {
+  describeMirrorReport,
   describeMirrorSource,
   formError,
   type InferenceForm,
@@ -26,6 +27,7 @@ import {
   sameInference,
   setInferenceCommand,
   setMirrorPairCommand,
+  targetName,
 } from "./inference";
 
 interface Props {
@@ -69,10 +71,13 @@ const chosen = $derived(choices[mirrorFrom]);
 let mirrorAxis = $state<number | null>(null);
 let mirrorTolerance = $state<number | null>(null);
 let overwriteAuthored = $state(false);
+/** 直前の「Mirror」の結果 (書いたセルの数、何も書かなければその理由)。 */
+let mirrorResult = $state<{ text: string; overwrite: boolean } | null>(null);
 $effect(() => {
-  // 要素が変わったら先頭 (対の相手) を選び直す。
+  // 要素が変わったら先頭 (対の相手) を選び直し、前の結果を消す。
   void element?.target.id;
   mirrorFrom = 0;
+  mirrorResult = null;
 });
 
 // 左右の対
@@ -103,6 +108,24 @@ function nameOf(id: string): string {
 
 async function send(command: Command) {
   await doc.apply(command);
+}
+
+function label(target: KeyformTarget): string {
+  return model ? targetName(model, target) : target.id;
+}
+
+/** 選んだ元からミラーし、結果を出す。`overwrite` なら authored のセルも上書きする。 */
+async function mirror(overwrite: boolean) {
+  if (!chosen || !element) return;
+  const report = await doc.apply(
+    mirrorCommand(chosen.source, element.target, {
+      axis: finiteOrNull(mirrorAxis),
+      tolerance: finiteOrNull(mirrorTolerance),
+      overwriteAuthored: overwrite,
+    }),
+  );
+  const result = report?.mirrored.at(-1);
+  mirrorResult = result ? describeMirrorReport(result, label) : null;
 }
 
 function finiteOrNull(value: number | null): number | null {
@@ -193,7 +216,11 @@ function finiteOrNull(value: number | null): number | null {
     {#if choices.length > 0}
       <h4>Mirror</h4>
       {#if grid?.mirror_source}
-        <p class="source">{describeMirrorSource(grid.mirror_source, element.target.id)}</p>
+        <p class="source">
+          {describeMirrorSource(grid.mirror_source, element.target.id, (id) =>
+            label({ ...element.target, id } as KeyformTarget),
+          )}
+        </p>
       {/if}
       <div class="settings">
         <label>
@@ -211,18 +238,21 @@ function finiteOrNull(value: number | null): number | null {
         <span class="row">
           <button
             disabled={!chosen}
-            title="Flip the source's keyforms into this grid's derived cells"
-            onclick={() =>
-              chosen &&
-              send(
-                mirrorCommand(chosen.source, element.target, {
-                  axis: finiteOrNull(mirrorAxis),
-                  tolerance: finiteOrNull(mirrorTolerance),
-                  overwriteAuthored,
-                }),
-              )}>Mirror</button
+            title="Flip the source's keyforms into this grid's derived cells and the cells still left as they were when their key was added"
+            onclick={() => mirror(overwriteAuthored)}>Mirror</button
           >
         </span>
+        {#if mirrorResult}
+          <p class="result" class:empty={mirrorResult.overwrite} role="status">{mirrorResult.text}</p>
+          {#if mirrorResult.overwrite}
+            <span class="row">
+              <button
+                title="Mirror again and replace the authored cells too (Undo restores them)"
+                onclick={() => mirror(true)}>Overwrite authored cells and mirror</button
+              >
+            </span>
+          {/if}
+        {/if}
       </div>
 
       <h4>Mirror partner</h4>
@@ -231,7 +261,7 @@ function finiteOrNull(value: number | null): number | null {
           Partner
           <select bind:value={partnerInput}>
             <option value="">(none, symmetric)</option>
-            {#each partners as id (id)}<option value={id}>{id}</option>{/each}
+            {#each partners as p (p.id)}<option value={p.id}>{p.label}</option>{/each}
           </select>
         </label>
         <label>
@@ -249,7 +279,11 @@ function finiteOrNull(value: number | null): number | null {
         </span>
       </div>
     {:else if grid?.mirror_source}
-      <p class="source">{describeMirrorSource(grid.mirror_source, element.target.id)}</p>
+      <p class="source">
+        {describeMirrorSource(grid.mirror_source, element.target.id, (id) =>
+          label({ ...element.target, id } as KeyformTarget),
+        )}
+      </p>
     {/if}
   </section>
 {/if}
@@ -279,7 +313,7 @@ p {
 
 .settings label {
   display: grid;
-  grid-template-columns: 7em 1fr;
+  grid-template-columns: 7em minmax(0, 1fr);
   align-items: center;
   gap: 4px;
 }
@@ -288,7 +322,8 @@ p {
   display: flex;
 }
 
-.settings input[type="number"] {
+.settings input[type="number"],
+.settings select {
   width: 100%;
   min-width: 0;
 }
@@ -304,5 +339,15 @@ p {
 .source {
   font-size: 12px;
   color: #2563eb;
+  overflow-wrap: anywhere;
+}
+
+.result {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.result.empty {
+  color: #d97706;
 }
 </style>

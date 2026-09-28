@@ -16,7 +16,7 @@ use ugoe_runtime::{CompiledModel, ModelInstance, WorldTransform};
 
 use crate::EditError;
 use crate::command::{ChildRef, KeyformTarget};
-use crate::ids::new_deformer_id;
+use crate::ids::{new_deformer_id, sanitize_id};
 
 /// ワープの行数・列数の上限 (制御点の数が大きくなりすぎないように)。
 pub const MAX_WARP_DIVISIONS: u16 = 64;
@@ -616,19 +616,176 @@ pub(crate) enum NewKind {
     },
 }
 
+/// パーツを包むときの子: `parts` (と子孫のパーツ) に属するメッシュ・デフォーマのうち、同じ集まりの
+/// デフォーマと `given` のデフォーマの下にないもの (いちばん外側の要素)。`given` にあるものは除く。
+/// 並びはモデルの順 (デフォーマ、メッシュの順)。パーツがなければ [`EditError::NotFound`]。
+pub(crate) fn part_children(
+    model: &Model,
+    parts: &[PartId],
+    given: &[ChildRef],
+) -> Result<Vec<ChildRef>, EditError> {
+    if parts.is_empty() {
+        return Ok(Vec::new());
+    }
+    for part in parts {
+        if !model.parts.iter().any(|p| &p.id == part) {
+            return Err(not_found("part", part));
+        }
+    }
+    // パーツ `part` が `parts` のどれか自身かその子孫か。
+    let in_parts = |part: &PartId| {
+        let mut current = Some(part.clone());
+        for _ in 0..=model.parts.len() {
+            let Some(id) = current else { break };
+            if parts.contains(&id) {
+                return true;
+            }
+            current = model
+                .parts
+                .iter()
+                .find(|p| p.id == id)
+                .and_then(|p| p.parent.clone());
+        }
+        false
+    };
+    let mut inside: Vec<&DeformerId> = model
+        .deformers
+        .iter()
+        .filter(|d| in_parts(&d.part))
+        .map(|d| &d.id)
+        .collect();
+    inside.extend(given.iter().filter_map(|c| match c {
+        ChildRef::Deformer(id) => Some(id),
+        ChildRef::Mesh(_) => None,
+    }));
+    // 親の列 (親自身を含む) に、集まりのデフォーマがあるか。
+    let under = |parent: Option<&DeformerId>| {
+        deformer_chain(model, parent)
+            .iter()
+            .flatten()
+            .any(|d| inside.contains(&d))
+    };
+    let deformers = model
+        .deformers
+        .iter()
+        .filter(|d| in_parts(&d.part) && !under(d.parent.as_ref()))
+        .map(|d| ChildRef::Deformer(d.id.clone()));
+    let meshes = model
+        .meshes
+        .iter()
+        .filter(|m| in_parts(&m.part) && !under(m.parent.as_ref()))
+        .map(|m| ChildRef::Mesh(m.id.clone()));
+    Ok(deformers
+        .chain(meshes)
+        .filter(|c| !given.contains(c))
+        .collect())
+}
+
+/// 名前を省略して作るデフォーマの名前と、ID の元。
+///
+/// 元にする要素は、最初のパーツ (なければ最初の子)。名前はその要素の名前に種類を付けたもの:
+/// 名前に ASCII 以外の文字 (日本語のレイヤー名など) があれば `顔のワープ` / `顔の回転`、なければ
+/// `Face warp` / `Face rotation`。ID の元は種類とその要素の ID (`WarpFace`・`RotationLayer8`)。
+fn default_name(
+    model: &Model,
+    kind: &NewKind,
+    parts: &[PartId],
+    children: &[ChildRef],
+) -> (String, String) {
+    let source = parts
+        .first()
+        .and_then(|id| model.parts.iter().find(|p| &p.id == id))
+        .map(|p| (p.name.as_str(), p.id.as_str()))
+        .or_else(|| match children.first()? {
+            ChildRef::Mesh(id) => model
+                .meshes
+                .iter()
+                .find(|m| &m.id == id)
+                .map(|m| (m.name.as_str(), m.id.as_str())),
+            ChildRef::Deformer(id) => model
+                .deformers
+                .iter()
+                .find(|d| &d.id == id)
+                .map(|d| (d.name.as_str(), d.id.as_str())),
+        });
+    let (kind_id, en, ja) = match kind {
+        NewKind::Warp { .. } => ("Warp", "warp", "ワープ"),
+        NewKind::Rotation { .. } => ("Rotation", "rotation", "回転"),
+    };
+    let Some((name, id)) = source else {
+        return (kind_id.to_owned(), kind_id.to_owned());
+    };
+    let name = name.trim();
+    let name = if name.is_empty() {
+        kind_id.to_owned()
+    } else if name.is_ascii() {
+        format!("{name} {en}")
+    } else {
+        format!("{name}の{ja}")
+    };
+    // 名前から作ったデフォーマの ID (`WarpFace`) を包むときは、種類の接頭辞を重ねない (`RotationFace`)。
+    let id = ["Warp", "Rotation"]
+        .iter()
+        .find_map(|prefix| {
+            id.strip_prefix(prefix)
+                .filter(|rest| rest.starts_with(|c: char| c.is_ascii_uppercase()))
+        })
+        .unwrap_or(id);
+    let mut id = sanitize_id(id);
+    if let Some(first) = id.get_mut(..1) {
+        first.make_ascii_uppercase();
+    }
+    (name, format!("{kind_id}{id}"))
+}
+
+/// 作るデフォーマの ID・名前・親・種類 (`CreateWarpDeformer` / `CreateRotationDeformer` の値)。
+pub(crate) struct NewDeformer {
+    pub id: Option<DeformerId>,
+    pub name: String,
+    pub parent: Option<DeformerId>,
+    pub kind: NewKind,
+}
+
 /// `CreateWarpDeformer` / `CreateRotationDeformer`: 子を包むデフォーマを作り、子を見た目を保って付け替える。
+///
+/// `parts` のパーツの要素 ([`part_children`]) も子にする。`name` が空なら子から名前を作り、`id` を
+/// 省略すると名前 (名前が空か英数字を含まなければ子の ID) から作る ([`default_name`])。
 pub(crate) fn create(
     model: &mut Model,
-    id: Option<DeformerId>,
-    name: String,
+    new: NewDeformer,
     children: &[ChildRef],
-    parent: Option<DeformerId>,
-    kind: NewKind,
+    parts: &[PartId],
     touched: &mut Vec<KeyformTarget>,
 ) -> Result<(), EditError> {
-    if children.is_empty() {
-        return Err(failed("no children are given"));
+    let NewDeformer {
+        id,
+        name,
+        parent,
+        kind,
+    } = new;
+    let mut children = children.to_vec();
+    for child in part_children(model, parts, &children)? {
+        if !children.contains(&child) {
+            children.push(child);
+        }
     }
+    let children = &children[..];
+    if children.is_empty() {
+        return Err(failed(if parts.is_empty() {
+            "no children are given"
+        } else {
+            "the parts have no meshes or deformers to wrap"
+        }));
+    }
+    let (name, id_base) = if name.trim().is_empty() {
+        let (name, id_base) = default_name(model, &kind, parts, children);
+        (name, id_base)
+    } else if name.chars().any(|c| c.is_ascii_alphanumeric()) {
+        (name.clone(), name)
+    } else {
+        let (_, id_base) = default_name(model, &kind, parts, children);
+        (name, id_base)
+    };
     let mut parents = Vec::new();
     for (i, child) in children.iter().enumerate() {
         if children[..i].contains(child) {
@@ -685,7 +842,7 @@ pub(crate) fn create(
             }
             id
         }
-        None => new_deformer_id(model, &name),
+        None => new_deformer_id(model, &id_base),
     };
     let parts: Vec<PartId> = children.iter().filter_map(|c| part_of(model, c)).collect();
     let part = common_part(model, &parts).ok_or_else(|| failed("the children have no part"))?;

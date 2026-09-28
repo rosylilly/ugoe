@@ -259,6 +259,35 @@ pub(crate) fn rest_cell_index<T>(
     index.min(grid.keyforms.len().saturating_sub(1))
 }
 
+/// 未編集のセル: 由来が `authored` で、基準のセル (すべての軸が中立のキーのセル) ではなく、値が
+/// 基準のセルと見た目で変わらない ([`same_values`]) セルの線形インデックス。キーを追加して埋めたまま、
+/// まだ形を編集していないセルにあたる (`docs/spec/keyform-inference.md#未編集のセル`)。
+/// 中立のキーがない軸があれば空。
+pub(crate) fn unedited_cells<T: KeyformValues + PartialEq>(
+    grid: &KeyformGrid<T>,
+    default_of: impl Fn(&ParamId) -> Option<f32>,
+) -> Vec<usize> {
+    let Some(neutral) = neutral_keys(&grid.bindings, default_of) else {
+        return Vec::new();
+    };
+    let mut base = 0;
+    let mut stride = 1;
+    for (binding, &z) in grid.bindings.iter().zip(&neutral) {
+        base += z * stride;
+        stride *= binding.keys.len().max(1);
+    }
+    let Some(rest) = grid.keyforms.get(base) else {
+        return Vec::new();
+    };
+    (0..grid.keyforms.len())
+        .filter(|&i| {
+            i != base
+                && grid.origin(i) == KeyformOrigin::Authored
+                && same_values(&grid.keyforms[i], rest)
+        })
+        .collect()
+}
+
 /// 推定の下ごしらえ: セル `cells` だけを `derived` (方法の記録なし) にし、残りのセルをすべて
 /// `authored` にする (書き換えずに推定の元にする)。
 pub(crate) fn derive_only<T>(grid: &mut KeyformGrid<T>, cells: &[usize]) {
