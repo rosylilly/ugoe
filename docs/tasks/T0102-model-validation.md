@@ -1,11 +1,11 @@
 ---
 id: T0102
 title: モデル検証の完成
-status: todo
+status: in-progress
 milestone: M1
 crates: [ugoe-model]
 depends_on: []
-assignee:
+assignee: claude-worker-T0102
 ---
 
 # T0102: モデル検証の完成

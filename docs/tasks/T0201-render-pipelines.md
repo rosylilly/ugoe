@@ -1,11 +1,11 @@
 ---
 id: T0201
 title: 参照レンダラ: パイプラインと描画
-status: todo
+status: in-progress
 milestone: M1
 crates: [ugoe-render]
 depends_on: []
-assignee:
+assignee: claude-worker-T0201
 ---
 
 # T0201: 参照レンダラ: パイプラインと描画

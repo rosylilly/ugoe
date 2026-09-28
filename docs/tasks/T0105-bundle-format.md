@@ -1,11 +1,11 @@
 ---
 id: T0105
 title: `.ugoe` バンドルの読み書き
-status: todo
+status: in-progress
 milestone: M1
 crates: [ugoe-format]
 depends_on: []
-assignee:
+assignee: claude-worker-T0105
 ---
 
 # T0105: `.ugoe` バンドルの読み書き
