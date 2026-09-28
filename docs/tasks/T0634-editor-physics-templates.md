@@ -1,11 +1,11 @@
 ---
 id: T0634
 title: エディタ: 物理のテンプレート (体の追従・弾み)
-status: todo
+status: in-progress
 milestone: M3.5
 crates: [ugoe-editor-core, apps/editor, docs/manual]
 depends_on: [T0312, T0313, T0629]
-assignee:
+assignee: claude-worker-T0634
 ---
 
 # T0634: エディタ: 物理のテンプレート (体の追従・弾み)
