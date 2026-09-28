@@ -1,11 +1,11 @@
 ---
 id: T0314
 title: キーフォームの曲線補間 (拡張補間に相当)
-status: todo
+status: in-progress
 milestone: M3.5
 crates: [ugoe-model, ugoe-runtime, ugoe-rigging, ugoe-editor-core, apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0314
 ---
 
 # T0314: キーフォームの曲線補間 (拡張補間に相当)

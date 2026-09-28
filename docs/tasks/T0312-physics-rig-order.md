@@ -1,11 +1,11 @@
 ---
 id: T0312
 title: 物理リグの順序付き評価と中継パラメータ
-status: todo
+status: in-progress
 milestone: M3.5
 crates: [ugoe-model, ugoe-physics, ugoe-motion, ugoe-editor-core, apps/viewer, docs]
 depends_on: [T0305]
-assignee:
+assignee: claude-worker-T0312
 ---
 
 # T0312: 物理リグの順序付き評価と中継パラメータ

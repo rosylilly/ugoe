@@ -1,11 +1,11 @@
 ---
 id: T0632
 title: エディタ: 親デフォーマからのはみ出しの表示と一覧
-status: todo
+status: in-progress
 milestone: M3.5
 crates: [ugoe-editor-core, apps/editor, docs/manual]
 depends_on: []
-assignee:
+assignee: claude-worker-T0632
 ---
 
 # T0632: エディタ: 親デフォーマからのはみ出しの表示と一覧

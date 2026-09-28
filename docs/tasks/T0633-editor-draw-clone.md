@@ -1,11 +1,11 @@
 ---
 id: T0633
 title: エディタ: 描画順を変えるための複製 (形を共有する)
-status: todo
+status: in-progress
 milestone: M3.5
 crates: [ugoe-editor-core, apps/editor, docs/manual]
 depends_on: []
-assignee:
+assignee: claude-worker-T0633
 ---
 
 # T0633: エディタ: 描画順を変えるための複製 (形を共有する)

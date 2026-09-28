@@ -1,11 +1,11 @@
 ---
 id: T0635
 title: エディタ: プレビューモード (パラメータのスライダーで仕上がりを確かめる)
-status: todo
+status: in-progress
 milestone: M3.5
 crates: [apps/editor, docs/manual, docs/editor.md]
 depends_on: [T0629, T0630]
-assignee:
+assignee: claude-worker-T0635
 ---
 
 # T0635: エディタ: プレビューモード (パラメータのスライダーで仕上がりを確かめる)
