@@ -1,11 +1,11 @@
 ---
 id: T0307
 title: ブレンドシェイプ
-status: todo
+status: in-progress
 milestone: M3
 crates: [ugoe-model, ugoe-runtime, ugoe-editor-core]
 depends_on: []
-assignee:
+assignee: claude-worker-T0307
 ---
 
 # T0307: ブレンドシェイプ

@@ -1,11 +1,11 @@
 ---
 id: T0305
 title: 動的物理の実装 (2 段階の評価)
-status: todo
+status: in-progress
 milestone: M3
 crates: [ugoe-physics, ugoe-runtime, ugoe]
 depends_on: [T0301, T0304]
-assignee:
+assignee: claude-worker-T0305
 ---
 
 # T0305: 動的物理の実装 (2 段階の評価)
