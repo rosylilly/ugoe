@@ -59,6 +59,8 @@ pub enum ValidationError {
         expected: usize,
         actual: usize,
     },
+    #[error("warp deformer `{id}`: rows ({rows}) and cols ({cols}) must both be at least 1")]
+    EmptyWarpGrid { id: String, rows: u16, cols: u16 },
     /// `field` は参照元のフィールド名 (`part`, `parent`, `masks` など)。
     #[error("{kind} `{id}`: {field} refers to unknown {target_kind} `{target}`")]
     UnknownReference {
@@ -189,6 +191,13 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
         match &deformer.kind {
             DeformerKind::Warp(warp) => {
                 check_grid(&refs, &params, &warp.keyforms, &mut errors);
+                if warp.rows == 0 || warp.cols == 0 {
+                    errors.push(ValidationError::EmptyWarpGrid {
+                        id: id.clone(),
+                        rows: warp.rows,
+                        cols: warp.cols,
+                    });
+                }
                 let expected = (usize::from(warp.rows) + 1) * (usize::from(warp.cols) + 1);
                 for kf in &warp.keyforms.keyforms {
                     if kf.points.len() != expected {
@@ -842,6 +851,20 @@ mod tests {
                 id: "W".into(),
                 expected: 12,
                 actual: 11,
+            }]
+        );
+    }
+
+    #[test]
+    fn warp_grid_needs_at_least_one_cell() {
+        let mut model = single_quad();
+        model.deformers.push(warp("W", 0, 3, 4));
+        assert_eq!(
+            validate(&model),
+            vec![ValidationError::EmptyWarpGrid {
+                id: "W".into(),
+                rows: 0,
+                cols: 3,
             }]
         );
     }
