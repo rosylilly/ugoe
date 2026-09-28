@@ -1,11 +1,9 @@
 //! 加算合成 (`docs/spec/keyform-inference.md#加算合成`)。
 
-use ugoe_model::{KeyformGrid, KeyformOrigin, Model, Parameter};
+use ugoe_model::{KeyformGrid, Model, Parameter};
 
+use crate::grid::{Axis, Layout, apply, authored_cells, build, check_sources, flatten};
 use crate::{InferError, KeyformValues};
-
-/// 中立のキーとパラメータの `default` を等しいとみなす誤差。
-const NEUTRAL_EPSILON: f32 = 1e-5;
 
 /// 推定の結果。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -26,152 +24,55 @@ pub fn infer_additive<T: KeyformValues>(
     infer_additive_with(&model.parameters, grid)
 }
 
-/// 格子の 1 本の軸。
-struct Axis<'a> {
-    keys: &'a [f32],
-    /// 中立のキーの位置 `z_k`。
-    neutral: usize,
-    /// 線形インデックスでの 1 キーあたりの間隔。
-    stride: usize,
-}
-
-/// 格子の軸と、セルの座標・インデックスの変換。
-struct Layout<'a> {
-    axes: Vec<Axis<'a>>,
-}
-
-impl Layout<'_> {
-    fn coords(&self, mut index: usize) -> Vec<usize> {
-        self.axes
-            .iter()
-            .map(|a| {
-                let i = index % a.keys.len();
-                index /= a.keys.len();
-                i
-            })
-            .collect()
-    }
-
-    /// 中立でない軸の集合 `S(c)` (ビット `k` が軸 `k`)。
-    fn non_neutral(&self, coords: &[usize]) -> u64 {
-        self.axes
-            .iter()
-            .zip(coords)
-            .enumerate()
-            .filter(|(_, (a, i))| **i != a.neutral)
-            .fold(0, |mask, (k, _)| mask | (1 << k))
-    }
-
-    /// `cell(S, c)`: 集合 `mask` の軸だけを `coords` の値にし、残りを中立にしたセル。
-    fn cell(&self, mask: u64, coords: &[usize]) -> usize {
-        self.axes
-            .iter()
-            .zip(coords)
-            .enumerate()
-            .map(|(k, (a, &i))| {
-                let i = if mask & (1 << k) != 0 { i } else { a.neutral };
-                i * a.stride
-            })
-            .sum()
-    }
-
-    fn base(&self) -> usize {
-        self.axes.iter().map(|a| a.neutral * a.stride).sum()
-    }
-}
-
 pub(crate) fn infer_additive_with<T: KeyformValues>(
     parameters: &[Parameter],
     grid: &mut KeyformGrid<T>,
 ) -> Result<InferReport, InferError> {
-    if grid.bindings.len() > 64 {
-        return Err(InferError::TooManyAxes {
-            count: grid.bindings.len(),
-        });
-    }
-    let mut stride = 1;
-    let mut axes = Vec::with_capacity(grid.bindings.len());
-    for binding in &grid.bindings {
-        let parameter = parameters
-            .iter()
-            .find(|p| p.id == binding.parameter)
-            .ok_or_else(|| InferError::UnknownParameter {
-                parameter: binding.parameter.clone(),
-            })?;
-        let neutral = binding
-            .keys
-            .iter()
-            .position(|&k| (k - parameter.default).abs() <= NEUTRAL_EPSILON)
-            .ok_or_else(|| InferError::MissingNeutralKey {
-                parameter: binding.parameter.clone(),
-                default: parameter.default,
-            })?;
-        axes.push(Axis {
-            keys: &binding.keys,
-            neutral,
-            stride,
-        });
-        stride *= binding.keys.len();
-    }
-    let layout = Layout { axes };
-
-    let len = grid.expected_len();
-    if grid.keyforms.len() != len {
-        return Err(InferError::GridSizeMismatch {
-            expected: len,
-            found: grid.keyforms.len(),
-        });
-    }
-    if !grid.origins.is_empty() && grid.origins.len() != len {
-        return Err(InferError::OriginsLengthMismatch {
-            expected: len,
-            found: grid.origins.len(),
-        });
-    }
-    let authored = |i: usize| grid.origin(i) == KeyformOrigin::Authored;
-
+    let layout = Layout::new(parameters, grid)?;
+    let authored = authored_cells(grid, &layout);
     let base = layout.base();
-    if !authored(base) {
-        return Err(InferError::BaseNotAuthored { cell: base });
-    }
-    let base_kf = &grid.keyforms[base];
-    let shape = base_kf.shape_len();
-    for (cell, kf) in grid.keyforms.iter().enumerate() {
-        if authored(cell) && kf.shape_len() != shape {
-            return Err(InferError::ShapeMismatch {
-                cell,
-                expected: shape,
-                found: kf.shape_len(),
-            });
-        }
-    }
+    check_sources(grid, &authored, base)?;
 
-    // セルの値の列。`authored` のセルと、作った 1 軸セルだけが入る。
-    let mut values: Vec<Option<Vec<f32>>> = (0..len)
-        .map(|i| authored(i).then(|| flatten(&grid.keyforms[i])))
+    let base_kf = &grid.keyforms[base];
+    let values = (0..layout.len)
+        .map(|i| authored[i].then(|| flatten(&grid.keyforms[i])))
         .collect();
-    let base_values = flatten(base_kf);
-    // (線形インデックス, 作ったキーフォーム)
-    let mut writes: Vec<(usize, T)> = Vec::new();
-    let mut make = |cell: usize, v: &[f32]| {
-        let mut kf = base_kf.clone();
-        kf.read_values(v);
-        kf.clamp();
-        let clamped = flatten(&kf);
-        writes.push((cell, kf));
-        clamped
-    };
+    let written = combine(&layout, &authored, values, &flatten(base_kf), |_, v| {
+        flatten(&build(base_kf, v))
+    });
+    let writes = written
+        .into_iter()
+        .map(|(cell, v)| (cell, build(base_kf, &v)))
+        .collect();
+    Ok(apply(grid, writes))
+}
+
+/// 加算合成の本体。値の列 (`KeyformValues::write_values` の並び) の上で計算する。
+///
+/// `values` は `authored` のセルだけが `Some`。`finish` は推定した生の値を、セルに書く値に直す
+/// (クランプなど)。1 軸セルは直した値を多軸セルの `Δ_k` に使う。
+/// 戻り値は作った (`derived` の) セルと、その直した値。
+pub(crate) fn combine(
+    layout: &Layout<'_>,
+    authored: &[bool],
+    mut values: Vec<Option<Vec<f32>>>,
+    base_values: &[f32],
+    mut finish: impl FnMut(usize, &[f32]) -> Vec<f32>,
+) -> Vec<(usize, Vec<f32>)> {
+    let len = layout.len;
+    let base = layout.base();
+    let mut written = Vec::new();
 
     // 1 軸セル: 同じ軸上の `authored` のセルから補間・外挿する。
     for axis in &layout.axes {
         // 軸上のキー `i` の 1 軸セル (`i == z_k` なら基準のセル)。
         let on_line = |i: usize| base - axis.neutral * axis.stride + i * axis.stride;
         let sources: Vec<usize> = (0..axis.keys.len())
-            .filter(|&i| authored(on_line(i)))
+            .filter(|&i| authored[on_line(i)])
             .collect();
         for i in 0..axis.keys.len() {
             let cell = on_line(i);
-            if authored(cell) {
+            if authored[cell] {
                 continue;
             }
             let below = sources.iter().rev().copied().find(|&j| j < i);
@@ -188,18 +89,20 @@ pub(crate) fn infer_additive_with<T: KeyformValues>(
                     side.truncate(2);
                     match side[..] {
                         [a, b] => line(axis, &values, on_line, a, b, i),
-                        _ => base_values.clone(),
+                        _ => base_values.to_vec(),
                     }
                 }
             };
-            values[cell] = Some(make(cell, &v));
+            let v = finish(cell, &v);
+            written.push((cell, v.clone()));
+            values[cell] = Some(v);
         }
     }
 
     // `Δ_k(c)` は 1 軸セルの値から基準の値を引いたもの。
     let delta = |cell: usize, out: &mut [f32], sign: f32| {
         if let Some(v) = &values[cell] {
-            for ((o, x), b) in out.iter_mut().zip(v).zip(&base_values) {
+            for ((o, x), b) in out.iter_mut().zip(v).zip(base_values) {
                 *o += sign * (x - b);
             }
         }
@@ -213,13 +116,13 @@ pub(crate) fn infer_additive_with<T: KeyformValues>(
     order.sort_unstable();
     let mut interaction: Vec<Option<Vec<f32>>> = vec![None; len];
     for &(_, cell) in &order {
-        if !authored(cell) {
+        if !authored[cell] {
             continue;
         }
         let coords = layout.coords(cell);
         let set = layout.non_neutral(&coords);
         let mut r = values[cell].clone().unwrap_or_default();
-        for (o, b) in r.iter_mut().zip(&base_values) {
+        for (o, b) in r.iter_mut().zip(base_values) {
             *o -= b;
         }
         for_each_axis(set, |k| delta(layout.cell(1 << k, &coords), &mut r, -1.0));
@@ -235,12 +138,12 @@ pub(crate) fn infer_additive_with<T: KeyformValues>(
 
     // 多軸セル: `B + Σ Δ_k(c) + Σ R(U, c)`。
     for &(_, cell) in &order {
-        if authored(cell) {
+        if authored[cell] {
             continue;
         }
         let coords = layout.coords(cell);
         let set = layout.non_neutral(&coords);
-        let mut v = base_values.clone();
+        let mut v = base_values.to_vec();
         for_each_axis(set, |k| delta(layout.cell(1 << k, &coords), &mut v, 1.0));
         for_each_proper_subset(set, |sub| {
             if let Some(term) = &interaction[layout.cell(sub, &coords)] {
@@ -249,26 +152,9 @@ pub(crate) fn infer_additive_with<T: KeyformValues>(
                 }
             }
         });
-        make(cell, &v);
+        written.push((cell, finish(cell, &v)));
     }
-
-    if grid.origins.is_empty() && !writes.is_empty() {
-        grid.origins = vec![KeyformOrigin::Authored; len];
-    }
-    writes.sort_unstable_by_key(|&(cell, _)| cell);
-    let mut report = InferReport::default();
-    for (cell, kf) in writes {
-        grid.keyforms[cell] = kf;
-        grid.origins[cell] = KeyformOrigin::Derived;
-        report.written.push(cell);
-    }
-    Ok(report)
-}
-
-fn flatten<T: KeyformValues>(kf: &T) -> Vec<f32> {
-    let mut out = Vec::new();
-    kf.write_values(&mut out);
-    out
+    written
 }
 
 /// 軸上のキー `a` と `b` のセルを通る直線の、キー `i` での値 (補間・外挿)。

@@ -197,3 +197,29 @@ impl KeyformValues for GlueKeyform {
         clamp_unit(&mut self.intensity);
     }
 }
+
+/// 頂点・制御点の位置を持つキーフォーム (ミラー・深度からの回転で動かす)。
+pub(crate) trait Points: KeyformValues {
+    fn points(&self) -> &[Vec2];
+    fn points_mut(&mut self) -> &mut Vec<Vec2>;
+}
+
+impl Points for MeshKeyform {
+    fn points(&self) -> &[Vec2] {
+        &self.positions
+    }
+
+    fn points_mut(&mut self) -> &mut Vec<Vec2> {
+        &mut self.positions
+    }
+}
+
+impl Points for WarpKeyform {
+    fn points(&self) -> &[Vec2] {
+        &self.points
+    }
+
+    fn points_mut(&mut self) -> &mut Vec<Vec2> {
+        &mut self.points
+    }
+}

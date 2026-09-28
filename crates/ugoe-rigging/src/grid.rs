@@ -1,0 +1,183 @@
+//! 格子の軸と、セルの座標・インデックスの変換 (`docs/spec/keyform-inference.md#記法`)。
+
+use ugoe_model::{KeyformGrid, KeyformOrigin, Parameter};
+
+use crate::{InferError, InferReport, KeyformValues};
+
+/// 中立のキーとパラメータの `default` を等しいとみなす誤差。キーどうしの比較にも使う。
+pub(crate) const KEY_EPSILON: f32 = 1e-5;
+
+/// 格子の 1 本の軸。
+pub(crate) struct Axis<'a> {
+    pub parameter: &'a Parameter,
+    pub keys: &'a [f32],
+    /// 中立のキーの位置 `z_k`。
+    pub neutral: usize,
+    /// 線形インデックスでの 1 キーあたりの間隔。
+    pub stride: usize,
+}
+
+/// 格子の軸と、セルの座標・インデックスの変換。
+pub(crate) struct Layout<'a> {
+    pub axes: Vec<Axis<'a>>,
+    /// セルの数。
+    pub len: usize,
+}
+
+impl<'a> Layout<'a> {
+    /// 格子の軸を `parameters` から引いて作る。
+    /// 軸の数・パラメータ・中立のキー・`keyforms` と `origins` の長さを検査する。
+    pub fn new<T>(
+        parameters: &'a [Parameter],
+        grid: &'a KeyformGrid<T>,
+    ) -> Result<Self, InferError> {
+        if grid.bindings.len() > 64 {
+            return Err(InferError::TooManyAxes {
+                count: grid.bindings.len(),
+            });
+        }
+        let mut stride = 1;
+        let mut axes = Vec::with_capacity(grid.bindings.len());
+        for binding in &grid.bindings {
+            let parameter = parameters
+                .iter()
+                .find(|p| p.id == binding.parameter)
+                .ok_or_else(|| InferError::UnknownParameter {
+                    parameter: binding.parameter.clone(),
+                })?;
+            let neutral = binding
+                .keys
+                .iter()
+                .position(|&k| (k - parameter.default).abs() <= KEY_EPSILON)
+                .ok_or_else(|| InferError::MissingNeutralKey {
+                    parameter: binding.parameter.clone(),
+                    default: parameter.default,
+                })?;
+            axes.push(Axis {
+                parameter,
+                keys: &binding.keys,
+                neutral,
+                stride,
+            });
+            stride *= binding.keys.len();
+        }
+
+        let len = grid.expected_len();
+        if grid.keyforms.len() != len {
+            return Err(InferError::GridSizeMismatch {
+                expected: len,
+                found: grid.keyforms.len(),
+            });
+        }
+        if !grid.origins.is_empty() && grid.origins.len() != len {
+            return Err(InferError::OriginsLengthMismatch {
+                expected: len,
+                found: grid.origins.len(),
+            });
+        }
+        Ok(Self { axes, len })
+    }
+
+    pub fn coords(&self, mut index: usize) -> Vec<usize> {
+        self.axes
+            .iter()
+            .map(|a| {
+                let i = index % a.keys.len();
+                index /= a.keys.len();
+                i
+            })
+            .collect()
+    }
+
+    /// 中立でない軸の集合 `S(c)` (ビット `k` が軸 `k`)。
+    pub fn non_neutral(&self, coords: &[usize]) -> u64 {
+        self.axes
+            .iter()
+            .zip(coords)
+            .enumerate()
+            .filter(|(_, (a, i))| **i != a.neutral)
+            .fold(0, |mask, (k, _)| mask | (1 << k))
+    }
+
+    /// `cell(S, c)`: 集合 `mask` の軸だけを `coords` の値にし、残りを中立にしたセル。
+    pub fn cell(&self, mask: u64, coords: &[usize]) -> usize {
+        self.axes
+            .iter()
+            .zip(coords)
+            .enumerate()
+            .map(|(k, (a, &i))| {
+                let i = if mask & (1 << k) != 0 { i } else { a.neutral };
+                i * a.stride
+            })
+            .sum()
+    }
+
+    /// 基準のセル `B` (すべての軸が中立のセル)。
+    pub fn base(&self) -> usize {
+        self.axes.iter().map(|a| a.neutral * a.stride).sum()
+    }
+
+    /// 軸 `k` の、パラメータの値 (セルの座標でのキー) と `default` の差。
+    pub fn offset(&self, k: usize, coords: &[usize]) -> f32 {
+        let axis = &self.axes[k];
+        axis.keys[coords[k]] - axis.parameter.default
+    }
+}
+
+/// セルごとに `authored` かどうか。
+pub(crate) fn authored_cells<T>(grid: &KeyformGrid<T>, layout: &Layout<'_>) -> Vec<bool> {
+    (0..layout.len)
+        .map(|i| grid.origin(i) == KeyformOrigin::Authored)
+        .collect()
+}
+
+/// 推定の元にする格子を検査する: 基準のセルが `authored` で、`authored` のセルの形が基準と揃っていること。
+pub(crate) fn check_sources<T: KeyformValues>(
+    grid: &KeyformGrid<T>,
+    authored: &[bool],
+    base: usize,
+) -> Result<(), InferError> {
+    if !authored[base] {
+        return Err(InferError::BaseNotAuthored { cell: base });
+    }
+    let shape = grid.keyforms[base].shape_len();
+    for (cell, kf) in grid.keyforms.iter().enumerate() {
+        if authored[cell] && kf.shape_len() != shape {
+            return Err(InferError::ShapeMismatch {
+                cell,
+                expected: shape,
+                found: kf.shape_len(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// 作ったセルを格子に書き込み、`derived` にする。
+pub(crate) fn apply<T>(grid: &mut KeyformGrid<T>, mut writes: Vec<(usize, T)>) -> InferReport {
+    if grid.origins.is_empty() && !writes.is_empty() {
+        grid.origins = vec![KeyformOrigin::Authored; grid.keyforms.len()];
+    }
+    writes.sort_unstable_by_key(|&(cell, _)| cell);
+    let mut report = InferReport::default();
+    for (cell, kf) in writes {
+        grid.keyforms[cell] = kf;
+        grid.origins[cell] = KeyformOrigin::Derived;
+        report.written.push(cell);
+    }
+    report
+}
+
+pub(crate) fn flatten<T: KeyformValues>(kf: &T) -> Vec<f32> {
+    let mut out = Vec::new();
+    kf.write_values(&mut out);
+    out
+}
+
+/// `base` の複製に値 `v` を書き戻し、クランプしたキーフォーム。
+pub(crate) fn build<T: KeyformValues>(base: &T, v: &[f32]) -> T {
+    let mut kf = base.clone();
+    kf.read_values(v);
+    kf.clamp();
+    kf
+}

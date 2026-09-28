@@ -12,5 +12,8 @@ thiserror.workspace = true
 ugoe-core.workspace = true
 ugoe-model.workspace = true
 
+[dev-dependencies]
+serde_json.workspace = true
+
 [lints]
 workspace = true

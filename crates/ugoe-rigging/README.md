@@ -5,12 +5,16 @@
 キーフォームの推定を行う。推定の結果はふつうのキーフォームとして格子に焼き込み、ランタイムは推定を知らない。
 
 - 加算合成 (`infer_additive`、`infer_additive_target`)
-- ミラーと深度からの回転は T0612 で追加する
+- ミラー (`mirror_keyforms`、設定は `MirrorOptions`)
+- 深度からの回転 (`infer_depth_rotation`)。`yaw` / `pitch` 以外の軸と手で直したセルは加算合成で足し合わせる
+
+目視確認用に、深度からの回転とミラーで振り向きの顔を作る例がある
+(`cargo run -p ugoe-rigging --example depth_face -- <out.json>` のあと `ugoe render <out.json> --param AngleX=30 -o <png>`)。
 
 ## 守ること
 
 - 決定的であること (同じモデルと格子からは同じ結果)
-- `authored` のセルを上書きしない。書き込むのは `derived` のセルだけ
+- `authored` のセルを上書きしない。書き込むのは `derived` のセルだけ (ミラーの `overwrite_authored` を明示したときを除く)
 - モデルの型は `ugoe-model` に置き、このクレートはアルゴリズムだけを持つ
 - 編集は `ugoe_editor_core::Command` から呼ぶ。このクレートは Undo を知らない
 
