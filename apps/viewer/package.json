@@ -5,15 +5,17 @@
   "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/mediapipe-assets.mjs --optional && vite",
     "wasm": "just wasm apps/viewer/src/lib/wasm/generated",
-    "build": "vite build",
+    "mediapipe": "node scripts/mediapipe-assets.mjs",
+    "build": "node scripts/mediapipe-assets.mjs && vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
     "tauri": "tauri"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "^1.0.1",
     "@tauri-apps/api": "^2.12.0",
     "@tauri-apps/plugin-dialog": "^2.8.0"
   },

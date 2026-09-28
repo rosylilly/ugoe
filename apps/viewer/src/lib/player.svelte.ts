@@ -1,6 +1,7 @@
 // モデル 1 体の表示と、フレームのループ。WebPuppet (ugoe-wasm) を持ち、UI に状態を公開する。
 //
-// フレームごとに: ドライバ (drivers.ts) の値を設定 → `update(dt)` (物理など) → スライダーの値を同期 → 描画。
+// フレームごとに: ドライバ (drivers.ts) の値を設定 → トラッキングの入力を渡す → `update(dt)` (物理など)
+// → スライダーの値を同期 → 描画。
 // 描画は WebGPU が無ければ WebGL2 で行う (docs/adr/0003-editor-viewport-in-webview.md)。
 import { parseHexColor } from "./color";
 import { DriverSet } from "./drivers";
@@ -11,6 +12,7 @@ import {
   type ParameterSection,
   parseParameterList,
 } from "./parameters";
+import type { TrackingFrame } from "./tracking/frame";
 import { loadWasm, type UgoeWasmModule, type WebPuppet } from "./wasm/load";
 
 export type PlayerStatus =
@@ -43,8 +45,14 @@ export class Player {
   sections = $state<ParameterSection[]>([]);
   /** パラメータの現在値 (ID → 値)。 */
   values = $state<Record<string, number>>({});
-  /** 直前のフレームでドライバが値を設定したパラメータ。スライダーでは動かせない。 */
+  /** 直前のフレームでドライバかトラッキングが値を設定したパラメータ。スライダーでは動かせない。 */
   driven = $state<ReadonlySet<string>>(new Set());
+  /** トラッキングが書き込むパラメータ (モデルの定義順。`avatar.tracking` の上書きを反映する)。 */
+  trackingParameterIds = $state<string[]>([]);
+  /** トラッキングの入力を渡しているか。 */
+  tracking = $state(false);
+  /** モデルの自動の目パチ。モデルを開き直しても保つ。 */
+  autoEyeBlink = $state(true);
   /** フィットに対する倍率。 */
   zoom = $state(1);
   background = $state("#e6e7eb");
@@ -64,6 +72,9 @@ export class Player {
   #frame = 0;
   #lastTime: number | null = null;
   #recovering = false;
+  /** 次のフレームで渡すトラッキングの入力 (渡したら `null`)。 */
+  #pendingTracking: TrackingFrame | null = null;
+  #lastTracking: TrackingFrame | null = null;
 
   /** `container` の中に canvas を作り、描画を始める。 */
   async attach(container: HTMLElement): Promise<void> {
@@ -114,6 +125,10 @@ export class Player {
     this.#syncValues();
     this.modelName = file.name;
     this.error = null;
+    // WebPuppet は読み直すと Puppet を作り直すので、トラッキングと目パチの設定を渡し直す。
+    this.trackingParameterIds = puppet.tracking_parameter_ids();
+    puppet.set_enabled("eye_blink", this.autoEyeBlink);
+    this.#pendingTracking = this.#lastTracking;
     this.status = "ready";
     this.fit();
   }
@@ -129,6 +144,37 @@ export class Player {
   resetParameter(id: string): void {
     const def = this.#parameters.find((p) => p.id === id);
     if (def) this.setParameter(id, def.default);
+  }
+
+  /**
+   * フェイストラッキングの入力を設定する (次のフレームで Rust の対応付けに渡す)。`null` で止め、
+   * トラッキングが書き込んでいたパラメータを既定値に戻す。値の約束は `tracking/frame.ts`。
+   */
+  setTracking(frame: TrackingFrame | null): void {
+    if (frame === null) {
+      if (this.#lastTracking === null) return;
+      this.#lastTracking = null;
+      this.#pendingTracking = null;
+      this.tracking = false;
+      this.#puppet?.clear_tracking();
+      // 最後の値が基準値として残るので、既定値に戻す。
+      const ids = new Set(this.trackingParameterIds);
+      for (const def of this.#parameters) {
+        if (ids.has(def.id)) this.#puppet?.set_parameter(def.id, def.default);
+      }
+      this.#syncValues();
+      return;
+    }
+    this.#lastTracking = frame;
+    this.#pendingTracking = frame;
+    this.tracking = true;
+  }
+
+  /** モデルの自動の目パチを有効・無効にする (トラッキング中は目の開閉に重なるため止められる)。 */
+  setAutoEyeBlink(enabled: boolean): void {
+    this.autoEyeBlink = enabled;
+    const puppet = this.#puppet;
+    if (puppet?.has_model()) puppet.set_enabled("eye_blink", enabled);
   }
 
   resetAllParameters(): void {
@@ -188,11 +234,20 @@ export class Player {
     if (puppet.has_model()) {
       const driven = this.drivers.collect(dt);
       for (const [id, value] of driven) puppet.set_parameter(id, value);
-      if (
-        driven.size !== this.driven.size ||
-        [...driven.keys()].some((id) => !this.driven.has(id))
-      ) {
-        this.driven = new Set(driven.keys());
+      const frame = this.#pendingTracking;
+      if (frame !== null) {
+        this.#pendingTracking = null;
+        const names = Object.keys(frame.blendShapes);
+        const scores = Float32Array.from(names, (n) => frame.blendShapes[n] ?? 0);
+        puppet.set_tracking(names, scores, frame.head.yaw, frame.head.pitch, frame.head.roll);
+      }
+      const ids = new Set(driven.keys());
+      if (this.tracking) {
+        // トラッキングは update の中で書き込むので、ドライバの値より優先される。
+        for (const id of this.trackingParameterIds) ids.add(id);
+      }
+      if (ids.size !== this.driven.size || [...ids].some((id) => !this.driven.has(id))) {
+        this.driven = ids;
       }
       puppet.update(dt);
       this.#syncValues();

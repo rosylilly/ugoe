@@ -22,6 +22,9 @@ use crate::load::{self, LoadError, LoadedModel};
 use crate::view::{Transform, ViewState};
 use crate::{gizmo, hit, view};
 
+// フェイストラッキングの API (T0703)。別のファイルに分けて、ほかの API の追加と衝突しにくくする。
+mod tracking;
+
 fn js_error(e: impl Display) -> JsError {
     JsError::new(&e.to_string())
 }

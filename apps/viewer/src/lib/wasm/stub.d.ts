@@ -20,6 +20,19 @@ export class WebPuppet {
   reset_parameters(): void;
   update(dt: number): void;
 
+  set_tracking(
+    names: string[],
+    scores: Float32Array,
+    yaw: number,
+    pitch: number,
+    roll: number,
+  ): void;
+  clear_tracking(): void;
+  is_tracking(): boolean;
+  tracking_parameter_ids(): string[];
+  set_enabled(stage: string, enabled: boolean): void;
+  is_enabled(stage: string): boolean;
+
   resize(width: number, height: number): void;
   set_background(r: number, g: number, b: number, a: number): void;
   render(): void;

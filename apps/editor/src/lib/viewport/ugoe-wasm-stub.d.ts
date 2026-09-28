@@ -22,6 +22,17 @@ export class WebPuppet {
   reset_parameters(): void;
   update(dt: number): void;
 
+  set_tracking(
+    names: string[],
+    scores: Float32Array,
+    yaw: number,
+    pitch: number,
+    roll: number,
+  ): void;
+  clear_tracking(): void;
+  is_tracking(): boolean;
+  tracking_parameter_ids(): string[];
+
   resize(width: number, height: number): void;
   width(): number;
   height(): number;

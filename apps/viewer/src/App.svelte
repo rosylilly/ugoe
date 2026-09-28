@@ -1,16 +1,22 @@
 <script lang="ts">
 import { onMount } from "svelte";
-import { readBrowserFile, viewerHost } from "./lib/host";
+import { readBrowserFile, readSampleModel, viewerHost } from "./lib/host";
+import LicenseDialog from "./lib/LicenseDialog.svelte";
 import type { ModelFile } from "./lib/modelFile";
 import ParameterPanel from "./lib/ParameterPanel.svelte";
 import { Player } from "./lib/player.svelte";
+import TrackingPanel from "./lib/TrackingPanel.svelte";
+import { FaceTracker } from "./lib/tracking/tracker.svelte";
 import Viewport from "./lib/Viewport.svelte";
 
 const player = new Player();
 // 外から操作できるようにする (ヘッドレスのブラウザでの確認、ドライバの登録など)。
 window.__UGOE_VIEWER__ = player;
+const tracker = new FaceTracker(player);
+window.__UGOE_TRACKER__ = tracker;
 
 let dropping = $state(false);
+let licenseDialog = $state<LicenseDialog | null>(null);
 
 async function openWith(get: () => Promise<ModelFile | null>) {
   try {
@@ -67,6 +73,12 @@ function onKeyDown(e: KeyboardEvent) {
 <div class="app" class:dropping>
   <header class="toolbar">
     <button type="button" onclick={openDialog} title="モデルを開く (Ctrl+O)">開く</button>
+    <button
+      type="button"
+      onclick={() => void openWith(readSampleModel)}
+      title="同梱の見本のモデル (アバタープロファイルのレベル 3) を開く。フェイストラッキングをすぐに試せる"
+      >サンプル</button
+    >
     <span class="name" title={player.modelName ?? ""}>{player.modelName ?? "モデルなし"}</span>
     <span class="spacer"></span>
     <div class="group" aria-label="表示">
@@ -97,8 +109,9 @@ function onKeyDown(e: KeyboardEvent) {
 
   <main>
     <Viewport {player} />
-    <!-- 右のパネル。フェイストラッキング (T0703) の映像と値のパネルは、パラメータの上に足す。 -->
+    <!-- 右のパネル。縦にパネルを積む (フェイストラッキングはパラメータの上)。 -->
     <aside class="sidebar">
+      <TrackingPanel {player} {tracker} />
       <ParameterPanel {player} />
     </aside>
   </main>
@@ -115,7 +128,9 @@ function onKeyDown(e: KeyboardEvent) {
     {/if}
     <span class="spacer"></span>
     {#if player.backend}<span class="backend">{player.backend}</span>{/if}
+    <button type="button" class="link" onclick={() => licenseDialog?.open()}>ライセンス</button>
   </footer>
+  <LicenseDialog bind:this={licenseDialog} />
 </div>
 
 <style>
@@ -182,6 +197,14 @@ function onKeyDown(e: KeyboardEvent) {
   }
   .error {
     color: var(--danger);
+  }
+  .link {
+    border: none;
+    background: none;
+    padding: 0;
+    font-size: inherit;
+    color: var(--muted);
+    text-decoration: underline;
   }
   .warning {
     color: var(--warning);

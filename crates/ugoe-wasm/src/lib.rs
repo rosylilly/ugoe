@@ -5,7 +5,7 @@
 //! wasm 内で完結させて 60fps を保つ (`docs/editor.md#ビューポート`)。
 //!
 //! JS へ公開するのは [`WebPuppet`] (wasm32 のときだけ)。GPU に触れない部分
-//! ([`load`]・[`view`]・[`hit`]・[`gizmo`]・[`animation`]) はネイティブでもビルドしてテストする。
+//! ([`load`]・[`view`]・[`hit`]・[`gizmo`]・[`animation`]・[`tracking`]) はネイティブでもビルドしてテストする。
 //!
 //! ビルド: `just wasm` (wasm-bindgen-cli が必要。README を参照)。
 
@@ -13,6 +13,7 @@ pub mod animation;
 pub mod gizmo;
 pub mod hit;
 pub mod load;
+pub mod tracking;
 pub mod view;
 #[cfg(target_arch = "wasm32")]
 mod web;

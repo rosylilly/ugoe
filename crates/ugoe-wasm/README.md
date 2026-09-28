@@ -17,6 +17,7 @@ WebAssembly バインディング。Web ビューア・ビューアのアプリ 
 | `web` | JS に公開する `WebPuppet`。canvas に wgpu のサーフェスを作り、クリアと描画を行う |
 | `load` | JSON / `.ugoe` バンドルの読み込み、PNG のデコード (乗算済みアルファへ)、パラメータ値の引き継ぎ |
 | `view` | フィット・ズーム・パンと、キャンバス座標 ↔ 画面座標の変換 |
+| `tracking` | フェイストラッキングの入力 (ブレンドシェイプの名前と値・頭の回転) から `TrackingInput` を作る。JS への公開は `web/tracking.rs` |
 | `hit` | 評価済みの要素の外接矩形とヒットテスト (エディタの選択用。三角形の判定は `ModelInstance::mesh_contains`) |
 | `animation` | 物理・モーション・表情・エフェクトの JSON の受け渡し、バンドルのモーション・表情の名前の解決、モデルを読み直したときの物理と段の有効無効の引き継ぎ (JS への公開は `src/web/animation.rs`) |
 
@@ -31,12 +32,21 @@ puppet.resize(canvas.clientWidth * devicePixelRatio, canvas.clientHeight * devic
 puppet.parameters_json();         // 値域・既定値・グループ ({"parameters": [...], "groups": [...]})
 puppet.set_parameter("AngleX", 15);
 puppet.render();                  // 呼ばれたときだけ描く。ループはホストが回す
+
+// フェイストラッキング (T0703)。変換は Rust の対応付け (ugoe_motion::tracking) で行う
+puppet.set_tracking(names, scores, yaw, pitch, roll); // MediaPipe のカテゴリ名と値、頭の回転 (度)
+puppet.tracking_parameter_ids();  // トラッキングが書き込むパラメータ
+puppet.set_enabled("eye_blink", false); // トラッキング中はモデルの目パチを止める (T0309 の段の切り替え)
+puppet.clear_tracking();
 ```
 
 - 画面座標は canvas の描画バッファの画素 (CSS ピクセル × `devicePixelRatio`)。
 - `set_parameter` は評価を遅らせ、次の `render` や問い合わせでまとめて評価する。物理やモーションを動かすときは `update(dt)` を呼ぶ。
 - モデルを読み直すと、同じ ID のパラメータの値は引き継がれる (エディタで編集・Undo のたびに読み直すため)。
 - `"auto"` は WebGPU のアダプタを実際に要求して判定し、無ければ WebGL2 を使う。1 つの canvas は WebGPU と WebGL2 を併用できないので、作成に失敗したら新しい canvas で作り直す。
+- トラッキングの入力は次の `update(dt)` から毎フレーム適用される (モーションの直後、表情・目パチ・呼吸の前)。
+  平滑化・キャリブレーション・回転行列からの角度の計算・鏡像の入れ替えはホストが行う
+  (`docs/spec/avatar-profile.md#実装の範囲`)。`clear_tracking()` の後も最後の値は残る。
 - `is_lost()` が `true` になったら (GPU プロセスのクラッシュなど)、新しい canvas で作り直す。
 
 ### 物理・モーション・表情・エフェクト (T0309)

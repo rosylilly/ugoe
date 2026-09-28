@@ -15,3 +15,5 @@ dist/
 # ローカル設定
 .claude/settings.local.json
 /.worktrees/
+# MediaPipe の wasm とモデル (apps/viewer の `pnpm mediapipe` が用意する。コミットしない)
+/apps/viewer/public/mediapipe/

@@ -1,4 +1,4 @@
-// ビューアの外の世界 (ファイルの選択と読み込み) とのやりとり。
+// ビューアの外の世界 (ファイルの選択と読み込み・書き出し) とのやりとり。
 //
 // 実行する場所ごとに実装を切り替える:
 // - Tauri の中: OS のダイアログ (tauri-plugin-dialog) で選び、バックエンドの `read_model_file` で読む。
@@ -9,7 +9,7 @@
 // ドラッグ・アンド・ドロップはどこでも HTML の File API で読むので、ここを通らない
 // (Tauri のウィンドウは `dragDropEnabled: false` にして、webview にドロップを渡している)。
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { baseName, MODEL_EXTENSIONS, type ModelFile } from "./modelFile";
 
 export interface ViewerHost {
@@ -17,6 +17,11 @@ export interface ViewerHost {
   pickModelFile(): Promise<ModelFile | null>;
   /** 起動時に開くモデル (コマンドライン引数など)。無ければ `null`。 */
   initialModelFile(): Promise<ModelFile | null>;
+  /**
+   * JSON のテキストを保存する (トラッキングの記録など)。`name` は既定のファイル名。
+   * 保存したら `true`、取り消したら `false`。省くとブラウザのダウンロードで保存する。
+   */
+  saveJsonFile?(name: string, text: string): Promise<boolean>;
 }
 
 declare global {
@@ -45,7 +50,35 @@ const tauriHost: ViewerHost = {
     const path = await invoke<string | null>("initial_file");
     return path === null ? null : readTauriFile(path);
   },
+  async saveJsonFile(name, text) {
+    const path = await save({
+      title: "保存",
+      defaultPath: name,
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (path === null) return false;
+    await invoke("write_json_file", { path, contents: text });
+    return true;
+  },
 };
+
+/** ブラウザのダウンロードで保存する。 */
+function downloadJson(name: string, text: string): void {
+  const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** JSON のテキストを、今の `ViewerHost` で保存する。 */
+export async function saveJsonFile(name: string, text: string): Promise<boolean> {
+  const host = viewerHost();
+  if (host.saveJsonFile) return host.saveJsonFile(name, text);
+  downloadJson(name, text);
+  return true;
+}
 
 /** File API の `File` を読む (ドロップ・`<input type="file">`)。 */
 export async function readBrowserFile(file: File): Promise<ModelFile> {
@@ -76,6 +109,14 @@ const browserHost: ViewerHost = {
     return { name, bytes: new Uint8Array(await response.arrayBuffer()) };
   },
 };
+
+/** アプリに同梱した見本のモデル (vite.config.ts の `sampleModel`)。 */
+export async function readSampleModel(): Promise<ModelFile> {
+  const url = new URL("samples/avatar.ugoe", document.baseURI);
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`${url}: ${response.status} ${response.statusText}`);
+  return { name: "avatar.ugoe (サンプル)", bytes: new Uint8Array(await response.arrayBuffer()) };
+}
 
 /** 今使う `ViewerHost`。 */
 export function viewerHost(): ViewerHost {
