@@ -106,6 +106,12 @@ editor:
 editor-build *args:
     pnpm --filter '@ugoe/editor' tauri build {{args}}
 
+# Linux (WSL2 を含む) から Windows x86_64 向けのエディタをクロスビルドする (NSIS だけ。署名なし)。
+# 必要な道具を調べてから tauri build を cargo-xwin で実行する (scripts/editor-windows.mjs)。
+# 手順と前提は apps/editor/README.md の「Linux (WSL2) から Windows 向けにビルドする」
+editor-build-windows *args:
+    @node scripts/editor-windows.mjs {{args}}
+
 # CLI 実行: `just cli info model.json`
 cli *args:
     @cargo run -q -p ugoe-cli -- {{args}}

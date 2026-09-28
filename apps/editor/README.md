@@ -28,9 +28,11 @@ just web-check      # Biome + svelte-check
 
 ## 各 OS でのビルド
 
-Tauri は他の OS 向けのクロスビルドが難しいので、**インストーラはその OS の上でビルドする**。
-WSL の中でビルドすると Linux 向けのバイナリができる (WSLg で動かせるが、Windows 向けではない)。
-Windows 向けは、WSL ではなく Windows 上 (PowerShell) で直接ビルドする。
+Tauri は他の OS 向けのクロスビルドが難しいので、**インストーラは基本的にその OS の上でビルドする**。
+WSL の中で `just editor-build` を実行すると Linux 向けのバイナリができる (WSLg で動かせるが、Windows 向けではない)。
+Windows 向けは、Windows 上 (PowerShell) で直接ビルドするか、
+Linux (WSL2 を含む) から `just editor-build-windows` でクロスビルドする
+([Linux (WSL2) から Windows 向けにビルドする](#linux-wsl2-から-windows-向けにビルドする)。NSIS のインストーラだけ)。
 
 ビルドせずに試すだけなら、GitHub Actions の [Editor build](../../.github/workflows/editor-build.yml) の成果物を使う
 (Actions のタブで実行を選び、Artifacts から `ugoe-editor-<OS>` をダウンロードする。手動実行か `v*` タグで動く)。
@@ -83,11 +85,48 @@ WSL では、AppImage を作る linuxdeploy が `PATH` に含まれる Windows �
 PATH="$(printf '%s' "$PATH" | tr ':' '\n' | grep -v '^/mnt/' | paste -sd:)" just editor-build
 ```
 
+### Linux (WSL2) から Windows 向けにビルドする
+
+Windows に切り替えずに、Linux から Windows x86_64 向けの実行ファイルと NSIS のインストーラを作れる
+([Tauri の Windows Installer の「Build Windows apps on Linux and macOS」](https://v2.tauri.app/distribute/windows-installer/#build-windows-apps-on-linux-and-macos))。
+[cargo-xwin](https://github.com/rust-cross/cargo-xwin) が MSVC の CRT と Windows SDK を用意し、LLVM の `clang` と `lld-link` でビルドする。
+
+前提 (「共通の前提」に加えて。Debian / Ubuntu の例):
+
+```sh
+sudo apt install clang lld llvm nsis                     # clang・lld-link・llvm-rc・llvm-lib・makensis
+rustup target add x86_64-pc-windows-msvc                 # リポジトリの中で実行する (rust-toolchain.toml の版に入る)
+cargo install cargo-xwin --locked
+```
+
+```sh
+just editor-build-windows   # 足りない道具があれば、入れ方を示して止まる
+```
+
+- できるもの: `target/x86_64-pc-windows-msvc/release/bundle/nsis/ugoe_<版>_x64-setup.exe` (インストーラ、約 4 MiB) と
+  `target/x86_64-pc-windows-msvc/release/ugoe-editor.exe` (実行ファイル、約 13 MiB)。
+  引数は `tauri build` に渡される (例: `just editor-build-windows --debug`)。
+- WSL2 からは、実行ファイルを Windows 側にコピーしてそのまま起動できる
+  (例: `cp target/x86_64-pc-windows-msvc/release/ugoe-editor.exe /mnt/c/Users/<名前>/Downloads/` してエクスプローラーから開く)。
+- **NSIS だけ。** `.msi` (WiX) は Windows でしか作れない。
+- **署名していない** ([配布物の署名](#配布物の署名))。SmartScreen の警告が出る。
+- **WebView2:** インストーラは、WebView2 Runtime がなければ Microsoft からブートストラッパーを
+  ダウンロードして入れる (Tauri の既定の `downloadBootstrapper`。インターネット接続が要る)。
+  Windows 10 (1803 以降)・11 には通常入っているので、何も起きない。実行ファイルを直接起動するときも WebView2 Runtime が要る。
+- 初回のビルドで cargo-xwin が **MSVC の CRT と Windows SDK をダウンロード**して `~/.cache/cargo-xwin` に置く (約 1 GiB)。
+  これらは Microsoft のライセンス (Visual Studio のライセンス条項) の下にあり、同意するかは利用者の責任で判断する。
+  リポジトリには置かない (コミットしない)。
+- リンク時に `lld-link: Cannot use debug info for 'libcmt.lib(...)' [LNK4099]` の警告が大量に出るが、
+  CRT のデバッグ情報 (PDB) がないというだけで、できるものには影響しない。
+- Tauri は Linux からのクロスビルドを実験的な機能としている (`Cross-platform compilation is experimental` の警告が出る)。
+  配布する版は、CI の Windows ランナーのネイティブビルド ([Editor build](../../.github/workflows/editor-build.yml)) を使う。
+
 ### できるもの
 
 | OS | 場所 (リポジトリのルートから) | 形式 |
 | --- | --- | --- |
 | Windows | `target/release/bundle/msi/`・`target/release/bundle/nsis/` | `.msi`・セットアップ用の `.exe` (NSIS) |
+| Windows (Linux からのクロスビルド) | `target/x86_64-pc-windows-msvc/release/bundle/nsis/` | セットアップ用の `.exe` (NSIS) |
 | macOS | `target/universal-apple-darwin/release/bundle/dmg/`・`.../bundle/macos/` | `.dmg`・`ugoe.app` |
 | Linux | `target/release/bundle/deb/`・`rpm/`・`appimage/` | `.deb`・`.rpm`・`.AppImage` |
 

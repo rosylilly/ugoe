@@ -2,6 +2,7 @@ name: Editor build
 
 # エディタのインストーラを各 OS のランナーでビルドし、成果物 (artifact) として置く。
 # Tauri は他の OS 向けのクロスビルドが難しいので、OS ごとにネイティブでビルドする。
+# (Linux から Windows 向けの NSIS だけを作る `just editor-build-windows` もあるが、MSI を作れないので CI では使わない。)
 # 署名はしていない (apps/editor/README.md#配布物の署名)。
 on:
   workflow_dispatch:
