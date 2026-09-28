@@ -20,6 +20,7 @@
 | `hit_areas` | 当たり判定 |
 | `pose` | ポーズ (排他的なパーツ切り替え)。省略するとグループなし ([ポーズ](#ポーズ)) |
 | `effects` | 目パチ・呼吸・リップシンクの設定。省略すると対象なし ([エフェクト設定](#エフェクト設定)) |
+| `avatar` | アバタープロファイル。省略するとなし ([アバタープロファイル](#アバタープロファイル)) |
 
 物理 (`physics::PhysicsSettings`)、モーション (`motion::Motion`)、表情 (`expression::Expression`) は `Model` とは別のデータです。バンドルでは同じファイルに入れて配布できます ([file-formats.md](file-formats.md))。
 
@@ -45,7 +46,7 @@
 
 > アバタープロファイル ([avatar-profile.md](avatar-profile.md)) は、この標準パラメータに拡張パラメータとトラッキングとの対応表を加えたものです。
 
-`ugoe_model::standard` に定義があります。モーション・表情・物理プリセット・AI の自動リギングは標準 ID を前提に作ります。
+`ugoe_model::standard` に定義があります。`ALL` が標準パラメータ、`EXTENDED` がアバタープロファイルの拡張パラメータ (`EyeLSmile` / `EyeRSmile` は両方にある)、`VOWELS` が母音 (`MouthVowelA` 〜 `MouthVowelO`) で、`standard::range(id)` で既定の値域を引けます。モーション・表情・物理プリセット・AI の自動リギングは標準 ID を前提に作ります。
 
 慣例:
 
@@ -127,6 +128,14 @@
 - 省略したフィールドは既定値になります。既定値は **対象パラメータなし** (何もしない) で、時間などの値だけが仕様の既定値を持ちます。標準パラメータを対象にした推奨設定は `Effects::standard()` で作ります。
 - `pose` と `effects` は `#[serde(default)]` 付きで追加したフィールドなので、これらを含まない既存のデータもそのまま読めます (`SCHEMA_VERSION` は変えていません)。バンドルでは `MODL` チャンクの `Model` に含まれます。
 
+## アバタープロファイル
+
+`avatar::AvatarProfile` (`Model::avatar`)。内容と意味は [avatar-profile.md](avatar-profile.md) にあります。
+
+- `Option` で、省略するとアバタープロファイルなしです。`None` のときは書き出しません。`#[serde(default)]` 付きで追加したフィールドなので、これを含まない既存のデータもそのまま読めます (`SCHEMA_VERSION` は変えていません)。バンドルでは `MODL` チャンクの `Model` に含まれます。
+- `AvatarProfile` と `AvatarMeta` のフィールドは省略でき、省略すると既定値になります。許諾の既定値は最も制限の強い値です。
+- ランタイムは `avatar` を読み飛ばせます (機能 `avatar.profile`、[file-formats.md](file-formats.md#機能とフォールバックの一覧))。そのため、構造の検証 (`validate`) は `avatar` を検査しません。準拠の検査は `avatar::check::check_profile` (`ugoe validate --profile avatar`) で行います ([avatar-profile.md#準拠の検査](avatar-profile.md#準拠の検査))。
+
 ## キーフォーム推定のデータ
 
 キーフォームの推定 ([keyform-inference.md](keyform-inference.md)) のためのデータです。
@@ -182,11 +191,12 @@
 ## 未知の値
 
 拡張されうる enum (`BlendMode` `MaskMode` `DeformerKind` `ParameterKind` `KeyformOrigin` `KeyformInference`、
+アバタープロファイルの `AvatarPermission` `CommercialUsage` `CreditNotation` `Modification` `TrackingSource`、
 モーション・表情・物理の `CurveTarget` `Segment` `ExpressionOp` `PhysicsSource`) は `Unknown` のバリアントを持ち、
 新しい版のファイルにある知らないタグを `Unknown` として読みます。元のタグと中身は捨てます。
 
 - `Unknown` にはその種類のフォールバックを適用します。一覧は [file-formats.md#未知の値の読み込み](file-formats.md#未知の値の読み込み)。
-  値で置き換えられる種類は `effective()` (`BlendMode` `MaskMode` `ParameterKind`) や `KeyformGrid::origin` がフォールバック後の値を返します。
+  値で置き換えられる種類は `effective()` (`BlendMode` `MaskMode` `ParameterKind` と許諾の 4 つ) や `KeyformGrid::origin` がフォールバック後の値を返します。
 - `Unknown` は **書き出せません** (シリアライズがエラーになる)。別の値として黙って保存しないためです。
 - 検証 (`validate`) は `Unknown` をエラーにしません。場所は `ugoe_model::unknown` (`in_model` など) で調べられます。
 
@@ -197,7 +207,6 @@
 | データ | 内容 | 仕様 | タスク |
 | --- | --- | --- | --- |
 | 物理の出力先・衝突体・重力の基準 | 動的物理 | [physics.md#動的物理](physics.md#動的物理-揺れ用パラメータのいらない物理) | T0304 |
-| `Model::avatar` | アバタープロファイル (準拠レベル・メタデータ・トラッキングの対応) | [avatar-profile.md](avatar-profile.md) | T0110 |
 | `Model::slots` | 着せ替えのスロット | [modules.md](modules.md) | T0111 |
 | `TextureRef::normal_map`、`Model::lighting`、`Mesh::lit` | 法線マップとライティング | [rendering.md#ライティング](rendering.md#ライティング) | T0112 |
 

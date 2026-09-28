@@ -3,6 +3,7 @@
 
 use ugoe_core::{Rgb, Vec2};
 
+use crate::avatar::{AvatarMeta, AvatarProfile};
 use crate::deformer::{
     Deformer, DeformerKind, RotationDeformer, RotationKeyform, WarpDeformer, WarpKeyform,
 };
@@ -100,6 +101,7 @@ pub fn single_quad() -> Model {
         hit_areas: vec![],
         pose: Pose::default(),
         effects: Effects::default(),
+        avatar: None,
     }
 }
 
@@ -326,6 +328,7 @@ fn base_model(name: &str, parameters: Vec<Parameter>) -> Model {
         hit_areas: vec![],
         pose: Pose::default(),
         effects: Effects::default(),
+        avatar: None,
     }
 }
 
@@ -965,6 +968,31 @@ pub fn physics_hair_settings() -> PhysicsSettings {
             },
         ],
     }
+}
+
+/// `pose_and_effects` に拡張パラメータとアバタープロファイルを加えたもの。
+/// アバタープロファイルのレベル 3 を満たす (`docs/spec/avatar-profile.md`)。
+///
+/// メタデータは名前と作者だけで、許諾は既定値 (最も制限の強い値)。
+pub fn avatar_profile() -> Model {
+    let mut model = pose_and_effects();
+    model.meta.name = "avatar_profile".into();
+    let extended: Vec<Parameter> = standard::EXTENDED
+        .iter()
+        .filter(|(id, ..)| !model.parameters.iter().any(|p| p.id.as_str() == *id))
+        .map(|&(id, min, default, max)| parameter(id, min, default, max))
+        .collect();
+    model.parameters.extend(extended);
+    model.avatar = Some(AvatarProfile {
+        level: 3,
+        meta: AvatarMeta {
+            name: "Avatar".into(),
+            authors: vec!["ugoe".into()],
+            ..AvatarMeta::default()
+        },
+        ..AvatarProfile::default()
+    });
+    model
 }
 
 #[cfg(test)]

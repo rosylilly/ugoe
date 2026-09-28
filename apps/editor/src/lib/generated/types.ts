@@ -42,6 +42,84 @@ interior_spacing: number,
 min_island_area: number, };
 
 /**
+ * 標準の当たり判定の名前と `HitArea` の対応。
+ */
+export type AvatarHitArea = { 
+/**
+ * 標準の名前 ([`HIT_AREA_HEAD`]、[`HIT_AREA_BODY`])。
+ */
+name: string, 
+/**
+ * `Model::hit_areas` の ID。
+ */
+hit_area: string, };
+
+/**
+ * アバターのメタデータと利用許諾 (`docs/spec/avatar-profile.md#メタデータ`)。
+ */
+export type AvatarMeta = { 
+/**
+ * アバターの名前 (必須)。
+ */
+name: string, version: string | null, 
+/**
+ * 作者の一覧 (必須。1 人以上)。
+ */
+authors: Array<string>, copyright: string | null, contact: string | null, 
+/**
+ * 原作・参考元。
+ */
+references: Array<string>, 
+/**
+ * サムネイル画像 (`Model::textures` のインデックス)。
+ */
+thumbnail: number | null, 
+/**
+ * 利用規約の URL。
+ */
+license_url: string | null, avatar_permission: AvatarPermission, commercial_usage: CommercialUsage, allow_violent_usage: boolean, allow_sexual_usage: boolean, allow_political_or_religious_usage: boolean, allow_antisocial_or_hate_usage: boolean, credit_notation: CreditNotation, allow_redistribution: boolean, modification: Modification, 
+/**
+ * 素材などの第三者のライセンス表記。
+ */
+third_party_licenses: string | null, };
+
+/**
+ * アバターとして使ってよい人。
+ */
+export type AvatarPermission = "only_author" | "only_licensed" | "everyone";
+
+/**
+ * アバタープロファイル (`Model::avatar`)。`docs/spec/avatar-profile.md`。
+ *
+ * 省略したフィールドは既定値になる。許諾の既定値は最も制限の強い値。
+ */
+export type AvatarProfile = { 
+/**
+ * 準拠するプロファイルのバージョン。既定は [`PROFILE_VERSION`]。
+ */
+profile_version: number, 
+/**
+ * 準拠を主張するレベル (1〜[`MAX_LEVEL`])。既定は 1。
+ */
+level: number, meta: AvatarMeta, 
+/**
+ * トラッキングの対応の上書きと追加。
+ */
+tracking: Array<TrackingOverride>, 
+/**
+ * 視線の追従。省略すると [`LookAt::default`] (`EyeBallX` / `EyeBallY`) を、モデルにあれば使う。
+ */
+look_at: LookAt | null, 
+/**
+ * 標準の当たり判定の名前と `Model::hit_areas` の対応。
+ */
+hit_areas: Array<AvatarHitArea>, 
+/**
+ * アプリに公開する着せ替えのスロットの ID (`docs/spec/modules.md`)。
+ */
+slots: Array<string>, };
+
+/**
  * 合成モード。式は `docs/spec/rendering.md`。
  */
 export type BlendMode = "normal" | "additive" | "multiply";
@@ -111,6 +189,16 @@ tolerance?: number | null,
  * `true` なら先の `authored` のセルも上書きする。
  */
 overwrite_authored: boolean, } | { "op": "mark_keyform_authored", target: KeyformTarget, cells: Array<{ [key in string]: number }>, } | { "op": "mark_keyform_derived", target: KeyformTarget, cells: Array<{ [key in string]: number }>, } | { "op": "move_mesh_vertices", id: string, moves: Array<VertexMove>, } | { "op": "add_mesh_vertex", id: string, position: Vec2, } | { "op": "remove_mesh_vertices", id: string, indices: Array<number>, } | { "op": "retriangulate_mesh", id: string, } | { "op": "add_keyform_key", target: KeyformTarget, parameter: string, key: number, } | { "op": "remove_keyform_key", target: KeyformTarget, parameter: string, key: number, } | { "op": "set_keyform_cell", target: KeyformTarget, cell: { [key in string]: number }, keyform: Keyform, } | { "op": "set_mesh_draw_order", id: string, draw_order: number, } | { "op": "create_warp_deformer", id?: string | null, name: string, children?: Array<ChildRef>, parts?: Array<string>, rows: number, cols: number, parent?: string | null, } | { "op": "create_rotation_deformer", id?: string | null, name: string, children?: Array<ChildRef>, parts?: Array<string>, origin?: Vec2 | null, parent?: string | null, } | { "op": "reparent_preserving_look", element: ChildRef, new_parent: string | null, } | { "op": "set_keyform_inference", target: KeyformTarget, inference?: KeyformInference | null, } | { "op": "set_mirror_pair", target: KeyformTarget, mirror?: string | null, axis?: number | null, } | { "op": "set_depth", target: ChildRef, depth?: Array<number> | null, } | { "op": "apply_depth_preset", target: ChildRef, preset: DepthPreset, } | { "op": "move_rotation_origin", id: string, delta: Vec2, } | { "op": "unwrap_deformer", id: string, };
+
+/**
+ * 商用利用の範囲。
+ */
+export type CommercialUsage = "personal_non_profit" | "personal_profit" | "corporation";
+
+/**
+ * クレジット表記。
+ */
+export type CreditNotation = "required" | "unnecessary";
 
 export type Curve = { target: CurveTarget, segments: Array<Segment>, 
 /**
@@ -308,6 +396,27 @@ export type LipSync = {
 parameters: Array<string>, };
 
 /**
+ * 視線の追従に使うパラメータと可動範囲。
+ */
+export type LookAt = { 
+/**
+ * 左右 (正でキャラクターの左)。既定は `EyeBallX`。
+ */
+x: string, 
+/**
+ * 上下 (正で上)。既定は `EyeBallY`。
+ */
+y: string, 
+/**
+ * 左右の可動範囲 (度)。見る先がこの角度だけ横にあるとき、`x` が端の値になる。0 より大きい。
+ */
+range_x: number, 
+/**
+ * 上下の可動範囲 (度)。0 より大きい。
+ */
+range_y: number, };
+
+/**
  * 通常マスクの結合方法。式は `docs/spec/rendering.md#マスク`。
  */
 export type MaskMode = "union" | "intersection";
@@ -444,9 +553,18 @@ pose: Pose,
 /**
  * 目パチ・呼吸・リップシンクの設定。省略時は対象なし (`docs/spec/motion.md#エフェクト`)。
  */
-effects: Effects, };
+effects: Effects, 
+/**
+ * アバタープロファイル。省略時はなし (`docs/spec/avatar-profile.md`)。
+ */
+avatar?: AvatarProfile | null, };
 
 export type ModelMeta = { name: string, canvas: Canvas, };
+
+/**
+ * 改変の許諾。
+ */
+export type Modification = "prohibited" | "allow" | "allow_redistribution";
 
 export type Motion = { name: string, 
 /**
@@ -620,6 +738,27 @@ export type Segment = { "type": "start", p: Point, } | { "type": "linear", to: P
  * テクスチャ参照。実データはコンテナ (`ugoe-format`) 側が保持する。
  */
 export type TextureRef = { name: string, width: number, height: number, };
+
+/**
+ * トラッキングの対応の上書き 1 つ (`docs/spec/avatar-profile.md#トラッキングの対応の上書き`)。
+ *
+ * 入力の値 `v` から `v * scale + offset` を `parameter` に書き込む (値域へのクランプはその後)。
+ */
+export type TrackingOverride = { source: TrackingSource, 
+/**
+ * 入力の名前。`source` によって、標準の対応表のパラメータ ID ([`TRACKED_PARAMETERS`])、
+ * ARKit のブレンドシェイプ名 ([`ARKIT_BLEND_SHAPES`])、頭の回転 ([`HEAD_INPUTS`]) のいずれか。
+ */
+input: string, 
+/**
+ * 書き込むパラメータ。`source` が `standard` なら省略でき、省略すると `input` と同じ ID。
+ */
+parameter?: string | null, scale: number, offset: number, };
+
+/**
+ * トラッキングの入力の種類。
+ */
+export type TrackingSource = "standard" | "blend_shape" | "head";
 
 /**
  * [`crate::Vec2`] の JSON 表現 `[x, y]` (glam の serde 形式)。

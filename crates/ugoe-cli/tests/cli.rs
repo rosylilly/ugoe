@@ -46,6 +46,43 @@ fn fixture_json_round_trips_through_info() {
 }
 
 #[test]
+fn validate_checks_the_avatar_profile() {
+    let out = stdout(&ugoe(&[
+        "validate",
+        "fixture:avatar-profile",
+        "--profile",
+        "avatar",
+    ]));
+    assert_eq!(
+        out.lines().collect::<Vec<_>>(),
+        ["avatar profile: claims level 3, satisfies level 3", "ok"]
+    );
+
+    // 構造は正しいが、プロファイルを持たないモデル。
+    assert_eq!(
+        stdout(&ugoe(&["validate", "fixture:single_quad"])).trim(),
+        "ok"
+    );
+    let output = ugoe(&["validate", "fixture:single_quad", "--profile", "avatar"]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("no avatar profile"), "{stderr}");
+}
+
+#[test]
+fn standard_params_include_extended_parameters() {
+    let out = stdout(&ugoe(&["standard-params"]));
+    let ids: Vec<&str> = out
+        .lines()
+        .filter_map(|l| l.split_whitespace().next())
+        .collect();
+    assert!(ids.contains(&"AngleX"));
+    assert!(ids.contains(&"TongueOut"));
+    assert!(ids.contains(&"MouthVowelA"));
+    assert_eq!(ids.iter().filter(|&&id| id == "EyeLSmile").count(), 1);
+}
+
+#[test]
 fn unknown_fixture_lists_known_names() {
     let output = ugoe(&["fixture", "nope"]);
     assert!(!output.status.success());

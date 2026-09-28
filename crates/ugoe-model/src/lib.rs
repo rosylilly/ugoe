@@ -4,6 +4,7 @@
 //! 「どう動かすか」(補間・変形・物理・モーション再生) は下流クレートが担う。
 //! 仕様は `docs/spec/model.md` を正とする。型を変更したら仕様書も同じ PR で更新すること。
 
+pub mod avatar;
 pub mod deformer;
 pub mod effects;
 pub mod expression;
@@ -25,6 +26,7 @@ use ugoe_core::Vec2;
 #[cfg(any(feature = "ts", feature = "schema"))]
 use ugoe_core::codegen::Vec2Repr;
 
+pub use avatar::AvatarProfile;
 pub use deformer::{Deformer, DeformerId, DeformerKind};
 pub use effects::Effects;
 pub use keyform::{
@@ -63,6 +65,9 @@ pub struct Model {
     /// 目パチ・呼吸・リップシンクの設定。省略時は対象なし (`docs/spec/motion.md#エフェクト`)。
     #[serde(default)]
     pub effects: Effects,
+    /// アバタープロファイル。省略時はなし (`docs/spec/avatar-profile.md`)。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar: Option<AvatarProfile>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

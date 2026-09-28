@@ -195,6 +195,8 @@ FeatureTable {
 | `Curve::segments` の要素 (`Segment`) | そのカーブ全体を無視する | モーション |
 | `ExpressionParameter::op` (`ExpressionOp`) | その項目を無視する | 表情 |
 | `PhysicsInput::source` / `PhysicsOutput::source` (`PhysicsSource`) | その入力・出力を無視する | 物理 |
+| `AvatarMeta` の許諾 (`AvatarPermission` `CommercialUsage` `CreditNotation` `Modification`) | 最も制限の強い値 (`only_author`・`personal_non_profit`・`required`・`prohibited`) として扱う (`effective()`) | アプリ |
+| `TrackingOverride::source` (`TrackingSource`) | その上書きを無視する | トラッキング |
 
 - 未知の値を読んでも検証エラーにはしません。`read_bundle_with_report` が警告として場所を返します。
 

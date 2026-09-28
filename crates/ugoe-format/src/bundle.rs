@@ -867,6 +867,22 @@ mod tests {
         );
     }
 
+    /// アバタープロファイル (基準の機能 `avatar.profile`) は `MODL` に入り、機能として宣言しない。
+    #[test]
+    fn roundtrip_avatar_profile() {
+        let mut bundle = model_only();
+        bundle.model = ugoe_model::fixtures::avatar_profile();
+        assert!(features::detect(&bundle).is_empty());
+        for compress in [false, true] {
+            let bytes = write_bundle_with(&bundle, WriteOptions { compress }).unwrap();
+            let (read, report) = read_bundle_with_report(&bytes).unwrap();
+            assert_eq!(read, bundle);
+            assert!(report.features.is_empty());
+        }
+        let json = crate::model_to_json(&bundle.model).unwrap();
+        assert_eq!(crate::model_from_json(&json).unwrap(), bundle.model);
+    }
+
     #[test]
     fn written_layout_follows_spec() {
         let bytes = write_bundle(&full_bundle()).unwrap();

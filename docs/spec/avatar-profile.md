@@ -2,7 +2,7 @@
 
 判断の経緯は [ADR 0012](../adr/0012-avatar-profile.md)。
 
-> 実装待ち: データ定義と検証は T0110、トラッキングの対応付けの実装は T0306 で行います。
+> 実装待ち: トラッキングの対応付けの実装は T0306 で行います。データ定義 (`ugoe_model::avatar`) と検証 (`ugoe validate --profile avatar`) は実装済みです。
 > この仕様は公開を前提に、ugoe の実装から独立して読めるように書きます。1.0 までは内容が変わりえます。
 > この仕様書のライセンスは MIT です ([ADR 0018](../adr/0018-licensing-and-1.0-scope.md))。
 
@@ -17,7 +17,8 @@
 | 2 | 標準 | レベル 1 に加えて、視線 (`EyeBallX` `EyeBallY`)、眉 (`BrowLY` `BrowRY`)、口の形 (`MouthForm`)、体の向き (`BodyAngleX` `BodyAngleY` `BodyAngleZ`)、呼吸 (`Breath`) |
 | 3 | 表情 | レベル 2 に加えて、下の「拡張パラメータ」のうち少なくとも 8 つ |
 
-モデルは準拠を主張するレベルを `Model.avatar.level` に書きます。検証ツール (`ugoe validate --profile avatar`) は、主張したレベルに必要なパラメータが揃っているかを検査します。
+モデルは準拠を主張するレベルを `Model.avatar.level` (整数、既定 1) に書きます。検証ツール (`ugoe validate --profile avatar`) は、主張したレベルに必要なパラメータが揃っているかを検査します ([準拠の検査](#準拠の検査))。
+`Model.avatar` を持たないモデルは、どのレベルにも準拠しません。
 
 ## パラメータ
 
@@ -92,6 +93,37 @@ ARKit の 52 ブレンドシェイプ (0〜1) からの変換です。ARKit の 
 
 結果はパラメータの値域にクランプします。
 
+### トラッキングの対応の上書き
+
+`Model.avatar.tracking` は上書きの列です。各要素は次のフィールドを持ちます。
+
+| フィールド | 内容 |
+| --- | --- |
+| `source` | 入力の種類: `standard` (上の表で計算したパラメータの値)・`blend_shape` (ARKit のブレンドシェイプの値、0〜1)・`head` (頭の回転、度) |
+| `input` | 入力の名前。`standard` なら上の表のパラメータ ID、`blend_shape` なら ARKit のブレンドシェイプ名、`head` なら `yaw` / `pitch` / `roll` |
+| `parameter` | 書き込むパラメータ。`standard` なら省略でき、省略すると `input` と同じ ID。それ以外では必須 |
+| `scale` | 係数 (既定 1) |
+| `offset` | オフセット (既定 0) |
+
+アプリは次の順で値を決めます。
+
+1. 各上書きについて、入力の値 `v` から `v × scale + offset` を計算し、`parameter` に書き込む。同じパラメータへの書き込みが複数あれば足し合わせる。`standard` の入力の値は、上の表の式の結果 (クランプ前) です。
+2. 上の表の標準の対応は、そのパラメータを `input` とする `standard` の上書きがあるとき、またはそのパラメータに書き込む上書きがあるときは行わない (上書きが置き換える)。それ以外のパラメータには標準の対応で書き込む。
+3. 最後に各パラメータの値域にクランプする。
+
+`head` の値の符号は、上の「向きの約束」と同じです (`yaw` は `AngleX`、`pitch` は `AngleY`、`roll` は `AngleZ` の向き)。
+知らない `source` の上書きは無視します (新しい版のファイル)。
+
+```json
+"tracking": [
+  { "source": "standard", "input": "EyeBallX", "scale": -1 },
+  { "source": "standard", "input": "MouthForm", "parameter": "MouthSmile" },
+  { "source": "blend_shape", "input": "jawForward", "parameter": "JawForward", "scale": 0.5 }
+]
+```
+
+1 つ目は `EyeBallX` の符号を反転し、2 つ目は `MouthForm` の代わりに独自の `MouthSmile` を動かし、3 つ目は表で使わないブレンドシェイプを独自のパラメータに対応させます。
+
 この表で使わない ARKit のブレンドシェイプ: `jawForward`、`mouthRollLower`、`mouthRollUpper`、`mouthDimpleLeft`、`mouthDimpleRight`、`mouthStretchLeft`、`mouthStretchRight`、`mouthLowerDownLeft`、`mouthLowerDownRight`、`mouthUpperUpLeft`、`mouthUpperUpRight`、`cheekSquintLeft`、`cheekSquintRight`。
 モデルは `Model.avatar.tracking` で、これらを独自のパラメータに対応させられます。
 
@@ -107,9 +139,9 @@ ARKit の 52 ブレンドシェイプ (0〜1) からの変換です。ARKit の 
 
 | フィールド | 内容 |
 | --- | --- |
-| `name` | アバターの名前 (必須) |
+| `name` | アバターの名前 (必須、空白だけは不可) |
 | `version` | アバターのバージョン |
-| `authors` | 作者の一覧 (必須) |
+| `authors` | 作者の一覧 (必須、1 人以上) |
 | `copyright` | 著作権の表示 |
 | `contact` | 連絡先 |
 | `references` | 原作・参考元 |
@@ -127,14 +159,46 @@ ARKit の 52 ブレンドシェイプ (0〜1) からの変換です。ARKit の 
 | `third_party_licenses` | 素材などの第三者のライセンス表記 |
 
 許諾の項目は、既定で最も制限の強い値 (`only_author`、`personal_non_profit`、`false`、`required`、`prohibited`) とします。
+知らない値 (新しい版のファイル) も、最も制限の強い値として扱います。
+`name` と `authors` 以外のフィールドは省略できます。
 
 ## アプリ向けの情報
 
 | フィールド | 内容 |
 | --- | --- |
-| `Model.avatar.look_at` | 視線の追従に使うパラメータと可動範囲 |
+| `Model.avatar.look_at` | 視線の追従に使うパラメータと可動範囲 (下の表)。省略すると `EyeBallX` / `EyeBallY` を、可動範囲 30 度で使う |
 | `Model.avatar.hit_areas` | 標準の当たり判定の名前 (`Head`、`Body`) と `HitArea` の対応 |
-| `Model.avatar.slots` | 着せ替えのスロット ([modules.md](modules.md)) のうち、アプリに公開するもの |
+| `Model.avatar.slots` | 着せ替えのスロット ([modules.md](modules.md)) のうち、アプリに公開するもの (スロットの ID の列) |
+
+`look_at` のフィールド:
+
+| フィールド | 内容 |
+| --- | --- |
+| `x` / `y` | 左右 (正でキャラクターの左)・上下 (正で上) のパラメータ。既定は `EyeBallX` / `EyeBallY` |
+| `range_x` / `range_y` | 可動範囲 (度、0 より大きい)。見る先がこの角度だけずれたとき、パラメータが端の値になる。既定は 30 |
+
+`hit_areas` の要素は `{ "name": "Head", "hit_area": "<HitArea の ID>" }` です。
+
+## 準拠の検査
+
+`ugoe validate --profile avatar` (`ugoe_model::avatar::check::check_profile`) は、モデルの構造の検証に加えて次を検査し、主張したレベルと満たしているレベルを表示します。
+エラーが 1 つでもあれば準拠していません。警告は準拠を妨げません。
+
+| 検査 | 重さ |
+| --- | --- |
+| `Model.avatar` があること | エラー |
+| `level` が 1〜3 であること | エラー |
+| メタデータの `name` と `authors` があること | エラー |
+| 主張したレベルまでに必要なパラメータがあること (レベル 3 は拡張パラメータが 8 つ以上) | エラー |
+| `tracking` の `input` が `source` の種類の入力として知られていること、`parameter` (または省略した `standard` の `input`) がモデルにあること、`scale` と `offset` が有限値であること | エラー |
+| `look_at` を書いたなら、`x` と `y` のパラメータがモデルにあり、可動範囲が 0 より大きいこと | エラー |
+| `hit_areas` の `name` が重複せず、`hit_area` がモデルの当たり判定にあること | エラー |
+| `meta.thumbnail` がテクスチャの範囲内にあること | エラー |
+| 標準・拡張パラメータの値域 (`min` / `default` / `max`) がこの仕様の値と同じであること | 警告 |
+| `profile_version` が検証ツールの知っているバージョン以下であること | 警告 |
+| 知らない値 (許諾・`tracking` の `source`) がないこと | 警告 |
+
+満たしているレベルは、主張したレベルとは無関係に、メタデータと必要なパラメータだけから決めます (メタデータが無ければ 0)。
 
 ## バージョン
 

@@ -156,6 +156,7 @@ impl Project {
             hit_areas: Vec::new(),
             pose: Pose::default(),
             effects: Effects::default(),
+            avatar: None,
         };
         Self::new(ProjectMeta::new(name), model, Textures::new())
     }

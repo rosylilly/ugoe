@@ -16,6 +16,7 @@ pub const FIXTURES: &[Fixture] = &[
     ("nested_masks", fixtures::nested_masks),
     ("mixed_masks", fixtures::mixed_masks),
     ("intersection_masks", fixtures::intersection_masks),
+    ("avatar_profile", fixtures::avatar_profile),
 ];
 
 /// 名前からフィクスチャを作る。`single-quad` のような kebab-case も受け付ける。

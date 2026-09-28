@@ -16,11 +16,12 @@
 
 ```sh
 ugoe validate model.json                 # 検証。問題なければ "ok"
+ugoe validate model.ugoe --profile avatar  # アバタープロファイルへの準拠も検査 (準拠レベルを表示)
 ugoe info fixture:single_quad            # 概要
 ugoe info model.ugoe --json              # 機械で読みやすい JSON (パラメータの ID・値域を含む)
 ugoe fixture list                        # フィクスチャ名の一覧 (名前を省略しても同じ)
 ugoe fixture single_quad > quad.json     # フィクスチャを JSON で書き出す
-ugoe standard-params                     # 標準パラメータ一覧
+ugoe standard-params                     # 標準パラメータ・拡張パラメータの一覧
 ```
 
 ### `ugoe render`

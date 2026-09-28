@@ -5,6 +5,9 @@
 //! 読み込み時の警告と、書き出し前の検査に使う。返すのは値の場所 (`meshes[Face].blend` など)。
 
 use crate::Model;
+use crate::avatar::{
+    AvatarPermission, AvatarProfile, CommercialUsage, CreditNotation, Modification, TrackingSource,
+};
 use crate::deformer::DeformerKind;
 use crate::expression::{Expression, ExpressionOp};
 use crate::keyform::{KeyformGrid, KeyformInference, KeyformOrigin};
@@ -45,7 +48,40 @@ pub fn in_model(model: &Model) -> Vec<String> {
     for glue in &model.glues {
         check_grid(&format!("glues[{}]", glue.id), &glue.keyforms, &mut found);
     }
+    if let Some(avatar) = &model.avatar {
+        check_avatar(avatar, &mut found);
+    }
     found
+}
+
+/// アバタープロファイルの許諾とトラッキングの入力の種類。
+fn check_avatar(avatar: &AvatarProfile, found: &mut Vec<String>) {
+    let meta = &avatar.meta;
+    let fields = [
+        (
+            "avatar_permission",
+            meta.avatar_permission == AvatarPermission::Unknown,
+        ),
+        (
+            "commercial_usage",
+            meta.commercial_usage == CommercialUsage::Unknown,
+        ),
+        (
+            "credit_notation",
+            meta.credit_notation == CreditNotation::Unknown,
+        ),
+        ("modification", meta.modification == Modification::Unknown),
+    ];
+    for (field, is_unknown) in fields {
+        if is_unknown {
+            found.push(format!("avatar.meta.{field}"));
+        }
+    }
+    for (index, entry) in avatar.tracking.iter().enumerate() {
+        if entry.source == TrackingSource::Unknown {
+            found.push(format!("avatar.tracking[{index}].source"));
+        }
+    }
 }
 
 /// 物理の設定の中の未知の値の場所をすべて返す。
@@ -162,6 +198,21 @@ mod tests {
         );
         // 未知の値は検証エラーにしない。
         assert!(crate::validate::validate(&model).is_empty());
+    }
+
+    #[test]
+    fn unknown_avatar_values_are_found() {
+        let mut value = serde_json::to_value(fixtures::avatar_profile()).unwrap();
+        value["avatar"]["meta"]["commercial_usage"] = json!("government");
+        value["avatar"]["tracking"] = json!([
+            { "source": "blend_shape", "input": "jawForward", "parameter": "X" },
+            { "source": "hand", "input": "thumb", "parameter": "X" },
+        ]);
+        let model: Model = serde_json::from_value(value).unwrap();
+        assert_eq!(
+            in_model(&model),
+            ["avatar.meta.commercial_usage", "avatar.tracking[1].source"]
+        );
     }
 
     #[test]

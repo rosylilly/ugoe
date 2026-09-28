@@ -32,6 +32,9 @@ enum Cmd {
     Validate {
         #[arg(help = INPUT_HELP)]
         input: String,
+        /// 構造の検証に加えて、プロファイルへの準拠を検査する。
+        #[arg(long, value_enum)]
+        profile: Option<Profile>,
     },
     /// モデルの概要 (パラメータ・パーツ・メッシュ数など) を表示する。
     Info {
@@ -43,12 +46,19 @@ enum Cmd {
     },
     /// 組み込みフィクスチャを JSON で標準出力に書き出す。名前を省略するか `list` で一覧を表示する。
     Fixture { name: Option<String> },
-    /// 標準パラメータ一覧を表示する。
+    /// 標準パラメータとアバタープロファイルの拡張パラメータの一覧を表示する。
     StandardParams,
     /// ヘッドレスの GPU でモデルを描画して PNG に書き出す。
     Render(RenderArgs),
     /// PSD を取り込んで新しい `.ugoeproj` プロジェクトに保存する。
     ImportPsd(ImportPsdArgs),
+}
+
+/// `ugoe validate --profile` で検査するプロファイル。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum Profile {
+    /// アバタープロファイル (`docs/spec/avatar-profile.md`)。
+    Avatar,
 }
 
 #[derive(Debug, Args)]
@@ -119,17 +129,23 @@ struct RenderArgs {
 
 fn main() -> anyhow::Result<()> {
     match Cli::parse().command {
-        Cmd::Validate { input } => {
+        Cmd::Validate { input, profile } => {
             let model = load_input(&input)?.model;
             let errors = ugoe_model::validate::validate(&model);
-            if errors.is_empty() {
-                println!("ok");
-            } else {
-                for e in &errors {
-                    eprintln!("error: {e}");
-                }
+            for e in &errors {
+                eprintln!("error: {e}");
+            }
+            let profile_errors = match profile {
+                Some(Profile::Avatar) => check_avatar_profile(&model),
+                None => 0,
+            };
+            if !errors.is_empty() {
                 bail!("{} validation error(s)", errors.len());
             }
+            if profile_errors > 0 {
+                bail!("{profile_errors} avatar profile error(s)");
+            }
+            println!("ok");
         }
         Cmd::Info { input, json } => {
             let m = load_input(&input)?.model;
@@ -160,14 +176,40 @@ fn main() -> anyhow::Result<()> {
             }
         },
         Cmd::StandardParams => {
-            for (id, min, default, max) in ugoe_model::standard::ALL {
-                println!("{id:<12} {min:>6} {default:>6} {max:>6}");
+            use ugoe_model::standard::{ALL, EXTENDED, VOWELS};
+            let mut printed = Vec::new();
+            for (id, min, default, max) in ALL.iter().chain(EXTENDED).chain(VOWELS) {
+                if !printed.contains(id) {
+                    println!("{id:<12} {min:>6} {default:>6} {max:>6}");
+                    printed.push(id);
+                }
             }
         }
         Cmd::Render(args) => run_render(args)?,
         Cmd::ImportPsd(args) => run_import_psd(args)?,
     }
     Ok(())
+}
+
+/// `ugoe validate --profile avatar`: アバタープロファイルへの準拠を検査し、問題を標準エラーに、
+/// 主張したレベルと満たしているレベルを標準出力に書く。エラーの数を返す (警告は数えない)。
+fn check_avatar_profile(model: &Model) -> usize {
+    use ugoe_model::avatar::check::{Severity, check_profile};
+
+    let report = check_profile(model);
+    for issue in &report.issues {
+        match issue.severity() {
+            Severity::Error => eprintln!("error: {issue}"),
+            Severity::Warning => eprintln!("warning: {issue}"),
+        }
+    }
+    if let Some(claimed) = report.claimed {
+        println!(
+            "avatar profile: claims level {claimed}, satisfies level {}",
+            report.satisfied
+        );
+    }
+    report.errors().count()
 }
 
 /// `ugoe import-psd`: 空のプロジェクトに PSD を取り込み、保存する。取り込みの規則は
