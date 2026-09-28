@@ -454,7 +454,7 @@ mod tests {
         NormalizationRange, PhysicsInput, PhysicsNormalization, PhysicsOutput, PhysicsParticle,
         PhysicsRig, PhysicsSource,
     };
-    use ugoe_model::{KeyformGrid, TextureRef};
+    use ugoe_model::{DepthRotation, KeyformGrid, KeyformInference, KeyformOrigin, TextureRef};
 
     use super::*;
 
@@ -598,7 +598,24 @@ mod tests {
                     opacity: 1.0,
                 }),
             }),
+            mirror: Some("Rot".into()),
+            mirror_axis: Some(0.0),
         });
+        // オーサリング用のデータ (セルの由来・推定の設定・深度) も往復させる。
+        let quad = &mut model.meshes[0];
+        quad.keyforms.origins = vec![
+            KeyformOrigin::Derived,
+            KeyformOrigin::Authored,
+            KeyformOrigin::Authored,
+        ];
+        quad.keyforms.inference = Some(KeyformInference::DepthRotation(DepthRotation {
+            angle_scale: 0.5,
+            pivot: Vec2::new(0.0, 32.0),
+            pivot_depth: -16.0,
+            yaw: Some("X".into()),
+            pitch: None,
+        }));
+        quad.depth = Some(vec![0.0, 1.0, 2.0, 3.0]);
         model.textures.push(TextureRef {
             name: "compressed".into(),
             width: 4,

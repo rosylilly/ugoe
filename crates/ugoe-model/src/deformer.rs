@@ -15,6 +15,14 @@ pub struct Deformer {
     /// `None` ならキャンバス座標直下。
     pub parent: Option<DeformerId>,
     pub kind: DeformerKind,
+    /// ミラーで対にするデフォーマ (オーサリング用)。`None` と自分自身は「自分と対応する」。
+    /// 対は双方向に張る (`docs/spec/keyform-inference.md#ミラー`)。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mirror: Option<DeformerId>,
+    /// ミラーの対称軸 (縦の直線) の x 座標。原点・制御点と同じ親座標系で表す (オーサリング用)。
+    /// `None` なら親で決まる既定値 (`docs/spec/keyform-inference.md#対称軸`)。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mirror_axis: Option<f32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -31,6 +39,10 @@ pub struct WarpDeformer {
     pub rows: u16,
     pub cols: u16,
     pub keyforms: KeyformGrid<WarpKeyform>,
+    /// 制御点ごとの深度 (キャンバスのピクセル単位、手前が正。オーサリング用)。
+    /// 並びは `WarpKeyform::points` と同じで、長さ `(rows+1)*(cols+1)`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depth: Option<Vec<f32>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

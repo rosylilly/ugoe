@@ -34,6 +34,17 @@ pub struct Mesh {
     #[serde(default)]
     pub mask_only: bool,
     pub keyforms: KeyformGrid<MeshKeyform>,
+    /// ミラーで対にするメッシュ (オーサリング用)。`None` と自分自身は「自分と対応する」。
+    /// 対は双方向に張る (`docs/spec/keyform-inference.md#ミラー`)。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mirror: Option<MeshId>,
+    /// ミラーの対称軸 (縦の直線) の x 座標。頂点と同じ親座標系で表す (オーサリング用)。
+    /// `None` なら親で決まる既定値 (`docs/spec/keyform-inference.md#対称軸`)。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mirror_axis: Option<f32>,
+    /// 頂点ごとの深度 (キャンバスのピクセル単位、手前が正。オーサリング用)。長さは `uvs` と同じ。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depth: Option<Vec<f32>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

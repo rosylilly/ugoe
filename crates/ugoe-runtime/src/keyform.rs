@@ -115,10 +115,7 @@ mod tests {
     // evaluation.md 1. 多重線形の重み: 真偽値は重みが最大の要素、同じ重みなら小さいインデックス
     #[test]
     fn bool_uses_max_weight_with_lowest_index_on_tie() {
-        let grid = KeyformGrid {
-            bindings: vec![],
-            keyforms: vec![false, true, true],
-        };
+        let grid = KeyformGrid::new(vec![], vec![false, true, true]);
         assert!(!blend_bool(&grid, &vec![(1, 0.5), (0, 0.5)], |&b| b));
         assert!(blend_bool(&grid, &vec![(0, 0.4), (1, 0.6)], |&b| b));
         assert!(blend_bool(

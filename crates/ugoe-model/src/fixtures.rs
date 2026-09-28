@@ -6,7 +6,7 @@ use ugoe_core::{Rgb, Vec2};
 use crate::deformer::{
     Deformer, DeformerKind, RotationDeformer, RotationKeyform, WarpDeformer, WarpKeyform,
 };
-use crate::keyform::{KeyformBinding, KeyformGrid};
+use crate::keyform::{DepthRotation, KeyformBinding, KeyformGrid, KeyformInference, KeyformOrigin};
 use crate::mesh::{BlendMode, Glue, GlueKeyform, GluePair, MaskMode, MaskRef, Mesh, MeshKeyform};
 use crate::parameter::{Parameter, ParameterKind};
 use crate::part::{Part, PartKeyform};
@@ -76,13 +76,16 @@ pub fn single_quad() -> Model {
             masks: vec![],
             mask_mode: MaskMode::Union,
             mask_only: false,
-            keyforms: KeyformGrid {
-                bindings: vec![KeyformBinding {
+            keyforms: KeyformGrid::new(
+                vec![KeyformBinding {
                     parameter: "X".into(),
                     keys: vec![-1.0, 0.0, 1.0],
                 }],
-                keyforms: vec![quad(-64.0), quad(0.0), quad(64.0)],
-            },
+                vec![quad(-64.0), quad(0.0), quad(64.0)],
+            ),
+            mirror: None,
+            mirror_axis: None,
+            depth: None,
         }],
         glues: vec![],
         textures: vec![TextureRef {
@@ -180,10 +183,7 @@ fn binding(parameter: &str, keys: &[f32]) -> KeyformBinding {
 
 /// 1 軸 `parameter` のキー `keys` にキーフォーム `keyforms` を並べた格子。
 fn grid1<T>(parameter: &str, keys: &[f32], keyforms: Vec<T>) -> KeyformGrid<T> {
-    KeyformGrid {
-        bindings: vec![binding(parameter, keys)],
-        keyforms,
-    }
+    KeyformGrid::new(vec![binding(parameter, keys)], keyforms)
 }
 
 fn mesh_keyform(positions: [Vec2; 4], opacity: f32, draw_order: f32) -> MeshKeyform {
@@ -223,6 +223,9 @@ fn quad_mesh(
         mask_mode: MaskMode::Union,
         mask_only: false,
         keyforms,
+        mirror: None,
+        mirror_axis: None,
+        depth: None,
     }
 }
 
@@ -252,7 +255,10 @@ fn warp(
             rows,
             cols,
             keyforms,
+            depth: None,
         }),
+        mirror: None,
+        mirror_axis: None,
     }
 }
 
@@ -263,6 +269,8 @@ fn rotation(id: &str, parent: Option<&str>, keyforms: KeyformGrid<RotationKeyfor
         part: "Root".into(),
         parent: parent.map(Into::into),
         kind: DeformerKind::Rotation(RotationDeformer { keyforms }),
+        mirror: None,
+        mirror_axis: None,
     }
 }
 
@@ -791,6 +799,78 @@ pub fn intersection_masks() -> Model {
     model
 }
 
+// ---- キーフォーム推定のオーサリング用データ (T0108) ----
+
+/// キーフォーム推定のデータ (由来・推定の設定・ミラー・深度) を持つ顔。値の検証は T0610〜T0612 で使う。
+///
+/// - パラメータ `AngleX` / `AngleY` (-30..30、既定 0)。
+/// - ワープ `Face` (1×1 セル): 制御点は `(64,64)`〜`(192,192)`。軸は `AngleX` × `AngleY` (キー -30, 0, 30) の 9 セル。
+///   中央のセル (線形インデックス 4) だけ `authored` で、残りは `derived` (値は仮に中央と同じ)。
+///   推定は深度からの回転 (中心 `(128,128)`、深度 0、yaw = `AngleX`、pitch = `AngleY`)。
+///   制御点の深度は上の行が 0、下の行が 16。
+/// - メッシュ `EyeL` (UV 空間 `(0.2,0.4)`〜`(0.4,0.5)`) と `EyeR` (`(0.6,0.4)`〜`(0.8,0.5)`): 親 `Face`。
+///   互いに `mirror` で対にし、対称軸は `u = 0.5`。頂点の深度はどちらも 8。
+/// - メッシュ `Nose` (`(0.45,0.5)`〜`(0.55,0.7)`): 親 `Face`。`mirror` なし (自分自身と対応する)。
+pub fn keyform_inference() -> Model {
+    let mut model = base_model(
+        "keyform_inference",
+        vec![
+            parameter("AngleX", -30.0, 0.0, 30.0),
+            parameter("AngleY", -30.0, 0.0, 30.0),
+        ],
+    );
+    let face = WarpKeyform {
+        points: warp_points(1, 1, |x, y| {
+            Vec2::new(64.0 + 128.0 * f32::from(x), 64.0 + 128.0 * f32::from(y))
+        }),
+        opacity: 1.0,
+    };
+    let keys = [-30.0, 0.0, 30.0];
+    let mut grid = KeyformGrid::new(
+        vec![binding("AngleX", &keys), binding("AngleY", &keys)],
+        vec![face; 9],
+    );
+    grid.origins = (0..9)
+        .map(|i| {
+            if i == 4 {
+                KeyformOrigin::Authored
+            } else {
+                KeyformOrigin::Derived
+            }
+        })
+        .collect();
+    grid.inference = Some(KeyformInference::DepthRotation(DepthRotation {
+        angle_scale: 1.0,
+        pivot: Vec2::new(128.0, 128.0),
+        pivot_depth: 0.0,
+        yaw: Some("AngleX".into()),
+        pitch: Some("AngleY".into()),
+    }));
+    let mut face = warp("Face", None, 1, 1, grid);
+    if let DeformerKind::Warp(w) = &mut face.kind {
+        w.depth = Some(vec![0.0, 0.0, 16.0, 16.0]);
+    }
+    model.deformers.push(face);
+
+    let feature = |id: &str, rect: [Vec2; 4], mirror: Option<&str>, depth: Option<f32>| Mesh {
+        mirror: mirror.map(Into::into),
+        mirror_axis: mirror.map(|_| 0.5),
+        depth: depth.map(|d| vec![d; 4]),
+        ..quad_mesh(
+            id,
+            "Root",
+            Some("Face"),
+            KeyformGrid::constant(mesh_keyform(rect, 1.0, 500.0)),
+        )
+    };
+    model.meshes.extend([
+        feature("EyeL", rect(0.2, 0.4, 0.4, 0.5), Some("EyeR"), Some(8.0)),
+        feature("EyeR", rect(0.6, 0.4, 0.8, 0.5), Some("EyeL"), Some(8.0)),
+        feature("Nose", rect(0.45, 0.5, 0.55, 0.7), None, None),
+    ]);
+    model
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -832,6 +912,7 @@ mod tests {
             nested_masks(),
             mixed_masks(),
             intersection_masks(),
+            keyform_inference(),
         ] {
             assert_eq!(
                 crate::validate::validate(&model),
@@ -892,5 +973,93 @@ mod tests {
         let model: Model = serde_json::from_value(json).unwrap();
         assert_eq!(model, single_quad());
         assert_eq!(model.pose.fade_duration, DEFAULT_FADE_DURATION);
+    }
+
+    #[test]
+    fn json_without_inference_fields_uses_defaults() {
+        // 由来・推定の設定・ミラー・深度を持たない (T0108 より前の) JSON。
+        let json = serde_json::json!({
+            "id": "W",
+            "name": "W",
+            "part": "Root",
+            "parent": null,
+            "kind": {
+                "type": "warp",
+                "rows": 1,
+                "cols": 1,
+                "keyforms": {
+                    "keyforms": [{ "points": [[0, 0], [1, 0], [0, 1], [1, 1]], "opacity": 1 }],
+                },
+            },
+        });
+        let deformer: Deformer = serde_json::from_value(json).unwrap();
+        assert_eq!(deformer.mirror, None);
+        assert_eq!(deformer.mirror_axis, None);
+        let DeformerKind::Warp(warp) = &deformer.kind else {
+            panic!("not a warp");
+        };
+        assert_eq!(warp.depth, None);
+        assert!(warp.keyforms.origins.is_empty());
+        assert_eq!(warp.keyforms.inference, None);
+        assert_eq!(warp.keyforms.origin(0), KeyformOrigin::Authored);
+
+        // 既定値のフィールドは書き出さないので、既存のモデルの JSON は変わらない。
+        let json = serde_json::to_value(single_quad()).unwrap();
+        let mesh = json["meshes"][0].as_object().unwrap();
+        for key in ["mirror", "mirror_axis", "depth"] {
+            assert!(!mesh.contains_key(key), "{key}");
+        }
+        let grid = json["meshes"][0]["keyforms"].as_object().unwrap();
+        for key in ["origins", "inference"] {
+            assert!(!grid.contains_key(key), "{key}");
+        }
+        let model: Model = serde_json::from_value(json).unwrap();
+        assert_eq!(model, single_quad());
+    }
+
+    #[test]
+    fn inference_json_format() {
+        let model = keyform_inference();
+        let json = serde_json::to_value(&model.deformers[0]).unwrap();
+        let grid = &json["kind"]["keyforms"];
+        assert_eq!(grid["origins"][0], "derived");
+        assert_eq!(grid["origins"][4], "authored");
+        assert_eq!(
+            grid["inference"],
+            serde_json::json!({
+                "method": "depth_rotation",
+                "angle_scale": 1.0,
+                "pivot": [128.0, 128.0],
+                "pivot_depth": 0.0,
+                "yaw": "AngleX",
+                "pitch": "AngleY",
+            })
+        );
+        assert_eq!(
+            json["kind"]["depth"],
+            serde_json::json!([0.0, 0.0, 16.0, 16.0])
+        );
+        let eye = serde_json::to_value(&model.meshes[0]).unwrap();
+        assert_eq!(eye["mirror"], "EyeR");
+        assert_eq!(eye["mirror_axis"], 0.5);
+
+        // 加算合成は設定を持たない。深度からの回転の `angle_scale` などは省略できる。
+        let additive: KeyformInference =
+            serde_json::from_value(serde_json::json!({ "method": "additive" })).unwrap();
+        assert_eq!(additive, KeyformInference::Additive);
+        let rotation: KeyformInference = serde_json::from_value(
+            serde_json::json!({ "method": "depth_rotation", "pivot": [1.0, 2.0] }),
+        )
+        .unwrap();
+        assert_eq!(
+            rotation,
+            KeyformInference::DepthRotation(DepthRotation {
+                angle_scale: 1.0,
+                pivot: Vec2::new(1.0, 2.0),
+                pivot_depth: 0.0,
+                yaw: None,
+                pitch: None,
+            })
+        );
     }
 }

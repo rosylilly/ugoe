@@ -7,7 +7,7 @@ use std::fmt::Display;
 use std::hash::Hash;
 
 use crate::deformer::DeformerKind;
-use crate::{KeyformGrid, Model};
+use crate::{KeyformGrid, KeyformInference, Model};
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ValidationError {
@@ -102,6 +102,37 @@ pub enum ValidationError {
     /// 同じパーツがポーズ全体 (全グループの `part` と `links`) で 2 回以上現れた。
     #[error("part `{part}` appears more than once in pose groups")]
     DuplicatePosePart { part: String },
+    /// `origins` が空でなく、長さがキーフォーム数と違う。
+    #[error("{kind} `{id}`: keyform origins length {actual} != keyform count {expected}")]
+    OriginCount {
+        kind: &'static str,
+        id: String,
+        expected: usize,
+        actual: usize,
+    },
+    /// 深度からの回転の `yaw` / `pitch` のパラメータが、格子の軸になっていない。
+    #[error("{kind} `{id}`: inference parameter `{parameter}` is not a keyform binding")]
+    UnboundInferenceParameter {
+        kind: &'static str,
+        id: String,
+        parameter: String,
+    },
+    /// `mirror` の対が双方向でない (`id` → `mirror` なのに、`mirror` の `mirror` が `back`)。
+    #[error("{kind} `{id}`: mirror `{mirror}` does not mirror back (its mirror is {back:?})")]
+    AsymmetricMirror {
+        kind: &'static str,
+        id: String,
+        mirror: String,
+        back: Option<String>,
+    },
+    /// 深度の長さが頂点数 (メッシュ) または制御点数 (ワープ) と違う。
+    #[error("{kind} `{id}`: depth has {actual} values, expected {expected}")]
+    DepthCount {
+        kind: &'static str,
+        id: String,
+        expected: usize,
+        actual: usize,
+    },
     /// `field` は値の場所 (`pose.fade_duration`、`effects.breath[0].cycle` など)。
     #[error("{field} = {value} must be {expected}")]
     InvalidValue {
@@ -191,9 +222,13 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
         if let Some(parent) = &deformer.parent {
             refs.check(&deformers, "parent", "deformer", parent, &mut errors);
         }
+        let path = format!("deformers[{id}]");
+        check_mirror_axis(&path, deformer.mirror_axis, &mut errors);
         match &deformer.kind {
             DeformerKind::Warp(warp) => {
                 check_grid(&refs, &params, &warp.keyforms, &mut errors);
+                let expected = (usize::from(warp.rows) + 1) * (usize::from(warp.cols) + 1);
+                check_depth(&refs, &path, warp.depth.as_deref(), expected, &mut errors);
                 if warp.rows == 0 || warp.cols == 0 {
                     errors.push(ValidationError::EmptyWarpGrid {
                         id: id.clone(),
@@ -201,7 +236,6 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
                         cols: warp.cols,
                     });
                 }
-                let expected = (usize::from(warp.rows) + 1) * (usize::from(warp.cols) + 1);
                 for kf in &warp.keyforms.keyforms {
                     if kf.points.len() != expected {
                         errors.push(ValidationError::WarpPointCount {
@@ -222,6 +256,14 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
         &model.deformers,
         |d| &d.id,
         |d| d.parent.as_ref(),
+        &deformers,
+        &mut errors,
+    );
+    check_mirrors(
+        "deformer",
+        &model.deformers,
+        |d| &d.id,
+        |d| d.mirror.as_ref(),
         &deformers,
         &mut errors,
     );
@@ -247,6 +289,15 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
             });
         }
         check_grid(&refs, &params, &mesh.keyforms, &mut errors);
+        let path = format!("meshes[{id}]");
+        check_mirror_axis(&path, mesh.mirror_axis, &mut errors);
+        check_depth(
+            &refs,
+            &path,
+            mesh.depth.as_deref(),
+            mesh.uvs.len(),
+            &mut errors,
+        );
         if mesh.indices.len() % 3 != 0 {
             errors.push(ValidationError::IndicesNotTriangles {
                 id: id.clone(),
@@ -279,6 +330,14 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
             }
         }
     }
+    check_mirrors(
+        "mesh",
+        &model.meshes,
+        |m| &m.id,
+        |m| m.mirror.as_ref(),
+        &meshes,
+        &mut errors,
+    );
     check_mask_cycles(model, &meshes, &mut errors);
 
     for glue in &model.glues {
@@ -530,6 +589,131 @@ fn check_grid<T>(
             });
         }
     }
+    if !grid.origins.is_empty() && grid.origins.len() != grid.keyforms.len() {
+        errors.push(ValidationError::OriginCount {
+            kind: refs.kind,
+            id: refs.id.to_owned(),
+            expected: grid.keyforms.len(),
+            actual: grid.origins.len(),
+        });
+    }
+    if let Some(KeyformInference::DepthRotation(rotation)) = &grid.inference {
+        let path = format!("{}[{}].keyforms.inference", plural(refs.kind), refs.id);
+        let values = [
+            ("angle_scale", rotation.angle_scale),
+            ("pivot.x", rotation.pivot.x),
+            ("pivot.y", rotation.pivot.y),
+            ("pivot_depth", rotation.pivot_depth),
+        ];
+        for (name, value) in values {
+            check_finite(&format!("{path}.{name}"), value, errors);
+        }
+        let axes = [("yaw", &rotation.yaw), ("pitch", &rotation.pitch)];
+        for (field, parameter) in axes {
+            let Some(parameter) = parameter else {
+                continue;
+            };
+            // 存在しないパラメータは参照の検査だけで報告する。
+            if refs
+                .check(params, field, "parameter", parameter, errors)
+                .is_some()
+                && !grid.bindings.iter().any(|b| &b.parameter == parameter)
+            {
+                errors.push(ValidationError::UnboundInferenceParameter {
+                    kind: refs.kind,
+                    id: refs.id.to_owned(),
+                    parameter: parameter.to_string(),
+                });
+            }
+        }
+    }
+}
+
+/// エラーメッセージの値の場所に使う、要素の種類の配列名。
+fn plural(kind: &str) -> &str {
+    match kind {
+        "mesh" => "meshes",
+        "part" => "parts",
+        "deformer" => "deformers",
+        "glue" => "glues",
+        _ => kind,
+    }
+}
+
+/// 有限値であること。
+fn check_finite(field: &str, value: f32, errors: &mut Vec<ValidationError>) {
+    if !value.is_finite() {
+        errors.push(ValidationError::InvalidValue {
+            field: field.to_owned(),
+            value,
+            expected: "finite",
+        });
+    }
+}
+
+/// 対称軸が指定されていれば有限値であること。
+fn check_mirror_axis(path: &str, axis: Option<f32>, errors: &mut Vec<ValidationError>) {
+    if let Some(axis) = axis {
+        check_finite(&format!("{path}.mirror_axis"), axis, errors);
+    }
+}
+
+/// 深度があれば、長さが `expected` で、すべて有限値であること (有限でない値は最初の 1 つだけ報告する)。
+fn check_depth(
+    refs: &Refs<'_>,
+    path: &str,
+    depth: Option<&[f32]>,
+    expected: usize,
+    errors: &mut Vec<ValidationError>,
+) {
+    let Some(depth) = depth else {
+        return;
+    };
+    if depth.len() != expected {
+        errors.push(ValidationError::DepthCount {
+            kind: refs.kind,
+            id: refs.id.to_owned(),
+            expected,
+            actual: depth.len(),
+        });
+    }
+    if let Some((index, &value)) = depth.iter().enumerate().find(|(_, v)| !v.is_finite()) {
+        check_finite(&format!("{path}.depth[{index}]"), value, errors);
+    }
+}
+
+/// ミラーの参照先が存在し、対が双方向であること (自分自身との対は常に正しい)。
+fn check_mirrors<T, K: Eq + Hash + Display>(
+    kind: &'static str,
+    items: &[T],
+    id_of: impl Fn(&T) -> &K,
+    mirror_of: impl Fn(&T) -> Option<&K>,
+    table: &HashMap<&K, usize>,
+    errors: &mut Vec<ValidationError>,
+) {
+    for item in items {
+        let id = id_of(item);
+        let Some(mirror) = mirror_of(item) else {
+            continue;
+        };
+        let id_string = id.to_string();
+        let refs = Refs {
+            kind,
+            id: &id_string,
+        };
+        let Some(target) = refs.check(table, "mirror", kind, mirror, errors) else {
+            continue;
+        };
+        let back = mirror_of(&items[target]);
+        if mirror != id && back != Some(id) {
+            errors.push(ValidationError::AsymmetricMirror {
+                kind,
+                id: id_string.clone(),
+                mirror: mirror.to_string(),
+                back: back.map(ToString::to_string),
+            });
+        }
+    }
 }
 
 /// 親をたどる連鎖に循環があれば、循環ごとに 1 件報告する。未定義の親は参照検査に任せて無視する。
@@ -649,11 +833,11 @@ mod tests {
 
     use super::*;
     use crate::deformer::{Deformer, RotationDeformer, RotationKeyform, WarpDeformer, WarpKeyform};
-    use crate::fixtures::{pose_and_effects, single_quad};
+    use crate::fixtures::{keyform_inference, pose_and_effects, single_quad};
     use crate::mesh::{Glue, GlueKeyform, GluePair, MaskRef};
     use crate::part::{Part, PartKeyform};
     use crate::pose::{PoseEntry, PoseGroup};
-    use crate::{Effects, HitArea, KeyformBinding, ParameterGroup, TextureRef};
+    use crate::{Effects, HitArea, KeyformBinding, KeyformOrigin, ParameterGroup, TextureRef};
 
     fn part(id: &str, parent: Option<&str>) -> Part {
         Part {
@@ -680,6 +864,8 @@ mod tests {
                     opacity: 1.0,
                 }),
             }),
+            mirror: None,
+            mirror_axis: None,
         }
     }
 
@@ -696,7 +882,10 @@ mod tests {
                     points: vec![Vec2::new(0.0, 0.0); points],
                     opacity: 1.0,
                 }),
+                depth: None,
             }),
+            mirror: None,
+            mirror_axis: None,
         }
     }
 
@@ -895,8 +1084,8 @@ mod tests {
     #[test]
     fn duplicate_binding_parameter() {
         let mut model = single_quad();
-        model.parts[0].keyforms = KeyformGrid {
-            bindings: vec![
+        model.parts[0].keyforms = KeyformGrid::new(
+            vec![
                 KeyformBinding {
                     parameter: "X".into(),
                     keys: vec![0.0],
@@ -906,8 +1095,8 @@ mod tests {
                     keys: vec![1.0],
                 },
             ],
-            keyforms: vec![PartKeyform { opacity: 1.0 }],
-        };
+            vec![PartKeyform { opacity: 1.0 }],
+        );
         assert_eq!(
             validate(&model),
             vec![ValidationError::DuplicateBinding {
@@ -1301,6 +1490,182 @@ mod tests {
                     if field == "effects.breath.parameters[0].cycle"
             ),
             "{errors:?}"
+        );
+    }
+
+    fn invalid(field: &str, value: f32, expected: &'static str) -> ValidationError {
+        ValidationError::InvalidValue {
+            field: field.into(),
+            value,
+            expected,
+        }
+    }
+
+    fn face_warp(model: &mut Model) -> &mut WarpDeformer {
+        match &mut model.deformers[0].kind {
+            DeformerKind::Warp(w) => w,
+            DeformerKind::Rotation(_) => panic!("not a warp"),
+        }
+    }
+
+    #[test]
+    fn inference_fixture_is_valid() {
+        assert_eq!(validate(&keyform_inference()), vec![]);
+    }
+
+    #[test]
+    fn origin_count() {
+        let mut model = keyform_inference();
+        face_warp(&mut model).keyforms.origins.pop();
+        // 空の `origins` は「すべて authored」なので正しい。
+        model.meshes[0].keyforms.origins.clear();
+        model.parts[0].keyforms.origins = vec![KeyformOrigin::Derived; 2];
+        assert_eq!(
+            validate(&model),
+            vec![
+                ValidationError::OriginCount {
+                    kind: "part",
+                    id: "Root".into(),
+                    expected: 1,
+                    actual: 2,
+                },
+                ValidationError::OriginCount {
+                    kind: "deformer",
+                    id: "Face".into(),
+                    expected: 9,
+                    actual: 8,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn depth_rotation_parameters() {
+        let mut model = keyform_inference();
+        // 存在するが格子の軸ではないパラメータ。
+        let mut angle_z = model.parameters[0].clone();
+        angle_z.id = "AngleZ".into();
+        model.parameters.push(angle_z);
+        let Some(KeyformInference::DepthRotation(rotation)) =
+            &mut face_warp(&mut model).keyforms.inference
+        else {
+            panic!("not depth rotation");
+        };
+        rotation.yaw = Some("NoParam".into());
+        rotation.pitch = Some("AngleZ".into());
+        rotation.angle_scale = f32::INFINITY;
+        rotation.pivot_depth = f32::NEG_INFINITY;
+        assert_eq!(
+            validate(&model),
+            vec![
+                invalid(
+                    "deformers[Face].keyforms.inference.angle_scale",
+                    f32::INFINITY,
+                    "finite"
+                ),
+                invalid(
+                    "deformers[Face].keyforms.inference.pivot_depth",
+                    f32::NEG_INFINITY,
+                    "finite"
+                ),
+                unknown("deformer", "Face", "yaw", "parameter", "NoParam"),
+                ValidationError::UnboundInferenceParameter {
+                    kind: "deformer",
+                    id: "Face".into(),
+                    parameter: "AngleZ".into(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn mirror_references() {
+        let mut model = keyform_inference();
+        // 自分自身との対は正しい。
+        model.meshes[2].mirror = Some("Nose".into());
+        model.deformers[0].mirror = Some("NoDeformer".into());
+        model.meshes.push(model.meshes[2].clone());
+        model.meshes[3].id = "Mouth".into();
+        model.meshes[3].mirror = Some("NoMesh".into());
+        assert_eq!(
+            validate(&model),
+            vec![
+                unknown("deformer", "Face", "mirror", "deformer", "NoDeformer"),
+                unknown("mesh", "Mouth", "mirror", "mesh", "NoMesh"),
+            ]
+        );
+    }
+
+    #[test]
+    fn mirror_must_be_symmetric() {
+        let mut model = keyform_inference();
+        // EyeL → EyeR → Nose、Nose → (なし)。
+        model.meshes[1].mirror = Some("Nose".into());
+        model.deformers.push(rotation("A", None));
+        model.deformers.push(rotation("B", None));
+        model.deformers[1].mirror = Some("B".into());
+        assert_eq!(
+            validate(&model),
+            vec![
+                ValidationError::AsymmetricMirror {
+                    kind: "deformer",
+                    id: "A".into(),
+                    mirror: "B".into(),
+                    back: None,
+                },
+                ValidationError::AsymmetricMirror {
+                    kind: "mesh",
+                    id: "EyeL".into(),
+                    mirror: "EyeR".into(),
+                    back: Some("Nose".into()),
+                },
+                ValidationError::AsymmetricMirror {
+                    kind: "mesh",
+                    id: "EyeR".into(),
+                    mirror: "Nose".into(),
+                    back: None,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn mirror_axis_must_be_finite() {
+        let mut model = keyform_inference();
+        model.meshes[0].mirror_axis = Some(f32::INFINITY);
+        model.deformers[0].mirror_axis = Some(f32::NEG_INFINITY);
+        assert_eq!(
+            validate(&model),
+            vec![
+                invalid("deformers[Face].mirror_axis", f32::NEG_INFINITY, "finite"),
+                invalid("meshes[EyeL].mirror_axis", f32::INFINITY, "finite"),
+            ]
+        );
+    }
+
+    #[test]
+    fn depth_count_and_values() {
+        let mut model = keyform_inference();
+        face_warp(&mut model).depth = Some(vec![0.0; 3]);
+        model.meshes[0].depth = Some(vec![0.0, f32::INFINITY, 0.0, f32::NEG_INFINITY]);
+        model.meshes[2].depth = Some(vec![0.0; 5]);
+        assert_eq!(
+            validate(&model),
+            vec![
+                ValidationError::DepthCount {
+                    kind: "deformer",
+                    id: "Face".into(),
+                    expected: 4,
+                    actual: 3,
+                },
+                invalid("meshes[EyeL].depth[1]", f32::INFINITY, "finite"),
+                ValidationError::DepthCount {
+                    kind: "mesh",
+                    id: "Nose".into(),
+                    expected: 4,
+                    actual: 5,
+                },
+            ]
         );
     }
 

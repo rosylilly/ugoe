@@ -23,7 +23,7 @@ use ugoe_core::Vec2;
 
 pub use deformer::{Deformer, DeformerId, DeformerKind};
 pub use effects::Effects;
-pub use keyform::{KeyformBinding, KeyformGrid};
+pub use keyform::{DepthRotation, KeyformBinding, KeyformGrid, KeyformInference, KeyformOrigin};
 pub use mesh::{BlendMode, Glue, MaskMode, MaskRef, Mesh, MeshId};
 pub use parameter::{ParamId, Parameter, ParameterGroup};
 pub use part::{Part, PartId};
