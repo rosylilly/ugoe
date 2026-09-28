@@ -1,11 +1,11 @@
 ---
 id: T0309
 title: wasm: 物理・モーション・表情・エフェクトの公開
-status: todo
+status: in-progress
 milestone: M3
-crates: [ugoe-wasm, ugoe]
+crates: [ugoe-wasm, ugoe, ugoe-format]
 depends_on: [T0303, T0305, T0308, T0110]
-assignee:
+assignee: claude-worker-T0309
 ---
 
 # T0309: wasm: 物理・モーション・表情・エフェクトの公開
@@ -21,6 +21,7 @@ assignee:
 - [ ] 物理の設定だけを差し替えられる (エディタで設定を変えながらプレビューするため)
 - [ ] 手で動かしたパラメータ (スライダー) と、モーション・物理の出力の関係を決めて書く
 - [ ] 当たり判定を標準の名前 (`Model.avatar.hit_areas` の `Head`・`Body`) で引く API を `Puppet` と `WebPuppet` に足す (T0308 の後続)
+- [ ] 読み込み時に `validate_physics` を実行する (T0305 の後続。`ugoe-format` または `Puppet` の組み立て)
 - [ ] TS の型 (`ugoe-wasm` の生成物) と、ネイティブでの単体テスト
 - [ ] `just ci`・`just wasm-check`・`just wasm` が通る
 
