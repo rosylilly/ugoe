@@ -38,6 +38,7 @@ pub fn run() {
             project::save_project,
             project::save_project_as,
             project::export_bundle,
+            project::get_model_bundle,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

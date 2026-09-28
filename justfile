@@ -65,9 +65,30 @@ licenses:
 layers:
     @node scripts/check-layers.mjs
 
-# wasm ターゲットでビルドできるか
+# wasm ターゲットでビルドできるか (ブラウザ専用のコード `src/web.rs` も clippy で検査する)
 wasm-check:
-    cargo check -p ugoe-wasm --target wasm32-unknown-unknown
+    cargo clippy -p ugoe-wasm --target wasm32-unknown-unknown -- -D warnings
+
+# ugoe-wasm をビルドし、エディタが読む JS バインディングを生成する (出力は gitignore 済み)。
+# wasm-bindgen-cli は Cargo.lock の wasm-bindgen と同じ版が必要:
+#   cargo install wasm-bindgen-cli --version "$(just wasm-bindgen-version)" --locked
+wasm out="apps/editor/src/lib/viewport/generated":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    want="$(just wasm-bindgen-version)"
+    have="$(wasm-bindgen --version 2>/dev/null | awk '{print $2}' || true)"
+    if [ "$have" != "$want" ]; then
+        echo "error: wasm-bindgen-cli $want is required (found: ${have:-none})." >&2
+        echo "  cargo install wasm-bindgen-cli --version $want --locked" >&2
+        exit 1
+    fi
+    cargo build -p ugoe-wasm --target wasm32-unknown-unknown --release
+    wasm-bindgen --target web --out-dir {{quote(out)}} \
+        target/wasm32-unknown-unknown/release/ugoe_wasm.wasm
+
+# Cargo.lock に記録された wasm-bindgen の版 (wasm-bindgen-cli はこれと一致させる)
+wasm-bindgen-version:
+    @awk '/^name = "wasm-bindgen"$/ { getline; gsub(/"/, "", $3); print $3 }' Cargo.lock
 
 # フロントエンドの lint / 型検査
 web-check:

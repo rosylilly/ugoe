@@ -1,74 +1,49 @@
+<!--
+  画面のレイアウトだけを持つ。状態は lib/ の EditorDocument (ドキュメント) と
+  ViewportController (表示) に、各領域の中身は lib/panels/ と lib/viewport/ に置く。
+-->
 <script lang="ts">
+import { EditorDocument } from "./lib/document.svelte";
 import FileMenu from "./lib/FileMenu.svelte";
 import { type AppInfo, ipc } from "./lib/ipc";
+import ParametersPanel from "./lib/panels/ParametersPanel.svelte";
+import { ViewportController } from "./lib/viewport/controller.svelte";
+import Viewport from "./lib/viewport/Viewport.svelte";
 
-interface ParameterView {
-  id: string;
-  name: string;
-  min: number;
-  max: number;
-  default: number;
-}
-
+const doc = new EditorDocument();
+const viewport = new ViewportController();
 let info = $state<AppInfo | null>(null);
-let parameters = $state<ParameterView[]>([]);
-let error = $state<string | null>(null);
 let fileMenu = $state<FileMenu>();
 
-async function refresh() {
-  try {
-    info = await ipc.appInfo();
-    const model = JSON.parse(await ipc.getModelJson());
-    parameters = model.parameters;
-    error = null;
-    await fileMenu?.refresh();
-  } catch (e) {
-    error = String(e);
-  }
-}
+ipc.appInfo().then((i) => {
+  info = i;
+});
+doc.refresh();
 
-async function undo() {
-  await ipc.undo();
-  await refresh();
-}
-
-async function redo() {
-  await ipc.redo();
-  await refresh();
-}
-
-refresh();
+// ドキュメントを読み直すたびに、プロジェクト名と未保存の印も取り直す。
+$effect(() => {
+  if (doc.revision > 0) fileMenu?.refresh();
+});
 </script>
 
 <div class="shell">
   <header>
     <strong>ugoe</strong>
     <span class="muted">{info ? `v${info.version}` : "…"}</span>
-    <FileMenu bind:this={fileMenu} onchange={refresh} />
+    <FileMenu bind:this={fileMenu} onchange={() => doc.refresh()} />
     <span class="spacer"></span>
-    <button onclick={undo}>Undo</button>
-    <button onclick={redo}>Redo</button>
+    <button onclick={() => doc.undo()}>Undo</button>
+    <button onclick={() => doc.redo()}>Redo</button>
   </header>
   <aside class="left">
     <h2>Parts</h2>
     <p class="muted">TODO(T0602): パーツ / デフォーマツリー</p>
   </aside>
-  <main class="viewport">
-    <!-- TODO(T0402): ugoe-wasm による WebGPU / WebGL2 ビューポート -->
-    <canvas></canvas>
+  <main class="center">
+    <Viewport controller={viewport} model={doc.model} />
   </main>
   <aside class="right">
-    <h2>Parameters</h2>
-    {#if error}<p class="error">{error}</p>{/if}
-    <ul>
-      {#each parameters as p (p.id)}
-        <li>
-          <label>
-            {p.name}
-            <input type="range" min={p.min} max={p.max} step="0.01" value={p.default} />
-          </label>
-        </li>
-      {/each}
-    </ul>
+    {#if doc.error}<p class="error">{doc.error}</p>{/if}
+    <ParametersPanel parameters={doc.parameters} {viewport} />
   </aside>
 </div>

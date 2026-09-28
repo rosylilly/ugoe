@@ -106,6 +106,8 @@ jobs:
       - name: GPU tests
         run: just test-gpu -- --nocapture
 
+  # フロントエンドは `just wasm` の生成物 (ugoe-wasm の JS バインディング) を読むので、
+  # 先に wasm をビルドしてから、本物の型で検査・ビルドする。
   web:
     runs-on: ubuntu-latest
     steps:
@@ -117,5 +119,21 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm biome check .
+      - name: Install Rust toolchain (rust-toolchain.toml, wasm32 target included)
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: wasm
+      - uses: extractions/setup-just@v4
+      # wasm-bindgen-cli は Cargo.lock の wasm-bindgen と同じ版でなければならない
+      - name: Resolve wasm-bindgen version
+        id: wasm-bindgen
+        run: echo "version=$(just wasm-bindgen-version)" >> "$GITHUB_OUTPUT"
+      - name: Install wasm-bindgen-cli (prebuilt)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@${{ steps.wasm-bindgen.outputs.version }}
+      - name: Build ugoe-wasm
+        run: just wasm
       - run: pnpm --filter @ugoe/editor check
       - run: pnpm --filter @ugoe/editor build

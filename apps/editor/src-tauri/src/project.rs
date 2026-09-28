@@ -178,6 +178,16 @@ pub fn save_project_as(state: State<'_, AppState>, path: String) -> Result<Proje
     Ok(status(&session, &document))
 }
 
+/// 今のドキュメントを `.ugoe` バンドルのバイト列で返す (ビューポートがテクスチャ付きで表示するため)。
+/// JSON を経由しないよう、生のバイト列 (`tauri::ipc::Response`) で送る (`docs/editor.md#ビューポート`)。
+#[tauri::command]
+pub fn get_model_bundle(state: State<'_, AppState>) -> Result<tauri::ipc::Response, String> {
+    let (document, session) = lock_both(&state)?;
+    let bytes = ugoe_editor_core::export_bundle(&session.to_project(&document))
+        .map_err(|e| e.to_string())?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
 /// `.ugoe` バンドルとしてファイルに書き出す。プロジェクトの保存状態は変えない。
 #[tauri::command]
 pub fn export_bundle(state: State<'_, AppState>, path: String) -> Result<(), String> {

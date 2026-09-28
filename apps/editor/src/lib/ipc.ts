@@ -35,4 +35,6 @@ export const ipc = {
   /** 拡張子 .ugoeproj がなければバックエンドが付ける。 */
   saveProjectAs: (path: string) => invoke<ProjectStatus>("save_project_as", { path }),
   exportBundle: (path: string) => invoke<void>("export_bundle", { path }),
+  /** 今のドキュメントの .ugoe バンドル (テクスチャ付き)。生のバイト列で届く。 */
+  getModelBundle: async () => new Uint8Array(await invoke<ArrayBuffer>("get_model_bundle")),
 };
