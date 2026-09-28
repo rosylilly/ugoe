@@ -90,10 +90,11 @@ wasm out="apps/editor/src/lib/viewport/generated":
 wasm-bindgen-version:
     @awk '/^name = "wasm-bindgen"$/ { getline; gsub(/"/, "", $3); print $3 }' Cargo.lock
 
-# フロントエンドの lint / 型検査
+# フロントエンドの lint / 型検査 / 単体テスト (Vitest)
 web-check:
     pnpm biome check .
     pnpm --filter @ugoe/editor check
+    pnpm --filter @ugoe/editor test
 
 # エディタを開発モードで起動
 editor:

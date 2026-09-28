@@ -8,7 +8,7 @@
 | 結合テスト | 各クレートの `tests/` | `just test` |
 | スナップショットテスト | `insta` (`tests/snapshots/`) | `just test`。更新は `cargo insta review` |
 | 描画テスト (GPU) | `gpu-tests` feature を持つクレート (`ugoe-render` など) | `just test-gpu` |
-| フロントエンドの検査 | Biome + svelte-check | `just web-check` |
+| フロントエンドの検査 | Biome + svelte-check + Vitest (`apps/editor/src/**/*.test.ts`) | `just web-check` |
 | 依存方向の検査 | `scripts/check-layers.mjs` | `just layers` |
 
 `just ci` はこれらを (GPU テスト以外) すべて実行します。

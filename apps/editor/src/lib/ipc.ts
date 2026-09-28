@@ -11,7 +11,28 @@ export interface AppInfo {
 export type EditCommand =
   | { op: "set_parameter_range"; id: string; min: number; default: number; max: number }
   | { op: "remove_parameter"; id: string }
-  | { op: "batch"; label: string; commands: EditCommand[] };
+  | { op: "batch"; label: string; commands: EditCommand[] }
+  | {
+      op: "add_part";
+      part: {
+        id: string;
+        name: string;
+        parent: string | null;
+        keyforms: { bindings: []; keyforms: [{ opacity: number }] };
+      };
+    }
+  | { op: "remove_part"; id: string }
+  | { op: "rename_part"; id: string; name: string }
+  | { op: "set_part_parent"; id: string; parent: string | null }
+  | { op: "remove_deformer"; id: string }
+  | { op: "rename_deformer"; id: string; name: string }
+  | { op: "set_deformer_parent"; id: string; parent: string | null }
+  | { op: "set_deformer_part"; id: string; part: string }
+  | { op: "remove_mesh"; id: string }
+  | { op: "rename_mesh"; id: string; name: string }
+  | { op: "set_mesh_properties"; id: string; part?: string }
+  | { op: "set_mesh_parent"; id: string; parent: string | null }
+  | { op: "reorder_mesh"; id: string; before: string | null };
 
 /** apps/editor/src-tauri/src/project.rs の ProjectStatus。 */
 export interface ProjectStatus {
