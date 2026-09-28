@@ -832,6 +832,48 @@ fn set_deformer_keyforms() {
     );
 }
 
+#[test]
+fn unknown_deformer_kinds_are_not_edited() {
+    // 新しい版のファイルから読んだ、未知の種類のデフォーマ (`docs/spec/file-formats.md#未知の値の読み込み`)。
+    let mut model = fixtures::rotation_chain();
+    model.deformers[1].kind = DeformerKind::Unknown;
+    let DeformerKind::Warp(cloth) = rotation_chain_deformer("Cloth").kind else {
+        panic!("Cloth is a warp deformer");
+    };
+    let DeformerKind::Rotation(hand) = rotation_chain_deformer("Hand").kind else {
+        panic!("Hand is a rotation deformer");
+    };
+    assert_eq!(
+        rejected(
+            &model,
+            Command::SetWarpKeyforms {
+                id: "Hand".into(),
+                keyforms: cloth.keyforms,
+            },
+        ),
+        EditError::DeformerKindMismatch {
+            id: "Hand".into(),
+            expected: "warp",
+        }
+    );
+    assert_eq!(
+        rejected(
+            &model,
+            Command::SetRotationKeyforms {
+                id: "Hand".into(),
+                keyforms: hand.keyforms,
+            },
+        ),
+        EditError::DeformerKindMismatch {
+            id: "Hand".into(),
+            expected: "rotation",
+        }
+    );
+    // パラメータの削除は、キーフォームを持たない未知のデフォーマには触れない。
+    let after = applied(&model, Command::RemoveParameter { id: "Flip".into() });
+    assert_eq!(after.deformers[1].kind, DeformerKind::Unknown);
+}
+
 // ---- メッシュ ----
 
 #[test]
