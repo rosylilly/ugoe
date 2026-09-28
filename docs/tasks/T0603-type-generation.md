@@ -1,11 +1,11 @@
 ---
 id: T0603
 title: Rust から TS 型と JSON Schema を生成する
-status: todo
+status: in-progress
 milestone: M2
 crates: [ugoe-editor-core, ugoe-model, apps/editor]
 depends_on: []
-assignee:
+assignee: claude-worker-T0603
 ---
 
 # T0603: Rust から TS 型と JSON Schema を生成する

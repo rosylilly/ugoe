@@ -1,11 +1,11 @@
 ---
 id: T0602
 title: パーツとデフォーマのツリー UI
-status: todo
+status: in-progress
 milestone: M2
 crates: [apps/editor]
 depends_on: [T0601]
-assignee:
+assignee: claude-worker-T0602
 ---
 
 # T0602: パーツとデフォーマのツリー UI

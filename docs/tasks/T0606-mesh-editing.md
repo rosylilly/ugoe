@@ -1,11 +1,11 @@
 ---
 id: T0606
 title: エディタ: メッシュの編集
-status: todo
+status: in-progress
 milestone: M2
 crates: [ugoe-editor-core, ugoe-wasm, apps/editor]
 depends_on: [T0601, T0402]
-assignee:
+assignee: claude-worker-T0606
 ---
 
 # T0606: エディタ: メッシュの編集
