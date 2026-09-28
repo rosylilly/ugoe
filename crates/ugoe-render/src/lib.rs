@@ -131,6 +131,7 @@ struct MeshRange {
     culling: bool,
     /// `Geometry::mask_sets` のインデックス。マスクを使わないなら `None`。
     mask_set: Option<u32>,
+    /// すべての参照が反転マスクか (T0202 時点の、メッシュ単位の反転)。
     invert_mask: bool,
 }
 
@@ -672,7 +673,9 @@ impl Geometry {
                 texture: mesh.texture,
                 culling: mesh.culling,
                 mask_set,
-                invert_mask: mesh.invert_mask,
+                // TODO(T0205): 参照ごとの反転・共通部分 (`mask_mode`)・入れ子の継承・`mask_strength` を実装する。
+                // 今は、通常と反転が混ざる場合は全参照を通常マスクとして、`intersection` は和集合として扱う。
+                invert_mask: !mesh.masks.is_empty() && mesh.masks.iter().all(|r| r.invert),
             });
         }
 
@@ -771,7 +774,7 @@ fn mask_sets(model: &ugoe_model::Model) -> (Vec<Option<u32>>, Vec<Vec<u32>>) {
             let mut key: Vec<u32> = mesh
                 .masks
                 .iter()
-                .filter_map(|id| index_of.get(id).copied())
+                .filter_map(|r| index_of.get(&r.mesh).copied())
                 .collect();
             key.sort_unstable();
             key.dedup();

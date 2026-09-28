@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 
 use ugoe_core::{Rgb, Vec2};
 use ugoe_model::mesh::Mesh;
-use ugoe_model::{BlendMode, Model, fixtures};
+use ugoe_model::{BlendMode, MaskRef, Model, fixtures};
 use ugoe_render::{FrameStats, MaskAtlasOptions, RenderError, Renderer, RendererOptions, View};
 use ugoe_runtime::{CompiledModel, ModelInstance};
 
@@ -451,11 +451,16 @@ fn quad(id: &str, [x0, y0, x1, y1]: [f32; 4]) -> Mesh {
     mesh
 }
 
-/// 不透明な赤の四角形。`masks` のメッシュでクリッピングする。
+/// 不透明な赤の四角形。`masks` のメッシュでクリッピングする (`invert` なら全参照を反転マスクにする)。
 fn red_quad(id: &str, rect: [f32; 4], masks: &[&str], invert: bool) -> Mesh {
     let mut mesh = quad(id, rect);
-    mesh.masks = masks.iter().map(|&m| m.into()).collect();
-    mesh.invert_mask = invert;
+    mesh.masks = masks
+        .iter()
+        .map(|&m| MaskRef {
+            mesh: m.into(),
+            invert,
+        })
+        .collect();
     for kf in &mut mesh.keyforms.keyforms {
         kf.multiply_color = Rgb::new(1.0, 0.0, 0.0);
     }

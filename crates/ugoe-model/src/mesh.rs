@@ -24,11 +24,15 @@ pub struct Mesh {
     /// 裏面カリングするか。
     #[serde(default)]
     pub culling: bool,
-    /// クリッピングマスクとして使うメッシュ。複数指定時は和集合。
+    /// クリッピングマスクの参照。意味論は `docs/spec/rendering.md#マスク`。
     #[serde(default)]
-    pub masks: Vec<MeshId>,
+    pub masks: Vec<MaskRef>,
+    /// 通常マスク (`invert = false` の参照) の結合方法。
     #[serde(default)]
-    pub invert_mask: bool,
+    pub mask_mode: MaskMode,
+    /// `true` なら色としては描画せず、マスクとしてだけ働く。
+    #[serde(default)]
+    pub mask_only: bool,
     pub keyforms: KeyformGrid<MeshKeyform>,
 }
 
@@ -43,6 +47,51 @@ pub struct MeshKeyform {
     pub multiply_color: Rgb,
     #[serde(default = "black")]
     pub screen_color: Rgb,
+    /// マスクの効き具合 (0〜1、既定 1)。範囲外の値はランタイムがクランプする。
+    #[serde(default = "one")]
+    pub mask_strength: f32,
+}
+
+/// マスクとして使うメッシュへの参照。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MaskRef {
+    pub mesh: MeshId,
+    /// `true` なら反転マスク (メッシュの内側を隠す)。
+    #[serde(default)]
+    pub invert: bool,
+}
+
+impl MaskRef {
+    /// 通常マスクの参照。
+    pub fn normal(mesh: impl Into<MeshId>) -> Self {
+        Self {
+            mesh: mesh.into(),
+            invert: false,
+        }
+    }
+
+    /// 反転マスクの参照。
+    pub fn inverted(mesh: impl Into<MeshId>) -> Self {
+        Self {
+            mesh: mesh.into(),
+            invert: true,
+        }
+    }
+}
+
+/// 通常マスクの結合方法。式は `docs/spec/rendering.md#マスク`。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MaskMode {
+    /// 和集合 `1 − Π(1 − c)`。
+    #[default]
+    Union,
+    /// 共通部分 `Π c`。
+    Intersection,
+}
+
+fn one() -> f32 {
+    1.0
 }
 
 fn white() -> Rgb {

@@ -89,6 +89,9 @@ pub enum ValidationError {
         kind: &'static str,
         cycle: Vec<String>,
     },
+    /// `cycle` は循環を構成するメッシュの ID (マスクされる側 → マスクの順)。
+    #[error("mesh masks have a cycle: {cycle:?}")]
+    MaskCycle { cycle: Vec<String> },
     #[error("parameter `{id}`: expected min <= default <= max, got {min} / {default} / {max}")]
     ParameterRange {
         id: String,
@@ -234,7 +237,7 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
             refs.check(&deformers, "parent", "deformer", parent, &mut errors);
         }
         for mask in &mesh.masks {
-            refs.check(&meshes, "masks", "mesh", mask, &mut errors);
+            refs.check(&meshes, "masks", "mesh", &mask.mesh, &mut errors);
         }
         if usize::try_from(mesh.texture).map_or(true, |t| t >= model.textures.len()) {
             errors.push(ValidationError::TextureOutOfRange {
@@ -258,7 +261,7 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
                 vertices,
             });
         }
-        for kf in &mesh.keyforms.keyforms {
+        for (k, kf) in mesh.keyforms.keyforms.iter().enumerate() {
             if kf.positions.len() != vertices {
                 errors.push(ValidationError::VertexCount {
                     id: id.clone(),
@@ -266,8 +269,17 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
                     actual: kf.positions.len(),
                 });
             }
+            // 0〜1 へのクランプはランタイムが行うので、ここでは有限値であることだけを見る。
+            if !kf.mask_strength.is_finite() {
+                errors.push(ValidationError::InvalidValue {
+                    field: format!("meshes[{id}].keyforms[{k}].mask_strength"),
+                    value: kf.mask_strength,
+                    expected: "finite",
+                });
+            }
         }
     }
+    check_mask_cycles(model, &meshes, &mut errors);
 
     for glue in &model.glues {
         let refs = Refs {
@@ -566,6 +578,71 @@ fn check_cycles<T, K: Eq + Hash + Display>(
     }
 }
 
+/// マスクの参照の循環 (自分自身を含む) を報告する。未定義の参照は参照検査に任せて無視する。
+///
+/// 宣言順・`masks` の並び順の深さ優先探索で、後退辺 1 本につき 1 件報告する。
+/// 同じ循環を重複した参照でたどった場合は 1 件にまとめる。
+fn check_mask_cycles(
+    model: &Model,
+    table: &HashMap<&crate::MeshId, usize>,
+    errors: &mut Vec<ValidationError>,
+) {
+    #[derive(Clone, Copy, PartialEq)]
+    enum State {
+        Unvisited,
+        OnPath,
+        Done,
+    }
+    let edges: Vec<Vec<usize>> = model
+        .meshes
+        .iter()
+        .map(|m| {
+            m.masks
+                .iter()
+                .filter_map(|r| table.get(&r.mesh).copied())
+                .collect()
+        })
+        .collect();
+    let mut state = vec![State::Unvisited; edges.len()];
+    let mut reported = HashSet::new();
+    for start in 0..edges.len() {
+        if state[start] != State::Unvisited {
+            continue;
+        }
+        // (メッシュ, 次に見る辺の番号) のスタック。スタック上のメッシュが現在の経路。
+        let mut stack = vec![(start, 0usize)];
+        state[start] = State::OnPath;
+        while let Some(top) = stack.last_mut() {
+            let node = top.0;
+            let Some(&target) = edges[node].get(top.1) else {
+                state[node] = State::Done;
+                stack.pop();
+                continue;
+            };
+            top.1 += 1;
+            match state[target] {
+                State::Done => {}
+                State::OnPath => {
+                    let begin = stack.iter().position(|&(n, _)| n == target).unwrap_or(0);
+                    let cycle: Vec<usize> = stack[begin..].iter().map(|&(n, _)| n).collect();
+                    if reported.insert(cycle.clone()) {
+                        errors.push(ValidationError::MaskCycle {
+                            cycle: cycle
+                                .iter()
+                                .map(|&n| model.meshes[n].id.to_string())
+                                .collect(),
+                        });
+                    }
+                }
+                State::Unvisited => {
+                    state[target] = State::OnPath;
+                    stack.push((target, 0));
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use ugoe_core::Vec2;
@@ -573,7 +650,7 @@ mod tests {
     use super::*;
     use crate::deformer::{Deformer, RotationDeformer, RotationKeyform, WarpDeformer, WarpKeyform};
     use crate::fixtures::{pose_and_effects, single_quad};
-    use crate::mesh::{Glue, GlueKeyform, GluePair};
+    use crate::mesh::{Glue, GlueKeyform, GluePair, MaskRef};
     use crate::part::{Part, PartKeyform};
     use crate::pose::{PoseEntry, PoseGroup};
     use crate::{Effects, HitArea, KeyformBinding, ParameterGroup, TextureRef};
@@ -665,7 +742,7 @@ mod tests {
         let mut mask = model.meshes[0].clone();
         mask.id = "Mask".into();
         model.meshes.push(mask);
-        model.meshes[0].masks.push("Mask".into());
+        model.meshes[0].masks.push(MaskRef::normal("Mask"));
         model.glues.push(glue(
             "Quad",
             "Mask",
@@ -875,7 +952,7 @@ mod tests {
         let mesh = &mut model.meshes[0];
         mesh.part = "Nope".into();
         mesh.parent = Some("NoDeformer".into());
-        mesh.masks.push("NoMask".into());
+        mesh.masks.push(MaskRef::inverted("NoMask"));
         mesh.keyforms.bindings[0].parameter = "Y".into();
         assert_eq!(
             validate(&model),
@@ -1016,6 +1093,69 @@ mod tests {
             vec![ValidationError::ParentCycle {
                 kind: "part",
                 cycle: vec!["A".into(), "B".into(), "C".into()],
+            }]
+        );
+    }
+
+    #[test]
+    fn mask_cycles() {
+        let mut model = single_quad();
+        let with_masks = |id: &str, masks: &[MaskRef]| {
+            let mut mesh = model.meshes[0].clone();
+            mesh.id = id.into();
+            mesh.masks = masks.to_vec();
+            mesh
+        };
+        let meshes = [
+            // A → B → C → A の循環。C は A を 2 回参照するが報告は 1 件。
+            with_masks("A", &[MaskRef::normal("B")]),
+            with_masks("B", &[MaskRef::inverted("C"), MaskRef::normal("D")]),
+            with_masks("C", &[MaskRef::normal("A"), MaskRef::inverted("A")]),
+            // D は循環しない (共有されているだけ)。
+            with_masks("D", &[]),
+            // E は循環を参照するが、循環の一部ではない。
+            with_masks("E", &[MaskRef::normal("A"), MaskRef::normal("NoMask")]),
+            // 自分自身をマスクにする。
+            with_masks("F", &[MaskRef::inverted("F")]),
+        ];
+        model.meshes.extend(meshes);
+        assert_eq!(
+            validate(&model),
+            vec![
+                unknown("mesh", "E", "masks", "mesh", "NoMask"),
+                ValidationError::MaskCycle {
+                    cycle: vec!["A".into(), "B".into(), "C".into()],
+                },
+                ValidationError::MaskCycle {
+                    cycle: vec!["F".into()],
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn shared_masks_are_not_cycles() {
+        // 菱形の依存 (A → B, A → C, B → D, C → D) は循環ではない。
+        let mut model = crate::fixtures::nested_masks();
+        let mut mesh = model.meshes[0].clone();
+        mesh.id = "Extra".into();
+        mesh.masks = vec![MaskRef::normal("Pupil"), MaskRef::inverted("Sclera")];
+        model.meshes.push(mesh);
+        assert_eq!(validate(&model), vec![]);
+    }
+
+    #[test]
+    fn mask_strength_must_be_finite() {
+        let mut model = single_quad();
+        model.meshes[0].keyforms.keyforms[1].mask_strength = f32::INFINITY;
+        // 範囲外でも有限値ならランタイムがクランプするので許す。
+        model.meshes[0].keyforms.keyforms[2].mask_strength = 2.0;
+        assert_eq!(
+            validate(&model),
+            vec![ValidationError::InvalidValue {
+                field: "meshes[Quad].keyforms[1].mask_strength".into(),
+                value: f32::INFINITY,
+                expected: "finite",
             }]
         );
     }

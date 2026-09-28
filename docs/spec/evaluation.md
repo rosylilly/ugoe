@@ -128,7 +128,8 @@ S    = diag(scale * (reflect_x ? -1 : 1), scale * (reflect_y ? -1 : 1))
 ```
 world_position[i] = F_parent(local_position[i])
 opacity           = mesh_opacity * part_opacity(mesh.part) * deformer_opacity(mesh.parent)
-visible           = opacity > 0
+visible           = !mask_only && opacity > 0
+mask_strength     = clamp(補間した mask_strength, 0, 1)
 ```
 
 乗算色とスクリーン色は補間した値をそのまま使います。パーツやデフォーマの色は継承しません。
@@ -175,8 +176,15 @@ result = interp(通常の格子) + Σ_{ブレンドシェイプ格子} delta
 | `draw_order` | 補間後の描画順 |
 | `multiply_color` / `screen_color` | 補間後の色 |
 | `blend` | 合成モード (静的) |
-| `visible` | 描画するかどうか |
+| `mask_strength` | マスクの効き具合 (0〜1、[rendering.md#マスク](rendering.md#マスク)) |
+| `visible` | 色として描画するかどうか (マスクとしての効き具合には影響しない) |
 
 UV とインデックスは静的なデータなので `CompiledModel` から取得します。
+マスクの参照も静的なデータで、`CompiledModel` がインデックスに解決して提供します。
+
+- `mask_refs(i)`: メッシュ `i` のマスクの参照 (マスク用メッシュのインデックスと反転の有無)。並びは `masks` と同じ
+- `mask_mode(i)`: メッシュ `i` の通常マスクの結合方法
+- `mask_depth(i)`: マスクの依存の深さ。マスクを持たなければ 0、持てば 1 + (マスク用メッシュの深さの最大値)
+- `mask_order()`: マスクとして参照されるメッシュを、深さの昇順 (同じ深さは宣言順) に並べたもの。各メッシュのマスクはそのメッシュより前に現れるので、この順に評価すれば入れ子のマスクを継承できる
 
 > 未決: エンジン統合での転送量を減らすため、フレーム間の変更フラグ (頂点・不透明度・描画順) を出力に加える (T0106)。

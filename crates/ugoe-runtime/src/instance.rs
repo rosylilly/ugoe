@@ -16,6 +16,11 @@ pub struct DrawableState {
     pub multiply_color: Rgb,
     pub screen_color: Rgb,
     pub blend: BlendMode,
+    /// マスクの効き具合。キーフォームを補間して 0〜1 にクランプした値 (`docs/spec/rendering.md#マスク`)。
+    /// マスクを持たないメッシュでは意味を持たない。
+    pub mask_strength: f32,
+    /// 色として描くか。不透明度が 0 のメッシュとマスク専用メッシュ (`Mesh::mask_only`) は `false`。
+    /// マスクとしての効き具合には影響しない。
     pub visible: bool,
 }
 
@@ -51,7 +56,8 @@ impl ModelInstance {
                 multiply_color: Rgb::WHITE,
                 screen_color: Rgb::BLACK,
                 blend: m.blend,
-                visible: true,
+                mask_strength: 1.0,
+                visible: !m.mask_only,
             })
             .collect();
         let model = &compiled.model;
@@ -217,7 +223,9 @@ impl ModelInstance {
             out.draw_order = keyform::blend_scalar(grid, &self.scratch, |k| k.draw_order);
             out.multiply_color = Rgb::new(mul[0], mul[1], mul[2]);
             out.screen_color = Rgb::new(scr[0], scr[1], scr[2]);
-            out.visible = out.opacity > 0.0;
+            out.mask_strength =
+                keyform::blend_scalar(grid, &self.scratch, |k| k.mask_strength).clamp(0.0, 1.0);
+            out.visible = !mesh.mask_only && out.opacity > 0.0;
         }
     }
 
@@ -343,6 +351,9 @@ mod tests {
             fixtures::rotation_under_warp(),
             fixtures::part_opacity_hierarchy(),
             fixtures::glued_quads(),
+            fixtures::nested_masks(),
+            fixtures::mixed_masks(),
+            fixtures::intersection_masks(),
         ] {
             let mut instance = ModelInstance::new(CompiledModel::compile(model).unwrap());
             let before = buffers(&instance);

@@ -7,7 +7,7 @@ use crate::deformer::{
     Deformer, DeformerKind, RotationDeformer, RotationKeyform, WarpDeformer, WarpKeyform,
 };
 use crate::keyform::{KeyformBinding, KeyformGrid};
-use crate::mesh::{BlendMode, Glue, GlueKeyform, GluePair, Mesh, MeshKeyform};
+use crate::mesh::{BlendMode, Glue, GlueKeyform, GluePair, MaskMode, MaskRef, Mesh, MeshKeyform};
 use crate::parameter::{Parameter, ParameterKind};
 use crate::part::{Part, PartKeyform};
 use crate::pose::{DEFAULT_FADE_DURATION, PoseEntry, PoseGroup};
@@ -28,6 +28,7 @@ pub fn single_quad() -> Model {
         draw_order: 500.0,
         multiply_color: Rgb::WHITE,
         screen_color: Rgb::BLACK,
+        mask_strength: 1.0,
     };
     Model {
         schema_version: SCHEMA_VERSION,
@@ -73,7 +74,8 @@ pub fn single_quad() -> Model {
             blend: BlendMode::Normal,
             culling: false,
             masks: vec![],
-            invert_mask: false,
+            mask_mode: MaskMode::Union,
+            mask_only: false,
             keyforms: KeyformGrid {
                 bindings: vec![KeyformBinding {
                     parameter: "X".into(),
@@ -191,6 +193,7 @@ fn mesh_keyform(positions: [Vec2; 4], opacity: f32, draw_order: f32) -> MeshKeyf
         draw_order,
         multiply_color: Rgb::WHITE,
         screen_color: Rgb::BLACK,
+        mask_strength: 1.0,
     }
 }
 
@@ -217,7 +220,8 @@ fn quad_mesh(
         blend: BlendMode::Normal,
         culling: false,
         masks: vec![],
-        invert_mask: false,
+        mask_mode: MaskMode::Union,
+        mask_only: false,
         keyforms,
     }
 }
@@ -644,6 +648,149 @@ pub fn glued_quads() -> Model {
     model
 }
 
+// ---- マスクのフィクスチャ (T0107) ----
+//
+// どれも 256×256 キャンバス、パーツ `Root`、白い 1×1 テクスチャ (アルファ 1) を持つ。
+// 見える範囲は `docs/spec/rendering.md#マスク` の式から求めたもの (四角形の範囲で書く)。
+
+/// `rect` の四角形メッシュ (親なし・パーツ `Root`・不透明度 1)。
+fn masked_quad(
+    id: &str,
+    rect: [Vec2; 4],
+    draw_order: f32,
+    masks: Vec<MaskRef>,
+    mask_mode: MaskMode,
+) -> Mesh {
+    Mesh {
+        masks,
+        mask_mode,
+        ..quad_mesh(
+            id,
+            "Root",
+            None,
+            KeyformGrid::constant(mesh_keyform(rect, 1.0, draw_order)),
+        )
+    }
+}
+
+/// 入れ子のマスク (白目 → 黒目 → 瞳孔)。依存の順とは逆に宣言する。
+///
+/// - メッシュ `Pupil`: `(112,40)`〜`(144,120)`、描画順 600、マスク `Iris`。
+/// - メッシュ `Iris`: `(96,64)`〜`(160,192)`、描画順 500、マスク `Sclera`。
+/// - メッシュ `Sclera`: `(64,96)`〜`(192,160)`、描画順 400、マスクなし。
+///
+/// 見える範囲: `Iris` は `(96,96)`〜`(160,160)`。`Pupil` は入れ子を継承するので `(112,96)`〜`(144,120)`
+/// (継承しなければ `(112,64)`〜`(144,120)`)。マスクの依存の深さは `Sclera` 0、`Iris` 1、`Pupil` 2。
+pub fn nested_masks() -> Model {
+    let mut model = base_model("nested_masks", vec![]);
+    model.meshes.extend([
+        masked_quad(
+            "Pupil",
+            rect(112.0, 40.0, 144.0, 120.0),
+            600.0,
+            vec![MaskRef::normal("Iris")],
+            MaskMode::Union,
+        ),
+        masked_quad(
+            "Iris",
+            rect(96.0, 64.0, 160.0, 192.0),
+            500.0,
+            vec![MaskRef::normal("Sclera")],
+            MaskMode::Union,
+        ),
+        masked_quad(
+            "Sclera",
+            rect(64.0, 96.0, 192.0, 160.0),
+            400.0,
+            vec![],
+            MaskMode::Union,
+        ),
+    ]);
+    model
+}
+
+/// 1 つのメッシュで通常マスクと反転マスクを併用し、`mask_strength` をパラメータで動かす。
+///
+/// - パラメータ `Strength` (0..1、既定 1)。
+/// - メッシュ `Face`: `(32,32)`〜`(224,224)`、描画順 300。
+/// - メッシュ `Hair`: `(32,32)`〜`(224,96)`、描画順 700。
+/// - メッシュ `Brow`: `(64,64)`〜`(192,128)`、描画順 500、マスク `Face` (通常) と `Hair` (反転)。
+///   `mask_strength` のキーフォームは `Strength = 0` で -1、`Strength = 1` で 2 (範囲外はクランプされる)。
+///   補間値は `-1 + 3 × Strength` なので、`Strength = 0.5` で 0.5、`Strength ≤ 1/3` で 0、`Strength ≥ 2/3` で 1。
+///
+/// `mask_strength = 1` での `Brow` の見える範囲は `(64,96)`〜`(192,128)` (顔の内側かつ髪の外側)。
+pub fn mixed_masks() -> Model {
+    let mut model = base_model("mixed_masks", vec![parameter("Strength", 0.0, 1.0, 1.0)]);
+    let brow = |mask_strength| MeshKeyform {
+        mask_strength,
+        ..mesh_keyform(rect(64.0, 64.0, 192.0, 128.0), 1.0, 500.0)
+    };
+    model.meshes.extend([
+        masked_quad(
+            "Face",
+            rect(32.0, 32.0, 224.0, 224.0),
+            300.0,
+            vec![],
+            MaskMode::Union,
+        ),
+        masked_quad(
+            "Hair",
+            rect(32.0, 32.0, 224.0, 96.0),
+            700.0,
+            vec![],
+            MaskMode::Union,
+        ),
+        Mesh {
+            masks: vec![MaskRef::normal("Face"), MaskRef::inverted("Hair")],
+            ..quad_mesh(
+                "Brow",
+                "Root",
+                None,
+                grid1("Strength", &[0.0, 1.0], vec![brow(-1.0), brow(2.0)]),
+            )
+        },
+    ]);
+    model
+}
+
+/// 共通部分のマスクとマスク専用メッシュ (舌を口内と輪郭の両方に収める)。
+///
+/// - メッシュ `Face`: `(32,32)`〜`(224,224)`、描画順 300。
+/// - メッシュ `MouthMask`: `(64,128)`〜`(192,192)`、描画順 400、`mask_only`。
+/// - メッシュ `Tongue`: `(96,160)`〜`(240,240)`、描画順 500、マスク `MouthMask` と `Face` を `intersection` で結合。
+///
+/// 見える範囲: `Tongue` は `(96,160)`〜`(192,192)`。`MouthMask` は色としては描かれない (`visible = false`)。
+pub fn intersection_masks() -> Model {
+    let mut model = base_model("intersection_masks", vec![]);
+    model.meshes.extend([
+        masked_quad(
+            "Face",
+            rect(32.0, 32.0, 224.0, 224.0),
+            300.0,
+            vec![],
+            MaskMode::Union,
+        ),
+        Mesh {
+            mask_only: true,
+            ..masked_quad(
+                "MouthMask",
+                rect(64.0, 128.0, 192.0, 192.0),
+                400.0,
+                vec![],
+                MaskMode::Union,
+            )
+        },
+        masked_quad(
+            "Tongue",
+            rect(96.0, 160.0, 240.0, 240.0),
+            500.0,
+            vec![MaskRef::normal("MouthMask"), MaskRef::normal("Face")],
+            MaskMode::Intersection,
+        ),
+    ]);
+    model
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -682,6 +829,9 @@ mod tests {
             rotation_under_warp(),
             part_opacity_hierarchy(),
             glued_quads(),
+            nested_masks(),
+            mixed_masks(),
+            intersection_masks(),
         ] {
             assert_eq!(
                 crate::validate::validate(&model),
@@ -693,6 +843,44 @@ mod tests {
             let back: Model = serde_json::from_str(&json).unwrap();
             assert_eq!(model, back);
         }
+    }
+
+    #[test]
+    fn json_without_mask_fields_uses_defaults() {
+        let mut json = serde_json::to_value(single_quad()).unwrap();
+        let mesh = json["meshes"][0].as_object_mut().unwrap();
+        for key in ["masks", "mask_mode", "mask_only"] {
+            assert!(mesh.remove(key).is_some(), "{key}");
+        }
+        for kf in json["meshes"][0]["keyforms"]["keyforms"]
+            .as_array_mut()
+            .unwrap()
+        {
+            assert!(
+                kf.as_object_mut()
+                    .unwrap()
+                    .remove("mask_strength")
+                    .is_some()
+            );
+        }
+        let model: Model = serde_json::from_value(json).unwrap();
+        assert_eq!(model, single_quad());
+    }
+
+    #[test]
+    fn mask_json_format() {
+        let json = serde_json::to_value(&intersection_masks().meshes[2]).unwrap();
+        assert_eq!(json["mask_mode"], "intersection");
+        assert_eq!(
+            json["masks"],
+            serde_json::json!([
+                { "mesh": "MouthMask", "invert": false },
+                { "mesh": "Face", "invert": false },
+            ])
+        );
+        // `invert` は省略できる (既定 false)。
+        let r: MaskRef = serde_json::from_value(serde_json::json!({ "mesh": "Hair" })).unwrap();
+        assert_eq!(r, MaskRef::normal("Hair"));
     }
 
     #[test]

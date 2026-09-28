@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::Arc;
 
-use ugoe_model::{DeformerKind, KeyformGrid, Model};
+use ugoe_model::{DeformerKind, KeyformGrid, MaskMode, Model};
 
 use crate::keyform::ResolvedBinding;
 use crate::{ParamIndex, ParameterValues};
@@ -30,6 +30,8 @@ pub struct CompiledModel {
     /// デフォーマのトポロジカル順 (親が先)。
     pub(crate) deformer_order: Vec<u32>,
     pub(crate) meshes: Vec<CompiledMesh>,
+    /// マスクとして参照されるメッシュの、マスクの依存順 (`mask_order`)。
+    pub(crate) mask_order: Vec<u32>,
     pub(crate) glues: Vec<CompiledGlue>,
     /// すべてのキーフォーム格子のうち最大の軸数。重みバッファの事前確保に使う。
     pub(crate) max_axes: usize,
@@ -52,6 +54,18 @@ pub(crate) struct CompiledMesh {
     pub(crate) part: u32,
     pub(crate) parent: Option<u32>,
     pub(crate) bindings: Vec<ResolvedBinding>,
+    pub(crate) masks: Vec<ResolvedMaskRef>,
+    /// マスクの依存の深さ (`mask_depth`)。
+    pub(crate) mask_depth: u32,
+}
+
+/// マスクの参照 (`ugoe_model::MaskRef`) の ID をメッシュのインデックスに解決したもの。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResolvedMaskRef {
+    /// マスクとして使うメッシュ (`Model::meshes` のインデックス)。
+    pub mesh: u32,
+    /// `true` なら反転マスク。
+    pub invert: bool,
 }
 
 #[derive(Debug)]
@@ -119,7 +133,7 @@ impl CompiledModel {
             })
             .collect::<Result<Vec<_>, CompileError>>()?;
 
-        let meshes = model
+        let mut meshes = model
             .meshes
             .iter()
             .map(|m| {
@@ -131,9 +145,25 @@ impl CompiledModel {
                         .map(|id| lookup(&deformer_index, id.as_str()))
                         .transpose()?,
                     bindings: resolve(&params, &m.keyforms)?,
+                    masks: m
+                        .masks
+                        .iter()
+                        .map(|r| {
+                            Ok(ResolvedMaskRef {
+                                mesh: lookup(&mesh_index, r.mesh.as_str())?,
+                                invert: r.invert,
+                            })
+                        })
+                        .collect::<Result<Vec<_>, CompileError>>()?,
+                    mask_depth: 0,
                 })
             })
             .collect::<Result<Vec<_>, CompileError>>()?;
+        let depths = mask_depths(&meshes);
+        for (mesh, depth) in meshes.iter_mut().zip(depths) {
+            mesh.mask_depth = depth;
+        }
+        let mask_order = mask_order(&meshes);
 
         let glues = model
             .glues
@@ -165,6 +195,7 @@ impl CompiledModel {
             deformers,
             deformer_order,
             meshes,
+            mask_order,
             glues,
             max_axes,
         }))
@@ -177,6 +208,46 @@ impl CompiledModel {
     /// デフォーマの評価順 (親が先のトポロジカル順、`Model::deformers` のインデックス)。
     pub fn deformer_order(&self) -> &[u32] {
         &self.deformer_order
+    }
+
+    /// メッシュ `mesh` (`Model::meshes` のインデックス) のマスクの参照。並びは `Mesh::masks` と同じ。
+    ///
+    /// # Panics
+    ///
+    /// `mesh` が範囲外のとき。
+    pub fn mask_refs(&self, mesh: usize) -> &[ResolvedMaskRef] {
+        &self.meshes[mesh].masks
+    }
+
+    /// メッシュ `mesh` の通常マスクの結合方法 (`Mesh::mask_mode`)。
+    ///
+    /// # Panics
+    ///
+    /// `mesh` が範囲外のとき。
+    pub fn mask_mode(&self, mesh: usize) -> MaskMode {
+        self.model.meshes[mesh].mask_mode
+    }
+
+    /// メッシュ `mesh` のマスクの依存の深さ。マスクを持たなければ 0、
+    /// 持てば 1 + (マスクとして使うメッシュの深さの最大値)。
+    ///
+    /// 深さの小さいメッシュから順に評価すれば、マスクは必ずマスクされる側より先に評価される
+    /// (入れ子の継承、`docs/spec/rendering.md#マスク`)。
+    ///
+    /// # Panics
+    ///
+    /// `mesh` が範囲外のとき。
+    pub fn mask_depth(&self, mesh: usize) -> u32 {
+        self.meshes[mesh].mask_depth
+    }
+
+    /// マスクとして 1 回以上参照されるメッシュ (`Model::meshes` のインデックス) を、
+    /// マスクの依存の深さの昇順 (同じ深さは宣言順) に並べたもの。
+    ///
+    /// 各メッシュのマスクは、そのメッシュより前に現れる。レンダラはこの順にマスクを評価すれば、
+    /// 入れ子のマスクの切り抜き後の形を使える。
+    pub fn mask_order(&self) -> &[u32] {
+        &self.mask_order
     }
 }
 
@@ -210,6 +281,57 @@ fn topological_order(parents: impl Iterator<Item = Option<u32>>) -> Vec<u32> {
         }
         chain.clear();
     }
+    order
+}
+
+/// メッシュごとのマスクの依存の深さ。循環がないこと (validate で検査済み) を前提にする。
+fn mask_depths(meshes: &[CompiledMesh]) -> Vec<u32> {
+    let mut depth: Vec<Option<u32>> = vec![None; meshes.len()];
+    let mut on_stack = vec![false; meshes.len()];
+    let mut stack = Vec::new();
+    for start in 0..meshes.len() {
+        if depth[start].is_some() {
+            continue;
+        }
+        stack.push(start);
+        on_stack[start] = true;
+        while let Some(&i) = stack.last() {
+            // 深さが未確定のマスクがあれば先に求める。循環 (検査済みなので起きない) は深さ 0 とみなして止める。
+            let pending = meshes[i]
+                .masks
+                .iter()
+                .map(|r| r.mesh as usize)
+                .find(|&m| depth[m].is_none() && !on_stack[m]);
+            if let Some(m) = pending {
+                stack.push(m);
+                on_stack[m] = true;
+                continue;
+            }
+            depth[i] = Some(
+                meshes[i]
+                    .masks
+                    .iter()
+                    .map(|r| depth[r.mesh as usize].map_or(0, |d| d + 1))
+                    .max()
+                    .unwrap_or(0),
+            );
+            on_stack[i] = false;
+            stack.pop();
+        }
+    }
+    depth.into_iter().map(|d| d.unwrap_or(0)).collect()
+}
+
+/// マスクとして参照されるメッシュを、深さの昇順 (同じ深さは宣言順) に並べる。
+fn mask_order(meshes: &[CompiledMesh]) -> Vec<u32> {
+    let mut used = vec![false; meshes.len()];
+    for r in meshes.iter().flat_map(|m| &m.masks) {
+        used[r.mesh as usize] = true;
+    }
+    let mut order: Vec<u32> = (0..meshes.len() as u32)
+        .filter(|&i| used[i as usize])
+        .collect();
+    order.sort_by_key(|&i| (meshes[i as usize].mask_depth, i));
     order
 }
 

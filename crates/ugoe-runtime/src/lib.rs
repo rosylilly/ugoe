@@ -13,6 +13,6 @@ pub mod instance;
 pub mod keyform;
 pub mod parameters;
 
-pub use compile::{CompileError, CompiledModel};
+pub use compile::{CompileError, CompiledModel, ResolvedMaskRef};
 pub use instance::{DrawableState, ModelInstance};
 pub use parameters::{ParamIndex, ParameterValues};
