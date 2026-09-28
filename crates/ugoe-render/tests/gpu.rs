@@ -118,25 +118,15 @@ impl Scene {
     }
 
     fn try_render(self) -> Result<Image, RenderError> {
-        let Gpu { device, queue, .. } = gpu();
-        let size = self.size;
-        let target = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("target"),
-            size: wgpu::Extent3d {
-                width: size,
-                height: size,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-        let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+        let (mut renderer, instance) = self.prepare()?;
+        render_frame(&mut renderer, &instance, &self.view, self.size, self.clear)
+    }
 
-        let mut instance = ModelInstance::new(CompiledModel::compile(self.model).expect("compile"));
+    /// レンダラ (テクスチャ登録済み) とインスタンス (パラメータ設定・更新済み) を作る。
+    fn prepare(&self) -> Result<(Renderer, ModelInstance), RenderError> {
+        let Gpu { device, queue, .. } = gpu();
+        let compiled = CompiledModel::compile(self.model.clone()).expect("compile");
+        let mut instance = ModelInstance::new(compiled);
         for &(id, value) in &self.params {
             let index = instance.parameters().index_of(id).expect("parameter");
             instance.parameters_mut().set(index, value);
@@ -149,65 +139,85 @@ impl Scene {
         for (i, texture) in self.extra_textures.iter().enumerate() {
             renderer.set_texture(device, queue, i as u32 + 1, 1, 1, texture)?;
         }
-
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-        // クリアはホストの責務。
-        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("clear"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &target_view,
-                depth_slice: None,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(self.clear),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            ..Default::default()
-        });
-        renderer.encode(
-            device,
-            queue,
-            &mut encoder,
-            &target_view,
-            &self.view,
-            &instance,
-        )?;
-
-        let bytes_per_row = size * 4; // 256 (COPY_BYTES_PER_ROW_ALIGNMENT) の倍数
-        let readback = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("readback"),
-            size: u64::from(bytes_per_row * size),
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        encoder.copy_texture_to_buffer(
-            target.as_image_copy(),
-            wgpu::TexelCopyBufferInfo {
-                buffer: &readback,
-                layout: wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(bytes_per_row),
-                    rows_per_image: Some(size),
-                },
-            },
-            target.size(),
-        );
-        queue.submit([encoder.finish()]);
-        readback.map_async(wgpu::MapMode::Read, .., |r| r.expect("map readback"));
-        device
-            .poll(wgpu::PollType::wait_indefinitely())
-            .expect("poll");
-        let pixels = readback
-            .get_mapped_range(..)
-            .expect("mapped range")
-            .to_vec();
-        Ok(Image {
-            pixels,
-            size,
-            stats: renderer.last_frame_stats(),
-        })
+        Ok((renderer, instance))
     }
+}
+
+/// 一辺 `size` の描画先を `clear` でクリアし、`renderer` で 1 フレーム描いて読み戻す。
+fn render_frame(
+    renderer: &mut Renderer,
+    instance: &ModelInstance,
+    view: &View,
+    size: u32,
+    clear: wgpu::Color,
+) -> Result<Image, RenderError> {
+    let Gpu { device, queue, .. } = gpu();
+    let target = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("target"),
+        size: wgpu::Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+    // クリアはホストの責務。
+    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("clear"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: &target_view,
+            depth_slice: None,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(clear),
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        ..Default::default()
+    });
+    renderer.encode(device, queue, &mut encoder, &target_view, view, instance)?;
+
+    let bytes_per_row = size * 4; // 256 (COPY_BYTES_PER_ROW_ALIGNMENT) の倍数
+    let readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("readback"),
+        size: u64::from(bytes_per_row * size),
+        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    encoder.copy_texture_to_buffer(
+        target.as_image_copy(),
+        wgpu::TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(bytes_per_row),
+                rows_per_image: Some(size),
+            },
+        },
+        target.size(),
+    );
+    queue.submit([encoder.finish()]);
+    readback.map_async(wgpu::MapMode::Read, .., |r| r.expect("map readback"));
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .expect("poll");
+    let pixels = readback
+        .get_mapped_range(..)
+        .expect("mapped range")
+        .to_vec();
+    Ok(Image {
+        pixels,
+        size,
+        stats: renderer.last_frame_stats(),
+    })
 }
 
 struct Image {
@@ -459,6 +469,11 @@ fn render_order_follows_draw_order() {
 const RED: [f32; 4] = [1.0, 0.0, 0.0, 1.0];
 const NONE: [f32; 4] = [0.0; 4];
 
+/// 一辺 `size` のマスクアトラス 1 枚のバイト数 (RGBA8)。
+fn atlas_bytes(size: u64) -> u64 {
+    size * size * 4
+}
+
 /// キャンバス上の矩形 `[x0, y0, x1, y1]` を覆う白い四角形 (single_quad のメッシュを複製)。
 fn quad(id: &str, [x0, y0, x1, y1]: [f32; 4]) -> Mesh {
     let mut mesh = fixtures::single_quad().meshes.remove(0);
@@ -535,6 +550,7 @@ fn mask_clips_drawable() {
             mask_sets: 1,
             mask_draws: 1,
             mask_atlases: 1,
+            mask_atlas_bytes: atlas_bytes(256),
         }
     );
 }
@@ -636,6 +652,7 @@ fn invisible_mask_mesh_is_still_drawn_as_mask() {
             mask_sets: 1,
             mask_draws: 1,
             mask_atlases: 1,
+            mask_atlas_bytes: atlas_bytes(256),
         }
     );
 
@@ -695,6 +712,7 @@ fn drawables_with_same_mask_set_share_mask() {
             mask_sets: 2,
             mask_draws: 3,
             mask_atlases: 1,
+            mask_atlas_bytes: atlas_bytes(256),
         }
     );
 }
@@ -766,6 +784,7 @@ fn unmasked_frame_uses_no_atlas() {
             mask_sets: 0,
             mask_draws: 0,
             mask_atlases: 0,
+            mask_atlas_bytes: 0,
         }
     );
 }
@@ -934,6 +953,7 @@ fn nested_masks_inherit_clipping() {
             mask_sets: 2,
             mask_draws: 2,
             mask_atlases: 2,
+            mask_atlas_bytes: 2 * atlas_bytes(256),
         }
     );
 }
@@ -1049,4 +1069,146 @@ fn downscale_option_lowers_mask_resolution() {
     image.assert_pixel((x0 + 20, y0 + 40), RED);
     image.assert_pixel((x0 + 34, y0 + 40), NONE);
     image.assert_pixel((x0 + 70, y0 + 40), NONE);
+}
+
+// ---- マスクアトラスの縮小 (T0206) ----
+
+/// 縮小を待つフレーム数 (テストを短くするため既定の 120 より小さくする)。
+const SHRINK_AFTER: u32 = 4;
+
+fn shrinking_options(max_size: u32) -> RendererOptions {
+    RendererOptions {
+        mask_atlas: MaskAtlasOptions {
+            max_size,
+            shrink_after_frames: SHRINK_AFTER,
+            ..MaskAtlasOptions::default()
+        },
+    }
+}
+
+/// `clipped_scene` を一辺 `size` の描画先に描いた結果が、64 画素のときと同じ形か確かめる。
+#[track_caller]
+fn assert_clipped(image: &Image) {
+    let s = image.size / 64;
+    image.assert_pixel((24 * s, 32 * s), NONE);
+    image.assert_pixel((31 * s, 32 * s), NONE);
+    image.assert_pixel((32 * s, 32 * s), RED);
+    image.assert_pixel((47 * s, 47 * s), RED);
+    image.assert_pixel((52 * s, 32 * s), NONE);
+    assert_eq!(image.covered_pixels([0; 4]) as u32, 16 * 32 * s * s);
+}
+
+#[test]
+fn mask_atlas_shrinks_after_zooming_out() {
+    let mut scene = clipped_scene(false, 1.0);
+    scene.options = shrinking_options(4096);
+    let (mut renderer, instance) = scene.prepare().expect("prepare");
+    let view = normal_view();
+    let clear = wgpu::Color::TRANSPARENT;
+    // 拡大: マスクの外接矩形は 256x256 画素なので、セル (縁込み 258) が入る 512 のアトラス。
+    let image = render_frame(&mut renderer, &instance, &view, 512, clear).expect("render");
+    assert_clipped(&image);
+    assert_eq!(image.stats.mask_atlas_bytes, atlas_bytes(512));
+    // 縮小: 256 で足りるが、SHRINK_AFTER フレーム続くまでは作り直さない。
+    for frame in 1..=SHRINK_AFTER {
+        let image = render_frame(&mut renderer, &instance, &view, SIZE, clear).expect("render");
+        // 大きいアトラスのままでも、縮めた後でも、マスクは正しく効く。
+        assert_clipped(&image);
+        let expected = if frame < SHRINK_AFTER { 512 } else { 256 };
+        assert_eq!(
+            image.stats.mask_atlas_bytes,
+            atlas_bytes(expected),
+            "frame {frame}"
+        );
+    }
+    // 縮めた後に拡大し直しても正しく描ける。
+    let image = render_frame(&mut renderer, &instance, &view, 512, clear).expect("render");
+    assert_clipped(&image);
+    assert_eq!(image.stats.mask_atlas_bytes, atlas_bytes(512));
+}
+
+#[test]
+fn repeated_zoom_cycles_do_not_grow_memory() {
+    let mut scene = clipped_scene(false, 1.0);
+    scene.options = shrinking_options(4096);
+    let (mut renderer, instance) = scene.prepare().expect("prepare");
+    let view = normal_view();
+    let clear = wgpu::Color::TRANSPARENT;
+    let mut peak = 0;
+    for cycle in 0..5 {
+        let image = render_frame(&mut renderer, &instance, &view, 1024, clear).expect("render");
+        assert_clipped(&image);
+        peak = peak.max(image.stats.mask_atlas_bytes);
+        let mut last = image;
+        for _ in 0..SHRINK_AFTER {
+            last = render_frame(&mut renderer, &instance, &view, SIZE, clear).expect("render");
+            assert_clipped(&last);
+            peak = peak.max(last.stats.mask_atlas_bytes);
+        }
+        assert_eq!(
+            last.stats.mask_atlas_bytes,
+            atlas_bytes(256),
+            "cycle {cycle}"
+        );
+    }
+    assert_eq!(peak, atlas_bytes(1024));
+}
+
+/// `canvas_view` を右へ `shift` (クリップ座標) だけずらしたビュー。
+fn shifted_view(shift: f32) -> View {
+    let mut view = normal_view();
+    view.view_proj[2][0] += shift;
+    view
+}
+
+#[test]
+fn unused_overflow_atlases_are_released() {
+    let mut scene = five_mask_sets();
+    // 一辺 16 では 1 枚に 3 つの内容しか入らない (`mask_sets_overflow_into_more_atlases`)。
+    scene.options = shrinking_options(16);
+    let (mut renderer, instance) = scene.prepare().expect("prepare");
+    let clear = wgpu::Color::TRANSPARENT;
+    let image =
+        render_frame(&mut renderer, &instance, &normal_view(), SIZE, clear).expect("render");
+    assert_five_mask_sets(&image, false);
+    assert_eq!(image.stats.mask_atlases, 2);
+    assert_eq!(image.stats.mask_atlas_bytes, 2 * atlas_bytes(16));
+
+    // 右へ半分ずらすと、画面に入る内容は左の 3 つ (キャンバス x < 128) だけになる。
+    let view = shifted_view(1.0);
+    for frame in 1..=SHRINK_AFTER {
+        let image = render_frame(&mut renderer, &instance, &view, SIZE, clear).expect("render");
+        assert_eq!(image.stats.mask_sets, 3);
+        assert_eq!(image.stats.mask_atlases, 1);
+        // 左端の 2 本は、キャンバス x 16..48 → 画素 36..44 と 64..96 → 画素 48..56。
+        image.assert_pixel((40, 20), RED);
+        image.assert_pixel((40, 44), NONE);
+        image.assert_pixel((52, 20), RED);
+        image.assert_pixel((52, 44), NONE);
+        let expected = if frame < SHRINK_AFTER { 2 } else { 1 };
+        assert_eq!(
+            image.stats.mask_atlas_bytes,
+            expected * atlas_bytes(16),
+            "frame {frame}"
+        );
+    }
+
+    // 画面外に出してマスクを使わなくなったら、すべて解放する。
+    let view = shifted_view(4.0);
+    for frame in 1..=SHRINK_AFTER {
+        let image = render_frame(&mut renderer, &instance, &view, SIZE, clear).expect("render");
+        assert_eq!(image.stats.mask_atlases, 0);
+        let expected = if frame < SHRINK_AFTER {
+            atlas_bytes(16)
+        } else {
+            0
+        };
+        assert_eq!(image.stats.mask_atlas_bytes, expected, "frame {frame}");
+    }
+
+    // 戻せば作り直して正しく描く。
+    let image =
+        render_frame(&mut renderer, &instance, &normal_view(), SIZE, clear).expect("render");
+    assert_five_mask_sets(&image, false);
+    assert_eq!(image.stats.mask_atlas_bytes, 2 * atlas_bytes(16));
 }

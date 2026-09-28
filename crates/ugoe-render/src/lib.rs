@@ -16,7 +16,7 @@ use ugoe_runtime::{CompiledModel, ModelInstance};
 use wgpu::util::DeviceExt;
 
 pub use crate::mask::MaskAtlasOptions;
-use crate::mask::{CellRequest, MaskContent, MaskSlot, MaskStep, MeshMask};
+use crate::mask::{AtlasPool, CellRequest, MaskContent, MaskSlot, MaskStep, MeshMask};
 use crate::pipeline::{MASK_ATLAS_FORMAT, PipelineKey, Pipelines, VEC2_SIZE};
 
 /// 参照シェーダの WGSL ソース。
@@ -77,6 +77,9 @@ pub struct FrameStats {
     pub mask_draws: u32,
     /// 使ったマスクアトラスの枚数。
     pub mask_atlases: u32,
+    /// フレームの終わりに持っているマスクアトラスの合計のバイト数 (このフレームで使わなかったが、
+    /// 縮小・解放を待っているアトラスも含む。`MaskAtlasOptions::shrink_after_frames`)。
+    pub mask_atlas_bytes: u64,
 }
 
 /// シェーダの `Globals` と同じ配置 (mat3x3 の各列は vec4 に詰める)。
@@ -211,8 +214,8 @@ pub struct Renderer {
     mask_options: MaskAtlasOptions,
     /// アトラスの一辺の上限 (設定とデバイスの上限の小さい方)。
     mask_atlas_max_size: u32,
-    /// 今のアトラスの一辺。必要になれば大きくし、小さくはしない (0 はまだ作っていない)。
-    mask_atlas_size: u32,
+    /// アトラスの一辺と枚数 (すぐに大きくし、ヒステリシスを持たせて小さくする)。
+    mask_atlas_pool: AtlasPool,
     mask_atlases: Vec<MaskAtlas>,
     stats: FrameStats,
     textures: Vec<Option<TextureSlot>>,
@@ -337,7 +340,7 @@ impl Renderer {
             no_mask_bind_group,
             mask_options: options.mask_atlas,
             mask_atlas_max_size,
-            mask_atlas_size: 0,
+            mask_atlas_pool: AtlasPool::default(),
             mask_atlases: Vec::new(),
             stats: FrameStats::default(),
             textures: Vec::new(),
@@ -511,10 +514,18 @@ impl Renderer {
                 height,
             });
         }
-        let (atlas_size, slots) = if requests.is_empty() {
-            (self.mask_atlas_size, Vec::new())
+        // このフレームだけで要る一辺を求め、縮小のヒステリシスを通して詰める一辺を決める。
+        let shrink_after = self.mask_options.shrink_after_frames;
+        let (needed, slots) = if requests.is_empty() {
+            (0, Vec::new())
         } else {
-            mask::allocate(&requests, self.mask_atlas_size, self.mask_atlas_max_size)
+            mask::allocate(&requests, 0, self.mask_atlas_max_size)
+        };
+        let frame_size = self.mask_atlas_pool.frame_size(needed, shrink_after);
+        let (atlas_size, slots) = if frame_size == needed || requests.is_empty() {
+            (frame_size, slots)
+        } else {
+            mask::allocate(&requests, frame_size, self.mask_atlas_max_size)
         };
         let active: Vec<ActiveMask> = slots
             .into_iter()
@@ -535,10 +546,13 @@ impl Renderer {
             .map(|a| a.slot.atlas as usize + 1)
             .max()
             .unwrap_or(0);
-        if atlas_size != self.mask_atlas_size {
+        if atlas_size != self.mask_atlas_pool.size() {
             self.mask_atlases.clear();
-            self.mask_atlas_size = atlas_size;
         }
+        let keep = self
+            .mask_atlas_pool
+            .commit(atlas_size, atlas_count as u32, shrink_after) as usize;
+        self.mask_atlases.truncate(keep);
         while self.mask_atlases.len() < atlas_count {
             self.mask_atlases.push(MaskAtlas::new(
                 device,
@@ -762,6 +776,7 @@ impl Renderer {
             mask_sets: active.len() as u32,
             mask_draws,
             mask_atlases: atlas_count as u32,
+            mask_atlas_bytes: self.mask_atlas_pool.bytes(),
         };
         Ok(())
     }

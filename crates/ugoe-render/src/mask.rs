@@ -11,6 +11,8 @@
 //!   チャンネルごとに棚詰め (shelf packing) で詰め、入らなければアトラスを増やす。
 //! - 入れ子のマスクは、マスクの依存の深さ (レベル) ごとに別のアトラスに描く
 //!   (描いている最中のアトラスを読まないため)。
+//! - アトラスは必要になればすぐ大きくし、要らなくなった状態が一定フレーム続いたら縮小・解放する
+//!   ([`AtlasPool`])。
 
 use std::collections::HashMap;
 
@@ -27,6 +29,10 @@ pub struct MaskAtlasOptions {
     /// 2 なら縦横 1/2 の解像度で描く (縁がぼやける代わりに、アトラスが小さく描画も軽くなる)。
     /// 0 は 1 とみなす。
     pub downscale: u32,
+    /// アトラスを縮小・解放するまでのフレーム数。必要な一辺が今の半分以下のフレーム
+    /// (または使わないアトラスがあるフレーム) がこれだけ続いたら、アトラスを作り直して小さくする。
+    /// 大きさが揺れるたびに作り直さないためのヒステリシス。0 なら縮小しない。
+    pub shrink_after_frames: u32,
 }
 
 impl Default for MaskAtlasOptions {
@@ -34,6 +40,7 @@ impl Default for MaskAtlasOptions {
         Self {
             max_size: 4096,
             downscale: 1,
+            shrink_after_frames: 120,
         }
     }
 }
@@ -263,8 +270,8 @@ pub(crate) fn max_atlas_size(options: MaskAtlasOptions, device_max: u32) -> u32 
 
 /// セルを詰めるアトラスの一辺を決めて、割り当てる。戻り値は `(一辺, requests と同じ並びの場所)`。
 ///
-/// 一辺は `current` (前のフレームの大きさ。小さくはしない)・[`MIN_ATLAS_SIZE`]・最大のセルを
-/// 収める 2 の冪のうち最大のものから始め、レベルの数より多くのアトラスが要るなら
+/// 一辺は `current` (これより小さくはしない。0 ならこのフレームに要る最小の大きさを求める)・
+/// [`MIN_ATLAS_SIZE`]・最大のセルを収める 2 の冪のうち最大のものから始め、レベルの数より多くのアトラスが要るなら
 /// `max_size` まで倍にして詰め直す。
 pub(crate) fn allocate(
     requests: &[CellRequest],
@@ -338,6 +345,94 @@ fn pack(requests: &[CellRequest], size: u32) -> Vec<MaskSlot> {
         };
     }
     slots
+}
+
+/// アトラスの一辺と枚数を、フレームをまたいで決める。
+///
+/// 大きくするのはすぐ行い、小さくするのは条件が `shrink_after_frames` フレーム続いてから行う
+/// (ヒステリシス)。一辺は必要な大きさが今の半分以下のとき、枚数は今より少なくて済むときに縮める。
+/// 縮めた後の値は、待っていた間に必要だった値の最大値。
+#[derive(Debug, Default)]
+pub(crate) struct AtlasPool {
+    /// 今のアトラスの一辺 (0 はアトラスを持たない)。
+    size: u32,
+    /// 今持っているアトラスの枚数。
+    count: u32,
+    shrink_size: ShrinkTimer,
+    shrink_count: ShrinkTimer,
+}
+
+impl AtlasPool {
+    pub fn size(&self) -> u32 {
+        self.size
+    }
+
+    /// 持っているアトラスの合計のバイト数 (RGBA8)。
+    pub fn bytes(&self) -> u64 {
+        u64::from(self.size) * u64::from(self.size) * 4 * u64::from(self.count)
+    }
+
+    /// このフレームでセルを詰めるアトラスの一辺を決める。
+    ///
+    /// `needed` はこのフレームだけで要る一辺 (`allocate(requests, 0, ..)` の結果、マスクがなければ 0)。
+    pub fn frame_size(&mut self, needed: u32, shrink_after_frames: u32) -> u32 {
+        if needed > self.size {
+            self.shrink_size = ShrinkTimer::default();
+            return needed;
+        }
+        let shrinkable = needed <= self.size / 2;
+        self.shrink_size
+            .step(shrinkable, needed, shrink_after_frames)
+            .unwrap_or(self.size)
+    }
+
+    /// 詰めた結果 (一辺 `size`、使ったアトラス `used` 枚) を記録し、持っておく枚数を返す。
+    ///
+    /// 一辺が変わったらアトラスはすべて作り直すので、使った枚数だけを持つ。
+    pub fn commit(&mut self, size: u32, used: u32, shrink_after_frames: u32) -> u32 {
+        if size != self.size {
+            self.size = size;
+            self.count = 0;
+            self.shrink_count = ShrinkTimer::default();
+        }
+        if used >= self.count {
+            self.count = used;
+            self.shrink_count = ShrinkTimer::default();
+        } else if let Some(count) = self.shrink_count.step(true, used, shrink_after_frames) {
+            self.count = count;
+        }
+        if self.count == 0 {
+            // 1 枚も持たないなら一辺も 0 にする (次に要るときは必要な大きさから作る)。
+            self.size = 0;
+        }
+        self.count
+    }
+}
+
+/// 縮めてよいフレームが続いた数を数える。
+#[derive(Debug, Default)]
+struct ShrinkTimer {
+    frames: u32,
+    /// 数えている間に必要だった値の最大値。
+    peak: u32,
+}
+
+impl ShrinkTimer {
+    /// 縮めてよいフレームが `after` フレーム続いたら、縮めた後の値を返す。
+    fn step(&mut self, shrinkable: bool, needed: u32, after: u32) -> Option<u32> {
+        if !shrinkable || after == 0 {
+            *self = Self::default();
+            return None;
+        }
+        self.frames += 1;
+        self.peak = self.peak.max(needed);
+        if self.frames < after {
+            return None;
+        }
+        let peak = self.peak;
+        *self = Self::default();
+        Some(peak)
+    }
 }
 
 /// 1 チャンネル分の棚詰め。
@@ -547,6 +642,75 @@ mod tests {
         let (_, slots) = allocate(&requests, 0, 4096);
         let atlas: Vec<u32> = slots.iter().map(|s| s.atlas).collect();
         assert_eq!(atlas, vec![1, 0, 2, 0]);
+    }
+
+    /// `needed` (一辺, 使う枚数) の列を 1 フレームずつ与え、各フレームの (一辺, 枚数) を返す。
+    fn run(pool: &mut AtlasPool, frames: &[(u32, u32)], after: u32) -> Vec<(u32, u32)> {
+        frames
+            .iter()
+            .map(|&(needed, used)| {
+                let size = pool.frame_size(needed, after);
+                let count = pool.commit(size, used, after);
+                (size, count)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn pool_grows_immediately_and_shrinks_after_delay() {
+        let mut pool = AtlasPool::default();
+        assert_eq!(run(&mut pool, &[(2048, 1)], 3), vec![(2048, 1)]);
+        assert_eq!(pool.bytes(), 2048 * 2048 * 4);
+        // 必要な一辺が半分以下のフレームが 3 つ続いたら、その間の最大 (512) まで縮める。
+        let out = run(&mut pool, &[(256, 1), (512, 1), (256, 1), (256, 1)], 3);
+        assert_eq!(out, vec![(2048, 1), (2048, 1), (512, 1), (512, 1)]);
+        assert_eq!(pool.bytes(), 512 * 512 * 4);
+    }
+
+    #[test]
+    fn pool_does_not_thrash_within_hysteresis_band() {
+        let mut pool = AtlasPool::default();
+        run(&mut pool, &[(1024, 1)], 4);
+        // 半分を超える大きさが混じるとタイマーが戻るので、何フレーム続いても作り直さない。
+        let frames: Vec<_> = (0..100)
+            .map(|i| if i % 2 == 0 { (512, 1) } else { (1024, 1) })
+            .collect();
+        assert!(run(&mut pool, &frames, 4).iter().all(|&s| s == (1024, 1)));
+        // 大きさが揺れても、一度縮めたら揺れの範囲では作り直さない。
+        let frames: Vec<_> = (0..100)
+            .map(|i| if i % 2 == 0 { (256, 1) } else { (512, 1) })
+            .collect();
+        let out = run(&mut pool, &frames, 4);
+        assert_eq!(out[3], (512, 1));
+        assert!(out[3..].iter().all(|&s| s == (512, 1)));
+    }
+
+    #[test]
+    fn pool_releases_unused_atlases() {
+        let mut pool = AtlasPool::default();
+        run(&mut pool, &[(4096, 3)], 2);
+        // 溢れた分のアトラスは、使わないフレームが続いたら解放する。
+        assert_eq!(
+            run(&mut pool, &[(4096, 1), (4096, 2)], 2),
+            vec![(4096, 3), (4096, 2)]
+        );
+        // マスクを使わないフレームが続いたらすべて解放する。
+        assert_eq!(
+            run(&mut pool, &[(0, 0), (0, 0)], 2),
+            vec![(4096, 2), (0, 0)]
+        );
+        assert_eq!(pool.bytes(), 0);
+        // 次に要るときは必要な大きさで作る。
+        assert_eq!(run(&mut pool, &[(256, 1)], 2), vec![(256, 1)]);
+    }
+
+    #[test]
+    fn pool_never_shrinks_when_disabled() {
+        let mut pool = AtlasPool::default();
+        run(&mut pool, &[(4096, 2)], 0);
+        let frames = vec![(0, 0); 1000];
+        assert!(run(&mut pool, &frames, 0).iter().all(|&s| s == (4096, 2)));
+        assert_eq!(MaskAtlasOptions::default().shrink_after_frames, 120);
     }
 
     #[test]
