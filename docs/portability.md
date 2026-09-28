@@ -43,3 +43,25 @@
 - 重い依存を追加しないこと。追加する場合は ADR を書きます。
 
 > 未決: 組み込み機器向けに `no_std + alloc` に対応するか。`ugoe-core`、`ugoe-model`、`ugoe-runtime` は対応できる設計にしておき、需要があれば対応する。
+
+## 配布
+
+判断の経緯は [ADR 0017](adr/0017-single-runtime-distribution.md)。すべての配布物を 1 つのコア (`ugoe` クレート) から作り、主要な環境に 1 行で導入できるようにします。
+
+| 環境 | 配布物 | タスク |
+| --- | --- | --- |
+| Rust | crates.io の `ugoe` | T0403 |
+| Web | npm の `@ugoe/runtime` と Web Components の `<ugoe-avatar>` | T0404 |
+| Unity | UPM パッケージ | T0405 |
+| Godot | GDExtension | T0406 |
+| Unreal | プラグイン | T0407 |
+| C / その他 | `ugoe-ffi` の共有ライブラリとヘッダ | T0401 |
+
+- **適合テスト**: すべての配布物で、同じモデル・同じパラメータから同じ頂点と画像が得られることを CI で検査します (T0408)。参照となる出力は `ModelInstance` と `ugoe render` から作ります。
+- **リリースの自動化**: タグを打つと、すべての配布物をビルドして公開します。バージョン番号は揃えます。
+- 公開には、プロジェクトのライセンスの決定が前提です (未決)。
+
+## 前方互換
+
+運用中のアプリは、ランタイムを更新しなくても新しいファイルを読めます。知らない機能は、仕様が定めるフォールバックで簡易な表示に落ちます ([ADR 0013](adr/0013-forward-compatibility.md)、[spec/file-formats.md#機能の宣言と段階的な劣化](spec/file-formats.md#機能の宣言と段階的な劣化))。
+

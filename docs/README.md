@@ -10,7 +10,10 @@
 | [spec/rendering.md](spec/rendering.md) | 描画・合成・マスク |
 | [spec/physics.md](spec/physics.md) | 物理演算 |
 | [spec/motion.md](spec/motion.md) | モーション・表情・常時エフェクト |
-| [spec/file-formats.md](spec/file-formats.md) | ファイル形式とバージョニング |
+| [spec/file-formats.md](spec/file-formats.md) | ファイル形式・機能の宣言と段階的な劣化・バージョニング |
+| [spec/keyform-inference.md](spec/keyform-inference.md) | キーフォームの推定 (加算合成・ミラー・深度からの回転) |
+| [spec/avatar-profile.md](spec/avatar-profile.md) | 2D アバターの標準プロファイル (公開仕様) |
+| [spec/modules.md](spec/modules.md) | 着せ替えモジュール |
 | [editor.md](editor.md) | エディタの設計 |
 | [ai-integration.md](ai-integration.md) | AI 連携の設計 |
 | [portability.md](portability.md) | ゲームエンジン・プラットフォームへの移植 |

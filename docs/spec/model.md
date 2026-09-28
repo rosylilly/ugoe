@@ -43,6 +43,8 @@
 
 ### 標準パラメータ
 
+> アバタープロファイル ([avatar-profile.md](avatar-profile.md)) は、この標準パラメータに拡張パラメータとトラッキングとの対応表を加えたものです。
+
 `ugoe_model::standard` に定義があります。モーション・表情・物理プリセット・AI の自動リギングは標準 ID を前提に作ります。
 
 慣例:
@@ -119,6 +121,21 @@
 
 - 省略したフィールドは既定値になります。既定値は **対象パラメータなし** (何もしない) で、時間などの値だけが仕様の既定値を持ちます。標準パラメータを対象にした推奨設定は `Effects::standard()` で作ります。
 - `pose` と `effects` は `#[serde(default)]` 付きで追加したフィールドなので、これらを含まない既存のデータもそのまま読めます (`SCHEMA_VERSION` は変えていません)。バンドルでは `MODL` チャンクの `Model` に含まれます。
+
+## 予定されているデータ
+
+次のデータは仕様が決まっていて、まだ実装していません。詳細はそれぞれの仕様書にあります。
+
+| データ | 内容 | 仕様 | タスク |
+| --- | --- | --- | --- |
+| `KeyformGrid::origins` | セルの由来 (`authored` / `derived`) と推定の設定 | [keyform-inference.md](keyform-inference.md) | T0108 |
+| `Mesh::mirror` / `Deformer::mirror` | ミラーで対にするメッシュ・デフォーマ | [keyform-inference.md#ミラー](keyform-inference.md#ミラー) | T0108 |
+| 頂点・制御点の `depth` | 深度からの回転に使う奥行き (オーサリング用) | [keyform-inference.md#深度からの回転](keyform-inference.md#深度からの回転) | T0108 |
+| 物理の出力先・衝突体・重力の基準 | 動的物理 | [physics.md#動的物理](physics.md#動的物理-揺れ用パラメータのいらない物理) | T0304 |
+| `Model::avatar` | アバタープロファイル (準拠レベル・メタデータ・トラッキングの対応) | [avatar-profile.md](avatar-profile.md) | T0110 |
+| `Model::slots` | 着せ替えのスロット | [modules.md](modules.md) | T0111 |
+| `TextureRef::normal_map`、`Model::lighting`、`Mesh::lit` | 法線マップとライティング | [rendering.md#ライティング](rendering.md#ライティング) | T0112 |
+| 拡張可能な enum の `Unknown` | 未知の値の読み込み | [file-formats.md#機能の宣言と段階的な劣化](file-formats.md#機能の宣言と段階的な劣化) | T0109 |
 
 ## 検証
 

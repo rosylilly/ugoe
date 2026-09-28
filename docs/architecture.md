@@ -41,7 +41,8 @@
 | L4 SDK | `ugoe` | L0〜L3 |
 | L5 バインディング | `ugoe-ffi`, `ugoe-wasm` | L0〜L4 |
 | T1 素材処理 | `ugoe-psd`, `ugoe-mesher` | core |
-| T2 エディタ中核 | `ugoe-editor-core` | ランタイム層, T1 |
+| T1 リギング | `ugoe-rigging` (予定、T0610) | core, model, runtime, mesher |
+| T2 エディタ中核 | `ugoe-editor-core` | ランタイム層, T1 (`ugoe-rigging` を含む) |
 | T3 自動化 | `ugoe-ai` | T2 以下 |
 | T4 アプリ | `ugoe-cli`, `apps/editor` (`ugoe-editor`) | すべて |
 
@@ -86,6 +87,15 @@
 | 独自ファイル形式: オーサリング用 JSON とランタイム用バイナリ `.ugoe` | [0004](adr/0004-file-formats.md) |
 | 編集操作はすべてシリアライズ可能な `Command` を通す | [0005](adr/0005-editor-command-model.md) |
 | AI は提案 (Command 列) を出すだけで、適用は人間が承認する | [0006](adr/0006-ai-proposals.md) |
+| マスクは使いやすさを基準に定義する (マスク専用メッシュ・反転の併用・共通部分・入れ子) | [0009](adr/0009-clipping-mask-semantics.md) |
+| キーフォームの推定はツールで行い、結果を焼き込む (ランタイムは推定を知らない) | [0010](adr/0010-keyform-inference.md) |
+| 物理はデフォーマや頂点を直接揺らせる (評価は 2 段階) | [0011](adr/0011-dynamic-physics.md) |
+| 2D アバターの標準プロファイルを公開仕様として持つ | [0012](adr/0012-avatar-profile.md) |
+| 機能ごとのフォールバックで、古いランタイムでも新しいファイルを読める | [0013](adr/0013-forward-compatibility.md) |
+| 着せ替えは、本体のスロットにモジュールを実行時に合成する | [0014](adr/0014-composable-modules.md) |
+| 法線マップによるライティング | [0015](adr/0015-lighting.md) |
+| 描画順を保ったまま描画を自動で統合する | [0016](adr/0016-draw-batching.md) |
+| すべての配布物を 1 つのコアから作る | [0017](adr/0017-single-runtime-distribution.md) |
 
 ## 座標系
 
