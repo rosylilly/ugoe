@@ -75,6 +75,12 @@ pub const FEATURES: &[Feature] = &[
         fallback: "線形で補間する (キーの上の形は同じで、キーの間の道筋が直線になる)",
         baseline: true,
     },
+    Feature {
+        id: "physics.additive_output",
+        description: "物理の出力の加算",
+        fallback: "上書きとして扱う (トラッキングなどの値が物理の値に置き換わる)",
+        baseline: true,
+    },
 ];
 
 /// ID から知っている機能を探す。

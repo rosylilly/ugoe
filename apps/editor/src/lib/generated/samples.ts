@@ -5028,6 +5028,24 @@ export const commands: Command[] = [
     ]
   },
   {
+    "op": "set_physics_outputs",
+    "rig": "BodySway",
+    "outputs": [
+      {
+        "target": {
+          "type": "parameter",
+          "id": "BodyAngleX"
+        },
+        "particle": 1,
+        "source": "x",
+        "scale": 0.5,
+        "weight": 100.0,
+        "reflect": false,
+        "blend": "add"
+      }
+    ]
+  },
+  {
     "op": "set_physics_particles",
     "rig": "Hair",
     "particles": [

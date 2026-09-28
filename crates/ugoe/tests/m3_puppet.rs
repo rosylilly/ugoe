@@ -20,7 +20,7 @@ use ugoe::model::effects::{Effects, EyeBlink};
 use ugoe::model::expression::{Expression, ExpressionOp, ExpressionParameter};
 use ugoe::model::motion::{Curve, CurveTarget, Motion, Point, Segment};
 use ugoe::model::physics::{
-    PhysicsInput, PhysicsOutput, PhysicsSettings, PhysicsSource, PhysicsTarget,
+    PhysicsBlend, PhysicsInput, PhysicsOutput, PhysicsSettings, PhysicsSource, PhysicsTarget,
 };
 use ugoe::model::{Model, fixtures, standard};
 use ugoe::motion::tracking::standard_value;
@@ -147,6 +147,7 @@ fn full_physics() -> PhysicsSettings {
         scale: 0.1,
         weight: 100.0,
         reflect: false,
+        blend: PhysicsBlend::Overwrite,
     }];
     settings.rigs.push(jaw);
     settings
@@ -607,4 +608,48 @@ fn avatar_sample_follows_arkit_tracking() {
         );
     }
     assert!(moved(&looks[0], &looks[5]) < 1e-3);
+}
+
+/// 物理の加算の出力 (T0313、`docs/spec/physics.md#合成の方法`)。トラッキングが `BodyAngleX` に書く
+/// 頭の回転 × 0.3 に、頭の動きに遅れる揺れを足す。パラメータを複製しない。
+/// フレームごとに基準値へ戻すので、揺れが収まるとトラッキングの値に戻る (累積しない)。
+#[test]
+fn physics_adds_sway_on_top_of_tracking() {
+    let mut puppet = Puppet::new(fixtures::physics_additive()).expect("compile");
+    puppet
+        .set_physics(Some(fixtures::physics_additive_settings()))
+        .expect("valid physics");
+    let head = |yaw| TrackingInput {
+        head: Rotation {
+            yaw,
+            pitch: 0.0,
+            roll: 0.0,
+        },
+        ..TrackingInput::default()
+    };
+    puppet.set_tracking(Some(head(0.0)));
+    for _ in 0..10 {
+        puppet.update(DT);
+    }
+    assert_close(param(&puppet, standard::BODY_ANGLE_X), 0.0, 1e-5, "at rest");
+
+    puppet.set_tracking(Some(head(20.0)));
+    let trace: Vec<f32> = (0..300)
+        .map(|_| {
+            puppet.update(DT);
+            param(&puppet, standard::BODY_ANGLE_X)
+        })
+        .collect();
+    assert_close(param(&puppet, standard::ANGLE_X), 20.0, 1e-5, "AngleX");
+    let target = 20.0 * ugoe::motion::tracking::BODY_FROM_HEAD;
+    let min = trace[..30].iter().copied().fold(f32::INFINITY, f32::min);
+    let max = trace[..120]
+        .iter()
+        .copied()
+        .fold(f32::NEG_INFINITY, f32::max);
+    assert!(min < target - 1.0, "the body lags behind the head: {min}");
+    assert!(max > target + 0.1, "the body overshoots: {max}");
+    for v in &trace[240..] {
+        assert_close(*v, target, 0.05, "settled on the tracking value");
+    }
 }

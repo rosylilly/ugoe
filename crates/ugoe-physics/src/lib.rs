@@ -14,7 +14,8 @@ use std::sync::Arc;
 use ugoe_core::{Vec2, lerp};
 use ugoe_model::DeformerKind;
 use ugoe_model::physics::{
-    NormalizationRange, PhysicsRig, PhysicsSettings, PhysicsSource, PhysicsTarget, VertexOwner,
+    NormalizationRange, PhysicsBlend, PhysicsOutput, PhysicsRig, PhysicsSettings, PhysicsSource,
+    PhysicsTarget, VertexOwner,
 };
 use ugoe_runtime::{CompiledModel, ModelInstance, ParamIndex, ParameterValues};
 
@@ -580,9 +581,7 @@ impl PhysicsSystem {
                 match rb.outputs[o] {
                     Target::Ignore => {}
                     Target::Parameter(index) => {
-                        let parameters = instance.parameters_mut();
-                        let value = value.x.clamp(parameters.min(index), parameters.max(index));
-                        parameters.blend(index, value, weight);
+                        blend_parameter(instance.parameters_mut(), index, output, value.x, weight);
                     }
                     Target::Angle(d) => {
                         let angle = if frame.flips[o] { -value.x } else { value.x };
@@ -786,19 +785,25 @@ fn outputs(
                 }
                 PhysicsTarget::Parameter { .. } | PhysicsTarget::DeformerAngle { .. } => {
                     let segment = particles[i].position - particles[i - 1].position;
-                    let source = match output.source {
-                        PhysicsSource::X => segment.x,
-                        PhysicsSource::Y => segment.y,
-                        PhysicsSource::Angle => {
-                            let parent = if i >= 2 {
-                                particles[i - 1].position - particles[i - 2].position
-                            } else {
-                                reference
-                            };
-                            chain::signed_angle(parent, segment)
-                        }
-                        PhysicsSource::Unknown => return None,
+                    let parent = if i >= 2 {
+                        particles[i - 1].position - particles[i - 2].position
+                    } else {
+                        reference
                     };
+                    let mut source = scalar_source(output.source, parent, segment)?;
+                    if is_additive(output) {
+                        // 加算の出力は、静止姿勢での値からのずれ (`docs/spec/physics.md#合成の方法`)。
+                        let rest = |k: usize| {
+                            chain::rest_offset(&rig.particles, k, input.gravity, input.wind)
+                        };
+                        let segment = rest(i) - rest(i - 1);
+                        let parent = if i >= 2 {
+                            rest(i - 1) - rest(i - 2)
+                        } else {
+                            reference
+                        };
+                        source -= scalar_source(output.source, parent, segment)?;
+                    }
                     Vec2::new(source, 0.0)
                 }
             };
@@ -806,6 +811,42 @@ fn outputs(
             Some(if output.reflect { -value } else { value })
         })
         .collect()
+}
+
+/// 区間 `segment` (粒子 i-1 → i) と、その親の向き `parent` から、スカラーの出力の元の値を求める。
+fn scalar_source(source: PhysicsSource, parent: Vec2, segment: Vec2) -> Option<f32> {
+    match source {
+        PhysicsSource::X => Some(segment.x),
+        PhysicsSource::Y => Some(segment.y),
+        PhysicsSource::Angle => Some(chain::signed_angle(parent, segment)),
+        PhysicsSource::Unknown => None,
+    }
+}
+
+/// パラメータへ加算する出力か。パラメータ以外の出力先は合成の方法を使わない (常に加算量)。
+fn is_additive(output: &PhysicsOutput) -> bool {
+    matches!(output.target, PhysicsTarget::Parameter { .. })
+        && output.blend.effective() == PhysicsBlend::Add
+}
+
+/// 出力の値 `value` をパラメータに合成する (`docs/spec/physics.md#合成の方法`)。
+///
+/// `overwrite` は値域にクランプした `value` へ `weight` の割合で近づける。
+/// `add` の `value` は静止時の値からのずれで、現在の値に `value * weight` を足してクランプする。
+fn blend_parameter(
+    parameters: &mut ParameterValues,
+    index: ParamIndex,
+    output: &PhysicsOutput,
+    value: f32,
+    weight: f32,
+) {
+    if is_additive(output) {
+        // `set` が値域にクランプする。
+        parameters.set(index, parameters.get(index) + value * weight);
+    } else {
+        let value = value.clamp(parameters.min(index), parameters.max(index));
+        parameters.blend(index, value, weight);
+    }
 }
 
 /// 直前 2 ステップの出力を `alpha` で補間し、パラメータに重み付きで書き込む。
@@ -827,9 +868,14 @@ fn write_parameters(
         else {
             continue;
         };
-        let value =
-            lerp(previous.x, current.x, alpha).clamp(parameters.min(index), parameters.max(index));
-        parameters.blend(index, value, (output.weight / 100.0).clamp(0.0, 1.0));
+        let value = lerp(previous.x, current.x, alpha);
+        blend_parameter(
+            parameters,
+            index,
+            output,
+            value,
+            (output.weight / 100.0).clamp(0.0, 1.0),
+        );
     }
 }
 
@@ -841,3 +887,6 @@ mod dynamic_tests;
 
 #[cfg(test)]
 mod relay_tests;
+
+#[cfg(test)]
+mod additive_tests;

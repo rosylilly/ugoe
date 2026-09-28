@@ -250,7 +250,7 @@
 | `add_physics_collider { collider }`・`set_physics_collider { collider }`・`remove_physics_collider { id }` | 衝突体の追加・置き換え (`collider.id` のもの)・削除 (リグの `colliders` からも外す) |
 
 - **検証:** `Document::apply` は、適用後の物理を `validate_physics` で検査し、適用前になかったエラーが生じたら `EditError::Invalid` で拒否します (存在しない参照先・種類の違うデフォーマ・頂点の重みの数・負の半径など。モデルの検証と同じ規則)。
-  `validate_physics` が見ない値はコマンドが検査し、`EditError::InvalidPhysics` で拒否します: 有限でない値、`fps` が 0 以下、粒子が 0 個、`mobility` が 0〜1 の外、`delay`・`radius`・`collision_radius` が負、出力の `particle` が 0 (根元)、正規化の範囲が `min <= default <= max` でない、空の ID。
+  `validate_physics` が見ない値はコマンドが検査し、`EditError::InvalidPhysics` で拒否します: 有限でない値、`fps` が 0 以下、粒子が 0 個、`mobility` が 0〜1 の外、`delay`・`radius`・`collision_radius` が負、出力の `particle` が 0 (根元)、出力の `blend` が未知の値、正規化の範囲が `min <= default <= max` でない、空の ID。
 - **モデルの編集との関係:** どのコマンドの後でも、そのコマンドが消したパラメータ・デフォーマ・メッシュ (`unwrap_deformer` を含む) を参照する入力・出力を削除し、重力の基準を外します。
   取り付け先のデフォーマが消えた衝突体は取り付けを外し、形状の位置を消す前の基準の姿でのキャンバス座標に写します (見た目の位置を保つ)。
   `add_mesh_vertex` は、そのメッシュへの頂点の出力の重みの末尾に 0 を足し、`remove_mesh_vertices` は消した頂点の重みを除きます。
@@ -264,7 +264,7 @@
 | 場所 | 操作 |
 | --- | --- |
 | 物理のパネル (`panels/physics/PhysicsPanel.svelte`) | 右の列の上の区画の「Physics」タブ (「Inspector」と切り替える)。「Preview」/「Stop preview」、「World」(重力・風・周波数 → `set_physics_world`)、リグの一覧 (上から処理する順。▲▼ で並べ替える → `reorder_physics_rig`。前のリグの出力を入力に読むリグには「relay」の印) と「+ Rig」(空のリグ → `add_physics_rig`)、「+ From selected deformers」(ツリーで選んだ回転デフォーマを親から子の順に並べて `create_physics_rig`) |
-| リグの編集 (`panels/physics/RigEditor.svelte`) | 名前、「Gravity frame」、「Delete rig」、粒子 (「Length」`radius`・「Sway」`mobility`・「Speed」`delay`・「Settle」`acceleration`・「Hit r」`collision_radius`・位置。「+ Particle」は最後の区間と同じ向き・長さで足す)、入力、出力 (種類・書き込み先・粒子・成分・倍率・重み・反転。頂点の出力は作ったとき重みがすべて 1)、「Collides with」、「Input range」。欄を確定するたびにコマンドを 1 つ送る |
+| リグの編集 (`panels/physics/RigEditor.svelte`) | 名前、「Gravity frame」、「Delete rig」、粒子 (「Length」`radius`・「Sway」`mobility`・「Speed」`delay`・「Settle」`acceleration`・「Hit r」`collision_radius`・位置。「+ Particle」は最後の区間と同じ向き・長さで足す)、入力、出力 (種類・書き込み先・粒子・成分・倍率・重み・反転・パラメータへの出力の合成の方法「Overwrite」/「Add」([physics.md#合成の方法](spec/physics.md#合成の方法))。頂点の出力は作ったとき重みがすべて 1)、「Collides with」、「Input range」。欄を確定するたびにコマンドを 1 つ送る |
 | 衝突体 (`panels/physics/ColliderSection.svelte`) | 「+ Circle」「+ Capsule」(主な選択がデフォーマならその原点 (ワープは中心) に取り付け、なければキャンバスの中央)。名前・「Attach to」・「Shape」(どちらも今の見た目の位置を保って写し直す)・位置・半径・削除 |
 | ビューポート (`viewport/tools/physics/PhysicsOverlay.svelte`) | 物理のパネルを開いている間、衝突体 (青) と粒子の鎖 (オレンジ、根元は四角。選んだリグは濃い色) を重ねる。粒子は動的物理の設定のときだけ (物理空間がキャンバス座標なので)。衝突体をドラッグで動かし (カプセルは端の丸で端だけ)、離したときに `set_physics_collider` を 1 つ送る。鎖を押すとそのリグを選ぶ |
 

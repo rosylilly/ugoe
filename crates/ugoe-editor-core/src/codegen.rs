@@ -657,6 +657,12 @@ pub(crate) fn physics_samples() -> Vec<Command> {
             rig: skirt.id.clone(),
             outputs: skirt.outputs.clone(),
         },
+        Command::SetPhysicsOutputs {
+            rig: "BodySway".into(),
+            outputs: fixtures::physics_additive_settings().rigs[0]
+                .outputs
+                .clone(),
+        },
         Command::SetPhysicsParticles {
             rig: hair.id.clone(),
             particles: hair.particles.clone(),

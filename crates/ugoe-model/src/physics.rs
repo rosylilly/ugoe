@@ -89,6 +89,10 @@ pub struct PhysicsOutput {
     pub weight: f32,
     #[serde(default)]
     pub reflect: bool,
+    /// パラメータへの合成の方法 (`docs/spec/physics.md#合成の方法`)。省略時は `overwrite`。
+    /// パラメータ以外の出力先では使わない (常に加算量として足す)。
+    #[serde(default, skip_serializing_if = "PhysicsBlend::is_overwrite")]
+    pub blend: PhysicsBlend,
 }
 
 impl PhysicsOutput {
@@ -116,6 +120,8 @@ impl<'de> Deserialize<'de> for PhysicsOutput {
             weight: f32,
             #[serde(default)]
             reflect: bool,
+            #[serde(default)]
+            blend: PhysicsBlend,
         }
 
         let raw = Raw::deserialize(deserializer)?;
@@ -131,7 +137,43 @@ impl<'de> Deserialize<'de> for PhysicsOutput {
             scale: raw.scale,
             weight: raw.weight,
             reflect: raw.reflect,
+            blend: raw.blend,
         })
+    }
+}
+
+/// 物理の出力をパラメータへ合成する方法 (`docs/spec/physics.md#合成の方法`)。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum PhysicsBlend {
+    /// 現在の値を物理の値へ重みの割合で近づける (`param + (value - param) * weight`)。
+    #[default]
+    Overwrite,
+    /// 物理を進める前の値に、物理の値の静止時の値からのずれを重み付きで足す
+    /// (`param + (value - rest) * weight`)。トラッキングなどの値に揺れを重ねる。
+    Add,
+    /// 未知の値 (新しい版のファイル)。`overwrite` として扱う。
+    /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
+    #[serde(other, skip_serializing)]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    #[cfg_attr(feature = "schema", schemars(skip))]
+    Unknown,
+}
+
+impl PhysicsBlend {
+    /// フォールバックを適用した値 (`Unknown` は `Overwrite`)。
+    pub fn effective(self) -> Self {
+        match self {
+            Self::Unknown => Self::Overwrite,
+            blend => blend,
+        }
+    }
+
+    /// 既定値 (`Overwrite`) か。書き出しの省略に使う (`Unknown` は省略しない)。
+    pub fn is_overwrite(&self) -> bool {
+        *self == Self::Overwrite
     }
 }
 
@@ -305,6 +347,7 @@ mod tests {
         assert!(rig.colliders.is_empty());
         assert_eq!(rig.frame, None);
         assert_eq!(rig.particles[0].collision_radius, 0.0);
+        assert_eq!(rig.outputs[0].blend, PhysicsBlend::Overwrite);
 
         // 書き出しは新しい形式になり、読み直すと同じ値になる。
         let value = serde_json::to_value(&physics).unwrap();
@@ -314,6 +357,7 @@ mod tests {
             json!({ "type": "parameter", "id": "HairFront" })
         );
         assert!(output.get("parameter").is_none());
+        assert!(output.get("blend").is_none());
         let back: PhysicsSettings = serde_json::from_value(value).unwrap();
         assert_eq!(back, physics);
     }
@@ -337,6 +381,7 @@ mod tests {
             scale: 1.0,
             weight: 100.0,
             reflect: false,
+            blend: PhysicsBlend::Overwrite,
         };
         let range = NormalizationRange {
             min: -1.0,
@@ -436,6 +481,25 @@ mod tests {
         assert_eq!(physics.rigs[0].outputs[0].target, PhysicsTarget::Unknown);
         assert_eq!(physics.rigs[0].outputs[0].parameter(), None);
         assert_eq!(physics.colliders[0].shape, ColliderShape::Unknown);
+        assert!(serde_json::to_string(&physics).is_err());
+    }
+
+    /// 合成の方法: `add` は読み書きでき、未知の値は `Unknown` (`overwrite` として扱い、書き出せない)。
+    #[test]
+    fn blend_round_trips_and_unknown_falls_back() {
+        let mut physics = dynamic();
+        physics.rigs[0].outputs[0].blend = PhysicsBlend::Add;
+        let mut value = serde_json::to_value(&physics).unwrap();
+        assert_eq!(value["rigs"][0]["outputs"][0]["blend"], json!("add"));
+        assert!(value["rigs"][0]["outputs"][1].get("blend").is_none());
+        let back: PhysicsSettings = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(back, physics);
+
+        value["rigs"][0]["outputs"][0]["blend"] = json!("multiply");
+        let physics: PhysicsSettings = serde_json::from_value(value).unwrap();
+        let blend = physics.rigs[0].outputs[0].blend;
+        assert_eq!(blend, PhysicsBlend::Unknown);
+        assert_eq!(blend.effective(), PhysicsBlend::Overwrite);
         assert!(serde_json::to_string(&physics).is_err());
     }
 }

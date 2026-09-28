@@ -10,9 +10,9 @@ use std::collections::HashSet;
 use ugoe_core::Vec2;
 use ugoe_model::deformer::DeformerKind;
 use ugoe_model::physics::{
-    ColliderShape, NormalizationRange, PhysicsCollider, PhysicsInput, PhysicsNormalization,
-    PhysicsOutput, PhysicsParticle, PhysicsRig, PhysicsSettings, PhysicsSource, PhysicsTarget,
-    VertexOwner,
+    ColliderShape, NormalizationRange, PhysicsBlend, PhysicsCollider, PhysicsInput,
+    PhysicsNormalization, PhysicsOutput, PhysicsParticle, PhysicsRig, PhysicsSettings,
+    PhysicsSource, PhysicsTarget, VertexOwner,
 };
 use ugoe_model::{DeformerId, MeshId, Model};
 
@@ -251,6 +251,9 @@ fn check_output(output: &PhysicsOutput) -> Result<(), EditError> {
             "output particle must be 1 or more (particle 0 is the root)",
         ));
     }
+    if output.blend == PhysicsBlend::Unknown {
+        return Err(invalid("output blend must be overwrite or add"));
+    }
     Ok(())
 }
 
@@ -405,6 +408,7 @@ fn chain_rig(
             scale: 1.0,
             weight: 100.0,
             reflect: false,
+            blend: PhysicsBlend::Overwrite,
         })
         .collect();
 

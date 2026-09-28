@@ -591,8 +591,8 @@ mod tests {
     use ugoe_model::expression::{ExpressionOp, ExpressionParameter};
     use ugoe_model::motion::{Curve, CurveTarget, MotionEvent, Point, Segment};
     use ugoe_model::physics::{
-        NormalizationRange, PhysicsInput, PhysicsNormalization, PhysicsOutput, PhysicsParticle,
-        PhysicsRig, PhysicsSource, PhysicsTarget,
+        NormalizationRange, PhysicsBlend, PhysicsInput, PhysicsNormalization, PhysicsOutput,
+        PhysicsParticle, PhysicsRig, PhysicsSource, PhysicsTarget,
     };
     use ugoe_model::{DepthRotation, KeyformGrid, KeyformInference, KeyformOrigin, TextureRef};
 
@@ -636,6 +636,7 @@ mod tests {
                     scale: 1.5,
                     weight: 100.0,
                     reflect: true,
+                    blend: PhysicsBlend::Overwrite,
                 }],
                 particles: vec![
                     PhysicsParticle {

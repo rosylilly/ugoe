@@ -24,6 +24,9 @@
 
 物理 (`physics::PhysicsSettings`)、モーション (`motion::Motion`)、表情 (`expression::Expression`) は `Model` とは別のデータです。バンドルでは同じファイルに入れて配布できます ([file-formats.md](file-formats.md))。
 
+物理のデータの意味は [physics.md](physics.md) にあります。物理の出力 (`PhysicsOutput`) の `blend` (`PhysicsBlend`: `overwrite` / `add`) は、
+パラメータへの出力を現在の値と合成する方法です ([physics.md#合成の方法](physics.md#合成の方法))。省略すると `overwrite` で、`overwrite` は書き出しでも省略します。
+
 ## ID
 
 - すべての要素は **文字列 ID** (`Id<T>`) で参照します。ID はモデル内で種類ごとに一意です。
@@ -243,11 +246,11 @@ ARKit のブレンドシェイプ (52 種) のように、互いに独立した�
 
 拡張されうる enum (`BlendMode` `MaskMode` `DeformerKind` `ParameterKind` `KeyformOrigin` `KeyformInference` `KeyformInterpolation`、
 アバタープロファイルの `AvatarPermission` `CommercialUsage` `CreditNotation` `Modification` `TrackingSource`、
-モーション・表情・物理の `CurveTarget` `Segment` `ExpressionOp` `PhysicsSource` `PhysicsTarget` `ColliderShape`) は `Unknown` のバリアントを持ち、
+モーション・表情・物理の `CurveTarget` `Segment` `ExpressionOp` `PhysicsSource` `PhysicsTarget` `PhysicsBlend` `ColliderShape`) は `Unknown` のバリアントを持ち、
 新しい版のファイルにある知らないタグを `Unknown` として読みます。元のタグと中身は捨てます。
 
 - `Unknown` にはその種類のフォールバックを適用します。一覧は [file-formats.md#未知の値の読み込み](file-formats.md#未知の値の読み込み)。
-  値で置き換えられる種類は `effective()` (`BlendMode` `MaskMode` `ParameterKind` `KeyformInterpolation` と許諾の 4 つ) や `KeyformGrid::origin` がフォールバック後の値を返します。
+  値で置き換えられる種類は `effective()` (`BlendMode` `MaskMode` `ParameterKind` `KeyformInterpolation` `PhysicsBlend` と許諾の 4 つ) や `KeyformGrid::origin` がフォールバック後の値を返します。
 - `Unknown` は **書き出せません** (シリアライズがエラーになる)。別の値として黙って保存しないためです。
 - 検証 (`validate`) は `Unknown` をエラーにしません。場所は `ugoe_model::unknown` (`in_model` など) で調べられます。
 

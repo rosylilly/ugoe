@@ -707,6 +707,11 @@ export type Part = { id: string, name: string, parent: string | null, keyforms: 
 export type PartKeyform = { opacity: number, };
 
 /**
+ * 物理の出力をパラメータへ合成する方法 (`docs/spec/physics.md#合成の方法`)。
+ */
+export type PhysicsBlend = "overwrite" | "add";
+
+/**
  * 衝突体 (`docs/spec/physics.md#衝突体`)。
  */
 export type PhysicsCollider = { id: string, name: string, 
@@ -738,7 +743,12 @@ target: PhysicsTarget,
 /**
  * 出力元となる粒子インデックス (その粒子と 1 つ前の粒子の成す角を使う)。
  */
-particle: number, source: PhysicsSource, scale: number, weight: number, reflect: boolean, };
+particle: number, source: PhysicsSource, scale: number, weight: number, reflect: boolean, 
+/**
+ * パラメータへの合成の方法 (`docs/spec/physics.md#合成の方法`)。省略時は `overwrite`。
+ * パラメータ以外の出力先では使わない (常に加算量として足す)。
+ */
+blend?: PhysicsBlend, };
 
 export type PhysicsParticle = { 
 /**

@@ -8,6 +8,7 @@ import type {
   Command,
   Model,
   NormalizationRange,
+  PhysicsBlend,
   PhysicsInput,
   PhysicsOutput,
   PhysicsParticle,
@@ -18,9 +19,12 @@ import type {
 import { elementLabel } from "../../labels";
 import {
   appendParticle,
+  BLENDS,
   finiteValue,
+  hasBlend,
   makeTarget,
   newOutput,
+  outputBlend,
   type ParticleField,
   removeParticle,
   setParticleField,
@@ -291,6 +295,13 @@ function number(e: Event): number {
       </label>
       <label class="check"><input type="checkbox" checked={output.reflect}
         onchange={(e) => patchOutput(i, { reflect: e.currentTarget.checked })} />Flip</label>
+      {#if hasBlend(output)}
+        <select value={outputBlend(output)} aria-label="Output {i} blend"
+          title="How the output combines with the parameter value (Add keeps tracking and adds the sway)"
+          onchange={(e) => patchOutput(i, { blend: e.currentTarget.value as PhysicsBlend })}>
+          {#each BLENDS as b (b.blend)}<option value={b.blend} title={b.title}>{b.label}</option>{/each}
+        </select>
+      {/if}
       {#if output.target.type === "vertices"}
         <span class="muted">{output.target.weights.length} weights</span>
       {/if}

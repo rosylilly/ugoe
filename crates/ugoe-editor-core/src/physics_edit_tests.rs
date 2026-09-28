@@ -4,8 +4,8 @@
 use ugoe_core::Vec2;
 use ugoe_model::fixtures;
 use ugoe_model::physics::{
-    ColliderShape, PhysicsCollider, PhysicsInput, PhysicsSettings, PhysicsSource, PhysicsTarget,
-    VertexOwner,
+    ColliderShape, PhysicsBlend, PhysicsCollider, PhysicsInput, PhysicsSettings, PhysicsSource,
+    PhysicsTarget, VertexOwner,
 };
 use ugoe_model::validate::ValidationError;
 
@@ -673,4 +673,36 @@ fn set_parameter_internal_and_undo() {
         }),
         Err(EditError::NotFound { .. })
     ));
+}
+
+/// 出力ごとの合成の方法を切り替えて、元に戻す (`docs/spec/physics.md#合成の方法`)。
+#[test]
+fn set_output_blend_and_undo() {
+    let mut doc = Document::new(fixtures::physics_additive())
+        .with_physics(Some(fixtures::physics_additive_settings()));
+    let blend = |doc: &Document| physics(doc).rigs[0].outputs[0].blend;
+    assert_eq!(blend(&doc), PhysicsBlend::Add);
+    let mut outputs = physics(&doc).rigs[0].outputs.clone();
+    outputs[0].blend = PhysicsBlend::Overwrite;
+    doc.apply(Command::SetPhysicsOutputs {
+        rig: "BodySway".into(),
+        outputs: outputs.clone(),
+    })
+    .unwrap();
+    assert_eq!(blend(&doc), PhysicsBlend::Overwrite);
+    assert!(doc.undo());
+    assert_eq!(blend(&doc), PhysicsBlend::Add);
+    assert!(doc.redo());
+    assert_eq!(blend(&doc), PhysicsBlend::Overwrite);
+
+    // 未知の値は保存できないので受け付けない。
+    outputs[0].blend = PhysicsBlend::Unknown;
+    assert!(matches!(
+        doc.apply(Command::SetPhysicsOutputs {
+            rig: "BodySway".into(),
+            outputs,
+        }),
+        Err(EditError::InvalidPhysics { .. })
+    ));
+    assert_eq!(blend(&doc), PhysicsBlend::Overwrite);
 }

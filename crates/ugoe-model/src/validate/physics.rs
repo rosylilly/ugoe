@@ -180,8 +180,8 @@ mod tests {
     use super::*;
     use crate::fixtures;
     use crate::physics::{
-        NormalizationRange, PhysicsCollider, PhysicsInput, PhysicsNormalization, PhysicsOutput,
-        PhysicsParticle, PhysicsRig, PhysicsSource,
+        NormalizationRange, PhysicsBlend, PhysicsCollider, PhysicsInput, PhysicsNormalization,
+        PhysicsOutput, PhysicsParticle, PhysicsRig, PhysicsSource,
     };
     use ugoe_core::Vec2;
 
@@ -209,6 +209,7 @@ mod tests {
             scale: 1.0,
             weight: 100.0,
             reflect: false,
+            blend: PhysicsBlend::Overwrite,
         };
         let range = NormalizationRange {
             min: -1.0,

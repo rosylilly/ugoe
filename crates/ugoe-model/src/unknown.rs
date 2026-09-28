@@ -14,7 +14,7 @@ use crate::keyform::{KeyformGrid, KeyformInference, KeyformInterpolation, Keyfor
 use crate::mesh::{BlendMode, MaskMode};
 use crate::motion::{CurveTarget, Motion, Segment};
 use crate::parameter::ParameterKind;
-use crate::physics::{ColliderShape, PhysicsSettings, PhysicsSource, PhysicsTarget};
+use crate::physics::{ColliderShape, PhysicsBlend, PhysicsSettings, PhysicsSource, PhysicsTarget};
 
 /// モデルの中の未知の値の場所をすべて返す。
 pub fn in_model(model: &Model) -> Vec<String> {
@@ -99,6 +99,9 @@ pub fn in_physics(physics: &PhysicsSettings) -> Vec<String> {
             }
             if output.source == PhysicsSource::Unknown {
                 found.push(format!("rigs[{}].outputs[{index}].source", rig.id));
+            }
+            if output.blend == PhysicsBlend::Unknown {
+                found.push(format!("rigs[{}].outputs[{index}].blend", rig.id));
             }
         }
     }
@@ -319,6 +322,7 @@ mod tests {
                     "source": "angle",
                     "scale": 1.0,
                     "weight": 100.0,
+                    "blend": "multiply",
                 }],
                 "particles": [],
                 "normalization": {
@@ -338,6 +342,7 @@ mod tests {
             [
                 "rigs[Hair].inputs[0].source",
                 "rigs[Hair].outputs[0].target",
+                "rigs[Hair].outputs[0].blend",
                 "colliders[Body].shape",
             ]
         );

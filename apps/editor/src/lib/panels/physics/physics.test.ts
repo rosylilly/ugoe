@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { Model, PhysicsParticle, PhysicsRig, PhysicsSettings } from "../../generated/types";
 import {
   appendParticle,
+  BLENDS,
   chainOrder,
   describeTarget,
+  hasBlend,
   isDynamicRig,
   isDynamicSettings,
   makeTarget,
@@ -11,6 +13,7 @@ import {
   newCollider,
   newOutput,
   newRig,
+  outputBlend,
   relayInputs,
   removeParticle,
   setParticleField,
@@ -171,6 +174,17 @@ describe("outputs", () => {
     });
     expect(newOutput(model, "mesh", 0)?.particle).toBe(1);
     expect(newOutput({ ...model, meshes: [] }, "mesh", 1)).toBeNull();
+  });
+
+  it("reads the blend of parameter outputs", () => {
+    const output = newOutput(model, "parameter", 1);
+    if (!output) throw new Error("no parameter output");
+    expect(outputBlend(output)).toBe("overwrite");
+    expect(hasBlend(output)).toBe(true);
+    expect(outputBlend({ ...output, blend: "add" })).toBe("add");
+    const angle = newOutput(model, "deformer_angle", 1);
+    expect(angle && hasBlend(angle)).toBe(false);
+    expect(BLENDS.map((b) => b.blend)).toEqual(["overwrite", "add"]);
   });
 });
 

@@ -15,9 +15,9 @@ use crate::mesh::{BlendMode, Glue, GlueKeyform, GluePair, MaskMode, MaskRef, Mes
 use crate::parameter::{Parameter, ParameterKind};
 use crate::part::{Part, PartKeyform};
 use crate::physics::{
-    ColliderShape, NormalizationRange, PhysicsCollider, PhysicsInput, PhysicsNormalization,
-    PhysicsOutput, PhysicsParticle, PhysicsRig, PhysicsSettings, PhysicsSource, PhysicsTarget,
-    VertexOwner,
+    ColliderShape, NormalizationRange, PhysicsBlend, PhysicsCollider, PhysicsInput,
+    PhysicsNormalization, PhysicsOutput, PhysicsParticle, PhysicsRig, PhysicsSettings,
+    PhysicsSource, PhysicsTarget, VertexOwner,
 };
 use crate::pose::{DEFAULT_FADE_DURATION, PoseEntry, PoseGroup};
 use crate::standard;
@@ -1115,6 +1115,7 @@ pub fn physics_hair_settings() -> PhysicsSettings {
         scale: 0.1,
         weight: 100.0,
         reflect: false,
+        blend: PhysicsBlend::Overwrite,
     };
     let particle = |y: f32, mobility: f32, delay: f32, radius: f32| PhysicsParticle {
         position: Vec2::new(0.0, y),
@@ -1236,6 +1237,7 @@ pub fn physics_relay_settings() -> PhysicsSettings {
             scale,
             weight: 100.0,
             reflect: false,
+            blend: PhysicsBlend::Overwrite,
         }],
         particles: vec![
             PhysicsParticle {
@@ -1295,6 +1297,85 @@ pub fn physics_relay_settings() -> PhysicsSettings {
                 0.85,
             ),
         ],
+        colliders: Vec::new(),
+    }
+}
+
+/// 物理の加算の出力のフィクスチャ [`physics_additive_settings`] と組で使うモデル
+/// (`docs/spec/physics.md#合成の方法`)。描画要素は持たない。
+///
+/// - パラメータ `AngleX` (-30..30、既定 0)・`BodyAngleX` (-10..10、既定 0)。どちらも標準パラメータなので、
+///   トラッキング (体の回転がなければ頭の回転 × 0.3 を `BodyAngleX` に書く) の対象になる。
+pub fn physics_additive() -> Model {
+    base_model(
+        "physics_additive",
+        vec![
+            parameter(standard::ANGLE_X, -30.0, 0.0, 30.0),
+            parameter(standard::BODY_ANGLE_X, -10.0, 0.0, 10.0),
+        ],
+    )
+}
+
+/// [`physics_additive`] 用の物理設定。頭の回転に体が遅れて付いてくる揺れを、`BodyAngleX` に **加算** する。
+/// 重力 `(0, 1)`、風なし、60 Hz。正規化の範囲は位置・角度とも -10..10。
+///
+/// - リグ `BodySway`: `AngleX` → x (重み 100。`AngleX` 30 で根元が 10 動く)。粒子 2 つ (長さ 10)。
+///   粒子 1 の区間の x の 0.5 倍を、`blend = add` で `BodyAngleX` に書く (静止時は x = 0 なので足す量も 0)。
+pub fn physics_additive_settings() -> PhysicsSettings {
+    let range = NormalizationRange {
+        min: -10.0,
+        default: 0.0,
+        max: 10.0,
+    };
+    PhysicsSettings {
+        gravity: Vec2::new(0.0, 1.0),
+        wind: Vec2::ZERO,
+        fps: 60.0,
+        rigs: vec![PhysicsRig {
+            id: "BodySway".into(),
+            name: "BodySway".into(),
+            inputs: vec![PhysicsInput {
+                parameter: standard::ANGLE_X.into(),
+                source: PhysicsSource::X,
+                weight: 100.0,
+                reflect: false,
+            }],
+            outputs: vec![PhysicsOutput {
+                target: PhysicsTarget::Parameter {
+                    id: standard::BODY_ANGLE_X.into(),
+                },
+                particle: 1,
+                source: PhysicsSource::X,
+                scale: 0.5,
+                weight: 100.0,
+                reflect: false,
+                blend: PhysicsBlend::Add,
+            }],
+            particles: vec![
+                PhysicsParticle {
+                    position: Vec2::ZERO,
+                    mobility: 1.0,
+                    delay: 1.0,
+                    acceleration: 1.0,
+                    radius: 0.0,
+                    collision_radius: 0.0,
+                },
+                PhysicsParticle {
+                    position: Vec2::new(0.0, 10.0),
+                    mobility: 0.9,
+                    delay: 0.8,
+                    acceleration: 1.5,
+                    radius: 10.0,
+                    collision_radius: 0.0,
+                },
+            ],
+            normalization: PhysicsNormalization {
+                position: range,
+                angle: range,
+            },
+            colliders: Vec::new(),
+            frame: None,
+        }],
         colliders: Vec::new(),
     }
 }
@@ -1401,6 +1482,7 @@ pub fn dynamic_hair_settings() -> PhysicsSettings {
         scale: 1.0,
         weight: 100.0,
         reflect: false,
+        blend: PhysicsBlend::Overwrite,
     };
     let particle = |y: f32, radius: f32, collision_radius: f32| PhysicsParticle {
         position: Vec2::new(0.0, y),

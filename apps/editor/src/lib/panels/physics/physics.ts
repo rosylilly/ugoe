@@ -5,6 +5,7 @@ import type {
   Command,
   Model,
   NormalizationRange,
+  PhysicsBlend,
   PhysicsCollider,
   PhysicsOutput,
   PhysicsParticle,
@@ -170,6 +171,25 @@ export const TARGET_KINDS: { kind: TargetKind; label: string }[] = [
   { kind: "mesh", label: "Mesh vertices" },
   { kind: "warp", label: "Warp points" },
 ];
+
+/**
+ * パラメータへの合成の方法 (docs/spec/physics.md#合成の方法)。`add` は物理の揺れ (静止時からのずれ) を
+ * トラッキングなどの値に足す。
+ */
+export const BLENDS: { blend: PhysicsBlend; label: string; title: string }[] = [
+  { blend: "overwrite", label: "Overwrite", title: "Replace the value with the physics value" },
+  { blend: "add", label: "Add", title: "Add the physics sway on top of the current value" },
+];
+
+/** 出力の合成の方法。省略は `overwrite`。 */
+export function outputBlend(output: PhysicsOutput): PhysicsBlend {
+  return output.blend ?? "overwrite";
+}
+
+/** 合成の方法を選べる出力か (パラメータへの出力だけ。ほかの出力先は常に加算量として足す)。 */
+export function hasBlend(output: PhysicsOutput): boolean {
+  return output.target.type === "parameter";
+}
 
 export function targetKind(target: PhysicsTarget): TargetKind {
   switch (target.type) {

@@ -27,8 +27,8 @@ use ugoe_model::avatar::{
 use ugoe_model::deformer::{RotationKeyform, WarpKeyform};
 use ugoe_model::mesh::MeshKeyform;
 use ugoe_model::physics::{
-    NormalizationRange, PhysicsInput, PhysicsNormalization, PhysicsOutput, PhysicsParticle,
-    PhysicsRig, PhysicsSource, PhysicsTarget, VertexOwner,
+    NormalizationRange, PhysicsBlend, PhysicsInput, PhysicsNormalization, PhysicsOutput,
+    PhysicsParticle, PhysicsRig, PhysicsSource, PhysicsTarget, VertexOwner,
 };
 use ugoe_model::standard as sp;
 use ugoe_model::{
@@ -895,6 +895,7 @@ impl Rig {
                     scale: 1.0,
                     weight: 100.0,
                     reflect: false,
+                    blend: PhysicsBlend::Overwrite,
                 }],
                 particles,
                 normalization: PhysicsNormalization {

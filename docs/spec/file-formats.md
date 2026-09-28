@@ -173,6 +173,7 @@ FeatureTable {
 | `avatar.profile` | アバタープロファイル ([avatar-profile.md](avatar-profile.md)) | 読み飛ばす (アプリの連携機能が使えないだけ) |
 | `deform.blend_shape` | ブレンドシェイプ格子 ([model.md#ブレンドシェイプ](model.md#ブレンドシェイプ)) | ブレンドシェイプ格子を無視する (ブレンドシェイプのパラメータが既定値のときの形になる) |
 | `deform.smooth_interpolation` | キーフォームの曲線補間 ([evaluation.md#曲線補間](evaluation.md#曲線補間)) | 線形で補間する (キーの上の形は同じで、キーの間の道筋が直線になる) |
+| `physics.additive_output` | 物理の出力の加算 ([physics.md#合成の方法](physics.md#合成の方法)) | 上書きとして扱う (トラッキングなどの値が物理の値に置き換わる) |
 
 上の表はすべて 1.0 の基準の機能です。
 
@@ -203,6 +204,7 @@ FeatureTable {
 | `AvatarMeta` の許諾 (`AvatarPermission` `CommercialUsage` `CreditNotation` `Modification`) | 最も制限の強い値 (`only_author`・`personal_non_profit`・`required`・`prohibited`) として扱う (`effective()`) | アプリ |
 | `TrackingOverride::source` (`TrackingSource`) | その上書きを無視する | トラッキング |
 | `PhysicsOutput::target` (`PhysicsTarget`) | その出力を無視する | 物理 |
+| `PhysicsOutput::blend` (`PhysicsBlend`) | `overwrite` として扱う (揺れを足さずに値を置き換える) | 物理・エディタ |
 | `PhysicsCollider::shape` (`ColliderShape`) | その衝突体を無視する | 物理 |
 
 - 未知の値を読んでも検証エラーにはしません。`read_bundle_with_report` が警告として場所を返します。

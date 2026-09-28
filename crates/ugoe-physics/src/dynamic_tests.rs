@@ -5,7 +5,7 @@ use ugoe_core::Mat2;
 use ugoe_model::fixtures::{
     dynamic_hair, dynamic_hair_settings, physics_hair, physics_hair_settings,
 };
-use ugoe_model::physics::{PhysicsOutput, PhysicsSettings};
+use ugoe_model::physics::{PhysicsBlend, PhysicsOutput, PhysicsSettings};
 use ugoe_model::standard::{ANGLE_X, ANGLE_Z};
 use ugoe_runtime::{CompiledModel, ModelInstance};
 
@@ -245,6 +245,7 @@ fn deformer_offset_moves_the_origin() {
         scale: 2.0,
         weight: 50.0,
         reflect: false,
+        blend: PhysicsBlend::Overwrite,
     });
     let (mut physics, mut instance) = setup(settings);
     let body = deformer(&instance, "Body");

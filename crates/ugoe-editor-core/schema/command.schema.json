@@ -3627,6 +3627,21 @@
         "opacity"
       ]
     },
+    "PhysicsBlend": {
+      "description": "物理の出力をパラメータへ合成する方法 (`docs/spec/physics.md#合成の方法`)。",
+      "oneOf": [
+        {
+          "description": "現在の値を物理の値へ重みの割合で近づける (`param + (value - param) * weight`)。",
+          "type": "string",
+          "const": "overwrite"
+        },
+        {
+          "description": "物理を進める前の値に、物理の値の静止時の値からのずれを重み付きで足す\n(`param + (value - rest) * weight`)。トラッキングなどの値に揺れを重ねる。",
+          "type": "string",
+          "const": "add"
+        }
+      ]
+    },
     "PhysicsCollider": {
       "description": "衝突体 (`docs/spec/physics.md#衝突体`)。",
       "type": "object",
@@ -3699,6 +3714,10 @@
       "description": "物理の出力。\n\n旧形式 (出力先が `parameter` フィールドのパラメータだけ) も読める。読み込みは手で書く\n([`PhysicsOutput::deserialize`])。書き出しは常に `target` を使う。",
       "type": "object",
       "properties": {
+        "blend": {
+          "description": "パラメータへの合成の方法 (`docs/spec/physics.md#合成の方法`)。省略時は `overwrite`。\nパラメータ以外の出力先では使わない (常に加算量として足す)。",
+          "$ref": "#/$defs/PhysicsBlend"
+        },
         "particle": {
           "description": "出力元となる粒子インデックス (その粒子と 1 つ前の粒子の成す角を使う)。",
           "type": "integer",
