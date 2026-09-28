@@ -107,13 +107,22 @@ fn check_count<T>(grid: &KeyformGrid<T>) -> Result<(), CellError> {
 /// - 軸があれば、新しいセルを既存の格子のその値での補間 (`docs/spec/evaluation.md#1-キーフォームの重み`
 ///   と同じ重み。キーの範囲の外は端のキーの値) で埋めるので、評価の結果は変わらない。
 ///
-/// 新しいセルは、格子に推定で作ったセル (`KeyformOrigin::is_derived`) があれば `derived` (方法の記録なし。
-/// 格子の `inference` の方法で作り直される)、なければ `authored`。
+/// 新しいセルの由来 (`docs/spec/keyform-inference.md#キーの追加とセルの由来`):
+///
+/// - キーを加えた後の格子のすべての軸に中立のキー (`default_of` の既定値と等しいキー) があれば、
+///   新しいセルを埋めた元のセル (補間した 2 つのセル、範囲の外なら端のセル) のどれかが推定で作ったセル
+///   (`KeyformOrigin::is_derived`) なら `derived` (方法の記録なし)、なければ `authored`。
+/// - 中立のキーがない軸があれば、格子に推定で作ったセルがあれば `derived`、なければ `authored` (T0608)。
+///
+/// 組み合わせのセルを推定で作ったセルにするのは呼び出し側 (`crate::keyform::add_key`)。
+///
+/// 新しいセルの線形インデックスを返す (軸を加えただけなら空)。
 pub(crate) fn add_key<T: KeyformValues>(
     grid: &mut KeyformGrid<T>,
     parameter: &ParamId,
     key: f32,
-) -> Result<(), CellError> {
+    default_of: impl Fn(&ParamId) -> Option<f32>,
+) -> Result<Vec<usize>, CellError> {
     if !key.is_finite() {
         return Err(CellError::NonFiniteKey {
             parameter: parameter.to_string(),
@@ -126,7 +135,7 @@ pub(crate) fn add_key<T: KeyformValues>(
             parameter: parameter.clone(),
             keys: vec![key],
         });
-        return Ok(());
+        return Ok(Vec::new());
     };
     let keys = grid.bindings[axis].keys.clone();
     if keys.contains(&key) {
@@ -140,23 +149,33 @@ pub(crate) fn add_key<T: KeyformValues>(
     let n = keys.len();
     let stride: usize = grid.bindings[..axis].iter().map(|b| b.keys.len()).product();
     let outer = grid.keyforms.len() / (stride * n).max(1);
-    let new_origin = if grid.origins.iter().any(|o| o.is_derived()) {
-        KeyformOrigin::Derived
-    } else {
-        KeyformOrigin::Authored
+    let mut after = grid.bindings.clone();
+    after[axis].keys.insert(pos, key);
+    let local = neutral_keys(&after, &default_of).is_some();
+    let derived = |derived: bool| {
+        if derived {
+            KeyformOrigin::Derived
+        } else {
+            KeyformOrigin::Authored
+        }
     };
+    let any_derived = grid.origins.iter().any(|o| o.is_derived());
     let old_origin = |i: usize| grid.origins.get(i).copied().unwrap_or_default();
     let mut keyforms = Vec::with_capacity(stride * (n + 1) * outer);
     let mut origins = Vec::with_capacity(keyforms.capacity());
+    let mut added = Vec::with_capacity(stride * outer);
     for o in 0..outer {
         for c in 0..=n {
             for s in 0..stride {
                 let old = |c: usize| s + stride * (c + n * o);
                 if c == pos {
-                    let a = &grid.keyforms[old(seg)];
-                    let b = &grid.keyforms[old((seg + 1).min(n - 1))];
-                    keyforms.push(lerp_keyform(a, b, t));
-                    origins.push(new_origin);
+                    let (a, b) = (old(seg), old((seg + 1).min(n - 1)));
+                    added.push(keyforms.len());
+                    keyforms.push(lerp_keyform(&grid.keyforms[a], &grid.keyforms[b], t));
+                    // `t == 0` なら `a` の値そのもの (範囲の外)。
+                    let from_derived =
+                        old_origin(a).is_derived() || (t != 0.0 && old_origin(b).is_derived());
+                    origins.push(derived(if local { from_derived } else { any_derived }));
                 } else {
                     let i = old(if c < pos { c } else { c - 1 });
                     keyforms.push(grid.keyforms[i].clone());
@@ -167,11 +186,130 @@ pub(crate) fn add_key<T: KeyformValues>(
     }
     grid.keyforms = keyforms;
     // `origins` が空 (すべて `authored`) のままでよければ空に保つ。
-    if !grid.origins.is_empty() || new_origin == KeyformOrigin::Derived {
+    if !grid.origins.is_empty() || origins.iter().any(|o| o.is_derived()) {
         grid.origins = origins;
     }
     grid.bindings[axis].keys.insert(pos, key);
-    Ok(())
+    Ok(added)
+}
+
+/// 中立のキー (パラメータの `default` と等しいキー) の許容差 (`docs/spec/keyform-inference.md#記法`)。
+const NEUTRAL_EPSILON: f32 = 1e-5;
+
+/// 軸ごとの中立のキー (パラメータの既定値 `default_of` と等しいキー) のインデックス。
+/// 中立のキーがない軸 (既定値のわからないパラメータの軸を含む) があれば `None`。
+fn neutral_keys(
+    bindings: &[KeyformBinding],
+    default_of: impl Fn(&ParamId) -> Option<f32>,
+) -> Option<Vec<usize>> {
+    bindings
+        .iter()
+        .map(|b| {
+            let default = default_of(&b.parameter)?;
+            b.keys
+                .iter()
+                .position(|&k| (k - default).abs() <= NEUTRAL_EPSILON)
+        })
+        .collect()
+}
+
+/// セル `cells` のうち、中立でない軸が 2 本以上あるセル (組み合わせのセル)。
+/// 中立のキーがない軸があれば、どのセルも組み合わせのセルとして扱わない (空を返す)。
+pub(crate) fn combination_cells(
+    bindings: &[KeyformBinding],
+    default_of: impl Fn(&ParamId) -> Option<f32>,
+    cells: &[usize],
+) -> Vec<usize> {
+    let Some(neutral) = neutral_keys(bindings, default_of) else {
+        return Vec::new();
+    };
+    cells
+        .iter()
+        .copied()
+        .filter(|&index| {
+            let mut rest = index;
+            let mut moved = 0;
+            for (binding, &z) in bindings.iter().zip(&neutral) {
+                let len = binding.keys.len().max(1);
+                if rest % len != z {
+                    moved += 1;
+                }
+                rest /= len;
+            }
+            moved >= 2
+        })
+        .collect()
+}
+
+/// 基準の姿のセル: 軸ごとにパラメータの既定値に最も近いキー (中立のキーがあればそれ) を採ったセル
+/// の線形インデックス。既定値のわからない軸は先頭のキーを採る。
+pub(crate) fn rest_cell_index<T>(
+    grid: &KeyformGrid<T>,
+    default_of: impl Fn(&ParamId) -> Option<f32>,
+) -> usize {
+    let mut index = 0;
+    let mut stride = 1;
+    for binding in &grid.bindings {
+        let key = default_of(&binding.parameter)
+            .and_then(|default| nearest_key(&binding.keys, default))
+            .unwrap_or(0);
+        index += key * stride;
+        stride *= binding.keys.len().max(1);
+    }
+    index.min(grid.keyforms.len().saturating_sub(1))
+}
+
+/// 推定の下ごしらえ: セル `cells` だけを `derived` (方法の記録なし) にし、残りのセルをすべて
+/// `authored` にする (書き換えずに推定の元にする)。
+pub(crate) fn derive_only<T>(grid: &mut KeyformGrid<T>, cells: &[usize]) {
+    grid.origins = vec![KeyformOrigin::Authored; grid.keyforms.len()];
+    for &index in cells {
+        if let Some(origin) = grid.origins.get_mut(index) {
+            *origin = KeyformOrigin::Derived;
+        }
+    }
+}
+
+/// セル `cells` のうち、`inferred` (同じ軸の格子で推定したもの) の値が今の値と見た目で変わらない
+/// ([`same_values`]) セルを、推定した値と由来に置き換える。
+pub(crate) fn adopt_inferred<T: KeyformValues + PartialEq>(
+    grid: &mut KeyformGrid<T>,
+    inferred: &KeyformGrid<T>,
+    cells: &[usize],
+) {
+    for &index in cells {
+        let (Some(current), Some(value)) = (grid.keyforms.get(index), inferred.keyforms.get(index))
+        else {
+            continue;
+        };
+        if !same_values(current, value) {
+            continue;
+        }
+        if grid.origins.is_empty() {
+            grid.origins = vec![KeyformOrigin::Authored; grid.keyforms.len()];
+        }
+        grid.keyforms[index] = value.clone();
+        grid.origins[index] = inferred.origin(index);
+    }
+}
+
+/// 2 つのキーフォームが同じ見た目になるか: 数値のフィールドが許容誤差 (値の大きさに対して 1e-4) で
+/// 一致し、それ以外のフィールド (真偽値など) が等しい。
+fn same_values<T: KeyformValues + PartialEq>(a: &T, b: &T) -> bool {
+    let (mut va, mut vb) = (Vec::new(), Vec::new());
+    a.write_values(&mut va);
+    b.write_values(&mut vb);
+    if va.len() != vb.len() {
+        return false;
+    }
+    let close = va
+        .iter()
+        .zip(&vb)
+        .all(|(&x, &y)| (x - y).abs() <= 1e-4 * x.abs().max(y.abs()).max(1.0));
+    // 数値を `b` の値にそろえて、残りのフィールドを比べる。
+    let mut probe = a.clone();
+    probe.read_values(&vb);
+    close && probe == *b
 }
 
 /// パラメータ `parameter` の軸からキー `key` とその断面のセルを取り除く。

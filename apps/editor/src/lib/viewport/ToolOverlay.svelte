@@ -8,12 +8,14 @@
   - フォーム編集 (T0608): tools/form/FormTool.svelte。今のセルのキーフォームを編集する (メッシュ編集中は出さない)。
   - デフォーマのギズモ (T0607): tools/deformer/DeformerGizmo.svelte。主な選択がデフォーマのとき、
     フォーム編集の代わりに出す。
+  - 深度の表示 (T0617): tools/depth/DepthOverlay.svelte。インスペクタの深度の節で切り替える (操作は受けない)。
 -->
 <script lang="ts">
 import type { EditorDocument } from "../document.svelte";
 import type { Selection } from "../selection.svelte";
 import type { ViewportController } from "./controller.svelte";
 import DeformerGizmo from "./tools/deformer/DeformerGizmo.svelte";
+import DepthOverlay from "./tools/depth/DepthOverlay.svelte";
 import FormTool from "./tools/form/FormTool.svelte";
 import { boundaryEdges, cycleHit } from "./tools/geometry";
 import MeshEditTool from "./tools/MeshEditTool.svelte";
@@ -167,6 +169,8 @@ function onKeyDown(e: KeyboardEvent): void {
 {:else}
   <FormTool {controller} {doc} {selection} />
 {/if}
+
+<DepthOverlay {controller} {doc} {selection} {scene} />
 
 <div class="toolbar">
   {#if editing === null}

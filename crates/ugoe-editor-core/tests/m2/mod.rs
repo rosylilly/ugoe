@@ -10,10 +10,10 @@ use std::path::PathBuf;
 
 use ugoe_editor_core::space::Vec2;
 use ugoe_editor_core::{
-    ChildRef, Command, Document, InferMethod, Keyform, KeyformCell, KeyformTarget, Project,
-    PsdImportOptions, Textures, import_psd,
+    ChildRef, Command, DepthPreset, Document, InferMethod, Keyform, KeyformCell, KeyformTarget,
+    Project, PsdImportOptions, Textures, import_psd,
 };
-use ugoe_model::deformer::{WarpDeformer, WarpKeyform};
+use ugoe_model::deformer::WarpKeyform;
 use ugoe_model::validate::validate;
 use ugoe_model::{
     Deformer, DeformerId, DeformerKind, DepthRotation, KeyformBinding, KeyformGrid,
@@ -179,8 +179,9 @@ fn create_deformers(wf: &mut Workflow) {
     }
 }
 
-/// 段階 3: `AngleX` / `AngleY` を作り、顔のワープに 3×3 のキーを置いて端のセルだけを編集し、
-/// 斜めのセルを加算合成で推定する。
+/// 段階 3: `AngleX` / `AngleY` を作り、顔のワープに 3×3 のキーを置いて端のセルだけを編集する。
+/// 斜めのセル (組み合わせのセル) はキーを加えたときに加算合成のセルになり、端を編集するたびに
+/// 自動で作り直される (`docs/spec/keyform-inference.md#キーの追加とセルの由来`)。
 fn additive_face(wf: &mut Workflow) {
     for id in [ANGLE_X, ANGLE_Y] {
         wf.apply(Command::AddParameter {
@@ -200,20 +201,12 @@ fn additive_face(wf: &mut Workflow) {
     wf.assert_rest_look_unchanged("after adding keys to the face warp");
     let grid = warp_grid(wf.model(), FACE).clone();
     assert_eq!(grid.keyforms.len(), 9);
-    // キーを加えただけのセルは `authored` (格子に推定のセルがないため)。
-    assert!((0..9).all(|i| grid.origin(i) == KeyformOrigin::Authored));
-
-    // 斜めのセルを推定に戻す (いまは端のセルが基準と同じなので、基準の値になる)。
-    let diagonals: Vec<KeyformCell> = [(-30.0, -30.0), (30.0, -30.0), (-30.0, 30.0), (30.0, 30.0)]
-        .into_iter()
-        .map(|(x, y)| cell(&[(ANGLE_X, x), (ANGLE_Y, y)]))
-        .collect();
-    wf.apply(Command::MarkKeyformDerived {
-        target: deformer_target(FACE),
-        cells: diagonals.clone(),
-    });
+    // 端と基準のセルは補間した値の `authored`、斜めのセルはその場で推定した `additive`。
+    assert_face_origins(wf.model());
+    assert_face_additive(wf.model());
 
     // 端のセル (1 軸セル) だけを手で作る: 点ごとに違うずれと、不透明度の変化。
+    // 編集のたびに斜めのセルが作り直される (手で `derived` にしたり推定を実行したりしない)。
     let base = warp_cell(wf.model(), FACE, &[(ANGLE_X, 0.0), (ANGLE_Y, 0.0)]).clone();
     let edges: [(Cell2, f32, PointDelta); 4] = [
         ((30.0, 0.0), 0.9, |i| {
@@ -230,15 +223,23 @@ fn additive_face(wf: &mut Workflow) {
             cell: cell(&[(ANGLE_X, x), (ANGLE_Y, y)]),
             keyform: Keyform::Warp(WarpKeyform { points, opacity }),
         });
+        assert_face_additive(wf.model());
     }
-    wf.apply(Command::InferKeyforms {
-        target: deformer_target(FACE),
-        method: InferMethod::Additive,
-        overwrite_derived: false,
-    });
     wf.assert_rest_look_unchanged("after additive inference");
-    assert_face_additive(wf.model());
-    let grid = warp_grid(wf.model(), FACE);
+    assert_face_origins(wf.model());
+    // 斜めの不透明度: 1 + (0.9 − 1) + (0.8 − 1)。
+    let diagonal = warp_cell(wf.model(), FACE, &[(ANGLE_X, 30.0), (ANGLE_Y, 30.0)]);
+    assert!(
+        (diagonal.opacity - 0.7).abs() < 1e-6,
+        "{}",
+        diagonal.opacity
+    );
+}
+
+/// 顔のワープの由来: 基準と端のセルが `authored`、斜めのセルが `additive`。
+#[track_caller]
+fn assert_face_origins(model: &Model) {
+    let grid = warp_grid(model, FACE);
     let origin = |x, y| grid.origin(index_of(&grid.bindings, &[(ANGLE_X, x), (ANGLE_Y, y)]));
     assert_eq!(origin(0.0, 0.0), KeyformOrigin::Authored);
     for (x, y) in [(30.0, 0.0), (-30.0, 0.0), (0.0, 30.0), (0.0, -30.0)] {
@@ -247,13 +248,6 @@ fn additive_face(wf: &mut Workflow) {
     for (x, y) in [(-30.0, -30.0), (30.0, -30.0), (-30.0, 30.0), (30.0, 30.0)] {
         assert_eq!(origin(x, y), KeyformOrigin::Additive, "diagonal ({x}, {y})");
     }
-    // 斜めの不透明度: 1 + (0.9 − 1) + (0.8 − 1)。
-    let diagonal = warp_cell(wf.model(), FACE, &[(ANGLE_X, 30.0), (ANGLE_Y, 30.0)]);
-    assert!(
-        (diagonal.opacity - 0.7).abs() < 1e-6,
-        "{}",
-        diagonal.opacity
-    );
 }
 
 /// 顔のワープの斜めのセルが `B + Δ_X + Δ_Y` (`docs/spec/keyform-inference.md#推定の式`) であること。
@@ -399,48 +393,61 @@ pub fn assert_eyes_mirrored(model: &Model, right_base: &WarpKeyform) {
     assert_eq!(warp_cell(model, EYE_R, &[(ANGLE_X, 0.0)]), right_base);
 }
 
-/// 段階 5: 深度を持つワープを `Head` と `Face` の間に入れ、深度からの回転で振り向きのセルを作る。
-///
-/// 既存の要素の `depth` を設定するコマンドはない (T0616 のメモ) ので、深度を持つワープを
-/// `AddDeformer` で作り、`ReparentPreservingLook` で顔のワープをその下へ移す。
+/// 段階 5: 振り向きのワープを `Head` と `Face` の間に作り、深度をプリセットで付けて、
+/// 深度からの回転で振り向きのセルを作る。
 fn depth_turn(wf: &mut Workflow) {
-    // 顔のワープの基準のセルの制御点 (Head の局所座標) を余白付きで覆う 3×3 の格子。
-    let face = warp_cell(wf.model(), FACE, &[(ANGLE_X, 0.0), (ANGLE_Y, 0.0)]);
-    let (min, max) = bounds(&face.points);
-    let margin = 0.25 * (max - min).max_element();
-    let (min, max) = (min - Vec2::splat(margin), max + Vec2::splat(margin));
-    let size = max - min;
-    let points: Vec<Vec2> = (0..3)
-        .flat_map(|r| (0..3).map(move |c| min + size * Vec2::new(c as f32, r as f32) / 2.0))
-        .collect();
-    let depth = vec![0.0, 4.0, 0.0, 4.0, 12.0, 4.0, 0.0, 4.0, 0.0];
-    let part = deformer(wf.model(), FACE).part.clone();
-    wf.apply(Command::AddDeformer {
-        deformer: Deformer {
-            id: FACE_TURN.into(),
-            name: "FaceTurn".into(),
-            part,
-            parent: Some(HEAD.into()),
-            kind: DeformerKind::Warp(WarpDeformer {
-                rows: 2,
-                cols: 2,
-                keyforms: KeyformGrid::constant(WarpKeyform {
-                    points: points.clone(),
-                    opacity: 1.0,
-                }),
-                depth: Some(depth.clone()),
-            }),
-            mirror: None,
-            mirror_axis: None,
-        },
+    // 顔のワープを包む 2×2 のワープ (親は `Face` の親の `Head`)。
+    wf.apply(Command::CreateWarpDeformer {
+        id: Some(FACE_TURN.into()),
+        name: "FaceTurn".into(),
+        children: vec![ChildRef::Deformer(FACE.into())],
+        rows: 2,
+        cols: 2,
+        parent: None,
     });
-    wf.apply(Command::ReparentPreservingLook {
-        element: ChildRef::Deformer(FACE.into()),
-        new_parent: Some(FACE_TURN.into()),
-    });
-    wf.assert_rest_look_unchanged("after inserting the depth warp");
+    wf.assert_rest_look_unchanged("after inserting the turn warp");
     // 顔のワープの格子はすべて写し直され、斜めのセルは作り直されている (写像はアフィン)。
     assert_face_additive(wf.model());
+    assert_eq!(
+        deformer(wf.model(), FACE_TURN)
+            .parent
+            .as_ref()
+            .map(|p| p.as_str()),
+        Some(HEAD)
+    );
+
+    // 深度: 中心が 12 のドームに、辺の中点を 4 にする。
+    let turn = ChildRef::Deformer(FACE_TURN.into());
+    wf.apply(Command::ApplyDepthPreset {
+        target: turn.clone(),
+        preset: DepthPreset::Dome { peak: 12.0 },
+    });
+    wf.apply(Command::ApplyDepthPreset {
+        target: turn,
+        preset: DepthPreset::Points {
+            indices: vec![1, 3, 5, 7],
+            value: 4.0,
+        },
+    });
+    let depth = vec![0.0, 4.0, 0.0, 4.0, 12.0, 4.0, 0.0, 4.0, 0.0];
+    let DeformerKind::Warp(warp) = &deformer(wf.model(), FACE_TURN).kind else {
+        panic!("FaceTurn must be a warp");
+    };
+    for (actual, expected) in warp
+        .depth
+        .as_deref()
+        .expect("FaceTurn has depth")
+        .iter()
+        .zip(&depth)
+    {
+        assert!(
+            (actual - expected).abs() < 1e-5,
+            "depth {actual} vs {expected}"
+        );
+    }
+    let points = warp.keyforms.keyforms[0].points.clone();
+    let (min, max) = bounds(&points);
+    let size = max - min;
 
     let target = deformer_target(FACE_TURN);
     add_keys(wf, &target, &[ANGLE_X, ANGLE_Y]);
@@ -455,21 +462,21 @@ fn depth_turn(wf: &mut Workflow) {
         target: target.clone(),
         inference: Some(KeyformInference::DepthRotation(rotation.clone())),
     });
-    // 基準以外のセルを推定に戻すと、格子の方法 (深度からの回転) で作り直される。
-    let others: Vec<KeyformCell> = KEYS
-        .iter()
-        .flat_map(|&y| KEYS.iter().map(move |&x| (x, y)))
-        .filter(|&(x, y)| (x, y) != (0.0, 0.0))
+    // キーを加えた時点で斜めのセルは加算合成のセル、端のセルは `authored` (手で作る端の形)。
+    // 振り向きでは端も回転で作るので、端を推定に戻し (格子の方法で作り直される)、加算合成で作った
+    // 斜めのセルも深度からの回転で作り直す (`overwrite_derived`)。
+    let edges: Vec<KeyformCell> = [(30.0, 0.0), (-30.0, 0.0), (0.0, 30.0), (0.0, -30.0)]
+        .into_iter()
         .map(|(x, y)| cell(&[(ANGLE_X, x), (ANGLE_Y, y)]))
         .collect();
     wf.apply(Command::MarkKeyformDerived {
         target: target.clone(),
-        cells: others,
+        cells: edges,
     });
     wf.apply(Command::InferKeyforms {
         target: target.clone(),
         method: InferMethod::DepthRotation,
-        overwrite_derived: false,
+        overwrite_derived: true,
     });
     assert_depth_rotation(wf.model(), &points, &depth, &rotation, &KEYS);
 

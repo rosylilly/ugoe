@@ -4,7 +4,8 @@
   (ドラッグ中はギズモだけをプレビューする)。
 
   - ワープ: 制御点のクリックで選ぶ (Shift で追加・解除)、何もない所からのドラッグで矩形選択 (Shift で追加)、
-    選んだ点のドラッグでまとめて動かす。「All」ですべて選ぶ。
+    選んだ点のドラッグでまとめて動かす。「All」ですべて選ぶ。選んだ点は Selection.controlPoints に持つ
+    (インスペクタの深度の節が「選んだ点の深度」に使う)。
   - 回転デフォーマ: 原点 (円) のドラッグで移動、上の取っ手で回転 (Shift で 15 度刻み)、右の四角で拡大率。
 
   形は wasm (WebPuppet.warp_points / rotation_frame) で評価した今のパラメータ値でのキャンバス座標。
@@ -65,7 +66,6 @@ type Drag =
 
 let svg = $state<SVGSVGElement>();
 let drag = $state<Drag | null>(null);
-let picked = $state<number[]>([]);
 let busy = $state(false);
 let error = $state<string | null>(null);
 /** WebPuppet が新しいモデル・パラメータを反映した後に読み直すための印。 */
@@ -110,6 +110,15 @@ const rotationCanvas = $derived.by(() => {
   if (element?.kind !== "rotation" || !puppet || controller.status !== "ready") return null;
   return rotationFrame(puppet.rotation_frame(deformerId));
 });
+
+/** 選んだ制御点 (インスペクタの深度の節も使うので Selection に持つ)。 */
+const picked = $derived(
+  (selection.controlPoints[deformerId] ?? []).filter((i) => i < (warpCanvas?.length ?? 0)),
+);
+
+function setPicked(indices: number[]): void {
+  selection.controlPoints = { ...selection.controlPoints, [deformerId]: indices };
+}
 
 const scale = $derived(controller.transform?.scale ?? 1);
 const warpScreen = $derived.by(() => {
@@ -202,10 +211,10 @@ function onPointerDown(e: PointerEvent): void {
     return;
   }
   if (e.shiftKey) {
-    picked = updateVertexSelection(picked, [hit], true);
+    setPicked(updateVertexSelection(picked, [hit], true));
     if (!picked.includes(hit)) return;
   } else if (!pickedSet.has(hit)) {
-    picked = [hit];
+    setPicked([hit]);
   }
   drag = { kind: "points", id, start: p, delta: [0, 0] };
 }
@@ -245,9 +254,9 @@ function onPointerUp(e: PointerEvent): void {
     drag = null;
     const { box } = d;
     if (Math.hypot(box.x1 - box.x0, box.y1 - box.y0) < CLICK_SLOP) {
-      if (!d.toggle) picked = [];
+      if (!d.toggle) setPicked([]);
     } else if (warpScreen) {
-      picked = updateVertexSelection(picked, verticesInBox(flatten(warpScreen), box), d.toggle);
+      setPicked(updateVertexSelection(picked, verticesInBox(flatten(warpScreen), box), d.toggle));
     }
     return;
   }
@@ -319,7 +328,7 @@ async function commit(d: Drag): Promise<void> {
 }
 
 function selectAll(): void {
-  if (warpCanvas) picked = warpCanvas.map((_, i) => i);
+  if (warpCanvas) setPicked(warpCanvas.map((_, i) => i));
 }
 
 function moveToNearestKey(): void {
@@ -334,7 +343,7 @@ function moveToNearestKey(): void {
 function onKeyDown(e: KeyboardEvent): void {
   const target = e.target as HTMLElement | null;
   if (target?.closest("input, textarea, select, [contenteditable]")) return;
-  if (e.key === "Escape" && picked.length > 0) picked = [];
+  if (e.key === "Escape" && picked.length > 0) setPicked([]);
   else if (e.key === "a" && (e.ctrlKey || e.metaKey) && warpCanvas) {
     e.preventDefault();
     selectAll();

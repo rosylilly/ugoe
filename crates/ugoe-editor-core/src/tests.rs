@@ -1365,10 +1365,12 @@ fn op_name(command: &Command) -> &'static str {
         Command::ReparentPreservingLook { .. } => "reparent_preserving_look",
         Command::SetKeyformInference { .. } => "set_keyform_inference",
         Command::SetMirrorPair { .. } => "set_mirror_pair",
+        Command::SetDepth { .. } => "set_depth",
+        Command::ApplyDepthPreset { .. } => "apply_depth_preset",
     }
 }
 
-const OP_COUNT: usize = 49;
+const OP_COUNT: usize = 51;
 
 fn json_samples() -> Vec<Command> {
     let quad = fixtures::single_quad();
@@ -1586,6 +1588,14 @@ fn json_samples() -> Vec<Command> {
             target: crate::KeyformTarget::Mesh("Quad".into()),
             mirror: Some("Quad".into()),
             axis: Some(0.0),
+        },
+        Command::SetDepth {
+            target: ChildRef::Mesh("Quad".into()),
+            depth: Some(vec![0.0, 1.0, 2.0, 3.0]),
+        },
+        Command::ApplyDepthPreset {
+            target: ChildRef::Deformer("Cloth".into()),
+            preset: crate::DepthPreset::Dome { peak: 12.0 },
         },
     ]
 }

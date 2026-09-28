@@ -2,13 +2,16 @@
 //!
 //! 要素は [`KeyformTarget`] (種類と ID、JSON では `{"kind": "mesh", "id": "Face"}`) で指定する。格子そのものの操作は `crate::grid` にある。
 
+use std::collections::HashMap;
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use ugoe_model::deformer::{DeformerKind, RotationKeyform, WarpKeyform};
 use ugoe_model::mesh::{GlueKeyform, MeshKeyform};
 use ugoe_model::part::PartKeyform;
-use ugoe_model::{KeyformGrid, Model, ParamId};
+use ugoe_model::{KeyformGrid, KeyformInference, Model, ParamId};
+use ugoe_rigging::{InferScope, infer_additive_target};
 
 use crate::command::{KeyformCell, KeyformTarget};
 use crate::document::EditError;
@@ -134,7 +137,10 @@ fn cell_error(target: &KeyformTarget) -> impl Fn(CellError) -> EditError + '_ {
     }
 }
 
-/// `Command::AddKeyformKey` を適用する。
+/// `Command::AddKeyformKey` を適用する (`docs/spec/keyform-inference.md#キーの追加とセルの由来`)。
+///
+/// 新しいセルは補間した値で埋め (`grid::add_key`)、そのうち組み合わせのセルを
+/// [`derive_combinations`] で加算合成のセルにする。既存のセルは作り直さない。
 pub(crate) fn add_key(
     model: &mut Model,
     target: &KeyformTarget,
@@ -144,8 +150,64 @@ pub(crate) fn add_key(
     if !model.parameters.iter().any(|p| &p.id == parameter) {
         return Err(not_found("parameter", parameter.as_str()));
     }
+    let defaults = parameter_defaults(model);
+    let default_of = |p: &ParamId| defaults.get(p).copied();
     let grid = grid_mut(model, target)?;
-    with_grid!(grid, |g| grid::add_key(g, parameter, key)).map_err(cell_error(target))
+    let added = with_grid!(grid, |g| grid::add_key(g, parameter, key, default_of))
+        .map_err(cell_error(target))?;
+    derive_combinations(model, target, &added);
+    Ok(())
+}
+
+/// パラメータ ID → 既定値。
+pub(crate) fn parameter_defaults(model: &Model) -> HashMap<ParamId, f32> {
+    model
+        .parameters
+        .iter()
+        .map(|p| (p.id.clone(), p.default))
+        .collect()
+}
+
+/// キーの追加でできたセル `added` のうち組み合わせのセル (中立でない軸が 2 本以上) を、その場で
+/// 加算合成で推定し、推定した値が補間した値と変わらない (見た目が変わらない) セルだけを `additive` にする。
+///
+/// 推定は、組み合わせのセルだけを `derived` にし、他のセル (既存の `derived` のセルと新しい 1 軸の
+/// セルを含む) を書き換えずに元にして行う。格子の推定の方法が加算合成でない (深度からの回転・未知) か、
+/// 中立のキーがない軸があるか、推定に失敗したときは何もしない。推定しなかったセルと、推定した値が
+/// 補間した値と違うセルの由来は `grid::add_key` が決めたまま。
+fn derive_combinations(model: &mut Model, target: &KeyformTarget, added: &[usize]) {
+    let defaults = parameter_defaults(model);
+    let default_of = |p: &ParamId| defaults.get(p).copied();
+    let Ok(grid) = grid_mut(model, target) else {
+        return;
+    };
+    let cells = with_grid!(grid, |g| match g.inference {
+        None | Some(KeyformInference::Additive) => {
+            grid::combination_cells(&g.bindings, default_of, added)
+        }
+        Some(_) => Vec::new(),
+    });
+    if cells.is_empty() {
+        return;
+    }
+    let mut scratch = model.clone();
+    if let Ok(g) = grid_mut(&mut scratch, target) {
+        with_grid!(g, |g| grid::derive_only(g, &cells));
+    }
+    if infer_additive_target(&mut scratch, &target.into(), InferScope::Own).is_err() {
+        return;
+    }
+    let (Ok(grid), Ok(inferred)) = (grid_mut(model, target), grid_mut(&mut scratch, target)) else {
+        return;
+    };
+    match (grid, inferred) {
+        (GridMut::Part(g), GridMut::Part(s)) => grid::adopt_inferred(g, s, &cells),
+        (GridMut::Warp(g), GridMut::Warp(s)) => grid::adopt_inferred(g, s, &cells),
+        (GridMut::Rotation(g), GridMut::Rotation(s)) => grid::adopt_inferred(g, s, &cells),
+        (GridMut::Mesh(g), GridMut::Mesh(s)) => grid::adopt_inferred(g, s, &cells),
+        (GridMut::Glue(g), GridMut::Glue(s)) => grid::adopt_inferred(g, s, &cells),
+        _ => {}
+    }
 }
 
 /// `Command::RemoveKeyformKey` を適用する。

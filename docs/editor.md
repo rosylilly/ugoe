@@ -53,7 +53,7 @@
 | キーフォーム | `add_keyform_key`、`remove_keyform_key`、`set_keyform_cell`、`set_mesh_draw_order` ([キーフォームの編集](#キーフォームの編集)) |
 | テクスチャ | `add_texture`、`set_texture_image`、`remove_texture` |
 | キャンバス | `set_canvas` (`width`・`height`・`origin`。大きさは 0 より大きい有限の値。要素の座標は変えない) |
-| キーフォームの推定 | `infer_keyforms`、`mirror_keyforms`、`mark_keyform_authored`、`mark_keyform_derived`、`set_keyform_inference`、`set_mirror_pair` (下の「推定とミラー」) |
+| キーフォームの推定 | `infer_keyforms`、`mirror_keyforms`、`mark_keyform_authored`、`mark_keyform_derived`、`set_keyform_inference`、`set_mirror_pair` (下の「推定とミラー」)、`set_depth`・`apply_depth_preset` ([深度の編集](#深度の編集)) |
 | その他 | `batch` |
 
 - `set_mesh_properties` は `part`・`texture`・`blend`・`culling`・`masks`・`mask_mode`・`mask_only` のうち、指定したフィールドだけを変えます。
@@ -79,7 +79,7 @@
 
 - 推定のエラー (中立のキーがない、基準のセルが `derived`、ミラーの対でない、など) は `EditError::Inference` で拒否し、モデルは変えません。
 - **自動の作り直し:** 格子のセル (値や由来) を変えたコマンドの後、`Document::apply` はその格子の `derived` のセルを **セルに記録した推定の方法で** 作り直し、その格子をミラー元 (`mirror_source`) にする格子のミラーのセルもミラーし直します。同じ Undo 単位に含まれ、`batch` では全体を適用した後にまとめて行います。加算合成・深度からの回転で作り直せなければコマンドを拒否します (ミラーのやり直しの失敗は、ミラーのセルをそのままにして続ける)。規則は [spec/keyform-inference.md#自動の作り直し](spec/keyform-inference.md#自動の作り直し)。
-  - 対象は `set_*_keyforms`・`set_mesh_keyform`・`set_keyform_cell`・`mark_keyform_*`・`infer_keyforms`・`mirror_keyforms`・`set_keyform_inference`・`set_mirror_pair`・頂点の編集 (`move_mesh_vertices` など) です。新しいコマンドは、格子のセルを変えたら `apply_to` の `touched` に要素を積むことで対象になります (`crates/ugoe-editor-core/src/document.rs`)。
+  - 対象は `set_*_keyforms`・`set_mesh_keyform`・`set_keyform_cell`・`mark_keyform_*`・`infer_keyforms`・`mirror_keyforms`・`set_keyform_inference`・`set_mirror_pair`・頂点の編集 (`move_mesh_vertices` など)・深度の編集 (`set_depth`・`apply_depth_preset`) です。新しいコマンドは、格子のセルを変えたら `apply_to` の `touched` に要素を積むことで対象になります (`crates/ugoe-editor-core/src/document.rs`)。
   - 推定のコマンドも積みます。作り直しはセルごとの方法で行うので推定の結果を別の方法で上書きせず、その格子をミラー元にする格子へ変化を伝えます。
   - パラメータの範囲の変更など、セルを変えないコマンドでは作り直しません。必要なら `infer_keyforms` を実行します。
 - **ミラーのやり直しの失敗の警告:** 自動のミラーのやり直しに失敗した (ミラー元の頂点を許容距離を超えて動かした、対を外した、など) 格子は、コマンドを拒否せずミラーのセルを前の値のまま残し、`RederiveWarning { target, source, message }` (格子・ミラー元・`InferError` の文) を 1 組に 1 つ返します。
@@ -100,6 +100,35 @@
 | 通知 (`inspector/inference/RederiveNotice.svelte`) | 適用したコマンドが返した `RederiveWarning` を、インスペクタの上に「Dismiss」で閉じるまで出す (同じ格子とミラー元の組は新しいもので置き換える) |
 
 - セルの選択 (`inspector/inference/cellSelection.svelte.ts`) は表示の状態で、Undo の対象にしません。別の格子のセルを選ぶと前の選択は消えます。
+
+### 深度の編集
+
+メッシュの頂点ごと (`Mesh::depth`) とワープデフォーマの制御点ごと (`WarpDeformer::depth`) の深度 (キャンバスのピクセル単位、手前が正) を設定するコマンドです。深度は [深度からの回転](spec/keyform-inference.md#深度からの回転) の入力で、ランタイムは読みません。
+要素は `target` で `{"kind": "mesh" | "deformer", "id": "..."}` (`ChildRef`) と指定します。デフォーマはワープだけです (回転デフォーマは `DeformerKindMismatch`)。
+
+| `op` | 内容 |
+| --- | --- |
+| `set_depth { target, depth }` | 深度を置き換える (省略・`null` で外す)。長さが点 (頂点・制御点) の数と違えば `DepthLength`、有限でない値があれば `NonFiniteDepth` で拒否する |
+| `apply_depth_preset { target, preset }` | プリセットで深度を作り、`set_depth` と同じく置き換える。`preset` は下の表 |
+
+| `preset` | 深度 |
+| --- | --- |
+| `{"kind": "uniform", "value": v}` | すべての点を `v` にする |
+| `{"kind": "dome", "peak": h}` | 基準の姿の点の外接矩形の中心を `c`、半分の幅・高さを `r` とし、内接する楕円で正規化した距離 `ρ = |((x − cx) / rx, (y − cy) / ry)|` から `h · sqrt(max(0, 1 − ρ²))` (中心で `h`、楕円の上と外で 0 の半球)。幅・高さが 0 の向きは数えない。`h` が負ならくぼみ |
+| `{"kind": "points", "indices": [...], "value": v}` | 点 `indices` (頂点・制御点の番号) だけを `v` にし、他の点は今の深度 (なければ 0) のまま。範囲外の番号は `DepthPointOutOfRange` |
+
+- 基準の姿は、軸ごとにパラメータの既定値に最も近いキー (中立のキーがあればそれ) を採ったセルの点 (親座標系) です。計算は `ugoe_editor_core::depth` の純粋な関数 (`uniform_depth`・`dome_depth`・`points_depth`) にあります。
+- 深度を変えると格子を作り直すので (`touched`)、深度からの回転のセルは新しい深度で作り直されます (同じ Undo 単位)。深度からの回転のセルが残っている格子の深度を外すと、作り直しが失敗して拒否されます (`Inference`。先にセルを `authored` にするか、推定の方法を変える)。
+- 頂点の編集は深度の並びを保ちます: 追加した頂点の深度は重心座標で補間し、削除した頂点の深度は除き、移動では変えません ([メッシュの編集](#メッシュの編集))。
+
+#### 深度の画面での操作
+
+| 場所 | 操作 |
+| --- | --- |
+| 深度 (`inspector/depth/DepthSection.svelte`) | 主な選択がメッシュかワープのときに出す。点の数と深度の範囲、「Uniform」(値) の「Set all」、「Dome peak」(値) の「Dome」、「Selected」(値) の「Set selected」、「Clear depth」。選んだ点は、メッシュはメッシュ編集モードで選んだ頂点 (`Selection.vertices`)、ワープはギズモで選んだ制御点 (`Selection.controlPoints`) |
+| ビューポート (`viewport/tools/depth/DepthOverlay.svelte`) | 深度の節の「Show in viewport」(`ViewportController.showDepth`) で、主な選択の点に深度の色の輪を重ねる (手前ほど赤、奥ほど青、0 は灰色。尺度は深度の絶対値の最大)。操作は受けず、ツールの上に描く |
+
+- コマンドの組み立てと色は `inspector/depth/depth.ts` の純粋な関数で、Vitest で検査します。
 
 ### 削除の連鎖と拒否
 
@@ -213,12 +242,12 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 
 | `op` | 内容 |
 | --- | --- |
-| `add_keyform_key { target, parameter, key }` | 格子の `parameter` の軸にキー `key` を加える。軸がなければキー 1 つの軸を末尾に加える (セルの並びは変わらない)。軸があれば、新しいセルを既存の格子のその値での補間 ([evaluation.md](spec/evaluation.md#1-キーフォームの重み) と同じ重み。キーの範囲の外は端のセルの値) で埋めるので、**評価の結果 (見た目) は変わらない**。真偽値のフィールド (`reflect_x` など) は重みの大きい側 (同じなら小さいキーの側) の値。新しいセルの由来は、格子に推定で作ったセル (`derived`・`additive`・`depth_rotation`・`mirror`) があれば `derived` (方法の記録なし。その格子のセルを次に編集したときに格子の `inference` の方法で作り直される)、なければ `authored`。同じキーがすでにある (`DuplicateKey`)、有限でない、パラメータがない場合は拒否する |
+| `add_keyform_key { target, parameter, key }` | 格子の `parameter` の軸にキー `key` を加える。軸がなければキー 1 つの軸を末尾に加える (セルの並びは変わらない)。軸があれば、新しいセルを既存の格子のその値での補間 ([evaluation.md](spec/evaluation.md#1-キーフォームの重み) と同じ重み。キーの範囲の外は端のセルの値) で埋めるので、**評価の結果 (見た目) は変わらない**。真偽値のフィールド (`reflect_x` など) は重みの大きい側 (同じなら小さいキーの側) の値。新しいセルの由来は [spec/keyform-inference.md#キーの追加とセルの由来](spec/keyform-inference.md#キーの追加とセルの由来): 組み合わせのセル (中立でない軸が 2 本以上) は、加算合成の格子ならその場で推定して、見た目が変わらなければ `additive` にする。それ以外のセルは、埋めた元のセルが推定で作ったセルなら `derived`、なければ `authored` (中立のキーがない軸がある格子では、格子に推定で作ったセルがあれば `derived`)。同じキーがすでにある (`DuplicateKey`)、有限でない、パラメータがない場合は拒否する |
 | `remove_keyform_key { target, parameter, key }` | 軸からキーとその断面のセル (と由来) を取り除く。軸の最後のキーなら軸ごと取り除き、そのキーの断面が残る (`remove_parameter` と同じ畳み方) |
 | `set_keyform_cell { target, cell, keyform }` | 1 セルを置き換え、そのセルを `authored` にする。`cell` は `set_mesh_keyform` と同じ「軸のパラメータ ID → キーの値」。`keyform` は `{"kind": "mesh" \| "warp" \| "rotation" \| "part" \| "glue", ...フィールド}` で、種類は格子と一致させる (`KeyformKindMismatch`)。頂点 (制御点) の数は変えられない (`ShapeMismatch`) |
 | `set_mesh_draw_order { id, draw_order }` | メッシュの格子の **すべてのセル** の `draw_order` を同じ値にする (有限の値でなければ `InvalidDrawOrder`)。セルの由来と他の値は変えず、すべて同じ値なので作り直しもしない。描画順の違うメッシュどうしの前後を入れ替えるのに使う (`reorder_mesh` は描画順が同じメッシュの間でしか効かない)。セルごとに変えるなら `set_keyform_cell` |
 
-`set_keyform_cell` の後は、その格子の `derived` のセルを同じ Undo の単位の中で作り直します ([推定とミラー](#推定とミラー))。`add_keyform_key` と `remove_keyform_key` は作り直しません (追加は補間で見た目を保ち、削除は残ったセルの値を変えないため)。
+`set_keyform_cell` の後は、その格子の `derived` のセルを同じ Undo の単位の中で作り直します ([推定とミラー](#推定とミラー))。`add_keyform_key` と `remove_keyform_key` は既存のセルを作り直しません (追加は補間で見た目を保ち、削除は残ったセルの値を変えないため)。`add_keyform_key` がその場で推定するのは新しい組み合わせのセルだけです。
 
 ### 座標の変換
 

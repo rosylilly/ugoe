@@ -3271,6 +3271,63 @@ export const commands: Command[] = [
     }
   },
   {
+    "op": "set_depth",
+    "target": {
+      "kind": "mesh",
+      "id": "EyeL"
+    },
+    "depth": [
+      0.0,
+      4.0,
+      12.0,
+      4.0
+    ]
+  },
+  {
+    "op": "set_depth",
+    "target": {
+      "kind": "deformer",
+      "id": "Arm"
+    }
+  },
+  {
+    "op": "apply_depth_preset",
+    "target": {
+      "kind": "mesh",
+      "id": "EyeL"
+    },
+    "preset": {
+      "kind": "uniform",
+      "value": 2.0
+    }
+  },
+  {
+    "op": "apply_depth_preset",
+    "target": {
+      "kind": "deformer",
+      "id": "Arm"
+    },
+    "preset": {
+      "kind": "dome",
+      "peak": 20.0
+    }
+  },
+  {
+    "op": "apply_depth_preset",
+    "target": {
+      "kind": "mesh",
+      "id": "EyeL"
+    },
+    "preset": {
+      "kind": "points",
+      "indices": [
+        0,
+        2
+      ],
+      "value": 8.0
+    }
+  },
+  {
     "op": "retriangulate_mesh",
     "id": "EyeL"
   }

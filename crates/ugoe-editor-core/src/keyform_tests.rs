@@ -2,7 +2,7 @@
 //! 座標の変換 (`crate::space`) のテスト。
 
 use ugoe_core::Vec2;
-use ugoe_model::deformer::DeformerKind;
+use ugoe_model::deformer::{DeformerKind, WarpKeyform};
 use ugoe_model::{KeyformOrigin, Model, fixtures};
 use ugoe_runtime::{CompiledModel, ModelInstance};
 
@@ -202,23 +202,286 @@ fn add_key_on_two_axis_grid_keeps_the_look_and_marks_derived() {
 }
 
 #[test]
-fn add_key_marks_new_cells_derived_only_if_grid_has_derived_cells() {
+fn add_key_marks_new_cells_derived_if_they_come_from_derived_cells() {
+    use KeyformOrigin::{Additive, Authored, Derived};
     let mut model = fixtures::warp_grid();
     if let DeformerKind::Warp(w) = &mut model.deformers[0].kind {
         // 方法を記録した由来 (`additive` など) も推定で作ったセルに数える。
-        w.keyforms.origins = vec![
-            KeyformOrigin::Additive,
-            KeyformOrigin::Authored,
-            KeyformOrigin::Authored,
-        ];
+        w.keyforms.origins = vec![Additive, Authored, Authored];
     }
+    // `X` の既定値 0 はキーなので、新しいセルの由来は埋めた元のセルで決まる。
+    let mut doc = Document::new(model.clone());
+    doc.apply(add_key(deformer("Warp"), "X", 0.5)).unwrap();
+    doc.apply(add_key(deformer("Warp"), "X", -0.5)).unwrap();
+    // 範囲の外は端のセル (1 = `authored`) の値そのもの。
+    doc.apply(add_key(deformer("Warp"), "X", 2.0)).unwrap();
+    assert_eq!(
+        warp_keys(&doc, "Warp").2,
+        vec![Additive, Derived, Authored, Authored, Authored, Authored]
+    );
+
+    // 中立のキーがない格子では従来どおり: 格子に推定のセルがあれば `derived`。
+    model.parameters[0].default = 0.25;
     let mut doc = Document::new(model);
     doc.apply(add_key(deformer("Warp"), "X", 0.5)).unwrap();
-    use KeyformOrigin::{Additive, Authored, Derived};
     assert_eq!(
         warp_keys(&doc, "Warp").2,
         vec![Additive, Authored, Derived, Authored]
     );
+}
+
+// ---- AddKeyformKey: 組み合わせのセル ----
+
+fn parameter(id: &str) -> Command {
+    Command::AddParameter {
+        parameter: ugoe_model::Parameter {
+            id: id.into(),
+            name: id.into(),
+            min: -1.0,
+            max: 1.0,
+            default: 0.0,
+            kind: Default::default(),
+            mirror: None,
+            group: None,
+        },
+    }
+}
+
+fn warp_grid_of(doc: &Document) -> &ugoe_model::KeyformGrid<WarpKeyform> {
+    match &doc.model().deformers[0].kind {
+        DeformerKind::Warp(w) => &w.keyforms,
+        _ => panic!("not a warp"),
+    }
+}
+
+/// `Warp` のセル (`(パラメータ, 値)` の組で指定) の値と由来。
+fn warp_at(doc: &Document, at: &[(&str, f32)]) -> (WarpKeyform, KeyformOrigin) {
+    let grid = warp_grid_of(doc);
+    let index = crate::grid::cell_index(grid, &cell(at)).unwrap();
+    (grid.keyforms[index].clone(), grid.origin(index))
+}
+
+/// 加算合成の式 `B + Σ Δ_k` (交互作用の項なし) で `at` のセルを作った制御点。
+fn additive_points(doc: &Document, at: &[(&str, f32)]) -> Vec<Vec2> {
+    let neutral = |except: Option<&str>| -> Vec<(&str, f32)> {
+        at.iter()
+            .map(|&(p, v)| (p, if Some(p) == except { v } else { 0.0 }))
+            .collect()
+    };
+    let base = warp_at(doc, &neutral(None)).0.points;
+    let mut points = base.clone();
+    for &(p, v) in at {
+        if v == 0.0 {
+            continue;
+        }
+        let edge = warp_at(doc, &neutral(Some(p))).0.points;
+        for (out, (e, b)) in points.iter_mut().zip(edge.iter().zip(&base)) {
+            *out += *e - *b;
+        }
+    }
+    points
+}
+
+#[track_caller]
+fn assert_points_close(a: &[Vec2], b: &[Vec2]) {
+    for (p, q) in a.iter().zip(b) {
+        assert!((*p - *q).length() < 1e-3, "{p} != {q}");
+    }
+}
+
+/// 2 軸の値の組 (`X`, `Y` を値域で走査)。
+fn two_axes(model: &Model) -> Vec<Vec<(&'static str, f32)>> {
+    let mut values = Vec::new();
+    for x in sweep(model, "X", 8) {
+        for y in sweep(model, "Y", 8) {
+            values.push(vec![("X", x), ("Y", y)]);
+        }
+    }
+    values
+}
+
+/// `warp_grid` (`X` のキー -1, 0, 1 の形が違う 3 セル) に `Y` の軸を加え、キー 0 と 1 を置いたドキュメント。
+fn warp_with_second_axis() -> (Model, Document) {
+    let mut doc = Document::new(fixtures::warp_grid());
+    doc.apply(parameter("Y")).unwrap();
+    let before = doc.model().clone();
+    for key in [0.0, 1.0] {
+        doc.apply(add_key(deformer("Warp"), "Y", key)).unwrap();
+    }
+    (before, doc)
+}
+
+#[test]
+fn second_axis_key_makes_combination_cells_additive() {
+    use KeyformOrigin::{Additive, Authored};
+    let (before, doc) = warp_with_second_axis();
+    assert_same_look(&before, doc.model(), &two_axes(&before));
+    // 1 軸のセル (`Y = 1`) と基準・`X` の端は `authored`、斜め (`X = ±1, Y = 1`) は `additive`。
+    for (x, y, origin) in [
+        (0.0, 0.0, Authored),
+        (-1.0, 0.0, Authored),
+        (1.0, 0.0, Authored),
+        (0.0, 1.0, Authored),
+        (-1.0, 1.0, Additive),
+        (1.0, 1.0, Additive),
+    ] {
+        assert_eq!(warp_at(&doc, &[("X", x), ("Y", y)]).1, origin, "({x}, {y})");
+    }
+    // 推定した値は補間した値 (`Y = 0` の行の写し) と同じ。
+    for x in [-1.0, 1.0] {
+        assert_eq!(
+            warp_at(&doc, &[("X", x), ("Y", 1.0)]).0,
+            warp_at(&doc, &[("X", x), ("Y", 0.0)]).0
+        );
+    }
+}
+
+#[test]
+fn editing_edge_cells_rederives_the_combination_cells() {
+    let (before, mut doc) = warp_with_second_axis();
+    doc.apply(add_key(deformer("Warp"), "Y", -1.0)).unwrap();
+    assert_same_look(&before, doc.model(), &two_axes(&before));
+    // 端のセル `Y = 1` と `X = 1` を編集すると、斜めのセルが同じ Undo 単位で作り直される。
+    let (mut edge, _) = warp_at(&doc, &[("X", 0.0), ("Y", 1.0)]);
+    for (i, p) in edge.points.iter_mut().enumerate() {
+        *p += Vec2::new(3.0, -2.0 + i as f32);
+    }
+    doc.apply(Command::SetKeyformCell {
+        target: deformer("Warp"),
+        cell: cell(&[("X", 0.0), ("Y", 1.0)]),
+        keyform: Keyform::Warp(edge),
+    })
+    .unwrap();
+    let (mut edge, _) = warp_at(&doc, &[("X", 1.0), ("Y", 0.0)]);
+    edge.points[4] += Vec2::new(-5.0, 7.0);
+    doc.apply(Command::SetKeyformCell {
+        target: deformer("Warp"),
+        cell: cell(&[("X", 1.0), ("Y", 0.0)]),
+        keyform: Keyform::Warp(edge),
+    })
+    .unwrap();
+    for x in [-1.0, 1.0] {
+        for y in [-1.0, 1.0] {
+            let at = [("X", x), ("Y", y)];
+            let (value, origin) = warp_at(&doc, &at);
+            assert_eq!(origin, KeyformOrigin::Additive, "({x}, {y})");
+            assert_points_close(&value.points, &additive_points(&doc, &at));
+        }
+    }
+    // 端のセルは `authored` のまま。
+    assert_eq!(
+        warp_at(&doc, &[("X", 0.0), ("Y", 1.0)]).1,
+        KeyformOrigin::Authored
+    );
+}
+
+#[test]
+fn third_axis_key_derives_two_and_three_axis_cells() {
+    use KeyformOrigin::{Additive, Authored};
+    let (_, mut doc) = warp_with_second_axis();
+    doc.apply(parameter("Z")).unwrap();
+    let before = doc.model().clone();
+    for key in [0.0, 1.0] {
+        doc.apply(add_key(deformer("Warp"), "Z", key)).unwrap();
+    }
+    let values: Vec<_> = two_axes(&before)
+        .into_iter()
+        .flat_map(|v| {
+            sweep(&before, "Z", 4).into_iter().map(move |z| {
+                let mut v = v.clone();
+                v.push(("Z", z));
+                v
+            })
+        })
+        .collect();
+    assert_same_look(&before, doc.model(), &values);
+    for (x, y, origin) in [
+        (0.0, 0.0, Authored),
+        (1.0, 0.0, Additive),
+        (0.0, 1.0, Additive),
+        (-1.0, 1.0, Additive),
+    ] {
+        let at = [("X", x), ("Y", y), ("Z", 1.0)];
+        assert_eq!(warp_at(&doc, &at).1, origin, "({x}, {y}, 1)");
+    }
+    // `Z` の端を編集すると、`Z` を含む組み合わせのセル (3 軸を含む) に広がる。
+    let (mut edge, _) = warp_at(&doc, &[("X", 0.0), ("Y", 0.0), ("Z", 1.0)]);
+    edge.points[0] += Vec2::new(10.0, 4.0);
+    doc.apply(Command::SetKeyformCell {
+        target: deformer("Warp"),
+        cell: cell(&[("X", 0.0), ("Y", 0.0), ("Z", 1.0)]),
+        keyform: Keyform::Warp(edge),
+    })
+    .unwrap();
+    for at in [
+        [("X", 1.0), ("Y", 1.0), ("Z", 1.0)],
+        [("X", -1.0), ("Y", 0.0), ("Z", 1.0)],
+    ] {
+        assert_points_close(&warp_at(&doc, &at).0.points, &additive_points(&doc, &at));
+    }
+}
+
+#[test]
+fn combination_cells_keep_the_interpolated_value_when_inference_differs() {
+    use KeyformOrigin::{Additive, Authored};
+    let (_, mut doc) = warp_with_second_axis();
+    doc.apply(add_key(deformer("Warp"), "Y", -1.0)).unwrap();
+    // 斜め (1, 1) を手で直す (交互作用の項を持つ `authored` のセル)。
+    let (mut corner, _) = warp_at(&doc, &[("X", 1.0), ("Y", 1.0)]);
+    corner.points[4] += Vec2::new(0.0, 20.0);
+    doc.apply(Command::SetKeyformCell {
+        target: deformer("Warp"),
+        cell: cell(&[("X", 1.0), ("Y", 1.0)]),
+        keyform: Keyform::Warp(corner),
+    })
+    .unwrap();
+    let before = doc.model().clone();
+    doc.apply(add_key(deformer("Warp"), "X", 0.5)).unwrap();
+    assert_same_look(&before, doc.model(), &two_axes(&before));
+    // (0.5, 1) は直した斜めとの補間なので、加算合成の値と違う → 補間した値の `authored` のまま。
+    // (0.5, -1) は加算合成の値と一致する → `additive`。
+    assert_eq!(warp_at(&doc, &[("X", 0.5), ("Y", 1.0)]).1, Authored);
+    assert_eq!(warp_at(&doc, &[("X", 0.5), ("Y", -1.0)]).1, Additive);
+    assert_eq!(warp_at(&doc, &[("X", 0.5), ("Y", 0.0)]).1, Authored);
+}
+
+#[test]
+fn adding_keys_does_not_rederive_existing_derived_cells() {
+    let (_, mut doc) = warp_with_second_axis();
+    // 斜め (1, 1) を、作り直していない古い値の `additive` のセルにする (ファイルから読んだ場合など)。
+    let mut model = doc.model().clone();
+    let DeformerKind::Warp(w) = &mut model.deformers[0].kind else {
+        panic!()
+    };
+    let index = crate::grid::cell_index(&w.keyforms, &cell(&[("X", 1.0), ("Y", 1.0)])).unwrap();
+    w.keyforms.keyforms[index].points[0] += Vec2::new(9.0, 9.0);
+    let stale = w.keyforms.keyforms[index].clone();
+    doc = Document::new(model.clone());
+    doc.apply(add_key(deformer("Warp"), "X", 0.5)).unwrap();
+    doc.apply(add_key(deformer("Warp"), "Y", -1.0)).unwrap();
+    assert_same_look(&model, doc.model(), &two_axes(&model));
+    // 既存のセルはそのまま。古い値との補間になる (0.5, 1) は推定と合わないので、元の由来から `derived`。
+    assert_eq!(
+        warp_at(&doc, &[("X", 1.0), ("Y", 1.0)]),
+        (stale, KeyformOrigin::Additive)
+    );
+    assert_eq!(
+        warp_at(&doc, &[("X", 0.5), ("Y", 1.0)]).1,
+        KeyformOrigin::Derived
+    );
+}
+
+#[test]
+fn grids_without_a_neutral_key_keep_new_cells_authored() {
+    // `Y` のキーが 0.5 と 1 (既定値 0 のキーがない) なら、組み合わせのセルも補間した値の `authored`。
+    let mut doc = Document::new(fixtures::warp_grid());
+    doc.apply(parameter("Y")).unwrap();
+    let before = doc.model().clone();
+    for key in [0.5, 1.0] {
+        doc.apply(add_key(deformer("Warp"), "Y", key)).unwrap();
+    }
+    assert_same_look(&before, doc.model(), &two_axes(&before));
+    assert!(warp_grid_of(&doc).origins.is_empty());
 }
 
 #[test]

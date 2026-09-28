@@ -13,6 +13,7 @@ use ugoe_model::{
 };
 
 use crate::automesh::AutoMeshOptions;
+use crate::depth::DepthPreset;
 use crate::keyform::Keyform;
 
 /// キーフォーム格子の 1 セルの指定: 軸のパラメータ ID → その軸のキーの値。
@@ -355,6 +356,20 @@ pub enum Command {
         mirror: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         axis: Option<f32>,
+    },
+    /// メッシュ (頂点ごと) またはワープデフォーマ (制御点ごと) の深度を置き換える (`None` で外す)。
+    /// 長さは点の数と同じで、値は有限 (キャンバスのピクセル単位、手前が正)。深度からの回転のセルは
+    /// 新しい深度で作り直す (`docs/spec/keyform-inference.md#深度の入力`)。
+    SetDepth {
+        target: ChildRef,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        depth: Option<Vec<f32>>,
+    },
+    /// プリセット (一様・ドーム・選んだ点の値) で深度を作り、`SetDepth` と同じく置き換える。
+    /// 式は `docs/editor.md#深度の編集`。
+    ApplyDepthPreset {
+        target: ChildRef,
+        preset: DepthPreset,
     },
 }
 

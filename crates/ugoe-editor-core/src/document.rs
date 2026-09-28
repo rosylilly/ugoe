@@ -14,7 +14,7 @@ use crate::grid::{self, CellError};
 use crate::inference::RederiveWarning;
 use crate::texture::{Textures, is_valid_texture_name, png_size};
 use crate::{Command, automesh, inference, keyform};
-use crate::{deformer_edit, mesh_edit};
+use crate::{deformer_edit, depth, mesh_edit};
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum EditError {
@@ -98,6 +98,23 @@ pub enum EditError {
     /// デフォーマの作成・付け替え・セルの編集ができない (子がない、循環する、座標を写せないなど)。
     #[error("deformer edit failed: {reason}")]
     DeformerEdit { reason: String },
+    /// 深度の長さが要素の点 (頂点・制御点) の数と違う。
+    #[error("{target}: depth has {actual} values but the element has {expected} points")]
+    DepthLength {
+        target: String,
+        expected: usize,
+        actual: usize,
+    },
+    /// 深度に有限でない値がある。
+    #[error("{target}: depth value {value} is not finite")]
+    NonFiniteDepth { target: String, value: f32 },
+    /// 深度を設定する点の番号が範囲外。
+    #[error("{target}: point {index} out of range (points = {points})")]
+    DepthPointOutOfRange {
+        target: String,
+        index: u32,
+        points: usize,
+    },
     /// 左右の対 (`mirror`) を持てない要素 (パーツ・グルー)。
     #[error("{target}: only meshes and deformers have mirror pairs")]
     MirrorPairNotSupported { target: String },
@@ -599,6 +616,13 @@ fn apply_to(
             element,
             new_parent,
         } => deformer_edit::reparent(model, &element, new_parent.as_ref(), touched)?,
+        // 深度は深度からの回転の入力なので、その格子の `derived` のセルを作り直す。
+        Command::SetDepth { target, depth } => {
+            touched.push(depth::set_depth(model, &target, depth)?);
+        }
+        Command::ApplyDepthPreset { target, preset } => {
+            touched.push(depth::apply_preset(model, &target, &preset)?);
+        }
     }
     Ok(())
 }

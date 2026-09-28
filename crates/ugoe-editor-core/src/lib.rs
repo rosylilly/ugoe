@@ -8,6 +8,7 @@ pub mod automesh;
 pub mod codegen;
 pub mod command;
 mod deformer_edit;
+pub mod depth;
 pub mod document;
 mod grid;
 pub mod ids;
@@ -21,6 +22,7 @@ pub mod texture;
 
 pub use automesh::AutoMeshOptions;
 pub use command::{ChildRef, Command, InferMethod, KeyformCell, KeyformTarget, VertexMove};
+pub use depth::DepthPreset;
 pub use document::{ApplyReport, Document, EditError};
 pub use grid::CellError;
 pub use import::{PsdImport, PsdImportError, PsdImportOptions, PsdImportWarning, import_psd};
@@ -31,6 +33,8 @@ pub use texture::Textures;
 
 #[cfg(test)]
 mod deformer_edit_tests;
+#[cfg(test)]
+mod depth_tests;
 #[cfg(test)]
 mod import_tests;
 #[cfg(test)]

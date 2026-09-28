@@ -33,6 +33,8 @@ export class ViewportController {
   transform = $state<ViewTransform | null>(null);
   /** canvas を作り直すたびに増える (Viewport.svelte が {#key} に使う)。 */
   generation = $state(0);
+  /** 選択中のメッシュ・ワープの深度を色の点で重ねるか (インスペクタの深度の節で切り替える)。 */
+  showDepth = $state(false);
 
   #puppet: WebPuppet | null = null;
   #model: ViewportModel | null = null;

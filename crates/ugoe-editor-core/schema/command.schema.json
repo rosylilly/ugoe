@@ -1268,6 +1268,54 @@
         "op",
         "target"
       ]
+    },
+    {
+      "description": "メッシュ (頂点ごと) またはワープデフォーマ (制御点ごと) の深度を置き換える (`None` で外す)。\n長さは点の数と同じで、値は有限 (キャンバスのピクセル単位、手前が正)。深度からの回転のセルは\n新しい深度で作り直す (`docs/spec/keyform-inference.md#深度の入力`)。",
+      "type": "object",
+      "properties": {
+        "depth": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "float"
+          }
+        },
+        "op": {
+          "type": "string",
+          "const": "set_depth"
+        },
+        "target": {
+          "$ref": "#/$defs/ChildRef"
+        }
+      },
+      "required": [
+        "op",
+        "target"
+      ]
+    },
+    {
+      "description": "プリセット (一様・ドーム・選んだ点の値) で深度を作り、`SetDepth` と同じく置き換える。\n式は `docs/editor.md#深度の編集`。",
+      "type": "object",
+      "properties": {
+        "op": {
+          "type": "string",
+          "const": "apply_depth_preset"
+        },
+        "preset": {
+          "$ref": "#/$defs/DepthPreset"
+        },
+        "target": {
+          "$ref": "#/$defs/ChildRef"
+        }
+      },
+      "required": [
+        "op",
+        "target",
+        "preset"
+      ]
     }
   ],
   "$defs": {
@@ -1436,6 +1484,74 @@
           "$ref": "#/$defs/RotationDeformer",
           "required": [
             "type"
+          ]
+        }
+      ]
+    },
+    "DepthPreset": {
+      "description": "[`crate::Command::ApplyDepthPreset`] の深度の作り方。JSON では `{\"kind\": \"dome\", \"peak\": 20}` と書く。",
+      "oneOf": [
+        {
+          "description": "すべての点を同じ深度 `value` にする ([`uniform_depth`])。",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "uniform"
+            },
+            "value": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "基準の姿の外接矩形に内接する楕円の上に、中心の深度が `peak` の半球のふくらみを作る\n([`dome_depth`])。楕円の外の点は 0。",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "dome"
+            },
+            "peak": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          "required": [
+            "kind",
+            "peak"
+          ]
+        },
+        {
+          "description": "点 `indices` (頂点・制御点の番号) の深度を `value` にし、他の点は今の深度 (なければ 0) のまま\nにする ([`points_depth`])。",
+          "type": "object",
+          "properties": {
+            "indices": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "points"
+            },
+            "value": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          "required": [
+            "kind",
+            "indices",
+            "value"
           ]
         }
       ]

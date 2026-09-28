@@ -20,7 +20,7 @@ use ugoe_model::{
 };
 
 use crate::command::{ChildRef, InferMethod, KeyformTarget};
-use crate::{AutoMeshOptions, Command, Keyform, KeyformCell, VertexMove};
+use crate::{AutoMeshOptions, Command, DepthPreset, Keyform, KeyformCell, VertexMove};
 
 /// チェックインした `Command` の JSON Schema (`schema/command.schema.json`)。AI のツール定義に使う。
 /// [`command_schema_json`] の出力と同じであることをテストで確かめる。
@@ -417,6 +417,29 @@ fn sample_commands() -> Vec<Command> {
             target: KeyformTarget::Deformer(deformers[0].id.clone()),
             mirror: None,
             axis: None,
+        },
+        Command::SetDepth {
+            target: ChildRef::Mesh(mesh_id.clone()),
+            depth: Some(vec![0.0, 4.0, 12.0, 4.0]),
+        },
+        Command::SetDepth {
+            target: ChildRef::Deformer(deformers[0].id.clone()),
+            depth: None,
+        },
+        Command::ApplyDepthPreset {
+            target: ChildRef::Mesh(mesh_id.clone()),
+            preset: DepthPreset::Uniform { value: 2.0 },
+        },
+        Command::ApplyDepthPreset {
+            target: ChildRef::Deformer(deformers[0].id.clone()),
+            preset: DepthPreset::Dome { peak: 20.0 },
+        },
+        Command::ApplyDepthPreset {
+            target: ChildRef::Mesh(mesh_id.clone()),
+            preset: DepthPreset::Points {
+                indices: vec![0, 2],
+                value: 8.0,
+            },
         },
         Command::RetriangulateMesh { id: mesh_id },
     ])
