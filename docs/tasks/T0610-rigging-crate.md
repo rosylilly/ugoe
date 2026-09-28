@@ -1,11 +1,11 @@
 ---
 id: T0610
 title: ugoe-rigging クレートと加算合成
-status: todo
+status: in-progress
 milestone: M2
 crates: [ugoe-rigging (新規), scripts/check-layers.mjs, commitlint.config.mjs, docs/architecture.md]
 depends_on: [T0108]
-assignee:
+assignee: claude-worker-T0610
 ---
 
 # T0610: ugoe-rigging クレートと加算合成

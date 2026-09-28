@@ -1,11 +1,11 @@
 ---
 id: T0109
 title: 前方互換: 機能の宣言と未知の値の読み込み
-status: todo
+status: in-progress
 milestone: M2
 crates: [ugoe-model, ugoe-format, ugoe-runtime, ugoe-render]
 depends_on: []
-assignee:
+assignee: claude-worker-T0109
 ---
 
 # T0109: 前方互換: 機能の宣言と未知の値の読み込み
