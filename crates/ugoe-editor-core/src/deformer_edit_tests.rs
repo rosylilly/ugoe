@@ -378,6 +378,28 @@ fn reparent_mesh_between_rotations_keeps_look_at_every_pose() {
 }
 
 #[test]
+fn reparent_mesh_into_unknown_deformer_uses_its_known_ancestor() {
+    // 未知の種類のデフォーマは恒等変換なので、その座標系は祖先の既知のデフォーマ (Arm) のもの。
+    let mut model = fixtures::rotation_chain();
+    model.deformers.push(Deformer {
+        id: "Future".into(),
+        name: "Future".into(),
+        part: deformer(&model, "Arm").part.clone(),
+        parent: Some("Arm".into()),
+        kind: DeformerKind::Unknown,
+        mirror: None,
+        mirror_axis: None,
+    });
+    let after = applied(&model, reparent(mesh("Palm"), Some("Future")));
+    assert_eq!(mesh_parent(&after, "Palm").as_deref(), Some("Future"));
+    assert_same_look(
+        &model,
+        &after,
+        &[REST, &[("Angle", -30.0)], &[("Angle", 30.0)]],
+    );
+}
+
+#[test]
 fn reparent_mesh_out_of_warp_keeps_rest_look() {
     let model = fixtures::rotation_chain();
     let after = applied(&model, reparent(mesh("Sleeve"), None));

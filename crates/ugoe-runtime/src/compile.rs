@@ -207,6 +207,19 @@ impl CompiledModel {
         &self.model
     }
 
+    /// ID が `id` のデフォーマの添字 (`Model::deformers` のインデックス)。
+    pub fn deformer_index(&self, id: &str) -> Option<usize> {
+        self.model
+            .deformers
+            .iter()
+            .position(|d| d.id.as_str() == id)
+    }
+
+    /// ID が `id` のメッシュの添字 (`Model::meshes` のインデックス、`drawables` と同じ並び)。
+    pub fn mesh_index(&self, id: &str) -> Option<usize> {
+        self.model.meshes.iter().position(|m| m.id.as_str() == id)
+    }
+
     /// デフォーマの評価順 (親が先のトポロジカル順、`Model::deformers` のインデックス)。
     pub fn deformer_order(&self) -> &[u32] {
         &self.deformer_order

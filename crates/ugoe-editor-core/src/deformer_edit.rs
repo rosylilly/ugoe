@@ -2,24 +2,21 @@
 //! 設計と式は `docs/editor.md#デフォーマの編集`。
 //!
 //! 作成と付け替えは **既定値のパラメータ** で評価した姿 (以下「基準の姿」) を基準にする。
-//! 基準の姿での各デフォーマのワールド変換 ([`Frame`]) をランタイムの評価 (評価用のメッシュを足した
-//! モデルの複製) から作り、子のキーフォームの局所座標を `新しい親⁻¹ ∘ 古い親` で写し直す。
+//! 基準の姿での各デフォーマのワールド変換 ([`Frame`]) をランタイムが評価したもの
+//! ([`ugoe_runtime::WorldTransform`]) から作り、子のキーフォームの局所座標を `新しい親⁻¹ ∘ 古い親` で写し直す。
 
 use std::collections::HashMap;
 
-use ugoe_core::{Affine2, Mat2, Rgb, Vec2};
+use ugoe_core::{Affine2, Mat2, Vec2};
 use ugoe_model::deformer::{
     DeformerKind, RotationDeformer, RotationKeyform, WarpDeformer, WarpKeyform,
 };
-use ugoe_model::mesh::MeshKeyform;
-use ugoe_model::{
-    BlendMode, Deformer, DeformerId, KeyformGrid, MaskMode, Mesh, MeshId, Model, PartId, TextureRef,
-};
-use ugoe_runtime::{CompiledModel, ModelInstance};
+use ugoe_model::{Deformer, DeformerId, KeyformGrid, MeshId, Model, PartId};
+use ugoe_runtime::{CompiledModel, ModelInstance, WorldTransform};
 
 use crate::EditError;
 use crate::command::{ChildRef, KeyformTarget};
-use crate::ids::{new_deformer_id, new_mesh_id};
+use crate::ids::new_deformer_id;
 
 /// ワープの行数・列数の上限 (制御点の数が大きくなりすぎないように)。
 pub const MAX_WARP_DIVISIONS: u16 = 64;
@@ -28,8 +25,6 @@ const MARGIN: f32 = 0.05;
 /// ワープの逆写像の許容誤差 (キャンバスのピクセル)。
 const INVERSE_TOLERANCE: f32 = 1e-3;
 const MAX_ITERATIONS: usize = 64;
-/// 親がワープの回転デフォーマの向きを求める差分の幅 (UV 単位、`docs/spec/evaluation.md` の ε)。
-const ROTATION_EPSILON: f32 = 0.01;
 
 fn failed(reason: impl Into<String>) -> EditError {
     EditError::DeformerEdit {
@@ -47,7 +42,9 @@ fn not_found(kind: &'static str, id: &impl ToString) -> EditError {
 // ---- ワールド変換 ----
 
 /// 基準の姿での、ある座標系 (デフォーマの局所座標) からキャンバス座標への写像。
-/// `docs/spec/evaluation.md#3-デフォーマのワールド変換` と同じ式。
+/// 写像とその微分はランタイムの [`WorldTransform`] で求める
+/// (`docs/spec/evaluation.md#デフォーマのワールド変換を読む`)。ここでは作ろうとしている
+/// デフォーマの写像も持てるように、制御点を所有する。
 #[derive(Debug, Clone)]
 pub(crate) enum Frame {
     /// 親なし (キャンバス座標そのもの)。
@@ -62,53 +59,22 @@ pub(crate) enum Frame {
     },
 }
 
-fn lerp(a: Vec2, b: Vec2, t: f32) -> Vec2 {
-    a + (b - a) * t
-}
-
 impl Frame {
-    fn warp_point(points: &[Vec2], cols: usize, x: usize, y: usize) -> Vec2 {
-        points[y * (cols + 1) + x]
-    }
-
-    /// 四隅から作ったアフィン近似の u 方向・v 方向の軸と、`(0, 0)` の角。
-    fn warp_axes(points: &[Vec2], cols: usize, rows: usize) -> (Vec2, Vec2, Vec2) {
-        let c00 = Self::warp_point(points, cols, 0, 0);
-        let c10 = Self::warp_point(points, cols, cols, 0);
-        let c01 = Self::warp_point(points, cols, 0, rows);
-        let c11 = Self::warp_point(points, cols, cols, rows);
-        (
-            c00,
-            ((c10 - c00) + (c11 - c01)) * 0.5,
-            ((c01 - c00) + (c11 - c10)) * 0.5,
-        )
+    /// ランタイムの写像。ワープの制御点の数が合わなければ (作らないので起きない) 恒等写像。
+    fn world(&self) -> WorldTransform<'_> {
+        match self {
+            Frame::Identity => WorldTransform::IDENTITY,
+            Frame::Affine(a) => WorldTransform::from_affine(*a),
+            Frame::Warp { points, cols, rows } => {
+                WorldTransform::from_warp_points(points, *cols, *rows)
+                    .unwrap_or(WorldTransform::IDENTITY)
+            }
+        }
     }
 
     /// 局所座標 → キャンバス座標。
     pub(crate) fn map(&self, p: Vec2) -> Vec2 {
-        match self {
-            Frame::Identity => p,
-            Frame::Affine(a) => a.transform_point2(p),
-            Frame::Warp { points, cols, rows } => {
-                let (cols, rows) = (*cols, *rows);
-                let c = p.clamp(Vec2::ZERO, Vec2::ONE);
-                let gx = c.x * cols as f32;
-                let gy = c.y * rows as f32;
-                let i = (gx.floor().max(0.0) as usize).min(cols - 1);
-                let j = (gy.floor().max(0.0) as usize).min(rows - 1);
-                let (fx, fy) = (gx - i as f32, gy - j as f32);
-                let at = |x, y| Self::warp_point(points, cols, x, y);
-                let top = lerp(at(i, j), at(i + 1, j), fx);
-                let bottom = lerp(at(i, j + 1), at(i + 1, j + 1), fx);
-                let base = lerp(top, bottom, fy);
-                if c == p {
-                    return base;
-                }
-                let (_, au, av) = Self::warp_axes(points, cols, rows);
-                let d = p - c;
-                base + au * d.x + av * d.y
-            }
-        }
+        self.world().point(p)
     }
 
     /// キャンバス座標 → 局所座標 ([`Frame::map`] の逆)。ワープはニュートン法で解く
@@ -123,9 +89,12 @@ impl Frame {
                 }
                 Ok(a.inverse().transform_point2(w))
             }
-            Frame::Warp { points, cols, rows } => {
-                let (c00, au, av) = Self::warp_axes(points, *cols, *rows);
-                let m = Mat2::from_cols(au, av);
+            Frame::Warp { cols, rows, .. } => {
+                // 四隅から作ったアフィン近似 (範囲外の外挿の軸)。両方向にはみ出した点での
+                // ヤコビ行列の列がちょうどその軸になる。
+                let world = self.world();
+                let c00 = world.point(Vec2::ZERO);
+                let m = world.jacobian(Vec2::splat(-1.0));
                 let mut starts = Vec::new();
                 if m.determinant().abs() > 1e-12 {
                     starts.push(m.inverse() * (w - c00));
@@ -141,7 +110,7 @@ impl Frame {
                 }
                 starts
                     .into_iter()
-                    .find_map(|start| self.newton(w, start))
+                    .find_map(|start| newton(&world, w, start))
                     .ok_or_else(|| {
                         format!(
                             "cannot map ({}, {}) into the warp deformer (the grid is degenerate)",
@@ -152,76 +121,56 @@ impl Frame {
         }
     }
 
-    /// 点 `p` での写像のヤコビ行列 (中心差分)。
-    fn jacobian(&self, p: Vec2) -> Mat2 {
-        let h = 1e-3;
-        let (dx, dy) = (Vec2::new(h, 0.0), Vec2::new(0.0, h));
-        Mat2::from_cols(
-            (self.map(p + dx) - self.map(p - dx)) / (2.0 * h),
-            (self.map(p + dy) - self.map(p - dy)) / (2.0 * h),
-        )
-    }
-
-    /// `map(uv) = w` をニュートン法 (残差が減らなければ歩幅を半分にする) で解く。
-    fn newton(&self, w: Vec2, start: Vec2) -> Option<Vec2> {
-        let mut uv = start;
-        let mut residual = self.map(uv) - w;
-        for _ in 0..MAX_ITERATIONS {
-            if residual.length() <= INVERSE_TOLERANCE {
-                return Some(uv);
-            }
-            let j = self.jacobian(uv);
-            let det = j.determinant();
-            if !det.is_finite() || det.abs() < 1e-12 {
-                return None;
-            }
-            let step = j.inverse() * residual;
-            let mut t = 1.0;
-            loop {
-                let next = uv - step * t;
-                let r = self.map(next) - w;
-                if r.length() < residual.length() {
-                    (uv, residual) = (next, r);
-                    break;
-                }
-                t *= 0.5;
-                if t < 1e-4 {
-                    return (residual.length() <= INVERSE_TOLERANCE).then_some(uv);
-                }
-            }
-        }
-        (residual.length() <= INVERSE_TOLERANCE).then_some(uv)
-    }
-
     /// この座標系を親に持つ回転デフォーマの、原点 `origin` での親の線形部分。
     /// ワールドの線形部分は `rotation_linear(origin) · R(angle) · S` になる
     /// (親が回転ならアフィンの線形部分、ワープなら向き δ の回転)。
     pub(crate) fn rotation_linear(&self, origin: Vec2) -> Mat2 {
-        match self {
-            Frame::Identity => Mat2::IDENTITY,
-            Frame::Affine(a) => a.matrix2,
-            Frame::Warp { .. } => {
-                let o = self.map(origin);
-                let up = self.map(origin + Vec2::new(0.0, -ROTATION_EPSILON)) - o;
-                Mat2::from_angle(up.x.atan2(-up.y))
-            }
-        }
+        self.rotation_child(&RotationKeyform {
+            origin,
+            angle: 0.0,
+            scale: 1.0,
+            reflect_x: false,
+            reflect_y: false,
+            opacity: 1.0,
+        })
+        .matrix2
     }
 
     /// この座標系を親に持つ回転デフォーマのワールド変換。
     fn rotation_child(&self, keyform: &RotationKeyform) -> Affine2 {
-        Affine2::from_mat2_translation(
-            self.rotation_linear(keyform.origin) * rotation_matrix(keyform),
-            self.map(keyform.origin),
-        )
+        self.world().rotation_child(keyform)
     }
 }
 
-/// `R(angle) · S` (`docs/spec/evaluation.md` の回転デフォーマ)。
-fn rotation_matrix(k: &RotationKeyform) -> Mat2 {
-    let sx = if k.reflect_x { -k.scale } else { k.scale };
-    let sy = if k.reflect_y { -k.scale } else { k.scale };
-    Mat2::from_angle(k.angle.to_radians()) * Mat2::from_diagonal(Vec2::new(sx, sy))
+/// `world.point(uv) = w` をニュートン法 (残差が減らなければ歩幅を半分にする) で解く。
+fn newton(world: &WorldTransform<'_>, w: Vec2, start: Vec2) -> Option<Vec2> {
+    let mut uv = start;
+    let mut residual = world.point(uv) - w;
+    for _ in 0..MAX_ITERATIONS {
+        if residual.length() <= INVERSE_TOLERANCE {
+            return Some(uv);
+        }
+        let j = world.jacobian(uv);
+        let det = j.determinant();
+        if !det.is_finite() || det.abs() < 1e-12 {
+            return None;
+        }
+        let step = j.inverse() * residual;
+        let mut t = 1.0;
+        loop {
+            let next = uv - step * t;
+            let r = world.point(next) - w;
+            if r.length() < residual.length() {
+                (uv, residual) = (next, r);
+                break;
+            }
+            t *= 0.5;
+            if t < 1e-4 {
+                return (residual.length() <= INVERSE_TOLERANCE).then_some(uv);
+            }
+        }
+    }
+    (residual.length() <= INVERSE_TOLERANCE).then_some(uv)
 }
 
 // ---- 基準の姿 ----
@@ -233,92 +182,44 @@ pub(crate) struct Rest {
 }
 
 impl Rest {
-    /// モデルに評価用のメッシュを足し、既定値のパラメータで 1 回評価して作る。
-    ///
-    /// - ワープ: 制御点 (と同じ格子) を頂点とするメッシュを親の下に置くと、出力がキャンバス座標の制御点になる。
-    /// - 回転デフォーマ: `(0,0)`・`(1,0)`・`(0,1)` を頂点とするメッシュを子に置くと、アフィン変換が分かる。
+    /// モデルを既定値のパラメータで 1 回評価し、ランタイムが評価したワールド変換を読んで作る。
     pub(crate) fn new(model: &Model) -> Result<Self, EditError> {
-        let mut probed = model.clone();
-        if probed.textures.is_empty() {
-            probed.textures.push(TextureRef {
-                name: "__ugoe_probe".into(),
-                width: 1,
-                height: 1,
-            });
-        }
-        let first = probed.meshes.len();
-        let mut probes = Vec::new();
-        for d in &model.deformers {
-            let (parent, keyforms) = match &d.kind {
-                DeformerKind::Warp(w) => (
-                    d.parent.clone(),
-                    KeyformGrid::new(
-                        w.keyforms.bindings.clone(),
-                        w.keyforms
-                            .keyforms
-                            .iter()
-                            .map(|k| probe_keyform(k.points.clone()))
-                            .collect(),
-                    ),
-                ),
-                DeformerKind::Rotation(_) => (
-                    Some(d.id.clone()),
-                    KeyformGrid::constant(probe_keyform(vec![Vec2::ZERO, Vec2::X, Vec2::Y])),
-                ),
-                DeformerKind::Unknown => continue,
-            };
-            let id = new_mesh_id(&probed, "__ugoe_deformer_probe");
-            probed
-                .meshes
-                .push(probe_mesh(id, d.part.clone(), parent, keyforms));
-            probes.push(d);
-        }
-        let compiled = CompiledModel::compile(probed)
+        let compiled = CompiledModel::compile(model.clone())
             .map_err(|e| failed(format!("the model cannot be evaluated: {e}")))?;
         let instance = ModelInstance::new(compiled);
-        let drawables = instance.drawables();
-
         let meshes = model
             .meshes
             .iter()
-            .zip(drawables)
+            .zip(instance.drawables())
             .map(|(m, d)| (m.id.clone(), d.positions.clone()))
             .collect();
-        let mut own: HashMap<DeformerId, Frame> = HashMap::new();
-        for (d, out) in probes.into_iter().zip(&drawables[first..]) {
-            let p = &out.positions;
-            let frame = match &d.kind {
-                DeformerKind::Warp(w) => Frame::Warp {
-                    points: p.clone(),
-                    cols: usize::from(w.cols),
-                    rows: usize::from(w.rows),
-                },
-                _ => Frame::Affine(Affine2::from_mat2_translation(
-                    Mat2::from_cols(p[1] - p[0], p[2] - p[0]),
-                    p[0],
-                )),
-            };
-            own.insert(d.id.clone(), frame);
-        }
-        // 未知の種類のデフォーマは恒等変換なので、ワールド変換は祖先の既知のデフォーマのもの。
-        let mut frames = HashMap::new();
-        for d in &model.deformers {
-            let mut current = Some(&d.id);
-            let mut frame = Frame::Identity;
-            for _ in 0..=model.deformers.len() {
-                let Some(id) = current else { break };
-                if let Some(f) = own.get(id) {
-                    frame = f.clone();
-                    break;
-                }
-                current = model
-                    .deformers
-                    .iter()
-                    .find(|x| &x.id == id)
-                    .and_then(|x| x.parent.as_ref());
-            }
-            frames.insert(d.id.clone(), frame);
-        }
+        // 既知の種類のデフォーマ `i` のワールド変換。
+        let known = |i: usize| match &model.deformers[i].kind {
+            DeformerKind::Warp(w) => Frame::Warp {
+                points: instance.warp_world_points(i).unwrap_or_default().to_vec(),
+                cols: usize::from(w.cols),
+                rows: usize::from(w.rows),
+            },
+            _ => Frame::Affine(
+                instance
+                    .rotation_world_frame(i)
+                    .unwrap_or(Affine2::IDENTITY),
+            ),
+        };
+        let frames = model
+            .deformers
+            .iter()
+            .enumerate()
+            .map(|(i, d)| {
+                // 未知の種類のデフォーマは恒等変換なので、ワールド変換は祖先の既知のデフォーマのもの。
+                let frame = if matches!(d.kind, DeformerKind::Unknown) {
+                    ancestor_known(model, d.parent.as_ref()).map_or(Frame::Identity, known)
+                } else {
+                    known(i)
+                };
+                (d.id.clone(), frame)
+            })
+            .collect();
         Ok(Self { frames, meshes })
     }
 
@@ -331,43 +232,20 @@ impl Rest {
     }
 }
 
-fn probe_keyform(positions: Vec<Vec2>) -> MeshKeyform {
-    MeshKeyform {
-        positions,
-        opacity: 1.0,
-        draw_order: 0.0,
-        multiply_color: Rgb::WHITE,
-        screen_color: Rgb::BLACK,
-        mask_strength: 1.0,
+/// `from` とその祖先のうち、最も近い既知の種類 (ワープ・回転) のデフォーマの添字。
+fn ancestor_known(model: &Model, from: Option<&DeformerId>) -> Option<usize> {
+    let mut current = from;
+    for _ in 0..=model.deformers.len() {
+        let i = model
+            .deformers
+            .iter()
+            .position(|d| Some(&d.id) == current)?;
+        if !matches!(model.deformers[i].kind, DeformerKind::Unknown) {
+            return Some(i);
+        }
+        current = model.deformers[i].parent.as_ref();
     }
-}
-
-/// 評価用の、描画に関わらないメッシュ (三角形なし)。
-fn probe_mesh(
-    id: MeshId,
-    part: PartId,
-    parent: Option<DeformerId>,
-    keyforms: KeyformGrid<MeshKeyform>,
-) -> Mesh {
-    let n = keyforms.keyforms.first().map_or(0, |k| k.positions.len());
-    Mesh {
-        name: id.to_string(),
-        id,
-        part,
-        parent,
-        texture: 0,
-        uvs: vec![Vec2::ZERO; n],
-        indices: Vec::new(),
-        blend: BlendMode::Normal,
-        culling: false,
-        masks: Vec::new(),
-        mask_mode: MaskMode::Union,
-        mask_only: true,
-        keyforms,
-        mirror: None,
-        mirror_axis: None,
-        depth: None,
-    }
+    None
 }
 
 // ---- 木の上の関係 ----

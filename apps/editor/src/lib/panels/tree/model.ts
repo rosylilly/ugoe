@@ -1,47 +1,39 @@
-// ツリーが読むモデルの JSON の一部 (ugoe_model の型のうち、ツリーの表示と編集に要るフィールドだけ)。
-// 仕様は docs/spec/model.md。TODO(T0603): ts-rs で生成した型に置き換える。
+// ツリーが読むモデルの JSON の一部。生成した型 (ugoe_model、lib/generated/types.ts) から、
+// ツリーの表示と編集に要るフィールドだけを取り出して組み立てる。仕様は docs/spec/model.md。
+import type {
+  Deformer,
+  DeformerKind,
+  KeyformGrid as FullKeyformGrid,
+  Mesh,
+  MeshKeyform,
+  Parameter,
+  Part,
+  PartKeyform,
+  RotationKeyform,
+  WarpKeyform,
+} from "../../generated/types";
 
-export interface KeyformBinding {
-  parameter: string;
-  keys: number[];
-}
+/** キーフォーム格子のうち、ツリーが読む部分 (軸は省略できる: 軸なしの定数格子)。 */
+export type KeyformGrid<T> = Pick<FullKeyformGrid<T>, "keyforms"> &
+  Partial<Pick<FullKeyformGrid<T>, "bindings">>;
 
-export interface KeyformGrid<T> {
-  bindings?: KeyformBinding[];
-  keyforms: T[];
-}
+export type TreeParameter = Pick<Parameter, "id" | "default">;
 
-export interface TreeParameter {
-  id: string;
-  default: number;
-}
+export type TreePart = Pick<Part, "id" | "name" | "parent"> & {
+  keyforms: KeyformGrid<PartKeyform>;
+};
 
-export interface TreePart {
-  id: string;
-  name: string;
-  parent: string | null;
-  keyforms: KeyformGrid<{ opacity: number }>;
-}
-
-export interface TreeDeformer {
-  id: string;
-  name: string;
-  part: string;
-  parent: string | null;
+export type TreeDeformer = Pick<Deformer, "id" | "name" | "part" | "parent"> & {
   /** `warp` / `rotation` (知らない種類は読み込み時に `Unknown` になり、書き出されない)。 */
-  kind: { type: string };
-  keyforms?: KeyformGrid<{ opacity?: number }>;
-}
+  kind: Pick<DeformerKind, "type">;
+  /** `kind` の中のキーフォーム (`parseTreeModel` が取り出す)。 */
+  keyforms?: KeyformGrid<Pick<WarpKeyform | RotationKeyform, "opacity">>;
+};
 
-export interface TreeMesh {
-  id: string;
-  name: string;
-  part: string;
-  parent: string | null;
-  mask_only?: boolean;
-  masks?: { mesh: string; invert?: boolean }[];
-  keyforms: KeyformGrid<{ opacity: number; draw_order: number }>;
-}
+export type TreeMesh = Pick<Mesh, "id" | "name" | "part" | "parent"> &
+  Partial<Pick<Mesh, "mask_only" | "masks">> & {
+    keyforms: KeyformGrid<Pick<MeshKeyform, "opacity" | "draw_order">>;
+  };
 
 export interface TreeModel {
   parameters: TreeParameter[];

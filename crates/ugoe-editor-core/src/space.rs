@@ -2,19 +2,15 @@
 //!
 //! ビューポートでの編集はキャンバス座標で行うが、キーフォームの頂点・制御点・原点は親の座標系
 //! (親なしならキャンバス座標、親がワープなら UV 空間、回転デフォーマなら原点を (0,0) とした座標)
-//! で表す。親のワールド変換はランタイムの評価 (`ugoe-runtime`) と同じものを使うため、
-//! 親の祖先だけを残したモデルに点を頂点とする仮のメッシュを置いて評価する。
-//! 逆変換 (キャンバス座標 → 親の座標系) はニュートン法で求める。
+//! で表す。親のワールド変換は、親の祖先だけを残したモデルをランタイム (`ugoe-runtime`) で評価し、
+//! ランタイムが公開するワールド変換 ([`WorldTransform`]) をそのまま使う。
+//! 逆変換 (キャンバス座標 → 親の座標系) は、その写像と解析的なヤコビ行列でニュートン法を解く。
 
 use std::collections::BTreeMap;
 
 pub use ugoe_core::Vec2;
-use ugoe_core::{Mat2, Rgb};
-use ugoe_model::mesh::MeshKeyform;
-use ugoe_model::{
-    BlendMode, DeformerId, KeyformGrid, MaskMode, Mesh, Model, ParamId, Part, TextureRef,
-};
-use ugoe_runtime::{CompiledModel, ModelInstance};
+use ugoe_model::{DeformerId, Model, ParamId};
+use ugoe_runtime::{CompiledModel, ModelInstance, WorldTransform};
 
 use crate::command::KeyformTarget;
 
@@ -51,7 +47,9 @@ pub fn local_to_canvas(
     values: &ParameterValues,
     points: &[Vec2],
 ) -> Result<Vec<Vec2>, SpaceError> {
-    ParentSpace::new(model, target, values)?.map(points)
+    let space = ParentSpace::new(model, target, values)?;
+    let world = space.world();
+    Ok(points.iter().map(|&p| world.point(p)).collect())
 }
 
 /// キャンバス座標の点 `points` を、`target` の要素の親の座標系に写す (`local_to_canvas` の逆)。
@@ -72,30 +70,19 @@ pub fn canvas_to_local(
         });
     }
     let space = ParentSpace::new(model, target, values)?;
-    if space.probe.is_none() {
+    let world = space.world();
+    if world.is_identity() {
         return Ok(points.to_vec());
     }
     let mut x = guesses.to_vec();
     for _ in 0..MAX_ITERATIONS {
-        // 各点について、点とその x・y 方向に少しずらした点を評価し、差分でヤコビアンを作る。
-        let steps: Vec<f32> = x
-            .iter()
-            .map(|p| 1e-2 * p.abs().max_element().max(1.0))
-            .collect();
-        let probe: Vec<Vec2> = x
-            .iter()
-            .zip(&steps)
-            .flat_map(|(&p, &h)| [p, p + Vec2::new(h, 0.0), p + Vec2::new(0.0, h)])
-            .collect();
-        let mapped = space.map(&probe)?;
         let mut converged = true;
-        for (i, (p, &h)) in x.iter_mut().zip(&steps).enumerate() {
-            let [f0, fx, fy] = [mapped[3 * i], mapped[3 * i + 1], mapped[3 * i + 2]];
-            let r = points[i] - f0;
+        for (i, p) in x.iter_mut().enumerate() {
+            let r = points[i] - world.point(*p);
             if r.length() <= 1e-2 * tolerance(points[i]) {
                 continue;
             }
-            let jacobian = Mat2::from_cols((fx - f0) / h, (fy - f0) / h);
+            let jacobian = world.jacobian(*p);
             let det = jacobian.determinant();
             if !det.is_finite() || det.abs() < 1e-12 {
                 return Err(SpaceError::Singular { index: i });
@@ -112,9 +99,8 @@ pub fn canvas_to_local(
         }
     }
     // 最後の更新の後の残差を確かめる。
-    let mapped = space.map(&x)?;
-    for (i, (&f, &target)) in mapped.iter().zip(points).enumerate() {
-        let residual = (target - f).length();
+    for (i, (&p, &target)) in x.iter().zip(points).enumerate() {
+        let residual = (target - world.point(p)).length();
         if residual > tolerance(target) {
             return Err(SpaceError::NotConverged { index: i, residual });
         }
@@ -128,18 +114,17 @@ fn tolerance(target: Vec2) -> f32 {
     1e-2 + 1e-5 * target.abs().max_element()
 }
 
-/// 親の祖先だけを残したモデルと、評価に使うパラメータの値。
-struct ParentSpace<'a> {
-    /// 親がなければ `None` (恒等変換)。
-    probe: Option<(Model, DeformerId)>,
-    values: &'a ParameterValues,
+/// 要素の親の座標系。親の祖先だけを残したモデルを評価したインスタンスを持つ。
+struct ParentSpace {
+    /// インスタンスと、その中での親の添字。親がなければ `None` (恒等変換)。
+    parent: Option<(ModelInstance, usize)>,
 }
 
-impl<'a> ParentSpace<'a> {
+impl ParentSpace {
     fn new(
         model: &Model,
         target: &KeyformTarget,
-        values: &'a ParameterValues,
+        values: &ParameterValues,
     ) -> Result<Self, SpaceError> {
         let missing = |kind, id: &dyn std::fmt::Display| SpaceError::NotFound {
             kind,
@@ -170,55 +155,33 @@ impl<'a> ParentSpace<'a> {
                 });
             }
         };
-        let probe = parent.map(|parent| (ancestors_only(model, &parent), parent));
-        Ok(Self { probe, values })
-    }
-
-    /// 親の座標系の点をキャンバス座標に写す。
-    fn map(&self, points: &[Vec2]) -> Result<Vec<Vec2>, SpaceError> {
-        let Some((base, parent)) = &self.probe else {
-            return Ok(points.to_vec());
+        let Some(parent) = parent else {
+            return Ok(Self { parent: None });
         };
-        if points.is_empty() {
-            return Ok(Vec::new());
-        }
-        let mut model = base.clone();
-        let part = model.parts[0].id.clone();
-        model.meshes.push(Mesh {
-            id: "__probe".into(),
-            name: String::new(),
-            part,
-            parent: Some(parent.clone()),
-            texture: 0,
-            uvs: vec![Vec2::ZERO; points.len()],
-            indices: Vec::new(),
-            blend: BlendMode::Normal,
-            culling: false,
-            masks: Vec::new(),
-            mask_mode: MaskMode::default(),
-            mask_only: false,
-            keyforms: KeyformGrid::constant(MeshKeyform {
-                positions: points.to_vec(),
-                opacity: 1.0,
-                draw_order: 0.0,
-                multiply_color: Rgb::WHITE,
-                screen_color: Rgb::BLACK,
-                mask_strength: 1.0,
-            }),
-            mirror: None,
-            mirror_axis: None,
-            depth: None,
-        });
-        let compiled =
-            CompiledModel::compile(model).map_err(|e| SpaceError::Evaluate(e.to_string()))?;
+        let compiled = CompiledModel::compile(ancestors_only(model, &parent))
+            .map_err(|e| SpaceError::Evaluate(e.to_string()))?;
         let mut instance = ModelInstance::new(compiled);
-        for (id, &value) in self.values {
+        for (id, &value) in values {
             if let Some(index) = instance.parameters().index_of(id.as_str()) {
                 instance.parameters_mut().set(index, value);
             }
         }
         instance.update();
-        Ok(instance.drawables()[0].positions.clone())
+        let index = instance
+            .compiled()
+            .deformer_index(parent.as_str())
+            .ok_or_else(|| SpaceError::Evaluate(format!("deformer `{parent}` not found")))?;
+        Ok(Self {
+            parent: Some((instance, index)),
+        })
+    }
+
+    /// 親の座標系 → キャンバス座標の写像。
+    fn world(&self) -> WorldTransform<'_> {
+        match &self.parent {
+            Some((instance, index)) => instance.deformer_world(*index),
+            None => WorldTransform::IDENTITY,
+        }
     }
 }
 
@@ -248,20 +211,5 @@ fn ancestors_only(model: &Model, parent: &DeformerId) -> Model {
     out.hit_areas.clear();
     out.pose = Default::default();
     out.effects = Default::default();
-    if out.parts.is_empty() {
-        out.parts.push(Part {
-            id: "__probe".into(),
-            name: String::new(),
-            parent: None,
-            keyforms: KeyformGrid::constant(ugoe_model::part::PartKeyform { opacity: 1.0 }),
-        });
-    }
-    if out.textures.is_empty() {
-        out.textures.push(TextureRef {
-            name: "__probe".into(),
-            width: 1,
-            height: 1,
-        });
-    }
     out
 }

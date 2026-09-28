@@ -63,6 +63,15 @@ impl Transform<'_> {
         }
     }
 
+    /// 点 `p` (局所座標) でのヤコビ行列 (列は局所座標の x・y 方向の微分)。
+    pub fn jacobian(&self, p: Vec2) -> Mat2 {
+        match self {
+            Transform::Identity => Mat2::IDENTITY,
+            Transform::Affine(a) => a.matrix2,
+            Transform::Warp(w) => w.jacobian(p),
+        }
+    }
+
     /// 親がこの変換である回転デフォーマのワールド変換を作る。
     pub fn rotation_child(&self, rotation: &Rotation) -> Affine2 {
         match self {
@@ -112,14 +121,18 @@ impl<'a> Warp<'a> {
         self.points[y * (self.cols + 1) + x]
     }
 
-    /// セル単位の双線形写像。`uv` が範囲外なら端のセルの式をそのまま延長する。
-    fn bilinear(&self, uv: Vec2) -> Vec2 {
+    /// `uv` を含むセル `(i, j)` とセルの中での位置 `(fx, fy)`。範囲外なら端のセル。
+    fn cell(&self, uv: Vec2) -> (usize, usize, f32, f32) {
         let gx = uv.x * self.cols as f32;
         let gy = uv.y * self.rows as f32;
         let i = (gx.floor().max(0.0) as usize).min(self.cols - 1);
         let j = (gy.floor().max(0.0) as usize).min(self.rows - 1);
-        let fx = gx - i as f32;
-        let fy = gy - j as f32;
+        (i, j, gx - i as f32, gy - j as f32)
+    }
+
+    /// セル単位の双線形写像。`uv` が範囲外なら端のセルの式をそのまま延長する。
+    fn bilinear(&self, uv: Vec2) -> Vec2 {
+        let (i, j, fx, fy) = self.cell(uv);
         let top = lerp(self.point(i, j), self.point(i + 1, j), fx);
         let bottom = lerp(self.point(i, j + 1), self.point(i + 1, j + 1), fx);
         lerp(top, bottom, fy)
@@ -137,6 +150,31 @@ impl<'a> Warp<'a> {
         }
         let d = uv - clamped;
         base + self.axis_u * d.x + self.axis_v * d.y
+    }
+
+    /// [`Warp::map`] のヤコビ行列 (列は u 方向・v 方向の微分)。
+    ///
+    /// 内側はセルの双線形式の微分。セルの境目では [`Warp::map`] と同じく `floor` で選んだセル
+    /// (上端・右端では端のセル) の片側の微分になる。外側では、はみ出した方向の列が
+    /// アフィン近似の軸 (`A_u`・`A_v`) になり、はみ出していない方向の列は境界上の双線形式の微分になる。
+    pub fn jacobian(&self, uv: Vec2) -> Mat2 {
+        let clamped = uv.clamp(Vec2::ZERO, Vec2::ONE);
+        let (i, j, fx, fy) = self.cell(clamped);
+        let du = if clamped.x == uv.x {
+            let top = self.point(i + 1, j) - self.point(i, j);
+            let bottom = self.point(i + 1, j + 1) - self.point(i, j + 1);
+            lerp(top, bottom, fy) * self.cols as f32
+        } else {
+            self.axis_u
+        };
+        let dv = if clamped.y == uv.y {
+            let left = self.point(i, j + 1) - self.point(i, j);
+            let right = self.point(i + 1, j + 1) - self.point(i + 1, j);
+            lerp(left, right, fx) * self.rows as f32
+        } else {
+            self.axis_v
+        };
+        Mat2::from_cols(du, dv)
     }
 
     /// 比較用: 範囲外も端のセルの双線形式を延長する方式 (採用しなかった案)。
@@ -263,6 +301,38 @@ mod tests {
             let b = warp.map(uv + outward);
             assert!(a.distance(b) < 0.5, "{uv}: {a} vs {b}");
         }
+    }
+
+    // ワープのヤコビ行列は、セルの境目と格子の境界を避けた点で中心差分と一致する (内側・外側とも)。
+    #[test]
+    fn warp_jacobian_matches_finite_difference() {
+        let mut points = grid(|u, v| affine(Vec2::new(u, v)));
+        points[2] += Vec2::new(13.0, -7.0);
+        points[4] += Vec2::new(4.0, 6.0);
+        points[6] += Vec2::new(-5.0, 9.0);
+        let warp = Warp::new(&points, 2, 2);
+        let h = 1e-3;
+        for uv in [
+            Vec2::new(0.2, 0.3),
+            Vec2::new(0.7, 0.9),
+            Vec2::new(0.35, 0.6),
+            Vec2::new(-0.4, 0.3),
+            Vec2::new(0.8, 1.7),
+            Vec2::new(1.3, -0.6),
+            Vec2::new(-2.0, 3.0),
+        ] {
+            let j = warp.jacobian(uv);
+            let du =
+                (warp.map(uv + Vec2::new(h, 0.0)) - warp.map(uv - Vec2::new(h, 0.0))) / (2.0 * h);
+            let dv =
+                (warp.map(uv + Vec2::new(0.0, h)) - warp.map(uv - Vec2::new(0.0, h))) / (2.0 * h);
+            assert!(j.x_axis.abs_diff_eq(du, 0.05), "{uv}: {} vs {du}", j.x_axis);
+            assert!(j.y_axis.abs_diff_eq(dv, 0.05), "{uv}: {} vs {dv}", j.y_axis);
+        }
+        // 外側の、はみ出した方向の列はアフィン近似の軸。
+        let j = warp.jacobian(Vec2::new(-2.0, 3.0));
+        assert_close(j.x_axis, warp.axis_u);
+        assert_close(j.y_axis, warp.axis_v);
     }
 
     // evaluation.md 3. 回転デフォーマ: L(p) = origin + R(angle) * S * p

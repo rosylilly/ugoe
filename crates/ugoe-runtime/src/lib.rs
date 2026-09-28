@@ -15,5 +15,5 @@ pub mod keyform;
 pub mod parameters;
 
 pub use compile::{CompileError, CompiledModel, ResolvedMaskRef};
-pub use instance::{DrawableChanges, DrawableState, ModelInstance};
+pub use instance::{DrawableChanges, DrawableState, ModelInstance, WorldTransform};
 pub use parameters::{ParamIndex, ParameterValues};

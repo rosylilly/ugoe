@@ -7,16 +7,13 @@
 
 use std::collections::HashMap;
 
-use ugoe_core::{Mat2, Rgb, Vec2};
+use ugoe_core::{Mat2, Vec2};
 use ugoe_mesher::{MAX_VERTICES, TriangulateError, triangulate_points};
-use ugoe_model::deformer::DeformerKind;
-use ugoe_model::mesh::MeshKeyform;
-use ugoe_model::{KeyformGrid, Mesh, MeshId, Model};
+use ugoe_model::{Mesh, MeshId, Model};
 use ugoe_runtime::{CompiledModel, ModelInstance};
 
 use crate::EditError;
 use crate::command::VertexMove;
-use crate::ids::new_mesh_id;
 
 /// 重心座標が「三角形の内側 (辺の上を含む)」とみなす下限。
 const INSIDE: f64 = -1e-6;
@@ -54,103 +51,40 @@ fn check_vertex(mesh: &Mesh, index: u16) -> Result<(), EditError> {
 
 // ---- 基準の姿の評価 ----
 
-/// 基準の姿での頂点位置。
+/// 基準の姿での頂点位置と、親デフォーマの変換。
 struct Rest {
+    /// 既定値のパラメータで評価したインスタンス。
+    instance: ModelInstance,
     /// キーフォームを補間した局所座標 (親デフォーマの座標系)。
     local: Vec<Vec2>,
     /// キャンバス座標 (グルーの適用後。ビューポートに既定値で表示される位置)。
     world: Vec<Vec2>,
 }
 
-/// `model` に `probes` を足して既定値のパラメータで評価し、足したメッシュの頂点位置を返す。
-fn evaluate_probes(
-    model: &Model,
-    id: &MeshId,
-    target: usize,
-    probes: Vec<Mesh>,
-) -> Result<(Vec<Vec2>, Vec<Vec<Vec2>>), EditError> {
-    let first = model.meshes.len();
-    let mut probed = model.clone();
-    probed.meshes.extend(probes);
-    let compiled = CompiledModel::compile(probed)
-        .map_err(|e| geometry(id, format!("the model cannot be evaluated: {e}")))?;
-    let instance = ModelInstance::new(compiled);
-    let drawables = instance.drawables();
-    let target = drawables[target].positions.clone();
-    let probes = drawables[first..]
-        .iter()
-        .map(|d| d.positions.clone())
-        .collect();
-    Ok((target, probes))
-}
-
-/// 評価用に足す、描画に関わらないメッシュの複製。
-fn probe_of(model: &Model, mesh: &Mesh, n: usize) -> Mesh {
-    let mut probe = mesh.clone();
-    probe.id = new_mesh_id(model, &format!("__ugoe_probe_{n}"));
-    probe.masks.clear();
-    probe.mirror = None;
-    probe.mirror_axis = None;
-    probe.depth = None;
-    probe
-}
-
 /// メッシュ `index` の基準の姿。
 fn rest(model: &Model, index: usize) -> Result<Rest, EditError> {
-    let mesh = &model.meshes[index];
-    // 親を外した複製の出力は、補間しただけの局所座標になる。
-    let mut local = probe_of(model, mesh, 0);
-    local.parent = None;
-    let (world, mut probes) = evaluate_probes(model, &mesh.id, index, vec![local])?;
+    let compiled = CompiledModel::compile(model.clone()).map_err(|e| {
+        geometry(
+            &model.meshes[index].id,
+            format!("the model cannot be evaluated: {e}"),
+        )
+    })?;
+    let instance = ModelInstance::new(compiled);
     Ok(Rest {
-        local: probes.pop().unwrap_or_default(),
-        world,
+        local: instance.mesh_local_positions(index),
+        world: instance.drawables()[index].positions.clone(),
+        instance,
     })
 }
 
-/// 局所座標の点 `at` のそれぞれでの、親デフォーマの変換 (局所 → キャンバス) のヤコビ行列。
-///
-/// 親なしは単位行列。親が回転デフォーマ (アフィン) なら中心差分は厳密に線形部分になる。
-/// 親がワープなら、その点での双線形写像の微分 (格子の外では外挿のアフィン近似の微分) になる。
-fn parent_jacobians(model: &Model, index: usize, at: &[Vec2]) -> Result<Vec<Mat2>, EditError> {
-    let mesh = &model.meshes[index];
-    let Some(parent) = &mesh.parent else {
-        return Ok(vec![Mat2::IDENTITY; at.len()]);
-    };
-    // 局所座標の単位: ワープは UV (0..1)、回転デフォーマはピクセル。
-    let eps = match model
-        .deformers
-        .iter()
-        .find(|d| &d.id == parent)
-        .map(|d| &d.kind)
-    {
-        Some(DeformerKind::Warp(_)) => 1e-3,
-        _ => 1.0,
-    };
-    let (dx, dy) = (Vec2::new(eps, 0.0), Vec2::new(0.0, eps));
-    let points: Vec<Vec2> = at
-        .iter()
-        .flat_map(|&p| [p + dx, p - dx, p + dy, p - dy])
-        .collect();
-    let mut probe = probe_of(model, mesh, 0);
-    probe.uvs = vec![Vec2::ZERO; points.len()];
-    probe.indices.clear();
-    probe.keyforms = KeyformGrid::constant(MeshKeyform {
-        positions: points,
-        opacity: 1.0,
-        draw_order: 0.0,
-        multiply_color: Rgb::WHITE,
-        screen_color: Rgb::BLACK,
-        mask_strength: 1.0,
-    });
-    let (_, mut probes) = evaluate_probes(model, &mesh.id, index, vec![probe])?;
-    let mapped = probes.pop().unwrap_or_default();
-    Ok(mapped
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .map(|m| Mat2::from_cols((m[0] - m[1]) / (2.0 * eps), (m[2] - m[3]) / (2.0 * eps)))
-        .collect())
+impl Rest {
+    /// 局所座標の点 `at` での、親デフォーマの変換 (局所 → キャンバス) のヤコビ行列。
+    ///
+    /// 親なしは単位行列、回転デフォーマは線形部分、ワープはその点での双線形写像の微分
+    /// (格子の外では外挿のアフィン近似の微分)。ランタイムが解析的に求める。
+    fn parent_jacobian(&self, index: usize, at: Vec2) -> Mat2 {
+        self.instance.mesh_parent_world(index).jacobian(at)
+    }
 }
 
 // ---- 三角形の上の位置 ----
@@ -301,14 +235,10 @@ pub(crate) fn move_vertices(
         return Ok(());
     }
     let rest = rest(model, index)?;
-    let at: Vec<Vec2> = moves
-        .iter()
-        .map(|m| rest.local[usize::from(m.index)])
-        .collect();
-    let jacobians = parent_jacobians(model, index, &at)?;
     let mut updates = Vec::with_capacity(moves.len());
-    for (m, j) in moves.iter().zip(&jacobians) {
+    for m in moves {
         let i = usize::from(m.index);
+        let j = rest.parent_jacobian(index, rest.local[i]);
         let det = j.determinant();
         if !det.is_finite() || det.abs() < 1e-9 {
             return Err(geometry(

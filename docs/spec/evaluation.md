@@ -226,3 +226,31 @@ UV とインデックスは静的なデータなので `CompiledModel` から取
 - `mark_all_changed()` を呼ぶと、次の `update()` で比較をせずにすべてを変更ありとして報告します (描画側の資源を作り直したときに使う)。
 - 描画側が「どのインスタンスのどの `update()` の出力を転送済みか」を覚えられるように、`ModelInstance::id()` (プロセス内で一意な番号) と `update_count()` (`update()` を呼んだ回数。`new` の中の 1 回を含む) を提供します。出力は `update()` でしか変わらないので、`update_count()` が同じなら出力も同じです。フラグは、描画側が前回見た `update_count()` のちょうど 1 つ後のときだけ、そのとき見た出力からの変化を表します ([rendering.md#転送の省略](rendering.md#転送の省略))。
 - 実装は前回の出力を控えておき、`update()` の最後に比べます。控えのバッファは `new` で確保し、頂点位置は変わったときだけコピーするので、毎フレームのヒープ確保はなく、止まっているメッシュの費用は頂点数に比例する比較 1 回です。
+
+### デフォーマのワールド変換を読む
+
+エディタのギズモや座標変換のために、`ModelInstance` は直前の `update()` で評価したデフォーマのワールド変換 (3.) を公開します。
+どれも評価済みの状態を借りて読むだけで、`update()` の費用やメモリ確保は増えません。添字は `Model::deformers` / `Model::meshes` のもので、ID からは `CompiledModel::deformer_index(id)` / `mesh_index(id)` で引きます。
+
+| API | 内容 |
+| --- | --- |
+| `deformer_world(d)` | デフォーマ `d` のワールド変換 `F_d` (子の座標系 → キャンバス座標)。未知の種類は恒等変換なので親の `F` と同じ |
+| `deformer_parent_world(d)` / `mesh_parent_world(m)` | 要素の親の座標系 (キーフォームの原点・制御点・頂点の座標系) → キャンバス座標。親がなければ恒等写像 |
+| `deformer_world_point(d, p)` / `deformer_world_jacobian(d, p)` | `deformer_world(d)` の `point(p)` / `jacobian(p)` の略記 |
+| `warp_world_points(d)` | ワープのキャンバス座標の制御点 `P[x, y]` (行優先、x が速い)。ワープでなければ `None` |
+| `rotation_world_frame(d)` | 回転デフォーマのワールド変換 (アフィン)。`translation` が原点、`matrix2` の列が局所座標の x 軸・y 軸の単位ベクトルの像。回転デフォーマでなければ `None` |
+| `mesh_local_positions(m)` | メッシュのキーフォームを今のパラメータ値で補間した頂点位置 (親のワールド変換とグルーの前)。問い合わせ用で、呼ぶたびに `Vec` を確保する |
+
+写像 (`WorldTransform`) は次を持ちます。
+
+- `point(p)`: `update()` がメッシュの頂点に使うのと同じ式・同じ演算順で写す。したがって、グルーで動かされないメッシュでは `mesh_parent_world(m).point(mesh_local_positions(m)[i])` が `drawables()[m].positions[i]` とビット単位で一致する。
+- `jacobian(p)`: 点 `p` でのヤコビ行列 (列は局所座標の x・y 方向の微分) を解析的に求める。祖先の変換はワールド座標の制御点・アフィン変換に畳み込み済みなので、連鎖も含む。
+  - 恒等写像は単位行列、回転デフォーマは線形部分 `R * S` (親がワープのときは向きを補正した後のもの)。
+  - ワープは、内側ではセルの双線形式の微分 `∂B/∂u = cols * lerp(P[i+1, j] - P[i, j], P[i+1, j+1] - P[i, j+1], fy)`、`∂B/∂v = rows * lerp(P[i, j+1] - P[i, j], P[i+1, j+1] - P[i+1, j], fx)`。セルの境目では写像と同じく `floor` で選んだセル (右端・下端では端のセル) の片側の微分になる。
+  - ワープの範囲外では、はみ出した方向の列が `A_u` / `A_v`、はみ出していない方向の列はクランプした点での双線形式の微分になる (外挿の規則の微分)。
+- `is_identity()`: 恒等写像か。
+- `rotation_child(keyform)`: この写像を親に持つ回転デフォーマのワールド変換 (補間後のキーフォームから。親がワープなら原点と向きだけを写す)。
+
+まだモデルにないデフォーマの写像 (エディタがデフォーマを作る前に子の座標を写し直すときなど) は、`WorldTransform::IDENTITY`、`from_affine(affine)`、`from_warp_points(points, cols, rows)` (キャンバス座標の制御点から) で作れます。作った写像も `update()` と同じ式で写します。
+
+逆写像 (キャンバス座標 → 局所座標。ワープの UV を求めるニュートン法など) はランタイムには置かず、エディタ (`ugoe-editor-core` の `space`) がこの `point` と `jacobian` を使って解きます。

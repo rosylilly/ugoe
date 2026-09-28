@@ -1,7 +1,8 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use ugoe_core::{Affine2, Rgb, Vec2};
+use ugoe_core::{Affine2, Mat2, Rgb, Vec2};
+use ugoe_model::deformer::RotationKeyform;
 use ugoe_model::{BlendMode, DeformerKind};
 
 use crate::deform::{Rotation, Transform, Warp};
@@ -102,6 +103,68 @@ impl std::ops::BitAnd for DrawableChanges {
     type Output = Self;
     fn bitand(self, rhs: Self) -> Self {
         Self(self.0 & rhs.0)
+    }
+}
+
+/// 要素の座標系からキャンバス座標への写像 (`docs/spec/evaluation.md#デフォーマのワールド変換を読む`)。
+///
+/// [`ModelInstance::deformer_world`] などで得る。直前の [`ModelInstance::update`] で評価した
+/// デフォーマの状態を借りるので、`update` がメッシュの頂点に使った写像とビット単位で同じ結果になる。
+#[derive(Debug, Clone, Copy)]
+pub struct WorldTransform<'a>(Transform<'a>);
+
+impl<'a> WorldTransform<'a> {
+    /// 恒等写像 (親を持たない要素の親の座標系)。
+    pub const IDENTITY: Self = Self(Transform::Identity);
+
+    /// アフィン変換 (回転デフォーマのワールド変換) の写像。
+    pub fn from_affine(affine: Affine2) -> Self {
+        Self(Transform::Affine(affine))
+    }
+
+    /// キャンバス座標の制御点 `points` (行優先、x が速い) を持つワープの写像。
+    /// エディタが、まだモデルにないワープの写像を作るのに使う。
+    ///
+    /// `cols`・`rows` が 0 か、`points` の長さが `(rows + 1) * (cols + 1)` でなければ `None`。
+    pub fn from_warp_points(points: &'a [Vec2], cols: usize, rows: usize) -> Option<Self> {
+        if cols == 0 || rows == 0 || points.len() != (rows + 1) * (cols + 1) {
+            return None;
+        }
+        Some(Self(Transform::Warp(Warp::new(points, cols, rows))))
+    }
+
+    /// この写像を親に持つ回転デフォーマのワールド変換 (`keyform` は補間後の値。不透明度は使わない)。
+    ///
+    /// 親がワープなら原点と向きだけを写す (`docs/spec/evaluation.md` の回転デフォーマ)。
+    pub fn rotation_child(&self, keyform: &RotationKeyform) -> Affine2 {
+        self.0.rotation_child(&Rotation {
+            origin: keyform.origin,
+            angle: keyform.angle,
+            scale: keyform.scale,
+            reflect_x: keyform.reflect_x,
+            reflect_y: keyform.reflect_y,
+        })
+    }
+}
+
+impl WorldTransform<'_> {
+    /// 恒等写像 (親を持たない要素の親の座標系、またはキャンバス座標) か。
+    pub fn is_identity(&self) -> bool {
+        matches!(self.0, Transform::Identity)
+    }
+
+    /// 局所座標の点をキャンバス座標に写す。
+    pub fn point(&self, local: Vec2) -> Vec2 {
+        self.0.apply(local)
+    }
+
+    /// 局所座標の点 `local` での写像のヤコビ行列 (列は局所座標の x・y 方向の微分)。
+    ///
+    /// 解析的に求める: 恒等写像は単位行列、回転デフォーマ (アフィン) は線形部分、
+    /// ワープはセルの双線形式の微分 (範囲外では外挿の規則の微分)。
+    /// 祖先の変換はワールド座標の制御点・アフィン変換に畳み込み済みなので、連鎖も含む。
+    pub fn jacobian(&self, local: Vec2) -> Mat2 {
+        self.0.jacobian(local)
     }
 }
 
@@ -461,6 +524,111 @@ impl ModelInstance {
         self.render_order_changed
     }
 
+    // ---- デフォーマのワールド変換 (docs/spec/evaluation.md#デフォーマのワールド変換を読む) ----
+    //
+    // どれも直前の `update` の結果を読むだけで、確保も再評価もしない (`mesh_local_positions` を除く)。
+    // 添字は `Model::deformers` / `Model::meshes` のもの (`CompiledModel::deformer_index` などで引く)。
+
+    /// デフォーマ `deformer` のワールド変換 (その子の座標系 → キャンバス座標)。
+    ///
+    /// ワープは UV 空間、回転デフォーマは原点を (0,0) としたピクセル単位の座標系を写す。
+    /// 未知の種類のデフォーマは恒等変換なので、親のワールド変換と同じになる。
+    ///
+    /// # Panics
+    ///
+    /// `deformer` が範囲外のとき。
+    pub fn deformer_world(&self, deformer: usize) -> WorldTransform<'_> {
+        assert!(
+            deformer < self.deformer_affine.len(),
+            "deformer out of range"
+        );
+        self.world(Some(deformer as u32))
+    }
+
+    /// デフォーマ `deformer` の親の座標系 (キーフォームの原点・制御点の座標系) → キャンバス座標。
+    /// 親がなければ恒等写像。
+    ///
+    /// # Panics
+    ///
+    /// `deformer` が範囲外のとき。
+    pub fn deformer_parent_world(&self, deformer: usize) -> WorldTransform<'_> {
+        self.world(self.compiled.deformers[deformer].parent)
+    }
+
+    /// メッシュ `mesh` の親の座標系 (キーフォームの頂点の座標系) → キャンバス座標。
+    /// 親がなければ恒等写像。
+    ///
+    /// # Panics
+    ///
+    /// `mesh` が範囲外のとき。
+    pub fn mesh_parent_world(&self, mesh: usize) -> WorldTransform<'_> {
+        self.world(self.compiled.meshes[mesh].parent)
+    }
+
+    /// `deformer_world(deformer).point(local)`。
+    pub fn deformer_world_point(&self, deformer: usize, local: Vec2) -> Vec2 {
+        self.deformer_world(deformer).point(local)
+    }
+
+    /// `deformer_world(deformer).jacobian(local)`。
+    pub fn deformer_world_jacobian(&self, deformer: usize, local: Vec2) -> Mat2 {
+        self.deformer_world(deformer).jacobian(local)
+    }
+
+    /// ワープ `deformer` のキャンバス座標の制御点 (行優先、x が速い)。ワープでなければ `None`。
+    pub fn warp_world_points(&self, deformer: usize) -> Option<&[Vec2]> {
+        match self.compiled.model.deformers.get(deformer)?.kind {
+            DeformerKind::Warp(_) => Some(&self.warp_points[deformer]),
+            _ => None,
+        }
+    }
+
+    /// 回転デフォーマ `deformer` のワールド変換 (`world(p) = translation + matrix2 * p`)。
+    /// `matrix2` の列は、局所座標の x 軸・y 軸の単位ベクトルの像。回転デフォーマでなければ `None`。
+    pub fn rotation_world_frame(&self, deformer: usize) -> Option<Affine2> {
+        match self.compiled.model.deformers.get(deformer)?.kind {
+            DeformerKind::Rotation(_) => Some(self.deformer_affine[deformer]),
+            _ => None,
+        }
+    }
+
+    /// メッシュ `mesh` のキーフォームを今のパラメータ値で補間した頂点位置 (親の座標系。
+    /// 親のワールド変換とグルーを適用する前)。
+    ///
+    /// `update` の途中の値は保持していないので、呼ぶたびに補間し直して新しい `Vec` を返す
+    /// (毎フレームの描画ではなく、エディタなどの問い合わせ用)。`update` の後にパラメータを
+    /// 変えていなければ、`update` が使った値と同じになる。
+    ///
+    /// # Panics
+    ///
+    /// `mesh` が範囲外のとき。
+    pub fn mesh_local_positions(&self, mesh: usize) -> Vec<Vec2> {
+        let grid = &self.compiled.model.meshes[mesh].keyforms;
+        let mut weights = Weights::new();
+        keyform::weights(
+            &self.compiled.meshes[mesh].bindings,
+            self.parameters.as_slice(),
+            &mut weights,
+        );
+        let n = self.drawables[mesh].positions.len();
+        let mut out = vec![Vec2::ZERO; n];
+        for &(k, w) in &weights {
+            for (p, q) in out.iter_mut().zip(&grid.keyforms[k].positions) {
+                *p += *q * w;
+            }
+        }
+        out
+    }
+
+    fn world(&self, parent: Option<u32>) -> WorldTransform<'_> {
+        WorldTransform(world_transform(
+            &self.compiled,
+            &self.deformer_affine,
+            &self.warp_points,
+            parent,
+        ))
+    }
+
     fn sort_render_order(&mut self) {
         self.render_order.clear();
         self.render_order.extend(0..self.drawables.len() as u32);
@@ -602,6 +770,252 @@ mod tests {
                 assert_eq!(buffers(&instance), before);
             }
         }
+    }
+
+    // ---- デフォーマのワールド変換 (docs/spec/evaluation.md#デフォーマのワールド変換を読む) ----
+
+    fn all_fixtures() -> Vec<Model> {
+        vec![
+            fixtures::single_quad(),
+            fixtures::pose_and_effects(),
+            fixtures::warp_grid(),
+            fixtures::rotation_chain(),
+            fixtures::rotation_under_warp(),
+            fixtures::part_opacity_hierarchy(),
+            fixtures::glued_quads(),
+            fixtures::nested_masks(),
+            fixtures::mixed_masks(),
+            fixtures::intersection_masks(),
+            fixtures::keyform_inference(),
+        ]
+    }
+
+    /// すべてのパラメータを値域の `t` (0..1) の位置にする。
+    fn set_all(instance: &mut ModelInstance, t: f32) {
+        let ranges: Vec<_> = instance
+            .compiled()
+            .model()
+            .parameters
+            .iter()
+            .map(|p| (p.min, p.max))
+            .collect();
+        for (i, (min, max)) in ranges.into_iter().enumerate() {
+            instance
+                .parameters_mut()
+                .set(crate::ParamIndex(i as u32), min + (max - min) * t);
+        }
+        instance.update();
+    }
+
+    // 親のワールド変換で局所座標の頂点を写すと、update の出力とビット単位で一致する
+    // (グルーで動かされるメッシュを除く)。
+    #[test]
+    fn mesh_parent_world_reproduces_update_output() {
+        for model in all_fixtures() {
+            let glued: Vec<String> = model
+                .glues
+                .iter()
+                .flat_map(|g| [g.mesh_a.to_string(), g.mesh_b.to_string()])
+                .collect();
+            let mut instance = instance(model);
+            for t in [0.0, 0.25, 0.5, 0.8, 1.0] {
+                set_all(&mut instance, t);
+                let model = instance.compiled().model();
+                for (i, mesh) in model.meshes.iter().enumerate() {
+                    if glued.contains(&mesh.id.to_string()) {
+                        continue;
+                    }
+                    let world = instance.mesh_parent_world(i);
+                    assert_eq!(world.is_identity(), mesh.parent.is_none());
+                    let mapped: Vec<Vec2> = instance
+                        .mesh_local_positions(i)
+                        .into_iter()
+                        .map(|p| world.point(p))
+                        .collect();
+                    assert_eq!(mapped, instance.drawables()[i].positions, "{}", mesh.id);
+                    if let Some(parent) = &mesh.parent {
+                        let d = instance.compiled().deformer_index(parent.as_str()).unwrap();
+                        for &p in &instance.mesh_local_positions(i) {
+                            assert_eq!(instance.deformer_world_point(d, p), world.point(p));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ヤコビ行列は中心差分と一致する (ワープはセルの境目を避けた点、格子の外を含む)。
+    #[test]
+    fn deformer_world_jacobian_matches_finite_difference() {
+        let warp_samples = [
+            Vec2::new(0.23, 0.41),
+            Vec2::new(0.77, 0.12),
+            Vec2::new(0.61, 0.93),
+            Vec2::new(-0.3, 0.6),
+            Vec2::new(1.4, 1.2),
+            Vec2::new(0.4, -0.7),
+        ];
+        let rotation_samples = [
+            Vec2::new(0.0, 0.0),
+            Vec2::new(10.0, -5.0),
+            Vec2::new(-37.0, 21.0),
+        ];
+        let mut checked = 0;
+        for model in all_fixtures() {
+            let mut instance = instance(model);
+            for t in [0.0, 0.3, 1.0] {
+                set_all(&mut instance, t);
+                for (d, deformer) in instance.compiled().model().deformers.iter().enumerate() {
+                    let (samples, h) = match deformer.kind {
+                        DeformerKind::Warp(_) => (&warp_samples[..], 1e-3),
+                        _ => (&rotation_samples[..], 0.5),
+                    };
+                    let world = instance.deformer_world(d);
+                    for &p in samples {
+                        let j = world.jacobian(p);
+                        let dx = (world.point(p + Vec2::new(h, 0.0))
+                            - world.point(p - Vec2::new(h, 0.0)))
+                            / (2.0 * h);
+                        let dy = (world.point(p + Vec2::new(0.0, h))
+                            - world.point(p - Vec2::new(0.0, h)))
+                            / (2.0 * h);
+                        let tol = 1e-2 * j.x_axis.length().max(j.y_axis.length()).max(1.0);
+                        assert!(
+                            j.x_axis.abs_diff_eq(dx, tol),
+                            "{}: {} vs {dx}",
+                            deformer.id,
+                            j.x_axis
+                        );
+                        assert!(
+                            j.y_axis.abs_diff_eq(dy, tol),
+                            "{}: {} vs {dy}",
+                            deformer.id,
+                            j.y_axis
+                        );
+                        assert_eq!(j, instance.deformer_world_jacobian(d, p));
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        assert!(checked > 0);
+    }
+
+    // 制御点・回転の原点と軸は、ワールド変換で格子点・単位ベクトルを写したものと同じ。
+    #[test]
+    fn warp_points_and_rotation_frames_match_world_transform() {
+        let mut seen = (0, 0);
+        for model in all_fixtures() {
+            let mut instance = instance(model);
+            set_all(&mut instance, 0.7);
+            for (d, deformer) in instance.compiled().model().deformers.iter().enumerate() {
+                let world = instance.deformer_world(d);
+                match &deformer.kind {
+                    DeformerKind::Warp(w) => {
+                        let points = instance.warp_world_points(d).unwrap();
+                        let (cols, rows) = (usize::from(w.cols), usize::from(w.rows));
+                        assert_eq!(points.len(), (cols + 1) * (rows + 1));
+                        for y in 0..=rows {
+                            for x in 0..=cols {
+                                let uv = Vec2::new(x as f32 / cols as f32, y as f32 / rows as f32);
+                                let p = points[y * (cols + 1) + x];
+                                assert!(world.point(uv).abs_diff_eq(p, 1e-3), "{}", deformer.id);
+                            }
+                        }
+                        assert!(instance.rotation_world_frame(d).is_none());
+                        seen.0 += 1;
+                    }
+                    DeformerKind::Rotation(_) => {
+                        let frame = instance.rotation_world_frame(d).unwrap();
+                        assert_eq!(world.point(Vec2::ZERO), frame.translation);
+                        assert_eq!(world.jacobian(Vec2::ZERO), frame.matrix2);
+                        assert!(instance.warp_world_points(d).is_none());
+                        seen.1 += 1;
+                    }
+                    DeformerKind::Unknown => {}
+                }
+            }
+        }
+        assert!(seen.0 > 0 && seen.1 > 0);
+    }
+
+    // 回転デフォーマの軸はパラメータに従って回る (rotation_chain: Angle で Arm が時計回り)。
+    #[test]
+    fn rotation_world_frame_follows_parameters() {
+        let mut instance = instance(fixtures::rotation_chain());
+        let arm = instance.compiled().deformer_index("Arm").unwrap();
+        let hand = instance.compiled().deformer_index("Hand").unwrap();
+        let frame = instance.rotation_world_frame(hand).unwrap();
+        assert!(frame.translation.abs_diff_eq(Vec2::new(192.0, 128.0), 1e-4));
+        assert!(
+            frame
+                .matrix2
+                .abs_diff_eq(Mat2::from_diagonal(Vec2::splat(0.5)), 1e-6)
+        );
+        set(&mut instance, "Angle", 30.0);
+        instance.update();
+        let (s, c) = 30f32.to_radians().sin_cos();
+        let frame = instance.rotation_world_frame(arm).unwrap();
+        assert!(frame.translation.abs_diff_eq(Vec2::new(128.0, 128.0), 1e-4));
+        assert!(
+            frame
+                .matrix2
+                .abs_diff_eq(Mat2::from_cols(Vec2::new(c, s), Vec2::new(-s, c)), 1e-5)
+        );
+        assert_eq!(instance.compiled().deformer_index("Nope"), None);
+        assert!(instance.warp_world_points(99).is_none());
+    }
+
+    // 作った写像は、ランタイムが評価したものと同じ結果になる。
+    #[test]
+    fn constructed_transforms_match_evaluated_ones() {
+        let mut instance = instance(fixtures::rotation_under_warp());
+        set_all(&mut instance, 0.7);
+        let model = instance.compiled().model().clone();
+        for (d, deformer) in model.deformers.iter().enumerate() {
+            let world = instance.deformer_world(d);
+            let built = match &deformer.kind {
+                DeformerKind::Warp(w) => WorldTransform::from_warp_points(
+                    instance.warp_world_points(d).unwrap(),
+                    usize::from(w.cols),
+                    usize::from(w.rows),
+                )
+                .unwrap(),
+                _ => WorldTransform::from_affine(instance.rotation_world_frame(d).unwrap()),
+            };
+            for p in [Vec2::new(0.3, 0.7), Vec2::new(-4.0, 9.0)] {
+                assert_eq!(built.point(p), world.point(p));
+                assert_eq!(built.jacobian(p), world.jacobian(p));
+            }
+            // 子の回転デフォーマのワールド変換を親の写像から作り直せる。
+            for (c, child) in model.deformers.iter().enumerate() {
+                if child.parent.as_ref() != Some(&deformer.id) {
+                    continue;
+                }
+                if let DeformerKind::Rotation(r) = &child.kind
+                    && r.keyforms.bindings.is_empty()
+                {
+                    let frame = built.rotation_child(&r.keyforms.keyforms[0]);
+                    assert_eq!(Some(frame), instance.rotation_world_frame(c));
+                }
+            }
+        }
+        assert!(WorldTransform::from_warp_points(&[Vec2::ZERO; 3], 1, 1).is_none());
+        assert!(WorldTransform::from_warp_points(&[], 0, 0).is_none());
+        assert!(WorldTransform::IDENTITY.is_identity());
+    }
+
+    // 親のないデフォーマの親の座標系は恒等写像。
+    #[test]
+    fn root_parent_world_is_identity() {
+        let instance = instance(fixtures::rotation_chain());
+        let arm = instance.compiled().deformer_index("Arm").unwrap();
+        let hand = instance.compiled().deformer_index("Hand").unwrap();
+        let root = instance.deformer_parent_world(arm);
+        assert!(root.is_identity());
+        assert_eq!(root.point(Vec2::new(3.0, 4.0)), Vec2::new(3.0, 4.0));
+        assert_eq!(root.jacobian(Vec2::new(3.0, 4.0)), Mat2::IDENTITY);
+        assert!(!instance.deformer_parent_world(hand).is_identity());
     }
 
     // ---- 変更フラグ (docs/spec/evaluation.md#8-出力) ----
