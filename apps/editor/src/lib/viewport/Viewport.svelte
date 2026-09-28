@@ -18,9 +18,11 @@ interface Props {
   /** 表示するモデル。変わるたびに読み直す。 */
   model: ViewportModel | null;
   overlay?: Snippet<[ViewportController]>;
+  /** 中央に出す案内 (空のプロジェクトでの次の操作など)。 */
+  hint?: string | null;
 }
 
-let { controller, model, overlay }: Props = $props();
+let { controller, model, overlay, hint = null }: Props = $props();
 
 let container: HTMLDivElement;
 let canvas = $state<HTMLCanvasElement>();
@@ -107,6 +109,7 @@ function onPointerUp(e: PointerEvent) {
   <div class="overlay">
     {#if overlay}{@render overlay(controller)}{/if}
   </div>
+  {#if hint}<p class="hint muted">{hint}</p>{/if}
   <div class="hud">
     {#if controller.status !== "ready"}
       <span class={controller.status === "error" ? "error" : "muted"}>
@@ -140,6 +143,15 @@ canvas {
 .overlay {
   position: absolute;
   inset: 0;
+  pointer-events: none;
+}
+
+.hint {
+  position: absolute;
+  inset: 50% 16px auto;
+  transform: translateY(-50%);
+  margin: 0;
+  text-align: center;
   pointer-events: none;
 }
 

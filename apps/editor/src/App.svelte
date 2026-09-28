@@ -4,6 +4,7 @@
 -->
 <script lang="ts">
 import { EditorDocument } from "./lib/document.svelte";
+import { EMPTY_VIEWPORT_HINT } from "./lib/emptyState";
 import FileMenu from "./lib/FileMenu.svelte";
 import { type AppInfo, ipc } from "./lib/ipc";
 import InspectorPanel from "./lib/panels/InspectorPanel.svelte";
@@ -35,7 +36,14 @@ $effect(() => {
   <header>
     <strong>ugoe</strong>
     <span class="muted">{info ? `v${info.version}` : "…"}</span>
-    <FileMenu bind:this={fileMenu} onchange={() => doc.refresh()} />
+    <!-- 別のモデルになったら (新規・開く・取り込み) キャンバス全体を表示し直す。 -->
+    <FileMenu
+      bind:this={fileMenu}
+      onchange={() => {
+        viewport.fit();
+        doc.refresh();
+      }}
+    />
     <span class="spacer"></span>
     <button onclick={() => doc.undo()}>Undo</button>
     <button onclick={() => doc.redo()}>Redo</button>
@@ -44,7 +52,7 @@ $effect(() => {
     <TreePanel {doc} {selection} />
   </aside>
   <main class="center">
-    <Viewport controller={viewport} model={doc.model}>
+    <Viewport controller={viewport} model={doc.model} hint={doc.empty ? EMPTY_VIEWPORT_HINT : null}>
       {#snippet overlay(controller)}
         <ToolOverlay {controller} {doc} {selection} />
       {/snippet}

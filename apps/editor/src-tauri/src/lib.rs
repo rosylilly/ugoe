@@ -37,6 +37,7 @@ pub fn run() {
             commands::redo,
             project::project_status,
             project::new_project,
+            project::new_project_from_psd,
             project::open_project,
             project::save_project,
             project::save_project_as,

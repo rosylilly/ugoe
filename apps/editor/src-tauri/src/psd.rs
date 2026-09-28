@@ -1,5 +1,6 @@
 //! PSD の取り込みの IPC コマンド。取り込みの規則は `ugoe_editor_core::import`
 //! (`docs/editor.md#psd-の取り込み`) にあり、ここはファイルを読んでコマンドを適用するだけ。
+//! PSD から新しいプロジェクトを作る `new_project_from_psd` は `project.rs` にある。
 //! 引数・戻り値の型を変えたら `apps/editor/src/lib/ipc.ts` も同じ PR で更新すること。
 
 use std::path::Path;
@@ -9,14 +10,11 @@ use ugoe_editor_core::{AutoMeshOptions, PsdImportOptions, PsdImportWarning, impo
 
 use crate::AppState;
 
-/// PSD ファイルを読み、今のドキュメントに取り込む (Undo の 1 単位)。
-/// 失敗したらドキュメントは変わらない。戻り値は取り込みの警告。
-#[tauri::command]
-pub fn import_psd(
-    state: State<'_, AppState>,
-    path: String,
+/// PSD ファイルを読み、取り込みの設定 (最上位のパーツの名前はファイル名) と合わせて返す。
+pub(crate) fn read_psd(
+    path: &str,
     mesh_options: Option<AutoMeshOptions>,
-) -> Result<Vec<PsdImportWarning>, String> {
+) -> Result<(Vec<u8>, PsdImportOptions), String> {
     let path = Path::new(path.trim());
     let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let name = path
@@ -26,6 +24,18 @@ pub fn import_psd(
         name,
         mesh: mesh_options.unwrap_or_default(),
     };
+    Ok((bytes, options))
+}
+
+/// PSD ファイルを読み、今のドキュメントに取り込む (Undo の 1 単位)。
+/// 失敗したらドキュメントは変わらない。戻り値は取り込みの警告。
+#[tauri::command]
+pub fn import_psd(
+    state: State<'_, AppState>,
+    path: String,
+    mesh_options: Option<AutoMeshOptions>,
+) -> Result<Vec<PsdImportWarning>, String> {
+    let (bytes, options) = read_psd(&path, mesh_options)?;
     let mut document = state
         .document
         .lock()

@@ -7,6 +7,7 @@
 <script lang="ts">
 import { tick, untrack } from "svelte";
 import type { EditorDocument } from "../document.svelte";
+import { EMPTY_TREE_HINT } from "../emptyState";
 import type { EditCommand } from "../ipc";
 import type { ElementRef, Selection } from "../selection.svelte";
 import {
@@ -377,7 +378,13 @@ const dragHint = $derived.by(() => {
       />
     {:else}
       <p class="muted empty">
-        {!index ? "No model" : view === "parts" ? "No parts" : "No deformers or meshes"}
+        {!index
+          ? "No model"
+          : doc.empty
+            ? EMPTY_TREE_HINT
+            : view === "parts"
+              ? "No parts"
+              : "No deformers or meshes"}
       </p>
     {/each}
   </div>

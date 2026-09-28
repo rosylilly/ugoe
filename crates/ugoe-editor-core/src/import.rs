@@ -136,7 +136,9 @@ pub fn layer_tree_command(
             &[],
             format!(
                 "the PSD canvas ({}x{}) differs from the model canvas ({}x{}); \
-                 layers keep their PSD pixel positions",
+                 the model canvas is kept and the layers are placed at their PSD pixel \
+                 positions, so they may not line up with the canvas \
+                 (import into an empty project to use the PSD canvas)",
                 tree.width, tree.height, model.meta.canvas.width, model.meta.canvas.height
             ),
         );

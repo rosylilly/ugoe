@@ -305,12 +305,11 @@ fn import_into_existing_model_uses_new_top_level_part() {
     let options = PsdImportOptions::new("layers");
     let first = import_psd(doc.model(), &fixture_bytes(), &options).unwrap();
     // キャンバスは変えず、大きさの違いを警告する。
-    assert!(
-        first
-            .warnings
-            .iter()
-            .any(|w| w.path.is_empty() && w.message.contains("differs from the model canvas"))
-    );
+    assert!(first.warnings.iter().any(|w| w.path.is_empty()
+        && w.message.starts_with(
+            "the PSD canvas (64x48) differs from the model canvas (256x256); \
+                     the model canvas is kept"
+        )));
     doc.apply(first.command).unwrap();
     // 同じ PSD をもう一度取り込むと、ID とテクスチャ名が重ならないように番号を付ける。
     let second = import_psd(doc.model(), &fixture_bytes(), &options).unwrap();

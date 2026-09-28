@@ -1,5 +1,6 @@
 // バックエンドが持つドキュメント (モデルの正となる状態) の、フロントエンド側の写し。
 // 編集は必ず IPC の Command で行い、その後 refresh() で読み直す (docs/editor.md)。
+import { isEmptyModel } from "./emptyState";
 import { type Command, ipc, type Model, type Parameter, type RederiveWarning } from "./ipc";
 import { mergeWarnings } from "./panels/inspector/inference/inference";
 import type { ViewportModel } from "./viewport/controller.svelte";
@@ -17,6 +18,8 @@ export class EditorDocument {
    * 利用者が閉じるまで残す。同じ格子とミラー元の組は新しいもので置き換える。
    */
   warnings = $state<RederiveWarning[]>([]);
+  /** パーツ・メッシュなどが 1 つもない (空のプロジェクト)。ビューポートとツリーが案内を出す。 */
+  empty = $state(false);
   /** refresh が成功するたびに増える (ファイルメニューの状態の取り直しなどに使う)。 */
   revision = $state(0);
 
@@ -29,7 +32,9 @@ export class EditorDocument {
         return null;
       });
       this.model = { json, bundle };
-      this.parameters = (JSON.parse(json) as Model).parameters;
+      const parsed = JSON.parse(json) as Model;
+      this.parameters = parsed.parameters;
+      this.empty = isEmptyModel(parsed);
       this.error = null;
       this.revision += 1;
     } catch (e) {

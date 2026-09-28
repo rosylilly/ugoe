@@ -28,6 +28,9 @@ export const ipc = {
   redo: () => invoke<boolean>("redo"),
   projectStatus: () => invoke<ProjectStatus>("project_status"),
   newProject: () => invoke<ProjectStatus>("new_project"),
+  /** apps/editor/src-tauri/src/project.rs。PSD から新しいプロジェクトを作り、取り込みの警告を返す。 */
+  newProjectFromPsd: (path: string, meshOptions?: Partial<AutoMeshOptions>) =>
+    invoke<PsdImportWarning[]>("new_project_from_psd", { path, meshOptions: meshOptions ?? null }),
   openProject: (path: string) => invoke<ProjectStatus>("open_project", { path }),
   saveProject: () => invoke<ProjectStatus>("save_project"),
   /** 拡張子 .ugoeproj がなければバックエンドが付ける。 */

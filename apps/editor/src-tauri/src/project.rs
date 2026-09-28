@@ -3,14 +3,15 @@
 //! 引数・戻り値の型を変えたら `apps/editor/src/lib/ipc.ts` も同じ PR で更新すること。
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, MutexGuard};
+use std::sync::MutexGuard;
 
 use serde::Serialize;
 use tauri::State;
 use ts_rs::TS;
 use ugoe_editor_core::project::PROJECT_EXTENSION;
-use ugoe_editor_core::texture::solid_png;
-use ugoe_editor_core::{Document, Project, ProjectMeta, Textures};
+use ugoe_editor_core::{
+    AutoMeshOptions, Document, Project, ProjectMeta, PsdImportOptions, PsdImportWarning, import,
+};
 use ugoe_model::expression::Expression;
 use ugoe_model::motion::Motion;
 use ugoe_model::physics::PhysicsSettings;
@@ -52,19 +53,27 @@ impl ProjectSession {
     }
 }
 
-/// 起動時の状態: 白いテクスチャを持つ `single_quad` の、保存先のないプロジェクト。
+/// 起動時の状態: 空のモデルの、保存先のないプロジェクト (`new_project` と同じ)。
+/// 空のモデルに PSD を取り込むとキャンバスが PSD の大きさになる (`docs/editor.md#psd-の取り込み`)。
 pub fn initial_state() -> (ProjectSession, Document) {
-    let model = ugoe_model::fixtures::single_quad();
-    let textures: Textures = model
-        .textures
-        .iter()
-        .map(|t| {
-            let png = solid_png(t.width, t.height, [255; 4]);
-            (t.name.clone(), Arc::from(png))
-        })
-        .collect();
-    let project = Project::new(ProjectMeta::new("Untitled"), model, textures);
-    ProjectSession::from_project(project, None)
+    ProjectSession::from_project(Project::empty(UNTITLED), None)
+}
+
+/// 新しいプロジェクトの名前 (保存するまで)。
+const UNTITLED: &str = "Untitled";
+
+/// PSD から新しいプロジェクトを作る: `options.name` (PSD のファイル名) の空のプロジェクトに取り込む。
+/// 空のモデルへの取り込みなので、キャンバスは PSD の大きさになる。取り込みは Undo の 1 単位で、
+/// 未保存の状態から始まる (Undo すると空のプロジェクトに戻る)。
+fn from_psd(
+    bytes: &[u8],
+    options: &PsdImportOptions,
+) -> Result<(ProjectSession, Document, Vec<PsdImportWarning>), String> {
+    let (session, mut document) =
+        ProjectSession::from_project(Project::empty(options.name.clone()), None);
+    let import = import::import_psd(document.model(), bytes, options).map_err(|e| e.to_string())?;
+    document.apply(import.command).map_err(|e| e.to_string())?;
+    Ok((session, document, import.warnings))
 }
 
 /// フロントエンドに見せるプロジェクトの状態。
@@ -130,8 +139,24 @@ pub fn project_status(state: State<'_, AppState>) -> Result<ProjectStatus, Strin
 #[tauri::command]
 pub fn new_project(state: State<'_, AppState>) -> Result<ProjectStatus, String> {
     let (mut document, mut session) = lock_both(&state)?;
-    (*session, *document) = ProjectSession::from_project(Project::empty("Untitled"), None);
+    (*session, *document) = ProjectSession::from_project(Project::empty(UNTITLED), None);
     Ok(status(&session, &document))
+}
+
+/// PSD ファイルから新しいプロジェクトを作る (File > New from PSD…)。プロジェクトの名前は
+/// ファイル名 (拡張子を除く)、キャンバスは PSD の大きさ。未保存の変更は破棄する (確認はフロントエンドで行う)。
+/// 失敗したら今のプロジェクトはそのまま。戻り値は取り込みの警告。
+#[tauri::command]
+pub fn new_project_from_psd(
+    state: State<'_, AppState>,
+    path: String,
+    mesh_options: Option<AutoMeshOptions>,
+) -> Result<Vec<PsdImportWarning>, String> {
+    let (bytes, options) = crate::psd::read_psd(&path, mesh_options)?;
+    let (new_session, new_document, warnings) = from_psd(&bytes, &options)?;
+    let (mut document, mut session) = lock_both(&state)?;
+    (*session, *document) = (new_session, new_document);
+    Ok(warnings)
 }
 
 /// `.ugoeproj` ディレクトリを開く。失敗したら今のプロジェクトはそのまま。
@@ -221,10 +246,57 @@ mod tests {
     }
 
     #[test]
-    fn initial_state_can_be_exported() {
+    fn initial_state_is_empty_and_can_be_exported() {
         let (session, document) = initial_state();
         assert!(!document.is_modified());
+        let model = document.model();
+        assert!(model.parts.is_empty() && model.meshes.is_empty() && model.textures.is_empty());
         let bytes = ugoe_editor_core::export_bundle(&session.to_project(&document)).unwrap();
-        assert!(ugoe_format::read_bundle(&bytes).is_ok());
+        let bundle = ugoe_format::read_bundle(&bytes).unwrap();
+        assert!(bundle.model.meshes.is_empty());
+    }
+
+    fn character_psd() -> Vec<u8> {
+        std::fs::read(crate::bindings::repo_root().join("assets/fixtures/character.psd")).unwrap()
+    }
+
+    /// 起動時の状態に取り込むと、キャンバスが PSD の大きさになり、キャンバスの警告は出ない。
+    #[test]
+    fn importing_into_initial_state_uses_psd_canvas() {
+        let (_, mut document) = initial_state();
+        let import = import::import_psd(
+            document.model(),
+            &character_psd(),
+            &PsdImportOptions::new("character"),
+        )
+        .unwrap();
+        assert!(import.warnings.is_empty(), "{:?}", import.warnings);
+        document.apply(import.command).unwrap();
+        let canvas = &document.model().meta.canvas;
+        assert_eq!((canvas.width, canvas.height), (320.0, 400.0));
+    }
+
+    #[test]
+    fn new_project_from_psd_is_named_after_the_file() {
+        let (session, mut document, warnings) =
+            from_psd(&character_psd(), &PsdImportOptions::new("character")).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let status = status(&session, &document);
+        assert_eq!(status.name, "character");
+        assert_eq!(status.path, None);
+        assert!(status.modified);
+        let canvas = &document.model().meta.canvas;
+        assert_eq!((canvas.width, canvas.height), (320.0, 400.0));
+        assert!(!document.model().meshes.is_empty());
+        // 書き出せる。Undo で空のプロジェクトに戻る。
+        ugoe_editor_core::export_bundle(&session.to_project(&document)).unwrap();
+        assert!(document.undo());
+        assert!(document.model().meshes.is_empty());
+        assert!(!document.is_modified());
+    }
+
+    #[test]
+    fn new_project_from_psd_rejects_invalid_files() {
+        assert!(from_psd(b"not a psd", &PsdImportOptions::new("broken")).is_err());
     }
 }

@@ -1,5 +1,6 @@
 <script lang="ts">
-// ファイル操作 (新規・開く・保存・別名で保存・書き出し・PSD の取り込み) とプロジェクト名・未保存の印。
+// ファイル操作 (新規・PSD から新規・開く・保存・別名で保存・書き出し・PSD の取り込み) と
+// プロジェクト名・未保存の印。
 // パスはファイルダイアログではなく入力欄で受け取る (docs/editor.md#プロジェクト)。
 import { ipc, type ProjectStatus, type PsdImportWarning } from "./ipc";
 
@@ -10,9 +11,12 @@ interface Props {
 
 let { onchange }: Props = $props();
 
-type PathAction = "open" | "saveAs" | "export" | "importPsd";
+type PathAction = "newFromPsd" | "open" | "saveAs" | "export" | "importPsd";
+/** 未保存の変更を破棄する操作。 */
+type DiscardAction = "new" | "newFromPsd" | "open";
 
 const labels: Record<PathAction, string> = {
+  newFromPsd: "New project from PSD (.psd file)",
   open: "Open project (.ugoeproj directory)",
   saveAs: "Save project as (.ugoeproj directory)",
   export: "Export bundle (.ugoe file)",
@@ -23,7 +27,7 @@ let status = $state<ProjectStatus | null>(null);
 let action = $state<PathAction | null>(null);
 let path = $state("");
 /** 未保存の変更を破棄する操作の確認待ち。 */
-let pendingDiscard = $state<"new" | "open" | null>(null);
+let pendingDiscard = $state<DiscardAction | null>(null);
 let message = $state<string | null>(null);
 /** 最後の PSD の取り込みの警告。 */
 let warnings = $state<PsdImportWarning[]>([]);
@@ -49,7 +53,7 @@ async function run(task: () => Promise<ProjectStatus | undefined>, reload: boole
   }
 }
 
-function discardConfirmed(kind: "new" | "open"): boolean {
+function discardConfirmed(kind: DiscardAction): boolean {
   if (!status?.modified || pendingDiscard === kind) {
     pendingDiscard = null;
     return true;
@@ -64,10 +68,11 @@ function newProject() {
 }
 
 function ask(next: PathAction) {
-  if (next === "open" && !discardConfirmed("open")) return;
+  const discards = next === "open" || next === "newFromPsd";
+  if (discards && !discardConfirmed(next)) return;
   action = next;
   path = next === "saveAs" && status?.path ? status.path : "";
-  if (next !== "open") message = null;
+  if (!discards) message = null;
 }
 
 function save() {
@@ -78,7 +83,13 @@ function save() {
 function submit(event: SubmitEvent) {
   event.preventDefault();
   const target = path.trim();
-  if (action === "open") run(() => ipc.openProject(target), true);
+  if (action === "newFromPsd")
+    run(async () => {
+      warnings = [];
+      warnings = await ipc.newProjectFromPsd(target);
+      return ipc.projectStatus();
+    }, true);
+  else if (action === "open") run(() => ipc.openProject(target), true);
   else if (action === "saveAs") run(() => ipc.saveProjectAs(target), false);
   else if (action === "export")
     run(async () => {
@@ -98,6 +109,7 @@ refresh();
 
 <nav class="file-menu">
   <button onclick={newProject}>New</button>
+  <button onclick={() => ask("newFromPsd")}>New from PSD…</button>
   <button onclick={() => ask("open")}>Open…</button>
   <button onclick={save}>Save</button>
   <button onclick={() => ask("saveAs")}>Save As…</button>
