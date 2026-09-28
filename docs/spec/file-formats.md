@@ -56,8 +56,40 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 | `TEXR` | テクスチャ 1 枚 (PNG または KTX2)。`Model.textures` と同じ順に並べる |
 | `META` | 作者やライセンスなどの自由なメタデータ (JSON) |
 
-- 未知のタグのチャンクは読み飛ばします (前方互換)。
-- バイナリのシリアライズ方式は T0105 で決めます (候補: postcard、自前の SoA 形式)。決まったらこの文書を更新します。
+- 未知のタグのチャンクは読み飛ばします (前方互換)。未知のタグのチャンクは中身も展開もしません。
+- チャンク表の順序は自由ですが、書き出しでは `MODL` `PHYS` `MOTN`… `EXPR`… `META` `TEXR`… の順にします。同じタグのチャンク (`MOTN` `EXPR` `TEXR`) は表の順が意味を持ちます。
+- ヘッダの `flags` と、チャンクの `flags` の bit0 以外は予約です。0 でなければ読み込みをエラーにします。
+
+### ペイロードのエンコード
+
+判断の経緯は [ADR 0008](../adr/0008-bundle-payload-encoding.md)。
+
+| チャンク | エンコード |
+| --- | --- |
+| `MODL` `PHYS` `MOTN` `EXPR` | **MessagePack**。構造体はフィールド名付きのマップ (`rmp-serde` の `to_vec_named`)。enum の表現は JSON と同じく serde の属性に従う |
+| `TEXR` | PNG / KTX2 ファイルの中身そのまま。形式は先頭のシグネチャで判別する |
+| `META` | UTF-8 の JSON |
+
+- postcard などの自己記述的でない形式は、`ugoe-model` の内部タグ付き enum (`Segment` `DeformerKind`) を読めないため採用しませんでした。
+- `flags` の bit0 が立ったチャンクは、ペイロード全体が 1 つの zstd フレームです。書き出し時の圧縮は任意で (既定は無圧縮)、`TEXR` は圧縮しません。展開後の大きさの上限は 1 チャンクあたり 256 MiB です。
+
+### 読み込み時の検査
+
+`read_bundle` は入力を信用せず、次をすべてエラーとして返します (パニックしない)。
+
+- 切り詰め、マジックの不一致、未対応のコンテナ `version`、予約フラグ
+- チャンクの範囲外 (オフセット・長さのオーバーフローを含む)、16 バイト境界でないオフセット、ヘッダ・チャンク表・他のチャンクとの重なり
+- `MODL` がない、`MODL` `PHYS` `META` が 2 つ以上ある
+- `TEXR` の数が `Model.textures` と一致しない、PNG / KTX2 でないテクスチャ
+- ペイロードのデコード失敗、`schema_version` が新しすぎる
+- `ugoe_model::validate::validate` がエラーを返すモデル (下流の変形・描画で範囲外アクセスを起こさないため、ここで弾く)
+
+### API (`ugoe-format`)
+
+- `Bundle { model, physics, motions, expressions, textures, meta }`。テクスチャは `TextureData { format: Png | Ktx2, bytes }`。
+- `write_bundle(&Bundle) -> Result<Vec<u8>, FormatError>` / `write_bundle_with(&Bundle, WriteOptions { compress })`
+- `read_bundle(&[u8]) -> Result<Bundle, FormatError>`
+- ファイルシステムには触れません。読み書きはバイト列で行います。
 
 > 未決: 読み込み時間を短くするため、`CompiledModel` をそのまま (ゼロコピーで) 読めるレイアウトにするか。まずは素直なシリアライズで実装し、計測してから判断する。
 

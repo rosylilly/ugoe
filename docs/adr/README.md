@@ -17,3 +17,4 @@
 | [0005](0005-editor-command-model.md) | 編集操作はすべてシリアライズ可能な Command を通す | Accepted |
 | [0006](0006-ai-proposals.md) | AI は提案だけを行い、適用は人間が承認する | Accepted |
 | [0007](0007-multi-agent-workflow.md) | ファイルベースのタスクボードと worktree による並行開発 | Accepted |
+| [0008](0008-bundle-payload-encoding.md) | バンドルのペイロードは MessagePack (フィールド名付き) と zstd | Accepted |
