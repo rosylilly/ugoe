@@ -40,6 +40,7 @@
 - wasm32-unknown-unknown でビルドできること (`just wasm-check`)。
 - `std::fs`、`std::thread`、`std::time` を使わないこと。時間は `dt` として受け取ります。
 - グローバルな状態 (static mut、グローバルなロガーの初期化など) を持たないこと。
+  例外: 出力に影響しない一意な ID を振るためのアトミックなカウンタ (`ModelInstance::id()`) は認める。初期化が不要で、評価結果の決定性にも影響しないため。
 - 重い依存を追加しないこと。追加する場合は ADR を書きます。
 
 > 未決: 組み込み機器向けに `no_std + alloc` に対応するか。`ugoe-core`、`ugoe-model`、`ugoe-runtime` は対応できる設計にしておき、需要があれば対応する。

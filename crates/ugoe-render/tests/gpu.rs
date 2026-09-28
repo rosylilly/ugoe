@@ -551,6 +551,7 @@ fn mask_clips_drawable() {
             mask_draws: 1,
             mask_atlases: 1,
             mask_atlas_bytes: atlas_bytes(256),
+            ..image.stats
         }
     );
 }
@@ -653,6 +654,7 @@ fn invisible_mask_mesh_is_still_drawn_as_mask() {
             mask_draws: 1,
             mask_atlases: 1,
             mask_atlas_bytes: atlas_bytes(256),
+            ..image.stats
         }
     );
 
@@ -713,6 +715,7 @@ fn drawables_with_same_mask_set_share_mask() {
             mask_draws: 3,
             mask_atlases: 1,
             mask_atlas_bytes: atlas_bytes(256),
+            ..image.stats
         }
     );
 }
@@ -785,6 +788,7 @@ fn unmasked_frame_uses_no_atlas() {
             mask_draws: 0,
             mask_atlases: 0,
             mask_atlas_bytes: 0,
+            ..image.stats
         }
     );
 }
@@ -954,6 +958,7 @@ fn nested_masks_inherit_clipping() {
             mask_draws: 2,
             mask_atlases: 2,
             mask_atlas_bytes: 2 * atlas_bytes(256),
+            ..image.stats
         }
     );
 }
@@ -1211,4 +1216,228 @@ fn unused_overflow_atlases_are_released() {
         render_frame(&mut renderer, &instance, &normal_view(), SIZE, clear).expect("render");
     assert_five_mask_sets(&image, false);
     assert_eq!(image.stats.mask_atlas_bytes, 2 * atlas_bytes(16));
+}
+
+// ---- 転送の省略 (T0207) ----
+
+/// 頂点 4 つのメッシュ 1 つ分の頂点位置のバイト数。
+const QUAD_BYTES: u64 = 4 * 8;
+
+fn set_param(instance: &mut ModelInstance, id: &str, value: f32) {
+    let index = instance.parameters().index_of(id).expect("parameter");
+    instance.parameters_mut().set(index, value);
+}
+
+fn frame(renderer: &mut Renderer, instance: &ModelInstance) -> Image {
+    render_frame(
+        renderer,
+        instance,
+        &normal_view(),
+        SIZE,
+        wgpu::Color::TRANSPARENT,
+    )
+    .expect("render")
+}
+
+/// 赤い `Content` (画素 16..48) を、パラメータ X で動く `Mask` で切り抜く。
+/// `Mask` は single_quad の四角形で、X = 0 なら画素 16..48、X = 1 なら画素 32..64 を覆う。
+fn moving_mask_model() -> Model {
+    let mut mask = fixtures::single_quad().meshes.remove(0);
+    mask.id = "Mask".into();
+    mask.name = "Mask".into();
+    mask.blend = BlendMode::Multiply;
+    for kf in &mut mask.keyforms.keyforms {
+        kf.draw_order = 400.0;
+    }
+    model_of(vec![
+        red_quad("Content", [64.0, 64.0, 192.0, 192.0], &["Mask"], false),
+        mask,
+    ])
+}
+
+/// `moving_mask_model` を X = `x` (0 か 1) で描いた結果か確かめる。
+#[track_caller]
+fn assert_mask_at(image: &Image, x: f32) {
+    image.assert_pixel((24, 32), if x == 0.0 { RED } else { NONE });
+    image.assert_pixel((40, 32), RED);
+    image.assert_pixel((52, 32), NONE);
+}
+
+/// single_quad (白) を X = `x` (0 か 1) で描いた結果か確かめる。
+#[track_caller]
+fn assert_quad_at(image: &Image, x: f32) {
+    image.assert_pixel((20, 32), if x == 0.0 { WHITE } else { NONE });
+    image.assert_pixel((40, 32), WHITE);
+    image.assert_pixel((52, 32), if x == 0.0 { NONE } else { WHITE });
+}
+
+#[test]
+fn static_frames_upload_nothing_after_the_first() {
+    let (mut renderer, mut instance) = clipped_scene(false, 1.0).prepare().expect("prepare");
+    let first = frame(&mut renderer, &instance);
+    assert_clipped(&first);
+    assert_eq!(first.stats.position_bytes, 2 * QUAD_BYTES);
+    assert!(first.stats.uniform_bytes > 0);
+    assert!(!first.stats.masks_reused);
+    assert_eq!(first.stats.mask_draws, 1);
+
+    // update を呼ばない (出力が同じ) フレームと、呼んでも何も変わらないフレーム。
+    for update in [false, true, true] {
+        if update {
+            instance.update();
+        }
+        let image = frame(&mut renderer, &instance);
+        assert_clipped(&image);
+        assert_eq!(
+            image.stats,
+            FrameStats {
+                masks_reused: true,
+                mask_draws: 0,
+                position_bytes: 0,
+                uniform_bytes: 0,
+                ..first.stats
+            },
+            "update: {update}"
+        );
+    }
+
+    // ビューだけが変わればビューのユニフォームとマスクを描き直す (頂点位置は転送しない)。
+    let image = render_frame(
+        &mut renderer,
+        &instance,
+        &shifted_view(0.0625),
+        SIZE,
+        wgpu::Color::TRANSPARENT,
+    )
+    .expect("render");
+    assert_eq!(image.stats.position_bytes, 0);
+    assert!(image.stats.uniform_bytes > 0);
+    assert!(!image.stats.masks_reused);
+}
+
+#[test]
+fn moving_one_mesh_uploads_only_that_mesh() {
+    let mut model = fixtures::single_quad();
+    model
+        .meshes
+        .push(red_quad("Still", [0.0, 0.0, 32.0, 32.0], &[], false));
+    let (mut renderer, mut instance) = Scene::new(model).prepare().expect("prepare");
+    let image = frame(&mut renderer, &instance);
+    assert_quad_at(&image, 0.0);
+    assert_eq!(image.stats.position_bytes, 2 * QUAD_BYTES);
+
+    set_param(&mut instance, "X", 1.0);
+    instance.update();
+    let image = frame(&mut renderer, &instance);
+    assert_quad_at(&image, 1.0);
+    image.assert_pixel((4, 4), RED);
+    assert_eq!(image.stats.position_bytes, QUAD_BYTES);
+    // 色や不透明度は変わらず、マスクもないのでユニフォームは転送しない。
+    assert_eq!(image.stats.uniform_bytes, 0);
+}
+
+#[test]
+fn moving_mask_redraws_the_atlas() {
+    let (mut renderer, mut instance) = Scene::new(moving_mask_model()).prepare().expect("prepare");
+    assert_mask_at(&frame(&mut renderer, &instance), 0.0);
+
+    set_param(&mut instance, "X", 1.0);
+    instance.update();
+    let image = frame(&mut renderer, &instance);
+    assert_mask_at(&image, 1.0);
+    assert!(!image.stats.masks_reused);
+    assert_eq!(image.stats.mask_draws, 1);
+
+    instance.update();
+    let image = frame(&mut renderer, &instance);
+    assert_mask_at(&image, 1.0);
+    assert!(image.stats.masks_reused);
+}
+
+#[test]
+fn two_instances_alternate_on_one_renderer() {
+    let scene = Scene::new(moving_mask_model());
+    let (mut renderer, mut a) = scene.prepare().expect("prepare");
+    // 同じモデル (同じ CompiledModel) の 2 つ目のインスタンス。
+    let mut b = ModelInstance::new(a.compiled().clone());
+    set_param(&mut b, "X", 1.0);
+    b.update();
+    for round in 0..3 {
+        // どちらも毎回 update する (変更フラグは「変化なし」だが、バッファは相手の内容)。
+        a.update();
+        b.update();
+        let image = frame(&mut renderer, &a);
+        assert_mask_at(&image, 0.0);
+        assert!(!image.stats.masks_reused, "round {round}");
+        let image = frame(&mut renderer, &b);
+        assert_mask_at(&image, 1.0);
+        // 動くのはマスク用メッシュだけなので、比べて違う要素だけを転送する。
+        if round > 0 {
+            assert_eq!(image.stats.position_bytes, QUAD_BYTES, "round {round}");
+        }
+    }
+}
+
+#[test]
+fn several_updates_between_encodes_are_not_lost() {
+    let (mut renderer, mut instance) = Scene::new(fixtures::single_quad())
+        .prepare()
+        .expect("prepare");
+    assert_quad_at(&frame(&mut renderer, &instance), 0.0);
+    // 2 回目の update の変更フラグは「変化なし」だが、描いたときからは動いている。
+    set_param(&mut instance, "X", 1.0);
+    instance.update();
+    instance.update();
+    let image = frame(&mut renderer, &instance);
+    assert_quad_at(&image, 1.0);
+    assert_eq!(image.stats.position_bytes, QUAD_BYTES);
+}
+
+#[test]
+fn switching_models_reuploads_everything() {
+    let (mut renderer, quad) = Scene::new(fixtures::single_quad())
+        .prepare()
+        .expect("prepare");
+    let compiled = CompiledModel::compile(moving_mask_model()).expect("compile");
+    let mut masked = ModelInstance::new(compiled);
+    masked.update();
+    for _ in 0..2 {
+        let image = frame(&mut renderer, &quad);
+        assert_quad_at(&image, 0.0);
+        assert_eq!(image.stats.position_bytes, QUAD_BYTES);
+        let image = frame(&mut renderer, &masked);
+        assert_mask_at(&image, 0.0);
+        assert_eq!(image.stats.position_bytes, 2 * QUAD_BYTES);
+        assert!(!image.stats.masks_reused);
+    }
+}
+
+#[test]
+fn mark_all_changed_reuploads_positions() {
+    let (mut renderer, mut instance) = clipped_scene(false, 1.0).prepare().expect("prepare");
+    frame(&mut renderer, &instance);
+    instance.mark_all_changed();
+    instance.update();
+    let image = frame(&mut renderer, &instance);
+    assert_clipped(&image);
+    assert_eq!(image.stats.position_bytes, 2 * QUAD_BYTES);
+    // マスク用メッシュの頂点位置を書き直したので、アトラスも描き直す。
+    assert!(!image.stats.masks_reused);
+}
+
+#[test]
+fn replacing_a_mask_texture_redraws_the_atlas() {
+    let mut scene = clipped_scene(false, 1.0);
+    use_alpha_texture(&mut scene, &["Mask"], 255);
+    let (mut renderer, instance) = scene.prepare().expect("prepare");
+    assert_clipped(&frame(&mut renderer, &instance));
+    // マスクのテクスチャを透明にすると、カバレッジは 0 になる。
+    let Gpu { device, queue, .. } = gpu();
+    renderer
+        .set_texture(device, queue, 1, 1, 1, &[0; 4])
+        .expect("texture");
+    let image = frame(&mut renderer, &instance);
+    assert!(!image.stats.masks_reused);
+    image.assert_pixel((40, 32), NONE);
+    assert_eq!(image.covered_pixels([0; 4]), 0);
 }

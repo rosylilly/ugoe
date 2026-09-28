@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use ugoe_core::{Affine2, Rgb, Vec2};
 use ugoe_model::{BlendMode, DeformerKind, Model};
@@ -106,6 +107,10 @@ impl std::ops::BitAnd for DrawableChanges {
 /// モデル 1 体分の実行時状態。
 #[derive(Debug)]
 pub struct ModelInstance {
+    /// プロセス内で一意な番号 ([`ModelInstance::id`])。
+    id: u64,
+    /// `update` を呼んだ回数 ([`ModelInstance::update_count`])。
+    update_count: u64,
     compiled: Arc<CompiledModel>,
     parameters: ParameterValues,
     drawables: Vec<DrawableState>,
@@ -160,7 +165,11 @@ impl ModelInstance {
             .collect();
         // 重みの個数は軸数 N に対して最大 2^N (`keyform::weights`)。
         let max_weights = 1usize << compiled.max_axes.min(20);
+        // 番号は一意であればよい (順序は使わない) ので Relaxed で足りる。
+        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
         let mut instance = Self {
+            id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
+            update_count: 0,
             parameters,
             render_order: Vec::with_capacity(mesh_count),
             previous: drawables.clone(),
@@ -181,6 +190,23 @@ impl ModelInstance {
         // すべてを変更ありとして報告する (new の直後に update してから読むホストのため)。
         instance.report_all = true;
         instance
+    }
+
+    /// このインスタンスを識別する番号。プロセス内で一意で、インスタンスの生存中は変わらない。
+    ///
+    /// 描画側が「どのインスタンスの出力を転送済みか」を覚えるために使う
+    /// (`docs/spec/evaluation.md#変更フラグ`)。
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
+    /// [`ModelInstance::update`] を呼んだ回数 ([`ModelInstance::new`] の中の 1 回を含む)。
+    ///
+    /// 出力 (`drawables` など) は `update` でだけ変わるので、この値が同じなら出力も同じ。
+    /// 前回見た値のちょうど 1 つ後なら、[`ModelInstance::changes`] はそのとき見た出力からの変更を表す
+    /// (`docs/spec/evaluation.md#変更フラグ`)。
+    pub fn update_count(&self) -> u64 {
+        self.update_count
     }
 
     pub fn compiled(&self) -> &Arc<CompiledModel> {
@@ -205,6 +231,7 @@ impl ModelInstance {
         self.apply_glues();
         self.sort_render_order();
         self.detect_changes();
+        self.update_count += 1;
     }
 
     /// 次の [`ModelInstance::update`] で、比較せずにすべての要素と描画順を変更ありとして報告させる。
@@ -726,6 +753,23 @@ mod tests {
         assert!(instance.render_order_changed());
         instance.update();
         assert_no_changes(&instance);
+    }
+
+    #[test]
+    fn ids_are_unique_and_update_count_increments() {
+        let mut a = instance(fixtures::single_quad());
+        let b = instance(fixtures::single_quad());
+        assert_ne!(a.id(), b.id());
+        let (id, count) = (a.id(), a.update_count());
+        assert_eq!(count, 1, "new runs update once");
+        a.update();
+        assert_eq!((a.id(), a.update_count()), (id, count + 1));
+        a.mark_all_changed();
+        assert_eq!(
+            a.update_count(),
+            count + 1,
+            "only update advances the count"
+        );
     }
 
     #[test]

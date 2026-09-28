@@ -9,6 +9,7 @@
 
 mod mask;
 mod pipeline;
+mod upload;
 
 use std::sync::Arc;
 
@@ -18,6 +19,7 @@ use wgpu::util::DeviceExt;
 pub use crate::mask::MaskAtlasOptions;
 use crate::mask::{AtlasPool, CellRequest, MaskContent, MaskSlot, MaskStep, MeshMask};
 use crate::pipeline::{MASK_ATLAS_FORMAT, PipelineKey, Pipelines, VEC2_SIZE};
+use crate::upload::{PositionUploads, SlotUploads};
 
 /// 参照シェーダの WGSL ソース。
 pub const DRAWABLE_WGSL: &str = include_str!("shaders/drawable.wgsl");
@@ -80,11 +82,17 @@ pub struct FrameStats {
     /// フレームの終わりに持っているマスクアトラスの合計のバイト数 (このフレームで使わなかったが、
     /// 縮小・解放を待っているアトラスも含む。`MaskAtlasOptions::shrink_after_frames`)。
     pub mask_atlas_bytes: u64,
+    /// マスクアトラスの内容を前のフレームから使い回したか (マスクパスを省いた。`mask_draws` は 0)。
+    pub masks_reused: bool,
+    /// 転送した頂点位置のバイト数 (変わっていない要素は転送しない)。
+    pub position_bytes: u64,
+    /// 転送したユニフォームのバイト数 (要素ごと・マスクパス用・ビュー。変わっていないものは転送しない)。
+    pub uniform_bytes: u64,
 }
 
 /// シェーダの `Globals` と同じ配置 (mat3x3 の各列は vec4 に詰める)。
 #[repr(C)]
-#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 struct GlobalsRaw {
     view_proj: [[f32; 4]; 3],
 }
@@ -144,6 +152,8 @@ struct Geometry {
     uvs: wgpu::Buffer,
     indices: wgpu::Buffer,
     meshes: Vec<MeshRange>,
+    /// 全要素の頂点数の合計。
+    vertex_count: usize,
     /// マスクの内容。モデルの静的なデータなので、ロード時に一度だけ求める。
     masks: Vec<MaskContent>,
     /// マスクの内容のインデックスを、レベルの大きい順に並べたもの (外接矩形の伝播に使う)。
@@ -180,13 +190,25 @@ struct MaskAtlas {
 }
 
 /// 1 フレームで使うマスクの内容の情報。
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct ActiveMask {
     /// `Geometry::masks` のインデックス。
     content: u32,
     slot: MaskSlot,
     /// 画面 UV → アトラス UV の変換 (`mask_rect` ユニフォーム)。
     transform: [f32; 4],
+}
+
+/// マスクアトラスに今描かれている内容の記録 (変わらなければマスクパスを省く)。
+///
+/// ここにない入力 (マスク用メッシュの頂点位置とマスクパスのユニフォーム) は、
+/// そのフレームで転送したかどうかで変化を判断する。
+#[derive(Debug, Default)]
+struct MaskFrame {
+    atlas_size: u32,
+    view_proj: [[f32; 3]; 3],
+    texture_generation: u64,
+    active: Vec<ActiveMask>,
 }
 
 #[derive(Debug)]
@@ -200,6 +222,10 @@ struct TextureSlot {
 ///
 /// `encode` はバッファを `Queue::write_buffer` で書き換えるので、
 /// 同じ `Renderer` の `encode` は 1 回の `Queue::submit` につき 1 回だけ呼ぶこと。
+///
+/// 変わっていない頂点位置・ユニフォーム・マスクアトラスは転送し直さない (`docs/spec/rendering.md` の
+/// 「転送の省略」)。1 つの `Renderer` で同じモデルの複数のインスタンスを交互に描いてもよく、
+/// `encode` の間に `update` を何度呼んでもよい。
 #[derive(Debug)]
 pub struct Renderer {
     target_format: wgpu::TextureFormat,
@@ -219,9 +245,16 @@ pub struct Renderer {
     mask_atlases: Vec<MaskAtlas>,
     stats: FrameStats,
     textures: Vec<Option<TextureSlot>>,
+    /// `set_texture` のたびに増やす (マスクアトラスの使い回しの判断に使う)。
+    texture_generation: u64,
     geometry: Option<Geometry>,
+    /// `geometry` のバッファに転送済みの内容の控え (`docs/spec/rendering.md` の「転送の省略」)。
+    position_uploads: PositionUploads,
+    draw_uploads: SlotUploads,
+    globals_uploaded: Option<GlobalsRaw>,
+    /// マスクアトラスの今の内容。`None` なら内容は当てにならない。
+    mask_frame: Option<MaskFrame>,
     // フレームごとの書き込み用の作業領域。
-    positions_scratch: Vec<[f32; 2]>,
     draws_scratch: Vec<u8>,
 }
 
@@ -344,8 +377,12 @@ impl Renderer {
             mask_atlases: Vec::new(),
             stats: FrameStats::default(),
             textures: Vec::new(),
+            texture_generation: 0,
             geometry: None,
-            positions_scratch: Vec::new(),
+            position_uploads: PositionUploads::default(),
+            draw_uploads: SlotUploads::default(),
+            globals_uploaded: None,
+            mask_frame: None,
             draws_scratch: Vec::new(),
         }
     }
@@ -396,6 +433,7 @@ impl Renderer {
             _texture: texture,
             bind_group,
         });
+        self.texture_generation += 1;
         Ok(())
     }
 
@@ -421,11 +459,11 @@ impl Renderer {
             .as_ref()
             .is_none_or(|g| !Arc::ptr_eq(&g.model, instance.compiled()))
         {
-            self.geometry = Some(Geometry::new(
-                device,
-                &self.draw_layout,
-                instance.compiled(),
-            ));
+            let geometry = Geometry::new(device, &self.draw_layout, instance.compiled());
+            self.position_uploads.reset(geometry.vertex_count);
+            self.draw_uploads.reset();
+            self.mask_frame = None;
+            self.geometry = Some(geometry);
         }
         let Some(geometry) = self.geometry.as_ref() else {
             return Ok(());
@@ -546,8 +584,11 @@ impl Renderer {
             .map(|a| a.slot.atlas as usize + 1)
             .max()
             .unwrap_or(0);
+        // 作り直したアトラスの内容は当てにならない。
+        let mut atlases_changed = false;
         if atlas_size != self.mask_atlas_pool.size() {
             self.mask_atlases.clear();
+            atlases_changed = true;
         }
         let keep = self
             .mask_atlas_pool
@@ -560,21 +601,13 @@ impl Renderer {
                 &self.sampler,
                 atlas_size,
             ));
+            atlases_changed = true;
         }
 
-        // 頂点位置 (毎フレーム)。
-        self.positions_scratch.clear();
-        for state in drawables {
-            self.positions_scratch
-                .extend(state.positions.iter().map(|p| [p.x, p.y]));
-        }
-        if !self.positions_scratch.is_empty() {
-            queue.write_buffer(
-                &geometry.positions,
-                0,
-                bytemuck::cast_slice(&self.positions_scratch),
-            );
-        }
+        // 頂点位置 (変わった要素だけ)。
+        let position_bytes = self.position_uploads.upload(instance, |offset, data| {
+            queue.write_buffer(&geometry.positions, offset, data);
+        });
 
         // 要素 (またはマスク用メッシュ) `i` 自身のマスクの読み方。
         let mask_read = |i: usize| {
@@ -651,20 +684,60 @@ impl Renderer {
                 );
             }
         }
-        if !self.draws_scratch.is_empty() {
-            queue.write_buffer(&geometry.draws, 0, &self.draws_scratch);
-        }
+        let draw_writes = self
+            .draw_uploads
+            .upload(&self.draws_scratch, stride, |offset, data| {
+                queue.write_buffer(&geometry.draws, offset, data);
+            });
+        let mut uniform_bytes = draw_writes.bytes;
 
         let globals = GlobalsRaw {
             view_proj: m.map(|c| [c[0], c[1], c[2], 0.0]),
         };
-        queue.write_buffer(&self.globals, 0, bytemuck::bytes_of(&globals));
+        if self.globals_uploaded != Some(globals) {
+            queue.write_buffer(&self.globals, 0, bytemuck::bytes_of(&globals));
+            self.globals_uploaded = Some(globals);
+            uniform_bytes += std::mem::size_of::<GlobalsRaw>() as u64;
+        }
+
+        // マスクアトラスの内容の使い回し: アトラス・割り当て・ビュー・テクスチャが前と同じで、
+        // マスクパスのユニフォームとマスク用メッシュの頂点位置を転送していなければ、描く内容も同じ。
+        let mask_uniforms_written = draw_writes
+            .last_slot
+            .is_some_and(|slot| slot >= geometry.meshes.len());
+        let members_written = active.iter().any(|a| {
+            geometry.masks[a.content as usize]
+                .members
+                .iter()
+                .any(|&member| self.position_uploads.written(member as usize))
+        });
+        let masks_reused = !active.is_empty()
+            && !atlases_changed
+            && !mask_uniforms_written
+            && !members_written
+            && self.mask_frame.as_ref().is_some_and(|f| {
+                f.atlas_size == atlas_size
+                    && f.view_proj == m
+                    && f.texture_generation == self.texture_generation
+                    && f.active == active
+            });
+        let mask_frame = self.mask_frame.get_or_insert_with(MaskFrame::default);
+        mask_frame.atlas_size = atlas_size;
+        mask_frame.view_proj = m;
+        mask_frame.texture_generation = self.texture_generation;
+        mask_frame.active.clear();
+        mask_frame.active.extend_from_slice(&active);
+        let mask_atlases = if masks_reused {
+            &[][..]
+        } else {
+            &self.mask_atlases[..atlas_count]
+        };
 
         // マスクパス: アトラスごとに 1 パス (レベルの小さいアトラスから)。各内容はシザー矩形で
         // 自分のセルだけに描く。アトラスは 1 でクリアし、乗算合成で値を作る。
         let pipelines = self.pipelines.mask();
         let mut mask_draws = 0;
-        for (index, atlas) in self.mask_atlases[..atlas_count].iter().enumerate() {
+        for (index, atlas) in mask_atlases.iter().enumerate() {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("ugoe mask pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -777,6 +850,9 @@ impl Renderer {
             mask_draws,
             mask_atlases: atlas_count as u32,
             mask_atlas_bytes: self.mask_atlas_pool.bytes(),
+            masks_reused,
+            position_bytes,
+            uniform_bytes,
         };
         Ok(())
     }
@@ -819,6 +895,7 @@ impl Geometry {
             });
         }
 
+        let vertex_count = uvs.len();
         let positions = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("ugoe positions"),
             size: uvs.len() as u64 * VEC2_SIZE,
@@ -871,6 +948,7 @@ impl Geometry {
             uvs,
             indices,
             meshes,
+            vertex_count,
             masks,
             masks_by_level_desc,
             mask_slot_base,
