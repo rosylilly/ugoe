@@ -3,6 +3,8 @@
 
 use std::collections::{HashMap, VecDeque};
 
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use ugoe_model::deformer::DeformerKind;
 use ugoe_model::{
     Deformer, Glue, KeyformBinding, KeyformGrid, KeyformInference, KeyformOrigin, Mesh,
@@ -20,12 +22,26 @@ use crate::grid;
 /// ミラー元にする) と作り直しが往復するので、値が変わらなくなるか、この回数で止める。
 const MAX_PASSES: usize = 8;
 
+/// 自動の作り直しで失敗したが、コマンドは拒否せずに続けたこと (`docs/editor.md#推定とミラー`)。
+///
+/// いまはミラーのやり直しの失敗 (元の頂点が許容距離を超えて動いた、対を外した、など) だけを報告する。
+/// そのとき `target` の格子の `mirror` のセルは前の値のまま残る。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct RederiveWarning {
+    /// ミラーのセルを作り直せなかった格子の要素。
+    pub target: KeyformTarget,
+    /// ミラー元 (`mirror_source`) の要素。
+    pub source: KeyformTarget,
+    /// 失敗の理由 (`ugoe_rigging::InferError` の表記)。
+    pub message: String,
+}
+
 /// 型によらない格子の見え方 (軸・セル数・由来・推定の設定)。
 struct GridView<'a> {
     bindings: &'a [KeyformBinding],
     len: usize,
     origins: &'a mut Vec<KeyformOrigin>,
-    inference: Option<&'a KeyformInference>,
+    inference: &'a mut Option<KeyformInference>,
     mirror_source: &'a mut Option<MirrorSource>,
     /// セルを作り直す推定の方法 (`KeyformGrid::derivation` の値) の一覧。重複なし。
     methods: Vec<KeyformOrigin>,
@@ -50,7 +66,7 @@ impl<'a> GridView<'a> {
             bindings,
             len: keyforms.len(),
             origins,
-            inference: inference.as_ref(),
+            inference,
             mirror_source,
             methods,
         }
@@ -142,13 +158,10 @@ pub(crate) fn infer_keyforms(
     overwrite_derived: bool,
 ) -> Result<(), EditError> {
     let method = match method {
-        InferMethod::FromGrid => {
-            grid_method(grid_view(model, target)?.inference).ok_or_else(|| {
-                EditError::UnsupportedInference {
-                    target: target.to_string(),
-                }
-            })?
-        }
+        InferMethod::FromGrid => grid_method(grid_view(model, target)?.inference.as_ref())
+            .ok_or_else(|| EditError::UnsupportedInference {
+                target: target.to_string(),
+            })?,
         method => {
             grid_view(model, target)?;
             method
@@ -182,6 +195,22 @@ pub(crate) fn mirror(
             target: target.to_string(),
             error,
         })
+}
+
+/// [`crate::Command::SetKeyformInference`]。格子を作り直すのは [`rederive`]。
+pub(crate) fn set_inference(
+    model: &mut Model,
+    target: &KeyformTarget,
+    inference: Option<KeyformInference>,
+) -> Result<(), EditError> {
+    let view = grid_view(model, target)?;
+    if inference == Some(KeyformInference::Unknown) {
+        return Err(EditError::UnsupportedInference {
+            target: target.to_string(),
+        });
+    }
+    *view.inference = inference;
+    Ok(())
 }
 
 /// [`crate::Command::MarkKeyformAuthored`] / [`crate::Command::MarkKeyformDerived`]。
@@ -227,11 +256,16 @@ pub(crate) fn mark(
 ///   作り直し、続けてその格子の加算合成・深度からの回転のセルも作り直す。依存する格子が変われば、
 ///   さらにその先へ伝える。循環は、値が変わらなくなるか [`MAX_PASSES`] 回で止める。
 /// - ミラーのやり直しに失敗したら (頂点が対応しなくなったなど)、その格子のミラーのセルはそのまま
-///   にする。加算合成・深度からの回転に失敗したら、コマンドを拒否する。
+///   にし、[`RederiveWarning`] を返す (格子とミラー元の組ごとに 1 つ)。加算合成・深度からの回転に
+///   失敗したら、コマンドを拒否する。
 /// - 作り直す方法のセルがない格子と、コマンドの途中で削除された要素は飛ばす。方法を記録していない
 ///   `derived` のセルは格子の `inference` の方法で作り直し、`inference` が未知なら作り直さない。
 ///   `depth_rotation` のセルは、格子の `inference` が深度からの回転でなければ作り直さない。
-pub(crate) fn rederive(model: &mut Model, touched: &[KeyformTarget]) -> Result<(), EditError> {
+pub(crate) fn rederive(
+    model: &mut Model,
+    touched: &[KeyformTarget],
+) -> Result<Vec<RederiveWarning>, EditError> {
+    let mut warnings = Vec::new();
     // (格子, ミラー元が変わったか)。
     let mut queue: VecDeque<(KeyformTarget, bool)> = VecDeque::new();
     for target in touched {
@@ -249,14 +283,14 @@ pub(crate) fn rederive(model: &mut Model, touched: &[KeyformTarget]) -> Result<(
         let Some(before) = Snapshot::of(model, &target) else {
             continue;
         };
-        rederive_grid(model, &target, source_changed)?;
+        rederive_grid(model, &target, source_changed, &mut warnings)?;
         if edited || Snapshot::of(model, &target).as_ref() != Some(&before) {
             for dependent in dependents(model, &target) {
                 enqueue(&mut queue, &dependent, true);
             }
         }
     }
-    Ok(())
+    Ok(warnings)
 }
 
 fn enqueue(queue: &mut VecDeque<(KeyformTarget, bool)>, target: &KeyformTarget, changed: bool) {
@@ -267,16 +301,18 @@ fn enqueue(queue: &mut VecDeque<(KeyformTarget, bool)>, target: &KeyformTarget, 
 }
 
 /// 1 つの格子を作り直す。`source_changed` ならミラーのセルもミラー元から作り直す。
+/// ミラーのやり直しの失敗は `warnings` に積む。
 fn rederive_grid(
     model: &mut Model,
     target: &KeyformTarget,
     source_changed: bool,
+    warnings: &mut Vec<RederiveWarning>,
 ) -> Result<(), EditError> {
     let Ok(view) = grid_view(model, target) else {
         return Ok(());
     };
     let methods = view.methods;
-    let depth = matches!(view.inference, Some(KeyformInference::DepthRotation(_)));
+    let depth = matches!(*view.inference, Some(KeyformInference::DepthRotation(_)));
     let mirror = view
         .mirror_source
         .clone()
@@ -290,7 +326,20 @@ fn rederive_grid(
         };
         let from = same_kind(target, &source.id);
         // 失敗してもエラーのときはモデルを変えないので、ミラーのセルは前の値のまま残る。
-        let _ = mirror_keyforms(model, &(&from).into(), &target.into(), &options);
+        if let Err(error) = mirror_keyforms(model, &(&from).into(), &target.into(), &options) {
+            let warning = RederiveWarning {
+                target: target.clone(),
+                source: from,
+                message: error.to_string(),
+            };
+            // 循環で同じ格子を何度も作り直すことがあるので、同じ組の警告は 1 つにする。
+            if !warnings
+                .iter()
+                .any(|w| w.target == warning.target && w.source == warning.source)
+            {
+                warnings.push(warning);
+            }
+        }
     }
     if depth && methods.contains(&KeyformOrigin::DepthRotation) {
         run(model, target, InferMethod::DepthRotation, InferScope::Own)?;

@@ -7,7 +7,7 @@ use ugoe_model::{KeyformGrid, KeyformInference, KeyformOrigin, Mesh, Model, fixt
 use ugoe_rigging::{InferError, InferScope, MirrorOptions};
 
 use crate::tests::{applied, binding, cell, rejected};
-use crate::{CellError, Command, Document, EditError, InferMethod, KeyformTarget};
+use crate::{CellError, Command, Document, EditError, InferMethod, KeyformTarget, RederiveWarning};
 
 use KeyformOrigin::{Additive, Authored, DepthRotation, Derived, Mirror};
 
@@ -972,4 +972,247 @@ fn dangling_mirror_sources_are_rejected() {
         ugoe_model::validate::ValidationError::UnknownReference { field, target, .. }
             if *field == "keyforms.mirror_source" && target == "Missing"
     )));
+}
+
+// ---- 自動のミラーのやり直しの失敗 (RederiveWarning) ----
+
+/// `doc` に `command` を適用し、警告を返す (コマンドは拒否されない)。
+fn warnings_of(model: &Model, command: Command) -> (Model, Vec<RederiveWarning>) {
+    let mut doc = Document::new(model.clone());
+    let report = doc.apply_with_report(command).unwrap();
+    (doc.model().clone(), report.warnings)
+}
+
+#[test]
+fn successful_rederivation_reports_no_warnings() {
+    let model = mirrored_model();
+    let left = base(&model);
+    let (_, warnings) = warnings_of(
+        &model,
+        Command::SetMeshKeyform {
+            id: "EyeL".into(),
+            cell: xy(-30.0, 0.0),
+            keyform: shifted(&left, -0.2, 0.0),
+        },
+    );
+    assert_eq!(warnings, vec![]);
+}
+
+#[test]
+fn failed_remirror_keeps_the_cells_and_warns() {
+    let model = mirrored_model();
+    // 左目の頂点 0 を大きく動かすと、右目の頂点 0 に対応する左目の頂点がなくなる。
+    let command = Command::MoveMeshVertices {
+        id: "EyeL".into(),
+        moves: vec![crate::VertexMove {
+            index: 0,
+            delta: Vec2::new(0.0, 100.0),
+        }],
+    };
+    let (after, warnings) = warnings_of(&model, command.clone());
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    let warning = &warnings[0];
+    assert_eq!(warning.target, target("EyeR"));
+    assert_eq!(warning.source, target("EyeL"));
+    assert!(
+        warning.message.contains("no mirrored source vertex"),
+        "{}",
+        warning.message
+    );
+    // 右目のミラーのセルは前の値のまま。
+    assert_eq!(mesh(&after, "EyeR").keyforms, mesh(&model, "EyeR").keyforms);
+    // `apply` は同じ結果になり、警告を捨てるだけ。
+    assert_eq!(applied(&model, command), after);
+}
+
+#[test]
+fn unpairing_the_mirror_source_warns() {
+    let model = mirrored_model();
+    let (after, warnings) = warnings_of(
+        &model,
+        Command::SetMirrorPair {
+            target: target("EyeL"),
+            mirror: None,
+            axis: None,
+        },
+    );
+    assert_eq!(mesh(&after, "EyeR").mirror, None);
+    assert_eq!(
+        warnings
+            .iter()
+            .map(|w| (&w.target, &w.source))
+            .collect::<Vec<_>>(),
+        vec![(&target("EyeR"), &target("EyeL"))]
+    );
+    assert_eq!(mesh(&after, "EyeR").keyforms, mesh(&model, "EyeR").keyforms);
+}
+
+// ---- SetKeyformInference ----
+
+fn face_grid(model: &Model) -> &KeyformGrid<ugoe_model::deformer::WarpKeyform> {
+    match &model.deformers[0].kind {
+        ugoe_model::DeformerKind::Warp(warp) => &warp.keyforms,
+        _ => panic!("Face is a warp deformer"),
+    }
+}
+
+fn face_rotation(model: &Model) -> ugoe_model::DepthRotation {
+    match &face_grid(model).inference {
+        Some(KeyformInference::DepthRotation(rotation)) => rotation.clone(),
+        other => panic!("Face must use depth rotation: {other:?}"),
+    }
+}
+
+#[test]
+fn set_keyform_inference_rederives_with_the_new_settings() {
+    let model = fixtures::keyform_inference();
+    let mut rotation = face_rotation(&model);
+    rotation.angle_scale = 0.5;
+    let inference = Some(KeyformInference::DepthRotation(rotation));
+    let mut expected = model.clone();
+    if let ugoe_model::DeformerKind::Warp(warp) = &mut expected.deformers[0].kind {
+        warp.keyforms.inference = inference.clone();
+    }
+    ugoe_rigging::infer_depth_rotation(&mut expected, &(&face()).into(), InferScope::Own).unwrap();
+    let after = applied(
+        &model,
+        Command::SetKeyformInference {
+            target: face(),
+            inference,
+        },
+    );
+    assert_eq!(after, expected);
+    assert_eq!(face_grid(&after).origin(8), DepthRotation);
+}
+
+#[test]
+fn set_keyform_inference_to_additive_rederives_legacy_cells() {
+    let model = fixtures::keyform_inference();
+    let mut expected = model.clone();
+    if let ugoe_model::DeformerKind::Warp(warp) = &mut expected.deformers[0].kind {
+        warp.keyforms.inference = None;
+    }
+    ugoe_rigging::infer_additive_target(&mut expected, &(&face()).into(), InferScope::Own).unwrap();
+    let after = applied(
+        &model,
+        Command::SetKeyformInference {
+            target: face(),
+            inference: None,
+        },
+    );
+    assert_eq!(after, expected);
+    assert_eq!(face_grid(&after).inference, None);
+}
+
+#[test]
+fn set_keyform_inference_rejects_invalid_settings() {
+    let model = fixtures::keyform_inference();
+    assert_eq!(
+        rejected(
+            &model,
+            Command::SetKeyformInference {
+                target: face(),
+                inference: Some(KeyformInference::Unknown),
+            },
+        ),
+        EditError::UnsupportedInference {
+            target: face().to_string()
+        }
+    );
+    // yaw のパラメータは格子の軸でなければならない (検証で拒否する)。
+    let mut rotation = face_rotation(&model);
+    rotation.yaw = Some("EyeLOpen".into());
+    let error = rejected(
+        &model,
+        Command::SetKeyformInference {
+            target: target("EyeL"),
+            inference: Some(KeyformInference::DepthRotation(rotation)),
+        },
+    );
+    assert!(matches!(error, EditError::Invalid(_)), "{error:?}");
+    assert!(matches!(
+        rejected(
+            &model,
+            Command::SetKeyformInference {
+                target: target("Missing"),
+                inference: None,
+            },
+        ),
+        EditError::NotFound { kind: "mesh", .. }
+    ));
+}
+
+// ---- SetMirrorPair ----
+
+#[test]
+fn set_mirror_pair_links_both_sides() {
+    let model = fixtures::keyform_inference();
+    assert_eq!(mesh(&model, "EyeL").mirror, Some("EyeR".into()));
+    let after = applied(
+        &model,
+        Command::SetMirrorPair {
+            target: target("Nose"),
+            mirror: Some("EyeL".into()),
+            axis: Some(0.25),
+        },
+    );
+    assert_eq!(mesh(&after, "Nose").mirror, Some("EyeL".into()));
+    assert_eq!(mesh(&after, "Nose").mirror_axis, Some(0.25));
+    assert_eq!(mesh(&after, "EyeL").mirror, Some("Nose".into()));
+    // EyeL の前の相手は対を外す。
+    assert_eq!(mesh(&after, "EyeR").mirror, None);
+    assert_eq!(
+        mesh(&after, "EyeR").mirror_axis,
+        mesh(&model, "EyeR").mirror_axis
+    );
+
+    // 自分自身は「対にしない」と同じ扱いで、相手の対も外す。
+    let after = applied(
+        &model,
+        Command::SetMirrorPair {
+            target: target("EyeL"),
+            mirror: Some("EyeL".into()),
+            axis: None,
+        },
+    );
+    assert_eq!(mesh(&after, "EyeL").mirror, Some("EyeL".into()));
+    assert_eq!(mesh(&after, "EyeL").mirror_axis, None);
+    assert_eq!(mesh(&after, "EyeR").mirror, None);
+}
+
+#[test]
+fn set_mirror_pair_rejects_invalid_targets() {
+    let model = fixtures::keyform_inference();
+    let pair = |target, mirror: Option<&str>, axis| Command::SetMirrorPair {
+        target,
+        mirror: mirror.map(Into::into),
+        axis,
+    };
+    assert!(matches!(
+        rejected(&model, pair(target("EyeL"), Some("Missing"), None)),
+        EditError::NotFound { kind: "mesh", .. }
+    ));
+    assert!(matches!(
+        rejected(&model, pair(target("Missing"), None, None)),
+        EditError::NotFound { kind: "mesh", .. }
+    ));
+    // メッシュの ID をデフォーマとして指定しても見つからない。
+    assert!(matches!(
+        rejected(&model, pair(face(), Some("EyeL"), None)),
+        EditError::NotFound {
+            kind: "deformer",
+            ..
+        }
+    ));
+    let part = KeyformTarget::Part(model.parts[0].id.clone());
+    assert_eq!(
+        rejected(&model, pair(part.clone(), None, None)),
+        EditError::MirrorPairNotSupported {
+            target: part.to_string()
+        }
+    );
+    assert!(matches!(
+        rejected(&model, pair(target("EyeL"), None, Some(f32::NAN))),
+        EditError::Invalid(_)
+    ));
 }

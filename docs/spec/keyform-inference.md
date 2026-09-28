@@ -2,7 +2,7 @@
 
 判断の経緯は [ADR 0010](../adr/0010-keyform-inference.md)。アルゴリズムはツール層のクレート `ugoe-rigging` (T0610) に置き、エディタのコマンド (T0611) から使う。
 
-> 実装待ち: AI による深度推定は T0505 で実装します。加算合成は `ugoe_rigging::infer_additive` (T0610)、ミラーは `ugoe_rigging::mirror_keyforms`、深度からの回転は `ugoe_rigging::infer_depth_rotation` (T0612)、エディタのコマンドは `ugoe_editor_core` (T0611) にあります。データ (由来・推定の設定・ミラー・深度) は `ugoe-model` に定義済みです ([model.md#キーフォーム推定のデータ](model.md#キーフォーム推定のデータ))。
+> 実装待ち: AI による深度推定は T0505 で実装します。加算合成は `ugoe_rigging::infer_additive` (T0610)、ミラーは `ugoe_rigging::mirror_keyforms`、深度からの回転は `ugoe_rigging::infer_depth_rotation` (T0612)、エディタのコマンドは `ugoe_editor_core` (T0611)、画面での操作は T0613 ([editor.md#推定の画面での操作](../editor.md#推定の画面での操作)) にあります。データ (由来・推定の設定・ミラー・深度) は `ugoe-model` に定義済みです ([model.md#キーフォーム推定のデータ](model.md#キーフォーム推定のデータ))。
 
 推定はツールで行い、結果はふつうのキーフォームとしてモデルに焼き込みます。**ランタイムの評価 ([evaluation.md](evaluation.md)) は推定を知りません。**
 
@@ -212,6 +212,8 @@ derived(c) = Rot(c) + 加算合成(E)(c)                  // E を加算合成�
 | `InferKeyforms { target, method, overwrite_derived }` | 指定した格子の `derived` のセルを作り直す。`method` は `from_grid` (既定。格子の `inference` に従う) / `additive` / `depth_rotation`。範囲は `own` で、`overwrite_derived` なら `all_derived` (別の方法で作ったセルも書き換える) |
 | `MirrorKeyforms { source, target, axis, tolerance, overwrite_authored }` | ミラーで対応するセルを作る (`MirrorOptions`)。範囲は `all_derived` (先の `authored` 以外のセルをすべて書き換える) |
 | `MarkKeyformAuthored { target, cells }` / `MarkKeyformDerived { target, cells }` | 由来を変える。`derived` にしたセルは格子の推定の設定で作り直す |
+| `SetKeyformInference { target, inference }` | 格子の推定の設定を置き換え、方法を記録していない `derived` のセルを新しい設定で作り直す |
+| `SetMirrorPair { target, mirror, axis }` | メッシュ・デフォーマの左右の対 (双方向) と対称軸を設定する |
 
 ### 自動の作り直し
 
@@ -223,5 +225,6 @@ derived(c) = Rot(c) + 加算合成(E)(c)                  // E を加算合成�
 3. 依存する格子の値が変われば、さらにその格子に依存する格子へ伝える。
 
 - 循環 (A が B を、B が A をミラー元にする) では、値が変わらなくなるまで伝えます。値が往復し続ける場合に備えて、1 つの格子を作り直すのは 1 回のコマンドにつき 8 回までです。
-- ミラーのやり直しに失敗したら (元の頂点を動かして対応しなくなった、対を外した、など)、その格子の `mirror` のセルは前の値のまま残します (コマンドは拒否しない)。明示的に `MirrorKeyforms` を実行すればエラーが分かります。加算合成・深度からの回転に失敗したら、コマンドを拒否します。
+- ミラーのやり直しに失敗したら (元の頂点を動かして対応しなくなった、対を外した、など)、その格子の `mirror` のセルは前の値のまま残します (コマンドは拒否しない)。
+  代わりに警告 (`RederiveWarning`: 格子・ミラー元・理由) を返し、エディタは利用者に知らせます ([editor.md#推定とミラー](../editor.md#推定とミラー))。明示的に `MirrorKeyforms` を実行してもエラーが分かります。加算合成・深度からの回転に失敗したら、コマンドを拒否します。
 - ミラー元の要素を削除すると、依存する格子の `mirror_source` を外し、その格子の `mirror` のセルを `authored` にします (値は変えない)。

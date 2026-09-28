@@ -1,6 +1,9 @@
 use std::fmt::Display;
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+
 use ugoe_model::deformer::DeformerKind;
 use ugoe_model::validate::{ValidationError, validate};
 use ugoe_model::{Canvas, DeformerId, KeyformOrigin, MeshId, Model, ParamId, PartId, TextureRef};
@@ -8,6 +11,7 @@ use ugoe_rigging::{InferError, InferScope, MirrorOptions};
 
 use crate::command::KeyformTarget;
 use crate::grid::{self, CellError};
+use crate::inference::RederiveWarning;
 use crate::texture::{Textures, is_valid_texture_name, png_size};
 use crate::{Command, automesh, inference, keyform};
 use crate::{deformer_edit, mesh_edit};
@@ -94,6 +98,16 @@ pub enum EditError {
     /// デフォーマの作成・付け替え・セルの編集ができない (子がない、循環する、座標を写せないなど)。
     #[error("deformer edit failed: {reason}")]
     DeformerEdit { reason: String },
+    /// 左右の対 (`mirror`) を持てない要素 (パーツ・グルー)。
+    #[error("{target}: only meshes and deformers have mirror pairs")]
+    MirrorPairNotSupported { target: String },
+}
+
+/// [`Document::apply_with_report`] の結果: コマンドは適用したが、利用者に知らせたいこと。
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+pub struct ApplyReport {
+    /// 自動の作り直しで失敗し、前の値のまま残したセルがある格子。
+    pub warnings: Vec<RederiveWarning>,
 }
 
 fn join(errors: &[ValidationError]) -> String {
@@ -182,12 +196,18 @@ impl Document {
     ///
     /// 検査の前に、コマンドが編集したキーフォーム格子の `derived` のセルをセルに記録した推定の方法で
     /// 作り直し、その格子をミラー元にする格子のミラーのセルも作り直す (同じ Undo 単位。
-    /// `docs/editor.md#推定とミラー`)。作り直せなければ拒否する。
+    /// `docs/editor.md#推定とミラー`)。作り直せなければ拒否する。ただしミラーのやり直しの失敗は
+    /// 拒否せず、そのセルを前の値のまま残す (知らせるには [`Document::apply_with_report`] を使う)。
     pub fn apply(&mut self, command: Command) -> Result<(), EditError> {
+        self.apply_with_report(command).map(drop)
+    }
+
+    /// [`Document::apply`] と同じく適用し、拒否しなかった問題 (ミラーのやり直しの失敗) を返す。
+    pub fn apply_with_report(&mut self, command: Command) -> Result<ApplyReport, EditError> {
         let mut next = self.current.clone();
         let mut touched = Vec::new();
         apply_to(&mut next.model, &mut next.textures, command, &mut touched)?;
-        inference::rederive(&mut next.model, &touched)?;
+        let warnings = inference::rederive(&mut next.model, &touched)?;
         let before = validate(&self.current.model);
         let introduced: Vec<_> = validate(&next.model)
             .into_iter()
@@ -200,7 +220,7 @@ impl Document {
         self.next_state += 1;
         self.undo.push(std::mem::replace(&mut self.current, next));
         self.redo.clear();
-        Ok(())
+        Ok(ApplyReport { warnings })
     }
 
     pub fn undo(&mut self) -> bool {
@@ -495,6 +515,18 @@ fn apply_to(
             inference::mark(model, &target, &cells, KeyformOrigin::Derived)?;
             touched.push(target);
         }
+        Command::SetKeyformInference { target, inference } => {
+            inference::set_inference(model, &target, inference)?;
+            touched.push(target);
+        }
+        // 対と対称軸はミラーのやり直しに使うので、対が変わった要素をミラー元にする格子を作り直す。
+        Command::SetMirrorPair {
+            target,
+            mirror,
+            axis,
+        } => {
+            touched.extend(set_mirror_pair(model, &target, mirror, axis)?);
+        }
         // 頂点の編集はすべてのセルの位置を変えるので、`derived` のセルは作り直す。
         Command::MoveMeshVertices { id, moves } => {
             mesh_edit::move_vertices(model, &id, &moves)?;
@@ -566,6 +598,88 @@ fn apply_to(
         } => deformer_edit::reparent(model, &element, new_parent.as_ref(), touched)?,
     }
     Ok(())
+}
+
+/// [`Command::SetMirrorPair`]。対を双方向に張り直し、`target` の対称軸を設定する。
+/// `mirror`・`mirror_axis` が変わった要素を返す。
+fn set_mirror_pair(
+    model: &mut Model,
+    target: &KeyformTarget,
+    mirror: Option<String>,
+    axis: Option<f32>,
+) -> Result<Vec<KeyformTarget>, EditError> {
+    match target {
+        KeyformTarget::Mesh(id) => {
+            let mirror = mirror.map(MeshId::new);
+            let changed = pair(
+                &mut model.meshes,
+                "mesh",
+                id,
+                mirror,
+                axis,
+                |m| &m.id,
+                |m| (&mut m.mirror, &mut m.mirror_axis),
+            )?;
+            Ok(changed.into_iter().map(KeyformTarget::Mesh).collect())
+        }
+        KeyformTarget::Deformer(id) => {
+            let mirror = mirror.map(DeformerId::new);
+            let changed = pair(
+                &mut model.deformers,
+                "deformer",
+                id,
+                mirror,
+                axis,
+                |d| &d.id,
+                |d| (&mut d.mirror, &mut d.mirror_axis),
+            )?;
+            Ok(changed.into_iter().map(KeyformTarget::Deformer).collect())
+        }
+        KeyformTarget::Part(_) | KeyformTarget::Glue(_) => Err(EditError::MirrorPairNotSupported {
+            target: target.to_string(),
+        }),
+    }
+}
+
+/// `items` の中で `id` と `mirror` を対にし (`None` なら対を外す)、`id` の対称軸を `axis` にする。
+/// どちらかと対になっていた要素の対は外す。`mirror`・`mirror_axis` が変わった要素の ID を返す。
+/// 対称軸が有限の値であることは、適用後の検証 (`validate`) が確かめる。
+fn pair<T, K: PartialEq + Clone + Display>(
+    items: &mut [T],
+    kind: &'static str,
+    id: &K,
+    mirror: Option<K>,
+    axis: Option<f32>,
+    id_of: impl Fn(&T) -> &K,
+    fields: impl Fn(&mut T) -> (&mut Option<K>, &mut Option<f32>),
+) -> Result<Vec<K>, EditError> {
+    find_mut(items, kind, id, &id_of)?;
+    if let Some(mirror) = &mirror {
+        find_mut(items, kind, mirror, &id_of)?;
+    }
+    let partner = mirror.clone().filter(|m| m != id);
+    let mut changed = Vec::new();
+    for item in items.iter_mut() {
+        let item_id = id_of(item).clone();
+        let (item_mirror, item_axis) = fields(item);
+        let before = (item_mirror.clone(), *item_axis);
+        if &item_id == id {
+            *item_mirror = mirror.clone();
+            *item_axis = axis;
+        } else if partner.as_ref() == Some(&item_id) {
+            *item_mirror = Some(id.clone());
+        } else if item_mirror
+            .as_ref()
+            .is_some_and(|m| m == id || partner.as_ref() == Some(m))
+        {
+            // 張り直す 2 つのどちらかと対になっていた要素。
+            *item_mirror = None;
+        }
+        if (item_mirror.clone(), *item_axis) != before {
+            changed.push(item_id);
+        }
+    }
+    Ok(changed)
 }
 
 /// パラメータを削除し、参照を外す: キーフォーム格子の軸は既定値の断面に畳み、

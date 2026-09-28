@@ -1,6 +1,6 @@
 // キーフォーム格子を読む補助 (docs/editor.md#キーフォームの編集)。DOM や IPC に依存しない純粋な関数だけを置く
 // (keyforms.test.ts で検査する)。モデルの JSON (ugoe_model::Model) のうち、ここで使う部分だけを型にする。
-import type { KeyformTarget } from "../../../generated/types";
+import type { KeyformInference, KeyformTarget, MirrorSource } from "../../../generated/types";
 import type { ElementRef } from "../../../selection.svelte";
 
 export type { KeyformTarget };
@@ -25,6 +25,10 @@ export interface KeyformGrid<T = Record<string, unknown>> {
   keyforms: T[];
   /** 空または省略ならすべて authored。 */
   origins?: string[];
+  /** 方法を記録していない derived のセルを作り直す設定。省略なら加算合成。 */
+  inference?: KeyformInference | null;
+  /** mirror のセルのミラー元。 */
+  mirror_source?: MirrorSource | null;
 }
 
 export interface MeshKeyformData {
@@ -51,7 +55,13 @@ export interface ParameterData {
   default: number;
 }
 
-interface DeformerData {
+/** 左右の対 (メッシュ・デフォーマ)。 */
+interface MirrorFields {
+  mirror?: string | null;
+  mirror_axis?: number | null;
+}
+
+interface DeformerData extends MirrorFields {
   id: string;
   parent?: string | null;
   kind: {
@@ -66,7 +76,12 @@ export interface ModelData {
   parameters: ParameterData[];
   parts: { id: string; keyforms: KeyformGrid }[];
   deformers: DeformerData[];
-  meshes: { id: string; parent?: string | null; indices: number[]; keyforms: KeyformGrid }[];
+  meshes: ({
+    id: string;
+    parent?: string | null;
+    indices: number[];
+    keyforms: KeyformGrid;
+  } & MirrorFields)[];
 }
 
 /** 格子のキーフォームの種類 (ugoe_editor_core::Keyform の kind)。 */

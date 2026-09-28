@@ -3,6 +3,15 @@
 export type AppInfo = { version: string, };
 
 /**
+ * [`Document::apply_with_report`] の結果: コマンドは適用したが、利用者に知らせたいこと。
+ */
+export type ApplyReport = { 
+/**
+ * 自動の作り直しで失敗し、前の値のまま残したセルがある格子。
+ */
+warnings: Array<RederiveWarning>, };
+
+/**
  * [`ugoe_mesher::MeshOptions`] の JSON 表現。省略したフィールドは既定値になる。
  */
 export type AutoMeshOptions = { 
@@ -96,7 +105,7 @@ tolerance?: number | null,
 /**
  * `true` なら先の `authored` のセルも上書きする。
  */
-overwrite_authored: boolean, } | { "op": "mark_keyform_authored", target: KeyformTarget, cells: Array<{ [key in string]: number }>, } | { "op": "mark_keyform_derived", target: KeyformTarget, cells: Array<{ [key in string]: number }>, } | { "op": "move_mesh_vertices", id: string, moves: Array<VertexMove>, } | { "op": "add_mesh_vertex", id: string, position: Vec2, } | { "op": "remove_mesh_vertices", id: string, indices: Array<number>, } | { "op": "retriangulate_mesh", id: string, } | { "op": "add_keyform_key", target: KeyformTarget, parameter: string, key: number, } | { "op": "remove_keyform_key", target: KeyformTarget, parameter: string, key: number, } | { "op": "set_keyform_cell", target: KeyformTarget, cell: { [key in string]: number }, keyform: Keyform, } | { "op": "set_mesh_draw_order", id: string, draw_order: number, } | { "op": "create_warp_deformer", id?: string | null, name: string, children: Array<ChildRef>, rows: number, cols: number, parent?: string | null, } | { "op": "create_rotation_deformer", id?: string | null, name: string, children: Array<ChildRef>, origin?: Vec2 | null, parent?: string | null, } | { "op": "reparent_preserving_look", element: ChildRef, new_parent: string | null, };
+overwrite_authored: boolean, } | { "op": "mark_keyform_authored", target: KeyformTarget, cells: Array<{ [key in string]: number }>, } | { "op": "mark_keyform_derived", target: KeyformTarget, cells: Array<{ [key in string]: number }>, } | { "op": "move_mesh_vertices", id: string, moves: Array<VertexMove>, } | { "op": "add_mesh_vertex", id: string, position: Vec2, } | { "op": "remove_mesh_vertices", id: string, indices: Array<number>, } | { "op": "retriangulate_mesh", id: string, } | { "op": "add_keyform_key", target: KeyformTarget, parameter: string, key: number, } | { "op": "remove_keyform_key", target: KeyformTarget, parameter: string, key: number, } | { "op": "set_keyform_cell", target: KeyformTarget, cell: { [key in string]: number }, keyform: Keyform, } | { "op": "set_mesh_draw_order", id: string, draw_order: number, } | { "op": "create_warp_deformer", id?: string | null, name: string, children: Array<ChildRef>, rows: number, cols: number, parent?: string | null, } | { "op": "create_rotation_deformer", id?: string | null, name: string, children: Array<ChildRef>, origin?: Vec2 | null, parent?: string | null, } | { "op": "reparent_preserving_look", element: ChildRef, new_parent: string | null, } | { "op": "set_keyform_inference", target: KeyformTarget, inference?: KeyformInference | null, } | { "op": "set_mirror_pair", target: KeyformTarget, mirror?: string | null, axis?: number | null, };
 
 export type Curve = { target: CurveTarget, segments: Array<Segment>, 
 /**
@@ -520,6 +529,26 @@ export type PsdImportWarning = {
  * ドキュメント全体についての警告では空。
  */
 path: Array<string>, message: string, };
+
+/**
+ * 自動の作り直しで失敗したが、コマンドは拒否せずに続けたこと (`docs/editor.md#推定とミラー`)。
+ *
+ * いまはミラーのやり直しの失敗 (元の頂点が許容距離を超えて動いた、対を外した、など) だけを報告する。
+ * そのとき `target` の格子の `mirror` のセルは前の値のまま残る。
+ */
+export type RederiveWarning = { 
+/**
+ * ミラーのセルを作り直せなかった格子の要素。
+ */
+target: KeyformTarget, 
+/**
+ * ミラー元 (`mirror_source`) の要素。
+ */
+source: KeyformTarget, 
+/**
+ * 失敗の理由 (`ugoe_rigging::InferError` の表記)。
+ */
+message: string, };
 
 /**
  * リニアではなく sRGB 値の RGB (0.0..=1.0)。乗算色・スクリーン色に使う。

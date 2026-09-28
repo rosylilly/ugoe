@@ -8,6 +8,8 @@ import type { EditorDocument } from "../document.svelte";
 import type { Selection } from "../selection.svelte";
 import type { ViewportController } from "../viewport/controller.svelte";
 import DeformerProperties from "./inspector/DeformerProperties.svelte";
+import InferenceSection from "./inspector/inference/InferenceSection.svelte";
+import RederiveNotice from "./inspector/inference/RederiveNotice.svelte";
 import KeyformInspector from "./inspector/keyforms/KeyformInspector.svelte";
 import MeshProperties from "./inspector/MeshProperties.svelte";
 
@@ -21,11 +23,13 @@ let { doc, selection, viewport }: Props = $props();
 </script>
 
 <h2>Inspector</h2>
+<RederiveNotice {doc} />
 {#if selection.primary}
   <p>{selection.primary.kind}: {selection.primary.id}</p>
   <MeshProperties {doc} {selection} />
   <DeformerProperties {doc} {selection} />
   <KeyformInspector {doc} {selection} {viewport} />
+  <InferenceSection {doc} {selection} {viewport} />
 {:else}
   <p class="muted">Nothing selected (rev {doc.revision})</p>
 {/if}

@@ -1363,10 +1363,12 @@ fn op_name(command: &Command) -> &'static str {
         Command::CreateWarpDeformer { .. } => "create_warp_deformer",
         Command::CreateRotationDeformer { .. } => "create_rotation_deformer",
         Command::ReparentPreservingLook { .. } => "reparent_preserving_look",
+        Command::SetKeyformInference { .. } => "set_keyform_inference",
+        Command::SetMirrorPair { .. } => "set_mirror_pair",
     }
 }
 
-const OP_COUNT: usize = 47;
+const OP_COUNT: usize = 49;
 
 fn json_samples() -> Vec<Command> {
     let quad = fixtures::single_quad();
@@ -1575,6 +1577,15 @@ fn json_samples() -> Vec<Command> {
         Command::ReparentPreservingLook {
             element: ChildRef::Deformer("Arm".into()),
             new_parent: Some("Body".into()),
+        },
+        Command::SetKeyformInference {
+            target: crate::KeyformTarget::Mesh("Quad".into()),
+            inference: Some(ugoe_model::KeyformInference::Additive),
+        },
+        Command::SetMirrorPair {
+            target: crate::KeyformTarget::Mesh("Quad".into()),
+            mirror: Some("Quad".into()),
+            axis: Some(0.0),
         },
     ]
 }

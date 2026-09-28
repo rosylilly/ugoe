@@ -21,9 +21,10 @@ pub mod texture;
 
 pub use automesh::AutoMeshOptions;
 pub use command::{ChildRef, Command, InferMethod, KeyformCell, KeyformTarget, VertexMove};
-pub use document::{Document, EditError};
+pub use document::{ApplyReport, Document, EditError};
 pub use grid::CellError;
 pub use import::{PsdImport, PsdImportError, PsdImportOptions, PsdImportWarning, import_psd};
+pub use inference::RederiveWarning;
 pub use keyform::Keyform;
 pub use project::{Project, ProjectError, ProjectMeta, export_bundle};
 pub use texture::Textures;

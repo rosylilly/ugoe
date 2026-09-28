@@ -1,19 +1,22 @@
 <!--
   インスペクタのキーの格子 (docs/editor.md#キーフォームの編集)。主な選択の要素について、
-  軸とキー・セルの由来 (authored / derived)・今のパラメータ値がどのセルの上にあるかを示し、
-  今のスライダーの値でキーを追加・削除する。セルを押すとスライダーをそのセルへ動かす。
+  軸とキー・セルの由来 (authored / 推定の方法ごと)・今のパラメータ値がどのセルの上にあるかを示し、
+  今のスライダーの値でキーを追加・削除する。セルを押すとスライダーをそのセルへ動かしてそのセルを選び、
+  Shift / Ctrl で押すと選択に加える (選んだセルは推定の操作 inference/InferenceSection.svelte が使う)。
 -->
 <script lang="ts">
 import type { EditorDocument } from "../../../document.svelte";
 import type { Selection } from "../../../selection.svelte";
 import type { ViewportController } from "../../../viewport/controller.svelte";
+import { cellSelection } from "../inference/cellSelection.svelte";
+import { originStyle, originTitle } from "../inference/inference";
+import OriginLegend from "../inference/OriginLegend.svelte";
 import {
   type Cell,
   cellIndex,
   cellOrigin,
   currentCell,
   elementGrid,
-  isDerived,
   keyAt,
   keyTolerance,
   type ParameterData,
@@ -79,6 +82,17 @@ function goTo(cell: Cell) {
   for (const [id, value] of Object.entries(cell)) viewport.setParameter(id, value);
 }
 
+/** セルを押したとき: 修飾キーなしなら移動して選び、Shift / Ctrl / Cmd なら選択に加える (外す)。 */
+function onCell(event: MouseEvent, cell: Cell) {
+  if (!element) return;
+  if (event.shiftKey || event.ctrlKey || event.metaKey) {
+    cellSelection.toggle(element.target, cell);
+    return;
+  }
+  cellSelection.select(element.target, cell);
+  goTo(cell);
+}
+
 function onKey(parameter: string): number | undefined {
   const keys = bindings.find((b) => b.parameter === parameter)?.keys ?? [];
   const param = params.find((p) => p.id === parameter);
@@ -102,14 +116,20 @@ async function removeKey(parameter: string, key: number) {
   {@const origin = element && index >= 0 ? cellOrigin(element.grid, index) : "authored"}
   <button
     class="cell"
-    class:derived={isDerived(origin)}
+    data-origin={origin}
+    style="--origin: {originStyle(origin).color}"
     class:current={isCurrent(cell)}
+    class:selected={element !== null && cellSelection.has(element.target, cell)}
     title="{Object.entries(cell)
       .map(([p, v]) => `${nameOf(p)} = ${v}`)
-      .join(', ') || 'Only cell'} ({origin})"
-    onclick={() => goTo(cell)}
+      .join(', ') || 'Only cell'} — {originTitle(
+      origin,
+      element?.grid.inference,
+      element?.grid.mirror_source,
+    )}"
+    onclick={(event) => onCell(event, cell)}
   >
-    {origin === "authored" ? "A" : origin === "mirror" ? "M" : "D"}
+    {originStyle(origin).symbol}
   </button>
 {/snippet}
 
@@ -227,7 +247,8 @@ async function removeKey(parameter: string, key: number) {
         >
       </span>
     {/if}
-    <p class="legend muted">A = authored, D = inferred, M = mirrored (re-derived when their sources change)</p>
+    <OriginLegend />
+    <p class="hint muted">Click a cell to go there; Shift/Ctrl-click to select several.</p>
   </section>
 {/if}
 
@@ -298,13 +319,20 @@ h3 {
   cursor: pointer;
 }
 
-.cell.derived {
-  border-style: dashed;
-  color: var(--muted);
+/* 推定で作ったセル: 方法の色 (--origin) の点線と薄い地。 */
+.cell:not([data-origin="authored"]) {
+  border: 1px dashed var(--origin);
+  background: color-mix(in srgb, var(--origin) 14%, var(--panel));
+  color: var(--origin);
 }
 
 .cell.current {
   border: 2px solid var(--accent);
+}
+
+.cell.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .draw-order {
@@ -318,7 +346,8 @@ h3 {
   width: 6em;
 }
 
-.legend {
+.hint {
+  margin: 4px 0 0;
   font-size: 11px;
 }
 </style>

@@ -1211,6 +1211,63 @@
         "op",
         "element"
       ]
+    },
+    {
+      "description": "格子の推定の設定 (`KeyformGrid::inference`) を置き換える (`None` なら加算合成)。\n方法を記録していない `derived` のセルは新しい設定で作り直す\n(`docs/spec/keyform-inference.md#セルの由来`)。未知の方法は拒否する。",
+      "type": "object",
+      "properties": {
+        "inference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KeyformInference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "op": {
+          "type": "string",
+          "const": "set_keyform_inference"
+        },
+        "target": {
+          "$ref": "#/$defs/KeyformTarget"
+        }
+      },
+      "required": [
+        "op",
+        "target"
+      ]
+    },
+    {
+      "description": "メッシュ・デフォーマの左右の対 (`mirror`) と対称軸 (`mirror_axis`) を設定する。\n対は双方向に張り、`target` と `mirror` のどちらかと対になっていた要素の対は外す。\n`mirror` が `None` (または自分自身) なら対にしない。`axis` は `target` の `mirror_axis`\n(`None` なら親で決まる既定値)。規則は `docs/spec/keyform-inference.md#ミラー`。",
+      "type": "object",
+      "properties": {
+        "axis": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "mirror": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "op": {
+          "type": "string",
+          "const": "set_mirror_pair"
+        },
+        "target": {
+          "$ref": "#/$defs/KeyformTarget"
+        }
+      },
+      "required": [
+        "op",
+        "target"
+      ]
     }
   ],
   "$defs": {

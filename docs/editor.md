@@ -53,7 +53,7 @@
 | キーフォーム | `add_keyform_key`、`remove_keyform_key`、`set_keyform_cell`、`set_mesh_draw_order` ([キーフォームの編集](#キーフォームの編集)) |
 | テクスチャ | `add_texture`、`set_texture_image`、`remove_texture` |
 | キャンバス | `set_canvas` (`width`・`height`・`origin`。大きさは 0 より大きい有限の値。要素の座標は変えない) |
-| キーフォームの推定 | `infer_keyforms`、`mirror_keyforms`、`mark_keyform_authored`、`mark_keyform_derived` (下の「推定とミラー」) |
+| キーフォームの推定 | `infer_keyforms`、`mirror_keyforms`、`mark_keyform_authored`、`mark_keyform_derived`、`set_keyform_inference`、`set_mirror_pair` (下の「推定とミラー」) |
 | その他 | `batch` |
 
 - `set_mesh_properties` は `part`・`texture`・`blend`・`culling`・`masks`・`mask_mode`・`mask_only` のうち、指定したフィールドだけを変えます。
@@ -74,14 +74,31 @@
 | `mirror_keyforms` | `source` を反転して `target` のセルを作る (由来は `mirror`)。先の `authored` 以外のセルをすべて書き換え、`source` を先の格子の `mirror_source` に記録する。`axis` (対称軸)・`tolerance` (頂点の許容距離) は省略できる (指定すれば記録する)。`overwrite_authored: true` で先の `authored` のセルも上書きする |
 | `mark_keyform_authored` | `cells` (セルの指定の配列。形は `set_mesh_keyform` の `cell` と同じ) の由来を `authored` にする。値は変えない |
 | `mark_keyform_derived` | `cells` の由来を `derived` にし、格子の推定の設定で作り直す。基準のセルは `derived` にできない (推定のエラーで拒否) |
+| `set_keyform_inference` | `target` の格子の推定の設定 (`inference`、[`KeyformInference`](spec/keyform-inference.md#回転と投影)) を置き換える。省略 (`null`) なら加算合成。方法を記録していない `derived` のセルを新しい設定で作り直す (`depth_rotation` のセルも、設定が深度からの回転なら作り直す)。未知の方法は `UnsupportedInference`、`yaw` / `pitch` が格子の軸でなければ検証エラーで拒否する |
+| `set_mirror_pair` | メッシュ・デフォーマの左右の対 (`mirror`、相手の ID。省略で対を外す) と `target` の対称軸 (`axis` → `mirror_axis`。省略で親で決まる既定値) を設定する。対は双方向に張り、`target` と相手のどちらかと対になっていた要素の対は外す。パーツ・グルーは `MirrorPairNotSupported`。対が変わった要素をミラー元にする格子はミラーし直す (失敗すれば下の警告) |
 
 - 推定のエラー (中立のキーがない、基準のセルが `derived`、ミラーの対でない、など) は `EditError::Inference` で拒否し、モデルは変えません。
 - **自動の作り直し:** 格子のセル (値や由来) を変えたコマンドの後、`Document::apply` はその格子の `derived` のセルを **セルに記録した推定の方法で** 作り直し、その格子をミラー元 (`mirror_source`) にする格子のミラーのセルもミラーし直します。同じ Undo 単位に含まれ、`batch` では全体を適用した後にまとめて行います。加算合成・深度からの回転で作り直せなければコマンドを拒否します (ミラーのやり直しの失敗は、ミラーのセルをそのままにして続ける)。規則は [spec/keyform-inference.md#自動の作り直し](spec/keyform-inference.md#自動の作り直し)。
-  - 対象は `set_*_keyforms`・`set_mesh_keyform`・`set_keyform_cell`・`mark_keyform_*`・`infer_keyforms`・`mirror_keyforms` です。新しいコマンドは、格子のセルを変えたら `apply_to` の `touched` に要素を積むことで対象になります (`crates/ugoe-editor-core/src/document.rs`)。
+  - 対象は `set_*_keyforms`・`set_mesh_keyform`・`set_keyform_cell`・`mark_keyform_*`・`infer_keyforms`・`mirror_keyforms`・`set_keyform_inference`・`set_mirror_pair`・頂点の編集 (`move_mesh_vertices` など) です。新しいコマンドは、格子のセルを変えたら `apply_to` の `touched` に要素を積むことで対象になります (`crates/ugoe-editor-core/src/document.rs`)。
   - 推定のコマンドも積みます。作り直しはセルごとの方法で行うので推定の結果を別の方法で上書きせず、その格子をミラー元にする格子へ変化を伝えます。
   - パラメータの範囲の変更など、セルを変えないコマンドでは作り直しません。必要なら `infer_keyforms` を実行します。
+- **ミラーのやり直しの失敗の警告:** 自動のミラーのやり直しに失敗した (ミラー元の頂点を許容距離を超えて動かした、対を外した、など) 格子は、コマンドを拒否せずミラーのセルを前の値のまま残し、`RederiveWarning { target, source, message }` (格子・ミラー元・`InferError` の文) を 1 組に 1 つ返します。
+  `Document::apply_with_report` が `ApplyReport { warnings }` で返し、`Document::apply` は同じ適用をして警告を捨てます (CLI などの既存の呼び出し側はそのまま)。
+  Tauri の `apply_command` は `ApplyReport` を返し、エディタはインスペクタの上に閉じられる通知として出します ([画面での操作](#推定の画面での操作))。
 - **`derived` のセルの編集:** セルを書き換えるコマンドは、書き換えた `derived` のセルを `authored` にします。`set_*_keyforms` で格子を丸ごと置き換えるときは、軸が同じなら、値が変わったのに `derived` (方法を問わない) と指定されたセルを `authored` にします。
 - ミラーで作ったセル (`mirror`) は、ミラー元の格子が変わるとミラーし直され、先の格子を編集しても上書きされません。方法を記録していない版 (T0614 より前) のファイルでミラーしたセルは `derived` のままなので、以前と同じく格子の方法で作り直されます (`mirror_keyforms` を再度実行すると `mirror` になる)。
+
+#### 推定の画面での操作
+
+操作はすべて上のコマンドを送るだけです (組み立ては `inspector/inference/inference.ts`、Vitest で検査)。
+
+| 場所 | 操作 |
+| --- | --- |
+| キーの格子 (`inspector/keyforms/KeyformInspector.svelte`) | セルの記号と色で由来を示す: `A` authored (実線) / `+` additive / `R` depth_rotation / `M` mirror / `D` 方法の記録のない derived (推定のセルは方法の色の破線と薄い地)。凡例は `inspector/inference/OriginLegend.svelte`。ツールチップに、`derived` なら作り直す方法、`mirror` ならミラー元を出す。セルを押すとそのセルへ移動して選び、Shift / Ctrl / Cmd で押すと選択に加える (外す) |
+| 推定 (`inspector/inference/InferenceSection.svelte`) | 格子の推定の設定 (加算合成 / 深度からの回転の `angle_scale`・`pivot`・`pivot_depth`・`yaw`・`pitch`。回転はメッシュとワープだけ。回転の中心の初期値は基準のセルの点の外接矩形の中心) を編集して「Apply settings」(`set_keyform_inference`)。「Infer」「Infer (overwrite derived)」(`infer_keyforms` の `from_grid`)。選んだセル (なければ今のセル) の「Mark authored」「Mark derived」。メッシュ・デフォーマでは「Mirror from…」(元は対の相手と自分自身。軸・許容距離・authored の上書きは任意) と、記録されたミラー元 (`mirror_source`) の表示、「Mirror partner」で対と対称軸の設定 (`set_mirror_pair`) |
+| 通知 (`inspector/inference/RederiveNotice.svelte`) | 適用したコマンドが返した `RederiveWarning` を、インスペクタの上に「Dismiss」で閉じるまで出す (同じ格子とミラー元の組は新しいもので置き換える) |
+
+- セルの選択 (`inspector/inference/cellSelection.svelte.ts`) は表示の状態で、Undo の対象にしません。別の格子のセルを選ぶと前の選択は消えます。
 
 ### 削除の連鎖と拒否
 
@@ -216,7 +233,7 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 | 場所 | 操作 |
 | --- | --- |
 | パラメータ一覧 (`ParametersPanel.svelte`) | 「+」でパラメータを作る (ID・名前・最小・既定・最大)。名前を押すと名前・値域・既定値の編集と削除 (`rename_parameter` と `set_parameter_range` を `batch` で 1 つの Undo に)。スライダーの下に、主な選択の要素のキーを ◆ で示し (押すとそのキーへ)、「Snap to keys」で要素のすべての軸を最も近いキーへ動かす。行の ◆ ボタンで、今の値にキーを追加 (今の値がキーならそのキーを削除)。スライダーは表示の状態なので IPC を通らない |
-| インスペクタ (`inspector/keyforms/KeyformInspector.svelte`) | 主な選択の要素の軸とキー (× で削除、押すとそのキーへ移動、「+ 値」で今の値にキーを追加)、軸のないパラメータへの軸の追加、セルの格子 (1 軸は 1 行、2 軸は表、3 軸目以降は今の値に最も近いキーの断面)。メッシュでは描画順を表示し、「Set for all cells」で `set_mesh_draw_order` を送る。セルは `A` (authored) / `D` (推定: `derived`・`additive`・`depth_rotation`、破線) / `M` (`mirror`、破線) で由来を示し、今の値がすべての軸でキーの上にあればそのセルを枠で示す。キーの上になければ「Move to nearest key」を出す |
+| インスペクタ (`inspector/keyforms/KeyformInspector.svelte`) | 主な選択の要素の軸とキー (× で削除、押すとそのキーへ移動、「+ 値」で今の値にキーを追加)、軸のないパラメータへの軸の追加、セルの格子 (1 軸は 1 行、2 軸は表、3 軸目以降は今の値に最も近いキーの断面)。メッシュでは描画順を表示し、「Set for all cells」で `set_mesh_draw_order` を送る。セルは記号と色で由来を示し ([推定の画面での操作](#推定の画面での操作))、今の値がすべての軸でキーの上にあればそのセルを枠で示す。キーの上になければ「Move to nearest key」を出す |
 | ビューポート (`viewport/tools/form/FormTool.svelte`) | 「Form edit」で切り替える。主な選択の要素のうち、メッシュは頂点、ワープは制御点、回転デフォーマは原点をハンドルで示す (主な選択がデフォーマのときは、代わりに [デフォーマのギズモ](#デフォーマの編集) を出す)。ドラッグ中はオーバーレイだけでプレビューし、離したときに `canvas_to_local` で親の座標系に直してから `set_keyform_cell` を 1 つ送る (Undo の 1 単位)。Shift を押しながらドラッグするとすべての点を同じだけ動かす |
 
 - **キーの上でだけ編集できる:** 今のパラメータ値がどれかの軸でキーの上にないと、どのセルに書くか決まらないので編集を拒否し (ハンドルを出さない)、「Move to nearest key」を出します。

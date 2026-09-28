@@ -3231,6 +3231,46 @@ export const commands: Command[] = [
     "new_parent": null
   },
   {
+    "op": "set_keyform_inference",
+    "target": {
+      "kind": "mesh",
+      "id": "EyeL"
+    },
+    "inference": {
+      "method": "depth_rotation",
+      "angle_scale": 0.8,
+      "pivot": [
+        512.0,
+        400.0
+      ],
+      "pivot_depth": -40.0,
+      "yaw": "AngleX"
+    }
+  },
+  {
+    "op": "set_keyform_inference",
+    "target": {
+      "kind": "deformer",
+      "id": "Arm"
+    }
+  },
+  {
+    "op": "set_mirror_pair",
+    "target": {
+      "kind": "mesh",
+      "id": "EyeL"
+    },
+    "mirror": "EyeR",
+    "axis": 512.0
+  },
+  {
+    "op": "set_mirror_pair",
+    "target": {
+      "kind": "deformer",
+      "id": "Arm"
+    }
+  },
+  {
     "op": "retriangulate_mesh",
     "id": "EyeL"
   }

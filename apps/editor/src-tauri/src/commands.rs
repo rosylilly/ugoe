@@ -4,7 +4,7 @@
 use serde::Serialize;
 use tauri::State;
 use ts_rs::TS;
-use ugoe_editor_core::Command;
+use ugoe_editor_core::{ApplyReport, Command};
 
 use crate::AppState;
 
@@ -21,9 +21,12 @@ pub fn app_info() -> AppInfo {
 }
 
 /// 編集コマンドを適用する。JSON 形式は `ugoe_editor_core::Command` を参照。
+/// 適用はしたが知らせたいこと (自動のミラーのやり直しの失敗) を返す。
 #[tauri::command]
-pub fn apply_command(state: State<'_, AppState>, command: Command) -> Result<(), String> {
-    lock(&state)?.apply(command).map_err(|e| e.to_string())
+pub fn apply_command(state: State<'_, AppState>, command: Command) -> Result<ApplyReport, String> {
+    lock(&state)?
+        .apply_with_report(command)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

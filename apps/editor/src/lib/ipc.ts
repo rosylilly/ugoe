@@ -4,6 +4,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AppInfo,
+  ApplyReport,
   AutoMeshOptions,
   Command,
   KeyformTarget,
@@ -19,7 +20,8 @@ export type EditCommand = Command;
 
 export const ipc = {
   appInfo: () => invoke<AppInfo>("app_info"),
-  applyCommand: (command: Command) => invoke<void>("apply_command", { command }),
+  /** 適用はしたが知らせたいこと (自動のミラーのやり直しの失敗) を返す。 */
+  applyCommand: (command: Command) => invoke<ApplyReport>("apply_command", { command }),
   /** ugoe_model::Model の JSON (JSON.parse すると `Model`)。 */
   getModelJson: () => invoke<string>("get_model_json"),
   undo: () => invoke<boolean>("undo"),

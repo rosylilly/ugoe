@@ -8,8 +8,8 @@ use ugoe_model::deformer::{RotationKeyform, WarpKeyform};
 use ugoe_model::mesh::MeshKeyform;
 use ugoe_model::part::PartKeyform;
 use ugoe_model::{
-    BlendMode, Deformer, DeformerId, KeyformGrid, MaskMode, MaskRef, Mesh, MeshId, ParamId,
-    Parameter, Part, PartId,
+    BlendMode, Deformer, DeformerId, KeyformGrid, KeyformInference, MaskMode, MaskRef, Mesh,
+    MeshId, ParamId, Parameter, Part, PartId,
 };
 
 use crate::automesh::AutoMeshOptions;
@@ -336,6 +336,25 @@ pub enum Command {
     ReparentPreservingLook {
         element: ChildRef,
         new_parent: Option<DeformerId>,
+    },
+    /// 格子の推定の設定 (`KeyformGrid::inference`) を置き換える (`None` なら加算合成)。
+    /// 方法を記録していない `derived` のセルは新しい設定で作り直す
+    /// (`docs/spec/keyform-inference.md#セルの由来`)。未知の方法は拒否する。
+    SetKeyformInference {
+        target: KeyformTarget,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        inference: Option<KeyformInference>,
+    },
+    /// メッシュ・デフォーマの左右の対 (`mirror`) と対称軸 (`mirror_axis`) を設定する。
+    /// 対は双方向に張り、`target` と `mirror` のどちらかと対になっていた要素の対は外す。
+    /// `mirror` が `None` (または自分自身) なら対にしない。`axis` は `target` の `mirror_axis`
+    /// (`None` なら親で決まる既定値)。規則は `docs/spec/keyform-inference.md#ミラー`。
+    SetMirrorPair {
+        target: KeyformTarget,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mirror: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        axis: Option<f32>,
     },
 }
 

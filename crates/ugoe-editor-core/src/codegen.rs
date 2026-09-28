@@ -14,7 +14,10 @@ use ugoe_model::deformer::DeformerKind;
 use ugoe_model::expression::Expression;
 use ugoe_model::motion::Motion;
 use ugoe_model::physics::PhysicsSettings;
-use ugoe_model::{BlendMode, KeyformGrid, MaskMode, MaskRef, MeshId, Model, fixtures};
+use ugoe_model::{
+    BlendMode, DepthRotation, KeyformGrid, KeyformInference, MaskMode, MaskRef, MeshId, Model,
+    fixtures,
+};
 
 use crate::command::{ChildRef, InferMethod, KeyformTarget};
 use crate::{AutoMeshOptions, Command, Keyform, KeyformCell, VertexMove};
@@ -390,6 +393,30 @@ fn sample_commands() -> Vec<Command> {
         Command::ReparentPreservingLook {
             element: ChildRef::Mesh(mesh_id.clone()),
             new_parent: None,
+        },
+        Command::SetKeyformInference {
+            target: KeyformTarget::Mesh(mesh_id.clone()),
+            inference: Some(KeyformInference::DepthRotation(DepthRotation {
+                angle_scale: 0.8,
+                pivot: Vec2::new(512.0, 400.0),
+                pivot_depth: -40.0,
+                yaw: Some("AngleX".into()),
+                pitch: None,
+            })),
+        },
+        Command::SetKeyformInference {
+            target: KeyformTarget::Deformer(deformers[0].id.clone()),
+            inference: None,
+        },
+        Command::SetMirrorPair {
+            target: KeyformTarget::Mesh(mesh_id.clone()),
+            mirror: Some("EyeR".to_owned()),
+            axis: Some(512.0),
+        },
+        Command::SetMirrorPair {
+            target: KeyformTarget::Deformer(deformers[0].id.clone()),
+            mirror: None,
+            axis: None,
         },
         Command::RetriangulateMesh { id: mesh_id },
     ])
