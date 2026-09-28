@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use ugoe_core::{Affine2, Rgb, Vec2};
-use ugoe_model::{BlendMode, DeformerKind, Model};
+use ugoe_model::{BlendMode, DeformerKind};
 
 use crate::deform::{Rotation, Transform, Warp};
 use crate::keyform::{self, Weights};
@@ -16,6 +16,7 @@ pub struct DrawableState {
     pub draw_order: f32,
     pub multiply_color: Rgb,
     pub screen_color: Rgb,
+    /// 合成モード。未知のモードには通常の合成のフォールバックを適用済み (`BlendMode::effective`)。
     pub blend: BlendMode,
     /// マスクの効き具合。キーフォームを補間して 0〜1 にクランプした値 (`docs/spec/rendering.md#マスク`)。
     /// マスクを持たないメッシュでは意味を持たない。
@@ -146,7 +147,7 @@ impl ModelInstance {
                 draw_order: 0.0,
                 multiply_color: Rgb::WHITE,
                 screen_color: Rgb::BLACK,
-                blend: m.blend,
+                blend: m.blend.effective(),
                 mask_strength: 1.0,
                 visible: !m.mask_only,
             })
@@ -160,7 +161,7 @@ impl ModelInstance {
                 DeformerKind::Warp(w) => {
                     vec![Vec2::ZERO; (usize::from(w.rows) + 1) * (usize::from(w.cols) + 1)]
                 }
-                DeformerKind::Rotation(_) => Vec::new(),
+                DeformerKind::Rotation(_) | DeformerKind::Unknown => Vec::new(),
             })
             .collect();
         // 重みの個数は軸数 N に対して最大 2^N (`keyform::weights`)。
@@ -330,7 +331,7 @@ impl ModelInstance {
                         }
                     }
                     let parent = world_transform(
-                        model,
+                        compiled,
                         &self.deformer_affine,
                         &self.warp_points,
                         deformer.parent,
@@ -351,7 +352,7 @@ impl ModelInstance {
                         reflect_y: keyform::blend_bool(grid, weights, |k| k.reflect_y),
                     };
                     let parent = world_transform(
-                        model,
+                        compiled,
                         &self.deformer_affine,
                         &self.warp_points,
                         deformer.parent,
@@ -359,6 +360,9 @@ impl ModelInstance {
                     self.deformer_affine[d] = parent.rotation_child(&local);
                     keyform::blend_scalar(grid, weights, |k| k.opacity)
                 }
+                // 未知の種類は恒等変換で、不透明度も変えない。子は親の変換をそのまま受ける
+                // (`world_transform` が親をたどる)。
+                DeformerKind::Unknown => 1.0,
             };
             let parent_opacity = deformer
                 .parent
@@ -392,8 +396,12 @@ impl ModelInstance {
                 scr[1] += kf.screen_color.g * w;
                 scr[2] += kf.screen_color.b * w;
             }
-            let parent =
-                world_transform(model, &self.deformer_affine, &self.warp_points, cm.parent);
+            let parent = world_transform(
+                compiled,
+                &self.deformer_affine,
+                &self.warp_points,
+                cm.parent,
+            );
             for p in &mut out.positions {
                 *p = parent.apply(*p);
             }
@@ -489,29 +497,35 @@ fn lerp(a: Vec2, b: Vec2, t: f32) -> Vec2 {
 }
 
 /// デフォーマ `parent` のワールド変換 (`None` なら恒等写像)。`parent` は評価済みであること。
+///
+/// 未知の種類のデフォーマは恒等変換なので、そのワールド変換は親のワールド変換と同じ。
 fn world_transform<'a>(
-    model: &Model,
+    compiled: &CompiledModel,
     affine: &[Affine2],
     warp_points: &'a [Vec<Vec2>],
     parent: Option<u32>,
 ) -> Transform<'a> {
-    let Some(d) = parent else {
-        return Transform::Identity;
-    };
-    let d = d as usize;
-    match &model.deformers[d].kind {
-        DeformerKind::Warp(w) => Transform::Warp(Warp::new(
-            &warp_points[d],
-            usize::from(w.cols),
-            usize::from(w.rows),
-        )),
-        DeformerKind::Rotation(_) => Transform::Affine(affine[d]),
+    let mut parent = parent;
+    while let Some(d) = parent {
+        let d = d as usize;
+        match &compiled.model.deformers[d].kind {
+            DeformerKind::Warp(w) => {
+                return Transform::Warp(Warp::new(
+                    &warp_points[d],
+                    usize::from(w.cols),
+                    usize::from(w.rows),
+                ));
+            }
+            DeformerKind::Rotation(_) => return Transform::Affine(affine[d]),
+            DeformerKind::Unknown => parent = compiled.deformers[d].parent,
+        }
     }
+    Transform::Identity
 }
 
 #[cfg(test)]
 mod tests {
-    use ugoe_model::fixtures;
+    use ugoe_model::{Model, fixtures};
 
     use super::*;
 

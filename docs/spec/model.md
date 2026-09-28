@@ -169,6 +169,17 @@
 - `Mesh::depth` は頂点ごと、`WarpDeformer::depth` は制御点ごとの深度 (キャンバスのピクセル単位、手前が正) です。
 - 深度は基準のセルの形に対して与えます。省略 (既定) は深度なしです。
 
+## 未知の値
+
+拡張されうる enum (`BlendMode` `MaskMode` `DeformerKind` `ParameterKind` `KeyformOrigin` `KeyformInference`、
+モーション・表情・物理の `CurveTarget` `Segment` `ExpressionOp` `PhysicsSource`) は `Unknown` のバリアントを持ち、
+新しい版のファイルにある知らないタグを `Unknown` として読みます。元のタグと中身は捨てます。
+
+- `Unknown` にはその種類のフォールバックを適用します。一覧は [file-formats.md#未知の値の読み込み](file-formats.md#未知の値の読み込み)。
+  値で置き換えられる種類は `effective()` (`BlendMode` `MaskMode` `ParameterKind`) や `KeyformGrid::origin` がフォールバック後の値を返します。
+- `Unknown` は **書き出せません** (シリアライズがエラーになる)。別の値として黙って保存しないためです。
+- 検証 (`validate`) は `Unknown` をエラーにしません。場所は `ugoe_model::unknown` (`in_model` など) で調べられます。
+
 ## 予定されているデータ
 
 次のデータは仕様が決まっていて、まだ実装していません。詳細はそれぞれの仕様書にあります。
@@ -179,7 +190,6 @@
 | `Model::avatar` | アバタープロファイル (準拠レベル・メタデータ・トラッキングの対応) | [avatar-profile.md](avatar-profile.md) | T0110 |
 | `Model::slots` | 着せ替えのスロット | [modules.md](modules.md) | T0111 |
 | `TextureRef::normal_map`、`Model::lighting`、`Mesh::lit` | 法線マップとライティング | [rendering.md#ライティング](rendering.md#ライティング) | T0112 |
-| 拡張可能な enum の `Unknown` | 未知の値の読み込み | [file-formats.md#機能の宣言と段階的な劣化](file-formats.md#機能の宣言と段階的な劣化) | T0109 |
 
 ## 検証
 

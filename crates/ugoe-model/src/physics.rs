@@ -30,6 +30,10 @@ pub enum PhysicsSource {
     X,
     Y,
     Angle,
+    /// 未知の値 (新しい版のファイル)。その入力・出力を無視する。
+    /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
+    #[serde(other, skip_serializing)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

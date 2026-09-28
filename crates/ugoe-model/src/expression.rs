@@ -26,4 +26,8 @@ pub enum ExpressionOp {
     Add,
     Multiply,
     Overwrite,
+    /// 未知の値 (新しい版のファイル)。その項目を無視する。
+    /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
+    #[serde(other, skip_serializing)]
+    Unknown,
 }

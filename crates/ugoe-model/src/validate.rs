@@ -249,6 +249,8 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
             DeformerKind::Rotation(rotation) => {
                 check_grid(&refs, &params, &rotation.keyforms, &mut errors);
             }
+            // 未知の種類は中身を持たない (恒等変換として扱う) ので、検査することがない。
+            DeformerKind::Unknown => {}
         }
     }
     check_cycles(
@@ -1504,7 +1506,7 @@ mod tests {
     fn face_warp(model: &mut Model) -> &mut WarpDeformer {
         match &mut model.deformers[0].kind {
             DeformerKind::Warp(w) => w,
-            DeformerKind::Rotation(_) => panic!("not a warp"),
+            _ => panic!("not a warp"),
         }
     }
 

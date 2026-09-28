@@ -121,6 +121,8 @@ impl CompiledModel {
                         resolve(&params, &warp.keyforms)?
                     }
                     DeformerKind::Rotation(rotation) => resolve(&params, &rotation.keyforms)?,
+                    // 未知の種類はキーフォームを持たない恒等変換 (`docs/spec/file-formats.md`)。
+                    DeformerKind::Unknown => Vec::new(),
                 };
                 Ok(CompiledDeformer {
                     parent: d
@@ -220,12 +222,13 @@ impl CompiledModel {
     }
 
     /// メッシュ `mesh` の通常マスクの結合方法 (`Mesh::mask_mode`)。
+    /// 未知の結合方法には和集合のフォールバックを適用して返す (`MaskMode::effective`)。
     ///
     /// # Panics
     ///
     /// `mesh` が範囲外のとき。
     pub fn mask_mode(&self, mesh: usize) -> MaskMode {
-        self.model.meshes[mesh].mask_mode
+        self.model.meshes[mesh].mask_mode.effective()
     }
 
     /// メッシュ `mesh` のマスクの依存の深さ。マスクを持たなければ 0、

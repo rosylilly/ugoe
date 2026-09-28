@@ -557,6 +557,23 @@ mod tests {
     }
 
     #[test]
+    fn unknown_mask_mode_is_a_union() {
+        let mut union = fixtures::intersection_masks();
+        union.meshes[2].mask_mode = MaskMode::Union;
+        let mut unknown = union.clone();
+        unknown.meshes[2].mask_mode = MaskMode::Unknown;
+        let (union, unknown) = (compile(union), compile(unknown));
+        let (expected, expected_contents) = build(&union);
+        let (actual, actual_contents) = build(&unknown);
+        let (expected, actual) = (expected[2].expect("Tongue"), actual[2].expect("Tongue"));
+        assert_eq!(actual.complement, expected.complement);
+        assert_eq!(
+            actual_contents[actual.content as usize].steps,
+            expected_contents[expected.content as usize].steps
+        );
+    }
+
+    #[test]
     fn nested_levels_follow_mask_depth() {
         let compiled = compile(fixtures::nested_masks());
         let (per_mesh, contents) = build(&compiled);

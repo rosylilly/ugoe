@@ -4,6 +4,7 @@
 //! - ヘッダ・チャンク表はリトルエンディアン。チャンクは 16 バイト境界に揃える。
 //! - `MODL` `PHYS` `MOTN` `EXPR` のペイロードは MessagePack (フィールド名付き)。
 //! - `TEXR` は PNG / KTX2 のバイト列そのまま。`META` は JSON。
+//! - `FEAT` は使っている機能の宣言 (MessagePack)。[`crate::features`] を参照。
 //! - 読み込みは入力を信用しない。範囲外・重なり・切り詰めはすべてエラーにし、パニックしない。
 
 use std::borrow::Cow;
@@ -17,6 +18,7 @@ use ugoe_model::expression::Expression;
 use ugoe_model::motion::Motion;
 use ugoe_model::physics::PhysicsSettings;
 
+use crate::features::{self, FeatureDecl, FeatureTable};
 use crate::{FormatError, MAGIC, check_schema_version};
 
 /// コンテナ形式のバージョン (ヘッダの `version`)。スキーマのバージョンとは別。
@@ -57,6 +59,8 @@ impl ChunkTag {
     pub const TEXR: Self = Self(*b"TEXR");
     /// 自由なメタデータ (JSON)。0〜1 個。
     pub const META: Self = Self(*b"META");
+    /// 使っている機能の宣言。0〜1 個 (宣言がなければ書かない)。
+    pub const FEAT: Self = Self(*b"FEAT");
 }
 
 impl fmt::Display for ChunkTag {
@@ -156,8 +160,25 @@ pub fn write_bundle(bundle: &Bundle) -> Result<Vec<u8>, FormatError> {
 ///
 /// テクスチャの数が `model.textures` と一致しない場合や、`TextureData::format` と
 /// 中身のシグネチャが食い違う場合はエラーにする (読み込めないファイルを作らないため)。
+/// 未知の値 (`Unknown`) を含む場合は [`FormatError::UnknownValues`] で拒否する
+/// (元の値を失っているので、別の値として黙って書き出さないため)。
+///
+/// 使っている機能は [`features::detect`] で自動で宣言し、宣言があれば `FEAT` チャンクに書く。
 pub fn write_bundle_with(bundle: &Bundle, options: WriteOptions) -> Result<Vec<u8>, FormatError> {
+    write_with_features(bundle, options, &features::detect(bundle))
+}
+
+/// 機能の宣言 `declared` を指定して書き出す (試験用の機能 ID で仕組みを確かめるため)。
+pub(crate) fn write_with_features(
+    bundle: &Bundle,
+    options: WriteOptions,
+    declared: &[FeatureDecl],
+) -> Result<Vec<u8>, FormatError> {
     check_texture_count(&bundle.model, bundle.textures.len())?;
+    let unknown = unknown_values(bundle);
+    if !unknown.is_empty() {
+        return Err(FormatError::UnknownValues(unknown));
+    }
 
     let mut chunks: Vec<(ChunkTag, u32, Cow<'_, [u8]>)> = Vec::new();
     let mut push_encoded = |tag: ChunkTag, raw: Vec<u8>| {
@@ -172,6 +193,12 @@ pub fn write_bundle_with(bundle: &Bundle, options: WriteOptions) -> Result<Vec<u
         }
     };
 
+    if !declared.is_empty() {
+        let table = FeatureTable {
+            features: declared.to_vec(),
+        };
+        push_encoded(ChunkTag::FEAT, encode(&table)?);
+    }
     push_encoded(ChunkTag::MODL, encode(&bundle.model)?);
     if let Some(physics) = &bundle.physics {
         push_encoded(ChunkTag::PHYS, encode(physics)?);
@@ -224,14 +251,73 @@ pub fn write_bundle_with(bundle: &Bundle, options: WriteOptions) -> Result<Vec<u
     Ok(out)
 }
 
-/// バイト列からバンドルを読み込む。
+/// 読み込みの警告 ([`read_bundle_with_report`])。読み込みは成功しているが、表示が劣化しうる。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReadWarning {
+    /// 知らない任意の機能。仕様の定めるフォールバックを適用して読んだ。
+    UnknownOptionalFeature(String),
+    /// 未知の値 (`Unknown` として読んだ enum の値)。その種類のフォールバックを適用する。
+    /// `path` はチャンク (`MODL` や `MOTN#0`) とその中の場所。
+    UnknownValue(String),
+}
+
+impl fmt::Display for ReadWarning {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnknownOptionalFeature(id) => write!(f, "unknown optional feature {id}"),
+            Self::UnknownValue(path) => write!(f, "unknown value at {path}"),
+        }
+    }
+}
+
+/// 読み込みの報告。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ReadReport {
+    /// `FEAT` チャンクで宣言されていた機能 (知っているものも含む、宣言のまま)。
+    pub features: Vec<FeatureDecl>,
+    /// 警告 (知らない任意の機能と未知の値)。
+    pub warnings: Vec<ReadWarning>,
+}
+
+/// バイト列からバンドルを読み込む。警告は捨てる ([`read_bundle_with_report`] を参照)。
+pub fn read_bundle(bytes: &[u8]) -> Result<Bundle, FormatError> {
+    read_bundle_with_report(bytes).map(|(bundle, _)| bundle)
+}
+
+/// バイト列からバンドルを読み込み、警告を含む報告も返す。
 ///
 /// コンテナの整合性 (マジック・版・範囲・境界・重なり・必須チャンク) を検査したうえで、
-/// モデルのスキーマバージョンを検査し、最後に `ugoe_model::validate::validate` を通す。
+/// 機能の宣言 (`FEAT`) を調べ、モデルのスキーマバージョンを検査し、最後に
+/// `ugoe_model::validate::validate` を通す。
 /// 検証に失敗したモデルは下流 (変形・描画) でパニックしうるため、ここで弾く。
-/// 未知のタグのチャンクは読み飛ばす。
-pub fn read_bundle(bytes: &[u8]) -> Result<Bundle, FormatError> {
+///
+/// - 知らない必須の機能があれば [`FormatError::UnsupportedFeatures`] で拒否する
+///   (ペイロードのデコードより先に調べるので、知らない形のデータでもこのエラーになる)。
+/// - 知らない任意の機能と未知の値は、[`ReadWarning`] として報告して読み込みを続ける。
+/// - 未知のタグのチャンクは読み飛ばす。
+pub fn read_bundle_with_report(bytes: &[u8]) -> Result<(Bundle, ReadReport), FormatError> {
+    read_with_known(bytes, |id| features::find(id).is_some())
+}
+
+/// 知っている機能の判定 `known` を指定して読む (試験用の機能 ID で仕組みを確かめるため)。
+pub(crate) fn read_with_known(
+    bytes: &[u8],
+    known: impl Fn(&str) -> bool,
+) -> Result<(Bundle, ReadReport), FormatError> {
     let entries = read_table(bytes)?;
+
+    // 機能の宣言は、ほかのチャンクをデコードする前に調べる。
+    let mut feat = entries.iter().filter(|e| e.tag == ChunkTag::FEAT);
+    let declared = match (feat.next(), feat.next()) {
+        (None, _) => Vec::new(),
+        (Some(entry), None) => decode::<FeatureTable>(&entry.payload(bytes)?)?.features,
+        (Some(_), Some(entry)) => return Err(FormatError::DuplicateChunk(entry.tag)),
+    };
+    let mut warnings: Vec<ReadWarning> = features::check(&declared, known)
+        .map_err(FormatError::UnsupportedFeatures)?
+        .into_iter()
+        .map(ReadWarning::UnknownOptionalFeature)
+        .collect();
 
     let mut model = None;
     let mut physics = None;
@@ -275,7 +361,7 @@ pub fn read_bundle(bytes: &[u8]) -> Result<Bundle, FormatError> {
                     bytes: payload,
                 });
             }
-            // 前方互換のため、未知のタグは読み飛ばす。
+            // 機能の宣言は先に読んだ。前方互換のため、未知のタグは読み飛ばす。
             _ => {}
         }
     }
@@ -287,14 +373,61 @@ pub fn read_bundle(bytes: &[u8]) -> Result<Bundle, FormatError> {
         return Err(FormatError::Invalid(errors));
     }
 
-    Ok(Bundle {
+    let bundle = Bundle {
         model,
         physics,
         motions,
         expressions,
         textures,
         meta,
-    })
+    };
+    warnings.extend(
+        unknown_values(&bundle)
+            .into_iter()
+            .map(ReadWarning::UnknownValue),
+    );
+    Ok((
+        bundle,
+        ReadReport {
+            features: declared,
+            warnings,
+        },
+    ))
+}
+
+/// バンドルの中の未知の値の場所 (チャンクの名前付き) をすべて返す。
+fn unknown_values(bundle: &Bundle) -> Vec<String> {
+    use ugoe_model::unknown;
+
+    let mut found: Vec<String> = unknown::in_model(&bundle.model)
+        .into_iter()
+        .map(|path| format!("{}: {path}", ChunkTag::MODL))
+        .collect();
+    if let Some(physics) = &bundle.physics {
+        let paths = unknown::in_physics(physics);
+        found.extend(
+            paths
+                .into_iter()
+                .map(|p| format!("{}: {p}", ChunkTag::PHYS)),
+        );
+    }
+    for (index, motion) in bundle.motions.iter().enumerate() {
+        let paths = unknown::in_motion(motion);
+        found.extend(
+            paths
+                .into_iter()
+                .map(|p| format!("{}#{index}: {p}", ChunkTag::MOTN)),
+        );
+    }
+    for (index, expression) in bundle.expressions.iter().enumerate() {
+        let paths = unknown::in_expression(expression);
+        found.extend(
+            paths
+                .into_iter()
+                .map(|p| format!("{}#{index}: {p}", ChunkTag::EXPR)),
+        );
+    }
+    found
 }
 
 /// 検査済みのチャンク表の 1 項目。
@@ -964,6 +1097,166 @@ mod tests {
                 let _ = read_bundle(&bytes);
             }
         }
+    }
+
+    fn test_features() -> Vec<FeatureDecl> {
+        vec![
+            FeatureDecl::optional("test.optional"),
+            FeatureDecl::required("test.required"),
+        ]
+    }
+
+    #[test]
+    fn baseline_bundles_have_no_feat_chunk() {
+        let bytes = write_bundle(&full_bundle()).unwrap();
+        let entries = read_table(&bytes).unwrap();
+        assert!(entries.iter().all(|e| e.tag != ChunkTag::FEAT));
+        let (_, report) = read_bundle_with_report(&bytes).unwrap();
+        assert_eq!(report, ReadReport::default());
+    }
+
+    #[test]
+    fn roundtrip_feature_declarations() {
+        // 試験用の機能 ID を知っているランタイムとして読む。
+        let known = |id: &str| id.starts_with("test.");
+        for compress in [false, true] {
+            let bundle = full_bundle();
+            let bytes =
+                write_with_features(&bundle, WriteOptions { compress }, &test_features()).unwrap();
+            assert_eq!(read_table(&bytes).unwrap()[0].tag, ChunkTag::FEAT);
+            let (read, report) = read_with_known(&bytes, known).unwrap();
+            assert_eq!(read, bundle);
+            assert_eq!(report.features, test_features());
+            assert!(report.warnings.is_empty());
+        }
+    }
+
+    #[test]
+    fn unknown_required_feature_is_rejected_with_ids() {
+        let bytes =
+            write_with_features(&model_only(), WriteOptions::default(), &test_features()).unwrap();
+        assert_err(
+            &bytes,
+            |e| matches!(e, FormatError::UnsupportedFeatures(ids) if ids == &["test.required"]),
+        );
+        // 知らない形のモデル (新しい版) でも、デコードより先に機能の宣言で拒否する。
+        let feat = FeatureTable {
+            features: vec![
+                FeatureDecl::required("test.a"),
+                FeatureDecl::required("test.b"),
+            ],
+        };
+        let bytes = assemble(&[
+            (ChunkTag::MODL, 0, b"future payload".to_vec()),
+            (ChunkTag::FEAT, 0, encode(&feat).unwrap()),
+        ]);
+        assert_err(
+            &bytes,
+            |e| matches!(e, FormatError::UnsupportedFeatures(ids) if ids == &["test.a", "test.b"]),
+        );
+    }
+
+    #[test]
+    fn unknown_optional_feature_loads_with_warnings() {
+        let bundle = model_only();
+        let declared = [
+            FeatureDecl::optional("test.optional"),
+            // 知っている機能 (基準の機能) の宣言は警告にしない。
+            FeatureDecl::optional("mask.intersection"),
+        ];
+        let bytes = write_with_features(&bundle, WriteOptions::default(), &declared).unwrap();
+        let (read, report) = read_bundle_with_report(&bytes).unwrap();
+        assert_eq!(read, bundle);
+        assert_eq!(report.features, declared);
+        assert_eq!(
+            report.warnings,
+            [ReadWarning::UnknownOptionalFeature("test.optional".into())]
+        );
+        assert_eq!(read_bundle(&bytes).unwrap(), bundle);
+    }
+
+    #[test]
+    fn rejects_duplicate_feat_chunks() {
+        let model = ugoe_model::fixtures::single_quad();
+        let feat = (ChunkTag::FEAT, 0, encode(&FeatureTable::default()).unwrap());
+        assert_err(
+            &assemble(&[feat.clone(), model_chunk(&model), feat, texture_chunk()]),
+            |e| matches!(e, FormatError::DuplicateChunk(ChunkTag::FEAT)),
+        );
+    }
+
+    /// 新しい版で増えた値 (未知のタグとその中身) を含むバンドルを、MessagePack で組み立てる。
+    fn future_bundle_bytes() -> Vec<u8> {
+        use serde_json::json;
+
+        let mut model = serde_json::to_value(ugoe_model::fixtures::single_quad()).unwrap();
+        model["meshes"][0]["blend"] = json!("overlay");
+        model["meshes"][0]["mask_mode"] = json!("xor");
+        model["deformers"] = json!([{
+            "id": "Bend",
+            "name": "Bend",
+            "part": "Root",
+            "parent": null,
+            "kind": { "type": "bezier", "handles": [[0.0, 1.0]], "extra": { "a": 1 } },
+        }]);
+        model["meshes"][0]["parent"] = json!("Bend");
+        // 構造体の未知のフィールドも無視する。
+        model["meshes"][0]["future_field"] = json!({ "nested": [1, 2, 3] });
+
+        let mut physics = serde_json::to_value(physics()).unwrap();
+        physics["rigs"][0]["outputs"][0]["source"] = json!("velocity");
+        let mut motion = serde_json::to_value(motion()).unwrap();
+        motion["curves"][1]["target"] = json!({ "kind": "camera", "id": { "zoom": 2 } });
+        motion["curves"][0]["segments"][2] =
+            json!({ "type": "hermite", "to": { "t": 1.0, "v": 0.0 } });
+        let mut expression = serde_json::to_value(expression()).unwrap();
+        expression["parameters"][0]["op"] = json!("screen");
+
+        let msgpack = |value: &serde_json::Value| rmp_serde::to_vec_named(value).unwrap();
+        assemble(&[
+            (ChunkTag::MODL, 0, msgpack(&model)),
+            (ChunkTag::PHYS, 0, msgpack(&physics)),
+            (ChunkTag::MOTN, 0, msgpack(&motion)),
+            (ChunkTag::EXPR, 0, msgpack(&expression)),
+            texture_chunk(),
+        ])
+    }
+
+    #[test]
+    fn unknown_enum_tags_in_msgpack_load_with_warnings() {
+        let (bundle, report) = read_bundle_with_report(&future_bundle_bytes()).unwrap();
+        let mesh = &bundle.model.meshes[0];
+        assert_eq!(mesh.blend, ugoe_model::BlendMode::Unknown);
+        assert_eq!(mesh.mask_mode, ugoe_model::MaskMode::Unknown);
+        assert_eq!(bundle.model.deformers[0].kind, DeformerKind::Unknown);
+        assert_eq!(bundle.motions[0].curves[1].target, CurveTarget::Unknown);
+        assert_eq!(bundle.motions[0].curves[0].segments[2], Segment::Unknown);
+        let warnings: Vec<String> = report.warnings.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            warnings,
+            [
+                "unknown value at MODL: deformers[Bend].kind",
+                "unknown value at MODL: meshes[Quad].blend",
+                "unknown value at MODL: meshes[Quad].mask_mode",
+                "unknown value at PHYS: rigs[Hair].outputs[0].source",
+                "unknown value at MOTN#0: curves[0].segments[2]",
+                "unknown value at MOTN#0: curves[1].target",
+                "unknown value at EXPR#0: parameters[0].op",
+            ]
+        );
+    }
+
+    #[test]
+    fn unknown_values_are_not_written_back() {
+        let (bundle, _) = read_bundle_with_report(&future_bundle_bytes()).unwrap();
+        match write_bundle(&bundle) {
+            Err(FormatError::UnknownValues(paths)) => assert_eq!(paths.len(), 7),
+            other => panic!("unexpected result: {other:?}"),
+        }
+        assert!(matches!(
+            crate::model_to_json(&bundle.model),
+            Err(FormatError::UnknownValues(_))
+        ));
     }
 
     #[test]

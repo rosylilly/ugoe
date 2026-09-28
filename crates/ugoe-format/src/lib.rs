@@ -6,14 +6,16 @@
 //! 読み込みは **常に** スキーマバージョンを検査し、未知の新しい版は明示的なエラーにする。
 
 pub mod bundle;
+pub mod features;
 
 use ugoe_model::Model;
 use ugoe_model::validate::ValidationError;
 
 pub use bundle::{
-    Bundle, ChunkTag, TextureData, TextureFormat, WriteOptions, read_bundle, write_bundle,
-    write_bundle_with,
+    Bundle, ChunkTag, ReadReport, ReadWarning, TextureData, TextureFormat, WriteOptions,
+    read_bundle, read_bundle_with_report, write_bundle, write_bundle_with,
 };
+pub use features::{FEATURES, Feature, FeatureDecl};
 
 /// `.ugoe` ファイル先頭のマジックバイト。
 pub const MAGIC: [u8; 4] = *b"UGOE";
@@ -56,6 +58,12 @@ pub enum FormatError {
     TooLarge,
     #[error("model failed validation with {} error(s)", .0.len())]
     Invalid(Vec<ValidationError>),
+    /// 知らない必須の機能を宣言している (`docs/spec/file-formats.md#機能の宣言`)。
+    #[error("unsupported required features: {}", .0.join(", "))]
+    UnsupportedFeatures(Vec<String>),
+    /// 未知の値 (新しい版で増えた enum の値) は書き出せない。値の場所の一覧。
+    #[error("cannot write unknown values: {}", .0.join(", "))]
+    UnknownValues(Vec<String>),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
     #[error(transparent)]
@@ -65,11 +73,18 @@ pub enum FormatError {
 }
 
 /// モデルを JSON 表現で書き出す (デバッグ・差分確認・AI 入出力用)。
+///
+/// 未知の値 (`Unknown`) を含むモデルは [`FormatError::UnknownValues`] で拒否する。
 pub fn model_to_json(model: &Model) -> Result<String, FormatError> {
+    let unknown = ugoe_model::unknown::in_model(model);
+    if !unknown.is_empty() {
+        return Err(FormatError::UnknownValues(unknown));
+    }
     Ok(serde_json::to_string_pretty(model)?)
 }
 
-/// JSON 表現からモデルを読み込む。
+/// JSON 表現からモデルを読み込む。未知の値は `Unknown` として読む
+/// (場所は `ugoe_model::unknown::in_model` で調べられる)。
 pub fn model_from_json(json: &str) -> Result<Model, FormatError> {
     let model: Model = serde_json::from_str(json)?;
     check_schema_version(&model)?;

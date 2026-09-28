@@ -16,6 +16,7 @@ pub mod part;
 pub mod physics;
 pub mod pose;
 pub mod standard;
+pub mod unknown;
 pub mod validate;
 
 use serde::{Deserialize, Serialize};

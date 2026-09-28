@@ -231,7 +231,7 @@ fn apply_to(model: &mut Model, command: Command) -> Result<(), EditError> {
         Command::SetDeformerPart { id, part } => deformer(model, &id)?.part = part,
         Command::SetWarpKeyforms { id, keyforms } => match &mut deformer(model, &id)?.kind {
             DeformerKind::Warp(warp) => warp.keyforms = keyforms,
-            DeformerKind::Rotation(_) => {
+            DeformerKind::Rotation(_) | DeformerKind::Unknown => {
                 return Err(EditError::DeformerKindMismatch {
                     id: id.to_string(),
                     expected: "warp",
@@ -240,7 +240,7 @@ fn apply_to(model: &mut Model, command: Command) -> Result<(), EditError> {
         },
         Command::SetRotationKeyforms { id, keyforms } => match &mut deformer(model, &id)?.kind {
             DeformerKind::Rotation(rotation) => rotation.keyforms = keyforms,
-            DeformerKind::Warp(_) => {
+            DeformerKind::Warp(_) | DeformerKind::Unknown => {
                 return Err(EditError::DeformerKindMismatch {
                     id: id.to_string(),
                     expected: "rotation",
@@ -330,6 +330,8 @@ fn remove_parameter(model: &mut Model, id: &ParamId) -> Result<(), EditError> {
             DeformerKind::Rotation(rotation) => {
                 grid::collapse_axis(&mut rotation.keyforms, id, default)
             }
+            // 未知の種類はキーフォームを持たない。
+            DeformerKind::Unknown => {}
         }
     }
     for mesh in &mut model.meshes {

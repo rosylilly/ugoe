@@ -27,6 +27,20 @@ pub enum ParameterKind {
     #[default]
     Normal,
     BlendShape,
+    /// 未知の値 (新しい版のファイル)。通常のパラメータとして扱う。
+    /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
+    #[serde(other, skip_serializing)]
+    Unknown,
+}
+
+impl ParameterKind {
+    /// フォールバックを適用した種類 (`Unknown` は通常のパラメータ)。
+    pub fn effective(self) -> Self {
+        match self {
+            Self::Unknown => Self::Normal,
+            kind => kind,
+        }
+    }
 }
 
 /// エディタ表示用のパラメータグループ。ランタイムの挙動には影響しない。

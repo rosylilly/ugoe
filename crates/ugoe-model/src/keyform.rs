@@ -58,8 +58,12 @@ impl<T> KeyformGrid<T> {
     }
 
     /// 線形インデックス `index` のセルの由来。`origins` が空なら `authored`。
+    /// 未知の由来 (`KeyformOrigin::Unknown`) も `authored` として返す。
     pub fn origin(&self, index: usize) -> KeyformOrigin {
-        self.origins.get(index).copied().unwrap_or_default()
+        match self.origins.get(index).copied().unwrap_or_default() {
+            KeyformOrigin::Unknown => KeyformOrigin::Authored,
+            origin => origin,
+        }
     }
 }
 
@@ -72,6 +76,10 @@ pub enum KeyformOrigin {
     Authored,
     /// 推定で作ったセル。推定の元になったセルが変わると、エディタが作り直す。
     Derived,
+    /// 未知の値 (新しい版のファイル)。`authored` として扱う (推定で上書きしない)。
+    /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
+    #[serde(other, skip_serializing)]
+    Unknown,
 }
 
 /// 格子の `derived` のセルを作る推定の方法と、その設定。
@@ -83,6 +91,10 @@ pub enum KeyformInference {
     Additive,
     /// 深度からの回転 (`docs/spec/keyform-inference.md#深度からの回転`)。
     DepthRotation(DepthRotation),
+    /// 未知の値 (新しい版のファイル)。推定で作り直さない (`derived` のセルをそのまま使う)。
+    /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
+    #[serde(other, skip_serializing)]
+    Unknown,
 }
 
 /// 深度からの回転の設定。対象の深度はメッシュ・ワープデフォーマの `depth` に持つ。

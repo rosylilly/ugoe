@@ -40,7 +40,7 @@ Header (16 bytes)
   flags         u32     予約 (0)
   chunk_count   u32
 ChunkTable (chunk_count × 24 bytes)
-  tag           [u8; 4]  "MODL" | "PHYS" | "MOTN" | "EXPR" | "TEXR" | "META"
+  tag           [u8; 4]  "MODL" | "PHYS" | "MOTN" | "EXPR" | "TEXR" | "META" | "FEAT"
   flags         u32      bit0: zstd で圧縮
   offset        u64
   length        u64
@@ -55,9 +55,10 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 | `EXPR` | `Expression`。複数可 |
 | `TEXR` | テクスチャ 1 枚 (PNG または KTX2)。`Model.textures` と同じ順に並べる |
 | `META` | 作者やライセンスなどの自由なメタデータ (JSON) |
+| `FEAT` | 使っている機能の宣言 ([機能の宣言](#機能の宣言))。0〜1 個 |
 
 - 未知のタグのチャンクは読み飛ばします (前方互換)。未知のタグのチャンクは中身も展開もしません。
-- チャンク表の順序は自由ですが、書き出しでは `MODL` `PHYS` `MOTN`… `EXPR`… `META` `TEXR`… の順にします。同じタグのチャンク (`MOTN` `EXPR` `TEXR`) は表の順が意味を持ちます。
+- チャンク表の順序は自由ですが、書き出しでは `FEAT` `MODL` `PHYS` `MOTN`… `EXPR`… `META` `TEXR`… の順にします。宣言する機能がなければ `FEAT` は書きません。同じタグのチャンク (`MOTN` `EXPR` `TEXR`) は表の順が意味を持ちます。
 - ヘッダの `flags` と、チャンクの `flags` の bit0 以外は予約です。0 でなければ読み込みをエラーにします。
 
 ### ペイロードのエンコード
@@ -66,7 +67,7 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 
 | チャンク | エンコード |
 | --- | --- |
-| `MODL` `PHYS` `MOTN` `EXPR` | **MessagePack**。構造体はフィールド名付きのマップ (`rmp-serde` の `to_vec_named`)。enum の表現は JSON と同じく serde の属性に従う |
+| `MODL` `PHYS` `MOTN` `EXPR` `FEAT` | **MessagePack**。構造体はフィールド名付きのマップ (`rmp-serde` の `to_vec_named`)。enum の表現は JSON と同じく serde の属性に従う |
 | `TEXR` | PNG / KTX2 ファイルの中身そのまま。形式は先頭のシグネチャで判別する |
 | `META` | UTF-8 の JSON |
 
@@ -79,7 +80,8 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 
 - 切り詰め、マジックの不一致、未対応のコンテナ `version`、予約フラグ
 - チャンクの範囲外 (オフセット・長さのオーバーフローを含む)、16 バイト境界でないオフセット、ヘッダ・チャンク表・他のチャンクとの重なり
-- `MODL` がない、`MODL` `PHYS` `META` が 2 つ以上ある
+- `MODL` がない、`MODL` `PHYS` `META` `FEAT` が 2 つ以上ある
+- 知らない必須の機能の宣言 (`UnsupportedFeatures`。ほかのチャンクをデコードする前に調べる)
 - `TEXR` の数が `Model.textures` と一致しない、PNG / KTX2 でないテクスチャ
 - ペイロードのデコード失敗、`schema_version` が新しすぎる
 - `ugoe_model::validate::validate` がエラーを返すモデル (下流の変形・描画で範囲外アクセスを起こさないため、ここで弾く)
@@ -88,7 +90,13 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 
 - `Bundle { model, physics, motions, expressions, textures, meta }`。テクスチャは `TextureData { format: Png | Ktx2, bytes }`。
 - `write_bundle(&Bundle) -> Result<Vec<u8>, FormatError>` / `write_bundle_with(&Bundle, WriteOptions { compress })`
+  - 使っている機能を `features::detect(&Bundle)` で自動で宣言し、宣言があれば `FEAT` を書きます。
+  - 未知の値 (`Unknown`) を含むバンドルは `UnknownValues(場所の一覧)` で拒否します ([再保存](#再保存))。
 - `read_bundle(&[u8]) -> Result<Bundle, FormatError>`
+- `read_bundle_with_report(&[u8]) -> Result<(Bundle, ReadReport), FormatError>`: 警告も返します。
+  `ReadReport { features, warnings }` の `features` は `FEAT` の宣言のまま、`warnings` は
+  `ReadWarning::UnknownOptionalFeature(id)` (知らない任意の機能) と `ReadWarning::UnknownValue(場所)` (未知の値。場所は `MODL: meshes[Face].blend` や `MOTN#0: curves[1].target`) です。
+- 機能の一覧は `features::FEATURES` (`Feature { id, description, fallback, baseline }`)。下の表と一致することをテストで検査します。
 - ファイルシステムには触れません。読み書きはバイト列で行います。
 
 > 未決: 読み込み時間を短くするため、`CompiledModel` をそのまま (ゼロコピーで) 読めるレイアウトにするか。まずは素直なシリアライズで実装し、計測してから判断する。
@@ -97,21 +105,23 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 
 判断の経緯は [ADR 0013](../adr/0013-forward-compatibility.md)。
 
-> 実装待ち: 仕組みは T0109 で実装します。1.0 より前に完成させます。
-
 ### 機能の宣言
 
-バンドルは `FEAT` チャンク (T0109 で追加) で、使っている機能を宣言します。
+バンドルは `FEAT` チャンクで、使っている機能を宣言します。ペイロードは次の構造体の MessagePack (フィールド名付き) です。
 
 ```
-features: [
-  { id: "mask.intersection", required: false },
-  { id: "physics.dynamic",   required: false },
-  ...
-]
+FeatureTable {
+  features: [            省略時は空
+    { id: "lighting.foo", required: false },   required は省略時 false
+    { id: "physics.bar",  required: true },
+    ...
+  ]
+}
 ```
 
-- 基準の機能 (1.0 の時点の機能) は宣言しません。
+- 基準の機能 (1.0 の時点の機能) は宣言しません。書き出しは `features::detect` で使っている機能を調べて自動で宣言します (1.0 の時点では常に空で、`FEAT` は書かれません)。
+- 必須の機能を宣言するとき、書き出すツールは利用者に警告します (`detect` の結果の `required` を見る)。
+- 同じ ID を必須と任意の両方で宣言したときは、必須として扱います。
 - 読み込むランタイムは、宣言のうち知らない機能を調べます。
   - `required: true` の機能を 1 つでも知らなければ、`UnsupportedFeatures(ids)` エラーで読み込みを拒否します。
   - `required: false` の機能は、下の表のフォールバックを適用して読み込みを続け、警告の一覧を返します。
@@ -146,7 +156,29 @@ features: [
 ### 未知の値の読み込み
 
 - 構造体の未知のフィールドは無視します。
-- 拡張されうる enum (合成モード、デフォーマの種類、物理の出力先、カーブの対象など) は、未知のタグを `Unknown` として読みます。`Unknown` の要素にはその種類のフォールバック (上の表、またはデフォーマなら恒等変換、合成モードなら通常) を適用します。
+- 拡張されうる enum は、未知のタグを `Unknown` として読みます (JSON と MessagePack のどちらでも。タグに付いた未知の中身は読み捨てます)。`Unknown` の要素には次のフォールバックを適用します。
+
+| 値 | フォールバック | 適用する場所 |
+| --- | --- | --- |
+| `Mesh::blend` (`BlendMode`) | 通常の合成で描く | ランタイム (`DrawableState::blend`)・レンダラ |
+| `Mesh::mask_mode` (`MaskMode`) | 和集合として扱う | ランタイム (`CompiledModel::mask_mode`)・レンダラ |
+| `Deformer::kind` (`DeformerKind`) | 恒等変換 (子は親の変換だけを受ける。不透明度は 1) | ランタイム |
+| `Parameter::kind` (`ParameterKind`) | 通常のパラメータとして扱う | ランタイム (ブレンドシェイプの実装時) |
+| `KeyformGrid::origins` の要素 (`KeyformOrigin`) | `authored` として扱う (推定で上書きしない) | エディタ |
+| `KeyformGrid::inference` (`KeyformInference`) | 推定で作り直さない (`derived` のセルをそのまま使う) | エディタ |
+| `Curve::target` (`CurveTarget`) | そのカーブを無視する | モーション |
+| `Curve::segments` の要素 (`Segment`) | そのカーブ全体を無視する | モーション |
+| `ExpressionParameter::op` (`ExpressionOp`) | その項目を無視する | 表情 |
+| `PhysicsInput::source` / `PhysicsOutput::source` (`PhysicsSource`) | その入力・出力を無視する | 物理 |
+
+- 未知の値を読んでも検証エラーにはしません。`read_bundle_with_report` が警告として場所を返します。
+
+### 再保存
+
+読み込んだバンドルを書き出し直すときの扱いです。
+
+- **未知の値 (`Unknown`) は書き出せません。** 元のタグと中身を失っているので、書き出しは `UnknownValues` エラーになります (`model_to_json` と、`ugoe-model` の型の serde でのシリアライズも同じくエラーになる)。別の値 (たとえばフォールバックの値) として黙って保存しないためです。保存したいツールは、利用者に確認してから値を置き換えます。
+- **知らない任意の機能** のデータは読み込みの時点で失われている (未知のフィールドは無視する) ので、書き出したファイルはフォールバックを適用した、その機能を使わないファイルになります。宣言は `detect` が作り直すので、知らない機能を宣言し直すことはありません。
 - 互換性のテストのため、各リリースで書き出したファイルを `assets/compat/` に保存し、新しいランタイムで読めること、新しい機能を含むファイルを古い読み込みルールで劣化させて読めることを CI で検査します (T0115)。
 
 ### モジュールと法線マップのファイル

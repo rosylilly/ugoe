@@ -253,7 +253,8 @@ pub(crate) fn blend_state(mode: BlendMode) -> wgpu::BlendState {
     // 描画先のアルファを保つ (additive / multiply)。
     let keep_dst_alpha = component(BlendFactor::Zero, BlendFactor::One);
     match mode {
-        BlendMode::Normal => wgpu::BlendState {
+        // 未知のモードは通常の合成で描く (`docs/spec/file-formats.md#未知の値の読み込み`)。
+        BlendMode::Normal | BlendMode::Unknown => wgpu::BlendState {
             color: component(BlendFactor::One, BlendFactor::OneMinusSrcAlpha),
             alpha: component(BlendFactor::One, BlendFactor::OneMinusSrcAlpha),
         },

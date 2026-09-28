@@ -99,6 +99,20 @@ pub enum MaskMode {
     Union,
     /// 共通部分 `Π c`。
     Intersection,
+    /// 未知の値 (新しい版のファイル)。和集合として扱う。
+    /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
+    #[serde(other, skip_serializing)]
+    Unknown,
+}
+
+impl MaskMode {
+    /// フォールバックを適用した結合方法 (`Unknown` は和集合)。
+    pub fn effective(self) -> Self {
+        match self {
+            Self::Unknown => Self::Union,
+            mode => mode,
+        }
+    }
 }
 
 fn one() -> f32 {
@@ -121,6 +135,20 @@ pub enum BlendMode {
     Normal,
     Additive,
     Multiply,
+    /// 未知の値 (新しい版のファイル)。通常の合成で描く。
+    /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
+    #[serde(other, skip_serializing)]
+    Unknown,
+}
+
+impl BlendMode {
+    /// フォールバックを適用した合成モード (`Unknown` は通常の合成)。
+    pub fn effective(self) -> Self {
+        match self {
+            Self::Unknown => Self::Normal,
+            mode => mode,
+        }
+    }
 }
 
 /// 2 つのメッシュの頂点同士を引き寄せて継ぎ目を防ぐ「接着」。

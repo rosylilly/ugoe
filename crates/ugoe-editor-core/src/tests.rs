@@ -212,7 +212,7 @@ fn remove_parameter_collapses_origins_and_inference_axes() {
     let model = fixtures::keyform_inference();
     let face = |model: &Model| match &model.deformers[0].kind {
         DeformerKind::Warp(warp) => warp.keyforms.clone(),
-        DeformerKind::Rotation(_) => panic!("Face is a warp deformer"),
+        _ => panic!("Face is a warp deformer"),
     };
     let after = applied(
         &model,

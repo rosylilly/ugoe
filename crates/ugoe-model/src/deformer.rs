@@ -30,6 +30,10 @@ pub struct Deformer {
 pub enum DeformerKind {
     Warp(WarpDeformer),
     Rotation(RotationDeformer),
+    /// 未知の値 (新しい版のファイル)。恒等変換として扱う (子は親の変換だけを受ける)。
+    /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
+    #[serde(other, skip_serializing)]
+    Unknown,
 }
 
 /// ワープデフォーマ: (rows+1)×(cols+1) 個の制御点を持つ格子による自由変形。
