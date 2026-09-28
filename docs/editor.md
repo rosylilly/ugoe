@@ -468,6 +468,39 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 - ドラッグ中はギズモだけをプレビューし、子の描画は離して読み直すまで変わりません。
 - 幾何の補助 (格子の辺・外周・取っ手の位置・角度・拡大率) は `viewport/tools/deformer/gizmo.ts` にあり、Vitest で検査します。
 
+### はみ出しの検証
+
+ワープの子 (メッシュの頂点・子のワープの制御点・子の回転デフォーマの原点) は、親の UV 空間で表します。UV が [0,1]² の外の点は
+[範囲外の外挿](spec/evaluation.md#範囲外の外挿) で親に追従するので壊れはしませんが、格子の中ほど思いどおりに曲がりません。
+高可動域のリグでは、パラメータを動かしたときにこの「はみ出し」がよく起きるので、エディタで示します (T0632。Live2D の実践で言う
+「親デフォーマからはみ出した頂点のハイライト」と「デフォーマの検証」に当たる)。読むだけで、コマンドは発行しません。
+
+- **検出** (`ugoe_editor_core::overflow`): 子の局所座標 (= 親の UV) は子自身のキーフォームだけで決まり、親の変形には依らないので、
+  子の格子とブレンドシェイプ格子を、ランタイムと同じ重み (`ugoe_runtime::keyform::weights`。格子の `interpolation` に従い、
+  [曲線補間](spec/evaluation.md#曲線補間) の軸では曲線の重み) で補間して調べます (メッシュは `ModelInstance::mesh_local_positions`
+  と、ワープの制御点は親のワールド変換で写した `warp_world_points` と一致することをテストで確かめている)。はみ出しの量は [0,1]² からの UV の距離
+  (格子の幅・高さを 1 とした量) で、既定の許容距離 `DEFAULT_TOLERANCE` (0.001) を超える点を数えます。親が回転デフォーマ・親なしの
+  要素は UV 空間を持たないので調べません。
+  - `overflows_at(model, values, tolerance)`: 今のパラメータ値 (含まないものは既定値) で、はみ出した点を要素ごとに返す
+    (`ElementOverflow { target, parent, kind, points: [{ index, uv, amount }] }`。`kind` は `vertex` / `control_point` / `origin`)。
+  - `verify_overflows(model, tolerance)`: 親がワープのすべての要素について、格子とブレンドシェイプ格子の軸のパラメータの
+    **キーのすべての組み合わせ** (セル) を調べ、はみ出したセルごとに `OverflowFinding { target, parent, kind, cell, count,
+    worst_index, max_amount }` を返す。補間はセルの中で各軸について線形なので、凸関数である UV の距離の最大はセルの角 (キーの
+    組み合わせ) で起きます。キーの外の値はクランプされるので、軸の端の組み合わせも両端のキーの組み合わせとして含まれます。
+    曲線補間の軸はキーの間で行き過ぎる (オーバーシュート) ことがあるので、隣り合うキーの間の `SMOOTH_SAMPLES` (3) 点も値に
+    加えます (間の点は近似。見つけたセルの値はその点になる)。
+    1 要素の組み合わせが `MAX_COMBINATIONS` (4096) を超えるときは、各軸の両端のキーだけを調べ、`truncated` に入れます。
+    サンプルのアバター (32 要素・269 セル) で 1 ms もかかりません。
+- **Tauri コマンド** (`src-tauri/src/overflow.rs`): `find_overflows(parameters, tolerance?)` と `verify_overflows(tolerance?)`。
+- **ビューポート** (`viewport/tools/overflow/OverflowOverlay.svelte`): 「Verify」のパネルの「Show overflows in viewport」
+  (`VerifyView.showOverflows`) の間、今のパラメータ値ではみ出した点に赤い印を重ねます。どの点かは `find_overflows` に問い合わせ
+  (同時に 1 つだけ。その間に変わった値は、終わってから最新のものだけを問い合わせる)、位置は wasm の評価結果 (メッシュは
+  `drawable_positions`、ワープは `warp_points`、回転デフォーマは `rotation_frame` の原点) を読みます。操作は受けません。
+- **「Verify」のパネル** (`panels/verify/VerifyPanel.svelte`、右の列のタブ): 「Verify all cells」で `verify_overflows` を呼び、
+  要素ごとに (最大の量の大きい順) セル・点の数・量を並べます。行を押すと、その要素を選び、ビューポートのパラメータをセルの値に
+  し (ほかのパラメータは変えない。物理のプレビュー中なら止める)、はみ出しの表示を出します。一度調べた後は、モデルが変わるたびに
+  調べ直します。一覧の組み立て (まとめ方・表記・印の位置) は `panels/verify/overflow.ts` にあり、Vitest で検査します。
+
 ## テクスチャ
 
 - `Document` はモデルと一緒に **テクスチャの画像** (`Textures` = テクスチャ名 → PNG のバイト列) を持ちます。モデルの `TextureRef` は名前と寸法だけで、画像はここにあります。画像はデコードせず、PNG ファイルのまま持ちます。

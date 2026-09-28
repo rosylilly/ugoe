@@ -3,6 +3,7 @@
 
 pub mod bindings;
 mod commands;
+mod overflow;
 mod project;
 mod psd;
 mod space;
@@ -50,6 +51,8 @@ pub fn run() {
             psd::import_psd,
             space::local_to_canvas,
             space::canvas_to_local,
+            overflow::find_overflows,
+            overflow::verify_overflows,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

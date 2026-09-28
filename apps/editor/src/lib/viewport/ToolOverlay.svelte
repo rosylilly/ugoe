@@ -11,10 +11,12 @@
   - 深度の表示 (T0617): tools/depth/DepthOverlay.svelte。インスペクタの深度の節で切り替える (操作は受けない)。
   - 物理の表示 (T0629): tools/physics/PhysicsOverlay.svelte。物理のパネルを開いている間、粒子と衝突体を重ね、
     衝突体のドラッグを受ける (ほかのツールより上)。
+  - はみ出しの表示 (T0632): tools/overflow/OverflowOverlay.svelte。「Verify」のパネルで切り替える (操作は受けない)。
 -->
 <script lang="ts">
 import type { EditorDocument } from "../document.svelte";
 import type { PhysicsView } from "../panels/physics/physicsView.svelte";
+import type { VerifyView } from "../panels/verify/verifyView.svelte";
 import type { Selection } from "../selection.svelte";
 import type { ViewportController } from "./controller.svelte";
 import DeformerGizmo from "./tools/deformer/DeformerGizmo.svelte";
@@ -22,6 +24,7 @@ import DepthOverlay from "./tools/depth/DepthOverlay.svelte";
 import FormTool from "./tools/form/FormTool.svelte";
 import { boundaryEdges, cycleHit } from "./tools/geometry";
 import MeshEditTool from "./tools/MeshEditTool.svelte";
+import OverflowOverlay from "./tools/overflow/OverflowOverlay.svelte";
 import PhysicsOverlay from "./tools/physics/PhysicsOverlay.svelte";
 import { ViewportScene } from "./tools/scene.svelte";
 
@@ -30,9 +33,10 @@ interface Props {
   doc: EditorDocument;
   selection: Selection;
   physics: PhysicsView;
+  verify: VerifyView;
 }
 
-let { controller, doc, selection, physics }: Props = $props();
+let { controller, doc, selection, physics, verify }: Props = $props();
 
 /** これより動かなければクリックとみなす (CSS ピクセル)。 */
 const CLICK_SLOP = 3;
@@ -177,6 +181,7 @@ function onKeyDown(e: KeyboardEvent): void {
 {/if}
 
 <DepthOverlay {controller} {doc} {selection} {scene} />
+<OverflowOverlay {controller} {doc} {scene} view={verify} />
 <PhysicsOverlay {controller} {doc} view={physics} />
 
 <div class="toolbar">

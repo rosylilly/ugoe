@@ -8,7 +8,9 @@ import type {
   ApplyReport,
   AutoMeshOptions,
   Command,
+  ElementOverflow,
   KeyformTarget,
+  OverflowReport,
   PhysicsSettings,
   ProjectStatus,
   PsdImportWarning,
@@ -58,4 +60,13 @@ export const ipc = {
     points: Point[],
     guesses: Point[],
   ) => invoke<Point[]>("canvas_to_local", { target, parameters, points, guesses }),
+  /**
+   * apps/editor/src-tauri/src/overflow.rs。パラメータの値 (含まないものは既定値) で、親のワープの格子の
+   * 外にある点を要素ごとに返す。`tolerance` は UV の許容距離 (省略すると既定値)。
+   */
+  findOverflows: (parameters: Record<string, number>, tolerance?: number) =>
+    invoke<ElementOverflow[]>("find_overflows", { parameters, tolerance: tolerance ?? null }),
+  /** 親がワープのすべての要素について、キーフォームのすべてのセルではみ出しを調べる。 */
+  verifyOverflows: (tolerance?: number) =>
+    invoke<OverflowReport>("verify_overflows", { tolerance: tolerance ?? null }),
 };

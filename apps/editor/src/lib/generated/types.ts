@@ -282,6 +282,19 @@ pitch?: string | null, };
 export type Effects = { eye_blink: EyeBlink, breath: Breath, lip_sync: LipSync, };
 
 /**
+ * 1 つの要素の、はみ出した点。
+ */
+export type ElementOverflow = { target: KeyformTarget, 
+/**
+ * 親のワープデフォーマ。
+ */
+parent: string, kind: OverflowPointKind, 
+/**
+ * はみ出した点 (番号の順)。
+ */
+points: Array<OverflowPoint>, };
+
+/**
  * 表情: モーションの上に重ねるパラメータ差分。
  */
 export type Expression = { name: string, fade_in: number, fade_out: number, parameters: Array<ExpressionParameter>, };
@@ -603,6 +616,62 @@ duration: number, looping: boolean, fade_in: number, fade_out: number, curves: A
 export type MotionEvent = { t: number, value: string, };
 
 export type NormalizationRange = { min: number, default: number, max: number, };
+
+/**
+ * [`verify_overflows`] で見つけた、ある要素のあるセルでのはみ出し。
+ */
+export type OverflowFinding = { target: KeyformTarget, parent: string, kind: OverflowPointKind, 
+/**
+ * セル: 要素の格子 (とブレンドシェイプ格子) の軸のパラメータの値。ほかのパラメータは値に依らない。
+ */
+cell: { [key in string]: number }, 
+/**
+ * はみ出した点の数。
+ */
+count: number, 
+/**
+ * 最もはみ出した点の番号と量。
+ */
+worst_index: number, max_amount: number, };
+
+/**
+ * はみ出した 1 点。
+ */
+export type OverflowPoint = { index: number, 
+/**
+ * 親のワープの UV。
+ */
+uv: Vec2, 
+/**
+ * [0,1]² からの UV の距離 (格子の幅・高さを 1 とした量)。
+ */
+amount: number, };
+
+/**
+ * はみ出した点の種類。
+ */
+export type OverflowPointKind = "vertex" | "control_point" | "origin";
+
+/**
+ * [`verify_overflows`] の結果。
+ */
+export type OverflowReport = { 
+/**
+ * 見つけたはみ出し。要素のモデルでの順 (デフォーマ、メッシュ)、同じ要素ではセルの順。
+ */
+findings: Array<OverflowFinding>, 
+/**
+ * 調べた要素 (親がワープの要素) の数。
+ */
+elements: number, 
+/**
+ * 調べたセルの数 (要素ごとの組み合わせの和)。
+ */
+cells: number, 
+/**
+ * 組み合わせが [`MAX_COMBINATIONS`] を超え、各軸の両端のキーだけを調べた要素。
+ */
+truncated: Array<KeyformTarget>, };
 
 /**
  * モデルを動かす入力スカラー値 (例: 顔の角度 X, 目の開閉)。

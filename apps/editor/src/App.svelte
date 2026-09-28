@@ -3,7 +3,7 @@
   ViewportController (表示) に、各領域の中身は lib/panels/ と lib/viewport/ に置く。
   中央はビューポート (上) とタイムライン (下。モーションと表情、lib/panels/timeline/)。
   右の列はインスペクタ (上) とパラメータ (下) に分け、区切りをドラッグ (または矢印キー) で動かす (lib/layout.ts)。
-  上の区画は「Inspector」と「Physics」(lib/panels/physics/) をタブで切り替える。
+  上の区画は「Inspector」「Physics」(lib/panels/physics/)「Verify」(lib/panels/verify/) をタブで切り替える。
   Undo / Redo のショートカット (lib/shortcuts.ts) もここで受ける。
 -->
 <script lang="ts">
@@ -19,6 +19,8 @@ import PhysicsPanel from "./lib/panels/physics/PhysicsPanel.svelte";
 import { PhysicsView } from "./lib/panels/physics/physicsView.svelte";
 import TreePanel from "./lib/panels/TreePanel.svelte";
 import TimelinePanel from "./lib/panels/timeline/TimelinePanel.svelte";
+import VerifyPanel from "./lib/panels/verify/VerifyPanel.svelte";
+import { VerifyView } from "./lib/panels/verify/verifyView.svelte";
 import { Selection } from "./lib/selection.svelte";
 import { historyShortcut, isMac, isTextEntry } from "./lib/shortcuts";
 import { ViewportController } from "./lib/viewport/controller.svelte";
@@ -29,6 +31,7 @@ const doc = new EditorDocument();
 const viewport = new ViewportController();
 const selection = new Selection();
 const physics = new PhysicsView();
+const verify = new VerifyView();
 let info = $state<AppInfo | null>(null);
 let fileMenu = $state<FileMenu>();
 
@@ -113,7 +116,7 @@ $effect(() => {
     <div class="viewport-area">
       <Viewport controller={viewport} model={doc.model} hint={doc.empty ? EMPTY_VIEWPORT_HINT : null}>
         {#snippet overlay(controller)}
-          <ToolOverlay {controller} {doc} {selection} {physics} />
+          <ToolOverlay {controller} {doc} {selection} {physics} {verify} />
         {/snippet}
       </Viewport>
     </div>
@@ -122,13 +125,18 @@ $effect(() => {
   <aside class="right" bind:this={rightColumn}>
     <div class="pane inspector" style:flex-basis="{split * 100}%">
       <div class="tabs" role="tablist">
-        <button role="tab" aria-selected={!physics.active} class:current={!physics.active}
-          onclick={() => (physics.active = false)}>Inspector</button>
+        <button role="tab" aria-selected={!physics.active && !verify.active}
+          class:current={!physics.active && !verify.active}
+          onclick={() => ((physics.active = false), (verify.active = false))}>Inspector</button>
         <button role="tab" aria-selected={physics.active} class:current={physics.active}
-          onclick={() => (physics.active = true)}>Physics</button>
+          onclick={() => ((physics.active = true), (verify.active = false))}>Physics</button>
+        <button role="tab" aria-selected={verify.active} class:current={verify.active}
+          onclick={() => ((verify.active = true), (physics.active = false))}>Verify</button>
       </div>
       {#if doc.error}<p class="error">{doc.error}</p>{/if}
-      {#if physics.active}
+      {#if verify.active}
+        <VerifyPanel {doc} {selection} {viewport} view={verify} />
+      {:else if physics.active}
         <PhysicsPanel {doc} {selection} {viewport} view={physics} />
       {:else}
         <InspectorPanel {doc} {selection} {viewport} />
