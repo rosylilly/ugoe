@@ -1,11 +1,11 @@
 ---
 id: T0608
 title: エディタ: パラメータとキーフォームの編集
-status: todo
+status: in-progress
 milestone: M2
 crates: [ugoe-editor-core, apps/editor]
 depends_on: [T0601, T0402]
-assignee:
+assignee: claude-worker-T0608
 ---
 
 # T0608: エディタ: パラメータとキーフォームの編集
