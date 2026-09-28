@@ -6,20 +6,24 @@
 <script lang="ts">
 import type { EditorDocument } from "../document.svelte";
 import type { Selection } from "../selection.svelte";
+import type { ViewportController } from "../viewport/controller.svelte";
+import KeyformInspector from "./inspector/keyforms/KeyformInspector.svelte";
 import MeshProperties from "./inspector/MeshProperties.svelte";
 
 interface Props {
   doc: EditorDocument;
   selection: Selection;
+  viewport: ViewportController;
 }
 
-let { doc, selection }: Props = $props();
+let { doc, selection, viewport }: Props = $props();
 </script>
 
 <h2>Inspector</h2>
 {#if selection.primary}
   <p>{selection.primary.kind}: {selection.primary.id}</p>
   <MeshProperties {doc} {selection} />
+  <KeyformInspector {doc} {selection} {viewport} />
 {:else}
   <p class="muted">Nothing selected (rev {doc.revision})</p>
 {/if}

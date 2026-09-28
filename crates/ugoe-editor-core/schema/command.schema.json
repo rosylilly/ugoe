@@ -981,6 +981,112 @@
         "op",
         "id"
       ]
+    },
+    {
+      "description": "要素の格子の、パラメータ `parameter` の軸にキー `key` を加える。\n軸がなければキー 1 つの軸として加える。新しいセルは既存の格子を補間して埋めるので、\n見た目は変わらない。規則は `docs/editor.md#キーフォームの編集`。",
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "number",
+          "format": "float"
+        },
+        "op": {
+          "type": "string",
+          "const": "add_keyform_key"
+        },
+        "parameter": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/KeyformTarget"
+        }
+      },
+      "required": [
+        "op",
+        "target",
+        "parameter",
+        "key"
+      ]
+    },
+    {
+      "description": "要素の格子の、パラメータ `parameter` の軸からキー `key` とその断面のセルを取り除く。\n軸の最後のキーなら軸ごと取り除く (その断面が残る)。",
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "number",
+          "format": "float"
+        },
+        "op": {
+          "type": "string",
+          "const": "remove_keyform_key"
+        },
+        "parameter": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/KeyformTarget"
+        }
+      },
+      "required": [
+        "op",
+        "target",
+        "parameter",
+        "key"
+      ]
+    },
+    {
+      "description": "要素の格子の 1 セルを置き換え、`authored` にする。キーフォームの種類は格子と一致させ、\n頂点 (制御点) の数は変えない。",
+      "type": "object",
+      "properties": {
+        "cell": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "float"
+          }
+        },
+        "keyform": {
+          "$ref": "#/$defs/Keyform"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_keyform_cell"
+        },
+        "target": {
+          "$ref": "#/$defs/KeyformTarget"
+        }
+      },
+      "required": [
+        "op",
+        "target",
+        "cell",
+        "keyform"
+      ]
+    },
+    {
+      "description": "メッシュの描画順 (`draw_order`) を、格子のすべてのセルで `draw_order` にする。\nセルの由来と他の値は変えない。`draw_order` は有限の値。",
+      "type": "object",
+      "properties": {
+        "draw_order": {
+          "type": "number",
+          "format": "float"
+        },
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_mesh_draw_order"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "draw_order"
+      ]
     }
   ],
   "$defs": {
@@ -1153,6 +1259,18 @@
         "pivot"
       ]
     },
+    "GlueKeyform": {
+      "type": "object",
+      "properties": {
+        "intensity": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "intensity"
+      ]
+    },
     "InferMethod": {
       "description": "[`Command::InferKeyforms`] の推定の方法。",
       "oneOf": [
@@ -1170,6 +1288,76 @@
           "description": "深度からの回転 (`docs/spec/keyform-inference.md#深度からの回転`)。\n格子の `inference` が `depth_rotation` でなければならない。",
           "type": "string",
           "const": "depth_rotation"
+        }
+      ]
+    },
+    "Keyform": {
+      "description": "1 つのセルのキーフォーム。種類は対象の格子と一致させる。\nJSON では `{\"kind\": \"mesh\", \"positions\": [..], \"opacity\": 1, ..}` のようにフィールドを並べる。",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "part"
+            }
+          },
+          "$ref": "#/$defs/PartKeyform",
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "warp"
+            }
+          },
+          "$ref": "#/$defs/WarpKeyform",
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "rotation"
+            }
+          },
+          "$ref": "#/$defs/RotationKeyform",
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "mesh"
+            }
+          },
+          "$ref": "#/$defs/MeshKeyform",
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "glue"
+            }
+          },
+          "$ref": "#/$defs/GlueKeyform",
+          "required": [
+            "kind"
+          ]
         }
       ]
     },

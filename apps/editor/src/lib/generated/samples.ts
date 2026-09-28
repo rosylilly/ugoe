@@ -2943,6 +2943,169 @@ export const commands: Command[] = [
     }
   },
   {
+    "op": "add_keyform_key",
+    "target": {
+      "kind": "mesh",
+      "id": "EyeL"
+    },
+    "parameter": "AngleX",
+    "key": 15.0
+  },
+  {
+    "op": "remove_keyform_key",
+    "target": {
+      "kind": "deformer",
+      "id": "Arm"
+    },
+    "parameter": "Angle",
+    "key": 30.0
+  },
+  {
+    "op": "set_mesh_draw_order",
+    "id": "EyeL",
+    "draw_order": 750.0
+  },
+  {
+    "op": "set_keyform_cell",
+    "target": {
+      "kind": "mesh",
+      "id": "EyeL"
+    },
+    "cell": {},
+    "keyform": {
+      "kind": "mesh",
+      "positions": [
+        [
+          0.2,
+          0.4
+        ],
+        [
+          0.4,
+          0.4
+        ],
+        [
+          0.4,
+          0.5
+        ],
+        [
+          0.2,
+          0.5
+        ]
+      ],
+      "opacity": 1.0,
+      "draw_order": 500.0,
+      "multiply_color": {
+        "r": 1.0,
+        "g": 1.0,
+        "b": 1.0
+      },
+      "screen_color": {
+        "r": 0.0,
+        "g": 0.0,
+        "b": 0.0
+      },
+      "mask_strength": 1.0
+    }
+  },
+  {
+    "op": "set_keyform_cell",
+    "target": {
+      "kind": "deformer",
+      "id": "Arm"
+    },
+    "cell": {
+      "Angle": -30.0
+    },
+    "keyform": {
+      "kind": "rotation",
+      "origin": [
+        128.0,
+        128.0
+      ],
+      "angle": -30.0,
+      "scale": 1.0,
+      "reflect_x": false,
+      "reflect_y": false,
+      "opacity": 1.0
+    }
+  },
+  {
+    "op": "set_keyform_cell",
+    "target": {
+      "kind": "deformer",
+      "id": "Hand"
+    },
+    "cell": {
+      "Flip": 0.0
+    },
+    "keyform": {
+      "kind": "rotation",
+      "origin": [
+        64.0,
+        0.0
+      ],
+      "angle": 0.0,
+      "scale": 0.5,
+      "reflect_x": false,
+      "reflect_y": false,
+      "opacity": 1.0
+    }
+  },
+  {
+    "op": "set_keyform_cell",
+    "target": {
+      "kind": "deformer",
+      "id": "Cloth"
+    },
+    "cell": {},
+    "keyform": {
+      "kind": "warp",
+      "points": [
+        [
+          0.0,
+          20.0
+        ],
+        [
+          40.0,
+          20.0
+        ],
+        [
+          0.0,
+          40.0
+        ],
+        [
+          40.0,
+          40.0
+        ]
+      ],
+      "opacity": 1.0
+    }
+  },
+  {
+    "op": "set_keyform_cell",
+    "target": {
+      "kind": "part",
+      "id": "Root"
+    },
+    "cell": {},
+    "keyform": {
+      "kind": "part",
+      "opacity": 1.0
+    }
+  },
+  {
+    "op": "set_keyform_cell",
+    "target": {
+      "kind": "glue",
+      "id": "Glue"
+    },
+    "cell": {},
+    "keyform": {
+      "kind": "glue",
+      "intensity": 0.5
+    }
+  },
+  {
     "op": "infer_keyforms",
     "target": {
       "kind": "mesh",

@@ -5,6 +5,7 @@ pub mod bindings;
 mod commands;
 mod project;
 mod psd;
+mod space;
 
 use std::sync::Mutex;
 
@@ -42,6 +43,8 @@ pub fn run() {
             project::export_bundle,
             project::get_model_bundle,
             psd::import_psd,
+            space::local_to_canvas,
+            space::canvas_to_local,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

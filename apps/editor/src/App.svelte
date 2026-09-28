@@ -52,7 +52,7 @@ $effect(() => {
   </main>
   <aside class="right">
     {#if doc.error}<p class="error">{doc.error}</p>{/if}
-    <InspectorPanel {doc} {selection} />
-    <ParametersPanel parameters={doc.parameters} {viewport} />
+    <InspectorPanel {doc} {selection} {viewport} />
+    <ParametersPanel parameters={doc.parameters} {viewport} {doc} {selection} />
   </aside>
 </div>

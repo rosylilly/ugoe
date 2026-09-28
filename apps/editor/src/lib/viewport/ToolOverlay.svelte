@@ -5,12 +5,14 @@
   - 選択モード: クリックで手前のメッシュを選ぶ (Shift / Ctrl で追加・解除)。Alt + クリックは重なった
     メッシュを手前から順に選ぶ。選択中のメッシュには輪郭を描く。ダブルクリックでメッシュ編集モードに入る。
   - メッシュ編集モード (T0606): tools/MeshEditTool.svelte。Esc で抜ける。
+  - フォーム編集 (T0608): tools/form/FormTool.svelte。今のセルのキーフォームを編集する (メッシュ編集中は出さない)。
   デフォーマのギズモ (T0607) もここに足す。
 -->
 <script lang="ts">
 import type { EditorDocument } from "../document.svelte";
 import type { Selection } from "../selection.svelte";
 import type { ViewportController } from "./controller.svelte";
+import FormTool from "./tools/form/FormTool.svelte";
 import { boundaryEdges, cycleHit } from "./tools/geometry";
 import MeshEditTool from "./tools/MeshEditTool.svelte";
 import { ViewportScene } from "./tools/scene.svelte";
@@ -153,6 +155,8 @@ function onKeyDown(e: KeyboardEvent): void {
   {#key editing}
     <MeshEditTool bind:this={meshTool} {scene} {doc} {selection} meshId={editing} />
   {/key}
+{:else}
+  <FormTool {controller} {doc} {selection} />
 {/if}
 
 <div class="toolbar">

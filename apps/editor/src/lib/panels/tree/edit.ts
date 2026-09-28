@@ -134,7 +134,7 @@ function reorder(
   if (a !== b) {
     return reject(
       `${label(index, item)} (draw order ${a}) and ${label(index, target)} (draw order ${b}) ` +
-        `cannot be reordered: change the draw order instead`,
+        `cannot be reordered: change the draw order instead (Inspector > Draw order, set_mesh_draw_order)`,
     );
   }
   // 手前 = `meshes` で後ろ。above なら target の直後、below なら target の直前へ。

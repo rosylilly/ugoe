@@ -1356,10 +1356,14 @@ fn op_name(command: &Command) -> &'static str {
         Command::AddMeshVertex { .. } => "add_mesh_vertex",
         Command::RemoveMeshVertices { .. } => "remove_mesh_vertices",
         Command::RetriangulateMesh { .. } => "retriangulate_mesh",
+        Command::AddKeyformKey { .. } => "add_keyform_key",
+        Command::RemoveKeyformKey { .. } => "remove_keyform_key",
+        Command::SetKeyformCell { .. } => "set_keyform_cell",
+        Command::SetMeshDrawOrder { .. } => "set_mesh_draw_order",
     }
 }
 
-const OP_COUNT: usize = 40;
+const OP_COUNT: usize = 44;
 
 fn json_samples() -> Vec<Command> {
     let quad = fixtures::single_quad();
@@ -1531,6 +1535,25 @@ fn json_samples() -> Vec<Command> {
             indices: vec![1, 3],
         },
         Command::RetriangulateMesh { id: "Quad".into() },
+        Command::AddKeyformKey {
+            target: crate::KeyformTarget::Mesh("Quad".into()),
+            parameter: "X".into(),
+            key: 0.5,
+        },
+        Command::RemoveKeyformKey {
+            target: crate::KeyformTarget::Deformer("Arm".into()),
+            parameter: "Angle".into(),
+            key: 30.0,
+        },
+        Command::SetKeyformCell {
+            target: crate::KeyformTarget::Glue("Seam".into()),
+            cell: cell(&[]),
+            keyform: crate::Keyform::Glue(ugoe_model::mesh::GlueKeyform { intensity: 0.5 }),
+        },
+        Command::SetMeshDrawOrder {
+            id: "Quad".into(),
+            draw_order: 250.0,
+        },
     ]
 }
 

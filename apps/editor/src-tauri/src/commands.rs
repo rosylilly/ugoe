@@ -41,7 +41,7 @@ pub fn redo(state: State<'_, AppState>) -> Result<bool, String> {
     Ok(lock(&state)?.redo())
 }
 
-fn lock<'a>(
+pub(crate) fn lock<'a>(
     state: &'a State<'_, AppState>,
 ) -> Result<std::sync::MutexGuard<'a, ugoe_editor_core::Document>, String> {
     state

@@ -14,10 +14,10 @@ use ugoe_model::deformer::DeformerKind;
 use ugoe_model::expression::Expression;
 use ugoe_model::motion::Motion;
 use ugoe_model::physics::PhysicsSettings;
-use ugoe_model::{BlendMode, KeyformGrid, MaskMode, MaskRef, Model, fixtures};
+use ugoe_model::{BlendMode, KeyformGrid, MaskMode, MaskRef, MeshId, Model, fixtures};
 
 use crate::command::{InferMethod, KeyformTarget};
-use crate::{AutoMeshOptions, Command, KeyformCell, VertexMove};
+use crate::{AutoMeshOptions, Command, Keyform, KeyformCell, VertexMove};
 
 /// チェックインした `Command` の JSON Schema (`schema/command.schema.json`)。AI のツール定義に使う。
 /// [`command_schema_json`] の出力と同じであることをテストで確かめる。
@@ -309,6 +309,24 @@ fn sample_commands() -> Vec<Command> {
             id: mesh_id.clone(),
             options: AutoMeshOptions::default(),
         },
+        Command::AddKeyformKey {
+            target: KeyformTarget::Mesh(mesh_id.clone()),
+            parameter: "AngleX".into(),
+            key: 15.0,
+        },
+        Command::RemoveKeyformKey {
+            target: KeyformTarget::Deformer(deformers[0].id.clone()),
+            parameter: "Angle".into(),
+            key: 30.0,
+        },
+        Command::SetMeshDrawOrder {
+            id: mesh_id.clone(),
+            draw_order: 750.0,
+        },
+    ]
+    .into_iter()
+    .chain(keyform_cell_samples(&mesh_id, &mesh_cell))
+    .chain([
         Command::InferKeyforms {
             target: KeyformTarget::Mesh(mesh_id.clone()),
             method: InferMethod::DepthRotation,
@@ -352,7 +370,54 @@ fn sample_commands() -> Vec<Command> {
             indices: vec![0, 3],
         },
         Command::RetriangulateMesh { id: mesh_id },
-    ]
+    ])
+    .collect()
+}
+
+/// `set_keyform_cell` の見本。キーフォームの種類 (`Keyform`) ごとに 1 つ。
+fn keyform_cell_samples(mesh_id: &MeshId, mesh_cell: &KeyformCell) -> Vec<Command> {
+    let model = fixtures::rotation_chain();
+    let mut keyforms = vec![(
+        KeyformTarget::Mesh(mesh_id.clone()),
+        mesh_cell.clone(),
+        Keyform::Mesh(fixtures::keyform_inference().meshes[0].keyforms.keyforms[0].clone()),
+    )];
+    for d in &model.deformers {
+        let (cell, keyform) = match &d.kind {
+            DeformerKind::Warp(w) => (
+                KeyformCell::new(),
+                Keyform::Warp(w.keyforms.keyforms[0].clone()),
+            ),
+            DeformerKind::Rotation(r) => (
+                r.keyforms
+                    .bindings
+                    .iter()
+                    .map(|b| (b.parameter.clone(), b.keys[0]))
+                    .collect(),
+                Keyform::Rotation(r.keyforms.keyforms[0]),
+            ),
+            DeformerKind::Unknown => continue,
+        };
+        keyforms.push((KeyformTarget::Deformer(d.id.clone()), cell, keyform));
+    }
+    keyforms.push((
+        KeyformTarget::Part(model.parts[0].id.clone()),
+        KeyformCell::new(),
+        Keyform::Part(model.parts[0].keyforms.keyforms[0]),
+    ));
+    keyforms.push((
+        KeyformTarget::Glue("Glue".to_owned()),
+        KeyformCell::new(),
+        Keyform::Glue(ugoe_model::mesh::GlueKeyform { intensity: 0.5 }),
+    ));
+    keyforms
+        .into_iter()
+        .map(|(target, cell, keyform)| Command::SetKeyformCell {
+            target,
+            cell,
+            keyform,
+        })
+        .collect()
 }
 
 fn empty<T>() -> KeyformGrid<T> {

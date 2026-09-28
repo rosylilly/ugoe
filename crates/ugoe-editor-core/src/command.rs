@@ -13,6 +13,7 @@ use ugoe_model::{
 };
 
 use crate::automesh::AutoMeshOptions;
+use crate::keyform::Keyform;
 
 /// キーフォーム格子の 1 セルの指定: 軸のパラメータ ID → その軸のキーの値。
 ///
@@ -271,6 +272,34 @@ pub enum Command {
     /// 今の輪郭を保ったまま、UV の制約付きドロネー三角形分割で三角形を作り直す。
     RetriangulateMesh {
         id: MeshId,
+    },
+    /// 要素の格子の、パラメータ `parameter` の軸にキー `key` を加える。
+    /// 軸がなければキー 1 つの軸として加える。新しいセルは既存の格子を補間して埋めるので、
+    /// 見た目は変わらない。規則は `docs/editor.md#キーフォームの編集`。
+    AddKeyformKey {
+        target: KeyformTarget,
+        parameter: ParamId,
+        key: f32,
+    },
+    /// 要素の格子の、パラメータ `parameter` の軸からキー `key` とその断面のセルを取り除く。
+    /// 軸の最後のキーなら軸ごと取り除く (その断面が残る)。
+    RemoveKeyformKey {
+        target: KeyformTarget,
+        parameter: ParamId,
+        key: f32,
+    },
+    /// 要素の格子の 1 セルを置き換え、`authored` にする。キーフォームの種類は格子と一致させ、
+    /// 頂点 (制御点) の数は変えない。
+    SetKeyformCell {
+        target: KeyformTarget,
+        cell: KeyformCell,
+        keyform: Keyform,
+    },
+    /// メッシュの描画順 (`draw_order`) を、格子のすべてのセルで `draw_order` にする。
+    /// セルの由来と他の値は変えない。`draw_order` は有限の値。
+    SetMeshDrawOrder {
+        id: MeshId,
+        draw_order: f32,
     },
 }
 

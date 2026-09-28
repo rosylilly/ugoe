@@ -10,7 +10,7 @@ use crate::command::KeyformTarget;
 use crate::grid::{self, CellError};
 use crate::mesh_edit;
 use crate::texture::{Textures, is_valid_texture_name, png_size};
-use crate::{Command, automesh, inference};
+use crate::{Command, automesh, inference, keyform};
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum EditError {
@@ -70,6 +70,17 @@ pub enum EditError {
     /// メッシュの形の編集ができない (退化した三角形・同じ UV の頂点・評価できないモデルなど)。
     #[error("mesh `{id}`: {reason}")]
     MeshGeometry { id: String, reason: String },
+    /// 描画順が有限の値でない。
+    #[error("mesh `{id}`: draw order {draw_order} is not finite")]
+    InvalidDrawOrder { id: String, draw_order: f32 },
+    /// `SetKeyformCell` のキーフォームの種類が、対象の格子の種類 (`expected`) と違う。
+    #[error("{kind} `{id}`: expected a {expected} keyform, got a {actual} keyform")]
+    KeyformKindMismatch {
+        kind: &'static str,
+        id: String,
+        expected: &'static str,
+        actual: &'static str,
+    },
     /// 適用するとモデルが検証 (`ugoe_model::validate`) に通らなくなる。新たに生じるエラーの一覧。
     #[error("command would make the model invalid: {}", join(.0))]
     Invalid(Vec<ValidationError>),
@@ -495,6 +506,36 @@ fn apply_to(
             touched.push(KeyformTarget::Mesh(id));
         }
         Command::RetriangulateMesh { id } => mesh_edit::retriangulate(model, &id)?,
+        Command::AddKeyformKey {
+            target,
+            parameter,
+            key,
+        } => keyform::add_key(model, &target, &parameter, key)?,
+        Command::RemoveKeyformKey {
+            target,
+            parameter,
+            key,
+        } => keyform::remove_key(model, &target, &parameter, key)?,
+        Command::SetKeyformCell {
+            target,
+            cell,
+            keyform,
+        } => {
+            keyform::set_cell(model, &target, &cell, keyform)?;
+            touched.push(target);
+        }
+        // すべてのセルが同じ値になるので、推定で作り直しても変わらない (`touched` に積まない)。
+        Command::SetMeshDrawOrder { id, draw_order } => {
+            if !draw_order.is_finite() {
+                return Err(EditError::InvalidDrawOrder {
+                    id: id.to_string(),
+                    draw_order,
+                });
+            }
+            for keyform in &mut mesh(model, &id)?.keyforms.keyforms {
+                keyform.draw_order = draw_order;
+            }
+        }
     }
     Ok(())
 }

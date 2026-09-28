@@ -50,6 +50,7 @@
 | パーツ | `add_part`、`remove_part`、`rename_part`、`set_part_parent`、`set_part_keyforms` |
 | デフォーマ | `add_deformer`、`remove_deformer`、`rename_deformer`、`set_deformer_parent`、`set_deformer_part`、`set_warp_keyforms` (`rows` / `cols` は変えない)、`set_rotation_keyforms` |
 | メッシュ | `add_mesh` (`meshes` の末尾に追加)、`remove_mesh`、`rename_mesh`、`set_mesh_properties`、`set_mesh_parent`、`set_mesh_keyforms`、`set_mesh_keyform`、`reorder_mesh`、`regenerate_mesh` ([メッシュの再生成](#メッシュの再生成))、`move_mesh_vertices`・`add_mesh_vertex`・`remove_mesh_vertices`・`retriangulate_mesh` ([メッシュの編集](#メッシュの編集)) |
+| キーフォーム | `add_keyform_key`、`remove_keyform_key`、`set_keyform_cell`、`set_mesh_draw_order` ([キーフォームの編集](#キーフォームの編集)) |
 | テクスチャ | `add_texture`、`set_texture_image`、`remove_texture` |
 | キャンバス | `set_canvas` (`width`・`height`・`origin`。大きさは 0 より大きい有限の値。要素の座標は変えない) |
 | キーフォームの推定 | `infer_keyforms`、`mirror_keyforms`、`mark_keyform_authored`、`mark_keyform_derived` (下の「推定とミラー」) |
@@ -76,7 +77,7 @@
 
 - 推定のエラー (中立のキーがない、基準のセルが `derived`、ミラーの対でない、など) は `EditError::Inference` で拒否し、モデルは変えません。
 - **自動の作り直し:** 格子のセル (値や由来) を変えたコマンドの後、`Document::apply` はその格子の `derived` のセルを **セルに記録した推定の方法で** 作り直し、その格子をミラー元 (`mirror_source`) にする格子のミラーのセルもミラーし直します。同じ Undo 単位に含まれ、`batch` では全体を適用した後にまとめて行います。加算合成・深度からの回転で作り直せなければコマンドを拒否します (ミラーのやり直しの失敗は、ミラーのセルをそのままにして続ける)。規則は [spec/keyform-inference.md#自動の作り直し](spec/keyform-inference.md#自動の作り直し)。
-  - 対象は `set_*_keyforms`・`set_mesh_keyform`・`mark_keyform_*`・`infer_keyforms`・`mirror_keyforms` です。新しいコマンドは、格子のセルを変えたら `apply_to` の `touched` に要素を積むことで対象になります (`crates/ugoe-editor-core/src/document.rs`)。
+  - 対象は `set_*_keyforms`・`set_mesh_keyform`・`set_keyform_cell`・`mark_keyform_*`・`infer_keyforms`・`mirror_keyforms` です。新しいコマンドは、格子のセルを変えたら `apply_to` の `touched` に要素を積むことで対象になります (`crates/ugoe-editor-core/src/document.rs`)。
   - 推定のコマンドも積みます。作り直しはセルごとの方法で行うので推定の結果を別の方法で上書きせず、その格子をミラー元にする格子へ変化を伝えます。
   - パラメータの範囲の変更など、セルを変えないコマンドでは作り直しません。必要なら `infer_keyforms` を実行します。
 - **`derived` のセルの編集:** セルを書き換えるコマンドは、書き換えた `derived` のセルを `authored` にします。`set_*_keyforms` で格子を丸ごと置き換えるときは、軸が同じなら、値が変わったのに `derived` (方法を問わない) と指定されたセルを `authored` にします。
@@ -183,6 +184,44 @@ uv[i]   = 基準の姿のテクスチャの対応で、キャンバスの点 wor
 - 制約辺は今の輪郭 (1 つの三角形だけが使う辺)。重心が制約辺の内側 (偶奇規則) にある三角形だけを残すので、凹んだ輪郭と穴は保たれます。三角形がなければ (初めから空なら) 凸包全体を分割します。
 - 三角形の向きは元のメッシュに合わせます (UV で見た向きの合計が時計回りなら時計回り)。カリングの表裏が変わらないようにするためです。
 - どの三角形にも使われない頂点は残ります (輪郭の外にある頂点など)。
+
+## キーフォームの編集
+
+Live2D のリギング作業の中心: パラメータを作り、要素にキーを追加し、各キー (セル) の上で形を編集します。
+
+### コマンド
+
+要素は `target` で種類と ID を指定します: `{"kind": "part" | "deformer" | "mesh" | "glue", "id": "..."}` (`ugoe_editor_core::KeyformTarget`)。デフォーマはワープ・回転のどちらでもよく、格子の種類はデフォーマから決まります。
+
+| `op` | 内容 |
+| --- | --- |
+| `add_keyform_key { target, parameter, key }` | 格子の `parameter` の軸にキー `key` を加える。軸がなければキー 1 つの軸を末尾に加える (セルの並びは変わらない)。軸があれば、新しいセルを既存の格子のその値での補間 ([evaluation.md](spec/evaluation.md#1-キーフォームの重み) と同じ重み。キーの範囲の外は端のセルの値) で埋めるので、**評価の結果 (見た目) は変わらない**。真偽値のフィールド (`reflect_x` など) は重みの大きい側 (同じなら小さいキーの側) の値。新しいセルの由来は、格子に推定で作ったセル (`derived`・`additive`・`depth_rotation`・`mirror`) があれば `derived` (方法の記録なし。その格子のセルを次に編集したときに格子の `inference` の方法で作り直される)、なければ `authored`。同じキーがすでにある (`DuplicateKey`)、有限でない、パラメータがない場合は拒否する |
+| `remove_keyform_key { target, parameter, key }` | 軸からキーとその断面のセル (と由来) を取り除く。軸の最後のキーなら軸ごと取り除き、そのキーの断面が残る (`remove_parameter` と同じ畳み方) |
+| `set_keyform_cell { target, cell, keyform }` | 1 セルを置き換え、そのセルを `authored` にする。`cell` は `set_mesh_keyform` と同じ「軸のパラメータ ID → キーの値」。`keyform` は `{"kind": "mesh" \| "warp" \| "rotation" \| "part" \| "glue", ...フィールド}` で、種類は格子と一致させる (`KeyformKindMismatch`)。頂点 (制御点) の数は変えられない (`ShapeMismatch`) |
+| `set_mesh_draw_order { id, draw_order }` | メッシュの格子の **すべてのセル** の `draw_order` を同じ値にする (有限の値でなければ `InvalidDrawOrder`)。セルの由来と他の値は変えず、すべて同じ値なので作り直しもしない。描画順の違うメッシュどうしの前後を入れ替えるのに使う (`reorder_mesh` は描画順が同じメッシュの間でしか効かない)。セルごとに変えるなら `set_keyform_cell` |
+
+`set_keyform_cell` の後は、その格子の `derived` のセルを同じ Undo の単位の中で作り直します ([推定とミラー](#推定とミラー))。`add_keyform_key` と `remove_keyform_key` は作り直しません (追加は補間で見た目を保ち、削除は残ったセルの値を変えないため)。
+
+### 座標の変換
+
+キーフォームの頂点・制御点・原点は親の座標系 (親なしならキャンバス座標、ワープの子は UV 空間、回転デフォーマの子は原点を (0,0) とした座標) で表されます。ビューポートでの操作 (キャンバス座標) を書き込むには、`ugoe_editor_core::space` で変換します。
+
+- `local_to_canvas(model, target, values, points)`: 親の座標系 → キャンバス座標。親の祖先のデフォーマだけを残したモデルに、点を頂点とする仮のメッシュを置いてランタイム (`ugoe-runtime`) で評価するので、変換はランタイムの評価と必ず一致します。
+- `canvas_to_local(model, target, values, points, guesses)`: 逆変換。差分で作ったヤコビアンでニュートン法を回します (初期値はドラッグ前の位置)。アフィンな親 (回転デフォーマ) なら 1 回で、ワープでも数回で収束します。親の変換が潰れていれば `Singular`、収束しなければ `NotConverged` を返します。
+- `values` はビューポートの表示中のパラメータ値です (パラメータ値はドキュメントの状態ではないので、フロントエンドが渡す)。
+- Tauri コマンドは `local_to_canvas(target, parameters, points)` と `canvas_to_local(target, parameters, points, guesses)` (`src-tauri/src/space.rs`)。点は `[x, y]` の配列です。
+
+### 画面での操作
+
+| 場所 | 操作 |
+| --- | --- |
+| パラメータ一覧 (`ParametersPanel.svelte`) | 「+」でパラメータを作る (ID・名前・最小・既定・最大)。名前を押すと名前・値域・既定値の編集と削除 (`rename_parameter` と `set_parameter_range` を `batch` で 1 つの Undo に)。スライダーの下に、主な選択の要素のキーを ◆ で示し (押すとそのキーへ)、「Snap to keys」で要素のすべての軸を最も近いキーへ動かす。行の ◆ ボタンで、今の値にキーを追加 (今の値がキーならそのキーを削除)。スライダーは表示の状態なので IPC を通らない |
+| インスペクタ (`inspector/keyforms/KeyformInspector.svelte`) | 主な選択の要素の軸とキー (× で削除、押すとそのキーへ移動、「+ 値」で今の値にキーを追加)、軸のないパラメータへの軸の追加、セルの格子 (1 軸は 1 行、2 軸は表、3 軸目以降は今の値に最も近いキーの断面)。メッシュでは描画順を表示し、「Set for all cells」で `set_mesh_draw_order` を送る。セルは `A` (authored) / `D` (推定: `derived`・`additive`・`depth_rotation`、破線) / `M` (`mirror`、破線) で由来を示し、今の値がすべての軸でキーの上にあればそのセルを枠で示す。キーの上になければ「Move to nearest key」を出す |
+| ビューポート (`viewport/tools/form/FormTool.svelte`) | 「Form edit」で切り替える。主な選択の要素のうち、メッシュは頂点、ワープは制御点、回転デフォーマは原点をハンドルで示す (回転の角度のギズモは T0607)。ドラッグ中はオーバーレイだけでプレビューし、離したときに `canvas_to_local` で親の座標系に直してから `set_keyform_cell` を 1 つ送る (Undo の 1 単位)。Shift を押しながらドラッグするとすべての点を同じだけ動かす |
+
+- **キーの上でだけ編集できる:** 今のパラメータ値がどれかの軸でキーの上にないと、どのセルに書くか決まらないので編集を拒否し (ハンドルを出さない)、「Move to nearest key」を出します。
+- キーの上かどうかは、パラメータの値域の 1e-6 倍 (最小 1e-6) の差まで同じとみなして判定します (スライダーの値は wasm の `f32` を経由するので、`0.1` のようなキーと完全には一致しない)。送るセルの値はキーの値そのものです。
+- 判定などの純粋な関数は `inspector/keyforms/keyforms.ts` にあり、Vitest で検査します (`pnpm --filter @ugoe/editor test`、`just web-check` に含まれる)。
 
 ## テクスチャ
 

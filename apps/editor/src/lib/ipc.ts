@@ -6,9 +6,11 @@ import type {
   AppInfo,
   AutoMeshOptions,
   Command,
+  KeyformTarget,
   ProjectStatus,
   PsdImportWarning,
 } from "./generated/types";
+import type { Point } from "./panels/inspector/keyforms/keyforms";
 
 export type * from "./generated/types";
 
@@ -35,4 +37,14 @@ export const ipc = {
   /** `meshOptions` の省略したフィールドは既定値。 */
   importPsd: (path: string, meshOptions?: Partial<AutoMeshOptions>) =>
     invoke<PsdImportWarning[]>("import_psd", { path, meshOptions: meshOptions ?? null }),
+  /** apps/editor/src-tauri/src/space.rs。`target` の親の座標系の点をキャンバス座標に写す。 */
+  localToCanvas: (target: KeyformTarget, parameters: Record<string, number>, points: Point[]) =>
+    invoke<Point[]>("local_to_canvas", { target, parameters, points }),
+  /** キャンバス座標の点を `target` の親の座標系に写す。`guesses` は反復の初期値 (親の座標系)。 */
+  canvasToLocal: (
+    target: KeyformTarget,
+    parameters: Record<string, number>,
+    points: Point[],
+    guesses: Point[],
+  ) => invoke<Point[]>("canvas_to_local", { target, parameters, points, guesses }),
 };

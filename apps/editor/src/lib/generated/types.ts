@@ -90,7 +90,7 @@ tolerance?: number | null,
 /**
  * `true` なら先の `authored` のセルも上書きする。
  */
-overwrite_authored: boolean, } | { "op": "mark_keyform_authored", target: KeyformTarget, cells: Array<{ [key in string]: number }>, } | { "op": "mark_keyform_derived", target: KeyformTarget, cells: Array<{ [key in string]: number }>, } | { "op": "move_mesh_vertices", id: string, moves: Array<VertexMove>, } | { "op": "add_mesh_vertex", id: string, position: Vec2, } | { "op": "remove_mesh_vertices", id: string, indices: Array<number>, } | { "op": "retriangulate_mesh", id: string, };
+overwrite_authored: boolean, } | { "op": "mark_keyform_authored", target: KeyformTarget, cells: Array<{ [key in string]: number }>, } | { "op": "mark_keyform_derived", target: KeyformTarget, cells: Array<{ [key in string]: number }>, } | { "op": "move_mesh_vertices", id: string, moves: Array<VertexMove>, } | { "op": "add_mesh_vertex", id: string, position: Vec2, } | { "op": "remove_mesh_vertices", id: string, indices: Array<number>, } | { "op": "retriangulate_mesh", id: string, } | { "op": "add_keyform_key", target: KeyformTarget, parameter: string, key: number, } | { "op": "remove_keyform_key", target: KeyformTarget, parameter: string, key: number, } | { "op": "set_keyform_cell", target: KeyformTarget, cell: { [key in string]: number }, keyform: Keyform, } | { "op": "set_mesh_draw_order", id: string, draw_order: number, };
 
 export type Curve = { target: CurveTarget, segments: Array<Segment>, 
 /**
@@ -218,6 +218,12 @@ export type HitArea = { id: string, mesh: string, };
  * [`Command::InferKeyforms`] の推定の方法。
  */
 export type InferMethod = "from_grid" | "additive" | "depth_rotation";
+
+/**
+ * 1 つのセルのキーフォーム。種類は対象の格子と一致させる。
+ * JSON では `{"kind": "mesh", "positions": [..], "opacity": 1, ..}` のようにフィールドを並べる。
+ */
+export type Keyform = { "kind": "part" } & PartKeyform | { "kind": "warp" } & WarpKeyform | { "kind": "rotation" } & RotationKeyform | { "kind": "mesh" } & MeshKeyform | { "kind": "glue" } & GlueKeyform;
 
 /**
  * 1 本のパラメータ軸と、その軸上のキー位置 (昇順・重複なし)。

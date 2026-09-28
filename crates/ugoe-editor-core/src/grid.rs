@@ -1,6 +1,7 @@
 //! キーフォーム格子の編集の補助。格子の並びは `ugoe_model::KeyformGrid` の doc コメントを参照。
 
 use ugoe_model::{KeyformBinding, KeyformGrid, KeyformInference, KeyformOrigin, ParamId};
+use ugoe_rigging::KeyformValues;
 
 use crate::command::KeyformCell;
 
@@ -77,6 +78,188 @@ pub enum CellError {
     UnknownKey { parameter: String, value: f32 },
     #[error("cell index {index} out of range (keyforms = {len})")]
     OutOfRange { index: usize, len: usize },
+    #[error("{value} is already a key of axis `{parameter}`")]
+    DuplicateKey { parameter: String, value: f32 },
+    #[error("key {value} of axis `{parameter}` is not finite")]
+    NonFiniteKey { parameter: String, value: f32 },
+    /// 格子のキーフォーム数が軸のキー数の積と合わない (不正な格子)。
+    #[error("grid has {actual} keyforms but its axes need {expected}")]
+    KeyformCount { expected: usize, actual: usize },
+    /// 新しいキーフォームの頂点 (制御点) の数が、置き換えるセルと違う。
+    #[error("keyform has {actual} vertices but the cell has {expected}")]
+    ShapeMismatch { expected: usize, actual: usize },
+}
+
+fn check_count<T>(grid: &KeyformGrid<T>) -> Result<(), CellError> {
+    let expected = grid.expected_len();
+    if grid.keyforms.len() != expected {
+        return Err(CellError::KeyformCount {
+            expected,
+            actual: grid.keyforms.len(),
+        });
+    }
+    Ok(())
+}
+
+/// パラメータ `parameter` の軸にキー `key` を加える (`docs/editor.md#キーフォームの編集`)。
+///
+/// - 軸がなければ、キー 1 つの軸を末尾に加える。セルの並びは変わらない。
+/// - 軸があれば、新しいセルを既存の格子のその値での補間 (`docs/spec/evaluation.md#1-キーフォームの重み`
+///   と同じ重み。キーの範囲の外は端のキーの値) で埋めるので、評価の結果は変わらない。
+///
+/// 新しいセルは、格子に推定で作ったセル (`KeyformOrigin::is_derived`) があれば `derived` (方法の記録なし。
+/// 格子の `inference` の方法で作り直される)、なければ `authored`。
+pub(crate) fn add_key<T: KeyformValues>(
+    grid: &mut KeyformGrid<T>,
+    parameter: &ParamId,
+    key: f32,
+) -> Result<(), CellError> {
+    if !key.is_finite() {
+        return Err(CellError::NonFiniteKey {
+            parameter: parameter.to_string(),
+            value: key,
+        });
+    }
+    check_count(grid)?;
+    let Some(axis) = grid.bindings.iter().position(|b| &b.parameter == parameter) else {
+        grid.bindings.push(KeyformBinding {
+            parameter: parameter.clone(),
+            keys: vec![key],
+        });
+        return Ok(());
+    };
+    let keys = grid.bindings[axis].keys.clone();
+    if keys.contains(&key) {
+        return Err(CellError::DuplicateKey {
+            parameter: parameter.to_string(),
+            value: key,
+        });
+    }
+    let pos = keys.partition_point(|&k| k < key);
+    let (seg, t) = locate(&keys, key);
+    let n = keys.len();
+    let stride: usize = grid.bindings[..axis].iter().map(|b| b.keys.len()).product();
+    let outer = grid.keyforms.len() / (stride * n).max(1);
+    let new_origin = if grid.origins.iter().any(|o| o.is_derived()) {
+        KeyformOrigin::Derived
+    } else {
+        KeyformOrigin::Authored
+    };
+    let old_origin = |i: usize| grid.origins.get(i).copied().unwrap_or_default();
+    let mut keyforms = Vec::with_capacity(stride * (n + 1) * outer);
+    let mut origins = Vec::with_capacity(keyforms.capacity());
+    for o in 0..outer {
+        for c in 0..=n {
+            for s in 0..stride {
+                let old = |c: usize| s + stride * (c + n * o);
+                if c == pos {
+                    let a = &grid.keyforms[old(seg)];
+                    let b = &grid.keyforms[old((seg + 1).min(n - 1))];
+                    keyforms.push(lerp_keyform(a, b, t));
+                    origins.push(new_origin);
+                } else {
+                    let i = old(if c < pos { c } else { c - 1 });
+                    keyforms.push(grid.keyforms[i].clone());
+                    origins.push(old_origin(i));
+                }
+            }
+        }
+    }
+    grid.keyforms = keyforms;
+    // `origins` が空 (すべて `authored`) のままでよければ空に保つ。
+    if !grid.origins.is_empty() || new_origin == KeyformOrigin::Derived {
+        grid.origins = origins;
+    }
+    grid.bindings[axis].keys.insert(pos, key);
+    Ok(())
+}
+
+/// パラメータ `parameter` の軸からキー `key` とその断面のセルを取り除く。
+/// 最後のキーなら軸ごと取り除く (その断面が残る。パラメータの削除と同じ畳み方)。
+pub(crate) fn remove_key<T>(
+    grid: &mut KeyformGrid<T>,
+    parameter: &ParamId,
+    key: f32,
+) -> Result<(), CellError> {
+    let axis = grid
+        .bindings
+        .iter()
+        .position(|b| &b.parameter == parameter)
+        .ok_or_else(|| CellError::UnknownAxis(parameter.to_string()))?;
+    let keys = &grid.bindings[axis].keys;
+    let index = keys
+        .iter()
+        .position(|&k| k == key)
+        .ok_or_else(|| CellError::UnknownKey {
+            parameter: parameter.to_string(),
+            value: key,
+        })?;
+    check_count(grid)?;
+    if keys.len() == 1 {
+        collapse_axis(grid, parameter, key);
+        return Ok(());
+    }
+    let keep: Vec<bool> = slice_mask(grid, axis, index)
+        .into_iter()
+        .map(|removed| !removed)
+        .collect();
+    retain_cells(&mut grid.keyforms, &keep);
+    if !grid.origins.is_empty() {
+        retain_cells(&mut grid.origins, &keep);
+    }
+    grid.bindings[axis].keys.remove(index);
+    Ok(())
+}
+
+/// セル `cell` を `value` で置き換え、`authored` にする。頂点 (制御点) の数は変えられない。
+pub(crate) fn set_cell<T: KeyformValues>(
+    grid: &mut KeyformGrid<T>,
+    cell: &KeyformCell,
+    value: T,
+) -> Result<(), CellError> {
+    let index = cell_index(grid, cell)?;
+    let expected = grid.keyforms[index].shape_len();
+    if value.shape_len() != expected {
+        return Err(CellError::ShapeMismatch {
+            expected,
+            actual: value.shape_len(),
+        });
+    }
+    grid.keyforms[index] = value;
+    set_authored(grid, index);
+    Ok(())
+}
+
+/// 1 軸の位置 `(seg, t)` (`docs/spec/evaluation.md#1-軸の位置`)。`keys` は空でないこと。
+fn locate(keys: &[f32], v: f32) -> (usize, f32) {
+    let last = keys.len().saturating_sub(1);
+    if last == 0 || v <= keys[0] {
+        return (0, 0.0);
+    }
+    if v >= keys[last] {
+        return (last, 0.0);
+    }
+    let seg = keys.partition_point(|&k| k <= v) - 1;
+    (seg, (v - keys[seg]) / (keys[seg + 1] - keys[seg]))
+}
+
+/// `a` と `b` を重み `1 - t`・`t` で補間したキーフォーム。
+/// 真偽値のフィールドは重みの大きい方 (同じなら `a`) の値 (`docs/spec/evaluation.md#多重線形の重み`)。
+fn lerp_keyform<T: KeyformValues>(a: &T, b: &T, t: f32) -> T {
+    if t == 0.0 {
+        return a.clone();
+    }
+    let mut out = if t > 0.5 { b.clone() } else { a.clone() };
+    let (mut va, mut vb) = (Vec::new(), Vec::new());
+    a.write_values(&mut va);
+    b.write_values(&mut vb);
+    let values: Vec<f32> = va
+        .iter()
+        .zip(&vb)
+        .map(|(&x, &y)| x * (1.0 - t) + y * t)
+        .collect();
+    out.read_values(&values);
+    out
 }
 
 /// セルの指定から、`grid.keyforms` の線形インデックスを求める。
