@@ -6,12 +6,17 @@
 import { EditorDocument } from "./lib/document.svelte";
 import FileMenu from "./lib/FileMenu.svelte";
 import { type AppInfo, ipc } from "./lib/ipc";
+import InspectorPanel from "./lib/panels/InspectorPanel.svelte";
 import ParametersPanel from "./lib/panels/ParametersPanel.svelte";
+import TreePanel from "./lib/panels/TreePanel.svelte";
+import { Selection } from "./lib/selection.svelte";
 import { ViewportController } from "./lib/viewport/controller.svelte";
+import ToolOverlay from "./lib/viewport/ToolOverlay.svelte";
 import Viewport from "./lib/viewport/Viewport.svelte";
 
 const doc = new EditorDocument();
 const viewport = new ViewportController();
+const selection = new Selection();
 let info = $state<AppInfo | null>(null);
 let fileMenu = $state<FileMenu>();
 
@@ -36,14 +41,18 @@ $effect(() => {
     <button onclick={() => doc.redo()}>Redo</button>
   </header>
   <aside class="left">
-    <h2>Parts</h2>
-    <p class="muted">TODO(T0602): パーツ / デフォーマツリー</p>
+    <TreePanel {doc} {selection} />
   </aside>
   <main class="center">
-    <Viewport controller={viewport} model={doc.model} />
+    <Viewport controller={viewport} model={doc.model}>
+      {#snippet overlay(controller)}
+        <ToolOverlay {controller} {doc} {selection} />
+      {/snippet}
+    </Viewport>
   </main>
   <aside class="right">
     {#if doc.error}<p class="error">{doc.error}</p>{/if}
+    <InspectorPanel {doc} {selection} />
     <ParametersPanel parameters={doc.parameters} {viewport} />
   </aside>
 </div>
