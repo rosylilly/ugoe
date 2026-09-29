@@ -26,5 +26,7 @@ webgl = ["wgpu/webgl"]
 gpu-tests = []
 
 [dev-dependencies]
-naga.workspace = true
+# glsl-out: 参照シェーダが WebGL2 (GLSL ES 3.00) に変換できることを確かめる。
+naga = { workspace = true, features = ["glsl-out"] }
+png.workspace = true
 pollster.workspace = true

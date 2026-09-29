@@ -9,7 +9,9 @@ use std::sync::OnceLock;
 use ugoe_core::{Rgb, Vec2};
 use ugoe_model::mesh::Mesh;
 use ugoe_model::{BlendMode, MaskRef, Model, fixtures};
-use ugoe_render::{FrameStats, MaskAtlasOptions, RenderError, Renderer, RendererOptions, View};
+use ugoe_render::{
+    FrameStats, Light, Lighting, MaskAtlasOptions, RenderError, Renderer, RendererOptions, View,
+};
 use ugoe_runtime::{CompiledModel, ModelInstance};
 
 /// 描画先の既定の一辺 (画素)。
@@ -97,6 +99,10 @@ struct Scene {
     size: u32,
     /// 描画前に設定するパラメータ。
     params: Vec<(&'static str, f32)>,
+    /// 光源。`None` なら設定しない (既定の光源)。
+    lighting: Option<Lighting>,
+    /// 法線マップ `(テクスチャの番号, 一辺, RGBA8)`。
+    normal_maps: Vec<(u32, u32, Vec<u8>)>,
 }
 
 impl Scene {
@@ -110,6 +116,8 @@ impl Scene {
             options: RendererOptions::default(),
             size: SIZE,
             params: Vec::new(),
+            lighting: None,
+            normal_maps: Vec::new(),
         }
     }
 
@@ -138,6 +146,12 @@ impl Scene {
         }
         for (i, texture) in self.extra_textures.iter().enumerate() {
             renderer.set_texture(device, queue, i as u32 + 1, 1, 1, texture)?;
+        }
+        for (index, size, rgba) in &self.normal_maps {
+            renderer.set_normal_map(device, queue, *index, *size, *size, rgba)?;
+        }
+        if let Some(lighting) = &self.lighting {
+            renderer.set_lighting(lighting);
         }
         Ok((renderer, instance))
     }
@@ -213,11 +227,36 @@ fn render_frame(
         .get_mapped_range(..)
         .expect("mapped range")
         .to_vec();
+    dump_image(&pixels, size);
     Ok(Image {
         pixels,
         size,
         stats: renderer.last_frame_stats(),
     })
+}
+
+/// 環境変数 `UGOE_GPU_TEST_DUMP` にディレクトリが指定されていれば、描いた画像を
+/// `<テスト名>-<番号>.png` として書き出す (目で確かめる・実装の前後で比べるため)。
+fn dump_image(pixels: &[u8], size: u32) {
+    thread_local! {
+        // テストは 1 つずつ別のスレッドで走るので、番号はテストの中での順番になる。
+        static COUNTER: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    }
+    let Some(dir) = std::env::var_os("UGOE_GPU_TEST_DUMP") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    std::fs::create_dir_all(&dir).expect("create dump dir");
+    let thread = std::thread::current();
+    let test = thread.name().unwrap_or("unknown").replace("::", "-");
+    let n = COUNTER.replace(COUNTER.get() + 1);
+    let path = dir.join(format!("{test}-{n:04}.png"));
+    let file = std::io::BufWriter::new(std::fs::File::create(&path).expect("create dump file"));
+    let mut encoder = png::Encoder::new(file, size, size);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().expect("png header");
+    writer.write_image_data(pixels).expect("png data");
 }
 
 struct Image {
@@ -1666,4 +1705,412 @@ fn many_drawables_read_their_own_values() {
         let (x, y) = ((k % 10) as u32 * 6 + 3, (k / 10) as u32 * 6 + 3);
         image.assert_pixel((x, y), [k as f32 / (COUNT - 1) as f32, 0.0, 1.0, 1.0]);
     }
+}
+
+// --- ライティング (docs/spec/rendering.md#ライティング) ---
+
+/// 法線 `[x, y, z]` (y は画像の上向き) を法線マップの texel にする (`c = (n + 1) / 2`)。
+fn normal_texel(n: [f32; 3]) -> [u8; 4] {
+    let [x, y, z] = n.map(|v| ((v + 1.0) * 0.5 * 255.0).round() as u8);
+    [x, y, z, 255]
+}
+
+/// 画像の右 (+u) を向いた法線。
+const NORMAL_RIGHT: [f32; 3] = [0.6, 0.0, 0.8];
+/// 画像の上 (−v) を向いた法線。
+const NORMAL_UP: [f32; 3] = [0.0, 0.6, 0.8];
+
+fn gray(v: f32) -> [f32; 4] {
+    [v, v, v, 1.0]
+}
+
+fn lights(ambient: f32, lights: Vec<Light>) -> Lighting {
+    Lighting {
+        ambient: Rgb::new(ambient, ambient, ambient),
+        lights,
+    }
+}
+
+/// 光源へ向かう向き `l` (キャンバス座標) から照らす白の平行光源 (`direction` は光が進む向きなので `−l`)。
+fn light_from([x, y, z]: [f32; 3]) -> Light {
+    Light::Directional {
+        direction: [-x, -y, -z],
+        color: Rgb::WHITE,
+    }
+}
+
+/// single_quad の四角形 (キャンバス 64..192) の中心 (128, 128) のまわりに、`map` で四隅を写したモデル。
+/// ライティングを受ける。四隅は UV の (0,0), (1,0), (1,1), (0,1) の順。
+fn lit_quad(map: impl Fn([f32; 2]) -> [f32; 2]) -> Model {
+    let mut model = fixtures::single_quad();
+    model.lighting = true;
+    let corners = [[-64.0, -64.0], [64.0, -64.0], [64.0, 64.0], [-64.0, 64.0]].map(|c| {
+        let [x, y] = map(c);
+        Vec2::new(128.0 + x, 128.0 + y)
+    });
+    for kf in &mut model.meshes[0].keyforms.keyforms {
+        kf.positions = corners.to_vec();
+    }
+    model
+}
+
+fn identity([x, y]: [f32; 2]) -> [f32; 2] {
+    [x, y]
+}
+
+/// 法線 1 つの法線マップ (1x1) を持つ、ライティングを受ける四角形。
+fn normal_mapped_scene(model: Model, normal: [f32; 3], lighting: Lighting) -> Scene {
+    let mut scene = Scene::new(model);
+    scene
+        .normal_maps
+        .push((0, 1, normal_texel(normal).to_vec()));
+    scene.lighting = Some(lighting);
+    scene
+}
+
+#[track_caller]
+fn assert_same_pixels(a: &Image, b: &Image) {
+    let differing = a
+        .pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(b.pixels.as_chunks::<4>().0)
+        .enumerate()
+        .find(|(_, (a, b))| a != b);
+    if let Some((i, (pa, pb))) = differing {
+        let (x, y) = (i as u32 % a.size, i as u32 / a.size);
+        panic!("pixel ({x}, {y}): {pa:?} != {pb:?}");
+    }
+}
+
+#[test]
+fn lighting_scales_lit_drawables() {
+    // 法線マップなし (法線 (0, 0, 1))。正面の光は dot = 1、真横の光は dot = 0。
+    let mut scene = Scene::new(lit_quad(identity));
+    scene.clear = clear_color([0.0, 0.0, 1.0, 1.0]);
+    let mut half_front = light_from([0.0, 0.0, 1.0]);
+    if let Light::Directional { color, .. } = &mut half_front {
+        *color = Rgb::new(0.5, 0.25, 0.5);
+    }
+    scene.lighting = Some(lights(0.25, vec![half_front, light_from([1.0, 0.0, 0.0])]));
+    let image = scene.render();
+    image.assert_pixel(INSIDE, [0.75, 0.5, 0.75, 1.0]);
+    image.assert_pixel(OUTSIDE, [0.0, 0.0, 1.0, 1.0]);
+
+    // 乗算色・スクリーン色の後、不透明度の前に掛かる (乗算済みのまま)。
+    let mut model = lit_quad(identity);
+    edit_keyforms(&mut model, "Quad", |k| {
+        k.multiply_color = Rgb::new(1.0, 0.5, 0.0);
+        k.screen_color = Rgb::new(0.0, 0.0, 0.5);
+        k.opacity = 0.5;
+    });
+    let mut scene = Scene::new(model);
+    scene.lighting = Some(lights(0.5, vec![]));
+    scene
+        .render()
+        .assert_pixel(INSIDE, [0.25, 0.125, 0.125, 0.5]);
+}
+
+#[test]
+fn unlit_drawables_ignore_lighting() {
+    let strong = || {
+        lights(
+            0.1,
+            vec![
+                light_from([1.0, -1.0, 0.5]),
+                Light::Point {
+                    position: [100.0, 100.0, 20.0],
+                    color: Rgb::new(3.0, 0.0, 0.0),
+                    range: 100.0,
+                },
+            ],
+        )
+    };
+    let reference = Scene::new(fixtures::single_quad()).render();
+
+    // モデルがライティングしない (法線マップがあっても)。
+    let mut scene = normal_mapped_scene(fixtures::single_quad(), NORMAL_RIGHT, strong());
+    scene.model.lighting = false;
+    assert_same_pixels(&scene.render(), &reference);
+
+    // メッシュがライティングを受けない。
+    let mut scene = normal_mapped_scene(lit_quad(identity), NORMAL_RIGHT, strong());
+    scene.model.meshes[0].lit = false;
+    assert_same_pixels(&scene.render(), &reference);
+
+    // 既定の光源 (環境光が白で光源なし) は、ライティングを受けても同じ色になる。
+    let mut scene = Scene::new(lit_quad(identity));
+    scene
+        .normal_maps
+        .push((0, 1, normal_texel(NORMAL_RIGHT).to_vec()));
+    assert_same_pixels(&scene.render(), &reference);
+}
+
+#[test]
+fn normal_map_tilts_the_shading() {
+    // 画像の右を向いた法線: 右からの光で 0.6、左・上からの光で 0。
+    let render = |normal, l| {
+        normal_mapped_scene(lit_quad(identity), normal, lights(0.0, vec![light_from(l)])).render()
+    };
+    render(NORMAL_RIGHT, [1.0, 0.0, 0.0]).assert_pixel(INSIDE, gray(0.6));
+    render(NORMAL_RIGHT, [-1.0, 0.0, 0.0]).assert_pixel(INSIDE, gray(0.0));
+    render(NORMAL_RIGHT, [0.0, -1.0, 0.0]).assert_pixel(INSIDE, gray(0.0));
+    // G は画像の上向き: キャンバスの上 (−y) からの光で明るくなる。
+    render(NORMAL_UP, [0.0, -1.0, 0.0]).assert_pixel(INSIDE, gray(0.6));
+    render(NORMAL_UP, [0.0, 1.0, 0.0]).assert_pixel(INSIDE, gray(0.0));
+    // 正面の光は z 成分の 0.8。
+    render(NORMAL_RIGHT, [0.0, 0.0, 1.0]).assert_pixel(INSIDE, gray(0.8));
+}
+
+/// 四角形の変形 (UV → キャンバスの写像) の線形部分。
+const TRANSFORMS: [(&str, [[f32; 2]; 2]); 6] = [
+    // 列優先: [写した u 軸, 写した v 軸]
+    ("identity", [[1.0, 0.0], [0.0, 1.0]]),
+    ("rotate 90", [[0.0, 1.0], [-1.0, 0.0]]),
+    ("rotate 180", [[-1.0, 0.0], [0.0, -1.0]]),
+    ("mirror x", [[-1.0, 0.0], [0.0, 1.0]]),
+    ("mirror y", [[1.0, 0.0], [0.0, -1.0]]),
+    ("transpose", [[0.0, 1.0], [1.0, 0.0]]),
+];
+
+fn apply(m: [[f32; 2]; 2], [x, y]: [f32; 2]) -> [f32; 2] {
+    [m[0][0] * x + m[1][0] * y, m[0][1] * x + m[1][1] * y]
+}
+
+#[test]
+fn normals_follow_rotation_and_reflection() {
+    // 法線は変形と一緒に回り、反転すれば鏡に映る: 画面での向きは、UV 空間での向き
+    // (画像の上は −v) を変形の線形部分で写したもの。その向きから照らしたときだけ明るい。
+    let axes = [[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0]];
+    for (name, m) in TRANSFORMS {
+        for (normal, uv_direction) in [(NORMAL_RIGHT, [1.0, 0.0]), (NORMAL_UP, [0.0, -1.0])] {
+            let expected = apply(m, uv_direction);
+            for [lx, ly] in axes {
+                let image = normal_mapped_scene(
+                    lit_quad(|c| apply(m, c)),
+                    normal,
+                    lights(0.0, vec![light_from([lx, ly, 0.0])]),
+                )
+                .render();
+                let facing = expected == [lx, ly];
+                let actual = image.at(INSIDE);
+                assert!(
+                    (i32::from(actual[0]) - if facing { 153 } else { 0 }).abs() <= TOLERANCE,
+                    "{name}: normal {normal:?} lit from {:?}: got {actual:?}",
+                    [lx, ly]
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn lighting_is_in_canvas_space_regardless_of_the_view() {
+    // Y を反転しないビューでは画像が上下逆に写るが、光はキャンバス座標なので同じ向きから当たる。
+    let render = |flip_y| {
+        let mut scene = normal_mapped_scene(
+            lit_quad(identity),
+            NORMAL_UP,
+            lights(0.0, vec![light_from([0.0, -1.0, 0.0])]),
+        );
+        scene.view = canvas_view(flip_y);
+        scene.render()
+    };
+    render(true).assert_pixel(INSIDE, gray(0.6));
+    render(false).assert_pixel(INSIDE, gray(0.6));
+}
+
+#[test]
+fn point_light_attenuates_with_distance() {
+    let point = |z: f32, range: f32| Light::Point {
+        position: [128.0, 128.0, z],
+        color: Rgb::WHITE,
+        range,
+    };
+    let render = |light| {
+        let mut scene = Scene::new(lit_quad(identity));
+        scene.lighting = Some(lights(0.0, vec![light]));
+        scene.render()
+    };
+    // 真上 (距離 64) から: dot ≈ 1、減衰 (1 − 64 / 128)² = 0.25。
+    let image = render(point(64.0, 128.0));
+    image.assert_pixel(INSIDE, gray(0.25));
+    // 四角形の角 (距離 ≈ 110) は暗い。
+    let corner = image.at((17, 17))[0];
+    assert!(corner < 10, "corner {corner}");
+    // 減衰しない点光源は、真上で 1。
+    render(point(64.0, f32::INFINITY)).assert_pixel(INSIDE, gray(1.0));
+    // 範囲の外は照らさない。
+    render(point(200.0, 150.0)).assert_pixel(INSIDE, gray(0.0));
+}
+
+/// 半球のふくらみの法線マップ (一辺 `size`)。
+fn dome_normal_map(size: u32) -> Vec<u8> {
+    let mut rgba = Vec::new();
+    for j in 0..size {
+        for i in 0..size {
+            let x = (i as f32 + 0.5) / size as f32 * 2.0 - 1.0;
+            let y = (j as f32 + 0.5) / size as f32 * 2.0 - 1.0;
+            let r2 = x * x + y * y;
+            // 画像の下向き (+v) の y を、法線マップの上向きに直す。
+            let n = if r2 < 1.0 {
+                [x, -y, (1.0 - r2).sqrt()]
+            } else {
+                [0.0, 0.0, 1.0]
+            };
+            rgba.extend(normal_texel(n));
+        }
+    }
+    rgba
+}
+
+#[test]
+fn dome_is_lit_from_the_light_side_after_deformation() {
+    // 左上の手前から照らす。どう変形しても、画面上でふくらみの左上が明るく右下が暗い。
+    // (ふくらみは点対称なので、法線が正しく回っていれば見た目は変形によらない。)
+    for (name, m) in TRANSFORMS {
+        let mut scene = Scene::new(lit_quad(|c| apply(m, c)));
+        scene.size = 128;
+        scene.normal_maps.push((0, 32, dome_normal_map(32)));
+        scene.lighting = Some(lights(0.1, vec![light_from([-1.0, -1.0, 1.0])]));
+        let image = scene.render();
+        // 四角形は画素 32..96、ふくらみの中心は 64。
+        let upper_left = image.at((48, 48))[0];
+        let lower_right = image.at((80, 80))[0];
+        let upper_right = image.at((80, 48))[0];
+        let lower_left = image.at((48, 80))[0];
+        assert!(
+            upper_left > 200 && lower_right < 40,
+            "{name}: upper left {upper_left}, lower right {lower_right}"
+        );
+        assert!(
+            (i32::from(upper_right) - i32::from(lower_left)).abs() <= 4,
+            "{name}: upper right {upper_right}, lower left {lower_left}"
+        );
+    }
+}
+
+#[test]
+fn lighting_batches_like_unlit_drawing() {
+    // ライティングを受ける要素・受けない要素・法線マップの有無・マスクが混ざっても、
+    // 描画の状態 (テクスチャ・合成モード・マスクアトラス) が同じならまとめて描き、結果は要素ごとに描いた場合と一致する。
+    let scene = || {
+        let mut scene = overlapping_tinted_quads();
+        scene.model.lighting = true;
+        scene.model.meshes[1].lit = false;
+        scene.model.meshes[4].lit = false;
+        scene.normal_maps.push((0, 32, dome_normal_map(32)));
+        scene.lighting = Some(lights(
+            0.2,
+            vec![
+                light_from([-1.0, -1.0, 1.0]),
+                Light::Point {
+                    position: [160.0, 160.0, 40.0],
+                    color: Rgb::new(0.2, 0.4, 1.0),
+                    range: 200.0,
+                },
+            ],
+        ));
+        scene
+    };
+    let (batched, unbatched) = render_with_and_without_batching(scene);
+    assert_eq!(batched.stats.draw_calls, 1);
+    assert_eq!(unbatched.stats.draw_calls, 6);
+    // ライティングしない場合と描画の数は同じ。
+    let unlit = overlapping_tinted_quads().render();
+    assert_eq!(unlit.stats.draw_calls, batched.stats.draw_calls);
+    assert_eq!(unlit.stats.state_changes, batched.stats.state_changes);
+
+    // 法線マップはテクスチャと一緒に描画の状態になる: 法線マップの違うテクスチャの間で描画が分かれる。
+    render_with_and_without_batching(|| {
+        let mut scene = scene();
+        let texture = scene.model.textures[0].clone();
+        scene.model.textures.push(texture);
+        scene.extra_textures.push([255; 4]);
+        for k in [2, 3] {
+            scene.model.meshes[k].texture = 1;
+        }
+        // テクスチャ 1 の法線マップは平ら (テクスチャ 0 はふくらみ)。
+        scene
+            .normal_maps
+            .push((1, 1, normal_texel([0.0, 0.0, 1.0]).to_vec()));
+        scene
+    });
+    render_with_and_without_batching(|| {
+        let mut scene = mixed_scene(0.5);
+        scene.model.lighting = true;
+        scene.normal_maps.push((0, 32, dome_normal_map(32)));
+        scene.lighting = Some(lights(0.3, vec![light_from([1.0, 0.0, 1.0])]));
+        scene
+    });
+}
+
+#[test]
+fn lighting_is_uploaded_only_when_used_and_changed() {
+    let (mut renderer, instance) = Scene::new(lit_quad(identity)).prepare().expect("prepare");
+    let first = frame(&mut renderer, &instance);
+    let static_frame = frame(&mut renderer, &instance);
+    assert_eq!(static_frame.stats.uploaded_bytes, 0);
+
+    renderer.set_lighting(&lights(0.5, vec![]));
+    let image = frame(&mut renderer, &instance);
+    image.assert_pixel(INSIDE, gray(0.5));
+    let lighting_bytes = image.stats.uniform_bytes;
+    assert!(lighting_bytes > 0);
+    assert_eq!(image.stats.uploaded_bytes, lighting_bytes);
+    // 同じ光源をもう一度渡しても転送しない。
+    renderer.set_lighting(&lights(0.5, vec![]));
+    assert_eq!(frame(&mut renderer, &instance).stats.uploaded_bytes, 0);
+
+    // ライティングを受ける要素がないモデルでは、光源を転送しない (初めのフレームの転送量も変わらない)。
+    let (mut renderer, instance) = Scene::new(fixtures::single_quad())
+        .prepare()
+        .expect("prepare");
+    renderer.set_lighting(&lights(0.5, vec![]));
+    let unlit = frame(&mut renderer, &instance);
+    assert_eq!(
+        unlit.stats.uniform_bytes + lighting_bytes,
+        first.stats.uniform_bytes
+    );
+    renderer.set_lighting(&lights(0.25, vec![]));
+    assert_eq!(frame(&mut renderer, &instance).stats.uploaded_bytes, 0);
+}
+
+#[test]
+fn normal_maps_can_be_set_replaced_and_removed() {
+    let Gpu { device, queue, .. } = gpu();
+    let mut scene = Scene::new(lit_quad(identity));
+    scene.lighting = Some(lights(0.0, vec![light_from([1.0, 0.0, 0.0])]));
+    let (mut renderer, instance) = scene.prepare().expect("prepare");
+    // 法線マップなし: 真横からの光は当たらない。
+    frame(&mut renderer, &instance).assert_pixel(INSIDE, gray(0.0));
+    let right = normal_texel(NORMAL_RIGHT);
+    renderer
+        .set_normal_map(device, queue, 0, 1, 1, &right)
+        .expect("set normal map");
+    frame(&mut renderer, &instance).assert_pixel(INSIDE, gray(0.6));
+    // テクスチャを登録し直しても法線マップは残る。
+    renderer
+        .set_texture(device, queue, 0, 1, 1, &[255; 4])
+        .expect("set texture");
+    frame(&mut renderer, &instance).assert_pixel(INSIDE, gray(0.6));
+    renderer.remove_normal_map(device, 0);
+    frame(&mut renderer, &instance).assert_pixel(INSIDE, gray(0.0));
+    // 大きさの合わないデータはエラー。
+    assert!(matches!(
+        renderer.set_normal_map(device, queue, 0, 2, 2, &right),
+        Err(RenderError::InvalidTextureData { .. })
+    ));
+
+    // テクスチャより先に登録してもよい。
+    let mut renderer = Renderer::new(device, FORMAT);
+    renderer
+        .set_normal_map(device, queue, 0, 1, 1, &right)
+        .expect("set normal map");
+    renderer
+        .set_texture(device, queue, 0, 1, 1, &[255; 4])
+        .expect("set texture");
+    renderer.set_lighting(&lights(0.0, vec![light_from([1.0, 0.0, 0.0])]));
+    frame(&mut renderer, &instance).assert_pixel(INSIDE, gray(0.6));
 }

@@ -7,6 +7,7 @@
 //! - ネイティブ (Vulkan/Metal/DX12/GL) と Web (WebGPU/WebGL2) の双方で動くこと。
 //!   WebGL2 で使えない機能 (storage buffer・compute 等) には必ずフォールバックを用意する。
 
+mod lighting;
 mod mask;
 mod pipeline;
 mod upload;
@@ -16,6 +17,8 @@ use std::sync::Arc;
 use ugoe_runtime::{CompiledModel, ModelInstance};
 use wgpu::util::DeviceExt;
 
+use crate::lighting::LightingRaw;
+pub use crate::lighting::{Light, Lighting, MAX_LIGHTS};
 pub use crate::mask::MaskAtlasOptions;
 use crate::mask::{AtlasPool, CellRequest, MaskContent, MaskSlot, MaskStep, MeshMask};
 use crate::pipeline::{MASK_ATLAS_FORMAT, PipelineKey, Pipelines, VEC2_SIZE};
@@ -103,7 +106,8 @@ pub struct FrameStats {
     pub masks_reused: bool,
     /// 転送した頂点位置のバイト数 (変わっていない要素は転送しない)。
     pub position_bytes: u64,
-    /// 転送したユニフォームのバイト数 (要素ごとの値・マスクパス用・ビュー。変わっていないものは転送しない)。
+    /// 転送したユニフォームのバイト数 (要素ごとの値・マスクパス用・ビュー・光源。変わっていないものは転送しない。
+    /// 光源はライティングを受ける要素を描くフレームだけ転送する)。
     pub uniform_bytes: u64,
     /// 転送した本描画のインデックスのバイト数 (描画順や表示が変わったときだけ転送する)。
     pub index_bytes: u64,
@@ -181,6 +185,14 @@ impl MaskRead {
 }
 
 const DRAW_UNIFORMS_SIZE: u64 = std::mem::size_of::<DrawUniformsRaw>() as u64;
+const LIGHTING_SIZE: u64 = std::mem::size_of::<LightingRaw>() as u64;
+
+/// 要素ごとのライティングの種類 (`mask_params.z`。シェーダの `MaskRead::params` の z)。
+const LIGHT_NONE: f32 = 0.0;
+/// 法線を `(0, 0, 1)` とする (法線マップが登録されていない)。
+const LIGHT_FLAT: f32 = 1.0;
+/// 法線マップを読む。
+const LIGHT_NORMAL_MAP: f32 = 2.0;
 
 /// モデルの静的な頂点データ (UV・要素の番号・インデックス) と、フレームごとに書き換えるバッファ。
 #[derive(Debug)]
@@ -225,6 +237,8 @@ struct MeshRange {
     index_count: u32,
     texture: u32,
     culling: bool,
+    /// ライティングを受けるか (`Model::lighting` と `Mesh::lit` の両方が `true`)。
+    lit: bool,
     /// 自身のマスクとして読む内容。マスクを持たないなら `None`。
     mask: Option<MeshMask>,
 }
@@ -304,8 +318,9 @@ struct MaskFrame {
 
 #[derive(Debug)]
 struct TextureSlot {
-    // バインドグループが参照するので保持しておく。
-    _texture: wgpu::Texture,
+    /// 法線マップを登録し直したときに、バインドグループを作り直すのに使う。
+    texture: wgpu::Texture,
+    /// テクスチャ・サンプラ・法線マップ (なければダミー)。
     bind_group: wgpu::BindGroup,
 }
 
@@ -323,9 +338,21 @@ pub struct Renderer {
     pipelines: Pipelines,
     globals_layout: wgpu::BindGroupLayout,
     draw_layout: wgpu::BindGroupLayout,
+    /// モデルのテクスチャ (テクスチャ・サンプラ・法線マップ。group 2)。
+    model_texture_layout: wgpu::BindGroupLayout,
+    /// マスクアトラス (テクスチャ・サンプラ。group 3)。
     texture_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     globals: wgpu::Buffer,
+    /// 光源 (`LightingRaw`) のユニフォーム。
+    lighting_buffer: wgpu::Buffer,
+    /// `set_lighting` で渡された光源。
+    lighting: LightingRaw,
+    lighting_uploaded: Option<LightingRaw>,
+    /// 法線マップのないテクスチャに束縛する 1x1 のダミー (シェーダは値を使わない)。
+    flat_normal: wgpu::Texture,
+    /// テクスチャの番号ごとの法線マップ。
+    normal_maps: Vec<Option<wgpu::Texture>>,
     /// マスクを使わない要素に束縛する 1x1 のダミー (`mask_strength = 0` なので値は効かない)。
     no_mask_bind_group: wgpu::BindGroup,
     mask_options: MaskAtlasOptions,
@@ -379,6 +406,17 @@ impl Renderer {
                     },
                     count: None,
                 },
+                // 光源 (`docs/spec/rendering.md#ライティング`)。
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(LIGHTING_SIZE),
+                    },
+                    count: None,
+                },
                 // 本描画の要素ごとの値 (`textureLoad` で読むのでフィルタしない)。
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
@@ -406,35 +444,39 @@ impl Renderer {
                 count: None,
             }],
         });
+        let texture_entry = |binding| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        };
+        let sampler_entry = wgpu::BindGroupLayoutEntry {
+            binding: 1,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+            count: None,
+        };
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("ugoe texture layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
+            entries: &[texture_entry(0), sampler_entry],
         });
-        // マスク (group 3) もテクスチャ + サンプラなので同じレイアウトを使う。
+        // モデルのテクスチャは法線マップ (binding 2) を同じサンプラで読む。
+        let model_texture_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("ugoe model texture layout"),
+                entries: &[texture_entry(0), sampler_entry, texture_entry(2)],
+            });
         let pipelines = Pipelines::new(
             device,
             target_format,
             &[
                 &globals_layout,
                 &draw_layout,
-                &texture_layout,
+                &model_texture_layout,
                 &texture_layout,
             ],
         );
@@ -455,6 +497,14 @@ impl Renderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let lighting = LightingRaw::new(&Lighting::default());
+        let lighting_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("ugoe lighting"),
+            size: LIGHTING_SIZE,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let flat_normal = device.create_texture(&texture_descriptor("ugoe flat normal", 1, 1));
         // 内容は使われない (mask_strength = 0)。wgpu は未書き込みのテクスチャをゼロで初期化する。
         let no_mask_texture = device.create_texture(&texture_descriptor("ugoe no mask", 1, 1));
         let no_mask_bind_group =
@@ -467,9 +517,15 @@ impl Renderer {
             pipelines,
             globals_layout,
             draw_layout,
+            model_texture_layout,
             texture_layout,
             sampler,
             globals,
+            lighting_buffer,
+            lighting,
+            lighting_uploaded: None,
+            flat_normal,
+            normal_maps: Vec::new(),
             no_mask_bind_group,
             mask_options: options.mask_atlas,
             batch_draws: options.batch_draws,
@@ -529,17 +585,118 @@ impl Renderer {
             wgpu::util::TextureDataOrder::LayerMajor,
             rgba_premultiplied,
         );
-        let bind_group = texture_bind_group(device, &self.texture_layout, &texture, &self.sampler);
+        let bind_group = self.model_texture_bind_group(device, index, &texture);
         let index = index as usize;
         if self.textures.len() <= index {
             self.textures.resize_with(index + 1, || None);
         }
         self.textures[index] = Some(TextureSlot {
-            _texture: texture,
+            texture,
             bind_group,
         });
         self.texture_generation += 1;
         Ok(())
+    }
+
+    /// テクスチャ `index` の法線マップ (RGBA8、アルファは使わない) を登録する。同じ `index` に再登録すると置き換える。
+    ///
+    /// 値は接空間法線 `n = 2c − 1` で、G は画像の上向き (`docs/spec/rendering.md#ライティング`)。
+    /// 大きさはテクスチャと違ってもよい (同じ UV 空間で読む)。テクスチャより先に登録してもよい。
+    pub fn set_normal_map(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        index: u32,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+    ) -> Result<(), RenderError> {
+        let expected = width as usize * height as usize * 4;
+        if width == 0 || height == 0 || rgba.len() != expected {
+            return Err(RenderError::InvalidTextureData {
+                width,
+                height,
+                expected,
+                actual: rgba.len(),
+            });
+        }
+        let normal_map = device.create_texture_with_data(
+            queue,
+            &texture_descriptor("ugoe normal map", width, height),
+            wgpu::util::TextureDataOrder::LayerMajor,
+            rgba,
+        );
+        let slot = index as usize;
+        if self.normal_maps.len() <= slot {
+            self.normal_maps.resize_with(slot + 1, || None);
+        }
+        self.normal_maps[slot] = Some(normal_map);
+        self.rebind_texture(device, index);
+        Ok(())
+    }
+
+    /// テクスチャ `index` の法線マップを外す (法線は `(0, 0, 1)` になる)。登録されていなければ何もしない。
+    pub fn remove_normal_map(&mut self, device: &wgpu::Device, index: u32) {
+        if let Some(normal_map) = self.normal_maps.get_mut(index as usize)
+            && normal_map.take().is_some()
+        {
+            self.rebind_texture(device, index);
+        }
+    }
+
+    /// 光源を設定する (`docs/spec/rendering.md#ライティング`)。次の [`Renderer::encode`] から使う。
+    ///
+    /// ライティングを受けるのは `Model::lighting` と `Mesh::lit` の両方が `true` のメッシュだけ。
+    /// 設定しなければ [`Lighting::default`] (環境光が白で光源なし。ライティングしない場合と同じ色になる)。
+    pub fn set_lighting(&mut self, lighting: &Lighting) {
+        self.lighting = LightingRaw::new(lighting);
+    }
+
+    /// テクスチャ `index` のバインドグループ (テクスチャ・サンプラ・法線マップ) を作る。
+    fn model_texture_bind_group(
+        &self,
+        device: &wgpu::Device,
+        index: u32,
+        texture: &wgpu::Texture,
+    ) -> wgpu::BindGroup {
+        let normal_map = self.normal_map(index).unwrap_or(&self.flat_normal);
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let normal_view = normal_map.create_view(&wgpu::TextureViewDescriptor::default());
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("ugoe model texture"),
+            layout: &self.model_texture_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&normal_view),
+                },
+            ],
+        })
+    }
+
+    /// 法線マップが変わったテクスチャ `index` のバインドグループを作り直す (テクスチャが未登録なら何もしない)。
+    fn rebind_texture(&mut self, device: &wgpu::Device, index: u32) {
+        let Some(slot) = self.texture(index) else {
+            return;
+        };
+        let bind_group = self.model_texture_bind_group(device, index, &slot.texture);
+        if let Some(Some(slot)) = self.textures.get_mut(index as usize) {
+            slot.bind_group = bind_group;
+        }
+    }
+
+    fn normal_map(&self, index: u32) -> Option<&wgpu::Texture> {
+        self.normal_maps
+            .get(index as usize)
+            .and_then(Option::as_ref)
     }
 
     /// 現在のインスタンス状態を描画するコマンドを `encoder` に積む。
@@ -567,6 +724,7 @@ impl Renderer {
             let layouts = GeometryLayouts {
                 globals: &self.globals_layout,
                 globals_buffer: &self.globals,
+                lighting_buffer: &self.lighting_buffer,
                 draw: &self.draw_layout,
             };
             let geometry = Geometry::new(device, &layouts, instance.compiled());
@@ -733,9 +891,16 @@ impl Renderer {
         };
 
         // 本描画の要素ごとの値 (頂点の要素の番号で引くので、描画の状態の違いにならない)。
+        // ライティングの種類は `mask_params.z` (シェーダの `MaskRead::params`) に置く。
         self.elements_scratch.clear();
         for (i, state) in drawables.iter().enumerate() {
-            let read = mask_read(i);
+            let mut read = mask_read(i);
+            let mesh = geometry.meshes[i];
+            read.params[2] = match (mesh.lit, self.normal_map(mesh.texture)) {
+                (false, _) => LIGHT_NONE,
+                (true, None) => LIGHT_FLAT,
+                (true, Some(_)) => LIGHT_NORMAL_MAP,
+            };
             let raw = ElementRaw {
                 multiply_color: [
                     state.multiply_color.r,
@@ -815,6 +980,13 @@ impl Renderer {
             queue.write_buffer(&self.globals, 0, bytemuck::bytes_of(&globals));
             self.globals_uploaded = Some(globals);
             uniform_bytes += std::mem::size_of::<GlobalsRaw>() as u64;
+        }
+        // 光源は、ライティングを受ける要素を描くときだけ要る。
+        let lit = draws.iter().any(|&(i, _)| geometry.meshes[i].lit);
+        if lit && self.lighting_uploaded != Some(self.lighting) {
+            queue.write_buffer(&self.lighting_buffer, 0, bytemuck::bytes_of(&self.lighting));
+            self.lighting_uploaded = Some(self.lighting);
+            uniform_bytes += LIGHTING_SIZE;
         }
 
         // マスクアトラスの内容の使い回し: アトラス・割り当て・ビュー・テクスチャが前と同じで、
@@ -1081,6 +1253,7 @@ impl Geometry {
                 index_count,
                 texture: mesh.texture,
                 culling: mesh.culling,
+                lit: model.lighting && mesh.lit,
                 mask,
             });
         }
@@ -1151,6 +1324,10 @@ impl Geometry {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::TextureView(&element_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: layouts.lighting_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -1252,6 +1429,7 @@ impl Geometry {
 struct GeometryLayouts<'a> {
     globals: &'a wgpu::BindGroupLayout,
     globals_buffer: &'a wgpu::Buffer,
+    lighting_buffer: &'a wgpu::Buffer,
     draw: &'a wgpu::BindGroupLayout,
 }
 
@@ -1384,5 +1562,50 @@ mod tests {
         )
         .validate(&module)
         .expect("validate");
+    }
+
+    /// WebGL2 (GLSL ES 3.00) に変換できる (ストレージバッファ・compute などを使っていない)。
+    #[test]
+    fn reference_shader_translates_to_webgl2() {
+        use naga::back::glsl;
+        let module = naga::front::wgsl::parse_str(super::DRAWABLE_WGSL).expect("parse");
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("validate");
+        let options = glsl::Options {
+            version: glsl::Version::Embedded {
+                version: 300,
+                is_webgl: true,
+            },
+            ..Default::default()
+        };
+        for (stage, entry_point) in [
+            (naga::ShaderStage::Vertex, "vs_main"),
+            (naga::ShaderStage::Fragment, "fs_main"),
+            (naga::ShaderStage::Vertex, "vs_mask"),
+            (naga::ShaderStage::Fragment, "fs_mask"),
+            (naga::ShaderStage::Vertex, "vs_fill"),
+            (naga::ShaderStage::Fragment, "fs_fill"),
+        ] {
+            let pipeline_options = glsl::PipelineOptions {
+                shader_stage: stage,
+                entry_point: entry_point.into(),
+                multiview: None,
+            };
+            let mut out = String::new();
+            glsl::Writer::new(
+                &mut out,
+                &module,
+                &info,
+                &options,
+                &pipeline_options,
+                naga::proc::BoundsCheckPolicies::default(),
+            )
+            .and_then(|mut writer| writer.write())
+            .unwrap_or_else(|e| panic!("{entry_point}: {e}"));
+        }
     }
 }
