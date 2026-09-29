@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use ugoe_core::{Rgb, Vec2};
 use ugoe_model::deformer::{DeformerKind, WarpDeformer, WarpKeyform};
 use ugoe_model::mesh::{BlendMode, MaskMode, MeshKeyform};
-use ugoe_model::module::{DrawOrderRange, ModulePhysics, ModuleRequirements};
+use ugoe_model::module::{DrawOrderRange, ModulePhysics, ModulePose, ModuleRequirements};
 use ugoe_model::parameter::ParameterKind;
 use ugoe_model::part::PartKeyform;
 use ugoe_model::{
@@ -266,6 +266,9 @@ fn base_model(meshes: usize, warps: usize) -> Model {
             replaces: Vec::new(),
             parameters: Vec::new(),
             mask_sources: Vec::new(),
+            part: None,
+            colliders: Vec::new(),
+            pose_parts: Vec::new(),
         })
         .collect();
     model
@@ -306,5 +309,6 @@ fn module(slot: &str, meshes: usize, warps: usize) -> Module {
             normal_map: None,
         }],
         physics: ModulePhysics::default(),
+        pose: ModulePose::default(),
     }
 }

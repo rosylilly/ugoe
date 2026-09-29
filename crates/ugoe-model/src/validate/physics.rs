@@ -158,6 +158,23 @@ pub fn validate_physics(physics: &PhysicsSettings, model: &Model) -> Vec<Validat
         check_non_negative(&format!("{path}.radius"), radius, &mut errors);
     }
 
+    // スロットが公開する衝突体 (`docs/spec/modules.md#スロット`)。
+    for slot in &model.slots {
+        let refs = Refs {
+            kind: "slot",
+            id: slot.id.as_str(),
+        };
+        for collider in &slot.colliders {
+            refs.check(
+                &colliders,
+                "colliders",
+                "physics collider",
+                collider,
+                &mut errors,
+            );
+        }
+    }
+
     errors
 }
 

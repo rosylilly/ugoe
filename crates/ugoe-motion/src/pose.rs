@@ -1,7 +1,7 @@
 //! ポーズ (排他的なパーツの切り替え)。仕様: `docs/spec/motion.md#ポーズ`。
 
 use ugoe_model::PartId;
-use ugoe_model::pose::Pose;
+use ugoe_model::pose::{Pose, PoseGroup};
 
 /// ポーズグループ 1 つ分の状態。
 #[derive(Debug, Clone)]
@@ -61,6 +61,32 @@ impl PosePlayer {
             }
         }
         found
+    }
+
+    /// `previous` の再生状態 (表示中の要素と不透明度) を引き継ぐ。
+    ///
+    /// 要素のパーツの並びが同じグループの状態を写す (リンクは違ってよい)。着せ替えの組み替え
+    /// (`docs/spec/modules.md#puppet-での着せ替え`) でポーズを作り直したとき、表示中の要素を保つために使う。
+    /// 対応するグループが無いグループは、先頭の要素の表示のまま。
+    pub fn carry_over(&mut self, previous: &PosePlayer) {
+        let same = |a: &PoseGroup, b: &PoseGroup| {
+            a.entries.len() == b.entries.len()
+                && a.entries
+                    .iter()
+                    .zip(&b.entries)
+                    .all(|(x, y)| x.part == y.part)
+        };
+        for (group, state) in self.pose.groups.iter().zip(&mut self.groups) {
+            let found = previous
+                .pose
+                .groups
+                .iter()
+                .zip(&previous.groups)
+                .find(|(g, _)| same(g, group));
+            if let Some((_, old)) = found {
+                state.clone_from(old);
+            }
+        }
     }
 
     /// 表示中のパーツ (グループの順)。
@@ -201,5 +227,29 @@ mod tests {
         p.update(0.0, &[]);
         assert_eq!(opacity(&p, "ArmB"), 1.0);
         assert_eq!(opacity(&p, "ArmA"), 0.0);
+    }
+
+    /// 要素のパーツの並びが同じグループは、リンクが違っても途中の状態を引き継ぐ。
+    #[test]
+    fn carry_over_keeps_the_visible_entry_of_matching_groups() {
+        let mut old = player();
+        assert!(old.show(&"ArmB".into()));
+        old.update(0.125, &[]);
+
+        let mut pose = old.pose().clone();
+        pose.groups[0].entries[1].links.push("Extra".into());
+        pose.groups.push(PoseGroup {
+            entries: vec![ugoe_model::pose::PoseEntry {
+                part: "HatA".into(),
+                links: vec![],
+            }],
+        });
+        let mut p = PosePlayer::new(pose);
+        p.carry_over(&old);
+        assert!(close(opacity(&p, "ArmB"), 0.25));
+        assert!(close(opacity(&p, "Extra"), 0.25));
+        assert!(close(opacity(&p, "ArmA"), 0.75));
+        assert_eq!(opacity(&p, "HatA"), 1.0);
+        assert_eq!(p.visible_parts().next().unwrap().as_str(), "ArmB");
     }
 }

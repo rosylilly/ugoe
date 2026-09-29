@@ -1,7 +1,7 @@
 //! 着せ替えのスロットとモジュールの検査。検査項目は `docs/spec/model.md#検証` と
 //! `docs/spec/modules.md#検証`。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use ugoe_core::Vec2;
 
@@ -20,6 +20,15 @@ pub(super) fn check_slots(
     errors: &mut Vec<ValidationError>,
 ) {
     collect_ids("slot", model.slots.iter().map(|s| &s.id), errors);
+    // スロットの `pose_parts` は、ポーズの要素 (リンクは含めない) のパーツでなければならない。
+    let pose_entries: HashMap<&PartId, usize> = model
+        .pose
+        .groups
+        .iter()
+        .flat_map(|g| &g.entries)
+        .enumerate()
+        .map(|(i, e)| (&e.part, i))
+        .collect();
     for slot in &model.slots {
         let id = slot.id.to_string();
         let refs = Refs {
@@ -37,6 +46,12 @@ pub(super) fn check_slots(
         }
         for mesh in &slot.mask_sources {
             refs.check(meshes, "mask_sources", "mesh", mesh, errors);
+        }
+        if let Some(part) = &slot.part {
+            refs.check(parts, "part", "part", part, errors);
+        }
+        for part in &slot.pose_parts {
+            refs.check(&pose_entries, "pose_parts", "pose entry", part, errors);
         }
         let range = slot.draw_order;
         if !range.min.is_finite() {
@@ -87,11 +102,29 @@ pub fn validate_module(module: &Module) -> Vec<ValidationError> {
     let model = module.stand_in_model(parameters);
     errors.extend(validate(&model));
     if !module.physics.is_empty() {
+        // 本体の衝突体 (スロットの `colliders`) への参照は合成時に検査する。同じ ID があれば
+        // モジュールの衝突体を指すので、モジュールにない ID だけを除く。
+        let own: HashSet<&str> = module
+            .physics
+            .colliders
+            .iter()
+            .map(|c| c.id.as_str())
+            .collect();
+        let rigs = module
+            .physics
+            .rigs
+            .iter()
+            .map(|rig| {
+                let mut rig = rig.clone();
+                rig.colliders.retain(|c| own.contains(c.as_str()));
+                rig
+            })
+            .collect();
         let physics = PhysicsSettings {
             gravity: Vec2::ZERO,
             wind: Vec2::ZERO,
             fps: 60.0,
-            rigs: module.physics.rigs.clone(),
+            rigs,
             colliders: module.physics.colliders.clone(),
         };
         errors.extend(validate_physics(&physics, &model));
@@ -159,13 +192,72 @@ mod tests {
     }
 
     #[test]
+    fn slot_part_pose_parts_and_colliders_are_checked() {
+        use crate::physics::{ColliderShape, PhysicsCollider};
+        use crate::pose::{PoseEntry, PoseGroup};
+        let mut model = dress_up_base();
+        model.pose.groups.push(PoseGroup {
+            entries: vec![PoseEntry {
+                part: "Hair".into(),
+                links: vec!["Body".into()],
+            }],
+        });
+        let slot = &mut model.slots[1];
+        slot.part = Some("NoPart".into());
+        // リンクのパーツや、ポーズにないパーツは `pose_parts` にできない。
+        slot.pose_parts = vec!["Hair".into(), "Body".into(), "Root".into()];
+        slot.colliders = vec!["Chest".into(), "NoCollider".into()];
+        let unknown = |field, target_kind, target: &str| ValidationError::UnknownReference {
+            kind: "slot",
+            id: "Outfit".into(),
+            field,
+            target_kind,
+            target: target.into(),
+        };
+        assert_eq!(
+            validate(&model),
+            vec![
+                unknown("part", "part", "NoPart"),
+                unknown("pose_parts", "pose entry", "Body"),
+                unknown("pose_parts", "pose entry", "Root"),
+            ]
+        );
+        let physics = PhysicsSettings {
+            gravity: Vec2::new(0.0, 1.0),
+            wind: Vec2::ZERO,
+            fps: 60.0,
+            rigs: Vec::new(),
+            colliders: vec![PhysicsCollider {
+                id: "Chest".into(),
+                name: "Chest".into(),
+                attach: Some("Torso".into()),
+                shape: ColliderShape::Circle {
+                    center: Vec2::new(0.5, 0.5),
+                    radius: 8.0,
+                },
+            }],
+        };
+        assert_eq!(
+            validate_physics(&physics, &model),
+            vec![unknown("colliders", "physics collider", "NoCollider")]
+        );
+    }
+
+    #[test]
     fn module_internal_references_are_checked() {
         let mut module = long_hair_module();
         module.name = "Long/Hair".into();
         module.meshes[0].parent = Some("Missing".into());
         // 本体のメッシュへのマスクは合成時に検査するので、ここではエラーにしない。
         module.meshes[1].masks.push(MaskRef::normal("SomeBaseMesh"));
-        module.physics.rigs[0].colliders.push("NoCollider".into());
+        // 本体の衝突体 (スロットの `colliders`) への参照も合成時に検査する。
+        module.physics.rigs[0].colliders.push("BaseCollider".into());
+        module.pose.groups.push(crate::pose::PoseGroup {
+            entries: vec![crate::pose::PoseEntry {
+                part: "NoPart".into(),
+                links: vec![],
+            }],
+        });
         let errors = validate_module(&module);
         assert_eq!(
             errors,
@@ -181,11 +273,11 @@ mod tests {
                     target: "Missing".into(),
                 },
                 ValidationError::UnknownReference {
-                    kind: "physics rig",
-                    id: "Sway".into(),
-                    field: "colliders",
-                    target_kind: "physics collider",
-                    target: "NoCollider".into(),
+                    kind: "pose group",
+                    id: "0".into(),
+                    field: "part",
+                    target_kind: "part",
+                    target: "NoPart".into(),
                 },
             ]
         );
@@ -215,6 +307,7 @@ mod tests {
                 "anchor": "Torso",
                 "draw_order": { "min": 300.0, "max": 400.0 },
                 "parameters": ["BodySway"],
+                "part": "Body",
             })
         );
         assert_eq!(serde_json::from_value::<Model>(json).unwrap(), model);
@@ -224,6 +317,8 @@ mod tests {
 
         for module in [long_hair_module(), dress_module()] {
             let json = serde_json::to_value(&module).unwrap();
+            // 空のポーズは書き出さない。
+            assert!(json.get("pose").is_none());
             assert_eq!(serde_json::from_value::<Module>(json).unwrap(), module);
         }
         // 要素・条件・物理は省略できる。
@@ -233,7 +328,7 @@ mod tests {
             "slot": "Hair",
         }))
         .unwrap();
-        assert!(module.meshes.is_empty() && module.physics.is_empty());
+        assert!(module.meshes.is_empty() && module.physics.is_empty() && module.pose.is_empty());
         assert_eq!(validate_module(&module), vec![]);
     }
 

@@ -458,7 +458,8 @@ mod tests {
         );
         // 物理の参照先の誤りも `validate_module` が見つける。
         let mut file = full_module();
-        file.module.physics.rigs[0].colliders = vec!["Missing".into()];
+        // モジュールにない衝突体は本体の衝突体への参照として合成時に検査するので、`frame` の誤りで試す。
+        file.module.physics.rigs[0].frame = Some("Missing".into());
         assert_err(
             &write_module(&file).unwrap(),
             |e| matches!(e, FormatError::InvalidModule(errors) if !errors.is_empty()),

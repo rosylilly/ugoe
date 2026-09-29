@@ -11,6 +11,7 @@ use ugoe_core::Id;
 
 use crate::deformer::DeformerKind;
 use crate::physics::{PhysicsCollider, PhysicsRig, PhysicsTarget};
+use crate::pose::{PoseEntry, PoseGroup};
 use crate::{
     Canvas, Deformer, DeformerId, Effects, Glue, Mesh, MeshId, Model, ModelMeta, ParamId,
     Parameter, Part, PartId, Pose, TextureRef,
@@ -40,6 +41,16 @@ pub struct Slot {
     /// このスロットのモジュールがマスクとして参照してよい本体のメッシュ。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mask_sources: Vec<MeshId>,
+    /// モジュールの最上位のパーツの親にする本体のパーツ。`None` ならモジュールの最上位のパーツは最上位のまま。
+    /// 親のパーツの不透明度 (ポーズやモーションで隠したときなど) にモジュールが追従する。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub part: Option<PartId>,
+    /// このスロットのモジュールの物理のリグが衝突してよい本体の衝突体 (`PhysicsCollider::id`)。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub colliders: Vec<String>,
+    /// このスロットのモジュールがパーツを追従 (`PoseEntry::links`) させてよい、本体のポーズの要素のパーツ。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pose_parts: Vec<PartId>,
 }
 
 /// 描画順の範囲 `[min, max]` (`min <= max`)。
@@ -82,6 +93,9 @@ pub struct Module {
     /// 物理のリグと衝突体。重力・風・周波数は本体の設定を使う。
     #[serde(default, skip_serializing_if = "ModulePhysics::is_empty")]
     pub physics: ModulePhysics,
+    /// ポーズ (排他的なパーツの切り替え)。
+    #[serde(default, skip_serializing_if = "ModulePose::is_empty")]
+    pub pose: ModulePose,
 }
 
 /// モジュールが対応する本体の条件。
@@ -115,6 +129,29 @@ pub struct ModulePhysics {
 impl ModulePhysics {
     pub fn is_empty(&self) -> bool {
         self.rigs.is_empty() && self.colliders.is_empty()
+    }
+}
+
+/// モジュールのポーズ (`docs/spec/modules.md#ポーズ`)。
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(default)]
+pub struct ModulePose {
+    /// モジュールのパーツだけでできたグループ。合成で本体のグループの後ろに加える。
+    /// クロスフェードの時間は本体のもの。
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<PoseGroup>,
+    /// 本体のポーズの要素に追従させるモジュールのパーツ。`part` は本体のパーツ
+    /// (スロットの `pose_parts` にあるもの)、`links` はモジュールのパーツ。
+    /// 合成で本体の要素の `links` に加える (例: 腕の差分 A / B に合わせて袖の差分を切り替える)。
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<PoseEntry>,
+}
+
+impl ModulePose {
+    pub fn is_empty(&self) -> bool {
+        self.groups.is_empty() && self.links.is_empty()
     }
 }
 
@@ -158,7 +195,7 @@ impl Module {
 
     /// 検証用に、モジュールの要素だけを持つモデルを作る。`parameters` はモジュールが参照する
     /// パラメータの代わり。マスクのうちモジュールの外のメッシュ (スロットの `mask_sources`) を
-    /// 参照するものは取り除く (合成時に検査する)。
+    /// 参照するものは取り除く (合成時に検査する)。ポーズはモジュールのグループだけを入れる。
     pub(crate) fn stand_in_model(&self, parameters: Vec<Parameter>) -> Model {
         let own: BTreeSet<&MeshId> = self.meshes.iter().map(|m| &m.id).collect();
         let meshes = self
@@ -188,7 +225,11 @@ impl Module {
             glues: self.glues.clone(),
             textures: self.textures.clone(),
             hit_areas: Vec::new(),
-            pose: Pose::default(),
+            // 本体の要素への追従 (`links`) は合成時に検査する。
+            pose: Pose {
+                groups: self.pose.groups.clone(),
+                ..Pose::default()
+            },
             effects: Effects::default(),
             avatar: None,
             slots: Vec::new(),

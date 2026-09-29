@@ -35,7 +35,9 @@ pub use keyform::{
     KeyformOrigin, MirrorSource,
 };
 pub use mesh::{BlendMode, Glue, MaskMode, MaskRef, Mesh, MeshId};
-pub use module::{DrawOrderRange, Module, ModulePhysics, ModuleRequirements, Slot, SlotId};
+pub use module::{
+    DrawOrderRange, Module, ModulePhysics, ModulePose, ModuleRequirements, Slot, SlotId,
+};
 pub use parameter::{ParamId, Parameter, ParameterGroup};
 pub use part::{Part, PartId};
 pub use pose::Pose;

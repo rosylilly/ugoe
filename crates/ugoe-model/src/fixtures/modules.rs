@@ -8,7 +8,7 @@ use super::{
 };
 use crate::deformer::WarpKeyform;
 use crate::mesh::MaskRef;
-use crate::module::{DrawOrderRange, Module, ModulePhysics, ModuleRequirements, Slot};
+use crate::module::{DrawOrderRange, Module, ModulePhysics, ModulePose, ModuleRequirements, Slot};
 use crate::part::PartKeyform;
 use crate::physics::{
     ColliderShape, NormalizationRange, PhysicsBlend, PhysicsCollider, PhysicsInput,
@@ -26,7 +26,7 @@ use crate::{KeyformGrid, Model, SCHEMA_VERSION, TextureRef, standard};
 /// - メッシュ: `Face` (親 `Head`、描画順 500)、`HairDefault` (パーツ `Hair`、親 `Head`、描画順 600)、
 ///   `BodyMesh` (パーツ `Body`、親 `Torso`、UV 全体、描画順 300)。
 /// - スロット `Hair`: 取り付け先 `Head`、描画順 550〜650、`Hair` を置き換える、マスクに `Face` を公開。
-/// - スロット `Outfit`: 取り付け先 `Torso`、描画順 300〜400、`BodySway` を公開。
+/// - スロット `Outfit`: 取り付け先 `Torso`、描画順 300〜400、`BodySway` を公開。モジュールの最上位のパーツは `Body` の子。
 pub fn dress_up_base() -> Model {
     let mut model = base_model(
         "dress_up_base",
@@ -100,6 +100,9 @@ pub fn dress_up_base() -> Model {
             replaces: vec!["Hair".into()],
             parameters: Vec::new(),
             mask_sources: vec!["Face".into()],
+            part: None,
+            colliders: Vec::new(),
+            pose_parts: Vec::new(),
         },
         Slot {
             id: "Outfit".into(),
@@ -111,6 +114,9 @@ pub fn dress_up_base() -> Model {
             replaces: Vec::new(),
             parameters: vec!["BodySway".into()],
             mask_sources: Vec::new(),
+            part: Some("Body".into()),
+            colliders: Vec::new(),
+            pose_parts: Vec::new(),
         },
     ];
     model
@@ -223,6 +229,7 @@ pub fn long_hair_module() -> Module {
                 },
             }],
         },
+        pose: ModulePose::default(),
     }
 }
 
@@ -262,5 +269,6 @@ pub fn dress_module() -> Module {
             normal_map: None,
         }],
         physics: ModulePhysics::default(),
+        pose: ModulePose::default(),
     }
 }

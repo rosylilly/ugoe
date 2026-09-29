@@ -1162,7 +1162,20 @@ parameters?: Array<string>,
 /**
  * このスロットのモジュールがマスクとして参照してよい本体のメッシュ。
  */
-mask_sources?: Array<string>, };
+mask_sources?: Array<string>, 
+/**
+ * モジュールの最上位のパーツの親にする本体のパーツ。`None` ならモジュールの最上位のパーツは最上位のまま。
+ * 親のパーツの不透明度 (ポーズやモーションで隠したときなど) にモジュールが追従する。
+ */
+part?: string | null, 
+/**
+ * このスロットのモジュールの物理のリグが衝突してよい本体の衝突体 (`PhysicsCollider::id`)。
+ */
+colliders?: Array<string>, 
+/**
+ * このスロットのモジュールがパーツを追従 (`PoseEntry::links`) させてよい、本体のポーズの要素のパーツ。
+ */
+pose_parts?: Array<string>, };
 
 /**
  * テクスチャ参照。実データはコンテナ (`ugoe-format`) 側が保持する。

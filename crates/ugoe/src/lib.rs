@@ -14,6 +14,10 @@ pub use ugoe_physics as physics;
 pub use ugoe_render as render;
 pub use ugoe_runtime as runtime;
 
+mod dress_up;
+
+pub use dress_up::{DressUpChange, DressUpError, TextureSource};
+
 use ugoe_model::effects::{EYE_BLINK_GROUP, Effects, LIP_SYNC_GROUP};
 use ugoe_model::expression::Expression;
 use ugoe_model::motion::{Motion, MotionEvent};
@@ -80,6 +84,8 @@ pub struct Puppet {
     tracking_map: TrackingMap,
     tracking: Option<TrackingInput>,
     toggles: Toggles,
+    /// 着せ替えの本体と取り付けているモジュール (`dress_up.rs`)。モジュールを付けるまで `None`。
+    wardrobe: Option<dress_up::Wardrobe>,
 }
 
 impl Puppet {
@@ -110,6 +116,7 @@ impl Puppet {
             tracking_map,
             tracking: None,
             toggles: Toggles::default(),
+            wardrobe: None,
         };
         puppet.set_pose(pose);
         puppet

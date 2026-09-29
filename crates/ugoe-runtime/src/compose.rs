@@ -12,6 +12,7 @@ use ugoe_model::keyform::KeyformGrid;
 use ugoe_model::module::DrawOrderRange;
 use ugoe_model::part::PartKeyform;
 use ugoe_model::physics::{PhysicsSettings, PhysicsTarget, VertexOwner};
+use ugoe_model::pose::{PoseEntry, PoseGroup};
 use ugoe_model::validate::{ValidationError, validate};
 use ugoe_model::{DeformerId, Model, Module, Part, PartId, Slot, standard};
 
@@ -63,6 +64,20 @@ pub enum ComposeError {
         mesh: String,
         texture: u32,
     },
+    /// リグの衝突体が、モジュールの衝突体でも、スロットの `colliders` にある本体の衝突体でもない。
+    #[error("module `{module}`: rig `{rig}` collides with `{collider}`, which is not available")]
+    UnknownCollider {
+        module: String,
+        rig: String,
+        collider: String,
+    },
+    /// ポーズの追従先が、スロットの `pose_parts` にある本体のポーズの要素ではない。
+    #[error("module `{module}`: pose entry `{part}` is not exposed by slot `{slot}`")]
+    PoseNotExposed {
+        module: String,
+        slot: String,
+        part: String,
+    },
     /// 合成したモデルが検証を通らない (モジュール自体の不整合など)。
     #[error("composed model failed validation: {0:?}")]
     Invalid(Vec<ValidationError>),
@@ -83,7 +98,11 @@ pub fn compose(base: &Model, modules: &[&Module]) -> Result<Model, ComposeError>
         for part in &module.parts {
             let mut part = part.clone();
             part.id = rename.id(&part.id);
-            part.parent = part.parent.as_ref().map(|p| rename.id(p));
+            // 最上位のパーツはスロットの `part` の子にする。
+            part.parent = match &part.parent {
+                Some(parent) => Some(rename.id(parent)),
+                None => slot.part.clone(),
+            };
             rename.grid(&mut part.keyforms);
             model.parts.push(part);
         }
@@ -145,6 +164,7 @@ pub fn compose(base: &Model, modules: &[&Module]) -> Result<Model, ComposeError>
             texture.name = rename.string(&texture.name);
             model.textures.push(texture);
         }
+        attach_pose(&mut model, module, slot, &rename)?;
         replaced.extend(slot.replaces.iter().cloned());
     }
     hide_replaced_parts(&mut model, replaced);
@@ -168,14 +188,31 @@ pub fn compose_physics(
 ) -> Result<PhysicsSettings, ComposeError> {
     let attachments = attach(base, modules)?;
     let mut physics = physics.clone();
+    let base_colliders: HashSet<String> = physics.colliders.iter().map(|c| c.id.clone()).collect();
     for Attachment { module, slot } in attachments {
         let rename = Renamer::new(&module.name);
+        let own_colliders: HashSet<&str> = module
+            .physics
+            .colliders
+            .iter()
+            .map(|c| c.id.as_str())
+            .collect();
         for rig in &module.physics.rigs {
             let mut rig = rig.clone();
+            let original = rig.id.clone();
             rig.id = rename.string(&rig.id);
             rig.frame = rig.frame.as_ref().map(|f| rename.id(f));
             for collider in &mut rig.colliders {
-                *collider = rename.string(collider);
+                if own_colliders.contains(collider.as_str()) {
+                    *collider = rename.string(collider);
+                } else if !(slot.colliders.contains(collider) && base_colliders.contains(collider))
+                {
+                    return Err(ComposeError::UnknownCollider {
+                        module: module.name.clone(),
+                        rig: original.clone(),
+                        collider: collider.clone(),
+                    });
+                }
             }
             for output in &mut rig.outputs {
                 match &mut output.target {
@@ -198,6 +235,49 @@ pub fn compose_physics(
         }
     }
     Ok(physics)
+}
+
+/// モジュールのポーズを加える。グループは本体のグループの後ろに加え、追従 (`links`) は
+/// 本体のポーズの要素の `links` に加える。
+fn attach_pose(
+    model: &mut Model,
+    module: &Module,
+    slot: &Slot,
+    rename: &Renamer<'_>,
+) -> Result<(), ComposeError> {
+    let rename_entry = |entry: &PoseEntry| PoseEntry {
+        part: rename.id(&entry.part),
+        links: entry.links.iter().map(|p| rename.id(p)).collect(),
+    };
+    for link in &module.pose.links {
+        let entry = slot
+            .pose_parts
+            .contains(&link.part)
+            .then(|| {
+                model
+                    .pose
+                    .groups
+                    .iter_mut()
+                    .flat_map(|g| &mut g.entries)
+                    .find(|e| e.part == link.part)
+            })
+            .flatten();
+        let Some(entry) = entry else {
+            return Err(ComposeError::PoseNotExposed {
+                module: module.name.clone(),
+                slot: slot.id.to_string(),
+                part: link.part.to_string(),
+            });
+        };
+        entry.links.extend(link.links.iter().map(|p| rename.id(p)));
+    }
+    model
+        .pose
+        .groups
+        .extend(module.pose.groups.iter().map(|group| PoseGroup {
+            entries: group.entries.iter().map(rename_entry).collect(),
+        }));
+    Ok(())
 }
 
 /// 描画順をスロットの範囲に写す: `min + (max − min) × order / 1000`。
@@ -522,6 +602,156 @@ mod tests {
         );
         let model = compose(&base, &modules).unwrap();
         assert_eq!(validate_physics(&physics, &model), vec![]);
+    }
+
+    #[test]
+    fn top_level_parts_hang_under_the_slot_part() {
+        let model = composed();
+        // `Outfit` は `part: Body` なので、`Dress` の最上位のパーツは `Body` の子になる。
+        assert_eq!(
+            part(&model, "Dress/Dress")
+                .parent
+                .as_ref()
+                .unwrap()
+                .as_str(),
+            "Body"
+        );
+        assert_eq!(part(&model, "LongHair/Hair").parent, None);
+
+        // 本体のパーツを隠すと、モジュールのメッシュも隠れる。
+        let compiled = CompiledModel::compile(model).unwrap();
+        let mut instance = ModelInstance::new(compiled.clone());
+        instance.set_part_opacity_override(compiled.part_index("Body").unwrap(), 0.0, 1.0);
+        instance.update();
+        let skirt = compiled.mesh_index("Dress/Skirt").unwrap();
+        assert_eq!(instance.drawables()[skirt].opacity, 0.0);
+    }
+
+    /// 本体の腕の差分 `ArmA` / `ArmB` と、それに追従する袖・モジュールだけの帽子の差分。
+    fn pose_base_and_module() -> (Model, Module) {
+        let mut base = dress_up_base();
+        let opaque = || KeyformGrid::constant(PartKeyform { opacity: 1.0 });
+        for id in ["ArmA", "ArmB"] {
+            base.parts.push(Part {
+                id: id.into(),
+                name: id.into(),
+                parent: Some("Body".into()),
+                keyforms: opaque(),
+            });
+        }
+        base.pose.groups.push(PoseGroup {
+            entries: vec![
+                PoseEntry {
+                    part: "ArmA".into(),
+                    links: vec![],
+                },
+                PoseEntry {
+                    part: "ArmB".into(),
+                    links: vec![],
+                },
+            ],
+        });
+        base.slots[1].pose_parts = vec!["ArmA".into(), "ArmB".into()];
+        let mut module = dress_module();
+        for id in ["SleeveA", "SleeveB", "HatA", "HatB"] {
+            module.parts.push(Part {
+                id: id.into(),
+                name: id.into(),
+                parent: Some("Dress".into()),
+                keyforms: opaque(),
+            });
+        }
+        let entry = |part: &str, links: &[&str]| PoseEntry {
+            part: part.into(),
+            links: links.iter().map(|&l| l.into()).collect(),
+        };
+        module.pose.links = vec![entry("ArmA", &["SleeveA"]), entry("ArmB", &["SleeveB"])];
+        module.pose.groups = vec![PoseGroup {
+            entries: vec![entry("HatA", &[]), entry("HatB", &[])],
+        }];
+        (base, module)
+    }
+
+    #[test]
+    fn module_parts_join_pose_groups() {
+        let (base, module) = pose_base_and_module();
+        let model = compose(&base, &[&module]).unwrap();
+        let groups = &model.pose.groups;
+        assert_eq!(groups.len(), 2);
+        let links: Vec<Vec<&str>> = groups[0]
+            .entries
+            .iter()
+            .map(|e| e.links.iter().map(|l| l.as_str()).collect())
+            .collect();
+        assert_eq!(links, [["Dress/SleeveA"], ["Dress/SleeveB"]]);
+        let hats: Vec<&str> = groups[1].entries.iter().map(|e| e.part.as_str()).collect();
+        assert_eq!(hats, ["Dress/HatA", "Dress/HatB"]);
+
+        // スロットが公開していない要素には追従できない。
+        let mut hidden = base.clone();
+        hidden.slots[1].pose_parts.pop();
+        assert_eq!(
+            compose(&hidden, &[&module]).unwrap_err(),
+            ComposeError::PoseNotExposed {
+                module: "Dress".into(),
+                slot: "Outfit".into(),
+                part: "ArmB".into(),
+            }
+        );
+        // モジュールにないパーツは、合成したモデルの検証で見つかる。
+        let mut missing = module.clone();
+        missing.pose.groups[0].entries[1].part = "NoHat".into();
+        assert!(matches!(
+            compose(&base, &[&missing]).unwrap_err(),
+            ComposeError::Invalid(_)
+        ));
+    }
+
+    fn physics_with_chest() -> PhysicsSettings {
+        PhysicsSettings {
+            gravity: Vec2::new(0.0, 1.0),
+            wind: Vec2::ZERO,
+            fps: 60.0,
+            rigs: Vec::new(),
+            colliders: vec![ugoe_model::physics::PhysicsCollider {
+                id: "Collar".into(),
+                name: "Base collar".into(),
+                attach: Some("Torso".into()),
+                shape: ugoe_model::physics::ColliderShape::Circle {
+                    center: Vec2::new(0.5, 0.0),
+                    radius: 8.0,
+                },
+            }],
+        }
+    }
+
+    #[test]
+    fn module_rigs_collide_with_colliders_exposed_by_the_slot() {
+        let mut base = dress_up_base();
+        base.slots[0].colliders = vec!["Collar".into()];
+        let physics = physics_with_chest();
+        let mut hair = long_hair_module();
+        // 本体の `Collar` と同じ ID の衝突体がモジュールにあれば、モジュールのものを指す。
+        let composed = compose_physics(&base, &physics, &[&hair]).unwrap();
+        assert_eq!(composed.rigs[0].colliders, ["LongHair/Collar"]);
+
+        // モジュールに無ければ、スロットが公開する本体の衝突体を指す (付け替えない)。
+        hair.physics.colliders.clear();
+        let composed = compose_physics(&base, &physics, &[&hair]).unwrap();
+        assert_eq!(composed.rigs[0].colliders, ["Collar"]);
+        let model = compose(&base, &[&hair]).unwrap();
+        assert_eq!(validate_physics(&composed, &model), vec![]);
+
+        // 公開していなければエラー。
+        base.slots[0].colliders.clear();
+        assert_eq!(
+            compose_physics(&base, &physics, &[&hair]).unwrap_err(),
+            ComposeError::UnknownCollider {
+                module: "LongHair".into(),
+                rig: "Sway".into(),
+                collider: "Collar".into(),
+            }
+        );
     }
 
     #[test]

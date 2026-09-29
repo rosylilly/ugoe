@@ -669,6 +669,9 @@ mod tests {
             replaces: Vec::new(),
             parameters: Vec::new(),
             mask_sources: Vec::new(),
+            part: None,
+            colliders: Vec::new(),
+            pose_parts: Vec::new(),
         });
         avatar(&mut model).slots = vec!["Hair".into(), "Outfit".into()];
         assert_eq!(
