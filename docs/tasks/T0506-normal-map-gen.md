@@ -4,7 +4,7 @@ title: 法線マップの生成
 status: todo
 milestone: M4
 crates: [ugoe-rigging, ugoe-ai]
-depends_on: [T0112, T0610, T0504]
+depends_on: [T0112, T0610, T0504, T0640]
 assignee:
 ---
 
