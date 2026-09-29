@@ -10,8 +10,10 @@
 
 pub mod classify;
 pub mod claude;
+pub mod depth;
 mod fake;
 pub mod transport;
+pub mod turn;
 
 use std::time::Duration;
 

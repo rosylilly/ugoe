@@ -4964,7 +4964,10 @@ dependencies = [
  "thiserror 2.0.21",
  "ugoe-core",
  "ugoe-editor-core",
+ "ugoe-model",
  "ugoe-psd",
+ "ugoe-rigging",
+ "ugoe-runtime",
  "ureq",
 ]
 

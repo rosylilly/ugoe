@@ -2,7 +2,7 @@
 
 判断の経緯は [ADR 0010](../adr/0010-keyform-inference.md)。アルゴリズムはツール層のクレート `ugoe-rigging` (T0610) に置き、エディタのコマンド (T0611) から使う。
 
-> 実装待ち: AI による深度推定は T0505 で実装します。加算合成は `ugoe_rigging::infer_additive` (T0610)、ミラーは `ugoe_rigging::mirror_keyforms`、深度からの回転は `ugoe_rigging::infer_depth_rotation` (T0612)、エディタのコマンドは `ugoe_editor_core` (T0611)、画面での操作は T0613 ([editor.md#推定の画面での操作](../editor.md#推定の画面での操作)) にあります。データ (由来・推定の設定・ミラー・深度) は `ugoe-model` に定義済みです ([model.md#キーフォーム推定のデータ](model.md#キーフォーム推定のデータ))。
+> AI による深度推定と振り向きの提案は `ugoe_ai::turn` (T0505、[ai-integration.md](../ai-integration.md#深度推定による振り向きリグ)) にあります。加算合成は `ugoe_rigging::infer_additive` (T0610)、ミラーは `ugoe_rigging::mirror_keyforms`、深度からの回転は `ugoe_rigging::infer_depth_rotation` (T0612)、エディタのコマンドは `ugoe_editor_core` (T0611)、画面での操作は T0613 ([editor.md#推定の画面での操作](../editor.md#推定の画面での操作)) にあります。データ (由来・推定の設定・ミラー・深度) は `ugoe-model` に定義済みです ([model.md#キーフォーム推定のデータ](model.md#キーフォーム推定のデータ))。
 
 推定はツールで行い、結果はふつうのキーフォームとしてモデルに焼き込みます。**ランタイムの評価 ([evaluation.md](evaluation.md)) は推定を知りません。**
 

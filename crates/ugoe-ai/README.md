@@ -17,6 +17,9 @@ AI プロバイダの抽象 (`Provider`) と、自動リギングのパイプラ
 - `transport.rs`: HTTP の差し替え (`UreqTransport`・`ReplayTransport`・`RecordingTransport`・`Cassette`)
 - `classify.rs`: レイヤーの意味分類 (`Label`・`Side`・`LayerLabel`、名前の規則による `classify_by_name`、`Provider` による `classify_layers`)。`classify/rules.rs` が名前の規則、`classify/image.rs` が送る画像
 - `fake.rs`: テスト用の `FakeProvider`
+- `depth.rs`: 深度推定 (`DepthEstimator`・`DepthMap`・`HttpDepthEstimator`・`FixedDepthEstimator`)
+- `turn.rs`: 深度推定による振り向きリグの提案 (`propose_depth_turn`・`plan_turn`・`label_depth`・`mesh_labels`)
+- `examples/depth_turn.rs`: 録画した深度マップから提案を作り、適用したモデルを書き出す (`ugoe render` で目視確認する)
 
 ## 仕様
 
@@ -27,4 +30,5 @@ AI プロバイダの抽象 (`Provider`) と、自動リギングのパイプラ
 
 - T0503 (`docs/tasks/T0503-*.md`)
 - T0504 (`docs/tasks/T0504-*.md`)
+- T0505 (`docs/tasks/T0505-depth-turn-rig.md`)
 - T0509 (`docs/tasks/T0509-claude-provider.md`)

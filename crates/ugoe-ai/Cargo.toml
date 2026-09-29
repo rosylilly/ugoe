@@ -13,8 +13,12 @@ png.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+ugoe-core.workspace = true
 ugoe-editor-core.workspace = true
+ugoe-model.workspace = true
 ugoe-psd.workspace = true
+ugoe-rigging.workspace = true
+ugoe-runtime.workspace = true
 ureq.workspace = true
 
 [dev-dependencies]
