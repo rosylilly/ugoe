@@ -10,17 +10,17 @@ license.workspace = true
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
-png.workspace = true
-pollster.workspace = true
 serde_json.workspace = true
 ugoe.workspace = true
 ugoe-core.workspace = true
 ugoe-editor-core.workspace = true
 ugoe-format.workspace = true
+ugoe-headless = { workspace = true, features = ["clap"] }
 ugoe-model.workspace = true
-ugoe-render.workspace = true
 ugoe-runtime.workspace = true
-wgpu.workspace = true
+
+[dev-dependencies]
+png.workspace = true
 
 [lints]
 workspace = true

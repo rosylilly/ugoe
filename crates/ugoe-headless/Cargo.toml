@@ -1,0 +1,28 @@
+[package]
+name = "ugoe-headless"
+description = "ヘッドレス描画: GPU の用意・出力の大きさと fit・時間を進める処理・PNG の書き出し (ugoe render と MCP サーバで共有)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+clap = { workspace = true, optional = true }
+png.workspace = true
+pollster.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+ugoe.workspace = true
+ugoe-format.workspace = true
+ugoe-model.workspace = true
+ugoe-render.workspace = true
+ugoe-runtime.workspace = true
+wgpu.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# `Fit` に `clap::ValueEnum` を付ける (CLI の引数にそのまま使う)。
+clap = ["dep:clap"]

@@ -7,7 +7,7 @@
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{Child, ChildStdin, ChildStdout, Command, ExitStatus, Stdio};
 use std::sync::Arc;
 
 use serde_json::{Value, json};
@@ -50,21 +50,25 @@ fn save_fixture_project(dir: &Path) -> PathBuf {
 
 struct Client {
     child: Child,
-    stdin: ChildStdin,
+    /// [`Client::shutdown`] で閉じる。
+    stdin: Option<ChildStdin>,
     stdout: BufReader<ChildStdout>,
     next_id: u64,
 }
 
 impl Client {
     fn spawn(args: &[&str]) -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_ugoe-mcp"))
-            .args(args)
+        Self::spawn_with(Command::new(env!("CARGO_BIN_EXE_ugoe-mcp")).args(args))
+    }
+
+    fn spawn_with(command: &mut Command) -> Self {
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        let stdin = child.stdin.take().unwrap();
+        let stdin = child.stdin.take();
         let stdout = BufReader::new(child.stdout.take().unwrap());
         Self {
             child,
@@ -75,8 +79,9 @@ impl Client {
     }
 
     fn send(&mut self, message: &Value) {
-        writeln!(self.stdin, "{message}").unwrap();
-        self.stdin.flush().unwrap();
+        let stdin = self.stdin.as_mut().unwrap();
+        writeln!(stdin, "{message}").unwrap();
+        stdin.flush().unwrap();
     }
 
     fn recv(&mut self) -> Value {
@@ -133,6 +138,15 @@ impl Client {
         let result = self.call(name, arguments);
         assert_eq!(result["isError"], true, "{name}: {result}");
         result["content"][0]["text"].as_str().unwrap().to_owned()
+    }
+}
+
+impl Client {
+    /// 標準入力を閉じ (サーバは読み終えて終了する)、終了を待つ。
+    #[cfg_attr(not(feature = "gpu-tests"), allow(dead_code))]
+    fn shutdown(&mut self) -> ExitStatus {
+        drop(self.stdin.take());
+        self.child.wait().unwrap()
     }
 }
 
@@ -251,8 +265,9 @@ fn protocol_errors() {
     client.initialize();
     client.send(&json!("not an object"));
     assert_eq!(client.recv()["error"]["code"], -32600);
-    writeln!(client.stdin, "{{ broken").unwrap();
-    client.stdin.flush().unwrap();
+    let stdin = client.stdin.as_mut().unwrap();
+    writeln!(stdin, "{{ broken").unwrap();
+    stdin.flush().unwrap();
     let parse = client.recv();
     assert_eq!(parse["error"]["code"], -32700);
     assert_eq!(parse["id"], Value::Null);
@@ -460,14 +475,77 @@ fn read_only_hides_edit_tools() {
 }
 
 #[test]
-fn render_reports_a_missing_cli() {
+fn render_reports_bad_arguments_before_touching_the_gpu() {
     let tmp = TempDir::new("render");
     let project = save_fixture_project(&tmp.0);
     let path = project.to_str().unwrap();
-    let missing = tmp.0.join("no-such-ugoe");
-    let mut client = Client::spawn(&["--ugoe-bin", missing.to_str().unwrap()]);
+    let mut client = Client::spawn(&[]);
     client.initialize();
-    let err = client.call_err("render_png", json!({ "path": path }));
-    assert!(err.contains("no-such-ugoe"), "{err}");
-    assert!(err.contains("--ugoe-bin"), "{err}");
+    let err = client.call_err(
+        "render_png",
+        json!({ "path": path, "params": { "Nope": 1 } }),
+    );
+    assert!(err.contains("unknown parameter `Nope` (known: X)"), "{err}");
+    let err = client.call_err("render_png", json!({ "path": path, "background": "#fff" }));
+    assert!(err.contains("invalid background"), "{err}");
+}
+
+/// `render_png` が `ugoe` (ugoe-cli) の実行ファイルなしで描けること。GPU (または lavapipe などの
+/// ソフトウェアラスタライザ) が要る。`cargo test -p ugoe-mcp --features gpu-tests` で実行する。
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn renders_png_without_the_cli() {
+    use base64::Engine;
+
+    let tmp = TempDir::new("render-gpu");
+    let project = save_fixture_project(&tmp.0);
+    let path = project.to_str().unwrap();
+    // PATH を空にして、子プロセスの `ugoe` を探せないようにする。
+    let mut client = Client::spawn_with(
+        Command::new(env!("CARGO_BIN_EXE_ugoe-mcp"))
+            .env("PATH", "")
+            .env_remove("UGOE_BIN"),
+    );
+    client.initialize();
+    let mut render = |x: f32| {
+        let result = client.call(
+            "render_png",
+            json!({ "path": path, "params": { "X": x }, "width": 64, "background": "black" }),
+        );
+        assert_eq!(result["isError"], false, "{result}");
+        let log = result["structuredContent"]["log"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let image = &result["content"][1];
+        assert_eq!(image["mimeType"], "image/png", "{result}");
+        let png = base64::engine::general_purpose::STANDARD
+            .decode(image["data"].as_str().unwrap())
+            .unwrap();
+        (
+            ugoe_headless::image::decode_png_premultiplied(&png).unwrap(),
+            log,
+        )
+    };
+    // 2 回目は同じ GPU を使い回す。
+    let (left, log) = render(0.0);
+    let (right, _) = render(1.0);
+    println!("render_png: {log}");
+    assert!(log.contains("rendered 64x64"), "{log}");
+    assert_eq!((left.width, left.height), (64, 64));
+    let white = |image: &ugoe_headless::Rgba8| {
+        image
+            .pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|p| p[0] > 200 && p[3] == 255)
+            .count()
+    };
+    assert!(white(&left) > 0 && white(&left) < 64 * 64);
+    assert_ne!(left.pixels, right.pixels, "X should move the quad");
+
+    // 終了時に GPU を破棄しないので、ドライバが終了時に落ちない (WSL2 の dzn)。
+    let status = client.shutdown();
+    assert!(status.success(), "{status}");
 }

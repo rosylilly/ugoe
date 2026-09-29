@@ -22,6 +22,7 @@ const SCOPES = [
   "cli",
   "rigging",
   "mcp",
+  "headless",
   // apps/
   "editor",
   "viewer",

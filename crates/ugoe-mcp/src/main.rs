@@ -1,7 +1,6 @@
 //! `ugoe-mcp`: stdio で動く MCP サーバ。使い方は `crates/ugoe-mcp/README.md`。
 
 use std::io::{BufRead, Write};
-use std::path::PathBuf;
 
 use anyhow::Context;
 use clap::Parser;
@@ -14,16 +13,16 @@ struct Cli {
     /// 読むだけにする (適用・Undo・Redo・保存のツールを出さない)
     #[arg(long)]
     read_only: bool,
-    /// 描画に使う `ugoe` (ugoe-cli) の実行ファイル。省略時は UGOE_BIN、このサーバの隣、PATH の順に探す
-    #[arg(long, value_name = "PATH")]
-    ugoe_bin: Option<PathBuf>,
+    /// 描画に使う wgpu のバックエンド (vulkan / metal / dx12 / gl。カンマ区切りで複数)。省略時は WGPU_BACKEND、それも無ければ wgpu の既定
+    #[arg(long)]
+    backend: Option<String>,
 }
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let mut server = Server::new(Options {
         read_only: cli.read_only,
-        ugoe_bin: cli.ugoe_bin,
+        backend: cli.backend,
     });
     let stdin = std::io::stdin().lock();
     let mut stdout = std::io::stdout().lock();

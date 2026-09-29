@@ -20,7 +20,9 @@ const RUNTIME_TIER = union(EVAL, [
 ]);
 const ASSETS = new Set(["ugoe-psd", "ugoe-mesher"]);
 const RIGGING = new Set(["ugoe-rigging"]);
-const TOOL_BASE = union(RUNTIME_TIER, ASSETS, RIGGING, ["ugoe-editor-core"]);
+// ヘッドレス描画 (ugoe render と MCP サーバの render_png が共有する)
+const HEADLESS = new Set(["ugoe-headless"]);
+const TOOL_BASE = union(RUNTIME_TIER, ASSETS, RIGGING, HEADLESS, ["ugoe-editor-core"]);
 
 // クレート -> 依存してよい内部クレート
 const ALLOWED = {
@@ -41,6 +43,7 @@ const ALLOWED = {
   "ugoe-psd": CORE,
   "ugoe-mesher": CORE,
   "ugoe-rigging": union(EVAL, ["ugoe-mesher"]),
+  "ugoe-headless": RUNTIME_TIER,
   "ugoe-editor-core": union(RUNTIME_TIER, ASSETS, RIGGING),
   "ugoe-ai": TOOL_BASE,
   "ugoe-cli": union(TOOL_BASE, ["ugoe-ai"]),

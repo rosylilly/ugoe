@@ -28,6 +28,7 @@ ugoe standard-params                     # 標準パラメータ・拡張パラ�
 ### `ugoe render`
 
 ヘッドレスの wgpu で描画して PNG を書き出す。AI エージェントが見た目を確かめる手段でもある。
+描画の中身は [`ugoe-headless`](../ugoe-headless/README.md) にあり、MCP サーバの `render_png` (`ugoe-mcp`) も同じ関数を呼ぶ。
 
 ```sh
 ugoe render fixture:single_quad -o out.png
@@ -66,7 +67,7 @@ ugoe render model.ugoe -o shake.png --motion Shake --time 0.25   # モーショ�
 - **ビュー:** キャンバス座標 (Y 下向き) を出力画像の上を上として写す。
 - **パラメータ:** `--time`・`--motion`・`--expression` のどれも無ければ、物理・モーション・ポーズのフェードは適用しない。
   指定した値 (と既定値) で 1 回 `update` した状態を描く。
-- **時間を進める (`src/animate.rs`):** `--time`・`--motion`・`--expression` のどれかがあれば、`--param` の値を基準値にして
+- **時間を進める (`ugoe_headless::animate`):** `--time`・`--motion`・`--expression` のどれかがあれば、`--param` の値を基準値にして
   `Puppet::update(1 / fps)` を `floor(time * fps)` 回、余りがあればもう 1 回その長さで呼んでから描く (`--time` を省略すると 0 秒で、
   `update(0)` を 1 回)。モーションは優先度 `Force` で 0 秒から再生する。適用順は `docs/spec/motion.md#フレーム内の適用順`。
   固定の刻みで進めるので、同じ引数からは常に同じ絵になる。標準出力に `advanced 0.25s in 15 update(s)` も書く。
@@ -74,7 +75,7 @@ ugoe render model.ugoe -o shake.png --motion Shake --time 0.25   # モーショ�
 - **GPU:** サーフェス無しでアダプタを要求する。見つからなければエラー。GPU の無い環境では Mesa の lavapipe (Vulkan) か llvmpipe (GL) を使う。
   `WGPU_POWER_PREF` も参照する。
 - **WSL2 の注意:** dzn (Vulkan on D3D12) ドライバは wgpu のインスタンスやデバイスの破棄時に SIGSEGV を起こすことがあるので、
-  CLI はこれらを破棄せずにプロセスを終える (`render::Gpu::leak`)。
+  CLI はこれらを破棄せずにプロセスを終える (`ugoe_headless::Gpu::leak`)。
 
 ### `ugoe import-psd`
 

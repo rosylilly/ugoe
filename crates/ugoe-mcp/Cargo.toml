@@ -15,10 +15,16 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 ugoe-editor-core.workspace = true
+ugoe-format.workspace = true
+ugoe-headless.workspace = true
 ugoe-model.workspace = true
 
 [lints]
 workspace = true
+
+[features]
+# 実 GPU (またはソフトウェアラスタライザ) で render_png を確かめるテストを有効にする。
+gpu-tests = []
 
 [[bin]]
 name = "ugoe-mcp"

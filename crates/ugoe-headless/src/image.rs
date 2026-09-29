@@ -4,7 +4,7 @@
 
 use std::io::Cursor;
 
-use anyhow::{Context, bail};
+use crate::{Error, bail};
 
 /// RGBA8 の画像。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,15 +17,19 @@ pub struct Rgba8 {
 /// PNG をデコードして、乗算済みアルファの RGBA8 にする。
 ///
 /// グレースケール・パレット・16bit は 8bit RGBA に展開する。
-pub fn decode_png_premultiplied(bytes: &[u8]) -> anyhow::Result<Rgba8> {
+pub fn decode_png_premultiplied(bytes: &[u8]) -> Result<Rgba8, Error> {
     let mut decoder = png::Decoder::new(Cursor::new(bytes));
     decoder.set_transformations(png::Transformations::normalize_to_color8());
-    let mut reader = decoder.read_info().context("reading PNG header")?;
-    let size = reader
-        .output_buffer_size()
-        .context("PNG image is too large")?;
+    let mut reader = decoder
+        .read_info()
+        .map_err(png_decode("reading PNG header"))?;
+    let Some(size) = reader.output_buffer_size() else {
+        bail!("PNG image is too large");
+    };
     let mut buf = vec![0; size];
-    let info = reader.next_frame(&mut buf).context("decoding PNG")?;
+    let info = reader
+        .next_frame(&mut buf)
+        .map_err(png_decode("decoding PNG"))?;
     buf.truncate(info.buffer_size());
     let pixel_count = info.width as usize * info.height as usize;
     let mut pixels = Vec::with_capacity(pixel_count * 4);
@@ -57,21 +61,24 @@ pub fn decode_png_premultiplied(bytes: &[u8]) -> anyhow::Result<Rgba8> {
 }
 
 /// 乗算済みアルファの RGBA8 を、ストレートアルファの PNG にエンコードする。
-pub fn encode_png_unpremultiplied(image: &Rgba8) -> anyhow::Result<Vec<u8>> {
+pub fn encode_png_unpremultiplied(image: &Rgba8) -> Result<Vec<u8>, Error> {
     let mut pixels = image.pixels.clone();
     unpremultiply(&mut pixels);
     let mut out = Vec::new();
     let mut encoder = png::Encoder::new(&mut out, image.width, image.height);
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
-    let mut writer = encoder.write_header().context("writing PNG header")?;
+    let mut writer = encoder
+        .write_header()
+        .map_err(png_encode("writing PNG header"))?;
     writer
         .write_image_data(&pixels)
-        .context("writing PNG data")?;
-    writer.finish().context("finishing PNG")?;
+        .map_err(png_encode("writing PNG data"))?;
+    writer.finish().map_err(png_encode("finishing PNG"))?;
     Ok(out)
 }
 
+/// ストレートアルファを乗算済みにする。
 pub fn premultiply(rgba: &mut [u8]) {
     for p in rgba.as_chunks_mut::<4>().0 {
         let a = u32::from(p[3]);
@@ -91,6 +98,14 @@ pub fn unpremultiply(rgba: &mut [u8]) {
                 .map_or(0, |v| v.min(255) as u8);
         }
     }
+}
+
+fn png_decode(context: &'static str) -> impl FnOnce(png::DecodingError) -> Error {
+    move |source| Error::PngDecode { context, source }
+}
+
+fn png_encode(context: &'static str) -> impl FnOnce(png::EncodingError) -> Error {
+    move |source| Error::PngEncode { context, source }
 }
 
 #[cfg(test)]

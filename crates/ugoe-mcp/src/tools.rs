@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use ugoe_editor_core::{Command, Document, Project, ProjectMeta, export_bundle};
 
 use crate::diff;
-use crate::render::{RenderRequest, find_ugoe_bin, render};
+use crate::render::{RenderRequest, Renderer};
 use crate::schema::{CommandSchema, object_schema};
 use crate::summary::{ELEMENT_KINDS, element, model_summary};
 
@@ -23,8 +23,9 @@ use crate::summary::{ELEMENT_KINDS, element, model_summary};
 pub struct Options {
     /// 読むだけにする: 適用・Undo・Redo・保存のツールを出さない。
     pub read_only: bool,
-    /// `ugoe` (ugoe-cli) の実行ファイル。`None` なら探す ([`find_ugoe_bin`])。
-    pub ugoe_bin: Option<PathBuf>,
+    /// 描画に使う wgpu のバックエンド (`vulkan`・`gl` など。カンマ区切り)。`None` なら
+    /// 環境変数 `WGPU_BACKEND`、それも無ければ wgpu の既定。
+    pub backend: Option<String>,
 }
 
 /// ツールの集まりと、開いているプロジェクト。
@@ -34,6 +35,8 @@ pub struct Tools {
     schema: CommandSchema,
     /// 絶対パス → 開いているプロジェクト。
     projects: BTreeMap<PathBuf, OpenProject>,
+    /// `render_png` の GPU (最初の描画で用意して使い回す)。
+    renderer: Renderer,
 }
 
 /// 開いているプロジェクト。
@@ -145,6 +148,7 @@ fn path_property() -> Value {
 impl Tools {
     pub fn new(options: Options) -> Self {
         Self {
+            renderer: Renderer::new(options.backend.clone()),
             options,
             schema: CommandSchema::generate(),
             projects: BTreeMap::new(),
@@ -249,7 +253,7 @@ impl Tools {
                 "Render PNG",
                 Kind::Read,
                 "今のモデル (未保存の変更を含む) を指定したパラメータの値で描いた PNG を返す。\
-                 `ugoe render` と同じ描画。params に無いパラメータは既定値。",
+                 `ugoe render` と同じ描画 (同じライブラリを呼ぶ)。params に無いパラメータは既定値。",
                 object_schema(
                     json!({
                         "path": path_property(),
@@ -529,8 +533,8 @@ impl Tools {
     }
 
     fn render_png(&mut self, args: RenderArgs) -> ToolResult {
-        let bin = find_ugoe_bin(self.options.ugoe_bin.as_deref());
         let (_, open) = self.project(&args.path)?;
+        let project = open.project();
         let request = RenderRequest {
             params: args.params.into_iter().collect(),
             width: args.width,
@@ -539,9 +543,11 @@ impl Tools {
             motion: args.motion,
             expression: args.expression,
             time: args.time,
-            output: None,
         };
-        let rendered = render(&bin, &open.project(), &request).map_err(|e| e.to_string())?;
+        let rendered = self
+            .renderer
+            .render(&project, &request)
+            .map_err(|e| e.to_string())?;
         Ok(Output {
             value: json!({ "log": rendered.log, "bytes": rendered.png.len() }),
             images: vec![rendered.png],

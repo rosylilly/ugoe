@@ -1,4 +1,6 @@
-//! `ugoe render --time/--motion/--expression`: ランタイム SDK の `Puppet` で時間を進めてから描く。
+//! パラメータの書き込みと、`ugoe render --time/--motion/--expression` の時間を進める処理。
+//!
+//! ランタイム SDK の `Puppet` で時間を進めてから描く。
 //!
 //! 物理・モーション・表情・目パチ・呼吸・ポーズを `Puppet::update` と同じ順
 //! (`docs/spec/motion.md#フレーム内の適用順`) で固定の刻みで進めるので、同じ引数からは常に同じ絵になる。
@@ -6,13 +8,15 @@
 
 use std::path::Path;
 
-use anyhow::{Context, bail};
 use ugoe::motion::Priority;
 use ugoe::{Puppet, Toggles};
 use ugoe_model::Model;
 use ugoe_model::expression::Expression;
 use ugoe_model::motion::Motion;
 use ugoe_model::physics::PhysicsSettings;
+use ugoe_runtime::ModelInstance;
+
+use crate::{Error, bail};
 
 /// バンドルに入っている物理・モーション・表情 (JSON とフィクスチャでは空)。
 #[derive(Debug, Default)]
@@ -36,47 +40,23 @@ pub struct Playback {
     pub effects: bool,
 }
 
-/// `--time` を読む (0 以上の有限の秒数)。
-pub fn parse_time(s: &str) -> Result<f32, String> {
-    let t: f32 = s
-        .trim()
-        .parse()
-        .map_err(|_| format!("invalid number `{s}`"))?;
-    if !t.is_finite() || t < 0.0 {
-        return Err(format!("time must be a finite number >= 0, got `{s}`"));
-    }
-    Ok(t)
-}
-
-/// `--fps` を読む (0 より大きい有限の値)。
-pub fn parse_fps(s: &str) -> Result<f32, String> {
-    let fps: f32 = s
-        .trim()
-        .parse()
-        .map_err(|_| format!("invalid number `{s}`"))?;
-    if !fps.is_finite() || fps <= 0.0 {
-        return Err(format!("fps must be a finite number > 0, got `{s}`"));
-    }
-    Ok(fps)
-}
-
 /// ファイルのパスとして読むか (`.json` で終わるか、ファイルが存在する)。
 fn is_path(arg: &str) -> bool {
     arg.ends_with(".json") || Path::new(arg).is_file()
 }
 
-fn read(path: &str) -> anyhow::Result<String> {
-    std::fs::read_to_string(path).with_context(|| format!("reading {path}"))
+fn read(path: &str) -> Result<String, Error> {
+    std::fs::read_to_string(path).map_err(Error::io(format!("reading {path}")))
 }
 
 /// `--motion`: バンドルのモーションの名前か、`.motion.json` のパス。
-pub fn resolve_motion(arg: &str, motions: &[Motion]) -> anyhow::Result<Motion> {
+pub fn resolve_motion(arg: &str, motions: &[Motion]) -> Result<Motion, Error> {
     if let Some(m) = motions.iter().find(|m| m.name == arg) {
         return Ok(m.clone());
     }
     if is_path(arg) {
         return ugoe_format::motion_from_json(&read(arg)?)
-            .with_context(|| format!("parsing motion {arg}"));
+            .map_err(Error::format(format!("parsing motion {arg}")));
     }
     bail!(
         "no motion named `{arg}` (known: {})",
@@ -85,13 +65,13 @@ pub fn resolve_motion(arg: &str, motions: &[Motion]) -> anyhow::Result<Motion> {
 }
 
 /// `--expression`: バンドルの表情の名前か、`.expression.json` のパス。
-pub fn resolve_expression(arg: &str, expressions: &[Expression]) -> anyhow::Result<Expression> {
+pub fn resolve_expression(arg: &str, expressions: &[Expression]) -> Result<Expression, Error> {
     if let Some(e) = expressions.iter().find(|e| e.name == arg) {
         return Ok(e.clone());
     }
     if is_path(arg) {
         return ugoe_format::expression_from_json(&read(arg)?)
-            .with_context(|| format!("parsing expression {arg}"));
+            .map_err(Error::format(format!("parsing expression {arg}")));
     }
     bail!(
         "no expression named `{arg}` (known: {})",
@@ -100,10 +80,11 @@ pub fn resolve_expression(arg: &str, expressions: &[Expression]) -> anyhow::Resu
 }
 
 /// `--physics`: 物理の設定の JSON のパス。
-pub fn read_physics(path: &Path) -> anyhow::Result<PhysicsSettings> {
+pub fn read_physics(path: &Path) -> Result<PhysicsSettings, Error> {
     let json =
-        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    ugoe_format::physics_from_json(&json).with_context(|| format!("parsing {}", path.display()))
+        std::fs::read_to_string(path).map_err(Error::io(format!("reading {}", path.display())))?;
+    ugoe_format::physics_from_json(&json)
+        .map_err(Error::format(format!("parsing {}", path.display())))
 }
 
 fn names<'a>(names: impl Iterator<Item = &'a str>) -> String {
@@ -115,12 +96,51 @@ fn names<'a>(names: impl Iterator<Item = &'a str>) -> String {
     }
 }
 
+/// パラメータの値をインスタンスに設定し、`update` する。
+///
+/// 値は値域にクランプされる (`ParameterValues::set`)。クランプされたものは警告文を返す。
+pub fn apply_params(
+    instance: &mut ModelInstance,
+    params: &[(String, f32)],
+) -> Result<Vec<String>, Error> {
+    let mut warnings = Vec::new();
+    for (id, value) in params {
+        let parameters = instance.parameters_mut();
+        let Some(index) = parameters.index_of(id) else {
+            let known: Vec<&str> = instance
+                .compiled()
+                .model()
+                .parameters
+                .iter()
+                .map(|p| p.id.as_str())
+                .collect();
+            let known = if known.is_empty() {
+                "none".to_owned()
+            } else {
+                known.join(", ")
+            };
+            bail!("unknown parameter `{id}` (known: {known})");
+        };
+        parameters.set(index, *value);
+        let actual = parameters.get(index);
+        if actual != *value {
+            let p = &instance.compiled().model().parameters[index.0 as usize];
+            warnings.push(format!(
+                "parameter {id}={value} clamped to {actual} (range {}..{})",
+                p.min, p.max
+            ));
+        }
+    }
+    instance.update();
+    Ok(warnings)
+}
+
 /// `Puppet` を作り、`params` を書き込んで評価する (時間は進めない)。値域でクランプしたパラメータの警告文も返す。
 ///
 /// 書き込んだ値は、この後の [`advance`] で基準値になる (モーションの対象は上書きされる)。
-pub fn puppet(model: Model, params: &[(String, f32)]) -> anyhow::Result<(Puppet, Vec<String>)> {
-    let mut puppet = Puppet::new(model).context("compiling model")?;
-    let warnings = crate::render::apply_params(puppet.instance_mut(), params)?;
+pub fn puppet(model: Model, params: &[(String, f32)]) -> Result<(Puppet, Vec<String>), Error> {
+    let mut puppet = Puppet::new(model).map_err(Error::Compile)?;
+    let warnings = apply_params(puppet.instance_mut(), params)?;
     Ok((puppet, warnings))
 }
 
@@ -128,11 +148,11 @@ pub fn puppet(model: Model, params: &[(String, f32)]) -> anyhow::Result<(Puppet,
 ///
 /// `1 / fps` 秒の `update` を `floor(time * fps)` 回行い、余りがあればもう 1 回その長さで行う。
 /// `time` が 0 なら `update(0)` を 1 回行う (物理は静止姿勢、モーションは 0 秒の値)。
-pub fn advance(puppet: &mut Puppet, playback: Playback) -> anyhow::Result<u32> {
+pub fn advance(puppet: &mut Puppet, playback: Playback) -> Result<u32, Error> {
     if let Some(physics) = playback.physics {
         puppet.set_physics(Some(physics)).map_err(|errors| {
             let errors: Vec<String> = errors.iter().map(ToString::to_string).collect();
-            anyhow::anyhow!("invalid physics settings: {}", errors.join("; "))
+            Error::Invalid(format!("invalid physics settings: {}", errors.join("; ")))
         })?;
     }
     puppet.set_toggles(Toggles {
@@ -184,7 +204,7 @@ mod tests {
         model: Model,
         params: &[(String, f32)],
         playback: Playback,
-    ) -> anyhow::Result<(Puppet, Vec<String>, u32)> {
+    ) -> Result<(Puppet, Vec<String>, u32), Error> {
         let (mut puppet, warnings) = puppet(model, params)?;
         let updates = advance(&mut puppet, playback)?;
         Ok((puppet, warnings, updates))
@@ -295,12 +315,33 @@ mod tests {
         assert!(err.contains("known: none"), "{err}");
     }
 
+    fn single_quad_instance() -> ModelInstance {
+        let compiled = ugoe_runtime::CompiledModel::compile(fixtures::single_quad()).unwrap();
+        ModelInstance::new(compiled)
+    }
+
     #[test]
-    fn parses_time_and_fps() {
-        assert_eq!(parse_time("1.5"), Ok(1.5));
-        assert!(parse_time("-1").is_err());
-        assert!(parse_time("inf").is_err());
-        assert_eq!(parse_fps("30"), Ok(30.0));
-        assert!(parse_fps("0").is_err());
+    fn applies_and_clamps_params() {
+        let mut instance = single_quad_instance();
+        let warnings = apply_params(&mut instance, &[("X".into(), 0.5)]).unwrap();
+        assert!(warnings.is_empty());
+        assert_eq!(instance.parameters().as_slice(), &[0.5]);
+        // 四角形は 32px 右へ動く。
+        assert_eq!(instance.drawables()[0].positions[0].x, 96.0);
+
+        let warnings = apply_params(&mut instance, &[("X".into(), 5.0)]).unwrap();
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("clamped to 1"), "{}", warnings[0]);
+        assert_eq!(instance.parameters().as_slice(), &[1.0]);
+    }
+
+    #[test]
+    fn unknown_param_lists_known_ids() {
+        let mut instance = single_quad_instance();
+        let err = apply_params(&mut instance, &[("Nope".into(), 0.0)])
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("unknown parameter `Nope`"), "{err}");
+        assert!(err.contains("known: X"), "{err}");
     }
 }

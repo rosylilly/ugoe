@@ -1,10 +1,7 @@
 //! `ugoe` コマンド。人間と AI エージェントの双方が、GUI 無しでモデルを検査・変換・確認するための道具。
 
-mod animate;
 mod fixtures;
-mod image;
 mod physics;
-mod render;
 mod sample;
 
 use std::path::{Path, PathBuf};
@@ -13,10 +10,8 @@ use anyhow::{Context, bail};
 use clap::{Args, Parser, Subcommand};
 use ugoe_editor_core::AtlasOptions;
 use ugoe_format::{TextureData, TextureFormat};
+use ugoe_headless::{Fit, RenderOptions, Scene, animate, args};
 use ugoe_model::Model;
-
-use crate::image::Rgba8;
-use crate::render::Fit;
 
 /// `INPUT` の書き方 (validate / info / render で共通)。
 const INPUT_HELP: &str =
@@ -146,17 +141,17 @@ struct RenderArgs {
     #[arg(short, long)]
     output: PathBuf,
     /// パラメータの値 (複数指定可)。値域の外はクランプされる。
-    #[arg(long = "param", value_name = "ID=VALUE", value_parser = render::parse_param)]
+    #[arg(long = "param", value_name = "ID=VALUE", value_parser = args::parse_param)]
     params: Vec<(String, f32)>,
     /// 出力の大きさ。
-    #[arg(long, value_name = "WxH", value_parser = render::parse_size,
+    #[arg(long, value_name = "WxH", value_parser = args::parse_size,
           conflicts_with_all = ["width", "height", "scale"])]
     size: Option<(u32, u32)>,
     /// 出力の幅。`--height` が無ければ高さはキャンバスの縦横比から決める。
-    #[arg(long, value_parser = render::parse_dimension, conflicts_with = "scale")]
+    #[arg(long, value_parser = args::parse_dimension, conflicts_with = "scale")]
     width: Option<u32>,
     /// 出力の高さ。`--width` が無ければ幅はキャンバスの縦横比から決める。
-    #[arg(long, value_parser = render::parse_dimension, conflicts_with = "scale")]
+    #[arg(long, value_parser = args::parse_dimension, conflicts_with = "scale")]
     height: Option<u32>,
     /// 大きさを指定しないときの、キャンバスに対する倍率。
     #[arg(long, default_value_t = 1.0)]
@@ -166,14 +161,14 @@ struct RenderArgs {
     fit: Fit,
     /// 背景色。`transparent` (既定)、`white`、`black`、`#RRGGBB`、`#RRGGBBAA`。
     #[arg(long, value_name = "COLOR", default_value = "transparent",
-          value_parser = render::parse_color)]
+          value_parser = args::parse_color)]
     background: [u8; 4],
     /// テクスチャを PNG ファイルで差し替える (複数指定可)。
-    #[arg(long = "texture", value_name = "INDEX=PATH", value_parser = render::parse_texture)]
+    #[arg(long = "texture", value_name = "INDEX=PATH", value_parser = args::parse_texture)]
     textures: Vec<(u32, PathBuf)>,
     /// この秒数だけ `ugoe::Puppet` で時間を進めてから描く (物理・モーション・表情・目パチ・呼吸・ポーズ)。
     /// `--motion` / `--expression` だけを指定すると 0 秒。どれも無ければ時間を進めずにパラメータだけで描く。
-    #[arg(long, value_name = "SECONDS", value_parser = animate::parse_time)]
+    #[arg(long, value_name = "SECONDS", value_parser = args::parse_time)]
     time: Option<f32>,
     /// 再生するモーション: バンドルのモーションの名前か、`.motion.json` のパス。
     #[arg(long, value_name = "NAME|PATH")]
@@ -191,7 +186,7 @@ struct RenderArgs {
     #[arg(long)]
     no_effects: bool,
     /// 時間を進めるときの 1 秒あたりの `update` の回数。
-    #[arg(long, default_value = "60", value_parser = animate::parse_fps)]
+    #[arg(long, default_value = "60", value_parser = args::parse_fps)]
     fps: f32,
     /// wgpu のバックエンド (vulkan / metal / dx12 / gl。カンマ区切りで複数)。
     /// 省略時は環境変数 `WGPU_BACKEND`、それも無ければ wgpu の既定。
@@ -587,111 +582,58 @@ fn run_render(args: RenderArgs) -> anyhow::Result<()> {
         textures,
         animation,
     } = load_input(&args.input)?;
-    let canvas = (model.meta.canvas.width, model.meta.canvas.height);
-    let size = render::output_size(canvas, args.size, args.width, args.height, args.scale)?;
-    let view = render::fit_view(canvas, size, args.fit);
-    let mut warnings = Vec::new();
-    let textures = resolve_textures(&model, &textures, &args.textures, &mut warnings)?;
-    let (mut puppet, w) = animate::puppet(model, &args.params)?;
-    warnings.extend(w);
-    if args.time.is_some() || args.motion.is_some() || args.expression.is_some() {
-        let physics = match (&args.physics, args.no_physics) {
-            (Some(path), _) => Some(animate::read_physics(path)?),
-            (None, false) => animation.physics,
-            (None, true) => None,
-        };
-        let playback = animate::Playback {
-            time: args.time.unwrap_or(0.0),
-            fps: args.fps,
-            motion: args
-                .motion
-                .as_deref()
-                .map(|m| animate::resolve_motion(m, &animation.motions))
-                .transpose()?,
-            expression: args
-                .expression
-                .as_deref()
-                .map(|e| animate::resolve_expression(e, &animation.expressions))
-                .transpose()?,
-            physics,
-            effects: !args.no_effects,
-        };
-        let time = playback.time;
-        let updates = animate::advance(&mut puppet, playback)?;
-        println!("advanced {time}s in {updates} update(s)");
-    } else if args.physics.is_some() || args.no_physics || args.no_effects {
-        warnings.push(
-            "--physics, --no-physics and --no-effects only apply with --time, --motion \
-             or --expression"
-                .to_owned(),
+    let options = RenderOptions {
+        params: args.params,
+        size: args.size,
+        width: args.width,
+        height: args.height,
+        scale: args.scale,
+        fit: args.fit,
+        background: args.background,
+        texture_overrides: args.textures,
+        time: args.time,
+        motion: args.motion,
+        expression: args.expression,
+        physics: args.physics,
+        no_physics: args.no_physics,
+        no_effects: args.no_effects,
+        fps: args.fps,
+    };
+    let scene = Scene {
+        model,
+        textures,
+        animation,
+    };
+    let prepared = ugoe_headless::prepare(scene, &options)?;
+    if let Some(advanced) = prepared.advanced {
+        println!(
+            "advanced {}s in {} update(s)",
+            advanced.time, advanced.updates
         );
     }
-    for w in &warnings {
+    for w in &prepared.warnings {
         eprintln!("warning: {w}");
     }
 
-    let gpu = render::Gpu::new(args.backend.as_deref())?;
-    let result = gpu.render(puppet.instance(), &textures, size, &view, args.background);
-    let adapter = format!("{} ({:?})", gpu.adapter_info.name, gpu.adapter_info.backend);
+    let gpu = ugoe_headless::Gpu::new(args.backend.as_deref())?;
+    let result = prepared.render(&gpu);
+    let adapter = gpu.adapter_description();
     gpu.leak();
     let (image, stats) = result?;
 
-    let png = image::encode_png_unpremultiplied(&image)?;
+    let png = ugoe_headless::image::encode_png_unpremultiplied(&image)?;
     std::fs::write(&args.output, png)
         .with_context(|| format!("writing {}", args.output.display()))?;
     println!(
         "wrote {} ({}x{}, adapter: {adapter})",
         args.output.display(),
-        size.0,
-        size.1
+        prepared.size.0,
+        prepared.size.1
     );
     if args.stats {
-        println!("stats: {}", render::stats_json(&stats));
+        println!("stats: {}", ugoe_headless::stats_json(&stats));
     }
     Ok(())
-}
-
-/// 描画に使うテクスチャ (乗算済み RGBA8) を番号順に揃える。
-///
-/// 優先順: `--texture` の指定 → バンドルの PNG → 不透明な白 1x1 (JSON・フィクスチャ用)。
-fn resolve_textures(
-    model: &Model,
-    bundle: &[TextureData],
-    overrides: &[(u32, PathBuf)],
-    warnings: &mut Vec<String>,
-) -> anyhow::Result<Vec<Rgba8>> {
-    let count = render::texture_count(model);
-    if let Some((index, _)) = overrides.iter().find(|(i, _)| *i as usize >= count) {
-        bail!("--texture {index}: the model has only {count} texture(s)");
-    }
-    (0..count)
-        .map(|i| {
-            if let Some((_, path)) = overrides.iter().rev().find(|(j, _)| *j as usize == i) {
-                let bytes =
-                    std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-                return image::decode_png_premultiplied(&bytes)
-                    .with_context(|| format!("decoding texture {i} from {}", path.display()));
-            }
-            match bundle.get(i) {
-                Some(data) => match data.format {
-                    TextureFormat::Png => image::decode_png_premultiplied(&data.bytes)
-                        .with_context(|| format!("decoding bundle texture {i}")),
-                    TextureFormat::Ktx2 => bail!(
-                        "bundle texture {i} is KTX2, which `ugoe render` cannot decode yet; \
-                         pass --texture {i}=<file.png> instead"
-                    ),
-                },
-                None => {
-                    if !bundle.is_empty() {
-                        warnings.push(format!(
-                            "bundle has no data for texture {i}; using an opaque white placeholder"
-                        ));
-                    }
-                    Ok(render::placeholder_texture())
-                }
-            }
-        })
-        .collect()
 }
 
 #[cfg(test)]
@@ -783,48 +725,5 @@ mod tests {
         assert_eq!(v["parameters"][0]["id"], "X");
         assert_eq!(v["canvas"]["width"], 256.0);
         assert_eq!(v["meshes"], 1);
-    }
-
-    #[test]
-    fn resolves_placeholder_and_rejects_out_of_range_overrides() {
-        let model = ugoe_model::fixtures::single_quad();
-        let mut warnings = Vec::new();
-        let textures = resolve_textures(&model, &[], &[], &mut warnings).unwrap();
-        assert_eq!(textures, vec![render::placeholder_texture()]);
-        assert!(warnings.is_empty());
-
-        let err = resolve_textures(&model, &[], &[(1, "a.png".into())], &mut warnings)
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("only 1 texture"), "{err}");
-    }
-
-    #[test]
-    fn rejects_ktx2_bundle_textures() {
-        let model = ugoe_model::fixtures::single_quad();
-        let ktx2 = TextureData {
-            format: TextureFormat::Ktx2,
-            bytes: Vec::new(),
-        };
-        let err = resolve_textures(&model, &[ktx2], &[], &mut Vec::new())
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("KTX2"), "{err}");
-    }
-
-    #[test]
-    fn decodes_bundle_png_textures() {
-        let model = ugoe_model::fixtures::single_quad();
-        let red = Rgba8 {
-            width: 1,
-            height: 1,
-            pixels: vec![255, 0, 0, 255],
-        };
-        let png = TextureData {
-            format: TextureFormat::Png,
-            bytes: image::encode_png_unpremultiplied(&red).unwrap(),
-        };
-        let textures = resolve_textures(&model, &[png], &[], &mut Vec::new()).unwrap();
-        assert_eq!(textures, vec![red]);
     }
 }

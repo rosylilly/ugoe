@@ -42,6 +42,7 @@
 | L5 バインディング | `ugoe-ffi`, `ugoe-wasm` | L0〜L4 |
 | T1 素材処理 | `ugoe-psd`, `ugoe-mesher` | core |
 | T1 リギング | `ugoe-rigging` | core, model, runtime, mesher |
+| T1 ヘッドレス描画 | `ugoe-headless` | ランタイム層 (`ugoe render` と `ugoe-mcp` の `render_png` が共有する) |
 | T2 エディタ中核 | `ugoe-editor-core` | ランタイム層, T1 (`ugoe-rigging` を含む) |
 | T3 自動化 | `ugoe-ai` | T2 以下 |
 | T4 アプリ | `ugoe-cli`, `ugoe-mcp`, `apps/editor` (`ugoe-editor`) | すべて |

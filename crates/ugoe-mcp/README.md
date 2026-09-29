@@ -11,16 +11,15 @@ MCP (Model Context Protocol) サーバ。Claude Code などの外部のエージ
 stdio のサーバ (1 行 1 メッセージの JSON-RPC 2.0)。MCP クライアントが子プロセスとして起動する。
 
 ```sh
-cargo build --release -p ugoe-mcp -p ugoe-cli   # target/release/ugoe-mcp と ugoe (描画に使う)
+cargo build --release -p ugoe-mcp   # target/release/ugoe-mcp
 # あるいは PATH に入れる
 cargo install --path crates/ugoe-mcp
-cargo install --path crates/ugoe-cli
 ```
 
 | オプション | 内容 |
 | --- | --- |
 | `--read-only` | 読むだけにする。`apply_proposal`・`undo`・`redo`・`save_project` を出さない (提案と描画はできる) |
-| `--ugoe-bin <PATH>` | 描画に使う `ugoe` (ugoe-cli)。省略時は `UGOE_BIN`、このサーバと同じディレクトリの `ugoe`、`PATH` の順に探す |
+| `--backend <NAME>` | 描画に使う wgpu のバックエンド (`vulkan` `metal` `dx12` `gl`、カンマ区切り)。省略時は `WGPU_BACKEND`、それも無ければ wgpu の既定 |
 
 ログは標準エラーに書く (標準出力は MCP のメッセージだけ)。
 
@@ -31,8 +30,8 @@ cargo install --path crates/ugoe-cli
 claude mcp add --scope project ugoe -- /path/to/ugoe/target/release/ugoe-mcp
 # 自分の環境のどこでも使う
 claude mcp add --scope user ugoe -- ugoe-mcp
-# 読むだけにする。描画に使う ugoe の場所を渡す
-claude mcp add ugoe-read -e UGOE_BIN=/path/to/ugoe -- ugoe-mcp --read-only
+# 読むだけにする。描画のバックエンドを GL に固定する
+claude mcp add ugoe-read -- ugoe-mcp --read-only --backend gl
 ```
 
 `claude mcp list` で `ugoe` が `Connected` になっていればよい。Claude Code の中では `/mcp` で状態とツールを見られる。
@@ -103,14 +102,21 @@ Claude Code に次のように頼む:
 
 ### 描画
 
-`render_png` は今のドキュメントを一時的な `.ugoe` に書き出し、`ugoe render` を子プロセスとして呼ぶ (`src/render.rs`)。
-描画の規則を CLI と完全に同じにし、GPU のデバイスをサーバのプロセスに持たないため。結果は MCP の画像
-(`image/png`、base64) で返す。
+`render_png` は `ugoe render` と同じ `ugoe_headless` の関数を、このプロセスの中で呼ぶ (`src/render.rs`)。
+描画の規則は CLI と同じで、`ugoe` (ugoe-cli) の実行ファイルは要らない。今のドキュメント (未保存の変更を含む) を
+メモリの上で `.ugoe` に書き出して読み直したもの (書き出した `.ugoe` を `ugoe render` で描くのと同じ中身) を描き、
+結果は MCP の画像 (`image/png`、base64) で返す。`log` には警告・時間を進めた回数・大きさとアダプタが入る。
 
-- `ugoe` は `--ugoe-bin`、`UGOE_BIN`、このサーバと同じディレクトリ、`PATH` の順に探す。同じ checkout から
-  一緒にビルド (`cargo build -p ugoe-cli -p ugoe-mcp`) すれば隣に置かれ、版がそろう。
-- 見つからなければ、探した場所と直し方をツールのエラーで返す。`ugoe --version` がサーバの版と違えば、結果の
-  `log` に警告を付ける。
+長く動くサーバなので、GPU のドライバの不調で落ちないように次の手当てをする。
+
+- GPU は最初の `render_png` で用意し、以後使い回す。破棄しない (WSL2 の dzn はデバイスの破棄時に SIGSEGV を
+  起こすことがある)。
+- アダプタやデバイスを用意できなければツールのエラーにし、次の呼び出しでもう一度試す。
+- 描画中の wgpu のエラー (検証・メモリ不足) はエラーとして返す (`ugoe_headless` のエラースコープ)。
+- それでも panic したら受け止めてツールのエラーにし、その GPU を捨てて次の呼び出しで作り直す。
+- ドライバの中の SIGSEGV のようにプロセスごと落ちる不調は防げない。そのときは MCP クライアントがサーバを
+  起動し直す (未保存の変更は失われる)。ドライバが不安定な環境では `--backend gl` や Mesa の lavapipe
+  (`VK_DRIVER_FILES`) を選ぶ (`docs/testing.md` の GPU の節)。
 
 ## プロトコル
 
@@ -126,8 +132,13 @@ Claude Code に次のように頼む:
 cargo test -p ugoe-mcp   # サーバを stdio で起動して、握手・ツールの一覧・提案と適用・Undo・保存を確かめる
 ```
 
-`render_png` の実際の描画は `ugoe render` のテスト (`crates/ugoe-cli`) が確かめる。ここでは CLI が見つからないときの
-エラーだけを確かめる。
+```sh
+cargo test -p ugoe-mcp --features gpu-tests   # render_png で実際に描く (GPU か lavapipe などが要る。just test-gpu に含まれる)
+```
+
+GPU テストは `PATH` を空にしてサーバを起動し、`ugoe` の実行ファイルなしで PNG が返ること、2 回目の描画で GPU を
+使い回せること、標準入力を閉じるとサーバが正常に終了すること (終了時に GPU を破棄しない) を確かめる。
+GPU を使わないテストでは、GPU に触る前に引数の誤り (未知のパラメータ・色) を返すことを確かめる。
 
 ## 関連タスク
 

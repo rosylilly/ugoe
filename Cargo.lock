@@ -4773,16 +4773,14 @@ dependencies = [
  "anyhow",
  "clap",
  "png 0.18.1",
- "pollster",
  "serde_json",
  "ugoe",
  "ugoe-core",
  "ugoe-editor-core",
  "ugoe-format",
+ "ugoe-headless",
  "ugoe-model",
- "ugoe-render",
  "ugoe-runtime",
- "wgpu",
 ]
 
 [[package]]
@@ -4855,6 +4853,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "ugoe-headless"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "png 0.18.1",
+ "pollster",
+ "serde_json",
+ "thiserror 2.0.21",
+ "ugoe",
+ "ugoe-format",
+ "ugoe-model",
+ "ugoe-render",
+ "ugoe-runtime",
+ "wgpu",
+]
+
+[[package]]
 name = "ugoe-mcp"
 version = "0.0.0"
 dependencies = [
@@ -4865,6 +4880,8 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "ugoe-editor-core",
+ "ugoe-format",
+ "ugoe-headless",
  "ugoe-model",
 ]
 

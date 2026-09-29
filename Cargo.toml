@@ -20,6 +20,7 @@ ugoe-ai = { path = "crates/ugoe-ai" }
 ugoe-core = { path = "crates/ugoe-core" }
 ugoe-editor-core = { path = "crates/ugoe-editor-core" }
 ugoe-format = { path = "crates/ugoe-format" }
+ugoe-headless = { path = "crates/ugoe-headless" }
 ugoe-mesher = { path = "crates/ugoe-mesher" }
 ugoe-model = { path = "crates/ugoe-model" }
 ugoe-motion = { path = "crates/ugoe-motion" }
