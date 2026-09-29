@@ -4,6 +4,7 @@
 //! 同じ `Command` を発行するだけで、それぞれ独自の編集ロジックを持たない。
 //! これにより Undo/Redo、操作ログ、AI による提案の差分プレビューが一元化される。
 
+pub mod atlas;
 pub mod automesh;
 pub mod codegen;
 pub mod command;
@@ -25,6 +26,7 @@ pub mod project;
 pub mod space;
 pub mod texture;
 
+pub use atlas::{AtlasOptions, AtlasReport, build_atlas};
 pub use automesh::AutoMeshOptions;
 pub use command::{ChildRef, Command, InferMethod, KeyformCell, KeyformTarget, VertexMove};
 pub use depth::DepthPreset;
@@ -38,6 +40,8 @@ pub use physics_template::{PhysicsTemplate, PhysicsTemplateOptions};
 pub use project::{Project, ProjectError, ProjectMeta, export_bundle};
 pub use texture::Textures;
 
+#[cfg(test)]
+mod atlas_tests;
 #[cfg(test)]
 mod blend_shape_tests;
 #[cfg(test)]

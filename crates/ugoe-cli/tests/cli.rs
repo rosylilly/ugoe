@@ -188,3 +188,70 @@ fn render_rejects_unknown_motion_before_touching_gpu() {
     assert!(stderr.contains("no motion named `Idle`"), "{stderr}");
     assert!(!out.exists());
 }
+
+/// `ugoe build`: プロジェクトとバンドルのどちらからも書き出せ、`--atlas` でテクスチャが 1 枚にまとまる。
+/// 見た目が変わらないことは `atlas_render_gpu.rs` で確かめる。
+#[test]
+fn build_packs_textures_into_an_atlas() {
+    let psd = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../assets/fixtures/layers.psd");
+    // 同時に走る別のテストの実行と重ならないように、プロセスごとのディレクトリに書く。
+    let tmp = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("build-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).expect("create output dir");
+    let project = tmp.join("layers-build.ugoeproj");
+    let plain = tmp.join("layers-build.ugoe");
+    let atlased = tmp.join("layers-build-atlas.ugoe");
+    let rebuilt = tmp.join("layers-build-rebuilt.ugoe");
+    let path = |p: &std::path::Path| p.to_str().expect("utf-8 path").to_owned();
+    stdout(&ugoe(&["import-psd", &path(&psd), "-o", &path(&project)]));
+    let textures = |bundle: &std::path::Path| -> Vec<String> {
+        let info = stdout(&ugoe(&["info", &path(bundle), "--json"]));
+        let v: serde_json::Value = serde_json::from_str(&info).expect("json");
+        v["textures"]
+            .as_array()
+            .expect("textures")
+            .iter()
+            .map(|t| t["name"].as_str().expect("name").to_owned())
+            .collect()
+    };
+
+    stdout(&ugoe(&["build", &path(&project), "-o", &path(&plain)]));
+    assert_eq!(textures(&plain).len(), 6);
+
+    let out = stdout(&ugoe(&[
+        "build",
+        &path(&project),
+        "-o",
+        &path(&atlased),
+        "--atlas",
+    ]));
+    assert!(
+        out.contains("packed 6 texture(s) into 1 atlas(es)"),
+        "{out}"
+    );
+    assert_eq!(textures(&atlased), ["atlas-0"]);
+    assert_eq!(stdout(&ugoe(&["validate", &path(&atlased)])).trim(), "ok");
+
+    // バンドルからも作れる。
+    stdout(&ugoe(&[
+        "build",
+        &path(&plain),
+        "-o",
+        &path(&rebuilt),
+        "--atlas",
+    ]));
+    assert_eq!(textures(&rebuilt), ["atlas-0"]);
+
+    // アトラスの設定は --atlas と一緒にだけ使える。
+    let output = ugoe(&[
+        "build",
+        &path(&project),
+        "-o",
+        &path(&rebuilt),
+        "--atlas-max-size",
+        "512",
+    ]);
+    assert!(!output.status.success());
+}

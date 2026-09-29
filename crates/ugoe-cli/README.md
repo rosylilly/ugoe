@@ -2,7 +2,7 @@
 
 **層:** T4 アプリ (依存してよいクレートは `scripts/check-layers.mjs` を参照)
 
-`ugoe` コマンド。モデルの検証・情報表示・フィクスチャの出力・スナップショット描画。(予定) 変換。
+`ugoe` コマンド。モデルの検証・情報表示・フィクスチャの出力・スナップショット描画・配布用バンドルの書き出し。
 
 ## 使い方
 
@@ -53,6 +53,7 @@ ugoe render model.ugoe -o shake.png --motion Shake --time 0.25   # モーショ�
 | `--no-physics` / `--no-effects` | 時間を進めるときに物理 / 目パチと呼吸を止める |
 | `--fps <N>` | 時間を進めるときの 1 秒あたりの `update` の回数 (既定 60) |
 | `--backend <NAME>` | wgpu のバックエンド (`vulkan` `metal` `dx12` `gl`、カンマ区切り)。省略時は `WGPU_BACKEND`、それも無ければ wgpu の既定 |
+| `--stats` | 描画の統計 (`ugoe_render::FrameStats`) を標準出力に `stats: {"drawables":21,...}` の 1 行 (JSON、キーは名前順) で書く |
 
 成功すると標準出力に 1 行 (`wrote out.png (256x256, adapter: ...)`) を書く。警告は標準エラーに `warning: ...` で出す。
 
@@ -93,6 +94,29 @@ ugoe render character.ugoe -o preview.png           # 取り込んだ結果を�
 | `--alpha-threshold` / `--margin` / `--edge-spacing` / `--interior-spacing` | 自動メッシュの設定 (`ugoe-mesher` の `MeshOptions`) |
 
 取り込みの警告は標準エラーに `warning: ...` で出す。
+
+### `ugoe build`
+
+`.ugoeproj` プロジェクトか `.ugoe` バンドルから、配布用の `.ugoe` バンドルを書き出す。`--atlas` でテクスチャをアトラスにまとめる
+(規則は [docs/spec/file-formats.md#テクスチャのアトラス化](../../docs/spec/file-formats.md#テクスチャのアトラス化))。
+
+```sh
+ugoe build character.ugoeproj -o character.ugoe --atlas
+ugoe build character.ugoe -o packed.ugoe --atlas --atlas-max-size 4096
+ugoe render packed.ugoe -o check.png                 # 見た目が変わっていないことを目で確かめる
+```
+
+| オプション | 内容 |
+| --- | --- |
+| `-o, --output <PATH>` | 書き出す `.ugoe` バンドル |
+| `--atlas` | テクスチャをアトラスにまとめる |
+| `--atlas-max-size <PX>` | アトラス 1 枚の幅と高さの上限 (既定 2048) |
+| `--atlas-padding <PX>` | 各画像の周りに複製する端の画素の幅 (既定 2) |
+
+- 入力はディレクトリならプロジェクト、ファイルならバンドルとして読む。バンドルの物理・モーション・表情・`META` は引き継ぐ。
+  テクスチャは PNG であること (KTX2 はエラー)。
+- `--atlas` では標準出力に `atlas: packed 24 texture(s) into 1 atlas(es) [994x1698], kept 0, removed 0 unused` のような要約を書き、
+  まとめずに残したテクスチャを標準エラーに `warning: ...` で出す。
 
 ### `ugoe sample avatar`
 

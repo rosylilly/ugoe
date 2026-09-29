@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, bail};
 use ugoe_model::Model;
-use ugoe_render::{Renderer, View};
+use ugoe_render::{FrameStats, Renderer, View};
 use ugoe_runtime::ModelInstance;
 
 use crate::image::Rgba8;
@@ -303,7 +303,7 @@ impl Gpu {
         std::mem::forget(self);
     }
 
-    /// `instance` を `size` の画像に描いて読み戻す。結果は乗算済みアルファ。
+    /// `instance` を `size` の画像に描いて読み戻す。結果は乗算済みアルファと、描画の統計。
     ///
     /// `background` はストレートアルファの RGBA8。乗算済みに直してからクリアする。
     pub fn render(
@@ -313,7 +313,7 @@ impl Gpu {
         size: (u32, u32),
         view: &View,
         background: [u8; 4],
-    ) -> anyhow::Result<Rgba8> {
+    ) -> anyhow::Result<(Rgba8, FrameStats)> {
         let (device, queue) = (&self.device, &self.queue);
         let (width, height) = size;
         let max = device.limits().max_texture_dimension_2d;
@@ -376,6 +376,7 @@ impl Gpu {
             ..Default::default()
         });
         renderer.encode(device, queue, &mut encoder, &target_view, view, instance)?;
+        let stats = renderer.last_frame_stats();
 
         // 読み戻しバッファの行は COPY_BYTES_PER_ROW_ALIGNMENT の倍数に揃える必要がある。
         let row_bytes = width * 4;
@@ -417,12 +418,33 @@ impl Gpu {
         for row in mapped.chunks_exact(padded_row_bytes as usize) {
             pixels.extend_from_slice(&row[..row_bytes as usize]);
         }
-        Ok(Rgba8 {
-            width,
-            height,
-            pixels,
-        })
+        Ok((
+            Rgba8 {
+                width,
+                height,
+                pixels,
+            },
+            stats,
+        ))
     }
+}
+
+/// `ugoe render --stats` で出す描画の統計 (`ugoe_render::FrameStats`) の JSON。
+pub fn stats_json(stats: &FrameStats) -> serde_json::Value {
+    serde_json::json!({
+        "drawables": stats.drawables,
+        "draw_calls": stats.draw_calls,
+        "state_changes": stats.state_changes,
+        "mask_sets": stats.mask_sets,
+        "mask_draws": stats.mask_draws,
+        "mask_atlases": stats.mask_atlases,
+        "mask_atlas_bytes": stats.mask_atlas_bytes,
+        "masks_reused": stats.masks_reused,
+        "position_bytes": stats.position_bytes,
+        "uniform_bytes": stats.uniform_bytes,
+        "index_bytes": stats.index_bytes,
+        "uploaded_bytes": stats.uploaded_bytes,
+    })
 }
 
 #[cfg(test)]

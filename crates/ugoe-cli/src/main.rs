@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
 use clap::{Args, Parser, Subcommand};
+use ugoe_editor_core::AtlasOptions;
 use ugoe_format::{TextureData, TextureFormat};
 use ugoe_model::Model;
 
@@ -53,6 +54,8 @@ enum Cmd {
     Render(RenderArgs),
     /// PSD を取り込んで新しい `.ugoeproj` プロジェクトに保存する。
     ImportPsd(ImportPsdArgs),
+    /// `.ugoeproj` プロジェクトか `.ugoe` バンドルから、配布用の `.ugoe` バンドルを書き出す。
+    Build(BuildArgs),
     /// 見本のモデルを生成する。
     #[command(subcommand)]
     Sample(SampleCmd),
@@ -109,6 +112,26 @@ struct ImportPsdArgs {
     /// 自動メッシュ: 内部点の間隔 (px。0 なら内部点なし)。
     #[arg(long)]
     interior_spacing: Option<f32>,
+}
+
+#[derive(Debug, Args)]
+struct BuildArgs {
+    /// 入力の `.ugoeproj` ディレクトリか `.ugoe` バンドル。
+    input: PathBuf,
+    /// 書き出す `.ugoe` バンドル。
+    #[arg(short, long)]
+    output: PathBuf,
+    /// テクスチャをアトラスにまとめる (`docs/spec/file-formats.md#テクスチャのアトラス化`)。
+    #[arg(long)]
+    atlas: bool,
+    /// アトラス 1 枚の幅と高さの上限 (px)。
+    #[arg(long, value_name = "PX", requires = "atlas",
+          default_value_t = AtlasOptions::default().max_size)]
+    atlas_max_size: u32,
+    /// アトラスで各画像の周りに複製する端の画素の幅 (px)。
+    #[arg(long, value_name = "PX", requires = "atlas",
+          default_value_t = AtlasOptions::default().padding)]
+    atlas_padding: u32,
 }
 
 #[derive(Debug, Args)]
@@ -170,6 +193,9 @@ struct RenderArgs {
     /// 省略時は環境変数 `WGPU_BACKEND`、それも無ければ wgpu の既定。
     #[arg(long)]
     backend: Option<String>,
+    /// 描画の統計 (描画回数など。`ugoe_render::FrameStats`) を標準出力に `stats: <JSON>` の 1 行で書く。
+    #[arg(long)]
+    stats: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -232,6 +258,7 @@ fn main() -> anyhow::Result<()> {
         }
         Cmd::Render(args) => run_render(args)?,
         Cmd::ImportPsd(args) => run_import_psd(args)?,
+        Cmd::Build(args) => run_build(args)?,
         Cmd::Sample(SampleCmd::Avatar(args)) => run_sample_avatar(args)?,
     }
     Ok(())
@@ -308,6 +335,115 @@ fn run_import_psd(args: ImportPsdArgs) -> anyhow::Result<()> {
         println!("wrote {}", path.display());
     }
     Ok(())
+}
+
+/// `ugoe build`: プロジェクトかバンドルを読み、必要ならテクスチャをアトラスにまとめてバンドルに書く。
+///
+/// バンドルから作るときは、物理・モーション・表情・`META` をそのまま引き継ぐ。
+fn run_build(args: BuildArgs) -> anyhow::Result<()> {
+    use ugoe_editor_core::{Project, ProjectMeta};
+
+    let (project, meta) = if args.input.is_dir() {
+        let project = Project::load(&args.input)
+            .with_context(|| format!("loading {}", args.input.display()))?;
+        (project, None)
+    } else {
+        let bytes = std::fs::read(&args.input)
+            .with_context(|| format!("reading {}", args.input.display()))?;
+        let bundle = ugoe_format::read_bundle(&bytes)
+            .with_context(|| format!("reading bundle {}", args.input.display()))?;
+        let mut textures = ugoe_editor_core::Textures::new();
+        for (i, (texture, data)) in bundle
+            .model
+            .textures
+            .iter()
+            .zip(&bundle.textures)
+            .enumerate()
+        {
+            if data.format != TextureFormat::Png {
+                bail!(
+                    "bundle texture {i} (`{}`) is not PNG; `ugoe build` needs PNG textures",
+                    texture.name
+                );
+            }
+            textures.insert(texture.name.clone(), data.bytes.clone().into());
+        }
+        let mut project = Project::new(
+            ProjectMeta::new(bundle.model.meta.name.clone()),
+            bundle.model,
+            textures,
+        );
+        project.physics = bundle.physics;
+        project.motions = bundle.motions;
+        project.expressions = bundle.expressions;
+        (project, bundle.meta)
+    };
+
+    let project = if args.atlas {
+        let options = AtlasOptions {
+            max_size: args.atlas_max_size,
+            padding: args.atlas_padding,
+        };
+        let (atlased, report) = project.with_atlas(&options)?;
+        for (name, reason) in &report.kept {
+            eprintln!(
+                "warning: texture `{name}` was not packed ({})",
+                kept_reason(*reason)
+            );
+        }
+        let sizes: Vec<String> = report
+            .atlases
+            .iter()
+            .map(|(w, h)| format!("{w}x{h}"))
+            .collect();
+        println!(
+            "atlas: packed {} texture(s) into {} atlas(es) [{}], kept {}, removed {} unused",
+            report.packed,
+            report.atlases.len(),
+            sizes.join(", "),
+            report.kept.len(),
+            report.removed.len()
+        );
+        atlased
+    } else {
+        project
+    };
+
+    let textures = project
+        .model
+        .textures
+        .iter()
+        .map(|t| {
+            let png = project
+                .textures
+                .get(&t.name)
+                .with_context(|| format!("texture `{}` has no image data", t.name))?;
+            Ok(TextureData {
+                format: TextureFormat::Png,
+                bytes: png.to_vec(),
+            })
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let bytes = ugoe_format::write_bundle(&ugoe_format::Bundle {
+        model: project.model,
+        physics: project.physics,
+        motions: project.motions,
+        expressions: project.expressions,
+        textures,
+        meta,
+    })?;
+    std::fs::write(&args.output, &bytes)
+        .with_context(|| format!("writing {}", args.output.display()))?;
+    println!("wrote {} ({} bytes)", args.output.display(), bytes.len());
+    Ok(())
+}
+
+fn kept_reason(reason: ugoe_editor_core::atlas::KeptReason) -> &'static str {
+    use ugoe_editor_core::atlas::KeptReason;
+    match reason {
+        KeptReason::TooLarge => "larger than --atlas-max-size",
+        KeptReason::UvOutOfRange => "its meshes use UVs outside 0..1",
+    }
 }
 
 /// `ugoe sample avatar`: 見本のモデルを組み立てて書き出す (`sample::build_avatar`)。
@@ -455,7 +591,7 @@ fn run_render(args: RenderArgs) -> anyhow::Result<()> {
     let result = gpu.render(puppet.instance(), &textures, size, &view, args.background);
     let adapter = format!("{} ({:?})", gpu.adapter_info.name, gpu.adapter_info.backend);
     gpu.leak();
-    let image = result?;
+    let (image, stats) = result?;
 
     let png = image::encode_png_unpremultiplied(&image)?;
     std::fs::write(&args.output, png)
@@ -466,6 +602,9 @@ fn run_render(args: RenderArgs) -> anyhow::Result<()> {
         size.0,
         size.1
     );
+    if args.stats {
+        println!("stats: {}", render::stats_json(&stats));
+    }
     Ok(())
 }
 
