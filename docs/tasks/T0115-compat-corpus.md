@@ -1,11 +1,11 @@
 ---
 id: T0115
 title: 互換性テストの資料と CI
-status: todo
+status: in-progress
 milestone: M5
 crates: [ugoe-format, assets/compat, CI]
 depends_on: [T0109, T0112, T0113]
-assignee:
+assignee: claude-worker-T0115
 ---
 
 # T0115: 互換性テストの資料と CI

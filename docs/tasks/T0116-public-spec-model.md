@@ -1,11 +1,11 @@
 ---
 id: T0116
 title: 公開仕様: 骨格とモデル・バンドルの形式 (英語)
-status: todo
+status: in-progress
 milestone: M5
 crates: [spec, docs, scripts]
 depends_on: [T0111, T0112, T0113, T0311]
-assignee:
+assignee: claude-worker-T0116
 ---
 
 # T0116: 公開仕様: 骨格とモデル・バンドルの形式 (英語)
