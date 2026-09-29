@@ -176,7 +176,7 @@ WebGL2 でも動くように、ストレージバッファ・コンピュート�
 
 判断の経緯は [ADR 0015](../adr/0015-lighting.md)。
 
-> 実装待ち: 法線マップの生成は T0506 で行います。データ定義 (`TextureRef::normal_map`・`Model::lighting`・`Mesh::lit` と `NRML` チャンク、[model.md#ライティング](model.md#ライティング)) と参照レンダラ (`ugoe-render`) は実装済みです。
+データ定義は [model.md#ライティング](model.md#ライティング)。法線マップの生成 (アルファの形・深度推定から) は [ai-integration.md#法線マップの生成](../ai-integration.md#法線マップの生成)。
 
 - テクスチャに **法線マップ** を添えられます (`TextureRef::normal_map`)。法線マップはテクスチャと同じ UV 空間の接空間法線で、RGB = (x, y, z) を `n = 2c − 1` で表します
   (sRGB の変換はしない。アルファは使わない)。**x は画像の右 (+u)、y は画像の上 (−v)、z は手前向き** です

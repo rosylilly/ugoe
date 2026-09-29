@@ -5,12 +5,15 @@
 //! (ミラーの `MirrorOptions::overwrite_authored` を除く)。書いたセルの由来には推定の方法
 //! (`additive` / `depth_rotation` / `mirror`) を記録する。`InferScope::Own` なら別の方法で作ったセルは
 //! 書き換えない。
+//!
+//! 法線マップの生成 (アルファの形からふくらみを作る決定的な方法) も持つ ([`bulge_normal_map`])。
 
 mod additive;
 mod depth;
 mod error;
 mod grid;
 mod mirror;
+mod normal;
 mod space;
 mod target;
 mod values;
@@ -20,6 +23,10 @@ pub use additive::{InferReport, InferScope, infer_additive};
 pub use depth::infer_depth_rotation;
 pub use error::InferError;
 pub use mirror::{MirrorOptions, check_mirror, mirror_keyforms};
+pub use normal::{
+    BulgeOptions, HeightField, NormalMap, NormalMapError, bulge_height, bulge_normal_map,
+    decode_normal, encode_normal,
+};
 pub use target::{KeyformTarget, infer_additive_target};
 pub use values::KeyformValues;
 pub use world::{ParentWorld, WorldError};

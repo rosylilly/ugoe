@@ -20,8 +20,15 @@ AI プロバイダの抽象 (`Provider`) と、自動リギングのパイプラ
 - `depth.rs`: 深度推定 (`DepthEstimator`・`DepthMap`・`HttpDepthEstimator`・`FixedDepthEstimator`)
 - `turn.rs`: 深度推定による振り向きリグの提案 (`propose_depth_turn`・`plan_turn`・`label_depth`・`mesh_labels`)
 - `rig.rs`: ラベルのテンプレートによる自動リギングの提案 (`propose_rig`)、テンプレートで決められない値 (`RigParams`) を AI に決めさせ、検証エラーを添えて問い直す `propose_rig_with_ai`、分類の結果をメッシュに対応付ける `mesh_parts`
+- `normal.rs`: 法線マップの生成の提案。アルファの形から (`propose_bulge_normal_maps`、決定的な計算は `ugoe_rigging::bulge_normal_map`) と、深度推定から (`propose_depth_normal_maps`・`plan_depth_normal_maps`)。テクスチャごとの設定は `NormalMapOptions::per_texture`
 - `examples/auto_rig.rs`: PSD を取り込み、名前の規則で分類してテンプレートの提案を適用したバンドルを書き出す (`ugoe render` で目視確認する)
 - `examples/depth_turn.rs`: 録画した深度マップから提案を作り、適用したモデルを書き出す (`ugoe render` で目視確認する)
+
+## テスト
+
+- `cargo test -p ugoe-ai`: ネットワークと GPU を使わないテスト
+- feature `gpu-tests` (`just test-gpu` に含まれる): 生成した法線マップを参照レンダラ (`ugoe-render`) で描く (`tests/normal_render.rs`)。
+  `UGOE_NORMAL_RENDER_DUMP=<dir>` を付けると描いた画像を PNG で書き出す (目視確認用)
 
 ## 仕様
 
@@ -34,3 +41,4 @@ AI プロバイダの抽象 (`Provider`) と、自動リギングのパイプラ
 - T0504 (`docs/tasks/T0504-*.md`)
 - T0505 (`docs/tasks/T0505-depth-turn-rig.md`)
 - T0509 (`docs/tasks/T0509-claude-provider.md`)
+- T0506 (`docs/tasks/T0506-normal-map-gen.md`)

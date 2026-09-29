@@ -4960,6 +4960,7 @@ version = "0.0.0"
 dependencies = [
  "base64 0.22.1",
  "png 0.18.1",
+ "pollster",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -4967,9 +4968,11 @@ dependencies = [
  "ugoe-editor-core",
  "ugoe-model",
  "ugoe-psd",
+ "ugoe-render",
  "ugoe-rigging",
  "ugoe-runtime",
  "ureq",
+ "wgpu",
 ]
 
 [[package]]

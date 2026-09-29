@@ -6000,5 +6000,25 @@ export const commands: Command[] = [
         "mesh": "Quad"
       }
     ]
+  },
+  {
+    "op": "set_normal_map",
+    "texture": "face.png",
+    "normal_map": "face_normal",
+    "png": [
+      137,
+      80,
+      78,
+      71
+    ]
+  },
+  {
+    "op": "set_normal_map",
+    "texture": "face.png",
+    "normal_map": null
+  },
+  {
+    "op": "set_lighting",
+    "enabled": true
   }
 ];

@@ -197,7 +197,8 @@ pub enum Command {
         png: Vec<u8>,
     },
     /// テクスチャを削除する。使っているメッシュがあれば拒否する。
-    /// 後ろのテクスチャを指すメッシュの `texture` は 1 つ詰める。
+    /// 後ろのテクスチャを指すメッシュの `texture` は 1 つ詰める。ほかのテクスチャから指されない
+    /// 法線マップの画像も表から除く。
     RemoveTexture {
         name: String,
     },
@@ -666,6 +667,26 @@ pub enum Command {
     /// アバタープロファイルの標準の当たり判定 (`avatar.hit_areas`) は外す。
     SetHitAreas {
         hit_areas: Vec<HitArea>,
+    },
+    /// テクスチャ `texture` の法線マップ (`TextureRef::normal_map`) を設定・差し替え・外す
+    /// (`docs/editor.md#法線マップ`)。法線マップの画像はテクスチャと同じ表に `normal_map` の名前で置く。
+    /// - `normal_map` と `png`: 画像を `normal_map` の名前で置く (すでにあれば差し替える。その画像を
+    ///   指すほかのテクスチャにも効く)。名前はテクスチャの名前と同じ規則で、テクスチャの名前と
+    ///   (大文字小文字を区別せずに) 重ならないこと。
+    /// - `normal_map` だけ: ほかのテクスチャがすでに指している法線マップの画像を共有する。
+    /// - どちらもなし: 法線マップを外す。
+    ///
+    /// どのテクスチャからも指されなくなった法線マップの画像は表から除く。
+    SetNormalMap {
+        texture: String,
+        normal_map: Option<String>,
+        /// 法線マップの画像 (PNG)。JSON では数値の配列になるので、主にバックエンド内 (生成の提案など) から使う。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        png: Option<Vec<u8>>,
+    },
+    /// モデル全体のライティングの有無 (`Model::lighting`) を変える。
+    SetLighting {
+        enabled: bool,
     },
 }
 

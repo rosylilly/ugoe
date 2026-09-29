@@ -483,6 +483,7 @@ fn sample_commands() -> Vec<Command> {
     .chain(physics_samples())
     .chain(draw_clone_samples())
     .chain(avatar_samples())
+    .chain(lighting_samples())
     .collect()
 }
 
@@ -768,6 +769,23 @@ pub(crate) fn avatar_samples() -> Vec<Command> {
                 mesh: "Quad".into(),
             }],
         },
+    ]
+}
+
+/// ライティングのコマンドの見本 (`docs/editor.md#法線マップ`)。
+pub(crate) fn lighting_samples() -> Vec<Command> {
+    vec![
+        Command::SetNormalMap {
+            texture: "face.png".to_owned(),
+            normal_map: Some("face_normal".to_owned()),
+            png: Some(vec![137, 80, 78, 71]),
+        },
+        Command::SetNormalMap {
+            texture: "face.png".to_owned(),
+            normal_map: None,
+            png: None,
+        },
+        Command::SetLighting { enabled: true },
     ]
 }
 

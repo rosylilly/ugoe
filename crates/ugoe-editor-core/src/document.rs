@@ -151,6 +151,9 @@ pub enum EditError {
     /// `docs/editor.md#アバタープロファイルの編集`)。
     #[error("invalid avatar profile: {reason}")]
     InvalidAvatarProfile { reason: String },
+    /// 法線マップの指定が不正 (`Command::SetNormalMap`)。
+    #[error("texture `{texture}`: invalid normal map: {reason}")]
+    InvalidNormalMap { texture: String, reason: String },
 }
 
 /// [`Document::apply_with_report`] の結果: コマンドは適用したが、利用者に知らせたいこと。
@@ -890,6 +893,12 @@ fn apply_to(
                 apply_to(model, textures, anim, c, touched, mirrored, physics)?;
             }
         }
+        Command::SetNormalMap {
+            texture,
+            normal_map,
+            png,
+        } => set_normal_map(model, textures, &texture, normal_map, png)?,
+        Command::SetLighting { enabled } => model.lighting = enabled,
     }
     Ok(())
 }
@@ -1250,12 +1259,101 @@ fn remove_texture(model: &mut Model, textures: &mut Textures, name: &str) -> Res
         .map(|m| format!("mesh `{}`", m.id))
         .collect();
     ensure_no_children("texture", &name, children)?;
-    model.textures.remove(index);
+    let removed = model.textures.remove(index);
     for mesh in &mut model.meshes {
         if usize::try_from(mesh.texture).is_ok_and(|t| t > index) {
             mesh.texture -= 1;
         }
     }
     textures.remove(name);
+    if let Some(normal_map) = removed.normal_map {
+        drop_unused_normal_map(model, textures, &normal_map);
+    }
     Ok(())
+}
+
+/// [`Command::SetNormalMap`]。
+fn set_normal_map(
+    model: &mut Model,
+    textures: &mut Textures,
+    texture: &str,
+    normal_map: Option<String>,
+    png: Option<Vec<u8>>,
+) -> Result<(), EditError> {
+    let index = model
+        .textures
+        .iter()
+        .position(|t| t.name == texture)
+        .ok_or_else(|| EditError::NotFound {
+            kind: "texture",
+            id: texture.to_owned(),
+        })?;
+    let invalid = |reason: String| EditError::InvalidNormalMap {
+        texture: texture.to_owned(),
+        reason,
+    };
+    match (&normal_map, png) {
+        (None, Some(_)) => {
+            return Err(invalid("an image was given without a name".into()));
+        }
+        (None, None) => {}
+        (Some(name), png) => {
+            if !is_valid_texture_name(name) {
+                return Err(EditError::InvalidTextureName { name: name.clone() });
+            }
+            // テクスチャの画像と同じ場所 (`textures/<name>.png`) に置くので、テクスチャの名前と重ならず、
+            // ほかの法線マップの名前とは大文字小文字まで一致すること。
+            if model
+                .textures
+                .iter()
+                .any(|t| t.name.eq_ignore_ascii_case(name))
+            {
+                return Err(EditError::DuplicateId {
+                    kind: "texture",
+                    id: name.clone(),
+                });
+            }
+            let shared = model
+                .textures
+                .iter()
+                .filter_map(|t| t.normal_map.as_deref())
+                .find(|n| n.eq_ignore_ascii_case(name));
+            if let Some(existing) = shared
+                && existing != name
+            {
+                return Err(invalid(format!(
+                    "`{name}` differs only in case from the normal map `{existing}`"
+                )));
+            }
+            match png {
+                Some(png) => {
+                    png_dimensions(name, &png)?;
+                    textures.insert(name.clone(), Arc::from(png));
+                }
+                None if shared.is_some() && textures.contains_key(name.as_str()) => {}
+                None => {
+                    return Err(EditError::NotFound {
+                        kind: "normal map",
+                        id: name.clone(),
+                    });
+                }
+            }
+        }
+    }
+    let previous = std::mem::replace(&mut model.textures[index].normal_map, normal_map);
+    if let Some(previous) = previous {
+        drop_unused_normal_map(model, textures, &previous);
+    }
+    Ok(())
+}
+
+/// どのテクスチャからも指されなくなった法線マップの画像を表から除く。
+fn drop_unused_normal_map(model: &Model, textures: &mut Textures, name: &str) {
+    let used = model
+        .textures
+        .iter()
+        .any(|t| t.name == name || t.normal_map.as_deref() == Some(name));
+    if !used {
+        textures.remove(name);
+    }
 }

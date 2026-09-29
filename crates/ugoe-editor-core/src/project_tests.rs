@@ -716,3 +716,171 @@ fn remove_texture_rejects_used_and_shifts_indices() {
     assert_eq!(doc.texture("white"), None);
     assert!(ugoe_model::validate::validate(doc.model()).is_empty());
 }
+
+// ---- 法線マップのコマンド ----
+
+fn set_normal_map(texture: &str, normal_map: Option<&str>, png: Option<Vec<u8>>) -> Command {
+    Command::SetNormalMap {
+        texture: texture.into(),
+        normal_map: normal_map.map(Into::into),
+        png,
+    }
+}
+
+#[test]
+fn set_normal_map_sets_replaces_and_removes() {
+    let mut doc = sample_project().document();
+    let flat = solid_png(2, 2, [128, 128, 255, 255]);
+    doc.apply(set_normal_map("white", Some("white_n"), Some(flat.clone())))
+        .unwrap();
+    assert_eq!(
+        doc.model().textures[0].normal_map.as_deref(),
+        Some("white_n")
+    );
+    assert_eq!(doc.texture("white_n"), Some(flat.as_slice()));
+
+    // 同じ名前で差し替える。
+    let right = solid_png(1, 1, [255, 128, 128, 255]);
+    doc.apply(set_normal_map(
+        "white",
+        Some("white_n"),
+        Some(right.clone()),
+    ))
+    .unwrap();
+    assert_eq!(doc.texture("white_n"), Some(right.as_slice()));
+
+    // 別の名前にすると、指されなくなった前の画像は表から消える。
+    doc.apply(set_normal_map("white", Some("other"), Some(flat.clone())))
+        .unwrap();
+    assert_eq!(doc.texture("white_n"), None);
+    assert_eq!(doc.texture("other"), Some(flat.as_slice()));
+
+    // 外す。
+    doc.apply(set_normal_map("white", None, None)).unwrap();
+    assert_eq!(doc.model().textures[0].normal_map, None);
+    assert_eq!(doc.texture("other"), None);
+
+    // Undo で画像ごと戻る。
+    assert!(doc.undo());
+    assert_eq!(doc.model().textures[0].normal_map.as_deref(), Some("other"));
+    assert_eq!(doc.texture("other"), Some(flat.as_slice()));
+    assert!(ugoe_model::validate::validate(doc.model()).is_empty());
+}
+
+#[test]
+fn set_normal_map_shares_an_existing_image() {
+    let project = project_with_normal_map();
+    let mut doc = project.document();
+    doc.apply(set_normal_map("Extra-2", Some("white_normal"), None))
+        .unwrap();
+    assert_eq!(
+        doc.model().textures[1].normal_map.as_deref(),
+        Some("white_normal")
+    );
+    // 片方を外しても、もう片方が指しているので画像は残る。
+    doc.apply(set_normal_map("white", None, None)).unwrap();
+    assert!(doc.texture("white_normal").is_some());
+    // 保存しても画像は 1 枚。
+    let tmp = TempDir::new("normal-map-command");
+    Project::from_document(project.meta.clone(), &doc)
+        .save(&tmp.project())
+        .unwrap();
+    let loaded = Project::load(&tmp.project()).unwrap();
+    assert_eq!(loaded.model.textures[0].normal_map, None);
+    assert_eq!(
+        loaded.model.textures[1].normal_map.as_deref(),
+        Some("white_normal")
+    );
+    // 最後の 1 つを外すと画像も消える。
+    doc.apply(set_normal_map("Extra-2", None, None)).unwrap();
+    assert_eq!(doc.texture("white_normal"), None);
+}
+
+#[test]
+fn set_normal_map_rejects_bad_requests() {
+    let mut doc = project_with_normal_map().document();
+    let before = (doc.model().clone(), doc.textures().clone());
+    let png = || Some(solid_png(1, 1, [128, 128, 255, 255]));
+    let mut reject = |command: Command| doc.apply(command).unwrap_err();
+    assert_eq!(
+        reject(set_normal_map("missing", Some("n"), png())),
+        EditError::NotFound {
+            kind: "texture",
+            id: "missing".into()
+        }
+    );
+    // テクスチャの名前と重なる (大文字小文字を区別しない)。
+    assert_eq!(
+        reject(set_normal_map("white", Some("EXTRA-2"), png())),
+        EditError::DuplicateId {
+            kind: "texture",
+            id: "EXTRA-2".into()
+        }
+    );
+    assert_eq!(
+        reject(set_normal_map("white", Some("../n"), png())),
+        EditError::InvalidTextureName {
+            name: "../n".into()
+        }
+    );
+    assert_eq!(
+        reject(set_normal_map("white", Some("n"), Some(b"GIF89a".to_vec()))),
+        EditError::NotPng { name: "n".into() }
+    );
+    // 画像のない名前は共有できない。
+    assert_eq!(
+        reject(set_normal_map("Extra-2", Some("nothing"), None)),
+        EditError::NotFound {
+            kind: "normal map",
+            id: "nothing".into()
+        }
+    );
+    // 大文字小文字だけが違う法線マップの名前。
+    assert!(matches!(
+        reject(set_normal_map("Extra-2", Some("WHITE_NORMAL"), png())),
+        EditError::InvalidNormalMap { .. }
+    ));
+    // 名前のない画像。
+    assert!(matches!(
+        reject(set_normal_map("white", None, png())),
+        EditError::InvalidNormalMap { .. }
+    ));
+    assert_eq!((doc.model().clone(), doc.textures().clone()), before);
+}
+
+#[test]
+fn remove_texture_drops_its_unused_normal_map() {
+    let mut doc = project_with_normal_map().document();
+    doc.apply(Command::SetMeshProperties {
+        id: "Quad".into(),
+        part: None,
+        texture: Some(1),
+        blend: None,
+        culling: None,
+        masks: None,
+        mask_mode: None,
+        mask_only: None,
+    })
+    .unwrap();
+    doc.apply(Command::RemoveTexture {
+        name: "white".into(),
+    })
+    .unwrap();
+    assert_eq!(doc.texture("white_normal"), None);
+    // Undo で表から除いた画像も戻る。
+    assert!(doc.undo());
+    assert!(doc.texture("white_normal").is_some());
+    assert_eq!(
+        doc.model().textures[0].normal_map.as_deref(),
+        Some("white_normal")
+    );
+}
+
+#[test]
+fn set_lighting_toggles_the_model() {
+    let mut doc = Document::new(fixtures::single_quad());
+    doc.apply(Command::SetLighting { enabled: true }).unwrap();
+    assert!(doc.model().lighting);
+    doc.apply(Command::SetLighting { enabled: false }).unwrap();
+    assert!(!doc.model().lighting);
+}

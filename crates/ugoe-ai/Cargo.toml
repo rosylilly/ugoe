@@ -22,7 +22,14 @@ ugoe-runtime.workspace = true
 ureq.workspace = true
 
 [dev-dependencies]
+pollster.workspace = true
 ugoe-core.workspace = true
+ugoe-render.workspace = true
+wgpu.workspace = true
+
+[features]
+# 生成した法線マップを参照レンダラで描くテスト (実 GPU かソフトウェアラスタライザが要る)。`just test-gpu` で実行する。
+gpu-tests = []
 
 [lints]
 workspace = true

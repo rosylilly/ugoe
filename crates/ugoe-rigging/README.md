@@ -8,6 +8,8 @@
 - ミラー (`mirror_keyforms`、設定は `MirrorOptions`。書き込まずに試す `check_mirror`)。親が異なる対は、ランタイムの
   ワールド変換 (`ParentWorld`、逆はニュートン法) でキャンバス座標を経由して反転する
 - 深度からの回転 (`infer_depth_rotation`)。`yaw` / `pitch` 以外の軸と手で直したセルは加算合成で足し合わせる
+- 法線マップの生成 (`normal.rs`): アルファの形からふくらみの高さを作り、勾配を法線にする (`bulge_normal_map`、設定は `BulgeOptions`)。
+  高さの場 (`HeightField`) は `ugoe-ai` の深度推定からの法線マップでも使う ([docs/ai-integration.md#法線マップの生成](../../docs/ai-integration.md#法線マップの生成))
 
 目視確認用に、深度からの回転とミラーで振り向きの顔を作る例がある
 (`cargo run -p ugoe-rigging --example depth_face -- <out.json>` のあと `ugoe render <out.json> --param AngleX=30 -o <png>`)。
@@ -30,3 +32,4 @@
 
 - T0610 (`docs/tasks/T0610-*.md`)
 - T0611 (エディタのコマンド)、T0612 (ミラーと深度からの回転)
+- T0506 (法線マップの生成)

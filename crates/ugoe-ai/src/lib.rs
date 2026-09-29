@@ -12,6 +12,7 @@ pub mod classify;
 pub mod claude;
 pub mod depth;
 mod fake;
+pub mod normal;
 pub mod rig;
 pub mod transport;
 pub mod turn;

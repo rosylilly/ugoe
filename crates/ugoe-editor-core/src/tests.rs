@@ -1424,10 +1424,12 @@ fn op_name(command: &Command) -> &'static str {
         Command::SetAvatarProfile { .. } => "set_avatar_profile",
         Command::UpdateAvatarProfile { .. } => "update_avatar_profile",
         Command::SetHitAreas { .. } => "set_hit_areas",
+        Command::SetNormalMap { .. } => "set_normal_map",
+        Command::SetLighting { .. } => "set_lighting",
     }
 }
 
-const OP_COUNT: usize = 93;
+const OP_COUNT: usize = 95;
 
 fn json_samples() -> Vec<Command> {
     let quad = fixtures::single_quad();
@@ -1677,6 +1679,7 @@ fn json_samples() -> Vec<Command> {
     .chain(crate::codegen::physics_samples())
     .chain(crate::codegen::draw_clone_samples())
     .chain(crate::codegen::avatar_samples())
+    .chain(crate::codegen::lighting_samples())
     .collect()
 }
 

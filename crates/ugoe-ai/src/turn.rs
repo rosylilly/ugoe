@@ -26,7 +26,7 @@ use crate::depth::{DepthEstimator, DepthMap, DepthRequest};
 use crate::{AiError, Proposal};
 
 /// 相対的な深度を正規化するときに捨てる両端の割合 (外れ値に引きずられないように)。
-const PERCENTILE: f32 = 0.02;
+pub(crate) const PERCENTILE: f32 = 0.02;
 /// 深度の正規化で部位を標本化する格子の分割数 (一辺)。
 const NORMALIZE_GRID: u32 = 48;
 
@@ -655,7 +655,7 @@ fn bounds(points: impl Iterator<Item = Vec2>) -> (Vec2, Vec2) {
 }
 
 /// 値の列の `q` と `1 - q` の分位点 (近い順位の値)。
-fn percentiles(mut values: Vec<f32>, q: f32) -> (f32, f32) {
+pub(crate) fn percentiles(mut values: Vec<f32>, q: f32) -> (f32, f32) {
     if values.is_empty() {
         return (0.0, 0.0);
     }

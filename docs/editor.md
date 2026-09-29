@@ -51,7 +51,8 @@
 | デフォーマ | `add_deformer`、`remove_deformer`、`rename_deformer`、`set_deformer_parent`、`set_deformer_part`、`set_warp_keyforms` (`rows` / `cols` は変えない)、`set_rotation_keyforms`、`create_warp_deformer`・`create_rotation_deformer`・`reparent_preserving_look`・`move_rotation_origin`・`unwrap_deformer` ([デフォーマの編集](#デフォーマの編集)) |
 | メッシュ | `add_mesh` (`meshes` の末尾に追加)、`remove_mesh`、`rename_mesh`、`set_mesh_properties`、`set_mesh_parent`、`set_mesh_keyforms`、`set_mesh_keyform`、`reorder_mesh`、`regenerate_mesh` ([メッシュの再生成](#メッシュの再生成))、`move_mesh_vertices`・`add_mesh_vertex`・`remove_mesh_vertices`・`retriangulate_mesh` ([メッシュの編集](#メッシュの編集))、`create_draw_clone`・`sync_draw_clone` ([描画用の複製](#描画用の複製)) |
 | キーフォーム | `add_keyform_key`、`remove_keyform_key`、`set_keyform_cell`、`set_mesh_draw_order`、`set_keyform_interpolation` ([キーフォームの編集](#キーフォームの編集)) |
-| テクスチャ | `add_texture`、`set_texture_image`、`remove_texture` |
+| テクスチャ | `add_texture`、`set_texture_image`、`remove_texture`、`set_normal_map` ([法線マップ](#法線マップ)) |
+| ライティング | `set_lighting` (`Model::lighting` を変える。[法線マップ](#法線マップ)) |
 | キャンバス | `set_canvas` (`width`・`height`・`origin`。大きさは 0 より大きい有限の値。要素の座標は変えない) |
 | キーフォームの推定 | `infer_keyforms`、`mirror_keyforms`、`mark_keyform_authored`、`mark_keyform_derived`、`set_keyform_inference`、`set_mirror_pair` (下の「推定とミラー」)、`set_depth`・`apply_depth_preset` ([深度の編集](#深度の編集)) |
 | モーション・表情 | `add_motion`、`remove_motion`、`rename_motion`、`set_motion_properties`、`add_motion_curve`、`remove_motion_curve`、`set_motion_curve_fade`、`set_motion_key`、`move_motion_key`、`remove_motion_key`、`set_motion_segment`、`set_motion_events`、`add_expression`、`remove_expression`、`rename_expression`、`set_expression_properties`、`set_expression_parameters` ([モーションと表情の編集](#モーションと表情の編集)) |
@@ -63,7 +64,7 @@
 - `reorder_mesh` は `meshes` の中でメッシュを `before` の直前 (`null` なら末尾) に移します。描画順 (`draw_order`) が同じメッシュの前後関係が変わります。
 - `set_deformer_parent` と `set_mesh_parent` は親を付け替えるだけで、座標は変えません (子の座標は新しい親の局所座標として解釈されるので、見た目は変わりうる)。見た目を保つ付け替えは `reparent_preserving_look` です ([デフォーマの編集](#デフォーマの編集))。
 
-- `add_texture` は `name` と `png` (PNG ファイルのバイト列) を受け取り、`Model::textures` の末尾に追加します。幅と高さは PNG の IHDR から読みます。名前の規則は下の「テクスチャ」を参照。`set_texture_image` は画像を差し替え、寸法も PNG に合わせます。`remove_texture` は使っているメッシュがあれば拒否し (`HasChildren`)、後ろのテクスチャを指すメッシュの `texture` (インデックス) を 1 つ詰めます。
+- `add_texture` は `name` と `png` (PNG ファイルのバイト列) を受け取り、`Model::textures` の末尾に追加します。幅と高さは PNG の IHDR から読みます。名前の規則は下の「テクスチャ」を参照。`set_texture_image` は画像を差し替え、寸法も PNG に合わせます。`remove_texture` は使っているメッシュがあれば拒否し (`HasChildren`)、後ろのテクスチャを指すメッシュの `texture` (インデックス) を 1 つ詰めます。消したテクスチャの法線マップの画像は、ほかのテクスチャから指されていなければ表から除きます (Undo で戻る)。
 
 ### 推定とミラー
 
@@ -703,6 +704,20 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 - スナップショットでは画像を `Arc<[u8]>` で共有するので、Undo のたびに画像のバイト列が複製されることはありません。
 - テクスチャ名は `textures/<name>.png` のファイル名になるので、`[A-Za-z0-9_.-]` だけからなり `.` で始まらないものに限り、大文字と小文字を区別せずに一意にします ([ファイル形式](spec/file-formats.md#名前と読み込み))。
 - `png` は JSON では数値の配列になります。大きな画像をフロントエンドから送ることは想定しておらず、バックエンドの中 (取り込み処理) から使います。
+
+### 法線マップ
+
+判断の経緯は [ADR 0015](adr/0015-lighting.md)、描き方は [rendering.md#ライティング](spec/rendering.md#ライティング)。
+
+- 法線マップの画像はテクスチャの画像と同じ表 (`Textures`) に、`TextureRef::normal_map` の名前で置きます (プロジェクトでは `textures/<normal_map>.png`。T0640)。
+- `set_normal_map` は `texture` (テクスチャの名前) の法線マップを設定・差し替え・外します。
+  - `normal_map` と `png`: 画像を `normal_map` の名前で置きます。すでにその名前の画像があれば差し替えます (その画像を指すほかのテクスチャにも効く)。
+  - `normal_map` だけ: ほかのテクスチャがすでに指している法線マップの画像を共有します (画像がなければ `NotFound`)。
+  - どちらもなし (`null`): 法線マップを外します。`png` だけを渡すと拒否します (`InvalidNormalMap`)。
+  - 名前はテクスチャの名前と同じ規則で、テクスチャの名前と (大文字小文字を区別せずに) 重なってはいけません (`DuplicateId`)。ほかの法線マップの名前とは、大文字小文字まで一致するか、まったく違う名前にします。
+  - どのテクスチャからも指されなくなった法線マップの画像は表から除きます。Undo で画像も戻ります。
+- `set_lighting` はモデル全体のライティングの有無 (`Model::lighting`) を変えます。メッシュごとの `lit` (既定 `true`) と両方が `true` のメッシュだけがライティングを受けます。
+- 法線マップの生成 (アルファの形・深度推定から) は `ugoe_ai::normal` が `set_normal_map` と `set_lighting` の列を提案します ([ai-integration.md#法線マップの生成](ai-integration.md#法線マップの生成))。エディタの画面からの呼び出しは T0637 (AI の提案のプレビューと採用) で扱います。
 
 ## プロジェクト
 

@@ -275,7 +275,11 @@ overwrite_authored: boolean, } | { "op": "mark_keyform_authored", target: Keyfor
 /**
  * 視線の追従。`null` で外す (既定の `EyeBallX` / `EyeBallY` に戻す)。
  */
-look_at?: LookAt | null, hit_areas?: Array<AvatarHitArea> | null, slots?: Array<string> | null, } | { "op": "set_hit_areas", hit_areas: Array<HitArea>, };
+look_at?: LookAt | null, hit_areas?: Array<AvatarHitArea> | null, slots?: Array<string> | null, } | { "op": "set_hit_areas", hit_areas: Array<HitArea>, } | { "op": "set_normal_map", texture: string, normal_map: string | null, 
+/**
+ * 法線マップの画像 (PNG)。JSON では数値の配列になるので、主にバックエンド内 (生成の提案など) から使う。
+ */
+png?: Array<number> | null, } | { "op": "set_lighting", enabled: boolean, };
 
 /**
  * 商用利用の範囲。
