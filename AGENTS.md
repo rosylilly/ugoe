@@ -55,6 +55,7 @@ crates/             Rust クレート (ランタイム層とツール層。依�
   ugoe-mcp            MCP サーバ (外部のエージェントが .ugoeproj を読み、編集を提案・適用する)
 apps/editor/        Tauri エディタ (src/ = Svelte フロントエンド, src-tauri/ = Rust バックエンド)
 apps/viewer/        Tauri ビューア (.ugoe を開いて表示しパラメータを動かす。構成はエディタと同じ)
+packages/           エディタとビューアで共有するフロントエンドの部品 (face-tracking など。GPL-3.0-only)
 docs/               設計・仕様・ADR・タスク
 scripts/            補助スクリプト (check-layers.mjs 等)
 assets/fixtures/    テスト用アセット (小さいものだけ)
@@ -100,7 +101,7 @@ assets/fixtures/    テスト用アセット (小さいものだけ)
 
 ### 外部のコードとライセンス
 
-- **ライセンス:** `crates/` と `docs/` は MIT、`apps/editor/` と `apps/viewer/` は GPL-3.0-only ([ADR 0018](docs/adr/0018-licensing-and-1.0-scope.md)・[ADR 0019](docs/adr/0019-viewer-license.md))。新しいクレートは `license.workspace = true` を書く。
+- **ライセンス:** `crates/` と `docs/` は MIT、`apps/editor/`・`apps/viewer/`・`packages/` は GPL-3.0-only ([ADR 0018](docs/adr/0018-licensing-and-1.0-scope.md)・[ADR 0019](docs/adr/0019-viewer-license.md))。新しいクレートは `license.workspace = true` を書く。
 - **MIT のクレートに、コピーレフト (MPL・LGPL・GPL など) のライブラリを依存させない。** `just licenses` (`just ci` に含まれる) が依存するクレートのライセンスを検査する。
 
 - **Live2D Cubism SDK などの外部 SDK のソースを、リポジトリの中に置かない (ダウンロードしない)。コードも写さない。** 挙動を調べるためにソースを読むのはよいが、読むときはリポジトリの外 (一時ディレクトリなど) で読む。
