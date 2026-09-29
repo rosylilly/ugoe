@@ -31,13 +31,16 @@ ugoe-rigging = { path = "crates/ugoe-rigging" }
 ugoe-runtime = { path = "crates/ugoe-runtime" }
 # --- external ---
 anyhow = "1"
+apple-native-keyring-store = { version = "1", features = ["keychain"] }
 base64 = "0.22"
 bytemuck = { version = "1", features = ["derive"] }
 clap = { version = "4", features = ["derive"] }
 console_error_panic_hook = "0.1"
+dbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }
 encoding_rs = "0.8"
 glam = { version = "0.33", features = ["serde", "bytemuck"] }
 insta = { version = "1", features = ["json"] }
+keyring-core = "1"
 miniz_oxide = "0.9"
 naga = { version = "30", features = ["wgsl-in"] }
 png = "0.18"
@@ -60,6 +63,7 @@ wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = "0.3"
 wgpu = "30"
+windows-native-keyring-store = { version = "1", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

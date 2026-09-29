@@ -711,9 +711,50 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 ヘッダーの「Help」は、操作マニュアル (`docs/manual/README.md` の GitHub の URL) を OS の既定のブラウザで開きます
 (`tauri-plugin-opener` / `@tauri-apps/plugin-opener`、MIT OR Apache-2.0。Tauri v2 の WebView は `target="_blank"` のリンクを開かないため)。
 
-- 権限は `opener:allow-open-url` を **`https://github.com/rosylilly/ugoe/*` だけ** に限っています (`capabilities/default.json`)。ほかの URL・ファイルは開けません。
+- 権限は `opener:allow-open-url` を **`https://github.com/rosylilly/ugoe/*` と `https://www.anthropic.com/legal/*`** (AI の確認の画面の規約) だけに限っています (`capabilities/default.json`)。ほかの URL・ファイルは開けません。
 - 開けなかったときは、理由と URL を選んで写せる形で出します (`src/lib/HelpButton.svelte`)。
 - **差し替え (テスト用):** `window.__UGOE_OPEN_URL__` に `(url) => Promise<void>` を置くと、プラグインの代わりにそれを呼びます (`src/lib/help.ts`)。
+
+### AI の設定と送信の同意
+
+外部の AI サービス (Claude API、`ugoe_ai::claude::ClaudeProvider`) を安全に使うための土台です (T0638)。
+方針は [AI 連携のセキュリティとプライバシー](ai-integration.md#セキュリティとプライバシー)。バックエンドは `src-tauri/src/ai.rs`、
+画面は `src/lib/ai/` にあります。
+
+- **API キーの保存先:** OS の資格情報の保存先 (Linux は Secret Service、macOS はキーチェーン、Windows は資格情報マネージャー。
+  [`keyring-core`](https://crates.io/crates/keyring-core) と OS ごとの保存先のクレート) に、サービス `ugoe-editor`・アカウント
+  `anthropic-api-key` で置きます。プロジェクト・設定ファイル・ログには書きません。
+  - 読む順は保存先 → 環境変数 `ANTHROPIC_API_KEY`。読んだ値は `ApiKey::new` に渡します。
+  - 保存先は最初に使うときに開きます。開けない・読めない環境 (WSL・キーリングのない Linux など) では「使えない」と出し、
+    環境変数だけを使います。普通のファイルへの代わりの保存はしません。
+  - Linux の保存先は同期の D-Bus (`dbus-secret-service-keyring-store`、暗号は `crypto-rust`) で、OpenSSL は要りません。
+    D-Bus の応答待ちで画面が止まらないよう、AI の IPC コマンドは別のスレッドで動かします。
+- **画面に出すもの:** フロントエンドが知るのはキーの状態 (`KeyStatus`: `stored`・`not_stored`・`unavailable`) と、環境変数に
+  キーがあるかだけです。キーは入力欄から `store_api_key` に 1 度渡すだけで、保存したら入力欄を空にします (Svelte の状態にも持たない)。
+- **プロジェクトごとの「外部に送らない」:** `project.json` の `editor.ai.send_externally` (`ProjectMeta::ai_send_externally`)。
+  選んだプロジェクトでは、外部に送るコマンドはすべて断ります (ローカルで完結するプロバイダは使える)。変えると未保存の変更になります。
+- **送る前の確認:** 外部に送る IPC コマンドは `ai::prepare_claude` を通します。プロジェクトの設定 → API キー → 同意の順に確かめ、
+  同意がなければ **送らずに** `AiReply::NeedsConsent { disclosure }` を返します。フロントエンドは `withConsent(call, consentPrompt.ask)`
+  (`src/lib/ai/consent.ts`) で確認のダイアログ (`ConsentDialog.svelte`) を出し、同意 (`ConsentAnswer`) を付けて呼び直します。
+  - ダイアログは `Provider::disclosure` の送り先 (サービス・URL・モデル)・画像の枚数とバイト数・テキストのバイト数と、
+    Anthropic の規約 (Commercial Terms・Privacy Policy) へのリンクを示します。Esc と「Cancel」は送りません。
+  - 同意は示した内容そのものに対するもので、呼び直したときに送る内容が違えば (画像が増えたなど) もう一度確かめます。
+  - **「今後は確かめない」** は、このプロジェクトを開いている間 (エディタを終えるか、新規・開くで替えるまで) だけ、同じ送り先
+    (サービス・URL・モデル) には確かめずに送ります。ファイルには残しません。画像を外部に送ることを永続的に黙って許す設定は
+    置かない、という判断です。設定の画面の「Ask again」で取り消せ、「外部に送らない」にしても消えます。
+- **設定の画面:** ヘッダーの「Settings」(`SettingsDialog.svelte`)。キーの保存・置き換え・削除、「外部に送らない」、
+  「Ask again」、「Test connection」(画像なしの小さなリクエストを、同意を得てから送ってキーを確かめる) があります。
+- **AI の機能を足すとき (T0637 など):** 送る IPC コマンドは `consent: ConsentAnswer | null` を受け取り、`prepare_claude` の
+  `Prepared::NeedsConsent` をそのまま `AiReply::NeedsConsent` で返します。画面は `aiSettings.canSend` (`src/lib/ai/ai.svelte.ts`) で
+  ボタンの有効・無効を決めます。
+
+| コマンド | 内容 |
+| --- | --- |
+| `ai_settings` | `AiSettings { key, env_key, send_externally, consent_remembered }`。キーの中身は含まない |
+| `store_api_key(key)` / `delete_api_key` | 保存先にキーを保存・削除し、`AiSettings` を返す |
+| `set_ai_send_externally(allowed)` | 開いているプロジェクトの「外部に送ってよいか」を変える |
+| `forget_ai_consent` | 「今後は確かめない」を取り消す |
+| `test_ai_connection(consent?)` | 接続の確認。`AiReply<null>` (`done` か `needs_consent`) |
 
 ## ビューポート
 

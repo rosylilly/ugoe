@@ -1,6 +1,32 @@
 // このファイルは生成物です。手で編集せず `just gen` で作り直してください (docs/editor.md#型の生成)。
 
 /**
+ * 外部の AI に送る IPC コマンドの戻り値。
+ */
+export type AiReply<T> = { "status": "done", value: T, } | { "status": "needs_consent", disclosure: DisclosureView, };
+
+/**
+ * 設定の画面に出す AI の状態。キーの中身は含めない。
+ */
+export type AiSettings = { 
+/**
+ * 資格情報の保存先の状態。
+ */
+key: KeyStatus, 
+/**
+ * 環境変数 `ANTHROPIC_API_KEY` にキーがあるか (保存先にキーがなければこちらを使う)。
+ */
+env_key: boolean, 
+/**
+ * 開いているプロジェクトのデータを外部の AI サービスに送ってよいか。
+ */
+send_externally: boolean, 
+/**
+ * このプロジェクトで「今後は確かめない」を選んだか (エディタを終えるかプロジェクトを替えると消える)。
+ */
+consent_remembered: boolean, };
+
+/**
  * ドキュメントのモーションと表情 (`get_animations` の戻り値)。
  */
 export type AnimationData = { motions: Array<Motion>, expressions: Array<Expression>, };
@@ -206,6 +232,20 @@ overwrite_authored: boolean, } | { "op": "mark_keyform_authored", target: Keyfor
 export type CommercialUsage = "personal_non_profit" | "personal_profit" | "corporation";
 
 /**
+ * 確認のダイアログでの利用者の答え。送る IPC コマンドに付けて呼び直す。
+ */
+export type ConsentAnswer = { 
+/**
+ * 同意した内容 (ダイアログに示したもの)。今送ろうとしている内容と違えば、もう一度確かめる。
+ */
+disclosure: DisclosureView, 
+/**
+ * 「今後は確かめない」: このプロジェクトを閉じるかエディタを終えるまで、同じ送り先
+ * (サービス・URL・モデル) には確かめずに送る。ファイルには残さない。
+ */
+remember: boolean, };
+
+/**
  * クレジット表記。
  */
 export type CreditNotation = "required" | "unnecessary";
@@ -275,6 +315,31 @@ yaw?: string | null,
  * 横軸まわりの回転 (pitch) に使う軸のパラメータ (通常 `AngleY`)。`None` なら回さない。
  */
 pitch?: string | null, };
+
+/**
+ * 外部に送る内容 (確認のダイアログに示す)。`ugoe_ai::Disclosure` の外部に送る場合の写し。
+ */
+export type DisclosureView = { 
+/**
+ * サービスの名前 (例: `Anthropic Claude API`)。
+ */
+service: string, 
+/**
+ * 送り先の URL。
+ */
+endpoint: string, 
+/**
+ * 使うモデル。
+ */
+model: string, image_count: number, 
+/**
+ * 画像の合計バイト数 (エンコード前)。
+ */
+image_bytes: number, 
+/**
+ * テキスト (システムプロンプトとプロンプト) の合計バイト数。
+ */
+text_bytes: number, };
 
 /**
  * 描画順の範囲 `[min, max]` (`min <= max`)。
@@ -359,6 +424,11 @@ export type HitArea = { id: string, mesh: string, };
  * [`Command::InferKeyforms`] の推定の方法。
  */
 export type InferMethod = "from_grid" | "additive" | "depth_rotation";
+
+/**
+ * 資格情報の保存先の状態 (フロントエンドに見せるのはこれだけ。キーの中身は見せない)。
+ */
+export type KeyStatus = "stored" | "not_stored" | "unavailable";
 
 /**
  * 1 つのセルのキーフォーム。種類は対象の格子と一致させる。

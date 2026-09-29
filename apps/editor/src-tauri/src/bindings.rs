@@ -9,6 +9,7 @@ use ugoe_editor_core::overflow::{ElementOverflow, OverflowReport};
 use ugoe_editor_core::physics_check::RestPoseCollision;
 use ugoe_editor_core::{ApplyReport, PsdImportWarning};
 
+use crate::ai::{AiReply, AiSettings, ConsentAnswer};
 use crate::commands::{AnimationData, AppInfo};
 use crate::project::ProjectStatus;
 
@@ -29,6 +30,9 @@ pub fn generated_files() -> Result<Vec<(&'static str, String)>, serde_json::Erro
     types.add::<ElementOverflow>();
     types.add::<OverflowReport>();
     types.add::<RestPoseCollision>();
+    types.add::<AiSettings>();
+    types.add::<ConsentAnswer>();
+    types.add::<AiReply<()>>();
     Ok(vec![
         ("apps/editor/src/lib/generated/types.ts", types.render()),
         (

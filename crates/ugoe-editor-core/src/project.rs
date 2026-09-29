@@ -101,7 +101,45 @@ impl ProjectMeta {
             editor: serde_json::Map::new(),
         }
     }
+
+    /// このプロジェクトのデータ (画像・レイヤー名など) を外部の AI サービスに送ってよいか。
+    ///
+    /// `editor.ai.send_externally` が `false` のときだけ送らない (書いていなければ送ってよい。
+    /// 送るたびに同意は求める)。`docs/ai-integration.md#セキュリティとプライバシー`。
+    pub fn ai_send_externally(&self) -> bool {
+        self.editor
+            .get(AI_KEY)
+            .and_then(|ai| ai.get(AI_SEND_EXTERNALLY_KEY))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(true)
+    }
+
+    /// [`Self::ai_send_externally`] を設定する。`true` (既定) にすると項目を消し、
+    /// `editor.ai` が空になればそれも消す (既定のままのプロジェクトの `project.json` を変えないため)。
+    pub fn set_ai_send_externally(&mut self, allowed: bool) {
+        let ai = self
+            .editor
+            .entry(AI_KEY)
+            .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+        if !ai.is_object() {
+            *ai = serde_json::Value::Object(serde_json::Map::new());
+        }
+        if let serde_json::Value::Object(map) = ai {
+            if allowed {
+                map.remove(AI_SEND_EXTERNALLY_KEY);
+            } else {
+                map.insert(AI_SEND_EXTERNALLY_KEY.into(), false.into());
+            }
+            if map.is_empty() {
+                self.editor.remove(AI_KEY);
+            }
+        }
+    }
 }
+
+/// `editor` のうち AI の設定を置く項目。
+const AI_KEY: &str = "ai";
+const AI_SEND_EXTERNALLY_KEY: &str = "send_externally";
 
 /// プロジェクト 1 つ分の中身。
 ///

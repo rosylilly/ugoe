@@ -9,7 +9,10 @@
     "dialog:allow-save",
     {
       "identifier": "opener:allow-open-url",
-      "allow": [{ "url": "https://github.com/rosylilly/ugoe/*" }]
+      "allow": [
+        { "url": "https://github.com/rosylilly/ugoe/*" },
+        { "url": "https://www.anthropic.com/legal/*" }
+      ]
     }
   ]
 }

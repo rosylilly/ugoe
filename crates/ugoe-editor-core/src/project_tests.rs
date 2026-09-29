@@ -252,6 +252,47 @@ fn empty_project_round_trips() {
     assert_eq!(Project::load(&tmp.project()).unwrap(), project);
 }
 
+/// 「外部の AI に送らない」は `editor.ai.send_externally` に保存され、既定 (送ってよい) なら書かない。
+#[test]
+fn ai_send_externally_round_trips_and_defaults_to_allowed() {
+    let tmp = TempDir::new("ai-send");
+    let mut project = Project::empty("New");
+    assert!(project.meta.ai_send_externally());
+    project
+        .meta
+        .editor
+        .insert("other".into(), serde_json::json!({ "keep": 1 }));
+    project.meta.set_ai_send_externally(false);
+    assert!(!project.meta.ai_send_externally());
+    project.save(&tmp.project()).unwrap();
+    let json = fs::read_to_string(tmp.project().join("project.json")).unwrap();
+    assert!(json.contains("\"send_externally\": false"), "{json}");
+    let mut loaded = Project::load(&tmp.project()).unwrap();
+    assert!(!loaded.meta.ai_send_externally());
+
+    // 送ってよいに戻すと項目が消え、ほかの設定は残る。
+    loaded.meta.set_ai_send_externally(true);
+    assert!(loaded.meta.ai_send_externally());
+    assert!(!loaded.meta.editor.contains_key("ai"));
+    assert_eq!(
+        loaded.meta.editor["other"],
+        serde_json::json!({ "keep": 1 })
+    );
+
+    // 項目のない (以前の) project.json は、送ってよい扱いで読める。
+    let old: ProjectMeta =
+        serde_json::from_str(r#"{ "format_version": 0, "name": "old" }"#).unwrap();
+    assert!(old.ai_send_externally());
+    // 形の違う値は既定 (送ってよい) として読み、上書きできる。
+    let mut odd: ProjectMeta = serde_json::from_str(
+        r#"{ "format_version": 0, "name": "odd", "editor": { "ai": "yes" } }"#,
+    )
+    .unwrap();
+    assert!(odd.ai_send_externally());
+    odd.set_ai_send_externally(false);
+    assert!(!odd.ai_send_externally());
+}
+
 // ---- 読み込みのエラー ----
 
 #[test]

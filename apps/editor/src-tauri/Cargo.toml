@@ -15,15 +15,26 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build.workspace = true
 
 [dependencies]
+keyring-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tauri.workspace = true
 tauri-plugin-dialog.workspace = true
 tauri-plugin-opener.workspace = true
 ts-rs.workspace = true
+ugoe-ai.workspace = true
 ugoe-editor-core.workspace = true
 ugoe-format.workspace = true
 ugoe-model.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+dbus-secret-service-keyring-store.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-native-keyring-store.workspace = true
 
 [lints]
 workspace = true

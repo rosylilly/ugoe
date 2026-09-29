@@ -36,6 +36,7 @@ character.ugoeproj/
 | `format_version` | u32 | プロジェクトの形式のバージョン (`PROJECT_FORMAT_VERSION`、現在 0)。ディレクトリ構成を変えたら上げる。モデルの `schema_version` とは別 |
 | `name` | string | プロジェクトの表示名。エディタで「別名で保存」するとディレクトリ名 (拡張子を除く) になる |
 | `editor` | object | エディタの設定 (自由な JSON)。空なら書き出さない |
+| `editor.ai.send_externally` | bool | `false` なら、このプロジェクトのデータを外部の AI サービスに送らない ([エディタ](../editor.md#ai-の設定と送信の同意))。既定 (送ってよい) のときは書き出さない。省略・形の違う値は送ってよい扱い |
 
 - `format_version` が読める版より新しければ、読み込みをエラーにします。
 

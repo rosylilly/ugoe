@@ -5,9 +5,14 @@
   右の列はインスペクタ (上) とパラメータ (下) に分け、区切りをドラッグ (または矢印キー) で動かす (lib/layout.ts)。
   上の区画は「Inspector」「Physics」(lib/panels/physics/)「Verify」(lib/panels/verify/) をタブで切り替える。
   Undo / Redo のショートカット (lib/shortcuts.ts) もここで受ける。
+  ヘッダーの「Settings」は AI の設定 (lib/ai/SettingsDialog.svelte)。外部の AI に送る前の確認
+  (lib/ai/ConsentDialog.svelte) もここに置く。
   プレビューモード (lib/preview/) では、左の列・タイムライン・編集のツールと右の列を隠し、右にプレビューのパネルを出す。
 -->
 <script lang="ts">
+import { consentPrompt } from "./lib/ai/ai.svelte";
+import ConsentDialog from "./lib/ai/ConsentDialog.svelte";
+import SettingsDialog from "./lib/ai/SettingsDialog.svelte";
 import { EditorDocument } from "./lib/document.svelte";
 import { EMPTY_VIEWPORT_HINT } from "./lib/emptyState";
 import FileMenu from "./lib/FileMenu.svelte";
@@ -38,6 +43,7 @@ const verify = new VerifyView();
 const preview = new PreviewMode(doc, viewport);
 let info = $state<AppInfo | null>(null);
 let fileMenu = $state<FileMenu>();
+let settings = $state<SettingsDialog>();
 
 ipc.appInfo().then((i) => {
   info = i;
@@ -119,6 +125,7 @@ $effect(() => {
       <button onclick={() => doc.undo()} title="Undo ({undoKeys})">Undo</button>
       <button onclick={() => doc.redo()} title="Redo ({redoKeys})">Redo</button>
     {/if}
+    <button onclick={() => settings?.open()} title="AI API key and this project's AI settings">Settings</button>
     <HelpButton />
   </header>
   <aside class="left">
@@ -183,6 +190,8 @@ $effect(() => {
     </aside>
   {/if}
 </div>
+<SettingsDialog bind:this={settings} onchange={() => fileMenu?.refresh()} />
+<ConsentDialog prompt={consentPrompt} />
 
 <style>
   /* プレビュー中は編集の列を隠す (中身は壊さず、出たときに元の状態で戻る)。 */

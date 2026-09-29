@@ -14,6 +14,7 @@ use ugoe_editor_core::{
 };
 
 use crate::AppState;
+use crate::ai::ConsentMemory;
 
 /// 開いているプロジェクトのうち、`Document` の外にあるもの (保存先・メタ情報)。
 /// モデル・物理・モーション・表情は `Document` が持つ (編集コマンドと Undo の対象)。
@@ -22,6 +23,10 @@ pub struct ProjectSession {
     /// 保存先の `.ugoeproj` ディレクトリ。一度も保存していなければ `None`。
     path: Option<PathBuf>,
     meta: ProjectMeta,
+    /// `meta` を最後に保存 (または開いた) ときから変えたか (`Document` の変更とは別に数える)。
+    meta_modified: bool,
+    /// AI への送信の「今後は確かめない」。プロジェクトを替えると消え、ファイルには残さない。
+    ai_consent: ConsentMemory,
 }
 
 impl ProjectSession {
@@ -30,11 +35,38 @@ impl ProjectSession {
         let session = Self {
             path,
             meta: project.meta,
+            meta_modified: false,
+            ai_consent: ConsentMemory::default(),
         };
         (session, document)
     }
 
-    fn to_project(&self, document: &Document) -> Project {
+    /// このプロジェクトのデータを外部の AI サービスに送ってよいか (`ProjectMeta::ai_send_externally`)。
+    pub(crate) fn ai_send_externally(&self) -> bool {
+        self.meta.ai_send_externally()
+    }
+
+    /// 送ってよいかを変える。送らないにすると「今後は確かめない」も忘れる。
+    pub(crate) fn set_ai_send_externally(&mut self, allowed: bool) {
+        if self.meta.ai_send_externally() == allowed {
+            return;
+        }
+        self.meta.set_ai_send_externally(allowed);
+        self.meta_modified = true;
+        if !allowed {
+            self.ai_consent.forget();
+        }
+    }
+
+    pub(crate) fn ai_consent(&self) -> &ConsentMemory {
+        &self.ai_consent
+    }
+
+    pub(crate) fn ai_consent_mut(&mut self) -> &mut ConsentMemory {
+        &mut self.ai_consent
+    }
+
+    pub(crate) fn to_project(&self, document: &Document) -> Project {
         Project::from_document(self.meta.clone(), document)
     }
 }
@@ -76,7 +108,7 @@ fn status(session: &ProjectSession, document: &Document) -> ProjectStatus {
     ProjectStatus {
         name: session.meta.name.clone(),
         path: session.path.as_ref().map(|p| p.display().to_string()),
-        modified: document.is_modified(),
+        modified: document.is_modified() || session.meta_modified,
     }
 }
 
@@ -170,7 +202,7 @@ pub fn open_project(state: State<'_, AppState>, path: String) -> Result<ProjectS
 /// 開いたときの (または前回保存した) 場所に保存する。
 #[tauri::command]
 pub fn save_project(state: State<'_, AppState>) -> Result<ProjectStatus, String> {
-    let (mut document, session) = lock_both(&state)?;
+    let (mut document, mut session) = lock_both(&state)?;
     let dir = session
         .path
         .clone()
@@ -180,6 +212,7 @@ pub fn save_project(state: State<'_, AppState>) -> Result<ProjectStatus, String>
         .save(&dir)
         .map_err(|e| e.to_string())?;
     document.mark_saved();
+    session.meta_modified = false;
     Ok(status(&session, &document))
 }
 
@@ -198,6 +231,7 @@ pub fn save_project_as(state: State<'_, AppState>, path: String) -> Result<Proje
     project.save(&dir).map_err(|e| e.to_string())?;
     session.meta = meta;
     session.path = Some(dir);
+    session.meta_modified = false;
     document.mark_saved();
     Ok(status(&session, &document))
 }

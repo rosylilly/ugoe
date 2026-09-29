@@ -1,6 +1,7 @@
 //! エディタのバックエンド。ここは **薄い IPC 層** に保ち、編集ロジックは `ugoe-editor-core` に置く。
 //! 設計: `docs/editor.md`。
 
+pub(crate) mod ai;
 pub mod bindings;
 mod commands;
 mod overflow;
@@ -20,6 +21,8 @@ pub struct AppState {
     pub document: Mutex<Document>,
     /// 開いているプロジェクトの保存先・メタ情報など (`Document` の外のもの)。
     pub project: Mutex<project::ProjectSession>,
+    /// AI の API キー (OS の資格情報の保存先と環境変数)。
+    pub api_keys: ai::ApiKeys,
 }
 
 pub fn run() {
@@ -27,6 +30,7 @@ pub fn run() {
     let state = AppState {
         document: Mutex::new(document),
         project: Mutex::new(session),
+        api_keys: ai::ApiKeys::default(),
     };
     #[allow(clippy::expect_used)]
     tauri::Builder::default()
@@ -55,6 +59,12 @@ pub fn run() {
             overflow::find_overflows,
             overflow::verify_overflows,
             physics_check::check_physics,
+            ai::ai_settings,
+            ai::store_api_key,
+            ai::delete_api_key,
+            ai::set_ai_send_externally,
+            ai::forget_ai_consent,
+            ai::test_ai_connection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
