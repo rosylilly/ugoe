@@ -133,7 +133,9 @@ fn external(images: usize) -> Disclosure {
 fn consent_is_asked_for_each_external_request() {
     let mut memory = ConsentMemory::default();
     let disclosure = external(2);
-    let Gate::Ask(view) = check_consent(true, &mut memory, &disclosure, None).unwrap() else {
+    let Gate::Ask(view) =
+        check_consent(true, &mut memory, DisclosureView::new(&disclosure), None).unwrap()
+    else {
         panic!("expected to ask");
     };
     assert_eq!(
@@ -146,18 +148,30 @@ fn consent_is_asked_for_each_external_request() {
         remember: false,
     };
     assert_eq!(
-        check_consent(true, &mut memory, &disclosure, Some(&once)).unwrap(),
+        check_consent(
+            true,
+            &mut memory,
+            DisclosureView::new(&disclosure),
+            Some(&once)
+        )
+        .unwrap(),
         Gate::Proceed
     );
     assert!(!memory.is_remembered());
     // 1 回きりの同意は次の送信には使わない。
     assert!(matches!(
-        check_consent(true, &mut memory, &disclosure, None).unwrap(),
+        check_consent(true, &mut memory, DisclosureView::new(&disclosure), None).unwrap(),
         Gate::Ask(_)
     ));
     // 同意した内容と違う (画像が増えた) なら確かめ直す。
     assert!(matches!(
-        check_consent(true, &mut memory, &external(3), Some(&once)).unwrap(),
+        check_consent(
+            true,
+            &mut memory,
+            DisclosureView::new(&external(3)),
+            Some(&once)
+        )
+        .unwrap(),
         Gate::Ask(_)
     ));
 }
@@ -171,11 +185,17 @@ fn remembered_consent_covers_the_same_destination_only() {
         disclosure: view,
         remember: true,
     };
-    check_consent(true, &mut memory, &disclosure, Some(&remember)).unwrap();
+    check_consent(
+        true,
+        &mut memory,
+        DisclosureView::new(&disclosure),
+        Some(&remember),
+    )
+    .unwrap();
     assert!(memory.is_remembered());
     // 同じ送り先なら、画像の数が違っても確かめない。
     assert_eq!(
-        check_consent(true, &mut memory, &external(5), None).unwrap(),
+        check_consent(true, &mut memory, DisclosureView::new(&external(5)), None).unwrap(),
         Gate::Proceed
     );
     // 別のモデルなら確かめる。
@@ -184,12 +204,12 @@ fn remembered_consent_covers_the_same_destination_only() {
         *model = "claude-sonnet-5-5".into();
     }
     assert!(matches!(
-        check_consent(true, &mut memory, &other, None).unwrap(),
+        check_consent(true, &mut memory, DisclosureView::new(&other), None).unwrap(),
         Gate::Ask(_)
     ));
     memory.forget();
     assert!(matches!(
-        check_consent(true, &mut memory, &disclosure, None).unwrap(),
+        check_consent(true, &mut memory, DisclosureView::new(&disclosure), None).unwrap(),
         Gate::Ask(_)
     ));
 }
@@ -203,18 +223,24 @@ fn disabled_projects_never_send_externally() {
         disclosure: DisclosureView::new(&disclosure).unwrap(),
         remember: true,
     };
-    let err = check_consent(false, &mut memory, &disclosure, Some(&answer)).unwrap_err();
+    let err = check_consent(
+        false,
+        &mut memory,
+        DisclosureView::new(&disclosure),
+        Some(&answer),
+    )
+    .unwrap_err();
     assert_eq!(err, SEND_DISABLED);
     assert!(!memory.is_remembered());
 
     let local = FakeProvider::new().disclosure(&ProviderRequest::default());
     assert_eq!(
-        check_consent(false, &mut memory, &local, None).unwrap(),
+        check_consent(false, &mut memory, DisclosureView::new(&local), None).unwrap(),
         Gate::Proceed
     );
 }
 
-fn state(secret: Option<&str>) -> AppState {
+pub(crate) fn state(secret: Option<&str>) -> AppState {
     let (session, document) = crate::project::initial_state();
     AppState {
         document: Mutex::new(document),
@@ -285,4 +311,23 @@ fn send_externally_is_saved_with_the_project() {
     let loaded = Project::load(&dir).unwrap();
     std::fs::remove_dir_all(&dir).unwrap();
     assert!(!loaded.meta.ai_send_externally());
+}
+
+/// 複数のリクエストをまとめた確認は合計を示す。外部に出ないものは数えず、送り先が違えば混ぜない。
+#[test]
+fn combined_disclosures_add_up() {
+    let local = FakeProvider::new().disclosure(&ProviderRequest::default());
+    let view = DisclosureView::combined(&[external(2), local.clone(), external(3)])
+        .unwrap()
+        .unwrap();
+    let single = DisclosureView::new(&external(1)).unwrap();
+    assert_eq!(view.image_count, 5);
+    assert_eq!(view.image_bytes, 5 * single.image_bytes);
+    assert_eq!(view.text_bytes, 2 * single.text_bytes);
+    assert!(DisclosureView::combined(&[local]).unwrap().is_none());
+    let mut other = external(1);
+    if let Destination::External { model, .. } = &mut other.destination {
+        *model = "claude-sonnet-5-5".into();
+    }
+    assert!(DisclosureView::combined(&[external(1), other]).is_err());
 }

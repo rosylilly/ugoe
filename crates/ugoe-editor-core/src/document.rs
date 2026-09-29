@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fmt::Display;
 use std::sync::Arc;
 
@@ -279,6 +280,51 @@ impl Document {
         self.saved = Some(self.current.state);
     }
 
+    /// 現在の状態の番号。状態ごとに一意で、Undo / Redo で戻れば同じ番号に戻る
+    /// (提案が作られた状態のままかを確かめるのに使う。`crate::proposal`)。
+    pub fn state_id(&self) -> u64 {
+        self.current.state
+    }
+
+    /// 現在の状態だけを持つ複製 (履歴は持たず、未保存の扱い)。元を変えずにコマンドを試すときに使う。
+    pub fn detached(&self) -> Document {
+        Document {
+            current: self.current.clone(),
+            undo: Vec::new(),
+            redo: Vec::new(),
+            next_state: self.next_state,
+            saved: None,
+        }
+    }
+
+    /// `commands` を検証せずに順に適用し、それぞれが新しく作った要素の ID を返す (提案の依存の解析用。
+    /// ドキュメントは変えない)。適用に失敗したコマンドとその後のものは空とする。
+    pub(crate) fn created_ids(&self, commands: &[Command]) -> Vec<BTreeSet<String>> {
+        let mut next = self.current.clone();
+        let mut created = Vec::with_capacity(commands.len());
+        let mut before = element_ids(&next);
+        for command in commands {
+            let ok = apply_to(
+                &mut next.model,
+                &mut next.textures,
+                &mut next.animations,
+                command.clone(),
+                &mut Vec::new(),
+                &mut Vec::new(),
+                &mut next.physics,
+            )
+            .is_ok();
+            if !ok {
+                break;
+            }
+            let after = element_ids(&next);
+            created.push(after.difference(&before).cloned().collect());
+            before = after;
+        }
+        created.resize_with(commands.len(), BTreeSet::new);
+        created
+    }
+
     /// コマンドを適用する。失敗時はモデルを変更しない。
     ///
     /// 適用後のモデルを `ugoe_model::validate::validate` で検査し、適用前になかった
@@ -361,6 +407,34 @@ impl Document {
             None => false,
         }
     }
+}
+
+/// 状態の中の要素の ID (パラメータ・グループ・パーツ・デフォーマ・メッシュ・グルー・テクスチャ・当たり判定・
+/// 物理のリグと衝突体・モーションと表情の名前)。
+fn element_ids(snapshot: &Snapshot) -> BTreeSet<String> {
+    let m = &snapshot.model;
+    let mut ids = BTreeSet::new();
+    ids.extend(m.parameters.iter().map(|p| p.id.to_string()));
+    ids.extend(m.parameter_groups.iter().map(|g| g.id.clone()));
+    ids.extend(m.parts.iter().map(|p| p.id.to_string()));
+    ids.extend(m.deformers.iter().map(|d| d.id.to_string()));
+    ids.extend(m.meshes.iter().map(|x| x.id.to_string()));
+    ids.extend(m.glues.iter().map(|g| g.id.clone()));
+    ids.extend(m.textures.iter().map(|t| t.name.clone()));
+    ids.extend(m.hit_areas.iter().map(|h| h.id.clone()));
+    if let Some(physics) = &snapshot.physics {
+        ids.extend(physics.rigs.iter().map(|r| r.id.clone()));
+        ids.extend(physics.colliders.iter().map(|c| c.id.clone()));
+    }
+    ids.extend(snapshot.animations.motions.iter().map(|x| x.name.clone()));
+    ids.extend(
+        snapshot
+            .animations
+            .expressions
+            .iter()
+            .map(|x| x.name.clone()),
+    );
+    ids
 }
 
 /// ID で要素を探す。

@@ -7,11 +7,16 @@
   Undo / Redo のショートカット (lib/shortcuts.ts) もここで受ける。
   ヘッダーの「Settings」は AI の設定 (lib/ai/SettingsDialog.svelte)。外部の AI に送る前の確認
   (lib/ai/ConsentDialog.svelte) もここに置く。
+  上の区画の「AI」タブは AI の提案 (lib/ai/ProposalsPanel.svelte)。提案をプレビューしている間は、ビューポートに
+  提案を適用した複製を渡し、編集のツールを隠す (docs/editor.md#ai-の提案)。
   プレビューモード (lib/preview/) では、左の列・タイムライン・編集のツールと右の列を隠し、右にプレビューのパネルを出す。
 -->
 <script lang="ts">
+import { untrack } from "svelte";
 import { consentPrompt } from "./lib/ai/ai.svelte";
 import ConsentDialog from "./lib/ai/ConsentDialog.svelte";
+import ProposalsPanel from "./lib/ai/ProposalsPanel.svelte";
+import { ProposalsView } from "./lib/ai/proposals.svelte";
 import SettingsDialog from "./lib/ai/SettingsDialog.svelte";
 import { EditorDocument } from "./lib/document.svelte";
 import { EMPTY_VIEWPORT_HINT } from "./lib/emptyState";
@@ -41,6 +46,7 @@ const selection = new Selection();
 const physics = new PhysicsView();
 const verify = new VerifyView();
 const preview = new PreviewMode(doc, viewport);
+const proposals = new ProposalsView(doc);
 let info = $state<AppInfo | null>(null);
 let fileMenu = $state<FileMenu>();
 let settings = $state<SettingsDialog>();
@@ -97,6 +103,12 @@ function onSplitterKey(e: KeyboardEvent): void {
 $effect(() => {
   if (doc.revision > 0) fileMenu?.refresh();
 });
+
+// ドキュメントが変わったら提案のプレビューをやめ、提案が古くなったかを取り直す。
+$effect(() => {
+  const revision = doc.revision;
+  if (revision > 0) untrack(() => proposals.documentChanged(revision));
+});
 </script>
 
 <svelte:window onkeydown={onKeydown} />
@@ -133,9 +145,12 @@ $effect(() => {
   </aside>
   <main class="center">
     <div class="viewport-area">
-      <Viewport controller={viewport} model={doc.model} hint={doc.empty ? EMPTY_VIEWPORT_HINT : null}>
+      <Viewport controller={viewport} model={proposals.preview?.model ?? doc.model}
+        hint={doc.empty && !proposals.preview ? EMPTY_VIEWPORT_HINT : null}>
         {#snippet overlay(controller)}
-          {#if !preview.active}<ToolOverlay {controller} {doc} {selection} {physics} {verify} />{/if}
+          {#if proposals.preview}
+            <p class="proposal-banner">Previewing an AI proposal. The model is unchanged until you adopt it.</p>
+          {:else if !preview.active}<ToolOverlay {controller} {doc} {selection} {physics} {verify} />{/if}
         {/snippet}
       </Viewport>
     </div>
@@ -144,16 +159,22 @@ $effect(() => {
   <aside class="right" bind:this={rightColumn}>
     <div class="pane inspector" style:flex-basis="{split * 100}%">
       <div class="tabs" role="tablist">
-        <button role="tab" aria-selected={!physics.active && !verify.active}
-          class:current={!physics.active && !verify.active}
-          onclick={() => ((physics.active = false), (verify.active = false))}>Inspector</button>
+        <button role="tab" aria-selected={!physics.active && !verify.active && !proposals.active}
+          class:current={!physics.active && !verify.active && !proposals.active}
+          onclick={() => ((physics.active = false), (verify.active = false), (proposals.active = false))}>Inspector</button>
         <button role="tab" aria-selected={physics.active} class:current={physics.active}
-          onclick={() => ((physics.active = true), (verify.active = false))}>Physics</button>
+          onclick={() => ((physics.active = true), (verify.active = false), (proposals.active = false))}>Physics</button>
         <button role="tab" aria-selected={verify.active} class:current={verify.active}
-          onclick={() => ((verify.active = true), (physics.active = false))}>Verify</button>
+          onclick={() => ((verify.active = true), (physics.active = false), (proposals.active = false))}>Verify</button>
+        <button role="tab" aria-selected={proposals.active} class:current={proposals.active}
+          title="Classify PSD layers and review rig proposals"
+          onclick={() => ((proposals.active = true), (physics.active = false), (verify.active = false))}
+          >AI{proposals.count > 0 ? ` (${proposals.count})` : ""}</button>
       </div>
       {#if doc.error}<p class="error">{doc.error}</p>{/if}
-      {#if verify.active}
+      {#if proposals.active}
+        <ProposalsPanel view={proposals} {viewport} onopensettings={() => settings?.open()} />
+      {:else if verify.active}
         <VerifyPanel {doc} {selection} {viewport} view={verify} {physics} />
       {:else if physics.active}
         <PhysicsPanel {doc} {selection} {viewport} view={physics} />
@@ -210,6 +231,17 @@ $effect(() => {
   .preview {
     grid-area: preview;
     border-left: 1px solid var(--border);
+  }
+  .proposal-banner {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    margin: 0;
+    padding: 4px 8px;
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    background: var(--panel);
+    color: var(--accent);
   }
   header button.active {
     color: var(--accent);

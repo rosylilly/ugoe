@@ -5021,6 +5021,7 @@ dependencies = [
  "ugoe-editor-core",
  "ugoe-format",
  "ugoe-model",
+ "ugoe-psd",
  "windows-native-keyring-store",
 ]
 

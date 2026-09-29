@@ -225,6 +225,9 @@ pub struct DisclosureView {
     pub image_bytes: usize,
     /// テキスト (システムプロンプトとプロンプト) の合計バイト数。
     pub text_bytes: usize,
+    /// 答えが検証を通らなかったときに、同じ画像と前の答え・理由を添えて送り直すことがある回数の上限
+    /// (上の数は 1 回分。`ugoe_ai::rig::propose_rig_with_ai` の問い直し)。
+    pub retries: usize,
 }
 
 impl DisclosureView {
@@ -245,7 +248,26 @@ impl DisclosureView {
             image_count: disclosure.image_count,
             image_bytes: disclosure.image_bytes,
             text_bytes: disclosure.text_bytes,
+            retries: 0,
         })
+    }
+
+    /// 複数のリクエストをまとめたもの (枚数・バイト数は合計)。送り先の違うものは混ぜない。
+    /// すべて外部に送らないなら `None`。
+    pub fn combined(disclosures: &[Disclosure]) -> Result<Option<Self>, String> {
+        let mut total: Option<Self> = None;
+        for view in disclosures.iter().filter_map(Self::new) {
+            match &mut total {
+                None => total = Some(view),
+                Some(t) if t.destination() == view.destination() => {
+                    t.image_count += view.image_count;
+                    t.image_bytes += view.image_bytes;
+                    t.text_bytes += view.text_bytes;
+                }
+                Some(_) => return Err("the requests go to different services".into()),
+            }
+        }
+        Ok(total)
     }
 
     fn destination(&self) -> RememberedDestination {
@@ -305,13 +327,14 @@ pub const SEND_DISABLED: &str =
 
 /// 送る前の確認。`allowed` はプロジェクトの「外部に送ってよい」
 /// (`ProjectMeta::ai_send_externally`)。送ってよくなければ、外部に出る送信はすべて断る。
+/// `view` は送る内容 ([`DisclosureView::new`]。外部に出なければ `None`)。
 pub fn check_consent(
     allowed: bool,
     memory: &mut ConsentMemory,
-    disclosure: &Disclosure,
+    view: Option<DisclosureView>,
     answer: Option<&ConsentAnswer>,
 ) -> Result<Gate, String> {
-    let Some(view) = DisclosureView::new(disclosure) else {
+    let Some(view) = view else {
         return Ok(Gate::Proceed);
     };
     if !allowed {
@@ -358,15 +381,29 @@ pub fn prepare_claude(
     request: &ProviderRequest,
     consent: Option<&ConsentAnswer>,
 ) -> Result<Prepared, String> {
+    prepare_claude_requests(state, config, std::slice::from_ref(request), 0, consent)
+}
+
+/// [`prepare_claude`] の、複数のリクエストをまとめて 1 回の確認で送る版 (レイヤーの分類を分けて送るなど)。
+/// 確認には合計を示す。`retries` は答えが検証を通らなかったときに送り直すことがある回数の上限
+/// ([`DisclosureView::retries`])。
+pub fn prepare_claude_requests(
+    state: &AppState,
+    config: ClaudeConfig,
+    requests: &[ProviderRequest],
+    retries: usize,
+    consent: Option<&ConsentAnswer>,
+) -> Result<Prepared, String> {
     if !lock_project(state)?.ai_send_externally() {
         return Err(SEND_DISABLED.into());
     }
     let key = state.api_keys.resolve().map_err(|e| e.to_string())?;
     let provider = ClaudeProvider::new(config, key);
-    let disclosure = provider.disclosure(request);
+    let disclosures: Vec<Disclosure> = requests.iter().map(|r| provider.disclosure(r)).collect();
+    let view = DisclosureView::combined(&disclosures)?.map(|v| DisclosureView { retries, ..v });
     let mut session = lock_project(state)?;
     let allowed = session.ai_send_externally();
-    match check_consent(allowed, session.ai_consent_mut(), &disclosure, consent)? {
+    match check_consent(allowed, session.ai_consent_mut(), view, consent)? {
         Gate::Proceed => Ok(Prepared::Ready(provider)),
         Gate::Ask(view) => Ok(Prepared::NeedsConsent(view)),
     }
@@ -387,7 +424,7 @@ pub struct AiSettings {
     pub consent_remembered: bool,
 }
 
-fn lock_project(
+pub(crate) fn lock_project(
     state: &AppState,
 ) -> Result<std::sync::MutexGuard<'_, crate::project::ProjectSession>, String> {
     state
@@ -409,7 +446,7 @@ fn settings(state: &AppState) -> Result<AiSettings, String> {
 }
 
 /// 保存先の操作は時間がかかることがある (D-Bus の応答待ちなど) ので、画面を止めないよう別のスレッドで行う。
-async fn blocking<T: Send + 'static>(
+pub(crate) async fn blocking<T: Send + 'static>(
     app: AppHandle,
     task: impl FnOnce(&AppState) -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {
@@ -507,4 +544,4 @@ pub async fn test_ai_connection(
 
 #[cfg(test)]
 #[path = "ai_tests.rs"]
-mod tests;
+pub(crate) mod tests;

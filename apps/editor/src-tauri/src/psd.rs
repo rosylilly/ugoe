@@ -41,5 +41,9 @@ pub fn import_psd(
     let import =
         import::import_psd(document.model(), &bytes, &options).map_err(|e| e.to_string())?;
     document.apply(import.command).map_err(|e| e.to_string())?;
+    // AI の提案 (自動リギング) の元にする PSD を覚えておく (ロックの順序は document → project)。
+    crate::ai::lock_project(&state)?
+        .proposals
+        .set_psd(crate::project::absolute_path(&path)?);
     Ok(import.warnings)
 }

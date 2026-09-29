@@ -10,6 +10,7 @@ import type {
   ApplyReport,
   AutoMeshOptions,
   AvatarCheck,
+  Classification,
   Command,
   ConsentAnswer,
   ElementOverflow,
@@ -19,6 +20,9 @@ import type {
   OverflowReport,
   PhysicsSettings,
   ProjectStatus,
+  ProposalPreview,
+  ProposalState,
+  ProposalView,
   PsdImportWarning,
   RestPoseCollision,
 } from "./generated/types";
@@ -111,6 +115,34 @@ export const ipc = {
    */
   testAiConnection: (consent: ConsentAnswer | null) =>
     invoke<AiReply<null>>("test_ai_connection", { consent }),
+  /**
+   * apps/editor/src-tauri/src/proposals.rs。AI の提案のパネルの状態 (提案の一覧・元にする PSD・分類の結果)。
+   * docs/editor.md#ai-の提案
+   */
+  getProposals: () => invoke<ProposalState>("get_proposals"),
+  /**
+   * PSD のレイヤーを分類して覚える。`psd` を省略すると取り込んだ PSD。`useAi` なら画像を外部に送るので
+   * `withConsent` で呼ぶ (偽なら名前の規則だけで、何も送らない)。
+   */
+  classifyPsdLayers: (psd: string | null, useAi: boolean, consent: ConsentAnswer | null) =>
+    invoke<AiReply<Classification>>("classify_psd_layers", { psd, useAi, consent }),
+  /**
+   * 分類の結果からリグを提案し、一覧に置く (ドキュメントは変えない)。`useAi` なら原画を外部に送るので
+   * `withConsent` で呼ぶ (偽ならテンプレートの既定値)。
+   */
+  proposeRigFromPsd: (useAi: boolean, consent: ConsentAnswer | null) =>
+    invoke<AiReply<ProposalView>>("propose_rig_from_psd", { useAi, consent }),
+  /** `excluded` の番号のコマンドを除いた提案を、ドキュメントの複製に適用した姿 (ドキュメントは変えない)。 */
+  previewProposal: (id: number, excluded: number[]) =>
+    invoke<ProposalPreview>("preview_proposal", { id, excluded }),
+  /** 最後にプレビューした姿の .ugoe バンドル (テクスチャ付き)。 */
+  getProposalPreviewBundle: async () =>
+    new Uint8Array(await invoke<ArrayBuffer>("get_proposal_preview_bundle")),
+  clearProposalPreview: () => invoke<void>("clear_proposal_preview"),
+  /** `excluded` の番号のコマンドを除いて採用する (1 回の Undo で戻る)。 */
+  adoptProposal: (id: number, excluded: number[]) =>
+    invoke<ApplyReport>("adopt_proposal", { id, excluded }),
+  rejectProposal: (id: number) => invoke<ProposalState>("reject_proposal", { id }),
   /**
    * apps/editor/src-tauri/src/tracking.rs。JSON のテキスト (フェイストラッキングの記録) を `path` に書く。
    * パスは保存のダイアログで選んだもの。拡張子は `.json` だけ。

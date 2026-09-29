@@ -242,6 +242,19 @@ origin: Vec2, };
 export type ChildRef = { "kind": "mesh", "id": string } | { "kind": "deformer", "id": string };
 
 /**
+ * PSD のレイヤーの分類の結果。
+ */
+export type Classification = { 
+/**
+ * 分類した PSD のパス。
+ */
+psd: string, 
+/**
+ * AI で分類したか (偽なら名前の規則だけ)。
+ */
+by_ai: boolean, layers: Array<LayerLabelView>, };
+
+/**
  * 衝突体の形状。半径はキャンバスのピクセル単位。
  */
 export type ColliderShape = { "type": "circle", center: Vec2, radius: number, } | { "type": "capsule", a: Vec2, b: Vec2, radius: number, };
@@ -394,7 +407,12 @@ image_bytes: number,
 /**
  * テキスト (システムプロンプトとプロンプト) の合計バイト数。
  */
-text_bytes: number, };
+text_bytes: number, 
+/**
+ * 答えが検証を通らなかったときに、同じ画像と前の答え・理由を添えて送り直すことがある回数の上限
+ * (上の数は 1 回分。`ugoe_ai::rig::propose_rig_with_ai` の問い直し)。
+ */
+retries: number, };
 
 /**
  * 既定のパラメータで 1 フレームを描くときの、描画の見積もり。
@@ -625,6 +643,27 @@ export type KeyformOrigin = "authored" | "derived" | "additive" | "depth_rotatio
  * どの要素も格子を 1 つだけ持つ (`ugoe_rigging::KeyformTarget` と同じ)。
  */
 export type KeyformTarget = { "kind": "part", "id": string } | { "kind": "mesh", "id": string } | { "kind": "deformer", "id": string } | { "kind": "glue", "id": string };
+
+/**
+ * 1 枚のレイヤーの分類 (`ugoe_ai::classify::LayerLabel`)。
+ */
+export type LayerLabelView = { 
+/**
+ * レイヤーの名前の列 (外側のグループから順に、最後がレイヤー自身)。
+ */
+path: Array<string>, 
+/**
+ * 意味ラベル (`face`・`eye_white` など。`docs/ai-integration.md#レイヤーの意味分類`)。
+ */
+label: string, 
+/**
+ * `left`・`right`・`center` (キャラクター自身の左右)。
+ */
+side: string, confidence: number, 
+/**
+ * 確からしさが低く、人間が確かめたほうがよい。
+ */
+needs_review: boolean, };
 
 /**
  * リップシンク。外部から与えた音量 (0〜1) を対象パラメータに書き込む。
@@ -1079,6 +1118,64 @@ path: string | null,
  * 最後に保存 (または開いた) ときから変更があるか。
  */
 modified: boolean, };
+
+/**
+ * 提案の 1 つのコマンドの要約 (画面の一覧に出す)。
+ */
+export type ProposalCommand = { 
+/**
+ * コマンドの種類 (`op`。例: `add_parameter`)。
+ */
+op: string, 
+/**
+ * 対象の ID や名前 (例: `AngleX`、``deformer `WarpHead` ``)。分からなければ `null`。
+ */
+subject: string | null, 
+/**
+ * このコマンドが頼る、前のコマンドの番号 (提案の中の 0 始まり。使う要素を作る・同じ要素を先に変える。
+ * 規則は [`analyze`])。これを外すと、このコマンドは適用できないか、結果が変わる。
+ */
+requires: Array<number>, };
+
+/**
+ * 提案を複製に適用した姿 (`preview_proposal` の戻り値)。
+ */
+export type ProposalPreview = { 
+/**
+ * 適用した後のモデルの JSON (`get_model_json` と同じ形)。テクスチャ付きのバンドルは
+ * `get_proposal_preview_bundle` で受け取る。
+ */
+model_json: string, report: ApplyReport, };
+
+/**
+ * 提案のパネルの状態。
+ */
+export type ProposalState = { 
+/**
+ * 採用を待っている提案 (古い順)。
+ */
+proposals: Array<ProposalView>, 
+/**
+ * 提案の元にする PSD のパス。なければ `null` (分類するときに選ぶ)。
+ */
+psd: string | null, 
+/**
+ * 最後の分類の結果。
+ */
+classification: Classification | null, };
+
+/**
+ * 画面に出す提案。
+ */
+export type ProposalView = { id: number, title: string, 
+/**
+ * 提案の理由 (複数行)。
+ */
+rationale: string, commands: Array<ProposalCommand>, 
+/**
+ * 提案の後にドキュメントが変わった (プレビュー・採用できない。Undo で戻れば使える)。
+ */
+stale: boolean, };
 
 /**
  * 取り込みの警告。

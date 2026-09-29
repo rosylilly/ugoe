@@ -8,6 +8,7 @@ mod commands;
 mod overflow;
 mod physics_check;
 mod project;
+mod proposals;
 mod psd;
 mod space;
 mod tracking;
@@ -71,6 +72,14 @@ pub fn run() {
             ai::set_ai_send_externally,
             ai::forget_ai_consent,
             ai::test_ai_connection,
+            proposals::get_proposals,
+            proposals::classify_psd_layers,
+            proposals::propose_rig_from_psd,
+            proposals::preview_proposal,
+            proposals::get_proposal_preview_bundle,
+            proposals::clear_proposal_preview,
+            proposals::adopt_proposal,
+            proposals::reject_proposal,
             tracking::write_json_file,
         ])
         .run(tauri::generate_context!())

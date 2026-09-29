@@ -26,6 +26,7 @@ pub mod physics_check;
 pub mod physics_edit;
 pub mod physics_template;
 pub mod project;
+pub mod proposal;
 pub mod space;
 pub mod texture;
 
@@ -42,6 +43,7 @@ pub use keyform::Keyform;
 pub use motion_edit::{Animations, SegmentShape};
 pub use physics_template::{PhysicsTemplate, PhysicsTemplateOptions};
 pub use project::{Project, ProjectError, ProjectMeta, export_bundle};
+pub use proposal::{ProposalCommand, ProposalError, ProposalView, Proposals};
 pub use texture::Textures;
 
 #[cfg(test)]
@@ -80,5 +82,7 @@ mod physics_edit_tests;
 mod physics_template_tests;
 #[cfg(test)]
 mod project_tests;
+#[cfg(test)]
+mod proposal_tests;
 #[cfg(test)]
 mod tests;

@@ -16,6 +16,7 @@ use ugoe_editor_core::{
 
 use crate::AppState;
 use crate::ai::ConsentMemory;
+use crate::proposals::ProposalSession;
 
 /// 開いているプロジェクトのうち、`Document` の外にあるもの (保存先・メタ情報)。
 /// モデル・物理・モーション・表情は `Document` が持つ (編集コマンドと Undo の対象)。
@@ -28,6 +29,8 @@ pub struct ProjectSession {
     meta_modified: bool,
     /// AI への送信の「今後は確かめない」。プロジェクトを替えると消え、ファイルには残さない。
     ai_consent: ConsentMemory,
+    /// AI の提案と、提案の元にする PSD。プロジェクトを替えると消え、ファイルには残さない。
+    pub(crate) proposals: ProposalSession,
 }
 
 impl ProjectSession {
@@ -38,6 +41,7 @@ impl ProjectSession {
             meta: project.meta,
             meta_modified: false,
             ai_consent: ConsentMemory::default(),
+            proposals: ProposalSession::default(),
         };
         (session, document)
     }
@@ -84,7 +88,7 @@ const UNTITLED: &str = "Untitled";
 /// PSD から新しいプロジェクトを作る: `options.name` (PSD のファイル名) の空のプロジェクトに取り込む。
 /// 空のモデルへの取り込みなので、キャンバスは PSD の大きさになる。取り込みは Undo の 1 単位で、
 /// 未保存の状態から始まる (Undo すると空のプロジェクトに戻る)。
-fn from_psd(
+pub(crate) fn from_psd(
     bytes: &[u8],
     options: &PsdImportOptions,
 ) -> Result<(ProjectSession, Document, Vec<PsdImportWarning>), String> {
@@ -184,7 +188,8 @@ pub fn new_project_from_psd(
     mesh_options: Option<AutoMeshOptions>,
 ) -> Result<Vec<PsdImportWarning>, String> {
     let (bytes, options) = crate::psd::read_psd(&path, mesh_options)?;
-    let (new_session, new_document, warnings) = from_psd(&bytes, &options)?;
+    let (mut new_session, new_document, warnings) = from_psd(&bytes, &options)?;
+    new_session.proposals.set_psd(absolute_path(&path)?);
     let (mut document, mut session) = lock_both(&state)?;
     (*session, *document) = (new_session, new_document);
     Ok(warnings)

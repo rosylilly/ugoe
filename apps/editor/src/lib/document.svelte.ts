@@ -63,9 +63,14 @@ export class EditorDocument {
 
   /** コマンドを適用して読み直す。適用の報告 (ミラーの結果など) を返し、失敗したら null (`error` に理由)。 */
   async apply(command: Command): Promise<ApplyReport | null> {
+    return this.applyWith(() => ipc.applyCommand(command));
+  }
+
+  /** 適用の報告を返す IPC (AI の提案の採用など) を呼んで読み直す。`apply` と同じく失敗したら null。 */
+  async applyWith(action: () => Promise<ApplyReport>): Promise<ApplyReport | null> {
     let applied: ApplyReport | null = null;
     await this.#run(async () => {
-      const report = await ipc.applyCommand(command);
+      const report = await action();
       if (report.warnings.length > 0) {
         this.warnings = mergeWarnings(this.warnings, report.warnings);
       }

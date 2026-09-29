@@ -13,6 +13,7 @@ use ugoe_editor_core::{ApplyReport, ExportReport, ExportSettings, PsdImportWarni
 use crate::ai::{AiReply, AiSettings, ConsentAnswer};
 use crate::commands::{AnimationData, AppInfo};
 use crate::project::ProjectStatus;
+use crate::proposals::{Classification, ProposalPreview, ProposalState};
 
 /// リポジトリのルート。
 pub fn repo_root() -> PathBuf {
@@ -34,6 +35,9 @@ pub fn generated_files() -> Result<Vec<(&'static str, String)>, serde_json::Erro
     types.add::<AiSettings>();
     types.add::<ConsentAnswer>();
     types.add::<AiReply<()>>();
+    types.add::<ProposalState>();
+    types.add::<Classification>();
+    types.add::<ProposalPreview>();
     types.add::<ExportSettings>();
     types.add::<ExportReport>();
     types.add::<AvatarCheck>();

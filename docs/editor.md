@@ -849,6 +849,65 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 | `forget_ai_consent` | 「今後は確かめない」を取り消す |
 | `test_ai_connection(consent?)` | 接続の確認。`AiReply<null>` (`done` か `needs_consent`) |
 
+### AI の提案
+
+AI などが作った提案 (`Command` の列、[ADR 0006](adr/0006-ai-proposals.md)) を、差分として確かめてから採用・却下する画面と、
+PSD の取り込みから「レイヤーの分類 → リギングの提案」までを画面から行う流れです (T0637)。提案の置き場・プレビュー・採用の規則は
+`ugoe_editor_core::proposal` (`Proposals`)、IPC は `src-tauri/src/proposals.rs`、画面は右の列の「AI」タブ
+(`src/lib/ai/ProposalsPanel.svelte`・`proposals.svelte.ts`・`proposals.ts`) にあります。操作の手順は [マニュアル](manual/ai.md)。
+
+- **流れ:** 「New from PSD…」「Import PSD…」で取り込んだ PSD を覚え (`ProposalSession::set_psd`。「Choose PSD…」で替えられる)、
+  「Classify layers」で `ugoe_ai::classify` の分類をし、「Propose rig」で分類から `ugoe_ai::rig` のリグ (顔の角度・目・口) を
+  提案します。分類していなければ「Propose rig」が先に分類します (2 段階で、段階ごとに何をしているかをパネルに出す)。
+  - 「Use Claude」なら、分類は `classify_layers` (合成画像とレイヤーのサムネイル)、リグは `propose_rig_with_ai` (原画) で
+    Claude API に送ります。使わなければ名前の規則 (`classify_by_name`) とテンプレートの既定値 (`propose_rig` と
+    `RigParams::default`) で、何も送りません。キーがなくても使えます。
+  - 深度推定 (T0505) の実際の推定器はまだないので、顔の振り向きは深度マップなし (顔の外接矩形に内接する楕円体。
+    `TurnDepth::Rules`) で組みます。推定器ができたら、同じ流れに「深度を推定する」段階を足します。
+  - 分類とその PSD はプロジェクトを開いている間だけ持ちます (ファイルには残さない)。確からしさの低いレイヤー
+    (`needs_review`) は、パネルと提案の理由の末尾に出します。分類の結果を画面で直す機能はまだありません。
+- **外部に送るとき:** 送る IPC コマンド (`classify_psd_layers`・`propose_rig_from_psd`) は、[送る前の確認](#ai-の設定と送信の同意)を
+  `ai::prepare_claude_requests` で通します。
+  - 分類はレイヤーが多いと複数のリクエストに分かれる (1 回 32 枚まで) ので、確認には **合計** (`DisclosureView::combined`) を示し、
+    1 回の同意で送ります。送り先の違うリクエストは混ぜません。
+  - リグは、答えが範囲の外か検証を通らなければ、同じ画像に前の答えと理由を添えて問い直します (既定で 3 回まで)。確認には
+    1 回分の内容と、送り直すことがある回数 (`DisclosureView::retries`) を示します。
+  - 「Use Claude」は `aiSettings.canSend` が偽なら選べず、理由 (プロジェクトが「外部に送らない」・API キーがない) と
+    「Settings…」への案内を出します。キーがないときは、キーの保存か環境変数 `ANTHROPIC_API_KEY` を案内し、AI なしでも
+    進められることを添えます。
+- **提案の置き場 (`Proposals::add`):** 置く前に、ドキュメントの複製 (`Document::detached`。履歴なし) に全体を `Batch` として
+  適用して検証を通すことを確かめ、通らなければ置きません。提案は作ったときのドキュメントの状態 (`Document::state_id`) に
+  対するもので、ドキュメントが変わると **古い (stale)** とし、プレビューも採用もしません (承認した差分と違う結果に
+  ならないように)。Undo で同じ状態に戻れば、また使えます。
+- **プレビュー:** 選んだコマンドを複製に適用し (`preview_proposal`)、そのモデル (と `get_proposal_preview_bundle` のテクスチャ付きの
+  バンドル) をビューポートに渡します。ドキュメントは変えません。プレビュー中はビューポートに「Previewing an AI proposal…」と出し、
+  編集のツール (選択・ギズモ) を隠します。パネルには複製のパラメータ (提案が足したものを含む) のスライダーを出します。
+  ドキュメントが変わったら (編集・Undo・採用) プレビューをやめます。
+- **採用:** 選んだコマンドを 1 つの `Batch` (ラベルは提案の題名。一部だけなら「(n of m commands)」を添える) として適用し、
+  **1 回の Undo で戻ります**。採用した後に手で直したセルは、ほかの編集と同じく `authored` になります (推定に任せた `derived` の
+  セルも)。採用した提案は一覧から隠しますが、Undo で提案を作った状態に戻ると再び出て、選び直して採用し直せます
+  (AI にもう一度尋ねずに済むように)。却下 (「Reject」) は一覧から消します。
+- **一部だけの採用 (コマンドの単位):** コマンドごとにチェックを外せます。一覧は、同じ対象への続いたコマンドを 1 つのまとまりに
+  まとめ (まとまりのチェックで全部を切り替える)、開くと 1 つずつ選べます。
+  - 各コマンドの依存 (`ProposalCommand::requires`) は `proposal::analyze` が、コマンドの JSON が前のコマンドの **作った要素** か
+    **主に変える要素** (`id`・`target`・`element`) の ID を指すかで決めます。同じ要素への後の編集は前の編集に依存するとみなします
+    (推定の設定の後の推定、キーの追加の後のセルの置き換えなど、前の結果に頼るため)。種類ごとの規則を持たない近似で、
+    外しすぎる側に倒れます。
+  - チェックを外すと、それに (直接・間接に) 依存するコマンドも外れます。戻すと、それが依存するコマンドも戻ります
+    (`src/lib/ai/proposals.ts`)。
+  - それでも適用・検証に失敗する選び方なら、プレビューも採用もせず理由を出します (黙って直さない)。リグの提案では、どのコマンドを
+    依存ごと外しても適用できることをテストで確かめています。
+
+| コマンド | 内容 |
+| --- | --- |
+| `get_proposals` | `ProposalState { proposals, psd, classification }` (一覧・元にする PSD・最後の分類) |
+| `classify_psd_layers(psd?, use_ai, consent?)` | 分類して覚える。`AiReply<Classification>`。`psd` を省くと取り込んだ PSD |
+| `propose_rig_from_psd(use_ai, consent?)` | 分類からリグを提案し、一覧に置く。`AiReply<ProposalView>` |
+| `preview_proposal(id, excluded)` | 外したコマンドを除いて複製に適用した姿。`ProposalPreview { model_json, report }` |
+| `get_proposal_preview_bundle` / `clear_proposal_preview` | プレビューの `.ugoe` バンドル (生のバイト列) / プレビューの複製を捨てる |
+| `adopt_proposal(id, excluded)` | 外したコマンドを除いて採用する (1 回の Undo で戻る)。`ApplyReport` |
+| `reject_proposal(id)` | 提案を捨てる。`ProposalState` |
+
 ## ビューポート
 
 [ADR 0003](adr/0003-editor-viewport-in-webview.md) のとおり、ビューポートは WebView 内の wasm で描画します。

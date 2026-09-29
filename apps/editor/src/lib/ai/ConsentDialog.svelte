@@ -1,7 +1,8 @@
 <!--
   外部の AI サービスに送る前の確認 (docs/editor.md#ai-の設定と送信の同意)。App に 1 つ置き、
   `consentPrompt.ask` (lib/ai/ai.svelte.ts) の問い合わせがあれば開く。送り先・モデル・画像の枚数と
-  バイト数・テキストのバイト数と、送り先の規約へのリンクを示す。Esc と「Cancel」は送らない。
+  バイト数・テキストのバイト数 (答えが検証を通らなければ送り直す回数の上限も) と、送り先の規約へのリンクを示す。
+  Esc と「Cancel」は送らない。
 -->
 <script lang="ts">
 import { openExternal } from "../help";
@@ -66,6 +67,12 @@ async function openTerms(url: string): Promise<void> {
       <dt>Text</dt>
       <dd>{formatBytes(d.text_bytes)}</dd>
     </dl>
+    {#if d.retries > 0}
+      <p class="muted">
+        If an answer fails validation, the same data is sent again with the previous answer and the reason, up to
+        {d.retries} more {d.retries === 1 ? "time" : "times"}.
+      </p>
+    {/if}
     <p class="muted">
       Anthropic handles the data under its terms:
       {#each PROVIDER_TERMS as term, i}
