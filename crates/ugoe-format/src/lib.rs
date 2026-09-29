@@ -1,15 +1,18 @@
 //! ファイル形式の読み書き。仕様: `docs/spec/file-formats.md`。
 //!
 //! - `.ugoe` : ランタイムバンドル (ヘッダ + チャンク表 + チャンク)。バイナリ。[`bundle`] を参照。
+//! - `.ugoemod` : 着せ替えのモジュール。バンドルと同じコンテナ。[`module_file`] を参照。
 //! - `*.motion.json` / `*.expression.json` / `*.physics.json` : JSON。
 //!
 //! 読み込みは **常に** スキーマバージョンを検査し、未知の新しい版は明示的なエラーにする。
 
 pub mod bundle;
 pub mod features;
+pub mod module_file;
 
 use ugoe_model::Model;
 use ugoe_model::expression::Expression;
+use ugoe_model::module::Module;
 use ugoe_model::motion::Motion;
 use ugoe_model::physics::PhysicsSettings;
 use ugoe_model::validate::ValidationError;
@@ -19,6 +22,9 @@ pub use bundle::{
     read_bundle, read_bundle_with_report, write_bundle, write_bundle_with,
 };
 pub use features::{FEATURES, Feature, FeatureDecl};
+pub use module_file::{
+    ModuleFile, read_module, read_module_with_report, write_module, write_module_with,
+};
 
 /// `.ugoe` ファイル先頭のマジックバイト。
 pub const MAGIC: [u8; 4] = *b"UGOE";
@@ -43,6 +49,10 @@ pub enum FormatError {
     MisalignedChunk { tag: ChunkTag, offset: u64 },
     #[error("chunk {tag} overlaps the header, the chunk table or another chunk")]
     OverlappingChunks { tag: ChunkTag },
+    /// このファイルの種類には置けないチャンク (`.ugoe` の `MODU`、`.ugoemod` の `MODL` など)。
+    /// バンドルとモジュールのファイルを取り違えたときに返す。
+    #[error("chunk {0} is not allowed in this kind of file")]
+    UnexpectedChunk(ChunkTag),
     #[error("required chunk {0} is missing")]
     MissingChunk(ChunkTag),
     #[error("chunk {0} must appear at most once")]
@@ -69,6 +79,9 @@ pub enum FormatError {
     TooLarge,
     #[error("model failed validation with {} error(s)", .0.len())]
     Invalid(Vec<ValidationError>),
+    /// 着せ替えのモジュールが `validate_module` の検査に通らない。
+    #[error("module failed validation with {} error(s)", .0.len())]
+    InvalidModule(Vec<ValidationError>),
     /// 物理の設定が `validate_physics` の検査に通らない。
     #[error("physics settings failed validation with {} error(s)", .0.len())]
     InvalidPhysics(Vec<ValidationError>),
@@ -101,8 +114,27 @@ pub fn model_to_json(model: &Model) -> Result<String, FormatError> {
 /// (場所は `ugoe_model::unknown::in_model` で調べられる)。
 pub fn model_from_json(json: &str) -> Result<Model, FormatError> {
     let model: Model = serde_json::from_str(json)?;
-    check_schema_version(&model)?;
+    check_schema_version(model.schema_version)?;
     Ok(model)
+}
+
+/// 着せ替えのモジュールを JSON 表現で書き出す。
+///
+/// 未知の値 (`Unknown`) を含むモジュールは [`FormatError::UnknownValues`] で拒否する。
+pub fn module_to_json(module: &Module) -> Result<String, FormatError> {
+    let unknown = ugoe_model::unknown::in_module(module);
+    if !unknown.is_empty() {
+        return Err(FormatError::UnknownValues(unknown));
+    }
+    Ok(serde_json::to_string_pretty(module)?)
+}
+
+/// JSON 表現から着せ替えのモジュールを読み込む。スキーマのバージョンだけを検査する
+/// (検証は `ugoe_model::validate::validate_module` を呼び出し側で行う)。
+pub fn module_from_json(json: &str) -> Result<Module, FormatError> {
+    let module: Module = serde_json::from_str(json)?;
+    check_schema_version(module.schema_version)?;
+    Ok(module)
 }
 
 /// 物理の設定 (`*.physics.json`) を JSON 表現から読み込む。参照先の検査
@@ -127,10 +159,10 @@ pub fn expression_from_json(json: &str) -> Result<Expression, FormatError> {
 }
 
 /// スキーマのバージョンが読める範囲か検査する (`docs/spec/file-formats.md` のバージョニング)。
-fn check_schema_version(model: &Model) -> Result<(), FormatError> {
-    if model.schema_version > ugoe_model::SCHEMA_VERSION {
+fn check_schema_version(version: u32) -> Result<(), FormatError> {
+    if version > ugoe_model::SCHEMA_VERSION {
         return Err(FormatError::UnsupportedVersion {
-            found: model.schema_version,
+            found: version,
             supported: ugoe_model::SCHEMA_VERSION,
         });
     }
@@ -146,6 +178,21 @@ mod tests {
         let model = ugoe_model::fixtures::single_quad();
         let back = model_from_json(&model_to_json(&model).unwrap()).unwrap();
         assert_eq!(model, back);
+    }
+
+    #[test]
+    fn module_json_roundtrip() {
+        let module = ugoe_model::fixtures::long_hair_module();
+        let back = module_from_json(&module_to_json(&module).unwrap()).unwrap();
+        assert_eq!(module, back);
+
+        let mut newer = module;
+        newer.schema_version = ugoe_model::SCHEMA_VERSION + 1;
+        let json = serde_json::to_string(&newer).unwrap();
+        assert!(matches!(
+            module_from_json(&json),
+            Err(FormatError::UnsupportedVersion { .. })
+        ));
     }
 
     #[test]

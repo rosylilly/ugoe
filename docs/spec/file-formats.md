@@ -8,6 +8,7 @@
 | --- | --- | --- | --- |
 | プロジェクト | `<name>.ugoeproj/` (ディレクトリ) | JSON + PNG + 元の PSD | エディタでの編集。git で差分を見られる |
 | バンドル | `<name>.ugoe` | バイナリのコンテナ | ランタイムでの配布。1 ファイルで完結 |
+| モジュール | `<name>.ugoemod` | バンドルと同じコンテナ | 着せ替えのモジュールの配布 ([モジュール](#モジュール-ugoemod)) |
 | モーション | `<name>.motion.json` | JSON | 単体で配布・共有するとき |
 | 表情 | `<name>.expression.json` | JSON | 同上 |
 | 物理 | `<name>.physics.json` | JSON | 同上 |
@@ -82,7 +83,7 @@ character.ugoeproj/
 - **着せ替えのモジュール** (`ugoe_model::module`、[modules.md](modules.md)) のテクスチャはまとめません。アトラス化の対象は
   モデル本体の `Model::textures` だけです。モジュールは自分の `textures` を持ち、実行時に本体の後ろへ付け足して差し替えるので、
   本体のアトラスに入れると差し替えのたびにアトラスを作り直すことになるためです。モジュールのテクスチャのアトラス化は、
-  モジュールのファイル形式 (T0113) の後に、モジュールの単位で行う後続の課題です。
+  モジュールの単位で行う後続の課題です。
 - 同じ入力と設定からは、同じ出力になります。
 
 ## バンドル (`.ugoe`)
@@ -96,7 +97,7 @@ Header (16 bytes)
   flags         u32     予約 (0)
   chunk_count   u32
 ChunkTable (chunk_count × 24 bytes)
-  tag           [u8; 4]  "MODL" | "PHYS" | "MOTN" | "EXPR" | "TEXR" | "NRML" | "META" | "FEAT"
+  tag           [u8; 4]  "MODL" | "PHYS" | "MOTN" | "EXPR" | "TEXR" | "NRML" | "META" | "FEAT" | "MODU"
   flags         u32      bit0: zstd で圧縮
   offset        u64
   length        u64
@@ -113,6 +114,7 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 | `NRML` | 法線マップ 1 枚 (PNG または KTX2)。`Model.textures` のうち `normal_map` を持つものと同じ数・同じ順に並べる ([rendering.md#ライティング](rendering.md#ライティング)) |
 | `META` | 作者やライセンスなどの自由なメタデータ (JSON) |
 | `FEAT` | 使っている機能の宣言 ([機能の宣言](#機能の宣言))。0〜1 個 |
+| `MODU` | 着せ替えのモジュール。`.ugoemod` だけに置く ([モジュール](#モジュール-ugoemod))。`.ugoe` にあれば読み込みをエラーにする |
 
 - 未知のタグのチャンクは読み飛ばします (前方互換)。未知のタグのチャンクは中身も展開もしません。
 - チャンク表の順序は自由ですが、書き出しでは `FEAT` `MODL` `PHYS` `MOTN`… `EXPR`… `META` `TEXR`… `NRML`… の順にします。宣言する機能がなければ `FEAT` は書きません。同じタグのチャンク (`MOTN` `EXPR` `TEXR` `NRML`) は表の順が意味を持ちます。
@@ -124,7 +126,7 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 
 | チャンク | エンコード |
 | --- | --- |
-| `MODL` `PHYS` `MOTN` `EXPR` `FEAT` | **MessagePack**。構造体はフィールド名付きのマップ (`rmp-serde` の `to_vec_named`)。enum の表現は JSON と同じく serde の属性に従う |
+| `MODL` `MODU` `PHYS` `MOTN` `EXPR` `FEAT` | **MessagePack**。構造体はフィールド名付きのマップ (`rmp-serde` の `to_vec_named`)。enum の表現は JSON と同じく serde の属性に従う |
 | `TEXR` `NRML` | PNG / KTX2 ファイルの中身そのまま。形式は先頭のシグネチャで判別する |
 | `META` | UTF-8 の JSON |
 
@@ -137,7 +139,7 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 
 - 切り詰め、マジックの不一致、未対応のコンテナ `version`、予約フラグ
 - チャンクの範囲外 (オフセット・長さのオーバーフローを含む)、16 バイト境界でないオフセット、ヘッダ・チャンク表・他のチャンクとの重なり
-- `MODL` がない、`MODL` `PHYS` `META` `FEAT` が 2 つ以上ある
+- `MODL` がない、`MODL` `PHYS` `META` `FEAT` が 2 つ以上ある、`MODU` がある (`UnexpectedChunk`。モジュールのファイルを取り違えたとき)
 - 知らない必須の機能の宣言 (`UnsupportedFeatures`。ほかのチャンクをデコードする前に調べる)
 - `TEXR` の数が `Model.textures` と一致しない、PNG / KTX2 でないテクスチャ
 - `NRML` の数が `normal_map` を持つテクスチャの数と一致しない (`NormalMapCountMismatch`)、PNG / KTX2 でない法線マップ
@@ -160,7 +162,46 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 - 単体の JSON: `physics_from_json` / `physics_to_json`・`motion_from_json`・`expression_from_json` (`model_from_json` / `model_to_json` と並ぶ)。物理の参照先の検査は、組み合わせるモデルが決まってから呼び出し側で行います。
 - ファイルシステムには触れません。読み書きはバイト列で行います。
 
+- 単体の JSON: `module_to_json` / `module_from_json` (着せ替えのモジュール。`schema_version` だけを検査し、検証は呼び出し側で行う)。
+
 > 未決: 読み込み時間を短くするため、`CompiledModel` をそのまま (ゼロコピーで) 読めるレイアウトにするか。まずは素直なシリアライズで実装し、計測してから判断する。
+
+## モジュール (`.ugoemod`)
+
+着せ替えのモジュール ([modules.md](modules.md)) を 1 つ入れるファイルです。**コンテナはバンドルと同じ** で
+(マジック `UGOE`・コンテナの `version`・予約フラグ・チャンク表・16 バイト境界・圧縮)、`MODL` の代わりに `MODU` を持ちます。
+
+| チャンク | 内容 |
+| --- | --- |
+| `MODU` | `Module` を MessagePack (フィールド名付き) にしたもの。1 つだけ。物理 (`Module::physics`) もこの中に入る |
+| `TEXR` | テクスチャ 1 枚 (PNG または KTX2)。`Module.textures` と同じ順に並べる |
+| `NRML` | 法線マップ 1 枚。`Module.textures` のうち `normal_map` を持つものと同じ数・同じ順に並べる |
+| `META` | 作者やライセンスなどの自由なメタデータ (JSON)。0〜1 個 |
+| `FEAT` | 使っている機能の宣言。0〜1 個 |
+
+- 書き出しでは `FEAT` `MODU` `META` `TEXR`… `NRML`… の順にします。圧縮の扱いはバンドルと同じです (`TEXR` と `NRML` は圧縮しない)。
+- バンドル用のチャンク `MODL` `PHYS` `MOTN` `EXPR` は置けません。あれば `UnexpectedChunk` で読み込みをエラーにします
+  (バンドルを取り違えたとき、黙って読み飛ばさないため)。未知のタグのチャンクは読み飛ばします。
+- 機能 `modules` は基準の機能なので宣言しません (下の [機能の宣言](#機能の宣言))。モジュールのファイルであることは `MODU` があることで分かります。
+  モジュールの中で 1.0 以降の機能を使ったときは、バンドルと同じく `FEAT` で宣言します (`features::detect_module`)。
+
+### 読み込み時の検査
+
+`read_module` は、バンドルのコンテナの検査 (切り詰め・マジック・版・予約フラグ・範囲・境界・重なり・機能の宣言) に加えて、次をエラーとして返します (パニックしない)。
+
+- `MODU` がない、`MODU` `META` `FEAT` が 2 つ以上ある、バンドル用のチャンクがある
+- `TEXR` の数が `Module.textures` と一致しない、`NRML` の数が `normal_map` を持つテクスチャの数と一致しない、PNG / KTX2 でない画像
+- ペイロードのデコード失敗、`schema_version` が新しすぎる
+- `ugoe_model::validate::validate_module` がエラーを返すモジュール (`InvalidModule`)。本体との整合 (スロット・`requires`・
+  パラメータ・マスクの参照先) は、本体が決まってから合成 (`ugoe_runtime::compose`) が検査します
+
+未知の値は警告として返し (場所は `MODU: meshes[Hair].blend`、物理は `MODU: physics.rigs[Sway].outputs[0].source`)、書き出しでは `UnknownValues` で拒否します。
+
+### API (`ugoe-format`)
+
+- `ModuleFile { module, textures, normal_maps, meta }`。法線マップはテクスチャの番号から `ModuleFile::normal_map(index)` で引きます。
+- `write_module(&ModuleFile)` / `write_module_with(&ModuleFile, WriteOptions)`
+- `read_module(&[u8])` / `read_module_with_report(&[u8])` (報告の形はバンドルと同じ `ReadReport`)
 
 ## 機能の宣言と段階的な劣化
 
@@ -253,7 +294,7 @@ FeatureTable {
 
 ### モジュールと法線マップのファイル
 
-- 着せ替えのモジュールは、ヘッダが同じ形式のファイル (拡張子は `.ugoemod`) で、`MODL` の代わりに `MODU` チャンクを持ちます (T0113)。ヘッダの予約フラグは使いません。
+- 着せ替えのモジュールは、ヘッダが同じ形式のファイル (拡張子は `.ugoemod`) で、`MODL` の代わりに `MODU` チャンクを持ちます ([モジュール](#モジュール-ugoemod))。ヘッダの予約フラグは使いません。
 - 法線マップは `TEXR` チャンクと同じ形式の `NRML` チャンクに入れ、`TextureRef::normal_map` を持つテクスチャの順に並べます ([バンドル](#バンドル-ugoe))。
   `lighting.normal_map` は基準の機能なので宣言しません。
 

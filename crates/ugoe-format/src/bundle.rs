@@ -5,6 +5,7 @@
 //! - `MODL` `PHYS` `MOTN` `EXPR` のペイロードは MessagePack (フィールド名付き)。
 //! - `TEXR` と `NRML` (法線マップ) は PNG / KTX2 のバイト列そのまま。`META` は JSON。
 //! - `FEAT` は使っている機能の宣言 (MessagePack)。[`crate::features`] を参照。
+//! - 着せ替えのモジュール (`.ugoemod`) も同じコンテナを使う ([`crate::module_file`])。
 //! - 読み込みは入力を信用しない。範囲外・重なり・切り詰めはすべてエラーにし、パニックしない。
 
 use std::borrow::Cow;
@@ -13,10 +14,10 @@ use std::io::Read;
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use ugoe_model::Model;
 use ugoe_model::expression::Expression;
 use ugoe_model::motion::Motion;
 use ugoe_model::physics::PhysicsSettings;
+use ugoe_model::{Model, TextureRef};
 
 use crate::features::{self, FeatureDecl, FeatureTable};
 use crate::{FormatError, MAGIC, check_schema_version};
@@ -63,6 +64,8 @@ impl ChunkTag {
     pub const FEAT: Self = Self(*b"FEAT");
     /// 法線マップ 1 枚。`Model.textures` のうち `normal_map` を持つものと同じ順。
     pub const NRML: Self = Self(*b"NRML");
+    /// 着せ替えのモジュール (`Module`)。`.ugoemod` に 1 つだけ。`.ugoe` には置かない。
+    pub const MODU: Self = Self(*b"MODU");
 }
 
 impl fmt::Display for ChunkTag {
@@ -91,8 +94,8 @@ pub enum TextureFormat {
     Ktx2,
 }
 
-const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
-const KTX2_SIGNATURE: [u8; 12] = [
+pub(crate) const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+pub(crate) const KTX2_SIGNATURE: [u8; 12] = [
     0xab, b'K', b'T', b'X', b' ', b'2', b'0', 0xbb, 0x0d, 0x0a, 0x1a, 0x0a,
 ];
 
@@ -151,14 +154,22 @@ impl Bundle {
 
     /// `model.textures` の `texture` 番目のテクスチャの法線マップ。なければ `None`。
     pub fn normal_map(&self, texture: usize) -> Option<&TextureData> {
-        let textures = &self.model.textures;
-        textures.get(texture)?.normal_map.as_ref()?;
-        let index = textures[..texture]
-            .iter()
-            .filter(|t| t.normal_map.is_some())
-            .count();
-        self.normal_maps.get(index)
+        normal_map_of(&self.model.textures, &self.normal_maps, texture)
     }
+}
+
+/// `textures` の `texture` 番目の法線マップを、`normal_map` を持つテクスチャの順に並ぶ `normal_maps` から引く。
+pub(crate) fn normal_map_of<'a>(
+    textures: &[TextureRef],
+    normal_maps: &'a [TextureData],
+    texture: usize,
+) -> Option<&'a TextureData> {
+    textures.get(texture)?.normal_map.as_ref()?;
+    let index = textures[..texture]
+        .iter()
+        .filter(|t| t.normal_map.is_some())
+        .count();
+    normal_maps.get(index)
 }
 
 /// 書き出しの設定。
@@ -191,92 +202,130 @@ pub(crate) fn write_with_features(
     options: WriteOptions,
     declared: &[FeatureDecl],
 ) -> Result<Vec<u8>, FormatError> {
-    check_texture_count(&bundle.model, bundle.textures.len())?;
-    check_normal_map_count(&bundle.model, bundle.normal_maps.len())?;
+    check_texture_count(&bundle.model.textures, bundle.textures.len())?;
+    check_normal_map_count(&bundle.model.textures, bundle.normal_maps.len())?;
     let unknown = unknown_values(bundle);
     if !unknown.is_empty() {
         return Err(FormatError::UnknownValues(unknown));
     }
 
-    let mut chunks: Vec<(ChunkTag, u32, Cow<'_, [u8]>)> = Vec::new();
-    let mut push_encoded = |tag: ChunkTag, raw: Vec<u8>| {
-        if options.compress {
+    let mut writer = ChunkWriter::new(options, declared)?;
+    writer.push_encoded(ChunkTag::MODL, encode(&bundle.model)?);
+    if let Some(physics) = &bundle.physics {
+        writer.push_encoded(ChunkTag::PHYS, encode(physics)?);
+    }
+    for motion in &bundle.motions {
+        writer.push_encoded(ChunkTag::MOTN, encode(motion)?);
+    }
+    for expression in &bundle.expressions {
+        writer.push_encoded(ChunkTag::EXPR, encode(expression)?);
+    }
+    if let Some(meta) = &bundle.meta {
+        writer.push_encoded(ChunkTag::META, serde_json::to_vec(meta)?);
+    }
+    writer.push_images(&bundle.textures, &bundle.normal_maps)?;
+    writer.finish()
+}
+
+/// チャンクを集めてコンテナを組み立てる (バンドルとモジュールで共通)。
+pub(crate) struct ChunkWriter<'a> {
+    options: WriteOptions,
+    chunks: Vec<(ChunkTag, u32, Cow<'a, [u8]>)>,
+}
+
+impl<'a> ChunkWriter<'a> {
+    /// 機能の宣言 `declared` があれば、最初に `FEAT` を置く。
+    pub(crate) fn new(
+        options: WriteOptions,
+        declared: &[FeatureDecl],
+    ) -> Result<Self, FormatError> {
+        let mut writer = Self {
+            options,
+            chunks: Vec::new(),
+        };
+        if !declared.is_empty() {
+            let table = FeatureTable {
+                features: declared.to_vec(),
+            };
+            writer.push_encoded(ChunkTag::FEAT, encode(&table)?);
+        }
+        Ok(writer)
+    }
+
+    /// エンコード済みのペイロードを加える。設定に従って圧縮する。
+    pub(crate) fn push_encoded(&mut self, tag: ChunkTag, raw: Vec<u8>) {
+        if self.options.compress {
             let compressed = ruzstd::encoding::compress_to_vec(
                 raw.as_slice(),
                 ruzstd::encoding::CompressionLevel::Fastest,
             );
-            chunks.push((tag, CHUNK_FLAG_ZSTD, Cow::Owned(compressed)));
+            self.chunks
+                .push((tag, CHUNK_FLAG_ZSTD, Cow::Owned(compressed)));
         } else {
-            chunks.push((tag, 0, Cow::Owned(raw)));
+            self.chunks.push((tag, 0, Cow::Owned(raw)));
         }
-    };
+    }
 
-    if !declared.is_empty() {
-        let table = FeatureTable {
-            features: declared.to_vec(),
-        };
-        push_encoded(ChunkTag::FEAT, encode(&table)?);
-    }
-    push_encoded(ChunkTag::MODL, encode(&bundle.model)?);
-    if let Some(physics) = &bundle.physics {
-        push_encoded(ChunkTag::PHYS, encode(physics)?);
-    }
-    for motion in &bundle.motions {
-        push_encoded(ChunkTag::MOTN, encode(motion)?);
-    }
-    for expression in &bundle.expressions {
-        push_encoded(ChunkTag::EXPR, encode(expression)?);
-    }
-    if let Some(meta) = &bundle.meta {
-        push_encoded(ChunkTag::META, serde_json::to_vec(meta)?);
-    }
-    for (index, texture) in bundle.textures.iter().enumerate() {
-        if TextureFormat::detect(&texture.bytes) != Some(texture.format) {
-            return Err(FormatError::TextureFormatMismatch { index });
+    /// テクスチャ (`TEXR`) と法線マップ (`NRML`) を、形式とシグネチャが合うか確かめて加える。圧縮しない。
+    pub(crate) fn push_images(
+        &mut self,
+        textures: &'a [TextureData],
+        normal_maps: &'a [TextureData],
+    ) -> Result<(), FormatError> {
+        for (index, texture) in textures.iter().enumerate() {
+            if TextureFormat::detect(&texture.bytes) != Some(texture.format) {
+                return Err(FormatError::TextureFormatMismatch { index });
+            }
+            self.chunks
+                .push((ChunkTag::TEXR, 0, Cow::Borrowed(texture.bytes.as_slice())));
         }
-        chunks.push((ChunkTag::TEXR, 0, Cow::Borrowed(texture.bytes.as_slice())));
-    }
-    for (index, normal_map) in bundle.normal_maps.iter().enumerate() {
-        if TextureFormat::detect(&normal_map.bytes) != Some(normal_map.format) {
-            return Err(FormatError::NormalMapFormatMismatch { index });
+        for (index, normal_map) in normal_maps.iter().enumerate() {
+            if TextureFormat::detect(&normal_map.bytes) != Some(normal_map.format) {
+                return Err(FormatError::NormalMapFormatMismatch { index });
+            }
+            self.chunks.push((
+                ChunkTag::NRML,
+                0,
+                Cow::Borrowed(normal_map.bytes.as_slice()),
+            ));
         }
-        chunks.push((
-            ChunkTag::NRML,
-            0,
-            Cow::Borrowed(normal_map.bytes.as_slice()),
-        ));
+        Ok(())
     }
 
-    let chunk_count = u32::try_from(chunks.len()).map_err(|_| FormatError::TooLarge)?;
-    let table_end = HEADER_LEN + CHUNK_ENTRY_LEN * chunks.len();
+    /// ヘッダ・チャンク表・チャンクの順に書き出す。
+    pub(crate) fn finish(self) -> Result<Vec<u8>, FormatError> {
+        let chunks = self.chunks;
+        let chunk_count = u32::try_from(chunks.len()).map_err(|_| FormatError::TooLarge)?;
+        let table_end = HEADER_LEN + CHUNK_ENTRY_LEN * chunks.len();
 
-    // 先にチャンクの配置を決め、ヘッダ・チャンク表・本体の順に書く。
-    let mut placements = Vec::with_capacity(chunks.len());
-    let mut cursor = table_end;
-    for (_, _, payload) in &chunks {
-        let offset = align_up(cursor).ok_or(FormatError::TooLarge)?;
-        placements.push(offset);
-        cursor = offset
-            .checked_add(payload.len())
-            .ok_or(FormatError::TooLarge)?;
-    }
+        // 先にチャンクの配置を決め、ヘッダ・チャンク表・本体の順に書く。
+        let mut placements = Vec::with_capacity(chunks.len());
+        let mut cursor = table_end;
+        for (_, _, payload) in &chunks {
+            let offset = align_up(cursor).ok_or(FormatError::TooLarge)?;
+            placements.push(offset);
+            cursor = offset
+                .checked_add(payload.len())
+                .ok_or(FormatError::TooLarge)?;
+        }
 
-    let mut out = Vec::with_capacity(cursor);
-    out.extend_from_slice(&MAGIC);
-    out.extend_from_slice(&CONTAINER_VERSION.to_le_bytes());
-    out.extend_from_slice(&0u32.to_le_bytes());
-    out.extend_from_slice(&chunk_count.to_le_bytes());
-    for ((tag, flags, payload), &offset) in chunks.iter().zip(&placements) {
-        out.extend_from_slice(&tag.0);
-        out.extend_from_slice(&flags.to_le_bytes());
-        out.extend_from_slice(&(offset as u64).to_le_bytes());
-        out.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+        let mut out = Vec::with_capacity(cursor);
+        out.extend_from_slice(&MAGIC);
+        out.extend_from_slice(&CONTAINER_VERSION.to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes());
+        out.extend_from_slice(&chunk_count.to_le_bytes());
+        for ((tag, flags, payload), &offset) in chunks.iter().zip(&placements) {
+            out.extend_from_slice(&tag.0);
+            out.extend_from_slice(&flags.to_le_bytes());
+            out.extend_from_slice(&(offset as u64).to_le_bytes());
+            out.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+        }
+        for ((_, _, payload), &offset) in chunks.iter().zip(&placements) {
+            out.resize(offset, 0);
+            out.extend_from_slice(payload);
+        }
+        Ok(out)
     }
-    for ((_, _, payload), &offset) in chunks.iter().zip(&placements) {
-        out.resize(offset, 0);
-        out.extend_from_slice(payload);
-    }
-    Ok(out)
 }
 
 /// 読み込みの警告 ([`read_bundle_with_report`])。読み込みは成功しているが、表示が劣化しうる。
@@ -332,20 +381,11 @@ pub(crate) fn read_with_known(
     bytes: &[u8],
     known: impl Fn(&str) -> bool,
 ) -> Result<(Bundle, ReadReport), FormatError> {
-    let entries = read_table(bytes)?;
-
-    // 機能の宣言は、ほかのチャンクをデコードする前に調べる。
-    let mut feat = entries.iter().filter(|e| e.tag == ChunkTag::FEAT);
-    let declared = match (feat.next(), feat.next()) {
-        (None, _) => Vec::new(),
-        (Some(entry), None) => decode::<FeatureTable>(&entry.payload(bytes)?)?.features,
-        (Some(_), Some(entry)) => return Err(FormatError::DuplicateChunk(entry.tag)),
-    };
-    let mut warnings: Vec<ReadWarning> = features::check(&declared, known)
-        .map_err(FormatError::UnsupportedFeatures)?
-        .into_iter()
-        .map(ReadWarning::UnknownOptionalFeature)
-        .collect();
+    let Container {
+        entries,
+        declared,
+        mut warnings,
+    } = read_container(bytes, known)?;
 
     let mut model = None;
     let mut physics = None;
@@ -362,7 +402,7 @@ pub(crate) fn read_with_known(
                     return Err(FormatError::DuplicateChunk(entry.tag));
                 }
                 let decoded: Model = decode(&entry.payload(bytes)?)?;
-                check_schema_version(&decoded)?;
+                check_schema_version(decoded.schema_version)?;
                 model = Some(decoded);
             }
             ChunkTag::PHYS => {
@@ -379,36 +419,20 @@ pub(crate) fn read_with_known(
             }
             ChunkTag::MOTN => motions.push(decode(&entry.payload(bytes)?)?),
             ChunkTag::EXPR => expressions.push(decode(&entry.payload(bytes)?)?),
-            ChunkTag::TEXR => {
-                let payload = entry.payload(bytes)?.into_owned();
-                let format =
-                    TextureFormat::detect(&payload).ok_or(FormatError::UnknownTextureFormat {
-                        index: textures.len(),
-                    })?;
-                textures.push(TextureData {
-                    format,
-                    bytes: payload,
-                });
-            }
+            ChunkTag::TEXR => textures.push(read_texture(entry, bytes, textures.len())?),
             ChunkTag::NRML => {
-                let payload = entry.payload(bytes)?.into_owned();
-                let format =
-                    TextureFormat::detect(&payload).ok_or(FormatError::UnknownNormalMapFormat {
-                        index: normal_maps.len(),
-                    })?;
-                normal_maps.push(TextureData {
-                    format,
-                    bytes: payload,
-                });
+                normal_maps.push(read_normal_map(entry, bytes, normal_maps.len())?);
             }
+            // モジュールのファイルを取り違えたとき、黙って読み飛ばさずに知らせる。
+            ChunkTag::MODU => return Err(FormatError::UnexpectedChunk(entry.tag)),
             // 機能の宣言は先に読んだ。前方互換のため、未知のタグは読み飛ばす。
             _ => {}
         }
     }
 
     let model = model.ok_or(FormatError::MissingChunk(ChunkTag::MODL))?;
-    check_texture_count(&model, textures.len())?;
-    check_normal_map_count(&model, normal_maps.len())?;
+    check_texture_count(&model.textures, textures.len())?;
+    check_normal_map_count(&model.textures, normal_maps.len())?;
     let errors = ugoe_model::validate::validate(&model);
     if !errors.is_empty() {
         return Err(FormatError::Invalid(errors));
@@ -442,6 +466,66 @@ pub(crate) fn read_with_known(
             warnings,
         },
     ))
+}
+
+/// 検査済みのコンテナ: チャンク表と機能の宣言 ([`read_container`])。
+pub(crate) struct Container {
+    pub(crate) entries: Vec<Entry>,
+    /// `FEAT` の宣言のまま。
+    pub(crate) declared: Vec<FeatureDecl>,
+    /// 知らない任意の機能の警告。
+    pub(crate) warnings: Vec<ReadWarning>,
+}
+
+/// コンテナのチャンク表を読み、機能の宣言 (`FEAT`) を調べる (バンドルとモジュールで共通)。
+///
+/// 機能の宣言は、ほかのチャンクをデコードする前に調べる。知らない必須の機能があれば
+/// [`FormatError::UnsupportedFeatures`]。
+pub(crate) fn read_container(
+    bytes: &[u8],
+    known: impl Fn(&str) -> bool,
+) -> Result<Container, FormatError> {
+    let entries = read_table(bytes)?;
+    let mut feat = entries.iter().filter(|e| e.tag == ChunkTag::FEAT);
+    let declared = match (feat.next(), feat.next()) {
+        (None, _) => Vec::new(),
+        (Some(entry), None) => decode::<FeatureTable>(&entry.payload(bytes)?)?.features,
+        (Some(_), Some(entry)) => return Err(FormatError::DuplicateChunk(entry.tag)),
+    };
+    let warnings = features::check(&declared, known)
+        .map_err(FormatError::UnsupportedFeatures)?
+        .into_iter()
+        .map(ReadWarning::UnknownOptionalFeature)
+        .collect();
+    Ok(Container {
+        entries,
+        declared,
+        warnings,
+    })
+}
+
+/// `TEXR` チャンクを読む。`index` はテクスチャの番号 (エラーの報告用)。
+pub(crate) fn read_texture(
+    entry: &Entry,
+    bytes: &[u8],
+    index: usize,
+) -> Result<TextureData, FormatError> {
+    let bytes = entry.payload(bytes)?.into_owned();
+    let format =
+        TextureFormat::detect(&bytes).ok_or(FormatError::UnknownTextureFormat { index })?;
+    Ok(TextureData { format, bytes })
+}
+
+/// `NRML` チャンクを読む。`index` は `NRML` チャンクの順番 (エラーの報告用)。
+pub(crate) fn read_normal_map(
+    entry: &Entry,
+    bytes: &[u8],
+    index: usize,
+) -> Result<TextureData, FormatError> {
+    let bytes = entry.payload(bytes)?.into_owned();
+    let format =
+        TextureFormat::detect(&bytes).ok_or(FormatError::UnknownNormalMapFormat { index })?;
+    Ok(TextureData { format, bytes })
 }
 
 /// バンドルの中の未知の値の場所 (チャンクの名前付き) をすべて返す。
@@ -481,16 +565,16 @@ fn unknown_values(bundle: &Bundle) -> Vec<String> {
 
 /// 検査済みのチャンク表の 1 項目。
 #[derive(Debug)]
-struct Entry {
-    tag: ChunkTag,
-    flags: u32,
+pub(crate) struct Entry {
+    pub(crate) tag: ChunkTag,
+    pub(crate) flags: u32,
     start: usize,
     end: usize,
 }
 
 impl Entry {
     /// ペイロードを取り出す (圧縮されていれば展開する)。範囲は `read_table` で検査済み。
-    fn payload<'a>(&self, bytes: &'a [u8]) -> Result<Cow<'a, [u8]>, FormatError> {
+    pub(crate) fn payload<'a>(&self, bytes: &'a [u8]) -> Result<Cow<'a, [u8]>, FormatError> {
         let raw = bytes
             .get(self.start..self.end)
             .ok_or(FormatError::ChunkOutOfBounds { tag: self.tag })?;
@@ -512,7 +596,7 @@ impl Entry {
 }
 
 /// ヘッダとチャンク表を読み、各チャンクの範囲を検査する。
-fn read_table(bytes: &[u8]) -> Result<Vec<Entry>, FormatError> {
+pub(crate) fn read_table(bytes: &[u8]) -> Result<Vec<Entry>, FormatError> {
     let header = bytes.get(..HEADER_LEN).ok_or(FormatError::Truncated)?;
     if header[0..4] != MAGIC {
         return Err(FormatError::BadMagic);
@@ -599,29 +683,33 @@ fn read_u64(bytes: &[u8], at: usize) -> Result<u64, FormatError> {
         .ok_or(FormatError::Truncated)
 }
 
-fn align_up(value: usize) -> Option<usize> {
+pub(crate) fn align_up(value: usize) -> Option<usize> {
     value
         .checked_add(CHUNK_ALIGN - 1)
         .map(|v| v / CHUNK_ALIGN * CHUNK_ALIGN)
 }
 
-fn check_texture_count(model: &Model, actual: usize) -> Result<(), FormatError> {
-    if model.textures.len() == actual {
+/// `TEXR` の数がテクスチャの参照 `textures` の数と一致するか。
+pub(crate) fn check_texture_count(
+    textures: &[TextureRef],
+    actual: usize,
+) -> Result<(), FormatError> {
+    if textures.len() == actual {
         Ok(())
     } else {
         Err(FormatError::TextureCountMismatch {
-            expected: model.textures.len(),
+            expected: textures.len(),
             actual,
         })
     }
 }
 
-fn check_normal_map_count(model: &Model, actual: usize) -> Result<(), FormatError> {
-    let expected = model
-        .textures
-        .iter()
-        .filter(|t| t.normal_map.is_some())
-        .count();
+/// `NRML` の数が `textures` のうち `normal_map` を持つものの数と一致するか。
+pub(crate) fn check_normal_map_count(
+    textures: &[TextureRef],
+    actual: usize,
+) -> Result<(), FormatError> {
+    let expected = textures.iter().filter(|t| t.normal_map.is_some()).count();
     if expected == actual {
         Ok(())
     } else {
@@ -629,18 +717,18 @@ fn check_normal_map_count(model: &Model, actual: usize) -> Result<(), FormatErro
     }
 }
 
-fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>, FormatError> {
+pub(crate) fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>, FormatError> {
     Ok(rmp_serde::to_vec_named(value)?)
 }
 
-fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, FormatError> {
+pub(crate) fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, FormatError> {
     let mut de = rmp_serde::Deserializer::from_read_ref(bytes);
     de.set_max_depth(MAX_DEPTH);
     Ok(T::deserialize(&mut de)?)
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use ugoe_core::Vec2;
     use ugoe_model::deformer::{Deformer, DeformerKind, RotationDeformer, RotationKeyform};
     use ugoe_model::expression::{ExpressionOp, ExpressionParameter};
@@ -653,13 +741,13 @@ mod tests {
 
     use super::*;
 
-    fn png() -> Vec<u8> {
+    pub(crate) fn png() -> Vec<u8> {
         let mut bytes = PNG_SIGNATURE.to_vec();
         bytes.extend_from_slice(b"not really a png body");
         bytes
     }
 
-    fn ktx2() -> Vec<u8> {
+    pub(crate) fn ktx2() -> Vec<u8> {
         let mut bytes = KTX2_SIGNATURE.to_vec();
         bytes.extend_from_slice(&[1, 2, 3]);
         bytes
@@ -870,7 +958,7 @@ mod tests {
     }
 
     /// 書き出しと同じ配置規則で、任意のチャンク列からコンテナを組み立てる (壊れた入力を作る用)。
-    fn assemble(chunks: &[(ChunkTag, u32, Vec<u8>)]) -> Vec<u8> {
+    pub(crate) fn assemble(chunks: &[(ChunkTag, u32, Vec<u8>)]) -> Vec<u8> {
         let table_end = HEADER_LEN + CHUNK_ENTRY_LEN * chunks.len();
         let mut offsets = Vec::new();
         let mut cursor = table_end;
@@ -905,7 +993,7 @@ mod tests {
     }
 
     /// チャンク表 `index` 番目の項目の、`field` バイト目から始まる u64 を書き換える。
-    fn patch_u64(bytes: &mut [u8], index: usize, field: usize, value: u64) {
+    pub(crate) fn patch_u64(bytes: &mut [u8], index: usize, field: usize, value: u64) {
         let at = HEADER_LEN + CHUNK_ENTRY_LEN * index + field;
         bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }

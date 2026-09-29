@@ -2,9 +2,10 @@
 
 判断の経緯は [ADR 0014](../adr/0014-composable-modules.md)。
 
-データ定義は `ugoe_model::module` (`Slot`、`Module`)、合成は `ugoe_runtime::compose` にあります (T0111)。
+データ定義は `ugoe_model::module` (`Slot`、`Module`)、合成は `ugoe_runtime::compose` (T0111)、
+ファイル形式 (`.ugoemod`) は `ugoe_format::module_file` ([file-formats.md#モジュール](file-formats.md#モジュール-ugoemod)、T0113) にあります。
 
-> 実装待ち: ファイル形式は T0113、エディタでの作成は M4 以降に起票します。
+> 実装待ち: エディタでの作成は M4 以降に起票します。
 
 ## スロット
 

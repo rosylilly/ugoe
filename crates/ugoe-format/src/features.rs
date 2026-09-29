@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::Bundle;
+use crate::{Bundle, ModuleFile};
 
 /// このランタイムが知っている機能 1 つ。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -133,6 +133,16 @@ pub fn detect(bundle: &Bundle) -> Vec<FeatureDecl> {
     Vec::new()
 }
 
+/// 書き出す着せ替えのモジュール (`.ugoemod`) が使っている機能の宣言を作る。
+///
+/// 着せ替え (`modules`) を含め、1.0 の時点ではすべての機能が基準なので、宣言は常に空になる。
+/// モジュールのファイル自体が着せ替えを使っていることは、`MODU` チャンクがあることで分かる。
+pub fn detect_module(file: &ModuleFile) -> Vec<FeatureDecl> {
+    // 1.0 以降の機能を足したら、ここで `file` がその機能を使っているかを調べて宣言を足す。
+    let _ = file;
+    Vec::new()
+}
+
 /// 宣言を、知っている機能の判定 `known` で調べる。
 ///
 /// 知らない必須の機能があれば、その ID の一覧を `Err` で返す。
@@ -237,6 +247,8 @@ mod tests {
     fn baseline_bundles_declare_nothing() {
         let bundle = Bundle::new(ugoe_model::fixtures::single_quad());
         assert!(detect(&bundle).is_empty());
+        let file = ModuleFile::new(ugoe_model::fixtures::long_hair_module());
+        assert!(detect_module(&file).is_empty());
     }
 
     #[test]
