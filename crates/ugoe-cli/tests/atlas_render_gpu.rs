@@ -161,6 +161,7 @@ fn atlas_keeps_opaque_texture_edges() {
             name,
             width,
             height,
+            normal_map: None,
         });
 
         // 128 四方の四角形 (64..192) を 96 四方にして、2x2 に並べる。
