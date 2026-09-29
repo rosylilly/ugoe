@@ -12,6 +12,7 @@ pub mod classify;
 pub mod claude;
 pub mod depth;
 mod fake;
+pub mod rig;
 pub mod transport;
 pub mod turn;
 
@@ -137,5 +138,3 @@ pub struct Proposal {
     pub rationale: String,
     pub commands: Vec<Command>,
 }
-
-// TODO(T0504): 自動パラメータ・キーフォーム設定 (`propose_rig`)。

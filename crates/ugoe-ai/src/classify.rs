@@ -607,6 +607,13 @@ fn prompt(tree: &LayerTree, batch: &[(usize, Target<'_>)], overview_scale: f32) 
     s
 }
 
+/// 全体の合成画像 (見えるレイヤーだけ) を、長い辺が `max_side` 以下になるように縮めた PNG。
+///
+/// 自動リギング ([`crate::rig::propose_rig_with_ai`]) で AI に送る原画に使う。
+pub fn overview_png(tree: &LayerTree, max_side: u32) -> Result<Vec<u8>, AiError> {
+    image::overview(tree, max_side).0.to_png()
+}
+
 /// 分類のために送るリクエスト。レイヤーが多ければ複数に分ける。
 ///
 /// 画素を持たないレイヤーは送らない (名前の規則で分類する)。エディタは送る前に、これを

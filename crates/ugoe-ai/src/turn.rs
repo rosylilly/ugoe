@@ -146,31 +146,12 @@ pub struct TurnPlan {
 /// PSD の取り込み (`ugoe_editor_core::import_psd`) はメッシュの名前をレイヤーの名前にするので、
 /// `layer_path` の最後の名前と同じ名前のメッシュにラベルを付ける。同じ名前のメッシュやレイヤーが
 /// 複数あって決められないものは付けない (ラベルのないメッシュは顔の表面として扱われる)。
+/// 左右も要るなら [`crate::rig::mesh_parts`]。
 pub fn mesh_labels(model: &Model, layers: &[LayerLabel]) -> BTreeMap<MeshId, Label> {
-    let mut by_name: BTreeMap<&str, Option<Label>> = BTreeMap::new();
-    for layer in layers {
-        if let Some(name) = layer.layer_path.last() {
-            by_name
-                .entry(name.as_str())
-                .and_modify(|l| {
-                    if *l != Some(layer.label) {
-                        *l = None;
-                    }
-                })
-                .or_insert(Some(layer.label));
-        }
-    }
-    let mut labels = BTreeMap::new();
-    for mesh in &model.meshes {
-        let same_name = model.meshes.iter().filter(|m| m.name == mesh.name).count();
-        if same_name != 1 {
-            continue;
-        }
-        if let Some(&Some(label)) = by_name.get(mesh.name.as_str()) {
-            labels.insert(mesh.id.clone(), label);
-        }
-    }
-    labels
+    crate::rig::mesh_parts(model, layers)
+        .into_iter()
+        .map(|(id, part)| (id, part.label))
+        .collect()
 }
 
 /// 深度を推定して振り向きのリグを提案する。
@@ -328,13 +309,22 @@ pub fn plan_turn(
 }
 
 /// 提案するコマンドを、複製したドキュメントに適用しながら集める。
-struct Builder {
-    doc: Document,
-    commands: Vec<Command>,
+pub(crate) struct Builder {
+    pub(crate) doc: Document,
+    pub(crate) commands: Vec<Command>,
 }
 
 impl Builder {
-    fn apply(&mut self, command: Command) -> Result<(), AiError> {
+    pub(crate) fn new(model: &Model) -> Self {
+        Self {
+            doc: Document::new(model.clone()),
+            commands: Vec::new(),
+        }
+    }
+
+    /// 複製に適用し、通ればコマンドを提案に加える。適用できない (検証エラーを生じる) コマンドは
+    /// [`AiError::InvalidProposal`]。
+    pub(crate) fn apply(&mut self, command: Command) -> Result<(), AiError> {
         self.doc
             .apply(command.clone())
             .map_err(|e| AiError::InvalidProposal(e.to_string()))?;
@@ -342,7 +332,8 @@ impl Builder {
         Ok(())
     }
 
-    fn parameter(&mut self, id: &ParamId) -> Result<Parameter, AiError> {
+    /// パラメータ `id` を返す。なければ標準の値域で足す。
+    pub(crate) fn parameter(&mut self, id: &ParamId) -> Result<Parameter, AiError> {
         if let Some(p) = self.doc.model().parameters.iter().find(|p| &p.id == id) {
             return Ok(p.clone());
         }
@@ -368,78 +359,28 @@ impl Builder {
         })?;
         Ok(true)
     }
+
+    /// 組み終えたモデルが `ugoe_model::validate` を通ることを確かめる。
+    pub(crate) fn validate(&self) -> Result<(), AiError> {
+        let errors = ugoe_model::validate::validate(self.doc.model());
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(AiError::InvalidProposal(format!(
+                "the proposal does not validate: {errors:?}"
+            )))
+        }
+    }
 }
 
 /// 設定をコマンドの列にし、複製したドキュメントに適用して確かめる。
 fn proposal_from_plans(model: &Model, plans: &[TurnPlan]) -> Result<Proposal, AiError> {
-    let mut b = Builder {
-        doc: Document::new(model.clone()),
-        commands: Vec::new(),
-    };
-    let mut rationale = Vec::new();
-    for plan in plans {
-        let target = KeyformTarget::Deformer(plan.deformer.clone());
-        let parameters = [&plan.rotation.yaw, &plan.rotation.pitch]
-            .into_iter()
-            .flatten()
-            .map(|id| b.parameter(id))
-            .collect::<Result<Vec<_>, _>>()?;
-        b.apply(Command::SetDepth {
-            target: ChildRef::Deformer(plan.deformer.clone()),
-            depth: Some(plan.depth.clone()),
-        })?;
-        // 中立のキーを先に置き (`docs/editor.md#キーフォームの編集`)、推定の設定を深度からの回転に
-        // してから端のキーを足す。加算合成の格子のまま端のキーを足すと、斜めのセルがその場で
-        // 加算合成で作られてしまう。
-        for p in &parameters {
-            b.add_key(&plan.deformer, &p.id, p.default)?;
-        }
-        b.apply(Command::SetKeyformInference {
-            target: target.clone(),
-            inference: Some(KeyformInference::DepthRotation(plan.rotation.clone())),
-        })?;
-        let mut added: BTreeMap<ParamId, Vec<f32>> = BTreeMap::new();
-        for p in &parameters {
-            for key in [p.min, p.max] {
-                if b.add_key(&plan.deformer, &p.id, key)? {
-                    added.entry(p.id.clone()).or_default().push(key);
-                }
-            }
-        }
-        // 足したキーのセルは、見た目を保つために補間した値の `authored` になっている。推定に戻す。
-        let cells = new_cells(b.doc.model(), &plan.deformer, &added);
-        if !cells.is_empty() {
-            b.apply(Command::MarkKeyformDerived {
-                target: target.clone(),
-                cells,
-            })?;
-        }
-        b.apply(Command::InferKeyforms {
-            target,
-            method: InferMethod::DepthRotation,
-            overwrite_derived: false,
-        })?;
-        let covered: BTreeSet<&str> = plan.labels.iter().flatten().map(|l| l.as_str()).collect();
-        rationale.push(format!(
-            "{} ({}): 起伏 {:.0}px、回転の中心 ({:.0}, {:.0})、角度の係数 {}、制御点を覆うラベル [{}]",
-            plan.deformer,
-            match plan.role {
-                TurnRole::Head => "頭",
-                TurnRole::Body => "体",
-            },
-            plan.relief,
-            plan.rotation.pivot.x,
-            plan.rotation.pivot.y,
-            plan.rotation.angle_scale,
-            covered.into_iter().collect::<Vec<_>>().join(", "),
-        ));
-    }
-    let errors = ugoe_model::validate::validate(b.doc.model());
-    if !errors.is_empty() {
-        return Err(AiError::InvalidProposal(format!(
-            "the proposal does not validate: {errors:?}"
-        )));
-    }
+    let mut b = Builder::new(model);
+    let rationale = plans
+        .iter()
+        .map(|plan| push_turn(&mut b, plan))
+        .collect::<Result<Vec<_>, _>>()?;
+    b.validate()?;
     Ok(Proposal {
         title: "深度推定による振り向き".into(),
         rationale: format!(
@@ -448,6 +389,65 @@ fn proposal_from_plans(model: &Model, plans: &[TurnPlan]) -> Result<Proposal, Ai
         ),
         commands: b.commands,
     })
+}
+
+/// 1 つの対象の振り向きのコマンドを `b` に加え、提案の理由の 1 行を返す。
+pub(crate) fn push_turn(b: &mut Builder, plan: &TurnPlan) -> Result<String, AiError> {
+    let target = KeyformTarget::Deformer(plan.deformer.clone());
+    let parameters = [&plan.rotation.yaw, &plan.rotation.pitch]
+        .into_iter()
+        .flatten()
+        .map(|id| b.parameter(id))
+        .collect::<Result<Vec<_>, _>>()?;
+    b.apply(Command::SetDepth {
+        target: ChildRef::Deformer(plan.deformer.clone()),
+        depth: Some(plan.depth.clone()),
+    })?;
+    // 中立のキーを先に置き (`docs/editor.md#キーフォームの編集`)、推定の設定を深度からの回転に
+    // してから端のキーを足す。加算合成の格子のまま端のキーを足すと、斜めのセルがその場で
+    // 加算合成で作られてしまう。
+    for p in &parameters {
+        b.add_key(&plan.deformer, &p.id, p.default)?;
+    }
+    b.apply(Command::SetKeyformInference {
+        target: target.clone(),
+        inference: Some(KeyformInference::DepthRotation(plan.rotation.clone())),
+    })?;
+    let mut added: BTreeMap<ParamId, Vec<f32>> = BTreeMap::new();
+    for p in &parameters {
+        for key in [p.min, p.max] {
+            if b.add_key(&plan.deformer, &p.id, key)? {
+                added.entry(p.id.clone()).or_default().push(key);
+            }
+        }
+    }
+    // 足したキーのセルは、見た目を保つために補間した値の `authored` になっている。推定に戻す。
+    let cells = new_cells(b.doc.model(), &plan.deformer, &added);
+    if !cells.is_empty() {
+        b.apply(Command::MarkKeyformDerived {
+            target: target.clone(),
+            cells,
+        })?;
+    }
+    b.apply(Command::InferKeyforms {
+        target,
+        method: InferMethod::DepthRotation,
+        overwrite_derived: false,
+    })?;
+    let covered: BTreeSet<&str> = plan.labels.iter().flatten().map(|l| l.as_str()).collect();
+    Ok(format!(
+        "{} ({}): 起伏 {:.0}px、回転の中心 ({:.0}, {:.0})、角度の係数 {}、制御点を覆うラベル [{}]",
+        plan.deformer,
+        match plan.role {
+            TurnRole::Head => "頭",
+            TurnRole::Body => "体",
+        },
+        plan.relief,
+        plan.rotation.pivot.x,
+        plan.rotation.pivot.y,
+        plan.rotation.angle_scale,
+        covered.into_iter().collect::<Vec<_>>().join(", "),
+    ))
 }
 
 /// 標準パラメータ (`ugoe_model::standard::ALL`) を作る。

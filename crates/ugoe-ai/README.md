@@ -19,6 +19,8 @@ AI プロバイダの抽象 (`Provider`) と、自動リギングのパイプラ
 - `fake.rs`: テスト用の `FakeProvider`
 - `depth.rs`: 深度推定 (`DepthEstimator`・`DepthMap`・`HttpDepthEstimator`・`FixedDepthEstimator`)
 - `turn.rs`: 深度推定による振り向きリグの提案 (`propose_depth_turn`・`plan_turn`・`label_depth`・`mesh_labels`)
+- `rig.rs`: ラベルのテンプレートによる自動リギングの提案 (`propose_rig`)、テンプレートで決められない値 (`RigParams`) を AI に決めさせ、検証エラーを添えて問い直す `propose_rig_with_ai`、分類の結果をメッシュに対応付ける `mesh_parts`
+- `examples/auto_rig.rs`: PSD を取り込み、名前の規則で分類してテンプレートの提案を適用したバンドルを書き出す (`ugoe render` で目視確認する)
 - `examples/depth_turn.rs`: 録画した深度マップから提案を作り、適用したモデルを書き出す (`ugoe render` で目視確認する)
 
 ## 仕様
