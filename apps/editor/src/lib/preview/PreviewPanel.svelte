@@ -1,13 +1,16 @@
 <!--
   プレビューモードの右の列 (docs/editor.md#プレビューモード)。段 (物理・目パチ・呼吸・リップシンク・ポーズ) の切り替え、
-  プロジェクトのモーション・表情の再生、すべてのパラメータのスライダー (グループごと)。
+  フェイストラッキング (@ugoe/face-tracking、T0636)、プロジェクトのモーション・表情の再生、すべてのパラメータの
+  スライダー (グループごと)。
   状態と WebPuppet の操作は PreviewMode (preview.svelte.ts)。コマンドは送らない。
 -->
 <script lang="ts">
+import { TrackingPanel } from "@ugoe/face-tracking";
 import type { EditorDocument } from "../document.svelte";
 import type { Model } from "../ipc";
 import { formatValue, parseValue } from "../panels/parameterValue";
 import type { ViewportController } from "../viewport/controller.svelte";
+import LicenseDialog from "./LicenseDialog.svelte";
 import { filterSections, groupParameters, STAGES, sliderStep, stageAvailability } from "./preview";
 import type { PreviewMode } from "./preview.svelte";
 
@@ -20,6 +23,7 @@ interface Props {
 let { preview, doc, viewport }: Props = $props();
 
 let filter = $state("");
+let licenses = $state<LicenseDialog | null>(null);
 /** 値の欄の入力の誤り (パラメータごとに 1 つ)。 */
 let valueError = $state<{ id: string; message: string } | null>(null);
 /**
@@ -93,6 +97,19 @@ function onValueKeyDown(e: KeyboardEvent) {
       </div>
     {/each}
   </section>
+
+  <section aria-label="Face tracking" class="tracking">
+    <TrackingPanel
+      tracker={preview.tracker}
+      parameterIds={preview.trackingParameterIds}
+      values={preview.values}
+      open={false}
+    />
+    <button class="link" type="button" onclick={() => void licenses?.open()}
+      >Third-party licenses</button
+    >
+  </section>
+  <LicenseDialog bind:this={licenses} />
 
   <section aria-label="Motions">
     <div class="head">
@@ -220,6 +237,32 @@ h3 {
 section {
   border-top: 1px solid var(--border);
   padding-top: 4px;
+}
+
+/* トラッキングのパネルは <details> で開閉する。見出しを他の節に揃える。 */
+.tracking :global(details.tracking > summary h2) {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+/* エディタの label は縦に並べる (app.css) ので、チェックボックスと文言を横に並べ直す。 */
+.tracking :global(details.tracking .options label) {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.link {
+  margin-top: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .stage {

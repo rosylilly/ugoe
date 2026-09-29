@@ -5,9 +5,10 @@
   "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "ugoe-mediapipe-assets public/mediapipe --optional && vite",
     "wasm": "just wasm",
-    "build": "vite build",
+    "mediapipe": "ugoe-mediapipe-assets public/mediapipe",
+    "build": "ugoe-mediapipe-assets public/mediapipe && vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
@@ -16,7 +17,8 @@
   "dependencies": {
     "@tauri-apps/api": "^2.12.0",
     "@tauri-apps/plugin-dialog": "^2.8.0",
-    "@tauri-apps/plugin-opener": "^2.6.0"
+    "@tauri-apps/plugin-opener": "^2.6.0",
+    "@ugoe/face-tracking": "workspace:*"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",

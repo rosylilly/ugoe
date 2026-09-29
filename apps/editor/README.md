@@ -5,8 +5,11 @@ ugoe のエディタ (Tauri v2 + Svelte 5)。設計は [docs/editor.md](../../do
 ```
 src/              フロントエンド (Svelte 5 + TS)
   lib/ipc.ts        バックエンドとの通信はすべてここを通す
+  lib/preview/      プレビューモード。フェイストラッキングは共有の @ugoe/face-tracking (packages/face-tracking/)
+public/mediapipe/ MediaPipe の wasm とモデル。`pnpm mediapipe` (dev・build の前にも) が用意する (gitignore 済み)
 src-tauri/        バックエンド (Rust クレート `ugoe-editor`)
   src/commands.rs   IPC コマンド。薄く保ち、編集ロジックは ugoe-editor-core に置く
+  src/tracking.rs   フェイストラッキングのカメラの許可と記録の保存。Info.plist・Entitlements.plist は macOS のカメラ
 ```
 
 ## 守ること

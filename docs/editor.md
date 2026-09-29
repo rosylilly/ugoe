@@ -362,8 +362,27 @@ AI や CLI は `commands` の結果を確かめてから `batch` として適用
 - スライダーは値域の 1/1000 程度のきりのよい刻み、値の欄は編集のパネルと同じ検査 (`parseValue`) で、値域の外は拒否します。
   並びはパラメータグループの定義順 (区切りの中はモデルの順、グループの無いものは最後の「Other」)。純粋な関数は
   `preview.ts` (Vitest)。
-- **まだ無いもの:** フェイストラッキング (ビューアの T0703 の仕組み) は T0636 で足す (`FrameDriver.beforeUpdate` で入力を渡す想定)。目パチ・呼吸・リップシンクの
-  設定 (`Model.effects`) を編集するコマンドと画面はまだ無い (読み込んだモデルの設定で動く)。
+- **フェイストラッキング (T0636):** ビューア (T0703) と同じ部品 `@ugoe/face-tracking` (`packages/face-tracking/`、
+  GPL-3.0-only。MediaPipe の呼び出し・頭の向き・キャリブレーション・平滑化・記録と再生・パネル) を使います。写さずに
+  共有のパッケージへ切り出したのは、ビューアとエディタで値の約束・既定値・不具合の直しを一致させるため
+  (どちらも pnpm のワークスペースの `"@ugoe/face-tracking": "workspace:*"`)。
+  - `PreviewMode` が `TrackingTarget` (`setTracking` / `setAutoEyeBlink`) になり、パネルの「Face tracking」
+    (最初は閉じている) の `FaceTracker` が値を渡します。値は `FrameDriver.beforeUpdate` で `set_tracking` に渡し
+    (1 フレームに 1 回。モデルを読み直したら最後の値を渡し直す)、パラメータへの変換は Rust の対応付け
+    (`avatar.tracking`) です。止めると `clear_tracking` し、トラッキングが書いていたパラメータを既定値に戻します。
+  - 目パチはビューアと同じく、トラッキング中は既定で止めます (「Stop eye blink」)。目パチの段は「Eye blink」と
+    トラッキングの指定のどちらも有効なときだけ動きます。プレビューを出るとトラッキングも止まります。
+  - MediaPipe の wasm とモデルは、`pnpm dev` / `pnpm build` の前に `ugoe-mediapipe-assets public/mediapipe`
+    (パッケージの `scripts/mediapipe-assets.mjs`) が用意します。wasm は npm パッケージから写し、モデル
+    (`face_landmarker.task`) は版を固定した URL から取って SHA-256 を検証します。`public/mediapipe/` はコミットしません。
+    同じ場所にライセンスの表記 (`third-party-notices.txt`、Apache-2.0) を写し、パネルの「Third-party licenses」で表示します。
+  - Tauri 側 (`src-tauri/src/tracking.rs`): webview からのカメラの許可の要求だけを許し (`on_permission_request`)、
+    記録の保存は `write_json_file` (保存のダイアログで選んだ `.json` だけ)。macOS は `Info.plist` の
+    `NSCameraUsageDescription` と `Entitlements.plist` の `com.apple.security.device.camera`。
+  - ヘッドレスのブラウザでは、記録した値の列 (JSON) か画像・動画を「File…」で入れて確かめます
+    (`window.__UGOE_TRACKER__` でトラッカーを読める)。
+- **まだ無いもの:** 目パチ・呼吸・リップシンクの設定 (`Model.effects`) を編集するコマンドと画面はまだ無い
+  (読み込んだモデルの設定で動く)。
 
 ## PSD の取り込み
 

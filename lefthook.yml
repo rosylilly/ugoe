@@ -35,4 +35,4 @@ pre-push:
     - name: test
       run: cargo test --workspace
     - name: web-check
-      run: pnpm --filter @ugoe/editor --filter @ugoe/viewer check
+      run: pnpm --filter @ugoe/editor --filter @ugoe/viewer --filter @ugoe/face-tracking check

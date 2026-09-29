@@ -1,13 +1,17 @@
 #!/usr/bin/env node
-// フェイストラッキング (MediaPipe Face Landmarker) の実行に要るファイルを public/mediapipe/ に用意する
-// (`pnpm mediapipe`。`pnpm dev` と `pnpm build` の前にも実行される)。実行時にネットワークへ取りに行かないため。
+// フェイストラッキング (MediaPipe Face Landmarker) の実行に要るファイルを、アプリの public/mediapipe/ に用意する
+// (ビューアとエディタの `pnpm mediapipe`。`pnpm dev` と `pnpm build` の前にも実行される)。
+// 実行時にネットワークへ取りに行かないため。
 //
 // - wasm: npm パッケージ @mediapipe/tasks-vision の wasm/ から写す (SIMD 版と、SIMD の無い環境向けの版)。
+// - ライセンスの表記: このパッケージの third-party-notices.txt を出力先に写す (アプリがライセンスとして表示する)。
 // - モデル (face_landmarker.task): 版を固定した URL から取得し、SHA-256 を検証する。リポジトリにはコミットしない
 //   (public/mediapipe/ は gitignore 済み)。検証済みのファイルがあれば取得しない。
 //
-//   node scripts/mediapipe-assets.mjs              取得できなければ失敗する (リリースビルド・CI)
-//   node scripts/mediapipe-assets.mjs --optional   取得できなくても警告だけで続ける (オフラインでの開発)
+//   ugoe-mediapipe-assets <出力先>              取得できなければ失敗する (リリースビルド・CI)
+//   ugoe-mediapipe-assets <出力先> --optional   取得できなくても警告だけで続ける (オフラインでの開発)
+//
+// 出力先は実行したディレクトリからの相対パス (アプリでは public/mediapipe)。
 //
 // モデルを更新するときは MODEL_URL と MODEL_SHA256 を一緒に書き換える。
 
@@ -21,7 +25,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 /** Face Landmarker のモデル (float16、版 1)。モデルのライセンスは Apache-2.0。 */
 const MODEL_URL =
@@ -35,16 +39,23 @@ const WASM_FILES = [
   "vision_wasm_nosimd_internal.wasm",
 ];
 
-const optional = process.argv.includes("--optional");
-const appDir = join(import.meta.dirname, "..");
-const outDir = join(appDir, "public", "mediapipe");
+const args = process.argv.slice(2);
+const optional = args.includes("--optional");
+const outArg = args.find((a) => !a.startsWith("--"));
+if (outArg === undefined) {
+  console.error("usage: ugoe-mediapipe-assets <output directory> [--optional]");
+  process.exit(2);
+}
+/** @mediapipe/tasks-vision に依存しているこのパッケージ (packages/face-tracking)。 */
+const packageDir = join(import.meta.dirname, "..");
+const outDir = resolve(outArg);
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
 function copyWasm() {
-  const require = createRequire(join(appDir, "package.json"));
+  const require = createRequire(join(packageDir, "package.json"));
   const wasmOut = join(outDir, "wasm");
   mkdirSync(wasmOut, { recursive: true });
   for (const name of WASM_FILES) {
@@ -72,6 +83,7 @@ async function fetchModel() {
 }
 
 copyWasm();
+copyFileSync(join(packageDir, "third-party-notices.txt"), join(outDir, "third-party-notices.txt"));
 try {
   await fetchModel();
 } catch (e) {

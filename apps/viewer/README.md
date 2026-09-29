@@ -15,14 +15,16 @@ src/                  フロントエンド (Svelte 5 + TS。npm パッケージ
   lib/host.ts           ファイルの選択と読み込み (Tauri / ブラウザ / 差し替え)
   lib/Viewport.svelte   描画領域 (ズーム・パン・フィット)
   lib/ParameterPanel.svelte  パラメータのスライダー (グループごと)
-  lib/TrackingPanel.svelte   フェイストラッキングのパネル (T0703)
-  lib/tracking/         フェイストラッキング: MediaPipe の結果の変換・キャリブレーション・平滑化・記録
   lib/wasm/             ugoe-wasm の読み込み。generated/ は `pnpm wasm` の出力 (gitignore 済み)
 public/               そのまま配る静的ファイル。third-party-notices.txt (同梱物のライセンス) だけコミットする
   mediapipe/            MediaPipe の wasm とモデル。`pnpm mediapipe` が用意する (gitignore 済み)
-scripts/mediapipe-assets.mjs  MediaPipe の wasm を写し、モデルを取得して SHA-256 を検証する
 src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 ```
+
+フェイストラッキング (T0703) の部品 (MediaPipe の結果の変換・キャリブレーション・平滑化・記録・`FaceTracker`・
+`TrackingPanel`) と、MediaPipe の wasm を写しモデルを取得して SHA-256 を検証するスクリプト (`ugoe-mediapipe-assets`) は、
+エディタのプレビューと共有するパッケージ `@ugoe/face-tracking` ([packages/face-tracking/](../../packages/face-tracking/)) にある (T0636)。
+ビューアは `Player` を `TrackingTarget` として渡し、文言は日本語 (`ja`)、記録の保存は `host.ts` の `saveJsonFile`。
 
 ## 仕組み
 
@@ -60,7 +62,7 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
   顔の変換行列を得る。
 - パラメータへの変換は Rust の対応付け (`ugoe_motion::tracking`、[アバタープロファイル](../../docs/spec/avatar-profile.md#フェイストラッキングとの対応))
   を `WebPuppet.set_tracking` で呼ぶ。TS では式を持たない。モデルの `avatar.tracking` の上書きも効く。
-- アプリ側で行うこと (`src/lib/tracking/`。仕様の「実装の範囲」でホストの責務とされたもの):
+- アプリ側で行うこと (`@ugoe/face-tracking`。仕様の「実装の範囲」でホストの責務とされたもの):
   - 頭の向き: 変換行列 (列優先の 4x4) の回転を Y・X・Z の順に分解し、ヨー・ピッチ・ロール (度) にする (`frame.ts`)。
     反転していない映像では、写った人が自分の左を向くと正のヨー、上を向くと正のピッチ、画面で時計回りに傾くと正のロール。
   - キャリブレーション: 「キャリブレーション」で直近 15 フレームの平均を中立にし、頭の向きは差し引き、
@@ -75,7 +77,7 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
   目パチは基準値に重なるので、止めないとトラッキングの目の開閉と目パチが混ざる。止めると元に戻す。
 - カメラの無い環境 (CI・ヘッドレス) では「ファイル…」で動画・画像、または記録した値の JSON を入れる。
   - 動画は繰り返し再生し、画像は同じ画像を検出し続ける。
-  - 「記録」で検出した値 (キャリブレーション・平滑化の前) を記録し、「保存」で JSON にする。形式は `src/lib/tracking/recording.ts`
+  - 「記録」で検出した値 (キャリブレーション・平滑化の前) を記録し、「保存」で JSON にする。形式は `packages/face-tracking/src/recording.ts`
     (`{"format": "ugoe-face-tracking", "version": 1, "frames": [{"t", "head": {"yaw", "pitch", "roll"}, "blendShapes": {...}}]}`)。
     JSON を開くと MediaPipe を使わずに繰り返し再生する (キャリブレーションと平滑化は通す)。
   - ヘッドレスのブラウザからは `window.__UGOE_TRACKER__` (`FaceTracker`) を触れる。`output` (渡した値)・`landmarks`・`status` など。
@@ -86,7 +88,7 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 実行時にネットワークに頼らないよう、wasm とモデルをアプリに同梱する (`public/mediapipe/`)。
 
 - wasm は npm パッケージの `wasm/` から写す (SIMD 版と SIMD の無い版。`FilesetResolver` が選ぶ)。
-- モデル `face_landmarker.task` は **リポジトリにコミットしない**。`scripts/mediapipe-assets.mjs` が版を固定した URL
+- モデル `face_landmarker.task` は **リポジトリにコミットしない**。`ugoe-mediapipe-assets` (`packages/face-tracking/scripts/mediapipe-assets.mjs`) が版を固定した URL
   (`.../face_landmarker/float16/1/face_landmarker.task`) から取得し、SHA-256 を検証する (違えば失敗する)。
   検証済みのファイルがあれば取得しない。モデルを更新するときは、スクリプトの URL とハッシュを一緒に書き換える。
 - `pnpm build` (= `tauri build` の前) は取得できなければ失敗する。`pnpm dev` は取得できなくても警告だけで起動する

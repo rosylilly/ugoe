@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- フェイストラッキング (T0636、プレビューモード) でカメラを使う。tauri build がアプリの Info.plist に合わせる。 -->
+  <key>NSCameraUsageDescription</key>
+  <string>The camera is used for face tracking. Images stay on this computer and are not sent anywhere.</string>
+</dict>
+</plist>

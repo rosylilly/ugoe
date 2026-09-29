@@ -1,11 +1,30 @@
 <script lang="ts">
-// フェイストラッキングのパネル (T0703): 入力の選択、映像とランドマーク、調整、記録、値の表示。
+// フェイストラッキングのパネル (T0703、ビューアとエディタで共有。T0636): 入力の選択、映像とランドマーク、
+// 調整、記録、値の表示。文言は `tracker.strings`。
 import { onDestroy, onMount } from "svelte";
-import { formatValue } from "./parameters";
-import type { Player } from "./player.svelte";
-import type { FaceTracker } from "./tracking/tracker.svelte";
+import type { FaceTracker } from "./tracker.svelte";
 
-let { player, tracker }: { player: Player; tracker: FaceTracker } = $props();
+interface Props {
+  tracker: FaceTracker;
+  /** トラッキングが書き込むパラメータ (`WebPuppet.tracking_parameter_ids`)。 */
+  parameterIds: readonly string[];
+  /** パラメータの今の値 (ID → 値)。 */
+  values: Readonly<Record<string, number>>;
+  /**
+   * 開いているか (最初の状態)。`bind:open` にしているのは、単方向の属性だと値の表示が変わるたびに
+   * 属性が書き戻され、利用者が開閉した状態が戻ってしまうため。
+   */
+  open?: boolean;
+}
+
+let { tracker, parameterIds, values, open = $bindable(true) }: Props = $props();
+const t = $derived(tracker.strings);
+
+/** 値の表示 (小数第 3 位まで)。 */
+function formatValue(value: number): string {
+  const rounded = Math.round(value * 1000) / 1000;
+  return (Object.is(rounded, -0) ? 0 : rounded).toString();
+}
 
 let canvas = $state<HTMLCanvasElement | null>(null);
 let fileInput = $state<HTMLInputElement | null>(null);
@@ -28,17 +47,15 @@ function onFile(e: Event & { currentTarget: HTMLInputElement }) {
   if (file) void tracker.startFile(file);
 }
 
-const SOURCE_KIND = { camera: "カメラ", video: "動画", image: "画像", replay: "記録の再生" };
-
 let statusText = $derived.by(() => {
   switch (tracker.status) {
     case "loading":
-      return "準備中…";
+      return t.loading;
     case "running":
       if (tracker.source?.kind === "replay") {
-        return `${tracker.replayTime.toFixed(1)} / ${tracker.replayDuration.toFixed(1)} 秒`;
+        return t.replayPosition(tracker.replayTime.toFixed(1), tracker.replayDuration.toFixed(1));
       }
-      return tracker.faceFound ? `${tracker.fps} fps` : "顔が見つかりません";
+      return tracker.faceFound ? t.fps(tracker.fps) : t.noFace;
     default:
       return "";
   }
@@ -48,9 +65,9 @@ let blendShapes = $derived(Object.entries(tracker.output?.blendShapes ?? {}));
 let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
 </script>
 
-<details class="panel tracking" open>
+<details class="tracking" bind:open>
   <summary>
-    <h2>フェイストラッキング</h2>
+    <h2>{t.title}</h2>
     <span class="status" class:warn={tracker.running && !tracker.faceFound}>{statusText}</span>
   </summary>
 
@@ -58,24 +75,24 @@ let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
     <select
       bind:value={tracker.cameraId}
       disabled={tracker.running}
-      title="カメラ"
+      title={t.camera}
       onfocus={() => void tracker.refreshCameras()}
     >
       {#each tracker.cameras as camera (camera.id)}
         <option value={camera.id}>{camera.label}</option>
       {:else}
-        <option value="">カメラ (既定)</option>
+        <option value="">{t.defaultCamera}</option>
       {/each}
     </select>
     {#if tracker.running || tracker.status === "loading"}
-      <button type="button" onclick={() => tracker.stop()}>停止</button>
+      <button type="button" onclick={() => tracker.stop()}>{t.stop}</button>
     {:else}
-      <button type="button" onclick={() => void tracker.startCamera()}>開始</button>
+      <button type="button" onclick={() => void tracker.startCamera()}>{t.start}</button>
     {/if}
     <button
       type="button"
       onclick={() => fileInput?.click()}
-      title="動画・画像、または記録した値 (JSON) で確かめる">ファイル…</button
+      title={t.fileTitle}>{t.file}</button
     >
     <input
       bind:this={fileInput}
@@ -90,7 +107,7 @@ let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
     <p class="error">{tracker.error}</p>
   {/if}
   {#if tracker.source}
-    <p class="source">{SOURCE_KIND[tracker.source.kind]}: {tracker.source.label}</p>
+    <p class="source">{t.sourceKind[tracker.source.kind]}: {tracker.source.label}</p>
   {/if}
 
   <div class="preview" class:hidden={!showMedia}>
@@ -98,28 +115,26 @@ let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
   </div>
 
   <div class="options">
-    <label title="映像を鏡のように表示する (表示だけで、値は変わらない)">
-      <input type="checkbox" bind:checked={tracker.mirrorView} /> 鏡像で表示
+    <label title={t.mirrorViewTitle}>
+      <input type="checkbox" bind:checked={tracker.mirrorView} /> {t.mirrorView}
     </label>
-    <label title="ランドマーク (顔の輪郭・目・眉・唇) を重ねて描く">
-      <input type="checkbox" bind:checked={tracker.showLandmarks} /> ランドマーク
+    <label title={t.landmarksTitle}>
+      <input type="checkbox" bind:checked={tracker.showLandmarks} /> {t.landmarks}
     </label>
-    <label
-      title="左右 (Left / Right) と、ヨー・ロールの符号を入れ替える。モデルを鏡に映った自分のように動かすとき、または入力の映像がすでに左右反転しているとき (反転済みの仮想カメラなど) に使う"
-    >
-      <input type="checkbox" bind:checked={tracker.swapSides} /> 左右を入れ替える
+    <label title={t.swapSidesTitle}>
+      <input type="checkbox" bind:checked={tracker.swapSides} /> {t.swapSides}
     </label>
-    <label title="トラッキング中はモデルの自動の目パチを止める (目の開閉はトラッキングの値だけになる)">
+    <label title={t.stopEyeBlinkTitle}>
       <input
         type="checkbox"
         checked={tracker.stopEyeBlink}
         onchange={(e) => tracker.setStopEyeBlink(e.currentTarget.checked)}
-      /> 目パチを止める
+      /> {t.stopEyeBlink}
     </label>
   </div>
 
-  <label class="slider" title="揺れを抑える強さ (One Euro フィルタ)。強いほど滑らかで、動きが遅れる">
-    平滑化
+  <label class="slider" title={t.smoothingTitle}>
+    {t.smoothing}
     <input type="range" min="0" max="1" step="0.05" bind:value={tracker.smoothing} />
     <span class="value">{tracker.smoothing.toFixed(2)}</span>
   </label>
@@ -129,32 +144,32 @@ let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
       type="button"
       onclick={() => tracker.calibrate()}
       disabled={!tracker.running || !tracker.faceFound}
-      title="今の顔を中立 (正面・無表情) にする">キャリブレーション</button
+      title={t.calibrateTitle}>{t.calibrate}</button
     >
     <button
       type="button"
       onclick={() => tracker.clearCalibration()}
       disabled={!tracker.calibrated}
-      title="キャリブレーションを取り消す">解除</button
+      title={t.clearCalibrationTitle}>{t.clearCalibration}</button
     >
   </div>
 
   <div class="row">
     {#if tracker.recording}
       <button type="button" class="rec" onclick={() => tracker.stopRecording()}
-        >記録を止める ({tracker.recordedCount})</button
+        >{t.stopRecording(tracker.recordedCount)}</button
       >
     {:else}
       <button
         type="button"
         onclick={() => tracker.startRecording()}
         disabled={!tracker.running || tracker.source?.kind === "replay"}
-        title="検出した値を記録する (JSON に保存して、カメラの無い環境で再生できる)">記録</button
+        title={t.recordTitle}>{t.record}</button
       >
       <button
         type="button"
         onclick={() => void tracker.saveRecording()}
-        disabled={tracker.recordedCount === 0}>保存 ({tracker.recordedCount})</button
+        disabled={tracker.recordedCount === 0}>{t.save(tracker.recordedCount)}</button
       >
     {/if}
   </div>
@@ -162,7 +177,7 @@ let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
   {#if tracker.output}
     {@const head = tracker.output.head}
     <details>
-      <summary>頭の向きとブレンドシェイプ <span class="count">{blendShapes.length}</span></summary>
+      <summary>{t.headAndBlendShapes} <span class="count">{blendShapes.length}</span></summary>
       <dl class="values">
         <dt>yaw</dt>
         <dd>{head.yaw.toFixed(1)}°</dd>
@@ -180,15 +195,13 @@ let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
       </dl>
     </details>
   {/if}
-  {#if player.trackingParameterIds.length > 0}
+  {#if parameterIds.length > 0}
     <details>
-      <summary>
-        変換後のパラメータ <span class="count">{player.trackingParameterIds.length}</span>
-      </summary>
+      <summary>{t.parameters} <span class="count">{parameterIds.length}</span></summary>
       <dl class="values">
-        {#each player.trackingParameterIds as id (id)}
+        {#each parameterIds as id (id)}
           <dt title={id}>{id}</dt>
-          <dd><span class="num">{formatValue(player.values[id] ?? 0)}</span></dd>
+          <dd><span class="num">{formatValue(values[id] ?? 0)}</span></dd>
         {/each}
       </dl>
     </details>
@@ -219,7 +232,7 @@ let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
     font-variant-numeric: tabular-nums;
   }
   .status.warn {
-    color: var(--warning);
+    color: var(--warning, #b7791f);
   }
   .row {
     display: flex;
@@ -241,7 +254,7 @@ let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
     display: none;
   }
   .error {
-    color: var(--danger);
+    color: var(--danger, #c53030);
     margin: 0.4rem 0 0;
   }
   .source {
@@ -286,8 +299,8 @@ let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
     color: var(--muted);
   }
   .rec {
-    border-color: var(--danger);
-    color: var(--danger);
+    border-color: var(--danger, #c53030);
+    color: var(--danger, #c53030);
   }
   details details > summary {
     cursor: pointer;

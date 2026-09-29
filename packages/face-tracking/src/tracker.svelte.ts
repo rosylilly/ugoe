@@ -1,15 +1,13 @@
-// フェイストラッキング (T0703)。MediaPipe Face Landmarker でカメラ・動画・画像から顔の値を得て、
-// キャリブレーションと平滑化を通してから Player に渡す (パラメータへの変換は Rust の対応付け)。
+// フェイストラッキング (T0703、エディタとの共有は T0636)。MediaPipe Face Landmarker でカメラ・動画・画像から
+// 顔の値を得て、キャリブレーションと平滑化を通してから TrackingTarget に渡す (パラメータへの変換は Rust の対応付け)。
 // カメラの無い環境では、記録した値の列 (recording.ts) を再生して確かめる。
 //
 // 入力 → [MediaPipe] → frameFromLandmarker → (左右を入れ替えるなら unmirrorFrame) → 記録
-//      → applyCalibration → FrameSmoother → Player.setTracking → WebPuppet.set_tracking (Rust)
+//      → applyCalibration → FrameSmoother → TrackingTarget.setTracking → WebPuppet.set_tracking (Rust)
 //
 // MediaPipe の wasm とモデルはアプリに同梱し (public/mediapipe/。scripts/mediapipe-assets.mjs)、
 // 実行時にネットワークへ取りに行かない。
 import type { FaceLandmarker, NormalizedLandmark } from "@mediapipe/tasks-vision";
-import { saveJsonFile } from "../host";
-import type { Player } from "../player.svelte";
 import { applyCalibration, averageFrames } from "./calibration";
 import { FrameSmoother } from "./filter";
 import { frameFromLandmarker, type TrackingFrame, unmirrorFrame } from "./frame";
@@ -21,6 +19,28 @@ import {
   recordingDuration,
   serializeRecording,
 } from "./recording";
+import { ja, type TrackingStrings } from "./strings";
+
+/**
+ * トラッキングの値を受け取るもの (ビューアの Player、エディタのプレビューモード)。値は次のフレームの
+ * `WebPuppet.set_tracking` に渡す。
+ */
+export interface TrackingTarget {
+  /** 次のフレームで渡す値。`null` で止め、トラッキングが書き込んでいたパラメータを既定値に戻す。 */
+  setTracking(frame: TrackingFrame | null): void;
+  /** モデルの自動の目パチを有効・無効にする (トラッキング中は目の開閉に重なるため止められる)。 */
+  setAutoEyeBlink(enabled: boolean): void;
+}
+
+export interface FaceTrackerOptions {
+  /** 画面とエラーの文言。既定は日本語。 */
+  strings?: TrackingStrings;
+  /**
+   * JSON のテキスト (記録) を保存する。`name` は既定のファイル名。保存したら `true`、取り消したら `false`。
+   * 省くとブラウザのダウンロードで保存する。
+   */
+  saveJson?: (name: string, text: string) => Promise<boolean>;
+}
 
 export type TrackerSource =
   | { kind: "camera"; label: string }
@@ -37,7 +57,7 @@ const IMAGE_INTERVAL = 1 / 30;
 /** 1 フレームで進める時間の上限 (秒)。 */
 const MAX_DT = 0.1;
 
-/** 同梱した MediaPipe のファイルの URL (public/mediapipe/)。 */
+/** 同梱した MediaPipe のファイルの URL (アプリの public/mediapipe/)。 */
 function assetUrl(path: string): string {
   return new URL(`mediapipe/${path}`, document.baseURI).href;
 }
@@ -47,17 +67,28 @@ function message(e: unknown): string {
 }
 
 /** getUserMedia の失敗を、利用者に分かる言葉にする (元のメッセージも付ける)。 */
-function cameraError(e: unknown): string {
+function cameraError(e: unknown, strings: TrackingStrings): string {
   const name = e instanceof DOMException ? e.name : "";
   const reason =
     name === "NotAllowedError" || name === "SecurityError"
-      ? "カメラの使用が許可されませんでした (OS やアプリの設定を確かめてください)"
+      ? strings.cameraNotAllowed
       : name === "NotFoundError" || name === "OverconstrainedError"
-        ? "カメラが見つかりません"
+        ? strings.cameraNotFound
         : name === "NotReadableError"
-          ? "カメラを開けません (ほかのアプリが使っているかもしれません)"
-          : "カメラを開けません";
+          ? strings.cameraBusy
+          : strings.cameraFailed;
   return `${reason}: ${message(e)}`;
+}
+
+/** ブラウザのダウンロードで保存する。 */
+async function downloadJson(name: string, text: string): Promise<boolean> {
+  const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return true;
 }
 
 export class FaceTracker {
@@ -84,7 +115,7 @@ export class FaceTracker {
   faceFound = $state(false);
   /** キャリブレーション済み (中立の顔を差し引いている)。 */
   calibrated = $state(false);
-  /** Player に渡した値 (キャリブレーション・平滑化の後)。 */
+  /** TrackingTarget に渡した値 (キャリブレーション・平滑化の後)。 */
   output = $state<TrackingFrame | null>(null);
   /** 検出の頻度 (回/秒)。 */
   fps = $state(0);
@@ -94,7 +125,9 @@ export class FaceTracker {
   replayDuration = $state(0);
   replayTime = $state(0);
 
-  readonly #player: Player;
+  readonly strings: TrackingStrings;
+  readonly #target: TrackingTarget;
+  readonly #saveJson: (name: string, text: string) => Promise<boolean>;
   #landmarker: FaceLandmarker | null = null;
   #landmarkerLoading: Promise<FaceLandmarker> | null = null;
   #drawing: typeof import("@mediapipe/tasks-vision") | null = null;
@@ -117,8 +150,10 @@ export class FaceTracker {
   #recordStart = 0;
   #smoother = new FrameSmoother();
 
-  constructor(player: Player) {
-    this.#player = player;
+  constructor(target: TrackingTarget, options: FaceTrackerOptions = {}) {
+    this.#target = target;
+    this.strings = options.strings ?? ja;
+    this.#saveJson = options.saveJson ?? downloadJson;
   }
 
   /** 映像とランドマークを描く canvas (パネルが渡す)。 */
@@ -143,7 +178,7 @@ export class FaceTracker {
     const devices = await navigator.mediaDevices.enumerateDevices();
     this.cameras = devices
       .filter((d) => d.kind === "videoinput")
-      .map((d, i) => ({ id: d.deviceId, label: d.label || `カメラ ${i + 1}` }));
+      .map((d, i) => ({ id: d.deviceId, label: d.label || this.strings.cameraNumber(i + 1) }));
     if (!this.cameras.some((c) => c.id === this.cameraId))
       this.cameraId = this.cameras[0]?.id ?? "";
   }
@@ -152,7 +187,7 @@ export class FaceTracker {
   async startCamera(): Promise<void> {
     await this.#start(async () => {
       if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error("この環境ではカメラを使えません (navigator.mediaDevices がありません)");
+        throw new Error(this.strings.noMediaDevices);
       }
       const stream = await navigator.mediaDevices
         .getUserMedia({
@@ -160,7 +195,7 @@ export class FaceTracker {
           audio: false,
         })
         .catch((e: unknown) => {
-          throw new Error(cameraError(e));
+          throw new Error(cameraError(e, this.strings));
         });
       this.#stream = stream;
       const video = this.#newVideo();
@@ -170,7 +205,7 @@ export class FaceTracker {
       const track = stream.getVideoTracks()[0];
       const id = track?.getSettings().deviceId;
       if (id) this.cameraId = id;
-      return { kind: "camera", label: track?.label || "カメラ" };
+      return { kind: "camera", label: track?.label || this.strings.camera };
     });
   }
 
@@ -201,7 +236,7 @@ export class FaceTracker {
   }
 
   /** 記録した値の列 (JSON のテキスト) を繰り返し再生する。MediaPipe は使わない。 */
-  async startReplay(text: string, label = "記録"): Promise<void> {
+  async startReplay(text: string, label = this.strings.recording): Promise<void> {
     await this.#start(async () => {
       this.#replay = parseRecording(text);
       this.replayDuration = recordingDuration(this.#replay);
@@ -214,8 +249,8 @@ export class FaceTracker {
     this.#frame = 0;
     if (this.recording) this.stopRecording();
     this.#releaseSource();
-    this.#player.setTracking(null);
-    if (this.stopEyeBlink) this.#player.setAutoEyeBlink(true);
+    this.#target.setTracking(null);
+    if (this.stopEyeBlink) this.#target.setAutoEyeBlink(true);
     this.status = "idle";
     this.source = null;
     this.faceFound = false;
@@ -244,7 +279,7 @@ export class FaceTracker {
 
   setStopEyeBlink(stop: boolean): void {
     this.stopEyeBlink = stop;
-    if (this.running) this.#player.setAutoEyeBlink(!stop);
+    if (this.running) this.#target.setAutoEyeBlink(!stop);
   }
 
   // --- 記録 ---
@@ -269,9 +304,9 @@ export class FaceTracker {
     const text = this.recordingJson();
     if (text === null) return;
     try {
-      await saveJsonFile("face-tracking.json", text);
+      await this.#saveJson("face-tracking.json", text);
     } catch (e) {
-      this.error = `保存できません: ${message(e)}`;
+      this.error = `${this.strings.saveFailed}: ${message(e)}`;
     }
   }
 
@@ -296,7 +331,7 @@ export class FaceTracker {
     this.#lastVideoTime = -1;
     this.#fpsSince = performance.now();
     this.#detectCount = 0;
-    if (this.stopEyeBlink) this.#player.setAutoEyeBlink(false);
+    if (this.stopEyeBlink) this.#target.setAutoEyeBlink(false);
     this.status = "running";
     this.#frame = requestAnimationFrame(this.#tick);
   }
@@ -332,9 +367,7 @@ export class FaceTracker {
       const modelUrl = assetUrl("face_landmarker.task");
       const head = await fetch(modelUrl, { method: "HEAD" }).catch(() => null);
       if (!head?.ok) {
-        throw new Error(
-          "MediaPipe のモデルが同梱されていません (apps/viewer で `pnpm mediapipe` を実行してください)",
-        );
+        throw new Error(this.strings.modelMissing);
       }
       const vision = await import("@mediapipe/tasks-vision");
       this.#drawing = vision;
@@ -416,7 +449,7 @@ export class FaceTracker {
     return frame && this.swapSides ? unmirrorFrame(frame) : frame;
   }
 
-  /** 検出した (または再生した) 値を記録し、キャリブレーションと平滑化を通して Player に渡す。 */
+  /** 検出した (または再生した) 値を記録し、キャリブレーションと平滑化を通して TrackingTarget に渡す。 */
   #push(raw: TrackingFrame, dt: number, now: number): void {
     this.#recent.push(raw);
     if (this.#recent.length > CALIBRATION_FRAMES) this.#recent.shift();
@@ -427,7 +460,7 @@ export class FaceTracker {
     this.#smoother.strength = this.smoothing;
     const out = this.#smoother.smooth(applyCalibration(raw, this.#neutral), dt);
     this.output = out;
-    this.#player.setTracking(out);
+    this.#target.setTracking(out);
   }
 
   #countFps(now: number): void {

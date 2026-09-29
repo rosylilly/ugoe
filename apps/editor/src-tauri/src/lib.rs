@@ -9,6 +9,7 @@ mod physics_check;
 mod project;
 mod psd;
 mod space;
+mod tracking;
 
 use std::sync::Mutex;
 
@@ -37,6 +38,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(state)
+        .on_permission_request(|_, kind| tracking::permission_response(kind))
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
             commands::apply_command,
@@ -67,6 +69,7 @@ pub fn run() {
             ai::set_ai_send_externally,
             ai::forget_ai_consent,
             ai::test_ai_connection,
+            tracking::write_json_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

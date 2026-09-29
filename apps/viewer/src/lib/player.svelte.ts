@@ -3,6 +3,7 @@
 // フレームごとに: ドライバ (drivers.ts) の値を設定 → トラッキングの入力を渡す → `update(dt)` (物理など)
 // → スライダーの値を同期 → 描画。
 // 描画は WebGPU が無ければ WebGL2 で行う (docs/adr/0003-editor-viewport-in-webview.md)。
+import type { TrackingFrame } from "@ugoe/face-tracking";
 import { parseHexColor } from "./color";
 import { DriverSet } from "./drivers";
 import { detectModelKind, type ModelFile } from "./modelFile";
@@ -12,7 +13,6 @@ import {
   type ParameterSection,
   parseParameterList,
 } from "./parameters";
-import type { TrackingFrame } from "./tracking/frame";
 import { loadWasm, type UgoeWasmModule, type WebPuppet } from "./wasm/load";
 
 export type PlayerStatus =
@@ -148,7 +148,7 @@ export class Player {
 
   /**
    * フェイストラッキングの入力を設定する (次のフレームで Rust の対応付けに渡す)。`null` で止め、
-   * トラッキングが書き込んでいたパラメータを既定値に戻す。値の約束は `tracking/frame.ts`。
+   * トラッキングが書き込んでいたパラメータを既定値に戻す。値の約束は `@ugoe/face-tracking` の `frame.ts`。
    */
   setTracking(frame: TrackingFrame | null): void {
     if (frame === null) {

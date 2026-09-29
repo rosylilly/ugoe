@@ -1,18 +1,17 @@
 <script lang="ts">
+import { FaceTracker, TrackingPanel } from "@ugoe/face-tracking";
 import { onMount } from "svelte";
-import { readBrowserFile, readSampleModel, viewerHost } from "./lib/host";
+import { readBrowserFile, readSampleModel, saveJsonFile, viewerHost } from "./lib/host";
 import LicenseDialog from "./lib/LicenseDialog.svelte";
 import type { ModelFile } from "./lib/modelFile";
 import ParameterPanel from "./lib/ParameterPanel.svelte";
 import { Player } from "./lib/player.svelte";
-import TrackingPanel from "./lib/TrackingPanel.svelte";
-import { FaceTracker } from "./lib/tracking/tracker.svelte";
 import Viewport from "./lib/Viewport.svelte";
 
 const player = new Player();
 // 外から操作できるようにする (ヘッドレスのブラウザでの確認、ドライバの登録など)。
 window.__UGOE_VIEWER__ = player;
-const tracker = new FaceTracker(player);
+const tracker = new FaceTracker(player, { saveJson: saveJsonFile });
 window.__UGOE_TRACKER__ = tracker;
 
 let dropping = $state(false);
@@ -111,7 +110,7 @@ function onKeyDown(e: KeyboardEvent) {
     <Viewport {player} />
     <!-- 右のパネル。縦にパネルを積む (フェイストラッキングはパラメータの上)。 -->
     <aside class="sidebar">
-      <TrackingPanel {player} {tracker} />
+      <TrackingPanel {tracker} parameterIds={player.trackingParameterIds} values={player.values} />
       <ParameterPanel {player} />
     </aside>
   </main>

@@ -99,6 +99,8 @@ web-check:
     pnpm --filter '@ugoe/editor' test
     pnpm --filter '@ugoe/viewer' check
     pnpm --filter '@ugoe/viewer' test
+    pnpm --filter '@ugoe/face-tracking' check
+    pnpm --filter '@ugoe/face-tracking' test
 
 # エディタを開発モードで起動
 editor:

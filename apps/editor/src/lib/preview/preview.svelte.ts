@@ -6,16 +6,20 @@
 //   写して始め、出るときは ViewportController がモデルを読み直して編集中の姿に戻す。
 // - モーション・表情・物理はドキュメントのもの (EditorDocument) を JSON で渡す。バンドルが作れず JSON で表示している
 //   ときも物理が動くよう、WebPuppet に物理が無ければ `set_physics_json` で渡す。
+// - フェイストラッキング (T0636) はビューアと同じ部品 (@ugoe/face-tracking) を使う。PreviewMode が TrackingTarget になり、
+//   値は `update(dt)` の直前に `set_tracking` で渡す (ビューアの Player と同じ)。プレビューを出るとトラッキングも止まる。
+import { en, FaceTracker, type TrackingFrame, type TrackingTarget } from "@ugoe/face-tracking";
 import type { EditorDocument } from "../document.svelte";
 import type { Expression, Motion } from "../ipc";
 import type { FrameDriver, PuppetStage, ViewportController } from "../viewport/controller.svelte";
 import type { WebPuppet } from "../viewport/wasm";
 import { defaultStages, pushEvents } from "./preview";
+import { saveTrackingRecording } from "./trackingHost";
 
 /** 表示の値を書き換える差の下限 (毎フレームの細かな変化で画面を作り直さないため)。 */
 const EPSILON = 1e-6;
 
-export class PreviewMode implements FrameDriver {
+export class PreviewMode implements FrameDriver, TrackingTarget {
   /** プレビューモード中か。 */
   active = $state(false);
   /** プレビューのスライダーの値 (ID → 値)。毎フレーム、物理・呼吸などを掛けた後の値に更新する。 */
@@ -34,13 +38,31 @@ export class PreviewMode implements FrameDriver {
   events = $state<string[]>([]);
   /** 直近の失敗 (物理の設定がモデルと合わないなど)。 */
   error = $state<string | null>(null);
+  /** フェイストラッキング (入力・キャリブレーション・平滑化・記録)。 */
+  readonly tracker: FaceTracker;
+  /** トラッキングが書き込むパラメータ (モデルの定義順。`avatar.tracking` の上書きを反映する)。 */
+  trackingParameterIds = $state<string[]>([]);
+  /** トラッキングの値を渡している (`setTracking` に `null` 以外を渡した後)。 */
+  tracking = $state(false);
+  /**
+   * モデルの自動の目パチを許すか (トラッキング中は止められる。ビューアと同じ)。目パチの段 (`stages.eye_blink`)
+   * とどちらも有効なときだけ動く。
+   */
+  autoEyeBlink = $state(true);
 
   #doc: EditorDocument;
   #viewport: ViewportController;
+  /** 次の `update` の前に渡す値。 */
+  #pendingTracking: TrackingFrame | null = null;
+  /** 最後に受け取った値 (モデルを読み直したときに渡し直す)。 */
+  #lastTracking: TrackingFrame | null = null;
 
   constructor(doc: EditorDocument, viewport: ViewportController) {
     this.#doc = doc;
     this.#viewport = viewport;
+    this.tracker = new FaceTracker(this, { strings: en, saveJson: saveTrackingRecording });
+    // ヘッドレスのブラウザでの確認のため (記録した値の列の再生など)。
+    window.__UGOE_TRACKER__ = this.tracker;
   }
 
   /** プレビューモードに入る。スライダーは編集中の姿の値から始める。 */
@@ -59,6 +81,7 @@ export class PreviewMode implements FrameDriver {
   /** プレビューモードを出て、編集中の姿に戻す。 */
   exit(): void {
     if (!this.active) return;
+    this.tracker.stop();
     this.active = false;
     this.#viewport.setDriver(null);
   }
@@ -93,6 +116,7 @@ export class PreviewMode implements FrameDriver {
   setStage(stage: PuppetStage, enabled: boolean): void {
     this.stages[stage] = enabled;
     this.#viewport.applyStages();
+    this.#applyEyeBlink();
     if (stage === "lip_sync") this.#applyLipSync();
   }
 
@@ -131,6 +155,38 @@ export class PreviewMode implements FrameDriver {
     });
   }
 
+  // --- TrackingTarget (FaceTracker が呼ぶ) ---
+
+  /**
+   * フェイストラッキングの値を設定する (次のフレームの `update` の前に Rust の対応付けに渡す)。`null` で止め、
+   * トラッキングが書き込んでいたパラメータを既定値に戻す (最後の値が基準値として残るため)。
+   */
+  setTracking(frame: TrackingFrame | null): void {
+    if (frame !== null) {
+      this.#lastTracking = frame;
+      this.#pendingTracking = frame;
+      this.tracking = true;
+      return;
+    }
+    if (this.#lastTracking === null) return;
+    this.#lastTracking = null;
+    this.#pendingTracking = null;
+    this.tracking = false;
+    const puppet = this.#puppet();
+    if (!puppet) return;
+    puppet.clear_tracking();
+    const ids = new Set(this.trackingParameterIds);
+    for (const def of this.#doc.parameters) {
+      if (ids.has(def.id)) puppet.set_parameter(def.id, def.default);
+    }
+    this.#sync(puppet);
+  }
+
+  setAutoEyeBlink(enabled: boolean): void {
+    this.autoEyeBlink = enabled;
+    this.#applyEyeBlink();
+  }
+
   // --- FrameDriver (ViewportController が呼ぶ) ---
 
   loaded(puppet: WebPuppet): void {
@@ -149,7 +205,20 @@ export class PreviewMode implements FrameDriver {
     else this.expression = null;
     this.motionPlaying = false;
     this.#applyLipSync(puppet);
+    this.#applyEyeBlink(puppet);
+    this.trackingParameterIds = puppet.tracking_parameter_ids();
+    // 読み直すとトラッキングの入力も消えるので、最後の値を渡し直す。
+    this.#pendingTracking = this.#lastTracking;
     this.#sync(puppet);
+  }
+
+  beforeUpdate(puppet: WebPuppet): void {
+    const frame = this.#pendingTracking;
+    if (frame === null) return;
+    this.#pendingTracking = null;
+    const names = Object.keys(frame.blendShapes);
+    const scores = Float32Array.from(names, (n) => frame.blendShapes[n] ?? 0);
+    puppet.set_tracking(names, scores, frame.head.yaw, frame.head.pitch, frame.head.roll);
   }
 
   afterUpdate(puppet: WebPuppet): void {
@@ -184,6 +253,16 @@ export class PreviewMode implements FrameDriver {
 
   #applyLipSync(puppet: WebPuppet | null = this.#puppet()): void {
     puppet?.set_lip_sync_level(this.stages.lip_sync ? this.lipSyncLevel : undefined);
+  }
+
+  /** 目パチの段は、段の設定とトラッキングの指定のどちらも有効なときだけ動かす。 */
+  #applyEyeBlink(puppet: WebPuppet | null = this.#puppet()): void {
+    if (!puppet) return;
+    try {
+      puppet.set_enabled("eye_blink", this.stages.eye_blink && this.autoEyeBlink);
+    } catch (e) {
+      console.warn("ugoe:", e);
+    }
   }
 
   /** WebPuppet の値をスライダーの表示へ写す (変わったものだけ)。 */

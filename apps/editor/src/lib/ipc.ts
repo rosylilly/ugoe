@@ -105,4 +105,10 @@ export const ipc = {
    */
   testAiConnection: (consent: ConsentAnswer | null) =>
     invoke<AiReply<null>>("test_ai_connection", { consent }),
+  /**
+   * apps/editor/src-tauri/src/tracking.rs。JSON のテキスト (フェイストラッキングの記録) を `path` に書く。
+   * パスは保存のダイアログで選んだもの。拡張子は `.json` だけ。
+   */
+  writeJsonFile: (path: string, contents: string) =>
+    invoke<void>("write_json_file", { path, contents }),
 };
