@@ -244,10 +244,30 @@ MCP サーバは実行中のエディタにはつながず、`.ugoeproj` を自�
 ADR 0006 は「AI は提案だけを行い、適用は人間が承認する」と決めています。MCP サーバでは、これを **提案と適用のツールを分けること** で守ります。
 
 - `propose_edit` は `Command` の列 (`ugoe_ai::Proposal` と同じ `title`・`rationale`・`commands`) を受け取り、ドキュメントの複製に `Batch` として適用して、検証の結果・`ApplyReport`・変わる要素の ID を返します。元のドキュメントは変えません (読むだけのツール)。成功すると提案の ID を返します。
-- `apply_proposal` は提案の ID だけを受け取り、`Document::apply` で適用します (1 回の Undo で戻せます)。提案の後にドキュメントが変わっていたら拒否します (承認した差分と違う結果にならないように)。
+- `apply_proposal` は提案の ID だけを受け取り、`Document::apply` で適用します (1 回の Undo で戻せます)。提案の後にドキュメントが変わっていたら拒否します (承認した差分と違う結果にならないように。Undo で提案を作った状態に戻れば、また使えます)。
+- 提案の置き場はエディタと同じ `ugoe_editor_core::Proposals` です (T0637)。提案の結果にはコマンドごとの要約と依存 (`requires`) を付け、`apply_proposal` の `exclude` でコマンドの一部を外して適用できます (外した列も複製で確かめ、通らなければ適用しません)。
 - **承認するのは MCP クライアントの確認です。** Claude Code は、許可していないツールを呼ぶ前にユーザーに確認を求めます。ユーザーは `propose_edit` の差分を見て、`apply_proposal` の呼び出しを許します。`propose_edit`・`get_*`・`render_png` は読むだけ (`readOnlyHint`) なので常に許してよく、`apply_proposal` と `save_project` は常に許す設定にしないことを勧めます。常に許すことは ADR 0006 の「すべての提案を自動で採用する」設定にあたります。
 - 適用してもディスクには書きません。`save_project` を呼んで初めて書きます (`destructiveHint`)。
 - `--read-only` で起動すると、適用・Undo・Redo・保存のツールを出しません。エージェントは読むこと・提案すること・描くことだけができます。
+
+### エージェントに任せる自動リギング
+
+ADR 0022 の「外部のエージェントに判断を任せる経路」(T0513)。[自動リギング](#自動リギング) のうち、画像を見て判断する 2 つの段階 (レイヤーの分類と、テンプレートで決められない値) を、MCP クライアント側のエージェント (Claude Code・OpenCode・Codex CLI など) が自分のモデルで行います。ugoe は API を呼ばず、API キーも持たず、外部に何も送りません (画像はエージェントに返すだけです)。
+
+| 段階 | ツール | エディタの中で API を呼ぶ経路との対応 |
+| --- | --- | --- |
+| PSD から作る | `import_psd` (既存のプロジェクトなら `get_psd_layers` に `psd` を渡す) | 「New from PSD…」 |
+| 画像を見る | `get_psd_layers`: レイヤーの一覧・全体の合成画像・サムネイル (MCP の image コンテンツ)・分類の指示と語彙 | `classify::classification_requests` が送る画像と指示 |
+| 分類する | `set_layer_labels`: `classify::output_schema` の形の答え | `classify::classify_layers` の答え |
+| 値を決める | `get_rig_guide` (値の説明・顔や目の位置・原画) → `propose_rig` (`rig::rig_output_schema` の形の値) | `rig::rig_request` と `rig::propose_rig_with_ai` の答え |
+| 適用する | `apply_proposal` (利用者の確認) → `render_png` で確かめる → `save_project` | 提案のパネルの Adopt |
+
+- **同じ部品を使う:** 画像は API に送るものと同じ作り方と上限 (`ClassifyOptions` の既定値。合成画像は長い辺 1024 画素、サムネイルは 256 画素まで) で、指示の文は API に送るシステムプロンプトと同じ (`classify::classification_instructions`・`rig_request` の `system`) です。答えの読み方と確かめ方も同じ関数 (`classify::apply_answer`・`rig::params_from_answer`・`propose_rig` の範囲と検証) を通します。ツールの入力の型は ugoe-ai の JSON Schema から作り、語彙や値の範囲を手で写しません。
+- **既定の案:** 分類は名前の規則 (`classify_by_name`) の結果を既定の案として持ち、エージェントは画像を見て直すレイヤーだけを渡せばよいようにします (`set_by` が `rules` か `agent` か)。値を渡さなければ `RigParams` の既定値で組みます。
+- **直して呼び直す:** 番号が範囲の外・語彙にないラベル・範囲の外の値・組んだリグが検証を通らないときは、ツールの実行エラー (`isError`) で理由を返します。エージェントはそれを読んで直し、呼び直します (API の経路の問い直しにあたります)。分類は誤りがあれば何も変えません。
+- **1 回に返す画像:** MCP クライアントは画像を含む結果の大きさに上限を設けることがある (Claude Code は既定で 25,000 トークン) ので、`get_psd_layers` は既定で 8 枚ずつ返し、`count` (32 枚まで)・`thumbnail_size`・`indices` で調整できます。サムネイルごとに `layer N: 名前` の文を直前に置き、画像と番号の対応が分かるようにします。
+- **覚えておくもの:** PSD のパスと分類は、サーバが開いているプロジェクトごとにメモリに持ちます (エディタと同じく、プロジェクトには保存しません)。開き直したら `get_psd_layers` に `psd` を渡します。
+- **深度:** 深度推定器は使わず、顔に内接する楕円体 (`TurnDepth::Rules`) で振り向かせます。
 
 ## セキュリティとプライバシー
 

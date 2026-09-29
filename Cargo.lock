@@ -5095,10 +5095,12 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+ "ugoe-ai",
  "ugoe-editor-core",
  "ugoe-format",
  "ugoe-headless",
  "ugoe-model",
+ "ugoe-psd",
 ]
 
 [[package]]

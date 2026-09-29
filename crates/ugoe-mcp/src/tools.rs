@@ -4,6 +4,9 @@
 //! 「MCP サーバ」、ADR 0006)。提案は複製したドキュメントに適用して検証と差分を返すだけで、
 //! 元のドキュメントは変えない。適用は提案の ID だけを受け取るので、承認する人は提案の中身と差分を
 //! 見てから、MCP クライアントの確認 (Claude Code の許可の確認など) で適用を許す。
+//! 提案の置き場は、エディタと同じ `ugoe_editor_core::Proposals` (一部のコマンドを外した採用もできる)。
+//!
+//! PSD からの自動リギングの判断を外部のエージェントに任せるツールは [`crate::autorig`]。
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -11,8 +14,11 @@ use std::path::{Path, PathBuf};
 use base64::Engine;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use ugoe_editor_core::{Command, Document, Project, ProjectMeta, export_bundle};
+use ugoe_editor_core::{
+    Command, Document, Project, ProjectMeta, ProposalError, ProposalView, Proposals, export_bundle,
+};
 
+use crate::autorig::{self, PsdSource};
 use crate::diff;
 use crate::render::{RenderRequest, Renderer};
 use crate::schema::{CommandSchema, object_schema};
@@ -41,33 +47,26 @@ pub struct Tools {
 
 /// 開いているプロジェクト。
 #[derive(Debug)]
-struct OpenProject {
+pub(crate) struct OpenProject {
     meta: ProjectMeta,
-    doc: Document,
-    /// ドキュメントを変えるたび (適用・Undo・Redo) に増やす番号。提案はこの番号の状態に対して作る。
+    pub(crate) doc: Document,
+    /// ドキュメントを変えるたび (適用・Undo・Redo) に増やす番号。
     revision: u64,
-    /// 適用を待つ提案。ドキュメントが変わったら捨てる (前の状態に対する提案なので)。
-    proposals: BTreeMap<String, Proposal>,
-    next_proposal: u64,
-}
-
-/// 適用を待つ提案 (`ugoe_ai::Proposal` と同じ形)。
-#[derive(Debug)]
-struct Proposal {
-    title: String,
-    commands: Vec<Command>,
-    /// 提案を作ったときに求めた差分 (適用の結果は同じになる)。
-    changes: Value,
+    /// 適用を待つ提案。提案は作ったときのドキュメントの状態に対するもので、ドキュメントが変わると
+    /// 適用できない (Undo で同じ状態に戻れば、また使える)。
+    proposals: Proposals,
+    /// 自動リギングの元にする PSD と、レイヤーの分類 (`import_psd`・`get_psd_layers` で覚える)。
+    pub(crate) psd: Option<PsdSource>,
 }
 
 impl OpenProject {
-    fn new(project: Project) -> Self {
+    pub(crate) fn new(project: Project) -> Self {
         Self {
             doc: project.document(),
             meta: project.meta,
             revision: 0,
-            proposals: BTreeMap::new(),
-            next_proposal: 1,
+            proposals: Proposals::new(),
+            psd: None,
         }
     }
 
@@ -75,13 +74,12 @@ impl OpenProject {
         Project::from_document(self.meta.clone(), &self.doc)
     }
 
-    /// ドキュメントが変わった: 番号を進め、待っている提案を捨てる。
+    /// ドキュメントが変わった: 番号を進める。
     fn changed(&mut self) {
         self.revision += 1;
-        self.proposals.clear();
     }
 
-    fn status(&self, path: &Path) -> Value {
+    pub(crate) fn status(&self, path: &Path) -> Value {
         json!({
             "path": path,
             "revision": self.revision,
@@ -92,26 +90,32 @@ impl OpenProject {
     }
 }
 
-/// ツールの結果: 構造化した値と、添える画像 (PNG)。
-struct Output {
-    value: Value,
-    images: Vec<Vec<u8>>,
+/// ツールの結果: 構造化した値と、その後に添える中身 (画像と、画像の説明の文)。
+pub(crate) struct Output {
+    pub(crate) value: Value,
+    pub(crate) content: Vec<Content>,
+}
+
+/// 構造化した値の後に添える中身。
+pub(crate) enum Content {
+    Text(String),
+    Png(Vec<u8>),
 }
 
 impl From<Value> for Output {
     fn from(value: Value) -> Self {
         Self {
             value,
-            images: Vec::new(),
+            content: Vec::new(),
         }
     }
 }
 
-type ToolResult = Result<Output, String>;
+pub(crate) type ToolResult = Result<Output, String>;
 
 /// ツールの注釈 (MCP の `ToolAnnotations`)。クライアントが確認を求めるかの判断に使う。
 #[derive(Clone, Copy)]
-enum Kind {
+pub(crate) enum Kind {
     /// 読むだけ。ドキュメントもディスクも変えない。
     Read,
     /// メモリ上のドキュメントを変える (Undo で戻せる)。
@@ -121,7 +125,7 @@ enum Kind {
 }
 
 impl Kind {
-    fn annotations(self, title: &str) -> Value {
+    pub(crate) fn annotations(self, title: &str) -> Value {
         let (read_only, destructive) = match self {
             Kind::Read => (true, false),
             Kind::Edit => (false, false),
@@ -138,10 +142,27 @@ impl Kind {
 }
 
 /// プロジェクトのパスの引数。
-fn path_property() -> Value {
+pub(crate) fn path_property() -> Value {
     json!({
         "type": "string",
         "description": "プロジェクト (.ugoeproj ディレクトリ) のパス。相対パスはサーバの作業ディレクトリから解決する。",
+    })
+}
+
+/// `tools/list` の 1 つのツール。
+pub(crate) fn tool_def(
+    name: &str,
+    title: &str,
+    kind: Kind,
+    description: &str,
+    schema: Value,
+) -> Value {
+    json!({
+        "name": name,
+        "title": title,
+        "description": description,
+        "inputSchema": schema,
+        "annotations": kind.annotations(title),
     })
 }
 
@@ -157,17 +178,17 @@ impl Tools {
 
     /// `tools/list` の `tools`。
     pub fn list(&self) -> Vec<Value> {
-        let tool = |name: &str, title: &str, kind: Kind, description: &str, schema: Value| {
-            json!({
-                "name": name,
-                "title": title,
-                "description": description,
-                "inputSchema": schema,
-                "annotations": kind.annotations(title),
-            })
-        };
+        let tool = tool_def;
         let path_only = || object_schema(json!({ "path": path_property() }), &["path"], None);
         let mut tools = vec![
+            tool(
+                "list_proposals",
+                "List proposals",
+                Kind::Read,
+                "適用を待っている提案の一覧 (提案の ID・題・理由・コマンドの要約)。stale=true の提案は、\
+                 提案の後にモデルが変わったので適用できない (Undo で戻れば使える)。",
+                path_only(),
+            ),
             tool(
                 "open_project",
                 "Open project",
@@ -274,19 +295,26 @@ impl Tools {
                 ),
             ),
         ];
+        tools.extend(autorig::tools());
         if !self.options.read_only {
             tools.extend([
                 tool(
                     "apply_proposal",
                     "Apply proposal",
                     Kind::Edit,
-                    "propose_edit で作った提案を適用する (1 回の undo で取り消せる)。\
+                    "propose_edit・propose_rig で作った提案を適用する (1 回の undo で取り消せる)。\
                      ユーザーが提案を承認してから呼ぶ。提案の後にモデルが変わっていたら拒否する \
-                     (提案し直す)。ディスクには書かない。",
+                     (提案し直す)。exclude で一部のコマンドを外せる (外したコマンドに頼るコマンドも \
+                     外さないと適用できない。commands[].requires を見る)。ディスクには書かない。",
                     object_schema(
                         json!({
                             "path": path_property(),
-                            "proposal": { "type": "string", "description": "propose_edit が返した提案の ID" },
+                            "proposal": { "type": "string", "description": "propose_edit・propose_rig が返した提案の ID" },
+                            "exclude": {
+                                "type": "array",
+                                "items": { "type": "integer", "minimum": 0 },
+                                "description": "外すコマンドの番号 (提案の commands の 0 始まりの位置)",
+                            },
                         }),
                         &["path", "proposal"],
                         None,
@@ -335,6 +363,25 @@ impl Tools {
             "get_element" => parse(arguments).and_then(|a| self.get_element(a)),
             "propose_edit" => parse(arguments).and_then(|a| self.propose_edit(a)),
             "render_png" => parse(arguments).and_then(|a| self.render_png(a)),
+            "list_proposals" => parse(arguments).and_then(|a| self.list_proposals(a)),
+            "import_psd" => parse(arguments).and_then(|a| self.import_psd(a)),
+            "get_psd_layers" => parse(arguments).and_then(|a: autorig::LayersArgs| {
+                let (_, open) = self.project(&a.path)?;
+                autorig::get_psd_layers(open, a)
+            }),
+            "set_layer_labels" => parse(arguments).and_then(|a: autorig::LabelsArgs| {
+                let (_, open) = self.project(&a.path)?;
+                autorig::set_layer_labels(open, a)
+            }),
+            "get_rig_guide" => parse(arguments).and_then(|a: PathArgs| {
+                let (_, open) = self.project(&a.path)?;
+                autorig::get_rig_guide(open)
+            }),
+            "propose_rig" => parse(arguments).and_then(|a: autorig::RigArgs| {
+                let (key, open) = self.project(&a.path)?;
+                let proposal = autorig::propose_rig(open, a)?;
+                add_proposal(&key, open, proposal)
+            }),
             _ if edit_tool && self.options.read_only => Err(format!(
                 "`{name}` is disabled (the server runs with --read-only)"
             )),
@@ -445,62 +492,94 @@ impl Tools {
 
     fn propose_edit(&mut self, args: ProposeArgs) -> ToolResult {
         let (key, open) = self.project(&args.path)?;
-        let mut scratch = open.project().document();
-        let batch = Command::Batch {
-            label: args.title.clone(),
-            commands: args.commands.clone(),
-        };
-        let report = scratch
-            .apply_with_report(batch)
-            .map_err(|e| format!("the proposal was rejected: {e}"))?;
-        let changes = diff::diff(&open.doc, &scratch);
-        let id = format!("p{}", open.next_proposal);
-        open.next_proposal += 1;
-        open.proposals.insert(
-            id.clone(),
-            Proposal {
-                title: args.title.clone(),
+        add_proposal(
+            &key,
+            open,
+            Draft {
+                title: args.title,
+                rationale: args.rationale,
                 commands: args.commands,
-                changes: changes.clone(),
+                extra: json!({}),
             },
-        );
-        Ok(json!({
-            "proposal": id,
-            "title": args.title,
-            "rationale": args.rationale,
-            "report": report,
-            "changes": changes,
-            "project": open.status(&key),
-            "next": "ユーザーの承認を得てから apply_proposal で適用する",
-        })
-        .into())
+        )
+    }
+
+    fn list_proposals(&mut self, args: PathArgs) -> ToolResult {
+        let (key, open) = self.project(&args.path)?;
+        let proposals: Vec<Value> = open
+            .proposals
+            .views(&open.doc)
+            .iter()
+            .map(proposal_json)
+            .collect();
+        Ok(json!({ "proposals": proposals, "project": open.status(&key) }).into())
     }
 
     fn apply_proposal(&mut self, args: ApplyArgs) -> ToolResult {
         let (key, open) = self.project(&args.path)?;
-        let Some(proposal) = open.proposals.remove(&args.proposal) else {
-            return Err(format!(
-                "proposal `{}` not found (the model changed after it was proposed, or it was \
-                 already applied); propose again",
+        let id = proposal_number(&args.proposal)?;
+        let explain = |e: ProposalError| match e {
+            ProposalError::Stale => format!(
+                "proposal `{}` cannot be applied: the model changed after it was proposed (or the \
+                 proposal was already applied); undo those changes or propose again",
                 args.proposal
-            ));
+            ),
+            ProposalError::NotFound(_) => format!("proposal `{}` not found", args.proposal),
+            e => format!("the proposal was rejected: {e}"),
         };
+        // 差分は、外したコマンドを除いた列を複製に適用して求める (承認した人が見るものと同じ)。
+        let (after, _) = open
+            .proposals
+            .preview(&open.doc, id, &args.exclude)
+            .map_err(explain)?;
+        let changes = diff::diff(&open.doc, &after);
+        let title = open
+            .proposals
+            .views(&open.doc)
+            .into_iter()
+            .find(|v| v.id == id)
+            .map(|v| v.title)
+            .unwrap_or_default();
         let report = open
-            .doc
-            .apply_with_report(Command::Batch {
-                label: proposal.title.clone(),
-                commands: proposal.commands,
-            })
-            .map_err(|e| format!("the proposal was rejected: {e}"))?;
+            .proposals
+            .adopt(&mut open.doc, id, &args.exclude)
+            .map_err(explain)?;
         open.changed();
         Ok(json!({
             "applied": args.proposal,
-            "title": proposal.title,
+            "title": title,
+            "excluded": args.exclude,
             "report": report,
-            "changes": proposal.changes,
+            "changes": changes,
             "project": open.status(&key),
         })
         .into())
+    }
+
+    fn import_psd(&mut self, args: autorig::ImportArgs) -> ToolResult {
+        let key = Self::key(&args.path)?;
+        if let Some(open) = self.projects.get(&key)
+            && open.doc.is_modified()
+            && !args.discard_changes
+        {
+            return Err(format!(
+                "`{}` has unsaved changes; save it or pass discard_changes=true",
+                key.display()
+            ));
+        }
+        if key.join("project.json").exists() {
+            return Err(format!(
+                "`{}` is already a project; open it and pass `psd` to get_psd_layers instead",
+                key.display()
+            ));
+        }
+        let (open, value) = autorig::import_psd(args)?;
+        let mut status = open.status(&key);
+        if let (Value::Object(status), Value::Object(value)) = (&mut status, value) {
+            status.extend(value);
+        }
+        self.projects.insert(key, open);
+        Ok(status.into())
     }
 
     fn undo(&mut self, args: PathArgs, undo: bool) -> ToolResult {
@@ -550,9 +629,66 @@ impl Tools {
             .map_err(|e| e.to_string())?;
         Ok(Output {
             value: json!({ "log": rendered.log, "bytes": rendered.png.len() }),
-            images: vec![rendered.png],
+            content: vec![Content::Png(rendered.png)],
         })
     }
+}
+
+/// 置く前の提案。
+pub(crate) struct Draft {
+    pub(crate) title: String,
+    pub(crate) rationale: String,
+    pub(crate) commands: Vec<Command>,
+    /// 結果に足す項目 (`propose_rig` の値など)。オブジェクト。
+    pub(crate) extra: Value,
+}
+
+/// 提案を置き (複製に適用して検証する)、提案の ID・検証の結果・差分・コマンドの要約を返す。
+/// モデルは変えない。
+fn add_proposal(key: &Path, open: &mut OpenProject, draft: Draft) -> ToolResult {
+    let rejected = |e: ProposalError| format!("the proposal was rejected: {e}");
+    let view = open
+        .proposals
+        .add(&open.doc, draft.title, draft.rationale, draft.commands)
+        .map_err(rejected)?;
+    let (after, report) = open
+        .proposals
+        .preview(&open.doc, view.id, &[])
+        .map_err(rejected)?;
+    let changes = diff::diff(&open.doc, &after);
+    let mut value = proposal_json(&view);
+    value["report"] = json!(report);
+    value["changes"] = changes;
+    value["project"] = open.status(key);
+    value["next"] =
+        json!("ユーザーに提案 (題・理由・差分) を示し、承認を得てから apply_proposal で適用する");
+    if let (Value::Object(value), Value::Object(extra)) = (&mut value, draft.extra) {
+        value.extend(extra);
+    }
+    Ok(value.into())
+}
+
+/// 提案の ID の文字列 (`p3`)。
+fn proposal_id(id: u32) -> String {
+    format!("p{id}")
+}
+
+/// 提案の ID の文字列から番号を読む (`p3` か `3`)。
+fn proposal_number(id: &str) -> Result<u32, String> {
+    id.strip_prefix('p')
+        .unwrap_or(id)
+        .parse()
+        .map_err(|_| format!("proposal `{id}` not found (proposal IDs look like `p1`)"))
+}
+
+fn proposal_json(view: &ProposalView) -> Value {
+    json!({
+        "proposal": proposal_id(view.id),
+        "title": view.title,
+        "rationale": view.rationale,
+        "stale": view.stale,
+        "commands": view.commands,
+    })
 }
 
 /// ツールの結果 (`CallToolResult`) にする。失敗はツールの実行エラー (`isError`) として返し、
@@ -561,12 +697,15 @@ fn tool_result(result: ToolResult) -> Value {
     match result {
         Ok(output) => {
             let mut content = vec![json!({ "type": "text", "text": output.value.to_string() })];
-            for png in &output.images {
-                content.push(json!({
-                    "type": "image",
-                    "data": base64::engine::general_purpose::STANDARD.encode(png),
-                    "mimeType": "image/png",
-                }));
+            for item in &output.content {
+                content.push(match item {
+                    Content::Text(text) => json!({ "type": "text", "text": text }),
+                    Content::Png(png) => json!({
+                        "type": "image",
+                        "data": base64::engine::general_purpose::STANDARD.encode(png),
+                        "mimeType": "image/png",
+                    }),
+                });
             }
             json!({
                 "content": content,
@@ -633,6 +772,8 @@ struct ProposeArgs {
 struct ApplyArgs {
     path: String,
     proposal: String,
+    #[serde(default)]
+    exclude: Vec<usize>,
 }
 
 #[derive(Deserialize)]

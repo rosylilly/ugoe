@@ -30,7 +30,10 @@ ugoe の .ugoeproj プロジェクト (2D リギングのモデル) を読み、
 手順: open_project でプロジェクトを開く → get_model_summary / get_element で構成を読む → \
 propose_edit で Command の列を提案する (検証と差分だけを返し、モデルは変えない) → \
 ユーザーの承認を得て apply_proposal で適用する → render_png で見た目を確かめる → save_project で保存する。\n\
-適用は 1 回の undo で取り消せる。save_project を呼ぶまでディスクには書かない。";
+適用は 1 回の undo で取り消せる。save_project を呼ぶまでディスクには書かない。\n\
+PSD からの自動リギング: import_psd → get_psd_layers (画像を見て分類する) → set_layer_labels → \
+get_rig_guide (画像を見て値を選ぶ) → propose_rig → ユーザーの承認を得て apply_proposal。\
+分類と値はあなたが画像を見て決める (サーバは AI を呼ばない)。";
 
 /// サーバの状態。1 つのプロセス (stdio の接続) につき 1 つ。
 #[derive(Debug)]

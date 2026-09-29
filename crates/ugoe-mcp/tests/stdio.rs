@@ -343,8 +343,10 @@ fn propose_apply_undo_and_save() {
     let angle = axes.iter().find(|a| a["parameter"] == "AngleX").unwrap();
     assert_eq!(angle["keys"], json!([-30.0, 30.0]));
 
-    // 同じ提案は 2 度適用できない。
+    // 同じ提案は 2 度適用できない (適用でモデルが変わったので)。
     let err = client.call_err("apply_proposal", json!({ "path": path, "proposal": id }));
+    assert!(err.contains("the model changed"), "{err}");
+    let err = client.call_err("apply_proposal", json!({ "path": path, "proposal": "p99" }));
     assert!(err.contains("not found"), "{err}");
 
     // 検証を通らない提案は拒否され、ID を返さない。
@@ -488,6 +490,251 @@ fn render_reports_bad_arguments_before_touching_the_gpu() {
     assert!(err.contains("unknown parameter `Nope` (known: X)"), "{err}");
     let err = client.call_err("render_png", json!({ "path": path, "background": "#fff" }));
     assert!(err.contains("invalid background"), "{err}");
+}
+
+/// 胸から上の実際の PSD (`assets/fixtures/psd-real/`)。
+fn bustup_psd() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../assets/fixtures/psd-real/comfyui-see-through-bustup-parts.psd")
+}
+
+/// MCP の image コンテンツの PNG の幅と高さ (IHDR)。
+fn png_size(content: &Value) -> (u32, u32) {
+    use base64::Engine;
+    assert_eq!(content["type"], "image", "{content}");
+    assert_eq!(content["mimeType"], "image/png");
+    let png = base64::engine::general_purpose::STANDARD
+        .decode(content["data"].as_str().unwrap())
+        .unwrap();
+    assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
+    let be = |i: usize| u32::from_be_bytes(png[i..i + 4].try_into().unwrap());
+    (be(16), be(20))
+}
+
+/// 自動リギングの判断をエージェントに任せる流れ: PSD の取り込み → レイヤーと画像 → 分類を渡す →
+/// 値を渡して提案 (範囲の外なら直して呼び直す) → 適用 → 保存。
+#[test]
+fn agent_driven_auto_rig_from_psd() {
+    let tmp = TempDir::new("auto-rig");
+    let project = tmp.0.join("bustup.ugoeproj");
+    let path = project.to_str().unwrap();
+    let psd = bustup_psd();
+    let mut client = Client::spawn(&[]);
+    client.initialize();
+
+    // 分類の語彙と値の形は ugoe_ai の JSON Schema から作る。
+    let list = client.request("tools/list", json!({}));
+    let tools = list["result"]["tools"].as_array().unwrap();
+    let schema_of =
+        |name: &str| tools.iter().find(|t| t["name"] == name).unwrap()["inputSchema"].clone();
+    let labels = schema_of("set_layer_labels");
+    let expected = ugoe_ai::classify::output_schema();
+    let item = &expected["properties"]["layers"]["items"]["properties"];
+    let got = &labels["properties"]["layers"]["items"]["properties"];
+    assert_eq!(got["label"], item["label"]);
+    assert_eq!(got["side"], item["side"]);
+    let rig = schema_of("propose_rig");
+    assert_eq!(
+        rig["properties"]["params"]["properties"],
+        ugoe_ai::rig::rig_output_schema()["properties"]
+    );
+
+    // PSD から新しいプロジェクトを作る (ディスクにはまだ書かない)。
+    let imported = client.call_ok(
+        "import_psd",
+        json!({ "path": path, "psd": psd.to_str().unwrap() }),
+    );
+    assert_eq!(imported["on_disk"], false);
+    assert_eq!(imported["modified"], true);
+    let total = imported["layers"].as_u64().unwrap() as usize;
+    assert!(total > 10, "{imported}");
+    assert!(imported["meshes"].as_u64().unwrap() > 10);
+
+    // 最初のページ: 一覧・指示・全体の画像・サムネイル。
+    let result = client.call("get_psd_layers", json!({ "path": path, "count": 4 }));
+    assert_eq!(result["isError"], false, "{result}");
+    let page = &result["structuredContent"];
+    assert_eq!(page["total"], total);
+    assert_eq!(page["next_start"], 4);
+    let instructions = page["instructions"].as_str().unwrap();
+    assert!(
+        instructions.contains("character's OWN left"),
+        "{instructions}"
+    );
+    assert!(instructions.contains("eye_white"), "{instructions}");
+    let content = result["content"].as_array().unwrap();
+    assert!(content[1]["text"].as_str().unwrap().starts_with("overview"));
+    let (w, h) = png_size(&content[2]);
+    assert!(w.max(h) <= 1024 && w.max(h) >= 256, "{w}x{h}");
+    // 画素のあるレイヤーごとに `layer N: 名前` の文と画像。
+    let layers = page["layers"].as_array().unwrap();
+    let with_pixels: Vec<&Value> = layers.iter().filter(|l| l["has_pixels"] == true).collect();
+    assert_eq!(content.len(), 3 + 2 * with_pixels.len());
+    for (k, layer) in with_pixels.iter().enumerate() {
+        let caption = content[3 + 2 * k]["text"].as_str().unwrap();
+        assert!(
+            caption.starts_with(&format!("layer {}: ", layer["index"])),
+            "{caption}"
+        );
+        let (w, h) = png_size(&content[4 + 2 * k]);
+        assert!(w.max(h) <= 256, "{w}x{h}");
+        assert!(layer["mesh"].is_string(), "{layer}");
+        assert_eq!(layer["set_by"], "rules");
+    }
+    // 画像を小さくできる。indices で特定のレイヤーを見る。
+    let result = client.call(
+        "get_psd_layers",
+        json!({ "path": path, "indices": [with_pixels[0]["index"]], "thumbnail_size": 64 }),
+    );
+    let content = result["content"].as_array().unwrap();
+    assert_eq!(content.len(), 3, "no overview for indices");
+    let (w, h) = png_size(&content[2]);
+    assert!(w.max(h) <= 64, "{w}x{h}");
+    client.call_err(
+        "get_psd_layers",
+        json!({ "path": path, "indices": [total] }),
+    );
+
+    // 一覧だけを全部読む (エージェントが名前の規則の案を見て判断する代わりに、その案をそのまま渡す)。
+    let mut all = Vec::new();
+    let mut start = Some(0);
+    while let Some(s) = start {
+        let result = client.call(
+            "get_psd_layers",
+            json!({ "path": path, "start": s, "count": 32, "images": false, "overview": false }),
+        );
+        assert_eq!(result["content"].as_array().unwrap().len(), 1);
+        let page = &result["structuredContent"];
+        all.extend(page["layers"].as_array().unwrap().iter().cloned());
+        start = page["next_start"].as_u64();
+    }
+    assert_eq!(all.len(), total);
+
+    // 誤った分類はツールのエラーで返り、分類は変わらない。
+    let err = client.call_err(
+        "set_layer_labels",
+        json!({ "path": path, "layers": [{ "index": total, "label": "face", "side": "center", "confidence": 1 }] }),
+    );
+    assert!(err.contains("does not exist"), "{err}");
+    let err = client.call_err(
+        "set_layer_labels",
+        json!({ "path": path, "layers": [{ "index": 0, "label": "halo", "side": "center", "confidence": 1 }] }),
+    );
+    assert!(err.contains("does not match the schema"), "{err}");
+
+    let answer: Vec<Value> = all
+        .iter()
+        .map(|l| json!({ "index": l["index"], "label": l["label"], "side": l["side"], "confidence": 0.9 }))
+        .collect();
+    let summary = client.call_ok(
+        "set_layer_labels",
+        json!({ "path": path, "layers": answer }),
+    );
+    assert_eq!(summary["updated"], total);
+    assert_eq!(summary["set_by_agent"], total);
+    assert_eq!(summary["rig"]["ready"], true, "{summary}");
+    assert_eq!(summary["needs_review"], json!([]));
+    assert!(summary["meshes"].as_array().unwrap().len() > 10);
+
+    // 値の説明・位置・原画。
+    let result = client.call("get_rig_guide", json!({ "path": path }));
+    assert_eq!(result["isError"], false, "{result}");
+    let guide = &result["structuredContent"];
+    assert!(
+        guide["instructions"]
+            .as_str()
+            .unwrap()
+            .contains("turn_angle_scale")
+    );
+    assert!(guide["layout"].as_str().unwrap().contains("- face:"));
+    assert_eq!(guide["defaults"]["turn_angle_scale"], 0.7_f32 as f64);
+    png_size(&result["content"][2]);
+
+    // 範囲の外の値はエラーを読んで直す。形の違う値もエラー。
+    let mut params = json!({
+        "turn_angle_scale": 2.5,
+        "eye_close_line": 0.72,
+        "eye_close_bend": 0.05,
+        "mouth_open_height": 0.4,
+        "reason": "large anime eyes; keep the turn small",
+    });
+    let err = client.call_err("propose_rig", json!({ "path": path, "params": params }));
+    assert!(err.contains("turn_angle_scale is 2.5"), "{err}");
+    let err = client.call_err(
+        "propose_rig",
+        json!({ "path": path, "params": { "turn_angle_scale": 0.6 } }),
+    );
+    assert!(err.contains("does not match the schema"), "{err}");
+    params["turn_angle_scale"] = json!(0.6);
+    let proposal = client.call_ok("propose_rig", json!({ "path": path, "params": params }));
+    let id = proposal["proposal"].as_str().unwrap().to_owned();
+    assert!(proposal["title"].as_str().unwrap().ends_with("agent"));
+    assert!(
+        proposal["rationale"]
+            .as_str()
+            .unwrap()
+            .contains("large anime eyes")
+    );
+    assert_eq!(proposal["params"]["turn_angle_scale"], 0.6_f32 as f64);
+    assert_eq!(proposal["report"]["warnings"], json!([]));
+    let commands = proposal["commands"].as_array().unwrap();
+    assert!(commands.len() > 20, "{}", commands.len());
+    let added = proposal["changes"]["parameters"]["added"]
+        .as_array()
+        .unwrap();
+    for p in [
+        "AngleX",
+        "AngleY",
+        "AngleZ",
+        "EyeLOpen",
+        "EyeROpen",
+        "MouthOpenY",
+    ] {
+        assert!(added.contains(&json!(p)), "{p} not in {added:?}");
+    }
+    // 提案だけではモデルは変わらない。
+    let summary = client.call_ok("get_model_summary", json!({ "path": path }));
+    assert!(parameter_ids(&summary).is_empty());
+    let listed = client.call_ok("list_proposals", json!({ "path": path }));
+    assert_eq!(listed["proposals"][0]["proposal"], id.as_str());
+    assert_eq!(listed["proposals"][0]["stale"], false);
+
+    // 外すコマンドの番号の誤りはエラー。承認されたら適用する。
+    let err = client.call_err(
+        "apply_proposal",
+        json!({ "path": path, "proposal": id, "exclude": [commands.len()] }),
+    );
+    assert!(err.contains("does not exist"), "{err}");
+    let applied = client.call_ok("apply_proposal", json!({ "path": path, "proposal": id }));
+    assert_eq!(applied["changes"], proposal["changes"]);
+    let summary = client.call_ok("get_model_summary", json!({ "path": path }));
+    assert!(parameter_ids(&summary).contains(&"EyeLOpen".to_owned()));
+
+    let bundle = tmp.0.join("bustup.ugoe");
+    let saved = client.call_ok(
+        "save_project",
+        json!({ "path": path, "bundle": bundle.to_str().unwrap() }),
+    );
+    assert_eq!(saved["on_disk"], true);
+    assert!(fs::read(&bundle).unwrap().starts_with(b"UGOE"));
+    let on_disk = Project::load(&project).unwrap();
+    assert!(ugoe_model::validate::validate(&on_disk.model).is_empty());
+    assert_eq!(on_disk.model.parameters.len(), 6);
+
+    // 保存したプロジェクトを開き直すと PSD は覚えていないので、get_psd_layers に渡す。
+    client.call_ok("close_project", json!({ "path": path }));
+    let err = client.call_err("get_rig_guide", json!({ "path": path }));
+    assert!(err.contains("no PSD"), "{err}");
+    let err = client.call_err(
+        "import_psd",
+        json!({ "path": path, "psd": psd.to_str().unwrap() }),
+    );
+    assert!(err.contains("already a project"), "{err}");
+    let page = client.call_ok(
+        "get_psd_layers",
+        json!({ "path": path, "psd": psd.to_str().unwrap(), "images": false, "count": 1 }),
+    );
+    assert_eq!(page["layers"][0]["set_by"], "rules");
 }
 
 /// `render_png` が `ugoe` (ugoe-cli) の実行ファイルなしで描けること。GPU (または lavapipe などの

@@ -1053,6 +1053,22 @@ struct Answer {
     reason: String,
 }
 
+/// [`rig_output_schema`] の形の答え (AI や外部のエージェントが決めた値) を読む。値と理由を返す。
+///
+/// 形が違えば [`AiError::InvalidProposal`]。範囲は確かめない ([`propose_rig`] が確かめる)。
+pub fn params_from_answer(answer: &serde_json::Value) -> Result<(RigParams, String), AiError> {
+    let answer: Answer = serde_json::from_value(answer.clone()).map_err(|e| {
+        AiError::InvalidProposal(format!("the answer does not match the schema: {e}"))
+    })?;
+    let params = RigParams {
+        turn_angle_scale: answer.turn_angle_scale,
+        eye_close_line: answer.eye_close_line,
+        eye_close_bend: answer.eye_close_bend,
+        mouth_open_height: answer.mouth_open_height,
+    };
+    Ok((params, answer.reason))
+}
+
 fn system_prompt() -> String {
     let d = RigParams::default();
     format!(
@@ -1187,21 +1203,18 @@ pub fn propose_rig_with_ai(
             images: vec![image.to_vec()],
         };
         let value = provider.complete_json(&request, &schema)?;
-        let answer: Answer = match serde_json::from_value(value.clone()) {
+        let (params, reason) = match params_from_answer(&value) {
             Ok(answer) => answer,
             Err(e) => {
                 rejected.push(RejectedAnswer {
                     answer: value,
-                    error: format!("the answer does not match the schema: {e}"),
+                    error: match e {
+                        AiError::InvalidProposal(error) => error,
+                        e => e.to_string(),
+                    },
                 });
                 continue;
             }
-        };
-        let params = RigParams {
-            turn_angle_scale: answer.turn_angle_scale,
-            eye_close_line: answer.eye_close_line,
-            eye_close_bend: answer.eye_close_bend,
-            mouth_open_height: answer.mouth_open_height,
         };
         match build(model, parts, &layout, &params, options) {
             Ok(mut proposal) => {
@@ -1211,7 +1224,7 @@ pub fn propose_rig_with_ai(
                     params.eye_close_line,
                     params.eye_close_bend,
                     params.mouth_open_height,
-                    answer.reason,
+                    reason,
                     proposal.rationale
                 );
                 return Ok(AiRig {
@@ -1254,6 +1267,27 @@ mod tests {
         assert_eq!(errors.len(), 2);
         assert!(errors[0].contains("turn_angle_scale is 2.5"), "{errors:?}");
         assert!(errors[1].contains("eye_close_bend"), "{errors:?}");
+    }
+
+    #[test]
+    fn answers_are_read_without_checking_ranges() {
+        let (params, reason) = params_from_answer(&json!({
+            "turn_angle_scale": 2.5,
+            "eye_close_line": 0.7,
+            "eye_close_bend": -0.05,
+            "mouth_open_height": 0.4,
+            "reason": "why",
+        }))
+        .unwrap();
+        assert_eq!(params.turn_angle_scale, 2.5);
+        assert_eq!(params.eye_close_bend, -0.05);
+        assert_eq!(reason, "why");
+        assert_eq!(params.check().len(), 1);
+        let err = params_from_answer(&json!({ "turn_angle_scale": 0.6 })).unwrap_err();
+        assert!(
+            matches!(&err, AiError::InvalidProposal(m) if m.contains("does not match the schema")),
+            "{err}"
+        );
     }
 
     #[test]

@@ -246,6 +246,11 @@ impl Label {
                 | Earwear
         )
     }
+
+    /// ラベルの説明 (英語)。分類を頼むモデル・エージェントに語彙として示す。
+    pub const fn description(self) -> &'static str {
+        label_description(self)
+    }
 }
 
 impl fmt::Display for Label {
@@ -546,6 +551,14 @@ const fn label_description(label: Label) -> &'static str {
     }
 }
 
+/// 分類の指示 (英語): 左右の約束・名前と画素の扱い・ラベルの語彙と説明。
+///
+/// [`classify_layers`] がモデルに送るシステムプロンプトと同じ文。MCP で外部のエージェントに分類を
+/// 任せるときにも、同じ指示を示す (`crates/ugoe-mcp`)。
+pub fn classification_instructions() -> String {
+    system_prompt()
+}
+
 /// システムプロンプト。
 fn system_prompt() -> String {
     let mut s = String::from(
@@ -628,6 +641,65 @@ pub fn classification_requests(
         .collect())
 }
 
+/// 分類の対象の 1 枚のレイヤー ([`layers`] が返す)。
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct LayerInfo {
+    /// 番号 ([`classify_by_name`] の結果の並び・[`output_schema`] の `index` と同じ)。
+    pub index: usize,
+    /// レイヤーの名前の列 (外側のグループから順に、最後がレイヤー自身)。
+    pub layer_path: Vec<String>,
+    /// キャンバスの画素での外接矩形 (`[x, y, width, height]`)。
+    pub bbox: [f32; 4],
+    pub visible: bool,
+    /// 画素を持つ (サムネイルを作れる)。
+    pub has_pixels: bool,
+}
+
+/// 分類の対象のレイヤー (描画順。[`classify_by_name`] の結果と同じ並び)。
+///
+/// MCP で外部のエージェントに分類を任せるとき、番号とレイヤーの対応を示すのに使う。
+pub fn layers(tree: &LayerTree) -> Vec<LayerInfo> {
+    targets(tree)
+        .into_iter()
+        .enumerate()
+        .map(|(index, t)| LayerInfo {
+            index,
+            bbox: [
+                t.layer.offset.x,
+                t.layer.offset.y,
+                t.layer.width as f32,
+                t.layer.height as f32,
+            ],
+            visible: t.layer.visible,
+            has_pixels: t.layer.width > 0 && t.layer.height > 0,
+            layer_path: t.path,
+        })
+        .collect()
+}
+
+/// `index` 番のレイヤーのサムネイルの PNG ([`classify_layers`] が送るものと同じ作り方。
+/// 大きさは `options` の `thumbnail_max_side` / `thumbnail_min_side`)。画素がなければ `None`。
+pub fn layer_thumbnail_png(
+    tree: &LayerTree,
+    index: usize,
+    options: &ClassifyOptions,
+) -> Result<Option<Vec<u8>>, AiError> {
+    let targets = targets(tree);
+    let target = targets.get(index).ok_or_else(|| {
+        AiError::InvalidRequest(format!(
+            "layer {index} does not exist (there are {} layers)",
+            targets.len()
+        ))
+    })?;
+    image::thumbnail(
+        target.layer,
+        options.thumbnail_max_side,
+        options.thumbnail_min_side,
+    )
+    .map(|img| img.to_png())
+    .transpose()
+}
+
 /// 1 回のリクエストと、そこで分類するレイヤーの番号 (全体の中の)。
 struct Batch {
     request: ProviderRequest,
@@ -706,35 +778,68 @@ pub fn classify_layers(
     let schema = output_schema();
     for batch in plan(tree, options)? {
         let value = provider.complete_json(&batch.request, &schema)?;
-        let output: Output = serde_json::from_value(value).map_err(|e| {
-            AiError::InvalidResponse(format!("classification does not match the schema: {e}"))
-        })?;
-        let mut seen = HashSet::new();
-        for entry in output.layers {
-            let index = usize::try_from(entry.index)
-                .ok()
-                .filter(|i| batch.indices.contains(i))
-                .ok_or_else(|| {
-                    AiError::InvalidResponse(format!(
-                        "layer {} was not in the request",
-                        entry.index
-                    ))
-                })?;
-            if !seen.insert(index) {
-                return Err(AiError::InvalidResponse(format!(
-                    "layer {index} was labeled twice"
-                )));
-            }
-            let confidence = if entry.confidence.is_finite() {
-                entry.confidence.clamp(0.0, 1.0) as f32
-            } else {
-                0.0
-            };
-            let slot = &mut labels[index];
-            slot.label = entry.label;
-            slot.side = entry.side;
-            slot.confidence = confidence;
-        }
+        merge_answer(
+            &mut labels,
+            value,
+            |i| batch.indices.contains(&i),
+            |index| format!("layer {index} was not in the request"),
+        )?;
     }
     Ok(labels)
+}
+
+/// [`output_schema`] の形の答え (外部のエージェントが決めた分類) を `labels` に書き込む。
+///
+/// `labels` は [`classify_by_name`] の結果など、すべてのレイヤーを同じ並びで持つもの。答えにない
+/// レイヤーはそのまま。番号が範囲の外・同じレイヤーに 2 度答えた・形が違うものは
+/// [`AiError::InvalidResponse`] で、そのときは `labels` を変えない。`confidence` は 0..=1 に丸める。
+/// 書き込んだレイヤーの数を返す。
+pub fn apply_answer(
+    labels: &mut [LayerLabel],
+    answer: serde_json::Value,
+) -> Result<usize, AiError> {
+    let count = labels.len();
+    let mut next = labels.to_vec();
+    let written = merge_answer(
+        &mut next,
+        answer,
+        |i| i < count,
+        |index| format!("layer {index} does not exist (there are {count} layers, numbered from 0)"),
+    )?;
+    labels.clone_from_slice(&next);
+    Ok(written)
+}
+
+/// 答えを `labels` に書き込む。`allowed` でない番号は `not_allowed` の文のエラー。
+fn merge_answer(
+    labels: &mut [LayerLabel],
+    answer: serde_json::Value,
+    allowed: impl Fn(usize) -> bool,
+    not_allowed: impl Fn(i64) -> String,
+) -> Result<usize, AiError> {
+    let output: Output = serde_json::from_value(answer).map_err(|e| {
+        AiError::InvalidResponse(format!("classification does not match the schema: {e}"))
+    })?;
+    let mut seen = HashSet::new();
+    for entry in output.layers {
+        let index = usize::try_from(entry.index)
+            .ok()
+            .filter(|&i| i < labels.len() && allowed(i))
+            .ok_or_else(|| AiError::InvalidResponse(not_allowed(entry.index)))?;
+        if !seen.insert(index) {
+            return Err(AiError::InvalidResponse(format!(
+                "layer {index} was labeled twice"
+            )));
+        }
+        let confidence = if entry.confidence.is_finite() {
+            entry.confidence.clamp(0.0, 1.0) as f32
+        } else {
+            0.0
+        };
+        let slot = &mut labels[index];
+        slot.label = entry.label;
+        slot.side = entry.side;
+        slot.confidence = confidence;
+    }
+    Ok(seen.len())
 }

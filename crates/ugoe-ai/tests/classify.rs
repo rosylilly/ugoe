@@ -11,8 +11,9 @@ use std::sync::Arc;
 
 use serde_json::json;
 use ugoe_ai::classify::{
-    ClassifyOptions, Label, LayerLabel, Side, classification_requests, classify_by_name,
-    classify_layers, output_schema,
+    ClassifyOptions, Label, LayerLabel, Side, apply_answer, classification_instructions,
+    classification_requests, classify_by_name, classify_layers, layer_thumbnail_png, layers,
+    output_schema,
 };
 use ugoe_ai::claude::{ApiKey, ClaudeConfig, ClaudeProvider};
 use ugoe_ai::transport::{Cassette, ReplayTransport};
@@ -194,6 +195,68 @@ fn names_inherit_from_groups_and_use_position_for_sides() {
     let options = ClassifyOptions::default();
     assert!(!labels[0].needs_review(&options));
     assert!(labels[4].needs_review(&options));
+}
+
+/// 外部のエージェントに分類を任せるときの部品: 番号の並び・サムネイル・指示・答えの書き込み。
+#[test]
+fn layers_and_answers_for_external_agents() {
+    let tree = small_tree();
+    let labels = classify_by_name(&tree);
+    let infos = layers(&tree);
+    assert_eq!(infos.len(), labels.len());
+    for (info, label) in infos.iter().zip(&labels) {
+        assert_eq!(info.layer_path, label.layer_path);
+    }
+    assert_eq!(infos[1].layer_path, ["目", "レイヤー 1"]);
+    assert_eq!(infos[1].bbox, [60.0, 10.0, 10.0, 10.0]);
+    assert!(infos[1].has_pixels && !infos[5].has_pixels);
+
+    // 小さなレイヤーは min_side まで拡大する (API に送るものと同じ作り方)。
+    let options = ClassifyOptions::default();
+    let png = layer_thumbnail_png(&tree, 1, &options).unwrap().unwrap();
+    let be = |i: usize| u32::from_be_bytes(png[i..i + 4].try_into().unwrap());
+    assert_eq!((be(16), be(20)), (70, 70));
+    assert!(layer_thumbnail_png(&tree, 5, &options).unwrap().is_none());
+    assert!(matches!(
+        layer_thumbnail_png(&tree, 6, &options),
+        Err(AiError::InvalidRequest(_))
+    ));
+
+    let instructions = classification_instructions();
+    assert!(instructions.contains("eye_white: white of the eye (sclera)"));
+    assert_eq!(Label::EyeWhite.description(), "white of the eye (sclera)");
+
+    // 答えにないレイヤーはそのまま。confidence は丸める。
+    let mut next = labels.clone();
+    let written = apply_answer(
+        &mut next,
+        json!({ "layers": [
+            { "index": 3, "label": "cheek", "side": "left", "confidence": 1.4 },
+            { "index": 1, "label": "eye_closed", "side": "left", "confidence": 0.8 },
+        ] }),
+    )
+    .unwrap();
+    assert_eq!(written, 2);
+    assert_eq!(
+        (next[3].label, next[3].side, next[3].confidence),
+        (Cheek, L, 1.0)
+    );
+    assert_eq!(next[1].label, EyeClosed);
+    assert_eq!(next[0], labels[0]);
+
+    // 誤りがあれば何も書かない。
+    for bad in [
+        json!({ "layers": [{ "index": 0, "label": "face", "side": "center", "confidence": 1 },
+                           { "index": 9, "label": "face", "side": "center", "confidence": 1 }] }),
+        json!({ "layers": [{ "index": 0, "label": "face", "side": "center", "confidence": 1 },
+                           { "index": 0, "label": "ear", "side": "left", "confidence": 1 }] }),
+        json!({ "layers": [{ "index": 0, "label": "halo", "side": "center", "confidence": 1 }] }),
+    ] {
+        let mut copy = labels.clone();
+        let err = apply_answer(&mut copy, bad).unwrap_err();
+        assert!(matches!(err, AiError::InvalidResponse(_)), "{err}");
+        assert_eq!(copy, labels);
+    }
 }
 
 #[test]
