@@ -1,11 +1,11 @@
 ---
 id: T0639
 title: エディタ: 書き出しでテクスチャのアトラス化を選ぶ
-status: todo
+status: in-progress
 milestone: M4
 crates: [apps/editor, ugoe-editor-core, docs]
 depends_on: [T0114]
-assignee:
+assignee: claude-worker-T0639
 ---
 
 # T0639: エディタ: 書き出しでテクスチャのアトラス化を選ぶ

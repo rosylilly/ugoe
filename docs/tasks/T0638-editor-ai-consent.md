@@ -1,11 +1,11 @@
 ---
 id: T0638
 title: エディタ: AI の API キーの保存と送信の同意
-status: todo
+status: in-progress
 milestone: M6
 crates: [apps/editor, ugoe-editor-core, docs]
 depends_on: [T0509]
-assignee:
+assignee: claude-worker-T0638
 ---
 
 # T0638: エディタ: AI の API キーの保存と送信の同意

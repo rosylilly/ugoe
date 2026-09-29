@@ -1,11 +1,11 @@
 ---
 id: T0112
 title: 法線マップとライティングのデータ
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-model, ugoe-format]
 depends_on: [T0109, T0111]
-assignee:
+assignee: claude-worker-T0112
 ---
 
 # T0112: 法線マップとライティングのデータ

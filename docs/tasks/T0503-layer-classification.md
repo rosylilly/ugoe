@@ -1,11 +1,11 @@
 ---
 id: T0503
 title: レイヤーの意味分類
-status: todo
+status: in-progress
 milestone: M6
 crates: [ugoe-ai]
 depends_on: [T0501]
-assignee:
+assignee: claude-worker-T0503
 ---
 
 # T0503: レイヤーの意味分類

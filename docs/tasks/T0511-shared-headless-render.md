@@ -1,11 +1,11 @@
 ---
 id: T0511
 title: ヘッドレス描画を CLI と MCP サーバで共有する
-status: todo
+status: in-progress
 milestone: M6
 crates: [ugoe-cli, ugoe-mcp, scripts, Cargo.toml, commitlint.config.mjs, docs]
 depends_on: [T0508, T0114]
-assignee:
+assignee: claude-worker-T0511
 ---
 
 # T0511: ヘッドレス描画を CLI と MCP サーバで共有する

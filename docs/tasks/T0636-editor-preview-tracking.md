@@ -1,11 +1,11 @@
 ---
 id: T0636
 title: エディタ: プレビューでのフェイストラッキング
-status: todo
+status: in-progress
 milestone: M4
 crates: [apps/editor, apps/viewer, packages, docs/manual]
 depends_on: [T0635, T0703]
-assignee:
+assignee: claude-worker-T0636
 ---
 
 # T0636: エディタ: プレビューでのフェイストラッキング

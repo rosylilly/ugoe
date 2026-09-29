@@ -1,11 +1,11 @@
 ---
 id: T0315
 title: 物理: 静止の姿で衝突体に入っている髪を知らせる
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-cli, ugoe-editor-core, apps/editor, docs]
 depends_on: [T0311]
-assignee:
+assignee: claude-worker-T0315
 ---
 
 # T0315: 物理: 静止の姿で衝突体に入っている髪を知らせる
