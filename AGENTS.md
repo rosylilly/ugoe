@@ -51,6 +51,7 @@ crates/             Rust クレート (ランタイム層とツール層。依�
   ugoe-editor-core    ヘッドレスなエディタ中核 (Document / Command / Undo)
   ugoe-ai             AI プロバイダ抽象と自動リギング
   ugoe-cli            `ugoe` コマンド
+  ugoe-mcp            MCP サーバ (外部のエージェントが .ugoeproj を読み、編集を提案・適用する)
 apps/editor/        Tauri エディタ (src/ = Svelte フロントエンド, src-tauri/ = Rust バックエンド)
 apps/viewer/        Tauri ビューア (.ugoe を開いて表示しパラメータを動かす。構成はエディタと同じ)
 docs/               設計・仕様・ADR・タスク

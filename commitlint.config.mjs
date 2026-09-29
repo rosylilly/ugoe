@@ -21,6 +21,7 @@ const SCOPES = [
   "ai",
   "cli",
   "rigging",
+  "mcp",
   // apps/
   "editor",
   "viewer",

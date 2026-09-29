@@ -44,6 +44,7 @@ const ALLOWED = {
   "ugoe-editor-core": union(RUNTIME_TIER, ASSETS, RIGGING),
   "ugoe-ai": TOOL_BASE,
   "ugoe-cli": union(TOOL_BASE, ["ugoe-ai"]),
+  "ugoe-mcp": union(TOOL_BASE, ["ugoe-ai"]),
   "ugoe-editor": union(TOOL_BASE, ["ugoe-ai"]),
 };
 

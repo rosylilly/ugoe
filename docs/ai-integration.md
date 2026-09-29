@@ -12,7 +12,7 @@ PSD を 1 枚渡すと、「顔の角度・目・口・呼吸・髪揺れが一�
 2. **AI でなくてもできることは、決定的なアルゴリズムで行います。** メッシュ生成は `ugoe-mesher` の幾何アルゴリズムで行います。AI が決めるのは「どのレイヤーが何か」「どのパラメータでどう動かすか」といった意味の判断と、アルゴリズムのパラメータ選びだけです。
 3. **プロバイダを差し替えられるようにします。** LLM や画像モデルの呼び出しは `ugoe_ai::Provider` トレイトの裏に隠します。既定のプロバイダは Anthropic の Claude API ですが、ローカルモデルも使えるようにします。
 4. **ネットワークなしでテストできるようにします。** テストでは、録画した応答を返す `FakeProvider` を使います。CI では実際の API を呼びません。
-5. **外部のエージェントからも操作できるようにします。** 将来、`ugoe-mcp` (MCP サーバ) で `Command` の JSON Schema をツールとして公開し、Claude Code などの外部エージェントがエディタを操作できるようにします。
+5. **外部のエージェントからも操作できるようにします。** `ugoe-mcp` (MCP サーバ) で `Command` の JSON Schema をツールとして公開し、Claude Code などの外部エージェントがプロジェクトを読み、編集を提案・適用できるようにします ([MCP サーバ](#mcp-サーバ))。
    - `Command` の JSON Schema は Rust から生成してリポジトリに置いてあります (`crates/ugoe-editor-core/schema/command.schema.json`、[型の生成](editor.md#型の生成))。`ugoe-ai` などからは `ugoe_editor_core::codegen::COMMAND_SCHEMA_JSON` (ファイルの中身) か `command_schema()` (その場で生成) で参照します。
 
 ## パイプライン
@@ -107,6 +107,29 @@ Proposal (Command 列) ──► ユーザーの確認 ──► Document::apply
 - 録画は往復の列で、リクエストは method・URL・本文 (JSON)、応答は状態コード・一部のヘッダ (`content-type`・`request-id`・`retry-after`)・本文を持ちます。応答の代わりに通信の失敗 (`timeout`・`connect`) も書けます。
 - 録画のリクエストに本文が書いてあれば、再生のときに送った本文と一致するかを確かめます。
 - `RecordingTransport` で実際の通信を包むと録画を作れます (`tests/claude_replay.rs` の `record_live`。既定では動かしません)。
+
+## MCP サーバ
+
+`crates/ugoe-mcp` (T0508)。使い方とツールの一覧は [crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md)。
+
+### `.ugoeproj` を直接扱う
+
+MCP サーバは実行中のエディタにはつながず、`.ugoeproj` を自分で開いて `ugoe_editor_core::Document` を持ちます。
+
+- エディタと同じ `Document`・`Command`・検証・Undo を使うので、編集の規則は同じです (原則 4 と ADR 0005)。
+- エディタを起動していなくても使えます (CI やターミナルだけの環境、エディタの無い自動化)。エディタに IPC の口を開けずに済みます。
+- 代わりに、**同じプロジェクトをエディタとサーバで同時に開いて編集してはいけません。** 保存は後に書いたほうが勝ちます。サーバで保存したら、エディタで開き直します。
+- 実行中のエディタにつなぐ形 (エディタの画面で提案の差分を見て採用する) は後続の候補です。そのときも同じツールの形 (提案と適用) を保ちます。
+
+### 提案と適用 (ADR 0006 との関係)
+
+ADR 0006 は「AI は提案だけを行い、適用は人間が承認する」と決めています。MCP サーバでは、これを **提案と適用のツールを分けること** で守ります。
+
+- `propose_edit` は `Command` の列 (`ugoe_ai::Proposal` と同じ `title`・`rationale`・`commands`) を受け取り、ドキュメントの複製に `Batch` として適用して、検証の結果・`ApplyReport`・変わる要素の ID を返します。元のドキュメントは変えません (読むだけのツール)。成功すると提案の ID を返します。
+- `apply_proposal` は提案の ID だけを受け取り、`Document::apply` で適用します (1 回の Undo で戻せます)。提案の後にドキュメントが変わっていたら拒否します (承認した差分と違う結果にならないように)。
+- **承認するのは MCP クライアントの確認です。** Claude Code は、許可していないツールを呼ぶ前にユーザーに確認を求めます。ユーザーは `propose_edit` の差分を見て、`apply_proposal` の呼び出しを許します。`propose_edit`・`get_*`・`render_png` は読むだけ (`readOnlyHint`) なので常に許してよく、`apply_proposal` と `save_project` は常に許す設定にしないことを勧めます。常に許すことは ADR 0006 の「すべての提案を自動で採用する」設定にあたります。
+- 適用してもディスクには書きません。`save_project` を呼んで初めて書きます (`destructiveHint`)。
+- `--read-only` で起動すると、適用・Undo・Redo・保存のツールを出しません。エージェントは読むこと・提案すること・描くことだけができます。
 
 ## セキュリティとプライバシー
 

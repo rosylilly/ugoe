@@ -10,7 +10,7 @@
                            │                                        │
            ┌───────────────┼────────────────┐                       │
            ▼               ▼                ▼                       │
-      apps/editor      ugoe-cli        (将来) ugoe-mcp               │
+      apps/editor      ugoe-cli        ugoe-mcp                      │
       (Tauri + Svelte)                                              │
                          └──────────────────────────────────────────┘
                                           │ Model / .ugoe
@@ -44,7 +44,7 @@
 | T1 リギング | `ugoe-rigging` | core, model, runtime, mesher |
 | T2 エディタ中核 | `ugoe-editor-core` | ランタイム層, T1 (`ugoe-rigging` を含む) |
 | T3 自動化 | `ugoe-ai` | T2 以下 |
-| T4 アプリ | `ugoe-cli`, `apps/editor` (`ugoe-editor`) | すべて |
+| T4 アプリ | `ugoe-cli`, `ugoe-mcp`, `apps/editor` (`ugoe-editor`) | すべて |
 | アプリ (ランタイムの見本) | `apps/viewer` (`ugoe-viewer`) | ランタイム層だけ。描画は webview の `ugoe-wasm` |
 
 層を分ける理由:

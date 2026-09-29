@@ -4851,6 +4851,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ugoe-mcp"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "clap",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "ugoe-editor-core",
+ "ugoe-model",
+]
+
+[[package]]
 name = "ugoe-mesher"
 version = "0.0.0"
 dependencies = [

@@ -1,0 +1,25 @@
+[package]
+name = "ugoe-mcp"
+description = "MCP サーバ: 外部のエージェントから .ugoeproj を読み、Command の提案と適用を行う"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+base64.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+ugoe-editor-core.workspace = true
+ugoe-model.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "ugoe-mcp"
+path = "src/main.rs"
