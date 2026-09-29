@@ -168,6 +168,7 @@ pub struct AvatarProfile {
     pub tracking: Vec<TrackingOverride>,
     /// 視線の追従。省略すると [`LookAt::default`] (`EyeBallX` / `EyeBallY`) を、モデルにあれば使う。
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional = nullable))]
     pub look_at: Option<LookAt>,
     /// 標準の当たり判定の名前と `Model::hit_areas` の対応。
     pub hit_areas: Vec<AvatarHitArea>,

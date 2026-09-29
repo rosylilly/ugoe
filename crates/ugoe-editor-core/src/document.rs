@@ -17,7 +17,7 @@ use crate::grid::{self, CellError};
 use crate::inference::{MirrorReport, RederiveWarning};
 use crate::motion_edit::{self, Animations};
 use crate::texture::{Textures, is_valid_texture_name, png_size};
-use crate::{Command, automesh, inference, keyform};
+use crate::{Command, automesh, avatar, inference, keyform};
 use crate::{deformer_edit, depth, draw_clone, mesh_edit, physics_edit, physics_template};
 
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -147,6 +147,10 @@ pub enum EditError {
     /// 描画用の複製でも、複製を持つメッシュでもない。
     #[error("mesh `{id}` is neither a draw clone nor has draw clones")]
     NotDrawClone { id: String },
+    /// アバタープロファイルの値が不正 (範囲外のレベル・有限でない数・未知の値など。
+    /// `docs/editor.md#アバタープロファイルの編集`)。
+    #[error("invalid avatar profile: {reason}")]
+    InvalidAvatarProfile { reason: String },
 }
 
 /// [`Document::apply_with_report`] の結果: コマンドは適用したが、利用者に知らせたいこと。
@@ -466,6 +470,26 @@ fn apply_to(
                 apply_to(model, textures, anim, c, touched, mirrored, physics)?;
             }
         }
+        Command::SetAvatarProfile { profile } => avatar::set_profile(model, profile)?,
+        Command::UpdateAvatarProfile {
+            level,
+            meta,
+            tracking,
+            look_at,
+            hit_areas,
+            slots,
+        } => avatar::update_profile(
+            model,
+            avatar::ProfileUpdate {
+                level,
+                meta,
+                tracking,
+                look_at,
+                hit_areas,
+                slots,
+            },
+        )?,
+        Command::SetHitAreas { hit_areas } => avatar::set_hit_areas(model, hit_areas)?,
         Command::RenameParameter { id, name } => parameter(model, &id)?.name = name,
         Command::SetParameterGroup { id, group } => parameter(model, &id)?.group = group,
         Command::SetParameterMirror { id, mirror } => {
@@ -1088,7 +1112,8 @@ fn remove_deformer(model: &mut Model, id: &DeformerId) -> Result<(), EditError> 
     Ok(())
 }
 
-/// メッシュを削除する。マスクの参照から外し、このメッシュを使うグルーと当たり判定を削除する。
+/// メッシュを削除する。マスクの参照から外し、このメッシュを使うグルーと当たり判定を削除する
+/// (その当たり判定を指すアバタープロファイルの標準の当たり判定も外す)。
 fn remove_mesh(model: &mut Model, id: &MeshId) -> Result<(), EditError> {
     let index = model
         .meshes
@@ -1104,6 +1129,7 @@ fn remove_mesh(model: &mut Model, id: &MeshId) -> Result<(), EditError> {
     }
     model.glues.retain(|g| &g.mesh_a != id && &g.mesh_b != id);
     model.hit_areas.retain(|h| &h.mesh != id);
+    avatar::forget_removed_hit_areas(model);
     for mesh in &mut model.meshes {
         if mesh.mirror.as_ref() == Some(id) {
             mesh.mirror = None;

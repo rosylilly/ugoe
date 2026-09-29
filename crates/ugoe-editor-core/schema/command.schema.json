@@ -2233,6 +2233,119 @@
         "op",
         "template"
       ]
+    },
+    {
+      "description": "アバタープロファイル (`Model::avatar`) を丸ごと置き換える。`null` で外す。",
+      "type": "object",
+      "properties": {
+        "op": {
+          "type": "string",
+          "const": "set_avatar_profile"
+        },
+        "profile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AvatarProfile"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "op"
+      ]
+    },
+    {
+      "description": "アバタープロファイルの一部を変える。省略したフィールドは変えない。\nプロファイルがなければ既定値 (許諾は最も制限の強い値) から作る。",
+      "type": "object",
+      "properties": {
+        "hit_areas": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/AvatarHitArea"
+          }
+        },
+        "level": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        },
+        "look_at": {
+          "description": "視線の追従。`null` で外す (既定の `EyeBallX` / `EyeBallY` に戻す)。",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LookAt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meta": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AvatarMeta"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "op": {
+          "type": "string",
+          "const": "update_avatar_profile"
+        },
+        "slots": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "tracking": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/TrackingOverride"
+          }
+        }
+      },
+      "required": [
+        "op"
+      ]
+    },
+    {
+      "description": "当たり判定 (`Model::hit_areas`) を丸ごと置き換える。なくなった当たり判定を指す、\nアバタープロファイルの標準の当たり判定 (`avatar.hit_areas`) は外す。",
+      "type": "object",
+      "properties": {
+        "hit_areas": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HitArea"
+          }
+        },
+        "op": {
+          "type": "string",
+          "const": "set_hit_areas"
+        }
+      },
+      "required": [
+        "op",
+        "hit_areas"
+      ]
     }
   ],
   "$defs": {
@@ -2272,6 +2385,233 @@
           "format": "uint32",
           "default": 0,
           "minimum": 0
+        }
+      }
+    },
+    "AvatarHitArea": {
+      "description": "標準の当たり判定の名前と `HitArea` の対応。",
+      "type": "object",
+      "properties": {
+        "hit_area": {
+          "description": "`Model::hit_areas` の ID。",
+          "type": "string"
+        },
+        "name": {
+          "description": "標準の名前 ([`HIT_AREA_HEAD`]、[`HIT_AREA_BODY`])。",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "hit_area"
+      ]
+    },
+    "AvatarMeta": {
+      "description": "アバターのメタデータと利用許諾 (`docs/spec/avatar-profile.md#メタデータ`)。",
+      "type": "object",
+      "properties": {
+        "allow_antisocial_or_hate_usage": {
+          "type": "boolean",
+          "default": false
+        },
+        "allow_political_or_religious_usage": {
+          "type": "boolean",
+          "default": false
+        },
+        "allow_redistribution": {
+          "type": "boolean",
+          "default": false
+        },
+        "allow_sexual_usage": {
+          "type": "boolean",
+          "default": false
+        },
+        "allow_violent_usage": {
+          "type": "boolean",
+          "default": false
+        },
+        "authors": {
+          "description": "作者の一覧 (必須。1 人以上)。",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "avatar_permission": {
+          "$ref": "#/$defs/AvatarPermission",
+          "default": "only_author"
+        },
+        "commercial_usage": {
+          "$ref": "#/$defs/CommercialUsage",
+          "default": "personal_non_profit"
+        },
+        "contact": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "copyright": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "credit_notation": {
+          "$ref": "#/$defs/CreditNotation",
+          "default": "required"
+        },
+        "license_url": {
+          "description": "利用規約の URL。",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "modification": {
+          "$ref": "#/$defs/Modification",
+          "default": "prohibited"
+        },
+        "name": {
+          "description": "アバターの名前 (必須)。",
+          "type": "string",
+          "default": ""
+        },
+        "references": {
+          "description": "原作・参考元。",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "third_party_licenses": {
+          "description": "素材などの第三者のライセンス表記。",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "thumbnail": {
+          "description": "サムネイル画像 (`Model::textures` のインデックス)。",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "default": null,
+          "minimum": 0
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      }
+    },
+    "AvatarPermission": {
+      "description": "アバターとして使ってよい人。",
+      "oneOf": [
+        {
+          "description": "作者だけ。",
+          "type": "string",
+          "const": "only_author"
+        },
+        {
+          "description": "作者が許諾した人だけ。",
+          "type": "string",
+          "const": "only_licensed"
+        },
+        {
+          "description": "誰でも。",
+          "type": "string",
+          "const": "everyone"
+        }
+      ]
+    },
+    "AvatarProfile": {
+      "description": "アバタープロファイル (`Model::avatar`)。`docs/spec/avatar-profile.md`。\n\n省略したフィールドは既定値になる。許諾の既定値は最も制限の強い値。",
+      "type": "object",
+      "properties": {
+        "hit_areas": {
+          "description": "標準の当たり判定の名前と `Model::hit_areas` の対応。",
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AvatarHitArea"
+          }
+        },
+        "level": {
+          "description": "準拠を主張するレベル (1〜[`MAX_LEVEL`])。既定は 1。",
+          "type": "integer",
+          "format": "uint8",
+          "default": 1,
+          "maximum": 255,
+          "minimum": 0
+        },
+        "look_at": {
+          "description": "視線の追従。省略すると [`LookAt::default`] (`EyeBallX` / `EyeBallY`) を、モデルにあれば使う。",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LookAt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meta": {
+          "$ref": "#/$defs/AvatarMeta",
+          "default": {
+            "allow_antisocial_or_hate_usage": false,
+            "allow_political_or_religious_usage": false,
+            "allow_redistribution": false,
+            "allow_sexual_usage": false,
+            "allow_violent_usage": false,
+            "authors": [],
+            "avatar_permission": "only_author",
+            "commercial_usage": "personal_non_profit",
+            "contact": null,
+            "copyright": null,
+            "credit_notation": "required",
+            "license_url": null,
+            "modification": "prohibited",
+            "name": "",
+            "references": [],
+            "third_party_licenses": null,
+            "thumbnail": null,
+            "version": null
+          }
+        },
+        "profile_version": {
+          "description": "準拠するプロファイルのバージョン。既定は [`PROFILE_VERSION`]。",
+          "type": "integer",
+          "format": "uint32",
+          "default": 0,
+          "minimum": 0
+        },
+        "slots": {
+          "description": "アプリに公開する着せ替えのスロットの ID (`docs/spec/modules.md`)。",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "tracking": {
+          "description": "トラッキングの対応の上書きと追加。",
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/TrackingOverride"
+          }
         }
       }
     },
@@ -2375,6 +2715,38 @@
             "a",
             "b",
             "radius"
+          ]
+        }
+      ]
+    },
+    "CommercialUsage": {
+      "description": "商用利用の範囲。",
+      "oneOf": [
+        {
+          "description": "個人の非営利の利用だけ。",
+          "type": "string",
+          "const": "personal_non_profit"
+        },
+        {
+          "description": "個人の営利の利用まで。",
+          "type": "string",
+          "const": "personal_profit"
+        },
+        {
+          "description": "法人の利用まで。",
+          "type": "string",
+          "const": "corporation"
+        }
+      ]
+    },
+    "CreditNotation": {
+      "description": "クレジット表記。",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "required",
+            "unnecessary"
           ]
         }
       ]
@@ -2727,6 +3099,23 @@
       },
       "required": [
         "intensity"
+      ]
+    },
+    "HitArea": {
+      "description": "当たり判定領域。メッシュの変形後形状で判定する。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "mesh": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "mesh"
       ]
     },
     "InferMethod": {
@@ -3239,6 +3628,34 @@
         }
       ]
     },
+    "LookAt": {
+      "description": "視線の追従に使うパラメータと可動範囲。",
+      "type": "object",
+      "properties": {
+        "range_x": {
+          "description": "左右の可動範囲 (度)。見る先がこの角度だけ横にあるとき、`x` が端の値になる。0 より大きい。",
+          "type": "number",
+          "format": "float",
+          "default": 30.0
+        },
+        "range_y": {
+          "description": "上下の可動範囲 (度)。0 より大きい。",
+          "type": "number",
+          "format": "float",
+          "default": 30.0
+        },
+        "x": {
+          "description": "左右 (正でキャラクターの左)。既定は `EyeBallX`。",
+          "type": "string",
+          "default": "EyeBallX"
+        },
+        "y": {
+          "description": "上下 (正で上)。既定は `EyeBallY`。",
+          "type": "string",
+          "default": "EyeBallY"
+        }
+      }
+    },
     "MaskMode": {
       "description": "通常マスクの結合方法。式は `docs/spec/rendering.md#マスク`。",
       "oneOf": [
@@ -3463,6 +3880,26 @@
       },
       "required": [
         "id"
+      ]
+    },
+    "Modification": {
+      "description": "改変の許諾。",
+      "oneOf": [
+        {
+          "description": "改変を禁止する。",
+          "type": "string",
+          "const": "prohibited"
+        },
+        {
+          "description": "改変してよい (改変したものの再配布は不可)。",
+          "type": "string",
+          "const": "allow"
+        },
+        {
+          "description": "改変し、改変したものを再配布してよい。",
+          "type": "string",
+          "const": "allow_redistribution"
+        }
       ]
     },
     "Motion": {
@@ -4270,6 +4707,60 @@
           "required": [
             "type"
           ]
+        }
+      ]
+    },
+    "TrackingOverride": {
+      "description": "トラッキングの対応の上書き 1 つ (`docs/spec/avatar-profile.md#トラッキングの対応の上書き`)。\n\n入力の値 `v` から `v * scale + offset` を `parameter` に書き込む (値域へのクランプはその後)。",
+      "type": "object",
+      "properties": {
+        "input": {
+          "description": "入力の名前。`source` によって、標準の対応表のパラメータ ID ([`TRACKED_PARAMETERS`])、\nARKit のブレンドシェイプ名 ([`ARKIT_BLEND_SHAPES`])、頭の回転 ([`HEAD_INPUTS`]) のいずれか。",
+          "type": "string"
+        },
+        "offset": {
+          "type": "number",
+          "format": "float",
+          "default": 0.0
+        },
+        "parameter": {
+          "description": "書き込むパラメータ。`source` が `standard` なら省略でき、省略すると `input` と同じ ID。",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scale": {
+          "type": "number",
+          "format": "float",
+          "default": 1.0
+        },
+        "source": {
+          "$ref": "#/$defs/TrackingSource"
+        }
+      },
+      "required": [
+        "source",
+        "input"
+      ]
+    },
+    "TrackingSource": {
+      "description": "トラッキングの入力の種類。",
+      "oneOf": [
+        {
+          "description": "標準の対応表で計算した、パラメータ `input` の値 (値域へのクランプ前)。",
+          "type": "string",
+          "const": "standard"
+        },
+        {
+          "description": "ARKit のブレンドシェイプ `input` の値 (0〜1)。",
+          "type": "string",
+          "const": "blend_shape"
+        },
+        {
+          "description": "頭の回転 `input` (`yaw` / `pitch` / `roll`、度)。",
+          "type": "string",
+          "const": "head"
         }
       ]
     },

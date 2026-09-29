@@ -4,6 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
+use ugoe_editor_core::avatar::AvatarCheck;
 use ugoe_editor_core::codegen::{TsBindings, command_schema_json, typescript_samples};
 use ugoe_editor_core::overflow::{ElementOverflow, OverflowReport};
 use ugoe_editor_core::physics_check::RestPoseCollision;
@@ -35,6 +36,7 @@ pub fn generated_files() -> Result<Vec<(&'static str, String)>, serde_json::Erro
     types.add::<AiReply<()>>();
     types.add::<ExportSettings>();
     types.add::<ExportReport>();
+    types.add::<AvatarCheck>();
     Ok(vec![
         ("apps/editor/src/lib/generated/types.ts", types.render()),
         (

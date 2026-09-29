@@ -198,22 +198,24 @@ pub fn build_avatar(psd: &[u8]) -> anyhow::Result<Project> {
     rig.rig_body(&layout)?;
     rig.rig_head(&layout)?;
 
-    let mut project = Project::from_document(empty.meta, &rig.document);
-    // TODO(T0631): `Model.avatar` と当たり判定を設定するコマンドができたら、コマンドで書く。
     let face = rig.mesh("face")?;
     let body = rig.mesh("topwear")?;
-    project.model.hit_areas = vec![
-        HitArea {
-            id: HIT_AREA_HEAD.to_owned(),
-            mesh: face,
-        },
-        HitArea {
-            id: HIT_AREA_BODY.to_owned(),
-            mesh: body,
-        },
-    ];
-    project.model.avatar = Some(avatar_profile());
-    Ok(project)
+    rig.apply(Command::SetHitAreas {
+        hit_areas: vec![
+            HitArea {
+                id: HIT_AREA_HEAD.to_owned(),
+                mesh: face,
+            },
+            HitArea {
+                id: HIT_AREA_BODY.to_owned(),
+                mesh: body,
+            },
+        ],
+    })?;
+    rig.apply(Command::SetAvatarProfile {
+        profile: Some(avatar_profile()),
+    })?;
+    Ok(Project::from_document(empty.meta, &rig.document))
 }
 
 /// 見本のモデルのアバタープロファイル (レベル 3)。絵は MIT で配布している PSD から作った。

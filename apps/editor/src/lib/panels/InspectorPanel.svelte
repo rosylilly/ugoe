@@ -1,6 +1,7 @@
 <!--
   右パネル: 選択中の要素のプロパティとキーフォーム。
-  プロパティは T0606 / T0607、キーの格子とキーフォームの編集は T0608、推定の操作は T0613、深度は T0617、描画用の複製は T0633 で追加する。
+  プロパティは T0606 / T0607、キーの格子とキーフォームの編集は T0608、推定の操作は T0613、深度は T0617、描画用の複製は T0633、
+  何も選んでいないときのアバタープロファイルは T0631 で追加する。
   それぞれ lib/panels/inspector/ にコンポーネントを置き、ここではそれを並べるだけにする。
 -->
 <script lang="ts">
@@ -9,6 +10,7 @@ import type { Model } from "../ipc";
 import { labelOf } from "../labels";
 import type { Selection } from "../selection.svelte";
 import type { ViewportController } from "../viewport/controller.svelte";
+import AvatarSection from "./inspector/avatar/AvatarSection.svelte";
 import DeformerProperties from "./inspector/DeformerProperties.svelte";
 import DepthSection from "./inspector/depth/DepthSection.svelte";
 import DrawCloneSection from "./inspector/drawClone/DrawCloneSection.svelte";
@@ -54,6 +56,7 @@ const primaryLabel = $derived.by(() => {
   <DepthSection {doc} {selection} {viewport} />
 {:else}
   <p class="muted">Nothing selected (rev {doc.revision})</p>
+  <AvatarSection {doc} />
 {/if}
 
 <style>

@@ -9,6 +9,7 @@ import type {
   AppInfo,
   ApplyReport,
   AutoMeshOptions,
+  AvatarCheck,
   Command,
   ConsentAnswer,
   ElementOverflow,
@@ -86,6 +87,11 @@ export const ipc = {
    * リグの鎖 (リグと衝突体の組ごと)。物理の設定がなければ空。
    */
   checkPhysics: () => invoke<RestPoseCollision[]>("check_physics"),
+  /**
+   * apps/editor/src-tauri/src/avatar.rs。アバタープロファイルへの準拠の検査の結果 (名乗るレベル・満たすレベル・
+   * エラーと警告)。モデルは変えない。
+   */
+  checkAvatarProfile: () => invoke<AvatarCheck>("check_avatar_profile"),
   /**
    * apps/editor/src-tauri/src/ai.rs。AI の設定 (API キーの状態・開いているプロジェクトの「外部に送らない」)。
    * キーの中身は返さない (docs/editor.md#ai-の設定と送信の同意)。

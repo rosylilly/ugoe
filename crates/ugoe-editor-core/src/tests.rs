@@ -1421,10 +1421,13 @@ fn op_name(command: &Command) -> &'static str {
         Command::CreateDrawClone { .. } => "create_draw_clone",
         Command::SyncDrawClone { .. } => "sync_draw_clone",
         Command::ApplyPhysicsTemplate { .. } => "apply_physics_template",
+        Command::SetAvatarProfile { .. } => "set_avatar_profile",
+        Command::UpdateAvatarProfile { .. } => "update_avatar_profile",
+        Command::SetHitAreas { .. } => "set_hit_areas",
     }
 }
 
-const OP_COUNT: usize = 90;
+const OP_COUNT: usize = 93;
 
 fn json_samples() -> Vec<Command> {
     let quad = fixtures::single_quad();
@@ -1673,6 +1676,7 @@ fn json_samples() -> Vec<Command> {
     .chain(crate::codegen::motion_sample_commands())
     .chain(crate::codegen::physics_samples())
     .chain(crate::codegen::draw_clone_samples())
+    .chain(crate::codegen::avatar_samples())
     .collect()
 }
 

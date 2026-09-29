@@ -3539,6 +3539,705 @@ export const models: Model[] = [
         "parameters": []
       }
     }
+  },
+  {
+    "schema_version": 0,
+    "meta": {
+      "name": "avatar_profile",
+      "canvas": {
+        "width": 256.0,
+        "height": 256.0,
+        "origin": [
+          128.0,
+          128.0
+        ]
+      }
+    },
+    "parameters": [
+      {
+        "id": "X",
+        "name": "X",
+        "min": -1.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "AngleX",
+        "name": "AngleX",
+        "min": -30.0,
+        "max": 30.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "AngleY",
+        "name": "AngleY",
+        "min": -30.0,
+        "max": 30.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "AngleZ",
+        "name": "AngleZ",
+        "min": -30.0,
+        "max": 30.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "BodyAngleX",
+        "name": "BodyAngleX",
+        "min": -10.0,
+        "max": 10.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "BodyAngleY",
+        "name": "BodyAngleY",
+        "min": -10.0,
+        "max": 10.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "BodyAngleZ",
+        "name": "BodyAngleZ",
+        "min": -10.0,
+        "max": 10.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "Breath",
+        "name": "Breath",
+        "min": 0.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "EyeLOpen",
+        "name": "EyeLOpen",
+        "min": 0.0,
+        "max": 1.0,
+        "default": 1.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "EyeROpen",
+        "name": "EyeROpen",
+        "min": 0.0,
+        "max": 1.0,
+        "default": 1.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "EyeLSmile",
+        "name": "EyeLSmile",
+        "min": 0.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "EyeRSmile",
+        "name": "EyeRSmile",
+        "min": 0.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "EyeBallX",
+        "name": "EyeBallX",
+        "min": -1.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "EyeBallY",
+        "name": "EyeBallY",
+        "min": -1.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "BrowLY",
+        "name": "BrowLY",
+        "min": -1.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "BrowRY",
+        "name": "BrowRY",
+        "min": -1.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "MouthForm",
+        "name": "MouthForm",
+        "min": -1.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "MouthOpenY",
+        "name": "MouthOpenY",
+        "min": 0.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "Cheek",
+        "name": "Cheek",
+        "min": 0.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "HairFront",
+        "name": "HairFront",
+        "min": -1.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "HairSide",
+        "name": "HairSide",
+        "min": -1.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "HairBack",
+        "name": "HairBack",
+        "min": -1.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "EyeLWide",
+        "name": "EyeLWide",
+        "min": 0.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "EyeRWide",
+        "name": "EyeRWide",
+        "min": 0.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "BrowInnerUp",
+        "name": "BrowInnerUp",
+        "min": 0.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "BrowLAngle",
+        "name": "BrowLAngle",
+        "min": -1.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "BrowRAngle",
+        "name": "BrowRAngle",
+        "min": -1.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "MouthX",
+        "name": "MouthX",
+        "min": -1.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "JawX",
+        "name": "JawX",
+        "min": -1.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "MouthPucker",
+        "name": "MouthPucker",
+        "min": 0.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "MouthFunnel",
+        "name": "MouthFunnel",
+        "min": 0.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "MouthPress",
+        "name": "MouthPress",
+        "min": 0.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "MouthShrug",
+        "name": "MouthShrug",
+        "min": 0.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "CheekPuff",
+        "name": "CheekPuff",
+        "min": 0.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "TongueOut",
+        "name": "TongueOut",
+        "min": 0.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "NoseSneer",
+        "name": "NoseSneer",
+        "min": 0.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      }
+    ],
+    "parameter_groups": [],
+    "parts": [
+      {
+        "id": "Root",
+        "name": "Root",
+        "parent": null,
+        "keyforms": {
+          "bindings": [],
+          "keyforms": [
+            {
+              "opacity": 1.0
+            }
+          ]
+        }
+      },
+      {
+        "id": "ArmA",
+        "name": "ArmA",
+        "parent": "Root",
+        "keyforms": {
+          "bindings": [],
+          "keyforms": [
+            {
+              "opacity": 1.0
+            }
+          ]
+        }
+      },
+      {
+        "id": "SleeveA",
+        "name": "SleeveA",
+        "parent": "Root",
+        "keyforms": {
+          "bindings": [],
+          "keyforms": [
+            {
+              "opacity": 1.0
+            }
+          ]
+        }
+      },
+      {
+        "id": "ArmB",
+        "name": "ArmB",
+        "parent": "Root",
+        "keyforms": {
+          "bindings": [],
+          "keyforms": [
+            {
+              "opacity": 0.0
+            }
+          ]
+        }
+      }
+    ],
+    "deformers": [],
+    "meshes": [
+      {
+        "id": "Quad",
+        "name": "Quad",
+        "part": "Root",
+        "parent": null,
+        "texture": 0,
+        "uvs": [
+          [
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0
+          ],
+          [
+            1.0,
+            1.0
+          ],
+          [
+            0.0,
+            1.0
+          ]
+        ],
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "blend": "normal",
+        "culling": false,
+        "masks": [],
+        "mask_mode": "union",
+        "mask_only": false,
+        "keyforms": {
+          "bindings": [
+            {
+              "parameter": "X",
+              "keys": [
+                -1.0,
+                0.0,
+                1.0
+              ]
+            }
+          ],
+          "keyforms": [
+            {
+              "positions": [
+                [
+                  0.0,
+                  64.0
+                ],
+                [
+                  128.0,
+                  64.0
+                ],
+                [
+                  128.0,
+                  192.0
+                ],
+                [
+                  0.0,
+                  192.0
+                ]
+              ],
+              "opacity": 1.0,
+              "draw_order": 500.0,
+              "multiply_color": {
+                "r": 1.0,
+                "g": 1.0,
+                "b": 1.0
+              },
+              "screen_color": {
+                "r": 0.0,
+                "g": 0.0,
+                "b": 0.0
+              },
+              "mask_strength": 1.0
+            },
+            {
+              "positions": [
+                [
+                  64.0,
+                  64.0
+                ],
+                [
+                  192.0,
+                  64.0
+                ],
+                [
+                  192.0,
+                  192.0
+                ],
+                [
+                  64.0,
+                  192.0
+                ]
+              ],
+              "opacity": 1.0,
+              "draw_order": 500.0,
+              "multiply_color": {
+                "r": 1.0,
+                "g": 1.0,
+                "b": 1.0
+              },
+              "screen_color": {
+                "r": 0.0,
+                "g": 0.0,
+                "b": 0.0
+              },
+              "mask_strength": 1.0
+            },
+            {
+              "positions": [
+                [
+                  128.0,
+                  64.0
+                ],
+                [
+                  256.0,
+                  64.0
+                ],
+                [
+                  256.0,
+                  192.0
+                ],
+                [
+                  128.0,
+                  192.0
+                ]
+              ],
+              "opacity": 1.0,
+              "draw_order": 500.0,
+              "multiply_color": {
+                "r": 1.0,
+                "g": 1.0,
+                "b": 1.0
+              },
+              "screen_color": {
+                "r": 0.0,
+                "g": 0.0,
+                "b": 0.0
+              },
+              "mask_strength": 1.0
+            }
+          ]
+        }
+      }
+    ],
+    "glues": [],
+    "textures": [
+      {
+        "name": "white",
+        "width": 1,
+        "height": 1
+      }
+    ],
+    "hit_areas": [],
+    "pose": {
+      "fade_duration": 0.5,
+      "groups": [
+        {
+          "entries": [
+            {
+              "part": "ArmA",
+              "links": [
+                "SleeveA"
+              ]
+            },
+            {
+              "part": "ArmB",
+              "links": []
+            }
+          ]
+        }
+      ]
+    },
+    "effects": {
+      "eye_blink": {
+        "parameters": [
+          "EyeLOpen",
+          "EyeROpen"
+        ],
+        "interval": 4.0,
+        "closing": 0.1,
+        "closed": 0.05,
+        "opening": 0.15,
+        "seed": 0
+      },
+      "breath": {
+        "parameters": [
+          {
+            "parameter": "AngleX",
+            "offset": 0.0,
+            "peak": 15.0,
+            "cycle": 6.5345,
+            "weight": 0.5
+          },
+          {
+            "parameter": "AngleY",
+            "offset": 0.0,
+            "peak": 8.0,
+            "cycle": 3.5345,
+            "weight": 0.5
+          },
+          {
+            "parameter": "AngleZ",
+            "offset": 0.0,
+            "peak": 10.0,
+            "cycle": 5.5345,
+            "weight": 0.5
+          },
+          {
+            "parameter": "BodyAngleX",
+            "offset": 0.0,
+            "peak": 4.0,
+            "cycle": 15.5345,
+            "weight": 0.5
+          },
+          {
+            "parameter": "Breath",
+            "offset": 0.5,
+            "peak": 0.5,
+            "cycle": 3.2345,
+            "weight": 1.0
+          }
+        ]
+      },
+      "lip_sync": {
+        "parameters": [
+          "MouthOpenY"
+        ]
+      }
+    },
+    "avatar": {
+      "profile_version": 0,
+      "level": 3,
+      "meta": {
+        "name": "Avatar",
+        "version": null,
+        "authors": [
+          "ugoe"
+        ],
+        "copyright": null,
+        "contact": null,
+        "references": [],
+        "thumbnail": null,
+        "license_url": null,
+        "avatar_permission": "only_author",
+        "commercial_usage": "personal_non_profit",
+        "allow_violent_usage": false,
+        "allow_sexual_usage": false,
+        "allow_political_or_religious_usage": false,
+        "allow_antisocial_or_hate_usage": false,
+        "credit_notation": "required",
+        "allow_redistribution": false,
+        "modification": "prohibited",
+        "third_party_licenses": null
+      },
+      "tracking": [],
+      "hit_areas": [],
+      "slots": []
+    }
   }
 ];
 
@@ -5205,5 +5904,101 @@ export const commands: Command[] = [
   {
     "op": "sync_draw_clone",
     "id": "Quad_Clone"
+  },
+  {
+    "op": "set_avatar_profile",
+    "profile": {
+      "profile_version": 0,
+      "level": 3,
+      "meta": {
+        "name": "Avatar",
+        "version": null,
+        "authors": [
+          "ugoe"
+        ],
+        "copyright": null,
+        "contact": null,
+        "references": [],
+        "thumbnail": null,
+        "license_url": null,
+        "avatar_permission": "only_author",
+        "commercial_usage": "personal_non_profit",
+        "allow_violent_usage": false,
+        "allow_sexual_usage": false,
+        "allow_political_or_religious_usage": false,
+        "allow_antisocial_or_hate_usage": false,
+        "credit_notation": "required",
+        "allow_redistribution": false,
+        "modification": "prohibited",
+        "third_party_licenses": null
+      },
+      "tracking": [],
+      "hit_areas": [],
+      "slots": []
+    }
+  },
+  {
+    "op": "set_avatar_profile",
+    "profile": null
+  },
+  {
+    "op": "update_avatar_profile",
+    "level": 2,
+    "meta": {
+      "name": "Avatar",
+      "version": null,
+      "authors": [
+        "ugoe"
+      ],
+      "copyright": null,
+      "contact": null,
+      "references": [],
+      "thumbnail": null,
+      "license_url": null,
+      "avatar_permission": "only_author",
+      "commercial_usage": "personal_non_profit",
+      "allow_violent_usage": false,
+      "allow_sexual_usage": false,
+      "allow_political_or_religious_usage": false,
+      "allow_antisocial_or_hate_usage": false,
+      "credit_notation": "required",
+      "allow_redistribution": false,
+      "modification": "prohibited",
+      "third_party_licenses": null
+    },
+    "tracking": [
+      {
+        "source": "standard",
+        "input": "EyeBallX",
+        "scale": -1.0,
+        "offset": 0.0
+      }
+    ],
+    "look_at": {
+      "x": "EyeBallX",
+      "y": "EyeBallY",
+      "range_x": 30.0,
+      "range_y": 30.0
+    },
+    "hit_areas": [
+      {
+        "name": "Head",
+        "hit_area": "Head"
+      }
+    ],
+    "slots": []
+  },
+  {
+    "op": "update_avatar_profile",
+    "look_at": null
+  },
+  {
+    "op": "set_hit_areas",
+    "hit_areas": [
+      {
+        "id": "Head",
+        "mesh": "Quad"
+      }
+    ]
   }
 ];

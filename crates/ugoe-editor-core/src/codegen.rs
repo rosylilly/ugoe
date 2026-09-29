@@ -10,13 +10,14 @@ use std::collections::BTreeMap;
 
 use ts_rs::{Config, TS, TypeVisitor};
 use ugoe_core::Vec2;
+use ugoe_model::avatar::{AvatarHitArea, HIT_AREA_HEAD, LookAt, TrackingOverride, TrackingSource};
 use ugoe_model::deformer::DeformerKind;
 use ugoe_model::expression::{Expression, ExpressionOp, ExpressionParameter};
 use ugoe_model::motion::{Curve, CurveTarget, Motion, MotionEvent, Point, Segment};
 use ugoe_model::physics::{PhysicsBlend, PhysicsSettings};
 use ugoe_model::{
-    BlendMode, DepthRotation, KeyformGrid, KeyformInference, KeyformInterpolation, MaskMode,
-    MaskRef, MeshId, Model, fixtures,
+    BlendMode, DepthRotation, HitArea, KeyformGrid, KeyformInference, KeyformInterpolation,
+    MaskMode, MaskRef, MeshId, Model, fixtures,
 };
 
 use crate::command::{ChildRef, InferMethod, KeyformTarget};
@@ -130,6 +131,7 @@ pub fn typescript_samples(types_module: &str) -> Result<String, serde_json::Erro
         fixtures::keyform_inference(),
         fixtures::blend_shapes(),
         fixtures::smooth_arc(),
+        fixtures::avatar_profile(),
     ];
     let mut out = GENERATED_HEADER.to_owned();
     out.push_str(&format!(
@@ -480,6 +482,7 @@ fn sample_commands() -> Vec<Command> {
     .chain(motion_sample_commands())
     .chain(physics_samples())
     .chain(draw_clone_samples())
+    .chain(avatar_samples())
     .collect()
 }
 
@@ -722,6 +725,48 @@ pub(crate) fn draw_clone_samples() -> Vec<Command> {
         },
         Command::SyncDrawClone {
             id: "Quad_Clone".into(),
+        },
+    ]
+}
+
+/// アバタープロファイルと当たり判定のコマンドの見本 (`docs/editor.md#アバタープロファイルの編集`)。
+/// `avatar_profile` のフィクスチャを対象にする。
+pub(crate) fn avatar_samples() -> Vec<Command> {
+    let profile = fixtures::avatar_profile().avatar;
+    let meta = profile.as_ref().map(|p| p.meta.clone()).unwrap_or_default();
+    vec![
+        Command::SetAvatarProfile { profile },
+        Command::SetAvatarProfile { profile: None },
+        Command::UpdateAvatarProfile {
+            level: Some(2),
+            meta: Some(meta),
+            tracking: Some(vec![TrackingOverride {
+                source: TrackingSource::Standard,
+                input: "EyeBallX".to_owned(),
+                parameter: None,
+                scale: -1.0,
+                offset: 0.0,
+            }]),
+            look_at: Some(Some(LookAt::default())),
+            hit_areas: Some(vec![AvatarHitArea {
+                name: HIT_AREA_HEAD.to_owned(),
+                hit_area: "Head".to_owned(),
+            }]),
+            slots: Some(Vec::new()),
+        },
+        Command::UpdateAvatarProfile {
+            level: None,
+            meta: None,
+            tracking: None,
+            look_at: Some(None),
+            hit_areas: None,
+            slots: None,
+        },
+        Command::SetHitAreas {
+            hit_areas: vec![HitArea {
+                id: "Head".to_owned(),
+                mesh: "Quad".into(),
+            }],
         },
     ]
 }

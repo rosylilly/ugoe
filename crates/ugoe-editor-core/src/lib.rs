@@ -6,6 +6,7 @@
 
 pub mod atlas;
 pub mod automesh;
+pub mod avatar;
 pub mod codegen;
 pub mod command;
 mod deformer_edit;
@@ -45,6 +46,8 @@ pub use texture::Textures;
 
 #[cfg(test)]
 mod atlas_tests;
+#[cfg(test)]
+mod avatar_tests;
 #[cfg(test)]
 mod blend_shape_tests;
 #[cfg(test)]

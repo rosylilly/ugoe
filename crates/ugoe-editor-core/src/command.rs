@@ -4,6 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use ugoe_core::Vec2;
+use ugoe_model::avatar::{AvatarHitArea, AvatarMeta, AvatarProfile, LookAt, TrackingOverride};
 use ugoe_model::deformer::{RotationKeyform, WarpKeyform};
 use ugoe_model::expression::{Expression, ExpressionParameter};
 use ugoe_model::mesh::MeshKeyform;
@@ -13,8 +14,8 @@ use ugoe_model::physics::{
     PhysicsCollider, PhysicsInput, PhysicsNormalization, PhysicsOutput, PhysicsParticle, PhysicsRig,
 };
 use ugoe_model::{
-    BlendMode, Deformer, DeformerId, KeyformGrid, KeyformInference, KeyformInterpolation, MaskMode,
-    MaskRef, Mesh, MeshId, ParamId, Parameter, Part, PartId,
+    BlendMode, Deformer, DeformerId, HitArea, KeyformGrid, KeyformInference, KeyformInterpolation,
+    MaskMode, MaskRef, Mesh, MeshId, ParamId, Parameter, Part, PartId,
 };
 
 use crate::automesh::AutoMeshOptions;
@@ -632,6 +633,39 @@ pub enum Command {
         template: PhysicsTemplate,
         #[serde(default)]
         options: PhysicsTemplateOptions,
+    },
+    // ---- アバタープロファイル (T0631)。規則は `docs/editor.md#アバタープロファイルの編集` ----
+    /// アバタープロファイル (`Model::avatar`) を丸ごと置き換える。`null` で外す。
+    SetAvatarProfile {
+        profile: Option<AvatarProfile>,
+    },
+    /// アバタープロファイルの一部を変える。省略したフィールドは変えない。
+    /// プロファイルがなければ既定値 (許諾は最も制限の強い値) から作る。
+    UpdateAvatarProfile {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        level: Option<u8>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        meta: Option<AvatarMeta>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tracking: Option<Vec<TrackingOverride>>,
+        /// 視線の追従。`null` で外す (既定の `EyeBallX` / `EyeBallY` に戻す)。
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            with = "crate::avatar::nullable"
+        )]
+        #[ts(as = "Option<LookAt>")]
+        #[schemars(with = "Option<LookAt>")]
+        look_at: Option<Option<LookAt>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        hit_areas: Option<Vec<AvatarHitArea>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        slots: Option<Vec<String>>,
+    },
+    /// 当たり判定 (`Model::hit_areas`) を丸ごと置き換える。なくなった当たり判定を指す、
+    /// アバタープロファイルの標準の当たり判定 (`avatar.hit_areas`) は外す。
+    SetHitAreas {
+        hit_areas: Vec<HitArea>,
     },
 }
 

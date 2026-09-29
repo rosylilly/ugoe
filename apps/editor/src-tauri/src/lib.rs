@@ -2,6 +2,7 @@
 //! 設計: `docs/editor.md`。
 
 pub(crate) mod ai;
+mod avatar;
 pub mod bindings;
 mod commands;
 mod overflow;
@@ -63,6 +64,7 @@ pub fn run() {
             overflow::find_overflows,
             overflow::verify_overflows,
             physics_check::check_physics,
+            avatar::check_avatar_profile,
             ai::ai_settings,
             ai::store_api_key,
             ai::delete_api_key,
