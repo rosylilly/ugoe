@@ -59,6 +59,7 @@ packages/           エディタとビューアで共有するフロントエン
 docs/               設計・仕様・ADR・タスク
 scripts/            補助スクリプト (check-layers.mjs 等)
 assets/fixtures/    テスト用アセット (小さいものだけ)
+assets/compat/      互換性テストの資料 (リリースごとのファイルと未来の版を模したファイル。docs/testing.md#互換性テスト)
 ```
 
 ## コマンド
