@@ -51,6 +51,8 @@ pub fn run() {
             project::open_project,
             project::save_project,
             project::save_project_as,
+            project::get_export_settings,
+            project::set_export_settings,
             project::export_bundle,
             project::get_model_bundle,
             psd::import_psd,

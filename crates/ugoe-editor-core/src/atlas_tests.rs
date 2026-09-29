@@ -23,7 +23,7 @@ fn noise_png(width: u32, height: u32, seed: u32) -> Vec<u8> {
 
 /// `single_quad` のメッシュを、描画順 `draw_order` とテクスチャ番号 `texture` で並べたモデル。
 /// テクスチャ `sizes[i]` の名前は `tex<i>`。
-fn model_with(meshes: &[(u32, f32)], sizes: &[(u32, u32)]) -> (Model, Textures) {
+pub(crate) fn model_with(meshes: &[(u32, f32)], sizes: &[(u32, u32)]) -> (Model, Textures) {
     let mut model = fixtures::single_quad();
     let base = model.meshes[0].clone();
     model.meshes = meshes
@@ -296,4 +296,27 @@ fn keeps_textures_with_a_normal_map() {
     // 法線マップを持つテクスチャを使うメッシュの UV は変えない。
     assert_eq!(atlased.model.meshes[1].texture, 1);
     assert_eq!(atlased.model.meshes[1].uvs, model.meshes[1].uvs);
+}
+
+#[test]
+fn identical_images_are_packed_once() {
+    // tex1 は tex0 と同じ画像。tex2 は大きさだけ同じ別の画像。
+    let (model, mut textures) = model_with(
+        &[(0, 0.0), (1, 1.0), (2, 2.0), (1, 3.0)],
+        &[(6, 6), (6, 6), (6, 6)],
+    );
+    let same = textures["tex0"].to_vec();
+    textures.insert("tex1".into(), Arc::from(same));
+    let atlased = build_atlas(&model, &textures, &AtlasOptions::default()).expect("atlas");
+    let report = &atlased.report;
+    assert_eq!(report.packed, 3);
+    assert_eq!(
+        report.deduplicated,
+        vec![("tex1".to_owned(), "tex0".to_owned())]
+    );
+    // 2 枚分 (6 + 2 × 2 = 10 px 四方が 2 つ) だけ詰める。
+    assert_eq!(report.atlases, vec![(10, 20)]);
+    assert_eq!(atlased.model.meshes[0].uvs, atlased.model.meshes[1].uvs);
+    assert_ne!(atlased.model.meshes[0].uvs, atlased.model.meshes[2].uvs);
+    assert_same_look((&model, &textures), (&atlased.model, &atlased.textures));
 }

@@ -12,6 +12,8 @@ import type {
   Command,
   ConsentAnswer,
   ElementOverflow,
+  ExportReport,
+  ExportSettings,
   KeyformTarget,
   OverflowReport,
   PhysicsSettings,
@@ -47,7 +49,13 @@ export const ipc = {
   saveProject: () => invoke<ProjectStatus>("save_project"),
   /** 拡張子 .ugoeproj がなければバックエンドが付ける。 */
   saveProjectAs: (path: string) => invoke<ProjectStatus>("save_project_as", { path }),
-  exportBundle: (path: string) => invoke<void>("export_bundle", { path }),
+  /** プロジェクトに残した書き出しの設定 (アトラス化の有無・最大の大きさ・余白)。 */
+  getExportSettings: () => invoke<ExportSettings>("get_export_settings"),
+  /** 書き出しの設定をプロジェクトに残す (保存で書き込む)。範囲の外ならエラー。 */
+  setExportSettings: (settings: ExportSettings) =>
+    invoke<ProjectStatus>("set_export_settings", { settings }),
+  /** プロジェクトの書き出しの設定で .ugoe に書き出し、前後のテクスチャの枚数と状態の切り替えを返す。 */
+  exportBundle: (path: string) => invoke<ExportReport>("export_bundle", { path }),
   /** 今のドキュメントの .ugoe バンドル (テクスチャ付き)。生のバイト列で届く。 */
   getModelBundle: async () => new Uint8Array(await invoke<ArrayBuffer>("get_model_bundle")),
   /** apps/editor/src-tauri/src/psd.rs。PSD を今のドキュメントに取り込み、警告を返す。 */

@@ -665,7 +665,8 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 | `open_project(path)` | `.ugoeproj` ディレクトリを開く。失敗したら今のプロジェクトはそのまま |
 | `save_project` | 開いた (前回保存した) 場所に保存する。保存先がなければエラー |
 | `save_project_as(path)` | 別の場所に保存し、以後の保存先にする。拡張子 `.ugoeproj` がなければ付け、名前をディレクトリ名にする |
-| `export_bundle(path)` | `.ugoe` ファイルに書き出す。保存状態は変えない |
+| `get_export_settings` / `set_export_settings(settings)` | 書き出しの設定 (`ExportSettings`) を読む / プロジェクトに残す ([書き出し](#書き出し))。範囲の外はエラー |
+| `export_bundle(path)` | プロジェクトの書き出しの設定で `.ugoe` ファイルに書き出し (アトラス化は任意)、`ExportReport` を返す。保存状態は変えない |
 | `import_psd(path, mesh_options?)` | PSD ファイルを今のドキュメントに取り込み ([PSD の取り込み](#psd-の取り込み)、Undo の 1 単位)、警告 (`PsdImportWarning[]`) を返す。最上位のパーツの名前はファイル名。`src-tauri/src/psd.rs` |
 
 - パスの引数は **絶対パスだけ** を受け付けます (相対パスは `path must be absolute: …` のエラー)。相対パスはプロセスの作業ディレクトリ
@@ -694,7 +695,7 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 | New from PSD… / Import PSD… | ファイルを開く | `.psd` | 最初の場所 |
 | Open… | **フォルダーを選ぶ** (`.ugoeproj` はディレクトリ) | なし | 最初の場所 |
 | Save As… (保存先のない Save も) | 保存 (新しいフォルダーを作れる) | `.ugoeproj` | 最初の場所に `<プロジェクト名>.ugoeproj` |
-| Export… | 保存 | `.ugoe` | 最初の場所に `<プロジェクト名>.ugoe` |
+| Export… の欄の「Export .ugoe…」 | 保存 | `.ugoe` | 最初の場所に `<プロジェクト名>.ugoe` |
 
 - **最初の場所:** 最後にダイアログで選んで成功した場所 → 開いているプロジェクトの隣 → ドキュメント (`documentDir()`、なければホーム) の順。
   プロジェクト名のうちファイル名に使えない文字は `_` にする。
@@ -705,6 +706,26 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 - コード: ダイアログの呼び出しは `src/lib/fileDialogs.ts` (`FileDialogs`)、フィルタ・拡張子・パスの整形は `src/lib/filePaths.ts` (Vitest)。
 - **差し替え (テスト用):** `window.__UGOE_FILE_DIALOGS__` に `FileDialogs` (`openFile`・`openDirectory`・`saveFile`・`defaultDirectory`) を置くと、
   ダイアログの代わりにそれを呼ぶ。ヘッドレスのブラウザでは、IPC の差し替え (`window.__TAURI_INTERNALS__`) と一緒に固定のパスを返すものを置く。
+
+### 書き出し
+
+「Export…」は書き出しの欄を開きます。欄で設定を選び、「Export .ugoe…」で保存のダイアログを開いて書き出します (`src/lib/ExportPanel.svelte`)。
+
+- **設定 (`ugoe_editor_core::ExportSettings`):** テクスチャのアトラス化の有無 (既定はしない)、アトラス 1 枚の最大の大きさ
+  (512〜16384px から選ぶ。既定 2048)、余白 (端の画素の複製の幅、0〜64px。既定 2)。規則は
+  [file-formats.md#テクスチャのアトラス化](spec/file-formats.md#テクスチャのアトラス化)。
+- 設定は変えるたびにプロジェクトに残し (`set_export_settings`)、保存で `project.json` の `editor.export` に書きます
+  ([file-formats.md#projectjson](spec/file-formats.md#projectjson))。すべて既定値なら書きません。設定を変えると未保存の印が付きます
+  (`ProjectSession.meta_modified`。Undo の対象ではない。モデルを変えないので `Command` にしない)。
+- **結果:** 書き出した後、欄の下にテクスチャの枚数・描画の状態の切り替え回数・描画の回数の前 → 後と、アトラス化の詳細
+  (詰めた枚数とアトラスの大きさ、同じ画像として 1 つにしたもの、まとめずに残したものと理由、使われないので取り除いたもの) を出します
+  (`src/lib/exportSummary.ts`、Vitest)。別のプロジェクトに替わると欄を閉じて結果を消します。
+- **切り替え回数の見積もり (`ugoe_editor_core::export::estimate_draws`):** エディタのバックエンドは `ugoe-render` (GPU) に依存しないので、
+  参照レンダラの本描画のまとめ方 ([rendering.md#描画の最適化](spec/rendering.md#描画の最適化)) を CPU で真似ます。既定のパラメータで
+  描画順に並べた、表示されていて三角形を持つメッシュについて、(テクスチャ・合成モード・カリング) が前と変わる回数を数えます。
+  マスクアトラスの違いは数えないので、マスクを多く使うモデルでは `ugoe render --stats` の `state_changes` より少なく出ることがあります
+  (`character.psd` では前後とも `ugoe render --stats` と一致した: 12 枚 → 1 枚、切り替え 10 → 2、描画 11 → 3)。
+- 着せ替えのモジュール (T0111) のテクスチャはアトラスに含めません ([file-formats.md#テクスチャのアトラス化](spec/file-formats.md#テクスチャのアトラス化))。
 
 ### ヘルプ
 

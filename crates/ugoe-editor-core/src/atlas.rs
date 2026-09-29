@@ -8,11 +8,14 @@
 //!   サンプラ (バイリニア・端でクランプ、ミップマップなし) で、UV が 0〜1 の範囲なら元の画像と同じ色になる。
 //! - UV が 0〜1 の外に出るメッシュのテクスチャ (クランプに頼っている) と、1 枚で上限を超える
 //!   テクスチャはまとめずに残す。どのメッシュも使わないテクスチャは取り除く。
+//! - 画素がまったく同じ画像は 1 つだけ詰め、それを使うメッシュは同じ場所を指す。
 //! - 出力は入力に対して決定的 (同じ入力からは同じバイト列)。
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use serde::Serialize;
+use ts_rs::TS;
 use ugoe_model::{Model, TextureRef};
 use ugoe_runtime::{CompiledModel, ModelInstance};
 
@@ -41,7 +44,8 @@ impl Default for AtlasOptions {
 }
 
 /// まとめずに残したテクスチャの理由。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
 pub enum KeptReason {
     /// 周りの複製を含めると、1 枚で `max_size` を超える。
     TooLarge,
@@ -52,9 +56,9 @@ pub enum KeptReason {
 }
 
 /// アトラス化の結果の要約。
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, TS)]
 pub struct AtlasReport {
-    /// アトラスにまとめた元のテクスチャの数。
+    /// アトラスにまとめた元のテクスチャの数 (重複として除いたものを含む)。
     pub packed: usize,
     /// 作ったアトラスの幅と高さ (出力の `Model::textures` の先頭から順に並ぶ)。
     pub atlases: Vec<(u32, u32)>,
@@ -62,6 +66,9 @@ pub struct AtlasReport {
     pub kept: Vec<(String, KeptReason)>,
     /// どのメッシュも使わないので取り除いたテクスチャの名前。
     pub removed: Vec<String>,
+    /// 画素が同じ画像が先にあったので詰めなかったテクスチャ (名前と、代わりに使う画像の名前)。
+    /// 描画順で最初に使われる順に並ぶ。
+    pub deduplicated: Vec<(String, String)>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -165,11 +172,24 @@ pub fn build_atlas(
         });
     }
 
-    // 描画順で最初に使われる順に並べ、順に詰める。
-    let order: Vec<usize> = first_use_order(model)
-        .into_iter()
-        .filter(|&t| images[t].is_some())
-        .collect();
+    // 描画順で最初に使われる順に並べ、順に詰める。画素が同じ画像は最初のものだけを詰める。
+    let mut order: Vec<usize> = Vec::new();
+    let mut same_as: Vec<Option<usize>> = vec![None; model.textures.len()];
+    for t in first_use_order(model) {
+        let Some(image) = images[t].as_ref() else {
+            continue;
+        };
+        match order.iter().find(|&&u| images[u].as_ref() == Some(image)) {
+            Some(&first) => {
+                same_as[t] = Some(first);
+                report.deduplicated.push((
+                    model.textures[t].name.clone(),
+                    model.textures[first].name.clone(),
+                ));
+            }
+            None => order.push(t),
+        }
+    }
     let item = |t: usize| {
         let image = images[t].as_ref().map_or((0, 0), |i| (i.width, i.height));
         (image.0 + 2 * pad, image.1 + 2 * pad)
@@ -238,7 +258,6 @@ pub fn build_atlas(
                 },
             ));
         }
-        report.packed += members.len();
         report.atlases.push((aw, ah));
         out_textures.insert(name.clone(), Arc::from(encode_rgba_png(aw, ah, &rgba)));
         new_refs.push(TextureRef {
@@ -248,6 +267,12 @@ pub fn build_atlas(
             normal_map: None,
         });
     }
+    for (t, first) in same_as.iter().enumerate() {
+        if let Some(first) = *first {
+            placement[t] = placement[first];
+        }
+    }
+    report.packed = placement.iter().filter(|p| p.is_some()).count();
     let mut kept_index = vec![None; model.textures.len()];
     for &t in &kept {
         let texture = &model.textures[t];
@@ -301,7 +326,7 @@ impl Project {
 }
 
 /// 非乗算 RGBA8 の画像。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct Image {
     width: u32,
     height: u32,

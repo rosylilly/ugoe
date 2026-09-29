@@ -1,6 +1,7 @@
 <script lang="ts">
 // ファイル操作 (新規・PSD から新規・開く・保存・別名で保存・書き出し・PSD の取り込み) と
 // プロジェクト名・未保存の印。パスは OS のファイルダイアログで選ぶ (docs/editor.md#ファイルダイアログ)。
+import ExportPanel from "./ExportPanel.svelte";
 import { fileDialogs } from "./fileDialogs";
 import {
   BUNDLE_FILTER,
@@ -11,7 +12,7 @@ import {
   safeFileName,
   withExtension,
 } from "./filePaths";
-import { ipc, type ProjectStatus, type PsdImportWarning } from "./ipc";
+import { type ExportReport, ipc, type ProjectStatus, type PsdImportWarning } from "./ipc";
 
 interface Props {
   /**
@@ -37,6 +38,10 @@ let message = $state<string | null>(null);
 let notice = $state<string | null>(null);
 /** 最後の PSD の取り込みの警告。 */
 let warnings = $state<PsdImportWarning[]>([]);
+/** 書き出しの設定の欄を開いているか。 */
+let exportOpen = $state(false);
+/** 最後の書き出しの結果 (テクスチャの枚数と状態の切り替えの変化)。 */
+let exportReport = $state<ExportReport | null>(null);
 /** 最後にダイアログで選んだ場所 (次のダイアログの最初の場所)。 */
 let lastDir: string | null = null;
 
@@ -61,6 +66,11 @@ async function run(
     const result = await task();
     if (result) status = result;
     message = null;
+    if (reload === "replaced") {
+      // 別のプロジェクトの設定と結果を見せないよう、書き出しの欄を閉じる
+      exportOpen = false;
+      exportReport = null;
+    }
     if (reload !== "none") onchange(reload === "replaced");
     return true;
   } catch (e) {
@@ -156,7 +166,7 @@ function perform(kind: PathAction, path: string): Promise<boolean> {
       }, "none");
     case "export":
       return run(async () => {
-        await ipc.exportBundle(path);
+        exportReport = await ipc.exportBundle(path);
         notice = `Exported to ${path}`;
         return undefined;
       }, "none");
@@ -194,7 +204,21 @@ refresh();
   <button onclick={() => pick("open")} disabled={busy}>Open…</button>
   <button onclick={save} disabled={busy}>Save</button>
   <button onclick={() => pick("saveAs")} disabled={busy}>Save As…</button>
-  <button onclick={() => pick("export")} disabled={busy}>Export…</button>
+  <span class="export">
+    <button
+      onclick={() => (exportOpen = !exportOpen)}
+      disabled={busy}
+      aria-expanded={exportOpen}>Export…</button
+    >
+    {#if exportOpen}
+      <ExportPanel
+        {busy}
+        report={exportReport}
+        onexport={() => pick("export")}
+        onstatus={(s) => (status = s)}
+      />
+    {/if}
+  </span>
   <button onclick={() => pick("importPsd")} disabled={busy}>Import PSD…</button>
   <span class="project" title={status?.path ?? "not saved yet"}>
     {status?.name ?? "…"}{#if status?.modified}<span class="dirty" aria-label="modified">●</span>{/if}
@@ -220,7 +244,12 @@ refresh();
     gap: 4px;
     min-width: 0;
   }
-  .file-menu > button {
+  .export {
+    position: relative;
+    flex-shrink: 0;
+  }
+  .file-menu > button,
+  .export > button {
     flex-shrink: 0;
     white-space: nowrap;
   }

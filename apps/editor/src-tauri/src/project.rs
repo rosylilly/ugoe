@@ -10,7 +10,8 @@ use tauri::State;
 use ts_rs::TS;
 use ugoe_editor_core::project::PROJECT_EXTENSION;
 use ugoe_editor_core::{
-    AutoMeshOptions, Document, Project, ProjectMeta, PsdImportOptions, PsdImportWarning, import,
+    AutoMeshOptions, Document, ExportReport, ExportSettings, Project, ProjectMeta,
+    PsdImportOptions, PsdImportWarning, export_bundle_with_settings, import,
 };
 
 use crate::AppState;
@@ -246,16 +247,44 @@ pub fn get_model_bundle(state: State<'_, AppState>) -> Result<tauri::ipc::Respon
     Ok(tauri::ipc::Response::new(bytes))
 }
 
-/// `.ugoe` バンドルとしてファイルに書き出す。プロジェクトの保存状態は変えない。
+/// プロジェクトに残した書き出しの設定 (`project.json` の `editor.export`、`docs/editor.md#書き出し`)。
 #[tauri::command]
-pub fn export_bundle(state: State<'_, AppState>, path: String) -> Result<(), String> {
+pub fn get_export_settings(state: State<'_, AppState>) -> Result<ExportSettings, String> {
+    let (_document, session) = lock_both(&state)?;
+    Ok(session.meta.export_settings())
+}
+
+/// 書き出しの設定をプロジェクトに残す (保存するまでファイルには書かない。変われば未保存の印が付く)。
+/// Undo の対象ではない。範囲の外ならエラーで、設定はそのまま。
+#[tauri::command]
+pub fn set_export_settings(
+    state: State<'_, AppState>,
+    settings: ExportSettings,
+) -> Result<ProjectStatus, String> {
+    let (document, mut session) = lock_both(&state)?;
+    if session
+        .meta
+        .set_export_settings(settings)
+        .map_err(|e| e.to_string())?
+    {
+        session.meta_modified = true;
+    }
+    Ok(status(&session, &document))
+}
+
+/// プロジェクトの書き出しの設定に従って (アトラス化は任意)、`.ugoe` バンドルとしてファイルに書き出す。
+/// 保存状態は変えない。書き出しの前後のテクスチャの枚数と描画の状態の切り替えの見積もりを返す。
+#[tauri::command]
+pub fn export_bundle(state: State<'_, AppState>, path: String) -> Result<ExportReport, String> {
     let path = absolute_path(&path)?;
-    let bytes = {
+    let (bytes, report) = {
         let (document, session) = lock_both(&state)?;
-        ugoe_editor_core::export_bundle(&session.to_project(&document))
+        let settings = session.meta.export_settings();
+        export_bundle_with_settings(&session.to_project(&document), &settings)
             .map_err(|e| e.to_string())?
     };
-    std::fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))
+    std::fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(report)
 }
 
 #[cfg(test)]
@@ -295,6 +324,37 @@ mod tests {
         let bytes = ugoe_editor_core::export_bundle(&session.to_project(&document)).unwrap();
         let bundle = ugoe_format::read_bundle(&bytes).unwrap();
         assert!(bundle.model.meshes.is_empty());
+    }
+
+    /// 書き出しの設定は未保存の印を付け、保存するとプロジェクトに残る。アトラス化するとテクスチャが減る。
+    #[test]
+    fn export_settings_are_saved_with_the_project() {
+        let (session, document, _) =
+            from_psd(&character_psd(), &PsdImportOptions::new("character")).unwrap();
+        let dir = std::env::temp_dir().join(format!("t0639-{}.ugoeproj", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        session.to_project(&document).save(&dir).unwrap();
+        let project = Project::load(&dir).unwrap();
+        let (mut session, document) = ProjectSession::from_project(project, Some(dir.clone()));
+        assert!(!status(&session, &document).modified);
+
+        let settings = ExportSettings {
+            atlas: true,
+            ..ExportSettings::default()
+        };
+        assert!(session.meta.set_export_settings(settings).unwrap());
+        session.meta_modified = true;
+        assert!(status(&session, &document).modified);
+        session.to_project(&document).save(&dir).unwrap();
+        let loaded = Project::load(&dir).unwrap();
+        assert_eq!(loaded.meta.export_settings(), settings);
+
+        let (bytes, report) = export_bundle_with_settings(&loaded, &settings).unwrap();
+        assert!(report.before.textures > 1, "{report:?}");
+        assert_eq!(report.after.textures, 1, "{report:?}");
+        assert!(report.after.state_changes <= report.before.state_changes);
+        assert_eq!(report.bytes, bytes.len());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     fn character_psd() -> Vec<u8> {

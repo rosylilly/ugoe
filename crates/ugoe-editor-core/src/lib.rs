@@ -12,6 +12,7 @@ mod deformer_edit;
 pub mod depth;
 pub mod document;
 pub mod draw_clone;
+pub mod export;
 mod grid;
 pub mod ids;
 pub mod import;
@@ -32,6 +33,7 @@ pub use automesh::AutoMeshOptions;
 pub use command::{ChildRef, Command, InferMethod, KeyformCell, KeyformTarget, VertexMove};
 pub use depth::DepthPreset;
 pub use document::{ApplyReport, Document, EditError};
+pub use export::{ExportReport, ExportSettings, export_bundle_with_settings};
 pub use grid::CellError;
 pub use import::{PsdImport, PsdImportError, PsdImportOptions, PsdImportWarning, import_psd};
 pub use inference::{MirrorReport, RederiveWarning};
@@ -51,6 +53,8 @@ mod deformer_edit_tests;
 mod depth_tests;
 #[cfg(test)]
 mod draw_clone_tests;
+#[cfg(test)]
+mod export_tests;
 #[cfg(test)]
 mod import_tests;
 #[cfg(test)]

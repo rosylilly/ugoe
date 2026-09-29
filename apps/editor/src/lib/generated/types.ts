@@ -48,6 +48,32 @@ warnings: Array<RederiveWarning>,
 mirrored: Array<MirrorReport>, };
 
 /**
+ * アトラス化の結果の要約。
+ */
+export type AtlasReport = { 
+/**
+ * アトラスにまとめた元のテクスチャの数 (重複として除いたものを含む)。
+ */
+packed: number, 
+/**
+ * 作ったアトラスの幅と高さ (出力の `Model::textures` の先頭から順に並ぶ)。
+ */
+atlases: Array<[number, number]>, 
+/**
+ * まとめずに残したテクスチャ (元の名前と理由)。アトラスの後ろに元の順で並ぶ。
+ */
+kept: Array<[string, KeptReason]>, 
+/**
+ * どのメッシュも使わないので取り除いたテクスチャの名前。
+ */
+removed: Array<string>, 
+/**
+ * 画素が同じ画像が先にあったので詰めなかったテクスチャ (名前と、代わりに使う画像の名前)。
+ * 描画順で最初に使われる順に並ぶ。
+ */
+deduplicated: Array<[string, string]>, };
+
+/**
  * [`ugoe_mesher::MeshOptions`] の JSON 表現。省略したフィールドは既定値になる。
  */
 export type AutoMeshOptions = { 
@@ -342,6 +368,31 @@ image_bytes: number,
 text_bytes: number, };
 
 /**
+ * 既定のパラメータで 1 フレームを描くときの、描画の見積もり。
+ *
+ * 参照レンダラの本描画のまとめ方 (`docs/spec/rendering.md#描画の最適化`) を、テクスチャ・合成モード・
+ * カリングの有無だけで真似る。マスクアトラスの違い (GPU の上での配置で決まる) は数えないので、
+ * マスクを使うモデルでは `ugoe render --stats` の `state_changes` より少なく出ることがある。
+ */
+export type DrawEstimate = { 
+/**
+ * テクスチャの枚数 (`Model::textures`)。
+ */
+textures: number, 
+/**
+ * 描く要素の数 (表示されていて三角形を持つメッシュ)。
+ */
+drawables: number, 
+/**
+ * まとめた後の描画の回数。
+ */
+draw_calls: number, 
+/**
+ * 前の描画から描画の状態を切り替える回数 (最初の描画は数えない)。
+ */
+state_changes: number, };
+
+/**
  * 描画順の範囲 `[min, max]` (`min <= max`)。
  */
 export type DrawOrderRange = { min: number, max: number, };
@@ -363,6 +414,45 @@ parent: string, kind: OverflowPointKind,
  * はみ出した点 (番号の順)。
  */
 points: Array<OverflowPoint>, };
+
+/**
+ * 書き出しの結果の要約 (エディタが書き出しの後に示す)。
+ */
+export type ExportReport = { 
+/**
+ * 書き出したバンドルの大きさ (バイト)。
+ */
+bytes: number, 
+/**
+ * アトラス化する前のモデルの見積もり。
+ */
+before: DrawEstimate, 
+/**
+ * 書き出したモデルの見積もり (アトラス化しなければ `before` と同じ)。
+ */
+after: DrawEstimate, 
+/**
+ * アトラス化したときの結果。しなければ `null`。
+ */
+atlas: AtlasReport | null, };
+
+/**
+ * 書き出しの設定。`project.json` の `editor.export` に残す (すべて既定値なら書かない)。
+ * 足りないフィールドは既定値で読む。
+ */
+export type ExportSettings = { 
+/**
+ * テクスチャをアトラスにまとめるか。既定は `false`。
+ */
+atlas: boolean, 
+/**
+ * アトラス 1 枚の幅と高さの上限 (px、1〜[`MAX_ATLAS_SIZE`])。
+ */
+atlas_max_size: number, 
+/**
+ * 各画像の周りに複製する端の画素の幅 (px、0〜[`MAX_ATLAS_PADDING`])。
+ */
+atlas_padding: number, };
 
 /**
  * 表情: モーションの上に重ねるパラメータ差分。
@@ -424,6 +514,11 @@ export type HitArea = { id: string, mesh: string, };
  * [`Command::InferKeyforms`] の推定の方法。
  */
 export type InferMethod = "from_grid" | "additive" | "depth_rotation";
+
+/**
+ * まとめずに残したテクスチャの理由。
+ */
+export type KeptReason = "too_large" | "uv_out_of_range" | "has_normal_map";
 
 /**
  * 資格情報の保存先の状態 (フロントエンドに見せるのはこれだけ。キーの中身は見せない)。
