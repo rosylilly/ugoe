@@ -217,6 +217,7 @@ MediaPipe の `Left` / `Right` は、入力画像に写った顔自身の左右�
 | `tracking` の `input` が `source` の種類の入力として知られていること、`parameter` (または省略した `standard` の `input`) がモデルにあること、`scale` と `offset` が有限値であること | エラー |
 | `look_at` を書いたなら、`x` と `y` のパラメータがモデルにあり、可動範囲が 0 より大きいこと | エラー |
 | `hit_areas` の `name` が重複せず、`hit_area` がモデルの当たり判定にあること | エラー |
+| `slots` の ID がモデルのスロット (`Model.slots`) にあること | エラー |
 | `meta.thumbnail` がテクスチャの範囲内にあること | エラー |
 | 標準・拡張パラメータの値域 (`min` / `default` / `max`) がこの仕様の値と同じであること | 警告 |
 | `profile_version` が検証ツールの知っているバージョン以下であること | 警告 |

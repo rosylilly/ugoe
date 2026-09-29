@@ -23,6 +23,10 @@ use crate::pose::{DEFAULT_FADE_DURATION, PoseEntry, PoseGroup};
 use crate::standard;
 use crate::{Canvas, Effects, Model, ModelMeta, Pose, SCHEMA_VERSION, TextureRef};
 
+mod modules;
+
+pub use modules::{dress_module, dress_up_base, long_hair_module};
+
 /// 256×256 キャンバスに四角形メッシュ 1 枚。
 /// パラメータ `X` (-1..1) で四角形が左右に 64px 平行移動する。
 pub fn single_quad() -> Model {
@@ -107,6 +111,7 @@ pub fn single_quad() -> Model {
         pose: Pose::default(),
         effects: Effects::default(),
         avatar: None,
+        slots: Vec::new(),
     }
 }
 
@@ -336,6 +341,7 @@ fn base_model(name: &str, parameters: Vec<Parameter>) -> Model {
         pose: Pose::default(),
         effects: Effects::default(),
         avatar: None,
+        slots: Vec::new(),
     }
 }
 

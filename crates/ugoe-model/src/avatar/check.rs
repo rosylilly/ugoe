@@ -214,7 +214,7 @@ pub fn check_profile(model: &Model) -> ProfileReport {
     check_tracking(model, avatar, &mut issues);
     check_look_at(model, avatar, &mut issues);
     check_hit_areas(model, avatar, &mut issues);
-    // TODO(T0111): `slots` の ID が `Model::slots` にあるかを調べる。
+    check_slots(model, avatar, &mut issues);
     issues.extend(
         crate::unknown::in_model(model)
             .into_iter()
@@ -325,6 +325,19 @@ fn check_hit_areas(model: &Model, avatar: &AvatarProfile, issues: &mut Vec<Profi
                 field: format!("avatar.hit_areas[{index}].hit_area"),
                 target_kind: "hit area",
                 target: entry.hit_area.clone(),
+            });
+        }
+    }
+}
+
+/// 公開するスロットが `Model::slots` にあること。
+fn check_slots(model: &Model, avatar: &AvatarProfile, issues: &mut Vec<ProfileIssue>) {
+    for (index, slot) in avatar.slots.iter().enumerate() {
+        if !model.slots.iter().any(|s| s.id.as_str() == slot) {
+            issues.push(ProfileIssue::UnknownReference {
+                field: format!("avatar.slots[{index}]"),
+                target_kind: "slot",
+                target: slot.clone(),
             });
         }
     }
@@ -640,6 +653,31 @@ mod tests {
                     target: "BodyArea".into(),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn exposed_slots_must_exist() {
+        let mut model = level_1();
+        model.slots.push(crate::Slot {
+            id: "Hair".into(),
+            anchor: None,
+            draw_order: crate::DrawOrderRange {
+                min: 0.0,
+                max: 1000.0,
+            },
+            replaces: Vec::new(),
+            parameters: Vec::new(),
+            mask_sources: Vec::new(),
+        });
+        avatar(&mut model).slots = vec!["Hair".into(), "Outfit".into()];
+        assert_eq!(
+            check_profile(&model).issues,
+            vec![ProfileIssue::UnknownReference {
+                field: "avatar.slots[1]".into(),
+                target_kind: "slot",
+                target: "Outfit".into(),
+            }]
         );
     }
 

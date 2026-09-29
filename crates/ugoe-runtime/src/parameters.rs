@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use ugoe_model::{Model, ParamId};
 
 /// コンパイル済みモデル内でのパラメータ連番。
@@ -70,6 +72,22 @@ impl ParameterValues {
     pub fn blend(&mut self, index: ParamIndex, value: f32, weight: f32) {
         let current = self.get(index);
         self.set(index, current + (value - current) * weight);
+    }
+
+    /// `previous` にある同じ ID のパラメータの値を引き継ぐ (値域にクランプする)。
+    /// 組み替え (`docs/spec/modules.md#合成`) で、合成し直したモデルに前の値を移すときに使う。
+    pub fn carry_over(&mut self, previous: &ParameterValues) {
+        let values: HashMap<&str, f32> = previous
+            .ids
+            .iter()
+            .map(|id| id.as_str())
+            .zip(previous.values.iter().copied())
+            .collect();
+        for i in 0..self.ids.len() {
+            if let Some(&value) = values.get(self.ids[i].as_str()) {
+                self.values[i] = value.clamp(self.min[i], self.max[i]);
+            }
+        }
     }
 
     pub fn reset(&mut self) {

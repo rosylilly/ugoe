@@ -277,6 +277,11 @@ yaw?: string | null,
 pitch?: string | null, };
 
 /**
+ * 描画順の範囲 `[min, max]` (`min <= max`)。
+ */
+export type DrawOrderRange = { min: number, max: number, };
+
+/**
  * エフェクト設定一式。
  */
 export type Effects = { eye_blink: EyeBlink, breath: Breath, lip_sync: LipSync, };
@@ -598,7 +603,11 @@ effects: Effects,
 /**
  * アバタープロファイル。省略時はなし (`docs/spec/avatar-profile.md`)。
  */
-avatar?: AvatarProfile | null, };
+avatar?: AvatarProfile | null, 
+/**
+ * 着せ替えのスロット。省略時はなし (`docs/spec/modules.md#スロット`)。
+ */
+slots?: Array<Slot>, };
 
 export type ModelMeta = { name: string, canvas: Canvas, };
 
@@ -929,6 +938,36 @@ export type Segment = { "type": "start", p: Point, } | { "type": "linear", to: P
  * [`crate::Command::SetMotionSegment`] で設定する区間の種類。
  */
 export type SegmentShape = { "type": "linear" } | { "type": "bezier", c1?: Point | null, c2?: Point | null, } | { "type": "stepped" } | { "type": "inverse_stepped" };
+
+/**
+ * 着せ替えのスロット: モジュールの取り付け位置 (`docs/spec/modules.md#スロット`)。
+ */
+export type Slot = { 
+/**
+ * スロットの名前 (例: `Hair`)。モジュールはこの名前だけで取り付け先を指定する。
+ */
+id: string, 
+/**
+ * 取り付け先のデフォーマ。`None` ならキャンバス。
+ * モジュールの最上位の要素の座標は、このデフォーマの局所座標系で表す。
+ */
+anchor?: string | null, 
+/**
+ * このスロットに入るメッシュの描画順の範囲。モジュールの描画順 (0〜1000) をこの範囲に写す。
+ */
+draw_order: DrawOrderRange, 
+/**
+ * モジュールを取り付けたときに非表示にする本体のパーツ。
+ */
+replaces?: Array<string>, 
+/**
+ * このスロットのモジュールが使ってよい本体のパラメータ。標準パラメータは常に使える。
+ */
+parameters?: Array<string>, 
+/**
+ * このスロットのモジュールがマスクとして参照してよい本体のメッシュ。
+ */
+mask_sources?: Array<string>, };
 
 /**
  * テクスチャ参照。実データはコンテナ (`ugoe-format`) 側が保持する。

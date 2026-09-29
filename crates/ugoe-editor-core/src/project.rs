@@ -156,6 +156,7 @@ impl Project {
             pose: Pose::default(),
             effects: Effects::default(),
             avatar: None,
+            slots: Vec::new(),
         };
         Self::new(ProjectMeta::new(name), model, Textures::new())
     }

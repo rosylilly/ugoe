@@ -21,6 +21,7 @@
 | `pose` | ポーズ (排他的なパーツ切り替え)。省略するとグループなし ([ポーズ](#ポーズ)) |
 | `effects` | 目パチ・呼吸・リップシンクの設定。省略すると対象なし ([エフェクト設定](#エフェクト設定)) |
 | `avatar` | アバタープロファイル。省略するとなし ([アバタープロファイル](#アバタープロファイル)) |
+| `slots` | 着せ替えのスロット。省略するとなし ([スロット](#スロット)) |
 
 物理 (`physics::PhysicsSettings`)、モーション (`motion::Motion`)、表情 (`expression::Expression`) は `Model` とは別のデータです。バンドルでは同じファイルに入れて配布できます ([file-formats.md](file-formats.md))。
 
@@ -174,6 +175,15 @@ ARKit のブレンドシェイプ (52 種) のように、互いに独立した�
 - `AvatarProfile` と `AvatarMeta` のフィールドは省略でき、省略すると既定値になります。許諾の既定値は最も制限の強い値です。
 - ランタイムは `avatar` を読み飛ばせます (機能 `avatar.profile`、[file-formats.md](file-formats.md#機能とフォールバックの一覧))。そのため、構造の検証 (`validate`) は `avatar` を検査しません。準拠の検査は `avatar::check::check_profile` (`ugoe validate --profile avatar`) で行います ([avatar-profile.md#準拠の検査](avatar-profile.md#準拠の検査))。
 
+## スロット
+
+`module::Slot` (`Model::slots`)。着せ替えのモジュールの取り付け位置で、内容と合成の規則は [modules.md](modules.md) にあります。
+モジュール (`module::Module`) は `Model` とは別のデータです。
+
+- `Vec` で、省略すると空です。空のときは書き出しません。これを含まない既存のデータもそのまま読めます (`SCHEMA_VERSION` は変えていません)。バンドルでは `MODL` チャンクの `Model` に含まれます。
+- 知らないランタイムはスロットを無視し、本体だけを表示します (機能 `modules`、[file-formats.md](file-formats.md#機能とフォールバックの一覧))。
+- アバタープロファイルの `slots` は、ここにあるスロットの ID を参照します。
+
 ## キーフォームの補間
 
 `KeyformGrid::interpolation` (`KeyformInterpolation`) は格子のキーの間の補間の種類です ([evaluation.md#曲線補間](evaluation.md#曲線補間))。
@@ -260,7 +270,6 @@ ARKit のブレンドシェイプ (52 種) のように、互いに独立した�
 
 | データ | 内容 | 仕様 | タスク |
 | --- | --- | --- | --- |
-| `Model::slots` | 着せ替えのスロット | [modules.md](modules.md) | T0111 |
 | `TextureRef::normal_map`、`Model::lighting`、`Mesh::lit` | 法線マップとライティング | [rendering.md#ライティング](rendering.md#ライティング) | T0112 |
 
 ## 検証
@@ -297,6 +306,7 @@ ARKit のブレンドシェイプ (52 種) のように、互いに独立した�
 - `depth` の長さがメッシュの頂点数・ワープの制御点数と同じで、すべて有限値であること
 - パラメータで `min <= default <= max` が成り立つこと
 - 同じパーツがポーズ全体で 2 回以上現れないこと (`part` と `links` を合わせて数える)
+- スロット: ID が一意で、`anchor` (デフォーマ)・`replaces` (パーツ)・`parameters` (パラメータ)・`mask_sources` (メッシュ) の参照先が存在し (`UnknownReference`、`kind` は `slot`)、`draw_order` の `min` と `max` が有限値で `min <= max` であること
 - 時間と周期の値: ポーズの `fade_duration` と目パチの `closing` / `closed` / `opening` は 0 以上、目パチの `interval` と呼吸の `cycle` は 0 より大きいこと (いずれも有限値)
 
 ### 物理の検証

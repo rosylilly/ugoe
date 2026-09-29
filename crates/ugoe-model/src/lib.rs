@@ -11,6 +11,7 @@ pub mod expression;
 pub mod fixtures;
 pub mod keyform;
 pub mod mesh;
+pub mod module;
 pub mod motion;
 pub mod parameter;
 pub mod part;
@@ -34,6 +35,7 @@ pub use keyform::{
     KeyformOrigin, MirrorSource,
 };
 pub use mesh::{BlendMode, Glue, MaskMode, MaskRef, Mesh, MeshId};
+pub use module::{DrawOrderRange, Module, ModulePhysics, ModuleRequirements, Slot, SlotId};
 pub use parameter::{ParamId, Parameter, ParameterGroup};
 pub use part::{Part, PartId};
 pub use pose::Pose;
@@ -69,6 +71,9 @@ pub struct Model {
     /// アバタープロファイル。省略時はなし (`docs/spec/avatar-profile.md`)。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub avatar: Option<AvatarProfile>,
+    /// 着せ替えのスロット。省略時はなし (`docs/spec/modules.md#スロット`)。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub slots: Vec<Slot>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

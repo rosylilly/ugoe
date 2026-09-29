@@ -10,8 +10,10 @@ use crate::deformer::DeformerKind;
 use crate::parameter::ParameterKind;
 use crate::{KeyformGrid, KeyformInference, Model, Parameter};
 
+mod module;
 mod physics;
 
+pub use module::validate_module;
 pub use physics::validate_physics;
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -107,6 +109,9 @@ pub enum ValidationError {
     /// 同じパーツがポーズ全体 (全グループの `part` と `links`) で 2 回以上現れた。
     #[error("part `{part}` appears more than once in pose groups")]
     DuplicatePosePart { part: String },
+    /// モジュールの名前が空、`/` を含む、または `#` で始まる (`docs/spec/modules.md#モジュール`)。
+    #[error("module name `{name}` must be non-empty, contain no `/` and not start with `#`")]
+    InvalidModuleName { name: String },
     /// `origins` が空でなく、長さがキーフォーム数と違う。
     #[error("{kind} `{id}`: keyform origins length {actual} != keyform count {expected}")]
     OriginCount {
@@ -443,6 +448,7 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
 
     check_pose(model, &parts, &mut errors);
     check_effects(model, &params, &mut errors);
+    module::check_slots(model, &params, &parts, &deformers, &meshes, &mut errors);
 
     errors
 }

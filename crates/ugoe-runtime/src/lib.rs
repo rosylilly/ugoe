@@ -10,6 +10,7 @@
 
 mod blend_shape;
 pub mod compile;
+pub mod compose;
 mod deform;
 pub mod dynamic;
 mod hit;
@@ -18,6 +19,7 @@ pub mod keyform;
 pub mod parameters;
 
 pub use compile::{CompileError, CompiledModel, ResolvedMaskRef};
+pub use compose::{ComposeError, compose, compose_physics};
 pub use dynamic::DynamicOffsets;
 pub use instance::{DrawableChanges, DrawableState, ModelInstance, WorldTransform};
 pub use parameters::{ParamIndex, ParameterValues};

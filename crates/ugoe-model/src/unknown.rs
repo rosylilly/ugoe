@@ -4,7 +4,6 @@
 //! 新しい版のファイルを読むと、知らないタグは `Unknown` になる。`Unknown` は書き出せないので、
 //! 読み込み時の警告と、書き出し前の検査に使う。返すのは値の場所 (`meshes[Face].blend` など)。
 
-use crate::Model;
 use crate::avatar::{
     AvatarPermission, AvatarProfile, CommercialUsage, CreditNotation, Modification, TrackingSource,
 };
@@ -15,6 +14,7 @@ use crate::mesh::{BlendMode, MaskMode};
 use crate::motion::{CurveTarget, Motion, Segment};
 use crate::parameter::ParameterKind;
 use crate::physics::{ColliderShape, PhysicsBlend, PhysicsSettings, PhysicsSource, PhysicsTarget};
+use crate::{Model, Module};
 
 /// モデルの中の未知の値の場所をすべて返す。
 pub fn in_model(model: &Model) -> Vec<String> {
@@ -110,6 +110,24 @@ pub fn in_physics(physics: &PhysicsSettings) -> Vec<String> {
             found.push(format!("colliders[{}].shape", collider.id));
         }
     }
+    found
+}
+
+/// 着せ替えのモジュールの中の未知の値の場所をすべて返す。物理の場所は `physics.` で始まる。
+pub fn in_module(module: &Module) -> Vec<String> {
+    let mut found = in_model(&module.stand_in_model(Vec::new()));
+    let physics = PhysicsSettings {
+        gravity: ugoe_core::Vec2::ZERO,
+        wind: ugoe_core::Vec2::ZERO,
+        fps: 0.0,
+        rigs: module.physics.rigs.clone(),
+        colliders: module.physics.colliders.clone(),
+    };
+    found.extend(
+        in_physics(&physics)
+            .into_iter()
+            .map(|field| format!("physics.{field}")),
+    );
     found
 }
 

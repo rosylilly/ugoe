@@ -13,6 +13,7 @@
 ## 仕様
 
 - [docs/spec/evaluation.md](../../docs/spec/evaluation.md)
+- [docs/spec/modules.md](../../docs/spec/modules.md) (着せ替えの合成、`compose`)
 
 ## 関連タスク
 
