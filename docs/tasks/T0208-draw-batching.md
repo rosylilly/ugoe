@@ -1,11 +1,11 @@
 ---
 id: T0208
 title: 参照レンダラ: 描画の自動統合
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-render]
 depends_on: [T0205]
-assignee:
+assignee: claude-worker-T0208
 ---
 
 # T0208: 参照レンダラ: 描画の自動統合

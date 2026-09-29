@@ -1,11 +1,11 @@
 ---
 id: T0311
 title: 動的物理: 衝突のすり抜けと節の伸びを防ぐ
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-physics, ugoe-model, docs]
 depends_on: [T0305]
-assignee:
+assignee: claude-worker-T0311
 ---
 
 # T0311: 動的物理: 衝突のすり抜けと節の伸びを防ぐ

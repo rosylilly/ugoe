@@ -1,11 +1,11 @@
 ---
 id: T0509
 title: AI: Claude API のプロバイダ
-status: todo
+status: in-progress
 milestone: M6
 crates: [ugoe-ai, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0509
 ---
 
 # T0509: AI: Claude API のプロバイダ

@@ -1,11 +1,11 @@
 ---
 id: T0111
 title: 着せ替え: スロットとモジュールの合成
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-model, ugoe-runtime]
 depends_on: [T0109]
-assignee:
+assignee: claude-worker-T0111
 ---
 
 # T0111: 着せ替え: スロットとモジュールの合成

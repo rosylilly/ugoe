@@ -1,11 +1,11 @@
 ---
 id: T0508
 title: MCP サーバ (`ugoe-mcp`)
-status: todo
+status: in-progress
 milestone: M6
 crates: [ugoe-mcp, scripts, Cargo.toml, commitlint.config.mjs, docs]
 depends_on: [T0601]
-assignee:
+assignee: claude-worker-T0508
 ---
 
 # T0508: MCP サーバ (`ugoe-mcp`)

@@ -1,11 +1,11 @@
 ---
 id: T0114
 title: ビルド時のテクスチャのアトラス化
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-editor-core, ugoe-cli]
 depends_on: [T0604]
-assignee:
+assignee: claude-worker-T0114
 ---
 
 # T0114: ビルド時のテクスチャのアトラス化
