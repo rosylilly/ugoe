@@ -77,6 +77,40 @@ pub fn resolve_textures(
         .collect()
 }
 
+/// バンドルの法線マップ (添字 = テクスチャの番号) をデコードする (`docs/spec/rendering.md#ライティング`)。
+///
+/// 法線マップはアルファを掛けずに読む。KTX2 はまだデコードできないので、警告を出して法線マップなし
+/// (法線 `(0, 0, 1)`) として描く。`--texture` でテクスチャを差し替えても、法線マップはバンドルのものを使う。
+pub fn resolve_normal_maps(
+    normal_maps: &[Option<TextureData>],
+    warnings: &mut Vec<String>,
+) -> Result<Vec<Option<Rgba8>>, Error> {
+    normal_maps
+        .iter()
+        .enumerate()
+        .map(|(i, data)| match data {
+            None => Ok(None),
+            Some(data) => match data.format {
+                TextureFormat::Png => {
+                    image::decode_png(&data.bytes)
+                        .map(Some)
+                        .map_err(|e| Error::Texture {
+                            context: format!("decoding the normal map of bundle texture {i}"),
+                            source: Box::new(e),
+                        })
+                }
+                TextureFormat::Ktx2 => {
+                    warnings.push(format!(
+                        "the normal map of texture {i} is KTX2, which cannot be decoded yet; \
+                         drawing without it"
+                    ));
+                    Ok(None)
+                }
+            },
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -132,5 +166,27 @@ mod tests {
         };
         let textures = resolve_textures(&model, &[png], &[], &mut Vec::new()).unwrap();
         assert_eq!(textures, vec![red]);
+    }
+
+    #[test]
+    fn decodes_normal_maps_without_premultiplying() {
+        let normal = Rgba8 {
+            width: 1,
+            height: 1,
+            pixels: vec![128, 128, 255, 255],
+        };
+        let png = TextureData {
+            format: TextureFormat::Png,
+            bytes: image::encode_png_unpremultiplied(&normal).unwrap(),
+        };
+        let ktx2 = TextureData {
+            format: TextureFormat::Ktx2,
+            bytes: Vec::new(),
+        };
+        let mut warnings = Vec::new();
+        let maps = resolve_normal_maps(&[None, Some(png), Some(ktx2)], &mut warnings).unwrap();
+        assert_eq!(maps, vec![None, Some(normal), None]);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("KTX2"), "{}", warnings[0]);
     }
 }

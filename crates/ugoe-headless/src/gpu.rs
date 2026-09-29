@@ -9,7 +9,7 @@ use ugoe_render::{FrameStats, Renderer, View};
 use ugoe_runtime::ModelInstance;
 
 use crate::image::Rgba8;
-use crate::{Error, bail};
+use crate::{Error, Shading, bail};
 
 /// 描画先の形式。レンダラの前提 (リニア化しない) に合わせて sRGB 形式にしない。
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -95,10 +95,12 @@ impl Gpu {
     /// `instance` を `size` の画像に描いて読み戻す。結果は乗算済みアルファと、描画の統計。
     ///
     /// `background` はストレートアルファの RGBA8。乗算済みに直してからクリアする。
+    /// `shading` の法線マップと光源をレンダラに渡す (`docs/spec/rendering.md#ライティング`)。
     pub fn render(
         &self,
         instance: &ModelInstance,
         textures: &[Rgba8],
+        shading: &Shading,
         size: (u32, u32),
         view: &View,
         background: [u8; 4],
@@ -107,7 +109,7 @@ impl Gpu {
         let internal = self.device.push_error_scope(wgpu::ErrorFilter::Internal);
         let out_of_memory = self.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
         let validation = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let result = self.render_unscoped(instance, textures, size, view, background);
+        let result = self.render_unscoped(instance, textures, shading, size, view, background);
         for scope in [validation, out_of_memory, internal] {
             if let Some(e) = pollster::block_on(scope.pop()) {
                 return Err(Error::Gpu {
@@ -123,6 +125,7 @@ impl Gpu {
         &self,
         instance: &ModelInstance,
         textures: &[Rgba8],
+        shading: &Shading,
         size: (u32, u32),
         view: &View,
         background: [u8; 4],
@@ -142,10 +145,29 @@ impl Gpu {
                 );
             }
         }
+        for (i, t) in shading.normal_maps.iter().enumerate() {
+            if let Some(t) = t
+                && (t.width > max || t.height > max)
+            {
+                bail!(
+                    "the normal map of texture {i} is {}x{}, which exceeds the device limit {max}",
+                    t.width,
+                    t.height
+                );
+            }
+        }
 
         let mut renderer = Renderer::new(device, FORMAT);
         for (i, t) in textures.iter().enumerate() {
             renderer.set_texture(device, queue, i as u32, t.width, t.height, &t.pixels)?;
+        }
+        for (i, t) in shading.normal_maps.iter().enumerate() {
+            if let Some(t) = t {
+                renderer.set_normal_map(device, queue, i as u32, t.width, t.height, &t.pixels)?;
+            }
+        }
+        if let Some(lighting) = &shading.lighting {
+            renderer.set_lighting(lighting);
         }
 
         let target = device.create_texture(&wgpu::TextureDescriptor {

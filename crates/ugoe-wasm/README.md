@@ -20,6 +20,7 @@ WebAssembly バインディング。Web ビューア・ビューアのアプリ 
 | `tracking` | フェイストラッキングの入力 (ブレンドシェイプの名前と値・頭の回転) から `TrackingInput` を作る。JS への公開は `web/tracking.rs` |
 | `hit` | 評価済みの要素の外接矩形とヒットテスト (エディタの選択用。三角形の判定は `ModelInstance::mesh_contains`) |
 | `physics_view` | エディタの物理の表示用の問い合わせ: デフォーマの写像とヤコビ行列、粒子の今の位置 (JS への公開は `src/web/physics.rs`) |
+| `lighting` | 光源の JSON (`set_lighting_json`) を `ugoe::render::Lighting` にする (JS への公開は `src/web/lighting.rs`) |
 | `animation` | 物理・モーション・表情・エフェクトの JSON の受け渡し、バンドルのモーション・表情の名前の解決、モデルを読み直したときの物理と段の有効無効の引き継ぎ (JS への公開は `src/web/animation.rs`) |
 
 ## `WebPuppet` の使い方
@@ -83,6 +84,25 @@ puppet.physics_particles(0);              // リグ 0 の粒子の今の位置 [
 
 - どれも今のパラメータ値 (と最後の `update`) で評価した値を返す (`src/gizmo.rs`・`src/physics_view.rs`)。T0629 (エディタの物理の画面) で追加。
 
+### ライティング (T0210)
+
+```js
+puppet.load_bundle(bytes);        // バンドルの法線マップ (NRML) もデコードして登録する (前のモデルの法線マップは外す)
+puppet.uses_lighting();           // Model.lighting と Mesh.lit の両方が true のメッシュがあるか (光源の操作を出すかの判断に)
+puppet.set_lighting_json(JSON.stringify({
+  ambient: [0.3, 0.3, 0.3],       // 省略すると白 [1, 1, 1]
+  lights: [
+    { type: "directional", direction: [1, 1, -1] },                       // 光が進む向き。color は省略すると白
+    { type: "point", position: [512, 300, 200], color: [1.5, 1.2, 1], range: 900 }, // range は省略すると減衰しない
+  ],
+}));
+puppet.set_lighting_json(undefined); // 既定 (環境光が白で光源なし) に戻す
+```
+
+- 規則は `docs/spec/rendering.md#ライティング`。座標はキャンバス座標 (ピクセル・Y 下向き) + 奥行き (手前が +z) で、ビュー (ズーム・パン) の影響を受けない。
+- 光源はホストの状態 (背景色と同じ) で、モデルを読み直しても保つ。次の `render` から使う。形の誤り・向きが 0・`range` が正でない・負の色はエラー。
+- 光源を設定しなければ、ライティングを受けるメッシュも受けない場合と同じ色で描く。法線マップはアルファを掛けずに読む (KTX2 は警告を出して使わない)。
+
 ## ビルド
 
 ```sh
@@ -103,3 +123,4 @@ wasm-bindgen-cli の版は `Cargo.lock` の `wasm-bindgen` と一致させる必
 ## 関連タスク
 
 - T0402 (`docs/tasks/T0402-*.md`)
+- T0210 (ライティング: 法線マップの登録と光源の JSON)

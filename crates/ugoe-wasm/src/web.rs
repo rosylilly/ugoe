@@ -25,6 +25,8 @@ use crate::{gizmo, hit, view};
 
 // フェイストラッキングの API (T0703)。別のファイルに分けて、ほかの API の追加と衝突しにくくする。
 mod tracking;
+// ライティングの API (T0210)。
+mod lighting;
 
 fn js_error(e: impl Display) -> JsError {
     JsError::new(&e.to_string())
@@ -58,6 +60,8 @@ pub struct WebPuppet {
     dirty: bool,
     /// デバイスを失った (GPU プロセスのクラッシュなど)。ホストは作り直す必要がある。
     lost: Arc<AtomicBool>,
+    /// 法線マップを登録したかもしれないテクスチャの番号の数 (モデルを読み直したときに外すため)。
+    normal_map_slots: usize,
 }
 
 #[wasm_bindgen]
@@ -180,6 +184,7 @@ impl WebPuppet {
             background: wgpu::Color::TRANSPARENT,
             dirty: false,
             lost,
+            normal_map_slots: 0,
         })
     }
 
@@ -577,6 +582,7 @@ impl WebPuppet {
             model,
             animation,
             textures,
+            normal_maps,
             mut warnings,
         } = loaded;
         let max = self.device.limits().max_texture_dimension_2d;
@@ -587,6 +593,17 @@ impl WebPuppet {
         {
             return Err(JsError::new(&format!(
                 "texture {i} is {}x{}, which exceeds the device limit {max}",
+                t.width, t.height
+            )));
+        }
+        if let Some((i, t)) = normal_maps
+            .iter()
+            .enumerate()
+            .filter_map(|(i, t)| t.as_ref().map(|t| (i, t)))
+            .find(|(_, t)| t.width > max || t.height > max)
+        {
+            return Err(JsError::new(&format!(
+                "the normal map of texture {i} is {}x{}, which exceeds the device limit {max}",
                 t.width, t.height
             )));
         }
@@ -622,6 +639,7 @@ impl WebPuppet {
                 )
                 .map_err(js_error)?;
         }
+        self.set_normal_maps(&normal_maps).map_err(js_error)?;
         self.puppet = Some(puppet);
         if let Some(library) = library {
             self.library = library;

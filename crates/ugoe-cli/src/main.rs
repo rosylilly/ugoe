@@ -10,7 +10,7 @@ use anyhow::{Context, bail};
 use clap::{Args, Parser, Subcommand};
 use ugoe_editor_core::AtlasOptions;
 use ugoe_format::{TextureData, TextureFormat};
-use ugoe_headless::{Fit, RenderOptions, Scene, animate, args};
+use ugoe_headless::{Fit, Light, Lighting, RenderOptions, Scene, animate, args};
 use ugoe_model::Model;
 
 /// `INPUT` の書き方 (validate / info / render で共通)。
@@ -188,6 +188,14 @@ struct RenderArgs {
     /// 時間を進めるときの 1 秒あたりの `update` の回数。
     #[arg(long, default_value = "60", value_parser = args::parse_fps)]
     fps: f32,
+    /// 環境光の色: `V` (灰色) か `R,G,B` (1 を超えてもよい)。既定は 1 (白)。
+    /// `--ambient` も `--light` も無ければ光源を渡さない (ライティングを受けるメッシュも受けない場合と同じ色)。
+    #[arg(long, value_name = "COLOR", value_parser = args::parse_light_color)]
+    ambient: Option<ugoe::core::Rgb>,
+    /// 光源 (複数指定可): `directional:DX,DY,DZ[:COLOR]` (DX,DY,DZ は光が進む向き) か
+    /// `point:X,Y,Z[:COLOR[:RANGE]]`。座標はキャンバス座標 + 奥行き (手前が +z)。
+    #[arg(long = "light", value_name = "LIGHT", value_parser = args::parse_light)]
+    lights: Vec<Light>,
     /// wgpu のバックエンド (vulkan / metal / dx12 / gl。カンマ区切りで複数)。
     /// 省略時は環境変数 `WGPU_BACKEND`、それも無ければ wgpu の既定。
     #[arg(long)]
@@ -204,7 +212,7 @@ fn main() -> anyhow::Result<()> {
             profile,
             physics,
         } => {
-            let Input {
+            let Scene {
                 model, animation, ..
             } = load_input(&input)?;
             let settings = match physics {
@@ -506,38 +514,17 @@ fn run_sample_avatar(args: SampleAvatarArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// 読み込んだ入力。
-struct Input {
-    model: Model,
-    /// バンドルのテクスチャ (`model.textures` と同じ順)。JSON とフィクスチャでは空。
-    textures: Vec<TextureData>,
-    /// バンドルの物理・モーション・表情。JSON とフィクスチャでは空。
-    animation: animate::Animation,
-}
-
 /// `fixture:<name>`、`.ugoe` バンドル (先頭のマジックで判別)、モデル JSON のいずれかを読む。
-fn load_input(input: &str) -> anyhow::Result<Input> {
+fn load_input(input: &str) -> anyhow::Result<Scene> {
     if let Some(name) = input.strip_prefix("fixture:") {
-        return Ok(Input {
-            model: fixtures::by_name(name)?,
-            textures: Vec::new(),
-            animation: animate::Animation::default(),
-        });
+        return Ok(Scene::from_model(fixtures::by_name(name)?));
     }
     let path = Path::new(input);
     let bytes = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
     if bytes.starts_with(&ugoe_format::MAGIC) {
         let bundle = ugoe_format::read_bundle(&bytes)
             .with_context(|| format!("reading bundle {}", path.display()))?;
-        return Ok(Input {
-            model: bundle.model,
-            textures: bundle.textures,
-            animation: animate::Animation {
-                physics: bundle.physics,
-                motions: bundle.motions,
-                expressions: bundle.expressions,
-            },
-        });
+        return Ok(Scene::from_bundle(bundle));
     }
     let json = String::from_utf8(bytes).with_context(|| {
         format!(
@@ -547,11 +534,7 @@ fn load_input(input: &str) -> anyhow::Result<Input> {
     })?;
     let model = ugoe_format::model_from_json(&json)
         .with_context(|| format!("parsing {}", path.display()))?;
-    Ok(Input {
-        model,
-        textures: Vec::new(),
-        animation: animate::Animation::default(),
-    })
+    Ok(Scene::from_model(model))
 }
 
 fn info_json(m: &Model) -> serde_json::Value {
@@ -577,11 +560,11 @@ fn info_json(m: &Model) -> serde_json::Value {
 
 fn run_render(args: RenderArgs) -> anyhow::Result<()> {
     // GPU を使う前に入力をすべて検査する (GPU の無い環境でも引数の誤りを報告できるように)。
-    let Input {
-        model,
-        textures,
-        animation,
-    } = load_input(&args.input)?;
+    let scene = load_input(&args.input)?;
+    let lighting = (args.ambient.is_some() || !args.lights.is_empty()).then(|| Lighting {
+        ambient: args.ambient.unwrap_or(Lighting::default().ambient),
+        lights: args.lights,
+    });
     let options = RenderOptions {
         params: args.params,
         size: args.size,
@@ -598,11 +581,7 @@ fn run_render(args: RenderArgs) -> anyhow::Result<()> {
         no_physics: args.no_physics,
         no_effects: args.no_effects,
         fps: args.fps,
-    };
-    let scene = Scene {
-        model,
-        textures,
-        animation,
+        lighting,
     };
     let prepared = ugoe_headless::prepare(scene, &options)?;
     if let Some(advanced) = prepared.advanced {
@@ -679,6 +658,29 @@ mod tests {
         assert_eq!(args.textures, vec![(0, PathBuf::from("a.png"))]);
         assert_eq!(args.fit, Fit::Contain);
         assert_eq!(args.scale, 1.0);
+    }
+
+    #[test]
+    fn parses_lighting_args() {
+        let cli = parse(&[
+            "render",
+            "m.ugoe",
+            "-o",
+            "o.png",
+            "--ambient",
+            "0.2",
+            "--light",
+            "directional:1,0,-1",
+            "--light",
+            "point:0,0,100:1,0.5,0:300",
+        ])
+        .unwrap();
+        let Cmd::Render(args) = cli.command else {
+            panic!("not render");
+        };
+        assert_eq!(args.ambient, Some(ugoe::core::Rgb::new(0.2, 0.2, 0.2)));
+        assert_eq!(args.lights.len(), 2);
+        assert!(parse(&["render", "m.ugoe", "-o", "o.png", "--light", "spot:0,0,1"]).is_err());
     }
 
     #[test]

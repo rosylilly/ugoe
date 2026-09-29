@@ -24,13 +24,16 @@ gpu.leak();                                // 破棄しない (下の「GPU」)
 | モジュール | 内容 |
 | --- | --- |
 | `lib.rs` | `Scene` (モデルとバンドルの中身)・`RenderOptions` (`ugoe render` のオプションと 1 対 1)・`prepare`・`Prepared::render` |
-| `args` | 文字列の引数を読む (`ID=VALUE`・`WxH`・色・`INDEX=PATH`・秒数・fps)。clap の `value_parser` にそのまま渡せる |
+| `args` | 文字列の引数を読む (`ID=VALUE`・`WxH`・色・`INDEX=PATH`・秒数・fps・光の色・光源)。clap の `value_parser` にそのまま渡せる |
 | `view` | 出力の大きさ (`output_size`) とキャンバスを収めるビュー (`fit_view`・`Fit`) |
-| `textures` | テクスチャを揃える (`--texture` の差し替え → バンドルの PNG → 不透明な白 1x1) |
+| `textures` | テクスチャを揃える (`--texture` の差し替え → バンドルの PNG → 不透明な白 1x1)・バンドルの法線マップをデコードする |
 | `animate` | パラメータの書き込みと、`ugoe::Puppet` で時間を進める処理 |
 | `gpu` | ヘッドレスの `Gpu` (アダプタとデバイス)・描いて読み戻す・`stats_json` |
 | `image` | PNG の読み書きと乗算済みアルファの変換 |
 
+- **ライティング:** `Scene::from_bundle` がバンドルの法線マップを持ち、`prepare` がデコードして `Prepared::shading` に入れる。
+  光源は `RenderOptions::lighting` (`None` ならレンダラに渡さないので、出力は法線マップが無いのと同じ)。
+  `Gpu::render` が `Renderer::set_normal_map` と `set_lighting` を呼ぶ。規則は `ugoe render` の節の「ライティング」。
 - feature `clap`: `Fit` に `clap::ValueEnum` を付ける (`ugoe-cli` が使う)。
 - エラーは `ugoe_headless::Error` (thiserror)。原因 (`source`) をたどると `anyhow` の `Caused by` と同じ情報になる。
 
@@ -55,3 +58,4 @@ cargo test -p ugoe-headless   # GPU を使わないテスト (引数・大きさ
 ## 関連タスク
 
 - T0511 (`docs/tasks/T0511-shared-headless-render.md`)
+- T0210 (法線マップと光源を渡す。`docs/tasks/T0210-lighting-hosts.md`)

@@ -36,6 +36,8 @@ ugoe render model.ugoe -o out.png --param AngleX=10 --param EyeLOpen=0 --width 5
 ugoe render model.json -o out.png --size 800x600 --background '#ffffff' --texture 0=atlas.png
 ugoe render fixture:nested_masks -o out.png --scale 2 --background black --backend gl
 ugoe render model.ugoe -o shake.png --motion Shake --time 0.25   # モーションの 0.25 秒の絵 (物理も進める)
+ugoe render model.ugoe -o lit.png --ambient 0.3 --light directional:1,1,-1   # 左上の手前から照らす
+ugoe render model.ugoe -o lamp.png --ambient 0.2 --light point:512,300,200:1.5,1.2,1:900
 ```
 
 | オプション | 内容 |
@@ -54,6 +56,8 @@ ugoe render model.ugoe -o shake.png --motion Shake --time 0.25   # モーショ�
 | `--physics <PATH>` | 物理の設定の JSON。省略するとバンドルの物理を使う。モデルと合わなければエラー |
 | `--no-physics` / `--no-effects` | 時間を進めるときに物理 / 目パチと呼吸を止める |
 | `--fps <N>` | 時間を進めるときの 1 秒あたりの `update` の回数 (既定 60) |
+| `--ambient <COLOR>` | 環境光の色。`V` (灰色) か `R,G,B` (0 以上、1 を超えてもよい)。既定 1 (白) |
+| `--light <LIGHT>` | 光源 (複数可)。`directional:DX,DY,DZ[:COLOR]` か `point:X,Y,Z[:COLOR[:RANGE]]` (下の「ライティング」) |
 | `--backend <NAME>` | wgpu のバックエンド (`vulkan` `metal` `dx12` `gl`、カンマ区切り)。省略時は `WGPU_BACKEND`、それも無ければ wgpu の既定 |
 | `--stats` | 描画の統計 (`ugoe_render::FrameStats`) を標準出力に `stats: {"drawables":21,...}` の 1 行 (JSON、キーは名前順) で書く |
 
@@ -72,6 +76,16 @@ ugoe render model.ugoe -o shake.png --motion Shake --time 0.25   # モーショ�
   `update(0)` を 1 回)。モーションは優先度 `Force` で 0 秒から再生する。適用順は `docs/spec/motion.md#フレーム内の適用順`。
   固定の刻みで進めるので、同じ引数からは常に同じ絵になる。標準出力に `advanced 0.25s in 15 update(s)` も書く。
   手順は `docs/testing.md#モーションの途中の絵を確かめる`。
+- **ライティング** (`docs/spec/rendering.md#ライティング`): バンドルの法線マップ (`NRML`) はアルファを掛けずにデコードしてレンダラに登録する
+  (KTX2 は警告を出して使わない。`--texture` で差し替えても法線マップはバンドルのもの)。`--ambient` も `--light` も無ければ光源を渡さない
+  ので、法線マップやライティングの指定があっても出力は 1 画素も変わらない。どちらかがあれば、環境光 (既定 1) と光源を渡す。
+  - 座標はキャンバス座標 (ピクセル・Y 下向き) + 奥行き (z、キャンバスから手前向き・ピクセル)。
+  - `directional:DX,DY,DZ[:COLOR]`: 平行光源。`DX,DY,DZ` は **光が進む向き** (長さは問わない。0 はエラー)。
+    例: 左上の手前から照らすなら `directional:1,1,-1`。
+  - `point:X,Y,Z[:COLOR[:RANGE]]`: 点光源。`RANGE` (正の数か `inf`、既定 `inf`) で 0 になるように減衰する (`(1 − d / RANGE)²`)。
+  - `COLOR` は `--ambient` と同じ形で、既定 1 (白)。
+  - ライティングを受けるのは `Model::lighting` と `Mesh::lit` の両方が `true` のメッシュだけ。受けるメッシュは `rgb × (環境光 + Σ 光源)`
+    になるので、光源を足すときは `--ambient` を 1 より下げないと白く飛ぶ。参照レンダラが使うのは先頭の 8 個まで。
 - **GPU:** サーフェス無しでアダプタを要求する。見つからなければエラー。GPU の無い環境では Mesa の lavapipe (Vulkan) か llvmpipe (GL) を使う。
   `WGPU_POWER_PREF` も参照する。
 - **WSL2 の注意:** dzn (Vulkan on D3D12) ドライバは wgpu のインスタンスやデバイスの破棄時に SIGSEGV を起こすことがあるので、

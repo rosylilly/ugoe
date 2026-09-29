@@ -4,6 +4,9 @@
 
 use std::path::PathBuf;
 
+use ugoe::core::Rgb;
+use ugoe_render::Light;
+
 use crate::view::MAX_SIZE;
 
 /// `ID=VALUE` を読む。
@@ -111,6 +114,91 @@ pub fn parse_fps(s: &str) -> Result<f32, String> {
     check_fps(fps).map_err(|_| format!("fps must be a finite number > 0, got `{s}`"))
 }
 
+/// 光の色 (`--ambient` と `--light` の色) を読む: `V` (灰色) か `R,G,B`。0 以上の有限の値で、1 を超えてもよい (強さを兼ねる)。
+pub fn parse_light_color(s: &str) -> Result<Rgb, String> {
+    let values = parse_floats(s)?;
+    if values.iter().any(|v| *v < 0.0) {
+        return Err(format!("light color must not be negative, got `{s}`"));
+    }
+    match values[..] {
+        [v] => Ok(Rgb::new(v, v, v)),
+        [r, g, b] => Ok(Rgb::new(r, g, b)),
+        _ => Err(format!("expected V or R,G,B for a light color, got `{s}`")),
+    }
+}
+
+/// 光源 (`--light`) を読む (`docs/spec/rendering.md#ライティング`)。座標はキャンバス座標 (ピクセル・Y 下向き) + 奥行き (手前が +z)。
+///
+/// - `directional:DX,DY,DZ[:COLOR]`: 平行光源。`DX,DY,DZ` は光が進む向き (長さは問わない)。
+/// - `point:X,Y,Z[:COLOR[:RANGE]]`: 点光源。`RANGE` は減衰して 0 になる距離 (既定は `inf` で減衰しない)。
+///
+/// `COLOR` は [`parse_light_color`] の形で、既定は白 (1)。
+pub fn parse_light(s: &str) -> Result<Light, String> {
+    let mut fields = s.split(':');
+    let kind = fields.next().unwrap_or_default().trim();
+    let vector = fields
+        .next()
+        .ok_or_else(|| format!("expected directional:DX,DY,DZ or point:X,Y,Z, got `{s}`"))?;
+    let vector: [f32; 3] = parse_floats(vector)?
+        .try_into()
+        .map_err(|_| format!("expected 3 numbers in `{vector}` (in `{s}`)"))?;
+    let color = fields
+        .next()
+        .map(parse_light_color)
+        .transpose()?
+        .unwrap_or(Rgb::WHITE);
+    let light = match kind {
+        "directional" => {
+            if vector == [0.0; 3] {
+                return Err(format!("the direction of `{s}` is zero"));
+            }
+            Light::Directional {
+                direction: vector,
+                color,
+            }
+        }
+        "point" => {
+            let range = match fields.next().map(str::trim) {
+                None | Some("inf") => f32::INFINITY,
+                Some(range) => range
+                    .parse::<f32>()
+                    .ok()
+                    .filter(|r| r.is_finite() && *r > 0.0)
+                    .ok_or_else(|| {
+                        format!("range must be a positive number or inf, got `{range}`")
+                    })?,
+            };
+            Light::Point {
+                position: vector,
+                color,
+                range,
+            }
+        }
+        _ => {
+            return Err(format!(
+                "unknown light `{kind}` (expected directional or point)"
+            ));
+        }
+    };
+    if let Some(rest) = fields.next() {
+        return Err(format!("unexpected `:{rest}` in `{s}`"));
+    }
+    Ok(light)
+}
+
+/// `a,b,c` のようにカンマで区切った有限の数を読む。
+fn parse_floats(s: &str) -> Result<Vec<f32>, String> {
+    s.split(',')
+        .map(|v| {
+            v.trim()
+                .parse::<f32>()
+                .ok()
+                .filter(|v| v.is_finite())
+                .ok_or_else(|| format!("invalid number `{v}` in `{s}`"))
+        })
+        .collect()
+}
+
 /// 進める秒数が 0 以上の有限の値か。
 pub fn check_time(t: f32) -> Result<f32, crate::Error> {
     if !t.is_finite() || t < 0.0 {
@@ -166,6 +254,58 @@ mod tests {
         assert!(parse_texture("a.png").is_err());
         assert!(parse_texture("x=a.png").is_err());
         assert!(parse_texture("0=").is_err());
+    }
+
+    #[test]
+    fn parses_light_colors() {
+        assert_eq!(parse_light_color("0.5"), Ok(Rgb::new(0.5, 0.5, 0.5)));
+        assert_eq!(parse_light_color("1, 2,0"), Ok(Rgb::new(1.0, 2.0, 0.0)));
+        assert!(parse_light_color("1,2").is_err());
+        assert!(parse_light_color("-1").is_err());
+        assert!(parse_light_color("inf").is_err());
+        assert!(parse_light_color("").is_err());
+    }
+
+    #[test]
+    fn parses_lights() {
+        assert_eq!(
+            parse_light("directional:1,1,-1"),
+            Ok(Light::Directional {
+                direction: [1.0, 1.0, -1.0],
+                color: Rgb::WHITE,
+            })
+        );
+        assert_eq!(
+            parse_light("directional:0,0,-1:0.5"),
+            Ok(Light::Directional {
+                direction: [0.0, 0.0, -1.0],
+                color: Rgb::new(0.5, 0.5, 0.5),
+            })
+        );
+        assert_eq!(
+            parse_light("point:10,20,30"),
+            Ok(Light::Point {
+                position: [10.0, 20.0, 30.0],
+                color: Rgb::WHITE,
+                range: f32::INFINITY,
+            })
+        );
+        assert_eq!(
+            parse_light("point:10,20,30:1,0.5,0:400"),
+            Ok(Light::Point {
+                position: [10.0, 20.0, 30.0],
+                color: Rgb::new(1.0, 0.5, 0.0),
+                range: 400.0,
+            })
+        );
+        assert!(parse_light("spot:0,0,1").is_err());
+        assert!(parse_light("directional").is_err());
+        assert!(parse_light("directional:0,0,0").is_err());
+        assert!(parse_light("directional:1,1").is_err());
+        assert!(parse_light("directional:1,1,1:1:2").is_err());
+        assert!(parse_light("point:0,0,1:1:0").is_err());
+        assert!(parse_light("point:0,0,1:1:-5").is_err());
+        assert!(parse_light("point:0,0,1:1:10:x").is_err());
     }
 
     #[test]

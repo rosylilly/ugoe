@@ -18,6 +18,15 @@ pub struct Rgba8 {
 ///
 /// グレースケール・パレット・16bit は 8bit RGBA に展開する。
 pub fn decode_png_premultiplied(bytes: &[u8]) -> Result<Rgba8, Error> {
+    let mut image = decode_png(bytes)?;
+    premultiply(&mut image.pixels);
+    Ok(image)
+}
+
+/// PNG をデコードして、アルファを掛けない RGBA8 にする (法線マップ用。アルファは使わない)。
+///
+/// グレースケール・パレット・16bit は 8bit RGBA に展開する。
+pub fn decode_png(bytes: &[u8]) -> Result<Rgba8, Error> {
     let mut decoder = png::Decoder::new(Cursor::new(bytes));
     decoder.set_transformations(png::Transformations::normalize_to_color8());
     let mut reader = decoder
@@ -52,7 +61,6 @@ pub fn decode_png_premultiplied(bytes: &[u8]) -> Result<Rgba8, Error> {
         }
         png::ColorType::Indexed => bail!("indexed PNG was not expanded"),
     }
-    premultiply(&mut pixels);
     Ok(Rgba8 {
         width: info.width,
         height: info.height,
@@ -152,6 +160,19 @@ mod tests {
         writer.finish().unwrap();
         let decoded = decode_png_premultiplied(&out).unwrap();
         assert_eq!(decoded.pixels, vec![1, 2, 3, 255]);
+    }
+
+    #[test]
+    fn straight_decode_keeps_color_under_zero_alpha() {
+        let mut out = Vec::new();
+        let mut encoder = png::Encoder::new(&mut out, 1, 1);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().unwrap();
+        writer.write_image_data(&[128, 200, 255, 0]).unwrap();
+        writer.finish().unwrap();
+        assert_eq!(decode_png(&out).unwrap().pixels, vec![128, 200, 255, 0]);
+        assert_eq!(decode_png_premultiplied(&out).unwrap().pixels, vec![0; 4]);
     }
 
     #[test]

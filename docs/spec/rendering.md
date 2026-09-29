@@ -221,6 +221,20 @@ WebGL2 でも動くように、ストレージバッファ・コンピュート�
   ライティングを受ける要素と受けない要素もまとめて描けます。受けない要素ではシェーダは陰影を掛けません。
 - 光源は 1 つのユニフォームバッファ (最大 8 個分) に置き、ライティングを受ける要素を描くフレームで、前に転送した内容と違うときだけ転送します。
 
+### ホストでのライティング
+
+参照レンダラを使うホストは、バンドルを読んだら法線マップを登録し、光源はホストの状態として渡します。
+
+- `ugoe` (SDK) の `ugoe::lighting` に、テクスチャの番号ごとの法線マップ (`bundle_normal_maps`) と、ライティングを受けるメッシュがあるか
+  (`uses_lighting`・`Puppet::uses_lighting`。光源の操作を出すかの判断に使う) があります。`Puppet` はレンダラを持たないので、登録はホストが行います。
+- 法線マップの PNG は **アルファを掛けずに** デコードします (テクスチャと違って乗算済みにしない。アルファは使わない)。
+  KTX2 をデコードできないホストは、警告を出してその法線マップを使いません (法線 `(0, 0, 1)`)。
+- `ugoe render` (`ugoe-headless`): `--ambient <COLOR>` と `--light directional:DX,DY,DZ[:COLOR]` / `--light point:X,Y,Z[:COLOR[:RANGE]]`
+  で光源を渡します。どちらも無ければ光源を渡さないので、出力は法線マップが無いのと 1 画素も変わりません
+  (書式は [crates/ugoe-cli/README.md](../../crates/ugoe-cli/README.md#ugoe-render))。MCP サーバの `render_png` は光源を渡しません。
+- `ugoe-wasm` (`WebPuppet`): `load_bundle` が法線マップを登録し (前のモデルの法線マップは外す)、`set_lighting_json` で光源を渡します
+  (JSON の形は [crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md))。光源はモデルを読み直しても保ちます。
+
 ## 描画の最適化
 
 判断の経緯は [ADR 0016](../adr/0016-draw-batching.md)。

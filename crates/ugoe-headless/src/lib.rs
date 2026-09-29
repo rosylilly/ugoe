@@ -26,7 +26,8 @@ use ugoe_render::FrameStats;
 pub use animate::Animation;
 pub use gpu::{Gpu, stats_json};
 pub use image::Rgba8;
-pub use textures::{placeholder_texture, resolve_textures, texture_count};
+pub use textures::{placeholder_texture, resolve_normal_maps, resolve_textures, texture_count};
+pub use ugoe_render::{Light, Lighting};
 pub use view::{Fit, MAX_SIZE, fit_view, output_size};
 
 /// ヘッドレス描画のエラー。
@@ -111,6 +112,8 @@ pub struct Scene {
     pub model: Model,
     /// バンドルのテクスチャ (`model.textures` と同じ順)。JSON とフィクスチャでは空。
     pub textures: Vec<TextureData>,
+    /// バンドルの法線マップ (添字 = テクスチャの番号。`Bundle::normal_map` で引いたもの)。JSON とフィクスチャでは空。
+    pub normal_maps: Vec<Option<TextureData>>,
     /// バンドルの物理・モーション・表情。JSON とフィクスチャでは空。
     pub animation: Animation,
 }
@@ -121,15 +124,21 @@ impl Scene {
         Self {
             model,
             textures: Vec::new(),
+            normal_maps: Vec::new(),
             animation: Animation::default(),
         }
     }
 
     /// `.ugoe` バンドルの中身。
     pub fn from_bundle(bundle: ugoe_format::Bundle) -> Self {
+        let normal_maps = ugoe::lighting::bundle_normal_maps(&bundle)
+            .into_iter()
+            .map(|t| t.cloned())
+            .collect();
         Self {
             model: bundle.model,
             textures: bundle.textures,
+            normal_maps,
             animation: Animation {
                 physics: bundle.physics,
                 motions: bundle.motions,
@@ -171,6 +180,9 @@ pub struct RenderOptions {
     pub no_effects: bool,
     /// 時間を進めるときの 1 秒あたりの `update` の回数 (`--fps`)。
     pub fps: f32,
+    /// 光源 (`--ambient`・`--light`)。`None` ならレンダラに渡さない (環境光が白で光源なし。
+    /// ライティングを受けるメッシュも受けない場合と同じ色になる)。
+    pub lighting: Option<Lighting>,
 }
 
 impl Default for RenderOptions {
@@ -191,6 +203,7 @@ impl Default for RenderOptions {
             no_physics: false,
             no_effects: false,
             fps: 60.0,
+            lighting: None,
         }
     }
 }
@@ -204,12 +217,23 @@ pub struct Advanced {
     pub updates: u32,
 }
 
+/// ライティングの入力 (`docs/spec/rendering.md#ライティング`)。既定値は法線マップなしで、光源を渡さない。
+#[derive(Debug, Clone, Default)]
+pub struct Shading {
+    /// 法線マップ (添字 = テクスチャの番号。RGBA8 でアルファを掛けない)。`None` の番号は法線 `(0, 0, 1)`。
+    pub normal_maps: Vec<Option<Rgba8>>,
+    /// 光源。`None` ならレンダラに渡さない。
+    pub lighting: Option<Lighting>,
+}
+
 /// GPU で描く直前の状態 ([`prepare`] の結果)。
 #[derive(Debug)]
 pub struct Prepared {
     pub puppet: Puppet,
     /// 描画に使うテクスチャ (乗算済み RGBA8、番号順)。
     pub textures: Vec<Rgba8>,
+    /// 法線マップと光源。
+    pub shading: Shading,
     /// 出力の大きさ。
     pub size: (u32, u32),
     pub view: ugoe_render::View,
@@ -225,6 +249,7 @@ pub fn prepare(scene: Scene, options: &RenderOptions) -> Result<Prepared, Error>
     let Scene {
         model,
         textures,
+        normal_maps,
         animation,
     } = scene;
     let canvas = (model.meta.canvas.width, model.meta.canvas.height);
@@ -238,6 +263,10 @@ pub fn prepare(scene: Scene, options: &RenderOptions) -> Result<Prepared, Error>
     let view = fit_view(canvas, size, options.fit);
     let mut warnings = Vec::new();
     let textures = resolve_textures(&model, &textures, &options.texture_overrides, &mut warnings)?;
+    let shading = Shading {
+        normal_maps: resolve_normal_maps(&normal_maps, &mut warnings)?,
+        lighting: options.lighting.clone(),
+    };
     let (mut puppet, w) = animate::puppet(model, &options.params)?;
     warnings.extend(w);
     let mut advanced = None;
@@ -276,6 +305,7 @@ pub fn prepare(scene: Scene, options: &RenderOptions) -> Result<Prepared, Error>
     Ok(Prepared {
         puppet,
         textures,
+        shading,
         size,
         view,
         background: options.background,
@@ -290,6 +320,7 @@ impl Prepared {
         gpu.render(
             self.puppet.instance(),
             &self.textures,
+            &self.shading,
             self.size,
             &self.view,
             self.background,

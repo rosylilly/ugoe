@@ -22,6 +22,8 @@ pub enum LoadError {
     Compile(#[from] ugoe::runtime::CompileError),
     #[error("decoding texture {index}: {message}")]
     Texture { index: usize, message: String },
+    #[error("decoding the normal map of texture {index}: {message}")]
+    NormalMap { index: usize, message: String },
 }
 
 /// 乗算済みアルファの RGBA8 画像。
@@ -51,6 +53,9 @@ pub struct LoadedModel {
     pub animation: Option<BundleAnimation>,
     /// 描画に使うテクスチャ (添字 = テクスチャ番号)。足りない分はプレースホルダ。
     pub textures: Vec<Rgba8>,
+    /// 法線マップ (添字 = テクスチャ番号。アルファを掛けない RGBA8)。`None` の番号は法線マップなし
+    /// (`docs/spec/rendering.md#ライティング`)。JSON のモデルでは空。
+    pub normal_maps: Vec<Option<Rgba8>>,
     /// 読み込めたが注意が要ること (プレースホルダで代用したテクスチャなど)。
     pub warnings: Vec<String>,
 }
@@ -71,12 +76,38 @@ pub fn from_json(json: &str) -> Result<LoadedModel, LoadError> {
         model,
         animation: None,
         textures,
+        normal_maps: Vec::new(),
         warnings: Vec::new(),
     })
 }
 
-/// `.ugoe` バンドルを読み、PNG のテクスチャをデコードする。
+/// `.ugoe` バンドルを読み、PNG のテクスチャと法線マップをデコードする。
 pub fn from_bundle(bytes: &[u8]) -> Result<LoadedModel, LoadError> {
+    let bundle = ugoe::format::read_bundle(bytes)?;
+    let mut warnings = Vec::new();
+    let normal_maps = ugoe::lighting::bundle_normal_maps(&bundle)
+        .into_iter()
+        .enumerate()
+        .map(|(index, data)| match data {
+            None => Ok(None),
+            Some(TextureData {
+                format: TextureFormat::Png,
+                bytes,
+            }) => decode_png(bytes)
+                .map(Some)
+                .map_err(|message| LoadError::NormalMap { index, message }),
+            Some(TextureData {
+                format: TextureFormat::Ktx2,
+                ..
+            }) => {
+                warnings.push(format!(
+                    "the normal map of texture {index} is KTX2, which is not supported yet; \
+                     drawing without it"
+                ));
+                Ok(None)
+            }
+        })
+        .collect::<Result<_, _>>()?;
     let Bundle {
         model,
         physics,
@@ -84,8 +115,7 @@ pub fn from_bundle(bytes: &[u8]) -> Result<LoadedModel, LoadError> {
         expressions,
         textures: data,
         ..
-    } = ugoe::format::read_bundle(bytes)?;
-    let mut warnings = Vec::new();
+    } = bundle;
     let textures = (0..texture_count(&model))
         .map(|index| match data.get(index) {
             Some(TextureData {
@@ -122,6 +152,7 @@ pub fn from_bundle(bytes: &[u8]) -> Result<LoadedModel, LoadError> {
             },
         }),
         textures,
+        normal_maps,
         warnings,
     })
 }
@@ -179,6 +210,20 @@ pub fn carry_over_parameters(from: &ModelInstance, to: &mut ModelInstance) {
 ///
 /// グレースケール・パレット・16bit は 8bit RGBA に展開する。
 pub fn decode_png_premultiplied(bytes: &[u8]) -> Result<Rgba8, String> {
+    let mut image = decode_png(bytes)?;
+    for p in image.pixels.as_chunks_mut::<4>().0 {
+        let a = u32::from(p[3]);
+        for c in &mut p[..3] {
+            *c = ((u32::from(*c) * a + 127) / 255) as u8;
+        }
+    }
+    Ok(image)
+}
+
+/// PNG をデコードして、アルファを掛けない RGBA8 にする (法線マップ用。アルファは使わない)。
+///
+/// グレースケール・パレット・16bit は 8bit RGBA に展開する。
+pub fn decode_png(bytes: &[u8]) -> Result<Rgba8, String> {
     let mut decoder = png::Decoder::new(Cursor::new(bytes));
     decoder.set_transformations(png::Transformations::normalize_to_color8());
     let mut reader = decoder.read_info().map_err(|e| e.to_string())?;
@@ -208,12 +253,6 @@ pub fn decode_png_premultiplied(bytes: &[u8]) -> Result<Rgba8, String> {
             }
         }
         png::ColorType::Indexed => return Err("indexed PNG was not expanded".to_owned()),
-    }
-    for p in pixels.as_chunks_mut::<4>().0 {
-        let a = u32::from(p[3]);
-        for c in &mut p[..3] {
-            *c = ((u32::from(*c) * a + 127) / 255) as u8;
-        }
     }
     Ok(Rgba8 {
         width: info.width,
@@ -261,6 +300,30 @@ mod tests {
         let t = &loaded.textures[0];
         assert_eq!((t.width, t.height), (2, 1));
         assert_eq!(t.pixels, vec![255, 0, 0, 255, 128, 128, 128, 128]);
+    }
+
+    #[test]
+    fn bundle_normal_maps_are_not_premultiplied() {
+        let mut model = fixtures::single_quad();
+        model.textures[0].normal_map = Some("n".into());
+        let mut bundle = Bundle::new(model);
+        bundle.textures = vec![TextureData {
+            format: TextureFormat::Png,
+            bytes: encode_png(1, 1, &[255; 4]),
+        }];
+        bundle.normal_maps = vec![TextureData {
+            format: TextureFormat::Png,
+            bytes: encode_png(1, 1, &[128, 200, 255, 0]),
+        }];
+        let loaded = from_bundle(&write_bundle(&bundle).unwrap()).unwrap();
+        assert_eq!(
+            loaded.normal_maps,
+            vec![Some(Rgba8 {
+                width: 1,
+                height: 1,
+                pixels: vec![128, 200, 255, 0],
+            })]
+        );
     }
 
     #[test]

@@ -18,6 +18,9 @@ mod dress_up;
 
 pub use dress_up::{DressUpChange, DressUpError, TextureSource};
 
+// ライティングの補助 (T0210)。
+pub mod lighting;
+
 use ugoe_model::effects::{EYE_BLINK_GROUP, Effects, LIP_SYNC_GROUP};
 use ugoe_model::expression::Expression;
 use ugoe_model::motion::{Motion, MotionEvent};
