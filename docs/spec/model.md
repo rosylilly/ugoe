@@ -1,6 +1,17 @@
 # モデル仕様
 
 対応するコードは `crates/ugoe-model`。型を変えたら同じ PR でこの文書も更新してください。
+英語の公開仕様 [`spec/model.md`](../../spec/model.md) も同じ PR で直します (対応は [public-spec.md](public-spec.md)。食い違ったら英語版が正)。
+
+## JSON と MessagePack での表現
+
+すべてのフィールドの型・省略時の値・必須かどうかの一覧は、英語の公開仕様 ([Data conventions](../../spec/model.md#data-conventions) と各節の表) にあります。要点:
+
+- `#[serde(default)]` のないフィールドは必須です (`Model` の `parameters` `parts` `meshes` `textures`、各要素の `id` `name`、キーフォームの数値など)。
+- `Option` のフィールドは、省略と `null` のどちらも「値なし」として読みます。書き出しでは、`skip_serializing_if` のないもの (`Part::parent`・`Mesh::parent`・`Parameter::mirror` など) を `null` として書きます。
+- 省略時の値: `MeshKeyform` の `multiply_color` は白、`screen_color` は黒、`mask_strength` は 1。`RotationKeyform` の `reflect_x` / `reflect_y` は `false`。
+- `Vec2` は `[x, y]` の配列、`Rgb` は `{ "r", "g", "b" }` のオブジェクトです。メッシュの `indices` は `u16` なので、1 つのメッシュの頂点は 65,536 個までです。
+- MessagePack では、`f32` のフィールドは整数や float 64 も読めます (serde の変換)。整数のフィールドに float を置くとエラーです。
 
 ## トップレベル
 
@@ -147,7 +158,7 @@ ARKit のブレンドシェイプ (52 種) のように、互いに独立した�
 
 ## グルー (M2)
 
-2 つのメッシュの頂点ペアを、重み `weight` の位置に引き寄せます。引き寄せの強さはキーフォーム (`intensity`, 0〜1) で決まります。式は [evaluation.md](evaluation.md#グルー) にあります。
+2 つのメッシュの頂点ペアを、重み `weight` の位置に引き寄せます。引き寄せの強さはキーフォーム (`intensity`, 0〜1) で決まります。式は [evaluation.md](evaluation.md#5-グルー) にあります。
 
 ## ポーズ
 

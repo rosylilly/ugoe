@@ -1,6 +1,7 @@
 # ファイル形式仕様
 
 対応するコードは `crates/ugoe-format` (ランタイム形式) と `crates/ugoe-editor-core` (プロジェクト形式)。判断の経緯は [ADR 0004](../adr/0004-file-formats.md)。
+バンドルとモジュールのファイル・機能の宣言は、英語の公開仕様 [`spec/bundle.md`](../../spec/bundle.md) にもあります (対応は [public-spec.md](public-spec.md)。食い違ったら英語版が正)。プロジェクト形式は公開仕様に含めません。
 
 ## 一覧
 
@@ -132,6 +133,7 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 
 - postcard などの自己記述的でない形式は、`ugoe-model` の内部タグ付き enum (`Segment` `DeformerKind`) を読めないため採用しませんでした。
 - `flags` の bit0 が立ったチャンクは、ペイロード全体が 1 つの zstd フレームです。書き出し時の圧縮は任意で (既定は無圧縮)、`TEXR` と `NRML` は圧縮しません。展開後の大きさの上限は 1 チャンクあたり 256 MiB です。
+- MessagePack の入れ子の深さは 128 までに制限して読みます (スタックを使い切らないため。モデルの型の入れ子はずっと浅い)。
 
 ### 読み込み時の検査
 
@@ -144,6 +146,7 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 - `TEXR` の数が `Model.textures` と一致しない、PNG / KTX2 でないテクスチャ
 - `NRML` の数が `normal_map` を持つテクスチャの数と一致しない (`NormalMapCountMismatch`)、PNG / KTX2 でない法線マップ
 - ペイロードのデコード失敗、`schema_version` が新しすぎる
+  (いまの実装は `MODL` 全体をデコードしてから `schema_version` を調べるので、形の変わった新しい版のモデルは `UnsupportedVersion` ではなくデコードのエラーになる。公開仕様は `schema_version` を先に調べることを推奨している)
 - `ugoe_model::validate::validate` がエラーを返すモデル (下流の変形・描画で範囲外アクセスを起こさないため、ここで弾く)
 - `PHYS` があり、`ugoe_model::validate::validate_physics` がエラーを返す物理の設定 (`InvalidPhysics`)
 
@@ -224,6 +227,7 @@ FeatureTable {
 - 基準の機能 (1.0 の時点の機能) は宣言しません。書き出しは `features::detect` で使っている機能を調べて自動で宣言します (1.0 の時点では常に空で、`FEAT` は書かれません)。
 - 必須の機能を宣言するとき、書き出すツールは利用者に警告します (`detect` の結果の `required` を見る)。
 - 同じ ID を必須と任意の両方で宣言したときは、必須として扱います。
+- `test.` で始まる機能 ID は試験用に予約されていて、本物の機能には使いません ([testing.md#互換性テスト](../testing.md#互換性テスト))。
 - 読み込むランタイムは、宣言のうち知らない機能を調べます。
   - `required: true` の機能を 1 つでも知らなければ、`UnsupportedFeatures(ids)` エラーで読み込みを拒否します。
   - `required: false` の機能は、下の表のフォールバックを適用して読み込みを続け、警告の一覧を返します。

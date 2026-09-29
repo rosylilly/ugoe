@@ -112,6 +112,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 ### 仕様とコードの同期
 
 - `ugoe-model` の型を変えたら **同じ PR で** `docs/spec/model.md` を更新する。ファイル形式に影響するなら `docs/spec/file-formats.md` と `SCHEMA_VERSION` も更新する。
+- 英語の公開仕様 (`spec/`) の対応する節も同じ PR で直す。対応は [docs/spec/public-spec.md](docs/spec/public-spec.md)、食い違ったら英語版が正 ([ADR 0021](docs/adr/0021-public-specification.md))。
 - Tauri の IPC コマンドを変えたら、同じ PR で `apps/editor/src/lib/ipc.ts` も更新する。
 - 既存の設計判断 (ADR) を覆すときは、新しい ADR を書いて古い ADR を `Superseded` にする。
 

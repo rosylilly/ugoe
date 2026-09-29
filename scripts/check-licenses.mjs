@@ -6,9 +6,12 @@
 //   (docs/adr/0019-viewer-license.md)。
 // - MIT のクレートが (dev 以外で) 依存するクレートは、寛容なライセンスで使えること。
 // - アプリが依存するクレートは、GPL-3.0 と両立するライセンスで使えること。
+// - 公開仕様 (spec/) は CC BY 4.0 (docs/adr/0021-public-specification.md)。spec/LICENSE が
+//   CC BY 4.0 の条文であることを確かめる。
 // ライセンスが SPDX の式で書かれていない依存を追加する場合は、EXCEPTIONS に理由付きで登録する。
 
 import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 
 const EDITOR_CRATES = new Set(["ugoe-editor", "ugoe-viewer"]);
 const EXPECTED = { mit: "MIT", editor: "GPL-3.0-only" };
@@ -136,6 +139,16 @@ for (const id of members) {
       errors.push(`${pkg.name} -> ${dep.name} ${dep.version}: ${dep.license} は${kind}`);
     }
   }
+}
+
+// 公開仕様のライセンス (CC BY 4.0 の条文) が置かれていること。
+const SPEC_LICENSE = new URL("../spec/LICENSE", import.meta.url);
+const specLicense = existsSync(SPEC_LICENSE) ? readFileSync(SPEC_LICENSE, "utf8") : "";
+if (
+  !specLicense.startsWith("Attribution 4.0 International") ||
+  !specLicense.includes("Creative Commons Attribution 4.0 International Public License")
+) {
+  errors.push("spec/LICENSE: CC BY 4.0 の条文であるべき");
 }
 
 for (const e of [...new Set(errors)]) console.error(`error: ${e}`);

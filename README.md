@@ -25,11 +25,13 @@ just cli fixture single-quad > /tmp/quad.json && just cli info /tmp/quad.json
 - [docs/manual/](docs/manual/README.md) — エディタの操作マニュアル (リガー向け。PSD から動くモデルを作るチュートリアル)
 - [AGENTS.md](AGENTS.md) — コントリビュータ (人間・AI エージェント) 向けの規約
 - [docs/](docs/README.md) — ビジョン・アーキテクチャ・仕様・ADR・ロードマップ・タスク
+- [spec/](spec/README.md) — 公開仕様 (英語、草案)。ugoe 以外の実装がモデルとバンドルを読み書きするための仕様
 
 ## ライセンス
 
 - ランタイム・ライブラリ・ツール (`crates/`)・文書 (`docs/`): [MIT](LICENSE)
 - エディタ (`apps/editor/`): [GPL-3.0-only](apps/editor/LICENSE)
 - ビューア (`apps/viewer/`): [GPL-3.0-only](apps/viewer/LICENSE)
+- 公開仕様 (`spec/`、英語): [CC BY 4.0](spec/LICENSE)
 
-詳細と依存ライブラリの方針は [ADR 0018](docs/adr/0018-licensing-and-1.0-scope.md) と [ADR 0019](docs/adr/0019-viewer-license.md) にあります。
+詳細と依存ライブラリの方針は [ADR 0018](docs/adr/0018-licensing-and-1.0-scope.md)・[ADR 0019](docs/adr/0019-viewer-license.md)・[ADR 0021](docs/adr/0021-public-specification.md) にあります。
