@@ -2,7 +2,7 @@
 id: T0637
 title: エディタ: AI の提案のプレビューと採用
 status: todo
-milestone: M4
+milestone: M6
 crates: [ugoe-editor-core, apps/editor, docs/manual, docs/editor.md]
 depends_on: [T0503, T0504]
 assignee:

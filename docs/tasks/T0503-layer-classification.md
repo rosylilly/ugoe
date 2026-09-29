@@ -2,7 +2,7 @@
 id: T0503
 title: レイヤーの意味分類
 status: todo
-milestone: M4
+milestone: M6
 crates: [ugoe-ai]
 depends_on: [T0501]
 assignee:

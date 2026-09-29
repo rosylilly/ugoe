@@ -2,7 +2,7 @@
 id: T0505
 title: 深度推定による振り向きリグの提案
 status: todo
-milestone: M4
+milestone: M6
 crates: [ugoe-ai]
 depends_on: [T0501, T0612]
 assignee:

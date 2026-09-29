@@ -2,7 +2,7 @@
 id: T0209
 title: 参照レンダラ: ライティング
 status: todo
-milestone: M6
+milestone: M4
 crates: [ugoe-render]
 depends_on: [T0112]
 assignee:

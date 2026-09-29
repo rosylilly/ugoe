@@ -2,7 +2,7 @@
 id: T0112
 title: 法線マップとライティングのデータ
 status: todo
-milestone: M6
+milestone: M4
 crates: [ugoe-model, ugoe-format]
 depends_on: [T0109]
 assignee:

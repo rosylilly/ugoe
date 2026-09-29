@@ -2,7 +2,7 @@
 id: T0504
 title: 自動リギングの提案
 status: todo
-milestone: M4
+milestone: M6
 crates: [ugoe-ai]
 depends_on: [T0503, T0601, T0509]
 assignee:

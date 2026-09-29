@@ -2,7 +2,7 @@
 id: T0636
 title: エディタ: プレビューでのフェイストラッキング
 status: todo
-milestone: M6
+milestone: M4
 crates: [apps/editor, apps/viewer, packages, docs/manual]
 depends_on: [T0635, T0703]
 assignee:

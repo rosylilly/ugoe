@@ -2,7 +2,7 @@
 id: T0508
 title: MCP サーバ (`ugoe-mcp`)
 status: todo
-milestone: M4
+milestone: M6
 crates: [ugoe-mcp, scripts, Cargo.toml, commitlint.config.mjs, docs]
 depends_on: [T0601]
 assignee:

@@ -2,7 +2,7 @@
 id: T0509
 title: AI: Claude API のプロバイダ
 status: todo
-milestone: M4
+milestone: M6
 crates: [ugoe-ai, docs]
 depends_on: []
 assignee:
