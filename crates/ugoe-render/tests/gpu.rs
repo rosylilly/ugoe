@@ -1088,6 +1088,7 @@ fn shrinking_options(max_size: u32) -> RendererOptions {
             shrink_after_frames: SHRINK_AFTER,
             ..MaskAtlasOptions::default()
         },
+        ..RendererOptions::default()
     }
 }
 
@@ -1295,6 +1296,8 @@ fn static_frames_upload_nothing_after_the_first() {
                 mask_draws: 0,
                 position_bytes: 0,
                 uniform_bytes: 0,
+                index_bytes: 0,
+                uploaded_bytes: 0,
                 ..first.stats
             },
             "update: {update}"
@@ -1440,4 +1443,227 @@ fn replacing_a_mask_texture_redraws_the_atlas() {
     assert!(!image.stats.masks_reused);
     image.assert_pixel((40, 32), NONE);
     assert_eq!(image.covered_pixels([0; 4]), 0);
+}
+
+// ---- 描画の統合 (T0208) ----
+
+/// `scene` を描画の統合あり・なしで描き、結果が画素単位で一致することを確かめる。
+/// (統合あり, 統合なし) の順に返す。
+#[track_caller]
+fn render_with_and_without_batching(scene: impl Fn() -> Scene) -> (Image, Image) {
+    let batched = scene().render();
+    let mut unbatched = scene();
+    unbatched.options.batch_draws = false;
+    let unbatched = unbatched.render();
+    let differing = batched
+        .pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(unbatched.pixels.as_chunks::<4>().0)
+        .enumerate()
+        .find(|(_, (a, b))| a != b);
+    if let Some((i, (a, b))) = differing {
+        let (x, y) = (i as u32 % batched.size, i as u32 / batched.size);
+        panic!("pixel ({x}, {y}): batched {a:?}, per-drawable {b:?}");
+    }
+    assert!(batched.covered_pixels([0; 4]) > 0, "scene draws something");
+    assert_eq!(batched.stats.drawables, unbatched.stats.drawables);
+    assert_eq!(batched.stats.state_changes, unbatched.stats.state_changes);
+    assert_eq!(unbatched.stats.draw_calls, unbatched.stats.drawables);
+    (batched, unbatched)
+}
+
+/// 重なり合う半透明の四角形 6 枚。色・不透明度・スクリーン色は要素ごとに違うが、描画の状態は同じ。
+fn overlapping_tinted_quads() -> Scene {
+    let mut meshes = Vec::new();
+    for k in 0..6 {
+        let x = 32.0 + 24.0 * k as f32;
+        let mut mesh = quad(
+            &format!("Q{k}"),
+            [x, 48.0 + 8.0 * k as f32, x + 96.0, 208.0],
+        );
+        let t = k as f32 / 5.0;
+        for kf in &mut mesh.keyforms.keyforms {
+            kf.multiply_color = Rgb::new(1.0 - t, t, 0.5);
+            kf.screen_color = Rgb::new(0.0, 0.0, t * 0.5);
+            kf.opacity = 0.4 + 0.1 * k as f32;
+            // 宣言と逆の順に描く (描画順で並べ替えたインデックスを使う)。
+            kf.draw_order = 600.0 - k as f32;
+        }
+        meshes.push(mesh);
+    }
+    Scene::new(model_of(meshes))
+}
+
+#[test]
+fn batching_matches_per_drawable_drawing() {
+    let (batched, unbatched) = render_with_and_without_batching(overlapping_tinted_quads);
+    assert_eq!(batched.stats.draw_calls, 1);
+    assert_eq!(batched.stats.state_changes, 0);
+    assert_eq!(unbatched.stats.draw_calls, 6);
+
+    // マスクを読む要素と読まない要素、別の合成モード、入れ子、共通部分、複数のアトラス。
+    render_with_and_without_batching(|| {
+        let band = |i: f32| [64.0, 64.0 + 32.0 * i, 192.0, 96.0 + 32.0 * i];
+        let mut scene = Scene::new(model_of(vec![
+            red_quad("A", band(0.0), &["M1"], false),
+            red_quad("B", band(1.0), &["M1"], true),
+            red_quad("Free", [32.0, 32.0, 224.0, 224.0], &[], false),
+            red_quad("C", band(2.0), &["M1", "M2"], false),
+            red_quad("D", band(3.0), &["M2"], false),
+            mask_quad("M1", [64.0, 0.0, 128.0, 256.0], 1.0),
+            mask_quad("M2", [160.0, 0.0, 192.0, 256.0], 1.0),
+        ]));
+        edit_keyforms(&mut scene.model, "Free", |k| k.opacity = 0.3);
+        tint(&mut scene.model, "C", [0.0, 1.0, 0.0]);
+        scene
+    });
+    render_with_and_without_batching(|| mixed_scene(0.5));
+    render_with_and_without_batching(|| {
+        let mut model = fixtures::nested_masks();
+        tint(&mut model, "Iris", [0.0, 0.0, 1.0]);
+        tint(&mut model, "Pupil", [1.0, 0.0, 0.0]);
+        Scene::new(model)
+    });
+    render_with_and_without_batching(|| {
+        let mut model = fixtures::intersection_masks();
+        tint(&mut model, "Face", [0.0, 0.0, 1.0]);
+        tint(&mut model, "Tongue", [1.0, 0.0, 0.0]);
+        Scene::new(model)
+    });
+    let (batched, _) = render_with_and_without_batching(|| {
+        let mut scene = five_mask_sets();
+        scene.options = shrinking_options(16);
+        scene
+    });
+    assert!(batched.stats.mask_atlases > 1);
+}
+
+#[test]
+fn adjacent_drawables_with_the_same_state_share_one_draw() {
+    // 描画順: M1, M2 (乗算合成) → A..D (通常の合成。マスクは同じアトラス)。
+    let band = |i: f32| [64.0, 64.0 + 32.0 * i, 192.0, 96.0 + 32.0 * i];
+    let image = Scene::new(model_of(vec![
+        red_quad("A", band(0.0), &["M1"], false),
+        red_quad("B", band(1.0), &["M1"], true),
+        red_quad("C", band(2.0), &["M1", "M2"], false),
+        red_quad("D", band(3.0), &[], false),
+        mask_quad("M1", [64.0, 0.0, 128.0, 256.0], 1.0),
+        mask_quad("M2", [160.0, 0.0, 192.0, 256.0], 1.0),
+    ]))
+    .render();
+    image.assert_pixel((20, 20), RED);
+    image.assert_pixel((36, 20), NONE);
+    image.assert_pixel((20, 44), RED);
+    image.assert_pixel((36, 44), RED);
+    assert_eq!(
+        image.stats,
+        FrameStats {
+            drawables: 6,
+            draw_calls: 2,
+            state_changes: 1,
+            ..image.stats
+        }
+    );
+}
+
+#[test]
+fn texture_and_blend_changes_split_draws_in_order() {
+    // 描画順 A (テクスチャ 0), B (0), C (1), D (0, 加算), E (0)。重なりの上は後の要素。
+    let rect = [64.0, 64.0, 192.0, 192.0];
+    let mut meshes = vec![
+        red_quad("A", rect, &[], false),
+        quad("B", rect),
+        quad("C", rect),
+        quad("D", rect),
+        quad("E", [64.0, 64.0, 128.0, 192.0]),
+    ];
+    for (k, mesh) in meshes.iter_mut().enumerate() {
+        for kf in &mut mesh.keyforms.keyforms {
+            kf.draw_order = 500.0 + k as f32;
+        }
+    }
+    meshes[3].blend = BlendMode::Additive;
+    let mut scene = Scene::new(model_of(meshes));
+    tint(&mut scene.model, "B", [0.0, 0.0, 1.0]);
+    edit_keyforms(&mut scene.model, "C", |k| k.opacity = 0.5);
+    tint(&mut scene.model, "D", [0.0, 0.25, 0.0]);
+    tint(&mut scene.model, "E", [1.0, 0.0, 0.0]);
+    let texture = scene.model.textures[0].clone();
+    scene.model.textures.push(texture);
+    mesh_mut(&mut scene.model, "C").texture = 1;
+    scene.extra_textures.push([0, 255, 0, 255]);
+    let image = scene.render();
+    // 青の上に 0.5 の緑、その上に緑 0.25 を加算。左半分は最後に赤。
+    image.assert_pixel((40, 32), [0.0, 0.75, 0.5, 1.0]);
+    image.assert_pixel((20, 32), RED);
+    assert_eq!(image.stats.draw_calls, 4, "{:?}", image.stats);
+    assert_eq!(image.stats.state_changes, 3);
+}
+
+#[test]
+fn draw_order_changes_reupload_indices() {
+    // Top は X = 0 で奥 (400)、X = 1 で手前 (600)。
+    let mut model = fixtures::single_quad();
+    let mut top = model.meshes[0].clone();
+    top.id = "Top".into();
+    top.name = "Top".into();
+    for (k, kf) in top.keyforms.keyforms.iter_mut().enumerate() {
+        kf.draw_order = if k == 2 { 600.0 } else { 400.0 };
+        kf.multiply_color = Rgb::new(0.0, 1.0, 0.0);
+    }
+    tint(&mut model, "Quad", [1.0, 0.0, 0.0]);
+    model.meshes.push(top);
+    let (mut renderer, mut instance) = Scene::new(model).prepare().expect("prepare");
+    let image = frame(&mut renderer, &instance);
+    image.assert_pixel(INSIDE, RED);
+    // 四角形 2 枚 × 6 インデックス × 4 バイト。
+    assert_eq!(image.stats.index_bytes, 2 * 6 * 4);
+    assert_eq!(image.stats.draw_calls, 1);
+    let s = image.stats;
+    assert_eq!(
+        s.uploaded_bytes,
+        s.position_bytes + s.uniform_bytes + s.index_bytes
+    );
+
+    // 動いても並びが同じならインデックスは転送しない。
+    set_param(&mut instance, "X", 0.25);
+    instance.update();
+    let image = frame(&mut renderer, &instance);
+    assert_eq!(image.stats.index_bytes, 0);
+    assert!(image.stats.position_bytes > 0);
+
+    set_param(&mut instance, "X", 1.0);
+    instance.update();
+    let image = frame(&mut renderer, &instance);
+    image.assert_pixel((52, 32), [0.0, 1.0, 0.0, 1.0]);
+    assert_eq!(image.stats.index_bytes, 2 * 6 * 4);
+    assert_eq!(image.stats.draw_calls, 1);
+}
+
+#[test]
+fn many_drawables_read_their_own_values() {
+    // 80 枚 (要素ごとの値のテクスチャは 1 行 64 要素なので 2 行目にまたがる)。
+    // 10 × 8 のマス (1 マス = キャンバス 24 = 画素 6) に並べ、赤の強さを番号で変える。
+    const COUNT: usize = 80;
+    let scene = || {
+        let meshes = (0..COUNT)
+            .map(|k| {
+                let (x, y) = ((k % 10) as f32 * 24.0, (k / 10) as f32 * 24.0);
+                let mut mesh = quad(&format!("Q{k}"), [x, y, x + 24.0, y + 24.0]);
+                for kf in &mut mesh.keyforms.keyforms {
+                    kf.multiply_color = Rgb::new(k as f32 / (COUNT - 1) as f32, 0.0, 1.0);
+                }
+                mesh
+            })
+            .collect();
+        Scene::new(model_of(meshes))
+    };
+    let (image, _) = render_with_and_without_batching(scene);
+    assert_eq!(image.stats.draw_calls, 1);
+    for k in [0, 63, 64, 79] {
+        let (x, y) = ((k % 10) as u32 * 6 + 3, (k / 10) as u32 * 6 + 3);
+        image.assert_pixel((x, y), [k as f32 / (COUNT - 1) as f32, 0.0, 1.0, 1.0]);
+    }
 }

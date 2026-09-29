@@ -41,8 +41,22 @@ pub(crate) const MASK_ATLAS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R
 
 /// 頂点 1 つ分の位置 (スロット 0) と UV (スロット 1) の大きさ。どちらも `vec2<f32>`。
 pub(crate) const VEC2_SIZE: u64 = 8;
+/// 頂点 1 つ分の要素の番号 (スロット 2、`u32`) の大きさ。本描画だけが使う。
+pub(crate) const ELEMENT_INDEX_SIZE: u64 = 4;
 const POSITION_ATTRIBUTES: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x2];
 const UV_ATTRIBUTES: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![1 => Float32x2];
+const ELEMENT_ATTRIBUTES: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![2 => Uint32];
+
+/// 頂点バッファの組 (`PipelineDesc::vertex_buffers`)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VertexBuffers {
+    /// 使わない (全面描画)。
+    None,
+    /// 位置と UV (マスクパス)。
+    Mesh,
+    /// 位置と UV と要素の番号 (本描画)。
+    MeshWithElement,
+}
 
 impl Pipelines {
     /// `layouts` は本描画とマスクパスで共有するバインドグループレイアウト (group 0..4)。
@@ -83,7 +97,7 @@ impl Pipelines {
                 module: &module,
                 vs: "vs_mask",
                 fs: "fs_mask",
-                vertex_buffers: true,
+                vertex_buffers: VertexBuffers::Mesh,
                 format: MASK_ATLAS_FORMAT,
                 blend: wgpu::BlendState {
                     color: multiply,
@@ -103,7 +117,7 @@ impl Pipelines {
                     module: &module,
                     vs: "vs_fill",
                     fs: "fs_fill",
-                    vertex_buffers: false,
+                    vertex_buffers: VertexBuffers::None,
                     format: MASK_ATLAS_FORMAT,
                     blend,
                     write_mask,
@@ -176,7 +190,7 @@ impl Pipelines {
                 module: &self.module,
                 vs: "vs_main",
                 fs: "fs_main",
-                vertex_buffers: true,
+                vertex_buffers: VertexBuffers::MeshWithElement,
                 format: self.target_format,
                 blend: blend_state(key.blend),
                 write_mask: wgpu::ColorWrites::ALL,
@@ -192,8 +206,7 @@ struct PipelineDesc<'a> {
     module: &'a wgpu::ShaderModule,
     vs: &'a str,
     fs: &'a str,
-    /// 位置と UV の頂点バッファを使うか (全面描画は使わない)。
-    vertex_buffers: bool,
+    vertex_buffers: VertexBuffers,
     format: wgpu::TextureFormat,
     blend: wgpu::BlendState,
     write_mask: wgpu::ColorWrites,
@@ -201,15 +214,21 @@ struct PipelineDesc<'a> {
 }
 
 fn create_pipeline(device: &wgpu::Device, desc: &PipelineDesc<'_>) -> wgpu::RenderPipeline {
-    let vertex_layout = |attributes| wgpu::VertexBufferLayout {
-        array_stride: VEC2_SIZE,
+    let vertex_layout = |array_stride, attributes| wgpu::VertexBufferLayout {
+        array_stride,
         step_mode: wgpu::VertexStepMode::Vertex,
         attributes,
     };
-    let buffers = [
-        Some(vertex_layout(&POSITION_ATTRIBUTES)),
-        Some(vertex_layout(&UV_ATTRIBUTES)),
+    let all_buffers = [
+        Some(vertex_layout(VEC2_SIZE, &POSITION_ATTRIBUTES)),
+        Some(vertex_layout(VEC2_SIZE, &UV_ATTRIBUTES)),
+        Some(vertex_layout(ELEMENT_INDEX_SIZE, &ELEMENT_ATTRIBUTES)),
     ];
+    let buffers = match desc.vertex_buffers {
+        VertexBuffers::None => &all_buffers[..0],
+        VertexBuffers::Mesh => &all_buffers[..2],
+        VertexBuffers::MeshWithElement => &all_buffers[..],
+    };
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some(desc.label),
         layout: Some(desc.layout),
@@ -217,7 +236,7 @@ fn create_pipeline(device: &wgpu::Device, desc: &PipelineDesc<'_>) -> wgpu::Rend
             module: desc.module,
             entry_point: Some(desc.vs),
             compilation_options: Default::default(),
-            buffers: if desc.vertex_buffers { &buffers } else { &[] },
+            buffers,
         },
         primitive: wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,

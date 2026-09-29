@@ -195,6 +195,46 @@ impl SlotUploads {
     }
 }
 
+/// 描画順に並べたインデックス (本描画のインデックスバッファ) に転送済みの内容の控え。
+///
+/// 並びが変わるのは描画順や表示が変わったときだけなので、控えと違う範囲だけを転送する。
+#[derive(Debug, Default)]
+pub(crate) struct IndexUploads {
+    /// 空ならまだ何も転送していない (または前のフレームで何も描かなかった)。
+    shadow: Vec<u32>,
+}
+
+impl IndexUploads {
+    /// バッファを作り直したときに呼ぶ。次の `upload` はすべてを転送する。
+    pub fn reset(&mut self) {
+        self.shadow.clear();
+    }
+
+    /// `data` の先頭からの並びのうち、控えと違う最初から最後までの範囲を 1 回で転送する。
+    /// 控えより長い分も転送する。短くなった分はバッファに残るが、描画では使わない。
+    /// 転送したバイト数を返す。
+    pub fn upload(&mut self, data: &[u32], mut write: impl FnMut(u64, &[u8])) -> u64 {
+        let differs = |i: usize| self.shadow.get(i) != Some(&data[i]);
+        let Some(first) = (0..data.len()).find(|&i| differs(i)) else {
+            return 0;
+        };
+        let last = (first..data.len()).rfind(|&i| differs(i)).unwrap_or(first);
+        let range = first..last + 1;
+        write(
+            range.start as u64 * INDEX_BYTES,
+            bytemuck::cast_slice(&data[range.clone()]),
+        );
+        if self.shadow.len() < data.len() {
+            self.shadow.resize(data.len(), 0);
+        }
+        self.shadow[range.clone()].copy_from_slice(&data[range.clone()]);
+        range.len() as u64 * INDEX_BYTES
+    }
+}
+
+/// インデックス 1 つのバイト数 (`u32`)。
+const INDEX_BYTES: u64 = std::mem::size_of::<u32>() as u64;
+
 #[cfg(test)]
 mod tests {
     use ugoe_model::fixtures;
@@ -273,5 +313,26 @@ mod tests {
         assert_eq!(writes, vec![(4, 8), (16, 4)]);
         assert_eq!(r.bytes, 12);
         assert_eq!(r.last_slot, Some(4));
+    }
+
+    #[test]
+    fn indices_upload_only_the_changed_span() {
+        let mut uploads = IndexUploads::default();
+        let mut writes = Vec::new();
+        assert_eq!(
+            uploads.upload(&[0, 1, 2, 3], |o, d| writes.push((o, d.len()))),
+            16
+        );
+        assert_eq!(uploads.upload(&[0, 1, 2, 3], |_, _| panic!("no write")), 0);
+        // 短くなっても、残った先頭が同じなら転送しない。
+        assert_eq!(uploads.upload(&[0, 1], |_, _| panic!("no write")), 0);
+        writes.clear();
+        assert_eq!(
+            uploads.upload(&[0, 9, 2, 8, 4], |o, d| writes.push((o, d.len()))),
+            16
+        );
+        assert_eq!(writes, vec![(4, 16)]);
+        uploads.reset();
+        assert_eq!(uploads.upload(&[0, 9], |_, _| {}), 8);
     }
 }

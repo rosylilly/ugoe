@@ -19,7 +19,7 @@ use wgpu::util::DeviceExt;
 pub use crate::mask::MaskAtlasOptions;
 use crate::mask::{AtlasPool, CellRequest, MaskContent, MaskSlot, MaskStep, MeshMask};
 use crate::pipeline::{MASK_ATLAS_FORMAT, PipelineKey, Pipelines, VEC2_SIZE};
-use crate::upload::{PositionUploads, SlotUploads};
+use crate::upload::{IndexUploads, PositionUploads, SlotUploads};
 
 /// 参照シェーダの WGSL ソース。
 pub const DRAWABLE_WGSL: &str = include_str!("shaders/drawable.wgsl");
@@ -62,10 +62,22 @@ impl View {
 }
 
 /// [`Renderer`] の設定。
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RendererOptions {
     /// マスクアトラスの大きさの上限と、マスクを描く解像度 (`docs/spec/rendering.md` の「精度」)。
     pub mask_atlas: MaskAtlasOptions,
+    /// 描画順で隣り合い、描画の状態が同じ要素を 1 回の描画にまとめるか (既定 `true`)。
+    /// 結果は変わらない (`docs/spec/rendering.md#描画の最適化`)。`false` は比較や調査用。
+    pub batch_draws: bool,
+}
+
+impl Default for RendererOptions {
+    fn default() -> Self {
+        Self {
+            mask_atlas: MaskAtlasOptions::default(),
+            batch_draws: true,
+        }
+    }
 }
 
 /// 直前の [`Renderer::encode`] で行った描画の統計 (テストやプロファイル用)。
@@ -73,6 +85,11 @@ pub struct RendererOptions {
 pub struct FrameStats {
     /// 本描画で描いた要素の数。
     pub drawables: u32,
+    /// 本描画の描画コマンドの数 (まとめた後。`docs/spec/rendering.md#描画の最適化`)。
+    pub draw_calls: u32,
+    /// 本描画で、描画の状態 (合成モードとカリング・テクスチャ・マスクアトラス) を前の描画から
+    /// 切り替えた回数。最初の描画は数えない。
+    pub state_changes: u32,
     /// マスクアトラスに描いたマスクの内容の数 (同じ内容を使う要素は 1 つと数える)。
     pub mask_sets: u32,
     /// マスクパスでマスク用メッシュを描いた回数 (作業領域の全面描画は数えない)。
@@ -86,8 +103,12 @@ pub struct FrameStats {
     pub masks_reused: bool,
     /// 転送した頂点位置のバイト数 (変わっていない要素は転送しない)。
     pub position_bytes: u64,
-    /// 転送したユニフォームのバイト数 (要素ごと・マスクパス用・ビュー。変わっていないものは転送しない)。
+    /// 転送したユニフォームのバイト数 (要素ごとの値・マスクパス用・ビュー。変わっていないものは転送しない)。
     pub uniform_bytes: u64,
+    /// 転送した本描画のインデックスのバイト数 (描画順や表示が変わったときだけ転送する)。
+    pub index_bytes: u64,
+    /// 転送したバイト数の合計 (`position_bytes + uniform_bytes + index_bytes`)。
+    pub uploaded_bytes: u64,
 }
 
 /// シェーダの `Globals` と同じ配置 (mat3x3 の各列は vec4 に詰める)。
@@ -97,7 +118,25 @@ struct GlobalsRaw {
     view_proj: [[f32; 4]; 3],
 }
 
-/// シェーダの `DrawUniforms` と同じ配置。
+/// 本描画の要素 1 つ分の値。シェーダの `element_data` の texel の並びと同じ。
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct ElementRaw {
+    multiply_color: [f32; 4],
+    screen_color: [f32; 4],
+    mask_rect: [f32; 4],
+    mask_channel: [f32; 4],
+    mask_params: [f32; 4],
+}
+
+/// 要素 1 つ分の texel の数 (シェーダの `ELEMENT_TEXELS`)。
+const ELEMENT_TEXELS: u32 = 5;
+const ELEMENT_BYTES: usize = std::mem::size_of::<ElementRaw>();
+/// 要素ごとの値のテクスチャの 1 行に並べる要素の数の上限。
+const ELEMENTS_PER_ROW: u32 = 64;
+const ELEMENT_DATA_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba32Float;
+
+/// シェーダの `DrawUniforms` (マスクパス) と同じ配置。
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct DrawUniformsRaw {
@@ -143,41 +182,93 @@ impl MaskRead {
 
 const DRAW_UNIFORMS_SIZE: u64 = std::mem::size_of::<DrawUniformsRaw>() as u64;
 
-/// モデルの静的な頂点データ (UV・インデックス) と、フレームごとに書き換えるバッファ。
+/// モデルの静的な頂点データ (UV・要素の番号・インデックス) と、フレームごとに書き換えるバッファ。
 #[derive(Debug)]
 struct Geometry {
     /// どのモデルのデータか (インスタンスが別モデルに変わったら作り直す)。
     model: Arc<CompiledModel>,
     positions: wgpu::Buffer,
     uvs: wgpu::Buffer,
+    /// 頂点ごとの要素の番号 (本描画で要素ごとの値を引く)。
+    elements: wgpu::Buffer,
+    /// 全要素のインデックスを宣言順に並べたもの (全体の頂点番号)。マスクパスで使う。
     indices: wgpu::Buffer,
+    /// `indices` と同じ内容 (本描画のインデックスを組み立てる)。
+    index_data: Vec<u32>,
+    /// 本描画のインデックス。描く要素のインデックスを描画順に並べ、変わったときだけ書き換える。
+    draw_indices: wgpu::Buffer,
     meshes: Vec<MeshRange>,
     /// 全要素の頂点数の合計。
     vertex_count: usize,
+    /// 要素ごとの値 (`ElementRaw`) を並べた `Rgba32Float` テクスチャ。
+    element_data: wgpu::Texture,
+    /// ビュー (binding 0) と要素ごとの値 (binding 1)。
+    globals_bind_group: wgpu::BindGroup,
     /// マスクの内容。モデルの静的なデータなので、ロード時に一度だけ求める。
     masks: Vec<MaskContent>,
     /// マスクの内容のインデックスを、レベルの大きい順に並べたもの (外接矩形の伝播に使う)。
     masks_by_level_desc: Vec<u32>,
     /// 内容 `c` の `Draw` の段のユニフォームを置く最初のスロット。
     mask_slot_base: Vec<u32>,
-    /// 描画可能要素ごとのユニフォーム。要素 `i` はオフセット `i * draw_stride`。
-    /// その後ろに、マスクパスでマスク用メッシュを描く分を内容ごとに並べる。
+    /// マスクパスでマスク用メッシュを描く分のユニフォームを、内容ごとに並べたもの。
+    /// スロット `i` はオフセット `i * draw_stride`。
     draws: wgpu::Buffer,
     draws_bind_group: wgpu::BindGroup,
     draw_stride: u64,
 }
 
-/// 共有バッファ内での 1 メッシュ分の範囲 (バイト単位)。
+/// 共有バッファ内での 1 メッシュ分の範囲。
 #[derive(Debug, Clone, Copy)]
 struct MeshRange {
-    vertex_offset: u64,
-    vertex_size: u64,
-    index_offset: u64,
+    /// `Geometry::indices` での最初のインデックスの位置。
+    first_index: u32,
     index_count: u32,
     texture: u32,
     culling: bool,
     /// 自身のマスクとして読む内容。マスクを持たないなら `None`。
     mask: Option<MeshMask>,
+}
+
+impl MeshRange {
+    /// `Geometry::indices` でのインデックスの範囲。
+    fn indices(&self) -> std::ops::Range<u32> {
+        self.first_index..self.first_index + self.index_count
+    }
+
+    fn indices_usize(&self) -> std::ops::Range<usize> {
+        self.first_index as usize..(self.first_index + self.index_count) as usize
+    }
+}
+
+/// 本描画の描画の状態 (`docs/spec/rendering.md#描画の最適化`)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DrawState {
+    /// 合成モードとカリング。
+    key: PipelineKey,
+    texture: u32,
+    /// 読むマスクアトラス。マスクを読まない要素は `None` で、どのアトラスとも両立する
+    /// (マスクの強さが 0 なので、アトラスの値は結果に効かない)。
+    mask_atlas: Option<u32>,
+}
+
+impl DrawState {
+    /// `self` の描画に続けて `next` を同じ描画で描けるなら、まとめた状態を返す。
+    fn merge(self, next: Self) -> Option<Self> {
+        let mask_atlas = match (self.mask_atlas, next.mask_atlas) {
+            (Some(a), Some(b)) if a != b => return None,
+            (a, b) => a.or(b),
+        };
+        (self.key == next.key && self.texture == next.texture)
+            .then_some(Self { mask_atlas, ..self })
+    }
+}
+
+/// 本描画の 1 回の描画。`first_index` は `Geometry::draw_indices` での位置。
+#[derive(Debug, Clone, Copy)]
+struct DrawCall {
+    state: DrawState,
+    first_index: u32,
+    index_count: u32,
 }
 
 /// マスクアトラス 1 枚。フレームをまたいで使い回す。
@@ -230,14 +321,15 @@ struct TextureSlot {
 pub struct Renderer {
     target_format: wgpu::TextureFormat,
     pipelines: Pipelines,
+    globals_layout: wgpu::BindGroupLayout,
     draw_layout: wgpu::BindGroupLayout,
     texture_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     globals: wgpu::Buffer,
-    globals_bind_group: wgpu::BindGroup,
     /// マスクを使わない要素に束縛する 1x1 のダミー (`mask_strength = 0` なので値は効かない)。
     no_mask_bind_group: wgpu::BindGroup,
     mask_options: MaskAtlasOptions,
+    batch_draws: bool,
     /// アトラスの一辺の上限 (設定とデバイスの上限の小さい方)。
     mask_atlas_max_size: u32,
     /// アトラスの一辺と枚数 (すぐに大きくし、ヒステリシスを持たせて小さくする)。
@@ -250,12 +342,16 @@ pub struct Renderer {
     geometry: Option<Geometry>,
     /// `geometry` のバッファに転送済みの内容の控え (`docs/spec/rendering.md` の「転送の省略」)。
     position_uploads: PositionUploads,
+    element_uploads: SlotUploads,
     draw_uploads: SlotUploads,
+    index_uploads: IndexUploads,
     globals_uploaded: Option<GlobalsRaw>,
     /// マスクアトラスの今の内容。`None` なら内容は当てにならない。
     mask_frame: Option<MaskFrame>,
     // フレームごとの書き込み用の作業領域。
+    elements_scratch: Vec<u8>,
     draws_scratch: Vec<u8>,
+    indices_scratch: Vec<u32>,
 }
 
 impl Renderer {
@@ -270,18 +366,31 @@ impl Renderer {
     ) -> Self {
         let globals_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("ugoe globals layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: wgpu::BufferSize::new(
-                        std::mem::size_of::<GlobalsRaw>() as u64
-                    ),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(
+                            std::mem::size_of::<GlobalsRaw>() as u64
+                        ),
+                    },
+                    count: None,
                 },
-                count: None,
-            }],
+                // 本描画の要素ごとの値 (`textureLoad` で読むのでフィルタしない)。
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+            ],
         });
         let draw_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("ugoe draw uniforms layout"),
@@ -346,15 +455,6 @@ impl Renderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let globals_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("ugoe globals"),
-            layout: &globals_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: globals.as_entire_binding(),
-            }],
-        });
-
         // 内容は使われない (mask_strength = 0)。wgpu は未書き込みのテクスチャをゼロで初期化する。
         let no_mask_texture = device.create_texture(&texture_descriptor("ugoe no mask", 1, 1));
         let no_mask_bind_group =
@@ -365,13 +465,14 @@ impl Renderer {
         Self {
             target_format,
             pipelines,
+            globals_layout,
             draw_layout,
             texture_layout,
             sampler,
             globals,
-            globals_bind_group,
             no_mask_bind_group,
             mask_options: options.mask_atlas,
+            batch_draws: options.batch_draws,
             mask_atlas_max_size,
             mask_atlas_pool: AtlasPool::default(),
             mask_atlases: Vec::new(),
@@ -380,10 +481,14 @@ impl Renderer {
             texture_generation: 0,
             geometry: None,
             position_uploads: PositionUploads::default(),
+            element_uploads: SlotUploads::default(),
             draw_uploads: SlotUploads::default(),
+            index_uploads: IndexUploads::default(),
             globals_uploaded: None,
             mask_frame: None,
+            elements_scratch: Vec::new(),
             draws_scratch: Vec::new(),
+            indices_scratch: Vec::new(),
         }
     }
 
@@ -459,9 +564,16 @@ impl Renderer {
             .as_ref()
             .is_none_or(|g| !Arc::ptr_eq(&g.model, instance.compiled()))
         {
-            let geometry = Geometry::new(device, &self.draw_layout, instance.compiled());
+            let layouts = GeometryLayouts {
+                globals: &self.globals_layout,
+                globals_buffer: &self.globals,
+                draw: &self.draw_layout,
+            };
+            let geometry = Geometry::new(device, &layouts, instance.compiled());
             self.position_uploads.reset(geometry.vertex_count);
+            self.element_uploads.reset();
             self.draw_uploads.reset();
+            self.index_uploads.reset();
             self.mask_frame = None;
             self.geometry = Some(geometry);
         }
@@ -620,7 +732,37 @@ impl Renderer {
                 .unwrap_or(MaskRead::NONE)
         };
 
-        // 要素ごとのユニフォームと、マスクパスで描くマスク用メッシュのユニフォーム。
+        // 本描画の要素ごとの値 (頂点の要素の番号で引くので、描画の状態の違いにならない)。
+        self.elements_scratch.clear();
+        for (i, state) in drawables.iter().enumerate() {
+            let read = mask_read(i);
+            let raw = ElementRaw {
+                multiply_color: [
+                    state.multiply_color.r,
+                    state.multiply_color.g,
+                    state.multiply_color.b,
+                    state.opacity,
+                ],
+                screen_color: [
+                    state.screen_color.r,
+                    state.screen_color.g,
+                    state.screen_color.b,
+                    0.0,
+                ],
+                mask_rect: read.rect,
+                mask_channel: read.channel,
+                mask_params: read.params,
+            };
+            self.elements_scratch
+                .extend_from_slice(bytemuck::bytes_of(&raw));
+        }
+        let element_writes =
+            self.element_uploads
+                .upload(&self.elements_scratch, ELEMENT_BYTES, |offset, data| {
+                    geometry.write_elements(queue, offset as usize / ELEMENT_BYTES, data);
+                });
+
+        // マスクパスで描くマスク用メッシュのユニフォーム。
         let stride = geometry.draw_stride as usize;
         self.draws_scratch.clear();
         self.draws_scratch.resize(geometry.draws.size() as usize, 0);
@@ -629,31 +771,6 @@ impl Renderer {
             self.draws_scratch[start..start + DRAW_UNIFORMS_SIZE as usize]
                 .copy_from_slice(bytemuck::bytes_of(&raw));
         };
-        for (i, state) in drawables.iter().enumerate() {
-            let read = mask_read(i);
-            write_draw(
-                i,
-                DrawUniformsRaw {
-                    multiply_color: [
-                        state.multiply_color.r,
-                        state.multiply_color.g,
-                        state.multiply_color.b,
-                        state.opacity,
-                    ],
-                    screen_color: [
-                        state.screen_color.r,
-                        state.screen_color.g,
-                        state.screen_color.b,
-                        0.0,
-                    ],
-                    mask_rect: read.rect,
-                    mask_channel: read.channel,
-                    mask_params: read.params,
-                    target_rect: [0.0; 4],
-                    target_channel: [0.0; 4],
-                },
-            );
-        }
         for a in &active {
             let base = geometry.mask_slot_base[a.content as usize] as usize;
             let draw_steps = geometry.masks[a.content as usize]
@@ -689,7 +806,7 @@ impl Renderer {
             .upload(&self.draws_scratch, stride, |offset, data| {
                 queue.write_buffer(&geometry.draws, offset, data);
             });
-        let mut uniform_bytes = draw_writes.bytes;
+        let mut uniform_bytes = element_writes.bytes + draw_writes.bytes;
 
         let globals = GlobalsRaw {
             view_proj: m.map(|c| [c[0], c[1], c[2], 0.0]),
@@ -702,9 +819,7 @@ impl Renderer {
 
         // マスクアトラスの内容の使い回し: アトラス・割り当て・ビュー・テクスチャが前と同じで、
         // マスクパスのユニフォームとマスク用メッシュの頂点位置を転送していなければ、描く内容も同じ。
-        let mask_uniforms_written = draw_writes
-            .last_slot
-            .is_some_and(|slot| slot >= geometry.meshes.len());
+        let mask_uniforms_written = draw_writes.last_slot.is_some();
         let members_written = active.iter().any(|a| {
             geometry.masks[a.content as usize]
                 .members
@@ -754,6 +869,10 @@ impl Renderer {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+            // マスク用メッシュは宣言順のインデックスで 1 つずつ描く。
+            pass.set_vertex_buffer(0, geometry.positions.slice(..));
+            pass.set_vertex_buffer(1, geometry.uvs.slice(..));
+            pass.set_index_buffer(geometry.indices.slice(..), wgpu::IndexFormat::Uint32);
             for a in active.iter().filter(|a| a.slot.atlas as usize == index) {
                 let [x, y, w, h] = a.slot.cell;
                 pass.set_scissor_rect(x, y, w, h);
@@ -791,7 +910,7 @@ impl Renderer {
                                 continue;
                             }
                             pass.set_pipeline(&pipelines.draw);
-                            pass.set_bind_group(0, &self.globals_bind_group, &[]);
+                            pass.set_bind_group(0, &geometry.globals_bind_group, &[]);
                             pass.set_bind_group(
                                 1,
                                 &geometry.draws_bind_group,
@@ -799,13 +918,52 @@ impl Renderer {
                             );
                             pass.set_bind_group(2, &texture.bind_group, &[]);
                             pass.set_bind_group(3, own_mask, &[]);
-                            geometry.draw_mesh(&mut pass, mesh);
+                            pass.draw_indexed(mesh.indices(), 0, 0..1);
                             mask_draws += 1;
                         }
                     }
                 }
             }
         }
+
+        // 本描画: 描画順で隣り合い、描画の状態が同じ要素を 1 回の描画にまとめる
+        // (`docs/spec/rendering.md#描画の最適化`)。インデックスは描く要素のものを描画順に並べる。
+        self.indices_scratch.clear();
+        let mut calls: Vec<DrawCall> = Vec::new();
+        let mut state_changes = 0;
+        for &(i, key) in &draws {
+            let mesh = geometry.meshes[i];
+            let state = DrawState {
+                key,
+                texture: mesh.texture,
+                mask_atlas: mesh
+                    .mask
+                    .and_then(|m| active_of[m.content as usize])
+                    .map(|a| active[a].slot.atlas),
+            };
+            let first_index = self.indices_scratch.len() as u32;
+            self.indices_scratch
+                .extend_from_slice(&geometry.index_data[mesh.indices_usize()]);
+            let merged = calls.last().and_then(|last| last.state.merge(state));
+            if let (Some(last), Some(merged), true) = (calls.last_mut(), merged, self.batch_draws) {
+                last.state = merged;
+                last.index_count += mesh.index_count;
+                continue;
+            }
+            if merged.is_none() && !calls.is_empty() {
+                state_changes += 1;
+            }
+            calls.push(DrawCall {
+                state,
+                first_index,
+                index_count: mesh.index_count,
+            });
+        }
+        let index_bytes = self
+            .index_uploads
+            .upload(&self.indices_scratch, |offset, data| {
+                queue.write_buffer(&geometry.draw_indices, offset, data);
+            });
 
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("ugoe main pass"),
@@ -823,29 +981,59 @@ impl Renderer {
             occlusion_query_set: None,
             multiview_mask: None,
         });
-        pass.set_bind_group(0, &self.globals_bind_group, &[]);
-        let mut drawn = 0;
-        for &(i, key) in &draws {
-            let mesh = geometry.meshes[i];
+        if !calls.is_empty() {
+            pass.set_bind_group(0, &geometry.globals_bind_group, &[]);
+            // 本描画のシェーダはユニフォームを読まないが、レイアウトを共有しているので束縛しておく。
+            pass.set_bind_group(1, &geometry.draws_bind_group, &[0]);
+            pass.set_vertex_buffer(0, geometry.positions.slice(..));
+            pass.set_vertex_buffer(1, geometry.uvs.slice(..));
+            pass.set_vertex_buffer(2, geometry.elements.slice(..));
+            pass.set_index_buffer(geometry.draw_indices.slice(..), wgpu::IndexFormat::Uint32);
+        }
+        // 束縛中の状態 (`mask_atlas` は束縛中のアトラス。`None` はダミー)。変わったものだけ束縛し直す。
+        let mut bound: Option<DrawState> = None;
+        for call in &calls {
+            let state = call.state;
             let (Some(pipeline), Some(texture)) =
-                (self.pipelines.get(key), self.texture(mesh.texture))
+                (self.pipelines.get(state.key), self.texture(state.texture))
             else {
                 continue;
             };
-            let mask_bind_group = match mesh.mask.and_then(|m| active_of[m.content as usize]) {
-                Some(a) => &self.mask_atlases[active[a].slot.atlas as usize].bind_group,
-                None => &self.no_mask_bind_group,
+            if bound.is_none_or(|b| b.key != state.key) {
+                pass.set_pipeline(pipeline);
+            }
+            if bound.is_none_or(|b| b.texture != state.texture) {
+                pass.set_bind_group(2, &texture.bind_group, &[]);
+            }
+            // マスクを読まない描画 (`None`) は、どのアトラスが束縛されていてもよい。
+            let mask_atlas = match bound {
+                Some(b) if state.mask_atlas.is_none() || state.mask_atlas == b.mask_atlas => {
+                    b.mask_atlas
+                }
+                _ => {
+                    let mask_bind_group = match state.mask_atlas {
+                        Some(atlas) => &self.mask_atlases[atlas as usize].bind_group,
+                        None => &self.no_mask_bind_group,
+                    };
+                    pass.set_bind_group(3, mask_bind_group, &[]);
+                    state.mask_atlas
+                }
             };
-            pass.set_pipeline(pipeline);
-            pass.set_bind_group(1, &geometry.draws_bind_group, &[(i * stride) as u32]);
-            pass.set_bind_group(2, &texture.bind_group, &[]);
-            pass.set_bind_group(3, mask_bind_group, &[]);
-            geometry.draw_mesh(&mut pass, mesh);
-            drawn += 1;
+            bound = Some(DrawState {
+                mask_atlas,
+                ..state
+            });
+            pass.draw_indexed(
+                call.first_index..call.first_index + call.index_count,
+                0,
+                0..1,
+            );
         }
 
         self.stats = FrameStats {
-            drawables: drawn,
+            drawables: draws.len() as u32,
+            draw_calls: calls.len() as u32,
+            state_changes,
             mask_sets: active.len() as u32,
             mask_draws,
             mask_atlases: atlas_count as u32,
@@ -853,6 +1041,8 @@ impl Renderer {
             masks_reused,
             position_bytes,
             uniform_bytes,
+            index_bytes,
+            uploaded_bytes: position_bytes + uniform_bytes + index_bytes,
         };
         Ok(())
     }
@@ -865,29 +1055,29 @@ impl Renderer {
 impl Geometry {
     fn new(
         device: &wgpu::Device,
-        draw_layout: &wgpu::BindGroupLayout,
+        layouts: &GeometryLayouts<'_>,
         compiled: &Arc<CompiledModel>,
     ) -> Self {
         let model = compiled.model();
         let (mesh_masks, masks) = mask::build(compiled);
         let mut uvs: Vec<[f32; 2]> = Vec::new();
-        let mut indices: Vec<u16> = Vec::new();
+        let mut elements: Vec<u32> = Vec::new();
+        let mut index_data: Vec<u32> = Vec::new();
         let mut meshes = Vec::with_capacity(model.meshes.len());
-        for (mesh, &mask) in model.meshes.iter().zip(&mesh_masks) {
-            let vertex_offset = uvs.len() as u64 * VEC2_SIZE;
-            let index_offset = indices.len() as u64 * 2;
+        for (i, (mesh, &mask)) in model.meshes.iter().zip(&mesh_masks).enumerate() {
+            let base = uvs.len() as u32;
+            let first_index = index_data.len() as u32;
             uvs.extend(mesh.uvs.iter().map(|uv| [uv.x, uv.y]));
-            indices.extend_from_slice(&mesh.indices);
-            // 空のスライスは束縛できないので、頂点のないメッシュは描かない。
+            elements.resize(uvs.len(), i as u32);
+            // 頂点のないメッシュは描かない (インデックスが指す頂点がない)。
             let index_count = if mesh.uvs.is_empty() {
                 0
             } else {
+                index_data.extend(mesh.indices.iter().map(|&k| base + u32::from(k)));
                 mesh.indices.len() as u32
             };
             meshes.push(MeshRange {
-                vertex_offset,
-                vertex_size: mesh.uvs.len() as u64 * VEC2_SIZE,
-                index_offset,
+                first_index,
                 index_count,
                 texture: mesh.texture,
                 culling: mesh.culling,
@@ -895,28 +1085,80 @@ impl Geometry {
             });
         }
 
+        // 空のバッファは束縛できないので、最低 1 つ分の大きさにする (中身は使わない)。
         let vertex_count = uvs.len();
         let positions = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("ugoe positions"),
-            size: uvs.len() as u64 * VEC2_SIZE,
+            size: vertex_count.max(1) as u64 * VEC2_SIZE,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let uvs = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("ugoe uvs"),
-            contents: bytemuck::cast_slice(&uvs),
-            usage: wgpu::BufferUsages::VERTEX,
+        let static_buffer = |label, contents: &[u8], usage| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(label),
+                contents,
+                usage,
+            })
+        };
+        uvs.resize(vertex_count.max(1), [0.0; 2]);
+        elements.resize(vertex_count.max(1), 0);
+        let uvs = static_buffer(
+            "ugoe uvs",
+            bytemuck::cast_slice(&uvs),
+            wgpu::BufferUsages::VERTEX,
+        );
+        let elements = static_buffer(
+            "ugoe element indices",
+            bytemuck::cast_slice(&elements),
+            wgpu::BufferUsages::VERTEX,
+        );
+        let indices = static_buffer(
+            "ugoe indices",
+            bytemuck::cast_slice(if index_data.is_empty() {
+                &[0]
+            } else {
+                &index_data[..]
+            }),
+            wgpu::BufferUsages::INDEX,
+        );
+        // 各要素は 1 フレームに高々 1 回描くので、全要素のインデックスの数で足りる。
+        let draw_indices = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("ugoe draw indices"),
+            size: indices.size(),
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
-        let indices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("ugoe indices"),
-            contents: bytemuck::cast_slice(&indices),
-            usage: wgpu::BufferUsages::INDEX,
+
+        let element_count = model.meshes.len().max(1) as u32;
+        let per_row = element_count.min(ELEMENTS_PER_ROW);
+        let element_data = device.create_texture(&wgpu::TextureDescriptor {
+            format: ELEMENT_DATA_FORMAT,
+            ..texture_descriptor(
+                "ugoe element data",
+                per_row * ELEMENT_TEXELS,
+                element_count.div_ceil(per_row),
+            )
+        });
+        let element_view = element_data.create_view(&wgpu::TextureViewDescriptor::default());
+        let globals_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("ugoe globals"),
+            layout: layouts.globals,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: layouts.globals_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&element_view),
+                },
+            ],
         });
 
         let alignment = u64::from(device.limits().min_uniform_buffer_offset_alignment);
         let draw_stride = DRAW_UNIFORMS_SIZE.div_ceil(alignment) * alignment;
         let mut mask_slot_base = Vec::with_capacity(masks.len());
-        let mut slots = meshes.len() as u32;
+        let mut slots = 0;
         for content in &masks {
             mask_slot_base.push(slots);
             slots += content.draw_count() as u32;
@@ -931,7 +1173,7 @@ impl Geometry {
         });
         let draws_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("ugoe draw uniforms"),
-            layout: draw_layout,
+            layout: layouts.draw,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
@@ -946,9 +1188,14 @@ impl Geometry {
             model: compiled.clone(),
             positions,
             uvs,
+            elements,
             indices,
+            index_data,
+            draw_indices,
             meshes,
             vertex_count,
+            element_data,
+            globals_bind_group,
             masks,
             masks_by_level_desc,
             mask_slot_base,
@@ -958,20 +1205,54 @@ impl Geometry {
         }
     }
 
-    /// 頂点・インデックスを束縛して 1 メッシュを描く。
-    fn draw_mesh(&self, pass: &mut wgpu::RenderPass<'_>, mesh: MeshRange) {
-        // WebGL2 は base_vertex を使えないので、バッファのスライスで要素を切り替える。
-        let vertices = mesh.vertex_offset..mesh.vertex_offset + mesh.vertex_size;
-        pass.set_vertex_buffer(0, self.positions.slice(vertices.clone()));
-        pass.set_vertex_buffer(1, self.uvs.slice(vertices));
-        let index_size = u64::from(mesh.index_count) * 2;
-        pass.set_index_buffer(
-            self.indices
-                .slice(mesh.index_offset..mesh.index_offset + index_size),
-            wgpu::IndexFormat::Uint16,
-        );
-        pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+    /// 要素ごとの値のテクスチャの 1 行の要素数。
+    fn elements_per_row(&self) -> u32 {
+        self.element_data.width() / ELEMENT_TEXELS
     }
+
+    /// 要素ごとの値 (`ElementRaw` の列) のうち、要素 `first` から始まる `data` をテクスチャに書く。
+    fn write_elements(&self, queue: &wgpu::Queue, first: usize, data: &[u8]) {
+        let per_row = self.elements_per_row() as usize;
+        let mut element = first;
+        let mut rest = data;
+        while !rest.is_empty() {
+            let (row, column) = (element / per_row, element % per_row);
+            let count = (per_row - column).min(rest.len() / ELEMENT_BYTES);
+            let (head, tail) = rest.split_at(count * ELEMENT_BYTES);
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &self.element_data,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d {
+                        x: column as u32 * ELEMENT_TEXELS,
+                        y: row as u32,
+                        z: 0,
+                    },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                head,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(head.len() as u32),
+                    rows_per_image: None,
+                },
+                wgpu::Extent3d {
+                    width: count as u32 * ELEMENT_TEXELS,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+            );
+            element += count;
+            rest = tail;
+        }
+    }
+}
+
+/// [`Geometry::new`] がバインドグループを作るのに使うレイアウトとバッファ。
+struct GeometryLayouts<'a> {
+    globals: &'a wgpu::BindGroupLayout,
+    globals_buffer: &'a wgpu::Buffer,
+    draw: &'a wgpu::BindGroupLayout,
 }
 
 impl MaskAtlas {
