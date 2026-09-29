@@ -2,7 +2,7 @@
 id: T0405
 title: Unity パッケージ
 status: todo
-milestone: M4
+milestone: M7
 crates: [bindings/unity]
 depends_on: [T0401]
 assignee:

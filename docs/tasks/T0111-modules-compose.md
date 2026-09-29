@@ -2,7 +2,7 @@
 id: T0111
 title: 着せ替え: スロットとモジュールの合成
 status: todo
-milestone: M4
+milestone: M6
 crates: [ugoe-model, ugoe-runtime]
 depends_on: [T0109]
 assignee:

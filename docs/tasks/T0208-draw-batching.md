@@ -2,7 +2,7 @@
 id: T0208
 title: 参照レンダラ: 描画の自動統合
 status: todo
-milestone: M4
+milestone: M6
 crates: [ugoe-render]
 depends_on: [T0205]
 assignee:

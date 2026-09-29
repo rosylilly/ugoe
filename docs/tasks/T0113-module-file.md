@@ -2,7 +2,7 @@
 id: T0113
 title: 着せ替えモジュールのファイル形式
 status: todo
-milestone: M4
+milestone: M6
 crates: [ugoe-format]
 depends_on: [T0111]
 assignee:

@@ -2,7 +2,7 @@
 id: T0403
 title: crates.io への公開準備
 status: todo
-milestone: M4
+milestone: M7
 crates: [全クレートの Cargo.toml, CI]
 depends_on: []
 assignee:

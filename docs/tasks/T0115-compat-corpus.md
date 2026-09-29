@@ -2,7 +2,7 @@
 id: T0115
 title: 互換性テストの資料と CI
 status: todo
-milestone: M4
+milestone: M5
 crates: [ugoe-format, assets/compat, CI]
 depends_on: [T0109]
 assignee:

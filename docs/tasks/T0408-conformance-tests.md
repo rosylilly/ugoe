@@ -2,7 +2,7 @@
 id: T0408
 title: 配布物の適合テスト
 status: todo
-milestone: M4
+milestone: M7
 crates: [tests/conformance, CI]
 depends_on: [T0401, T0404]
 assignee:

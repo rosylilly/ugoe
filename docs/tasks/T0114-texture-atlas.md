@@ -2,7 +2,7 @@
 id: T0114
 title: ビルド時のテクスチャのアトラス化
 status: todo
-milestone: M4
+milestone: M6
 crates: [ugoe-editor-core, ugoe-cli]
 depends_on: [T0604]
 assignee:

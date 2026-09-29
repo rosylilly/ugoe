@@ -2,7 +2,7 @@
 id: T0406
 title: Godot GDExtension
 status: todo
-milestone: M4
+milestone: M7
 crates: [bindings/godot]
 depends_on: []
 assignee:

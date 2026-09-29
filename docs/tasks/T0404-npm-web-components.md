@@ -2,7 +2,7 @@
 id: T0404
 title: npm パッケージと Web Components
 status: todo
-milestone: M4
+milestone: M7
 crates: [ugoe-wasm, packages/]
 depends_on: [T0402]
 assignee:

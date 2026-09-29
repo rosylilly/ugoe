@@ -2,7 +2,7 @@
 id: T0631
 title: エディタ: アバタープロファイルの編集
 status: todo
-milestone: M4
+milestone: M5
 crates: [ugoe-editor-core, apps/editor, docs/manual]
 depends_on: [T0110]
 assignee:

@@ -2,7 +2,7 @@
 id: T0311
 title: 動的物理: 衝突のすり抜けと節の伸びを防ぐ
 status: todo
-milestone: M4
+milestone: M6
 crates: [ugoe-physics, ugoe-model, docs]
 depends_on: [T0305]
 assignee:

@@ -27,5 +27,7 @@
 | [0015](0015-lighting.md) | ライティング (法線マップ) | Accepted |
 | [0016](0016-draw-batching.md) | 描画コストの自動最適化 | Accepted |
 | [0017](0017-single-runtime-distribution.md) | 単一ランタイムと 1 行導入 | Accepted |
-| [0018](0018-licensing-and-1.0-scope.md) | ライセンスと 1.0 の範囲 | Accepted |
+| [0018](0018-licensing-and-1.0-scope.md) | ライセンスと 1.0 の範囲 | 一部 Superseded (1.0 の範囲は 0020) |
 | [0019](0019-viewer-license.md) | ビューア (apps/viewer) のライセンスは GPL-3.0-only | Accepted |
+| [0020](0020-milestone-order-and-ai-in-1.0.md) | マイルストーンの順序と、AI 支援を 1.0 に含めること | Accepted |
+| [0021](0021-public-specification.md) | 公開のモデル仕様 (英語版を正とし、CC BY 4.0) | Accepted |

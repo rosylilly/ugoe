@@ -2,7 +2,7 @@
 id: T0407
 title: Unreal プラグイン
 status: todo
-milestone: M4
+milestone: M7
 crates: [bindings/unreal]
 depends_on: [T0401]
 assignee:

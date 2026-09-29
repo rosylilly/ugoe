@@ -2,7 +2,7 @@
 id: T0503
 title: レイヤーの意味分類
 status: todo
-milestone: M5
+milestone: M4
 crates: [ugoe-ai]
 depends_on: [T0501]
 assignee:
@@ -24,6 +24,7 @@ assignee:
 ## 参考
 
 - `docs/ai-integration.md`
+- `assets/fixtures/psd-real/` (See-Through の PSD。英語のレイヤー名で、正解のラベルを付けやすい)
 
 ## メモ
 

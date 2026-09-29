@@ -2,9 +2,9 @@
 id: T0504
 title: 自動リギングの提案
 status: todo
-milestone: M5
+milestone: M4
 crates: [ugoe-ai]
-depends_on: [T0503, T0601]
+depends_on: [T0503, T0601, T0509]
 assignee:
 ---
 
@@ -24,6 +24,8 @@ assignee:
 ## 参考
 
 - `docs/ai-integration.md#自動リギング`
+- `crates/ugoe-cli/src/sample.rs` (T0702・T0704 の見本のジェネレータ。レイヤーの名前から部位を見つけ、コマンドの列でリグを組む。テンプレートの出発点になる)
+- `crates/ugoe-editor-core/src/physics_template.rs` (T0634 の物理のテンプレート)
 
 ## メモ
 
