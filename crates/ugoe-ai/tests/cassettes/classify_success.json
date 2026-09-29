@@ -1,0 +1,71 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "body": {
+          "model": "claude-opus-5-5",
+          "max_tokens": 16000,
+          "system": "You label the layers of a character illustration.",
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "image",
+                  "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": "<16 base64 chars omitted>"
+                  }
+                },
+                { "type": "text", "text": "Label the layer named \"eye_l\"." }
+              ]
+            }
+          ],
+          "output_config": {
+            "format": {
+              "type": "json_schema",
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": { "type": "string" },
+                  "side": { "type": "string", "enum": ["left", "right", "center"] }
+                },
+                "required": ["label", "side"],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "request-id": "req_011CT0509success"
+        },
+        "body": {
+          "id": "msg_01T0509success",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-opus-5-5",
+          "content": [
+            { "type": "thinking", "thinking": "", "signature": "EqQBCkYIBhgCIkB0509" },
+            { "type": "text", "text": "{\"label\":\"iris\",\"side\":\"left\"}" }
+          ],
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "stop_details": null,
+          "usage": {
+            "input_tokens": 1843,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 97
+          }
+        }
+      }
+    }
+  ]
+}

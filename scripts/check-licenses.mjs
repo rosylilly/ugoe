@@ -27,6 +27,8 @@ const PERMISSIVE = new Set([
   "Unlicense",
   "0BSD",
   "CC0-1.0",
+  // webpki-roots (TLS のルート証明書) のデータ用ライセンス。コピーレフトはなく、条件は再配布時に条文を示すことだけ
+  "CDLA-Permissive-2.0",
   "BSL-1.0",
 ]);
 // GPL-3.0 と両立するライセンス (アプリの依存に使ってよい)

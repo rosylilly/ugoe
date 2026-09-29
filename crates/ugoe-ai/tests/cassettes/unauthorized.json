@@ -1,0 +1,16 @@
+{
+  "interactions": [
+    {
+      "request": { "method": "POST", "url": "https://api.anthropic.com/v1/messages" },
+      "response": {
+        "status": 401,
+        "headers": { "content-type": "application/json", "request-id": "req_011CT0509auth" },
+        "body": {
+          "type": "error",
+          "error": { "type": "authentication_error", "message": "invalid x-api-key: sk-ant-test-DO-NOT-LEAK" },
+          "request_id": "req_011CT0509auth"
+        }
+      }
+    }
+  ]
+}

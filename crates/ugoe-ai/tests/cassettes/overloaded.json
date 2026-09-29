@@ -1,0 +1,28 @@
+{
+  "interactions": [
+    {
+      "request": { "method": "POST", "url": "https://api.anthropic.com/v1/messages" },
+      "response": {
+        "status": 529,
+        "headers": { "content-type": "application/json", "request-id": "req_011CT0509busy1" },
+        "body": { "type": "error", "error": { "type": "overloaded_error", "message": "Overloaded" }, "request_id": "req_011CT0509busy1" }
+      }
+    },
+    {
+      "request": { "method": "POST", "url": "https://api.anthropic.com/v1/messages" },
+      "response": {
+        "status": 529,
+        "headers": { "content-type": "application/json", "request-id": "req_011CT0509busy2" },
+        "body": { "type": "error", "error": { "type": "overloaded_error", "message": "Overloaded" }, "request_id": "req_011CT0509busy2" }
+      }
+    },
+    {
+      "request": { "method": "POST", "url": "https://api.anthropic.com/v1/messages" },
+      "response": {
+        "status": 529,
+        "headers": { "content-type": "application/json", "request-id": "req_011CT0509busy3" },
+        "body": { "type": "error", "error": { "type": "overloaded_error", "message": "Overloaded" }, "request_id": "req_011CT0509busy3" }
+      }
+    }
+  ]
+}
