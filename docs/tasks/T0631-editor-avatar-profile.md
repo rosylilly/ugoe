@@ -1,11 +1,11 @@
 ---
 id: T0631
 title: エディタ: アバタープロファイルの編集
-status: todo
+status: in-progress
 milestone: M5
 crates: [ugoe-editor-core, apps/editor, docs/manual]
 depends_on: [T0110]
-assignee:
+assignee: claude-worker-T0631
 ---
 
 # T0631: エディタ: アバタープロファイルの編集

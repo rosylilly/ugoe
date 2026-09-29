@@ -1,11 +1,11 @@
 ---
 id: T0210
 title: ライティングをホストにつなぐ
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe, ugoe-wasm, ugoe-headless, ugoe-cli, docs]
 depends_on: [T0209]
-assignee:
+assignee: claude-worker-T0210
 ---
 
 # T0210: ライティングをホストにつなぐ

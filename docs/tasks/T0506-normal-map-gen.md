@@ -1,11 +1,11 @@
 ---
 id: T0506
 title: 法線マップの生成
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-rigging, ugoe-ai]
 depends_on: [T0112, T0610, T0504, T0640]
-assignee:
+assignee: claude-worker-T0506
 ---
 
 # T0506: 法線マップの生成

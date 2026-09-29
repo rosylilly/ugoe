@@ -1,11 +1,11 @@
 ---
 id: T0121
 title: 着せ替え: Puppet の API と合成の残り
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe, ugoe-runtime, ugoe-model, docs]
 depends_on: [T0111, T0113]
-assignee:
+assignee: claude-worker-T0121
 ---
 
 # T0121: 着せ替え: Puppet の API と合成の残り
