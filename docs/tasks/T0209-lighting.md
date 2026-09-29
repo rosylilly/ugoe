@@ -1,11 +1,11 @@
 ---
 id: T0209
 title: 参照レンダラ: ライティング
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-render]
 depends_on: [T0112]
-assignee:
+assignee: claude-worker-T0209
 ---
 
 # T0209: 参照レンダラ: ライティング

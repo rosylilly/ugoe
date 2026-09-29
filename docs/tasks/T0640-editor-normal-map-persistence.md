@@ -1,11 +1,11 @@
 ---
 id: T0640
 title: エディタ: プロジェクトに法線マップの画像を保存する
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-editor-core, docs]
 depends_on: [T0112]
-assignee:
+assignee: claude-worker-T0640
 ---
 
 # T0640: エディタ: プロジェクトに法線マップの画像を保存する

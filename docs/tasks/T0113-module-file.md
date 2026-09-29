@@ -1,11 +1,11 @@
 ---
 id: T0113
 title: 着せ替えモジュールのファイル形式
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-format]
 depends_on: [T0111]
-assignee:
+assignee: claude-worker-T0113
 ---
 
 # T0113: 着せ替えモジュールのファイル形式
