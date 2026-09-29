@@ -14,6 +14,7 @@ import type {
   PhysicsSettings,
   ProjectStatus,
   PsdImportWarning,
+  RestPoseCollision,
 } from "./generated/types";
 import type { Point } from "./panels/inspector/keyforms/keyforms";
 
@@ -69,4 +70,9 @@ export const ipc = {
   /** 親がワープのすべての要素について、キーフォームのすべてのセルではみ出しを調べる。 */
   verifyOverflows: (tolerance?: number) =>
     invoke<OverflowReport>("verify_overflows", { tolerance: tolerance ?? null }),
+  /**
+   * apps/editor/src-tauri/src/physics_check.rs。パラメータの既定値での静止姿勢で衝突体に当たっている
+   * リグの鎖 (リグと衝突体の組ごと)。物理の設定がなければ空。
+   */
+  checkPhysics: () => invoke<RestPoseCollision[]>("check_physics"),
 };

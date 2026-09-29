@@ -6,12 +6,16 @@
   - 「Verify all cells」: 親がワープのすべての要素について、キーフォームのすべてのセル (軸のキーの組み合わせ)
     ではみ出しを調べ、要素ごとに一覧にする。行を押すと、その要素を選び、ビューポートのパラメータを
     そのセルの値にする。一度調べた後は、モデルが変わるたびに調べ直す。
+  - 「Physics」: 静止姿勢で衝突体に当たっている鎖 (physics/RestPoseWarnings.svelte、docs/editor.md#物理の警告)。
+    行を押すと「Physics」のタブに移り、そのリグと衝突体を選ぶ。
 -->
 <script lang="ts">
 import type { EditorDocument } from "../../document.svelte";
 import { ipc, type Model, type OverflowFinding, type OverflowReport } from "../../ipc";
 import type { Selection } from "../../selection.svelte";
 import type { ViewportController } from "../../viewport/controller.svelte";
+import type { PhysicsView } from "../physics/physicsView.svelte";
+import RestPoseWarnings from "../physics/RestPoseWarnings.svelte";
 import {
   cellParameters,
   formatAmount,
@@ -28,9 +32,10 @@ interface Props {
   selection: Selection;
   viewport: ViewportController;
   view: VerifyView;
+  physics: PhysicsView;
 }
 
-let { doc, selection, viewport, view }: Props = $props();
+let { doc, selection, viewport, view, physics }: Props = $props();
 
 const model = $derived.by((): Model | null => {
   try {
@@ -77,6 +82,14 @@ function goTo(finding: OverflowFinding): void {
   if (viewport.previewingPhysics) viewport.stopPhysicsPreview();
   for (const [id, value] of cellParameters(finding.cell)) viewport.setParameter(id, value);
   view.showOverflows = true;
+}
+
+/** 「Physics」のタブに移り、リグと衝突体を選ぶ。 */
+function goToPhysics(rig: string, collider: string): void {
+  physics.rig = rig;
+  physics.collider = collider;
+  physics.active = true;
+  view.active = false;
 }
 </script>
 
@@ -159,6 +172,11 @@ function goTo(finding: OverflowFinding): void {
       </ul>
     {/if}
   {/if}
+</section>
+
+<section>
+  <h3>Physics</h3>
+  <RestPoseWarnings {doc} onSelect={goToPhysics} showEmpty />
 </section>
 
 <style>

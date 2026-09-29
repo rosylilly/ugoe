@@ -302,6 +302,29 @@ AI や CLI は `commands` の結果を確かめてから `batch` として適用
 - 始めるときと止めるときに `reset_physics` で粒子を静止姿勢に戻します。止めると物理の段を止め (動的物理の加算量が 0 に戻る)、物理が書き込んだパラメータをスライダーの値に戻すので、編集中の姿に戻ります。
 - プレビュー中に編集すると、モデルと物理を読み直し、揺れは静止した姿からやり直します。
 
+### 物理の警告
+
+モデルだけを見る `validate_physics` (エラー。[物理の編集](#物理の編集)) では分からず、モデルを評価して初めて分かる問題を警告として
+知らせます (T0315)。今は「静止姿勢で衝突体に入っている鎖」だけです
+([physics.md#静止姿勢で衝突体に入っている場合](spec/physics.md#静止姿勢で衝突体に入っている場合))。警告は編集を拒否せず、読むだけでコマンドも発行しません。
+
+- **検出** (`ugoe_editor_core::physics_check::rest_pose_collisions(model, physics)`): モデルをコンパイルし、パラメータの既定値で
+  `PhysicsSystem::rest_pose_collisions` を呼んで、当たっている区間をリグと衝突体の組ごとにまとめます
+  (`RestPoseCollision { rig, collider, particles }`。`particles` は当たっている区間の子の粒子の添字の昇順。並びはリグの順、同じリグの中は最初に当たる粒子の順)。
+  動的物理を使わない設定 (パラメータにだけ出力する) では空です。モデルをコンパイルできなければエラー。
+- **`ugoe validate`** も同じ関数を使い、``warning: physics rig `Hair` hits collider `Shoulder` in its rest pose (…)`` を標準エラーに出します
+  (終了コードと `ok` は変えない。検証エラーがあるときは評価できないので出さない)。物理はバンドルのもの、または `--physics <PATH>` の JSON。
+- **Tauri コマンド** (`src-tauri/src/physics_check.rs`): `check_physics()`。物理の設定がなければ空。
+- **画面** (`panels/physics/RestPoseWarnings.svelte`、表記は `panels/physics/restPose.ts` で Vitest): ドキュメントが変わるたびに
+  (`EditorDocument.revision`) 問い合わせ直し、当たっている組を 1 行ずつ (`前髪 (Hair) hits Shoulder` と区間の番号) 出します。
+  - 「Verify」のパネルの「Physics」: 当たりがなければ「No rig hits a collider in the rest pose.」。行を押すと「Physics」のタブに移り、
+    そのリグと衝突体を選びます (`PhysicsView.rig` / `collider`。ビューポートに衝突体と鎖が出る)。
+  - 物理のパネル: 当たりがあるときだけ、「Preview」の下に同じ一覧を出します。行を押すとそのリグと衝突体を選びます。
+- **取り込み・テンプレートの直後に知らせるか:** 別の通知 (ヘッダーの警告や、`apply_physics_template` の報告) は **足しません**。
+  物理のテンプレートの適用・衝突体の移動・「Collides with」の変更はすべて物理のパネルで行い、その直後にパネルの一覧が更新されるので、
+  操作した場所でそのまま気づけます。PSD の取り込みは物理の設定を作らず、既存の物理がある場合も、取り込みの後に「Physics」か「Verify」の
+  タブを開けば出ます。`ApplyReport` に警告を足すと、すべてのコマンドの後に評価が要るので避けました。
+
 ## プレビューモード
 
 組み上げたモデルがランタイムでどう動くか (物理・目パチ・呼吸・モーション・表情を掛けた仕上がり) を、すべての

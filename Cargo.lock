@@ -4828,6 +4828,7 @@ dependencies = [
  "ugoe-mesher",
  "ugoe-model",
  "ugoe-motion",
+ "ugoe-physics",
  "ugoe-psd",
  "ugoe-rigging",
  "ugoe-runtime",

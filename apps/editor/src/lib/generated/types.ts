@@ -919,6 +919,26 @@ source: KeyformTarget,
 message: string, };
 
 /**
+ * 衝突体を考えない静止姿勢で、リグの鎖が衝突体に当たっている (`docs/spec/physics.md#静止姿勢で衝突体に入っている場合`)。
+ *
+ * 最初の `update` で、髪は真下に垂れずに衝突体の手前に止まり、衝突体に沿って置かれる。
+ * 作者が意図しない姿勢になりやすいので警告にする (エラーではない)。
+ */
+export type RestPoseCollision = { 
+/**
+ * リグの ID。
+ */
+rig: string, 
+/**
+ * 衝突体の ID。
+ */
+collider: string, 
+/**
+ * 当たっている区間の、子の粒子の添字 (昇順。区間は粒子 `i - 1` → `i`)。
+ */
+particles: Array<number>, };
+
+/**
  * リニアではなく sRGB 値の RGB (0.0..=1.0)。乗算色・スクリーン色に使う。
  */
 export type Rgb = { r: number, g: number, b: number, };

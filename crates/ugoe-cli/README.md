@@ -17,6 +17,7 @@
 ```sh
 ugoe validate model.json                 # 検証。問題なければ "ok"
 ugoe validate model.ugoe --profile avatar  # アバタープロファイルへの準拠も検査 (準拠レベルを表示)
+ugoe validate model.json --physics hair.physics.json  # 物理の設定も検査 (バンドルは同梱の物理を使う)
 ugoe info fixture:single_quad            # 概要
 ugoe info model.ugoe --json              # 機械で読みやすい JSON (パラメータの ID・値域を含む)
 ugoe fixture list                        # フィクスチャ名の一覧 (名前を省略しても同じ)

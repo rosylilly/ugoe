@@ -147,7 +147,7 @@ $effect(() => {
       </div>
       {#if doc.error}<p class="error">{doc.error}</p>{/if}
       {#if verify.active}
-        <VerifyPanel {doc} {selection} {viewport} view={verify} />
+        <VerifyPanel {doc} {selection} {viewport} view={verify} {physics} />
       {:else if physics.active}
         <PhysicsPanel {doc} {selection} {viewport} view={physics} />
       {:else}

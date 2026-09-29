@@ -4,6 +4,7 @@
 pub mod bindings;
 mod commands;
 mod overflow;
+mod physics_check;
 mod project;
 mod psd;
 mod space;
@@ -53,6 +54,7 @@ pub fn run() {
             space::canvas_to_local,
             overflow::find_overflows,
             overflow::verify_overflows,
+            physics_check::check_physics,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

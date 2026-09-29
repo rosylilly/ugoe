@@ -69,6 +69,68 @@ fn validate_checks_the_avatar_profile() {
     assert!(stderr.contains("no avatar profile"), "{stderr}");
 }
 
+/// `ugoe validate --physics`: 物理の設定を検証し、静止姿勢で衝突体に当たっている鎖を警告する (エラーにはしない)。
+#[test]
+fn validate_warns_about_rest_pose_collisions() {
+    use ugoe_core::Vec2;
+    use ugoe_model::fixtures;
+    use ugoe_model::physics::ColliderShape;
+
+    let tmp = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("validate-physics-{}", std::process::id()));
+    std::fs::create_dir_all(&tmp).expect("create output dir");
+    let write = |name: &str, json: String| {
+        let path = tmp.join(name);
+        std::fs::write(&path, json).expect("write json");
+        path.to_str().expect("utf-8 path").to_owned()
+    };
+    let model = write(
+        "dynamic_hair.json",
+        ugoe_format::model_to_json(&fixtures::dynamic_hair()).expect("model json"),
+    );
+    let fine = write(
+        "fine.physics.json",
+        ugoe_format::physics_to_json(&fixtures::dynamic_hair_settings()).expect("physics json"),
+    );
+    // 肩を、真下に垂れた髪を横切る位置へ動かす。
+    let mut settings = fixtures::dynamic_hair_settings();
+    settings.colliders[0].shape = ColliderShape::Capsule {
+        a: Vec2::new(-10.0, -60.0),
+        b: Vec2::new(40.0, -40.0),
+        radius: 8.0,
+    };
+    let crossing = write(
+        "crossing.physics.json",
+        ugoe_format::physics_to_json(&settings).expect("physics json"),
+    );
+
+    let output = ugoe(&["validate", &model, "--physics", &fine]);
+    assert_eq!(stdout(&output).trim(), "ok");
+    assert!(
+        output.stderr.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let output = ugoe(&["validate", &model, "--physics", &crossing]);
+    assert_eq!(stdout(&output).trim(), "ok");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("warning: physics rig `Hair` hits collider `Shoulder` in its rest pose"),
+        "{stderr}"
+    );
+
+    // 物理の設定の誤りはエラー。
+    settings.rigs[0].colliders = vec!["Missing".into()];
+    let broken = write(
+        "broken.physics.json",
+        ugoe_format::physics_to_json(&settings).expect("physics json"),
+    );
+    let output = ugoe(&["validate", &model, "--physics", &broken]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("error:"));
+}
+
 #[test]
 fn standard_params_include_extended_parameters() {
     let out = stdout(&ugoe(&["standard-params"]));

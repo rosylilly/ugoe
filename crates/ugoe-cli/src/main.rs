@@ -3,6 +3,7 @@
 mod animate;
 mod fixtures;
 mod image;
+mod physics;
 mod render;
 mod sample;
 
@@ -37,6 +38,9 @@ enum Cmd {
         /// 構造の検証に加えて、プロファイルへの準拠を検査する。
         #[arg(long, value_enum)]
         profile: Option<Profile>,
+        /// 物理の設定の JSON。バンドルの物理の代わりに検証する (JSON のモデルの物理を調べるときに使う)。
+        #[arg(long, value_name = "PATH")]
+        physics: Option<PathBuf>,
     },
     /// モデルの概要 (パラメータ・パーツ・メッシュ数など) を表示する。
     Info {
@@ -200,11 +204,32 @@ struct RenderArgs {
 
 fn main() -> anyhow::Result<()> {
     match Cli::parse().command {
-        Cmd::Validate { input, profile } => {
-            let model = load_input(&input)?.model;
-            let errors = ugoe_model::validate::validate(&model);
+        Cmd::Validate {
+            input,
+            profile,
+            physics,
+        } => {
+            let Input {
+                model, animation, ..
+            } = load_input(&input)?;
+            let settings = match physics {
+                Some(path) => Some(animate::read_physics(&path)?),
+                None => animation.physics,
+            };
+            let mut errors = ugoe_model::validate::validate(&model);
+            if let Some(settings) = &settings {
+                errors.extend(ugoe_model::validate::validate_physics(settings, &model));
+            }
             for e in &errors {
                 eprintln!("error: {e}");
+            }
+            // 物理の警告はモデルを評価して調べるので、エラーがないときだけ。
+            if let Some(settings) = settings.as_ref()
+                && errors.is_empty()
+            {
+                for w in physics::warnings(&model, settings)? {
+                    eprintln!("warning: {w}");
+                }
             }
             let profile_errors = match profile {
                 Some(Profile::Avatar) => check_avatar_profile(&model),

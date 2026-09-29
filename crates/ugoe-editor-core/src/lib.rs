@@ -20,6 +20,7 @@ pub mod keyform;
 mod mesh_edit;
 pub mod motion_edit;
 pub mod overflow;
+pub mod physics_check;
 pub mod physics_edit;
 pub mod physics_template;
 pub mod project;
@@ -64,6 +65,8 @@ mod mesh_edit_tests;
 mod motion_edit_tests;
 #[cfg(test)]
 mod overflow_tests;
+#[cfg(test)]
+mod physics_check_tests;
 #[cfg(test)]
 mod physics_edit_tests;
 #[cfg(test)]
