@@ -4,7 +4,7 @@ title: 法線マップとライティングのデータ
 status: todo
 milestone: M4
 crates: [ugoe-model, ugoe-format]
-depends_on: [T0109]
+depends_on: [T0109, T0111]
 assignee:
 ---
 

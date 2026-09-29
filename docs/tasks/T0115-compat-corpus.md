@@ -4,7 +4,7 @@ title: 互換性テストの資料と CI
 status: todo
 milestone: M5
 crates: [ugoe-format, assets/compat, CI]
-depends_on: [T0109]
+depends_on: [T0109, T0112, T0113]
 assignee:
 ---
 

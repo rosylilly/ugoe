@@ -4,7 +4,7 @@ title: 公開仕様: 骨格とモデル・バンドルの形式 (英語)
 status: todo
 milestone: M5
 crates: [spec, docs, scripts]
-depends_on: []
+depends_on: [T0111, T0112, T0113, T0311]
 assignee:
 ---
 
