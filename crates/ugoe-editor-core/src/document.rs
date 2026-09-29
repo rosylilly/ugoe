@@ -1185,6 +1185,7 @@ fn add_texture(
         name: name.clone(),
         width,
         height,
+        normal_map: None,
     });
     textures.insert(name, Arc::from(png));
     Ok(())

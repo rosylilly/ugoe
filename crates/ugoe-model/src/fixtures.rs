@@ -100,18 +100,21 @@ pub fn single_quad() -> Model {
             mirror: None,
             mirror_axis: None,
             depth: None,
+            lit: true,
         }],
         glues: vec![],
         textures: vec![TextureRef {
             name: "white".into(),
             width: 1,
             height: 1,
+            normal_map: None,
         }],
         hit_areas: vec![],
         pose: Pose::default(),
         effects: Effects::default(),
         avatar: None,
         slots: Vec::new(),
+        lighting: false,
     }
 }
 
@@ -244,6 +247,7 @@ fn quad_mesh(
         mirror: None,
         mirror_axis: None,
         depth: None,
+        lit: true,
     }
 }
 
@@ -336,12 +340,14 @@ fn base_model(name: &str, parameters: Vec<Parameter>) -> Model {
             name: "white".into(),
             width: 1,
             height: 1,
+            normal_map: None,
         }],
         hit_areas: vec![],
         pose: Pose::default(),
         effects: Effects::default(),
         avatar: None,
         slots: Vec::new(),
+        lighting: false,
     }
 }
 

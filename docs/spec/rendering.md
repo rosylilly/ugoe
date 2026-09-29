@@ -176,7 +176,7 @@ WebGL2 でも動くように、ストレージバッファ・コンピュート�
 
 判断の経緯は [ADR 0015](../adr/0015-lighting.md)。
 
-> 実装待ち: データ定義は T0112、参照レンダラは T0209、法線マップの生成は T0506 で行います。
+> 実装待ち: 参照レンダラは T0209、法線マップの生成は T0506 で行います。データ定義 (`TextureRef::normal_map`・`Model::lighting`・`Mesh::lit` と `NRML` チャンク) は実装済みです ([model.md#ライティング](model.md#ライティング))。
 
 - テクスチャに **法線マップ** を添えられます (`TextureRef::normal_map`)。法線マップはテクスチャと同じ UV 空間の接空間法線で、RGB = (x, y, z) を `n = 2c − 1` で表します。z はキャンバスから手前向きです。
 - 光源はホストがフレームごとに渡します (`Lighting { ambient, lights }`)。光源は平行光源 (`directional { direction, color }`) と点光源 (`point { position, color, range }`) で、位置と向きはキャンバス座標 + 奥行きで表します。

@@ -74,6 +74,10 @@ pub struct Model {
     /// 着せ替えのスロット。省略時はなし (`docs/spec/modules.md#スロット`)。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub slots: Vec<Slot>,
+    /// ホストが渡す光源でライティングするか。省略時は `false` で、`false` は書き出しでも省略する。
+    /// メッシュごとの有無は `Mesh::lit` (`docs/spec/rendering.md#ライティング`)。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub lighting: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -106,6 +110,11 @@ pub struct TextureRef {
     pub name: String,
     pub width: u32,
     pub height: u32,
+    /// 法線マップの画像の名前。`None` なら法線マップなし (法線は `(0, 0, 1)`)。
+    /// 画像は同じ UV 空間の接空間法線で、バンドルでは `NRML` チャンクに入る
+    /// (`docs/spec/rendering.md#ライティング`、`docs/spec/file-formats.md`)。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub normal_map: Option<String>,
 }
 
 /// 当たり判定領域。メッシュの変形後形状で判定する。

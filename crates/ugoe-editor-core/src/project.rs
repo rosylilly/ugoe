@@ -157,6 +157,7 @@ impl Project {
             effects: Effects::default(),
             avatar: None,
             slots: Vec::new(),
+            lighting: false,
         };
         Self::new(ProjectMeta::new(name), model, Textures::new())
     }
@@ -331,12 +332,27 @@ pub fn export_bundle(project: &Project) -> Result<Vec<u8>, ProjectError> {
             })
         })
         .collect::<Result<Vec<_>, ProjectError>>()?;
+    // TODO(T0640): プロジェクトの保存・読み込みはまだ法線マップの画像を扱わない。
+    // 法線マップの画像は、テクスチャと同じ `textures` から名前で引く。
+    let normal_maps = project
+        .model
+        .textures
+        .iter()
+        .filter_map(|t| t.normal_map.as_deref())
+        .map(|name| {
+            Ok(TextureData {
+                format: TextureFormat::Png,
+                bytes: project.texture_bytes(name)?.to_vec(),
+            })
+        })
+        .collect::<Result<Vec<_>, ProjectError>>()?;
     let bundle = Bundle {
         model: project.model.clone(),
         physics: project.physics.clone(),
         motions: project.motions.clone(),
         expressions: project.expressions.clone(),
         textures,
+        normal_maps,
         meta: None,
     };
     ugoe_format::write_bundle(&bundle).map_err(ProjectError::Export)

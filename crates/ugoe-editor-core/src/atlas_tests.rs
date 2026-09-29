@@ -51,6 +51,7 @@ fn model_with(meshes: &[(u32, f32)], sizes: &[(u32, u32)]) -> (Model, Textures) 
                 name,
                 width,
                 height,
+                normal_map: None,
             }
         })
         .collect();
@@ -274,4 +275,25 @@ fn reports_bad_input() {
         build_atlas(&model, &textures, &options),
         Err(AtlasError::InvalidMaxSize)
     ));
+}
+
+#[test]
+fn keeps_textures_with_a_normal_map() {
+    let (mut model, mut textures) = model_with(&[(0, 0.0), (1, 1.0)], &[(8, 8), (8, 8)]);
+    model.textures[1].normal_map = Some("tex1_normal".into());
+    textures.insert("tex1_normal".into(), Arc::from(noise_png(8, 8, 99)));
+    let atlased = build_atlas(&model, &textures, &AtlasOptions::default()).expect("atlas");
+    assert_eq!(atlased.report.packed, 1);
+    assert_eq!(
+        atlased.report.kept,
+        vec![("tex1".to_owned(), KeptReason::HasNormalMap)]
+    );
+    assert_eq!(atlased.model.textures[1], model.textures[1]);
+    assert!(Arc::ptr_eq(
+        &atlased.textures["tex1_normal"],
+        &textures["tex1_normal"]
+    ));
+    // 法線マップを持つテクスチャを使うメッシュの UV は変えない。
+    assert_eq!(atlased.model.meshes[1].texture, 1);
+    assert_eq!(atlased.model.meshes[1].uvs, model.meshes[1].uvs);
 }

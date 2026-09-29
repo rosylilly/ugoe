@@ -1379,6 +1379,7 @@ mod tests {
             name: "second".into(),
             width: 1,
             height: 1,
+            normal_map: None,
         });
         assert_eq!(validate(&model), vec![]);
     }

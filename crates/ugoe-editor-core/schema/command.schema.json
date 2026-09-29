@@ -3313,6 +3313,10 @@
         "keyforms": {
           "$ref": "#/$defs/KeyformGrid4"
         },
+        "lit": {
+          "description": "ライティングを受けるか (既定 `true`、`true` は書き出しでも省略する)。\n`Model::lighting` が `true` のときだけ効く (`docs/spec/rendering.md#ライティング`)。",
+          "type": "boolean"
+        },
         "mask_mode": {
           "description": "通常マスク (`invert = false` の参照) の結合方法。",
           "$ref": "#/$defs/MaskMode",

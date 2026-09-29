@@ -3,7 +3,7 @@
 //!
 //! - ヘッダ・チャンク表はリトルエンディアン。チャンクは 16 バイト境界に揃える。
 //! - `MODL` `PHYS` `MOTN` `EXPR` のペイロードは MessagePack (フィールド名付き)。
-//! - `TEXR` は PNG / KTX2 のバイト列そのまま。`META` は JSON。
+//! - `TEXR` と `NRML` (法線マップ) は PNG / KTX2 のバイト列そのまま。`META` は JSON。
 //! - `FEAT` は使っている機能の宣言 (MessagePack)。[`crate::features`] を参照。
 //! - 読み込みは入力を信用しない。範囲外・重なり・切り詰めはすべてエラーにし、パニックしない。
 
@@ -61,6 +61,8 @@ impl ChunkTag {
     pub const META: Self = Self(*b"META");
     /// 使っている機能の宣言。0〜1 個 (宣言がなければ書かない)。
     pub const FEAT: Self = Self(*b"FEAT");
+    /// 法線マップ 1 枚。`Model.textures` のうち `normal_map` を持つものと同じ順。
+    pub const NRML: Self = Self(*b"NRML");
 }
 
 impl fmt::Display for ChunkTag {
@@ -126,6 +128,9 @@ pub struct Bundle {
     pub expressions: Vec<Expression>,
     /// `model.textures` と同じ数・同じ順。
     pub textures: Vec<TextureData>,
+    /// 法線マップ (`NRML` チャンク)。`model.textures` のうち `normal_map` が `Some` のものと
+    /// 同じ数・同じ順。テクスチャの番号からは [`Bundle::normal_map`] で引く。
+    pub normal_maps: Vec<TextureData>,
     /// 作者やライセンスなどの自由なメタデータ。
     pub meta: Option<serde_json::Value>,
 }
@@ -139,15 +144,27 @@ impl Bundle {
             motions: Vec::new(),
             expressions: Vec::new(),
             textures: Vec::new(),
+            normal_maps: Vec::new(),
             meta: None,
         }
+    }
+
+    /// `model.textures` の `texture` 番目のテクスチャの法線マップ。なければ `None`。
+    pub fn normal_map(&self, texture: usize) -> Option<&TextureData> {
+        let textures = &self.model.textures;
+        textures.get(texture)?.normal_map.as_ref()?;
+        let index = textures[..texture]
+            .iter()
+            .filter(|t| t.normal_map.is_some())
+            .count();
+        self.normal_maps.get(index)
     }
 }
 
 /// 書き出しの設定。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct WriteOptions {
-    /// `TEXR` 以外のチャンクを zstd で圧縮する。テクスチャは既に圧縮済みなので対象外。
+    /// `TEXR` と `NRML` 以外のチャンクを zstd で圧縮する。画像は既に圧縮済みなので対象外。
     pub compress: bool,
 }
 
@@ -158,7 +175,7 @@ pub fn write_bundle(bundle: &Bundle) -> Result<Vec<u8>, FormatError> {
 
 /// バンドルをバイト列に書き出す。
 ///
-/// テクスチャの数が `model.textures` と一致しない場合や、`TextureData::format` と
+/// テクスチャと法線マップの数が `model.textures` と一致しない場合や、`TextureData::format` と
 /// 中身のシグネチャが食い違う場合はエラーにする (読み込めないファイルを作らないため)。
 /// 未知の値 (`Unknown`) を含む場合は [`FormatError::UnknownValues`] で拒否する
 /// (元の値を失っているので、別の値として黙って書き出さないため)。
@@ -175,6 +192,7 @@ pub(crate) fn write_with_features(
     declared: &[FeatureDecl],
 ) -> Result<Vec<u8>, FormatError> {
     check_texture_count(&bundle.model, bundle.textures.len())?;
+    check_normal_map_count(&bundle.model, bundle.normal_maps.len())?;
     let unknown = unknown_values(bundle);
     if !unknown.is_empty() {
         return Err(FormatError::UnknownValues(unknown));
@@ -217,6 +235,16 @@ pub(crate) fn write_with_features(
             return Err(FormatError::TextureFormatMismatch { index });
         }
         chunks.push((ChunkTag::TEXR, 0, Cow::Borrowed(texture.bytes.as_slice())));
+    }
+    for (index, normal_map) in bundle.normal_maps.iter().enumerate() {
+        if TextureFormat::detect(&normal_map.bytes) != Some(normal_map.format) {
+            return Err(FormatError::NormalMapFormatMismatch { index });
+        }
+        chunks.push((
+            ChunkTag::NRML,
+            0,
+            Cow::Borrowed(normal_map.bytes.as_slice()),
+        ));
     }
 
     let chunk_count = u32::try_from(chunks.len()).map_err(|_| FormatError::TooLarge)?;
@@ -325,6 +353,7 @@ pub(crate) fn read_with_known(
     let mut motions = Vec::new();
     let mut expressions = Vec::new();
     let mut textures = Vec::new();
+    let mut normal_maps = Vec::new();
 
     for entry in &entries {
         match entry.tag {
@@ -361,6 +390,17 @@ pub(crate) fn read_with_known(
                     bytes: payload,
                 });
             }
+            ChunkTag::NRML => {
+                let payload = entry.payload(bytes)?.into_owned();
+                let format =
+                    TextureFormat::detect(&payload).ok_or(FormatError::UnknownNormalMapFormat {
+                        index: normal_maps.len(),
+                    })?;
+                normal_maps.push(TextureData {
+                    format,
+                    bytes: payload,
+                });
+            }
             // 機能の宣言は先に読んだ。前方互換のため、未知のタグは読み飛ばす。
             _ => {}
         }
@@ -368,6 +408,7 @@ pub(crate) fn read_with_known(
 
     let model = model.ok_or(FormatError::MissingChunk(ChunkTag::MODL))?;
     check_texture_count(&model, textures.len())?;
+    check_normal_map_count(&model, normal_maps.len())?;
     let errors = ugoe_model::validate::validate(&model);
     if !errors.is_empty() {
         return Err(FormatError::Invalid(errors));
@@ -386,6 +427,7 @@ pub(crate) fn read_with_known(
         motions,
         expressions,
         textures,
+        normal_maps,
         meta,
     };
     warnings.extend(
@@ -571,6 +613,19 @@ fn check_texture_count(model: &Model, actual: usize) -> Result<(), FormatError> 
             expected: model.textures.len(),
             actual,
         })
+    }
+}
+
+fn check_normal_map_count(model: &Model, actual: usize) -> Result<(), FormatError> {
+    let expected = model
+        .textures
+        .iter()
+        .filter(|t| t.normal_map.is_some())
+        .count();
+    if expected == actual {
+        Ok(())
+    } else {
+        Err(FormatError::NormalMapCountMismatch { expected, actual })
     }
 }
 
@@ -762,10 +817,14 @@ mod tests {
             pitch: None,
         }));
         quad.depth = Some(vec![0.0, 1.0, 2.0, 3.0]);
+        // ライティング (基準の機能 `lighting.normal_map`): 2 枚目のテクスチャにだけ法線マップを添える。
+        model.lighting = true;
+        model.meshes[0].lit = false;
         model.textures.push(TextureRef {
             name: "compressed".into(),
             width: 4,
             height: 4,
+            normal_map: Some("compressed_normal".into()),
         });
         Bundle {
             model,
@@ -793,6 +852,10 @@ mod tests {
                     bytes: ktx2(),
                 },
             ],
+            normal_maps: vec![TextureData {
+                format: TextureFormat::Png,
+                bytes: png(),
+            }],
             meta: Some(serde_json::json!({ "author": "ugoe", "license": "CC0" })),
         }
     }
@@ -859,10 +922,10 @@ mod tests {
         let bundle = full_bundle();
         let bytes = write_bundle_with(&bundle, WriteOptions { compress: true }).unwrap();
         assert_eq!(read_bundle(&bytes).unwrap(), bundle);
-        // テクスチャ以外のチャンクには圧縮フラグが立つ。
+        // テクスチャと法線マップ以外のチャンクには圧縮フラグが立つ。
         let entries = read_table(&bytes).unwrap();
         for entry in entries {
-            let expected = if entry.tag == ChunkTag::TEXR {
+            let expected = if entry.tag == ChunkTag::TEXR || entry.tag == ChunkTag::NRML {
                 0
             } else {
                 CHUNK_FLAG_ZSTD
@@ -902,10 +965,11 @@ mod tests {
         assert_eq!(&bytes[0..4], b"UGOE");
         assert_eq!(read_u32(&bytes, 4).unwrap(), CONTAINER_VERSION);
         assert_eq!(read_u32(&bytes, 8).unwrap(), 0);
-        // MODL + PHYS + MOTN×2 + EXPR + META + TEXR×2
-        assert_eq!(read_u32(&bytes, 12).unwrap(), 8);
+        // MODL + PHYS + MOTN×2 + EXPR + META + TEXR×2 + NRML
+        assert_eq!(read_u32(&bytes, 12).unwrap(), 9);
         let entries = read_table(&bytes).unwrap();
         assert_eq!(entries[0].tag, ChunkTag::MODL);
+        assert_eq!(entries[8].tag, ChunkTag::NRML);
         for entry in &entries {
             assert_eq!(entry.start % CHUNK_ALIGN, 0);
         }
@@ -1060,6 +1124,93 @@ mod tests {
         assert_err(
             &assemble(&[model_chunk(&model), (ChunkTag::TEXR, 0, b"GIF89a".to_vec())]),
             |e| matches!(e, FormatError::UnknownTextureFormat { index: 0 }),
+        );
+    }
+
+    /// 法線マップは `normal_map` を持つテクスチャの順に並び、テクスチャの番号から引ける。
+    #[test]
+    fn normal_maps_follow_textures_with_normal_map() {
+        let mut bundle = full_bundle();
+        assert_eq!(bundle.normal_map(0), None);
+        assert_eq!(bundle.normal_map(1), Some(&bundle.normal_maps[0]));
+        assert_eq!(bundle.normal_map(2), None);
+
+        bundle.model.textures[0].normal_map = Some("white_normal".into());
+        bundle.normal_maps.insert(
+            0,
+            TextureData {
+                format: TextureFormat::Ktx2,
+                bytes: ktx2(),
+            },
+        );
+        let read = read_bundle(&write_bundle(&bundle).unwrap()).unwrap();
+        assert_eq!(read, bundle);
+        assert_eq!(read.normal_map(0).unwrap().format, TextureFormat::Ktx2);
+        assert_eq!(read.normal_map(1).unwrap().format, TextureFormat::Png);
+    }
+
+    /// ライティングは基準の機能なので宣言しない。既定値 (なし) のフィールドは書き出さない。
+    #[test]
+    fn lighting_is_baseline_and_defaults_are_omitted() {
+        let bundle = full_bundle();
+        assert!(features::detect(&bundle).is_empty());
+        let (_, report) = read_bundle_with_report(&write_bundle(&bundle).unwrap()).unwrap();
+        assert!(report.features.is_empty());
+
+        let json = crate::model_to_json(&bundle.model).unwrap();
+        assert_eq!(crate::model_from_json(&json).unwrap(), bundle.model);
+        assert!(json.contains("\"lighting\": true"));
+        assert!(json.contains("\"lit\": false"));
+        assert!(json.contains("\"normal_map\": \"compressed_normal\""));
+
+        let plain = crate::model_to_json(&ugoe_model::fixtures::single_quad()).unwrap();
+        for field in ["lighting", "\"lit\"", "normal_map"] {
+            assert!(!plain.contains(field), "{field}");
+        }
+        let model = crate::model_from_json(&plain).unwrap();
+        assert!(!model.lighting);
+        assert!(model.meshes[0].lit);
+        assert_eq!(model.textures[0].normal_map, None);
+    }
+
+    #[test]
+    fn rejects_normal_map_problems() {
+        let mut model = ugoe_model::fixtures::single_quad();
+        model.textures[0].normal_map = Some("white_normal".into());
+        assert_err(&assemble(&[model_chunk(&model), texture_chunk()]), |e| {
+            matches!(
+                e,
+                FormatError::NormalMapCountMismatch {
+                    expected: 1,
+                    actual: 0
+                }
+            )
+        });
+        assert_err(
+            &assemble(&[
+                model_chunk(&model),
+                texture_chunk(),
+                (ChunkTag::NRML, 0, b"GIF89a".to_vec()),
+            ]),
+            |e| matches!(e, FormatError::UnknownNormalMapFormat { index: 0 }),
+        );
+        // 法線マップを持たないモデルに `NRML` がある。
+        let plain = ugoe_model::fixtures::single_quad();
+        assert_err(
+            &assemble(&[
+                model_chunk(&plain),
+                texture_chunk(),
+                (ChunkTag::NRML, 0, png()),
+            ]),
+            |e| {
+                matches!(
+                    e,
+                    FormatError::NormalMapCountMismatch {
+                        expected: 0,
+                        actual: 1
+                    }
+                )
+            },
         );
     }
 
@@ -1312,6 +1463,24 @@ mod tests {
         assert!(matches!(
             write_bundle(&bundle),
             Err(FormatError::TextureCountMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn write_rejects_inconsistent_normal_maps() {
+        let mut bundle = full_bundle();
+        bundle.normal_maps[0].format = TextureFormat::Ktx2;
+        assert!(matches!(
+            write_bundle(&bundle),
+            Err(FormatError::NormalMapFormatMismatch { index: 0 })
+        ));
+        bundle.normal_maps.clear();
+        assert!(matches!(
+            write_bundle(&bundle),
+            Err(FormatError::NormalMapCountMismatch {
+                expected: 1,
+                actual: 0
+            })
         ));
     }
 }

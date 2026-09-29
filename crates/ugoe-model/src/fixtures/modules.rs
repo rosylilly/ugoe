@@ -182,6 +182,7 @@ pub fn long_hair_module() -> Module {
             name: "long_hair".into(),
             width: 1,
             height: 1,
+            normal_map: None,
         }],
         physics: ModulePhysics {
             rigs: vec![PhysicsRig {
@@ -258,6 +259,7 @@ pub fn dress_module() -> Module {
             name: "dress".into(),
             width: 1,
             height: 1,
+            normal_map: None,
         }],
         physics: ModulePhysics::default(),
     }

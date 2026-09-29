@@ -47,6 +47,8 @@ pub enum KeptReason {
     TooLarge,
     /// 使うメッシュの UV が 0〜1 の外に出る (または有限でない)。
     UvOutOfRange,
+    /// 法線マップを持つ (法線マップは同じ UV 空間なので、テクスチャだけを詰めると食い違う)。
+    HasNormalMap,
 }
 
 /// アトラス化の結果の要約。
@@ -136,6 +138,13 @@ pub fn build_atlas(
             report
                 .kept
                 .push((texture.name.clone(), KeptReason::UvOutOfRange));
+            continue;
+        }
+        if texture.normal_map.is_some() {
+            kept.push(t);
+            report
+                .kept
+                .push((texture.name.clone(), KeptReason::HasNormalMap));
             continue;
         }
         let (width, height, rgba) = decode_rgba_png(png).ok_or_else(|| AtlasError::NotPng {
@@ -236,6 +245,7 @@ pub fn build_atlas(
             name,
             width: aw,
             height: ah,
+            normal_map: None,
         });
     }
     let mut kept_index = vec![None; model.textures.len()];
@@ -244,6 +254,11 @@ pub fn build_atlas(
         kept_index[t] = Some(u32::try_from(new_refs.len()).unwrap_or(u32::MAX));
         if let Some(png) = textures.get(&texture.name) {
             out_textures.insert(texture.name.clone(), png.clone());
+        }
+        if let Some(name) = &texture.normal_map
+            && let Some(png) = textures.get(name)
+        {
+            out_textures.insert(name.clone(), png.clone());
         }
         new_refs.push(texture.clone());
     }

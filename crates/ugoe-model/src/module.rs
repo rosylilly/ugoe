@@ -192,6 +192,7 @@ impl Module {
             effects: Effects::default(),
             avatar: None,
             slots: Vec::new(),
+            lighting: false,
         }
     }
 }

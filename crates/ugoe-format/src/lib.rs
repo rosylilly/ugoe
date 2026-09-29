@@ -53,6 +53,14 @@ pub enum FormatError {
     UnknownTextureFormat { index: usize },
     #[error("texture #{index}: bytes do not match the declared format")]
     TextureFormatMismatch { index: usize },
+    /// `NRML` の数が、`normal_map` を持つテクスチャの数と一致しない。
+    #[error("normal map count {actual} does not match textures with a normal map {expected}")]
+    NormalMapCountMismatch { expected: usize, actual: usize },
+    /// `index` は `NRML` チャンクの順番。
+    #[error("normal map #{index}: not a PNG or KTX2 image")]
+    UnknownNormalMapFormat { index: usize },
+    #[error("normal map #{index}: bytes do not match the declared format")]
+    NormalMapFormatMismatch { index: usize },
     #[error("chunk decompression failed: {0}")]
     Decompress(String),
     #[error("chunk {tag}: decompressed size exceeds the limit")]

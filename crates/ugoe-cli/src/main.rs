@@ -424,12 +424,29 @@ fn run_build(args: BuildArgs) -> anyhow::Result<()> {
             })
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
+    let normal_maps = project
+        .model
+        .textures
+        .iter()
+        .filter_map(|t| t.normal_map.as_deref())
+        .map(|name| {
+            let png = project
+                .textures
+                .get(name)
+                .with_context(|| format!("normal map `{name}` has no image data"))?;
+            Ok(TextureData {
+                format: TextureFormat::Png,
+                bytes: png.to_vec(),
+            })
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
     let bytes = ugoe_format::write_bundle(&ugoe_format::Bundle {
         model: project.model,
         physics: project.physics,
         motions: project.motions,
         expressions: project.expressions,
         textures,
+        normal_maps,
         meta,
     })?;
     std::fs::write(&args.output, &bytes)
@@ -443,6 +460,7 @@ fn kept_reason(reason: ugoe_editor_core::atlas::KeptReason) -> &'static str {
     match reason {
         KeptReason::TooLarge => "larger than --atlas-max-size",
         KeptReason::UvOutOfRange => "its meshes use UVs outside 0..1",
+        KeptReason::HasNormalMap => "it has a normal map",
     }
 }
 

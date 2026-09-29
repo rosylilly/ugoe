@@ -420,6 +420,7 @@ impl Builder {
             mirror: None,
             mirror_axis: None,
             depth: None,
+            lit: true,
         };
         let png = encode_rgba_png(width, height, &rgba);
         self.meshes.push((mesh, (texture, png)));

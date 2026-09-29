@@ -84,7 +84,7 @@ Header (16 bytes)
   flags         u32     予約 (0)
   chunk_count   u32
 ChunkTable (chunk_count × 24 bytes)
-  tag           [u8; 4]  "MODL" | "PHYS" | "MOTN" | "EXPR" | "TEXR" | "META" | "FEAT"
+  tag           [u8; 4]  "MODL" | "PHYS" | "MOTN" | "EXPR" | "TEXR" | "NRML" | "META" | "FEAT"
   flags         u32      bit0: zstd で圧縮
   offset        u64
   length        u64
@@ -98,11 +98,12 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 | `MOTN` | `Motion`。複数可 |
 | `EXPR` | `Expression`。複数可 |
 | `TEXR` | テクスチャ 1 枚 (PNG または KTX2)。`Model.textures` と同じ順に並べる |
+| `NRML` | 法線マップ 1 枚 (PNG または KTX2)。`Model.textures` のうち `normal_map` を持つものと同じ数・同じ順に並べる ([rendering.md#ライティング](rendering.md#ライティング)) |
 | `META` | 作者やライセンスなどの自由なメタデータ (JSON) |
 | `FEAT` | 使っている機能の宣言 ([機能の宣言](#機能の宣言))。0〜1 個 |
 
 - 未知のタグのチャンクは読み飛ばします (前方互換)。未知のタグのチャンクは中身も展開もしません。
-- チャンク表の順序は自由ですが、書き出しでは `FEAT` `MODL` `PHYS` `MOTN`… `EXPR`… `META` `TEXR`… の順にします。宣言する機能がなければ `FEAT` は書きません。同じタグのチャンク (`MOTN` `EXPR` `TEXR`) は表の順が意味を持ちます。
+- チャンク表の順序は自由ですが、書き出しでは `FEAT` `MODL` `PHYS` `MOTN`… `EXPR`… `META` `TEXR`… `NRML`… の順にします。宣言する機能がなければ `FEAT` は書きません。同じタグのチャンク (`MOTN` `EXPR` `TEXR` `NRML`) は表の順が意味を持ちます。
 - ヘッダの `flags` と、チャンクの `flags` の bit0 以外は予約です。0 でなければ読み込みをエラーにします。
 
 ### ペイロードのエンコード
@@ -112,11 +113,11 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 | チャンク | エンコード |
 | --- | --- |
 | `MODL` `PHYS` `MOTN` `EXPR` `FEAT` | **MessagePack**。構造体はフィールド名付きのマップ (`rmp-serde` の `to_vec_named`)。enum の表現は JSON と同じく serde の属性に従う |
-| `TEXR` | PNG / KTX2 ファイルの中身そのまま。形式は先頭のシグネチャで判別する |
+| `TEXR` `NRML` | PNG / KTX2 ファイルの中身そのまま。形式は先頭のシグネチャで判別する |
 | `META` | UTF-8 の JSON |
 
 - postcard などの自己記述的でない形式は、`ugoe-model` の内部タグ付き enum (`Segment` `DeformerKind`) を読めないため採用しませんでした。
-- `flags` の bit0 が立ったチャンクは、ペイロード全体が 1 つの zstd フレームです。書き出し時の圧縮は任意で (既定は無圧縮)、`TEXR` は圧縮しません。展開後の大きさの上限は 1 チャンクあたり 256 MiB です。
+- `flags` の bit0 が立ったチャンクは、ペイロード全体が 1 つの zstd フレームです。書き出し時の圧縮は任意で (既定は無圧縮)、`TEXR` と `NRML` は圧縮しません。展開後の大きさの上限は 1 チャンクあたり 256 MiB です。
 
 ### 読み込み時の検査
 
@@ -127,13 +128,15 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 - `MODL` がない、`MODL` `PHYS` `META` `FEAT` が 2 つ以上ある
 - 知らない必須の機能の宣言 (`UnsupportedFeatures`。ほかのチャンクをデコードする前に調べる)
 - `TEXR` の数が `Model.textures` と一致しない、PNG / KTX2 でないテクスチャ
+- `NRML` の数が `normal_map` を持つテクスチャの数と一致しない (`NormalMapCountMismatch`)、PNG / KTX2 でない法線マップ
 - ペイロードのデコード失敗、`schema_version` が新しすぎる
 - `ugoe_model::validate::validate` がエラーを返すモデル (下流の変形・描画で範囲外アクセスを起こさないため、ここで弾く)
 - `PHYS` があり、`ugoe_model::validate::validate_physics` がエラーを返す物理の設定 (`InvalidPhysics`)
 
 ### API (`ugoe-format`)
 
-- `Bundle { model, physics, motions, expressions, textures, meta }`。テクスチャは `TextureData { format: Png | Ktx2, bytes }`。
+- `Bundle { model, physics, motions, expressions, textures, normal_maps, meta }`。テクスチャは `TextureData { format: Png | Ktx2, bytes }`。
+  法線マップ `normal_maps` は `NRML` チャンクの順で、テクスチャの番号からは `Bundle::normal_map(index)` で引きます。
 - `write_bundle(&Bundle) -> Result<Vec<u8>, FormatError>` / `write_bundle_with(&Bundle, WriteOptions { compress })`
   - 使っている機能を `features::detect(&Bundle)` で自動で宣言し、宣言があれば `FEAT` を書きます。
   - 未知の値 (`Unknown`) を含むバンドルは `UnknownValues(場所の一覧)` で拒否します ([再保存](#再保存))。
@@ -239,7 +242,8 @@ FeatureTable {
 ### モジュールと法線マップのファイル
 
 - 着せ替えのモジュールは、ヘッダが同じ形式のファイル (拡張子は `.ugoemod`) で、`MODL` の代わりに `MODU` チャンクを持ちます (T0113)。ヘッダの予約フラグは使いません。
-- 法線マップは `TEXR` チャンクと同じ形式の `NRML` チャンクに入れ、`TextureRef::normal_map` から参照します (T0112)。
+- 法線マップは `TEXR` チャンクと同じ形式の `NRML` チャンクに入れ、`TextureRef::normal_map` を持つテクスチャの順に並べます ([バンドル](#バンドル-ugoe))。
+  `lighting.normal_map` は基準の機能なので宣言しません。
 
 ## バージョニング
 

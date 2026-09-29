@@ -49,6 +49,10 @@ pub struct Mesh {
     /// 頂点ごとの深度 (キャンバスのピクセル単位、手前が正。オーサリング用)。長さは `uvs` と同じ。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub depth: Option<Vec<f32>>,
+    /// ライティングを受けるか (既定 `true`、`true` は書き出しでも省略する)。
+    /// `Model::lighting` が `true` のときだけ効く (`docs/spec/rendering.md#ライティング`)。
+    #[serde(default = "yes", skip_serializing_if = "is_yes")]
+    pub lit: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -127,6 +131,14 @@ impl MaskMode {
             mode => mode,
         }
     }
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn is_yes(value: &bool) -> bool {
+    *value
 }
 
 fn one() -> f32 {

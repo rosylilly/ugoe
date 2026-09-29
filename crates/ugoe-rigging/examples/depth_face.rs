@@ -179,6 +179,7 @@ fn mesh(id: &str, (positions, indices): (Vec<Vec2>, Vec<u16>), color: Rgb, order
         mirror: None,
         mirror_axis: None,
         depth: None,
+        lit: true,
     }
 }
 

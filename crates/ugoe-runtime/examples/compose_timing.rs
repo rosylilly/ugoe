@@ -193,6 +193,7 @@ fn mesh(id: &str, part: &str, parent: Option<&str>, params: (&str, &str), order:
         mirror: None,
         mirror_axis: None,
         depth: None,
+        lit: true,
     }
 }
 
@@ -302,6 +303,7 @@ fn module(slot: &str, meshes: usize, warps: usize) -> Module {
             name: slot.to_owned(),
             width: 1,
             height: 1,
+            normal_map: None,
         }],
         physics: ModulePhysics::default(),
     }

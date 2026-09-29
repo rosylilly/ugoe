@@ -525,7 +525,12 @@ mirror_axis?: number | null,
 /**
  * 頂点ごとの深度 (キャンバスのピクセル単位、手前が正。オーサリング用)。長さは `uvs` と同じ。
  */
-depth?: Array<number> | null, };
+depth?: Array<number> | null, 
+/**
+ * ライティングを受けるか (既定 `true`、`true` は書き出しでも省略する)。
+ * `Model::lighting` が `true` のときだけ効く (`docs/spec/rendering.md#ライティング`)。
+ */
+lit?: boolean, };
 
 export type MeshKeyform = { 
 /**
@@ -607,7 +612,12 @@ avatar?: AvatarProfile | null,
 /**
  * 着せ替えのスロット。省略時はなし (`docs/spec/modules.md#スロット`)。
  */
-slots?: Array<Slot>, };
+slots?: Array<Slot>, 
+/**
+ * ホストが渡す光源でライティングするか。省略時は `false` で、`false` は書き出しでも省略する。
+ * メッシュごとの有無は `Mesh::lit` (`docs/spec/rendering.md#ライティング`)。
+ */
+lighting?: boolean, };
 
 export type ModelMeta = { name: string, canvas: Canvas, };
 
@@ -972,7 +982,13 @@ mask_sources?: Array<string>, };
 /**
  * テクスチャ参照。実データはコンテナ (`ugoe-format`) 側が保持する。
  */
-export type TextureRef = { name: string, width: number, height: number, };
+export type TextureRef = { name: string, width: number, height: number, 
+/**
+ * 法線マップの画像の名前。`None` なら法線マップなし (法線は `(0, 0, 1)`)。
+ * 画像は同じ UV 空間の接空間法線で、バンドルでは `NRML` チャンクに入る
+ * (`docs/spec/rendering.md#ライティング`、`docs/spec/file-formats.md`)。
+ */
+normal_map?: string | null, };
 
 /**
  * トラッキングの対応の上書き 1 つ (`docs/spec/avatar-profile.md#トラッキングの対応の上書き`)。
