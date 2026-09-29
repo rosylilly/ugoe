@@ -68,10 +68,10 @@ fn origin(puppet: &Puppet, id: &str) -> Vec2 {
         .translation
 }
 
-/// `fixtures::dynamic_hair_settings` の衝突体 `Shoulder` (ワールドで `(118,140)`–`(168,160)`、
+/// `fixtures::dynamic_hair_settings` の衝突体 `Shoulder` (ワールドで `(163,150)`–`(198,170)`、
 /// 半径 8) の線分までの距離。粒子の衝突半径 2 と合わせ、10 未満なら食い込んでいる。
 fn shoulder_distance(p: Vec2) -> f32 {
-    let (a, b) = (Vec2::new(118.0, 140.0), Vec2::new(168.0, 160.0));
+    let (a, b) = (Vec2::new(163.0, 150.0), Vec2::new(198.0, 170.0));
     let t = ((p - a).dot(b - a) / (b - a).length_squared()).clamp(0.0, 1.0);
     (p - (a + (b - a) * t)).length()
 }
@@ -373,10 +373,6 @@ const SHOULDER_CENTER: Vec2 = Vec2::new(168.0, 155.0);
 const SHOULDER_CIRCLE_RADIUS: f32 = 6.0;
 
 /// `dynamic_hair_settings` の肩のカプセルを、上の円に置き換えた設定。髪の粒子の衝突半径は 2。
-///
-/// フィクスチャのカプセルは静止姿勢の髪を貫いている (押し出しを確かめるため) ので、髪は肩の下側に押し出され、
-/// 区間が伸びたまま描かれる (角度しか出力しないので、描かれる房は肩に食い込む)。
-/// 髪が体の外から当たる場面を確かめるため、ここでは離れた円を使う (T0310 のメモ。直すのは T0311)。
 fn shoulder_circle_settings() -> PhysicsSettings {
     let mut settings = fixtures::dynamic_hair_settings();
     settings.colliders[0].shape = ugoe::model::physics::ColliderShape::Circle {
@@ -430,9 +426,9 @@ fn hair_swings_without_swing_parameters_and_hits_the_body() {
         "the free hair should pass through the shoulder: {joints}"
     );
 
-    // 衝突体があると、粒子は肩の外 (半径 + 衝突半径) に押し出される。描かれる房の関節は、出力の補間で
-    // 最大 1 ステップ遅れ (`docs/spec/physics.md#時間の進め方`)、押し出しで伸びた区間の長さも伝わらないので、
-    // 衝突半径 (2px) の分は食い込み得る。それでも肩の円そのものには入らない。T0311 の後はこの許容を厳しくできる。
+    // 衝突体があると、粒子は肩の外 (半径 + 衝突半径) で止まる。区間の長さは保たれるので、描かれる房の関節も
+    // 粒子と同じ位置にあり、出力の補間 (最大 1 ステップの遅れ、`docs/spec/physics.md#時間の進め方`) の分
+    // (1px 未満) を除いて肩の外にある (T0311)。
     let (particles, joints, swing) = shake_hair(shoulder_circle_settings());
     assert!(swing > 30.0, "swing with colliders: {swing}");
     assert!(
@@ -440,7 +436,7 @@ fn hair_swings_without_swing_parameters_and_hits_the_body() {
         "a particle went into the shoulder: {particles}"
     );
     assert!(
-        joints >= SHOULDER_CIRCLE_RADIUS,
+        joints >= reach - 1.0,
         "the drawn hair went into the shoulder: {joints}"
     );
 }

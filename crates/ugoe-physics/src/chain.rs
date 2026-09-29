@@ -30,6 +30,18 @@ impl Particle {
     }
 }
 
+/// 制約のフック ([`Chain::step`]・[`Chain::settle`]) に渡す、粒子 1 つ (i >= 1) の区間の情報。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Segment {
+    /// 粒子の添字。
+    pub index: usize,
+    /// 親 (粒子 i-1) の、補正した後の位置。
+    pub parent: Vec2,
+    /// 区間の始めの向きに置いた粒子の位置 (親から `radius` の距離)。ステップではステップの始めの区間の向き、
+    /// 静止姿勢に置くときは初期位置 (`PhysicsParticle::position`) の区間の向き。
+    pub from: Vec2,
+}
+
 /// 1 ステップ分の外部入力。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StepInput {
@@ -70,14 +82,14 @@ impl Chain {
     ///
     /// 読み込み直後やリセット後に、初期姿勢から揺れ始めないようにするために使う。
     /// `constrain` は [`Chain::step`] と同じく粒子ごと (i >= 1) に呼ばれ、置いた位置を補正できる
-    /// (補正後の位置を次の粒子の親にする)。
+    /// (補正後の位置を次の粒子の親にする)。`Segment::from` は初期位置の区間の向き。
     pub fn settle(
         &mut self,
         defs: &[PhysicsParticle],
         root: Vec2,
         gravity: Vec2,
         wind: Vec2,
-        mut constrain: impl FnMut(usize, &mut Vec2),
+        mut constrain: impl FnMut(&Segment, &mut Vec2),
     ) {
         let Some(first) = defs.first() else {
             return;
@@ -85,8 +97,13 @@ impl Chain {
         let mut prev = root + first.position;
         self.particles[0] = Particle::at_rest(prev);
         for i in 1..self.particles.len() {
+            let segment = Segment {
+                index: i,
+                parent: prev,
+                from: prev + rest_direction(defs, i) * defs[i].radius,
+            };
             prev += rest_segment(defs, i, gravity, wind);
-            constrain(i, &mut prev);
+            constrain(&segment, &mut prev);
             self.particles[i] = Particle::at_rest(prev);
         }
     }
@@ -94,12 +111,13 @@ impl Chain {
     /// 1 ステップ進める。
     ///
     /// `constrain` は距離拘束の直後に粒子ごと (i >= 1) に呼ばれ、位置を補正できる
-    /// (衝突体からの押し出しなど。補正後の位置から速度を求める)。
+    /// (衝突体からの押し出しなど。補正後の位置から速度を求める)。`Segment::from` はステップの始めの
+    /// 区間 (親と粒子のステップの始めの位置) の向き。
     pub fn step(
         &mut self,
         defs: &[PhysicsParticle],
         input: &StepInput,
-        mut constrain: impl FnMut(usize, &mut Vec2),
+        mut constrain: impl FnMut(&Segment, &mut Vec2),
     ) {
         let Some(first) = defs.first() else {
             return;
@@ -112,7 +130,11 @@ impl Chain {
         for i in 1..self.particles.len() {
             let d = &defs[i];
             let parent = self.particles[i - 1].position;
+            let parent_last = self.particles[i - 1].last_position;
             let p = &mut self.particles[i];
+            let from_dir = (p.position - parent_last)
+                .try_normalize()
+                .unwrap_or_else(|| rest_direction(defs, i));
             let last = p.position;
             let h = input.time_scale * d.delay;
 
@@ -126,7 +148,12 @@ impl Chain {
                 .try_normalize()
                 .unwrap_or_else(|| rest_direction(defs, i));
             position = parent + dir * d.radius;
-            constrain(i, &mut position);
+            let segment = Segment {
+                index: i,
+                parent,
+                from: parent + from_dir * d.radius,
+            };
+            constrain(&segment, &mut position);
 
             p.velocity = if h > 0.0 {
                 (position - last) / h * velocity_retention(d.mobility, input.time_scale)
@@ -274,8 +301,10 @@ mod tests {
     fn constrain_hook_can_push_particles() {
         let defs = two_particles();
         let mut chain = Chain::new(&defs, Vec2::ZERO);
-        chain.step(&defs, &input(Vec2::ZERO), |i, p| {
-            assert_eq!(i, 1);
+        chain.step(&defs, &input(Vec2::ZERO), |s, p| {
+            assert_eq!(s.index, 1);
+            assert_eq!(s.parent, Vec2::ZERO);
+            assert_eq!(s.from, Vec2::new(0.0, 10.0));
             *p = Vec2::new(3.0, 4.0);
         });
         assert_eq!(chain.particles()[1].position, Vec2::new(3.0, 4.0));
@@ -310,8 +339,8 @@ mod tests {
             particle(Vec2::new(0.0, 20.0), 10.0),
         ];
         let mut chain = Chain::new(&defs, Vec2::ZERO);
-        chain.settle(&defs, Vec2::ZERO, Vec2::Y, Vec2::ZERO, |i, p| {
-            if i == 1 {
+        chain.settle(&defs, Vec2::ZERO, Vec2::Y, Vec2::ZERO, |s, p| {
+            if s.index == 1 {
                 p.x += 5.0;
             }
         });

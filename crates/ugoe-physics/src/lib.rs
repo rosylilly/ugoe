@@ -19,7 +19,7 @@ use ugoe_model::physics::{
 };
 use ugoe_runtime::{CompiledModel, ModelInstance, ParamIndex, ParameterValues};
 
-pub use chain::{Chain, Particle, StepInput};
+pub use chain::{Chain, Particle, Segment, StepInput};
 pub use collider::WorldCollider;
 
 /// 1 回の `update` で実行するステップ数の上限 (`docs/spec/physics.md#時間の進め方`)。
@@ -45,6 +45,17 @@ pub struct PhysicsSystem {
     relay: bool,
     /// モデルの要素への参照を解決したもの (動的物理でだけ使う)。
     binding: Option<Binding>,
+}
+
+/// 衝突体を考えない静止姿勢で、衝突体に当たっている区間 ([`PhysicsSystem::rest_pose_collisions`])。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RestPoseCollision {
+    /// リグの ID。
+    pub rig: String,
+    /// 当たっている区間の、子の粒子の添字 (区間は粒子 `particle - 1` → `particle`)。
+    pub particle: usize,
+    /// 衝突体の ID。
+    pub collider: String,
 }
 
 /// 物理リグ 1 つ分の実行時状態。
@@ -103,6 +114,8 @@ struct RigFrame {
     /// 出力ごとに、出力先の親の座標系が裏返っているか (角度の符号を反転する)。
     flips: Vec<bool>,
     colliders: Vec<WorldCollider>,
+    /// `colliders` のそれぞれの、`PhysicsSettings::colliders` の添字。
+    collider_ids: Vec<usize>,
 }
 
 impl RigFrame {
@@ -113,6 +126,7 @@ impl RigFrame {
             references: vec![gravity; rig.outputs.len()],
             flips: vec![false; rig.outputs.len()],
             colliders: Vec::new(),
+            collider_ids: Vec::new(),
         }
     }
 }
@@ -369,6 +383,50 @@ impl PhysicsSystem {
         }
     }
 
+    /// 衝突体を考えない静止姿勢で、衝突体に当たっている区間を調べる (`docs/spec/physics.md#衝突体`)。
+    ///
+    /// `instance` の今のパラメータ (ふつうは既定値) で 1 段目の評価を行い、各リグの鎖を、その入力と
+    /// 重力・風に対する静止姿勢 (衝突体を考えない) に置いて、区間 (粒子 i-1 → i) が
+    /// [`WorldCollider::blocks`] で衝突体に当たるものを返す。当たっている区間は、最初の `update` で
+    /// 衝突体の外の最も近い向きへ回され、髪は衝突体に沿って置かれる。作者が意図しない姿勢になりやすいので、
+    /// 取り込みやエディタで警告に使う。物理の状態 (粒子) は変えない。動的物理を使わない設定では空。
+    pub fn rest_pose_collisions(&mut self, instance: &mut ModelInstance) -> Vec<RestPoseCollision> {
+        if !self.dynamic {
+            return Vec::new();
+        }
+        self.bind(instance);
+        instance.update_first_stage();
+        let frames = self.rig_frames(instance);
+        let settings = &self.settings;
+        let mut found = Vec::new();
+        for (rig, frame) in settings.rigs.iter().zip(&frames) {
+            if frame.colliders.is_empty() {
+                continue;
+            }
+            let mut pose = root_pose(rig, instance.parameters(), |_| true);
+            pose.translation += frame.anchor;
+            pose.angle += frame.frame_angle;
+            let gravity = rotate_deg(settings.gravity, pose.angle);
+            let wind = rotate_deg(settings.wind, frame.frame_angle);
+            let mut chain = Chain::new(&rig.particles, Vec2::ZERO);
+            chain.settle(&rig.particles, pose.translation, gravity, wind, |_, _| {});
+            let particles = chain.particles();
+            for i in 1..particles.len() {
+                let margin = rig.particles[i].collision_radius.max(0.0);
+                for (c, &id) in frame.colliders.iter().zip(&frame.collider_ids) {
+                    if c.blocks(particles[i - 1].position, particles[i].position, margin) {
+                        found.push(RestPoseCollision {
+                            rig: rig.id.clone(),
+                            particle: i,
+                            collider: settings.colliders[id].id.clone(),
+                        });
+                    }
+                }
+            }
+        }
+        found
+    }
+
     /// 1 段目の評価から、リグごとのそのフレームの状態を求める。
     fn rig_frames(&self, instance: &ModelInstance) -> Vec<RigFrame> {
         let gravity = self.settings.gravity;
@@ -427,12 +485,18 @@ impl PhysicsSystem {
                         _ => (gravity, false),
                     })
                     .unzip();
+                let (collider_ids, colliders) = rb
+                    .colliders
+                    .iter()
+                    .filter_map(|&c| Some((c, colliders[c]?)))
+                    .unzip();
                 RigFrame {
                     anchor,
                     frame_angle,
                     references,
                     flips,
-                    colliders: rb.colliders.iter().filter_map(|&c| colliders[c]).collect(),
+                    colliders,
+                    collider_ids,
                 }
             })
             .collect()
@@ -505,7 +569,7 @@ impl PhysicsSystem {
                     pose.translation,
                     input.gravity,
                     input.wind,
-                    |i, p| collide(&frame.colliders, rig, i, p),
+                    |s, p| collide(&frame.colliders, rig, s, p),
                 );
                 state.pose = pose;
                 state.external = *target;
@@ -542,8 +606,8 @@ impl PhysicsSystem {
                     let external = start.lerp(*target, k as f32 / steps as f32);
                     let pose = with_relay(external, rig, state, &relay);
                     let input = step_input(pose, pose.angle - state.pose.angle);
-                    state.chain.step(&rig.particles, &input, |i, p| {
-                        collide(&frame.colliders, rig, i, p);
+                    state.chain.step(&rig.particles, &input, |s, p| {
+                        collide(&frame.colliders, rig, s, p);
                     });
                     state.pose = pose;
                     state.external = external;
@@ -672,12 +736,13 @@ impl Relay {
     }
 }
 
-/// 粒子 i を、リグの衝突体の外へ押し出す。
-fn collide(colliders: &[WorldCollider], rig: &PhysicsRig, i: usize, p: &mut Vec2) {
-    let margin = rig.particles[i].collision_radius.max(0.0);
-    for c in colliders {
-        c.push_out(p, margin);
+/// 粒子の区間を、長さを保ってリグの衝突体の外に置く。
+fn collide(colliders: &[WorldCollider], rig: &PhysicsRig, segment: &Segment, p: &mut Vec2) {
+    if colliders.is_empty() {
+        return;
     }
+    let margin = rig.particles[segment.index].collision_radius.max(0.0);
+    collider::constrain_segment(colliders, margin, segment.parent, segment.from, p);
 }
 
 /// 頂点ごとの重みを掛けて足す。

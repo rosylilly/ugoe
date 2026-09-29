@@ -155,28 +155,70 @@ fn tilting_the_frame_deformer_turns_gravity() {
     assert!(world_down(&instance, "Hair3").abs_diff_eq(rotated_down(30.0), 1e-3));
 }
 
-/// カプセル `(118,140)`–`(168,160)` までの距離。
-fn shoulder_distance(p: Vec2) -> f32 {
-    let (a, b) = (Vec2::new(118.0, 140.0), Vec2::new(168.0, 160.0));
+/// 衝突体 `Shoulder` のカプセルの芯 (ワールド座標)。
+const SHOULDER: (Vec2, Vec2) = (Vec2::new(163.0, 150.0), Vec2::new(198.0, 170.0));
+/// カプセルの半径 8 + 粒子の衝突半径 2。
+const SHOULDER_REACH: f32 = 10.0;
+
+/// 線分 `a`–`b` までの距離。
+fn segment_distance(p: Vec2, (a, b): (Vec2, Vec2)) -> f32 {
     let t = ((p - a).dot(b - a) / (b - a).length_squared()).clamp(0.0, 1.0);
     (p - (a + (b - a) * t)).length()
 }
 
-/// 衝突体の外に粒子が押し出される。
-#[test]
-fn particles_are_pushed_out_of_colliders() {
-    // 衝突体がなければ、粒子 2 は肩のカプセルの内側 (半径 8 + 衝突半径 2) に垂れる。
-    let (mut physics, mut instance) = setup(without_colliders());
-    frame(&mut physics, &mut instance);
-    let p = physics.chain(0).unwrap().particles()[2].position;
-    assert!(shoulder_distance(p) < 10.0 - 1.0, "{p}");
+/// 回転デフォーマ `id` の原点のワールド位置。
+fn origin(instance: &ModelInstance, id: &str) -> Vec2 {
+    instance
+        .rotation_world_frame(deformer(instance, id))
+        .unwrap()
+        .translation
+}
 
+/// 鎖の区間の長さが `radius` (30) のままか。
+fn assert_lengths_kept(physics: &PhysicsSystem, label: &str) {
+    let p = physics.chain(0).unwrap().particles();
+    for i in 1..p.len() {
+        let length = p[i].position.distance(p[i - 1].position);
+        assert!(
+            (length - 30.0).abs() < 1e-3,
+            "{label} segment {i}: {length}"
+        );
+    }
+}
+
+/// フィクスチャの肩は、静止姿勢の髪の外にある。
+#[test]
+fn fixture_rest_pose_is_outside_the_shoulder() {
     let (mut physics, mut instance) = setup(dynamic_hair_settings());
+    assert_eq!(physics.rest_pose_collisions(&mut instance), vec![]);
+    instance.update();
+    let (mut free, mut free_instance) = setup(without_colliders());
+    frame(&mut physics, &mut instance);
+    frame(&mut free, &mut free_instance);
+    // 衝突体があってもなくても、静止姿勢は同じ (真下に垂れる)。
+    assert_eq!(
+        physics.chain(0).unwrap().particles(),
+        free.chain(0).unwrap().particles()
+    );
+}
+
+/// 頭を振ると髪が肩に当たるが、粒子も描かれる関節も衝突体に入らず、区間の長さは変わらない。
+#[test]
+fn colliding_hair_keeps_segment_lengths_and_stays_outside() {
+    let (mut free, mut free_instance) = setup(without_colliders());
+    let (mut physics, mut instance) = setup(dynamic_hair_settings());
+    let (mut free_min, mut particle_min, mut joint_min) =
+        (f32::INFINITY, f32::INFINITY, f32::INFINITY);
     for k in 0..240 {
-        // 頭を左右に振っても、粒子は衝突体に入らない。
-        set(&mut instance, ANGLE_X, 30.0 * (k as f32 * 0.05).sin());
+        let x = 30.0 * (k as f32 * 0.05).sin();
+        set(&mut free_instance, ANGLE_X, x);
+        frame(&mut free, &mut free_instance);
+        set(&mut instance, ANGLE_X, x);
         frame(&mut physics, &mut instance);
-        for (i, particle) in physics
+        for p in free.chain(0).unwrap().particles().iter().skip(1) {
+            free_min = free_min.min(segment_distance(p.position, SHOULDER));
+        }
+        for (i, p) in physics
             .chain(0)
             .unwrap()
             .particles()
@@ -184,15 +226,78 @@ fn particles_are_pushed_out_of_colliders() {
             .enumerate()
             .skip(1)
         {
-            let d = shoulder_distance(particle.position);
-            assert!(d >= 10.0 - 1e-3, "frame {k} particle {i}: {d}");
+            let d = segment_distance(p.position, SHOULDER);
+            assert!(d >= SHOULDER_REACH - 1e-3, "frame {k} particle {i}: {d}");
+            particle_min = particle_min.min(d);
+        }
+        assert_lengths_kept(&physics, &format!("frame {k}"));
+        for id in ["Hair2", "Hair3"] {
+            joint_min = joint_min.min(segment_distance(origin(&instance, id), SHOULDER));
         }
     }
-    // 衝突体を避けた姿勢が、デフォーマの角度に出る。
+    // 衝突体がなければ肩に入る動き。
+    assert!(free_min < SHOULDER_REACH - 3.0, "{free_min}");
+    // 衝突体に沿って止まる。
+    assert!(particle_min < SHOULDER_REACH + 0.5, "{particle_min}");
+    // 描かれる関節は粒子と同じ長さの鎖なので、出力の補間 (最大 1 ステップの遅れ) の分を除いて
+    // 衝突体の外にある。
+    assert!(joint_min >= SHOULDER_REACH - 1.0, "{joint_min}");
+}
+
+/// 静止姿勢の髪を貫く衝突体 (T0310 で見つかった状態): 検査で知らせ、髪は衝突体の反対側に抜けず、
+/// 区間の長さを保って衝突体の手前に置かれる。
+#[test]
+fn rest_pose_inside_a_collider_is_reported_and_kept_on_the_near_side() {
+    // 線分 (118,140)–(168,160) の肩は、真下に垂れた髪 (x = 148、y = 100..190) を横切る。
+    let mut settings = dynamic_hair_settings();
+    settings.colliders[0].shape = ugoe_model::physics::ColliderShape::Capsule {
+        a: Vec2::new(-10.0, -60.0),
+        b: Vec2::new(40.0, -40.0),
+        radius: 8.0,
+    };
+    let crossing = (Vec2::new(118.0, 140.0), Vec2::new(168.0, 160.0));
+    let (mut physics, mut instance) = setup(settings);
+    let found = physics.rest_pose_collisions(&mut instance);
     assert!(
-        angle_offset(&instance, "Hair1").abs() > 1.0
-            || angle_offset(&instance, "Hair2").abs() > 1.0
+        found.contains(&RestPoseCollision {
+            rig: "Hair".into(),
+            particle: 2,
+            collider: "Shoulder".into(),
+        }),
+        "{found:?}"
     );
+    assert!(
+        found
+            .iter()
+            .all(|c| c.rig == "Hair" && c.collider == "Shoulder")
+    );
+    // 検査は粒子を動かさない。
+    assert_eq!(
+        physics.chain(0).unwrap().particles(),
+        Chain::new(&physics.settings().rigs[0].particles, Vec2::ZERO).particles()
+    );
+    instance.update();
+
+    for k in 0..240 {
+        set(&mut instance, ANGLE_X, 30.0 * (k as f32 * 0.05).sin());
+        frame(&mut physics, &mut instance);
+        let p = physics.chain(0).unwrap().particles();
+        for i in 1..p.len() {
+            let d = segment_distance(p[i].position, crossing);
+            assert!(d >= SHOULDER_REACH - 1e-3, "frame {k} particle {i}: {d}");
+            // 区間が肩の芯を横切らない (肩の下側に抜けていない)。
+            let collider = WorldCollider::Capsule {
+                a: crossing.0,
+                b: crossing.1,
+                radius: 8.0,
+            };
+            assert!(
+                !collider.blocks(p[i - 1].position, p[i].position, 0.0),
+                "frame {k} segment {i}"
+            );
+        }
+        assert_lengths_kept(&physics, &format!("frame {k}"));
+    }
 }
 
 /// 頂点への出力: 根元が動くと、ワープの下の行とメッシュの下の頂点が遅れて追従する。

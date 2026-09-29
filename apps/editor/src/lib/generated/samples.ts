@@ -5135,12 +5135,12 @@ export const commands: Command[] = [
       "shape": {
         "type": "capsule",
         "a": [
-          -10.0,
-          -60.0
+          35.0,
+          -50.0
         ],
         "b": [
-          40.0,
-          -40.0
+          70.0,
+          -30.0
         ],
         "radius": 8.0
       }
@@ -5159,12 +5159,12 @@ export const commands: Command[] = [
       "shape": {
         "type": "capsule",
         "a": [
-          -10.0,
-          -60.0
+          35.0,
+          -50.0
         ],
         "b": [
-          40.0,
-          -40.0
+          70.0,
+          -30.0
         ],
         "radius": 8.0
       }
