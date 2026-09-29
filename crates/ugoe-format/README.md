@@ -20,3 +20,4 @@
 - T0105 (`docs/tasks/T0105-*.md`)
 - T0109 (前方互換: 機能の宣言と未知の値)
 - T0113 (着せ替えのモジュールのファイル形式)
+- T0115 (互換性テストの資料 `assets/compat/` と `tests/compat.rs`。手順は `docs/testing.md#互換性テスト`)
