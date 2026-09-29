@@ -366,6 +366,155 @@ fn load_corrupt_project_fails() {
     );
 }
 
+// ---- 法線マップ ----
+
+/// `sample_project` の `white` に法線マップ `white_normal` を付けたプロジェクト。
+fn project_with_normal_map() -> Project {
+    let mut project = sample_project();
+    project.model.textures[0].normal_map = Some("white_normal".into());
+    project.textures.insert(
+        "white_normal".into(),
+        Arc::from(solid_png(1, 1, [128, 128, 255, 255])),
+    );
+    project
+}
+
+#[test]
+fn normal_map_round_trips_and_survives_resave() {
+    let tmp = TempDir::new("normal-map");
+    let dir = tmp.project();
+    let project = project_with_normal_map();
+    project.save(&dir).unwrap();
+    assert!(dir.join("textures/white_normal.png").is_file());
+    let loaded = Project::load(&dir).unwrap();
+    assert_eq!(loaded, project);
+
+    // 保存し直しても、使われていない画像として消されない。
+    loaded.save(&dir).unwrap();
+    assert!(dir.join("textures/white_normal.png").is_file());
+
+    // 法線マップを外すと画像も消える。
+    let mut project = project;
+    project.model.textures[0].normal_map = None;
+    project.textures.remove("white_normal");
+    project.save(&dir).unwrap();
+    assert!(!dir.join("textures/white_normal.png").exists());
+    assert_eq!(Project::load(&dir).unwrap(), project);
+}
+
+#[test]
+fn shared_normal_map_is_saved_once() {
+    let tmp = TempDir::new("normal-map-shared");
+    let mut project = project_with_normal_map();
+    project.model.textures[1].normal_map = Some("white_normal".into());
+    project.save(&tmp.project()).unwrap();
+    let pngs: Vec<String> = file_names(&tmp.project())
+        .into_iter()
+        .filter(|n| n.starts_with("textures/"))
+        .collect();
+    assert_eq!(
+        pngs,
+        [
+            "textures/Extra-2.png",
+            "textures/white.png",
+            "textures/white_normal.png"
+        ]
+    );
+    assert_eq!(Project::load(&tmp.project()).unwrap(), project);
+}
+
+#[test]
+fn normal_map_names_are_checked_before_writing() {
+    let tmp = TempDir::new("normal-map-names");
+
+    let mut project = project_with_normal_map();
+    project.textures.remove("white_normal");
+    let err = project.save(&tmp.project()).unwrap_err();
+    assert!(
+        matches!(&err, ProjectError::MissingTexture { name } if name == "white_normal"),
+        "{err}"
+    );
+    assert!(!tmp.project().exists());
+
+    // テクスチャの名前と大文字小文字だけが違う法線マップはファイル名が衝突する。
+    let mut project = project_with_normal_map();
+    project.model.textures[0].normal_map = Some("EXTRA-2".into());
+    project
+        .textures
+        .insert("EXTRA-2".into(), Arc::from(solid_png(1, 1, [0; 4])));
+    let err = project.save(&tmp.project()).unwrap_err();
+    assert!(
+        matches!(
+            err,
+            ProjectError::DuplicateName {
+                kind: "texture",
+                ..
+            }
+        ),
+        "{err}"
+    );
+
+    let mut project = project_with_normal_map();
+    project.model.textures[0].normal_map = Some("../escape".into());
+    let err = project.save(&tmp.project()).unwrap_err();
+    assert!(
+        matches!(
+            err,
+            ProjectError::InvalidName {
+                kind: "texture",
+                ..
+            }
+        ),
+        "{err}"
+    );
+    assert!(!tmp.project().exists());
+}
+
+#[test]
+fn load_requires_normal_map_image() {
+    let tmp = TempDir::new("normal-map-missing");
+    let dir = tmp.project();
+    project_with_normal_map().save(&dir).unwrap();
+    fs::remove_file(dir.join("textures/white_normal.png")).unwrap();
+    let err = Project::load(&dir).unwrap_err();
+    assert!(
+        matches!(&err, ProjectError::MissingTexture { name } if name == "white_normal"),
+        "{err}"
+    );
+}
+
+/// 保存 → 開き直す → 書き出す (アトラス化あり・なし) で、法線マップが `NRML` に入る。
+#[test]
+fn reopened_project_exports_normal_map() {
+    let tmp = TempDir::new("normal-map-export");
+    let project = project_with_normal_map();
+    project.save(&tmp.project()).unwrap();
+    let reopened = Project::load(&tmp.project()).unwrap();
+    let normal = &project.textures["white_normal"];
+
+    for atlas in [false, true] {
+        let settings = crate::ExportSettings {
+            atlas,
+            ..Default::default()
+        };
+        let (bytes, report) = crate::export_bundle_with_settings(&reopened, &settings).unwrap();
+        assert_eq!(report.atlas.is_some(), atlas);
+        let bundle = ugoe_format::read_bundle(&bytes).unwrap();
+        let index = bundle
+            .model
+            .textures
+            .iter()
+            .position(|t| t.name == "white")
+            .unwrap();
+        assert_eq!(
+            bundle.model.textures[index].normal_map.as_deref(),
+            Some("white_normal")
+        );
+        assert_eq!(bundle.normal_maps.len(), 1, "atlas: {atlas}");
+        assert_eq!(bundle.normal_map(index).unwrap().bytes, **normal);
+    }
+}
+
 // ---- 書き出し ----
 
 #[test]
@@ -480,6 +629,30 @@ fn add_texture() {
         EditError::NotPng { name: "gif".into() }
     );
     assert_eq!(doc.model(), &before);
+}
+
+/// 法線マップの画像と同じ名前のテクスチャは、`textures/` のファイルが衝突するので足せない。
+#[test]
+fn add_texture_rejects_normal_map_name() {
+    let project = project_with_normal_map();
+    let mut doc = project.document();
+    let err = doc
+        .apply(Command::AddTexture {
+            name: "White_Normal".into(),
+            png: solid_png(1, 1, [0; 4]),
+        })
+        .unwrap_err();
+    assert_eq!(
+        err,
+        EditError::DuplicateId {
+            kind: "texture",
+            id: "White_Normal".into()
+        }
+    );
+    assert_eq!(
+        doc.texture("white_normal"),
+        Some(&*project.textures["white_normal"])
+    );
 }
 
 #[test]

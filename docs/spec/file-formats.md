@@ -22,6 +22,7 @@ character.ugoeproj/
   motions/<name>.motion.json          Motion (<name> は Motion::name)
   expressions/<name>.expression.json  Expression (<name> は Expression::name)
   textures/<name>.png   レイヤー単位の非乗算 RGBA 画像 (アトラス化する前の状態。<name> は TextureRef::name)
+                        と法線マップの画像 (<name> は TextureRef::normal_map)
   sources/*.psd         取り込み元の PSD (任意。保存では触れない)
   .gitignore            `.ugoe-cache/` を書く
   .ugoe-cache/          サムネイルなどのキャッシュ (git 管理外。保存・読み込みでは触れない)
@@ -52,9 +53,11 @@ character.ugoeproj/
 
 - テクスチャ・モーション・表情の名前はファイル名になるので、`[A-Za-z0-9_.-]` だけからなり `.` で始まらない 128 バイト以下の文字列に限ります。大文字と小文字だけが違う名前は重複とみなします (大文字小文字を区別しないファイルシステムで衝突しないように)。保存の前にすべて検査し、違反があれば何も書きません。
 - 読み込みでは、モーションと表情をファイル名の順に並べます。`Model::textures` のすべてに `textures/<name>.png` (PNG のシグネチャを持つもの) が必要です。参照されない PNG は無視します。
+- 法線マップの画像 ([model.md#ライティング](model.md#ライティング)) は、テクスチャと同じ `textures/` に `TextureRef::normal_map` の名前で置きます (`textures/<normal_map>.png`)。名前の規則と大文字小文字の重複の検査は、テクスチャの名前と合わせて行います。複数のテクスチャが同じ法線マップを指してもよく、画像は 1 枚だけ置きます。テクスチャの名前と同じ名前の法線マップは、同じ画像を指します。
+  読み込みでは `normal_map` のすべてに画像が必要です (ないと `MissingTexture`)。保存では、どこかの `normal_map` が指す画像を使われているものとして扱い、消しません。法線マップを持たない既存のプロジェクトは、そのまま読めます (形式のバージョンは変えない)。
 - モデルは読み込み時に検証しません (不正なモデルもエディタで開いて直せるように)。`schema_version` は検査します。
 - テクスチャのアトラス化はビルド時に行います ([テクスチャのアトラス化](#テクスチャのアトラス化))。プロジェクト内では、レイヤーごとに別々の画像として持ちます。
-- `.ugoe` への書き出し (`ugoe_editor_core::export_bundle`) では、テクスチャを `Model::textures` の順に `TEXR` に入れ、物理・モーション・表情も含めます。
+- `.ugoe` への書き出し (`ugoe_editor_core::export_bundle`) では、テクスチャを `Model::textures` の順に `TEXR` に入れ、法線マップを `normal_map` を持つテクスチャの順に `NRML` に入れ、物理・モーション・表情も含めます。
 
 ### テクスチャのアトラス化
 

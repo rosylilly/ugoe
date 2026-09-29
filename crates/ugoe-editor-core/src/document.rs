@@ -1160,7 +1160,7 @@ fn png_dimensions(name: &str, png: &[u8]) -> Result<(u32, u32), EditError> {
 /// テクスチャを `Model::textures` の末尾に追加する。寸法は PNG から読む。
 ///
 /// 名前は大文字と小文字を区別せずに重複を拒否する (大文字小文字を区別しないファイルシステムで
-/// `textures/<name>.png` が衝突しないように)。
+/// `textures/<name>.png` が衝突しないように)。法線マップの画像も同じ場所に置くので、その名前とも比べる。
 fn add_texture(
     model: &mut Model,
     textures: &mut Textures,
@@ -1170,11 +1170,12 @@ fn add_texture(
     if !is_valid_texture_name(&name) {
         return Err(EditError::InvalidTextureName { name });
     }
-    if model
-        .textures
-        .iter()
-        .any(|t| t.name.eq_ignore_ascii_case(&name))
-    {
+    if model.textures.iter().any(|t| {
+        t.name.eq_ignore_ascii_case(&name)
+            || t.normal_map
+                .as_deref()
+                .is_some_and(|n| n.eq_ignore_ascii_case(&name))
+    }) {
         return Err(EditError::DuplicateId {
             kind: "texture",
             id: name,

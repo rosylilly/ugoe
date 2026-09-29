@@ -191,7 +191,7 @@ ARKit のブレンドシェイプ (52 種) のように、互いに独立した�
 法線マップとライティングの意味は [rendering.md#ライティング](rendering.md#ライティング)、判断の経緯は [ADR 0015](../adr/0015-lighting.md) にあります。
 
 - `TextureRef::normal_map` (`Option<String>`) はそのテクスチャの法線マップの画像の名前です。省略すると法線マップなしで、法線を `(0, 0, 1)` として扱います。
-  法線マップはテクスチャと同じ UV 空間の接空間法線です。画像はコンテナ側が持ち、バンドルでは `NRML` チャンクに入ります ([file-formats.md](file-formats.md#バンドル-ugoe))。
+  法線マップはテクスチャと同じ UV 空間の接空間法線です。画像はコンテナ側が持ち、バンドルでは `NRML` チャンクに、プロジェクトでは `textures/<normal_map>.png` に入ります ([file-formats.md](file-formats.md#バンドル-ugoe)、[名前と読み込み](file-formats.md#名前と読み込み))。
 - `Model::lighting` (既定 `false`) と `Mesh::lit` (既定 `true`) の両方が `true` のメッシュだけがライティングを受けます。モデル全体で有効にしてから、受けないメッシュ (目のハイライトなど) を外す使い方を想定しています。
 - どれも既定値のときは書き出しません。これを含まない既存のデータもそのまま読めます (`SCHEMA_VERSION` は変えていません)。
 - 光源 (`Lighting { ambient, lights }`) はモデルのデータではなく、ホストがフレームごとにレンダラへ渡します。

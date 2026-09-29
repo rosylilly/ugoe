@@ -149,6 +149,7 @@ pub struct Project {
     pub meta: ProjectMeta,
     pub model: Model,
     /// テクスチャ名 (`Model::textures` の `name`) → PNG。
+    /// 法線マップの画像も、`TextureRef::normal_map` の名前で同じ表に入れる。
     pub textures: Textures,
     pub physics: Option<PhysicsSettings>,
     /// 読み込むとファイル名の順に並ぶ。名前 (`Motion::name`) がファイル名になる。
@@ -248,7 +249,8 @@ impl Project {
     /// `dir` からプロジェクトを読み込む。
     ///
     /// モデルは検証 (`ugoe_model::validate`) しない (不正なモデルもエディタで開いて直せるように)。
-    /// `Model::textures` のすべてに `textures/<name>.png` が必要。参照されない PNG は無視する。
+    /// `Model::textures` のすべてと、その `normal_map` のすべてに `textures/<name>.png` が必要。
+    /// 参照されない PNG は無視する。
     pub fn load(dir: &Path) -> Result<Self, ProjectError> {
         let meta_path = dir.join(PROJECT_JSON);
         if !meta_path.is_file() {
@@ -282,19 +284,19 @@ impl Project {
         let expressions = read_json_dir(&dir.join(EXPRESSIONS_DIR), EXPRESSION_SUFFIX)?;
 
         let mut textures = Textures::new();
-        for texture in &model.textures {
-            check_name("texture", &texture.name)?;
-            let path = texture_path(dir, &texture.name);
+        for name in image_names(&model) {
+            check_name("texture", name)?;
+            let path = texture_path(dir, name);
             if !path.is_file() {
                 return Err(ProjectError::MissingTexture {
-                    name: texture.name.clone(),
+                    name: name.to_owned(),
                 });
             }
             let png = fs::read(&path).map_err(io_error(&path))?;
             if png_size(&png).is_none() {
                 return Err(ProjectError::NotPng { path });
             }
-            textures.insert(texture.name.clone(), Arc::from(png));
+            textures.insert(name.to_owned(), Arc::from(png));
         }
 
         Ok(Self {
@@ -338,9 +340,12 @@ impl Project {
             "texture",
             self.model.textures.iter().map(|t| t.name.as_str()),
         )?;
-        for texture in &self.model.textures {
-            let png = self.texture_bytes(&texture.name)?;
-            let path = Path::new(TEXTURES_DIR).join(format!("{}{TEXTURE_SUFFIX}", texture.name));
+        // 法線マップの画像もテクスチャと同じ `textures/` に置くので、合わせて大文字小文字の衝突を調べる。
+        let images = image_names(&self.model);
+        check_names("texture", images.iter().copied())?;
+        for name in images {
+            let png = self.texture_bytes(name)?;
+            let path = Path::new(TEXTURES_DIR).join(format!("{name}{TEXTURE_SUFFIX}"));
             files.push((path, png.to_vec()));
         }
         Ok(files)
@@ -370,7 +375,6 @@ pub fn export_bundle(project: &Project) -> Result<Vec<u8>, ProjectError> {
             })
         })
         .collect::<Result<Vec<_>, ProjectError>>()?;
-    // TODO(T0640): プロジェクトの保存・読み込みはまだ法線マップの画像を扱わない。
     // 法線マップの画像は、テクスチャと同じ `textures` から名前で引く。
     let normal_maps = project
         .model
@@ -437,6 +441,25 @@ fn check_names<'a>(
         }
     }
     Ok(())
+}
+
+/// `textures/` に置く画像の名前。`Model::textures` の順に、テクスチャの名前と、まだ出ていない
+/// `normal_map` の名前を並べる (同じ名前は 1 度だけ)。
+fn image_names(model: &Model) -> Vec<&str> {
+    let mut seen = BTreeSet::new();
+    let mut names = Vec::new();
+    let all = model.textures.iter().map(|t| t.name.as_str()).chain(
+        model
+            .textures
+            .iter()
+            .filter_map(|t| t.normal_map.as_deref()),
+    );
+    for name in all {
+        if seen.insert(name) {
+            names.push(name);
+        }
+    }
+    names
 }
 
 fn texture_path(dir: &Path, name: &str) -> PathBuf {
