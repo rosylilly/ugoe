@@ -8,6 +8,7 @@
 //!   [`transport::ReplayTransport`] を使う)。
 //! - 既定のプロバイダは Anthropic の Claude API ([`claude::ClaudeProvider`])。
 
+pub mod classify;
 pub mod claude;
 mod fake;
 pub mod transport;
@@ -135,5 +136,4 @@ pub struct Proposal {
     pub commands: Vec<Command>,
 }
 
-// TODO(T0503): レイヤー意味分類 (`classify_layers`)。
 // TODO(T0504): 自動パラメータ・キーフォーム設定 (`propose_rig`)。
