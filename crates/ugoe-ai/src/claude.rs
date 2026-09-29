@@ -17,7 +17,11 @@ use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::transport::{HttpRequest, HttpResponse, Transport, TransportError, UreqTransport};
+pub use crate::transport::RetryPolicy;
+use crate::transport::{
+    HttpRequest, HttpResponse, SendFailure, Transport, TransportError, UreqTransport,
+    is_retryable_status, send_with_retry,
+};
 use crate::{AiError, Destination, Disclosure, Provider, ProviderRequest};
 
 /// 既定のモデル。
@@ -48,15 +52,18 @@ impl ApiKey {
 
     /// 環境変数 `ANTHROPIC_API_KEY` から読む。
     pub fn from_env() -> Result<Self, AiError> {
-        match std::env::var(API_KEY_ENV) {
-            Ok(v) => {
-                Self::new(v).map_err(|_| AiError::MissingApiKey(format!("{API_KEY_ENV} is empty")))
-            }
-            Err(_) => Err(AiError::MissingApiKey(format!("{API_KEY_ENV} is not set"))),
+        Self::from_env_var(API_KEY_ENV)
+    }
+
+    /// 環境変数 `name` から読む (OpenAI 互換の API の `OPENAI_API_KEY` など)。
+    pub fn from_env_var(name: &str) -> Result<Self, AiError> {
+        match std::env::var(name) {
+            Ok(v) => Self::new(v).map_err(|_| AiError::MissingApiKey(format!("{name} is empty"))),
+            Err(_) => Err(AiError::MissingApiKey(format!("{name} is not set"))),
         }
     }
 
-    fn expose(&self) -> &str {
+    pub(crate) fn expose(&self) -> &str {
         &self.0
     }
 }
@@ -76,40 +83,6 @@ pub enum Effort {
     High,
     Xhigh,
     Max,
-}
-
-/// 再試行の方針。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RetryPolicy {
-    /// 最初の試行に加えて再試行する回数。
-    pub max_retries: u32,
-    /// 最初の待ち時間。再試行ごとに倍にする。
-    pub initial_backoff: Duration,
-    /// 待ち時間の上限 (`retry-after` がないとき)。
-    pub max_backoff: Duration,
-    /// `retry-after` がこれより長いときは待たずに諦める。
-    pub max_retry_after: Duration,
-}
-
-impl Default for RetryPolicy {
-    fn default() -> Self {
-        Self {
-            max_retries: 2,
-            initial_backoff: Duration::from_millis(500),
-            max_backoff: Duration::from_secs(8),
-            max_retry_after: Duration::from_secs(60),
-        }
-    }
-}
-
-impl RetryPolicy {
-    /// `attempt` 回目 (0 始まり) の失敗の後に待つ時間。
-    fn backoff(&self, attempt: u32) -> Duration {
-        let factor = 1u32.checked_shl(attempt).unwrap_or(u32::MAX);
-        self.initial_backoff
-            .saturating_mul(factor)
-            .min(self.max_backoff)
-    }
 }
 
 /// [`ClaudeProvider`] の設定。
@@ -247,32 +220,20 @@ impl ClaudeProvider {
 
     /// 再試行しながら送り、成功した応答を返す。
     fn send_with_retry(&self, request: &HttpRequest) -> Result<HttpResponse, AiError> {
-        let policy = &self.config.retry;
-        let mut attempt = 0;
-        loop {
-            let can_retry = attempt < policy.max_retries;
-            let wait = match self.transport.send(request) {
-                Ok(response) if (200..300).contains(&response.status) => return Ok(response),
-                Ok(response) => {
-                    let retry_after = retry_after(&response);
-                    let retryable = is_retryable_status(response.status);
-                    if !retryable || !can_retry {
-                        return Err(self.status_error(&response, retry_after));
-                    }
-                    match retry_after {
-                        Some(d) if d > policy.max_retry_after => {
-                            return Err(self.status_error(&response, retry_after));
-                        }
-                        Some(d) => d,
-                        None => policy.backoff(attempt),
-                    }
-                }
-                Err(e) if e.is_retryable() && can_retry => policy.backoff(attempt),
-                Err(e) => return Err(self.transport_error(&e)),
-            };
-            (self.sleep)(wait);
-            attempt += 1;
-        }
+        send_with_retry(
+            self.transport.as_ref(),
+            &self.config.retry,
+            self.sleep.as_ref(),
+            request,
+            |r| is_retryable_status(r.status),
+        )
+        .map_err(|failure| match failure {
+            SendFailure::Status {
+                response,
+                retry_after,
+            } => self.status_error(&response, retry_after),
+            SendFailure::Transport(e) => self.transport_error(&e),
+        })
     }
 
     fn status_error(&self, response: &HttpResponse, retry_after: Option<Duration>) -> AiError {
@@ -349,17 +310,6 @@ impl Provider for ClaudeProvider {
     }
 }
 
-/// 再試行してよい状態コード (408 Request Timeout・409 Conflict・429・5xx)。
-fn is_retryable_status(status: u16) -> bool {
-    matches!(status, 408 | 409 | 429) || status >= 500
-}
-
-/// `retry-after` ヘッダ (秒)。
-fn retry_after(response: &HttpResponse) -> Option<Duration> {
-    let secs: f64 = response.header("retry-after")?.trim().parse().ok()?;
-    (secs.is_finite() && secs >= 0.0).then(|| Duration::from_secs_f64(secs))
-}
-
 #[derive(Deserialize)]
 struct MessageResponse {
     #[serde(default)]
@@ -395,25 +345,6 @@ struct ErrorDetail {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn backoff_doubles_up_to_the_cap() {
-        let p = RetryPolicy::default();
-        assert_eq!(p.backoff(0), Duration::from_millis(500));
-        assert_eq!(p.backoff(1), Duration::from_secs(1));
-        assert_eq!(p.backoff(10), Duration::from_secs(8));
-        assert_eq!(p.backoff(40), Duration::from_secs(8));
-    }
-
-    #[test]
-    fn retryable_statuses() {
-        for s in [408, 409, 429, 500, 503, 529] {
-            assert!(is_retryable_status(s), "{s}");
-        }
-        for s in [400, 401, 403, 404, 413] {
-            assert!(!is_retryable_status(s), "{s}");
-        }
-    }
 
     #[test]
     fn api_key_rejects_empty_and_hides_value() {

@@ -6,13 +6,15 @@
 //! - LLM / 画像モデルの呼び出しは [`Provider`] トレイトの裏に隠し、ネットワーク無しで
 //!   テストできるようにする (テストでは [`FakeProvider`] か、録画した応答を再生する
 //!   [`transport::ReplayTransport`] を使う)。
-//! - 既定のプロバイダは Anthropic の Claude API ([`claude::ClaudeProvider`])。
+//! - 既定のプロバイダは Anthropic の Claude API ([`claude::ClaudeProvider`])。OpenAI 互換の API
+//!   ([`openai::OpenAiProvider`]) も使える (ADR 0022)。
 
 pub mod classify;
 pub mod claude;
 pub mod depth;
 mod fake;
 pub mod normal;
+pub mod openai;
 pub mod rig;
 pub mod transport;
 pub mod turn;

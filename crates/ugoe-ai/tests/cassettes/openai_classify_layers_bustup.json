@@ -1,0 +1,41 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "x-request-id": "req_T0512clas0"
+        },
+        "body": {
+          "id": "chatcmpl-T0512clas0",
+          "object": "chat.completion",
+          "created": 1790000000,
+          "model": "gpt-6-sol",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\"layers\":[{\"index\":0,\"label\":\"hair_back\",\"side\":\"center\",\"confidence\":0.97},{\"index\":1,\"label\":\"handwear\",\"side\":\"left\",\"confidence\":0.93},{\"index\":2,\"label\":\"handwear\",\"side\":\"right\",\"confidence\":0.93},{\"index\":3,\"label\":\"topwear\",\"side\":\"center\",\"confidence\":0.98},{\"index\":4,\"label\":\"neck\",\"side\":\"center\",\"confidence\":0.95},{\"index\":5,\"label\":\"ear\",\"side\":\"right\",\"confidence\":0.94},{\"index\":6,\"label\":\"earwear\",\"side\":\"right\",\"confidence\":0.72},{\"index\":7,\"label\":\"ear\",\"side\":\"left\",\"confidence\":0.94},{\"index\":8,\"label\":\"earwear\",\"side\":\"left\",\"confidence\":0.71},{\"index\":9,\"label\":\"face\",\"side\":\"center\",\"confidence\":0.99},{\"index\":10,\"label\":\"mouth_open\",\"side\":\"center\",\"confidence\":0.92},{\"index\":11,\"label\":\"mouth_closed\",\"side\":\"center\",\"confidence\":0.9},{\"index\":12,\"label\":\"nose\",\"side\":\"center\",\"confidence\":0.96},{\"index\":13,\"label\":\"eye_white\",\"side\":\"right\",\"confidence\":0.95},{\"index\":14,\"label\":\"iris\",\"side\":\"right\",\"confidence\":0.96},{\"index\":15,\"label\":\"eyelash_upper\",\"side\":\"right\",\"confidence\":0.93},{\"index\":16,\"label\":\"eyebrow\",\"side\":\"right\",\"confidence\":0.97},{\"index\":17,\"label\":\"eye_closed\",\"side\":\"right\",\"confidence\":0.55},{\"index\":18,\"label\":\"eye_white\",\"side\":\"left\",\"confidence\":0.95},{\"index\":19,\"label\":\"iris\",\"side\":\"left\",\"confidence\":0.96},{\"index\":20,\"label\":\"eyelash_upper\",\"side\":\"left\",\"confidence\":0.93},{\"index\":21,\"label\":\"eyebrow\",\"side\":\"left\",\"confidence\":0.97},{\"index\":22,\"label\":\"eye_closed\",\"side\":\"left\",\"confidence\":0.88}]}",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 120,
+            "completion_tokens": 12,
+            "total_tokens": 132
+          }
+        }
+      }
+    }
+  ]
+}

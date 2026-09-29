@@ -10,9 +10,15 @@ import { fileDialogs } from "../fileDialogs";
 import { PSD_FILTER, parentDir } from "../filePaths";
 import { type ConsentAnswer, ipc, type Model, type Parameter, type ProposalState } from "../ipc";
 import type { ViewportModel } from "../viewport/controller.svelte";
-import { consentPrompt } from "./ai.svelte";
+import { aiSettings, consentPrompt } from "./ai.svelte";
 import { withConsent } from "./consent";
 import { type CommandGroup, excludedList, toggleCommand, toggleGroup } from "./proposals";
+import { providerLabel } from "./providers";
+
+/** 選んだ AI のプロバイダの名前 (進み具合の文言に使う)。 */
+function aiName(): string {
+  return aiSettings.value ? providerLabel(aiSettings.value) : "the AI";
+}
 
 /** プレビュー中の提案。 */
 export interface ProposalPreviewState {
@@ -80,7 +86,7 @@ export class ProposalsView {
   async classify(psd: string | null = null): Promise<boolean> {
     const useAi = this.useAi;
     return this.#task(
-      useAi ? "Classifying the layers with Claude…" : "Classifying the layers by name…",
+      useAi ? `Classifying the layers with ${aiName()}…` : "Classifying the layers by name…",
       async () => {
         const reply = await withConsent(
           (consent: ConsentAnswer | null) => ipc.classifyPsdLayers(psd, useAi, consent),
@@ -102,7 +108,7 @@ export class ProposalsView {
     const useAi = this.useAi;
     await this.#task(
       useAi
-        ? "Asking Claude for the rig values (it may ask again if an answer fails validation)…"
+        ? `Asking ${aiName()} for the rig values (it may ask again if an answer fails validation)…`
         : "Building the rig from the templates…",
       async () => {
         const reply = await withConsent(

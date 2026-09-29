@@ -14,7 +14,7 @@ use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::transport::{HttpRequest, Transport, UreqTransport};
+use crate::transport::{HttpRequest, Transport, UreqTransport, is_loopback_url};
 use crate::{AiError, Destination, Disclosure};
 
 const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
@@ -182,17 +182,7 @@ impl HttpDepthConfig {
 
     /// 送り先がこの計算機 (ループバック) か。
     fn is_loopback(&self) -> bool {
-        let rest = self
-            .endpoint
-            .split_once("://")
-            .map_or(self.endpoint.as_str(), |(_, r)| r);
-        let host = rest.split(['/', '?']).next().unwrap_or_default();
-        let host = match host.strip_prefix('[') {
-            // IPv6 (`[::1]:8765`)
-            Some(v6) => v6.split(']').next().unwrap_or_default(),
-            None => host.split(':').next().unwrap_or_default(),
-        };
-        matches!(host, "localhost" | "::1") || host.starts_with("127.")
+        is_loopback_url(&self.endpoint)
     }
 }
 

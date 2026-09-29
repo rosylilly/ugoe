@@ -205,6 +205,69 @@ fn ai_rig_notes_retries() {
     );
 }
 
+/// ADR 0022: 分類とリギングの提案は、選んだプロバイダ (ここでは OpenAI 互換の API の録画) でも同じ流れで動く。
+#[test]
+fn an_openai_compatible_provider_classifies_and_rigs() {
+    use ugoe_ai::claude::ApiKey;
+    use ugoe_ai::openai::{OPENAI_BASE_URL, OpenAiConfig, OpenAiProvider};
+    use ugoe_ai::transport::{Cassette, ReplayTransport};
+
+    let replay = |name: &str| {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../crates/ugoe-ai/tests/cassettes")
+            .join(name);
+        OpenAiProvider::with_transport(
+            OpenAiConfig::new(OPENAI_BASE_URL, "gpt-6-sol"),
+            Some(ApiKey::new("sk-test").unwrap()),
+            ReplayTransport::new(Cassette::load(path).unwrap()),
+        )
+    };
+    let tree = read_tree(&bustup_path()).unwrap();
+    let labels = classify(&tree, Some(&replay("openai_classify_layers_bustup.json"))).unwrap();
+    assert!(labels.iter().any(|l| l.label == Label::Face));
+
+    let state = from_psd(None);
+    let model = state.document.lock().unwrap().model().clone();
+    let image = overview(&tree).unwrap();
+    let provider = replay("openai_auto_rig_retry.json");
+    let proposal = rig(&model, &labels, &image, Some(&provider)).unwrap();
+    assert!(proposal.title.ends_with("— AI"), "{}", proposal.title);
+    assert!(
+        proposal.rationale.contains("1 回分"),
+        "{}",
+        proposal.rationale
+    );
+    let mut document = state.document.lock().unwrap();
+    let view = state
+        .project
+        .lock()
+        .unwrap()
+        .proposals
+        .proposals
+        .add(
+            &document,
+            proposal.title,
+            proposal.rationale,
+            proposal.commands,
+        )
+        .unwrap();
+    state
+        .project
+        .lock()
+        .unwrap()
+        .proposals
+        .proposals
+        .adopt(&mut document, view.id, &[])
+        .unwrap();
+    assert!(
+        document
+            .model()
+            .parameters
+            .iter()
+            .any(|p| p.id.as_str() == "AngleX")
+    );
+}
+
 /// 採用した後に手で直したセルは `authored` になる (提案が推定に任せた `derived` のセルでも)。
 #[test]
 fn cells_edited_after_adoption_become_authored() {

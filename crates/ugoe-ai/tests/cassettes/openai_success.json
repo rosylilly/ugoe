@@ -1,0 +1,93 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "body": {
+          "model": "gpt-6-sol",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You label the layers of a character illustration."
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "image_url",
+                  "image_url": {
+                    "url": "data:image/png;base64,<16 base64 chars omitted>"
+                  }
+                },
+                {
+                  "type": "text",
+                  "text": "Label the layer named \"eye_l\"."
+                }
+              ]
+            }
+          ],
+          "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+              "name": "ugoe_response",
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "side": {
+                    "type": "string",
+                    "enum": [
+                      "left",
+                      "right",
+                      "center"
+                    ]
+                  }
+                },
+                "required": [
+                  "label",
+                  "side"
+                ],
+                "additionalProperties": false
+              },
+              "strict": true
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "x-request-id": "req_T0512ok"
+        },
+        "body": {
+          "id": "chatcmpl-T0512ok",
+          "object": "chat.completion",
+          "created": 1790000000,
+          "model": "gpt-6-sol",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\"label\":\"iris\",\"side\":\"left\"}",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 120,
+            "completion_tokens": 12,
+            "total_tokens": 132
+          }
+        }
+      }
+    }
+  ]
+}

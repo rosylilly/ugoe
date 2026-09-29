@@ -10,11 +10,31 @@ export type AiReply<T> = { "status": "done", value: T, } | { "status": "needs_co
  */
 export type AiSettings = { 
 /**
- * 資格情報の保存先の状態。
+ * 選んだプロバイダ・モデル・ベースの URL (エディタ全体の設定)。
+ */
+provider: ProviderSettings, 
+/**
+ * 利用者に示す送り先のサービスの名前。
+ */
+service: string, 
+/**
+ * 送り先がこの計算機 (ループバック) か。外部に出ないので同意を求めず、「外部に送らない」でも使える。
+ */
+local: boolean, 
+/**
+ * 選んだプロバイダの API キーの、資格情報の保存先での状態。
  */
 key: KeyStatus, 
 /**
- * 環境変数 `ANTHROPIC_API_KEY` にキーがあるか (保存先にキーがなければこちらを使う)。
+ * 選んだプロバイダがキーなしでは送れないか (手元のサーバなどはキーが要らない)。
+ */
+key_required: boolean, 
+/**
+ * 保存先にキーがないときに読む環境変数 (例: `ANTHROPIC_API_KEY`)。なければ `null`。
+ */
+key_env: string | null, 
+/**
+ * その環境変数にキーがあるか (保存先にキーがなければこちらを使う)。
  */
 env_key: boolean, 
 /**
@@ -253,6 +273,15 @@ psd: string,
  * AI で分類したか (偽なら名前の規則だけ)。
  */
 by_ai: boolean, layers: Array<LayerLabelView>, };
+
+/**
+ * Claude の設定。
+ */
+export type ClaudeSettings = { 
+/**
+ * モデルの ID。
+ */
+model: string, };
 
 /**
  * 衝突体の形状。半径はキャンバスのピクセル単位。
@@ -870,6 +899,24 @@ export type MotionEvent = { t: number, value: string, };
 export type NormalizationRange = { min: number, default: number, max: number, };
 
 /**
+ * OpenAI 互換の API の設定。
+ */
+export type OpenAiSettings = { 
+/**
+ * `/chat/completions` の手前までの URL (例: `https://api.openai.com/v1`・`http://localhost:11434/v1`)。
+ */
+base_url: string, 
+/**
+ * モデルの ID。
+ */
+model: string, output: OutputMode, };
+
+/**
+ * OpenAI 互換の API で、答えを JSON にさせる方法 (`ugoe_ai::openai::StructuredOutput`)。
+ */
+export type OutputMode = "json_schema" | "json_object" | "prompt";
+
+/**
  * [`verify_overflows`] で見つけた、ある要素のあるセルでのはみ出し。
  */
 export type OverflowFinding = { target: KeyformTarget, parent: string, kind: OverflowPointKind, 
@@ -1176,6 +1223,16 @@ rationale: string, commands: Array<ProposalCommand>,
  * 提案の後にドキュメントが変わった (プレビュー・採用できない。Undo で戻れば使える)。
  */
 stale: boolean, };
+
+/**
+ * 使うプロバイダ。
+ */
+export type ProviderKind = "claude" | "openai_compatible";
+
+/**
+ * AI のプロバイダの設定 (`ai-provider.json`)。API キーは含めない。
+ */
+export type ProviderSettings = { provider: ProviderKind, claude: ClaudeSettings, openai: OpenAiSettings, };
 
 /**
  * 取り込みの警告。

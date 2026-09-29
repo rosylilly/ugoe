@@ -2,6 +2,7 @@
 //! 設計: `docs/editor.md`。
 
 pub(crate) mod ai;
+mod ai_provider;
 mod avatar;
 pub mod bindings;
 mod commands;
@@ -26,6 +27,8 @@ pub struct AppState {
     pub project: Mutex<project::ProjectSession>,
     /// AI の API キー (OS の資格情報の保存先と環境変数)。
     pub api_keys: ai::ApiKeys,
+    /// 選んだ AI のプロバイダ (エディタ全体の設定。起動時にアプリの設定のディレクトリから読む)。
+    pub ai_provider: ai_provider::ProviderStore,
 }
 
 pub fn run() {
@@ -34,12 +37,25 @@ pub fn run() {
         document: Mutex::new(document),
         project: Mutex::new(session),
         api_keys: ai::ApiKeys::default(),
+        ai_provider: ai_provider::ProviderStore::default(),
     };
     #[allow(clippy::expect_used)]
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(state)
+        .setup(|app| {
+            use tauri::Manager;
+            let loaded = match app.path().app_config_dir() {
+                Ok(dir) => app.state::<AppState>().ai_provider.load(dir),
+                Err(e) => Err(e.to_string()),
+            };
+            // 読めなければ既定 (Claude) のまま起動する
+            if let Err(e) = loaded {
+                eprintln!("could not read the AI provider settings: {e}");
+            }
+            Ok(())
+        })
         .on_permission_request(|_, kind| tracking::permission_response(kind))
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
@@ -67,6 +83,7 @@ pub fn run() {
             physics_check::check_physics,
             avatar::check_avatar_profile,
             ai::ai_settings,
+            ai::set_ai_provider,
             ai::store_api_key,
             ai::delete_api_key,
             ai::set_ai_send_externally,

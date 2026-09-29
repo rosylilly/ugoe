@@ -2,6 +2,7 @@
 // AI の機能 (T0637 の提案など) は `aiSettings.canSend` で有効・無効を決め、送るときは
 // `withConsent(call, consentPrompt.ask)` を使う。
 import { type AiSettings, type ConsentAnswer, type DisclosureView, ipc } from "../ipc";
+import { aiBlockedReason } from "./providers";
 
 /** 確認のダイアログ (ConsentDialog.svelte) に出す問い合わせ。 */
 export class ConsentPrompt {
@@ -27,15 +28,18 @@ export class ConsentPrompt {
   }
 }
 
-/** AI の設定 (API キーの状態とプロジェクトの「外部に送らない」)。キーの中身は持たない。 */
+/** AI の設定 (選んだプロバイダ・API キーの状態とプロジェクトの「外部に送らない」)。キーの中身は持たない。 */
 export class AiSettingsState {
   value = $state<AiSettings | null>(null);
   error = $state<string | null>(null);
 
-  /** 外部の AI に送れるか (プロジェクトが許していて、キーが保存先か環境変数にある)。 */
+  /**
+   * 選んだプロバイダに送れるか (外部に出るならプロジェクトが許していて、キーが要るなら保存先か環境変数にある)。
+   * 手元のサーバ (ループバック) は「外部に送らない」のプロジェクトでも送れる。
+   */
   get canSend(): boolean {
     const s = this.value;
-    return !!s && s.send_externally && (s.key === "stored" || s.env_key);
+    return !!s && aiBlockedReason(s) === null;
   }
 
   refresh(): Promise<boolean> {

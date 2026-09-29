@@ -41,8 +41,52 @@ export function formatBytes(bytes: number): string {
   return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
 }
 
-/** 確認の画面に示す、送り先の規約 (Anthropic の商用規約とプライバシーポリシー)。 */
-export const PROVIDER_TERMS = [
-  { label: "Commercial Terms", url: "https://www.anthropic.com/legal/commercial-terms" },
-  { label: "Privacy Policy", url: "https://www.anthropic.com/legal/privacy" },
-] as const;
+/** 送り先の規約へのリンク。 */
+export interface ProviderTerms {
+  /** データを扱う組織の名前。 */
+  org: string;
+  links: readonly { label: string; url: string }[];
+}
+
+/** 送り先のホストごとの規約 (確認の画面に示す)。 */
+const TERMS_BY_HOST: Record<string, ProviderTerms> = {
+  "api.anthropic.com": {
+    org: "Anthropic",
+    links: [
+      { label: "Commercial Terms", url: "https://www.anthropic.com/legal/commercial-terms" },
+      { label: "Privacy Policy", url: "https://www.anthropic.com/legal/privacy" },
+    ],
+  },
+  "api.openai.com": {
+    org: "OpenAI",
+    links: [
+      { label: "Services Agreement", url: "https://openai.com/policies/services-agreement/" },
+      { label: "Privacy Policy", url: "https://openai.com/policies/privacy-policy/" },
+    ],
+  },
+  "openrouter.ai": {
+    org: "OpenRouter",
+    links: [
+      { label: "Terms", url: "https://openrouter.ai/terms" },
+      { label: "Privacy Policy", url: "https://openrouter.ai/privacy" },
+    ],
+  },
+  "generativelanguage.googleapis.com": {
+    org: "Google",
+    links: [
+      { label: "Gemini API Terms", url: "https://ai.google.dev/gemini-api/terms" },
+      { label: "Privacy Policy", url: "https://policies.google.com/privacy" },
+    ],
+  },
+};
+
+/** 送り先の URL の規約。知らない送り先なら `null` (利用者に規約を確かめるよう促す)。 */
+export function termsFor(endpoint: string): ProviderTerms | null {
+  let host: string;
+  try {
+    host = new URL(endpoint).hostname;
+  } catch {
+    return null;
+  }
+  return TERMS_BY_HOST[host] ?? null;
+}

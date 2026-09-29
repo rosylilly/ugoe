@@ -810,41 +810,64 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 
 ### AI の設定と送信の同意
 
-外部の AI サービス (Claude API、`ugoe_ai::claude::ClaudeProvider`) を安全に使うための土台です (T0638)。
-方針は [AI 連携のセキュリティとプライバシー](ai-integration.md#セキュリティとプライバシー)。バックエンドは `src-tauri/src/ai.rs`、
-画面は `src/lib/ai/` にあります。
+AI のプロバイダを選び、外部の AI サービスを安全に使うための土台です (T0638、プロバイダの選択は T0512・[ADR 0022](adr/0022-multiple-ai-providers-and-agents.md))。
+方針は [AI 連携のセキュリティとプライバシー](ai-integration.md#セキュリティとプライバシー)。バックエンドは `src-tauri/src/ai.rs`・
+`ai_provider.rs`、画面は `src/lib/ai/` にあります。
+
+- **プロバイダの選択:** Claude API (`ugoe_ai::claude::ClaudeProvider`) か OpenAI 互換の API (`ugoe_ai::openai::OpenAiProvider`。
+  [OpenAI 互換の API](ai-integration.md#openai-互換の-api)) を選びます。既定は Claude (`claude-opus-5-5`) で、既存の利用者の設定は変わりません。
+  - 選んだもの (`ProviderSettings`: プロバイダ・Claude のモデル・OpenAI 互換のベースの URL とモデルと JSON の出力の形) は
+    エディタ全体の設定で、アプリの設定のディレクトリ (Tauri の `app_config_dir`) の `ai-provider.json` に置きます。プロジェクトには
+    書かず、API キーも含めません。ファイルがなければ既定、読めなければ既定のまま起動します (知らない項目は無視し、欠けた項目は既定)。
+  - OpenAI 互換は、よく使う送り先 (OpenAI・OpenRouter・Google Gemini・Ollama・LM Studio) を選ぶとベースの URL とモデルを埋めます
+    (`src/lib/ai/providers.ts`)。ほかの送り先は URL を入れます。JSON の出力の形は、構造化出力 (既定)・JSON モード・プロンプトだけから
+    選びます。後の 2 つは答えを検証して問い直すので、同じ内容を送り直すことがあります (確認の画面の「送り直す回数」に含める)。
+  - 変えると `set_ai_provider` で検査 (ベースの URL は `http(s)://`、モデルは空でない) してから保存します。送り先が変わると
+    「今後は確かめない」は効かなくなります (覚えた送り先と違うため)。
 
 - **API キーの保存先:** OS の資格情報の保存先 (Linux は Secret Service、macOS はキーチェーン、Windows は資格情報マネージャー。
-  [`keyring-core`](https://crates.io/crates/keyring-core) と OS ごとの保存先のクレート) に、サービス `ugoe-editor`・アカウント
-  `anthropic-api-key` で置きます。プロジェクト・設定ファイル・ログには書きません。
-  - 読む順は保存先 → 環境変数 `ANTHROPIC_API_KEY`。読んだ値は `ApiKey::new` に渡します。
+  [`keyring-core`](https://crates.io/crates/keyring-core) と OS ごとの保存先のクレート) に、サービス `ugoe-editor` で置きます。
+  アカウントはプロバイダごと (`KeySlot`) で、Claude は前からの `anthropic-api-key`、OpenAI 互換は送り先のホストごとの
+  `openai-compatible:<host>` です (OpenAI のキーを OpenRouter などの別の送り先に送らないため)。プロジェクト・設定ファイル・ログには書きません。
+  - 読む順は保存先 → 環境変数 (Claude は `ANTHROPIC_API_KEY`、OpenAI 互換は送り先が `api.openai.com` のときだけ `OPENAI_API_KEY`)。
+    読んだ値は `ApiKey::new` に渡します。
+  - Claude はキーがないと送れません。OpenAI 互換はキーを省けます (手元のサーバ。キーがなければ `Authorization` を送りません)。
+    キーがあっても、平文の `http://` で外部の送り先には送りません (`https://` にするよう断ります。ループバックは除く)。
   - 保存先は最初に使うときに開きます。開けない・読めない環境 (WSL・キーリングのない Linux など) では「使えない」と出し、
     環境変数だけを使います。普通のファイルへの代わりの保存はしません。
   - Linux の保存先は同期の D-Bus (`dbus-secret-service-keyring-store`、暗号は `crypto-rust`) で、OpenSSL は要りません。
     D-Bus の応答待ちで画面が止まらないよう、AI の IPC コマンドは別のスレッドで動かします。
-- **画面に出すもの:** フロントエンドが知るのはキーの状態 (`KeyStatus`: `stored`・`not_stored`・`unavailable`) と、環境変数に
-  キーがあるかだけです。キーは入力欄から `store_api_key` に 1 度渡すだけで、保存したら入力欄を空にします (Svelte の状態にも持たない)。
+- **画面に出すもの:** フロントエンドが知るのは、選んだプロバイダのキーの状態 (`KeyStatus`: `stored`・`not_stored`・`unavailable`)、
+  キーが要るか、読む環境変数の名前とそこにキーがあるかだけです。キーは入力欄から `store_api_key` に 1 度渡すだけで、保存したら入力欄を空にします (Svelte の状態にも持たない)。
 - **プロジェクトごとの「外部に送らない」:** `project.json` の `editor.ai.send_externally` (`ProjectMeta::ai_send_externally`)。
-  選んだプロジェクトでは、外部に送るコマンドはすべて断ります (ローカルで完結するプロバイダは使える)。変えると未保存の変更になります。
-- **送る前の確認:** 外部に送る IPC コマンドは `ai::prepare_claude` を通します。プロジェクトの設定 → API キー → 同意の順に確かめ、
+  選んだプロジェクトでは、外部に送るコマンドはすべて断ります (ローカルで完結するプロバイダと、手元のサーバ (ループバック) の
+  OpenAI 互換の API は使える)。変えると未保存の変更になります。
+- **送る前の確認:** AI に送る IPC コマンドは、プロバイダに関わらず `ai::prepare_requests` を通します。プロジェクトの設定 → API キー →
+  同意の順に確かめ、
   同意がなければ **送らずに** `AiReply::NeedsConsent { disclosure }` を返します。フロントエンドは `withConsent(call, consentPrompt.ask)`
   (`src/lib/ai/consent.ts`) で確認のダイアログ (`ConsentDialog.svelte`) を出し、同意 (`ConsentAnswer`) を付けて呼び直します。
+  - 送り先がループバック (`localhost`・`127.0.0.1`・`::1`) なら外部に出ない (`Destination::Local`) ので、確かめずに送ります。
   - ダイアログは `Provider::disclosure` の送り先 (サービス・URL・モデル)・画像の枚数とバイト数・テキストのバイト数と、
-    Anthropic の規約 (Commercial Terms・Privacy Policy) へのリンクを示します。Esc と「Cancel」は送りません。
+    送り先の規約へのリンクを示します (`termsFor`: Anthropic・OpenAI・OpenRouter・Google。知らない送り先には規約を確かめるよう
+    促す文だけ)。Esc と「Cancel」は送りません。
+  - 送り直すことがある回数 (`DisclosureView::retries`) には、OpenAI 互換で構造化出力を使わないときのプロバイダの問い直しも含めます
+    (呼び出し側の回数 r、プロバイダの回数 j なら `(r + 1)(j + 1) − 1`)。
   - 同意は示した内容そのものに対するもので、呼び直したときに送る内容が違えば (画像が増えたなど) もう一度確かめます。
   - **「今後は確かめない」** は、このプロジェクトを開いている間 (エディタを終えるか、新規・開くで替えるまで) だけ、同じ送り先
     (サービス・URL・モデル) には確かめずに送ります。ファイルには残しません。画像を外部に送ることを永続的に黙って許す設定は
     置かない、という判断です。設定の画面の「Ask again」で取り消せ、「外部に送らない」にしても消えます。
-- **設定の画面:** ヘッダーの「Settings」(`SettingsDialog.svelte`)。キーの保存・置き換え・削除、「外部に送らない」、
-  「Ask again」、「Test connection」(画像なしの小さなリクエストを、同意を得てから送ってキーを確かめる) があります。
-- **AI の機能を足すとき (T0637 など):** 送る IPC コマンドは `consent: ConsentAnswer | null` を受け取り、`prepare_claude` の
+- **設定の画面:** ヘッダーの「Settings」(`SettingsDialog.svelte`)。プロバイダ・モデル・ベースの URL・JSON の出力の形の選択
+  (「Apply」で保存)、選んだプロバイダのキーの保存・置き換え・削除 (プロバイダを変えたら先に Apply する)、「外部に送らない」、
+  「Ask again」、「Test connection」(画像なしの小さなリクエストを、外部なら同意を得てから送ってプロバイダとキーを確かめる) があります。
+- **AI の機能を足すとき (T0637 など):** 送る IPC コマンドは `consent: ConsentAnswer | null` を受け取り、`prepare_requests` の
   `Prepared::NeedsConsent` をそのまま `AiReply::NeedsConsent` で返します。画面は `aiSettings.canSend` (`src/lib/ai/ai.svelte.ts`) で
-  ボタンの有効・無効を決めます。
+  ボタンの有効・無効を決めます (理由の文言は `aiBlockedReason`、プロバイダの名前は `providerLabel`。`src/lib/ai/providers.ts`)。
 
 | コマンド | 内容 |
 | --- | --- |
-| `ai_settings` | `AiSettings { key, env_key, send_externally, consent_remembered }`。キーの中身は含まない |
-| `store_api_key(key)` / `delete_api_key` | 保存先にキーを保存・削除し、`AiSettings` を返す |
+| `ai_settings` | `AiSettings { provider, service, local, key, key_required, key_env, env_key, send_externally, consent_remembered }`。キーの中身は含まない |
+| `set_ai_provider(provider)` | プロバイダ・モデル・ベースの URL を検査して `ai-provider.json` に保存し、`AiSettings` を返す |
+| `store_api_key(key)` / `delete_api_key` | 選んでいるプロバイダのキーを保存先に保存・削除し、`AiSettings` を返す |
 | `set_ai_send_externally(allowed)` | 開いているプロジェクトの「外部に送ってよいか」を変える |
 | `forget_ai_consent` | 「今後は確かめない」を取り消す |
 | `test_ai_connection(consent?)` | 接続の確認。`AiReply<null>` (`done` か `needs_consent`) |
@@ -859,22 +882,22 @@ PSD の取り込みから「レイヤーの分類 → リギングの提案」�
 - **流れ:** 「New from PSD…」「Import PSD…」で取り込んだ PSD を覚え (`ProposalSession::set_psd`。「Choose PSD…」で替えられる)、
   「Classify layers」で `ugoe_ai::classify` の分類をし、「Propose rig」で分類から `ugoe_ai::rig` のリグ (顔の角度・目・口) を
   提案します。分類していなければ「Propose rig」が先に分類します (2 段階で、段階ごとに何をしているかをパネルに出す)。
-  - 「Use Claude」なら、分類は `classify_layers` (合成画像とレイヤーのサムネイル)、リグは `propose_rig_with_ai` (原画) で
-    Claude API に送ります。使わなければ名前の規則 (`classify_by_name`) とテンプレートの既定値 (`propose_rig` と
+  - 「Use <プロバイダ>」(Claude・OpenAI・Ollama など、選んだプロバイダの名前) なら、分類は `classify_layers` (合成画像と
+    レイヤーのサムネイル)、リグは `propose_rig_with_ai` (原画) で選んだプロバイダに送ります。使わなければ名前の規則 (`classify_by_name`) とテンプレートの既定値 (`propose_rig` と
     `RigParams::default`) で、何も送りません。キーがなくても使えます。
   - 深度推定 (T0505) の実際の推定器はまだないので、顔の振り向きは深度マップなし (顔の外接矩形に内接する楕円体。
     `TurnDepth::Rules`) で組みます。推定器ができたら、同じ流れに「深度を推定する」段階を足します。
   - 分類とその PSD はプロジェクトを開いている間だけ持ちます (ファイルには残さない)。確からしさの低いレイヤー
     (`needs_review`) は、パネルと提案の理由の末尾に出します。分類の結果を画面で直す機能はまだありません。
 - **外部に送るとき:** 送る IPC コマンド (`classify_psd_layers`・`propose_rig_from_psd`) は、[送る前の確認](#ai-の設定と送信の同意)を
-  `ai::prepare_claude_requests` で通します。
+  `ai::prepare_requests` で通します (手元のサーバなら確かめずに送る)。
   - 分類はレイヤーが多いと複数のリクエストに分かれる (1 回 32 枚まで) ので、確認には **合計** (`DisclosureView::combined`) を示し、
     1 回の同意で送ります。送り先の違うリクエストは混ぜません。
   - リグは、答えが範囲の外か検証を通らなければ、同じ画像に前の答えと理由を添えて問い直します (既定で 3 回まで)。確認には
     1 回分の内容と、送り直すことがある回数 (`DisclosureView::retries`) を示します。
-  - 「Use Claude」は `aiSettings.canSend` が偽なら選べず、理由 (プロジェクトが「外部に送らない」・API キーがない) と
-    「Settings…」への案内を出します。キーがないときは、キーの保存か環境変数 `ANTHROPIC_API_KEY` を案内し、AI なしでも
-    進められることを添えます。
+  - 「Use <プロバイダ>」は `aiSettings.canSend` が偽なら選べず、理由 (外部の送り先でプロジェクトが「外部に送らない」・
+    キーの要るプロバイダでキーがない) と「Settings…」への案内を出します。キーがないときは、キーの保存か環境変数
+    (`ANTHROPIC_API_KEY` など) を案内し、AI なしでも進められることを添えます。
 - **提案の置き場 (`Proposals::add`):** 置く前に、ドキュメントの複製 (`Document::detached`。履歴なし) に全体を `Batch` として
   適用して検証を通すことを確かめ、通らなければ置きません。提案は作ったときのドキュメントの状態 (`Document::state_id`) に
   対するもので、ドキュメントが変わると **古い (stale)** とし、プレビューも採用もしません (承認した差分と違う結果に

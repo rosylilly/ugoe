@@ -1,14 +1,16 @@
-//! AI の API キーの保存と、外部の AI サービスに送る前の同意の IPC コマンド。
-//! 方針: `docs/ai-integration.md#セキュリティとプライバシー`・`docs/editor.md#ai-の設定と送信の同意`。
+//! AI のプロバイダの選択・API キーの保存と、外部の AI サービスに送る前の同意の IPC コマンド。
+//! 方針: `docs/ai-integration.md#セキュリティとプライバシー`・`docs/editor.md#ai-の設定と送信の同意`・ADR 0022。
 //! 引数・戻り値の型を変えたら `apps/editor/src/lib/ipc.ts` も同じ PR で更新すること。
 //!
-//! - API キーは OS の資格情報の保存先 (keyring) に置き、プロジェクトや普通のファイルには書かない。
-//!   読む順は保存先 → 環境変数 `ANTHROPIC_API_KEY`。保存先が使えない環境 (WSL・ヘッドレスの Linux) では
-//!   環境変数だけを使う。
+//! - プロバイダ (Claude / OpenAI 互換) とモデル・ベースの URL は [`crate::ai_provider`] が持つ。
+//! - API キーはプロバイダごとに OS の資格情報の保存先 (keyring) に置き ([`KeySlot`])、プロジェクトや
+//!   普通のファイルには書かない。読む順は保存先 → 環境変数 (Claude は `ANTHROPIC_API_KEY`、OpenAI は
+//!   `OPENAI_API_KEY`)。保存先が使えない環境 (WSL・ヘッドレスの Linux) では環境変数だけを使う。
 //! - キーはログ・エラーの文言・IPC の応答に出さない。フロントエンドが知るのは [`KeyStatus`] だけ。
-//! - 外部に送る IPC コマンドは [`prepare_claude`] を通す。プロジェクトが「外部に送らない」なら断り、
-//!   同意がなければ送らずに [`AiReply::NeedsConsent`] を返す (フロントエンドが確認のダイアログを出して、
-//!   [`ConsentAnswer`] を付けて呼び直す)。
+//! - AI に送る IPC コマンドは、プロバイダに関わらず [`prepare_requests`] を通す。外部に出るなら、
+//!   プロジェクトが「外部に送らない」なら断り、同意がなければ送らずに [`AiReply::NeedsConsent`] を返す
+//!   (フロントエンドが確認のダイアログを出して、[`ConsentAnswer`] を付けて呼び直す)。
+//!   送り先が手元 (ループバック) なら外部に出ないので、同意を求めない。
 
 use std::fmt;
 use std::sync::{Arc, OnceLock};
@@ -16,56 +18,63 @@ use std::sync::{Arc, OnceLock};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 use ts_rs::TS;
-use ugoe_ai::claude::{API_KEY_ENV, ApiKey, ClaudeConfig, ClaudeProvider, Effort};
+use ugoe_ai::claude::ApiKey;
 use ugoe_ai::{AiError, Destination, Disclosure, Provider, ProviderRequest};
 
 use crate::AppState;
+pub use crate::ai_provider::KeySlot;
+use crate::ai_provider::{ProviderSettings, Purpose};
 
-/// 資格情報の保存先での名前 (サービス名・アカウント名)。
+/// 資格情報の保存先での名前 (サービス名)。アカウント名はプロバイダごと ([`KeySlot::account`])。
 const KEYRING_SERVICE: &str = "ugoe-editor";
-const KEYRING_USER: &str = "anthropic-api-key";
 
 // ---- API キー ----
 
-/// API キーを置く保存先。テストではメモリ上のものに差し替える。
+/// API キーを置く保存先。`account` はプロバイダごとの名前 ([`KeySlot::account`])。
+/// テストではメモリ上のものに差し替える。
 pub trait SecretStore: Send + Sync {
     /// 保存したキー。なければ `None`。
-    fn get(&self) -> Result<Option<String>, String>;
-    fn set(&self, secret: &str) -> Result<(), String>;
+    fn get(&self, account: &str) -> Result<Option<String>, String>;
+    fn set(&self, account: &str, secret: &str) -> Result<(), String>;
     /// 消す。もともとなければ何もしない。
-    fn delete(&self) -> Result<(), String>;
+    fn delete(&self, account: &str) -> Result<(), String>;
 }
 
 /// OS の資格情報の保存先 (Linux は Secret Service、macOS はキーチェーン、Windows は資格情報マネージャー)。
 struct KeyringStore {
-    entry: keyring_core::Entry,
+    store: Arc<keyring_core::CredentialStore>,
 }
 
 impl KeyringStore {
     fn open() -> Result<Self, String> {
         let store = platform_store().map_err(|e| describe(&e))?;
-        let entry = store
-            .build(KEYRING_SERVICE, KEYRING_USER, None)
-            .map_err(|e| describe(&e))?;
-        Ok(Self { entry })
+        Ok(Self { store })
+    }
+
+    fn entry(&self, account: &str) -> Result<keyring_core::Entry, String> {
+        self.store
+            .build(KEYRING_SERVICE, account, None)
+            .map_err(|e| describe(&e))
     }
 }
 
 impl SecretStore for KeyringStore {
-    fn get(&self) -> Result<Option<String>, String> {
-        match self.entry.get_password() {
+    fn get(&self, account: &str) -> Result<Option<String>, String> {
+        match self.entry(account)?.get_password() {
             Ok(secret) => Ok(Some(secret)),
             Err(keyring_core::Error::NoEntry) => Ok(None),
             Err(e) => Err(describe(&e)),
         }
     }
 
-    fn set(&self, secret: &str) -> Result<(), String> {
-        self.entry.set_password(secret).map_err(|e| describe(&e))
+    fn set(&self, account: &str, secret: &str) -> Result<(), String> {
+        self.entry(account)?
+            .set_password(secret)
+            .map_err(|e| describe(&e))
     }
 
-    fn delete(&self) -> Result<(), String> {
-        match self.entry.delete_credential() {
+    fn delete(&self, account: &str) -> Result<(), String> {
+        match self.entry(account)?.delete_credential() {
             Ok(()) | Err(keyring_core::Error::NoEntry) => Ok(()),
             Err(e) => Err(describe(&e)),
         }
@@ -127,7 +136,8 @@ pub enum KeyStatus {
 }
 
 type Opener = Box<dyn Fn() -> Result<Box<dyn SecretStore>, String> + Send + Sync>;
-type EnvReader = fn() -> Option<String>;
+/// 環境変数を読む (テストでは差し替える)。
+type EnvReader = fn(&str) -> Option<String>;
 
 /// API キーの読み書き。保存先は最初に使うときに開く (D-Bus への接続などで起動を遅らせないため)。
 pub struct ApiKeys {
@@ -146,7 +156,7 @@ impl Default for ApiKeys {
     fn default() -> Self {
         Self::new(
             Box::new(|| KeyringStore::open().map(|s| Box::new(s) as Box<dyn SecretStore>)),
-            || std::env::var(API_KEY_ENV).ok(),
+            |name| std::env::var(name).ok(),
         )
     }
 }
@@ -167,45 +177,54 @@ impl ApiKeys {
         }
     }
 
-    pub fn status(&self) -> KeyStatus {
-        match self.store().and_then(SecretStore::get) {
+    pub fn status(&self, slot: &KeySlot) -> KeyStatus {
+        match self.store().and_then(|s| s.get(&slot.account)) {
             Ok(Some(_)) => KeyStatus::Stored,
             Ok(None) => KeyStatus::NotStored,
             Err(_) => KeyStatus::Unavailable,
         }
     }
 
-    /// 環境変数 `ANTHROPIC_API_KEY` にキーがあるか。
-    pub fn env_available(&self) -> bool {
-        (self.env)().is_some_and(|v| !v.trim().is_empty())
+    /// `slot` の環境変数にキーがあるか。
+    pub fn env_available(&self, slot: &KeySlot) -> bool {
+        self.env_value(slot).is_some()
+    }
+
+    fn env_value(&self, slot: &KeySlot) -> Option<String> {
+        slot.env.and_then(self.env).filter(|v| !v.trim().is_empty())
     }
 
     /// 保存先に保存する (前後の空白は除く)。
-    pub fn save(&self, key: &str) -> Result<(), String> {
+    pub fn save(&self, slot: &KeySlot, key: &str) -> Result<(), String> {
         let key = key.trim();
         if key.is_empty() {
             return Err("the API key is empty".into());
         }
-        self.store()?.set(key)
+        self.store()?.set(&slot.account, key)
     }
 
-    pub fn delete(&self) -> Result<(), String> {
-        self.store()?.delete()
+    pub fn delete(&self, slot: &KeySlot) -> Result<(), String> {
+        self.store()?.delete(&slot.account)
     }
 
-    /// 使うキー: 保存先 → 環境変数の順。保存先が使えなければ環境変数だけを見る。
-    pub fn resolve(&self) -> Result<ApiKey, AiError> {
-        if let Ok(Some(key)) = self.store().and_then(SecretStore::get)
+    /// 使うキー: 保存先 → 環境変数の順。保存先が使えなければ環境変数だけを見る。どちらにもなければ `None`。
+    pub fn find(&self, slot: &KeySlot) -> Option<ApiKey> {
+        if let Ok(Some(key)) = self.store().and_then(|s| s.get(&slot.account))
             && let Ok(key) = ApiKey::new(key)
         {
-            return Ok(key);
+            return Some(key);
         }
-        match (self.env)() {
-            Some(key) => ApiKey::new(key),
-            None => Err(AiError::MissingApiKey(format!(
-                "save a key in Settings or set {API_KEY_ENV}"
-            ))),
-        }
+        self.env_value(slot).and_then(|k| ApiKey::new(k).ok())
+    }
+
+    /// [`Self::find`] の、キーがなければエラーにする版。
+    pub fn resolve(&self, slot: &KeySlot) -> Result<ApiKey, AiError> {
+        self.find(slot).ok_or_else(|| {
+            AiError::MissingApiKey(match slot.env {
+                Some(env) => format!("save a key in Settings or set {env}"),
+                None => "save a key in Settings".into(),
+            })
+        })
     }
 }
 
@@ -364,41 +383,59 @@ pub enum AiReply<T> {
     NeedsConsent { disclosure: DisclosureView },
 }
 
-/// [`prepare_claude`] の結果。
-#[derive(Debug)]
+/// [`prepare_requests`] の結果。
 pub enum Prepared {
     /// 送ってよい。このプロバイダで送る。
-    Ready(ClaudeProvider),
+    Ready(Box<dyn Provider>),
     NeedsConsent(DisclosureView),
 }
 
-/// 外部の AI (Claude API) に `request` を送る前の準備。プロジェクトの設定・API キー・同意を確かめる。
-/// 送る IPC コマンドは必ずこれを通し、[`Prepared::NeedsConsent`] なら送らずに
-/// [`AiReply::NeedsConsent`] を返す。ロックは返る前に外す (送信中に編集を止めないため)。
-pub fn prepare_claude(
-    state: &AppState,
-    config: ClaudeConfig,
-    request: &ProviderRequest,
-    consent: Option<&ConsentAnswer>,
-) -> Result<Prepared, String> {
-    prepare_claude_requests(state, config, std::slice::from_ref(request), 0, consent)
+impl fmt::Debug for Prepared {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Ready(_) => f.write_str("Ready"),
+            Self::NeedsConsent(view) => f.debug_tuple("NeedsConsent").field(view).finish(),
+        }
+    }
 }
 
-/// [`prepare_claude`] の、複数のリクエストをまとめて 1 回の確認で送る版 (レイヤーの分類を分けて送るなど)。
-/// 確認には合計を示す。`retries` は答えが検証を通らなかったときに送り直すことがある回数の上限
-/// ([`DisclosureView::retries`])。
-pub fn prepare_claude_requests(
+/// 選んだプロバイダで AI に `requests` を送る前の準備。プロジェクトの設定・API キー・同意を確かめる。
+/// 送る IPC コマンドは必ずこれを通し、[`Prepared::NeedsConsent`] なら送らずに [`AiReply::NeedsConsent`] を
+/// 返す。複数のリクエストは 1 回の確認で合計を示す (レイヤーの分類を分けて送るなど)。
+/// `retries` は答えが検証を通らなかったときに呼び出し側が送り直すことがある回数の上限。確認に示す回数
+/// ([`DisclosureView::retries`]) には、プロバイダ自身の問い直し (OpenAI 互換の API で構造化出力を
+/// 使わないとき) も含める。ロックは返る前に外す (送信中に編集を止めないため)。
+pub fn prepare_requests(
     state: &AppState,
-    config: ClaudeConfig,
+    purpose: Purpose,
     requests: &[ProviderRequest],
     retries: usize,
     consent: Option<&ConsentAnswer>,
 ) -> Result<Prepared, String> {
-    if !lock_project(state)?.ai_send_externally() {
+    let settings = state.ai_provider.get();
+    prepare_with(state, &settings, purpose, requests, retries, consent)
+}
+
+fn prepare_with(
+    state: &AppState,
+    settings: &ProviderSettings,
+    purpose: Purpose,
+    requests: &[ProviderRequest],
+    retries: usize,
+    consent: Option<&ConsentAnswer>,
+) -> Result<Prepared, String> {
+    if !settings.is_local() && !lock_project(state)?.ai_send_externally() {
         return Err(SEND_DISABLED.into());
     }
-    let key = state.api_keys.resolve().map_err(|e| e.to_string())?;
-    let provider = ClaudeProvider::new(config, key);
+    let slot = settings.key_slot();
+    let key = if slot.required {
+        Some(state.api_keys.resolve(&slot).map_err(|e| e.to_string())?)
+    } else {
+        state.api_keys.find(&slot)
+    };
+    let provider = settings.build(key, purpose)?;
+    let json_retries = settings.json_retries();
+    let retries = (retries + 1) * (json_retries + 1) - 1;
     let disclosures: Vec<Disclosure> = requests.iter().map(|r| provider.disclosure(r)).collect();
     let view = DisclosureView::combined(&disclosures)?.map(|v| DisclosureView { retries, ..v });
     let mut session = lock_project(state)?;
@@ -414,9 +451,19 @@ pub fn prepare_claude_requests(
 /// 設定の画面に出す AI の状態。キーの中身は含めない。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 pub struct AiSettings {
-    /// 資格情報の保存先の状態。
+    /// 選んだプロバイダ・モデル・ベースの URL (エディタ全体の設定)。
+    pub provider: ProviderSettings,
+    /// 利用者に示す送り先のサービスの名前。
+    pub service: String,
+    /// 送り先がこの計算機 (ループバック) か。外部に出ないので同意を求めず、「外部に送らない」でも使える。
+    pub local: bool,
+    /// 選んだプロバイダの API キーの、資格情報の保存先での状態。
     pub key: KeyStatus,
-    /// 環境変数 `ANTHROPIC_API_KEY` にキーがあるか (保存先にキーがなければこちらを使う)。
+    /// 選んだプロバイダがキーなしでは送れないか (手元のサーバなどはキーが要らない)。
+    pub key_required: bool,
+    /// 保存先にキーがないときに読む環境変数 (例: `ANTHROPIC_API_KEY`)。なければ `null`。
+    pub key_env: Option<String>,
+    /// その環境変数にキーがあるか (保存先にキーがなければこちらを使う)。
     pub env_key: bool,
     /// 開いているプロジェクトのデータを外部の AI サービスに送ってよいか。
     pub send_externally: bool,
@@ -434,12 +481,19 @@ pub(crate) fn lock_project(
 }
 
 fn settings(state: &AppState) -> Result<AiSettings, String> {
-    let key = state.api_keys.status();
-    let env_key = state.api_keys.env_available();
+    let provider = state.ai_provider.get();
+    let slot = provider.key_slot();
+    let key = state.api_keys.status(&slot);
+    let env_key = state.api_keys.env_available(&slot);
     let session = lock_project(state)?;
     Ok(AiSettings {
+        service: provider.service(),
+        local: provider.is_local(),
         key,
+        key_required: slot.required,
+        key_env: slot.env.map(str::to_owned),
         env_key,
+        provider,
         send_externally: session.ai_send_externally(),
         consent_remembered: session.ai_consent().is_remembered(),
     })
@@ -460,20 +514,37 @@ pub async fn ai_settings(app: AppHandle) -> Result<AiSettings, String> {
     blocking(app, settings).await
 }
 
-/// API キーを資格情報の保存先に保存する。キーは応答に含めない。
+/// プロバイダ・モデル・ベースの URL を変え、アプリの設定のディレクトリに保存する。
+/// 送り先が変わるので、「今後は確かめない」は次の送信で確かめ直す (覚えた送り先と違うため)。
 #[tauri::command]
-pub async fn store_api_key(app: AppHandle, key: String) -> Result<AiSettings, String> {
+pub async fn set_ai_provider(
+    app: AppHandle,
+    provider: ProviderSettings,
+) -> Result<AiSettings, String> {
     blocking(app, move |state| {
-        state.api_keys.save(&key)?;
+        state.ai_provider.set(provider)?;
         settings(state)
     })
     .await
 }
 
+/// 選んでいるプロバイダの API キーを資格情報の保存先に保存する。キーは応答に含めない。
+#[tauri::command]
+pub async fn store_api_key(app: AppHandle, key: String) -> Result<AiSettings, String> {
+    blocking(app, move |state| {
+        state
+            .api_keys
+            .save(&state.ai_provider.get().key_slot(), &key)?;
+        settings(state)
+    })
+    .await
+}
+
+/// 選んでいるプロバイダの API キーを消す。
 #[tauri::command]
 pub async fn delete_api_key(app: AppHandle) -> Result<AiSettings, String> {
     blocking(app, |state| {
-        state.api_keys.delete()?;
+        state.api_keys.delete(&state.ai_provider.get().key_slot())?;
         settings(state)
     })
     .await
@@ -501,12 +572,7 @@ pub async fn forget_ai_consent(app: AppHandle) -> Result<AiSettings, String> {
 }
 
 /// 接続の確認で送る小さなリクエスト (画像なし)。
-fn test_request() -> (ClaudeConfig, ProviderRequest, serde_json::Value) {
-    let config = ClaudeConfig {
-        max_tokens: 1024,
-        effort: Some(Effort::Low),
-        ..ClaudeConfig::default()
-    };
+fn test_request() -> (ProviderRequest, serde_json::Value) {
     let request = ProviderRequest {
         system: "You check that the API connection works.".into(),
         prompt: "Reply with {\"ok\": true}.".into(),
@@ -518,18 +584,26 @@ fn test_request() -> (ClaudeConfig, ProviderRequest, serde_json::Value) {
         "required": ["ok"],
         "additionalProperties": false,
     });
-    (config, request, schema)
+    (request, schema)
 }
 
-/// API キーと接続を確かめる (画像を含まない小さなリクエストを送る)。送る前に同意を求める。
+/// 選んでいるプロバイダの API キーと接続を確かめる (画像を含まない小さなリクエストを送る)。
+/// 外部に送るなら、送る前に同意を求める。
 #[tauri::command]
 pub async fn test_ai_connection(
     app: AppHandle,
     consent: Option<ConsentAnswer>,
 ) -> Result<AiReply<()>, String> {
     blocking(app, move |state| {
-        let (config, request, schema) = test_request();
-        match prepare_claude(state, config, &request, consent.as_ref())? {
+        let (request, schema) = test_request();
+        let requests = std::slice::from_ref(&request);
+        match prepare_requests(
+            state,
+            Purpose::ConnectionTest,
+            requests,
+            0,
+            consent.as_ref(),
+        )? {
             Prepared::NeedsConsent(disclosure) => Ok(AiReply::NeedsConsent { disclosure }),
             Prepared::Ready(provider) => {
                 provider

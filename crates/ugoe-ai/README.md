@@ -14,7 +14,8 @@ AI プロバイダの抽象 (`Provider`) と、自動リギングのパイプラ
 
 - `lib.rs`: `Provider` トレイト、`ProviderRequest`、`Proposal`、`Disclosure` (外部に送る内容の要約)
 - `claude.rs`: Claude API のプロバイダ (`ClaudeProvider`・`ClaudeConfig`・`ApiKey`)
-- `transport.rs`: HTTP の差し替え (`UreqTransport`・`ReplayTransport`・`RecordingTransport`・`Cassette`)
+- `openai.rs`: OpenAI 互換の API (Chat Completions) のプロバイダ (`OpenAiProvider`・`OpenAiConfig`・`StructuredOutput`)。OpenAI・OpenRouter・Gemini・Ollama・LM Studio・vLLM など
+- `transport.rs`: HTTP の差し替え (`UreqTransport`・`ReplayTransport`・`RecordingTransport`・`Cassette`)、プロバイダで共通の再試行 (`RetryPolicy`)、ループバックの判定 (`is_loopback_url`)
 - `classify.rs`: レイヤーの意味分類 (`Label`・`Side`・`LayerLabel`、名前の規則による `classify_by_name`、`Provider` による `classify_layers`)。`classify/rules.rs` が名前の規則、`classify/image.rs` が送る画像
 - `fake.rs`: テスト用の `FakeProvider`
 - `depth.rs`: 深度推定 (`DepthEstimator`・`DepthMap`・`HttpDepthEstimator`・`FixedDepthEstimator`)
@@ -34,6 +35,7 @@ AI プロバイダの抽象 (`Provider`) と、自動リギングのパイプラ
 
 - [docs/ai-integration.md](../../docs/ai-integration.md)
 - [docs/adr/0006-ai-proposals.md](../../docs/adr/0006-ai-proposals.md)
+- [docs/adr/0022-multiple-ai-providers-and-agents.md](../../docs/adr/0022-multiple-ai-providers-and-agents.md)
 
 ## 関連タスク
 

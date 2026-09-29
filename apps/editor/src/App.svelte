@@ -137,7 +137,7 @@ $effect(() => {
       <button onclick={() => doc.undo()} title="Undo ({undoKeys})">Undo</button>
       <button onclick={() => doc.redo()} title="Redo ({redoKeys})">Redo</button>
     {/if}
-    <button onclick={() => settings?.open()} title="AI API key and this project's AI settings">Settings</button>
+    <button onclick={() => settings?.open()} title="AI provider, API key and this project's AI settings">Settings</button>
     <HelpButton />
   </header>
   <aside class="left">

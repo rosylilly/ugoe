@@ -10,7 +10,7 @@ PSD を 1 枚渡すと、「顔の角度・目・口・呼吸・髪揺れが一�
 
 1. **AI は提案するだけです。** AI は `Proposal { title, rationale, commands: Vec<Command> }` を返します。エディタはそれを差分としてプレビューし、ユーザーが採用して初めて `Document::apply` で適用します。適用は `Batch` として 1 回の Undo で取り消せます。
 2. **AI でなくてもできることは、決定的なアルゴリズムで行います。** メッシュ生成は `ugoe-mesher` の幾何アルゴリズムで行います。AI が決めるのは「どのレイヤーが何か」「どのパラメータでどう動かすか」といった意味の判断と、アルゴリズムのパラメータ選びだけです。
-3. **プロバイダを差し替えられるようにします。** LLM や画像モデルの呼び出しは `ugoe_ai::Provider` トレイトの裏に隠します。既定のプロバイダは Anthropic の Claude API ですが、ローカルモデルも使えるようにします。
+3. **プロバイダを差し替えられるようにします。** LLM や画像モデルの呼び出しは `ugoe_ai::Provider` トレイトの裏に隠します。既定のプロバイダは Anthropic の Claude API で、OpenAI 互換の API (OpenAI・OpenRouter・Gemini・手元の Ollama / LM Studio / vLLM など) も使えます ([ADR 0022](adr/0022-multiple-ai-providers-and-agents.md)、[OpenAI 互換の API](#openai-互換の-api))。プロンプトと出力の JSON Schema は特定のモデルに依存させません。
 4. **ネットワークなしでテストできるようにします。** テストでは、録画した応答を返す `FakeProvider` を使います。CI では実際の API を呼びません。
 5. **外部のエージェントからも操作できるようにします。** `ugoe-mcp` (MCP サーバ) で `Command` の JSON Schema をツールとして公開し、Claude Code などの外部エージェントがプロジェクトを読み、編集を提案・適用できるようにします ([MCP サーバ](#mcp-サーバ))。
    - `Command` の JSON Schema は Rust から生成してリポジトリに置いてあります (`crates/ugoe-editor-core/schema/command.schema.json`、[型の生成](editor.md#型の生成))。`ugoe-ai` などからは `ugoe_editor_core::codegen::COMMAND_SCHEMA_JSON` (ファイルの中身) か `command_schema()` (その場で生成) で参照します。
@@ -215,16 +215,42 @@ Proposal (Command 列) ──► ユーザーの確認 ──► Document::apply
 - **入力と出力:** `ProviderRequest` の画像 (PNG) を base64 の画像ブロックとして、プロンプトをテキストのブロックとして 1 つのユーザーメッセージに入れて送ります。出力は構造化出力 (`output_config.format` に `{"type": "json_schema", "schema": ...}`) で、呼び出し側の JSON Schema に沿った JSON を受け取ります。スキーマのオブジェクトには `additionalProperties: false` を書きます (構造化出力の制約。`minimum` などの数値の制約や再帰するスキーマは使えません)。
 - **設定 (`ClaudeConfig`):** モデル (既定は `claude-opus-5-5`)、`max_tokens` (既定は 16000。考える分を含む)、考える量 `effort` (既定は API の既定)、API の URL、1 回のリクエストの時間の上限 (既定は 600 秒)、再試行の方針。
 - **応答の扱い:** テキストのブロックだけをつないで JSON として読みます (`thinking` のブロックは読み飛ばします)。`stop_reason` が `refusal` なら `AiError::Refused`、`max_tokens` なら `AiError::Truncated` を返します。
-- **再試行:** HTTP 408・409・429・5xx (529 overloaded を含む)・接続の失敗・タイムアウトは、指数バックオフ (0.5 秒から倍々、上限 8 秒) で 2 回まで再試行します。`retry-after` ヘッダがあればその秒数を待ち、長すぎる (既定で 60 秒を超える) ときは待たずに `AiError::RateLimited` を返します。400・401・403・404 などは再試行しません。
+- **再試行:** HTTP 408・409・429・5xx (529 overloaded を含む)・接続の失敗・タイムアウトは、指数バックオフ (0.5 秒から倍々、上限 8 秒) で 2 回まで再試行します。`retry-after` ヘッダがあればその秒数を待ち、長すぎる (既定で 60 秒を超える) ときは待たずに `AiError::RateLimited` を返します。400・401・403・404 などは再試行しません。再試行の規則 (`transport::RetryPolicy`) は OpenAI 互換の API と共通です。
 - **HTTP クライアント:** 同期の `ureq` (TLS は rustls) を使い、`Transport` トレイトの裏に隠します。
+
+## OpenAI 互換の API
+
+`ugoe_ai::openai::OpenAiProvider` (T0512)。Chat Completions (`POST <base_url>/chat/completions`) を呼びます。1 つの実装で、OpenAI・OpenRouter・Gemini の OpenAI 互換の窓口 (`https://generativelanguage.googleapis.com/v1beta/openai`)・手元の Ollama (`http://localhost:11434/v1`)・LM Studio (`http://localhost:1234/v1`)・vLLM などを扱います。
+
+- **入力:** システムプロンプトを `system` のメッセージに、画像 (PNG) を data URL (`data:image/png;base64,...`) の `image_url` として、プロンプトをテキストとして 1 つのユーザーメッセージに入れます。API キーがあれば `Authorization: Bearer` で送ります。キーは省略できます (手元のサーバ)。
+- **出力の形 (`StructuredOutput`)。サーバの対応の差はここで吸収します:**
+
+  | 設定 | 送るもの | 検証と問い直し (既定) | 向く送り先 |
+  | --- | --- | --- | --- |
+  | `JsonSchema` (既定) | `response_format: {type: "json_schema", json_schema: {name, schema, strict: true}}` | しない (0 回) | OpenAI・Gemini・Ollama・LM Studio・vLLM・OpenRouter (対応するモデル) |
+  | `JsonObject` | `response_format: {type: "json_object"}` と、プロンプトの末尾にスキーマ | する (2 回) | JSON モードだけに対応するサーバ |
+  | `Prompt` | プロンプトの末尾にスキーマだけ | する (2 回) | どのサーバでも |
+
+  - 構造化出力の `strict` はスキーマのすべてのプロパティを `required` にし、`additionalProperties: false` を書く必要があります。ugoe-ai のスキーマ (分類・リギング) はこれを満たします。
+  - 受け取った JSON は、どの形でもスキーマ (`type`・`enum`・`properties`・`required`・`additionalProperties`・`items`・`anyOf`) で確かめます。通らなければ、前の答え (`assistant`) と理由 (`user`) を足して送り直します (`OpenAiConfig::json_retries` 回まで。画像も送り直します)。構造化出力を使わないモデルは、考えた内容 (`<think>…</think>`)・コードフェンス・前置きを付けることがあるので、それを除いて最初の `{` から最後の `}` までを読みます。
+  - OpenRouter はモデルによって構造化出力を強制しないことがあります (スキーマを参考として扱う)。その場合も検証で気づけますが、問い直すなら `JsonObject` か `Prompt` にします。
+- **応答の扱い:** 最初の `choices[0].message.content` を読みます (文字列のほか、テキストの部分の列も読みます)。`message.refusal` があれば `AiError::Refused`、`finish_reason` が `length` なら `AiError::Truncated`、`content_filter` なら `AiError::Refused { category: "content_filter" }` を返します。
+- **トークン数の上限:** 既定では送りません (サーバの既定)。`OpenAiConfig::max_tokens` を決めると `max_completion_tokens` (OpenAI の今の名前) で送ります。`max_tokens` しか受け付けないサーバ (Ollama・Gemini の互換の窓口など) では `MaxTokensField::MaxTokens` にします。
+- **再試行:** Claude と同じ規則 (408・409・429・5xx・接続の失敗・タイムアウト、`retry-after`)。ただし 429 でも、残高・利用上限の不足 (`insufficient_quota`・`credit_balance_exhausted`・`*_spend_limit_exceeded`・`*_usage_limit_exceeded`) は再試行しても直らないので、すぐに `AiError::Api` を返します。エラーの本文は OpenAI の `{"error": {"message", "type", "code"}}` のほか、`{"error": "..."}` と `{"message": "..."}` も読みます。
+- **送り先の提示:** 送り先がループバック (`localhost`・`127.0.0.0/8`・`::1`。`transport::is_loopback_url`) なら `Destination::Local` を返します。それ以外は送り先の URL から決めたサービスの名前 (`openai::service_name`。`OpenAI API`・`OpenRouter`・`Google Gemini API`・`OpenAI-compatible API (<host>)`) と URL・モデルを返します。LAN の中の計算機 (`192.168.x.x` など) は外部として扱います。
+- **API キー:** `ApiKey` (Claude と共通)。CLI や開発では `OPENAI_API_KEY` から読めます (`ApiKey::from_env_var`)。
+- 録画: `tests/cassettes/openai_*.json` (Chat Completions の応答の形に合わせて手で作ったもの。`openai_ollama_*` は Ollama の形)。分類とリギングの提案のテストは、Claude の録画と同じ答えを OpenAI の形にしたもので、同じ結果になることを確かめます (`tests/classify.rs`・`tests/auto_rig.rs`)。実際の API から録るには `tests/openai_replay.rs` の `record_live`。
+- 法線マップの提案は `Provider` を使いません (決定的な方法と深度推定器 `DepthEstimator`) ので、プロバイダの選択に関わりません。
+- 出典: [Chat Completions の API リファレンス](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)・[Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)・[エラーコード](https://developers.openai.com/api/docs/guides/error-codes)・[レート制限](https://developers.openai.com/api/docs/guides/rate-limits)・[Ollama の OpenAI 互換](https://github.com/ollama/ollama/blob/main/docs/api/openai-compatibility.mdx)・[LM Studio の構造化出力](https://lmstudio.ai/docs/developer/openai-compat/structured-output)・[OpenRouter の構造化出力](https://openrouter.ai/docs/features/structured-outputs)・[Gemini の OpenAI 互換](https://ai.google.dev/gemini-api/docs/openai)。
 
 ### 録画と再生
 
 テストはネットワークを使わず、録画 (`Cassette`、JSON ファイル) を `ReplayTransport` で再生します。録画は `crates/ugoe-ai/tests/cassettes/` にあります。
 
-- 録画は往復の列で、リクエストは method・URL・本文 (JSON)、応答は状態コード・一部のヘッダ (`content-type`・`request-id`・`retry-after`)・本文を持ちます。応答の代わりに通信の失敗 (`timeout`・`connect`) も書けます。
+- 録画は往復の列で、リクエストは method・URL・本文 (JSON)、応答は状態コード・一部のヘッダ (`content-type`・`request-id`・`x-request-id`・`retry-after`)・本文を持ちます。応答の代わりに通信の失敗 (`timeout`・`connect`) も書けます。
 - 録画のリクエストに本文が書いてあれば、再生のときに送った本文と一致するかを確かめます。
-- `RecordingTransport` で実際の通信を包むと録画を作れます (`tests/claude_replay.rs` の `record_live`。既定では動かしません)。
+- 録画には画像のデータ (base64 のブロックと data URL) を残さず、長さだけにします。
+- `RecordingTransport` で実際の通信を包むと録画を作れます (`tests/claude_replay.rs`・`tests/openai_replay.rs` の `record_live`。既定では動かしません)。
 
 ## MCP サーバ
 
@@ -271,9 +297,10 @@ ADR 0022 の「外部のエージェントに判断を任せる経路」(T0513)�
 
 ## セキュリティとプライバシー
 
-- API キーは OS の資格情報の保存先 (キーチェーンなど。`keyring-core`) に保存します。プロジェクトファイルや普通のファイルには書き込みません。保存先が使えない環境では環境変数だけを使います ([エディタの AI の設定](editor.md#ai-の設定と送信の同意))。
-  - `ugoe-ai` はキーチェーンを直接読みません。ホスト (エディタ) が読んだ値を `ApiKey::new` に渡します。CLI や開発では環境変数 `ANTHROPIC_API_KEY` から読みます (`ApiKey::from_env`)。
+- API キーはプロバイダごとに OS の資格情報の保存先 (キーチェーンなど。`keyring-core`) に保存します (OpenAI 互換の API は送り先のホストごと)。プロジェクトファイルや普通のファイルには書き込みません。保存先が使えない環境では環境変数だけを使います ([エディタの AI の設定](editor.md#ai-の設定と送信の同意))。
+  - `ugoe-ai` はキーチェーンを直接読みません。ホスト (エディタ) が読んだ値を `ApiKey::new` に渡します。CLI や開発では環境変数 `ANTHROPIC_API_KEY` から読みます (`ApiKey::from_env`)。OpenAI は `OPENAI_API_KEY` (`ApiKey::from_env_var`。エディタは送り先が OpenAI のときだけ使います)。
   - `ApiKey` の `Debug` は伏せ字で、エラーの文言にキーが紛れ込んだ場合も伏せます。録画にはリクエストのヘッダ (キーを含む) を残さず、送った画像のデータも長さだけに置き換えます。
-- 外部の API に画像を送る前に、ユーザーに確認します。プロジェクト単位で「送信しない」を設定できます (`project.json` の `editor.ai.send_externally`)。「今後は確かめない」はプロジェクトを開いている間だけ、同じ送り先に限って効きます。
-  - 確認に示す内容は `Provider::disclosure` で得ます。送り先 (サービス名・URL・モデル) と、画像の枚数・バイト数、テキストのバイト数を返します。ローカルで完結するプロバイダは `Destination::Local` を返します。
-  - Claude API に送ったデータの扱い (保持期間など) は Anthropic の規約に従います。確認の画面ではその旨と規約へのリンクを示します。
+- 外部の API に画像を送る前に、プロバイダに関わらず同じ流れでユーザーに確認します。手元のサーバ (ループバック) は外部に出ないので確かめません。プロジェクト単位で「送信しない」を設定できます (`project.json` の `editor.ai.send_externally`)。「今後は確かめない」はプロジェクトを開いている間だけ、同じ送り先に限って効きます。
+  - 確認に示す内容は `Provider::disclosure` で得ます。送り先 (サービス名・URL・モデル) と、画像の枚数・バイト数、テキストのバイト数を返します。ローカルで完結するプロバイダ (と、ループバックへ送る OpenAI 互換のプロバイダ) は `Destination::Local` を返します。
+  - 送ったデータの扱い (保持期間など) は送り先の規約に従います。確認の画面では、知っている送り先 (Anthropic・OpenAI・OpenRouter・Google) なら規約へのリンクを、それ以外なら規約を確かめるよう促す文を示します。
+  - 平文の `http://` で外部の送り先に API キーを送りません (エディタが断ります。ループバックは除く)。

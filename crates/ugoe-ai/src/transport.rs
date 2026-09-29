@@ -17,7 +17,8 @@ use serde::{Deserialize, Serialize};
 /// 値をログや録画に出してはならないヘッダ (小文字)。
 const SENSITIVE_HEADERS: &[&str] = &["x-api-key", "authorization"];
 /// 録画に残す応答ヘッダ (小文字)。再試行の判断と調査に使うものだけ。
-const RECORDED_RESPONSE_HEADERS: &[&str] = &["content-type", "request-id", "retry-after"];
+const RECORDED_RESPONSE_HEADERS: &[&str] =
+    &["content-type", "request-id", "retry-after", "x-request-id"];
 
 /// 送る HTTP リクエスト。
 #[derive(Clone)]
@@ -428,13 +429,137 @@ impl<T: Transport> Transport for RecordingTransport<T> {
     }
 }
 
+/// 再試行の方針。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RetryPolicy {
+    /// 最初の試行に加えて再試行する回数。
+    pub max_retries: u32,
+    /// 最初の待ち時間。再試行ごとに倍にする。
+    pub initial_backoff: Duration,
+    /// 待ち時間の上限 (`retry-after` がないとき)。
+    pub max_backoff: Duration,
+    /// `retry-after` がこれより長いときは待たずに諦める。
+    pub max_retry_after: Duration,
+}
+
+impl Default for RetryPolicy {
+    fn default() -> Self {
+        Self {
+            max_retries: 2,
+            initial_backoff: Duration::from_millis(500),
+            max_backoff: Duration::from_secs(8),
+            max_retry_after: Duration::from_secs(60),
+        }
+    }
+}
+
+impl RetryPolicy {
+    /// `attempt` 回目 (0 始まり) の失敗の後に待つ時間。
+    fn backoff(&self, attempt: u32) -> Duration {
+        let factor = 1u32.checked_shl(attempt).unwrap_or(u32::MAX);
+        self.initial_backoff
+            .saturating_mul(factor)
+            .min(self.max_backoff)
+    }
+}
+
+/// [`send_with_retry`] が諦めた理由。
+pub(crate) enum SendFailure {
+    /// 成功でない応答 (再試行しない状態・再試行の上限・`retry-after` が長すぎる)。
+    Status {
+        response: HttpResponse,
+        retry_after: Option<Duration>,
+    },
+    /// 応答を受け取る前の失敗。
+    Transport(TransportError),
+}
+
+/// 再試行しながら送り、成功 (2xx) の応答を返す。プロバイダで共通の再試行の規則:
+/// `retryable` が真の応答と、タイムアウト・接続の失敗を指数バックオフで再試行する。
+/// `retry-after` ヘッダ (秒) があればそれだけ待ち、`max_retry_after` より長ければ諦める。
+pub(crate) fn send_with_retry(
+    transport: &dyn Transport,
+    policy: &RetryPolicy,
+    sleep: &dyn Fn(Duration),
+    request: &HttpRequest,
+    retryable: impl Fn(&HttpResponse) -> bool,
+) -> Result<HttpResponse, SendFailure> {
+    let mut attempt = 0;
+    loop {
+        let can_retry = attempt < policy.max_retries;
+        let wait = match transport.send(request) {
+            Ok(response) if (200..300).contains(&response.status) => return Ok(response),
+            Ok(response) => {
+                let retry_after = retry_after(&response);
+                if !retryable(&response) || !can_retry {
+                    return Err(SendFailure::Status {
+                        response,
+                        retry_after,
+                    });
+                }
+                match retry_after {
+                    Some(d) if d > policy.max_retry_after => {
+                        return Err(SendFailure::Status {
+                            response,
+                            retry_after,
+                        });
+                    }
+                    Some(d) => d,
+                    None => policy.backoff(attempt),
+                }
+            }
+            Err(e) if e.is_retryable() && can_retry => policy.backoff(attempt),
+            Err(e) => return Err(SendFailure::Transport(e)),
+        };
+        sleep(wait);
+        attempt += 1;
+    }
+}
+
+/// 再試行してよい状態コード (408 Request Timeout・409 Conflict・429・5xx)。
+pub(crate) fn is_retryable_status(status: u16) -> bool {
+    matches!(status, 408 | 409 | 429) || status >= 500
+}
+
+/// `retry-after` ヘッダ (秒)。
+fn retry_after(response: &HttpResponse) -> Option<Duration> {
+    let secs: f64 = response.header("retry-after")?.trim().parse().ok()?;
+    (secs.is_finite() && secs >= 0.0).then(|| Duration::from_secs_f64(secs))
+}
+
+/// URL のホスト名 (小文字。IPv6 は角括弧を除く)。スキームがなくてもよい。
+pub fn url_host(url: &str) -> String {
+    let rest = url.split_once("://").map_or(url, |(_, r)| r);
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    // `user:pass@host` の利用者の部分は除く
+    let host = authority.rsplit('@').next().unwrap_or_default();
+    let host = match host.strip_prefix('[') {
+        // IPv6 (`[::1]:8765`)
+        Some(v6) => v6.split(']').next().unwrap_or_default(),
+        None => host.split(':').next().unwrap_or_default(),
+    };
+    host.to_ascii_lowercase()
+}
+
+/// URL の送り先がこの計算機 (ループバック: `localhost`・`127.0.0.0/8`・`::1`) か。
+/// ループバックへの送信は外部に出ない扱い ([`crate::Destination::Local`]) にする。
+pub fn is_loopback_url(url: &str) -> bool {
+    let host = url_host(url);
+    if host == "localhost" || host == "::1" {
+        return true;
+    }
+    // `127.x.y.z` (数字 4 つ)。`127.example.com` のような名前は含めない
+    let octets: Vec<&str> = host.split('.').collect();
+    octets.len() == 4 && octets[0] == "127" && octets.iter().all(|o| o.parse::<u8>().is_ok())
+}
+
 fn is_sensitive(header: &str) -> bool {
     SENSITIVE_HEADERS
         .iter()
         .any(|s| header.eq_ignore_ascii_case(s))
 }
 
-/// `{"type": "base64", "data": "..."}` の `data` を、長さだけを書いた文字列に置き換える。
+/// `{"type": "base64", "data": "..."}` の `data` と data URL の本体を、長さだけを書いた文字列に置き換える。
 fn redact_binary(value: &mut serde_json::Value) {
     match value {
         serde_json::Value::Object(map) => {
@@ -448,6 +573,14 @@ fn redact_binary(value: &mut serde_json::Value) {
             }
         }
         serde_json::Value::Array(items) => items.iter_mut().for_each(redact_binary),
+        // data URL (`data:image/png;base64,...`。OpenAI 互換の API の画像)
+        serde_json::Value::String(text) => {
+            if let Some((head, data)) = text.split_once(";base64,")
+                && head.starts_with("data:")
+            {
+                *text = format!("{head};base64,<{} base64 chars omitted>", data.len());
+            }
+        }
         _ => {}
     }
 }
@@ -500,6 +633,62 @@ mod tests {
         assert!(!json.contains("sk-secret"));
         assert!(!json.contains("QUJDRA=="));
         assert!(json.contains("<8 base64 chars omitted>"));
+    }
+
+    #[test]
+    fn recording_omits_data_urls() {
+        let mut v =
+            json!({"image_url": {"url": "data:image/png;base64,QUJDRA=="}, "text": "data: plain"});
+        redact_binary(&mut v);
+        assert_eq!(
+            v,
+            json!({"image_url": {"url": "data:image/png;base64,<8 base64 chars omitted>"}, "text": "data: plain"})
+        );
+    }
+
+    #[test]
+    fn backoff_doubles_up_to_the_cap() {
+        let p = RetryPolicy::default();
+        assert_eq!(p.backoff(0), Duration::from_millis(500));
+        assert_eq!(p.backoff(1), Duration::from_secs(1));
+        assert_eq!(p.backoff(10), Duration::from_secs(8));
+        assert_eq!(p.backoff(40), Duration::from_secs(8));
+    }
+
+    #[test]
+    fn retryable_statuses() {
+        for s in [408, 409, 429, 500, 503, 529] {
+            assert!(is_retryable_status(s), "{s}");
+        }
+        for s in [400, 401, 403, 404, 413] {
+            assert!(!is_retryable_status(s), "{s}");
+        }
+    }
+
+    #[test]
+    fn loopback_urls() {
+        for url in [
+            "http://127.0.0.1:8765/depth",
+            "http://localhost/depth",
+            "http://LOCALHOST:11434/v1",
+            "http://[::1]:80/",
+            "http://127.1.2.3/",
+            "http://user:pw@localhost:1234/v1",
+            "localhost:1234",
+        ] {
+            assert!(is_loopback_url(url), "{url}");
+        }
+        for url in [
+            "https://depth.example.com/v1",
+            "https://localhost.example.com/",
+            "https://127.0.0.1.example.com/",
+            "https://example.com/?next=http://localhost",
+            "https://localhost@example.com/",
+            "http://192.168.0.10:11434/v1",
+            "http://0.0.0.0:11434/v1",
+        ] {
+            assert!(!is_loopback_url(url), "{url}");
+        }
     }
 
     #[test]

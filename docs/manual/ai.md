@@ -5,10 +5,11 @@ PSD のレイヤーを **分類** し (顔・白目・まつ毛・口など)、�
 [AI 連携](../ai-integration.md) (開発者向け) にあります。
 
 - 提案は **採用するまでモデルを変えません。** 採用は 1 回の「Undo」で取り消せます。
-- AI (Claude API) を使わなくても使えます。そのときはレイヤーの名前で分類し、リグの値はテンプレートの既定値になります。
+- AI (Claude API や OpenAI 互換の API) を使わなくても使えます。そのときはレイヤーの名前で分類し、リグの値はテンプレートの既定値になります。
   何も外部に送らず、API キーも要りません。
 - AI を使うと、分類とリグの値 (振り向きの大きさ・目の閉じる線・口の開き) を絵を見て決めます。**絵の画像を外部に送る** ので、
-  送る前に毎回確認が出ます。
+  外部のサービスに送る前には毎回確認が出ます。手元の計算機で動かすサーバ (Ollama・LM Studio など) なら外部に出ないので、
+  確認は出ません。
 
 ![提案をプレビューしているところ (AngleX = 30、口を開いた姿)](images/ai-proposal.png)
 
@@ -16,13 +17,23 @@ PSD のレイヤーを **分類** し (顔・白目・まつ毛・口など)、�
 
 AI を使わないなら、この節は飛ばしてかまいません。
 
-1. ヘッダーの「Settings」を押し、Anthropic の API キーを保存する (または、エディタを起動する前に環境変数
-   `ANTHROPIC_API_KEY` を設定する)。
-2. 「Settings」の「This project」の「Don't send this project's data to external AI services」に印が **付いていない** ことを確かめる
-   (プロジェクトごとの設定です。印を付けると、そのプロジェクトからは何も送りません)。
+1. ヘッダーの「Settings」を押し、「AI provider」でプロバイダを選ぶ。既定は「Anthropic Claude API」です。
+   - OpenAI・OpenRouter・Google Gemini、手元の Ollama・LM Studio などを使うなら「OpenAI-compatible API」を選び、「Service」で
+     送り先を選ぶ (ほかの送り先は「Base URL」に `/chat/completions` の手前までの URL を入れる)。「Model」には **画像を読める**
+     モデルの名前を入れる。「Apply」で保存します (エディタ全体の設定で、プロジェクトには残りません)。
+   - 送り先が構造化出力 (JSON Schema) に対応しないときは、「JSON output」を「JSON mode…」か「Schema in the prompt only…」にします。
+     答えを確かめて、合わなければ問い直します (同じ内容を送り直すことがあります)。
+2. 選んだプロバイダの API キーを保存する。キーはプロバイダ (OpenAI 互換は送り先) ごとに OS の資格情報の保存先に置かれます。
+   Claude は環境変数 `ANTHROPIC_API_KEY`、OpenAI は `OPENAI_API_KEY` でもかまいません (エディタを起動する前に設定する)。
+   手元のサーバなど、認証のない送り先ならキーは要りません。
+3. 「Settings」の「This project」の「Don't send this project's data to external AI services」に印が **付いていない** ことを確かめる
+   (プロジェクトごとの設定です。印を付けると、そのプロジェクトからは外部に何も送りません。手元のサーバには送れます)。
+4. 「Test connection」で、選んだプロバイダにつながるかを確かめられます (画像は送りません)。
 
-キーがないか、プロジェクトが「送らない」になっていると、AI のパネルの「Use Claude」は選べず、その理由と「Settings…」への
-案内が出ます。
+![AI の設定。OpenAI 互換の API で OpenRouter を選んだところ](images/ai-settings.png)
+
+キーの要るプロバイダでキーがないか、外部の送り先でプロジェクトが「送らない」になっていると、AI のパネルの「Use …」は選べず、
+その理由と「Settings…」への案内が出ます。
 
 ## 提案を作る
 
@@ -30,15 +41,15 @@ AI を使わないなら、この節は飛ばしてかまいません。
    取り込んだ PSD が、分類の元になります。
 2. 右の列の上の「AI」タブを押す。「Auto rig from PSD」に取り込んだ PSD の名前が出ます。別の PSD を使うときは
    「Choose PSD…」で選びます。
-3. AI を使うなら「Use Claude (sends images of the artwork)」に印を付ける。
+3. AI を使うなら「Use Claude (sends images of the artwork)」(選んだプロバイダの名前が出ます) に印を付ける。
 4. 「Propose rig」を押す。まだ分類していなければ、先にレイヤーを分類します。パネルに今の段階
    (「Classifying the layers…」「Asking Claude for the rig values…」など) が出ます。
-5. AI を使うときは、送る前に確認が出ます (分類で 1 回、リグの値で 1 回)。送り先・モデル・画像の枚数と大きさを確かめて
-   「Send」を押します。「Cancel」なら何も送りません。
+5. 外部の AI に送るときは、送る前に確認が出ます (分類で 1 回、リグの値で 1 回)。送り先・モデル・画像の枚数と大きさ、
+   送り先の規約を確かめて「Send」を押します。「Cancel」なら何も送りません。
 
 ![送る前の確認。リグの値は、答えが検証を通らなければ同じ内容を送り直すことがある](images/ai-consent.png)
 
-- 分類だけを先に行うときは「Classify layers」を押します。分類の結果は「24 layers classified by Claude · 1 to review」のように出て、
+- 分類だけを先に行うときは「Classify layers」を押します。分類の結果は「24 layers classified by AI · 1 to review」のように出て、
   「Labels」を開くとラベルごとの数と、**確からしさが低いレイヤー** が出ます。確からしさが低いレイヤーは提案の理由の末尾にも出るので、
   採用する前にそのレイヤーの動きを確かめてください。
 - リグの値の答えが範囲の外か、組んだリグが検証を通らないときは、AI に理由を添えて問い直します (最大 3 回)。

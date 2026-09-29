@@ -2,7 +2,8 @@
 //!
 //! - 名前の規則: `assets/fixtures/psd-real/` の See-Through の PSD に正解のラベルを付けて比べる。
 //! - AI の経路: [`FakeProvider`] と、録画 (`tests/cassettes/classify_layers_bustup.json`、
-//!   Messages API の応答の形に合わせて手で作ったもの) を再生する [`ClaudeProvider`]。
+//!   Messages API の応答の形に合わせて手で作ったもの) を再生する [`ClaudeProvider`]。同じ答えを
+//!   Chat Completions の形にした録画 (`openai_classify_layers_bustup.json`) を再生する [`OpenAiProvider`]。
 
 #![allow(clippy::unwrap_used)]
 
@@ -16,6 +17,7 @@ use ugoe_ai::classify::{
     output_schema,
 };
 use ugoe_ai::claude::{ApiKey, ClaudeConfig, ClaudeProvider};
+use ugoe_ai::openai::{OPENAI_BASE_URL, OpenAiConfig, OpenAiProvider};
 use ugoe_ai::transport::{Cassette, ReplayTransport};
 use ugoe_ai::{AiError, FakeProvider};
 use ugoe_core::Vec2;
@@ -420,4 +422,34 @@ fn replays_a_recorded_claude_answer_for_the_bustup_psd() {
             .unwrap()
             .contains("23. name: \"face / front hair\"")
     );
+}
+
+/// ADR 0022: 分類はプロバイダに依存しない。OpenAI 互換の API の録画でも同じ結果になる。
+#[test]
+fn replays_a_recorded_openai_compatible_answer_for_the_bustup_psd() {
+    let cassette = Cassette::load(repo_path(
+        "tests/cassettes/openai_classify_layers_bustup.json",
+    ))
+    .unwrap();
+    let transport = Arc::new(ReplayTransport::new(cassette));
+    let provider = OpenAiProvider::with_transport(
+        OpenAiConfig::new(OPENAI_BASE_URL, "gpt-6-sol"),
+        Some(ApiKey::new("sk-test").unwrap()),
+        transport.clone(),
+    );
+    let labels = classify_layers(&provider, &bustup(), &ClassifyOptions::default()).unwrap();
+    assert_eq!(transport.remaining(), 0);
+    assert_eq!(summary(&labels), bustup_truth());
+
+    // 送ったもの: 合成画像 + 24 枚のサムネイル (data URL)、分類のスキーマ (strict)
+    let received = transport.received();
+    assert_eq!(received.len(), 1);
+    let body = received[0].body.as_ref().unwrap();
+    assert_eq!(body["messages"][0]["role"], "system");
+    let content = body["messages"][1]["content"].as_array().unwrap();
+    let images = content.iter().filter(|b| b["type"] == "image_url").count();
+    assert_eq!(images, 25);
+    let format = &body["response_format"]["json_schema"];
+    assert_eq!(format["schema"], output_schema());
+    assert_eq!(format["strict"], true);
 }

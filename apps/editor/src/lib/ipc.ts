@@ -23,6 +23,7 @@ import type {
   ProposalPreview,
   ProposalState,
   ProposalView,
+  ProviderSettings,
   PsdImportWarning,
   RestPoseCollision,
 } from "./generated/types";
@@ -97,12 +98,16 @@ export const ipc = {
    */
   checkAvatarProfile: () => invoke<AvatarCheck>("check_avatar_profile"),
   /**
-   * apps/editor/src-tauri/src/ai.rs。AI の設定 (API キーの状態・開いているプロジェクトの「外部に送らない」)。
-   * キーの中身は返さない (docs/editor.md#ai-の設定と送信の同意)。
+   * apps/editor/src-tauri/src/ai.rs。AI の設定 (選んだプロバイダ・API キーの状態・開いているプロジェクトの
+   * 「外部に送らない」)。キーの中身は返さない (docs/editor.md#ai-の設定と送信の同意)。
    */
   aiSettings: () => invoke<AiSettings>("ai_settings"),
-  /** API キーを OS の資格情報の保存先に保存する。 */
+  /** プロバイダ (Claude / OpenAI 互換)・モデル・ベースの URL を変える (エディタ全体の設定として保存する)。 */
+  setAiProvider: (provider: ProviderSettings) =>
+    invoke<AiSettings>("set_ai_provider", { provider }),
+  /** 選んでいるプロバイダの API キーを OS の資格情報の保存先に保存する。 */
   storeApiKey: (key: string) => invoke<AiSettings>("store_api_key", { key }),
+  /** 選んでいるプロバイダの API キーを消す。 */
   deleteApiKey: () => invoke<AiSettings>("delete_api_key"),
   /** 開いているプロジェクトのデータを外部の AI に送ってよいか (プロジェクトと一緒に保存する)。 */
   setAiSendExternally: (allowed: boolean) =>
@@ -110,7 +115,7 @@ export const ipc = {
   /** 「今後は確かめない」を取り消す。 */
   forgetAiConsent: () => invoke<AiSettings>("forget_ai_consent"),
   /**
-   * API キーと接続を確かめる (画像なしの小さなリクエスト)。外部に送る他のコマンドと同じく、
+   * 選んでいるプロバイダの API キーと接続を確かめる (画像なしの小さなリクエスト)。外部に送る他のコマンドと同じく、
    * 同意がなければ送らずに `needs_consent` を返す。lib/ai/consent.ts の `withConsent` で呼ぶ。
    */
   testAiConnection: (consent: ConsentAnswer | null) =>

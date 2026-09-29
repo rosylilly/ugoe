@@ -15,6 +15,7 @@ use serde_json::json;
 use ugoe_ai::classify::{classify_by_name, overview_png};
 use ugoe_ai::claude::{ApiKey, ClaudeConfig, ClaudeProvider};
 use ugoe_ai::depth::DepthMap;
+use ugoe_ai::openai::{OPENAI_BASE_URL, OpenAiConfig, OpenAiProvider};
 use ugoe_ai::rig::{
     MeshPart, RigOptions, RigParams, TurnDepth, mesh_parts, propose_rig, propose_rig_with_ai,
 };
@@ -419,4 +420,44 @@ fn a_model_without_a_face_is_not_sent_to_the_ai() {
     .unwrap_err();
     assert!(matches!(error, AiError::InvalidRequest(_)), "{error}");
     assert!(fake.calls().is_empty());
+}
+
+/// ADR 0022: リグの提案はプロバイダに依存しない。OpenAI 互換の API の録画 (Claude の録画と同じ答え) でも、
+/// 範囲の外の答えを問い直して同じ提案になる。
+#[test]
+fn an_openai_compatible_provider_rigs_the_same_way() {
+    let input = full_body();
+    let cassette = Cassette::load(repo_path("tests/cassettes/openai_auto_rig_retry.json")).unwrap();
+    let transport = Arc::new(ReplayTransport::new(cassette));
+    let provider = OpenAiProvider::with_transport(
+        OpenAiConfig::new(OPENAI_BASE_URL, "gpt-6-sol"),
+        Some(ApiKey::new("sk-test").unwrap()),
+        transport.clone(),
+    );
+    let rig = propose_rig_with_ai(
+        &provider,
+        &input.model,
+        &input.parts,
+        &input.image,
+        &RigOptions::default(),
+        3,
+    )
+    .unwrap();
+    assert_eq!(transport.remaining(), 0);
+    assert_eq!(rig.rejected.len(), 1);
+    assert_eq!(rig.params.turn_angle_scale, 0.6);
+    let model = apply(&input.model, &rig.proposal);
+    assert!((angle_scale(&model) - 0.6).abs() < 1e-6);
+
+    let received = transport.received();
+    let text = received[1].body.as_ref().unwrap().to_string();
+    assert!(text.contains("Attempt 1 was rejected"));
+    let body = received[1].body.as_ref().unwrap();
+    let images = body["messages"][1]["content"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| c["type"] == "image_url")
+        .count();
+    assert_eq!(images, 1);
 }

@@ -1,12 +1,14 @@
 <!--
   ヘッダーの「Settings」。今は AI の設定だけ (docs/editor.md#ai-の設定と送信の同意):
+  プロバイダ (Claude / OpenAI 互換) とモデル・ベースの URL の選択 (エディタ全体の設定)、選んだプロバイダの
   API キーの保存・削除 (OS の資格情報の保存先。キーは画面に出さず、入力欄も保存したら空にする)、
   開いているプロジェクトの「外部の AI に送らない」、「今後は確かめない」の取り消し、接続の確認。
 -->
 <script lang="ts">
-import { type AiSettings, ipc } from "../ipc";
+import { type AiSettings, ipc, type ProviderSettings } from "../ipc";
 import { aiSettings, consentPrompt } from "./ai.svelte";
 import { withConsent } from "./consent";
+import { OPENAI_PRESETS, OUTPUT_MODES, presetFor } from "./providers";
 
 interface Props {
   /** プロジェクトの設定を変えたとき (未保存の印を取り直すため)。 */
@@ -22,11 +24,22 @@ let hasKeyInput = $state(false);
 let busy = $state(false);
 /** 接続の確認の結果。 */
 let testResult = $state<{ ok: boolean; text: string } | null>(null);
+/** 編集中のプロバイダの設定 (「Apply」で保存する)。 */
+let draft = $state<ProviderSettings | null>(null);
 
-export function open(): void {
+const saved = $derived(aiSettings.value?.provider ?? null);
+const dirty = $derived(!!draft && !!saved && JSON.stringify(draft) !== JSON.stringify(saved));
+const preset = $derived(draft ? presetFor(draft.openai.base_url) : undefined);
+
+export async function open(): Promise<void> {
   testResult = null;
-  aiSettings.refresh();
   dialog?.showModal();
+  await aiSettings.refresh();
+  resetDraft();
+}
+
+function resetDraft(): void {
+  draft = aiSettings.value ? structuredClone($state.snapshot(aiSettings.value.provider)) : null;
 }
 
 function close(): void {
@@ -48,6 +61,22 @@ async function run(task: () => Promise<AiSettings>): Promise<boolean> {
   }
 }
 
+async function applyProvider(e: SubmitEvent): Promise<void> {
+  e.preventDefault();
+  if (!draft) return;
+  const next = $state.snapshot(draft);
+  testResult = null;
+  clearKeyInput();
+  if (await run(() => ipc.setAiProvider(next))) resetDraft();
+}
+
+function choosePreset(label: string): void {
+  const p = OPENAI_PRESETS.find((x) => x.label === label);
+  if (!draft || !p) return;
+  draft.openai.base_url = p.base_url;
+  draft.openai.model = p.model;
+}
+
 async function saveKey(e: SubmitEvent): Promise<void> {
   e.preventDefault();
   const key = keyInput?.value ?? "";
@@ -66,7 +95,7 @@ async function testConnection(): Promise<void> {
   try {
     const result = await withConsent(ipc.testAiConnection, consentPrompt.ask);
     testResult = result
-      ? { ok: true, text: "Connected. The API key works." }
+      ? { ok: true, text: "Connected. The server answered." }
       : { ok: false, text: "Not sent." };
   } catch (e) {
     testResult = { ok: false, text: String(e) };
@@ -77,13 +106,21 @@ async function testConnection(): Promise<void> {
   }
 }
 
-const KEY_STATUS = {
-  stored: "An API key is saved in the OS credential store.",
-  not_stored: "No API key is saved.",
-  unavailable:
-    "The OS credential store is not available here (for example WSL or Linux without a keyring). " +
-    "Set the ANTHROPIC_API_KEY environment variable instead.",
-} as const;
+function keyStatus(s: AiSettings): string {
+  switch (s.key) {
+    case "stored":
+      return `An API key for ${s.service} is saved in the OS credential store.`;
+    case "not_stored":
+      return s.key_required
+        ? `No API key for ${s.service} is saved.`
+        : `No API key for ${s.service} is saved (not needed if the server has no authentication).`;
+    case "unavailable":
+      return (
+        "The OS credential store is not available here (for example WSL or Linux without a keyring). " +
+        (s.key_env ? `Set the ${s.key_env} environment variable instead.` : "Keys cannot be saved.")
+      );
+  }
+}
 </script>
 
 <dialog
@@ -97,16 +134,105 @@ const KEY_STATUS = {
 >
   <h2 id="settings-title">Settings</h2>
   <section>
-    <h3>AI (Claude API)</h3>
+    <h3>AI provider</h3>
     {#if aiSettings.error}<p class="error">{aiSettings.error}</p>{/if}
+    {#if draft}
+      <form class="provider" onsubmit={applyProvider}>
+        <div class="choices" role="radiogroup" aria-label="AI provider">
+          <label class="check">
+            <input type="radio" name="provider" value="claude" bind:group={draft.provider} disabled={busy} />
+            Anthropic Claude API
+          </label>
+          <label class="check">
+            <input
+              type="radio"
+              name="provider"
+              value="openai_compatible"
+              bind:group={draft.provider}
+              disabled={busy}
+            />
+            OpenAI-compatible API (OpenAI, OpenRouter, Gemini, Ollama, LM Studio, vLLM…)
+          </label>
+        </div>
+        {#if draft.provider === "claude"}
+          <label class="field">
+            <span>Model</span>
+            <input
+              bind:value={draft.claude.model}
+              spellcheck="false"
+              placeholder="claude-opus-5-5"
+              aria-label="Model"
+            />
+          </label>
+        {:else}
+          <label class="field">
+            <span>Service</span>
+            <select
+              aria-label="Service"
+              value={preset?.label ?? ""}
+              onchange={(e) => choosePreset(e.currentTarget.value)}
+              disabled={busy}
+            >
+              {#each OPENAI_PRESETS as p (p.label)}
+                <option value={p.label}>{p.label}</option>
+              {/each}
+              <option value="" disabled>Other (enter the URL)</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Base URL</span>
+            <input
+              bind:value={draft.openai.base_url}
+              spellcheck="false"
+              placeholder="https://api.example.com/v1"
+              aria-label="Base URL"
+              aria-describedby="base-url-note"
+            />
+          </label>
+          <p class="muted note" id="base-url-note">The address up to <code>/chat/completions</code>.</p>
+          <label class="field">
+            <span>Model</span>
+            <input
+              bind:value={draft.openai.model}
+              spellcheck="false"
+              placeholder={preset?.placeholder ?? "model id (a vision model)"}
+              aria-label="Model"
+            />
+          </label>
+          <label class="field">
+            <span>JSON output</span>
+            <select bind:value={draft.openai.output} disabled={busy} aria-label="JSON output">
+              {#each OUTPUT_MODES as mode (mode.value)}
+                <option value={mode.value}>{mode.label}</option>
+              {/each}
+            </select>
+          </label>
+          <p class="muted note">
+            Use structured output when the server supports it. Otherwise answers are checked against the schema
+            and asked again, which sends the same data more than once.
+          </p>
+        {/if}
+        <p class="row">
+          <button type="submit" disabled={busy || !dirty}>Apply</button>
+          {#if dirty}
+            <button type="button" disabled={busy} onclick={resetDraft}>Revert</button>
+            <span class="muted">Not applied yet.</span>
+          {/if}
+        </p>
+      </form>
+    {:else if !aiSettings.error}
+      <p class="muted">Loading…</p>
+    {/if}
+
     {#if aiSettings.value}
       {@const s = aiSettings.value}
-      <p data-key-status={s.key}>{KEY_STATUS[s.key]}</p>
-      {#if s.env_key}
+      <h3>API key for {s.service}</h3>
+      <p data-key-status={s.key}>{keyStatus(s)}</p>
+      {#if s.env_key && s.key_env}
         <p class="muted">
           {s.key === "stored"
-            ? "ANTHROPIC_API_KEY is also set; the saved key is used first."
-            : "Using the API key from ANTHROPIC_API_KEY."}
+            ? `${s.key_env} is also set; the saved key is used first.`
+            : `Using the API key from ${s.key_env}.`}
         </p>
       {/if}
       {#if s.key !== "unavailable"}
@@ -116,15 +242,16 @@ const KEY_STATUS = {
             type="password"
             autocomplete="off"
             spellcheck="false"
-            placeholder={s.key === "stored" ? "Replace the saved key" : "sk-ant-…"}
-            aria-label="Anthropic API key"
+            placeholder={s.key === "stored" ? "Replace the saved key" : s.key_required ? "API key" : "API key (optional)"}
+            aria-label={`API key for ${s.service}`}
             oninput={(e) => (hasKeyInput = e.currentTarget.value.trim() !== "")}
           />
-          <button type="submit" disabled={busy || !hasKeyInput}>Save</button>
+          <button type="submit" disabled={busy || !hasKeyInput || dirty}>Save</button>
           {#if s.key === "stored"}
-            <button type="button" disabled={busy} onclick={() => run(ipc.deleteApiKey)}>Delete</button>
+            <button type="button" disabled={busy || dirty} onclick={() => run(ipc.deleteApiKey)}>Delete</button>
           {/if}
         </form>
+        {#if dirty}<p class="muted note">Apply the provider first; keys are saved per provider.</p>{/if}
       {/if}
 
       <h3>This project</h3>
@@ -139,10 +266,15 @@ const KEY_STATUS = {
       </label>
       <p class="muted">
         {s.send_externally
-          ? "You are asked before anything is sent."
-          : "AI features that send data are turned off for this project."}
+          ? "You are asked before anything is sent to an external service."
+          : "AI features that send data to external services are turned off for this project."}
         Saved with the project.
       </p>
+      {#if s.local}
+        <p class="muted" data-local>
+          The selected server is on this computer, so nothing leaves it and you are not asked before sending.
+        </p>
+      {/if}
       {#if s.consent_remembered}
         <p class="row">
           <span>You chose not to be asked again for this project.</span>
@@ -151,16 +283,14 @@ const KEY_STATUS = {
       {/if}
       <p class="row">
         <button
-          disabled={busy || !aiSettings.canSend}
+          disabled={busy || dirty || !aiSettings.canSend}
           onclick={testConnection}
-          title="Send a small request without images to check the API key"
+          title="Send a small request without images to check the provider and the API key"
         >Test connection</button>
         {#if testResult}
           <span class:error={!testResult.ok}>{testResult.text}</span>
         {/if}
       </p>
-    {:else if !aiSettings.error}
-      <p class="muted">Loading…</p>
     {/if}
   </section>
   <div class="actions">
@@ -170,7 +300,7 @@ const KEY_STATUS = {
 
 <style>
   .settings {
-    width: min(520px, calc(100vw - 32px));
+    width: min(560px, calc(100vw - 32px));
     padding: 16px 20px;
     background: var(--panel);
     color: var(--text);
@@ -190,6 +320,25 @@ const KEY_STATUS = {
     display: flex;
     align-items: flex-start;
     gap: 6px;
+  }
+  .choices {
+    display: grid;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+  .field {
+    display: grid;
+    grid-template-columns: 7em 1fr;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0;
+  }
+  .field input,
+  .field select {
+    min-width: 0;
+  }
+  .note {
+    margin: 2px 0 6px;
   }
   h3 {
     margin: 16px 0 4px;

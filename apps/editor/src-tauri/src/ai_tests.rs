@@ -1,47 +1,54 @@
+use std::collections::HashMap;
 use std::sync::Mutex;
 
 use ugoe_ai::FakeProvider;
 use ugoe_editor_core::Project;
 
 use super::*;
+use crate::ai_provider::{OutputMode, ProviderKind, ProviderStore};
 
-/// メモリ上の保存先。`fail` なら使えない保存先として振る舞う。
+type Secrets = Arc<Mutex<HashMap<String, String>>>;
+
+/// メモリ上の保存先 (アカウントごと)。`fail` なら使えない保存先として振る舞う。
 #[derive(Default)]
 struct MemoryStore {
-    secret: Arc<Mutex<Option<String>>>,
+    secrets: Secrets,
     fail: bool,
 }
 
 impl SecretStore for MemoryStore {
-    fn get(&self) -> Result<Option<String>, String> {
+    fn get(&self, account: &str) -> Result<Option<String>, String> {
         if self.fail {
             return Err("no secret service".into());
         }
-        Ok(self.secret.lock().unwrap().clone())
+        Ok(self.secrets.lock().unwrap().get(account).cloned())
     }
 
-    fn set(&self, secret: &str) -> Result<(), String> {
+    fn set(&self, account: &str, secret: &str) -> Result<(), String> {
         if self.fail {
             return Err("no secret service".into());
         }
-        *self.secret.lock().unwrap() = Some(secret.into());
+        self.secrets
+            .lock()
+            .unwrap()
+            .insert(account.into(), secret.into());
         Ok(())
     }
 
-    fn delete(&self) -> Result<(), String> {
+    fn delete(&self, account: &str) -> Result<(), String> {
         if self.fail {
             return Err("no secret service".into());
         }
-        *self.secret.lock().unwrap() = None;
+        self.secrets.lock().unwrap().remove(account);
         Ok(())
     }
 }
 
-fn keys(secret: Arc<Mutex<Option<String>>>, env: EnvReader) -> ApiKeys {
+fn keys(secrets: Secrets, env: EnvReader) -> ApiKeys {
     ApiKeys::new(
         Box::new(move || {
             Ok(Box::new(MemoryStore {
-                secret: secret.clone(),
+                secrets: secrets.clone(),
                 fail: false,
             }) as Box<dyn SecretStore>)
         }),
@@ -49,40 +56,88 @@ fn keys(secret: Arc<Mutex<Option<String>>>, env: EnvReader) -> ApiKeys {
     )
 }
 
-fn no_env() -> Option<String> {
+fn no_env(_: &str) -> Option<String> {
     None
 }
 
-fn env_key() -> Option<String> {
-    Some("sk-env".into())
+fn env_key(name: &str) -> Option<String> {
+    (name == "ANTHROPIC_API_KEY" || name == "OPENAI_API_KEY").then(|| "sk-env".into())
+}
+
+fn claude_slot() -> KeySlot {
+    ProviderSettings::default().key_slot()
+}
+
+fn openai(base_url: &str) -> ProviderSettings {
+    let mut settings = ProviderSettings {
+        provider: ProviderKind::OpenaiCompatible,
+        ..ProviderSettings::default()
+    };
+    settings.openai.base_url = base_url.into();
+    settings
 }
 
 #[test]
 fn keys_are_saved_trimmed_and_deleted() {
-    let secret = Arc::new(Mutex::new(None));
-    let keys = keys(secret.clone(), no_env);
-    assert_eq!(keys.status(), KeyStatus::NotStored);
-    assert!(keys.resolve().is_err());
-    assert!(keys.save("  ").is_err());
+    let secrets = Secrets::default();
+    let keys = keys(secrets.clone(), no_env);
+    let slot = claude_slot();
+    assert_eq!(keys.status(&slot), KeyStatus::NotStored);
+    assert!(keys.resolve(&slot).is_err());
+    assert!(keys.save(&slot, "  ").is_err());
 
-    keys.save("  sk-stored \n").unwrap();
-    assert_eq!(secret.lock().unwrap().as_deref(), Some("sk-stored"));
-    assert_eq!(keys.status(), KeyStatus::Stored);
-    assert!(keys.resolve().is_ok());
+    keys.save(&slot, "  sk-stored \n").unwrap();
+    // 前からの保存先の名前のまま (T0638 で保存したキーをそのまま使う)
+    assert_eq!(
+        secrets
+            .lock()
+            .unwrap()
+            .get("anthropic-api-key")
+            .map(String::as_str),
+        Some("sk-stored")
+    );
+    assert_eq!(keys.status(&slot), KeyStatus::Stored);
+    assert!(keys.resolve(&slot).is_ok());
 
-    keys.delete().unwrap();
-    keys.delete().unwrap();
-    assert_eq!(keys.status(), KeyStatus::NotStored);
+    keys.delete(&slot).unwrap();
+    keys.delete(&slot).unwrap();
+    assert_eq!(keys.status(&slot), KeyStatus::NotStored);
+}
+
+/// キーはプロバイダごと、OpenAI 互換の API は送り先のホストごとに分ける。
+/// `OPENAI_API_KEY` は OpenAI に送るときだけ使う。
+#[test]
+fn keys_are_kept_per_provider_and_host() {
+    let secrets = Secrets::default();
+    let keys = keys(secrets.clone(), env_key);
+    let openai_slot = openai("https://api.openai.com/v1").key_slot();
+    let router_slot = openai("https://openrouter.ai/api/v1").key_slot();
+    let local_slot = openai("http://localhost:11434/v1").key_slot();
+    assert_eq!(openai_slot.account, "openai-compatible:api.openai.com");
+    assert_eq!(router_slot.account, "openai-compatible:openrouter.ai");
+    assert!(!openai_slot.required && !local_slot.required);
+    assert!(claude_slot().required);
+
+    keys.save(&router_slot, "sk-or-1").unwrap();
+    assert_eq!(keys.status(&router_slot), KeyStatus::Stored);
+    assert_eq!(keys.status(&openai_slot), KeyStatus::NotStored);
+    assert_eq!(keys.status(&claude_slot()), KeyStatus::NotStored);
+    // OpenAI には環境変数のキー、それ以外の送り先には環境変数を使わない
+    assert!(keys.env_available(&openai_slot));
+    assert!(!keys.env_available(&router_slot));
+    assert!(keys.find(&local_slot).is_none());
+    assert_eq!(secrets.lock().unwrap().len(), 1);
 }
 
 /// 保存先が使えなければ「使えない」になり、環境変数のキーを使う。
 #[test]
 fn unavailable_store_falls_back_to_env() {
+    let slot = claude_slot();
     let keys = ApiKeys::new(Box::new(|| Err("no D-Bus session".into())), env_key);
-    assert_eq!(keys.status(), KeyStatus::Unavailable);
-    assert!(keys.env_available());
-    assert!(keys.resolve().is_ok());
-    assert!(keys.save("sk-x").unwrap_err().contains("D-Bus"));
+    assert_eq!(keys.status(&slot), KeyStatus::Unavailable);
+    assert!(keys.env_available(&slot));
+    assert!(keys.resolve(&slot).is_ok());
+    assert!(keys.save(&slot, "sk-x").unwrap_err().contains("D-Bus"));
 
     let failing = ApiKeys::new(
         Box::new(|| {
@@ -93,24 +148,31 @@ fn unavailable_store_falls_back_to_env() {
         }),
         no_env,
     );
-    assert_eq!(failing.status(), KeyStatus::Unavailable);
-    assert!(!failing.env_available());
-    let err = failing.resolve().unwrap_err().to_string();
-    assert!(err.contains(API_KEY_ENV), "{err}");
+    assert_eq!(failing.status(&slot), KeyStatus::Unavailable);
+    assert!(!failing.env_available(&slot));
+    let err = failing.resolve(&slot).unwrap_err().to_string();
+    assert!(err.contains("ANTHROPIC_API_KEY"), "{err}");
 }
 
 /// キーは `Debug` にもエラーにも出ない。空白だけの保存値は使わない。
 #[test]
 fn keys_are_never_shown() {
-    let keys = keys(
-        Arc::new(Mutex::new(Some("sk-stored-secret".into()))),
-        env_key,
-    );
-    let key = keys.resolve().unwrap();
+    let slot = claude_slot();
+    let secrets = Secrets::default();
+    secrets
+        .lock()
+        .unwrap()
+        .insert(slot.account.clone(), "sk-stored-secret".into());
+    let keys = keys(secrets, env_key);
+    let key = keys.resolve(&slot).unwrap();
     let shown = format!("{key:?} {keys:?}");
     assert!(!shown.contains("sk-"), "{shown}");
-    let blank = self::keys(Arc::new(Mutex::new(Some("   ".into()))), no_env);
-    assert!(blank.resolve().is_err());
+    let blank = Secrets::default();
+    blank
+        .lock()
+        .unwrap()
+        .insert(slot.account.clone(), "   ".into());
+    assert!(self::keys(blank, no_env).resolve(&slot).is_err());
 }
 
 fn external(images: usize) -> Disclosure {
@@ -242,46 +304,179 @@ fn disabled_projects_never_send_externally() {
 
 pub(crate) fn state(secret: Option<&str>) -> AppState {
     let (session, document) = crate::project::initial_state();
+    let secrets = Secrets::default();
+    if let Some(secret) = secret {
+        secrets
+            .lock()
+            .unwrap()
+            .insert(claude_slot().account, secret.into());
+    }
     AppState {
         document: Mutex::new(document),
         project: Mutex::new(session),
-        api_keys: keys(Arc::new(Mutex::new(secret.map(Into::into))), no_env),
+        api_keys: keys(secrets, no_env),
+        ai_provider: ProviderStore::default(),
     }
 }
 
 /// 送る IPC コマンドの入口: 設定・キー・同意の順に確かめ、同意がなければ送らない。
 #[test]
-fn prepare_claude_checks_settings_key_and_consent() {
-    let (config, request, _) = test_request();
+fn prepare_checks_settings_key_and_consent() {
+    let (request, _) = test_request();
+    let requests = std::slice::from_ref(&request);
+    let test = Purpose::ConnectionTest;
 
     let no_key = state(None);
-    let err = prepare_claude(&no_key, config.clone(), &request, None).unwrap_err();
+    let err = prepare_requests(&no_key, test, requests, 0, None).unwrap_err();
     assert!(err.contains("API key"), "{err}");
 
     let state = state(Some("sk-test"));
-    let Prepared::NeedsConsent(view) =
-        prepare_claude(&state, config.clone(), &request, None).unwrap()
+    let Prepared::NeedsConsent(view) = prepare_requests(&state, test, requests, 0, None).unwrap()
     else {
         panic!("expected to ask for consent");
     };
-    assert_eq!(view.model, config.model);
+    assert_eq!(view.model, "claude-opus-5-5");
+    assert_eq!(view.service, "Anthropic Claude API");
     assert_eq!(view.image_count, 0);
     let answer = ConsentAnswer {
         disclosure: view,
         remember: false,
     };
     assert!(matches!(
-        prepare_claude(&state, config.clone(), &request, Some(&answer)).unwrap(),
+        prepare_requests(&state, test, requests, 0, Some(&answer)).unwrap(),
         Prepared::Ready(_)
     ));
 
     // 「外部に送らない」にすると、同意があっても断る。
     state.project.lock().unwrap().set_ai_send_externally(false);
-    let err = prepare_claude(&state, config, &request, Some(&answer)).unwrap_err();
+    let err = prepare_requests(&state, test, requests, 0, Some(&answer)).unwrap_err();
     assert_eq!(err, SEND_DISABLED);
     let settings = settings(&state).unwrap();
     assert!(!settings.send_externally);
     assert_eq!(settings.key, KeyStatus::Stored);
+}
+
+/// OpenAI 互換の API: 外部の送り先は同じ同意の流れを通り、送り先・モデルを示す。キーがなくても送れる。
+/// 構造化出力を使わないなら、プロバイダの問い直しも送り直す回数に含める。
+#[test]
+fn openai_compatible_goes_through_the_same_consent() {
+    let state = state(None);
+    let mut provider = openai("https://openrouter.ai/api/v1");
+    provider.openai.model = "openai/gpt-6-sol".into();
+    state.ai_provider.set(provider.clone()).unwrap();
+    let (request, _) = test_request();
+    let requests = std::slice::from_ref(&request);
+    let Prepared::NeedsConsent(view) =
+        prepare_requests(&state, Purpose::Proposal, requests, 2, None).unwrap()
+    else {
+        panic!("expected to ask for consent");
+    };
+    assert_eq!(view.service, "OpenRouter");
+    assert_eq!(
+        view.endpoint,
+        "https://openrouter.ai/api/v1/chat/completions"
+    );
+    assert_eq!(view.model, "openai/gpt-6-sol");
+    assert_eq!(view.retries, 2);
+
+    provider.openai.output = OutputMode::Prompt;
+    state.ai_provider.set(provider).unwrap();
+    let Prepared::NeedsConsent(view) =
+        prepare_requests(&state, Purpose::Proposal, requests, 2, None).unwrap()
+    else {
+        panic!("expected to ask for consent");
+    };
+    // 3 回の問い合わせそれぞれで、2 回まで問い直す
+    assert_eq!(view.retries, 8);
+
+    state.project.lock().unwrap().set_ai_send_externally(false);
+    assert_eq!(
+        prepare_requests(&state, Purpose::Proposal, requests, 0, None).unwrap_err(),
+        SEND_DISABLED
+    );
+}
+
+/// 手元のサーバ (ループバック) は外部に出ないので、同意を求めず、「外部に送らない」でも送れる。
+#[test]
+fn loopback_servers_need_no_consent() {
+    let state = state(None);
+    state.project.lock().unwrap().set_ai_send_externally(false);
+    state
+        .ai_provider
+        .set(openai("http://localhost:11434/v1"))
+        .unwrap();
+    let (request, _) = test_request();
+    assert!(matches!(
+        prepare_requests(
+            &state,
+            Purpose::Proposal,
+            std::slice::from_ref(&request),
+            0,
+            None
+        )
+        .unwrap(),
+        Prepared::Ready(_)
+    ));
+    let settings = settings(&state).unwrap();
+    assert!(settings.local);
+    assert!(!settings.key_required);
+    assert_eq!(settings.service, "Local OpenAI-compatible server");
+}
+
+/// キーを平文の http で外部に送らない。
+#[test]
+fn keys_are_not_sent_over_plain_http() {
+    let settings = openai("http://llm.example.com/v1");
+    let key = ApiKey::new("sk-x").unwrap();
+    let Err(err) = settings.build(Some(key.clone()), Purpose::Proposal) else {
+        panic!("expected to refuse");
+    };
+    assert!(err.contains("https"), "{err}");
+    assert!(settings.build(None, Purpose::Proposal).is_ok());
+    assert!(
+        openai("http://127.0.0.1:1234/v1")
+            .build(Some(key), Purpose::Proposal)
+            .is_ok()
+    );
+}
+
+/// プロバイダの設定は検査してから保存し、ファイルから読み直せる。ファイルがなければ既定 (Claude)。
+#[test]
+fn provider_settings_are_checked_and_saved() {
+    let dir = std::env::temp_dir().join(format!("ugoe-editor-provider-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let store = ProviderStore::default();
+    store.load(dir.clone()).unwrap();
+    assert_eq!(store.get(), ProviderSettings::default());
+    assert_eq!(store.get().provider, ProviderKind::Claude);
+
+    for bad in [openai("ftp://example.com"), openai("https://")] {
+        assert!(store.set(bad).is_err());
+    }
+    let mut no_model = openai("http://localhost:1234/v1");
+    no_model.openai.model = " ".into();
+    assert!(store.set(no_model).is_err());
+    assert_eq!(store.get(), ProviderSettings::default());
+
+    let chosen = openai("http://localhost:1234/v1");
+    store.set(chosen.clone()).unwrap();
+    let text = std::fs::read_to_string(dir.join("ai-provider.json")).unwrap();
+    assert!(!text.contains("sk-"), "{text}");
+    let reloaded = ProviderStore::default();
+    reloaded.load(dir.clone()).unwrap();
+    assert_eq!(reloaded.get(), chosen);
+
+    // 知らない項目・欠けた項目があっても読める
+    std::fs::write(
+        dir.join("ai-provider.json"),
+        r#"{"provider":"openai_compatible","openai":{"model":"m"},"future":1}"#,
+    )
+    .unwrap();
+    reloaded.load(dir.clone()).unwrap();
+    let loaded = reloaded.get();
+    assert_eq!(loaded.openai.model, "m");
+    assert_eq!(loaded.openai.base_url, "https://api.openai.com/v1");
+    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 /// 設定の応答はキーの中身を含まない。
@@ -290,9 +485,12 @@ fn settings_never_contain_the_key() {
     let state = state(Some("sk-very-secret"));
     let json = serde_json::to_string(&settings(&state).unwrap()).unwrap();
     assert!(!json.contains("sk-"), "{json}");
-    assert_eq!(
-        json,
-        r#"{"key":"stored","env_key":false,"send_externally":true,"consent_remembered":false}"#
+    assert!(json.contains(r#""key":"stored","key_required":true,"key_env":"ANTHROPIC_API_KEY","env_key":false,"send_externally":true,"consent_remembered":false}"#), "{json}");
+    assert!(
+        json.starts_with(
+            r#"{"provider":{"provider":"claude","claude":{"model":"claude-opus-5-5"}"#
+        ),
+        "{json}"
     );
 }
 

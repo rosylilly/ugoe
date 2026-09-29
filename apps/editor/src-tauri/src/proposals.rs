@@ -3,7 +3,7 @@
 //! `ugoe_editor_core::proposal` にあり、ここは入力 (PSD・分類) を集めて ugoe-ai を呼び、結果を渡すだけ。
 //! 引数・戻り値の型を変えたら `apps/editor/src/lib/ipc.ts` も同じ PR で更新すること。
 //!
-//! - 外部に送るもの (`use_ai`) は必ず [`crate::ai::prepare_claude_requests`] を通し、同意がなければ送らずに
+//! - 外部に送るもの (`use_ai`) は必ず [`crate::ai::prepare_requests`] を通し、同意がなければ送らずに
 //!   `AiReply::NeedsConsent` を返す。AI を使わない経路 (名前の規則とテンプレートの既定値) は何も送らない。
 //! - 提案は採用するまでドキュメントを変えない。プレビューは複製に適用したもの ([`ProposalSession`] が持つ)。
 
@@ -16,7 +16,6 @@ use ugoe_ai::classify::{
     ClassifyOptions, LayerLabel, classification_requests, classify_by_name, classify_layers,
     overview_png,
 };
-use ugoe_ai::claude::ClaudeConfig;
 use ugoe_ai::rig::{
     DEFAULT_MAX_ATTEMPTS, RigOptions, RigParams, mesh_parts, propose_rig, propose_rig_with_ai,
     rig_request,
@@ -27,9 +26,8 @@ use ugoe_model::Model;
 use ugoe_psd::LayerTree;
 
 use crate::AppState;
-use crate::ai::{
-    AiReply, ConsentAnswer, Prepared, blocking, lock_project, prepare_claude_requests,
-};
+use crate::ai::{AiReply, ConsentAnswer, Prepared, blocking, lock_project, prepare_requests};
+use crate::ai_provider::Purpose;
 use crate::project::absolute_path;
 
 /// 提案の元にする PSD がないときの断りの文言。
@@ -234,7 +232,7 @@ pub fn get_proposals(state: State<'_, AppState>) -> Result<ProposalState, String
 }
 
 /// PSD のレイヤーを分類し、結果を覚える (次の `propose_rig` の入力)。`psd` を省略すると、取り込んだ PSD。
-/// `use_ai` なら画像を Claude API に送る (同意がなければ送らずに `needs_consent`)。偽なら名前の規則だけ。
+/// `use_ai` なら画像を選んだ AI のプロバイダに送る (同意がなければ送らずに `needs_consent`)。偽なら名前の規則だけ。
 #[tauri::command]
 pub async fn classify_psd_layers(
     app: AppHandle,
@@ -249,7 +247,7 @@ pub async fn classify_psd_layers(
 }
 
 /// 分類の結果からリグ (顔の角度・目・口) を提案し、提案の一覧に置く (ドキュメントは変えない)。
-/// `use_ai` なら原画を Claude API に送って値を決めさせる (答えが通らなければ問い直す)。偽ならテンプレートの既定値。
+/// `use_ai` なら原画を選んだ AI のプロバイダに送って値を決めさせる (答えが通らなければ問い直す)。偽ならテンプレートの既定値。
 #[tauri::command]
 pub async fn propose_rig_from_psd(
     app: AppHandle,
@@ -277,12 +275,11 @@ pub(crate) fn classify_in(
     let labels = if use_ai {
         let requests = classification_requests(&tree, &ClassifyOptions::default())
             .map_err(|e| e.to_string())?;
-        let config = ClaudeConfig::default();
-        match prepare_claude_requests(state, config, &requests, 0, consent)? {
+        match prepare_requests(state, Purpose::Proposal, &requests, 0, consent)? {
             Prepared::NeedsConsent(disclosure) => {
                 return Ok(AiReply::NeedsConsent { disclosure });
             }
-            Prepared::Ready(provider) => classify(&tree, Some(&provider)),
+            Prepared::Ready(provider) => classify(&tree, Some(provider.as_ref())),
         }
     } else {
         classify(&tree, None)
@@ -320,13 +317,14 @@ pub(crate) fn propose_in(
         let image = overview(&tree).map_err(|e| e.to_string())?;
         let parts = mesh_parts(&model, &classified.labels);
         let request = rig_request(&model, &parts, &image, &[]).map_err(|e| e.to_string())?;
-        let config = ClaudeConfig::default();
         let retries = DEFAULT_MAX_ATTEMPTS - 1;
-        match prepare_claude_requests(state, config, &[request], retries, consent)? {
+        match prepare_requests(state, Purpose::Proposal, &[request], retries, consent)? {
             Prepared::NeedsConsent(disclosure) => {
                 return Ok(AiReply::NeedsConsent { disclosure });
             }
-            Prepared::Ready(provider) => rig(&model, &classified.labels, &image, Some(&provider)),
+            Prepared::Ready(provider) => {
+                rig(&model, &classified.labels, &image, Some(provider.as_ref()))
+            }
         }
     } else {
         rig(&model, &classified.labels, &[], None)

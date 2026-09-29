@@ -1,0 +1,72 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "http://localhost:11434/v1/chat/completions"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": "chatcmpl-412",
+          "object": "chat.completion",
+          "created": 1790000000,
+          "model": "qwen3-vl:8b",
+          "system_fingerprint": "fp_ollama",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "<think>\nThe layer is the left iris.\n</think>\n```json\n{\"label\": \"iris\", \"side\": \"LEFT\"}\n```"
+              },
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 300,
+            "completion_tokens": 20,
+            "total_tokens": 320
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "http://localhost:11434/v1/chat/completions"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": "chatcmpl-413",
+          "object": "chat.completion",
+          "created": 1790000000,
+          "model": "qwen3-vl:8b",
+          "system_fingerprint": "fp_ollama",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\"label\": \"iris\", \"side\": \"left\"}"
+              },
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 300,
+            "completion_tokens": 20,
+            "total_tokens": 320
+          }
+        }
+      }
+    }
+  ]
+}

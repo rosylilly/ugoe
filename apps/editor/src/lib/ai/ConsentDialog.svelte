@@ -1,13 +1,14 @@
 <!--
   外部の AI サービスに送る前の確認 (docs/editor.md#ai-の設定と送信の同意)。App に 1 つ置き、
   `consentPrompt.ask` (lib/ai/ai.svelte.ts) の問い合わせがあれば開く。送り先・モデル・画像の枚数と
-  バイト数・テキストのバイト数 (答えが検証を通らなければ送り直す回数の上限も) と、送り先の規約へのリンクを示す。
+  バイト数・テキストのバイト数 (答えが検証を通らなければ送り直す回数の上限も) と、送り先の規約へのリンク
+  (知っている送り先だけ。lib/ai/consent.ts の `termsFor`) を示す。
   Esc と「Cancel」は送らない。
 -->
 <script lang="ts">
 import { openExternal } from "../help";
 import type { ConsentPrompt } from "./ai.svelte";
-import { formatBytes, PROVIDER_TERMS } from "./consent";
+import { formatBytes, termsFor } from "./consent";
 
 interface Props {
   prompt: ConsentPrompt;
@@ -55,6 +56,7 @@ async function openTerms(url: string): Promise<void> {
 >
   {#if prompt.pending}
     {@const d = prompt.pending.disclosure}
+    {@const terms = termsFor(d.endpoint)}
     <h2 id="consent-title">Send to {d.service}?</h2>
     <p>This project's data leaves your computer and is sent to an external AI service.</p>
     <dl>
@@ -74,11 +76,15 @@ async function openTerms(url: string): Promise<void> {
       </p>
     {/if}
     <p class="muted">
-      Anthropic handles the data under its terms:
-      {#each PROVIDER_TERMS as term, i}
-        {#if i > 0}{" · "}{/if}
-        <a href={term.url} onclick={(e) => (e.preventDefault(), openTerms(term.url))}>{term.label}</a>
-      {/each}
+      {#if terms}
+        {terms.org} handles the data under its terms:
+        {#each terms.links as term, i}
+          {#if i > 0}{" · "}{/if}
+          <a href={term.url} onclick={(e) => (e.preventDefault(), openTerms(term.url))}>{term.label}</a>
+        {/each}
+      {:else}
+        Check how this service handles your data before sending.
+      {/if}
     </p>
     {#if linkError}<p class="error">{linkError}</p>{/if}
     <label class="check">

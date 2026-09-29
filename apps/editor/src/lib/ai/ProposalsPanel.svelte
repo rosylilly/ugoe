@@ -2,7 +2,8 @@
   AI の提案のパネル (docs/editor.md#ai-の提案)。右の列の「AI」タブ。
   - 提案の元にする PSD (「New from PSD…」「Import PSD…」で取り込んだもの。「Choose PSD…」で替えられる) の
     レイヤーを分類し (「Classify layers」)、分類からリグ (顔の角度・目・口) を提案する (「Propose rig」)。
-    「Use Claude」なら外部の AI に画像を送る (送る前に確認のダイアログ)。使えないときは理由と設定への案内を出す。
+    「Use <プロバイダ>」なら選んだ AI のプロバイダに画像を送る (外部に出るなら送る前に確認のダイアログ)。
+    使えないときは理由と設定への案内を出す。
   - 提案ごとに題名・理由・コマンドの一覧 (同じ対象への続いたコマンドはまとめる) を出す。コマンド (まとまり) の
     チェックを外すと、それに頼るコマンドも外れる (lib/ai/proposals.ts)。「Preview」は提案を複製に適用した姿をビューポートに出し (ドキュメントは変えない)、
     提案が足したパラメータのスライダーをここに出す。「Adopt」は 1 回の Undo で戻る編集として適用する。
@@ -12,6 +13,7 @@ import type { ViewportController } from "../viewport/controller.svelte";
 import { aiSettings } from "./ai.svelte";
 import { classificationSummary, commandLabel, groupCommands, groupState } from "./proposals";
 import type { ProposalsView } from "./proposals.svelte";
+import { aiBlockedReason, providerLabel } from "./providers";
 
 interface Props {
   view: ProposalsView;
@@ -34,16 +36,16 @@ const summary = $derived(
 const review = $derived(panel?.classification?.layers.filter((l) => l.needs_review) ?? []);
 const busy = $derived(view.busy !== null);
 
-/** 外部の AI を使えない理由 (使えるなら null)。 */
+/** AI を使えない理由 (使えるなら null)。 */
 const aiBlocked = $derived.by((): string | null => {
   const s = aiSettings.value;
   if (!s) return "Checking the AI settings…";
-  if (!s.send_externally) return "This project is set not to send data to external AI services.";
-  if (s.key !== "stored" && !s.env_key) {
-    return "No Anthropic API key. Add one in Settings, or set ANTHROPIC_API_KEY before starting the editor.";
-  }
-  return null;
+  return aiBlockedReason(s);
 });
+/** 選んだプロバイダの名前。 */
+const aiName = $derived(aiSettings.value ? providerLabel(aiSettings.value) : "AI");
+/** 選んだプロバイダがこの計算機のサーバか (画像は外に出ない)。 */
+const aiLocal = $derived(aiSettings.value?.local ?? false);
 
 $effect(() => {
   if (aiBlocked && view.useAi) view.useAi = false;
@@ -68,9 +70,12 @@ function onSlider(id: string, e: Event): void {
     {/if}
     <button onclick={() => view.choosePsd()} disabled={busy}>Choose PSD…</button>
   </div>
-  <label class="check" title={aiBlocked ?? "Send the artwork to Claude to classify the layers and pick the rig values"}>
+  <label
+    class="check"
+    title={aiBlocked ?? `Send the artwork to ${aiName} to classify the layers and pick the rig values`}
+  >
     <input type="checkbox" bind:checked={view.useAi} disabled={!!aiBlocked || busy} />
-    Use Claude (sends images of the artwork)
+    Use {aiName} ({aiLocal ? "sends images to a server on this computer" : "sends images of the artwork"})
   </label>
   {#if aiBlocked && aiSettings.value}
     <p class="muted note">
@@ -88,7 +93,7 @@ function onSlider(id: string, e: Event): void {
   {#if view.error}<p class="error">{view.error}</p>{/if}
   {#if summary && panel?.classification}
     <p class="muted">
-      {summary.layers} layers classified {panel.classification.by_ai ? "by Claude" : "by name"}
+      {summary.layers} layers classified {panel.classification.by_ai ? "by AI" : "by name"}
       {#if summary.review > 0}{" · "}<span class="warn">{summary.review} to review</span>{/if}
     </p>
     <details>
