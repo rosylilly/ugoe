@@ -7,6 +7,7 @@ import {
   type Expression,
   ipc,
   type Model,
+  type ModuleStatus,
   type Motion,
   type Parameter,
   type PhysicsSettings,
@@ -25,6 +26,11 @@ export class EditorDocument {
   /** モーションと表情 (保存・書き出しの順)。refresh のたびに読み直す。 */
   motions = $state.raw<Motion[]>([]);
   expressions = $state.raw<Expression[]>([]);
+  /**
+   * モジュールのプロジェクトなら、本体とスロットと本体の要素 (読み取り専用の下敷き)。本体のプロジェクトなら null。
+   * docs/editor.md#モジュールのプロジェクト。
+   */
+  module = $state.raw<ModuleStatus | null>(null);
   /** 物理の設定 (なければ null)。物理のパネルとビューポートの表示が読む。 */
   physics = $state.raw<PhysicsSettings | null>(null);
   error = $state<string | null>(null);
@@ -48,6 +54,7 @@ export class EditorDocument {
       });
       const animations = await ipc.getAnimations();
       this.physics = await ipc.getPhysics();
+      this.module = await ipc.moduleStatus();
       this.model = { json, bundle };
       this.motions = animations.motions;
       this.expressions = animations.expressions;

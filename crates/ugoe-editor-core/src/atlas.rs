@@ -320,6 +320,8 @@ impl Project {
             physics: self.physics.clone(),
             motions: self.motions.clone(),
             expressions: self.expressions.clone(),
+            // アトラス化したものは書き出し用の合成済みのモデルで、モジュールとしては保存しない。
+            module: None,
         };
         Ok((project, atlased.report))
     }

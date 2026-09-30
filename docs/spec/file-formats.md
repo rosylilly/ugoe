@@ -32,12 +32,16 @@ character.ugoeproj/
 
 読み書きは `ugoe_editor_core::project` (`Project::save` / `Project::load`) が行います。
 
+着せ替えのモジュールのプロジェクト ([モジュールのプロジェクト](#モジュールのプロジェクト)) は、`model.json` の代わりに `module.json` を置きます。
+
 ### `project.json`
 
 | フィールド | 型 | 内容 |
 | --- | --- | --- |
 | `format_version` | u32 | プロジェクトの形式のバージョン (`PROJECT_FORMAT_VERSION`、現在 0)。ディレクトリ構成を変えたら上げる。モデルの `schema_version` とは別 |
 | `name` | string | プロジェクトの表示名。エディタで「別名で保存」するとディレクトリ名 (拡張子を除く) になる |
+| `kind` | string | プロジェクトの種類。`model` (本体のモデル。既定で、書き出さない) か `module` (着せ替えのモジュール) |
+| `module` | object | モジュールのプロジェクトが参照する本体とスロット (`kind` が `module` のとき必須)。`base` は本体 (`.ugoeproj` のディレクトリか `.ugoe`) のパスで、保存するとプロジェクトのディレクトリからの相対パス (`/` 区切り) で書く (根が違えば絶対パス)。`slot` は取り付け先のスロットの ID |
 | `editor` | object | エディタの設定 (自由な JSON)。空なら書き出さない |
 | `editor.ai.send_externally` | bool | `false` なら、このプロジェクトのデータを外部の AI サービスに送らない ([エディタ](../editor.md#ai-の設定と送信の同意))。既定 (送ってよい) のときは書き出さない。省略・形の違う値は送ってよい扱い |
 | `editor.lighting` | object | エディタのビューポートとプレビューで当てる光源 (`PreviewLighting`。モデルには入らない)。`enabled` (bool)・`ambient` (RGB 0〜1)・`ambient_intensity`・`lights` (最大 8 個。`{"type": "directional", "direction", "color", "intensity"}` か `{"type": "point", "position", "color", "intensity", "range"}`)。すべて既定値なら書かない。足りないフィールドは既定値、読めない・範囲の外ならすべて既定値で読む ([editor.md#ライティングの画面](../editor.md#ライティングの画面)) |
@@ -45,6 +49,16 @@ character.ugoeproj/
 | `editor.export` | object | 書き出しの設定 (`ExportSettings`)。`atlas` (bool、既定 `false`)・`atlas_max_size` (1〜16384、既定 2048)・`atlas_padding` (0〜64、既定 2)。すべて既定値なら書かない。足りないフィールドは既定値、読めなければすべて既定値で読む ([editor.md#書き出し](../editor.md#書き出し)) |
 
 - `format_version` が読める版より新しければ、読み込みをエラーにします。
+- `kind`・`module` がない既存のプロジェクトは、本体のモデルのプロジェクトとしてそのまま読めます (`format_version` は変えていません)。
+
+```json
+{
+  "format_version": 0,
+  "name": "CatEars",
+  "kind": "module",
+  "module": { "base": "../avatar.ugoeproj", "slot": "Headwear" }
+}
+```
 
 ### 出力の安定性
 
@@ -62,6 +76,27 @@ character.ugoeproj/
 - モデルは読み込み時に検証しません (不正なモデルもエディタで開いて直せるように)。`schema_version` は検査します。
 - テクスチャのアトラス化はビルド時に行います ([テクスチャのアトラス化](#テクスチャのアトラス化))。プロジェクト内では、レイヤーごとに別々の画像として持ちます。
 - `.ugoe` への書き出し (`ugoe_editor_core::export_bundle`) では、テクスチャを `Model::textures` の順に `TEXR` に入れ、法線マップを `normal_map` を持つテクスチャの順に `NRML` に入れ、物理・モーション・表情も含めます。
+
+### モジュールのプロジェクト
+
+着せ替えのモジュール ([modules.md](modules.md)) を作るプロジェクトです ([ADR 0024](../adr/0024-module-authoring.md)、[editor.md#モジュールのプロジェクト](../editor.md#モジュールのプロジェクト))。
+
+```
+cat_ears.ugoeproj/
+  project.json          kind = "module" と、本体とスロット (module.base・module.slot)
+  module.json           ugoe_model::Module (整形済み JSON。`ugoe_format::module_to_json`)
+  textures/<name>.png   モジュールのテクスチャと法線マップ (<name> は Module::textures の name と normal_map)
+  .gitignore
+```
+
+- `module.json` はモジュールだけを持ちます (本体の要素・画像は含めません)。ID はモジュールの中の ID (合成の接頭辞 `<name>/` を付けない)、
+  最上位の要素はスロットの取り付け先の局所座標、描画順は 0〜1000 です。物理 (`rigs`・`colliders`) は `module.json` の中にあり、`physics.json` は置きません。
+  モーション・表情も持ちません。`slot` は `project.json` の `module.slot` と同じ値で書きます (読み込みでは `project.json` のものを使う)。
+- 読み込みでは本体も読みます。本体が見つからなければ `BaseNotFound`、スロットがなければ `UnknownSlot` のエラーで、エディタは本体を選び直して開けます。
+  本体の読み込みの間違い (壊れた `.ugoe`、PNG でないテクスチャ、本体がモジュールのプロジェクト) もエラーです。
+- 保存すると、`model.json`・`physics.json` を消します (本体のプロジェクトとして保存し直したときは、逆に `module.json` を消します)。
+- `.ugoemod` への書き出し (`ugoe_editor_core::export_module`) は、`validate_module` と本体との合成 (`compose`・`compose_physics`) を確かめてから、
+  テクスチャを `Module::textures` の順に `TEXR` に、法線マップを `NRML` に入れます。
 
 ### テクスチャのアトラス化
 

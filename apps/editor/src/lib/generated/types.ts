@@ -252,6 +252,15 @@ hit_areas: Array<AvatarHitArea>,
 slots: Array<string>, };
 
 /**
+ * 本体として選んだファイルの要約 (`read_module_base` の戻り値)。
+ */
+export type BaseSummary = { 
+/**
+ * 本体のモデルの名前。
+ */
+name: string, slots: Array<SlotSummary>, };
+
+/**
  * 合成モード。式は `docs/spec/rendering.md`。
  */
 export type BlendMode = "normal" | "additive" | "multiply";
@@ -1016,6 +1025,36 @@ export type ModelMeta = { name: string, canvas: Canvas, };
  */
 export type Modification = "prohibited" | "allow" | "allow_redistribution";
 
+/**
+ * `.ugoemod` の書き出しの結果。
+ */
+export type ModuleExportReport = { 
+/**
+ * 書き出したファイルの大きさ (バイト)。
+ */
+bytes: number, 
+/**
+ * 書き出しはしたが知らせたいこと。
+ */
+warnings: Array<string>, };
+
+/**
+ * 開いているモジュールのプロジェクトの情報 (`module_status` の戻り値)。
+ */
+export type ModuleStatus = { 
+/**
+ * モジュールの名前 (合成で ID の接頭辞になる)。
+ */
+name: string, 
+/**
+ * 本体のファイルの絶対パス。
+ */
+base: string, slot: SlotSummary, 
+/**
+ * 作業用のモデルのうち本体の要素 (読み取り専用) の ID。
+ */
+base_parts: Array<string>, base_deformers: Array<string>, base_meshes: Array<string>, };
+
 export type Motion = { name: string, 
 /**
  * 秒。
@@ -1569,6 +1608,31 @@ colliders?: Array<string>,
  * このスロットのモジュールがパーツを追従 (`PoseEntry::links`) させてよい、本体のポーズの要素のパーツ。
  */
 pose_parts?: Array<string>, };
+
+/**
+ * 本体のスロット 1 つ (新規作成の画面で選ぶ)。
+ */
+export type SlotSummary = { id: string, 
+/**
+ * 取り付け先のデフォーマ。`null` ならキャンバス。
+ */
+anchor: string | null, 
+/**
+ * モジュールの最上位のパーツの親になる本体のパーツ。
+ */
+part: string | null, 
+/**
+ * 描画順の範囲。
+ */
+draw_order_min: number, draw_order_max: number, 
+/**
+ * モジュールを付けると隠れる本体のパーツ。
+ */
+replaces: Array<string>, 
+/**
+ * モジュールが使える本体のパラメータ (標準パラメータのほかに)。
+ */
+parameters: Array<string>, };
 
 /**
  * テクスチャ参照。実データはコンテナ (`ugoe-format`) 側が保持する。

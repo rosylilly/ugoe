@@ -11,6 +11,7 @@ import type {
   ApplyReport,
   AutoMeshOptions,
   AvatarCheck,
+  BaseSummary,
   BridgeEvent,
   BulgeSettings,
   Classification,
@@ -22,6 +23,8 @@ import type {
   ExternalChange,
   KeyformTarget,
   McpBridgeStatus,
+  ModuleExportReport,
+  ModuleStatus,
   OverflowReport,
   PhysicsSettings,
   PreviewLighting,
@@ -59,6 +62,18 @@ export const ipc = {
   newProjectFromPsd: (path: string, meshOptions?: Partial<AutoMeshOptions>) =>
     invoke<PsdImportWarning[]>("new_project_from_psd", { path, meshOptions: meshOptions ?? null }),
   openProject: (path: string) => invoke<ProjectStatus>("open_project", { path }),
+  /** apps/editor/src-tauri/src/module.rs。モジュールのプロジェクトなら本体とスロット、でなければ null。 */
+  moduleStatus: () => invoke<ModuleStatus | null>("module_status"),
+  /** 本体の候補 (.ugoeproj のフォルダーか .ugoe) の名前とスロット。 */
+  readModuleBase: (path: string) => invoke<BaseSummary>("read_module_base", { path }),
+  /** 本体のスロットに付ける空のモジュールのプロジェクトにする (未保存)。 */
+  newModuleProject: (base: string, slot: string, name: string) =>
+    invoke<ProjectStatus>("new_module_project", { base, slot, name }),
+  /** モジュールのプロジェクトを、本体を付け替えて開く (本体が見つからないとき)。 */
+  openModuleWithBase: (path: string, base: string) =>
+    invoke<ProjectStatus>("open_module_with_base", { path, base }),
+  /** モジュールのプロジェクトを .ugoemod に書き出す。 */
+  exportModule: (path: string) => invoke<ModuleExportReport>("export_module", { path }),
   /**
    * 開いた場所に保存する。開いた後で外で書き換えられていたら、`overwrite` でない限り書かずにエラー
    * (lib/externalChange.ts の `isExternalChangeError`)。

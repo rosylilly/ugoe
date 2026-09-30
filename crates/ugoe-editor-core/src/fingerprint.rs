@@ -3,8 +3,10 @@
 //!
 //! - ファイルの監視 (OS の通知) は使わない。WSL 越しのパス (`\\wsl.localhost\...`) やネットワークのドライブでは
 //!   通知が届かないことが多いため。代わりに、開いた (保存した) ときの指紋と、いまのディスクの指紋を比べる。
-//! - 指紋は `Project::load` が読むファイル (`project.json`・`model.json`・`physics.json`・モーション・表情・
+//! - 指紋は `Project::load` が読むファイル (`project.json`・`model.json`・`module.json`・`physics.json`・モーション・表情・
 //!   `textures/*.png`) の、中身のハッシュと大きさ。更新日時だけが変わった (中身が同じ) ファイルは変更としない。
+//! - モジュールのプロジェクトが参照する本体のファイルは含めない。モジュールのプロジェクトは本体を書かず、
+//!   開き直せばそのときの本体と合成し直すので、本体が変わっても保存した内容は失われない (下敷きが古いだけ)。
 //! - PNG は大きいので、大きさと更新日時が前の指紋と同じなら前のハッシュを使い回す ([`ProjectFingerprint::reread`])。
 //!   JSON は毎回読んでハッシュする (更新日時の刻みが粗いファイルシステムでも、編集を見逃さないため)。
 //! - ハッシュは `std` の `DefaultHasher` で、同じプロセスの中で比べるだけ (ファイルには残さない)。
@@ -16,8 +18,8 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use crate::project::{
-    EXPRESSION_SUFFIX, EXPRESSIONS_DIR, MODEL_JSON, MOTION_SUFFIX, MOTIONS_DIR, PHYSICS_JSON,
-    PROJECT_JSON, ProjectError, TEXTURE_SUFFIX, TEXTURES_DIR, io_error, list_files,
+    EXPRESSION_SUFFIX, EXPRESSIONS_DIR, MODEL_JSON, MODULE_JSON, MOTION_SUFFIX, MOTIONS_DIR,
+    PHYSICS_JSON, PROJECT_JSON, ProjectError, TEXTURE_SUFFIX, TEXTURES_DIR, io_error, list_files,
 };
 
 /// プロジェクトのファイルの指紋 (プロジェクトからの相対パス → 中身のハッシュ)。
@@ -60,6 +62,7 @@ impl ProjectFingerprint {
         let mut paths = vec![
             dir.join(PROJECT_JSON),
             dir.join(MODEL_JSON),
+            dir.join(MODULE_JSON),
             dir.join(PHYSICS_JSON),
         ];
         paths.extend(list_files(&dir.join(MOTIONS_DIR), MOTION_SUFFIX)?);

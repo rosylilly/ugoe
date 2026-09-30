@@ -13,6 +13,10 @@ export const PROJECT_FILTER: FileFilter = {
   extensions: ["ugoeproj"],
 };
 export const BUNDLE_FILTER: FileFilter = { name: "ugoe bundle (.ugoe)", extensions: ["ugoe"] };
+export const MODULE_FILTER: FileFilter = {
+  name: "ugoe dress-up module (.ugoemod)",
+  extensions: ["ugoemod"],
+};
 
 /** 拡張子 (大文字小文字は区別しない) がなければ付け足す。 */
 export function withExtension(path: string, extension: string): string {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   BUNDLE_FILTER,
   joinPath,
+  MODULE_FILTER,
   PROJECT_FILTER,
   PSD_FILTER,
   parentDir,
@@ -14,6 +15,7 @@ describe("filters", () => {
     expect(PSD_FILTER.extensions).toEqual(["psd"]);
     expect(PROJECT_FILTER.extensions).toEqual(["ugoeproj"]);
     expect(BUNDLE_FILTER.extensions).toEqual(["ugoe"]);
+    expect(MODULE_FILTER.extensions).toEqual(["ugoemod"]);
   });
 });
 

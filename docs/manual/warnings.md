@@ -18,7 +18,7 @@
 
 | メッセージ | 意味と対処 |
 | --- | --- |
-| `Unsaved changes will be lost. Click again to continue.` | 保存していない変更があります。捨ててよければ、同じボタン (「New」「New from PSD…」「Open…」) をもう一度押します。残したければ先に「Save」を押します |
+| `Unsaved changes will be lost. Click again to continue.` | 保存していない変更があります。捨ててよければ、同じボタン (「New」「New from PSD…」「New Module…」「Open…」) をもう一度押します。残したければ先に「Save」を押します |
 | `…: not a ugoe project (project.json is missing)` | 「Open…」で `.ugoeproj` ではないフォルダを選びました。`project.json` と `model.json` の入った `.ugoeproj` フォルダを選びます |
 | `…: directory is not empty and is not a ugoe project` | 「Save As…」で、中身のある別のフォルダを保存先に選びました (上書きしないように拒否します)。新しい名前を付けます |
 | `path must be absolute: …` | パスが絶対パスではありません。ふつうはダイアログで選ぶので出ません |

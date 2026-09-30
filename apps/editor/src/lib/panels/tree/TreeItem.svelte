@@ -14,6 +14,8 @@ interface Props {
   expanded: boolean;
   renaming: boolean;
   drop: DropMark;
+  /** モジュールのプロジェクトで、本体の要素 (読み取り専用の下敷き)。 */
+  base?: boolean;
   onselect: (e: MouseEvent) => void;
   ontoggle: () => void;
   onrenamestart: () => void;
@@ -29,6 +31,7 @@ let {
   expanded,
   renaming,
   drop,
+  base = false,
   onselect,
   ontoggle,
   onrenamestart,
@@ -69,6 +72,7 @@ function onKeydown(e: KeyboardEvent) {
   class:active
   class:hidden={node.hidden}
   class:mask-only={node.maskOnly}
+  class:base
   class:drop-into={drop?.position === "into"}
   class:drop-above={drop?.position === "above"}
   class:drop-below={drop?.position === "below"}
@@ -114,6 +118,7 @@ function onKeydown(e: KeyboardEvent) {
   {:else}
     <span class="name" title={node.ref.id}>{node.name}</span>
   {/if}
+  {#if base}<span class="badge" title="Part of the base model: read-only in a module project">base</span>{/if}
   {#if node.maskOnly}<span class="badge" title="Mask only: not drawn as color">mask</span>{/if}
   {#if node.hidden}<span class="badge" title="Opacity is 0 at the default parameter values">hidden</span>{/if}
   {#if node.drawOrder !== undefined}<span class="order" title="Draw order">{node.drawOrder}</span>{/if}
@@ -140,6 +145,9 @@ function onKeydown(e: KeyboardEvent) {
 }
 .row.active {
   border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.row.base .name {
+  opacity: 0.55;
 }
 .row.hidden .name {
   opacity: 0.5;

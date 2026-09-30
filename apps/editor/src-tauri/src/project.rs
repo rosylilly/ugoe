@@ -57,6 +57,11 @@ impl ProjectSession {
         (session, document)
     }
 
+    /// `Document` の外の設定 (本体の参照の付け替えなど) を変えたことにする (未保存の印を付ける)。
+    pub(crate) fn mark_meta_modified(&mut self) {
+        self.meta_modified = true;
+    }
+
     /// このプロジェクトのデータを外部の AI サービスに送ってよいか (`ProjectMeta::ai_send_externally`)。
     pub(crate) fn ai_send_externally(&self) -> bool {
         self.meta.ai_send_externally()

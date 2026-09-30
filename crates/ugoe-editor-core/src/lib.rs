@@ -22,6 +22,7 @@ mod inference;
 pub mod keyform;
 pub mod lighting;
 mod mesh_edit;
+pub mod module_project;
 pub mod motion_edit;
 pub mod overflow;
 pub mod physics_check;
@@ -44,9 +45,13 @@ pub use grid::CellError;
 pub use import::{PsdImport, PsdImportError, PsdImportOptions, PsdImportWarning, import_psd};
 pub use inference::{MirrorReport, RederiveWarning};
 pub use keyform::Keyform;
+pub use module_project::{ModuleBase, ModuleContext, ModuleError};
 pub use motion_edit::{Animations, SegmentShape};
 pub use physics_template::{PhysicsTemplate, PhysicsTemplateOptions};
-pub use project::{Project, ProjectError, ProjectMeta, export_bundle};
+pub use project::{
+    ModuleExport, ModuleLink, Project, ProjectError, ProjectKind, ProjectMeta, export_bundle,
+    export_module,
+};
 pub use proposal::{ProposalCommand, ProposalError, ProposalOrigin, ProposalView, Proposals};
 pub use texture::Textures;
 
@@ -78,6 +83,8 @@ mod keyform_tests;
 mod lighting_tests;
 #[cfg(test)]
 mod mesh_edit_tests;
+#[cfg(test)]
+mod module_project_tests;
 #[cfg(test)]
 mod motion_edit_tests;
 #[cfg(test)]

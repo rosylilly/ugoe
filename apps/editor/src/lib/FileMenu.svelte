@@ -15,6 +15,7 @@ import { fileDialogs } from "./fileDialogs";
 import {
   BUNDLE_FILTER,
   joinPath,
+  MODULE_FILTER,
   PROJECT_FILTER,
   PSD_FILTER,
   parentDir,
@@ -25,9 +26,12 @@ import {
   type ExportReport,
   type ExternalChange,
   ipc,
+  type ModuleStatus,
   type ProjectStatus,
   type PsdImportWarning,
 } from "./ipc";
+import { isBaseNotFoundError, moduleLabel, moduleTitle } from "./moduleProject";
+import NewModuleDialog from "./NewModuleDialog.svelte";
 
 interface Props {
   /**
@@ -40,11 +44,25 @@ interface Props {
 
 let { onchange }: Props = $props();
 
-type PathAction = "newFromPsd" | "open" | "saveAs" | "export" | "importPsd";
+type PathAction =
+  | "newFromPsd"
+  | "open"
+  | "saveAs"
+  | "export"
+  | "exportModule"
+  | "importPsd"
+  | "locateBaseProject"
+  | "locateBaseBundle";
 /** 未保存の変更を破棄する操作。 */
-type DiscardAction = "new" | "newFromPsd" | "open";
+type DiscardAction = "new" | "newFromPsd" | "newModule" | "open";
 
 let status = $state<ProjectStatus | null>(null);
+/** モジュールのプロジェクトなら、本体とスロット (docs/editor.md#モジュールのプロジェクト)。 */
+let moduleInfo = $state<ModuleStatus | null>(null);
+/** 新しいモジュールの画面を開いているか。 */
+let newModuleOpen = $state(false);
+/** 本体が見つからずに開けなかったモジュールのプロジェクト (本体を選び直して開く)。 */
+let baseMissing = $state<string | null>(null);
 /** ダイアログを開いているか、その後の処理の途中か。 */
 let busy = $state(false);
 /** 未保存の変更を破棄する操作の確認待ち。 */
@@ -59,7 +77,7 @@ let exportOpen = $state(false);
 /** 最後の書き出しの結果 (テクスチャの枚数と状態の切り替えの変化)。 */
 let exportReport = $state<ExportReport | null>(null);
 /** 最後にダイアログで選んだ場所 (次のダイアログの最初の場所)。 */
-let lastDir: string | null = null;
+let lastDir = $state<string | null>(null);
 /** 外での書き換え (確認のダイアログを開いている間だけ)。 */
 let external = $state<ExternalChange | null>(null);
 /** 保存しようとして外での書き換えが見つかったか (ダイアログで上書きを選べる)。 */
@@ -72,6 +90,7 @@ let autoReload = $state(loadAutoReload());
 export async function refresh() {
   try {
     status = await ipc.projectStatus();
+    moduleInfo = await ipc.moduleStatus();
   } catch (e) {
     message = String(e);
   }
@@ -92,6 +111,7 @@ async function run(
     const result = await task();
     if (result) status = result;
     message = null;
+    moduleInfo = await ipc.moduleStatus();
     if (reload === "replaced") {
       // 別のプロジェクトの設定と結果を見せないよう、書き出しの欄を閉じる
       exportOpen = false;
@@ -118,6 +138,20 @@ function discardConfirmed(kind: DiscardAction): boolean {
 function newProject() {
   notice = null;
   if (discardConfirmed("new")) run(ipc.newProject, "replaced");
+}
+
+function newModule() {
+  notice = null;
+  if (discardConfirmed("newModule")) newModuleOpen = true;
+}
+
+async function createModule(base: string, slot: string, name: string) {
+  // 失敗はダイアログに出す (例外をそのまま返す)
+  status = await ipc.newModuleProject(base, slot, name);
+  newModuleOpen = false;
+  warnings = [];
+  baseMissing = null;
+  await run(async () => undefined, "replaced");
 }
 
 /** ダイアログの最初の場所: 最後に選んだ場所、プロジェクトの隣、ドキュメント (なければホーム) の順。 */
@@ -156,6 +190,25 @@ async function choose(kind: PathAction): Promise<string | null> {
       });
       return path && withExtension(path, "ugoeproj");
     }
+    case "exportModule": {
+      const path = await dialogs.saveFile({
+        title: "Export Module",
+        defaultPath: suggest(`${safeFileName(moduleInfo?.name ?? name)}.ugoemod`),
+        filters: [MODULE_FILTER],
+      });
+      return path && withExtension(path, "ugoemod");
+    }
+    case "locateBaseProject":
+      return dialogs.openDirectory({
+        title: "Locate the base project (.ugoeproj folder)",
+        defaultPath: dir,
+      });
+    case "locateBaseBundle":
+      return dialogs.openFile({
+        title: "Locate the base bundle",
+        defaultPath: dir,
+        filters: [BUNDLE_FILTER],
+      });
     case "export": {
       const path = await dialogs.saveFile({
         title: "Export Bundle",
@@ -183,7 +236,30 @@ function perform(kind: PathAction, path: string): Promise<boolean> {
         return ipc.projectStatus();
       }, "same");
     case "open":
-      return run(() => ipc.openProject(path), "replaced");
+      return run(() => ipc.openProject(path), "replaced").then((ok) => {
+        // モジュールのプロジェクトの本体が見つからなければ、本体を選び直して開けるようにする
+        baseMissing = !ok && isBaseNotFoundError(message) ? path : null;
+        return ok;
+      });
+    case "locateBaseProject":
+    case "locateBaseBundle": {
+      const project = baseMissing;
+      if (!project) return Promise.resolve(false);
+      return run(() => ipc.openModuleWithBase(project, path), "replaced").then((ok) => {
+        if (ok) {
+          baseMissing = null;
+          notice = "Opened with the new base. Save to remember it.";
+        }
+        return ok;
+      });
+    }
+    case "exportModule":
+      return run(async () => {
+        const report = await ipc.exportModule(path);
+        warnings = report.warnings.map((message) => ({ path: [], message }));
+        notice = `Exported to ${path}`;
+        return undefined;
+      }, "none");
     case "saveAs":
       return run(async () => {
         const result = await ipc.saveProjectAs(path);
@@ -310,9 +386,17 @@ refresh();
 <nav class="file-menu">
   <button onclick={newProject} disabled={busy}>New</button>
   <button onclick={() => pick("newFromPsd")} disabled={busy}>New from PSD…</button>
+  <button onclick={newModule} disabled={busy} title="Make a dress-up module for a slot of a base model"
+    >New Module…</button
+  >
   <button onclick={() => pick("open")} disabled={busy}>Open…</button>
   <button onclick={save} disabled={busy}>Save</button>
   <button onclick={() => pick("saveAs")} disabled={busy}>Save As…</button>
+  {#if moduleInfo}
+    <button onclick={() => pick("exportModule")} disabled={busy} title="Check the module against the base and write .ugoemod"
+      >Export Module…</button
+    >
+  {:else}
   <span class="export">
     <button
       onclick={() => (exportOpen = !exportOpen)}
@@ -328,10 +412,18 @@ refresh();
       />
     {/if}
   </span>
+  {/if}
   <button onclick={() => pick("importPsd")} disabled={busy}>Import PSD…</button>
   <span class="project" title={status?.path ?? "not saved yet"}>
     {status?.name ?? "…"}{#if status?.modified}<span class="dirty" aria-label="modified">●</span>{/if}
   </span>
+  {#if moduleInfo}
+    <span class="module" title={moduleTitle(moduleInfo)}>{moduleLabel(moduleInfo)}</span>
+  {/if}
+  {#if baseMissing}
+    <button onclick={() => pick("locateBaseProject")} disabled={busy}>Locate base project…</button>
+    <button onclick={() => pick("locateBaseBundle")} disabled={busy}>Locate base .ugoe…</button>
+  {/if}
   {#if message}<span class="error">{message}</span>{/if}
   {#if notice}<span class="notice" title={notice}>{notice}</span>{/if}
   {#if warnings.length > 0}
@@ -345,6 +437,12 @@ refresh();
     </details>
   {/if}
 </nav>
+<NewModuleDialog
+  open={newModuleOpen}
+  startDir={lastDir ?? (status?.path ? parentDir(status.path) : null)}
+  oncreate={createModule}
+  onclose={() => (newModuleOpen = false)}
+/>
 <ExternalChangeDialog
   change={external}
   modified={status?.modified ?? false}
@@ -376,6 +474,13 @@ refresh();
   .project {
     margin-left: 8px;
     font-weight: 600;
+  }
+  .module {
+    padding: 0 6px;
+    border: 1px solid var(--accent);
+    border-radius: 3px;
+    color: var(--accent);
+    white-space: nowrap;
   }
   .dirty {
     margin-left: 4px;

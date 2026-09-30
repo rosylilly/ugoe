@@ -9,6 +9,7 @@ import { tick, untrack } from "svelte";
 import type { EditorDocument } from "../document.svelte";
 import { EMPTY_TREE_HINT } from "../emptyState";
 import type { EditCommand } from "../ipc";
+import { baseElements, isBaseElement } from "../moduleProject";
 import type { ElementRef, Selection } from "../selection.svelte";
 import {
   buildTree,
@@ -63,6 +64,9 @@ const rows = $derived(flatten(roots, collapsed));
 const rowIndex = $derived(new Map(rows.map((r, i) => [r.node.key, i])));
 const selectedKeys = $derived(new Set(selection.items.map(refKey)));
 const rowId = (key: string) => `tree-row-${key}`;
+/** モジュールのプロジェクトで、本体の要素 (読み取り専用)。 */
+const base = $derived(baseElements(doc.module));
+const isBase = (ref: ElementRef) => isBaseElement(base, ref);
 
 // ドキュメントを読み直したら、消えた要素を選択から外す。
 $effect(() => {
@@ -370,6 +374,7 @@ const dragHint = $derived.by(() => {
         expanded={!collapsed.has(row.node.key)}
         renaming={renaming === row.node.key}
         drop={dropMark(row.node.key)}
+        base={isBase(row.node.ref)}
         onselect={(e) => onRowClick(row, e)}
         ontoggle={() => toggle(row.node.key)}
         onrenamestart={() => (renaming = row.node.key)}

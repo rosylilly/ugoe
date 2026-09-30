@@ -10,12 +10,15 @@ use ugoe_model::expression::Expression;
 use ugoe_model::motion::Motion;
 use ugoe_model::physics::PhysicsSettings;
 use ugoe_model::validate::{ValidationError, validate, validate_physics};
-use ugoe_model::{Canvas, DeformerId, KeyformOrigin, MeshId, Model, ParamId, PartId, TextureRef};
+use ugoe_model::{
+    Canvas, DeformerId, KeyformOrigin, MeshId, Model, Module, ParamId, PartId, TextureRef,
+};
 use ugoe_rigging::{InferError, InferScope, MirrorOptions};
 
 use crate::command::KeyformTarget;
 use crate::grid::{self, CellError};
 use crate::inference::{MirrorReport, RederiveWarning};
+use crate::module_project::{ModuleContext, ModuleError};
 use crate::motion_edit::{self, Animations};
 use crate::texture::{Textures, is_valid_texture_name, png_size};
 use crate::{Command, automesh, avatar, inference, keyform};
@@ -161,6 +164,14 @@ pub enum EditError {
     /// `docs/editor.md#スロットの編集`)。
     #[error("slot `{id}`: {reason}")]
     InvalidSlot { id: String, reason: String },
+    /// モジュールのプロジェクトで、読み取り専用の本体の要素を変えようとした
+    /// (`element` は ``parameter `AngleX` `` のような表記。`docs/editor.md#モジュールのプロジェクト`)。
+    #[error("{element} belongs to the base model and cannot be edited in a module project")]
+    ReadOnlyBase { element: String },
+    /// モジュールのプロジェクトで、編集した結果がモジュールとして表せない
+    /// (本体の要素への参照・接頭辞を外した ID の重なりなど)。
+    #[error("{reason}")]
+    ModuleShape { reason: String },
 }
 
 /// [`Document::apply_with_report`] の結果: コマンドは適用したが、利用者に知らせたいこと。
@@ -194,6 +205,9 @@ pub struct Document {
     next_state: u64,
     /// 最後に保存した状態の番号 (未保存なら `None`)。
     saved: Option<u64>,
+    /// モジュールのプロジェクトなら、本体とスロット (編集中は変わらない。`crate::module_project`)。
+    /// このときモデルは本体と合成した作業用のモデルで、本体の部分は読み取り専用。
+    module: Option<Arc<ModuleContext>>,
 }
 
 /// ある時点のドキュメントの状態。`state` は状態ごとに一意な番号 (変更の有無の判定に使う)。
@@ -228,7 +242,29 @@ impl Document {
             redo: Vec::new(),
             next_state: 1,
             saved: Some(0),
+            module: None,
         }
+    }
+
+    /// 作ったばかりのドキュメントを、モジュールのプロジェクトのものにする (モデルは `context` の作業用のモデル)。
+    pub fn with_module(mut self, context: Arc<ModuleContext>) -> Self {
+        self.module = Some(context);
+        self
+    }
+
+    /// モジュールのプロジェクトなら、その本体とスロット。
+    pub fn module(&self) -> Option<&Arc<ModuleContext>> {
+        self.module.as_ref()
+    }
+
+    /// モジュールのプロジェクトなら、今の状態をモジュールとその画像に分ける。
+    pub fn split_module(&self) -> Option<Result<(Module, Textures), ModuleError>> {
+        let context = self.module.as_ref()?;
+        Some(context.split(
+            &self.current.model,
+            self.current.physics.as_ref(),
+            &self.current.textures,
+        ))
     }
 
     /// 作ったばかりのドキュメントに、モーションと表情を持たせる (保存済みの状態のまま)。
@@ -300,6 +336,7 @@ impl Document {
             redo: Vec::new(),
             next_state: self.next_state,
             saved: None,
+            module: self.module.clone(),
         }
     }
 
@@ -360,6 +397,9 @@ impl Document {
             &mut mirrored,
             &mut next.physics,
         )?;
+        if let Some(context) = &self.module {
+            context.normalize(&mut next.model, &mut touched)?;
+        }
         // 形・テクスチャ・親が変わった元のメッシュに、描画用の複製を追従させる。
         draw_clone::follow(&self.current.model, &mut next.model)?;
         let mut warnings = inference::rederive(&mut next.model, &touched)?;
@@ -391,6 +431,15 @@ impl Document {
         }
         if !introduced.is_empty() {
             return Err(EditError::Invalid(introduced));
+        }
+        if let Some(context) = &self.module {
+            // 本体が変わっていないこと、モジュールとして表せることを確かめる。
+            if !next.animations.motions.is_empty() || !next.animations.expressions.is_empty() {
+                return Err(EditError::ModuleShape {
+                    reason: "a module has no motions or expressions".into(),
+                });
+            }
+            context.split(&next.model, next.physics.as_ref(), &next.textures)?;
         }
         next.state = self.next_state;
         self.next_state += 1;

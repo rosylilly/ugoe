@@ -9,6 +9,7 @@ mod commands;
 mod dress_up;
 mod lighting;
 mod mcp;
+mod module;
 mod overflow;
 mod physics_check;
 mod project;
@@ -86,6 +87,11 @@ pub fn run() {
             project::set_preview_lighting,
             project::export_bundle,
             project::get_model_bundle,
+            module::module_status,
+            module::read_module_base,
+            module::new_module_project,
+            module::open_module_with_base,
+            module::export_module,
             psd::import_psd,
             space::local_to_canvas,
             space::canvas_to_local,
