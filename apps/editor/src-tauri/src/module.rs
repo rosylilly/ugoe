@@ -276,21 +276,48 @@ pub fn check_base_change(state: State<'_, AppState>) -> Result<Option<ExternalCh
 }
 
 /// モジュールのプロジェクトの本体をファイルから読み直す。保存していないモジュールの編集は保ち、Undo の履歴は消す。
+/// `base` なら本体をそのファイルに、`slot` ならスロットをそれに付け替える (本体を動かした・本体からスロットが
+/// なくなったときに、開き直さずに直す。付け替えは保存するまでファイルに書かず、未保存の印が付く)。
 /// 読み直せなければ (`problem`)、ドキュメントはそのまま。
 #[tauri::command]
-pub fn reload_base(state: State<'_, AppState>) -> Result<BaseReload, String> {
+pub fn reload_base(
+    state: State<'_, AppState>,
+    base: Option<String>,
+    slot: Option<String>,
+) -> Result<BaseReload, String> {
+    let base = base.as_deref().map(absolute_path).transpose()?;
     let (mut document, mut session) = lock_both(&state)?;
+    rebase(&mut document, &mut session, base, slot)
+}
+
+/// [`reload_base`] の中身 (テストから呼ぶ)。
+fn rebase(
+    document: &mut Document,
+    session: &mut ProjectSession,
+    base: Option<std::path::PathBuf>,
+    slot: Option<String>,
+) -> Result<BaseReload, String> {
     let context = document
         .module()
         .ok_or("this is not a module project")?
         .clone();
-    let path = context.base().path.clone();
-    let slot = context.slot().id.to_string();
-    let result =
-        load_base(&path).and_then(|base| document.rebase_module(base).map_err(ProjectError::from));
+    let relocated = base.is_some() || slot.is_some();
+    let path = base.unwrap_or_else(|| context.base().path.clone());
+    let new_slot = slot.map(|s| ugoe_model::SlotId::from(s.as_str()));
+    let slot = new_slot
+        .as_ref()
+        .map_or_else(|| context.slot().id.to_string(), ToString::to_string);
+    let result = load_base(&path).and_then(|base| {
+        document
+            .rebase_module_on(base, new_slot.as_ref())
+            .map_err(ProjectError::from)
+    });
     let problem = match result {
         Ok(()) => {
-            session.remember_base(&document);
+            session.remember_base(document);
+            if relocated {
+                session.mark_meta_modified();
+            }
             None
         }
         Err(error) => Some(
@@ -304,9 +331,29 @@ pub fn reload_base(state: State<'_, AppState>) -> Result<BaseReload, String> {
         ),
     };
     Ok(BaseReload {
-        status: status(&session, &document),
+        status: status(session, document),
         problem,
     })
+}
+
+/// モジュールのプロジェクトの本体だけの `.ugoe` のバイト列 (プレビューで、今の編集を書き出したモジュールを付けて
+/// ほかのモジュールと比べる。`docs/editor.md#プレビューの着せ替え`)。
+#[tauri::command]
+pub fn get_preview_base_bundle(state: State<'_, AppState>) -> Result<tauri::ipc::Response, String> {
+    let (document, session) = lock_both(&state)?;
+    let bytes = ugoe_editor_core::export_base_bundle(&session.to_project(&document))
+        .map_err(|e| e.to_string())?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+/// 開いているモジュールのプロジェクトの今の編集を `.ugoemod` のバイト列にする (ファイルには書かない。
+/// プレビューで付けて比べる)。書き出しと同じ検査をし、通らなければエラー。
+#[tauri::command]
+pub fn get_preview_module(state: State<'_, AppState>) -> Result<tauri::ipc::Response, String> {
+    let (document, session) = lock_both(&state)?;
+    let export = ugoe_editor_core::export_module(&session.to_project(&document))
+        .map_err(|e| e.to_string())?;
+    Ok(tauri::ipc::Response::new(export.bytes))
 }
 
 /// 開いているモジュールのプロジェクトを `.ugoemod` として書き出す。書き出す前に、モジュールの検証と
@@ -458,6 +505,45 @@ mod tests {
             .unwrap();
         assert_eq!(problem.kind, ModuleProblemKind::UnknownSlot);
         assert_eq!(problem.base, moved);
+
+        // 開き直さずに本体を選び直す: スロットがなければ問題を返し、ドキュメントはそのまま。
+        document
+            .apply(Command::AddPart {
+                part: ugoe_model::Part {
+                    id: "Brim".into(),
+                    name: "Brim".into(),
+                    parent: None,
+                    keyforms: ugoe_model::KeyformGrid::constant(ugoe_model::part::PartKeyform {
+                        opacity: 1.0,
+                    }),
+                },
+            })
+            .unwrap();
+        let moved_dir = dir.join("moved.ugoeproj");
+        let reload = rebase(&mut document, &mut session, Some(moved_dir.clone()), None).unwrap();
+        assert_eq!(reload.problem.unwrap().kind, ModuleProblemKind::UnknownSlot);
+        assert_eq!(module_status_of(&document).unwrap().slot.id, "Hair");
+        // スロットも選ぶと読み直せる。保存していない編集は残り、本体の場所が変わる。
+        let reload = rebase(
+            &mut document,
+            &mut session,
+            Some(moved_dir.clone()),
+            Some("Outfit".into()),
+        )
+        .unwrap();
+        assert!(reload.problem.is_none());
+        assert!(reload.status.modified);
+        let module = module_status_of(&document).unwrap();
+        assert_eq!(module.slot.id, "Outfit");
+        assert_eq!(module.base, moved_dir.display().to_string());
+        assert!(
+            document
+                .model()
+                .parts
+                .iter()
+                .any(|p| p.id.as_str() == "Hat/Brim")
+        );
+        assert_eq!(session.base_change(&document).unwrap(), None);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

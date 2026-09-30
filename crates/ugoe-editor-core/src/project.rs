@@ -605,6 +605,24 @@ pub fn export_bundle(project: &Project) -> Result<Vec<u8>, ProjectError> {
     ugoe_format::write_bundle(&bundle).map_err(ProjectError::Export)
 }
 
+/// モジュールのプロジェクトの本体だけを `.ugoe` バンドルのバイト列に書き出す (モデル・画像・物理。モーションと
+/// 表情は本体から読まないので含めない)。エディタのプレビューが、本体に今の編集を書き出したモジュールを付けて
+/// ほかのモジュールと比べるために使う (`docs/editor.md#プレビューの着せ替え`、T0651)。
+pub fn export_base_bundle(project: &Project) -> Result<Vec<u8>, ProjectError> {
+    let base = project
+        .module
+        .as_ref()
+        .ok_or(ProjectError::NotAModule)?
+        .base();
+    let mut base_project = Project::new(
+        ProjectMeta::new(base.model.meta.name.clone()),
+        base.model.clone(),
+        base.textures.clone(),
+    );
+    base_project.physics.clone_from(&base.physics);
+    export_bundle(&base_project)
+}
+
 /// [`export_module`] の結果。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleExport {

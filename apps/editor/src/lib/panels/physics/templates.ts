@@ -11,6 +11,8 @@ export interface TemplateInfo {
   parameters: string[];
   /** 作るリグの ID。 */
   rigs: string[];
+  /** なければ `create_missing` によらず作る中継パラメータ (モジュールのプロジェクトでは作れない)。 */
+  relays: string[];
 }
 
 export const TEMPLATES: TemplateInfo[] = [
@@ -21,6 +23,7 @@ export const TEMPLATES: TemplateInfo[] = [
       "The body (BodyAngleX/Y/Z) follows the head (AngleX/Y/Z) late, overshoots a little and settles",
     parameters: ["AngleX", "BodyAngleX", "AngleY", "BodyAngleY", "AngleZ", "BodyAngleZ"],
     rigs: ["BodyFollowX", "BodyFollowY", "BodyFollowZ"],
+    relays: [],
   },
   {
     template: "bounce",
@@ -29,6 +32,7 @@ export const TEMPLATES: TemplateInfo[] = [
       "Turning the head swings the relay parameter BodyBounce, and a second pendulum adds the bounce to BodyAngleX",
     parameters: ["AngleX", "BodyAngleX"],
     rigs: ["BodyBounce", "BodyBounceAngle"],
+    relays: ["BodyBounce"],
   },
   {
     template: "neck_follow",
@@ -36,6 +40,7 @@ export const TEMPLATES: TemplateInfo[] = [
     title: "A neck rotation deformer tilts with the head (AngleZ, AngleX) late",
     parameters: ["AngleZ", "AngleX"],
     rigs: ["NeckFollow"],
+    relays: [],
   },
 ];
 
@@ -44,6 +49,13 @@ export function missingParameters(model: Model, template: PhysicsTemplate): stri
   const have = new Set(model.parameters.map((p) => p.id));
   const info = TEMPLATES.find((t) => t.template === template);
   return info?.parameters.filter((id) => !have.has(id)) ?? [];
+}
+
+/** テンプレートが必ず作る中継パラメータのうち、モデルにないもの (モジュールのプロジェクトでは作れないので使えない)。 */
+export function missingRelays(model: Model, template: PhysicsTemplate): string[] {
+  const have = new Set(model.parameters.map((p) => p.id));
+  const info = TEMPLATES.find((t) => t.template === template);
+  return info?.relays.filter((id) => !have.has(id)) ?? [];
 }
 
 /** 首の追従で傾けられる回転デフォーマ。 */
@@ -55,9 +67,15 @@ function isNeckName(name: string): boolean {
   return name.toLowerCase().includes("neck") || name.includes("首");
 }
 
-/** 既定の首のデフォーマ (ID か名前に neck か「首」を含む最初の回転デフォーマ。physics_template::default_neck と同じ)。 */
-export function defaultNeck(model: Model): string | null {
-  return neckCandidates(model).find((d) => isNeckName(d.id) || isNeckName(d.name))?.id ?? null;
+/**
+ * 既定の首のデフォーマ (ID か名前に neck か「首」を含む最初の回転デフォーマ。physics_template::default_neck と同じ)。
+ * `candidates` を渡すとその中から選ぶ (モジュールのプロジェクトで本体のデフォーマを除いたもの)。
+ */
+export function defaultNeck(
+  model: Model,
+  candidates: readonly { id: string; name: string }[] = neckCandidates(model),
+): string | null {
+  return candidates.find((d) => isNeckName(d.id) || isNeckName(d.name))?.id ?? null;
 }
 
 export function templateCommand(

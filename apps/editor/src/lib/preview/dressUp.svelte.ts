@@ -9,6 +9,8 @@
 // - 読み込んだバイト列を持っておき、WebPuppet を作り直したとき (GPU の喪失など) に読み込み直す。
 // - 一覧 (パスと付けるか) は project.json の editor.dress_up に残す (ipc.setPreviewModules)。ドロップしたファイルで
 //   パスが分からないもの (ブラウザ) は残さない。
+// - モジュールのプロジェクトでは、PreviewMode が本体だけのモデルを描き、今の編集を書き出したモジュールを一覧の先頭の
+//   行 (`own`) として付ける (`setOwn`。T0651)。同じスロットのほかのモジュールと差し替えて比べられる。
 import { ipc } from "../ipc";
 import type { WebPuppet } from "../viewport/wasm";
 import {
@@ -41,6 +43,8 @@ export interface DressUpEntry {
   /** 読み込めたが注意が要ること (代わりの画像を使ったテクスチャなど)。 */
   warnings: string[];
   requires: LoadedModuleInfo["requires"];
+  /** モジュールのプロジェクトの今の編集 (ファイルではない。プロジェクトに残さない)。 */
+  own?: boolean;
 }
 
 /** 読み込むファイル。`bytes` がなければ `path` から読む。 */
@@ -65,6 +69,15 @@ export interface DressUpHost {
   ownSlot?(): string | null;
 }
 
+/** モジュールのプロジェクトの今の編集と同じ名前のモジュールを読み込んだときの説明。 */
+export function sameNameProblem(name: string): DressUpProblem {
+  return {
+    summary: `This file is also named "${name}", like the module you are editing, so only your current edits are shown. Rename one of them to compare.`,
+    detail: `module ${name} has the same name as this module project`,
+    code: "same_name",
+  };
+}
+
 /** モジュールのプロジェクトで、自分のスロットに付けようとしたときの説明。 */
 export function ownSlotProblem(slot: string): DressUpProblem {
   return {
@@ -82,6 +95,8 @@ export class DressUp {
   error = $state<DressUpProblem | null>(null);
   /** ファイルを読んでいる間。 */
   busy = $state(false);
+  /** モジュールのプロジェクトの今の編集を付けて比べられないときの理由 (PreviewMode が設定する)。 */
+  ownProblem = $state<string | null>(null);
 
   /** 一覧をプロジェクトに残した後 (未保存の印が変わる) に呼ぶ。 */
   onsaved: (() => void) | null = null;
@@ -89,6 +104,8 @@ export class DressUp {
   #host: DressUpHost;
   /** 読み込んだモジュールのバイト列 (名前 → 中身)。WebPuppet を作り直したときに読み込み直す。 */
   #bytes = new Map<string, Uint8Array>();
+  /** 今の編集のモジュールの名前 (`setOwn`)。 */
+  #ownName: string | null = null;
 
   constructor(host: DressUpHost) {
     this.#host = host;
@@ -107,6 +124,7 @@ export class DressUp {
       }
     }
     this.#bytes.clear();
+    this.#ownName = null;
     this.notices = [];
     this.error = null;
     try {
@@ -238,6 +256,62 @@ export class DressUp {
     void this.#save();
   }
 
+  /**
+   * モジュールのプロジェクトの今の編集を書き出したもの `bytes` (名前 `name`) を、一覧の先頭の行にする (T0651)。
+   * `null` で除く。`apply` なら WebPuppet に読み込み直して付けたい組に揃える (でなければ次の `loaded` で読み込む)。
+   * 付けるか (`wanted`) は前の行のものを保つ (初めは付ける)。
+   */
+  setOwn(bytes: Uint8Array | null, name: string, apply: boolean): void {
+    const puppet = this.#host.puppet();
+    const old = this.entries.find((e) => e.own);
+    if (old) {
+      this.#bytes.delete(old.name);
+      if (puppet && old.loaded) this.#forget(puppet, old.name);
+    }
+    this.#ownName = bytes === null ? null : name;
+    if (bytes === null) {
+      this.entries = this.entries.filter((e) => !e.own);
+    } else {
+      // 同じ名前のファイルを読み込んでいれば、今の編集に替える (同じ名前は 1 つしか持てない)。
+      for (const entry of this.entries) {
+        if (entry.own || entry.name !== name) continue;
+        // 付けたい組 (プロジェクトに残した一覧) は書き換えない。
+        entry.problem = sameNameProblem(name);
+        if (puppet && entry.loaded) this.#forget(puppet, name);
+      }
+      this.#bytes.set(name, bytes);
+      const row: DressUpEntry = old ?? {
+        name,
+        slot: null,
+        path: null,
+        loaded: false,
+        wanted: true,
+        attached: false,
+        problem: null,
+        warnings: [],
+        requires: {},
+        own: true,
+      };
+      row.name = name;
+      row.loaded = false;
+      row.problem = null;
+      if (!old) this.entries = [row, ...this.entries];
+      const active = this.#puppet();
+      if (apply && active) {
+        try {
+          active.load_module(bytes);
+        } catch (e) {
+          row.problem = describeProblem(e);
+        }
+      }
+    }
+    const active = this.#puppet();
+    if (apply && active) {
+      this.#update(active);
+      this.#reconcile(active);
+    }
+  }
+
   dismissNotice(index: number): void {
     this.notices = this.notices.filter((_, i) => i !== index);
   }
@@ -269,6 +343,8 @@ export class DressUp {
         if (entry) entry.problem = describeProblem(e);
       }
     }
+    // 初めて読み込んだもの (今の編集の行など) も付けたい組に入るよう、行を WebPuppet に合わせる。
+    this.#update(puppet);
     // 読み直しで WebPuppet が外したもの (理由は付け直しを試した DressUpError の code)。
     // 一覧は直前の読み込みのものなので、その後で付け直したものは除く。
     const attached = puppet.attached_modules();
@@ -353,6 +429,18 @@ export class DressUp {
         };
       return null;
     }
+    // 今の編集と同じ名前なら、今の編集を読み込み直して、このファイルは付けない (同じ名前は 1 つしか持てない)。
+    const own = this.#ownName === null ? undefined : this.#bytes.get(this.#ownName);
+    if (name === this.#ownName && own && !entry?.own) {
+      try {
+        puppet.load_module(own);
+      } catch (e) {
+        console.warn("ugoe:", e);
+      }
+      if (entry) entry.problem = sameNameProblem(name);
+      else this.error = sameNameProblem(name);
+      return null;
+    }
     // 名前が変わった (別のモジュールを同じパスに書き出した) なら、前の名前のものを捨てる。
     if (entry?.loaded && entry.name !== name) this.#forget(puppet, entry.name);
     this.#bytes.set(name, bytes);
@@ -431,9 +519,11 @@ export class DressUp {
 
   #afterChange(puppet: WebPuppet): void {
     this.#update(puppet);
-    // 同じスロットの差し替えで外れたものは、付けたい組からも外す。
+    // 同じスロットの差し替えで外れたものは、付けたい組からも外す。自分のスロットで付けなかったもの (モジュールの
+    // プロジェクトで今の編集を付けて比べる前) は、比べ始めたときに付けるよう残す。
+    const own = this.#host.ownSlot?.() ?? null;
     for (const entry of this.entries) {
-      if (entry.loaded) entry.wanted = entry.attached;
+      if (entry.loaded && (own === null || entry.slot !== own)) entry.wanted = entry.attached;
     }
     this.#host.changed(puppet);
   }
@@ -442,6 +532,12 @@ export class DressUp {
   #update(puppet: WebPuppet): void {
     const infos = new Map(this.#infos(puppet).map((m) => [m.name, m]));
     for (const entry of this.entries) {
+      // 今の編集と同じ名前のファイルの行は、今の編集の状態を写さない。
+      if (!entry.own && entry.name === this.#ownName) {
+        entry.loaded = false;
+        entry.attached = false;
+        continue;
+      }
       const info = infos.get(entry.name);
       entry.loaded = info !== undefined;
       entry.attached = info?.attached ?? false;

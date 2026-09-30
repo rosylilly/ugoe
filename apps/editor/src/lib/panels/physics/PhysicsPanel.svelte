@@ -7,7 +7,8 @@
   - リグの一覧・テンプレート (TemplateSection)・選んだリグの編集 (RigEditor)・衝突体 (ColliderSection)。
   - 静止姿勢で衝突体に当たっている鎖があれば、上に警告を出す (RestPoseWarnings)。行を押すとそのリグと衝突体を選ぶ。
   - リグは上から順に処理される。▲▼ で並べ替える (reorder_physics_rig)。前のリグの出力を読むリグには「relay」と出す
-    (docs/spec/physics.md#リグの順序と中継)。
+    (docs/spec/physics.md#リグの順序と中継)。モジュールのプロジェクトでは、本体のリグは動かせず、モジュールのリグは
+    モジュールのリグどうしでだけ並べ替える (canMoveRig)。
   - パネルを開いている間、ビューポートに粒子と衝突体を重ねる (viewport/tools/physics/PhysicsOverlay.svelte)。
 -->
 <script lang="ts">
@@ -15,7 +16,7 @@ import BaseLock from "../../BaseLock.svelte";
 import type { EditorDocument } from "../../document.svelte";
 import type { Command, Model } from "../../ipc";
 import { elementLabel } from "../../labels";
-import { isBaseRig } from "../../moduleProject";
+import { baseElements, canMoveRig, isBaseElement, isBaseRig } from "../../moduleProject";
 import type { Selection } from "../../selection.svelte";
 import type { ViewportController } from "../../viewport/controller.svelte";
 import ColliderSection from "./ColliderSection.svelte";
@@ -60,12 +61,16 @@ $effect(() => {
   if (view.rig !== null && !rig) view.rig = settings?.rigs[0]?.id ?? null;
 });
 
+const base = $derived(baseElements(doc.module));
 /** 選択中の回転デフォーマ (親から子の順)。「From selected deformers」で鎖にする。 */
 const chain = $derived(
   model
     ? chainOrder(
         model,
-        selection.items.filter((r) => r.kind === "deformer").map((r) => r.id),
+        // 本体のデフォーマはモジュールのリグで動かせない。
+        selection.items
+          .filter((r) => r.kind === "deformer" && !isBaseElement(base, r))
+          .map((r) => r.id),
       )
     : [],
 );
@@ -111,6 +116,20 @@ function setWorld(field: "gx" | "gy" | "wx" | "wy" | "fps", raw: number): void {
 function moveRig(id: string, delta: -1 | 1): void {
   const command = moveRigCommand(settings, id, delta);
   if (command) void send(command);
+}
+
+const rigIds = $derived(settings?.rigs.map((r) => r.id) ?? []);
+
+/** ▲▼ の説明 (モジュールのプロジェクトで本体のリグに関わるため動かせないときは、その理由)。 */
+function moveTitle(index: number, delta: -1 | 1): string {
+  const plain = delta < 0 ? "Move up (run earlier)" : "Move down (run later)";
+  const id = rigIds[index];
+  const other = rigIds[index + delta];
+  if (other === undefined || id === undefined) return plain;
+  if (isBaseRig(doc.module, id)) return "The base model's rig order is set in the base project.";
+  if (isBaseRig(doc.module, other))
+    return "A module's rigs run after the base model's rigs; they can only be reordered among themselves.";
+  return plain;
 }
 
 function togglePreview(): void {
@@ -196,15 +215,15 @@ function togglePreview(): void {
           </button>
           <span class="order">
             <button
-              disabled={busy || i === 0}
+              disabled={busy || !canMoveRig(doc.module, rigIds, i, -1)}
               onclick={() => moveRig(r.id, -1)}
-              title="Move up (run earlier)"
+              title={moveTitle(i, -1)}
               aria-label="Move {elementLabel(r.name, r.id)} up">▲</button
             >
             <button
-              disabled={busy || i === settings.rigs.length - 1}
+              disabled={busy || !canMoveRig(doc.module, rigIds, i, 1)}
               onclick={() => moveRig(r.id, 1)}
-              title="Move down (run later)"
+              title={moveTitle(i, 1)}
               aria-label="Move {elementLabel(r.name, r.id)} down">▼</button
             >
           </span>
@@ -229,6 +248,7 @@ function togglePreview(): void {
 {#if model}
   <TemplateSection
     {model}
+    module={doc.module}
     {send}
     {busy}
     onApplied={(rigs) => (view.rig = rigs.find((id) => doc.physics?.rigs.some((r) => r.id === id)) ?? view.rig)}

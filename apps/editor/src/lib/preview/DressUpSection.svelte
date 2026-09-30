@@ -2,6 +2,7 @@
   プレビューの着せ替え (docs/editor.md#プレビューの着せ替え)。`.ugoemod` を読み込み (ボタンか、プレビュー中のウィンドウへの
   ドロップ)、スロットごとに付けるモジュールを選ぶ。付け外しの失敗は DressUpError の code から分かる言葉で出す (dressUp.ts)。
   状態と WebPuppet の操作は DressUp (dressUp.svelte.ts)。モデルは変えない。
+  モジュールのプロジェクトでは、今の編集 (`own` の行) も一覧に出し、同じスロットのモジュールと差し替えて比べられる (T0651)。
 -->
 <script lang="ts">
 import { isTauri } from "@tauri-apps/api/core";
@@ -110,6 +111,7 @@ onMount(() => {
     {dragging ? "Drop to load the modules." : "Try modules on this model. Load a file or drop .ugoemod files onto the window. The model is not changed."}
   </p>
   {#if dressUp.error}<p class="error" title={dressUp.error.detail}>{dressUp.error.summary}</p>{/if}
+  {#if dressUp.ownProblem}<p class="error">{dressUp.ownProblem}</p>{/if}
   {#if dropError}<p class="error">{dropError}</p>{/if}
   {#each dressUp.notices as notice, i (i)}
     <p class="notice">
@@ -146,10 +148,15 @@ onMount(() => {
     <p class="muted">No modules loaded.</p>
   {:else}
     <ul class="modules">
-      {#each dressUp.entries as entry (entry.path ?? entry.name)}
-        <li>
+      {#each dressUp.entries as entry (entry.own ? "#own" : (entry.path ?? entry.name))}
+        <li class:own={entry.own}>
           <div class="module">
-            <label class="check" title={entry.path ?? "Dropped file (not kept in the project)"}>
+            <label
+              class="check"
+              title={entry.own
+                ? "Your current edits (not saved to a file). Swap with other modules of the slot to compare."
+                : (entry.path ?? "Dropped file (not kept in the project)")}
+            >
               <input
                 type="checkbox"
                 checked={entry.attached}
@@ -158,8 +165,10 @@ onMount(() => {
                 onchange={(e) => (e.currentTarget.checked ? dressUp.attach(entry.name) : dressUp.detach(entry.name))}
               />
               <span class="name">{entry.name}</span>
+              {#if entry.own}<span class="badge">editing</span>{/if}
             </label>
             <span class="muted slot-of">{entry.slot ? `→ ${entry.slot}` : ""}</span>
+            {#if !entry.own}
             <button
               class="icon"
               disabled={entry.path === null || dressUp.busy}
@@ -173,6 +182,7 @@ onMount(() => {
               title="Take it off and remove it from the list"
               onclick={() => dressUp.remove(entry.name)}>✕</button
             >
+            {/if}
           </div>
           {#if entry.problem}
             <p class="error">{entry.problem.summary}</p>
@@ -181,7 +191,7 @@ onMount(() => {
             {/if}
           {/if}
           {#each entry.warnings as warning, i (i)}<p class="muted">{warning}</p>{/each}
-          {#if entry.path === null}<p class="muted">Dropped file: not kept in the project.</p>{/if}
+          {#if entry.path === null && !entry.own}<p class="muted">Dropped file: not kept in the project.</p>{/if}
         </li>
       {/each}
     </ul>
@@ -287,6 +297,15 @@ p {
   gap: 6px;
   flex: 1;
   min-width: 0;
+}
+
+.badge {
+  font-size: 10px;
+  padding: 0 4px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  color: var(--accent);
+  white-space: nowrap;
 }
 
 .name {

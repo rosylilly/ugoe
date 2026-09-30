@@ -1,6 +1,7 @@
 <!--
   ライティングのパネル (docs/editor.md#ライティングの画面)。右の列の「Lighting」タブ。
   - モデル全体のライティングの有無 (set_lighting) と、メッシュごとの有無 (set_mesh_properties の lit)。
+    モジュールのプロジェクトでは、本体のメッシュの有無は変えられない (欄を無効にし、まとめての操作からも除く)。
   - 選んだメッシュのテクスチャの法線マップ (NormalMapSection)。
   - プレビューの光源 (PreviewLightsSection)。パネルを開いている間、ビューポートに光源の取っ手を重ねる。
   モデルがライティングを受けないときは、光源を動かしても見た目が変わらない理由を出す。
@@ -10,7 +11,7 @@ import BaseLock from "../../BaseLock.svelte";
 import type { EditorDocument } from "../../document.svelte";
 import type { Command, Model } from "../../ipc";
 import { elementLabel } from "../../labels";
-import { isBaseTexture } from "../../moduleProject";
+import { BASE_EDIT_HINT, isBaseMesh, isBaseTexture } from "../../moduleProject";
 import type { Selection } from "../../selection.svelte";
 import { isLit, lightingHint, litCandidates } from "./lighting";
 import type { LightingView } from "./lightingView.svelte";
@@ -48,10 +49,13 @@ function setLit(ids: string[], lit: boolean): void {
     void doc.apply({ op: "batch", label: lit ? "Light meshes" : "Unlight meshes", commands });
 }
 
+/** 変えられるメッシュ (モジュールのプロジェクトでは、本体のメッシュを除く)。 */
+const editable = $derived(meshes.filter((m) => !isBaseMesh(doc.module, m.id)));
+
 /** 選んでいるメッシュ (なければすべて) の lit を変える。 */
 function setLitForSelection(lit: boolean): void {
   const selected = selection.items.filter((r) => r.kind === "mesh").map((r) => r.id);
-  const targets = selected.length > 0 ? meshes.filter((m) => selected.includes(m.id)) : meshes;
+  const targets = selected.length > 0 ? editable.filter((m) => selected.includes(m.id)) : editable;
   setLit(
     targets.filter((m) => isLit(m) !== lit).map((m) => m.id),
     lit,
@@ -86,23 +90,35 @@ const selectedCount = $derived(selection.items.filter((r) => r.kind === "mesh").
     <h3 class="row">
       <span>Lit meshes</span>
       <span class="buttons">
-        <button onclick={() => setLitForSelection(true)}>{selectedCount > 0 ? "Light selected" : "All on"}</button>
-        <button onclick={() => setLitForSelection(false)}>{selectedCount > 0 ? "Unlight selected" : "All off"}</button>
+        <button disabled={editable.length === 0} onclick={() => setLitForSelection(true)}
+          >{selectedCount > 0 ? "Light selected" : "All on"}</button
+        >
+        <button disabled={editable.length === 0} onclick={() => setLitForSelection(false)}
+          >{selectedCount > 0 ? "Unlight selected" : "All off"}</button
+        >
       </span>
     </h3>
-    <p class="muted note">Turn lighting off for parts that should stay flat, such as eye highlights.</p>
+    <p class="muted note">
+      Turn lighting off for parts that should stay flat, such as eye highlights.
+      {#if doc.module}The base model's meshes are set in the base project; the buttons change only the module's
+        meshes.{/if}
+    </p>
     <ul class="meshes">
       {#each meshes as mesh (mesh.id)}
-        <li class:selected={selection.has({ kind: "mesh", id: mesh.id })}>
+        {@const base = isBaseMesh(doc.module, mesh.id)}
+        <li class:selected={selection.has({ kind: "mesh", id: mesh.id })} class:base>
           <input
             type="checkbox"
             aria-label="Lit: {elementLabel(mesh.name, mesh.id)}"
+            title={base ? BASE_EDIT_HINT : undefined}
+            disabled={base}
             checked={isLit(mesh)}
             onchange={(e) => setLit([mesh.id], (e.currentTarget as HTMLInputElement).checked)}
           />
           <button class="link" onclick={() => selection.set([{ kind: "mesh", id: mesh.id }])}>
             {elementLabel(mesh.name, mesh.id)}
           </button>
+          {#if base}<span class="badge" title="Part of the base model: read-only in a module project">base</span>{/if}
           {#if model.textures[mesh.texture]?.normal_map}<span class="badge" title="Has a normal map">N</span>{/if}
         </li>
       {/each}
@@ -157,6 +173,10 @@ const selectedCount = $derived(selection.items.filter((r) => r.kind === "mesh").
   align-items: center;
   gap: 4px;
   padding: 1px 4px;
+}
+
+.meshes li.base {
+  opacity: 0.65;
 }
 
 .meshes li.selected {

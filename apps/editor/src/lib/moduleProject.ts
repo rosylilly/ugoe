@@ -49,6 +49,7 @@ export const MODULE_CAN: readonly string[] = [
   "Physics rigs and colliders of the module, normal maps of its textures",
   "AI rig proposals for the costume: it follows the base deformers and swaying parts get physics, without new parameters",
   "Move any base parameter with the sliders to check the look",
+  "Preview your current edits on the base and swap them with other modules of the slot",
 ];
 
 /** モジュールのプロジェクトでできないこと (本体のプロジェクトで直すもの・まだ無いもの)。 */
@@ -85,6 +86,27 @@ export function isBaseTexture(module: ModuleStatus | null, name: string): boolea
 /** 物理のリグが本体のものか。 */
 export function isBaseRig(module: ModuleStatus | null, id: string): boolean {
   return module?.base_rigs.includes(id) ?? false;
+}
+
+/** メッシュが本体のものか。 */
+export function isBaseMesh(module: ModuleStatus | null, id: string): boolean {
+  return module?.base_meshes.includes(id) ?? false;
+}
+
+/**
+ * 物理のリグの列 `rigs` の `index` 番目を `delta` だけ動かせるか。モジュールのプロジェクトでは、本体のリグの順は
+ * 変えられず、モジュールのリグは本体のリグの後に続く (合成の順) ので、モジュールのリグどうしでだけ入れ替える。
+ */
+export function canMoveRig(
+  module: ModuleStatus | null,
+  rigs: readonly string[],
+  index: number,
+  delta: -1 | 1,
+): boolean {
+  const id = rigs[index];
+  const other = rigs[index + delta];
+  if (id === undefined || other === undefined) return false;
+  return !isBaseRig(module, id) && !isBaseRig(module, other);
 }
 
 /** 物理の衝突体が本体のものか。 */
@@ -127,9 +149,12 @@ export function baseIsProject(base: string): boolean {
   return !base.toLowerCase().endsWith(".ugoe");
 }
 
-/** 本体の問題の、何が起きてどうすればよいかの説明。 */
+/**
+ * 本体の問題の、何が起きてどうすればよいかの説明。ファイル名は文と続けて読めないよう引用符で囲む
+ * (`The base model "moved.ugoeproj" no longer has…`)。
+ */
 export function describeModuleProblem(problem: ModuleProblem): string {
-  const file = baseFileName(problem.base);
+  const file = `"${baseFileName(problem.base)}"`;
   switch (problem.kind) {
     case "base_not_found":
       return `The base model ${file} is not where this module expects it (${problem.base}). It may have been moved or renamed. Locate it to continue.`;

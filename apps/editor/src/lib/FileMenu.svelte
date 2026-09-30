@@ -2,12 +2,15 @@
 // ファイル操作 (新規・PSD から新規・開く・保存・別名で保存・書き出し・PSD の取り込み) と
 // プロジェクト名・未保存の印。パスは OS のファイルダイアログで選ぶ (docs/editor.md#ファイルダイアログ)。
 // 外でのプロジェクトの書き換えも、ウィンドウに戻ったとき・一定の間隔・保存の前に確かめる (docs/editor.md#外での書き換え)。
-// モジュールのプロジェクトでは、本体の変化も同じ機会に確かめ (BaseChangeDialog)、本体の問題で開けない・読み直せない
-// ときは直し方を出す (ModuleProblemBar)。`Module:` の印を押すとモジュールの設定 (ModuleSettingsDialog)。
+// モジュールのプロジェクトでは、本体の変化も同じ機会に確かめ (BaseChangeDialog。「Reload automatically」なら
+// 尋ねずに読み直す)、本体の問題で開けない・読み直せないときは直し方を出す (ModuleProblemBar)。開いている
+// モジュールの本体・スロットの付け替えは、開き直さずに reload_base で行う (保存していない編集を保つ)。
+// `Module:` の印を押すとモジュールの設定 (ModuleSettingsDialog)。
 import BaseChangeDialog from "./BaseChangeDialog.svelte";
 import ExportPanel from "./ExportPanel.svelte";
 import ExternalChangeDialog from "./ExternalChangeDialog.svelte";
 import {
+  baseAction,
   CHECK_INTERVAL_MS,
   externalAction,
   isExternalChangeError,
@@ -73,8 +76,8 @@ let newModuleOpen = $state(false);
 /**
  * 本体の問題で開けなかった・読み直せなかったモジュールのプロジェクトと、その問題 (直し方を出す)。
  * `project` は付け替えて開き直すプロジェクトの場所 (未保存なら null)。`opening` は開けなかったこと
- * (読み直せなかっただけなら、開き直すと保存していない編集が消える)。`base` は選び直した本体
- * (それでも開けなかったとき。次の直し方でも使う)。
+ * (読み直せなかっただけなら、開き直さずに reload_base で付け替えるので、保存していない編集は残る)。
+ * `base` は選び直した本体 (それでも開けなかったとき。次の直し方でも使う)。
  */
 let problem = $state<{
   project: string | null;
@@ -275,7 +278,8 @@ function perform(kind: PathAction, path: string): Promise<boolean> {
       });
     case "locateBaseProject":
     case "locateBaseBundle":
-      return reopenModule(path, null);
+      // 開いているモジュールなら開き直さずに付け替える (保存していない編集を保つ)
+      return problem?.opening ? reopenModule(path, null) : relocateBase(path, null);
     case "exportModule":
       return run(async () => {
         const report = await ipc.exportModule(path);
@@ -323,12 +327,41 @@ async function reopenModule(base: string | null, slot: string | null): Promise<b
   return ok;
 }
 
+/**
+ * 開いているモジュールのプロジェクトの本体 `base` かスロット `slot` を、開き直さずに付け替える (`base` が null なら、
+ * 前に選び直した本体があればそれ)。保存していない編集は残る。付け替えられなければ、新しい問題を出す。
+ */
+async function relocateBase(base: string | null, slot: string | null): Promise<boolean> {
+  const useBase = base ?? problem?.base ?? null;
+  baseChange = null;
+  try {
+    const result = await ipc.reloadBase(useBase, slot);
+    status = result.status;
+    if (result.problem) {
+      problem = { project: status.path, problem: result.problem, opening: false, base: useBase };
+      message = null;
+      return false;
+    }
+    problem = null;
+    await run(async () => undefined, "reloaded");
+    notice =
+      slot === null
+        ? "Using the new base. Save to remember it."
+        : `Moved to slot ${slot}. Save to remember it.`;
+    return true;
+  } catch (e) {
+    message = String(e);
+    return false;
+  }
+}
+
 /** 本体の問題の枠の「Use this slot」。 */
 async function useSlot(slot: string) {
   if (busy) return;
   busy = true;
   try {
-    await reopenModule(null, slot);
+    if (problem?.opening) await reopenModule(null, slot);
+    else await relocateBase(null, slot);
   } finally {
     busy = false;
   }
@@ -421,16 +454,23 @@ async function checkExternal() {
   else if (action === "ask" && change) askExternal(change, false);
 }
 
-/** モジュールのプロジェクトの本体が変わったか確かめ、変わっていれば尋ねる (保存していなくても確かめる)。 */
+/**
+ * モジュールのプロジェクトの本体が変わったか確かめ、変わっていれば尋ねる (保存していなくても確かめる)。
+ * 「Reload automatically」なら尋ねずに読み直す (保存していないモジュールの編集は残る)。
+ */
 async function checkBase() {
   if (busy || external || baseChange || problem || !moduleInfo) return;
   const change = await ipc.checkBaseChange().catch(() => null);
-  if (!change || change.token === dismissedBaseToken || busy || external) return;
-  baseChange = change;
+  if (busy || external) return;
+  const action = baseAction(change, { autoReload, dismissed: dismissedBaseToken });
+  if (action === "reload" && change) {
+    baseChange = change;
+    await reloadBase(true);
+  } else if (action === "ask") baseChange = change;
 }
 
 /** 本体を読み直す。読み直せなければ、問題と直し方を出す (モジュールはそのまま)。 */
-async function reloadBase() {
+async function reloadBase(auto = false) {
   const token = baseChange?.token ?? null;
   baseChange = null;
   dismissedBaseToken = null;
@@ -447,7 +487,9 @@ async function reloadBase() {
     }
     problem = null;
     await run(async () => undefined, "reloaded");
-    notice = "Reloaded the base model";
+    notice = auto
+      ? "Reloaded the base model: it was changed outside the editor"
+      : "Reloaded the base model";
   } catch (e) {
     message = String(e);
   } finally {
@@ -563,7 +605,7 @@ refresh();
 {#if problem}
   <ModuleProblemBar
     problem={problem.problem}
-    canReopen={problem.project !== null && (problem.opening || !status?.modified)}
+    canReopen={!problem.opening || problem.project !== null}
     {busy}
     onlocate={(kind) => pick(kind === "project" ? "locateBaseProject" : "locateBaseBundle")}
     onchooseslot={useSlot}
@@ -580,7 +622,10 @@ refresh();
 <BaseChangeDialog
   change={baseChange}
   base={moduleInfo?.base ?? ""}
-  onreload={reloadBase}
+  {autoReload}
+  onautoreload={setAutoReload}
+  onreload={() => reloadBase()}
+  onlocate={(kind) => pick(kind === "project" ? "locateBaseProject" : "locateBaseBundle")}
   ondismiss={dismissBase}
 />
 <NewModuleDialog

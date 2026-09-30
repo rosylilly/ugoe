@@ -2,6 +2,7 @@
   モジュールのプロジェクトが本体の問題で開けない・本体を読み直せないときの、問題と直し方 (docs/editor.md#本体の問題の直し方)。
   FileMenu が出す。直し方はバックエンドの問題の種類 (`ModuleProblem.kind`) から選ぶ (moduleProject.ts の moduleProblemFixes):
   本体を選び直す (「Locate base project…」「Locate base .ugoe…」)、別のスロットで開く、本体のプロジェクトを開いて直す。
+  開いているモジュールの本体を読み直せなかったときは、開き直さずに付け替える (保存していない編集は残る。T0651)。
 -->
 <script lang="ts">
 import type { ModuleProblem } from "./ipc";
@@ -9,7 +10,10 @@ import { describeModuleProblem, moduleProblemFixes } from "./moduleProject";
 
 interface Props {
   problem: ModuleProblem;
-  /** 開き直す操作 (本体・スロットの付け替え) ができるか (保存したプロジェクトのとき)。 */
+  /**
+   * 本体・スロットの付け替えができるか (開けなかったプロジェクトは保存した場所から開き直す。開いているプロジェクトは
+   * いつでも付け替えられる)。
+   */
   canReopen: boolean;
   busy: boolean;
   onlocate: (kind: "project" | "bundle") => void;

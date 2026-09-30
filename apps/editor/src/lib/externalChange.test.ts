@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeFiles, externalAction, isExternalChangeError } from "./externalChange";
+import { baseAction, describeFiles, externalAction, isExternalChangeError } from "./externalChange";
 import type { ExternalChange } from "./ipc";
 
 const change: ExternalChange = { files: ["model.json"], missing: false, token: "abc" };
@@ -20,6 +20,17 @@ describe("external change", () => {
     // 消されたプロジェクトは開き直せない
     const missing = { files: [], missing: true, token: "missing" };
     expect(externalAction(missing, { ...clean, autoReload: true })).toBe("ask");
+  });
+
+  it("reloads the base automatically with the same setting, even with unsaved edits", () => {
+    const base = { autoReload: false, dismissed: null };
+    expect(baseAction(null, base)).toBe("none");
+    expect(baseAction(change, base)).toBe("ask");
+    expect(baseAction(change, { ...base, autoReload: true })).toBe("reload");
+    expect(baseAction(change, { autoReload: true, dismissed: "abc" })).toBe("none");
+    // 見つからない本体は選び直すので尋ねる
+    const missing = { files: [], missing: true, token: "base-missing" };
+    expect(baseAction(missing, { ...base, autoReload: true })).toBe("ask");
   });
 
   it("lists a few changed files", () => {

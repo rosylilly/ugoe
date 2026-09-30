@@ -27,6 +27,19 @@ export function externalAction(
   return "ask";
 }
 
+/**
+ * モジュールのプロジェクトの本体の変化への応じ方 (docs/editor.md#本体の変化)。本体の読み直しは保存していない
+ * モジュールの編集を保つので、自動で開き直す設定なら未保存の変更があっても読み直す。本体が見つからなければ尋ねる。
+ */
+export function baseAction(
+  change: ExternalChange | null,
+  context: Omit<ExternalContext, "modified">,
+): ExternalAction {
+  if (!change || change.token === context.dismissed) return "none";
+  if (!change.missing && context.autoReload) return "reload";
+  return "ask";
+}
+
 /** 変わったファイルの短い一覧 (`max` を超えたら「ほか N 件」)。 */
 export function describeFiles(files: string[], max = 3): string {
   if (files.length <= max) return files.join(", ");

@@ -104,10 +104,11 @@ function onValueKeyDown(e: KeyboardEvent) {
     {/each}
   </section>
 
-  <!-- モジュールのプロジェクトでは、自分のスロットはもう埋まっているので出さない (T0650) -->
+  <!-- モジュールのプロジェクトでは、今の編集を付けて比べている間だけ自分のスロットも出す (T0650・T0651。
+       比べられないときは、編集中のモデルで自分のスロットはもう埋まっている) -->
   <DressUpSection
     dressUp={preview.dressUp}
-    slots={(model?.slots ?? []).filter((s) => s.id !== doc.module?.slot.id)}
+    slots={(model?.slots ?? []).filter((s) => preview.comparing || s.id !== doc.module?.slot.id)}
   />
 
   <section aria-label="Face tracking" class="tracking">

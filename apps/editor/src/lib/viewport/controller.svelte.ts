@@ -72,6 +72,8 @@ export class ViewportController {
 
   #puppet: WebPuppet | null = null;
   #model: ViewportModel | null = null;
+  /** プレビュー中だけ代わりに描くモデル (モジュールのプロジェクトの本体だけのもの。setPreviewModel)。 */
+  #previewModel: ViewportModel | null = null;
   /** 次に読み込むモデルでパラメータを既定値から始める (resetParametersOnNextModel)。 */
   #resetOnLoad = false;
   #size = { width: 1, height: 1, dpr: 1 };
@@ -114,7 +116,8 @@ export class ViewportController {
       puppet.set_background(...this.#background);
       this.#applyLighting();
       puppet.resize(this.#pixelWidth(), this.#pixelHeight());
-      if (this.#model) this.#load(this.#model);
+      const shown = this.#shown();
+      if (shown) this.#load(shown);
       this.requestRender();
       this.#scheduleAnimation();
     } catch (e) {
@@ -144,7 +147,25 @@ export class ViewportController {
   setModel(model: ViewportModel): void {
     if (model === this.#model) return;
     this.#model = model;
-    if (this.#puppet) this.#load(model);
+    const shown = this.#shown();
+    if (this.#puppet && shown) this.#load(shown);
+  }
+
+  /**
+   * プレビュー中 (FrameDriver を設定している間) だけ、編集中のモデルの代わりに描くモデル (モジュールのプロジェクトで、
+   * 本体だけのモデルに今の編集のモジュールを付けて比べる。T0651)。`null` で編集中のモデルに戻す。
+   * プレビューを出ると (setDriver(null)) 忘れる。
+   */
+  setPreviewModel(model: ViewportModel | null): void {
+    if (model === this.#previewModel) return;
+    this.#previewModel = model;
+    const shown = this.#shown();
+    if (this.#driver && this.#puppet && shown) this.#load(shown);
+  }
+
+  /** 今描くモデル。 */
+  #shown(): ViewportModel | null {
+    return (this.#driver ? this.#previewModel : null) ?? this.#model;
   }
 
   setParameter(id: string, value: number): void {
@@ -210,8 +231,9 @@ export class ViewportController {
         driver.loaded(puppet);
       }
       this.#scheduleAnimation();
-    } else if (this.#model) {
-      this.#load(this.#model);
+    } else {
+      this.#previewModel = null;
+      if (this.#model) this.#load(this.#model);
     }
     this.animationFrame += 1;
     this.requestRender();

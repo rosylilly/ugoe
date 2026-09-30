@@ -95,6 +95,8 @@ pub fn run() {
             module::module_open_problem,
             module::check_base_change,
             module::reload_base,
+            module::get_preview_base_bundle,
+            module::get_preview_module,
             psd::import_psd,
             space::local_to_canvas,
             space::canvas_to_local,

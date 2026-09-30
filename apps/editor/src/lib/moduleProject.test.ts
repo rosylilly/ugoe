@@ -3,8 +3,10 @@ import type { ModuleProblem, ModuleStatus } from "./ipc";
 import {
   baseElements,
   baseIsProject,
+  canMoveRig,
   describeModuleProblem,
   isBaseElement,
+  isBaseMesh,
   isBaseRig,
   isBaseTexture,
   isValidModuleName,
@@ -145,5 +147,30 @@ describe("module problems", () => {
     expect(describeModuleProblem(problem("base_not_found"))).toContain("moved or renamed");
     expect(describeModuleProblem(problem("unknown_slot"))).toContain('no longer has slot "Hair"');
     expect(describeModuleProblem(problem("does_not_fit"))).toContain("no longer fits");
+    // ファイル名は引用符で囲み、文と続けて読めないようにする。
+    expect(describeModuleProblem(problem("unknown_slot", "/p/moved.ugoeproj"))).toMatch(
+      /^The base model "moved\.ugoeproj" no longer has slot "Hair"\./,
+    );
+  });
+});
+
+describe("rig order in a module project", () => {
+  const module = { base_rigs: ["BaseA", "BaseB"] } as unknown as ModuleStatus;
+  const rigs = ["BaseA", "BaseB", "Hat/Sway", "Hat/Ribbon"];
+  it("reorders only the module's rigs among themselves", () => {
+    expect(canMoveRig(module, rigs, 0, 1)).toBe(false);
+    expect(canMoveRig(module, rigs, 2, -1)).toBe(false);
+    expect(canMoveRig(module, rigs, 2, 1)).toBe(true);
+    expect(canMoveRig(module, rigs, 3, -1)).toBe(true);
+    expect(canMoveRig(module, rigs, 3, 1)).toBe(false);
+    // 本体のモデルのプロジェクトでは、端でなければ動かせる。
+    expect(canMoveRig(null, rigs, 0, 1)).toBe(true);
+    expect(canMoveRig(null, rigs, 0, -1)).toBe(false);
+  });
+  it("knows the base meshes", () => {
+    const m = { base_meshes: ["Face"] } as unknown as ModuleStatus;
+    expect(isBaseMesh(m, "Face")).toBe(true);
+    expect(isBaseMesh(m, "Hat/Brim")).toBe(false);
+    expect(isBaseMesh(null, "Face")).toBe(false);
   });
 });

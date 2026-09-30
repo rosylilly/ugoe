@@ -722,10 +722,16 @@ pub enum Command {
     /// 作業用のモデルをモジュールに分け、新しい設定で本体と合成し直す (ID の接頭辞・描画順の写し方・
     /// 取り付け先が変わる)。本体がスロット・条件を満たさなければ拒否する。`Batch` の中では使えない。
     /// モジュールのプロジェクトでなければ拒否する。
+    ///
+    /// `keep_look` なら、取り付け先の違うスロットに移すとき、モジュールの最上位のデフォーマとメッシュを
+    /// 新しい取り付け先の局所座標に写し直し、基準の姿での見た目を保つ (`ReparentPreservingLook` と同じ写し方。
+    /// T0651)。偽なら局所座標のままで、見た目の位置が変わる。取り付け先が同じなら何もしない。
     SetModuleSettings {
         name: String,
         slot: SlotId,
         requires: ModuleRequirements,
+        #[serde(default)]
+        keep_look: bool,
     },
 }
 

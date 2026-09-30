@@ -318,4 +318,61 @@ describe("DressUp in a module project", () => {
     dressUp.loaded(fake.puppet);
     expect(fake.attached()).toEqual(["Dress"]);
   });
+
+  it("puts the current edits on the own slot and swaps them with other modules (T0651)", async () => {
+    // 本体だけのモデルに付けるとき (PreviewMode が比べている間) は、自分のスロットを除かない。
+    const fake = fakePuppet({ Hat: "Hair", LongHair: "Hair", Dress: "Outfit" });
+    const dressUp = new DressUp({
+      puppet: () => fake.puppet,
+      active: () => true,
+      changed: vi.fn(),
+      ownSlot: () => null,
+    });
+    // 初めは記録だけで、本体を読み込んだ後の loaded で読み込んで付ける。
+    dressUp.setOwn(bytes("Hat"), "Hat", false);
+    expect(fake.attached()).toEqual([]);
+    dressUp.loaded(fake.puppet);
+    expect(fake.attached()).toEqual(["Hat"]);
+    expect(dressUp.entries[0]).toMatchObject({
+      name: "Hat",
+      own: true,
+      attached: true,
+      slot: "Hair",
+    });
+    // 同じスロットのモジュールに差し替え、戻す。
+    await dressUp.add([{ path: "/work/LongHair.ugoemod", bytes: bytes("LongHair") }]);
+    expect(fake.attached()).toEqual(["LongHair"]);
+    expect(entry(dressUp, "Hat")?.wanted).toBe(false);
+    dressUp.setSlot("Hair", "Hat");
+    expect(fake.attached()).toEqual(["Hat"]);
+    // 今の編集はプロジェクトの一覧に残さない。
+    expect(saved.at(-1)).toEqual([{ path: "/work/LongHair.ugoemod", attached: false }]);
+    // 編集の後に取り直すと、付けたまま新しい版に替わる。
+    dressUp.setOwn(bytes("Hat"), "Hat", true);
+    expect(fake.attached()).toEqual(["Hat"]);
+    expect(dressUp.entries.filter((e) => e.own)).toHaveLength(1);
+    // 同じ名前のファイル (前に書き出した版) は、今の編集に替えて付けない。
+    await dressUp.add([{ path: "/work/Hat.ugoemod", bytes: bytes("Hat") }]);
+    expect(dressUp.error?.code).toBe("same_name");
+    expect(entry(dressUp, "Hat")?.own).toBe(true);
+    expect(fake.attached()).toEqual(["Hat"]);
+    // 比べる前 (自分のスロットを除いている間) に揃えても、今の編集を付けたい組は残る。
+    let comparing = false;
+    const later = new DressUp({
+      puppet: () => fake.puppet,
+      active: () => true,
+      changed: vi.fn(),
+      ownSlot: () => (comparing ? null : "Hair"),
+    });
+    later.setOwn(bytes("Hat"), "Hat", false);
+    later.loaded(fake.puppet);
+    expect(entry(later, "Hat")?.wanted).toBe(true);
+    comparing = true;
+    later.loaded(fake.puppet);
+    expect(fake.attached()).toEqual(["Hat"]);
+    // 比べるのをやめると、行を除く。
+    dressUp.setOwn(null, "", true);
+    expect(dressUp.entries.some((e) => e.own)).toBe(false);
+    expect(fake.attached()).toEqual([]);
+  });
 });

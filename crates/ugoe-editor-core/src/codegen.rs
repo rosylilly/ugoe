@@ -823,6 +823,7 @@ pub(crate) fn slot_samples() -> Vec<Command> {
                 slots: vec!["Outfit".into()],
                 parameters: vec!["BodySway".into()],
             },
+            keep_look: true,
         },
     ]
 }

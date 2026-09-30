@@ -55,7 +55,7 @@
 | ライティング | `set_lighting` (`Model::lighting` を変える。[法線マップ](#法線マップ)) |
 | エフェクト | `set_effects` (`Model::effects` を丸ごと置き換える。[エフェクトの設定](#エフェクトの設定)) |
 | 着せ替えのスロット | `add_slot`、`set_slot`、`remove_slot` ([スロットの編集](#スロットの編集)) |
-| モジュールのプロジェクト | `set_module_settings` (名前・スロット・条件。[モジュールの設定](#モジュールの設定)) |
+| モジュールのプロジェクト | `set_module_settings` (名前・スロット・条件と、取り付け先の違うスロットへ見た目を保って移すか `keep_look`。[モジュールの設定](#モジュールの設定)) |
 | キャンバス | `set_canvas` (`width`・`height`・`origin`。大きさは 0 より大きい有限の値。要素の座標は変えない) |
 | キーフォームの推定 | `infer_keyforms`、`mirror_keyforms`、`mark_keyform_authored`、`mark_keyform_derived`、`set_keyform_inference`、`set_mirror_pair` (下の「推定とミラー」)、`set_depth`・`apply_depth_preset` ([深度の編集](#深度の編集)) |
 | モーション・表情 | `add_motion`、`remove_motion`、`rename_motion`、`set_motion_properties`、`add_motion_curve`、`remove_motion_curve`、`set_motion_curve_fade`、`set_motion_key`、`move_motion_key`、`remove_motion_key`、`set_motion_segment`、`set_motion_events`、`add_expression`、`remove_expression`、`rename_expression`、`set_expression_properties`、`set_expression_parameters` ([モーションと表情の編集](#モーションと表情の編集)) |
@@ -503,10 +503,19 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
   モジュールを書き出し直しては本体で試す、を繰り返すためです。パスは `.ugoeproj` と同じフォルダの中なら相対パスで書きます
   ([file-formats.md](spec/file-formats.md#プロジェクト-ugoeproj))。パスの分からないもの (ブラウザでドロップしたもの) は残しません。
   自動で外れたものは、残した一覧を書き換えません (次に開いたときも付けようとして、また知らせる)。
-- **モジュールのプロジェクトのプレビュー (T0650):** 作業用のモデルにはもうそのモジュールが付いているので (`Puppet` から見ると
-  スロットは空に見える)、自分のスロットの行は出さず、自分のスロットのモジュールは付けません (`DressUpHost.ownSlot`。
-  読み込むと、その行に `own_slot` の説明「This project is the module for slot …」を出す)。ほかのスロットのモジュールは付けられるので、
-  ほかの衣装と重ねた見た目を確かめられます。
+- **モジュールのプロジェクトのプレビュー (T0650・T0651):** プレビューの間は、作業用のモデル (本体と合成したもの) の代わりに
+  **本体だけのモデル** (`get_preview_base_bundle`、`ugoe_editor_core::export_base_bundle`) を描き、**今の編集を書き出したモジュール**
+  (`get_preview_module`。`export_module` と同じ検査をし、ファイルには書かない) を一覧の先頭の行 (`DressUpEntry.own`、画面では `editing` の印)
+  として付けます (`PreviewMode` の `comparing`、`ViewportController.setPreviewModel`、`DressUp.setOwn`)。同じスロットのほかの `.ugoemod` と
+  差し替えて見比べられ、ほかのスロットのモジュールとも重ねられます。
+  - 今の編集の行は、除けず・ファイルから読み直さず・プロジェクトの一覧 (`editor.dress_up`) に残しません。付けるかは、差し替えても保ちます。
+  - 編集でドキュメントを読み直すたびに (プレビューの中での編集。`EditorDocument.revision` が変わったとき)、両方を取り直します。本体だけのモデルは、
+    バイト列が変わったとき (本体の読み直しの後) だけ読み込み直します。
+  - 今の編集と同じ名前の `.ugoemod` は付けません (`WebPuppet` は同じ名前のモジュールを 1 つしか持てない。`same_name` の説明「This file is also
+    named …」)。前に書き出した版と見比べるなら、どちらかの名前を変える。
+  - 今の編集を書き出せない (検査に通らない) 間は、理由 (「Your edits can't be put on the base …」) を出し、作業用のモデルを描きます。このときは
+    T0650 と同じく、自分のスロットの行は出さず、そのスロットのモジュールは付けません (`DressUpHost.ownSlot`。`own_slot` の説明)。
+  - 本体だけのモデルには本体の物理がバンドルに入っているので、ドキュメントの物理 (モジュールのものを含む) を `set_physics_json` で渡しません。
 
 ## モジュールのプロジェクト
 
@@ -576,7 +585,9 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
 | `open_module_with_base(path, base, slot)` | 本体 (`base`) かスロット (`slot`) を付け替えて開く (`null` なら `project.json` のまま。`Project::load_module_with`) |
 | `module_open_problem(path, base)` | 本体の問題で開けないなら、問題の種類と直すための情報 (`ModuleProblem`)。`base` なら選び直した本体で確かめる |
 | `check_base_change()` | 本体のファイルが開いた (読み直した) 後で変わったか (`ExternalChange` か `null`) |
-| `reload_base()` | 本体を読み直す。読み直せなければ `problem` 付きで、ドキュメントはそのまま (`BaseReload`) |
+| `reload_base(base, slot)` | 本体を読み直す。`base`・`slot` があれば本体・スロットを付け替える (開き直さない。未保存の印が付く)。読み直せなければ `problem` 付きで、ドキュメントはそのまま (`BaseReload`) |
+| `get_preview_base_bundle()` | 本体だけの `.ugoe` のバイト列 (プレビューで今の編集と比べる。[プレビューの着せ替え](#プレビューの着せ替え)) |
+| `get_preview_module()` | 今の編集の `.ugoemod` のバイト列 (ファイルには書かない。書き出しと同じ検査) |
 
 `ModuleStatus` は、本体のテクスチャ・物理のリグと衝突体・スロット・パラメータ・アバタープロファイルのレベルと、モジュールの条件 (`requires`) も返します
 (画面が本体のものの欄を無効にし、設定の画面で選ばせるため)。
@@ -584,7 +595,7 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
 ### モジュールの設定
 
 モジュールの名前・付けるスロット・本体に求める条件 (`Module::requires`) は、`Module:` の印を押して開く画面 (`ModuleSettingsDialog.svelte`) で
-変えます (T0650)。「Apply」で `Command::SetModuleSettings { name, slot, requires }` を 1 つ送り、1 回の Undo で戻ります。
+変えます (T0650)。「Apply」で `Command::SetModuleSettings { name, slot, requires, keep_look }` を 1 つ送り、1 回の Undo で戻ります。
 
 - `Document::apply_with_report` がこのコマンドだけを先に受け、作業用のモデルを今の設定でモジュールに分け (`split`)、新しい設定の `ModuleContext`
   (`ModuleContext::reconfigured`。本体は同じ) で合成し直します (`workspace`)。本体がスロット・条件を満たさなければ (`compose` のエラー)、何も変えずに拒否します。
@@ -593,9 +604,14 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
   (以前は「編集中は変わらない」ものとして `Document` が直接持っていた)。
 - **名前を変えると ID の接頭辞が変わる:** 作業用のモデルの要素の ID は `<新しい名前>/…` になります (新しく作って接頭辞のなかった要素も、合成し直すと付く)。
   画面は選択を新しい ID に付け替えます (`renamePrefix`、FileMenu の `onrenamemodule`)。
-- **スロットを変えると:** 描画順は新しいスロットの範囲に写し直されます。モジュールの最上位の要素は取り付け先の局所座標のままなので、
-  取り付け先の違うスロットに移すと見た目の位置が変わります (画面が警告を出す。見た目を保って移す操作は無い)。スロットが公開していない
-  パラメータ・マスク・衝突体・ポーズのパーツを使っていれば拒否されます。
+- **スロットを変えると:** 描画順は新しいスロットの範囲に写し直されます。モジュールの最上位の要素は取り付け先の局所座標なので、
+  取り付け先の違うスロットに移すとき:
+  - `keep_look` (画面の「Keep where it appears」、既定で入) なら、合成し直した作業用のモデルで、モジュールの最上位のデフォーマとメッシュの親を
+    いったん前の取り付け先に戻し、`ReparentPreservingLook` と同じ写し方 (`deformer_edit::reparent`。基準の姿で見た目を保つ) で新しい取り付け先の
+    下へ移します (`ModuleContext::keep_look`、T0651)。推定のセルは作り直し (`inference::rederive`)、検証とモジュールへの分割を確かめてから採用します。
+    物理の粒子・衝突体の位置は写し直しません (取り付け先の局所座標のまま)。
+  - `keep_look` でなければ局所座標のままで、見た目の位置が変わります (画面が注意を出す)。
+  スロットが公開していないパラメータ・マスク・衝突体・ポーズのパーツを使っていれば拒否されます。
 - **条件:** アバタープロファイルのレベル (本体が名乗るレベルまで)、ほかのスロット、パラメータを本体のものから選びます。付けるスロットは書きません。
 
 ### 本体のものの表示
@@ -607,14 +623,14 @@ base project.」と示します (`BaseLock.svelte`。`fieldset` の `disabled` �
 | --- | --- |
 | インスペクタ | 主な選択が本体の要素なら、プロパティ・キーフォーム・推定・深度・描画用の複製の欄 (見出しに `base`)。何も選んでいないときのアバタープロファイル |
 | パラメータ | 「+」(モジュールはパラメータを足せない)、定義の編集欄。選んだ要素が本体のものなら ◆ (キーの追加)。スライダーはいつも動かせる |
-| Physics | World (重力・風・頻度)、本体のリグの編集欄、本体の衝突体の編集欄 |
-| Lighting | モデル全体のライティングの有無、本体のテクスチャの法線マップ |
+| Physics | World (重力・風・頻度)、本体のリグの編集欄、本体の衝突体の編集欄。リグの ▲▼ は本体のリグとの入れ替えを無効にする (モジュールのリグは合成で本体のリグの後に並ぶので、モジュールのリグどうしでだけ並べ替える。`canMoveRig`)。「+ From selected deformers」は本体のデフォーマを鎖に入れない。テンプレート (`TemplateSection`) は「Create missing parameters」を無効にし、首の候補から本体のデフォーマを除き、本体にあるリグを作り直すテンプレートと、本体にない中継パラメータ (`BodyBounce`) を作るテンプレートを無効にする (T0651) |
+| Lighting | モデル全体のライティングの有無、本体のテクスチャの法線マップ、「Lit meshes」の本体のメッシュ (`base` の印。「All on」「All off」・「Light selected」はモジュールのメッシュだけを変える。T0651) |
 | Slots | タブ全体 (スロットは本体のもの) |
 | ビューポート | 本体の要素を選ぶと、選択枠を灰色の破線にし、編集のツール (フォームの編集・ギズモ・メッシュの編集) を出さず、「Base model: can't be edited here…」と示す。「Module outline」(既定で入) でモジュールのメッシュすべての輪郭を重ね、本体と見分ける |
 
 - **ID の接頭辞を隠す:** 合成で付いた `<モジュールの名前>/` を、表記 (`labels.ts` の `elementLabel`・`nameOf`・`textureLabel`) から外します
   (`setHiddenIdPrefix`。`EditorDocument.refresh` が設定する)。コマンドに渡す ID はそのままです。
-- 無効にしていない欄から本体を変えようとしても (Lit meshes の本体のメッシュなど)、バックエンドが
+- 無効にしていない欄から本体を変えようとしても、バックエンドが
   `` mesh `face` belongs to the base model and can't be edited here. Edit it in the base project `` で拒否します。
 
 ### 本体の変化
@@ -625,7 +641,11 @@ base project.」と示します (`BaseLock.svelte`。`fieldset` の `disabled` �
   `ProjectSession` が覚えます。確かめる機会は [外での書き換え](#外での書き換え) と同じ (ウィンドウに戻ったとき・5 秒ごと) で、保存していない
   プロジェクトでも確かめます。
 - **確認 (`BaseChangeDialog.svelte`):** 変わっていれば「Reload the base」「Later」。「Later」を選んだ状態は二度尋ねません。本体が見つからなければ
-  (動かした・消した)、保存してから開き直して「Locate base…」を使うよう案内します。
+  (動かした・消した)、「Locate base project…」「Locate base .ugoe…」で開き直さずに本体を選び直せます (`reload_base` に `base`。下の「付け替え」)。
+- **自動の読み直し (T0651):** 外での書き換えの「Reload automatically」と **同じ設定** (`loadAutoReload`) を使い、確認の画面にも同じ欄を出します。
+  入っていれば尋ねずに読み直し、「Reloaded the base model: it was changed outside the editor」と知らせます (`baseAction`)。本体の読み直しは保存していない
+  モジュールの編集を保つので、プロジェクトの自動の読み直しと違い、未保存の変更があっても読み直します。本体が見つからないときは尋ねます。
+  別の設定にしなかったのは、どちらも「外で変わったものを黙って取り込むか」という同じ好みで、欄が増えると分かりにくいためです。
 - **読み直し (`reload_base`、`Document::rebase_module`):** 作業用のモデルを今の本体でモジュールに分け、読み直した本体で合成し直します。保存していない
   モジュールの編集は保ち、保存済みかどうかも保ちます (モジュールの中身は変わらない)。前の状態は古い本体のものなので、Undo の履歴は消します
   (状態の番号は続けるので、AI の提案は古くなったと分かる)。読み直せなければ ([本体の問題の直し方](#本体の問題の直し方))、ドキュメントはそのままです。
@@ -645,7 +665,11 @@ base project.」と示します (`BaseLock.svelte`。`fieldset` の `disabled` �
 - 付け替え (本体・スロット) は `open_module_with_base` で開き直し、保存するまでファイルに書きません (未保存の印)。選び直した本体でも開けなければ
   (スロットがないなど)、その本体で確かめた次の問題を出し、次の直し方でもその本体を使います。
 - 「Open base project」は本体の `.ugoeproj` を開きます (モジュールは閉じる)。本体が `.ugoe` (書き出したもの) なら出しません。
-- 本体を読み直せなかったときの付け替えは、保存していない編集が消えるので、保存していて未保存の変更がないときだけ選べます。
+- **付け替え (T0651):** 開いているモジュールの本体を読み直せなかったとき (本体が変わった・見つからない) の「Locate base…」「Use this slot」は、
+  開き直さずに `reload_base(base, slot)` で付け替えます (`Document::rebase_module_on`。作業用のモデルを今の設定で分け、選んだ本体・スロットで合成し直す)。
+  保存していない編集は残り、Undo の履歴は消えます。付け替えは保存するまでファイルに書かず、未保存の印が付きます。開けなかったプロジェクト
+  (開く途中の問題) は、これまでどおり `open_module_with_base` で開き直します。
+- **説明の文:** 本体のファイル名は引用符で囲みます (`The base model "moved.ugoeproj" no longer has slot "Hair".`)。ファイル名が文と続けて読めてしまうため。
 - **読み取り専用で開く形は作らない:** 本体が無い・合わないと、モジュールの最上位の要素の座標 (取り付け先の局所座標) を表示できず、
   描画順も写せないため、モジュールだけを読み取り専用で見せても役に立ちません。代わりに直し方をすぐ選べるようにしました。
 

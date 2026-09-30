@@ -12,8 +12,8 @@ use ugoe_model::{KeyformGrid, Mesh, Module, Part, PartId};
 use crate::module_project::{ModuleBase, ModuleContext, ModuleError};
 use crate::texture::{Textures, solid_png};
 use crate::{
-    Command, Document, EditError, Project, ProjectError, ProjectKind, ProjectMeta, export_bundle,
-    export_module,
+    Command, Document, EditError, Project, ProjectError, ProjectKind, ProjectMeta,
+    export_base_bundle, export_bundle, export_module,
 };
 
 fn base() -> ModuleBase {
@@ -509,7 +509,14 @@ fn base_can_be_a_bundle() {
     let meta: serde_json::Value =
         serde_json::from_slice(&std::fs::read(dir.join("project.json")).unwrap()).unwrap();
     assert_eq!(meta["module"]["base"], "../../avatar.ugoe");
-    Project::load(&dir).unwrap();
+    let project = Project::load(&dir).unwrap();
+    // プレビューで比べるための本体だけのバンドル (モジュールの要素を含まない)。
+    let base_only = ugoe_format::read_bundle(&export_base_bundle(&project).unwrap()).unwrap();
+    assert_eq!(base_only.model, dress_up_base());
+    assert!(matches!(
+        export_base_bundle(&Project::load(&base_path).unwrap()),
+        Err(ProjectError::NotAModule)
+    ));
 }
 
 #[test]
@@ -527,6 +534,7 @@ fn settings(name: &str, slot: &str, requires: ModuleRequirements) -> Command {
         name: name.to_owned(),
         slot: slot.into(),
         requires,
+        keep_look: false,
     }
 }
 
@@ -716,6 +724,83 @@ fn rebase_keeps_unsaved_module_edits() {
     assert_eq!(
         reopened.module.as_ref().unwrap().slot().id.as_str(),
         "Outfit"
+    );
+    // 開き直さずに、別のスロットで本体を読み直すこともできる (保存していない編集は残る)。
+    document
+        .rebase_module_on(
+            crate::project::load_base(&base_path).unwrap(),
+            Some(&"Outfit".into()),
+        )
+        .unwrap();
+    assert_eq!(document.module().unwrap().slot().id.as_str(), "Outfit");
+    assert!(
+        document
+            .model()
+            .parts
+            .iter()
+            .any(|p| p.id.as_str() == "Hat/Brim")
+    );
+    assert!(document.is_modified());
+}
+
+/// 取り付け先の違うスロットへ移すとき、`keep_look` なら見た目 (基準の姿) を保つ。
+#[test]
+fn module_settings_keep_the_look_when_the_anchor_changes() {
+    // Dress (取り付け先 Torso) を、パラメータとマスクを使わない形にして Hair (取り付け先 Head) へ移す。
+    let mut module = dress_module();
+    module.requires = ModuleRequirements::default();
+    let rest = module.meshes[0].keyforms.keyforms[0].clone();
+    module.meshes[0].keyforms = KeyformGrid::constant(rest);
+    let positions = |document: &Document| -> Vec<Vec2> {
+        let model = document.model().clone();
+        let mut instance = ugoe_runtime::ModelInstance::new(
+            ugoe_runtime::CompiledModel::compile(model.clone()).unwrap(),
+        );
+        instance.update();
+        let index = model
+            .meshes
+            .iter()
+            .position(|m| m.id.as_str() == "Dress/Skirt")
+            .unwrap();
+        instance.drawables()[index].positions.clone()
+    };
+
+    let mut document = self::document(&module);
+    let before = positions(&document);
+    let mut command = settings("Dress", "Hair", ModuleRequirements::default());
+    let Command::SetModuleSettings { keep_look, .. } = &mut command else {
+        unreachable!()
+    };
+    *keep_look = true;
+    document.apply(command).unwrap();
+    assert_eq!(document.module().unwrap().slot().id.as_str(), "Hair");
+    let skirt = document
+        .model()
+        .meshes
+        .iter()
+        .find(|m| m.id.as_str() == "Dress/Skirt")
+        .unwrap();
+    assert_eq!(skirt.parent.as_ref().map(|p| p.as_str()), Some("Head"));
+    for (a, b) in before.iter().zip(positions(&document)) {
+        assert!((*a - b).length() < 1e-3, "{a:?} != {b:?}");
+    }
+    // 分けたモジュールの座標は Head の局所座標になっている (Torso の UV のままではない)。
+    let split = split(&document);
+    assert_ne!(split.meshes[0].keyforms, module.meshes[0].keyforms);
+    assert!(document.undo());
+    assert_eq!(document.module().unwrap().slot().id.as_str(), "Outfit");
+
+    // `keep_look` でなければ局所座標のままなので、見た目が変わる。
+    let mut document = self::document(&module);
+    document
+        .apply(settings("Dress", "Hair", ModuleRequirements::default()))
+        .unwrap();
+    let moved = positions(&document);
+    assert!(
+        before
+            .iter()
+            .zip(&moved)
+            .any(|(a, b)| (*a - *b).length() > 1.0)
     );
 }
 

@@ -395,9 +395,10 @@ impl Document {
             name,
             slot,
             requires,
+            keep_look,
         } = command
         {
-            self.set_module_settings(name, &slot, requires)?;
+            self.set_module_settings(name, &slot, requires, keep_look)?;
             return Ok(ApplyReport::default());
         }
         let mut next = self.current.clone();
@@ -465,12 +466,14 @@ impl Document {
 
     /// [`Command::SetModuleSettings`]: 作業用のモデルをモジュールに分け、新しい名前・スロット・条件で
     /// 本体と合成し直す (`docs/editor.md#モジュールの設定`)。モジュールの要素の座標は取り付け先の局所座標のまま
-    /// なので、取り付け先の違うスロットに移すと見た目の位置が変わる。変わらなければ何もしない。
+    /// なので、取り付け先の違うスロットに移すと見た目の位置が変わる。`keep_look` なら新しい取り付け先の局所座標に
+    /// 写し直して見た目を保つ ([`ModuleContext::keep_look`])。変わらなければ何もしない。
     fn set_module_settings(
         &mut self,
         name: String,
         slot: &SlotId,
         requires: ModuleRequirements,
+        keep_look: bool,
     ) -> Result<(), EditError> {
         let context = self.current.module.as_ref().ok_or(EditError::NotModule)?;
         if context.name() == name && &context.slot().id == slot && *context.requires() == requires {
@@ -482,7 +485,29 @@ impl Document {
             &self.current.textures,
         )?;
         let reconfigured = context.reconfigured(slot, name, requires)?;
-        let workspace = reconfigured.workspace(&module, &images)?;
+        let mut workspace = reconfigured.workspace(&module, &images)?;
+        if keep_look {
+            let mut touched = Vec::new();
+            reconfigured.keep_look(
+                &mut workspace.model,
+                context.slot().anchor.as_ref(),
+                &mut touched,
+            )?;
+            inference::rederive(&mut workspace.model, &touched)?;
+            let before = validate(&self.current.model);
+            let introduced: Vec<_> = validate(&workspace.model)
+                .into_iter()
+                .filter(|e| !before.contains(e))
+                .collect();
+            if !introduced.is_empty() {
+                return Err(EditError::Invalid(introduced));
+            }
+            reconfigured.split(
+                &workspace.model,
+                workspace.physics.as_ref(),
+                &workspace.textures,
+            )?;
+        }
         let next = Snapshot {
             model: workspace.model,
             textures: workspace.textures,
@@ -502,6 +527,17 @@ impl Document {
     /// Undo の履歴は消す。モジュールの中身は変わらないので、保存済みかどうかは保つ。
     /// 本体がスロットや条件を満たさなくなった・モジュールが合わなくなったならエラーで、何も変えない。
     pub fn rebase_module(&mut self, base: ModuleBase) -> Result<(), ModuleError> {
+        self.rebase_module_on(base, None)
+    }
+
+    /// [`Document::rebase_module`] と同じく本体を `base` に替え、`slot` があればスロットも替える
+    /// (本体を選び直した・本体からスロットがなくなったときに、開き直さずに直す。T0651)。
+    /// 取り付け先の局所座標はそのまま使う。
+    pub fn rebase_module_on(
+        &mut self,
+        base: ModuleBase,
+        slot: Option<&SlotId>,
+    ) -> Result<(), ModuleError> {
         let Some(context) = self.current.module.as_ref() else {
             return Err(ModuleError::Shape {
                 reason: "this is not a module project".into(),
@@ -512,9 +548,18 @@ impl Document {
             self.current.physics.as_ref(),
             &self.current.textures,
         )?;
-        let rebased = context.rebased(base)?;
+        let rebased = match slot {
+            Some(slot) => ModuleContext::new(
+                base,
+                slot,
+                context.name().to_owned(),
+                context.requires().clone(),
+            )?,
+            None => context.rebased(base)?,
+        };
         let workspace = rebased.workspace(&module, &images)?;
-        let saved = !self.is_modified();
+        // スロットが替われば `module.json` の中身も変わる。
+        let saved = !self.is_modified() && rebased.slot().id == context.slot().id;
         self.current = Snapshot {
             model: workspace.model,
             textures: workspace.textures,

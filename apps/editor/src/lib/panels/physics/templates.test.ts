@@ -3,6 +3,7 @@ import type { Model } from "../../generated/types";
 import {
   defaultNeck,
   missingParameters,
+  missingRelays,
   neckCandidates,
   TEMPLATES,
   templateCommand,
@@ -31,6 +32,9 @@ describe("physics templates", () => {
     ]);
     expect(missingParameters(model, "bounce")).toEqual([]);
     expect(missingParameters(model, "neck_follow")).toEqual(["AngleZ"]);
+    // 弾みの中継パラメータは create_missing によらず作る (モジュールのプロジェクトでは作れない)。
+    expect(missingRelays(model, "bounce")).toEqual(["BodyBounce"]);
+    expect(missingRelays(model, "body_follow")).toEqual([]);
   });
 
   it("picks a rotation deformer named neck", () => {
@@ -38,6 +42,13 @@ describe("physics templates", () => {
     // ワープは名前に neck があっても選ばない。
     expect(defaultNeck(model)).toBe("Rot2");
     expect(defaultNeck({ ...model, deformers: model.deformers.slice(0, 1) })).toBeNull();
+    // 候補を絞ると (モジュールのプロジェクトで本体のデフォーマを除く)、その中から選ぶ。
+    expect(
+      defaultNeck(
+        model,
+        neckCandidates(model).filter((d) => d.id !== "Rot2"),
+      ),
+    ).toBeNull();
   });
 
   it("builds the command", () => {

@@ -287,6 +287,39 @@ impl ModuleContext {
         Ok(())
     }
 
+    /// 前の取り付け先 `old_anchor` の局所座標のまま合成し直した作業用のモデルで、モジュールの最上位のデフォーマと
+    /// メッシュを、このスロットの取り付け先の局所座標に写し直す (見た目を保って移す。`Command::SetModuleSettings` の
+    /// `keep_look`)。写し方は `ReparentPreservingLook` と同じで、基準の姿で見た目が変わらない。
+    pub(crate) fn keep_look(
+        &self,
+        model: &mut Model,
+        old_anchor: Option<&DeformerId>,
+        touched: &mut Vec<KeyformTarget>,
+    ) -> Result<(), EditError> {
+        let anchor = self.slot.anchor.as_ref();
+        if anchor == old_anchor {
+            return Ok(());
+        }
+        let mut tops = Vec::new();
+        for d in &mut model.deformers {
+            if d.parent.as_ref() == anchor && !self.is_base_deformer(&d.id) {
+                d.parent = old_anchor.cloned();
+                tops.push(ChildRef::Deformer(d.id.clone()));
+            }
+        }
+        for m in &mut model.meshes {
+            if m.parent.as_ref() == anchor && !self.is_base_mesh(&m.id) {
+                m.parent = old_anchor.cloned();
+                tops.push(ChildRef::Mesh(m.id.clone()));
+            }
+        }
+        // 局所座標は前の取り付け先のものなので、親を前の取り付け先に戻した姿から付け替える。
+        for element in &tops {
+            deformer_edit::reparent(model, element, anchor, touched)?;
+        }
+        Ok(())
+    }
+
     /// 作業用のモデル・物理・画像を、モジュールとその画像 (モジュールの中の名前 → PNG) に分ける。
     ///
     /// 本体の部分が本体と同じでなければ [`ModuleError::ReadOnlyBase`]、モジュールとして表せなければ

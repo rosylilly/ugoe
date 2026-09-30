@@ -9,6 +9,9 @@
 // - フェイストラッキング (T0636) はビューアと同じ部品 (@ugoe/face-tracking) を使う。PreviewMode が TrackingTarget になり、
 //   値は `update(dt)` の直前に `set_tracking` で渡す (ビューアの Player と同じ)。プレビューを出るとトラッキングも止まる。
 // - 着せ替え (T0649) は DressUp (dressUp.svelte.ts)。モジュールはプレビューの間だけ付ける。
+// - モジュールのプロジェクトでは、本体だけのモデル (ipc.getPreviewBaseBundle) を描き、今の編集を書き出したモジュール
+//   (ipc.getPreviewModule) を付けて、同じスロットのほかのモジュールと差し替えて比べる (T0651)。編集のたびに取り直す。
+//   書き出せない (検査に通らない) 間は、編集中の (合成した) モデルを描き、自分のスロットにはほかのモジュールを付けない。
 import {
   en,
   FaceTracker,
@@ -17,7 +20,7 @@ import {
   type TrackingTarget,
 } from "@ugoe/face-tracking";
 import type { EditorDocument } from "../document.svelte";
-import type { Expression, Motion } from "../ipc";
+import { type Expression, ipc, type Motion } from "../ipc";
 import type { FrameDriver, PuppetStage, ViewportController } from "../viewport/controller.svelte";
 import type { WebPuppet } from "../viewport/wasm";
 import { DressUp } from "./dressUp.svelte";
@@ -69,6 +72,15 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
   #pendingTracking: TrackingFrame | null = null;
   /** 最後に受け取った値 (モデルを読み直したときに渡し直す)。 */
   #lastTracking: TrackingFrame | null = null;
+  /**
+   * モジュールのプロジェクトで、本体だけのモデルに今の編集を付けて描いているか (自分のスロットの行も出し、
+   * ほかのモジュールと差し替えられる)。
+   */
+  comparing = $state(false);
+  /** 今の編集を取り直した EditorDocument.revision。 */
+  #ownRevision = -1;
+  /** 描いている本体だけのモデル (.ugoe)。 */
+  #baseBundle: Uint8Array | null = null;
 
   constructor(doc: EditorDocument, viewport: ViewportController) {
     this.#doc = doc;
@@ -81,7 +93,7 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
         this.trackingParameterIds = puppet.tracking_parameter_ids();
         this.#sync(puppet);
       },
-      ownSlot: () => this.#doc.module?.slot.id ?? null,
+      ownSlot: () => (this.comparing ? null : (this.#doc.module?.slot.id ?? null)),
     });
     // ヘッドレスのブラウザでの確認のため (記録した値の列の再生など)。
     window.__UGOE_TRACKER__ = this.tracker;
@@ -99,6 +111,7 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
     this.active = true;
     this.#viewport.setDriver(this);
     void this.dressUp.refresh();
+    if (this.#doc.module) void this.#compareOwn();
   }
 
   /** プレビューモードを出て、編集中の姿に戻す。 */
@@ -108,6 +121,10 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
     // 編集の画面には本体だけを出す (付けたい組は覚えておき、次に入ったときに付け直す)。
     this.dressUp.takeOff();
     this.active = false;
+    // 本体だけのモデルは忘れ、編集中のモデルに戻る (setDriver(null) が読み直す)。
+    this.comparing = false;
+    this.#baseBundle = null;
+    this.#ownRevision = -1;
     this.#viewport.setDriver(null);
   }
 
@@ -217,7 +234,8 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
   loaded(puppet: WebPuppet): void {
     const physics = this.#doc.physics;
     let physicsReplaced = false;
-    if (physics && !puppet.has_physics()) {
+    // 本体だけのモデルには、本体の物理がバンドルに入っている (ドキュメントの物理はモジュールのものを含む)。
+    if (physics && !puppet.has_physics() && !this.comparing) {
       try {
         puppet.set_physics_json(JSON.stringify(physics));
         physicsReplaced = true;
@@ -240,6 +258,8 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
     // 読み直すとトラッキングの入力も消えるので、最後の値を渡し直す。
     this.#pendingTracking = this.#lastTracking;
     this.#sync(puppet);
+    // 編集で読み直したなら、今の編集のモジュールを取り直す。
+    if (this.comparing && this.#doc.revision !== this.#ownRevision) void this.#compareOwn();
   }
 
   /** 直前の読み込みの警告 (`load_warnings_json`) を知らせの文にする。 */
@@ -268,6 +288,46 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
   }
 
   // --- 内部 ---
+
+  /**
+   * モジュールのプロジェクトで、本体だけのモデルと今の編集のモジュールを取り、本体に今の編集を付けて描く。
+   * 書き出せなければ理由を出し、編集中の (合成した) モデルに戻す。取る間に編集されたら、その読み込みで取り直す。
+   */
+  async #compareOwn(): Promise<void> {
+    const module = this.#doc.module;
+    if (!module) return;
+    const revision = this.#doc.revision;
+    this.#ownRevision = revision;
+    let base: Uint8Array;
+    let own: Uint8Array;
+    try {
+      [base, own] = await Promise.all([ipc.getPreviewBaseBundle(), ipc.getPreviewModule()]);
+    } catch (e) {
+      if (!this.active || revision !== this.#doc.revision) return;
+      this.dressUp.ownProblem = `Your edits can't be put on the base to compare with other modules: ${e}`;
+      this.#stopComparing();
+      return;
+    }
+    if (!this.active || revision !== this.#doc.revision) return;
+    this.dressUp.ownProblem = null;
+    const comparing = this.comparing;
+    this.comparing = true;
+    // 描いている本体だけのモデルに付けるなら、ここで読み込み直す。初めてなら、本体を読み込んだ後の loaded で読み込む。
+    this.dressUp.setOwn(own, module.name, comparing);
+    if (!comparing || !sameBytes(base, this.#baseBundle)) {
+      this.#baseBundle = base;
+      this.#viewport.setPreviewModel({ json: this.#doc.model?.json ?? "", bundle: base });
+    }
+  }
+
+  /** 今の編集を付けて比べるのをやめ、編集中の (合成した) モデルを描く。 */
+  #stopComparing(): void {
+    const comparing = this.comparing;
+    this.comparing = false;
+    this.#baseBundle = null;
+    this.dressUp.setOwn(null, "", false);
+    if (comparing) this.#viewport.setPreviewModel(null);
+  }
 
   #puppet(): WebPuppet | null {
     const puppet = this.#viewport.puppet;
@@ -312,4 +372,10 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
       if (shown === undefined || Math.abs(shown - value) > EPSILON) this.values[id] = value;
     }
   }
+}
+
+function sameBytes(a: Uint8Array, b: Uint8Array | null): boolean {
+  if (b === null || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }

@@ -2,6 +2,7 @@
   モジュールのプロジェクトの設定 (docs/editor.md#モジュールの設定): 名前・付けるスロット・本体に求める条件 (`requires`)。
   ファイルメニューの `Module: <スロット>` の印を押すと開く。「Apply」で set_module_settings を 1 つ送る (1 回の Undo で戻る)。
   本体がスロットや条件を満たさなければ、バックエンドが拒否し、理由をここに出す。Esc で閉じる。
+  取り付け先の違うスロットに移すときは、見た目を保って移すか (`keep_look`、既定) 局所座標のまま移すかを選ぶ (T0651)。
 -->
 <script lang="ts">
 import type { Command, ModuleStatus } from "./ipc";
@@ -23,6 +24,8 @@ let slot = $state("");
 let avatarLevel = $state<number | null>(null);
 let slots = $state<string[]>([]);
 let parameters = $state<string[]>([]);
+/** 取り付け先の違うスロットに移すとき、見た目 (基準の姿) を保つ。 */
+let keepLook = $state(true);
 let error = $state<string | null>(null);
 let busy = $state(false);
 
@@ -43,6 +46,7 @@ function reset(): void {
   avatarLevel = r.avatar_level;
   slots = r.slots;
   parameters = r.parameters;
+  keepLook = true;
   error = null;
 }
 
@@ -71,6 +75,7 @@ async function apply(): Promise<void> {
         slots: slots.filter((s) => s !== slot),
         parameters,
       },
+      keep_look: anchorChanges && keepLook,
     });
     error = null;
   } catch (e) {
@@ -118,9 +123,21 @@ async function apply(): Promise<void> {
       {#if anchorChanges}
         <p class="warn">
           This slot attaches to {current?.anchor ?? "the canvas"}, not {module.slot.anchor ?? "the canvas"}. The module
-          keeps its coordinates relative to the attachment, so it may appear somewhere else. Check it after applying
-          (Undo goes back).
+          then moves with {current?.anchor ?? "the canvas"}.
         </p>
+        <label class="keep">
+          <input type="checkbox" bind:checked={keepLook} />
+          <span>
+            Keep where it appears (convert its top-level meshes and deformers into the new attachment's coordinates, at
+            the default pose)
+          </span>
+        </label>
+        {#if !keepLook}
+          <p class="muted">
+            The coordinates stay relative to the attachment, so the module may appear somewhere else. Check it after
+            applying (Undo goes back).
+          </p>
+        {/if}
       {/if}
     </fieldset>
 
@@ -191,6 +208,12 @@ async function apply(): Promise<void> {
     text-transform: none;
     letter-spacing: normal;
     color: var(--text);
+  }
+  .keep {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin: 4px 0;
   }
   .row {
     display: flex;

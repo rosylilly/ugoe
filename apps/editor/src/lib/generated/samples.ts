@@ -6599,6 +6599,7 @@ export const commands: Command[] = [
       "parameters": [
         "BodySway"
       ]
-    }
+    },
+    "keep_look": true
   }
 ];

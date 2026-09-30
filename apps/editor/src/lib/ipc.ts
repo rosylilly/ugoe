@@ -86,8 +86,17 @@ export const ipc = {
     invoke<ModuleProblem | null>("module_open_problem", { path, base }),
   /** モジュールのプロジェクトの本体のファイルが、開いた (読み直した) 後で変わったか。変わっていなければ null。 */
   checkBaseChange: () => invoke<ExternalChange | null>("check_base_change"),
-  /** 本体をファイルから読み直す (保存していないモジュールの編集は保ち、Undo の履歴は消す)。 */
-  reloadBase: () => invoke<BaseReload>("reload_base"),
+  /**
+   * 本体をファイルから読み直す (保存していないモジュールの編集は保ち、Undo の履歴は消す)。`base` なら本体を、
+   * `slot` ならスロットを付け替える (開き直さずに直す。保存するまでファイルに書かず、未保存の印が付く)。
+   */
+  reloadBase: (base: string | null = null, slot: string | null = null) =>
+    invoke<BaseReload>("reload_base", { base, slot }),
+  /** モジュールのプロジェクトの本体だけの .ugoe (プレビューで今の編集のモジュールと比べる)。 */
+  getPreviewBaseBundle: async () =>
+    new Uint8Array(await invoke<ArrayBuffer>("get_preview_base_bundle")),
+  /** モジュールのプロジェクトの今の編集の .ugoemod (ファイルには書かない。書き出しと同じ検査に通らなければエラー)。 */
+  getPreviewModule: async () => new Uint8Array(await invoke<ArrayBuffer>("get_preview_module")),
   /** モジュールのプロジェクトを .ugoemod に書き出す。 */
   exportModule: (path: string) => invoke<ModuleExportReport>("export_module", { path }),
   /**
