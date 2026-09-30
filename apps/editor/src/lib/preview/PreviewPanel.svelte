@@ -8,6 +8,8 @@
 import { TrackingPanel } from "@ugoe/face-tracking";
 import type { EditorDocument } from "../document.svelte";
 import type { Model } from "../ipc";
+import type { LightingView } from "../panels/lighting/lightingView.svelte";
+import PreviewLightsSection from "../panels/lighting/PreviewLightsSection.svelte";
 import { formatValue, parseValue } from "../panels/parameterValue";
 import type { ViewportController } from "../viewport/controller.svelte";
 import LicenseDialog from "./LicenseDialog.svelte";
@@ -18,9 +20,11 @@ interface Props {
   preview: PreviewMode;
   doc: EditorDocument;
   viewport: ViewportController;
+  /** プレビューの光源 (ライティングのパネルと共有。docs/editor.md#ライティングの画面)。 */
+  lighting: LightingView;
 }
 
-let { preview, doc, viewport }: Props = $props();
+let { preview, doc, viewport, lighting }: Props = $props();
 
 let filter = $state("");
 let licenses = $state<LicenseDialog | null>(null);
@@ -110,6 +114,10 @@ function onValueKeyDown(e: KeyboardEvent) {
     >
   </section>
   <LicenseDialog bind:this={licenses} />
+
+  {#if viewport.usesLighting}
+    <PreviewLightsSection view={lighting} canvas={model?.meta.canvas ?? { width: 1024, height: 1024 }} />
+  {/if}
 
   <section aria-label="Motions">
     <div class="head">

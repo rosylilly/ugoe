@@ -8,6 +8,7 @@ use std::sync::MutexGuard;
 use serde::Serialize;
 use tauri::State;
 use ts_rs::TS;
+use ugoe_editor_core::lighting::PreviewLighting;
 use ugoe_editor_core::project::PROJECT_EXTENSION;
 use ugoe_editor_core::project::ProjectError;
 use ugoe_editor_core::{
@@ -379,6 +380,31 @@ pub fn set_export_settings(
     if session
         .meta
         .set_export_settings(settings)
+        .map_err(|e| e.to_string())?
+    {
+        session.meta_modified = true;
+    }
+    Ok(status(&session, &document))
+}
+
+/// プロジェクトに残したプレビューの光源 (`project.json` の `editor.lighting`、`docs/editor.md#ライティングの画面`)。
+#[tauri::command]
+pub fn get_preview_lighting(state: State<'_, AppState>) -> Result<PreviewLighting, String> {
+    let (_document, session) = lock_both(&state)?;
+    Ok(session.meta.preview_lighting())
+}
+
+/// プレビューの光源をプロジェクトに残す (保存するまでファイルには書かない。変われば未保存の印が付く)。
+/// Undo の対象ではない。範囲の外ならエラーで、設定はそのまま。
+#[tauri::command]
+pub fn set_preview_lighting(
+    state: State<'_, AppState>,
+    lighting: PreviewLighting,
+) -> Result<ProjectStatus, String> {
+    let (document, mut session) = lock_both(&state)?;
+    if session
+        .meta
+        .set_preview_lighting(lighting)
         .map_err(|e| e.to_string())?
     {
         session.meta_modified = true;

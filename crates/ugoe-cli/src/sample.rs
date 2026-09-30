@@ -1068,6 +1068,7 @@ impl Rig {
             masks: Some(vec![MaskRef::normal(white)]),
             mask_mode: None,
             mask_only: None,
+            lit: None,
         })?;
         let range = white_rect.size() * Vec2::new(0.22, 0.12);
         let target = KeyformTarget::Mesh(iris);

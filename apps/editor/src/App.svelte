@@ -7,6 +7,8 @@
   Undo / Redo のショートカット (lib/shortcuts.ts) もここで受ける。
   ヘッダーの「Settings」は AI の設定 (lib/ai/SettingsDialog.svelte)。外部の AI に送る前の確認
   (lib/ai/ConsentDialog.svelte) もここに置く。
+  上の区画の「Lighting」タブはライティングの操作 (lib/panels/lighting/)。開いている間とプレビュー中は、ビューポートに
+  光源の取っ手を重ねる。プレビューの光源 (LightingView) はいつもビューポートに渡す (docs/editor.md#ライティングの画面)。
   上の区画の「AI」タブは AI の提案 (lib/ai/ProposalsPanel.svelte)。提案をプレビューしている間は、ビューポートに
   提案を適用した複製を渡し、編集のツールを隠す (docs/editor.md#ai-の提案)。
   ヘッダーの「Agents」はエディタにつないだエージェント (lib/agents/。設定の「Connect agents」) の状態。エージェントの
@@ -29,6 +31,8 @@ import HelpButton from "./lib/HelpButton.svelte";
 import { type AppInfo, ipc } from "./lib/ipc";
 import { loadSplit, saveSplit, splitAt, splitByKey } from "./lib/layout";
 import InspectorPanel from "./lib/panels/InspectorPanel.svelte";
+import LightingPanel from "./lib/panels/lighting/LightingPanel.svelte";
+import { LightingView } from "./lib/panels/lighting/lightingView.svelte";
 import ParametersPanel from "./lib/panels/ParametersPanel.svelte";
 import PhysicsPanel from "./lib/panels/physics/PhysicsPanel.svelte";
 import { PhysicsView } from "./lib/panels/physics/physicsView.svelte";
@@ -42,6 +46,7 @@ import { Selection } from "./lib/selection.svelte";
 import { historyShortcut, isMac, isTextEntry } from "./lib/shortcuts";
 import { ViewportController } from "./lib/viewport/controller.svelte";
 import ToolOverlay from "./lib/viewport/ToolOverlay.svelte";
+import LightingOverlay from "./lib/viewport/tools/lighting/LightingOverlay.svelte";
 import Viewport from "./lib/viewport/Viewport.svelte";
 
 const doc = new EditorDocument();
@@ -51,6 +56,7 @@ const physics = new PhysicsView();
 const verify = new VerifyView();
 const preview = new PreviewMode(doc, viewport);
 const proposals = new ProposalsView(doc);
+const lighting = new LightingView();
 let info = $state<AppInfo | null>(null);
 let fileMenu = $state<FileMenu>();
 let settings = $state<SettingsDialog>();
@@ -59,6 +65,11 @@ ipc.appInfo().then((i) => {
   info = i;
 });
 doc.refresh();
+void lighting.load();
+lighting.onsaved = () => fileMenu?.refresh();
+
+// プレビューの光源をビューポートに渡す (編集中もプレビュー中も)。
+$effect(() => viewport.setLighting(lighting.json));
 
 // エディタにつないだエージェント: 確認の求め・文書と提案の変化を受ける。
 onMount(() => {
@@ -80,6 +91,7 @@ function openProposals(): void {
   proposals.fresh = false;
   physics.active = false;
   verify.active = false;
+  lighting.active = false;
 }
 
 const mac = isMac(navigator.platform);
@@ -151,6 +163,7 @@ $effect(() => {
         if (!reloaded) viewport.fit();
         if (replaced) viewport.resetParametersOnNextModel();
         doc.refresh();
+        void lighting.load();
       }}
     />
     <span class="spacer"></span>
@@ -182,6 +195,9 @@ $effect(() => {
           {#if proposals.preview}
             <p class="proposal-banner">Previewing an AI proposal. The model is unchanged until you adopt it.</p>
           {:else if !preview.active}<ToolOverlay {controller} {doc} {selection} {physics} {verify} />{/if}
+          {#if !proposals.preview && (lighting.active || preview.active)}
+            <LightingOverlay {controller} {doc} view={lighting} />
+          {/if}
         {/snippet}
       </Viewport>
     </div>
@@ -190,13 +206,16 @@ $effect(() => {
   <aside class="right" bind:this={rightColumn}>
     <div class="pane inspector" style:flex-basis="{split * 100}%">
       <div class="tabs" role="tablist">
-        <button role="tab" aria-selected={!physics.active && !verify.active && !proposals.active}
-          class:current={!physics.active && !verify.active && !proposals.active}
-          onclick={() => ((physics.active = false), (verify.active = false), (proposals.active = false))}>Inspector</button>
+        <button role="tab" aria-selected={!physics.active && !verify.active && !proposals.active && !lighting.active}
+          class:current={!physics.active && !verify.active && !proposals.active && !lighting.active}
+          onclick={() => ((physics.active = false), (verify.active = false), (proposals.active = false), (lighting.active = false))}>Inspector</button>
         <button role="tab" aria-selected={physics.active} class:current={physics.active}
-          onclick={() => ((physics.active = true), (verify.active = false), (proposals.active = false))}>Physics</button>
+          onclick={() => ((physics.active = true), (verify.active = false), (proposals.active = false), (lighting.active = false))}>Physics</button>
+        <button role="tab" aria-selected={lighting.active} class:current={lighting.active}
+          title="Lighting, normal maps and preview lights"
+          onclick={() => ((lighting.active = true), (physics.active = false), (verify.active = false), (proposals.active = false))}>Lighting</button>
         <button role="tab" aria-selected={verify.active} class:current={verify.active}
-          onclick={() => ((verify.active = true), (physics.active = false), (proposals.active = false))}>Verify</button>
+          onclick={() => ((verify.active = true), (physics.active = false), (proposals.active = false), (lighting.active = false))}>Verify</button>
         <button role="tab" aria-selected={proposals.active} class:current={proposals.active}
           class:fresh={proposals.fresh}
           title={proposals.fresh ? "An agent made a new proposal" : "Classify PSD layers and review rig proposals"}
@@ -210,6 +229,8 @@ $effect(() => {
         <VerifyPanel {doc} {selection} {viewport} view={verify} {physics} />
       {:else if physics.active}
         <PhysicsPanel {doc} {selection} {viewport} view={physics} />
+      {:else if lighting.active}
+        <LightingPanel {doc} {selection} view={lighting} />
       {:else}
         <InspectorPanel {doc} {selection} {viewport} />
       {/if}
@@ -239,7 +260,7 @@ $effect(() => {
   </aside>
   {#if preview.active}
     <aside class="preview">
-      <PreviewPanel {preview} {doc} {viewport} />
+      <PreviewPanel {preview} {doc} {viewport} {lighting} />
     </aside>
   {/if}
 </div>

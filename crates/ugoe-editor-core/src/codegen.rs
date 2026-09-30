@@ -271,6 +271,7 @@ fn sample_commands() -> Vec<Command> {
             masks: None,
             mask_mode: None,
             mask_only: None,
+            lit: None,
         },
         Command::SetMeshProperties {
             id: mid.clone(),
@@ -281,6 +282,7 @@ fn sample_commands() -> Vec<Command> {
             masks: Some(vec![MaskRef::inverted(mid.clone())]),
             mask_mode: Some(MaskMode::Intersection),
             mask_only: Some(false),
+            lit: Some(false),
         },
         Command::SetMeshParent {
             id: mid.clone(),

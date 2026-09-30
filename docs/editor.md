@@ -721,7 +721,37 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
   - 名前はテクスチャの名前と同じ規則で、テクスチャの名前と (大文字小文字を区別せずに) 重なってはいけません (`DuplicateId`)。ほかの法線マップの名前とは、大文字小文字まで一致するか、まったく違う名前にします。
   - どのテクスチャからも指されなくなった法線マップの画像は表から除きます。Undo で画像も戻ります。
 - `set_lighting` はモデル全体のライティングの有無 (`Model::lighting`) を変えます。メッシュごとの `lit` (既定 `true`) と両方が `true` のメッシュだけがライティングを受けます。
-- 法線マップの生成 (アルファの形・深度推定から) は `ugoe_ai::normal` が `set_normal_map` と `set_lighting` の列を提案します ([ai-integration.md#法線マップの生成](ai-integration.md#法線マップの生成))。エディタの画面からの呼び出しは T0637 (AI の提案のプレビューと採用) で扱います。
+- `set_mesh_properties` の `lit` でメッシュごとの有無を変えます (目のハイライトなど、陰影を付けたくない部分を外す)。
+- 法線マップの生成 (アルファの形・深度推定から) は `ugoe_ai::normal` が `set_normal_map` と `set_lighting` の列を提案します ([ai-integration.md#法線マップの生成](ai-integration.md#法線マップの生成))。
+  エディタの画面からは、AI を使わないアルファの形からの生成だけを [ライティングの画面](#ライティングの画面) で行います。
+
+### ライティングの画面
+
+T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/tools/lighting/` (取っ手)・`src-tauri/src/lighting.rs`、
+コマンドの組み立ては `ugoe_editor_core::lighting`。操作の手順は [manual/lighting.md](manual/lighting.md)。
+
+- 右の列の「Lighting」タブ。モデルの「Receive lighting」(`set_lighting`) と、メッシュごとの「Lit」(`set_mesh_properties { lit }`。
+  選んだメッシュか、選んでいなければすべてを「Light selected」「All on」などでまとめて `batch` で変える) を置きます。
+  モデルがライティングを受けない (`Model::lighting` が偽か、`lit` のメッシュがない) ときは、光源を動かしても見た目が変わらない理由を出します。
+- **法線マップ:** 主な選択のメッシュのテクスチャについて、テクスチャと法線マップの画像を並べて出し (`get_texture_png(name)` で PNG を読む)、
+  - 「Generate」(`generate_texture_normal_map(texture, settings)`): アルファの形からのふくらみ (`ugoe_rigging::bulge_normal_map`。AI は使わない)。
+    `BulgeSettings { strength, edge, smoothing }` の強さ (0〜2、画面の既定 0.5) と「Round edges only」の縁の丸みの幅 (`edge`、画素) を選べます。
+  - 「Assign PNG…」(`assign_texture_normal_map(texture, path, flip_green)`): 開くのダイアログで選んだ PNG を付けます。「Flip green (DirectX)」は G を反転します。
+  - どちらも `set_normal_map` (モデルのライティングが無効なら `set_lighting { enabled: true }` も) を 1 つの `batch` にして適用するので、1 回の Undo で画像ごと戻ります。
+    画像の名前は、今の法線マップをこのテクスチャだけが指していればその名前 (差し替え)、共有していれば `<texture>_normal` (重なれば `_normal2`…) です (`lighting::normal_map_name`)。
+  - 「Remove normal map」は `set_normal_map { normal_map: null }`。
+- **プレビューの光源:** 光源はモデルに入らない (ホストが渡す、[rendering.md#ライティング](spec/rendering.md#ライティング)) ので、コマンドではなく
+  `project.json` の `editor.lighting` (`PreviewLighting`、[file-formats.md](spec/file-formats.md#プロジェクト-ugoeproj)) にプロジェクトの表示の設定として残します
+  (`get_preview_lighting` / `set_preview_lighting`。Undo の対象ではなく、変えると未保存の印が付く。既定値なら書かない)。
+  - 既定は、環境光 0.45 と左上の手前からの白い平行光源 1 つ (強さ 0.7)。色 (0〜1) と強さを別に持ち、`WebPuppet.set_lighting_json` には掛けた色を渡します (`lighting.ts` の `lightingJson`、Vitest)。
+  - `LightingView` (`lightingView.svelte.ts`) が設定を持ち、`App.svelte` が `ViewportController.setLighting` でいつもビューポートに渡します
+    (編集中もプレビュー中も。「Light the viewport」を外すと光源を渡さない)。`ViewportController` は WebPuppet を作り直しても渡し直し、
+    読み込むたびに `uses_lighting` を `usesLighting` に写します。
+  - 取っ手 (`LightingOverlay.svelte`) は「Lighting」タブを開いている間とプレビュー中に出します。平行光源はキャンバスの中央の円の上で、光源のある向き
+    (`l = −normalize(direction)` の xy。中心が正面から、縁が真横から) に置き、ドラッグで向きを変えます (「From behind the canvas」で裏から)。
+    点光源はキャンバスの上の位置に置き、ドラッグで動かします (奥行き z と届く距離 `range` はパネルの欄)。ドラッグ中は表示だけを変え、離したときに残します。
+  - プレビューのパネルにも同じ光源の節を出します (モデルがライティングを受けるときだけ)。
+
 
 ## エフェクトの設定
 
@@ -752,6 +782,8 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 | `check_external_change` | 開いた (最後に保存した) 後で保存先のファイルが外で変わったか (`ExternalChange \| null`) |
 | `save_project_as(path)` | 別の場所に保存し、以後の保存先にする。拡張子 `.ugoeproj` がなければ付け、名前をディレクトリ名にする |
 | `get_export_settings` / `set_export_settings(settings)` | 書き出しの設定 (`ExportSettings`) を読む / プロジェクトに残す ([書き出し](#書き出し))。範囲の外はエラー |
+| `get_preview_lighting` / `set_preview_lighting(lighting)` | プレビューの光源 (`PreviewLighting`) を読む / プロジェクトに残す ([ライティングの画面](#ライティングの画面))。範囲の外はエラー |
+| `generate_texture_normal_map(texture, settings)` / `assign_texture_normal_map(texture, path, flip_green)` / `get_texture_png(name)` | 法線マップの生成・PNG の割り当て (どちらも 1 回の Undo) と、テクスチャか法線マップの画像の PNG。`src-tauri/src/lighting.rs` |
 | `export_bundle(path)` | プロジェクトの書き出しの設定で `.ugoe` ファイルに書き出し (アトラス化は任意)、`ExportReport` を返す。保存状態は変えない |
 | `import_psd(path, mesh_options?)` | PSD ファイルを今のドキュメントに取り込み ([PSD の取り込み](#psd-の取り込み)、Undo の 1 単位)、警告 (`PsdImportWarning[]`) を返す。最上位のパーツの名前はファイル名。`src-tauri/src/psd.rs` |
 

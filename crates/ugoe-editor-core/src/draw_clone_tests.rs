@@ -385,6 +385,7 @@ fn clone_keeps_its_own_draw_order_masks_and_opacity() {
             masks: Some(vec![ugoe_model::MaskRef::inverted("Sleeve")]),
             mask_mode: None,
             mask_only: None,
+            lit: None,
         },
     ] {
         model = applied(&model, command);

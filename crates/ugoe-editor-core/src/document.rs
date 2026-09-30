@@ -646,6 +646,7 @@ fn apply_to(
             masks,
             mask_mode,
             mask_only,
+            lit,
         } => {
             let m = mesh(model, &id)?;
             if let Some(part) = part {
@@ -668,6 +669,9 @@ fn apply_to(
             }
             if let Some(mask_only) = mask_only {
                 m.mask_only = mask_only;
+            }
+            if let Some(lit) = lit {
+                m.lit = lit;
             }
         }
         Command::SetMeshParent { id, parent } => mesh(model, &id)?.parent = parent,

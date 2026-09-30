@@ -53,6 +53,9 @@ export class WebPuppet {
   set_background(r: number, g: number, b: number, a: number): void;
   render(): void;
 
+  set_lighting_json(json?: string | null): void;
+  uses_lighting(): boolean;
+
   fit(): void;
   set_view(zoom: number, pan_x: number, pan_y: number): void;
   zoom(): number;

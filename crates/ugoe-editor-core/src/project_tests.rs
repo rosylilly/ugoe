@@ -705,6 +705,7 @@ fn remove_texture_rejects_used_and_shifts_indices() {
         masks: None,
         mask_mode: None,
         mask_only: None,
+        lit: None,
     })
     .unwrap();
     doc.apply(Command::RemoveTexture {
@@ -860,6 +861,7 @@ fn remove_texture_drops_its_unused_normal_map() {
         masks: None,
         mask_mode: None,
         mask_only: None,
+        lit: None,
     })
     .unwrap();
     doc.apply(Command::RemoveTexture {

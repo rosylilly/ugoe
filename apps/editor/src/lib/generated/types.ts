@@ -294,6 +294,23 @@ connected_at: number, };
 export type BridgeEvent = { "kind": "status" } | { "kind": "approval", request: ApprovalRequest, } | { "kind": "approval_closed", id: number, } | { "kind": "document" } | { "kind": "proposals" };
 
 /**
+ * アルファの形からの法線マップの生成の設定 (`ugoe_rigging::BulgeOptions` のうち画面で選ぶもの)。
+ */
+export type BulgeSettings = { 
+/**
+ * ふくらみの強さ (高さと幅の比)。1 で断面が円、0 で平ら。
+ */
+strength: number, 
+/**
+ * 縁の丸みの幅 (テクスチャの画素)。縁だけが丸まり中は平らになる。`None` なら形全体を 1 つのふくらみにする。
+ */
+edge: number | null, 
+/**
+ * 高さをならすぼかしの標準偏差 (画素)。
+ */
+smoothing: number, };
+
+/**
  * キャンバス。モデル座標系は「キャンバス左上原点・ピクセル単位・Y 下向き」。
  * 表示時の正規化 (高さ 2.0 の NDC 相当など) は描画側の責務。
  */
@@ -353,7 +370,11 @@ export type ColliderShape = { "type": "circle", center: Vec2, radius: number, } 
  *
  * 削除時の連鎖 (カスケード) と拒否の規則は `docs/editor.md#コマンド` にある。
  */
-export type Command = { "op": "add_parameter", parameter: Parameter, } | { "op": "remove_parameter", id: string, } | { "op": "set_parameter_range", id: string, min: number, default: number, max: number, } | { "op": "batch", label: string, commands: Array<Command>, } | { "op": "rename_parameter", id: string, name: string, } | { "op": "set_parameter_group", id: string, group: string | null, } | { "op": "set_parameter_mirror", id: string, mirror: string | null, } | { "op": "add_part", part: Part, } | { "op": "remove_part", id: string, } | { "op": "rename_part", id: string, name: string, } | { "op": "set_part_parent", id: string, parent: string | null, } | { "op": "set_part_keyforms", id: string, keyforms: KeyformGrid<PartKeyform>, } | { "op": "add_deformer", deformer: Deformer, } | { "op": "remove_deformer", id: string, } | { "op": "rename_deformer", id: string, name: string, } | { "op": "set_deformer_parent", id: string, parent: string | null, } | { "op": "set_deformer_part", id: string, part: string, } | { "op": "set_warp_keyforms", id: string, keyforms: KeyformGrid<WarpKeyform>, } | { "op": "set_rotation_keyforms", id: string, keyforms: KeyformGrid<RotationKeyform>, } | { "op": "add_mesh", mesh: Mesh, } | { "op": "remove_mesh", id: string, } | { "op": "rename_mesh", id: string, name: string, } | { "op": "set_mesh_properties", id: string, part?: string | null, texture?: number | null, blend?: BlendMode | null, culling?: boolean | null, masks?: Array<MaskRef> | null, mask_mode?: MaskMode | null, mask_only?: boolean | null, } | { "op": "set_mesh_parent", id: string, parent: string | null, } | { "op": "set_mesh_keyforms", id: string, keyforms: KeyformGrid<MeshKeyform>, } | { "op": "set_mesh_keyform", id: string, cell: { [key in string]: number }, keyform: MeshKeyform, } | { "op": "reorder_mesh", id: string, before: string | null, } | { "op": "add_texture", name: string, png: Array<number>, } | { "op": "set_texture_image", name: string, png: Array<number>, } | { "op": "remove_texture", name: string, } | { "op": "set_canvas", width: number, height: number, origin: Vec2, } | { "op": "regenerate_mesh", id: string, options: AutoMeshOptions, } | { "op": "infer_keyforms", target: KeyformTarget, method: InferMethod, overwrite_derived: boolean, } | { "op": "mirror_keyforms", source: KeyformTarget, target: KeyformTarget, 
+export type Command = { "op": "add_parameter", parameter: Parameter, } | { "op": "remove_parameter", id: string, } | { "op": "set_parameter_range", id: string, min: number, default: number, max: number, } | { "op": "batch", label: string, commands: Array<Command>, } | { "op": "rename_parameter", id: string, name: string, } | { "op": "set_parameter_group", id: string, group: string | null, } | { "op": "set_parameter_mirror", id: string, mirror: string | null, } | { "op": "add_part", part: Part, } | { "op": "remove_part", id: string, } | { "op": "rename_part", id: string, name: string, } | { "op": "set_part_parent", id: string, parent: string | null, } | { "op": "set_part_keyforms", id: string, keyforms: KeyformGrid<PartKeyform>, } | { "op": "add_deformer", deformer: Deformer, } | { "op": "remove_deformer", id: string, } | { "op": "rename_deformer", id: string, name: string, } | { "op": "set_deformer_parent", id: string, parent: string | null, } | { "op": "set_deformer_part", id: string, part: string, } | { "op": "set_warp_keyforms", id: string, keyforms: KeyformGrid<WarpKeyform>, } | { "op": "set_rotation_keyforms", id: string, keyforms: KeyformGrid<RotationKeyform>, } | { "op": "add_mesh", mesh: Mesh, } | { "op": "remove_mesh", id: string, } | { "op": "rename_mesh", id: string, name: string, } | { "op": "set_mesh_properties", id: string, part?: string | null, texture?: number | null, blend?: BlendMode | null, culling?: boolean | null, masks?: Array<MaskRef> | null, mask_mode?: MaskMode | null, mask_only?: boolean | null, 
+/**
+ * ライティングを受けるか (`Mesh::lit`、`docs/editor.md#ライティングの画面`)。
+ */
+lit?: boolean | null, } | { "op": "set_mesh_parent", id: string, parent: string | null, } | { "op": "set_mesh_keyforms", id: string, keyforms: KeyformGrid<MeshKeyform>, } | { "op": "set_mesh_keyform", id: string, cell: { [key in string]: number }, keyform: MeshKeyform, } | { "op": "reorder_mesh", id: string, before: string | null, } | { "op": "add_texture", name: string, png: Array<number>, } | { "op": "set_texture_image", name: string, png: Array<number>, } | { "op": "remove_texture", name: string, } | { "op": "set_canvas", width: number, height: number, origin: Vec2, } | { "op": "regenerate_mesh", id: string, options: AutoMeshOptions, } | { "op": "infer_keyforms", target: KeyformTarget, method: InferMethod, overwrite_derived: boolean, } | { "op": "mirror_keyforms", source: KeyformTarget, target: KeyformTarget, 
 /**
  * 対称軸 `x = a` の `a`。省略すると元の要素の `mirror_axis` (または親で決まる既定値)。
  */
@@ -1259,6 +1280,32 @@ links: Array<string>, };
  * 互いに排他的なパーツの組 (例: 腕の差分 A / B)。
  */
 export type PoseGroup = { entries: Array<PoseEntry>, };
+
+/**
+ * プレビューの光源 1 つ (`docs/spec/rendering.md#ライティング`)。
+ */
+export type PreviewLight = { "type": "directional", direction: [number, number, number], color: [number, number, number], intensity: number, } | { "type": "point", position: [number, number, number], color: [number, number, number], intensity: number, range: number | null, };
+
+/**
+ * プレビューの光源 (`project.json` の `editor.lighting`)。エディタのビューポートとプレビューで
+ * `WebPuppet::set_lighting_json` に渡す。モデルには入らない。すべて既定値なら書かない。
+ *
+ * 座標はキャンバス座標 (ピクセル・Y 下向き) + 奥行き (手前が +z)。色は 0〜1 で、強さ `intensity` を掛けて渡す。
+ * `project.json` に書く値が丸めの誤差で読みにくくならないよう、`f64` で持つ。
+ */
+export type PreviewLighting = { 
+/**
+ * ビューポートに光源を当てるか。`false` ならホストは光源を渡さない (環境光が白で光源なし)。
+ */
+enabled: boolean, 
+/**
+ * 環境光の色と強さ。
+ */
+ambient: [number, number, number], ambient_intensity: number, 
+/**
+ * 光源 (最大 [`MAX_PREVIEW_LIGHTS`] 個)。
+ */
+lights: Array<PreviewLight>, };
 
 /**
  * フロントエンドに見せるプロジェクトの状態。

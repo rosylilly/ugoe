@@ -6,6 +6,7 @@ mod ai_provider;
 mod avatar;
 pub mod bindings;
 mod commands;
+mod lighting;
 mod mcp;
 mod overflow;
 mod physics_check;
@@ -80,6 +81,8 @@ pub fn run() {
             project::save_project_as,
             project::get_export_settings,
             project::set_export_settings,
+            project::get_preview_lighting,
+            project::set_preview_lighting,
             project::export_bundle,
             project::get_model_bundle,
             psd::import_psd,
@@ -114,6 +117,9 @@ pub fn run() {
             mcp::open_claude_desktop_bundle,
             mcp::save_claude_desktop_bundle,
             tracking::write_json_file,
+            lighting::generate_texture_normal_map,
+            lighting::assign_texture_normal_map,
+            lighting::get_texture_png,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

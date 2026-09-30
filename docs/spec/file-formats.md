@@ -40,6 +40,7 @@ character.ugoeproj/
 | `name` | string | プロジェクトの表示名。エディタで「別名で保存」するとディレクトリ名 (拡張子を除く) になる |
 | `editor` | object | エディタの設定 (自由な JSON)。空なら書き出さない |
 | `editor.ai.send_externally` | bool | `false` なら、このプロジェクトのデータを外部の AI サービスに送らない ([エディタ](../editor.md#ai-の設定と送信の同意))。既定 (送ってよい) のときは書き出さない。省略・形の違う値は送ってよい扱い |
+| `editor.lighting` | object | エディタのビューポートとプレビューで当てる光源 (`PreviewLighting`。モデルには入らない)。`enabled` (bool)・`ambient` (RGB 0〜1)・`ambient_intensity`・`lights` (最大 8 個。`{"type": "directional", "direction", "color", "intensity"}` か `{"type": "point", "position", "color", "intensity", "range"}`)。すべて既定値なら書かない。足りないフィールドは既定値、読めない・範囲の外ならすべて既定値で読む ([editor.md#ライティングの画面](../editor.md#ライティングの画面)) |
 | `editor.export` | object | 書き出しの設定 (`ExportSettings`)。`atlas` (bool、既定 `false`)・`atlas_max_size` (1〜16384、既定 2048)・`atlas_padding` (0〜64、既定 2)。すべて既定値なら書かない。足りないフィールドは既定値、読めなければすべて既定値で読む ([editor.md#書き出し](../editor.md#書き出し)) |
 
 - `format_version` が読める版より新しければ、読み込みをエラーにします。

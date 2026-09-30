@@ -12,6 +12,7 @@ import type {
   AutoMeshOptions,
   AvatarCheck,
   BridgeEvent,
+  BulgeSettings,
   Classification,
   Command,
   ConsentAnswer,
@@ -23,6 +24,7 @@ import type {
   McpBridgeStatus,
   OverflowReport,
   PhysicsSettings,
+  PreviewLighting,
   ProjectStatus,
   ProposalPreview,
   ProposalState,
@@ -76,6 +78,23 @@ export const ipc = {
   exportBundle: (path: string) => invoke<ExportReport>("export_bundle", { path }),
   /** 今のドキュメントの .ugoe バンドル (テクスチャ付き)。生のバイト列で届く。 */
   getModelBundle: async () => new Uint8Array(await invoke<ArrayBuffer>("get_model_bundle")),
+  /** プロジェクトに残したプレビューの光源 (`project.json` の `editor.lighting`)。 */
+  getPreviewLighting: () => invoke<PreviewLighting>("get_preview_lighting"),
+  /** プレビューの光源をプロジェクトに残す (保存で書き込む。Undo の対象ではない)。範囲の外ならエラー。 */
+  setPreviewLighting: (lighting: PreviewLighting) =>
+    invoke<ProjectStatus>("set_preview_lighting", { lighting }),
+  /**
+   * apps/editor/src-tauri/src/lighting.rs。テクスチャのアルファの形からふくらみの法線マップを作って付ける
+   * (AI は使わない。モデルのライティングが無効なら有効にする。1 回の Undo で戻る)。
+   */
+  generateTextureNormalMap: (texture: string, settings: BulgeSettings) =>
+    invoke<ApplyReport>("generate_texture_normal_map", { texture, settings }),
+  /** PNG ファイル (絶対パス) をテクスチャの法線マップとして付ける。`flipGreen` は DirectX 形式の画像。 */
+  assignTextureNormalMap: (texture: string, path: string, flipGreen: boolean) =>
+    invoke<ApplyReport>("assign_texture_normal_map", { texture, path, flipGreen }),
+  /** テクスチャか法線マップの画像の PNG。生のバイト列で届く。 */
+  getTexturePng: async (name: string) =>
+    new Uint8Array(await invoke<ArrayBuffer>("get_texture_png", { name })),
   /** apps/editor/src-tauri/src/psd.rs。PSD を今のドキュメントに取り込み、警告を返す。 */
   /** `meshOptions` の省略したフィールドは既定値。 */
   importPsd: (path: string, meshOptions?: Partial<AutoMeshOptions>) =>

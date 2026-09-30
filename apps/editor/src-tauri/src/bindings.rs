@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use ugoe_editor_core::avatar::AvatarCheck;
 use ugoe_editor_core::codegen::{TsBindings, command_schema_json, typescript_samples};
+use ugoe_editor_core::lighting::{BulgeSettings, PreviewLighting};
 use ugoe_editor_core::overflow::{ElementOverflow, OverflowReport};
 use ugoe_editor_core::physics_check::RestPoseCollision;
 use ugoe_editor_core::{ApplyReport, ExportReport, ExportSettings, PsdImportWarning};
@@ -47,6 +48,8 @@ pub fn generated_files() -> Result<Vec<(&'static str, String)>, serde_json::Erro
     types.add::<AvatarCheck>();
     types.add::<McpBridgeStatus>();
     types.add::<BridgeEvent>();
+    types.add::<BulgeSettings>();
+    types.add::<PreviewLighting>();
     Ok(vec![
         ("apps/editor/src/lib/generated/types.ts", types.render()),
         (

@@ -1017,6 +1017,7 @@ fn set_mesh_properties_changes_only_given_fields() {
             masks: Some(vec![MaskRef::inverted("Sclera")]),
             mask_mode: Some(ugoe_model::MaskMode::Intersection),
             mask_only: Some(true),
+            lit: None,
         },
     );
     let pupil = &after.meshes[0];
@@ -1039,6 +1040,7 @@ fn set_mesh_properties_rejects_invalid_results() {
         masks,
         mask_mode: None,
         mask_only: None,
+        lit: None,
     };
     rejected_invalid(
         &model,
@@ -1060,6 +1062,7 @@ fn set_mesh_properties_rejects_invalid_results() {
                 masks: None,
                 mask_mode: None,
                 mask_only: None,
+                lit: None,
             },
         ),
         not_found("mesh", "Nope")
@@ -1306,6 +1309,7 @@ fn invalid_document_accepts_commands_that_add_no_new_errors() {
         masks: None,
         mask_mode: None,
         mask_only: None,
+        lit: None,
     })
     .unwrap();
     assert!(validate(doc.model()).is_empty());
@@ -1525,6 +1529,7 @@ fn json_samples() -> Vec<Command> {
             masks: Some(vec![MaskRef::inverted("Other")]),
             mask_mode: None,
             mask_only: Some(false),
+            lit: None,
         },
         Command::SetMeshParent {
             id: "Quad".into(),

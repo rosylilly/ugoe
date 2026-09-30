@@ -67,6 +67,8 @@ export class ViewportController {
   driven = $state(false);
   /** プレビューで 1 フレーム進めるたびに増える (オーバーレイが評価結果を読み直すため)。 */
   animationFrame = $state(0);
+  /** 読み込んだモデルにライティングを受けるメッシュがあるか (`WebPuppet.uses_lighting`)。 */
+  usesLighting = $state(false);
 
   #puppet: WebPuppet | null = null;
   #model: ViewportModel | null = null;
@@ -81,6 +83,8 @@ export class ViewportController {
   #lastTime = 0;
   #animation = 0;
   #driver: FrameDriver | null = null;
+  /** 光源の JSON (`set_lighting_json`)。null なら渡さない。WebPuppet を作り直しても渡し直す。 */
+  #lighting: string | null = null;
 
   /** 描画中の WebPuppet (ヒットテストなどの問い合わせ用)。 */
   get puppet(): WebPuppet | null {
@@ -108,6 +112,7 @@ export class ViewportController {
       this.status = "ready";
       this.message = null;
       puppet.set_background(...this.#background);
+      this.#applyLighting();
       puppet.resize(this.#pixelWidth(), this.#pixelHeight());
       if (this.#model) this.#load(this.#model);
       this.requestRender();
@@ -237,6 +242,25 @@ export class ViewportController {
     this.#size = { width: Math.max(1, width), height: Math.max(1, height), dpr };
     this.#puppet?.resize(this.#pixelWidth(), this.#pixelHeight());
     this.requestRender();
+  }
+
+  /**
+   * 光源 (docs/editor.md#ライティングの画面)。`WebPuppet.set_lighting_json` の JSON で、null なら光源を渡さない
+   * (環境光が白で光源なし)。モデルを読み直しても保つ。
+   */
+  setLighting(json: string | null): void {
+    if (json === this.#lighting) return;
+    this.#lighting = json;
+    this.#applyLighting();
+    this.requestRender();
+  }
+
+  #applyLighting(): void {
+    try {
+      this.#puppet?.set_lighting_json(this.#lighting ?? undefined);
+    } catch (e) {
+      console.warn("ugoe: lighting:", e);
+    }
   }
 
   /** 背景色 (ストレートアルファ、各成分 0..1)。 */
@@ -374,6 +398,7 @@ export class ViewportController {
         ? puppet.load_bundle(model.bundle)
         : puppet.load_json(model.json);
       for (const warning of warnings) console.warn("ugoe:", warning);
+      this.usesLighting = puppet.uses_lighting();
       this.#applyStages();
       if (this.#driver) {
         // プレビュー中の読み直し (別の WebPuppet への作り直しなど)。値はプレビューのものを渡す。

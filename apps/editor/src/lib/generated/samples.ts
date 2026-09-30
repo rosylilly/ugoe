@@ -4718,7 +4718,8 @@ export const commands: Command[] = [
       }
     ],
     "mask_mode": "intersection",
-    "mask_only": false
+    "mask_only": false,
+    "lit": false
   },
   {
     "op": "set_mesh_parent",

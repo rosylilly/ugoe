@@ -163,6 +163,9 @@ pub enum Command {
         mask_mode: Option<MaskMode>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         mask_only: Option<bool>,
+        /// ライティングを受けるか (`Mesh::lit`、`docs/editor.md#ライティングの画面`)。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        lit: Option<bool>,
     },
     /// 親デフォーマを付け替える。頂点座標はそのまま (新しい親の局所座標として解釈される)。
     SetMeshParent {

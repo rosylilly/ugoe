@@ -489,6 +489,13 @@
           "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
           "type": "string"
         },
+        "lit": {
+          "description": "ライティングを受けるか (`Mesh::lit`、`docs/editor.md#ライティングの画面`)。",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "mask_mode": {
           "anyOf": [
             {

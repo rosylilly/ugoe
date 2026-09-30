@@ -20,6 +20,7 @@ pub mod ids;
 pub mod import;
 mod inference;
 pub mod keyform;
+pub mod lighting;
 mod mesh_edit;
 pub mod motion_edit;
 pub mod overflow;
@@ -72,6 +73,8 @@ mod inference_tests;
 mod interpolation_tests;
 #[cfg(test)]
 mod keyform_tests;
+#[cfg(test)]
+mod lighting_tests;
 #[cfg(test)]
 mod mesh_edit_tests;
 #[cfg(test)]
