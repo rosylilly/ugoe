@@ -1,0 +1,22 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://main.gd" id="1"]
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1")
+
+[node name="Puppet" type="UgoePuppet2D" parent="."]
+model_path = "res://models/avatar.ugoe"
+
+[node name="Panel" type="PanelContainer" parent="."]
+offset_left = 660.0
+offset_top = 8.0
+offset_right = 952.0
+offset_bottom = 712.0
+
+[node name="Scroll" type="ScrollContainer" parent="Panel"]
+layout_mode = 2
+
+[node name="Sliders" type="VBoxContainer" parent="Panel/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3

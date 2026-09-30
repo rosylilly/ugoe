@@ -23,6 +23,8 @@ const SCOPES = [
   "rigging",
   "mcp",
   "headless",
+  // bindings/
+  "godot",
   // apps/
   "editor",
   "viewer",

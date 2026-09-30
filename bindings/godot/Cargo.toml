@@ -1,0 +1,41 @@
+[package]
+name = "ugoe-godot"
+description = "ugoe の Godot 4 向け GDExtension (godot-rust)"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.98"
+repository = "https://github.com/rosylilly/ugoe"
+publish = false
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+godot = { version = "0.5", features = ["api-4-4"] }
+thiserror = "2"
+ugoe = { path = "../../crates/ugoe" }
+
+[dev-dependencies]
+png = "0.18"
+
+# リポジトリのルートのワークスペースには入れない (独自の Cargo.lock を持つ)。
+# godot-rust (MPL-2.0) を MIT のクレートのワークスペースに入れないため (docs/adr/0026-godot-binding.md)。
+[workspace]
+
+[lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"
+
+# ルートのワークスペースと同じ (target/ を共有したときにビルド済みの依存を使い回せるように)。
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = "thin"

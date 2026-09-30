@@ -56,7 +56,7 @@ crates/             Rust クレート (ランタイム層とツール層。依�
 apps/editor/        Tauri エディタ (src/ = Svelte フロントエンド, src-tauri/ = Rust バックエンド)
 apps/viewer/        Tauri ビューア (.ugoe を開いて表示しパラメータを動かす。構成はエディタと同じ)
 packages/           エディタとビューアで共有するフロントエンドの部品 (face-tracking など。GPL-3.0-only)
-bindings/           ランタイムを別の環境へ出すパッケージ (web = npm の @ugoe/runtime と <ugoe-avatar>。MIT)
+bindings/           ランタイムを別の環境へ出すパッケージ (MIT。web = npm の @ugoe/runtime と <ugoe-avatar>、godot = Godot 4 の GDExtension (ワークスペースの外、ADR 0026))
 docs/               設計・仕様・ADR・タスク
 scripts/            補助スクリプト (check-layers.mjs 等)
 assets/fixtures/    テスト用アセット (小さいものだけ)
@@ -104,7 +104,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 ### 外部のコードとライセンス
 
 - **ライセンス:** `crates/`・`bindings/`・`docs/` は MIT、`apps/editor/`・`apps/viewer/`・`packages/` は GPL-3.0-only ([ADR 0018](docs/adr/0018-licensing-and-1.0-scope.md)・[ADR 0019](docs/adr/0019-viewer-license.md)・[ADR 0025](docs/adr/0025-web-runtime-package.md))。MIT の `bindings/` から GPL のコードを import したり写したりしない。新しいクレートは `license.workspace = true` を書く。
-- **MIT のクレートに、コピーレフト (MPL・LGPL・GPL など) のライブラリを依存させない。** `just licenses` (`just ci` に含まれる) が依存するクレートのライセンスを検査する。
+- **MIT のクレートに、コピーレフト (MPL・LGPL・GPL など) のライブラリを依存させない。** `just licenses` (`just ci` に含まれる) が依存するクレートのライセンスを検査する。例外は `bindings/godot` で、ワークスペースの外に置いて godot-rust (MPL-2.0) にだけ依存を許す ([ADR 0026](docs/adr/0026-godot-binding.md)。検査は `bindings/godot/check-licenses.mjs`)。
 
 - **Live2D Cubism SDK などの外部 SDK のソースを、リポジトリの中に置かない (ダウンロードしない)。コードも写さない。** 挙動を調べるためにソースを読むのはよいが、読むときはリポジトリの外 (一時ディレクトリなど) で読む。
 - 調べて分かった挙動は、仕様書や ADR に「何をするか」として自分の言葉で書き、出典の URL を示す。

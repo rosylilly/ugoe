@@ -1,0 +1,5 @@
+# ビルドの出力 (build.mjs が example/bin/ にライブラリを、example/models/ に見本のモデルを置く)
+/target/
+/example/.godot/
+/example/bin/
+/example/models/*.ugoe

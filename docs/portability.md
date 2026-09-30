@@ -22,7 +22,7 @@
 | Web | `ugoe-wasm` (WebGPU、なければ WebGL2) | npm パッケージとして配布する (M4) |
 | Unity | 段階 B: `ugoe-ffi` + C# (P/Invoke) + Unity の Mesh / Material | 描画はエンジンのシェーダで行う |
 | Unreal | 段階 B: `ugoe-ffi` + C++ プラグイン + ProceduralMesh または独自の SceneProxy | |
-| Godot | 段階 B: GDExtension (godot-rust 経由で ugoe を直接使うのが有力) | |
+| Godot | 段階 B: GDExtension (godot-rust で `ugoe` を直接使う。`bindings/godot`) | 描画は Godot の 2D (キャンバスアイテムとシェーダ)。ワークスペースの外に置く ([ADR 0026](adr/0026-godot-binding.md)) |
 | Bevy | 段階 A (wgpu のバージョンが一致する場合) または B | Bevy が使う wgpu のバージョンに合わせた ugoe-render のリリースを検討する |
 
 ## C ABI (`ugoe-ffi`) の規約
@@ -54,7 +54,7 @@
 | Rust | crates.io の `ugoe` | T0403 |
 | Web | npm の `@ugoe/runtime` と Web Components の `<ugoe-avatar>` | T0404 |
 | Unity | UPM パッケージ | T0405 |
-| Godot | GDExtension | T0406 |
+| Godot | GDExtension (`bindings/godot`。ワークスペースの外、[ADR 0026](adr/0026-godot-binding.md)) | T0406 |
 | Unreal | プラグイン | T0407 |
 | C / その他 | `ugoe-ffi` の共有ライブラリとヘッダ | T0401 |
 
@@ -62,6 +62,7 @@
 - **リリースの自動化**: タグを打つと、すべての配布物をビルドして公開します。バージョン番号は揃えます。
 - ランタイムとライブラリは MIT で配布します ([ADR 0018](adr/0018-licensing-and-1.0-scope.md))。
 - Web の `@ugoe/runtime` は `bindings/web/` に置き、MIT で配布します。GPL-3.0-only の `packages/` (アプリが共有する部品) とは分けます ([ADR 0025](adr/0025-web-runtime-package.md))。使い方は [bindings/web/README.md](../bindings/web/README.md)。
+- Godot の GDExtension は `bindings/godot/` に置き、MIT で配布します。依存する godot-rust だけが MPL-2.0 なので、ルートのワークスペースの外に置きます ([ADR 0026](adr/0026-godot-binding.md))。使い方は [bindings/godot/README.md](../bindings/godot/README.md)。
 
 ## 前方互換
 

@@ -1,0 +1,17 @@
+; ugoe の GDExtension の見本のプロジェクト (bindings/godot/README.md)。
+config_version=5
+
+[application]
+
+config/name="ugoe example"
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.4")
+
+[display]
+
+window/size/viewport_width=960
+window/size/viewport_height=720
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
