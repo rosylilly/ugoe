@@ -1,11 +1,11 @@
 ---
 id: T0713
 title: ビューア: Tauri でドロップしたファイルのパスを受け取り、起動し直した後も戻せるようにする
-status: todo
+status: in-progress
 milestone: M4
 crates: [apps/viewer, docs]
 depends_on: [T0711]
-assignee:
+assignee: claude-worker-T0713
 ---
 
 # T0713: ビューア: ドロップしたファイルのパスを受け取る
