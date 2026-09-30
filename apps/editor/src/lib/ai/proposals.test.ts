@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Classification, ProposalCommand } from "../ipc";
+import type { Classification, NormalMapGroupView, ProposalCommand } from "../ipc";
 import {
   classificationSummary,
   commandLabel,
@@ -10,6 +10,11 @@ import {
   includeCommand,
   instructionChars,
   instructionsToSend,
+  normalMapChoices,
+  normalMapPicks,
+  normalMapTargetCount,
+  sectionGroups,
+  surfaceGroupLabel,
   toggleCommand,
   toggleGroup,
 } from "./proposals";
@@ -116,5 +121,63 @@ describe("instructionsToSend", () => {
   it("counts characters like the backend", () => {
     expect(instructionChars(" 帽子は headwear ")).toBe(12);
     expect(instructionChars("😀")).toBe(1);
+  });
+});
+
+describe("normal map proposals", () => {
+  const defaults = { strength: 0.35, edge: 48, smoothing: 6 };
+  const group = (
+    name: string | null,
+    textures: string[],
+    withNormalMap: string[] = [],
+  ): NormalMapGroupView => ({
+    group: name,
+    textures,
+    shape_only: [],
+    oriented: [],
+    with_normal_map: withNormalMap,
+    defaults,
+    from_classification: false,
+  });
+  const groups = [group("face", ["face", "eye"], ["face"]), group(null, ["prop"])];
+
+  it("includes every group at its default strength and keeps earlier picks", () => {
+    const picks = normalMapPicks(groups);
+    expect(picks).toEqual({
+      face: { include: true, strength: 0.35 },
+      unlabeled: { include: true, strength: 0.35 },
+    });
+    const kept = normalMapPicks(groups, { face: { include: false, strength: 1 } });
+    expect(kept.face).toEqual({ include: false, strength: 1 });
+  });
+
+  it("sends the included groups with their strength", () => {
+    const picks = {
+      face: { include: true, strength: 0.1 },
+      unlabeled: { include: false, strength: 0.5 },
+    };
+    expect(normalMapChoices(groups, picks)).toEqual([
+      { group: "face", settings: { strength: 0.1, edge: 48, smoothing: 6 } },
+    ]);
+    expect(normalMapTargetCount(groups, picks, false)).toBe(1);
+    expect(normalMapTargetCount(groups, picks, true)).toBe(2);
+  });
+
+  it("names the sections", () => {
+    expect(
+      sectionGroups([
+        { label: "face", indices: [0, 2], subjects: ["face", "eye"] },
+        { label: "lighting", indices: [3], subjects: [""] },
+      ]),
+    ).toEqual([
+      {
+        label: "Face, eyes, nose, mouth, brows",
+        indices: [0, 2],
+        section: true,
+        subjects: ["face", "eye"],
+      },
+      { label: "Turn on lighting", indices: [3], section: true, subjects: [""] },
+    ]);
+    expect(surfaceGroupLabel("wings")).toBe("wings");
   });
 });

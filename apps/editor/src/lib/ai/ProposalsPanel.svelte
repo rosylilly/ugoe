@@ -16,6 +16,9 @@
     「Regenerate with instructions」は前の答えと注文を送って作り直し、新しい提案を後ろに並べる (前の提案は残る)。
     提案には添えた注文と、AI が反映できないと答えた注文 (「Not applied」) を出す。注文はプロジェクトに保存しない
     (docs/editor.md#ai-への注文と作り直し)。
+  - 「Normal maps from the shapes」(モデルのプロジェクトだけ): 部位のまとまり (顔と目口鼻眉・首と体と腕・髪など。意味ラベルから
+    決める) ごとに含めるか・強さを選び、すべてのテクスチャの法線マップを 1 つの提案にする (AI なし。何も送らない)。
+    提案のコマンドはまとまりごとに区切って出す (まとまりを外して採用できる)。docs/editor.md#法線マップの提案
 -->
 <script lang="ts">
 import type { ViewportController } from "../viewport/controller.svelte";
@@ -23,10 +26,12 @@ import { aiSettings } from "./ai.svelte";
 import {
   classificationSummary,
   commandLabel,
-  groupCommands,
   groupState,
   instructionChars,
   MAX_INSTRUCTION_CHARS,
+  normalGroupKey,
+  normalMapTargetCount,
+  surfaceGroupLabel,
 } from "./proposals";
 import type { ProposalsView } from "./proposals.svelte";
 import { aiBlockedReason, providerLabel } from "./providers";
@@ -79,6 +84,15 @@ const regenerateBlocked = $derived.by((): string | null => {
   if (tooLong) return `The instructions are longer than ${MAX_INSTRUCTION_CHARS} characters`;
   return null;
 });
+
+/** 法線マップを作るテクスチャの数 (選んだまとまり)。 */
+const normalTargets = $derived(
+  view.normalGroups
+    ? normalMapTargetCount(view.normalGroups, view.normalPicks, view.replaceNormalMaps)
+    : 0,
+);
+/** 法線マップのまとまりのラベルの出どころ。 */
+const normalFromClassification = $derived(view.normalGroups?.[0]?.from_classification ?? false);
 
 function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
@@ -204,6 +218,62 @@ function onSlider(id: string, e: Event): void {
   {/if}
 </section>
 
+{#if !module}
+  <section aria-label="Normal maps from the shapes">
+    <h3>Normal maps from the shapes</h3>
+    <p class="muted note">
+      No AI; nothing is sent. Each group of parts bulges as one surface, so eyes follow the face and the neck joins the
+      body. Glasses take the face's direction without bulging. Groups come from
+      {normalFromClassification ? "the layer classification above" : "the layer names (classify the layers to use AI labels)"}.
+    </p>
+    {#if view.normalGroups && view.normalGroups.length === 0}
+      <p class="muted">No textures to make normal maps for.</p>
+    {:else if view.normalGroups}
+      <ul class="normal-groups">
+        {#each view.normalGroups as group (normalGroupKey(group))}
+          {@const key = normalGroupKey(group)}
+          {@const pick = view.normalPicks[key]}
+          {#if pick}
+            <li>
+              <label class="check" title={group.textures.join(", ")}>
+                <input type="checkbox" bind:checked={pick.include} disabled={busy} />
+                <span class="group-name">{surfaceGroupLabel(key)}</span>
+              </label>
+              <span class="muted counts">
+                {group.textures.length} {group.textures.length === 1 ? "texture" : "textures"}{#if group.with_normal_map.length > 0}, {group.with_normal_map.length} mapped{/if}{#if group.oriented.length > 0}, {group.oriented.length} direction only{/if}
+              </span>
+              <span class="strength">
+                <input
+                  type="range"
+                  min="0"
+                  max="2"
+                  step="0.05"
+                  bind:value={pick.strength}
+                  disabled={busy || !pick.include}
+                  aria-label="Strength of {surfaceGroupLabel(key)}"
+                />
+                <span class="value">{pick.strength.toFixed(2)}</span>
+              </span>
+            </li>
+          {/if}
+        {/each}
+      </ul>
+      <label class="check note">
+        <input type="checkbox" bind:checked={view.replaceNormalMaps} disabled={busy} />
+        Replace existing normal maps
+      </label>
+      <div class="row">
+        <button
+          class="primary"
+          onclick={() => view.proposeNormalMaps()}
+          disabled={busy || normalTargets === 0}
+          title="Make normal maps for the chosen groups as a proposal. Preview it to see the model lit by the Lighting tab's preview lights."
+        >Propose normal maps{normalTargets > 0 ? ` (${normalTargets})` : ""}</button>
+      </div>
+    {/if}
+  </section>
+{/if}
+
 <section>
   <h3>Proposals</h3>
   {#if !panel || panel.proposals.length === 0}
@@ -248,9 +318,10 @@ function onSlider(id: string, e: Event): void {
         <details>
           <summary>{selected} of {proposal.commands.length} commands selected</summary>
           <ul class="groups">
-            {#each groupCommands(proposal.commands) as group (group.indices[0])}
+            {#each view.commandGroups(proposal.id) as group (group.indices[0])}
               {@const state = groupState(group, excluded)}
-              {@const single = group.indices.length === 1 ? proposal.commands[group.indices[0] as number] : null}
+              {@const single =
+                group.indices.length === 1 && !group.section ? proposal.commands[group.indices[0] as number] : null}
               <li>
                 <div class="group">
                   <input
@@ -266,10 +337,12 @@ function onSlider(id: string, e: Event): void {
                     <code>{commandLabel(single)}</code>
                   {:else}
                     <details class="inner">
-                      <summary><code>{group.label}</code> · {group.indices.length} commands</summary>
+                      <summary><code>{group.label}</code> · {group.indices.length}
+                        {group.indices.length === 1 ? "command" : "commands"}</summary>
                       <ol class="commands">
-                        {#each group.indices as i (i)}
+                        {#each group.indices as i, k (i)}
                           {@const command = proposal.commands[i]}
+                          {@const subject = group.subjects?.[k]}
                           {#if command}
                             <li>
                               <label class="check" title={command.requires.length > 0
@@ -282,7 +355,7 @@ function onSlider(id: string, e: Event): void {
                                   onchange={() => view.toggleCommand(proposal.id, i)}
                                 />
                                 <span class="index">#{i}</span>
-                                <code>{command.op}</code>
+                                <code>{subject ? `${command.op} ${subject}` : command.op}</code>
                               </label>
                             </li>
                           {/if}
@@ -488,6 +561,39 @@ function onSlider(id: string, e: Event): void {
   .index {
     color: var(--muted);
     min-width: 2.5em;
+  }
+  .normal-groups {
+    list-style: none;
+    margin: 4px 0;
+    padding: 0;
+    font-size: 12px;
+  }
+  .normal-groups li {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    column-gap: 6px;
+    padding: 2px 0;
+  }
+  .normal-groups .counts {
+    grid-column: 1;
+    padding-left: 22px;
+    font-size: 11px;
+  }
+  .normal-groups .strength {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .normal-groups input[type="range"] {
+    width: 90px;
+  }
+  .normal-groups .value {
+    width: 32px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
   }
   .sliders {
     display: grid;

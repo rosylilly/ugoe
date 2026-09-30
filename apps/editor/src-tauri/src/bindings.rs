@@ -15,7 +15,7 @@ use crate::ai::{AiReply, AiSettings, ConsentAnswer};
 use crate::ai_provider::ProviderSettings;
 use crate::commands::{AnimationData, AppInfo};
 use crate::dress_up::PreviewModule;
-use crate::lighting::NormalMapGroupView;
+use crate::lighting::{NormalMapGroupChoice, NormalMapGroupView};
 use crate::mcp::{BridgeEvent, McpBridgeStatus};
 use crate::module::{
     BaseReload, BaseSummary, ModuleExportReport, ModuleProblem, ModuleProblemKind, ModuleStatus,
@@ -57,6 +57,7 @@ pub fn generated_files() -> Result<Vec<(&'static str, String)>, serde_json::Erro
     types.add::<BridgeEvent>();
     types.add::<BulgeSettings>();
     types.add::<NormalMapGroupView>();
+    types.add::<NormalMapGroupChoice>();
     types.add::<PreviewLighting>();
     types.add::<PreviewModule>();
     types.add::<SlotSummary>();

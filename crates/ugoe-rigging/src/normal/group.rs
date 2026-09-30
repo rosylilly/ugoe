@@ -72,105 +72,207 @@ pub fn group_bulge_normal_maps(
     shape_only: &[PlacedTexture<'_>],
     options: &BulgeOptions,
 ) -> Result<Vec<NormalMap>, NormalMapError> {
+    Ok(group_bulge_normal_maps_oriented(members, shape_only, &[], options)?.members)
+}
+
+/// [`group_bulge_normal_maps_oriented`] の結果。
+#[derive(Debug, Clone)]
+pub struct GroupNormalMaps {
+    /// `members` の法線マップ (並びのとおり)。
+    pub members: Vec<NormalMap>,
+    /// `oriented` の法線マップ (並びのとおり)。
+    pub oriented: Vec<NormalMap>,
+}
+
+/// [`group_bulge_normal_maps`] に、ふくらませず向きだけを受けるテクスチャ `oriented` を加えたもの (T0520)。
+///
+/// `oriented` (顔の上の眼鏡など) は形に加えない。画素の位置がまとまりの形の中なら、その位置のふくらみの高さを受け
+/// (まとまりの面の向きになる)、形の外の画素 (顔の外に出る眼鏡のつるなど) は、近い形の中の画素の向きを受ける
+/// (輪郭の向きのまま続く。64 画素より遠い画素は、形の中から広げた高さの勾配)。まとまりに形がなければ正面向き。
+/// `members` の結果は [`group_bulge_normal_maps`] と同じ。
+pub fn group_bulge_normal_maps_oriented(
+    members: &[PlacedTexture<'_>],
+    shape_only: &[PlacedTexture<'_>],
+    oriented: &[PlacedTexture<'_>],
+    options: &BulgeOptions,
+) -> Result<GroupNormalMaps, NormalMapError> {
     options.check()?;
-    for t in members.iter().chain(shape_only) {
+    for t in members.iter().chain(shape_only).chain(oriented) {
         t.check()?;
     }
     let threshold = options.alpha_threshold.max(1);
-    let all = || members.iter().chain(shape_only);
-    let Some(cell) = all().map(|t| t.canvas_per_texel).reduce(f32::min) else {
-        return Ok(Vec::new());
+    let Some(grid) = GroupField::build(members, shape_only, options, threshold)? else {
+        // 形がない (テクスチャがない・どの画素も置かれていない)。平ら。
+        let flat = |list: &[PlacedTexture<'_>]| -> Result<Vec<NormalMap>, NormalMapError> {
+            list.iter().map(|t| flat_map(t, threshold)).collect()
+        };
+        return Ok(GroupNormalMaps {
+            members: flat(members)?,
+            oriented: flat(oriented)?,
+        });
     };
+    let members = members
+        .iter()
+        .map(|t| grid.map_for(t, threshold, false))
+        .collect::<Result<_, _>>()?;
+    let oriented = oriented
+        .iter()
+        .map(|t| grid.map_for(t, threshold, true))
+        .collect::<Result<_, _>>()?;
+    Ok(GroupNormalMaps { members, oriented })
+}
 
-    // 格子の範囲 (置かれた画素の正方形を覆い、外に 1 升の余白を取る)。
-    let (mut min, mut max) = (Vec2::splat(f32::INFINITY), Vec2::splat(f32::NEG_INFINITY));
-    for t in all() {
-        let half = Vec2::splat(t.canvas_per_texel * 0.5);
-        for p in t.positions.iter().flatten() {
-            min = min.min(*p - half);
-            max = max.max(*p + half);
-        }
-    }
-    if !(min.x.is_finite() && min.y.is_finite() && max.x.is_finite() && max.y.is_finite()) {
-        // どの画素も置かれていない (メッシュが覆わない)。形がないので平ら。
-        return members.iter().map(|t| flat_map(t, threshold)).collect();
-    }
-    let origin = Vec2::new(
-        (min.x / cell).floor() * cell - cell,
-        (min.y / cell).floor() * cell - cell,
-    );
-    let w = ((max.x - origin.x) / cell).ceil() as usize + 1;
-    let h = ((max.y - origin.y) / cell).ceil() as usize + 1;
+/// まとまりの形をふくらませた高さ (キャンバスに並べた格子)。
+struct GroupField {
+    origin: Vec2,
+    /// 升目の大きさ (キャンバスのピクセル)。
+    cell: f32,
+    w: usize,
+    h: usize,
+    /// 升目ごとの高さ (升目の単位)。
+    field: HeightField,
+}
 
-    // 形: 画素の正方形が中心を含む升目 (少なくとも画素の中心を含む升目)。
-    let mut mask = vec![false; w * h];
-    for t in all() {
-        let half = t.canvas_per_texel * 0.5;
-        for (i, p) in t.positions.iter().enumerate() {
-            let Some(p) = p else { continue };
-            if !t.inside(i, threshold) {
-                continue;
+impl GroupField {
+    /// 形がなければ `None`。
+    fn build(
+        members: &[PlacedTexture<'_>],
+        shape_only: &[PlacedTexture<'_>],
+        options: &BulgeOptions,
+        threshold: u8,
+    ) -> Result<Option<Self>, NormalMapError> {
+        let all = || members.iter().chain(shape_only);
+        let Some(cell) = all().map(|t| t.canvas_per_texel).reduce(f32::min) else {
+            return Ok(None);
+        };
+
+        // 格子の範囲 (置かれた画素の正方形を覆い、外に 1 升の余白を取る)。
+        let (mut min, mut max) = (Vec2::splat(f32::INFINITY), Vec2::splat(f32::NEG_INFINITY));
+        for t in all() {
+            let half = Vec2::splat(t.canvas_per_texel * 0.5);
+            for p in t.positions.iter().flatten() {
+                min = min.min(*p - half);
+                max = max.max(*p + half);
             }
-            let g = (*p - origin) / cell;
-            // 升目 `i` の中心は `i + 0.5`。範囲は余白の分だけ内側なので負にならない。
-            let span = |c: f32| {
-                let lo = (c - half / cell - 0.5).ceil().max(0.0) as usize;
-                let hi = (c + half / cell - 0.5).ceil().max(0.0) as usize;
-                let at = c.floor().max(0.0) as usize;
-                (lo.min(at), hi.max(at + 1))
-            };
-            let (x0, x1) = span(g.x);
-            let (y0, y1) = span(g.y);
-            for y in y0..y1.min(h) {
-                for x in x0..x1.min(w) {
-                    mask[y * w + x] = true;
+        }
+        if !(min.x.is_finite() && min.y.is_finite() && max.x.is_finite() && max.y.is_finite()) {
+            // どの画素も置かれていない (メッシュが覆わない)。
+            return Ok(None);
+        }
+        let origin = Vec2::new(
+            (min.x / cell).floor() * cell - cell,
+            (min.y / cell).floor() * cell - cell,
+        );
+        let w = ((max.x - origin.x) / cell).ceil() as usize + 1;
+        let h = ((max.y - origin.y) / cell).ceil() as usize + 1;
+
+        // 形: 画素の正方形が中心を含む升目 (少なくとも画素の中心を含む升目)。
+        let mut mask = vec![false; w * h];
+        for t in all() {
+            let half = t.canvas_per_texel * 0.5;
+            for (i, p) in t.positions.iter().enumerate() {
+                let Some(p) = p else { continue };
+                if !t.inside(i, threshold) {
+                    continue;
+                }
+                let g = (*p - origin) / cell;
+                // 升目 `i` の中心は `i + 0.5`。範囲は余白の分だけ内側なので負にならない。
+                let span = |c: f32| {
+                    let lo = (c - half / cell - 0.5).ceil().max(0.0) as usize;
+                    let hi = (c + half / cell - 0.5).ceil().max(0.0) as usize;
+                    let at = c.floor().max(0.0) as usize;
+                    (lo.min(at), hi.max(at + 1))
+                };
+                let (x0, x1) = span(g.x);
+                let (y0, y1) = span(g.y);
+                for y in y0..y1.min(h) {
+                    for x in x0..x1.min(w) {
+                        mask[y * w + x] = true;
+                    }
                 }
             }
         }
+        let rgba: Vec<u8> = mask
+            .iter()
+            .flat_map(|&m| [0, 0, 0, if m { 255 } else { 0 }])
+            .collect();
+        let mut field = bulge_height(
+            w as u32,
+            h as u32,
+            &rgba,
+            &BulgeOptions {
+                alpha_threshold: 255,
+                ..*options
+            },
+        )?;
+        field.smooth(options.smoothing);
+        Ok(Some(Self {
+            origin,
+            cell,
+            w,
+            h,
+            field,
+        }))
     }
-    let rgba: Vec<u8> = mask
-        .iter()
-        .flat_map(|&m| [0, 0, 0, if m { 255 } else { 0 }])
-        .collect();
-    let mut field = bulge_height(
-        w as u32,
-        h as u32,
-        &rgba,
-        &BulgeOptions {
-            alpha_threshold: 255,
-            ..*options
-        },
-    )?;
-    field.smooth(options.smoothing);
 
-    members
-        .iter()
-        .map(|t| {
-            // 升目の単位の高さを、このテクスチャの画素の単位に直す。
-            let scale = cell / t.canvas_per_texel;
-            let values: Vec<Option<f32>> = t
-                .positions
-                .iter()
-                .map(|p| {
-                    p.map(|p| {
-                        let g = (p - origin) / cell - Vec2::splat(0.5);
-                        sample_bilinear(&field.values, w, h, g.x, g.y) * scale
-                    })
+    /// 位置 `p` (キャンバス) が形の中の升目にあるか。
+    fn in_shape(&self, p: Vec2) -> bool {
+        let g = (p - self.origin) / self.cell;
+        if !(g.x >= 0.0 && g.y >= 0.0) {
+            return false;
+        }
+        let (x, y) = (g.x as usize, g.y as usize);
+        x < self.w && y < self.h && self.field.mask[y * self.w + x]
+    }
+
+    /// テクスチャ `t` の法線マップ。`oriented` なら、形の外の画素は高さを引かず隣から広げる。
+    fn map_for(
+        &self,
+        t: &PlacedTexture<'_>,
+        threshold: u8,
+        oriented: bool,
+    ) -> Result<NormalMap, NormalMapError> {
+        // 升目の単位の高さを、このテクスチャの画素の単位に直す。
+        let scale = self.cell / t.canvas_per_texel;
+        let values: Vec<Option<f32>> = t
+            .positions
+            .iter()
+            .map(|p| {
+                p.filter(|p| !oriented || self.in_shape(*p)).map(|p| {
+                    let g = (p - self.origin) / self.cell - Vec2::splat(0.5);
+                    sample_bilinear(&self.field.values, self.w, self.h, g.x, g.y) * scale
                 })
-                .collect();
-            let mask: Vec<bool> = (0..values.len()).map(|i| t.inside(i, threshold)).collect();
-            let values = fill_missing(values, &mask, t.width as usize, t.height as usize);
-            let field = HeightField {
-                width: t.width,
-                height: t.height,
-                values,
-                mask,
-            };
-            let mut map = field.to_normal_map();
-            map.extend_edges(&field.mask, EDGE_PASSES);
-            Ok(map)
-        })
-        .collect()
+            })
+            .collect();
+        let mask: Vec<bool> = (0..values.len()).map(|i| t.inside(i, threshold)).collect();
+        // 形の中に置かれた画素 (向きだけを受けるテクスチャで、形の向きをそのまま使う画素)。
+        let on_shape: Vec<bool> = values
+            .iter()
+            .zip(&mask)
+            .map(|(v, &m)| m && v.is_some())
+            .collect();
+        let values = fill_missing(values, &mask, t.width as usize, t.height as usize);
+        let field = HeightField {
+            width: t.width,
+            height: t.height,
+            values,
+            mask,
+        };
+        let mut map = field.to_normal_map();
+        if oriented && on_shape.iter().any(|&m| m) {
+            // 形の外の画素は、高さの勾配ではなく、隣の形の中の画素の向きを受ける (輪郭で折れない)。
+            // 広げた高さの勾配は、形の縁の高さの違いを傾きとして持ち出してしまう。
+            let mut outside = map.clone();
+            outside.extend_edges(&on_shape, FILL_PASSES);
+            for (i, &m) in field.mask.iter().enumerate() {
+                if m && !on_shape[i] {
+                    map.rgba[i * 4..i * 4 + 4].copy_from_slice(&outside.rgba[i * 4..i * 4 + 4]);
+                }
+            }
+        }
+        map.extend_edges(&field.mask, EDGE_PASSES);
+        Ok(map)
+    }
 }
 
 /// 正面向きの法線マップ。

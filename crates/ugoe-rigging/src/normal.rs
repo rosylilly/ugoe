@@ -19,7 +19,10 @@
 
 mod group;
 
-pub use group::{EDGE_PASSES, PlacedTexture, fill_missing, group_bulge_normal_maps};
+pub use group::{
+    EDGE_PASSES, GroupNormalMaps, PlacedTexture, fill_missing, group_bulge_normal_maps,
+    group_bulge_normal_maps_oriented,
+};
 
 /// ふくらみの方程式を解くマルチグリッドの V サイクルの回数。
 const INFLATE_CYCLES: usize = 8;

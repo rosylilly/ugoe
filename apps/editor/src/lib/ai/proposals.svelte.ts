@@ -7,6 +7,8 @@
 // - 外したコマンドの番号 (`excluded`) は提案ごとに持ち、プレビューと採用に渡す (一部だけの採用)。
 // - 利用者の注文 (`instructions`) は AI を使うときだけ分類・提案・作り直しに添える。プロジェクトには保存しない
 //   (エディタを開いている間だけ。docs/editor.md#ai-への注文と作り直し)。
+// - 法線マップの提案 (AI なし): まとまりの一覧 (`normalGroups`) を読み、まとまりごとに含めるか・強さを選んで
+//   (`normalPicks`) 提案する。提案のコマンドはまとまりごとに区切って出す (docs/editor.md#法線マップの提案)。
 import type { EditorDocument } from "../document.svelte";
 import { fileDialogs } from "../fileDialogs";
 import { PSD_FILTER, parentDir } from "../filePaths";
@@ -15,6 +17,7 @@ import {
   ipc,
   type Model,
   type ModuleRigChoice,
+  type NormalMapGroupView,
   type Parameter,
   type ProposalState,
 } from "../ipc";
@@ -24,7 +27,12 @@ import { withConsent } from "./consent";
 import {
   type CommandGroup,
   excludedList,
+  groupCommands,
   instructionsToSend,
+  type NormalMapPick,
+  normalMapChoices,
+  normalMapPicks,
+  sectionGroups,
   toggleCommand,
   toggleGroup,
 } from "./proposals";
@@ -73,6 +81,12 @@ export class ProposalsView {
    * docs/editor.md#モジュールのプロジェクトでの-ai-の提案
    */
   moduleOptions = $state<ModuleRigChoice>({ direct: false, colliders: true, poses: true });
+  /** 法線マップを作るテクスチャのまとまり (読む前・読めなければ null)。 */
+  normalGroups = $state.raw<NormalMapGroupView[] | null>(null);
+  /** まとまりごとの選び方 (鍵は `normalGroupKey`)。 */
+  normalPicks = $state<Record<string, NormalMapPick>>({});
+  /** 法線マップを持つテクスチャも作り直すか。 */
+  replaceNormalMaps = $state(false);
 
   #doc: EditorDocument;
   #viewport: PhysicsPreview | null;
@@ -118,6 +132,38 @@ export class ProposalsView {
 
   async refresh(): Promise<void> {
     await this.#task(null, async () => {
+      this.value = await ipc.getProposals();
+    });
+    await this.loadNormalGroups();
+  }
+
+  /** 提案 `id` のコマンドの一覧のまとまり (区切りがあればそれ、なければ同じ対象への続いたコマンド)。 */
+  commandGroups(id: number): CommandGroup[] {
+    const sections = this.value?.sections.find((s) => s.id === id);
+    if (sections) return sectionGroups(sections.sections);
+    const proposal = this.value?.proposals.find((p) => p.id === id);
+    return proposal ? groupCommands(proposal.commands) : [];
+  }
+
+  /** 法線マップのまとまりを読み直す (ラベルは分類と編集で変わる)。選び方は残す。 */
+  async loadNormalGroups(): Promise<void> {
+    try {
+      const groups = await ipc.getNormalMapGroups();
+      this.normalGroups = groups;
+      this.normalPicks = normalMapPicks(groups, this.normalPicks);
+    } catch {
+      this.normalGroups = null;
+    }
+  }
+
+  /** 選んだまとまりの法線マップを提案する (AI なし。何も送らない)。 */
+  async proposeNormalMaps(): Promise<void> {
+    const groups = this.normalGroups;
+    if (!groups) return;
+    const choices = normalMapChoices(groups, this.normalPicks);
+    const replace = this.replaceNormalMaps;
+    await this.#task("Making normal maps from the shapes…", async () => {
+      await ipc.proposeNormalMaps(choices, replace);
       this.value = await ipc.getProposals();
     });
   }
@@ -172,6 +218,8 @@ export class ProposalsView {
         );
         if (!reply) return false;
         this.value = await ipc.getProposals();
+        // 分類はまとまりのラベルを変える。
+        await this.loadNormalGroups();
         return true;
       },
     );

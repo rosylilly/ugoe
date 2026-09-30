@@ -7,7 +7,8 @@
 //! 書き換えない。
 //!
 //! 法線マップの生成 (アルファの形からふくらみを作る決定的な方法) も持つ ([`bulge_normal_map`]、部位のまとまりを
-//! 1 つの形にする [`group_bulge_normal_maps`])。
+//! 1 つの形にする [`group_bulge_normal_maps`]、形に加えず向きだけを受けるテクスチャを含める
+//! [`group_bulge_normal_maps_oriented`])。
 
 mod additive;
 mod depth;
@@ -25,8 +26,9 @@ pub use depth::infer_depth_rotation;
 pub use error::InferError;
 pub use mirror::{MirrorOptions, check_mirror, mirror_keyforms};
 pub use normal::{
-    BulgeOptions, EDGE_PASSES, HeightField, NormalMap, NormalMapError, PlacedTexture, bulge_height,
-    bulge_normal_map, decode_normal, encode_normal, fill_missing, group_bulge_normal_maps,
+    BulgeOptions, EDGE_PASSES, GroupNormalMaps, HeightField, NormalMap, NormalMapError,
+    PlacedTexture, bulge_height, bulge_normal_map, decode_normal, encode_normal, fill_missing,
+    group_bulge_normal_maps, group_bulge_normal_maps_oriented,
 };
 pub use target::{KeyformTarget, infer_additive_target};
 pub use values::KeyformValues;

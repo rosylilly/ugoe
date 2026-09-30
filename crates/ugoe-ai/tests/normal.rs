@@ -9,11 +9,12 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use ugoe_ai::classify::label_meshes_by_name;
+use ugoe_ai::classify::{Label, label_meshes_by_name};
 use ugoe_ai::depth::{DepthMap, DepthRequest, FixedDepthEstimator};
 use ugoe_ai::normal::{
     BulgeNormalMapOptions, DepthNormalOptions, NormalMapOptions, SurfaceGroup, normal_map_group,
-    plan_depth_normal_maps, propose_bulge_normal_maps, propose_depth_normal_maps,
+    normal_map_groups, plan_depth_normal_maps, propose_bulge_normal_maps,
+    propose_depth_normal_maps,
 };
 use ugoe_ai::{AiError, Proposal};
 use ugoe_core::Vec2;
@@ -340,6 +341,102 @@ fn one_texture_of_a_group_uses_the_whole_shape() {
     assert_eq!(group.group, Some(SurfaceGroup::Body));
     assert_eq!(group.shape_only.len(), 1);
     assert!(group.options.radius.is_none());
+}
+
+/// 眼鏡のラベルのテクスチャは顔のまとまりに入り、形に加えず顔の面の向きだけを受ける (T0520)。
+#[test]
+fn eyewear_takes_the_face_orientation_only() {
+    let mut doc = bustup();
+    let mut labels = label_meshes_by_name(doc.model());
+    // 目の白目を眼鏡に見立てる (顔の上にあり、顔の形の中)。
+    let eye = doc
+        .model()
+        .meshes
+        .iter()
+        .find(|m| m.name == "eyewhite-l")
+        .unwrap();
+    let eye_texture = doc.model().textures[eye.texture as usize].name.clone();
+    labels.insert(eye.id.clone(), Label::Eyewear);
+    let group = normal_map_group(
+        doc.model(),
+        doc.textures(),
+        &labels,
+        &BulgeNormalMapOptions::default(),
+        &eye_texture,
+    )
+    .unwrap();
+    assert_eq!(group.group, Some(SurfaceGroup::Face));
+    assert_eq!(group.oriented, vec![eye_texture.clone()]);
+    assert!(group.textures.contains(&eye_texture));
+    assert_eq!(group.textures.len(), 14, "{:?}", group.textures);
+
+    let proposal = propose_bulge_normal_maps(
+        doc.model(),
+        doc.textures(),
+        &labels,
+        &BulgeNormalMapOptions::default(),
+    )
+    .unwrap();
+    assert!(
+        proposal.rationale.contains("向きだけを受けたもの"),
+        "{}",
+        proposal.rationale
+    );
+    apply(&mut doc, &proposal);
+    let p = mesh_center(&doc, "eyewhite-l");
+    let (a, b) = (
+        normal_on_canvas(&doc, "eyewhite-l", p),
+        normal_on_canvas(&doc, "face", p),
+    );
+    assert!(angle(a, b) < 3.0, "eyewear {a:?} vs face {b:?}");
+}
+
+/// まとまりの一覧: まとまりごとに 1 行、単独のものは最後に 1 行。すべての対象のテクスチャが 1 回ずつ入る (T0520)。
+#[test]
+fn groups_list_every_target_once() {
+    let doc = bustup();
+    let labels = label_meshes_by_name(doc.model());
+    let options = BulgeNormalMapOptions::default();
+    let groups = normal_map_groups(doc.model(), doc.textures(), &labels, &options).unwrap();
+    let names: Vec<_> = groups.iter().map(|g| g.group).collect();
+    assert_eq!(names.first(), Some(&Some(SurfaceGroup::Face)));
+    assert_eq!(
+        names
+            .iter()
+            .filter(|g| **g == Some(SurfaceGroup::Face))
+            .count(),
+        1
+    );
+    let mut all: Vec<String> = groups.iter().flat_map(|g| g.textures.clone()).collect();
+    let count = all.len();
+    all.sort();
+    all.dedup();
+    assert_eq!(all.len(), count, "no texture is listed twice");
+    let proposal =
+        propose_bulge_normal_maps(doc.model(), doc.textures(), &labels, &options).unwrap();
+    let made = proposal
+        .commands
+        .iter()
+        .filter(|c| matches!(c, Command::SetNormalMap { .. }))
+        .count();
+    assert_eq!(count, made);
+    // それぞれのまとまりの設定は、1 枚ずつ尋ねたときと同じ。
+    for g in groups.iter().filter(|g| g.group.is_some()) {
+        let one = normal_map_group(
+            doc.model(),
+            doc.textures(),
+            &labels,
+            &options,
+            &g.textures[0],
+        )
+        .unwrap();
+        assert_eq!(one.options, g.options);
+    }
+    // ラベルがなければ、すべて単独の 1 行。
+    let alone = normal_map_groups(doc.model(), doc.textures(), &BTreeMap::new(), &options).unwrap();
+    assert_eq!(alone.len(), 1);
+    assert_eq!(alone[0].group, None);
+    assert_eq!(alone[0].textures.len(), count);
 }
 
 // --- 深度推定から ---

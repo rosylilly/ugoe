@@ -2,7 +2,8 @@
   選んだメッシュのテクスチャの法線マップ (docs/editor.md#ライティングの画面)。
   - 「Generate」: 部位のまとまり (顔と目口鼻眉・首と体と腕・髪など。意味ラベルから決める) の形を 1 つのふくらみにして
     法線マップを作る (AI なし。ipc.generateTextureNormalMap)。強さと縁の丸みはまとまりの既定から始まる (ipc.getNormalMapGroup)。
-    「Generate for the group」はまとまりのすべてのテクスチャに作る。
+    「Generate for the group」はまとまりのすべてのテクスチャに作る。眼鏡はまとまり (顔) の形に加えず、向きだけを受ける
+    (`oriented`)。すべてのテクスチャをまとめて提案するのは AI タブ (lib/ai/ProposalsPanel.svelte)。
   - 「Assign PNG…」: PNG を選んで付ける (DirectX 形式なら「Flip green」)。
   - 「Remove」: set_normal_map で外す。
   どれも 1 回の Undo で戻る。テクスチャと法線マップの画像を並べて表示する。
@@ -183,12 +184,15 @@ function remove(): void {
     <h4>Generate from the shape</h4>
     <p class="muted note">
       Makes the opaque shape bulge toward the viewer (no AI). Parts of the same group are shaped as one surface, so eyes
-      follow the face and the neck joins the body. Turns on lighting for the model if it is off.
+      follow the face and the neck joins the body; glasses take the face's direction without bulging. Turns on lighting
+      for the model if it is off. To propose maps for every texture at once, use the AI tab.
     </p>
     {#if group}
       <p class="muted note" data-testid="normal-map-group">
-        {#if group.group && partners.length > 0}
-          Group “{group.group}” with {partners.join(", ")}{#if group.shape_only.length > 0}; also shaped by {group.shape_only.join(", ")}{/if}.
+        {#if group.group && ref && group.oriented.includes(ref.name)}
+          Takes the direction of group “{group.group}” ({partners.filter((t) => !group?.oriented.includes(t)).join(", ")}) without bulging.
+        {:else if group.group && partners.length > 0}
+          Group “{group.group}” with {partners.join(", ")}{#if group.shape_only.length > 0}; also shaped by {group.shape_only.join(", ")}{/if}{#if group.oriented.length > 0}; {group.oriented.join(", ")} only take its direction{/if}.
         {:else if group.group}
           Group “{group.group}” (this texture only).
         {:else}

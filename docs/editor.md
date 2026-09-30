@@ -1018,7 +1018,8 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
   - 「Generate」(`generate_texture_normal_map(texture, settings, whole_group)`): 部位のまとまりの形のふくらみ (`ugoe_ai::normal::propose_bulge_normal_maps`。
     AI は使わない。[ai-integration.md#まとまりでふくらませる](ai-integration.md#まとまりでふくらませる))。まとまりは意味ラベルから決めます。ラベルはメッシュの名前の規則
     (`ugoe_ai::classify::label_meshes_by_name`) に、AI の提案のパネルで PSD を分類していればその結果 (`rig::mesh_parts`) を重ねたものです (T0518)。
-    - `get_normal_map_group(texture)` (`NormalMapGroupView`) で、まとまりの名前・いっしょにふくらむテクスチャ・形にだけ加えるテクスチャ・既定の設定を出し、
+    - `get_normal_map_group(texture)` (`NormalMapGroupView`) で、まとまりの名前・いっしょにふくらむテクスチャ・形にだけ加えるテクスチャ・向きだけを受けるテクスチャ
+      (眼鏡。選んだテクスチャがそれなら「Takes the direction of group “face” … without bulging」)・既定の設定を出し、
       強さ (0〜2) と「Round edges only」の縁の丸みの幅 (`edge`、まとまりの格子の画素)・ならしは、テクスチャを選ぶたびにまとまりの既定から始めます (「Defaults」で戻す)。
     - `settings` (`BulgeSettings { strength, edge, smoothing }`) はまとまり全体の設定です (`null` ならまとまりの既定)。「Regenerate」は選んだテクスチャの法線マップだけを、
       「Generate for the group」(`whole_group`) はまとまりのすべてのテクスチャの法線マップを作ります。どちらも形はまとまり全体で決まるので、1 枚ずつ作っても同じ向きになります。
@@ -1080,6 +1081,7 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
 | `save_project_as(path)` | 別の場所に保存し、以後の保存先にする。拡張子 `.ugoeproj` がなければ付け、名前をディレクトリ名にする |
 | `get_export_settings` / `set_export_settings(settings)` | 書き出しの設定 (`ExportSettings`) を読む / プロジェクトに残す ([書き出し](#書き出し))。範囲の外はエラー |
 | `get_preview_lighting` / `set_preview_lighting(lighting)` | プレビューの光源 (`PreviewLighting`) を読む / プロジェクトに残す ([ライティングの画面](#ライティングの画面))。範囲の外はエラー |
+| `get_normal_map_group(texture)` / `get_normal_map_groups` | 1 枚のテクスチャのまとまりと既定の設定 / すべての対象のまとまりの一覧 (AI タブ。[法線マップの提案](#法線マップの提案))。`NormalMapGroupView` (`with_normal_map` はすでに法線マップを持つテクスチャ)。`src-tauri/src/lighting.rs` |
 | `generate_texture_normal_map(texture, settings)` / `assign_texture_normal_map(texture, path, flip_green)` / `get_texture_png(name)` | 法線マップの生成・PNG の割り当て (どちらも 1 回の Undo) と、テクスチャか法線マップの画像の PNG。`src-tauri/src/lighting.rs` |
 | `export_bundle(path)` | プロジェクトの書き出しの設定で `.ugoe` ファイルに書き出し (アトラス化は任意)、`ExportReport` を返す。保存状態は変えない |
 | `open_sample_project(parent)` | 着せ替えの見本 (`assets/samples/dress-up/` をバイナリに埋め込んだもの) を、`parent` の中の新しいフォルダー `ugoe-dress-up-sample` (あれば `-2`・`-3`…。既にあるフォルダーには書かない) に本体 `dress-up.ugoeproj` とモジュールのプロジェクト 4 つとして書き出し、本体を開く (T0715。`ugoe sample dress-up --project` と同じ形)。`src-tauri/src/sample.rs` |
@@ -1301,14 +1303,33 @@ PSD の取り込みから「レイヤーの分類 → リギングの提案」�
 
 | コマンド | 内容 |
 | --- | --- |
-| `get_proposals` | `ProposalState { proposals, psd, classification, regenerable }` (一覧・元にする PSD・最後の分類・作り直せる提案) |
+| `get_proposals` | `ProposalState { proposals, psd, classification, regenerable, sections }` (一覧・元にする PSD・最後の分類・作り直せる提案・コマンドの区切り) |
 | `classify_psd_layers(psd?, use_ai, instructions?, revise, consent?)` | 分類して覚える。`AiReply<Classification>`。`psd` を省くと取り込んだ PSD。`revise` なら今の分類を前の答えとして送る |
 | `propose_rig_from_psd(use_ai, instructions?, consent?, module_options?)` | 分類からリグを提案し、一覧に置く。`AiReply<ProposalView>`。`module_options` はモジュールのプロジェクトの組み方 (`ModuleRigChoice`。省略すると既定) |
 | `regenerate_rig_proposal(id, instructions?, consent?, module_options?)` | 提案を前の答えと注文を添えて作り直し、後ろに並べる (いつも AI)。`AiReply<ProposalView>` |
+| `propose_normal_maps(choices, replace_existing)` | 選んだまとまり (`NormalMapGroupChoice { group, settings }`) の法線マップを提案し、一覧に置く (AI なし)。`ProposalView`。[法線マップの提案](#法線マップの提案) |
 | `preview_proposal(id, excluded)` | 外したコマンドを除いて複製に適用した姿。`ProposalPreview { model_json, report }` |
 | `get_proposal_preview_bundle` / `clear_proposal_preview` | プレビューの `.ugoe` バンドル (生のバイト列) / プレビューの複製を捨てる |
 | `adopt_proposal(id, excluded)` | 外したコマンドを除いて採用する (1 回の Undo で戻る)。`ApplyReport` |
 | `reject_proposal(id)` | 提案を捨てる。`ProposalState` |
+
+### 法線マップの提案
+
+AI タブの「Normal maps from the shapes」で、すべてのテクスチャの法線マップを部位のまとまりごとに設定して 1 つの提案にし、プレビューしてから採用します (T0520)。
+作り方は Lighting タブの「Generate」と同じ `ugoe_ai::normal` (アルファの形のふくらみ。[ai-integration.md#まとまりでふくらませる](ai-integration.md#まとまりでふくらませる)) で、
+**AI は使わず、何も送りません**。操作の手順は [manual/ai.md](manual/ai.md#法線マップを提案する)。
+
+- **まとまりの一覧:** `get_normal_map_groups` が、法線マップを作る対象 (マスク専用と背景を除くメッシュのテクスチャ) のまとまりを返します。ラベルは Lighting タブと同じく
+  メッシュの名前の規則に、パネルで分類していればその結果を重ねたもので、分類し直すと一覧も読み直します。単独でふくらませるもの (`alone`・ラベルなし) は 1 行にまとめます。
+  行ごとにテクスチャの数・法線マップを持つ数・向きだけを受ける数 (眼鏡) を出します。
+- **選ぶ:** 行ごとに含めるか (既定はすべて) と強さ (0〜2。既定はまとまりの既定) を選びます。縁の丸み・ならしはまとまりの既定のままです (細かく変えるなら Lighting タブ)。
+  選び方はエディタを開いている間だけ覚えます。「Replace existing normal maps」を付けなければ、法線マップを持つテクスチャは飛ばします。
+- **提案:** `propose_normal_maps` が `set_normal_map` の列 (ライティングが無効なら最後に `set_lighting`) を作り、一覧に置きます (題名の末尾は「— no AI」)。
+  作る間はドキュメントのロックを持たず、その間にドキュメントが変わったら置きません。モジュールのプロジェクトでは断ります (本体のテクスチャとライティングは変えられない。
+  パネルにも出さない)。
+- **区切り:** 提案のコマンドはまとまりごとの区切り (`ProposalState::sections`、`CommandSection { label, indices, subjects }`。`subjects` はコマンドごとのテクスチャの名前) にし、一覧はその単位でまとめます
+  (まとまりのチェックで、そのまとまりの法線マップを外せる)。区切りのない提案 (リグなど) は今までどおり、同じ対象への続いたコマンドをまとめます。
+- **プレビュー:** 提案の複製はライティングが有効なので、ビューポートはプレビューの光源 (Lighting タブの Preview lights) で照らした姿を出します。
 
 ### モジュールのプロジェクトでの AI の提案
 

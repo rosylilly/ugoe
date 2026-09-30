@@ -28,6 +28,7 @@ import type {
   ModuleProblem,
   ModuleRigChoice,
   ModuleStatus,
+  NormalMapGroupChoice,
   NormalMapGroupView,
   OverflowReport,
   PhysicsSettings,
@@ -154,6 +155,11 @@ export const ipc = {
   /** テクスチャの法線マップを作る部位のまとまりと、その既定の設定。 */
   getNormalMapGroup: (texture: string) =>
     invoke<NormalMapGroupView>("get_normal_map_group", { texture }),
+  /**
+   * 法線マップを作るすべてのテクスチャの、まとまりの一覧と既定の設定 (AI タブ)。単独でふくらませるもの
+   * (`alone` と、ラベルのない `group: null`) はそれぞれ 1 行にまとめて最後に置く。
+   */
+  getNormalMapGroups: () => invoke<NormalMapGroupView[]>("get_normal_map_groups"),
   /** まとまりの形から法線マップを作る (`settings` が null ならまとまりの既定、`wholeGroup` ならまとまり全体)。 */
   generateTextureNormalMap: (
     texture: string,
@@ -263,6 +269,13 @@ export const ipc = {
       consent,
       moduleOptions,
     }),
+  /**
+   * apps/editor/src-tauri/src/proposals.rs。選んだまとまりのテクスチャに、まとまりごとの設定で法線マップを作る提案を
+   * 一覧に置く (AI は使わず、何も送らない。ドキュメントは変えない)。コマンドはまとまりごとに区切る
+   * (`ProposalState.sections`)。`replaceExisting` なら法線マップを持つテクスチャも作り直す。docs/editor.md#法線マップの提案
+   */
+  proposeNormalMaps: (choices: NormalMapGroupChoice[], replaceExisting: boolean) =>
+    invoke<ProposalView>("propose_normal_maps", { choices, replaceExisting }),
   /**
    * 提案を、前の答えと注文を AI に送って作り直す (いつも AI。`withConsent` で呼ぶ)。新しい提案は前の提案の後ろに並ぶ。
    * docs/editor.md#ai-への注文と作り直し

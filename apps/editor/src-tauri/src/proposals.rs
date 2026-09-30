@@ -12,6 +12,9 @@
 //! - 利用者の注文 (`instructions`) は AI を使うときだけ送る。作り直し ([`regenerate_rig_proposal`]) は前の答え
 //!   (値と理由) と注文を送って新しい提案を作り、前の提案の後ろに並べる (置き換えない)。注文はプロジェクトに
 //!   保存しない (`docs/editor.md#ai-への注文と作り直し`)。
+//! - 法線マップの提案 ([`propose_normal_maps`]) は AI を使わず、何も送らない (`ugoe_ai::normal`。まとまりと設定の
+//!   決め方は `crate::lighting`)。コマンドをまとまりごとの区切り ([`CommandSection`]) にして画面に渡す
+//!   (`docs/editor.md#法線マップの提案`)。
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -40,6 +43,7 @@ use ugoe_psd::LayerTree;
 use crate::AppState;
 use crate::ai::{AiReply, ConsentAnswer, Prepared, blocking, lock_project, prepare_instructed};
 use crate::ai_provider::Purpose;
+use crate::lighting::{CommandSection, NormalMapGroupChoice, normal_map_proposal_in};
 use crate::project::absolute_path;
 
 /// 提案の元にする PSD がないときの断りの文言。
@@ -56,6 +60,8 @@ pub struct ProposalSession {
     preview: Option<Document>,
     /// このパネルで作ったリグの提案の値と理由 (提案の番号ごと。作り直しで前の答えとして送る)。
     rigs: HashMap<u32, PreviousAnswer>,
+    /// 提案のコマンドの区切り (提案の番号ごと。法線マップの提案のまとまり)。
+    sections: HashMap<u32, Vec<CommandSection>>,
 }
 
 #[derive(Debug, Clone)]
@@ -93,6 +99,15 @@ impl ProposalSession {
                 .iter()
                 .map(|p| p.id)
                 .filter(|id| self.rigs.contains_key(id))
+                .collect(),
+            sections: proposals
+                .iter()
+                .filter_map(|p| {
+                    self.sections.get(&p.id).map(|sections| ProposalSections {
+                        id: p.id,
+                        sections: sections.clone(),
+                    })
+                })
                 .collect(),
             proposals,
             psd: self.psd.as_ref().map(|p| p.display().to_string()),
@@ -162,6 +177,15 @@ pub struct ProposalState {
     pub classification: Option<Classification>,
     /// 注文を添えて作り直せる提案の番号 (このパネルで作ったリグの提案。つないだエージェントの提案は含まない)。
     pub regenerable: Vec<u32>,
+    /// コマンドを区切って出す提案 (法線マップの提案)。ない提案は、同じ対象への続いたコマンドをまとめて出す。
+    pub sections: Vec<ProposalSections>,
+}
+
+/// 提案 1 つのコマンドの区切り。
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+pub struct ProposalSections {
+    pub id: u32,
+    pub sections: Vec<CommandSection>,
 }
 
 /// 提案を複製に適用した姿 (`preview_proposal` の戻り値)。
@@ -555,6 +579,55 @@ pub async fn regenerate_rig_proposal(
     .await
 }
 
+/// 選んだまとまり (`choices`。まとまりと設定は `get_normal_map_groups` で得る) のテクスチャに、アルファの形から法線マップを
+/// 作る提案を一覧に置く (ドキュメントは変えない)。AI は使わず、何も送らない。ラベルはメッシュの名前の規則に、分類が
+/// あれば重ねる。`replace_existing` なら法線マップを持つテクスチャも作り直す。モデルのライティングが無効なら有効にする
+/// コマンドも入る。コマンドはまとまりごとに区切る (`ProposalState::sections`)。
+#[tauri::command]
+pub async fn propose_normal_maps(
+    app: AppHandle,
+    choices: Vec<NormalMapGroupChoice>,
+    replace_existing: bool,
+) -> Result<ProposalView, String> {
+    blocking(app, move |state| {
+        propose_normal_maps_in(state, &choices, replace_existing)
+    })
+    .await
+}
+
+/// [`propose_normal_maps`] の本体。
+pub(crate) fn propose_normal_maps_in(
+    state: &AppState,
+    choices: &[NormalMapGroupChoice],
+    replace_existing: bool,
+) -> Result<ProposalView, String> {
+    let layers = lock_project(state)?.proposals.layer_labels();
+    // 作る間はロックを持たない (大きなテクスチャでは時間がかかる)。
+    let (document, base) = {
+        let document = lock_document(state)?;
+        (document.detached(), document.state_id())
+    };
+    let (proposal, sections) =
+        normal_map_proposal_in(&document, layers.as_deref(), choices, replace_existing)?;
+    let document = lock_document(state)?;
+    if document.state_id() != base {
+        return Err("the model changed while the proposal was being made; propose again".into());
+    }
+    let mut session = lock_project(state)?;
+    let proposals = &mut session.proposals;
+    let view = proposals
+        .proposals
+        .add(
+            &document,
+            proposal.title,
+            proposal.rationale,
+            proposal.commands,
+        )
+        .map_err(|e| e.to_string())?;
+    proposals.sections.insert(view.id, sections);
+    Ok(view)
+}
+
 /// 分類に添える注文と、分類の作り直しか。
 #[derive(Debug, Default)]
 pub(crate) struct Ask<'a> {
@@ -833,6 +906,7 @@ pub(crate) fn reject_in(state: &AppState, id: u32) -> Result<ProposalState, Stri
         .reject(id)
         .map_err(|e| e.to_string())?;
     session.proposals.rigs.remove(&id);
+    session.proposals.sections.remove(&id);
     session.proposals.preview = None;
     Ok(session.proposals.state(&document))
 }

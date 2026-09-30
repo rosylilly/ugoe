@@ -3,7 +3,9 @@
 //! - [`propose_bulge_normal_maps`] は、テクスチャのアルファの形からふくらみを作る決定的な方法。AI は使わない。
 //!   意味ラベルから部位のまとまり ([`SurfaceGroup`]。顔と目口鼻眉・首と体と腕・髪など) を決め、まとまりの形を
 //!   基準の姿のキャンバスに並べて 1 つの形としてふくらませる (`ugoe_rigging::group_bulge_normal_maps`)。
+//!   眼鏡は顔のまとまりに入るが形に加えず、顔の面の向きだけを受ける ([`SurfaceGroup::orientation_only`])。
 //!   ラベルのないテクスチャは単独でふくらませる (`ugoe_rigging::bulge_normal_map`)。
+//!   [`normal_map_groups`] はまとまりの一覧 (エディタの AI タブでまとまりごとに設定して提案するため)。
 //! - [`propose_depth_normal_maps`] は、原画の深度推定 ([`DepthEstimator`]、振り向きの提案と共通) から、
 //!   テクスチャの画素ごとに基準の姿のキャンバス座標で深度を引き、その勾配を法線にする。
 //!
@@ -20,7 +22,7 @@ use ugoe_editor_core::texture::{MAX_TEXTURE_NAME_LEN, Textures, decode_rgba_png,
 use ugoe_model::{MeshId, Model};
 use ugoe_rigging::{
     BulgeOptions, EDGE_PASSES, HeightField, NormalMap, PlacedTexture, bulge_height, fill_missing,
-    group_bulge_normal_maps,
+    group_bulge_normal_maps_oriented,
 };
 use ugoe_runtime::{CompiledModel, ModelInstance};
 
@@ -88,7 +90,8 @@ impl Default for DepthNormalOptions {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SurfaceGroup {
-    /// 顔と、顔の上に描く部位 (鼻・頬・目・眉・口)。
+    /// 顔と、顔の上に描く部位 (鼻・頬・目・眉・口)。眼鏡も入るが、形に加えず向きだけを受ける
+    /// ([`SurfaceGroup::orientation_only`])。
     Face,
     /// 首・体・手足と服。形には顔 (`face`) も加える (首が形の上端として上を向かないように)。
     Body,
@@ -99,7 +102,7 @@ pub enum SurfaceGroup {
     Earwear,
     Headwear,
     Tail,
-    /// まとめない (眼鏡・その他の装飾・分からないもの)。テクスチャごとに単独でふくらませる。
+    /// まとめない (その他の装飾・分からないもの)。テクスチャごとに単独でふくらませる。
     Alone,
 }
 
@@ -110,7 +113,7 @@ impl SurfaceGroup {
         Some(match label {
             Face | Nose | Cheek | Eye | EyeWhite | Iris | EyeHighlight | EyelashUpper
             | EyelashLower | EyeClosed | Eyebrow | Mouth | MouthOpen | MouthClosed | MouthInner
-            | Teeth | Tongue => Self::Face,
+            | Teeth | Tongue | Eyewear => Self::Face,
             Neck | Body | Arm | Hand | Leg | Foot | Topwear | Bottomwear | Legwear | Footwear
             | Handwear | Neckwear => Self::Body,
             HairFront => Self::HairFront,
@@ -120,8 +123,7 @@ impl SurfaceGroup {
             Earwear => Self::Earwear,
             Headwear => Self::Headwear,
             Tail => Self::Tail,
-            // 眼鏡のつるは顔の外に出るので、顔の形に加えない。
-            Eyewear | Accessory | Other => Self::Alone,
+            Accessory | Other => Self::Alone,
             Background => return None,
         })
     }
@@ -139,6 +141,15 @@ impl SurfaceGroup {
             Self::Tail => "tail",
             Self::Alone => "alone",
         }
+    }
+
+    /// ラベルのテクスチャが、まとまりの形に加わらず、ふくらませずに面の向きだけを受けるか (T0520)。
+    ///
+    /// 眼鏡 (`eyewear`) は顔の上に重なるので顔の面の向きを受けたいが、つるが顔の外に出るので形に加えると顔の輪郭が
+    /// 広がり、単独でふくらませると細いつるが丸まって顔と向きが合わない。そこで顔の形の中では顔のふくらみの向きを、
+    /// 顔の外では近い輪郭の向きを受ける (`ugoe_rigging::group_bulge_normal_maps_oriented`)。
+    pub const fn orientation_only(label: Label) -> bool {
+        matches!(label, Label::Eyewear)
     }
 
     /// ラベルが `self` の形にだけ加わるか (法線マップはラベルのまとまりで作る)。
@@ -186,10 +197,12 @@ pub struct BulgeNormalMapOptions {
 pub struct NormalMapGroup {
     /// まとまり。ラベルがない・単独の設定があるなら `None` (単独でふくらませる)。
     pub group: Option<SurfaceGroup>,
-    /// いっしょにふくらませるテクスチャ (このテクスチャを含む。形にだけ加えるものは含めない)。
+    /// 法線マップを作るテクスチャ (このテクスチャを含む。向きだけを受けるものも含み、形にだけ加えるものは含めない)。
     pub textures: Vec<String>,
     /// 形にだけ加えるテクスチャ。
     pub shape_only: Vec<String>,
+    /// `textures` のうち、形に加えず向きだけを受けるテクスチャ (顔のまとまりの眼鏡)。
+    pub oriented: Vec<String>,
     /// 使う設定 (まとまりの既定か、置き換えたもの)。
     pub options: BulgeOptions,
 }
@@ -224,11 +237,12 @@ pub fn propose_bulge_normal_maps(
         let wanted: Vec<usize> = group
             .members
             .iter()
+            .chain(&group.oriented)
             .copied()
             .filter(|i| targets.iter().any(|(t, _)| t == i))
             .collect();
         let made = planner.make(&group)?;
-        for (i, map) in group.members.iter().zip(made) {
+        for (i, map) in group.members.iter().chain(&group.oriented).zip(made) {
             if wanted.contains(i) {
                 done.insert(*i);
                 maps.push((*i, map));
@@ -263,18 +277,52 @@ pub fn normal_map_group(
         .position(|t| t.name == texture)
         .ok_or_else(|| invalid(format!("texture `{texture}` not found")))?;
     let mut planner = GroupPlanner::new(model, textures, labels, options);
-    let group = planner.group_of(index)?;
-    let names = |list: &[usize]| {
-        list.iter()
-            .map(|&i| model.textures[i].name.clone())
-            .collect()
+    Ok(planner.group_of(index)?.named(model))
+}
+
+/// 法線マップを作るテクスチャのまとまりの一覧 ([`propose_bulge_normal_maps`] と同じ規則)。エディタの AI タブで、
+/// まとまりごとに設定を選んで提案するのに使う。
+///
+/// `options.textures` が空ならメッシュ (マスク専用と背景を除く) が使うすべてのテクスチャ、そうでなければその
+/// テクスチャが入るまとまり。`replace_existing` は見ない (法線マップを持つテクスチャも並べる)。並びはまとまりの順
+/// ([`SurfaceGroup`] の定義の順) で、単独でふくらませるもの (`alone` のまとまりと、ラベルのないもの (`group` が
+/// `None`)) は、それぞれ 1 つにまとめて最後に置く (`textures` はその全部、`options` は 1 枚ごとの設定)。
+/// 対象がなければ空。
+pub fn normal_map_groups(
+    model: &Model,
+    textures: &Textures,
+    labels: &BTreeMap<MeshId, Label>,
+    options: &BulgeNormalMapOptions,
+) -> Result<Vec<NormalMapGroup>, AiError> {
+    let targets = match targets(
+        model,
+        labels,
+        &options.textures,
+        options.per_texture.keys(),
+        true,
+    ) {
+        Ok(t) => t,
+        Err(_) if options.textures.is_empty() => return Ok(Vec::new()),
+        Err(e) => return Err(e),
     };
-    Ok(NormalMapGroup {
-        group: group.group,
-        textures: names(&group.members),
-        shape_only: names(&group.shape_only),
-        options: group.options,
-    })
+    let mut planner = GroupPlanner::new(model, textures, labels, options);
+    // ラベルのないもの (`None`) は最後に並べる。
+    let mut rows: BTreeMap<(bool, Option<SurfaceGroup>), NormalMapGroup> = BTreeMap::new();
+    for (index, _) in &targets {
+        let group = planner.group_of(*index)?.named(model);
+        let key = (group.group.is_none(), group.group);
+        match rows.get_mut(&key) {
+            // 単独でふくらませるものは 1 つにまとめる (まとまりのものは同じ内容なので 1 つ目を使う)。
+            Some(row) if matches!(group.group, None | Some(SurfaceGroup::Alone)) => {
+                row.textures.extend(group.textures);
+            }
+            Some(_) => {}
+            None => {
+                rows.insert(key, group);
+            }
+        }
+    }
+    Ok(rows.into_values().collect())
 }
 
 /// 1 つのまとまりの計画: メンバー・形にだけ加えるもの (テクスチャの番号) と設定。
@@ -282,7 +330,28 @@ struct PlannedGroup {
     group: Option<SurfaceGroup>,
     members: Vec<usize>,
     shape_only: Vec<usize>,
+    /// 形に加えず向きだけを受けるもの ([`SurfaceGroup::orientation_only`])。
+    oriented: Vec<usize>,
     options: BulgeOptions,
+}
+
+impl PlannedGroup {
+    fn named(&self, model: &Model) -> NormalMapGroup {
+        let names = |list: &[usize]| -> Vec<String> {
+            list.iter()
+                .map(|&i| model.textures[i].name.clone())
+                .collect()
+        };
+        let mut textures = names(&self.members);
+        textures.extend(names(&self.oriented));
+        NormalMapGroup {
+            group: self.group,
+            textures,
+            shape_only: names(&self.shape_only),
+            oriented: names(&self.oriented),
+            options: self.options,
+        }
+    }
 }
 
 /// まとまりを決め、テクスチャの画素をキャンバスに置いて法線マップを作る (画像と置いた位置を覚えておく)。
@@ -336,6 +405,7 @@ impl<'a> GroupPlanner<'a> {
             group: None,
             members: vec![index],
             shape_only: Vec::new(),
+            oriented: Vec::new(),
             options,
         };
         if let Some(o) = self.options.per_texture.get(name) {
@@ -359,7 +429,13 @@ impl<'a> GroupPlanner<'a> {
         let members: Vec<usize> = self
             .groups
             .iter()
-            .filter(|(i, (g, _))| *g == group && free(i))
+            .filter(|(i, (g, l))| *g == group && !SurfaceGroup::orientation_only(*l) && free(i))
+            .map(|(i, _)| *i)
+            .collect();
+        let oriented: Vec<usize> = self
+            .groups
+            .iter()
+            .filter(|(i, (g, l))| *g == group && SurfaceGroup::orientation_only(*l) && free(i))
             .map(|(i, _)| *i)
             .collect();
         let shape_only: Vec<usize> = self
@@ -384,6 +460,7 @@ impl<'a> GroupPlanner<'a> {
             group: Some(group),
             members,
             shape_only,
+            oriented,
             options,
         })
     }
@@ -431,7 +508,7 @@ impl<'a> GroupPlanner<'a> {
             .ok_or_else(|| invalid("texture was not placed".into()))
     }
 
-    /// まとまりのメンバーの法線マップ (メンバーの並び)。
+    /// まとまりのメンバーと向きだけを受けるものの法線マップ (`members`、`oriented` の並び)。
     fn make(&mut self, group: &PlannedGroup) -> Result<Vec<NormalMap>, AiError> {
         if group.group.is_none() || group.group == Some(SurfaceGroup::Alone) {
             // 単独: キャンバスに置かずテクスチャの画素でふくらませる (メッシュが覆わなくても作れる)。
@@ -445,7 +522,12 @@ impl<'a> GroupPlanner<'a> {
             map.extend_edges(&field.mask, EDGE_PASSES);
             return Ok(vec![map]);
         }
-        for &i in group.members.iter().chain(&group.shape_only) {
+        for &i in group
+            .members
+            .iter()
+            .chain(&group.shape_only)
+            .chain(&group.oriented)
+        {
             self.place(i)?;
         }
         let placed = |list: &[usize]| -> Vec<PlacedTexture<'_>> {
@@ -460,15 +542,17 @@ impl<'a> GroupPlanner<'a> {
                 })
                 .collect()
         };
-        group_bulge_normal_maps(
+        let maps = group_bulge_normal_maps_oriented(
             &placed(&group.members),
             &placed(&group.shape_only),
+            &placed(&group.oriented),
             &group.options,
         )
         .map_err(|e| {
             let g = group.group.map_or("", SurfaceGroup::as_str);
             invalid(format!("group `{g}`: {e}"))
-        })
+        })?;
+        Ok(maps.members.into_iter().chain(maps.oriented).collect())
     }
 }
 
@@ -510,6 +594,17 @@ fn group_line(model: &Model, group: &PlannedGroup, made: &[usize]) -> String {
                     "。形に加えたもの: {}",
                     group
                         .shape_only
+                        .iter()
+                        .map(name)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+            if !group.oriented.is_empty() {
+                line.push_str(&format!(
+                    "。形に加えず向きだけを受けたもの: {}",
+                    group
+                        .oriented
                         .iter()
                         .map(name)
                         .collect::<Vec<_>>()

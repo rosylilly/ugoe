@@ -7,11 +7,15 @@
 
 use std::collections::BTreeMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::State;
 use ts_rs::TS;
+use ugoe_ai::Proposal;
 use ugoe_ai::classify::{Label, LayerLabel, label_meshes_by_name};
-use ugoe_ai::normal::{BulgeNormalMapOptions, normal_map_group, propose_bulge_normal_maps};
+use ugoe_ai::normal::{
+    BulgeNormalMapOptions, NormalMapGroup, SurfaceGroup, normal_map_group, normal_map_groups,
+    propose_bulge_normal_maps,
+};
 use ugoe_ai::rig::mesh_parts;
 use ugoe_editor_core::lighting::{BulgeSettings, assign_normal_map};
 use ugoe_editor_core::{ApplyReport, Command, Document};
@@ -27,10 +31,15 @@ use crate::project::absolute_path;
 pub struct NormalMapGroupView {
     /// まとまり (`face`・`body`・`hair_front` など。`ugoe_ai::normal::SurfaceGroup`)。ラベルがなければ `null` (単独)。
     pub group: Option<String>,
-    /// いっしょにふくらませるテクスチャ (このテクスチャを含む)。
+    /// 法線マップを作るテクスチャ (このテクスチャを含む。`get_normal_map_groups` の単独のまとまり
+    /// (`alone` と `null`) では、単独でふくらませるすべてのテクスチャ)。
     pub textures: Vec<String>,
     /// 形にだけ加えるテクスチャ (体のまとまりの顔など)。
     pub shape_only: Vec<String>,
+    /// `textures` のうち、形に加えず向きだけを受けるテクスチャ (顔のまとまりの眼鏡)。
+    pub oriented: Vec<String>,
+    /// `textures` のうち、すでに法線マップを持つテクスチャ。
+    pub with_normal_map: Vec<String>,
     /// まとまりの既定の設定 (長さはまとまりの格子の画素)。
     pub defaults: BulgeSettings,
     /// ラベルを PSD の分類 (AI の提案のパネル) から取ったか。偽ならメッシュの名前の規則だけ。
@@ -55,6 +64,35 @@ fn layer_labels(state: &AppState) -> Result<Option<Vec<LayerLabel>>, String> {
     Ok(lock_project(state)?.proposals.layer_labels())
 }
 
+impl NormalMapGroupView {
+    fn new(model: &Model, group: NormalMapGroup, from_classification: bool) -> Self {
+        let with_normal_map = group
+            .textures
+            .iter()
+            .filter(|name| {
+                model
+                    .textures
+                    .iter()
+                    .any(|t| t.name == **name && t.normal_map.is_some())
+            })
+            .cloned()
+            .collect();
+        Self {
+            with_normal_map,
+            group: group.group.map(|g| g.as_str().to_owned()),
+            textures: group.textures,
+            shape_only: group.shape_only,
+            oriented: group.oriented,
+            defaults: BulgeSettings {
+                strength: group.options.strength,
+                edge: group.options.radius,
+                smoothing: group.options.smoothing,
+            },
+            from_classification,
+        }
+    }
+}
+
 /// テクスチャ `texture` の法線マップのまとまりと、その既定の設定。
 pub(crate) fn normal_map_group_in(
     document: &Document,
@@ -71,17 +109,148 @@ pub(crate) fn normal_map_group_in(
         texture,
     )
     .map_err(|e| e.to_string())?;
-    Ok(NormalMapGroupView {
-        group: group.group.map(|g| g.as_str().to_owned()),
-        textures: group.textures,
-        shape_only: group.shape_only,
-        defaults: BulgeSettings {
-            strength: group.options.strength,
-            edge: group.options.radius,
-            smoothing: group.options.smoothing,
-        },
-        from_classification: layers.is_some(),
-    })
+    Ok(NormalMapGroupView::new(model, group, layers.is_some()))
+}
+
+/// 法線マップを作るすべてのテクスチャの、まとまりの一覧 (AI タブ。`ugoe_ai::normal::normal_map_groups`)。
+pub(crate) fn normal_map_groups_in(
+    document: &Document,
+    layers: Option<&[LayerLabel]>,
+) -> Result<Vec<NormalMapGroupView>, String> {
+    let model = document.model();
+    let labels = mesh_labels(model, layers);
+    let groups = normal_map_groups(
+        model,
+        document.textures(),
+        &labels,
+        &BulgeNormalMapOptions::default(),
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(groups
+        .into_iter()
+        .map(|g| NormalMapGroupView::new(model, g, layers.is_some()))
+        .collect())
+}
+
+/// AI タブで選んだ、法線マップを提案する 1 つのまとまりと設定 (`propose_normal_maps` の引数)。
+#[derive(Debug, Clone, PartialEq, Deserialize, TS)]
+pub struct NormalMapGroupChoice {
+    /// まとまり (`NormalMapGroupView::group`。`null` はラベルのないテクスチャ)。
+    pub group: Option<String>,
+    /// まとまり全体の設定 (単独のまとまりでは 1 枚ごとの設定)。
+    pub settings: BulgeSettings,
+}
+
+/// 提案のコマンドを、画面でまとめて出す区切り (法線マップの提案のまとまりごと)。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct CommandSection {
+    /// 区切りの名前 (まとまり `face` など。ラベルのないものは `unlabeled`、ライティングを有効にするのは `lighting`)。
+    pub label: String,
+    /// 区切りに入るコマンドの番号 (提案の中の 0 始まり)。
+    pub indices: Vec<usize>,
+    /// コマンドごとの対象 (`indices` と同じ並び。法線マップを作るテクスチャの名前。ライティングは空)。
+    pub subjects: Vec<String>,
+}
+
+/// ラベルのないテクスチャのまとまりの、区切りの名前。
+const UNLABELED: &str = "unlabeled";
+
+/// 選んだまとまりのテクスチャに、まとまりごとの設定で法線マップを作る提案 (AI は使わない) と、コマンドの区切り。
+/// `replace_existing` なら法線マップを持つテクスチャも作り直す。モジュールのプロジェクトでは断る。
+pub(crate) fn normal_map_proposal_in(
+    document: &Document,
+    layers: Option<&[LayerLabel]>,
+    choices: &[NormalMapGroupChoice],
+    replace_existing: bool,
+) -> Result<(Proposal, Vec<CommandSection>), String> {
+    if document.module().is_some() {
+        // 本体のテクスチャとライティングの設定は変えられない (ADR 0024)。
+        return Err("normal maps are proposed only in model projects".into());
+    }
+    if choices.is_empty() {
+        return Err("choose at least one group".into());
+    }
+    let model = document.model();
+    let labels = mesh_labels(model, layers);
+    let groups = normal_map_groups(
+        model,
+        document.textures(),
+        &labels,
+        &BulgeNormalMapOptions::default(),
+    )
+    .map_err(|e| e.to_string())?;
+    let mut options = BulgeNormalMapOptions {
+        replace_existing,
+        ..Default::default()
+    };
+    // テクスチャの名前 → 区切りの名前。
+    let mut section_of = BTreeMap::new();
+    for choice in choices {
+        let group = match &choice.group {
+            None => None,
+            Some(name) => Some(
+                serde_json::from_value::<SurfaceGroup>(serde_json::Value::String(name.clone()))
+                    .map_err(|_| format!("unknown group `{name}`"))?,
+            ),
+        };
+        let row = groups
+            .iter()
+            .find(|g| g.group == group)
+            .ok_or_else(|| format!("no texture is in the group `{}`", section_name(group)))?;
+        match group {
+            Some(g) => {
+                options.per_group.insert(g, choice.settings.into());
+            }
+            None => options.default = choice.settings.into(),
+        }
+        for t in &row.textures {
+            section_of.insert(t.clone(), section_name(group));
+            options.textures.push(t.clone());
+        }
+    }
+    let mut proposal = propose_bulge_normal_maps(model, document.textures(), &labels, &options)
+        .map_err(|e| e.to_string())?;
+    proposal.title.push_str(" — no AI");
+    let mut sections: Vec<CommandSection> = Vec::new();
+    for (i, command) in proposal.commands.iter().enumerate() {
+        let (label, subject) = match command {
+            Command::SetNormalMap { texture, .. } => (
+                section_of
+                    .get(texture)
+                    .cloned()
+                    .unwrap_or_else(|| UNLABELED.to_owned()),
+                texture.clone(),
+            ),
+            _ => ("lighting".to_owned(), String::new()),
+        };
+        match sections.iter_mut().find(|s| s.label == label) {
+            Some(s) => {
+                s.indices.push(i);
+                s.subjects.push(subject);
+            }
+            None => sections.push(CommandSection {
+                label,
+                indices: vec![i],
+                subjects: vec![subject],
+            }),
+        }
+    }
+    // 選んだまとまりの順に並べ、ライティングを最後に置く。
+    let order: Vec<String> = choices
+        .iter()
+        .map(|c| c.group.clone().unwrap_or_else(|| UNLABELED.to_owned()))
+        .collect();
+    sections.sort_by_key(|s| {
+        order
+            .iter()
+            .position(|o| *o == s.label)
+            .unwrap_or(usize::MAX)
+    });
+    Ok((proposal, sections))
+}
+
+fn section_name(group: Option<SurfaceGroup>) -> String {
+    group.map_or(UNLABELED, SurfaceGroup::as_str).to_owned()
 }
 
 /// テクスチャ `texture` の法線マップを、まとまりの形から作るコマンド (1 つの Batch)。
@@ -130,6 +299,17 @@ pub fn get_normal_map_group(
     let layers = layer_labels(&state)?;
     let document = lock(&state)?;
     normal_map_group_in(&document, layers.as_deref(), &texture)
+}
+
+/// 法線マップを作るすべてのテクスチャの、まとまりの一覧と既定の設定 (AI タブでまとまりごとに設定して提案する)。
+/// 単独でふくらませるもの (`alone` と、ラベルのない `null`) はそれぞれ 1 行にまとめて最後に置く。
+#[tauri::command]
+pub fn get_normal_map_groups(
+    state: State<'_, AppState>,
+) -> Result<Vec<NormalMapGroupView>, String> {
+    let layers = layer_labels(&state)?;
+    let document = lock(&state)?;
+    normal_map_groups_in(&document, layers.as_deref())
 }
 
 /// テクスチャ `texture` の法線マップを、部位のまとまり (意味ラベルから決める) の形のふくらみから作って付ける
@@ -304,5 +484,32 @@ mod tests {
         assert_eq!(view.group.as_deref(), Some("hair_front"));
         assert!(view.from_classification);
         assert!(view.textures.contains(&texture_of(&doc, "front hair")));
+    }
+
+    /// 分類で眼鏡にしたテクスチャは、顔のまとまりの向きだけを受ける (T0520)。
+    #[test]
+    fn eyewear_takes_the_face_direction() {
+        let mut doc = bustup();
+        let eye = texture_of(&doc, "eyewhite-l");
+        let layers = vec![LayerLabel {
+            layer_path: vec!["eyewhite-l".into()],
+            label: Label::Eyewear,
+            side: ugoe_ai::classify::Side::Left,
+            confidence: 1.0,
+        }];
+        let view = normal_map_group_in(&doc, Some(&layers), &eye).unwrap();
+        assert_eq!(view.group.as_deref(), Some("face"));
+        assert_eq!(view.oriented, vec![eye.clone()]);
+        assert!(view.with_normal_map.is_empty());
+        let command = generate_normal_map_in(&doc, Some(&layers), &eye, None, false).unwrap();
+        doc.apply(command).unwrap();
+        assert!(!is_flat(&doc, &eye));
+        let groups = normal_map_groups_in(&doc, Some(&layers)).unwrap();
+        let face = groups
+            .iter()
+            .find(|g| g.group.as_deref() == Some("face"))
+            .unwrap();
+        assert_eq!(face.oriented, vec![eye.clone()]);
+        assert_eq!(face.with_normal_map, vec![eye]);
     }
 }

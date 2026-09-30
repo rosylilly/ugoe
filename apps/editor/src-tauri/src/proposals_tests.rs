@@ -806,3 +806,104 @@ fn module_rig_choice_reaches_the_proposal() {
         ModuleRigOptions::default()
     );
 }
+
+/// 法線マップの提案 (AI なし): まとまりごとに設定を選び、コマンドはまとまりごとに区切られる。まとまりを外して採用でき、
+/// 1 回の Undo で戻る (T0520)。
+#[test]
+fn normal_maps_are_proposed_by_group() {
+    use crate::lighting::normal_map_groups_in;
+    use ugoe_editor_core::lighting::BulgeSettings;
+
+    // テクスチャの画像が要るので、取り込んだドキュメントをそのまま使う。
+    let state = state(None);
+    let (bytes, options) =
+        crate::psd::read_psd(&bustup_path().display().to_string(), None).unwrap();
+    let (_, document, _) = crate::project::from_psd(&bytes, &options).unwrap();
+    *state.document.lock().unwrap() = document;
+    let groups = {
+        let document = state.document.lock().unwrap();
+        normal_map_groups_in(&document, None).unwrap()
+    };
+    let face = groups
+        .iter()
+        .find(|g| g.group.as_deref() == Some("face"))
+        .unwrap();
+    assert!(face.textures.len() > 5);
+    // すべてのまとまりを既定で、顔だけ弱く。
+    let choices: Vec<NormalMapGroupChoice> = groups
+        .iter()
+        .map(|g| NormalMapGroupChoice {
+            group: g.group.clone(),
+            settings: if g.group.as_deref() == Some("face") {
+                BulgeSettings {
+                    strength: 0.1,
+                    ..g.defaults
+                }
+            } else {
+                g.defaults
+            },
+        })
+        .collect();
+    let base = state.document.lock().unwrap().state_id();
+    let view = propose_normal_maps_in(&state, &choices, false).unwrap();
+    assert!(view.title.ends_with("— no AI"), "{}", view.title);
+    assert!(
+        view.rationale.contains("ふくらみ 0.1"),
+        "{}",
+        view.rationale
+    );
+    assert_eq!(state.document.lock().unwrap().state_id(), base);
+
+    let panel = {
+        let document = state.document.lock().unwrap();
+        state.project.lock().unwrap().proposals.state(&document)
+    };
+    let sections = &panel
+        .sections
+        .iter()
+        .find(|s| s.id == view.id)
+        .unwrap()
+        .sections;
+    let labels: Vec<&str> = sections.iter().map(|s| s.label.as_str()).collect();
+    assert_eq!(labels.first(), Some(&"face"));
+    assert_eq!(labels.last(), Some(&"lighting"));
+    let covered: usize = sections.iter().map(|s| s.indices.len()).sum();
+    assert_eq!(covered, view.commands.len());
+    let face_section = &sections[0];
+    assert_eq!(face_section.indices.len(), face.textures.len());
+    let mut subjects = face_section.subjects.clone();
+    subjects.sort();
+    let mut textures = face.textures.clone();
+    textures.sort();
+    assert_eq!(subjects, textures);
+
+    // 顔のまとまりを外して採用する。
+    let excluded = face_section.indices.clone();
+    {
+        let mut document = state.document.lock().unwrap();
+        let mut session = state.project.lock().unwrap();
+        session
+            .proposals
+            .proposals
+            .adopt(&mut document, view.id, &excluded)
+            .unwrap();
+        let model = document.model();
+        assert!(model.lighting);
+        for t in &model.textures {
+            if face.textures.contains(&t.name) {
+                assert!(t.normal_map.is_none(), "{}", t.name);
+            }
+        }
+        assert!(model.textures.iter().any(|t| t.normal_map.is_some()));
+        assert!(document.undo());
+        assert_eq!(document.state_id(), base);
+    }
+
+    // 選ばないと断る。知らないまとまりも断る。
+    assert!(propose_normal_maps_in(&state, &[], false).is_err());
+    let unknown = NormalMapGroupChoice {
+        group: Some("wings".into()),
+        settings: BulgeSettings::default(),
+    };
+    assert!(propose_normal_maps_in(&state, &[unknown], false).is_err());
+}

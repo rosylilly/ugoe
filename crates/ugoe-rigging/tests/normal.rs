@@ -2,7 +2,8 @@
 
 use ugoe_core::Vec2;
 use ugoe_rigging::{
-    BulgeOptions, NormalMap, PlacedTexture, bulge_height, bulge_normal_map, group_bulge_normal_maps,
+    BulgeOptions, NormalMap, PlacedTexture, bulge_height, bulge_normal_map,
+    group_bulge_normal_maps, group_bulge_normal_maps_oriented,
 };
 
 /// 一辺 `size` の画像に、中心 `(size/2, size/2)`・半径 `radius` の不透明な円を描く (RGBA8)。
@@ -345,4 +346,76 @@ fn normals_extend_past_the_outline() {
         normal_at(map, 53.0, 32.0)
     );
     assert!(normal_at(map, 62.0, 32.0)[2] > 0.999);
+}
+
+/// 向きだけを受けるテクスチャ (顔の上の眼鏡) は、顔の形を変えず、顔の上では顔の面の向きを受け、
+/// 顔の外 (つる) では近い顔の輪郭の向きを受ける (T0520)。
+#[test]
+fn oriented_parts_take_the_surface_without_changing_the_shape() {
+    let face_rgba = disc(96, 44.0);
+    let face_pos = placed(96, Vec2::ZERO, 1.0, false);
+    // 横に長い帯 (128 × 8): 顔の中心の高さを通り、左右に 16 画素ずつ顔の外へ出る。
+    let (gw, gh) = (128u32, 8u32);
+    let glasses_rgba = vec![255u8; (gw * gh * 4) as usize];
+    let glasses_pos: Vec<Option<Vec2>> = (0..gw * gh)
+        .map(|i| {
+            let (x, y) = ((i % gw) as f32 + 0.5, (i / gw) as f32 + 0.5);
+            Some(Vec2::new(-16.0 + x, 36.0 + y))
+        })
+        .collect();
+    let glasses = PlacedTexture {
+        width: gw,
+        height: gh,
+        rgba: &glasses_rgba,
+        positions: &glasses_pos,
+        canvas_per_texel: 1.0,
+    };
+    let options = BulgeOptions::default();
+    let face = [texture(96, &face_rgba, &face_pos, 1.0)];
+    let plain = group_bulge_normal_maps(&face, &[], &options).unwrap();
+    let maps = group_bulge_normal_maps_oriented(&face, &[], &[glasses], &options).unwrap();
+    // 顔の形は変わらない。
+    assert_eq!(maps.members, plain);
+    let g = &maps.oriented[0];
+    assert_eq!((g.width, g.height), (gw, gh));
+    // 顔の上では顔の向き (右寄りは右、左寄りは左を向く)。
+    for gx in [30.0, 64.0, 100.0] {
+        let e = normal_at(g, gx, 4.0);
+        let f = normal_at(&maps.members[0], gx - 16.0, 40.0);
+        assert!(angle(e, f) < 3.0, "glasses {e:?} vs face {f:?} at {gx}");
+    }
+    assert!(normal_at(g, 100.0, 4.0)[0] > 0.2);
+    assert!(normal_at(g, 30.0, 4.0)[0] < -0.2);
+    // 顔の外のつるは、顔の輪郭の向き (外向き) を受けて続く (正面に戻って輪郭で折れない)。
+    // 帯の高さ (キャンバスの y = 36〜44) での顔の輪郭は x = 4.7 と 91.3 (眼鏡の x = 20.7 と 107.3)。
+    for gx in 0..gw - 1 {
+        let (a, b) = (
+            normal_at(g, gx as f32, 4.0),
+            normal_at(g, gx as f32 + 1.0, 4.0),
+        );
+        assert!(angle(a, b) < 15.0, "{a:?} vs {b:?} at {gx}");
+    }
+    for (end, sign) in [(1.0, -1.0), (126.0, 1.0)] {
+        let n = normal_at(g, end, 4.0);
+        assert!(n[0] * sign > 0.3 && n[1].abs() < 0.3, "temple {n:?}");
+    }
+    // 形に加えるなら、つるの先も丸まる (向きだけを受けるのとは違う)。
+    let joined = group_bulge_normal_maps(&[face[0], glasses], &[], &options).unwrap();
+    assert_ne!(joined[0], plain[0]);
+}
+
+/// 形がないまとまりでは、向きだけを受けるテクスチャは平ら。
+#[test]
+fn oriented_parts_without_a_shape_are_flat() {
+    let rgba = disc(16, 7.0);
+    let pos = placed(16, Vec2::ZERO, 1.0, false);
+    let maps = group_bulge_normal_maps_oriented(
+        &[],
+        &[],
+        &[texture(16, &rgba, &pos, 1.0)],
+        &BulgeOptions::default(),
+    )
+    .unwrap();
+    assert!(maps.members.is_empty());
+    assert!(normal_at(&maps.oriented[0], 8.0, 8.0)[2] > 0.999);
 }

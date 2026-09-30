@@ -411,6 +411,23 @@ look_at?: LookAt | null, hit_areas?: Array<AvatarHitArea> | null, slots?: Array<
 png?: Array<number> | null, } | { "op": "set_lighting", enabled: boolean, } | { "op": "set_effects", effects: Effects, } | { "op": "add_slot", slot: Slot, } | { "op": "set_slot", id: string, slot: Slot, } | { "op": "remove_slot", id: string, } | { "op": "set_module_settings", name: string, slot: string, requires: ModuleRequirements, keep_look: boolean, } | { "op": "set_pose", pose: Pose, };
 
 /**
+ * 提案のコマンドを、画面でまとめて出す区切り (法線マップの提案のまとまりごと)。
+ */
+export type CommandSection = { 
+/**
+ * 区切りの名前 (まとまり `face` など。ラベルのないものは `unlabeled`、ライティングを有効にするのは `lighting`)。
+ */
+label: string, 
+/**
+ * 区切りに入るコマンドの番号 (提案の中の 0 始まり)。
+ */
+indices: Array<number>, 
+/**
+ * コマンドごとの対象 (`indices` と同じ並び。法線マップを作るテクスチャの名前。ライティングは空)。
+ */
+subjects: Array<string>, };
+
+/**
  * 商用利用の範囲。
  */
 export type CommercialUsage = "personal_non_profit" | "personal_profit" | "corporation";
@@ -1163,6 +1180,19 @@ duration: number, looping: boolean, fade_in: number, fade_out: number, curves: A
 export type MotionEvent = { t: number, value: string, };
 
 /**
+ * AI タブで選んだ、法線マップを提案する 1 つのまとまりと設定 (`propose_normal_maps` の引数)。
+ */
+export type NormalMapGroupChoice = { 
+/**
+ * まとまり (`NormalMapGroupView::group`。`null` はラベルのないテクスチャ)。
+ */
+group: string | null, 
+/**
+ * まとまり全体の設定 (単独のまとまりでは 1 枚ごとの設定)。
+ */
+settings: BulgeSettings, };
+
+/**
  * テクスチャの法線マップを、どのまとまりで作るか (`get_normal_map_group` の戻り値)。
  */
 export type NormalMapGroupView = { 
@@ -1171,13 +1201,22 @@ export type NormalMapGroupView = {
  */
 group: string | null, 
 /**
- * いっしょにふくらませるテクスチャ (このテクスチャを含む)。
+ * 法線マップを作るテクスチャ (このテクスチャを含む。`get_normal_map_groups` の単独のまとまり
+ * (`alone` と `null`) では、単独でふくらませるすべてのテクスチャ)。
  */
 textures: Array<string>, 
 /**
  * 形にだけ加えるテクスチャ (体のまとまりの顔など)。
  */
 shape_only: Array<string>, 
+/**
+ * `textures` のうち、形に加えず向きだけを受けるテクスチャ (顔のまとまりの眼鏡)。
+ */
+oriented: Array<string>, 
+/**
+ * `textures` のうち、すでに法線マップを持つテクスチャ。
+ */
+with_normal_map: Array<string>, 
 /**
  * まとまりの既定の設定 (長さはまとまりの格子の画素)。
  */
@@ -1525,6 +1564,11 @@ export type ProposalPreview = {
 model_json: string, report: ApplyReport, };
 
 /**
+ * 提案 1 つのコマンドの区切り。
+ */
+export type ProposalSections = { id: number, sections: Array<CommandSection>, };
+
+/**
  * 提案のパネルの状態。
  */
 export type ProposalState = { 
@@ -1543,7 +1587,11 @@ classification: Classification | null,
 /**
  * 注文を添えて作り直せる提案の番号 (このパネルで作ったリグの提案。つないだエージェントの提案は含まない)。
  */
-regenerable: Array<number>, };
+regenerable: Array<number>, 
+/**
+ * コマンドを区切って出す提案 (法線マップの提案)。ない提案は、同じ対象への続いたコマンドをまとめて出す。
+ */
+sections: Array<ProposalSections>, };
 
 /**
  * 画面に出す提案。
