@@ -1,11 +1,11 @@
 ---
 id: T0413
 title: npm: wasm の読み込みコードの縮小・エディタとビューアの wasm のプロファイル・トラッキングの平滑化
-status: todo
+status: in-progress
 milestone: M7
 crates: [bindings/web, ugoe-wasm, ugoe-format, docs]
 depends_on: [T0410]
-assignee:
+assignee: claude-worker-T0413
 ---
 
 # T0413: npm パッケージの後続
