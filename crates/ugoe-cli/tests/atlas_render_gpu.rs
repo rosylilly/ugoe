@@ -62,6 +62,11 @@ fn assert_same_image(name: &str, original: &Path, atlased: &Path, args: &[&str])
     let dir = out_dir();
     let original = render(original, &dir.join(format!("{name}-layers.png")), args);
     let packed = render(atlased, &dir.join(format!("{name}-atlas.png")), args);
+    assert_close(name, &original, &packed);
+}
+
+/// 2 枚の絵の乗算済みの値がほぼ同じであること。
+fn assert_close(name: &str, original: &(u32, u32, Vec<u8>), packed: &(u32, u32, Vec<u8>)) {
     assert_eq!((original.0, original.1), (packed.0, packed.1));
     let mut different = 0usize;
     let mut max = 0u8;
@@ -242,4 +247,74 @@ fn atlas_reduces_state_changes() {
             "{key}: {before} -> {after}"
         );
     }
+}
+
+/// 着せ替えのモジュールのアトラス化 (T0132): 見本のモジュールを `ugoe build --atlas` でまとめ、本体に付けて描いた絵が
+/// 変わらず、テクスチャの切り替えが減ること。
+#[test]
+fn module_atlas_does_not_change_the_rendered_image() {
+    let samples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/samples/dress-up");
+    let base = samples.join("dress-up.ugoe");
+    let dir = out_dir();
+    let names = ["long-hair", "sailor", "cat-ears"];
+    let mut original_args = Vec::new();
+    let mut atlased_args = Vec::new();
+    for name in names {
+        let module = samples.join(format!("{name}.ugoemod"));
+        let atlased = dir.join(format!("{name}-atlas.ugoemod"));
+        let summary = ugoe(&[
+            OsStr::new("build"),
+            module.as_os_str(),
+            OsStr::new("--atlas"),
+            OsStr::new("-o"),
+            atlased.as_os_str(),
+        ]);
+        assert!(summary.contains("into 1 atlas(es)"), "{summary}");
+        for (args, path) in [(&mut original_args, module), (&mut atlased_args, atlased)] {
+            args.push("--module".to_owned());
+            args.push(path.to_str().expect("utf-8 path").to_owned());
+        }
+    }
+    let poses: [(&str, &[&str]); 2] = [
+        ("dressed-rest", &[]),
+        (
+            "dressed-turned",
+            &["--param", "AngleX=25", "--param", "BodyAngleX=8"],
+        ),
+    ];
+    for (name, pose) in poses {
+        let with = |modules: &[String]| -> Vec<String> {
+            let mut all: Vec<String> = pose.iter().map(|s| (*s).to_owned()).collect();
+            all.extend(modules.iter().cloned());
+            all
+        };
+        let (a, b) = (with(&original_args), with(&atlased_args));
+        let a: Vec<&str> = a.iter().map(String::as_str).collect();
+        let b: Vec<&str> = b.iter().map(String::as_str).collect();
+        let original = render(&base, &dir.join(format!("{name}-layers.png")), &a);
+        let packed = render(&base, &dir.join(format!("{name}-atlas.png")), &b);
+        assert_close(name, &original, &packed);
+    }
+
+    // 本体 → 各モジュールの画像の切り替えが減る (13 回の描画が 10 回になる)。
+    let draw_calls = |modules: &[String], out: &str| {
+        let mut all = vec![
+            OsStr::new("render"),
+            base.as_os_str(),
+            OsStr::new("--stats"),
+        ];
+        all.extend(modules.iter().map(OsStr::new));
+        let out = dir.join(out);
+        all.extend([OsStr::new("-o"), out.as_os_str()]);
+        let stdout = ugoe(&all);
+        let line = stdout
+            .lines()
+            .find_map(|l| l.strip_prefix("stats: "))
+            .unwrap_or_else(|| panic!("no stats in {stdout}"));
+        let stats: serde_json::Value = serde_json::from_str(line).expect("stats json");
+        stats["draw_calls"].as_u64().expect("draw_calls")
+    };
+    let before = draw_calls(&original_args, "dressed-stats-layers.png");
+    let after = draw_calls(&atlased_args, "dressed-stats-atlas.png");
+    assert!(after < before, "draw calls {before} -> {after}");
 }

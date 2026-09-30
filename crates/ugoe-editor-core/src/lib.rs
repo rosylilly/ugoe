@@ -34,7 +34,7 @@ pub mod slot_edit;
 pub mod space;
 pub mod texture;
 
-pub use atlas::{AtlasOptions, AtlasReport, build_atlas};
+pub use atlas::{AtlasOptions, AtlasReport, build_atlas, build_module_atlas};
 pub use automesh::AutoMeshOptions;
 pub use command::{ChildRef, Command, InferMethod, KeyformCell, KeyformTarget, VertexMove};
 pub use depth::DepthPreset;

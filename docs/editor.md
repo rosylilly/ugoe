@@ -1143,6 +1143,7 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
   マスクアトラスの違いは数えないので、マスクを多く使うモデルでは `ugoe render --stats` の `state_changes` より少なく出ることがあります
   (`character.psd` では前後とも `ugoe render --stats` と一致した: 12 枚 → 1 枚、切り替え 10 → 2、描画 11 → 3)。
 - 着せ替えのモジュール (T0111) のテクスチャはアトラスに含めません ([file-formats.md#テクスチャのアトラス化](spec/file-formats.md#テクスチャのアトラス化))。
+  モジュールの単位のアトラス化 (T0132) は、いまは `ugoe build <m>.ugoemod --atlas` だけで、エディタのモジュールの書き出しでは選べません。
 
 ### ヘルプ
 

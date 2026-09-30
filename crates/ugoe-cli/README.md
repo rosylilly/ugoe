@@ -14,9 +14,9 @@
 - `.ugoe` バンドル (拡張子ではなく先頭のマジック `UGOE` で判別する)
 - 組み込みフィクスチャ `fixture:<name>` (`ugoe_model::fixtures` の関数名。`single-quad` のような kebab-case も可)
 
-`validate` はこのほかに着せ替えのモジュール `.ugoemod` も受け付ける (下の「モジュールの検査」)。バンドルと同じコンテナなので、
-これも拡張子ではなく中身 (`MODL` の代わりに `MODU` チャンクを持つ) で判別する。`info` と `render` にモジュールを渡すとエラーになる
-(モジュールは本体に付けないと描けないので、`render` では `--module` で付ける)。
+`validate` と `info` はこのほかに着せ替えのモジュール `.ugoemod` も受け付ける (下の「モジュールの検査」「モジュールの概要」)。
+バンドルと同じコンテナなので、これも拡張子ではなく中身 (`MODL` の代わりに `MODU` チャンクを持つ) で判別する。`render` にモジュールを
+渡すとエラーになる (モジュールは本体に付けないと描けないので、`render` では `--module` で付ける)。
 
 ```sh
 ugoe validate model.json                 # 検証。問題なければ "ok"
@@ -26,6 +26,7 @@ ugoe validate long-hair.ugoemod           # 着せ替えのモジュールを単
 ugoe validate dress-up.ugoe --module long-hair.ugoemod  # 本体に付けた結果を検査
 ugoe info fixture:single_quad            # 概要
 ugoe info model.ugoe --json              # 機械で読みやすい JSON (パラメータの ID・値域を含む)
+ugoe info long-hair.ugoemod              # 着せ替えのモジュールの概要
 ugoe fixture list                        # フィクスチャ名の一覧 (名前を省略しても同じ)
 ugoe fixture single_quad > quad.json     # フィクスチャを JSON で書き出す
 ugoe standard-params                     # 標準パラメータ・拡張パラメータの一覧
@@ -40,6 +41,13 @@ ugoe standard-params                     # 標準パラメータ・拡張パラ�
   (付けられなければエラー)、付けた結果のモデルと物理を検査する。`--physics` はバンドルの物理の代わりになり、モジュールのリグはそれに加わる。
   `--profile` は付けた結果のモデルを検査する。入力は `.ugoe` バンドル。
 - モデルやモジュールが検証に通らないときは、各エラーを標準エラーに `error: ...` で書く (バンドルも同じ)。
+
+### モジュールの概要
+
+`ugoe info <module>.ugoemod` はモジュールの名前・取り付け先のスロット・本体に求める条件 (`requires` のアバタープロファイルの
+レベル・スロット・パラメータ)・使うパラメータ (`Module::referenced_parameters`)・要素の数 (パーツ・デフォーマ・メッシュ・グルー・
+物理のリグと衝突体・ポーズのグループと追従)・テクスチャ (名前・大きさ・形式・法線マップ) を書く。`--json` では同じ内容を
+`"kind": "module"` の JSON で書く (モデルの JSON は `"kind": "model"`)。
 
 ### `ugoe render`
 
@@ -137,14 +145,14 @@ ugoe render character.ugoe -o preview.png           # 取り込んだ結果を�
 ```sh
 ugoe build character.ugoeproj -o character.ugoe --atlas
 ugoe build character.ugoe -o packed.ugoe --atlas --atlas-max-size 4096
-ugoe build long-hair.ugoemod -o long-hair.ugoemod --compress   # モジュールは圧縮などを変えて書き直すだけ
+ugoe build long-hair.ugoemod -o packed.ugoemod --atlas   # モジュールのテクスチャをモジュールの単位でまとめる
 ugoe render packed.ugoe -o check.png                 # 見た目が変わっていないことを目で確かめる
 ```
 
 | オプション | 内容 |
 | --- | --- |
-| `-o, --output <PATH>` | 書き出す `.ugoe` バンドル |
-| `--atlas` | テクスチャをアトラスにまとめる |
+| `-o, --output <PATH>` | 書き出す `.ugoe` バンドル (入力がモジュールなら `.ugoemod`) |
+| `--atlas` | テクスチャをアトラスにまとめる (モジュールはモジュールの単位で) |
 | `--atlas-max-size <PX>` | アトラス 1 枚の幅と高さの上限 (既定 2048) |
 | `--atlas-padding <PX>` | 各画像の周りに複製する端の画素の幅 (既定 2) |
 | `--compress` | 画像 (`TEXR` `NRML`) 以外のチャンクを zstd で圧縮する (既定は無圧縮) |
@@ -152,7 +160,9 @@ ugoe render packed.ugoe -o check.png                 # 見た目が変わって�
 - 入力はディレクトリならプロジェクト、ファイルならバンドルとして読む。バンドルの物理・モーション・表情・法線マップ・`META` は引き継ぐ。
   テクスチャと法線マップは PNG であること (KTX2 はエラー)。アトラスを使わなければ、読んだバンドルと同じ内容のバンドルを書く
   (`assets/compat/dev` の全ファイルで確かめている)。
-- 入力が `.ugoemod` モジュールなら、中身をそのままモジュールとして書き直す (`--atlas` はエラー)。
+- 入力が `.ugoemod` モジュールなら、モジュールとして書き直す。`--atlas` では、モジュールのテクスチャだけをモジュールの単位で
+  まとめる (本体のアトラスには入れない。画像はメッシュの宣言順で詰める。`ugoe_editor_core::build_module_atlas`)。
+  テクスチャと法線マップの名前が重なっていたり PNG でなければエラー。
 - `--atlas` では標準出力に `atlas: packed 24 texture(s) into 1 atlas(es) [994x1698], kept 0, removed 0 unused` のような要約を書き、
   まとめずに残したテクスチャを標準エラーに `warning: ...` で出す。
 

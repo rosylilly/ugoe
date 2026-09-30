@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use ts_rs::TS;
-use ugoe_model::{Model, TextureRef};
+use ugoe_model::{Mesh, Model, Module, TextureRef};
 use ugoe_runtime::{CompiledModel, ModelInstance};
 
 use crate::texture::{decode_rgba_png, encode_rgba_png};
@@ -91,6 +91,14 @@ pub struct Atlased {
     pub report: AtlasReport,
 }
 
+/// アトラス化した着せ替えのモジュールとテクスチャ。
+#[derive(Debug, Clone, PartialEq)]
+pub struct AtlasedModule {
+    pub module: Module,
+    pub textures: Textures,
+    pub report: AtlasReport,
+}
+
 /// `model` のテクスチャ (`textures` は名前 → PNG) をアトラスにまとめる。
 ///
 /// 出力の `Model::textures` は、アトラス (`atlas-0`…) の後ろに、まとめずに残したテクスチャを元の順で並べる。
@@ -101,11 +109,65 @@ pub fn build_atlas(
     textures: &Textures,
     options: &AtlasOptions,
 ) -> Result<Atlased, AtlasError> {
+    let order = first_use_order(model);
+    let packed = pack_textures(&model.textures, &model.meshes, textures, options, order)?;
+    let mut out = model.clone();
+    out.textures = packed.refs;
+    out.meshes = packed.meshes;
+    Ok(Atlased {
+        model: out,
+        textures: packed.textures,
+        report: packed.report,
+    })
+}
+
+/// 着せ替えのモジュールのテクスチャ (`Module::textures`) を、モジュールの単位でアトラスにまとめる。
+/// 規則は [`build_atlas`] と同じ。本体のテクスチャとは混ぜない。
+///
+/// モジュールは本体に付けないと描画順が決まらないので、画像は **メッシュの宣言順で** 最初に使われる順に詰める。
+pub fn build_module_atlas(
+    module: &Module,
+    textures: &Textures,
+    options: &AtlasOptions,
+) -> Result<AtlasedModule, AtlasError> {
+    let order = first_use_order_of(
+        &module.meshes,
+        module.textures.len(),
+        0..module.meshes.len(),
+    );
+    let packed = pack_textures(&module.textures, &module.meshes, textures, options, order)?;
+    let mut out = module.clone();
+    out.textures = packed.refs;
+    out.meshes = packed.meshes;
+    Ok(AtlasedModule {
+        module: out,
+        textures: packed.textures,
+        report: packed.report,
+    })
+}
+
+/// [`pack_textures`] の結果。
+struct Packed {
+    refs: Vec<TextureRef>,
+    meshes: Vec<Mesh>,
+    textures: Textures,
+    report: AtlasReport,
+}
+
+/// テクスチャの参照 `refs` と、それを番号で使うメッシュ `meshes` をアトラス化する。
+/// `order_of_use` は画像を詰める順 (テクスチャの番号)。
+fn pack_textures(
+    refs: &[TextureRef],
+    meshes: &[Mesh],
+    textures: &Textures,
+    options: &AtlasOptions,
+    order_of_use: Vec<usize>,
+) -> Result<Packed, AtlasError> {
     if options.max_size == 0 {
         return Err(AtlasError::InvalidMaxSize);
     }
-    for mesh in &model.meshes {
-        if mesh.texture as usize >= model.textures.len() {
+    for mesh in meshes {
+        if mesh.texture as usize >= refs.len() {
             return Err(AtlasError::TextureOutOfRange {
                 mesh: mesh.id.as_str().to_owned(),
                 texture: mesh.texture,
@@ -114,9 +176,9 @@ pub fn build_atlas(
     }
 
     // 各テクスチャを使うメッシュの UV が 0〜1 に収まるか。
-    let mut used = vec![false; model.textures.len()];
-    let mut uv_in_range = vec![true; model.textures.len()];
-    for mesh in &model.meshes {
+    let mut used = vec![false; refs.len()];
+    let mut uv_in_range = vec![true; refs.len()];
+    for mesh in meshes {
         let t = mesh.texture as usize;
         used[t] = true;
         uv_in_range[t] &= mesh
@@ -128,9 +190,9 @@ pub fn build_atlas(
     let mut report = AtlasReport::default();
     let pad = options.padding;
     // まとめる画像 (元の番号・画素)。
-    let mut images: Vec<Option<Image>> = vec![None; model.textures.len()];
+    let mut images: Vec<Option<Image>> = vec![None; refs.len()];
     let mut kept = Vec::new();
-    for (t, texture) in model.textures.iter().enumerate() {
+    for (t, texture) in refs.iter().enumerate() {
         if !used[t] {
             report.removed.push(texture.name.clone());
             continue;
@@ -174,18 +236,17 @@ pub fn build_atlas(
 
     // 描画順で最初に使われる順に並べ、順に詰める。画素が同じ画像は最初のものだけを詰める。
     let mut order: Vec<usize> = Vec::new();
-    let mut same_as: Vec<Option<usize>> = vec![None; model.textures.len()];
-    for t in first_use_order(model) {
+    let mut same_as: Vec<Option<usize>> = vec![None; refs.len()];
+    for t in order_of_use {
         let Some(image) = images[t].as_ref() else {
             continue;
         };
         match order.iter().find(|&&u| images[u].as_ref() == Some(image)) {
             Some(&first) => {
                 same_as[t] = Some(first);
-                report.deduplicated.push((
-                    model.textures[t].name.clone(),
-                    model.textures[first].name.clone(),
-                ));
+                report
+                    .deduplicated
+                    .push((refs[t].name.clone(), refs[first].name.clone()));
             }
             None => order.push(t),
         }
@@ -221,13 +282,13 @@ pub fn build_atlas(
     }
 
     // 出力のテクスチャ: アトラス → 残したもの。元の番号 → (新しい番号・画像を置いた位置)。
-    let mut out_model = model.clone();
+    let mut out_meshes = meshes.to_vec();
     let mut out_textures = Textures::new();
     let mut new_refs = Vec::new();
-    let mut placement: Vec<Option<(u32, Placement)>> = vec![None; model.textures.len()];
+    let mut placement: Vec<Option<(u32, Placement)>> = vec![None; refs.len()];
     let kept_names: BTreeSet<String> = kept
         .iter()
-        .map(|&t| model.textures[t].name.to_ascii_lowercase())
+        .map(|&t| refs[t].name.to_ascii_lowercase())
         .collect();
     let mut atlas_number = 0;
     for (members, packing) in &pages {
@@ -273,9 +334,9 @@ pub fn build_atlas(
         }
     }
     report.packed = placement.iter().filter(|p| p.is_some()).count();
-    let mut kept_index = vec![None; model.textures.len()];
+    let mut kept_index = vec![None; refs.len()];
     for &t in &kept {
-        let texture = &model.textures[t];
+        let texture = &refs[t];
         kept_index[t] = Some(u32::try_from(new_refs.len()).unwrap_or(u32::MAX));
         if let Some(png) = textures.get(&texture.name) {
             out_textures.insert(texture.name.clone(), png.clone());
@@ -287,9 +348,7 @@ pub fn build_atlas(
         }
         new_refs.push(texture.clone());
     }
-    out_model.textures = new_refs;
-
-    for mesh in &mut out_model.meshes {
+    for mesh in &mut out_meshes {
         let t = mesh.texture as usize;
         if let Some((index, place)) = placement[t] {
             mesh.texture = index;
@@ -301,8 +360,9 @@ pub fn build_atlas(
         }
     }
 
-    Ok(Atlased {
-        model: out_model,
+    Ok(Packed {
+        refs: new_refs,
+        meshes: out_meshes,
         textures: out_textures,
         report,
     })
@@ -382,11 +442,20 @@ fn first_use_order(model: &Model) -> Vec<usize> {
         }
         Err(_) => (0..model.meshes.len()).collect(),
     };
-    let mut seen = vec![false; model.textures.len()];
+    first_use_order_of(&model.meshes, model.textures.len(), mesh_order)
+}
+
+/// テクスチャの番号を、メッシュを `mesh_order` の順に見て最初に使われる順に並べる。
+fn first_use_order_of(
+    meshes: &[Mesh],
+    texture_count: usize,
+    mesh_order: impl IntoIterator<Item = usize>,
+) -> Vec<usize> {
+    let mut seen = vec![false; texture_count];
     let mut order = Vec::new();
     // 描画順に含まれないメッシュがあっても漏らさないように、宣言順で補う。
-    for m in mesh_order.into_iter().chain(0..model.meshes.len()) {
-        let Some(mesh) = model.meshes.get(m) else {
+    for m in mesh_order.into_iter().chain(0..meshes.len()) {
+        let Some(mesh) = meshes.get(m) else {
             continue;
         };
         let t = mesh.texture as usize;

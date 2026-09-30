@@ -148,6 +148,8 @@ impl SurfaceGroup {
 
     /// 既定の設定: 強さ (高さと幅の比)・縁だけを丸める幅 (まとまりの形の幅に対する比)・ならし (格子の画素)。
     /// 顔と体のような大きな部位は弱く、髪の房・耳のような細い部位は強めにする (T0707 の見本の値)。
+    /// 見本の生成 (`ugoe-cli` の `sample/lit.rs` の `GROUPS`) は同じ値を別に持つ。見本が既定の調整で変わらない
+    /// ように共有していない (T0132)。
     const fn defaults(self) -> (f32, Option<f32>, f32) {
         match self {
             Self::Face => (0.35, Some(FACE_EDGE), 6.0),

@@ -394,7 +394,7 @@ fn validate_accepts_modules() {
 
     let output = ugoe(&["validate", &dress, "--profile", "avatar"]);
     assert!(!output.status.success());
-    let output = ugoe(&["info", &dress]);
+    let output = ugoe(&["render", &dress, "-o", "never-written.png"]);
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("is a dress-up module"), "{stderr}");
@@ -403,4 +403,87 @@ fn validate_accepts_modules() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("slot `Outfit` does not exist"), "{stderr}");
+}
+
+/// `ugoe info <module>.ugoemod`: モジュールの概要 (スロット・条件・要素の数・テクスチャ) を出す。
+#[test]
+fn info_describes_modules() {
+    let dev = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/compat/dev");
+    let file = |name: &str| dev.join(name).to_str().expect("utf-8 path").to_owned();
+    let text = stdout(&ugoe(&["info", &file("dress.ugoemod")]));
+    assert!(text.contains("module:     Dress"), "{text}");
+    assert!(text.contains("slot:       Outfit"), "{text}");
+    assert!(
+        text.contains("requires:   avatar level -; slots Hair; parameters BodySway"),
+        "{text}"
+    );
+    assert!(text.contains("  0: `dress` 1x1 (png)"), "{text}");
+
+    let json = stdout(&ugoe(&["info", &file("long-hair.ugoemod"), "--json"]));
+    let v: serde_json::Value = serde_json::from_str(&json).expect("json");
+    assert_eq!(v["kind"], "module");
+    assert_eq!(v["name"], "LongHair");
+    assert_eq!(v["slot"], "Hair");
+    assert_eq!(v["meshes"], 2);
+    assert_eq!(v["physics"]["rigs"], 1);
+    assert_eq!(v["parameters"], serde_json::json!(["AngleX", "HairFront"]));
+    assert_eq!(v["textures"][0]["name"], "long_hair");
+    assert_eq!(v["textures"][0]["format"], "png");
+    assert!(v["textures"][0]["normal_map"].is_null());
+
+    // モデルの JSON は `kind: "model"`。
+    let json = stdout(&ugoe(&["info", "fixture:single_quad", "--json"]));
+    let v: serde_json::Value = serde_json::from_str(&json).expect("json");
+    assert_eq!(v["kind"], "model");
+}
+
+/// `ugoe build <module>.ugoemod --atlas`: モジュールのテクスチャをモジュールの単位でまとめ、本体に付けられるままにする。
+/// 見た目が変わらないことは `atlas_render_gpu.rs` で確かめる。
+#[test]
+fn build_packs_module_textures_into_an_atlas() {
+    let samples =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/samples/dress-up");
+    let tmp = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("build-module-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).expect("create output dir");
+    let path = |p: &std::path::Path| p.to_str().expect("utf-8 path").to_owned();
+    let (base, module, atlased) = (
+        samples.join("dress-up.ugoe"),
+        samples.join("twin-tails.ugoemod"),
+        tmp.join("twin-tails.ugoemod"),
+    );
+    let out = stdout(&ugoe(&[
+        "build",
+        &path(&module),
+        "-o",
+        &path(&atlased),
+        "--atlas",
+    ]));
+    assert!(
+        out.contains("packed 6 texture(s) into 1 atlas(es)"),
+        "{out}"
+    );
+    let info = stdout(&ugoe(&["info", &path(&atlased), "--json"]));
+    let v: serde_json::Value = serde_json::from_str(&info).expect("json");
+    assert_eq!(v["textures"].as_array().expect("textures").len(), 1);
+    assert_eq!(v["textures"][0]["name"], "atlas-0");
+    assert_eq!(
+        stdout(&ugoe(&[
+            "validate",
+            &path(&base),
+            "--module",
+            &path(&atlased)
+        ]))
+        .trim(),
+        "ok"
+    );
+    // モジュールのほかの部分はそのまま。
+    let read = |p: &std::path::Path| {
+        ugoe_format::read_module(&std::fs::read(p).expect("read module")).expect("module")
+    };
+    let (before, after) = (read(&module), read(&atlased));
+    assert_eq!(after.module.parts, before.module.parts);
+    assert_eq!(after.module.physics, before.module.physics);
+    assert_eq!(after.meta, before.meta);
 }

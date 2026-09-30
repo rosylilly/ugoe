@@ -16,8 +16,8 @@ use ugoe_model::Model;
 /// `INPUT` の書き方 (validate / info / render で共通)。
 const INPUT_HELP: &str =
     "Model JSON (.json), bundle (.ugoe), or built-in fixture as `fixture:<name>`";
-/// `validate` の `INPUT` の書き方。モジュールも受け付ける。
-const VALIDATE_INPUT_HELP: &str = "Model JSON (.json), bundle (.ugoe), dress-up module (.ugoemod), \
+/// `validate` / `info` の `INPUT` の書き方。モジュールも受け付ける。
+const MODULE_INPUT_HELP: &str = "Model JSON (.json), bundle (.ugoe), dress-up module (.ugoemod), \
      or built-in fixture as `fixture:<name>`";
 
 #[derive(Debug, Parser)]
@@ -31,7 +31,7 @@ struct Cli {
 enum Cmd {
     /// モデルか着せ替えのモジュール (`.ugoemod`) を検証する。
     Validate {
-        #[arg(help = VALIDATE_INPUT_HELP)]
+        #[arg(help = MODULE_INPUT_HELP)]
         input: String,
         /// 構造の検証に加えて、プロファイルへの準拠を検査する。
         #[arg(long, value_enum)]
@@ -44,9 +44,10 @@ enum Cmd {
         #[arg(long = "module", value_name = "PATH")]
         modules: Vec<PathBuf>,
     },
-    /// モデルの概要 (パラメータ・パーツ・メッシュ数など) を表示する。
+    /// モデルの概要 (パラメータ・パーツ・メッシュ数など) か、着せ替えのモジュールの概要
+    /// (スロット・条件・要素の数・テクスチャ) を表示する。
     Info {
-        #[arg(help = INPUT_HELP)]
+        #[arg(help = MODULE_INPUT_HELP)]
         input: String,
         /// 機械で読みやすい JSON で出力する。
         #[arg(long)]
@@ -145,6 +146,7 @@ struct BuildArgs {
     #[arg(short, long)]
     output: PathBuf,
     /// テクスチャをアトラスにまとめる (`docs/spec/file-formats.md#テクスチャのアトラス化`)。
+    /// モジュールはモジュールのテクスチャだけをまとめる。
     #[arg(long)]
     atlas: bool,
     /// アトラス 1 枚の幅と高さの上限 (px)。
@@ -245,7 +247,7 @@ fn main() -> anyhow::Result<()> {
         } => {
             let mut scene = match load(&input)? {
                 Input::Scene(scene) => *scene,
-                Input::Module => {
+                Input::Module(_) => {
                     if profile.is_some() || physics.is_some() || !modules.is_empty() {
                         bail!(
                             "--profile, --physics and --module need a model; {input} is a dress-up module"
@@ -296,7 +298,20 @@ fn main() -> anyhow::Result<()> {
             println!("ok");
         }
         Cmd::Info { input, json } => {
-            let m = load_input(&input)?.model;
+            let m = match load(&input)? {
+                Input::Scene(scene) => scene.model,
+                Input::Module(file) => {
+                    if json {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&module_info_json(&file))?
+                        );
+                    } else {
+                        print_module_info(&file);
+                    }
+                    return Ok(());
+                }
+            };
             if json {
                 println!("{}", serde_json::to_string_pretty(&info_json(&m))?);
             } else {
@@ -441,30 +456,8 @@ fn run_build(args: BuildArgs) -> anyhow::Result<()> {
     };
 
     let project = if args.atlas {
-        let options = AtlasOptions {
-            max_size: args.atlas_max_size,
-            padding: args.atlas_padding,
-        };
-        let (atlased, report) = project.with_atlas(&options)?;
-        for (name, reason) in &report.kept {
-            eprintln!(
-                "warning: texture `{name}` was not packed ({})",
-                kept_reason(*reason)
-            );
-        }
-        let sizes: Vec<String> = report
-            .atlases
-            .iter()
-            .map(|(w, h)| format!("{w}x{h}"))
-            .collect();
-        println!(
-            "atlas: packed {} texture(s) into {} atlas(es) [{}], kept {}, removed {} unused",
-            report.packed,
-            report.atlases.len(),
-            sizes.join(", "),
-            report.kept.len(),
-            report.removed.len()
-        );
+        let (atlased, report) = project.with_atlas(&atlas_options(&args))?;
+        print_atlas_report(&report);
         atlased
     } else {
         project
@@ -564,16 +557,111 @@ fn project_from_bundle(
     Ok((project, bundle.meta))
 }
 
-/// `ugoe build <module>.ugoemod`: 着せ替えのモジュールを読み直して書き出す (中身はそのまま。アトラスは未対応)。
+/// `ugoe build <module>.ugoemod`: 着せ替えのモジュールを読み直して書き出す。`--atlas` ではモジュールの
+/// テクスチャだけをモジュールの単位でアトラスにまとめる (`docs/spec/file-formats.md#テクスチャのアトラス化`)。
 fn rebuild_module(args: &BuildArgs, file: &ugoe_format::ModuleFile) -> anyhow::Result<()> {
-    if args.atlas {
-        bail!("--atlas is not supported for modules (.ugoemod)");
-    }
+    let atlased;
+    let file = if args.atlas {
+        atlased = atlas_module(file, &atlas_options(args))?;
+        &atlased
+    } else {
+        file
+    };
     let bytes = ugoe_format::write_module_with(file, write_options(args))?;
     std::fs::write(&args.output, &bytes)
         .with_context(|| format!("writing {}", args.output.display()))?;
     println!("wrote {} ({} bytes)", args.output.display(), bytes.len());
     Ok(())
+}
+
+/// モジュールのテクスチャをアトラスにまとめる (`ugoe_editor_core::atlas::build_module_atlas`)。
+/// テクスチャと法線マップの画像は、プロジェクトと同じく名前で引く。
+fn atlas_module(
+    file: &ugoe_format::ModuleFile,
+    options: &AtlasOptions,
+) -> anyhow::Result<ugoe_format::ModuleFile> {
+    let mut images = ugoe_editor_core::Textures::new();
+    let mut add = |name: &str, data: &TextureData, what: &str| {
+        if data.format != TextureFormat::Png {
+            bail!("module {what} `{name}` is not PNG; `ugoe build --atlas` needs PNG images");
+        }
+        if images
+            .insert(name.to_owned(), data.bytes.clone().into())
+            .is_some()
+        {
+            bail!(
+                "module image name `{name}` is used twice; `ugoe build --atlas` needs unique names"
+            );
+        }
+        Ok(())
+    };
+    for (i, (texture, data)) in file.module.textures.iter().zip(&file.textures).enumerate() {
+        add(&texture.name, data, "texture")?;
+        if let (Some(name), Some(data)) = (&texture.normal_map, file.normal_map(i)) {
+            add(name, data, "normal map")?;
+        }
+    }
+    let atlased = ugoe_editor_core::atlas::build_module_atlas(&file.module, &images, options)?;
+    print_atlas_report(&atlased.report);
+    let image = |name: &str| -> anyhow::Result<TextureData> {
+        let png = atlased
+            .textures
+            .get(name)
+            .with_context(|| format!("image `{name}` has no data"))?;
+        Ok(TextureData {
+            format: TextureFormat::Png,
+            bytes: png.to_vec(),
+        })
+    };
+    let textures = atlased
+        .module
+        .textures
+        .iter()
+        .map(|t| image(&t.name))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let normal_maps = atlased
+        .module
+        .textures
+        .iter()
+        .filter_map(|t| t.normal_map.as_deref())
+        .map(image)
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    Ok(ugoe_format::ModuleFile {
+        module: atlased.module,
+        textures,
+        normal_maps,
+        meta: file.meta.clone(),
+    })
+}
+
+fn atlas_options(args: &BuildArgs) -> AtlasOptions {
+    AtlasOptions {
+        max_size: args.atlas_max_size,
+        padding: args.atlas_padding,
+    }
+}
+
+/// `--atlas` の要約を標準出力に、まとめずに残したテクスチャを標準エラーに書く。
+fn print_atlas_report(report: &ugoe_editor_core::AtlasReport) {
+    for (name, reason) in &report.kept {
+        eprintln!(
+            "warning: texture `{name}` was not packed ({})",
+            kept_reason(*reason)
+        );
+    }
+    let sizes: Vec<String> = report
+        .atlases
+        .iter()
+        .map(|(w, h)| format!("{w}x{h}"))
+        .collect();
+    println!(
+        "atlas: packed {} texture(s) into {} atlas(es) [{}], kept {}, removed {} unused",
+        report.packed,
+        report.atlases.len(),
+        sizes.join(", "),
+        report.kept.len(),
+        report.removed.len()
+    );
 }
 
 fn write_options(args: &BuildArgs) -> ugoe_format::WriteOptions {
@@ -691,7 +779,7 @@ fn attach_modules(scene: Scene, files: Vec<ugoe_format::ModuleFile>) -> anyhow::
 /// (読み込みで単体の検査 `validate_module` を済ませたもの)。
 enum Input {
     Scene(Box<Scene>),
-    Module,
+    Module(Box<ugoe_format::ModuleFile>),
 }
 
 /// 先頭のマジック `UGOE` を持つファイルの中身。
@@ -736,7 +824,7 @@ fn load(input: &str) -> anyhow::Result<Input> {
     if bytes.starts_with(&ugoe_format::MAGIC) {
         return Ok(match read_container(path, &bytes)? {
             Container::Bundle(bundle) => Input::Scene(Box::new(Scene::from_bundle(*bundle))),
-            Container::Module(_) => Input::Module,
+            Container::Module(file) => Input::Module(file),
         });
     }
     let json = String::from_utf8(bytes).with_context(|| {
@@ -754,7 +842,7 @@ fn load(input: &str) -> anyhow::Result<Input> {
 fn load_input(input: &str) -> anyhow::Result<Scene> {
     match load(input)? {
         Input::Scene(scene) => Ok(*scene),
-        Input::Module => bail!(
+        Input::Module(_) => bail!(
             "{input} is a dress-up module (.ugoemod), not a model (attach it to a base bundle with `--module`)"
         ),
     }
@@ -762,6 +850,7 @@ fn load_input(input: &str) -> anyhow::Result<Scene> {
 
 fn info_json(m: &Model) -> serde_json::Value {
     serde_json::json!({
+        "kind": "model",
         "name": m.meta.name,
         "canvas": { "width": m.meta.canvas.width, "height": m.meta.canvas.height },
         "parameters": m.parameters.iter().map(|p| serde_json::json!({
@@ -779,6 +868,102 @@ fn info_json(m: &Model) -> serde_json::Value {
             "height": t.height,
         })).collect::<Vec<_>>(),
     })
+}
+
+/// `ugoe info <module>.ugoemod` の表示。
+fn print_module_info(file: &ugoe_format::ModuleFile) {
+    let m = &file.module;
+    let list = |ids: Vec<&str>| {
+        if ids.is_empty() {
+            "-".to_owned()
+        } else {
+            ids.join(", ")
+        }
+    };
+    println!("module:     {}", m.name);
+    println!("slot:       {}", m.slot.as_str());
+    println!(
+        "requires:   avatar level {}; slots {}; parameters {}",
+        m.requires
+            .avatar_level
+            .map_or_else(|| "-".to_owned(), |l| l.to_string()),
+        list(m.requires.slots.iter().map(|s| s.as_str()).collect()),
+        list(m.requires.parameters.iter().map(|p| p.as_str()).collect())
+    );
+    let used = m.referenced_parameters();
+    println!(
+        "parameters: {} used ({})",
+        used.len(),
+        list(used.iter().map(|p| p.as_str()).collect())
+    );
+    println!("parts:      {}", m.parts.len());
+    println!("deformers:  {}", m.deformers.len());
+    println!("meshes:     {}", m.meshes.len());
+    println!("glues:      {}", m.glues.len());
+    println!(
+        "physics:    {} rig(s), {} collider(s)",
+        m.physics.rigs.len(),
+        m.physics.colliders.len()
+    );
+    println!(
+        "pose:       {} group(s), {} link(s)",
+        m.pose.groups.len(),
+        m.pose.links.len()
+    );
+    println!("textures:   {}", m.textures.len());
+    for (i, (t, data)) in m.textures.iter().zip(&file.textures).enumerate() {
+        let normal = file
+            .normal_map(i)
+            .zip(t.normal_map.as_deref())
+            .map(|(data, name)| format!(", normal map `{name}` ({})", format_name(data.format)))
+            .unwrap_or_default();
+        println!(
+            "  {i}: `{}` {}x{} ({}){normal}",
+            t.name,
+            t.width,
+            t.height,
+            format_name(data.format)
+        );
+    }
+}
+
+/// `ugoe info <module>.ugoemod --json`。
+fn module_info_json(file: &ugoe_format::ModuleFile) -> serde_json::Value {
+    let m = &file.module;
+    serde_json::json!({
+        "kind": "module",
+        "name": m.name,
+        "slot": m.slot.as_str(),
+        "requires": {
+            "avatar_level": m.requires.avatar_level,
+            "slots": m.requires.slots.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+            "parameters": m.requires.parameters.iter().map(|p| p.as_str()).collect::<Vec<_>>(),
+        },
+        "parameters": m.referenced_parameters().iter().map(|p| p.as_str().to_owned()).collect::<Vec<_>>(),
+        "parts": m.parts.len(),
+        "deformers": m.deformers.len(),
+        "meshes": m.meshes.len(),
+        "glues": m.glues.len(),
+        "physics": { "rigs": m.physics.rigs.len(), "colliders": m.physics.colliders.len() },
+        "pose": { "groups": m.pose.groups.len(), "links": m.pose.links.len() },
+        "textures": m.textures.iter().zip(&file.textures).enumerate().map(|(i, (t, data))| serde_json::json!({
+            "name": t.name,
+            "width": t.width,
+            "height": t.height,
+            "format": format_name(data.format),
+            "normal_map": t.normal_map.as_deref().zip(file.normal_map(i)).map(|(name, data)| serde_json::json!({
+                "name": name,
+                "format": format_name(data.format),
+            })),
+        })).collect::<Vec<_>>(),
+    })
+}
+
+fn format_name(format: TextureFormat) -> &'static str {
+    match format {
+        TextureFormat::Png => "png",
+        TextureFormat::Ktx2 => "ktx2",
+    }
 }
 
 fn run_render(args: RenderArgs) -> anyhow::Result<()> {

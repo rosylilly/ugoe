@@ -6,7 +6,7 @@ use ugoe_core::Vec2;
 use ugoe_model::{Mesh, Model, TextureRef, fixtures};
 
 use crate::Textures;
-use crate::atlas::{AtlasError, AtlasOptions, KeptReason, build_atlas};
+use crate::atlas::{AtlasError, AtlasOptions, KeptReason, build_atlas, build_module_atlas};
 use crate::texture::{decode_rgba_png, encode_rgba_png};
 
 /// 決まった種から作る、隣り合う画素の差が大きい画像 (端の扱いの誤りが色に出るように)。
@@ -319,4 +319,38 @@ fn identical_images_are_packed_once() {
     assert_eq!(atlased.model.meshes[0].uvs, atlased.model.meshes[1].uvs);
     assert_ne!(atlased.model.meshes[0].uvs, atlased.model.meshes[2].uvs);
     assert_same_look((&model, &textures), (&atlased.model, &atlased.textures));
+}
+
+/// モジュールのテクスチャはモジュールの単位でまとめる。描画順は本体に付けないと決まらないので、メッシュの宣言順で詰める。
+#[test]
+fn packs_module_textures_in_declaration_order() {
+    // 宣言順は tex1 → tex0 (描画順は逆)。1 枚に 1 つしか入らない上限にして、詰める順をアトラスの番号で見る。
+    let (model, textures) = model_with(&[(1, 1.0), (0, 0.0), (2, 2.0)], &[(8, 8), (6, 6), (4, 4)]);
+    let mut module = fixtures::long_hair_module();
+    module.meshes = model.meshes.clone();
+    module.textures = model.textures.clone();
+    let options = AtlasOptions {
+        max_size: 12,
+        padding: 2,
+    };
+    let atlased = build_module_atlas(&module, &textures, &options).expect("atlas");
+    assert_eq!(atlased.report.packed, 3);
+    assert_eq!(atlased.report.atlases, vec![(10, 10), (12, 12), (8, 8)]);
+    let names: Vec<_> = atlased
+        .module
+        .textures
+        .iter()
+        .map(|t| t.name.as_str())
+        .collect();
+    assert_eq!(names, ["atlas-0", "atlas-1", "atlas-2"]);
+    assert_eq!(atlased.module.meshes[0].texture, 0);
+    assert_eq!(atlased.module.meshes[1].texture, 1);
+    // モジュールのほかの部分は変えない。
+    assert_eq!(atlased.module.parts, module.parts);
+    assert_eq!(atlased.module.physics, module.physics);
+    // 見た目は変わらない (モデルに入れ直して比べる)。
+    let mut after = model.clone();
+    after.meshes = atlased.module.meshes.clone();
+    after.textures = atlased.module.textures.clone();
+    assert_same_look((&model, &textures), (&after, &atlased.textures));
 }
