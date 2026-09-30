@@ -1,11 +1,11 @@
 ---
 id: T0712
 title: 見本: 着せ替えの見本をエディタで開けるプロジェクトとしても出力し、本体にアバタープロファイルを持たせる
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-cli, assets, docs]
 depends_on: [T0710, T0707]
-assignee:
+assignee: claude-worker-T0712
 ---
 
 # T0712: 見本: 着せ替えの見本のプロジェクトとアバタープロファイル

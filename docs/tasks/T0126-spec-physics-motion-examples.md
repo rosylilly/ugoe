@@ -1,11 +1,11 @@
 ---
 id: T0126
 title: 公開仕様: 物理・モーション・効果の例のファイルと、独立の実装での検証
-status: todo
+status: in-progress
 milestone: M5
 crates: [spec, tools/spec-check, docs]
 depends_on: [T0120]
-assignee:
+assignee: claude-worker-T0126
 ---
 
 # T0126: 公開仕様: 物理・モーション・効果の例のファイルと、独立の実装での検証
