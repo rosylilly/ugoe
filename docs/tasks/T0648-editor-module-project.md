@@ -1,11 +1,11 @@
 ---
 id: T0648
 title: エディタ: モジュールのプロジェクトと .ugoemod の書き出し
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-editor-core, apps/editor, docs]
 depends_on: [T0647, T0123]
-assignee:
+assignee: claude-worker-T0648
 ---
 
 # T0648: エディタ: モジュールのプロジェクトと .ugoemod の書き出し

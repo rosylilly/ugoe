@@ -1,11 +1,11 @@
 ---
 id: T0649
 title: エディタ: プレビューで着せ替えを試す
-status: todo
+status: in-progress
 milestone: M4
 crates: [apps/editor, docs]
 depends_on: [T0123, T0647]
-assignee:
+assignee: claude-worker-T0649
 ---
 
 # T0649: エディタ: プレビューで着せ替えを試す
