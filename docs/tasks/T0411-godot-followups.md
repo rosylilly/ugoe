@@ -22,6 +22,7 @@ T0406 の後続の候補をまとめる。
 - [ ] 1 要素あたり 8 つまでのマスクの上限をなくす。アニメーション中に入れ子のマスクが 1 フレーム遅れないかを確かめる
 - [ ] Godot のアセットライブラリでの配布の準備 (手順だけ。公開は利用者が行う)
 - [ ] Vulkan のレンダラでの見た目、Windows・macOS でのビルドは、できなければ利用者の確認に残す
+- [ ] justfile に godot-build / godot-check を足す (Godot が無ければ入れ方を案内して止める。just ci には入れない)。bindings/godot/check-licenses.mjs を scripts/check-licenses.mjs の小さな関数に統合するかを決め、ADR 0026 の検査の方法を揃える
 - [ ] `just ci` と `node bindings/godot/build.mjs --check` が通る
 
 ## 参考
