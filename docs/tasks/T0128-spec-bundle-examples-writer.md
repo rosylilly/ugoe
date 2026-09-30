@@ -1,11 +1,11 @@
 ---
 id: T0128
 title: 公開仕様: .ugoe の例のファイルと、独立の書き出し・往復の試験
-status: todo
+status: in-progress
 milestone: M5
 crates: [spec, tools/spec-check, docs]
 depends_on: [T0120]
-assignee:
+assignee: claude-worker-T0128
 ---
 
 # T0128: 公開仕様: .ugoe の例のファイルと、独立の書き出し・往復の試験
