@@ -256,7 +256,10 @@ fn reloading_the_base_reattaches_modules_and_drops_leftovers() {
     // 読み込みのほかの警告と同じ一覧では、外したものは後ろに並ぶ (戻り値の文の警告と同じ順。T0125)。
     let texture = crate::load::LoadWarning::TextureMissing { texture: 0 };
     let list = crate::load::warnings_json(std::slice::from_ref(&texture), detached);
-    assert_eq!(list, [texture.to_json(), detached[0].to_json()]);
+    assert_eq!(
+        list,
+        [crate::load::warning_json(&texture), detached[0].to_json()]
+    );
     assert_eq!(attached_names(Some(&other)), ["LongHair"]);
     assert_eq!(
         sink.take(),

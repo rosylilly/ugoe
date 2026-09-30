@@ -638,3 +638,237 @@ fn load_warnings_have_codes_and_fields() {
     ok(unsafe { ugoe_module_warning_count(hair.0, &mut n) });
     assert_eq!(n, 0);
 }
+
+/// 警告 1 つ: `(code, message, 補足の値)`。
+type WarningRow = (String, String, Vec<(String, String)>);
+
+/// 警告を [`WarningRow`] の一覧にする。
+fn warnings(
+    n: u32,
+    warning: impl Fn(u32, *mut UgoeWarning) -> UgoeResult,
+    field: impl Fn(u32, *const c_char, *mut *const c_char) -> UgoeResult,
+) -> Vec<WarningRow> {
+    (0..n)
+        .map(|i| {
+            let mut w = UgoeWarning {
+                code: ptr::null(),
+                message: ptr::null(),
+            };
+            ok(warning(i, &mut w));
+            let fields = ["texture", "feature", "path"]
+                .into_iter()
+                .filter_map(|key| {
+                    let key = CString::new(key).unwrap();
+                    let mut value = ptr::null();
+                    (field(i, key.as_ptr(), &mut value) == UGOE_OK)
+                        .then(|| (key.into_string().unwrap(), text(value)))
+                })
+                .collect();
+            (text(w.code), text(w.message), fields)
+        })
+        .collect()
+}
+
+/// 読み込みの報告の警告の、T0409 の C ABI が出していた形。
+fn expected_read_warnings(report: &ugoe::format::ReadReport) -> Vec<WarningRow> {
+    use ugoe::format::ReadWarning;
+    report
+        .warnings
+        .iter()
+        .map(|w| {
+            let (code, key, value) = match w {
+                ReadWarning::UnknownOptionalFeature(id) => {
+                    ("unknown_optional_feature", "feature", id)
+                }
+                ReadWarning::UnknownValue(path) => ("unknown_value", "path", path),
+            };
+            (
+                code.to_owned(),
+                w.to_string(),
+                vec![(key.to_owned(), value.clone())],
+            )
+        })
+        .collect()
+}
+
+/// SDK に種類の対応を移しても (T0412)、C ABI の警告は T0409 と同じ code・文・補足の値のまま。
+#[test]
+fn load_warnings_are_unchanged_by_the_shared_codes() {
+    let bytes = include_bytes!("../../../assets/compat/future/optional-feature.ugoe");
+    let (_, report) = ugoe::format::read_bundle_with_report(bytes).unwrap();
+    let mut raw = ptr::null_mut();
+    ok(unsafe { ugoe_puppet_create_from_bundle(bytes.as_ptr(), bytes.len(), &mut raw) });
+    let p = Handle(raw);
+    let n = count(&p, ugoe_puppet_load_warning_count);
+    let actual = warnings(
+        n,
+        |i, out| unsafe { ugoe_puppet_load_warning(p.0, i, out) },
+        |i, key, out| unsafe { ugoe_puppet_load_warning_field(p.0, i, key, out) },
+    );
+    let expected = expected_read_warnings(&report);
+    assert!(!expected.is_empty());
+    assert_eq!(actual, expected);
+
+    let bytes = include_bytes!("../../../assets/compat/future/optional-feature.ugoemod");
+    let (_, report) = ugoe::format::module_file::read_module_with_report(bytes).unwrap();
+    let mut m = ptr::null_mut();
+    ok(unsafe { ugoe_module_create(bytes.as_ptr(), bytes.len(), &mut m) });
+    let future = ModuleHandle(m);
+    let mut n = 0;
+    ok(unsafe { ugoe_module_warning_count(future.0, &mut n) });
+    let actual = warnings(
+        n,
+        |i, out| unsafe { ugoe_module_warning(future.0, i, out) },
+        |i, key, out| unsafe { ugoe_module_warning_field(future.0, i, key, out) },
+    );
+    assert_eq!(actual, expected_read_warnings(&report));
+}
+
+const MOTION: &str = r#"{
+    "name": "nod",
+    "duration": 1.0,
+    "looping": false,
+    "fade_in": 0.0,
+    "fade_out": 0.0,
+    "curves": [{
+        "target": { "kind": "parameter", "id": "AngleX" },
+        "segments": [
+            { "type": "start", "p": { "t": 0.0, "v": 0.0 } },
+            { "type": "linear", "to": { "t": 1.0, "v": 30.0 } }
+        ]
+    }],
+    "events": [{ "t": 0.5, "value": "half" }, { "t": 0.75, "value": "late" }]
+}"#;
+
+fn motion_events(p: &Handle) -> Vec<(f32, String)> {
+    (0..count(p, ugoe_puppet_motion_event_count))
+        .map(|i| {
+            let mut e = UgoeMotionEvent {
+                time: f32::NAN,
+                value: ptr::null(),
+            };
+            ok(unsafe { ugoe_puppet_motion_event(p.0, i, &mut e) });
+            (e.time, text(e.value))
+        })
+        .collect()
+}
+
+/// モーションのイベント (T0412) は `ugoe::Puppet::motion_events` と同じものを、発火した update の後だけ返す。
+#[test]
+fn motion_events_follow_the_puppet() {
+    let motion = ugoe::format::motion_from_json(MOTION).unwrap();
+    let model = fixtures::pose_and_effects();
+    let mut bundle = Bundle::new(model.clone());
+    bundle.textures = model.textures.iter().map(|_| png(0)).collect();
+    bundle.motions = vec![motion.clone()];
+    let p = from_bundle(&bundle);
+    let mut rust = Puppet::new(fixtures::pose_and_effects()).unwrap();
+    assert!(motion_events(&p).is_empty());
+
+    ok(unsafe { ugoe_puppet_start_motion(p.0, 0, UGOE_PRIORITY_FORCE, ptr::null_mut()) });
+    rust.start_motion(motion, ugoe::motion::Priority::Force);
+    for (dt, expected) in [
+        (0.25, vec![]),
+        (
+            0.6,
+            vec![(0.5, "half".to_owned()), (0.75, "late".to_owned())],
+        ),
+        (0.1, vec![]),
+    ] {
+        ok(unsafe { ugoe_puppet_update(p.0, dt) });
+        rust.update(dt);
+        let actual = motion_events(&p);
+        assert_eq!(actual, expected);
+        let from_rust: Vec<_> = rust
+            .motion_events()
+            .iter()
+            .map(|e| (e.t, e.value.clone()))
+            .collect();
+        assert_eq!(actual, from_rust);
+    }
+    let mut e = UgoeMotionEvent {
+        time: 0.0,
+        value: ptr::null(),
+    };
+    assert_eq!(
+        unsafe { ugoe_puppet_motion_event(p.0, 0, &mut e) },
+        UGOE_ERROR_OUT_OF_RANGE
+    );
+}
+
+fn physics_json(p: &Handle) -> String {
+    let mut len = usize::MAX;
+    let code = unsafe { ugoe_puppet_physics_json(p.0, ptr::null_mut(), 0, &mut len) };
+    if len == 0 {
+        ok(code);
+        return String::new();
+    }
+    assert_eq!(code, UGOE_ERROR_BUFFER_TOO_SMALL);
+    let mut buf = vec![0u8; len];
+    ok(unsafe { ugoe_puppet_physics_json(p.0, buf.as_mut_ptr(), buf.len(), &mut len) });
+    assert_eq!(len, buf.len());
+    String::from_utf8(buf).unwrap()
+}
+
+fn set_physics(p: &Handle, json: &str) -> UgoeResult {
+    unsafe { ugoe_puppet_set_physics_json(p.0, json.as_ptr(), json.len()) }
+}
+
+/// 物理の設定の差し替え (T0412) は `ugoe::Puppet::set_physics` と同じく検査し、失敗したら何も変えない。
+#[test]
+fn physics_settings_can_be_replaced() {
+    let p = from_model(fixtures::physics_hair());
+    assert_eq!(physics_json(&p), "");
+
+    let settings = fixtures::physics_hair_settings();
+    ok(set_physics(
+        &p,
+        &ugoe::format::physics_to_json(&settings).unwrap(),
+    ));
+    assert_eq!(
+        ugoe::format::physics_from_json(&physics_json(&p)).unwrap(),
+        settings
+    );
+
+    // Rust の Puppet と同じように揺れる。
+    let mut rust = Puppet::new(fixtures::physics_hair())
+        .unwrap()
+        .with_physics(settings.clone());
+    let angle = CString::new(standard::ANGLE_X).unwrap();
+    let mut index = 0;
+    ok(unsafe { ugoe_puppet_parameter_index(p.0, angle.as_ptr(), &mut index) });
+    for frame in 0..8 {
+        let value = (frame as f32 * 0.7).sin() * 30.0;
+        ok(unsafe { ugoe_puppet_set_parameter(p.0, index, value) });
+        ok(unsafe { ugoe_puppet_update(p.0, DT) });
+        let params = rust.instance_mut().parameters_mut();
+        let i = params.index_of(standard::ANGLE_X).unwrap();
+        params.set(i, value);
+        rust.update(DT);
+    }
+    let front = {
+        let params = rust.instance().parameters();
+        params.get(params.index_of(standard::HAIR_FRONT).unwrap())
+    };
+    assert!(front.abs() > 1e-3);
+    assert!((param(&p, standard::HAIR_FRONT) - front).abs() < 1e-5);
+    ok(unsafe { ugoe_puppet_reset_physics(p.0) });
+
+    // 検査を通らない設定と読めない JSON は、何も変えずに失敗する。
+    let mut bad = settings.clone();
+    bad.rigs[0].inputs[0].parameter = "Missing".into();
+    assert_eq!(
+        set_physics(&p, &ugoe::format::physics_to_json(&bad).unwrap()),
+        UGOE_ERROR_INVALID_MODEL
+    );
+    assert!(text(ugoe_last_error()).contains("Missing"));
+    assert_eq!(set_physics(&p, "{"), UGOE_ERROR_FORMAT);
+    assert_eq!(
+        ugoe::format::physics_from_json(&physics_json(&p)).unwrap(),
+        settings
+    );
+
+    // NULL で外す。
+    ok(unsafe { ugoe_puppet_set_physics_json(p.0, ptr::null(), 0) });
+    assert_eq!(physics_json(&p), "");
+}

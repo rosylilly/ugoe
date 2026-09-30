@@ -7,6 +7,7 @@
 use std::io::Cursor;
 
 use serde::Serialize;
+use ugoe::FieldValue;
 use ugoe::format::{Bundle, TextureData, TextureFormat};
 use ugoe::model::physics::PhysicsSettings;
 
@@ -60,51 +61,24 @@ pub struct LoadedModel {
     pub warnings: Vec<LoadWarning>,
 }
 
-/// 読み込めたが注意が要ること (T0125)。`Display` は読み込みの戻り値に入る英語の文 (T0125 の前から変えていない)。
-/// 機械が読む形は [`LoadWarning::to_json`] (`load_warnings_json` の要素。`crates/ugoe-wasm/README.md#読み込みの警告-t0125`)。
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum LoadWarning {
-    /// テクスチャが KTX2 (未対応) なので、白のプレースホルダで代用した。
-    #[error("texture {texture} is KTX2, which is not supported yet; using a white placeholder")]
-    TextureKtx2 { texture: usize },
-    /// テクスチャの画像が無いので、白のプレースホルダで代用した。
-    #[error("no data for texture {texture}; using a white placeholder")]
-    TextureMissing { texture: usize },
-    /// 法線マップが KTX2 (未対応) なので、法線マップなしで描く。
-    #[error(
-        "the normal map of texture {texture} is KTX2, which is not supported yet; drawing without it"
-    )]
-    NormalMapKtx2 { texture: usize },
-    /// 読み直す前の物理の設定が新しいモデルと合わないので外した。`reason` は検査の結果 (英語)。
-    #[error("physics settings were removed: {reason}")]
-    PhysicsRemoved { reason: String },
-}
+/// 読み込めたが注意が要ること。種類 (`code`) と補足の値は SDK の [`ugoe::LoadWarning`] が決める (T0412)。
+/// `Display` は読み込みの戻り値に入る英語の文 (T0125 の前から変えていない)。
+pub use ugoe::LoadWarning;
 
-impl LoadWarning {
-    /// 種類を表すコード (`load_warnings_json` の `code`)。
-    pub fn code(&self) -> &'static str {
-        match self {
-            Self::TextureKtx2 { .. } => "texture_ktx2",
-            Self::TextureMissing { .. } => "texture_missing",
-            Self::NormalMapKtx2 { .. } => "normal_map_ktx2",
-            Self::PhysicsRemoved { .. } => "physics_removed",
-        }
+/// JSON: `{"code", "warning", "texture"?, "reason"?, "feature"?, "path"?}` (`load_warnings_json` の要素。
+/// `crates/ugoe-wasm/README.md#読み込みの警告-t0125`)。`warning` は文の警告と同じ文字列。番号の補足の値は数にする。
+pub fn warning_json(warning: &LoadWarning) -> serde_json::Value {
+    let mut json = serde_json::json!({
+        "code": warning.code(),
+        "warning": warning.to_string(),
+    });
+    for (key, value) in warning.fields() {
+        json[key] = match value {
+            FieldValue::Index(i) => i.into(),
+            FieldValue::Text(s) => s.into(),
+        };
     }
-
-    /// JSON: `{"code", "warning", "texture"?, "reason"?}`。`warning` は文の警告と同じ文字列。
-    pub fn to_json(&self) -> serde_json::Value {
-        let mut json = serde_json::json!({
-            "code": self.code(),
-            "warning": self.to_string(),
-        });
-        match self {
-            Self::TextureKtx2 { texture }
-            | Self::TextureMissing { texture }
-            | Self::NormalMapKtx2 { texture } => json["texture"] = (*texture).into(),
-            Self::PhysicsRemoved { reason } => json["reason"] = reason.as_str().into(),
-        }
-        json
-    }
+    json
 }
 
 /// 読み込みの警告の構造 (`load_warnings_json`)。戻り値の文の警告と同じ順: モデルの読み込みと物理の引き継ぎの
@@ -115,7 +89,7 @@ pub fn warnings_json(
 ) -> Vec<serde_json::Value> {
     warnings
         .iter()
-        .map(LoadWarning::to_json)
+        .map(warning_json)
         .chain(detached.iter().map(crate::dress_up::Detached::to_json))
         .collect()
 }
@@ -143,8 +117,9 @@ pub fn from_json(json: &str) -> Result<LoadedModel, LoadError> {
 
 /// `.ugoe` バンドルを読み、PNG のテクスチャと法線マップをデコードする。
 pub fn from_bundle(bytes: &[u8]) -> Result<LoadedModel, LoadError> {
-    let bundle = ugoe::format::read_bundle(bytes)?;
-    let mut warnings = Vec::new();
+    let (bundle, report) = ugoe::format::read_bundle_with_report(bytes)?;
+    // 読み込みの報告の警告を先に並べる (C ABI の `ugoe_puppet_load_warning_*` と同じ順。T0412)。
+    let mut warnings: Vec<LoadWarning> = report.warnings.iter().map(LoadWarning::from).collect();
     let normal_maps =
         decode_normal_maps(ugoe::lighting::bundle_normal_maps(&bundle), &mut warnings)?;
     let textures = decode_textures(
@@ -442,6 +417,47 @@ mod tests {
                 }),
             ]
         );
+    }
+
+    /// 読み込みの報告の警告の構造 (T0412)。C ABI の `ugoe_puppet_load_warning_*` と同じ code・補足の値・文。
+    fn read_warnings_json(report: &ugoe::format::ReadReport) -> Vec<serde_json::Value> {
+        use ugoe::format::ReadWarning;
+        report
+            .warnings
+            .iter()
+            .map(|w| match w {
+                ReadWarning::UnknownOptionalFeature(id) => serde_json::json!({
+                    "code": "unknown_optional_feature",
+                    "warning": w.to_string(),
+                    "feature": id,
+                }),
+                ReadWarning::UnknownValue(path) => serde_json::json!({
+                    "code": "unknown_value",
+                    "warning": w.to_string(),
+                    "path": path,
+                }),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn unknown_features_and_values_are_reported_like_the_c_abi() {
+        let bytes = include_bytes!("../../../assets/compat/future/optional-feature.ugoe");
+        let (_, report) = ugoe::format::read_bundle_with_report(bytes).unwrap();
+        let loaded = from_bundle(bytes).unwrap();
+        let expected = read_warnings_json(&report);
+        assert!(!expected.is_empty());
+        assert_eq!(warnings_json(&loaded.warnings, &[]), expected);
+        let codes: Vec<_> = loaded.warnings.iter().map(LoadWarning::code).collect();
+        assert!(codes.contains(&"unknown_optional_feature"), "{codes:?}");
+        assert!(codes.contains(&"unknown_value"), "{codes:?}");
+
+        let bytes = include_bytes!("../../../assets/compat/future/optional-feature.ugoemod");
+        let (_, report) = ugoe::format::module_file::read_module_with_report(bytes).unwrap();
+        let loaded = crate::dress_up::from_module_file(bytes).unwrap();
+        let details: Vec<_> = loaded.warnings.iter().map(warning_json).collect();
+        assert!(!details.is_empty());
+        assert_eq!(details, read_warnings_json(&report));
     }
 
     #[test]

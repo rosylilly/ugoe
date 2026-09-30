@@ -18,6 +18,11 @@ mod dress_up;
 
 pub use dress_up::{DressUpChange, DressUpError, TextureSource};
 
+// 読み込みの警告の種類 (T0412)。
+mod warning;
+
+pub use warning::{FieldValue, LoadWarning};
+
 // ライティングの補助 (T0210)。
 pub mod lighting;
 

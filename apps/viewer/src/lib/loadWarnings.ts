@@ -5,13 +5,20 @@ import type { DressUpErrorInfo } from "./dressUp";
 
 /** 構造にした警告 1 つ。`warning` は wasm の文の警告 (英語) と同じ文字列。 */
 export interface LoadWarning {
-  /** `texture_ktx2` | `texture_missing` | `normal_map_ktx2` | `physics_removed` | `module_detached` (ほかは将来の種類)。 */
+  /**
+   * `texture_ktx2` | `texture_missing` | `normal_map_ktx2` | `physics_removed` | `module_detached` |
+   * `unknown_optional_feature` | `unknown_value` (T0412。ほかは将来の種類)。
+   */
   code: string;
   warning: string;
   /** テクスチャの番号 (テクスチャ・法線マップの警告)。 */
   texture?: number;
   /** 物理を外した理由 (英語)。 */
   reason?: string;
+  /** 知らない任意の機能の ID (`unknown_optional_feature`)。 */
+  feature?: string;
+  /** 知らない値のあった場所 (`unknown_value`。チャンクとその中の場所)。 */
+  path?: string;
   /** 外したモジュールの名前とスロット、付けられなかった理由 (`module_detached`)。 */
   module?: string;
   slot?: string;
@@ -33,6 +40,8 @@ export function readLoadWarnings(list: unknown): LoadWarning[] {
     const warning: LoadWarning = { code: w.code, warning: w.warning };
     if (typeof w.texture === "number") warning.texture = w.texture;
     if (typeof w.reason === "string") warning.reason = w.reason;
+    if (typeof w.feature === "string") warning.feature = w.feature;
+    if (typeof w.path === "string") warning.path = w.path;
     if (typeof w.module === "string") warning.module = w.module;
     if (typeof w.slot === "string") warning.slot = w.slot;
     if (w.error !== undefined) {
@@ -71,6 +80,10 @@ export function describeLoadWarning(w: LoadWarning): string | null {
       return `${texture} の法線マップは KTX2 の画像で、まだ使えないため法線マップなしで描いています`;
     case "physics_removed":
       return `物理の設定がこのモデルに合わないため外しました (${w.reason ?? w.warning})`;
+    case "unknown_optional_feature":
+      return `このファイルは新しい版の機能「${w.feature ?? "?"}」を使っています。この版では代わりの方法で表示しています`;
+    case "unknown_value":
+      return `このファイルには、この版が知らない値があります (${w.path ?? "?"})。既定の扱いで表示しています`;
     default:
       return null;
   }

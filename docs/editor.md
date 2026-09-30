@@ -427,7 +427,8 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
   ときは物理が無いので、`WebPuppet` に物理が無ければ `set_physics_json` でドキュメントの物理を渡します。
 - **読み込みの警告 (T0125):** モデルを読み込むたびに `WebPuppet.load_warnings_json()` の `code` から英語の知らせを作り、
   パネルの上に出します (`loadWarnings.ts`。読み込むたびに置き換える)。テクスチャ・法線マップを代用した (`texture_ktx2`・
-  `texture_missing`・`normal_map_ktx2`) と、前の物理を外した (`physics_removed`)。外したモジュール (`module_detached`) は
+  `texture_missing`・`normal_map_ktx2`)、前の物理を外した (`physics_removed`)、新しい版のファイルの知らない機能・値を
+  フォールバックで読んだ (`unknown_optional_feature`・`unknown_value`。T0412)。外したモジュール (`module_detached`) は
   [着せ替え](#プレビューの着せ替え) の知らせに出すので除き、`physics_removed` もドキュメントの物理を渡し直せたときは除きます
   (編集のたびの読み直しで、外れたのは古い設定のため)。知らない `code` は wasm の文をそのまま出します。
   着せ替えの一覧のモジュールの警告 (テクスチャの代用) も、`modules_json()` の `warning_details` から同じ言い回しで作ります

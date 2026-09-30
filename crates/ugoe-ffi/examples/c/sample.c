@@ -260,6 +260,43 @@ static void dress_up(UgoePuppet *puppet, int count, char **paths) {
     EXPECT(attached == 0);
 }
 
+/* モーションを順に再生してイベントを数え、物理の設定を読み出して差し替え直す (T0412)。 */
+static void animate(UgoePuppet *puppet, uint32_t motions) {
+    uint32_t fired = 0;
+    for (uint32_t m = 0; m < motions; m++) {
+        CHECK(ugoe_puppet_start_motion(puppet, m, UGOE_PRIORITY_FORCE, NULL));
+        for (int frame = 0; frame < 120; frame++) {
+            CHECK(ugoe_puppet_update(puppet, 1.0f / 60.0f));
+            uint32_t events = 0;
+            CHECK(ugoe_puppet_motion_event_count(puppet, &events));
+            for (uint32_t e = 0; e < events; e++) {
+                UgoeMotionEvent event;
+                CHECK(ugoe_puppet_motion_event(puppet, e, &event));
+                EXPECT(event.value != NULL);
+                fired++;
+            }
+        }
+    }
+    printf("%u motion events\n", fired);
+
+    size_t len = 0;
+    int result = ugoe_puppet_physics_json(puppet, NULL, 0, &len);
+    if (len == 0) {
+        CHECK(result);
+        printf("no physics\n");
+        return;
+    }
+    EXPECT(result == UGOE_ERROR_BUFFER_TOO_SMALL);
+    uint8_t *json = malloc(len);
+    CHECK(ugoe_puppet_physics_json(puppet, json, len, &len));
+    CHECK(ugoe_puppet_set_physics_json(puppet, json, len));
+    EXPECT(ugoe_puppet_set_physics_json(puppet, json, len / 2) == UGOE_ERROR_FORMAT);
+    free(json);
+    CHECK(ugoe_puppet_reset_physics(puppet));
+    CHECK(ugoe_puppet_update(puppet, 1.0f / 60.0f));
+    printf("physics settings: %zu bytes of JSON\n", len);
+}
+
 int main(int argc, char **argv) {
     bool expect_lit = false;
     int arg = 1;
@@ -378,6 +415,7 @@ int main(int argc, char **argv) {
         CHECK(ugoe_puppet_update(puppet, 0.5f));
     }
 
+    animate(puppet, motions);
     light(puppet, expect_lit);
     dress_up(puppet, argc - arg, argv + arg);
 

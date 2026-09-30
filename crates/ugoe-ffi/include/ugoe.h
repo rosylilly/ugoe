@@ -108,6 +108,14 @@ typedef struct UgoePuppet UgoePuppet;
 // 関数の結果。`UGOE_OK` (0) が成功、それ以外は失敗の種類。詳細は `ugoe_last_error` で得る。
 typedef int32_t UgoeResult;
 
+// 発火したモーションのイベント (`docs/spec/motion.md`)。
+typedef struct UgoeMotionEvent {
+  // モーションの中の時刻 (秒)。
+  float time;
+  // イベントの値 (UTF-8、NUL 終端)。次の `ugoe_puppet_update` まで有効。
+  const char *value;
+} UgoeMotionEvent;
+
 // 描画可能要素の、評価で変わらない情報。
 typedef struct UgoeDrawableInfo {
   // ID (UTF-8、NUL 終端)。着せ替えの操作か `UgoePuppet` の破棄まで有効。
@@ -286,6 +294,58 @@ uint32_t ugoe_abi_version(void);
 
 // ランタイムのバージョン (`"0.1.0"` の形。NUL 終端)。ポインタはずっと有効。
 const char *ugoe_version(void);
+
+// 直前の `ugoe_puppet_update` で発火したモーションのイベントの数。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
+UgoeResult ugoe_puppet_motion_event_count(const struct UgoePuppet *puppet, uint32_t *out);
+
+// 直前の `ugoe_puppet_update` で発火した `index` 番目のモーションのイベント。開始した順のモーションごとに、
+// 発火した順に並ぶ (ループをまたいだら周回の順)。文字列は次の `ugoe_puppet_update` まで有効。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
+UgoeResult ugoe_puppet_motion_event(const struct UgoePuppet *puppet,
+                                    uint32_t index,
+                                    struct UgoeMotionEvent *out);
+
+// 物理の設定を JSON (`*.physics.json` の形。UTF-8、`len` バイト。NUL 終端は要らない) で差し替える。
+// `json` が NULL なら物理を外す。粒子は次の `ugoe_puppet_update` で、その時の入力に対する静止姿勢から始める。
+//
+// JSON を読めなければ `UGOE_ERROR_FORMAT`、モデルに対する検査 (`docs/spec/physics.md`) を通らなければ
+// `UGOE_ERROR_INVALID_MODEL` を返し、何も変えない。
+//
+// 着せ替えのモジュールを付けているときは、付けたモデルに対して差し替える。次に付け外しをすると、
+// 最初にモジュールを付けたときの本体の設定から合成し直すので、ここで差し替えた設定は失われる。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`json` は NULL か `len` バイトの読める領域を指すこと。
+UgoeResult ugoe_puppet_set_physics_json(struct UgoePuppet *puppet,
+                                        const uint8_t *json,
+                                        size_t len);
+
+// 今の物理の設定の JSON (UTF-8。NUL 終端しない) を `out` (`capacity` バイト) に書き、`*out_len` にバイト数を書く。
+// 物理が無ければ `*out_len` は 0。`capacity` が足りなければ `UGOE_ERROR_BUFFER_TOO_SMALL` を返し、`*out_len` だけを書く
+// (長さを知るには `capacity` を 0 にして呼ぶ。そのとき `out` は NULL でもよい)。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`out` は `capacity` バイトを書き込める領域、`out_len` は書き込める領域を指すこと。
+UgoeResult ugoe_puppet_physics_json(const struct UgoePuppet *puppet,
+                                    uint8_t *out,
+                                    size_t capacity,
+                                    size_t *out_len);
+
+// 物理の粒子を初期姿勢に戻す (次の `ugoe_puppet_update` で静止姿勢に置き直す)。物理が無ければ何もしない。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet` を指すこと。
+UgoeResult ugoe_puppet_reset_physics(struct UgoePuppet *puppet);
 
 // 描画可能要素 (メッシュ) の数。
 //
@@ -719,7 +779,7 @@ UgoeResult ugoe_puppet_canvas(const struct UgoePuppet *puppet, struct UgoeCanvas
 // 1 フレーム進める (モーション → 表情 → 目パチ・呼吸 → 物理 → リップシンク → ポーズ → 評価。
 // `docs/spec/motion.md#フレーム内の適用順`)。`dt` は前のフレームからの経過秒数。
 //
-// 呼ぶと、この `UgoePuppet` から借りた頂点位置と描画順のポインタは無効になる。
+// 呼ぶと、この `UgoePuppet` から借りた頂点位置と描画順とモーションのイベントのポインタは無効になる。
 //
 // # Safety
 //

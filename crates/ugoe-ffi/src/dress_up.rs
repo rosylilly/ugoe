@@ -1,8 +1,8 @@
 //! 着せ替え: `.ugoemod` の読み込み (`UgoeModule`) と、`UgoePuppet` へのモジュールの付け外し
 //! (`docs/spec/modules.md#puppet-での着せ替え`)。
 //!
-//! 失敗の種類 (`ugoe_last_error_kind`) と補足の値は wasm の `DressUpError` の `code` と同じ
-//! (`crates/ugoe-wasm/src/dress_up.rs` の `error_info`)。
+//! 失敗の種類 (`ugoe_last_error_kind`) と補足の値は SDK の `ugoe::DressUpError::code`・`fields` で、
+//! wasm の `DressUpError` の `code` と同じ (T0412)。
 
 use std::ffi::{CString, c_char};
 use std::sync::Arc;
@@ -42,58 +42,12 @@ pub struct UgoeModule {
 
 /// 着せ替えの失敗を、種類と補足の値の付いたエラーにする。
 fn dress_up_error(error: DressUpError) -> Error {
-    use ugoe::runtime::ComposeError as C;
-    let message = error.to_string();
-    let (kind, fields): (_, Vec<(&'static str, &str)>) = match &error {
-        DressUpError::NotAttached(name) => ("not_attached", vec![("module", name)]),
-        DressUpError::Compile(_) => ("compile", vec![]),
-        DressUpError::Physics(_) => ("invalid_physics", vec![]),
-        DressUpError::Compose(e) => match e {
-            C::InvalidModuleName(name) => ("invalid_module_name", vec![("module", name)]),
-            C::DuplicateModule(name) => ("duplicate_module", vec![("module", name)]),
-            C::UnknownSlot { module, slot } => {
-                ("unknown_slot", vec![("module", module), ("slot", slot)])
-            }
-            C::SlotOccupied {
-                slot,
-                first,
-                second,
-            } => (
-                "slot_occupied",
-                vec![("slot", slot), ("module", second), ("attached", first)],
-            ),
-            C::AvatarLevel { module, .. } => ("avatar_level", vec![("module", module)]),
-            C::MissingSlot { module, slot } => {
-                ("missing_slot", vec![("module", module), ("slot", slot)])
-            }
-            C::MissingParameter { module, parameter } => (
-                "missing_parameter",
-                vec![("module", module), ("parameter", parameter)],
-            ),
-            C::ParameterNotExposed {
-                module,
-                slot,
-                parameter,
-            } => (
-                "parameter_not_exposed",
-                vec![("module", module), ("slot", slot), ("parameter", parameter)],
-            ),
-            C::UnknownMask { module, mesh, .. } => {
-                ("unknown_mask", vec![("module", module), ("mesh", mesh)])
-            }
-            C::TextureOutOfRange { module, mesh, .. } => (
-                "texture_out_of_range",
-                vec![("module", module), ("mesh", mesh)],
-            ),
-            C::UnknownCollider { module, .. } => ("unknown_collider", vec![("module", module)]),
-            C::PoseNotExposed { module, slot, .. } => {
-                ("pose_not_exposed", vec![("module", module), ("slot", slot)])
-            }
-            C::Invalid(_) => ("invalid_composition", vec![]),
-        },
-    };
-    let fields = fields.into_iter().map(|(k, v)| (k, v.to_owned())).collect();
-    Error::new(UGOE_ERROR_DRESS_UP, message).with_kind(kind, fields)
+    let fields = error
+        .fields()
+        .into_iter()
+        .map(|(k, v)| (k, v.to_owned()))
+        .collect();
+    Error::new(UGOE_ERROR_DRESS_UP, error.to_string()).with_kind(error.code(), fields)
 }
 
 impl UgoePuppet {
@@ -129,7 +83,8 @@ pub unsafe extern "C" fn ugoe_module_create(
         // SAFETY: 呼び出し側の約束。
         let bytes = unsafe { crate::puppet::bytes(bytes, len, "bytes")? };
         let (file, report) = module_file::read_module_with_report(bytes).map_err(|e| {
-            Error::new(UGOE_ERROR_FORMAT, e.to_string()).with_kind("invalid_file", Vec::new())
+            Error::new(UGOE_ERROR_FORMAT, e.to_string())
+                .with_kind(DressUpError::INVALID_FILE, Vec::new())
         })?;
         let count = file.module.textures.len();
         let normal_maps = (0..count).map(|i| file.normal_map(i).cloned()).collect();

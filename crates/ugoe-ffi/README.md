@@ -110,8 +110,8 @@ ugoe_module_destroy(hair);                          /* 付けたモジュール�
 | `invalid_composition`・`compile`・`invalid_physics` | 同上 | |
 
 wasm にある `not_loaded`・`no_model`・`texture` は C ABI では起きない (モジュールはポインタで渡し、`UgoePuppet` は常にモデルを持ち、
-画像の登録はホストが行う)。種類を持たない失敗では `ugoe_last_error_kind()` は NULL。対応は `src/dress_up.rs` と
-`ugoe-wasm` の `dress_up::error_info` の 2 か所にあるので、種類を足すときは両方を直す。
+画像の登録はホストが行う)。種類を持たない失敗では `ugoe_last_error_kind()` は NULL。種類と補足の値の対応は SDK の
+`ugoe::DressUpError::code`・`fields` (と `INVALID_FILE`) の 1 か所にあり、wasm も同じものを使う (T0412)。
 
 ## ライティング (T0409)
 
@@ -147,13 +147,38 @@ wasm にある `not_loaded`・`no_model`・`texture` は C ABI では起きな�
 | `code` | 補足の値 | いつ |
 | --- | --- | --- |
 | `texture_missing` | `texture` | テクスチャの画像が無い (読み込みが数を検査するので通常は起きない) |
-| `unknown_optional_feature` | `feature` (機能の ID) | 知らない任意の機能を宣言したファイル。フォールバックで読んだ (C ABI だけ。wasm はまだ出さない) |
-| `unknown_value` | `path` (チャンクと場所) | 知らない列挙の値をフォールバックで読んだ (C ABI だけ) |
+| `unknown_optional_feature` | `feature` (機能の ID) | 知らない任意の機能を宣言したファイル。フォールバックで読んだ |
+| `unknown_value` | `path` (チャンクと場所) | 知らない列挙の値をフォールバックで読んだ |
+
+`code` と補足の値は SDK の `ugoe::LoadWarning` (`code()`・`fields()`) が決め、wasm の `load_warnings_json` も同じものを使う (T0412)。
 
 - wasm の `texture_ktx2`・`normal_map_ktx2` は C ABI では出さない (画像のデコードはホストが行うので、KTX2 を扱えるかはホストが決める)。
   `physics_removed`・`module_detached` はモデルの読み直しで起きるもので、C ABI には読み直しが無いので起きない。
 - JSON から作ったときは警告を出さない (JSON はもともとテクスチャを持たない)。
 - `message` は英語の文で、安定した値として扱わない。知らない `code` は `message` をそのまま出せばよい。
+
+## モーションのイベントと物理の設定 (T0412)
+
+```c
+CHECK(ugoe_puppet_update(puppet, dt));
+uint32_t n = 0;
+ugoe_puppet_motion_event_count(puppet, &n);          /* 直前の update で発火したイベント */
+for (uint32_t i = 0; i < n; i++) {
+    UgoeMotionEvent e;
+    ugoe_puppet_motion_event(puppet, i, &e);          /* e.time (モーションの中の秒)・e.value (次の update まで有効) */
+}
+
+size_t len = 0;
+ugoe_puppet_physics_json(puppet, NULL, 0, &len);      /* 物理が無ければ len == 0。あれば UGOE_ERROR_BUFFER_TOO_SMALL */
+ugoe_puppet_set_physics_json(puppet, json, json_len); /* *.physics.json の形で差し替える。NULL で外す */
+ugoe_puppet_reset_physics(puppet);                    /* 粒子を初期姿勢に戻す */
+```
+
+- イベントは `ugoe::Puppet::motion_events` と同じ (開始した順のモーションごとに、発火した順)。wasm の `motion_events()` は値だけを返す。
+- `ugoe_puppet_set_physics_json` は `ugoe::Puppet::set_physics` と同じく、モデルに対して検査する。JSON を読めなければ `UGOE_ERROR_FORMAT`、
+  検査を通らなければ `UGOE_ERROR_INVALID_MODEL` で、どちらも何も変えない。粒子は次の `update` で静止姿勢から始める。
+- 着せ替えのモジュールを付けている間に差し替えた設定は、次の付け外しで本体の設定から作り直される (wasm の `set_physics_json` と同じ)。
+- `ugoe_puppet_physics_json` は NUL 終端しない UTF-8 をホストのバッファに書く (可変長の結果の規約)。
 
 ## 範囲外 (後続)
 
@@ -164,3 +189,4 @@ wasm にある `not_loaded`・`no_model`・`texture` は C ABI では起きな�
 
 - T0401 (`docs/tasks/T0401-*.md`)
 - T0409 (着せ替え・ライティング・当たり判定・トラッキング・読み込みの警告)
+- T0412 (エラーと警告の code を SDK にまとめる・モーションのイベント・物理の設定の差し替え)

@@ -11,6 +11,10 @@ export interface LoadWarning {
   texture?: number;
   /** 物理を外した理由 (`physics_removed`)。 */
   reason?: string;
+  /** 知らない任意の機能の ID (`unknown_optional_feature`。T0412)。 */
+  feature?: string;
+  /** 知らない値のあった場所 (`unknown_value`。T0412)。 */
+  path?: string;
 }
 
 /** 警告の配列 (JSON を解析したもの) を読む。`code` か `warning` の無い要素は読み飛ばす。 */
@@ -22,6 +26,8 @@ export function readLoadWarnings(list: unknown): LoadWarning[] {
     const warning: LoadWarning = { code: w.code, warning: w.warning };
     if (typeof w.texture === "number") warning.texture = w.texture;
     if (typeof w.reason === "string") warning.reason = w.reason;
+    if (typeof w.feature === "string") warning.feature = w.feature;
+    if (typeof w.path === "string") warning.path = w.path;
     return [warning];
   });
 }
@@ -43,6 +49,10 @@ export function describeLoadWarning(w: LoadWarning): string {
       return `${texture} has no image, so it is drawn white.`;
     case "normal_map_ktx2":
       return `The normal map of ${texture.toLowerCase()} is a KTX2 image, which the preview can't use yet, so it is lit without it.`;
+    case "unknown_optional_feature":
+      return `This file uses the feature "${w.feature ?? "?"}" from a newer version, so the preview shows a fallback for it.`;
+    case "unknown_value":
+      return `This file has a value this version doesn't know (${w.path ?? "?"}), so the preview uses the default for it.`;
     default:
       return w.warning;
   }

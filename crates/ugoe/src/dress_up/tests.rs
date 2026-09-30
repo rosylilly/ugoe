@@ -255,3 +255,27 @@ fn pose_state_carries_over_and_module_parts_follow() {
     assert_eq!(opacity(&puppet, "Dress/SleeveB"), (1.0, 1.0));
     assert_eq!(opacity(&puppet, "Dress/SleeveA"), (0.0, 1.0));
 }
+
+#[test]
+fn errors_have_stable_codes_and_fields() {
+    let mut puppet = Puppet::new(dress_up_base()).unwrap();
+    let error = puppet.detach_module("LongHair").unwrap_err();
+    assert_eq!(error.code(), "not_attached");
+    assert_eq!(error.fields(), [("module", "LongHair")]);
+
+    puppet.attach_module(Arc::new(long_hair_module())).unwrap();
+    let mut other = long_hair_module();
+    other.name = "OtherHair".into();
+    let mut modules = puppet.modules().to_vec();
+    modules.push(Arc::new(other));
+    let error = puppet.set_modules(modules).unwrap_err();
+    assert_eq!(error.code(), "slot_occupied");
+    assert_eq!(
+        error.fields(),
+        [
+            ("slot", long_hair_module().slot.as_str()),
+            ("module", "OtherHair"),
+            ("attached", "LongHair"),
+        ]
+    );
+}

@@ -1,9 +1,10 @@
-//! 読み込みの警告。wasm の `load_warnings_json` と同じ `code` と補足の値を持つ
-//! (crates/ugoe-wasm/README.md#読み込みの警告-t0125)。
+//! 読み込みの警告。種類 (`code`) と補足の値は SDK の `ugoe::LoadWarning` のもので、wasm の
+//! `load_warnings_json` と同じ (crates/ugoe-wasm/README.md#読み込みの警告-t0125。T0412)。
 
 use std::ffi::{CString, c_char};
 
-use ugoe::format::{ReadReport, ReadWarning, TextureData};
+use ugoe::LoadWarning;
+use ugoe::format::{ReadReport, TextureData};
 
 use crate::error::{Error, UGOE_ERROR_NOT_FOUND, c_string};
 use crate::puppet::{c_str, write};
@@ -28,13 +29,15 @@ pub(crate) struct Warning {
 }
 
 impl Warning {
-    fn new(code: &str, message: &str, fields: &[(&str, &str)]) -> Self {
+    /// `warning` の種類と補足の値に、文 `message` を添える。
+    fn new(warning: &LoadWarning, message: &str) -> Self {
         Self {
-            code: c_string(code),
+            code: c_string(warning.code()),
             message: c_string(message),
-            fields: fields
+            fields: warning
+                .fields()
                 .iter()
-                .map(|(k, v)| (c_string(k), c_string(v)))
+                .map(|(k, v)| (c_string(k), c_string(&v.to_string())))
                 .collect(),
         }
     }
@@ -47,36 +50,29 @@ impl Warning {
     }
 }
 
-/// ファイルの読み込みの報告の警告。wasm にはまだ無い種類 (知らない任意の機能・未知の値)。
+/// ファイルの読み込みの報告の警告 (知らない任意の機能・未知の値)。
 pub(crate) fn read_warnings(report: &ReadReport) -> Vec<Warning> {
     report
         .warnings
         .iter()
-        .map(|w| match w {
-            ReadWarning::UnknownOptionalFeature(id) => Warning::new(
-                "unknown_optional_feature",
-                &w.to_string(),
-                &[("feature", id)],
-            ),
-            ReadWarning::UnknownValue(path) => {
-                Warning::new("unknown_value", &w.to_string(), &[("path", path)])
-            }
+        .map(|w| {
+            let warning = LoadWarning::from(w);
+            Warning::new(&warning, &warning.to_string())
         })
         .collect()
 }
 
 /// 画像の無いテクスチャの番号の警告 (`texture_missing`。読み込みがテクスチャの数を検査するので、通常は起きない)。
+/// C ABI は代わりの画像を用意しないので、文は wasm (白で代用する) と違う。
 pub(crate) fn missing_textures(textures: &[Option<TextureData>]) -> Vec<Warning> {
     textures
         .iter()
         .enumerate()
         .filter(|(_, t)| t.is_none())
         .map(|(i, _)| {
-            let texture = i.to_string();
             Warning::new(
-                "texture_missing",
+                &LoadWarning::TextureMissing { texture: i },
                 &format!("no data for texture {i}"),
-                &[("texture", &texture)],
             )
         })
         .collect()

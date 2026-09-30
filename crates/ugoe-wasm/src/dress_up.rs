@@ -30,9 +30,10 @@ pub struct LoadedModule {
 /// `.ugoemod` を読み、テクスチャと法線マップをデコードする。
 /// 本体との整合 (スロット・パラメータ) は付けるときに合成が検査する。
 pub fn from_module_file(bytes: &[u8]) -> Result<LoadedModule, LoadError> {
-    let file = module_file::read_module(bytes)?;
+    let (file, report) = module_file::read_module_with_report(bytes)?;
     let count = file.module.textures.len();
-    let mut warnings = Vec::new();
+    // 読み込みの報告の警告を先に並べる (C ABI の `ugoe_module_warning_*` と同じ順)。
+    let mut warnings: Vec<LoadWarning> = report.warnings.iter().map(LoadWarning::from).collect();
     let normal_maps =
         load::decode_normal_maps((0..count).map(|i| file.normal_map(i)), &mut warnings)?;
     let textures = load::decode_textures(count, |i| file.textures.get(i), &mut warnings)?;
@@ -79,7 +80,7 @@ pub struct ModuleInfo<'a> {
     pub textures: usize,
     /// 読み込めたが注意が要ること (英語の文。T0123 から変えていない)。
     pub warnings: Vec<String>,
-    /// `warnings` と同じ順の構造 (`LoadWarning::to_json`。T0125)。
+    /// `warnings` と同じ順の構造 (`load::warning_json`。T0125)。
     pub warning_details: Vec<serde_json::Value>,
 }
 
@@ -103,7 +104,7 @@ impl Detached {
     /// JSON: `{"code": "module_detached", "module", "slot", "error": {"code", "message", "module"?, "slot"?, ...}, "warning"}`。
     /// `error` は JS の `DressUpError` と同じ `code` と補足の値に、英語の文 `message` を添えたもの。
     /// `warning` は読み込みの戻り値に入る文の警告と同じ文字列 (ホストが一覧から除けるように)。
-    /// `code` は読み込みのほかの警告 ([`LoadWarning::to_json`]) と同じ一覧に並べるためのもの (T0125)。
+    /// `code` は読み込みのほかの警告 ([`load::warning_json`]) と同じ一覧に並べるためのもの (T0125)。
     pub fn to_json(&self) -> serde_json::Value {
         let info = error_info(&self.error);
         let mut error = serde_json::Map::new();
@@ -165,7 +166,7 @@ impl Wardrobe {
                 attached: attached.iter().any(|n| *n == m.module.name),
                 textures: m.textures.len(),
                 warnings: m.warnings.iter().map(ToString::to_string).collect(),
-                warning_details: m.warnings.iter().map(LoadWarning::to_json).collect(),
+                warning_details: m.warnings.iter().map(load::warning_json).collect(),
             })
             .collect()
     }
@@ -381,61 +382,15 @@ pub struct ErrorInfo {
 }
 
 /// エラーの種類を JS で分けられるように、コードと補足の値にする (`docs/spec/modules.md#puppet-での着せ替え`)。
+/// 付け外しの失敗 (`DressUpError`) と `invalid_file` は SDK の値 (`ugoe::DressUpError::code`・`fields`) を使い、
+/// C ABI と揃える (T0412)。`no_model`・`not_loaded`・`texture` は wasm だけのもの。
 pub fn error_info(error: &WardrobeError) -> ErrorInfo {
-    use ugoe::runtime::ComposeError as C;
     let (code, fields): (_, Vec<(&'static str, &str)>) = match error {
-        WardrobeError::Load(_) => ("invalid_file", vec![]),
+        WardrobeError::Load(_) => (DressUpError::INVALID_FILE, vec![]),
         WardrobeError::NoModel => ("no_model", vec![]),
         WardrobeError::NotLoaded(name) => ("not_loaded", vec![("module", name)]),
         WardrobeError::Texture(_) => ("texture", vec![]),
-        WardrobeError::DressUp(e) => match e {
-            DressUpError::NotAttached(name) => ("not_attached", vec![("module", name)]),
-            DressUpError::Compile(_) => ("compile", vec![]),
-            DressUpError::Physics(_) => ("invalid_physics", vec![]),
-            DressUpError::Compose(e) => match e {
-                C::InvalidModuleName(name) => ("invalid_module_name", vec![("module", name)]),
-                C::DuplicateModule(name) => ("duplicate_module", vec![("module", name)]),
-                C::UnknownSlot { module, slot } => {
-                    ("unknown_slot", vec![("module", module), ("slot", slot)])
-                }
-                C::SlotOccupied {
-                    slot,
-                    first,
-                    second,
-                } => (
-                    "slot_occupied",
-                    vec![("slot", slot), ("module", second), ("attached", first)],
-                ),
-                C::AvatarLevel { module, .. } => ("avatar_level", vec![("module", module)]),
-                C::MissingSlot { module, slot } => {
-                    ("missing_slot", vec![("module", module), ("slot", slot)])
-                }
-                C::MissingParameter { module, parameter } => (
-                    "missing_parameter",
-                    vec![("module", module), ("parameter", parameter)],
-                ),
-                C::ParameterNotExposed {
-                    module,
-                    slot,
-                    parameter,
-                } => (
-                    "parameter_not_exposed",
-                    vec![("module", module), ("slot", slot), ("parameter", parameter)],
-                ),
-                C::UnknownMask { module, mesh, .. } => {
-                    ("unknown_mask", vec![("module", module), ("mesh", mesh)])
-                }
-                C::TextureOutOfRange { module, mesh, .. } => (
-                    "texture_out_of_range",
-                    vec![("module", module), ("mesh", mesh)],
-                ),
-                C::UnknownCollider { module, .. } => ("unknown_collider", vec![("module", module)]),
-                C::PoseNotExposed { module, slot, .. } => {
-                    ("pose_not_exposed", vec![("module", module), ("slot", slot)])
-                }
-                C::Invalid(_) => ("invalid_composition", vec![]),
-            },
-        },
+        WardrobeError::DressUp(e) => (e.code(), e.fields()),
     };
     ErrorInfo {
         code,

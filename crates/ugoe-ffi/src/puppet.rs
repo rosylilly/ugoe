@@ -10,6 +10,7 @@ use ugoe::motion::Priority;
 use ugoe::runtime::{CompiledModel, ParamIndex};
 use ugoe::{Puppet, TextureSource};
 
+use crate::animation::MotionEvents;
 use crate::dress_up::ModuleData;
 use crate::error::{
     Error, UGOE_ERROR_FORMAT, UGOE_ERROR_INVALID_ARGUMENT, UGOE_ERROR_INVALID_MODEL,
@@ -52,6 +53,8 @@ pub struct UgoePuppet {
     pub(crate) slot_ids: Vec<CString>,
     /// 読み込みの警告。
     pub(crate) warnings: Vec<Warning>,
+    /// 直前の `update` で発火したモーションのイベント。
+    pub(crate) motion_events: MotionEvents,
 }
 
 /// パラメータの範囲と既定値。
@@ -115,6 +118,7 @@ impl UgoePuppet {
             changed_textures: Vec::new(),
             slot_ids,
             warnings,
+            motion_events: MotionEvents::default(),
         };
         this.refresh_model();
         this
@@ -426,7 +430,7 @@ pub unsafe extern "C" fn ugoe_puppet_canvas(
 /// 1 フレーム進める (モーション → 表情 → 目パチ・呼吸 → 物理 → リップシンク → ポーズ → 評価。
 /// `docs/spec/motion.md#フレーム内の適用順`)。`dt` は前のフレームからの経過秒数。
 ///
-/// 呼ぶと、この `UgoePuppet` から借りた頂点位置と描画順のポインタは無効になる。
+/// 呼ぶと、この `UgoePuppet` から借りた頂点位置と描画順とモーションのイベントのポインタは無効になる。
 ///
 /// # Safety
 ///
@@ -441,7 +445,9 @@ pub unsafe extern "C" fn ugoe_puppet_update(puppet: *mut UgoePuppet, dt: f32) ->
             ));
         }
         // SAFETY: 呼び出し側の約束。
-        unsafe { puppet_mut(puppet)? }.puppet.update(dt);
+        let p = unsafe { puppet_mut(puppet)? };
+        p.puppet.update(dt);
+        p.motion_events.refresh(&p.puppet);
         Ok(())
     })
 }

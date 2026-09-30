@@ -7,6 +7,8 @@ const json = JSON.stringify([
   { code: "texture_missing", warning: "m", texture: 2 },
   { code: "physics_removed", warning: "physics settings were removed: bad", reason: "bad" },
   { code: "module_detached", warning: "d", module: "Dress", slot: "Outfit", error: {} },
+  { code: "unknown_optional_feature", warning: "f", feature: "test.optional" },
+  { code: "unknown_value", warning: "v", path: "MODL/meshes/0/blend" },
   { code: "something_new", warning: "a new kind of warning" },
   { code: "texture_ktx2" },
 ]);
@@ -20,10 +22,14 @@ describe("parseLoadWarnings", () => {
       "texture_missing",
       "physics_removed",
       "module_detached",
+      "unknown_optional_feature",
+      "unknown_value",
       "something_new",
     ]);
     expect(list[2]).toEqual({ code: "texture_missing", warning: "m", texture: 2 });
     expect(list[3]?.reason).toBe("bad");
+    expect(list[5]?.feature).toBe("test.optional");
+    expect(list[6]?.path).toBe("MODL/meshes/0/blend");
     expect(parseLoadWarnings("{}")).toEqual([]);
   });
 });
@@ -35,6 +41,8 @@ describe("describeLoadWarnings", () => {
       "Texture 0 is a KTX2 image, which the preview can't show yet, so it is drawn white.",
       "Texture 2 has no image, so it is drawn white.",
       "The physics settings no longer fit this model and were turned off (bad).",
+      'This file uses the feature "test.optional" from a newer version, so the preview shows a fallback for it.',
+      "This file has a value this version doesn't know (MODL/meshes/0/blend), so the preview uses the default for it.",
       "a new kind of warning",
     ]);
   });

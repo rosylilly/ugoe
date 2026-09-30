@@ -404,7 +404,10 @@ mod tests {
             matches!(&warnings[..], [LoadWarning::PhysicsRemoved { reason }] if reason.contains("failed validation")),
             "{warnings:?}"
         );
-        assert_eq!(warnings[0].to_json()["code"], "physics_removed");
+        assert_eq!(
+            crate::load::warning_json(&warnings[0])["code"],
+            "physics_removed"
+        );
         assert!(new.physics().is_none());
 
         let mut new = Puppet::new(fixtures::physics_hair()).unwrap();

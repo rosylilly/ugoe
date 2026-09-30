@@ -119,7 +119,8 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
   警告する。原因は wasm の `load_warnings_json()` の `module_detached` の要素の `error.code` から、付けられないときと同じ文にする
   (`describeLoadWarnings`。wasm の文の警告は読まない。T0124・T0125)。
 - 読み込みのほかの警告 (T0125) も `load_warnings_json()` の `code` から日本語にする: テクスチャを白で代用した (`texture_ktx2`・
-  `texture_missing`)、法線マップを使わない (`normal_map_ktx2`)、物理の設定が合わないので外した (`physics_removed`。理由は英語のまま括弧で添える)。
+  `texture_missing`)、法線マップを使わない (`normal_map_ktx2`)、物理の設定が合わないので外した (`physics_removed`。理由は英語のまま括弧で添える)、
+  新しい版のファイルの知らない機能・値をフォールバックで読んだ (`unknown_optional_feature`・`unknown_value`。T0412)。
   モジュールの警告 (パネルの「警告 N」) も `modules_json()` の `warning_details` から同じ文にする。知らない `code` と構造の無い文は wasm の文 (英語) のまま出す。
 - **別のモデル** を開くと、読み込んでいたモジュールを一覧から除く (`unload_module`)。前のモデルに付けていた組はモデルごとに
   覚えてある (下の「付けていた組を覚える」)。T0706 では一覧に残ったまま外れていたが、見本を切り替えたときに前の見本の衣装が

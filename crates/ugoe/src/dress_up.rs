@@ -55,6 +55,75 @@ pub enum DressUpError {
     NotAttached(String),
 }
 
+impl DressUpError {
+    /// `.ugoemod` を読めなかったときの種類。付け外しの失敗ではないが、組み込み先 (wasm の `DressUpError`・
+    /// C ABI の `ugoe_last_error_kind`) が同じ一覧で扱うので、ここで決める。
+    pub const INVALID_FILE: &'static str = "invalid_file";
+
+    /// 機械が読む種類 (`"unknown_slot"`・`"slot_occupied"` など)。wasm の `DressUpError` の `code` と
+    /// C ABI の `ugoe_last_error_kind` はこの値を使う。値は組み込み先が照らし合わせるので変えない。
+    pub fn code(&self) -> &'static str {
+        self.info().0
+    }
+
+    /// 補足の値 (キーと値)。キーは `module`・`slot`・`parameter`・`mesh`・`attached` (付いていたモジュール)。
+    pub fn fields(&self) -> Vec<(&'static str, &str)> {
+        self.info().1
+    }
+
+    fn info(&self) -> (&'static str, Vec<(&'static str, &str)>) {
+        use ComposeError as C;
+        match self {
+            Self::NotAttached(name) => ("not_attached", vec![("module", name)]),
+            Self::Compile(_) => ("compile", vec![]),
+            Self::Physics(_) => ("invalid_physics", vec![]),
+            Self::Compose(e) => match e {
+                C::InvalidModuleName(name) => ("invalid_module_name", vec![("module", name)]),
+                C::DuplicateModule(name) => ("duplicate_module", vec![("module", name)]),
+                C::UnknownSlot { module, slot } => {
+                    ("unknown_slot", vec![("module", module), ("slot", slot)])
+                }
+                C::SlotOccupied {
+                    slot,
+                    first,
+                    second,
+                } => (
+                    "slot_occupied",
+                    vec![("slot", slot), ("module", second), ("attached", first)],
+                ),
+                C::AvatarLevel { module, .. } => ("avatar_level", vec![("module", module)]),
+                C::MissingSlot { module, slot } => {
+                    ("missing_slot", vec![("module", module), ("slot", slot)])
+                }
+                C::MissingParameter { module, parameter } => (
+                    "missing_parameter",
+                    vec![("module", module), ("parameter", parameter)],
+                ),
+                C::ParameterNotExposed {
+                    module,
+                    slot,
+                    parameter,
+                } => (
+                    "parameter_not_exposed",
+                    vec![("module", module), ("slot", slot), ("parameter", parameter)],
+                ),
+                C::UnknownMask { module, mesh, .. } => {
+                    ("unknown_mask", vec![("module", module), ("mesh", mesh)])
+                }
+                C::TextureOutOfRange { module, mesh, .. } => (
+                    "texture_out_of_range",
+                    vec![("module", module), ("mesh", mesh)],
+                ),
+                C::UnknownCollider { module, .. } => ("unknown_collider", vec![("module", module)]),
+                C::PoseNotExposed { module, slot, .. } => {
+                    ("pose_not_exposed", vec![("module", module), ("slot", slot)])
+                }
+                C::Invalid(_) => ("invalid_composition", vec![]),
+            },
+        }
+    }
+}
+
 /// 着せ替えの状態: 本体と、取り付けているモジュール。
 #[derive(Debug, Clone)]
 pub(crate) struct Wardrobe {

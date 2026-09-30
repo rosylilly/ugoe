@@ -133,6 +133,9 @@ try {
 }
 ```
 
+`code` と補足の値のうち、付け外しの失敗と `invalid_file` は SDK の `ugoe::DressUpError::code`・`fields`・`INVALID_FILE` が決め、
+C ABI の `ugoe_last_error_kind` と同じ (T0412)。`not_loaded`・`no_model`・`texture` は wasm だけのもの (`src/dress_up.rs` の `error_info`)。
+
 - 規則は `docs/spec/modules.md#puppet-での着せ替え`。付け外しで、パラメータの値・ポーズ・トラッキング・モーションは続きから動き、物理はリセットされる。失敗したときは何も変えない。
 - テクスチャ (と法線マップ) は本体、モジュールの順に並ぶ。付け外しで番号がずれたものは登録し直し、使わなくなった番号の画像は 1x1 の白に置き換えて捨てる。
 - `load_json` / `load_bundle` でモデルを読み直すと、付けていたモジュールを付け直す (付けられないものは外して警告に入れる)。
@@ -162,6 +165,8 @@ JSON.parse(puppet.load_warnings_json());           // 同じ警告の構造 (同
 | `normal_map_ktx2` | `texture` | 法線マップが KTX2 なので、法線マップなしで描く |
 | `physics_removed` | `reason` (英語の理由) | `load_json` で読み直したとき、引き継いだ物理の設定が新しいモデルと合わないので外した |
 | `module_detached` | `module`・`slot`・`error` (`detached_modules_json()` の要素と同じ) | 付けていたモジュールを付け直せないので外した |
+| `unknown_optional_feature` | `feature` (機能の ID) | 知らない任意の機能を宣言したファイル (新しい版で書かれたもの)。フォールバックで読んだ (T0412) |
+| `unknown_value` | `path` (チャンクとその中の場所) | 知らない列挙の値をフォールバックで読んだ (T0412) |
 
 - `warning` は戻り値の配列の同じ位置の文と同じ文字列。一覧は次の `load_json` / `load_bundle` が成功するまで変わらない (無ければ `[]`)。
   知らない `code` (将来の種類) は `warning` をそのまま出せばよい。
@@ -173,6 +178,9 @@ JSON.parse(puppet.load_warnings_json());           // 同じ警告の構造 (同
 - `.ugoemod` の読み込み (`load_module`) の警告 (テクスチャの代用) は `modules_json()` の各要素の `warnings` (文) と
   `warning_details` (同じ順の構造。`code` と補足の値は上と同じ) にある。
 - 使う側: ビューアは日本語 (`apps/viewer/src/lib/loadWarnings.ts`)、エディタのプレビューは英語 (`apps/editor/src/lib/preview/loadWarnings.ts`)。
+- `code` と補足の値は SDK の `ugoe::LoadWarning` (`code()`・`fields()`) が決め、C ABI の `ugoe_puppet_load_warning_*` と同じ (T0412)。
+  `unknown_optional_feature`・`unknown_value` は読み込みの報告 (`read_bundle_with_report` / `read_module_with_report`) の警告で、
+  一覧の先頭 (テクスチャの警告より前) に並ぶ。`.ugoemod` でも出る。
 
 ## ビルド
 

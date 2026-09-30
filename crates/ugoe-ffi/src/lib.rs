@@ -10,6 +10,7 @@
 //!   借用 ([`ugoe_puppet_positions`]。次の `ugoe_puppet_update` まで有効) の両方を用意する。
 #![allow(unsafe_code)] // `#[unsafe(no_mangle)]` と生ポインタ操作のため、このクレートに限り許可する。
 
+mod animation;
 mod drawable;
 mod dress_up;
 mod error;
@@ -21,6 +22,7 @@ mod warning;
 
 use std::ffi::c_char;
 
+pub use animation::*;
 pub use drawable::*;
 pub use dress_up::*;
 pub use error::*;
