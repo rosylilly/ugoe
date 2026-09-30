@@ -6,7 +6,10 @@ import {
   describeDressUpSet,
   describeLocation,
   describeRememberedAt,
+  loadRememberedOrder,
   mergeRemembered,
+  REMEMBERED_ORDER_STORAGE_KEY,
+  saveRememberedOrder,
 } from "./rememberedModels";
 
 const id = (name: string, fp: string, location?: ModelIdentity["location"]): ModelIdentity =>
@@ -93,5 +96,39 @@ describe("describe", () => {
     expect(describeDressUpSet(set(["Hair", "Dress"]))).toBe("Hair・Dress");
     expect(describeDressUpSet(set([], ["Hat"]))).toBe("付けていない (1 個を読み込み)");
     expect(describeDressUpSet(set([]))).toBe("なし");
+  });
+});
+
+describe("remembered order", () => {
+  /** 最小の Storage (getItem と setItem だけ使う)。 */
+  const storage = (items: Record<string, string> = {}) =>
+    ({
+      getItem: (key: string) => items[key] ?? null,
+      setItem: (key: string, value: string) => {
+        items[key] = value;
+      },
+    }) as unknown as Storage;
+
+  it("remembers the chosen order (T0718)", () => {
+    const s = storage();
+    expect(loadRememberedOrder(s)).toBe("recent");
+    saveRememberedOrder("name", s);
+    expect(loadRememberedOrder(s)).toBe("name");
+    saveRememberedOrder("recent", s);
+    expect(loadRememberedOrder(s)).toBe("recent");
+  });
+
+  it("falls back to the newest first for unknown values and a broken storage", () => {
+    expect(loadRememberedOrder(storage({ [REMEMBERED_ORDER_STORAGE_KEY]: "size" }))).toBe("recent");
+    const broken = {
+      getItem: () => {
+        throw new Error("denied");
+      },
+      setItem: () => {
+        throw new Error("quota");
+      },
+    } as unknown as Storage;
+    expect(loadRememberedOrder(broken)).toBe("recent");
+    expect(() => saveRememberedOrder("name", broken)).not.toThrow();
   });
 });

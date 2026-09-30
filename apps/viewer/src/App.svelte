@@ -6,6 +6,7 @@ import {
   type DropPreview,
   type DroppedItem,
   describeDropPaths,
+  describeDropTypes,
   openDroppedItems,
 } from "./lib/drop";
 import { readBrowserFile, readFileAt, readSampleFile, saveJsonFile, viewerHost } from "./lib/host";
@@ -25,7 +26,10 @@ const tracker = new FaceTracker(player, { saveJson: saveJsonFile });
 window.__UGOE_TRACKER__ = tracker;
 
 let dropping = $state(false);
-/** ドラッグ中のものが開けるかの見立て (Tauri はパスが分かる。ブラウザでは分からないので `null`。T0717)。 */
+/**
+ * ドラッグ中のものが開けるかの見立て (Tauri はパスから。T0717。ブラウザは名前が分からないので数と種類から。T0718)。
+ * 見立てられなければ `null`。
+ */
 let dropPreview = $state<DropPreview | null>(null);
 /** ドロップで飛ばしたものの知らせ (次に開くまで出す。T0717)。 */
 let dropNotice = $state<string | null>(null);
@@ -96,6 +100,7 @@ function onDragOver(e: DragEvent) {
   e.preventDefault();
   e.dataTransfer.dropEffect = "copy";
   dropping = true;
+  dropPreview = describeDropTypes([...e.dataTransfer.items]);
 }
 
 /** ドロップしたものを読んで開く (`drop.ts`)。開けないもの・読めないものは飛ばして知らせる。 */
@@ -112,6 +117,7 @@ function onDrop(e: DragEvent) {
   if (nativeDrop) return;
   e.preventDefault();
   dropping = false;
+  dropPreview = null;
   const files = [...(e.dataTransfer?.files ?? [])];
   if (files.length > 0)
     void openDropped(files.map((file) => ({ name: file.name, read: () => readBrowserFile(file) })));
@@ -133,7 +139,10 @@ function onKeyDown(e: KeyboardEvent) {
   onkeydown={onKeyDown}
   ondragover={onDragOver}
   ondragleave={(e) => {
-    if (e.relatedTarget === null) dropping = false;
+    if (e.relatedTarget === null) {
+      dropping = false;
+      dropPreview = null;
+    }
   }}
   ondrop={onDrop}
 />
@@ -195,7 +204,7 @@ function onKeyDown(e: KeyboardEvent) {
     {#if dropping}
       <!--
         落とすときの枠。ビューポートの canvas の上にも見えるように、main の上に重ねる (T0717)。
-        Tauri ではパスで開けるかを見立て、枠の色 (一部を飛ばす・開けるものが無い) と文で示す。
+        開けるかを見立て (Tauri はパスから、ブラウザは種類と数から。T0718)、枠の色 (一部を飛ばす・開けるものが無い) と文で示す。
       -->
       <div class="drop-frame" data-kind={dropPreview?.kind ?? "all"}>
         {#if dropPreview}

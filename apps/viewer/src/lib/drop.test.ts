@@ -1,7 +1,14 @@
 import type { DragDropEvent } from "@tauri-apps/api/webview";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { dressUpMemory, planRestore } from "./dressUpMemory";
-import { describeDropPaths, isOpenableName, openDroppedItems, skippedMessage } from "./drop";
+import {
+  classifyDragType,
+  describeDropPaths,
+  describeDropTypes,
+  isOpenableName,
+  openDroppedItems,
+  skippedMessage,
+} from "./drop";
 import { type FileDropEvent, readFileAt, viewerHost } from "./host";
 import { defaultLighting, lightingMemory } from "./lighting";
 import type { ModelFile, ModuleToOpen } from "./modelFile";
@@ -210,6 +217,47 @@ describe("drop checks (T0717)", () => {
       message: "1 個を開きます (1 個は開けないので飛ばします)",
     });
     expect(describeDropPaths(["/a/folder"]).kind).toBe("none");
+  });
+
+  it("classifies the dragged types (T0718)", () => {
+    // .ugoe・.ugoemod・フォルダはブラウザでは種類が空。
+    expect(classifyDragType("")).toBe("unknown");
+    expect(classifyDragType("application/octet-stream")).toBe("unknown");
+    expect(classifyDragType("application/json")).toBe("open");
+    expect(classifyDragType("application/ld+json")).toBe("open");
+    expect(classifyDragType("image/png")).toBe("skip");
+    expect(classifyDragType("text/plain")).toBe("skip");
+    expect(classifyDragType("application/pdf")).toBe("skip");
+  });
+
+  it("previews the dragged types in the browser (T0718)", () => {
+    const file = (type: string) => ({ kind: "file", type });
+    // 種類の分かるものだけ。
+    expect(describeDropTypes([file("application/json")])).toEqual({
+      kind: "all",
+      message: "1 個を開きます",
+    });
+    expect(describeDropTypes([file("application/json"), file("image/png")])).toEqual({
+      kind: "some",
+      message: "1 個を開きます (1 個は開けないので飛ばします)",
+    });
+    expect(describeDropTypes([file("image/png"), file("text/plain")])?.kind).toBe("none");
+    // 種類の分からないもの (.ugoe など) があれば、落としたときに確かめる。
+    expect(describeDropTypes([file(""), file("application/json")])).toEqual({
+      kind: "unknown",
+      message: "2 個のファイル (2 個は、開けるかを落としたときに名前で確かめます)",
+    });
+    expect(describeDropTypes([file(""), file("image/png")])).toEqual({
+      kind: "some",
+      message:
+        "1 個は開けない種類なので飛ばします (1 個は、開けるかを落としたときに名前で確かめます)",
+    });
+    // ファイルでないもの (一緒に来る URL) は数えない。ファイルが分からなければ見立てない。
+    expect(
+      describeDropTypes([file(""), { kind: "string", type: "text/uri-list" }])?.message,
+    ).toMatch(/^1 個のファイル/);
+    expect(describeDropTypes([])).toBeNull();
+    expect(describeDropTypes([{ kind: "string", type: "text/plain" }])).toBeNull();
   });
 
   it("shortens a long list of names", () => {

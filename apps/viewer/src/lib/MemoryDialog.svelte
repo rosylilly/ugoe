@@ -3,26 +3,31 @@
 // ツールバーの「覚えたもの」とライティングのパネルから開く。モデルごとに光源・組を忘れるか、すべて忘れる。
 // パネルが出ないモデル (モジュールを外してライティングを受けなくなったモデルなど) や、開いていないモデルの分もここで忘れられる。
 // 並びは覚えた日時の新しい順と名前の順から選ぶ (T0717。日時を持たない前の保存値は「日時なし」で最後)。
+// 選んだ並びは覚えて、次に開いたときも使う (T0718)。
 import { lightingLabel } from "./lighting";
 import type { Player } from "./player.svelte";
 import {
   describeDressUpSet,
   describeLocation,
   describeRememberedAt,
+  loadRememberedOrder,
   type RememberedModel,
   type RememberedOrder,
+  saveRememberedOrder,
 } from "./rememberedModels";
 
 let { player }: { player: Player } = $props();
 
 let dialog = $state<HTMLDialogElement | null>(null);
 let rows = $state<RememberedModel[]>([]);
-/** 並び (覚えた日時の新しい順か名前の順。T0717)。開いているモデルはどちらでも先頭。 */
-let order = $state<RememberedOrder>("recent");
+/** 並び (覚えた日時の新しい順か名前の順。T0717)。開いているモデルはどちらでも先頭。選択は覚える (T0718)。 */
+let order = $state<RememberedOrder>(loadRememberedOrder());
 /** 「すべて忘れる」を押して、確かめている間。 */
 let confirming = $state(false);
 
 export function open(): void {
+  // ほかのウィンドウ (タブ) で選び直した並びも拾う。
+  order = loadRememberedOrder();
   refresh();
   confirming = false;
   dialog?.showModal();
@@ -64,6 +69,7 @@ function forgetAll() {
         value={order}
         onchange={(e) => {
           order = e.currentTarget.value as RememberedOrder;
+          saveRememberedOrder(order);
           refresh();
         }}
       >

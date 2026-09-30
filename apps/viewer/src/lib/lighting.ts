@@ -438,8 +438,14 @@ export interface RangeGrip {
  * 縁が画面を通るなら (縁を直接掴めるので) `null`。
  *
  * 縁が見えないのは、円が画面をすっぽり覆うとき (範囲が大きい既定の 1.4〜1.5 ではよくある) と、円がまるごと画面の外にあるとき。
- * どちらも、光源から画面の中央へ向かう向きの縁の点を画面の内側に収めた位置に置く。取っ手をその向きへ動かすと範囲が広がる
- * (`rangeRadiusFromGrip`)。
+ * どちらも、縁がいちばん画面に近い向きに置く (T0718。T0717 は光源から画面の中央へ向かう向きで、光源が中央に近いと右向きに
+ * 固定され、取っ手が円の縁の向きと合わなかった)。
+ *
+ * - 覆うとき: 光源からいちばん遠い画面の角の向き。範囲を狭めると縁が最初にその角から入ってくる。取っ手はその角に置く。
+ * - 外にあるとき: 光源からいちばん近い画面の点の向き。範囲を広げると縁が最初にそこから入ってくる。取っ手はその点に置く。
+ *
+ * どちらも取っ手は光源から伸ばした `dir` の線の上にあるので、取っ手をその向きへ動かすと範囲が広がり
+ * (`rangeRadiusFromGrip`)、縁が画面に入るところで取っ手と縁が重なる。
  */
 export function rangeGrip(
   center: readonly [number, number],
@@ -454,16 +460,25 @@ export function rangeGrip(
   const nearest = Math.hypot(px - clampTo(px, m, w - m), py - clampTo(py, m, h - m));
   const farthest = Math.hypot(Math.max(px - m, w - m - px), Math.max(py - m, h - m - py));
   if (nearest <= radius && radius <= farthest) return null;
-  let dx = w / 2 - px;
-  let dy = h / 2 - py;
+  let target: [number, number];
+  if (radius > farthest) {
+    // いちばん遠い角。同じ遠さなら右下・右上・左下・左上の順で先のもの。
+    const corners: [number, number][] = [
+      [w - m, h - m],
+      [w - m, m],
+      [m, h - m],
+      [m, m],
+    ];
+    target = corners.reduce((best, c) =>
+      Math.hypot(c[0] - px, c[1] - py) > Math.hypot(best[0] - px, best[1] - py) + 0.5 ? c : best,
+    );
+  } else target = [clampTo(px, m, w - m), clampTo(py, m, h - m)];
+  const dx = target[0] - px;
+  const dy = target[1] - py;
   const length = Math.hypot(dx, dy);
-  if (length < 1) [dx, dy] = [1, 0];
-  else [dx, dy] = [dx / length, dy / length];
-  return {
-    x: clampTo(px + dx * radius, m, w - m),
-    y: clampTo(py + dy * radius, m, h - m),
-    dir: [dx, dy],
-  };
+  // 外にあるときは光源が画面から離れている (nearest > radius > 0) ので、長さは 0 にならない。
+  const dir: [number, number] = length > 0 ? [dx / length, dy / length] : [1, 0];
+  return { x: target[0], y: target[1], dir };
 }
 
 /**

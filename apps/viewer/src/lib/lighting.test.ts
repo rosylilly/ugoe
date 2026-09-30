@@ -372,24 +372,42 @@ describe("ビューポートの光源の印", () => {
     });
   });
 
-  it("範囲の円の縁が画面に見えないときだけ、画面の端に範囲の取っ手を出す (T0717)", () => {
+  it("範囲の円の縁が画面に見えないときだけ、画面の端に範囲の取っ手を出す (T0717・T0718)", () => {
     const bounds = [800, 600] as const;
+    const onRay = (g: ReturnType<typeof rangeGrip>, center: readonly [number, number]) => {
+      // 取っ手は光源から伸ばした dir の線の上にある。
+      const along =
+        ((g?.x ?? 0) - center[0]) * (g?.dir[0] ?? 0) + ((g?.y ?? 0) - center[1]) * (g?.dir[1] ?? 0);
+      expect(Math.hypot((g?.x ?? 0) - center[0], (g?.y ?? 0) - center[1])).toBeCloseTo(along);
+    };
     // 縁が画面を通る → 出さない (縁を直接掴む)。
     expect(rangeGrip([400, 300], 200, bounds)).toBeNull();
-    // 画面をすっぽり覆う → 光源から画面の中央へ向かう向きの縁を、画面の内側に収めた位置。
-    const cover = rangeGrip([200, 300], 2000, bounds);
-    expect(cover).not.toBeNull();
-    expect(cover?.dir).toEqual([1, 0]);
+    // 画面をすっぽり覆う → 光源からいちばん遠い角 (縁が最初に入ってくるところ)。
+    const cover = rangeGrip([200, 200], 2000, bounds);
     expect(cover?.x).toBe(800 - 14);
-    expect(cover?.y).toBe(300);
-    // 光源が画面の中央ちょうどなら右へ。
-    expect(rangeGrip([400, 300], 2000, bounds)?.dir).toEqual([1, 0]);
-    // まるごと画面の外 (左上の外の小さな円) → 画面の左上の角の近く、中央へ向かう向き。
+    expect(cover?.y).toBe(600 - 14);
+    expect(cover?.dir[0]).toBeGreaterThan(0);
+    expect(cover?.dir[1]).toBeGreaterThan(0);
+    onRay(cover, [200, 200]);
+    // 光源が画面の中央に近くても、右向きに固定しない。中央のわずかに右下なら左上の角。
+    const nearCenter = rangeGrip([402, 303], 2000, bounds);
+    expect([nearCenter?.x, nearCenter?.y]).toEqual([14, 14]);
+    expect(nearCenter?.dir[0]).toBeLessThan(0);
+    expect(nearCenter?.dir[1]).toBeLessThan(0);
+    onRay(nearCenter, [402, 303]);
+    // 中央ちょうど (4 つの角が同じ遠さ) なら右下。
+    const center = rangeGrip([400, 300], 2000, bounds);
+    expect([center?.x, center?.y]).toEqual([786, 586]);
+    // まるごと画面の外 (左上の外の小さな円) → 画面の左上の角 (光源にいちばん近い画面の点)。
     const outside = rangeGrip([-400, -300], 100, bounds);
     expect(outside?.x).toBe(14);
     expect(outside?.y).toBe(14);
-    expect(outside?.dir[0]).toBeCloseTo(0.8);
-    expect(outside?.dir[1]).toBeCloseTo(0.6);
+    expect(outside?.dir[0]).toBeCloseTo(414 / Math.hypot(414, 314));
+    expect(outside?.dir[1]).toBeCloseTo(314 / Math.hypot(414, 314));
+    // 左の外 (上下は画面の中) → 左の縁の、光源と同じ高さ。向きは真右。
+    const left = rangeGrip([-500, 100], 200, bounds);
+    expect([left?.x, left?.y]).toEqual([14, 100]);
+    expect(left?.dir).toEqual([1, 0]);
     // 範囲が無い・画面が狭すぎる → 出さない。
     expect(rangeGrip([200, 300], 0, bounds)).toBeNull();
     expect(rangeGrip([200, 300], 2000, [20, 20])).toBeNull();

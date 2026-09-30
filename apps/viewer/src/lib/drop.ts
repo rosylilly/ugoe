@@ -6,6 +6,7 @@
 //
 // フォルダや読めない拡張子のファイルが混ざっていても、読めるものだけを開き、残りは飛ばしたと知らせる (T0717)。
 // Tauri ではドラッグ中 (`enter`) にもパスが分かるので、落とす前に開けるかを示す (`describeDropPaths`)。
+// ブラウザではドラッグ中は名前が分からず、数と種類 (MIME) だけが分かるので、種類から分かる範囲で示す (`describeDropTypes`。T0718)。
 import {
   baseName,
   detectModelKind,
@@ -118,9 +119,12 @@ export function skippedMessage(skipped: readonly SkippedItem[], opened: number):
   return `${head}: ${parts.join("。")}`;
 }
 
-/** ドラッグ中のパスの見立て (枠の色と文)。`all` はすべて開ける、`some` は一部を飛ばす、`none` は開けるものが無い。 */
+/**
+ * ドラッグ中のパスの見立て (枠の色と文)。`all` はすべて開ける、`some` は一部を飛ばす、`none` は開けるものが無い、
+ * `unknown` は開けるかが落とすまで分からない (ブラウザで名前が分からないとき。枠は `all` と同じ色)。
+ */
 export interface DropPreview {
-  kind: "all" | "some" | "none";
+  kind: "all" | "some" | "none" | "unknown";
   message: string;
 }
 
@@ -140,4 +144,48 @@ export function describeDropPaths(paths: readonly string[]): DropPreview {
       message: `${openable} 個を開きます (${skipped} 個は開けないので飛ばします)`,
     };
   return { kind: "all", message: `${openable} 個を開きます` };
+}
+
+/** ドラッグ中のもの 1 つ (ブラウザの `DataTransferItem` の `kind` と `type`)。 */
+export interface DragItemInfo {
+  kind: string;
+  type: string;
+}
+
+/**
+ * 種類 (MIME) から、開けるかを見立てる。`open` は開ける (JSON)、`skip` は開けない (画像・文書など、開けない拡張子と分かる種類)、
+ * `unknown` は分からない。`.ugoe`・`.ugoemod`・フォルダはブラウザでは種類が空 (または `application/octet-stream`) になるので、
+ * 開けるかは落としたときに名前で確かめる。
+ */
+export function classifyDragType(type: string): "open" | "skip" | "unknown" {
+  const t = type.trim().toLowerCase();
+  if (t === "" || t === "application/octet-stream") return "unknown";
+  // OS に登録した種類 (いまは登録していない) でも開けるものとみなす。
+  if (t === "application/json" || t === "text/json" || t.endsWith("+json") || t.includes("ugoe"))
+    return "open";
+  return "skip";
+}
+
+/**
+ * ブラウザのドラッグ中 (`dragover`) のものから、開けるかを見立てる (T0718)。ブラウザはドラッグ中にファイルの名前を渡さないが、
+ * 数と種類は分かる (`DataTransfer.items`)。ファイルでないもの (一緒に来る URL の文字列など) は数えない。
+ * ファイルが 1 つも分からない (種類を渡さないブラウザ) なら `null` (見立てない)。
+ */
+export function describeDropTypes(items: readonly DragItemInfo[]): DropPreview | null {
+  const files = items
+    .filter((item) => item.kind === "file")
+    .map((item) => classifyDragType(item.type));
+  if (files.length === 0) return null;
+  const skipped = files.filter((c) => c === "skip").length;
+  const unknown = files.filter((c) => c === "unknown").length;
+  const open = files.length - skipped - unknown;
+  if (skipped === files.length) return describeDropPaths([]);
+  if (unknown === 0)
+    return skipped > 0
+      ? { kind: "some", message: `${open} 個を開きます (${skipped} 個は開けないので飛ばします)` }
+      : { kind: "all", message: `${open} 個を開きます` };
+  const later = `${files.length - skipped} 個は、開けるかを落としたときに名前で確かめます`;
+  return skipped > 0
+    ? { kind: "some", message: `${skipped} 個は開けない種類なので飛ばします (${later})` }
+    : { kind: "unknown", message: `${files.length} 個のファイル (${later})` };
 }
