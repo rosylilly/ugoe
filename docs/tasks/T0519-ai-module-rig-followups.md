@@ -1,11 +1,11 @@
 ---
 id: T0519
 title: AI: モジュールの自動リギングの改善 (メッシュへの直接の追従・衝突体・差分のポーズ・プレビューの物理)
-status: todo
+status: in-progress
 milestone: M6
 crates: [ugoe-ai, apps/editor, docs]
 depends_on: [T0517]
-assignee:
+assignee: claude-worker-T0519
 ---
 
 # T0519: AI: モジュールの自動リギングの改善
