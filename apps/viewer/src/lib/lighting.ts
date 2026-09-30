@@ -317,6 +317,12 @@ export function anglesFromPad(x: number, y: number): [number, number] {
   return [azimuth, elevation];
 }
 
+/** 設定の短い名前: 切っていれば「切」、既定の組と同じならその名前、違えば「カスタム」。 */
+export function lightingLabel(settings: LightingSettings): string {
+  if (!settings.enabled) return "切";
+  return PRESETS.find((p) => sameLighting(p.settings, settings))?.name ?? "カスタム";
+}
+
 /** 2 つの設定が同じか (フィールドの並びによらない)。どの既定の組を選んでいるかの表示に使う。 */
 export function sameLighting(a: LightingSettings, b: LightingSettings): boolean {
   return JSON.stringify(sanitizeLighting(a)) === JSON.stringify(sanitizeLighting(b));
@@ -341,11 +347,37 @@ export interface LightDial {
 /** 平行光源の円の半径の範囲 (CSS ピクセル)。拡大縮小に合わせるが、小さすぎて掴めない・大きすぎて見えないことがないように収める。 */
 const DIAL_RADIUS = [60, 220] as const;
 
-/** 平行光源の円を、表示しているキャンバスの中央に置く。半径はキャンバスの短い辺の 35% (エディタの取っ手と同じ)。 */
-export function lightDial(canvas: readonly [number, number], view: ScreenTransform): LightDial {
+/** 画面の端に寄せた印と、画面の縁との間 (CSS ピクセル。取っ手の半径より少し大きく)。 */
+export const EDGE_MARGIN = 14;
+
+/**
+ * `value` を画面の `[margin, size − margin]` に収める。画面が狭すぎて収まらなければ画面の中央。
+ * 大きく拡大して印が画面の外に出ても、取っ手を掴めるようにするため (T0714)。
+ */
+function keepOnScreen(value: number, size: number, margin: number): number {
+  if (size < 2 * margin) return size / 2;
+  return Math.min(size - margin, Math.max(margin, value));
+}
+
+/**
+ * 平行光源の円を、表示しているキャンバスの中央に置く。半径はキャンバスの短い辺の 35% (エディタの取っ手と同じ)。
+ * `bounds` (ビューポートの大きさ `[幅, 高さ]`) を渡すと、円が画面からはみ出すときは円ごと画面の内側へ寄せる
+ * (大きく拡大してキャンバスの中央が画面の外に出ても、取っ手が見えるように。T0714)。
+ */
+export function lightDial(
+  canvas: readonly [number, number],
+  view: ScreenTransform,
+  bounds?: readonly [number, number],
+): LightDial {
   const [w, h] = canvas;
   const r = Math.min(DIAL_RADIUS[1], Math.max(DIAL_RADIUS[0], Math.min(w, h) * view.scale * 0.35));
-  return { cx: view.x + (view.scale * w) / 2, cy: view.y + (view.scale * h) / 2, r };
+  let cx = view.x + (view.scale * w) / 2;
+  let cy = view.y + (view.scale * h) / 2;
+  if (bounds !== undefined) {
+    cx = keepOnScreen(cx, bounds[0], r + EDGE_MARGIN);
+    cy = keepOnScreen(cy, bounds[1], r + EDGE_MARGIN);
+  }
+  return { cx, cy, r };
 }
 
 /** 平行光源の取っ手の位置 (画面座標)。取っ手のある向きから光が来る。 */
@@ -366,6 +398,22 @@ export function pointHandle(
   p: PointSettings,
 ): [number, number] {
   return [view.x + view.scale * p.x * canvas[0], view.y + view.scale * p.y * canvas[1]];
+}
+
+/**
+ * 点光源の取っ手を描く位置 (画面座標)。光源が画面の外にあれば画面の縁に寄せ、`offscreen` を真にする
+ * (寄せた取っ手を掴んで動かすと、光源は掴んだ位置へ移る)。
+ */
+export function pointHandleOnScreen(
+  canvas: readonly [number, number],
+  view: ScreenTransform,
+  p: PointSettings,
+  bounds: readonly [number, number],
+): { x: number; y: number; offscreen: boolean } {
+  const [px, py] = pointHandle(canvas, view, p);
+  const x = keepOnScreen(px, bounds[0], EDGE_MARGIN);
+  const y = keepOnScreen(py, bounds[1], EDGE_MARGIN);
+  return { x, y, offscreen: Math.abs(x - px) > 0.5 || Math.abs(y - py) > 0.5 };
 }
 
 /** 画面の位置に点光源を動かしたときの位置 `[x, y]` (キャンバスに対する割合。範囲に収め、小数 3 桁に丸める)。 */
@@ -395,6 +443,94 @@ export function pointRangeOnCanvas(canvas: readonly [number, number], p: PointSe
   const range = Math.max(p.range, LIMITS.range[0]) * size;
   const z = p.z * size;
   return Math.sqrt(Math.max(0, range * range - z * z));
+}
+
+/**
+ * 点光源の面の上の範囲の円の半径 (画面の CSS ピクセル) を `radius` にしたときの「範囲」(長い辺に対する割合)。
+ * 手前の距離は変えないので `√((radius / scale)² + z²)`。範囲に収め、小数 3 桁に丸める。
+ */
+export function rangeFromScreenRadius(
+  canvas: readonly [number, number],
+  view: ScreenTransform,
+  p: PointSettings,
+  radius: number,
+): number {
+  const size = Math.max(canvas[0], canvas[1], 1);
+  const onCanvas = Math.max(0, radius) / view.scale / size;
+  const range = Math.hypot(onCanvas, p.z);
+  return Math.round(clamp(range, LIMITS.range, p.range) * 1000) / 1000;
+}
+
+/** ビューポートの取っ手をキーボードやホイールで動かす量。Shift を押すと大きく動かす。 */
+export const MARKER_STEPS = {
+  /** 平行光源の取っ手 (向きの面の座標。LightPad と同じ)。 */
+  pad: [0.05, 0.2],
+  /** 点光源の横・縦 (キャンバスに対する割合)。 */
+  position: [0.01, 0.1],
+  /** 点光源の手前 (長い辺に対する割合)。 */
+  z: [0.02, 0.1],
+  /** 点光源の範囲 (長い辺に対する割合)。 */
+  range: [0.05, 0.2],
+} as const satisfies Record<string, readonly [number, number]>;
+
+const round3 = (v: number) => Math.round(v * 1000) / 1000;
+
+/**
+ * ビューポートの光源の取っ手でキーを押したときの変更を `next` に書く。動かすキーでなければ `false` (何もしない)。
+ *
+ * - 平行光源: 矢印キーで取っ手を上下左右に動かす (パネルの丸い面と同じ。円の外へは出ない)。
+ * - 点光源: 矢印キーで横・縦、PageUp / PageDown で手前 (PageUp で手前へ離す)、`+` / `-` で範囲。
+ */
+export function stepMarker(
+  next: LightingSettings,
+  kind: "directional" | "point",
+  key: string,
+  large: boolean,
+): boolean {
+  const pick = (steps: readonly [number, number]) => (large ? steps[1] : steps[0]);
+  const arrows: Record<string, [number, number]> = {
+    ArrowLeft: [-1, 0],
+    ArrowRight: [1, 0],
+    ArrowUp: [0, -1],
+    ArrowDown: [0, 1],
+  };
+  const arrow = arrows[key];
+  if (kind === "directional") {
+    if (arrow === undefined) return false;
+    const d = next.directional;
+    const step = pick(MARKER_STEPS.pad);
+    let [x, y] = padFromAngles(d.azimuth, d.elevation);
+    x += arrow[0] * step;
+    y += arrow[1] * step;
+    const r = Math.hypot(x, y);
+    if (r > 1) [x, y] = [x / r, y / r];
+    const [azimuth, elevation] = anglesFromPad(x, y);
+    d.azimuth = azimuth;
+    d.elevation = elevation;
+    return true;
+  }
+  const p = next.point;
+  if (arrow !== undefined) {
+    const step = pick(MARKER_STEPS.position);
+    p.x = round3(clamp(p.x + arrow[0] * step, LIMITS.x, p.x));
+    p.y = round3(clamp(p.y + arrow[1] * step, LIMITS.y, p.y));
+    return true;
+  }
+  if (key === "PageUp" || key === "PageDown") {
+    p.z = round3(clamp(p.z + (key === "PageUp" ? 1 : -1) * pick(MARKER_STEPS.z), LIMITS.z, p.z));
+    return true;
+  }
+  // `+` は配列によって Shift が要る (`=` や `;` のキー) ので、Shift の有無で量を変えない。
+  const grow = key === "+" || key === "=" ? 1 : key === "-" || key === "_" ? -1 : 0;
+  if (grow === 0) return false;
+  p.range = round3(clamp(p.range + grow * MARKER_STEPS.range[0], LIMITS.range, p.range));
+  return true;
+}
+
+/** 点光源の手前をホイールで変えた値。`delta` が負 (奥へ回す) なら手前へ離す。1 回の量はキーボードと同じ。 */
+export function wheelPointZ(p: PointSettings, delta: number): number {
+  const step = MARKER_STEPS.z[0];
+  return round3(clamp(p.z + (delta < 0 ? step : delta > 0 ? -step : 0), LIMITS.z, p.z));
 }
 
 const MARKERS_STORAGE_KEY = "ugoe-viewer.lighting.markers";

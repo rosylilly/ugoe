@@ -6,6 +6,7 @@ import { openDroppedFiles } from "./lib/drop";
 import { readBrowserFile, readFileAt, readSampleFile, saveJsonFile, viewerHost } from "./lib/host";
 import LicenseDialog from "./lib/LicenseDialog.svelte";
 import LightingPanel from "./lib/LightingPanel.svelte";
+import MemoryDialog from "./lib/MemoryDialog.svelte";
 import type { ModelFile } from "./lib/modelFile";
 import ParameterPanel from "./lib/ParameterPanel.svelte";
 import { Player } from "./lib/player.svelte";
@@ -23,6 +24,7 @@ let dropping = $state(false);
 let nativeDrop = false;
 let sampleMenu = $state<HTMLDetailsElement | null>(null);
 let licenseDialog = $state<LicenseDialog | null>(null);
+let memoryDialog = $state<MemoryDialog | null>(null);
 
 async function openWith(get: () => Promise<ModelFile | null>) {
   try {
@@ -136,6 +138,12 @@ function onKeyDown(e: KeyboardEvent) {
         {/each}
       </div>
     </details>
+    <button
+      type="button"
+      onclick={() => memoryDialog?.open()}
+      title="モデルごとに覚えた光源と着せ替えの組の一覧。モデルごとに、またはすべて忘れる"
+      >覚えたもの</button
+    >
     <span class="name" title={player.modelName ?? ""}>{player.modelName ?? "モデルなし"}</span>
     <span class="spacer"></span>
     <div class="group" aria-label="表示">
@@ -178,7 +186,7 @@ function onKeyDown(e: KeyboardEvent) {
         <DressUpPanel {player} hasModel={player.status === "ready"} />
       {/if}
       {#if player.usesLighting}
-        <LightingPanel {player} />
+        <LightingPanel {player} onshowmemory={() => memoryDialog?.open()} />
       {/if}
       <ParameterPanel {player} />
     </aside>
@@ -199,6 +207,7 @@ function onKeyDown(e: KeyboardEvent) {
     <button type="button" class="link" onclick={() => licenseDialog?.open()}>ライセンス</button>
   </footer>
   <LicenseDialog bind:this={licenseDialog} />
+  <MemoryDialog {player} bind:this={memoryDialog} />
 </div>
 
 <style>

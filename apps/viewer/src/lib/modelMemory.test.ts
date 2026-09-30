@@ -96,6 +96,23 @@ describe("ModelMemory", () => {
     expect(new ModelMemory("k", numberValue, { limit: 3, storage }).get(id(5))).toBe(50);
   });
 
+  it("lists entries and forgets everything (T0714)", () => {
+    const storage = new MemoryStorage();
+    const memory = new ModelMemory("k", numberValue, { limit: 3, storage });
+    memory.set(id(1), 10);
+    memory.set(id(2, "/b.ugoe"), 20);
+    storage.setItem("other", "keep");
+    expect(memory.entries()).toEqual([
+      { model: id(2, "/b.ugoe"), value: 20 },
+      { model: id(1), value: 10 },
+    ]);
+    memory.clear();
+    expect(memory.entries()).toEqual([]);
+    expect(storage.getItem("k")).toBeNull();
+    // ほかのキーには触らない。
+    expect(storage.getItem("other")).toBe("keep");
+  });
+
   it("prefers the entry with the same location, then the same fingerprint", () => {
     const memory = new ModelMemory("k", numberValue, { limit: 10, storage: new MemoryStorage() });
     memory.set(id(1), 1);

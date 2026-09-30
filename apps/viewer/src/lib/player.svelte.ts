@@ -45,6 +45,7 @@ import {
   type ParameterSection,
   parseParameterList,
 } from "./parameters";
+import { mergeRemembered, type RememberedModel } from "./rememberedModels";
 import { loadWasm, type UgoeWasmModule, type WebPuppet } from "./wasm/load";
 
 export type PlayerStatus =
@@ -98,12 +99,14 @@ export class Player {
    * 最後に使った設定も localStorage に覚える (起動し直したときに、覚えていないモデルで使う)。
    */
   lighting = $state<LightingSettings>(loadLighting());
-  /** 開いているモデルの光源の設定を覚えているか (「既定に戻す」で忘れる)。 */
+  /** 開いているモデルの光源の設定を覚えているか (覚えたものの一覧で忘れる)。 */
   lightingRemembered = $state(false);
   /** ビューポートに光源の印を出すか (T0708)。localStorage に覚える。 */
   lightMarkers = $state(loadLightMarkers());
   /** 開いているモデルのキャンバスの大きさ `[幅, 高さ]`。モデルが無ければ `null`。 */
   canvasSize = $state<[number, number] | null>(null);
+  /** ビューポート (canvas 要素) の大きさ `[幅, 高さ]` (CSS ピクセル。画面の外の印を端に寄せるため、T0714)。 */
+  viewportSize = $state<[number, number]>([1, 1]);
   /** キャンバス座標 → canvas 要素の CSS ピクセルの変換 (ビューポートに重ねる印のため)。モデルが無ければ `null`。 */
   view = $state<ScreenTransform | null>(null);
   /** 読み込んだ着せ替えのモジュール (読み込んだ順)。同じモデルを開き直したときは残り、別のモデルを開くと空になる。 */
@@ -487,6 +490,7 @@ export class Player {
   /** canvas 要素の大きさ (CSS ピクセル) が変わった。 */
   resize(width: number, height: number): void {
     this.#cssSize = [Math.max(1, width), Math.max(1, height)];
+    this.viewportSize = [...this.#cssSize];
     const dpr = devicePixelRatio;
     this.#puppet?.resize(
       Math.max(1, Math.round(this.#cssSize[0] * dpr)),
@@ -514,15 +518,12 @@ export class Player {
     this.#applyLighting();
   }
 
-  /** 開いているモデルに覚えた光源の設定を忘れ、既定 (lighting.ts の `defaultLighting`) に戻す。 */
+  /**
+   * 開いているモデルの光源を既定 (lighting.ts の `defaultLighting`、「標準」) に戻し、そのモデルの設定として覚える
+   * (次に開いたときも「標準」で始まる。T0714)。覚えた設定を忘れるのは `forgetRemembered`。
+   */
   resetLighting(): void {
-    const model = this.#model;
-    if (model !== null) this.#lightingMemory.delete(model);
-    this.#lightingPending = false;
-    this.lightingRemembered = false;
-    this.lighting = defaultLighting();
-    saveLighting(this.lighting);
-    this.#applyLighting();
+    this.setLighting(defaultLighting());
   }
 
   /**
@@ -557,6 +558,31 @@ export class Player {
     if (this.#lightingPending) this.setLighting($state.snapshot(this.lighting) as LightingSettings);
   }
 
+  /** モデルごとに覚えたもの (光源の設定と着せ替えの組) の一覧 (rememberedModels.ts、T0714)。 */
+  rememberedModels(): RememberedModel[] {
+    return mergeRemembered(this.#lightingMemory.entries(), this.#memory.entries(), this.#model);
+  }
+
+  /**
+   * 一覧の `model` に覚えたものを忘れる (`lighting`・`dressUp` で選ぶ)。開いているモデルなら、いまの光源と
+   * 付けているモジュールはそのままで、パネルの「覚えた」の表示を消す (次に変えるとまた覚える)。
+   */
+  forgetRemembered(
+    model: ModelIdentity,
+    { lighting = true, dressUp = true }: { lighting?: boolean; dressUp?: boolean } = {},
+  ): void {
+    if (lighting) this.#lightingMemory.delete(model);
+    if (dressUp) this.#memory.delete(model);
+    this.#afterForget((current) => sameModel(current, model), lighting, dressUp);
+  }
+
+  /** モデルごとに覚えたものをすべて忘れる (最後に使った光源と、印・自動で戻すの設定は残す)。 */
+  forgetAllRemembered(): void {
+    this.#lightingMemory.clear();
+    this.#memory.clear();
+    this.#afterForget(() => true, true, true);
+  }
+
   /** ビューポートに光源の印を出すかを変える (覚える)。 */
   setLightMarkers(show: boolean): void {
     this.lightMarkers = show;
@@ -564,6 +590,25 @@ export class Player {
   }
 
   // --- 内部 ---
+
+  /** 覚えたものを忘れた後、開いているモデルの分なら表示を合わせる。 */
+  #afterForget(
+    affects: (current: ModelIdentity) => boolean,
+    lighting: boolean,
+    dressUp: boolean,
+  ): void {
+    const current = this.#model;
+    if (current === null || !affects(current)) return;
+    if (lighting) {
+      // ドラッグの途中の設定を、忘れた直後に覚え直さない。
+      this.#lightingPending = false;
+      this.lightingRemembered = false;
+    }
+    if (dressUp) {
+      this.dressUpRemembered = false;
+      this.restoreOffer = null;
+    }
+  }
 
   /**
    * 読み込んでいたモジュールをすべて一覧から除く (別のモデルを開く前)。除いたファイルと付けていたものを返す

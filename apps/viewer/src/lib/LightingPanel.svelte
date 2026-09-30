@@ -1,7 +1,7 @@
 <script lang="ts">
 // 光源のパネル (T0705)。ライティングを使うモデル (`WebPuppet.uses_lighting`) のときだけ App.svelte が出す。
 // 環境光・平行光源 (向き)・点光源 (位置と範囲) の色と強さ、既定の光源の組。設定は Player がモデルごとに覚え (T0709)、
-// 「既定に戻す」で開いているモデルの設定を忘れる。
+// 「既定に戻す」で開いているモデルを「標準」にして覚える (T0714)。覚えた設定を忘れるのは「覚えたもの」の一覧。
 // スライダー・色・面をドラッグしている途中は描画だけを変え、離したときに覚える (`preview` と `commitLighting`)。
 // ビューポートの光源の印 (LightMarkers.svelte、T0708) の表示もここで切り替える。
 import LightPad from "./LightPad.svelte";
@@ -11,22 +11,23 @@ import {
   LIMITS,
   type LightColor,
   type LightingSettings,
+  lightingLabel,
   PRESETS,
   padFromAngles,
   sameLighting,
 } from "./lighting";
 import type { Player } from "./player.svelte";
 
-let { player }: { player: Player } = $props();
+let { player, onshowmemory }: { player: Player; onshowmemory?: () => void } = $props();
 
 let open = $state(true);
 
 let s = $derived(player.lighting);
 let preset = $derived(PRESETS.find((p) => sameLighting(p.settings, s)) ?? null);
-let status = $derived(!s.enabled ? "切" : (preset?.name ?? "カスタム"));
+let status = $derived(lightingLabel(s));
 let directionPad = $derived(padFromAngles(s.directional.azimuth, s.directional.elevation));
-// 覚えておらず既定のままなら、戻すものが無い。
-let canReset = $derived(player.lightingRemembered || !sameLighting(s, defaultLighting()));
+// 既定 (標準) をこのモデル用に覚えていれば、戻すものが無い。
+let canReset = $derived(!player.lightingRemembered || !sameLighting(s, defaultLighting()));
 
 function edit(change: (settings: LightingSettings) => void, preview = false) {
   player.updateLighting(change, { preview });
@@ -139,12 +140,21 @@ const times = (v: number) => `×${v.toFixed(2)}`;
     <span title="光源の設定はモデルごとに覚える。覚えていないモデルでは、最後に使った設定を使う">
       {player.lightingRemembered ? "このモデル用に覚えた設定" : "このモデル用の設定はまだありません"}
     </span>
-    <button
-      type="button"
-      disabled={!canReset}
-      title="このモデルに覚えた光源の設定を忘れ、既定 (標準) に戻す"
-      onclick={() => player.resetLighting()}>既定に戻す</button
-    >
+    <span class="memory-actions">
+      <button
+        type="button"
+        disabled={!canReset}
+        title="このモデルの光源を既定 (標準) に戻す。次に開いたときも標準で始まる"
+        onclick={() => player.resetLighting()}>既定に戻す</button
+      >
+      {#if onshowmemory}
+        <button
+          type="button"
+          title="モデルごとに覚えた光源と着せ替えの組の一覧。ここで忘れられる"
+          onclick={onshowmemory}>覚えたもの…</button
+        >
+      {/if}
+    </span>
   </div>
 
   <div class="presets" role="group" aria-label="既定の光源の組">
@@ -363,6 +373,11 @@ const times = (v: number) => `×${v.toFixed(2)}`;
     margin-top: 0.4rem;
     color: var(--muted);
     font-size: 0.75rem;
+  }
+  .memory-actions {
+    display: flex;
+    gap: 0.3rem;
+    flex-shrink: 0;
   }
   .memory button {
     font-size: 0.75rem;

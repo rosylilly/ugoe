@@ -6,6 +6,7 @@ import {
   directionalHandle,
   type LightingSettings,
   lightDial,
+  lightingLabel,
   lightingMemory,
   loadLighting,
   loadLightMarkers,
@@ -15,13 +16,17 @@ import {
   padFromAngles,
   pointFromScreen,
   pointHandle,
+  pointHandleOnScreen,
   pointRangeOnCanvas,
+  rangeFromScreenRadius,
   sameLighting,
   sanitizeLighting,
   saveLighting,
   saveLightMarkers,
+  stepMarker,
   toLightingJson,
   towardLight,
+  wheelPointZ,
 } from "./lighting";
 import { type ModelIdentity, modelIdentity } from "./modelMemory";
 
@@ -254,6 +259,16 @@ describe("lightingMemory", () => {
   });
 });
 
+describe("lightingLabel", () => {
+  it("names presets, custom settings and lights off", () => {
+    expect(lightingLabel(defaultLighting())).toBe("標準");
+    const custom = defaultLighting();
+    custom.ambient.intensity = 0.1;
+    expect(lightingLabel(custom)).toBe("カスタム");
+    expect(lightingLabel({ ...defaultLighting(), enabled: false })).toBe("切");
+  });
+});
+
 describe("sameLighting", () => {
   it("ignores field order", () => {
     const a = defaultLighting();
@@ -309,6 +324,88 @@ describe("ビューポートの光源の印", () => {
     // 長い辺 800: 範囲 400、手前 240 → √(400² − 240²) = 320。
     expect(pointRangeOnCanvas(canvas, p)).toBeCloseTo(320);
     expect(pointRangeOnCanvas(canvas, { ...p, z: 1 })).toBe(0);
+  });
+
+  it("大きく拡大して円が画面からはみ出すときは、円ごと画面の内側へ寄せる (T0714)", () => {
+    const bounds = [800, 600] as const;
+    // 画面に収まっていれば動かさない。
+    expect(lightDial(canvas, view, bounds)).toEqual({ cx: 200, cy: 250, r: 70 });
+    // 10 倍に拡大してキャンバスの中央 (2000 + 100, 4000 + 50) が画面の外: 端から半径 + 余白の位置に寄せる。
+    const zoomed = lightDial(canvas, { scale: 10, x: 100, y: 50 }, bounds);
+    expect(zoomed.r).toBe(220);
+    expect(zoomed.cx).toBe(800 - 220 - 14);
+    expect(zoomed.cy).toBe(600 - 220 - 14);
+    // 画面が円より狭ければ画面の中央。
+    expect(lightDial(canvas, { scale: 10, x: -5000, y: 50 }, [300, 300])).toMatchObject({
+      cx: 150,
+      cy: 150,
+    });
+  });
+
+  it("点光源の取っ手は、画面の外なら画面の縁に寄せる (T0714)", () => {
+    const p = { ...defaultLighting().point, x: 0.25, y: 0.5 };
+    expect(pointHandleOnScreen(canvas, view, p, [800, 600])).toEqual({
+      x: 150,
+      y: 250,
+      offscreen: false,
+    });
+    expect(pointHandleOnScreen(canvas, view, { ...p, x: 1.5, y: -0.5 }, [200, 200])).toEqual({
+      x: 200 - 14,
+      y: 14,
+      offscreen: true,
+    });
+  });
+
+  it("範囲の円の縁を動かすと、手前を保ったまま範囲が変わる (T0714)", () => {
+    const p = { ...defaultLighting().point, z: 0.3, range: 0.5 };
+    // 面の上の半径 320 (画面では × 0.5 = 160) の範囲は 0.5。
+    expect(rangeFromScreenRadius(canvas, view, p, 160)).toBeCloseTo(0.5, 3);
+    // 半径 0 → 範囲は手前の距離と同じ (範囲の下限 0.1 より大きい)。
+    expect(rangeFromScreenRadius(canvas, view, p, 0)).toBeCloseTo(0.3, 3);
+    expect(rangeFromScreenRadius(canvas, view, p, 1e6)).toBe(4);
+    // 往復。
+    const r = pointRangeOnCanvas(canvas, { ...p, range: 1.2 }) * view.scale;
+    expect(rangeFromScreenRadius(canvas, view, p, r)).toBeCloseTo(1.2, 3);
+  });
+
+  it("取っ手をキーボードで動かす (T0714)", () => {
+    const next = defaultLighting();
+    // 平行光源: → で取っ手が右へ (方位が 0° に近づく)。円の外へは出ない。
+    const before = padFromAngles(next.directional.azimuth, next.directional.elevation);
+    expect(stepMarker(next, "directional", "ArrowRight", false)).toBe(true);
+    const after = padFromAngles(next.directional.azimuth, next.directional.elevation);
+    expect(after[0]).toBeCloseTo(before[0] + 0.05, 2);
+    expect(after[1]).toBeCloseTo(before[1], 2);
+    for (let i = 0; i < 20; i++) stepMarker(next, "directional", "ArrowRight", true);
+    expect(next.directional.elevation).toBeCloseTo(0, 0);
+    // 縁に沿って右へ寄っていく。
+    expect(Math.abs(next.directional.azimuth)).toBeLessThan(5);
+    expect(stepMarker(next, "directional", "PageUp", false)).toBe(false);
+
+    // 点光源: 矢印で横・縦 (Shift で 10%)、PageUp / PageDown で手前、+ / − で範囲。範囲に収める。
+    const p = next.point;
+    const { x, y, z, range } = p;
+    stepMarker(next, "point", "ArrowRight", false);
+    stepMarker(next, "point", "ArrowDown", true);
+    expect(p.x).toBeCloseTo(x + 0.01, 6);
+    expect(p.y).toBeCloseTo(y + 0.1, 6);
+    stepMarker(next, "point", "PageUp", false);
+    expect(p.z).toBeCloseTo(z + 0.02, 6);
+    stepMarker(next, "point", "+", false);
+    stepMarker(next, "point", "=", false);
+    stepMarker(next, "point", "-", false);
+    expect(p.range).toBeCloseTo(range + 0.05, 6);
+    for (let i = 0; i < 100; i++) stepMarker(next, "point", "PageDown", true);
+    expect(p.z).toBe(0);
+    expect(stepMarker(next, "point", "a", false)).toBe(false);
+  });
+
+  it("Shift + ホイールで点光源の手前を変える (T0714)", () => {
+    const p = { ...defaultLighting().point, z: 0.4 };
+    expect(wheelPointZ(p, -100)).toBeCloseTo(0.42, 6);
+    expect(wheelPointZ(p, 100)).toBeCloseTo(0.38, 6);
+    expect(wheelPointZ(p, 0)).toBe(0.4);
+    expect(wheelPointZ({ ...p, z: 2 }, -1)).toBe(2);
   });
 
   it("印を出すかを覚える (既定は出す。読めなければ出す)", () => {

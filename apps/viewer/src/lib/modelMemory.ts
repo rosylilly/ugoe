@@ -109,7 +109,7 @@ export class ModelMemory<T> {
     this.#write([{ model, value }, ...rest].slice(0, this.#limit));
   }
 
-  /** `model` の値を忘れる (「既定に戻す」)。 */
+  /** `model` の値を忘れる (覚えたものの一覧・「覚えた組を忘れる」)。 */
   delete(model: ModelIdentity): void {
     const entries = this.#read();
     const rest = entries.filter((e) => !sameModel(model, e.model));
@@ -119,6 +119,20 @@ export class ModelMemory<T> {
   /** 覚えているモデル (最近使った順)。 */
   models(): ModelIdentity[] {
     return this.#read().map((e) => e.model);
+  }
+
+  /** 覚えているモデルと値 (最近使った順。覚えたものの一覧で使う、T0714)。 */
+  entries(): { model: ModelIdentity; value: T }[] {
+    return this.#read();
+  }
+
+  /** すべて忘れる。 */
+  clear(): void {
+    try {
+      (this.#storage ?? globalThis.localStorage)?.removeItem(this.#key);
+    } catch {
+      // 忘れられないだけで、表示には影響しない。
+    }
   }
 
   #read(): Entry<T>[] {
