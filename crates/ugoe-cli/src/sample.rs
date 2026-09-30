@@ -12,6 +12,7 @@
 //! 不透明度と変形でつなぐ。
 
 pub mod dress_up;
+pub mod lit;
 mod paint;
 
 use std::collections::BTreeMap;

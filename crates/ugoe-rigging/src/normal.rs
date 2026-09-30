@@ -322,8 +322,9 @@ fn pixel_count(width: u32, height: u32, found: usize) -> Result<usize, NormalMap
 /// 形の中で `∇²u = −4` (形の外と画像の外で `u = 0`) を解く。形の外は 0。
 /// 値は画素の二乗の単位 (円なら `R² − r²`)。
 ///
-/// マルチグリッド法の V サイクル ([`INFLATE_CYCLES`] 回) で解く。粗い格子の画素は、もとの 4 画素の
-/// 2 つ以上が形の中なら形の中とする。
+/// マルチグリッド法の V サイクル ([`INFLATE_CYCLES`] 回) で解く。粗い格子の画素は、もとの 4 画素が
+/// すべて形の中のときだけ形の中とする。2 つ以上で形の中にすると、細い切れ込みの多い形 (髪の房など) で
+/// 粗い格子の形が広がり、補正が大きすぎて反復が発散・振動する (T0707)。
 fn inflate(mask: &[bool], w: usize, h: usize) -> Vec<f32> {
     let mut grids = vec![Grid {
         mask: mask.to_vec(),
@@ -364,7 +365,7 @@ impl Grid {
                 self.children(i % w, i / w)
                     .filter(|&j| self.mask[j])
                     .count()
-                    >= 2
+                    == 4
             })
             .collect();
         Grid { mask, w, h }

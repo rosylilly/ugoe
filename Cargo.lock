@@ -4990,6 +4990,7 @@ dependencies = [
  "ugoe-format",
  "ugoe-headless",
  "ugoe-model",
+ "ugoe-rigging",
  "ugoe-runtime",
 ]
 

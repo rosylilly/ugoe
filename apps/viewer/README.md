@@ -46,7 +46,7 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 - 形式は中身で判別する (先頭が `UGOE` ならチャンク表を見て、`MODL` があればバンドル、`MODU` があれば着せ替えのモジュール。
   `{` なら JSON)。決まらなければ拡張子で決める (`modelFile.ts`)。
 - 見本はリポジトリの `assets/samples/` の `.ugoe` と `.ugoemod` を写さずに使う。`vite.config.ts` の `sampleModels` が開発サーバーで
-  `samples/<パス>` として配り、ビルドの出力に入れる (合わせて約 1.5 MB)。メニューに出す見本と一緒に読み込むモジュールは `samples.ts` の `SAMPLES`。
+  `samples/<パス>` として配り、ビルドの出力に入れる (合わせて約 3 MB)。メニューに出す見本と一緒に読み込むモジュールは `samples.ts` の `SAMPLES`。
   ブラウザでは `?model=samples/avatar.ugoe` でも開ける。
 - パラメータの値域・既定値・グループは `WebPuppet.parameters_json()` から得る。
 
@@ -55,7 +55,7 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 | 操作 | 内容 |
 | --- | --- |
 | 開く (Ctrl+O / ⌘O) | OS のダイアログで `.ugoe`・`.json` か `.ugoemod` を選ぶ (`.ugoemod` は読み込んで付ける) |
-| サンプル | 同梱の見本 (`assets/samples/`、MIT) をメニューから選んで開く。「アバター」はアバタープロファイルのレベル 3 の見本で、フェイストラッキングをすぐ試せる。「着せ替え」はスロットを持つ本体と衣装のモジュール 4 つを読み込み、`LongHair`・`CatEars`・`Sailor` を付ける (`TwinTails` はパネルで差し替えて試す) |
+| サンプル | 同梱の見本 (`assets/samples/`、MIT) をメニューから選んで開く。「アバター」はアバタープロファイルのレベル 3 の見本で、フェイストラッキングをすぐ試せる。「アバター (ライティング)」は同じ見本に法線マップを付けた版で、ライティングのパネルが出る。「着せ替え」はスロットを持つ本体と衣装のモジュール 4 つを読み込み、`LongHair`・`CatEars`・`Sailor` を付ける (`TwinTails` はパネルで差し替えて試す) |
 | ファイルをウィンドウにドロップ | そのファイルを開く。`.ugoemod` は読み込んで付ける。モデルとモジュールを一緒に落とすと、モデルを先に開く |
 | `ugoe-viewer path/to/model.ugoe` | 起動時に開く |
 | ホイール | カーソルの位置を中心にズーム |
@@ -178,8 +178,7 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 - 設定はモデルを開き直しても保ち、`localStorage` (`ugoe-viewer.lighting`) に覚える。壊れた値・範囲の外の値は既定値で埋めるか範囲に収め、
   読めなければ「標準」から始める。
 - ヘッドレスのブラウザからは `window.__UGOE_VIEWER__` の `lighting`・`setLighting`・`updateLighting`・`usesLighting` を触れる。
-- 確かめるためのライティングを使うモデルはリポジトリに無い。エディタで法線マップを付けて書き出すか、`ugoe_rigging::bulge_normal_map` で
-  見本のモデルのテクスチャに法線マップを付けたバンドルを作る (T0705 のメモ)。
+- 確かめるには「サンプル」→「アバター (ライティング)」(`assets/samples/avatar-lit.ugoe`。見本のアバターに法線マップを付けた版、T0707) を開く。
 
 ## フェイストラッキング (T0703)
 

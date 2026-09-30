@@ -17,6 +17,7 @@ ugoe-editor-core.workspace = true
 ugoe-format.workspace = true
 ugoe-headless = { workspace = true, features = ["clap"] }
 ugoe-model.workspace = true
+ugoe-rigging.workspace = true
 ugoe-runtime.workspace = true
 
 [dev-dependencies]

@@ -31,6 +31,15 @@ export const SAMPLES: readonly Sample[] = [
     modules: [],
   },
   {
+    // `ugoe sample avatar --lit` で作る (assets/samples/README.md#avatar-lit)。
+    id: "avatar-lit",
+    label: "アバター (ライティング)",
+    description:
+      "アバターの見本に法線マップを付けた版。ライティングのパネルで光の向きを変えると陰影が変わる",
+    model: "avatar-lit.ugoe",
+    modules: [],
+  },
+  {
     // `ugoe sample dress-up` で作る (assets/samples/README.md#dress-up)。
     id: "dress-up",
     label: "着せ替え",

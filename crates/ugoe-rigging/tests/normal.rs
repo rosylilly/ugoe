@@ -111,3 +111,91 @@ fn result_is_deterministic_and_opaque() {
     assert_eq!(a, b);
     assert!(a.rgba.as_chunks::<4>().0.iter().all(|p| p[3] == 255));
 }
+
+/// `∇²u = −4` (形の外と画像の外で `u = 0`) を SOR で十分に反復して解いた参照解。
+fn reference_inflate(mask: &[bool], w: usize, h: usize, iterations: usize) -> Vec<f32> {
+    let mut u = vec![0.0f32; w * h];
+    for _ in 0..iterations {
+        for i in 0..w * h {
+            if !mask[i] {
+                continue;
+            }
+            let (x, y) = (i % w, i / w);
+            let mut sum = 0.0;
+            if x > 0 {
+                sum += u[i - 1];
+            }
+            if x + 1 < w {
+                sum += u[i + 1];
+            }
+            if y > 0 {
+                sum += u[i - w];
+            }
+            if y + 1 < h {
+                sum += u[i + w];
+            }
+            u[i] += 1.9 * ((sum + 4.0) / 4.0 - u[i]);
+        }
+    }
+    u
+}
+
+/// 髪の房のような、細い切れ込みの多い形でも、ふくらみの高さが参照解と合う (マルチグリッドが発散・停滞しない)。
+/// T0707 で、実際の PSD の前髪・後ろ髪で高さが大きく外れていた (粗い格子の形が細かい格子の形より広がっていたため)。
+#[test]
+fn ragged_shapes_match_the_reference_solution() {
+    let (w, h) = (160usize, 128usize);
+    type Inside = Box<dyn Fn(f32, f32) -> bool>;
+    let shapes: [(&str, Inside); 3] = [
+        // 上が塊で、下に幅 2 の房が並ぶ櫛。
+        (
+            "comb",
+            Box::new(|x, y| {
+                (8.0..152.0).contains(&x)
+                    && (8.0..120.0).contains(&y)
+                    && (y < 48.0 || (x as u32 / 3).is_multiple_of(2))
+            }),
+        ),
+        // 斜めの細い帯が交わる格子。
+        (
+            "lattice",
+            Box::new(|x, y| ((x + y) as u32 % 9 < 3) || ((x + 2.0 * y) as u32 % 11 < 2)),
+        ),
+        // 円に、放射状の細い切れ込みを入れたもの。
+        (
+            "slits",
+            Box::new(|x, y| {
+                let (dx, dy) = (x - 80.0, y - 64.0);
+                let r = dx.hypot(dy);
+                let a = dy.atan2(dx) / std::f32::consts::TAU * 48.0;
+                r < 56.0 && (r < 20.0 || a.rem_euclid(1.0) > 0.3)
+            }),
+        ),
+    ];
+    for (name, inside) in shapes {
+        let mask: Vec<bool> = (0..w * h)
+            .map(|i| inside((i % w) as f32 + 0.5, (i / w) as f32 + 0.5))
+            .collect();
+        let rgba: Vec<u8> = mask
+            .iter()
+            .flat_map(|&m| [0, 0, 0, if m { 255 } else { 0 }])
+            .collect();
+        let options = BulgeOptions {
+            strength: 1.0,
+            ..BulgeOptions::default()
+        };
+        let field = bulge_height(w as u32, h as u32, &rgba, &options).unwrap();
+        let reference = reference_inflate(&mask, w, h, 1500);
+        let peak = reference.iter().fold(0.0f32, |a, &b| a.max(b)).sqrt();
+        let error = field
+            .values
+            .iter()
+            .zip(&reference)
+            .map(|(v, r)| (v - r.max(0.0).sqrt()).abs())
+            .fold(0.0f32, f32::max);
+        assert!(
+            error < 0.02 * peak,
+            "{name}: height differs by {error} (peak {peak})"
+        );
+    }
+}

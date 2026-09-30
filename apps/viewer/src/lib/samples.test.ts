@@ -11,6 +11,7 @@ describe("samples", () => {
     const files = sampleFiles();
     expect(new Set(files).size).toBe(files.length);
     expect(files).toContain("avatar.ugoe");
+    expect(files).toContain("avatar-lit.ugoe");
     expect(files).toContain("dress-up/dress-up.ugoe");
     for (const path of files) {
       const url = new URL(`../../../../assets/samples/${path}`, import.meta.url);

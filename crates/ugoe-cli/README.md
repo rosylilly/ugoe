@@ -152,6 +152,7 @@ ugoe sample avatar -o avatar.ugoe --psd path/to/parts.psd --project avatar.ugoep
 | `-o, --output <PATH>` | 書き出す `.ugoe` バンドル |
 | `--psd <PATH>` | 入力の PSD (既定 `assets/fixtures/psd-real/comfyui-see-through-bustup-parts.psd`。レイヤー名 `face`・`eyelash-l`・`eyeclose-l`・`mouth-open` などで部位を探す) |
 | `--project <DIR>` | `.ugoeproj` プロジェクトにも保存する (エディタで開いてリグを見る用) |
+| `--lit` | 法線マップを付けてライティングを有効にした版を書き出す (`src/sample/lit.rs`。[assets/samples/README.md#avatar-litugoe](../../assets/samples/README.md#avatar-litugoe))。`just cli sample avatar --lit -o assets/samples/avatar-lit.ugoe` |
 
 ### `ugoe sample dress-up`
 

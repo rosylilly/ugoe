@@ -13,6 +13,14 @@
 - 光を受けるのは、モデルの「Receive lighting」と、メッシュの「Lit」の **両方** が入っているメッシュだけです。
 - 法線マップの無いメッシュも光を受けます (表面が正面を向いた平らな板として扱う)。明るさが全体に変わるだけで、立体感は出ません。
 
+## 見本で試す
+
+法線マップを付けた見本のモデル ([assets/samples/avatar-lit.ugoe](../../assets/samples/README.md#avatar-litugoe)) があります。
+ビューアのツールバーの「サンプル」→「アバター (ライティング)」で開くと、右のパネルにライティングのパネルが出て、光の向きを変えて陰影を確かめられます。
+エディタで開くときは、`just cli sample avatar --lit -o avatar-lit.ugoe --project avatar-lit.ugoeproj` でプロジェクトを作ります。
+
+![見本のアバター。左からライティングなし、左・右・上から光を当てたもの](../../assets/samples/avatar-lit.jpg)
+
 ## パネルを開く
 
 1. 右の列の上の「Lighting」タブを押す。

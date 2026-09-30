@@ -86,6 +86,9 @@ struct SampleAvatarArgs {
     /// `.ugoeproj` プロジェクトにも保存する (エディタで開く用)。
     #[arg(long, value_name = "DIR")]
     project: Option<PathBuf>,
+    /// 法線マップを付けてライティングを有効にした版を書き出す (`assets/samples/avatar-lit.ugoe`)。
+    #[arg(long)]
+    lit: bool,
 }
 
 /// `ugoe validate --profile` で検査するプロファイル。
@@ -518,7 +521,10 @@ fn run_sample_avatar(args: SampleAvatarArgs) -> anyhow::Result<()> {
             args.psd.display()
         )
     })?;
-    let project = sample::build_avatar(&psd)?;
+    let mut project = sample::build_avatar(&psd)?;
+    if args.lit {
+        project = sample::lit::light_avatar(&project, &psd)?;
+    }
     let bytes = ugoe_editor_core::export_bundle(&project)?;
     std::fs::write(&args.output, &bytes)
         .with_context(|| format!("writing {}", args.output.display()))?;
