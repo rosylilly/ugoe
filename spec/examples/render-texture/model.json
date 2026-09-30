@@ -1,0 +1,153 @@
+{
+  "schema_version": 0,
+  "meta": {
+    "name": "render_texture",
+    "canvas": {
+      "width": 64.0,
+      "height": 32.0,
+      "origin": [
+        32.0,
+        16.0
+      ]
+    }
+  },
+  "parameters": [],
+  "parts": [
+    {
+      "id": "Root",
+      "name": "Root",
+      "keyforms": {
+        "keyforms": [
+          {
+            "opacity": 1.0
+          }
+        ]
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "id": "Stretch",
+      "name": "Stretch",
+      "part": "Root",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                64.0,
+                0.0
+              ],
+              [
+                64.0,
+                16.0
+              ],
+              [
+                0.0,
+                16.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "Clamp",
+      "name": "Clamp",
+      "part": "Root",
+      "texture": 0,
+      "uvs": [
+        [
+          -1.0,
+          0.0
+        ],
+        [
+          2.0,
+          0.0
+        ],
+        [
+          2.0,
+          1.0
+        ],
+        [
+          -1.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                0.0,
+                16.0
+              ],
+              [
+                64.0,
+                16.0
+              ],
+              [
+                64.0,
+                32.0
+              ],
+              [
+                0.0,
+                32.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    }
+  ],
+  "textures": [
+    {
+      "name": "pair",
+      "width": 2,
+      "height": 1
+    }
+  ]
+}

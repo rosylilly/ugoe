@@ -6,12 +6,13 @@ license of this specification.
 Each directory contains a small model and the results a runtime is expected to produce for it.
 **Evaluation examples** give the results at given parameter values ([Files](#files)); **timeline
 examples** give the results frame by frame while time advances, with physics, motions, expressions,
-effects and the pose ([Timeline examples](#timeline-examples)). **File examples** are bundle and
-module files with the data a reader obtains from them ([File examples](#file-examples)). The examples
-illustrate the rules and
-let an implementation check itself against them, with the tolerances of
-[evaluation.md](../evaluation.md#conformance), [physics.md](../physics.md#conformance) and
-[motion.md](../motion.md#conformance). They are **informative**: where an example and the text
+effects and the pose ([Timeline examples](#timeline-examples)). **Rendering examples** give the
+expected colors of chosen pixels of a rendered frame ([Rendering examples](#rendering-examples)).
+**File examples** are bundle and module files with the data a reader obtains from them
+([File examples](#file-examples)). The examples illustrate the rules and let an implementation check
+itself against them, with the tolerances of [evaluation.md](../evaluation.md#conformance),
+[physics.md](../physics.md#conformance), [motion.md](../motion.md#conformance) and
+[rendering.md](../rendering.md#conformance). They are **informative**: where an example and the text
 disagree, the text is correct (and the example is a bug in the specification).
 
 Evaluation examples:
@@ -205,6 +206,89 @@ by hand from the text (the summaries give the closed forms where they are short)
 swinging chains were computed with a separate, direct transcription of [physics.md](../physics.md) and
 [motion.md](../motion.md), written from the text only, and checked against a second independent
 implementation. Neither is the reference implementation.
+
+Rendering examples:
+
+| Example | Shows |
+| --- | --- |
+| [render-blend](render-blend/) | Premultiplied texture colors, multiply and screen colors, opacity; the `normal`, `additive` and `multiply` blend modes over an opaque mesh and over the transparent target; overlapping triangles of one mesh; the view transform. |
+| [render-masks](render-masks/) | Union and intersection, inverted masks, `mask_strength`, nested masks, masks with opacity 0 and `mask_only`, a culled mask, overlapping triangles in a mask, a mask referenced twice. |
+| [render-culling](render-culling/) | Back-face culling in canvas coordinates, including under a rotation deformer that reflects. |
+| [render-lighting](render-lighting/) | Normal maps, normals turned by rotation, mirroring and shear; ambient, directional and point lights, attenuation, light above 1, invalid lights, unlit meshes. |
+| [render-texture](render-texture/) | Bilinear filtering of premultiplied values; clamp-to-edge addressing with texture coordinates outside `[0, 1]`. |
+
+## Rendering examples
+
+A rendering example draws a model, evaluated at given parameter values, into a render target of a
+given size and gives the expected colors of chosen pixels ([rendering.md](../rendering.md)).
+
+The files of a rendering example:
+
+- `model.json` — the model, as for evaluation examples. Its textures are given in `render.json`.
+- `render.json` — the textures, the frames and the expected pixels:
+
+  ```json
+  {
+    "model": "model.json",
+    "summary": "What the example shows.",
+    "textures": [
+      {
+        "width": 1, "height": 1, "rgba": [204, 204, 204, 255],
+        "normal_map": { "width": 1, "height": 1, "rgba": [204, 204, 196, 255] }
+      }
+    ],
+    "cases": [
+      {
+        "summary": "What the case shows.",
+        "parameters": { "X": 0.5 },
+        "target": [112, 16],
+        "lights": {
+          "ambient": [0.2, 0.2, 0.2],
+          "directional": [{ "direction": [-1, 0, -1], "color": [1, 1, 1] }]
+        },
+        "pixels": [{ "at": [4, 11], "rgba": [185.05, 185.05, 185.05, 255] }]
+      }
+    ]
+  }
+  ```
+
+  | Field | Meaning |
+  | --- | --- |
+  | `model` | The model file, relative to `render.json`. |
+  | `summary` | A description of the example. |
+  | `textures` | One entry per texture, in the order of the model's `textures`: `width`, `height` and the color `rgba` of every pixel (row by row from the top-left; non-premultiplied, 0 to 255), and `normal_map`, the same for the texture's normal map if it has one (the model's `normal_map` names it). |
+  | `cases` | Independent frames. |
+  | `cases[].parameters` | Optional. Parameter values, as in evaluation examples. The model is evaluated once. |
+  | `cases[].target` | The width and height of the render target in pixels. The view transform scales the canvas to the whole target (`x × width / canvas.width`, `y × height / canvas.height`); the examples keep the canvas's aspect ratio. The target is cleared to transparent black before drawing. |
+  | `cases[].lights` | Optional. The lights the host supplies ([rendering.md](../rendering.md#lights)): `ambient` (default `[1, 1, 1]`), `directional` lights and `point` lights; a point light without `range` has an infinite range. Absent: the host supplies no lights. |
+  | `cases[].pixels` | The checked pixels: `at` is `[column, row]` of a target pixel (from the top-left), `rgba` its expected premultiplied color on the scale 0 to 255. |
+
+  The expected colors are the output defined by [rendering.md](../rendering.md#conformance) (real
+  numbers, clamped to `[0, 1]` after each draw), multiplied by 255 and rounded to two decimal places.
+  They are not rounded to 8 bits.
+
+To stay independent of rasterization details, the examples follow these rules:
+
+- The center of every checked pixel is at least one target pixel away from every edge of every
+  triangle of the model (of meshes that are drawn and of meshes used as masks), so it does not
+  depend on how edges and shared edges are rasterized.
+- Textures have a single color, except in `render-texture`, which checks filtering at pixels whose
+  sampling position lies strictly between texel centers or beyond the clamped edge.
+
+### Rendering tolerances
+
+An implementation matches a rendering example if every channel of every checked pixel, premultiplied
+and on the scale 0 to 255, is within **3** of the expected value (the tolerance of
+[rendering.md](../rendering.md#conformance)). Every checked pixel has to match; the allowance for
+the remaining 1% of pixels in rendering.md is for edge pixels, which the examples do not check.
+
+### How the expected values were derived (informative)
+
+The expected colors were computed at the checked pixels only, directly from the per-pixel equations
+of [rendering.md](../rendering.md), with a separate transcription written from the text (not the
+reference implementation); the blends of `render-blend` and the mask factors of `render-masks` were
+also checked by hand. A small CPU rasterizer written independently from the text
+renders the whole frames and agrees with them.
 
 ## File examples
 

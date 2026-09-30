@@ -101,7 +101,7 @@
 | `spec/rendering.md` | `docs/spec/` | 備考 |
 | --- | --- | --- |
 | [Inputs](../../spec/rendering.md#inputs)・[Drawing a frame](../../spec/rendering.md#drawing-a-frame) | [rendering.md#gpu-リソースの方針](rendering.md#gpu-リソースの方針)、[rendering.md#ビュー変換](rendering.md#ビュー変換) | GPU の資源の扱いは含めない |
-| [Color values](../../spec/rendering.md#color-values)・[Textures](../../spec/rendering.md#textures) | [rendering.md#前提](rendering.md#前提) | |
+| [Color values](../../spec/rendering.md#color-values)・[Textures](../../spec/rendering.md#textures) | [rendering.md#前提](rendering.md#前提) | 画素の中心での被覆 (英語版は Drawing a frame) も日本語版は前提に書く |
 | [Mesh color](../../spec/rendering.md#mesh-color) | [rendering.md#描画可能要素ごとのシェーディング](rendering.md#描画可能要素ごとのシェーディング) | |
 | [Blend modes](../../spec/rendering.md#blend-modes) | [rendering.md#合成モード](rendering.md#合成モード) | |
 | [Masks](../../spec/rendering.md#masks) | [rendering.md#マスク](rendering.md#マスク) | 参照レンダラの実装方式 (アトラス) は含めない (Implementation notes に要約だけ) |

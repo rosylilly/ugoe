@@ -80,6 +80,14 @@ results within the tolerances of [Conformance](#conformance).
   masks when referenced.
 - Within one mesh, triangles are drawn in the order of `indices`. Where triangles of the same mesh
   overlap, later triangles are blended over earlier ones.
+- A pixel is **covered** by a triangle when the pixel's **center** lies inside the triangle (in
+  target pixels, the center of pixel `(x, y)` is `(x + 0.5, y + 0.5)`). Values that vary across a
+  triangle (texture coordinates, and the pixel's canvas position used by point lights) are taken at
+  the pixel's center. A pixel center that lies exactly on an edge shared by two triangles SHOULD be
+  covered by exactly one of them, so that a mesh does not draw it twice. *Informative:* the top-left
+  rule of common GPU APIs does this. Renderers that differ at triangle edges (for example, with
+  antialiasing) stay within the tolerances of [Conformance](#conformance) only as long as the pixels
+  that differ are few.
 - The render order MUST NOT be changed. A renderer MAY group consecutive draws for efficiency only
   when the result is unchanged ([Implementation notes](#implementation-notes)).
 
@@ -100,6 +108,12 @@ component-wise.
 
 `α` is used as evaluation produced it (not clamped). *Informative:* when models keep opacities within
 `[0, 1]` (as they normally do), `α` stays within that range.
+
+*Informative:* premultiplied colors whose `rgb` exceeds their alpha are valid results: `additive`
+drawing over transparent pixels leaves color with alpha 0, and light above 1 makes `rgb` exceed `a`
+([Shading](#shading)). The render target keeps them as they are. Converting the target to
+non-premultiplied colors (for example, to save a PNG image) loses that color; how a host does it is
+outside this specification.
 
 ## Blend modes
 
@@ -212,13 +226,15 @@ also carries the intensity. The view transform does not affect lighting.
 | Light | Vector towards the light `l` | Attenuation |
 | --- | --- | --- |
 | Directional | `−normalize(direction)`. `direction` is the direction in which the light travels; its length does not matter. Example: light from the top left, in front of the canvas: `(1, 1, −1)`. | 1 |
-| Point | `normalize(position − p)`, where `p = (x, y, 0)` is the pixel's position on the canvas. If `position = p`, `l = (0, 0, 1)`. | `clamp(1 − |position − p| / range, 0, 1)²`; 1 if `range` is infinite |
+| Point | `normalize(position − p)`, where `p = (x, y, 0)` and `(x, y)` is the canvas position of the pixel's center (the center mapped back through the view transform). If `position = p`, `l = (0, 0, 1)`. | `clamp(1 − |position − p| / range, 0, 1)²`; 1 if `range` is infinite |
 
 - A directional light whose `direction` has length 0 or is not finite, and a point light whose
   `range` is not positive (or is NaN) or whose `position` is not finite, are ignored.
 - When the host supplies no lights, `ambient` is `(1, 1, 1)` and there are no lights, so lit meshes
   look exactly like unlit ones.
-- *Informative:* the reference renderer uses at most the first 8 valid lights.
+- A renderer MAY use only 8 of the valid lights when more are supplied; which ones it uses is not
+  specified. [Conformance](#conformance) covers frames with at most 8 valid lights. *Informative:*
+  the reference renderer uses at most the first 8 valid lights.
 
 ### Normals
 
@@ -246,9 +262,11 @@ The normal is then turned with the deformation of the triangle, so that shading 
 5. Rotate the `xy` part of the normal: `n' = (cos θ × n.x − sin θ × n.y, sin θ × n.x + cos θ × n.y, n.z)`.
 6. Normalize: `n = n' / |n'|`, or `(0, 0, 1)` if `|n'| = 0`.
 
-Scaling and shear of the mesh therefore do not change the normals; rotation and mirroring do. For
-example, a mesh mirrored left–right (`J = diag(−1, 1)`) negates only `n.x`, and a mesh mirrored
-top–bottom (`J = diag(1, −1)`) negates only `n.y`.
+Scaling of the mesh along the texture axes (including non-uniform scaling) therefore does not change
+the normals; rotation and mirroring do. For example, a mesh mirrored left–right (`J = diag(−1, 1)`)
+negates only `n.x`, and a mesh mirrored top–bottom (`J = diag(1, −1)`) negates only `n.y`. A shear
+turns the normals by the rotation of its polar decomposition: for `t = (12, 0)` and `b = (4, 16)`,
+`r = (28, −4)` and the normals turn by `atan2(−4, 28) ≈ −8.13°`.
 
 ### Shading
 
@@ -278,6 +296,13 @@ pixels account for differences in rasterization at triangle edges and in texture
   drawing, unless an example says otherwise.
 - The evaluated meshes are the outputs of [evaluation](evaluation.md); differences allowed by the
   evaluation tolerances are included in the rendering tolerance.
+- The output defined here is computed with real numbers; only writing to the render target clamps
+  values to `[0, 1]` (after each draw). The tolerance includes the rounding of 8-bit textures,
+  intermediate results and the target.
+- The frame has at most 8 valid lights ([Lights](#lights)).
+- The [rendering examples](examples/README.md#rendering-examples) check chosen pixels away from
+  triangle edges, where the result does not depend on rasterization details; every checked pixel
+  has to be within the tolerance.
 
 ## Implementation notes
 

@@ -1,5 +1,5 @@
 // 例のファイルに入れる小さな PNG を作る (PNG の仕様 https://www.w3.org/TR/png-3/ から)。
-// 1 色で塗った RGBA 8 ビットの画像 (フィルタは None、IDAT は 1 つ) を書き、同じ種類の画像を読む。
+// RGBA 8 ビットの画像 (フィルタは None、IDAT は 1 つ) を書き、同じ種類の画像を読む。
 
 import { crc32, deflateSync, inflateSync } from "node:zlib";
 
@@ -15,6 +15,13 @@ function chunk(type: string, data: Uint8Array): Uint8Array {
 
 /** 幅 `width`・高さ `height` を 1 色 `rgba` で塗った PNG。 */
 export function solidPng(width: number, height: number, rgba: [number, number, number, number]) {
+  const pixels = new Uint8Array(4 * width * height);
+  for (let i = 0; i < width * height; i++) pixels.set(rgba, 4 * i);
+  return rgbaPng(width, height, pixels);
+}
+
+/** 幅 `width`・高さ `height` の RGBA 8 ビットの画素 (行ごと、左上から) の PNG。 */
+export function rgbaPng(width: number, height: number, pixels: ArrayLike<number>) {
   const ihdr = new Uint8Array(13);
   const view = new DataView(ihdr.buffer);
   view.setUint32(0, width);
@@ -22,7 +29,8 @@ export function solidPng(width: number, height: number, rgba: [number, number, n
   ihdr.set([8, 6, 0, 0, 0], 8); // 8 ビット・RGBA・deflate・フィルタ 0・インターレースなし
   const raw = new Uint8Array(height * (1 + 4 * width));
   for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) raw.set(rgba, y * (1 + 4 * width) + 1 + 4 * x);
+    for (let x = 0; x < 4 * width; x++)
+      raw[y * (1 + 4 * width) + 1 + x] = pixels[4 * width * y + x];
   }
   const parts = [
     new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),

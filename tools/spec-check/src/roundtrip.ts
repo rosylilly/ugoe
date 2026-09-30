@@ -26,7 +26,10 @@ import { type Bundle, readBundle, readJsonDocument, readModelJson } from "./bund
 import { loadManifest } from "./bundles.ts";
 import * as D from "./decode.ts";
 import type { MsgValue } from "./msgpack.ts";
-import { solidPng } from "./png.ts";
+import { rgbaPng, solidPng } from "./png.ts";
+import type { Image } from "./render.ts";
+import { loadRenderExample } from "./render-examples.ts";
+import type * as M from "./types.ts";
 import { EXPLICIT, MINIMAL, type Style, type WriteOptions, writeBundle } from "./write.ts";
 
 const REPO = join(import.meta.dirname, "../../..");
@@ -63,15 +66,31 @@ export function exampleSources(): Source[] {
           .filter((f) => f.endsWith(".expression.json"))
           .map((f) => read(f, D.expression)),
         meta: { example: name },
-        textures: model.textures.map(() => ({
-          format: "png" as const,
-          bytes: solidPng(1, 1, [255, 255, 255, 255]),
-        })),
-        normalMaps: [],
+        ...exampleImages(d, model),
       },
     });
   }
   return out;
+}
+
+/** 描画の例は render.json の画像を、ほかの例は白い 1 × 1 の画像を使う。 */
+function exampleImages(
+  dir: string,
+  model: M.Model,
+): Pick<Source["bundle"], "textures" | "normalMaps"> {
+  const png = (bytes: Uint8Array) => ({ format: "png" as const, bytes });
+  if (!existsSync(join(dir, "render.json"))) {
+    return {
+      textures: model.textures.map(() => png(solidPng(1, 1, [255, 255, 255, 255]))),
+      normalMaps: [],
+    };
+  }
+  const { doc } = loadRenderExample(dir);
+  const image = (i: Image) => png(rgbaPng(i.width, i.height, i.rgba));
+  return {
+    textures: doc.textures.map(image),
+    normalMaps: doc.textures.flatMap((t) => (t.normal_map ? [image(t.normal_map)] : [])),
+  };
 }
 
 /** assets/compat/dev/ の .ugoe (参照実装が書いたもの) をこの実装で読む。警告のあるものは書けないので除く。 */

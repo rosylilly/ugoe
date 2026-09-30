@@ -1,0 +1,89 @@
+{
+  "model": "model.json",
+  "summary": "Bilinear filtering of premultiplied values with clamp-to-edge addressing. The 2x1 texture has a transparent red texel (255, 0, 0, 0) and an opaque blue texel: between their centers the result is blue with a partial alpha, never red. Clamp has texture coordinates from -1 to 2.",
+  "textures": [
+    {
+      "width": 2,
+      "height": 1,
+      "rgba": [255, 0, 0, 0, 0, 0, 255, 255]
+    }
+  ],
+  "cases": [
+    {
+      "summary": "Canvas and target of the same size.",
+      "target": [64, 32],
+      "pixels": [
+        {
+          "at": [4, 12],
+          "rgba": [0.0, 0.0, 0.0, 0.0]
+        },
+        {
+          "at": [24, 12],
+          "rgba": [0.0, 0.0, 67.73, 67.73]
+        },
+        {
+          "at": [40, 12],
+          "rgba": [0.0, 0.0, 195.23, 195.23]
+        },
+        {
+          "at": [60, 12],
+          "rgba": [0.0, 0.0, 255.0, 255.0]
+        },
+        {
+          "at": [4, 28],
+          "rgba": [0.0, 0.0, 0.0, 0.0]
+        },
+        {
+          "at": [30, 28],
+          "rgba": [0.0, 0.0, 91.64, 91.64]
+        },
+        {
+          "at": [36, 28],
+          "rgba": [0.0, 0.0, 235.08, 235.08]
+        },
+        {
+          "at": [60, 28],
+          "rgba": [0.0, 0.0, 255.0, 255.0]
+        }
+      ]
+    },
+    {
+      "summary": "The target is twice the canvas.",
+      "target": [128, 64],
+      "pixels": [
+        {
+          "at": [9, 25],
+          "rgba": [0.0, 0.0, 0.0, 0.0]
+        },
+        {
+          "at": [49, 25],
+          "rgba": [0.0, 0.0, 69.73, 69.73]
+        },
+        {
+          "at": [81, 25],
+          "rgba": [0.0, 0.0, 197.23, 197.23]
+        },
+        {
+          "at": [121, 25],
+          "rgba": [0.0, 0.0, 255.0, 255.0]
+        },
+        {
+          "at": [9, 57],
+          "rgba": [0.0, 0.0, 0.0, 0.0]
+        },
+        {
+          "at": [61, 57],
+          "rgba": [0.0, 0.0, 97.62, 97.62]
+        },
+        {
+          "at": [73, 57],
+          "rgba": [0.0, 0.0, 241.05, 241.05]
+        },
+        {
+          "at": [121, 57],
+          "rgba": [0.0, 0.0, 255.0, 255.0]
+        }
+      ]
+    }
+  ]
+}

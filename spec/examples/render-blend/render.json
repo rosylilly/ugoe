@@ -1,0 +1,110 @@
+{
+  "model": "model.json",
+  "summary": "Mesh color (premultiplied texture, multiply and screen colors, opacity) and the three blend modes, over an opaque gray mesh (top half) and over the transparent target (bottom half). Additive and multiply keep the target's alpha, so additive over transparent pixels leaves color with alpha 0. Triangles of one mesh that overlap are blended over each other (Twice). Back is drawn first by its drawing order.",
+  "textures": [
+    {
+      "width": 1,
+      "height": 1,
+      "rgba": [153, 153, 153, 255]
+    },
+    {
+      "width": 1,
+      "height": 1,
+      "rgba": [204, 102, 51, 153]
+    }
+  ],
+  "cases": [
+    {
+      "summary": "Canvas and target of the same size.",
+      "target": [64, 32],
+      "pixels": [
+        {
+          "at": [8, 8],
+          "rgba": [137.7, 137.7, 153.0, 255.0]
+        },
+        {
+          "at": [8, 24],
+          "rgba": [30.6, 30.6, 45.9, 76.5]
+        },
+        {
+          "at": [24, 8],
+          "rgba": [255.0, 183.6, 183.6, 255.0]
+        },
+        {
+          "at": [24, 24],
+          "rgba": [122.4, 30.6, 30.6, 0.0]
+        },
+        {
+          "at": [40, 8],
+          "rgba": [143.82, 125.46, 116.28, 255.0]
+        },
+        {
+          "at": [40, 24],
+          "rgba": [0.0, 0.0, 0.0, 0.0]
+        },
+        {
+          "at": [56, 2],
+          "rgba": [183.6, 122.4, 91.8, 255.0]
+        },
+        {
+          "at": [56, 10],
+          "rgba": [195.84, 110.16, 67.32, 255.0]
+        },
+        {
+          "at": [56, 20],
+          "rgba": [171.36, 85.68, 42.84, 214.2]
+        },
+        {
+          "at": [56, 29],
+          "rgba": [122.4, 61.2, 30.6, 153.0]
+        }
+      ]
+    },
+    {
+      "summary": "The target is twice the canvas: the same colors at the corresponding pixels.",
+      "target": [128, 64],
+      "pixels": [
+        {
+          "at": [17, 17],
+          "rgba": [137.7, 137.7, 153.0, 255.0]
+        },
+        {
+          "at": [17, 49],
+          "rgba": [30.6, 30.6, 45.9, 76.5]
+        },
+        {
+          "at": [49, 17],
+          "rgba": [255.0, 183.6, 183.6, 255.0]
+        },
+        {
+          "at": [49, 49],
+          "rgba": [122.4, 30.6, 30.6, 0.0]
+        },
+        {
+          "at": [81, 17],
+          "rgba": [143.82, 125.46, 116.28, 255.0]
+        },
+        {
+          "at": [81, 49],
+          "rgba": [0.0, 0.0, 0.0, 0.0]
+        },
+        {
+          "at": [113, 5],
+          "rgba": [183.6, 122.4, 91.8, 255.0]
+        },
+        {
+          "at": [113, 21],
+          "rgba": [195.84, 110.16, 67.32, 255.0]
+        },
+        {
+          "at": [113, 41],
+          "rgba": [171.36, 85.68, 42.84, 214.2]
+        },
+        {
+          "at": [113, 59],
+          "rgba": [122.4, 61.2, 30.6, 153.0]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "model": "model.json",
+  "summary": "Back-face culling in canvas coordinates. Front (counter-clockwise on screen) is drawn and Back (clockwise) is culled; Mixed has one triangle of each; NoCulling draws its clockwise triangles. Under a rotation deformer with reflect_x, triangles that are clockwise in the local coordinates become counter-clockwise on screen: the mesh at x 64 to 80 is drawn, the one at 80 to 96 is culled.",
+  "textures": [
+    {
+      "width": 1,
+      "height": 1,
+      "rgba": [204, 51, 51, 255]
+    }
+  ],
+  "cases": [
+    {
+      "summary": "Canvas and target of the same size.",
+      "target": [96, 32],
+      "pixels": [
+        {
+          "at": [12, 8],
+          "rgba": [204.0, 51.0, 51.0, 255.0]
+        },
+        {
+          "at": [28, 8],
+          "rgba": [0.0, 0.0, 0.0, 0.0]
+        },
+        {
+          "at": [36, 26],
+          "rgba": [204.0, 51.0, 51.0, 255.0]
+        },
+        {
+          "at": [44, 5],
+          "rgba": [0.0, 0.0, 0.0, 0.0]
+        },
+        {
+          "at": [60, 8],
+          "rgba": [204.0, 51.0, 51.0, 255.0]
+        },
+        {
+          "at": [68, 8],
+          "rgba": [204.0, 51.0, 51.0, 255.0]
+        },
+        {
+          "at": [84, 8],
+          "rgba": [0.0, 0.0, 0.0, 0.0]
+        }
+      ]
+    },
+    {
+      "summary": "The target is twice the canvas (the view transform does not mirror).",
+      "target": [192, 64],
+      "pixels": [
+        {
+          "at": [25, 17],
+          "rgba": [204.0, 51.0, 51.0, 255.0]
+        },
+        {
+          "at": [57, 17],
+          "rgba": [0.0, 0.0, 0.0, 0.0]
+        },
+        {
+          "at": [73, 53],
+          "rgba": [204.0, 51.0, 51.0, 255.0]
+        },
+        {
+          "at": [89, 11],
+          "rgba": [0.0, 0.0, 0.0, 0.0]
+        },
+        {
+          "at": [121, 17],
+          "rgba": [204.0, 51.0, 51.0, 255.0]
+        },
+        {
+          "at": [137, 17],
+          "rgba": [204.0, 51.0, 51.0, 255.0]
+        },
+        {
+          "at": [169, 17],
+          "rgba": [0.0, 0.0, 0.0, 0.0]
+        }
+      ]
+    }
+  ]
+}

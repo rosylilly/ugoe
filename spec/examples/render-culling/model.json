@@ -1,0 +1,416 @@
+{
+  "schema_version": 0,
+  "meta": {
+    "name": "render_culling",
+    "canvas": {
+      "width": 96.0,
+      "height": 32.0,
+      "origin": [
+        48.0,
+        16.0
+      ]
+    }
+  },
+  "parameters": [],
+  "parts": [
+    {
+      "id": "Root",
+      "name": "Root",
+      "keyforms": {
+        "keyforms": [
+          {
+            "opacity": 1.0
+          }
+        ]
+      }
+    }
+  ],
+  "deformers": [
+    {
+      "id": "Mirror",
+      "name": "Mirror",
+      "part": "Root",
+      "kind": {
+        "type": "rotation",
+        "keyforms": {
+          "keyforms": [
+            {
+              "origin": [
+                80.0,
+                16.0
+              ],
+              "angle": 0.0,
+              "scale": 1.0,
+              "reflect_x": true,
+              "opacity": 1.0
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "id": "Front",
+      "name": "Front",
+      "part": "Root",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        3,
+        2,
+        0,
+        2,
+        1
+      ],
+      "culling": true,
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                16.0,
+                0.0
+              ],
+              [
+                16.0,
+                32.0
+              ],
+              [
+                0.0,
+                32.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "Back",
+      "name": "Back",
+      "part": "Root",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "culling": true,
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                16.0,
+                0.0
+              ],
+              [
+                32.0,
+                0.0
+              ],
+              [
+                32.0,
+                32.0
+              ],
+              [
+                16.0,
+                32.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "Mixed",
+      "name": "Mixed",
+      "part": "Root",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        3,
+        2,
+        0,
+        1,
+        2
+      ],
+      "culling": true,
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                32.0,
+                0.0
+              ],
+              [
+                48.0,
+                0.0
+              ],
+              [
+                48.0,
+                32.0
+              ],
+              [
+                32.0,
+                32.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "NoCulling",
+      "name": "NoCulling",
+      "part": "Root",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                48.0,
+                0.0
+              ],
+              [
+                64.0,
+                0.0
+              ],
+              [
+                64.0,
+                32.0
+              ],
+              [
+                48.0,
+                32.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "MirroredCW",
+      "name": "MirroredCW",
+      "part": "Root",
+      "parent": "Mirror",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "culling": true,
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                0.0,
+                -16.0
+              ],
+              [
+                16.0,
+                -16.0
+              ],
+              [
+                16.0,
+                16.0
+              ],
+              [
+                0.0,
+                16.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "MirroredCCW",
+      "name": "MirroredCCW",
+      "part": "Root",
+      "parent": "Mirror",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        3,
+        2,
+        0,
+        2,
+        1
+      ],
+      "culling": true,
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                -16.0,
+                -16.0
+              ],
+              [
+                0.0,
+                -16.0
+              ],
+              [
+                0.0,
+                16.0
+              ],
+              [
+                -16.0,
+                16.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    }
+  ],
+  "textures": [
+    {
+      "name": "red",
+      "width": 1,
+      "height": 1
+    }
+  ]
+}

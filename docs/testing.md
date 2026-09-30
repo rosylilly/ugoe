@@ -94,6 +94,12 @@ cargo test -p ugoe-format --test compat   # 作り直した資料で、もう一
   参照実装の読み込み (`read_bundle_with_report` / `read_module_with_report`) が一覧のとおりに読むことを
   `crates/ugoe-format/tests/spec_bundles.rs` で確かめます。食い違う例は理由を付けてテストの `KNOWN_MISMATCHES` に挙げます
   (例のファイルを参照実装に合わせて作り直してはいけません)。
+- 描画の例 (`spec/examples/render-*/`、公開仕様の [Rendering examples](../spec/examples/README.md#rendering-examples)) は、`model.json` と、
+  テクスチャの画素・描画先の大きさ・光源・調べる画素の期待値 (乗算済み、0〜255 の尺度) を持つ `render.json` の組です。
+  調べる画素の中心は三角形の辺から描画先の画素で 1 以上離し、テクスチャは 1 色を基本にして、GPU によるラスタライズとフィルタの違いに
+  頼らないようにしています。許容誤差は各チャンネル 3 (rendering.md の Conformance と同じ) で、調べる画素はすべて満たします。
+  期待値は仕様の式から画素ごとに導いた値で、`tools/spec-check` の CPU のラスタライザ (仕様だけから書いたもの) と一致します。
+  参照実装の描画が満たすことは GPU を使うテスト (`just test-gpu`) で確かめます。
 - 互換性テストの資料 (`assets/compat/`) との違い: あちらはリリースごとのバイナリのファイルで、古い版のファイルが読めることと、
   知らない機能を劣化させて読めることを確かめる (評価の期待値は持たない)。こちらは仕様の一部 (CC BY 4.0) で、
   評価の規則とファイルの中身の並べ方を例で示し、他の実装が自分を確かめるためのもの。

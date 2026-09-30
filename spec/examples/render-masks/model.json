@@ -1,0 +1,1318 @@
+{
+  "schema_version": 0,
+  "meta": {
+    "name": "render_masks",
+    "canvas": {
+      "width": 128.0,
+      "height": 64.0,
+      "origin": [
+        64.0,
+        32.0
+      ]
+    }
+  },
+  "parameters": [],
+  "parts": [
+    {
+      "id": "Root",
+      "name": "Root",
+      "keyforms": {
+        "keyforms": [
+          {
+            "opacity": 1.0
+          }
+        ]
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "id": "UnionA",
+      "name": "UnionA",
+      "part": "Root",
+      "texture": 1,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "mask_only": true,
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                16.0,
+                0.0
+              ],
+              [
+                16.0,
+                32.0
+              ],
+              [
+                0.0,
+                32.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "UnionB",
+      "name": "UnionB",
+      "part": "Root",
+      "texture": 2,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "mask_only": true,
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                32.0,
+                0.0
+              ],
+              [
+                32.0,
+                16.0
+              ],
+              [
+                0.0,
+                16.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "Union",
+      "name": "Union",
+      "part": "Root",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "masks": [
+        {
+          "mesh": "UnionA"
+        },
+        {
+          "mesh": "UnionB"
+        }
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                32.0,
+                0.0
+              ],
+              [
+                32.0,
+                32.0
+              ],
+              [
+                0.0,
+                32.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "InterA",
+      "name": "InterA",
+      "part": "Root",
+      "texture": 1,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "mask_only": true,
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                32.0,
+                0.0
+              ],
+              [
+                48.0,
+                0.0
+              ],
+              [
+                48.0,
+                32.0
+              ],
+              [
+                32.0,
+                32.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "InterB",
+      "name": "InterB",
+      "part": "Root",
+      "texture": 2,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "mask_only": true,
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                32.0,
+                0.0
+              ],
+              [
+                64.0,
+                0.0
+              ],
+              [
+                64.0,
+                16.0
+              ],
+              [
+                32.0,
+                16.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "Intersection",
+      "name": "Intersection",
+      "part": "Root",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "masks": [
+        {
+          "mesh": "InterA"
+        },
+        {
+          "mesh": "InterB"
+        }
+      ],
+      "mask_mode": "intersection",
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                32.0,
+                0.0
+              ],
+              [
+                64.0,
+                0.0
+              ],
+              [
+                64.0,
+                32.0
+              ],
+              [
+                32.0,
+                32.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "InvA",
+      "name": "InvA",
+      "part": "Root",
+      "texture": 1,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "mask_only": true,
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                64.0,
+                0.0
+              ],
+              [
+                80.0,
+                0.0
+              ],
+              [
+                80.0,
+                32.0
+              ],
+              [
+                64.0,
+                32.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "InvB",
+      "name": "InvB",
+      "part": "Root",
+      "texture": 2,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "mask_only": true,
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                64.0,
+                0.0
+              ],
+              [
+                96.0,
+                0.0
+              ],
+              [
+                96.0,
+                16.0
+              ],
+              [
+                64.0,
+                16.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "Inverted",
+      "name": "Inverted",
+      "part": "Root",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "masks": [
+        {
+          "mesh": "InvA"
+        },
+        {
+          "mesh": "InvB",
+          "invert": true
+        }
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                64.0,
+                0.0
+              ],
+              [
+                96.0,
+                0.0
+              ],
+              [
+                96.0,
+                32.0
+              ],
+              [
+                64.0,
+                32.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "HalfB",
+      "name": "HalfB",
+      "part": "Root",
+      "texture": 1,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "mask_only": true,
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                96.0,
+                0.0
+              ],
+              [
+                128.0,
+                0.0
+              ],
+              [
+                128.0,
+                16.0
+              ],
+              [
+                96.0,
+                16.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "HalfStrength",
+      "name": "HalfStrength",
+      "part": "Root",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "masks": [
+        {
+          "mesh": "HalfB",
+          "invert": true
+        }
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                96.0,
+                0.0
+              ],
+              [
+                128.0,
+                0.0
+              ],
+              [
+                128.0,
+                32.0
+              ],
+              [
+                96.0,
+                32.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0,
+            "mask_strength": 0.5
+          }
+        ]
+      }
+    },
+    {
+      "id": "NestB",
+      "name": "NestB",
+      "part": "Root",
+      "texture": 1,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                0.0,
+                32.0
+              ],
+              [
+                32.0,
+                32.0
+              ],
+              [
+                32.0,
+                48.0
+              ],
+              [
+                0.0,
+                48.0
+              ]
+            ],
+            "opacity": 0.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "NestA",
+      "name": "NestA",
+      "part": "Root",
+      "texture": 1,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "masks": [
+        {
+          "mesh": "NestB"
+        }
+      ],
+      "mask_only": true,
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                0.0,
+                32.0
+              ],
+              [
+                16.0,
+                32.0
+              ],
+              [
+                16.0,
+                64.0
+              ],
+              [
+                0.0,
+                64.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "Nested",
+      "name": "Nested",
+      "part": "Root",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "masks": [
+        {
+          "mesh": "NestA"
+        }
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                0.0,
+                32.0
+              ],
+              [
+                32.0,
+                32.0
+              ],
+              [
+                32.0,
+                64.0
+              ],
+              [
+                0.0,
+                64.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "Culled",
+      "name": "Culled",
+      "part": "Root",
+      "texture": 2,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        4,
+        6,
+        7
+      ],
+      "culling": true,
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                32.0,
+                32.0
+              ],
+              [
+                48.0,
+                32.0
+              ],
+              [
+                48.0,
+                64.0
+              ],
+              [
+                32.0,
+                64.0
+              ],
+              [
+                32.0,
+                32.0
+              ],
+              [
+                64.0,
+                32.0
+              ],
+              [
+                64.0,
+                48.0
+              ],
+              [
+                32.0,
+                48.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 600.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "Overlap",
+      "name": "Overlap",
+      "part": "Root",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "masks": [
+        {
+          "mesh": "Culled"
+        }
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                32.0,
+                32.0
+              ],
+              [
+                64.0,
+                32.0
+              ],
+              [
+                64.0,
+                64.0
+              ],
+              [
+                32.0,
+                64.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "WeakA",
+      "name": "WeakA",
+      "part": "Root",
+      "texture": 1,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "mask_only": true,
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                64.0,
+                32.0
+              ],
+              [
+                80.0,
+                32.0
+              ],
+              [
+                80.0,
+                64.0
+              ],
+              [
+                64.0,
+                64.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "Weak",
+      "name": "Weak",
+      "part": "Root",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "masks": [
+        {
+          "mesh": "WeakA"
+        }
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                64.0,
+                32.0
+              ],
+              [
+                96.0,
+                32.0
+              ],
+              [
+                96.0,
+                64.0
+              ],
+              [
+                64.0,
+                64.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0,
+            "mask_strength": 0.25
+          }
+        ]
+      }
+    },
+    {
+      "id": "TwiceB",
+      "name": "TwiceB",
+      "part": "Root",
+      "texture": 2,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "mask_only": true,
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                96.0,
+                32.0
+              ],
+              [
+                128.0,
+                32.0
+              ],
+              [
+                128.0,
+                48.0
+              ],
+              [
+                96.0,
+                48.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "Repeated",
+      "name": "Repeated",
+      "part": "Root",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "masks": [
+        {
+          "mesh": "TwiceB"
+        },
+        {
+          "mesh": "TwiceB"
+        }
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                96.0,
+                32.0
+              ],
+              [
+                128.0,
+                32.0
+              ],
+              [
+                128.0,
+                64.0
+              ],
+              [
+                96.0,
+                64.0
+              ]
+            ],
+            "opacity": 0.5,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    }
+  ],
+  "textures": [
+    {
+      "name": "blue",
+      "width": 1,
+      "height": 1
+    },
+    {
+      "name": "white",
+      "width": 1,
+      "height": 1
+    },
+    {
+      "name": "faint",
+      "width": 1,
+      "height": 1
+    }
+  ]
+}
