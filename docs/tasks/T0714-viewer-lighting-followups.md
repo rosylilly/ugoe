@@ -1,11 +1,11 @@
 ---
 id: T0714
 title: ビューア: 光源の操作と記憶の残り (キーボード・拡大時の印・覚えたものの一覧)
-status: todo
+status: in-progress
 milestone: M4
 crates: [apps/viewer, docs]
 depends_on: [T0708, T0709]
-assignee:
+assignee: claude-worker-T0714
 ---
 
 # T0714: ビューア: 光源の操作と記憶の残り
