@@ -119,3 +119,20 @@ export function classificationSummary(c: Classification): {
     labels: [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])),
   };
 }
+
+/** 注文の文字数の上限 (`ugoe_ai::instructions::Instructions::MAX_CHARS`)。 */
+export const MAX_INSTRUCTION_CHARS = 2000;
+
+/** 注文の文字数 (Unicode のスカラー値の数。バックエンドの数え方と同じ)。前後の空白は数えない。 */
+export function instructionChars(text: string): number {
+  return [...text.trim()].length;
+}
+
+/**
+ * AI に添える注文 (docs/editor.md#ai-への注文と作り直し)。AI を使わないとき・空のときは送らない (`null`)。
+ * 長すぎるかどうかはバックエンドが確かめる。
+ */
+export function instructionsToSend(text: string, useAi: boolean): string | null {
+  const trimmed = text.trim();
+  return useAi && trimmed !== "" ? trimmed : null;
+}

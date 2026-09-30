@@ -959,13 +959,38 @@ PSD の取り込みから「レイヤーの分類 → リギングの提案」�
 
 | コマンド | 内容 |
 | --- | --- |
-| `get_proposals` | `ProposalState { proposals, psd, classification }` (一覧・元にする PSD・最後の分類) |
-| `classify_psd_layers(psd?, use_ai, consent?)` | 分類して覚える。`AiReply<Classification>`。`psd` を省くと取り込んだ PSD |
-| `propose_rig_from_psd(use_ai, consent?)` | 分類からリグを提案し、一覧に置く。`AiReply<ProposalView>` |
+| `get_proposals` | `ProposalState { proposals, psd, classification, regenerable }` (一覧・元にする PSD・最後の分類・作り直せる提案) |
+| `classify_psd_layers(psd?, use_ai, instructions?, revise, consent?)` | 分類して覚える。`AiReply<Classification>`。`psd` を省くと取り込んだ PSD。`revise` なら今の分類を前の答えとして送る |
+| `propose_rig_from_psd(use_ai, instructions?, consent?)` | 分類からリグを提案し、一覧に置く。`AiReply<ProposalView>` |
+| `regenerate_rig_proposal(id, instructions?, consent?)` | 提案を前の答えと注文を添えて作り直し、後ろに並べる (いつも AI)。`AiReply<ProposalView>` |
 | `preview_proposal(id, excluded)` | 外したコマンドを除いて複製に適用した姿。`ProposalPreview { model_json, report }` |
 | `get_proposal_preview_bundle` / `clear_proposal_preview` | プレビューの `.ugoe` バンドル (生のバイト列) / プレビューの複製を捨てる |
 | `adopt_proposal(id, excluded)` | 外したコマンドを除いて採用する (1 回の Undo で戻る)。`ApplyReport` |
 | `reject_proposal(id)` | 提案を捨てる。`ProposalState` |
+
+### AI への注文と作り直し
+
+AI タブの「Instructions for <プロバイダ>」(複数行) に書いた利用者の注文を、分類・提案に添えて送り、できた提案を注文を添えて
+作り直せます (T0644)。プロンプトへの入れ方と、反映できない注文の示し方は [ai-integration.md#利用者の注文](ai-integration.md#利用者の注文)。
+
+- **送るとき:** 注文は「Use <プロバイダ>」のときだけ、「Classify layers」「Propose rig」「Regenerate with instructions」に添えます
+  (前後の空白を除いて 2000 文字まで。超えるとボタンを無効にし、バックエンドも断る)。AI を使わないときは送らず、欄の下に
+  「Only sent when "Use …" is on」と出します。送る前の確認 ([AI の設定と送信の同意](#ai-の設定と送信の同意)) には、テキストのバイト数に
+  加えて注文の文字数 (`DisclosureView::instruction_chars`) を示します。注文を変えると確認の内容が変わるので、もう一度確かめます
+  (「今後は確かめない」を選んだ送り先を除く)。「外部に送らない」のプロジェクトでは、作り直しも外部には送りません。
+- **作り直し (「Regenerate with instructions」):** このパネルで作ったリグの提案 (`ProposalState::regenerable`。つないだエージェントの
+  提案は除く) にだけ出ます。前の提案の値と理由 (AI を使わなかった提案はテンプレートの既定値) と今の注文を送り、**新しい提案を
+  一覧の後ろに並べます。前の提案は置き換えません。** 両方をプレビューで見比べ、要らない方を「Reject」します。新しい提案には
+  「revision of #n」の印を付けます (`ProposalOrigin::revises`)。作り直しはいつも AI を使うので、「Use <プロバイダ>」が外れているか
+  注文が空ならボタンを無効にします。
+  - 分類は今の分類を使います。「When regenerating, also reclassify the layers…」に印を付けると、先に今の分類を前の答えとして
+    注文を添えて分類し直します (`classify_psd_layers` の `revise`。レイヤーの画像をもう一度送るので、確認は 2 回)。同じ注文で
+    分類し直したときは、ラベルに関わる注文を「反映できない」に数えさせません。
+  - 置き方・プレビュー・採用 (1 回の Undo) は、ふつうの提案と同じです。作り直しの間にドキュメントが変わったら置きません。
+- **提案の表示:** 提案の番号 (`#n`)、添えた注文 (`Instructions:`)、AI が 4 つの値では反映できないと答えた注文 (`Not applied`。
+  `ProposalView::unapplied`、AI の言葉のまま) を理由の上に出します。分類の要約には「with instructions」と出します。
+- **保存しない:** 注文の欄の中身はエディタを開いている間だけ持ち、プロジェクトには保存しません (`project.json` の形を変えず、
+  利用者の注文が意図せずファイルに残らないように)。提案に添えた注文も、提案と同じくプロジェクトを開いている間だけです。
 
 ### エージェントをつなぐ
 

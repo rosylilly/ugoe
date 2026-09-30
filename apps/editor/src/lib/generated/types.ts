@@ -320,7 +320,11 @@ psd: string,
 /**
  * AI で分類したか (偽なら名前の規則だけ)。
  */
-by_ai: boolean, layers: Array<LayerLabelView>, };
+by_ai: boolean, 
+/**
+ * AI で分類したときに添えた注文。
+ */
+instructions: string | null, layers: Array<LayerLabelView>, };
 
 /**
  * Claude の設定。
@@ -489,7 +493,12 @@ text_bytes: number,
  * 答えが検証を通らなかったときに、同じ画像と前の答え・理由を添えて送り直すことがある回数の上限
  * (上の数は 1 回分。`ugoe_ai::rig::propose_rig_with_ai` の問い直し)。
  */
-retries: number, };
+retries: number, 
+/**
+ * テキストに含まれる、利用者の注文の文字数 (`ugoe_ai::instructions::Instructions`)。注文がなければ 0。
+ * 分かれたリクエストには、どれにも同じ注文が入る。
+ */
+instruction_chars: number, };
 
 /**
  * 既定のパラメータで 1 フレームを描くときの、描画の見積もり。
@@ -1307,7 +1316,11 @@ psd: string | null,
 /**
  * 最後の分類の結果。
  */
-classification: Classification | null, };
+classification: Classification | null, 
+/**
+ * 注文を添えて作り直せる提案の番号 (このパネルで作ったリグの提案。つないだエージェントの提案は含まない)。
+ */
+regenerable: Array<number>, };
 
 /**
  * 画面に出す提案。
@@ -1325,7 +1338,19 @@ stale: boolean,
  * 提案を作ったもの (エディタにつないだエージェントの名前など。[`Proposals::set_source`])。
  * エディタの中で作った提案は `null`。
  */
-source: string | null, };
+source: string | null, 
+/**
+ * この提案が作り直した元の提案の番号 ([`ProposalOrigin::revises`])。
+ */
+revises: number | null, 
+/**
+ * 提案を作るときに AI に添えた利用者の注文 ([`ProposalOrigin::instructions`])。
+ */
+instructions: string | null, 
+/**
+ * 今の仕組みでは反映できなかった注文 (AI の答えの言葉のまま。[`ProposalOrigin::unapplied`])。
+ */
+unapplied: Array<string>, };
 
 /**
  * 使うプロバイダ。

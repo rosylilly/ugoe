@@ -4,6 +4,7 @@
 //! - AI の経路: [`FakeProvider`] と、録画 (`tests/cassettes/classify_layers_bustup.json`、
 //!   Messages API の応答の形に合わせて手で作ったもの) を再生する [`ClaudeProvider`]。同じ答えを
 //!   Chat Completions の形にした録画 (`openai_classify_layers_bustup.json`) を再生する [`OpenAiProvider`]。
+//!   同じ録画で、利用者の注文と前の分類を添えた作り直しも確かめる。
 
 #![allow(clippy::unwrap_used)]
 
@@ -12,11 +13,13 @@ use std::sync::Arc;
 
 use serde_json::json;
 use ugoe_ai::classify::{
-    ClassifyOptions, Label, LayerLabel, Side, apply_answer, classification_instructions,
-    classification_requests, classify_by_name, classify_layers, layer_thumbnail_png, layers,
+    ClassifyGuidance, ClassifyOptions, Label, LayerLabel, Side, apply_answer,
+    classification_instructions, classification_requests, classification_requests_guided,
+    classify_by_name, classify_layers, classify_layers_guided, layer_thumbnail_png, layers,
     output_schema,
 };
 use ugoe_ai::claude::{ApiKey, ClaudeConfig, ClaudeProvider};
+use ugoe_ai::instructions::Instructions;
 use ugoe_ai::openai::{OPENAI_BASE_URL, OpenAiConfig, OpenAiProvider};
 use ugoe_ai::transport::{Cassette, ReplayTransport};
 use ugoe_ai::{AiError, FakeProvider};
@@ -452,4 +455,115 @@ fn replays_a_recorded_openai_compatible_answer_for_the_bustup_psd() {
     let format = &body["response_format"]["json_schema"];
     assert_eq!(format["schema"], output_schema());
     assert_eq!(format["strict"], true);
+}
+
+/// 作り直しの入力: 前の分類 (前髪を誤って `headwear` にしたもの) と注文。
+fn revision(tree: &LayerTree) -> ClassifyGuidance {
+    let mut previous = classify_by_name(tree);
+    previous[23].label = Label::Headwear;
+    previous[23].confidence = 0.4;
+    ClassifyGuidance {
+        instructions: Instructions::new("前髪は hair_front。目はもう少し細く閉じる。").unwrap(),
+        previous: Some(previous),
+    }
+}
+
+/// 注文と前の分類を添えて送ったリクエストを確かめる (出力の形は変えない)。
+fn check_guided_request(system: &str, prompt: &str, schema: &serde_json::Value) {
+    assert!(system.contains("This is a revision."));
+    assert!(system.contains("<user_instructions> tags"));
+    assert!(system.contains("follow the parts about labels and sides"));
+    assert!(prompt.contains("23. name: \"face / front hair\"; bbox: "));
+    assert!(prompt.contains("; previous: headwear (center)"));
+    assert!(prompt.contains("<user_instructions>\n\"前髪は hair_front。"));
+    assert_eq!(schema, &output_schema());
+}
+
+#[test]
+fn a_claude_revision_sends_the_instructions_and_the_previous_labels() {
+    let tree = bustup();
+    let cassette =
+        Cassette::load(repo_path("tests/cassettes/classify_layers_bustup.json")).unwrap();
+    let transport = Arc::new(ReplayTransport::new(cassette));
+    let provider = ClaudeProvider::with_transport(
+        ClaudeConfig::default(),
+        ApiKey::new("sk-ant-test").unwrap(),
+        transport.clone(),
+    );
+    let guidance = revision(&tree);
+    let labels =
+        classify_layers_guided(&provider, &tree, &ClassifyOptions::default(), &guidance).unwrap();
+    // 録画の答えが前の分類を直す。答えのない前髪は前の分類のまま (名前の規則ではない)。
+    let mut expected = bustup_truth();
+    expected[23].1 = Headwear;
+    assert_eq!(summary(&labels), expected);
+    assert!((labels[23].confidence - 0.4).abs() < 1e-6);
+
+    let body = transport.received()[0].body.clone().unwrap();
+    let content = body["messages"][0]["content"].as_array().unwrap();
+    check_guided_request(
+        body["system"].as_str().unwrap(),
+        content.last().unwrap()["text"].as_str().unwrap(),
+        &body["output_config"]["format"]["schema"],
+    );
+    // 送る前の確認に使うリクエストも同じ文。
+    let requests =
+        classification_requests_guided(&tree, &ClassifyOptions::default(), &guidance).unwrap();
+    assert_eq!(requests[0].system, body["system"].as_str().unwrap());
+    // 注文も前の分類もなければ、前と同じリクエスト。
+    let plain = classification_requests(&tree, &ClassifyOptions::default()).unwrap();
+    let default = classification_requests_guided(
+        &tree,
+        &ClassifyOptions::default(),
+        &ClassifyGuidance::default(),
+    )
+    .unwrap();
+    assert_eq!(plain[0].system, default[0].system);
+    assert_eq!(plain[0].prompt, default[0].prompt);
+    assert!(!plain[0].system.contains("user_instructions"));
+}
+
+/// ADR 0022: OpenAI 互換の API でも、注文と前の分類を同じように送る。
+#[test]
+fn an_openai_compatible_revision_sends_the_same_guidance() {
+    let tree = bustup();
+    let cassette = Cassette::load(repo_path(
+        "tests/cassettes/openai_classify_layers_bustup.json",
+    ))
+    .unwrap();
+    let transport = Arc::new(ReplayTransport::new(cassette));
+    let provider = OpenAiProvider::with_transport(
+        OpenAiConfig::new(OPENAI_BASE_URL, "gpt-6-sol"),
+        Some(ApiKey::new("sk-test").unwrap()),
+        transport.clone(),
+    );
+    let labels = classify_layers_guided(
+        &provider,
+        &tree,
+        &ClassifyOptions::default(),
+        &revision(&tree),
+    )
+    .unwrap();
+    assert_eq!(labels[23].label, Headwear);
+    let body = transport.received()[0].body.clone().unwrap();
+    let content = body["messages"][1]["content"].as_array().unwrap();
+    let prompt = content.iter().rev().find(|c| c["type"] == "text").unwrap();
+    check_guided_request(
+        body["messages"][0]["content"].as_str().unwrap(),
+        prompt["text"].as_str().unwrap(),
+        &body["response_format"]["json_schema"]["schema"],
+    );
+}
+
+#[test]
+fn a_previous_classification_must_cover_every_layer() {
+    let fake = FakeProvider::new();
+    let guidance = ClassifyGuidance {
+        previous: Some(Vec::new()),
+        ..ClassifyGuidance::default()
+    };
+    let err = classify_layers_guided(&fake, &bustup(), &ClassifyOptions::default(), &guidance)
+        .unwrap_err();
+    assert!(matches!(err, AiError::InvalidRequest(_)), "{err}");
+    assert!(fake.calls().is_empty());
 }

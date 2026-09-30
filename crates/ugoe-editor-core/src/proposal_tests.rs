@@ -2,7 +2,7 @@
 
 use ugoe_model::fixtures;
 
-use crate::{ChildRef, Command, Document, KeyformTarget, ProposalError, Proposals};
+use crate::{ChildRef, Command, Document, KeyformTarget, ProposalError, ProposalOrigin, Proposals};
 
 fn parameter(id: &str) -> ugoe_model::Parameter {
     let mut p = fixtures::single_quad().parameters.remove(0);
@@ -259,4 +259,30 @@ fn records_where_a_proposal_came_from() {
         Some("claude-code")
     );
     assert!(!proposals.set_source(id + 1, "other"));
+}
+
+/// 作り直した提案は元の提案を置き換えずに並べ、元・注文・反映できなかった注文を一覧に出す。
+#[test]
+fn a_revision_is_listed_beside_the_original() {
+    let (doc, mut proposals, id) = setup();
+    let first = &proposals.views(&doc)[0];
+    assert_eq!((first.revises, first.instructions.as_deref()), (None, None));
+    assert!(first.unapplied.is_empty());
+    let revision = proposals
+        .add(&doc, "revised", "why", commands())
+        .unwrap()
+        .id;
+    let origin = ProposalOrigin {
+        revises: Some(id),
+        instructions: Some("目は細く".into()),
+        unapplied: vec!["hair sway".into()],
+    };
+    assert!(proposals.set_origin(revision, origin.clone()));
+    let views = proposals.views(&doc);
+    assert_eq!(views.len(), 2);
+    assert_eq!(views[0].id, id);
+    assert_eq!(views[1].revises, Some(id));
+    assert_eq!(views[1].instructions.as_deref(), Some("目は細く"));
+    assert_eq!(views[1].unapplied, ["hair sway"]);
+    assert!(!proposals.set_origin(revision + 1, origin));
 }

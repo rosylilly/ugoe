@@ -247,6 +247,9 @@ pub struct DisclosureView {
     /// 答えが検証を通らなかったときに、同じ画像と前の答え・理由を添えて送り直すことがある回数の上限
     /// (上の数は 1 回分。`ugoe_ai::rig::propose_rig_with_ai` の問い直し)。
     pub retries: usize,
+    /// テキストに含まれる、利用者の注文の文字数 (`ugoe_ai::instructions::Instructions`)。注文がなければ 0。
+    /// 分かれたリクエストには、どれにも同じ注文が入る。
+    pub instruction_chars: usize,
 }
 
 impl DisclosureView {
@@ -268,6 +271,7 @@ impl DisclosureView {
             image_bytes: disclosure.image_bytes,
             text_bytes: disclosure.text_bytes,
             retries: 0,
+            instruction_chars: 0,
         })
     }
 
@@ -412,8 +416,29 @@ pub fn prepare_requests(
     retries: usize,
     consent: Option<&ConsentAnswer>,
 ) -> Result<Prepared, String> {
+    prepare_instructed(state, purpose, requests, retries, 0, consent)
+}
+
+/// [`prepare_requests`] の、利用者の注文を含むリクエストの版。確認に注文の文字数
+/// ([`DisclosureView::instruction_chars`]) を示す。
+pub fn prepare_instructed(
+    state: &AppState,
+    purpose: Purpose,
+    requests: &[ProviderRequest],
+    retries: usize,
+    instruction_chars: usize,
+    consent: Option<&ConsentAnswer>,
+) -> Result<Prepared, String> {
     let settings = state.ai_provider.get();
-    prepare_with(state, &settings, purpose, requests, retries, consent)
+    prepare_with(
+        state,
+        &settings,
+        purpose,
+        requests,
+        retries,
+        instruction_chars,
+        consent,
+    )
 }
 
 fn prepare_with(
@@ -422,6 +447,7 @@ fn prepare_with(
     purpose: Purpose,
     requests: &[ProviderRequest],
     retries: usize,
+    instruction_chars: usize,
     consent: Option<&ConsentAnswer>,
 ) -> Result<Prepared, String> {
     if !settings.is_local() && !lock_project(state)?.ai_send_externally() {
@@ -437,7 +463,11 @@ fn prepare_with(
     let json_retries = settings.json_retries();
     let retries = (retries + 1) * (json_retries + 1) - 1;
     let disclosures: Vec<Disclosure> = requests.iter().map(|r| provider.disclosure(r)).collect();
-    let view = DisclosureView::combined(&disclosures)?.map(|v| DisclosureView { retries, ..v });
+    let view = DisclosureView::combined(&disclosures)?.map(|v| DisclosureView {
+        retries,
+        instruction_chars,
+        ..v
+    });
     let mut session = lock_project(state)?;
     let allowed = session.ai_send_externally();
     match check_consent(allowed, session.ai_consent_mut(), view, consent)? {

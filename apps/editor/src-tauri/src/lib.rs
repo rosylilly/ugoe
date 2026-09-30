@@ -99,6 +99,7 @@ pub fn run() {
             proposals::get_proposals,
             proposals::classify_psd_layers,
             proposals::propose_rig_from_psd,
+            proposals::regenerate_rig_proposal,
             proposals::preview_proposal,
             proposals::get_proposal_preview_bundle,
             proposals::clear_proposal_preview,

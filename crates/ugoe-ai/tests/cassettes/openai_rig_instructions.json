@@ -1,0 +1,41 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "x-request-id": "req_T0644rig1"
+        },
+        "body": {
+          "id": "chatcmpl-T0644rig1",
+          "object": "chat.completion",
+          "created": 1790000000,
+          "model": "gpt-6-sol",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\"turn_angle_scale\":0.5,\"eye_close_line\":0.8,\"eye_close_bend\":0.02,\"mouth_open_height\":0.4,\"reason\":\"As asked, the head turns less (0.5 instead of 0.6), and the eyes close lower (0.8) with a flatter curve so they look narrower when closing.\\nNot applied: make the hair sway more. Hair physics comes from the template and is not one of the four values.\\nNot applied: label the hat as headwear. Layer labels cannot change in this step; classify the layers again with this instruction.\"}",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 2140,
+            "completion_tokens": 120,
+            "total_tokens": 2260
+          }
+        }
+      }
+    }
+  ]
+}

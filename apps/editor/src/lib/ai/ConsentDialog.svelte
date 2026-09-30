@@ -1,7 +1,7 @@
 <!--
   外部の AI サービスに送る前の確認 (docs/editor.md#ai-の設定と送信の同意)。App に 1 つ置き、
   `consentPrompt.ask` (lib/ai/ai.svelte.ts) の問い合わせがあれば開く。送り先・モデル・画像の枚数と
-  バイト数・テキストのバイト数 (答えが検証を通らなければ送り直す回数の上限も) と、送り先の規約へのリンク
+  バイト数・テキストのバイト数 (利用者の注文の文字数と、答えが検証を通らなければ送り直す回数の上限も) と、送り先の規約へのリンク
   (知っている送り先だけ。lib/ai/consent.ts の `termsFor`) を示す。
   Esc と「Cancel」は送らない。
 -->
@@ -68,6 +68,10 @@ async function openTerms(url: string): Promise<void> {
       <dd>{d.image_count} ({formatBytes(d.image_bytes)})</dd>
       <dt>Text</dt>
       <dd>{formatBytes(d.text_bytes)}</dd>
+      {#if d.instruction_chars > 0}
+        <dt>Your instructions</dt>
+        <dd>{d.instruction_chars} {d.instruction_chars === 1 ? "character" : "characters"} (included in the text)</dd>
+      {/if}
     </dl>
     {#if d.retries > 0}
       <p class="muted">

@@ -8,11 +8,22 @@
   - 提案ごとに題名・理由・コマンドの一覧 (同じ対象への続いたコマンドはまとめる) を出す。コマンド (まとまり) の
     チェックを外すと、それに頼るコマンドも外れる (lib/ai/proposals.ts)。「Preview」は提案を複製に適用した姿をビューポートに出し (ドキュメントは変えない)、
     提案が足したパラメータのスライダーをここに出す。「Adopt」は 1 回の Undo で戻る編集として適用する。
+  - AI への注文 (「Instructions for <プロバイダ>」): AI を使うときだけ分類・提案に添える。提案ごとの
+    「Regenerate with instructions」は前の答えと注文を送って作り直し、新しい提案を後ろに並べる (前の提案は残る)。
+    提案には添えた注文と、AI が反映できないと答えた注文 (「Not applied」) を出す。注文はプロジェクトに保存しない
+    (docs/editor.md#ai-への注文と作り直し)。
 -->
 <script lang="ts">
 import type { ViewportController } from "../viewport/controller.svelte";
 import { aiSettings } from "./ai.svelte";
-import { classificationSummary, commandLabel, groupCommands, groupState } from "./proposals";
+import {
+  classificationSummary,
+  commandLabel,
+  groupCommands,
+  groupState,
+  instructionChars,
+  MAX_INSTRUCTION_CHARS,
+} from "./proposals";
 import type { ProposalsView } from "./proposals.svelte";
 import { aiBlockedReason, providerLabel } from "./providers";
 
@@ -52,6 +63,17 @@ $effect(() => {
   if (aiBlocked && view.useAi) view.useAi = false;
 });
 
+/** 注文の文字数。 */
+const chars = $derived(instructionChars(view.instructions));
+const tooLong = $derived(chars > MAX_INSTRUCTION_CHARS);
+/** 作り直せない理由 (作り直せるなら null)。 */
+const regenerateBlocked = $derived.by((): string | null => {
+  if (!view.useAi) return `Turn on "Use ${aiName}" to regenerate with instructions`;
+  if (chars === 0) return "Write instructions for the AI above first";
+  if (tooLong) return `The instructions are longer than ${MAX_INSTRUCTION_CHARS} characters`;
+  return null;
+});
+
 function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
 }
@@ -84,17 +106,47 @@ function onSlider(id: string, e: Event): void {
       <button class="link" onclick={onopensettings}>Settings…</button>
     </p>
   {/if}
+  <label class="instructions" for="ai-instructions">
+    Instructions for {aiName} <span class="muted">(optional)</span>
+  </label>
+  <textarea
+    id="ai-instructions"
+    rows="3"
+    bind:value={view.instructions}
+    disabled={busy}
+    placeholder="e.g. Close the eyes a little narrower. Keep head turns subtle. The hat is headwear."
+    aria-describedby="ai-instructions-note"
+  ></textarea>
+  <p id="ai-instructions-note" class="muted note">
+    <span class:error={tooLong}>{chars} / {MAX_INSTRUCTION_CHARS}</span>{" · "}
+    {#if view.useAi}
+      Sent with Classify, Propose rig and Regenerate.
+    {:else}
+      Only sent when "Use {aiName}" is on.
+    {/if}
+    The AI can change layer labels and four rig values (head turn, where and how the eyes close, how far a single
+    mouth opens); it lists anything else as not applied. Not saved in the project.
+  </p>
+  {#if view.useAi && (panel?.regenerable.length ?? 0) > 0}
+    <label class="check note">
+      <input type="checkbox" bind:checked={view.reclassify} disabled={busy} />
+      When regenerating, also reclassify the layers with these instructions (sends the layer images again)
+    </label>
+  {/if}
   <div class="row">
-    <button onclick={() => view.classify()} disabled={busy || !panel?.psd}>Classify layers</button>
-    <button class="primary" onclick={() => view.propose()} disabled={busy || !panel?.psd}>
+    <button onclick={() => view.classify()} disabled={busy || !panel?.psd || (view.useAi && tooLong)}>
+      Classify layers
+    </button>
+    <button class="primary" onclick={() => view.propose()} disabled={busy || !panel?.psd || (view.useAi && tooLong)}>
       Propose rig
     </button>
   </div>
   {#if view.busy}<p class="progress" role="status">{view.busy}</p>{/if}
   {#if view.error}<p class="error">{view.error}</p>{/if}
   {#if summary && panel?.classification}
-    <p class="muted">
+    <p class="muted" title={panel.classification.instructions ? `With instructions: ${panel.classification.instructions}` : undefined}>
       {summary.layers} layers classified {panel.classification.by_ai ? "by AI" : "by name"}
+      {#if panel.classification.instructions}{" "}with instructions{/if}
       {#if summary.review > 0}{" · "}<span class="warn">{summary.review} to review</span>{/if}
     </p>
     <details>
@@ -125,9 +177,14 @@ function onSlider(id: string, e: Event): void {
       {@const excluded = view.excludedOf(proposal.id)}
       {@const selected = proposal.commands.length - excluded.size}
       {@const previewing = view.preview?.id === proposal.id}
-      <article class="proposal" class:previewing>
+      {@const regenerable = panel.regenerable.includes(proposal.id)}
+      <article class="proposal" class:previewing aria-label="Proposal #{proposal.id}">
         <header>
-          <strong>{proposal.title}</strong>
+          <strong><span class="index">#{proposal.id}</span> {proposal.title}</strong>
+          {#if proposal.revises !== null}
+            <span class="source" title="Regenerated from proposal #{proposal.revises}, which is kept so you can compare them"
+              >revision of #{proposal.revises}</span>
+          {/if}
           {#if proposal.source}
             <span class="source" title="Proposed by {proposal.source}, connected to this editor (Settings → Connect agents)"
               >from {proposal.source}</span>
@@ -138,6 +195,19 @@ function onSlider(id: string, e: Event): void {
             </span>
           {/if}
         </header>
+        {#if proposal.instructions}
+          <p class="note sent"><span class="muted">Instructions:</span> {proposal.instructions}</p>
+        {/if}
+        {#if proposal.unapplied.length > 0}
+          <div class="unapplied" role="note">
+            <strong>Not applied</strong> — the AI says the current rig template cannot do these:
+            <ul>
+              {#each proposal.unapplied as item, i (i)}
+                <li>{item}</li>
+              {/each}
+            </ul>
+          </div>
+        {/if}
         <p class="rationale">{proposal.rationale}</p>
         <details>
           <summary>{selected} of {proposal.commands.length} commands selected</summary>
@@ -203,6 +273,14 @@ function onSlider(id: string, e: Event): void {
             title="Apply the selected commands as one edit (one Undo reverts it)"
           >Adopt{selected < proposal.commands.length ? ` ${selected}` : ""}</button>
           <button onclick={() => view.reject(proposal.id)} disabled={busy}>Reject</button>
+          {#if regenerable}
+            <button
+              onclick={() => view.regenerate(proposal.id)}
+              disabled={busy || !!regenerateBlocked}
+              title={regenerateBlocked ??
+                `Send this proposal's values and your instructions to ${aiName}, and add the result as a new proposal (this one is kept)`}
+            >Regenerate with instructions</button>
+          {/if}
         </div>
         {#if previewing && view.preview}
           <p class="muted note">Previewing. The model is unchanged until you adopt.</p>
@@ -248,6 +326,33 @@ function onSlider(id: string, e: Event): void {
   }
   .note {
     font-size: 12px;
+  }
+  .instructions {
+    display: block;
+    margin-top: 6px;
+  }
+  textarea {
+    box-sizing: border-box;
+    width: 100%;
+    resize: vertical;
+    font: inherit;
+    font-size: 12px;
+  }
+  .sent {
+    margin: 4px 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .unapplied {
+    margin: 4px 0;
+    padding: 4px 6px;
+    border-left: 3px solid #b45309;
+    font-size: 12px;
+  }
+  .unapplied ul {
+    list-style: disc;
+    margin: 2px 0;
+    padding-left: 18px;
   }
   .link {
     border: none;

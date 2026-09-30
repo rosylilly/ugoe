@@ -5,6 +5,8 @@
 // - プレビューは、提案を複製に適用した姿を `preview.model` に置き、App がビューポートに渡す (ドキュメントは変えない)。
 //   ドキュメントが変わったら (編集・Undo・採用) プレビューをやめる。
 // - 外したコマンドの番号 (`excluded`) は提案ごとに持ち、プレビューと採用に渡す (一部だけの採用)。
+// - 利用者の注文 (`instructions`) は AI を使うときだけ分類・提案・作り直しに添える。プロジェクトには保存しない
+//   (エディタを開いている間だけ。docs/editor.md#ai-への注文と作り直し)。
 import type { EditorDocument } from "../document.svelte";
 import { fileDialogs } from "../fileDialogs";
 import { PSD_FILTER, parentDir } from "../filePaths";
@@ -12,7 +14,13 @@ import { type ConsentAnswer, ipc, type Model, type Parameter, type ProposalState
 import type { ViewportModel } from "../viewport/controller.svelte";
 import { aiSettings, consentPrompt } from "./ai.svelte";
 import { withConsent } from "./consent";
-import { type CommandGroup, excludedList, toggleCommand, toggleGroup } from "./proposals";
+import {
+  type CommandGroup,
+  excludedList,
+  instructionsToSend,
+  toggleCommand,
+  toggleGroup,
+} from "./proposals";
 import { providerLabel } from "./providers";
 
 /** 選んだ AI のプロバイダの名前 (進み具合の文言に使う)。 */
@@ -43,6 +51,10 @@ export class ProposalsView {
   useAi = $state(false);
   /** タブを開いていない間に、エディタにつないだエージェントが提案を置いた (タブに印を出す)。 */
   fresh = $state(false);
+  /** AI への注文 (複数行の自由な文)。 */
+  instructions = $state("");
+  /** 作り直すときに、レイヤーも注文を添えて分類し直すか (レイヤーの画像をもう一度送る)。 */
+  reclassify = $state(false);
 
   #doc: EditorDocument;
   /** プレビューを作ったときのドキュメントの版 (変わったらプレビューをやめる)。 */
@@ -100,14 +112,19 @@ export class ProposalsView {
     if (path) await this.classify(path);
   }
 
-  /** PSD のレイヤーを分類する (`psd` を省略すると取り込んだ PSD)。 */
-  async classify(psd: string | null = null): Promise<boolean> {
+  /**
+   * PSD のレイヤーを分類する (`psd` を省略すると取り込んだ PSD)。`revise` なら今の分類を前の答えとして AI に送る
+   * (作り直しで「レイヤーも分類し直す」とき)。
+   */
+  async classify(psd: string | null = null, revise = false): Promise<boolean> {
     const useAi = this.useAi;
+    const instructions = instructionsToSend(this.instructions, useAi);
     return this.#task(
       useAi ? `Classifying the layers with ${aiName()}…` : "Classifying the layers by name…",
       async () => {
         const reply = await withConsent(
-          (consent: ConsentAnswer | null) => ipc.classifyPsdLayers(psd, useAi, consent),
+          (consent: ConsentAnswer | null) =>
+            ipc.classifyPsdLayers(psd, useAi, instructions, revise, consent),
           consentPrompt.ask,
         );
         if (!reply) return false;
@@ -124,19 +141,41 @@ export class ProposalsView {
       if (!ok) return;
     }
     const useAi = this.useAi;
+    const instructions = instructionsToSend(this.instructions, useAi);
     await this.#task(
       useAi
         ? `Asking ${aiName()} for the rig values (it may ask again if an answer fails validation)…`
         : "Building the rig from the templates…",
       async () => {
         const reply = await withConsent(
-          (consent: ConsentAnswer | null) => ipc.proposeRigFromPsd(useAi, consent),
+          (consent: ConsentAnswer | null) => ipc.proposeRigFromPsd(useAi, instructions, consent),
           consentPrompt.ask,
         );
         if (!reply) return;
         this.value = await ipc.getProposals();
       },
     );
+  }
+
+  /**
+   * 提案を、前の答えと注文を添えて AI に作り直させる。新しい提案は前の提案の後ろに並ぶ (前の提案は残る)。
+   * `reclassify` なら先にレイヤーも今の分類を前の答えとして分類し直す (確認はそれぞれに出る)。
+   */
+  async regenerate(id: number): Promise<void> {
+    if (!this.useAi) return;
+    const instructions = instructionsToSend(this.instructions, true);
+    if (this.reclassify) {
+      const ok = await this.classify(null, true);
+      if (!ok) return;
+    }
+    await this.#task(`Asking ${aiName()} to revise proposal #${id}…`, async () => {
+      const reply = await withConsent(
+        (consent: ConsentAnswer | null) => ipc.regenerateRigProposal(id, instructions, consent),
+        consentPrompt.ask,
+      );
+      if (!reply) return;
+      this.value = await ipc.getProposals();
+    });
   }
 
   /** コマンドを外す・戻す (依存するものも一緒に)。プレビュー中ならプレビューも作り直す。 */

@@ -10,6 +10,7 @@ const disclosure: DisclosureView = {
   image_bytes: 4096,
   text_bytes: 120,
   retries: 0,
+  instruction_chars: 0,
 };
 
 /** 同意がなければ `needs_consent` を返し、同意があれば `value` を返すコマンド。 */

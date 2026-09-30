@@ -7,7 +7,8 @@
 //! - [`classify_by_name`]: レイヤー名の規則だけで分類する (API を使わない、決定的)。
 //! - [`classify_layers`]: [`Provider`] に画像 (全体の合成画像とレイヤーのサムネイル) と
 //!   レイヤー名を送り、[`output_schema`] に沿った JSON で分類させる。モデルが答えなかった
-//!   レイヤーは名前の規則で補う。
+//!   レイヤーは名前の規則で補う。利用者の注文と前の分類を添えるなら [`classify_layers_guided`]
+//!   ([`ClassifyGuidance`]、`docs/ai-integration.md#利用者の注文`)。
 
 use std::collections::HashSet;
 use std::fmt;
@@ -17,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use ugoe_psd::{Layer, LayerNode, LayerTree};
 
+use crate::instructions::{Instructions, system_rules};
 use crate::{AiError, Provider, ProviderRequest};
 
 mod image;
@@ -366,6 +368,17 @@ impl Default for ClassifyOptions {
     }
 }
 
+/// 分類に添える、利用者の注文と前の分類 (作り直し)。既定 (どちらもない) なら [`classify_layers`] と同じ。
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ClassifyGuidance {
+    /// 利用者の注文。ラベルと左右に関わるものだけに従わせ、ほかの注文 (リグの動きなど) はこの段階では扱わない
+    /// (出力の形に理由の項目がないので、反映できない注文はリグの段階で示す)。
+    pub instructions: Option<Instructions>,
+    /// 前の分類 ([`classify_by_name`] と同じ並び)。レイヤーごとに前のラベルと左右をプロンプトに書き、
+    /// 注文が求めるところだけ変えさせる。
+    pub previous: Option<Vec<LayerLabel>>,
+}
+
 /// 分類の対象 (木を平らにした 1 枚のレイヤー)。
 struct Target<'a> {
     path: Vec<String>,
@@ -559,6 +572,24 @@ pub fn classification_instructions() -> String {
     system_prompt()
 }
 
+/// 注文か前の分類があるときにシステムプロンプトに足す規則。
+fn guidance_rules(guidance: &ClassifyGuidance) -> String {
+    let mut s = String::new();
+    if guidance.previous.is_some() {
+        s.push_str(
+            "\n\nThis is a revision. Each listed layer shows your previous label and side. Keep \
+             them unless the user's instructions or a clear mistake call for a change.",
+        );
+    }
+    if guidance.instructions.is_some() {
+        s.push_str(&system_rules(
+            "follow the parts about labels and sides of layers. Other parts (such as how the rig \
+             moves) are handled in a later step, so ignore them here.",
+        ));
+    }
+    s
+}
+
 /// システムプロンプト。
 fn system_prompt() -> String {
     let mut s = String::from(
@@ -585,7 +616,12 @@ fn system_prompt() -> String {
 }
 
 /// 1 回のリクエストのプロンプト。
-fn prompt(tree: &LayerTree, batch: &[(usize, Target<'_>)], overview_scale: f32) -> String {
+fn prompt(
+    tree: &LayerTree,
+    batch: &[(usize, Target<'_>)],
+    overview_scale: f32,
+    guidance: &ClassifyGuidance,
+) -> String {
     let (ow, oh) = (
         (tree.width as f32 * overview_scale).round() as u32,
         (tree.height as f32 * overview_scale).round() as u32,
@@ -606,8 +642,14 @@ fn prompt(tree: &LayerTree, batch: &[(usize, Target<'_>)], overview_scale: f32) 
             l.height as f32 * overview_scale,
         ]
         .map(|v| v.round() as i64);
+        let previous = guidance
+            .previous
+            .as_ref()
+            .and_then(|p| p.get(*i))
+            .map(|p| format!("; previous: {} ({})", p.label.as_str(), p.side.as_str()))
+            .unwrap_or_default();
         s.push_str(&format!(
-            "{i}. name: {}; bbox: {}, {}, {}, {}{}\n",
+            "{i}. name: {}; bbox: {}, {}, {}, {}{}{previous}\n",
             serde_json::Value::String(t.path.join(" / ")),
             bbox[0],
             bbox[1],
@@ -615,6 +657,10 @@ fn prompt(tree: &LayerTree, batch: &[(usize, Target<'_>)], overview_scale: f32) 
             bbox[3],
             if l.visible { "" } else { "; hidden" },
         ));
+    }
+    if let Some(instructions) = &guidance.instructions {
+        s.push_str("\nThe user's instructions:\n");
+        s.push_str(&instructions.block());
     }
     s.push_str("\nReturn one entry for every listed layer, using its number as `index`.");
     s
@@ -635,7 +681,16 @@ pub fn classification_requests(
     tree: &LayerTree,
     options: &ClassifyOptions,
 ) -> Result<Vec<ProviderRequest>, AiError> {
-    Ok(plan(tree, options)?
+    classification_requests_guided(tree, options, &ClassifyGuidance::default())
+}
+
+/// [`classification_requests`] の、注文と前の分類を添える版 ([`classify_layers_guided`] が送るもの)。
+pub fn classification_requests_guided(
+    tree: &LayerTree,
+    options: &ClassifyOptions,
+    guidance: &ClassifyGuidance,
+) -> Result<Vec<ProviderRequest>, AiError> {
+    Ok(plan(tree, options, guidance)?
         .into_iter()
         .map(|b| b.request)
         .collect())
@@ -706,7 +761,11 @@ struct Batch {
     indices: Vec<usize>,
 }
 
-fn plan(tree: &LayerTree, options: &ClassifyOptions) -> Result<Vec<Batch>, AiError> {
+fn plan(
+    tree: &LayerTree,
+    options: &ClassifyOptions,
+    guidance: &ClassifyGuidance,
+) -> Result<Vec<Batch>, AiError> {
     if options.max_layers_per_request == 0 {
         return Err(AiError::InvalidRequest(
             "max_layers_per_request must be at least 1".into(),
@@ -727,7 +786,7 @@ fn plan(tree: &LayerTree, options: &ClassifyOptions) -> Result<Vec<Batch>, AiErr
     }
     let (overview, scale) = image::overview(tree, options.overview_max_side);
     let overview = overview.to_png()?;
-    let system = system_prompt();
+    let system = system_prompt() + &guidance_rules(guidance);
     let mut batches = Vec::new();
     let mut rest = thumbs;
     while !rest.is_empty() {
@@ -742,7 +801,7 @@ fn plan(tree: &LayerTree, options: &ClassifyOptions) -> Result<Vec<Batch>, AiErr
         batches.push(Batch {
             request: ProviderRequest {
                 system: system.clone(),
-                prompt: prompt(tree, &listed, scale),
+                prompt: prompt(tree, &listed, scale, guidance),
                 images,
             },
             indices: listed.iter().map(|(i, _)| *i).collect(),
@@ -774,9 +833,32 @@ pub fn classify_layers(
     tree: &LayerTree,
     options: &ClassifyOptions,
 ) -> Result<Vec<LayerLabel>, AiError> {
+    classify_layers_guided(provider, tree, options, &ClassifyGuidance::default())
+}
+
+/// [`classify_layers`] の、利用者の注文と前の分類を添える版 (`docs/ai-integration.md#利用者の注文`)。
+///
+/// 出力の形は [`output_schema`] のまま。前の分類があれば、モデルが答えなかったレイヤーは前の分類を使う
+/// (なければ名前の規則)。`previous` の長さがレイヤーの数と違えば [`AiError::InvalidRequest`]。
+pub fn classify_layers_guided(
+    provider: &dyn Provider,
+    tree: &LayerTree,
+    options: &ClassifyOptions,
+    guidance: &ClassifyGuidance,
+) -> Result<Vec<LayerLabel>, AiError> {
     let mut labels = classify_by_name(tree);
+    if let Some(previous) = &guidance.previous {
+        if previous.len() != labels.len() {
+            return Err(AiError::InvalidRequest(format!(
+                "the previous classification has {} layers, but the PSD has {}",
+                previous.len(),
+                labels.len()
+            )));
+        }
+        labels.clone_from_slice(previous);
+    }
     let schema = output_schema();
-    for batch in plan(tree, options)? {
+    for batch in plan(tree, options, guidance)? {
         let value = provider.complete_json(&batch.request, &schema)?;
         merge_answer(
             &mut labels,

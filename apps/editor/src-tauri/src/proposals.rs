@@ -6,27 +6,32 @@
 //! - 外部に送るもの (`use_ai`) は必ず [`crate::ai::prepare_requests`] を通し、同意がなければ送らずに
 //!   `AiReply::NeedsConsent` を返す。AI を使わない経路 (名前の規則とテンプレートの既定値) は何も送らない。
 //! - 提案は採用するまでドキュメントを変えない。プレビューは複製に適用したもの ([`ProposalSession`] が持つ)。
+//! - 利用者の注文 (`instructions`) は AI を使うときだけ送る。作り直し ([`regenerate_rig_proposal`]) は前の答え
+//!   (値と理由) と注文を送って新しい提案を作り、前の提案の後ろに並べる (置き換えない)。注文はプロジェクトに
+//!   保存しない (`docs/editor.md#ai-への注文と作り直し`)。
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use tauri::{AppHandle, State};
 use ts_rs::TS;
 use ugoe_ai::classify::{
-    ClassifyOptions, LayerLabel, classification_requests, classify_by_name, classify_layers,
-    overview_png,
+    ClassifyGuidance, ClassifyOptions, LayerLabel, classification_requests_guided,
+    classify_by_name, classify_layers_guided, overview_png,
 };
+use ugoe_ai::instructions::Instructions;
 use ugoe_ai::rig::{
-    DEFAULT_MAX_ATTEMPTS, RigOptions, RigParams, mesh_parts, propose_rig, propose_rig_with_ai,
-    rig_request,
+    DEFAULT_MAX_ATTEMPTS, PreviousRig, RigGuidance, RigOptions, RigParams, mesh_parts, propose_rig,
+    propose_rig_with_ai_guided, rig_request_guided,
 };
 use ugoe_ai::{AiError, Proposal, Provider};
-use ugoe_editor_core::{ApplyReport, Document, ProposalView, Proposals};
+use ugoe_editor_core::{ApplyReport, Document, ProposalOrigin, ProposalView, Proposals};
 use ugoe_model::Model;
 use ugoe_psd::LayerTree;
 
 use crate::AppState;
-use crate::ai::{AiReply, ConsentAnswer, Prepared, blocking, lock_project, prepare_requests};
+use crate::ai::{AiReply, ConsentAnswer, Prepared, blocking, lock_project, prepare_instructed};
 use crate::ai_provider::Purpose;
 use crate::project::absolute_path;
 
@@ -42,6 +47,8 @@ pub struct ProposalSession {
     proposals: Proposals,
     /// 最後にプレビューした提案を適用した複製 (`get_proposal_preview_bundle` で渡す)。
     preview: Option<Document>,
+    /// このパネルで作ったリグの提案の値と理由 (提案の番号ごと。作り直しで前の答えとして送る)。
+    rigs: HashMap<u32, PreviousRig>,
 }
 
 #[derive(Debug, Clone)]
@@ -49,6 +56,8 @@ struct Classified {
     psd: PathBuf,
     labels: Vec<LayerLabel>,
     by_ai: bool,
+    /// AI で分類したときに添えた注文。
+    instructions: Option<Instructions>,
 }
 
 impl ProposalSession {
@@ -66,8 +75,14 @@ impl ProposalSession {
     }
 
     fn state(&self, document: &Document) -> ProposalState {
+        let proposals = self.proposals.views(document);
         ProposalState {
-            proposals: self.proposals.views(document),
+            regenerable: proposals
+                .iter()
+                .map(|p| p.id)
+                .filter(|id| self.rigs.contains_key(id))
+                .collect(),
+            proposals,
             psd: self.psd.as_ref().map(|p| p.display().to_string()),
             classification: self.classification.as_ref().map(Classified::view),
         }
@@ -97,6 +112,8 @@ pub struct Classification {
     pub psd: String,
     /// AI で分類したか (偽なら名前の規則だけ)。
     pub by_ai: bool,
+    /// AI で分類したときに添えた注文。
+    pub instructions: Option<String>,
     pub layers: Vec<LayerLabelView>,
 }
 
@@ -106,6 +123,7 @@ impl Classified {
         Classification {
             psd: self.psd.display().to_string(),
             by_ai: self.by_ai,
+            instructions: self.instructions.as_ref().map(|i| i.as_str().to_owned()),
             layers: self
                 .labels
                 .iter()
@@ -130,6 +148,8 @@ pub struct ProposalState {
     pub psd: Option<String>,
     /// 最後の分類の結果。
     pub classification: Option<Classification>,
+    /// 注文を添えて作り直せる提案の番号 (このパネルで作ったリグの提案。つないだエージェントの提案は含まない)。
+    pub regenerable: Vec<u32>,
 }
 
 /// 提案を複製に適用した姿 (`preview_proposal` の戻り値)。
@@ -148,15 +168,26 @@ fn read_tree(path: &Path) -> Result<LayerTree, String> {
     ugoe_psd::import(&bytes).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// レイヤーを分類する。`provider` があれば AI で、なければ名前の規則で。
+/// レイヤーを分類する。`provider` があれば AI で (注文と前の分類を添えて)、なければ名前の規則で。
 pub(crate) fn classify(
     tree: &LayerTree,
     provider: Option<&dyn Provider>,
+    guidance: &ClassifyGuidance,
 ) -> Result<Vec<LayerLabel>, AiError> {
     match provider {
-        Some(p) => classify_layers(p, tree, &ClassifyOptions::default()),
+        Some(p) => classify_layers_guided(p, tree, &ClassifyOptions::default(), guidance),
         None => Ok(classify_by_name(tree)),
     }
+}
+
+/// 画面から受け取った注文 (空なら `None`、長すぎればエラー)。
+fn instructions(text: Option<&str>) -> Result<Option<Instructions>, String> {
+    Instructions::new(text.unwrap_or_default()).map_err(|e| e.to_string())
+}
+
+/// 送る前の確認に示す注文の文字数。
+fn instruction_chars(instructions: &Option<Instructions>) -> usize {
+    instructions.as_ref().map_or(0, Instructions::chars)
 }
 
 /// 原画の PNG (リギングの値を決めるために AI に送る)。
@@ -164,18 +195,36 @@ fn overview(tree: &LayerTree) -> Result<Vec<u8>, AiError> {
     overview_png(tree, ClassifyOptions::default().overview_max_side)
 }
 
-/// リグを提案する。`provider` があればテンプレートで決められない値を AI に決めさせ、なければ既定値。
+/// [`rig`] の結果: 提案と、作り直しに使う値と理由、反映できなかった注文。
+#[derive(Debug)]
+pub(crate) struct Rigged {
+    pub proposal: Proposal,
+    pub previous: PreviousRig,
+    pub unapplied: Vec<String>,
+}
+
+/// リグを提案する。`provider` があればテンプレートで決められない値を AI に決めさせ (注文と前の答えを添えて)、
+/// なければ既定値。
 pub(crate) fn rig(
     model: &Model,
     labels: &[LayerLabel],
     image: &[u8],
     provider: Option<&dyn Provider>,
-) -> Result<Proposal, AiError> {
+    guidance: &RigGuidance,
+) -> Result<Rigged, AiError> {
     let parts = mesh_parts(model, labels);
     let options = RigOptions::default();
-    let mut proposal = match provider {
+    let (mut proposal, previous, unapplied) = match provider {
         Some(p) => {
-            let rig = propose_rig_with_ai(p, model, &parts, image, &options, DEFAULT_MAX_ATTEMPTS)?;
+            let rig = propose_rig_with_ai_guided(
+                p,
+                model,
+                &parts,
+                image,
+                &options,
+                DEFAULT_MAX_ATTEMPTS,
+                guidance,
+            )?;
             let mut proposal = rig.proposal;
             if !rig.rejected.is_empty() {
                 proposal.rationale.push_str(&format!(
@@ -184,16 +233,29 @@ pub(crate) fn rig(
                 ));
             }
             proposal.title.push_str(" — AI");
-            proposal
+            let previous = PreviousRig {
+                params: rig.params,
+                reason: rig.reason,
+            };
+            (proposal, previous, rig.unapplied)
         }
         None => {
-            let mut proposal = propose_rig(model, &parts, &RigParams::default(), &options)?;
+            let params = RigParams::default();
+            let mut proposal = propose_rig(model, &parts, &params, &options)?;
             proposal.title.push_str(" — rules");
-            proposal
+            let previous = PreviousRig {
+                params,
+                reason: "The template defaults (no AI was used).".into(),
+            };
+            (proposal, previous, Vec::new())
         }
     };
     proposal.rationale.push_str(&labels_note(labels));
-    Ok(proposal)
+    Ok(Rigged {
+        proposal,
+        previous,
+        unapplied,
+    })
 }
 
 /// 提案の理由に添える、分類の要約 (確からしさが低いレイヤー)。
@@ -238,38 +300,72 @@ pub fn get_proposals(state: State<'_, AppState>) -> Result<ProposalState, String
 
 /// PSD のレイヤーを分類し、結果を覚える (次の `propose_rig` の入力)。`psd` を省略すると、取り込んだ PSD。
 /// `use_ai` なら画像を選んだ AI のプロバイダに送る (同意がなければ送らずに `needs_consent`)。偽なら名前の規則だけ。
+/// `instructions` は AI に添える利用者の注文 (AI を使うときだけ送る)。`revise` なら、同じ PSD の今の分類を
+/// 前の答えとして送り、注文が求めるところだけ直させる (分類の作り直し)。
 #[tauri::command]
 pub async fn classify_psd_layers(
     app: AppHandle,
     psd: Option<String>,
     use_ai: bool,
+    instructions: Option<String>,
+    revise: bool,
     consent: Option<ConsentAnswer>,
 ) -> Result<AiReply<Classification>, String> {
     blocking(app, move |state| {
-        classify_in(state, psd, use_ai, consent.as_ref())
+        let ask = Ask {
+            instructions: instructions.as_deref(),
+            revise,
+        };
+        classify_guided_in(state, psd, use_ai, &ask, consent.as_ref())
     })
     .await
 }
 
 /// 分類の結果からリグ (顔の角度・目・口) を提案し、提案の一覧に置く (ドキュメントは変えない)。
 /// `use_ai` なら原画を選んだ AI のプロバイダに送って値を決めさせる (答えが通らなければ問い直す)。偽ならテンプレートの既定値。
+/// `instructions` は AI に添える利用者の注文 (AI を使うときだけ送る)。
 #[tauri::command]
 pub async fn propose_rig_from_psd(
     app: AppHandle,
     use_ai: bool,
+    instructions: Option<String>,
     consent: Option<ConsentAnswer>,
 ) -> Result<AiReply<ProposalView>, String> {
     blocking(app, move |state| {
-        propose_in(state, use_ai, consent.as_ref())
+        propose_guided_in(state, use_ai, instructions.as_deref(), consent.as_ref())
     })
     .await
 }
 
+/// 提案を、前の答え (値と理由) と注文を AI に送って作り直す。新しい提案は前の提案を置き換えず、一覧の後ろに並べる
+/// (前の提案は残る。見比べて選び、要らない方を却下する)。いつも AI を使う。分類は今の分類を使う (ラベルも直したいときは
+/// 先に `classify_psd_layers` を `revise` で呼ぶ)。
+#[tauri::command]
+pub async fn regenerate_rig_proposal(
+    app: AppHandle,
+    id: u32,
+    instructions: Option<String>,
+    consent: Option<ConsentAnswer>,
+) -> Result<AiReply<ProposalView>, String> {
+    blocking(app, move |state| {
+        regenerate_in(state, id, instructions.as_deref(), consent.as_ref())
+    })
+    .await
+}
+
+/// 分類に添える注文と、分類の作り直しか。
+#[derive(Debug, Default)]
+pub(crate) struct Ask<'a> {
+    pub instructions: Option<&'a str>,
+    pub revise: bool,
+}
+
 /// [`classify_psd_layers`] の本体。
-pub(crate) fn classify_in(
+pub(crate) fn classify_guided_in(
     state: &AppState,
     psd: Option<String>,
     use_ai: bool,
+    ask: &Ask<'_>,
     consent: Option<&ConsentAnswer>,
 ) -> Result<AiReply<Classification>, String> {
     let path = match psd {
@@ -277,23 +373,38 @@ pub(crate) fn classify_in(
         None => lock_project(state)?.proposals.psd.clone().ok_or(NO_PSD)?,
     };
     let tree = read_tree(&path)?;
+    let mut guidance = ClassifyGuidance::default();
     let labels = if use_ai {
-        let requests = classification_requests(&tree, &ClassifyOptions::default())
-            .map_err(|e| e.to_string())?;
-        match prepare_requests(state, Purpose::Proposal, &requests, 0, consent)? {
+        guidance.instructions = instructions(ask.instructions)?;
+        if ask.revise {
+            let session = lock_project(state)?;
+            let current = session
+                .proposals
+                .classification
+                .as_ref()
+                .filter(|c| c.psd == path)
+                .ok_or("classify the PSD layers first")?;
+            guidance.previous = Some(current.labels.clone());
+        }
+        let requests =
+            classification_requests_guided(&tree, &ClassifyOptions::default(), &guidance)
+                .map_err(|e| e.to_string())?;
+        let chars = instruction_chars(&guidance.instructions);
+        match prepare_instructed(state, Purpose::Proposal, &requests, 0, chars, consent)? {
             Prepared::NeedsConsent(disclosure) => {
                 return Ok(AiReply::NeedsConsent { disclosure });
             }
-            Prepared::Ready(provider) => classify(&tree, Some(provider.as_ref())),
+            Prepared::Ready(provider) => classify(&tree, Some(provider.as_ref()), &guidance),
         }
     } else {
-        classify(&tree, None)
+        classify(&tree, None, &guidance)
     }
     .map_err(|e| e.to_string())?;
     let classified = Classified {
         psd: path.clone(),
         labels,
         by_ai: use_ai,
+        instructions: guidance.instructions,
     };
     let value = classified.view();
     let mut session = lock_project(state)?;
@@ -303,9 +414,52 @@ pub(crate) fn classify_in(
 }
 
 /// [`propose_rig_from_psd`] の本体。
-pub(crate) fn propose_in(
+pub(crate) fn propose_guided_in(
     state: &AppState,
     use_ai: bool,
+    instructions_text: Option<&str>,
+    consent: Option<&ConsentAnswer>,
+) -> Result<AiReply<ProposalView>, String> {
+    let guidance = if use_ai {
+        RigGuidance {
+            instructions: instructions(instructions_text)?,
+            ..RigGuidance::default()
+        }
+    } else {
+        RigGuidance::default()
+    };
+    make_rig(state, use_ai, guidance, None, consent)
+}
+
+/// [`regenerate_rig_proposal`] の本体。
+pub(crate) fn regenerate_in(
+    state: &AppState,
+    id: u32,
+    instructions_text: Option<&str>,
+    consent: Option<&ConsentAnswer>,
+) -> Result<AiReply<ProposalView>, String> {
+    let previous = lock_project(state)?
+        .proposals
+        .rigs
+        .get(&id)
+        .cloned()
+        .ok_or_else(|| {
+            format!("proposal {id} was not made in this panel, so it cannot be regenerated")
+        })?;
+    let guidance = RigGuidance {
+        instructions: instructions(instructions_text)?,
+        previous: Some(previous),
+        ..RigGuidance::default()
+    };
+    make_rig(state, true, guidance, Some(id), consent)
+}
+
+/// 今の分類からリグを提案して一覧に置く。`revises` は作り直した元の提案。
+fn make_rig(
+    state: &AppState,
+    use_ai: bool,
+    mut guidance: RigGuidance,
+    revises: Option<u32>,
     consent: Option<&ConsentAnswer>,
 ) -> Result<AiReply<ProposalView>, String> {
     let (model, base) = {
@@ -317,39 +471,81 @@ pub(crate) fn propose_in(
         .classification
         .clone()
         .ok_or("classify the PSD layers first")?;
-    let proposal = if use_ai {
+    // 同じ注文で AI が分類したなら、ラベルに関わる注文は分類で反映した。
+    guidance.labels_follow_instructions = classified.by_ai
+        && guidance.instructions.is_some()
+        && classified.instructions == guidance.instructions;
+    let rigged = if use_ai {
         let tree = read_tree(&classified.psd)?;
         let image = overview(&tree).map_err(|e| e.to_string())?;
         let parts = mesh_parts(&model, &classified.labels);
-        let request = rig_request(&model, &parts, &image, &[]).map_err(|e| e.to_string())?;
+        let request = rig_request_guided(&model, &parts, &image, &[], &guidance)
+            .map_err(|e| e.to_string())?;
         let retries = DEFAULT_MAX_ATTEMPTS - 1;
-        match prepare_requests(state, Purpose::Proposal, &[request], retries, consent)? {
+        let chars = instruction_chars(&guidance.instructions);
+        match prepare_instructed(
+            state,
+            Purpose::Proposal,
+            &[request],
+            retries,
+            chars,
+            consent,
+        )? {
             Prepared::NeedsConsent(disclosure) => {
                 return Ok(AiReply::NeedsConsent { disclosure });
             }
-            Prepared::Ready(provider) => {
-                rig(&model, &classified.labels, &image, Some(provider.as_ref()))
-            }
+            Prepared::Ready(provider) => rig(
+                &model,
+                &classified.labels,
+                &image,
+                Some(provider.as_ref()),
+                &guidance,
+            ),
         }
     } else {
-        rig(&model, &classified.labels, &[], None)
+        rig(&model, &classified.labels, &[], None, &guidance)
     }
     .map_err(|e| e.to_string())?;
+    let origin = ProposalOrigin {
+        revises,
+        instructions: guidance.instructions.map(|i| i.as_str().to_owned()),
+        unapplied: rigged.unapplied.clone(),
+    };
+    let view = place(state, base, rigged, origin)?;
+    Ok(AiReply::Done { value: view })
+}
+
+/// 作ったリグの提案を一覧に置き、作り直しに使う値と理由を覚える。提案を作る間にドキュメントが変わっていたら置かない。
+pub(crate) fn place(
+    state: &AppState,
+    base: u64,
+    rigged: Rigged,
+    origin: ProposalOrigin,
+) -> Result<ProposalView, String> {
     let document = lock_document(state)?;
     if document.state_id() != base {
         return Err("the model changed while the proposal was being made; propose again".into());
     }
-    let view = lock_project(state)?
-        .proposals
+    let mut session = lock_project(state)?;
+    let proposals = &mut session.proposals;
+    let view = proposals
         .proposals
         .add(
             &document,
-            proposal.title,
-            proposal.rationale,
-            proposal.commands,
+            rigged.proposal.title,
+            rigged.proposal.rationale,
+            rigged.proposal.commands,
         )
         .map_err(|e| e.to_string())?;
-    Ok(AiReply::Done { value: view })
+    proposals.proposals.set_origin(view.id, origin);
+    proposals.rigs.insert(view.id, rigged.previous);
+    let view = proposals
+        .proposals
+        .views(&document)
+        .into_iter()
+        .find(|v| v.id == view.id)
+        .ok_or("the proposal disappeared")?;
+    Ok(view)
 }
 
 /// `excluded` の番号のコマンドを除いた提案を、ドキュメントの複製に適用した姿を返す (ドキュメントは変えない)。
@@ -418,13 +614,19 @@ pub fn adopt_proposal(
 /// 提案を捨てる。
 #[tauri::command]
 pub fn reject_proposal(state: State<'_, AppState>, id: u32) -> Result<ProposalState, String> {
-    let document = lock_document(&state)?;
-    let mut session = lock_project(&state)?;
+    reject_in(&state, id)
+}
+
+/// [`reject_proposal`] の本体。作り直しに使う値と理由も捨てる。
+pub(crate) fn reject_in(state: &AppState, id: u32) -> Result<ProposalState, String> {
+    let document = lock_document(state)?;
+    let mut session = lock_project(state)?;
     session
         .proposals
         .proposals
         .reject(id)
         .map_err(|e| e.to_string())?;
+    session.proposals.rigs.remove(&id);
     session.proposals.preview = None;
     Ok(session.proposals.state(&document))
 }

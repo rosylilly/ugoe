@@ -13,6 +13,7 @@ pub mod classify;
 pub mod claude;
 pub mod depth;
 mod fake;
+pub mod instructions;
 pub mod normal;
 pub mod openai;
 pub mod rig;

@@ -8,6 +8,8 @@ import {
   groupCommands,
   groupState,
   includeCommand,
+  instructionChars,
+  instructionsToSend,
   toggleCommand,
   toggleGroup,
 } from "./proposals";
@@ -91,6 +93,7 @@ describe("classificationSummary", () => {
     const c: Classification = {
       psd: "/a.psd",
       by_ai: false,
+      instructions: null,
       layers: [layer("eye_white", false), layer("face", true), layer("eye_white", false)],
     };
     expect(classificationSummary(c)).toEqual({
@@ -101,5 +104,17 @@ describe("classificationSummary", () => {
         ["face", 1],
       ],
     });
+  });
+});
+
+describe("instructionsToSend", () => {
+  it("sends trimmed instructions only with AI", () => {
+    expect(instructionsToSend("  目は細く \n", true)).toBe("目は細く");
+    expect(instructionsToSend("目は細く", false)).toBeNull();
+    expect(instructionsToSend(" \n ", true)).toBeNull();
+  });
+  it("counts characters like the backend", () => {
+    expect(instructionChars(" 帽子は headwear ")).toBe(12);
+    expect(instructionChars("😀")).toBe(1);
   });
 });

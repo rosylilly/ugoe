@@ -21,7 +21,9 @@
 //! - **AI が決める値** ([`RigParams`]): テンプレートでは決められない値 (振り向きの量・目の閉じ方・
 //!   口の開き方) を [`Provider`] に画像から決めさせる ([`propose_rig_with_ai`])。
 //!   答えが範囲の外であったり、組んだリグが検証を通らなかったりしたら、エラーを添えて問い直す
-//!   (回数の上限あり)。
+//!   (回数の上限あり)。利用者の注文と前の答え (作り直し) を添えるなら [`propose_rig_with_ai_guided`]
+//!   ([`RigGuidance`]、`docs/ai-integration.md#利用者の注文`)。4 つの値で反映できない注文は、
+//!   答えの理由に `Not applied:` として示させ、[`AiRig::unapplied`] に取り出す。
 //!
 //! 提案は複製したドキュメントに適用し、`ugoe_model::validate` を通ることを確かめてから返す (ADR 0006)。
 
@@ -48,6 +50,7 @@ use ugoe_runtime::{CompiledModel, ModelInstance};
 
 use crate::classify::{Label, LabelCategory, LayerLabel, Side};
 use crate::depth::DepthMap;
+use crate::instructions::{Instructions, split_unapplied, system_rules};
 use crate::turn::{Builder, TurnRole, TurnTarget, plan_turn, push_turn};
 use crate::{AiError, Proposal, Provider, ProviderRequest};
 
@@ -1387,8 +1390,31 @@ pub struct AiRig {
     pub proposal: Proposal,
     /// 採用した値。
     pub params: RigParams,
+    /// 採用した答えの理由 (反映できなかった注文を除いた本文)。
+    pub reason: String,
+    /// 4 つの値では反映できなかった注文 (答えの理由の `Not applied:` の部分。AI の言葉のまま)。
+    pub unapplied: Vec<String>,
     /// 捨てた答え (古い順)。
     pub rejected: Vec<RejectedAnswer>,
+}
+
+/// 作り直しで AI に示す、前の答え。
+#[derive(Debug, Clone, PartialEq)]
+pub struct PreviousRig {
+    pub params: RigParams,
+    /// 前の答えの理由。
+    pub reason: String,
+}
+
+/// リグの値を決めるときに添える、利用者の注文と前の答え (作り直し)。既定 (どちらもない) なら
+/// [`propose_rig_with_ai`] と同じ。
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct RigGuidance {
+    pub instructions: Option<Instructions>,
+    pub previous: Option<PreviousRig>,
+    /// 同じ注文でレイヤーを分類し直した (ラベルに関わる注文は分類で反映した)。偽なら、ラベルの付け替えを
+    /// 求める注文も「反映できない」として示させる (この段階ではラベルを変えられないため)。
+    pub labels_follow_instructions: bool,
 }
 
 /// 検証を通らなかった AI の答えと、その理由 (次の問い合わせで AI に送り返す)。
@@ -1490,7 +1516,40 @@ fn system_prompt() -> String {
     )
 }
 
-fn prompt(model: &Model, layout: &Layout, rejected: &[RejectedAnswer]) -> String {
+/// 注文か前の答えがあるときにシステムプロンプトに足す規則。
+fn guidance_rules(guidance: &RigGuidance) -> String {
+    let mut s = String::new();
+    if guidance.previous.is_some() {
+        s.push_str(
+            "\n\nThis is a revision. Your previous answer is given in the prompt. Start from its \
+             values and change only what the user's instructions call for.",
+        );
+    }
+    if guidance.instructions.is_some() {
+        let labels = if guidance.labels_follow_instructions {
+            "Parts about layer labels were already applied when the layers were classified; do \
+             not list them."
+        } else {
+            "Layer labels cannot change in this step, so list requests to relabel layers as not \
+             applied too (the user can classify the layers again)."
+        };
+        s.push_str(&system_rules(&format!(
+            "reflect them only through the four values above. For every part you cannot reflect \
+             that way (for example other parameters, a different rig structure, physics, motions, \
+             or changes to the drawing), do not pretend: end `reason` with one line per such part, \
+             starting with \"{}\" and saying what was asked and why it cannot be done. {labels}",
+            crate::instructions::NOT_APPLIED
+        )));
+    }
+    s
+}
+
+fn prompt(
+    model: &Model,
+    layout: &Layout,
+    rejected: &[RejectedAnswer],
+    guidance: &RigGuidance,
+) -> String {
     let canvas = Vec2::new(model.meta.canvas.width, model.meta.canvas.height);
     let bbox = |r: Rect| {
         let (min, size) = (r.min / canvas, r.size() / canvas);
@@ -1533,6 +1592,24 @@ fn prompt(model: &Model, layout: &Layout, rejected: &[RejectedAnswer]) -> String
         }
         None => s.push_str("- no mouth\n"),
     }
+    if let Some(previous) = &guidance.previous {
+        let p = previous.params;
+        let _ = writeln!(
+            s,
+            "\nYour previous answer: {}",
+            json!({
+                "turn_angle_scale": p.turn_angle_scale,
+                "eye_close_line": p.eye_close_line,
+                "eye_close_bend": p.eye_close_bend,
+                "mouth_open_height": p.mouth_open_height,
+                "reason": previous.reason,
+            })
+        );
+    }
+    if let Some(instructions) = &guidance.instructions {
+        s.push_str("\nThe user's instructions:\n");
+        s.push_str(&instructions.block());
+    }
     for (i, r) in rejected.iter().enumerate() {
         let _ = write!(
             s,
@@ -1554,12 +1631,33 @@ pub fn rig_request(
     image: &[u8],
     rejected: &[RejectedAnswer],
 ) -> Result<ProviderRequest, AiError> {
+    rig_request_guided(model, parts, image, rejected, &RigGuidance::default())
+}
+
+/// [`rig_request`] の、注文と前の答えを添える版 ([`propose_rig_with_ai_guided`] が送るもの)。
+pub fn rig_request_guided(
+    model: &Model,
+    parts: &BTreeMap<MeshId, MeshPart>,
+    image: &[u8],
+    rejected: &[RejectedAnswer],
+    guidance: &RigGuidance,
+) -> Result<ProviderRequest, AiError> {
     let layout = Layout::new(model, parts)?;
-    Ok(ProviderRequest {
-        system: system_prompt(),
-        prompt: prompt(model, &layout, rejected),
+    Ok(request(model, &layout, image, rejected, guidance))
+}
+
+fn request(
+    model: &Model,
+    layout: &Layout,
+    image: &[u8],
+    rejected: &[RejectedAnswer],
+    guidance: &RigGuidance,
+) -> ProviderRequest {
+    ProviderRequest {
+        system: system_prompt() + &guidance_rules(guidance),
+        prompt: prompt(model, layout, rejected, guidance),
         images: vec![image.to_vec()],
-    })
+    }
 }
 
 /// テンプレートでリグを組み、テンプレートで決められない値 ([`RigParams`]) を `provider` に決めさせる。
@@ -1578,15 +1676,36 @@ pub fn propose_rig_with_ai(
     options: &RigOptions,
     max_attempts: usize,
 ) -> Result<AiRig, AiError> {
+    propose_rig_with_ai_guided(
+        provider,
+        model,
+        parts,
+        image,
+        options,
+        max_attempts,
+        &RigGuidance::default(),
+    )
+}
+
+/// [`propose_rig_with_ai`] の、利用者の注文と前の答え (作り直し) を添える版
+/// (`docs/ai-integration.md#利用者の注文`)。
+///
+/// 出力の形は [`rig_output_schema`] のまま。4 つの値で反映できない注文は、答えの理由に `Not applied:` で
+/// 始まる行として書かせ、[`AiRig::unapplied`] に分けて返す (提案の理由には本文だけを書く)。
+pub fn propose_rig_with_ai_guided(
+    provider: &dyn Provider,
+    model: &Model,
+    parts: &BTreeMap<MeshId, MeshPart>,
+    image: &[u8],
+    options: &RigOptions,
+    max_attempts: usize,
+    guidance: &RigGuidance,
+) -> Result<AiRig, AiError> {
     let layout = Layout::new(model, parts)?;
     let schema = rig_output_schema();
     let mut rejected: Vec<RejectedAnswer> = Vec::new();
     for _ in 0..max_attempts {
-        let request = ProviderRequest {
-            system: system_prompt(),
-            prompt: prompt(model, &layout, &rejected),
-            images: vec![image.to_vec()],
-        };
+        let request = request(model, &layout, image, &rejected, guidance);
         let value = provider.complete_json(&request, &schema)?;
         let (params, reason) = match params_from_answer(&value) {
             Ok(answer) => answer,
@@ -1603,6 +1722,7 @@ pub fn propose_rig_with_ai(
         };
         match build(model, parts, &layout, &params, options) {
             Ok(mut proposal) => {
+                let (reason, unapplied) = split_unapplied(&reason);
                 proposal.rationale = format!(
                     "AI が決めた値: 振り向き {:.2}、目の閉じる線 {:.2}、弧 {:+.2}、口の開き {:.2} ({})\n{}",
                     params.turn_angle_scale,
@@ -1615,6 +1735,8 @@ pub fn propose_rig_with_ai(
                 return Ok(AiRig {
                     proposal,
                     params,
+                    reason,
+                    unapplied,
                     rejected,
                 });
             }

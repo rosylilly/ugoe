@@ -45,7 +45,7 @@ pub use keyform::Keyform;
 pub use motion_edit::{Animations, SegmentShape};
 pub use physics_template::{PhysicsTemplate, PhysicsTemplateOptions};
 pub use project::{Project, ProjectError, ProjectMeta, export_bundle};
-pub use proposal::{ProposalCommand, ProposalError, ProposalView, Proposals};
+pub use proposal::{ProposalCommand, ProposalError, ProposalOrigin, ProposalView, Proposals};
 pub use texture::Textures;
 
 #[cfg(test)]

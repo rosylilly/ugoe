@@ -9,6 +9,9 @@
 //! - **一部だけの採用:** コマンドの単位で外せる。外したコマンドを除いた列を同じく複製で確かめ、
 //!   適用・検証に失敗したら採用しない (黙って直さない)。画面が依存を追えるよう、各コマンドが
 //!   前のどのコマンドに頼るか ([`ProposalCommand::requires`]、規則は [`analyze`]) を返す。
+//! - **注文を添えた作り直し:** 作り直した提案は前の提案を置き換えず、一覧の後ろに並べる (見比べてから選ぶ。
+//!   前の提案は利用者が却下するまで残る)。作り直しの元・添えた注文・反映できなかった注文は
+//!   [`ProposalOrigin`] として提案に記す ([`Proposals::set_origin`])。
 
 use std::collections::BTreeSet;
 
@@ -43,6 +46,23 @@ pub struct ProposalView {
     /// 提案を作ったもの (エディタにつないだエージェントの名前など。[`Proposals::set_source`])。
     /// エディタの中で作った提案は `null`。
     pub source: Option<String>,
+    /// この提案が作り直した元の提案の番号 ([`ProposalOrigin::revises`])。
+    pub revises: Option<u32>,
+    /// 提案を作るときに AI に添えた利用者の注文 ([`ProposalOrigin::instructions`])。
+    pub instructions: Option<String>,
+    /// 今の仕組みでは反映できなかった注文 (AI の答えの言葉のまま。[`ProposalOrigin::unapplied`])。
+    pub unapplied: Vec<String>,
+}
+
+/// 提案の出どころ: 作り直しの元と、利用者の注文 (`docs/editor.md#ai-への注文と作り直し`)。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProposalOrigin {
+    /// 作り直した元の提案の番号 (元の提案は置き換えず、そのまま残す)。
+    pub revises: Option<u32>,
+    /// AI に添えた利用者の注文。
+    pub instructions: Option<String>,
+    /// 反映できなかった注文。
+    pub unapplied: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -71,6 +91,7 @@ struct Pending {
     /// 採用した (ドキュメントが `base` に戻るまで一覧に出さない)。
     adopted: bool,
     source: Option<String>,
+    origin: ProposalOrigin,
 }
 
 /// 採用を待っている提案 (開いているプロジェクトごとに持つ)。
@@ -111,6 +132,7 @@ impl Proposals {
             base: doc.state_id(),
             adopted: false,
             source: None,
+            origin: ProposalOrigin::default(),
         };
         let view = view(&pending, doc);
         self.items.push(pending);
@@ -171,6 +193,17 @@ impl Proposals {
         }
     }
 
+    /// 提案の出どころ (作り直しの元・注文・反映できなかった注文) を記す (画面に出す)。提案が無ければ `false`。
+    pub fn set_origin(&mut self, id: u32, origin: ProposalOrigin) -> bool {
+        match self.items.iter_mut().find(|p| p.id == id) {
+            Some(p) => {
+                p.origin = origin;
+                true
+            }
+            None => false,
+        }
+    }
+
     /// 提案を捨てる。
     pub fn reject(&mut self, id: u32) -> Result<(), ProposalError> {
         let before = self.items.len();
@@ -225,6 +258,9 @@ fn view(pending: &Pending, doc: &Document) -> ProposalView {
         commands: pending.info.clone(),
         stale: pending.base != doc.state_id(),
         source: pending.source.clone(),
+        revises: pending.origin.revises,
+        instructions: pending.origin.instructions.clone(),
+        unapplied: pending.origin.unapplied.clone(),
     }
 }
 

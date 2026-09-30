@@ -139,16 +139,35 @@ export const ipc = {
   getProposals: () => invoke<ProposalState>("get_proposals"),
   /**
    * PSD のレイヤーを分類して覚える。`psd` を省略すると取り込んだ PSD。`useAi` なら画像を外部に送るので
-   * `withConsent` で呼ぶ (偽なら名前の規則だけで、何も送らない)。
+   * `withConsent` で呼ぶ (偽なら名前の規則だけで、何も送らない)。`instructions` は AI に添える利用者の注文、
+   * `revise` なら今の分類を前の答えとして送る (分類の作り直し)。
    */
-  classifyPsdLayers: (psd: string | null, useAi: boolean, consent: ConsentAnswer | null) =>
-    invoke<AiReply<Classification>>("classify_psd_layers", { psd, useAi, consent }),
+  classifyPsdLayers: (
+    psd: string | null,
+    useAi: boolean,
+    instructions: string | null,
+    revise: boolean,
+    consent: ConsentAnswer | null,
+  ) =>
+    invoke<AiReply<Classification>>("classify_psd_layers", {
+      psd,
+      useAi,
+      instructions,
+      revise,
+      consent,
+    }),
   /**
    * 分類の結果からリグを提案し、一覧に置く (ドキュメントは変えない)。`useAi` なら原画を外部に送るので
-   * `withConsent` で呼ぶ (偽ならテンプレートの既定値)。
+   * `withConsent` で呼ぶ (偽ならテンプレートの既定値)。`instructions` は AI に添える利用者の注文。
    */
-  proposeRigFromPsd: (useAi: boolean, consent: ConsentAnswer | null) =>
-    invoke<AiReply<ProposalView>>("propose_rig_from_psd", { useAi, consent }),
+  proposeRigFromPsd: (useAi: boolean, instructions: string | null, consent: ConsentAnswer | null) =>
+    invoke<AiReply<ProposalView>>("propose_rig_from_psd", { useAi, instructions, consent }),
+  /**
+   * 提案を、前の答えと注文を AI に送って作り直す (いつも AI。`withConsent` で呼ぶ)。新しい提案は前の提案の後ろに並ぶ。
+   * docs/editor.md#ai-への注文と作り直し
+   */
+  regenerateRigProposal: (id: number, instructions: string | null, consent: ConsentAnswer | null) =>
+    invoke<AiReply<ProposalView>>("regenerate_rig_proposal", { id, instructions, consent }),
   /** `excluded` の番号のコマンドを除いた提案を、ドキュメントの複製に適用した姿 (ドキュメントは変えない)。 */
   previewProposal: (id: number, excluded: number[]) =>
     invoke<ProposalPreview>("preview_proposal", { id, excluded }),
