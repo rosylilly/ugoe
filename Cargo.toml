@@ -8,6 +8,7 @@ version = "0.0.0"
 edition = "2024"
 rust-version = "1.98"
 repository = "https://github.com/rosylilly/ugoe"
+# 既定では公開しない。crates.io に公開するクレートだけ `publish = true` にする (docs/adr/0027-crates-io-publishing.md)。
 publish = false
 license = "MIT"
 
@@ -15,21 +16,23 @@ license = "MIT"
 # マージ衝突を減らすため 1 行 1 依存・アルファベット順を守ること。
 [workspace.dependencies]
 # --- internal ---
-ugoe = { path = "crates/ugoe" }
+# crates.io に公開するクレート (publish = true) は、path に加えて version を書く (公開したパッケージでは version だけが残る)。
+# version は [workspace.package] の version と揃える (`node scripts/crates.mjs sync`。docs/release.md)。
+ugoe = { path = "crates/ugoe", version = "0.0.0" }
 ugoe-ai = { path = "crates/ugoe-ai" }
-ugoe-core = { path = "crates/ugoe-core" }
+ugoe-core = { path = "crates/ugoe-core", version = "0.0.0" }
 ugoe-editor-core = { path = "crates/ugoe-editor-core" }
-ugoe-format = { path = "crates/ugoe-format" }
+ugoe-format = { path = "crates/ugoe-format", version = "0.0.0" }
 ugoe-headless = { path = "crates/ugoe-headless" }
 ugoe-mcp = { path = "crates/ugoe-mcp" }
 ugoe-mesher = { path = "crates/ugoe-mesher" }
-ugoe-model = { path = "crates/ugoe-model" }
-ugoe-motion = { path = "crates/ugoe-motion" }
-ugoe-physics = { path = "crates/ugoe-physics" }
+ugoe-model = { path = "crates/ugoe-model", version = "0.0.0" }
+ugoe-motion = { path = "crates/ugoe-motion", version = "0.0.0" }
+ugoe-physics = { path = "crates/ugoe-physics", version = "0.0.0" }
 ugoe-psd = { path = "crates/ugoe-psd" }
-ugoe-render = { path = "crates/ugoe-render" }
+ugoe-render = { path = "crates/ugoe-render", version = "0.0.0" }
 ugoe-rigging = { path = "crates/ugoe-rigging" }
-ugoe-runtime = { path = "crates/ugoe-runtime" }
+ugoe-runtime = { path = "crates/ugoe-runtime", version = "0.0.0" }
 # --- external ---
 anyhow = "1"
 apple-native-keyring-store = { version = "1", features = ["keychain"] }

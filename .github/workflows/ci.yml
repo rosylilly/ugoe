@@ -60,6 +60,9 @@ jobs:
         run: just layers
       - name: Licenses
         run: just licenses
+      # crates.io に公開するクレートの準備 (メタデータ・LICENSE の写し・内部の依存の版。docs/release.md#cratesio)
+      - name: Publish check
+        run: just publish-check
       - name: Tasks
         run: just tasks > /dev/null
       - name: wasm32

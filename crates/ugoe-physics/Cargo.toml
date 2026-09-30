@@ -4,8 +4,13 @@ description = "ugoe 物理演算 (振り子チェーン)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-publish.workspace = true
+# crates.io に公開する (docs/adr/0027-crates-io-publishing.md)
+publish = true
 license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["ugoe", "animation", "physics", "pendulum", "2d"]
+categories = ["game-development", "simulation"]
 
 [dependencies]
 ugoe-core.workspace = true

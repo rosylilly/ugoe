@@ -1,0 +1,77 @@
+name: Crates release
+
+# ランタイム層のクレート (ADR 0027 の範囲。scripts/crates.mjs の PUBLISHED) を crates.io に公開する。
+# 手順と前提 (トークン・environment の設定、途中で失敗したときのやり直し) は docs/release.md#cratesio。
+# - `v*` のタグ (editor-build.yml・web-runtime-release.yml と同じ。すべての配布物の版を揃える。docs/portability.md) で動く。
+#   タグと [workspace.package] の version が揃っていなければ失敗する。
+# - まず `cargo publish --workspace --dry-run` で、パッケージを作って一時的なレジストリでビルドする (package ジョブ)。
+# - 公開 (publish ジョブ) は environment `crates-io` で行う。environment に required reviewers を設定し、
+#   承認されてから動くようにする。トークン (CARGO_REGISTRY_TOKEN) もこの environment の secret に置く。
+# - 手で起動したときは、既定で予行 (package ジョブ) だけ。`publish` を選び、タグを ref に選んだときだけ公開する。
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "crates.io に公開する (タグを ref に選んだときだけ。外すと予行だけ)"
+        type: boolean
+        default: false
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust toolchain (rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: crates-release
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .tool-versions
+      - name: Check versions and metadata
+        run: node scripts/crates.mjs check ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+      - name: Dry run
+        run: cargo publish --workspace --locked --dry-run
+
+  publish:
+    needs: package
+    if: github.ref_type == 'tag' && (github.event_name == 'push' || inputs.publish)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # required reviewers を設定した environment。承認されるまで、このジョブは始まらない
+    environment:
+      name: crates-io
+      url: https://crates.io/crates/ugoe
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust toolchain (rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: crates-release
+          save-if: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .tool-versions
+      - name: Check versions and metadata
+        run: node scripts/crates.mjs check "$GITHUB_REF_NAME"
+      # 依存の順に公開する (cargo が決める。順は `node scripts/crates.mjs order` と同じ)。
+      # 公開したクレートが索引に現れるまで cargo が待ってから次へ進む
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --workspace --locked

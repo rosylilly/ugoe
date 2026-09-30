@@ -4,8 +4,13 @@ description = "ugoe ランタイム SDK ファサード (ゲームエンジン�
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-publish.workspace = true
+# crates.io に公開する (docs/adr/0027-crates-io-publishing.md)
+publish = true
 license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["animation", "rigging", "vtuber", "puppet", "2d"]
+categories = ["game-development", "graphics", "rendering"]
 
 [dependencies]
 ugoe-core.workspace = true

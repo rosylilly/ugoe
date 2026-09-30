@@ -4,8 +4,13 @@ description = "ugoe ファイル形式 (ランタイムバンドル .ugoe / モ�
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-publish.workspace = true
+# crates.io に公開する (docs/adr/0027-crates-io-publishing.md)
+publish = true
 license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["ugoe", "animation", "rigging", "file-format", "2d"]
+categories = ["graphics", "game-development", "encoding", "parser-implementations"]
 
 [dependencies]
 rmp-serde.workspace = true

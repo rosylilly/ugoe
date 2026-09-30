@@ -74,6 +74,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 | `just fmt` | Rust と TS を整形 |
 | `just layers` | クレートの依存方向を検査 |
 | `just licenses` | 依存するクレートのライセンスを検査 (MIT のクレートにコピーレフトを入れない) |
+| `just publish-check` | crates.io に公開するクレートの準備を検査 (メタデータ・LICENSE の写し・内部の依存の版。[docs/release.md](docs/release.md#cratesio)) |
 | `just wasm-check` | wasm32 でビルドできるか (ランタイム層を触ったら実行) |
 | `just wt-add <ID>` / `just wt-remove <ID>` | タスク用 worktree の作成・削除 (main の `target/` をコピーしてビルドを省く) |
 | `just editor` | エディタを開発モードで起動 |

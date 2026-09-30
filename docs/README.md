@@ -19,6 +19,7 @@
 | [manual/](manual/README.md) | エディタの操作マニュアル (利用者向け) |
 | [ai-integration.md](ai-integration.md) | AI 連携の設計 |
 | [portability.md](portability.md) | ゲームエンジン・プラットフォームへの移植 |
+| [release.md](release.md) | リリース (版の揃え方・crates.io などへの公開の手順) |
 | [testing.md](testing.md) | テスト方針 |
 | [roadmap.md](roadmap.md) | マイルストーン |
 | [workflow/multi-agent.md](workflow/multi-agent.md) | マルチエージェントでの作業手順 |

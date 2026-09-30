@@ -63,7 +63,8 @@
 | C / その他 | `ugoe-ffi` の共有ライブラリとヘッダ | T0401 |
 
 - **適合テスト**: すべての配布物で、同じモデル・同じパラメータから同じ頂点と画像が得られることを CI で検査します (T0408)。参照となる出力は `ModelInstance` と `ugoe render` から作ります。
-- **リリースの自動化**: タグを打つと、すべての配布物をビルドして公開します。バージョン番号は揃えます。
+- **リリースの自動化**: タグを打つと、すべての配布物をビルドして公開します。バージョン番号は揃えます。手順は [release.md](release.md)。
+- crates.io には `ugoe` とその依存のクレートだけを公開します (`ugoe-ffi`・`ugoe-wasm`・ツール層は公開しない。[ADR 0027](adr/0027-crates-io-publishing.md))。タグ `v*` で CI (`crates-release.yml`) が予行し、承認の後に公開します ([release.md#cratesio](release.md#cratesio))。
 - ランタイムとライブラリは MIT で配布します ([ADR 0018](adr/0018-licensing-and-1.0-scope.md))。
 - Web の `@ugoe/runtime` は `bindings/web/` に置き、MIT で配布します。GPL-3.0-only の `packages/` (アプリが共有する部品) とは分けます ([ADR 0025](adr/0025-web-runtime-package.md))。使い方は [bindings/web/README.md](../bindings/web/README.md)、npm への公開の手順 (タグ `v*` で CI から公開する `web-runtime-release.yml`) は [bindings/web/README.md#リリース](../bindings/web/README.md#リリース)。
 - Godot の GDExtension は `bindings/godot/` に置き、MIT で配布します。依存する godot-rust だけが MPL-2.0 なので、ルートのワークスペースの外に置きます ([ADR 0026](adr/0026-godot-binding.md))。使い方は [bindings/godot/README.md](../bindings/godot/README.md)。

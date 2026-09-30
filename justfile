@@ -19,7 +19,7 @@ setup:
     rustup show active-toolchain
 
 # CI と同じ検査一式
-ci: fmt-check lint test layers licenses spec web-check
+ci: fmt-check lint test layers licenses publish-check spec web-check
 
 # コミットメッセージを検査: `just commitlint "feat(runtime): add foo"`
 commitlint message:
@@ -67,6 +67,16 @@ tasks *args:
 # 依存クレートのライセンスの検査 (docs/adr/0018-licensing.md)
 licenses:
     @node scripts/check-licenses.mjs
+
+# crates.io に公開するクレートの準備の検査 (メタデータ・LICENSE の写し・内部の依存の版。docs/release.md#cratesio)
+publish-check:
+    @node --test --test-reporter=dot scripts/crates.test.mjs
+    @node scripts/crates.mjs check
+
+# crates.io への公開の予行 (パッケージを作り、crates.io の代わりに一時的なレジストリでビルドする。公開はしない)。
+# crates.io の索引を読むのでネットワークが要る。`just ci` には含めない (CI では crates-release.yml が実行する)
+publish-dry-run *args:
+    cargo publish --workspace --dry-run {{args}}
 
 # 公開仕様 (spec/) の検査: Markdown のリンク、例と JSON Schema、docs/spec との同期 (docs/spec/public-spec.md#同期の検査)、
 # 公開仕様だけで書いた独立の読み込み器の型検査とテスト (tools/spec-check/README.md)
