@@ -32,7 +32,7 @@
 - 関数はエラーコード (`UgoeResult`、`i32`) を返し、詳細なエラーメッセージはスレッドローカルの `ugoe_last_error()` で取得できるようにします。
 - パニックは `catch_unwind` で捕まえてエラーコードに変換します。FFI の境界の外にパニックを漏らしません。
 - 頂点データは、ホストが確保したバッファにコピーする API (`ugoe_puppet_copy_positions(p, drawable, out_ptr, len)`) と、内部のバッファを借用する API (次の `update` まで有効) の両方を提供します。
-- ヘッダファイルは cbindgen で生成して `crates/ugoe-ffi/include/ugoe.h` に置き、CI で最新かどうかを検査します。
+- ヘッダファイルは cbindgen で生成して `crates/ugoe-ffi/include/ugoe.h` に置き、CI で最新かどうかを検査します (`just ffi-header` で作り直し、`just ffi-check` で検査と C の見本の実行)。cbindgen は MPL-2.0 なので、ワークスペースの依存には入れず、版を固定した CLI として使います。`just ffi-check` は `just ci` に含めません ([crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#ヘッダの生成))。
 - `ugoe_abi_version()` の値は、ABI を壊す変更をしたら上げます。
 
 ## ランタイム層が守る制約 (移植性のため)

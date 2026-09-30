@@ -64,6 +64,14 @@ jobs:
         run: just tasks > /dev/null
       - name: wasm32
         run: just wasm-check
+      # C ABI のヘッダが最新か、C の見本のビルドと実行 (crates/ugoe-ffi/README.md#ヘッダの生成)。
+      # cbindgen は MPL-2.0 なのでワークスペースの依存に入れず、版を固定した CLI を入れる (scripts/ffi.mjs と揃える)
+      - name: Install cbindgen
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cbindgen@0.29.4
+      - name: C ABI
+        run: just ffi-check
 
   # 描画テスト (`just test-gpu`)。GPU のないランナーで Mesa のソフトウェア実装を使う。
   # vulkan: lavapipe / gl: llvmpipe (EGL)。gl は WebGL2 相当のバックエンドで動くことの確認。

@@ -11,8 +11,10 @@
 | 描画テスト (GPU) | `gpu-tests` feature を持つクレート (`ugoe-render` など) | `just test-gpu` |
 | フロントエンドの検査 | Biome + svelte-check + Vitest (`apps/editor/src/**/*.test.ts`) | `just web-check` |
 | 依存方向の検査 | `scripts/check-layers.mjs` | `just layers` |
+| C ABI の検査 | ヘッダ `crates/ugoe-ffi/include/ugoe.h` が最新か、C の見本 `crates/ugoe-ffi/examples/c/sample.c` のビルドと実行 | `just ffi-check` (cbindgen が要る。[crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#ヘッダの生成)) |
 
-`just ci` はこれらを (GPU テスト以外) すべて実行します。
+`just ci` はこれらを (GPU テストと C ABI の検査以外) すべて実行します。
+C ABI の検査はワークスペースの外のツール (cbindgen) と C コンパイラが要るので `just ci` に入れず、CI の `rust` ジョブで別に実行します。
 
 ## フィクスチャ
 

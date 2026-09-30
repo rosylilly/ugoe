@@ -79,6 +79,15 @@ spec:
 layers:
     @node scripts/check-layers.mjs
 
+# C ABI のヘッダ crates/ugoe-ffi/include/ugoe.h を cbindgen で作り直す (crates/ugoe-ffi/README.md#ヘッダの生成)。
+# cbindgen は MPL-2.0 なので CLI として使う: cargo install cbindgen --version 0.29.4 --locked
+ffi-header:
+    @node scripts/ffi.mjs header
+
+# C ABI の検査: ヘッダが最新か、C の見本のビルドと実行。cbindgen と C コンパイラが要るので `just ci` には含めない
+ffi-check:
+    @node scripts/ffi.mjs check
+
 # wasm ターゲットでビルドできるか (ブラウザ専用のコード `src/web.rs` も clippy で検査する)
 wasm-check:
     cargo clippy -p ugoe-wasm --target wasm32-unknown-unknown -- -D warnings
