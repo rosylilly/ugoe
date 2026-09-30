@@ -1,11 +1,11 @@
 ---
 id: T0653
 title: エディタ: モジュールのプロジェクトの仕上げ (見た目を保つ移動の物理・本体のバンドルの作り直し・書き出したものとの比較)
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-editor-core, apps/editor, docs]
 depends_on: [T0651]
-assignee:
+assignee: claude-worker-T0653
 ---
 
 # T0653: エディタ: モジュールのプロジェクトの仕上げ
