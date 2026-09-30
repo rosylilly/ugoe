@@ -131,7 +131,11 @@ const q = (s: string | undefined) => `「${s ?? "?"}」`;
  * 原因が細かいもの (合成・コンパイル・物理の検証など) は、wasm の文 (英語) を括弧で添える。
  */
 export function describeDressUpError(e: unknown): string {
-  const info = dressUpErrorInfo(e);
+  return describeDressUpInfo(dressUpErrorInfo(e));
+}
+
+/** `describeDressUpError` の、読み取った後の中身から文を作る部分 (外したモジュールの `error` にも使う)。 */
+export function describeDressUpInfo(info: DressUpErrorInfo): string {
   const m = q(info.module);
   const detail = ` (${info.message})`;
   switch (info.code) {
@@ -180,14 +184,55 @@ export function describeDressUpError(e: unknown): string {
   }
 }
 
-const DETACHED = /^module `(.+?)` was detached: (.*)$/s;
+/** モデルを開き直したときに付け直せずに外したモジュール (`WebPuppet.detached_modules_json()` の要素)。 */
+export interface DetachedModule {
+  module: string;
+  slot: string;
+  /** 付けられなかった理由 (`DressUpError` と同じ `code` と補足の値)。 */
+  error: DressUpErrorInfo;
+  /** 読み込みの戻り値に入る文の警告と同じ文字列 (一覧から除くときに比べる)。 */
+  warning: string;
+}
+
+/** `detached_modules_json()` を読む。形の違う要素は読み飛ばす。 */
+export function parseDetachedModules(json: string): DetachedModule[] {
+  const list: unknown = JSON.parse(json);
+  if (!Array.isArray(list)) return [];
+  return list.flatMap((item) => {
+    const d = record(item);
+    const e = record(d.error);
+    if (typeof d.module !== "string" || typeof d.slot !== "string") return [];
+    const text = (key: string) => (typeof e[key] === "string" ? (e[key] as string) : undefined);
+    return [
+      {
+        module: d.module,
+        slot: d.slot,
+        error: {
+          code: text("code") ?? "unknown",
+          message: text("message") ?? "",
+          module: text("module"),
+          slot: text("slot"),
+          parameter: text("parameter"),
+          mesh: text("mesh"),
+          attached: text("attached"),
+        },
+        warning: typeof d.warning === "string" ? d.warning : "",
+      },
+    ];
+  });
+}
 
 /**
- * モデルを開き直したときの警告 (wasm の文) のうち、付け直せずに外したモジュールの知らせを日本語にする。
- * ほかの警告はそのまま返す。
+ * モデルを開き直したときの警告を、利用者に見せる一覧にする。付け直せずに外したモジュール (`detached`) は
+ * 文の警告を除き、`code` から日本語の知らせを作って後ろに並べる。ほかの警告 (英語) はそのまま。
  */
-export function describeLoadWarning(warning: string): string {
-  const match = DETACHED.exec(warning);
-  if (match === null) return warning;
-  return `このモデルに合わないため、着せ替えの「${match[1]}」を外しました (${match[2]})`;
+export function describeLoadWarnings(warnings: string[], detached: DetachedModule[]): string[] {
+  const covered = new Set(detached.map((d) => d.warning));
+  return [
+    ...warnings.filter((w) => !covered.has(w)),
+    ...detached.map(
+      (d) =>
+        `このモデルに合わないため、着せ替えの${q(d.module)}を外しました (${describeDressUpInfo(d.error)})`,
+    ),
+  ];
 }

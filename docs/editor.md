@@ -483,9 +483,10 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
   バンドルが作れず JSON で表示しているときは、ドキュメントの物理を `set_physics_json` で渡してから付けます
   (付けるときの物理が合成の元になるため)。
 - **読み直しと外れたことの知らせ:** エディタは編集のたびにモデルを読み直し、`WebPuppet` は付けていたモジュールを付け直します
-  (付けられないものは外す、T0123)。`PreviewMode.loaded` で `DressUp.loaded` が付けたい組と比べ、まとめて付けられなければ
-  1 つずつ試して、付けられないものを外し「… was taken off: 理由」と知らせます (理由は付け直しで出た `DressUpError`)。
-  プレビューの外でスロットを消したり変えたりしてから入ったときも同じです。`WebPuppet` を作り直したとき (GPU の喪失など) は、
+  (付けられないものは外す、T0123)。`PreviewMode.loaded` で `DressUp.loaded` が、`WebPuppet` の外したもの
+  (`detached_modules_json`。`DressUpError` と同じ `code` と補足の値、T0124) を「… was taken off: 理由」と知らせ、付けたい組から外します。
+  そのうえで付けたい組と比べ、まとめて付けられなければ 1 つずつ試して、付けられないものを同じように外して知らせます
+  (プレビューの外でスロットを消したり変えたりしてから入ったとき。出るときに外しているので `WebPuppet` は付け直していない)。`WebPuppet` を作り直したとき (GPU の喪失など) は、
   持っているバイト列から読み込み直します。
 - **エラー:** `DressUpError` の `code` を分かる言葉にします (`describeProblem`。「スロットがない → Slots タブで足す」
   「公開していないパラメータ → スロットの Parameters に入れる」など)。元の文言は「Details」に出します。

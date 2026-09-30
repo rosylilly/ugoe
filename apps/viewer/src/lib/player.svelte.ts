@@ -7,8 +7,9 @@ import { setPuppetTracking, type TrackingFrame } from "@ugoe/face-tracking";
 import { parseHexColor } from "./color";
 import {
   describeDressUpError,
-  describeLoadWarning,
+  describeLoadWarnings,
   type ModuleInfo,
+  parseDetachedModules,
   parseModules,
   parseSlots,
   type SlotInfo,
@@ -145,7 +146,10 @@ export class Player {
         kind === "bundle"
           ? puppet.load_bundle(file.bytes)
           : puppet.load_json(new TextDecoder().decode(file.bytes));
-      this.warnings = warnings.map(describeLoadWarning);
+      this.warnings = describeLoadWarnings(
+        warnings,
+        parseDetachedModules(puppet.detached_modules_json()),
+      );
     } catch (e) {
       this.error = `${file.name}: ${message(e)}`;
       return;

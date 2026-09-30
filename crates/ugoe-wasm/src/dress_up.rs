@@ -80,6 +80,43 @@ pub struct ModuleInfo<'a> {
     pub warnings: &'a [String],
 }
 
+/// モデルを読み直したときに付け直せず、外したモジュール (`detached_modules_json` の要素)。
+#[derive(Debug)]
+pub struct Detached {
+    /// モジュールの名前。
+    pub module: String,
+    /// モジュールを付けるスロット。
+    pub slot: String,
+    /// 付けられなかった理由 (付けようとしたときの合成のエラー)。
+    pub error: WardrobeError,
+}
+
+impl Detached {
+    /// 文の警告 (`load_json` / `load_bundle` の戻り値。T0123 から変えていない)。
+    pub fn warning(&self) -> String {
+        format!("module `{}` was detached: {}", self.module, self.error)
+    }
+
+    /// JSON: `{"module", "slot", "error": {"code", "message", "module"?, "slot"?, ...}, "warning"}`。
+    /// `error` は JS の `DressUpError` と同じ `code` と補足の値に、英語の文 `message` を添えたもの。
+    /// `warning` は読み込みの戻り値に入る文の警告と同じ文字列 (ホストが一覧から除けるように)。
+    pub fn to_json(&self) -> serde_json::Value {
+        let info = error_info(&self.error);
+        let mut error = serde_json::Map::new();
+        error.insert("code".into(), info.code.into());
+        error.insert("message".into(), self.error.to_string().into());
+        for (key, value) in info.fields {
+            error.insert(key.into(), value.into());
+        }
+        serde_json::json!({
+            "module": self.module,
+            "slot": self.slot,
+            "error": error,
+            "warning": self.warning(),
+        })
+    }
+}
+
 /// 読み込んだモジュールと、レンダラに登録したテクスチャの番号の範囲。
 #[derive(Debug, Default)]
 pub struct Wardrobe {
@@ -89,6 +126,8 @@ pub struct Wardrobe {
     base_slots: u32,
     /// テクスチャ (と法線マップ) を登録したかもしれない番号の数。これ以上の番号には何も登録していない。
     slots: u32,
+    /// 直前の [`Wardrobe::load_base`] で付け直せずに外したモジュール (付けていた順)。
+    detached: Vec<Detached>,
 }
 
 impl Wardrobe {
@@ -102,6 +141,11 @@ impl Wardrobe {
             .iter()
             .find(|m| m.module.name == name)
             .ok_or_else(|| WardrobeError::NotLoaded(name.to_owned()))
+    }
+
+    /// 直前の [`Wardrobe::load_base`] (モデルの読み直し) で付け直せずに外したモジュール (付けていた順)。
+    pub fn detached(&self) -> &[Detached] {
+        &self.detached
     }
 
     /// 読み込んだモジュールの一覧。`puppet` に付けているかを添える。
@@ -121,7 +165,8 @@ impl Wardrobe {
     }
 
     /// 本体のモデルを読み込んだ直後に呼ぶ。本体のテクスチャと法線マップを登録し、`attached`
-    /// (前のモデルに付けていたモジュールの名前、合成の順) を付け直す。付けられないモジュールは外して警告を返す。
+    /// (前のモデルに付けていたモジュールの名前、合成の順) を付け直す。付けられないモジュールは外して警告を返す
+    /// (外したものは [`Wardrobe::detached`] でも読める)。
     /// 前のモデルやモジュールの画像で、もう使わない番号のものは捨てる。
     pub fn load_base<S: TextureSink>(
         &mut self,
@@ -141,7 +186,7 @@ impl Wardrobe {
         }
         self.base_slots = textures.len() as u32;
 
-        let mut warnings = Vec::new();
+        let mut detached = Vec::new();
         let modules: Vec<Arc<Module>> = attached
             .iter()
             .filter_map(|name| self.find(name).ok())
@@ -155,7 +200,11 @@ impl Wardrobe {
                 next.push(Arc::clone(&module));
                 match puppet.set_modules(next) {
                     Ok(_) => accepted.push(module),
-                    Err(e) => warnings.push(format!("module `{}` was detached: {e}", module.name)),
+                    Err(e) => detached.push(Detached {
+                        module: module.name.clone(),
+                        slot: module.slot.as_str().to_owned(),
+                        error: e.into(),
+                    }),
                 }
             }
         }
@@ -170,6 +219,8 @@ impl Wardrobe {
                 .collect(),
             texture_count: sources.len() as u32,
         };
+        let warnings = detached.iter().map(Detached::warning).collect();
+        self.detached = detached;
         self.apply(&sources, &change, sink)?;
         Ok(warnings)
     }

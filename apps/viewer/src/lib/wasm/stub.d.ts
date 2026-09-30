@@ -25,6 +25,7 @@ export class WebPuppet {
   unload_module(name: string): void;
   attached_modules(): string[];
   modules_json(): string;
+  detached_modules_json(): string;
   slots_json(): string;
 
   parameters_json(): string;

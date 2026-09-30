@@ -18,7 +18,7 @@ src/                  フロントエンド (Svelte 5 + TS。npm パッケージ
   lib/LightingPanel.svelte   光源のパネル (ライティングを使うモデルのときだけ出す)。LightPad.svelte は向き・位置の面
   lib/lighting.ts       光源の設定・既定の光源の組・set_lighting_json の JSON への変換・localStorage への保存
   lib/DressUpPanel.svelte  着せ替えのパネル (スロットのあるモデルか、モジュールを読み込んだときだけ出す)
-  lib/dressUp.ts        着せ替えの一覧 (modules_json・slots_json) の読み取り、スロットごとのまとめ、エラーと警告の文
+  lib/dressUp.ts        着せ替えの一覧 (modules_json・slots_json・detached_modules_json) の読み取り、スロットごとのまとめ、エラーと警告の文
   lib/modelFile.ts      開いたファイルの形式の判別 (バンドル・JSON・モジュール)
   lib/wasm/             ugoe-wasm の読み込み。generated/ は `pnpm wasm` の出力 (gitignore 済み)
 public/               そのまま配る静的ファイル。third-party-notices.txt (同梱物のライセンス) だけコミットする
@@ -98,7 +98,8 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 
   合成・コンパイル・物理の検証など原因が細かいものは、wasm の文 (英語) を括弧で添える。知らないコードは wasm の文をそのまま出す。
 - 読み込んだモジュールは、別のモデルを開いても残る。開き直すと付けていたモジュールを付け直し、新しいモデルに合わないものは外して
-  ステータスバーに「このモデルに合わないため、着せ替えの「Dress」を外しました (原因)」と警告する。
+  ステータスバーに「このモデルに合わないため、着せ替えの「Dress」を外しました (原因)」と警告する。原因は wasm の
+  `detached_modules_json()` の `code` から、付けられないときと同じ文にする (`describeLoadWarnings`。wasm の文の警告は読まない。T0124)。
 - GPU を失って作り直したときも、モジュールを読み直して付けていたものを付け直す。
 - ヘッドレスのブラウザからは `window.__UGOE_VIEWER__` の `modules`・`slots`・`dressUpError`・`loadModule(file)`・`attachModule(name)`・
   `detachModule(name)`・`unloadModule(name)`・`setSlotModule(slot, name)` を触れる。`ViewerHost` を差し替えるときは `pickModuleFiles` も置く。

@@ -150,6 +150,21 @@ impl WebPuppet {
             .map_err(|e| JsError::new(&e.to_string()))
     }
 
+    /// 直前の `load_json` / `load_bundle` で付け直せずに外したモジュールの JSON (付けていた順):
+    /// `[{"module", "slot", "error": {"code", "message", "module"?, "slot"?, "parameter"?, "mesh"?, "attached"?}, "warning"}]`。
+    /// `error` は付けるときの `DressUpError` と同じ `code` と補足の値 (と英語の文)。外したものが無ければ `[]`。
+    /// 読み込みの戻り値の文の警告 (`module `X` was detached: ...`) と同じものを、文に頼らずに読むためのもの。
+    /// `warning` はその文の警告と同じ文字列で、戻り値の一覧から除くときに比べる。
+    pub fn detached_modules_json(&self) -> Result<String, JsError> {
+        let detached: Vec<_> = self
+            .wardrobe
+            .detached()
+            .iter()
+            .map(dress_up::Detached::to_json)
+            .collect();
+        serde_json::to_string(&detached).map_err(|e| JsError::new(&e.to_string()))
+    }
+
     /// 本体のモデルのスロットの JSON (モジュールを付けていても本体のもの)。各要素はモデルの JSON 形式と同じ
     /// (`id`・`anchor`・`draw_order`・`replaces`・`parameters`・`mask_sources`・`part`・`colliders`・`pose_parts`)。
     /// モデルが無ければ `[]`。

@@ -42,6 +42,7 @@ function fakePuppet() {
       calls.push("clear_tracking");
     },
     modules_json: () => "[]",
+    detached_modules_json: () => "[]",
     attached_modules: () => [],
   };
   return { puppet: puppet as unknown as WebPuppet, calls, values };

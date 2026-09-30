@@ -4,17 +4,20 @@
 // - モジュールはプレビューの間だけ付ける。出るときに外し (`takeOff`)、入るときに付け直す。編集の画面には本体だけが出る。
 // - 付け外しでパラメータの値・ポーズ・トラッキング・モーションは続きから動く (Puppet の規則。物理はリセットされる)。
 // - エディタは編集のたびにモデルを読み直す。WebPuppet は付けていたモジュールを付け直し (T0123)、付けられないものは
-//   外す。`loaded` で付けたい組と比べ、外れたものは `notices` で知らせる (理由は付け直しを試した DressUpError)。
+//   外す。`loaded` で外れたもの (`detached_modules_json`。T0124) を `notices` で知らせ、付けたい組と比べる
+//   (プレビューに入ったときなど、付け直しを WebPuppet に任せていないときは、1 つずつ試した DressUpError が理由)。
 // - 読み込んだバイト列を持っておき、WebPuppet を作り直したとき (GPU の喪失など) に読み込み直す。
 // - 一覧 (パスと付けるか) は project.json の editor.dress_up に残す (ipc.setPreviewModules)。ドロップしたファイルで
 //   パスが分からないもの (ブラウザ) は残さない。
 import { ipc } from "../ipc";
 import type { WebPuppet } from "../viewport/wasm";
 import {
+  type DetachedModule,
   type DressUpProblem,
   describeProblem,
   fileStem,
   type LoadedModuleInfo,
+  parseDetachedModules,
   parseModules,
   sameNames,
 } from "./dressUp";
@@ -246,6 +249,14 @@ export class DressUp {
         if (entry) entry.problem = describeProblem(e);
       }
     }
+    // 読み直しで WebPuppet が外したもの (理由は付け直しを試した DressUpError の code)。
+    // 一覧は直前の読み込みのものなので、その後で付け直したものは除く。
+    const attached = puppet.attached_modules();
+    for (const detached of this.#detached(puppet)) {
+      if (!attached.includes(detached.module)) {
+        this.#takenOff(detached.module, describeProblem(detached.error));
+      }
+    }
     this.#reconcile(puppet);
   }
 
@@ -267,6 +278,25 @@ export class DressUp {
       console.warn("ugoe:", e);
       return [];
     }
+  }
+
+  #detached(puppet: WebPuppet): DetachedModule[] {
+    try {
+      return parseDetachedModules(puppet.detached_modules_json());
+    } catch (e) {
+      console.warn("ugoe:", e);
+      return [];
+    }
+  }
+
+  /** 付けられなかったモジュールを付けたい組から外し、知らせる。 */
+  #takenOff(name: string, problem: DressUpProblem): void {
+    const entry = this.#entry(name);
+    if (entry) {
+      entry.wanted = false;
+      entry.problem = problem;
+    }
+    this.notices = [...this.notices, `${name} was taken off: ${problem.summary}`];
   }
 
   /** `entry.path` から読み直す。読めなければ `entry.problem`。 */
@@ -363,13 +393,7 @@ export class DressUp {
             puppet.set_modules([...accepted, name]);
             accepted.push(name);
           } catch (e) {
-            const problem = describeProblem(e);
-            const entry = this.#entry(name);
-            if (entry) {
-              entry.wanted = false;
-              entry.problem = problem;
-            }
-            this.notices = [...this.notices, `${name} was taken off: ${problem.summary}`];
+            this.#takenOff(name, describeProblem(e));
           }
         }
         try {

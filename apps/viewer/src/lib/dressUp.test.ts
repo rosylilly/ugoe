@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   describeDressUpError,
-  describeLoadWarning,
+  describeLoadWarnings,
   dressUpErrorInfo,
   groupBySlot,
+  parseDetachedModules,
   parseModules,
   parseSlots,
 } from "./dressUp";
@@ -128,18 +129,55 @@ describe("describeDressUpError", () => {
   });
 });
 
-describe("describeLoadWarning", () => {
-  it("translates modules detached on reload", () => {
-    expect(
-      describeLoadWarning(
-        "module `Dress` was detached: module `Dress` targets unknown slot `Outfit`",
-      ),
-    ).toBe(
-      "このモデルに合わないため、着せ替えの「Dress」を外しました (module `Dress` targets unknown slot `Outfit`)",
-    );
+describe("describeLoadWarnings", () => {
+  const detachedJson = JSON.stringify([
+    {
+      module: "Dress",
+      slot: "Outfit",
+      error: {
+        code: "unknown_slot",
+        message: "module `Dress` targets unknown slot `Outfit`",
+        module: "Dress",
+        slot: "Outfit",
+      },
+      warning: "module `Dress` was detached: module `Dress` targets unknown slot `Outfit`",
+    },
+    {
+      module: "Cape",
+      slot: "Outfit",
+      error: { code: "missing_parameter", message: "x", module: "Cape", parameter: "Tail" },
+      warning: "Cape could not be put back",
+    },
+    { slot: "Broken" },
+  ]);
+
+  it("reads detached_modules_json and skips malformed entries", () => {
+    const detached = parseDetachedModules(detachedJson);
+    expect(detached.map((d) => d.module)).toEqual(["Dress", "Cape"]);
+    expect(detached[0]?.error).toMatchObject({ code: "unknown_slot", slot: "Outfit" });
+    expect(detached[1]?.error.parameter).toBe("Tail");
+    expect(parseDetachedModules("{}")).toEqual([]);
   });
 
-  it("keeps other warnings", () => {
-    expect(describeLoadWarning("texture 3: placeholder")).toBe("texture 3: placeholder");
+  it("describes detached modules from their codes and keeps other warnings", () => {
+    const detached = parseDetachedModules(detachedJson);
+    // 文の警告は文面に関わらず `warning` と同じものを除く (照らし合わせない)。
+    expect(
+      describeLoadWarnings(
+        [
+          "texture 3: placeholder",
+          "module `Dress` was detached: module `Dress` targets unknown slot `Outfit`",
+          "Cape could not be put back",
+        ],
+        detached,
+      ),
+    ).toEqual([
+      "texture 3: placeholder",
+      "このモデルに合わないため、着せ替えの「Dress」を外しました (「Dress」を付けるスロット「Outfit」が、このモデルにありません)",
+      "このモデルに合わないため、着せ替えの「Cape」を外しました (「Cape」に必要なパラメータ「Tail」が、このモデルにありません)",
+    ]);
+    expect(describeLoadWarnings(["physics settings were removed: x"], [])).toEqual([
+      "physics settings were removed: x",
+    ]);
   });
 });

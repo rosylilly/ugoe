@@ -211,6 +211,7 @@ fn reloading_the_base_reattaches_modules_and_drops_leftovers() {
         )
         .unwrap();
     assert!(warnings.is_empty());
+    assert!(wardrobe.detached().is_empty());
     assert_eq!(attached_names(Some(&reloaded)), ["LongHair", "Dress"]);
     assert_eq!(
         sink.take(),
@@ -233,6 +234,24 @@ fn reloading_the_base_reattaches_modules_and_drops_leftovers() {
         .unwrap();
     assert_eq!(warnings.len(), 1);
     assert!(warnings[0].contains("`Dress` was detached"), "{warnings:?}");
+    // 同じものを構造で読める (文の警告は `Detached::warning` から作る)。
+    let detached = wardrobe.detached();
+    assert_eq!(detached.len(), 1);
+    assert_eq!(detached[0].warning(), warnings[0]);
+    assert_eq!(
+        detached[0].to_json(),
+        serde_json::json!({
+            "module": "Dress",
+            "slot": "Outfit",
+            "error": {
+                "code": "unknown_slot",
+                "message": detached[0].error.to_string(),
+                "module": "Dress",
+                "slot": "Outfit",
+            },
+            "warning": warnings[0],
+        })
+    );
     assert_eq!(attached_names(Some(&other)), ["LongHair"]);
     assert_eq!(
         sink.take(),

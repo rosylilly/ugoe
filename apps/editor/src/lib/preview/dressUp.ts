@@ -38,6 +38,22 @@ export function parseModules(json: string): LoadedModuleInfo[] {
   return JSON.parse(json) as LoadedModuleInfo[];
 }
 
+/**
+ * `WebPuppet.detached_modules_json()` の要素: モデルを読み直したときに WebPuppet が付け直せずに外したモジュール。
+ * `error` は DressUpError と同じ `code` と補足の値 (と英語の文 `message`)。
+ */
+export interface DetachedModule {
+  module: string;
+  slot: string;
+  error: { code: string; message: string } & Record<string, unknown>;
+  /** 読み込みの戻り値の文の警告と同じ文字列。 */
+  warning: string;
+}
+
+export function parseDetachedModules(json: string): DetachedModule[] {
+  return JSON.parse(json) as DetachedModule[];
+}
+
 /** 付け外しの失敗の、利用者向けの説明。 */
 export interface DressUpProblem {
   /** 何が起きて、どうすればよいか。 */
@@ -50,6 +66,7 @@ export interface DressUpProblem {
 
 interface DressUpErrorFields {
   code?: unknown;
+  message?: unknown;
   module?: unknown;
   slot?: unknown;
   parameter?: unknown;
@@ -61,11 +78,19 @@ function text(value: unknown, fallback: string): string {
   return typeof value === "string" && value !== "" ? value : fallback;
 }
 
-/** エラー (DressUpError かそれ以外) を、分かる言葉の説明にする。 */
+/**
+ * エラー (DressUpError かそれ以外) を、分かる言葉の説明にする。外したモジュールの `error`
+ * (`DetachedModule.error`。`code` と `message` を持つオブジェクト) も読める。
+ */
 export function describeProblem(error: unknown): DressUpProblem {
-  const detail = error instanceof Error ? error.message : String(error);
   const fields: DressUpErrorFields =
     error !== null && typeof error === "object" ? (error as DressUpErrorFields) : {};
+  const detail =
+    error instanceof Error
+      ? error.message
+      : typeof fields.message === "string"
+        ? fields.message
+        : String(error);
   const code = typeof fields.code === "string" ? fields.code : null;
   const module = text(fields.module, "The module");
   const slot = text(fields.slot, "?");

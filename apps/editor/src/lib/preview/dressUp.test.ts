@@ -38,6 +38,8 @@ function fakePuppet(slotOf: Record<string, string>) {
   const loaded: string[] = [];
   let attached: string[] = [];
   const broken = new Set<string>();
+  /** 直前の `reload` で付け直せなかったもの (`detached_modules_json`)。 */
+  let detached: unknown[] = [];
   const check = (names: string[]) => {
     for (const name of names) {
       if (!loaded.includes(name)) throw dressUpError("not_loaded", { module: name });
@@ -71,6 +73,7 @@ function fakePuppet(slotOf: Record<string, string>) {
       attached = [...names];
     },
     attached_modules: () => [...attached],
+    detached_modules_json: () => JSON.stringify(detached),
     modules_json: () =>
       JSON.stringify(
         loaded.map((name) => ({
@@ -83,7 +86,27 @@ function fakePuppet(slotOf: Record<string, string>) {
         })),
       ),
   };
-  return { puppet: puppet as unknown as WebPuppet, broken, attached: () => attached };
+  /** モデルの読み直し (T0123): 付けていたものを 1 つずつ付け直し、付けられないものを外して一覧に残す。 */
+  const reload = () => {
+    const before = attached;
+    attached = [];
+    detached = [];
+    for (const name of before) {
+      try {
+        check([name]);
+        attached.push(name);
+      } catch (e) {
+        const { code, module, slot } = e as Error & Record<string, string>;
+        detached.push({
+          module: name,
+          slot: slotOf[name],
+          error: { code, message: (e as Error).message, module, slot },
+          warning: `module \`${name}\` was detached: ${(e as Error).message}`,
+        });
+      }
+    }
+  };
+  return { puppet: puppet as unknown as WebPuppet, broken, reload, attached: () => attached };
 }
 
 function setup() {
@@ -231,16 +254,35 @@ describe("DressUp", () => {
     setActive(true);
     dressUp.loaded(fake.puppet);
     expect(fake.attached()).toEqual(["LongHair", "Dress"]);
-    // 編集でスロットが無くなった後に読み直すと、付けられないものだけ外れて知らされる。
+    // 編集でスロットが無くなった後に読み直すと、WebPuppet が外したもの (detached_modules_json) が知らされる。
     fake.broken.add("Outfit");
-    fake.puppet.set_modules(["LongHair"]);
+    fake.reload();
+    const setModules = vi.spyOn(fake.puppet, "set_modules");
     dressUp.loaded(fake.puppet);
     expect(fake.attached()).toEqual(["LongHair"]);
+    // 付け直しを試し直さない (理由は WebPuppet の code から)。
+    expect(setModules).not.toHaveBeenCalled();
     expect(dressUp.notices).toHaveLength(1);
     expect(dressUp.notices[0]).toMatch(/^Dress was taken off: Dress goes in slot "Outfit"/);
     expect(entry(dressUp, "Dress")).toMatchObject({ wanted: false, attached: false });
+    expect(entry(dressUp, "Dress")?.problem).toMatchObject({
+      code: "unknown_slot",
+      detail: "unknown_slot happened",
+    });
+    // 同じ読み込みの一覧をもう一度渡されても (読み込みを伴わない loaded)、付け直したものは知らせない。
+    fake.broken.delete("Outfit");
+    dressUp.attach("Dress");
+    dressUp.loaded(fake.puppet);
+    expect(dressUp.notices).toHaveLength(1);
+    expect(fake.attached()).toEqual(["LongHair", "Dress"]);
     dressUp.dismissNotice(0);
     expect(dressUp.notices).toEqual([]);
+    // プレビューに入り直したとき (WebPuppet が付け直していない) は、1 つずつ試した理由で知らせる。
+    dressUp.takeOff();
+    fake.broken.add("Outfit");
+    dressUp.loaded(fake.puppet);
+    expect(fake.attached()).toEqual(["LongHair"]);
+    expect(dressUp.notices[0]).toMatch(/^Dress was taken off: Dress goes in slot "Outfit"/);
   });
 
   it("loads the kept bytes again into a new WebPuppet", async () => {

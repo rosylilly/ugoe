@@ -116,6 +116,8 @@ puppet.unload_module(name);                  // 読み込んだモジュール�
 puppet.attached_modules();                   // 付けている名前 (合成の順)
 JSON.parse(puppet.modules_json());           // [{name, slot, requires, attached, textures, warnings}] (読み込んだ順)
 JSON.parse(puppet.slots_json());             // 本体のスロット [{id, anchor, draw_order, replaces, parameters, ...}]
+JSON.parse(puppet.detached_modules_json());  // 直前の load_json / load_bundle で付け直せずに外したもの
+                                             // [{module, slot, error: {code, message, module?, slot?, ...}, warning}]
 try {
   puppet.attach_module("Hat");
 } catch (e) {
@@ -130,6 +132,13 @@ try {
 - 規則は `docs/spec/modules.md#puppet-での着せ替え`。付け外しで、パラメータの値・ポーズ・トラッキング・モーションは続きから動き、物理はリセットされる。失敗したときは何も変えない。
 - テクスチャ (と法線マップ) は本体、モジュールの順に並ぶ。付け外しで番号がずれたものは登録し直し、使わなくなった番号の画像は 1x1 の白に置き換えて捨てる。
 - `load_json` / `load_bundle` でモデルを読み直すと、付けていたモジュールを付け直す (付けられないものは外して警告に入れる)。
+  外したものは `detached_modules_json()` でも読める (T0124): `error` は付けるときの `DressUpError` と同じ `code` と補足の値に、
+  英語の文 `message` を添えたもの。`warning` は戻り値の警告の一覧に入る文 (`module `X` was detached: ...`) と同じ文字列。
+  一覧は次の `load_json` / `load_bundle` まで変わらない (外したものが無ければ `[]`)。
+- **戻り値の文の警告は残す** (T0124 で決めた)。戻り値の `string[]` はほかの警告 (物理を外した・テクスチャを代用したなど) と
+  同じ一覧で、ログに出すだけの組み込み先はそのままでよく、外すと知らせが黙って消えるため。文面は安定した値として扱わない。
+  利用者向けに言い換えるときは `detached_modules_json()` の `code` を使い、その要素の `warning` と同じ文字列を一覧から除く
+  (ビューアの `describeLoadWarnings`。エディタのプレビューは `DressUp.loaded` で知らせ、文の警告はコンソールに出すだけ)。
   物理は本体の設定を引き継ぎ、モジュールのリグは付け直しで加わる。読み込んだモジュールはモデルを変えても残る。
 - 同じ名前のモジュールを `load_module` し直すと、付けていれば新しい版に付け替える (エディタで書き出し直したとき)。
 - モジュールを付けている間に `set_physics_json` で渡した設定は、次の付け外しで本体の設定から作り直される。
