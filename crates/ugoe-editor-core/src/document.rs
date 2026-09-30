@@ -490,6 +490,7 @@ impl Document {
             let mut touched = Vec::new();
             reconfigured.keep_look(
                 &mut workspace.model,
+                workspace.physics.as_mut(),
                 context.slot().anchor.as_ref(),
                 &mut touched,
             )?;

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WebPuppet } from "../viewport/wasm";
 import {
   describeProblem,
+  editingName,
   fileStem,
   isModuleFile,
   parseModules,
@@ -411,5 +412,35 @@ describe("DressUp in a module project", () => {
     dressUp.setOwn(null, "", true);
     expect(dressUp.entries.some((e) => e.own)).toBe(false);
     expect(fake.attached()).toEqual([]);
+  });
+
+  it("compares the current edits with an exported file of the same name (T0653)", async () => {
+    const editing = editingName("Hat");
+    expect(editing).toBe("Hat (editing)");
+    const fake = fakePuppet({ [editing]: "Hair", Hat: "Hair" });
+    const dressUp = new DressUp({
+      puppet: () => fake.puppet,
+      active: () => true,
+      changed: vi.fn(),
+      ownSlot: () => null,
+    });
+    dressUp.setOwn(bytes(editing), editing, false, "Hat");
+    dressUp.loaded(fake.puppet);
+    expect(fake.attached()).toEqual([editing]);
+    // 一覧には今の編集をモジュールの名前で出す。
+    expect(dressUp.entries[0]).toMatchObject({ name: editing, label: "Hat", own: true });
+    // 前に書き出した同じ名前のファイルも読み込めて、同じスロットで差し替えて比べられる。
+    await dressUp.add([{ path: "/work/Hat.ugoemod", bytes: bytes("Hat") }]);
+    expect(dressUp.error).toBeNull();
+    expect(entry(dressUp, "Hat")?.problem).toBeNull();
+    expect(fake.attached()).toEqual(["Hat"]);
+    dressUp.setSlot("Hair", editing);
+    expect(fake.attached()).toEqual([editing]);
+    dressUp.setSlot("Hair", "Hat");
+    expect(fake.attached()).toEqual(["Hat"]);
+    // 取り直しても、ファイルの行はそのまま残る。
+    dressUp.setOwn(bytes(editing), editing, true, "Hat");
+    expect(fake.attached()).toEqual(["Hat"]);
+    expect(dressUp.entries.map((e) => e.name)).toEqual([editing, "Hat"]);
   });
 });

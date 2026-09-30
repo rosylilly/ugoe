@@ -1125,7 +1125,12 @@ base_parameters: Array<string>,
 /**
  * 本体が名乗るアバタープロファイルのレベル (なければ `null`)。
  */
-base_avatar_level: number | null, };
+base_avatar_level: number | null, 
+/**
+ * 本体の版 (`ModuleContext::base_revision`)。本体を読み込み直すと変わる。プレビューが、本体だけの `.ugoe`
+ * (`get_preview_base_bundle`) をこれが変わったときだけ取り直す。
+ */
+base_revision: number, };
 
 export type Motion = { name: string, 
 /**

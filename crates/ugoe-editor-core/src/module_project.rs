@@ -13,12 +13,13 @@
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use ugoe_core::Id;
+use ugoe_core::{Id, Vec2};
 use ugoe_model::deformer::DeformerKind;
 use ugoe_model::keyform::KeyformGrid;
 use ugoe_model::module::{DrawOrderRange, ModulePhysics, ModulePose, ModuleRequirements};
-use ugoe_model::physics::{PhysicsSettings, PhysicsTarget, VertexOwner};
+use ugoe_model::physics::{ColliderShape, PhysicsSettings, PhysicsTarget, VertexOwner};
 use ugoe_model::pose::{PoseEntry, PoseGroup};
 use ugoe_model::{DeformerId, MeshId, Model, Module, PartId, SCHEMA_VERSION, Slot, SlotId};
 use ugoe_runtime::{ComposeError, compose, compose_physics};
@@ -60,6 +61,9 @@ impl From<ModuleError> for EditError {
     }
 }
 
+/// 次に読み込む本体の版 ([`ModuleContext::base_revision`])。
+static NEXT_BASE_REVISION: AtomicU64 = AtomicU64::new(1);
+
 /// モジュールのプロジェクトが参照する本体 (読み取り専用)。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleBase {
@@ -84,6 +88,8 @@ pub struct Workspace {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleContext {
     base: ModuleBase,
+    /// 本体の版 ([`ModuleContext::base_revision`])。
+    base_revision: u64,
     slot: Slot,
     name: String,
     requires: ModuleRequirements,
@@ -105,7 +111,17 @@ impl ModuleContext {
         name: impl Into<String>,
         requires: ModuleRequirements,
     ) -> Result<Self, ModuleError> {
-        let name = name.into();
+        let revision = NEXT_BASE_REVISION.fetch_add(1, Ordering::Relaxed);
+        Self::with_revision(base, revision, slot, name.into(), requires)
+    }
+
+    fn with_revision(
+        base: ModuleBase,
+        base_revision: u64,
+        slot: &SlotId,
+        name: String,
+        requires: ModuleRequirements,
+    ) -> Result<Self, ModuleError> {
         if !Module::is_valid_name(&name) {
             return Err(ModuleError::InvalidName(name));
         }
@@ -128,6 +144,7 @@ impl ModuleContext {
         let base_meshes = expected.meshes.iter().map(|m| m.id.to_string()).collect();
         Ok(Self {
             base,
+            base_revision,
             slot,
             name,
             requires,
@@ -146,7 +163,13 @@ impl ModuleContext {
         name: impl Into<String>,
         requires: ModuleRequirements,
     ) -> Result<Self, ModuleError> {
-        Self::new(self.base.clone(), slot, name, requires)
+        Self::with_revision(
+            self.base.clone(),
+            self.base_revision,
+            slot,
+            name.into(),
+            requires,
+        )
     }
 
     /// スロット・名前・条件は同じで、本体を `base` に替えた情報 (本体のファイルが変わったときの読み直し)。
@@ -166,6 +189,13 @@ impl ModuleContext {
 
     pub fn base(&self) -> &ModuleBase {
         &self.base
+    }
+
+    /// 本体の版。本体を読み込むたび ([`ModuleContext::new`]・[`ModuleContext::rebased`]) にプロセスの中で
+    /// 重ならない番号になり、名前・スロット・条件を替えても ([`ModuleContext::reconfigured`]) 変わらない。
+    /// 本体から作るもの (プレビューで比べる本体だけの `.ugoe`) を、本体が変わったときだけ作り直すのに使う。
+    pub fn base_revision(&self) -> u64 {
+        self.base_revision
     }
 
     pub fn slot(&self) -> &Slot {
@@ -287,18 +317,52 @@ impl ModuleContext {
         Ok(())
     }
 
-    /// 前の取り付け先 `old_anchor` の局所座標のまま合成し直した作業用のモデルで、モジュールの最上位のデフォーマと
-    /// メッシュを、このスロットの取り付け先の局所座標に写し直す (見た目を保って移す。`Command::SetModuleSettings` の
-    /// `keep_look`)。写し方は `ReparentPreservingLook` と同じで、基準の姿で見た目が変わらない。
+    /// 前の取り付け先 `old_anchor` の局所座標のまま合成し直した作業用のモデルと物理で、モジュールの最上位のデフォーマと
+    /// メッシュ、取り付け先に付く衝突体を、このスロットの取り付け先の局所座標に写し直す (見た目を保って移す。
+    /// `Command::SetModuleSettings` の `keep_look`)。写し方は `ReparentPreservingLook` と同じで、基準の姿で見た目が変わらない。
+    ///
+    /// 物理のリグの粒子は写し直さない。モジュールのリグの根元はモジュールのデフォーマ (出力先か `frame`) の局所座標か
+    /// キャンバス座標で表され (`docs/spec/physics.md#物理空間と根元の取り付け先`)、どちらも基準の姿でのキャンバスでの
+    /// 位置がデフォーマの写し直しで保たれるため。
     pub(crate) fn keep_look(
         &self,
         model: &mut Model,
+        physics: Option<&mut PhysicsSettings>,
         old_anchor: Option<&DeformerId>,
         touched: &mut Vec<KeyformTarget>,
     ) -> Result<(), EditError> {
         let anchor = self.slot.anchor.as_ref();
         if anchor == old_anchor {
             return Ok(());
+        }
+        if let Some(physics) = physics {
+            // 取り付け先はどちらも本体のデフォーマなので、モジュールの要素を動かす前に求めても同じ。
+            let rest = deformer_edit::Rest::new(model)?;
+            let (from, to) = (rest.frame(old_anchor), rest.frame(anchor));
+            let remap = |p: &mut Vec2| -> Result<(), EditError> {
+                *p = to
+                    .inverse(from.map(*p))
+                    .map_err(|reason| EditError::DeformerEdit {
+                        reason: format!("cannot keep the physics colliders in place: {reason}"),
+                    })?;
+                Ok(())
+            };
+            let base = &self.expected_physics;
+            for collider in &mut physics.colliders {
+                if collider.attach.as_ref() != anchor
+                    || base.colliders.iter().any(|b| b.id == collider.id)
+                {
+                    continue;
+                }
+                match &mut collider.shape {
+                    ColliderShape::Circle { center, .. } => remap(center)?,
+                    ColliderShape::Capsule { a, b, .. } => {
+                        remap(a)?;
+                        remap(b)?;
+                    }
+                    ColliderShape::Unknown => {}
+                }
+            }
         }
         let mut tops = Vec::new();
         for d in &mut model.deformers {

@@ -93,11 +93,18 @@ export const ipc = {
    */
   reloadBase: (base: string | null = null, slot: string | null = null) =>
     invoke<BaseReload>("reload_base", { base, slot }),
-  /** モジュールのプロジェクトの本体だけの .ugoe (プレビューで今の編集のモジュールと比べる)。 */
+  /**
+   * モジュールのプロジェクトの本体だけの .ugoe (プレビューで今の編集のモジュールと比べる)。本体の版
+   * (ModuleStatus.base_revision) が変わったときだけ取り直す。
+   */
   getPreviewBaseBundle: async () =>
     new Uint8Array(await invoke<ArrayBuffer>("get_preview_base_bundle")),
-  /** モジュールのプロジェクトの今の編集の .ugoemod (ファイルには書かない。書き出しと同じ検査に通らなければエラー)。 */
-  getPreviewModule: async () => new Uint8Array(await invoke<ArrayBuffer>("get_preview_module")),
+  /**
+   * モジュールのプロジェクトの今の編集の .ugoemod (ファイルには書かない。書き出しと同じ検査に通らなければエラー)。
+   * `name` ならモジュールの名前をそれにする (前に書き出した同じ名前のファイルと並べて読み込む)。
+   */
+  getPreviewModule: async (name: string | null = null) =>
+    new Uint8Array(await invoke<ArrayBuffer>("get_preview_module", { name })),
   /** モジュールのプロジェクトを .ugoemod に書き出す。 */
   exportModule: (path: string) => invoke<ModuleExportReport>("export_module", { path }),
   /**

@@ -50,7 +50,7 @@ pub use motion_edit::{Animations, SegmentShape};
 pub use physics_template::{PhysicsTemplate, PhysicsTemplateOptions};
 pub use project::{
     ModuleExport, ModuleLink, Project, ProjectError, ProjectKind, ProjectMeta, export_base_bundle,
-    export_bundle, export_module,
+    export_bundle, export_module, export_module_as,
 };
 pub use proposal::{ProposalCommand, ProposalError, ProposalOrigin, ProposalView, Proposals};
 pub use texture::Textures;

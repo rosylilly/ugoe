@@ -43,6 +43,7 @@ const status: ModuleStatus = {
   base_slots: [],
   base_parameters: ["AngleX", "BodySway"],
   base_avatar_level: null,
+  base_revision: 1,
 };
 
 describe("baseElements", () => {

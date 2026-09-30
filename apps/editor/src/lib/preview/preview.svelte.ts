@@ -10,7 +10,8 @@
 //   値は `update(dt)` の直前に `set_tracking` で渡す (ビューアの Player と同じ)。プレビューを出るとトラッキングも止まる。
 // - 着せ替え (T0649) は DressUp (dressUp.svelte.ts)。モジュールはプレビューの間だけ付ける。
 // - モジュールのプロジェクトでは、本体だけのモデル (ipc.getPreviewBaseBundle) を描き、今の編集を書き出したモジュール
-//   (ipc.getPreviewModule) を付けて、同じスロットのほかのモジュールと差し替えて比べる (T0651)。編集のたびに取り直す。
+//   (ipc.getPreviewModule) を付けて、同じスロットのほかのモジュールと差し替えて比べる (T0651)。今の編集は編集のたびに
+//   取り直し、本体だけのモデルは本体の版 (ModuleStatus.base_revision) が変わったときだけ取り直す (T0653)。
 //   書き出せない (検査に通らない) 間は、編集中の (合成した) モデルを描き、自分のスロットにはほかのモジュールを付けない。
 import {
   en,
@@ -23,6 +24,7 @@ import type { EditorDocument } from "../document.svelte";
 import { type Expression, ipc, type Motion } from "../ipc";
 import type { FrameDriver, PuppetStage, ViewportController } from "../viewport/controller.svelte";
 import type { WebPuppet } from "../viewport/wasm";
+import { editingName } from "./dressUp";
 import { DressUp } from "./dressUp.svelte";
 import { describeLoadWarnings, parseLoadWarnings } from "./loadWarnings";
 import { defaultStages, pushEvents } from "./preview";
@@ -79,8 +81,8 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
   comparing = $state(false);
   /** 今の編集を取り直した EditorDocument.revision。 */
   #ownRevision = -1;
-  /** 描いている本体だけのモデル (.ugoe)。 */
-  #baseBundle: Uint8Array | null = null;
+  /** 最後に取った本体だけのモデル (.ugoe) と、その本体の版。プレビューを出ても覚えておく。 */
+  #baseBundle: { revision: number; bytes: Uint8Array } | null = null;
 
   constructor(doc: EditorDocument, viewport: ViewportController) {
     this.#doc = doc;
@@ -123,7 +125,6 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
     this.active = false;
     // 本体だけのモデルは忘れ、編集中のモデルに戻る (setDriver(null) が読み直す)。
     this.comparing = false;
-    this.#baseBundle = null;
     this.#ownRevision = -1;
     this.#viewport.setDriver(null);
   }
@@ -291,6 +292,7 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
 
   /**
    * モジュールのプロジェクトで、本体だけのモデルと今の編集のモジュールを取り、本体に今の編集を付けて描く。
+   * 本体だけのモデルは、本体の版が前に取ったものと違うときだけ取る。
    * 書き出せなければ理由を出し、編集中の (合成した) モデルに戻す。取る間に編集されたら、その読み込みで取り直す。
    */
   async #compareOwn(): Promise<void> {
@@ -298,10 +300,15 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
     if (!module) return;
     const revision = this.#doc.revision;
     this.#ownRevision = revision;
+    const cached = this.#baseBundle;
+    const baseRevision = module.base_revision;
     let base: Uint8Array;
     let own: Uint8Array;
     try {
-      [base, own] = await Promise.all([ipc.getPreviewBaseBundle(), ipc.getPreviewModule()]);
+      [base, own] = await Promise.all([
+        cached?.revision === baseRevision ? cached.bytes : ipc.getPreviewBaseBundle(),
+        ipc.getPreviewModule(editingName(module.name)),
+      ]);
     } catch (e) {
       if (!this.active || revision !== this.#doc.revision) return;
       this.dressUp.ownProblem = `Your edits can't be put on the base to compare with other modules: ${e}`;
@@ -313,9 +320,10 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
     const comparing = this.comparing;
     this.comparing = true;
     // 描いている本体だけのモデルに付けるなら、ここで読み込み直す。初めてなら、本体を読み込んだ後の loaded で読み込む。
-    this.dressUp.setOwn(own, module.name, comparing);
-    if (!comparing || !sameBytes(base, this.#baseBundle)) {
-      this.#baseBundle = base;
+    this.dressUp.setOwn(own, editingName(module.name), comparing, module.name);
+    const baseChanged = this.#baseBundle?.bytes !== base;
+    this.#baseBundle = { revision: baseRevision, bytes: base };
+    if (!comparing || baseChanged) {
       this.#viewport.setPreviewModel({ json: this.#doc.model?.json ?? "", bundle: base });
     }
   }
@@ -324,7 +332,6 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
   #stopComparing(): void {
     const comparing = this.comparing;
     this.comparing = false;
-    this.#baseBundle = null;
     this.dressUp.setOwn(null, "", false);
     if (comparing) this.#viewport.setPreviewModel(null);
   }
@@ -372,10 +379,4 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
       if (shown === undefined || Math.abs(shown - value) > EPSILON) this.values[id] = value;
     }
   }
-}
-
-function sameBytes(a: Uint8Array, b: Uint8Array | null): boolean {
-  if (b === null || a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-  return true;
 }

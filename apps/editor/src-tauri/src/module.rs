@@ -67,6 +67,10 @@ pub struct ModuleStatus {
     pub base_parameters: Vec<String>,
     /// 本体が名乗るアバタープロファイルのレベル (なければ `null`)。
     pub base_avatar_level: Option<u8>,
+    /// 本体の版 (`ModuleContext::base_revision`)。本体を読み込み直すと変わる。プレビューが、本体だけの `.ugoe`
+    /// (`get_preview_base_bundle`) をこれが変わったときだけ取り直す。
+    #[ts(type = "number")]
+    pub base_revision: u64,
 }
 
 /// モジュールのプロジェクトが本体の問題で開けない・読み直せないときの、問題の種類 (直し方を選ぶ)。
@@ -163,6 +167,7 @@ pub(crate) fn module_status_of(document: &Document) -> Option<ModuleStatus> {
         base_slots: base.slots.iter().map(slot_summary).collect(),
         base_parameters: base.parameters.iter().map(|p| p.id.to_string()).collect(),
         base_avatar_level: base.avatar.as_ref().map(|a| a.level),
+        base_revision: context.base_revision(),
     })
 }
 
@@ -347,12 +352,20 @@ pub fn get_preview_base_bundle(state: State<'_, AppState>) -> Result<tauri::ipc:
 }
 
 /// 開いているモジュールのプロジェクトの今の編集を `.ugoemod` のバイト列にする (ファイルには書かない。
-/// プレビューで付けて比べる)。書き出しと同じ検査をし、通らなければエラー。
+/// プレビューで付けて比べる)。書き出しと同じ検査をし、通らなければエラー。`name` があればモジュールの名前を
+/// それにする (前に書き出した同じ名前の `.ugoemod` と並べて読み込めるように。T0653)。
 #[tauri::command]
-pub fn get_preview_module(state: State<'_, AppState>) -> Result<tauri::ipc::Response, String> {
+pub fn get_preview_module(
+    state: State<'_, AppState>,
+    name: Option<String>,
+) -> Result<tauri::ipc::Response, String> {
     let (document, session) = lock_both(&state)?;
-    let export = ugoe_editor_core::export_module(&session.to_project(&document))
-        .map_err(|e| e.to_string())?;
+    let project = session.to_project(&document);
+    let export = match &name {
+        Some(name) => ugoe_editor_core::export_module_as(&project, name),
+        None => ugoe_editor_core::export_module(&project),
+    }
+    .map_err(|e| e.to_string())?;
     Ok(tauri::ipc::Response::new(export.bytes))
 }
 

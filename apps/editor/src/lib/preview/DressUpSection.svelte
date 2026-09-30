@@ -164,7 +164,7 @@ onMount(() => {
                 aria-label="Put on {entry.name}"
                 onchange={(e) => (e.currentTarget.checked ? dressUp.attach(entry.name) : dressUp.detach(entry.name))}
               />
-              <span class="name">{entry.name}</span>
+              <span class="name">{entry.label ?? entry.name}</span>
               {#if entry.own}<span class="badge">editing</span>{/if}
             </label>
             <span class="muted slot-of">{entry.slot ? `→ ${entry.slot}` : ""}</span>

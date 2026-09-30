@@ -22,7 +22,9 @@ use ugoe_model::module::ModuleRequirements;
 use ugoe_model::motion::Motion;
 use ugoe_model::physics::PhysicsSettings;
 use ugoe_model::validate::ValidationError;
-use ugoe_model::{Canvas, Effects, Model, ModelMeta, Pose, SCHEMA_VERSION, SlotId, TextureRef};
+use ugoe_model::{
+    Canvas, Effects, Model, ModelMeta, Module, Pose, SCHEMA_VERSION, SlotId, TextureRef,
+};
 
 use crate::Document;
 use crate::fingerprint::ProjectFingerprint;
@@ -637,9 +639,26 @@ pub struct ModuleExport {
 /// 作業用のモデルからモジュールを取り出し、単体の検証 (`validate_module`) と、本体との合成
 /// (`compose`・`compose_physics`) を確かめてから書く。テクスチャと法線マップを含める。
 pub fn export_module(project: &Project) -> Result<ModuleExport, ProjectError> {
+    export_module_with(project, None)
+}
+
+/// [`export_module`] と同じく書き出すが、モジュールの名前を `name` にする (ファイルには書かない。エディタの
+/// プレビューが、今の編集を前に書き出した同じ名前の `.ugoemod` と並べて比べるために使う。
+/// `docs/editor.md#プレビューの着せ替え`、T0653)。名前が使えなければ [`ModuleError::InvalidName`]。
+pub fn export_module_as(project: &Project, name: &str) -> Result<ModuleExport, ProjectError> {
+    if !Module::is_valid_name(name) {
+        return Err(ModuleError::InvalidName(name.to_owned()).into());
+    }
+    export_module_with(project, Some(name))
+}
+
+fn export_module_with(project: &Project, name: Option<&str>) -> Result<ModuleExport, ProjectError> {
     let context = project.module.as_ref().ok_or(ProjectError::NotAModule)?;
-    let (module, images) =
+    let (mut module, images) =
         context.split(&project.model, project.physics.as_ref(), &project.textures)?;
+    if let Some(name) = name {
+        name.clone_into(&mut module.name);
+    }
     let errors = ugoe_model::validate::validate_module(&module);
     if !errors.is_empty() {
         return Err(ProjectError::InvalidModule(errors));

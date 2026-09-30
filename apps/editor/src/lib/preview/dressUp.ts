@@ -182,3 +182,11 @@ export function sameNames(a: readonly string[], b: readonly string[]): boolean {
   const set = new Set(a);
   return b.every((n) => set.has(n));
 }
+
+/**
+ * モジュールのプロジェクトのプレビューで、今の編集を読み込む名前 (T0653)。モジュールの名前のままだと、前に書き出した
+ * 同じ名前の `.ugoemod` と一緒に読み込めない (WebPuppet は名前で区別する) ので、別の名前にする。
+ */
+export function editingName(name: string): string {
+  return `${name} (editing)`;
+}

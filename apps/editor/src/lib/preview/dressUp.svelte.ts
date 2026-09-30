@@ -10,7 +10,8 @@
 // - 一覧 (パスと付けるか) は project.json の editor.dress_up に残す (ipc.setPreviewModules)。ドロップしたファイルで
 //   パスが分からないもの (ブラウザ) は残さない。
 // - モジュールのプロジェクトでは、PreviewMode が本体だけのモデルを描き、今の編集を書き出したモジュールを一覧の先頭の
-//   行 (`own`) として付ける (`setOwn`。T0651)。同じスロットのほかのモジュールと差し替えて比べられる。
+//   行 (`own`) として付ける (`setOwn`。T0651)。同じスロットのほかのモジュールと差し替えて比べられる。今の編集は
+//   `editingName` の名前で読み込むので、前に書き出した同じ名前の `.ugoemod` とも並べて比べられる (T0653)。
 import { ipc } from "../ipc";
 import type { WebPuppet } from "../viewport/wasm";
 import {
@@ -45,6 +46,8 @@ export interface DressUpEntry {
   requires: LoadedModuleInfo["requires"];
   /** モジュールのプロジェクトの今の編集 (ファイルではない。プロジェクトに残さない)。 */
   own?: boolean;
+  /** 一覧に出す名前 (`name` と違うとき。今の編集の行はモジュールの名前)。 */
+  label?: string;
 }
 
 /** 読み込むファイル。`bytes` がなければ `path` から読む。 */
@@ -69,10 +72,10 @@ export interface DressUpHost {
   ownSlot?(): string | null;
 }
 
-/** モジュールのプロジェクトの今の編集と同じ名前のモジュールを読み込んだときの説明。 */
+/** モジュールのプロジェクトの今の編集と同じ名前 (`editingName`) のモジュールを読み込んだときの説明。 */
 export function sameNameProblem(name: string): DressUpProblem {
   return {
-    summary: `This file is also named "${name}", like the module you are editing, so only your current edits are shown. Rename one of them to compare.`,
+    summary: `This file is also named "${name}", the name your current edits use here, so only your current edits are shown. Rename the file's module to compare.`,
     detail: `module ${name} has the same name as this module project`,
     code: "same_name",
   };
@@ -259,9 +262,9 @@ export class DressUp {
   /**
    * モジュールのプロジェクトの今の編集を書き出したもの `bytes` (名前 `name`) を、一覧の先頭の行にする (T0651)。
    * `null` で除く。`apply` なら WebPuppet に読み込み直して付けたい組に揃える (でなければ次の `loaded` で読み込む)。
-   * 付けるか (`wanted`) は前の行のものを保つ (初めは付ける)。
+   * 付けるか (`wanted`) は前の行のものを保つ (初めは付ける)。`label` は一覧に出す名前 (既定は `name`)。
    */
-  setOwn(bytes: Uint8Array | null, name: string, apply: boolean): void {
+  setOwn(bytes: Uint8Array | null, name: string, apply: boolean, label = name): void {
     const puppet = this.#host.puppet();
     const old = this.entries.find((e) => e.own);
     if (old) {
@@ -293,6 +296,7 @@ export class DressUp {
         own: true,
       };
       row.name = name;
+      row.label = label === name ? undefined : label;
       row.loaded = false;
       row.problem = null;
       if (!old) this.entries = [row, ...this.entries];

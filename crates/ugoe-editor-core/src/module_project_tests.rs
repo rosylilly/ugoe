@@ -13,7 +13,7 @@ use crate::module_project::{ModuleBase, ModuleContext, ModuleError};
 use crate::texture::{Textures, solid_png};
 use crate::{
     Command, Document, EditError, Project, ProjectError, ProjectKind, ProjectMeta,
-    export_base_bundle, export_bundle, export_module,
+    export_base_bundle, export_bundle, export_module, export_module_as,
 };
 
 fn base() -> ModuleBase {
@@ -802,6 +802,131 @@ fn module_settings_keep_the_look_when_the_anchor_changes() {
             .zip(&moved)
             .any(|(a, b)| (*a - *b).length() > 1.0)
     );
+}
+
+/// `keep_look` で取り付け先を替えると、モジュールの衝突体 (取り付け先に付くもの) も見た目の位置を保ち、
+/// リグの根元 (モジュールの回転デフォーマに付く) も同じ位置に残る。Undo で戻る。
+#[test]
+fn module_settings_keep_physics_in_place_when_the_anchor_changes() {
+    // LongHair (取り付け先 Head) を、マスクとパラメータを使わない形にして Outfit (取り付け先 Torso) へ移す。
+    let mut module = long_hair_module();
+    for mesh in &mut module.meshes {
+        mesh.masks.clear();
+    }
+    if let ugoe_model::deformer::DeformerKind::Rotation(r) = &mut module.deformers[0].kind {
+        let rest = r.keyforms.keyforms[0];
+        r.keyforms = KeyformGrid::constant(rest);
+    }
+    module.physics.rigs[0].inputs.clear();
+    // 衝突体の位置 (キャンバス座標) と、リグの根元 (`Sway` の局所座標の粒子 0) のキャンバス座標。
+    let canvas = |document: &Document| -> (Vec2, Vec2) {
+        let model = document.model().clone();
+        let physics = document.physics().unwrap();
+        let mut instance = ugoe_runtime::ModelInstance::new(
+            ugoe_runtime::CompiledModel::compile(model.clone()).unwrap(),
+        );
+        instance.update();
+        let index = |id: &str| {
+            model
+                .deformers
+                .iter()
+                .position(|d| d.id.as_str() == id)
+                .unwrap()
+        };
+        let collider = &physics.colliders[0];
+        let ugoe_model::physics::ColliderShape::Circle { center, .. } = collider.shape else {
+            unreachable!()
+        };
+        let attach = index(collider.attach.as_ref().unwrap().as_str());
+        let rig = &physics.rigs[0];
+        (
+            instance.deformer_world_point(attach, center),
+            instance.deformer_world_point(index("LongHair/Sway"), rig.particles[0].position),
+        )
+    };
+
+    let mut document = self::document(&module);
+    let (collider, root) = canvas(&document);
+    let original = document.physics().cloned();
+    let mut command = settings("LongHair", "Outfit", ModuleRequirements::default());
+    let Command::SetModuleSettings { keep_look, .. } = &mut command else {
+        unreachable!()
+    };
+    *keep_look = true;
+    document.apply(command).unwrap();
+    let physics = document.physics().unwrap();
+    assert_eq!(
+        physics.colliders[0].attach.as_ref().map(|a| a.as_str()),
+        Some("Torso")
+    );
+    // 粒子は写し直さない (根元はモジュールのデフォーマの局所座標なので、デフォーマと一緒に保たれる)。
+    assert_eq!(physics.rigs[0].particles, module.physics.rigs[0].particles);
+    let (moved_collider, moved_root) = canvas(&document);
+    assert!(
+        (collider - moved_collider).length() < 1e-3,
+        "{collider:?} != {moved_collider:?}"
+    );
+    assert!(
+        (root - moved_root).length() < 1e-3,
+        "{root:?} != {moved_root:?}"
+    );
+    // 分けたモジュールの衝突体は Torso の UV で表される。
+    assert_ne!(
+        split(&document).physics.colliders[0].shape,
+        module.physics.colliders[0].shape
+    );
+    assert!(document.undo());
+    assert_eq!(document.physics().cloned(), original);
+
+    // `keep_look` でなければ、衝突体は Head の局所座標のまま Torso に付く。
+    let mut document = self::document(&module);
+    document
+        .apply(settings(
+            "LongHair",
+            "Outfit",
+            ModuleRequirements::default(),
+        ))
+        .unwrap();
+    assert_eq!(
+        split(&document).physics.colliders[0].shape,
+        module.physics.colliders[0].shape
+    );
+}
+
+/// 本体の版は、名前・スロットを替えても変わらず、本体を読み直すと変わる (プレビューの本体だけのバンドルを作り直す印)。
+#[test]
+fn base_revision_changes_only_with_the_base() {
+    let mut document = self::document(&dress_module());
+    let first = document.module().unwrap().base_revision();
+    document
+        .apply(settings("Gown", "Outfit", ModuleRequirements::default()))
+        .unwrap();
+    assert_eq!(document.module().unwrap().base_revision(), first);
+    assert!(document.undo());
+    assert_eq!(document.module().unwrap().base_revision(), first);
+    document.rebase_module(base()).unwrap();
+    let second = document.module().unwrap().base_revision();
+    assert_ne!(second, first);
+    // 同じ中身の本体でも、別に読み込んだものは別の版 (プロセスの中で重ならない)。
+    assert_ne!(context(&dress_module()).base_revision(), second);
+}
+
+/// プレビュー用に名前を替えて書き出すと、名前のほかは書き出しと同じ。使えない名前は拒否する。
+#[test]
+fn module_can_be_exported_under_another_name() {
+    let temp = TempDir::new("export-as");
+    let base_path = save_base(&temp.0);
+    let project = Project::new_module("Hat", &base_path, &"Hair".into()).unwrap();
+    let read = |bytes: Vec<u8>| ugoe_format::read_module(&bytes).unwrap().module;
+    let plain = read(export_module(&project).unwrap().bytes);
+    let mut renamed = read(export_module_as(&project, "Hat (editing)").unwrap().bytes);
+    assert_eq!(renamed.name, "Hat (editing)");
+    renamed.name = plain.name.clone();
+    assert_eq!(renamed, plain);
+    assert!(matches!(
+        export_module_as(&project, "a/b"),
+        Err(ProjectError::Module(ModuleError::InvalidName(_)))
+    ));
 }
 
 #[test]
