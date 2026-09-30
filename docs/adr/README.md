@@ -33,3 +33,4 @@
 | [0021](0021-public-specification.md) | 公開のモデル仕様 (英語版を正とし、CC BY 4.0) | Accepted |
 | [0022](0022-multiple-ai-providers-and-agents.md) | 複数の AI プロバイダと、エージェントに判断を任せる経路 | Accepted |
 | [0023](0023-editor-mcp-bridge.md) | 実行中のエディタと MCP をつなぐ (エディタの中の MCP サーバと、stdio の中継) | Accepted |
+| [0024](0024-module-authoring.md) | 着せ替えのモジュールは、本体を参照する別のプロジェクトとして作る | Accepted |
