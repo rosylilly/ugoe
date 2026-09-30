@@ -1,11 +1,11 @@
 ---
 id: T0656
 title: エディタ: モジュールの違いをメッシュの中身まで出す・違いの行からツリーで選ぶ
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-editor-core, apps/editor, docs]
 depends_on: [T0654]
-assignee:
+assignee: claude-worker-T0656
 ---
 
 # T0656: モジュールの違いの詳細
