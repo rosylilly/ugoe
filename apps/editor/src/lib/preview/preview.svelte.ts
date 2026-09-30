@@ -8,6 +8,7 @@
 //   ときも物理が動くよう、WebPuppet に物理が無ければ `set_physics_json` で渡す。
 // - フェイストラッキング (T0636) はビューアと同じ部品 (@ugoe/face-tracking) を使う。PreviewMode が TrackingTarget になり、
 //   値は `update(dt)` の直前に `set_tracking` で渡す (ビューアの Player と同じ)。プレビューを出るとトラッキングも止まる。
+// - 着せ替え (T0649) は DressUp (dressUp.svelte.ts)。モジュールはプレビューの間だけ付ける。
 import {
   en,
   FaceTracker,
@@ -19,6 +20,7 @@ import type { EditorDocument } from "../document.svelte";
 import type { Expression, Motion } from "../ipc";
 import type { FrameDriver, PuppetStage, ViewportController } from "../viewport/controller.svelte";
 import type { WebPuppet } from "../viewport/wasm";
+import { DressUp } from "./dressUp.svelte";
 import { defaultStages, pushEvents } from "./preview";
 import { saveTrackingRecording } from "./trackingHost";
 
@@ -55,6 +57,8 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
    * とどちらも有効なときだけ動く。
    */
   autoEyeBlink = $state(true);
+  /** 着せ替え (`.ugoemod` の付け外し)。 */
+  readonly dressUp: DressUp;
 
   #doc: EditorDocument;
   #viewport: ViewportController;
@@ -67,6 +71,14 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
     this.#doc = doc;
     this.#viewport = viewport;
     this.tracker = new FaceTracker(this, { strings: en, saveJson: saveTrackingRecording });
+    this.dressUp = new DressUp({
+      puppet: () => this.#viewport.puppet,
+      active: () => this.active,
+      changed: (puppet) => {
+        this.trackingParameterIds = puppet.tracking_parameter_ids();
+        this.#sync(puppet);
+      },
+    });
     // ヘッドレスのブラウザでの確認のため (記録した値の列の再生など)。
     window.__UGOE_TRACKER__ = this.tracker;
   }
@@ -82,12 +94,15 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
     this.error = null;
     this.active = true;
     this.#viewport.setDriver(this);
+    void this.dressUp.refresh();
   }
 
   /** プレビューモードを出て、編集中の姿に戻す。 */
   exit(): void {
     if (!this.active) return;
     this.tracker.stop();
+    // 編集の画面には本体だけを出す (付けたい組は覚えておき、次に入ったときに付け直す)。
+    this.dressUp.takeOff();
     this.active = false;
     this.#viewport.setDriver(null);
   }
@@ -204,6 +219,8 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
         this.error = `Physics: ${e}`;
       }
     }
+    // 物理を渡した後に付ける (付けるときの本体の物理が合成の元になる)。
+    this.dressUp.loaded(puppet);
     for (const [id, value] of Object.entries(this.values)) puppet.set_parameter(id, value);
     // 読み直すと再生の状態は初めからになるので、表情だけ掛け直す (モーションは止まる)。
     const expression = this.expression === null ? null : this.#expression(this.expression);

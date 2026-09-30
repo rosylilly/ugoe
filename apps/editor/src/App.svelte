@@ -71,6 +71,8 @@ ipc.appInfo().then((i) => {
 doc.refresh();
 void lighting.load();
 lighting.onsaved = () => fileMenu?.refresh();
+void preview.dressUp.load();
+preview.dressUp.onsaved = () => fileMenu?.refresh();
 
 // プレビューの光源をビューポートに渡す (編集中もプレビュー中も)。
 $effect(() => viewport.setLighting(lighting.json));
@@ -182,6 +184,7 @@ $effect(() => {
         if (replaced) viewport.resetParametersOnNextModel();
         doc.refresh();
         void lighting.load();
+        void preview.dressUp.load();
       }}
     />
     <span class="spacer"></span>

@@ -25,6 +25,7 @@ import type {
   OverflowReport,
   PhysicsSettings,
   PreviewLighting,
+  PreviewModule,
   ProjectStatus,
   ProposalPreview,
   ProposalState,
@@ -232,4 +233,15 @@ export const ipc = {
    */
   writeJsonFile: (path: string, contents: string) =>
     invoke<void>("write_json_file", { path, contents }),
+  /**
+   * apps/editor/src-tauri/src/dress_up.rs。プロジェクトに残した、プレビューで試すモジュールの一覧
+   * (`project.json` の `editor.dress_up`。パスは絶対パス)。
+   */
+  getPreviewModules: () => invoke<PreviewModule[]>("get_preview_modules"),
+  /** プレビューで試すモジュールの一覧をプロジェクトに残す (保存で書き込む。Undo の対象ではない)。 */
+  setPreviewModules: (modules: PreviewModule[]) =>
+    invoke<ProjectStatus>("set_preview_modules", { modules }),
+  /** `.ugoemod` (絶対パス) のバイト列。生のバイト列で届く。 */
+  readModuleFile: async (path: string) =>
+    new Uint8Array(await invoke<ArrayBuffer>("read_module_file", { path })),
 };

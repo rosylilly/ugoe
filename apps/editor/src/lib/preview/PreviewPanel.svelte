@@ -1,6 +1,6 @@
 <!--
   プレビューモードの右の列 (docs/editor.md#プレビューモード)。段 (物理・目パチ・呼吸・リップシンク・ポーズ) の切り替え、
-  フェイストラッキング (@ugoe/face-tracking、T0636)、プロジェクトのモーション・表情の再生、すべてのパラメータの
+  着せ替え (DressUpSection、T0649)、フェイストラッキング (@ugoe/face-tracking、T0636)、プロジェクトのモーション・表情の再生、すべてのパラメータの
   スライダー (グループごと)。
   状態と WebPuppet の操作は PreviewMode (preview.svelte.ts)。コマンドは送らない。
 -->
@@ -12,6 +12,7 @@ import type { LightingView } from "../panels/lighting/lightingView.svelte";
 import PreviewLightsSection from "../panels/lighting/PreviewLightsSection.svelte";
 import { formatValue, parseValue } from "../panels/parameterValue";
 import type { ViewportController } from "../viewport/controller.svelte";
+import DressUpSection from "./DressUpSection.svelte";
 import LicenseDialog from "./LicenseDialog.svelte";
 import { filterSections, groupParameters, STAGES, sliderStep, stageAvailability } from "./preview";
 import type { PreviewMode } from "./preview.svelte";
@@ -101,6 +102,8 @@ function onValueKeyDown(e: KeyboardEvent) {
       </div>
     {/each}
   </section>
+
+  <DressUpSection dressUp={preview.dressUp} slots={model?.slots ?? []} />
 
   <section aria-label="Face tracking" class="tracking">
     <TrackingPanel

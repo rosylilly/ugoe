@@ -460,6 +460,42 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
 - **まだ無いもの:** 目パチ・呼吸・リップシンクの設定 (`Model.effects`) を編集する画面はまだ無い
   (読み込んだモデルの設定で動く)。コマンドは `set_effects` ([エフェクトの設定](#エフェクトの設定))。
 
+### プレビューの着せ替え
+
+本体のプロジェクトのプレビューで、`.ugoemod` を読み込んで付け外しする (T0649、[ADR 0024](adr/0024-module-authoring.md))。
+モデルは変えず、コマンドも送りません。付け外しは ugoe-wasm の `WebPuppet` の口 (`load_module`・`attach_module`・
+`detach_module`・`set_modules`・`unload_module`、[crates/ugoe-wasm/README.md](../crates/ugoe-wasm/README.md#着せ替え-t0123)) で行い、
+規則は [spec/modules.md](spec/modules.md#puppet-での着せ替え) のとおりです。コードは `apps/editor/src/lib/preview/` の
+`DressUpSection.svelte` (パネルの節)・`dressUp.svelte.ts` (`DressUp`、状態と `WebPuppet` の操作)・`dressUp.ts`
+(エラーの説明・スロットの行。Vitest) と、`src-tauri/src/dress_up.rs`。
+
+- **読み込み:** 「Load .ugoemod…」(OS のダイアログ) か、プレビュー中のウィンドウへのドロップ。Tauri のウィンドウでは
+  OS のドロップを Tauri が受けてパスを渡すので (`getCurrentWebview().onDragDropEvent`)、バイト列は `read_module_file`
+  (`.ugoemod` だけを読む) で取ります。ブラウザ (ヘッドレスでの確認) では HTML のドロップの `File` を読み、パスは分かりません。
+  読み込むとすぐに付けます (同じスロットのモジュールは差し替わる)。
+- **付け外し:** スロットの行 (本体のスロットの定義順。そのスロットを指す読み込んだモジュールから選ぶ。「(none)」で外す) と、
+  モジュールの行のチェックボックス。行の「↻」はファイルから読み直し (書き出し直した新しい版に付け替わる)、「✕」は一覧から除く。
+- **プレビューの間だけ付ける:** 出るときに `set_modules([])` で外し (付けたい組は覚えておく)、入るときに付け直します。
+  編集の画面 (ツリー・選択・ヒットテスト) は本体の要素だけを扱うので、モジュールの要素を編集の画面に出さないためです。
+  入るたびに、パスのあるモジュールをファイルから読み直します。
+- **状態を保つ:** 付け外しで、パラメータの値・ポーズ・トラッキング・モーション・表情は続きから動きます (物理はリセット。
+  `Puppet::set_modules` の規則)。付け外しの後、スライダーの表示とトラッキングの対象のパラメータを写し直します。
+  バンドルが作れず JSON で表示しているときは、ドキュメントの物理を `set_physics_json` で渡してから付けます
+  (付けるときの物理が合成の元になるため)。
+- **読み直しと外れたことの知らせ:** エディタは編集のたびにモデルを読み直し、`WebPuppet` は付けていたモジュールを付け直します
+  (付けられないものは外す、T0123)。`PreviewMode.loaded` で `DressUp.loaded` が付けたい組と比べ、まとめて付けられなければ
+  1 つずつ試して、付けられないものを外し「… was taken off: 理由」と知らせます (理由は付け直しで出た `DressUpError`)。
+  プレビューの外でスロットを消したり変えたりしてから入ったときも同じです。`WebPuppet` を作り直したとき (GPU の喪失など) は、
+  持っているバイト列から読み込み直します。
+- **エラー:** `DressUpError` の `code` を分かる言葉にします (`describeProblem`。「スロットがない → Slots タブで足す」
+  「公開していないパラメータ → スロットの Parameters に入れる」など)。元の文言は「Details」に出します。
+  読み込めないファイル (`invalid_file`) はパネルの上に、付けられないモジュールはその行に出します。
+- **一覧をプロジェクトに残す:** 一覧 (パスと、付けるか) を `project.json` の `editor.dress_up` に残し、次に開いたときに
+  読み込み直します (`get_preview_modules` / `set_preview_modules`。Undo の対象ではなく、変えると未保存の印が付く)。
+  モジュールを書き出し直しては本体で試す、を繰り返すためです。パスは `.ugoeproj` と同じフォルダの中なら相対パスで書きます
+  ([file-formats.md](spec/file-formats.md#プロジェクト-ugoeproj))。パスの分からないもの (ブラウザでドロップしたもの) は残しません。
+  自動で外れたものは、残した一覧を書き換えません (次に開いたときも付けようとして、また知らせる)。
+
 ## PSD の取り込み
 
 `ugoe_editor_core::import::import_psd(model, bytes, options)` が、PSD (`ugoe-psd` の `LayerTree`) から

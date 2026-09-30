@@ -6,6 +6,7 @@ mod ai_provider;
 mod avatar;
 pub mod bindings;
 mod commands;
+mod dress_up;
 mod lighting;
 mod mcp;
 mod overflow;
@@ -117,6 +118,9 @@ pub fn run() {
             mcp::open_claude_desktop_bundle,
             mcp::save_claude_desktop_bundle,
             tracking::write_json_file,
+            dress_up::get_preview_modules,
+            dress_up::set_preview_modules,
+            dress_up::read_module_file,
             lighting::generate_texture_normal_map,
             lighting::assign_texture_normal_map,
             lighting::get_texture_png,

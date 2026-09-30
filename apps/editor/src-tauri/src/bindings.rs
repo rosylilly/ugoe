@@ -14,6 +14,7 @@ use ugoe_editor_core::{ApplyReport, ExportReport, ExportSettings, PsdImportWarni
 use crate::ai::{AiReply, AiSettings, ConsentAnswer};
 use crate::ai_provider::ProviderSettings;
 use crate::commands::{AnimationData, AppInfo};
+use crate::dress_up::PreviewModule;
 use crate::mcp::{BridgeEvent, McpBridgeStatus};
 use crate::project::{ExternalChange, ProjectStatus};
 use crate::proposals::{Classification, ProposalPreview, ProposalState};
@@ -50,6 +51,7 @@ pub fn generated_files() -> Result<Vec<(&'static str, String)>, serde_json::Erro
     types.add::<BridgeEvent>();
     types.add::<BulgeSettings>();
     types.add::<PreviewLighting>();
+    types.add::<PreviewModule>();
     Ok(vec![
         ("apps/editor/src/lib/generated/types.ts", types.render()),
         (

@@ -1308,6 +1308,19 @@ ambient: [number, number, number], ambient_intensity: number,
 lights: Array<PreviewLight>, };
 
 /**
+ * プレビューで試すモジュール 1 つ (`editor.dress_up.modules` の要素)。
+ */
+export type PreviewModule = { 
+/**
+ * `.ugoemod` のパス (IPC では絶対パス)。
+ */
+path: string, 
+/**
+ * プレビューで付けるか。
+ */
+attached: boolean, };
+
+/**
  * フロントエンドに見せるプロジェクトの状態。
  */
 export type ProjectStatus = { name: string, 

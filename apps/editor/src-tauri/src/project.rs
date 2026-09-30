@@ -87,6 +87,23 @@ impl ProjectSession {
         self.path.as_deref()
     }
 
+    /// `project.json` の `editor` の項目 `key` (エディタだけが使う設定。`crate::dress_up` など)。
+    pub(crate) fn editor_value(&self, key: &str) -> Option<&serde_json::Value> {
+        self.meta.editor.get(key)
+    }
+
+    /// `editor` の項目 `key` を `value` にする (`None` なら消す)。変われば未保存の印を付ける。
+    pub(crate) fn set_editor_value(&mut self, key: &str, value: Option<serde_json::Value>) {
+        if self.meta.editor.get(key) == value.as_ref() {
+            return;
+        }
+        match value {
+            Some(value) => self.meta.editor.insert(key.to_owned(), value),
+            None => self.meta.editor.remove(key),
+        };
+        self.meta_modified = true;
+    }
+
     /// エディタにつないだエージェント (`crate::mcp`) に貸す、メタ情報と提案の置き場。
     pub(crate) fn lend(&mut self) -> (&ProjectMeta, &mut ugoe_editor_core::Proposals) {
         (&self.meta, self.proposals.proposals_mut())
@@ -191,7 +208,7 @@ pub struct ProjectStatus {
     pub modified: bool,
 }
 
-fn status(session: &ProjectSession, document: &Document) -> ProjectStatus {
+pub(crate) fn status(session: &ProjectSession, document: &Document) -> ProjectStatus {
     ProjectStatus {
         name: session.meta.name.clone(),
         path: session.path.as_ref().map(|p| p.display().to_string()),
@@ -200,7 +217,7 @@ fn status(session: &ProjectSession, document: &Document) -> ProjectStatus {
 }
 
 /// ロックの順序は常に `document` → `project`。
-fn lock_both<'a>(
+pub(crate) fn lock_both<'a>(
     state: &'a State<'_, AppState>,
 ) -> Result<(MutexGuard<'a, Document>, MutexGuard<'a, ProjectSession>), String> {
     let document = state
