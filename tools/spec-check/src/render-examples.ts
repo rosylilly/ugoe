@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { readModelJson } from "./bundle.ts";
 import { evaluate, parameterValues } from "./evaluate.ts";
 import { rgbaPng } from "./png.ts";
-import { type Image, type Lights, render } from "./render.ts";
+import { applyView, fitView, type Image, type Lights, render, type View } from "./render.ts";
 import type * as M from "./types.ts";
 import { writeBundle } from "./write.ts";
 
@@ -22,6 +22,7 @@ export interface RenderCase {
   summary: string;
   parameters?: Record<string, number>;
   target: [number, number];
+  view?: View;
   lights?: Lights;
   pixels: ExpectedPixel[];
 }
@@ -64,6 +65,7 @@ export function compareRenderCase(example: RenderExample, c: RenderCase): string
     width,
     height,
     lights: c.lights,
+    view: c.view,
   });
   const failures: string[] = [];
   for (const p of c.pixels) {
@@ -83,14 +85,13 @@ export function compareRenderCase(example: RenderExample, c: RenderCase): string
 export function pixelsNearEdges(example: RenderExample, c: RenderCase): string[] {
   const { model } = example;
   const result = evaluate(model, parameterValues(model, c.parameters ?? {}));
-  const sx = c.target[0] / model.meta.canvas.width;
-  const sy = c.target[1] / model.meta.canvas.height;
+  const view = c.view ?? fitView(model, c.target[0], c.target[1]);
   const near: string[] = [];
   for (const p of c.pixels) {
     const center: M.Vec2 = [p.at[0] + 0.5, p.at[1] + 0.5];
     let best = Number.POSITIVE_INFINITY;
     model.meshes.forEach((m, i) => {
-      const pos = result.meshes[i].positions.map(([x, y]): M.Vec2 => [x * sx, y * sy]);
+      const pos = result.meshes[i].positions.map((p) => applyView(view, p));
       for (let t = 0; t + 2 < m.indices.length; t += 3) {
         const tri = [pos[m.indices[t]], pos[m.indices[t + 1]], pos[m.indices[t + 2]]];
         for (let e = 0; e < 3; e++)

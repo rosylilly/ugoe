@@ -889,8 +889,11 @@ value: do not rebuild the `derived` keyforms):
   corresponds to. If `A.mirror = B` with `B ≠ A`, a key of `A` corresponds to the same key of `B`
   (for example `EyeLOpen` and `EyeROpen`). If `A.mirror = A`, the parameter is its own counterpart
   and a key corresponds to the negated key (for example `AngleX`: the key 30 corresponds to −30).
-  None: no counterpart is recorded. Pairs SHOULD be bidirectional (`B.mirror = A`); unlike those of
-  meshes and deformers, validation does not check it.
+  None: the parameter is not changed by mirroring, and a key corresponds to the same key of the same
+  parameter (for example `MouthOpenY`: the key 1 corresponds to 1). Unlike on meshes and deformers,
+  where none and the element's own ID mean the same, none and the parameter's own ID differ on a
+  parameter (the same key and the negated key). Pairs SHOULD be bidirectional
+  (`B.mirror = A`); unlike those of meshes and deformers, validation does not check it.
 
 ### Depth
 

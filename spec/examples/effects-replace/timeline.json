@@ -1,0 +1,256 @@
+{
+  "model": "model.json",
+  "summary": "The host replaces the effect settings. Before: eye blink with interval 4 (no blink in these frames), breathing 0.5 sin(2 pi phase / 2) on Breath, lip sync on Mouth with the level 0.6. After the replacement the eye blink restarts from the new seed 42 (interval 0.4, so its first open intervals are 0.4 x (0.5 + u) with u from SplitMix64), breathing restarts from phase 0 with 0.1 + 0.25 sin(2 pi phase), and lip sync writes the kept level to Mouth2 while Mouth returns to its base value. Replacing again with the same settings restarts the blink and breathing, so the frames repeat. Replacing with empty settings stops all three.",
+  "frames": [
+    {
+      "actions": [
+        {
+          "lip_sync": 0.6
+        }
+      ],
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1.0,
+          "Breath": 0.1545,
+          "Mouth": 0.6,
+          "Mouth2": 0.0
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1.0,
+          "Breath": 0.2939,
+          "Mouth": 0.6,
+          "Mouth2": 0.0
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "set_effects": {
+            "eye_blink": {
+              "parameters": [
+                "EyeL"
+              ],
+              "interval": 0.4,
+              "closing": 0.1,
+              "closed": 0.05,
+              "opening": 0.15,
+              "seed": 42
+            },
+            "breath": {
+              "parameters": [
+                {
+                  "parameter": "Breath",
+                  "offset": 0.1,
+                  "peak": 0.25,
+                  "cycle": 1.0,
+                  "weight": 1.0
+                }
+              ]
+            },
+            "lip_sync": {
+              "parameters": [
+                "Mouth2"
+              ]
+            }
+          }
+        }
+      ],
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1.0,
+          "Breath": 0.2469,
+          "Mouth": 0.0,
+          "Mouth2": 0.6
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1.0,
+          "Breath": 0.3378,
+          "Mouth": 0.0,
+          "Mouth2": 0.6
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1.0,
+          "Breath": 0.3378,
+          "Mouth": 0.0,
+          "Mouth2": 0.6
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1.0,
+          "Breath": 0.2469,
+          "Mouth": 0.0,
+          "Mouth2": 0.6
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 0.9663,
+          "Breath": 0.1,
+          "Mouth": 0.0,
+          "Mouth2": 0.6
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 0.0,
+          "Breath": -0.0469,
+          "Mouth": 0.0,
+          "Mouth2": 0.6
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "set_effects": {
+            "eye_blink": {
+              "parameters": [
+                "EyeL"
+              ],
+              "interval": 0.4,
+              "closing": 0.1,
+              "closed": 0.05,
+              "opening": 0.15,
+              "seed": 42
+            },
+            "breath": {
+              "parameters": [
+                {
+                  "parameter": "Breath",
+                  "offset": 0.1,
+                  "peak": 0.25,
+                  "cycle": 1.0,
+                  "weight": 1.0
+                }
+              ]
+            },
+            "lip_sync": {
+              "parameters": [
+                "Mouth2"
+              ]
+            }
+          }
+        }
+      ],
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1.0,
+          "Breath": 0.2469,
+          "Mouth": 0.0,
+          "Mouth2": 0.6
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1.0,
+          "Breath": 0.3378,
+          "Mouth": 0.0,
+          "Mouth2": 0.6
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1.0,
+          "Breath": 0.3378,
+          "Mouth": 0.0,
+          "Mouth2": 0.6
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1.0,
+          "Breath": 0.2469,
+          "Mouth": 0.0,
+          "Mouth2": 0.6
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 0.9663,
+          "Breath": 0.1,
+          "Mouth": 0.0,
+          "Mouth2": 0.6
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 0.0,
+          "Breath": -0.0469,
+          "Mouth": 0.0,
+          "Mouth2": 0.6
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "set_effects": {}
+        }
+      ],
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1.0,
+          "Breath": 0.0,
+          "Mouth": 0.0,
+          "Mouth2": 0.0
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1.0,
+          "Breath": 0.0,
+          "Mouth": 0.0,
+          "Mouth2": 0.0
+        }
+      }
+    }
+  ]
+}

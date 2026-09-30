@@ -35,16 +35,38 @@ export interface RenderInput {
   height: number;
   /** 省略: ホストは光源を与えない。 */
   lights?: Lights;
+  /** キャンバスから描画先へのビュー変換。省略: キャンバス全体を描画先に引き伸ばす。 */
+  view?: View;
 }
 
 /**
- * 透明な黒で初期化した `width` × `height` の描画先に描き、乗算済みの RGBA ([0, 1]) を返す。
- * ビュー変換はキャンバス全体を描画先に引き伸ばすもの。
+ * ビュー変換 (spec/rendering.md#inputs)。`[a, b, c, d, e, f]` はキャンバスの `(x, y)` を描画先の
+ * `(a x + c y + e, b x + d y + f)` に写す (spec/examples/README.md#rendering-examples の `view`)。
  */
+export type View = [number, number, number, number, number, number];
+
+/** キャンバス全体を `width` × `height` の描画先に引き伸ばすビュー変換。 */
+export function fitView(model: M.Model, width: number, height: number): View {
+  return [width / model.meta.canvas.width, 0, 0, height / model.meta.canvas.height, 0, 0];
+}
+
+export function applyView(v: View, p: M.Vec2): M.Vec2 {
+  return [v[0] * p[0] + v[2] * p[1] + v[4], v[1] * p[0] + v[3] * p[1] + v[5]];
+}
+
+/** ビュー変換の逆 (描画先の点をキャンバスに戻す)。 */
+export function invertView(v: View): View {
+  const [a, b, c, d, e, f] = v;
+  const det = a * d - b * c;
+  if (det === 0 || !Number.isFinite(det)) throw new Error("the view transform is not invertible");
+  return [d / det, -b / det, -c / det, a / det, (c * f - d * e) / det, (b * e - a * f) / det];
+}
+
+/** 透明な黒で初期化した `width` × `height` の描画先に描き、乗算済みの RGBA ([0, 1]) を返す。 */
 export function render(input: RenderInput): Float64Array {
   const { model, result, width, height } = input;
-  const sx = width / model.meta.canvas.width;
-  const sy = height / model.meta.canvas.height;
+  const view = input.view ?? fitView(model, width, height);
+  const back = invertView(view);
   const out = new Float64Array(4 * width * height);
   const meshIndex = new Map(model.meshes.map((m, i) => [m.id, i]));
   const lighting = model.lighting;
@@ -62,7 +84,7 @@ export function render(input: RenderInput): Float64Array {
       const ix = [m.indices[t], m.indices[t + 1], m.indices[t + 2]];
       tris.push({
         canvas: ix.map((k) => pos[k]),
-        target: ix.map((k) => [pos[k][0] * sx, pos[k][1] * sy]),
+        target: ix.map((k) => applyView(view, pos[k])),
         uv: ix.map((k) => m.uvs[k]),
       });
     }
@@ -142,7 +164,7 @@ export function render(input: RenderInput): Float64Array {
         });
         if (rotation) {
           const n = normalAt(normalMap, u, v, rotation);
-          const light = shade(n, [(x + 0.5) / sx, (y + 0.5) / sy], lights);
+          const light = shade(n, applyView(back, [x + 0.5, y + 0.5]), lights);
           rgb = rgb.map((x, q) => x * light[q]);
         }
         const f = r.opacity * (k ? k[y * width + x] : 1);

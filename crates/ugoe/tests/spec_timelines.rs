@@ -13,11 +13,13 @@ use serde::Deserialize;
 use ugoe::Puppet;
 use ugoe::core::{Rgb, Vec2};
 use ugoe::format::{expression_from_json, model_from_json, motion_from_json, physics_from_json};
+use ugoe::model::PartId;
+use ugoe::model::effects::Effects;
 use ugoe::model::expression::Expression;
 use ugoe::model::motion::Motion;
 use ugoe::model::physics::PhysicsTarget;
 use ugoe::model::validate::validate;
-use ugoe::motion::Priority;
+use ugoe::motion::{BodyInput, Priority, Rotation, TrackingInput};
 use ugoe::runtime::DrawableState;
 
 /// 参照実装と期待値が食い違う例 (例のディレクトリ名 → 理由)。ここにある例は照合しても失敗にしない。
@@ -88,6 +90,15 @@ enum Action {
     LipSync {
         lip_sync: Option<f32>,
     },
+    Tracking {
+        tracking: Option<TrackingJson>,
+    },
+    ShowPose {
+        show_pose: String,
+    },
+    SetEffects {
+        set_effects: Box<Effects>,
+    },
     ResetPhysics {
         #[allow(dead_code)]
         reset_physics: bool,
@@ -95,6 +106,69 @@ enum Action {
     Stages {
         stages: BTreeMap<String, bool>,
     },
+}
+
+/// 操作 `tracking` の入力 (`spec/examples/README.md#files`)。
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TrackingJson {
+    head: RotationJson,
+    #[serde(default)]
+    body: BodyJson,
+    #[serde(default)]
+    shoulders: ShouldersJson,
+    #[serde(default)]
+    blend_shapes: BTreeMap<String, f32>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RotationJson {
+    yaw: f32,
+    pitch: f32,
+    roll: f32,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct BodyJson {
+    yaw: Option<f32>,
+    pitch: Option<f32>,
+    roll: Option<f32>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct ShouldersJson {
+    left: Option<f32>,
+    right: Option<f32>,
+}
+
+impl TrackingJson {
+    fn to_input(&self, label: &str) -> TrackingInput {
+        let mut input = TrackingInput {
+            head: Rotation {
+                yaw: self.head.yaw,
+                pitch: self.head.pitch,
+                roll: self.head.roll,
+            },
+            body: BodyInput {
+                yaw: self.body.yaw,
+                pitch: self.body.pitch,
+                roll: self.body.roll,
+                shoulder_left: self.shoulders.left,
+                shoulder_right: self.shoulders.right,
+            },
+            ..TrackingInput::default()
+        };
+        for (name, &value) in &self.blend_shapes {
+            assert!(
+                input.set_blend_shape(name, value),
+                "{label}: unknown blend shape {name}"
+            );
+        }
+        input
+    }
 }
 
 #[derive(Deserialize, Clone, Copy)]
@@ -319,6 +393,13 @@ fn perform(
         }
         Action::StopExpressions { .. } => puppet.expressions_mut().stop_all(),
         Action::LipSync { lip_sync } => puppet.set_lip_sync_level(*lip_sync),
+        Action::Tracking { tracking } => {
+            puppet.set_tracking(tracking.as_ref().map(|t| t.to_input(label)));
+        }
+        Action::ShowPose { show_pose } => {
+            puppet.pose_mut().show(&PartId::new(show_pose.as_str()));
+        }
+        Action::SetEffects { set_effects } => puppet.set_effects((**set_effects).clone()),
         Action::ResetPhysics { .. } => puppet.reset_physics(),
         Action::Stages { stages } => {
             let mut toggles = puppet.toggles();

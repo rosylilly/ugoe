@@ -1,0 +1,235 @@
+{
+  "model": "model.json",
+  "motions": {
+    "nod": "nod.motion.json"
+  },
+  "expressions": {
+    "open": "open.expression.json"
+  },
+  "summary": "Face tracking with the avatar profile's overrides. The standard mapping writes AngleY, AngleZ, BodyAngleZ (0.3 x roll without a body rotation, the body roll with one), EyeLOpen and EyeROpen (1 - eyeBlink, clamped), MouthOpenY (max(0, jawOpen - mouthClose)) and ShoulderLY (only when the input has the left shoulder). Overrides: EyeBallX with scale -1; the MouthForm formula written to MouthSmile, so MouthForm is not written; jawForward x 0.5 to JawForward; AngleX as the sum of the head yaw and -1 x the BodyAngleX formula (which also replaces the standard mapping of BodyAngleX), clamped to 30; an element with an unknown blend shape and one whose target the model lacks are ignored. BrowLY is internal and is not written. Tracking comes after motions (AngleY) and before expressions, and overwrites values set by the host; when the input is removed, the last tracked values stay as base values.",
+  "frames": [
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "AngleX": 0.0,
+          "AngleY": 0.0,
+          "EyeLOpen": 1.0,
+          "MouthOpenY": 0.0
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "set": {
+            "MouthForm": 0.3,
+            "ShoulderLY": 0.5,
+            "BrowLY": 0.2
+          }
+        },
+        {
+          "tracking": {
+            "head": {
+              "yaw": 12.0,
+              "pitch": -6.0,
+              "roll": 3.0
+            },
+            "blend_shapes": {
+              "eyeBlinkLeft": 0.25,
+              "eyeBlinkRight": 1.2,
+              "eyeLookOutLeft": 0.4,
+              "eyeLookInRight": 0.4,
+              "jawOpen": 0.7,
+              "mouthClose": 0.2,
+              "mouthSmileLeft": 0.6,
+              "mouthSmileRight": 0.4,
+              "jawForward": 0.8,
+              "browInnerUp": 0.6
+            }
+          }
+        }
+      ],
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "AngleX": 8.4,
+          "AngleY": -6.0,
+          "AngleZ": 3.0,
+          "BodyAngleX": 0.0,
+          "BodyAngleZ": 0.9,
+          "ShoulderLY": 0.5,
+          "EyeLOpen": 0.75,
+          "EyeROpen": 0.0,
+          "EyeBallX": -0.4,
+          "BrowLY": 0.2,
+          "MouthOpenY": 0.5,
+          "MouthForm": 0.3,
+          "MouthSmile": 0.5,
+          "JawForward": 0.4
+        },
+        "meshes": {
+          "Head": {
+            "positions": [
+              [72.4, 64],
+              [200.4, 64],
+              [200.4, 192],
+              [72.4, 192]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "tracking": {
+            "head": {
+              "yaw": 40.0,
+              "pitch": 0.0,
+              "roll": 0.0
+            },
+            "body": {
+              "yaw": 5.0,
+              "roll": -4.0
+            },
+            "shoulders": {
+              "left": 0.3
+            }
+          }
+        }
+      ],
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "AngleX": 30.0,
+          "AngleY": 0.0,
+          "AngleZ": 0.0,
+          "BodyAngleX": 0.0,
+          "BodyAngleZ": -4.0,
+          "ShoulderLY": 0.3,
+          "EyeLOpen": 1.0,
+          "EyeROpen": 1.0,
+          "EyeBallX": 0.0,
+          "BrowLY": 0.2,
+          "MouthOpenY": 0.0,
+          "MouthForm": 0.3,
+          "MouthSmile": 0.0,
+          "JawForward": 0.0
+        },
+        "meshes": {
+          "Head": {
+            "positions": [
+              [94, 64],
+              [222, 64],
+              [222, 192],
+              [94, 192]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "start_motion": "nod",
+          "priority": "normal"
+        },
+        {
+          "set_expression": "open"
+        }
+      ],
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "AngleX": 30.0,
+          "AngleY": 5.0,
+          "MouthOpenY": 0.25,
+          "Cheek": 0.1,
+          "ShoulderLY": 0.3
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "set": {
+            "AngleX": -20,
+            "EyeLOpen": 0.3,
+            "Cheek": 0.9
+          }
+        }
+      ],
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "AngleX": 30.0,
+          "EyeLOpen": 1.0,
+          "AngleY": 5.0,
+          "MouthOpenY": 0.25,
+          "Cheek": 0.2
+        },
+        "meshes": {
+          "Head": {
+            "positions": [
+              [94, 64],
+              [222, 64],
+              [222, 192],
+              [94, 192]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "tracking": null
+        }
+      ],
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "AngleX": 30.0,
+          "AngleY": 8.0,
+          "AngleZ": 0.0,
+          "BodyAngleZ": -4.0,
+          "ShoulderLY": 0.3,
+          "EyeLOpen": 1.0,
+          "MouthOpenY": 0.25,
+          "Cheek": 0.3
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "set": {
+            "AngleX": -20,
+            "EyeLOpen": 0.3
+          }
+        }
+      ],
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "AngleX": -20.0,
+          "EyeLOpen": 0.3,
+          "AngleY": 9.0,
+          "MouthOpenY": 0.25,
+          "Cheek": 0.4
+        },
+        "meshes": {
+          "Head": {
+            "positions": [
+              [44, 64],
+              [172, 64],
+              [172, 192],
+              [44, 192]
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

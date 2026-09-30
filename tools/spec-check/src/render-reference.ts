@@ -64,6 +64,11 @@ for (const name of names) {
   const bundle = join(work, `${name}.ugoe`);
   writeFileSync(bundle, renderExampleBundle(example));
   example.doc.cases.forEach((c, i) => {
+    if (c.view) {
+      // CLI はキャンバスを引き伸ばすビュー変換しか指定できない (鏡映・回転は参照実装の側のテストで確かめる)
+      console.log(`${name} case ${i}: skipped (the CLI cannot give the view transform)`);
+      return;
+    }
     const png = join(work, `${name}-${i}.png`);
     const { args, dropped } = lightArgs(c);
     const params = Object.entries(c.parameters ?? {}).flatMap(([k, v]) => ["--param", `${k}=${v}`]);

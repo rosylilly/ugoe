@@ -1,0 +1,456 @@
+{
+  "schema_version": 0,
+  "meta": {
+    "name": "render_lighting_off",
+    "canvas": {
+      "width": 112.0,
+      "height": 16.0,
+      "origin": [
+        56.0,
+        8.0
+      ]
+    }
+  },
+  "parameters": [],
+  "parts": [
+    {
+      "id": "Root",
+      "name": "Root",
+      "keyforms": {
+        "keyforms": [
+          {
+            "opacity": 1.0
+          }
+        ]
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "id": "Flat",
+      "name": "Flat",
+      "part": "Root",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                16.0,
+                0.0
+              ],
+              [
+                16.0,
+                16.0
+              ],
+              [
+                0.0,
+                16.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "Bumped",
+      "name": "Bumped",
+      "part": "Root",
+      "texture": 1,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                16.0,
+                0.0
+              ],
+              [
+                32.0,
+                0.0
+              ],
+              [
+                32.0,
+                16.0
+              ],
+              [
+                16.0,
+                16.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "Turned",
+      "name": "Turned",
+      "part": "Root",
+      "texture": 1,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                48.0,
+                0.0
+              ],
+              [
+                48.0,
+                16.0
+              ],
+              [
+                32.0,
+                16.0
+              ],
+              [
+                32.0,
+                0.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "Mirrored",
+      "name": "Mirrored",
+      "part": "Root",
+      "texture": 1,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                64.0,
+                0.0
+              ],
+              [
+                48.0,
+                0.0
+              ],
+              [
+                48.0,
+                16.0
+              ],
+              [
+                64.0,
+                16.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "Sheared",
+      "name": "Sheared",
+      "part": "Root",
+      "texture": 1,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                64.0,
+                0.0
+              ],
+              [
+                76.0,
+                0.0
+              ],
+              [
+                80.0,
+                16.0
+              ],
+              [
+                68.0,
+                16.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "Unlit",
+      "name": "Unlit",
+      "part": "Root",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "lit": false,
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                80.0,
+                0.0
+              ],
+              [
+                96.0,
+                0.0
+              ],
+              [
+                96.0,
+                16.0
+              ],
+              [
+                80.0,
+                16.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "Glass",
+      "name": "Glass",
+      "part": "Root",
+      "texture": 2,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                96.0,
+                0.0
+              ],
+              [
+                112.0,
+                0.0
+              ],
+              [
+                112.0,
+                16.0
+              ],
+              [
+                96.0,
+                16.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    }
+  ],
+  "textures": [
+    {
+      "name": "plain",
+      "width": 1,
+      "height": 1
+    },
+    {
+      "name": "bumped",
+      "width": 1,
+      "height": 1,
+      "normal_map": "bumped_normal"
+    },
+    {
+      "name": "glass",
+      "width": 1,
+      "height": 1
+    }
+  ],
+  "lighting": false
+}

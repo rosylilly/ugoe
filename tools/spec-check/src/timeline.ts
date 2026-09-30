@@ -7,6 +7,8 @@ import * as D from "./decode.ts";
 import { compareMeshes, type ExpectedMesh } from "./examples.ts";
 import { type FrameResult, Runtime, type Stage } from "./frame.ts";
 import type { Priority } from "./motion.ts";
+import type { MsgValue } from "./msgpack.ts";
+import type { TrackingInput } from "./tracking.ts";
 import type * as M from "./types.ts";
 import { validatePhysics } from "./validate.ts";
 
@@ -18,6 +20,9 @@ export type Action =
   | { add_expression: string }
   | { stop_expressions: true }
   | { lip_sync: number | null }
+  | { tracking: TrackingInput | null }
+  | { show_pose: string }
+  | { set_effects: M.Effects }
   | { reset_physics: true }
   | { stages: Partial<Record<Stage, boolean>> };
 
@@ -68,8 +73,21 @@ function readDoc<T>(
 
 /** 時間の例のディレクトリを読む。 */
 export function loadTimeline(dir: string): TimelineExample {
-  const timeline = JSON.parse(readFileSync(join(dir, "timeline.json"), "utf8")) as Timeline;
+  const text = readFileSync(join(dir, "timeline.json"), "utf8");
+  const timeline = JSON.parse(text) as Timeline;
   const { model, warnings } = readModelJson(readFileSync(join(dir, timeline.model), "utf8"));
+  // 効果の設定はモデルと同じ規則で読む (seed を正確に読むため、整数を bigint にする読み方で読み直す)
+  const raw = D.parseJson(text) as unknown as {
+    frames: { actions?: Record<string, MsgValue>[] }[];
+  };
+  timeline.frames.forEach((frame, fi) => {
+    frame.actions?.forEach((action, ai) => {
+      if ("set_effects" in action) {
+        const v = raw.frames[fi].actions?.[ai].set_effects;
+        action.set_effects = D.effects(new D.Ctx(warnings), v);
+      }
+    });
+  });
   let physics: M.PhysicsSettings | null = null;
   if (timeline.physics) {
     physics = readDoc(join(dir, timeline.physics), D.physicsSettings, warnings);
@@ -135,6 +153,9 @@ export function runTimeline(ex: TimelineExample): string[] {
         if ("set_expression" in action) rt.expressions.set(e);
         else rt.expressions.add(e);
       } else if ("lip_sync" in action) rt.lipSyncLevel = action.lip_sync;
+      else if ("tracking" in action) rt.tracking = action.tracking;
+      else if ("show_pose" in action) rt.showPose(action.show_pose);
+      else if ("set_effects" in action) rt.setEffects(action.set_effects);
       else if ("reset_physics" in action) rt.physics?.reset();
       else if ("stages" in action) {
         for (const [s, on] of Object.entries(action.stages)) rt.setStage(s as Stage, on ?? true);

@@ -289,6 +289,21 @@ The host supplies a **level** between 0 and 1 (values outside are clamped), or n
 level, lip sync writes nothing. With a level `ℓ` and the strength `s` of the `LipSync` group, each
 target parameter is set to `lerp(v, ℓ, s)`. Lip sync analyzes no audio itself.
 
+### Replacing the effect settings
+
+A host MAY replace the effect settings (`eye_blink`, `breath` and `lip_sync` together) while the
+model runs. Replacing them, even with equal settings, restarts the effects from the new settings:
+
+- The eye blink starts again: the generator's state is set to the new `seed`, the phase is `open`
+  with `t = 0`, and the first interval is drawn at once ([Eye blink](#eye-blink)).
+- The phase `φ` of every breath entry is 0.
+- The lip sync level supplied by the host is kept; the new `lip_sync` parameters receive it from
+  the next frame, and the old ones are no longer written.
+
+The replacement takes effect in the next frame. It does not change the parameter values: a parameter
+that the old settings wrote and the new ones do not returns to its base value in the next frame
+([Order of operations in a frame](#order-of-operations-in-a-frame)).
+
 ## Pose
 
 Each pose group keeps a **shown entry** and an opacity per entry. Initially the first entry is shown,
@@ -299,12 +314,21 @@ Every frame, given the part opacity requests of motions for the parts of pose en
 
 1. In each group, among the entries whose part has a request with a value greater than 0, the entry
    with the largest value becomes the shown entry (the earlier entry on a tie). Without such requests
-   the shown entry does not change. A host MAY also choose the shown entry directly.
+   the shown entry does not change (it may have been chosen by the host, below).
 2. The shown entry's opacity increases by `max(dt, 0) / fade_duration` (to 1 at once if
    `fade_duration ≤ 0`), up to 1. Every other entry's opacity is limited to at most
    `1 − (the shown entry's opacity)`.
 3. Each entry's opacity is written as a part opacity override with weight 1 to its `part` and to
    every part in its `links`.
+
+**Showing an entry.** A host MAY choose the shown entry directly by naming the `part` of an entry
+(not a part of its `links`). Between frames, that entry becomes the shown entry of its group at once;
+the opacities do not change until the next frame, which fades towards it with step 2. A part that is
+not the `part` of any entry changes nothing. In a frame in which motions request an entry of the
+group with a value greater than 0 (step 1), the requests decide the shown entry, so while a motion
+requests pose parts the host's choice has no lasting effect. While the pose stage is off, showing an entry still changes the
+shown entry, but the opacities neither advance nor are written; when the stage is turned on again,
+the fade continues from the opacities the pose kept.
 
 While switching, the old and the new entry's opacities sum to 1. During a cross-fade between two
 motions, the old motion's request loses weight while the new one's gains it, so the shown entry
@@ -364,8 +388,10 @@ Consequences:
 
 - Stages 5 to 9 are applied on top of the base values every frame, so their changes (`add` of
   expressions, breathing, eye blink, additive physics) never accumulate across frames.
-- The base value includes motions and tracking. When a motion ends, the last value it applied stays.
-  Tracking replaces the value of the parameters it drives, motion values included.
+- The base value includes motions and tracking. When a motion ends, the last value it applied stays,
+  and when the host stops supplying tracking input, the last tracked values stay. Tracking replaces
+  the value of the parameters it drives, motion values included, and each frame drives only the
+  parameters that receive a value ([avatar-profile.md](avatar-profile.md#computing-the-parameter-values)).
 - A value set by the host between frames becomes the base value. It is overridden by a playing
   motion that targets the parameter (according to the motion's weight) and by tracking; expressions,
   eye blink and breathing are layered on it; physics reads it as an input or overwrites it as an
@@ -392,7 +418,7 @@ Consequences:
 
 Everything in this document is deterministic: the same model, the same sequence of host actions
 (starting and stopping motions, setting, adding and stopping expressions, levels, tracking input,
-parameter changes) and the same sequence of `dt` values produce the same parameter values and part
+parameter changes, showing pose entries, replacing effect settings) and the same sequence of `dt` values produce the same parameter values and part
 opacities. Randomness comes only
 from the seeded eye blink generator; the clock is never read.
 

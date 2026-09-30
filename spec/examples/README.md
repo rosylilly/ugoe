@@ -6,7 +6,7 @@ license of this specification.
 Each directory contains a small model and the results a runtime is expected to produce for it.
 **Evaluation examples** give the results at given parameter values ([Files](#files)); **timeline
 examples** give the results frame by frame while time advances, with physics, motions, expressions,
-effects and the pose ([Timeline examples](#timeline-examples)). **Rendering examples** give the
+effects, the pose and tracking ([Timeline examples](#timeline-examples)). **Rendering examples** give the
 expected colors of chosen pixels of a rendered frame ([Rendering examples](#rendering-examples)).
 **File examples** are bundle and module files with the data a reader obtains from them
 ([File examples](#file-examples)). The examples illustrate the rules and let an implementation check
@@ -42,6 +42,9 @@ Timeline examples:
 | [expressions](expressions/) | The three expression operations over host values, fades, setting and adding expressions. |
 | [effects](effects/) | Eye blink with a 64-bit seed, breathing, lip sync, effect-group strengths from a motion, turning effects off. |
 | [pose](pose/) | A pose group switched by part opacity curves, links, combined part opacity overrides, turning the pose off. |
+| [pose-select](pose-select/) | The host showing pose entries: fades to the chosen entry, parts that name no entry, motion requests that decide the shown entry, showing an entry while the pose is off. |
+| [effects-replace](effects-replace/) | The host replacing the effect settings: the eye blink and breathing restart from the new settings (also when they are equal), lip sync moves the kept level to new parameters, empty settings. |
+| [tracking](tracking/) | Face tracking input mapped by the avatar profile: the standard mapping, overrides that change the sign, redirect a formula, map a blend shape and sum two inputs, ignored elements, internal parameters, clamping; tracking after motions and before expressions; removing the input. |
 
 ## Files
 
@@ -169,6 +172,9 @@ The files of a timeline example:
   | `{ "add_expression": <key> }` | The host adds the expression on top of the active ones. |
   | `{ "stop_expressions": true }` | The host stops all expressions ([Expressions](../motion.md#expressions)). |
   | `{ "lip_sync": <level> }` | The host supplies the lip sync level from now on; `null` removes it. Initially there is no level. |
+  | `{ "tracking": <input> }` | The host supplies this tracking input in every frame from now on ([avatar-profile.md](../avatar-profile.md#tracking-input)); `null` removes it. Initially there is no tracking input. The input is `{ "head": { "yaw", "pitch", "roll" }, "body": { "yaw", "pitch", "roll" }, "shoulders": { "left", "right" }, "blend_shapes": { <ARKit name>: <value>, … } }`: `head` is required, `body` and `shoulders` and each of their fields are optional (absent: the input does not have it), and blend shapes not listed are 0. |
+  | `{ "show_pose": <part ID> }` | The host shows the pose entry whose `part` is this part ([Pose](../motion.md#pose)). |
+  | `{ "set_effects": <Effects> }` | The host replaces the effect settings with this [`Effects`](../model.md#effects) object (with the defaults of model.md for absent fields; [Replacing the effect settings](../motion.md#replacing-the-effect-settings)). The `seed` is read exactly, as in a model. |
   | `{ "reset_physics": true }` | The host resets physics ([physics.md](../physics.md#state)). |
   | `{ "stages": { <stage>: <bool>, … } }` | The host turns stages on or off. Stages: `physics`, `eye_blink`, `breath`, `lip_sync`, `pose`. Initially all are on. |
 
@@ -182,7 +188,6 @@ The files of a timeline example:
   | `offsets` | The dynamic physics offsets passed to evaluation ([evaluation.md](../evaluation.md#dynamic-physics-offsets)): `deformer_angles` (deformer ID → degrees), `deformer_origins` (deformer ID → `[x, y]`), `warp_points` (warp deformer ID → one `[x, y]` per control point), `mesh_vertices` (mesh ID → one `[x, y]` per vertex). Absent offsets are 0. |
   | `meshes` | The results of evaluating the model in this frame, as in `expected.json`. |
 
-  No tracking input is supplied in the timeline examples.
 
 ### Timeline tolerances
 
@@ -213,8 +218,9 @@ Rendering examples:
 | --- | --- |
 | [render-blend](render-blend/) | Premultiplied texture colors, multiply and screen colors, opacity; the `normal`, `additive` and `multiply` blend modes over an opaque mesh and over the transparent target; overlapping triangles of one mesh; the view transform. |
 | [render-masks](render-masks/) | Union and intersection, inverted masks, `mask_strength`, nested masks, masks with opacity 0 and `mask_only`, a culled mask, overlapping triangles in a mask, a mask referenced twice. |
-| [render-culling](render-culling/) | Back-face culling in canvas coordinates, including under a rotation deformer that reflects. |
-| [render-lighting](render-lighting/) | Normal maps, normals turned by rotation, mirroring and shear; ambient, directional and point lights, attenuation, light above 1, invalid lights, unlit meshes. |
+| [render-culling](render-culling/) | Back-face culling in canvas coordinates, including under a rotation deformer that reflects and under view transforms that mirror or turn the canvas. |
+| [render-lighting](render-lighting/) | Normal maps, normals turned by rotation, mirroring and shear; ambient, directional and point lights, attenuation, light above 1, invalid lights, unlit meshes; lights under view transforms that mirror or turn the canvas; invalid lights before eight valid ones, and more than eight lights. |
+| [render-lighting-off](render-lighting-off/) | A model whose `lighting` is `false`: no mesh is lit. |
 | [render-texture](render-texture/) | Bilinear filtering of premultiplied values; clamp-to-edge addressing with texture coordinates outside `[0, 1]`. |
 
 ## Rendering examples
@@ -242,6 +248,7 @@ The files of a rendering example:
         "summary": "What the case shows.",
         "parameters": { "X": 0.5 },
         "target": [112, 16],
+        "view": [1, 0, 0, 1, 0, 0],
         "lights": {
           "ambient": [0.2, 0.2, 0.2],
           "directional": [{ "direction": [-1, 0, -1], "color": [1, 1, 1] }]
@@ -259,7 +266,8 @@ The files of a rendering example:
   | `textures` | One entry per texture, in the order of the model's `textures`: `width`, `height` and the color `rgba` of every pixel (row by row from the top-left; non-premultiplied, 0 to 255), and `normal_map`, the same for the texture's normal map if it has one (the model's `normal_map` names it). |
   | `cases` | Independent frames. |
   | `cases[].parameters` | Optional. Parameter values, as in evaluation examples. The model is evaluated once. |
-  | `cases[].target` | The width and height of the render target in pixels. The view transform scales the canvas to the whole target (`x × width / canvas.width`, `y × height / canvas.height`); the examples keep the canvas's aspect ratio. The target is cleared to transparent black before drawing. |
+  | `cases[].target` | The width and height of the render target in pixels. The target is cleared to transparent black before drawing. |
+  | `cases[].view` | Optional. The view transform ([rendering.md](../rendering.md#inputs)) as six numbers `[a, b, c, d, e, f]`: the canvas point `(x, y)` is drawn at the target position `(a × x + c × y + e, b × x + d × y + f)` (target pixels from the top-left, `y` down). Absent: the view transform scales the canvas to the whole target (`[width / canvas.width, 0, 0, height / canvas.height, 0, 0]`); the examples then keep the canvas's aspect ratio. |
   | `cases[].lights` | Optional. The lights the host supplies ([rendering.md](../rendering.md#lights)): `ambient` (default `[1, 1, 1]`), `directional` lights and `point` lights; a point light without `range` has an infinite range. Absent: the host supplies no lights. |
   | `cases[].pixels` | The checked pixels: `at` is `[column, row]` of a target pixel (from the top-left), `rgba` its expected premultiplied color on the scale 0 to 255. |
 
@@ -274,6 +282,9 @@ To stay independent of rasterization details, the examples follow these rules:
   depend on how edges and shared edges are rasterized.
 - Textures have a single color, except in `render-texture`, which checks filtering at pixels whose
   sampling position lies strictly between texel centers or beyond the clamped edge.
+- A case with more than 8 valid lights (outside [Conformance](../rendering.md#conformance), since a
+  renderer MAY use only 8 of them) is chosen so that the checked pixels are the same whichever 8 of
+  its lights, or all of them, a renderer uses.
 
 ### Rendering tolerances
 

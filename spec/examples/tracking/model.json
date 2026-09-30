@@ -1,0 +1,233 @@
+{
+  "schema_version": 0,
+  "meta": {
+    "name": "tracking",
+    "canvas": {
+      "width": 256.0,
+      "height": 256.0,
+      "origin": [128.0, 128.0]
+    }
+  },
+  "parameters": [
+    {
+      "id": "AngleX",
+      "name": "AngleX",
+      "min": -30.0,
+      "max": 30.0,
+      "default": 0.0
+    },
+    {
+      "id": "AngleY",
+      "name": "AngleY",
+      "min": -30.0,
+      "max": 30.0,
+      "default": 0.0
+    },
+    {
+      "id": "AngleZ",
+      "name": "AngleZ",
+      "min": -30.0,
+      "max": 30.0,
+      "default": 0.0
+    },
+    {
+      "id": "BodyAngleX",
+      "name": "BodyAngleX",
+      "min": -10.0,
+      "max": 10.0,
+      "default": 0.0
+    },
+    {
+      "id": "BodyAngleZ",
+      "name": "BodyAngleZ",
+      "min": -10.0,
+      "max": 10.0,
+      "default": 0.0
+    },
+    {
+      "id": "ShoulderLY",
+      "name": "ShoulderLY",
+      "min": -1.0,
+      "max": 1.0,
+      "default": 0.0
+    },
+    {
+      "id": "EyeLOpen",
+      "name": "EyeLOpen",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 1.0
+    },
+    {
+      "id": "EyeROpen",
+      "name": "EyeROpen",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 1.0
+    },
+    {
+      "id": "EyeBallX",
+      "name": "EyeBallX",
+      "min": -1.0,
+      "max": 1.0,
+      "default": 0.0
+    },
+    {
+      "id": "BrowLY",
+      "name": "BrowLY",
+      "min": -1.0,
+      "max": 1.0,
+      "default": 0.0,
+      "internal": true
+    },
+    {
+      "id": "MouthOpenY",
+      "name": "MouthOpenY",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.0
+    },
+    {
+      "id": "MouthForm",
+      "name": "MouthForm",
+      "min": -1.0,
+      "max": 1.0,
+      "default": 0.0
+    },
+    {
+      "id": "MouthSmile",
+      "name": "MouthSmile",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.0
+    },
+    {
+      "id": "JawForward",
+      "name": "JawForward",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.0
+    },
+    {
+      "id": "Cheek",
+      "name": "Cheek",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.0
+    }
+  ],
+  "parts": [
+    {
+      "id": "Root",
+      "name": "Root",
+      "keyforms": {
+        "keyforms": [
+          {
+            "opacity": 1.0
+          }
+        ]
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "id": "Head",
+      "name": "Head",
+      "part": "Root",
+      "texture": 0,
+      "uvs": [
+        [0.0, 0.0],
+        [1.0, 0.0],
+        [1.0, 1.0],
+        [0.0, 1.0]
+      ],
+      "indices": [0, 1, 2, 0, 2, 3],
+      "keyforms": {
+        "bindings": [
+          {
+            "parameter": "AngleX",
+            "keys": [-30.0, 30.0]
+          }
+        ],
+        "keyforms": [
+          {
+            "positions": [
+              [34.0, 64.0],
+              [162.0, 64.0],
+              [162.0, 192.0],
+              [34.0, 192.0]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          },
+          {
+            "positions": [
+              [94.0, 64.0],
+              [222.0, 64.0],
+              [222.0, 192.0],
+              [94.0, 192.0]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    }
+  ],
+  "textures": [
+    {
+      "name": "white",
+      "width": 1,
+      "height": 1
+    }
+  ],
+  "avatar": {
+    "level": 1,
+    "meta": {
+      "name": "Tracking example",
+      "authors": [
+        "ugoe"
+      ]
+    },
+    "tracking": [
+      {
+        "source": "standard",
+        "input": "EyeBallX",
+        "scale": -1.0
+      },
+      {
+        "source": "standard",
+        "input": "MouthForm",
+        "parameter": "MouthSmile"
+      },
+      {
+        "source": "blend_shape",
+        "input": "jawForward",
+        "parameter": "JawForward",
+        "scale": 0.5
+      },
+      {
+        "source": "head",
+        "input": "yaw",
+        "parameter": "AngleX"
+      },
+      {
+        "source": "standard",
+        "input": "BodyAngleX",
+        "parameter": "AngleX",
+        "scale": -1.0
+      },
+      {
+        "source": "blend_shape",
+        "input": "notABlendShape",
+        "parameter": "JawForward",
+        "scale": 10.0
+      },
+      {
+        "source": "standard",
+        "input": "EyeLOpen",
+        "parameter": "Missing"
+      }
+    ]
+  }
+}

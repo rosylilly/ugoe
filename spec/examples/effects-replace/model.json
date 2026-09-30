@@ -1,0 +1,115 @@
+{
+  "schema_version": 0,
+  "meta": {
+    "name": "effects_replace",
+    "canvas": {
+      "width": 256.0,
+      "height": 256.0,
+      "origin": [128.0, 128.0]
+    }
+  },
+  "parameters": [
+    {
+      "id": "EyeL",
+      "name": "EyeL",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 1.0
+    },
+    {
+      "id": "Breath",
+      "name": "Breath",
+      "min": -1.0,
+      "max": 1.0,
+      "default": 0.0
+    },
+    {
+      "id": "Mouth",
+      "name": "Mouth",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.0
+    },
+    {
+      "id": "Mouth2",
+      "name": "Mouth2",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.0
+    }
+  ],
+  "parts": [
+    {
+      "id": "Root",
+      "name": "Root",
+      "keyforms": {
+        "keyforms": [
+          {
+            "opacity": 1.0
+          }
+        ]
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "id": "Quad",
+      "name": "Quad",
+      "part": "Root",
+      "texture": 0,
+      "uvs": [
+        [0.0, 0.0],
+        [1.0, 0.0],
+        [1.0, 1.0],
+        [0.0, 1.0]
+      ],
+      "indices": [0, 1, 2, 0, 2, 3],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [64.0, 64.0],
+              [192.0, 64.0],
+              [192.0, 192.0],
+              [64.0, 192.0]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    }
+  ],
+  "textures": [
+    {
+      "name": "white",
+      "width": 1,
+      "height": 1
+    }
+  ],
+  "effects": {
+    "eye_blink": {
+      "parameters": [
+        "EyeL"
+      ],
+      "interval": 4.0,
+      "seed": 1
+    },
+    "breath": {
+      "parameters": [
+        {
+          "parameter": "Breath",
+          "offset": 0.0,
+          "peak": 0.5,
+          "cycle": 2.0,
+          "weight": 1.0
+        }
+      ]
+    },
+    "lip_sync": {
+      "parameters": [
+        "Mouth"
+      ]
+    }
+  }
+}

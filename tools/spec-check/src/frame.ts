@@ -1,6 +1,5 @@
 // 1 フレームの順 (spec/motion.md#order-of-operations-in-a-frame): モーション・表情・効果・物理・
-// ポーズを決まった順に行い、評価に渡すパラメータの値と上書きとオフセットを作る。
-// 追従 (トラッキング) は扱わない。
+// ポーズ・追従 (トラッキング) を決まった順に行い、評価に渡すパラメータの値と上書きとオフセットを作る。
 
 import {
   type EvaluationResult,
@@ -23,6 +22,7 @@ import {
   writeParameter,
 } from "./motion.ts";
 import { Physics } from "./physics.ts";
+import { applyTracking, type TrackingInput } from "./tracking.ts";
 import type * as M from "./types.ts";
 
 /** ホストが切れる段 (spec/motion.md#order-of-operations-in-a-frame の Consequences)。 */
@@ -42,8 +42,10 @@ export class Runtime {
   readonly values: ParameterValues;
   readonly motions = new MotionManager();
   readonly expressions = new ExpressionManager();
-  readonly eyeBlink: EyeBlink;
-  readonly breath: Breath;
+  /** 効果の設定 (はじめはモデルのもの。ホストが差し替えられる)。 */
+  effects: M.Effects;
+  eyeBlink: EyeBlink;
+  breath: Breath;
   readonly pose: PoseState;
   readonly physics: Physics | null;
   readonly enabled: Record<Stage, boolean> = {
@@ -55,12 +57,15 @@ export class Runtime {
   };
   /** リップシンクの音量 (無ければ null)。 */
   lipSyncLevel: number | null = null;
+  /** 毎フレーム使う追従の入力 (無ければ null)。 */
+  tracking: TrackingInput | null = null;
   private base: ParameterValues | null = null;
   private left: ParameterValues | null = null;
 
   constructor(model: M.Model, physics: M.PhysicsSettings | null = null) {
     this.model = model;
     this.values = parameterValues(model);
+    this.effects = model.effects;
     this.eyeBlink = new EyeBlink(model.effects.eye_blink);
     this.breath = new Breath(model.effects.breath.parameters);
     this.pose = new PoseState(model.pose);
@@ -71,6 +76,21 @@ export class Runtime {
   set(id: string, value: number): void {
     if (!Number.isFinite(value)) return;
     writeParameter(this.model, this.values, id, () => value);
+  }
+
+  /**
+   * 効果の設定を差し替える (spec/motion.md#replacing-the-effect-settings)。目パチは新しい seed で
+   * 始め直し (開いた相の始めから、最初の間隔を引く)、呼吸は各波の位相を 0 から始め直す。
+   */
+  setEffects(effects: M.Effects): void {
+    this.effects = effects;
+    this.eyeBlink = new EyeBlink(effects.eye_blink);
+    this.breath = new Breath(effects.breath.parameters);
+  }
+
+  /** ポーズのエントリを表示する (spec/motion.md#pose)。`part` はエントリの `part`。 */
+  showPose(part: string): void {
+    this.pose.show(part);
   }
 
   startMotion(motion: M.Motion, priority: Priority): boolean {
@@ -103,7 +123,10 @@ export class Runtime {
     // 2. モーション
     const motion = this.motions.frame(model, values, dt);
 
-    // 3. 追従は扱わない。4. 基準の値を保存する
+    // 3. 追従
+    if (this.tracking) applyTracking(model, values, this.tracking);
+
+    // 4. 基準の値を保存する
     this.base = new Map(values);
 
     // 5〜7. 表情・目パチ・呼吸
@@ -129,7 +152,7 @@ export class Runtime {
     if (this.enabled.lip_sync && this.lipSyncLevel !== null) {
       const level = Math.min(Math.max(this.lipSyncLevel, 0), 1);
       const s = motion.strength.LipSync;
-      for (const id of model.effects.lip_sync.parameters) {
+      for (const id of this.effects.lip_sync.parameters) {
         writeParameter(model, values, id, (v) => v + (level - v) * s);
       }
     }

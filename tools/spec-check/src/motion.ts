@@ -453,6 +453,14 @@ export class PoseState {
     this.opacity = pose.groups.map((g) => g.entries.map((_, i) => (i === 0 ? 1 : 0)));
   }
 
+  /** `part` のエントリをそのグループの表示するエントリにする。ポーズに無いパーツなら何もしない。 */
+  show(part: string): void {
+    this.pose.groups.forEach((g, gi) => {
+      const i = g.entries.findIndex((e) => e.part === part);
+      if (i >= 0) this.shown[gi] = i;
+    });
+  }
+
   /** 各エントリの `part` (リンクは含まない)。 */
   entryParts(): Set<string> {
     return new Set(this.pose.groups.flatMap((g) => g.entries.map((e) => e.part)));

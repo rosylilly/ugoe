@@ -1,0 +1,581 @@
+{
+  "model": "model.json",
+  "motions": {
+    "back": "back.motion.json"
+  },
+  "summary": "The host shows pose entries by the part of the entry (the pose group of the pose example: ArmA, and ArmB with the link SleeveB; fade_duration 0.5). Showing an entry makes it the shown entry at once and the next frames fade to it by dt / 0.5, also back in the middle of a fade. Naming a link part or a part outside the pose changes nothing. In a frame in which a motion requests ArmA (back, fading in), the request decides the shown entry and the host's choice of ArmB has no effect; after the motion has stopped and finished, showing ArmB works again. With the pose stage off, showing ArmA changes the shown entry but the pose writes nothing; turned on again, the pose fades from the opacities it kept.",
+  "frames": [
+    {
+      "dt": 0.125,
+      "expect": {
+        "part_opacity": {
+          "ArmA": {
+            "value": 1.0,
+            "weight": 1.0
+          },
+          "ArmB": {
+            "value": 0.0,
+            "weight": 1.0
+          },
+          "SleeveB": {
+            "value": 0.0,
+            "weight": 1.0
+          },
+          "Hat": {
+            "value": 0.0,
+            "weight": 0.0
+          }
+        },
+        "meshes": {
+          "ArmAMesh": {
+            "opacity": 1.0
+          },
+          "ArmBMesh": {
+            "opacity": 0.0
+          },
+          "SleeveMesh": {
+            "opacity": 0.0
+          },
+          "HatMesh": {
+            "opacity": 1.0
+          }
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "show_pose": "ArmB"
+        }
+      ],
+      "dt": 0.125,
+      "expect": {
+        "part_opacity": {
+          "ArmA": {
+            "value": 0.75,
+            "weight": 1.0
+          },
+          "ArmB": {
+            "value": 0.25,
+            "weight": 1.0
+          },
+          "SleeveB": {
+            "value": 0.25,
+            "weight": 1.0
+          },
+          "Hat": {
+            "value": 0.0,
+            "weight": 0.0
+          }
+        },
+        "meshes": {
+          "ArmAMesh": {
+            "opacity": 0.75
+          },
+          "ArmBMesh": {
+            "opacity": 0.25
+          },
+          "SleeveMesh": {
+            "opacity": 0.25
+          },
+          "HatMesh": {
+            "opacity": 1.0
+          }
+        }
+      }
+    },
+    {
+      "dt": 0.125,
+      "expect": {
+        "part_opacity": {
+          "ArmA": {
+            "value": 0.5,
+            "weight": 1.0
+          },
+          "ArmB": {
+            "value": 0.5,
+            "weight": 1.0
+          },
+          "SleeveB": {
+            "value": 0.5,
+            "weight": 1.0
+          },
+          "Hat": {
+            "value": 0.0,
+            "weight": 0.0
+          }
+        },
+        "meshes": {
+          "ArmAMesh": {
+            "opacity": 0.5
+          },
+          "ArmBMesh": {
+            "opacity": 0.5
+          },
+          "SleeveMesh": {
+            "opacity": 0.5
+          },
+          "HatMesh": {
+            "opacity": 1.0
+          }
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "show_pose": "ArmA"
+        }
+      ],
+      "dt": 0.125,
+      "expect": {
+        "part_opacity": {
+          "ArmA": {
+            "value": 0.75,
+            "weight": 1.0
+          },
+          "ArmB": {
+            "value": 0.25,
+            "weight": 1.0
+          },
+          "SleeveB": {
+            "value": 0.25,
+            "weight": 1.0
+          },
+          "Hat": {
+            "value": 0.0,
+            "weight": 0.0
+          }
+        },
+        "meshes": {
+          "ArmAMesh": {
+            "opacity": 0.75
+          },
+          "ArmBMesh": {
+            "opacity": 0.25
+          },
+          "SleeveMesh": {
+            "opacity": 0.25
+          },
+          "HatMesh": {
+            "opacity": 1.0
+          }
+        }
+      }
+    },
+    {
+      "dt": 0.125,
+      "expect": {
+        "part_opacity": {
+          "ArmA": {
+            "value": 1.0,
+            "weight": 1.0
+          },
+          "ArmB": {
+            "value": 0.0,
+            "weight": 1.0
+          },
+          "SleeveB": {
+            "value": 0.0,
+            "weight": 1.0
+          },
+          "Hat": {
+            "value": 0.0,
+            "weight": 0.0
+          }
+        },
+        "meshes": {
+          "ArmAMesh": {
+            "opacity": 1.0
+          },
+          "ArmBMesh": {
+            "opacity": 0.0
+          },
+          "SleeveMesh": {
+            "opacity": 0.0
+          },
+          "HatMesh": {
+            "opacity": 1.0
+          }
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "show_pose": "SleeveB"
+        },
+        {
+          "show_pose": "Hat"
+        }
+      ],
+      "dt": 0.125,
+      "expect": {
+        "part_opacity": {
+          "ArmA": {
+            "value": 1.0,
+            "weight": 1.0
+          },
+          "ArmB": {
+            "value": 0.0,
+            "weight": 1.0
+          },
+          "SleeveB": {
+            "value": 0.0,
+            "weight": 1.0
+          },
+          "Hat": {
+            "value": 0.0,
+            "weight": 0.0
+          }
+        },
+        "meshes": {
+          "ArmAMesh": {
+            "opacity": 1.0
+          },
+          "ArmBMesh": {
+            "opacity": 0.0
+          },
+          "SleeveMesh": {
+            "opacity": 0.0
+          },
+          "HatMesh": {
+            "opacity": 1.0
+          }
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "show_pose": "ArmB"
+        },
+        {
+          "start_motion": "back",
+          "priority": "normal"
+        }
+      ],
+      "dt": 0.125,
+      "expect": {
+        "part_opacity": {
+          "ArmA": {
+            "value": 1.0,
+            "weight": 1.0
+          },
+          "ArmB": {
+            "value": 0.0,
+            "weight": 1.0
+          },
+          "SleeveB": {
+            "value": 0.0,
+            "weight": 1.0
+          },
+          "Hat": {
+            "value": 0.8,
+            "weight": 0.1464
+          }
+        },
+        "meshes": {
+          "ArmAMesh": {
+            "opacity": 1.0
+          },
+          "ArmBMesh": {
+            "opacity": 0.0
+          },
+          "SleeveMesh": {
+            "opacity": 0.0
+          },
+          "HatMesh": {
+            "opacity": 0.9707
+          }
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "stop_motions": true
+        }
+      ],
+      "dt": 0.125,
+      "expect": {
+        "part_opacity": {
+          "ArmA": {
+            "value": 1.0,
+            "weight": 1.0
+          },
+          "ArmB": {
+            "value": 0.0,
+            "weight": 1.0
+          },
+          "SleeveB": {
+            "value": 0.0,
+            "weight": 1.0
+          },
+          "Hat": {
+            "value": 0.8,
+            "weight": 0.4268
+          }
+        },
+        "meshes": {
+          "ArmAMesh": {
+            "opacity": 1.0
+          },
+          "ArmBMesh": {
+            "opacity": 0.0
+          },
+          "SleeveMesh": {
+            "opacity": 0.0
+          },
+          "HatMesh": {
+            "opacity": 0.9146
+          }
+        }
+      }
+    },
+    {
+      "dt": 0.125,
+      "expect": {
+        "part_opacity": {
+          "ArmA": {
+            "value": 1.0,
+            "weight": 1.0
+          },
+          "ArmB": {
+            "value": 0.0,
+            "weight": 1.0
+          },
+          "SleeveB": {
+            "value": 0.0,
+            "weight": 1.0
+          },
+          "Hat": {
+            "value": 0.8,
+            "weight": 0.4268
+          }
+        },
+        "meshes": {
+          "ArmAMesh": {
+            "opacity": 1.0
+          },
+          "ArmBMesh": {
+            "opacity": 0.0
+          },
+          "SleeveMesh": {
+            "opacity": 0.0
+          },
+          "HatMesh": {
+            "opacity": 0.9146
+          }
+        }
+      }
+    },
+    {
+      "dt": 0.125,
+      "expect": {
+        "part_opacity": {
+          "ArmA": {
+            "value": 1.0,
+            "weight": 1.0
+          },
+          "ArmB": {
+            "value": 0.0,
+            "weight": 1.0
+          },
+          "SleeveB": {
+            "value": 0.0,
+            "weight": 1.0
+          },
+          "Hat": {
+            "value": 0.8,
+            "weight": 0.1464
+          }
+        },
+        "meshes": {
+          "ArmAMesh": {
+            "opacity": 1.0
+          },
+          "ArmBMesh": {
+            "opacity": 0.0
+          },
+          "SleeveMesh": {
+            "opacity": 0.0
+          },
+          "HatMesh": {
+            "opacity": 0.9707
+          }
+        }
+      }
+    },
+    {
+      "dt": 0.125,
+      "expect": {
+        "part_opacity": {
+          "ArmA": {
+            "value": 1.0,
+            "weight": 1.0
+          },
+          "ArmB": {
+            "value": 0.0,
+            "weight": 1.0
+          },
+          "SleeveB": {
+            "value": 0.0,
+            "weight": 1.0
+          },
+          "Hat": {
+            "value": 0.0,
+            "weight": 0.0
+          }
+        },
+        "meshes": {
+          "ArmAMesh": {
+            "opacity": 1.0
+          },
+          "ArmBMesh": {
+            "opacity": 0.0
+          },
+          "SleeveMesh": {
+            "opacity": 0.0
+          },
+          "HatMesh": {
+            "opacity": 1.0
+          }
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "show_pose": "ArmB"
+        }
+      ],
+      "dt": 0.125,
+      "expect": {
+        "part_opacity": {
+          "ArmA": {
+            "value": 0.75,
+            "weight": 1.0
+          },
+          "ArmB": {
+            "value": 0.25,
+            "weight": 1.0
+          },
+          "SleeveB": {
+            "value": 0.25,
+            "weight": 1.0
+          },
+          "Hat": {
+            "value": 0.0,
+            "weight": 0.0
+          }
+        },
+        "meshes": {
+          "ArmAMesh": {
+            "opacity": 0.75
+          },
+          "ArmBMesh": {
+            "opacity": 0.25
+          },
+          "SleeveMesh": {
+            "opacity": 0.25
+          },
+          "HatMesh": {
+            "opacity": 1.0
+          }
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "stages": {
+            "pose": false
+          }
+        },
+        {
+          "show_pose": "ArmA"
+        }
+      ],
+      "dt": 0.125,
+      "expect": {
+        "part_opacity": {
+          "ArmA": {
+            "value": 0.0,
+            "weight": 0.0
+          },
+          "ArmB": {
+            "value": 0.0,
+            "weight": 0.0
+          },
+          "SleeveB": {
+            "value": 0.0,
+            "weight": 0.0
+          },
+          "Hat": {
+            "value": 0.0,
+            "weight": 0.0
+          }
+        },
+        "meshes": {
+          "ArmAMesh": {
+            "opacity": 1.0
+          },
+          "ArmBMesh": {
+            "opacity": 1.0
+          },
+          "SleeveMesh": {
+            "opacity": 1.0
+          },
+          "HatMesh": {
+            "opacity": 1.0
+          }
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "stages": {
+            "pose": true
+          }
+        }
+      ],
+      "dt": 0.125,
+      "expect": {
+        "part_opacity": {
+          "ArmA": {
+            "value": 1.0,
+            "weight": 1.0
+          },
+          "ArmB": {
+            "value": 0.0,
+            "weight": 1.0
+          },
+          "SleeveB": {
+            "value": 0.0,
+            "weight": 1.0
+          },
+          "Hat": {
+            "value": 0.0,
+            "weight": 0.0
+          }
+        },
+        "meshes": {
+          "ArmAMesh": {
+            "opacity": 1.0
+          },
+          "ArmBMesh": {
+            "opacity": 0.0
+          },
+          "SleeveMesh": {
+            "opacity": 0.0
+          },
+          "HatMesh": {
+            "opacity": 1.0
+          }
+        }
+      }
+    }
+  ]
+}

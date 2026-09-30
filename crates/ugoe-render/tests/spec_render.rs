@@ -56,6 +56,8 @@ struct Case {
     #[serde(default)]
     parameters: BTreeMap<String, f32>,
     target: [u32; 2],
+    /// キャンバスの `(x, y)` を描画先の px の `(a·x + c·y + e, b·x + d·y + f)` に写す `[a, b, c, d, e, f]`。
+    view: Option<[f32; 6]>,
     lights: Option<Lights>,
     pixels: Vec<Pixel>,
 }
@@ -176,15 +178,30 @@ fn premultiply(rgba: &[u8]) -> Vec<u8> {
         .collect()
 }
 
-/// キャンバス全体を描画先全体に写すビュー (`x × width / canvas.width` を画素に、Y 下向き)。
-fn canvas_view(width: f32, height: f32) -> View {
+/// キャンバスの px を描画先の px に写す `[a, b, c, d, e, f]` (`spec/examples/README.md#files`) に、
+/// 描画先の px から NDC への変換 (Y 下向きから上向きへ) を合成したビュー。
+fn target_view(view: [f32; 6], [width, height]: [u32; 2]) -> View {
+    let [a, b, c, d, e, f] = view;
+    let (sx, sy) = (2.0 / width as f32, -2.0 / height as f32);
     View {
         view_proj: [
-            [2.0 / width, 0.0, 0.0],
-            [0.0, -2.0 / height, 0.0],
-            [-1.0, 1.0, 1.0],
+            [a * sx, b * sy, 0.0],
+            [c * sx, d * sy, 0.0],
+            [e * sx - 1.0, f * sy + 1.0, 1.0],
         ],
     }
+}
+
+/// `case.view` を省略したときのビュー。キャンバス全体を描画先全体に引き伸ばす。
+fn stretch_view(canvas_width: f32, canvas_height: f32, [width, height]: [u32; 2]) -> [f32; 6] {
+    [
+        width as f32 / canvas_width,
+        0.0,
+        0.0,
+        height as f32 / canvas_height,
+        0.0,
+        0.0,
+    ]
 }
 
 #[test]
@@ -230,7 +247,11 @@ fn reference_renderer_meets_the_rendering_examples() {
                 &example.textures,
                 case,
                 &instance,
-                canvas_view(canvas.width, canvas.height),
+                target_view(
+                    case.view
+                        .unwrap_or_else(|| stretch_view(canvas.width, canvas.height, case.target)),
+                    case.target,
+                ),
             );
             for pixel in &case.pixels {
                 let [x, y] = pixel.at;
