@@ -26,3 +26,5 @@
 - T0607 (デフォーマの作成・見た目を保つ付け替え・ギズモのセルの編集。`src/deformer_edit.rs`)
 - T0630 (モーションと表情を `Document` に持ち、編集するコマンド。`src/motion_edit.rs`)
 - T0114 (書き出し時のテクスチャのアトラス化。`src/atlas.rs`)
+- T0648 (モジュールのプロジェクト。`src/module_project.rs`)
+- T0650 (モジュールの設定の `SetModuleSettings`・本体の読み直しの `Document::rebase_module`・本体の指紋)

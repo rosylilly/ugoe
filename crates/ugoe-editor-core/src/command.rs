@@ -9,7 +9,7 @@ use ugoe_model::deformer::{RotationKeyform, WarpKeyform};
 use ugoe_model::effects::Effects;
 use ugoe_model::expression::{Expression, ExpressionParameter};
 use ugoe_model::mesh::MeshKeyform;
-use ugoe_model::module::{Slot, SlotId};
+use ugoe_model::module::{ModuleRequirements, Slot, SlotId};
 use ugoe_model::motion::{Curve, CurveTarget, Motion, MotionEvent, Point};
 use ugoe_model::part::PartKeyform;
 use ugoe_model::physics::{
@@ -716,6 +716,16 @@ pub enum Command {
     /// スロットを消す。アバタープロファイルの `slots` からも外す。
     RemoveSlot {
         id: SlotId,
+    },
+    // ---- モジュールのプロジェクト (T0650)。規則は `docs/editor.md#モジュールの設定` ----
+    /// モジュールのプロジェクトの名前・スロット・条件 (`Module::name`・`slot`・`requires`) を変える。
+    /// 作業用のモデルをモジュールに分け、新しい設定で本体と合成し直す (ID の接頭辞・描画順の写し方・
+    /// 取り付け先が変わる)。本体がスロット・条件を満たさなければ拒否する。`Batch` の中では使えない。
+    /// モジュールのプロジェクトでなければ拒否する。
+    SetModuleSettings {
+        name: String,
+        slot: SlotId,
+        requires: ModuleRequirements,
     },
 }
 

@@ -2,6 +2,9 @@
 // ファイル操作 (新規・PSD から新規・開く・保存・別名で保存・書き出し・PSD の取り込み) と
 // プロジェクト名・未保存の印。パスは OS のファイルダイアログで選ぶ (docs/editor.md#ファイルダイアログ)。
 // 外でのプロジェクトの書き換えも、ウィンドウに戻ったとき・一定の間隔・保存の前に確かめる (docs/editor.md#外での書き換え)。
+// モジュールのプロジェクトでは、本体の変化も同じ機会に確かめ (BaseChangeDialog)、本体の問題で開けない・読み直せない
+// ときは直し方を出す (ModuleProblemBar)。`Module:` の印を押すとモジュールの設定 (ModuleSettingsDialog)。
+import BaseChangeDialog from "./BaseChangeDialog.svelte";
 import ExportPanel from "./ExportPanel.svelte";
 import ExternalChangeDialog from "./ExternalChangeDialog.svelte";
 import {
@@ -23,14 +26,18 @@ import {
   withExtension,
 } from "./filePaths";
 import {
+  type Command,
   type ExportReport,
   type ExternalChange,
   ipc,
+  type ModuleProblem,
   type ModuleStatus,
   type ProjectStatus,
   type PsdImportWarning,
 } from "./ipc";
-import { isBaseNotFoundError, moduleLabel, moduleTitle } from "./moduleProject";
+import ModuleProblemBar from "./ModuleProblemBar.svelte";
+import ModuleSettingsDialog from "./ModuleSettingsDialog.svelte";
+import { moduleLabel, moduleTitle } from "./moduleProject";
 import NewModuleDialog from "./NewModuleDialog.svelte";
 
 interface Props {
@@ -40,9 +47,11 @@ interface Props {
    * `reloaded` は同じプロジェクトを開き直したこと (外での書き換えの後。表示の位置を保つ)。
    */
   onchange: (replaced: boolean, reloaded?: boolean) => void;
+  /** モジュールの名前を変えた (作業用のモデルの ID の接頭辞が変わる。読み直す前に選択を付け替える)。 */
+  onrenamemodule?: (from: string, to: string) => void;
 }
 
-let { onchange }: Props = $props();
+let { onchange, onrenamemodule }: Props = $props();
 
 type PathAction =
   | "newFromPsd"
@@ -61,8 +70,24 @@ let status = $state<ProjectStatus | null>(null);
 let moduleInfo = $state<ModuleStatus | null>(null);
 /** 新しいモジュールの画面を開いているか。 */
 let newModuleOpen = $state(false);
-/** 本体が見つからずに開けなかったモジュールのプロジェクト (本体を選び直して開く)。 */
-let baseMissing = $state<string | null>(null);
+/**
+ * 本体の問題で開けなかった・読み直せなかったモジュールのプロジェクトと、その問題 (直し方を出す)。
+ * `project` は付け替えて開き直すプロジェクトの場所 (未保存なら null)。`opening` は開けなかったこと
+ * (読み直せなかっただけなら、開き直すと保存していない編集が消える)。`base` は選び直した本体
+ * (それでも開けなかったとき。次の直し方でも使う)。
+ */
+let problem = $state<{
+  project: string | null;
+  problem: ModuleProblem;
+  opening: boolean;
+  base: string | null;
+} | null>(null);
+/** モジュールの設定の画面を開いているか。 */
+let settingsOpen = $state(false);
+/** 本体の変化 (確認のダイアログを開いている間だけ)。 */
+let baseChange = $state<ExternalChange | null>(null);
+/** 「後で」を選んだ本体の状態の目印。 */
+let dismissedBaseToken: string | null = null;
 /** ダイアログを開いているか、その後の処理の途中か。 */
 let busy = $state(false);
 /** 未保存の変更を破棄する操作の確認待ち。 */
@@ -150,7 +175,7 @@ async function createModule(base: string, slot: string, name: string) {
   status = await ipc.newModuleProject(base, slot, name);
   newModuleOpen = false;
   warnings = [];
-  baseMissing = null;
+  problem = null;
   await run(async () => undefined, "replaced");
 }
 
@@ -236,23 +261,21 @@ function perform(kind: PathAction, path: string): Promise<boolean> {
         return ipc.projectStatus();
       }, "same");
     case "open":
-      return run(() => ipc.openProject(path), "replaced").then((ok) => {
-        // モジュールのプロジェクトの本体が見つからなければ、本体を選び直して開けるようにする
-        baseMissing = !ok && isBaseNotFoundError(message) ? path : null;
-        return ok;
-      });
-    case "locateBaseProject":
-    case "locateBaseBundle": {
-      const project = baseMissing;
-      if (!project) return Promise.resolve(false);
-      return run(() => ipc.openModuleWithBase(project, path), "replaced").then((ok) => {
-        if (ok) {
-          baseMissing = null;
-          notice = "Opened with the new base. Save to remember it.";
+      return run(() => ipc.openProject(path), "replaced").then(async (ok) => {
+        problem = null;
+        // モジュールのプロジェクトが本体の問題で開けなければ、直し方を出す
+        if (!ok) {
+          const found = await ipc.moduleOpenProblem(path).catch(() => null);
+          if (found) {
+            problem = { project: path, problem: found, opening: true, base: null };
+            message = null;
+          }
         }
         return ok;
       });
-    }
+    case "locateBaseProject":
+    case "locateBaseBundle":
+      return reopenModule(path, null);
     case "exportModule":
       return run(async () => {
         const report = await ipc.exportModule(path);
@@ -273,6 +296,68 @@ function perform(kind: PathAction, path: string): Promise<boolean> {
         return undefined;
       }, "none");
   }
+}
+
+/**
+ * 本体の問題で開けなかったモジュールのプロジェクトを、本体 `base` かスロット `slot` を付け替えて開き直す
+ * (`base` が null なら、前に選び直した本体があればそれ)。それでも本体の問題で開けなければ、新しい問題を出す。
+ */
+async function reopenModule(base: string | null, slot: string | null): Promise<boolean> {
+  const project = problem?.project;
+  if (!project) return false;
+  const useBase = base ?? problem?.base ?? null;
+  const ok = await run(() => ipc.openModuleWithBase(project, useBase, slot), "replaced");
+  if (ok) {
+    problem = null;
+    notice =
+      slot === null
+        ? "Opened with the new base. Save to remember it."
+        : `Opened on slot ${slot}. Save to remember it.`;
+  } else {
+    const found = await ipc.moduleOpenProblem(project, useBase).catch(() => null);
+    if (found) {
+      problem = { project, problem: found, opening: true, base: useBase };
+      message = null;
+    }
+  }
+  return ok;
+}
+
+/** 本体の問題の枠の「Use this slot」。 */
+async function useSlot(slot: string) {
+  if (busy) return;
+  busy = true;
+  try {
+    await reopenModule(null, slot);
+  } finally {
+    busy = false;
+  }
+}
+
+/** 本体の問題の枠の「Open base project」: 本体のプロジェクトを開いて直す (モジュールは後で開き直す)。 */
+async function openBase() {
+  const base = problem?.problem.base;
+  if (!base || busy || !discardConfirmed("open")) return;
+  busy = true;
+  try {
+    if (await run(() => ipc.openProject(base), "replaced")) {
+      problem = null;
+      notice = "Opened the base project. Fix it, save, then open the module again.";
+    }
+  } finally {
+    busy = false;
+  }
+}
+
+/** モジュールの設定の画面の「Apply」(失敗は例外のまま画面に返す)。 */
+async function applyModuleSettings(command: Command) {
+  await ipc.applyCommand(command);
+  settingsOpen = false;
+  const from = moduleInfo?.name;
+  if (command.op === "set_module_settings" && from && from !== command.name) {
+    onrenamemodule?.(from, command.name);
+  }
+  await run(ipc.projectStatus, "reloaded");
 }
 
 async function pick(kind: PathAction) {
@@ -316,9 +401,10 @@ function askExternal(change: ExternalChange, onSave: boolean) {
   external = change;
 }
 
-/** ウィンドウに戻ったとき・一定の間隔で、外での書き換えを確かめる。 */
+/** ウィンドウに戻ったとき・一定の間隔で、外での書き換えと、モジュールのプロジェクトの本体の変化を確かめる。 */
 async function checkExternal() {
-  if (busy || external || !status?.path) return;
+  await checkBase();
+  if (busy || external || baseChange || !status?.path) return;
   let change: ExternalChange | null;
   try {
     change = await ipc.checkExternalChange();
@@ -333,6 +419,45 @@ async function checkExternal() {
   });
   if (action === "reload") await reloadProject(true);
   else if (action === "ask" && change) askExternal(change, false);
+}
+
+/** モジュールのプロジェクトの本体が変わったか確かめ、変わっていれば尋ねる (保存していなくても確かめる)。 */
+async function checkBase() {
+  if (busy || external || baseChange || problem || !moduleInfo) return;
+  const change = await ipc.checkBaseChange().catch(() => null);
+  if (!change || change.token === dismissedBaseToken || busy || external) return;
+  baseChange = change;
+}
+
+/** 本体を読み直す。読み直せなければ、問題と直し方を出す (モジュールはそのまま)。 */
+async function reloadBase() {
+  const token = baseChange?.token ?? null;
+  baseChange = null;
+  dismissedBaseToken = null;
+  busy = true;
+  try {
+    const result = await ipc.reloadBase();
+    status = result.status;
+    if (result.problem) {
+      problem = { project: status.path, problem: result.problem, opening: false, base: null };
+      message = null;
+      // 読み直せなかった同じ本体の状態は、もう尋ねない (直し方の枠で選ぶ)
+      dismissedBaseToken = token;
+      return;
+    }
+    problem = null;
+    await run(async () => undefined, "reloaded");
+    notice = "Reloaded the base model";
+  } catch (e) {
+    message = String(e);
+  } finally {
+    busy = false;
+  }
+}
+
+function dismissBase() {
+  if (baseChange) dismissedBaseToken = baseChange.token;
+  baseChange = null;
 }
 
 async function reloadProject(auto: boolean) {
@@ -418,11 +543,9 @@ refresh();
     {status?.name ?? "…"}{#if status?.modified}<span class="dirty" aria-label="modified">●</span>{/if}
   </span>
   {#if moduleInfo}
-    <span class="module" title={moduleTitle(moduleInfo)}>{moduleLabel(moduleInfo)}</span>
-  {/if}
-  {#if baseMissing}
-    <button onclick={() => pick("locateBaseProject")} disabled={busy}>Locate base project…</button>
-    <button onclick={() => pick("locateBaseBundle")} disabled={busy}>Locate base .ugoe…</button>
+    <button class="module" title={moduleTitle(moduleInfo)} onclick={() => (settingsOpen = true)} disabled={busy}
+      >{moduleLabel(moduleInfo)}</button
+    >
   {/if}
   {#if message}<span class="error">{message}</span>{/if}
   {#if notice}<span class="notice" title={notice}>{notice}</span>{/if}
@@ -437,6 +560,29 @@ refresh();
     </details>
   {/if}
 </nav>
+{#if problem}
+  <ModuleProblemBar
+    problem={problem.problem}
+    canReopen={problem.project !== null && (problem.opening || !status?.modified)}
+    {busy}
+    onlocate={(kind) => pick(kind === "project" ? "locateBaseProject" : "locateBaseBundle")}
+    onchooseslot={useSlot}
+    onopenbase={openBase}
+    ondismiss={() => (problem = null)}
+  />
+{/if}
+<ModuleSettingsDialog
+  open={settingsOpen}
+  module={moduleInfo}
+  onapply={applyModuleSettings}
+  onclose={() => (settingsOpen = false)}
+/>
+<BaseChangeDialog
+  change={baseChange}
+  base={moduleInfo?.base ?? ""}
+  onreload={reloadBase}
+  ondismiss={dismissBase}
+/>
 <NewModuleDialog
   open={newModuleOpen}
   startDir={lastDir ?? (status?.path ? parentDir(status.path) : null)}
@@ -476,6 +622,7 @@ refresh();
     font-weight: 600;
   }
   .module {
+    flex-shrink: 0;
     padding: 0 6px;
     border: 1px solid var(--accent);
     border-radius: 3px;

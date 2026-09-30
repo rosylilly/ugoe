@@ -7,7 +7,9 @@
   (set_parameter_internal。docs/spec/model.md#パラメータ)。
 -->
 <script lang="ts">
+import BaseLock from "../BaseLock.svelte";
 import type { EditorDocument, ParameterDef } from "../document.svelte";
+import { baseElements, isBaseElement } from "../moduleProject";
 import type { Selection } from "../selection.svelte";
 import type { ViewportController } from "../viewport/controller.svelte";
 import {
@@ -32,6 +34,12 @@ let { parameters, viewport, doc, selection }: Props = $props();
 const model = $derived(doc.model ? parseModel(doc.model.json) : null);
 const element = $derived(model ? elementGrid(model, selection.primary) : null);
 const bindings = $derived(element?.grid.bindings ?? []);
+/** モジュールのプロジェクトでは、パラメータはすべて本体のもの (定義は変えられない。スライダーは動かせる)。 */
+const baseParameters = $derived(doc.module !== null);
+/** 選択中の要素が本体のもの (キーを足せない)。 */
+const elementIsBase = $derived(
+  selection.primary !== null && isBaseElement(baseElements(doc.module), selection.primary),
+);
 
 /** 定義を編集中のパラメータ (null なら閉じている)。 */
 let editing = $state<string | null>(null);
@@ -159,7 +167,14 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
       title="Move the selected element's parameters to their nearest keys">Snap to keys</button
     >
     <button onclick={() => viewport.resetParameters()}>Reset</button>
-    <button onclick={() => (creating = !creating)} title="New parameter" aria-label="New parameter">+</button>
+    <button
+      onclick={() => (creating = !creating)}
+      disabled={baseParameters}
+      title={baseParameters
+        ? "A module can't add parameters. Add them in the base project and expose them in the slot."
+        : "New parameter"}
+      aria-label="New parameter">+</button
+    >
   </span>
 </div>
 
@@ -210,8 +225,11 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
             <button
               class="key"
               class:on={onKey !== undefined}
+              disabled={elementIsBase}
               onclick={() => toggleKey(p, onKey)}
-              title={onKey === undefined
+              title={elementIsBase
+                ? "The selected element belongs to the base model. Edit it in the base project."
+                : onKey === undefined
                 ? `Add a key at ${formatValue(value)} to ${element.target.id}`
                 : `Remove the key ${onKey} from ${element.target.id}`}>◆</button
             >
@@ -241,6 +259,10 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
       </span>
       {#if valueError?.id === p.id}<p class="error">{valueError.message}</p>{/if}
       {#if editing === p.id}
+        <BaseLock
+          locked={baseParameters}
+          hint="Parameters belong to the base model and can't be edited here. Edit them in the base project."
+        >
         <div class="editor">
           <label>Name <input bind:value={draft.name} /></label>
           <span class="range">
@@ -265,6 +287,7 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
             <button class="danger" onclick={() => remove(p)} title="Delete {p.id}">Delete</button>
           </span>
         </div>
+        </BaseLock>
       {/if}
     </li>
   {/each}

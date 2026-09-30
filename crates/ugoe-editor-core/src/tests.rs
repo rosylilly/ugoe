@@ -1434,10 +1434,11 @@ fn op_name(command: &Command) -> &'static str {
         Command::AddSlot { .. } => "add_slot",
         Command::SetSlot { .. } => "set_slot",
         Command::RemoveSlot { .. } => "remove_slot",
+        Command::SetModuleSettings { .. } => "set_module_settings",
     }
 }
 
-const OP_COUNT: usize = 99;
+const OP_COUNT: usize = 100;
 
 fn json_samples() -> Vec<Command> {
     let quad = fixtures::single_quad();

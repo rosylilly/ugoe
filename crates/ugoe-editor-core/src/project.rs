@@ -428,17 +428,22 @@ impl Project {
     /// モジュールのプロジェクト `dir` を、本体を `base` に付け替えて読む (本体を動かした・見つからないとき)。
     /// 付け替えた参照は、次に保存したときに `project.json` に書く。
     pub fn load_with_base(dir: &Path, base: &Path) -> Result<Self, ProjectError> {
-        let meta_path = dir.join(PROJECT_JSON);
-        if !meta_path.is_file() {
-            return Err(ProjectError::NotAProject {
-                path: dir.to_path_buf(),
-            });
+        Self::load_module_with(dir, Some(base), None)
+    }
+
+    /// モジュールのプロジェクト `dir` を、本体を `base` に、スロットを `slot` に替えて読む (`None` なら
+    /// `project.json` のまま)。本体からスロットがなくなったとき・本体を選び直すときに使う。
+    /// 替えたものは、次に保存したときに `project.json` に書く。
+    pub fn load_module_with(
+        dir: &Path,
+        base: Option<&Path>,
+        slot: Option<&SlotId>,
+    ) -> Result<Self, ProjectError> {
+        let mut meta = read_module_meta(dir)?;
+        if let (Some(link), Some(slot)) = (&mut meta.module, slot) {
+            link.slot = slot.clone();
         }
-        let meta: ProjectMeta = read_json(&meta_path)?;
-        if meta.kind != ProjectKind::Module {
-            return Err(ProjectError::NotAModule);
-        }
-        Self::load_module(dir, meta, Some(base))
+        Self::load_module(dir, meta, base)
     }
 
     /// モジュールのプロジェクトを読む: `module.json` と画像を読み、本体を読んで作業用のモデルを作る。
@@ -761,6 +766,29 @@ fn read_images(dir: &Path, textures: &[TextureRef]) -> Result<Textures, ProjectE
         images.insert(name.to_owned(), Arc::from(png));
     }
     Ok(images)
+}
+
+/// モジュールのプロジェクト `dir` の `project.json` (モジュールのプロジェクトでなければ [`ProjectError::NotAModule`])。
+fn read_module_meta(dir: &Path) -> Result<ProjectMeta, ProjectError> {
+    let meta_path = dir.join(PROJECT_JSON);
+    if !meta_path.is_file() {
+        return Err(ProjectError::NotAProject {
+            path: dir.to_path_buf(),
+        });
+    }
+    let meta: ProjectMeta = read_json(&meta_path)?;
+    if meta.kind != ProjectKind::Module {
+        return Err(ProjectError::NotAModule);
+    }
+    Ok(meta)
+}
+
+/// モジュールのプロジェクト `dir` が参照する本体 (絶対パスに解決したもの) とスロット。開けなかったときに
+/// 直し方を選ぶために使う (本体を読まない)。
+pub fn read_module_link(dir: &Path) -> Result<(PathBuf, SlotId), ProjectError> {
+    let meta = read_module_meta(dir)?;
+    let link = meta.module.ok_or(ProjectError::MissingModuleLink)?;
+    Ok((resolve_base(dir, &link.base), link.slot))
 }
 
 /// モジュールのプロジェクトの本体を読む。`path` は `.ugoeproj` のディレクトリか `.ugoe`。

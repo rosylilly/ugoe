@@ -4,9 +4,11 @@
   取り付け先と形状の種類を変えるときは、今の見た目の位置を保つように写し直す (viewport/tools/physics/physicsGeometry.ts)。
 -->
 <script lang="ts">
+import BaseLock from "../../BaseLock.svelte";
 import type { EditorDocument } from "../../document.svelte";
 import type { Command, Model, PhysicsCollider, Vec2 } from "../../ipc";
 import { elementLabel } from "../../labels";
+import { isBaseCollider } from "../../moduleProject";
 import type { Selection } from "../../selection.svelte";
 import type { ViewportController } from "../../viewport/controller.svelte";
 import { puppetJacobian, puppetMap } from "../../viewport/tools/physics/mapper";
@@ -127,6 +129,7 @@ const points = $derived.by((): { key: "center" | "a" | "b"; label: string; p: Ve
   </div>
 
   {#if collider}
+    <BaseLock locked={isBaseCollider(doc.module, collider.id)}>
     <div class="grid editor">
       <span>Name</span>
       <input type="text" value={collider.name} aria-label="Collider name"
@@ -166,6 +169,7 @@ const points = $derived.by((): { key: "center" | "a" | "b"; label: string; p: Ve
         Delete collider
       </button>
     </div>
+    </BaseLock>
   {/if}
 </section>
 

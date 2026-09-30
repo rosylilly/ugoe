@@ -16,7 +16,10 @@ use crate::ai_provider::ProviderSettings;
 use crate::commands::{AnimationData, AppInfo};
 use crate::dress_up::PreviewModule;
 use crate::mcp::{BridgeEvent, McpBridgeStatus};
-use crate::module::{BaseSummary, ModuleExportReport, ModuleStatus, SlotSummary};
+use crate::module::{
+    BaseReload, BaseSummary, ModuleExportReport, ModuleProblem, ModuleProblemKind, ModuleStatus,
+    SlotSummary,
+};
 use crate::project::{ExternalChange, ProjectStatus};
 use crate::proposals::{Classification, ProposalPreview, ProposalState};
 
@@ -56,6 +59,9 @@ pub fn generated_files() -> Result<Vec<(&'static str, String)>, serde_json::Erro
     types.add::<SlotSummary>();
     types.add::<BaseSummary>();
     types.add::<ModuleStatus>();
+    types.add::<ModuleProblemKind>();
+    types.add::<ModuleProblem>();
+    types.add::<BaseReload>();
     types.add::<ModuleExportReport>();
     Ok(vec![
         ("apps/editor/src/lib/generated/types.ts", types.render()),

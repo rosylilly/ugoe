@@ -7,7 +7,7 @@
 import { fileDialogs } from "./fileDialogs";
 import { BUNDLE_FILTER } from "./filePaths";
 import { type BaseSummary, ipc } from "./ipc";
-import { isValidModuleName, suggestModuleName } from "./moduleProject";
+import { isValidModuleName, MODULE_CAN, MODULE_CANNOT, suggestModuleName } from "./moduleProject";
 
 interface Props {
   open: boolean;
@@ -99,6 +99,20 @@ const ready = $derived(basePath !== null && slot !== null && isValidModuleName(n
     A module is made in its own project that refers to a base model. The base is shown underneath and cannot be
     edited here.
   </p>
+  <details class="features">
+    <summary>What you can do in a module project</summary>
+    <div class="columns">
+      <div>
+        <strong>You can</strong>
+        <ul>{#each MODULE_CAN as line (line)}<li>{line}</li>{/each}</ul>
+      </div>
+      <div>
+        <strong>Edit in the base project instead</strong>
+        <ul>{#each MODULE_CANNOT as line (line)}<li>{line}</li>{/each}</ul>
+      </div>
+    </div>
+    <p class="muted">The name, slot and requirements can be changed later by clicking the “Module:” badge.</p>
+  </details>
   <div class="row">
     <span class="label">Base</span>
     <button onclick={() => chooseBase("project")} disabled={busy}>Project folder…</button>
@@ -170,6 +184,18 @@ const ready = $derived(basePath !== null && slot !== null && isValidModuleName(n
     text-transform: none;
     letter-spacing: normal;
     color: var(--text);
+  }
+  .features {
+    margin: 4px 0 8px;
+  }
+  .features ul {
+    margin: 4px 0;
+    padding-left: 18px;
+  }
+  .columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
   }
   .row {
     display: flex;

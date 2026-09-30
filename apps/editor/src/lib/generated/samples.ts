@@ -6586,5 +6586,19 @@ export const commands: Command[] = [
   {
     "op": "remove_slot",
     "id": "Hair"
+  },
+  {
+    "op": "set_module_settings",
+    "name": "LongHair",
+    "slot": "Hair",
+    "requires": {
+      "avatar_level": 1,
+      "slots": [
+        "Outfit"
+      ],
+      "parameters": [
+        "BodySway"
+      ]
+    }
   }
 ];

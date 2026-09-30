@@ -6,9 +6,11 @@
   モデルがライティングを受けないときは、光源を動かしても見た目が変わらない理由を出す。
 -->
 <script lang="ts">
+import BaseLock from "../../BaseLock.svelte";
 import type { EditorDocument } from "../../document.svelte";
 import type { Command, Model } from "../../ipc";
 import { elementLabel } from "../../labels";
+import { isBaseTexture } from "../../moduleProject";
 import type { Selection } from "../../selection.svelte";
 import { isLit, lightingHint, litCandidates } from "./lighting";
 import type { LightingView } from "./lightingView.svelte";
@@ -64,6 +66,10 @@ const selectedCount = $derived(selection.items.filter((r) => r.kind === "mesh").
   <p class="muted">Import a PSD first. Lighting shades meshes with the lights below.</p>
 {:else}
   <section aria-label="Model lighting">
+    <BaseLock
+      locked={doc.module !== null}
+      hint="Whether the model receives lighting is set in the base project."
+    >
     <label class="row">
       <span>Receive lighting (model)</span>
       <input
@@ -72,6 +78,7 @@ const selectedCount = $derived(selection.items.filter((r) => r.kind === "mesh").
         onchange={(e) => void doc.apply({ op: "set_lighting", enabled: (e.currentTarget as HTMLInputElement).checked })}
       />
     </label>
+    </BaseLock>
     {#if hint}<p class="hint">{hint}</p>{/if}
   </section>
 
@@ -103,7 +110,9 @@ const selectedCount = $derived(selection.items.filter((r) => r.kind === "mesh").
   </section>
 
   {#if selectedMesh}
-    <NormalMapSection {doc} {model} texture={selectedMesh.texture} />
+    <BaseLock locked={isBaseTexture(doc.module, model.textures[selectedMesh.texture]?.name ?? "")}>
+      <NormalMapSection {doc} {model} texture={selectedMesh.texture} />
+    </BaseLock>
   {:else}
     <h3>Normal map</h3>
     <p class="muted">Select a mesh to generate or assign a normal map for its texture.</p>

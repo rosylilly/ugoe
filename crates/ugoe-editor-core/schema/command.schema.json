@@ -2480,6 +2480,32 @@
         "op",
         "id"
       ]
+    },
+    {
+      "description": "モジュールのプロジェクトの名前・スロット・条件 (`Module::name`・`slot`・`requires`) を変える。\n作業用のモデルをモジュールに分け、新しい設定で本体と合成し直す (ID の接頭辞・描画順の写し方・\n取り付け先が変わる)。本体がスロット・条件を満たさなければ拒否する。`Batch` の中では使えない。\nモジュールのプロジェクトでなければ拒否する。",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_module_settings"
+        },
+        "requires": {
+          "$ref": "#/$defs/ModuleRequirements"
+        },
+        "slot": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "name",
+        "slot",
+        "requires"
+      ]
     }
   ],
   "$defs": {
@@ -4192,6 +4218,38 @@
           "const": "allow_redistribution"
         }
       ]
+    },
+    "ModuleRequirements": {
+      "description": "モジュールが対応する本体の条件。",
+      "type": "object",
+      "properties": {
+        "avatar_level": {
+          "description": "本体に求めるアバタープロファイルのレベル (`Model::avatar` の `level` 以上)。`None` なら求めない。",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        },
+        "parameters": {
+          "description": "本体に必要なパラメータ。",
+          "type": "array",
+          "items": {
+            "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+            "type": "string"
+          }
+        },
+        "slots": {
+          "description": "本体に必要なスロット (取り付け先のスロットは書かなくてよい)。",
+          "type": "array",
+          "items": {
+            "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+            "type": "string"
+          }
+        }
+      }
     },
     "Motion": {
       "type": "object",

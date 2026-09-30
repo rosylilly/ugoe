@@ -7,6 +7,7 @@ use ts_rs::TS;
 
 use ugoe_model::deformer::DeformerKind;
 use ugoe_model::expression::Expression;
+use ugoe_model::module::{ModuleRequirements, SlotId};
 use ugoe_model::motion::Motion;
 use ugoe_model::physics::PhysicsSettings;
 use ugoe_model::validate::{ValidationError, validate, validate_physics};
@@ -18,7 +19,7 @@ use ugoe_rigging::{InferError, InferScope, MirrorOptions};
 use crate::command::KeyformTarget;
 use crate::grid::{self, CellError};
 use crate::inference::{MirrorReport, RederiveWarning};
-use crate::module_project::{ModuleContext, ModuleError};
+use crate::module_project::{ModuleBase, ModuleContext, ModuleError};
 use crate::motion_edit::{self, Animations};
 use crate::texture::{Textures, is_valid_texture_name, png_size};
 use crate::{Command, automesh, avatar, inference, keyform};
@@ -166,12 +167,17 @@ pub enum EditError {
     InvalidSlot { id: String, reason: String },
     /// モジュールのプロジェクトで、読み取り専用の本体の要素を変えようとした
     /// (`element` は ``parameter `AngleX` `` のような表記。`docs/editor.md#モジュールのプロジェクト`)。
-    #[error("{element} belongs to the base model and cannot be edited in a module project")]
+    #[error(
+        "{element} belongs to the base model and can't be edited here. Edit it in the base project"
+    )]
     ReadOnlyBase { element: String },
     /// モジュールのプロジェクトで、編集した結果がモジュールとして表せない
     /// (本体の要素への参照・接頭辞を外した ID の重なりなど)。
     #[error("{reason}")]
     ModuleShape { reason: String },
+    /// モジュールのプロジェクトでないのに、モジュールの設定を変えようとした (`Command::SetModuleSettings`)。
+    #[error("this is not a module project")]
+    NotModule,
 }
 
 /// [`Document::apply_with_report`] の結果: コマンドは適用したが、利用者に知らせたいこと。
@@ -205,9 +211,6 @@ pub struct Document {
     next_state: u64,
     /// 最後に保存した状態の番号 (未保存なら `None`)。
     saved: Option<u64>,
-    /// モジュールのプロジェクトなら、本体とスロット (編集中は変わらない。`crate::module_project`)。
-    /// このときモデルは本体と合成した作業用のモデルで、本体の部分は読み取り専用。
-    module: Option<Arc<ModuleContext>>,
 }
 
 /// ある時点のドキュメントの状態。`state` は状態ごとに一意な番号 (変更の有無の判定に使う)。
@@ -218,6 +221,10 @@ struct Snapshot {
     animations: Animations,
     /// 物理の設定 (`docs/editor.md#物理の編集`)。モデルと同じ Undo の単位で変える。
     physics: Option<PhysicsSettings>,
+    /// モジュールのプロジェクトなら、本体とスロット・名前・条件 (`crate::module_project`)。
+    /// このときモデルは本体と合成した作業用のモデルで、本体の部分は読み取り専用。
+    /// 名前・スロット・条件は [`Command::SetModuleSettings`] で変わるので、Undo の単位に含める。
+    module: Option<Arc<ModuleContext>>,
     state: u64,
 }
 
@@ -236,30 +243,30 @@ impl Document {
                 textures,
                 animations: Animations::default(),
                 physics: None,
+                module: None,
                 state: 0,
             },
             undo: Vec::new(),
             redo: Vec::new(),
             next_state: 1,
             saved: Some(0),
-            module: None,
         }
     }
 
     /// 作ったばかりのドキュメントを、モジュールのプロジェクトのものにする (モデルは `context` の作業用のモデル)。
     pub fn with_module(mut self, context: Arc<ModuleContext>) -> Self {
-        self.module = Some(context);
+        self.current.module = Some(context);
         self
     }
 
     /// モジュールのプロジェクトなら、その本体とスロット。
     pub fn module(&self) -> Option<&Arc<ModuleContext>> {
-        self.module.as_ref()
+        self.current.module.as_ref()
     }
 
     /// モジュールのプロジェクトなら、今の状態をモジュールとその画像に分ける。
     pub fn split_module(&self) -> Option<Result<(Module, Textures), ModuleError>> {
-        let context = self.module.as_ref()?;
+        let context = self.current.module.as_ref()?;
         Some(context.split(
             &self.current.model,
             self.current.physics.as_ref(),
@@ -336,7 +343,6 @@ impl Document {
             redo: Vec::new(),
             next_state: self.next_state,
             saved: None,
-            module: self.module.clone(),
         }
     }
 
@@ -385,6 +391,15 @@ impl Document {
     /// [`Document::apply`] と同じく適用し、拒否しなかった問題 (ミラーのやり直しの失敗と、親を変えた
     /// ことでミラーし直せなくなった左右の対) を返す。
     pub fn apply_with_report(&mut self, command: Command) -> Result<ApplyReport, EditError> {
+        if let Command::SetModuleSettings {
+            name,
+            slot,
+            requires,
+        } = command
+        {
+            self.set_module_settings(name, &slot, requires)?;
+            return Ok(ApplyReport::default());
+        }
         let mut next = self.current.clone();
         let mut touched = Vec::new();
         let mut mirrored = Vec::new();
@@ -397,7 +412,7 @@ impl Document {
             &mut mirrored,
             &mut next.physics,
         )?;
-        if let Some(context) = &self.module {
+        if let Some(context) = &next.module {
             context.normalize(&mut next.model, &mut touched)?;
         }
         // 形・テクスチャ・親が変わった元のメッシュに、描画用の複製を追従させる。
@@ -432,7 +447,7 @@ impl Document {
         if !introduced.is_empty() {
             return Err(EditError::Invalid(introduced));
         }
-        if let Some(context) = &self.module {
+        if let Some(context) = &next.module {
             // 本体が変わっていないこと、モジュールとして表せることを確かめる。
             if !next.animations.motions.is_empty() || !next.animations.expressions.is_empty() {
                 return Err(EditError::ModuleShape {
@@ -446,6 +461,73 @@ impl Document {
         self.undo.push(std::mem::replace(&mut self.current, next));
         self.redo.clear();
         Ok(ApplyReport { warnings, mirrored })
+    }
+
+    /// [`Command::SetModuleSettings`]: 作業用のモデルをモジュールに分け、新しい名前・スロット・条件で
+    /// 本体と合成し直す (`docs/editor.md#モジュールの設定`)。モジュールの要素の座標は取り付け先の局所座標のまま
+    /// なので、取り付け先の違うスロットに移すと見た目の位置が変わる。変わらなければ何もしない。
+    fn set_module_settings(
+        &mut self,
+        name: String,
+        slot: &SlotId,
+        requires: ModuleRequirements,
+    ) -> Result<(), EditError> {
+        let context = self.current.module.as_ref().ok_or(EditError::NotModule)?;
+        if context.name() == name && &context.slot().id == slot && *context.requires() == requires {
+            return Ok(());
+        }
+        let (module, images) = context.split(
+            &self.current.model,
+            self.current.physics.as_ref(),
+            &self.current.textures,
+        )?;
+        let reconfigured = context.reconfigured(slot, name, requires)?;
+        let workspace = reconfigured.workspace(&module, &images)?;
+        let next = Snapshot {
+            model: workspace.model,
+            textures: workspace.textures,
+            animations: self.current.animations.clone(),
+            physics: workspace.physics,
+            module: Some(Arc::new(reconfigured)),
+            state: self.next_state,
+        };
+        self.next_state += 1;
+        self.undo.push(std::mem::replace(&mut self.current, next));
+        self.redo.clear();
+        Ok(())
+    }
+
+    /// モジュールのプロジェクトの本体を `base` に替える (本体のファイルが外で変わったときの読み直し。
+    /// `docs/editor.md#本体の変化`)。保存していないモジュールの編集は保つ。前の状態は古い本体のものなので
+    /// Undo の履歴は消す。モジュールの中身は変わらないので、保存済みかどうかは保つ。
+    /// 本体がスロットや条件を満たさなくなった・モジュールが合わなくなったならエラーで、何も変えない。
+    pub fn rebase_module(&mut self, base: ModuleBase) -> Result<(), ModuleError> {
+        let Some(context) = self.current.module.as_ref() else {
+            return Err(ModuleError::Shape {
+                reason: "this is not a module project".into(),
+            });
+        };
+        let (module, images) = context.split(
+            &self.current.model,
+            self.current.physics.as_ref(),
+            &self.current.textures,
+        )?;
+        let rebased = context.rebased(base)?;
+        let workspace = rebased.workspace(&module, &images)?;
+        let saved = !self.is_modified();
+        self.current = Snapshot {
+            model: workspace.model,
+            textures: workspace.textures,
+            animations: self.current.animations.clone(),
+            physics: workspace.physics,
+            module: Some(Arc::new(rebased)),
+            state: self.next_state,
+        };
+        self.next_state += 1;
+        self.undo.clear();
+        self.redo.clear();
+        self.saved = saved.then_some(self.current.state);
+        Ok(())
     }
 
     pub fn undo(&mut self) -> bool {
@@ -1042,6 +1124,12 @@ fn apply_to(
         Command::AddSlot { slot } => slot_edit::add(model, physics.as_ref(), slot)?,
         Command::SetSlot { id, slot } => slot_edit::set(model, physics.as_ref(), &id, slot)?,
         Command::RemoveSlot { id } => slot_edit::remove(model, &id)?,
+        // 作業用のモデルを組み直すので、`Document::apply_with_report` が単独で受ける。
+        Command::SetModuleSettings { .. } => {
+            return Err(EditError::ModuleShape {
+                reason: "module settings must be changed on their own, not in a batch".into(),
+            });
+        }
     }
     Ok(())
 }

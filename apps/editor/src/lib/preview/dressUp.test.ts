@@ -293,3 +293,29 @@ describe("DressUp", () => {
     expect(other.attached()).toEqual(["LongHair"]);
   });
 });
+
+describe("DressUp in a module project", () => {
+  it("does not put another module on the project's own slot", async () => {
+    const fake = fakePuppet({ LongHair: "Hair", Dress: "Outfit" });
+    const dressUp = new DressUp({
+      puppet: () => fake.puppet,
+      active: () => true,
+      changed: vi.fn(),
+      ownSlot: () => "Hair",
+    });
+    await dressUp.add([
+      { path: null, bytes: bytes("LongHair"), name: "LongHair.ugoemod" },
+      { path: null, bytes: bytes("Dress"), name: "Dress.ugoemod" },
+    ]);
+    expect(fake.attached()).toEqual(["Dress"]);
+    const hair = entry(dressUp, "LongHair");
+    expect(hair?.attached).toBe(false);
+    expect(hair?.wanted).toBe(false);
+    expect(hair?.problem?.code).toBe("own_slot");
+    expect(hair?.problem?.summary).toContain('module for slot "Hair"');
+    // 付けたい組に残っていても、読み直しでは付けない
+    if (hair) hair.wanted = true;
+    dressUp.loaded(fake.puppet);
+    expect(fake.attached()).toEqual(["Dress"]);
+  });
+});

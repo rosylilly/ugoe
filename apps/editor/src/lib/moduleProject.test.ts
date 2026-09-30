@@ -1,13 +1,21 @@
 import { describe, expect, it } from "vitest";
-import type { ModuleStatus } from "./ipc";
+import type { ModuleProblem, ModuleStatus } from "./ipc";
 import {
   baseElements,
+  baseIsProject,
+  describeModuleProblem,
   isBaseElement,
-  isBaseNotFoundError,
+  isBaseRig,
+  isBaseTexture,
   isValidModuleName,
+  MODULE_CANNOT,
   moduleLabel,
+  moduleProblemFixes,
   moduleTitle,
+  renamePrefix,
+  requirementsOf,
   suggestModuleName,
+  toggled,
 } from "./moduleProject";
 
 const status: ModuleStatus = {
@@ -25,6 +33,14 @@ const status: ModuleStatus = {
   base_parts: ["Root"],
   base_deformers: ["Head"],
   base_meshes: ["Face"],
+  base_textures: ["face.png"],
+  base_rigs: ["Sway"],
+  base_colliders: [],
+  // JSON では空の欄を書かない
+  requires: { parameters: ["BodySway"] } as ModuleStatus["requires"],
+  base_slots: [],
+  base_parameters: ["AngleX", "BodySway"],
+  base_avatar_level: null,
 };
 
 describe("baseElements", () => {
@@ -40,9 +56,11 @@ describe("baseElements", () => {
 describe("labels and names", () => {
   it("describes the module", () => {
     expect(moduleLabel(status)).toBe("Module: Hair");
-    expect(moduleTitle(status)).toBe(
-      "Slot Hair of avatar.ugoeproj (read-only base: /home/me/avatar.ugoeproj)",
-    );
+    const title = moduleTitle(status);
+    expect(title.split("\n")[0]).toBe('Module "Hat" for slot Hair of avatar.ugoeproj');
+    expect(title).toContain("Read-only base: /home/me/avatar.ugoeproj");
+    // できないことも示す
+    for (const line of MODULE_CANNOT) expect(title).toContain(line);
     expect(moduleTitle({ ...status, base: "C:\\x\\a.ugoe" })).toContain("of a.ugoe");
   });
   it("suggests and checks module names", () => {
@@ -53,8 +71,79 @@ describe("labels and names", () => {
     expect(isValidModuleName("a/b")).toBe(false);
     expect(isValidModuleName("#a")).toBe(false);
   });
-  it("recognizes a missing base", () => {
-    expect(isBaseNotFoundError("base model not found: /x")).toBe(true);
-    expect(isBaseNotFoundError(null)).toBe(false);
+});
+
+describe("base things", () => {
+  it("tells base textures and rigs", () => {
+    expect(isBaseTexture(status, "face.png")).toBe(true);
+    expect(isBaseTexture(status, "Hat/brim.png")).toBe(false);
+    expect(isBaseTexture(null, "face.png")).toBe(false);
+    expect(isBaseRig(status, "Sway")).toBe(true);
+    expect(isBaseRig(status, "Hat/Sway")).toBe(false);
+  });
+  it("fills the omitted requirements", () => {
+    expect(requirementsOf(status)).toEqual({
+      avatar_level: null,
+      slots: [],
+      parameters: ["BodySway"],
+    });
+  });
+  it("toggles in the given order", () => {
+    const order = ["A", "B", "C"];
+    expect(toggled(["C"], "A", true, order)).toEqual(["A", "C"]);
+    expect(toggled(["A", "C"], "A", false, order)).toEqual(["C"]);
+  });
+});
+
+describe("renamePrefix", () => {
+  it("moves the selection to the new prefix", () => {
+    expect(
+      renamePrefix(
+        [
+          { kind: "mesh", id: "Hat/Brim" },
+          { kind: "mesh", id: "Face" },
+          { kind: "parameter", id: "Hat/X" },
+        ],
+        "Hat",
+        "Cap",
+      ),
+    ).toEqual([
+      { kind: "mesh", id: "Cap/Brim" },
+      { kind: "mesh", id: "Face" },
+      { kind: "parameter", id: "Hat/X" },
+    ]);
+  });
+});
+
+describe("module problems", () => {
+  const problem = (kind: ModuleProblem["kind"], base = "/p/avatar.ugoeproj"): ModuleProblem => ({
+    kind,
+    base,
+    slot: "Hair",
+    base_slots: kind === "unknown_slot" ? ["Outfit"] : [],
+    message: "x",
+  });
+  it("offers fixes for each kind", () => {
+    expect(moduleProblemFixes(problem("base_not_found"))).toEqual([
+      "locate_project",
+      "locate_bundle",
+    ]);
+    expect(moduleProblemFixes(problem("unknown_slot"))).toEqual([
+      "choose_slot",
+      "open_base",
+      "locate_project",
+      "locate_bundle",
+    ]);
+    // 書き出した本体 (.ugoe) はエディタで開いて直せない
+    expect(moduleProblemFixes(problem("does_not_fit", "/p/avatar.ugoe"))).toEqual([
+      "locate_project",
+      "locate_bundle",
+    ]);
+    expect(baseIsProject("/p/a.UGOE")).toBe(false);
+  });
+  it("describes what happened", () => {
+    expect(describeModuleProblem(problem("base_not_found"))).toContain("moved or renamed");
+    expect(describeModuleProblem(problem("unknown_slot"))).toContain('no longer has slot "Hair"');
+    expect(describeModuleProblem(problem("does_not_fit"))).toContain("no longer fits");
   });
 });

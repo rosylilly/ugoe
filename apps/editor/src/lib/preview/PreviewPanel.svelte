@@ -103,7 +103,11 @@ function onValueKeyDown(e: KeyboardEvent) {
     {/each}
   </section>
 
-  <DressUpSection dressUp={preview.dressUp} slots={model?.slots ?? []} />
+  <!-- モジュールのプロジェクトでは、自分のスロットはもう埋まっているので出さない (T0650) -->
+  <DressUpSection
+    dressUp={preview.dressUp}
+    slots={(model?.slots ?? []).filter((s) => s.id !== doc.module?.slot.id)}
+  />
 
   <section aria-label="Face tracking" class="tracking">
     <TrackingPanel

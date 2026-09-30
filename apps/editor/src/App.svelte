@@ -25,12 +25,14 @@ import ConsentDialog from "./lib/ai/ConsentDialog.svelte";
 import ProposalsPanel from "./lib/ai/ProposalsPanel.svelte";
 import { ProposalsView } from "./lib/ai/proposals.svelte";
 import SettingsDialog from "./lib/ai/SettingsDialog.svelte";
+import BaseLock from "./lib/BaseLock.svelte";
 import { EditorDocument } from "./lib/document.svelte";
 import { EMPTY_VIEWPORT_HINT } from "./lib/emptyState";
 import FileMenu from "./lib/FileMenu.svelte";
 import HelpButton from "./lib/HelpButton.svelte";
 import { type AppInfo, ipc } from "./lib/ipc";
 import { loadSplit, saveSplit, splitAt, splitByKey } from "./lib/layout";
+import { renamePrefix } from "./lib/moduleProject";
 import InspectorPanel from "./lib/panels/InspectorPanel.svelte";
 import LightingPanel from "./lib/panels/lighting/LightingPanel.svelte";
 import { LightingView } from "./lib/panels/lighting/lightingView.svelte";
@@ -186,6 +188,7 @@ $effect(() => {
         void lighting.load();
         void preview.dressUp.load();
       }}
+      onrenamemodule={(from, to) => selection.set(renamePrefix(selection.items, from, to))}
     />
     <span class="spacer"></span>
     <button class:active={preview.active} onclick={() => preview.toggle()}
@@ -255,7 +258,12 @@ $effect(() => {
       {:else if lighting.active}
         <LightingPanel {doc} {selection} view={lighting} />
       {:else if slots.active}
-        <SlotsPanel {doc} {selection} view={slots} />
+        <BaseLock
+          locked={doc.module !== null}
+          hint="Slots belong to the base model and can't be edited in a module project. Edit them in the base project."
+        >
+          <SlotsPanel {doc} {selection} view={slots} />
+        </BaseLock>
       {:else}
         <InspectorPanel {doc} {selection} {viewport} />
       {/if}

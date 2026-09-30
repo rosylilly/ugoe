@@ -521,3 +521,214 @@ fn model_projects_keep_their_project_json() {
         r#"{"format_version":0,"name":"x"}"#
     );
 }
+
+fn settings(name: &str, slot: &str, requires: ModuleRequirements) -> Command {
+    Command::SetModuleSettings {
+        name: name.to_owned(),
+        slot: slot.into(),
+        requires,
+    }
+}
+
+#[test]
+fn module_settings_rename_the_module_and_undo() {
+    let module = long_hair_module();
+    let mut document = document(&module);
+    document
+        .apply(settings("Braid", "Hair", module.requires.clone()))
+        .unwrap();
+    let context = document.module().unwrap();
+    assert_eq!(context.name(), "Braid");
+    assert!(
+        document
+            .model()
+            .meshes
+            .iter()
+            .any(|m| m.id.as_str() == "Braid/Back")
+    );
+    assert_eq!(context.display_id("Braid/Back"), "Back");
+    assert_eq!(context.display_id("Face"), "Face");
+    let (split, _) = document.split_module().unwrap().unwrap();
+    assert_eq!(split.name, "Braid");
+    assert_same_module(&split, &module);
+    assert!(document.is_modified());
+
+    assert!(document.undo());
+    assert_eq!(document.module().unwrap().name(), "LongHair");
+    assert!(!document.is_modified());
+    assert!(document.redo());
+    assert_eq!(document.module().unwrap().name(), "Braid");
+}
+
+#[test]
+fn module_settings_move_to_another_slot() {
+    let mut document = Document::new(dress_up_base());
+    assert_eq!(
+        document.apply(settings("X", "Hair", ModuleRequirements::default())),
+        Err(EditError::NotModule)
+    );
+
+    let module = long_hair_module();
+    let mut document = self::document(&module);
+    // `Outfit` は `Face` をマスクに公開しないので、LongHair は移せない (何も変わらない)。
+    let error = document
+        .apply(settings(
+            "LongHair",
+            "Outfit",
+            ModuleRequirements::default(),
+        ))
+        .unwrap_err();
+    assert!(matches!(error, EditError::ModuleShape { .. }), "{error}");
+    assert_eq!(document.module().unwrap().slot().id.as_str(), "Hair");
+    assert!(!document.is_modified());
+
+    // 空のモジュールは移せる。描画順の写し方と取り付け先が新しいスロットのものになる。
+    let mut empty = module.clone();
+    empty.meshes.clear();
+    empty.deformers.clear();
+    empty.physics = Default::default();
+    empty.textures.clear();
+    let mut document = self::document(&empty);
+    document
+        .apply(settings("Hat", "Outfit", ModuleRequirements::default()))
+        .unwrap();
+    let context = document.module().unwrap();
+    assert_eq!(context.slot().id.as_str(), "Outfit");
+    assert_eq!(context.map_draw_order(0.0), 300.0);
+    // 条件は本体が満たすものだけ。
+    let error = document
+        .apply(settings(
+            "Hat",
+            "Outfit",
+            ModuleRequirements {
+                parameters: vec!["Missing".into()],
+                ..Default::default()
+            },
+        ))
+        .unwrap_err();
+    assert!(error.to_string().contains("Missing"), "{error}");
+    document
+        .apply(settings(
+            "Hat",
+            "Outfit",
+            ModuleRequirements {
+                slots: vec!["Hair".into()],
+                ..Default::default()
+            },
+        ))
+        .unwrap();
+    assert_eq!(split(&document).requires.slots, vec!["Hair".into()]);
+    // バッチの中では使えない。
+    let error = document
+        .apply(Command::Batch {
+            label: "x".into(),
+            commands: vec![settings("Cap", "Outfit", ModuleRequirements::default())],
+        })
+        .unwrap_err();
+    assert!(matches!(error, EditError::ModuleShape { .. }), "{error}");
+}
+
+#[test]
+fn read_only_message_points_to_the_base_project() {
+    let mut document = document(&long_hair_module());
+    let error = document
+        .apply(Command::RemoveMesh { id: "Face".into() })
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "mesh `Face` belongs to the base model and can't be edited here. Edit it in the base project"
+    );
+}
+
+#[test]
+fn rebase_keeps_unsaved_module_edits() {
+    let temp = TempDir::new("rebase");
+    let base_path = save_base(&temp.0);
+    let project = Project::new_module("Hat", &base_path, &"Hair".into()).unwrap();
+    let dir = temp.0.join("hat.ugoeproj");
+    project.save(&dir).unwrap();
+    let before = crate::ProjectFingerprint::read_base(&base_path).unwrap();
+    let mut document = Project::load(&dir).unwrap().document();
+    document
+        .apply(Command::AddPart {
+            part: Part {
+                id: "Brim".into(),
+                name: "Brim".into(),
+                parent: None,
+                keyforms: KeyformGrid::constant(ugoe_model::part::PartKeyform { opacity: 1.0 }),
+            },
+        })
+        .unwrap();
+
+    // 本体を外で変える (パラメータを足し、スロットの範囲を変える)。
+    let mut base = Project::load(&base_path).unwrap();
+    base.model
+        .parameters
+        .push(dress_up_base().parameters[0].clone());
+    base.model.parameters.last_mut().unwrap().id = "Extra".into();
+    base.model.slots[0].draw_order.max = 600.0;
+    base.save(&base_path).unwrap();
+    let after = before.reread_base(&base_path).unwrap();
+    assert_ne!(before, after);
+
+    let state = document.state_id();
+    document
+        .rebase_module(crate::project::load_base(&base_path).unwrap())
+        .unwrap();
+    assert!(
+        document
+            .model()
+            .parameters
+            .iter()
+            .any(|p| p.id.as_str() == "Extra")
+    );
+    // 合成し直すので、新しく作った要素の ID にも接頭辞が付く。
+    assert!(
+        document
+            .model()
+            .parts
+            .iter()
+            .any(|p| p.id.as_str() == "Hat/Brim")
+    );
+    assert_eq!(document.module().unwrap().slot().draw_order.max, 600.0);
+    assert!(document.is_modified());
+    assert!(document.state_id() > state);
+    assert!(!document.undo());
+
+    // 本体からスロットがなくなると読み直せない。別のスロットを選んで開ける。
+    base.model.slots.remove(0);
+    base.model.avatar = None;
+    base.save(&base_path).unwrap();
+    let before = document.model().clone();
+    assert!(matches!(
+        document.rebase_module(crate::project::load_base(&base_path).unwrap()),
+        Err(ModuleError::UnknownSlot(_))
+    ));
+    assert_eq!(*document.model(), before);
+    assert!(matches!(
+        Project::load(&dir),
+        Err(ProjectError::Module(ModuleError::UnknownSlot(_)))
+    ));
+    let (link_base, link_slot) = crate::project::read_module_link(&dir).unwrap();
+    assert_eq!(link_base, base_path);
+    assert_eq!(link_slot.as_str(), "Hair");
+    let reopened = Project::load_module_with(&dir, None, Some(&"Outfit".into())).unwrap();
+    assert_eq!(
+        reopened.module.as_ref().unwrap().slot().id.as_str(),
+        "Outfit"
+    );
+}
+
+#[test]
+fn base_bundle_fingerprint_follows_the_file() {
+    let temp = TempDir::new("bundle-fingerprint");
+    std::fs::create_dir_all(&temp.0).unwrap();
+    let path = temp.0.join("avatar.ugoe");
+    std::fs::write(&path, b"one").unwrap();
+    let before = crate::ProjectFingerprint::read_base(&path).unwrap();
+    assert_eq!(before, before.reread_base(&path).unwrap());
+    std::fs::write(&path, b"two!").unwrap();
+    let after = before.reread_base(&path).unwrap();
+    assert_ne!(before, after);
+    assert_eq!(before.changed_files(&after), vec!["avatar.ugoe".to_owned()]);
+}

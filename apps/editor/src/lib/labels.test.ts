@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { elementLabel, elementOptions, labelOf, nameOf, textureLabel } from "./labels";
+import {
+  displayId,
+  elementLabel,
+  elementOptions,
+  labelOf,
+  nameOf,
+  setHiddenIdPrefix,
+  textureLabel,
+} from "./labels";
 
 describe("element labels", () => {
   it("shows the display name with the ID", () => {
@@ -26,5 +34,23 @@ describe("element labels", () => {
     expect(textureLabel("Layer8", ["顔"])).toBe("Layer8 — 顔");
     expect(textureLabel("atlas", ["a", "b", "c", "d"])).toBe("atlas — a, b +2");
     expect(textureLabel("Face", ["Face"])).toBe("Face");
+  });
+});
+
+describe("hidden module prefix", () => {
+  it("hides the prefix of a module project in labels only", () => {
+    setHiddenIdPrefix("Hat/");
+    try {
+      expect(displayId("Hat/Brim")).toBe("Brim");
+      expect(displayId("Hat/")).toBe("Hat/");
+      expect(displayId("Face")).toBe("Face");
+      expect(elementLabel("Brim", "Hat/Brim")).toBe("Brim");
+      expect(elementLabel("つば", "Hat/Brim")).toBe("つば (Brim)");
+      expect(nameOf([{ id: "Hat/Brim" }], "Hat/Brim")).toBe("Brim");
+      expect(textureLabel("Hat/brim", ["Brim"])).toBe("brim — Brim");
+    } finally {
+      setHiddenIdPrefix(null);
+    }
+    expect(displayId("Hat/Brim")).toBe("Hat/Brim");
   });
 });

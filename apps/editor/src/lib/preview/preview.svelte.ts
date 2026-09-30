@@ -78,6 +78,7 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
         this.trackingParameterIds = puppet.tracking_parameter_ids();
         this.#sync(puppet);
       },
+      ownSlot: () => this.#doc.module?.slot.id ?? null,
     });
     // ヘッドレスのブラウザでの確認のため (記録した値の列の再生など)。
     window.__UGOE_TRACKER__ = this.tracker;

@@ -13,6 +13,7 @@ import {
   type PhysicsSettings,
   type RederiveWarning,
 } from "./ipc";
+import { setHiddenIdPrefix } from "./labels";
 import { mergeWarnings } from "./panels/inspector/inference/inference";
 import type { ViewportModel } from "./viewport/controller.svelte";
 
@@ -55,6 +56,8 @@ export class EditorDocument {
       const animations = await ipc.getAnimations();
       this.physics = await ipc.getPhysics();
       this.module = await ipc.moduleStatus();
+      // 表記から合成の接頭辞を隠す (モデルを差し替える前に。表記はモデルから作り直される)
+      setHiddenIdPrefix(this.module ? `${this.module.name}/` : null);
       this.model = { json, bundle };
       this.motions = animations.motions;
       this.expressions = animations.expressions;

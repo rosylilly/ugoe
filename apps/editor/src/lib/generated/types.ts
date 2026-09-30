@@ -252,6 +252,11 @@ hit_areas: Array<AvatarHitArea>,
 slots: Array<string>, };
 
 /**
+ * 本体の読み直し (`reload_base`) の結果。読み直せなければ `problem` があり、ドキュメントはそのまま。
+ */
+export type BaseReload = { status: ProjectStatus, problem: ModuleProblem | null, };
+
+/**
  * 本体として選んだファイルの要約 (`read_module_base` の戻り値)。
  */
 export type BaseSummary = { 
@@ -403,7 +408,7 @@ look_at?: LookAt | null, hit_areas?: Array<AvatarHitArea> | null, slots?: Array<
 /**
  * 法線マップの画像 (PNG)。JSON では数値の配列になるので、主にバックエンド内 (生成の提案など) から使う。
  */
-png?: Array<number> | null, } | { "op": "set_lighting", enabled: boolean, } | { "op": "set_effects", effects: Effects, } | { "op": "add_slot", slot: Slot, } | { "op": "set_slot", id: string, slot: Slot, } | { "op": "remove_slot", id: string, };
+png?: Array<number> | null, } | { "op": "set_lighting", enabled: boolean, } | { "op": "set_effects", effects: Effects, } | { "op": "add_slot", slot: Slot, } | { "op": "set_slot", id: string, slot: Slot, } | { "op": "remove_slot", id: string, } | { "op": "set_module_settings", name: string, slot: string, requires: ModuleRequirements, };
 
 /**
  * 商用利用の範囲。
@@ -1039,6 +1044,49 @@ bytes: number,
 warnings: Array<string>, };
 
 /**
+ * モジュールのプロジェクトが本体の問題で開けない・読み直せないこと (`module_open_problem`・`reload_base`)。
+ */
+export type ModuleProblem = { kind: ModuleProblemKind, 
+/**
+ * 本体のファイルの絶対パス。
+ */
+base: string, 
+/**
+ * モジュールのスロット。
+ */
+slot: string, 
+/**
+ * 本体を読めたなら、そのスロットの ID (別のスロットを選ぶ)。
+ */
+base_slots: Array<string>, 
+/**
+ * 元のエラーの文。
+ */
+message: string, };
+
+/**
+ * モジュールのプロジェクトが本体の問題で開けない・読み直せないときの、問題の種類 (直し方を選ぶ)。
+ */
+export type ModuleProblemKind = "base_not_found" | "base_unreadable" | "unknown_slot" | "does_not_fit";
+
+/**
+ * モジュールが対応する本体の条件。
+ */
+export type ModuleRequirements = { 
+/**
+ * 本体に求めるアバタープロファイルのレベル (`Model::avatar` の `level` 以上)。`None` なら求めない。
+ */
+avatar_level: number | null, 
+/**
+ * 本体に必要なスロット (取り付け先のスロットは書かなくてよい)。
+ */
+slots: Array<string>, 
+/**
+ * 本体に必要なパラメータ。
+ */
+parameters: Array<string>, };
+
+/**
  * 開いているモジュールのプロジェクトの情報 (`module_status` の戻り値)。
  */
 export type ModuleStatus = { 
@@ -1053,7 +1101,31 @@ base: string, slot: SlotSummary,
 /**
  * 作業用のモデルのうち本体の要素 (読み取り専用) の ID。
  */
-base_parts: Array<string>, base_deformers: Array<string>, base_meshes: Array<string>, };
+base_parts: Array<string>, base_deformers: Array<string>, base_meshes: Array<string>, 
+/**
+ * 本体のテクスチャの名前 (作業用のモデルの `textures` の先頭から、この数だけが本体のもの)。
+ */
+base_textures: Array<string>, 
+/**
+ * 本体の物理のリグと衝突体の ID (読み取り専用)。
+ */
+base_rigs: Array<string>, base_colliders: Array<string>, 
+/**
+ * モジュールの条件 (`Module::requires`)。変えるのは `Command::SetModuleSettings`。
+ */
+requires: ModuleRequirements, 
+/**
+ * 本体のスロット (モジュールの設定の画面で、付けるスロットと条件のスロットを選ぶ)。
+ */
+base_slots: Array<SlotSummary>, 
+/**
+ * 本体のパラメータの ID (条件のパラメータを選ぶ)。
+ */
+base_parameters: Array<string>, 
+/**
+ * 本体が名乗るアバタープロファイルのレベル (なければ `null`)。
+ */
+base_avatar_level: number | null, };
 
 export type Motion = { name: string, 
 /**

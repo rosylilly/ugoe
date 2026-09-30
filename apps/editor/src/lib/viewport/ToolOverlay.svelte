@@ -12,9 +12,12 @@
   - 物理の表示 (T0629): tools/physics/PhysicsOverlay.svelte。物理のパネルを開いている間、粒子と衝突体を重ね、
     衝突体のドラッグを受ける (ほかのツールより上)。
   - はみ出しの表示 (T0632): tools/overflow/OverflowOverlay.svelte。「Verify」のパネルで切り替える (操作は受けない)。
+  - モジュールのプロジェクト (T0650): 本体の要素の選択枠は灰色の破線にし、編集のツール (フォーム・ギズモ・メッシュ編集) を
+    出さずに「本体のプロジェクトで直す」と示す。「Module outline」でモジュールのメッシュすべての輪郭を重ね、本体と見分ける。
 -->
 <script lang="ts">
 import type { EditorDocument } from "../document.svelte";
+import { baseElements, isBaseElement } from "../moduleProject";
 import type { PhysicsView } from "../panels/physics/physicsView.svelte";
 import type { VerifyView } from "../panels/verify/verifyView.svelte";
 import type { Selection } from "../selection.svelte";
@@ -58,6 +61,14 @@ $effect(() => {
   queueMicrotask(() => scene.invalidate());
 });
 
+/** モジュールのプロジェクトの本体の要素 (読み取り専用)。本体のプロジェクトなら空。 */
+const base = $derived(baseElements(doc.module));
+const primaryIsBase = $derived(
+  selection.primary !== null && isBaseElement(base, selection.primary),
+);
+/** モジュールのメッシュの輪郭を重ねるか (モジュールのプロジェクトだけ)。 */
+let moduleOutline = $state(true);
+
 const primaryMesh = $derived(
   selection.primary?.kind === "mesh" && scene.mesh(selection.primary.id)
     ? selection.primary.id
@@ -75,20 +86,37 @@ $effect(() => {
   if (selection.meshEdit !== null && editing === null) selection.meshEdit = null;
 });
 
-/** 選択中のメッシュの輪郭 (SVG のパス)。 */
+/** メッシュ `id` の今の輪郭 (SVG のパス)。 */
+function outlineOf(id: string): string | null {
+  const mesh = scene.mesh(id);
+  const p = scene.screenPositions(id);
+  if (!mesh || !p) return null;
+  return boundaryEdges(mesh.indices)
+    .map(([a, b]) => `M${p[2 * a]},${p[2 * a + 1]}L${p[2 * b]},${p[2 * b + 1]}`)
+    .join("");
+}
+
+/** 選択中のメッシュの輪郭。本体の要素は `base` (灰色の破線)。 */
 const outlines = $derived(
   selection.items
     .filter((r) => r.kind === "mesh")
     .flatMap((r) => {
-      const mesh = scene.mesh(r.id);
-      const p = scene.screenPositions(r.id);
-      if (!mesh || !p) return [];
-      const d = boundaryEdges(mesh.indices)
-        .map(([a, b]) => `M${p[2 * a]},${p[2 * a + 1]}L${p[2 * b]},${p[2 * b + 1]}`)
-        .join("");
-      return [{ id: r.id, d, primary: r.id === primaryMesh }];
+      const d = outlineOf(r.id);
+      return d === null
+        ? []
+        : [{ id: r.id, d, primary: r.id === primaryMesh, base: isBaseElement(base, r) }];
     }),
 );
+
+/** モジュールのプロジェクトで、モジュールのメッシュすべての輪郭 (本体と見分けるため)。 */
+const moduleOutlines = $derived.by(() => {
+  if (!doc.module || !moduleOutline) return [];
+  const ids = scene.model.meshes.map((m) => m.id).filter((id) => !base.has(`mesh:${id}`));
+  return ids.flatMap((id) => {
+    const d = outlineOf(id);
+    return d === null ? [] : [{ id, d }];
+  });
+});
 
 function enterMeshEdit(): void {
   if (!primaryMesh) return;
@@ -163,8 +191,11 @@ function onKeyDown(e: KeyboardEvent): void {
   onpointerdown={onPointerDown}
   ondblclick={onDoubleClick}
 >
+  {#each moduleOutlines as o (o.id)}
+    <path class="module-outline" d={o.d} />
+  {/each}
   {#each outlines as o (o.id)}
-    <path class="outline" class:primary={o.primary} d={o.d} />
+    <path class="outline" class:primary={o.primary} class:base={o.base} d={o.d} />
   {/each}
 </svg>
 
@@ -172,6 +203,8 @@ function onKeyDown(e: KeyboardEvent): void {
   {#key editing}
     <MeshEditTool bind:this={meshTool} {scene} {doc} {selection} meshId={editing} />
   {/key}
+{:else if primaryIsBase}
+  <!-- 本体の要素は編集できないので、編集のツールを出さない -->
 {:else if primaryDeformer !== null}
   {#key primaryDeformer}
     <DeformerGizmo {controller} {doc} {selection} deformerId={primaryDeformer} />
@@ -190,9 +223,19 @@ function onKeyDown(e: KeyboardEvent): void {
       title="Stop the physics preview and return to the edit pose">Stop physics</button>
   {/if}
   {#if editing === null}
-    <button disabled={primaryMesh === null} onclick={enterMeshEdit} title="Double-click a mesh">
+    <button disabled={primaryMesh === null || primaryIsBase} onclick={enterMeshEdit} title="Double-click a mesh">
       Edit mesh
     </button>
+    {#if doc.module}
+      <label class="check" title="Outline every mesh of this module, to tell it from the base model underneath">
+        <input type="checkbox" bind:checked={moduleOutline} /> Module outline
+      </label>
+    {/if}
+    {#if primaryIsBase}
+      <span class="base-tag" role="note"
+        >Base model: can't be edited here. Edit it in the base project.</span
+      >
+    {/if}
   {:else}
     <span class="muted">Mesh: {editing}</span>
     <button onclick={() => meshTool?.retriangulate()}>Retriangulate</button>
@@ -227,6 +270,36 @@ function onKeyDown(e: KeyboardEvent): void {
 .outline.primary {
   stroke-width: 2;
   opacity: 1;
+}
+
+.outline.base {
+  stroke: var(--muted, #888);
+  stroke-dasharray: 4 3;
+}
+
+.module-outline {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+  opacity: 0.55;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.base-tag {
+  padding: 2px 6px;
+  background: var(--panel);
+  border: 1px dashed var(--border);
+  border-radius: 4px;
 }
 
 .toolbar {

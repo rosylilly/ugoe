@@ -7,6 +7,7 @@
 //!   `textures/*.png`) の、中身のハッシュと大きさ。更新日時だけが変わった (中身が同じ) ファイルは変更としない。
 //! - モジュールのプロジェクトが参照する本体のファイルは含めない。モジュールのプロジェクトは本体を書かず、
 //!   開き直せばそのときの本体と合成し直すので、本体が変わっても保存した内容は失われない (下敷きが古いだけ)。
+//!   本体の変化には、本体の指紋 ([`ProjectFingerprint::read_base`]) を別に取って気づく (`docs/editor.md#本体の変化`)。
 //! - PNG は大きいので、大きさと更新日時が前の指紋と同じなら前のハッシュを使い回す ([`ProjectFingerprint::reread`])。
 //!   JSON は毎回読んでハッシュする (更新日時の刻みが粗いファイルシステムでも、編集を見逃さないため)。
 //! - ハッシュは `std` の `DefaultHasher` で、同じプロセスの中で比べるだけ (ファイルには残さない)。
@@ -50,6 +51,25 @@ impl ProjectFingerprint {
     /// `dir` のプロジェクトの指紋を取る。`project.json` がなければ [`ProjectError::NotAProject`]。
     pub fn read(dir: &Path) -> Result<Self, ProjectError> {
         Self::default().reread(dir)
+    }
+
+    /// モジュールのプロジェクトの本体 (`.ugoeproj` のディレクトリか `.ugoe`) の指紋。`.ugoe` ならその
+    /// ファイル 1 つ (ファイル名で持つ)。
+    pub fn read_base(path: &Path) -> Result<Self, ProjectError> {
+        Self::default().reread_base(path)
+    }
+
+    /// 本体の指紋を取り直す ([`ProjectFingerprint::reread`] と同じく、変わっていない大きなファイルは読まない)。
+    pub fn reread_base(&self, path: &Path) -> Result<Self, ProjectError> {
+        if path.is_dir() {
+            return self.reread(path);
+        }
+        let name = PathBuf::from(path.file_name().unwrap_or(path.as_os_str()));
+        let mut files = BTreeMap::new();
+        if let Some(stamp) = stamp(path, self.files.get(&name))? {
+            files.insert(name, stamp);
+        }
+        Ok(Self { files })
     }
 
     /// `dir` の指紋を取り直す。PNG は大きさと更新日時が `self` と同じなら、読まずに `self` のハッシュを使う。

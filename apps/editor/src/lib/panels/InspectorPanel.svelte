@@ -5,9 +5,11 @@
   それぞれ lib/panels/inspector/ にコンポーネントを置き、ここではそれを並べるだけにする。
 -->
 <script lang="ts">
+import BaseLock from "../BaseLock.svelte";
 import type { EditorDocument } from "../document.svelte";
 import type { Model } from "../ipc";
 import { labelOf } from "../labels";
+import { baseElements, isBaseElement } from "../moduleProject";
 import type { Selection } from "../selection.svelte";
 import type { ViewportController } from "../viewport/controller.svelte";
 import AvatarSection from "./inspector/avatar/AvatarSection.svelte";
@@ -28,6 +30,11 @@ interface Props {
 
 let { doc, selection, viewport }: Props = $props();
 
+/** モジュールのプロジェクトで、主な選択が本体の要素 (読み取り専用) か。 */
+const primaryIsBase = $derived(
+  selection.primary !== null && isBaseElement(baseElements(doc.module), selection.primary),
+);
+
 /** 主な選択の表記 (表示名と ID)。 */
 const primaryLabel = $derived.by(() => {
   const primary = selection.primary;
@@ -47,20 +54,37 @@ const primaryLabel = $derived.by(() => {
 <h2>Inspector</h2>
 <RederiveNotice {doc} />
 {#if selection.primary}
-  <p class="heading">{selection.primary.kind}: {primaryLabel}</p>
-  <MeshProperties {doc} {selection} />
-  <DrawCloneSection {doc} {selection} {viewport} />
-  <DeformerProperties {doc} {selection} />
-  <KeyformInspector {doc} {selection} {viewport} />
-  <InferenceSection {doc} {selection} {viewport} />
-  <DepthSection {doc} {selection} {viewport} />
+  <p class="heading">
+    {selection.primary.kind}: {primaryLabel}{#if primaryIsBase}<span class="badge" title="Part of the base model: read-only in a module project">base</span>{/if}
+  </p>
+  <BaseLock locked={primaryIsBase}>
+    <MeshProperties {doc} {selection} />
+    <DrawCloneSection {doc} {selection} {viewport} />
+    <DeformerProperties {doc} {selection} />
+    <KeyformInspector {doc} {selection} {viewport} />
+    <InferenceSection {doc} {selection} {viewport} />
+    <DepthSection {doc} {selection} {viewport} />
+  </BaseLock>
 {:else}
   <p class="muted">Nothing selected (rev {doc.revision})</p>
-  <AvatarSection {doc} />
+  <BaseLock
+    locked={doc.module !== null}
+    hint="The avatar profile belongs to the base model and can't be edited here. Edit it in the base project."
+  >
+    <AvatarSection {doc} />
+  </BaseLock>
 {/if}
 
 <style>
 .heading {
   overflow-wrap: anywhere;
+}
+.badge {
+  margin-left: 6px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 11px;
+  opacity: 0.8;
 }
 </style>

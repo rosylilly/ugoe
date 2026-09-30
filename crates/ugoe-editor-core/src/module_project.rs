@@ -40,7 +40,9 @@ pub enum ModuleError {
     #[error(transparent)]
     Compose(#[from] ComposeError),
     /// 本体の要素を変えた (`element` は ``parameter `AngleX` `` のような表記)。
-    #[error("{element} belongs to the base model and cannot be edited in a module project")]
+    #[error(
+        "{element} belongs to the base model and can't be edited here. Edit it in the base project"
+    )]
     ReadOnlyBase { element: String },
     /// モジュールとして表せない (本体の要素への参照・接頭辞を外した ID の重なりなど)。
     #[error("cannot be kept as a module: {reason}")]
@@ -77,7 +79,8 @@ pub struct Workspace {
     pub textures: Textures,
 }
 
-/// モジュールのプロジェクトの、編集中に変わらない情報: 本体・スロット・モジュールの名前と条件。
+/// モジュールのプロジェクトの情報: 本体・スロット・モジュールの名前と条件。本体は編集中に変わらない
+/// (読み直すと替わる)。名前・スロット・条件は `Command::SetModuleSettings` で替わる (`Document` がスナップショットごとに持つ)。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleContext {
     base: ModuleBase,
@@ -134,6 +137,31 @@ impl ModuleContext {
             base_deformers,
             base_meshes,
         })
+    }
+
+    /// 本体は同じで、スロット・名前・条件を替えた情報 ([`Command::SetModuleSettings`])。
+    pub fn reconfigured(
+        &self,
+        slot: &SlotId,
+        name: impl Into<String>,
+        requires: ModuleRequirements,
+    ) -> Result<Self, ModuleError> {
+        Self::new(self.base.clone(), slot, name, requires)
+    }
+
+    /// スロット・名前・条件は同じで、本体を `base` に替えた情報 (本体のファイルが変わったときの読み直し)。
+    pub fn rebased(&self, base: ModuleBase) -> Result<Self, ModuleError> {
+        Self::new(
+            base,
+            &self.slot.id,
+            self.name.clone(),
+            self.requires.clone(),
+        )
+    }
+
+    /// 作業用の ID から、合成で付いた接頭辞 (`<モジュールの名前>/`) を外したもの (表示用)。
+    pub fn display_id<'a>(&self, id: &'a str) -> &'a str {
+        self.unprefixed(id)
     }
 
     pub fn base(&self) -> &ModuleBase {

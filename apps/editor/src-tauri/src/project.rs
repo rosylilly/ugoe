@@ -29,6 +29,9 @@ pub struct ProjectSession {
     /// `path` のファイルの、開いた (または最後に保存した) ときの指紋。外での書き換えに気づくために比べる
     /// (`docs/editor.md#外での書き換え`)。`path` がなければ `None`。
     disk: Option<ProjectFingerprint>,
+    /// モジュールのプロジェクトなら、本体のファイルの、開いた (または読み直した) ときの指紋。本体の変化に
+    /// 気づくために比べる (`docs/editor.md#本体の変化`)。取れなければ `None`。
+    base_disk: Option<ProjectFingerprint>,
     meta: ProjectMeta,
     /// `meta` を最後に保存 (または開いた) ときから変えたか (`Document` の変更とは別に数える)。
     meta_modified: bool,
@@ -49,6 +52,7 @@ impl ProjectSession {
         let session = Self {
             path,
             disk,
+            base_disk: base_fingerprint(&document),
             meta: project.meta,
             meta_modified: false,
             ai_consent: ConsentMemory::default(),
@@ -123,6 +127,44 @@ impl ProjectSession {
         Project::from_document(self.meta.clone(), document)
     }
 
+    /// モジュールのプロジェクトの本体のファイルが、開いた (読み直した) 後で変わっていれば、その内容。
+    /// `files` は本体からの相対パス (`.ugoe` ならファイル名)、`missing` は本体が見つからないこと。
+    pub(crate) fn base_change(
+        &self,
+        document: &Document,
+    ) -> Result<Option<ExternalChange>, String> {
+        let (Some(context), Some(known)) = (document.module(), &self.base_disk) else {
+            return Ok(None);
+        };
+        let path = &context.base().path;
+        if !path.exists() {
+            return Ok(Some(ExternalChange {
+                files: Vec::new(),
+                missing: true,
+                token: "base-missing".into(),
+            }));
+        }
+        match known.reread_base(path) {
+            Ok(now) if now == *known => Ok(None),
+            Ok(now) => Ok(Some(ExternalChange {
+                files: known.changed_files(&now),
+                missing: false,
+                token: format!("base-{:016x}", now.digest()),
+            })),
+            Err(ProjectError::NotAProject { .. }) => Ok(Some(ExternalChange {
+                files: Vec::new(),
+                missing: true,
+                token: "base-missing".into(),
+            })),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    /// 本体を読み直した後で、本体の指紋を取り直す。
+    pub(crate) fn remember_base(&mut self, document: &Document) {
+        self.base_disk = base_fingerprint(document);
+    }
+
     /// 保存先のファイルが、開いた (最後に保存した) 後で外で変わっていれば、その内容。
     /// 保存先がなければ `None`。
     pub(crate) fn external_change(&self) -> Result<Option<ExternalChange>, String> {
@@ -164,6 +206,14 @@ impl ProjectSession {
         document.mark_saved();
         Ok(())
     }
+}
+
+/// モジュールのプロジェクトなら、本体のファイルの指紋 (取れなければ `None`)。
+fn base_fingerprint(document: &Document) -> Option<ProjectFingerprint> {
+    let path = &document.module()?.base().path;
+    ProjectFingerprint::read_base(path)
+        .inspect_err(|e| eprintln!("could not fingerprint the base model: {e}"))
+        .ok()
 }
 
 /// 開いているプロジェクトのファイルが、エディタの外で変わったこと (`docs/editor.md#外での書き換え`)。

@@ -814,6 +814,16 @@ pub(crate) fn slot_samples() -> Vec<Command> {
             slot: outfit,
         },
         Command::RemoveSlot { id: "Hair".into() },
+        Command::SetModuleSettings {
+            name: "LongHair".to_owned(),
+            slot: "Hair".into(),
+            // 省略された欄は TS の型では欠けてしまうので、見本はすべての欄を埋める。
+            requires: ugoe_model::module::ModuleRequirements {
+                avatar_level: Some(1),
+                slots: vec!["Outfit".into()],
+                parameters: vec!["BodySway".into()],
+            },
+        },
     ]
 }
 

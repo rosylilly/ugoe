@@ -58,6 +58,20 @@ export interface DressUpHost {
   active(): boolean;
   /** 付け外しの後 (スライダーの表示を写し直す)。 */
   changed(puppet: WebPuppet): void;
+  /**
+   * モジュールのプロジェクトなら、そのモジュールのスロット (作業用のモデルにもう付いているので、ほかのモジュールを
+   * 付けない。T0650)。
+   */
+  ownSlot?(): string | null;
+}
+
+/** モジュールのプロジェクトで、自分のスロットに付けようとしたときの説明。 */
+export function ownSlotProblem(slot: string): DressUpProblem {
+  return {
+    summary: `This project is the module for slot "${slot}", so another module can't go on it here. Try it in the base project.`,
+    detail: `slot ${slot} is this module project's own slot`,
+    code: "own_slot",
+  };
 }
 
 export class DressUp {
@@ -153,6 +167,12 @@ export class DressUp {
     const puppet = this.#puppet();
     const entry = this.#entry(name);
     if (!puppet || !entry) return;
+    if (entry.slot !== null && entry.slot === this.#host.ownSlot?.()) {
+      entry.problem = ownSlotProblem(entry.slot);
+      entry.wanted = false;
+      if (save) void this.#save();
+      return;
+    }
     try {
       puppet.attach_module(name);
       entry.problem = null;
@@ -381,7 +401,10 @@ export class DressUp {
 
   /** 付けたい組 (`wanted`) に揃える。付けられないものは外して知らせる。 */
   #reconcile(puppet: WebPuppet): void {
-    const wanted = this.entries.filter((e) => e.wanted && e.loaded).map((e) => e.name);
+    const own = this.#host.ownSlot?.() ?? null;
+    const wanted = this.entries
+      .filter((e) => e.wanted && e.loaded && (own === null || e.slot !== own))
+      .map((e) => e.name);
     if (!sameNames(puppet.attached_modules(), wanted)) {
       try {
         puppet.set_modules(wanted);

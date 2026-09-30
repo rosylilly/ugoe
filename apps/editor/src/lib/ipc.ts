@@ -11,6 +11,7 @@ import type {
   ApplyReport,
   AutoMeshOptions,
   AvatarCheck,
+  BaseReload,
   BaseSummary,
   BridgeEvent,
   BulgeSettings,
@@ -24,6 +25,7 @@ import type {
   KeyformTarget,
   McpBridgeStatus,
   ModuleExportReport,
+  ModuleProblem,
   ModuleStatus,
   OverflowReport,
   PhysicsSettings,
@@ -69,9 +71,23 @@ export const ipc = {
   /** 本体のスロットに付ける空のモジュールのプロジェクトにする (未保存)。 */
   newModuleProject: (base: string, slot: string, name: string) =>
     invoke<ProjectStatus>("new_module_project", { base, slot, name }),
-  /** モジュールのプロジェクトを、本体を付け替えて開く (本体が見つからないとき)。 */
-  openModuleWithBase: (path: string, base: string) =>
-    invoke<ProjectStatus>("open_module_with_base", { path, base }),
+  /**
+   * モジュールのプロジェクトを、本体を `base` に、スロットを `slot` に付け替えて開く (null ならそのまま。
+   * 本体が見つからない・本体からスロットがなくなったとき)。
+   */
+  openModuleWithBase: (path: string, base: string | null, slot: string | null = null) =>
+    invoke<ProjectStatus>("open_module_with_base", { path, base, slot }),
+  /**
+   * `path` のモジュールのプロジェクトが本体の問題で開けないなら、その問題と直すための情報 (openProject の失敗の後に呼ぶ)。
+   * `base` なら project.json の本体の代わりにそれで確かめる (選び直した本体)。
+   * 開ける・モジュールのプロジェクトでない・本体と関係のないエラーなら null。
+   */
+  moduleOpenProblem: (path: string, base: string | null = null) =>
+    invoke<ModuleProblem | null>("module_open_problem", { path, base }),
+  /** モジュールのプロジェクトの本体のファイルが、開いた (読み直した) 後で変わったか。変わっていなければ null。 */
+  checkBaseChange: () => invoke<ExternalChange | null>("check_base_change"),
+  /** 本体をファイルから読み直す (保存していないモジュールの編集は保ち、Undo の履歴は消す)。 */
+  reloadBase: () => invoke<BaseReload>("reload_base"),
   /** モジュールのプロジェクトを .ugoemod に書き出す。 */
   exportModule: (path: string) => invoke<ModuleExportReport>("export_module", { path }),
   /**

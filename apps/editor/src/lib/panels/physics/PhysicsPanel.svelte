@@ -11,9 +11,11 @@
   - パネルを開いている間、ビューポートに粒子と衝突体を重ねる (viewport/tools/physics/PhysicsOverlay.svelte)。
 -->
 <script lang="ts">
+import BaseLock from "../../BaseLock.svelte";
 import type { EditorDocument } from "../../document.svelte";
 import type { Command, Model } from "../../ipc";
 import { elementLabel } from "../../labels";
+import { isBaseRig } from "../../moduleProject";
 import type { Selection } from "../../selection.svelte";
 import type { ViewportController } from "../../viewport/controller.svelte";
 import ColliderSection from "./ColliderSection.svelte";
@@ -144,6 +146,10 @@ function togglePreview(): void {
 
 <section>
   <h3>World</h3>
+  <BaseLock
+    locked={doc.module !== null}
+    hint="Gravity, wind and steps belong to the base model and can't be edited here. Edit them in the base project."
+  >
   <div class="grid">
     <span>Gravity</span>
     <span class="row">
@@ -165,6 +171,7 @@ function togglePreview(): void {
         onchange={(e) => setWorld("fps", e.currentTarget.valueAsNumber)} />
     </span>
   </div>
+  </BaseLock>
 </section>
 
 <section>
@@ -230,7 +237,9 @@ function togglePreview(): void {
 
 {#if rig && model}
   {#key rig.id}
-    <RigEditor {rig} {model} {settings} {send} {busy} />
+    <BaseLock locked={isBaseRig(doc.module, rig.id)}>
+      <RigEditor {rig} {model} {settings} {send} {busy} />
+    </BaseLock>
   {/key}
 {/if}
 
