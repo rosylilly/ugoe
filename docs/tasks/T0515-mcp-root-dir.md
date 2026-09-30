@@ -1,11 +1,11 @@
 ---
 id: T0515
 title: MCP: ツールが触れるパスを 1 つのディレクトリの下に限る
-status: todo
+status: in-progress
 milestone: M6
 crates: [ugoe-mcp, docs]
 depends_on: [T0514]
-assignee:
+assignee: claude-worker-T0515
 ---
 
 # T0515: MCP: ツールが触れるパスを 1 つのディレクトリの下に限る
