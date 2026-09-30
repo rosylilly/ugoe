@@ -5,6 +5,14 @@
 // 描画は WebGPU が無ければ WebGL2 で行う (docs/adr/0003-editor-viewport-in-webview.md)。
 import { setPuppetTracking, type TrackingFrame } from "@ugoe/face-tracking";
 import { parseHexColor } from "./color";
+import {
+  describeDressUpError,
+  describeLoadWarning,
+  type ModuleInfo,
+  parseModules,
+  parseSlots,
+  type SlotInfo,
+} from "./dressUp";
 import { DriverSet } from "./drivers";
 import { type LightingSettings, loadLighting, saveLighting, toLightingJson } from "./lighting";
 import { detectModelKind, type ModelFile } from "./modelFile";
@@ -62,6 +70,12 @@ export class Player {
   usesLighting = $state(false);
   /** 光源の設定 (lighting.ts)。モデルを開き直しても保ち、localStorage に覚える。 */
   lighting = $state<LightingSettings>(loadLighting());
+  /** 読み込んだ着せ替えのモジュール (読み込んだ順)。モデルを開き直しても残る。 */
+  modules = $state<ModuleInfo[]>([]);
+  /** 開いているモデル (本体) のスロット。 */
+  slots = $state<SlotInfo[]>([]);
+  /** 直近の着せ替えの失敗 (利用者に見せる文)。 */
+  dressUpError = $state<string | null>(null);
 
   /** パラメータを毎フレーム外から動かすもの (drivers.ts)。 */
   readonly drivers = new DriverSet();
@@ -80,6 +94,12 @@ export class Player {
   /** 次のフレームで渡すトラッキングの入力 (渡したら `null`)。 */
   #pendingTracking: TrackingFrame | null = null;
   #lastTracking: TrackingFrame | null = null;
+  /** 読み込んだモジュールのファイル (名前ごと。GPU を作り直したときに読み直す)。 */
+  #moduleFiles = new Map<string, ModelFile>();
+  /** 描画の準備ができる前に開いたモジュール。 */
+  #pendingModules: ModelFile[] = [];
+  /** 付けているモジュールの名前 (合成の順。GPU を作り直したときに付け直す)。 */
+  #attached: string[] = [];
 
   /** `container` の中に canvas を作り、描画を始める。 */
   async attach(container: HTMLElement): Promise<void> {
@@ -101,22 +121,31 @@ export class Player {
     this.#container = null;
   }
 
-  /** モデルを開く。形式は中身から判別する。 */
+  /**
+   * モデルか着せ替えのモジュールを開く。形式は中身から判別する (modelFile.ts)。
+   * モジュールなら読み込んで付ける (`loadModule`)。
+   */
   async load(file: ModelFile): Promise<void> {
+    const kind = detectModelKind(file);
+    if (kind === "module") {
+      this.loadModule(file);
+      return;
+    }
     this.#file = file;
     const puppet = this.#puppet;
     // まだ描画の準備中なら、準備ができたときに読む (#createPuppet)。
     if (puppet === null) return;
-    const kind = detectModelKind(file);
     if (kind === null) {
-      this.error = `${file.name}: .ugoe か JSON のモデルではありません`;
+      this.error = `${file.name}: .ugoe・JSON のモデルか .ugoemod のモジュールではありません`;
       return;
     }
     try {
-      this.warnings =
+      // 付けていたモジュールは wasm が付け直す。付けられなかったものは外して警告に入る。
+      const warnings =
         kind === "bundle"
           ? puppet.load_bundle(file.bytes)
           : puppet.load_json(new TextDecoder().decode(file.bytes));
+      this.warnings = warnings.map(describeLoadWarning);
     } catch (e) {
       this.error = `${file.name}: ${message(e)}`;
       return;
@@ -137,8 +166,61 @@ export class Player {
     // 点光源の位置はキャンバスの大きさに対する割合なので、モデルごとに渡し直す。
     this.usesLighting = puppet.uses_lighting();
     this.#applyLighting();
+    this.dressUpError = null;
+    this.#syncDressUp();
     this.status = "ready";
     this.fit();
+  }
+
+  // --- 着せ替え (T0706)。付け外しの規則は docs/spec/modules.md#puppet-での着せ替え ---
+
+  /**
+   * `.ugoemod` を読み込む。`attach` なら、モデルを開いていれば続けて付ける (同じスロットのモジュールは差し替わる)。
+   * 失敗は `dressUpError` に入れる。読み込めたらモジュールの名前を返す。
+   */
+  loadModule(file: ModelFile, attach = true): string | null {
+    const puppet = this.#puppet;
+    if (puppet === null) {
+      // 描画の準備ができたら読んで付ける (#createPuppet)。
+      this.#pendingModules.push(file);
+      return null;
+    }
+    let name: string;
+    try {
+      name = puppet.load_module(file.bytes);
+    } catch (e) {
+      this.dressUpError = `${file.name}: ${describeDressUpError(e)}`;
+      return null;
+    }
+    this.#moduleFiles.set(name, file);
+    this.dressUpError = null;
+    if (attach && puppet.has_model()) this.attachModule(name);
+    else this.#syncDressUp();
+    return name;
+  }
+
+  /** 読み込んだモジュールを付ける。同じスロットに付いているモジュールとは差し替える。付けられたら `true`。 */
+  attachModule(name: string): boolean {
+    return this.#dressUp((puppet) => puppet.attach_module(name));
+  }
+
+  /** モジュールを外す。 */
+  detachModule(name: string): boolean {
+    return this.#dressUp((puppet) => puppet.detach_module(name));
+  }
+
+  /** 読み込んだモジュールを一覧から除く (付けていれば外す)。 */
+  unloadModule(name: string): boolean {
+    const done = this.#dressUp((puppet) => puppet.unload_module(name));
+    if (done) this.#moduleFiles.delete(name);
+    return done;
+  }
+
+  /** スロット `slot` に付けるモジュールを `name` にする。`null` ならそのスロットのモジュールを外す。 */
+  setSlotModule(slot: string, name: string | null): boolean {
+    if (name !== null) return this.attachModule(name);
+    const current = this.modules.find((m) => m.slot === slot && m.attached);
+    return current === undefined || this.detachModule(current.name);
   }
 
   /** スライダーからの設定。ドライバが動かしているパラメータは無視する。 */
@@ -243,6 +325,36 @@ export class Player {
 
   // --- 内部 ---
 
+  /** 付け外しを 1 つ行い、一覧を読み直す。失敗したら (wasm は何も変えない) 理由を `dressUpError` に入れる。 */
+  #dressUp(action: (puppet: WebPuppet) => void): boolean {
+    const puppet = this.#puppet;
+    if (puppet === null) return false;
+    try {
+      action(puppet);
+      this.dressUpError = null;
+      return true;
+    } catch (e) {
+      this.dressUpError = describeDressUpError(e);
+      return false;
+    } finally {
+      this.#syncDressUp();
+    }
+  }
+
+  /** 着せ替えの一覧を WebPuppet から読み直す。モジュールのメッシュでライティングの有無も変わる。 */
+  #syncDressUp(): void {
+    const puppet = this.#puppet;
+    if (puppet === null) return;
+    try {
+      this.modules = parseModules(puppet.modules_json());
+      this.slots = parseSlots(puppet.slots_json());
+    } catch (e) {
+      this.dressUpError = message(e);
+    }
+    this.#attached = puppet.attached_modules();
+    if (puppet.has_model()) this.usesLighting = puppet.uses_lighting();
+  }
+
   #tick = (now: number): void => {
     this.#frame = requestAnimationFrame(this.#tick);
     const puppet = this.#puppet;
@@ -341,7 +453,18 @@ export class Player {
     this.resize(...this.#cssSize);
     this.#applyBackground();
     this.status = "empty";
+    // GPU を作り直したときは、モジュールを読み直してからモデルを読み、付けていたもの (合成の順) を付け直す。
+    // 準備中に開いたモジュールは、モデルを読んだ後に付ける。
+    const attach = [...this.#attached];
+    const known = [...this.#moduleFiles.values()];
+    this.#moduleFiles.clear();
+    for (const file of known) this.loadModule(file, false);
+    for (const file of this.#pendingModules.splice(0)) {
+      const name = this.loadModule(file, false);
+      if (name !== null) attach.push(name);
+    }
     if (this.#file !== null) await this.load(this.#file);
+    if (puppet.has_model()) for (const name of attach) this.attachModule(name);
   }
 
   #destroyPuppet(): void {

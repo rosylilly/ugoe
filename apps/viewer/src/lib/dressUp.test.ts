@@ -1,0 +1,145 @@
+import { describe, expect, it } from "vitest";
+import {
+  describeDressUpError,
+  describeLoadWarning,
+  dressUpErrorInfo,
+  groupBySlot,
+  parseModules,
+  parseSlots,
+} from "./dressUp";
+
+/** ugoe-wasm の `DressUpError` と同じ形の `Error`。 */
+function dressUpError(code: string, fields: Record<string, string> = {}, text = "failed") {
+  return Object.assign(new Error(text), { name: "DressUpError", code, ...fields });
+}
+
+const modulesJson = JSON.stringify([
+  {
+    name: "LongHair",
+    slot: "Hair",
+    requires: {},
+    attached: true,
+    textures: 1,
+    warnings: [],
+  },
+  {
+    name: "Dress",
+    slot: "Outfit",
+    requires: { parameters: ["BodySway"], avatar_level: 2 },
+    attached: false,
+    textures: 1,
+    warnings: ["texture 0: placeholder"],
+  },
+  { name: "Hat", slot: "Hat", requires: {}, attached: false, textures: 0, warnings: [] },
+  { slot: "Broken" },
+]);
+
+describe("parseModules", () => {
+  it("reads modules_json and skips malformed entries", () => {
+    const modules = parseModules(modulesJson);
+    expect(modules.map((m) => m.name)).toEqual(["LongHair", "Dress", "Hat"]);
+    expect(modules[0]?.attached).toBe(true);
+    expect(modules[1]?.requires).toEqual({ parameters: ["BodySway"], avatar_level: 2 });
+    expect(modules[1]?.warnings).toEqual(["texture 0: placeholder"]);
+  });
+
+  it("returns nothing for a non-array", () => {
+    expect(parseModules("{}")).toEqual([]);
+  });
+});
+
+describe("parseSlots", () => {
+  it("keeps the id and the exposed parameters", () => {
+    const slots = parseSlots(
+      JSON.stringify([
+        { id: "Hair", anchor: "Head", parameters: [] },
+        { id: "Outfit", parameters: ["BodySway"] },
+        { anchor: "x" },
+      ]),
+    );
+    expect(slots).toEqual([
+      { id: "Hair", parameters: [] },
+      { id: "Outfit", parameters: ["BodySway"] },
+    ]);
+  });
+});
+
+describe("groupBySlot", () => {
+  it("lists the model's slots in order and appends unknown slots", () => {
+    const groups = groupBySlot(
+      [
+        { id: "Hair", parameters: [] },
+        { id: "Outfit", parameters: [] },
+        { id: "Shoes", parameters: [] },
+      ],
+      parseModules(modulesJson),
+    );
+    expect(groups.map((g) => [g.id, g.missing, g.modules.map((m) => m.name)])).toEqual([
+      ["Hair", false, ["LongHair"]],
+      ["Outfit", false, ["Dress"]],
+      ["Shoes", false, []],
+      ["Hat", true, ["Hat"]],
+    ]);
+    expect(groups[0]?.attached?.name).toBe("LongHair");
+    expect(groups[1]?.attached).toBeNull();
+  });
+});
+
+describe("describeDressUpError", () => {
+  it("reads the code and the fields", () => {
+    const info = dressUpErrorInfo(dressUpError("unknown_slot", { module: "Hat", slot: "Hat" }));
+    expect(info).toMatchObject({ code: "unknown_slot", module: "Hat", slot: "Hat" });
+  });
+
+  it("explains the common failures in plain words", () => {
+    expect(describeDressUpError(dressUpError("unknown_slot", { module: "Hat", slot: "Hat" }))).toBe(
+      "「Hat」を付けるスロット「Hat」が、このモデルにありません",
+    );
+    expect(
+      describeDressUpError(
+        dressUpError("missing_parameter", { module: "Cape", parameter: "Tail" }),
+      ),
+    ).toBe("「Cape」に必要なパラメータ「Tail」が、このモデルにありません");
+    expect(
+      describeDressUpError(
+        dressUpError("slot_occupied", { slot: "Hair", module: "B", attached: "A" }),
+      ),
+    ).toContain("「A」が付いている");
+    expect(describeDressUpError(dressUpError("no_model"))).toContain("先にモデル");
+  });
+
+  it("adds the original message for detailed failures", () => {
+    expect(describeDressUpError(dressUpError("compile", {}, "bad deformer"))).toBe(
+      "合成したモデルを組み立てられません (bad deformer)",
+    );
+    expect(describeDressUpError(dressUpError("invalid_file", {}, "truncated"))).toContain(
+      "(truncated)",
+    );
+  });
+
+  it("falls back to the message for other errors", () => {
+    expect(describeDressUpError(new Error("the GPU device was lost"))).toBe(
+      "the GPU device was lost",
+    );
+    expect(describeDressUpError(dressUpError("something_new", {}, "new failure"))).toBe(
+      "new failure",
+    );
+    expect(dressUpErrorInfo("plain").code).toBe("unknown");
+  });
+});
+
+describe("describeLoadWarning", () => {
+  it("translates modules detached on reload", () => {
+    expect(
+      describeLoadWarning(
+        "module `Dress` was detached: module `Dress` targets unknown slot `Outfit`",
+      ),
+    ).toBe(
+      "このモデルに合わないため、着せ替えの「Dress」を外しました (module `Dress` targets unknown slot `Outfit`)",
+    );
+  });
+
+  it("keeps other warnings", () => {
+    expect(describeLoadWarning("texture 3: placeholder")).toBe("texture 3: placeholder");
+  });
+});

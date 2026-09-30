@@ -1,7 +1,7 @@
 # apps/viewer
 
 ugoe のビューア (Tauri v2 + Svelte 5)。`.ugoe` バンドルか JSON のモデル (`model.json`) を開いて表示し、
-パラメータを動かして確かめるだけの軽いアプリ。ランタイムをアプリに組み込むときの見本と、
+パラメータを動かして確かめるだけの軽いアプリ。着せ替えのモジュール (`.ugoemod`) を付け外しして試せる (T0706)。ランタイムをアプリに組み込むときの見本と、
 フェイストラッキング (T0703) の確認の場を兼ねる。
 
 **ライセンスは GPL-3.0-only** (エディタと同じ。[ADR 0019](../../docs/adr/0019-viewer-license.md))。
@@ -17,6 +17,9 @@ src/                  フロントエンド (Svelte 5 + TS。npm パッケージ
   lib/ParameterPanel.svelte  パラメータのスライダー (グループごと)
   lib/LightingPanel.svelte   光源のパネル (ライティングを使うモデルのときだけ出す)。LightPad.svelte は向き・位置の面
   lib/lighting.ts       光源の設定・既定の光源の組・set_lighting_json の JSON への変換・localStorage への保存
+  lib/DressUpPanel.svelte  着せ替えのパネル (スロットのあるモデルか、モジュールを読み込んだときだけ出す)
+  lib/dressUp.ts        着せ替えの一覧 (modules_json・slots_json) の読み取り、スロットごとのまとめ、エラーと警告の文
+  lib/modelFile.ts      開いたファイルの形式の判別 (バンドル・JSON・モジュール)
   lib/wasm/             ugoe-wasm の読み込み。generated/ は `pnpm wasm` の出力 (gitignore 済み)
 public/               そのまま配る静的ファイル。third-party-notices.txt (同梱物のライセンス) だけコミットする
   mediapipe/            MediaPipe の wasm とモデル。`pnpm mediapipe` が用意する (gitignore 済み)
@@ -32,11 +35,13 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 
 - 描画もパラメータの操作も、webview の中の `ugoe-wasm` (`WebPuppet`) で行う (エディタのビューポートと同じ、
   [ADR 0003](../../docs/adr/0003-editor-viewport-in-webview.md))。WebGPU が無ければ WebGL2 で描く。
-- バックエンドは webview だけではできないことに限る: モデルのファイルをバイト列で読む (`read_model_file`) こと、
+- バックエンドは webview だけではできないことに限る: モデルとモジュールのファイルをバイト列で読む (`read_model_file`。
+  拡張子が `.ugoe`・`.json`・`.ugoemod` のものだけ) こと、
   トラッキングの記録を JSON で書く (`write_json_file`。保存のダイアログで選んだ `.json` だけ) こと、
   起動時の引数のパスを返す (`initial_file`) こと、webview からのカメラの許可の要求に応じること。依存してよいのはランタイム層のクレートだけ (`scripts/check-layers.mjs`)。
   いまは内部のクレートに依存していない。
-- 形式は中身で判別する (先頭が `UGOE` ならバンドル、`{` なら JSON)。
+- 形式は中身で判別する (先頭が `UGOE` ならチャンク表を見て、`MODL` があればバンドル、`MODU` があれば着せ替えのモジュール。
+  `{` なら JSON)。決まらなければ拡張子で決める (`modelFile.ts`)。
 - 見本のモデルはリポジトリの `assets/samples/avatar.ugoe` を写さずに使う。`vite.config.ts` の `sampleModel` が開発サーバーで
   `samples/avatar.ugoe` として配り、ビルドの出力に入れる (約 1.3 MB)。ブラウザでは `?model=samples/avatar.ugoe` でも開ける。
 - パラメータの値域・既定値・グループは `WebPuppet.parameters_json()` から得る。
@@ -45,16 +50,60 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 
 | 操作 | 内容 |
 | --- | --- |
-| 開く (Ctrl+O / ⌘O) | OS のダイアログで `.ugoe` か `.json` を選ぶ |
+| 開く (Ctrl+O / ⌘O) | OS のダイアログで `.ugoe`・`.json` か `.ugoemod` を選ぶ (`.ugoemod` は読み込んで付ける) |
 | サンプル | 同梱の見本のモデル (`assets/samples/avatar.ugoe`、アバタープロファイルのレベル 3、MIT) を開く。フェイストラッキングをすぐ試せる |
-| ファイルをウィンドウにドロップ | そのファイルを開く |
+| ファイルをウィンドウにドロップ | そのファイルを開く。`.ugoemod` は読み込んで付ける。モデルとモジュールを一緒に落とすと、モデルを先に開く |
 | `ugoe-viewer path/to/model.ugoe` | 起動時に開く |
 | ホイール | カーソルの位置を中心にズーム |
 | ドラッグ (左・中ボタン) | パン |
 | ダブルクリック・F・Fit | 全体を表示 |
 | 背景・透明 | 背景色。透明にすると市松模様の上に描く |
+| 着せ替え | スロットのあるモデルか、モジュールを読み込んだときに右のパネルに出る。スロットごとにモジュールを付ける・外す・差し替える (下の「着せ替え」) |
 | ライティング | ライティングを使うモデルのときだけ右のパネルに出る。光源の向き・位置・色・強さと既定の光源の組 (下の「ライティング」) |
 | スライダー | パラメータ。ダブルクリックか ↺ で既定値、「すべて戻す」で全部を既定値に戻す。中継用のパラメータ (`internal`、物理のリグの間の受け渡し用) は既定で隠し、「中継用のパラメータも表示」で出す |
+
+## 着せ替え (T0706)
+
+スロットを持つモデル (本体) に、着せ替えのモジュール (`.ugoemod`) を付け外しして試す。仕組みは
+[docs/spec/modules.md](../../docs/spec/modules.md) と [ADR 0024](../../docs/adr/0024-module-authoring.md)、wasm の口は
+[crates/ugoe-wasm/README.md#着せ替え-t0123](../../crates/ugoe-wasm/README.md#着せ替え-t0123)。
+
+- 「着せ替え」のパネルの「モジュールを開く…」(複数選べる)、ツールバーの「開く」、ウィンドウへのドロップで `.ugoemod` を読み込む。
+  モデルを開いていれば、読み込んだモジュールをそのまま付ける (同じスロットに付いているモジュールとは差し替わる)。
+  同じ名前のモジュールを読み込み直すと新しい版に置き換える (付けていれば付け替える)。
+- パネルはモデルのスロットを定義の順に並べ、スロットごとに付けているモジュール (無ければ「なし」) と、読み込んだそのスロットの
+  モジュールを出す。モデルに無いスロットのモジュールは「モデルに無い」の印を付けて後ろに並べ、付けられない。
+
+| 操作 | 内容 |
+| --- | --- |
+| 付ける | そのスロットに何も付いていないときに付ける |
+| 差し替える | そのスロットに付いている別のモジュールと入れ替える |
+| 外す | 外して本体だけの姿に戻す (`Hair` のように本体の要素を置き換えるスロットでは、本体の要素がまた見える) |
+| × | 読み込んだモジュールを一覧から除く (付けていれば外す) |
+
+- 付け外しでは、パラメータの値・トラッキング・目パチは続きから動き、物理 (揺れ) はリセットされる
+  ([Puppet での着せ替え](../../docs/spec/modules.md#puppet-での着せ替え))。光源の設定も保つ。モジュールのメッシュがライティングを受けるなら、
+  付けたときにライティングのパネルが出る。
+- 付けられないとき (合成のエラー) は何も変えず、パネルに理由を出す。wasm の `DressUpError` の `code` ごとの文は `dressUp.ts` の
+  `describeDressUpError`。たとえば:
+
+  | `code` | 表示 |
+  | --- | --- |
+  | `unknown_slot` | 「Hat」を付けるスロット「Hat」が、このモデルにありません |
+  | `missing_parameter` | 「Cape」に必要なパラメータ「Tail」が、このモデルにありません |
+  | `parameter_not_exposed` | 「X」が使うパラメータ「P」を、スロット「S」が公開していません |
+  | `avatar_level` | 「X」が求めるアバタープロファイルのレベルを、このモデルが満たしていません |
+  | `no_model` | 先にモデル (.ugoe か .json) を開いてください |
+  | `invalid_file` | 着せ替えのモジュール (.ugoemod) として読めません (原因) |
+
+  合成・コンパイル・物理の検証など原因が細かいものは、wasm の文 (英語) を括弧で添える。知らないコードは wasm の文をそのまま出す。
+- 読み込んだモジュールは、別のモデルを開いても残る。開き直すと付けていたモジュールを付け直し、新しいモデルに合わないものは外して
+  ステータスバーに「このモデルに合わないため、着せ替えの「Dress」を外しました (原因)」と警告する。
+- GPU を失って作り直したときも、モジュールを読み直して付けていたものを付け直す。
+- ヘッドレスのブラウザからは `window.__UGOE_VIEWER__` の `modules`・`slots`・`dressUpError`・`loadModule(file)`・`attachModule(name)`・
+  `detachModule(name)`・`unloadModule(name)`・`setSlotModule(slot, name)` を触れる。`ViewerHost` を差し替えるときは `pickModuleFiles` も置く。
+- 確かめるための本体とモジュールはリポジトリに無い。`ugoe_model::fixtures` の `dress_up_base`・`long_hair_module`・`dress_module` を
+  `ugoe_format` の `write_bundle` / `module_file::write_module` で書き出して作る (T0706 のメモ)。
 
 ## ライティング (T0705)
 
@@ -158,7 +207,7 @@ const remove = player.drivers.add({
 - ドライバが値を返しているパラメータのスライダーは「(自動)」と表示され、手では動かせない。
 - 開発中やヘッドレスのブラウザでは、表示中の `Player` を `window.__UGOE_VIEWER__` から触れる。
 
-右のパネル (`App.svelte` の `.sidebar`) は縦にパネルを積む作りで、上からトラッキング → モデルの機能ごとのパネル (ライティングなど。
+右のパネル (`App.svelte` の `.sidebar`) は縦にパネルを積む作りで、上からトラッキング → モデルの機能ごとのパネル (着せ替え・ライティング。
 そのモデルが使うときだけ出す、畳める `<details>`) → パラメータ (残りの高さ) の順に並ぶ。
 
 ## ヘッドレスのブラウザで確かめる

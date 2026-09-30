@@ -1,10 +1,11 @@
 <script lang="ts">
 import { FaceTracker, TrackingPanel } from "@ugoe/face-tracking";
 import { onMount } from "svelte";
+import DressUpPanel from "./lib/DressUpPanel.svelte";
 import { readBrowserFile, readSampleModel, saveJsonFile, viewerHost } from "./lib/host";
 import LicenseDialog from "./lib/LicenseDialog.svelte";
 import LightingPanel from "./lib/LightingPanel.svelte";
-import type { ModelFile } from "./lib/modelFile";
+import { detectModelKind, type ModelFile } from "./lib/modelFile";
 import ParameterPanel from "./lib/ParameterPanel.svelte";
 import { Player } from "./lib/player.svelte";
 import Viewport from "./lib/Viewport.svelte";
@@ -42,11 +43,26 @@ function onDragOver(e: DragEvent) {
   dropping = true;
 }
 
+/** ドロップしたファイルを開く。モデルとモジュール (.ugoemod) を一緒に落としたら、モデルを先に開く。 */
+async function openDropped(files: File[]) {
+  try {
+    const read = await Promise.all(files.map(readBrowserFile));
+    const isModule = (f: ModelFile) => detectModelKind(f) === "module";
+    const models = read.filter((f) => !isModule(f));
+    // モデルは最後の 1 つだけを開く。
+    const model = models.at(-1);
+    if (model !== undefined) await player.load(model);
+    for (const file of read.filter(isModule)) await player.load(file);
+  } catch (e) {
+    player.error = e instanceof Error ? e.message : String(e);
+  }
+}
+
 function onDrop(e: DragEvent) {
   e.preventDefault();
   dropping = false;
-  const file = e.dataTransfer?.files[0];
-  if (file) void openWith(() => readBrowserFile(file));
+  const files = [...(e.dataTransfer?.files ?? [])];
+  if (files.length > 0) void openDropped(files);
 }
 
 function onKeyDown(e: KeyboardEvent) {
@@ -72,7 +88,11 @@ function onKeyDown(e: KeyboardEvent) {
 
 <div class="app" class:dropping>
   <header class="toolbar">
-    <button type="button" onclick={openDialog} title="モデルを開く (Ctrl+O)">開く</button>
+    <button
+      type="button"
+      onclick={openDialog}
+      title="モデル (.ugoe・.json) か着せ替えのモジュール (.ugoemod) を開く (Ctrl+O)">開く</button
+    >
     <button
       type="button"
       onclick={() => void openWith(readSampleModel)}
@@ -111,11 +131,15 @@ function onKeyDown(e: KeyboardEvent) {
     <Viewport {player} />
     <!--
       右のパネル。縦にパネルを積む: フェイストラッキング → モデルの機能ごとのパネル → パラメータ (残りの高さ)。
-      モデルの機能ごとのパネル (ライティングなど) は、そのモデルが使うときだけ出す。畳める <details> にして、
+      モデルの機能ごとのパネル (着せ替え・ライティング) は、そのモデルが使うときだけ出す
+      (着せ替えはスロットがあるか、モジュールを読み込んだとき)。畳める <details> にして、
       高さの上限 (max-height) を付ける。
     -->
     <aside class="sidebar">
       <TrackingPanel {tracker} parameterIds={player.trackingParameterIds} values={player.values} />
+      {#if player.slots.length > 0 || player.modules.length > 0 || player.dressUpError}
+        <DressUpPanel {player} hasModel={player.status === "ready"} />
+      {/if}
       {#if player.usesLighting}
         <LightingPanel {player} />
       {/if}

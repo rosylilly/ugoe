@@ -1,4 +1,5 @@
-// ビューアが開くモデルのファイル。`.ugoe` バンドルと JSON のモデル (docs/spec/file-formats.md)。
+// ビューアが開くファイル。`.ugoe` バンドルと JSON のモデル、着せ替えのモジュール `.ugoemod`
+// (docs/spec/file-formats.md)。
 
 /** 読み込んだファイル。どこから来たか (ダイアログ・ドロップ・URL) は問わない。 */
 export interface ModelFile {
@@ -7,25 +8,52 @@ export interface ModelFile {
   bytes: Uint8Array;
 }
 
-export type ModelFileKind = "bundle" | "json";
+/** `bundle` と `json` はモデル、`module` は着せ替えのモジュール (`.ugoemod`)。 */
+export type ModelFileKind = "bundle" | "json" | "module";
 
-/** ファイル選択で使う拡張子。 */
+/** ファイル選択で使う拡張子 (モデル)。 */
 export const MODEL_EXTENSIONS = ["ugoe", "json"] as const;
+/** ファイル選択で使う拡張子 (着せ替えのモジュール)。 */
+export const MODULE_EXTENSIONS = ["ugoemod"] as const;
 
 const BUNDLE_MAGIC = [0x55, 0x47, 0x4f, 0x45]; // "UGOE"
+/** コンテナのヘッダとチャンク表の 1 行の大きさ (docs/spec/file-formats.md#バンドル-ugoe)。 */
+const HEADER_BYTES = 16;
+const CHUNK_ENTRY_BYTES = 24;
 
 /**
- * 形式を判別する。中身 (バンドルのマジック、JSON の `{`) を優先し、決まらなければ拡張子で決める。
- * どちらでもなければ `null`。
+ * 形式を判別する。中身 (コンテナのマジック、JSON の `{`) を優先し、決まらなければ拡張子で決める。
+ * どれでもなければ `null`。
+ *
+ * `.ugoe` と `.ugoemod` はコンテナが同じなので、チャンク表に `MODU` (モジュール) があるか `MODL` (モデル) が
+ * あるかで分ける。表が読めなければ拡張子で決め、それも無ければバンドルとみなす (読み込みがエラーを出す)。
  */
 export function detectModelKind(file: ModelFile): ModelFileKind | null {
   const { bytes } = file;
-  if (BUNDLE_MAGIC.every((b, i) => bytes[i] === b)) return "bundle";
+  const ext = extensionOf(file.name);
+  if (BUNDLE_MAGIC.every((b, i) => bytes[i] === b)) {
+    return containerKind(bytes) ?? (ext === "ugoemod" ? "module" : "bundle");
+  }
   const first = bytes.find((b) => !isJsonWhitespace(b));
   if (first === 0x7b /* { */) return "json";
-  const ext = extensionOf(file.name);
   if (ext === "ugoe") return "bundle";
   if (ext === "json") return "json";
+  if (ext === "ugoemod") return "module";
+  return null;
+}
+
+/** チャンク表のタグから、モデル (`MODL`) かモジュール (`MODU`) かを決める。分からなければ `null`。 */
+function containerKind(bytes: Uint8Array): "bundle" | "module" | null {
+  if (bytes.length < HEADER_BYTES) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const count = view.getUint32(12, true);
+  for (let i = 0; i < count; i++) {
+    const at = HEADER_BYTES + i * CHUNK_ENTRY_BYTES;
+    if (at + 4 > bytes.length) break;
+    const tag = String.fromCharCode(...bytes.subarray(at, at + 4));
+    if (tag === "MODL") return "bundle";
+    if (tag === "MODU") return "module";
+  }
   return null;
 }
 

@@ -10,11 +10,13 @@
 // (Tauri のウィンドウは `dragDropEnabled: false` にして、webview にドロップを渡している)。
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { baseName, MODEL_EXTENSIONS, type ModelFile } from "./modelFile";
+import { baseName, MODEL_EXTENSIONS, MODULE_EXTENSIONS, type ModelFile } from "./modelFile";
 
 export interface ViewerHost {
-  /** モデルのファイルを選んで読む。取り消したら `null`。 */
+  /** モデル (か着せ替えのモジュール) のファイルを選んで読む。取り消したら `null`。 */
   pickModelFile(): Promise<ModelFile | null>;
+  /** 着せ替えのモジュール (`.ugoemod`) を選んで読む (複数選べる)。取り消したら空。 */
+  pickModuleFiles(): Promise<ModelFile[]>;
   /** 起動時に開くモデル (コマンドライン引数など)。無ければ `null`。 */
   initialModelFile(): Promise<ModelFile | null>;
   /**
@@ -42,9 +44,20 @@ const tauriHost: ViewerHost = {
       title: "モデルを開く",
       multiple: false,
       directory: false,
-      filters: [{ name: "ugoe モデル", extensions: [...MODEL_EXTENSIONS] }],
+      filters: [
+        { name: "ugoe モデル・着せ替え", extensions: [...MODEL_EXTENSIONS, ...MODULE_EXTENSIONS] },
+      ],
     });
     return path === null ? null : readTauriFile(path);
+  },
+  async pickModuleFiles() {
+    const paths = await open({
+      title: "着せ替えのモジュールを開く",
+      multiple: true,
+      directory: false,
+      filters: [{ name: "着せ替えのモジュール", extensions: [...MODULE_EXTENSIONS] }],
+    });
+    return paths === null ? [] : Promise.all(paths.map(readTauriFile));
   },
   async initialModelFile() {
     const path = await invoke<string | null>("initial_file");
@@ -85,20 +98,28 @@ export async function readBrowserFile(file: File): Promise<ModelFile> {
   return { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) };
 }
 
-const browserHost: ViewerHost = {
-  pickModelFile() {
-    return new Promise((resolve, reject) => {
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = MODEL_EXTENSIONS.map((e) => `.${e}`).join(",");
-      input.addEventListener("change", () => {
-        const file = input.files?.[0];
-        if (file === undefined) resolve(null);
-        else readBrowserFile(file).then(resolve, reject);
-      });
-      input.addEventListener("cancel", () => resolve(null));
-      input.click();
+/** `<input type="file">` で選ぶ。取り消したら空。 */
+function pickBrowserFiles(extensions: readonly string[], multiple: boolean): Promise<ModelFile[]> {
+  return new Promise((resolve, reject) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.multiple = multiple;
+    input.accept = extensions.map((e) => `.${e}`).join(",");
+    input.addEventListener("change", () => {
+      Promise.all([...(input.files ?? [])].map(readBrowserFile)).then(resolve, reject);
     });
+    input.addEventListener("cancel", () => resolve([]));
+    input.click();
+  });
+}
+
+const browserHost: ViewerHost = {
+  async pickModelFile() {
+    const files = await pickBrowserFiles([...MODEL_EXTENSIONS, ...MODULE_EXTENSIONS], false);
+    return files[0] ?? null;
+  },
+  pickModuleFiles() {
+    return pickBrowserFiles(MODULE_EXTENSIONS, true);
   },
   async initialModelFile() {
     const url = new URLSearchParams(location.search).get("model");

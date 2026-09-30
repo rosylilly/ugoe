@@ -166,6 +166,8 @@ wasm (`ugoe-wasm` の `WebPuppet`) は、`.ugoemod` の読み込み (`load_modul
 (`crates/ugoe-wasm/README.md#着せ替え-t0123`)。`DressUpChange` に従ってテクスチャと法線マップを登録し直し、使わなくなった番号の画像は
 1x1 の白に置き換えて捨てます。モデルを読み直すと、付けていたモジュールを付け直します (付けられないものは外して警告します)。
 失敗は `name` が `DressUpError` の `Error` で、`code` (`unknown_slot`・`missing_parameter` など) と `module`・`slot` などを持ちます。
+ビューア (`apps/viewer`) はこれを使い、`.ugoemod` を開いてスロットごとに付ける・外す・差し替えることができます。
+エラーの `code` は利用者に分かる文にして出します (`apps/viewer/README.md#着せ替え-t0706`、T0706)。
 
 ### 性能
 
