@@ -23,6 +23,7 @@ use ugoe_model::physics::PhysicsSettings;
 use ugoe_model::{Canvas, Effects, Model, ModelMeta, Pose, SCHEMA_VERSION};
 
 use crate::Document;
+use crate::fingerprint::ProjectFingerprint;
 use crate::texture::{Textures, is_valid_texture_name, png_size};
 
 /// `project.json` の `format_version` の現在の値。プロジェクトのディレクトリ構成を変えたら上げる。
@@ -32,16 +33,16 @@ pub const PROJECT_FORMAT_VERSION: u32 = 0;
 /// プロジェクトのディレクトリの拡張子。
 pub const PROJECT_EXTENSION: &str = "ugoeproj";
 
-const PROJECT_JSON: &str = "project.json";
-const MODEL_JSON: &str = "model.json";
-const PHYSICS_JSON: &str = "physics.json";
+pub(crate) const PROJECT_JSON: &str = "project.json";
+pub(crate) const MODEL_JSON: &str = "model.json";
+pub(crate) const PHYSICS_JSON: &str = "physics.json";
 const GITIGNORE: &str = ".gitignore";
-const MOTIONS_DIR: &str = "motions";
-const EXPRESSIONS_DIR: &str = "expressions";
-const TEXTURES_DIR: &str = "textures";
-const MOTION_SUFFIX: &str = ".motion.json";
-const EXPRESSION_SUFFIX: &str = ".expression.json";
-const TEXTURE_SUFFIX: &str = ".png";
+pub(crate) const MOTIONS_DIR: &str = "motions";
+pub(crate) const EXPRESSIONS_DIR: &str = "expressions";
+pub(crate) const TEXTURES_DIR: &str = "textures";
+pub(crate) const MOTION_SUFFIX: &str = ".motion.json";
+pub(crate) const EXPRESSION_SUFFIX: &str = ".expression.json";
+pub(crate) const TEXTURE_SUFFIX: &str = ".png";
 /// 一時ファイルの接尾辞。書き込みに失敗して残っても、読み込みでは無視される。
 const TEMP_SUFFIX: &str = ".ugoe-tmp";
 const GITIGNORE_CONTENT: &str = ".ugoe-cache/\n";
@@ -309,6 +310,15 @@ impl Project {
         })
     }
 
+    /// [`Self::load`] と、読み込む直前のファイルの指紋 (外での書き換えに気づくため、`docs/editor.md#外での書き換え`)。
+    ///
+    /// 指紋は読み込みの前に取る。読み込みの間に外で書き換えられたら、次に比べたときに変更として見える
+    /// (見逃すより、開き直しを促すほうを選ぶ)。
+    pub fn load_tracked(dir: &Path) -> Result<(Self, ProjectFingerprint), ProjectError> {
+        let fingerprint = ProjectFingerprint::read(dir)?;
+        Ok((Self::load(dir)?, fingerprint))
+    }
+
     /// `project.json` 以外に保存するファイルの一覧 (プロジェクトからの相対パスと中身)。
     fn files(&self) -> Result<Vec<(PathBuf, Vec<u8>)>, ProjectError> {
         let mut files = vec![(PathBuf::from(GITIGNORE), GITIGNORE_CONTENT.into())];
@@ -467,7 +477,7 @@ fn texture_path(dir: &Path, name: &str) -> PathBuf {
         .join(format!("{name}{TEXTURE_SUFFIX}"))
 }
 
-fn io_error(path: &Path) -> impl FnOnce(std::io::Error) -> ProjectError + '_ {
+pub(crate) fn io_error(path: &Path) -> impl FnOnce(std::io::Error) -> ProjectError + '_ {
     move |source| ProjectError::Io {
         path: path.to_path_buf(),
         source,
@@ -506,7 +516,7 @@ fn read_json_dir<T: DeserializeOwned>(dir: &Path, suffix: &str) -> Result<Vec<T>
 }
 
 /// `dir` の中の、名前が `suffix` で終わるファイルをファイル名の順に返す。`dir` がなければ空。
-fn list_files(dir: &Path, suffix: &str) -> Result<Vec<PathBuf>, ProjectError> {
+pub(crate) fn list_files(dir: &Path, suffix: &str) -> Result<Vec<PathBuf>, ProjectError> {
     if !dir.is_dir() {
         return Ok(Vec::new());
     }

@@ -540,6 +540,23 @@ export type ExpressionOp = "add" | "multiply" | "overwrite";
 export type ExpressionParameter = { parameter: string, value: number, op: ExpressionOp, };
 
 /**
+ * 開いているプロジェクトのファイルが、エディタの外で変わったこと (`docs/editor.md#外での書き換え`)。
+ */
+export type ExternalChange = { 
+/**
+ * 足された・消された・中身が変わったファイル (プロジェクトからの相対パス、`/` 区切り、名前の順)。
+ */
+files: Array<string>, 
+/**
+ * `project.json` がない (プロジェクトが消された・移された)。開き直せない。
+ */
+missing: boolean, 
+/**
+ * 外の状態の目印。同じ変更を二度知らせないために使う (エディタを起動している間だけ意味がある)。
+ */
+token: string, };
+
+/**
  * 目パチ。対象パラメータを 1 → 0 → 1 と動かす。時間はすべて秒。
  */
 export type EyeBlink = { 

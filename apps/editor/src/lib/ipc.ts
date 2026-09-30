@@ -16,6 +16,7 @@ import type {
   ElementOverflow,
   ExportReport,
   ExportSettings,
+  ExternalChange,
   KeyformTarget,
   OverflowReport,
   PhysicsSettings,
@@ -52,7 +53,15 @@ export const ipc = {
   newProjectFromPsd: (path: string, meshOptions?: Partial<AutoMeshOptions>) =>
     invoke<PsdImportWarning[]>("new_project_from_psd", { path, meshOptions: meshOptions ?? null }),
   openProject: (path: string) => invoke<ProjectStatus>("open_project", { path }),
-  saveProject: () => invoke<ProjectStatus>("save_project"),
+  /**
+   * 開いた場所に保存する。開いた後で外で書き換えられていたら、`overwrite` でない限り書かずにエラー
+   * (lib/externalChange.ts の `isExternalChangeError`)。
+   */
+  saveProject: (overwrite = false) => invoke<ProjectStatus>("save_project", { overwrite }),
+  /** 開いているプロジェクトを保存先から開き直す (未保存の変更は捨てる)。 */
+  reloadProject: () => invoke<ProjectStatus>("reload_project"),
+  /** 開いた (最後に保存した) 後で、保存先のファイルが外で変わったか。変わっていなければ null。 */
+  checkExternalChange: () => invoke<ExternalChange | null>("check_external_change"),
   /** 拡張子 .ugoeproj がなければバックエンドが付ける。 */
   saveProjectAs: (path: string) => invoke<ProjectStatus>("save_project_as", { path }),
   /** プロジェクトに残した書き出しの設定 (アトラス化の有無・最大の大きさ・余白)。 */

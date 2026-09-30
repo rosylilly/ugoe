@@ -9,9 +9,10 @@ use serde::Serialize;
 use tauri::State;
 use ts_rs::TS;
 use ugoe_editor_core::project::PROJECT_EXTENSION;
+use ugoe_editor_core::project::ProjectError;
 use ugoe_editor_core::{
-    AutoMeshOptions, Document, ExportReport, ExportSettings, Project, ProjectMeta,
-    PsdImportOptions, PsdImportWarning, export_bundle_with_settings, import,
+    AutoMeshOptions, Document, ExportReport, ExportSettings, Project, ProjectFingerprint,
+    ProjectMeta, PsdImportOptions, PsdImportWarning, export_bundle_with_settings, import,
 };
 
 use crate::AppState;
@@ -24,6 +25,9 @@ use crate::proposals::ProposalSession;
 pub struct ProjectSession {
     /// 保存先の `.ugoeproj` ディレクトリ。一度も保存していなければ `None`。
     path: Option<PathBuf>,
+    /// `path` のファイルの、開いた (または最後に保存した) ときの指紋。外での書き換えに気づくために比べる
+    /// (`docs/editor.md#外での書き換え`)。`path` がなければ `None`。
+    disk: Option<ProjectFingerprint>,
     meta: ProjectMeta,
     /// `meta` を最後に保存 (または開いた) ときから変えたか (`Document` の変更とは別に数える)。
     meta_modified: bool,
@@ -34,10 +38,16 @@ pub struct ProjectSession {
 }
 
 impl ProjectSession {
-    fn from_project(project: Project, path: Option<PathBuf>) -> (Self, Document) {
+    /// `disk` は `path` のファイルの指紋 (`path` と一緒に渡す)。
+    fn from_project(
+        project: Project,
+        path: Option<(PathBuf, ProjectFingerprint)>,
+    ) -> (Self, Document) {
         let document = project.document();
+        let (path, disk) = path.unzip();
         let session = Self {
             path,
+            disk,
             meta: project.meta,
             meta_modified: false,
             ai_consent: ConsentMemory::default(),
@@ -74,7 +84,63 @@ impl ProjectSession {
     pub(crate) fn to_project(&self, document: &Document) -> Project {
         Project::from_document(self.meta.clone(), document)
     }
+
+    /// 保存先のファイルが、開いた (最後に保存した) 後で外で変わっていれば、その内容。
+    /// 保存先がなければ `None`。
+    pub(crate) fn external_change(&self) -> Result<Option<ExternalChange>, String> {
+        let (Some(dir), Some(known)) = (&self.path, &self.disk) else {
+            return Ok(None);
+        };
+        match known.reread(dir) {
+            Ok(now) if now == *known => Ok(None),
+            Ok(now) => Ok(Some(ExternalChange {
+                files: known.changed_files(&now),
+                missing: false,
+                token: format!("{:016x}", now.digest()),
+            })),
+            Err(ProjectError::NotAProject { .. }) => Ok(Some(ExternalChange {
+                files: Vec::new(),
+                missing: true,
+                token: "missing".into(),
+            })),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    /// `dir` に保存し、保存先と指紋を覚え直す (自分の保存を外の変更と取り違えないよう、書いた直後に取る)。
+    fn save_to(&mut self, document: &mut Document, dir: PathBuf) -> Result<(), String> {
+        self.to_project(document)
+            .save(&dir)
+            .map_err(|e| e.to_string())?;
+        let known = match (&self.path, &self.disk) {
+            // PNG のハッシュを使い回すため、同じ場所なら前の指紋から取り直す
+            (Some(path), Some(disk)) if *path == dir => disk.reread(&dir),
+            _ => ProjectFingerprint::read(&dir),
+        };
+        // 保存はできたので、指紋が取れなくても保存したことにする (外での書き換えには気づけなくなる)
+        self.disk = known
+            .inspect_err(|e| eprintln!("could not fingerprint the saved project: {e}"))
+            .ok();
+        self.path = Some(dir);
+        self.meta_modified = false;
+        document.mark_saved();
+        Ok(())
+    }
 }
+
+/// 開いているプロジェクトのファイルが、エディタの外で変わったこと (`docs/editor.md#外での書き換え`)。
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+pub struct ExternalChange {
+    /// 足された・消された・中身が変わったファイル (プロジェクトからの相対パス、`/` 区切り、名前の順)。
+    pub files: Vec<String>,
+    /// `project.json` がない (プロジェクトが消された・移された)。開き直せない。
+    pub missing: bool,
+    /// 外の状態の目印。同じ変更を二度知らせないために使う (エディタを起動している間だけ意味がある)。
+    pub token: String,
+}
+
+/// 保存の前に外での書き換えが見つかったときのエラー。フロントエンドは確かめ直して選ばせる。
+pub const EXTERNAL_CHANGE_ERROR: &str = "the project was changed outside the editor after it was opened; reload it, or save again to overwrite";
 
 /// 起動時の状態: 空のモデルの、保存先のないプロジェクト (`new_project` と同じ)。
 /// 空のモデルに PSD を取り込むとキャンバスが PSD の大きさになる (`docs/editor.md#psd-の取り込み`)。
@@ -199,26 +265,57 @@ pub fn new_project_from_psd(
 #[tauri::command]
 pub fn open_project(state: State<'_, AppState>, path: String) -> Result<ProjectStatus, String> {
     let dir = absolute_path(&path)?;
-    let project = Project::load(&dir).map_err(|e| e.to_string())?;
+    let (project, disk) = Project::load_tracked(&dir).map_err(|e| e.to_string())?;
     let (mut document, mut session) = lock_both(&state)?;
-    (*session, *document) = ProjectSession::from_project(project, Some(dir));
+    (*session, *document) = ProjectSession::from_project(project, Some((dir, disk)));
     Ok(status(&session, &document))
 }
 
-/// 開いたときの (または前回保存した) 場所に保存する。
+/// 開いているプロジェクトを保存先から開き直す (外で書き換えられたとき)。未保存の変更は破棄する
+/// (確認はフロントエンドで行う)。AI への送信の「今後は確かめない」は同じプロジェクトなので残す。
+/// AI の提案は前のドキュメントに対するものなので消す。失敗したら今のプロジェクトはそのまま。
 #[tauri::command]
-pub fn save_project(state: State<'_, AppState>) -> Result<ProjectStatus, String> {
+pub fn reload_project(state: State<'_, AppState>) -> Result<ProjectStatus, String> {
+    let (mut document, mut session) = lock_both(&state)?;
+    let dir = session
+        .path
+        .clone()
+        .ok_or("the project has not been saved yet")?;
+    let (project, disk) = Project::load_tracked(&dir).map_err(|e| e.to_string())?;
+    let consent = std::mem::take(session.ai_consent_mut());
+    (*session, *document) = ProjectSession::from_project(project, Some((dir, disk)));
+    *session.ai_consent_mut() = consent;
+    Ok(status(&session, &document))
+}
+
+/// 開いたとき (または最後に保存したとき) から、保存先のファイルが外で変わったか。変わっていなければ `null`。
+/// 保存先がなければ `null`。フロントエンドがウィンドウに戻ったとき・一定の間隔・保存の前に呼ぶ。
+#[tauri::command]
+pub fn check_external_change(state: State<'_, AppState>) -> Result<Option<ExternalChange>, String> {
+    // 保存とぶつからないよう、ロックを持ったまま比べる (保存は `document` → `project` の順にロックする)
+    let session = state
+        .project
+        .lock()
+        .map_err(|_| "project lock poisoned".to_string())?;
+    session.external_change()
+}
+
+/// 開いたときの (または前回保存した) 場所に保存する。開いた後で外で書き換えられていたら、
+/// `overwrite` が真でない限り書かずに [`EXTERNAL_CHANGE_ERROR`] を返す。
+#[tauri::command]
+pub fn save_project(
+    state: State<'_, AppState>,
+    overwrite: Option<bool>,
+) -> Result<ProjectStatus, String> {
     let (mut document, mut session) = lock_both(&state)?;
     let dir = session
         .path
         .clone()
         .ok_or("the project has not been saved yet; use Save As")?;
-    session
-        .to_project(&document)
-        .save(&dir)
-        .map_err(|e| e.to_string())?;
-    document.mark_saved();
-    session.meta_modified = false;
+    if !overwrite.unwrap_or(false) && session.external_change()?.is_some() {
+        return Err(EXTERNAL_CHANGE_ERROR.into());
+    }
+    session.save_to(&mut document, dir)?;
     Ok(status(&session, &document))
 }
 
@@ -228,17 +325,14 @@ pub fn save_project(state: State<'_, AppState>) -> Result<ProjectStatus, String>
 pub fn save_project_as(state: State<'_, AppState>, path: String) -> Result<ProjectStatus, String> {
     let dir = project_dir(&path)?;
     let (mut document, mut session) = lock_both(&state)?;
-    let mut meta = session.meta.clone();
+    let old_meta = session.meta.clone();
     if let Some(name) = stem(&dir) {
-        meta.name = name;
+        session.meta.name = name;
     }
-    let mut project = session.to_project(&document);
-    project.meta = meta.clone();
-    project.save(&dir).map_err(|e| e.to_string())?;
-    session.meta = meta;
-    session.path = Some(dir);
-    session.meta_modified = false;
-    document.mark_saved();
+    if let Err(e) = session.save_to(&mut document, dir) {
+        session.meta = old_meta;
+        return Err(e);
+    }
     Ok(status(&session, &document))
 }
 
@@ -339,8 +433,9 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("t0639-{}.ugoeproj", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         session.to_project(&document).save(&dir).unwrap();
-        let project = Project::load(&dir).unwrap();
-        let (mut session, document) = ProjectSession::from_project(project, Some(dir.clone()));
+        let (project, disk) = Project::load_tracked(&dir).unwrap();
+        let (mut session, document) =
+            ProjectSession::from_project(project, Some((dir.clone(), disk)));
         assert!(!status(&session, &document).modified);
 
         let settings = ExportSettings {
@@ -360,6 +455,64 @@ mod tests {
         assert!(report.after.state_changes <= report.before.state_changes);
         assert_eq!(report.bytes, bytes.len());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// 外での書き換えに気づき、自分の保存は外の変更と取り違えない (`docs/editor.md#外での書き換え`)。
+    #[test]
+    fn external_changes_are_detected_but_own_saves_are_not() {
+        let (session, document, _) =
+            from_psd(&character_psd(), &PsdImportOptions::new("character")).unwrap();
+        let dir = std::env::temp_dir().join(format!("t0641-{}.ugoeproj", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        session.to_project(&document).save(&dir).unwrap();
+        let (project, disk) = Project::load_tracked(&dir).unwrap();
+        let (mut session, mut document) =
+            ProjectSession::from_project(project, Some((dir.clone(), disk)));
+        assert_eq!(session.external_change().unwrap(), None);
+
+        // 自分の保存 (モデルを変えて)
+        let mut parameter = ugoe_model::fixtures::single_quad().parameters[0].clone();
+        parameter.id = "Extra".into();
+        document
+            .apply(ugoe_editor_core::Command::AddParameter { parameter })
+            .unwrap();
+        session.save_to(&mut document, dir.clone()).unwrap();
+        assert_eq!(session.external_change().unwrap(), None);
+        assert!(!status(&session, &document).modified);
+
+        // 外での書き換え
+        let meta = dir.join("project.json");
+        let text = std::fs::read_to_string(&meta).unwrap();
+        std::fs::write(&meta, text.replace("character", "renamed")).unwrap();
+        let change = session.external_change().unwrap().unwrap();
+        assert_eq!(change.files, vec!["project.json"]);
+        assert!(!change.missing);
+        // 同じ外の状態なら目印も同じ
+        assert_eq!(
+            session.external_change().unwrap().unwrap().token,
+            change.token
+        );
+
+        // 上書きの保存の後は、もう変わっていない
+        session.save_to(&mut document, dir.clone()).unwrap();
+        assert_eq!(session.external_change().unwrap(), None);
+        assert!(
+            std::fs::read_to_string(&meta)
+                .unwrap()
+                .contains("character")
+        );
+
+        // 消されたら missing
+        std::fs::remove_dir_all(&dir).unwrap();
+        let change = session.external_change().unwrap().unwrap();
+        assert!(change.missing && change.files.is_empty());
+    }
+
+    /// 保存先のないプロジェクトは比べない。
+    #[test]
+    fn unsaved_project_has_no_external_change() {
+        let (session, _) = initial_state();
+        assert_eq!(session.external_change().unwrap(), None);
     }
 
     fn character_psd() -> Vec<u8> {

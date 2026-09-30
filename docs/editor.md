@@ -744,7 +744,9 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 | `new_project` | 空のモデル (1024×1024 のキャンバス) の新しいプロジェクトにする |
 | `new_project_from_psd(path, mesh_options?)` | 空のプロジェクトを作って PSD を取り込み (キャンバスは PSD の大きさ、警告は `import_psd` と同じ)、それを今のプロジェクトにする。名前はファイル名 (拡張子を除く)、保存先はなし。取り込みは Undo の 1 単位で、未保存の状態から始まる (Undo すると空のプロジェクトに戻る)。失敗したら今のプロジェクトはそのまま |
 | `open_project(path)` | `.ugoeproj` ディレクトリを開く。失敗したら今のプロジェクトはそのまま |
-| `save_project` | 開いた (前回保存した) 場所に保存する。保存先がなければエラー |
+| `save_project(overwrite?)` | 開いた (前回保存した) 場所に保存する。保存先がなければエラー。開いた後で外で書き換えられていたら、`overwrite` が真でない限り書かずにエラー ([外での書き換え](#外での書き換え)) |
+| `reload_project` | 開いているプロジェクトを保存先から開き直す。未保存の変更は破棄する (確認はフロントエンドで行う) |
+| `check_external_change` | 開いた (最後に保存した) 後で保存先のファイルが外で変わったか (`ExternalChange \| null`) |
 | `save_project_as(path)` | 別の場所に保存し、以後の保存先にする。拡張子 `.ugoeproj` がなければ付け、名前をディレクトリ名にする |
 | `get_export_settings` / `set_export_settings(settings)` | 書き出しの設定 (`ExportSettings`) を読む / プロジェクトに残す ([書き出し](#書き出し))。範囲の外はエラー |
 | `export_bundle(path)` | プロジェクトの書き出しの設定で `.ugoe` ファイルに書き出し (アトラス化は任意)、`ExportReport` を返す。保存状態は変えない |
@@ -764,6 +766,31 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 - 空のプロジェクト (パーツ・メッシュ・デフォーマ・テクスチャがない。取り込みの規則と同じ判定、`src/lib/emptyState.ts`) では、
   ビューポートの中央とツリーに「File > New from PSD… で始める」案内を出します。
 - 空のプロジェクトも保存・書き出しできます (メッシュのない `.ugoe` になる)。
+
+### 外での書き換え
+
+`ugoe-mcp` (ファイルを直接扱う形)・別のエディタ・手での編集が、開いているプロジェクトを書き換えたことに気づき、黙って上書きしない
+([ADR 0023](adr/0023-editor-mcp-bridge.md) の 5、T0641)。操作は [マニュアル](manual/screen.md#外でプロジェクトが書き換えられたとき)。
+
+- **検出の方法: ファイルの指紋を比べる (ファイルの監視は使わない)。** `ugoe_editor_core::ProjectFingerprint` が、`Project::load` の読むファイル
+  (`project.json`・`model.json`・`physics.json`・`motions/`・`expressions/`・`textures/*.png`) の中身のハッシュと大きさを持つ。
+  OS のファイルの通知 (`notify` クレートなど) は、WSL 越しのパス (`\\wsl.localhost\...`、9P) やネットワークのドライブ (SMB) では届かないことが多く、
+  エディタを Windows で動かし、エージェントを WSL で動かす使い方 (ADR 0023 の 4) で働かない。指紋を比べる方式はどのファイルシステムでも同じに働き、
+  依存も増えない。代わりに、確かめた時点でしか気づかない。
+- **いつ確かめるか:** ウィンドウに戻ったとき (`focus`)、ウィンドウが見えている間は 5 秒ごと (`CHECK_INTERVAL_MS`)、保存の前。
+  バックエンドの `save_project` も書く直前に確かめ、変わっていれば `overwrite` なしでは書かない (画面の確認とのあいだの書き換えも拾う)。
+- **比べ方:** 開いた (保存した) ときの指紋を `ProjectSession` が覚え、`ProjectFingerprint::reread` で取り直して比べる。中身が同じなら更新日時が変わっても
+  変更としない (`touch`・同じ内容の書き直し)。JSON は毎回読んでハッシュし、PNG は大きさと更新日時が前と同じなら前のハッシュを使い回す
+  (大きな画像を 5 秒ごとに読まないため。大きさも日時も同じまま PNG の中身だけを変えられると気づかない)。ハッシュは `std` の `DefaultHasher` で、ファイルには残さない。
+- **自分の保存を外の変更と取り違えない:** 保存の直後に指紋を取り直す (`ProjectSession::save_to`)。確かめる処理は保存と同じロックを持って行う。
+  開くときの指紋は読み込みの **前** に取る (`Project::load_tracked`)。読み込みの途中で書き換えられたら、次に確かめたときに変更として見える (見逃すより開き直しを促す)。
+- **応じ方 (`src/lib/externalChange.ts`、Vitest):** 変わっていれば `ExternalChangeDialog` を出す。未保存の変更がなければ「Reload」・「Later」、
+  未保存の変更がある (または保存しようとした) ときは「Reload and discard my changes」・「Overwrite with my version」・「Save As…」・「Later」、
+  `project.json` がなければ (移された・消された)「Save here again」・「Save As…」・「Later」。「Later」を選んだ外の状態 (`ExternalChange.token`) は、
+  間隔の確認では二度尋ねない (保存の前は尋ねる)。「Reload automatically when there are no unsaved changes」(localStorage に覚える、既定は切) を入れると、
+  未保存の変更がないときは尋ねずに開き直す。
+- **開き直し (`reload_project`):** 保存先から `Project::load_tracked` で読み直す。AI への送信の「今後は確かめない」は同じプロジェクトなので残し、
+  AI の提案は前のドキュメントに対するものなので消す。ビューポートの表示の位置とパラメータの値は保つ (新規・開くと違い Fit しない)。
 
 ### ファイルダイアログ
 

@@ -14,6 +14,7 @@ pub mod depth;
 pub mod document;
 pub mod draw_clone;
 pub mod export;
+pub mod fingerprint;
 mod grid;
 pub mod ids;
 pub mod import;
@@ -36,6 +37,7 @@ pub use command::{ChildRef, Command, InferMethod, KeyformCell, KeyformTarget, Ve
 pub use depth::DepthPreset;
 pub use document::{ApplyReport, Document, EditError};
 pub use export::{ExportReport, ExportSettings, export_bundle_with_settings};
+pub use fingerprint::ProjectFingerprint;
 pub use grid::CellError;
 pub use import::{PsdImport, PsdImportError, PsdImportOptions, PsdImportWarning, import_psd};
 pub use inference::{MirrorReport, RederiveWarning};
@@ -60,6 +62,8 @@ mod depth_tests;
 mod draw_clone_tests;
 #[cfg(test)]
 mod export_tests;
+#[cfg(test)]
+mod fingerprint_tests;
 #[cfg(test)]
 mod import_tests;
 #[cfg(test)]

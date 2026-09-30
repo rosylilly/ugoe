@@ -1,7 +1,16 @@
 <script lang="ts">
 // ファイル操作 (新規・PSD から新規・開く・保存・別名で保存・書き出し・PSD の取り込み) と
 // プロジェクト名・未保存の印。パスは OS のファイルダイアログで選ぶ (docs/editor.md#ファイルダイアログ)。
+// 外でのプロジェクトの書き換えも、ウィンドウに戻ったとき・一定の間隔・保存の前に確かめる (docs/editor.md#外での書き換え)。
 import ExportPanel from "./ExportPanel.svelte";
+import ExternalChangeDialog from "./ExternalChangeDialog.svelte";
+import {
+  CHECK_INTERVAL_MS,
+  externalAction,
+  isExternalChangeError,
+  loadAutoReload,
+  saveAutoReload,
+} from "./externalChange";
 import { fileDialogs } from "./fileDialogs";
 import {
   BUNDLE_FILTER,
@@ -12,14 +21,21 @@ import {
   safeFileName,
   withExtension,
 } from "./filePaths";
-import { type ExportReport, ipc, type ProjectStatus, type PsdImportWarning } from "./ipc";
+import {
+  type ExportReport,
+  type ExternalChange,
+  ipc,
+  type ProjectStatus,
+  type PsdImportWarning,
+} from "./ipc";
 
 interface Props {
   /**
    * 新規作成・開く・PSD の取り込みでモデルが変わったときに呼ぶ。`replaced` は別のモデルに替わったこと
    * (新規・PSD から新規・開く。パラメータのスライダーを既定値に戻す)。PSD の取り込みは `false`。
+   * `reloaded` は同じプロジェクトを開き直したこと (外での書き換えの後。表示の位置を保つ)。
    */
-  onchange: (replaced: boolean) => void;
+  onchange: (replaced: boolean, reloaded?: boolean) => void;
 }
 
 let { onchange }: Props = $props();
@@ -44,6 +60,13 @@ let exportOpen = $state(false);
 let exportReport = $state<ExportReport | null>(null);
 /** 最後にダイアログで選んだ場所 (次のダイアログの最初の場所)。 */
 let lastDir: string | null = null;
+/** 外での書き換え (確認のダイアログを開いている間だけ)。 */
+let external = $state<ExternalChange | null>(null);
+/** 保存しようとして外での書き換えが見つかったか (ダイアログで上書きを選べる)。 */
+let externalOnSave = $state(false);
+/** 「後で」を選んだ外の状態の目印 (同じ変更を二度尋ねない。保存の前は尋ねる)。 */
+let dismissedToken: string | null = null;
+let autoReload = $state(loadAutoReload());
 
 /** 状態 (名前・未保存の印) を取り直す。編集の後に親から呼ぶ。 */
 export async function refresh() {
@@ -54,8 +77,11 @@ export async function refresh() {
   }
 }
 
-/** 成功した後のモデルの読み直し: しない、同じモデルの続き (取り込み)、別のモデルに替わった。 */
-type Reload = "none" | "same" | "replaced";
+/**
+ * 成功した後のモデルの読み直し: しない、同じモデルの続き (取り込み)、別のモデルに替わった、
+ * 同じプロジェクトを開き直した (外での書き換えの後)。
+ */
+type Reload = "none" | "same" | "replaced" | "reloaded";
 
 /** 成功したら `true`。失敗はメッセージに出す。 */
 async function run(
@@ -71,7 +97,7 @@ async function run(
       exportOpen = false;
       exportReport = null;
     }
-    if (reload !== "none") onchange(reload === "replaced");
+    if (reload !== "none") onchange(reload === "replaced", reload === "reloaded");
     return true;
   } catch (e) {
     message = String(e);
@@ -189,14 +215,97 @@ async function pick(kind: PathAction) {
   }
 }
 
-function save() {
+async function save() {
   notice = null;
-  if (status?.path) run(ipc.saveProject, "none");
-  else pick("saveAs");
+  if (!status?.path) return pick("saveAs");
+  if (busy) return;
+  // 保存の前に確かめ、外で変わっていれば選ばせる (バックエンドも保存の直前に確かめて断る)
+  const change = await ipc.checkExternalChange().catch(() => null);
+  if (change) {
+    askExternal(change, true);
+    return;
+  }
+  const saved = await run(ipc.saveProject, "none");
+  if (!saved && isExternalChangeError(message)) {
+    const again = await ipc.checkExternalChange().catch(() => null);
+    if (again) {
+      message = null;
+      askExternal(again, true);
+    }
+  }
 }
+
+function askExternal(change: ExternalChange, onSave: boolean) {
+  externalOnSave = onSave;
+  external = change;
+}
+
+/** ウィンドウに戻ったとき・一定の間隔で、外での書き換えを確かめる。 */
+async function checkExternal() {
+  if (busy || external || !status?.path) return;
+  let change: ExternalChange | null;
+  try {
+    change = await ipc.checkExternalChange();
+  } catch {
+    return; // 書き込みの途中などで読めなければ、次の機会に確かめる
+  }
+  if (busy || external) return;
+  const action = externalAction(change, {
+    modified: status?.modified ?? false,
+    autoReload,
+    dismissed: dismissedToken,
+  });
+  if (action === "reload") await reloadProject(true);
+  else if (action === "ask" && change) askExternal(change, false);
+}
+
+async function reloadProject(auto: boolean) {
+  external = null;
+  dismissedToken = null;
+  if (await run(ipc.reloadProject, "reloaded")) {
+    notice = auto
+      ? "Reloaded: the project was changed outside the editor"
+      : "Reloaded the project from disk";
+  }
+}
+
+async function overwriteExternal() {
+  external = null;
+  dismissedToken = null;
+  await run(async () => {
+    const result = await ipc.saveProject(true);
+    notice = `Saved to ${result.path ?? ""}`;
+    return result;
+  }, "none");
+}
+
+function saveAsExternal() {
+  if (external) dismissedToken = external.token;
+  external = null;
+  pick("saveAs");
+}
+
+function dismissExternal() {
+  if (external) dismissedToken = external.token;
+  external = null;
+}
+
+function setAutoReload(enabled: boolean) {
+  autoReload = enabled;
+  saveAutoReload(enabled);
+}
+
+$effect(() => {
+  const timer = setInterval(() => {
+    if (document.visibilityState === "visible") checkExternal();
+  }, CHECK_INTERVAL_MS);
+  return () => clearInterval(timer);
+});
 
 refresh();
 </script>
+
+<svelte:window onfocus={() => checkExternal()} />
 
 <nav class="file-menu">
   <button onclick={newProject} disabled={busy}>New</button>
@@ -236,6 +345,17 @@ refresh();
     </details>
   {/if}
 </nav>
+<ExternalChangeDialog
+  change={external}
+  modified={status?.modified ?? false}
+  saving={externalOnSave}
+  {autoReload}
+  onautoreload={setAutoReload}
+  onreload={() => reloadProject(false)}
+  onoverwrite={overwriteExternal}
+  onsaveas={saveAsExternal}
+  ondismiss={dismissExternal}
+/>
 
 <style>
   .file-menu {

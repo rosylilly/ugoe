@@ -117,12 +117,12 @@ $effect(() => {
   <header>
     <strong>ugoe</strong>
     <span class="muted">{info ? `v${info.version}` : "…"}</span>
-    <!-- 別のモデルになったら (新規・開く・取り込み) キャンバス全体を表示し直す。 -->
+    <!-- 別のモデルになったら (新規・開く・取り込み) キャンバス全体を表示し直す。外での書き換えの後の開き直しでは保つ。 -->
     <FileMenu
       bind:this={fileMenu}
-      onchange={(replaced) => {
+      onchange={(replaced, reloaded) => {
         preview.exit();
-        viewport.fit();
+        if (!reloaded) viewport.fit();
         if (replaced) viewport.resetParametersOnNextModel();
         doc.refresh();
       }}

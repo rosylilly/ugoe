@@ -69,6 +69,8 @@ pub fn run() {
             project::new_project,
             project::new_project_from_psd,
             project::open_project,
+            project::reload_project,
+            project::check_external_change,
             project::save_project,
             project::save_project_as,
             project::get_export_settings,

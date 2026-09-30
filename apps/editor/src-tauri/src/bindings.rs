@@ -13,7 +13,7 @@ use ugoe_editor_core::{ApplyReport, ExportReport, ExportSettings, PsdImportWarni
 use crate::ai::{AiReply, AiSettings, ConsentAnswer};
 use crate::ai_provider::ProviderSettings;
 use crate::commands::{AnimationData, AppInfo};
-use crate::project::ProjectStatus;
+use crate::project::{ExternalChange, ProjectStatus};
 use crate::proposals::{Classification, ProposalPreview, ProposalState};
 
 /// リポジトリのルート。
@@ -27,6 +27,7 @@ pub fn generated_files() -> Result<Vec<(&'static str, String)>, serde_json::Erro
     // IPC の戻り値 (apps/editor/src-tauri の型)
     types.add::<AppInfo>();
     types.add::<ProjectStatus>();
+    types.add::<ExternalChange>();
     types.add::<PsdImportWarning>();
     types.add::<ApplyReport>();
     types.add::<AnimationData>();
