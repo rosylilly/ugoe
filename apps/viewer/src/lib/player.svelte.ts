@@ -9,6 +9,7 @@ import {
   describeDressUpError,
   describeLoadWarnings,
   type ModuleInfo,
+  parseAvatarSlots,
   parseModules,
   parseSlots,
   type SlotInfo,
@@ -111,8 +112,13 @@ export class Player {
   view = $state<ScreenTransform | null>(null);
   /** 読み込んだ着せ替えのモジュール (読み込んだ順)。同じモデルを開き直したときは残り、別のモデルを開くと空になる。 */
   modules = $state<ModuleInfo[]>([]);
-  /** 開いているモデル (本体) のスロット。 */
+  /** 開いているモデル (本体) のスロット (公開していないものも含む)。 */
   slots = $state<SlotInfo[]>([]);
+  /**
+   * 本体のアバタープロファイルがアプリに公開するスロットの ID (`avatar.slots`)。プロファイルが無ければ `null`
+   * (すべて見せる)。着せ替えのパネルは公開していないスロットを出さない (dressUp.ts の `visibleSlots`)。
+   */
+  publishedSlots = $state<string[] | null>(null);
   /** 直近の着せ替えの失敗 (利用者に見せる文。複数あれば改行で区切る)。 */
   dressUpError = $state<string | null>(null);
   /**
@@ -385,9 +391,28 @@ export class Player {
       this.#sessionFiles.delete(fp);
     }
     this.dressUpError = null;
-    if (attach && puppet.has_model()) this.attachModule(name);
+    const hidden = attach && puppet.has_model() ? this.#hiddenSlot(puppet, name) : null;
+    if (hidden !== null) {
+      // 作者用の (公開していない) スロットには自動では付けない (T0715)。一覧には「公開されていない」として出る。
+      this.#syncDressUp();
+      this.dressUpError = `「${name}」のスロット「${hidden}」は、このモデルが公開していないため付けませんでした`;
+    } else if (attach && puppet.has_model()) this.attachModule(name);
     else this.#syncDressUp();
     return name;
+  }
+
+  /** 読み込んだモジュール `name` のスロットを、本体のアバタープロファイルが公開していなければ、そのスロットの ID。 */
+  #hiddenSlot(puppet: WebPuppet, name: string): string | null {
+    try {
+      const published = parseAvatarSlots(puppet.avatar_slots_json());
+      const slot = parseModules(puppet.modules_json()).find((m) => m.name === name)?.slot;
+      const inModel = parseSlots(puppet.slots_json()).some((s) => s.id === slot);
+      return slot !== undefined && inModel && published !== null && !published.includes(slot)
+        ? slot
+        : null;
+    } catch {
+      return null;
+    }
   }
 
   /** 読み込んだモジュールを付ける。同じスロットに付いているモジュールとは差し替える。付けられたら `true`。 */
@@ -695,6 +720,7 @@ export class Player {
     try {
       this.modules = parseModules(puppet.modules_json());
       this.slots = parseSlots(puppet.slots_json());
+      this.publishedSlots = parseAvatarSlots(puppet.avatar_slots_json());
     } catch (e) {
       this.dressUpError = message(e);
     }

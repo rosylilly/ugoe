@@ -59,6 +59,7 @@ let { onchange, onrenamemodule }: Props = $props();
 type PathAction =
   | "newFromPsd"
   | "open"
+  | "openSample"
   | "saveAs"
   | "export"
   | "exportModule"
@@ -66,7 +67,7 @@ type PathAction =
   | "locateBaseProject"
   | "locateBaseBundle";
 /** 未保存の変更を破棄する操作。 */
-type DiscardAction = "new" | "newFromPsd" | "newModule" | "open";
+type DiscardAction = "new" | "newFromPsd" | "newModule" | "open" | "openSample";
 
 let status = $state<ProjectStatus | null>(null);
 /** モジュールのプロジェクトなら、本体とスロット (docs/editor.md#モジュールのプロジェクト)。 */
@@ -210,6 +211,11 @@ async function choose(kind: PathAction): Promise<string | null> {
     case "open":
       // .ugoeproj はディレクトリなので、フォルダーを選ぶ
       return dialogs.openDirectory({ title: "Open Project (.ugoeproj folder)", defaultPath: dir });
+    case "openSample":
+      return dialogs.openDirectory({
+        title: "Choose a folder to put the dress-up sample projects in",
+        defaultPath: dir,
+      });
     case "saveAs": {
       const path = await dialogs.saveFile({
         title: "Save Project As",
@@ -273,6 +279,16 @@ function perform(kind: PathAction, path: string): Promise<boolean> {
             problem = { project: path, problem: found, opening: true, base: null };
             message = null;
           }
+        }
+        return ok;
+      });
+    case "openSample":
+      // 選んだフォルダーの中に新しいフォルダーを作って書き出し、本体を開く (docs/manual/dress-up.md#見本のプロジェクトを開く)
+      return run(() => ipc.openSampleProject(path), "replaced").then((ok) => {
+        if (ok) {
+          problem = null;
+          const folder = status?.path ? parentDir(status.path) : null;
+          notice = `Opened the dress-up sample. Its module projects (long-hair, twin-tails, cat-ears, sailor) are next to it${folder ? ` in ${folder}` : ""}; open them with Open…`;
         }
         return ok;
       });
@@ -395,13 +411,21 @@ async function applyModuleSettings(command: Command) {
 
 async function pick(kind: PathAction) {
   if (busy) return;
-  if ((kind === "open" || kind === "newFromPsd") && !discardConfirmed(kind)) return;
+  if (
+    (kind === "open" || kind === "openSample" || kind === "newFromPsd") &&
+    !discardConfirmed(kind)
+  )
+    return;
   busy = true;
   notice = null;
   try {
     const path = await choose(kind);
     message = null;
-    if (path && (await perform(kind, path))) lastDir = parentDir(path) ?? lastDir;
+    if (path && (await perform(kind, path))) {
+      // 見本なら、次の「Open…」をモジュールのプロジェクトの並ぶフォルダーから始める
+      const opened = kind === "openSample" && status?.path ? status.path : path;
+      lastDir = parentDir(opened) ?? lastDir;
+    }
   } catch (e) {
     message = String(e);
   } finally {
@@ -557,6 +581,12 @@ refresh();
     >New Module…</button
   >
   <button onclick={() => pick("open")} disabled={busy}>Open…</button>
+  <button
+    onclick={() => pick("openSample")}
+    disabled={busy}
+    title="Write the dress-up sample (a base and its module projects) into a new folder and open the base"
+    >Open Sample…</button
+  >
   <button onclick={save} disabled={busy}>Save</button>
   <button onclick={() => pick("saveAs")} disabled={busy}>Save As…</button>
   {#if moduleInfo}

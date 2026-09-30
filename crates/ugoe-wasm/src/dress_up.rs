@@ -358,6 +358,16 @@ pub fn slots(puppet: &Puppet) -> &[Slot] {
     &puppet.base_model().slots
 }
 
+/// 本体のアバタープロファイルがアプリに公開するスロットの ID (`avatar.slots`)。プロファイルが無ければ `None`
+/// (公開の区別が無い)。`docs/spec/avatar-profile.md#アプリ向けの情報`
+pub fn published_slots(puppet: &Puppet) -> Option<&[String]> {
+    puppet
+        .base_model()
+        .avatar
+        .as_ref()
+        .map(|a| a.slots.as_slice())
+}
+
 fn texture_error(e: impl std::fmt::Display) -> WardrobeError {
     WardrobeError::Texture(e.to_string())
 }

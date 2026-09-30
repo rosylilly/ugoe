@@ -2,6 +2,7 @@
 import { FaceTracker, TrackingPanel } from "@ugoe/face-tracking";
 import { onMount } from "svelte";
 import DressUpPanel from "./lib/DressUpPanel.svelte";
+import { visibleSlots } from "./lib/dressUp";
 import {
   type DropPreview,
   type DroppedItem,
@@ -220,7 +221,7 @@ function onKeyDown(e: KeyboardEvent) {
     -->
     <aside class="sidebar">
       <TrackingPanel {tracker} parameterIds={player.trackingParameterIds} values={player.values} />
-      {#if player.slots.length > 0 || player.modules.length > 0 || player.dressUpError || player.restoreOffer || player.dressUpRemembered}
+      {#if visibleSlots(player.slots, player.publishedSlots).length > 0 || player.modules.length > 0 || player.dressUpError || player.restoreOffer || player.dressUpRemembered}
         <DressUpPanel {player} hasModel={player.status === "ready"} />
       {/if}
       {#if player.usesLighting}

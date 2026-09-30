@@ -175,4 +175,12 @@ impl WebPuppet {
             None => Ok("[]".to_owned()),
         }
     }
+
+    /// 本体のアバタープロファイルがアプリに公開するスロット (`avatar.slots`) の ID の JSON 配列
+    /// (モジュールを付けていても本体のもの)。本体にアバタープロファイルが無いか、モデルが無ければ `null`。
+    /// 公開していないスロットは作者用で、利用者に見せないことが推奨される (`docs/spec/avatar-profile.md#アプリ向けの情報`)。
+    pub fn avatar_slots_json(&self) -> Result<String, JsError> {
+        let slots = self.puppet.as_ref().and_then(dress_up::published_slots);
+        serde_json::to_string(&slots).map_err(|e| JsError::new(&e.to_string()))
+    }
 }

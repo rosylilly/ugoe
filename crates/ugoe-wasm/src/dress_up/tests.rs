@@ -351,3 +351,25 @@ fn reloading_keeps_the_base_physics_not_the_composed_one() {
         "LongHair/Sway"
     );
 }
+
+/// 公開するスロットは本体のアバタープロファイルの `slots` (モジュールを付けても本体のもの)。
+/// プロファイルが無ければ `None` (T0715)。
+#[test]
+fn published_slots_come_from_the_base_avatar_profile() {
+    let mut model = dress_up_base();
+    model.avatar = None;
+    let puppet = Puppet::new(model.clone()).unwrap();
+    assert_eq!(published_slots(&puppet), None);
+
+    let first = model.slots[0].id.to_string();
+    model.avatar = Some(ugoe::model::AvatarProfile {
+        slots: vec![first.clone()],
+        ..ugoe::model::AvatarProfile::default()
+    });
+    let mut puppet = Puppet::new(model).unwrap();
+    assert_eq!(published_slots(&puppet), Some(&[first.clone()][..]));
+    puppet
+        .attach_module(std::sync::Arc::new(long_hair_module()))
+        .unwrap();
+    assert_eq!(published_slots(&puppet), Some(&[first][..]));
+}

@@ -118,6 +118,8 @@ puppet.unload_module(name);                  // 読み込んだモジュール�
 puppet.attached_modules();                   // 付けている名前 (合成の順)
 JSON.parse(puppet.modules_json());           // [{name, slot, requires, attached, textures, warnings, warning_details}] (読み込んだ順)
 JSON.parse(puppet.slots_json());             // 本体のスロット [{id, anchor, draw_order, replaces, parameters, ...}]
+JSON.parse(puppet.avatar_slots_json());      // 本体のアバタープロファイルがアプリに公開するスロットの ID ["Hair", ...]。
+                                             // プロファイルが無ければ null (公開していないスロットは利用者に見せない。T0715)
 JSON.parse(puppet.detached_modules_json());  // 直前の load_json / load_bundle で付け直せずに外したもの
                                              // [{code: "module_detached", module, slot, error: {code, message, module?, slot?, ...}, warning}]
 try {

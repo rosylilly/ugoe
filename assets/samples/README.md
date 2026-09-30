@@ -99,7 +99,7 @@ just cli render assets/samples/avatar-lit.ugoe -o lit.png --ambient 0.55 --light
 
 ```sh
 just cli sample dress-up -o assets/samples/dress-up
-just cli validate --profile avatar assets/samples/dress-up/dress-up.ugoe   # "claims level 1, satisfies level 1"
+just cli validate --profile avatar assets/samples/dress-up/dress-up.ugoe   # "claims level 2, satisfies level 2"
 just cli render assets/samples/dress-up/dress-up.ugoe -o dressed.png \
   --module assets/samples/dress-up/long-hair.ugoemod --module assets/samples/dress-up/sailor.ugoemod
 ```
@@ -116,14 +116,15 @@ just cli render assets/samples/dress-up/dress-up.ugoe -o dressed.png \
 
 | 要素 | 内容 |
 | --- | --- |
-| パラメータ | `AngleX/Y/Z`・`BodyAngleX`・`Breath`・`EyeLOpen`・`EyeROpen`・`MouthOpenY` (標準の値域)。目パチ・呼吸・リップシンクは標準の設定 |
+| パラメータ | アバタープロファイルのレベル 2 の分 (T0715): `AngleX/Y/Z`・`BodyAngleX/Y/Z`・`Breath`・`EyeLOpen`・`EyeROpen`・`EyeBallX/Y`・`BrowLY`・`BrowRY`・`MouthOpenY`・`MouthForm` (標準の値域)。目パチ・呼吸・リップシンクは標準の設定 |
 | パーツ | `Body` → `Head` → `Hair` (既定の髪)、`Body` → `Clothes` (既定のシャツ) |
-| `BodyWarp` (ワープ 2x2) | 上ほど `BodyAngleX` で横に、`Breath` で上に動く |
-| `HeadRotation` (回転) | 首の付け根が中心。`AngleZ` ±30 で ±10 度。`BodyAngleX` で中心が体と一緒に動く |
+| `BodyWarp` (ワープ 2x2) | 上ほど `BodyAngleX` で横に、`Breath` で上に、`BodyAngleY` で上下 (±4px) に動き、`BodyAngleZ` ±10 で腰の下を軸に上の辺が ±5 度傾く (下の辺は動かない) |
+| `HeadRotation` (回転) | 首の付け根が中心。`AngleZ` ±30 で ±10 度、`BodyAngleZ` ±10 で ±5 度を足す。`BodyAngleX/Y/Z` で中心が体と一緒に動く |
 | `HeadWarp` (ワープ 8x8、`HeadRotation` の子) | 顔の中ほどを頂点にした丸みの分だけ `AngleX` で横 (最大 16px)、`AngleY` で縦 (最大 12px) に動かす。目・口は大きく、輪郭と後ろ髪は小さく動く |
-| 目・口 | 開いた目は `EyeLOpen` で下寄りの線へつぶれて消え、閉じた目の線が現れる。口は `MouthOpenY` で上の辺へつぶす |
+| 目・眉・口 | 開いた目は `EyeLOpen` で下寄りの線へつぶれて消え、閉じた目の線が現れる。瞳 (`EyeLIris`・`EyeRIris`) は `EyeBallX/Y` で横 ±4px・縦 ±3px 動き、目の形をマスクにしてくり抜く。眉 (`BrowL`・`BrowR`) は `BrowLY`・`BrowRY` で ±5px 上下する。口は `MouthOpenY` で上の辺へつぶし、`MouthForm` で口角を ±4px 上げ下げする (正で笑顔) |
+| 物理 | 既定の後ろ髪 (`HairBack`) が頭の中心を軸にした回転デフォーマ `HairSway` に付き、リグ `HairSway` (長さ 120px の振り子) で揺れる。重力などはエディタの既定の設定。衝突体は持たない (T0715) |
 | 当たり判定 | `Head` (顔 `Face`)・`Body` (肌 `Skin`) |
-| アバタープロファイル | レベル 1 (メタデータ・許諾は `avatar.ugoe` と同じく MIT で自由に使える形)。`slots` に 3 つのスロットをすべて書き、アプリに公開する (T0712) |
+| アバタープロファイル | レベル 2 (メタデータ・許諾は `avatar.ugoe` と同じく MIT で自由に使える形)。`slots` に 3 つのスロットをすべて書き、アプリに公開する (T0712) |
 
 | スロット | 取り付け先 | 描画順 | 置き換える | その他 |
 | --- | --- | --- | --- | --- |
@@ -154,8 +155,8 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
 
 | プロジェクト | 種類 | 内容 |
 | --- | --- | --- |
-| `dress-up.ugoeproj` | 本体 | `dress-up.ugoe` と同じモデル (スロットとアバタープロファイルの見本) |
-| `long-hair.ugoeproj`・`twin-tails.ugoeproj`・`cat-ears.ugoeproj`・`sailor.ugoeproj` | モジュール | 本体 `../dress-up.ugoeproj` のスロットを参照する。「Export Module…」で書き出すと、コミットした `.ugoemod` と同じ中身になる |
+| `dress-up.ugoeproj` | 本体 | `dress-up.ugoe` と同じモデルと物理 (スロットとアバタープロファイルの見本) |
+| `long-hair.ugoeproj`・`twin-tails.ugoeproj`・`cat-ears.ugoeproj`・`sailor.ugoeproj` | モジュール | 本体 `../dress-up.ugoeproj` のスロットを参照する。「Export Module…」で書き出すと、コミットした `.ugoemod` と同じ中身になる。物理のタブには本体のリグ `HairSway` も (動かせない行として) 並ぶ |
 
 プロジェクトは `ugoe_editor_core::Project` で書きます (本体を保存して読み直し、エディタの「New Module…」と同じ
 `Project::new_module` で作ったモジュールのプロジェクトに、見本のモジュールを入れる)。

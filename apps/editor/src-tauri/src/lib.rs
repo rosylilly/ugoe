@@ -15,6 +15,7 @@ mod physics_check;
 mod project;
 mod proposals;
 mod psd;
+mod sample;
 mod space;
 mod tracking;
 
@@ -77,6 +78,7 @@ pub fn run() {
             project::new_project,
             project::new_project_from_psd,
             project::open_project,
+            sample::open_sample_project,
             project::reload_project,
             project::check_external_change,
             project::save_project,

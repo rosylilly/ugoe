@@ -1058,13 +1058,14 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
 | `get_preview_lighting` / `set_preview_lighting(lighting)` | プレビューの光源 (`PreviewLighting`) を読む / プロジェクトに残す ([ライティングの画面](#ライティングの画面))。範囲の外はエラー |
 | `generate_texture_normal_map(texture, settings)` / `assign_texture_normal_map(texture, path, flip_green)` / `get_texture_png(name)` | 法線マップの生成・PNG の割り当て (どちらも 1 回の Undo) と、テクスチャか法線マップの画像の PNG。`src-tauri/src/lighting.rs` |
 | `export_bundle(path)` | プロジェクトの書き出しの設定で `.ugoe` ファイルに書き出し (アトラス化は任意)、`ExportReport` を返す。保存状態は変えない |
+| `open_sample_project(parent)` | 着せ替えの見本 (`assets/samples/dress-up/` をバイナリに埋め込んだもの) を、`parent` の中の新しいフォルダー `ugoe-dress-up-sample` (あれば `-2`・`-3`…。既にあるフォルダーには書かない) に本体 `dress-up.ugoeproj` とモジュールのプロジェクト 4 つとして書き出し、本体を開く (T0715。`ugoe sample dress-up --project` と同じ形)。`src-tauri/src/sample.rs` |
 | `import_psd(path, mesh_options?)` | PSD ファイルを今のドキュメントに取り込み ([PSD の取り込み](#psd-の取り込み)、Undo の 1 単位)、警告 (`PsdImportWarning[]`) を返す。最上位のパーツの名前はファイル名。`src-tauri/src/psd.rs` |
 
 - パスの引数は **絶対パスだけ** を受け付けます (相対パスは `path must be absolute: …` のエラー)。相対パスはプロセスの作業ディレクトリ
   (開発時は `apps/editor/src-tauri`) を基準にしてしまい、思わぬ場所に保存されるためです (T0619)。パスは [ファイルダイアログ](#ファイルダイアログ) で選びます。
-- ファイルメニューは「New」「New from PSD…」「New Module…」「Open…」「Save」「Save As…」「Export…」「Import PSD…」です
+- ファイルメニューは「New」「New from PSD…」「New Module…」「Open…」「Open Sample…」「Save」「Save As…」「Export…」「Import PSD…」です
   (モジュールのプロジェクトでは「Export…」が「Export Module…」。[モジュールのプロジェクト](#モジュールのプロジェクト))。
-- 未保存の変更がある状態で「New」「New from PSD…」「Open…」を押すと、もう一度押すまで実行しません (確認のダイアログの代わり)。
+- 未保存の変更がある状態で「New」「New from PSD…」「Open…」「Open Sample…」を押すと、もう一度押すまで実行しません (確認のダイアログの代わり)。
 - 新規・開く・取り込みの後は、ビューポートをキャンバス全体の表示 (Fit) に戻します。
 - 別のモデルに替わったとき (「New」「New from PSD…」「Open…」) は、パラメータのスライダーを新しいモデルの既定値に戻します
   (`ViewportController.resetParametersOnNextModel`。WebPuppet は同じ ID の値を引き継ぐので、読み込んだ後に既定値へ戻す)。
@@ -1111,6 +1112,7 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
 | --- | --- | --- | --- |
 | New from PSD… / Import PSD… | ファイルを開く | `.psd` | 最初の場所 |
 | Open… | **フォルダーを選ぶ** (`.ugoeproj` はディレクトリ) | なし | 最初の場所 |
+| Open Sample… | フォルダーを選ぶ (見本のフォルダーをこの中に作る)。開いた後の最初の場所は見本のフォルダー (続けて「Open…」でモジュールのプロジェクトを開ける) | なし | 最初の場所 |
 | Save As… (保存先のない Save も) | 保存 (新しいフォルダーを作れる) | `.ugoeproj` | 最初の場所に `<プロジェクト名>.ugoeproj` |
 | Export… の欄の「Export .ugoe…」 | 保存 | `.ugoe` | 最初の場所に `<プロジェクト名>.ugoe` |
 

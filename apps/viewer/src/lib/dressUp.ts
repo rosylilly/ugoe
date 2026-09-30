@@ -31,6 +31,11 @@ export interface SlotGroup {
   id: string;
   /** 本体に無いスロット (付けられない)。 */
   missing: boolean;
+  /**
+   * 本体のアバタープロファイルがアプリに公開していない (作者用の) スロット。そのスロットのモジュールを
+   * 読み込んだときだけ出る (付けられない。付いていれば外せる)。
+   */
+  hidden: boolean;
   modules: ModuleInfo[];
   /** 付けているモジュール。 */
   attached: ModuleInfo | null;
@@ -84,20 +89,43 @@ export function parseSlots(json: string): SlotInfo[] {
 }
 
 /**
- * スロットごとにまとめる。本体のスロットを定義の順に並べ、本体に無いスロットのモジュールは
- * `missing` のグループとして後ろに付ける。
+ * `avatar_slots_json()` を読む: 本体のアバタープロファイルがアプリに公開するスロットの ID
+ * (`docs/spec/avatar-profile.md#アプリ向けの情報`)。プロファイルが無い・形が違うなら `null` (公開の区別が無い)。
  */
-export function groupBySlot(slots: SlotInfo[], modules: ModuleInfo[]): SlotGroup[] {
-  const groups: SlotGroup[] = slots.map((s) => ({
+export function parseAvatarSlots(json: string): string[] | null {
+  const value: unknown = JSON.parse(json);
+  return Array.isArray(value) ? strings(value) : null;
+}
+
+/**
+ * 利用者に見せるスロット: 本体のアバタープロファイルが公開するもの (`published` が `null` ならすべて)。
+ * 公開していないスロットは作者用で、アプリは利用者に見せない (avatar-profile.md の推奨)。
+ */
+export function visibleSlots(slots: SlotInfo[], published: string[] | null): SlotInfo[] {
+  return published === null ? slots : slots.filter((s) => published.includes(s.id));
+}
+
+/**
+ * スロットごとにまとめる。利用者に見せる本体のスロット (`visibleSlots`) を定義の順に並べ、それ以外のスロットの
+ * モジュールは、公開していないスロットなら `hidden`、本体に無いスロットなら `missing` のグループとして後ろに付ける。
+ */
+export function groupBySlot(
+  slots: SlotInfo[],
+  modules: ModuleInfo[],
+  published: string[] | null = null,
+): SlotGroup[] {
+  const groups: SlotGroup[] = visibleSlots(slots, published).map((s) => ({
     id: s.id,
     missing: false,
+    hidden: false,
     modules: [],
     attached: null,
   }));
   for (const m of modules) {
     let group = groups.find((g) => g.id === m.slot);
     if (group === undefined) {
-      group = { id: m.slot, missing: true, modules: [], attached: null };
+      const inModel = slots.some((s) => s.id === m.slot);
+      group = { id: m.slot, missing: !inModel, hidden: inModel, modules: [], attached: null };
       groups.push(group);
     }
     group.modules.push(m);

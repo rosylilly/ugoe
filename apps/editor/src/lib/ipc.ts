@@ -65,6 +65,11 @@ export const ipc = {
   newProjectFromPsd: (path: string, meshOptions?: Partial<AutoMeshOptions>) =>
     invoke<PsdImportWarning[]>("new_project_from_psd", { path, meshOptions: meshOptions ?? null }),
   openProject: (path: string) => invoke<ProjectStatus>("open_project", { path }),
+  /**
+   * apps/editor/src-tauri/src/sample.rs。着せ替えの見本を、`parent` の中の新しいフォルダー
+   * (`ugoe-dress-up-sample`、あれば `-2` など) に本体とモジュールのプロジェクトとして書き出し、本体を開く。
+   */
+  openSampleProject: (parent: string) => invoke<ProjectStatus>("open_sample_project", { parent }),
   /** apps/editor/src-tauri/src/module.rs。モジュールのプロジェクトなら本体とスロット、でなければ null。 */
   moduleStatus: () => invoke<ModuleStatus | null>("module_status"),
   /** 本体の候補 (.ugoeproj のフォルダーか .ugoe) の名前とスロット。 */

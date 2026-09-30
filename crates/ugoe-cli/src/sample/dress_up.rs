@@ -11,7 +11,8 @@
 //! | `CatEars` | `Headwear` | 猫耳のカチューシャ |
 //! | `Sailor` | `Outfit` | セーラー服 |
 //!
-//! 本体はアバタープロファイルのレベル 1 を名乗り、3 つのスロットをアプリに公開する (T0712)。
+//! 本体はアバタープロファイルのレベル 2 を名乗り (T0715)、3 つのスロットをアプリに公開する (T0712)。
+//! 本体の物理は既定の後ろ髪の揺れ (モジュールのプロジェクトで本体のリグを確かめられる。T0715)。
 //! [`DressUpSample::save_projects`] は、本体とモジュールをエディタで開けるプロジェクトとしても書き出す。
 //!
 //! 座標はすべてキャンバス (512×512) で考え、要素の親の座標系へは [`Space`] で写す。
@@ -34,7 +35,7 @@ use ugoe_model::parameter::ParameterKind;
 use ugoe_model::part::PartKeyform;
 use ugoe_model::physics::{
     NormalizationRange, PhysicsBlend, PhysicsInput, PhysicsNormalization, PhysicsOutput,
-    PhysicsParticle, PhysicsRig, PhysicsSource, PhysicsTarget,
+    PhysicsParticle, PhysicsRig, PhysicsSettings, PhysicsSource, PhysicsTarget,
 };
 use ugoe_model::standard as sp;
 use ugoe_model::{
@@ -68,6 +69,14 @@ const BODY_WARP: (Vec2, Vec2) = (Vec2::new(120.0, 256.0), Vec2::new(392.0, 512.0
 const EYE_R: Vec2 = Vec2::new(222.0, 228.0);
 const EYE_L: Vec2 = Vec2::new(290.0, 228.0);
 const MOUTH: Vec2 = Vec2::new(256.0, 261.0);
+/// 視線 (`EyeBallX`・`EyeBallY` = ±1) で瞳が動く量 (px)。
+const GAZE: Vec2 = Vec2::new(4.0, 3.0);
+/// 眉 (`BrowLY`・`BrowRY` = ±1) が上下する量 (px)。
+const BROW_LIFT: f32 = 5.0;
+/// `BodyAngleZ` の 1 あたりの体の上の辺と頭の傾き (度)。
+const BODY_TILT: f32 = 0.5;
+/// 体が `BodyAngleZ` で傾くときの軸 (腰。キャンバスの下の外)。
+const BODY_PIVOT: Vec2 = Vec2::new(256.0, 600.0);
 
 /// 輪郭線の幅 (px)。
 const LINE: f32 = 2.5;
@@ -179,15 +188,23 @@ fn kebab_case(name: &str) -> String {
 pub fn build_dress_up() -> anyhow::Result<DressUpSample> {
     let base = base();
     let modules = vec![long_hair(), twin_tails(), cat_ears(), sailor()];
-    check(&base.model, &modules)?;
+    let physics = base
+        .physics
+        .clone()
+        .unwrap_or_else(ugoe_editor_core::physics_edit::default_settings);
+    check(&base.model, &physics, &modules)?;
     Ok(DressUpSample { base, modules })
 }
 
 /// 本体とモジュールがそれぞれ検証を通り、同じスロットのものを除くどの組み合わせでも合成できること。
-fn check(base: &Model, modules: &[ModuleFile]) -> anyhow::Result<()> {
+fn check(base: &Model, physics: &PhysicsSettings, modules: &[ModuleFile]) -> anyhow::Result<()> {
     let errors = ugoe_model::validate::validate(base);
     if !errors.is_empty() {
         bail!("the base model is invalid: {errors:?}");
+    }
+    let errors = ugoe_model::validate::validate_physics(physics, base);
+    if !errors.is_empty() {
+        bail!("the base physics is invalid: {errors:?}");
     }
     // 警告 (値域の違いなど) も見本には残さない。
     let report = ugoe_model::avatar::check::check_profile(base);
@@ -203,7 +220,6 @@ fn check(base: &Model, modules: &[ModuleFile]) -> anyhow::Result<()> {
             bail!("module `{}` is invalid: {errors:?}", file.module.name);
         }
     }
-    let physics = ugoe_editor_core::physics_edit::default_settings();
     for hair in ["LongHair", "TwinTails"] {
         let set: Vec<&Module> = modules
             .iter()
@@ -214,7 +230,7 @@ fn check(base: &Model, modules: &[ModuleFile]) -> anyhow::Result<()> {
             let modules = &set[..n];
             let model = ugoe_runtime::compose(base, modules)
                 .with_context(|| format!("composing {:?}", names(modules)))?;
-            let composed = ugoe_runtime::compose_physics(base, &physics, modules)
+            let composed = ugoe_runtime::compose_physics(base, physics, modules)
                 .with_context(|| format!("composing the physics of {:?}", names(modules)))?;
             let errors = ugoe_model::validate::validate_physics(&composed, &model);
             if !errors.is_empty() {
@@ -528,6 +544,7 @@ fn mirror(p: Vec2) -> Vec2 {
 // ---- 本体 ----
 
 /// 本体: 胸から上の人物。既定の髪 (パーツ `Hair`) と服 (パーツ `Clothes`) はスロットのモジュールで置き換わる。
+/// パラメータはアバタープロファイルのレベル 2 の分 (T0715)。既定の後ろ髪は物理で揺れる。
 fn base() -> Bundle {
     let mut textures = Textures::default();
     let parameters = [
@@ -535,10 +552,17 @@ fn base() -> Bundle {
         sp::ANGLE_Y,
         sp::ANGLE_Z,
         sp::BODY_ANGLE_X,
+        sp::BODY_ANGLE_Y,
+        sp::BODY_ANGLE_Z,
         sp::BREATH,
         sp::EYE_L_OPEN,
         sp::EYE_R_OPEN,
+        sp::EYE_BALL_X,
+        sp::EYE_BALL_Y,
+        sp::BROW_L_Y,
+        sp::BROW_R_Y,
         sp::MOUTH_OPEN_Y,
+        sp::MOUTH_FORM,
     ]
     .map(parameter)
     .to_vec();
@@ -549,8 +573,8 @@ fn base() -> Bundle {
         part("Clothes", Some("Body")),
     ];
 
-    // 体: 上ほど `BodyAngleX` で横に、`Breath` で上に動く。頭の回転の中心も同じだけ動かす。
-    let lift = |y: f32| ((BODY_WARP.1.y - y) / (BODY_WARP.1.y - BODY_WARP.0.y)).clamp(0.0, 1.0);
+    // 体: 上ほど `BodyAngleX` で横に、`Breath`・`BodyAngleY` で上下に動き、`BodyAngleZ` で腰の下を軸に傾く。
+    // 頭の回転の中心 (首) も同じだけ動かし、頭も体と一緒に傾ける。
     let body_warp = warp(
         "BodyWarp",
         "Body",
@@ -561,9 +585,12 @@ fn base() -> Bundle {
         &[
             (sp::BODY_ANGLE_X, &[-10.0, 0.0, 10.0]),
             (sp::BREATH, &[0.0, 1.0]),
+            (sp::BODY_ANGLE_Y, &[-10.0, 0.0, 10.0]),
+            (sp::BODY_ANGLE_Z, &[-10.0, 0.0, 10.0]),
         ],
-        |p, v| p + Vec2::new(v[0], -3.0 * v[1]) * lift(p.y),
+        |p, v| body_pose(p, v[0], v[1], v[2], v[3]),
     );
+    // `BodyAngleZ` は首の位置が円を描くので、0 もキーにする (2 つのキーの間の直線では既定の姿で首がずれる)。
     let head_rotation = rotation(
         "HeadRotation",
         "Head",
@@ -572,8 +599,15 @@ fn base() -> Bundle {
             &[
                 (sp::ANGLE_Z, &[-30.0, 30.0]),
                 (sp::BODY_ANGLE_X, &[-10.0, 10.0]),
+                (sp::BODY_ANGLE_Y, &[-10.0, 10.0]),
+                (sp::BODY_ANGLE_Z, &[-10.0, 0.0, 10.0]),
             ],
-            |v| rotation_keyform(NECK + Vec2::new(v[1] * lift(NECK.y), 0.0), v[0] / 3.0),
+            |v| {
+                rotation_keyform(
+                    body_pose(NECK, v[1], 0.0, v[2], v[3]),
+                    v[0] / 3.0 + v[3] * BODY_TILT,
+                )
+            },
         ),
     );
     // 顔の向き: 顔の中ほどを頂点にした丸みの分だけ、`AngleX` で横に、`AngleY` で縦に動かす
@@ -595,6 +629,13 @@ fn base() -> Bundle {
             p + Vec2::new(v[0] / 30.0 * 16.0, -v[1] / 30.0 * 12.0) * dome
         },
     );
+    // 既定の後ろ髪の揺れ (物理のリグ `HairSway` が角度を足す)。
+    let hair_sway = rotation(
+        "HairSway",
+        "Hair",
+        Some("HeadWarp"),
+        KeyformGrid::constant(rotation_keyform(IN_HEAD.local(HEAD), 0.0)),
+    );
 
     let hair = Palette {
         fill: rgb(0x8c5a43),
@@ -605,7 +646,7 @@ fn base() -> Bundle {
     let mut meshes = Vec::new();
     let art = hair_back(&hair, bob_back());
     let t = textures.add("hair-back", &art);
-    meshes.push(Sheet::head("HairBack", "Hair", 150.0, (4, 4)).still(t, &art));
+    meshes.push(on_pivot("HairBack", "Hair", ("HairSway", HEAD), 150.0, (4, 4)).still(t, &art));
     let art = skin();
     let t = textures.add("skin", &art);
     meshes.push(Sheet::body("Skin", "Body", 200.0).still(t, &art));
@@ -623,23 +664,43 @@ fn base() -> Bundle {
         };
         // 開いた目は閉じるにつれ下寄りの線へつぶれて消え、閉じた目の線が現れる。
         let keys: &[f32] = &[0.0, 0.3, 1.0];
-        let (open_id, closed_id) = (format!("Eye{id}"), format!("Eye{id}Closed"));
+        let squash = center.y + 7.0;
+        let blink = move |p: Vec2, open: f32| {
+            let (scale, opacity) = match open {
+                x if x <= 0.0 => (0.08, 0.0),
+                x if x < 1.0 => (0.4, 1.0),
+                _ => (1.0, 1.0),
+            };
+            (Vec2::new(p.x, squash + (p.y - squash) * scale), opacity)
+        };
+        let (open_id, iris_id, closed_id) = (
+            format!("Eye{id}"),
+            format!("Eye{id}Iris"),
+            format!("Eye{id}Closed"),
+        );
         let art = eye_open(center);
         let t = textures.add(&format!("eye-{}", id.to_lowercase()), &art);
-        let squash = center.y + 7.0;
         meshes.push(Sheet::head(&open_id, "Head", 530.0, (1, 1)).mesh(
             t,
             &art,
             &[(parameter, keys)],
-            |p, v| {
-                let (scale, opacity) = match v[0] {
-                    x if x <= 0.0 => (0.08, 0.0),
-                    x if x < 1.0 => (0.4, 1.0),
-                    _ => (1.0, 1.0),
-                };
-                (Vec2::new(p.x, squash + (p.y - squash) * scale), opacity)
-            },
+            |p, v| blink(p, v[0]),
         ));
+        // 瞳は視線 (`EyeBallX`・`EyeBallY`) で目の中を動き、目の形でくり抜く。
+        let art = eye_iris(center);
+        let t = textures.add(&format!("eye-{}-iris", id.to_lowercase()), &art);
+        let mut iris = Sheet::head(&iris_id, "Head", 535.0, (1, 1)).mesh(
+            t,
+            &art,
+            &[
+                (parameter, keys),
+                (sp::EYE_BALL_X, &[-1.0, 0.0, 1.0]),
+                (sp::EYE_BALL_Y, &[-1.0, 0.0, 1.0]),
+            ],
+            |p, v| blink(p + Vec2::new(v[1] * GAZE.x, -v[2] * GAZE.y), v[0]),
+        );
+        iris.masks = vec![MaskRef::normal(open_id.as_str())];
+        meshes.push(iris);
         let art = eye_closed(center);
         let t = textures.add(&format!("eye-{}-closed", id.to_lowercase()), &art);
         meshes.push(Sheet::head(&closed_id, "Head", 530.0, (1, 1)).mesh(
@@ -649,18 +710,37 @@ fn base() -> Bundle {
             |p, v| (p, if v[0] <= 0.0 { 1.0 } else { 0.0 }),
         ));
     }
-    let art = brows();
-    let t = textures.add("brows", &art);
-    meshes.push(Sheet::head("Brows", "Head", 540.0, (1, 1)).still(t, &art));
+    // 眉は左右別々に `BrowLY`・`BrowRY` で上下する (正で上)。
+    for (id, center, parameter, outer) in [
+        ("L", EYE_L, sp::BROW_L_Y, 1.0),
+        ("R", EYE_R, sp::BROW_R_Y, -1.0),
+    ] {
+        let art = brow(center, outer);
+        let t = textures.add(&format!("brow-{}", id.to_lowercase()), &art);
+        meshes.push(
+            Sheet::head(&format!("Brow{id}"), "Head", 540.0, (1, 1)).mesh(
+                t,
+                &art,
+                &[(parameter, &[-1.0, 0.0, 1.0])],
+                |p, v| (p - Vec2::new(0.0, v[0] * BROW_LIFT), 1.0),
+            ),
+        );
+    }
+    // 口: `MouthOpenY` で上の辺へつぶれ、`MouthForm` で口角が上がる (正で笑顔) か下がる。
     let art = mouth();
     let t = textures.add("mouth", &art);
-    meshes.push(Sheet::head("Mouth", "Head", 530.0, (1, 1)).mesh(
+    meshes.push(Sheet::head("Mouth", "Head", 530.0, (4, 2)).mesh(
         t,
         &art,
-        &[(sp::MOUTH_OPEN_Y, &[0.0, 1.0])],
+        &[
+            (sp::MOUTH_OPEN_Y, &[0.0, 1.0]),
+            (sp::MOUTH_FORM, &[-1.0, 0.0, 1.0]),
+        ],
         |p, v| {
             let scale = 0.2 + 0.8 * v[0];
-            (Vec2::new(p.x, MOUTH.y + (p.y - MOUTH.y) * scale), 1.0)
+            let corner = ((p.x - MOUTH.x) / 14.0).powi(2);
+            let y = MOUTH.y + (p.y - MOUTH.y) * scale - v[1] * 4.0 * corner;
+            (Vec2::new(p.x, y), 1.0)
         },
     ));
     let art = bangs(&hair, &bob_bangs());
@@ -705,7 +785,7 @@ fn base() -> Bundle {
         parameters,
         parameter_groups: Vec::new(),
         parts,
-        deformers: vec![body_warp, head_rotation, head_warp],
+        deformers: vec![body_warp, head_rotation, head_warp, hair_sway],
         meshes,
         glues: Vec::new(),
         textures: textures.refs,
@@ -727,15 +807,39 @@ fn base() -> Bundle {
     };
     Bundle {
         textures: textures.data,
+        physics: Some(base_physics()),
         ..Bundle::new(model)
     }
 }
 
-/// 本体のアバタープロファイル (レベル 1)。スロットはすべてアプリに公開する (利用者が着せ替えを選べる)。
+/// 本体の物理: 既定の後ろ髪の揺れ (`HairSway`)。重力などはエディタの既定の設定と同じで、モジュールの物理も
+/// この設定で動く。
+///
+/// 衝突体はスロットに公開しない: 公開すると、物理を読まずにモデルだけを開いたホストでは、そのスロットに
+/// モジュールを付けられなくなる (スロットの `colliders` の参照先が無い)。
+fn base_physics() -> PhysicsSettings {
+    PhysicsSettings {
+        rigs: vec![pendulum("HairSway", 120.0, 6.0, 0.4)],
+        ..ugoe_editor_core::physics_edit::default_settings()
+    }
+}
+
+/// 体の点 `p` (既定の姿のキャンバス座標) を、体のパラメータの値で動かした位置。上ほど `BodyAngleX` で横に、
+/// `Breath` と `BodyAngleY` で上下に動き、`BodyAngleZ` で `BODY_PIVOT` を軸に傾く (上ほど大きく)。
+fn body_pose(p: Vec2, x: f32, breath: f32, y: f32, z: f32) -> Vec2 {
+    let lift = ((BODY_WARP.1.y - p.y) / (BODY_WARP.1.y - BODY_WARP.0.y)).clamp(0.0, 1.0);
+    let q = p + Vec2::new(x, -3.0 * breath - 0.4 * y) * lift;
+    // 下の辺 (キャンバスの端で切れた胴) は動かさず、上ほど大きく傾ける。
+    let (sin, cos) = (z * BODY_TILT * lift).to_radians().sin_cos();
+    let d = q - BODY_PIVOT;
+    BODY_PIVOT + Vec2::new(d.x * cos - d.y * sin, d.x * sin + d.y * cos)
+}
+
+/// 本体のアバタープロファイル (レベル 2)。スロットはすべてアプリに公開する (利用者が着せ替えを選べる)。
 /// 絵はコードで描いたもので、リポジトリと同じ MIT で配布する。
 fn avatar_profile(slots: &[Slot]) -> AvatarProfile {
     AvatarProfile {
-        level: 1,
+        level: 2,
         meta: AvatarMeta {
             name: NAME.to_owned(),
             version: Some("0.1.0".to_owned()),
@@ -809,8 +913,17 @@ fn eye_open(center: Vec2) -> Layer {
         center + Vec2::new(15.0, 20.0),
     );
     layer.fill(&shape, EYE);
+    layer
+}
+
+/// 瞳とハイライト。視線で動かし、開いた目 (`eye_open`) の形でくり抜く。
+fn eye_iris(center: Vec2) -> Layer {
+    let mut layer = Layer::new(
+        center + Vec2::new(-10.0, -12.0),
+        center + Vec2::new(10.0, 16.0),
+    );
     layer.fill(
-        &Shape::ellipse(center + Vec2::new(0.0, 6.0), 9.0, 9.0).intersect(shape.clone()),
+        &Shape::ellipse(center + Vec2::new(0.0, 6.0), 9.0, 9.0),
         IRIS,
     );
     layer.fill(&Shape::circle(center + Vec2::new(-4.0, -7.0), 4.5), WHITE);
@@ -833,22 +946,18 @@ fn eye_closed(center: Vec2) -> Layer {
     layer
 }
 
-fn brows() -> Layer {
+/// 片方の眉。`outer` は目尻の向き (画面で +1 が右)。目尻の側が少し下がる。
+fn brow(center: Vec2, outer: f32) -> Layer {
     let color = rgb(0x5a3a30);
-    let (y, dy) = (EYE_R.y - 32.0, 2.0);
+    let (y, dy) = (center.y - 32.0, 2.0);
     let shape = Shape::capsule(
-        Vec2::new(EYE_R.x - 11.0, y + dy),
-        Vec2::new(EYE_R.x + 10.0, y),
+        Vec2::new(center.x - 10.0 * outer, y),
+        Vec2::new(center.x + 11.0 * outer, y + dy),
         2.2,
-    )
-    .union(Shape::capsule(
-        Vec2::new(EYE_L.x - 10.0, y),
-        Vec2::new(EYE_L.x + 11.0, y + dy),
-        2.2,
-    ));
+    );
     let mut layer = Layer::new(
-        Vec2::new(EYE_R.x - 16.0, y - 5.0),
-        Vec2::new(EYE_L.x + 16.0, y + dy + 5.0),
+        Vec2::new(center.x - 16.0, y - 5.0),
+        Vec2::new(center.x + 16.0, y + dy + 5.0),
     );
     layer.fill(&shape, color);
     layer
@@ -1374,14 +1483,14 @@ mod tests {
         assert_eq!(committed, generated);
     }
 
-    /// 本体はアバタープロファイルのレベル 1 に (警告もなく) 準拠し、スロットをすべて公開する。
+    /// 本体はアバタープロファイルのレベル 2 に (警告もなく) 準拠し、スロットをすべて公開する。
     #[test]
     fn base_conforms_to_the_avatar_profile() {
         let sample = build_dress_up().unwrap();
         let model = &sample.base.model;
         let report = ugoe_model::avatar::check::check_profile(model);
         assert!(report.issues.is_empty(), "{:?}", report.issues);
-        assert_eq!((report.claimed, report.satisfied), (Some(1), 1));
+        assert_eq!((report.claimed, report.satisfied), (Some(2), 2));
         let avatar = model.avatar.as_ref().unwrap();
         assert_eq!(avatar.slots, ["Hair", "Headwear", "Outfit"]);
         assert_eq!(avatar.hit_areas.len(), 2);
@@ -1413,6 +1522,7 @@ mod tests {
         let base = Project::load(&written[0]).unwrap();
         assert!(base.module.is_none());
         assert_eq!(base.model, sample.base.model);
+        assert_eq!(base.physics, sample.base.physics);
         let bundle =
             ugoe_format::read_bundle(&ugoe_editor_core::export_bundle(&base).unwrap()).unwrap();
         assert_eq!(bundle.textures, sample.base.textures);
@@ -1610,6 +1720,90 @@ mod tests {
             ),
             0.0
         );
+    }
+
+    /// レベル 2 のパラメータが、それぞれの部分だけを動かす: 視線は瞳、眉は片方の眉、口の形は口、
+    /// 体の Y・Z は体と、その上に載る頭。
+    #[test]
+    fn level_2_parameters_move_their_parts() {
+        let sample = build_dress_up().unwrap();
+        let model = &sample.base.model;
+        let moved = |param: &str, value: f32, id: &str| {
+            max_shift(
+                &positions(model, &[], id),
+                &positions(model, &[(param, value)], id),
+            )
+        };
+        for (param, value, moving, still) in [
+            (sp::EYE_BALL_X, 1.0, "EyeLIris", "EyeL"),
+            (sp::EYE_BALL_Y, -1.0, "EyeRIris", "EyeR"),
+            (sp::BROW_L_Y, 1.0, "BrowL", "BrowR"),
+            (sp::BROW_R_Y, -1.0, "BrowR", "BrowL"),
+            (sp::MOUTH_FORM, 1.0, "Mouth", "Face"),
+            (sp::BODY_ANGLE_Y, 10.0, "Skin", "HairSway"),
+            (sp::BODY_ANGLE_Z, 10.0, "Face", "HairSway"),
+            (sp::BODY_ANGLE_Z, -10.0, "Skin", "HairSway"),
+        ] {
+            let m = moved(param, value, moving);
+            assert!(m > 2.0, "{param} = {value} moves {moving} only {m} px");
+            if still != "HairSway" {
+                assert_eq!(moved(param, value, still), 0.0, "{param} moves {still}");
+            }
+        }
+        // 視線は正でキャラクターの左 (画面の右)・上。笑顔 (`MouthForm` = 1) で口角が上がる。
+        let iris = |params: &[(&str, f32)]| positions(model, params, "EyeLIris")[0];
+        assert!(iris(&[(sp::EYE_BALL_X, 1.0)]).x > iris(&[]).x);
+        assert!(iris(&[(sp::EYE_BALL_Y, 1.0)]).y < iris(&[]).y);
+        let corner = |form: f32| positions(model, &[(sp::MOUTH_FORM, form)], "Mouth")[0].y;
+        assert!(corner(1.0) < corner(0.0) && corner(0.0) < corner(-1.0));
+    }
+
+    /// 本体の物理 (既定の後ろ髪の揺れ) が、頭を振ると揺れて止まる。
+    #[test]
+    fn base_hair_sways_with_the_base_physics() {
+        let sample = build_dress_up().unwrap();
+        let physics = sample.base.physics.clone().unwrap();
+        assert_eq!(physics.rigs.len(), 1);
+        let mut puppet = ugoe::Puppet::new(sample.base.model.clone())
+            .unwrap()
+            .with_physics(physics);
+        puppet.set_toggles(ugoe::Toggles {
+            eye_blink: false,
+            breath: false,
+            ..ugoe::Toggles::default()
+        });
+        let model = &sample.base.model;
+        let index = model
+            .meshes
+            .iter()
+            .position(|m| m.id.as_str() == "HairBack")
+            .unwrap();
+        let angle = puppet
+            .instance()
+            .parameters()
+            .index_of(sp::ANGLE_X)
+            .unwrap();
+        let rest = puppet.instance().drawables()[index].positions.clone();
+        let mut peak = 0.0f32;
+        for frame in 0..360 {
+            let value = if frame < 48 && (frame / 12) % 2 == 0 {
+                30.0
+            } else if frame < 48 {
+                -30.0
+            } else {
+                0.0
+            };
+            puppet.instance_mut().parameters_mut().set(angle, value);
+            puppet.update(1.0 / 60.0);
+            let still = positions(model, &[(sp::ANGLE_X, value)], "HairBack");
+            peak = peak.max(max_shift(
+                &puppet.instance().drawables()[index].positions,
+                &still,
+            ));
+        }
+        assert!(peak > 2.0 && peak < 60.0, "peak {peak}");
+        let settled = max_shift(&puppet.instance().drawables()[index].positions, &rest);
+        assert!(settled < 1.0, "did not settle: {settled}");
     }
 
     /// 頭を振ると、髪のモジュールの揺れものが物理で遅れて揺れ、止めると元に戻る。

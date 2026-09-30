@@ -2,8 +2,9 @@
 // 着せ替えのパネル (T0706)。スロットを持つモデルか、モジュールを読み込んだときに App.svelte が出す。
 // スロットごとに、読み込んだモジュールを並べて付ける・外す・差し替える・一覧から除く。
 // 付け外しは Player (WebPuppet の着せ替えの口) が行い、失敗の理由は `player.dressUpError`。
+// 本体のアバタープロファイルがアプリに公開していないスロット (作者用) は出さない (T0715。`player.publishedSlots`)。
 // モデルに前に付けていた組があれば、戻すか尋ねる (T0711。`player.restoreOffer`)。覚えた組は「覚えた組を忘れる」で忘れる (T0709)。
-import { groupBySlot, type ModuleInfo } from "./dressUp";
+import { groupBySlot, type ModuleInfo, visibleSlots } from "./dressUp";
 import { viewerHost } from "./host";
 import type { Player } from "./player.svelte";
 
@@ -11,10 +12,13 @@ let { player, hasModel }: { player: Player; hasModel: boolean } = $props();
 
 let open = $state(true);
 
-let groups = $derived(groupBySlot(player.slots, player.modules));
-let attachedCount = $derived(player.modules.filter((m) => m.attached).length);
+let slots = $derived(visibleSlots(player.slots, player.publishedSlots));
+let groups = $derived(groupBySlot(player.slots, player.modules, player.publishedSlots));
+let attachedCount = $derived(
+  player.modules.filter((m) => m.attached && slots.some((s) => s.id === m.slot)).length,
+);
 let status = $derived(
-  player.slots.length === 0 ? "スロットなし" : `${attachedCount} / ${player.slots.length} スロット`,
+  slots.length === 0 ? "スロットなし" : `${attachedCount} / ${slots.length} スロット`,
 );
 
 async function openModules() {
@@ -94,14 +98,22 @@ function describe(m: ModuleInfo): string {
     <p class="hint">モデルを開くと付けられます</p>
   {:else if player.slots.length === 0}
     <p class="hint">このモデルにはスロットがありません (着せ替えに対応していません)</p>
+  {:else if slots.length === 0}
+    <p class="hint">このモデルは着せ替えのスロットを公開していません</p>
   {/if}
 
   {#each groups as g (g.id)}
-    <section class:missing={g.missing}>
+    <section class:missing={g.missing || g.hidden}>
       <h3>
         {g.id}
         {#if g.missing}
           <span class="badge" title="このモデルに無いスロット。このモジュールは付けられない">モデルに無い</span>
+        {:else if g.hidden}
+          <span
+            class="badge"
+            title="モデルの作者用のスロット (アバタープロファイルでアプリに公開していない)。このモジュールは付けられない"
+            >公開されていない</span
+          >
         {:else}
           <span class="current">{g.attached?.name ?? "なし"}</span>
         {/if}
@@ -121,7 +133,7 @@ function describe(m: ModuleInfo): string {
               {:else}
                 <button
                   type="button"
-                  disabled={g.missing || !hasModel}
+                  disabled={g.missing || g.hidden || !hasModel}
                   title={g.attached ? `「${g.attached.name}」と差し替える` : "付ける"}
                   onclick={() => player.attachModule(m.name)}>{g.attached ? "差し替える" : "付ける"}</button
                 >

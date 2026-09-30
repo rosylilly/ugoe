@@ -27,6 +27,7 @@ export class WebPuppet {
   attached_modules(): string[];
   modules_json(): string;
   slots_json(): string;
+  avatar_slots_json(): string;
 
   parameters_json(): string;
   set_parameter(id: string, value: number): boolean;

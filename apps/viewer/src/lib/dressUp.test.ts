@@ -4,8 +4,10 @@ import {
   describeLoadWarnings,
   dressUpErrorInfo,
   groupBySlot,
+  parseAvatarSlots,
   parseModules,
   parseSlots,
+  visibleSlots,
 } from "./dressUp";
 import { parseLoadWarnings } from "./loadWarnings";
 
@@ -88,6 +90,38 @@ describe("groupBySlot", () => {
     ]);
     expect(groups[0]?.attached?.name).toBe("LongHair");
     expect(groups[1]?.attached).toBeNull();
+    expect(groups.some((g) => g.hidden)).toBe(false);
+  });
+
+  // T0715: アバタープロファイルがアプリに公開していないスロットは、利用者に見せない。
+  it("hides slots the avatar profile does not publish", () => {
+    const slots = [
+      { id: "Hair", parameters: [] },
+      { id: "Outfit", parameters: [] },
+      { id: "Shoes", parameters: [] },
+    ];
+    const published = ["Hair", "Shoes"];
+    expect(visibleSlots(slots, published).map((s) => s.id)).toEqual(["Hair", "Shoes"]);
+    expect(visibleSlots(slots, null)).toEqual(slots);
+    const groups = groupBySlot(slots, parseModules(modulesJson), published);
+    // 公開していない Outfit は、そのスロットのモジュールを読み込んだときだけ `hidden` として後ろに出る。
+    expect(groups.map((g) => [g.id, g.missing, g.hidden, g.modules.map((m) => m.name)])).toEqual([
+      ["Hair", false, false, ["LongHair"]],
+      ["Shoes", false, false, []],
+      ["Outfit", false, true, ["Dress"]],
+      ["Hat", true, false, ["Hat"]],
+    ]);
+    const withoutOutfit = groupBySlot(slots, parseModules(modulesJson).slice(0, 1), published);
+    expect(withoutOutfit.map((g) => g.id)).toEqual(["Hair", "Shoes"]);
+  });
+});
+
+describe("parseAvatarSlots", () => {
+  it("reads the published slot ids, or null without a profile", () => {
+    expect(parseAvatarSlots('["Hair","Outfit"]')).toEqual(["Hair", "Outfit"]);
+    expect(parseAvatarSlots("[]")).toEqual([]);
+    expect(parseAvatarSlots("null")).toBeNull();
+    expect(parseAvatarSlots('{"slots":[]}')).toBeNull();
   });
 });
 

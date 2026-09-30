@@ -186,7 +186,7 @@ ugoe sample avatar -o avatar.ugoe --psd path/to/parts.psd --project avatar.ugoep
 
 ### `ugoe sample dress-up`
 
-着せ替えの見本 (スロットを持ち、アバタープロファイルのレベル 1 を名乗る本体 `dress-up.ugoe` と、衣装のモジュール 4 つの `.ugoemod`) を、
+着せ替えの見本 (スロットと物理のリグを持ち、アバタープロファイルのレベル 2 を名乗る本体 `dress-up.ugoe` と、衣装のモジュール 4 つの `.ugoemod`) を、
 指定したディレクトリに書き出す (`src/sample/dress_up.rs`)。絵はコードで描く (`src/sample/paint.rs`)。
 中身は [assets/samples/README.md#dress-up](../../assets/samples/README.md#dress-up)。
 

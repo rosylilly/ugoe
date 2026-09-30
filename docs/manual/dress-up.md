@@ -105,26 +105,31 @@
 
 ### 見本のプロジェクトを開く
 
-着せ替えの見本 (ビューアの「サンプル」→「着せ替え」と同じもの) は、本体とモジュールのプロジェクトとしても書き出せます。
-スロットの作り方とモジュールのプロジェクトの組み方の例として、エディタで開いて中を見られます。リポジトリのルートで:
+着せ替えの見本 (ビューアの「サンプル」→「着せ替え」と同じもの) を、本体とモジュールのプロジェクトとして開けます。
+スロットの作り方とモジュールのプロジェクトの組み方の例として、エディタで開いて中を見られます。
 
-```sh
-just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
-```
-
-`/tmp/dress-up/projects` に次のプロジェクトができます。モジュールのプロジェクトは、隣の本体 `../dress-up.ugoeproj` を参照します。
+ファイルメニューの「Open Sample…」を押し、見本を置く場所のフォルダーを選びます。その中に新しいフォルダー
+`ugoe-dress-up-sample` (もうあれば `ugoe-dress-up-sample-2` など。前に書き出して編集した見本は上書きしません) を作って次のプロジェクトを書き、
+本体を開きます。モジュールのプロジェクトは、隣の本体 `../dress-up.ugoeproj` を参照します。
 
 | プロジェクト | 開くと |
 | --- | --- |
-| `dress-up.ugoeproj` | 本体。「Slots」タブにスロット `Hair`・`Headwear`・`Outfit` があり、3 つとも「Show to apps」が入っている (本体はアバタープロファイルのレベル 1 を名乗る) |
+| `dress-up.ugoeproj` | 本体。「Slots」タブにスロット `Hair`・`Headwear`・`Outfit` があり、3 つとも「Show to apps」が入っている (本体はアバタープロファイルのレベル 2 を名乗る)。物理のタブには既定の後ろ髪を揺らすリグ `HairSway` がある |
 | `long-hair.ugoeproj` | スロット `Hair` のモジュール `LongHair`。後ろ髪は回転デフォーマ `Sway` と物理で揺れ、本体の肌を反転マスクに使う |
 | `twin-tails.ugoeproj` | スロット `Hair` のモジュール `TwinTails`。房が結び目を軸に揺れる |
 | `cat-ears.ugoeproj` | スロット `Headwear` のモジュール `CatEars` |
 | `sailor.ugoeproj` | スロット `Outfit` のモジュール `Sailor`。体のワープに付き、本体のシャツを置き換える |
 
-ファイルメニューの「Open…」でフォルダーを選んで開きます。モジュールのプロジェクトを開くと本体が下敷きに出て、
-本体のパラメータで一緒に動きます。「Export Module…」で書き出すと、ビューアの見本と同じ `.ugoemod` になります。
+モジュールのプロジェクトは、続けて「Open…」で開きます (ダイアログは見本のフォルダーから始まります)。モジュールのプロジェクトを開くと本体が下敷きに出て、
+本体のパラメータで一緒に動きます。物理のタブには本体のリグ `HairSway` も並びます (モジュールでは動かせない行。
+下の「[衣装を組む](#衣装を組む)」の、リグの順番の ▲▼ やテンプレートの制限を試せます)。「Export Module…」で書き出すと、ビューアの見本と同じ `.ugoemod` になります。
 中身の詳しい説明は [assets/samples/README.md](../../assets/samples/README.md#dress-up) にあります。
+
+コマンドラインで書き出すこともできます (リポジトリのルートで):
+
+```sh
+just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
+```
 
 ### 衣装を組む
 
