@@ -156,16 +156,19 @@ ugoe sample avatar -o avatar.ugoe --psd path/to/parts.psd --project avatar.ugoep
 
 ### `ugoe sample dress-up`
 
-着せ替えの見本 (スロットを持つ本体 `dress-up.ugoe` と、衣装のモジュール 4 つの `.ugoemod`) を、指定したディレクトリに書き出す
-(`src/sample/dress_up.rs`)。絵はコードで描く (`src/sample/paint.rs`)。中身は [assets/samples/README.md#dress-up](../../assets/samples/README.md#dress-up)。
+着せ替えの見本 (スロットを持ち、アバタープロファイルのレベル 1 を名乗る本体 `dress-up.ugoe` と、衣装のモジュール 4 つの `.ugoemod`) を、
+指定したディレクトリに書き出す (`src/sample/dress_up.rs`)。絵はコードで描く (`src/sample/paint.rs`)。
+中身は [assets/samples/README.md#dress-up](../../assets/samples/README.md#dress-up)。
 
 ```sh
 just cli sample dress-up -o assets/samples/dress-up          # リポジトリのルートで実行する
+just cli sample dress-up -o out --project out/projects       # エディタで開くプロジェクトも書く
 ```
 
 | オプション | 内容 |
 | --- | --- |
 | `-o, --output <DIR>` | 書き出すディレクトリ (無ければ作る) |
+| `--project <DIR>` | エディタで開くプロジェクトも書き出す: 本体 `dress-up.ugoeproj` と、それを参照するモジュールのプロジェクト (`long-hair.ugoeproj` など) を並べる。すでにあるプロジェクトは上書きする |
 
 ## テスト
 

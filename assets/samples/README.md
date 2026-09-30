@@ -92,11 +92,13 @@ just cli render assets/samples/avatar-lit.ugoe -o lit.png --ambient 0.55 --light
 
 着せ替え ([docs/manual/dress-up.md](../../docs/manual/dress-up.md)・[docs/spec/modules.md](../../docs/spec/modules.md)) を試すための見本 (T0710)。
 ビューアの「サンプル」→「着せ替え」で、本体と 4 つのモジュールをまとめて開ける。
+エディタで開くプロジェクトは `--project` で書き出す ([下](#エディタで開くプロジェクト))。
 
 作り直し (リポジトリのルートで):
 
 ```sh
 just cli sample dress-up -o assets/samples/dress-up
+just cli validate --profile avatar assets/samples/dress-up/dress-up.ugoe   # "claims level 1, satisfies level 1"
 just cli render assets/samples/dress-up/dress-up.ugoe -o dressed.png \
   --module assets/samples/dress-up/long-hair.ugoemod --module assets/samples/dress-up/sailor.ugoemod
 ```
@@ -119,6 +121,8 @@ just cli render assets/samples/dress-up/dress-up.ugoe -o dressed.png \
 | `HeadRotation` (回転) | 首の付け根が中心。`AngleZ` ±30 で ±10 度。`BodyAngleX` で中心が体と一緒に動く |
 | `HeadWarp` (ワープ 8x8、`HeadRotation` の子) | 顔の中ほどを頂点にした丸みの分だけ `AngleX` で横 (最大 16px)、`AngleY` で縦 (最大 12px) に動かす。目・口は大きく、輪郭と後ろ髪は小さく動く |
 | 目・口 | 開いた目は `EyeLOpen` で下寄りの線へつぶれて消え、閉じた目の線が現れる。口は `MouthOpenY` で上の辺へつぶす |
+| 当たり判定 | `Head` (顔 `Face`)・`Body` (肌 `Skin`) |
+| アバタープロファイル | レベル 1 (メタデータ・許諾は `avatar.ugoe` と同じく MIT で自由に使える形)。`slots` に 3 つのスロットをすべて書き、アプリに公開する (T0712) |
 
 | スロット | 取り付け先 | 描画順 | 置き換える | その他 |
 | --- | --- | --- | --- | --- |
@@ -137,3 +141,21 @@ just cli render assets/samples/dress-up/dress-up.ugoe -o dressed.png \
 
 `LongHair` と `TwinTails` は同じスロット `Hair` なので、付けると差し替わります。どのモジュールも `requires` は持たず、
 本体のパラメータは標準パラメータだけを使います。
+
+### エディタで開くプロジェクト
+
+`--project <DIR>` を付けると、同じ本体とモジュールを、エディタで開けるプロジェクトとしても書き出します (T0712)。
+プロジェクトはリポジトリにコミットしていません (`.ugoe`・`.ugoemod` と同じ中身で、いつでも作り直せるため)。
+
+```sh
+just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
+```
+
+| プロジェクト | 種類 | 内容 |
+| --- | --- | --- |
+| `dress-up.ugoeproj` | 本体 | `dress-up.ugoe` と同じモデル (スロットとアバタープロファイルの見本) |
+| `long-hair.ugoeproj`・`twin-tails.ugoeproj`・`cat-ears.ugoeproj`・`sailor.ugoeproj` | モジュール | 本体 `../dress-up.ugoeproj` のスロットを参照する。「Export Module…」で書き出すと、コミットした `.ugoemod` と同じ中身になる |
+
+プロジェクトは `ugoe_editor_core::Project` で書きます (本体を保存して読み直し、エディタの「New Module…」と同じ
+`Project::new_module` で作ったモジュールのプロジェクトに、見本のモジュールを入れる)。
+`sample::dress_up::tests::projects_open_in_the_editor_core` が、書いたプロジェクトを開けて、書き出すと見本と同じになることを確かめます。

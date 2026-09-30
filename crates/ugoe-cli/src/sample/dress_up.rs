@@ -11,11 +11,22 @@
 //! | `CatEars` | `Headwear` | 猫耳のカチューシャ |
 //! | `Sailor` | `Outfit` | セーラー服 |
 //!
+//! 本体はアバタープロファイルのレベル 1 を名乗り、3 つのスロットをアプリに公開する (T0712)。
+//! [`DressUpSample::save_projects`] は、本体とモジュールをエディタで開けるプロジェクトとしても書き出す。
+//!
 //! 座標はすべてキャンバス (512×512) で考え、要素の親の座標系へは [`Space`] で写す。
 
-use anyhow::{Context, bail};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use anyhow::{Context, anyhow, bail};
 use ugoe_core::{Rgb, Vec2};
+use ugoe_editor_core::{Project, ProjectMeta, Textures as ProjectTextures};
 use ugoe_format::{Bundle, ModuleFile, TextureData, TextureFormat};
+use ugoe_model::avatar::{
+    AvatarHitArea, AvatarMeta, AvatarPermission, CommercialUsage, CreditNotation, HIT_AREA_BODY,
+    HIT_AREA_HEAD, Modification,
+};
 use ugoe_model::deformer::{RotationDeformer, RotationKeyform, WarpDeformer, WarpKeyform};
 use ugoe_model::mesh::MeshKeyform;
 use ugoe_model::module::DrawOrderRange;
@@ -27,15 +38,19 @@ use ugoe_model::physics::{
 };
 use ugoe_model::standard as sp;
 use ugoe_model::{
-    BlendMode, Canvas, Deformer, DeformerKind, Effects, KeyformBinding, KeyformGrid, MaskMode,
-    MaskRef, Mesh, Model, ModelMeta, Module, ModulePhysics, ModulePose, ModuleRequirements,
-    Parameter, Part, Pose, SCHEMA_VERSION, Slot, TextureRef,
+    AvatarProfile, BlendMode, Canvas, Deformer, DeformerKind, Effects, HitArea, KeyformBinding,
+    KeyformGrid, MaskMode, MaskRef, Mesh, Model, ModelMeta, Module, ModulePhysics, ModulePose,
+    ModuleRequirements, Parameter, Part, Pose, SCHEMA_VERSION, Slot, TextureRef,
 };
 
 use super::paint::{Color, Layer, Shape, rgb, with_alpha};
 
 /// 本体のファイル名。モジュールは `<名前の kebab-case>.ugoemod` ([`DressUpSample::files`])。
 pub const BASE_FILE: &str = "dress-up.ugoe";
+
+/// 本体のプロジェクトのディレクトリ名。モジュールのプロジェクトは `<名前の kebab-case>.ugoeproj`
+/// ([`DressUpSample::save_projects`])。
+pub const BASE_PROJECT: &str = "dress-up.ugoeproj";
 
 /// 本体の名前。
 const NAME: &str = "ugoe sample dress-up";
@@ -85,6 +100,67 @@ impl DressUpSample {
         }
         Ok(files)
     }
+
+    /// 本体とモジュールを、エディタで開けるプロジェクトとして `dir` に書き出す: 本体 `dress-up.ugoeproj` と、
+    /// それを参照するモジュールのプロジェクト `<名前の kebab-case>.ugoeproj` (同じディレクトリに並べる)。
+    /// 書いたプロジェクトのパスを、本体を先に返す。
+    ///
+    /// 形式は `ugoe_editor_core::Project` が書く (エディタの「New Module…」と同じく、書いた本体を読み直して
+    /// モジュールのプロジェクトを作る)。
+    pub fn save_projects(&self, dir: &Path) -> anyhow::Result<Vec<PathBuf>> {
+        let base_dir = dir.join(BASE_PROJECT);
+        let model = &self.base.model;
+        let mut base = Project::new(
+            ProjectMeta::new(NAME),
+            model.clone(),
+            images(&model.textures, &self.base.textures)?,
+        );
+        base.physics = self.base.physics.clone();
+        base.save(&base_dir)
+            .with_context(|| format!("saving {}", base_dir.display()))?;
+        let mut written = vec![base_dir.clone()];
+        for file in &self.modules {
+            let module = &file.module;
+            let path = dir.join(format!("{}.ugoeproj", kebab_case(&module.name)));
+            let empty = Project::new_module(&module.name, &base_dir, &module.slot)
+                .with_context(|| format!("creating the project of `{}`", module.name))?;
+            let context = empty
+                .module
+                .as_ref()
+                .ok_or_else(|| anyhow!("`{}` is not a module project", module.name))?
+                .reconfigured(&module.slot, module.name.clone(), module.requires.clone())?;
+            let workspace =
+                context.workspace(module, &images(&module.textures, &file.textures)?)?;
+            let project = Project {
+                model: workspace.model,
+                textures: workspace.textures,
+                physics: workspace.physics,
+                module: Some(Arc::new(context)),
+                ..empty
+            };
+            project
+                .save(&path)
+                .with_context(|| format!("saving {}", path.display()))?;
+            written.push(path);
+        }
+        Ok(written)
+    }
+}
+
+/// テクスチャの参照と中身 (PNG) を、プロジェクトの画像 (名前 → PNG) にする。
+fn images(refs: &[TextureRef], data: &[TextureData]) -> anyhow::Result<ProjectTextures> {
+    if refs.len() != data.len() {
+        bail!("{} textures but {} images", refs.len(), data.len());
+    }
+    refs.iter()
+        .zip(data)
+        .map(|(r, d)| {
+            if d.format != TextureFormat::Png {
+                bail!("texture `{}` is not a PNG", r.name);
+            }
+            Ok((r.name.clone(), Arc::from(d.bytes.as_slice())))
+        })
+        .collect()
 }
 
 /// `LongHair` → `long-hair`。
@@ -112,6 +188,14 @@ fn check(base: &Model, modules: &[ModuleFile]) -> anyhow::Result<()> {
     let errors = ugoe_model::validate::validate(base);
     if !errors.is_empty() {
         bail!("the base model is invalid: {errors:?}");
+    }
+    // 警告 (値域の違いなど) も見本には残さない。
+    let report = ugoe_model::avatar::check::check_profile(base);
+    if !report.issues.is_empty() || report.claimed != Some(report.satisfied) {
+        bail!(
+            "the base model does not conform to the avatar profile: {:?}",
+            report
+        );
     }
     for file in modules {
         let errors = ugoe_model::validate::validate_module(&file.module);
@@ -625,16 +709,53 @@ fn base() -> Bundle {
         meshes,
         glues: Vec::new(),
         textures: textures.refs,
-        hit_areas: Vec::new(),
+        hit_areas: vec![
+            HitArea {
+                id: HIT_AREA_HEAD.to_owned(),
+                mesh: "Face".into(),
+            },
+            HitArea {
+                id: HIT_AREA_BODY.to_owned(),
+                mesh: "Skin".into(),
+            },
+        ],
         pose: Pose::default(),
         effects: Effects::standard(),
-        avatar: None,
+        avatar: Some(avatar_profile(&slots)),
         slots,
         lighting: false,
     };
     Bundle {
         textures: textures.data,
         ..Bundle::new(model)
+    }
+}
+
+/// 本体のアバタープロファイル (レベル 1)。スロットはすべてアプリに公開する (利用者が着せ替えを選べる)。
+/// 絵はコードで描いたもので、リポジトリと同じ MIT で配布する。
+fn avatar_profile(slots: &[Slot]) -> AvatarProfile {
+    AvatarProfile {
+        level: 1,
+        meta: AvatarMeta {
+            name: NAME.to_owned(),
+            version: Some("0.1.0".to_owned()),
+            authors: vec!["ugoe contributors".to_owned()],
+            license_url: Some("https://opensource.org/license/mit".to_owned()),
+            avatar_permission: AvatarPermission::Everyone,
+            commercial_usage: CommercialUsage::Corporation,
+            credit_notation: CreditNotation::Unnecessary,
+            allow_redistribution: true,
+            modification: Modification::AllowRedistribution,
+            ..AvatarMeta::default()
+        },
+        hit_areas: [HIT_AREA_HEAD, HIT_AREA_BODY]
+            .map(|name| AvatarHitArea {
+                name: name.to_owned(),
+                hit_area: name.to_owned(),
+            })
+            .to_vec(),
+        slots: slots.iter().map(|s| s.id.to_string()).collect(),
+        ..AvatarProfile::default()
     }
 }
 
@@ -1251,6 +1372,129 @@ mod tests {
         let mut generated: Vec<String> = files.into_iter().map(|(n, _)| n).collect();
         generated.sort();
         assert_eq!(committed, generated);
+    }
+
+    /// 本体はアバタープロファイルのレベル 1 に (警告もなく) 準拠し、スロットをすべて公開する。
+    #[test]
+    fn base_conforms_to_the_avatar_profile() {
+        let sample = build_dress_up().unwrap();
+        let model = &sample.base.model;
+        let report = ugoe_model::avatar::check::check_profile(model);
+        assert!(report.issues.is_empty(), "{:?}", report.issues);
+        assert_eq!((report.claimed, report.satisfied), (Some(1), 1));
+        let avatar = model.avatar.as_ref().unwrap();
+        assert_eq!(avatar.slots, ["Hair", "Headwear", "Outfit"]);
+        assert_eq!(avatar.hit_areas.len(), 2);
+    }
+
+    /// 書き出したプロジェクトをエディタの中核で開ける: 本体は見本の本体と同じモデル、モジュールのプロジェクトは
+    /// 本体を参照し、書き出す (`export_module`) と見本の `.ugoemod` とバイト列で同じになる。
+    #[test]
+    fn projects_open_in_the_editor_core() {
+        let sample = build_dress_up().unwrap();
+        let dir = std::env::temp_dir().join(format!("ugoe-cli-dress-up-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let written = sample.save_projects(&dir).unwrap();
+        let names: Vec<String> = written
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "dress-up.ugoeproj",
+                "long-hair.ugoeproj",
+                "twin-tails.ugoeproj",
+                "cat-ears.ugoeproj",
+                "sailor.ugoeproj"
+            ]
+        );
+
+        let base = Project::load(&written[0]).unwrap();
+        assert!(base.module.is_none());
+        assert_eq!(base.model, sample.base.model);
+        let bundle =
+            ugoe_format::read_bundle(&ugoe_editor_core::export_bundle(&base).unwrap()).unwrap();
+        assert_eq!(bundle.textures, sample.base.textures);
+
+        for (path, file) in written[1..].iter().zip(&sample.modules) {
+            let meta: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(path.join("project.json")).unwrap()).unwrap();
+            assert_eq!(meta["kind"], "module");
+            assert_eq!(meta["module"]["base"], "../dress-up.ugoeproj");
+            assert_eq!(meta["module"]["slot"], file.module.slot.as_str());
+
+            let project = Project::load(path).unwrap();
+            let context = project.module.as_ref().unwrap();
+            assert_eq!(context.name(), file.module.name);
+            let document = project.document();
+            assert!(document.module().is_some());
+            let export = ugoe_editor_core::export_module(&project).unwrap();
+            assert!(export.warnings.is_empty(), "{:?}", export.warnings);
+            let exported = ugoe_format::read_module(&export.bytes).unwrap();
+            assert_eq!(exported.module, file.module, "{}", file.module.name);
+            assert!(
+                export.bytes == ugoe_format::write_module(file).unwrap(),
+                "{} is exported differently",
+                file.module.name
+            );
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// モジュールのプロジェクトの作業用のモデルで、エディタの座標変換 (親の座標系 ⇔ キャンバス) が使える
+    /// (スロットの取り付け先が別々のデフォーマでも。T0517 の `ancestors_only` の修正)。モジュールの
+    /// メッシュとデフォーマの既定の姿の位置が評価の結果と一致し、キャンバスから戻すと元の値になる。
+    #[test]
+    fn module_projects_convert_coordinates() {
+        use ugoe_editor_core::KeyformTarget;
+        use ugoe_editor_core::space::{ParameterValues, canvas_to_local, local_to_canvas};
+
+        let sample = build_dress_up().unwrap();
+        let dir =
+            std::env::temp_dir().join(format!("ugoe-cli-dress-up-space-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let written = sample.save_projects(&dir).unwrap();
+        let values = ParameterValues::new();
+        for path in &written[1..] {
+            let project = Project::load(path).unwrap();
+            let context = project.module.as_ref().unwrap();
+            let model = &project.model;
+            let mut instance = ModelInstance::new(CompiledModel::compile(model.clone()).unwrap());
+            instance.update();
+            let mut checked = 0;
+            for (index, mesh) in model.meshes.iter().enumerate() {
+                if context.is_base_mesh(&mesh.id) {
+                    continue;
+                }
+                let target = KeyformTarget::Mesh(mesh.id.clone());
+                let local = &mesh.keyforms.keyforms[0].positions;
+                let canvas = local_to_canvas(model, &target, &values, local).unwrap();
+                let evaluated = &instance.drawables()[index].positions;
+                assert!(max_shift(&canvas, evaluated) < 0.01, "{}", mesh.id);
+                let back = canvas_to_local(model, &target, &values, &canvas, local).unwrap();
+                let error = max_shift(&back, local);
+                // ワープの子は UV 空間 (0〜1) なので、キャンバスの 0.01px ほどの誤差。
+                assert!(error < 1e-3, "{}: {error}", mesh.id);
+                checked += 1;
+            }
+            for deformer in &model.deformers {
+                if context.is_base_deformer(&deformer.id) {
+                    continue;
+                }
+                let DeformerKind::Rotation(rotation) = &deformer.kind else {
+                    continue;
+                };
+                let target = KeyformTarget::Deformer(deformer.id.clone());
+                let origin = [rotation.keyforms.keyforms[0].origin];
+                let canvas = local_to_canvas(model, &target, &values, &origin).unwrap();
+                let back = canvas_to_local(model, &target, &values, &canvas, &origin).unwrap();
+                assert!(max_shift(&back, &origin) < 1e-3, "{}", deformer.id);
+                checked += 1;
+            }
+            assert!(checked >= 2, "{}", path.display());
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

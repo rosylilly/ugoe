@@ -73,6 +73,10 @@ struct SampleDressUpArgs {
     /// 書き出すディレクトリ (無ければ作る)。本体 `dress-up.ugoe` とモジュールの `.ugoemod` を置く。
     #[arg(short, long)]
     output: PathBuf,
+    /// エディタで開くプロジェクトも書き出すディレクトリ。本体 `dress-up.ugoeproj` と、それを参照する
+    /// モジュールのプロジェクト (`long-hair.ugoeproj` など) を並べて置く。
+    #[arg(long, value_name = "DIR")]
+    project: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -547,6 +551,11 @@ fn run_sample_dress_up(args: SampleDressUpArgs) -> anyhow::Result<()> {
         let path = args.output.join(name);
         std::fs::write(&path, &bytes).with_context(|| format!("writing {}", path.display()))?;
         println!("wrote {} ({} bytes)", path.display(), bytes.len());
+    }
+    if let Some(dir) = args.project {
+        for path in sample.save_projects(&dir)? {
+            println!("wrote {}", path.display());
+        }
     }
     Ok(())
 }
