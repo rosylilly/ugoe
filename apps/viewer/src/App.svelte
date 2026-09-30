@@ -2,10 +2,11 @@
 import { FaceTracker, TrackingPanel } from "@ugoe/face-tracking";
 import { onMount } from "svelte";
 import DressUpPanel from "./lib/DressUpPanel.svelte";
-import { readBrowserFile, readSampleFile, saveJsonFile, viewerHost } from "./lib/host";
+import { openDroppedFiles } from "./lib/drop";
+import { readBrowserFile, readFileAt, readSampleFile, saveJsonFile, viewerHost } from "./lib/host";
 import LicenseDialog from "./lib/LicenseDialog.svelte";
 import LightingPanel from "./lib/LightingPanel.svelte";
-import { detectModelKind, type ModelFile } from "./lib/modelFile";
+import type { ModelFile } from "./lib/modelFile";
 import ParameterPanel from "./lib/ParameterPanel.svelte";
 import { Player } from "./lib/player.svelte";
 import { openSample, SAMPLES, type Sample } from "./lib/samples";
@@ -18,6 +19,8 @@ const tracker = new FaceTracker(player, { saveJson: saveJsonFile });
 window.__UGOE_TRACKER__ = tracker;
 
 let dropping = $state(false);
+/** OS からのドロップをホストがパスで受け取るか (Tauri)。そのときは HTML のドロップを扱わない。 */
+let nativeDrop = false;
 let sampleMenu = $state<HTMLDetailsElement | null>(null);
 let licenseDialog = $state<LicenseDialog | null>(null);
 
@@ -46,43 +49,52 @@ function openDialog() {
 
 onMount(() => {
   void openWith(() => viewerHost().initialModelFile());
+  const host = viewerHost();
+  if (host.listenFileDrop === undefined) return;
+  nativeDrop = true;
+  let unlisten: (() => void) | null = null;
+  let disposed = false;
+  void host
+    .listenFileDrop((event) => {
+      if (event.type === "hover") dropping = event.active;
+      else {
+        dropping = false;
+        // パスから読むので `path:` の場所が付き、起動し直した後も覚えた組や光源を戻せる (T0713)。
+        void openDropped(() => Promise.all(event.paths.map((path) => readFileAt(`path:${path}`))));
+      }
+    })
+    .then((f) => {
+      if (disposed) f();
+      else unlisten = f;
+    });
+  return () => {
+    disposed = true;
+    unlisten?.();
+  };
 });
 
 function onDragOver(e: DragEvent) {
-  if (!e.dataTransfer?.types.includes("Files")) return;
+  if (nativeDrop || !e.dataTransfer?.types.includes("Files")) return;
   e.preventDefault();
   e.dataTransfer.dropEffect = "copy";
   dropping = true;
 }
 
-/**
- * ドロップしたファイルを開く。モデルとモジュール (.ugoemod) を一緒に落としたら、モデルをモジュールと一緒に開く
- * (別のモデルなら前のモジュールは一覧から除かれ、落としたモジュールが付く)。
- */
-async function openDropped(files: File[]) {
+/** ドロップしたファイルを読んで開く (`drop.ts`)。 */
+async function openDropped(read: () => Promise<ModelFile[]>) {
   try {
-    const read = await Promise.all(files.map(readBrowserFile));
-    const isModule = (f: ModelFile) => detectModelKind(f) === "module";
-    const models = read.filter((f) => !isModule(f));
-    const modules = read.filter(isModule);
-    // モデルは最後の 1 つだけを開く。
-    const model = models.at(-1);
-    if (model !== undefined)
-      await player.load(
-        model,
-        modules.map((file) => ({ file, attach: true })),
-      );
-    else for (const file of modules) await player.load(file);
+    await openDroppedFiles(await read(), player);
   } catch (e) {
     player.error = e instanceof Error ? e.message : String(e);
   }
 }
 
 function onDrop(e: DragEvent) {
+  if (nativeDrop) return;
   e.preventDefault();
   dropping = false;
   const files = [...(e.dataTransfer?.files ?? [])];
-  if (files.length > 0) void openDropped(files);
+  if (files.length > 0) void openDropped(() => Promise.all(files.map(readBrowserFile)));
 }
 
 function onKeyDown(e: KeyboardEvent) {

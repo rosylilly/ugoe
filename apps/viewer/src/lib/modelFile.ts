@@ -7,7 +7,7 @@ export interface ModelFile {
   name: string;
   bytes: Uint8Array;
   /**
-   * 後から読み直せる場所 (host.ts の `readFileAt`)。ドロップと、ブラウザの `<input type="file">` で選んだファイルには無い
+   * 後から読み直せる場所 (host.ts の `readFileAt`)。ブラウザでドロップしたファイルと `<input type="file">` で選んだファイルには無い
    * (File API は場所を教えない)。
    */
   location?: FileLocation;
@@ -21,7 +21,7 @@ export interface ModuleToOpen {
 }
 
 /**
- * ファイルを読み直せる場所。`path:` は Tauri で選んだファイルの絶対パス、`sample:` は同梱の見本 (`samples/` からのパス)、
+ * ファイルを読み直せる場所。`path:` は Tauri で選んだ・ドロップしたファイルの絶対パス、`sample:` は同梱の見本 (`samples/` からのパス)、
  * `url:` はブラウザで `?model=` から開いた URL (絶対 URL)。
  */
 export type FileLocation = `path:${string}` | `sample:${string}` | `url:${string}`;

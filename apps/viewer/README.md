@@ -23,6 +23,7 @@ src/                  フロントエンド (Svelte 5 + TS。npm パッケージ
   lib/dressUpMemory.ts  付けていたモジュールの組をモデルごとに覚える形と、戻すときにファイルをどこから得るか (T0711)
   lib/modelMemory.ts    モデルを見分ける鍵と、モデルごとの値を上限付きで localStorage に覚える入れ物 (T0711。光源の T0709 と共有)
   lib/modelFile.ts      開いたファイルの形式の判別 (バンドル・JSON・モジュール)
+  lib/drop.ts           ドロップしたファイルの開き方 (モデルとモジュールを一緒に落としたとき。T0713)
   lib/samples.ts        同梱の見本の一覧と開き方 (ツールバーの「サンプル」)
   lib/wasm/             ugoe-wasm の読み込み。generated/ は `pnpm wasm` の出力 (gitignore 済み)
 public/               そのまま配る静的ファイル。third-party-notices.txt (同梱物のライセンス) だけコミットする
@@ -136,12 +137,13 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
   変えない (次に着せ替えを操作したときに覚え直す)。
 - 戻すときは、覚えていたモジュールを **読み込んでいるもの (名前) → このセッションで読んだ中身 (指紋。32 個まで手元に置く) →
   覚えていた場所** の順に探し (`planRestore`)、付けているものを外してから覚えていた順に付ける。
-- **ファイルが見つからないとき:** 場所から読めない (動かした・消した) か、場所が無い (ドロップ・ブラウザの `<input type="file">`) で
+- **ファイルが見つからないとき:** 場所から読めない (動かした・消した) か、場所が無い (ブラウザでのドロップ・`<input type="file">`) で
   このセッションで読んでいないモジュールは戻さず、パネルに理由を出す (`describeRestoreFailure`)。このとき覚えている組は変えないので、
   モジュールを開き直してから「戻す」ことも、そのまま付け直すこともできる。
-- **ブラウザ版と Tauri 版の違い:** Tauri の「開く」「モジュールを開く…」で選んだファイルはパス (`path:`) を覚え、起動し直しても
-  バックエンドの `read_model_file` で読み直す (`ViewerHost.readPath`)。ブラウザで選んだファイルと、どちらでもドロップしたファイル
-  (Tauri のウィンドウは `dragDropEnabled: false` で、File API はパスを教えない) は場所が無く、読み直せるのは開いている間だけ。
+- **ブラウザ版と Tauri 版の違い:** Tauri の「開く」「モジュールを開く…」で選んだファイルと、ウィンドウにドロップしたファイルは
+  パス (`path:`) を覚え、起動し直してもバックエンドの `read_model_file` で読み直す (`ViewerHost.readPath`)。ドロップは OS からの
+  ドロップを Tauri が受けてパスを渡す (`ViewerHost.listenFileDrop` = webview の `onDragDropEvent`。T0713)。このとき HTML のドロップは
+  扱わない。ブラウザで選んだファイルとドロップしたファイル (File API はパスを教えない) は場所が無く、読み直せるのは開いている間だけ。
   見本 (`sample:`) と `?model=` の URL (`url:`) はどちらでも読み直せる。
 
 ## モデルごとに覚える (T0711)
@@ -155,14 +157,14 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 
 
 - **モデルの鍵 (`ModelIdentity`):** `{ name, fingerprint, location? }`。
-  - `location` (`FileLocation`) は後から読み直せる場所: `path:<絶対パス>` (Tauri のダイアログ・起動時の引数)、
-    `sample:<samples/ からのパス>` (同梱の見本)、`url:<絶対 URL>` (ブラウザの `?model=`)。ドロップとブラウザで選んだファイルには無い。
+  - `location` (`FileLocation`) は後から読み直せる場所: `path:<絶対パス>` (Tauri のダイアログ・ドロップ・起動時の引数)、
+    `sample:<samples/ からのパス>` (同梱の見本)、`url:<絶対 URL>` (ブラウザの `?model=`)。ブラウザでドロップした・選んだファイルには無い。
     `host.ts` がファイルを読むときに `ModelFile.location` に入れ、`readFileAt(location)` で読み直す。
   - `fingerprint` はバイト列の指紋 (長さと 2 つの 32 ビットのハッシュ。暗号のハッシュではない。`fingerprint()`)。
   - `name` は表示だけに使い、比べない (`model.ugoe` のような同じ名前の別のモデルがよくあるため)。
-- **同じモデル (`sameModel`):** 場所が同じか、指紋が同じ。場所が同じなら中身が変わっても (書き出し直し) 同じモデル。ドロップで
-  場所が分からなくても、中身が同じなら同じモデル。`ModelMemory.get` は場所が同じ項目を優先し、無ければ指紋が同じ項目を返す。
-  `set` は同じモデルの古い項目を消して新しい鍵で覚える (ドロップで覚えたモデルを「開く」で開くと、場所が付く)。
+- **同じモデル (`sameModel`):** 場所が同じか、指紋が同じ。場所が同じなら中身が変わっても (書き出し直し) 同じモデル。ブラウザでの
+  ドロップで場所が分からなくても、中身が同じなら同じモデル。`ModelMemory.get` は場所が同じ項目を優先し、無ければ指紋が同じ項目を返す。
+  `set` は同じモデルの古い項目を消して新しい鍵で覚える (ブラウザでドロップして覚えたモデルを、場所の分かる開き方で開くと、場所が付く)。
 - **入れ物 (`ModelMemory<T>`):** `new ModelMemory(key, parse, { limit })`。localStorage の 1 つのキーに
   `{"version": 1, "entries": [{"model": ModelIdentity, "value": T}]}` を最近使った順に置き、`limit` を超えたら古いものから消す。
   `get`・`set`・`delete` (「既定に戻す」)・`models`。値は `parse` (unknown → `T | null`) が確かめ、読めない項目・例外を出した項目・
@@ -316,7 +318,8 @@ Tauri の外 (ふつうのブラウザ) で開くと、ファイルの選択は 
 
 - `?model=<URL>` を付けると、起動時にその URL のモデルを開く (例: `http://localhost:1430/?model=/c.ugoe`)。
 - `window.__UGOE_VIEWER_HOST__` に `ViewerHost` (`src/lib/host.ts`) を置くと、「開く」などでそれを使う。
-- ドロップは `DragEvent` と `DataTransfer` に `File` を入れて `window` に送れば確かめられる。
+- ドロップは `DragEvent` と `DataTransfer` に `File` を入れて `window` に送れば確かめられる。差し替えた `ViewerHost` に
+  `listenFileDrop` (と `readPath`) を置くと、Tauri のようにパスで受け取る経路を確かめられる (HTML のドロップは扱わなくなる)。
 - WebGPU の無いヘッドレスの Chrome でも、SwiftShader の WebGL2 で描ける
   (`--use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader`)。
 

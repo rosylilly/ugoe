@@ -14,8 +14,7 @@
       {
         "title": "ugoe viewer",
         "width": 1280,
-        "height": 800,
-        "dragDropEnabled": false
+        "height": 800
       }
     ],
     "security": {

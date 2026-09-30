@@ -6,9 +6,11 @@
 //   `?model=<URL>` を付けると、起動時にその URL のモデルを開く。
 // - ヘッドレスのブラウザでの確認: `window.__UGOE_VIEWER_HOST__` に `ViewerHost` を置くと、それを使う。
 //
-// ドラッグ・アンド・ドロップはどこでも HTML の File API で読むので、ここを通らない
-// (Tauri のウィンドウは `dragDropEnabled: false` にして、webview にドロップを渡している)。
+// ドラッグ・アンド・ドロップは、Tauri のウィンドウでは OS からのドロップを Tauri が受けてパスを渡す
+// (`listenFileDrop`。パスから読むので、起動し直した後も読み直せる。T0713)。ブラウザでは HTML の File API で読むので、
+// ここを通らず、場所は分からない。
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   baseName,
@@ -35,7 +37,18 @@ export interface ViewerHost {
    * 無ければ `path:` の場所は読み直せない (ブラウザ)。
    */
   readPath?(path: string): Promise<ModelFile>;
+  /**
+   * OS からウィンドウにドロップしたファイルを、パスで受け取る (Tauri)。返すのは受け取りをやめる関数。
+   * 無ければ HTML のドロップ (File API) で受け取る (場所は分からない)。
+   */
+  listenFileDrop?(listener: (event: FileDropEvent) => void): Promise<() => void>;
 }
+
+/**
+ * OS からのドロップ (`ViewerHost.listenFileDrop`)。`hover` はファイルを持ってウィンドウに入った・出たとき、
+ * `drop` は落としたファイルのパス (絶対パス。`readPath` で読む)。
+ */
+export type FileDropEvent = { type: "hover"; active: boolean } | { type: "drop"; paths: string[] };
 
 declare global {
   interface Window {
@@ -85,6 +98,21 @@ const tauriHost: ViewerHost = {
     return true;
   },
   readPath: readTauriFile,
+  listenFileDrop(listener) {
+    return getCurrentWebview().onDragDropEvent(({ payload }) => {
+      switch (payload.type) {
+        case "enter":
+          listener({ type: "hover", active: true });
+          break;
+        case "leave":
+          listener({ type: "hover", active: false });
+          break;
+        case "drop":
+          listener({ type: "drop", paths: payload.paths });
+          break;
+      }
+    });
+  },
 };
 
 /** ブラウザのダウンロードで保存する。 */
