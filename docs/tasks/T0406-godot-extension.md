@@ -1,11 +1,11 @@
 ---
 id: T0406
 title: Godot GDExtension
-status: todo
+status: in-progress
 milestone: M7
 crates: [bindings/godot, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0406
 ---
 
 # T0406: Godot GDExtension
