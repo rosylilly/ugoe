@@ -1,0 +1,93 @@
+{
+  "model": "model.json",
+  "physics": "model.physics.json",
+  "summary": "Colliders. CircleRig hangs from (100, 100) into the circle Ball (center (92, 140), radius 10) with collision_radius 2: in the first update the chain is placed at the nearest free angle, clockwise (to the left) tried first; the right side is free first and the chain rests where its tip is 12 px from the center, at -5.7368 degrees (the angle of segment 1 from gravity). Moving the root left by 30 px carries the segment past the circle (the sweep only turns the segment around its parent, from its direction at the start of the step); the segment then swings back towards its new direction and the circle stops the sweep. CapsuleRig hangs from (180, 100) through the capsule Bar (a to b from (155, 130) to (195, 130), radius 5, attached to the rotation deformer Arm): the rest pose crosses the capsule, so the chain is placed where the segment passes 5 px from the end (195, 130), at -35.1382 degrees; turning Arm by 30 degrees moves the capsule, which pushes the chain.",
+  "frames": [
+    {
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "CircleSway": -5.7368,
+          "CapsuleSway": -35.1382
+        }
+      }
+    },
+    {
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "CircleSway": -5.7368,
+          "CapsuleSway": -35.1382
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "set": {
+            "X": -30.0
+          }
+        }
+      ],
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "CircleSway": -5.7368,
+          "CapsuleSway": -35.1382
+        }
+      }
+    },
+    {
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "CircleSway": -14.58,
+          "CapsuleSway": -35.1382
+        }
+      }
+    },
+    {
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "CircleSway": 3.556,
+          "CapsuleSway": -35.1382
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "set": {
+            "ArmAngle": 30.0
+          }
+        }
+      ],
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "CircleSway": 12.2996,
+          "CapsuleSway": -35.1382
+        }
+      }
+    },
+    {
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "CircleSway": 16.4571,
+          "CapsuleSway": -34.4264
+        }
+      }
+    },
+    {
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "CircleSway": 18.229,
+          "CapsuleSway": -33.3625
+        }
+      }
+    }
+  ]
+}

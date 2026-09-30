@@ -1,0 +1,160 @@
+{
+  "gravity": [
+    0.0,
+    1.0
+  ],
+  "wind": [
+    0.0,
+    0.0
+  ],
+  "fps": 32.0,
+  "rigs": [
+    {
+      "id": "CircleRig",
+      "name": "CircleRig",
+      "inputs": [
+        {
+          "parameter": "X",
+          "source": "x",
+          "weight": 100.0
+        }
+      ],
+      "outputs": [
+        {
+          "target": {
+            "type": "parameter",
+            "id": "CircleSway"
+          },
+          "particle": 1,
+          "source": "angle",
+          "scale": 1.0,
+          "weight": 100.0
+        }
+      ],
+      "particles": [
+        {
+          "position": [
+            100.0,
+            100.0
+          ],
+          "mobility": 0.5,
+          "delay": 1.0,
+          "acceleration": 1.0,
+          "radius": 0.0
+        },
+        {
+          "position": [
+            100.0,
+            140.0
+          ],
+          "mobility": 0.5,
+          "delay": 1.0,
+          "acceleration": 1.0,
+          "radius": 40.0,
+          "collision_radius": 2.0
+        }
+      ],
+      "normalization": {
+        "position": {
+          "min": -40.0,
+          "default": 0.0,
+          "max": 40.0
+        },
+        "angle": {
+          "min": -30.0,
+          "default": 0.0,
+          "max": 30.0
+        }
+      },
+      "colliders": [
+        "Ball"
+      ]
+    },
+    {
+      "id": "CapsuleRig",
+      "name": "CapsuleRig",
+      "inputs": [],
+      "outputs": [
+        {
+          "target": {
+            "type": "parameter",
+            "id": "CapsuleSway"
+          },
+          "particle": 1,
+          "source": "angle",
+          "scale": 1.0,
+          "weight": 100.0
+        }
+      ],
+      "particles": [
+        {
+          "position": [
+            180.0,
+            100.0
+          ],
+          "mobility": 0.5,
+          "delay": 1.0,
+          "acceleration": 1.0,
+          "radius": 0.0
+        },
+        {
+          "position": [
+            180.0,
+            140.0
+          ],
+          "mobility": 0.5,
+          "delay": 1.0,
+          "acceleration": 1.0,
+          "radius": 40.0
+        }
+      ],
+      "normalization": {
+        "position": {
+          "min": -40.0,
+          "default": 0.0,
+          "max": 40.0
+        },
+        "angle": {
+          "min": -30.0,
+          "default": 0.0,
+          "max": 30.0
+        }
+      },
+      "colliders": [
+        "Bar"
+      ]
+    }
+  ],
+  "colliders": [
+    {
+      "id": "Ball",
+      "name": "Ball",
+      "attach": null,
+      "shape": {
+        "type": "circle",
+        "center": [
+          92.0,
+          140.0
+        ],
+        "radius": 10.0
+      }
+    },
+    {
+      "id": "Bar",
+      "name": "Bar",
+      "attach": "Arm",
+      "shape": {
+        "type": "capsule",
+        "a": [
+          -25.0,
+          30.0
+        ],
+        "b": [
+          15.0,
+          30.0
+        ],
+        "radius": 5.0
+      }
+    }
+  ]
+}

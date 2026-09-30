@@ -1,0 +1,1006 @@
+{
+  "model": "model.json",
+  "physics": "model.physics.json",
+  "summary": "Dynamic physics. HairRig has no inputs: its root is anchored at the origin of the rotation deformer Hair (the first deformer output), which the rotation deformer Head moves. Its outputs add to the angle of Hair (measured from gravity as seen in Head's frame), move the origin of the rotation deformer Bow, and move the vertices of the mesh Ribbon and the control points of the warp Cape by the swing's displacement, with per-vertex weights. FrameRig has frame = Head, so its gravity turns with Head (frame angle = HeadAngle); its root is anchored at Head's origin. Turning the head to 30 degrees swings the chains; after a reset, the chains rest: Hair receives -30 degrees (it keeps hanging straight down), FrameRig outputs 30 degrees, and the displacements are 0.",
+  "frames": [
+    {
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "Tilt": 0
+        },
+        "offsets": {
+          "deformer_angles": {
+            "Hair": 0
+          },
+          "deformer_origins": {
+            "Bow": [
+              0,
+              0
+            ]
+          },
+          "warp_points": {
+            "Cape": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ]
+            ]
+          },
+          "mesh_vertices": {
+            "Ribbon": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ]
+            ]
+          }
+        },
+        "meshes": {
+          "HairMesh": {
+            "positions": [
+              [
+                92,
+                120
+              ],
+              [
+                108,
+                120
+              ],
+              [
+                108,
+                160
+              ],
+              [
+                92,
+                160
+              ]
+            ]
+          },
+          "BowMesh": {
+            "positions": [
+              [
+                195,
+                55
+              ],
+              [
+                205,
+                55
+              ],
+              [
+                205,
+                65
+              ],
+              [
+                195,
+                65
+              ]
+            ]
+          },
+          "CapeMesh": {
+            "positions": [
+              [
+                20,
+                150
+              ],
+              [
+                80,
+                150
+              ],
+              [
+                80,
+                230
+              ],
+              [
+                20,
+                230
+              ]
+            ]
+          },
+          "Ribbon": {
+            "positions": [
+              [
+                150,
+                150
+              ],
+              [
+                170,
+                150
+              ],
+              [
+                170,
+                190
+              ],
+              [
+                150,
+                190
+              ]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "set": {
+            "HeadAngle": 30.0
+          }
+        }
+      ],
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "Tilt": 0
+        },
+        "offsets": {
+          "deformer_angles": {
+            "Hair": 0
+          },
+          "deformer_origins": {
+            "Bow": [
+              0,
+              0
+            ]
+          },
+          "warp_points": {
+            "Cape": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ]
+            ]
+          },
+          "mesh_vertices": {
+            "Ribbon": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ]
+            ]
+          }
+        },
+        "meshes": {
+          "HairMesh": {
+            "positions": [
+              [
+                83.0718,
+                113.3205
+              ],
+              [
+                96.9282,
+                121.3205
+              ],
+              [
+                76.9282,
+                155.9615
+              ],
+              [
+                63.0718,
+                147.9615
+              ]
+            ]
+          },
+          "BowMesh": {
+            "positions": [
+              [
+                195,
+                55
+              ],
+              [
+                205,
+                55
+              ],
+              [
+                205,
+                65
+              ],
+              [
+                195,
+                65
+              ]
+            ]
+          },
+          "CapeMesh": {
+            "positions": [
+              [
+                20,
+                150
+              ],
+              [
+                80,
+                150
+              ],
+              [
+                80,
+                230
+              ],
+              [
+                20,
+                230
+              ]
+            ]
+          },
+          "Ribbon": {
+            "positions": [
+              [
+                150,
+                150
+              ],
+              [
+                170,
+                150
+              ],
+              [
+                170,
+                190
+              ],
+              [
+                150,
+                190
+              ]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "Tilt": 6.6649
+        },
+        "offsets": {
+          "deformer_angles": {
+            "Hair": -42.9297
+          },
+          "deformer_origins": {
+            "Bow": [
+              8.9502,
+              0
+            ]
+          },
+          "warp_points": {
+            "Cape": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                -0.5071
+              ],
+              [
+                0,
+                -1.0142
+              ]
+            ]
+          },
+          "mesh_vertices": {
+            "Ribbon": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                8.9502,
+                0
+              ],
+              [
+                8.9502,
+                0
+              ]
+            ]
+          }
+        },
+        "meshes": {
+          "HairMesh": {
+            "positions": [
+              [
+                82.2028,
+                119.1106
+              ],
+              [
+                97.7972,
+                115.5305
+              ],
+              [
+                106.7474,
+                154.5163
+              ],
+              [
+                91.1531,
+                158.0964
+              ]
+            ]
+          },
+          "BowMesh": {
+            "positions": [
+              [
+                203.9502,
+                55
+              ],
+              [
+                213.9502,
+                55
+              ],
+              [
+                213.9502,
+                65
+              ],
+              [
+                203.9502,
+                65
+              ]
+            ]
+          },
+          "CapeMesh": {
+            "positions": [
+              [
+                20,
+                150
+              ],
+              [
+                80,
+                150
+              ],
+              [
+                80,
+                228.9858
+              ],
+              [
+                20,
+                229.4929
+              ]
+            ]
+          },
+          "Ribbon": {
+            "positions": [
+              [
+                150,
+                150
+              ],
+              [
+                170,
+                150
+              ],
+              [
+                178.9502,
+                190
+              ],
+              [
+                158.9502,
+                190
+              ]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "Tilt": 9.399
+        },
+        "offsets": {
+          "deformer_angles": {
+            "Hair": -42.4555
+          },
+          "deformer_origins": {
+            "Bow": [
+              8.6273,
+              0
+            ]
+          },
+          "warp_points": {
+            "Cape": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                -0.4707
+              ],
+              [
+                0,
+                -0.9415
+              ]
+            ]
+          },
+          "mesh_vertices": {
+            "Ribbon": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                8.6273,
+                0
+              ],
+              [
+                8.6273,
+                0
+              ]
+            ]
+          }
+        },
+        "meshes": {
+          "HairMesh": {
+            "positions": [
+              [
+                82.1883,
+                119.046
+              ],
+              [
+                97.8117,
+                115.5951
+              ],
+              [
+                106.439,
+                154.6536
+              ],
+              [
+                90.8156,
+                158.1045
+              ]
+            ]
+          },
+          "BowMesh": {
+            "positions": [
+              [
+                203.6273,
+                55
+              ],
+              [
+                213.6273,
+                55
+              ],
+              [
+                213.6273,
+                65
+              ],
+              [
+                203.6273,
+                65
+              ]
+            ]
+          },
+          "CapeMesh": {
+            "positions": [
+              [
+                20,
+                150
+              ],
+              [
+                80,
+                150
+              ],
+              [
+                80,
+                229.0585
+              ],
+              [
+                20,
+                229.5293
+              ]
+            ]
+          },
+          "Ribbon": {
+            "positions": [
+              [
+                150,
+                150
+              ],
+              [
+                170,
+                150
+              ],
+              [
+                178.6273,
+                190
+              ],
+              [
+                158.6273,
+                190
+              ]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "dt": 0.015625,
+      "expect": {
+        "parameters": {
+          "Tilt": 10.1163
+        },
+        "offsets": {
+          "deformer_angles": {
+            "Hair": -42.1789
+          },
+          "deformer_origins": {
+            "Bow": [
+              8.4385,
+              0
+            ]
+          },
+          "warp_points": {
+            "Cape": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                -0.4504
+              ],
+              [
+                0,
+                -0.9007
+              ]
+            ]
+          },
+          "mesh_vertices": {
+            "Ribbon": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                8.4385,
+                0
+              ],
+              [
+                8.4385,
+                0
+              ]
+            ]
+          }
+        },
+        "meshes": {
+          "HairMesh": {
+            "positions": [
+              [
+                82.18,
+                119.0082
+              ],
+              [
+                97.82,
+                115.6328
+              ],
+              [
+                106.2585,
+                154.7325
+              ],
+              [
+                90.6186,
+                158.108
+              ]
+            ]
+          },
+          "BowMesh": {
+            "positions": [
+              [
+                203.4385,
+                55
+              ],
+              [
+                213.4385,
+                55
+              ],
+              [
+                213.4385,
+                65
+              ],
+              [
+                203.4385,
+                65
+              ]
+            ]
+          },
+          "CapeMesh": {
+            "positions": [
+              [
+                20,
+                150
+              ],
+              [
+                80,
+                150
+              ],
+              [
+                80,
+                229.0993
+              ],
+              [
+                20,
+                229.5496
+              ]
+            ]
+          },
+          "Ribbon": {
+            "positions": [
+              [
+                150,
+                150
+              ],
+              [
+                170,
+                150
+              ],
+              [
+                178.4385,
+                190
+              ],
+              [
+                158.4385,
+                190
+              ]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "reset_physics": true
+        }
+      ],
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "Tilt": 30
+        },
+        "offsets": {
+          "deformer_angles": {
+            "Hair": -30
+          },
+          "deformer_origins": {
+            "Bow": [
+              0,
+              0
+            ]
+          },
+          "warp_points": {
+            "Cape": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ]
+            ]
+          },
+          "mesh_vertices": {
+            "Ribbon": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ]
+            ]
+          }
+        },
+        "meshes": {
+          "HairMesh": {
+            "positions": [
+              [
+                82,
+                117.3205
+              ],
+              [
+                98,
+                117.3205
+              ],
+              [
+                98,
+                157.3205
+              ],
+              [
+                82,
+                157.3205
+              ]
+            ]
+          },
+          "BowMesh": {
+            "positions": [
+              [
+                195,
+                55
+              ],
+              [
+                205,
+                55
+              ],
+              [
+                205,
+                65
+              ],
+              [
+                195,
+                65
+              ]
+            ]
+          },
+          "CapeMesh": {
+            "positions": [
+              [
+                20,
+                150
+              ],
+              [
+                80,
+                150
+              ],
+              [
+                80,
+                230
+              ],
+              [
+                20,
+                230
+              ]
+            ]
+          },
+          "Ribbon": {
+            "positions": [
+              [
+                150,
+                150
+              ],
+              [
+                170,
+                150
+              ],
+              [
+                170,
+                190
+              ],
+              [
+                150,
+                190
+              ]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "Tilt": 30
+        },
+        "offsets": {
+          "deformer_angles": {
+            "Hair": -30
+          },
+          "deformer_origins": {
+            "Bow": [
+              0,
+              0
+            ]
+          },
+          "warp_points": {
+            "Cape": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ]
+            ]
+          },
+          "mesh_vertices": {
+            "Ribbon": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ]
+            ]
+          }
+        },
+        "meshes": {
+          "HairMesh": {
+            "positions": [
+              [
+                82,
+                117.3205
+              ],
+              [
+                98,
+                117.3205
+              ],
+              [
+                98,
+                157.3205
+              ],
+              [
+                82,
+                157.3205
+              ]
+            ]
+          },
+          "BowMesh": {
+            "positions": [
+              [
+                195,
+                55
+              ],
+              [
+                205,
+                55
+              ],
+              [
+                205,
+                65
+              ],
+              [
+                195,
+                65
+              ]
+            ]
+          },
+          "CapeMesh": {
+            "positions": [
+              [
+                20,
+                150
+              ],
+              [
+                80,
+                150
+              ],
+              [
+                80,
+                230
+              ],
+              [
+                20,
+                230
+              ]
+            ]
+          },
+          "Ribbon": {
+            "positions": [
+              [
+                150,
+                150
+              ],
+              [
+                170,
+                150
+              ],
+              [
+                170,
+                190
+              ],
+              [
+                150,
+                190
+              ]
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,194 @@
+{
+  "gravity": [
+    0.0,
+    1.0
+  ],
+  "wind": [
+    0.0,
+    0.0
+  ],
+  "fps": 32.0,
+  "rigs": [
+    {
+      "id": "Early",
+      "name": "Early",
+      "inputs": [
+        {
+          "parameter": "NeckSway",
+          "source": "angle",
+          "weight": 100.0
+        }
+      ],
+      "outputs": [
+        {
+          "target": {
+            "type": "parameter",
+            "id": "EarlySway"
+          },
+          "particle": 1,
+          "source": "angle",
+          "scale": 1.0,
+          "weight": 100.0
+        }
+      ],
+      "particles": [
+        {
+          "position": [
+            0.0,
+            0.0
+          ],
+          "mobility": 0.5,
+          "delay": 1.0,
+          "acceleration": 1.0,
+          "radius": 0.0
+        },
+        {
+          "position": [
+            0.0,
+            10.0
+          ],
+          "mobility": 0.5,
+          "delay": 1.0,
+          "acceleration": 1.0,
+          "radius": 10.0
+        }
+      ],
+      "normalization": {
+        "position": {
+          "min": -10.0,
+          "default": 0.0,
+          "max": 10.0
+        },
+        "angle": {
+          "min": -90.0,
+          "default": 0.0,
+          "max": 90.0
+        }
+      }
+    },
+    {
+      "id": "Neck",
+      "name": "Neck",
+      "inputs": [
+        {
+          "parameter": "Angle",
+          "source": "angle",
+          "weight": 100.0
+        },
+        {
+          "parameter": "X",
+          "source": "x",
+          "weight": 100.0
+        }
+      ],
+      "outputs": [
+        {
+          "target": {
+            "type": "parameter",
+            "id": "NeckSway"
+          },
+          "particle": 1,
+          "source": "angle",
+          "scale": 1.0,
+          "weight": 100.0
+        }
+      ],
+      "particles": [
+        {
+          "position": [
+            0.0,
+            0.0
+          ],
+          "mobility": 0.5,
+          "delay": 1.0,
+          "acceleration": 1.0,
+          "radius": 0.0
+        },
+        {
+          "position": [
+            0.0,
+            10.0
+          ],
+          "mobility": 0.8,
+          "delay": 0.5,
+          "acceleration": 1.0,
+          "radius": 10.0
+        }
+      ],
+      "normalization": {
+        "position": {
+          "min": -10.0,
+          "default": 0.0,
+          "max": 10.0
+        },
+        "angle": {
+          "min": -90.0,
+          "default": 0.0,
+          "max": 90.0
+        }
+      }
+    },
+    {
+      "id": "Hair",
+      "name": "Hair",
+      "inputs": [
+        {
+          "parameter": "NeckSway",
+          "source": "angle",
+          "weight": 50.0
+        },
+        {
+          "parameter": "X",
+          "source": "x",
+          "weight": 100.0
+        }
+      ],
+      "outputs": [
+        {
+          "target": {
+            "type": "parameter",
+            "id": "HairSway"
+          },
+          "particle": 1,
+          "source": "angle",
+          "scale": 1.0,
+          "weight": 100.0
+        }
+      ],
+      "particles": [
+        {
+          "position": [
+            0.0,
+            0.0
+          ],
+          "mobility": 0.5,
+          "delay": 1.0,
+          "acceleration": 1.0,
+          "radius": 0.0
+        },
+        {
+          "position": [
+            0.0,
+            10.0
+          ],
+          "mobility": 0.5,
+          "delay": 1.0,
+          "acceleration": 1.0,
+          "radius": 10.0
+        }
+      ],
+      "normalization": {
+        "position": {
+          "min": -10.0,
+          "default": 0.0,
+          "max": 10.0
+        },
+        "angle": {
+          "min": -90.0,
+          "default": 0.0,
+          "max": 90.0
+        }
+      }
+    }
+  ]
+}

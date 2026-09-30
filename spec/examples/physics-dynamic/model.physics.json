@@ -1,0 +1,162 @@
+{
+  "gravity": [
+    0.0,
+    1.0
+  ],
+  "wind": [
+    0.0,
+    0.0
+  ],
+  "fps": 32.0,
+  "rigs": [
+    {
+      "id": "HairRig",
+      "name": "HairRig",
+      "inputs": [],
+      "outputs": [
+        {
+          "target": {
+            "type": "deformer_angle",
+            "deformer": "Hair"
+          },
+          "particle": 1,
+          "source": "angle",
+          "scale": 1.0,
+          "weight": 100.0
+        },
+        {
+          "target": {
+            "type": "deformer_offset",
+            "deformer": "Bow"
+          },
+          "particle": 1,
+          "source": "x",
+          "scale": 1.0,
+          "weight": 100.0
+        },
+        {
+          "target": {
+            "type": "vertices",
+            "owner": {
+              "mesh": "Ribbon"
+            },
+            "weights": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ]
+          },
+          "particle": 1,
+          "source": "x",
+          "scale": 1.0,
+          "weight": 100.0
+        },
+        {
+          "target": {
+            "type": "vertices",
+            "owner": {
+              "warp": "Cape"
+            },
+            "weights": [
+              0.0,
+              0.0,
+              0.5,
+              1.0
+            ]
+          },
+          "particle": 1,
+          "source": "y",
+          "scale": 2.0,
+          "weight": 50.0
+        }
+      ],
+      "particles": [
+        {
+          "position": [
+            0.0,
+            0.0
+          ],
+          "mobility": 0.6,
+          "delay": 1.0,
+          "acceleration": 1.0,
+          "radius": 0.0
+        },
+        {
+          "position": [
+            0.0,
+            40.0
+          ],
+          "mobility": 0.6,
+          "delay": 1.0,
+          "acceleration": 1.0,
+          "radius": 40.0
+        }
+      ],
+      "normalization": {
+        "position": {
+          "min": -10.0,
+          "default": 0.0,
+          "max": 10.0
+        },
+        "angle": {
+          "min": -10.0,
+          "default": 0.0,
+          "max": 10.0
+        }
+      }
+    },
+    {
+      "id": "FrameRig",
+      "name": "FrameRig",
+      "inputs": [],
+      "frame": "Head",
+      "outputs": [
+        {
+          "target": {
+            "type": "parameter",
+            "id": "Tilt"
+          },
+          "particle": 1,
+          "source": "angle",
+          "scale": 1.0,
+          "weight": 100.0
+        }
+      ],
+      "particles": [
+        {
+          "position": [
+            0.0,
+            0.0
+          ],
+          "mobility": 0.6,
+          "delay": 1.0,
+          "acceleration": 1.0,
+          "radius": 0.0
+        },
+        {
+          "position": [
+            0.0,
+            30.0
+          ],
+          "mobility": 0.3,
+          "delay": 1.0,
+          "acceleration": 1.0,
+          "radius": 30.0
+        }
+      ],
+      "normalization": {
+        "position": {
+          "min": -10.0,
+          "default": 0.0,
+          "max": 10.0
+        },
+        "angle": {
+          "min": -10.0,
+          "default": 0.0,
+          "max": 10.0
+        }
+      }
+    }
+  ]
+}

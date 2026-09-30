@@ -17,5 +17,9 @@ ugoe-render.workspace = true
 ugoe-runtime.workspace = true
 thiserror.workspace = true
 
+[dev-dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
 [lints]
 workspace = true

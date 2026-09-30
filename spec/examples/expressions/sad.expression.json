@@ -1,0 +1,16 @@
+{
+  "name": "sad",
+  "fade_in": 0.25,
+  "parameters": [
+    {
+      "parameter": "Brow",
+      "value": -0.8,
+      "op": "add"
+    },
+    {
+      "parameter": "Smile",
+      "value": 0.0,
+      "op": "overwrite"
+    }
+  ]
+}

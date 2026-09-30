@@ -1,0 +1,310 @@
+{
+  "model": "model.json",
+  "motions": {
+    "calm": "calm.motion.json"
+  },
+  "summary": "Eye blink, breathing and lip sync. The eye blink's seed exceeds 2^53 and must be read exactly; its first open intervals are 1.0 x (0.5 + u) with u = 0.9740, 0.5582, 0.3370, ... from SplitMix64. The blink multiplies EyeL (default 1) and EyeR (default 1.2, above 1, keeps its ratio). Breathing adds 0.1 + 0.5 sin(2 pi phase / 2) to Breath. Lip sync writes the level (clamped to 1) to Mouth and nothing when the level is removed. The looping motion calm sets the strengths of the EyeBlink and LipSync effect groups to 0.5 and 0.25. Turning eye blink and breathing off leaves their parameters untouched and stops their clocks; a long frame then passes several blink phases at once.",
+  "frames": [
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1,
+          "EyeR": 1.2,
+          "Breath": 0.2545,
+          "Mouth": 0
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1,
+          "EyeR": 1.2,
+          "Breath": 0.3939,
+          "Mouth": 0
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1,
+          "EyeR": 1.2,
+          "Breath": 0.5045,
+          "Mouth": 0
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1,
+          "EyeR": 1.2,
+          "Breath": 0.5755,
+          "Mouth": 0
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1,
+          "EyeR": 1.2,
+          "Breath": 0.6,
+          "Mouth": 0
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1,
+          "EyeR": 1.2,
+          "Breath": 0.5755,
+          "Mouth": 0
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1,
+          "EyeR": 1.2,
+          "Breath": 0.5045,
+          "Mouth": 0
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1,
+          "EyeR": 1.2,
+          "Breath": 0.3939,
+          "Mouth": 0
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1,
+          "EyeR": 1.2,
+          "Breath": 0.2545,
+          "Mouth": 0
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1,
+          "EyeR": 1.2,
+          "Breath": 0.1,
+          "Mouth": 0
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1,
+          "EyeR": 1.2,
+          "Breath": -0.0545,
+          "Mouth": 0
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1,
+          "EyeR": 1.2,
+          "Breath": -0.1939,
+          "Mouth": 0
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "lip_sync": 0.8
+        }
+      ],
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1,
+          "EyeR": 1.2,
+          "Breath": -0.3045,
+          "Mouth": 0.8
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "lip_sync": 1.5
+        }
+      ],
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1,
+          "EyeR": 1.2,
+          "Breath": -0.3755,
+          "Mouth": 1
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "start_motion": "calm",
+          "priority": "normal"
+        }
+      ],
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 0.8701,
+          "EyeR": 1.0442,
+          "Breath": -0.4,
+          "Mouth": 0.25
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 0.5,
+          "EyeR": 0.6,
+          "Breath": -0.3755,
+          "Mouth": 0.25
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 0.7532,
+          "EyeR": 0.9039,
+          "Breath": -0.3045,
+          "Mouth": 0.25
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1,
+          "EyeR": 1.2,
+          "Breath": -0.1939,
+          "Mouth": 0.25
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "lip_sync": null
+        }
+      ],
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1,
+          "EyeR": 1.2,
+          "Breath": -0.0545,
+          "Mouth": 0
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "stages": {
+            "eye_blink": false,
+            "breath": false
+          }
+        }
+      ],
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1,
+          "EyeR": 1.2,
+          "Breath": 0,
+          "Mouth": 0
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "stages": {
+            "eye_blink": true,
+            "breath": true
+          }
+        }
+      ],
+      "dt": 1.7,
+      "expect": {
+        "parameters": {
+          "EyeL": 1,
+          "EyeR": 1.2,
+          "Breath": -0.3755,
+          "Mouth": 0
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1,
+          "EyeR": 1.2,
+          "Breath": -0.3045,
+          "Mouth": 0
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1,
+          "EyeR": 1.2,
+          "Breath": -0.1939,
+          "Mouth": 0
+        }
+      }
+    },
+    {
+      "dt": 0.1,
+      "expect": {
+        "parameters": {
+          "EyeL": 1,
+          "EyeR": 1.2,
+          "Breath": -0.0545,
+          "Mouth": 0
+        }
+      }
+    }
+  ]
+}

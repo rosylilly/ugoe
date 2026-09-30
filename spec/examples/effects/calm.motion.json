@@ -1,0 +1,39 @@
+{
+  "name": "calm",
+  "duration": 1.0,
+  "looping": true,
+  "fade_in": 0.0,
+  "fade_out": 0.0,
+  "curves": [
+    {
+      "target": {
+        "kind": "effect_group",
+        "id": "EyeBlink"
+      },
+      "segments": [
+        {
+          "type": "start",
+          "p": {
+            "t": 0.0,
+            "v": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "effect_group",
+        "id": "LipSync"
+      },
+      "segments": [
+        {
+          "type": "start",
+          "p": {
+            "t": 0.0,
+            "v": 0.25
+          }
+        }
+      ]
+    }
+  ]
+}

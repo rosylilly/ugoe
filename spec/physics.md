@@ -300,7 +300,11 @@ can read, as an input, a parameter that an earlier rig outputs; the two rigs are
   rest outputs of earlier rigs.
 - The values written to the real parameters are the interpolated outputs, as for any output.
 - An input that reads the output of the same rig or of a later rig is not a relay input: it reads the
-  value at the start of the update, i.e. the output written in the previous update.
+  value at the start of the update. In the frame order of
+  [motion.md](motion.md#order-of-operations-in-a-frame), parameters are restored to their base values
+  before physics runs, so this is the base value, not the output written in the previous update
+  (physics outputs do not remain in the base values). A host that runs physics on its own, without
+  restoring the parameters, reads the previous output instead.
 - Without relay inputs, the order of the rigs does not affect the results.
 
 *Informative:* parameters used only for relays should be marked `internal`
@@ -373,6 +377,8 @@ computed like a parameter output, except:
   (including blend-shape deltas, without physics offsets). The angle is thus measured from the
   direction of gravity as seen in the deformer's own parent frame.
 - If `det J < 0` (the parent frame is mirrored, for example by `reflect_x`), the value is negated.
+  This applies to outputs of every particle: `J` depends only on the target deformer. The particle
+  changes only the reference against which the angle is measured.
 
 *Informative:* with a head rotated by 30 degrees and no `frame`, a hair deformer under the head
 receives −30 degrees and the hair keeps hanging straight down. With `frame` set to the head, gravity
@@ -466,9 +472,12 @@ return q                                                  (not blocked: q is unc
   no direction is free.
 
 The segment is thus swept around its parent from its direction at the start of the step towards its
-new direction, and stops just before the first collider it would hit: fast motion does not tunnel
-through colliders, and the segment length is kept. Because the velocity is computed from the
-constrained position, a particle that hits a collider loses its speed.
+new direction, and stops just before the first collider it would hit: a fast swing does not tunnel
+through colliders, and the segment length is kept. Only the turn around the parent is swept: the
+start direction is taken relative to the parent's previous position (`from_dir`) and placed at the
+parent's new position, so when the parent itself moves (for example with the root) the segment is
+carried along without a check on the way and may pass through a collider. Because the velocity is
+computed from the constrained position, a particle that hits a collider loses its speed.
 
 *Informative:* when the rest pose of a chain intersects a collider, the chain is placed along the
 collider in the first update rather than hanging straight. Authoring tools should warn about this.

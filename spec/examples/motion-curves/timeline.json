@@ -1,0 +1,142 @@
+{
+  "model": "model.json",
+  "motions": {
+    "curves": "curves.motion.json"
+  },
+  "summary": "One motion of 2 seconds without fades, sampled every 0.25 s. Lin: linear segments. Bez: a Bézier segment whose control times are at a third and two thirds of the segment (so s = t / 1.5), then one whose control times lie outside the segment and are clamped (so s = 0.5 at its middle). Step and Inv: stepped and inverse-stepped segments. Clamp: a curve beyond the parameter's range. A curve for a parameter that does not exist is ignored. Events fire in order of time, ties in array order, the event at time 0 in the first frame. In the frame that reaches the end (elapsed = 2) the motion is finished and applies nothing, so the parameters keep the values applied at 1.75 s; the event at 2 s still fires.",
+  "frames": [
+    {
+      "actions": [
+        {
+          "start_motion": "curves",
+          "priority": "normal",
+          "accepted": true
+        }
+      ],
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Lin": 2.5,
+          "Bez": 2.537,
+          "Step": 1,
+          "Inv": 5,
+          "Clamp": 0.25
+        },
+        "events": [
+          "start"
+        ]
+      }
+    },
+    {
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Lin": 5,
+          "Bez": 2.963,
+          "Step": 1,
+          "Inv": 5,
+          "Clamp": 0.5
+        },
+        "events": [
+          "b",
+          "a"
+        ]
+      }
+    },
+    {
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Lin": 7.5,
+          "Bez": 2.5,
+          "Step": 1,
+          "Inv": 5,
+          "Clamp": 0.75
+        },
+        "events": []
+      }
+    },
+    {
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Lin": 10,
+          "Bez": 2.3704,
+          "Step": 5,
+          "Inv": 5,
+          "Clamp": 1
+        },
+        "events": [
+          "one"
+        ]
+      }
+    },
+    {
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Lin": 5,
+          "Bez": 3.7963,
+          "Step": 5,
+          "Inv": 9,
+          "Clamp": 1
+        },
+        "events": []
+      }
+    },
+    {
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Lin": 0,
+          "Bez": 8,
+          "Step": 5,
+          "Inv": 9,
+          "Clamp": 1
+        },
+        "events": []
+      }
+    },
+    {
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Lin": -5,
+          "Bez": 1.5,
+          "Step": 5,
+          "Inv": 9,
+          "Clamp": 1
+        },
+        "events": []
+      }
+    },
+    {
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Lin": -5,
+          "Bez": 1.5,
+          "Step": 5,
+          "Inv": 9,
+          "Clamp": 1
+        },
+        "events": [
+          "end"
+        ]
+      }
+    },
+    {
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Lin": -5,
+          "Bez": 1.5,
+          "Step": 5,
+          "Inv": 9,
+          "Clamp": 1
+        },
+        "events": []
+      }
+    }
+  ]
+}

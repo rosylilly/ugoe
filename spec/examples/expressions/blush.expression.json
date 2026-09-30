@@ -1,0 +1,15 @@
+{
+  "name": "blush",
+  "parameters": [
+    {
+      "parameter": "Scale",
+      "value": 0.5,
+      "op": "multiply"
+    },
+    {
+      "parameter": "Brow",
+      "value": 0.25,
+      "op": "add"
+    }
+  ]
+}

@@ -11,9 +11,12 @@
 - モデル・物理・モジュールの検証 ([spec/model.md](../../spec/model.md#validation))
 - 評価 ([spec/evaluation.md](../../spec/evaluation.md)): 線形と滑らかな補間、ブレンドシェイプ、ワープ・回転デフォーマ (ワープの下の回転、外挿を含む)、パーツとデフォーマの不透明度、グルー、描画順
 - 着せ替えのモジュールの取り付け ([spec/model.md](../../spec/model.md#composition))
+- 物理 ([spec/physics.md](../../spec/physics.md)): 振り子の鎖、固定の刻みと出力の補間、リグの順と中継、動的な物理 (根のアンカー・重力の座標系・
+  デフォーマの角度と原点・頂点と制御点のオフセット)、当たり判定 (円とカプセル、掃引と二分法)
+- モーションと効果 ([spec/motion.md](../../spec/motion.md)): 曲線 (Bézier を含む)、フェード・ループ・イベント・優先度とクロスフェード、表情、
+  目パチ (SplitMix64)・呼吸・リップシンク、効果のグループ、ポーズとパーツの不透明度の上書き、1 フレームの順 (T0126)
 
-しないこと: 物理・モーション・効果の実行、動的な物理のオフセット、パーツの不透明度の上書き、当たり判定、描画、書き出し。
-物理の設定・モーション・表情は、読み込んで型と参照を確かめるだけです。
+しないこと: 追従 (トラッキング)、当たり判定のヒットテスト、描画、書き出し。
 
 ## 独立性を保つ手順
 
@@ -36,6 +39,7 @@ Node.js 24 以上 (型の除去で `.ts` を直接実行する。zstd は `node:
 node --test tools/spec-check/test/                                  # テスト
 node tools/spec-check/src/cli.ts spec/examples/single-quad/model.json X=0.5   # 評価の結果を JSON で表示
 node tools/spec-check/src/cli.ts assets/compat/dev/smooth-arc.ugoe
+node tools/spec-check/src/cli.ts spec/examples/physics-pendulum          # 時間の例を走らせ、食い違いを表示
 ```
 
 型の検査は、エディタの TypeScript を借りて行えます (`@types/node` が要るため):
@@ -48,7 +52,8 @@ cd tools/spec-check && ../../apps/editor/node_modules/.bin/tsc -p . --typeRoots 
 
 | ファイル | 内容 |
 | --- | --- |
-| `test/examples.test.ts` | `spec/examples/` のすべての例を評価し、[許容誤差](../../spec/examples/README.md#tolerances) で期待値と比べる。 |
+| `test/examples.test.ts` | `spec/examples/` の評価の例 (`expected.json`) をすべて評価し、[許容誤差](../../spec/examples/README.md#tolerances) で期待値と比べる。 |
+| `test/timeline.test.ts` | `spec/examples/` の時間の例 (`timeline.json`) をはじめからフレームごとに走らせ、[許容誤差](../../spec/examples/README.md#timeline-tolerances) で期待値と比べる。 |
 | `test/compat.test.ts` | `assets/compat/` の資料を読む。`dev/` は警告なしに読めて評価できる、`future/` は仕様どおりに劣化して読める (評価の結果が元のファイルと同じ) か拒否される ([docs/testing.md](../../docs/testing.md#互換性テスト))。 |
 | `test/reader.test.ts` | コンテナの誤り (ヘッダ・表・重なり・許されないチャンク・画像の数)、機能の宣言、MessagePack、JSON の整数と `null`、知らない値、検証。 |
 
@@ -66,6 +71,10 @@ cd tools/spec-check && ../../apps/editor/node_modules/.bin/tsc -p . --typeRoots 
 - この実装は書き出しをしないので、知らない値は読むときにフォールバックに置き換えて警告を残す。
   検証に影響する `Parameter.kind` とデフォーマの種類だけは「知らない値」のまま持つ。
 - MessagePack の値の後ろに余りのバイトがあるペイロードは拒否する (仕様はどちらも許す。参照実装は無視する)。
+- 目パチの `seed` (`u64`) は `bigint` で正確に読む (2^53 を超えうる)。間隔は単精度に丸める (仕様は単精度の `u` を求める)。
+- 時間の例の期待値は、この実装の出力を写したものではない。仕様から別に書いた転記 (T0126 の作業者が Python で書いた使い捨てのもの) で出し、
+  静止の姿勢・閉じた式で書ける値は手で確かめた。この実装はそれと独立に書き、一致を確かめた。
+- Bézier の `s` は二分法で解く (仕様は `|b(s) − x| ≤ 1e-6` を求め、解き方を問わない)。
 
 ## ライセンス
 

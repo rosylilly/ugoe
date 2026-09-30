@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { readModelJson } from "./bundle.ts";
-import { evaluate, parameterValues } from "./evaluate.ts";
+import { type EvaluationResult, evaluate, parameterValues } from "./evaluate.ts";
 import type * as M from "./types.ts";
 
 export interface ExpectedMesh {
@@ -46,15 +46,31 @@ export const TOLERANCE = { position: 0.01, value: 1e-4, draw_order: 1e-3 };
 
 /** 1 つのケースを評価して比べ、食い違いの説明の一覧を返す (空なら一致)。 */
 export function compareCase(model: M.Model, c: ExpectedCase): string[] {
-  const failures: string[] = [];
   const result = evaluate(model, parameterValues(model, c.parameters));
+  const failures = compareMeshes(result, c.meshes, TOLERANCE.position);
+  if (c.render_order) {
+    const actual = result.render_order.map((i) => result.meshes[i].id);
+    if (!sameRenderOrder(actual, c.render_order, result.meshes)) {
+      failures.push(`render_order: expected ${c.render_order.join(",")}, got ${actual.join(",")}`);
+    }
+  }
+  return failures;
+}
+
+/** 評価の結果をメッシュごとの期待値と比べる。位置の許容誤差は `positionTolerance`。 */
+export function compareMeshes(
+  result: EvaluationResult,
+  expected: Record<string, ExpectedMesh>,
+  positionTolerance: number,
+): string[] {
+  const failures: string[] = [];
   const byId = new Map(result.meshes.map((m) => [m.id, m]));
   const near = (what: string, actual: number, expected: number, tol: number) => {
     if (!(Math.abs(actual - expected) <= tol)) {
       failures.push(`${what}: expected ${expected}, got ${actual}`);
     }
   };
-  for (const [id, exp] of Object.entries(c.meshes)) {
+  for (const [id, exp] of Object.entries(expected)) {
     const m = byId.get(id);
     if (!m) {
       failures.push(`mesh ${id} not found`);
@@ -65,8 +81,8 @@ export function compareCase(model: M.Model, c: ExpectedCase): string[] {
         failures.push(`${id}.positions: expected ${exp.positions.length} vertices`);
       } else {
         exp.positions.forEach(([x, y], i) => {
-          near(`${id}.positions[${i}].x`, m.positions[i][0], x, TOLERANCE.position);
-          near(`${id}.positions[${i}].y`, m.positions[i][1], y, TOLERANCE.position);
+          near(`${id}.positions[${i}].x`, m.positions[i][0], x, positionTolerance);
+          near(`${id}.positions[${i}].y`, m.positions[i][1], y, positionTolerance);
         });
       }
     }
@@ -83,12 +99,6 @@ export function compareCase(model: M.Model, c: ExpectedCase): string[] {
     }
     if (exp.mask_strength !== undefined) {
       near(`${id}.mask_strength`, m.mask_strength, exp.mask_strength, TOLERANCE.value);
-    }
-  }
-  if (c.render_order) {
-    const actual = result.render_order.map((i) => result.meshes[i].id);
-    if (!sameRenderOrder(actual, c.render_order, result.meshes)) {
-      failures.push(`render_order: expected ${c.render_order.join(",")}, got ${actual.join(",")}`);
     }
   }
   return failures;

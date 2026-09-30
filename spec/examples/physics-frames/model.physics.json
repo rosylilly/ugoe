@@ -1,0 +1,132 @@
+{
+  "gravity": [
+    0.0,
+    1.0
+  ],
+  "wind": [
+    0.5,
+    0.0
+  ],
+  "fps": 32.0,
+  "rigs": [
+    {
+      "id": "BodyRig",
+      "name": "BodyRig",
+      "inputs": [],
+      "frame": "Body",
+      "outputs": [
+        {
+          "target": {
+            "type": "parameter",
+            "id": "Tilt"
+          },
+          "particle": 1,
+          "source": "angle",
+          "scale": 1.0,
+          "weight": 100.0
+        }
+      ],
+      "particles": [
+        {
+          "position": [
+            0.0,
+            0.0
+          ],
+          "mobility": 0.5,
+          "delay": 1.0,
+          "acceleration": 1.0,
+          "radius": 0.0
+        },
+        {
+          "position": [
+            0.0,
+            20.0
+          ],
+          "mobility": 0.5,
+          "delay": 1.0,
+          "acceleration": 1.0,
+          "radius": 20.0
+        }
+      ],
+      "normalization": {
+        "position": {
+          "min": -10.0,
+          "default": 0.0,
+          "max": 10.0
+        },
+        "angle": {
+          "min": -30.0,
+          "default": 0.0,
+          "max": 30.0
+        }
+      }
+    },
+    {
+      "id": "TailRig",
+      "name": "TailRig",
+      "inputs": [
+        {
+          "parameter": "Turn",
+          "source": "angle",
+          "weight": 100.0
+        }
+      ],
+      "outputs": [
+        {
+          "target": {
+            "type": "deformer_angle",
+            "deformer": "Tail"
+          },
+          "particle": 1,
+          "source": "angle",
+          "scale": 1.0,
+          "weight": 100.0
+        },
+        {
+          "target": {
+            "type": "parameter",
+            "id": "Lean"
+          },
+          "particle": 1,
+          "source": "angle",
+          "scale": 1.0,
+          "weight": 100.0
+        }
+      ],
+      "particles": [
+        {
+          "position": [
+            0.0,
+            0.0
+          ],
+          "mobility": 0.5,
+          "delay": 1.0,
+          "acceleration": 1.0,
+          "radius": 0.0
+        },
+        {
+          "position": [
+            0.0,
+            20.0
+          ],
+          "mobility": 0.5,
+          "delay": 1.0,
+          "acceleration": 1.0,
+          "radius": 20.0
+        }
+      ],
+      "normalization": {
+        "position": {
+          "min": -10.0,
+          "default": 0.0,
+          "max": 10.0
+        },
+        "angle": {
+          "min": -30.0,
+          "default": 0.0,
+          "max": 30.0
+        }
+      }
+    }
+  ]
+}

@@ -1,16 +1,25 @@
 // 使い方: node tools/spec-check/src/cli.ts <model.json | .ugoe> [パラメータ=値 ...]
 // ファイルを読み、与えたパラメータで評価した結果を JSON で標準出力に書く。警告は標準エラーに書く。
+// 時間の例のディレクトリ (timeline.json のあるもの) を与えると、フレームごとの食い違いを書く。
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { readBundle, readModelJson } from "./bundle.ts";
 import { evaluate, parameterValues } from "./evaluate.ts";
+import { loadTimeline, runTimeline } from "./timeline.ts";
 
 const [path, ...assignments] = process.argv.slice(2);
 if (!path) {
   console.error(
-    "usage: node tools/spec-check/src/cli.ts <model.json | .ugoe> [Parameter=value ...]",
+    "usage: node tools/spec-check/src/cli.ts <model.json | .ugoe | timeline example dir> [Parameter=value ...]",
   );
   process.exit(2);
+}
+
+if (existsSync(join(path, "timeline.json"))) {
+  const failures = runTimeline(loadTimeline(path));
+  for (const f of failures) console.log(f);
+  process.exit(failures.length > 0 ? 1 : 0);
 }
 
 const { model, warnings } = path.endsWith(".json")

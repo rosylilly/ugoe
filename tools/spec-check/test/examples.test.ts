@@ -1,15 +1,15 @@
-// spec/examples/ の例のファイルを評価して、期待値と許容誤差 (spec/examples/README.md#tolerances) で比べる。
+// spec/examples/ の評価の例 (expected.json のあるもの) を評価して、期待値と許容誤差 (spec/examples/README.md#tolerances) で比べる。
 // 例のファイルは spec/ (CC BY 4.0) から実行時に読み、このディレクトリには写さない。
 
 import assert from "node:assert/strict";
-import { readdirSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { compareCase, loadExample } from "../src/examples.ts";
 import { SPEC_EXAMPLES } from "./paths.ts";
 
 const names = readdirSync(SPEC_EXAMPLES, { withFileTypes: true })
-  .filter((e) => e.isDirectory())
+  .filter((e) => e.isDirectory() && existsSync(join(SPEC_EXAMPLES, e.name, "expected.json")))
   .map((e) => e.name)
   .sort();
 

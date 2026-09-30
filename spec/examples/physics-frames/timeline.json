@@ -1,0 +1,89 @@
+{
+  "model": "model.json",
+  "physics": "model.physics.json",
+  "summary": "Chains at rest in frames other than the canvas, with wind (0.5, 0). BodyRig has frame = Body, a warp whose lattice is not affine: the frame angle is the angle by which the Jacobian at (0.5, 0.5) turns the gravity direction, atan2(65, 5) = 85.6013 degrees; gravity and wind are both rotated by it. TailRig has no frame (wind is not rotated) and outputs to the angle of Tail, whose parent Flip mirrors x: the value is measured against gravity mapped by Flip's Jacobian and negated because the Jacobian's determinant is negative, so that Tail hangs in the direction of the forces on screen. The same chain is also output to the parameter Lean against unmapped gravity. The second frame turns the input angle to 20 degrees and resets.",
+  "frames": [
+    {
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "Tilt": 59.0362,
+          "Lean": -26.5651
+        },
+        "offsets": {
+          "deformer_angles": {
+            "Tail": 26.5651
+          }
+        },
+        "meshes": {
+          "TailMesh": {
+            "positions": [
+              [
+                63.5777,
+                68.2111
+              ],
+              [
+                56.4223,
+                71.7889
+              ],
+              [
+                65.3666,
+                89.6774
+              ],
+              [
+                72.522,
+                86.0997
+              ]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "set": {
+            "Turn": 20.0
+          }
+        },
+        {
+          "reset_physics": true
+        }
+      ],
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "Tilt": 59.0362,
+          "Lean": -9.5432
+        },
+        "offsets": {
+          "deformer_angles": {
+            "Tail": 9.5432
+          }
+        },
+        "meshes": {
+          "TailMesh": {
+            "positions": [
+              [
+                63.9446,
+                69.3368
+              ],
+              [
+                56.0554,
+                70.6632
+              ],
+              [
+                59.3712,
+                90.3864
+              ],
+              [
+                67.2605,
+                89.06
+              ]
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "name": "happy",
+  "fade_in": 0.5,
+  "fade_out": 0.5,
+  "parameters": [
+    {
+      "parameter": "Smile",
+      "value": 1.0,
+      "op": "overwrite"
+    },
+    {
+      "parameter": "Brow",
+      "value": 0.5,
+      "op": "add"
+    },
+    {
+      "parameter": "Scale",
+      "value": 1.5,
+      "op": "multiply"
+    }
+  ]
+}

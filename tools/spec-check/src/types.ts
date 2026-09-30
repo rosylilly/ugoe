@@ -209,7 +209,7 @@ export interface EyeBlink {
   closing: number;
   closed: number;
   opening: number;
-  seed: number;
+  seed: bigint;
 }
 
 export interface BreathParameter {

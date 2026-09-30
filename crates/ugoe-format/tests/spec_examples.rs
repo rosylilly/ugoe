@@ -66,19 +66,28 @@ fn example_dirs() -> Vec<PathBuf> {
     dirs
 }
 
+/// 評価の例は `expected.json`、時間の例は `timeline.json` を持つ (時間の例の照合は
+/// `crates/ugoe/tests/spec_timelines.rs`)。
 #[test]
 fn every_example_has_a_model_and_expected_values() {
     let dirs = example_dirs();
     assert!(!dirs.is_empty());
     for dir in dirs {
-        assert!(dir.join("expected.json").is_file(), "{}", dir.display());
+        assert!(
+            dir.join("expected.json").is_file() || dir.join("timeline.json").is_file(),
+            "{}",
+            dir.display()
+        );
     }
 }
 
 #[test]
 fn runtime_meets_the_expected_values_of_every_example() {
     let mut failures = Vec::new();
-    for dir in example_dirs() {
+    for dir in example_dirs()
+        .into_iter()
+        .filter(|dir| dir.join("expected.json").is_file())
+    {
         let name = dir.file_name().unwrap().to_string_lossy().into_owned();
         let expected: Expected =
             serde_json::from_str(&std::fs::read_to_string(dir.join("expected.json")).unwrap())

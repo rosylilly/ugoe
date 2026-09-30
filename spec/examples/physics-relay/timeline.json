@@ -1,0 +1,82 @@
+{
+  "model": "model.json",
+  "physics": "model.physics.json",
+  "summary": "Three rigs chained through parameters. Neck outputs NeckSway; Hair, after it in the array, reads NeckSway as a relay input (at weight 50) within the same step; Early, before Neck, reads NeckSway too but is not a relay: it reads the value at the start of the update, which the frame order restores to the base value 0 every frame. Shows the rest pose resting on the rest outputs of earlier rigs, relays across several steps of one update, and the delay of outputs by one step.",
+  "frames": [
+    {
+      "actions": [
+        {
+          "set": {
+            "Angle": 20.0
+          }
+        }
+      ],
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "NeckSway": 60,
+          "HairSway": 30,
+          "EarlySway": 0
+        }
+      }
+    },
+    {
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "NeckSway": 60,
+          "HairSway": 30,
+          "EarlySway": 0
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "set": {
+            "Angle": -10.0,
+            "X": 5.0
+          }
+        }
+      ],
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "NeckSway": 60,
+          "HairSway": 30,
+          "EarlySway": 0
+        }
+      }
+    },
+    {
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "NeckSway": 51.0412,
+          "HairSway": 46.8274,
+          "EarlySway": 0
+        }
+      }
+    },
+    {
+      "dt": 0.09375,
+      "expect": {
+        "parameters": {
+          "NeckSway": -15.107,
+          "HairSway": 21.2493,
+          "EarlySway": 0
+        }
+      }
+    },
+    {
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "NeckSway": -27.0611,
+          "HairSway": 13.4374,
+          "EarlySway": 0
+        }
+      }
+    }
+  ]
+}

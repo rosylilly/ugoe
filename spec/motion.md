@@ -147,6 +147,12 @@ its fade weight `w` (times an external weight, normally 1):
 
 A motion of length 0 that does not loop is finished as soon as it starts and applies nothing.
 
+In the frame in which a motion reaches its end (`elapsed ≥ end` after advancing), it is finished: it
+applies nothing in that frame, although the events up to the end fire. The parameters therefore keep
+the values the motion applied in the previous frame (carried over as base values,
+[Order of operations in a frame](#order-of-operations-in-a-frame)), not the curves' values at the
+end time.
+
 ## Playing several motions
 
 *This section defines the behavior of the reference motion manager. Runtimes that cross-fade between
@@ -227,7 +233,8 @@ u = (z >> 40) / 2²⁴                            (a single-precision number in 
 interval = interval_setting × (0.5 + u)
 ```
 
-The first interval is drawn when the eye blink starts, and a new one each time the phase returns to
+The first interval is drawn when the runtime is created for the model (before the first frame) and
+again whenever the eye blink settings are replaced; a new one is drawn each time the phase returns to
 `open`. The intervals are therefore uniformly distributed in `[0.5, 1.5) × interval` and the same
 seed always gives the same blinks.
 
@@ -300,11 +307,13 @@ Motion curves with the target `part_opacity` override the part's own opacity.
 
    Overriding with `(v, W)` equals overriding with each request in turn:
    `lerp(lerp(o, v_old, W_old), c, w)`.
-2. If the part is the `part` of a pose entry and the pose is active, the combined override is not
+2. If the part is the `part` of a pose entry and the pose stage is on, the combined override is not
    applied; instead `v × W` is the pose request for that part ([Pose](#pose)).
 3. Otherwise the override `(v, W)` is given to evaluation, which replaces the part's own opacity `o`
    by `lerp(o, v, W)` ([evaluation.md](evaluation.md#parts)).
-4. The pose then writes its overrides (weight 1) for its entries and links.
+4. If the pose stage is on, the pose then writes its overrides (weight 1) for the parts and links of
+   all its entries, every frame (also in groups with a single entry). A pose without groups writes
+   nothing.
 
 Overrides are rebuilt every frame; when the curves end, parts return to their own opacity.
 

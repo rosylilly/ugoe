@@ -1,0 +1,53 @@
+{
+  "name": "switch",
+  "duration": 4.0,
+  "fade_in": 0.5,
+  "fade_out": 0.5,
+  "curves": [
+    {
+      "target": {
+        "kind": "part_opacity",
+        "id": "ArmA"
+      },
+      "segments": [
+        {
+          "type": "start",
+          "p": {
+            "t": 0.0,
+            "v": 0.0
+          }
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "part_opacity",
+        "id": "ArmB"
+      },
+      "segments": [
+        {
+          "type": "start",
+          "p": {
+            "t": 0.0,
+            "v": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "part_opacity",
+        "id": "Hat"
+      },
+      "segments": [
+        {
+          "type": "start",
+          "p": {
+            "t": 0.0,
+            "v": 0.2
+          }
+        }
+      ]
+    }
+  ]
+}

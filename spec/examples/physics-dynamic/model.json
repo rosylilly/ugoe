@@ -1,0 +1,520 @@
+{
+  "schema_version": 0,
+  "meta": {
+    "name": "physics_dynamic",
+    "canvas": {
+      "width": 256.0,
+      "height": 256.0,
+      "origin": [
+        128.0,
+        128.0
+      ]
+    }
+  },
+  "parameters": [
+    {
+      "id": "HeadAngle",
+      "name": "HeadAngle",
+      "min": -30.0,
+      "max": 30.0,
+      "default": 0.0,
+      "kind": "normal",
+      "mirror": null,
+      "group": null
+    },
+    {
+      "id": "Tilt",
+      "name": "Tilt",
+      "min": -90.0,
+      "max": 90.0,
+      "default": 0.0,
+      "kind": "normal",
+      "mirror": null,
+      "group": null
+    }
+  ],
+  "parameter_groups": [],
+  "parts": [
+    {
+      "id": "Root",
+      "name": "Root",
+      "parent": null,
+      "keyforms": {
+        "bindings": [],
+        "keyforms": [
+          {
+            "opacity": 1.0
+          }
+        ]
+      }
+    }
+  ],
+  "deformers": [
+    {
+      "id": "Head",
+      "name": "Head",
+      "part": "Root",
+      "parent": null,
+      "kind": {
+        "type": "rotation",
+        "keyforms": {
+          "bindings": [
+            {
+              "parameter": "HeadAngle",
+              "keys": [
+                -30.0,
+                30.0
+              ]
+            }
+          ],
+          "keyforms": [
+            {
+              "origin": [
+                100.0,
+                100.0
+              ],
+              "angle": -30.0,
+              "scale": 1.0,
+              "reflect_x": false,
+              "reflect_y": false,
+              "opacity": 1.0
+            },
+            {
+              "origin": [
+                100.0,
+                100.0
+              ],
+              "angle": 30.0,
+              "scale": 1.0,
+              "reflect_x": false,
+              "reflect_y": false,
+              "opacity": 1.0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "Hair",
+      "name": "Hair",
+      "part": "Root",
+      "parent": "Head",
+      "kind": {
+        "type": "rotation",
+        "keyforms": {
+          "bindings": [],
+          "keyforms": [
+            {
+              "origin": [
+                0.0,
+                20.0
+              ],
+              "angle": 0.0,
+              "scale": 1.0,
+              "reflect_x": false,
+              "reflect_y": false,
+              "opacity": 1.0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "Bow",
+      "name": "Bow",
+      "part": "Root",
+      "parent": null,
+      "kind": {
+        "type": "rotation",
+        "keyforms": {
+          "bindings": [],
+          "keyforms": [
+            {
+              "origin": [
+                200.0,
+                60.0
+              ],
+              "angle": 0.0,
+              "scale": 1.0,
+              "reflect_x": false,
+              "reflect_y": false,
+              "opacity": 1.0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "Cape",
+      "name": "Cape",
+      "part": "Root",
+      "parent": null,
+      "kind": {
+        "type": "warp",
+        "rows": 1,
+        "cols": 1,
+        "keyforms": {
+          "bindings": [],
+          "keyforms": [
+            {
+              "points": [
+                [
+                  20.0,
+                  150.0
+                ],
+                [
+                  80.0,
+                  150.0
+                ],
+                [
+                  20.0,
+                  230.0
+                ],
+                [
+                  80.0,
+                  230.0
+                ]
+              ],
+              "opacity": 1.0
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "id": "HairMesh",
+      "name": "HairMesh",
+      "part": "Root",
+      "parent": "Hair",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "blend": "normal",
+      "culling": false,
+      "masks": [],
+      "mask_mode": "union",
+      "mask_only": false,
+      "keyforms": {
+        "bindings": [],
+        "keyforms": [
+          {
+            "positions": [
+              [
+                -8.0,
+                0.0
+              ],
+              [
+                8.0,
+                0.0
+              ],
+              [
+                8.0,
+                40.0
+              ],
+              [
+                -8.0,
+                40.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "BowMesh",
+      "name": "BowMesh",
+      "part": "Root",
+      "parent": "Bow",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "blend": "normal",
+      "culling": false,
+      "masks": [],
+      "mask_mode": "union",
+      "mask_only": false,
+      "keyforms": {
+        "bindings": [],
+        "keyforms": [
+          {
+            "positions": [
+              [
+                -5.0,
+                -5.0
+              ],
+              [
+                5.0,
+                -5.0
+              ],
+              [
+                5.0,
+                5.0
+              ],
+              [
+                -5.0,
+                5.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "CapeMesh",
+      "name": "CapeMesh",
+      "part": "Root",
+      "parent": "Cape",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "blend": "normal",
+      "culling": false,
+      "masks": [],
+      "mask_mode": "union",
+      "mask_only": false,
+      "keyforms": {
+        "bindings": [],
+        "keyforms": [
+          {
+            "positions": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                1.0,
+                0.0
+              ],
+              [
+                1.0,
+                1.0
+              ],
+              [
+                0.0,
+                1.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "Ribbon",
+      "name": "Ribbon",
+      "part": "Root",
+      "parent": null,
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "blend": "normal",
+      "culling": false,
+      "masks": [],
+      "mask_mode": "union",
+      "mask_only": false,
+      "keyforms": {
+        "bindings": [],
+        "keyforms": [
+          {
+            "positions": [
+              [
+                150.0,
+                150.0
+              ],
+              [
+                170.0,
+                150.0
+              ],
+              [
+                170.0,
+                190.0
+              ],
+              [
+                150.0,
+                190.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          }
+        ]
+      }
+    }
+  ],
+  "glues": [],
+  "textures": [
+    {
+      "name": "white",
+      "width": 1,
+      "height": 1
+    }
+  ],
+  "hit_areas": [],
+  "pose": {
+    "fade_duration": 0.5,
+    "groups": []
+  },
+  "effects": {
+    "eye_blink": {
+      "parameters": [],
+      "interval": 4.0,
+      "closing": 0.1,
+      "closed": 0.05,
+      "opening": 0.15,
+      "seed": 0
+    },
+    "breath": {
+      "parameters": []
+    },
+    "lip_sync": {
+      "parameters": []
+    }
+  }
+}

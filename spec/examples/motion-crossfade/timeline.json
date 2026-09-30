@@ -1,0 +1,249 @@
+{
+  "model": "model.json",
+  "motions": {
+    "idle": "idle.motion.json",
+    "wave": "wave.motion.json"
+  },
+  "summary": "Priorities, cross-fades, loops and stopping. idle loops (1 s, fades 0.5 s) and fires events at 0 and 0.5 s of every loop, including all loops passed in one long frame (dt = 2.5). wave (normal, 1.5 s, fades 0.5 s) replaces it: idle fades out while wave fades in, blending with lerp over idle's result; Arm has its own fade_in of 0 and jumps to 1. A request with a lower priority (idle) is refused while wave plays and accepted once wave has finished; a force request replaces a normal motion; stop_motions fades out every motion. When a motion ends, its last applied values stay (they are part of the base values).",
+  "frames": [
+    {
+      "actions": [
+        {
+          "start_motion": "idle",
+          "priority": "idle",
+          "accepted": true
+        }
+      ],
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Angle": 2.5,
+          "Arm": 0
+        },
+        "events": [
+          "idle-start"
+        ]
+      }
+    },
+    {
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Angle": 10,
+          "Arm": 0
+        },
+        "events": [
+          "idle-half"
+        ]
+      }
+    },
+    {
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Angle": 5,
+          "Arm": 0
+        },
+        "events": []
+      }
+    },
+    {
+      "dt": 2.5,
+      "expect": {
+        "parameters": {
+          "Angle": 5,
+          "Arm": 0
+        },
+        "events": [
+          "idle-start",
+          "idle-half",
+          "idle-start",
+          "idle-half",
+          "idle-start"
+        ]
+      }
+    },
+    {
+      "actions": [
+        {
+          "start_motion": "wave",
+          "priority": "normal",
+          "accepted": true
+        }
+      ],
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Angle": -6.25,
+          "Arm": 1
+        },
+        "events": [
+          "idle-half"
+        ]
+      }
+    },
+    {
+      "actions": [
+        {
+          "start_motion": "idle",
+          "priority": "idle",
+          "accepted": false
+        }
+      ],
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Angle": -20,
+          "Arm": 1
+        },
+        "events": []
+      }
+    },
+    {
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Angle": -20,
+          "Arm": 1
+        },
+        "events": []
+      }
+    },
+    {
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Angle": -20,
+          "Arm": 1
+        },
+        "events": []
+      }
+    },
+    {
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Angle": -20,
+          "Arm": 1
+        },
+        "events": []
+      }
+    },
+    {
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Angle": -20,
+          "Arm": 1
+        },
+        "events": [
+          "wave-end"
+        ]
+      }
+    },
+    {
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Angle": -20,
+          "Arm": 1
+        },
+        "events": []
+      }
+    },
+    {
+      "actions": [
+        {
+          "start_motion": "idle",
+          "priority": "idle",
+          "accepted": true
+        }
+      ],
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Angle": -7.5,
+          "Arm": 1
+        },
+        "events": [
+          "idle-start"
+        ]
+      }
+    },
+    {
+      "actions": [
+        {
+          "start_motion": "wave",
+          "priority": "normal",
+          "accepted": true
+        }
+      ],
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Angle": -9.375,
+          "Arm": 1
+        },
+        "events": [
+          "idle-half"
+        ]
+      }
+    },
+    {
+      "actions": [
+        {
+          "start_motion": "idle",
+          "priority": "force",
+          "accepted": true
+        }
+      ],
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Angle": -4.8438,
+          "Arm": 1
+        },
+        "events": [
+          "idle-start"
+        ]
+      }
+    },
+    {
+      "actions": [
+        {
+          "stop_motions": true
+        }
+      ],
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Angle": 2.5781,
+          "Arm": 1
+        },
+        "events": [
+          "idle-half"
+        ]
+      }
+    },
+    {
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Angle": 2.5781,
+          "Arm": 1
+        },
+        "events": []
+      }
+    },
+    {
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Angle": 2.5781,
+          "Arm": 1
+        },
+        "events": []
+      }
+    }
+  ]
+}

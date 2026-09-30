@@ -500,7 +500,7 @@ export function validateModule(mod: M.Module): string[] {
     hit_areas: [],
     pose: { fade_duration: 0.5, groups: mod.pose.groups },
     effects: {
-      eye_blink: { parameters: [], interval: 4, closing: 0, closed: 0, opening: 0, seed: 0 },
+      eye_blink: { parameters: [], interval: 4, closing: 0, closed: 0, opening: 0, seed: 0n },
       breath: { parameters: [] },
       lip_sync: { parameters: [] },
     },

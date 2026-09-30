@@ -1,0 +1,45 @@
+{
+  "name": "wave",
+  "duration": 1.5,
+  "fade_in": 0.5,
+  "fade_out": 0.5,
+  "curves": [
+    {
+      "target": {
+        "kind": "parameter",
+        "id": "Angle"
+      },
+      "segments": [
+        {
+          "type": "start",
+          "p": {
+            "t": 0.0,
+            "v": -20.0
+          }
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "id": "Arm"
+      },
+      "segments": [
+        {
+          "type": "start",
+          "p": {
+            "t": 0.0,
+            "v": 1.0
+          }
+        }
+      ],
+      "fade_in": 0.0
+    }
+  ],
+  "events": [
+    {
+      "t": 1.5,
+      "value": "wave-end"
+    }
+  ]
+}

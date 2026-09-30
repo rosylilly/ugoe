@@ -76,9 +76,15 @@ function uint(bits: number) {
     if (typeof v !== "bigint") return c.fail(`expected an integer (u${bits})`);
     const i = v;
     if (i < 0n || i >= limit) c.fail(`integer out of range of u${bits}`);
-    // u64 の seed は 2^53 を超えうるが、評価には使わないので number で持つ
     return Number(i);
   };
+}
+
+/** `u64` をそのまま `bigint` で読む (2^53 を超えうる目パチの seed。spec/model.md#effects)。 */
+export function u64Exact(c: Ctx, v: MsgValue | undefined): bigint {
+  if (typeof v !== "bigint") return c.fail("expected an integer (u64)");
+  if (v < 0n || v >= 2n ** 64n) c.fail("integer out of range of u64");
+  return v;
 }
 
 export const u8 = uint(8);
@@ -396,7 +402,7 @@ const DEFAULT_EYE_BLINK: M.EyeBlink = {
   closing: Math.fround(0.1),
   closed: Math.fround(0.05),
   opening: Math.fround(0.15),
-  seed: 0,
+  seed: 0n,
 };
 
 function eyeBlink(c: Ctx, v: MsgValue | undefined): M.EyeBlink {
@@ -408,7 +414,7 @@ function eyeBlink(c: Ctx, v: MsgValue | undefined): M.EyeBlink {
     closing: opt(c, o, "closing", f32, d.closing),
     closed: opt(c, o, "closed", f32, d.closed),
     opening: opt(c, o, "opening", f32, d.opening),
-    seed: opt(c, o, "seed", u64, d.seed),
+    seed: opt(c, o, "seed", u64Exact, d.seed),
   };
 }
 

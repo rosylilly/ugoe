@@ -1,0 +1,48 @@
+{
+  "name": "idle",
+  "duration": 1.0,
+  "looping": true,
+  "fade_in": 0.5,
+  "fade_out": 0.5,
+  "curves": [
+    {
+      "target": {
+        "kind": "parameter",
+        "id": "Angle"
+      },
+      "segments": [
+        {
+          "type": "start",
+          "p": {
+            "t": 0.0,
+            "v": 0.0
+          }
+        },
+        {
+          "type": "linear",
+          "to": {
+            "t": 0.5,
+            "v": 10.0
+          }
+        },
+        {
+          "type": "linear",
+          "to": {
+            "t": 1.0,
+            "v": 0.0
+          }
+        }
+      ]
+    }
+  ],
+  "events": [
+    {
+      "t": 0.0,
+      "value": "idle-start"
+    },
+    {
+      "t": 0.5,
+      "value": "idle-half"
+    }
+  ]
+}

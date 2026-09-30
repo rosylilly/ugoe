@@ -1,0 +1,197 @@
+{
+  "name": "curves",
+  "duration": 2.0,
+  "curves": [
+    {
+      "target": {
+        "kind": "parameter",
+        "id": "Lin"
+      },
+      "segments": [
+        {
+          "type": "start",
+          "p": {
+            "t": 0.0,
+            "v": 0.0
+          }
+        },
+        {
+          "type": "linear",
+          "to": {
+            "t": 1.0,
+            "v": 10.0
+          }
+        },
+        {
+          "type": "linear",
+          "to": {
+            "t": 2.0,
+            "v": -10.0
+          }
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "id": "Bez"
+      },
+      "segments": [
+        {
+          "type": "start",
+          "p": {
+            "t": 0.0,
+            "v": 0.0
+          }
+        },
+        {
+          "type": "bezier",
+          "c1": {
+            "t": 0.5,
+            "v": 8.0
+          },
+          "c2": {
+            "t": 1.0,
+            "v": -4.0
+          },
+          "to": {
+            "t": 1.5,
+            "v": 8.0
+          }
+        },
+        {
+          "type": "bezier",
+          "c1": {
+            "t": 1.0,
+            "v": 0.0
+          },
+          "c2": {
+            "t": 3.0,
+            "v": 4.0
+          },
+          "to": {
+            "t": 2.0,
+            "v": -8.0
+          }
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "id": "Step"
+      },
+      "segments": [
+        {
+          "type": "start",
+          "p": {
+            "t": 0.0,
+            "v": 1.0
+          }
+        },
+        {
+          "type": "stepped",
+          "to": {
+            "t": 1.0,
+            "v": 5.0
+          }
+        },
+        {
+          "type": "stepped",
+          "to": {
+            "t": 2.0,
+            "v": 9.0
+          }
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "id": "Inv"
+      },
+      "segments": [
+        {
+          "type": "start",
+          "p": {
+            "t": 0.0,
+            "v": 1.0
+          }
+        },
+        {
+          "type": "inverse_stepped",
+          "to": {
+            "t": 1.0,
+            "v": 5.0
+          }
+        },
+        {
+          "type": "inverse_stepped",
+          "to": {
+            "t": 2.0,
+            "v": 9.0
+          }
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "id": "Clamp"
+      },
+      "segments": [
+        {
+          "type": "start",
+          "p": {
+            "t": 0.0,
+            "v": 0.0
+          }
+        },
+        {
+          "type": "linear",
+          "to": {
+            "t": 2.0,
+            "v": 2.0
+          }
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "id": "Nothing"
+      },
+      "segments": [
+        {
+          "type": "start",
+          "p": {
+            "t": 0.0,
+            "v": 1.0
+          }
+        }
+      ]
+    }
+  ],
+  "events": [
+    {
+      "t": 1.0,
+      "value": "one"
+    },
+    {
+      "t": 0.5,
+      "value": "b"
+    },
+    {
+      "t": 0.5,
+      "value": "a"
+    },
+    {
+      "t": 0.0,
+      "value": "start"
+    },
+    {
+      "t": 2.0,
+      "value": "end"
+    }
+  ]
+}

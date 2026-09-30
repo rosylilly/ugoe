@@ -3,7 +3,8 @@
 //
 // 計算は倍精度で行う (spec/evaluation.md#numbers-and-determinism は単精度以上を求め、
 // 結果が許容誤差に収まればよいとしている)。足し合わせの順は仕様の順に従う。
-// 動的な物理のオフセットとパーツの不透明度の上書きは扱わない (例のファイルでは使わない)。
+// 動的な物理のオフセット (spec/evaluation.md#dynamic-physics-offsets) とパーツの不透明度の上書き
+// (spec/evaluation.md#parts) は、呼び出し側 (frame.ts) が与える。
 
 import type * as M from "./types.ts";
 
@@ -322,11 +323,81 @@ function rotScale(thetaDeg: number, sx: number, sy: number): [number, number, nu
   return [c * sx, -s * sy, s * sx, c * sy];
 }
 
+/**
+ * ワールド変換のヤコビアン `[j00, j01, j10, j11]` (行ごと。列は局所の x と y での微分)
+ * (spec/physics.md#gravity-frame)。ワープでは格子の中はセルの双線形の写像の微分、
+ * 格子の外にはみ出した向きは `A_u` / `A_v`。
+ */
+export function jacobian(F: World, p: Vec2): [number, number, number, number] {
+  switch (F.kind) {
+    case "identity":
+      return [1, 0, 0, 1];
+    case "affine":
+      return [...F.m];
+    case "warp": {
+      const { cols, rows, P } = F;
+      const [u, v] = p;
+      const cu = clamp(u, 0, 1);
+      const cv = clamp(v, 0, 1);
+      const at = (x: number, y: number): Vec2 => P[x + (cols + 1) * y];
+      const gx = cu * cols;
+      const gy = cv * rows;
+      const i = clamp(Math.floor(gx), 0, cols - 1);
+      const j = clamp(Math.floor(gy), 0, rows - 1);
+      const fx = gx - i;
+      const fy = gy - j;
+      const C00 = P[0];
+      const C10 = P[cols];
+      const C01 = P[(cols + 1) * rows];
+      const C11 = P[cols + (cols + 1) * rows];
+      let du: Vec2;
+      if (u === cu) {
+        const a = at(i, j);
+        const b = at(i + 1, j);
+        const c = at(i, j + 1);
+        const d = at(i + 1, j + 1);
+        du = [
+          cols * ((b[0] - a[0]) * (1 - fy) + (d[0] - c[0]) * fy),
+          cols * ((b[1] - a[1]) * (1 - fy) + (d[1] - c[1]) * fy),
+        ];
+      } else {
+        du = [
+          (C10[0] - C00[0] + (C11[0] - C01[0])) * 0.5,
+          (C10[1] - C00[1] + (C11[1] - C01[1])) * 0.5,
+        ];
+      }
+      let dv: Vec2;
+      if (v === cv) {
+        const a = at(i, j);
+        const b = at(i + 1, j);
+        const c = at(i, j + 1);
+        const d = at(i + 1, j + 1);
+        dv = [
+          rows * (c[0] + (d[0] - c[0]) * fx - (a[0] + (b[0] - a[0]) * fx)),
+          rows * (c[1] + (d[1] - c[1]) * fx - (a[1] + (b[1] - a[1]) * fx)),
+        ];
+      } else {
+        dv = [
+          (C01[0] - C00[0] + (C11[0] - C10[0])) * 0.5,
+          (C01[1] - C00[1] + (C11[1] - C10[1])) * 0.5,
+        ];
+      }
+      return [du[0], dv[0], du[1], dv[1]];
+    }
+  }
+}
+
 /** 回転デフォーマのワールド変換 (spec/evaluation.md#rotation-deformers)。 */
-function rotationWorld(parent: World, k: RotationValues): World {
+function rotationWorld(parent: World, k: RotationValues, dAngle: number, dOrigin: Vec2): World {
+  const world = rotationWorldWithoutOffset(parent, k, dAngle);
+  if (world.kind !== "affine" || (dOrigin[0] === 0 && dOrigin[1] === 0)) return world;
+  return { ...world, t: [world.t[0] + dOrigin[0], world.t[1] + dOrigin[1]] };
+}
+
+function rotationWorldWithoutOffset(parent: World, k: RotationValues, dAngle: number): World {
   const sx = k.scale * (k.reflect_x ? -1 : 1);
   const sy = k.scale * (k.reflect_y ? -1 : 1);
-  const alpha = k.angle;
+  const alpha = k.angle + dAngle;
   switch (parent.kind) {
     case "identity":
       return { kind: "affine", m: rotScale(alpha, sx, sy), t: k.origin };
@@ -365,26 +436,49 @@ interface RotationValues {
 export interface DeformerState {
   world: World;
   opacity: number;
+  /** 回転デフォーマの補間した `origin` (親の局所座標。ブレンドシェイプの差分を含む)。 */
+  origin?: Vec2;
 }
 
-export function evaluate(model: M.Model, values: ParameterValues): EvaluationResult {
+/** 動的な物理のオフセット (spec/evaluation.md#dynamic-physics-offsets)。無いものは 0。 */
+export interface Offsets {
+  /** 回転デフォーマの角度 (度)。 */
+  angles: Map<string, number>;
+  /** 回転デフォーマの原点 (キャンバスのピクセル)。 */
+  origins: Map<string, Vec2>;
+  /** ワープデフォーマの制御点 (キャンバスのピクセル、制御点の順)。 */
+  points: Map<string, Vec2[]>;
+  /** メッシュの頂点 (キャンバスのピクセル、頂点の順)。 */
+  vertices: Map<string, Vec2[]>;
+}
+
+export const emptyOffsets = (): Offsets => ({
+  angles: new Map(),
+  origins: new Map(),
+  points: new Map(),
+  vertices: new Map(),
+});
+
+/** パーツの不透明度の上書き `(value, weight)` (spec/evaluation.md#parts)。 */
+export type PartOverrides = Map<string, { value: number; weight: number }>;
+
+export interface EvaluateOptions {
+  offsets?: Offsets;
+  partOverrides?: PartOverrides;
+}
+
+const addOffset = (p: Vec2, d: Vec2 | undefined): Vec2 => (d ? [p[0] + d[0], p[1] + d[1]] : p);
+
+/**
+ * デフォーマだけを評価する (動的な物理の 1 段目は `offsets` を与えない。
+ * spec/evaluation.md#dynamic-physics-offsets)。
+ */
+export function evaluateDeformers(
+  model: M.Model,
+  values: ParameterValues,
+  offsets: Offsets = emptyOffsets(),
+): Map<string, DeformerState> {
   const rest = parameterValues(model);
-
-  // 1. パーツ: 親から子へ (spec/evaluation.md#parts)
-  const partById = new Map(model.parts.map((p) => [p.id, p]));
-  const partOpacity = new Map<string, number>();
-  const partOpacityOf = (id: string): number => {
-    const cached = partOpacity.get(id);
-    if (cached !== undefined) return cached;
-    const p = partById.get(id);
-    if (!p) throw new Error(`unknown part ${id}`);
-    const own = interpolate(p.keyforms, partLayout, values, rest, false).linear[0];
-    const result = own * (p.parent === null ? 1 : partOpacityOf(p.parent));
-    partOpacity.set(id, result);
-    return result;
-  };
-
-  // 2. デフォーマ: 親から子へ (spec/evaluation.md#deformers)
   const deformerById = new Map(model.deformers.map((d) => [d.id, d]));
   const deformerState = new Map<string, DeformerState>();
   const deformerOf = (id: string): DeformerState => {
@@ -399,7 +493,8 @@ export function evaluate(model: M.Model, values: ParameterValues): EvaluationRes
       case "warp": {
         const { cols, rows } = d.kind;
         const ip = interpolate(d.kind.keyforms, warpLayout, values, rest);
-        const P = toPoints(ip.shape).map((q) => apply(parent.world, q));
+        const dp = offsets.points.get(d.id);
+        const P = toPoints(ip.shape).map((q, i) => addOffset(apply(parent.world, q), dp?.[i]));
         state = { world: { kind: "warp", cols, rows, P }, opacity: ip.linear[0] * parent.opacity };
         break;
       }
@@ -407,14 +502,13 @@ export function evaluate(model: M.Model, values: ParameterValues): EvaluationRes
         const ip = interpolate(d.kind.keyforms, rotationLayout, values, rest);
         const k = dominant(ip);
         const [ox, oy, angle, scale] = ip.shape;
-        const world = rotationWorld(parent.world, {
-          origin: [ox, oy],
-          angle,
-          scale,
-          reflect_x: k.reflect_x,
-          reflect_y: k.reflect_y,
-        });
-        state = { world, opacity: ip.linear[0] * parent.opacity };
+        const world = rotationWorld(
+          parent.world,
+          { origin: [ox, oy], angle, scale, reflect_x: k.reflect_x, reflect_y: k.reflect_y },
+          offsets.angles.get(d.id) ?? 0,
+          offsets.origins.get(d.id) ?? [0, 0],
+        );
+        state = { world, opacity: ip.linear[0] * parent.opacity, origin: [ox, oy] };
         break;
       }
       case "unknown":
@@ -426,13 +520,52 @@ export function evaluate(model: M.Model, values: ParameterValues): EvaluationRes
     return state;
   };
   for (const d of model.deformers) deformerOf(d.id);
+  return deformerState;
+}
+
+export function evaluate(
+  model: M.Model,
+  values: ParameterValues,
+  options: EvaluateOptions = {},
+): EvaluationResult {
+  const rest = parameterValues(model);
+  const offsets = options.offsets ?? emptyOffsets();
+  const overrides: PartOverrides = options.partOverrides ?? new Map();
+
+  // 1. パーツ: 親から子へ (spec/evaluation.md#parts)
+  const partById = new Map(model.parts.map((p) => [p.id, p]));
+  const partOpacity = new Map<string, number>();
+  const partOpacityOf = (id: string): number => {
+    const cached = partOpacity.get(id);
+    if (cached !== undefined) return cached;
+    const p = partById.get(id);
+    if (!p) throw new Error(`unknown part ${id}`);
+    let own = interpolate(p.keyforms, partLayout, values, rest, false).linear[0];
+    const o = overrides.get(id);
+    if (o) {
+      const w = clamp(o.weight, 0, 1);
+      own = own + (o.value - own) * w;
+    }
+    const result = own * (p.parent === null ? 1 : partOpacityOf(p.parent));
+    partOpacity.set(id, result);
+    return result;
+  };
+
+  // 2. デフォーマ: 親から子へ (spec/evaluation.md#deformers)
+  const deformerState = evaluateDeformers(model, values, offsets);
+  const deformerOf = (id: string): DeformerState => {
+    const state = deformerState.get(id);
+    if (!state) throw new Error(`unknown deformer ${id}`);
+    return state;
+  };
 
   // 3. メッシュ (spec/evaluation.md#meshes)
   const meshes: MeshResult[] = model.meshes.map((m) => {
     const ip = interpolate(m.keyforms, meshLayout, values, rest);
     const parent: DeformerState =
       m.parent === null ? { world: IDENTITY, opacity: 1 } : deformerOf(m.parent);
-    const positions = toPoints(ip.shape).map((p) => apply(parent.world, p));
+    const dv = offsets.vertices.get(m.id);
+    const positions = toPoints(ip.shape).map((p, i) => addOffset(apply(parent.world, p), dv?.[i]));
     const [own, draw_order, mr, mg, mb, sr, sg, sb, mask] = ip.linear;
     const opacity = own * partOpacityOf(m.part) * parent.opacity;
     return {

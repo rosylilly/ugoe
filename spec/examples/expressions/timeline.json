@@ -1,0 +1,138 @@
+{
+  "model": "model.json",
+  "expressions": {
+    "happy": "happy.expression.json",
+    "blush": "blush.expression.json",
+    "sad": "sad.expression.json"
+  },
+  "summary": "Expressions over host values. happy fades in over 0.5 s with the three operations (overwrite Smile with 1, add 0.5 to Brow, multiply Scale by 1.5); the host value of Brow (0.2, later -0.4) is the base value on which the addition is layered every frame without accumulating. blush is added on top without fades and is applied after happy. Setting sad stops both: happy fades out over its 0.5 s while sad fades in over 0.25 s; blush, without fade-out, is removed at once. Values are clamped to the parameters' ranges after every item.",
+  "frames": [
+    {
+      "actions": [
+        {
+          "set": {
+            "Brow": 0.2
+          }
+        },
+        {
+          "set_expression": "happy"
+        }
+      ],
+      "dt": 0.125,
+      "expect": {
+        "parameters": {
+          "Smile": 0.1464,
+          "Brow": 0.2732,
+          "Scale": 1.0732
+        }
+      }
+    },
+    {
+      "dt": 0.125,
+      "expect": {
+        "parameters": {
+          "Smile": 0.5,
+          "Brow": 0.45,
+          "Scale": 1.25
+        }
+      }
+    },
+    {
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Smile": 1,
+          "Brow": 0.7,
+          "Scale": 1.5
+        }
+      }
+    },
+    {
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Smile": 1,
+          "Brow": 0.7,
+          "Scale": 1.5
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "add_expression": "blush"
+        }
+      ],
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Smile": 1,
+          "Brow": 0.95,
+          "Scale": 0.75
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "set": {
+            "Brow": -0.4
+          }
+        }
+      ],
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Smile": 1,
+          "Brow": 0.35,
+          "Scale": 0.75
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "set_expression": "sad"
+        }
+      ],
+      "dt": 0.125,
+      "expect": {
+        "parameters": {
+          "Smile": 0.4268,
+          "Brow": -0.3732,
+          "Scale": 1.4268
+        }
+      }
+    },
+    {
+      "dt": 0.125,
+      "expect": {
+        "parameters": {
+          "Smile": 0,
+          "Brow": -0.95,
+          "Scale": 1.25
+        }
+      }
+    },
+    {
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Smile": 0,
+          "Brow": -1,
+          "Scale": 1
+        }
+      }
+    },
+    {
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Smile": 0,
+          "Brow": -1,
+          "Scale": 1
+        }
+      }
+    }
+  ]
+}

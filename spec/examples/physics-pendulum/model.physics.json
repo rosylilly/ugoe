@@ -1,0 +1,107 @@
+{
+  "gravity": [
+    0.0,
+    1.0
+  ],
+  "wind": [
+    0.0,
+    0.0
+  ],
+  "fps": 32.0,
+  "rigs": [
+    {
+      "id": "Hair",
+      "name": "Hair",
+      "inputs": [
+        {
+          "parameter": "X",
+          "source": "x",
+          "weight": 100.0
+        },
+        {
+          "parameter": "Angle",
+          "source": "angle",
+          "weight": 100.0
+        }
+      ],
+      "outputs": [
+        {
+          "target": {
+            "type": "parameter",
+            "id": "SwayAngle"
+          },
+          "particle": 1,
+          "source": "angle",
+          "scale": 1.0,
+          "weight": 100.0
+        },
+        {
+          "target": {
+            "type": "parameter",
+            "id": "Tip"
+          },
+          "particle": 2,
+          "source": "angle",
+          "scale": 1.0,
+          "weight": 100.0
+        },
+        {
+          "target": {
+            "type": "parameter",
+            "id": "SwayX"
+          },
+          "particle": 1,
+          "source": "x",
+          "scale": 1.0,
+          "weight": 50.0,
+          "reflect": true,
+          "blend": "add"
+        }
+      ],
+      "particles": [
+        {
+          "position": [
+            0.0,
+            0.0
+          ],
+          "mobility": 0.5,
+          "delay": 1.0,
+          "acceleration": 1.0,
+          "radius": 0.0
+        },
+        {
+          "position": [
+            0.0,
+            10.0
+          ],
+          "mobility": 0.5,
+          "delay": 1.0,
+          "acceleration": 1.0,
+          "radius": 10.0
+        },
+        {
+          "position": [
+            0.0,
+            20.0
+          ],
+          "mobility": 0.5,
+          "delay": 1.0,
+          "acceleration": 1.0,
+          "radius": 10.0
+        }
+      ],
+      "normalization": {
+        "position": {
+          "min": -10.0,
+          "default": 0.0,
+          "max": 10.0
+        },
+        "angle": {
+          "min": -30.0,
+          "default": 0.0,
+          "max": 30.0
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,153 @@
+{
+  "model": "model.json",
+  "physics": "model.physics.json",
+  "summary": "A three-particle pendulum at 32 Hz (so every dt is exact in binary) driven by X (root x) and Angle (root angle). Outputs: the angle of segment 1 against gravity (SwayAngle), the angle of segment 2 against segment 1 (Tip), and the reflected x of segment 1, added at weight 50 as deviation from rest (SwayX). Shows the rest pose of the first update, a step input, output interpolation between steps (dt of half a step), the limit of 8 steps per update, an additive output layered on a host value, and a reset.",
+  "frames": [
+    {
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "SwayAngle": 0,
+          "Tip": 0,
+          "SwayX": 0
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "set": {
+            "X": 6.0
+          }
+        }
+      ],
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "SwayAngle": 0,
+          "Tip": 0,
+          "SwayX": 0
+        }
+      }
+    },
+    {
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "SwayAngle": 28.8779,
+          "Tip": -23.3624,
+          "SwayX": 2.4147
+        }
+      }
+    },
+    {
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "SwayAngle": 25.1462,
+          "Tip": -16.8858,
+          "SwayX": 2.1246
+        }
+      }
+    },
+    {
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "SwayAngle": 21.3698,
+          "Tip": -10.7883,
+          "SwayX": 1.8219
+        }
+      }
+    },
+    {
+      "dt": 0.015625,
+      "expect": {
+        "parameters": {
+          "SwayAngle": 19.6151,
+          "Tip": -8.1909,
+          "SwayX": 1.6777
+        }
+      }
+    },
+    {
+      "dt": 0.015625,
+      "expect": {
+        "parameters": {
+          "SwayAngle": 17.8605,
+          "Tip": -5.5936,
+          "SwayX": 1.5335
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "set": {
+            "Angle": 30.0
+          }
+        }
+      ],
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "SwayAngle": 14.7512,
+          "Tip": -1.4774,
+          "SwayX": 1.2731
+        }
+      }
+    },
+    {
+      "dt": 0.5,
+      "expect": {
+        "parameters": {
+          "SwayAngle": 29.1128,
+          "Tip": -5.4058,
+          "SwayX": -0.0674
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "set": {
+            "SwayX": 5.0
+          }
+        }
+      ],
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "SwayAngle": 29.3296,
+          "Tip": -4.6237,
+          "SwayX": 4.9492
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "reset_physics": true
+        }
+      ],
+      "dt": 0.03125,
+      "expect": {
+        "parameters": {
+          "SwayAngle": 30,
+          "Tip": 0,
+          "SwayX": 5
+        }
+      }
+    },
+    {
+      "dt": 0.0,
+      "expect": {
+        "parameters": {
+          "SwayAngle": 30,
+          "Tip": 0,
+          "SwayX": 5
+        }
+      }
+    }
+  ]
+}
