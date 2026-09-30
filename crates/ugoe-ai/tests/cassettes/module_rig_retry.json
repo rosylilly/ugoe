@@ -1,0 +1,82 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "request-id": "req_011CT0517mod1"
+        },
+        "body": {
+          "id": "msg_01T0517mod1",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-opus-5-5",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "",
+              "signature": "EqQBCkYIBhgCIkB051701"
+            },
+            {
+              "type": "text",
+              "text": "{\"sway_scale\": 3.0, \"sway_length\": 0.8, \"reason\": \"The user wants the earrings to swing a lot, so the sway is tripled.\"}"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "stop_details": null,
+          "usage": {
+            "input_tokens": 1480,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 210
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "request-id": "req_011CT0517mod2"
+        },
+        "body": {
+          "id": "msg_01T0517mod2",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-opus-5-5",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "",
+              "signature": "EqQBCkYIBhgCIkB051702"
+            },
+            {
+              "type": "text",
+              "text": "{\"sway_scale\": 1.6, \"sway_length\": 0.8, \"reason\": \"The earrings are small and dangle freely, so they swing a lot (1.6, the most the rules allow for a clear effect) on a slightly shorter pendulum; the hat does not sway.\\nNot applied: add a parameter for the hat brim. A module cannot add parameters; add it in the base project and expose it in the slot.\"}"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "stop_details": null,
+          "usage": {
+            "input_tokens": 1480,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 210
+          }
+        }
+      }
+    }
+  ]
+}

@@ -6,6 +6,7 @@ use std::sync::OnceLock;
 use serde_json::json;
 use ugoe_ai::FakeProvider;
 use ugoe_ai::classify::Label;
+use ugoe_model::Model;
 
 use super::*;
 use crate::ai::tests::state;
@@ -215,11 +216,11 @@ fn ai_rig_notes_retries() {
     let fake = FakeProvider::new();
     fake.push(answer(5.0)).push(answer(0.7));
     let proposal = rig(
-        &model,
+        &Document::new(model),
         &labels,
         b"png",
         Some(&fake),
-        &RigGuidance::default(),
+        &RigAsk::default(),
     )
     .unwrap()
     .proposal;
@@ -263,11 +264,11 @@ fn an_openai_compatible_provider_classifies_and_rigs() {
     let image = overview(&tree).unwrap();
     let provider = replay("openai_auto_rig_retry.json");
     let proposal = rig(
-        &model,
+        &Document::new(model),
         &labels,
         &image,
         Some(&provider),
-        &RigGuidance::default(),
+        &RigAsk::default(),
     )
     .unwrap()
     .proposal;
@@ -509,7 +510,10 @@ fn a_regenerated_proposal_is_listed_after_the_original() {
             session.proposals.rigs[&original.id].clone(),
         )
     };
-    assert_eq!(previous.params, RigParams::default());
+    let PreviousAnswer::Model(ref model_answer) = previous else {
+        panic!("{previous:?}");
+    };
+    assert_eq!(model_answer.params, RigParams::default());
 
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../../crates/ugoe-ai/tests/cassettes/openai_rig_instructions.json");
@@ -520,18 +524,28 @@ fn a_regenerated_proposal_is_listed_after_the_original() {
         transport.clone(),
     );
     let text = "振り向きは控えめに。髪はもっと揺らして。";
-    let guidance = RigGuidance {
+    let guidance = RigAsk {
         instructions: Instructions::new(text).unwrap(),
         previous: Some(previous),
-        ..RigGuidance::default()
+        ..RigAsk::default()
     };
     let tree = read_tree(&bustup_path()).unwrap();
     let image = overview(&tree).unwrap();
-    let rigged = rig(&model, &labels, &image, Some(&provider), &guidance).unwrap();
+    let rigged = rig(
+        &Document::new(model),
+        &labels,
+        &image,
+        Some(&provider),
+        &guidance,
+    )
+    .unwrap();
     let sent = transport.received()[0].body.clone().unwrap().to_string();
     assert!(sent.contains("Your previous answer"), "{sent}");
     assert!(sent.contains("The template defaults"));
-    assert_eq!(rigged.previous.params.turn_angle_scale, 0.5);
+    let PreviousAnswer::Model(ref answer) = rigged.previous else {
+        panic!("{:?}", rigged.previous);
+    };
+    assert_eq!(answer.params.turn_angle_scale, 0.5);
     let origin = ProposalOrigin {
         revises: Some(original.id),
         instructions: Some(text.into()),
@@ -563,4 +577,178 @@ fn a_regenerated_proposal_is_listed_after_the_original() {
     assert!(document.undo());
     assert!(document.model().parameters.is_empty());
     assert_eq!(session.proposals.state(&document).proposals.len(), 2);
+}
+
+/// モジュールのプロジェクト: 本体 (見本の PSD にテンプレートのリグを組み、頭の回転に付くスロット `Headwear` を
+/// 足したもの) に、帽子と耳飾りの衣装を取り込んだ作業用のドキュメント。分類は名前の規則。
+fn module_state() -> (AppState, Vec<LayerLabel>) {
+    use std::sync::Arc;
+    use ugoe_editor_core::import::layer_tree_command;
+    use ugoe_editor_core::{ModuleBase, ModuleContext, PsdImportOptions};
+    use ugoe_model::module::{DrawOrderRange, ModuleRequirements};
+    use ugoe_model::{Slot, SlotId};
+    use ugoe_psd::{Layer, LayerNode};
+
+    let state = from_psd(None);
+    done(classify_in(&state, None, false, None).unwrap());
+    let view = done(propose_in(&state, false, None).unwrap());
+    let mut base = {
+        let mut document = state.document.lock().unwrap();
+        let mut session = state.project.lock().unwrap();
+        session
+            .proposals
+            .proposals
+            .adopt(&mut document, view.id, &[])
+            .unwrap();
+        document.detached()
+    };
+    base.apply(ugoe_editor_core::Command::AddSlot {
+        slot: Slot {
+            id: "Headwear".into(),
+            anchor: Some("HeadRotation".into()),
+            draw_order: DrawOrderRange {
+                min: 960.0,
+                max: 1000.0,
+            },
+            replaces: Vec::new(),
+            parameters: Vec::new(),
+            mask_sources: Vec::new(),
+            part: None,
+            colliders: Vec::new(),
+            pose_parts: Vec::new(),
+        },
+    })
+    .unwrap();
+    let context = Arc::new(
+        ModuleContext::new(
+            ModuleBase {
+                path: "/base.ugoeproj".into(),
+                model: base.model().clone(),
+                physics: base.physics().cloned(),
+                textures: base.textures().clone(),
+            },
+            &SlotId::from("Headwear"),
+            "Costume",
+            ModuleRequirements::default(),
+        )
+        .unwrap(),
+    );
+    let workspace = context
+        .workspace(&context.empty_module(), &Default::default())
+        .unwrap();
+    let mut doc = Document::with_textures(workspace.model, workspace.textures)
+        .with_physics(workspace.physics)
+        .with_module(context.clone());
+    let layer = |name: &str, x: f32, y: f32, w: u32, h: u32| {
+        LayerNode::Layer(Layer {
+            name: name.into(),
+            visible: true,
+            opacity: 1.0,
+            offset: ugoe_editor_core::space::Vec2::new(x, y),
+            width: w,
+            height: h,
+            rgba: [200, 60, 60, 255].repeat((w * h) as usize),
+            blend_mode: "norm".into(),
+            id: None,
+            fill_opacity: 1.0,
+            clipping: false,
+        })
+    };
+    // 顔 (見本の PSD では横 390〜640・縦 200〜520 ほど) の上の帽子と、左右の耳飾り。
+    let tree = ugoe_psd::LayerTree {
+        width: 1024,
+        height: 1024,
+        root: vec![
+            layer("hat", 370.0, 130.0, 290, 140),
+            layer("earring-r", 380.0, 420.0, 16, 90),
+            layer("earring-l", 630.0, 420.0, 16, 90),
+        ],
+        warnings: Vec::new(),
+    };
+    let mut import =
+        layer_tree_command(doc.model(), &tree, &PsdImportOptions::new("costume")).unwrap();
+    context.map_new_meshes(&mut import.command);
+    doc.apply(import.command).unwrap();
+    *state.document.lock().unwrap() = doc;
+    {
+        let mut session = state.project.lock().unwrap();
+        session.proposals = ProposalSession::default();
+        session.proposals.classification = Some(Classified {
+            psd: PathBuf::from("/costume.psd"),
+            labels: classify_by_name(&tree),
+            by_ai: false,
+            instructions: None,
+        });
+    }
+    (state, classify_by_name(&tree))
+}
+
+/// モジュールのプロジェクトでは、パラメータを足さないモジュール向けの提案を作り、採用できる (本体は変わらない)。
+/// 作り直しはモジュールの前の答えを送り、モデルの前の答えは断る。
+#[test]
+fn module_projects_get_module_rigs() {
+    let (state, labels) = module_state();
+    let view = done(propose_in(&state, false, None).unwrap());
+    assert!(view.title.contains("モジュール"), "{}", view.title);
+    assert!(view.title.ends_with("— rules"), "{}", view.title);
+    let parameters = state.document.lock().unwrap().model().parameters.clone();
+    {
+        let mut document = state.document.lock().unwrap();
+        let mut session = state.project.lock().unwrap();
+        session
+            .proposals
+            .proposals
+            .adopt(&mut document, view.id, &[])
+            .unwrap();
+    }
+    let document = state.document.lock().unwrap().detached();
+    assert_eq!(document.model().parameters, parameters);
+    let (module, _) = document.split_module().unwrap().unwrap();
+    assert!(!module.physics.rigs.is_empty());
+    assert!(
+        module
+            .deformers
+            .iter()
+            .any(|d| d.id.as_str() == "FollowFaceWarp")
+    );
+
+    // AI の経路 (作り直し): 前の答えを添える。
+    let (state, _) = module_state();
+    let original = done(propose_in(&state, false, None).unwrap());
+    let previous = state.project.lock().unwrap().proposals.rigs[&original.id].clone();
+    assert!(
+        matches!(previous, PreviousAnswer::Module(_)),
+        "{previous:?}"
+    );
+    let doc = state.document.lock().unwrap().detached();
+    let fake = FakeProvider::new();
+    fake.push(json!({ "sway_scale": 1.3, "sway_length": 1.0, "reason": "light earrings" }));
+    let ask = RigAsk {
+        instructions: Instructions::new("Swing the earrings more.").unwrap(),
+        previous: Some(previous),
+        ..RigAsk::default()
+    };
+    let rigged = rig(&doc, &labels, b"png", Some(&fake), &ask).unwrap();
+    assert!(rigged.proposal.title.ends_with("— AI"));
+    let calls = fake.calls();
+    assert!(
+        calls[0].0.prompt.contains("Your previous answer"),
+        "{}",
+        calls[0].0.prompt
+    );
+    assert!(calls[0].0.system.contains("cannot add parameters"));
+    let PreviousAnswer::Module(answer) = rigged.previous else {
+        panic!();
+    };
+    assert_eq!(answer.params.sway_scale, 1.3);
+
+    let wrong = RigAsk {
+        previous: Some(PreviousAnswer::Model(PreviousRig {
+            params: RigParams::default(),
+            reason: String::new(),
+        })),
+        ..RigAsk::default()
+    };
+    let err = rig(&doc, &labels, b"png", Some(&fake), &wrong).unwrap_err();
+    assert!(err.to_string().contains("another kind of project"), "{err}");
 }

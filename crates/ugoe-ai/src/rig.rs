@@ -44,7 +44,8 @@ use ugoe_model::physics::{
     PhysicsParticle, PhysicsRig, PhysicsSource, PhysicsTarget, VertexOwner,
 };
 use ugoe_model::{
-    DeformerId, DeformerKind, KeyformGrid, KeyformInterpolation, MeshId, Model, ParamId, standard,
+    DeformerId, DeformerKind, KeyformGrid, KeyformInterpolation, Mesh, MeshId, Model, ParamId,
+    standard,
 };
 use ugoe_runtime::{CompiledModel, ModelInstance};
 
@@ -68,6 +69,15 @@ pub struct MeshPart {
 /// `layer_path` の最後の名前と同じ名前のメッシュにラベルを付ける。同じ名前のメッシュやレイヤーが
 /// 複数あって決められないものは付けない。
 pub fn mesh_parts(model: &Model, layers: &[LayerLabel]) -> BTreeMap<MeshId, MeshPart> {
+    mesh_parts_where(model, layers, |_| true)
+}
+
+/// [`mesh_parts`] の、`keep` が真のメッシュだけを対応付ける版 (名前が同じかどうかも、その中で数える)。
+pub(crate) fn mesh_parts_where(
+    model: &Model,
+    layers: &[LayerLabel],
+    keep: impl Fn(&Mesh) -> bool,
+) -> BTreeMap<MeshId, MeshPart> {
     let mut by_name: BTreeMap<&str, Option<MeshPart>> = BTreeMap::new();
     for layer in layers {
         if let Some(name) = layer.layer_path.last() {
@@ -85,9 +95,10 @@ pub fn mesh_parts(model: &Model, layers: &[LayerLabel]) -> BTreeMap<MeshId, Mesh
                 .or_insert(Some(part));
         }
     }
+    let meshes: Vec<&Mesh> = model.meshes.iter().filter(|m| keep(m)).collect();
     let mut parts = BTreeMap::new();
-    for mesh in &model.meshes {
-        let same_name = model.meshes.iter().filter(|m| m.name == mesh.name).count();
+    for mesh in &meshes {
+        let same_name = meshes.iter().filter(|m| m.name == mesh.name).count();
         if same_name != 1 {
             continue;
         }
@@ -219,7 +230,7 @@ mod breath {
 }
 
 /// 髪揺れの振り子 (`crates/ugoe-cli/src/sample.rs` の見本の値を、顔の大きさに対する割合にしたもの)。
-mod hair {
+pub(crate) mod hair {
     use super::Label;
 
     #[derive(Debug, Clone, Copy)]
@@ -311,13 +322,13 @@ fn is_open_eye(label: Label) -> bool {
 
 /// キャンバス座標の軸に平行な矩形。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct Rect {
-    min: Vec2,
-    max: Vec2,
+pub(crate) struct Rect {
+    pub(crate) min: Vec2,
+    pub(crate) max: Vec2,
 }
 
 impl Rect {
-    fn of(points: &[Vec2]) -> Option<Self> {
+    pub(crate) fn of(points: &[Vec2]) -> Option<Self> {
         let first = *points.first()?;
         let (min, max) = points
             .iter()
@@ -325,23 +336,23 @@ impl Rect {
         Some(Self { min, max })
     }
 
-    fn union(self, other: Self) -> Self {
+    pub(crate) fn union(self, other: Self) -> Self {
         Self {
             min: self.min.min(other.min),
             max: self.max.max(other.max),
         }
     }
 
-    fn size(self) -> Vec2 {
+    pub(crate) fn size(self) -> Vec2 {
         self.max - self.min
     }
 
-    fn center(self) -> Vec2 {
+    pub(crate) fn center(self) -> Vec2 {
         (self.min + self.max) * 0.5
     }
 
     /// 点 `p` の、矩形の中での位置 (左上 (0,0)〜右下 (1,1))。
-    fn normalize(self, p: Vec2) -> Vec2 {
+    pub(crate) fn normalize(self, p: Vec2) -> Vec2 {
         let size = self.size().max(Vec2::splat(f32::EPSILON));
         (p - self.min) / size
     }
@@ -407,19 +418,7 @@ struct Layout {
 
 impl Layout {
     fn new(model: &Model, parts: &BTreeMap<MeshId, MeshPart>) -> Result<Self, AiError> {
-        let compiled = CompiledModel::compile(model.clone())
-            .map_err(|e| AiError::InvalidRequest(format!("the model cannot be evaluated: {e}")))?;
-        let mut instance = ModelInstance::new(compiled);
-        instance.update();
-        let mut bounds = BTreeMap::new();
-        for mesh in &model.meshes {
-            let Some(index) = instance.compiled().mesh_index(mesh.id.as_str()) else {
-                continue;
-            };
-            if let Some(rect) = Rect::of(&instance.drawables()[index].positions) {
-                bounds.insert(mesh.id.clone(), rect);
-            }
-        }
+        let bounds = mesh_bounds(model)?;
         // 取り込みの順 (描画順) に並べる。
         let labeled: Vec<(&MeshId, MeshPart)> = model
             .meshes
@@ -570,7 +569,25 @@ impl Layout {
     }
 }
 
-fn mesh_name<'a>(model: &'a Model, id: &'a MeshId) -> &'a str {
+/// メッシュの基準の姿 (すべてのパラメータが既定値) の外接矩形 (キャンバス座標)。
+pub(crate) fn mesh_bounds(model: &Model) -> Result<BTreeMap<MeshId, Rect>, AiError> {
+    let compiled = CompiledModel::compile(model.clone())
+        .map_err(|e| AiError::InvalidRequest(format!("the model cannot be evaluated: {e}")))?;
+    let mut instance = ModelInstance::new(compiled);
+    instance.update();
+    let mut bounds = BTreeMap::new();
+    for mesh in &model.meshes {
+        let Some(index) = instance.compiled().mesh_index(mesh.id.as_str()) else {
+            continue;
+        };
+        if let Some(rect) = Rect::of(&instance.drawables()[index].positions) {
+            bounds.insert(mesh.id.clone(), rect);
+        }
+    }
+    Ok(bounds)
+}
+
+pub(crate) fn mesh_name<'a>(model: &'a Model, id: &'a MeshId) -> &'a str {
     model
         .meshes
         .iter()
@@ -673,16 +690,16 @@ fn dome_depth(model: &Model, face: Rect) -> Result<DepthMap, AiError> {
 }
 
 /// 組み立て中のドキュメントと、要素の探索・形の編集の補助 (`crates/ugoe-cli/src/sample.rs` の見本と同じ方法)。
-struct Rig {
-    b: Builder,
+pub(crate) struct Rig {
+    pub(crate) b: Builder,
 }
 
 impl Rig {
-    fn model(&self) -> &Model {
+    pub(crate) fn model(&self) -> &Model {
         self.b.doc.model()
     }
 
-    fn apply(&mut self, command: Command) -> Result<(), AiError> {
+    pub(crate) fn apply(&mut self, command: Command) -> Result<(), AiError> {
         self.b.apply(command)
     }
 
@@ -690,7 +707,7 @@ impl Rig {
         new_deformer_id(self.model(), base)
     }
 
-    fn create_warp(
+    pub(crate) fn create_warp(
         &mut self,
         base: &str,
         name: &str,
@@ -700,6 +717,19 @@ impl Rig {
         parent: Option<&DeformerId>,
     ) -> Result<DeformerId, AiError> {
         let id = self.new_deformer(base);
+        self.create_warp_as(id, name, children, rows, cols, parent)
+    }
+
+    /// [`Rig::create_warp`] の、ID を決めて作る版。
+    pub(crate) fn create_warp_as(
+        &mut self,
+        id: DeformerId,
+        name: &str,
+        children: &[MeshId],
+        rows: u16,
+        cols: u16,
+        parent: Option<&DeformerId>,
+    ) -> Result<DeformerId, AiError> {
         self.apply(Command::CreateWarpDeformer {
             id: Some(id.clone()),
             name: name.to_owned(),
@@ -713,7 +743,7 @@ impl Rig {
     }
 
     /// 要素の格子のセル `cell` (書かない軸は既定値) の点 (親の座標系)・キーフォームと、すべての軸を書いたセル。
-    fn keyform_at(
+    pub(crate) fn keyform_at(
         &self,
         target: &KeyformTarget,
         cell: &[(&str, f32)],
@@ -789,7 +819,7 @@ impl Rig {
     }
 
     /// 要素の格子の `parameter` の軸にキー `keys` を加える (既定値のキーを先に。あるキーは飛ばす)。
-    fn add_keys(
+    pub(crate) fn add_keys(
         &mut self,
         target: &KeyformTarget,
         parameter: &str,
@@ -844,7 +874,7 @@ impl Rig {
     }
 
     /// 格子のセル `cell` (書かない軸は既定値) を、そのセルの今のキーフォームを `edit` で変えたものにする。
-    fn set_cell(
+    pub(crate) fn set_cell(
         &mut self,
         target: &KeyformTarget,
         cell: &[(&str, f32)],
@@ -1134,7 +1164,7 @@ impl Rig {
     }
 
     /// 要素の基準の姿の点 (キャンバス座標)。
-    fn canvas_points(&self, target: &KeyformTarget) -> Result<Vec<Vec2>, AiError> {
+    pub(crate) fn canvas_points(&self, target: &KeyformTarget) -> Result<Vec<Vec2>, AiError> {
         let (local, ..) = self.keyform_at(target, &[])?;
         local_to_canvas(self.model(), target, &ParameterValues::new(), &local)
             .map_err(|e| template(format!("{target}: {e}")))
@@ -1225,7 +1255,8 @@ impl Rig {
                 &format!("Hair{kind}{side}"),
                 format!("Hair {kind} {side}").trim_end(),
                 head,
-                face_warp,
+                &KeyformTarget::Deformer(face_warp.clone()),
+                standard::ANGLE_X,
                 root,
                 &lengths,
                 sway,
@@ -1244,15 +1275,17 @@ impl Rig {
         Ok(())
     }
 
-    /// 真下に垂れる振り子 (根元 `root` はキャンバス座標) の動的物理のリグ。根元は `head` に取り付け、
-    /// 先の粒子の横の変位を `owner` の頂点に `weights` の重みで足す。
+    /// 真下に垂れる振り子 (根元 `root` はキャンバス座標) の動的物理のリグ。根元は `frame` に取り付け、
+    /// 先の粒子の横の変位を `owner` の頂点に `weights` の重みで足す。`space` は親が `frame` の要素
+    /// (根元の位置をその親の座標系で書く)。入力は `input` の値で根元を横に `±shift` だけ動かす。
     #[allow(clippy::too_many_arguments)]
-    fn pendulum(
+    pub(crate) fn pendulum(
         &self,
         id: &str,
         name: &str,
-        head: &DeformerId,
-        face_warp: &DeformerId,
+        frame: &DeformerId,
+        space: &KeyformTarget,
+        input: &str,
         root: Vec2,
         lengths: &[f32],
         sway: hair::Sway,
@@ -1260,10 +1293,10 @@ impl Rig {
         owner: VertexOwner,
         weights: Vec<f32>,
     ) -> Result<PhysicsRig, AiError> {
-        // 根元の位置は頭の回転デフォーマの局所座標で書く (その子の顔のワープの親の座標系)。
+        // 根元の位置は `frame` の局所座標で書く (リグの髪なら頭の回転デフォーマ。その子の顔のワープの親の座標系)。
         let local = canvas_to_local(
             self.model(),
-            &KeyformTarget::Deformer(face_warp.clone()),
+            space,
             &ParameterValues::new(),
             &[root],
             &[root],
@@ -1293,7 +1326,7 @@ impl Rig {
             id: id.to_owned(),
             name: name.to_owned(),
             inputs: vec![PhysicsInput {
-                parameter: ParamId::new(standard::ANGLE_X),
+                parameter: ParamId::new(input),
                 source: PhysicsSource::X,
                 weight: 100.0,
                 reflect: false,
@@ -1321,7 +1354,7 @@ impl Rig {
                 },
             },
             colliders: Vec::new(),
-            frame: Some(head.clone()),
+            frame: Some(frame.clone()),
         })
     }
 
@@ -1380,7 +1413,7 @@ impl Rig {
 }
 
 /// テンプレートの内部の失敗 (座標変換が解けない、など)。
-fn template(message: String) -> AiError {
+pub(crate) fn template(message: String) -> AiError {
     AiError::InvalidProposal(message)
 }
 

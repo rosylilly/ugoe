@@ -22,6 +22,7 @@ AI プロバイダの抽象 (`Provider`) と、自動リギングのパイプラ
 - `turn.rs`: 深度推定による振り向きリグの提案 (`propose_depth_turn`・`plan_turn`・`label_depth`・`mesh_labels`)
 - `instructions.rs`: 利用者の注文 (`Instructions`) をプロンプトに区切って入れる書き方と、反映できない注文 (`Not applied:`) の取り出し (`split_unapplied`)。分類・リグの `*_guided` が使う (`docs/ai-integration.md#利用者の注文`)
 - `rig.rs`: ラベルのテンプレートによる自動リギングの提案 (`propose_rig`)、テンプレートで決められない値 (`RigParams`) を AI に決めさせ、検証エラーを添えて問い直す `propose_rig_with_ai`、分類の結果をメッシュに対応付ける `mesh_parts`
+- `module_rig.rs`: 着せ替えのモジュールのプロジェクト向けの自動リギング (`propose_module_rig`・`propose_module_rig_with_ai_guided`)。パラメータを足さず、衣装を本体のワープに追従させ (`Follow…` のワープのキーフォームを本体の変形から推定)、揺れるラベルの衣装に振り子の物理を付ける (`docs/ai-integration.md#モジュールの自動リギング`)
 - `normal.rs`: 法線マップの生成の提案。アルファの形から (`propose_bulge_normal_maps`、決定的な計算は `ugoe_rigging::bulge_normal_map`) と、深度推定から (`propose_depth_normal_maps`・`plan_depth_normal_maps`)。テクスチャごとの設定は `NormalMapOptions::per_texture`
 - `examples/auto_rig.rs`: PSD を取り込み、名前の規則で分類してテンプレートの提案を適用したバンドルを書き出す (`ugoe render` で目視確認する)
 - `examples/depth_turn.rs`: 録画した深度マップから提案を作り、適用したモデルを書き出す (`ugoe render` で目視確認する)
@@ -45,3 +46,4 @@ AI プロバイダの抽象 (`Provider`) と、自動リギングのパイプラ
 - T0505 (`docs/tasks/T0505-depth-turn-rig.md`)
 - T0509 (`docs/tasks/T0509-claude-provider.md`)
 - T0506 (`docs/tasks/T0506-normal-map-gen.md`)
+- T0517 (`docs/tasks/T0517-ai-module-proposals.md`)

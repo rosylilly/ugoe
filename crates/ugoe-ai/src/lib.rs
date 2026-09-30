@@ -14,6 +14,7 @@ pub mod claude;
 pub mod depth;
 mod fake;
 pub mod instructions;
+pub mod module_rig;
 pub mod normal;
 pub mod openai;
 pub mod rig;

@@ -47,13 +47,14 @@ export const MODULE_CAN: readonly string[] = [
   "Import PSD (draw order goes into the slot's range), auto mesh, mesh editing",
   "Keyforms with standard parameters and the ones the slot exposes; inference and mirroring",
   "Physics rigs and colliders of the module, normal maps of its textures",
+  "AI rig proposals for the costume: it follows the base deformers and swaying parts get physics, without new parameters",
   "Move any base parameter with the sliders to check the look",
 ];
 
 /** モジュールのプロジェクトでできないこと (本体のプロジェクトで直すもの・まだ無いもの)。 */
 export const MODULE_CANNOT: readonly string[] = [
   "Change the base: its elements, parameters, avatar profile, slots, effects, lighting and physics settings",
-  "Add parameters (AI rig proposals that add parameters are rejected)",
+  "Add parameters (add them in the base project and expose them in the slot)",
   "Motions and expressions",
   "Pose groups (there is no command for them yet)",
 ];

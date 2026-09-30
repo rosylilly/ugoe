@@ -6,6 +6,9 @@
 //! - 外部に送るもの (`use_ai`) は必ず [`crate::ai::prepare_requests`] を通し、同意がなければ送らずに
 //!   `AiReply::NeedsConsent` を返す。AI を使わない経路 (名前の規則とテンプレートの既定値) は何も送らない。
 //! - 提案は採用するまでドキュメントを変えない。プレビューは複製に適用したもの ([`ProposalSession`] が持つ)。
+//! - モジュールのプロジェクト (ADR 0024) では、リグの提案は `ugoe_ai::module_rig` (パラメータを足さず、本体の変形に
+//!   追従させ、揺れる衣装に物理を付ける) を使う。分類・送る前の確認・作り直しの流れはモデルと同じ
+//!   (`docs/editor.md#モジュールのプロジェクトでの-ai-の提案`)。
 //! - 利用者の注文 (`instructions`) は AI を使うときだけ送る。作り直し ([`regenerate_rig_proposal`]) は前の答え
 //!   (値と理由) と注文を送って新しい提案を作り、前の提案の後ろに並べる (置き換えない)。注文はプロジェクトに
 //!   保存しない (`docs/editor.md#ai-への注文と作り直し`)。
@@ -21,13 +24,16 @@ use ugoe_ai::classify::{
     classify_by_name, classify_layers_guided, overview_png,
 };
 use ugoe_ai::instructions::Instructions;
+use ugoe_ai::module_rig::{
+    ModuleRigGuidance, ModuleRigParams, PreviousModuleRig, module_mesh_parts,
+    module_rig_request_guided, propose_module_rig, propose_module_rig_with_ai_guided,
+};
 use ugoe_ai::rig::{
     DEFAULT_MAX_ATTEMPTS, PreviousRig, RigGuidance, RigOptions, RigParams, mesh_parts, propose_rig,
     propose_rig_with_ai_guided, rig_request_guided,
 };
-use ugoe_ai::{AiError, Proposal, Provider};
+use ugoe_ai::{AiError, Proposal, Provider, ProviderRequest};
 use ugoe_editor_core::{ApplyReport, Document, ProposalOrigin, ProposalView, Proposals};
-use ugoe_model::Model;
 use ugoe_psd::LayerTree;
 
 use crate::AppState;
@@ -48,7 +54,7 @@ pub struct ProposalSession {
     /// 最後にプレビューした提案を適用した複製 (`get_proposal_preview_bundle` で渡す)。
     preview: Option<Document>,
     /// このパネルで作ったリグの提案の値と理由 (提案の番号ごと。作り直しで前の答えとして送る)。
-    rigs: HashMap<u32, PreviousRig>,
+    rigs: HashMap<u32, PreviousAnswer>,
 }
 
 #[derive(Debug, Clone)]
@@ -195,23 +201,97 @@ fn overview(tree: &LayerTree) -> Result<Vec<u8>, AiError> {
     overview_png(tree, ClassifyOptions::default().overview_max_side)
 }
 
+/// 作り直しで AI に送る前の答え。モデルとモジュールのプロジェクトで AI が決める値が違う。
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum PreviousAnswer {
+    Model(PreviousRig),
+    Module(PreviousModuleRig),
+}
+
+/// リグの提案に添える、利用者の注文と前の答え (作り直し)。
+#[derive(Debug, Clone, Default)]
+pub(crate) struct RigAsk {
+    pub instructions: Option<Instructions>,
+    pub previous: Option<PreviousAnswer>,
+    /// 同じ注文で AI がレイヤーを分類した (ラベルに関わる注文は分類で反映した)。
+    pub labels_follow_instructions: bool,
+}
+
+/// 前の答えがモデルとモジュールで食い違う (プロジェクトの種類が変わった) ときの断り。
+const OTHER_KIND: &str =
+    "the proposal was made for another kind of project, so it cannot be regenerated";
+
+impl RigAsk {
+    fn model(&self) -> Result<RigGuidance, AiError> {
+        let previous = match &self.previous {
+            None => None,
+            Some(PreviousAnswer::Model(p)) => Some(p.clone()),
+            Some(PreviousAnswer::Module(_)) => {
+                return Err(AiError::InvalidRequest(OTHER_KIND.into()));
+            }
+        };
+        Ok(RigGuidance {
+            instructions: self.instructions.clone(),
+            previous,
+            labels_follow_instructions: self.labels_follow_instructions,
+        })
+    }
+
+    fn module(&self) -> Result<ModuleRigGuidance, AiError> {
+        let previous = match &self.previous {
+            None => None,
+            Some(PreviousAnswer::Module(p)) => Some(p.clone()),
+            Some(PreviousAnswer::Model(_)) => {
+                return Err(AiError::InvalidRequest(OTHER_KIND.into()));
+            }
+        };
+        Ok(ModuleRigGuidance {
+            instructions: self.instructions.clone(),
+            previous,
+            labels_follow_instructions: self.labels_follow_instructions,
+        })
+    }
+}
+
 /// [`rig`] の結果: 提案と、作り直しに使う値と理由、反映できなかった注文。
 #[derive(Debug)]
 pub(crate) struct Rigged {
     pub proposal: Proposal,
-    pub previous: PreviousRig,
+    pub previous: PreviousAnswer,
     pub unapplied: Vec<String>,
 }
 
+/// AI を使ってリグを提案するときに最初に送るリクエスト (送る前の確認に使う)。
+fn rig_request(
+    document: &Document,
+    labels: &[LayerLabel],
+    image: &[u8],
+    ask: &RigAsk,
+) -> Result<ProviderRequest, AiError> {
+    if document.module().is_some() {
+        let parts = module_mesh_parts(document, labels);
+        module_rig_request_guided(document, &parts, image, &[], &ask.module()?)
+    } else {
+        let parts = mesh_parts(document.model(), labels);
+        rig_request_guided(document.model(), &parts, image, &[], &ask.model()?)
+    }
+}
+
 /// リグを提案する。`provider` があればテンプレートで決められない値を AI に決めさせ (注文と前の答えを添えて)、
-/// なければ既定値。
+/// なければ既定値。モジュールのプロジェクトならモジュール向けの提案 ([`module_rig`])。
 pub(crate) fn rig(
-    model: &Model,
+    document: &Document,
     labels: &[LayerLabel],
     image: &[u8],
     provider: Option<&dyn Provider>,
-    guidance: &RigGuidance,
+    ask: &RigAsk,
 ) -> Result<Rigged, AiError> {
+    if document.module().is_some() {
+        return module_rig(document, labels, image, provider, ask);
+    }
+    let model = document.model();
+    let guidance = ask.model()?;
+    let guidance = &guidance;
     let parts = mesh_parts(model, labels);
     let options = RigOptions::default();
     let (mut proposal, previous, unapplied) = match provider {
@@ -237,7 +317,7 @@ pub(crate) fn rig(
                 params: rig.params,
                 reason: rig.reason,
             };
-            (proposal, previous, rig.unapplied)
+            (proposal, PreviousAnswer::Model(previous), rig.unapplied)
         }
         None => {
             let params = RigParams::default();
@@ -245,7 +325,63 @@ pub(crate) fn rig(
             proposal.title.push_str(" — rules");
             let previous = PreviousRig {
                 params,
-                reason: "The template defaults (no AI was used).".into(),
+                reason: TEMPLATE_DEFAULTS.into(),
+            };
+            (proposal, PreviousAnswer::Model(previous), Vec::new())
+        }
+    };
+    proposal.rationale.push_str(&labels_note(labels));
+    Ok(Rigged {
+        proposal,
+        previous,
+        unapplied,
+    })
+}
+
+/// AI を使わなかった提案の、前の答えの理由。
+const TEMPLATE_DEFAULTS: &str = "The template defaults (no AI was used).";
+
+/// モジュールのプロジェクトのリグ (`ugoe_ai::module_rig`): パラメータを足さず、衣装を本体の変形に追従させ、
+/// 揺れるラベルの衣装に物理を付ける。
+fn module_rig(
+    document: &Document,
+    labels: &[LayerLabel],
+    image: &[u8],
+    provider: Option<&dyn Provider>,
+    ask: &RigAsk,
+) -> Result<Rigged, AiError> {
+    let parts = module_mesh_parts(document, labels);
+    let (mut proposal, previous, unapplied) = match provider {
+        Some(p) => {
+            let rig = propose_module_rig_with_ai_guided(
+                p,
+                document,
+                &parts,
+                image,
+                DEFAULT_MAX_ATTEMPTS,
+                &ask.module()?,
+            )?;
+            let mut proposal = rig.proposal;
+            if !rig.rejected.is_empty() {
+                proposal.rationale.push_str(&format!(
+                    "\nAI の答えのうち {} 回分は範囲の外か検証を通らなかったので問い直した",
+                    rig.rejected.len()
+                ));
+            }
+            proposal.title.push_str(" — AI");
+            let previous = PreviousModuleRig {
+                params: rig.params,
+                reason: rig.reason,
+            };
+            (proposal, previous, rig.unapplied)
+        }
+        None => {
+            let params = ModuleRigParams::default();
+            let mut proposal = propose_module_rig(document, &parts, &params)?;
+            proposal.title.push_str(" — rules");
+            let previous = PreviousModuleRig {
+                params,
+                reason: TEMPLATE_DEFAULTS.into(),
             };
             (proposal, previous, Vec::new())
         }
@@ -253,7 +389,7 @@ pub(crate) fn rig(
     proposal.rationale.push_str(&labels_note(labels));
     Ok(Rigged {
         proposal,
-        previous,
+        previous: PreviousAnswer::Module(previous),
         unapplied,
     })
 }
@@ -420,15 +556,15 @@ pub(crate) fn propose_guided_in(
     instructions_text: Option<&str>,
     consent: Option<&ConsentAnswer>,
 ) -> Result<AiReply<ProposalView>, String> {
-    let guidance = if use_ai {
-        RigGuidance {
+    let ask = if use_ai {
+        RigAsk {
             instructions: instructions(instructions_text)?,
-            ..RigGuidance::default()
+            ..RigAsk::default()
         }
     } else {
-        RigGuidance::default()
+        RigAsk::default()
     };
-    make_rig(state, use_ai, guidance, None, consent)
+    make_rig(state, use_ai, ask, None, consent)
 }
 
 /// [`regenerate_rig_proposal`] の本体。
@@ -446,25 +582,26 @@ pub(crate) fn regenerate_in(
         .ok_or_else(|| {
             format!("proposal {id} was not made in this panel, so it cannot be regenerated")
         })?;
-    let guidance = RigGuidance {
+    let ask = RigAsk {
         instructions: instructions(instructions_text)?,
         previous: Some(previous),
-        ..RigGuidance::default()
+        ..RigAsk::default()
     };
-    make_rig(state, true, guidance, Some(id), consent)
+    make_rig(state, true, ask, Some(id), consent)
 }
 
 /// 今の分類からリグを提案して一覧に置く。`revises` は作り直した元の提案。
 fn make_rig(
     state: &AppState,
     use_ai: bool,
-    mut guidance: RigGuidance,
+    mut guidance: RigAsk,
     revises: Option<u32>,
     consent: Option<&ConsentAnswer>,
 ) -> Result<AiReply<ProposalView>, String> {
-    let (model, base) = {
+    // 提案を作る間はロックを持たない (AI の応答を待つ)。複製は履歴を持たず、モジュールの情報は持つ。
+    let (document, base) = {
         let document = lock_document(state)?;
-        (document.model().clone(), document.state_id())
+        (document.detached(), document.state_id())
     };
     let classified = lock_project(state)?
         .proposals
@@ -478,8 +615,7 @@ fn make_rig(
     let rigged = if use_ai {
         let tree = read_tree(&classified.psd)?;
         let image = overview(&tree).map_err(|e| e.to_string())?;
-        let parts = mesh_parts(&model, &classified.labels);
-        let request = rig_request_guided(&model, &parts, &image, &[], &guidance)
+        let request = rig_request(&document, &classified.labels, &image, &guidance)
             .map_err(|e| e.to_string())?;
         let retries = DEFAULT_MAX_ATTEMPTS - 1;
         let chars = instruction_chars(&guidance.instructions);
@@ -495,7 +631,7 @@ fn make_rig(
                 return Ok(AiReply::NeedsConsent { disclosure });
             }
             Prepared::Ready(provider) => rig(
-                &model,
+                &document,
                 &classified.labels,
                 &image,
                 Some(provider.as_ref()),
@@ -503,7 +639,7 @@ fn make_rig(
             ),
         }
     } else {
-        rig(&model, &classified.labels, &[], None, &guidance)
+        rig(&document, &classified.labels, &[], None, &guidance)
     }
     .map_err(|e| e.to_string())?;
     let origin = ProposalOrigin {

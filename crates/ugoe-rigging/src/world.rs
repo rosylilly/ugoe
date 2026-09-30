@@ -163,8 +163,36 @@ fn ancestors_only(model: &Model, parent: &DeformerId) -> Model {
     }
     out.meshes.clear();
     out.glues.clear();
+    // スロットは消したデフォーマを取り付け先にしていることがある (着せ替えの本体・モジュールの作業用のモデル)。
+    // アバタープロファイルは、消したスロットと当たり判定を名前で参照する。
+    out.slots.clear();
+    out.avatar = None;
     out.hit_areas.clear();
     out.pose = Default::default();
     out.effects = Default::default();
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use ugoe_model::fixtures::dress_up_base;
+
+    use super::*;
+
+    /// 親の祖先でないデフォーマを取り付け先にするスロットがあっても、写像を作れる。
+    #[test]
+    fn slots_on_other_deformers_do_not_break_the_world() {
+        let mut model = dress_up_base();
+        assert!(model.slots.iter().any(|s| s.anchor == Some("Torso".into())));
+        model.avatar = Some(ugoe_model::AvatarProfile {
+            slots: model.slots.iter().map(|s| s.id.to_string()).collect(),
+            ..Default::default()
+        });
+        let world = ParentWorld::new(&model, Some(&"Head".into())).unwrap();
+        let p = Vec2::new(10.0, -20.0);
+        let back = world
+            .from_canvas(&world.to_canvas(&[p]), &[Vec2::ZERO])
+            .unwrap();
+        assert!((back[0] - p).length() < 1e-3);
+    }
 }

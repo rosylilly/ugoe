@@ -316,8 +316,14 @@ pub(crate) struct Builder {
 
 impl Builder {
     pub(crate) fn new(model: &Model) -> Self {
+        Self::from_document(&Document::new(model.clone()))
+    }
+
+    /// `doc` の複製 (履歴なし) に適用しながら集める。モジュールのプロジェクトなら、本体を変える
+    /// コマンドやモジュールとして表せないコマンドは、適用のときに拒否される。
+    pub(crate) fn from_document(doc: &Document) -> Self {
         Self {
-            doc: Document::new(model.clone()),
+            doc: doc.detached(),
             commands: Vec::new(),
         }
     }

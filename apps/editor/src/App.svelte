@@ -250,7 +250,12 @@ $effect(() => {
       </div>
       {#if doc.error}<p class="error">{doc.error}</p>{/if}
       {#if proposals.active}
-        <ProposalsPanel view={proposals} {viewport} onopensettings={() => settings?.open()} />
+        <ProposalsPanel
+          view={proposals}
+          {viewport}
+          module={doc.module !== null}
+          onopensettings={() => settings?.open()}
+        />
       {:else if verify.active}
         <VerifyPanel {doc} {selection} {viewport} view={verify} {physics} />
       {:else if physics.active}
@@ -386,6 +391,8 @@ $effect(() => {
     top: 0;
     z-index: 1;
     display: flex;
+    /* タブが列の幅に収まらなければ折り返す (横にはみ出すと列ごと横に送られて本文の左が切れる)。 */
+    flex-wrap: wrap;
     gap: 4px;
     padding: 8px 0 4px;
     margin-bottom: 4px;

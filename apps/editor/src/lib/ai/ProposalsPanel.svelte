@@ -2,6 +2,8 @@
   AI の提案のパネル (docs/editor.md#ai-の提案)。右の列の「AI」タブ。
   - 提案の元にする PSD (「New from PSD…」「Import PSD…」で取り込んだもの。「Choose PSD…」で替えられる) の
     レイヤーを分類し (「Classify layers」)、分類からリグ (顔の角度・目・口) を提案する (「Propose rig」)。
+    モジュールのプロジェクト (`module`) では、衣装を本体の変形に追従させ、揺れるラベルの衣装に物理を付ける提案になる
+    (パラメータを足さない。docs/editor.md#モジュールのプロジェクトでの-ai-の提案)。
     「Use <プロバイダ>」なら選んだ AI のプロバイダに画像を送る (外部に出るなら送る前に確認のダイアログ)。
     使えないときは理由と設定への案内を出す。
   - エディタにつないだエージェント (lib/agents/) の提案は「from <名前>」の印を付けて同じ一覧に出す。
@@ -30,11 +32,13 @@ import { aiBlockedReason, providerLabel } from "./providers";
 interface Props {
   view: ProposalsView;
   viewport: ViewportController;
+  /** モジュールのプロジェクトか (提案の中身と説明が変わる)。 */
+  module?: boolean;
   /** AI の設定 (API キー) の画面を開く。 */
   onopensettings: () => void;
 }
 
-let { view, viewport, onopensettings }: Props = $props();
+let { view, viewport, module = false, onopensettings }: Props = $props();
 
 $effect(() => {
   void aiSettings.refresh();
@@ -84,7 +88,14 @@ function onSlider(id: string, e: Event): void {
 </script>
 
 <section>
-  <h3>Auto rig from PSD</h3>
+  <h3>{module ? "Auto rig the costume from PSD" : "Auto rig from PSD"}</h3>
+  {#if module}
+    <p class="muted note">
+      Module project: the rig uses only the base's parameters. The costume follows the base deformers under the
+      slot's anchor (for example the face turn), and hair, tails, earrings, neckwear and skirts sway with physics.
+      No parameters are added.
+    </p>
+  {/if}
   <div class="row">
     {#if panel?.psd}
       <span class="psd" title={panel.psd}>{fileName(panel.psd)}</span>
@@ -114,7 +125,9 @@ function onSlider(id: string, e: Event): void {
     rows="3"
     bind:value={view.instructions}
     disabled={busy}
-    placeholder="e.g. Close the eyes a little narrower. Keep head turns subtle. The hat is headwear."
+    placeholder={module
+      ? "e.g. Let the earrings swing more. The ribbon is neckwear."
+      : "e.g. Close the eyes a little narrower. Keep head turns subtle. The hat is headwear."}
     aria-describedby="ai-instructions-note"
   ></textarea>
   <p id="ai-instructions-note" class="muted note">
@@ -124,8 +137,13 @@ function onSlider(id: string, e: Event): void {
     {:else}
       Only sent when "Use {aiName}" is on.
     {/if}
-    The AI can change layer labels and four rig values (head turn, where and how the eyes close, how far a single
-    mouth opens); it lists anything else as not applied. Not saved in the project.
+    {#if module}
+      The AI can change layer labels and two sway values (how strongly and how slowly the swaying parts swing); it
+      lists anything else as not applied. Not saved in the project.
+    {:else}
+      The AI can change layer labels and four rig values (head turn, where and how the eyes close, how far a single
+      mouth opens); it lists anything else as not applied. Not saved in the project.
+    {/if}
   </p>
   {#if view.useAi && (panel?.regenerable.length ?? 0) > 0}
     <label class="check note">
