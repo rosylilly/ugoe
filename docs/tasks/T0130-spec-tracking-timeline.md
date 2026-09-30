@@ -20,6 +20,7 @@ T0126 の後続の候補。時間の例 (`spec/examples/*/timeline.json`) に、
 - [ ] timeline.json の操作にトラッキングの入力・ポーズの表示の選択・効果の差し替えを足し、例を足す。形式の変更は `spec/examples/README.md` に書く
 - [ ] `tools/spec-check` の独立の実装を合わせる。参照実装での照合 (`crates/ugoe/tests/spec_timelines.rs`) の拡張は team-lead に頼む
 - [ ] 見つかった仕様の抜け・曖昧さの一覧と `spec/` への修正 (`docs/spec/` の同期は team-lead に頼む)
+- [ ] `Parameter.mirror` を省略した意味: 英語版は「対を記録していない」とだけ書くが、参照実装のミラーは省略を「自分自身の同じ値のキーに対応する」として扱う (T0129 の同期で見つかった)。spec/model.md に書き足すかを決める
 - [ ] `just ci` が通る
 
 ## 参考

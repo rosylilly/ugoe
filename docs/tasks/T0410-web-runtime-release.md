@@ -1,11 +1,11 @@
 ---
 id: T0410
 title: npm: @ugoe/runtime の公開の準備・wasm の縮小・<ugoe-avatar> のフェイストラッキング
-status: todo
+status: in-progress
 milestone: M7
 crates: [bindings/web, ugoe-wasm, docs]
 depends_on: [T0404]
-assignee:
+assignee: claude-worker-T0410
 ---
 
 # T0410: npm: @ugoe/runtime の公開の準備と改善

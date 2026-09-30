@@ -1,11 +1,11 @@
 ---
 id: T0127
 title: 公開仕様: 描画の例 (画素の期待値) と、独立の実装での検証
-status: todo
+status: in-progress
 milestone: M5
 crates: [spec, tools/spec-check, docs]
 depends_on: [T0120]
-assignee:
+assignee: claude-worker-T0127
 ---
 
 # T0127: 公開仕様: 描画の例 (画素の期待値) と、独立の実装での検証
