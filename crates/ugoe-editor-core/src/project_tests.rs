@@ -884,3 +884,43 @@ fn set_lighting_toggles_the_model() {
     doc.apply(Command::SetLighting { enabled: false }).unwrap();
     assert!(!doc.model().lighting);
 }
+
+#[test]
+fn set_effects_replaces_the_effects_and_is_validated() {
+    use ugoe_model::effects::{Breath, BreathParameter, Effects};
+    let mut doc = Document::new(fixtures::single_quad());
+    let param = doc.model().parameters[0].id.clone();
+    let effects = Effects {
+        breath: Breath {
+            parameters: vec![BreathParameter {
+                parameter: param,
+                offset: 0.5,
+                peak: 0.5,
+                cycle: 3.0,
+                weight: 1.0,
+            }],
+        },
+        ..Effects::default()
+    };
+    doc.apply(Command::SetEffects {
+        effects: effects.clone(),
+    })
+    .unwrap();
+    assert_eq!(doc.model().effects, effects);
+    // モデルにないパラメータを対象にした設定は検証で拒否し、モデルを変えない。
+    let err = doc.apply(Command::SetEffects {
+        effects: Effects::standard(),
+    });
+    assert!(err.is_err());
+    assert_eq!(doc.model().effects, effects);
+    // 値が範囲の外 (呼吸の周期が 0 以下・目パチの間隔が負) の設定も拒否する。
+    let mut bad = effects.clone();
+    bad.breath.parameters[0].cycle = 0.0;
+    assert!(doc.apply(Command::SetEffects { effects: bad }).is_err());
+    let mut bad = effects.clone();
+    bad.eye_blink.interval = -1.0;
+    assert!(doc.apply(Command::SetEffects { effects: bad }).is_err());
+    assert_eq!(doc.model().effects, effects);
+    assert!(doc.undo());
+    assert_eq!(doc.model().effects, Effects::default());
+}

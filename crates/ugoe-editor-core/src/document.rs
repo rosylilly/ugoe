@@ -973,6 +973,7 @@ fn apply_to(
             png,
         } => set_normal_map(model, textures, &texture, normal_map, png)?,
         Command::SetLighting { enabled } => model.lighting = enabled,
+        Command::SetEffects { effects } => model.effects = effects,
     }
     Ok(())
 }

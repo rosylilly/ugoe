@@ -53,6 +53,7 @@
 | キーフォーム | `add_keyform_key`、`remove_keyform_key`、`set_keyform_cell`、`set_mesh_draw_order`、`set_keyform_interpolation` ([キーフォームの編集](#キーフォームの編集)) |
 | テクスチャ | `add_texture`、`set_texture_image`、`remove_texture`、`set_normal_map` ([法線マップ](#法線マップ)) |
 | ライティング | `set_lighting` (`Model::lighting` を変える。[法線マップ](#法線マップ)) |
+| エフェクト | `set_effects` (`Model::effects` を丸ごと置き換える。[エフェクトの設定](#エフェクトの設定)) |
 | キャンバス | `set_canvas` (`width`・`height`・`origin`。大きさは 0 より大きい有限の値。要素の座標は変えない) |
 | キーフォームの推定 | `infer_keyforms`、`mirror_keyforms`、`mark_keyform_authored`、`mark_keyform_derived`、`set_keyform_inference`、`set_mirror_pair` (下の「推定とミラー」)、`set_depth`・`apply_depth_preset` ([深度の編集](#深度の編集)) |
 | モーション・表情 | `add_motion`、`remove_motion`、`rename_motion`、`set_motion_properties`、`add_motion_curve`、`remove_motion_curve`、`set_motion_curve_fade`、`set_motion_key`、`move_motion_key`、`remove_motion_key`、`set_motion_segment`、`set_motion_events`、`add_expression`、`remove_expression`、`rename_expression`、`set_expression_properties`、`set_expression_parameters` ([モーションと表情の編集](#モーションと表情の編集)) |
@@ -420,8 +421,8 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
     `NSCameraUsageDescription` と `Entitlements.plist` の `com.apple.security.device.camera`。
   - ヘッドレスのブラウザでは、記録した値の列 (JSON) か画像・動画を「File…」で入れて確かめます
     (`window.__UGOE_TRACKER__` でトラッカーを読める)。
-- **まだ無いもの:** 目パチ・呼吸・リップシンクの設定 (`Model.effects`) を編集するコマンドと画面はまだ無い
-  (読み込んだモデルの設定で動く)。
+- **まだ無いもの:** 目パチ・呼吸・リップシンクの設定 (`Model.effects`) を編集する画面はまだ無い
+  (読み込んだモデルの設定で動く)。コマンドは `set_effects` ([エフェクトの設定](#エフェクトの設定))。
 
 ## PSD の取り込み
 
@@ -718,6 +719,14 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
   - どのテクスチャからも指されなくなった法線マップの画像は表から除きます。Undo で画像も戻ります。
 - `set_lighting` はモデル全体のライティングの有無 (`Model::lighting`) を変えます。メッシュごとの `lit` (既定 `true`) と両方が `true` のメッシュだけがライティングを受けます。
 - 法線マップの生成 (アルファの形・深度推定から) は `ugoe_ai::normal` が `set_normal_map` と `set_lighting` の列を提案します ([ai-integration.md#法線マップの生成](ai-integration.md#法線マップの生成))。エディタの画面からの呼び出しは T0637 (AI の提案のプレビューと採用) で扱います。
+
+## エフェクトの設定
+
+- `set_effects` は目パチ・呼吸・リップシンクの設定 (`Model::effects`、[motion.md#エフェクト](spec/motion.md)) を丸ごと置き換えます。
+  対象のパラメータがモデルにあること・時間の値の範囲は、適用後の検証 (`validate`) が調べ、通らなければ拒否してモデルを変えません。Undo で前の設定に戻ります。
+- パラメータを削除すると、エフェクトの対象からも取り除きます (`remove_parameter`)。
+- 自動リギングの提案 (`ugoe_ai::rig`) は、作ったパラメータに向けた標準の設定をこのコマンドで足します ([ai-integration.md#テンプレート-ugoe_airigpropose_rig](ai-integration.md#テンプレート-ugoe_airigpropose_rig))。
+- 設定を編集する画面は後続 (今は提案か、読み込んだモデルの設定で動く)。
 
 ## プロジェクト
 

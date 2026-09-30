@@ -6020,5 +6020,65 @@ export const commands: Command[] = [
   {
     "op": "set_lighting",
     "enabled": true
+  },
+  {
+    "op": "set_effects",
+    "effects": {
+      "eye_blink": {
+        "parameters": [
+          "EyeLOpen",
+          "EyeROpen"
+        ],
+        "interval": 4.0,
+        "closing": 0.1,
+        "closed": 0.05,
+        "opening": 0.15,
+        "seed": 0
+      },
+      "breath": {
+        "parameters": [
+          {
+            "parameter": "AngleX",
+            "offset": 0.0,
+            "peak": 15.0,
+            "cycle": 6.5345,
+            "weight": 0.5
+          },
+          {
+            "parameter": "AngleY",
+            "offset": 0.0,
+            "peak": 8.0,
+            "cycle": 3.5345,
+            "weight": 0.5
+          },
+          {
+            "parameter": "AngleZ",
+            "offset": 0.0,
+            "peak": 10.0,
+            "cycle": 5.5345,
+            "weight": 0.5
+          },
+          {
+            "parameter": "BodyAngleX",
+            "offset": 0.0,
+            "peak": 4.0,
+            "cycle": 15.5345,
+            "weight": 0.5
+          },
+          {
+            "parameter": "Breath",
+            "offset": 0.5,
+            "peak": 0.5,
+            "cycle": 3.2345,
+            "weight": 1.0
+          }
+        ]
+      },
+      "lip_sync": {
+        "parameters": [
+          "MouthOpenY"
+        ]
+      }
+    }
   }
 ];

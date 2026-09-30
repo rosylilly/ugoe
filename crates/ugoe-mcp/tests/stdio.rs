@@ -719,7 +719,7 @@ fn agent_driven_auto_rig_from_psd() {
     assert!(fs::read(&bundle).unwrap().starts_with(b"UGOE"));
     let on_disk = Project::load(&project).unwrap();
     assert!(ugoe_model::validate::validate(&on_disk.model).is_empty());
-    assert_eq!(on_disk.model.parameters.len(), 6);
+    assert_eq!(on_disk.model.parameters.len(), 7);
 
     // 保存したプロジェクトを開き直すと PSD は覚えていないので、get_psd_layers に渡す。
     client.call_ok("close_project", json!({ "path": path }));

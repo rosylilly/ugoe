@@ -6,6 +6,7 @@ use ts_rs::TS;
 use ugoe_core::Vec2;
 use ugoe_model::avatar::{AvatarHitArea, AvatarMeta, AvatarProfile, LookAt, TrackingOverride};
 use ugoe_model::deformer::{RotationKeyform, WarpKeyform};
+use ugoe_model::effects::Effects;
 use ugoe_model::expression::{Expression, ExpressionParameter};
 use ugoe_model::mesh::MeshKeyform;
 use ugoe_model::motion::{Curve, CurveTarget, Motion, MotionEvent, Point};
@@ -687,6 +688,12 @@ pub enum Command {
     /// モデル全体のライティングの有無 (`Model::lighting`) を変える。
     SetLighting {
         enabled: bool,
+    },
+    // ---- エフェクト (T0510)。規則は `docs/editor.md#エフェクトの設定` ----
+    /// 目パチ・呼吸・リップシンクの設定 (`Model::effects`) を丸ごと置き換える。対象のパラメータがモデルに
+    /// あること・時間の値の範囲は、適用後の検証 (`validate`) が調べる。
+    SetEffects {
+        effects: Effects,
     },
 }
 

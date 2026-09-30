@@ -786,6 +786,9 @@ pub(crate) fn lighting_samples() -> Vec<Command> {
             png: None,
         },
         Command::SetLighting { enabled: true },
+        Command::SetEffects {
+            effects: ugoe_model::effects::Effects::standard(),
+        },
     ]
 }
 

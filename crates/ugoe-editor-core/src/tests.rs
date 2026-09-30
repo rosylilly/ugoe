@@ -1426,10 +1426,11 @@ fn op_name(command: &Command) -> &'static str {
         Command::SetHitAreas { .. } => "set_hit_areas",
         Command::SetNormalMap { .. } => "set_normal_map",
         Command::SetLighting { .. } => "set_lighting",
+        Command::SetEffects { .. } => "set_effects",
     }
 }
 
-const OP_COUNT: usize = 95;
+const OP_COUNT: usize = 96;
 
 fn json_samples() -> Vec<Command> {
     let quad = fixtures::single_quad();

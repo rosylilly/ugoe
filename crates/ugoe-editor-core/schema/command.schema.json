@@ -2399,6 +2399,23 @@
         "op",
         "enabled"
       ]
+    },
+    {
+      "description": "目パチ・呼吸・リップシンクの設定 (`Model::effects`) を丸ごと置き換える。対象のパラメータがモデルに\nあること・時間の値の範囲は、適用後の検証 (`validate`) が調べる。",
+      "type": "object",
+      "properties": {
+        "effects": {
+          "$ref": "#/$defs/Effects"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_effects"
+        }
+      },
+      "required": [
+        "op",
+        "effects"
+      ]
     }
   ],
   "$defs": {
@@ -2679,6 +2696,55 @@
             "multiply"
           ]
         }
+      ]
+    },
+    "Breath": {
+      "description": "呼吸。各パラメータに `weight * (offset + peak * sin(2π t / cycle))` を加算する。",
+      "type": "object",
+      "properties": {
+        "parameters": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/BreathParameter"
+          }
+        }
+      }
+    },
+    "BreathParameter": {
+      "type": "object",
+      "properties": {
+        "cycle": {
+          "description": "周期 (秒)。0 より大きい。",
+          "type": "number",
+          "format": "float"
+        },
+        "offset": {
+          "description": "波の中心値。",
+          "type": "number",
+          "format": "float"
+        },
+        "parameter": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "peak": {
+          "description": "波の振幅。",
+          "type": "number",
+          "format": "float"
+        },
+        "weight": {
+          "description": "加算するときに掛ける重み。",
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "parameter",
+        "offset",
+        "peak",
+        "cycle",
+        "weight"
       ]
     },
     "ChildRef": {
@@ -3080,6 +3146,35 @@
         "pivot"
       ]
     },
+    "Effects": {
+      "description": "エフェクト設定一式。",
+      "type": "object",
+      "properties": {
+        "breath": {
+          "$ref": "#/$defs/Breath",
+          "default": {
+            "parameters": []
+          }
+        },
+        "eye_blink": {
+          "$ref": "#/$defs/EyeBlink",
+          "default": {
+            "closed": 0.05000000074505806,
+            "closing": 0.10000000149011612,
+            "interval": 4.0,
+            "opening": 0.15000000596046448,
+            "parameters": [],
+            "seed": 0
+          }
+        },
+        "lip_sync": {
+          "$ref": "#/$defs/LipSync",
+          "default": {
+            "parameters": []
+          }
+        }
+      }
+    },
     "Expression": {
       "description": "表情: モーションの上に重ねるパラメータ差分。",
       "type": "object",
@@ -3141,6 +3236,52 @@
         "value",
         "op"
       ]
+    },
+    "EyeBlink": {
+      "description": "目パチ。対象パラメータを 1 → 0 → 1 と動かす。時間はすべて秒。",
+      "type": "object",
+      "properties": {
+        "closed": {
+          "description": "閉じたまま保つ時間。0 以上。",
+          "type": "number",
+          "format": "float",
+          "default": 0.05000000074505806
+        },
+        "closing": {
+          "description": "閉じるのにかける時間。0 以上。",
+          "type": "number",
+          "format": "float",
+          "default": 0.10000000149011612
+        },
+        "interval": {
+          "description": "まばたきの平均間隔。0 より大きい。",
+          "type": "number",
+          "format": "float",
+          "default": 4.0
+        },
+        "opening": {
+          "description": "開くのにかける時間。0 以上。",
+          "type": "number",
+          "format": "float",
+          "default": 0.15000000596046448
+        },
+        "parameters": {
+          "description": "エフェクトグループ `EyeBlink` の対象。",
+          "type": "array",
+          "default": [],
+          "items": {
+            "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+            "type": "string"
+          }
+        },
+        "seed": {
+          "description": "間隔を決める決定的な擬似乱数のシード。",
+          "type": "integer",
+          "format": "uint64",
+          "default": 0,
+          "minimum": 0
+        }
+      }
     },
     "GlueKeyform": {
       "type": "object",
@@ -3680,6 +3821,21 @@
           ]
         }
       ]
+    },
+    "LipSync": {
+      "description": "リップシンク。外部から与えた音量 (0〜1) を対象パラメータに書き込む。",
+      "type": "object",
+      "properties": {
+        "parameters": {
+          "description": "エフェクトグループ `LipSync` の対象。",
+          "type": "array",
+          "default": [],
+          "items": {
+            "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+            "type": "string"
+          }
+        }
+      }
     },
     "LookAt": {
       "description": "視線の追従に使うパラメータと可動範囲。",

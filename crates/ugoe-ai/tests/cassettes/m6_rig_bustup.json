@@ -1,0 +1,43 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "request-id": "req_011CT0510rig1"
+        },
+        "body": {
+          "id": "msg_01T0510rig1",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-opus-5-5",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "",
+              "signature": "EqQBCkYIBhgCIkB05101"
+            },
+            {
+              "type": "text",
+              "text": "{\"turn_angle_scale\":0.6,\"eye_close_line\":0.7,\"eye_close_bend\":-0.06,\"mouth_open_height\":0.35,\"reason\":\"Flat anime face with large eyes, so keep the turn small (0.6). The closed-eye drawings are smiling arcs, so bend the squashed eye upward; the mouth has open and closed drawings, so its height is unused.\"}"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "stop_details": null,
+          "usage": {
+            "input_tokens": 1870,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 412
+          }
+        }
+      }
+    }
+  ]
+}

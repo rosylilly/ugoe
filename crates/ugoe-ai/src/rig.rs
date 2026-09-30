@@ -2,10 +2,12 @@
 //!
 //! PSD を取り込んだ直後のモデル (メッシュだけでデフォーマのないもの) と、メッシュごとの意味ラベル
 //! ([`mesh_parts`] でレイヤーの分類から作る) から、アバタープロファイルのレベル 1 のパラメータ
-//! (`docs/spec/avatar-profile.md`) を動かすリグを [`Command`] の列として提案する。
+//! (`docs/spec/avatar-profile.md`) と呼吸 (`Breath`) を動かすリグと、髪揺れの物理、目パチ・呼吸・
+//! リップシンクの設定を [`Command`] の列として提案する。
 //!
 //! - **テンプレート** ([`propose_rig`]): ラベルの組み合わせからデフォーマの構造とキーフォームの作り方を
 //!   決める (決定的)。
+//!   - 呼吸 (`Breath`): すべてのメッシュを包む体のワープを、上ほど大きく持ち上げる。
 //!   - 顔の角度: 頭の回転デフォーマ (`AngleZ`) と、頭のメッシュを包むワープ (`AngleX` / `AngleY`)。
 //!     ワープは深度からの回転で振り向かせる ([`crate::turn`])。深度は推定した深度マップか、
 //!     なければ顔の外接矩形に内接する楕円体 (規則) を使い、どちらも意味ラベルで補正する。
@@ -13,6 +15,9 @@
 //!     閉じた目の絵 (`eye_closed`) があれば、つぶれた所で不透明度を入れ替える。
 //!   - 口の開閉 (`MouthOpenY`): 開いた口と閉じた口の絵があれば、開いた口を閉じた口の大きさの細い
 //!     隙間から開いて入れ替える。1 枚の口なら、口を包むワープの下側を下げて縦に開く。
+//!   - 髪揺れ: 前髪・横髪・後ろ髪を包む揺れ用のワープに、頭の回転デフォーマに取り付けた振り子の
+//!     動的物理 (`docs/spec/physics.md#動的物理-揺れ用パラメータのいらない物理`) の出力を足す。
+//!   - エフェクト (`Model::effects`): 目パチ・呼吸・リップシンクの標準の設定を、作ったパラメータに向ける。
 //! - **AI が決める値** ([`RigParams`]): テンプレートでは決められない値 (振り向きの量・目の閉じ方・
 //!   口の開き方) を [`Provider`] に画像から決めさせる ([`propose_rig_with_ai`])。
 //!   答えが範囲の外であったり、組んだリグが検証を通らなかったりしたら、エラーを添えて問い直す
@@ -30,7 +35,12 @@ use ugoe_editor_core::ids::new_deformer_id;
 use ugoe_editor_core::space::{ParameterValues, canvas_to_local, local_to_canvas};
 use ugoe_editor_core::{ChildRef, Command, Keyform, KeyformCell, KeyformTarget};
 use ugoe_model::deformer::{RotationKeyform, WarpKeyform};
+use ugoe_model::effects::Effects;
 use ugoe_model::mesh::MeshKeyform;
+use ugoe_model::physics::{
+    NormalizationRange, PhysicsBlend, PhysicsInput, PhysicsNormalization, PhysicsOutput,
+    PhysicsParticle, PhysicsRig, PhysicsSource, PhysicsTarget, VertexOwner,
+};
 use ugoe_model::{
     DeformerId, DeformerKind, KeyformGrid, KeyformInterpolation, MeshId, Model, ParamId, standard,
 };
@@ -199,6 +209,75 @@ mod mouth_fade {
     pub const CLOSED_OUT: f32 = 0.3;
 }
 
+/// 呼吸 (`Breath` = 1) の持ち上げ。
+mod breath {
+    /// 絵の上端を持ち上げる量 (顔の高さに対する割合。下端は動かさない)。
+    pub const LIFT: f32 = 0.025;
+}
+
+/// 髪揺れの振り子 (`crates/ugoe-cli/src/sample.rs` の見本の値を、顔の大きさに対する割合にしたもの)。
+mod hair {
+    use super::Label;
+
+    #[derive(Debug, Clone, Copy)]
+    pub struct Sway {
+        /// 房の上から、揺れの重みが 0 のままの割合。そこから下端へ 2 乗で `max` まで増える。
+        pub start: f32,
+        pub max: f32,
+        /// 振り子の長さ (根元から房の下端までに対する割合) と区間の数。
+        pub length: f32,
+        pub sections: usize,
+        /// 粒子の係数 (`docs/spec/physics.md#係数の意味`)。
+        pub mobility: f32,
+        pub delay: f32,
+        pub acceleration: f32,
+        /// `AngleX` = ±30 での根元の平行移動 (顔の幅に対する割合)。
+        pub shift: f32,
+    }
+
+    /// 前髪: 毛先だけを小さく揺らす (顔が読めるように)。
+    const FRONT: Sway = Sway {
+        start: 0.4,
+        max: 0.5,
+        length: 0.8,
+        sections: 1,
+        mobility: 0.9,
+        delay: 0.8,
+        acceleration: 1.5,
+        shift: 0.04,
+    };
+    /// 横髪: 前髪より長く揺らす。
+    const SIDE: Sway = Sway {
+        start: 0.3,
+        max: 0.7,
+        length: 1.0,
+        sections: 1,
+        mobility: 0.92,
+        delay: 0.7,
+        acceleration: 1.5,
+        shift: 0.08,
+    };
+    /// 後ろ髪: 2 区間で、大きくゆっくり揺らす。
+    const BACK: Sway = Sway {
+        start: 0.3,
+        max: 0.8,
+        length: 1.0,
+        sections: 2,
+        mobility: 0.93,
+        delay: 0.6,
+        acceleration: 1.5,
+        shift: 0.09,
+    };
+
+    pub fn of(label: Label) -> Sway {
+        match label {
+            Label::HairFront => FRONT,
+            Label::HairSide => SIDE,
+            _ => BACK,
+        }
+    }
+}
+
 /// 頭 (`AngleZ`) の傾き: パラメータの値 (度) に対する回転の角度の比。
 const HEAD_TILT: f32 = 1.0 / 3.0;
 
@@ -299,13 +378,24 @@ enum MouthParts {
     Single(Vec<MeshId>),
 }
 
+/// 揺らす髪の房 (同じラベルと左右のメッシュをまとめたもの)。
+#[derive(Debug, Clone)]
+struct HairGroup {
+    label: Label,
+    side: Side,
+    meshes: Vec<MeshId>,
+}
+
 /// ラベルから決めた、リグの対象の部位と基準の姿の外接矩形。
 #[derive(Debug, Clone)]
 struct Layout {
     face: Rect,
+    /// 呼吸で動かすメッシュ (背景・その他のラベルを除くすべて)。
+    body: Vec<MeshId>,
     head: Vec<MeshId>,
     eyes: Vec<EyeParts>,
     mouth: Option<MouthParts>,
+    hair: Vec<HairGroup>,
     /// メッシュの基準の姿の外接矩形 (キャンバス座標)。
     bounds: BTreeMap<MeshId, Rect>,
     /// 組めなかった部位 (提案の理由に書く)。
@@ -352,6 +442,18 @@ impl Layout {
             AiError::InvalidRequest("no mesh is labeled `face`; cannot place the head".into())
         })?;
         let head = with(&is_head);
+        // 呼吸の体のワープはマスク用のメッシュも含める (マスクされるメッシュと一緒に動かす)。
+        let body = model
+            .meshes
+            .iter()
+            .filter(|m| bounds.contains_key(&m.id))
+            .filter(|m| {
+                parts
+                    .get(&m.id)
+                    .is_none_or(|p| p.label.category() != LabelCategory::Other)
+            })
+            .map(|m| m.id.clone())
+            .collect();
         let mut skipped = Vec::new();
 
         // 目: 左右はラベルの左右、中央のものは顔の中心との位置で決める (画像の右がキャラクターの左)。
@@ -425,11 +527,34 @@ impl Layout {
             Some(MouthParts::Pair { open, closed })
         };
 
+        // 髪: ラベルと左右ごとに 1 つの房にまとめる (前髪・横髪・後ろ髪の順)。
+        let mut hair: Vec<HairGroup> = Vec::new();
+        for label in [Label::HairFront, Label::HairSide, Label::HairBack] {
+            for (id, part) in labeled.iter().filter(|(_, p)| p.label == label) {
+                match hair
+                    .iter_mut()
+                    .find(|g| g.label == label && g.side == part.side)
+                {
+                    Some(group) => group.meshes.push((*id).clone()),
+                    None => hair.push(HairGroup {
+                        label,
+                        side: part.side,
+                        meshes: vec![(*id).clone()],
+                    }),
+                }
+            }
+        }
+        if hair.is_empty() {
+            skipped.push("髪のラベルのメッシュがないので髪揺れの物理を作らない".into());
+        }
+
         Ok(Self {
             face,
+            body,
             head,
             eyes,
             mouth,
+            hair,
             bounds,
             skipped,
         })
@@ -480,7 +605,9 @@ fn build(
         b: Builder::new(model),
     };
     let mut rationale = Vec::new();
-    rig.rig_head(layout, parts, params, options, &mut rationale)?;
+    // 体のワープを先に作り、頭の回転デフォーマをその中に入れる (呼吸で頭も持ち上がる)。
+    rig.rig_breath(layout, &mut rationale)?;
+    let (head, face_warp) = rig.rig_head(layout, parts, params, options, &mut rationale)?;
     for eye in &layout.eyes {
         rig.rig_eye(layout, eye, params, &mut rationale)?;
     }
@@ -510,6 +637,8 @@ fn build(
         }
         None => {}
     }
+    rig.rig_hair(layout, &head, &face_warp, &mut rationale)?;
+    rig.set_effects(&mut rationale)?;
     rationale.extend(
         layout
             .skipped
@@ -518,7 +647,7 @@ fn build(
     );
     rig.b.validate()?;
     Ok(Proposal {
-        title: "自動リギング (顔の角度・目・口)".into(),
+        title: "自動リギング (顔の角度・目・口・呼吸・髪揺れ)".into(),
         rationale: rationale.join("\n"),
         commands: rig.b.commands,
     })
@@ -565,6 +694,7 @@ impl Rig {
         children: &[MeshId],
         rows: u16,
         cols: u16,
+        parent: Option<&DeformerId>,
     ) -> Result<DeformerId, AiError> {
         let id = self.new_deformer(base);
         self.apply(Command::CreateWarpDeformer {
@@ -574,7 +704,7 @@ impl Rig {
             parts: Vec::new(),
             rows,
             cols,
-            parent: None,
+            parent: parent.cloned(),
         })?;
         Ok(id)
     }
@@ -788,7 +918,7 @@ impl Rig {
         params: &RigParams,
         options: &RigOptions,
         rationale: &mut Vec<String>,
-    ) -> Result<(), AiError> {
+    ) -> Result<(DeformerId, DeformerId), AiError> {
         let face = layout.face;
         for id in [standard::ANGLE_X, standard::ANGLE_Y, standard::ANGLE_Z] {
             self.b.parameter(&ParamId::new(id))?;
@@ -816,7 +946,16 @@ impl Rig {
         }
 
         let cells = options.head_warp_cells.max(1);
-        let warp = self.create_warp("FaceWarp", "Face warp", &layout.head, cells, cells)?;
+        // 親 (頭の回転) を明示して、提案の一部だけを採用するときに頭の回転を外すと顔のワープも外れるようにする
+        // (体のワープの直下では深度からの回転を推定できない)。
+        let warp = self.create_warp(
+            "FaceWarp",
+            "Face warp",
+            &layout.head,
+            cells,
+            cells,
+            Some(&head),
+        )?;
         // 目・口のワープは顔のワープの中に作る (子の共通の親が顔のワープになる)。
         let (map, source) = match &options.turn {
             TurnDepth::Rules => (dome_depth(self.model(), face)?, "顔に内接する楕円体"),
@@ -837,7 +976,7 @@ impl Rig {
         let line = push_turn(&mut self.b, &plan)?;
         // キーの間の角度でも回転の道筋に沿うように曲線補間にする (`docs/spec/evaluation.md#曲線補間`)。
         self.apply(Command::SetKeyformInterpolation {
-            target: KeyformTarget::Deformer(warp),
+            target: KeyformTarget::Deformer(warp.clone()),
             blend_shape: None,
             interpolation: KeyformInterpolation::Smooth,
         })?;
@@ -851,7 +990,7 @@ impl Rig {
             "頭: `AngleZ` ±30 で ±{:.0} 度傾け、`AngleX` / `AngleY` は深度 ({source}) からの回転で振り向かせる。{line}",
             30.0 * HEAD_TILT
         ));
-        Ok(())
+        Ok((head, warp))
     }
 
     /// 目の開閉: 開いた目を包むワープを閉じる線へつぶし、閉じた目の絵があれば不透明度で入れ替える。
@@ -883,6 +1022,7 @@ impl Rig {
             &eye.open,
             2,
             4,
+            None,
         )?;
         let target = KeyformTarget::Deformer(warp);
         self.add_keys(&target, parameter, &[0.0, SQUASH_KEY])?;
@@ -979,7 +1119,7 @@ impl Rig {
             .union(ids)
             .ok_or_else(|| template("the mouth has no bounds".into()))?;
         let width = rect.size().x;
-        let warp = self.create_warp("MouthWarp", "Mouth warp", ids, 2, 2)?;
+        let warp = self.create_warp("MouthWarp", "Mouth warp", ids, 2, 2, None)?;
         let target = KeyformTarget::Deformer(warp);
         self.add_keys(&target, standard::MOUTH_OPEN_Y, &[1.0])?;
         let open = params.mouth_open_height * width;
@@ -988,6 +1128,251 @@ impl Rig {
             Vec2::new(-(n.x - 0.5) * 0.1 * width, open * n.y.clamp(0.0, 1.0))
         })?;
         Ok(())
+    }
+
+    /// 要素の基準の姿の点 (キャンバス座標)。
+    fn canvas_points(&self, target: &KeyformTarget) -> Result<Vec<Vec2>, AiError> {
+        let (local, ..) = self.keyform_at(target, &[])?;
+        local_to_canvas(self.model(), target, &ParameterValues::new(), &local)
+            .map_err(|e| template(format!("{target}: {e}")))
+    }
+
+    /// 呼吸: すべてのメッシュを包む体のワープを、`Breath` = 1 で上 (頭の側) ほど大きく持ち上げる。
+    fn rig_breath(&mut self, layout: &Layout, rationale: &mut Vec<String>) -> Result<(), AiError> {
+        let Some(rect) = layout.union(&layout.body) else {
+            return Ok(());
+        };
+        self.b.parameter(&ParamId::new(standard::BREATH))?;
+        let warp = self.create_warp("BodyWarp", "Body warp", &layout.body, 4, 4, None)?;
+        let target = KeyformTarget::Deformer(warp);
+        self.add_keys(&target, standard::BREATH, &[1.0])?;
+        let lift = breath::LIFT * layout.face.size().y;
+        self.shape(&target, &[(standard::BREATH, 1.0)], |p, _| {
+            // 絵の下端は動かさず、上ほど大きく持ち上げる。
+            let t = ((rect.max.y - p.y) / rect.size().y.max(f32::EPSILON)).clamp(0.0, 1.0);
+            Vec2::new(0.0, -lift * t)
+        })?;
+        rationale.push(format!(
+            "呼吸: すべてのメッシュを包む体のワープを、`Breath` = 1 で上端ほど大きく (最大 {lift:.1} px、顔の高さの {:.1}%) 持ち上げる",
+            breath::LIFT * 100.0
+        ));
+        Ok(())
+    }
+
+    /// 髪揺れ: 房ごとに揺れ用のワープを作り、頭の回転デフォーマ `head` に取り付けた振り子の先の横の
+    /// 変位を、ワープの制御点に重み付きで足す (根元側の重み 0・毛先 1。生え際は動かない)。
+    ///
+    /// 入力は `AngleX` (頭を横に向ける動きはデフォーマを動かさないので、根元の平行移動で与える)。
+    /// `AngleZ`・呼吸は頭のデフォーマを動かすので、それだけで根元が動く (`crates/ugoe-cli/src/sample.rs` の見本と同じ方法)。
+    fn rig_hair(
+        &mut self,
+        layout: &Layout,
+        head: &DeformerId,
+        face_warp: &DeformerId,
+        rationale: &mut Vec<String>,
+    ) -> Result<(), AiError> {
+        let face = layout.face;
+        for group in &layout.hair {
+            let rect = layout
+                .union(&group.meshes)
+                .ok_or_else(|| template("the hair has no bounds".into()))?;
+            let (kind, side) = (
+                match group.label {
+                    Label::HairFront => "Front",
+                    Label::HairSide => "Side",
+                    _ => "Back",
+                },
+                match group.side {
+                    Side::Left => "L",
+                    Side::Right => "R",
+                    Side::Center => "",
+                },
+            );
+            let sway = hair::of(group.label);
+            let warp = self.create_warp(
+                &format!("Hair{kind}{side}SwayWarp"),
+                &format!("Hair {kind} {side} sway warp").replace("  ", " "),
+                &group.meshes,
+                3,
+                3,
+                Some(face_warp),
+            )?;
+            let target = KeyformTarget::Deformer(warp.clone());
+            let weights = self
+                .canvas_points(&target)?
+                .iter()
+                .map(|p| {
+                    let t =
+                        ((rect.normalize(*p).y - sway.start) / (1.0 - sway.start)).clamp(0.0, 1.0);
+                    sway.max * t * t
+                })
+                .collect();
+            // 根元: 前髪・横髪は房の上端。後ろ髪は顔の中ほどの高さ (頭頂に置くと、あごを中心に傾けた
+            // ときに根元が大きく動きすぎる)。
+            let top = if group.label == Label::HairBack {
+                face.center().y.clamp(rect.min.y, rect.max.y)
+            } else {
+                rect.min.y
+            };
+            let root = Vec2::new(rect.center().x, top);
+            let length = (rect.max.y - top) * sway.length;
+            let lengths = vec![length / sway.sections as f32; sway.sections];
+            let shift = sway.shift * face.size().x;
+            let rig = self.pendulum(
+                &format!("Hair{kind}{side}"),
+                format!("Hair {kind} {side}").trim_end(),
+                head,
+                face_warp,
+                root,
+                &lengths,
+                sway,
+                shift,
+                VertexOwner::Warp(warp),
+                weights,
+            )?;
+            self.apply(Command::AddPhysicsRig { rig })?;
+            rationale.push(format!(
+                "髪揺れ: {} ({} 枚) を、頭に取り付けた {} 区間 (長さ {length:.0} px) の振り子で揺らす (`AngleX` ±30 で根元が {shift:.0} px 動く)",
+                group.label,
+                group.meshes.len(),
+                sway.sections,
+            ));
+        }
+        Ok(())
+    }
+
+    /// 真下に垂れる振り子 (根元 `root` はキャンバス座標) の動的物理のリグ。根元は `head` に取り付け、
+    /// 先の粒子の横の変位を `owner` の頂点に `weights` の重みで足す。
+    #[allow(clippy::too_many_arguments)]
+    fn pendulum(
+        &self,
+        id: &str,
+        name: &str,
+        head: &DeformerId,
+        face_warp: &DeformerId,
+        root: Vec2,
+        lengths: &[f32],
+        sway: hair::Sway,
+        shift: f32,
+        owner: VertexOwner,
+        weights: Vec<f32>,
+    ) -> Result<PhysicsRig, AiError> {
+        // 根元の位置は頭の回転デフォーマの局所座標で書く (その子の顔のワープの親の座標系)。
+        let local = canvas_to_local(
+            self.model(),
+            &KeyformTarget::Deformer(face_warp.clone()),
+            &ParameterValues::new(),
+            &[root],
+            &[root],
+        )
+        .map_err(|e| template(format!("the root of {id}: {e}")))?[0];
+        let mut particles = vec![PhysicsParticle {
+            position: local,
+            mobility: 1.0,
+            delay: 1.0,
+            acceleration: 1.0,
+            radius: 0.0,
+            collision_radius: 0.0,
+        }];
+        let mut y = 0.0;
+        for length in lengths {
+            y += length;
+            particles.push(PhysicsParticle {
+                position: Vec2::new(0.0, y),
+                mobility: sway.mobility,
+                delay: sway.delay,
+                acceleration: sway.acceleration,
+                radius: *length,
+                collision_radius: 0.0,
+            });
+        }
+        Ok(PhysicsRig {
+            id: id.to_owned(),
+            name: name.to_owned(),
+            inputs: vec![PhysicsInput {
+                parameter: ParamId::new(standard::ANGLE_X),
+                source: PhysicsSource::X,
+                weight: 100.0,
+                reflect: false,
+            }],
+            outputs: vec![PhysicsOutput {
+                target: PhysicsTarget::Vertices { owner, weights },
+                particle: lengths.len() as u32,
+                source: PhysicsSource::X,
+                scale: 1.0,
+                weight: 100.0,
+                reflect: false,
+                blend: PhysicsBlend::Overwrite,
+            }],
+            particles,
+            normalization: PhysicsNormalization {
+                position: NormalizationRange {
+                    min: -shift,
+                    default: 0.0,
+                    max: shift,
+                },
+                angle: NormalizationRange {
+                    min: -10.0,
+                    default: 0.0,
+                    max: 10.0,
+                },
+            },
+            colliders: Vec::new(),
+            frame: Some(head.clone()),
+        })
+    }
+
+    /// エフェクト: 目パチ・呼吸・リップシンクの標準の設定 (`Effects::standard`) のうち、モデルにある
+    /// パラメータを対象にするものを足す (すでに対象のパラメータは、その設定を残す)。
+    fn set_effects(&mut self, rationale: &mut Vec<String>) -> Result<(), AiError> {
+        let model = self.model();
+        let has = |id: &ParamId| model.parameters.iter().any(|p| &p.id == id);
+        let mut effects = model.effects.clone();
+        let standard = Effects::standard();
+        for id in standard.eye_blink.parameters {
+            if has(&id) && !effects.eye_blink.parameters.contains(&id) {
+                effects.eye_blink.parameters.push(id);
+            }
+        }
+        for b in standard.breath.parameters {
+            if has(&b.parameter)
+                && !effects
+                    .breath
+                    .parameters
+                    .iter()
+                    .any(|x| x.parameter == b.parameter)
+            {
+                effects.breath.parameters.push(b);
+            }
+        }
+        for id in standard.lip_sync.parameters {
+            if has(&id) && !effects.lip_sync.parameters.contains(&id) {
+                effects.lip_sync.parameters.push(id);
+            }
+        }
+        if effects == model.effects {
+            return Ok(());
+        }
+        let list = |ids: Vec<&ParamId>| {
+            ids.iter()
+                .map(|id| format!("`{id}`"))
+                .collect::<Vec<_>>()
+                .join("・")
+        };
+        rationale.push(format!(
+            "エフェクト: 目パチ ({})、呼吸 ({})、リップシンク ({})",
+            list(effects.eye_blink.parameters.iter().collect()),
+            list(
+                effects
+                    .breath
+                    .parameters
+                    .iter()
+                    .map(|b| &b.parameter)
+                    .collect()
+            ),
+            list(effects.lip_sync.parameters.iter().collect()),
+        ));
+        self.apply(Command::SetEffects { effects })
     }
 }
 
