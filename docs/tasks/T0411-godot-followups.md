@@ -1,11 +1,11 @@
 ---
 id: T0411
 title: Godot: CI での検査・ライティングと着せ替えとトラッキング・リソースとしての取り込み
-status: todo
+status: in-progress
 milestone: M7
 crates: [bindings/godot, docs]
 depends_on: [T0406]
-assignee:
+assignee: claude-worker-T0411
 ---
 
 # T0411: Godot の後続
