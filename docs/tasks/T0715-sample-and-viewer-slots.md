@@ -1,11 +1,11 @@
 ---
 id: T0715
 title: 見本とビューア: 見本の本体をレベル 2 にし、公開していないスロットをビューアで隠す
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-cli, assets, apps/viewer, apps/editor, docs]
 depends_on: [T0712]
-assignee:
+assignee: claude-worker-T0715
 ---
 
 # T0715: 見本とビューア: 見本の本体のレベル 2 とスロットの公開
