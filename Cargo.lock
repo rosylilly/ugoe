@@ -5211,6 +5211,7 @@ name = "ugoe-wasm"
 version = "0.0.0"
 dependencies = [
  "console_error_panic_hook",
+ "js-sys",
  "png 0.18.1",
  "serde",
  "serde_json",

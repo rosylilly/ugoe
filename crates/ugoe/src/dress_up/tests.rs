@@ -160,6 +160,7 @@ fn module_physics_is_added_and_removed() {
     let physics = puppet.physics().unwrap();
     assert_eq!(physics.settings().rigs[0].id, "LongHair/Sway");
     assert_eq!(physics.settings().gravity, ugoe_core::Vec2::new(0.0, 1.0));
+    assert!(puppet.base_physics().is_none());
     set_param(&mut puppet, standard::ANGLE_X, 20.0);
     for _ in 0..10 {
         puppet.update(DT);
@@ -185,11 +186,13 @@ fn base_physics_is_kept_and_collides_through_the_slot() {
         ..empty_physics()
     };
     let mut puppet = Puppet::new(base).unwrap().with_physics(settings.clone());
+    assert_eq!(puppet.base_physics(), Some(&settings));
     let mut hair = long_hair_module();
     hair.physics.rigs[0].colliders.push("Chest".into());
     puppet.attach_module(Arc::new(hair)).unwrap();
     let composed = puppet.physics().unwrap().settings();
     assert_eq!(composed.rigs[0].colliders, ["LongHair/Collar", "Chest"]);
+    assert_eq!(puppet.base_physics(), Some(&settings));
     puppet.update(DT);
 
     puppet.set_modules(Vec::new()).unwrap();

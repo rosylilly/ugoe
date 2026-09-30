@@ -19,7 +19,8 @@ use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
 use crate::animation::Library;
-use crate::load::{self, LoadError, LoadedModel};
+use crate::dress_up::{Wardrobe, attached_names};
+use crate::load::{self, LoadError, LoadedModel, Rgba8};
 use crate::view::{Transform, ViewState};
 use crate::{gizmo, hit, view};
 
@@ -27,6 +28,8 @@ use crate::{gizmo, hit, view};
 mod tracking;
 // ライティングの API (T0210)。
 mod lighting;
+// 着せ替えの API (T0123)。
+mod dress_up;
 
 fn js_error(e: impl Display) -> JsError {
     JsError::new(&e.to_string())
@@ -60,8 +63,9 @@ pub struct WebPuppet {
     dirty: bool,
     /// デバイスを失った (GPU プロセスのクラッシュなど)。ホストは作り直す必要がある。
     lost: Arc<AtomicBool>,
-    /// 法線マップを登録したかもしれないテクスチャの番号の数 (モデルを読み直したときに外すため)。
-    normal_map_slots: usize,
+    /// 読み込んだ着せ替えのモジュールと、レンダラに登録したテクスチャの番号の範囲
+    /// (モデルを読み直したときや付け外しのときに、使わなくなった画像を捨てるため)。
+    wardrobe: Wardrobe,
 }
 
 #[wasm_bindgen]
@@ -184,7 +188,7 @@ impl WebPuppet {
             background: wgpu::Color::TRANSPARENT,
             dirty: false,
             lost,
-            normal_map_slots: 0,
+            wardrobe: Wardrobe::default(),
         })
     }
 
@@ -208,6 +212,7 @@ impl WebPuppet {
     ///
     /// すでにモデルがあれば置き換え、同じ ID のパラメータの値は引き継ぐ。
     /// 物理の設定・モーションと表情の一覧・段の有効無効も引き継ぐ (新しいモデルと合わない物理は外して警告する)。
+    /// 付けていた着せ替えのモジュールは付け直す (付けられないものは外して警告する)。
     pub fn load_json(&mut self, json: &str) -> Result<Vec<String>, JsError> {
         self.load(load::from_json(json).map_err(js_error)?)
     }
@@ -216,6 +221,7 @@ impl WebPuppet {
     ///
     /// すでにモデルがあれば置き換え、同じ ID のパラメータの値と段の有効無効は引き継ぐ。
     /// 物理・モーション・表情はバンドルのものに置き換える (物理は `validate_physics` で検査済み)。
+    /// 付けていた着せ替えのモジュールは付け直す (付けられないものは外して警告する)。
     pub fn load_bundle(&mut self, bytes: &[u8]) -> Result<Vec<String>, JsError> {
         self.load(load::from_bundle(bytes).map_err(js_error)?)
     }
@@ -585,28 +591,8 @@ impl WebPuppet {
             normal_maps,
             mut warnings,
         } = loaded;
-        let max = self.device.limits().max_texture_dimension_2d;
-        if let Some((i, t)) = textures
-            .iter()
-            .enumerate()
-            .find(|(_, t)| t.width > max || t.height > max)
-        {
-            return Err(JsError::new(&format!(
-                "texture {i} is {}x{}, which exceeds the device limit {max}",
-                t.width, t.height
-            )));
-        }
-        if let Some((i, t)) = normal_maps
-            .iter()
-            .enumerate()
-            .filter_map(|(i, t)| t.as_ref().map(|t| (i, t)))
-            .find(|(_, t)| t.width > max || t.height > max)
-        {
-            return Err(JsError::new(&format!(
-                "the normal map of texture {i} is {}x{}, which exceeds the device limit {max}",
-                t.width, t.height
-            )));
-        }
+        self.check_texture_sizes(&textures, &normal_maps)
+            .map_err(|e| JsError::new(&e))?;
         let mut puppet = Puppet::new(model)
             .map_err(LoadError::from)
             .map_err(js_error)?;
@@ -627,25 +613,57 @@ impl WebPuppet {
             ));
             load::carry_over_parameters(old.instance(), puppet.instance_mut());
         }
-        for (i, t) in textures.iter().enumerate() {
-            self.renderer
-                .set_texture(
-                    &self.device,
-                    &self.queue,
-                    i as u32,
-                    t.width,
-                    t.height,
-                    &t.pixels,
-                )
-                .map_err(js_error)?;
-        }
-        self.set_normal_maps(&normal_maps).map_err(js_error)?;
+        let attached: Vec<String> = attached_names(self.puppet.as_ref())
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let mut sink = dress_up::RendererSink {
+            renderer: &mut self.renderer,
+            device: &self.device,
+            queue: &self.queue,
+        };
+        warnings.extend(
+            self.wardrobe
+                .load_base(&mut puppet, &attached, &textures, &normal_maps, &mut sink)
+                .map_err(js_error)?,
+        );
         self.puppet = Some(puppet);
         if let Some(library) = library {
             self.library = library;
         }
         self.dirty = false;
         Ok(warnings)
+    }
+
+    /// テクスチャと法線マップが、デバイスの扱える大きさに収まるか。
+    fn check_texture_sizes(
+        &self,
+        textures: &[Rgba8],
+        normal_maps: &[Option<Rgba8>],
+    ) -> Result<(), String> {
+        let max = self.device.limits().max_texture_dimension_2d;
+        if let Some((i, t)) = textures
+            .iter()
+            .enumerate()
+            .find(|(_, t)| t.width > max || t.height > max)
+        {
+            return Err(format!(
+                "texture {i} is {}x{}, which exceeds the device limit {max}",
+                t.width, t.height
+            ));
+        }
+        if let Some((i, t)) = normal_maps
+            .iter()
+            .enumerate()
+            .filter_map(|(i, t)| t.as_ref().map(|t| (i, t)))
+            .find(|(_, t)| t.width > max || t.height > max)
+        {
+            return Err(format!(
+                "the normal map of texture {i} is {}x{}, which exceeds the device limit {max}",
+                t.width, t.height
+            ));
+        }
+        Ok(())
     }
 
     fn evaluate(&mut self) {

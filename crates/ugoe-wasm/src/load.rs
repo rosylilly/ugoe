@@ -85,8 +85,77 @@ pub fn from_json(json: &str) -> Result<LoadedModel, LoadError> {
 pub fn from_bundle(bytes: &[u8]) -> Result<LoadedModel, LoadError> {
     let bundle = ugoe::format::read_bundle(bytes)?;
     let mut warnings = Vec::new();
-    let normal_maps = ugoe::lighting::bundle_normal_maps(&bundle)
-        .into_iter()
+    let normal_maps =
+        decode_normal_maps(ugoe::lighting::bundle_normal_maps(&bundle), &mut warnings)?;
+    let textures = decode_textures(
+        texture_count(&bundle.model),
+        |i| bundle.textures.get(i),
+        &mut warnings,
+    )?;
+    let Bundle {
+        model,
+        physics,
+        motions,
+        expressions,
+        ..
+    } = bundle;
+    Ok(LoadedModel {
+        model,
+        animation: Some(BundleAnimation {
+            physics,
+            library: Library {
+                motions,
+                expressions,
+            },
+        }),
+        textures,
+        normal_maps,
+        warnings,
+    })
+}
+
+/// テクスチャ `count` 枚をデコードする (`data(i)` が `i` 番目の画像)。PNG は乗算済みアルファにし、
+/// KTX2 と画像の無い番号は白のプレースホルダで代用して警告する。
+pub(crate) fn decode_textures<'a>(
+    count: usize,
+    data: impl Fn(usize) -> Option<&'a TextureData>,
+    warnings: &mut Vec<String>,
+) -> Result<Vec<Rgba8>, LoadError> {
+    (0..count)
+        .map(|index| match data(index) {
+            Some(TextureData {
+                format: TextureFormat::Png,
+                bytes,
+            }) => decode_png_premultiplied(bytes)
+                .map_err(|message| LoadError::Texture { index, message }),
+            Some(TextureData {
+                format: TextureFormat::Ktx2,
+                ..
+            }) => {
+                // KTX2 のデコードは未対応 (`ugoe render` と同じ)。表示は止めずに白で代用する。
+                warnings.push(format!(
+                    "texture {index} is KTX2, which is not supported yet; using a white placeholder"
+                ));
+                Ok(Rgba8::placeholder())
+            }
+            // 読み込み (`read_bundle` / `read_module`) がテクスチャの数を検証するので、通常は起きない。
+            None => {
+                warnings.push(format!(
+                    "no data for texture {index}; using a white placeholder"
+                ));
+                Ok(Rgba8::placeholder())
+            }
+        })
+        .collect()
+}
+
+/// テクスチャの番号ごとの法線マップ (`None` は法線マップなし) を、アルファを掛けずにデコードする。
+/// KTX2 は警告して使わない。
+pub(crate) fn decode_normal_maps<'a>(
+    data: impl IntoIterator<Item = Option<&'a TextureData>>,
+    warnings: &mut Vec<String>,
+) -> Result<Vec<Option<Rgba8>>, LoadError> {
+    data.into_iter()
         .enumerate()
         .map(|(index, data)| match data {
             None => Ok(None),
@@ -107,54 +176,7 @@ pub fn from_bundle(bytes: &[u8]) -> Result<LoadedModel, LoadError> {
                 Ok(None)
             }
         })
-        .collect::<Result<_, _>>()?;
-    let Bundle {
-        model,
-        physics,
-        motions,
-        expressions,
-        textures: data,
-        ..
-    } = bundle;
-    let textures = (0..texture_count(&model))
-        .map(|index| match data.get(index) {
-            Some(TextureData {
-                format: TextureFormat::Png,
-                bytes,
-            }) => decode_png_premultiplied(bytes)
-                .map_err(|message| LoadError::Texture { index, message }),
-            Some(TextureData {
-                format: TextureFormat::Ktx2,
-                ..
-            }) => {
-                // KTX2 のデコードは未対応 (`ugoe render` と同じ)。表示は止めずに白で代用する。
-                warnings.push(format!(
-                    "texture {index} is KTX2, which is not supported yet; using a white placeholder"
-                ));
-                Ok(Rgba8::placeholder())
-            }
-            // `read_bundle` がテクスチャの数を検証するので、通常は起きない。
-            None => {
-                warnings.push(format!(
-                    "bundle has no data for texture {index}; using a white placeholder"
-                ));
-                Ok(Rgba8::placeholder())
-            }
-        })
-        .collect::<Result<_, _>>()?;
-    Ok(LoadedModel {
-        model,
-        animation: Some(BundleAnimation {
-            physics,
-            library: Library {
-                motions,
-                expressions,
-            },
-        }),
-        textures,
-        normal_maps,
-        warnings,
-    })
+        .collect()
 }
 
 /// 描画に使うテクスチャの枚数。`model.textures` と、メッシュが参照する番号の大きい方。

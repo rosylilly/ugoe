@@ -20,6 +20,7 @@ wgpu.workspace = true
 # ブラウザの canvas とサーフェスを扱う部分 (`src/web.rs`) だけが使う。
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook.workspace = true
+js-sys.workspace = true
 wasm-bindgen-futures.workspace = true
 web-sys = { workspace = true, features = ["HtmlCanvasElement", "console"] }
 

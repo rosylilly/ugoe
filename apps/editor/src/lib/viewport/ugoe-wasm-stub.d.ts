@@ -13,6 +13,15 @@ export class WebPuppet {
   load_bundle(bytes: Uint8Array): string[];
   unload(): void;
   has_model(): boolean;
+
+  load_module(bytes: Uint8Array): string;
+  attach_module(name: string): void;
+  detach_module(name: string): void;
+  set_modules(names: string[]): void;
+  unload_module(name: string): void;
+  attached_modules(): string[];
+  modules_json(): string;
+  slots_json(): string;
   canvas_size(): Float32Array;
 
   parameter_ids(): string[];

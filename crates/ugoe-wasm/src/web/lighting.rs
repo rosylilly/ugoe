@@ -1,14 +1,14 @@
 //! `WebPuppet` のライティングの API (`docs/spec/rendering.md#ライティング`)。
 //!
-//! 法線マップは `load_bundle` がバンドルから登録する。光源はホストがここで渡す (JSON の形は [`crate::lighting`])。
+//! 法線マップは `load_bundle` がバンドルから (着せ替えのモジュールの分は付け外しで) 登録する。
+//! 光源はホストがここで渡す (JSON の形は [`crate::lighting`])。
 //! ライティングを受けるのは、`Model::lighting` と `Mesh::lit` の両方が `true` のメッシュだけ。
 
-use ugoe::render::{Lighting, RenderError};
+use ugoe::render::Lighting;
 use wasm_bindgen::prelude::*;
 
 use super::WebPuppet;
 use crate::lighting;
-use crate::load::Rgba8;
 
 #[wasm_bindgen]
 impl WebPuppet {
@@ -31,29 +31,5 @@ impl WebPuppet {
     /// ビューアが光源の操作を出すかを決めるために使う。
     pub fn uses_lighting(&self) -> bool {
         self.puppet.as_ref().is_some_and(|p| p.uses_lighting())
-    }
-}
-
-impl WebPuppet {
-    /// 法線マップを登録し、前のモデルで登録したがいまは無い番号の法線マップを外す。
-    pub(super) fn set_normal_maps(
-        &mut self,
-        normal_maps: &[Option<Rgba8>],
-    ) -> Result<(), RenderError> {
-        for i in 0..self.normal_map_slots.max(normal_maps.len()) {
-            match normal_maps.get(i).and_then(Option::as_ref) {
-                Some(t) => self.renderer.set_normal_map(
-                    &self.device,
-                    &self.queue,
-                    i as u32,
-                    t.width,
-                    t.height,
-                    &t.pixels,
-                )?,
-                None => self.renderer.remove_normal_map(&self.device, i as u32),
-            }
-        }
-        self.normal_map_slots = normal_maps.len();
-        Ok(())
     }
 }

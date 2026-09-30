@@ -79,6 +79,16 @@ impl Puppet {
         }
     }
 
+    /// 本体の物理の設定 (モジュールを付ける前の設定)。モジュールを付けたことがなければ今の設定。
+    ///
+    /// モデルを読み直すホストが、合成した設定 (モジュールのリグを含む) ではなく本体の設定を引き継ぐために使う。
+    pub fn base_physics(&self) -> Option<&PhysicsSettings> {
+        match &self.wardrobe {
+            Some(wardrobe) => wardrobe.base_physics.as_ref(),
+            None => self.physics.as_ref().map(|p| p.settings()),
+        }
+    }
+
     /// 合成したモデルのテクスチャごとの出どころ (`Model::textures` と同じ順)。
     /// 本体のテクスチャが先頭に同じ順で並び、モジュールのテクスチャがモジュールの順に続く。
     pub fn texture_sources(&self) -> Vec<TextureSource> {

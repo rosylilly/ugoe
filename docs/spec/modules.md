@@ -160,6 +160,12 @@ compose_physics(base: &Model, physics: &PhysicsSettings, modules: &[&Module]) ->
 - `texture_count`: 合成したモデルのテクスチャの数。これ以上の番号は使われません。
 - メッシュの並びなどは変わりますが、`ugoe_render::Renderer` は別のコンパイル済みモデルを渡されると描画用のバッファを作り直すので、利用者がすることはありません。
 
+wasm (`ugoe-wasm` の `WebPuppet`) は、`.ugoemod` の読み込み (`load_module`) と付け外し (`attach_module` / `detach_module` /
+`set_modules` / `unload_module`)、付けているモジュールと本体のスロットの一覧 (`attached_modules`・`modules_json`・`slots_json`) を持ちます
+(`crates/ugoe-wasm/README.md#着せ替え-t0123`)。`DressUpChange` に従ってテクスチャと法線マップを登録し直し、使わなくなった番号の画像は
+1x1 の白に置き換えて捨てます。モデルを読み直すと、付けていたモジュールを付け直します (付けられないものは外して警告します)。
+失敗は `name` が `DressUpError` の `Error` で、`code` (`unknown_slot`・`missing_parameter` など) と `module`・`slot` などを持ちます。
+
 ### 性能
 
 組み替えのたびに合成とコンパイルが走ります。`cargo run --release -p ugoe-runtime --example compose_timing` で計測できます。

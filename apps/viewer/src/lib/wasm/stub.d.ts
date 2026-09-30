@@ -18,6 +18,15 @@ export class WebPuppet {
   set_lighting_json(json?: string | null): void;
   uses_lighting(): boolean;
 
+  load_module(bytes: Uint8Array): string;
+  attach_module(name: string): void;
+  detach_module(name: string): void;
+  set_modules(names: string[]): void;
+  unload_module(name: string): void;
+  attached_modules(): string[];
+  modules_json(): string;
+  slots_json(): string;
+
   parameters_json(): string;
   set_parameter(id: string, value: number): boolean;
   parameter(id: string): number | undefined;

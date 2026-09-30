@@ -20,6 +20,7 @@ WebAssembly バインディング。Web ビューア・ビューアのアプリ 
 | `tracking` | フェイストラッキングの入力 (ブレンドシェイプの名前と値・頭の回転) から `TrackingInput` を作る。JS への公開は `web/tracking.rs` |
 | `hit` | 評価済みの要素の外接矩形とヒットテスト (エディタの選択用。三角形の判定は `ModelInstance::mesh_contains`) |
 | `physics_view` | エディタの物理の表示用の問い合わせ: デフォーマの写像とヤコビ行列、粒子の今の位置 (JS への公開は `src/web/physics.rs`) |
+| `dress_up` | `.ugoemod` の読み込み、付け外しに合わせたテクスチャの登録し直し (`Wardrobe`)、エラーのコード (JS への公開は `src/web/dress_up.rs`) |
 | `lighting` | 光源の JSON (`set_lighting_json`) を `ugoe::render::Lighting` にする (JS への公開は `src/web/lighting.rs`) |
 | `animation` | 物理・モーション・表情・エフェクトの JSON の受け渡し、バンドルのモーション・表情の名前の解決、モデルを読み直したときの物理と段の有効無効の引き継ぎ (JS への公開は `src/web/animation.rs`) |
 
@@ -103,6 +104,36 @@ puppet.set_lighting_json(undefined); // 既定 (環境光が白で光源なし) 
 - 光源はホストの状態 (背景色と同じ) で、モデルを読み直しても保つ。次の `render` から使う。形の誤り・向きが 0・`range` が正でない・負の色はエラー。
 - 光源を設定しなければ、ライティングを受けるメッシュも受けない場合と同じ色で描く。法線マップはアルファを掛けずに読む (KTX2 は警告を出して使わない)。
 
+### 着せ替え (T0123)
+
+```js
+puppet.load_bundle(bytes);                   // スロットを持つ本体
+const name = puppet.load_module(modBytes);   // .ugoemod を読む (付けはしない)。戻り値はモジュールの名前
+puppet.attach_module(name);                  // 付ける。同じスロットか同じ名前のモジュールは差し替える
+puppet.detach_module(name);                  // 外す
+puppet.set_modules(["LongHair", "Dress"]);   // 付ける組をまとめて決める (合成の順)。[] で本体だけ
+puppet.unload_module(name);                  // 読み込んだモジュールを捨てる (付けていれば外す)
+puppet.attached_modules();                   // 付けている名前 (合成の順)
+JSON.parse(puppet.modules_json());           // [{name, slot, requires, attached, textures, warnings}] (読み込んだ順)
+JSON.parse(puppet.slots_json());             // 本体のスロット [{id, anchor, draw_order, replaces, parameters, ...}]
+try {
+  puppet.attach_module("Hat");
+} catch (e) {
+  // e.name === "DressUpError"。e.code は "unknown_slot" | "missing_slot" | "missing_parameter" |
+  // "parameter_not_exposed" | "avatar_level" | "slot_occupied" | "unknown_mask" | "unknown_collider" |
+  // "pose_not_exposed" | "texture_out_of_range" | "invalid_composition" | "invalid_module_name" | "duplicate_module" |
+  // "compile" | "invalid_physics" | "not_attached" | "not_loaded" | "no_model" | "invalid_file" | "texture"。
+  // 補足の値 (あれば): e.module・e.slot・e.parameter・e.mesh・e.attached (slot_occupied で付いているモジュール)
+}
+```
+
+- 規則は `docs/spec/modules.md#puppet-での着せ替え`。付け外しで、パラメータの値・ポーズ・トラッキング・モーションは続きから動き、物理はリセットされる。失敗したときは何も変えない。
+- テクスチャ (と法線マップ) は本体、モジュールの順に並ぶ。付け外しで番号がずれたものは登録し直し、使わなくなった番号の画像は 1x1 の白に置き換えて捨てる。
+- `load_json` / `load_bundle` でモデルを読み直すと、付けていたモジュールを付け直す (付けられないものは外して警告に入れる)。
+  物理は本体の設定を引き継ぎ、モジュールのリグは付け直しで加わる。読み込んだモジュールはモデルを変えても残る。
+- 同じ名前のモジュールを `load_module` し直すと、付けていれば新しい版に付け替える (エディタで書き出し直したとき)。
+- モジュールを付けている間に `set_physics_json` で渡した設定は、次の付け外しで本体の設定から作り直される。
+
 ## ビルド
 
 ```sh
@@ -124,3 +155,4 @@ wasm-bindgen-cli の版は `Cargo.lock` の `wasm-bindgen` と一致させる必
 
 - T0402 (`docs/tasks/T0402-*.md`)
 - T0210 (ライティング: 法線マップの登録と光源の JSON)
+- T0123 (着せ替え: `.ugoemod` の読み込みと付け外し)
