@@ -1,11 +1,11 @@
 ---
 id: T0654
 title: エディタ: 今の編集と書き出したモジュールの違いを文字で出す・本体だけのバンドルをセッション側で持つ
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-editor-core, apps/editor, docs]
 depends_on: [T0653]
-assignee:
+assignee: claude-worker-T0654
 ---
 
 # T0654: エディタ: モジュールの比較の仕上げ
