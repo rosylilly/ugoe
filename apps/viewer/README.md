@@ -19,6 +19,8 @@ src/                  フロントエンド (Svelte 5 + TS。npm パッケージ
   lib/lighting.ts       光源の設定・既定の光源の組・set_lighting_json の JSON への変換・localStorage への保存
   lib/DressUpPanel.svelte  着せ替えのパネル (スロットのあるモデルか、モジュールを読み込んだときだけ出す)
   lib/dressUp.ts        着せ替えの一覧 (modules_json・slots_json・detached_modules_json) の読み取り、スロットごとのまとめ、エラーと警告の文
+  lib/dressUpMemory.ts  付けていたモジュールの組をモデルごとに覚える形と、戻すときにファイルをどこから得るか (T0711)
+  lib/modelMemory.ts    モデルを見分ける鍵と、モデルごとの値を上限付きで localStorage に覚える入れ物 (T0711。T0709 と共有)
   lib/modelFile.ts      開いたファイルの形式の判別 (バンドル・JSON・モジュール)
   lib/samples.ts        同梱の見本の一覧と開き方 (ツールバーの「サンプル」)
   lib/wasm/             ugoe-wasm の読み込み。generated/ は `pnpm wasm` の出力 (gitignore 済み)
@@ -99,12 +101,61 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
   | `invalid_file` | 着せ替えのモジュール (.ugoemod) として読めません (原因) |
 
   合成・コンパイル・物理の検証など原因が細かいものは、wasm の文 (英語) を括弧で添える。知らないコードは wasm の文をそのまま出す。
-- 読み込んだモジュールは、別のモデルを開いても残る。開き直すと付けていたモジュールを付け直し、新しいモデルに合わないものは外して
-  ステータスバーに「このモデルに合わないため、着せ替えの「Dress」を外しました (原因)」と警告する。原因は wasm の
-  `detached_modules_json()` の `code` から、付けられないときと同じ文にする (`describeLoadWarnings`。wasm の文の警告は読まない。T0124)。
-- GPU を失って作り直したときも、モジュールを読み直して付けていたものを付け直す。
+- **同じモデル** ([モデルの見分け方](#モデルごとに覚える-t0711)) を開き直すと、読み込んだモジュールは残り、付けていたモジュールを
+  wasm が付け直す。合わなくなったものは外してステータスバーに「このモデルに合わないため、着せ替えの「Dress」を外しました (原因)」と
+  警告する。原因は wasm の `detached_modules_json()` の `code` から、付けられないときと同じ文にする (`describeLoadWarnings`。
+  wasm の文の警告は読まない。T0124)。
+- **別のモデル** を開くと、読み込んでいたモジュールを一覧から除く (`unload_module`)。前のモデルに付けていた組はモデルごとに
+  覚えてある (下の「付けていた組を覚える」)。T0706 では一覧に残ったまま外れていたが、見本を切り替えたときに前の見本の衣装が
+  「モデルに無い」で並ぶだけになるので、組ごとモデルに結び付けた (T0711)。モデルが開けなかったときは除いたモジュールを戻す。モデルを開く前に読み込んだモジュールは残す。
+- モデルとモジュールを一緒に開く (見本の `openSample`・モデルとモジュールのドロップ) ときは `Player.load(model, modules)` で、
+  モデルを開いた後でモジュールを読み込み、それから覚えていた組と比べる。
+- GPU を失って作り直したときも、モジュールを読み直して付けていたものを付け直す (組は覚え直さない)。
 - ヘッドレスのブラウザからは `window.__UGOE_VIEWER__` の `modules`・`slots`・`dressUpError`・`loadModule(file)`・`attachModule(name)`・
-  `detachModule(name)`・`unloadModule(name)`・`setSlotModule(slot, name)` を触れる。`ViewerHost` を差し替えるときは `pickModuleFiles` も置く。
+  `detachModule(name)`・`unloadModule(name)`・`setSlotModule(slot, name)`・`restoreOffer`・`restoreDressUp()`・`dismissRestore()`・
+  `setAutoRestore(on)` を触れる。`ViewerHost` を差し替えるときは `pickModuleFiles` も置く (覚えたパスから読み直すなら `readPath` も)。
+
+### 付けていた組を覚える (T0711)
+
+モデルごとに、読み込んだモジュール (名前とファイルの鍵) と付けていたもの (合成の順) を `localStorage` の
+`ugoe-viewer.dress-up` に覚える (`dressUpMemory.ts`。入れ物は下の `ModelMemory`)。
+
+- 着せ替えを操作する (付ける・外す・差し替える・×・モジュールを開く) たびに、開いているモデルの組を覚え直す。
+  モジュールを 1 つも読み込んでいなければ、そのモデルの組を忘れる。覚えるのは最近開いた 20 体まで (`MAX_MODELS`)、1 体に
+  64 個まで (`MAX_MODULES`)。ファイルの中身は覚えない (容量のため)。
+- モデルを開いたとき (別のモデルか、同じモデルをモジュールと一緒に開き直したとき)、覚えていた組と違えば (付けているもの・その順・
+  読み込んでいないモジュール。`needsRestore`) パネルで「戻す」か尋ねる (`restoreOffer`)。「前の組を自動で戻す」
+  (`ugoe-viewer.dress-up.auto-restore`) なら尋ねずに戻す。尋ねている間は覚え直さず、「今回は戻さない」でも覚えている組は
+  変えない (次に着せ替えを操作したときに覚え直す)。
+- 戻すときは、覚えていたモジュールを **読み込んでいるもの (名前) → このセッションで読んだ中身 (指紋。32 個まで手元に置く) →
+  覚えていた場所** の順に探し (`planRestore`)、付けているものを外してから覚えていた順に付ける。
+- **ファイルが見つからないとき:** 場所から読めない (動かした・消した) か、場所が無い (ドロップ・ブラウザの `<input type="file">`) で
+  このセッションで読んでいないモジュールは戻さず、パネルに理由を出す (`describeRestoreFailure`)。このとき覚えている組は変えないので、
+  モジュールを開き直してから「戻す」ことも、そのまま付け直すこともできる。
+- **ブラウザ版と Tauri 版の違い:** Tauri の「開く」「モジュールを開く…」で選んだファイルはパス (`path:`) を覚え、起動し直しても
+  バックエンドの `read_model_file` で読み直す (`ViewerHost.readPath`)。ブラウザで選んだファイルと、どちらでもドロップしたファイル
+  (Tauri のウィンドウは `dragDropEnabled: false` で、File API はパスを教えない) は場所が無く、読み直せるのは開いている間だけ。
+  見本 (`sample:`) と `?model=` の URL (`url:`) はどちらでも読み直せる。
+
+## モデルごとに覚える (T0711)
+
+モデルごとの設定 (着せ替えの組。T0709 の光源の設定も) は、`modelMemory.ts` の部品で覚える。
+
+- **モデルの鍵 (`ModelIdentity`):** `{ name, fingerprint, location? }`。
+  - `location` (`FileLocation`) は後から読み直せる場所: `path:<絶対パス>` (Tauri のダイアログ・起動時の引数)、
+    `sample:<samples/ からのパス>` (同梱の見本)、`url:<絶対 URL>` (ブラウザの `?model=`)。ドロップとブラウザで選んだファイルには無い。
+    `host.ts` がファイルを読むときに `ModelFile.location` に入れ、`readFileAt(location)` で読み直す。
+  - `fingerprint` はバイト列の指紋 (長さと 2 つの 32 ビットのハッシュ。暗号のハッシュではない。`fingerprint()`)。
+  - `name` は表示だけに使い、比べない (`model.ugoe` のような同じ名前の別のモデルがよくあるため)。
+- **同じモデル (`sameModel`):** 場所が同じか、指紋が同じ。場所が同じなら中身が変わっても (書き出し直し) 同じモデル。ドロップで
+  場所が分からなくても、中身が同じなら同じモデル。`ModelMemory.get` は場所が同じ項目を優先し、無ければ指紋が同じ項目を返す。
+  `set` は同じモデルの古い項目を消して新しい鍵で覚える (ドロップで覚えたモデルを「開く」で開くと、場所が付く)。
+- **入れ物 (`ModelMemory<T>`):** `new ModelMemory(key, parse, { limit })`。localStorage の 1 つのキーに
+  `{"version": 1, "entries": [{"model": ModelIdentity, "value": T}]}` を最近使った順に置き、`limit` を超えたら古いものから消す。
+  `get`・`set`・`delete` (「既定に戻す」)・`models`。値は `parse` (unknown → `T | null`) が確かめ、読めない項目・例外を出した項目・
+  壊れた JSON・違う版・使えない localStorage では、何も覚えていないものとして動き、例外を出さない。
+- T0709 は、`Player.load` で作る鍵 (`modelIdentity(file)`) と同じ作り方で `ModelMemory<LightingSettings>` を持てばよい
+  (`parse` には `lighting.ts` の `sanitizeLighting` を使える)。
 - 確かめるための本体とモジュールはリポジトリに無い。`ugoe_model::fixtures` の `dress_up_base`・`long_hair_module`・`dress_module` を
   `ugoe_format` の `write_bundle` / `module_file::write_module` で書き出して作る (T0706 のメモ)。
 

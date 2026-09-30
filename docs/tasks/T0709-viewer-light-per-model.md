@@ -25,6 +25,8 @@ assignee:
 ## 参考
 
 - `docs/tasks/T0705-viewer-lighting.md` のメモ
+- モデルの鍵と、モデルごとに上限付きで覚える入れ物は T0711 が `apps/viewer/src/lib/modelMemory.ts` に置いた
+  (`apps/viewer/README.md#モデルごとに覚える-t0711`)。同じ鍵で `ModelMemory<LightingSettings>` を持てばよい
 
 ## メモ
 

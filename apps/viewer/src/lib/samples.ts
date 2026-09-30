@@ -1,7 +1,7 @@
 // アプリに同梱した見本 (assets/samples、MIT)。ツールバーの「サンプル」から開く。
 // ファイルは vite.config.ts の `sampleModels` が assets/samples の .ugoe と .ugoemod をすべて開発サーバーで配り、
 // ビルドの出力の `samples/` に入れる。
-import type { ModelFile } from "./modelFile";
+import type { ModelFile, ModuleToOpen } from "./modelFile";
 
 /** 見本と一緒に読み込む着せ替えのモジュール。 */
 export interface SampleModule {
@@ -54,12 +54,12 @@ export function sampleFiles(samples: readonly Sample[] = SAMPLES): string[] {
 
 /** 見本を開く先 (`Player`)。 */
 export interface SampleTarget {
-  load(file: ModelFile): Promise<void>;
-  loadModule(file: ModelFile, attach?: boolean): string | null;
+  /** モデルを開き、`modules` を読み込む (前に付けていた組があれば、その後で戻すか尋ねる。T0711)。 */
+  load(file: ModelFile, modules?: readonly ModuleToOpen[]): Promise<void>;
 }
 
 /**
- * 見本を開く: ファイルをすべて読んでから、モデルを開き、モジュールを読み込む (`attach` のものは付ける)。
+ * 見本を開く: ファイルをすべて読んでから、モデルをモジュールと一緒に開く (`attach` のものは付ける)。
  * 読めないファイルがあれば、何も開かずに例外を投げる。
  */
 export async function openSample(
@@ -72,9 +72,11 @@ export async function openSample(
     ...sample.modules.map((m) => read(m.file)),
   ]);
   if (model === undefined) return;
-  await target.load(model);
-  sample.modules.forEach((m, i) => {
-    const file = modules[i];
-    if (file !== undefined) target.loadModule(file, m.attach);
-  });
+  await target.load(
+    model,
+    sample.modules.flatMap((m, i) => {
+      const file = modules[i];
+      return file === undefined ? [] : [{ file, attach: m.attach }];
+    }),
+  );
 }

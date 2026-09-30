@@ -24,7 +24,7 @@ describe("samples", () => {
     expect(dressUp?.modules.filter((m) => !m.attach).length).toBeGreaterThan(0);
   });
 
-  it("opens the model first, then loads the modules with their attach flags", async () => {
+  it("opens the model together with the modules and their attach flags", async () => {
     const sample: Sample = {
       id: "x",
       label: "x",
@@ -39,12 +39,9 @@ describe("samples", () => {
     await openSample(
       sample,
       {
-        async load(f) {
+        async load(f, modules = []) {
           calls.push(`load ${f.name}`);
-        },
-        loadModule(f, attach) {
-          calls.push(`module ${f.name} ${attach}`);
-          return f.name;
+          for (const m of modules) calls.push(`module ${m.file.name} ${m.attach}`);
         },
       },
       async (path) => file(path),
@@ -57,10 +54,6 @@ describe("samples", () => {
     const target = {
       async load() {
         calls.push("load");
-      },
-      loadModule() {
-        calls.push("module");
-        return null;
       },
     };
     const dressUp = SAMPLES.find((s) => s.id === "dress-up") as Sample;

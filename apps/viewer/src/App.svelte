@@ -55,16 +55,24 @@ function onDragOver(e: DragEvent) {
   dropping = true;
 }
 
-/** ドロップしたファイルを開く。モデルとモジュール (.ugoemod) を一緒に落としたら、モデルを先に開く。 */
+/**
+ * ドロップしたファイルを開く。モデルとモジュール (.ugoemod) を一緒に落としたら、モデルをモジュールと一緒に開く
+ * (別のモデルなら前のモジュールは一覧から除かれ、落としたモジュールが付く)。
+ */
 async function openDropped(files: File[]) {
   try {
     const read = await Promise.all(files.map(readBrowserFile));
     const isModule = (f: ModelFile) => detectModelKind(f) === "module";
     const models = read.filter((f) => !isModule(f));
+    const modules = read.filter(isModule);
     // モデルは最後の 1 つだけを開く。
     const model = models.at(-1);
-    if (model !== undefined) await player.load(model);
-    for (const file of read.filter(isModule)) await player.load(file);
+    if (model !== undefined)
+      await player.load(
+        model,
+        modules.map((file) => ({ file, attach: true })),
+      );
+    else for (const file of modules) await player.load(file);
   } catch (e) {
     player.error = e instanceof Error ? e.message : String(e);
   }
@@ -154,7 +162,7 @@ function onKeyDown(e: KeyboardEvent) {
     -->
     <aside class="sidebar">
       <TrackingPanel {tracker} parameterIds={player.trackingParameterIds} values={player.values} />
-      {#if player.slots.length > 0 || player.modules.length > 0 || player.dressUpError}
+      {#if player.slots.length > 0 || player.modules.length > 0 || player.dressUpError || player.restoreOffer}
         <DressUpPanel {player} hasModel={player.status === "ready"} />
       {/if}
       {#if player.usesLighting}

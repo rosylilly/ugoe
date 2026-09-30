@@ -10,7 +10,13 @@
 // (Tauri のウィンドウは `dragDropEnabled: false` にして、webview にドロップを渡している)。
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { baseName, MODEL_EXTENSIONS, MODULE_EXTENSIONS, type ModelFile } from "./modelFile";
+import {
+  baseName,
+  type FileLocation,
+  MODEL_EXTENSIONS,
+  MODULE_EXTENSIONS,
+  type ModelFile,
+} from "./modelFile";
 
 export interface ViewerHost {
   /** モデル (か着せ替えのモジュール) のファイルを選んで読む。取り消したら `null`。 */
@@ -24,6 +30,11 @@ export interface ViewerHost {
    * 保存したら `true`、取り消したら `false`。省くとブラウザのダウンロードで保存する。
    */
   saveJsonFile?(name: string, text: string): Promise<boolean>;
+  /**
+   * パス (`FileLocation` の `path:` の後ろ) のファイルを読み直す (覚えていた着せ替えのモジュールを戻すときなど)。
+   * 無ければ `path:` の場所は読み直せない (ブラウザ)。
+   */
+  readPath?(path: string): Promise<ModelFile>;
 }
 
 declare global {
@@ -35,7 +46,7 @@ declare global {
 
 async function readTauriFile(path: string): Promise<ModelFile> {
   const buffer = await invoke<ArrayBuffer>("read_model_file", { path });
-  return { name: baseName(path), bytes: new Uint8Array(buffer) };
+  return { name: baseName(path), bytes: new Uint8Array(buffer), location: `path:${path}` };
 }
 
 const tauriHost: ViewerHost = {
@@ -73,6 +84,7 @@ const tauriHost: ViewerHost = {
     await invoke("write_json_file", { path, contents: text });
     return true;
   },
+  readPath: readTauriFile,
 };
 
 /** ブラウザのダウンロードで保存する。 */
@@ -124,12 +136,20 @@ const browserHost: ViewerHost = {
   async initialModelFile() {
     const url = new URLSearchParams(location.search).get("model");
     if (!url) return null;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`${url}: ${response.status} ${response.statusText}`);
-    const name = baseName(new URL(url, location.href).pathname);
-    return { name, bytes: new Uint8Array(await response.arrayBuffer()) };
+    return readUrl(new URL(url, location.href).href);
   },
 };
+
+/** URL のファイルを読む (`?model=`)。 */
+async function readUrl(url: string): Promise<ModelFile> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`${url}: ${response.status} ${response.statusText}`);
+  return {
+    name: baseName(new URL(url).pathname),
+    bytes: new Uint8Array(await response.arrayBuffer()),
+    location: `url:${url}`,
+  };
+}
 
 /** アプリに同梱した見本のファイル (`samples/` からのパス。samples.ts・vite.config.ts の `sampleModels`)。 */
 export async function readSampleFile(path: string): Promise<ModelFile> {
@@ -139,7 +159,29 @@ export async function readSampleFile(path: string): Promise<ModelFile> {
   return {
     name: `${baseName(path)} (サンプル)`,
     bytes: new Uint8Array(await response.arrayBuffer()),
+    location: `sample:${path}`,
   };
+}
+
+/**
+ * 場所 (`ModelFile.location`) からファイルを読み直す。`path:` は `ViewerHost.readPath` を使い、無ければ
+ * (ブラウザ) 読めないとして例外を投げる。ファイルが消えた・動いたときも例外。
+ */
+export async function readFileAt(location: FileLocation): Promise<ModelFile> {
+  const colon = location.indexOf(":");
+  const rest = location.slice(colon + 1);
+  switch (location.slice(0, colon)) {
+    case "sample":
+      return readSampleFile(rest);
+    case "url":
+      return readUrl(rest);
+    default: {
+      const host = viewerHost();
+      if (host.readPath === undefined)
+        throw new Error("このアプリではパスからファイルを読めません");
+      return host.readPath(rest);
+    }
+  }
 }
 
 /** 今使う `ViewerHost`。 */

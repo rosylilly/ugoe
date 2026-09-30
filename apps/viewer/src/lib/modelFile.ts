@@ -6,6 +6,29 @@ export interface ModelFile {
   /** 表示用の名前 (パスを除いたファイル名)。 */
   name: string;
   bytes: Uint8Array;
+  /**
+   * 後から読み直せる場所 (host.ts の `readFileAt`)。ドロップと、ブラウザの `<input type="file">` で選んだファイルには無い
+   * (File API は場所を教えない)。
+   */
+  location?: FileLocation;
+}
+
+/** モデルと一緒に開く着せ替えのモジュール (見本・ドロップ)。 */
+export interface ModuleToOpen {
+  file: ModelFile;
+  /** 読み込んだら付けるか。 */
+  attach: boolean;
+}
+
+/**
+ * ファイルを読み直せる場所。`path:` は Tauri で選んだファイルの絶対パス、`sample:` は同梱の見本 (`samples/` からのパス)、
+ * `url:` はブラウザで `?model=` から開いた URL (絶対 URL)。
+ */
+export type FileLocation = `path:${string}` | `sample:${string}` | `url:${string}`;
+
+/** 文字列が `FileLocation` の形か (保存した値を読むとき)。 */
+export function isFileLocation(v: unknown): v is FileLocation {
+  return typeof v === "string" && /^(path|sample|url):./.test(v);
 }
 
 /** `bundle` と `json` はモデル、`module` は着せ替えのモジュール (`.ugoemod`)。 */

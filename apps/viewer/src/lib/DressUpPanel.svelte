@@ -2,6 +2,7 @@
 // 着せ替えのパネル (T0706)。スロットを持つモデルか、モジュールを読み込んだときに App.svelte が出す。
 // スロットごとに、読み込んだモジュールを並べて付ける・外す・差し替える・一覧から除く。
 // 付け外しは Player (WebPuppet の着せ替えの口) が行い、失敗の理由は `player.dressUpError`。
+// モデルに前に付けていた組があれば、戻すか尋ねる (T0711。`player.restoreOffer`)。
 import { groupBySlot, type ModuleInfo } from "./dressUp";
 import { viewerHost } from "./host";
 import type { Player } from "./player.svelte";
@@ -25,6 +26,15 @@ async function openModules() {
   }
 }
 
+let offer = $derived(player.restoreOffer);
+let offerText = $derived(
+  offer === null
+    ? ""
+    : offer.attached.length > 0
+      ? offer.attached.join("・")
+      : `付けていないモジュール ${offer.modules.length} 個`,
+);
+
 function describe(m: ModuleInfo): string {
   const lines = [`スロット: ${m.slot}`, `テクスチャ: ${m.textures} 枚`];
   const r = m.requires;
@@ -46,7 +56,25 @@ function describe(m: ModuleInfo): string {
     <button type="button" onclick={openModules} title=".ugoemod を選んで読み込み、付ける (ウィンドウへのドロップでも開ける)"
       >モジュールを開く…</button
     >
+    <label title="モデルを開いたとき、前にそのモデルに付けていた組を尋ねずに戻す">
+      <input
+        type="checkbox"
+        checked={player.autoRestore}
+        onchange={(e) => player.setAutoRestore(e.currentTarget.checked)}
+      />
+      前の組を自動で戻す
+    </label>
   </div>
+
+  {#if offer !== null}
+    <div class="offer" role="status">
+      <p>前にこのモデルに付けていた組があります: <strong>{offerText}</strong></p>
+      <div class="offer-actions">
+        <button type="button" onclick={() => void player.restoreDressUp()}>戻す</button>
+        <button type="button" onclick={() => player.dismissRestore()}>今回は戻さない</button>
+      </div>
+    </div>
+  {/if}
 
   {#if player.dressUpError}
     <p class="error" role="alert">{player.dressUpError}</p>
@@ -143,6 +171,35 @@ function describe(m: ModuleInfo): string {
   }
   .actions {
     margin-top: 0.4rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+  }
+  .actions label {
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .offer {
+    margin-top: 0.4rem;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+  }
+  .offer p {
+    margin: 0;
+  }
+  .offer-actions {
+    display: flex;
+    gap: 0.3rem;
+    margin-top: 0.3rem;
+  }
+  .offer-actions button {
+    font-size: 0.75rem;
+    padding: 0.1rem 0.5rem;
   }
   .actions button {
     font-size: 0.75rem;
@@ -151,6 +208,7 @@ function describe(m: ModuleInfo): string {
   .error {
     margin: 0.4rem 0 0;
     color: var(--danger);
+    white-space: pre-line;
   }
   section {
     margin-top: 0.6rem;

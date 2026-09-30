@@ -14,9 +14,21 @@ import {
   parseSlots,
   type SlotInfo,
 } from "./dressUp";
+import {
+  type DressUpSet,
+  describeRestoreFailure,
+  dressUpMemory,
+  loadAutoRestore,
+  needsRestore,
+  planRestore,
+  type RememberedModule,
+  saveAutoRestore,
+} from "./dressUpMemory";
 import { DriverSet } from "./drivers";
+import { readFileAt } from "./host";
 import { type LightingSettings, loadLighting, saveLighting, toLightingJson } from "./lighting";
-import { detectModelKind, type ModelFile } from "./modelFile";
+import { detectModelKind, type ModelFile, type ModuleToOpen } from "./modelFile";
+import { type ModelIdentity, modelIdentity, sameModel } from "./modelMemory";
 import {
   groupParameters,
   type ParameterDef,
@@ -38,6 +50,8 @@ export type PlayerStatus =
 const MAX_DT = 0.1;
 /** スライダーの値を書き換える差の下限。 */
 const EPSILON = 1e-6;
+/** このセッションで読んだモジュールの中身を手元に置く数 (一覧から除いた後でも組を戻せるように)。 */
+const SESSION_FILES = 32;
 
 function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -71,12 +85,19 @@ export class Player {
   usesLighting = $state(false);
   /** 光源の設定 (lighting.ts)。モデルを開き直しても保ち、localStorage に覚える。 */
   lighting = $state<LightingSettings>(loadLighting());
-  /** 読み込んだ着せ替えのモジュール (読み込んだ順)。モデルを開き直しても残る。 */
+  /** 読み込んだ着せ替えのモジュール (読み込んだ順)。同じモデルを開き直したときは残り、別のモデルを開くと空になる。 */
   modules = $state<ModuleInfo[]>([]);
   /** 開いているモデル (本体) のスロット。 */
   slots = $state<SlotInfo[]>([]);
-  /** 直近の着せ替えの失敗 (利用者に見せる文)。 */
+  /** 直近の着せ替えの失敗 (利用者に見せる文。複数あれば改行で区切る)。 */
   dressUpError = $state<string | null>(null);
+  /**
+   * 開いたモデルに前に付けていた組 (dressUpMemory.ts)。戻すか尋ねている間だけ入る (`restoreDressUp` か
+   * `dismissRestore`、または着せ替えを操作すると空になる)。
+   */
+  restoreOffer = $state<DressUpSet | null>(null);
+  /** モデルを開いたとき、前に付けていた組を尋ねずに戻すか。localStorage に覚える。 */
+  autoRestore = $state(loadAutoRestore());
 
   /** パラメータを毎フレーム外から動かすもの (drivers.ts)。 */
   readonly drivers = new DriverSet();
@@ -95,12 +116,20 @@ export class Player {
   /** 次のフレームで渡すトラッキングの入力 (渡したら `null`)。 */
   #pendingTracking: TrackingFrame | null = null;
   #lastTracking: TrackingFrame | null = null;
-  /** 読み込んだモジュールのファイル (名前ごと。GPU を作り直したときに読み直す)。 */
-  #moduleFiles = new Map<string, ModelFile>();
+  /** 読み込んだモジュールのファイルと鍵 (名前ごと。GPU を作り直したときに読み直す。組を覚えるときに使う)。 */
+  #moduleFiles = new Map<string, { file: ModelFile; identity: ModelIdentity }>();
   /** 描画の準備ができる前に開いたモジュール。 */
-  #pendingModules: ModelFile[] = [];
+  #pendingModules: ModuleToOpen[] = [];
   /** 付けているモジュールの名前 (合成の順。GPU を作り直したときに付け直す)。 */
   #attached: string[] = [];
+  /** 開いているモデルの鍵 (modelMemory.ts)。 */
+  #model: ModelIdentity | null = null;
+  /** モデルごとに覚えた着せ替えの組。 */
+  #memory = dressUpMemory();
+  /** このセッションで読んだモジュールの中身 (指紋ごと。古いものから捨てる)。 */
+  #sessionFiles = new Map<string, ModelFile>();
+  /** 0 より大きい間は、着せ替えの変化を利用者の操作とみなさない (組を覚えず、尋ねているのを取り消さない)。 */
+  #quiet = 0;
 
   /** `container` の中に canvas を作り、描画を始める。 */
   async attach(container: HTMLElement): Promise<void> {
@@ -125,8 +154,13 @@ export class Player {
   /**
    * モデルか着せ替えのモジュールを開く。形式は中身から判別する (modelFile.ts)。
    * モジュールなら読み込んで付ける (`loadModule`)。
+   *
+   * モデルなら、`modules` (見本やドロップでモデルと一緒に開くモジュール) を読み込んだ後で、そのモデルに前に付けていた
+   * 組 (dressUpMemory.ts) と比べ、違えば戻すか尋ねる (`autoRestore` なら戻す)。別のモデルを開くときは、読み込んでいた
+   * モジュールを一覧から除く (前のモデルの組として覚えてある)。同じモデル (modelMemory.ts の `sameModel`) を
+   * 開き直すときは残し、wasm が付け直す (`modules` が無ければ比べず、いまの組を覚える)。
    */
-  async load(file: ModelFile): Promise<void> {
+  async load(file: ModelFile, modules: readonly ModuleToOpen[] = []): Promise<void> {
     const kind = detectModelKind(file);
     if (kind === "module") {
       this.loadModule(file);
@@ -135,25 +169,63 @@ export class Player {
     this.#file = file;
     const puppet = this.#puppet;
     // まだ描画の準備中なら、準備ができたときに読む (#createPuppet)。
-    if (puppet === null) return;
+    if (puppet === null) {
+      this.#pendingModules.push(...modules);
+      return;
+    }
     if (kind === null) {
       this.error = `${file.name}: .ugoe・JSON のモデルか .ugoemod のモジュールではありません`;
       return;
     }
+    const identity = modelIdentity(file);
+    const switching = this.#model === null || !sameModel(this.#model, identity);
+    // 一緒に開くモジュールが組を変えるので、覚えている組は先に読んでおく。
+    const remembered = this.#memory.get(identity);
+    this.#quiet++;
     try {
-      // 付けていたモジュールは wasm が付け直す。付けられなかったものは外して警告に入る。
-      const warnings =
-        kind === "bundle"
-          ? puppet.load_bundle(file.bytes)
-          : puppet.load_json(new TextDecoder().decode(file.bytes));
-      this.warnings = describeLoadWarnings(
-        warnings,
-        parseDetachedModules(puppet.detached_modules_json()),
-      );
-    } catch (e) {
-      this.error = `${file.name}: ${message(e)}`;
-      return;
+      // モデルを開く前に読み込んだモジュールは、どのモデルの組でもないので残す。
+      const previous = switching && this.#model !== null ? this.#clearModules(puppet) : null;
+      try {
+        // 同じモデルなら、付けていたモジュールは wasm が付け直す。付けられなかったものは外して警告に入る。
+        const warnings =
+          kind === "bundle"
+            ? puppet.load_bundle(file.bytes)
+            : puppet.load_json(new TextDecoder().decode(file.bytes));
+        this.warnings = describeLoadWarnings(
+          warnings,
+          parseDetachedModules(puppet.detached_modules_json()),
+        );
+      } catch (e) {
+        this.error = `${file.name}: ${message(e)}`;
+        // 前のモデルが残るので、除いたモジュールを戻す。
+        if (previous !== null) this.#reloadModules(previous.files, previous.attached);
+        return;
+      }
+      this.#model = identity;
+      this.#afterLoad(file);
+      for (const m of modules) this.loadModule(m.file, m.attach);
+    } finally {
+      this.#quiet--;
     }
+    // 別のモデルか、同じモデルでも見本のようにモジュールと一緒に開き直したときは、覚えている組と比べる。
+    if (switching || modules.length > 0) {
+      this.restoreOffer = null;
+      if (
+        remembered !== null &&
+        needsRestore(remembered, new Set(this.#moduleFiles.keys()), this.#attached)
+      ) {
+        if (this.autoRestore) await this.restoreDressUp(remembered);
+        else this.restoreOffer = remembered;
+        return;
+      }
+    }
+    this.#remember();
+  }
+
+  /** モデルを読んだ後の、パラメータ・トラッキング・光源・着せ替えの一覧の用意。 */
+  #afterLoad(file: ModelFile): void {
+    const puppet = this.#puppet;
+    if (puppet === null) return;
     // 読み直しでは同じ ID の値が引き継がれるが、別のファイルを開いたときは既定値から始める。
     puppet.reset_parameters();
     const list = parseParameterList(puppet.parameters_json());
@@ -176,6 +248,78 @@ export class Player {
     this.fit();
   }
 
+  /**
+   * 覚えていた組を戻す (省くと尋ねている組)。モジュールは、読み込んでいるもの → このセッションで読んだ中身 →
+   * 覚えていた場所の順に探す。戻せなかったものは `dressUpError` に書き、覚えている組は変えない。
+   */
+  async restoreDressUp(set: DressUpSet | null = this.restoreOffer): Promise<void> {
+    this.restoreOffer = null;
+    const puppet = this.#puppet;
+    const model = this.#model;
+    if (set === null || puppet === null || model === null) return;
+    const failures: string[] = [];
+    const plan = planRestore(set, new Set(this.#moduleFiles.keys()), (fp) =>
+      this.#sessionFiles.get(fp),
+    );
+    const files = await Promise.all(
+      plan.map(async ({ module, source }): Promise<[RememberedModule, ModelFile] | null> => {
+        switch (source.kind) {
+          case "loaded":
+            return null;
+          case "cached":
+            return [module, source.file];
+          case "location":
+            try {
+              return [module, await readFileAt(source.location)];
+            } catch (e) {
+              failures.push(describeRestoreFailure(module, message(e)));
+              return null;
+            }
+          case "unavailable":
+            failures.push(describeRestoreFailure(module));
+            return null;
+        }
+      }),
+    );
+    // 読んでいる間に別のモデルを開いたら、何もしない。
+    if (this.#puppet !== puppet || this.#model !== model) return;
+    this.#quiet++;
+    try {
+      // 覚えていた名前と、読み込んで wasm が返した名前 (ファイルが書き換わっていれば違うことがある)。
+      const names = new Map<string, string>();
+      for (const entry of files) {
+        if (entry === null) continue;
+        const name = this.loadModule(entry[1], false);
+        if (name !== null) names.set(entry[0].name, name);
+      }
+      // 合成の順を揃えるため、付けているものをすべて外してから、覚えていた順に付ける。
+      for (const name of [...this.#attached]) this.detachModule(name);
+      for (const remembered of set.attached) {
+        const name = names.get(remembered) ?? remembered;
+        if (!this.#moduleFiles.has(name)) continue;
+        if (!this.attachModule(name) && this.dressUpError !== null)
+          failures.push(this.dressUpError);
+      }
+    } finally {
+      this.#quiet--;
+    }
+    // 戻せなかったものがあれば、覚えている組はそのままにする (もう一度開けば戻せるように)。
+    // 利用者が着せ替えを操作したら、そのときの組で覚え直す。
+    this.dressUpError = failures.length > 0 ? failures.join("\n") : null;
+    if (failures.length === 0) this.#remember();
+  }
+
+  /** 覚えていた組を今回は戻さない (覚えている組は、着せ替えを操作するまでそのまま)。 */
+  dismissRestore(): void {
+    this.restoreOffer = null;
+  }
+
+  /** モデルを開いたときに、前に付けていた組を尋ねずに戻すか。 */
+  setAutoRestore(enabled: boolean): void {
+    this.autoRestore = enabled;
+    saveAutoRestore(enabled);
+  }
+
   // --- 着せ替え (T0706)。付け外しの規則は docs/spec/modules.md#puppet-での着せ替え ---
 
   /**
@@ -186,7 +330,7 @@ export class Player {
     const puppet = this.#puppet;
     if (puppet === null) {
       // 描画の準備ができたら読んで付ける (#createPuppet)。
-      this.#pendingModules.push(file);
+      this.#pendingModules.push({ file, attach });
       return null;
     }
     let name: string;
@@ -196,7 +340,14 @@ export class Player {
       this.dressUpError = `${file.name}: ${describeDressUpError(e)}`;
       return null;
     }
-    this.#moduleFiles.set(name, file);
+    const identity = modelIdentity(file);
+    this.#moduleFiles.set(name, { file, identity });
+    this.#sessionFiles.delete(identity.fingerprint);
+    this.#sessionFiles.set(identity.fingerprint, file);
+    for (const fp of this.#sessionFiles.keys()) {
+      if (this.#sessionFiles.size <= SESSION_FILES) break;
+      this.#sessionFiles.delete(fp);
+    }
     this.dressUpError = null;
     if (attach && puppet.has_model()) this.attachModule(name);
     else this.#syncDressUp();
@@ -329,6 +480,49 @@ export class Player {
 
   // --- 内部 ---
 
+  /**
+   * 読み込んでいたモジュールをすべて一覧から除く (別のモデルを開く前)。除いたファイルと付けていたものを返す
+   * (開けなかったときに戻す)。中身はこのセッションの間は手元に残る (`#sessionFiles`)。
+   */
+  #clearModules(puppet: WebPuppet): { files: ModelFile[]; attached: string[] } {
+    const previous = {
+      files: [...this.#moduleFiles.values()].map((m) => m.file),
+      attached: [...this.#attached],
+    };
+    for (const name of this.#moduleFiles.keys()) {
+      try {
+        puppet.unload_module(name);
+      } catch {
+        // 読み込んでいなければ何もしない。
+      }
+    }
+    this.#moduleFiles.clear();
+    this.#attached = [];
+    this.dressUpError = null;
+    this.#syncDressUp();
+    return previous;
+  }
+
+  /** モジュールを読み込み直し、`attached` を (合成の順に) 付ける。 */
+  #reloadModules(files: ModelFile[], attached: string[]): void {
+    this.#quiet++;
+    try {
+      for (const file of files) this.loadModule(file, false);
+      if (this.#puppet?.has_model()) for (const name of attached) this.attachModule(name);
+    } finally {
+      this.#quiet--;
+    }
+  }
+
+  /** 開いているモデルに、いま読み込んでいるモジュールの組を覚える。何も読み込んでいなければ忘れる。 */
+  #remember(): void {
+    const model = this.#model;
+    if (model === null || this.#quiet > 0 || this.#puppet?.has_model() !== true) return;
+    const modules = [...this.#moduleFiles].map(([name, m]) => ({ name, file: m.identity }));
+    if (modules.length === 0) this.#memory.delete(model);
+    else this.#memory.set(model, { modules, attached: [...this.#attached] });
+  }
+
   /** 付け外しを 1 つ行い、一覧を読み直す。失敗したら (wasm は何も変えない) 理由を `dressUpError` に入れる。 */
   #dressUp(action: (puppet: WebPuppet) => void): boolean {
     const puppet = this.#puppet;
@@ -357,6 +551,11 @@ export class Player {
     }
     this.#attached = puppet.attached_modules();
     if (puppet.has_model()) this.usesLighting = puppet.uses_lighting();
+    // 利用者が着せ替えを操作した: 尋ねている組は取り消し、いまの組を覚える。
+    if (this.#quiet === 0) {
+      this.restoreOffer = null;
+      this.#remember();
+    }
   }
 
   #tick = (now: number): void => {
@@ -457,18 +656,22 @@ export class Player {
     this.resize(...this.#cssSize);
     this.#applyBackground();
     this.status = "empty";
-    // GPU を作り直したときは、モジュールを読み直してからモデルを読み、付けていたもの (合成の順) を付け直す。
-    // 準備中に開いたモジュールは、モデルを読んだ後に付ける。
-    const attach = [...this.#attached];
-    const known = [...this.#moduleFiles.values()];
+    // 準備中に開いたモジュールは、モデルと一緒に開く (モデルが無ければ読み込むだけ)。
+    const pending = this.#pendingModules.splice(0);
+    // GPU を作り直したときは、同じモデルを読み直してから、モジュールを読み直して付けていたもの (合成の順) を
+    // 付け直す。作り直しは利用者の操作ではないので、組を覚え直さない。
+    const recovering = this.#recovering;
+    const attached = [...this.#attached];
+    const known = [...this.#moduleFiles.values()].map((m) => m.file);
     this.#moduleFiles.clear();
-    for (const file of known) this.loadModule(file, false);
-    for (const file of this.#pendingModules.splice(0)) {
-      const name = this.loadModule(file, false);
-      if (name !== null) attach.push(name);
+    if (recovering) this.#quiet++;
+    try {
+      if (this.#file !== null) await this.load(this.#file, pending);
+      else for (const m of pending) this.loadModule(m.file, m.attach);
+      this.#reloadModules(known, attached);
+    } finally {
+      if (recovering) this.#quiet--;
     }
-    if (this.#file !== null) await this.load(this.#file);
-    if (puppet.has_model()) for (const name of attach) this.attachModule(name);
   }
 
   #destroyPuppet(): void {
