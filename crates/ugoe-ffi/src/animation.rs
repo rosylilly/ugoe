@@ -1,5 +1,5 @@
 //! モーションのイベントと物理の設定の差し替え (T0412)。wasm の `motion_events`・`set_physics_json`・
-//! `physics_json`・`reset_physics` と同じ。
+//! `physics_json`・`reset_physics` と同じ。効果の設定の差し替え (T0414) は wasm の `set_effects_json` と同じ。
 
 use std::ffi::{CString, c_char};
 
@@ -173,6 +173,38 @@ pub unsafe extern "C" fn ugoe_puppet_reset_physics(puppet: *mut UgoePuppet) -> U
     guard(|| {
         // SAFETY: 呼び出し側の約束。
         unsafe { puppet_mut(puppet)? }.puppet.reset_physics();
+        Ok(())
+    })
+}
+
+/// 目パチ・呼吸・リップシンクの設定を JSON (モデルの `effects` と同じ形。UTF-8、`len` バイト。NUL 終端は要らない)
+/// で差し替える。省略したフィールドはモデルと同じ既定値になる。
+///
+/// 再生の状態は初めからになる (目パチは新しい `seed` で目を開けた状態から、呼吸の位相は 0)。
+/// リップシンクの音量は保つ (`docs/spec/motion.md#エフェクト設定の差し替え`、`ugoe::Puppet::set_effects`)。
+/// 同じ設定を渡しても初めからになる。JSON を読めなければ `UGOE_ERROR_FORMAT` を返し、何も変えない。
+///
+/// # Safety
+///
+/// `puppet` は有効な `UgoePuppet`、`json` は `len` バイトの読める領域を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_puppet_set_effects_json(
+    puppet: *mut UgoePuppet,
+    json: *const u8,
+    len: usize,
+) -> UgoeResult {
+    guard(|| {
+        // SAFETY: 呼び出し側の約束。
+        let p = unsafe { puppet_mut(puppet)? };
+        if json.is_null() {
+            return Err(Error::null("json"));
+        }
+        // SAFETY: 呼び出し側の約束。
+        let json = std::str::from_utf8(unsafe { bytes(json, len, "json")? })
+            .map_err(|_| Error::new(UGOE_ERROR_INVALID_ARGUMENT, "`json` is not UTF-8"))?;
+        let effects = serde_json::from_str(json)
+            .map_err(|e| Error::new(UGOE_ERROR_FORMAT, format!("effects: {e}")))?;
+        p.puppet.set_effects(effects);
         Ok(())
     })
 }

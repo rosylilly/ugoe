@@ -33,6 +33,8 @@ pub struct UgoePuppet {
     pub(crate) drawable_ids: Vec<CString>,
     /// 当たり判定の ID (NUL 終端。`Model::hit_areas` の並び)。
     pub(crate) hit_area_ids: Vec<CString>,
+    /// パーツの ID (NUL 終端。`Model::parts` の並び)。
+    pub(crate) part_ids: Vec<CString>,
     motions: Vec<Motion>,
     motion_names: Vec<CString>,
     expressions: Vec<Expression>,
@@ -106,6 +108,7 @@ impl UgoePuppet {
             parameter_ids: Vec::new(),
             drawable_ids: Vec::new(),
             hit_area_ids: Vec::new(),
+            part_ids: Vec::new(),
             motions,
             motion_names,
             expressions,
@@ -141,6 +144,11 @@ impl UgoePuppet {
             .hit_areas
             .iter()
             .map(|h| c_string(h.id.as_str()))
+            .collect();
+        self.part_ids = model
+            .parts
+            .iter()
+            .map(|p| c_string(p.id.as_str()))
             .collect();
         self.module_names = self
             .modules

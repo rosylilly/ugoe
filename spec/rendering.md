@@ -42,6 +42,9 @@ results within the tolerances of [Conformance](#conformance).
   It MUST be an affine transform. Everything in this document is defined in canvas coordinates or
   per target pixel, so the result does not depend on the view transform except through where and
   how large the model appears.
+- A view transform that has no inverse (its linear part has determinant 0) maps every triangle onto
+  a line or a point. Such a triangle covers no pixel center ([Drawing a frame](#drawing-a-frame)),
+  so nothing is drawn, and the canvas position of a pixel (used by point lights) is never needed.
 - The renderer draws on top of the render target's existing contents. Clearing the target or
   drawing a background is the host's job.
 

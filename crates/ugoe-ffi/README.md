@@ -178,7 +178,33 @@ ugoe_puppet_reset_physics(puppet);                    /* 粒子を初期姿勢�
 - `ugoe_puppet_set_physics_json` は `ugoe::Puppet::set_physics` と同じく、モデルに対して検査する。JSON を読めなければ `UGOE_ERROR_FORMAT`、
   検査を通らなければ `UGOE_ERROR_INVALID_MODEL` で、どちらも何も変えない。粒子は次の `update` で静止姿勢から始める。
 - 着せ替えのモジュールを付けている間に差し替えた設定は、次の付け外しで本体の設定から作り直される (wasm の `set_physics_json` と同じ)。
+  差し替えた設定を保たないことは T0414 で決めた (合成した設定は本体の分に戻せないため。`docs/spec/modules.md#puppet-での着せ替え`)。
+  付けている間も設定を変えたいなら、付け外しの後に差し替え直す。
 - `ugoe_puppet_physics_json` は NUL 終端しない UTF-8 をホストのバッファに書く (可変長の結果の規約)。
+
+## パーツ・ポーズ・効果の設定 (T0414)
+
+```c
+uint32_t parts = 0, index = 0;
+ugoe_puppet_part_count(puppet, &parts);             /* パーツの数 (Model::parts の並び) */
+ugoe_puppet_part_index(puppet, "ArmA", &index);     /* ID から番号。ugoe_puppet_part_id で逆引き */
+UgoePartOpacity o;
+ugoe_puppet_part_opacity(puppet, index, &o);        /* 直前の update が書いた上書き (o.value, o.weight) */
+
+bool shown = false;
+ugoe_puppet_show_pose(puppet, "ArmB", &shown);      /* ポーズの要素 (part の ID) を表示する。要素でなければ false */
+ugoe_puppet_set_effects_json(puppet, json, len);    /* 目パチ・呼吸・リップシンクの設定 (モデルの effects の形) */
+```
+
+- `ugoe_puppet_part_opacity` はモーションのパーツの不透明度のカーブとポーズが書いた **上書き** (`lerp(o, value, weight)` の `value` と
+  `weight`。上書きしなければ `weight` は 0) で、公開仕様の時間の例 (`spec/examples/README.md#timeline-examples`) の `part_opacity` と同じもの。
+  キーフォームと親を掛けた評価の後の不透明度ではない (ランタイムが公開していないため。メッシュの不透明度は `UgoeDrawableState::opacity`)。
+- `ugoe_puppet_show_pose` は `PosePlayer::show` と同じ (`docs/spec/motion.md#ポーズ`)。`links` のパーツや、どの要素の `part` でもない
+  パーツは何も変えず `false` (エラーにはしない)。不透明度は次の update からフェードし、そのフレームにモーションが同じグループの要素を
+  要求すれば要求が勝つ。ポーズの段を止めている間も表示中の要素は変わる。wasm は `show_pose(part)`。
+- `ugoe_puppet_set_effects_json` は `Puppet::set_effects` と同じ (`docs/spec/motion.md#エフェクト設定の差し替え`)。同じ設定でも目パチと呼吸は
+  初めからやり直し、リップシンクの音量は保つ。省略したフィールドは既定値、`seed` は丸めずに読む。読めなければ `UGOE_ERROR_FORMAT`。
+- パーツの ID のポインタは、着せ替えの操作か `UgoePuppet` の破棄まで有効 (当たり判定の ID と同じ)。
 
 ## 範囲外 (後続)
 
@@ -190,3 +216,4 @@ ugoe_puppet_reset_physics(puppet);                    /* 粒子を初期姿勢�
 - T0401 (`docs/tasks/T0401-*.md`)
 - T0409 (着せ替え・ライティング・当たり判定・トラッキング・読み込みの警告)
 - T0412 (エラーと警告の code を SDK にまとめる・モーションのイベント・物理の設定の差し替え)
+- T0414 (パーツの不透明度・ポーズの表示の選択・効果の設定の差し替え)

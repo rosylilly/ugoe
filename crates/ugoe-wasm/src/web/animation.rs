@@ -91,6 +91,15 @@ impl WebPuppet {
         }
     }
 
+    // --- ポーズ ---
+
+    /// ポーズで、パーツ `part` を `part` に持つ要素をそのグループの表示中の要素にする (`links` のパーツは対象外)。
+    /// 不透明度は次の `update` からフェードする。その間にモーションが同じグループの要素を要求すれば要求が勝つ。
+    /// どの要素の `part` でもなければ何も変えず `false`。
+    pub fn show_pose(&mut self, part: &str) -> Result<bool, JsError> {
+        Ok(animation::show_pose(self.puppet_mut()?, part))
+    }
+
     // --- エフェクト ---
 
     /// 目パチ・呼吸・リップシンクの設定 (モデルの `effects` と同じ JSON) を差し替える。

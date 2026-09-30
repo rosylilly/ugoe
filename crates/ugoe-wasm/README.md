@@ -66,6 +66,8 @@ puppet.set_expression("smile");        // または set_expression_json(json)。
 puppet.set_lip_sync_level(0.4);        // 0..1。undefined で口に触らない
 puppet.set_enabled("physics", false);  // "physics" | "eye_blink" | "breath" | "lip_sync" | "pose"
 puppet.set_physics_json(json);         // 物理だけを差し替える (validate_physics で検査。undefined で外す)
+puppet.set_effects_json(json);         // 目パチ・呼吸・リップシンクの設定 (モデルの effects の形) を差し替える
+puppet.show_pose("ArmB");              // ポーズの要素 (part の ID) を表示する (T0414)。要素でなければ false
 puppet.update(dt);                     // Puppet::update と同じ順で 1 フレーム進める
 puppet.motion_events();                // 直前の update で発火したイベントの値
 puppet.hit_test_standard("Head", x, y); // Model.avatar.hit_areas の標準の名前で当たり判定
@@ -74,6 +76,9 @@ puppet.hit_test_standard("Head", x, y); // Model.avatar.hit_areas の標準の�
 - 適用順とスライダー (`set_parameter`) との関係は `docs/spec/motion.md#フレーム内の適用順` と `#手で動かしたパラメータとの関係`。
 - `load_json` で読み直すと、物理の設定・モーションと表情の一覧・段の有効無効を引き継ぐ (新しいモデルと合わない物理は外して警告を返す)。`load_bundle` は物理・モーション・表情をバンドルのものに置き換える。
 - モーション・表情の再生状態は、モデルを読み直すと初めからになる。
+- `set_effects_json` は同じ設定でも目パチ・呼吸を初めからやり直し、リップシンクの音量は保つ。`show_pose` の不透明度は次の `update` からフェードし、
+  モーションが同じグループの要素を要求すればそちらが勝つ (`docs/spec/motion.md#エフェクト設定の差し替え`・`#ポーズ`)。C ABI では
+  `ugoe_puppet_set_effects_json`・`ugoe_puppet_show_pose` (T0414)。
 
 ### エディタ向けの問い合わせ (ギズモ・物理の表示)
 
@@ -149,7 +154,8 @@ C ABI の `ugoe_last_error_kind` と同じ (T0412)。`not_loaded`・`no_model`�
   外したものは読み込みのほかの警告と一緒に `load_warnings_json()` にも入る ([読み込みの警告](#読み込みの警告-t0125))。
   物理は本体の設定を引き継ぎ、モジュールのリグは付け直しで加わる。読み込んだモジュールはモデルを変えても残る。
 - 同じ名前のモジュールを `load_module` し直すと、付けていれば新しい版に付け替える (エディタで書き出し直したとき)。
-- モジュールを付けている間に `set_physics_json` で渡した設定は、次の付け外しで本体の設定から作り直される。
+- モジュールを付けている間に `set_physics_json` で渡した設定は、次の付け外しで本体の設定から作り直される。保たないことは T0414 で決めた
+  (合成した設定は本体の分に戻せないため。`docs/spec/modules.md#puppet-での着せ替え`)。
 
 ### 読み込みの警告 (T0125)
 

@@ -297,6 +297,43 @@ static void animate(UgoePuppet *puppet, uint32_t motions) {
     printf("physics settings: %zu bytes of JSON\n", len);
 }
 
+/* パーツの不透明度の上書きを読み、各パーツをポーズで表示してみて、効果の設定を差し替える (T0414)。 */
+static void host_actions(UgoePuppet *puppet) {
+    uint32_t parts = 0, entries = 0, overridden = 0;
+    CHECK(ugoe_puppet_part_count(puppet, &parts));
+    for (uint32_t i = 0; i < parts; i++) {
+        const char *id = NULL;
+        CHECK(ugoe_puppet_part_id(puppet, i, &id));
+        uint32_t index = UINT32_MAX;
+        CHECK(ugoe_puppet_part_index(puppet, id, &index));
+        EXPECT(index == i);
+        UgoePartOpacity opacity;
+        CHECK(ugoe_puppet_part_opacity(puppet, i, &opacity));
+        EXPECT(opacity.weight >= 0.0f && opacity.weight <= 1.0f);
+        if (opacity.weight > 0.0f) {
+            overridden++;
+        }
+        /* どの要素の part でもなければ false (エラーにはならない)。 */
+        bool shown = false;
+        CHECK(ugoe_puppet_show_pose(puppet, id, &shown));
+        if (shown) {
+            entries++;
+        }
+    }
+    EXPECT(ugoe_puppet_show_pose(puppet, NULL, NULL) == UGOE_ERROR_NULL_POINTER);
+    CHECK(ugoe_puppet_update(puppet, 1.0f / 60.0f));
+    printf("%u parts, %u overridden, %u pose entries\n", parts, overridden, entries);
+
+    /* モデルの effects と同じ JSON。省略したフィールドは既定値。 */
+    static const char effects[] =
+        "{\"eye_blink\": {\"parameters\": [\"EyeLOpen\", \"EyeROpen\"], \"interval\": 2, \"seed\": 42}}";
+    CHECK(ugoe_puppet_set_effects_json(puppet, (const uint8_t *)effects, strlen(effects)));
+    EXPECT(ugoe_puppet_set_effects_json(puppet, (const uint8_t *)"{", 1) == UGOE_ERROR_FORMAT);
+    for (int frame = 0; frame < 60; frame++) {
+        CHECK(ugoe_puppet_update(puppet, 1.0f / 60.0f));
+    }
+}
+
 int main(int argc, char **argv) {
     bool expect_lit = false;
     int arg = 1;
@@ -416,6 +453,7 @@ int main(int argc, char **argv) {
     }
 
     animate(puppet, motions);
+    host_actions(puppet);
     light(puppet, expect_lit);
     dress_up(puppet, argc - arg, argv + arg);
 

@@ -58,7 +58,7 @@ enum Cmd {
     /// 標準パラメータとアバタープロファイルの拡張パラメータの一覧を表示する。
     StandardParams,
     /// ヘッドレスの GPU でモデルを描画して PNG に書き出す。
-    Render(RenderArgs),
+    Render(Box<RenderArgs>),
     /// PSD を取り込んで新しい `.ugoeproj` プロジェクトに保存する。
     ImportPsd(ImportPsdArgs),
     /// `.ugoeproj` プロジェクトか `.ugoe` バンドルから、配布用の `.ugoe` バンドルを書き出す。
@@ -188,6 +188,12 @@ struct RenderArgs {
     /// キャンバスを出力にどう収めるか。
     #[arg(long, value_enum, default_value_t = Fit::Contain)]
     fit: Fit,
+    /// ビュー変換を 6 数 `A,B,C,D,E,F` で直接与える (`--fit` の代わり)。キャンバスの点 `(x, y)` を出力の
+    /// `(A*x + C*y + E, B*x + D*y + F)` (出力の画素、左上が原点・Y 下向き) に写す。鏡映や回転もできる。
+    /// 公開仕様の描画の例の `view` と同じ意味 (`spec/examples/README.md#rendering-examples`)。
+    #[arg(long, value_name = "A,B,C,D,E,F", value_parser = parse_view,
+          allow_hyphen_values = true, conflicts_with = "fit")]
+    view: Option<[f32; 6]>,
     /// 背景色。`transparent` (既定)、`white`、`black`、`#RRGGBB`、`#RRGGBBAA`。
     #[arg(long, value_name = "COLOR", default_value = "transparent",
           value_parser = args::parse_color)]
@@ -353,7 +359,7 @@ fn main() -> anyhow::Result<()> {
                 }
             }
         }
-        Cmd::Render(args) => run_render(args)?,
+        Cmd::Render(args) => run_render(*args)?,
         Cmd::ImportPsd(args) => run_import_psd(args)?,
         Cmd::Build(args) => run_build(args)?,
         Cmd::Sample(SampleCmd::Avatar(args)) => run_sample_avatar(args)?,
@@ -994,7 +1000,10 @@ fn run_render(args: RenderArgs) -> anyhow::Result<()> {
         fps: args.fps,
         lighting,
     };
-    let prepared = ugoe_headless::prepare(scene, &options)?;
+    let mut prepared = ugoe_headless::prepare(scene, &options)?;
+    if let Some(view) = args.view {
+        prepared.view = target_view(view, prepared.size);
+    }
     if let Some(advanced) = prepared.advanced {
         println!(
             "advanced {}s in {} update(s)",
@@ -1024,6 +1033,39 @@ fn run_render(args: RenderArgs) -> anyhow::Result<()> {
         println!("stats: {}", ugoe_headless::stats_json(&stats));
     }
     Ok(())
+}
+
+/// `--view` の 6 数 `A,B,C,D,E,F` を読む。どれも有限の数であること。
+fn parse_view(s: &str) -> Result<[f32; 6], String> {
+    let values = s
+        .split(',')
+        .map(|v| {
+            v.trim()
+                .parse::<f32>()
+                .ok()
+                .filter(|v| v.is_finite())
+                .ok_or_else(|| format!("invalid number `{v}` in `{s}`"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    values
+        .try_into()
+        .map_err(|_| format!("expected six numbers A,B,C,D,E,F for a view, got `{s}`"))
+}
+
+/// キャンバスの px を出力の px に写す `[a, b, c, d, e, f]` に、出力の px からクリップ座標への変換
+/// (Y 下向きから上向きへ) を合成したビュー。
+///
+/// 逆変換の無いビュー (`a*d - b*c = 0`) も受け付ける。三角形は面積を持たず、何も描かれない
+/// (`docs/spec/rendering.md#ビュー変換`)。
+fn target_view([a, b, c, d, e, f]: [f32; 6], (width, height): (u32, u32)) -> ugoe::render::View {
+    let (sx, sy) = (2.0 / width as f32, -2.0 / height as f32);
+    ugoe::render::View {
+        view_proj: [
+            [a * sx, b * sy, 0.0],
+            [c * sx, d * sy, 0.0],
+            [e * sx - 1.0, f * sy + 1.0, 1.0],
+        ],
+    }
 }
 
 #[cfg(test)]
@@ -1122,6 +1164,73 @@ mod tests {
         assert_eq!(args.ambient, Some(ugoe::core::Rgb::new(0.2, 0.2, 0.2)));
         assert_eq!(args.lights.len(), 2);
         assert!(parse(&["render", "m.ugoe", "-o", "o.png", "--light", "spot:0,0,1"]).is_err());
+    }
+
+    #[test]
+    fn parses_view_args() {
+        let cli = parse(&[
+            "render",
+            "m.ugoe",
+            "-o",
+            "o.png",
+            "--size",
+            "4x2",
+            "--view",
+            "-1,0,0,1,4,0",
+        ])
+        .unwrap();
+        let Cmd::Render(args) = cli.command else {
+            panic!("not render");
+        };
+        assert_eq!(args.view, Some([-1.0, 0.0, 0.0, 1.0, 4.0, 0.0]));
+        for bad in ["1,0,0,1,0", "1,0,0,1,0,0,0", "1,0,0,1,0,nan", "1,0,0,x,0,0"] {
+            assert!(
+                parse(&["render", "m.ugoe", "-o", "o.png", "--view", bad]).is_err(),
+                "{bad}"
+            );
+        }
+        // `--fit` とは同時に使えない。
+        assert!(
+            parse(&[
+                "render",
+                "m.ugoe",
+                "-o",
+                "o.png",
+                "--fit",
+                "stretch",
+                "--view",
+                "1,0,0,1,0,0"
+            ])
+            .is_err()
+        );
+    }
+
+    /// `--view` はキャンバスの px を出力の px に写し、出力の px をクリップ座標 (Y 上向き) にする。
+    #[test]
+    fn target_view_maps_canvas_pixels_to_the_output() {
+        let apply = |view: &ugoe::render::View, (x, y): (f32, f32)| {
+            let m = view.view_proj;
+            (
+                m[0][0] * x + m[1][0] * y + m[2][0],
+                m[0][1] * x + m[1][1] * y + m[2][1],
+            )
+        };
+        // 左右の鏡映: キャンバスの (0, 0) は出力の右上 (4, 0)、(4, 2) は左下 (0, 2)。
+        let view = target_view([-1.0, 0.0, 0.0, 1.0, 4.0, 0.0], (4, 2));
+        assert_eq!(apply(&view, (0.0, 0.0)), (1.0, 1.0));
+        assert_eq!(apply(&view, (4.0, 2.0)), (-1.0, -1.0));
+        // 引き伸ばし (`--fit stretch`) と同じビュー。
+        let canvas = (256.0, 128.0);
+        let stretch = ugoe_headless::fit_view(canvas, (64, 32), Fit::Stretch);
+        let view = target_view([0.25, 0.0, 0.0, 0.25, 0.0, 0.0], (64, 32));
+        for point in [(0.0, 0.0), (256.0, 128.0), (100.0, 30.0)] {
+            let (x0, y0) = apply(&stretch, point);
+            let (x1, y1) = apply(&view, point);
+            assert!(
+                (x0 - x1).abs() < 1e-6 && (y0 - y1).abs() < 1e-6,
+                "{point:?}"
+            );
+        }
     }
 
     #[test]

@@ -63,6 +63,7 @@ ugoe render model.ugoe -o shake.png --motion Shake --time 0.25   # モーショ�
 ugoe render model.ugoe -o lit.png --ambient 0.3 --light directional:1,1,-1   # 左上の手前から照らす
 ugoe render model.ugoe -o lamp.png --ambient 0.2 --light point:512,300,200:1.5,1.2,1:900
 ugoe render dress-up.ugoe -o dressed.png --module long-hair.ugoemod --module sailor.ugoemod   # 着せ替えのモジュールを付けて描く
+ugoe render fixture:single_quad -o flipped.png --size 256x256 --view=-1,0,0,1,256,0   # 左右を鏡映して描く
 ```
 
 | オプション | 内容 |
@@ -73,6 +74,7 @@ ugoe render dress-up.ugoe -o dressed.png --module long-hair.ugoemod --module sai
 | `--width` / `--height` | 片方だけならキャンバスの縦横比から他方を決める |
 | `--scale <F>` | 大きさを指定しないときの、キャンバスに対する倍率 (既定 1 = キャンバスと同じ大きさ) |
 | `--fit contain\|stretch` | `contain` (既定) は縦横比を保って中央に収める。`stretch` は出力全体に引き伸ばす |
+| `--view A,B,C,D,E,F` | ビュー変換を直接与える (`--fit` と同時には使えない)。キャンバスの点 `(x, y)` を出力の `(A*x + C*y + E, B*x + D*y + F)` (画素、左上が原点・Y 下向き) に写す。鏡映・回転もできる。公開仕様の描画の例の `view` と同じ意味 (T0414) |
 | `--background <COLOR>` | `transparent` (既定)、`white`、`black`、`#RRGGBB`、`#RRGGBBAA` |
 | `--texture INDEX=PATH` | テクスチャを PNG で差し替える (複数可) |
 | `--time <SECONDS>` | `ugoe::Puppet` でこの秒数だけ時間を進めてから描く (物理・モーション・表情・目パチ・呼吸・ポーズ) |
@@ -94,7 +96,10 @@ ugoe render dress-up.ugoe -o dressed.png --module long-hair.ugoemod --module sai
 - **色:** 値はリニア化しない (`docs/spec/rendering.md` の「前提」)。描画先は `Rgba8Unorm`・乗算済みアルファで、
   PNG に書くときストレートアルファに戻す (アルファ 0 の画素は RGB も 0)。
 - **背景:** 既定は透明。透明な背景の上に描いた結果は、そのまま別の画像に合成できる。
-- **ビュー:** キャンバス座標 (Y 下向き) を出力画像の上を上として写す。
+- **ビュー:** キャンバス座標 (Y 下向き) を出力画像の上を上として写す。`--view` を与えればそのアフィン変換で写す
+  (負の数から始まるので `--view=-1,0,0,1,256,0` とも書ける)。裏面カリングは表裏をキャンバス座標で決めるので、鏡映しても変わらない。
+  逆変換の無いビュー (`A*D - B*C = 0`) は何も描かない (`docs/spec/rendering.md#ビュー変換`)。描画の例 (`spec/examples/`) の `view` の
+  ケースも、このオプションで黒箱として比べられる (`tools/spec-check/src/render-reference.ts` はまだ飛ばす。T0414 のメモ)。
 - **パラメータ:** `--time`・`--motion`・`--expression` のどれも無ければ、物理・モーション・ポーズのフェードは適用しない。
   指定した値 (と既定値) で 1 回 `update` した状態を描く。
 - **時間を進める (`ugoe_headless::animate`):** `--time`・`--motion`・`--expression` のどれかがあれば、`--param` の値を基準値にして

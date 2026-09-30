@@ -83,6 +83,7 @@ export class WebPuppet {
   ): void;
   set_view(zoom: number, pan_x: number, pan_y: number): void;
   slots_json(): string;
+  show_pose(part: string): boolean;
   standard_hit_area(name: string): string | undefined;
   standard_hit_areas_at(x: number, y: number): string[];
   start_motion(name: string, priority?: string | null): boolean;

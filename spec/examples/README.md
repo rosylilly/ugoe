@@ -178,6 +178,10 @@ The files of a timeline example:
   | `{ "reset_physics": true }` | The host resets physics ([physics.md](../physics.md#state)). |
   | `{ "stages": { <stage>: <bool>, … } }` | The host turns stages on or off. Stages: `physics`, `eye_blink`, `breath`, `lip_sync`, `pose`. Initially all are on. |
 
+  Gaze ([avatar-profile.md](../avatar-profile.md#gaze)) has no action: an application turns a gaze
+  target into parameter values itself (the mapping is a recommendation, not an operation of the
+  runtime) and writes them like any other value, which `set` covers.
+
   Expected results:
 
   | Field | Meaning |

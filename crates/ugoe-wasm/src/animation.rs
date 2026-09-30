@@ -155,6 +155,12 @@ pub fn set_effects_json(puppet: &mut Puppet, json: &str) -> Result<(), Animation
     Ok(())
 }
 
+/// ポーズで、`part` を `part` に持つ要素をそのグループの表示中の要素にする (`links` のパーツは対象外)。
+/// どの要素の `part` でもなければ何も変えず `false` (`ugoe::motion::PosePlayer::show`、`docs/spec/motion.md#ポーズ`)。
+pub fn show_pose(puppet: &mut Puppet, part: &str) -> bool {
+    puppet.pose_mut().show(&part.into())
+}
+
 /// 物理の設定 (`*.physics.json` の形) を差し替える。`None` で外す。
 /// モデルと合わせて検査し、エラーがあれば何も変えない。
 pub fn set_physics_json(puppet: &mut Puppet, json: Option<&str>) -> Result<(), AnimationError> {
@@ -384,6 +390,29 @@ mod tests {
         set_stage_enabled(&mut puppet, "lip_sync", false).unwrap();
         puppet.update(DT);
         assert_eq!(param(&puppet, standard::MOUTH_OPEN_Y), 0.0);
+    }
+
+    /// 表示を選んだ要素へ次の `update` からフェードする。モーションの要求が無ければ選択が残る。
+    #[test]
+    fn show_pose_switches_the_shown_entry() {
+        let mut puppet = quiet(fixtures::pose_and_effects());
+        let arm_b = puppet.instance().compiled().part_index("ArmB").unwrap();
+        assert!(!show_pose(&mut puppet, "SleeveA"));
+        assert!(!show_pose(&mut puppet, "Missing"));
+        puppet.update(DT);
+        assert_eq!(puppet.instance().part_opacity_override(arm_b), (0.0, 1.0));
+
+        assert!(show_pose(&mut puppet, "ArmB"));
+        for _ in 0..15 {
+            puppet.update(DT);
+        }
+        let (value, weight) = puppet.instance().part_opacity_override(arm_b);
+        assert!((value - 0.5).abs() < 1e-4, "{value}");
+        assert_eq!(weight, 1.0);
+        for _ in 0..30 {
+            puppet.update(DT);
+        }
+        assert_eq!(puppet.instance().part_opacity_override(arm_b), (1.0, 1.0));
     }
 
     #[test]

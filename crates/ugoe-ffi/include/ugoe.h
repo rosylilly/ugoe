@@ -212,6 +212,15 @@ typedef struct UgoeLightingUniform {
   struct UgoeLightUniform lights[UGOE_MAX_LIGHTS];
 } UgoeLightingUniform;
 
+// パーツ自身の不透明度の上書き (`docs/spec/motion.md#パーツの不透明度`)。
+//
+// 評価ではパーツ自身の不透明度 `o` (キーフォームの補間) を `lerp(o, value, weight)` にしてから子へ伝える。
+// `weight` が 0 なら上書きしない (そのとき `value` に意味は無い)。
+typedef struct UgoePartOpacity {
+  float value;
+  float weight;
+} UgoePartOpacity;
+
 // モデルのキャンバス (ピクセル単位・Y 下向き。`docs/spec/model.md`)。
 typedef struct UgoeCanvas {
   float width;
@@ -346,6 +355,20 @@ UgoeResult ugoe_puppet_physics_json(const struct UgoePuppet *puppet,
 //
 // `puppet` は有効な `UgoePuppet` を指すこと。
 UgoeResult ugoe_puppet_reset_physics(struct UgoePuppet *puppet);
+
+// 目パチ・呼吸・リップシンクの設定を JSON (モデルの `effects` と同じ形。UTF-8、`len` バイト。NUL 終端は要らない)
+// で差し替える。省略したフィールドはモデルと同じ既定値になる。
+//
+// 再生の状態は初めからになる (目パチは新しい `seed` で目を開けた状態から、呼吸の位相は 0)。
+// リップシンクの音量は保つ (`docs/spec/motion.md#エフェクト設定の差し替え`、`ugoe::Puppet::set_effects`)。
+// 同じ設定を渡しても初めからになる。JSON を読めなければ `UGOE_ERROR_FORMAT` を返し、何も変えない。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`json` は `len` バイトの読める領域を指すこと。
+UgoeResult ugoe_puppet_set_effects_json(struct UgoePuppet *puppet,
+                                        const uint8_t *json,
+                                        size_t len);
 
 // 描画可能要素 (メッシュ) の数。
 //
@@ -738,6 +761,57 @@ UgoeResult ugoe_puppet_uses_lighting(const struct UgoePuppet *puppet,
 UgoeResult ugoe_puppet_drawable_lit(const struct UgoePuppet *puppet,
                                     uint32_t index,
                                     bool *out);
+
+// パーツ (`Model::parts`) の数。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
+UgoeResult ugoe_puppet_part_count(const struct UgoePuppet *puppet, uint32_t *out);
+
+// `index` 番目のパーツの ID (UTF-8、NUL 終端)。ポインタは、着せ替えの操作か `UgoePuppet` の破棄まで有効。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
+UgoeResult ugoe_puppet_part_id(const struct UgoePuppet *puppet,
+                               uint32_t index,
+                               const char **out);
+
+// ID (UTF-8、NUL 終端) からパーツの番号を引く。無ければ `UGOE_ERROR_NOT_FOUND`。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`id` は NUL 終端の文字列、`out` は書き込める領域を指すこと。
+UgoeResult ugoe_puppet_part_index(const struct UgoePuppet *puppet,
+                                  const char *id,
+                                  uint32_t *out);
+
+// 直前の `ugoe_puppet_update` が `index` 番目のパーツに書いた不透明度の上書き (モーションのパーツの不透明度の
+// カーブとポーズの結果。`docs/spec/motion.md#フレーム内の適用順`)。評価に渡した値で、公開仕様の時間の例の
+// `part_opacity` と同じもの。上書きしていなければ `weight` は 0。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
+UgoeResult ugoe_puppet_part_opacity(const struct UgoePuppet *puppet,
+                                    uint32_t index,
+                                    struct UgoePartOpacity *out);
+
+// ポーズで、`part` (UTF-8、NUL 終端) を `part` に持つ要素をそのグループの表示中の要素にする
+// (`links` のパーツは対象外)。不透明度は次の `ugoe_puppet_update` からフェードで近づく。
+// そのフレームにモーションが同じグループの要素を 0 より大きい値で要求すれば、要求が勝つ
+// (`docs/spec/motion.md#ポーズ`、`ugoe::motion::PosePlayer::show`)。
+//
+// どの要素の `part` でもなければ何も変えず、`*out_shown` に false を書く (エラーにはしない。
+// `out_shown` は NULL でもよい)。ポーズの段を止めている間も表示中の要素は変わる。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`part` は NUL 終端の文字列、`out_shown` は NULL か書き込める領域を指すこと。
+UgoeResult ugoe_puppet_show_pose(struct UgoePuppet *puppet,
+                                 const char *part,
+                                 bool *out_shown);
 
 // `.ugoe` バンドルのバイト列から `UgoePuppet` を作る。
 //
