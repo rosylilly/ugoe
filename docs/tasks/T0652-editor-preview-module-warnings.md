@@ -1,11 +1,11 @@
 ---
 id: T0652
 title: エディタ: プレビューの着せ替えの一覧のモジュールの警告を英語の知らせにする
-status: todo
+status: in-progress
 milestone: M4
 crates: [apps/editor, docs]
 depends_on: [T0125]
-assignee:
+assignee: claude-worker-T0652
 ---
 
 # T0652: エディタ: プレビューの着せ替えの一覧のモジュールの警告
