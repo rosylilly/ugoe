@@ -342,6 +342,13 @@ export interface LightDial {
   cx: number;
   cy: number;
   r: number;
+  /**
+   * 円を画面の内側へ寄せたか (中心がキャンバスの中央を示していない)。寄せたときは見た目を変え、
+   * 中心からキャンバスの中央の向きに矢印を出す (T0717)。
+   */
+  shifted: boolean;
+  /** キャンバスの中央 (画面座標)。寄せていなければ `[cx, cy]`。 */
+  canvasCenter: [number, number];
 }
 
 /** 平行光源の円の半径の範囲 (CSS ピクセル)。拡大縮小に合わせるが、小さすぎて掴めない・大きすぎて見えないことがないように収める。 */
@@ -371,13 +378,14 @@ export function lightDial(
 ): LightDial {
   const [w, h] = canvas;
   const r = Math.min(DIAL_RADIUS[1], Math.max(DIAL_RADIUS[0], Math.min(w, h) * view.scale * 0.35));
-  let cx = view.x + (view.scale * w) / 2;
-  let cy = view.y + (view.scale * h) / 2;
+  const center: [number, number] = [view.x + (view.scale * w) / 2, view.y + (view.scale * h) / 2];
+  let [cx, cy] = center;
   if (bounds !== undefined) {
     cx = keepOnScreen(cx, bounds[0], r + EDGE_MARGIN);
     cy = keepOnScreen(cy, bounds[1], r + EDGE_MARGIN);
   }
-  return { cx, cy, r };
+  const shifted = Math.abs(cx - center[0]) > 0.5 || Math.abs(cy - center[1]) > 0.5;
+  return { cx, cy, r, shifted, canvasCenter: center };
 }
 
 /** 平行光源の取っ手の位置 (画面座標)。取っ手のある向きから光が来る。 */
@@ -414,6 +422,65 @@ export function pointHandleOnScreen(
   const x = keepOnScreen(px, bounds[0], EDGE_MARGIN);
   const y = keepOnScreen(py, bounds[1], EDGE_MARGIN);
   return { x, y, offscreen: Math.abs(x - px) > 0.5 || Math.abs(y - py) > 0.5 };
+}
+
+/**
+ * 点光源の範囲の円の縁の代わりに、画面の端に出す小さな取っ手 (T0717)。`dir` は取っ手を動かすと範囲が広がる向き (長さ 1)。
+ */
+export interface RangeGrip {
+  x: number;
+  y: number;
+  dir: [number, number];
+}
+
+/**
+ * 範囲の円 (中心 `center`・半径 `radius`、画面座標) の縁が画面 (縁から `EDGE_MARGIN` の内側) を通らないときの取っ手。
+ * 縁が画面を通るなら (縁を直接掴めるので) `null`。
+ *
+ * 縁が見えないのは、円が画面をすっぽり覆うとき (範囲が大きい既定の 1.4〜1.5 ではよくある) と、円がまるごと画面の外にあるとき。
+ * どちらも、光源から画面の中央へ向かう向きの縁の点を画面の内側に収めた位置に置く。取っ手をその向きへ動かすと範囲が広がる
+ * (`rangeRadiusFromGrip`)。
+ */
+export function rangeGrip(
+  center: readonly [number, number],
+  radius: number,
+  bounds: readonly [number, number],
+): RangeGrip | null {
+  const [w, h] = bounds;
+  const m = EDGE_MARGIN;
+  if (radius <= 0 || w < 2 * m || h < 2 * m) return null;
+  const [px, py] = center;
+  // 画面の内側の四角形までの最も近い距離と、最も遠い角までの距離。
+  const nearest = Math.hypot(px - clampTo(px, m, w - m), py - clampTo(py, m, h - m));
+  const farthest = Math.hypot(Math.max(px - m, w - m - px), Math.max(py - m, h - m - py));
+  if (nearest <= radius && radius <= farthest) return null;
+  let dx = w / 2 - px;
+  let dy = h / 2 - py;
+  const length = Math.hypot(dx, dy);
+  if (length < 1) [dx, dy] = [1, 0];
+  else [dx, dy] = [dx / length, dy / length];
+  return {
+    x: clampTo(px + dx * radius, m, w - m),
+    y: clampTo(py + dy * radius, m, h - m),
+    dir: [dx, dy],
+  };
+}
+
+/**
+ * 範囲の取っ手 (`rangeGrip`) を掴んだ位置 `start` から `to` へ動かしたときの、範囲の円の半径 (画面座標)。
+ * 取っ手の向き `dir` に沿って動かした分だけ、掴んだときの半径 `startRadius` から増やす (逆向きなら減らす)。
+ */
+export function rangeRadiusFromGrip(
+  startRadius: number,
+  dir: readonly [number, number],
+  start: readonly [number, number],
+  to: readonly [number, number],
+): number {
+  return Math.max(0, startRadius + (to[0] - start[0]) * dir[0] + (to[1] - start[1]) * dir[1]);
+}
+
+function clampTo(v: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, v));
 }
 
 /** 画面の位置に点光源を動かしたときの位置 `[x, y]` (キャンバスに対する割合。範囲に収め、小数 3 桁に丸める)。 */

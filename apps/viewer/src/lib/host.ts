@@ -45,10 +45,13 @@ export interface ViewerHost {
 }
 
 /**
- * OS からのドロップ (`ViewerHost.listenFileDrop`)。`hover` はファイルを持ってウィンドウに入った・出たとき、
+ * OS からのドロップ (`ViewerHost.listenFileDrop`)。`hover` はファイルを持ってウィンドウに入った・出たとき
+ * (入ったときは持っているもののパスも。落とす前に開けるかを示す、T0717)、
  * `drop` は落としたファイルのパス (絶対パス。`readPath` で読む)。
  */
-export type FileDropEvent = { type: "hover"; active: boolean } | { type: "drop"; paths: string[] };
+export type FileDropEvent =
+  | { type: "hover"; active: boolean; paths?: string[] }
+  | { type: "drop"; paths: string[] };
 
 declare global {
   interface Window {
@@ -102,7 +105,7 @@ const tauriHost: ViewerHost = {
     return getCurrentWebview().onDragDropEvent(({ payload }) => {
       switch (payload.type) {
         case "enter":
-          listener({ type: "hover", active: true });
+          listener({ type: "hover", active: true, paths: payload.paths });
           break;
         case "leave":
           listener({ type: "hover", active: false });

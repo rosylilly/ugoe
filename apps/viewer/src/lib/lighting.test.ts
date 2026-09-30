@@ -19,6 +19,8 @@ import {
   pointHandleOnScreen,
   pointRangeOnCanvas,
   rangeFromScreenRadius,
+  rangeGrip,
+  rangeRadiusFromGrip,
   sameLighting,
   sanitizeLighting,
   saveLighting,
@@ -285,7 +287,13 @@ describe("ビューポートの光源の印", () => {
   const view = { scale: 0.5, x: 100, y: 50 };
 
   it("平行光源の円はキャンバスの中央に置き、半径は短い辺の 35% を範囲に収める", () => {
-    expect(lightDial(canvas, view)).toEqual({ cx: 200, cy: 250, r: 70 });
+    expect(lightDial(canvas, view)).toEqual({
+      cx: 200,
+      cy: 250,
+      r: 70,
+      shifted: false,
+      canvasCenter: [200, 250],
+    });
     expect(lightDial(canvas, { ...view, scale: 0.1 }).r).toBe(60);
     expect(lightDial(canvas, { ...view, scale: 5 }).r).toBe(220);
   });
@@ -329,12 +337,20 @@ describe("ビューポートの光源の印", () => {
   it("大きく拡大して円が画面からはみ出すときは、円ごと画面の内側へ寄せる (T0714)", () => {
     const bounds = [800, 600] as const;
     // 画面に収まっていれば動かさない。
-    expect(lightDial(canvas, view, bounds)).toEqual({ cx: 200, cy: 250, r: 70 });
+    expect(lightDial(canvas, view, bounds)).toMatchObject({
+      cx: 200,
+      cy: 250,
+      r: 70,
+      shifted: false,
+    });
     // 10 倍に拡大してキャンバスの中央 (2000 + 100, 4000 + 50) が画面の外: 端から半径 + 余白の位置に寄せる。
     const zoomed = lightDial(canvas, { scale: 10, x: 100, y: 50 }, bounds);
     expect(zoomed.r).toBe(220);
     expect(zoomed.cx).toBe(800 - 220 - 14);
     expect(zoomed.cy).toBe(600 - 220 - 14);
+    // 寄せたことと、本当のキャンバスの中央が分かる (印の見た目を変える、T0717)。
+    expect(zoomed.shifted).toBe(true);
+    expect(zoomed.canvasCenter).toEqual([2100, 4050]);
     // 画面が円より狭ければ画面の中央。
     expect(lightDial(canvas, { scale: 10, x: -5000, y: 50 }, [300, 300])).toMatchObject({
       cx: 150,
@@ -354,6 +370,36 @@ describe("ビューポートの光源の印", () => {
       y: 14,
       offscreen: true,
     });
+  });
+
+  it("範囲の円の縁が画面に見えないときだけ、画面の端に範囲の取っ手を出す (T0717)", () => {
+    const bounds = [800, 600] as const;
+    // 縁が画面を通る → 出さない (縁を直接掴む)。
+    expect(rangeGrip([400, 300], 200, bounds)).toBeNull();
+    // 画面をすっぽり覆う → 光源から画面の中央へ向かう向きの縁を、画面の内側に収めた位置。
+    const cover = rangeGrip([200, 300], 2000, bounds);
+    expect(cover).not.toBeNull();
+    expect(cover?.dir).toEqual([1, 0]);
+    expect(cover?.x).toBe(800 - 14);
+    expect(cover?.y).toBe(300);
+    // 光源が画面の中央ちょうどなら右へ。
+    expect(rangeGrip([400, 300], 2000, bounds)?.dir).toEqual([1, 0]);
+    // まるごと画面の外 (左上の外の小さな円) → 画面の左上の角の近く、中央へ向かう向き。
+    const outside = rangeGrip([-400, -300], 100, bounds);
+    expect(outside?.x).toBe(14);
+    expect(outside?.y).toBe(14);
+    expect(outside?.dir[0]).toBeCloseTo(0.8);
+    expect(outside?.dir[1]).toBeCloseTo(0.6);
+    // 範囲が無い・画面が狭すぎる → 出さない。
+    expect(rangeGrip([200, 300], 0, bounds)).toBeNull();
+    expect(rangeGrip([200, 300], 2000, [20, 20])).toBeNull();
+  });
+
+  it("範囲の取っ手を向きに沿って動かした分だけ半径が変わる (T0717)", () => {
+    // 右向きの取っ手: 右へ 30 で +30、上下の動きは効かない、左へ動かしすぎても 0 より小さくならない。
+    expect(rangeRadiusFromGrip(500, [1, 0], [786, 300], [816, 250])).toBe(530);
+    expect(rangeRadiusFromGrip(500, [1, 0], [786, 300], [0, 300])).toBe(0);
+    expect(rangeRadiusFromGrip(100, [0.8, 0.6], [14, 14], [22, 20])).toBeCloseTo(110);
   });
 
   it("範囲の円の縁を動かすと、手前を保ったまま範囲が変わる (T0714)", () => {

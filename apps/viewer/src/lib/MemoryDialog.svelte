@@ -2,14 +2,23 @@
 // モデルごとに覚えたもの (光源の設定 (T0709) と着せ替えの組 (T0711)) の一覧 (T0714)。
 // ツールバーの「覚えたもの」とライティングのパネルから開く。モデルごとに光源・組を忘れるか、すべて忘れる。
 // パネルが出ないモデル (モジュールを外してライティングを受けなくなったモデルなど) や、開いていないモデルの分もここで忘れられる。
+// 並びは覚えた日時の新しい順と名前の順から選ぶ (T0717。日時を持たない前の保存値は「日時なし」で最後)。
 import { lightingLabel } from "./lighting";
 import type { Player } from "./player.svelte";
-import { describeDressUpSet, describeLocation, type RememberedModel } from "./rememberedModels";
+import {
+  describeDressUpSet,
+  describeLocation,
+  describeRememberedAt,
+  type RememberedModel,
+  type RememberedOrder,
+} from "./rememberedModels";
 
 let { player }: { player: Player } = $props();
 
 let dialog = $state<HTMLDialogElement | null>(null);
 let rows = $state<RememberedModel[]>([]);
+/** 並び (覚えた日時の新しい順か名前の順。T0717)。開いているモデルはどちらでも先頭。 */
+let order = $state<RememberedOrder>("recent");
 /** 「すべて忘れる」を押して、確かめている間。 */
 let confirming = $state(false);
 
@@ -20,7 +29,7 @@ export function open(): void {
 }
 
 function refresh() {
-  rows = player.rememberedModels();
+  rows = player.rememberedModels(order);
 }
 
 function forget(row: RememberedModel, what: { lighting?: boolean; dressUp?: boolean }) {
@@ -48,6 +57,22 @@ function forgetAll() {
     光源の設定と着せ替えの組は、モデルごとにこのブラウザ (アプリ) に覚えています。忘れても、いま表示している光源と付けているモジュールは変わりません。
   </p>
 
+  {#if rows.length > 1}
+    <label class="order">
+      並び
+      <select
+        value={order}
+        onchange={(e) => {
+          order = e.currentTarget.value as RememberedOrder;
+          refresh();
+        }}
+      >
+        <option value="recent">覚えた日時の新しい順</option>
+        <option value="name">名前の順</option>
+      </select>
+    </label>
+  {/if}
+
   {#if rows.length === 0}
     <p class="empty">覚えているモデルはありません。</p>
   {:else}
@@ -57,6 +82,7 @@ function forgetAll() {
           <th scope="col">モデル</th>
           <th scope="col">光源</th>
           <th scope="col">着せ替えの組</th>
+          <th scope="col">覚えた日時</th>
           <th scope="col"><span class="visually-hidden">操作</span></th>
         </tr>
       </thead>
@@ -95,6 +121,9 @@ function forgetAll() {
               {:else}
                 <span class="none">—</span>
               {/if}
+            </td>
+            <td class="date" class:none={row.rememberedAt === null}>
+              {describeRememberedAt(row.rememberedAt)}
             </td>
             <td>
               {#if row.lighting && row.dressUp}
@@ -166,6 +195,18 @@ function forgetAll() {
   }
   .lead {
     font-size: 0.8rem;
+  }
+  .order {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.4rem;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .date {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
   }
   .hint {
     font-size: 0.75rem;

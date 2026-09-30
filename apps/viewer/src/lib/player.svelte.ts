@@ -45,7 +45,7 @@ import {
   type ParameterSection,
   parseParameterList,
 } from "./parameters";
-import { mergeRemembered, type RememberedModel } from "./rememberedModels";
+import { mergeRemembered, type RememberedModel, type RememberedOrder } from "./rememberedModels";
 import { loadWasm, type UgoeWasmModule, type WebPuppet } from "./wasm/load";
 
 export type PlayerStatus =
@@ -558,9 +558,14 @@ export class Player {
     if (this.#lightingPending) this.setLighting($state.snapshot(this.lighting) as LightingSettings);
   }
 
-  /** モデルごとに覚えたもの (光源の設定と着せ替えの組) の一覧 (rememberedModels.ts、T0714)。 */
-  rememberedModels(): RememberedModel[] {
-    return mergeRemembered(this.#lightingMemory.entries(), this.#memory.entries(), this.#model);
+  /** モデルごとに覚えたもの (光源の設定と着せ替えの組) の一覧 (rememberedModels.ts、T0714)。並びは `order` (T0717)。 */
+  rememberedModels(order: RememberedOrder = "recent"): RememberedModel[] {
+    return mergeRemembered(
+      this.#lightingMemory.entries(),
+      this.#memory.entries(),
+      this.#model,
+      order,
+    );
   }
 
   /**

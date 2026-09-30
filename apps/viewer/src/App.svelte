@@ -2,7 +2,12 @@
 import { FaceTracker, TrackingPanel } from "@ugoe/face-tracking";
 import { onMount } from "svelte";
 import DressUpPanel from "./lib/DressUpPanel.svelte";
-import { openDroppedFiles } from "./lib/drop";
+import {
+  type DropPreview,
+  type DroppedItem,
+  describeDropPaths,
+  openDroppedItems,
+} from "./lib/drop";
 import { readBrowserFile, readFileAt, readSampleFile, saveJsonFile, viewerHost } from "./lib/host";
 import LicenseDialog from "./lib/LicenseDialog.svelte";
 import LightingPanel from "./lib/LightingPanel.svelte";
@@ -20,6 +25,10 @@ const tracker = new FaceTracker(player, { saveJson: saveJsonFile });
 window.__UGOE_TRACKER__ = tracker;
 
 let dropping = $state(false);
+/** ドラッグ中のものが開けるかの見立て (Tauri はパスが分かる。ブラウザでは分からないので `null`。T0717)。 */
+let dropPreview = $state<DropPreview | null>(null);
+/** ドロップで飛ばしたものの知らせ (次に開くまで出す。T0717)。 */
+let dropNotice = $state<string | null>(null);
 /** OS からのドロップをホストがパスで受け取るか (Tauri)。そのときは HTML のドロップを扱わない。 */
 let nativeDrop = false;
 let sampleMenu = $state<HTMLDetailsElement | null>(null);
@@ -27,6 +36,7 @@ let licenseDialog = $state<LicenseDialog | null>(null);
 let memoryDialog = $state<MemoryDialog | null>(null);
 
 async function openWith(get: () => Promise<ModelFile | null>) {
+  dropNotice = null;
   try {
     const file = await get();
     if (file !== null) await player.load(file);
@@ -38,6 +48,7 @@ async function openWith(get: () => Promise<ModelFile | null>) {
 /** 同梱の見本を開く (モデルと、着せ替えの見本ならモジュールも)。 */
 async function openSampleFromMenu(sample: Sample) {
   if (sampleMenu) sampleMenu.open = false;
+  dropNotice = null;
   try {
     await openSample(sample, player, readSampleFile);
   } catch (e) {
@@ -58,11 +69,16 @@ onMount(() => {
   let disposed = false;
   void host
     .listenFileDrop((event) => {
-      if (event.type === "hover") dropping = event.active;
-      else {
+      if (event.type === "hover") {
+        dropping = event.active;
+        dropPreview = event.active && event.paths ? describeDropPaths(event.paths) : null;
+      } else {
         dropping = false;
+        dropPreview = null;
         // パスから読むので `path:` の場所が付き、起動し直した後も覚えた組や光源を戻せる (T0713)。
-        void openDropped(() => Promise.all(event.paths.map((path) => readFileAt(`path:${path}`))));
+        void openDropped(
+          event.paths.map((path) => ({ name: path, read: () => readFileAt(`path:${path}`) })),
+        );
       }
     })
     .then((f) => {
@@ -82,10 +98,11 @@ function onDragOver(e: DragEvent) {
   dropping = true;
 }
 
-/** ドロップしたファイルを読んで開く (`drop.ts`)。 */
-async function openDropped(read: () => Promise<ModelFile[]>) {
+/** ドロップしたものを読んで開く (`drop.ts`)。開けないもの・読めないものは飛ばして知らせる。 */
+async function openDropped(items: DroppedItem[]) {
+  dropNotice = null;
   try {
-    await openDroppedFiles(await read(), player);
+    dropNotice = await openDroppedItems(items, player);
   } catch (e) {
     player.error = e instanceof Error ? e.message : String(e);
   }
@@ -96,7 +113,8 @@ function onDrop(e: DragEvent) {
   e.preventDefault();
   dropping = false;
   const files = [...(e.dataTransfer?.files ?? [])];
-  if (files.length > 0) void openDropped(() => Promise.all(files.map(readBrowserFile)));
+  if (files.length > 0)
+    void openDropped(files.map((file) => ({ name: file.name, read: () => readBrowserFile(file) })));
 }
 
 function onKeyDown(e: KeyboardEvent) {
@@ -120,7 +138,7 @@ function onKeyDown(e: KeyboardEvent) {
   ondrop={onDrop}
 />
 
-<div class="app" class:dropping>
+<div class="app">
   <header class="toolbar">
     <button
       type="button"
@@ -174,6 +192,17 @@ function onKeyDown(e: KeyboardEvent) {
 
   <main>
     <Viewport {player} />
+    {#if dropping}
+      <!--
+        落とすときの枠。ビューポートの canvas の上にも見えるように、main の上に重ねる (T0717)。
+        Tauri ではパスで開けるかを見立て、枠の色 (一部を飛ばす・開けるものが無い) と文で示す。
+      -->
+      <div class="drop-frame" data-kind={dropPreview?.kind ?? "all"}>
+        {#if dropPreview}
+          <div class="drop-preview" role="status">{dropPreview.message}</div>
+        {/if}
+      </div>
+    {/if}
     <!--
       右のパネル。縦にパネルを積む: フェイストラッキング → モデルの機能ごとのパネル → パラメータ (残りの高さ)。
       モデルの機能ごとのパネル (着せ替え・ライティング) は、そのモデルが使うときだけ出す
@@ -199,8 +228,11 @@ function onKeyDown(e: KeyboardEvent) {
       <span class="warning" title={player.warnings.join("\n")}>
         警告 {player.warnings.length} 件: {player.warnings[0]}
       </span>
-    {:else}
+    {:else if !dropNotice}
       <span>{player.status === "ready" ? "読み込みました" : ""}</span>
+    {/if}
+    {#if dropNotice}
+      <span class="warning drop-notice" role="status" title={dropNotice}>{dropNotice}</span>
     {/if}
     <span class="spacer"></span>
     {#if player.backend}<span class="backend">{player.backend}</span>{/if}
@@ -216,9 +248,33 @@ function onKeyDown(e: KeyboardEvent) {
     display: flex;
     flex-direction: column;
   }
-  .app.dropping main {
-    outline: 3px dashed var(--accent);
-    outline-offset: -6px;
+  .drop-frame {
+    --frame: var(--accent);
+    position: absolute;
+    inset: 3px;
+    z-index: 5;
+    border: 3px dashed var(--frame);
+    pointer-events: none;
+  }
+  /* 一部を飛ばす・開けるものが無い (Tauri のドラッグ中にパスで見立てる、T0717)。 */
+  .drop-frame[data-kind="some"] {
+    --frame: var(--warning);
+  }
+  .drop-frame[data-kind="none"] {
+    --frame: var(--danger);
+  }
+  .drop-preview {
+    position: absolute;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: 80%;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+    color: var(--text);
+    background: var(--panel);
+    border: 2px solid var(--frame);
+    border-radius: 6px;
   }
   .toolbar,
   .status {
@@ -310,6 +366,7 @@ function onKeyDown(e: KeyboardEvent) {
     font-variant-numeric: tabular-nums;
   }
   main {
+    position: relative;
     flex: 1;
     min-height: 0;
     display: flex;

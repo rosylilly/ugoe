@@ -98,19 +98,47 @@ describe("ModelMemory", () => {
 
   it("lists entries and forgets everything (T0714)", () => {
     const storage = new MemoryStorage();
-    const memory = new ModelMemory("k", numberValue, { limit: 3, storage });
+    let now = 1000;
+    const memory = new ModelMemory("k", numberValue, { limit: 3, storage, now: () => now++ });
     memory.set(id(1), 10);
     memory.set(id(2, "/b.ugoe"), 20);
     storage.setItem("other", "keep");
     expect(memory.entries()).toEqual([
-      { model: id(2, "/b.ugoe"), value: 20 },
-      { model: id(1), value: 10 },
+      { model: id(2, "/b.ugoe"), value: 20, at: 1001 },
+      { model: id(1), value: 10, at: 1000 },
     ]);
     memory.clear();
     expect(memory.entries()).toEqual([]);
     expect(storage.getItem("k")).toBeNull();
     // ほかのキーには触らない。
     expect(storage.getItem("other")).toBe("keep");
+  });
+
+  it("remembers when each entry was set, and reads older values without dates (T0717)", () => {
+    const storage = new MemoryStorage();
+    // T0717 より前の保存値 (日時なし) と、壊れた日時。
+    storage.setItem(
+      "k",
+      JSON.stringify({
+        version: 1,
+        entries: [
+          { model: id(1), value: 10 },
+          { model: id(2), value: 20, at: "yesterday" },
+        ],
+      }),
+    );
+    const memory = new ModelMemory("k", numberValue, { limit: 10, storage, now: () => 5000 });
+    expect(memory.entries()).toEqual([
+      { model: id(1), value: 10 },
+      { model: id(2), value: 20 },
+    ]);
+    expect(memory.get(id(2))).toBe(20);
+    // 覚え直すと日時が付き、ほかの項目はそのまま (日時なし) で残る。
+    memory.set(id(2), 21);
+    expect(memory.entries()).toEqual([
+      { model: id(2), value: 21, at: 5000 },
+      { model: id(1), value: 10 },
+    ]);
   });
 
   it("prefers the entry with the same location, then the same fingerprint", () => {

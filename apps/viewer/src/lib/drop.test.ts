@@ -1,7 +1,7 @@
 import type { DragDropEvent } from "@tauri-apps/api/webview";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { dressUpMemory, planRestore } from "./dressUpMemory";
-import { openDroppedFiles } from "./drop";
+import { describeDropPaths, isOpenableName, openDroppedItems, skippedMessage } from "./drop";
 import { type FileDropEvent, readFileAt, viewerHost } from "./host";
 import { defaultLighting, lightingMemory } from "./lighting";
 import type { ModelFile, ModuleToOpen } from "./modelFile";
@@ -73,24 +73,28 @@ class Target {
   }
 }
 
-/** Tauri のドロップを送り、App.svelte と同じくパスから読んで開く。 */
-async function dropPaths(paths: string[], target: Target): Promise<FileDropEvent[]> {
+/** Tauri のドロップを送り、App.svelte と同じくパスから読んで開く。`notice` は飛ばしたものの知らせ。 */
+async function dropPaths(
+  paths: string[],
+  target: Target,
+): Promise<{ events: FileDropEvent[]; notice: string | null }> {
   const events: FileDropEvent[] = [];
-  let pending: Promise<void> = Promise.resolve();
+  let pending: Promise<string | null> = Promise.resolve(null);
   const stop = await viewerHost().listenFileDrop?.((event) => {
     events.push(event);
     if (event.type === "drop")
-      pending = Promise.all(event.paths.map((p) => readFileAt(`path:${p}`))).then((files) =>
-        openDroppedFiles(files, target),
+      pending = openDroppedItems(
+        event.paths.map((p) => ({ name: p, read: () => readFileAt(`path:${p}`) })),
+        target,
       );
   });
   const position = { x: 0, y: 0 } as never;
   dragDrop?.({ payload: { type: "enter", paths, position } });
   dragDrop?.({ payload: { type: "over", position } });
   dragDrop?.({ payload: { type: "drop", paths, position } });
-  await pending;
+  const notice = await pending;
   stop?.();
-  return events;
+  return { events, notice };
 }
 
 beforeAll(() => {
@@ -109,11 +113,12 @@ beforeEach(() => {
 describe("dropped files", () => {
   it("receives the paths from Tauri and reads them with a path: location", async () => {
     const target = new Target();
-    const events = await dropPaths([HAIR, MODEL], target);
+    const { events, notice } = await dropPaths([HAIR, MODEL], target);
     expect(events).toEqual([
-      { type: "hover", active: true },
+      { type: "hover", active: true, paths: [HAIR, MODEL] },
       { type: "drop", paths: [HAIR, MODEL] },
     ]);
+    expect(notice).toBeNull();
     expect(unlisten).toHaveBeenCalled();
     // モデルをモジュールと一緒に開き、どちらにも場所が付く。
     expect(target.calls).toHaveLength(1);
@@ -129,6 +134,29 @@ describe("dropped files", () => {
       [`path:${HAIR}`, 0],
       [`path:${HAT}`, 0],
     ]);
+  });
+
+  it("opens only the readable files and tells what was skipped, in Japanese (T0717)", async () => {
+    const target = new Target();
+    const folder = "/home/u/mods";
+    const image = "/home/u/Pictures/face.PNG";
+    // 拡張子は開けるが読めない (フォルダ・消えたファイル。read_model_file のエラーは英語)。
+    const gone = "/home/u/old.ugoe";
+    const { notice } = await dropPaths([folder, MODEL, image, gone, HAIR], target);
+    expect(target.calls).toHaveLength(1);
+    expect(target.calls[0]?.file.location).toBe(`path:${MODEL}`);
+    expect(target.calls[0]?.modules.map((m) => m.file.location)).toEqual([`path:${HAIR}`]);
+    expect(notice).toBe(
+      "開けないものを 3 個飛ばしました: mods、face.PNG (開けるのはモデル .ugoe・.json と着せ替えのモジュール .ugoemod。" +
+        "フォルダの中は開きません)。old.ugoe (読めませんでした)",
+    );
+  });
+
+  it("opens nothing when nothing can be opened", async () => {
+    const target = new Target();
+    const { notice } = await dropPaths(["/a/b.txt", "/a/folder"], target);
+    expect(target.calls).toEqual([]);
+    expect(notice).toMatch(/^開けるファイルがありませんでした: b\.txt、folder \(/);
   });
 
   it("restores the set and the lighting for a dropped model after a restart", async () => {
@@ -161,5 +189,37 @@ describe("dropped files", () => {
     ]);
     const hat = await readFileAt(`path:${HAT}`);
     expect(hat.bytes).toEqual(moduleBytes(2));
+  });
+});
+
+describe("drop checks (T0717)", () => {
+  it("decides by the extension, like read_model_file", () => {
+    expect(isOpenableName("/a/model.UGOE")).toBe(true);
+    expect(isOpenableName("C:\\m\\hair.ugoemod")).toBe(true);
+    expect(isOpenableName("model.json")).toBe(true);
+    expect(isOpenableName("/a/folder")).toBe(false);
+    expect(isOpenableName("/a/.json")).toBe(false);
+    expect(isOpenableName("project.ugoeproj")).toBe(false);
+    expect(isOpenableName("face.psd")).toBe(false);
+  });
+
+  it("previews the dragged paths", () => {
+    expect(describeDropPaths([MODEL, HAIR])).toEqual({ kind: "all", message: "2 個を開きます" });
+    expect(describeDropPaths([MODEL, "/a/folder"])).toEqual({
+      kind: "some",
+      message: "1 個を開きます (1 個は開けないので飛ばします)",
+    });
+    expect(describeDropPaths(["/a/folder"]).kind).toBe("none");
+  });
+
+  it("shortens a long list of names", () => {
+    const skipped = ["a", "b", "c", "d", "e"].map((name) => ({
+      name,
+      reason: "extension" as const,
+    }));
+    expect(skippedMessage(skipped, 1)).toMatch(
+      /^開けないものを 5 個飛ばしました: a、b、c ほか 2 個 \(/,
+    );
+    expect(skippedMessage([], 1)).toBeNull();
   });
 });

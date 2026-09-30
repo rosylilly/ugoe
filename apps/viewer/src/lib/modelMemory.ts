@@ -65,19 +65,26 @@ export interface ModelMemoryOptions {
   limit: number;
   /** 省くと `localStorage`。 */
   storage?: Storage;
+  /** 覚えた日時に使う今の時刻 (ミリ秒)。省くと `Date.now`。 */
+  now?: () => number;
 }
 
 /** 保存の形の版。変えたら古いものは読まずに捨てる。 */
 const STORAGE_VERSION = 1;
 
-interface Entry<T> {
+/** 覚えた項目。`at` は最後に覚えた日時 (ミリ秒。T0717)。日時を持たない前の保存値から読んだ項目には無い。 */
+export interface MemoryEntry<T> {
   model: ModelIdentity;
   value: T;
+  at?: number;
 }
+
+type Entry<T> = MemoryEntry<T>;
 
 /**
  * モデルごとの値を localStorage の 1 つのキーに覚える。値の形は `parse` が確かめる (形の違う項目は読み飛ばす)。
- * 保存の形は `{"version": 1, "entries": [{"model": ModelIdentity, "value": T}]}` で、最近使った順。
+ * 保存の形は `{"version": 1, "entries": [{"model": ModelIdentity, "value": T, "at": number}]}` で、最近使った順。
+ * `at` (覚えた日時、T0717) は後から足したので無くてもよい (版は変えない。無い項目は日時なしとして読む)。
  * localStorage が使えない・壊れた値・版の違いでは、何も覚えていないものとして動き、例外を出さない。
  */
 export class ModelMemory<T> {
@@ -85,12 +92,14 @@ export class ModelMemory<T> {
   readonly #parse: (value: unknown) => T | null;
   readonly #limit: number;
   readonly #storage: Storage | undefined;
+  readonly #now: () => number;
 
   constructor(key: string, parse: (value: unknown) => T | null, options: ModelMemoryOptions) {
     this.#key = key;
     this.#parse = parse;
     this.#limit = Math.max(1, Math.floor(options.limit));
     this.#storage = options.storage;
+    this.#now = options.now ?? Date.now;
   }
 
   /** `model` の値。場所が同じ項目を優先し、無ければ指紋が同じ項目。覚えていなければ `null`。 */
@@ -106,7 +115,7 @@ export class ModelMemory<T> {
   /** `model` の値を覚える (最近使ったものにする)。同じモデルの古い項目は、鍵も新しいものに置き換える。 */
   set(model: ModelIdentity, value: T): void {
     const rest = this.#read().filter((e) => !sameModel(model, e.model));
-    this.#write([{ model, value }, ...rest].slice(0, this.#limit));
+    this.#write([{ model, value, at: this.#now() }, ...rest].slice(0, this.#limit));
   }
 
   /** `model` の値を忘れる (覚えたものの一覧・「覚えた組を忘れる」)。 */
@@ -121,8 +130,8 @@ export class ModelMemory<T> {
     return this.#read().map((e) => e.model);
   }
 
-  /** 覚えているモデルと値 (最近使った順。覚えたものの一覧で使う、T0714)。 */
-  entries(): { model: ModelIdentity; value: T }[] {
+  /** 覚えているモデルと値と覚えた日時 (最近使った順。覚えたものの一覧で使う、T0714・T0717)。 */
+  entries(): MemoryEntry<T>[] {
     return this.#read();
   }
 
@@ -151,7 +160,10 @@ export class ModelMemory<T> {
           const model = parseIdentity(r.model);
           if (model === null) return [];
           const value = this.#parseValue(r.value);
-          return value === null ? [] : [{ model, value }];
+          if (value === null) return [];
+          const entry: Entry<T> = { model, value };
+          if (typeof r.at === "number" && Number.isFinite(r.at)) entry.at = r.at;
+          return [entry];
         })
         .slice(0, this.#limit);
     } catch {

@@ -2,7 +2,7 @@
 // 2 つの入れ物 (modelMemory.ts の `ModelMemory`) の項目を、同じモデル (`sameModel`) ごとに 1 行にまとめる。
 import type { DressUpSet } from "./dressUpMemory";
 import type { LightingSettings } from "./lighting";
-import { type ModelIdentity, sameModel } from "./modelMemory";
+import { type MemoryEntry, type ModelIdentity, sameModel } from "./modelMemory";
 
 /** 一覧の 1 行 (1 つのモデル)。覚えていないものは `null`。 */
 export interface RememberedModel {
@@ -12,32 +12,69 @@ export interface RememberedModel {
   dressUp: DressUpSet | null;
   /** いま開いているモデルか。 */
   current: boolean;
+  /**
+   * 最後に覚えた日時 (ミリ秒。光源と組の新しい方、T0717)。日時を持たない前の保存値だけなら `null`。
+   */
+  rememberedAt: number | null;
 }
 
+/** 一覧の並び。`recent` は覚えた日時の新しい順 (日時なしは最後に名前の順)、`name` は名前の順。 */
+export type RememberedOrder = "recent" | "name";
+
 /**
- * 2 つの入れ物の項目を、同じモデルごとにまとめる。並びは開いているモデルを先頭に、あとは名前の順
- * (入れ物ごとに最近使った順は違うので、どちらにも寄せない)。
+ * 2 つの入れ物の項目を、同じモデルごとにまとめる。並びは開いているモデルを先頭に、あとは `order`
+ * (既定は覚えた日時の新しい順。T0717 より前は、入れ物ごとの最近使った順が揃わないので名前の順だった)。
  */
 export function mergeRemembered(
-  lighting: readonly { model: ModelIdentity; value: LightingSettings }[],
-  dressUp: readonly { model: ModelIdentity; value: DressUpSet }[],
+  lighting: readonly MemoryEntry<LightingSettings>[],
+  dressUp: readonly MemoryEntry<DressUpSet>[],
   current: ModelIdentity | null,
+  order: RememberedOrder = "recent",
 ): RememberedModel[] {
   const rows: RememberedModel[] = lighting.map((e) => ({
     model: e.model,
     lighting: e.value,
     dressUp: null,
     current: false,
+    rememberedAt: e.at ?? null,
   }));
   for (const e of dressUp) {
     const row = rows.find((r) => r.dressUp === null && sameModel(r.model, e.model));
-    if (row !== undefined) row.dressUp = e.value;
-    else rows.push({ model: e.model, lighting: null, dressUp: e.value, current: false });
+    if (row !== undefined) {
+      row.dressUp = e.value;
+      row.rememberedAt = newer(row.rememberedAt, e.at ?? null);
+    } else
+      rows.push({
+        model: e.model,
+        lighting: null,
+        dressUp: e.value,
+        current: false,
+        rememberedAt: e.at ?? null,
+      });
   }
   for (const row of rows) row.current = current !== null && sameModel(current, row.model);
+  const byName = (a: RememberedModel, b: RememberedModel) =>
+    a.model.name.localeCompare(b.model.name);
+  const byRecent = (a: RememberedModel, b: RememberedModel) =>
+    (b.rememberedAt ?? Number.NEGATIVE_INFINITY) - (a.rememberedAt ?? Number.NEGATIVE_INFINITY) ||
+    byName(a, b);
   return rows.sort(
-    (a, b) => Number(b.current) - Number(a.current) || a.model.name.localeCompare(b.model.name),
+    (a, b) =>
+      Number(b.current) - Number(a.current) || (order === "recent" ? byRecent : byName)(a, b),
   );
+}
+
+function newer(a: number | null, b: number | null): number | null {
+  if (a === null) return b;
+  return b === null ? a : Math.max(a, b);
+}
+
+/** 覚えた日時の表示 (`2026/10/01 09:05`、その環境の時刻)。日時が無ければ「日時なし」。 */
+export function describeRememberedAt(at: number | null): string {
+  if (at === null) return "日時なし";
+  const d = new Date(at);
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}/${two(d.getMonth() + 1)}/${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`;
 }
 
 /** 覚えた場所の表示 (`sample:` は見本、`path:` はパス、`url:` は URL。無ければ中身で見分けることを書く)。 */

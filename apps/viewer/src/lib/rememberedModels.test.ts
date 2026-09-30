@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { DressUpSet } from "./dressUpMemory";
 import { defaultLighting } from "./lighting";
 import type { ModelIdentity } from "./modelMemory";
-import { describeDressUpSet, describeLocation, mergeRemembered } from "./rememberedModels";
+import {
+  describeDressUpSet,
+  describeLocation,
+  describeRememberedAt,
+  mergeRemembered,
+} from "./rememberedModels";
 
 const id = (name: string, fp: string, location?: ModelIdentity["location"]): ModelIdentity =>
   location === undefined ? { name, fingerprint: fp } : { name, fingerprint: fp, location };
@@ -28,6 +33,7 @@ describe("mergeRemembered", () => {
         { model: id("a.ugoe", "fa"), value: set(["Dress"]) },
       ],
       id("c.ugoe", "fc", "path:/c.ugoe"),
+      "name",
     );
     // 開いているモデルが先頭、あとは名前の順。
     expect(
@@ -36,6 +42,32 @@ describe("mergeRemembered", () => {
       ["c.ugoe", true, true, true],
       ["a.ugoe", false, false, true],
       ["b.ugoe", false, true, true],
+    ]);
+  });
+
+  it("sorts by the newest date, with undated (older) entries last (T0717)", () => {
+    const lit = defaultLighting();
+    const rows = mergeRemembered(
+      [
+        { model: id("a.ugoe", "fa"), value: lit, at: 100 },
+        { model: id("b.ugoe", "fb"), value: lit },
+        { model: id("c.ugoe", "fc"), value: lit, at: 300 },
+        { model: id("z.ugoe", "fz"), value: lit },
+      ],
+      [
+        // a の組は光源より新しい → a の行は新しい方の日時。
+        { model: id("a.ugoe", "fa"), value: set([]), at: 500 },
+        { model: id("d.ugoe", "fd"), value: set([]), at: 200 },
+      ],
+      id("z.ugoe", "fz"),
+    );
+    expect(rows.map((r) => [r.model.name, r.rememberedAt])).toEqual([
+      // 開いているモデルは先頭のまま。
+      ["z.ugoe", null],
+      ["a.ugoe", 500],
+      ["c.ugoe", 300],
+      ["d.ugoe", 200],
+      ["b.ugoe", null],
     ]);
   });
 
@@ -50,6 +82,11 @@ describe("describe", () => {
     expect(describeLocation(id("a", "f", "path:/home/a.ugoe"))).toBe("/home/a.ugoe");
     expect(describeLocation(id("a", "f", "url:https://x/a.ugoe"))).toBe("https://x/a.ugoe");
     expect(describeLocation(id("a", "f"))).toBe("場所なし (中身で見分ける)");
+  });
+
+  it("shows when it was remembered", () => {
+    expect(describeRememberedAt(new Date(2026, 9, 1, 9, 5).getTime())).toBe("2026/10/01 09:05");
+    expect(describeRememberedAt(null)).toBe("日時なし");
   });
 
   it("summarizes a dress-up set", () => {

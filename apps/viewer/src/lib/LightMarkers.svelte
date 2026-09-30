@@ -9,18 +9,27 @@
     ドラッグの途中は描画だけを変え (`updateLighting` の `preview`)、離したときにパネルと同じ経路で覚える (`commitLighting`)。
   - 取っ手は Tab でフォーカスでき、矢印キーなどで動かせる (lighting.ts の `stepMarker`。キーボードはすぐ覚える、T0714)。
   - 大きく拡大して印が画面の外に出るときは、平行光源の円・点光源の取っ手を画面の端に寄せる (T0714)。
+    寄せた平行光源の円は、線を点線にし、中心を白抜きにして、キャンバスの中央の向きに矢印を出す (中央を示していないことが分かるように。T0717)。
+  - 点光源の範囲の円の縁が画面に見えない (円が画面を覆う・まるごと画面の外) ときは、画面の端に小さな範囲の取っ手を出し、
+    そのドラッグで範囲を変える (lighting.ts の `rangeGrip`。T0717)。
+  - 取っ手にフォーカスがあるときも `F` は「全体を表示」(アプリのショートカット) のまま。取っ手は文字のキーを使わず、
+    フィットしても取っ手のフォーカスは残って印は新しい位置に描き直されるので、横取りしない (T0717)。
   印の形はエディタの光源の取っ手 (apps/editor/src/lib/viewport/tools/lighting/LightingOverlay.svelte) に合わせる。
 -->
 <script lang="ts">
 import {
   anglesFromScreen,
   directionalHandle,
+  type LightDial,
   lightDial,
   pointFromScreen,
   pointHandle,
   pointHandleOnScreen,
   pointRangeOnCanvas,
+  type RangeGrip,
   rangeFromScreenRadius,
+  rangeGrip,
+  rangeRadiusFromGrip,
   stepMarker,
   wheelPointZ,
 } from "./lighting";
@@ -29,8 +38,12 @@ import type { Player } from "./player.svelte";
 let { player }: { player: Player } = $props();
 
 let svg = $state<SVGSVGElement>();
-type DragKind = "directional" | "point" | "range";
-let drag = $state<{ pointer: number; kind: DragKind } | null>(null);
+type DragKind = "directional" | "point" | "range" | "grip";
+/** 範囲の取っ手 (`grip`) を掴んだときの取っ手・半径・ポインタの位置 (動かした分だけ半径を変える)。 */
+type GripStart = { grip: RangeGrip; radius: number; at: [number, number] };
+let drag = $state<{ pointer: number; kind: DragKind; grip?: GripStart } | null>(null);
+/** 範囲の取っ手を動かしている間のポインタの位置 (取っ手を指に付いてこさせる)。 */
+let gripAt = $state<[number, number] | null>(null);
 /** ホイールで変えた手前の距離を覚えるまでの待ち (回している間は覚えない)。 */
 let wheelTimer: ReturnType<typeof setTimeout> | undefined;
 /** キーボードのフォーカスがある取っ手 (フォーカスの輪を描く)。 */
@@ -52,6 +65,20 @@ let pointShown = $derived(
 let pointRange = $derived(
   canvas && view && s.point.enabled ? pointRangeOnCanvas(canvas, s.point) * view.scale : 0,
 );
+// 範囲の円の縁が画面に見えないときの取っ手。ドラッグの間は、縁が画面に入っても消さずに掴んだ取っ手を動かす。
+let grip = $derived.by((): RangeGrip | null => {
+  const start = drag?.kind === "grip" ? drag.grip : undefined;
+  if (start !== undefined) {
+    const [dx, dy] = start.grip.dir;
+    const along = gripAt ? (gripAt[0] - start.at[0]) * dx + (gripAt[1] - start.at[1]) * dy : 0;
+    return { ...start.grip, x: start.grip.x + dx * along, y: start.grip.y + dy * along };
+  }
+  if (point === null || pointShown === null || pointRange <= 0) return null;
+  const g = rangeGrip(point, pointRange, bounds);
+  // 画面の端に寄せた点光源の取っ手と重なるなら出さない (光源を画面に戻せば縁か取っ手が出る)。
+  if (g === null || Math.hypot(g.x - pointShown.x, g.y - pointShown.y) < 24) return null;
+  return g;
+});
 
 function local(e: PointerEvent): [number, number] {
   const r = svg?.getBoundingClientRect();
@@ -64,7 +91,12 @@ function onDown(e: PointerEvent, kind: DragKind) {
   e.preventDefault();
   e.stopPropagation();
   (e.currentTarget as Element).setPointerCapture(e.pointerId);
-  drag = { pointer: e.pointerId, kind };
+  if (kind === "grip") {
+    if (grip === null) return;
+    const at = local(e);
+    drag = { pointer: e.pointerId, kind, grip: { grip, radius: pointRange, at } };
+    gripAt = at;
+  } else drag = { pointer: e.pointerId, kind };
 }
 
 function onMove(e: PointerEvent) {
@@ -80,14 +112,14 @@ function onMove(e: PointerEvent) {
       },
       { preview: true },
     );
-  } else if (drag.kind === "range") {
+  } else if (drag.kind === "range" || drag.kind === "grip") {
     if (point === null) return;
-    const range = rangeFromScreenRadius(
-      canvas,
-      view,
-      s.point,
-      Math.hypot(x - point[0], y - point[1]),
-    );
+    let radius = Math.hypot(x - point[0], y - point[1]);
+    if (drag.grip !== undefined) {
+      gripAt = [x, y];
+      radius = rangeRadiusFromGrip(drag.grip.radius, drag.grip.grip.dir, drag.grip.at, [x, y]);
+    }
+    const range = rangeFromScreenRadius(canvas, view, s.point, radius);
     player.updateLighting(
       (next) => {
         next.point.range = range;
@@ -109,6 +141,7 @@ function onMove(e: PointerEvent) {
 function onUp(e: PointerEvent) {
   if (drag?.pointer !== e.pointerId) return;
   drag = null;
+  gripAt = null;
   player.commitLighting();
 }
 
@@ -153,6 +186,33 @@ function onFocus(e: FocusEvent, kind: "directional" | "point") {
   focused = (e.currentTarget as Element).matches(":focus-visible") ? kind : null;
 }
 
+/** 寄せた平行光源の円の中心から、キャンバスの中央の向きへの矢印 (長さ 22px)。 */
+function toCenterArrow(d: LightDial): string {
+  const dx = d.canvasCenter[0] - d.cx;
+  const dy = d.canvasCenter[1] - d.cy;
+  const length = Math.hypot(dx, dy) || 1;
+  const [ux, uy] = [dx / length, dy / length];
+  const [x0, y0] = [d.cx + ux * 6, d.cy + uy * 6];
+  const [x1, y1] = [d.cx + ux * 28, d.cy + uy * 28];
+  // 矢じり: 先端から後ろへ 7px、左右に 4px。
+  const [bx, by] = [x1 - ux * 7, y1 - uy * 7];
+  return `M${x0},${y0}L${x1},${y1}M${bx - uy * 4},${by + ux * 4}L${x1},${y1}L${bx + uy * 4},${by - ux * 4}`;
+}
+
+/** 範囲の取っ手の形 (取っ手の向きに沿った両向きの矢印)。 */
+function gripArrows(g: RangeGrip): string {
+  const [ux, uy] = g.dir;
+  const tip = (sign: number) => [g.x + sign * ux * 12, g.y + sign * uy * 12] as const;
+  const head = (sign: number) => {
+    const [tx, ty] = tip(sign);
+    const [bx, by] = [tx - sign * ux * 5, ty - sign * uy * 5];
+    return `M${bx - uy * 4},${by + ux * 4}L${tx},${ty}L${bx + uy * 4},${by - ux * 4}`;
+  };
+  const [ax, ay] = tip(-1);
+  const [cx, cy] = tip(1);
+  return `M${ax},${ay}L${cx},${cy}${head(-1)}${head(1)}`;
+}
+
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 
 /** 点光源の印 (放射する短い線)。 */
@@ -168,8 +228,14 @@ function rays(x: number, y: number): string {
 
 <svg bind:this={svg} class="light-markers" role="presentation">
   {#if dial && directional}
-    <circle class="dial" cx={dial.cx} cy={dial.cy} r={dial.r} />
-    <circle class="center" cx={dial.cx} cy={dial.cy} r="3" />
+    <circle class="dial" class:shifted={dial.shifted} cx={dial.cx} cy={dial.cy} r={dial.r} />
+    <circle class="center" class:shifted={dial.shifted} cx={dial.cx} cy={dial.cy} r="3" />
+    {#if dial.shifted}
+      <!-- 寄せた円: 中心はキャンバスの中央ではない。中心から本当の中央の向きに矢印を出す。 -->
+      <path class="to-center" d={toCenterArrow(dial)} data-light="to-center">
+        <title>キャンバスの中央は画面の外 (矢印の向き)。円は画面の端に寄せて出している</title>
+      </path>
+    {/if}
     <line class="beam" x1={directional[0]} y1={directional[1]} x2={dial.cx} y2={dial.cy} />
     {#if focused === "directional"}
       <circle class="focus-ring" cx={directional[0]} cy={directional[1]} r="14" />
@@ -224,6 +290,24 @@ function rays(x: number, y: number): string {
       >
         <title>点光源の届く範囲: 縁をドラッグで変える</title>
       </circle>
+    {/if}
+    {#if grip}
+      <!-- 範囲の円の縁が画面に見えないときの、範囲の取っ手 (キーボードは点光源の取っ手の + / −)。 -->
+      <g
+        class="range-grip"
+        class:dragging={drag?.kind === "grip"}
+        data-light="range-grip"
+        role="presentation"
+        onpointerdown={(e) => onDown(e, "grip")}
+        onpointermove={onMove}
+        onpointerup={onUp}
+        onpointercancel={onUp}
+        ondblclick={(e) => e.stopPropagation()}
+      >
+        <circle class="grip-hit" cx={grip.x} cy={grip.y} r="12" />
+        <path class="grip-arrows" d={gripArrows(grip)} />
+        <title>点光源の届く範囲: 範囲の円の縁は画面の外。矢印の向きにドラッグで広げ、逆向きで狭める</title>
+      </g>
     {/if}
     <path class="rays" class:offscreen={pointShown.offscreen} d={rays(pointShown.x, pointShown.y)} />
     {#if focused === "point"}
@@ -327,6 +411,47 @@ function rays(x: number, y: number): string {
   }
   .range-edge.dragging {
     stroke: var(--accent);
+    stroke-width: 2;
+  }
+  .dial.shifted {
+    stroke-dasharray: 1 4;
+    stroke-linecap: round;
+    stroke-width: 2;
+    opacity: 0.6;
+  }
+  .center.shifted {
+    fill: none;
+    stroke: #facc15;
+    stroke-width: 1.5;
+  }
+  .to-center {
+    fill: none;
+    stroke: #facc15;
+    stroke-width: 1.5;
+    stroke-dasharray: 3 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: 0.8;
+  }
+  .range-grip {
+    pointer-events: auto;
+    cursor: move;
+  }
+  .grip-hit {
+    fill: rgb(31 41 55 / 0.6);
+    stroke: #facc15;
+    stroke-dasharray: 3 2;
+  }
+  .grip-arrows {
+    fill: none;
+    stroke: #facc15;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .range-grip.dragging .grip-hit {
+    stroke: var(--accent);
+    stroke-dasharray: none;
     stroke-width: 2;
   }
   .handle.dragging {
