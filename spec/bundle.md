@@ -150,7 +150,7 @@ least 128 levels; the data defined by this specification nests far less deeply.
 
   A payload with neither signature makes the file invalid.
 - The pixel data of textures is non-premultiplied RGBA. The encoding of normals in normal maps is
-  defined in the planned Rendering document.
+  defined in [rendering.md](rendering.md#normals).
 
 ## Metadata
 

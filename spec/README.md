@@ -26,16 +26,15 @@ reference implementation to understand it.
 | --- | --- | --- |
 | [model.md](model.md) | The model data: every type and field, default values, encodings (JSON and MessagePack), identifiers, extensible enumerations, validation rules. Also the data of physics settings, motions, expressions, avatar profiles and dress-up modules. | Draft |
 | [bundle.md](bundle.md) | The binary container: `.ugoe` bundles and `.ugoemod` module files (chunks, MessagePack, zstd, textures, normal maps), versioning, feature declarations and forward compatibility. | Draft |
-| Evaluation | How parameter values produce deformed meshes: keyform interpolation, deformers, glue, blend shapes, evaluation order, determinism. | Planned |
-| Rendering | Blending, masks, culling, lighting with normal maps. | Planned |
-| Physics | Pendulum physics, dynamic physics outputs, colliders. | Planned |
-| Motion | Motions, expressions, eye blink, breathing, lip sync, pose, the order of operations within a frame. | Planned |
+| [evaluation.md](evaluation.md) | How parameter values produce deformed meshes: keyform interpolation (linear and smooth), blend shapes, deformers, glues, evaluation order, dynamic physics offsets, hit testing, determinism and conformance tolerances. | Draft |
+| [rendering.md](rendering.md) | How evaluated meshes are drawn: mesh color, blend modes, masks, culling, lighting with normal maps, pixel tolerances. | Draft |
+| [physics.md](physics.md) | Pendulum physics: time steps, inputs, outputs, rig order and relays, dynamic physics outputs, gravity frames, colliders. | Draft |
+| [motion.md](motion.md) | Motions, cross-fades, expressions, eye blink, breathing, lip sync, pose, part opacity, the order of operations within a frame. | Draft |
 | [avatar-profile.md](avatar-profile.md) | The avatar profile: standard and extended parameters and their meanings, conformance levels, the face tracking mapping (ARKit blend shapes) and its overrides, gaze, hit areas, license metadata, and the rules for applications that drive avatars. | Draft |
 | JSON Schema and examples | Machine-readable schemas and conformance examples. | Planned |
 
-Where this draft needs behavior that belongs to a planned document (for example, how a warp
-deformer maps coordinates), it states only what is needed to read and write the data correctly and
-names the planned document.
+Where this draft needs something that belongs to a planned document, it states only what is needed
+to read and write the data correctly and names the planned document.
 
 ## Versions
 

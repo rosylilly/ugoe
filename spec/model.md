@@ -9,9 +9,9 @@ defines the data that travels with a model (physics settings, motions, expressio
 dress-up modules. How the data is packed into files is defined in [bundle.md](bundle.md).
 
 This document states what each field *means* only as far as needed to produce and consume the data
-correctly. The exact computations (interpolation, deformation, rendering, physics, playback) belong
-to the planned Evaluation, Rendering, Physics, Motion and Avatar profile documents
-([README.md](README.md#documents)).
+correctly. The exact computations belong to [evaluation.md](evaluation.md) (interpolation and
+deformation), [rendering.md](rendering.md), [physics.md](physics.md), [motion.md](motion.md)
+(playback, effects and the order of operations in a frame) and [avatar-profile.md](avatar-profile.md).
 
 ## Contents
 
@@ -313,7 +313,7 @@ all its descendant parts and of the meshes that belong to it.
 
 A keyform grid stores the values of an element at the grid points formed by one or more parameter
 axes. At run time, the values for the current parameter values are interpolated from the grid
-(planned Evaluation document).
+([evaluation.md](evaluation.md#keyform-interpolation)).
 
 `KeyformGrid<T>`, where `T` is the keyform type of the element (for example `MeshKeyform`):
 
@@ -451,7 +451,7 @@ A warp deformer is a lattice of `(rows + 1) × (cols + 1)` control points.
   (`0 ≤ x ≤ cols`) and row `y` (`0 ≤ y ≤ rows`) is at index `x + (cols + 1) × y`.
 - A child at local coordinates `(u, v)` is mapped through the lattice: `u = 0` is column 0 and
   `u = 1` is column `cols`; `v = 0` is row 0 and `v = 1` is row `rows`. Inside a cell the mapping is
-  bilinear; outside `[0, 1]²` it is extrapolated (planned Evaluation document).
+  bilinear; outside `[0, 1]²` it is extrapolated ([evaluation.md](evaluation.md#warp-deformers)).
 
 ### Rotation deformers
 
@@ -473,7 +473,7 @@ A warp deformer is a lattice of `(rows + 1) × (cols + 1)` control points.
 A child at local coordinates `p` (pixels relative to the origin) is placed at
 `origin + R(angle) · S · p`, where `S` applies `scale` and the reflections. When the parent is a warp
 deformer, only the origin and the direction are taken through the lattice, so the children are not
-stretched by it (planned Evaluation document).
+stretched by it ([evaluation.md](evaluation.md#rotation-deformers)).
 
 ## Meshes
 
@@ -518,7 +518,7 @@ A mesh is a textured triangle mesh, the unit of drawing.
 - When two meshes have the same `draw_order`, the one later in the model's `meshes` array is drawn in
   front.
 - `BlendMode` (string, extensible): `normal`, `additive`, `multiply`. Fallback for an unknown value:
-  `normal`. The blend equations are defined in the planned Rendering document.
+  `normal`. The blend equations are defined in [rendering.md](rendering.md#blend-modes).
 
 ### Masks
 
@@ -531,7 +531,7 @@ A mesh is a textured triangle mesh, the unit of drawing.
 
 - A mesh is visible where its non-inverted masks cover it (combined according to `mask_mode`) and
   where none of its inverted masks cover it. Masks are evaluated with their own masks applied
-  (nesting). The exact coverage equations are defined in the planned Rendering document.
+  (nesting). The exact coverage equations are defined in [rendering.md](rendering.md#masks).
 - `MaskMode` (string, extensible): `union` (visible where any non-inverted mask covers) or
   `intersection` (visible where all non-inverted masks cover). Fallback for an unknown value:
   `union`.
@@ -585,8 +585,8 @@ A glue pulls pairs of vertices of two meshes towards each other to hide seams.
 
 - A normal map is an image in the same UV space as its texture that stores tangent-space normals.
   Its size may differ from the texture's. A texture without a normal map has the normal `(0, 0, 1)`
-  everywhere. The encoding of normals and the lighting equations are defined in the planned
-  Rendering document.
+  everywhere. The encoding of normals and the lighting equations are defined in
+  [rendering.md](rendering.md#lighting).
 - A mesh is lit only if both the model's `lighting` and the mesh's `lit` are `true`.
 - Lights are not part of the model: the host supplies them at run time.
 - Fallback for readers that do not support lighting: draw without lighting (feature
@@ -681,8 +681,8 @@ care to read it exactly.
 | `parameters` | `id[]` | `[]` | Target parameters. |
 
 Motions control the strength of the eye blink and lip sync through the *effect groups* named
-`EyeBlink` and `LipSync` ([Motions](#motions)). The exact behavior of the effects is defined in the
-planned Motion document.
+`EyeBlink` and `LipSync` ([Motions](#motions)). The exact behavior of the effects is defined in
+[motion.md](motion.md#effects).
 
 ## Avatar profile
 
@@ -872,8 +872,8 @@ value: do not rebuild the `derived` keyforms):
 
 Physics settings are a separate object, carried by the `PHYS` chunk of a bundle
 ([bundle.md](bundle.md#chunk-types)) or as a standalone `*.physics.json` file. They refer to the
-model's parameters, deformers and meshes by ID. The simulation itself is defined in the planned
-Physics document.
+model's parameters, deformers and meshes by ID. The simulation itself is defined in
+[physics.md](physics.md).
 
 `PhysicsSettings`:
 
@@ -994,7 +994,7 @@ value: ignore the collider). Radii are in canvas pixels and at least 0.
 ## Motions
 
 A motion is a time-line animation, carried by an `MOTN` chunk of a bundle or as a standalone
-`*.motion.json` file. Playback is defined in the planned Motion document.
+`*.motion.json` file. Playback is defined in [motion.md](motion.md#motion-playback).
 
 `Motion`:
 
@@ -1285,7 +1285,7 @@ modules are attached).
    points of collider shapes are finite.
 
 *Informative:* an output whose `particle` is 0 or not less than the number of particles is not
-invalid; it has no effect (planned Physics document).
+invalid; it has no effect ([physics.md](physics.md#output-values)).
 
 ### Module validation
 

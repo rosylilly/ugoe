@@ -322,7 +322,7 @@ of the order in which the elements of `tracking` appear.
 
 *Informative:* where tracking values enter the per-frame order of operations (after motions, before
 expressions, eye blink, breathing, physics and lip sync, which are layered on top of the tracked
-values) is defined in the planned Motion document.
+values) is defined in [motion.md](motion.md#order-of-operations-in-a-frame).
 
 Example (JSON):
 
