@@ -55,13 +55,29 @@ let statusText = $derived.by(() => {
       if (tracker.source?.kind === "replay") {
         return t.replayPosition(tracker.replayTime.toFixed(1), tracker.replayDuration.toFixed(1));
       }
-      return tracker.faceFound ? t.fps(tracker.fps) : t.noFace;
+      if (!tracker.faceFound) return t.noFace;
+      if (tracker.trackBody && !tracker.bodyFound) return `${t.fps(tracker.fps)} · ${t.noBody}`;
+      return t.fps(tracker.fps);
     default:
       return "";
   }
 });
 
 let blendShapes = $derived(Object.entries(tracker.output?.blendShapes ?? {}));
+/** 体の値の表示 (無い値は「—」)。 */
+let bodyRows = $derived.by(() => {
+  const body = tracker.output?.body;
+  if (!body) return [];
+  const deg = (v: number | null) => (v === null ? "—" : `${v.toFixed(1)}°`);
+  const num = (v: number | null) => (v === null ? "—" : v.toFixed(2));
+  return [
+    ["yaw", deg(body.yaw)],
+    ["pitch", deg(body.pitch)],
+    ["roll", deg(body.roll)],
+    ["shoulderLeft", num(body.shoulderLeft)],
+    ["shoulderRight", num(body.shoulderRight)],
+  ] as const;
+});
 let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
 </script>
 
@@ -131,7 +147,17 @@ let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
         onchange={(e) => tracker.setStopEyeBlink(e.currentTarget.checked)}
       /> {t.stopEyeBlink}
     </label>
+    <label title={t.trackBodyTitle}>
+      <input
+        type="checkbox"
+        checked={tracker.trackBody}
+        onchange={(e) => tracker.setTrackBody(e.currentTarget.checked)}
+      /> {t.trackBody}
+    </label>
   </div>
+  {#if tracker.trackBody && tracker.bodyError}
+    <p class="error">{tracker.bodyError}</p>
+  {/if}
 
   <label class="slider" title={t.smoothingTitle}>
     {t.smoothing}
@@ -185,6 +211,14 @@ let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
         <dd>{head.pitch.toFixed(1)}°</dd>
         <dt>roll</dt>
         <dd>{head.roll.toFixed(1)}°</dd>
+        {#if bodyRows.length > 0}
+          <dt class="group" title={t.bodyNeedsCalibration}>{t.body}</dt>
+          <dd></dd>
+          {#each bodyRows as [name, text] (name)}
+            <dt title={name}>{name}</dt>
+            <dd><span class="num">{text}</span></dd>
+          {/each}
+        {/if}
         {#each blendShapes as [name, score] (name)}
           <dt title={name}>{name}</dt>
           <dd>
@@ -316,6 +350,10 @@ let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
     grid-template-columns: 9.5rem 1fr;
     gap: 0.1rem 0.4rem;
     margin: 0.3rem 0 0;
+  }
+  .values dt.group {
+    font-weight: 600;
+    margin-top: 0.2rem;
   }
   .values dt {
     overflow: hidden;

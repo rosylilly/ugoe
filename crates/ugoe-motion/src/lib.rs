@@ -18,4 +18,4 @@ pub use expression::{ExpressionManager, ExpressionPlayer};
 pub use manager::{MotionManager, Priority};
 pub use player::{MotionPlayer, easing};
 pub use pose::PosePlayer;
-pub use tracking::{Rotation, TrackingInput, TrackingMap};
+pub use tracking::{BodyInput, Rotation, TrackingInput, TrackingMap};

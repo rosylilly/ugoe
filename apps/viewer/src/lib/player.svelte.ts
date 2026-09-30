@@ -3,7 +3,7 @@
 // フレームごとに: ドライバ (drivers.ts) の値を設定 → トラッキングの入力を渡す → `update(dt)` (物理など)
 // → スライダーの値を同期 → 描画。
 // 描画は WebGPU が無ければ WebGL2 で行う (docs/adr/0003-editor-viewport-in-webview.md)。
-import type { TrackingFrame } from "@ugoe/face-tracking";
+import { setPuppetTracking, type TrackingFrame } from "@ugoe/face-tracking";
 import { parseHexColor } from "./color";
 import { DriverSet } from "./drivers";
 import { detectModelKind, type ModelFile } from "./modelFile";
@@ -237,9 +237,7 @@ export class Player {
       const frame = this.#pendingTracking;
       if (frame !== null) {
         this.#pendingTracking = null;
-        const names = Object.keys(frame.blendShapes);
-        const scores = Float32Array.from(names, (n) => frame.blendShapes[n] ?? 0);
-        puppet.set_tracking(names, scores, frame.head.yaw, frame.head.pitch, frame.head.roll);
+        setPuppetTracking(puppet, frame);
       }
       const ids = new Set(driven.keys());
       if (this.tracking) {

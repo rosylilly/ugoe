@@ -274,13 +274,19 @@ are 0 when closed and 1 when open. Parameters with a range of −1 to 1 are neut
 | `MouthPucker`, `MouthFunnel`, `MouthPress`, `MouthShrug` | 0 | 0 | 1 |
 | `CheekPuff`, `TongueOut`, `NoseSneer` | 0 | 0 | 1 |
 
+**Body extended parameters** (avatar profile):
+
+| ID | min | default | max |
+| --- | --- | --- | --- |
+| `ShoulderLY`, `ShoulderRY` | −1 | 0 | 1 |
+
 **Vowel parameters** (lip sync):
 
 | ID | min | default | max |
 | --- | --- | --- | --- |
 | `MouthVowelA`, `MouthVowelI`, `MouthVowelU`, `MouthVowelE`, `MouthVowelO` | 0 | 0 | 1 |
 
-The IDs in these three tables are the **well-known parameter IDs**. Dress-up modules may always use
+The IDs in these four tables are the **well-known parameter IDs**. Dress-up modules may always use
 them ([Modules](#modules)).
 
 ## Parts

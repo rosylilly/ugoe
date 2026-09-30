@@ -6,15 +6,22 @@
 //! (`docs/spec/avatar-profile.md#実装の範囲`)。
 
 use ugoe::Puppet;
-use ugoe::motion::{Rotation, TrackingInput, TrackingMap};
+use ugoe::motion::{BodyInput, Rotation, TrackingInput, TrackingMap};
 
-/// 名前 (ARKit / MediaPipe のカテゴリ名) と値の列、頭の回転 (度、プロファイルの向きの約束) から入力を作る。
+/// 名前 (ARKit / MediaPipe のカテゴリ名) と値の列、頭の回転 (度、プロファイルの向きの約束) と体の入力から
+/// 入力を作る。
 ///
 /// 知らない名前 (MediaPipe の `_neutral` など) は無視し、渡されなかったブレンドシェイプは 0 にする。
-/// `names` と `scores` の長さが違えば、短い方に合わせる。体の回転は渡さない (頭の回転 × 0.3 になる)。
-pub fn tracking_input(names: &[String], scores: &[f32], head: Rotation) -> TrackingInput {
+/// `names` と `scores` の長さが違えば、短い方に合わせる。体の入力の省略した軸は頭の回転 × 0.3 になる。
+pub fn tracking_input(
+    names: &[String],
+    scores: &[f32],
+    head: Rotation,
+    body: BodyInput,
+) -> TrackingInput {
     let mut input = TrackingInput {
         head,
+        body,
         ..TrackingInput::default()
     };
     input.set_blend_shapes(names.iter().zip(scores.iter().copied()));
@@ -58,9 +65,10 @@ mod tests {
             &names(&["_neutral", "eyeBlinkLeft", "jawOpen", "mouthClose"]),
             &[1.0, 0.75, 0.5],
             head,
+            BodyInput::default(),
         );
         assert_eq!(input.head, head);
-        assert_eq!(input.body, None);
+        assert_eq!(input.body, BodyInput::default());
         assert_eq!(input.blend_shape("eyeBlinkLeft"), Some(0.75));
         assert_eq!(input.blend_shape("jawOpen"), Some(0.5));
         // 値が足りない名前は無視する。
@@ -79,6 +87,10 @@ mod tests {
                 yaw: 15.0,
                 ..Rotation::default()
             },
+            BodyInput {
+                roll: Some(-4.0),
+                ..BodyInput::default()
+            },
         );
         puppet.set_tracking(Some(input));
         puppet.update(1.0 / 60.0);
@@ -88,7 +100,9 @@ mod tests {
         assert!((get("EyeROpen") - 1.0).abs() < 1e-6);
         assert!((get("MouthOpenY") - 0.5).abs() < 1e-6);
         assert!((get("AngleX") - 15.0).abs() < 1e-6);
+        // 体のヨーは省略したので頭 × 0.3、ロールは体の入力。
         assert!((get("BodyAngleX") - 4.5).abs() < 1e-5);
+        assert!((get("BodyAngleZ") + 4.0).abs() < 1e-6);
     }
 
     #[test]

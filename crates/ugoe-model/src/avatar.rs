@@ -54,7 +54,7 @@ pub const HIT_AREA_HEAD: &str = "Head";
 pub const HIT_AREA_BODY: &str = "Body";
 
 /// トラッキングの標準の対応表で値が決まるパラメータ ([`TrackingSource::Standard`] の `input` に書ける ID)。
-/// 仕様書の「頭の向き」と「ARKit のブレンドシェイプ」の表と同じ順。
+/// 仕様書の「頭と体」と「ARKit のブレンドシェイプ」の表と同じ順。
 pub const TRACKED_PARAMETERS: &[&str] = &[
     standard::ANGLE_X,
     standard::ANGLE_Y,
@@ -62,6 +62,8 @@ pub const TRACKED_PARAMETERS: &[&str] = &[
     standard::BODY_ANGLE_X,
     standard::BODY_ANGLE_Y,
     standard::BODY_ANGLE_Z,
+    standard::SHOULDER_L_Y,
+    standard::SHOULDER_R_Y,
     standard::EYE_L_OPEN,
     standard::EYE_R_OPEN,
     standard::EYE_L_WIDE,
@@ -537,7 +539,7 @@ mod tests {
         shapes.dedup();
         assert_eq!(shapes.len(), 52);
         // 拡張パラメータはすべて標準の対応表で値が決まる。
-        for (id, ..) in standard::EXTENDED {
+        for (id, ..) in standard::EXTENDED.iter().chain(standard::BODY_EXTENDED) {
             assert!(TRACKED_PARAMETERS.contains(id), "{id}");
         }
     }

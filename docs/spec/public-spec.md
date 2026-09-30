@@ -66,15 +66,15 @@
 | --- | --- | --- |
 | [Overview](../../spec/avatar-profile.md#overview) | [avatar-profile.md](avatar-profile.md) の冒頭 | アバター・準拠するモデル・アプリ・検証ツールの用語は英語版だけ |
 | [Orientation and sides](../../spec/avatar-profile.md#orientation-and-sides) | [avatar-profile.md#向きと左右の約束](avatar-profile.md#向きと左右の約束)、[model.md#標準パラメータ](model.md#標準パラメータ) | |
-| [Standard parameters](../../spec/avatar-profile.md#standard-parameters)・[Extended parameters](../../spec/avatar-profile.md#extended-parameters)・[Vowel parameters](../../spec/avatar-profile.md#vowel-parameters) | [avatar-profile.md#拡張パラメータ-レベル-3](avatar-profile.md#拡張パラメータ-レベル-3)、[model.md#標準パラメータ](model.md#標準パラメータ) | 値域は `ugoe_model::standard`。標準パラメータの意味の表は英語版だけ |
+| [Standard parameters](../../spec/avatar-profile.md#standard-parameters)・[Extended parameters](../../spec/avatar-profile.md#extended-parameters)・[Body extended parameters](../../spec/avatar-profile.md#body-extended-parameters)・[Vowel parameters](../../spec/avatar-profile.md#vowel-parameters) | [avatar-profile.md#拡張パラメータ-レベル-3](avatar-profile.md#拡張パラメータ-レベル-3)、[avatar-profile.md#体の拡張パラメータ](avatar-profile.md#体の拡張パラメータ)、[model.md#標準パラメータ](model.md#標準パラメータ) | 値域は `ugoe_model::standard`。標準パラメータの意味の表は英語版だけ |
 | [Conformance levels](../../spec/avatar-profile.md#conformance-levels) | [avatar-profile.md#準拠レベル](avatar-profile.md#準拠レベル) | 必要なパラメータは `ugoe_model::avatar::LEVEL_1_PARAMETERS` などと同じ |
 | [Conformance checks](../../spec/avatar-profile.md#conformance-checks) | [avatar-profile.md#準拠の検査](avatar-profile.md#準拠の検査) | 項目と重さは `ugoe_model::avatar::check` と同じ |
-| [Tracking input](../../spec/avatar-profile.md#tracking-input)・[Standard mapping](../../spec/avatar-profile.md#standard-mapping) | [avatar-profile.md#頭の向き](avatar-profile.md#頭の向き)、[avatar-profile.md#arkit-のブレンドシェイプ](avatar-profile.md#arkit-のブレンドシェイプ) | 式は `ugoe_motion::tracking` と同じ。`MouthX`・`JawX` の符号は両方で未決 |
+| [Tracking input](../../spec/avatar-profile.md#tracking-input)・[Standard mapping](../../spec/avatar-profile.md#standard-mapping) | [avatar-profile.md#頭と体](avatar-profile.md#頭と体)、[avatar-profile.md#arkit-のブレンドシェイプ](avatar-profile.md#arkit-のブレンドシェイプ) | 式は `ugoe_motion::tracking` と同じ。`MouthX`・`JawX` の符号は両方で未決 |
 | [Overrides](../../spec/avatar-profile.md#overrides)・[Computing the parameter values](../../spec/avatar-profile.md#computing-the-parameter-values) | [avatar-profile.md#トラッキングの対応の上書き](avatar-profile.md#トラッキングの対応の上書き) | |
 | [Audio](../../spec/avatar-profile.md#audio) | [avatar-profile.md#音声-リップシンク](avatar-profile.md#音声-リップシンク) | |
 | [Gaze](../../spec/avatar-profile.md#gaze)・[Hit areas](../../spec/avatar-profile.md#hit-areas)・[Slots](../../spec/avatar-profile.md#slots) | [avatar-profile.md#アプリ向けの情報](avatar-profile.md#アプリ向けの情報) | |
 | [Metadata and license terms](../../spec/avatar-profile.md#metadata-and-license-terms) | [avatar-profile.md#メタデータ](avatar-profile.md#メタデータ) | |
-| [Rules for applications](../../spec/avatar-profile.md#rules-for-applications) | [avatar-profile.md#アプリの規則](avatar-profile.md#アプリの規則)、[avatar-profile.md#実装の範囲](avatar-profile.md#実装の範囲) | MediaPipe の観察は英語版では参考 (informative) |
+| [Rules for applications](../../spec/avatar-profile.md#rules-for-applications) | [avatar-profile.md#アプリの規則](avatar-profile.md#アプリの規則)、[avatar-profile.md#実装の範囲](avatar-profile.md#実装の範囲)、[avatar-profile.md#体のトラッキング-mediapipe-pose-landmarker](avatar-profile.md#体のトラッキング-mediapipe-pose-landmarker) | MediaPipe の観察は英語版では参考 (informative)。Pose Landmarker の点からの式の詳細と確かめたことは日本語版だけ |
 | [Versions](../../spec/avatar-profile.md#versions) | [avatar-profile.md#バージョン](avatar-profile.md#バージョン) | |
 
 ## 評価 (`spec/evaluation.md`)

@@ -1,16 +1,18 @@
 // フェイストラッキング (T0703、エディタとの共有は T0636)。MediaPipe Face Landmarker でカメラ・動画・画像から
 // 顔の値を得て、キャリブレーションと平滑化を通してから TrackingTarget に渡す (パラメータへの変換は Rust の対応付け)。
+// 体のトラッキング (T0645) は同じフレームで Pose Landmarker (lite) を動かし、体の向きと肩の値 (pose.ts) を足す。
 // カメラの無い環境では、記録した値の列 (recording.ts) を再生して確かめる。
 //
-// 入力 → [MediaPipe] → frameFromLandmarker → (左右を入れ替えるなら unmirrorFrame) → 記録
+// 入力 → [MediaPipe] → frameFromLandmarker (+ PoseConverter) → (左右を入れ替えるなら unmirrorFrame) → 記録
 //      → applyCalibration → FrameSmoother → TrackingTarget.setTracking → WebPuppet.set_tracking (Rust)
 //
 // MediaPipe の wasm とモデルはアプリに同梱し (public/mediapipe/。scripts/mediapipe-assets.mjs)、
 // 実行時にネットワークへ取りに行かない。
-import type { FaceLandmarker, NormalizedLandmark } from "@mediapipe/tasks-vision";
+import type { FaceLandmarker, NormalizedLandmark, PoseLandmarker } from "@mediapipe/tasks-vision";
 import { applyCalibration, averageFrames } from "./calibration";
 import { FrameSmoother } from "./filter";
-import { frameFromLandmarker, type TrackingFrame, unmirrorFrame } from "./frame";
+import { frameFromLandmarker, NO_BODY, type TrackingFrame, unmirrorFrame } from "./frame";
+import { PoseConverter } from "./pose";
 import {
   frameAt,
   parseRecording,
@@ -107,6 +109,15 @@ export class FaceTracker {
   swapSides = $state(false);
   /** トラッキング中はモデルの自動の目パチを止める。 */
   stopEyeBlink = $state(true);
+  /**
+   * 体のトラッキング (Pose Landmarker) も行う。切ると検出が軽くなり、体の向きは頭の回転 × 0.3 になる
+   * (docs/spec/avatar-profile.md)。
+   */
+  trackBody = $state(true);
+  /** 直近のフレームで体 (肩) が見つかった。 */
+  bodyFound = $state(false);
+  /** 体のトラッキングが使えない理由 (モデルが無いなど)。顔のトラッキングは続ける。 */
+  bodyError = $state<string | null>(null);
   /** ランドマークを重ねて描く。 */
   showLandmarks = $state(true);
   /** 平滑化の強さ (0〜1)。 */
@@ -130,6 +141,10 @@ export class FaceTracker {
   readonly #saveJson: (name: string, text: string) => Promise<boolean>;
   #landmarker: FaceLandmarker | null = null;
   #landmarkerLoading: Promise<FaceLandmarker> | null = null;
+  #pose: PoseLandmarker | null = null;
+  #poseLoading: Promise<PoseLandmarker | null> | null = null;
+  #poseConverter = new PoseConverter();
+  #poseLandmarks: NormalizedLandmark[] | null = null;
   #drawing: typeof import("@mediapipe/tasks-vision") | null = null;
   #canvas: HTMLCanvasElement | null = null;
   #video: HTMLVideoElement | null = null;
@@ -254,9 +269,12 @@ export class FaceTracker {
     this.status = "idle";
     this.source = null;
     this.faceFound = false;
+    this.bodyFound = false;
     this.output = null;
     this.fps = 0;
     this.#landmarks = null;
+    this.#poseLandmarks = null;
+    this.#poseConverter.reset();
     this.#clearCanvas();
   }
 
@@ -280,6 +298,15 @@ export class FaceTracker {
   setStopEyeBlink(stop: boolean): void {
     this.stopEyeBlink = stop;
     if (this.running) this.#target.setAutoEyeBlink(!stop);
+  }
+
+  /** 体のトラッキングを切り替える。入れたときにモデルがまだ読まれていなければ読む。 */
+  setTrackBody(on: boolean): void {
+    this.trackBody = on;
+    this.bodyFound = false;
+    this.#poseLandmarks = null;
+    this.#poseConverter.reset();
+    if (on && this.running && this.#replay === null) void this.#loadPose();
   }
 
   // --- 記録 ---
@@ -317,7 +344,10 @@ export class FaceTracker {
     this.error = null;
     this.status = "loading";
     try {
-      if (useLandmarker) await this.#loadLandmarker();
+      if (useLandmarker) {
+        await this.#loadLandmarker();
+        if (this.trackBody) await this.#loadPose();
+      }
       this.source = await open();
     } catch (e) {
       this.#releaseSource();
@@ -396,6 +426,38 @@ export class FaceTracker {
     }
   }
 
+  /**
+   * 体の Pose Landmarker (lite) を読む。読めなければ `bodyError` に理由を書いて `null` を返す
+   * (顔のトラッキングは続ける)。`#loadLandmarker` の後に呼ぶ (wasm を共有する)。
+   */
+  async #loadPose(): Promise<PoseLandmarker | null> {
+    if (this.#pose) return this.#pose;
+    this.#poseLoading ??= (async () => {
+      const modelUrl = assetUrl("pose_landmarker_lite.task");
+      const head = await fetch(modelUrl, { method: "HEAD" }).catch(() => null);
+      if (!head?.ok) throw new Error(this.strings.poseModelMissing);
+      const vision = await import("@mediapipe/tasks-vision");
+      const fileset = await vision.FilesetResolver.forVisionTasks(assetUrl("wasm"));
+      // 顔と同じく、WebKitGTK のためにふつうの canvas を渡す。
+      const create = (delegate: "GPU" | "CPU") =>
+        vision.PoseLandmarker.createFromOptions(fileset, {
+          canvas: document.createElement("canvas"),
+          baseOptions: { modelAssetPath: modelUrl, delegate },
+          runningMode: "VIDEO",
+          numPoses: 1,
+        });
+      const pose = await create("GPU").catch(() => create("CPU"));
+      this.#pose = pose;
+      this.bodyError = null;
+      return pose;
+    })().catch((e: unknown) => {
+      this.bodyError = message(e);
+      this.#poseLoading = null;
+      return null;
+    });
+    return await this.#poseLoading;
+  }
+
   #tick = (now: number): void => {
     this.#frame = requestAnimationFrame(this.#tick);
     const dt = this.#lastNow === null ? 0 : Math.min((now - this.#lastNow) / 1000, MAX_DT);
@@ -446,11 +508,27 @@ export class FaceTracker {
     const result = landmarker.detectForVideo(source, timestamp);
     this.#landmarks = result.faceLandmarks[0] ?? null;
     const frame = frameFromLandmarker(result);
+    if (frame !== null && this.trackBody) {
+      // 体が見つからない (・まだ読めていない) ときは、体の値をすべて無しにする (頭の回転 × 0.3 に戻る)。
+      frame.body = this.#detectBody(source, timestamp) ?? { ...NO_BODY };
+    }
     return frame && this.swapSides ? unmirrorFrame(frame) : frame;
+  }
+
+  /** 体を検出する。Pose Landmarker が無い・人が見つからなければ `null`。 */
+  #detectBody(source: HTMLVideoElement | HTMLImageElement, timestamp: number) {
+    const pose = this.#pose;
+    if (pose === null) return null;
+    const result = pose.detectForVideo(source, timestamp);
+    this.#poseLandmarks = result.landmarks[0] ?? null;
+    const width = source instanceof HTMLVideoElement ? source.videoWidth : source.naturalWidth;
+    const height = source instanceof HTMLVideoElement ? source.videoHeight : source.naturalHeight;
+    return this.#poseConverter.convert(result, width, height);
   }
 
   /** 検出した (または再生した) 値を記録し、キャリブレーションと平滑化を通して TrackingTarget に渡す。 */
   #push(raw: TrackingFrame, dt: number, now: number): void {
+    this.bodyFound = raw.body !== undefined && raw.body.yaw !== null;
     this.#recent.push(raw);
     if (this.#recent.length > CALIBRATION_FRAMES) this.#recent.shift();
     if (this.recording) {
@@ -499,6 +577,15 @@ export class FaceTracker {
     const { DrawingUtils, FaceLandmarker } = vision;
     const draw = new DrawingUtils(ctx);
     const lineWidth = Math.max(1, width / 640);
+    const pose = this.trackBody ? this.#poseLandmarks : null;
+    if (pose !== null) {
+      // 体の値に使う点 (耳・肩・腰) と、肩の線・胴。
+      draw.drawConnectors(pose, BODY_CONNECTIONS, { color: "#30a0ff", lineWidth: lineWidth * 1.5 });
+      draw.drawLandmarks(
+        BODY_POINTS.map((i) => pose[i]).filter((p) => p !== undefined),
+        { color: "#30a0ff", radius: lineWidth * 2 },
+      );
+    }
     draw.drawConnectors(landmarks, FaceLandmarker.FACE_LANDMARKS_TESSELATION, {
       color: "#c0c0c060",
       lineWidth: lineWidth * 0.5,
@@ -517,6 +604,15 @@ export class FaceTracker {
     }
   }
 }
+
+/** 体の値に使う Pose Landmarker の点 (左右の耳・肩・腰) と、描く線。 */
+const BODY_POINTS = [7, 8, 11, 12, 23, 24];
+const BODY_CONNECTIONS = [
+  { start: 11, end: 12 },
+  { start: 11, end: 23 },
+  { start: 12, end: 24 },
+  { start: 23, end: 24 },
+];
 
 declare global {
   interface Window {

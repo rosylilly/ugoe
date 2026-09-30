@@ -24,7 +24,7 @@ use ugoe::model::physics::{
 };
 use ugoe::model::{Model, fixtures, standard};
 use ugoe::motion::tracking::standard_value;
-use ugoe::motion::{Priority, Rotation, TrackingInput};
+use ugoe::motion::{BodyInput, Priority, Rotation, TrackingInput};
 use ugoe::{Puppet, Toggles};
 
 const DT: f32 = 1.0 / 60.0;
@@ -508,6 +508,48 @@ fn arkit_frames() -> Vec<TrackingInput> {
         ),
         frame(0.0, 0.0, 0.0, &[]),
     ]
+}
+
+/// 見本のモデルの、ARKit のフレームの列に対する見た目 (描画物の頂点と不透明度)。`body` を各フレームの体の入力にする。
+fn sample_looks(body: BodyInput) -> Vec<Vec<(Vec<Vec2>, f32)>> {
+    let mut puppet = Puppet::new(sample_bundle().model).expect("compile the sample");
+    puppet.set_toggles(Toggles {
+        eye_blink: false,
+        breath: false,
+        ..Toggles::default()
+    });
+    arkit_frames()
+        .into_iter()
+        .map(|input| {
+            puppet.set_tracking(Some(TrackingInput { body, ..input }));
+            puppet.update(DT);
+            puppet
+                .instance()
+                .drawables()
+                .iter()
+                .map(|d| (d.positions.clone(), d.opacity))
+                .collect()
+        })
+        .collect()
+}
+
+#[test]
+fn avatar_sample_is_unchanged_without_body_input() {
+    // 体の入力が無いとき (T0645 より前と同じ入力) の見た目を基準にする。
+    let base = sample_looks(BodyInput::default());
+    // 見本には肩のパラメータが無いので、肩の入力だけがあっても見た目は同じ。
+    let shoulders = sample_looks(BodyInput {
+        shoulder_left: Some(0.8),
+        shoulder_right: Some(-0.5),
+        ..BodyInput::default()
+    });
+    assert_eq!(base, shoulders);
+    // 体の回転を与えると変わる (比べ方が見た目の違いを捉えていることの確認)。
+    let turned = sample_looks(BodyInput {
+        yaw: Some(10.0),
+        ..BodyInput::default()
+    });
+    assert_ne!(base, turned);
 }
 
 #[test]

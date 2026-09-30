@@ -49,3 +49,52 @@ describe("averageFrames", () => {
     expect(averageFrames([])).toBeNull();
   });
 });
+
+describe("body calibration", () => {
+  const body = { yaw: 10, pitch: -15, roll: 3, shoulderLeft: 0.4, shoulderRight: 0.2 };
+  const frame = { head: { yaw: 0, pitch: 0, roll: 0 }, blendShapes: {}, body };
+
+  it("keeps only yaw and roll without calibration", () => {
+    const out = applyCalibration(frame, null);
+    expect(out.body).toEqual({
+      yaw: 10,
+      pitch: null,
+      roll: 3,
+      shoulderLeft: null,
+      shoulderRight: null,
+    });
+  });
+
+  it("subtracts the neutral body and drops relative values the neutral lacks", () => {
+    const neutral = {
+      head: { yaw: 0, pitch: 0, roll: 0 },
+      blendShapes: {},
+      body: { yaw: 4, pitch: null, roll: 1, shoulderLeft: 0.1, shoulderRight: 0.1 },
+    };
+    const out = applyCalibration(frame, neutral);
+    expect(out.body?.yaw).toBeCloseTo(6);
+    expect(out.body?.roll).toBeCloseTo(2);
+    // 中立で腰が見えていなかったので、ピッチは使わない。
+    expect(out.body?.pitch).toBeNull();
+    expect(out.body?.shoulderLeft).toBeCloseTo(0.3);
+    expect(out.body?.shoulderRight).toBeCloseTo(0.1);
+  });
+
+  it("keeps yaw and roll when the neutral pose had no body", () => {
+    const neutral = { head: { yaw: 0, pitch: 0, roll: 0 }, blendShapes: {} };
+    const out = applyCalibration(frame, neutral);
+    expect(out.body?.yaw).toBe(10);
+    expect(out.body?.shoulderLeft).toBeNull();
+  });
+
+  it("averages body values over the frames that have them", () => {
+    const avg = averageFrames([
+      frame,
+      { ...frame, body: { ...body, yaw: 20, pitch: null } },
+      { head: frame.head, blendShapes: {} },
+    ]);
+    expect(avg?.body?.yaw).toBeCloseTo(15);
+    expect(avg?.body?.pitch).toBeCloseTo(-15);
+    expect(averageFrames([{ head: frame.head, blendShapes: {} }])?.body).toBeUndefined();
+  });
+});

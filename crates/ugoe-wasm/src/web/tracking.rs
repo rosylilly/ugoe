@@ -4,7 +4,7 @@
 //! 入力は次の `update(dt)` から毎フレーム、モーションの直後に基準値へ書き込まれる
 //! (`docs/spec/motion.md#フレーム内の適用順`)。
 
-use ugoe::motion::Rotation;
+use ugoe::motion::{BodyInput, Rotation};
 use wasm_bindgen::prelude::*;
 
 use super::WebPuppet;
@@ -18,6 +18,10 @@ impl WebPuppet {
     /// カテゴリ名をそのまま渡せる (知らない名前は無視し、渡さなかったものは 0)。`Left` / `Right` は
     /// トラッキングされた人自身の左右。`yaw` / `pitch` / `roll` は頭の回転 (度) で、符号はアバタープロファイルの
     /// 向きの約束に合わせる (`docs/spec/avatar-profile.md#向きと左右の約束`)。平滑化などはホストが行ってから渡す。
+    ///
+    /// 残りは体のトラッキングの入力で、どれも省略できる (`undefined` / `null`): 体の回転 (度、頭と同じ符号。
+    /// 省略した軸は頭の回転 × 0.3) と、左右の肩の上下 (0 が中立、1 ですくめた状態。省略すると書き込まない)。
+    #[allow(clippy::too_many_arguments)]
     pub fn set_tracking(
         &mut self,
         names: Vec<String>,
@@ -25,10 +29,22 @@ impl WebPuppet {
         yaw: f32,
         pitch: f32,
         roll: f32,
+        body_yaw: Option<f32>,
+        body_pitch: Option<f32>,
+        body_roll: Option<f32>,
+        shoulder_left: Option<f32>,
+        shoulder_right: Option<f32>,
     ) {
         if let Some(puppet) = &mut self.puppet {
             let head = Rotation { yaw, pitch, roll };
-            puppet.set_tracking(Some(tracking::tracking_input(&names, scores, head)));
+            let body = BodyInput {
+                yaw: body_yaw,
+                pitch: body_pitch,
+                roll: body_roll,
+                shoulder_left,
+                shoulder_right,
+            };
+            puppet.set_tracking(Some(tracking::tracking_input(&names, scores, head, body)));
         }
     }
 

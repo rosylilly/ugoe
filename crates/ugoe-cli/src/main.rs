@@ -275,9 +275,14 @@ fn main() -> anyhow::Result<()> {
             }
         },
         Cmd::StandardParams => {
-            use ugoe_model::standard::{ALL, EXTENDED, VOWELS};
+            use ugoe_model::standard::{ALL, BODY_EXTENDED, EXTENDED, VOWELS};
             let mut printed = Vec::new();
-            for (id, min, default, max) in ALL.iter().chain(EXTENDED).chain(VOWELS) {
+            for (id, min, default, max) in ALL
+                .iter()
+                .chain(EXTENDED)
+                .chain(BODY_EXTENDED)
+                .chain(VOWELS)
+            {
                 if !printed.contains(id) {
                     println!("{id:<12} {min:>6} {default:>6} {max:>6}");
                     printed.push(id);

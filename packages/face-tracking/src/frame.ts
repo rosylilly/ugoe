@@ -4,6 +4,7 @@
 // - ブレンドシェイプの `Left` / `Right` はトラッキングされた人自身の左右。
 // - 頭の回転 (度) は「向きの約束」の符号: yaw は正でキャラクター (人) 自身の左を向く、pitch は正で上を向く、
 //   roll は正で (画面で見て) 時計回りに傾く。
+// - 体 (T0645) は回転 (頭と同じ符号) と肩の上下 (0 が中立、1 ですくめた状態)。どの値も省略できる (`null`)。
 // パラメータへの変換は Rust (ugoe-wasm の `WebPuppet.set_tracking`) が行う。ここでは式を持たない。
 
 /** 頭の回転 (度)。 */
@@ -13,10 +14,39 @@ export interface HeadPose {
   roll: number;
 }
 
-/** 1 フレーム分の入力。`blendShapes` は ARKit の名前 (MediaPipe のカテゴリ名) → 0〜1。 */
+/**
+ * 体 (上半身) の値。`null` はその値が無い (映っていない・信頼度が低い・キャリブレーションしていない) こと。
+ * 回転は度で頭と同じ符号 (無い軸は Rust の対応付けが頭の回転 × 0.3 を使う)。肩の上下は写った人自身の左右で、
+ * 0 が中立、1 ですくめた状態、負で下げた状態 (無い肩のパラメータは書き込まれない)。
+ */
+export interface BodyPose {
+  yaw: number | null;
+  pitch: number | null;
+  roll: number | null;
+  shoulderLeft: number | null;
+  shoulderRight: number | null;
+}
+
+/** 体の値の名前 (記録・平滑化・キャリブレーションで順に扱う)。 */
+export const BODY_KEYS = ["yaw", "pitch", "roll", "shoulderLeft", "shoulderRight"] as const;
+export type BodyKey = (typeof BODY_KEYS)[number];
+
+export const NO_BODY: BodyPose = {
+  yaw: null,
+  pitch: null,
+  roll: null,
+  shoulderLeft: null,
+  shoulderRight: null,
+};
+
+/**
+ * 1 フレーム分の入力。`blendShapes` は ARKit の名前 (MediaPipe のカテゴリ名) → 0〜1。
+ * `body` は体のトラッキングの値 (体のトラッキングを使っていなければ省く)。
+ */
 export interface TrackingFrame {
   head: HeadPose;
   blendShapes: Record<string, number>;
+  body?: BodyPose;
 }
 
 export const NEUTRAL_HEAD: HeadPose = { yaw: 0, pitch: 0, roll: 0 };
@@ -55,16 +85,65 @@ export function swapSide(name: string): string {
   return name;
 }
 
+const negate = (v: number | null) => (v === null ? null : -v);
+
 /**
- * 左右反転した映像から得た値を、反転していない映像の値に直す (左右の名前を入れ替え、yaw と roll の符号を反転する)。
- * 2 回かけると元に戻る。
+ * 左右反転した映像から得た値を、反転していない映像の値に直す (左右の名前を入れ替え、yaw と roll の符号を反転する。
+ * 体も同じく左右の肩を入れ替え、yaw と roll の符号を反転する)。2 回かけると元に戻る。
  */
 export function unmirrorFrame(frame: TrackingFrame): TrackingFrame {
   const blendShapes: Record<string, number> = {};
   for (const [name, value] of Object.entries(frame.blendShapes))
     blendShapes[swapSide(name)] = value;
   const { yaw, pitch, roll } = frame.head;
-  return { head: { yaw: -yaw, pitch, roll: -roll }, blendShapes };
+  const out: TrackingFrame = { head: { yaw: -yaw, pitch, roll: -roll }, blendShapes };
+  if (frame.body) {
+    const b = frame.body;
+    out.body = {
+      yaw: negate(b.yaw),
+      pitch: b.pitch,
+      roll: negate(b.roll),
+      shoulderLeft: b.shoulderRight,
+      shoulderRight: b.shoulderLeft,
+    };
+  }
+  return out;
+}
+
+/** `WebPuppet.set_tracking` (ugoe-wasm) の形。ビューアとエディタの WebPuppet がこれを満たす。 */
+export interface TrackingPuppet {
+  set_tracking(
+    names: string[],
+    scores: Float32Array,
+    yaw: number,
+    pitch: number,
+    roll: number,
+    body_yaw?: number | null,
+    body_pitch?: number | null,
+    body_roll?: number | null,
+    shoulder_left?: number | null,
+    shoulder_right?: number | null,
+  ): void;
+}
+
+/** フレームを `WebPuppet.set_tracking` に渡す (体の無い値は `null` = 省略)。 */
+export function setPuppetTracking(puppet: TrackingPuppet, frame: TrackingFrame): void {
+  const names = Object.keys(frame.blendShapes);
+  const scores = Float32Array.from(names, (n) => frame.blendShapes[n] ?? 0);
+  const b = frame.body ?? NO_BODY;
+  const { yaw, pitch, roll } = frame.head;
+  puppet.set_tracking(
+    names,
+    scores,
+    yaw,
+    pitch,
+    roll,
+    b.yaw,
+    b.pitch,
+    b.roll,
+    b.shoulderLeft,
+    b.shoulderRight,
+  );
 }
 
 /** MediaPipe の `FaceLandmarkerResult` のうち、ここで使う部分。 */

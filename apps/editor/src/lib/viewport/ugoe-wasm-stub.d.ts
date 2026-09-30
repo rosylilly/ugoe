@@ -28,6 +28,11 @@ export class WebPuppet {
     yaw: number,
     pitch: number,
     roll: number,
+    body_yaw?: number | null,
+    body_pitch?: number | null,
+    body_roll?: number | null,
+    shoulder_left?: number | null,
+    shoulder_right?: number | null,
   ): void;
   clear_tracking(): void;
   is_tracking(): boolean;

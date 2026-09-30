@@ -55,7 +55,8 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 
 ## フェイストラッキング (T0703)
 
-右のパネルの「フェイストラッキング」で、カメラの映像から表情と頭の向きを取ってモデルを動かす。
+右のパネルの「フェイストラッキング」で、カメラの映像から表情と頭の向き、体の向きと肩の上下 (T0645、「体 (肩) も」。
+[packages/face-tracking](../../packages/face-tracking/README.md#体のトラッキング-t0645)) を取ってモデルを動かす。
 
 - 顔の検出は [MediaPipe Face Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker/web_js)
   (`@mediapipe/tasks-vision`) で行い、ARKit 互換のブレンドシェイプ (MediaPipe は `_neutral` と 51 個。`tongueOut` は無い) と
@@ -78,7 +79,8 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 - カメラの無い環境 (CI・ヘッドレス) では「ファイル…」で動画・画像、または記録した値の JSON を入れる。
   - 動画は繰り返し再生し、画像は同じ画像を検出し続ける。
   - 「記録」で検出した値 (キャリブレーション・平滑化の前) を記録し、「保存」で JSON にする。形式は `packages/face-tracking/src/recording.ts`
-    (`{"format": "ugoe-face-tracking", "version": 1, "frames": [{"t", "head": {"yaw", "pitch", "roll"}, "blendShapes": {...}}]}`)。
+    (`{"format": "ugoe-face-tracking", "version": 2, "frames": [{"t", "head": {"yaw", "pitch", "roll"}, "blendShapes": {...}, "body": {...}}]}`。
+    `body` は体のトラッキングの値で、版 2 で足した)。
     JSON を開くと MediaPipe を使わずに繰り返し再生する (キャリブレーションと平滑化は通す)。
   - ヘッドレスのブラウザからは `window.__UGOE_TRACKER__` (`FaceTracker`) を触れる。`output` (渡した値)・`landmarks`・`status` など。
   - Chrome の偽のカメラ (`--use-fake-device-for-media-stream --use-file-for-fake-video-capture=<file.y4m>`) でも、カメラの経路を確かめられる。
@@ -88,8 +90,8 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 実行時にネットワークに頼らないよう、wasm とモデルをアプリに同梱する (`public/mediapipe/`)。
 
 - wasm は npm パッケージの `wasm/` から写す (SIMD 版と SIMD の無い版。`FilesetResolver` が選ぶ)。
-- モデル `face_landmarker.task` は **リポジトリにコミットしない**。`ugoe-mediapipe-assets` (`packages/face-tracking/scripts/mediapipe-assets.mjs`) が版を固定した URL
-  (`.../face_landmarker/float16/1/face_landmarker.task`) から取得し、SHA-256 を検証する (違えば失敗する)。
+- モデル `face_landmarker.task`・`pose_landmarker_lite.task` は **リポジトリにコミットしない**。`ugoe-mediapipe-assets` (`packages/face-tracking/scripts/mediapipe-assets.mjs`) が版を固定した URL
+  (`.../face_landmarker/float16/1/face_landmarker.task`・`.../pose_landmarker_lite/float16/1/pose_landmarker_lite.task`) から取得し、SHA-256 を検証する (違えば失敗する)。
   検証済みのファイルがあれば取得しない。モデルを更新するときは、スクリプトの URL とハッシュを一緒に書き換える。
 - `pnpm build` (= `tauri build` の前) は取得できなければ失敗する。`pnpm dev` は取得できなくても警告だけで起動する
   (トラッキングを始めると「モデルが同梱されていません」と表示する)。手で用意するときは `pnpm mediapipe`。

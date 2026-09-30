@@ -25,6 +25,14 @@ export interface TrackingStrings {
   swapSidesTitle: string;
   stopEyeBlink: string;
   stopEyeBlinkTitle: string;
+  trackBody: string;
+  trackBodyTitle: string;
+  /** 体のトラッキングを入れているのに、体 (肩) が見つからない。 */
+  noBody: string;
+  /** 体の値の見出し。 */
+  body: string;
+  /** キャリブレーションするまで使わない値 (体のピッチと肩) の説明。 */
+  bodyNeedsCalibration: string;
   smoothing: string;
   smoothingTitle: string;
   calibrate: string;
@@ -46,6 +54,7 @@ export interface TrackingStrings {
   cameraBusy: string;
   cameraFailed: string;
   modelMissing: string;
+  poseModelMissing: string;
   saveFailed: string;
 }
 
@@ -73,6 +82,12 @@ export const ja: TrackingStrings = {
   stopEyeBlink: "目パチを止める",
   stopEyeBlinkTitle:
     "トラッキング中はモデルの自動の目パチを止める (目の開閉はトラッキングの値だけになる)",
+  trackBody: "体 (肩) も",
+  trackBodyTitle:
+    "MediaPipe Pose Landmarker で体の向きと肩の上下も取り込む。切ると検出が軽くなり、体の向きは頭の動きから作る",
+  noBody: "体が見つかりません",
+  body: "体",
+  bodyNeedsCalibration: "前後の傾きと肩はキャリブレーションの後に使います",
   smoothing: "平滑化",
   smoothingTitle: "揺れを抑える強さ (One Euro フィルタ)。強いほど滑らかで、動きが遅れる",
   calibrate: "キャリブレーション",
@@ -93,6 +108,8 @@ export const ja: TrackingStrings = {
   cameraFailed: "カメラを開けません",
   modelMissing:
     "MediaPipe のモデルが同梱されていません (アプリのディレクトリで `pnpm mediapipe` を実行してください)",
+  poseModelMissing:
+    "体のトラッキングのモデルが同梱されていません (アプリのディレクトリで `pnpm mediapipe` を実行してください)。顔だけをトラッキングします",
   saveFailed: "保存できません",
 };
 
@@ -120,6 +137,12 @@ export const en: TrackingStrings = {
   stopEyeBlink: "Stop eye blink",
   stopEyeBlinkTitle:
     "Stop the model's automatic eye blink while tracking (the eyes follow the tracking only)",
+  trackBody: "Body (shoulders)",
+  trackBodyTitle:
+    "Also track the body orientation and the shoulders with MediaPipe Pose Landmarker. Turn it off for lighter detection; the body then follows the head",
+  noBody: "No body found",
+  body: "Body",
+  bodyNeedsCalibration: "Leaning and shoulders are used after calibration",
   smoothing: "Smoothing",
   smoothingTitle: "How much to suppress jitter (One Euro filter). Stronger is smoother but lags",
   calibrate: "Calibrate",
@@ -139,5 +162,7 @@ export const en: TrackingStrings = {
   cameraBusy: "Cannot open the camera (another app may be using it)",
   cameraFailed: "Cannot open the camera",
   modelMissing: "The MediaPipe model is not bundled (run `pnpm mediapipe` in the app's directory)",
+  poseModelMissing:
+    "The body tracking model is not bundled (run `pnpm mediapipe` in the app's directory). Tracking the face only",
   saveFailed: "Cannot save",
 };

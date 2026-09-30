@@ -478,6 +478,12 @@ mod tests {
         );
         assert_eq!(report.satisfied, 2);
 
+        // 体の拡張パラメータ (肩) はレベル 3 の数に入らない。
+        model
+            .parameters
+            .extend(standard::BODY_EXTENDED.iter().map(|(id, ..)| param(id)));
+        assert_eq!(check_profile(&model).satisfied, 2);
+
         model.parameters.push(param(standard::EXTENDED[7].0));
         let report = check_profile(&model);
         assert!(report.is_conformant());

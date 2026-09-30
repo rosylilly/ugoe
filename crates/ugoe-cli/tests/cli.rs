@@ -141,6 +141,7 @@ fn standard_params_include_extended_parameters() {
     assert!(ids.contains(&"AngleX"));
     assert!(ids.contains(&"TongueOut"));
     assert!(ids.contains(&"MouthVowelA"));
+    assert!(ids.contains(&"ShoulderLY"));
     assert_eq!(ids.iter().filter(|&&id| id == "EyeLSmile").count(), 1);
 }
 

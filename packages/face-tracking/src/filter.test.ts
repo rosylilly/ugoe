@@ -53,3 +53,29 @@ describe("FrameSmoother", () => {
     expect(minCutoffForStrength(0)).toBeGreaterThan(minCutoffForStrength(1));
   });
 });
+
+describe("FrameSmoother body", () => {
+  const frame = (yaw: number | null) => ({
+    head: { yaw: 0, pitch: 0, roll: 0 },
+    blendShapes: {},
+    body: { yaw, pitch: null, roll: 0, shoulderLeft: 0.5, shoulderRight: null },
+  });
+
+  it("smooths body values and keeps missing ones missing", () => {
+    const smoother = new FrameSmoother(1);
+    smoother.smooth(frame(0), 1 / 60);
+    const out = smoother.smooth(frame(10), 1 / 60);
+    expect(out.body?.yaw).toBeGreaterThan(0);
+    expect(out.body?.yaw).toBeLessThan(10);
+    expect(out.body?.pitch).toBeNull();
+    expect(out.body?.shoulderRight).toBeNull();
+  });
+
+  it("forgets a body value while it is missing", () => {
+    const smoother = new FrameSmoother(1);
+    smoother.smooth(frame(0), 1 / 60);
+    expect(smoother.smooth(frame(null), 1 / 60).body?.yaw).toBeNull();
+    // 戻ったときは古い値 (0) から追いかけない。
+    expect(smoother.smooth(frame(10), 1 / 60).body?.yaw).toBe(10);
+  });
+});

@@ -1,7 +1,7 @@
 //! フェイストラッキングの値からアバタープロファイルのパラメータを計算する。
 //! 仕様: `docs/spec/avatar-profile.md#フェイストラッキングとの対応`。
 //!
-//! 入力は頭 (と体) の回転と ARKit の 52 ブレンドシェイプ ([`TrackingInput`])。
+//! 入力は頭の回転、体の入力 (回転と肩の上下。省略できる) と ARKit の 52 ブレンドシェイプ ([`TrackingInput`])。
 //! モデルごとに [`TrackingMap`] を 1 度作り (`Model.avatar.tracking` の上書きを解決する)、
 //! 毎フレーム [`TrackingMap::apply`] でパラメータに書き込む。
 //!
@@ -106,16 +106,36 @@ pub struct Rotation {
     pub roll: f32,
 }
 
+/// 体 (上半身) のトラッキングの入力。`docs/spec/avatar-profile.md#頭と体`。
+///
+/// どの値も省略できる (体が映っていない・信頼度が低い軸は `None`)。回転 (度) の符号は [`Rotation`] と同じで、
+/// 省略した軸は頭の回転 × [`BODY_FROM_HEAD`] を使う。肩の上下は 0 が中立、1 ですくめた状態、負で下げた状態で、
+/// 左右はトラッキングされた人自身の左右。省略した肩のパラメータには書き込まない。
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct BodyInput {
+    /// 体のヨー (`BodyAngleX` の向き)。
+    pub yaw: Option<f32>,
+    /// 体のピッチ (`BodyAngleY` の向き)。
+    pub pitch: Option<f32>,
+    /// 体のロール (`BodyAngleZ` の向き)。
+    pub roll: Option<f32>,
+    /// 左肩の上下 (`ShoulderLY`)。
+    pub shoulder_left: Option<f32>,
+    /// 右肩の上下 (`ShoulderRY`)。
+    pub shoulder_right: Option<f32>,
+}
+
 /// 1 フレーム分のトラッキングの入力。
 ///
 /// ブレンドシェイプの `Left` / `Right` はトラッキングされた人自身の左右
 /// (キャラクター自身の左右と同じ向き)。鏡像にした映像から得た値は、ホストが入れ替えてから渡す。
+/// 頭の回転はカメラに対する回転で、体の回転を差し引かない (`AngleX` などはカメラに対する頭の向き)。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TrackingInput {
     /// 頭の回転。
     pub head: Rotation,
-    /// 体の回転。`None` なら頭の回転 × [`BODY_FROM_HEAD`] を使う。
-    pub body: Option<Rotation>,
+    /// 体の入力。既定 (すべて `None`) なら、体の回転は頭の回転 × [`BODY_FROM_HEAD`] を使う。
+    pub body: BodyInput,
     /// ARKit のブレンドシェイプの値 (0〜1)。添字は [`ARKIT_BLEND_SHAPES`] の順。
     pub blend_shapes: [f32; BLEND_SHAPE_COUNT],
 }
@@ -124,7 +144,7 @@ impl Default for TrackingInput {
     fn default() -> Self {
         Self {
             head: Rotation::default(),
-            body: None,
+            body: BodyInput::default(),
             blend_shapes: [0.0; BLEND_SHAPE_COUNT],
         }
     }
@@ -160,12 +180,13 @@ impl TrackingInput {
             .count()
     }
 
-    fn body(&self) -> Rotation {
-        self.body.unwrap_or(Rotation {
-            yaw: self.head.yaw * BODY_FROM_HEAD,
-            pitch: self.head.pitch * BODY_FROM_HEAD,
-            roll: self.head.roll * BODY_FROM_HEAD,
-        })
+    /// 体の回転。省略した軸は頭の回転 × [`BODY_FROM_HEAD`]。
+    fn body_rotation(&self) -> Rotation {
+        Rotation {
+            yaw: self.body.yaw.unwrap_or(self.head.yaw * BODY_FROM_HEAD),
+            pitch: self.body.pitch.unwrap_or(self.head.pitch * BODY_FROM_HEAD),
+            roll: self.body.roll.unwrap_or(self.head.roll * BODY_FROM_HEAD),
+        }
     }
 
     fn head_value(&self, axis: Axis) -> f32 {
@@ -204,6 +225,8 @@ enum Formula {
     BodyAngleX,
     BodyAngleY,
     BodyAngleZ,
+    ShoulderLY,
+    ShoulderRY,
     EyeLOpen,
     EyeROpen,
     EyeLWide,
@@ -239,6 +262,8 @@ impl Formula {
             standard::BODY_ANGLE_X => Self::BodyAngleX,
             standard::BODY_ANGLE_Y => Self::BodyAngleY,
             standard::BODY_ANGLE_Z => Self::BodyAngleZ,
+            standard::SHOULDER_L_Y => Self::ShoulderLY,
+            standard::SHOULDER_R_Y => Self::ShoulderRY,
             standard::EYE_L_OPEN => Self::EyeLOpen,
             standard::EYE_R_OPEN => Self::EyeROpen,
             standard::EYE_L_WIDE => Self::EyeLWide,
@@ -267,16 +292,18 @@ impl Formula {
         })
     }
 
-    /// 式の値 (クランプ前)。
+    /// 式の値 (クランプ前)。値が無い (肩の入力を省略した) ときは NaN で、書き込まれない。
     fn eval(self, input: &TrackingInput) -> f32 {
         let b = &input.blend_shapes;
         match self {
             Self::AngleX => input.head.yaw,
             Self::AngleY => input.head.pitch,
             Self::AngleZ => input.head.roll,
-            Self::BodyAngleX => input.body().yaw,
-            Self::BodyAngleY => input.body().pitch,
-            Self::BodyAngleZ => input.body().roll,
+            Self::BodyAngleX => input.body_rotation().yaw,
+            Self::BodyAngleY => input.body_rotation().pitch,
+            Self::BodyAngleZ => input.body_rotation().roll,
+            Self::ShoulderLY => input.body.shoulder_left.unwrap_or(f32::NAN),
+            Self::ShoulderRY => input.body.shoulder_right.unwrap_or(f32::NAN),
             Self::EyeLOpen => 1.0 - b[EYE_BLINK_LEFT],
             Self::EyeROpen => 1.0 - b[EYE_BLINK_RIGHT],
             Self::EyeLWide => b[EYE_WIDE_LEFT],
@@ -320,6 +347,7 @@ impl Formula {
 }
 
 /// 標準の対応表で計算したパラメータ `id` の値 (クランプ前)。`id` が表にないパラメータなら `None`。
+/// 表にあっても入力に値が無い (肩の入力を省略した) ときは NaN (そのパラメータには書き込まない)。
 pub fn standard_value(id: &str, input: &TrackingInput) -> Option<f32> {
     Formula::from_parameter(id).map(|f| f.eval(input))
 }
@@ -515,6 +543,25 @@ mod tests {
         ParameterValues::from_model(&fixtures::avatar_profile())
     }
 
+    /// 体の拡張パラメータ (肩) をモデルに足す (フィクスチャには無い)。
+    fn add_shoulders(model: &mut Model) {
+        for &(id, min, default, max) in standard::BODY_EXTENDED {
+            model.parameters.push(ugoe_model::Parameter {
+                id: id.into(),
+                min,
+                default,
+                max,
+                ..model.parameters[0].clone()
+            });
+        }
+    }
+
+    fn params_with_shoulders() -> ParameterValues {
+        let mut model = fixtures::avatar_profile();
+        add_shoulders(&mut model);
+        ParameterValues::from_model(&model)
+    }
+
     fn value(params: &ParameterValues, id: &str) -> f32 {
         params.get(params.index_of(id).unwrap())
     }
@@ -583,14 +630,116 @@ mod tests {
         assert!(close(v(standard::BODY_ANGLE_Y, &input), -3.0));
         assert!(close(v(standard::BODY_ANGLE_Z, &input), 1.5));
 
-        input.body = Some(Rotation {
-            yaw: 1.0,
-            pitch: 2.0,
-            roll: 3.0,
-        });
+        input.body = BodyInput {
+            yaw: Some(1.0),
+            pitch: Some(2.0),
+            roll: Some(3.0),
+            ..BodyInput::default()
+        };
         assert_eq!(v(standard::BODY_ANGLE_X, &input), 1.0);
         assert_eq!(v(standard::BODY_ANGLE_Y, &input), 2.0);
         assert_eq!(v(standard::BODY_ANGLE_Z, &input), 3.0);
+        // 頭の角度は体の回転を差し引かない (カメラに対する頭の向き)。
+        assert_eq!(v(standard::ANGLE_X, &input), 20.0);
+        assert_eq!(v(standard::ANGLE_Z, &input), 5.0);
+    }
+
+    #[test]
+    fn without_body_input_the_values_are_as_before() {
+        // T0645 より前の式: 頭はそのまま、体は頭 × 0.3。肩は値が無い。
+        let input = TrackingInput {
+            head: Rotation {
+                yaw: 12.0,
+                pitch: -7.0,
+                roll: 3.0,
+            },
+            ..input(&[("jawOpen", 0.4), ("eyeBlinkLeft", 0.3)])
+        };
+        let mut params = params_with_shoulders();
+        let before = params.clone();
+        TrackingMap::new(None, &params).apply(&input, &mut params);
+        assert_eq!(value(&params, standard::ANGLE_X), 12.0);
+        assert!(close(value(&params, standard::BODY_ANGLE_X), 3.6));
+        assert!(close(value(&params, standard::BODY_ANGLE_Y), -2.1));
+        assert!(close(value(&params, standard::BODY_ANGLE_Z), 0.9));
+        assert!(close(value(&params, standard::MOUTH_OPEN_Y), 0.4));
+        for id in [standard::SHOULDER_L_Y, standard::SHOULDER_R_Y] {
+            assert_eq!(value(&params, id), value(&before, id), "{id}");
+        }
+    }
+
+    #[test]
+    fn body_axes_fall_back_to_the_head_one_by_one() {
+        // 腰が映らずピッチだけ省略した体の入力。
+        let input = TrackingInput {
+            head: Rotation {
+                yaw: 20.0,
+                pitch: -10.0,
+                roll: 5.0,
+            },
+            body: BodyInput {
+                yaw: Some(4.0),
+                roll: Some(-2.0),
+                ..BodyInput::default()
+            },
+            ..TrackingInput::default()
+        };
+        let v = |id| standard_value(id, &input).unwrap();
+        assert_eq!(v(standard::BODY_ANGLE_X), 4.0);
+        assert!(close(v(standard::BODY_ANGLE_Y), -3.0));
+        assert_eq!(v(standard::BODY_ANGLE_Z), -2.0);
+    }
+
+    #[test]
+    fn shoulders_are_written_only_when_given() {
+        let mut params = params_with_shoulders();
+        let map = TrackingMap::new(None, &params);
+        let mut input = TrackingInput::default();
+        assert!(
+            standard_value(standard::SHOULDER_L_Y, &input)
+                .unwrap()
+                .is_nan()
+        );
+
+        // 入力が無ければ書き込まない (ほかから与えた値が残る)。
+        let l = params.index_of(standard::SHOULDER_L_Y).unwrap();
+        params.set(l, 0.5);
+        map.apply(&input, &mut params);
+        assert_eq!(value(&params, standard::SHOULDER_L_Y), 0.5);
+        assert_eq!(value(&params, standard::SHOULDER_R_Y), 0.0);
+
+        input.body.shoulder_left = Some(0.25);
+        input.body.shoulder_right = Some(-3.0);
+        map.apply(&input, &mut params);
+        assert_eq!(value(&params, standard::SHOULDER_L_Y), 0.25);
+        // 値域 (-1〜1) にクランプする。
+        assert_eq!(value(&params, standard::SHOULDER_R_Y), -1.0);
+    }
+
+    #[test]
+    fn override_reading_a_missing_shoulder_writes_nothing() {
+        let mut model = fixtures::avatar_profile();
+        add_shoulders(&mut model);
+        let mut avatar = model.avatar.clone().unwrap();
+        avatar.tracking = vec![TrackingOverride {
+            scale: 2.0,
+            ..over(
+                TrackingSource::Standard,
+                standard::SHOULDER_L_Y,
+                Some(standard::BREATH),
+            )
+        }];
+        let mut params = ParameterValues::from_model(&model);
+        let map = TrackingMap::new(Some(&avatar), &params);
+        let breath = params.index_of(standard::BREATH).unwrap();
+        params.set(breath, 0.3);
+        map.apply(&TrackingInput::default(), &mut params);
+        assert_eq!(value(&params, standard::BREATH), 0.3);
+
+        let mut input = TrackingInput::default();
+        input.body.shoulder_left = Some(0.25);
+        map.apply(&input, &mut params);
+        assert_eq!(value(&params, standard::BREATH), 0.5);
     }
 
     #[test]

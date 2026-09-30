@@ -3,7 +3,7 @@
 // One Euro フィルタは、動きが遅いときは強く、速いときは弱く平滑化する (揺れを抑えつつ遅れを小さくする)。
 // 出典: Casiez, Roussel, Vogel, "1€ Filter: A Simple Speed-based Low-pass Filter for Noisy Input in
 // Interactive Systems" (CHI 2012), https://gery.casiez.net/1euro/
-import type { TrackingFrame } from "./frame";
+import { BODY_KEYS, type BodyPose, type TrackingFrame } from "./frame";
 
 function alpha(cutoff: number, dt: number): number {
   const tau = 1 / (2 * Math.PI * cutoff);
@@ -49,9 +49,16 @@ export class OneEuroFilter {
 const MIN_CUTOFF_WEAK = 30;
 /** 強さ 1 の遮断周波数 (Hz)。 */
 const MIN_CUTOFF_STRONG = 0.3;
-/** 速さの係数。頭の回転 (度/秒) とブレンドシェイプ (1/秒) で値の大きさが違うので分ける。 */
+/** 速さの係数。頭の回転 (度/秒) とブレンドシェイプ (1/秒) で値の大きさが違うので分ける。肩の上下は後者と同じ。 */
 const BETA_ANGLE = 0.02;
 const BETA_SCORE = 0.5;
+const BODY_BETA: Record<string, number> = {
+  yaw: BETA_ANGLE,
+  pitch: BETA_ANGLE,
+  roll: BETA_ANGLE,
+  shoulderLeft: BETA_SCORE,
+  shoulderRight: BETA_SCORE,
+};
 
 /** 強さ (0〜1) から止まっているときの遮断周波数を決める (対数で補間する)。 */
 export function minCutoffForStrength(strength: number): number {
@@ -59,7 +66,10 @@ export function minCutoffForStrength(strength: number): number {
   return Math.exp(Math.log(MIN_CUTOFF_WEAK) * (1 - s) + Math.log(MIN_CUTOFF_STRONG) * s);
 }
 
-/** フレームのすべての値 (頭の回転とブレンドシェイプ) を、値ごとの One Euro フィルタで平滑化する。 */
+/**
+ * フレームのすべての値 (頭の回転・ブレンドシェイプ・体) を、値ごとの One Euro フィルタで平滑化する。
+ * 体の値が途切れたら (`null`)、その値のフィルタは忘れる (戻ったときに古い値から追いかけないように)。
+ */
 export class FrameSmoother {
   /** 強さ (0〜1)。0 なら平滑化しない。 */
   strength: number;
@@ -85,7 +95,7 @@ export class FrameSmoother {
     for (const [name, value] of Object.entries(frame.blendShapes)) {
       blendShapes[name] = this.#filter(name, value, dt, BETA_SCORE);
     }
-    return {
+    const out: TrackingFrame = {
       head: {
         yaw: this.#filter("#yaw", frame.head.yaw, dt, BETA_ANGLE),
         pitch: this.#filter("#pitch", frame.head.pitch, dt, BETA_ANGLE),
@@ -93,6 +103,19 @@ export class FrameSmoother {
       },
       blendShapes,
     };
+    if (frame.body) {
+      const body = { ...frame.body };
+      for (const key of BODY_KEYS) {
+        const v = frame.body[key];
+        const id = `#body.${key}`;
+        if (v === null) this.#filters.delete(id);
+        else body[key] = this.#filter(id, v, dt, BODY_BETA[key] ?? BETA_ANGLE);
+      }
+      out.body = body satisfies BodyPose;
+    } else {
+      for (const key of BODY_KEYS) this.#filters.delete(`#body.${key}`);
+    }
+    return out;
   }
 
   /** 途切れた後や入力を切り替えたときに、過去の値を忘れる。 */

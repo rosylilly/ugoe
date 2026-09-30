@@ -108,6 +108,18 @@ Extended parameters express facial detail that face trackers can measure. They a
 
 These are 16 parameter IDs; `EyeLSmile` and `EyeRSmile` are both standard and extended.
 
+### Body extended parameters
+
+Body extended parameters express movements of the upper body that body trackers can measure. They
+are optional at every level and are not counted among the extended parameters of
+[level 3](#conformance-levels).
+
+| ID | min / default / max | Meaning |
+| --- | --- | --- |
+| `ShoulderLY`, `ShoulderRY` | −1 / 0 / 1 | Height of the character's own left and right shoulder relative to its body. 0: relaxed, 1: fully raised (a shrug), negative: lowered. |
+
+Tilting the whole upper body is `BodyAngleZ`, not a difference between the two shoulders.
+
 ### Vowel parameters
 
 | ID | min / default / max | Meaning |
@@ -119,8 +131,9 @@ Vowel parameters are optional at every level ([Audio](#audio)).
 ### Stability
 
 The IDs, ranges and meanings in this section do not change within a profile version. New IDs MAY be
-added in a later profile version. Until version 1.0 of this specification, the draft rules of
-[README.md](README.md) apply.
+added, either in a later profile version or, when no level requires them, within a profile version
+(as the body extended parameters were added to profile version 0). Until version 1.0 of this
+specification, the draft rules of [README.md](README.md) apply.
 
 ## Conformance levels
 
@@ -155,7 +168,7 @@ not handle as the author expects. A validator SHOULD report every failed check.
 | The `name` values of `hit_areas` are unique, and each `hit_area` is the ID of one of the model's hit areas. | error |
 | Each element of `slots` is the ID of one of the model's slots. | error |
 | `meta.thumbnail`, if present, is an index into the model's `textures`. | error |
-| Every parameter whose ID is a standard, extended or vowel parameter has the minimum, default and maximum listed in [Parameters](#parameters). | warning |
+| Every parameter whose ID is a standard, extended, body extended or vowel parameter has the minimum, default and maximum listed in [Parameters](#parameters). | warning |
 | `profile_version` is not greater than the version the validator supports (0 in this document). A validator that meets a greater version SHOULD say that its checks may be incomplete. | warning |
 | The profile contains no unknown value (an unknown license term or an unknown `tracking` `source`). | warning |
 | No parameter that tracking or gaze writes is `internal` ([model.md](model.md#parameters)): a parameter of the [standard mapping](#standard-mapping) that the model has, the parameter written by an element of `tracking`, and the `x` and `y` parameters of `look_at`. Tracking never writes internal parameters. | warning |
@@ -181,7 +194,13 @@ The input of one frame consists of:
   `AngleZ` ([Orientation and sides](#orientation-and-sides)). Seen from the tracked person: yaw is
   positive when they turn to their own left, pitch is positive when they look up, and roll is
   positive when their head tilts clockwise in an unmirrored image of them.
-- **Body rotation** (optional): the same three angles for the upper body.
+- **Head rotation** is the orientation of the head relative to the camera, not relative to the body.
+- **Body rotation** (optional): the same three angles for the upper body, relative to the camera.
+  Each of the three angles may be absent on its own (for example, a tracker that cannot see the
+  hips may provide yaw and roll but no pitch).
+- **Shoulder raise** (optional): for the tracked person's own left and right shoulder, 0 when
+  relaxed, 1 when fully raised (a shrug) and negative when lowered, relative to the body. Each may
+  be absent on its own.
 - **Blend shapes**: the 52 face blend shapes of Apple ARKit, identified by their ARKit names (for
   example `eyeBlinkLeft`), each nominally 0 to 1.
 
@@ -224,8 +243,24 @@ stands for its value, and `head.yaw` etc. for the head rotation.
 | `BodyAngleX` | `body.yaw` if the input has a body rotation, otherwise `0.3 × head.yaw` |
 | `BodyAngleY` | `body.pitch` if the input has a body rotation, otherwise `0.3 × head.pitch` |
 | `BodyAngleZ` | `body.roll` if the input has a body rotation, otherwise `0.3 × head.roll` |
+| `ShoulderLY` | the left shoulder raise if the input has it, otherwise no value |
+| `ShoulderRY` | the right shoulder raise if the input has it, otherwise no value |
 
-Angles map one to one: a head yaw of 12 degrees gives `AngleX = 12`.
+Angles map one to one: a head yaw of 12 degrees gives `AngleX = 12`. "If the input has a body
+rotation" applies to each angle separately. The head angles are not reduced by the body rotation:
+`AngleX` is the head's orientation relative to the camera whether or not the body is tracked, as it
+is without body tracking, where the body adds `0.3 × head.yaw` on top.
+
+This is a trade-off. In most rigs the head is a child of the body, so when the person turns their
+whole upper body, the head on screen turns by the body angle and the head angle together, more than
+the person's head did (by up to the range of `BodyAngleX`, 10 degrees). The head angles are not
+reduced because the body rotation estimated from a single camera can be off by 10 to 15 degrees,
+and subtracting it would move that error into the most visible parameters (`AngleX` etc.), while the
+overlap is bounded by the narrower range of the body angles. A model that wants the head relative to
+the body can express it with [overrides](#overrides), for example by adding the `standard` input
+`BodyAngleX` with a `scale` of −1 to the `head` input `yaw`. An application MAY offer its user an
+option to subtract the body rotation from the head rotation before the mapping; it SHOULD NOT do so
+by default.
 
 **Blend shapes:**
 
@@ -259,7 +294,7 @@ Angles map one to one: a head yaw of 12 degrees gives `AngleX = 12`.
 `eyeLookOutLeft` means the left eye looks outward, that is, to the person's own left; `EyeBallX` is
 therefore positive when the person looks to their own left, the same direction as `AngleX`.
 
-These 30 parameters are the **tracked parameters**. The standard mapping does not use `jawForward`,
+These 32 parameters are the **tracked parameters**. The standard mapping does not use `jawForward`,
 `mouthRollLower`, `mouthRollUpper`, `mouthDimpleLeft`, `mouthDimpleRight`, `mouthStretchLeft`,
 `mouthStretchRight`, `mouthLowerDownLeft`, `mouthLowerDownRight`, `mouthUpperUpLeft`,
 `mouthUpperUpRight`, `cheekSquintLeft` or `cheekSquintRight`. A model can map them to its own
@@ -283,9 +318,9 @@ A model adjusts the standard mapping with the elements of `avatar.tracking`
 
 | `source` | `input` | Input value |
 | --- | --- | --- |
-| `standard` | The ID of a [tracked parameter](#standard-mapping). The model need not have that parameter. | The result of its standard formula, before clamping. |
+| `standard` | The ID of a [tracked parameter](#standard-mapping). The model need not have that parameter. | The result of its standard formula, before clamping, or no value if the formula gives none. |
 | `blend_shape` | One of the 52 ARKit blend shape names. | The value of that blend shape. |
-| `head` | `yaw`, `pitch` or `roll`. | That angle of the head rotation in degrees (never the body rotation). |
+| `head` | `yaw`, `pitch` or `roll`. | That angle of the head rotation in degrees (never the body rotation; use the `standard` inputs `BodyAngleX`, `BodyAngleY` and `BodyAngleZ` for the body). |
 
 The parameter an element writes (its **target**) is `parameter` if present. If `parameter` is
 absent and `source` is `standard`, the target is `input`. Otherwise the element has no target.
@@ -307,9 +342,10 @@ of the order in which the elements of `tracking` appear.
 
 1. **Overrides.** For each target parameter of the elements that are not ignored, compute
    `input value × scale + offset` of each such element that writes it, and add them up. That sum is
-   the value of the target.
+   the value of the target. If the input of any of these elements has no value, the target gets no
+   value.
 2. **Standard mapping.** For each tracked parameter `P` that the model has, the value is the result
-   of `P`'s formula, unless `P` is *replaced*. `P` is replaced when an element that is not ignored
+   of `P`'s formula (which may be no value), unless `P` is *replaced*. `P` is replaced when an element that is not ignored
    has `source` `standard` and `input` `P`, or has `P` as its target. A replaced parameter gets a
    value only from step 1 (if it is a target) or none at all.
 3. **Exclusions.** Discard the value of every parameter that is `internal`
@@ -454,7 +490,8 @@ defined in [Face tracking](#face-tracking), including the overrides in `tracking
   degrees with the signs of this profile, and blend shapes with the tracked person's own `Left` and
   `Right`. If the tracker receives a mirrored (horizontally flipped) camera image, the application
   swaps every `Left` blend shape with its `Right` counterpart and negates `yaw` and `roll` before
-  the mapping.
+  the mapping. It does the same with the body input: it swaps the left and right shoulder raise and
+  negates the body yaw and roll.
 - It MUST NOT write parameters that are `internal`, or parameters the model does not have.
 - The following are the application's responsibility and are not part of the mapping: converting
   the tracker's output (for example, a rotation matrix) into yaw, pitch and roll; smoothing;
@@ -465,6 +502,19 @@ defined in [Face tracking](#face-tracking), including the overrides in `tracking
   `EyeROpen`.
 - An application that shows the character as the user's mirror image flips the display (or swaps
   the inputs as above); it does not change the mapping.
+
+*Informative, body tracking:* the reference implementation obtains the body input from MediaPipe
+Pose Landmarker. It takes the roll from the tilt of the line between the shoulders in the image, the
+yaw from the depth of the shoulders in the world landmarks, and the pitch from the direction from
+the hips to the shoulders in the world landmarks. It estimates one shoulder raise from the distance
+between the ears and the line between the shoulders, and gives the same value to both shoulders,
+because raising one shoulder cannot be told apart from tilting the upper body with the shoulder
+landmarks alone. It gives the pitch and the shoulder raise only after the user has calibrated a
+neutral pose, because their absolute values depend strongly on the camera's height and angle. As
+with faces, the landmark names refer to the person's own left and right, and the application swaps
+them for a mirrored image. With a single camera, the yaw of the upper body was observed to be off by
+10 to 15 degrees in some images, which is one reason the head angles are not reduced by the body
+rotation.
 
 *Informative, MediaPipe Face Landmarker:* the blend shape category names of MediaPipe Face
 Landmarker are the ARKit names, plus `_neutral`, which the mapping does not use. It provides 51 of
@@ -522,5 +572,9 @@ to their own right gives a negative `EyeBallX`.
   It applies the rules it knows; it SHOULD warn that parts of the profile may not be understood.
 - Within a profile version, parameter IDs, ranges and meanings, the formulas of the standard
   mapping and the requirements of the levels do not change, except where this draft marks an issue
-  as unresolved ([Open issue](#open-issue-sign-of-mouthx-and-jawx)). Until version 1.0 of this
+  as unresolved ([Open issue](#open-issue-sign-of-mouthx-and-jawx)). Optional additions that no
+  level requires MAY be made within a profile version: the body tracking input and the
+  [body extended parameters](#body-extended-parameters) were added to profile version 0 in this
+  way. An application that does not know them does not drive them, and a model that has them is
+  read the same way as before. Until version 1.0 of this
   specification, any of them may change between drafts.

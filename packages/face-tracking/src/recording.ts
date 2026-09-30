@@ -6,17 +6,20 @@
 //
 // {
 //   "format": "ugoe-face-tracking",
-//   "version": 1,
+//   "version": 2,
 //   "frames": [
-//     { "t": 0, "head": { "yaw": 1.2, "pitch": -3.4, "roll": 0.5 }, "blendShapes": { "eyeBlinkLeft": 0.1, ... } }
+//     { "t": 0, "head": { "yaw": 1.2, "pitch": -3.4, "roll": 0.5 }, "blendShapes": { "eyeBlinkLeft": 0.1, ... },
+//       "body": { "yaw": 3.1, "roll": -1.0, "pitch": -12.5, "shoulderLeft": 0.1, "shoulderRight": 0.1 } }
 //   ]
 // }
 //
 // `t` は最初のフレームからの秒数 (昇順)。顔が見つからなかったフレームは記録しない (再生では直前の値を保つ)。
-import type { TrackingFrame } from "./frame";
+// `body` (版 2、T0645) は体のトラッキングの値で、体のトラッキングを使っていなければ省く。値の無いキー
+// (映っていない部分) も省く。版 1 のファイル (`body` が無い) もそのまま読める。
+import { BODY_KEYS, type BodyPose, NO_BODY, type TrackingFrame } from "./frame";
 
 export const RECORDING_FORMAT = "ugoe-face-tracking";
-export const RECORDING_VERSION = 1;
+export const RECORDING_VERSION = 2;
 
 export interface RecordedFrame extends TrackingFrame {
   t: number;
@@ -64,11 +67,21 @@ export function parseRecording(text: string): Recording {
     for (const [name, value] of Object.entries(f.blendShapes)) {
       if (isFiniteNumber(value)) blendShapes[name] = value;
     }
-    frames.push({
+    const frame: RecordedFrame = {
       t: f.t,
       head: { yaw: head.yaw, pitch: head.pitch, roll: head.roll },
       blendShapes,
-    });
+    };
+    if (typeof f.body === "object" && f.body !== null) {
+      const raw = f.body as Record<string, unknown>;
+      const body: BodyPose = { ...NO_BODY };
+      for (const key of BODY_KEYS) {
+        const v = raw[key];
+        if (isFiniteNumber(v)) body[key] = v;
+      }
+      frame.body = body;
+    }
+    frames.push(frame);
   }
   return { format: RECORDING_FORMAT, version: RECORDING_VERSION, frames };
 }
@@ -76,16 +89,29 @@ export function parseRecording(text: string): Recording {
 /** 記録を JSON にする (値は小数第 4 位まで)。 */
 export function serializeRecording(frames: readonly RecordedFrame[]): string {
   const round = (v: number) => Math.round(v * 1e4) / 1e4;
-  const out: Recording = {
+  const out = {
     format: RECORDING_FORMAT,
     version: RECORDING_VERSION,
-    frames: frames.map((f) => ({
-      t: round(f.t),
-      head: { yaw: round(f.head.yaw), pitch: round(f.head.pitch), roll: round(f.head.roll) },
-      blendShapes: Object.fromEntries(
-        Object.entries(f.blendShapes).map(([name, value]) => [name, round(value)]),
-      ),
-    })),
+    frames: frames.map((f) => {
+      const row: Record<string, unknown> = {
+        t: round(f.t),
+        head: { yaw: round(f.head.yaw), pitch: round(f.head.pitch), roll: round(f.head.roll) },
+        blendShapes: Object.fromEntries(
+          Object.entries(f.blendShapes).map(([name, value]) => [name, round(value)]),
+        ),
+      };
+      if (f.body) {
+        const body = f.body;
+        // 値の無いキーは省く (JSON の null にしない)。
+        row.body = Object.fromEntries(
+          BODY_KEYS.flatMap((key) => {
+            const v = body[key];
+            return v === null ? [] : [[key, round(v)]];
+          }),
+        );
+      }
+      return row;
+    }),
   };
   return `${JSON.stringify(out)}\n`;
 }

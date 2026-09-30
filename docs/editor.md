@@ -274,7 +274,7 @@ AI や CLI は `commands` の結果を確かめてから `batch` として適用
 | `neck_follow` | `NeckFollow` | `AngleZ` → 角度、`AngleX` → x (重み 50%) → 粒子 1 の角度 × 0.3 を首の回転デフォーマの角度へ (`deformer_angle`。動的物理になる) |
 
 - **合成 (`options.blend`):** 体の回転への出力の合成の方法。既定の `add` は、トラッキング・モーションが書いた値に「振り子の角度 − 静止時の角度」を足すので、遅れと行き過ぎだけを加えて最後は元の値に戻ります ([spec/physics.md#合成の方法](spec/physics.md#合成の方法))。
-  トラッキングが体の回転を頭の回転 × 0.3 にしている ([avatar-profile.md#頭の向き](spec/avatar-profile.md#頭の向き)) と、体の追従の結果は振り子の角度 × 0.3 になり、`overwrite` と同じ動きです。体の回転を書かないホストでは `overwrite` を選びます。中継パラメータへの出力は常に `overwrite` です。
+  トラッキングが体の回転を頭の回転 × 0.3 にしている (体のトラッキングが無いとき。[avatar-profile.md#頭と体](spec/avatar-profile.md#頭と体)) と、体の追従の結果は振り子の角度 × 0.3 になり、`overwrite` と同じ動きです。体の回転を書かないホストでは `overwrite` を選びます。中継パラメータへの出力は常に `overwrite` です。
 - **ないパラメータ (`options.create_missing`):** `true` なら標準の値域 (`ugoe_model::standard::range`) で `add_parameter` を先に置きます。`false` (既定) なら、それを使う組 (体の追従は軸ごと、弾みは 2 つのリグ一緒、首は 1 つ) を作りません。作る組が 1 つもなければ `InvalidPhysics` で拒否します。
   中継パラメータ `BodyBounce` (値域 -10〜10) はこの選択によらず、なければ内部用 (`internal`) で作ります。
 - **首 (`options.neck`):** 回転デフォーマの ID。省略すると、ID か名前に `neck` (大文字小文字を問わない) か `首` を含む最初の回転デフォーマです。なければ `InvalidPhysics`、回転デフォーマでなければ `DeformerKindMismatch`。
@@ -412,9 +412,12 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
     (`avatar.tracking`) です。止めると `clear_tracking` し、トラッキングが書いていたパラメータを既定値に戻します。
   - 目パチはビューアと同じく、トラッキング中は既定で止めます (「Stop eye blink」)。目パチの段は「Eye blink」と
     トラッキングの指定のどちらも有効なときだけ動きます。プレビューを出るとトラッキングも止まります。
+  - 体のトラッキング (T0645): 同じパネルの「Body (shoulders)」(既定で入れる) で、MediaPipe Pose Landmarker (lite) の
+    体の向きと肩の上下も渡します (`setPuppetTracking` が `set_tracking` の体の引数に渡す)。式とキャリブレーションの扱いは
+    [spec/avatar-profile.md#体のトラッキング-mediapipe-pose-landmarker](spec/avatar-profile.md#体のトラッキング-mediapipe-pose-landmarker)。
   - MediaPipe の wasm とモデルは、`pnpm dev` / `pnpm build` の前に `ugoe-mediapipe-assets public/mediapipe`
     (パッケージの `scripts/mediapipe-assets.mjs`) が用意します。wasm は npm パッケージから写し、モデル
-    (`face_landmarker.task`) は版を固定した URL から取って SHA-256 を検証します。`public/mediapipe/` はコミットしません。
+    (`face_landmarker.task`・`pose_landmarker_lite.task`) は版を固定した URL から取って SHA-256 を検証します。`public/mediapipe/` はコミットしません。
     同じ場所にライセンスの表記 (`third-party-notices.txt`、Apache-2.0) を写し、パネルの「Third-party licenses」で表示します。
   - Tauri 側 (`src-tauri/src/tracking.rs`): webview からのカメラの許可の要求だけを許し (`on_permission_request`)、
     記録の保存は `write_json_file` (保存のダイアログで選んだ `.json` だけ)。macOS は `Info.plist` の

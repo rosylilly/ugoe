@@ -2,13 +2,19 @@
 export { applyCalibration, averageFrames } from "./calibration";
 export { FrameSmoother, minCutoffForStrength, OneEuroFilter } from "./filter";
 export {
+  BODY_KEYS,
+  type BodyPose,
   frameFromLandmarker,
   type HeadPose,
   headPoseFromMatrix,
+  NO_BODY,
+  setPuppetTracking,
   swapSide,
   type TrackingFrame,
+  type TrackingPuppet,
   unmirrorFrame,
 } from "./frame";
+export { bodyFromLandmarks, PoseConverter, type PoseLandmarkerOutput } from "./pose";
 export {
   frameAt,
   parseRecording,

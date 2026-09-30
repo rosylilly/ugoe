@@ -6,7 +6,9 @@
 **ライセンスは GPL-3.0-only** (使うアプリと同じ)。同梱する MediaPipe は Apache-2.0 ([third-party-notices.txt](third-party-notices.txt))。
 
 ```
-src/frame.ts            MediaPipe の結果 → TrackingFrame (頭の向きとブレンドシェイプ)、左右の入れ替え
+src/frame.ts            MediaPipe の結果 → TrackingFrame (頭の向き・ブレンドシェイプ・体)、左右の入れ替え、
+                        WebPuppet.set_tracking への受け渡し (setPuppetTracking)
+src/pose.ts             Pose Landmarker の点 → 体の値 (体の向きと肩の上下、T0645)
 src/calibration.ts      キャリブレーション (中立の顔を差し引く)
 src/filter.ts           One Euro フィルタによる平滑化
 src/recording.ts        記録した値の列 (JSON) の形式・再生
@@ -20,7 +22,7 @@ scripts/mediapipe-assets.mjs  `ugoe-mediapipe-assets <出力先> [--optional]`: 
 ## 使い方
 
 - アプリは `TrackingTarget` (`setTracking(frame | null)` と `setAutoEyeBlink(enabled)`) を実装して `FaceTracker` に渡す。
-  値は次のフレームで `WebPuppet.set_tracking` に渡す (パラメータへの変換は Rust の対応付け)。`null` を受けたら
+  値は次のフレームで `setPuppetTracking(puppet, frame)` (= `WebPuppet.set_tracking`) に渡す (パラメータへの変換は Rust の対応付け)。`null` を受けたら
   `clear_tracking` し、トラッキングが書き込んでいたパラメータを既定値に戻す。
 - `new FaceTracker(target, { strings, saveJson })`。`saveJson` を省くとブラウザのダウンロードで保存する。
 - パネルは `import { TrackingPanel } from "@ugoe/face-tracking"` (`index.ts` から。サブパスで import すると
@@ -36,3 +38,15 @@ pnpm --filter @ugoe/face-tracking check   # svelte-check
 ```
 
 どちらも `just web-check` (`just ci`) に入っている。
+
+## 体のトラッキング (T0645)
+
+顔と同じフレームで MediaPipe Pose Landmarker (lite) を動かし、体の向き (ヨー・ピッチ・ロール) と肩の上下を
+`TrackingFrame.body` に入れる。式・キャリブレーションの扱い・確かめたことは
+[docs/spec/avatar-profile.md#体のトラッキング-mediapipe-pose-landmarker](../../docs/spec/avatar-profile.md#体のトラッキング-mediapipe-pose-landmarker)。
+
+- パネルの「体 (肩) も」で切れる (既定は入れる)。切ると `body` を省き、Rust の対応付けは体を頭 × 0.3 にする。
+- 体の値は、無い値を `null` にする (肩が見えない・腰が見えない・キャリブレーションしていない)。ピッチと肩の上下は
+  キャリブレーションした後だけ渡す (`calibration.ts`)。
+- モデル `pose_landmarker_lite.task` (5.5 MiB) も `ugoe-mediapipe-assets` が取得・検証する。無ければ顔だけでトラッキングを続ける。
+- 記録の形式は版 2 (`body` が増えた。版 1 も読める)。

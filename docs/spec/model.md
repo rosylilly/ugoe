@@ -72,7 +72,7 @@
 
 > アバタープロファイル ([avatar-profile.md](avatar-profile.md)) は、この標準パラメータに拡張パラメータとトラッキングとの対応表を加えたものです。
 
-`ugoe_model::standard` に定義があります。`ALL` が標準パラメータ、`EXTENDED` がアバタープロファイルの拡張パラメータ (`EyeLSmile` / `EyeRSmile` は両方にある)、`VOWELS` が母音 (`MouthVowelA` 〜 `MouthVowelO`) で、`standard::range(id)` で既定の値域を引けます。モーション・表情・物理プリセット・AI の自動リギングは標準 ID を前提に作ります。
+`ugoe_model::standard` に定義があります。`ALL` が標準パラメータ、`EXTENDED` がアバタープロファイルの拡張パラメータ (`EyeLSmile` / `EyeRSmile` は両方にある)、`BODY_EXTENDED` が体の拡張パラメータ (`ShoulderLY` / `ShoulderRY`)、`VOWELS` が母音 (`MouthVowelA` 〜 `MouthVowelO`) で、`standard::range(id)` で既定の値域を引けます。モーション・表情・物理プリセット・AI の自動リギングは標準 ID を前提に作ります。
 
 慣例:
 

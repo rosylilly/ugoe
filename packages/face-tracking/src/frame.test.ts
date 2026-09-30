@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { frameFromLandmarker, headPoseFromMatrix, swapSide, unmirrorFrame } from "./frame";
+import {
+  frameFromLandmarker,
+  headPoseFromMatrix,
+  setPuppetTracking,
+  swapSide,
+  unmirrorFrame,
+} from "./frame";
 
 const DEG = Math.PI / 180;
 
@@ -105,5 +111,33 @@ describe("frameFromLandmarker", () => {
     expect(
       frameFromLandmarker({ faceBlendshapes: [], facialTransformationMatrixes: [] }),
     ).toBeNull();
+  });
+});
+
+describe("body", () => {
+  const body = { yaw: 10, pitch: -3, roll: 4, shoulderLeft: 0.8, shoulderRight: null };
+  const frame = { head: { yaw: 1, pitch: 2, roll: 3 }, blendShapes: { jawOpen: 0.5 }, body };
+
+  it("mirroring swaps the shoulders and negates yaw and roll", () => {
+    const out = unmirrorFrame(frame);
+    expect(out.body).toEqual({
+      yaw: -10,
+      pitch: -3,
+      roll: -4,
+      shoulderLeft: null,
+      shoulderRight: 0.8,
+    });
+    expect(unmirrorFrame(out).body).toEqual(body);
+    expect(unmirrorFrame({ head: frame.head, blendShapes: {} }).body).toBeUndefined();
+  });
+
+  it("passes the body to set_tracking as optional trailing arguments", () => {
+    const calls: unknown[][] = [];
+    const puppet = { set_tracking: (...args: unknown[]) => calls.push(args) };
+    setPuppetTracking(puppet, frame);
+    setPuppetTracking(puppet, { head: frame.head, blendShapes: {} });
+    expect(calls[0]?.slice(2)).toEqual([1, 2, 3, 10, -3, 4, 0.8, null]);
+    expect(calls[1]?.slice(2)).toEqual([1, 2, 3, null, null, null, null, null]);
+    expect(Array.from(calls[0]?.[1] as Float32Array)).toEqual([0.5]);
   });
 });

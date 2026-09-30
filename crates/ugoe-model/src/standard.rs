@@ -89,6 +89,18 @@ pub const EXTENDED: &[(&str, f32, f32, f32)] = &[
     (NOSE_SNEER, 0.0, 0.0, 1.0),
 ];
 
+// アバタープロファイルの体の拡張パラメータ (`docs/spec/avatar-profile.md#体の拡張パラメータ`)。
+// 体のトラッキング (Pose Landmarker など) で動かす。レベル 3 の拡張パラメータの数には数えない。
+
+pub const SHOULDER_L_Y: &str = "ShoulderLY";
+pub const SHOULDER_R_Y: &str = "ShoulderRY";
+
+/// アバタープロファイルの体の拡張パラメータと既定の値域 `(id, min, default, max)`。
+pub const BODY_EXTENDED: &[(&str, f32, f32, f32)] = &[
+    (SHOULDER_L_Y, -1.0, 0.0, 1.0),
+    (SHOULDER_R_Y, -1.0, 0.0, 1.0),
+];
+
 // 音声からの母音の推定 (`docs/spec/avatar-profile.md#音声-リップシンク`)。
 
 pub const MOUTH_VOWEL_A: &str = "MouthVowelA";
@@ -106,10 +118,12 @@ pub const VOWELS: &[(&str, f32, f32, f32)] = &[
     (MOUTH_VOWEL_O, 0.0, 0.0, 1.0),
 ];
 
-/// ID から、[`ALL`]・[`EXTENDED`]・[`VOWELS`] のいずれかにある既定の値域 `(min, default, max)` を返す。
+/// ID から、[`ALL`]・[`EXTENDED`]・[`BODY_EXTENDED`]・[`VOWELS`] のいずれかにある既定の値域
+/// `(min, default, max)` を返す。
 pub fn range(id: &str) -> Option<(f32, f32, f32)> {
     ALL.iter()
         .chain(EXTENDED)
+        .chain(BODY_EXTENDED)
         .chain(VOWELS)
         .find(|(s, ..)| *s == id)
         .map(|&(_, min, default, max)| (min, default, max))
@@ -124,6 +138,7 @@ mod tests {
         let mut ids: Vec<&str> = ALL
             .iter()
             .chain(EXTENDED)
+            .chain(BODY_EXTENDED)
             .chain(VOWELS)
             .map(|p| p.0)
             .collect();
@@ -136,7 +151,12 @@ mod tests {
 
     #[test]
     fn ranges_contain_their_defaults() {
-        for &(id, min, default, max) in ALL.iter().chain(EXTENDED).chain(VOWELS) {
+        for &(id, min, default, max) in ALL
+            .iter()
+            .chain(EXTENDED)
+            .chain(BODY_EXTENDED)
+            .chain(VOWELS)
+        {
             assert!(min <= default && default <= max, "{id}");
             assert_eq!(range(id), Some((min, default, max)));
         }

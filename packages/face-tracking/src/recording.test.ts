@@ -34,3 +34,37 @@ describe("recording", () => {
     expect(frameAt(rec, 10)?.head.yaw).toBe(4);
   });
 });
+
+describe("recording with body (version 2)", () => {
+  const withBody = [
+    {
+      t: 0,
+      head: { yaw: 1, pitch: 2, roll: 3 },
+      blendShapes: {},
+      body: { yaw: 5.123456, pitch: null, roll: -2, shoulderLeft: 0.3, shoulderRight: 0.3 },
+    },
+    { t: 0.1, head: { yaw: 1, pitch: 2, roll: 3 }, blendShapes: {} },
+  ];
+
+  it("round-trips the body and omits missing values", () => {
+    const text = serializeRecording(withBody);
+    expect(text).not.toContain("null");
+    const rec = parseRecording(text);
+    expect(rec.version).toBe(2);
+    expect(rec.frames[0]?.body).toEqual({
+      yaw: 5.1235,
+      pitch: null,
+      roll: -2,
+      shoulderLeft: 0.3,
+      shoulderRight: 0.3,
+    });
+    expect(rec.frames[1]?.body).toBeUndefined();
+  });
+
+  it("reads version 1 files without a body", () => {
+    const rec = parseRecording(
+      '{"format":"ugoe-face-tracking","version":1,"frames":[{"t":0,"head":{"yaw":1,"pitch":0,"roll":0},"blendShapes":{}}]}',
+    );
+    expect(rec.frames[0]?.body).toBeUndefined();
+  });
+});

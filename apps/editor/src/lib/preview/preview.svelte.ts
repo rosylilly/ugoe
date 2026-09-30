@@ -8,7 +8,13 @@
 //   ときも物理が動くよう、WebPuppet に物理が無ければ `set_physics_json` で渡す。
 // - フェイストラッキング (T0636) はビューアと同じ部品 (@ugoe/face-tracking) を使う。PreviewMode が TrackingTarget になり、
 //   値は `update(dt)` の直前に `set_tracking` で渡す (ビューアの Player と同じ)。プレビューを出るとトラッキングも止まる。
-import { en, FaceTracker, type TrackingFrame, type TrackingTarget } from "@ugoe/face-tracking";
+import {
+  en,
+  FaceTracker,
+  setPuppetTracking,
+  type TrackingFrame,
+  type TrackingTarget,
+} from "@ugoe/face-tracking";
 import type { EditorDocument } from "../document.svelte";
 import type { Expression, Motion } from "../ipc";
 import type { FrameDriver, PuppetStage, ViewportController } from "../viewport/controller.svelte";
@@ -216,9 +222,7 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
     const frame = this.#pendingTracking;
     if (frame === null) return;
     this.#pendingTracking = null;
-    const names = Object.keys(frame.blendShapes);
-    const scores = Float32Array.from(names, (n) => frame.blendShapes[n] ?? 0);
-    puppet.set_tracking(names, scores, frame.head.yaw, frame.head.pitch, frame.head.roll);
+    setPuppetTracking(puppet, frame);
   }
 
   afterUpdate(puppet: WebPuppet): void {
