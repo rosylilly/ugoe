@@ -1,11 +1,11 @@
 ---
 id: T0518
 title: AI: 法線マップの生成で、部位のまとまりごとにふくらませる
-status: todo
+status: in-progress
 milestone: M6
 crates: [ugoe-ai, ugoe-rigging, apps/editor, docs]
 depends_on: [T0707]
-assignee:
+assignee: claude-worker-T0518
 ---
 
 # T0518: AI: 法線マップの生成で、部位のまとまりごとにふくらませる
