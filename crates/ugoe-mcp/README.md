@@ -36,6 +36,8 @@ cargo install --path crates/ugoe-mcp
 | `--editor` | 実行中のエディタにつなぐ (stdio をエディタの MCP サーバへ中継する)。ほかのサーバのオプションとは一緒に使えない |
 | `--discovery <FILE>` | `--editor` で読む発見用のファイル (既定は [OS ごとの場所](#発見用のファイル)。環境変数 `UGOE_MCP_DISCOVERY` でも変えられる) |
 | `--wsl-distro <NAME>` | `--editor` で、エージェントが動く WSL のディストリビューションの名前 (Windows 版を WSL から使うとき。WSL のパスを Windows のパスに変える) |
+| `--mcpb <OUT>` | サーバを動かさず、この実行ファイルの `--editor` を包む Claude Desktop 用の MCP Bundle (`.mcpb`) を `<OUT>` に書く ([Claude Desktop に入れる](#claude-desktop-に入れる-mcpb)) |
+| `--mcpb-icon <PNG>` | `--mcpb` で束に入れるアイコン (PNG。512×512 を勧める) |
 
 ログは標準エラーに書く (stdio では標準出力は MCP のメッセージだけ)。
 
@@ -288,6 +290,35 @@ claude mcp add --scope user ugoe-editor -- /mnt/c/Users/<名前>/AppData/Local/u
 (作業ディレクトリからディストリビューションの名前を知る) の両方で、`C:` の下と WSL の `/tmp` の下のプロジェクトを作って保存し、
 結果のパスが WSL のパスで返ることを確かめた。NAT のネットワークと、相互運用が無効な WSL では確かめていない。
 
+### Claude Desktop に入れる (`.mcpb`)
+
+Claude Desktop には、MCP の stdio のサーバを MCP Bundle (`.mcpb`) にして拡張機能として入れられる。`--mcpb` は
+`--editor` の中継を包む (`src/mcpb.rs`)。エディタは「Connect agents」の「Claude Desktop」で、同梱の `ugoe-mcp` から同じ束を
+その場で作る (利用者向けは [操作マニュアル](../../docs/manual/mcp.md#claude-desktop))。
+
+```sh
+cargo build --release -p ugoe-mcp
+target/release/ugoe-mcp --mcpb ugoe-editor.mcpb --mcpb-icon apps/editor/src-tauri/icons/icon.png
+# 公式の CLI で確かめる (任意。npm から取ってくる)
+npx @anthropic-ai/mcpb info ugoe-editor.mcpb
+npx @anthropic-ai/mcpb unpack ugoe-editor.mcpb out && npx @anthropic-ai/mcpb validate out/manifest.json
+```
+
+- 束は zip で、`manifest.json`・`icon.png` (あれば)・`server/ugoe-mcp` (Windows は `server/ugoe-mcp.exe`。Unix の権限 0755) を持つ。
+- `manifest.json` は `manifest_version` 0.3 (公式の CLI の既定)、`server.type` は `binary`、`mcp_config` は
+  `${__dirname}/server/ugoe-mcp[.exe]` と `--editor`。1 つの束には 1 つの OS の実行ファイルだけを入れ、`compatibility.platforms`
+  をその OS (`darwin`・`win32`・`linux`) にする。`tools` は `tools/list` (エディタのブリッジと同じ既定の設定) から作り、
+  説明には英語の `title` を使う。`user_config` は無い (ポートとトークンは発見用のファイルから読む)。
+- 仕様: [MANIFEST.md](https://github.com/modelcontextprotocol/mcpb/blob/main/MANIFEST.md)・
+  [manifest 0.3 の JSON Schema](https://github.com/modelcontextprotocol/mcpb/blob/main/schemas/mcpb-manifest-v0.3.schema.json)・
+  [Build a desktop extension with MCPB](https://claude.com/docs/connectors/building/mcpb)。署名 (`mcpb sign`) はしていない
+  (公式の CLI の `info` は「Not signed」と出す。Claude Desktop が署名の無い束をどう見せるかは確かめていない)。
+- zip は自前の小さな書き手 (deflate は `miniz_oxide`。ugoe-psd が使っているもの)。`zip` のクレートは使っていない
+  (書くだけで、新しい依存を増やさないため)。時刻は固定し、同じ入力から同じバイト列を作る。
+- 確かめたこと: `tests/editor.rs` が `--mcpb` で束を作り、展開して manifest を確かめ、manifest のコマンドを起動して偽のエディタに
+  つながることを確かめる。公式の CLI (`@anthropic-ai/mcpb` 2.1.2) の `info`・`unpack`・`validate` も手で通した (Linux の束)。
+  **実際の Claude Desktop に入れることは確かめていない** (開発した環境が WSL のため)。
+
 ### エディタに組み込む
 
 エディタ (T0642) は、開いている文書を貸す持ち主 (`ugoe_mcp::host::DocumentHost`) を実装し、
@@ -480,6 +511,7 @@ cargo test -p ugoe-mcp   # サーバを stdio で起動して、握手・ツー�
                          # --root で外に出るパス (相対・..・絶対・シンボリックリンク) を拒否することは tests/stdio.rs と src/root.rs
                          # tests/editor.rs は偽のエディタ (持ち主) を EditorBridge で待ち受け、--editor の中継でツールを一通り動かす
                          # パスの変換 (WSL と Windows) は src/wsl.rs と src/relay.rs の単体テスト
+                         # tests/editor.rs は --mcpb の束も展開し、manifest の検査と、中の ugoe-mcp --editor が偽のエディタにつながることを確かめる
 ```
 
 Windows 向けのビルドは `cargo xwin clippy --target x86_64-pc-windows-msvc -p ugoe-mcp --tests` で確かめられる。WSL の中なら、
@@ -501,3 +533,4 @@ GPU を使わないテストでは、GPU に触る前に引数の誤り (未知�
 - T0514 (`docs/tasks/T0514-mcp-http-transport.md`): HTTP のトランスポート
 - T0515 (`docs/tasks/T0515-mcp-root-dir.md`): ツールが触れるパスを `--root` の下に限る
 - T0516 (`docs/tasks/T0516-mcp-document-host.md`): 文書の持ち主の抽象化・エディタに組み込む API・`--editor` の中継と WSL
+- T0643 (`docs/tasks/T0643-editor-claude-desktop-mcpb.md`): Claude Desktop 用の MCP Bundle (`--mcpb`・`src/mcpb.rs`)

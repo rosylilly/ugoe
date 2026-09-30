@@ -45,7 +45,13 @@ describe("setupSections", () => {
     expect(opencode.permission["ugoe-editor_apply_proposal"]).toBe("ask");
     expect(step(s, "chatgpt")).toContain('--mcp-command "/usr/bin/ugoe-mcp --editor"');
     // Windows のエディタでなければ WSL の手順は出さない
-    expect(setupSections(s).map((x) => x.id)).toEqual(["claude", "opencode", "chatgpt", "http"]);
+    expect(setupSections(s).map((x) => x.id)).toEqual([
+      "claude",
+      "claude-desktop",
+      "opencode",
+      "chatgpt",
+      "http",
+    ]);
   });
 
   it("falls back to ugoe-mcp on the PATH when nothing is bundled", () => {
@@ -74,6 +80,15 @@ describe("setupSections", () => {
     expect(step(s, "chatgpt")).toContain(
       `--mcp-command "'C:\\Users\\A B\\AppData\\Local\\ugoe\\ugoe-mcp.exe' --editor"`,
     );
+  });
+
+  it("writes the Claude Desktop config with the bundled ugoe-mcp", () => {
+    const windows = status({ platform: "windows", path: "C:\\Program Files\\ugoe\\ugoe-mcp.exe" });
+    expect(JSON.parse(step(windows, "claude-desktop"))).toEqual({
+      mcpServers: {
+        "ugoe-editor": { command: "C:\\Program Files\\ugoe\\ugoe-mcp.exe", args: ["--editor"] },
+      },
+    });
   });
 
   it("offers the HTTP form only while the bridge listens", () => {

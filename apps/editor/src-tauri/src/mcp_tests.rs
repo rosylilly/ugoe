@@ -448,3 +448,23 @@ fn sidecar_is_looked_up_next_to_the_editor_and_in_the_target_dir() {
         vec![installed.join("ugoe-mcp")]
     );
 }
+
+#[test]
+fn the_claude_desktop_bundle_wraps_the_sidecar_with_the_editor_icon() {
+    let tmp = TempDir::new("mcpb");
+    let binary = tmp.0.join("ugoe-mcp");
+    std::fs::write(&binary, b"relay").unwrap();
+    let out = tmp.0.join("nested").join("ugoe-editor.mcpb");
+    write_claude_desktop_bundle(Some(binary), &out).unwrap();
+    let bytes = std::fs::read(&out).unwrap();
+    assert!(bytes.starts_with(b"PK\x03\x04"));
+    let manifest = Bundle::new("ugoe-mcp", Platform::current().unwrap()).manifest();
+    assert_eq!(manifest["name"], "ugoe-editor");
+    // 束の中身は ugoe-mcp のテスト (crates/ugoe-mcp/tests/editor.rs) で展開して確かめる。ここはアイコンを入れたことだけ。
+    let icon_name = b"icon.png";
+    assert!(bytes.windows(icon_name.len()).any(|w| w == icon_name));
+    assert!(BUNDLE_ICON.starts_with(b"\x89PNG"));
+
+    let err = write_claude_desktop_bundle(None, &tmp.0.join("x.mcpb")).unwrap_err();
+    assert!(err.contains("cargo build --release -p ugoe-mcp"), "{err}");
+}

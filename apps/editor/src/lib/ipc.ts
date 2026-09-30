@@ -178,6 +178,13 @@ export const ipc = {
   /** エージェントの求め (適用・Undo・Redo・保存) に答える。待っていなければ (時間切れの後など) false。 */
   answerMcpApproval: (id: number, approved: boolean) =>
     invoke<boolean>("answer_mcp_approval", { id, approved }),
+  /**
+   * Claude Desktop 用の MCP Bundle (.mcpb。同梱の ugoe-mcp を --editor で動かす) をアプリのキャッシュに作り、
+   * OS に開かせる (Claude Desktop がインストールの画面を出す)。作ったファイルのパスを返す。
+   */
+  openClaudeDesktopBundle: () => invoke<string>("open_claude_desktop_bundle"),
+  /** Claude Desktop 用の .mcpb を `path` (保存のダイアログで選んだもの。拡張子は .mcpb) に書く。 */
+  saveClaudeDesktopBundle: (path: string) => invoke<string>("save_claude_desktop_bundle", { path }),
   /** ブリッジからのイベント (確認の求め・文書や提案の変化)。戻り値で購読をやめる。 */
   onMcpBridgeEvent: (handler: (event: BridgeEvent) => void): Promise<UnlistenFn> =>
     listen<BridgeEvent>("mcp-bridge", (e) => handler(e.payload)),

@@ -969,7 +969,7 @@ PSD の取り込みから「レイヤーの分類 → リギングの提案」�
 
 ### エージェントをつなぐ
 
-実行中のエディタに外部のエージェント (Claude Code・OpenCode・ChatGPT) をつなぎ、その提案をエディタの画面で確かめて採用する
+実行中のエディタに外部のエージェント (Claude Code・Claude Desktop・OpenCode・ChatGPT) をつなぎ、その提案をエディタの画面で確かめて採用する
 ([ADR 0023](adr/0023-editor-mcp-bridge.md) の 1・2・4・6、T0642)。`ugoe-mcp` の側 (持ち主の抽象・`EditorBridge`・`--editor` の中継・WSL) は
 T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエディタにつなぐ---editor))。バックエンドは `src-tauri/src/mcp.rs`、
 画面は `src/lib/agents/` (設定の「Connect agents」・確認のダイアログ・登録の手順)。操作は [マニュアル](manual/mcp.md)。
@@ -999,6 +999,14 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
   `/mnt/c/…` も) を埋めた、Claude Code (`claude mcp add … -- <ugoe-mcp> --editor`)・OpenCode (`opencode.json`)・ChatGPT
   (`tunnel-client` の `--mcp-command "<ugoe-mcp> --editor"`)・WSL (`ugoe-mcp.exe --editor --wsl-distro`、ミラーのときは Linux 版)・HTTP の
   手順。パスは OS に合わせて引用する。
+- **Claude Desktop (MCP Bundle、T0643):** 「Claude Desktop」のタブで、同梱の `ugoe-mcp` を `--editor` で動かす `.mcpb` をその場で作る
+  (`ugoe_mcp::mcpb::Bundle`。束の OS はエディタの OS、アイコンはエディタの `icons/icon.png`)。「Install in Claude Desktop…」は
+  アプリのキャッシュのディレクトリに `ugoe-editor.mcpb` を書いて OS に開かせ (tauri-plugin-opener の `open_path`。Claude Desktop が
+  インストールの画面を出す)、「Save .mcpb…」は保存のダイアログで選んだ場所に書く。圧縮に数秒かかるので Tauri の非同期のコマンドで
+  `spawn_blocking` する。インストーラには `.mcpb` を別に入れない (同じ実行ファイルを 2 つ持たずに済み、束の版と OS がエディタと必ず
+  そろう。開発中も `target/` の `ugoe-mcp` から同じように作れる)。束は `ugoe-mcp` の複製を持つので、エディタを更新したら入れ直す
+  (画面とマニュアルに書いた)。`.mcpb` を使わない形として `claude_desktop_config.json` の `mcpServers` の JSON も写せる。
+  エディタを WSL の中で動かしているときは、Windows の Claude Desktop から届かない旨を出す。
 - **ugoe-mcp の同梱 (サイドカー):** Tauri の `externalBin` (`binaries/ugoe-mcp-<ターゲットの三つ組>[.exe]`)。`tauri.conf.json` には書かず、
   `src-tauri/tauri.bundle.conf.json` を `just editor-build` が `--config` で重ねる (tauri-build は `externalBin` のファイルが無いと
   `cargo check`・`tauri dev` も失敗させるため)。重ねた設定の `beforeBuildCommand` が `pnpm sidecar` (`scripts/sidecar.mjs`) で
@@ -1012,6 +1020,8 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 | `set_mcp_bridge_port(port?)` | 待ち受けるポート (`null` なら空いているポート)。動いていれば始め直す |
 | `regenerate_mcp_bridge_token` / `get_mcp_bridge_token` | トークンを作り直す (動いていれば始め直す) / 写すために読む |
 | `answer_mcp_approval(id, approved)` | 確認に答える。待っていなければ (時間切れの後など) `false` |
+| `open_claude_desktop_bundle` | Claude Desktop 用の `.mcpb` をアプリのキャッシュに作って OS に開かせ、そのパスを返す (非同期) |
+| `save_claude_desktop_bundle(path)` | Claude Desktop 用の `.mcpb` を `path` (拡張子は `.mcpb`) に書き、そのパスを返す (非同期) |
 
 ## ビューポート
 

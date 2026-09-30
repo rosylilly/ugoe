@@ -110,6 +110,8 @@ pub fn run() {
             mcp::regenerate_mcp_bridge_token,
             mcp::get_mcp_bridge_token,
             mcp::answer_mcp_approval,
+            mcp::open_claude_desktop_bundle,
+            mcp::save_claude_desktop_bundle,
             tracking::write_json_file,
         ])
         .build(tauri::generate_context!())

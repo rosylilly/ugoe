@@ -17,7 +17,7 @@ export interface SetupStep {
 
 /** クライアントごとのまとまり。 */
 export interface SetupSection {
-  id: "claude" | "opencode" | "chatgpt" | "wsl" | "http";
+  id: "claude" | "claude-desktop" | "opencode" | "chatgpt" | "wsl" | "http";
   title: string;
   /** まとまりの説明。 */
   summary: string;
@@ -60,6 +60,12 @@ export function opencodeConfig(command: string[]): string {
   return JSON.stringify(config, null, 2);
 }
 
+/** Claude Desktop の設定 (`claude_desktop_config.json`) の `mcpServers` の項目 (.mcpb を使わないとき)。 */
+export function claudeDesktopConfig(command: string): string {
+  const config = { mcpServers: { [SERVER_NAME]: { command, args: ["--editor"] } } };
+  return JSON.stringify(config, null, 2);
+}
+
 /** 登録の手順 (エディタの OS と同梱の ugoe-mcp のパスに合わせる)。 */
 export function setupSections(status: McpBridgeStatus): SetupSection[] {
   const { sidecar } = status;
@@ -78,6 +84,21 @@ export function setupSections(status: McpBridgeStatus): SetupSection[] {
           label: "Run once in a terminal",
           text: `claude mcp add --scope user ${SERVER_NAME} -- ${q(exe)} --editor`,
           note: "Then check it with “claude mcp list”, or with /mcp inside Claude Code.",
+        },
+      ],
+    },
+    {
+      id: "claude-desktop",
+      title: "Claude Desktop",
+      summary:
+        "Install the editor as a Claude Desktop extension (.mcpb). It contains a copy of the bundled ugoe-mcp " +
+        "and relays to this editor while the bridge is on.",
+      steps: [
+        {
+          label:
+            "Alternative: add it to claude_desktop_config.json (Claude Desktop: Settings → Developer → Edit Config)",
+          text: claudeDesktopConfig(exe),
+          note: "Merge it into the existing “mcpServers”, then quit and restart Claude Desktop.",
         },
       ],
     },

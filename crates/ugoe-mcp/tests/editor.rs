@@ -16,7 +16,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use ugoe_editor_core::texture::solid_png;
 use ugoe_editor_core::{Document, Project, ProjectMeta, Proposals, Textures, export_bundle};
-use ugoe_mcp::discovery::{self, Discovery};
+use ugoe_mcp::discovery::{self, DISCOVERY_ENV, Discovery};
 use ugoe_mcp::host::{Action, Approvals, Change, HostError, Lent, Opening};
 use ugoe_mcp::{BridgeOptions, DocumentHost, EditorBridge};
 use ugoe_model::fixtures;
@@ -249,10 +249,17 @@ struct Relay {
 
 impl Relay {
     fn spawn(discovery: &Path, cwd: &Path) -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_ugoe-mcp"))
+        let mut command = Command::new(env!("CARGO_BIN_EXE_ugoe-mcp"));
+        command
             .args(["--editor", "--discovery"])
             .arg(discovery)
-            .current_dir(cwd)
+            .current_dir(cwd);
+        Self::spawn_command(command)
+    }
+
+    /// `command` (中継を起動するコマンド) を stdio のサーバとして起動する。
+    fn spawn_command(mut command: Command) -> Self {
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -627,4 +634,313 @@ fn the_bridge_requires_the_token_and_loopback() {
     discovery::write(&discovery_file, &theirs).unwrap();
     drop(bridge);
     assert_eq!(discovery::read(&discovery_file).unwrap(), theirs);
+}
+
+// ---- MCP Bundle (Claude Desktop) ----
+
+/// zip の 1 つの項目 (名前・Unix の mode・汎用のフラグ・展開した中身)。
+struct ZipEntry {
+    name: String,
+    mode: u32,
+    flags: usize,
+    data: Vec<u8>,
+}
+
+fn le16(b: &[u8], at: usize) -> usize {
+    usize::from(u16::from_le_bytes([b[at], b[at + 1]]))
+}
+
+fn le32(b: &[u8], at: usize) -> u32 {
+    u32::from_le_bytes([b[at], b[at + 1], b[at + 2], b[at + 3]])
+}
+
+/// `.mcpb` (zip) を中央ディレクトリから読む (テスト用の最小の読み手。deflate と無圧縮だけ)。
+fn read_zip(bytes: &[u8]) -> Vec<ZipEntry> {
+    let end = bytes.len() - 22;
+    assert_eq!(le32(bytes, end), 0x0605_4b50, "end of central directory");
+    let count = le16(bytes, end + 10);
+    let mut at = le32(bytes, end + 16) as usize;
+    let mut entries = Vec::new();
+    for _ in 0..count {
+        assert_eq!(le32(bytes, at), 0x0201_4b50, "central directory entry");
+        assert_eq!(le16(bytes, at + 4) >> 8, 3, "made on Unix (keeps the mode)");
+        let flags = le16(bytes, at + 8);
+        let method = le16(bytes, at + 10);
+        let compressed = le32(bytes, at + 20) as usize;
+        let size = le32(bytes, at + 24) as usize;
+        let name_len = le16(bytes, at + 28);
+        let extra_len = le16(bytes, at + 30);
+        let comment_len = le16(bytes, at + 32);
+        let mode = le32(bytes, at + 38) >> 16;
+        let local = le32(bytes, at + 42) as usize;
+        let name = String::from_utf8(bytes[at + 46..at + 46 + name_len].to_vec()).unwrap();
+        assert_eq!(le32(bytes, local), 0x0403_4b50, "local header of {name}");
+        assert_eq!(
+            le16(bytes, local + 6),
+            flags,
+            "local and central flags of {name}"
+        );
+        assert_eq!(
+            le32(bytes, local + 14),
+            le32(bytes, at + 16),
+            "local CRC of {name}"
+        );
+        let start = local + 30 + le16(bytes, local + 26) + le16(bytes, local + 28);
+        let raw = &bytes[start..start + compressed];
+        let data = match method {
+            0 => raw.to_vec(),
+            8 => miniz_oxide::inflate::decompress_to_vec(raw).unwrap(),
+            other => panic!("unknown compression {other} for {name}"),
+        };
+        assert_eq!(data.len(), size, "{name}");
+        entries.push(ZipEntry {
+            name,
+            mode,
+            flags,
+            data,
+        });
+        at += 46 + name_len + extra_len + comment_len;
+    }
+    entries
+}
+
+/// manifest を MCPB の manifest 0.3 の規則 (公式の schema と `mcpb validate` の検査) で確かめる。
+/// <https://github.com/modelcontextprotocol/mcpb/blob/main/schemas/mcpb-manifest-v0.3.schema.json>
+fn check_manifest(manifest: &Value, files: &[&str]) {
+    const TOP: &[&str] = &[
+        "$schema",
+        "dxt_version",
+        "manifest_version",
+        "name",
+        "display_name",
+        "version",
+        "description",
+        "long_description",
+        "author",
+        "repository",
+        "homepage",
+        "documentation",
+        "support",
+        "icon",
+        "icons",
+        "screenshots",
+        "server",
+        "tools",
+        "tools_generated",
+        "prompts",
+        "prompts_generated",
+        "keywords",
+        "license",
+        "privacy_policies",
+        "compatibility",
+        "user_config",
+        "_meta",
+        "localization",
+    ];
+    let object = manifest.as_object().unwrap();
+    for key in object.keys() {
+        assert!(TOP.contains(&key.as_str()), "unknown top-level field {key}");
+    }
+    assert_eq!(manifest["manifest_version"], "0.3");
+    for key in ["name", "version", "description"] {
+        assert!(
+            manifest[key].as_str().is_some_and(|s| !s.is_empty()),
+            "{key}"
+        );
+    }
+    assert!(manifest["author"]["name"].is_string());
+    let version = manifest["version"].as_str().unwrap();
+    assert_eq!(
+        version
+            .split('.')
+            .filter(|p| p.parse::<u64>().is_ok())
+            .count(),
+        3,
+        "{version}"
+    );
+
+    let server = &manifest["server"];
+    assert_eq!(server["type"], "binary");
+    let entry = server["entry_point"].as_str().unwrap();
+    assert!(files.contains(&entry), "entry point {entry} in {files:?}");
+    let config = server["mcp_config"].as_object().unwrap();
+    for key in config.keys() {
+        assert!(
+            ["command", "args", "env", "platform_overrides"].contains(&key.as_str()),
+            "{key}"
+        );
+    }
+    assert_eq!(config["command"], format!("${{__dirname}}/{entry}"));
+    // `mcpb validate` が受ける変数だけ
+    let mut strings = vec![config["command"].as_str().unwrap()];
+    strings.extend(
+        config["args"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a.as_str().unwrap()),
+    );
+    for s in strings {
+        let mut rest = s;
+        while let Some(start) = rest.find("${") {
+            let end = rest[start..].find('}').unwrap() + start;
+            let var = &rest[start + 2..end];
+            assert!(
+                ["__dirname", "pathSeparator", "/"].contains(&var)
+                    || var.starts_with("user_config."),
+                "variable {var} in {s}"
+            );
+            rest = &rest[end..];
+        }
+    }
+
+    for tool in manifest["tools"].as_array().unwrap() {
+        let keys: Vec<&String> = tool.as_object().unwrap().keys().collect();
+        assert!(
+            keys.iter().all(|k| *k == "name" || *k == "description"),
+            "{tool}"
+        );
+        assert!(tool["name"].is_string());
+    }
+    let platforms = manifest["compatibility"]["platforms"].as_array().unwrap();
+    for p in platforms {
+        assert!(
+            ["darwin", "win32", "linux"].contains(&p.as_str().unwrap()),
+            "{p}"
+        );
+    }
+    if let Some(icon) = manifest["icon"].as_str() {
+        assert!(files.contains(&icon), "icon {icon}");
+    }
+}
+
+#[test]
+fn the_mcp_bundle_relays_to_a_running_editor() {
+    let tmp = TempDir::new("mcpb");
+    let project = save_fixture_project(&tmp.0);
+    let path = project.to_str().unwrap().to_owned();
+    let icon = tmp.0.join("icon.png");
+    fs::write(&icon, solid_png(512, 512, [40, 120, 220, 255])).unwrap();
+
+    // `ugoe-mcp --mcpb` がこの実行ファイルを包む。
+    let bundle = tmp.0.join("ugoe-editor.mcpb");
+    let status = Command::new(env!("CARGO_BIN_EXE_ugoe-mcp"))
+        .arg("--mcpb")
+        .arg(&bundle)
+        .arg("--mcpb-icon")
+        .arg(&icon)
+        .stderr(Stdio::null())
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let entries = read_zip(&fs::read(&bundle).unwrap());
+    let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+    let manifest: Value = serde_json::from_slice(&entries[0].data).unwrap();
+    assert_eq!(names[0], "manifest.json");
+    check_manifest(&manifest, &names);
+    let platform = ugoe_mcp::mcpb::Platform::current().unwrap();
+    assert_eq!(
+        manifest["compatibility"]["platforms"],
+        json!([platform.as_str()])
+    );
+    assert_eq!(
+        manifest["server"]["mcp_config"]["args"],
+        json!(["--editor"])
+    );
+    assert_eq!(manifest["icon"], "icon.png");
+    let entry = manifest["server"]["entry_point"].as_str().unwrap();
+    let binary = entries.iter().find(|e| e.name == entry).unwrap();
+    assert_eq!(binary.mode & 0o777, 0o755, "the server must be executable");
+    assert_eq!(binary.mode & 0o170_000, 0o100_000, "a regular file");
+    for e in &entries {
+        assert_eq!(e.flags & 0x0800, 0x0800, "UTF-8 name: {}", e.name);
+        assert_eq!(e.flags & 0x0008, 0, "no data descriptor: {}", e.name);
+    }
+    // 中身が同じか (失敗したときに数百 MB のバイト列を出さないよう、長さだけを示す)
+    let exe = fs::read(env!("CARGO_BIN_EXE_ugoe-mcp")).unwrap();
+    assert!(
+        binary.data == exe,
+        "the packed server differs from ugoe-mcp ({} and {} bytes)",
+        binary.data.len(),
+        exe.len()
+    );
+    let packed_icon = entries.iter().find(|e| e.name == "icon.png").unwrap();
+    assert_eq!(packed_icon.data, fs::read(&icon).unwrap());
+
+    // Claude Desktop のように展開し、manifest のコマンドを起動する (`${__dirname}` は展開したディレクトリ)。
+    let dir = tmp.0.join("installed");
+    for e in &entries {
+        let file = dir.join(&e.name);
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, &e.data).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&file, fs::Permissions::from_mode(e.mode & 0o777)).unwrap();
+        }
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = fs::metadata(dir.join(entry)).unwrap().permissions().mode();
+        assert_eq!(
+            mode & 0o111,
+            0o111,
+            "the extracted server is executable ({mode:o})"
+        );
+    }
+    let config = &manifest["server"]["mcp_config"];
+    let dirname = dir.to_str().unwrap();
+    let mut command = Command::new(
+        config["command"]
+            .as_str()
+            .unwrap()
+            .replace("${__dirname}", dirname),
+    );
+    for arg in config["args"].as_array().unwrap() {
+        command.arg(arg.as_str().unwrap().replace("${__dirname}", dirname));
+    }
+    // 発見用のファイルは既定の場所の代わりにテストのディレクトリ (manifest には書かない)。
+    let discovery_file = tmp.0.join("state").join("editor-mcp.json");
+    command
+        .env(DISCOVERY_ENV, &discovery_file)
+        .current_dir(&tmp.0);
+
+    let (editor, _asked) = FakeEditor::open(&project);
+    let _bridge = start(&editor, &discovery_file);
+    let mut relay = Relay::spawn_command(command);
+    let init = relay.initialize();
+    let instructions = init["result"]["instructions"].as_str().unwrap();
+    assert!(
+        instructions.contains("running ugoe editor"),
+        "{instructions}"
+    );
+
+    // manifest の tools は、中継から見えるツールと同じ。
+    let list = relay.request("tools/list", json!({}));
+    let served: Vec<&Value> = list["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| &t["name"])
+        .collect();
+    let declared: Vec<&Value> = manifest["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| &t["name"])
+        .collect();
+    assert_eq!(served, declared);
+
+    let summary = relay.call_ok("get_model_summary", json!({ "path": path }));
+    assert_eq!(summary["parameters"][0]["id"], "X");
+    relay.call_ok("propose_edit", add_angle(&path));
+    assert!(
+        editor
+            .events()
+            .iter()
+            .any(|e| e.starts_with("proposed") && e.ends_with("by test-agent")),
+        "{:?}",
+        editor.events()
+    );
 }

@@ -352,7 +352,7 @@ ADR 0022 の「HTTP で MCP サーバにつなぐクライアント (ChatGPT な
 
 ### 実行中のエディタにつなぐ (ADR 0023)
 
-T0516 (`ugoe-mcp` の側) と T0642 (エディタの側)。使い方は [crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエディタにつなぐ---editor)。
+T0516 (`ugoe-mcp` の側)、T0642 (エディタの側)、T0643 (Claude Desktop の拡張機能)。使い方は [crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエディタにつなぐ---editor)。
 
 - **文書の持ち主:** ツール (`Tools`) は文書・メタ情報・提案を自分では持たず、持ち主 (`ugoe_mcp::host::DocumentHost`) から
   借ります。持ち主は、適用・Undo・Redo・保存・開く・閉じるを許すかを決め (`authorize`。待ってよい)、出来事を知らされます
@@ -380,6 +380,13 @@ T0516 (`ugoe-mcp` の側) と T0642 (エディタの側)。使い方は [crates/
   プレビュー・一部だけの採用・Undo がそのまま使えます。適用・Undo・Redo・保存は画面の確認 (120 秒で時間切れ) を通します。
   `ugoe-mcp` はエディタのサイドカーとして同梱し、「Connect agents」の画面が各クライアントの登録のコマンドにそのパスを埋めます。
   詳細は [docs/editor.md#エージェントをつなぐ](editor.md#エージェントをつなぐ)、操作は [操作マニュアル](manual/mcp.md)。
+- **Claude Desktop (T0643):** 中継を MCP Bundle (`.mcpb`) に包み、Claude Desktop に拡張機能として入れます
+  (`ugoe_mcp::mcpb`・`ugoe-mcp --mcpb <OUT>`)。束は zip で、`manifest.json` (`manifest_version` 0.3・`server.type` `binary`・
+  `mcp_config` は `${__dirname}/server/ugoe-mcp[.exe] --editor`・`compatibility.platforms` は 1 つの OS・`tools` は `tools/list` から)
+  と実行ファイル (0755) を持ちます。エディタは同梱の `ugoe-mcp` からその場で作ります
+  ([docs/editor.md#エージェントをつなぐ](editor.md#エージェントをつなぐ))。仕様は
+  [MCPB の MANIFEST.md](https://github.com/modelcontextprotocol/mcpb/blob/main/MANIFEST.md) と
+  [Build a desktop extension with MCPB](https://claude.com/docs/connectors/building/mcpb)。
 
 ## セキュリティとプライバシー
 

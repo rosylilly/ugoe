@@ -2,11 +2,12 @@
 //! 使い方は `crates/ugoe-mcp/README.md`。
 
 use std::io::{BufRead, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use clap::Parser;
 use ugoe_mcp::http::{ENDPOINT, HttpOptions, HttpServer, generate_token};
+use ugoe_mcp::mcpb::{Bundle, Platform};
 use ugoe_mcp::relay::{Relay, RelayOptions};
 use ugoe_mcp::{Options, Root, Server};
 
@@ -50,10 +51,19 @@ struct Cli {
     /// ループバックのほかに受け付ける Origin (`https://example.com` の形。繰り返せる)
     #[arg(long = "allow-origin", value_name = "ORIGIN", requires = "http")]
     allow_origins: Vec<String>,
+    /// サーバを動かさず、この実行ファイルの `--editor` を包む Claude Desktop 用の MCP Bundle (.mcpb) を書く
+    #[arg(long, value_name = "OUT", conflicts_with_all = ["editor", "read_only", "backend", "root", "http"])]
+    mcpb: Option<PathBuf>,
+    /// --mcpb で束に入れるアイコン (PNG。512×512 を勧める)
+    #[arg(long, value_name = "PNG", requires = "mcpb")]
+    mcpb_icon: Option<PathBuf>,
 }
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    if let Some(out) = cli.mcpb {
+        return pack_mcpb(&out, cli.mcpb_icon.as_deref());
+    }
     if cli.editor {
         return relay(RelayOptions {
             discovery: cli.discovery,
@@ -97,6 +107,26 @@ fn main() -> anyhow::Result<()> {
         }
         None => serve_stdio(server, &paths),
     }
+}
+
+/// この実行ファイルを包む `.mcpb` を書く (`ugoe_mcp::mcpb`)。
+fn pack_mcpb(out: &Path, icon: Option<&Path>) -> anyhow::Result<()> {
+    let platform =
+        Platform::current().context("MCP Bundles run only on macOS, Windows and Linux")?;
+    let exe = std::env::current_exe().context("failed to find this executable")?;
+    let mut bundle = Bundle::new(exe, platform);
+    if let Some(icon) = icon {
+        bundle.icon = Some(
+            std::fs::read(icon).with_context(|| format!("failed to read {}", icon.display()))?,
+        );
+    }
+    bundle.write(out)?;
+    eprintln!(
+        "ugoe-mcp: wrote {} ({}; runs `ugoe-mcp --editor`)",
+        out.display(),
+        platform.as_str()
+    );
+    Ok(())
 }
 
 fn relay(options: RelayOptions) -> anyhow::Result<()> {

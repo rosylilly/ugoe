@@ -2,9 +2,11 @@
   設定の「Connect agents」(docs/editor.md#エージェントをつなぐ、docs/manual/mcp.md)。
   エディタの中の MCP サーバ (ブリッジ) の有効化・状態 (待ち受けの URL・つながったクライアント・エージェントが使う
   プロジェクトのパス)・ポートとトークン、クライアントごとの登録の手順 (同梱の ugoe-mcp のパスを埋めたもの) を出す。
+  Claude Desktop には、同梱の ugoe-mcp を包んだ .mcpb をその場で作り、開く (インストールの画面) か保存する。
   エージェントの適用・保存は、ここでの設定に関わらず確認のダイアログ (ApprovalDialog.svelte) を通る。
 -->
 <script lang="ts">
+import { fileDialogs } from "../fileDialogs";
 import { openExternal } from "../help";
 import { ipc } from "../ipc";
 import { agentBridge } from "./bridge.svelte";
@@ -67,6 +69,42 @@ async function applyPort(e: SubmitEvent): Promise<void> {
   await agentBridge.setPort(port);
 }
 
+/** Claude Desktop の .mcpb を作っている・作った結果。 */
+let bundleBusy = $state(false);
+let bundle = $state<
+  { kind: "opened" | "saved"; path: string } | { kind: "error"; message: string } | null
+>(null);
+
+async function installInClaudeDesktop(): Promise<void> {
+  bundleBusy = true;
+  try {
+    bundle = { kind: "opened", path: await ipc.openClaudeDesktopBundle() };
+  } catch (e) {
+    bundle = { kind: "error", message: String(e) };
+  } finally {
+    bundleBusy = false;
+  }
+}
+
+async function saveBundle(): Promise<void> {
+  const dialogs = fileDialogs();
+  const dir = await dialogs.defaultDirectory();
+  const path = await dialogs.saveFile({
+    title: "Save the Claude Desktop extension",
+    defaultPath: dir ? `${dir}/ugoe-editor.mcpb` : "ugoe-editor.mcpb",
+    filters: [{ name: "MCP Bundle", extensions: ["mcpb"] }],
+  });
+  if (!path) return;
+  bundleBusy = true;
+  try {
+    bundle = { kind: "saved", path: await ipc.saveClaudeDesktopBundle(path) };
+  } catch (e) {
+    bundle = { kind: "error", message: String(e) };
+  } finally {
+    bundleBusy = false;
+  }
+}
+
 async function openManual(): Promise<void> {
   try {
     await openExternal(MCP_MANUAL_URL);
@@ -78,7 +116,7 @@ async function openManual(): Promise<void> {
 
 <section class="agents">
   <p class="muted">
-    Let coding agents (Claude Code, OpenCode, ChatGPT…) work on the project open in this editor. Their proposals
+    Let agents (Claude Code, Claude Desktop, OpenCode, ChatGPT…) work on the project open in this editor. Their proposals
     appear in the AI tab, and applying, undoing or saving always asks you here first.
     <button class="link" onclick={openManual}>How to connect agents…</button>
     {#if copied === "manual:failed"}<span class="muted">{MCP_MANUAL_URL}</span>{/if}
@@ -144,6 +182,52 @@ async function openManual(): Promise<void> {
     </div>
     {#if section}
       <p class="muted note">{section.summary}</p>
+      {#if section.id === "claude-desktop"}
+        {#if !status.enabled}
+          <p class="warn note">
+            Turn on “Allow agents to connect to this editor” above first. Claude Desktop reaches the editor only while
+            it is on (you can install the extension now and turn it on later).
+          </p>
+        {/if}
+        {#if status.sidecar.in_wsl}
+          <p class="warn note">
+            This editor runs inside WSL, so Claude Desktop on Windows cannot reach it. Run the Windows editor
+            instead; its extension relays inside Windows.
+          </p>
+        {/if}
+        <div class="bundle">
+          <button class="primary" onclick={installInClaudeDesktop} disabled={bundleBusy || !status.sidecar.path}>
+            Install in Claude Desktop…
+          </button>
+          <button onclick={saveBundle} disabled={bundleBusy || !status.sidecar.path}>Save .mcpb…</button>
+          {#if bundleBusy}<span class="muted">Packing the extension…</span>{/if}
+        </div>
+        {#if bundle?.kind === "opened"}
+          <p class="ok note">
+            Opened the extension. Claude Desktop shows its install dialog: choose Install and enable it.
+          </p>
+          <p class="muted note">
+            Nothing happened, or another app opened it? In Claude Desktop, go to Settings → Extensions → Advanced
+            settings → Install Extension… and choose <code class="path">{bundle.path}</code>.
+          </p>
+        {:else if bundle?.kind === "saved"}
+          <p class="ok note">
+            Saved <code class="path">{bundle.path}</code>. Double-click it, drag it onto the Claude Desktop window, or
+            use Settings → Extensions → Advanced settings → Install Extension… in Claude Desktop.
+          </p>
+        {:else if bundle?.kind === "error"}
+          <p class="error">{bundle.message}</p>
+        {/if}
+        <ul class="muted note checks">
+          <li>
+            Check it: Claude Desktop's Settings → Extensions lists “ugoe editor” as enabled, and in a chat the “+”
+            button → Connectors shows its tools. Once Claude uses a tool, it appears under “Connected agents” here.
+          </li>
+          <li>
+            The extension carries its own copy of ugoe-mcp. Install it again after updating the editor.
+          </li>
+        </ul>
+      {/if}
       {#each section.steps as step, i (i)}
         {@const key = `${section.id}-${i}`}
         <div class="step">
@@ -271,6 +355,21 @@ async function openManual(): Promise<void> {
   }
   .ok {
     color: #16a34a;
+  }
+  .bundle {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: 6px 0;
+  }
+  .bundle .primary {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  .checks {
+    margin: 4px 0 8px;
+    padding-left: 18px;
   }
   .warn {
     color: #b45309;

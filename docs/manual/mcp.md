@@ -1,6 +1,6 @@
 # エージェントに頼む (MCP)
 
-Claude Code・OpenCode・ChatGPT などのコーディングエージェントに、モデルの編集を頼む方法です。エージェントは
+Claude Code・Claude Desktop・OpenCode・ChatGPT などのエージェントに、モデルの編集を頼む方法です。エージェントは
 MCP (Model Context Protocol) で ugoe のツールを使い、パラメータやデフォーマの追加・キーの設定・PSD からの自動リギングなどを
 **提案** します。提案はモデルを変えず、採用するかはあなたが決めます。
 仕組みは [ADR 0023](../adr/0023-editor-mcp-bridge.md)・[docs/editor.md#エージェントをつなぐ](../editor.md#エージェントをつなぐ)・
@@ -46,6 +46,10 @@ claude mcp add --scope user ugoe-editor -- <同梱の ugoe-mcp のパス> --edit
 ```
 
 `claude mcp list` で `ugoe-editor` が `Connected` になるか、Claude Code の中の `/mcp` で確かめます。
+
+**Claude Desktop**
+
+「Claude Desktop」のタブから拡張機能として入れます。手順は [Claude Desktop](#claude-desktop) にあります。
 
 **OpenCode**
 
@@ -112,6 +116,62 @@ Streamable HTTP で直接つなぐクライアントには、「Other clients (H
 「Allow agents to connect to this editor」の印を外すか、エディタを終えると止まります。待っていた確認はすべて断ったことになり、
 エージェントには「エディタが動いていないか、つなぐのが無効」というエラーが返ります。中継は動き続けるので、もう一度有効にすれば
 エージェントを起動し直さずにつながります。
+
+## Claude Desktop
+
+Claude Desktop (デスクトップのアプリ) からも、実行中のエディタのモデルを扱えます。エディタが、同梱の `ugoe-mcp` を包んだ
+**拡張機能** (MCP Bundle、`.mcpb` のファイル) を作り、Claude Desktop に入れます。コマンドを打つ必要はありません。
+Claude Desktop は macOS・Windows と、Linux (ベータ。Ubuntu 22.04 以降・Debian 12 以降、x64・arm64。拡張機能も入れられます。
+[Install Claude Desktop](https://support.claude.com/en/articles/10065433-install-claude-desktop)) で動きます。
+
+![Connect agents の Claude Desktop のタブ。拡張機能を入れ、Claude Desktop がつながったところ](images/mcp-claude-desktop.png)
+
+### 入れる
+
+1. エディタで [「Connect agents」を有効にし、プロジェクトを保存する](#1-エディタで有効にする) (有効にする前に入れてもかまいませんが、
+   Claude Desktop がつながるのは有効にしている間だけです)。
+2. 「Register the editor in your agent」の「**Claude Desktop**」のタブを開き、「**Install in Claude Desktop…**」を押す。
+   エディタが拡張機能を作り (数秒かかります)、Claude Desktop に渡します。
+3. Claude Desktop にインストールの画面が出るので、内容 (「ugoe editor」とツールの一覧) を確かめて「Install」を押し、有効にする。
+
+Claude Desktop が開かない・ほかのアプリ (zip を開くアプリなど) が開いたときは、次のどれかで入れます:
+
+- 「**Save .mcpb…**」でファイル (`ugoe-editor.mcpb`) を保存し、ダブルクリックするか、Claude Desktop のウィンドウに落とす。
+- Claude Desktop の「Settings」→「Extensions」→「Advanced settings」→「Install Extension…」で、保存したファイルを選ぶ
+  (「Install in Claude Desktop…」の後に画面に出るパスのファイルでもかまいません)。
+
+### 確かめる
+
+- Claude Desktop の「Settings」→「Extensions」に「ugoe editor」があり、有効になっている。
+- Claude Desktop のチャットの入力欄の「+」→「Connectors」に「ugoe editor」とツール (`propose_edit` など) が出る。
+- Claude がツールを使うと、エディタの「Connected agents」に Claude Desktop の名前が出る。
+
+頼み方と確認への答え方は、Claude Code などと同じです ([3. 頼む](#3-頼む)・[4. 確認に答える](#4-確認に答える))。提案は「AI」タブに
+Claude Desktop の名前付きで出て、適用・Undo・Redo・保存はエディタで承認したときだけ行われます。
+
+### 気をつけること
+
+- **エディタを更新したら、拡張機能を入れ直してください。** 拡張機能は、入れたときの `ugoe-mcp` の複製を持っています。
+  ツールそのものはエディタが出すのでたいていは動き続けますが、Claude Desktop に出るツールの一覧が古いままになり、
+  エディタとのつなぎ方が変わった版では「版が合わない」というエラーが返ります ([困ったとき](#困ったとき))。
+- 拡張機能はエディタと同じ OS 向けです。**Windows のエディタなら Windows の Claude Desktop**、macOS なら macOS のものに入れます。
+  エディタを WSL の中で動かしているときは、Windows の Claude Desktop からは届きません (Windows 版のエディタを使ってください。
+  画面にもそう出ます)。
+- **署名について:** 拡張機能 (`.mcpb`) には署名をしていません。MCPB には束に署名する仕組み (`mcpb sign`。証明書の署名を
+  ファイルの後ろに足す) がありますが、ugoe は使っていません。中の `ugoe-mcp` は、エディタに同梱のものをそのまま写したもので、
+  エディタのインストーラと同じく **コード署名もしていません** ([apps/editor/README.md の配布物の署名](../../apps/editor/README.md#配布物の署名))。
+  - エディタが手元で作ったファイルには、ダウンロードの印 (macOS の隔離属性 `com.apple.quarantine`・Windows の Mark of the Web) が
+    付かないので、普通はそのまま入れられます。ただし、束を人に渡したりダウンロードしたりすると印が付き、次のことが起こりえます
+    (実際の Claude Desktop では確かめていません):
+  - **macOS:** Gatekeeper が署名の無い `ugoe-mcp` の起動を止め、拡張機能がエラーになることがあります。その束は使わず、
+    自分のエディタの「Install in Claude Desktop…」で作り直してください。
+  - **Windows:** SmartScreen やウイルス対策のソフトが、署名の無い `ugoe-mcp.exe` を止めたり、隔離したりすることがあります。
+    そのときも、自分のエディタで作り直すか、ウイルス対策のソフトで許可してください。
+  - Claude Desktop のインストールの画面で、署名が無い旨が出ることがあります。
+- 拡張機能の代わりに、Claude Desktop の設定のファイル (`claude_desktop_config.json`。「Settings」→「Developer」→「Edit Config」)
+  に登録することもできます。「Claude Desktop」のタブの「Alternative」の JSON を写して `mcpServers` に足し、Claude Desktop を
+  終えて起動し直します。こちらは同梱の `ugoe-mcp` をそのまま使うので、エディタを更新しても入れ直しは要りません
+  (インストール先を移したときは直します)。
 
 ## Windows と WSL
 
@@ -185,6 +245,7 @@ claude mcp add --scope user ugoe-read -- <同梱の ugoe-mcp のパス> --read-o
 | `the model changed after it was proposed` | 提案の後か確認の間にモデルが変わった。「Undo」で戻すか、提案を作り直してもらう |
 | `the project files were changed outside the editor` | エディタの外でプロジェクトのファイルが変わった。エディタで開き直すか「Save」で上書きする |
 | `... was written by ugoe … in discovery format …` | エディタと中継の版が合わない。エディタに同梱の `ugoe-mcp` を登録する |
+| Claude Desktop にツールが出ない・「ugoe editor」がエラーになる | 「Settings」→「Extensions」で有効か確かめる。エディタを更新した後なら、「Install in Claude Desktop…」で入れ直す。エディタの「Connect agents」が有効か確かめる |
 
 ## 制限
 

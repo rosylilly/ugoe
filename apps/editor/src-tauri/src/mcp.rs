@@ -9,6 +9,8 @@
 //!   利用者が承認したときだけ行う (拒否・時間切れはツールのエラー)。画面から採用するときは確認しない。
 //! - ほかのプロジェクトを開く・作る・閉じる・PSD から作るはブリッジからはできない。未保存のプロジェクトは
 //!   パスで指せないので、保存を促す。
+//! - Claude Desktop には、同梱の `ugoe-mcp` を `--editor` で動かす MCP Bundle (`.mcpb`) を、その場で作って渡す
+//!   ([`open_claude_desktop_bundle`]・[`save_claude_desktop_bundle`]。`ugoe_mcp::mcpb`)。
 //! - ブリッジの編集はエディタの文書に入るので、外での書き換え (`docs/editor.md#外での書き換え`) にはならない。
 //!   保存はエディタの保存と同じ処理 ([`crate::project::ProjectSession::save_to`]) で、指紋も取り直す。
 
@@ -22,6 +24,7 @@ use ts_rs::TS;
 use ugoe_editor_core::{Document, export_bundle_with_settings};
 use ugoe_mcp::host::{Action, Approvals, Change, HostError, Lent, Opening};
 use ugoe_mcp::http::generate_token;
+use ugoe_mcp::mcpb::{Bundle, Platform};
 use ugoe_mcp::wsl::WslPaths;
 use ugoe_mcp::{BridgeOptions, DocumentHost, EditorBridge};
 
@@ -410,17 +413,22 @@ fn sidecar_candidates(dir: &Path, name: &str) -> Vec<PathBuf> {
     candidates
 }
 
-/// 同梱の `ugoe-mcp` (Tauri のサイドカー。エディタの実行ファイルと同じディレクトリに置かれる)。
-fn sidecar() -> Sidecar {
+/// 同梱の `ugoe-mcp` のパス (Tauri のサイドカー。エディタの実行ファイルと同じディレクトリに置かれる)。
+fn sidecar_path() -> Option<PathBuf> {
     let name = if cfg!(windows) {
         "ugoe-mcp.exe"
     } else {
         "ugoe-mcp"
     };
-    let path = std::env::current_exe()
+    std::env::current_exe()
         .ok()
         .and_then(|exe| exe.parent().map(|dir| sidecar_candidates(dir, name)))
-        .and_then(|candidates| candidates.into_iter().find(|p| p.is_file()));
+        .and_then(|candidates| candidates.into_iter().find(|p| p.is_file()))
+}
+
+/// 同梱の `ugoe-mcp` (登録のコマンドに埋める)。
+fn sidecar() -> Sidecar {
+    let path = sidecar_path();
     let wsl_path = if cfg!(windows) {
         path.as_ref()
             .and_then(|p| WslPaths::new("", "/mnt/").to_wsl(&p.display().to_string()))
@@ -440,6 +448,64 @@ fn sidecar() -> Sidecar {
         platform: platform.into(),
         in_wsl: cfg!(target_os = "linux") && std::env::var_os("WSL_DISTRO_NAME").is_some(),
     }
+}
+
+// ---- Claude Desktop (MCP Bundle) ----
+
+/// `.mcpb` に入れるアイコン (エディタのアイコン。512×512)。
+const BUNDLE_ICON: &[u8] = include_bytes!("../icons/icon.png");
+/// 「Install in Claude Desktop」で作る `.mcpb` の名前 (アプリのキャッシュのディレクトリの下)。
+const BUNDLE_FILE: &str = "ugoe-editor.mcpb";
+
+/// 同梱の `ugoe-mcp` を `--editor` で動かす `.mcpb` を `out` に書く。束の OS はエディタの OS。
+/// 同梱の `ugoe-mcp` をその場で包むので、インストーラに `.mcpb` を別に入れない (同じ実行ファイルを 2 つ
+/// 持たずに済み、エディタと版が必ずそろう)。
+fn write_claude_desktop_bundle(binary: Option<PathBuf>, out: &Path) -> Result<(), String> {
+    let binary = binary.ok_or(
+        "no ugoe-mcp was found next to the editor; build it with `cargo build --release -p ugoe-mcp` \
+         (installers include it)",
+    )?;
+    let platform =
+        Platform::current().ok_or("Claude Desktop extensions need macOS, Windows or Linux")?;
+    let mut bundle = Bundle::new(binary, platform);
+    bundle.icon = Some(BUNDLE_ICON.to_vec());
+    bundle.write(out).map_err(|e| e.to_string())
+}
+
+/// 束を作る (数秒かかるので、画面のスレッドの外で)。
+async fn build_bundle(out: PathBuf) -> Result<String, String> {
+    let display = out.display().to_string();
+    tauri::async_runtime::spawn_blocking(move || write_claude_desktop_bundle(sidecar_path(), &out))
+        .await
+        .map_err(|e| e.to_string())??;
+    Ok(display)
+}
+
+/// Claude Desktop 用の `.mcpb` を作り、OS に開かせる (Claude Desktop がインストールの画面を出す)。
+/// 作ったファイルのパスを返す (開けなかったときに、Claude Desktop から選ばせるため)。
+#[tauri::command]
+pub async fn open_claude_desktop_bundle(app: AppHandle) -> Result<String, String> {
+    use tauri_plugin_opener::OpenerExt;
+    let out = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| e.to_string())?
+        .join(BUNDLE_FILE);
+    let path = build_bundle(out).await?;
+    app.opener()
+        .open_path(path.clone(), None::<&str>)
+        .map_err(|e| format!("could not open {path}: {e}"))?;
+    Ok(path)
+}
+
+/// Claude Desktop 用の `.mcpb` を `path` (保存のダイアログで選んだもの) に書く。
+#[tauri::command]
+pub async fn save_claude_desktop_bundle(path: String) -> Result<String, String> {
+    let out = PathBuf::from(path);
+    if out.extension().is_none_or(|e| e != "mcpb") {
+        return Err("the file name must end with .mcpb".into());
+    }
+    build_bundle(out).await
 }
 
 // ---- 持ち主 ----
