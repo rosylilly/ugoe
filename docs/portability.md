@@ -33,7 +33,10 @@
 - パニックは `catch_unwind` で捕まえてエラーコードに変換します。FFI の境界の外にパニックを漏らしません。
 - 頂点データは、ホストが確保したバッファにコピーする API (`ugoe_puppet_copy_positions(p, drawable, out_ptr, len)`) と、内部のバッファを借用する API (次の `update` まで有効) の両方を提供します。
 - ヘッダファイルは cbindgen で生成して `crates/ugoe-ffi/include/ugoe.h` に置き、CI で最新かどうかを検査します (`just ffi-header` で作り直し、`just ffi-check` で検査と C の見本の実行)。cbindgen は MPL-2.0 なので、ワークスペースの依存には入れず、版を固定した CLI として使います。`just ffi-check` は `just ci` に含めません ([crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#ヘッダの生成))。
-- `ugoe_abi_version()` の値は、ABI を壊す変更をしたら上げます。
+- `ugoe_abi_version()` の値は、ABI を壊す変更をしたら上げます。関数・型・定数・エラーコードを足すだけなら上げません
+  (既存の構造体にフィールドを足すのは壊す変更なので、別の関数や構造体を足します。[crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#abi-の版))。
+- 可変長の結果は、ホストのバッファ (`out`・`capacity`) に書いて数を返し、足りなければ `UGOE_ERROR_BUFFER_TOO_SMALL` で数だけを返します。
+- 着せ替えなど、失敗の種類を機械が読む必要がある関数は、`ugoe_last_error_kind()` と `ugoe_last_error_field(key)` で wasm と同じ `code` と補足の値を返します。
 
 ## ランタイム層が守る制約 (移植性のため)
 

@@ -2,7 +2,7 @@
 //! (`docs/portability.md#c-abi-ugoe-ffi-の規約`)。
 
 use std::cell::RefCell;
-use std::ffi::{CString, c_char};
+use std::ffi::{CStr, CString, c_char};
 use std::panic::{self, AssertUnwindSafe};
 
 /// 関数の結果。`UGOE_OK` (0) が成功、それ以外は失敗の種類。詳細は `ugoe_last_error` で得る。
@@ -26,12 +26,19 @@ pub const UGOE_ERROR_INVALID_MODEL: UgoeResult = 6;
 pub const UGOE_ERROR_NOT_FOUND: UgoeResult = 7;
 /// ugoe の内部でパニックが起きた。対象のオブジェクトの状態は不定なので、破棄して作り直す。
 pub const UGOE_ERROR_PANIC: UgoeResult = 8;
+/// 着せ替え (モジュールの付け外し) に失敗した。何も変えていない。種類は `ugoe_last_error_kind`、
+/// 補足の値は `ugoe_last_error_field` で得る (T0409)。
+pub const UGOE_ERROR_DRESS_UP: UgoeResult = 9;
 
 /// 境界の内側で使う失敗。コードとメッセージを持つ。
 #[derive(Debug)]
 pub(crate) struct Error {
     code: UgoeResult,
     message: String,
+    /// 機械が読む種類 (`ugoe_last_error_kind`)。wasm の `DressUpError` の `code` と同じ値。
+    kind: Option<&'static str>,
+    /// 補足の値 (`ugoe_last_error_field`。`module`・`slot` など)。
+    fields: Vec<(&'static str, String)>,
 }
 
 impl Error {
@@ -39,7 +46,20 @@ impl Error {
         Self {
             code,
             message: message.into(),
+            kind: None,
+            fields: Vec::new(),
         }
+    }
+
+    /// 種類と補足の値を付ける。
+    pub(crate) fn with_kind(
+        mut self,
+        kind: &'static str,
+        fields: Vec<(&'static str, String)>,
+    ) -> Self {
+        self.kind = Some(kind);
+        self.fields = fields;
+        self
     }
 
     pub(crate) fn null(name: &str) -> Self {
@@ -54,19 +74,35 @@ impl Error {
     }
 }
 
-thread_local! {
-    static LAST_ERROR: RefCell<Option<CString>> = const { RefCell::new(None) };
+/// 最後の失敗の中身。
+#[derive(Default)]
+struct LastError {
+    message: Option<CString>,
+    kind: Option<CString>,
+    fields: Vec<(CString, CString)>,
 }
 
-fn set_last_error(message: String) {
-    // メッセージに NUL が含まれていたら、そこまでで切る。
-    let bytes: Vec<u8> = message
-        .into_bytes()
-        .into_iter()
-        .take_while(|&b| b != 0)
-        .collect();
-    let message = CString::new(bytes).unwrap_or_default();
-    LAST_ERROR.with(|last| *last.borrow_mut() = Some(message));
+thread_local! {
+    static LAST_ERROR: RefCell<LastError> = RefCell::new(LastError::default());
+}
+
+/// 文字列を C の文字列にする。NUL が含まれていたら、そこまでで切る。
+pub(crate) fn c_string(s: &str) -> CString {
+    let end = s.find('\0').unwrap_or(s.len());
+    CString::new(&s[..end]).unwrap_or_default()
+}
+
+fn set_last_error(error: Error) {
+    let last = LastError {
+        message: Some(c_string(&error.message)),
+        kind: error.kind.map(c_string),
+        fields: error
+            .fields
+            .iter()
+            .map(|(k, v)| (c_string(k), c_string(v)))
+            .collect(),
+    };
+    LAST_ERROR.with(|cell| *cell.borrow_mut() = last);
 }
 
 /// `f` をパニックを捕まえて実行し、結果をエラーコードにする。失敗したらメッセージを記録する。
@@ -74,8 +110,9 @@ pub(crate) fn guard(f: impl FnOnce() -> Result<(), Error>) -> UgoeResult {
     match panic::catch_unwind(AssertUnwindSafe(f)) {
         Ok(Ok(())) => UGOE_OK,
         Ok(Err(error)) => {
-            set_last_error(error.message);
-            error.code
+            let code = error.code;
+            set_last_error(error);
+            code
         }
         Err(payload) => {
             let message = payload
@@ -83,7 +120,10 @@ pub(crate) fn guard(f: impl FnOnce() -> Result<(), Error>) -> UgoeResult {
                 .map(|s| (*s).to_owned())
                 .or_else(|| payload.downcast_ref::<String>().cloned())
                 .unwrap_or_else(|| "unknown panic payload".to_owned());
-            set_last_error(format!("panic inside ugoe: {message}"));
+            set_last_error(Error::new(
+                UGOE_ERROR_PANIC,
+                format!("panic inside ugoe: {message}"),
+            ));
             UGOE_ERROR_PANIC
         }
     }
@@ -96,15 +136,51 @@ pub(crate) fn guard(f: impl FnOnce() -> Result<(), Error>) -> UgoeResult {
 pub extern "C" fn ugoe_last_error() -> *const c_char {
     LAST_ERROR.with(|last| {
         last.borrow()
+            .message
             .as_ref()
             .map_or(std::ptr::null(), |message| message.as_ptr())
     })
 }
 
+/// このスレッドで最後に失敗した関数の、機械が読む種類 (UTF-8、NUL 終端)。種類を持たない失敗なら NULL。
+///
+/// 着せ替えの失敗 (`UGOE_ERROR_DRESS_UP` と、`.ugoemod` を読めなかったときの `UGOE_ERROR_FORMAT`) で、
+/// wasm の `DressUpError` の `code` と同じ値 (`"unknown_slot"`・`"slot_occupied"`・`"invalid_file"` など) になる。
+/// 一覧は crates/ugoe-ffi/README.md。ポインタの寿命は `ugoe_last_error` と同じ。
+#[unsafe(no_mangle)]
+pub extern "C" fn ugoe_last_error_kind() -> *const c_char {
+    LAST_ERROR.with(|last| {
+        last.borrow()
+            .kind
+            .as_ref()
+            .map_or(std::ptr::null(), |kind| kind.as_ptr())
+    })
+}
+
+/// このスレッドで最後に失敗した関数の補足の値 `key` (`"module"`・`"slot"`・`"parameter"`・`"mesh"`・
+/// `"attached"`)。無ければ NULL。`key` が NULL か UTF-8 でなくても NULL。ポインタの寿命は `ugoe_last_error` と同じ。
+///
+/// # Safety
+///
+/// `key` は NULL か、NUL 終端の文字列を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_last_error_field(key: *const c_char) -> *const c_char {
+    if key.is_null() {
+        return std::ptr::null();
+    }
+    // SAFETY: 呼び出し側の約束で、`key` は NUL 終端の文字列。
+    let key = unsafe { CStr::from_ptr(key) };
+    LAST_ERROR.with(|last| {
+        last.borrow()
+            .fields
+            .iter()
+            .find(|(k, _)| k.as_c_str() == key)
+            .map_or(std::ptr::null(), |(_, v)| v.as_ptr())
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use std::ffi::CStr;
-
     use super::*;
 
     fn last_error() -> String {
@@ -134,5 +210,28 @@ mod tests {
         assert_eq!(last_error(), "no such thing");
         assert_eq!(guard(|| Ok(())), UGOE_OK);
         assert_eq!(last_error(), "no such thing");
+        assert!(ugoe_last_error_kind().is_null());
+    }
+
+    #[test]
+    fn kind_and_fields_follow_the_last_failure() {
+        let code = guard(|| {
+            Err(Error::new(UGOE_ERROR_DRESS_UP, "taken")
+                .with_kind("slot_occupied", vec![("slot", "Hair".into())]))
+        });
+        assert_eq!(code, UGOE_ERROR_DRESS_UP);
+        // SAFETY: NULL でないポインタは、次の失敗まで有効な NUL 終端の文字列。`key` は C の文字列リテラルか NULL。
+        unsafe {
+            let text = |p: *const c_char| CStr::from_ptr(p).to_string_lossy().into_owned();
+            assert_eq!(text(ugoe_last_error_kind()), "slot_occupied");
+            assert_eq!(text(ugoe_last_error_field(c"slot".as_ptr())), "Hair");
+            assert!(ugoe_last_error_field(c"module".as_ptr()).is_null());
+            assert!(ugoe_last_error_field(std::ptr::null()).is_null());
+
+            // 種類を持たない失敗で消える。
+            guard(|| Err(Error::null("x")));
+            assert!(ugoe_last_error_kind().is_null());
+            assert!(ugoe_last_error_field(c"slot".as_ptr()).is_null());
+        }
     }
 }

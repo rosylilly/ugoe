@@ -8,7 +8,7 @@
 //   cargo install cbindgen --version <CBINDGEN_VERSION> --locked
 
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -87,7 +87,16 @@ function check() {
     "-o",
     exe,
   ]);
-  run(exe, [join(root, "assets", "samples", "avatar.ugoe")]);
+  // 見本のモデル、法線マップ付きの見本 (ライティング)、着せ替えの見本 (本体とモジュール) で動かす。
+  const samples = join(root, "assets", "samples");
+  const dressUp = join(samples, "dress-up");
+  const modules = readdirSync(dressUp)
+    .filter((f) => f.endsWith(".ugoemod"))
+    .sort()
+    .map((f) => join(dressUp, f));
+  run(exe, [join(samples, "avatar.ugoe")]);
+  run(exe, ["--lit", join(samples, "avatar-lit.ugoe")]);
+  run(exe, [join(dressUp, "dress-up.ugoe"), ...modules]);
 }
 
 const [command] = process.argv.slice(2);

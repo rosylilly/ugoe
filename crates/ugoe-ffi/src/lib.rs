@@ -11,14 +11,24 @@
 #![allow(unsafe_code)] // `#[unsafe(no_mangle)]` と生ポインタ操作のため、このクレートに限り許可する。
 
 mod drawable;
+mod dress_up;
 mod error;
+mod hit;
+mod lighting;
 mod puppet;
+mod tracking;
+mod warning;
 
 use std::ffi::c_char;
 
 pub use drawable::*;
+pub use dress_up::*;
 pub use error::*;
+pub use hit::*;
+pub use lighting::*;
 pub use puppet::*;
+pub use tracking::*;
+pub use warning::*;
 
 /// C ABI のバージョン。互換性を壊す変更で上げる (ヘッダでは `UGOE_ABI_VERSION`)。
 pub const ABI_VERSION: u32 = 1;

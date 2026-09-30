@@ -1,17 +1,22 @@
 //! `UgoePuppet`: 読み込み・破棄・パラメータ・更新・モーションと表情。
 
 use std::ffi::{CStr, CString, c_char};
+use std::sync::Arc;
 
-use ugoe::Puppet;
-use ugoe::format::{Bundle, TextureData};
+use ugoe::format::{Bundle, ReadReport, TextureData};
 use ugoe::model::expression::Expression;
 use ugoe::model::motion::Motion;
 use ugoe::motion::Priority;
 use ugoe::runtime::{CompiledModel, ParamIndex};
+use ugoe::{Puppet, TextureSource};
 
+use crate::dress_up::ModuleData;
 use crate::error::{
     Error, UGOE_ERROR_FORMAT, UGOE_ERROR_INVALID_ARGUMENT, UGOE_ERROR_INVALID_MODEL,
-    UGOE_ERROR_NOT_FOUND, UgoeResult, guard,
+    UGOE_ERROR_NOT_FOUND, UgoeResult, c_string, guard,
+};
+use crate::warning::{
+    UgoeWarning, Warning, missing_textures, read_warnings, write_warning, write_warning_field,
 };
 
 /// 1 体分のモデルの動作単位 (Rust の `ugoe::Puppet`)。不透明な型で、中身には触れない。
@@ -25,12 +30,28 @@ pub struct UgoePuppet {
     parameter_ids: Vec<CString>,
     /// 描画可能要素 (メッシュ) の ID (NUL 終端。`Model::meshes` の並び)。
     pub(crate) drawable_ids: Vec<CString>,
+    /// 当たり判定の ID (NUL 終端。`Model::hit_areas` の並び)。
+    pub(crate) hit_area_ids: Vec<CString>,
     motions: Vec<Motion>,
     motion_names: Vec<CString>,
     expressions: Vec<Expression>,
     expression_names: Vec<CString>,
-    /// テクスチャの番号ごとの画像。JSON から作ったときや、バンドルに無い番号は `None`。
-    pub(crate) textures: Vec<Option<TextureData>>,
+    /// 本体のテクスチャの番号ごとの画像。JSON から作ったときや、バンドルに無い番号は `None`。
+    pub(crate) base_textures: Vec<Option<TextureData>>,
+    /// 本体のテクスチャの番号ごとの法線マップ。無い番号は `None`。
+    pub(crate) base_normal_maps: Vec<Option<TextureData>>,
+    /// 取り付けているモジュールの中身 (画像を含む。合成の順)。テクスチャの借用はこれを指す。
+    pub(crate) modules: Vec<Arc<ModuleData>>,
+    /// 取り付けているモジュールの名前 (NUL 終端。合成の順)。
+    pub(crate) module_names: Vec<CString>,
+    /// 合成したモデルのテクスチャの出どころ (`Puppet::texture_sources`)。
+    pub(crate) texture_sources: Vec<TextureSource>,
+    /// 直前の着せ替えで設定し直すテクスチャの番号 (`DressUpChange::textures`)。
+    pub(crate) changed_textures: Vec<u32>,
+    /// 本体のスロットの ID (NUL 終端)。
+    pub(crate) slot_ids: Vec<CString>,
+    /// 読み込みの警告。
+    pub(crate) warnings: Vec<Warning>,
 }
 
 /// パラメータの範囲と既定値。
@@ -60,46 +81,74 @@ pub const UGOE_PRIORITY_NORMAL: u32 = 1;
 /// 常に開始する。
 pub const UGOE_PRIORITY_FORCE: u32 = 2;
 
-/// NUL を含む文字列は、最初の NUL までにする (ID に NUL が入ることは想定しない)。
-fn c_string(s: &str) -> CString {
-    let end = s.find('\0').unwrap_or(s.len());
-    CString::new(&s[..end]).unwrap_or_default()
-}
-
 impl UgoePuppet {
     fn new(
         puppet: Puppet,
         motions: Vec<Motion>,
         expressions: Vec<Expression>,
-        textures: Vec<Option<TextureData>>,
+        base_textures: Vec<Option<TextureData>>,
+        base_normal_maps: Vec<Option<TextureData>>,
+        warnings: Vec<Warning>,
     ) -> Self {
-        let model = puppet.instance().compiled().model();
-        let parameter_ids = model
-            .parameters
-            .iter()
-            .map(|p| c_string(p.id.as_str()))
-            .collect();
-        let drawable_ids = model
-            .meshes
-            .iter()
-            .map(|m| c_string(m.id.as_str()))
-            .collect();
         let motion_names = motions.iter().map(|m| c_string(&m.name)).collect();
         let expression_names = expressions.iter().map(|e| c_string(&e.name)).collect();
-        Self {
+        let slot_ids = puppet
+            .base_model()
+            .slots
+            .iter()
+            .map(|s| c_string(s.id.as_str()))
+            .collect();
+        let mut this = Self {
             puppet,
-            parameter_ids,
-            drawable_ids,
+            parameter_ids: Vec::new(),
+            drawable_ids: Vec::new(),
+            hit_area_ids: Vec::new(),
             motions,
             motion_names,
             expressions,
             expression_names,
-            textures,
-        }
+            base_textures,
+            base_normal_maps,
+            modules: Vec::new(),
+            module_names: Vec::new(),
+            texture_sources: Vec::new(),
+            changed_textures: Vec::new(),
+            slot_ids,
+            warnings,
+        };
+        this.refresh_model();
+        this
     }
 
-    fn from_bundle(bundle: Bundle) -> Result<Self, Error> {
+    /// モデルから作る ID の一覧などを作り直す (作ったときと、着せ替えでモデルを差し替えたとき)。
+    pub(crate) fn refresh_model(&mut self) {
+        let model = self.puppet.instance().compiled().model();
+        self.parameter_ids = model
+            .parameters
+            .iter()
+            .map(|p| c_string(p.id.as_str()))
+            .collect();
+        self.drawable_ids = model
+            .meshes
+            .iter()
+            .map(|m| c_string(m.id.as_str()))
+            .collect();
+        self.hit_area_ids = model
+            .hit_areas
+            .iter()
+            .map(|h| c_string(h.id.as_str()))
+            .collect();
+        self.module_names = self
+            .modules
+            .iter()
+            .map(|m| c_string(&m.module.name))
+            .collect();
+        self.texture_sources = self.puppet.texture_sources();
+    }
+
+    fn from_bundle(bundle: Bundle, report: ReadReport) -> Result<Self, Error> {
         let count = texture_count(&bundle.model);
+        let base_normal_maps = (0..count).map(|i| bundle.normal_map(i).cloned()).collect();
         let Bundle {
             model,
             physics,
@@ -117,7 +166,16 @@ impl UgoePuppet {
         }
         let mut textures: Vec<Option<TextureData>> = textures.into_iter().map(Some).collect();
         textures.resize(count, None);
-        Ok(Self::new(puppet, motions, expressions, textures))
+        let mut warnings = read_warnings(&report);
+        warnings.extend(missing_textures(&textures));
+        Ok(Self::new(
+            puppet,
+            motions,
+            expressions,
+            textures,
+            base_normal_maps,
+            warnings,
+        ))
     }
 
     fn from_json(json: &str) -> Result<Self, Error> {
@@ -126,7 +184,43 @@ impl UgoePuppet {
         let count = texture_count(&model);
         let puppet =
             Puppet::new(model).map_err(|e| Error::new(UGOE_ERROR_INVALID_MODEL, e.to_string()))?;
-        Ok(Self::new(puppet, Vec::new(), Vec::new(), vec![None; count]))
+        Ok(Self::new(
+            puppet,
+            Vec::new(),
+            Vec::new(),
+            vec![None; count],
+            vec![None; count],
+            Vec::new(),
+        ))
+    }
+
+    /// 合成したモデルのテクスチャ `index` の画像と法線マップ。範囲外なら `None`。
+    pub(crate) fn texture_data(
+        &self,
+        index: usize,
+    ) -> Option<(Option<&TextureData>, Option<&TextureData>)> {
+        if index >= self.texture_count() {
+            return None;
+        }
+        match self.texture_sources.get(index) {
+            Some(TextureSource::Module { module, index }) => {
+                let data = self.modules.iter().find(|m| m.module.name == *module);
+                let i = *index as usize;
+                Some((
+                    data.and_then(|m| m.textures.get(i)),
+                    data.and_then(|m| m.normal_maps.get(i)?.as_ref()),
+                ))
+            }
+            _ => Some((
+                self.base_textures.get(index).and_then(Option::as_ref),
+                self.base_normal_maps.get(index).and_then(Option::as_ref),
+            )),
+        }
+    }
+
+    /// 合成したモデルのテクスチャの数。
+    pub(crate) fn texture_count(&self) -> usize {
+        self.base_textures.len().max(self.texture_sources.len())
     }
 
     fn parameter_index(&self, index: u32) -> Result<ParamIndex, Error> {
@@ -139,7 +233,7 @@ impl UgoePuppet {
     }
 }
 
-/// 描画に使うテクスチャの枚数。`model.textures` と、メッシュが参照する番号の大きい方。
+/// 本体の描画に使うテクスチャの枚数。`model.textures` と、メッシュが参照する番号の大きい方。
 fn texture_count(model: &ugoe::model::Model) -> usize {
     model
         .meshes
@@ -255,9 +349,10 @@ pub unsafe extern "C" fn ugoe_puppet_create_from_bundle(
     // SAFETY: 呼び出し側の約束。
     unsafe {
         create(out, || {
-            let bundle = ugoe::format::read_bundle(self::bytes(bytes, len, "bytes")?)
-                .map_err(|e| Error::new(UGOE_ERROR_FORMAT, e.to_string()))?;
-            UgoePuppet::from_bundle(bundle)
+            let (bundle, report) =
+                ugoe::format::read_bundle_with_report(self::bytes(bytes, len, "bytes")?)
+                    .map_err(|e| Error::new(UGOE_ERROR_FORMAT, e.to_string()))?;
+            UgoePuppet::from_bundle(bundle, report)
         })
     }
 }
@@ -369,7 +464,7 @@ pub unsafe extern "C" fn ugoe_puppet_parameter_count(
     })
 }
 
-/// `index` 番目のパラメータの ID (UTF-8、NUL 終端)。ポインタは `UgoePuppet` を破棄するまで有効。
+/// `index` 番目のパラメータの ID (UTF-8、NUL 終端)。ポインタは、着せ替えの操作か `UgoePuppet` の破棄まで有効。
 ///
 /// # Safety
 ///
@@ -653,5 +748,189 @@ pub unsafe extern "C" fn ugoe_puppet_set_expression(
             .clone();
         p.puppet.set_expression(expression);
         Ok(())
+    })
+}
+
+/// 使用中の表情をすべてフェードアウトさせる (表情の解除)。
+///
+/// # Safety
+///
+/// `puppet` は有効な `UgoePuppet` を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_puppet_stop_expressions(puppet: *mut UgoePuppet) -> UgoeResult {
+    guard(|| {
+        // SAFETY: 呼び出し側の約束。
+        let p = unsafe { puppet_mut(puppet)? };
+        p.puppet.expressions_mut().stop_all();
+        Ok(())
+    })
+}
+
+/// ID (UTF-8、NUL 終端) で複数のパラメータに値を設定する (範囲に丸める)。`ids` と `values` は `count` 個ずつ。
+/// 知らない ID は飛ばし、設定した数を `*out_applied` に書く (`out_applied` は NULL でもよい)。
+/// 値に NaN があるか ID が UTF-8 でなければ、何も設定せずにエラーを返す。
+/// 設定した値の扱いは `ugoe_puppet_set_parameter` と同じ。
+///
+/// # Safety
+///
+/// `puppet` は有効な `UgoePuppet`、`ids` は `count` 個の NUL 終端の文字列へのポインタの並び、
+/// `values` は `count` 個の float を読める領域、`out_applied` は NULL か書き込める領域を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_puppet_set_parameters_by_id(
+    puppet: *mut UgoePuppet,
+    ids: *const *const c_char,
+    values: *const f32,
+    count: usize,
+    out_applied: *mut usize,
+) -> UgoeResult {
+    guard(|| {
+        // SAFETY: 呼び出し側の約束。
+        let p = unsafe { puppet_mut(puppet)? };
+        let (ids, values): (&[*const c_char], &[f32]) = if count == 0 {
+            (&[], &[])
+        } else if ids.is_null() {
+            return Err(Error::null("ids"));
+        } else if values.is_null() {
+            return Err(Error::null("values"));
+        } else {
+            // SAFETY: 呼び出し側の約束で、どちらも `count` 個を読める。
+            unsafe {
+                (
+                    std::slice::from_raw_parts(ids, count),
+                    std::slice::from_raw_parts(values, count),
+                )
+            }
+        };
+        let parameters = p.puppet.instance().parameters();
+        let mut targets = Vec::with_capacity(count);
+        for (i, (&id, &value)) in ids.iter().zip(values).enumerate() {
+            // SAFETY: 呼び出し側の約束。
+            let id = unsafe { c_str(id, "ids[i]")? };
+            if value.is_nan() {
+                return Err(Error::new(
+                    UGOE_ERROR_INVALID_ARGUMENT,
+                    format!("`values[{i}]` is NaN"),
+                ));
+            }
+            if let Some(index) = parameters.index_of(id) {
+                targets.push((index, value));
+            }
+        }
+        let parameters = p.puppet.instance_mut().parameters_mut();
+        for &(index, value) in &targets {
+            parameters.set(index, value);
+        }
+        if !out_applied.is_null() {
+            // SAFETY: 呼び出し側の約束。
+            unsafe { out_applied.write(targets.len()) };
+        }
+        Ok(())
+    })
+}
+
+/// `ugoe_puppet_update` の段: 物理。
+pub const UGOE_STAGE_PHYSICS: u32 = 0;
+/// 目パチ。
+pub const UGOE_STAGE_EYE_BLINK: u32 = 1;
+/// 呼吸。
+pub const UGOE_STAGE_BREATH: u32 = 2;
+/// リップシンク。
+pub const UGOE_STAGE_LIP_SYNC: u32 = 3;
+/// ポーズ。
+pub const UGOE_STAGE_POSE: u32 = 4;
+
+/// `ugoe_puppet_update` の段 `stage` (`UGOE_STAGE_*`) を動かすか (既定はすべて動かす)。
+/// 止めた段はパラメータ・パーツの不透明度に触らない (`docs/spec/motion.md#段の有効無効`)。
+/// 例: トラッキング中はモデルの目パチを止める。
+///
+/// # Safety
+///
+/// `puppet` は有効な `UgoePuppet` を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_puppet_set_stage_enabled(
+    puppet: *mut UgoePuppet,
+    stage: u32,
+    enabled: bool,
+) -> UgoeResult {
+    guard(|| {
+        // SAFETY: 呼び出し側の約束。
+        let p = unsafe { puppet_mut(puppet)? };
+        let mut toggles = p.puppet.toggles();
+        let flag = match stage {
+            UGOE_STAGE_PHYSICS => &mut toggles.physics,
+            UGOE_STAGE_EYE_BLINK => &mut toggles.eye_blink,
+            UGOE_STAGE_BREATH => &mut toggles.breath,
+            UGOE_STAGE_LIP_SYNC => &mut toggles.lip_sync,
+            UGOE_STAGE_POSE => &mut toggles.pose,
+            other => {
+                return Err(Error::new(
+                    UGOE_ERROR_INVALID_ARGUMENT,
+                    format!("unknown stage {other}"),
+                ));
+            }
+        };
+        *flag = enabled;
+        p.puppet.set_toggles(toggles);
+        Ok(())
+    })
+}
+
+/// 読み込みの警告の数 (読み込みは成功しているが、表示が劣化しうること)。JSON から作ったときは 0。
+///
+/// # Safety
+///
+/// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_puppet_load_warning_count(
+    puppet: *const UgoePuppet,
+    out: *mut u32,
+) -> UgoeResult {
+    guard(|| {
+        // SAFETY: 呼び出し側の約束。
+        let p = unsafe { puppet_ref(puppet)? };
+        // SAFETY: 呼び出し側の約束。
+        unsafe { write(out, "out", p.warnings.len() as u32) }
+    })
+}
+
+/// `index` 番目の読み込みの警告 (`code` は wasm の `load_warnings_json` と同じ)。
+/// 文字列は `UgoePuppet` を破棄するまで有効。
+///
+/// # Safety
+///
+/// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_puppet_load_warning(
+    puppet: *const UgoePuppet,
+    index: u32,
+    out: *mut UgoeWarning,
+) -> UgoeResult {
+    guard(|| {
+        // SAFETY: 呼び出し側の約束。
+        let p = unsafe { puppet_ref(puppet)? };
+        // SAFETY: 呼び出し側の約束。
+        unsafe { write_warning(&p.warnings, index, out) }
+    })
+}
+
+/// `index` 番目の読み込みの警告の補足の値 `key` (UTF-8、NUL 終端。`"texture"`・`"feature"`・`"path"`)。
+/// 数も 10 進の文字列で返す。その警告が `key` を持たなければ `UGOE_ERROR_NOT_FOUND`。
+/// 文字列は `UgoePuppet` を破棄するまで有効。
+///
+/// # Safety
+///
+/// `puppet` は有効な `UgoePuppet`、`key` は NUL 終端の文字列、`out` は書き込める領域を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_puppet_load_warning_field(
+    puppet: *const UgoePuppet,
+    index: u32,
+    key: *const c_char,
+    out: *mut *const c_char,
+) -> UgoeResult {
+    guard(|| {
+        // SAFETY: 呼び出し側の約束。
+        let p = unsafe { puppet_ref(puppet)? };
+        // SAFETY: 呼び出し側の約束。
+        unsafe { write_warning_field(&p.warnings, index, key, out) }
     })
 }

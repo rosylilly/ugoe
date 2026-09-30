@@ -3,7 +3,7 @@
 
 use std::ffi::c_char;
 
-use ugoe::format::TextureFormat;
+use ugoe::format::{TextureData, TextureFormat};
 use ugoe::model::{BlendMode, MaskMode};
 
 use crate::error::{Error, UGOE_ERROR_BUFFER_TOO_SMALL, UgoeResult, guard};
@@ -47,7 +47,7 @@ pub const UGOE_CHANGED_MASK_STRENGTH: u8 = 1 << 6;
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct UgoeDrawableInfo {
-    /// ID (UTF-8、NUL 終端)。`UgoePuppet` を破棄するまで有効。
+    /// ID (UTF-8、NUL 終端)。着せ替えの操作か `UgoePuppet` の破棄まで有効。
     pub id: *const c_char,
     /// 使うテクスチャの番号 (`ugoe_puppet_texture`)。
     pub texture: u32,
@@ -103,7 +103,7 @@ pub struct UgoeDrawableState {
 pub struct UgoeTexture {
     /// `UGOE_TEXTURE_*`。
     pub format: u32,
-    /// ファイルの中身。`UGOE_TEXTURE_NONE` なら NULL。`UgoePuppet` を破棄するまで有効。
+    /// ファイルの中身。`UGOE_TEXTURE_NONE` なら NULL。寿命は `ugoe_puppet_texture` を参照。
     pub data: *const u8,
     pub len: usize,
 }
@@ -124,7 +124,7 @@ fn mask_mode_code(mode: MaskMode) -> u32 {
 }
 
 impl UgoePuppet {
-    fn drawable_index(&self, index: u32) -> Result<usize, Error> {
+    pub(crate) fn drawable_index(&self, index: u32) -> Result<usize, Error> {
         let len = self.drawable_ids.len();
         let i = index as usize;
         if i < len {
@@ -290,7 +290,7 @@ pub unsafe extern "C" fn ugoe_puppet_copy_positions(
 /// `index` 番目の描画可能要素の頂点位置を、内部のバッファのまま借りる。`*out` に先頭
 /// (x と y の組が `*out_len` / 2 個)、`*out_len` に float の数を書く。
 ///
-/// ポインタは、次の `ugoe_puppet_update` か `ugoe_puppet_destroy` まで有効。
+/// ポインタは、次の `ugoe_puppet_update`・着せ替えの操作・`ugoe_puppet_destroy` まで有効。
 ///
 /// # Safety
 ///
@@ -320,7 +320,7 @@ pub unsafe extern "C" fn ugoe_puppet_positions(
 }
 
 /// `index` 番目の描画可能要素のテクスチャ座標 (u と v の組を頂点の数だけ。0〜1、画像の左上が原点) を借りる。
-/// ポインタは `UgoePuppet` を破棄するまで有効。
+/// ポインタは、着せ替えの操作か `UgoePuppet` の破棄まで有効。
 ///
 /// # Safety
 ///
@@ -348,7 +348,7 @@ pub unsafe extern "C" fn ugoe_puppet_drawable_uvs(
 }
 
 /// `index` 番目の描画可能要素の三角形の頂点番号 (3 つで 1 つの三角形) を借りる。
-/// ポインタは `UgoePuppet` を破棄するまで有効。
+/// ポインタは、着せ替えの操作か `UgoePuppet` の破棄まで有効。
 ///
 /// # Safety
 ///
@@ -376,7 +376,7 @@ pub unsafe extern "C" fn ugoe_puppet_drawable_indices(
 }
 
 /// 奥から手前への描画順 (描画可能要素の番号の並び) を借りる。`*out_len` は描画可能要素の数。
-/// ポインタは、次の `ugoe_puppet_update` か `ugoe_puppet_destroy` まで有効。
+/// ポインタは、次の `ugoe_puppet_update`・着せ替えの操作・`ugoe_puppet_destroy` まで有効。
 ///
 /// # Safety
 ///
@@ -434,11 +434,33 @@ pub unsafe extern "C" fn ugoe_puppet_texture_count(
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         // SAFETY: 呼び出し側の約束。
-        unsafe { write(out, "out", p.textures.len() as u32) }
+        unsafe { write(out, "out", p.texture_count() as u32) }
     })
 }
 
+/// 画像を C に渡す形にする。
+fn texture_value(texture: Option<&TextureData>) -> UgoeTexture {
+    match texture {
+        None => UgoeTexture {
+            format: UGOE_TEXTURE_NONE,
+            data: std::ptr::null(),
+            len: 0,
+        },
+        Some(t) => UgoeTexture {
+            format: match t.format {
+                TextureFormat::Png => UGOE_TEXTURE_PNG,
+                TextureFormat::Ktx2 => UGOE_TEXTURE_KTX2,
+            },
+            data: t.bytes.as_ptr(),
+            len: t.bytes.len(),
+        },
+    }
+}
+
 /// `index` 番目のテクスチャの画像 (エンコードされたまま)。デコードはホストが行う。
+///
+/// ポインタは、本体のテクスチャなら `UgoePuppet` を破棄するまで、モジュールのテクスチャならそのモジュールを
+/// 外すか別の `UgoeModule` に差し替えるまで (`UgoePuppet` の破棄を含む) 有効。`UgoeModule` の破棄では無効にならない。
 ///
 /// # Safety
 ///
@@ -452,26 +474,34 @@ pub unsafe extern "C" fn ugoe_puppet_texture(
     guard(|| {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
-        let texture = p
-            .textures
-            .get(index as usize)
-            .ok_or_else(|| Error::out_of_range("texture", index as usize, p.textures.len()))?;
-        let value = match texture {
-            None => UgoeTexture {
-                format: UGOE_TEXTURE_NONE,
-                data: std::ptr::null(),
-                len: 0,
-            },
-            Some(t) => UgoeTexture {
-                format: match t.format {
-                    TextureFormat::Png => UGOE_TEXTURE_PNG,
-                    TextureFormat::Ktx2 => UGOE_TEXTURE_KTX2,
-                },
-                data: t.bytes.as_ptr(),
-                len: t.bytes.len(),
-            },
-        };
+        let (texture, _) = p
+            .texture_data(index as usize)
+            .ok_or_else(|| Error::out_of_range("texture", index as usize, p.texture_count()))?;
         // SAFETY: 呼び出し側の約束。
-        unsafe { write(out, "out", value) }
+        unsafe { write(out, "out", texture_value(texture)) }
+    })
+}
+
+/// `index` 番目のテクスチャの法線マップ (エンコードされたまま)。無ければ `format` が `UGOE_TEXTURE_NONE`
+/// (法線 `(0, 0, 1)` として扱う)。PNG は **アルファを掛けずに** デコードする
+/// (`docs/spec/rendering.md#ホストでのライティング`)。ポインタの寿命は `ugoe_puppet_texture` と同じ。
+///
+/// # Safety
+///
+/// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_puppet_normal_map(
+    puppet: *const UgoePuppet,
+    index: u32,
+    out: *mut UgoeTexture,
+) -> UgoeResult {
+    guard(|| {
+        // SAFETY: 呼び出し側の約束。
+        let p = unsafe { puppet_ref(puppet)? };
+        let (_, normal_map) = p
+            .texture_data(index as usize)
+            .ok_or_else(|| Error::out_of_range("texture", index as usize, p.texture_count()))?;
+        // SAFETY: 呼び出し側の約束。
+        unsafe { write(out, "out", texture_value(normal_map)) }
     })
 }
