@@ -5092,6 +5092,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "clap",
+ "getrandom 0.3.4",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -5101,6 +5102,7 @@ dependencies = [
  "ugoe-headless",
  "ugoe-model",
  "ugoe-psd",
+ "ureq",
 ]
 
 [[package]]

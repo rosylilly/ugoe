@@ -13,16 +13,16 @@ pub const MODERN_VERSION: &str = "2026-07-28";
 /// `initialize` の握手をする版。先頭が最新。
 pub const LEGACY_VERSIONS: &[&str] = &["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
-const META_PROTOCOL_VERSION: &str = "io.modelcontextprotocol/protocolVersion";
+pub(crate) const META_PROTOCOL_VERSION: &str = "io.modelcontextprotocol/protocolVersion";
 const META_CLIENT_CAPABILITIES: &str = "io.modelcontextprotocol/clientCapabilities";
 const META_SERVER_INFO: &str = "io.modelcontextprotocol/serverInfo";
 
 // JSON-RPC のエラーコード。
-const PARSE_ERROR: i64 = -32700;
-const INVALID_REQUEST: i64 = -32600;
-const METHOD_NOT_FOUND: i64 = -32601;
+pub(crate) const PARSE_ERROR: i64 = -32700;
+pub(crate) const INVALID_REQUEST: i64 = -32600;
+pub(crate) const METHOD_NOT_FOUND: i64 = -32601;
 const INVALID_PARAMS: i64 = -32602;
-const UNSUPPORTED_PROTOCOL_VERSION: i64 = -32022;
+pub(crate) const UNSUPPORTED_PROTOCOL_VERSION: i64 = -32022;
 
 /// サーバがエージェントに示す使い方。
 const INSTRUCTIONS: &str = "\
@@ -35,7 +35,7 @@ PSD からの自動リギング: import_psd → get_psd_layers (画像を見て�
 get_rig_guide (画像を見て値を選ぶ) → propose_rig → ユーザーの承認を得て apply_proposal。\
 分類と値はあなたが画像を見て決める (サーバは AI を呼ばない)。";
 
-/// サーバの状態。1 つのプロセス (stdio の接続) につき 1 つ。
+/// サーバの状態。1 つのプロセスにつき 1 つ (stdio の接続、または HTTP のすべての要求で共有する)。
 #[derive(Debug)]
 pub struct Server {
     tools: Tools,
@@ -144,11 +144,9 @@ impl Server {
     }
 
     fn discover(&self) -> Value {
-        let mut versions = vec![MODERN_VERSION];
-        versions.extend_from_slice(LEGACY_VERSIONS);
         json!({
             "resultType": "complete",
-            "supportedVersions": versions,
+            "supportedVersions": supported_versions(),
             "capabilities": capabilities(),
             "_meta": { META_SERVER_INFO: server_info() },
             "instructions": INSTRUCTIONS,
@@ -177,12 +175,10 @@ fn era(params: &Value) -> Result<Era, (i64, String, Option<Value>)> {
         return Ok(Era::Legacy);
     };
     if version.as_str() != Some(MODERN_VERSION) {
-        let mut supported = vec![MODERN_VERSION];
-        supported.extend_from_slice(LEGACY_VERSIONS);
         return Err((
             UNSUPPORTED_PROTOCOL_VERSION,
             "Unsupported protocol version".to_owned(),
-            Some(json!({ "supported": supported, "requested": version })),
+            Some(json!({ "supported": supported_versions(), "requested": version })),
         ));
     }
     if !meta.is_some_and(|m| m.contains_key(META_CLIENT_CAPABILITIES)) {
@@ -193,6 +189,13 @@ fn era(params: &Value) -> Result<Era, (i64, String, Option<Value>)> {
         ));
     }
     Ok(Era::Modern)
+}
+
+/// 応じられる版の一覧 (先頭が最新)。
+pub(crate) fn supported_versions() -> Vec<&'static str> {
+    let mut versions = vec![MODERN_VERSION];
+    versions.extend_from_slice(LEGACY_VERSIONS);
+    versions
 }
 
 fn capabilities() -> Value {
@@ -207,11 +210,11 @@ fn success(id: Value, result: Value) -> Value {
     json!({ "jsonrpc": "2.0", "id": id, "result": result })
 }
 
-fn error(id: Value, code: i64, message: &str) -> Value {
+pub(crate) fn error(id: Value, code: i64, message: &str) -> Value {
     error_with_data(id, code, message, None)
 }
 
-fn error_with_data(id: Value, code: i64, message: &str, data: Option<Value>) -> Value {
+pub(crate) fn error_with_data(id: Value, code: i64, message: &str, data: Option<Value>) -> Value {
     let mut err = Map::new();
     err.insert("code".to_owned(), json!(code));
     err.insert("message".to_owned(), json!(message));

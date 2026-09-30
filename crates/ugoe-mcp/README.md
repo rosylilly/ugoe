@@ -9,7 +9,8 @@ MCP (Model Context Protocol) サーバ。Claude Code などの外部のエージ
 
 ## 動かし方
 
-stdio のサーバ (1 行 1 メッセージの JSON-RPC 2.0)。MCP クライアントが子プロセスとして起動する。
+既定は stdio のサーバ (1 行 1 メッセージの JSON-RPC 2.0)。MCP クライアントが子プロセスとして起動する。
+`--http` を付けると HTTP (MCP の Streamable HTTP) で待ち受ける ([HTTP で動かす](#http-で動かす-chatgpt-など))。
 
 ```sh
 cargo build --release -p ugoe-mcp   # target/release/ugoe-mcp
@@ -21,8 +22,12 @@ cargo install --path crates/ugoe-mcp
 | --- | --- |
 | `--read-only` | 読むだけにする。`apply_proposal`・`undo`・`redo`・`save_project` を出さない (提案と描画はできる) |
 | `--backend <NAME>` | 描画に使う wgpu のバックエンド (`vulkan` `metal` `dx12` `gl`、カンマ区切り)。省略時は `WGPU_BACKEND`、それも無ければ wgpu の既定 |
+| `--http <ADDR>` | stdio の代わりに HTTP で待ち受ける。`127.0.0.1:8765` の形か、ポート番号だけ (`8765` はループバックの `127.0.0.1:8765`)。エンドポイントは `/mcp` |
+| `--token <TOKEN>` | HTTP の要求に求めるトークン (32 文字以上。16 進数で 128 ビット以上)。環境変数 `UGOE_MCP_TOKEN` でも渡せる (コマンド行は `ps` でほかの利用者から見えることがあるので、環境変数を勧める) |
+| `--generate-token` | トークンを OS の乱数で作り (256 ビット、16 進数で 64 文字)、標準エラーに書く |
+| `--allow-origin <ORIGIN>` | ループバックのほかに受け付ける `Origin` (`https://example.com` の形。繰り返せる) |
 
-ログは標準エラーに書く (標準出力は MCP のメッセージだけ)。
+ログは標準エラーに書く (stdio では標準出力は MCP のメッセージだけ)。
 
 ### Claude Code に登録する
 
@@ -88,6 +93,95 @@ claude mcp add ugoe-read -- ugoe-mcp --read-only --backend gl
 
 **確かめていないこと:** Claude Code・OpenCode から実際につなぐことは確かめていない (ユーザーの設定を変えない
 ため)。サーバの側は、stdio で JSON-RPC を流すテスト (`tests/stdio.rs`) で同じ流れを確かめている。
+
+### HTTP で動かす (ChatGPT など)
+
+ChatGPT のように、サーバを子プロセスとして起動せず HTTP でつなぐクライアントのために、MCP の Streamable HTTP で
+待ち受けられる。ツールと状態は stdio と同じ。
+
+```sh
+ugoe-mcp --http 8765                      # http://127.0.0.1:8765/mcp (ループバックだけ。トークンなし)
+ugoe-mcp --http 8765 --generate-token    # トークンを作って求める (標準エラーに書く)
+UGOE_MCP_TOKEN=$(openssl rand -hex 32) ugoe-mcp --http 8765   # 自分で作ったトークンを求める
+```
+
+起動すると標準エラーに `listening on http://127.0.0.1:8765/mcp (...)` と書く。サーバは Ctrl-C まで動き続け、
+開いたプロジェクトと提案はプロセスに 1 つだけ持つ (つないだすべてのクライアントで共有する。保存するまで
+ディスクに書かないのは stdio と同じ)。
+
+#### 守り
+
+HTTP で待ち受けると、同じ計算機のほかのプログラムやブラウザのページからも届く。ツールは利用者の権限で
+任意のパスのプロジェクトと PSD を読み、`save_project` は任意のパスに書くので、次のように守る。
+
+- **既定はループバックだけ。** `--http 8765` は `127.0.0.1` に束ねる。ループバック以外 (`0.0.0.0:8765` など) に
+  束ねるにはトークンが要り、無ければ起動しない。
+- **トークン。** `--token` (または `UGOE_MCP_TOKEN`)・`--generate-token` で、すべての要求にトークンを求める。
+  推測されないように 128 ビット以上 (16 進数で 32 文字以上) を求め、`--generate-token` は OS の乱数で 256 ビットを
+  作る。比較は定数時間で行う。`Authorization: Bearer <token>` のヘッダで渡すか、ヘッダを送れないクライアントの
+  ために URL のパス (`http://.../mcp/<token>`) に入れる。違えば `401`。
+  **URL に入れたトークンはログに残りやすい** (トンネルやプロキシのアクセスログ、クライアントの設定や履歴、画面の
+  共有)。ヘッダで渡せるクライアントではヘッダを使い、URL の形を使ったら、使い終えたときにトークンを変える。
+  `--generate-token` のトークンは標準エラーに書くので、標準エラーをログに残す環境では気を付ける。
+- **トンネルを通した公開の防止。** トークンが無いときは、`Host` がループバックの名前 (`localhost`・`127.0.0.1`・
+  `[::1]`) で、プロキシやトンネルの転送ヘッダ (`X-Forwarded-For`・`Forwarded`・`CF-Connecting-IP` など) が無い
+  要求だけを受け、ほかは `403`。ngrok や Cloudflare Tunnel などでループバックのポートを外に出しても、
+  トークンなしでは使えない (転送ヘッダを付けず `Host` を書き換えるトンネルは見分けられないので、
+  トンネルを使うときは必ずトークンを付ける)。
+- **DNS リバインディング対策。** `Origin` が付いた要求は、ループバックの `Origin` か `--allow-origin` で
+  許したものだけを受け、ほかは `403` (MCP の仕様の求め)。ブラウザで開いた悪意のあるページからは届かない。
+- **上限。** 本文は 32 MiB まで (超えたら `413`)、要求の行とヘッダは合わせて 64 KiB・100 個まで (`431`)、
+  1 つの要求を読み終えるまで 60 秒まで (keep-alive で次の要求を待つ時間を含む。少しずつ送り続ける相手も切る。
+  `408`)、同時の接続は 32 まで (`503`)。超えたら答えて接続を閉じる。
+- TLS は扱わない (外に出すときは HTTPS を終端するトンネルを使う)。
+
+#### ChatGPT から使う
+
+ChatGPT の開発者モード (設定の「Security and login」→「Developer mode」。使えるプランは
+[OpenAI の文書](https://developers.openai.com/api/docs/guides/developer-mode) を見る) で、リモートの MCP サーバとして
+登録する。ChatGPT は OpenAI のサーバからつなぐので、手元のループバックのサーバには直接届かない。どちらかの
+方法で届くようにする。認証は「No Authentication」を選ぶ (ChatGPT のコネクタは OAuth か認証なしだけで、
+Bearer のヘッダを付けられない)。
+
+1. **Secure MCP Tunnel (勧める)。** OpenAI の [`tunnel-client`](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels)
+   を手元で動かし、外向きの接続だけで ChatGPT とサーバをつなぐ (公開の URL を作らない)。`tunnel-client` は
+   サーバを子プロセスとして stdio で起動できるので、この場合 `--http` は要らない (`tunnel_id` と API キーは
+   OpenAI の Platform の設定で作る)。
+
+   ```sh
+   tunnel-client init --sample sample_mcp_stdio_local --profile ugoe \
+     --tunnel-id <tunnel_id> --mcp-command "ugoe-mcp --read-only"
+   tunnel-client doctor --profile ugoe --explain
+   tunnel-client run --profile ugoe
+   ```
+
+   HTTP のサーバにつなぐなら、`ugoe-mcp --http 8765 --read-only` を動かし、`--mcp-command` の代わりに
+   `--mcp-server-url http://127.0.0.1:8765/mcp` を渡す (対応する `--sample` の名前は OpenAI の文書で確かめる)。
+   `tunnel-client` が転送ヘッダを付けるなどで `403` になるときは、トークンを付けてパスの形の URL
+   (`http://127.0.0.1:8765/mcp/<token>`) を渡す。ChatGPT のプラグインの画面で開発者モードのアプリを作り、
+   接続に「Tunnel」を選ぶ。
+2. **公開のトンネル (ngrok・Cloudflare Tunnel など)。** 公開の HTTPS の URL を作るので、**必ずトークンを付ける**。
+   ChatGPT はヘッダを送れないので、URL のパスにトークンを入れる。
+
+   ```sh
+   ugoe-mcp --http 8765 --read-only --generate-token   # 標準エラーの token をひかえる
+   ngrok http 8765          # https://<name>.ngrok.app を得る
+   ```
+
+   ChatGPT には `https://<name>.ngrok.app/mcp/<token>` を登録する。URL を知っている人は誰でもツールを呼べるので、
+   URL をほかの人に見せない (トンネルの事業者のログ・ChatGPT の設定・ブラウザの履歴に残りうる)。使い終えたら
+   トンネルを止め、トークンを変える (`--generate-token` なら起動し直すたびに変わる)。
+
+- ChatGPT がブラウザのように `Origin` を付けて `403` になるときは、`--allow-origin https://chatgpt.com` を足す。
+- ChatGPT は `readOnlyHint` の無いツール (`apply_proposal`・`undo`・`redo`・`save_project`) を書き込みとして扱い、
+  呼ぶ前に確認を求める (ADR 0006 の承認にあたる)。外に出すときは `--read-only` で始め、提案 (`propose_edit`) と
+  描画 (`render_png`) だけを使わせ、適用は手元の Claude Code やエディタで行うことを勧める。
+- パスはサーバの作業ディレクトリから解決する。ChatGPT には手元のパス (例: `~/art/character.ugoeproj` の絶対パス)
+  を伝える。
+
+**確かめていないこと:** 実際の ChatGPT (開発者モード・Secure MCP Tunnel・ngrok) からつなぐことは確かめていない。
+サーバの側は、HTTP で握手・ツールの一覧・ツールの呼び出し (提案・適用・保存) を流すテスト (`tests/http.rs`) で
+確かめている。
 
 ### 簡単な編集の例 (パラメータの作成とキーの追加)
 
@@ -221,13 +315,25 @@ Claude Code に次のように頼む:
 - 版: `initialize` の握手をする版 (`2025-11-25`・`2025-06-18`・`2025-03-26`・`2024-11-05`) と、要求ごとに
   `_meta` で版を示す版 (`2026-07-28`、`server/discover`) の両方に応じる。
 - メソッド: `initialize`・`server/discover`・`ping`・`tools/list`・`tools/call`。通知は受け取って無視する。
+- HTTP (`src/http.rs`): [Streamable HTTP](https://modelcontextprotocol.io/specification/draft/basic/transports/streamable-http)
+  のエンドポイント 1 つ (`/mcp`) で、要求を 1 つずつ POST で受け、応答は JSON 1 つ (`application/json`) で返す。
+  ツールは途中の通知を送らないので SSE は使わない。通知には `202`、GET と DELETE には `405` を返し、
+  セッション (`Mcp-Session-Id`) は発行しない (状態はプロセスに 1 つ)。要求ごとに版を示す版では
+  `MCP-Protocol-Version`・`Mcp-Method`・`Mcp-Name` (`=?base64?...?=` の形も解く) のヘッダが本文と一致しなければ
+  `400` と `HeaderMismatch` (-32020)、知らないメソッドは `404`。握手をする版では `MCP-Protocol-Version` が無ければ
+  2025-03-26 とみなし、応じられない版なら `400`。
 - 依存: 既存の Rust の MCP SDK は非同期ランタイム (tokio) などを連れてくるが、stdio で要求に順に答えるだけなら
   JSON-RPC の処理は数百行で書けるので、`serde_json` だけで書いた。画像の base64 はワークスペースの `base64` を使う。
+  HTTP も、要求に 1 つずつ JSON で答えるだけなので、HTTP のサーバのクレートを入れず std の `TcpListener` の上に
+  書いた (接続ごとのスレッド、keep-alive、`Content-Length` と `chunked` の本文、`Expect: 100-continue`)。
+  トークンの乱数は `getrandom` (OS の乱数。MIT/Apache-2.0、ワークスペースではすでに推移的に入っている)。
+  ツールの処理は `Mutex` で 1 つずつ行う (描画の GPU を同時に使わない)。
 
 ## テスト
 
 ```sh
 cargo test -p ugoe-mcp   # サーバを stdio で起動して、握手・ツールの一覧・提案と適用・Undo・保存、PSD からの自動リギングを確かめる
+                         # tests/http.rs は --http で起動して、HTTP での握手・ツールの呼び出しと、トークン・Origin・Host の守りを確かめる
 ```
 
 ```sh
@@ -242,3 +348,4 @@ GPU を使わないテストでは、GPU に触る前に引数の誤り (未知�
 
 - T0508 (`docs/tasks/T0508-mcp-server.md`)
 - T0513 (`docs/tasks/T0513-mcp-agent-auto-rig.md`): 自動リギングの判断をエージェントに任せるツール
+- T0514 (`docs/tasks/T0514-mcp-http-transport.md`): HTTP のトランスポート

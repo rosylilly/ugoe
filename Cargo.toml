@@ -38,6 +38,7 @@ clap = { version = "4", features = ["derive"] }
 console_error_panic_hook = "0.1"
 dbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }
 encoding_rs = "0.8"
+getrandom = "0.3"
 glam = { version = "0.33", features = ["serde", "bytemuck"] }
 insta = { version = "1", features = ["json"] }
 keyring-core = "1"
