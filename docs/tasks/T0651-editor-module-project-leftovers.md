@@ -1,11 +1,11 @@
 ---
 id: T0651
 title: エディタ: モジュールのプロジェクトの残り (無効にしていない欄・見た目を保つ移動・本体の自動の読み直し)
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-editor-core, apps/editor, docs]
 depends_on: [T0650]
-assignee:
+assignee: claude-worker-T0651
 ---
 
 # T0651: エディタ: モジュールのプロジェクトの残り

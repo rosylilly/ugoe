@@ -1,11 +1,11 @@
 ---
 id: T0125
 title: wasm: 読み込みのほかの警告 (物理を外した・テクスチャを代用した) も構造化されたデータで返す
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-wasm, apps/viewer, apps/editor, docs]
 depends_on: [T0124]
-assignee:
+assignee: claude-worker-T0125
 ---
 
 # T0125: wasm: 読み込みのほかの警告も構造化されたデータで返す
