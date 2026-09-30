@@ -29,7 +29,7 @@
 | [Hit areas](../../spec/model.md#hit-areas) | [model.md#トップレベル](model.md#トップレベル) | |
 | [Pose](../../spec/model.md#pose) | [model.md#ポーズ](model.md#ポーズ) | |
 | [Effects](../../spec/model.md#effects) | [model.md#エフェクト設定](model.md#エフェクト設定)、[motion.md#既定値](motion.md#既定値) | 挙動は T0117 (`spec/motion.md`) |
-| [Avatar profile](../../spec/model.md#avatar-profile) | [model.md#アバタープロファイル](model.md#アバタープロファイル)、[avatar-profile.md#メタデータ](avatar-profile.md#メタデータ)、[avatar-profile.md#アプリ向けの情報](avatar-profile.md#アプリ向けの情報) | データだけ。準拠レベル・トラッキングの式・アプリの規則は T0118 (`spec/avatar-profile.md`) |
+| [Avatar profile](../../spec/model.md#avatar-profile) | [model.md#アバタープロファイル](model.md#アバタープロファイル)、[avatar-profile.md#メタデータ](avatar-profile.md#メタデータ)、[avatar-profile.md#アプリ向けの情報](avatar-profile.md#アプリ向けの情報) | データだけ。意味・準拠レベル・トラッキングの式・アプリの規則は [spec/avatar-profile.md](#アバタープロファイル-specavatar-profilemd) |
 | [Slots](../../spec/model.md#slots) | [model.md#スロット](model.md#スロット)、[modules.md#スロット](modules.md#スロット) | |
 | [Authoring data](../../spec/model.md#authoring-data) | [model.md#キーフォーム推定のデータ](model.md#キーフォーム推定のデータ) | 推定のアルゴリズム ([keyform-inference.md](keyform-inference.md)) は公開仕様に含めない (ツールの内部) |
 | [Physics settings](../../spec/model.md#physics-settings) | [physics.md](physics.md) の各節 | データだけ。振り子の式は T0117 (`spec/physics.md`) |
@@ -61,6 +61,23 @@
 | [Re-saving](../../spec/bundle.md#re-saving) | [file-formats.md#再保存](file-formats.md#再保存) | |
 | [Standalone JSON files](../../spec/bundle.md#standalone-json-files) | [file-formats.md#api-ugoe-format](file-formats.md#api-ugoe-format) | |
 
+## アバタープロファイル (`spec/avatar-profile.md`)
+
+| `spec/avatar-profile.md` | `docs/spec/` | 備考 |
+| --- | --- | --- |
+| [Overview](../../spec/avatar-profile.md#overview) | [avatar-profile.md](avatar-profile.md) の冒頭 | アバター・準拠するモデル・アプリ・検証ツールの用語は英語版だけ |
+| [Orientation and sides](../../spec/avatar-profile.md#orientation-and-sides) | [avatar-profile.md#向きと左右の約束](avatar-profile.md#向きと左右の約束)、[model.md#標準パラメータ](model.md#標準パラメータ) | |
+| [Standard parameters](../../spec/avatar-profile.md#standard-parameters)・[Extended parameters](../../spec/avatar-profile.md#extended-parameters)・[Vowel parameters](../../spec/avatar-profile.md#vowel-parameters) | [avatar-profile.md#拡張パラメータ-レベル-3](avatar-profile.md#拡張パラメータ-レベル-3)、[model.md#標準パラメータ](model.md#標準パラメータ) | 値域は `ugoe_model::standard`。標準パラメータの意味の表は英語版だけ |
+| [Conformance levels](../../spec/avatar-profile.md#conformance-levels) | [avatar-profile.md#準拠レベル](avatar-profile.md#準拠レベル) | 必要なパラメータは `ugoe_model::avatar::LEVEL_1_PARAMETERS` などと同じ |
+| [Conformance checks](../../spec/avatar-profile.md#conformance-checks) | [avatar-profile.md#準拠の検査](avatar-profile.md#準拠の検査) | 項目と重さは `ugoe_model::avatar::check` と同じ |
+| [Tracking input](../../spec/avatar-profile.md#tracking-input)・[Standard mapping](../../spec/avatar-profile.md#standard-mapping) | [avatar-profile.md#頭の向き](avatar-profile.md#頭の向き)、[avatar-profile.md#arkit-のブレンドシェイプ](avatar-profile.md#arkit-のブレンドシェイプ) | 式は `ugoe_motion::tracking` と同じ。`MouthX`・`JawX` の符号は両方で未決 |
+| [Overrides](../../spec/avatar-profile.md#overrides)・[Computing the parameter values](../../spec/avatar-profile.md#computing-the-parameter-values) | [avatar-profile.md#トラッキングの対応の上書き](avatar-profile.md#トラッキングの対応の上書き) | |
+| [Audio](../../spec/avatar-profile.md#audio) | [avatar-profile.md#音声-リップシンク](avatar-profile.md#音声-リップシンク) | |
+| [Gaze](../../spec/avatar-profile.md#gaze)・[Hit areas](../../spec/avatar-profile.md#hit-areas)・[Slots](../../spec/avatar-profile.md#slots) | [avatar-profile.md#アプリ向けの情報](avatar-profile.md#アプリ向けの情報) | |
+| [Metadata and license terms](../../spec/avatar-profile.md#metadata-and-license-terms) | [avatar-profile.md#メタデータ](avatar-profile.md#メタデータ) | |
+| [Rules for applications](../../spec/avatar-profile.md#rules-for-applications) | [avatar-profile.md#アプリの規則](avatar-profile.md#アプリの規則)、[avatar-profile.md#実装の範囲](avatar-profile.md#実装の範囲) | MediaPipe の観察は英語版では参考 (informative) |
+| [Versions](../../spec/avatar-profile.md#versions) | [avatar-profile.md#バージョン](avatar-profile.md#バージョン) | |
+
 ## まだ公開仕様にない文書
 
 | `docs/spec/` | 公開仕様 | タスク |
@@ -69,5 +86,4 @@
 | [rendering.md](rendering.md) | `spec/rendering.md` | T0117 |
 | [physics.md](physics.md) | `spec/physics.md` | T0117 |
 | [motion.md](motion.md) | `spec/motion.md` | T0117 |
-| [avatar-profile.md](avatar-profile.md) | `spec/avatar-profile.md` | T0118 |
 | [keyform-inference.md](keyform-inference.md) | 含めない (ツールの内部。結果のデータは `spec/model.md` の Authoring data) | — |

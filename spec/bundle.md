@@ -232,7 +232,7 @@ Three independent version numbers apply ([README.md](README.md#versions)):
 | --- | --- | --- |
 | Container version | Header `version` | The byte layout of the container (header, chunk table, alignment, flags). This draft defines 0. A reader MUST reject a container version it does not support. |
 | Schema version | `schema_version` of a model or module | The data schema of [model.md](model.md). This draft defines 0. A reader MUST reject a schema version greater than it supports. A reader that supports an older schema version MAY read files of that version by converting them. |
-| Profile version | `profile_version` of an avatar profile | The avatar profile rules. A newer profile version is not an error (planned Avatar profile document). |
+| Profile version | `profile_version` of an avatar profile | The avatar profile rules. A newer profile version is not an error ([avatar-profile.md](avatar-profile.md#versions)). |
 
 - Before version 1.0 of this specification, `schema_version` remains 0 and compatibility is not
   guaranteed between drafts.

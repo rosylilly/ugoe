@@ -30,7 +30,7 @@ reference implementation to understand it.
 | Rendering | Blending, masks, culling, lighting with normal maps. | Planned |
 | Physics | Pendulum physics, dynamic physics outputs, colliders. | Planned |
 | Motion | Motions, expressions, eye blink, breathing, lip sync, pose, the order of operations within a frame. | Planned |
-| Avatar profile | Standard parameters and their meanings, tracking mappings, conformance levels, license metadata. | Planned |
+| [avatar-profile.md](avatar-profile.md) | The avatar profile: standard and extended parameters and their meanings, conformance levels, the face tracking mapping (ARKit blend shapes) and its overrides, gaze, hit areas, license metadata, and the rules for applications that drive avatars. | Draft |
 | JSON Schema and examples | Machine-readable schemas and conformance examples. | Planned |
 
 Where this draft needs behavior that belongs to a planned document (for example, how a warp

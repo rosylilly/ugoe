@@ -239,7 +239,7 @@ A parameter is a named scalar input.
 Some parameter IDs have a fixed meaning so that motions, physics presets, tracking and dress-up
 modules work across models. A model is not required to define any of them, but a parameter with one
 of these IDs SHOULD have the range and default below. The meaning of each ID, and which of them an
-avatar must define, is specified by the planned Avatar profile document.
+avatar must define, is specified by [avatar-profile.md](avatar-profile.md#parameters).
 
 Conventions: left and right (`L` / `R`) are the character's own left and right. `AngleX` is positive
 when the character turns to its own left (the right of the screen), `AngleY` is positive when it
@@ -689,7 +689,7 @@ planned Motion document.
 The avatar profile (`Model.avatar`) tells applications how to drive the model as an avatar: which
 conformance level it claims, its license metadata, and adjustments to the standard tracking
 mapping. This section defines the data. The meaning of the conformance levels, the tracking
-mappings and the rules for applications are specified by the planned Avatar profile document.
+mappings and the rules for applications are specified by [avatar-profile.md](avatar-profile.md).
 
 Readers that do not use avatar profiles MAY ignore the `avatar` field entirely (feature
 `avatar.profile`, [bundle.md](bundle.md#baseline-features)). Accordingly, the
@@ -1218,7 +1218,7 @@ from a file written for a later version of the format.
 A reader MUST reject a model that breaks any rule in this section, because the evaluation of such a
 model is undefined (for example, an index out of range). Readers SHOULD report all violations, not
 only the first. Unknown values are never violations. The avatar profile is not checked here; its
-conformance rules are defined by the planned Avatar profile document.
+conformance rules are defined by [avatar-profile.md](avatar-profile.md#conformance-checks).
 
 ### Model validation
 
