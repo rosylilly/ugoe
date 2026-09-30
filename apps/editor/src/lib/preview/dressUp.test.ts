@@ -1,7 +1,14 @@
 // プレビューの着せ替え (T0649): 説明の文言・スロットの一覧と、DressUp の付け外し (WebPuppet と IPC は偽物)。
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WebPuppet } from "../viewport/wasm";
-import { describeProblem, fileStem, isModuleFile, sameNames, slotRows } from "./dressUp";
+import {
+  describeProblem,
+  fileStem,
+  isModuleFile,
+  parseModules,
+  sameNames,
+  slotRows,
+} from "./dressUp";
 import { DressUp } from "./dressUp.svelte";
 
 const saved: unknown[] = [];
@@ -180,6 +187,36 @@ describe("dressUp helpers", () => {
     ]);
     expect(sameNames(["a", "b"], ["b", "a"])).toBe(true);
     expect(sameNames(["a"], ["a", "b"])).toBe(false);
+  });
+
+  it("reads modules_json and words the module warnings like the load warnings (T0652)", () => {
+    const ktx = "texture 0 is KTX2, which is not supported yet; using a white placeholder";
+    const json = JSON.stringify([
+      {
+        name: "Hat",
+        slot: "Headwear",
+        requires: {},
+        attached: true,
+        textures: 2,
+        warnings: [ktx, "an old warning without details"],
+        warning_details: [{ code: "texture_ktx2", warning: ktx, texture: 0 }],
+      },
+      { name: "Cape", slot: "Back", requires: {}, attached: false, textures: 1, warnings: [] },
+    ]);
+    expect(parseModules(json)).toEqual([
+      {
+        name: "Hat",
+        slot: "Headwear",
+        requires: {},
+        attached: true,
+        textures: 2,
+        warnings: [
+          "Texture 0 is a KTX2 image, which the preview can't show yet, so it is drawn white.",
+          "an old warning without details",
+        ],
+      },
+      { name: "Cape", slot: "Back", requires: {}, attached: false, textures: 1, warnings: [] },
+    ]);
   });
 });
 

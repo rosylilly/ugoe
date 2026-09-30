@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeLoadWarnings, parseLoadWarnings } from "./loadWarnings";
+import { describeLoadWarnings, describeModuleWarnings, parseLoadWarnings } from "./loadWarnings";
 
 const json = JSON.stringify([
   { code: "normal_map_ktx2", warning: "n", texture: 0 },
@@ -42,5 +42,20 @@ describe("describeLoadWarnings", () => {
   it("drops the removed physics when the document's physics was passed again", () => {
     const list = parseLoadWarnings(json).filter((w) => w.code === "physics_removed");
     expect(describeLoadWarnings(list, true)).toEqual([]);
+  });
+});
+
+describe("describeModuleWarnings", () => {
+  it("words a module's warnings from warning_details and keeps the rest as they are", () => {
+    const details = [
+      { code: "normal_map_ktx2", warning: "n", texture: 1 },
+      { code: "texture_missing", warning: "m", texture: 0 },
+    ];
+    expect(describeModuleWarnings(["m", "other", "n"], details)).toEqual([
+      "Texture 0 has no image, so it is drawn white.",
+      "other",
+      "The normal map of texture 1 is a KTX2 image, which the preview can't use yet, so it is lit without it.",
+    ]);
+    expect(describeModuleWarnings(["m"], undefined)).toEqual(["m"]);
   });
 });

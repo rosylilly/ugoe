@@ -429,6 +429,8 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
   `texture_missing`・`normal_map_ktx2`) と、前の物理を外した (`physics_removed`)。外したモジュール (`module_detached`) は
   [着せ替え](#プレビューの着せ替え) の知らせに出すので除き、`physics_removed` もドキュメントの物理を渡し直せたときは除きます
   (編集のたびの読み直しで、外れたのは古い設定のため)。知らない `code` は wasm の文をそのまま出します。
+  着せ替えの一覧のモジュールの警告 (テクスチャの代用) も、`modules_json()` の `warning_details` から同じ言い回しで作ります
+  (T0652。`dressUp.ts` の `parseModules`。構造の無い文はそのまま)。
   プレビューの外 (編集の画面) では、今までどおり文の警告をコンソールに出すだけです。
 - **値を別に持つ:** プレビューのスライダーの値 (`PreviewMode.values`) は、編集用の値
   (`ViewportController.parameterValues`) と別です。入るときに編集用の値を写して始め、毎フレーム `update` の後の値

@@ -2,6 +2,7 @@
 // 付け外しの失敗は ugoe-wasm の DressUpError (`code` と補足の値。crates/ugoe-wasm/README.md#着せ替え-t0123)。
 import type { FileFilter } from "../filePaths";
 import type { Slot } from "../ipc";
+import { describeModuleWarnings } from "./loadWarnings";
 
 export const MODULE_FILTER: FileFilter = {
   name: "ugoe module (.ugoemod)",
@@ -31,11 +32,17 @@ export interface LoadedModuleInfo {
   requires: { avatar_level?: number | null; slots?: string[]; parameters?: string[] };
   attached: boolean;
   textures: number;
+  /** 読み込みの警告 (`warning_details` から作った英語の知らせ。構造の無いものは wasm の文)。 */
   warnings: string[];
 }
 
+/** `modules_json()` を読む。警告は `warning_details` から知らせにする (`loadWarnings.ts` と同じ言い回し)。 */
 export function parseModules(json: string): LoadedModuleInfo[] {
-  return JSON.parse(json) as LoadedModuleInfo[];
+  const list = JSON.parse(json) as (LoadedModuleInfo & { warning_details?: unknown })[];
+  return list.map(({ warning_details, ...m }) => ({
+    ...m,
+    warnings: describeModuleWarnings(m.warnings ?? [], warning_details),
+  }));
 }
 
 /**
