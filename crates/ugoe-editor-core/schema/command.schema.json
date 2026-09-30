@@ -2423,6 +2423,63 @@
         "op",
         "effects"
       ]
+    },
+    {
+      "description": "スロット (`Model::slots`) を末尾に足す。ID は `[A-Za-z0-9_]+` で、ほかのスロットと重ならないこと。\n描画順の範囲はほかのスロットの範囲と重ならないこと (端が接するのはよい)。参照先 (取り付け先・\n置き換えるパーツ・パラメータ・マスク・ポーズの要素) と範囲の値は、適用後の検証 (`validate`) が調べる。\n公開する衝突体 (`colliders`) は物理の設定にあること。",
+      "type": "object",
+      "properties": {
+        "op": {
+          "type": "string",
+          "const": "add_slot"
+        },
+        "slot": {
+          "$ref": "#/$defs/Slot"
+        }
+      },
+      "required": [
+        "op",
+        "slot"
+      ]
+    },
+    {
+      "description": "スロット `id` を `slot` で丸ごと置き換える (規則は `AddSlot` と同じ)。`slot.id` が `id` と違えば\n名前を変え、アバタープロファイルの `slots` の参照も付け替える。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_slot"
+        },
+        "slot": {
+          "$ref": "#/$defs/Slot"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "slot"
+      ]
+    },
+    {
+      "description": "スロットを消す。アバタープロファイルの `slots` からも外す。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "remove_slot"
+        }
+      },
+      "required": [
+        "op",
+        "id"
+      ]
     }
   ],
   "$defs": {
@@ -3151,6 +3208,24 @@
       },
       "required": [
         "pivot"
+      ]
+    },
+    "DrawOrderRange": {
+      "description": "描画順の範囲 `[min, max]` (`min <= max`)。",
+      "type": "object",
+      "properties": {
+        "max": {
+          "type": "number",
+          "format": "float"
+        },
+        "min": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "min",
+        "max"
       ]
     },
     "Effects": {
@@ -4924,6 +4999,77 @@
             "type"
           ]
         }
+      ]
+    },
+    "Slot": {
+      "description": "着せ替えのスロット: モジュールの取り付け位置 (`docs/spec/modules.md#スロット`)。",
+      "type": "object",
+      "properties": {
+        "anchor": {
+          "description": "取り付け先のデフォーマ。`None` ならキャンバス。\nモジュールの最上位の要素の座標は、このデフォーマの局所座標系で表す。",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "colliders": {
+          "description": "このスロットのモジュールの物理のリグが衝突してよい本体の衝突体 (`PhysicsCollider::id`)。",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "draw_order": {
+          "description": "このスロットに入るメッシュの描画順の範囲。モジュールの描画順 (0〜1000) をこの範囲に写す。",
+          "$ref": "#/$defs/DrawOrderRange"
+        },
+        "id": {
+          "description": "スロットの名前 (例: `Hair`)。モジュールはこの名前だけで取り付け先を指定する。",
+          "type": "string"
+        },
+        "mask_sources": {
+          "description": "このスロットのモジュールがマスクとして参照してよい本体のメッシュ。",
+          "type": "array",
+          "items": {
+            "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+            "type": "string"
+          }
+        },
+        "parameters": {
+          "description": "このスロットのモジュールが使ってよい本体のパラメータ。標準パラメータは常に使える。",
+          "type": "array",
+          "items": {
+            "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+            "type": "string"
+          }
+        },
+        "part": {
+          "description": "モジュールの最上位のパーツの親にする本体のパーツ。`None` ならモジュールの最上位のパーツは最上位のまま。\n親のパーツの不透明度 (ポーズやモーションで隠したときなど) にモジュールが追従する。",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pose_parts": {
+          "description": "このスロットのモジュールがパーツを追従 (`PoseEntry::links`) させてよい、本体のポーズの要素のパーツ。",
+          "type": "array",
+          "items": {
+            "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+            "type": "string"
+          }
+        },
+        "replaces": {
+          "description": "モジュールを取り付けたときに非表示にする本体のパーツ。",
+          "type": "array",
+          "items": {
+            "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "draw_order"
       ]
     },
     "TrackingOverride": {

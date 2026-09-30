@@ -29,6 +29,7 @@ pub mod physics_edit;
 pub mod physics_template;
 pub mod project;
 pub mod proposal;
+pub mod slot_edit;
 pub mod space;
 pub mod texture;
 
@@ -91,5 +92,7 @@ mod physics_template_tests;
 mod project_tests;
 #[cfg(test)]
 mod proposal_tests;
+#[cfg(test)]
+mod slot_tests;
 #[cfg(test)]
 mod tests;

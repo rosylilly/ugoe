@@ -13,6 +13,7 @@ use ugoe_core::Vec2;
 use ugoe_model::avatar::{AvatarHitArea, HIT_AREA_HEAD, LookAt, TrackingOverride, TrackingSource};
 use ugoe_model::deformer::DeformerKind;
 use ugoe_model::expression::{Expression, ExpressionOp, ExpressionParameter};
+use ugoe_model::module::DrawOrderRange;
 use ugoe_model::motion::{Curve, CurveTarget, Motion, MotionEvent, Point, Segment};
 use ugoe_model::physics::{PhysicsBlend, PhysicsSettings};
 use ugoe_model::{
@@ -132,6 +133,7 @@ pub fn typescript_samples(types_module: &str) -> Result<String, serde_json::Erro
         fixtures::blend_shapes(),
         fixtures::smooth_arc(),
         fixtures::avatar_profile(),
+        fixtures::dress_up_base(),
     ];
     let mut out = GENERATED_HEADER.to_owned();
     out.push_str(&format!(
@@ -486,6 +488,7 @@ fn sample_commands() -> Vec<Command> {
     .chain(draw_clone_samples())
     .chain(avatar_samples())
     .chain(lighting_samples())
+    .chain(slot_samples())
     .collect()
 }
 
@@ -791,6 +794,26 @@ pub(crate) fn lighting_samples() -> Vec<Command> {
         Command::SetEffects {
             effects: ugoe_model::effects::Effects::standard(),
         },
+    ]
+}
+
+/// スロットのコマンドの見本 (`docs/editor.md#スロットの編集`)。`dress_up_base` のフィクスチャを対象にする。
+pub(crate) fn slot_samples() -> Vec<Command> {
+    let mut slots = fixtures::dress_up_base().slots;
+    let outfit = slots.pop().expect("dress_up_base has the Outfit slot");
+    let mut hair = slots.pop().expect("dress_up_base has the Hair slot");
+    hair.id = "Accessory".into();
+    hair.draw_order = DrawOrderRange {
+        min: 700.0,
+        max: 750.0,
+    };
+    vec![
+        Command::AddSlot { slot: hair },
+        Command::SetSlot {
+            id: "Outfit".into(),
+            slot: outfit,
+        },
+        Command::RemoveSlot { id: "Hair".into() },
     ]
 }
 

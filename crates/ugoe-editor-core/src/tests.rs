@@ -1431,10 +1431,13 @@ fn op_name(command: &Command) -> &'static str {
         Command::SetNormalMap { .. } => "set_normal_map",
         Command::SetLighting { .. } => "set_lighting",
         Command::SetEffects { .. } => "set_effects",
+        Command::AddSlot { .. } => "add_slot",
+        Command::SetSlot { .. } => "set_slot",
+        Command::RemoveSlot { .. } => "remove_slot",
     }
 }
 
-const OP_COUNT: usize = 96;
+const OP_COUNT: usize = 99;
 
 fn json_samples() -> Vec<Command> {
     let quad = fixtures::single_quad();
@@ -1686,6 +1689,7 @@ fn json_samples() -> Vec<Command> {
     .chain(crate::codegen::draw_clone_samples())
     .chain(crate::codegen::avatar_samples())
     .chain(crate::codegen::lighting_samples())
+    .chain(crate::codegen::slot_samples())
     .collect()
 }
 

@@ -19,7 +19,9 @@ use crate::inference::{MirrorReport, RederiveWarning};
 use crate::motion_edit::{self, Animations};
 use crate::texture::{Textures, is_valid_texture_name, png_size};
 use crate::{Command, automesh, avatar, inference, keyform};
-use crate::{deformer_edit, depth, draw_clone, mesh_edit, physics_edit, physics_template};
+use crate::{
+    deformer_edit, depth, draw_clone, mesh_edit, physics_edit, physics_template, slot_edit,
+};
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum EditError {
@@ -155,6 +157,10 @@ pub enum EditError {
     /// 法線マップの指定が不正 (`Command::SetNormalMap`)。
     #[error("texture `{texture}`: invalid normal map: {reason}")]
     InvalidNormalMap { texture: String, reason: String },
+    /// スロットの指定が不正 (ID の形式・ほかのスロットとの描画順の範囲の重なり。
+    /// `docs/editor.md#スロットの編集`)。
+    #[error("slot `{id}`: {reason}")]
+    InvalidSlot { id: String, reason: String },
 }
 
 /// [`Document::apply_with_report`] の結果: コマンドは適用したが、利用者に知らせたいこと。
@@ -359,6 +365,11 @@ impl Document {
         let mut warnings = inference::rederive(&mut next.model, &touched)?;
         inference::check_reparented_pairs(&self.current.model, &next.model, &mut warnings);
         physics_edit::forget_removed(&self.current.model, &next.model, &mut next.physics);
+        slot_edit::forget_removed_colliders(
+            self.current.physics.as_ref(),
+            next.physics.as_ref(),
+            &mut next.model,
+        );
         let before = validate(&self.current.model);
         let mut introduced: Vec<_> = validate(&next.model)
             .into_iter()
@@ -409,7 +420,7 @@ impl Document {
     }
 }
 
-/// 状態の中の要素の ID (パラメータ・グループ・パーツ・デフォーマ・メッシュ・グルー・テクスチャ・当たり判定・
+/// 状態の中の要素の ID (パラメータ・グループ・パーツ・デフォーマ・メッシュ・グルー・テクスチャ・当たり判定・スロット・
 /// 物理のリグと衝突体・モーションと表情の名前)。
 fn element_ids(snapshot: &Snapshot) -> BTreeSet<String> {
     let m = &snapshot.model;
@@ -422,6 +433,7 @@ fn element_ids(snapshot: &Snapshot) -> BTreeSet<String> {
     ids.extend(m.glues.iter().map(|g| g.id.clone()));
     ids.extend(m.textures.iter().map(|t| t.name.clone()));
     ids.extend(m.hit_areas.iter().map(|h| h.id.clone()));
+    ids.extend(m.slots.iter().map(|s| s.id.to_string()));
     if let Some(physics) = &snapshot.physics {
         ids.extend(physics.rigs.iter().map(|r| r.id.clone()));
         ids.extend(physics.colliders.iter().map(|c| c.id.clone()));
@@ -978,6 +990,9 @@ fn apply_to(
         } => set_normal_map(model, textures, &texture, normal_map, png)?,
         Command::SetLighting { enabled } => model.lighting = enabled,
         Command::SetEffects { effects } => model.effects = effects,
+        Command::AddSlot { slot } => slot_edit::add(model, physics.as_ref(), slot)?,
+        Command::SetSlot { id, slot } => slot_edit::set(model, physics.as_ref(), &id, slot)?,
+        Command::RemoveSlot { id } => slot_edit::remove(model, &id)?,
     }
     Ok(())
 }
@@ -1121,6 +1136,9 @@ fn remove_parameter(model: &mut Model, id: &ParamId) -> Result<(), EditError> {
     effects.eye_blink.parameters.retain(|p| p != id);
     effects.breath.parameters.retain(|b| &b.parameter != id);
     effects.lip_sync.parameters.retain(|p| p != id);
+    for slot in &mut model.slots {
+        slot.parameters.retain(|p| p != id);
+    }
     Ok(())
 }
 
@@ -1153,9 +1171,14 @@ fn remove_part(model: &mut Model, id: &PartId) -> Result<(), EditError> {
                 .filter(|m| &m.part == id)
                 .map(|m| format!("mesh `{}`", m.id)),
         )
+        .chain(slot_edit::parented_to(model, id))
         .collect();
     ensure_no_children("part", id, children)?;
     model.parts.remove(index);
+    for slot in &mut model.slots {
+        slot.replaces.retain(|p| p != id);
+        slot.pose_parts.retain(|p| p != id);
+    }
 
     for group in &mut model.pose.groups {
         group.entries.retain(|e| &e.part != id);
@@ -1189,6 +1212,7 @@ fn remove_deformer(model: &mut Model, id: &DeformerId) -> Result<(), EditError> 
                 .filter(|m| m.parent.as_ref() == Some(id))
                 .map(|m| format!("mesh `{}`", m.id)),
         )
+        .chain(slot_edit::anchored_to(model, id))
         .collect();
     ensure_no_children("deformer", id, children)?;
     model.deformers.remove(index);
@@ -1218,6 +1242,9 @@ fn remove_mesh(model: &mut Model, id: &MeshId) -> Result<(), EditError> {
     model.glues.retain(|g| &g.mesh_a != id && &g.mesh_b != id);
     model.hit_areas.retain(|h| &h.mesh != id);
     avatar::forget_removed_hit_areas(model);
+    for slot in &mut model.slots {
+        slot.mask_sources.retain(|m| m != id);
+    }
     for mesh in &mut model.meshes {
         if mesh.mirror.as_ref() == Some(id) {
             mesh.mirror = None;

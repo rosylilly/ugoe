@@ -9,6 +9,7 @@ use ugoe_model::deformer::{RotationKeyform, WarpKeyform};
 use ugoe_model::effects::Effects;
 use ugoe_model::expression::{Expression, ExpressionParameter};
 use ugoe_model::mesh::MeshKeyform;
+use ugoe_model::module::{Slot, SlotId};
 use ugoe_model::motion::{Curve, CurveTarget, Motion, MotionEvent, Point};
 use ugoe_model::part::PartKeyform;
 use ugoe_model::physics::{
@@ -697,6 +698,24 @@ pub enum Command {
     /// あること・時間の値の範囲は、適用後の検証 (`validate`) が調べる。
     SetEffects {
         effects: Effects,
+    },
+    // ---- 着せ替えのスロット (T0647)。規則は `docs/editor.md#スロットの編集` ----
+    /// スロット (`Model::slots`) を末尾に足す。ID は `[A-Za-z0-9_]+` で、ほかのスロットと重ならないこと。
+    /// 描画順の範囲はほかのスロットの範囲と重ならないこと (端が接するのはよい)。参照先 (取り付け先・
+    /// 置き換えるパーツ・パラメータ・マスク・ポーズの要素) と範囲の値は、適用後の検証 (`validate`) が調べる。
+    /// 公開する衝突体 (`colliders`) は物理の設定にあること。
+    AddSlot {
+        slot: Slot,
+    },
+    /// スロット `id` を `slot` で丸ごと置き換える (規則は `AddSlot` と同じ)。`slot.id` が `id` と違えば
+    /// 名前を変え、アバタープロファイルの `slots` の参照も付け替える。
+    SetSlot {
+        id: SlotId,
+        slot: Slot,
+    },
+    /// スロットを消す。アバタープロファイルの `slots` からも外す。
+    RemoveSlot {
+        id: SlotId,
     },
 }
 

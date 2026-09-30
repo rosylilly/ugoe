@@ -3,7 +3,8 @@
   ViewportController (表示) に、各領域の中身は lib/panels/ と lib/viewport/ に置く。
   中央はビューポート (上) とタイムライン (下。モーションと表情、lib/panels/timeline/)。
   右の列はインスペクタ (上) とパラメータ (下) に分け、区切りをドラッグ (または矢印キー) で動かす (lib/layout.ts)。
-  上の区画は「Inspector」「Physics」(lib/panels/physics/)「Verify」(lib/panels/verify/) をタブで切り替える。
+  上の区画は「Inspector」「Physics」(lib/panels/physics/)「Slots」(lib/panels/slots/)「Verify」(lib/panels/verify/) を
+  タブで切り替える。
   Undo / Redo のショートカット (lib/shortcuts.ts) もここで受ける。
   ヘッダーの「Settings」は AI の設定 (lib/ai/SettingsDialog.svelte)。外部の AI に送る前の確認
   (lib/ai/ConsentDialog.svelte) もここに置く。
@@ -36,6 +37,8 @@ import { LightingView } from "./lib/panels/lighting/lightingView.svelte";
 import ParametersPanel from "./lib/panels/ParametersPanel.svelte";
 import PhysicsPanel from "./lib/panels/physics/PhysicsPanel.svelte";
 import { PhysicsView } from "./lib/panels/physics/physicsView.svelte";
+import SlotsPanel from "./lib/panels/slots/SlotsPanel.svelte";
+import { SlotsView } from "./lib/panels/slots/slotsView.svelte";
 import TreePanel from "./lib/panels/TreePanel.svelte";
 import TimelinePanel from "./lib/panels/timeline/TimelinePanel.svelte";
 import VerifyPanel from "./lib/panels/verify/VerifyPanel.svelte";
@@ -54,6 +57,7 @@ const viewport = new ViewportController();
 const selection = new Selection();
 const physics = new PhysicsView();
 const verify = new VerifyView();
+const slots = new SlotsView();
 const preview = new PreviewMode(doc, viewport);
 const proposals = new ProposalsView(doc);
 const lighting = new LightingView();
@@ -92,7 +96,21 @@ function openProposals(): void {
   physics.active = false;
   verify.active = false;
   lighting.active = false;
+  slots.active = false;
 }
+
+/** 上の区画のタブを切り替える (AI タブは openProposals)。 */
+function openTab(tab: "inspector" | "physics" | "lighting" | "slots" | "verify"): void {
+  physics.active = tab === "physics";
+  lighting.active = tab === "lighting";
+  slots.active = tab === "slots";
+  verify.active = tab === "verify";
+  proposals.active = false;
+}
+
+const inspectorActive = $derived(
+  !physics.active && !lighting.active && !slots.active && !verify.active && !proposals.active,
+);
 
 const mac = isMac(navigator.platform);
 const undoKeys = mac ? "Cmd+Z" : "Ctrl+Z";
@@ -206,16 +224,18 @@ $effect(() => {
   <aside class="right" bind:this={rightColumn}>
     <div class="pane inspector" style:flex-basis="{split * 100}%">
       <div class="tabs" role="tablist">
-        <button role="tab" aria-selected={!physics.active && !verify.active && !proposals.active && !lighting.active}
-          class:current={!physics.active && !verify.active && !proposals.active && !lighting.active}
-          onclick={() => ((physics.active = false), (verify.active = false), (proposals.active = false), (lighting.active = false))}>Inspector</button>
+        <button role="tab" aria-selected={inspectorActive} class:current={inspectorActive}
+          onclick={() => openTab("inspector")}>Inspector</button>
         <button role="tab" aria-selected={physics.active} class:current={physics.active}
-          onclick={() => ((physics.active = true), (verify.active = false), (proposals.active = false), (lighting.active = false))}>Physics</button>
+          onclick={() => openTab("physics")}>Physics</button>
         <button role="tab" aria-selected={lighting.active} class:current={lighting.active}
           title="Lighting, normal maps and preview lights"
-          onclick={() => ((lighting.active = true), (physics.active = false), (verify.active = false), (proposals.active = false))}>Lighting</button>
+          onclick={() => openTab("lighting")}>Lighting</button>
+        <button role="tab" aria-selected={slots.active} class:current={slots.active}
+          title="Dress-up slots: where outfit and accessory modules attach"
+          onclick={() => openTab("slots")}>Slots</button>
         <button role="tab" aria-selected={verify.active} class:current={verify.active}
-          onclick={() => ((verify.active = true), (physics.active = false), (proposals.active = false), (lighting.active = false))}>Verify</button>
+          onclick={() => openTab("verify")}>Verify</button>
         <button role="tab" aria-selected={proposals.active} class:current={proposals.active}
           class:fresh={proposals.fresh}
           title={proposals.fresh ? "An agent made a new proposal" : "Classify PSD layers and review rig proposals"}
@@ -231,6 +251,8 @@ $effect(() => {
         <PhysicsPanel {doc} {selection} {viewport} view={physics} />
       {:else if lighting.active}
         <LightingPanel {doc} {selection} view={lighting} />
+      {:else if slots.active}
+        <SlotsPanel {doc} {selection} view={slots} />
       {:else}
         <InspectorPanel {doc} {selection} {viewport} />
       {/if}

@@ -6,7 +6,8 @@
 ファイル形式 (`.ugoemod`) は `ugoe_format::module_file` ([file-formats.md#モジュール](file-formats.md#モジュール-ugoemod)、T0113)、
 ランタイム SDK の付け外しは `ugoe::Puppet` ([Puppet での着せ替え](#puppet-での着せ替え)、T0121) にあります。
 
-> 実装待ち: エディタでの作成は M4 以降に起票します。
+> エディタでの作成は [ADR 0024](../adr/0024-module-authoring.md) の方針で段階的に入れます。スロットの定義は T0647 ([editor.md#スロットの編集](../editor.md#スロットの編集))、
+> モジュールのプロジェクトは T0648、プレビューでの付け外しは T0649 です。
 
 ## スロット
 

@@ -4238,6 +4238,474 @@ export const models: Model[] = [
       "hit_areas": [],
       "slots": []
     }
+  },
+  {
+    "schema_version": 0,
+    "meta": {
+      "name": "dress_up_base",
+      "canvas": {
+        "width": 256.0,
+        "height": 256.0,
+        "origin": [
+          128.0,
+          128.0
+        ]
+      }
+    },
+    "parameters": [
+      {
+        "id": "AngleX",
+        "name": "AngleX",
+        "min": -30.0,
+        "max": 30.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "HairFront",
+        "name": "HairFront",
+        "min": -1.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "BodySway",
+        "name": "BodySway",
+        "min": 0.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      },
+      {
+        "id": "Secret",
+        "name": "Secret",
+        "min": 0.0,
+        "max": 1.0,
+        "default": 0.0,
+        "kind": "normal",
+        "mirror": null,
+        "group": null
+      }
+    ],
+    "parameter_groups": [],
+    "parts": [
+      {
+        "id": "Root",
+        "name": "Root",
+        "parent": null,
+        "keyforms": {
+          "bindings": [],
+          "keyforms": [
+            {
+              "opacity": 1.0
+            }
+          ]
+        }
+      },
+      {
+        "id": "Hair",
+        "name": "Hair",
+        "parent": "Root",
+        "keyforms": {
+          "bindings": [],
+          "keyforms": [
+            {
+              "opacity": 1.0
+            }
+          ]
+        }
+      },
+      {
+        "id": "Body",
+        "name": "Body",
+        "parent": "Root",
+        "keyforms": {
+          "bindings": [],
+          "keyforms": [
+            {
+              "opacity": 1.0
+            }
+          ]
+        }
+      }
+    ],
+    "deformers": [
+      {
+        "id": "Head",
+        "name": "Head",
+        "part": "Root",
+        "parent": null,
+        "kind": {
+          "type": "rotation",
+          "keyforms": {
+            "bindings": [
+              {
+                "parameter": "AngleX",
+                "keys": [
+                  -30.0,
+                  30.0
+                ]
+              }
+            ],
+            "keyforms": [
+              {
+                "origin": [
+                  128.0,
+                  96.0
+                ],
+                "angle": -10.0,
+                "scale": 1.0,
+                "reflect_x": false,
+                "reflect_y": false,
+                "opacity": 1.0
+              },
+              {
+                "origin": [
+                  128.0,
+                  96.0
+                ],
+                "angle": 10.0,
+                "scale": 1.0,
+                "reflect_x": false,
+                "reflect_y": false,
+                "opacity": 1.0
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "Torso",
+        "name": "Torso",
+        "part": "Root",
+        "parent": null,
+        "kind": {
+          "type": "warp",
+          "rows": 1,
+          "cols": 1,
+          "keyforms": {
+            "bindings": [],
+            "keyforms": [
+              {
+                "points": [
+                  [
+                    64.0,
+                    128.0
+                  ],
+                  [
+                    192.0,
+                    128.0
+                  ],
+                  [
+                    64.0,
+                    256.0
+                  ],
+                  [
+                    192.0,
+                    256.0
+                  ]
+                ],
+                "opacity": 1.0
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "meshes": [
+      {
+        "id": "Face",
+        "name": "Face",
+        "part": "Root",
+        "parent": "Head",
+        "texture": 0,
+        "uvs": [
+          [
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0
+          ],
+          [
+            1.0,
+            1.0
+          ],
+          [
+            0.0,
+            1.0
+          ]
+        ],
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "blend": "normal",
+        "culling": false,
+        "masks": [],
+        "mask_mode": "union",
+        "mask_only": false,
+        "keyforms": {
+          "bindings": [],
+          "keyforms": [
+            {
+              "positions": [
+                [
+                  -32.0,
+                  -32.0
+                ],
+                [
+                  32.0,
+                  -32.0
+                ],
+                [
+                  32.0,
+                  32.0
+                ],
+                [
+                  -32.0,
+                  32.0
+                ]
+              ],
+              "opacity": 1.0,
+              "draw_order": 500.0,
+              "multiply_color": {
+                "r": 1.0,
+                "g": 1.0,
+                "b": 1.0
+              },
+              "screen_color": {
+                "r": 0.0,
+                "g": 0.0,
+                "b": 0.0
+              },
+              "mask_strength": 1.0
+            }
+          ]
+        }
+      },
+      {
+        "id": "HairDefault",
+        "name": "HairDefault",
+        "part": "Hair",
+        "parent": "Head",
+        "texture": 0,
+        "uvs": [
+          [
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0
+          ],
+          [
+            1.0,
+            1.0
+          ],
+          [
+            0.0,
+            1.0
+          ]
+        ],
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "blend": "normal",
+        "culling": false,
+        "masks": [],
+        "mask_mode": "union",
+        "mask_only": false,
+        "keyforms": {
+          "bindings": [],
+          "keyforms": [
+            {
+              "positions": [
+                [
+                  -40.0,
+                  -48.0
+                ],
+                [
+                  40.0,
+                  -48.0
+                ],
+                [
+                  40.0,
+                  0.0
+                ],
+                [
+                  -40.0,
+                  0.0
+                ]
+              ],
+              "opacity": 1.0,
+              "draw_order": 600.0,
+              "multiply_color": {
+                "r": 1.0,
+                "g": 1.0,
+                "b": 1.0
+              },
+              "screen_color": {
+                "r": 0.0,
+                "g": 0.0,
+                "b": 0.0
+              },
+              "mask_strength": 1.0
+            }
+          ]
+        }
+      },
+      {
+        "id": "BodyMesh",
+        "name": "BodyMesh",
+        "part": "Body",
+        "parent": "Torso",
+        "texture": 0,
+        "uvs": [
+          [
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0
+          ],
+          [
+            1.0,
+            1.0
+          ],
+          [
+            0.0,
+            1.0
+          ]
+        ],
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ],
+        "blend": "normal",
+        "culling": false,
+        "masks": [],
+        "mask_mode": "union",
+        "mask_only": false,
+        "keyforms": {
+          "bindings": [],
+          "keyforms": [
+            {
+              "positions": [
+                [
+                  0.0,
+                  0.0
+                ],
+                [
+                  1.0,
+                  0.0
+                ],
+                [
+                  1.0,
+                  1.0
+                ],
+                [
+                  0.0,
+                  1.0
+                ]
+              ],
+              "opacity": 1.0,
+              "draw_order": 300.0,
+              "multiply_color": {
+                "r": 1.0,
+                "g": 1.0,
+                "b": 1.0
+              },
+              "screen_color": {
+                "r": 0.0,
+                "g": 0.0,
+                "b": 0.0
+              },
+              "mask_strength": 1.0
+            }
+          ]
+        }
+      }
+    ],
+    "glues": [],
+    "textures": [
+      {
+        "name": "white",
+        "width": 1,
+        "height": 1
+      }
+    ],
+    "hit_areas": [],
+    "pose": {
+      "fade_duration": 0.5,
+      "groups": []
+    },
+    "effects": {
+      "eye_blink": {
+        "parameters": [],
+        "interval": 4.0,
+        "closing": 0.1,
+        "closed": 0.05,
+        "opening": 0.15,
+        "seed": 0
+      },
+      "breath": {
+        "parameters": []
+      },
+      "lip_sync": {
+        "parameters": []
+      }
+    },
+    "slots": [
+      {
+        "id": "Hair",
+        "anchor": "Head",
+        "draw_order": {
+          "min": 550.0,
+          "max": 650.0
+        },
+        "replaces": [
+          "Hair"
+        ],
+        "mask_sources": [
+          "Face"
+        ]
+      },
+      {
+        "id": "Outfit",
+        "anchor": "Torso",
+        "draw_order": {
+          "min": 300.0,
+          "max": 400.0
+        },
+        "parameters": [
+          "BodySway"
+        ],
+        "part": "Body"
+      }
+    ]
   }
 ];
 
@@ -6081,5 +6549,42 @@ export const commands: Command[] = [
         ]
       }
     }
+  },
+  {
+    "op": "add_slot",
+    "slot": {
+      "id": "Accessory",
+      "anchor": "Head",
+      "draw_order": {
+        "min": 700.0,
+        "max": 750.0
+      },
+      "replaces": [
+        "Hair"
+      ],
+      "mask_sources": [
+        "Face"
+      ]
+    }
+  },
+  {
+    "op": "set_slot",
+    "id": "Outfit",
+    "slot": {
+      "id": "Outfit",
+      "anchor": "Torso",
+      "draw_order": {
+        "min": 300.0,
+        "max": 400.0
+      },
+      "parameters": [
+        "BodySway"
+      ],
+      "part": "Body"
+    }
+  },
+  {
+    "op": "remove_slot",
+    "id": "Hair"
   }
 ];
