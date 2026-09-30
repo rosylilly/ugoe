@@ -5063,6 +5063,7 @@ dependencies = [
 name = "ugoe-format"
 version = "0.0.0"
 dependencies = [
+ "png 0.18.1",
  "rmp-serde",
  "ruzstd",
  "serde",

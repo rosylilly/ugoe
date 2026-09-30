@@ -274,3 +274,161 @@ export function peekKey(bytes: Uint8Array, key: string): MsgValue | undefined {
     return undefined;
   }
 }
+
+// ---- 書き出し (spec/bundle.md#payload-encoding) ----
+// - `bigint` は整数の型のうち最も短いもの、`number` は float 32 (値が単精度で正確に表せるとき) か
+//   float 64 にする (spec/model.md#types: `f32` は float 32 で書くのがよい)。
+// - map はオブジェクトのキーの順に書く (フィールドの順は書き出しが決める)。
+
+class Writer {
+  private buf = new Uint8Array(256);
+  private view = new DataView(this.buf.buffer);
+  length = 0;
+
+  /** `n` バイトの場所を確保して、その位置を返す。バッファを取り替えることがあるので、先に呼ぶ。 */
+  private reserve(n: number): number {
+    if (this.length + n > this.buf.length) {
+      const next = new Uint8Array(Math.max(this.buf.length * 2, this.length + n));
+      next.set(this.buf.subarray(0, this.length));
+      this.buf = next;
+      this.view = new DataView(next.buffer);
+    }
+    const at = this.length;
+    this.length += n;
+    return at;
+  }
+
+  u8(b: number): void {
+    const at = this.reserve(1);
+    this.buf[at] = b;
+  }
+
+  u16(v: number): void {
+    const at = this.reserve(2);
+    this.view.setUint16(at, v);
+  }
+
+  u32(v: number): void {
+    const at = this.reserve(4);
+    this.view.setUint32(at, v);
+  }
+
+  bytes(b: Uint8Array): void {
+    const at = this.reserve(b.length);
+    this.buf.set(b, at);
+  }
+
+  f32(v: number): void {
+    const at = this.reserve(4);
+    this.view.setFloat32(at, v);
+  }
+
+  f64(v: number): void {
+    const at = this.reserve(8);
+    this.view.setFloat64(at, v);
+  }
+
+  u64(v: bigint): void {
+    const at = this.reserve(8);
+    this.view.setBigUint64(at, v);
+  }
+
+  i64(v: bigint): void {
+    const at = this.reserve(8);
+    this.view.setBigInt64(at, v);
+  }
+
+  result(): Uint8Array {
+    return this.buf.slice(0, this.length);
+  }
+}
+
+const utf8Encoder = new TextEncoder();
+
+function writeInt(w: Writer, v: bigint): void {
+  if (v >= 0n) {
+    if (v <= 0x7fn) w.u8(Number(v));
+    else if (v <= 0xffn) {
+      w.u8(0xcc);
+      w.u8(Number(v));
+    } else if (v <= 0xffffn) {
+      w.u8(0xcd);
+      w.u16(Number(v));
+    } else if (v <= 0xffff_ffffn) {
+      w.u8(0xce);
+      w.u32(Number(v));
+    } else if (v < 2n ** 64n) {
+      w.u8(0xcf);
+      w.u64(v);
+    } else throw new MsgpackError(`integer ${v} does not fit in 64 bits`);
+    return;
+  }
+  if (v >= -32n) w.u8(Number(v) & 0xff);
+  else if (v >= -0x80n) {
+    w.u8(0xd0);
+    w.u8(Number(v) & 0xff);
+  } else if (v >= -0x8000n) {
+    w.u8(0xd1);
+    w.u16(Number(v) & 0xffff);
+  } else if (v >= -0x8000_0000n) {
+    w.u8(0xd2);
+    w.u32(Number(v) >>> 0);
+  } else if (v >= -(2n ** 63n)) {
+    w.u8(0xd3);
+    w.i64(v);
+  } else throw new MsgpackError(`integer ${v} does not fit in 64 bits`);
+}
+
+function writeLength(w: Writer, n: number, fix: number, fixMax: number, codes: number[]): void {
+  // codes: 8 ビット (無ければ -1)・16 ビット・32 ビットの長さの型
+  if (n <= fixMax) w.u8(fix | n);
+  else if (codes[0] >= 0 && n <= 0xff) {
+    w.u8(codes[0]);
+    w.u8(n);
+  } else if (n <= 0xffff) {
+    w.u8(codes[1]);
+    w.u16(n);
+  } else {
+    w.u8(codes[2]);
+    w.u32(n);
+  }
+}
+
+function writeValue(w: Writer, v: MsgValue): void {
+  if (v === null) w.u8(0xc0);
+  else if (typeof v === "boolean") w.u8(v ? 0xc3 : 0xc2);
+  else if (typeof v === "bigint") writeInt(w, v);
+  else if (typeof v === "number") {
+    if (Number.isNaN(v) || Math.fround(v) === v) {
+      w.u8(0xca);
+      w.f32(v);
+    } else {
+      w.u8(0xcb);
+      w.f64(v);
+    }
+  } else if (typeof v === "string") {
+    const b = utf8Encoder.encode(v);
+    writeLength(w, b.length, 0xa0, 31, [0xd9, 0xda, 0xdb]);
+    w.bytes(b);
+  } else if (v instanceof Uint8Array) {
+    writeLength(w, v.length, 0xc4, -1, [0xc4, 0xc5, 0xc6]);
+    w.bytes(v);
+  } else if (Array.isArray(v)) {
+    writeLength(w, v.length, 0x90, 15, [-1, 0xdc, 0xdd]);
+    for (const x of v) writeValue(w, x);
+  } else {
+    const entries = Object.entries(v);
+    writeLength(w, entries.length, 0x80, 15, [-1, 0xde, 0xdf]);
+    for (const [key, x] of entries) {
+      writeValue(w, key);
+      writeValue(w, x);
+    }
+  }
+}
+
+/** 1 つの値を MessagePack にする。 */
+export function encode(value: MsgValue): Uint8Array {
+  const w = new Writer();
+  writeValue(w, value);
+  return w.result();
+}

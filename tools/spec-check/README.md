@@ -1,4 +1,4 @@
-# spec-check — 公開仕様だけで書いた独立の読み込み器
+# spec-check — 公開仕様だけで書いた独立の読み込み器と書き出し
 
 公開仕様 ([spec/](../../spec/README.md)) が実装から独立して読めることを確かめるための、TypeScript の小さな実装です
 (T0120、[ADR 0021](../../docs/adr/0021-public-specification.md))。参照実装 (`crates/`) のコードは使わず、読みもせずに書きました。
@@ -15,8 +15,10 @@
   デフォーマの角度と原点・頂点と制御点のオフセット)、当たり判定 (円とカプセル、掃引と二分法)
 - モーションと効果 ([spec/motion.md](../../spec/motion.md)): 曲線 (Bézier を含む)、フェード・ループ・イベント・優先度とクロスフェード、表情、
   目パチ (SplitMix64)・呼吸・リップシンク、効果のグループ、ポーズとパーツの不透明度の上書き、1 フレームの順 (T0126)
+- 書き出し ([spec/bundle.md](../../spec/bundle.md#writing)): MessagePack の符号化、既定値と null の 2 通りの書き方、zstd の圧縮、
+  機能の宣言、`.ugoe` と `.ugoemod` のコンテナ。ファイルの例 (`spec/examples/bundles/`) の作成と、参照実装との往復の試験 (T0128)
 
-しないこと: 追従 (トラッキング)、当たり判定のヒットテスト、描画、書き出し。
+しないこと: 追従 (トラッキング)、当たり判定のヒットテスト、描画。
 
 ## 独立性を保つ手順
 
@@ -40,7 +42,23 @@ node --test tools/spec-check/test/                                  # テスト
 node tools/spec-check/src/cli.ts spec/examples/single-quad/model.json X=0.5   # 評価の結果を JSON で表示
 node tools/spec-check/src/cli.ts assets/compat/dev/smooth-arc.ugoe
 node tools/spec-check/src/cli.ts spec/examples/physics-pendulum          # 時間の例を走らせ、食い違いを表示
+node tools/spec-check/src/make-bundles.ts                                # ファイルの例を bundles.json から作り直す
+node tools/spec-check/src/roundtrip.ts target/debug/ugoe                 # 参照実装との往復の試験 (下)
 ```
+
+### 参照実装との往復の試験
+
+`src/roundtrip.ts` は、参照実装を黒箱として (コマンドだけを使い、ソースもログも読まずに) 次を確かめる。`ugoe` の実行ファイルが要るので CI には入れず、
+書き出しやファイルの例を変えたときに手で実行する (`cargo build --bin ugoe` の後)。
+
+1. 元のデータ (`spec/examples/` の JSON の文書と `.ugoe` の例、`assets/compat/dev/` の `.ugoe`) をこの実装で読む。
+2. この実装で `.ugoe` に書く。書き方は 2 通り (既定値と値の無いフィールドを省き圧縮しない / すべて書き MessagePack と META を zstd で圧縮する)。
+3. 参照実装の `ugoe validate` が受け付ける。
+4. 参照実装の `ugoe build <in> -o <out>` で読んで書き直させ、それをこの実装で読むと元のデータと同じ (f32 に丸めた値で完全一致、画像はバイト単位)。
+
+モジュールのファイルは `ugoe` のコマンドが読めないので、参照実装の側のテストで確かめる。
+T0128 の時点では、法線マップのあるバンドル (`lit-quads.ugoe`・`dress-up-base.ugoe`) で `ugoe build` が
+`normal map … has no image data` で失敗する (参照実装の `build` の問題。`validate` は受け付ける)。ほかはすべて一致した。
 
 型の検査は、エディタの TypeScript を借りて行えます (`@types/node` が要るため):
 
@@ -55,6 +73,8 @@ cd tools/spec-check && ../../apps/editor/node_modules/.bin/tsc -p . --typeRoots 
 | `test/examples.test.ts` | `spec/examples/` の評価の例 (`expected.json`) をすべて評価し、[許容誤差](../../spec/examples/README.md#tolerances) で期待値と比べる。 |
 | `test/timeline.test.ts` | `spec/examples/` の時間の例 (`timeline.json`) をはじめからフレームごとに走らせ、[許容誤差](../../spec/examples/README.md#timeline-tolerances) で期待値と比べる。 |
 | `test/compat.test.ts` | `assets/compat/` の資料を読む。`dev/` は警告なしに読めて評価できる、`future/` は仕様どおりに劣化して読める (評価の結果が元のファイルと同じ) か拒否される ([docs/testing.md](../../docs/testing.md#互換性テスト))。 |
+| `test/bundles.test.ts` | ファイルの例 (`spec/examples/bundles/`) を読み、目録 `bundles.json` (チャンクの表・結果・同じ中身の JSON の文書・画像の色) と比べる。目録から書き出しで作り直したものと、展開したペイロードが同じ。 |
+| `test/writer.test.ts` | MessagePack の符号化 (整数と長さの境目、float 32 と 64)、整数と `f32` のフィールドの型、2 通りの書き方、知らない値と基準の機能の宣言の拒否、コンテナの配置、すべての例と互換性の資料のこの実装での往復。 |
 | `test/reader.test.ts` | コンテナの誤り (ヘッダ・表・重なり・許されないチャンク・画像の数)、機能の宣言、MessagePack、JSON の整数と `null`、知らない値、検証。 |
 
 ### CI
@@ -68,8 +88,11 @@ cd tools/spec-check && ../../apps/editor/node_modules/.bin/tsc -p . --typeRoots 
 - 計算は倍精度で行う。仕様は単精度以上を求め、許容誤差の内ならよいとしている ([spec/evaluation.md](../../spec/evaluation.md#numbers-and-determinism))。
 - 整数と浮動小数点数を区別するため、MessagePack の整数と、JSON の小数部も指数部もない数を `bigint` で読む
   (`JSON.parse` の reviver の `context.source` を使う)。`1.0` は整数のフィールドでは拒否する。
-- この実装は書き出しをしないので、知らない値は読むときにフォールバックに置き換えて警告を残す。
-  検証に影響する `Parameter.kind` とデフォーマの種類だけは「知らない値」のまま持つ。
+- 知らない値は読むときにフォールバックに置き換えて警告を残す。検証に影響する `Parameter.kind` とデフォーマの種類だけは「知らない値」のまま持つ。
+  そのため書き出しは、型の上に残る「知らない値」を拒否し (`WriteError`)、警告のあったデータは書かない (呼び出し側が確かめる)。
+- 書き出しは型の決まったデータ (`types.ts`) から書く。整数の型のフィールドは MessagePack の整数、`f32` は値が整数でも float 32。
+  作るときのデータは既定値なら常に省く (仕様の SHOULD)。アバタープロファイルは書き出しのためにすべてのフィールドを読む。
+- ファイルの例の zstd の圧縮結果は Node.js (zstd) の版で変わりうるので、テストは展開したペイロードで比べる。
 - MessagePack の値の後ろに余りのバイトがあるペイロードは拒否する (仕様はどちらも許す。参照実装は無視する)。
 - 目パチの `seed` (`u64`) は `bigint` で正確に読む (2^53 を超えうる)。間隔は単精度に丸める (仕様は単精度の `u` を求める)。
 - 時間の例の期待値は、この実装の出力を写したものではない。仕様から別に書いた転記 (T0126 の作業者が Python で書いた使い捨てのもの) で出し、

@@ -106,6 +106,8 @@ The chunk table immediately follows the header. Each entry is 24 bytes:
   layout rules above, including the reserved flag bits).
 - A chunk that is "not allowed" in a kind of file makes the file invalid. This detects a bundle
   opened as a module file or vice versa.
+- Tags whose first byte is `X` (0x58) are reserved for testing readers and writers (for example, to
+  check that unknown chunks are skipped). No chunk type of this specification will use them.
 
 ## Payload encoding
 
@@ -145,7 +147,8 @@ ignores them; a stricter reader that rejects them is also conforming.
   none; otherwise count the textures before `i` that have a `normal_map`; that count is the index of
   its `NRML` chunk.
 - Several textures may name the same normal map; the container still holds one `NRML` chunk per
-  such texture.
+  such texture, and each texture uses its own chunk. Writers SHOULD store the same image in the
+  chunks of textures that name the same normal map.
 - The image format is determined by the first bytes of the payload:
 
   | Format | Signature |

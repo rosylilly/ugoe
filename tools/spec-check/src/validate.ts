@@ -504,7 +504,7 @@ export function validateModule(mod: M.Module): string[] {
       breath: { parameters: [] },
       lip_sync: { parameters: [] },
     },
-    avatar_level: null,
+    avatar: null,
     slots: [],
     lighting: false,
   };

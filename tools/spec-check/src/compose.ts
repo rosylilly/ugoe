@@ -55,7 +55,8 @@ export function compose(
     if (occupied.has(mod.slot)) errors.push(`${mod.name}: slot ${mod.slot} is already occupied`);
     occupied.add(mod.slot);
     const r = mod.requires;
-    if (r.avatar_level !== null && (model.avatar_level ?? 0) < r.avatar_level) {
+    // プロファイルの無い本体は満たさない (level 0 を求める場合も)
+    if (r.avatar_level !== null && (model.avatar === null || model.avatar.level < r.avatar_level)) {
       errors.push(`${mod.name}: requires avatar level ${r.avatar_level}`);
     }
     for (const s of r.slots) if (!modelSlots.has(s)) errors.push(`${mod.name}: requires slot ${s}`);

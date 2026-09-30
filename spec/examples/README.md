@@ -6,7 +6,9 @@ license of this specification.
 Each directory contains a small model and the results a runtime is expected to produce for it.
 **Evaluation examples** give the results at given parameter values ([Files](#files)); **timeline
 examples** give the results frame by frame while time advances, with physics, motions, expressions,
-effects and the pose ([Timeline examples](#timeline-examples)). The examples illustrate the rules and
+effects and the pose ([Timeline examples](#timeline-examples)). **File examples** are bundle and
+module files with the data a reader obtains from them ([File examples](#file-examples)). The examples
+illustrate the rules and
 let an implementation check itself against them, with the tolerances of
 [evaluation.md](../evaluation.md#conformance), [physics.md](../physics.md#conformance) and
 [motion.md](../motion.md#conformance). They are **informative**: where an example and the text
@@ -203,13 +205,90 @@ swinging chains were computed with a separate, direct transcription of [physics.
 [motion.md](../motion.md), written from the text only, and checked against a second independent
 implementation. Neither is the reference implementation.
 
+## File examples
+
+The directory [bundles/](bundles/) holds small bundle (`.ugoe`) and module (`.ugoemod`) files in the
+container of [bundle.md](../bundle.md):
+
+| File | Shows |
+| --- | --- |
+| `single-quad.ugoe` | A model and its texture; no compression; fields with default values and fields without a value omitted. |
+| `single-quad-zstd.ugoe` | The same model with a zstd-compressed `MODL` chunk; every field with a default value written, fields without a value written as nil. |
+| `layout.ugoe` | Payloads stored in the reverse order of the chunk table; metadata; an unknown chunk flagged as compressed whose payload is not a zstd frame (skipped without decompressing it) and an unknown chunk of length 0. |
+| `physics-pendulum.ugoe` | Physics settings; compressed `MODL` and `PHYS`. |
+| `motion-crossfade.ugoe` | Two motions in table order. |
+| `expressions.ugoe` | Three compressed expressions and metadata. |
+| `lit-quads.ugoe` | Four textures, three with a normal map; two textures that name the same normal map, each with its own `NRML` chunk. |
+| `optional-feature.ugoe` | An unknown optional feature: the file is read and the feature is reported. |
+| `required-feature.ugoe` | An unknown required feature: the file is refused. |
+| `short-hair.ugoemod` | A module file with a compressed `MODU` chunk, a texture and metadata. |
+
+The directory also holds the JSON documents of the files that are not taken from the other examples
+(`lit-quads.model.json`, `short-hair.module.json`), and the list of the files, `bundles.json`:
+
+```json
+{
+  "summary": "What the files show.",
+  "files": [
+    {
+      "file": "single-quad-zstd.ugoe",
+      "summary": "What the file shows.",
+      "style": "explicit",
+      "chunks": [ { "tag": "MODL", "compressed": true }, { "tag": "TEXR" } ],
+      "result": "ok",
+      "model": "../single-quad/model.json",
+      "textures": [ { "width": 1, "height": 1, "rgba": [255, 255, 255, 255] } ]
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `file` | The file, relative to `bundles.json`. Files ending in `.ugoemod` are module files; the others are bundles. |
+| `summary` | A description of the file. |
+| `style` | Informative. How the file writes fields that have their default value and nullable fields without a value: `minimal` omits them, `explicit` writes them (the value, or nil). [Authoring data](../model.md#authoring-data) with its default value is omitted in both. A reader obtains the same data from both. |
+| `chunks` | The chunk table in order: `tag`, and `compressed` (bit 0 of the flags; `false` if absent). For unknown chunks, `payload` is the stored payload as a UTF-8 string. |
+| `payload_order` | Optional. The order in which the payloads are stored in the file, as indices into `chunks`. Absent: table order. |
+| `features` | Optional. The content of the `FEAT` chunk. |
+| `result` | `ok`: a reader reads the file. `error`: a reader refuses it. |
+| `error` | For `error`: the step of [Reading](../bundle.md#reading) that refuses the file (below). |
+| `unknown_required_features` | For `error` `feature_declarations`: the unknown required features the error lists. |
+| `warnings` | Optional. For `ok`: `unknown_features`, the unknown optional features a reader reports. Apart from these, reading the file produces no warnings. |
+| `model`, `physics`, `motions`, `expressions`, `module` | The JSON documents the file is equivalent to, relative to `bundles.json`. `motions` and `expressions` are arrays in table order. For `ok`, the data a reader obtains from the file is the data it obtains from these documents. For `error`, they are the data the file carries. |
+| `meta` | Optional. The JSON value of the `META` chunk. Absent: the file has no `META` chunk. |
+| `textures` | One entry per texture, in the order of the model's (or module's) `textures`: the image's `width` and `height` in pixels and the color `rgba` of every pixel (non-premultiplied, 0 to 255), and `normal_map`, the same for the texture's normal map if it has one. Every image is a PNG. |
+
+Values of `error`, named after the steps of [Reading](../bundle.md#reading):
+
+| `error` | Step |
+| --- | --- |
+| `header` | 1. Header |
+| `chunk_table` | 2. Chunk table |
+| `feature_declarations` | 3. Feature declarations |
+| `schema_version` | 4. Schema version |
+| `chunks` | 5. Chunks (including payloads that fail to decompress or decode) |
+| `counts` | 6. Counts |
+| `validation` | 7. Validation |
+
+The examples of this version use only `feature_declarations`. A reader that checks in another order
+than the one recommended may report a different step for a file that breaks several rules; the
+examples break only one.
+
+The feature IDs used (`test.example_optional`, `test.example_required`) and the unknown chunk tags
+(`Xzst`, `Xnul`) are reserved for testing ([bundle.md](../bundle.md#feature-declarations),
+[bundle.md](../bundle.md#chunk-types)), so no reader knows them.
+
+The files were written by a writer built from this specification alone, and checked to be read by
+that writer's reader and by the reference implementation.
+
 ## Relation to other test data (informative)
 
 The ugoe repository also keeps a corpus of binary files for forward-compatibility tests (outside
 this specification). That corpus checks that files written by each release stay readable and that
 files using unknown features degrade as specified; it has no expected evaluation results. The
-examples here are part of the specification: they are JSON, they show how the rules evaluate, and
-they are not tied to any release of the reference implementation.
+examples here are part of the specification: they show how the rules evaluate and how files are
+laid out, and they are not tied to any release of the reference implementation.
 
 ## License
 

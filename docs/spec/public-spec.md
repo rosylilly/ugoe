@@ -148,7 +148,7 @@
 | 公開仕様 | 開発用 | 備考 |
 | --- | --- | --- |
 | [spec/schema/](../../spec/schema/README.md) | [editor.md#型の生成](../editor.md#型の生成) | `Model`・`Module`・`PhysicsSettings`・`Motion`・`Expression` の JSON Schema。`ugoe_model::spec_files` が Rust の型から生成する (`just gen`) |
-| [spec/examples/](../../spec/examples/README.md) | [testing.md#公開仕様の例](../testing.md#公開仕様の例) | 例のモデル (`model.json` はフィクスチャから生成) と、手で導いた期待値 (`expected.json`)。ランタイムが満たすことを `ugoe-format` の `tests/spec_examples.rs` で確かめる |
+| [spec/examples/](../../spec/examples/README.md) | [testing.md#公開仕様の例](../testing.md#公開仕様の例) | 例のモデル (`model.json` はフィクスチャから生成) と、手で導いた期待値 (`expected.json`)。ランタイムが満たすことを `ugoe-format` の `tests/spec_examples.rs` で確かめる。ファイルの例 (`bundles/`) は `tests/spec_bundles.rs` で参照実装の読み込みと照合する |
 
 ## まだ公開仕様にない文書
 

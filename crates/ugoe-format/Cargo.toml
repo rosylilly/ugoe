@@ -16,6 +16,7 @@ thiserror.workspace = true
 ugoe-model.workspace = true
 
 [dev-dependencies]
+png.workspace = true
 ugoe-core.workspace = true
 ugoe-runtime.workspace = true
 

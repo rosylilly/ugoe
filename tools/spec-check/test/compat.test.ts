@@ -72,6 +72,19 @@ test("dev modules compose together", () => {
   assertFinite(evaluateAll(composed.model));
 });
 
+test("requires.avatar_level: プロファイルの無い本体は満たさない (level 0 でも)", () => {
+  const b = base();
+  const m = moduleFile("dev/long-hair.ugoemod").module;
+  const withoutProfile = { ...b.model, avatar: null };
+  const requiring = (level: number) => ({ ...m, requires: { ...m.requires, avatar_level: level } });
+  assert.throws(() => compose(withoutProfile, b.physics, [requiring(0)]));
+  const profile = readBundle(read("dev/avatar-profile.ugoe")).model.avatar;
+  assert.ok(profile !== null);
+  const withProfile = { ...b.model, avatar: { ...profile, level: 2 } };
+  compose(withProfile, b.physics, [requiring(2)]);
+  assert.throws(() => compose(withProfile, b.physics, [requiring(3)]));
+});
+
 /** 2 つのモデルの評価の結果が、同じ ID のメッシュで一致する。 */
 function assertSameEvaluation(actual: M.Model, expected: M.Model): void {
   assert.deepEqual(

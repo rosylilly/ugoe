@@ -345,3 +345,22 @@ export function readModelJson(text: string): { model: M.Model; warnings: string[
   if (errors.length > 0) throw new ReadError("validation", "invalid model", errors);
   return { model, warnings };
 }
+
+/** JSON の文書 (物理・モーション・表情) を読む。検証はしない (物理は本体と合わせて検証する)。 */
+export function readJsonDocument<T>(
+  text: string,
+  conv: (c: D.Ctx, v: MsgValue) => T,
+): { value: T; warnings: string[] } {
+  const warnings: string[] = [];
+  const value = typed(() => conv(new D.Ctx(warnings), D.parseJson(text)));
+  return { value, warnings };
+}
+
+/** JSON のモジュールの文書を読み、検証する。 */
+export function readModuleJson(text: string): { module: M.Module; warnings: string[] } {
+  const warnings: string[] = [];
+  const module = typed(() => D.module(new D.Ctx(warnings), D.parseJson(text)));
+  const errors = validateModule(module);
+  if (errors.length > 0) throw new ReadError("validation", "invalid module", errors);
+  return { module, warnings };
+}

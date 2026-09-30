@@ -1,0 +1,289 @@
+{
+  "schema_version": 0,
+  "meta": {
+    "name": "lit_quads",
+    "canvas": {
+      "width": 256.0,
+      "height": 128.0,
+      "origin": [
+        128.0,
+        64.0
+      ]
+    }
+  },
+  "parameters": [],
+  "parts": [
+    {
+      "id": "Root",
+      "name": "Root",
+      "keyforms": {
+        "keyforms": [
+          {
+            "opacity": 1.0
+          }
+        ]
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "id": "Base",
+      "name": "Base",
+      "part": "Root",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                0.0,
+                32.0
+              ],
+              [
+                64.0,
+                32.0
+              ],
+              [
+                64.0,
+                96.0
+              ],
+              [
+                0.0,
+                96.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "Flat",
+      "name": "Flat",
+      "part": "Root",
+      "texture": 1,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                64.0,
+                32.0
+              ],
+              [
+                128.0,
+                32.0
+              ],
+              [
+                128.0,
+                96.0
+              ],
+              [
+                64.0,
+                96.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      },
+      "lit": false
+    },
+    {
+      "id": "Cloth",
+      "name": "Cloth",
+      "part": "Root",
+      "texture": 2,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                128.0,
+                32.0
+              ],
+              [
+                192.0,
+                32.0
+              ],
+              [
+                192.0,
+                96.0
+              ],
+              [
+                128.0,
+                96.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "ClothDark",
+      "name": "ClothDark",
+      "part": "Root",
+      "texture": 3,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                192.0,
+                32.0
+              ],
+              [
+                256.0,
+                32.0
+              ],
+              [
+                256.0,
+                96.0
+              ],
+              [
+                192.0,
+                96.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    }
+  ],
+  "textures": [
+    {
+      "name": "base",
+      "width": 1,
+      "height": 1,
+      "normal_map": "bumps_a"
+    },
+    {
+      "name": "flat",
+      "width": 1,
+      "height": 1
+    },
+    {
+      "name": "cloth",
+      "width": 1,
+      "height": 1,
+      "normal_map": "bumps_b"
+    },
+    {
+      "name": "cloth_dark",
+      "width": 1,
+      "height": 1,
+      "normal_map": "bumps_b"
+    }
+  ],
+  "lighting": true
+}

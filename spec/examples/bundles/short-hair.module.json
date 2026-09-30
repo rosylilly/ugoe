@@ -1,0 +1,203 @@
+{
+  "schema_version": 0,
+  "name": "short_hair",
+  "slot": "Hair",
+  "requires": {
+    "parameters": [
+      "AngleX"
+    ]
+  },
+  "parts": [
+    {
+      "id": "Hair",
+      "name": "Hair",
+      "keyforms": {
+        "keyforms": [
+          {
+            "opacity": 1.0
+          }
+        ]
+      }
+    }
+  ],
+  "deformers": [
+    {
+      "id": "HairSwing",
+      "name": "Hair swing",
+      "part": "Hair",
+      "kind": {
+        "type": "rotation",
+        "keyforms": {
+          "bindings": [
+            {
+              "parameter": "AngleX",
+              "keys": [
+                -30.0,
+                0.0,
+                30.0
+              ]
+            }
+          ],
+          "keyforms": [
+            {
+              "origin": [
+                0.0,
+                -8.0
+              ],
+              "angle": -10.0,
+              "scale": 1.0,
+              "opacity": 1.0
+            },
+            {
+              "origin": [
+                0.0,
+                -8.0
+              ],
+              "angle": 0.0,
+              "scale": 1.0,
+              "opacity": 1.0
+            },
+            {
+              "origin": [
+                0.0,
+                -8.0
+              ],
+              "angle": 10.0,
+              "scale": 1.0,
+              "opacity": 1.0
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "id": "Hair",
+      "name": "Hair",
+      "part": "Hair",
+      "parent": "HairSwing",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                -32.0,
+                0.0
+              ],
+              [
+                32.0,
+                0.0
+              ],
+              [
+                32.0,
+                48.0
+              ],
+              [
+                -32.0,
+                48.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 600.0
+          }
+        ]
+      }
+    }
+  ],
+  "textures": [
+    {
+      "name": "hair",
+      "width": 1,
+      "height": 1
+    }
+  ],
+  "physics": {
+    "rigs": [
+      {
+        "id": "HairSway",
+        "name": "Hair sway",
+        "inputs": [
+          {
+            "parameter": "AngleX",
+            "source": "x",
+            "weight": 100.0
+          }
+        ],
+        "outputs": [
+          {
+            "target": {
+              "type": "deformer_angle",
+              "deformer": "HairSwing"
+            },
+            "particle": 1,
+            "source": "angle",
+            "scale": 1.0,
+            "weight": 100.0
+          }
+        ],
+        "particles": [
+          {
+            "position": [
+              0.0,
+              0.0
+            ],
+            "mobility": 1.0,
+            "delay": 1.0,
+            "acceleration": 1.0,
+            "radius": 0.0
+          },
+          {
+            "position": [
+              0.0,
+              40.0
+            ],
+            "mobility": 0.9,
+            "delay": 0.8,
+            "acceleration": 1.5,
+            "radius": 40.0
+          }
+        ],
+        "normalization": {
+          "position": {
+            "min": -10.0,
+            "default": 0.0,
+            "max": 10.0
+          },
+          "angle": {
+            "min": -10.0,
+            "default": 0.0,
+            "max": 10.0
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,456 @@
+{
+  "summary": "Bundle (.ugoe) and module (.ugoemod) files. Each entry describes a file: its chunk table, and either the data a reader obtains from it (the JSON documents it is equivalent to) or the error with which a reader refuses it.",
+  "files": [
+    {
+      "file": "single-quad.ugoe",
+      "summary": "The model of single-quad with its texture. No compression; fields with default values and fields without a value are omitted.",
+      "style": "minimal",
+      "chunks": [
+        {
+          "tag": "MODL"
+        },
+        {
+          "tag": "TEXR"
+        }
+      ],
+      "result": "ok",
+      "model": "../single-quad/model.json",
+      "textures": [
+        {
+          "width": 1,
+          "height": 1,
+          "rgba": [
+            255,
+            255,
+            255,
+            255
+          ]
+        }
+      ]
+    },
+    {
+      "file": "single-quad-zstd.ugoe",
+      "summary": "The same model with a zstd-compressed MODL chunk. Every field with a default value is written, and fields without a value are written as nil.",
+      "style": "explicit",
+      "chunks": [
+        {
+          "tag": "MODL",
+          "compressed": true
+        },
+        {
+          "tag": "TEXR"
+        }
+      ],
+      "result": "ok",
+      "model": "../single-quad/model.json",
+      "textures": [
+        {
+          "width": 1,
+          "height": 1,
+          "rgba": [
+            255,
+            255,
+            255,
+            255
+          ]
+        }
+      ]
+    },
+    {
+      "file": "layout.ugoe",
+      "summary": "The same model in a container whose payloads are stored in the reverse order of the chunk table, with metadata and two unknown chunks: one flagged as compressed whose payload is not a zstd frame (a reader skips it without decompressing it), and one of length 0.",
+      "style": "minimal",
+      "chunks": [
+        {
+          "tag": "MODL"
+        },
+        {
+          "tag": "META"
+        },
+        {
+          "tag": "TEXR"
+        },
+        {
+          "tag": "Xzst",
+          "compressed": true,
+          "payload": "not a zstd frame"
+        },
+        {
+          "tag": "Xnul",
+          "payload": ""
+        }
+      ],
+      "payload_order": [
+        4,
+        3,
+        2,
+        1,
+        0
+      ],
+      "result": "ok",
+      "model": "../single-quad/model.json",
+      "meta": {
+        "title": "layout example"
+      },
+      "textures": [
+        {
+          "width": 1,
+          "height": 1,
+          "rgba": [
+            255,
+            255,
+            255,
+            255
+          ]
+        }
+      ]
+    },
+    {
+      "file": "physics-pendulum.ugoe",
+      "summary": "A model with physics settings; MODL and PHYS are compressed.",
+      "style": "minimal",
+      "chunks": [
+        {
+          "tag": "MODL",
+          "compressed": true
+        },
+        {
+          "tag": "PHYS",
+          "compressed": true
+        },
+        {
+          "tag": "TEXR"
+        }
+      ],
+      "result": "ok",
+      "model": "../physics-pendulum/model.json",
+      "physics": "../physics-pendulum/model.physics.json",
+      "textures": [
+        {
+          "width": 1,
+          "height": 1,
+          "rgba": [
+            255,
+            255,
+            255,
+            255
+          ]
+        }
+      ]
+    },
+    {
+      "file": "motion-crossfade.ugoe",
+      "summary": "A model with two motions; the order of the MOTN chunks is the order of the motions.",
+      "style": "minimal",
+      "chunks": [
+        {
+          "tag": "MODL"
+        },
+        {
+          "tag": "MOTN"
+        },
+        {
+          "tag": "MOTN"
+        },
+        {
+          "tag": "TEXR"
+        }
+      ],
+      "result": "ok",
+      "model": "../motion-crossfade/model.json",
+      "motions": [
+        "../motion-crossfade/idle.motion.json",
+        "../motion-crossfade/wave.motion.json"
+      ],
+      "textures": [
+        {
+          "width": 1,
+          "height": 1,
+          "rgba": [
+            255,
+            255,
+            255,
+            255
+          ]
+        }
+      ]
+    },
+    {
+      "file": "expressions.ugoe",
+      "summary": "A model with three compressed expressions and metadata.",
+      "style": "minimal",
+      "chunks": [
+        {
+          "tag": "MODL"
+        },
+        {
+          "tag": "EXPR",
+          "compressed": true
+        },
+        {
+          "tag": "EXPR",
+          "compressed": true
+        },
+        {
+          "tag": "EXPR",
+          "compressed": true
+        },
+        {
+          "tag": "META"
+        },
+        {
+          "tag": "TEXR"
+        }
+      ],
+      "result": "ok",
+      "model": "../expressions/model.json",
+      "expressions": [
+        "../expressions/happy.expression.json",
+        "../expressions/blush.expression.json",
+        "../expressions/sad.expression.json"
+      ],
+      "meta": {
+        "title": "expressions",
+        "authors": [
+          "ugoe contributors"
+        ]
+      },
+      "textures": [
+        {
+          "width": 1,
+          "height": 1,
+          "rgba": [
+            255,
+            255,
+            255,
+            255
+          ]
+        }
+      ]
+    },
+    {
+      "file": "lit-quads.ugoe",
+      "summary": "Four textures, three of which have a normal map; two textures name the same normal map and still have one NRML chunk each. Texture 3's normal map is the third NRML chunk, because two textures before it have one.",
+      "style": "minimal",
+      "chunks": [
+        {
+          "tag": "MODL"
+        },
+        {
+          "tag": "TEXR"
+        },
+        {
+          "tag": "TEXR"
+        },
+        {
+          "tag": "TEXR"
+        },
+        {
+          "tag": "TEXR"
+        },
+        {
+          "tag": "NRML"
+        },
+        {
+          "tag": "NRML"
+        },
+        {
+          "tag": "NRML"
+        }
+      ],
+      "result": "ok",
+      "model": "lit-quads.model.json",
+      "textures": [
+        {
+          "width": 1,
+          "height": 1,
+          "rgba": [
+            200,
+            160,
+            120,
+            255
+          ],
+          "normal_map": {
+            "width": 1,
+            "height": 1,
+            "rgba": [
+              160,
+              128,
+              240,
+              255
+            ]
+          }
+        },
+        {
+          "width": 1,
+          "height": 1,
+          "rgba": [
+            90,
+            90,
+            90,
+            255
+          ]
+        },
+        {
+          "width": 1,
+          "height": 1,
+          "rgba": [
+            60,
+            90,
+            200,
+            255
+          ],
+          "normal_map": {
+            "width": 1,
+            "height": 1,
+            "rgba": [
+              128,
+              160,
+              240,
+              255
+            ]
+          }
+        },
+        {
+          "width": 1,
+          "height": 1,
+          "rgba": [
+            30,
+            45,
+            100,
+            255
+          ],
+          "normal_map": {
+            "width": 1,
+            "height": 1,
+            "rgba": [
+              128,
+              160,
+              240,
+              255
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "file": "optional-feature.ugoe",
+      "summary": "Declares the optional test feature test.example_optional. A reader that does not know it reads the file and reports the feature as a warning.",
+      "style": "minimal",
+      "chunks": [
+        {
+          "tag": "FEAT"
+        },
+        {
+          "tag": "MODL"
+        },
+        {
+          "tag": "TEXR"
+        }
+      ],
+      "features": [
+        {
+          "id": "test.example_optional",
+          "required": false
+        }
+      ],
+      "result": "ok",
+      "warnings": {
+        "unknown_features": [
+          "test.example_optional"
+        ]
+      },
+      "model": "../single-quad/model.json",
+      "textures": [
+        {
+          "width": 1,
+          "height": 1,
+          "rgba": [
+            255,
+            255,
+            255,
+            255
+          ]
+        }
+      ]
+    },
+    {
+      "file": "required-feature.ugoe",
+      "summary": "Declares the optional test feature test.example_optional and the required test feature test.example_required. A reader that does not know the required one refuses the file.",
+      "style": "minimal",
+      "chunks": [
+        {
+          "tag": "FEAT"
+        },
+        {
+          "tag": "MODL"
+        },
+        {
+          "tag": "TEXR"
+        }
+      ],
+      "features": [
+        {
+          "id": "test.example_optional",
+          "required": false
+        },
+        {
+          "id": "test.example_required",
+          "required": true
+        }
+      ],
+      "result": "error",
+      "error": "feature_declarations",
+      "unknown_required_features": [
+        "test.example_required"
+      ],
+      "model": "../single-quad/model.json",
+      "textures": [
+        {
+          "width": 1,
+          "height": 1,
+          "rgba": [
+            255,
+            255,
+            255,
+            255
+          ]
+        }
+      ]
+    },
+    {
+      "file": "short-hair.ugoemod",
+      "summary": "A module file: a compressed module with a rotation deformer, a mesh and a physics rig, its texture and metadata.",
+      "style": "minimal",
+      "chunks": [
+        {
+          "tag": "MODU",
+          "compressed": true
+        },
+        {
+          "tag": "META"
+        },
+        {
+          "tag": "TEXR"
+        }
+      ],
+      "result": "ok",
+      "module": "short-hair.module.json",
+      "meta": {
+        "title": "short hair"
+      },
+      "textures": [
+        {
+          "width": 1,
+          "height": 1,
+          "rgba": [
+            120,
+            70,
+            40,
+            255
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -22,8 +22,7 @@ export interface Model {
   hit_areas: HitArea[];
   pose: Pose;
   effects: Effects;
-  /** アバタープロファイルの `level` だけ (無ければ null)。 */
-  avatar_level: number | null;
+  avatar: AvatarProfile | null;
   slots: Slot[];
   lighting: boolean;
 }
@@ -241,6 +240,56 @@ export interface Slot {
   part: string | null;
   colliders: string[];
   pose_parts: string[];
+}
+
+// ---- アバタープロファイル (spec/model.md#avatar-profile) ----
+
+export interface AvatarProfile {
+  profile_version: number;
+  level: number;
+  meta: AvatarMeta;
+  /** 知らない `source` の項目は除いてある。 */
+  tracking: TrackingOverride[];
+  look_at: LookAt | null;
+  hit_areas: { name: string; hit_area: string }[];
+  slots: string[];
+}
+
+/** 使用条件の列挙の知らない値は、フォールバック (最も制限の強い値) にしてある。 */
+export interface AvatarMeta {
+  name: string;
+  version: string | null;
+  authors: string[];
+  copyright: string | null;
+  contact: string | null;
+  references: string[];
+  thumbnail: number | null;
+  license_url: string | null;
+  avatar_permission: "only_author" | "only_licensed" | "everyone";
+  commercial_usage: "personal_non_profit" | "personal_profit" | "corporation";
+  allow_violent_usage: boolean;
+  allow_sexual_usage: boolean;
+  allow_political_or_religious_usage: boolean;
+  allow_antisocial_or_hate_usage: boolean;
+  credit_notation: "required" | "unnecessary";
+  allow_redistribution: boolean;
+  modification: "prohibited" | "allow" | "allow_redistribution";
+  third_party_licenses: string | null;
+}
+
+export interface TrackingOverride {
+  source: "standard" | "blend_shape" | "head";
+  input: string;
+  parameter: string | null;
+  scale: number;
+  offset: number;
+}
+
+export interface LookAt {
+  x: string;
+  y: string;
+  range_x: number;
+  range_y: number;
 }
 
 // ---- 物理 ----

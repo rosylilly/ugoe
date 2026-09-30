@@ -3,7 +3,7 @@
   "private": true,
   "license": "MIT",
   "type": "module",
-  "description": "An independent reader of ugoe files written from the public specification (spec/) only",
+  "description": "An independent reader and writer of ugoe files written from the public specification (spec/) only",
   "engines": {
     "node": ">=24"
   },

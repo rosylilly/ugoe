@@ -66,15 +66,17 @@ fn example_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-/// 評価の例は `expected.json`、時間の例は `timeline.json` を持つ (時間の例の照合は
-/// `crates/ugoe/tests/spec_timelines.rs`)。
+/// 評価の例は `expected.json`、時間の例は `timeline.json`、ファイルの例は `bundles.json` を持つ
+/// (時間の例の照合は `crates/ugoe/tests/spec_timelines.rs`、ファイルの例の照合は `tests/spec_bundles.rs`)。
 #[test]
 fn every_example_has_a_model_and_expected_values() {
     let dirs = example_dirs();
     assert!(!dirs.is_empty());
     for dir in dirs {
         assert!(
-            dir.join("expected.json").is_file() || dir.join("timeline.json").is_file(),
+            dir.join("expected.json").is_file()
+                || dir.join("timeline.json").is_file()
+                || dir.join("bundles.json").is_file(),
             "{}",
             dir.display()
         );

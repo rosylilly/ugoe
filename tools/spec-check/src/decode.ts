@@ -3,8 +3,8 @@
 // - 既定値のあるフィールドが無ければ既定値を入れる (spec/model.md#presence-and-default-values)。
 // - 知らないフィールドは無視する (spec/model.md#objects)。
 // - 拡張できる列挙の知らない値は、フォールバックを当てて警告を残す (spec/model.md#unknown-values)。
-//   この実装は書き出しをしないので、元の値は残さない。フォールバックが検証に影響する
-//   `Parameter.kind` とデフォーマの種類だけは「知らない値」として残す。
+//   元の値は残さない (書き出し write.ts は、警告のあったデータを書かない)。フォールバックが検証に
+//   影響する `Parameter.kind` とデフォーマの種類だけは「知らない値」として残す。
 // - 型の合わない値は `DecodeError` (ペイロードが不正)。モデルの規則の検査は validate.ts。
 
 import type { MsgValue } from "./msgpack.ts";
@@ -463,9 +463,125 @@ function slot(c: Ctx, v: MsgValue | undefined): M.Slot {
   };
 }
 
-function avatarLevel(c: Ctx, v: MsgValue | undefined): number | null {
+// ---- アバタープロファイル (spec/model.md#avatar-profile) ----
+// 評価には使わないが、モジュールの条件 (level) と書き出しのために全体を読む。
+
+const avatarPermission = stringEnum(
+  "AvatarPermission",
+  ["only_author", "only_licensed", "everyone"],
+  "only_author",
+);
+const commercialUsage = stringEnum(
+  "CommercialUsage",
+  ["personal_non_profit", "personal_profit", "corporation"],
+  "personal_non_profit",
+);
+const creditNotation = stringEnum("CreditNotation", ["required", "unnecessary"], "required");
+const modification = stringEnum(
+  "Modification",
+  ["prohibited", "allow", "allow_redistribution"],
+  "prohibited",
+);
+
+export const DEFAULT_AVATAR_META: M.AvatarMeta = {
+  name: "",
+  version: null,
+  authors: [],
+  copyright: null,
+  contact: null,
+  references: [],
+  thumbnail: null,
+  license_url: null,
+  avatar_permission: "only_author",
+  commercial_usage: "personal_non_profit",
+  allow_violent_usage: false,
+  allow_sexual_usage: false,
+  allow_political_or_religious_usage: false,
+  allow_antisocial_or_hate_usage: false,
+  credit_notation: "required",
+  allow_redistribution: false,
+  modification: "prohibited",
+  third_party_licenses: null,
+};
+
+function avatarMeta(c: Ctx, v: MsgValue | undefined): M.AvatarMeta {
   const o = object(c, v);
-  return opt(c, o, "level", u8, 1);
+  const d = DEFAULT_AVATAR_META;
+  return {
+    name: opt(c, o, "name", str, d.name),
+    version: nul(c, o, "version", str),
+    authors: opt(c, o, "authors", array(str), []),
+    copyright: nul(c, o, "copyright", str),
+    contact: nul(c, o, "contact", str),
+    references: opt(c, o, "references", array(str), []),
+    thumbnail: nul(c, o, "thumbnail", u32),
+    license_url: nul(c, o, "license_url", str),
+    avatar_permission: opt(c, o, "avatar_permission", avatarPermission, d.avatar_permission),
+    commercial_usage: opt(c, o, "commercial_usage", commercialUsage, d.commercial_usage),
+    allow_violent_usage: opt(c, o, "allow_violent_usage", bool, false),
+    allow_sexual_usage: opt(c, o, "allow_sexual_usage", bool, false),
+    allow_political_or_religious_usage: opt(
+      c,
+      o,
+      "allow_political_or_religious_usage",
+      bool,
+      false,
+    ),
+    allow_antisocial_or_hate_usage: opt(c, o, "allow_antisocial_or_hate_usage", bool, false),
+    credit_notation: opt(c, o, "credit_notation", creditNotation, d.credit_notation),
+    allow_redistribution: opt(c, o, "allow_redistribution", bool, false),
+    modification: opt(c, o, "modification", modification, d.modification),
+    third_party_licenses: nul(c, o, "third_party_licenses", str),
+  };
+}
+
+const trackingSource = stringEnum("TrackingSource", ["standard", "blend_shape", "head"], "unknown");
+
+/** 知らない `source` の項目は `null` (無視する)。 */
+function trackingOverride(c: Ctx, v: MsgValue | undefined): M.TrackingOverride | null {
+  const o = object(c, v);
+  const source = req(c, o, "source", trackingSource);
+  const item = {
+    input: req(c, o, "input", str),
+    parameter: nul(c, o, "parameter", str),
+    scale: opt(c, o, "scale", f32, 1),
+    offset: opt(c, o, "offset", f32, 0),
+  };
+  return source === "unknown" ? null : { source, ...item };
+}
+
+function lookAt(c: Ctx, v: MsgValue | undefined): M.LookAt {
+  const o = object(c, v);
+  return {
+    x: opt(c, o, "x", str, "EyeBallX"),
+    y: opt(c, o, "y", str, "EyeBallY"),
+    range_x: opt(c, o, "range_x", f32, 30),
+    range_y: opt(c, o, "range_y", f32, 30),
+  };
+}
+
+function avatarProfile(c: Ctx, v: MsgValue | undefined): M.AvatarProfile {
+  const o = object(c, v);
+  return {
+    profile_version: opt(c, o, "profile_version", u32, 0),
+    level: opt(c, o, "level", u8, 1),
+    meta: opt(c, o, "meta", avatarMeta, DEFAULT_AVATAR_META),
+    tracking: opt(c, o, "tracking", array(trackingOverride), []).filter(
+      (x): x is M.TrackingOverride => x !== null,
+    ),
+    look_at: nul(c, o, "look_at", lookAt),
+    hit_areas: opt(
+      c,
+      o,
+      "hit_areas",
+      array((hc, hv) => {
+        const ho = object(hc, hv);
+        return { name: req(hc, ho, "name", str), hit_area: req(hc, ho, "hit_area", str) };
+      }),
+      [],
+    ),
+    slots: opt(c, o, "slots", array(str), []),
+  };
 }
 
 /** `schema_version` を読んで、この実装が読める版か確かめる。 */
@@ -516,9 +632,7 @@ export function model(c: Ctx, v: MsgValue | undefined): M.Model {
       breath: { parameters: [] },
       lip_sync: { parameters: [] },
     }),
-    // アバタープロファイルは評価に使わないので、モジュールの条件に要る level だけを読む
-    // (spec/model.md#avatar-profile: 使わない読み込み器は無視してよい)
-    avatar_level: nul(c, o, "avatar", avatarLevel),
+    avatar: nul(c, o, "avatar", avatarProfile),
     slots: opt(c, o, "slots", array(slot), []),
     lighting: opt(c, o, "lighting", bool, false),
   };
