@@ -1,11 +1,11 @@
 ---
 id: T0132
 title: CLI: `ugoe info` でモジュールの概要を出す・モジュールのアトラス化・見本のまとまりの設定を共有する
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-cli, ugoe-format, ugoe-ai, docs]
 depends_on: [T0131, T0716]
-assignee:
+assignee: claude-worker-T0132
 ---
 
 # T0132: CLI: モジュールの概要とアトラス化
