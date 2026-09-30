@@ -6,6 +6,7 @@
 import { setPuppetTracking, type TrackingFrame } from "@ugoe/face-tracking";
 import { parseHexColor } from "./color";
 import { DriverSet } from "./drivers";
+import { type LightingSettings, loadLighting, saveLighting, toLightingJson } from "./lighting";
 import { detectModelKind, type ModelFile } from "./modelFile";
 import {
   groupParameters,
@@ -57,6 +58,10 @@ export class Player {
   zoom = $state(1);
   background = $state("#e6e7eb");
   transparent = $state(false);
+  /** 開いているモデルにライティングを受けるメッシュがあるか (光源のパネルを出すか)。 */
+  usesLighting = $state(false);
+  /** 光源の設定 (lighting.ts)。モデルを開き直しても保ち、localStorage に覚える。 */
+  lighting = $state<LightingSettings>(loadLighting());
 
   /** パラメータを毎フレーム外から動かすもの (drivers.ts)。 */
   readonly drivers = new DriverSet();
@@ -129,6 +134,9 @@ export class Player {
     this.trackingParameterIds = puppet.tracking_parameter_ids();
     puppet.set_enabled("eye_blink", this.autoEyeBlink);
     this.#pendingTracking = this.#lastTracking;
+    // 点光源の位置はキャンバスの大きさに対する割合なので、モデルごとに渡し直す。
+    this.usesLighting = puppet.uses_lighting();
+    this.#applyLighting();
     this.status = "ready";
     this.fit();
   }
@@ -219,6 +227,20 @@ export class Player {
     this.#applyBackground();
   }
 
+  /** 光源の設定を変える (次のフレームから効く)。設定は覚えておく。 */
+  setLighting(settings: LightingSettings): void {
+    this.lighting = settings;
+    saveLighting(settings);
+    this.#applyLighting();
+  }
+
+  /** 光源の設定の一部を書き換える (`edit` は写しを書き換える)。 */
+  updateLighting(edit: (settings: LightingSettings) => void): void {
+    const next = $state.snapshot(this.lighting) as LightingSettings;
+    edit(next);
+    this.setLighting(next);
+  }
+
   // --- 内部 ---
 
   #tick = (now: number): void => {
@@ -267,6 +289,18 @@ export class Player {
       if (value === undefined) continue;
       const shown = this.values[id];
       if (shown === undefined || Math.abs(shown - value) > EPSILON) this.values[id] = value;
+    }
+  }
+
+  #applyLighting(): void {
+    const puppet = this.#puppet;
+    if (puppet === null) return;
+    const size = puppet.canvas_size();
+    const json = toLightingJson(this.lighting, [size[0] ?? 1, size[1] ?? 1]);
+    try {
+      puppet.set_lighting_json(json === null ? undefined : JSON.stringify(json));
+    } catch (e) {
+      this.error = `光源を設定できません: ${message(e)}`;
     }
   }
 

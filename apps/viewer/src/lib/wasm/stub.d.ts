@@ -13,6 +13,10 @@ export class WebPuppet {
   load_bundle(bytes: Uint8Array): string[];
   unload(): void;
   has_model(): boolean;
+  canvas_size(): Float32Array;
+
+  set_lighting_json(json?: string | null): void;
+  uses_lighting(): boolean;
 
   parameters_json(): string;
   set_parameter(id: string, value: number): boolean;

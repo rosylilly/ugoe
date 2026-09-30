@@ -3,6 +3,7 @@ import { FaceTracker, TrackingPanel } from "@ugoe/face-tracking";
 import { onMount } from "svelte";
 import { readBrowserFile, readSampleModel, saveJsonFile, viewerHost } from "./lib/host";
 import LicenseDialog from "./lib/LicenseDialog.svelte";
+import LightingPanel from "./lib/LightingPanel.svelte";
 import type { ModelFile } from "./lib/modelFile";
 import ParameterPanel from "./lib/ParameterPanel.svelte";
 import { Player } from "./lib/player.svelte";
@@ -108,9 +109,16 @@ function onKeyDown(e: KeyboardEvent) {
 
   <main>
     <Viewport {player} />
-    <!-- 右のパネル。縦にパネルを積む (フェイストラッキングはパラメータの上)。 -->
+    <!--
+      右のパネル。縦にパネルを積む: フェイストラッキング → モデルの機能ごとのパネル → パラメータ (残りの高さ)。
+      モデルの機能ごとのパネル (ライティングなど) は、そのモデルが使うときだけ出す。畳める <details> にして、
+      高さの上限 (max-height) を付ける。
+    -->
     <aside class="sidebar">
       <TrackingPanel {tracker} parameterIds={player.trackingParameterIds} values={player.values} />
+      {#if player.usesLighting}
+        <LightingPanel {player} />
+      {/if}
       <ParameterPanel {player} />
     </aside>
   </main>

@@ -240,6 +240,8 @@ WebGL2 でも動くように、ストレージバッファ・コンピュート�
   (書式は [crates/ugoe-cli/README.md](../../crates/ugoe-cli/README.md#ugoe-render))。MCP サーバの `render_png` は光源を渡しません。
 - `ugoe-wasm` (`WebPuppet`): `load_bundle` が法線マップを登録し (前のモデルの法線マップは外す)、`set_lighting_json` で光源を渡します
   (JSON の形は [crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md))。光源はモデルを読み直しても保ちます。
+- ビューア (`apps/viewer`): `uses_lighting` が真のモデルのときだけ光源のパネルを出し、環境光・平行光源・点光源を操作できます
+  (点光源の位置と範囲はキャンバスの大きさに対する割合で持つ。[apps/viewer/README.md](../../apps/viewer/README.md#ライティング-t0705))。
 
 ## 互換の基準
 
