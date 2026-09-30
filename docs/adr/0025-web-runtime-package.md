@@ -43,3 +43,22 @@ ADR 0017 で、Web 向けの配布物を npm の `@ugoe/runtime` (wasm + TypeScr
 - `packages/` の部品 (フェイストラッキングなど) を `@ugoe/runtime` から使いたくなったら、MIT で書き直して `bindings/` に置くか、
   作者の了解を得て部品のライセンスを変える (別の ADR)。
 - npm への公開 (リリースの自動化) は別のタスクで行う。それまでパッケージは `private: true` で、`pnpm pack` の tarball で確かめる。
+  (T0410 で手順と CI のワークフロー `web-runtime-release.yml` を用意した。`private: true` を外して公開するかは利用者が決める。
+  `bindings/web/README.md#リリース`)
+
+## 追記: フェイストラッキング (T0410)
+
+`<ugoe-avatar>` のフェイストラッキングは、**ホストから入力を渡す口だけ**を持ち、トラッカー (カメラ・MediaPipe) は持たないことにした。
+
+- `UgoeAvatarElement.setTracking(input)` / `clearTracking()` と、依存のない変換 `trackingFromFaceLandmarker`
+  (MediaPipe Face Landmarker の結果の形 → 入力)・`mirrorTracking`・`headRotationFromMatrix` を `@ugoe/runtime` に置く。
+  MediaPipe の型は import せず、使う形だけを書く。変換は仕様 (`docs/spec/avatar-profile.md` の向きと左右の約束) から自分で書いた
+  (GPL の `packages/face-tracking` は読んだが写していない)。
+- 平滑化・キャリブレーション・顔を見失ったときの扱いは、これまでどおりホストが行う (`docs/spec/avatar-profile.md#実装の範囲`)。
+
+| 案 | 利点 | 欠点 |
+| --- | --- | --- |
+| **入力を渡す口だけ (採用)** | 実行時の依存が増えない (ADR の決定 3)。トラッカーを選べる (MediaPipe 以外・サーバー側の推定・録画の再生)。パッケージの大きさが変わらない | カメラから動かすまでの数十行はホストが書く (README に例を置いた) |
+| MIT で書き直したトラッカーを同梱する (`packages/face-tracking` 相当) | 属性 1 つでカメラから動かせる | `@mediapipe/tasks-vision` (Apache-2.0。寛容なので可) が実行時の依存になり、wasm (約 10MB) とモデル (約 4MB) の置き場所・CDN・カメラの許可の UI まで決める必要がある。平滑化・キャリブレーションを含めると GPL の実装を写さずに書き直す量が大きい |
+
+トラッカーの同梱は、要望があれば別のパッケージ (`bindings/web` の中の `@ugoe/tracking` など、MIT) として検討する。

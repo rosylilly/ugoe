@@ -1,0 +1,10 @@
+{
+  "name": "smile",
+  "fade_in": 0.3,
+  "fade_out": 0.3,
+  "parameters": [
+    { "parameter": "EyeLSmile", "value": 1.0, "op": "overwrite" },
+    { "parameter": "EyeRSmile", "value": 1.0, "op": "overwrite" },
+    { "parameter": "MouthForm", "value": 1.0, "op": "overwrite" }
+  ]
+}

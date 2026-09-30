@@ -2,7 +2,7 @@
 //
 // - `WebPuppet` などは ugoe-wasm (crates/ugoe-wasm) の JS バインディングそのもの。使い方は crates/ugoe-wasm/README.md。
 // - ここでは初期化 (`initRuntime`)・作成 (`createPuppet`)・モデルの読み込み (`loadModel`) の薄い補助と、
-//   Web Component の `<ugoe-avatar>` (`./element.ts`) を足す。
+//   Web Component の `<ugoe-avatar>` (`./element.ts`)、フェイストラッキングの入力の変換 (`./tracking.ts`) を足す。
 // - 配布の方針は `docs/adr/0017-single-runtime-distribution.md`、ライセンスと置き場所は
 //   `docs/adr/0025-web-runtime-package.md`。
 
@@ -27,4 +27,15 @@ export {
   initRuntime,
   loadModel,
 } from "./runtime.js";
+export {
+  type FaceLandmarkerOptions,
+  type FaceLandmarkerResultLike,
+  headRotationFromMatrix,
+  mirrorTracking,
+  type TrackingBody,
+  type TrackingInput,
+  type TrackingRotation,
+  trackingArguments,
+  trackingFromFaceLandmarker,
+} from "./tracking.js";
 export { type InitInput, sample_motion_json, version, WebPuppet } from "./wasm/ugoe_wasm.js";

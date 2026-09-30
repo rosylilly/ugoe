@@ -183,6 +183,9 @@ just wasm-check  # wasm32 向けの clippy
 
 wasm-bindgen-cli の版は `Cargo.lock` の `wasm-bindgen` と一致させる必要がある (`just wasm` が検査する)。
 
+npm のパッケージ `@ugoe/runtime` の wasm は、`just web-runtime` が大きさを優先した別の設定 (opt-level "z"・fat LTO・関数名の節を外す)
+でビルドする (`bindings/web/README.md#wasm-の大きさ`)。`just wasm` (エディタ・ビューア) の設定は変えていない。
+
 ## 仕様
 
 - [docs/editor.md#ビューポート](../../docs/editor.md#ビューポート)

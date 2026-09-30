@@ -1,0 +1,19 @@
+{
+  "name": "shake",
+  "duration": 1.6,
+  "fade_in": 0.2,
+  "fade_out": 0.3,
+  "curves": [
+    {
+      "target": { "kind": "parameter", "id": "AngleX" },
+      "segments": [
+        { "type": "start", "p": { "t": 0.0, "v": 0.0 } },
+        { "type": "linear", "to": { "t": 0.4, "v": 25.0 } },
+        { "type": "linear", "to": { "t": 0.8, "v": -25.0 } },
+        { "type": "linear", "to": { "t": 1.2, "v": 25.0 } },
+        { "type": "linear", "to": { "t": 1.6, "v": 0.0 } }
+      ]
+    }
+  ],
+  "events": []
+}

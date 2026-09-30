@@ -87,6 +87,7 @@
             </select>
           </label>
           <label style="display: flex"><input type="checkbox" id="paused" /> paused</label>
+          <label style="display: flex"><input type="checkbox" id="tracking" /> tracking (合成の入力)</label>
         </div>
         <div class="row">
           <label style="display: flex">
@@ -113,6 +114,20 @@
       const query = new URLSearchParams(location.search);
       const backend = query.get("backend") ?? "auto";
       const avatar = document.getElementById("avatar");
+      // ?src=generated/avatar-motion.ugoe でモデルを変える (モーションと表情を含む見本は `npm run sample:motion` で作る)
+      if (query.get("src")) avatar.setAttribute("src", query.get("src"));
+
+      // WebGPU が使えない環境を真似る (WebGL2 への切り替えを試す。README の「WebGL2 への切り替えを試す」)。
+      // - no-adapter: アダプタが無い → `auto` は同じ canvas で WebGL2 を使う
+      // - device-error: アダプタはあるがデバイスの作成に失敗する → `auto` の作成が失敗し、新しい canvas の WebGL2 で作り直す
+      const simulate = query.get("simulate");
+      if (simulate === "no-adapter" && navigator.gpu) {
+        navigator.gpu.requestAdapter = async () => null;
+      } else if (simulate === "device-error" && globalThis.GPUAdapter) {
+        GPUAdapter.prototype.requestDevice = async () => {
+          throw new Error("simulated requestDevice failure");
+        };
+      }
       const status = document.getElementById("status");
       const result = { version: null, element: null, plain: null, errors: [] };
       await initRuntime();
@@ -131,6 +146,34 @@
       document
         .getElementById("paused")
         .addEventListener("change", (e) => (avatar.paused = e.target.checked));
+
+      // フェイストラッキングの入力を渡す口 (setTracking)。ここでは時間の関数で作った合成の入力を毎フレーム渡す。
+      // 本物のカメラでは MediaPipe の結果を trackingFromFaceLandmarker で変換して渡す (README の「フェイストラッキング」)
+      let trackingFrame = 0;
+      document.getElementById("tracking").addEventListener("change", (e) => {
+        cancelAnimationFrame(trackingFrame);
+        if (!e.target.checked) {
+          avatar.clearTracking();
+          return;
+        }
+        const start = performance.now();
+        const feed = (now) => {
+          const t = (now - start) / 1000;
+          const blink = t % 3 < 0.15 ? 1 : 0;
+          avatar.setTracking({
+            blendshapes: {
+              jawOpen: 0.5 + 0.5 * Math.sin(t * 3),
+              eyeBlinkLeft: blink,
+              eyeBlinkRight: blink,
+              mouthSmileLeft: 0.6,
+              mouthSmileRight: 0.6,
+            },
+            head: { yaw: 20 * Math.sin(t), pitch: 10 * Math.sin(t * 0.7), roll: 8 * Math.sin(t * 1.3) },
+          });
+          trackingFrame = requestAnimationFrame(feed);
+        };
+        trackingFrame = requestAnimationFrame(feed);
+      });
 
       function fillSelect(id, names, attribute) {
         const select = document.getElementById(id);
@@ -178,11 +221,24 @@
 
       // 低い層の API: canvas と WebPuppet をホストが持ち、ループも自分で回す
       async function startPlain() {
-        const canvas = document.getElementById("plain");
+        let canvas = document.getElementById("plain");
         const dpr = devicePixelRatio;
         canvas.width = canvas.clientWidth * dpr;
         canvas.height = canvas.clientHeight * dpr;
-        const puppet = await createPuppet(canvas, { backend });
+        let puppet;
+        try {
+          puppet = await createPuppet(canvas, { backend });
+        } catch (e) {
+          if (backend !== "auto") throw e;
+          // 1 つの canvas は WebGPU と WebGL2 を併用できないので、新しい canvas の WebGL2 で作り直す
+          console.warn("falling back to WebGL2:", e);
+          const fresh = canvas.cloneNode();
+          canvas.replaceWith(fresh);
+          canvas = fresh;
+          canvas.width = canvas.clientWidth * dpr;
+          canvas.height = canvas.clientHeight * dpr;
+          puppet = await createPuppet(canvas, { backend: "webgl2" });
+        }
         const warnings = await fetchModel(puppet, "samples/dress-up/dress-up.ugoe");
         puppet.set_parameter("AngleX", -15);
         let last = performance.now();

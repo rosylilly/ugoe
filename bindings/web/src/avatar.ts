@@ -4,14 +4,17 @@
 // - `src`: モデルの URL (`.ugoe` バンドルかモデルの JSON)
 // - `backend`: `auto` (既定) | `webgpu` | `webgl2`。`auto` で WebGPU の作成に失敗したら、新しい canvas の WebGL2 で作り直す
 // - `parameters`: `"AngleX: 15; EyeLOpen: 0.5"` (読み込みのたびと、属性を変えたときに設定する)
-// - `expression` / `motion` (+ `motion-priority`): バンドルの表情・モーションの名前
+// - `expression` / `motion` (+ `motion-priority`): バンドルの表情・モーションの名前。再生中のモーションより優先度が低くて
+//   始められないモーションは、始められるまで毎フレーム試す
 // - `paused`: 時間を止める (`update(dt)` を呼ばない。パラメータを変えたときだけ描き直す)
 //
-// JS からは `setParameter` / `parameters` / `load` と、ugoe-wasm の `WebPuppet` そのもの (`puppet`) を使う。
+// JS からは `setParameter` / `parameters` / `load` / `setTracking` と、ugoe-wasm の `WebPuppet` そのもの (`puppet`) を使う。
+// フェイストラッキングはホストが入力を渡す口だけを持つ (トラッカーは持たない。ADR 0025)。
 // 画面外 (IntersectionObserver) と `paused` の間は requestAnimationFrame を回さない。
 
 import { parseBackend, parseMotionPriority, parseParameters } from "./attributes.js";
 import { createPuppet, loadModel } from "./runtime.js";
+import { type TrackingInput, trackingArguments } from "./tracking.js";
 import type { WebPuppet } from "./wasm/ugoe_wasm.js";
 
 /** `load` イベントの `detail`。 */
@@ -105,6 +108,12 @@ export class UgoeAvatarElement extends BaseElement {
   #needsRender = false;
   #visible = true;
   #restarts = 0;
+  /** 最後に渡されたトラッキングの入力。モデルを読み直したら渡し直す。 */
+  #tracking: TrackingInput | null = null;
+  /** トラッキングの入力を渡してから、まだ `update` していない (`paused` の間も反映するため)。 */
+  #trackingDirty = false;
+  /** `motion` 属性のモーションを、再生中のモーションより優先度が低くて始められなかった (始められるまで毎フレーム試す)。 */
+  #motionPending = false;
   #resizeObserver: ResizeObserver | null = null;
   #intersectionObserver: IntersectionObserver | null = null;
 
@@ -187,6 +196,47 @@ export class UgoeAvatarElement extends BaseElement {
   /** パラメータの今の値。モデルが無いか ID が無ければ `undefined`。 */
   getParameter(id: string): number | undefined {
     return this.#puppet?.parameter(id);
+  }
+
+  /** 最後に `setTracking` で渡した入力 (`clearTracking` の後は `null`)。 */
+  get tracking(): TrackingInput | null {
+    return this.#tracking;
+  }
+
+  /**
+   * フェイストラッキングの入力を渡す (毎フレーム呼んでよい)。`null` は `clearTracking()` と同じ。
+   *
+   * 入力は次のフレームから、モーションの後・表情と目パチの前にパラメータへ書き込まれる (`paused` の間も反映する)。
+   * トラッキングの間はモデルの目パチを止める。モデルを読み直したり作り直したりしても、最後の入力を渡し直す。
+   * 平滑化・キャリブレーション・左右反転の直しはホストが行う (MediaPipe の結果は `trackingFromFaceLandmarker` で変換できる)。
+   */
+  setTracking(input: TrackingInput | null): void {
+    if (input === null) {
+      this.clearTracking();
+      return;
+    }
+    this.#tracking = input;
+    this.#applyTracking();
+  }
+
+  /**
+   * トラッキングをやめる。トラッキングが書き込んでいたパラメータを既定値に戻し (`parameters` 属性にあればその値)、
+   * 目パチを再び有効にする。
+   */
+  clearTracking(): void {
+    if (this.#tracking === null) return;
+    this.#tracking = null;
+    this.#trackingDirty = false;
+    const puppet = this.#puppet;
+    if (!puppet?.has_model()) return;
+    const ids = new Set(puppet.tracking_parameter_ids());
+    puppet.clear_tracking();
+    puppet.set_enabled("eye_blink", true);
+    for (const def of this.parameterDefinitions) {
+      if (ids.has(def.id)) puppet.set_parameter(def.id, def.default);
+    }
+    this.#applyParameters();
+    this.requestRender();
   }
 
   /**
@@ -396,6 +446,7 @@ export class UgoeAvatarElement extends BaseElement {
     this.#applyParameters();
     if (this.#carry) this.parameters = this.#carry;
     this.#carry = null;
+    this.#applyTracking();
     // 表情・モーションの名前がモデルに無くても、読み込み自体は成功として扱う (`error` を送るだけ)。
     this.#guard(() => this.#applyExpression());
     this.#guard(() => this.#applyMotion());
@@ -414,6 +465,15 @@ export class UgoeAvatarElement extends BaseElement {
     }
   }
 
+  #applyTracking(): void {
+    const puppet = this.#puppet;
+    if (!this.#tracking || !puppet?.has_model()) return;
+    puppet.set_tracking(...trackingArguments(this.#tracking));
+    puppet.set_enabled("eye_blink", false);
+    this.#trackingDirty = true;
+    this.requestRender();
+  }
+
   #applyExpression(): void {
     const puppet = this.#puppet;
     if (!puppet?.has_model()) return;
@@ -427,8 +487,13 @@ export class UgoeAvatarElement extends BaseElement {
     const puppet = this.#puppet;
     if (!puppet?.has_model()) return;
     const name = this.getAttribute("motion");
-    if (name) puppet.start_motion(name, parseMotionPriority(this.getAttribute("motion-priority")));
-    else puppet.stop_motions();
+    this.#motionPending = false;
+    if (name) {
+      const priority = parseMotionPriority(this.getAttribute("motion-priority"));
+      this.#motionPending = !puppet.start_motion(name, priority);
+    } else {
+      puppet.stop_motions();
+    }
     this.requestRender();
   }
 
@@ -456,9 +521,13 @@ export class UgoeAvatarElement extends BaseElement {
       const dt = this.#last === null ? 0 : Math.min((now - this.#last) / 1000, MAX_DT);
       this.#last = now;
       puppet.update(dt);
+      if (this.#motionPending) this.#guard(() => this.#applyMotion());
     } else {
       this.#last = null;
+      // 時間を止めていても、新しいトラッキングの入力は反映する (時間は進めない)
+      if (this.#trackingDirty && puppet.has_model()) puppet.update(0);
     }
+    this.#trackingDirty = false;
     this.#needsRender = false;
     try {
       puppet.render();

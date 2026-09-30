@@ -1,0 +1,27 @@
+{
+  "name": "idle",
+  "duration": 4.0,
+  "looping": true,
+  "fade_in": 0.5,
+  "fade_out": 0.5,
+  "curves": [
+    {
+      "target": { "kind": "parameter", "id": "AngleX" },
+      "segments": [
+        { "type": "start", "p": { "t": 0.0, "v": 0.0 } },
+        { "type": "linear", "to": { "t": 1.0, "v": 8.0 } },
+        { "type": "linear", "to": { "t": 3.0, "v": -8.0 } },
+        { "type": "linear", "to": { "t": 4.0, "v": 0.0 } }
+      ]
+    },
+    {
+      "target": { "kind": "parameter", "id": "BodyAngleZ" },
+      "segments": [
+        { "type": "start", "p": { "t": 0.0, "v": 0.0 } },
+        { "type": "linear", "to": { "t": 2.0, "v": 3.0 } },
+        { "type": "linear", "to": { "t": 4.0, "v": 0.0 } }
+      ]
+    }
+  ],
+  "events": []
+}

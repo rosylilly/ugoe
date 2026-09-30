@@ -3,3 +3,5 @@
 # `pnpm pack --out ugoe-runtime.tgz` の出力 (examples/basic が読む)
 /ugoe-runtime.tgz
 /examples/*/package-lock.json
+# examples/basic の make-motion-sample.mjs が作る見本のバンドル
+/examples/*/generated/

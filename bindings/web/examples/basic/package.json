@@ -5,7 +5,8 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "start": "node serve.mjs"
+    "start": "node serve.mjs",
+    "sample:motion": "node make-motion-sample.mjs"
   },
   "dependencies": {
     "@ugoe/runtime": "file:../../ugoe-runtime.tgz"
