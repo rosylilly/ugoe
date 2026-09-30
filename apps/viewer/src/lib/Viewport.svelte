@@ -1,6 +1,8 @@
 <script lang="ts">
 // モデルを描く領域。ホイールでズーム、ドラッグでパン、ダブルクリックでフィット。
+// ライティングを使うモデルでは光源の印を重ね、印をドラッグすると光源が動く (LightMarkers.svelte、T0708)。
 import { onMount } from "svelte";
+import LightMarkers from "./LightMarkers.svelte";
 import type { Player } from "./player.svelte";
 
 let { player }: { player: Player } = $props();
@@ -70,6 +72,9 @@ function onPointerUp(e: PointerEvent) {
     <p class="hint">準備しています…</p>
   {:else if player.status === "unavailable"}
     <p class="hint error">{player.error}</p>
+  {/if}
+  {#if player.status === "ready" && player.usesLighting && player.lighting.enabled && player.lightMarkers}
+    <LightMarkers {player} />
   {/if}
 </div>
 

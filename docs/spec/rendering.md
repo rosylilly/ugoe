@@ -242,6 +242,7 @@ WebGL2 でも動くように、ストレージバッファ・コンピュート�
   (JSON の形は [crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md))。光源はモデルを読み直しても保ちます。
 - ビューア (`apps/viewer`): `uses_lighting` が真のモデルのときだけ光源のパネルを出し、環境光・平行光源・点光源を操作できます
   (点光源の位置と範囲はキャンバスの大きさに対する割合で持つ。[apps/viewer/README.md](../../apps/viewer/README.md#ライティング-t0705))。
+  光源の印をビューポートに重ね、平行光源の向きと点光源の位置をドラッグで変えられる (印の位置はビュー変換 `view_transform` で合わせる)。
 
 ## 互換の基準
 

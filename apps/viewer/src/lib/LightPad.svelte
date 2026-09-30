@@ -1,6 +1,7 @@
 <script lang="ts">
 // 光源の向きや位置をドラッグで選ぶ小さな面。`x`・`y` は -1..1 (右・下が正)。
 // `round` なら円の中 (平行光源の向き。中心が真正面)、そうでなければ四角の中 (点光源の位置)。
+// ドラッグの途中は `onchange` の `preview` を真にし、離したときに `oncommit` を呼ぶ (途中で毎回覚えないため)。
 let {
   x,
   y,
@@ -8,13 +9,15 @@ let {
   disabled = false,
   label,
   onchange,
+  oncommit,
 }: {
   x: number;
   y: number;
   round?: boolean;
   disabled?: boolean;
   label: string;
-  onchange: (x: number, y: number) => void;
+  onchange: (x: number, y: number, preview: boolean) => void;
+  oncommit?: () => void;
 } = $props();
 
 let pad = $state<HTMLDivElement | null>(null);
@@ -34,7 +37,7 @@ function pick(e: PointerEvent) {
     px = Math.min(1, Math.max(-1, px));
     py = Math.min(1, Math.max(-1, py));
   }
-  onchange(px, py);
+  onchange(px, py, true);
 }
 
 function onPointerDown(e: PointerEvent) {
@@ -45,6 +48,10 @@ function onPointerDown(e: PointerEvent) {
 
 function onPointerMove(e: PointerEvent) {
   if (pad?.hasPointerCapture(e.pointerId)) pick(e);
+}
+
+function onPointerUp(e: PointerEvent) {
+  if (pad?.hasPointerCapture(e.pointerId)) oncommit?.();
 }
 
 function onKeyDown(e: KeyboardEvent) {
@@ -61,7 +68,7 @@ function onKeyDown(e: KeyboardEvent) {
   let [nx, ny] = [x + move[0], y + move[1]];
   const r = Math.hypot(nx, ny);
   if (round && r > 1) [nx, ny] = [nx / r, ny / r];
-  onchange(Math.min(1, Math.max(-1, nx)), Math.min(1, Math.max(-1, ny)));
+  onchange(Math.min(1, Math.max(-1, nx)), Math.min(1, Math.max(-1, ny)), false);
 }
 </script>
 
@@ -79,6 +86,8 @@ function onKeyDown(e: KeyboardEvent) {
   title={label}
   onpointerdown={onPointerDown}
   onpointermove={onPointerMove}
+  onpointerup={onPointerUp}
+  onpointercancel={onPointerUp}
   onkeydown={onKeyDown}
 >
   <span class="dot" style:left="{(x + 1) * 50}%" style:top="{(y + 1) * 50}%"></span>

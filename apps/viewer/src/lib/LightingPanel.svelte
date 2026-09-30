@@ -2,6 +2,8 @@
 // 光源のパネル (T0705)。ライティングを使うモデル (`WebPuppet.uses_lighting`) のときだけ App.svelte が出す。
 // 環境光・平行光源 (向き)・点光源 (位置と範囲) の色と強さ、既定の光源の組。設定は Player がモデルごとに覚え (T0709)、
 // 「既定に戻す」で開いているモデルの設定を忘れる。
+// スライダー・色・面をドラッグしている途中は描画だけを変え、離したときに覚える (`preview` と `commitLighting`)。
+// ビューポートの光源の印 (LightMarkers.svelte、T0708) の表示もここで切り替える。
 import LightPad from "./LightPad.svelte";
 import {
   anglesFromPad,
@@ -26,8 +28,8 @@ let directionPad = $derived(padFromAngles(s.directional.azimuth, s.directional.e
 // 覚えておらず既定のままなら、戻すものが無い。
 let canReset = $derived(player.lightingRemembered || !sameLighting(s, defaultLighting()));
 
-function edit(change: (settings: LightingSettings) => void) {
-  player.updateLighting(change);
+function edit(change: (settings: LightingSettings) => void, preview = false) {
+  player.updateLighting(change, { preview });
 }
 
 function applyPreset(settings: LightingSettings) {
@@ -59,8 +61,9 @@ const times = (v: number) => `×${v.toFixed(2)}`;
       {disabled}
       oninput={(e) => {
         const v = e.currentTarget.valueAsNumber;
-        edit((next) => set(next, v));
+        edit((next) => set(next, v), true);
       }}
+      onchange={() => player.commitLighting()}
     />
     <span class="value">{format(value)}</span>
   </label>
@@ -82,8 +85,9 @@ const times = (v: number) => `×${v.toFixed(2)}`;
           const color = e.currentTarget.value;
           edit((next) => {
             pick(next).color = color;
-          });
+          }, true);
         }}
+        onchange={() => player.commitLighting()}
       />
     </label>
     {@render slider(
@@ -118,6 +122,17 @@ const times = (v: number) => `×${v.toFixed(2)}`;
       }}
     />
     光源を当てる
+  </label>
+  <label
+    class="toggle"
+    title="ビューポートに光源の印を出す。印をドラッグすると、平行光源の向きと点光源の位置を変えられる"
+  >
+    <input
+      type="checkbox"
+      checked={player.lightMarkers}
+      onchange={(e) => player.setLightMarkers(e.currentTarget.checked)}
+    />
+    ビューポートに光源の印を出す
   </label>
 
   <div class="memory">
@@ -171,13 +186,14 @@ const times = (v: number) => `×${v.toFixed(2)}`;
             x={directionPad[0]}
             y={directionPad[1]}
             disabled={!s.enabled || !s.directional.enabled}
-            onchange={(x, y) => {
+            onchange={(x, y, preview) => {
               const [azimuth, elevation] = anglesFromPad(x, y);
               edit((next) => {
                 next.directional.azimuth = azimuth;
                 next.directional.elevation = elevation;
-              });
+              }, preview);
             }}
+            oncommit={() => player.commitLighting()}
           />
         </div>
         <div class="controls">
@@ -234,12 +250,13 @@ const times = (v: number) => `×${v.toFixed(2)}`;
             x={Math.min(1, Math.max(-1, s.point.x * 2 - 1))}
             y={Math.min(1, Math.max(-1, s.point.y * 2 - 1))}
             disabled={!s.enabled || !s.point.enabled}
-            onchange={(x, y) => {
+            onchange={(x, y, preview) => {
               edit((next) => {
                 next.point.x = Math.round(((x + 1) / 2) * 1000) / 1000;
                 next.point.y = Math.round(((y + 1) / 2) * 1000) / 1000;
-              });
+              }, preview);
             }}
+            oncommit={() => player.commitLighting()}
           />
         </div>
         <div class="controls">

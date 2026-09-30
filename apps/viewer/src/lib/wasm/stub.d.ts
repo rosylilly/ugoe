@@ -60,6 +60,7 @@ export class WebPuppet {
   zoom(): number;
   zoom_at(factor: number, x: number, y: number): void;
   pan_by(dx: number, dy: number): void;
+  view_transform(): Float32Array;
 }
 
 export function version(): string;

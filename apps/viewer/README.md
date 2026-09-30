@@ -13,7 +13,7 @@ src/                  フロントエンド (Svelte 5 + TS。npm パッケージ
   lib/player.svelte.ts  WebPuppet (ugoe-wasm) を持ち、フレームのループを回す。UI の状態もここ
   lib/drivers.ts        パラメータを毎フレーム外から動かす仕組み (ParameterDriver)
   lib/host.ts           ファイルの選択と読み込み (Tauri / ブラウザ / 差し替え)
-  lib/Viewport.svelte   描画領域 (ズーム・パン・フィット)
+  lib/Viewport.svelte   描画領域 (ズーム・パン・フィット)。LightMarkers.svelte は重ねる光源の印 (ドラッグで光源を動かす、T0708)
   lib/ParameterPanel.svelte  パラメータのスライダー (グループごと)
   lib/LightingPanel.svelte   光源のパネル (ライティングを使うモデルのときだけ出す)。LightPad.svelte は向き・位置の面
   lib/lighting.ts       光源の設定・既定の光源の組・set_lighting_json の JSON への変換・localStorage への保存 (最後に使った設定と、モデルごとの設定 (T0709))
@@ -60,7 +60,7 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 | ファイルをウィンドウにドロップ | そのファイルを開く。`.ugoemod` は読み込んで付ける。モデルとモジュールを一緒に落とすと、モデルを先に開く |
 | `ugoe-viewer path/to/model.ugoe` | 起動時に開く |
 | ホイール | カーソルの位置を中心にズーム |
-| ドラッグ (左・中ボタン) | パン |
+| ドラッグ (左・中ボタン) | パン。光源の印 (ライティングを使うモデル) を掴んだときは光源を動かす |
 | ダブルクリック・F・Fit | 全体を表示 |
 | 背景・透明 | 背景色。透明にすると市松模様の上に描く |
 | 着せ替え | スロットのあるモデルか、モジュールを読み込んだときに右のパネルに出る。スロットごとにモジュールを付ける・外す・差し替える (下の「着せ替え」) |
@@ -185,6 +185,7 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 | 環境光 | 色と強さ。どの向きの面にも同じだけ当たる |
 | 平行光源 | 光が来る向き。丸い面をドラッグ (中心が正面、縁が真横) するか、「方位」(0° = 右、90° = 上、180° = 左、−90° = 下) と「高さ」(0° = 面に沿う、90° = 正面) で選ぶ。色と強さ |
 | 点光源 | 位置 (「横」「縦」はキャンバスの幅・高さに対する割合、四角い面のドラッグでも選べる)・「手前」(キャンバスからの距離)・「範囲」(光が届く距離。遠いほど弱まり、範囲の外には届かない)。手前と範囲はキャンバスの長い辺に対する割合。色と強さ |
+| ビューポートに光源の印を出す | ビューポートに光源の印を重ね、印のドラッグで光源を動かす (下の「ビューポートの光源の印」)。既定は出す。`ugoe-viewer.lighting.markers` に覚える |
 
 - 渡す色は「色 × 強さ」(1 を超えてよい)。位置と範囲を割合で持つので、キャンバスの大きさが違うモデルでも同じように当たる。
   JSON への変換は `lighting.ts` の `toLightingJson` (平行光源の `direction` は光が進む向きなので、来る向きの逆にする)。
@@ -197,9 +198,34 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
   - 既定を「最後に使った設定」にしたのは、T0705 までの「ビューアで 1 つ」の使い方 (好みの光源で見本を次々に見る) を保つため。
 - 壊れた値・範囲の外の値は既定値で埋めるか範囲に収め、読めなければ (壊れた JSON・違う版) 覚えていないものとして扱う。
   最後に使った設定が読めなければ「標準」から始める。
-- ヘッドレスのブラウザからは `window.__UGOE_VIEWER__` の `lighting`・`setLighting`・`updateLighting`・`usesLighting`・
-  `lightingRemembered`・`resetLighting()`・`dressUpRemembered`・`forgetDressUp()` を触れる。
+- ヘッドレスのブラウザからは `window.__UGOE_VIEWER__` の `lighting`・`setLighting`・`updateLighting`・`commitLighting`・`usesLighting`・
+  `lightingRemembered`・`resetLighting()`・`lightMarkers`・`setLightMarkers`・`view`・`canvasSize`・`dressUpRemembered`・`forgetDressUp()` を触れる。
+  印の取っ手は `[data-light=directional]`・`[data-light=point]` で引ける。
+- スライダー・色・面をドラッグしている途中は描画だけを変え (`updateLighting(edit, { preview: true })`)、離したときに
+  覚える (`commitLighting()`。最後に使った設定とモデルごとの設定を 1 回だけ書く)。キーボードで動かしたときはすぐ覚える。
+  覚える前に別のモデルを開いたときは、開く前に前のモデルの設定として覚える。
 - 確かめるには「サンプル」→「アバター (ライティング)」(`assets/samples/avatar-lit.ugoe`。見本のアバターに法線マップを付けた版、T0707) を開く。
+
+### ビューポートの光源の印 (T0708)
+
+光源を当てていて、パネルの「ビューポートに光源の印を出す」が入っているとき、ビューポートに印を重ねる (`LightMarkers.svelte`)。
+形はエディタの光源の取っ手 ([docs/manual/lighting.md](../../docs/manual/lighting.md#光源-preview-lights)) に合わせた。
+
+| 印 | 内容 |
+| --- | --- |
+| 平行光源 | 表示しているキャンバスの中央に黄色い破線の円と、光源の色の丸い取っ手。**取っ手のある向きから光が来る** (円の中心 = 正面から、縁 = 真横から)。取っ手をドラッグすると「方位」と「高さ」が変わる (円の外へ引くと縁、つまり真横から)。円の半径はキャンバスの短い辺の 35% を 60〜220 CSS ピクセルに収めたもの |
+| 点光源 | キャンバスの上の光源の位置に、放射線の付いた取っ手。ドラッグで「横」「縦」が変わる (手前・範囲はパネルで変える)。光が面の上で届く範囲 (`√(範囲² − 手前²)`) を破線の円で描く |
+
+- **パンとの切り分け:** 取っ手だけがポインタを受け (`pointer-events`)、取っ手の上で押したときはパンを始めない。ほかの場所の
+  ドラッグは今までどおりパン、ホイールは取っ手の上でもズーム。取っ手の上のダブルクリックではフィットしない。
+- **パネルとの同期:** 取っ手のドラッグはパネルと同じ `updateLighting` で値を変える (途中は `preview`、離したときに `commitLighting`)
+  ので、パネルの面・スライダーもすぐ動き、モデルごとの記憶 (T0709) にも同じように入る。
+- **位置の合わせ方:** キャンバス座標から画面座標への変換は `WebPuppet.view_transform()` (`[scale, offset_x, offset_y]`、描画先の画素) を
+  `devicePixelRatio` で割ったもの (`Player.view`)。ズーム・パン・フィット・大きさの変更・モデルを開いたときに読み直す。
+  幾何の計算は `lighting.ts` の `lightDial`・`directionalHandle`・`anglesFromScreen`・`pointHandle`・`pointFromScreen`・`pointRangeOnCanvas`。
+- ビューポートの描画に鏡像の表示は無い (フェイストラッキングの「鏡像で表示」とランドマークは、右のパネルのカメラの映像にだけ掛かる)
+  ので、印は反転を考えなくてよい。ビューポートに鏡像の表示を足すときは、印の変換にも同じ反転を入れる。
+- 光源を切っているとき・ライティングを使わないモデルでは出さない。平行光源・点光源のうち切っているものの印も出さない。
 
 ## フェイストラッキング (T0703)
 

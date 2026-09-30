@@ -30,7 +30,10 @@ import {
   type LightingSettings,
   lightingMemory,
   loadLighting,
+  loadLightMarkers,
+  type ScreenTransform,
   saveLighting,
+  saveLightMarkers,
   toLightingJson,
 } from "./lighting";
 import { parseLoadWarnings } from "./loadWarnings";
@@ -97,6 +100,12 @@ export class Player {
   lighting = $state<LightingSettings>(loadLighting());
   /** 開いているモデルの光源の設定を覚えているか (「既定に戻す」で忘れる)。 */
   lightingRemembered = $state(false);
+  /** ビューポートに光源の印を出すか (T0708)。localStorage に覚える。 */
+  lightMarkers = $state(loadLightMarkers());
+  /** 開いているモデルのキャンバスの大きさ `[幅, 高さ]`。モデルが無ければ `null`。 */
+  canvasSize = $state<[number, number] | null>(null);
+  /** キャンバス座標 → canvas 要素の CSS ピクセルの変換 (ビューポートに重ねる印のため)。モデルが無ければ `null`。 */
+  view = $state<ScreenTransform | null>(null);
   /** 読み込んだ着せ替えのモジュール (読み込んだ順)。同じモデルを開き直したときは残り、別のモデルを開くと空になる。 */
   modules = $state<ModuleInfo[]>([]);
   /** 開いているモデル (本体) のスロット。 */
@@ -146,6 +155,8 @@ export class Player {
   #sessionFiles = new Map<string, ModelFile>();
   /** 0 より大きい間は、着せ替えの変化を利用者の操作とみなさない (組を覚えず、尋ねているのを取り消さない)。 */
   #quiet = 0;
+  /** ドラッグの途中で変えて、まだ覚えていない光源の設定があるか (`commitLighting` で覚える)。 */
+  #lightingPending = false;
 
   /** `container` の中に canvas を作り、描画を始める。 */
   async attach(container: HTMLElement): Promise<void> {
@@ -182,6 +193,8 @@ export class Player {
       this.loadModule(file);
       return;
     }
+    // ドラッグの途中の光源は、前のモデルの設定として覚えてから開く。
+    this.commitLighting();
     this.#file = file;
     const puppet = this.#puppet;
     // まだ描画の準備中なら、準備ができたときに読む (#createPuppet)。
@@ -263,6 +276,8 @@ export class Player {
     this.dressUpError = null;
     this.#syncDressUp();
     this.status = "ready";
+    const size = puppet.canvas_size();
+    this.canvasSize = [size[0] ?? 1, size[1] ?? 1];
     this.fit();
   }
 
@@ -450,6 +465,7 @@ export class Player {
   fit(): void {
     this.#puppet?.fit();
     this.zoom = this.#puppet?.zoom() ?? 1;
+    this.#syncView();
   }
 
   /** `(x, y)` を中心に `factor` 倍する。位置を省くと中央。 */
@@ -459,11 +475,13 @@ export class Player {
     const dpr = devicePixelRatio;
     puppet.zoom_at(factor, x * dpr, y * dpr);
     this.zoom = puppet.zoom();
+    this.#syncView();
   }
 
   panBy(dx: number, dy: number): void {
     const dpr = devicePixelRatio;
     this.#puppet?.pan_by(dx * dpr, dy * dpr);
+    this.#syncView();
   }
 
   /** canvas 要素の大きさ (CSS ピクセル) が変わった。 */
@@ -474,6 +492,7 @@ export class Player {
       Math.max(1, Math.round(this.#cssSize[0] * dpr)),
       Math.max(1, Math.round(this.#cssSize[1] * dpr)),
     );
+    this.#syncView();
   }
 
   setBackground(color: string, transparent: boolean): void {
@@ -484,6 +503,7 @@ export class Player {
 
   /** 光源の設定を変える (次のフレームから効く)。最後に使った設定と、開いているモデルの設定として覚える。 */
   setLighting(settings: LightingSettings): void {
+    this.#lightingPending = false;
     this.lighting = settings;
     saveLighting(settings);
     const model = this.#model;
@@ -498,6 +518,7 @@ export class Player {
   resetLighting(): void {
     const model = this.#model;
     if (model !== null) this.#lightingMemory.delete(model);
+    this.#lightingPending = false;
     this.lightingRemembered = false;
     this.lighting = defaultLighting();
     saveLighting(this.lighting);
@@ -515,11 +536,31 @@ export class Player {
     this.restoreOffer = null;
   }
 
-  /** 光源の設定の一部を書き換える (`edit` は写しを書き換える)。 */
-  updateLighting(edit: (settings: LightingSettings) => void): void {
+  /**
+   * 光源の設定の一部を書き換える (`edit` は写しを書き換える)。`preview` なら描画だけを変えて覚えない
+   * (ドラッグの途中。離したときに `commitLighting` で覚える。localStorage に毎回書かないため)。
+   */
+  updateLighting(edit: (settings: LightingSettings) => void, { preview = false } = {}): void {
     const next = $state.snapshot(this.lighting) as LightingSettings;
     edit(next);
-    this.setLighting(next);
+    if (!preview) {
+      this.setLighting(next);
+      return;
+    }
+    this.lighting = next;
+    this.#lightingPending = true;
+    this.#applyLighting();
+  }
+
+  /** `preview` で変えた光源の設定を、最後に使った設定と開いているモデルの設定として覚える。変えていなければ何もしない。 */
+  commitLighting(): void {
+    if (this.#lightingPending) this.setLighting($state.snapshot(this.lighting) as LightingSettings);
+  }
+
+  /** ビューポートに光源の印を出すかを変える (覚える)。 */
+  setLightMarkers(show: boolean): void {
+    this.lightMarkers = show;
+    saveLightMarkers(show);
   }
 
   // --- 内部 ---
@@ -675,6 +716,19 @@ export class Player {
     } catch (e) {
       this.error = `光源を設定できません: ${message(e)}`;
     }
+  }
+
+  /** ビューの変換を読み直す (ズーム・パン・大きさ・モデルが変わったとき)。 */
+  #syncView(): void {
+    const t = this.#puppet?.has_model() ? this.#puppet.view_transform() : [];
+    const [scale, x, y] = t;
+    if (scale === undefined || x === undefined || y === undefined) {
+      this.view = null;
+      return;
+    }
+    // WebPuppet の画面座標は描画先の画素 (デバイスピクセル)。
+    const dpr = devicePixelRatio;
+    this.view = { scale: scale / dpr, x: x / dpr, y: y / dpr };
   }
 
   #applyBackground(): void {

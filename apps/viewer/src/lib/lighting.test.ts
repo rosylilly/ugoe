@@ -1,17 +1,25 @@
 import { describe, expect, it } from "vitest";
 import {
   anglesFromPad,
+  anglesFromScreen,
   defaultLighting,
+  directionalHandle,
   type LightingSettings,
+  lightDial,
   lightingMemory,
   loadLighting,
+  loadLightMarkers,
   MAX_LIGHTING_MODELS,
   MODEL_LIGHTING_STORAGE_KEY,
   PRESETS,
   padFromAngles,
+  pointFromScreen,
+  pointHandle,
+  pointRangeOnCanvas,
   sameLighting,
   sanitizeLighting,
   saveLighting,
+  saveLightMarkers,
   toLightingJson,
   towardLight,
 } from "./lighting";
@@ -253,5 +261,68 @@ describe("sameLighting", () => {
     expect(sameLighting(a, b)).toBe(true);
     b.directional.azimuth += 1;
     expect(sameLighting(a, b)).toBe(false);
+  });
+});
+
+describe("ビューポートの光源の印", () => {
+  const canvas = [400, 800] as const;
+  // 半分に縮めて (100, 50) にずらした表示。
+  const view = { scale: 0.5, x: 100, y: 50 };
+
+  it("平行光源の円はキャンバスの中央に置き、半径は短い辺の 35% を範囲に収める", () => {
+    expect(lightDial(canvas, view)).toEqual({ cx: 200, cy: 250, r: 70 });
+    expect(lightDial(canvas, { ...view, scale: 0.1 }).r).toBe(60);
+    expect(lightDial(canvas, { ...view, scale: 5 }).r).toBe(220);
+  });
+
+  it("平行光源の取っ手は光が来る向きにあり、動かした位置から角度に戻せる", () => {
+    const dial = lightDial(canvas, view);
+    const d = { ...defaultLighting().directional, azimuth: 180, elevation: 0 };
+    closeTo(directionalHandle(dial, d), [130, 250]);
+    // 真上の縁 → 上から真横に、中心 → 正面から、円の外 → 縁に収める。
+    expect(anglesFromScreen(dial, 200, 180)).toEqual([90, 0]);
+    expect(anglesFromScreen(dial, 200, 250)[1]).toBe(90);
+    // (-0 と 0 は区別しない)
+    expect(anglesFromScreen(dial, 200 + 700, 250).map((v) => v + 0)).toEqual([0, 0]);
+    const [azimuth, elevation] = anglesFromScreen(
+      dial,
+      ...directionalHandle(dial, {
+        ...d,
+        azimuth: 135,
+        elevation: 45,
+      }),
+    );
+    expect(azimuth).toBeCloseTo(135, 0);
+    expect(elevation).toBeCloseTo(45, 0);
+  });
+
+  it("点光源の取っ手はキャンバスの上の位置にあり、画面の位置から割合に戻せる", () => {
+    const p = { ...defaultLighting().point, x: 0.25, y: 0.5 };
+    expect(pointHandle(canvas, view, p)).toEqual([150, 250]);
+    expect(pointFromScreen(canvas, view, 150, 250)).toEqual([0.25, 0.5]);
+    // 範囲の外は収める。
+    expect(pointFromScreen(canvas, view, -10000, 10000)).toEqual([-0.5, 1.5]);
+  });
+
+  it("点光源の光が面の上で届く範囲", () => {
+    const p = { ...defaultLighting().point, z: 0.3, range: 0.5 };
+    // 長い辺 800: 範囲 400、手前 240 → √(400² − 240²) = 320。
+    expect(pointRangeOnCanvas(canvas, p)).toBeCloseTo(320);
+    expect(pointRangeOnCanvas(canvas, { ...p, z: 1 })).toBe(0);
+  });
+
+  it("印を出すかを覚える (既定は出す。読めなければ出す)", () => {
+    const storage = new MemoryStorage();
+    expect(loadLightMarkers(storage)).toBe(true);
+    saveLightMarkers(false, storage);
+    expect(loadLightMarkers(storage)).toBe(false);
+    saveLightMarkers(true, storage);
+    expect(loadLightMarkers(storage)).toBe(true);
+    const broken = {
+      getItem() {
+        throw new Error("denied");
+      },
+    } as unknown as Storage;
+    expect(loadLightMarkers(broken)).toBe(true);
   });
 });

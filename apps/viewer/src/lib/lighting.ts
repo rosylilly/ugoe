@@ -321,3 +321,98 @@ export function anglesFromPad(x: number, y: number): [number, number] {
 export function sameLighting(a: LightingSettings, b: LightingSettings): boolean {
   return JSON.stringify(sanitizeLighting(a)) === JSON.stringify(sanitizeLighting(b));
 }
+
+// --- ビューポートの光源の印 (T0708) ---
+
+/** キャンバス座標 → 画面座標 (canvas 要素の左上からの CSS ピクセル) の変換。`screen = offset + scale × canvas`。 */
+export interface ScreenTransform {
+  scale: number;
+  x: number;
+  y: number;
+}
+
+/** 平行光源の向きを選ぶ円 (画面座標)。中心がキャンバスの中央、中心が真正面・縁が真横から来る光を表す。 */
+export interface LightDial {
+  cx: number;
+  cy: number;
+  r: number;
+}
+
+/** 平行光源の円の半径の範囲 (CSS ピクセル)。拡大縮小に合わせるが、小さすぎて掴めない・大きすぎて見えないことがないように収める。 */
+const DIAL_RADIUS = [60, 220] as const;
+
+/** 平行光源の円を、表示しているキャンバスの中央に置く。半径はキャンバスの短い辺の 35% (エディタの取っ手と同じ)。 */
+export function lightDial(canvas: readonly [number, number], view: ScreenTransform): LightDial {
+  const [w, h] = canvas;
+  const r = Math.min(DIAL_RADIUS[1], Math.max(DIAL_RADIUS[0], Math.min(w, h) * view.scale * 0.35));
+  return { cx: view.x + (view.scale * w) / 2, cy: view.y + (view.scale * h) / 2, r };
+}
+
+/** 平行光源の取っ手の位置 (画面座標)。取っ手のある向きから光が来る。 */
+export function directionalHandle(dial: LightDial, d: DirectionalSettings): [number, number] {
+  const [x, y] = padFromAngles(d.azimuth, d.elevation);
+  return [dial.cx + dial.r * x, dial.cy + dial.r * y];
+}
+
+/** 画面の位置に取っ手を動かしたときの平行光源の角度 `[azimuth, elevation]`。円の外では縁 (真横から) にする。 */
+export function anglesFromScreen(dial: LightDial, x: number, y: number): [number, number] {
+  return anglesFromPad((x - dial.cx) / dial.r, (y - dial.cy) / dial.r);
+}
+
+/** 点光源の位置 (画面座標)。 */
+export function pointHandle(
+  canvas: readonly [number, number],
+  view: ScreenTransform,
+  p: PointSettings,
+): [number, number] {
+  return [view.x + view.scale * p.x * canvas[0], view.y + view.scale * p.y * canvas[1]];
+}
+
+/** 画面の位置に点光源を動かしたときの位置 `[x, y]` (キャンバスに対する割合。範囲に収め、小数 3 桁に丸める)。 */
+export function pointFromScreen(
+  canvas: readonly [number, number],
+  view: ScreenTransform,
+  x: number,
+  y: number,
+): [number, number] {
+  const fraction = (
+    screen: number,
+    offset: number,
+    size: number,
+    limits: readonly [number, number],
+  ) =>
+    Math.round(clamp((screen - offset) / view.scale / Math.max(size, 1), limits, 0.5) * 1000) /
+    1000;
+  return [fraction(x, view.x, canvas[0], LIMITS.x), fraction(y, view.y, canvas[1], LIMITS.y)];
+}
+
+/**
+ * 点光源の光がキャンバスの面の上で届く範囲の半径 (キャンバス座標)。光源は面から `z` だけ手前にあるので、
+ * 面の上では `√(range² − z²)`。面まで届かなければ 0。
+ */
+export function pointRangeOnCanvas(canvas: readonly [number, number], p: PointSettings): number {
+  const size = Math.max(canvas[0], canvas[1], 1);
+  const range = Math.max(p.range, LIMITS.range[0]) * size;
+  const z = p.z * size;
+  return Math.sqrt(Math.max(0, range * range - z * z));
+}
+
+const MARKERS_STORAGE_KEY = "ugoe-viewer.lighting.markers";
+
+/** ビューポートに光源の印を出すか (既定は出す)。読めなければ既定。 */
+export function loadLightMarkers(storage?: Storage): boolean {
+  try {
+    return (storage ?? globalThis.localStorage)?.getItem(MARKERS_STORAGE_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+/** 光源の印を出すかを覚える。覚えられなくても無視する。 */
+export function saveLightMarkers(show: boolean, storage?: Storage): void {
+  try {
+    (storage ?? globalThis.localStorage)?.setItem(MARKERS_STORAGE_KEY, show ? "on" : "off");
+  } catch {
+    // 覚えられないだけで、表示には影響しない。
+  }
+}
