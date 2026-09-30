@@ -6551,6 +6551,28 @@ export const commands: Command[] = [
     }
   },
   {
+    "op": "set_pose",
+    "pose": {
+      "fade_duration": 0.5,
+      "groups": [
+        {
+          "entries": [
+            {
+              "part": "ArmA",
+              "links": [
+                "SleeveA"
+              ]
+            },
+            {
+              "part": "ArmB",
+              "links": []
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
     "op": "add_slot",
     "slot": {
       "id": "Accessory",

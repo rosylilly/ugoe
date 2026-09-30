@@ -10,8 +10,15 @@
 import type { EditorDocument } from "../document.svelte";
 import { fileDialogs } from "../fileDialogs";
 import { PSD_FILTER, parentDir } from "../filePaths";
-import { type ConsentAnswer, ipc, type Model, type Parameter, type ProposalState } from "../ipc";
-import type { ViewportModel } from "../viewport/controller.svelte";
+import {
+  type ConsentAnswer,
+  ipc,
+  type Model,
+  type ModuleRigChoice,
+  type Parameter,
+  type ProposalState,
+} from "../ipc";
+import type { ViewportController, ViewportModel } from "../viewport/controller.svelte";
 import { aiSettings, consentPrompt } from "./ai.svelte";
 import { withConsent } from "./consent";
 import {
@@ -22,6 +29,12 @@ import {
   toggleGroup,
 } from "./proposals";
 import { providerLabel } from "./providers";
+
+/** プレビュー中に物理を動かすためのビューポートの操作 (ViewportController)。 */
+export type PhysicsPreview = Pick<
+  ViewportController,
+  "previewingPhysics" | "startPhysicsPreview" | "stopPhysicsPreview"
+>;
 
 /** 選んだ AI のプロバイダの名前 (進み具合の文言に使う)。 */
 function aiName(): string {
@@ -55,13 +68,43 @@ export class ProposalsView {
   instructions = $state("");
   /** 作り直すときに、レイヤーも注文を添えて分類し直すか (レイヤーの画像をもう一度送る)。 */
   reclassify = $state(false);
+  /**
+   * モジュールのプロジェクトのリグの組み方 (AI には送らない。提案と作り直しに渡す。モデルのプロジェクトでは使わない)。
+   * docs/editor.md#モジュールのプロジェクトでの-ai-の提案
+   */
+  moduleOptions = $state<ModuleRigChoice>({ direct: false, colliders: true, poses: true });
 
   #doc: EditorDocument;
+  #viewport: PhysicsPreview | null;
   /** プレビューを作ったときのドキュメントの版 (変わったらプレビューをやめる)。 */
   #previewRevision = -1;
+  /** プレビューのために物理を動かし始めた (プレビューをやめるときに止める)。 */
+  #physics = false;
 
-  constructor(doc: EditorDocument) {
+  constructor(doc: EditorDocument, viewport: PhysicsPreview | null = null) {
     this.#doc = doc;
+    this.#viewport = viewport;
+  }
+
+  /** プレビュー中に物理が動いているか。 */
+  get physicsRunning(): boolean {
+    return this.preview !== null && (this.#viewport?.previewingPhysics ?? false);
+  }
+
+  /**
+   * プレビュー中の提案の物理 (揺れ) を動かす・止める。採用の前に揺れを確かめるため (スライダーを動かすと揺れる)。
+   * プレビューをやめると止まる。
+   */
+  togglePhysics(): void {
+    const viewport = this.#viewport;
+    if (!viewport || !this.preview) return;
+    if (viewport.previewingPhysics) {
+      viewport.stopPhysicsPreview();
+      this.#physics = false;
+    } else {
+      viewport.startPhysicsPreview();
+      this.#physics = viewport.previewingPhysics;
+    }
   }
 
   /** 採用を待っている提案の数 (タブの印)。 */
@@ -148,7 +191,8 @@ export class ProposalsView {
         : "Building the rig from the templates…",
       async () => {
         const reply = await withConsent(
-          (consent: ConsentAnswer | null) => ipc.proposeRigFromPsd(useAi, instructions, consent),
+          (consent: ConsentAnswer | null) =>
+            ipc.proposeRigFromPsd(useAi, instructions, consent, { ...this.moduleOptions }),
           consentPrompt.ask,
         );
         if (!reply) return;
@@ -170,7 +214,8 @@ export class ProposalsView {
     }
     await this.#task(`Asking ${aiName()} to revise proposal #${id}…`, async () => {
       const reply = await withConsent(
-        (consent: ConsentAnswer | null) => ipc.regenerateRigProposal(id, instructions, consent),
+        (consent: ConsentAnswer | null) =>
+          ipc.regenerateRigProposal(id, instructions, consent, { ...this.moduleOptions }),
         consentPrompt.ask,
       );
       if (!reply) return;
@@ -217,6 +262,10 @@ export class ProposalsView {
 
   endPreview(): void {
     if (!this.preview) return;
+    if (this.#physics) {
+      this.#physics = false;
+      this.#viewport?.stopPhysicsPreview();
+    }
     this.preview = null;
     ipc.clearProposalPreview().catch(() => {});
   }

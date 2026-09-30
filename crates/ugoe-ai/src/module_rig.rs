@@ -11,8 +11,13 @@
 //!   受け継がないので、衣装を覆う本体のワープのうち、衣装と重なる本体の絵で描画順が衣装に最も近いもの
 //!   (衣装が重なる層を動かすワープ) を選び、その変形を写したワープ (追従のワープ) で衣装を包む。
 //!   追従のワープのキーフォーム (見た目の差分) は、本体のワープの各キーでの変形から推定する。
+//!   組み方 [`FollowMode::Mesh`] では、ワープで近似せずに衣装のメッシュのキーフォームへ直接写す。
+//! - **本体のメッシュへの追従:** 目の開閉のように本体のメッシュ自身のキーフォームで形が変わる部分に重なる衣装
+//!   (化粧など) は、その変位を衣装の頂点へ写す (`mesh.rs`)。
 //! - **揺れ:** 揺れる意味ラベル (髪・尻尾・耳飾り・首の飾り・下の服) の衣装は、揺れ用のワープで包み、
-//!   追従のワープに取り付けた振り子の動的物理で揺らす (`crate::rig` の髪揺れと同じ方法)。
+//!   追従のワープに取り付けた振り子の動的物理で揺らす (`crate::rig` の髪揺れと同じ方法)。スロットが公開する
+//!   本体の衝突体 (`Slot::colliders`) があれば、振り子を当てる (体にめり込まない)。
+//! - **ポーズ:** 名前の末尾の A / B だけが違う衣装の差分をポーズにする (`pose.rs`)。
 //! - **AI が決める値** ([`ModuleRigParams`]): 揺れの大きさと振り子の長さ。問い直しと利用者の注文は
 //!   `crate::rig` と同じ ([`propose_module_rig_with_ai_guided`])。
 //!
@@ -26,17 +31,19 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use ugoe_core::Vec2;
 use ugoe_editor_core::ids::unique_id;
+use ugoe_editor_core::physics_check::rest_pose_collisions;
 use ugoe_editor_core::space::{ParameterValues, canvas_to_local};
 use ugoe_editor_core::{Command, Document, KeyformTarget, ModuleContext};
 use ugoe_model::deformer::WarpKeyform;
-use ugoe_model::physics::VertexOwner;
+use ugoe_model::mesh::MeshKeyform;
+use ugoe_model::physics::{PhysicsRig, VertexOwner};
 use ugoe_model::{
     Deformer, DeformerId, DeformerKind, KeyformGrid, KeyformInterpolation, MeshId, Model, ParamId,
     standard,
 };
 use ugoe_rigging::ParentWorld;
 
-use crate::classify::{Label, LayerLabel, Side};
+use crate::classify::{Label, LabelCategory, LayerLabel, Side};
 use crate::instructions::{Instructions, split_unapplied, system_rules};
 use crate::rig::hair::{self, Sway};
 use crate::rig::{
@@ -44,6 +51,11 @@ use crate::rig::{
 };
 use crate::turn::Builder;
 use crate::{AiError, Proposal, Provider, ProviderRequest};
+
+mod mesh;
+mod pose;
+
+use mesh::{MeshFollow, MeshFollows, Poser};
 
 /// 追従のワープの分割数 (一辺のセルの数)。本体の顔のワープ (6×6 の曲線補間) の丸みを写せるよう細かめにする
 /// (見本の胸から上の人物で、4 では振り向きの移動量の 3 割、8 では 1 割ほどずれる)。
@@ -53,6 +65,8 @@ const FOLLOW_CELLS: u16 = 8;
 const MIN_OVERLAP: f32 = 0.1;
 /// 追従のワープのキーの組の数の上限 (軸のキーの数の積)。超える本体のワープには従わない。
 const MAX_FOLLOW_CELLS: usize = 81;
+/// 衣装のメッシュに直接写すときのキーの組の数の上限 (本体のワープと本体のメッシュの軸を合わせたもの)。
+const MAX_MESH_CELLS: usize = 243;
 
 /// レイヤーの分類の結果を、モジュールのメッシュ (本体のメッシュを除く) に名前で対応付ける
 /// ([`crate::rig::mesh_parts`] と同じ規則。同じ名前かどうかもモジュールのメッシュの中で数える)。
@@ -103,6 +117,42 @@ impl ModuleRigParams {
                 format!("{name} is {v}, but it must be between {min} and {max}")
             })
             .collect()
+    }
+}
+
+/// 本体のワープへの追従の形 (利用者が選ぶ)。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FollowMode {
+    /// 衣装を追従のワープ (`Follow<ID>`、8×8) で包み、ワープのキーフォームに本体のワープの変形を写す。
+    /// 衣装を描き足しても組み直さずに済むが、本体のワープを格子で近似するので少しずれる
+    /// (見本の胸から上の人物で、振り向きの移動量の 1 割ほど)。
+    #[default]
+    Warp,
+    /// 衣装のメッシュのキーフォームに、本体のワープの変形を直接写す。キーの上では頂点が本体のワープの中の点と
+    /// 同じ所へ動く (ずれない) が、メッシュの頂点を編集したら組み直す。
+    Mesh,
+}
+
+/// モジュールのリグの組み方 (AI は決めない。利用者が選ぶ)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ModuleRigOptions {
+    /// 本体のワープへの追従の形。
+    pub follow: FollowMode,
+    /// 揺れのリグを、スロットが公開する本体の衝突体 (`Slot::colliders`) に当てる。
+    pub colliders: bool,
+    /// 名前の末尾が A / B … で違うだけの衣装の差分を、ポーズにする。
+    pub poses: bool,
+}
+
+impl Default for ModuleRigOptions {
+    fn default() -> Self {
+        Self {
+            follow: FollowMode::default(),
+            colliders: true,
+            poses: true,
+        }
     }
 }
 
@@ -210,6 +260,12 @@ struct ModuleLayout {
     /// メッシュの意味ラベル (プロンプトに書く)。
     labels: BTreeMap<MeshId, MeshPart>,
     bounds: BTreeMap<MeshId, Rect>,
+    /// 本体のメッシュのキーフォームに従う衣装のメッシュ (目の開閉など)。
+    mesh_follows: MeshFollows,
+    /// 揺れのリグが当たってよい本体の衝突体 (スロットが公開し、本体の物理にあるもの)。
+    colliders: Vec<String>,
+    /// 衣装の差分 (ポーズにする候補)。
+    variants: Vec<pose::Variants>,
     /// 組めなかったもの (提案の理由に書く)。
     skipped: Vec<String>,
 }
@@ -354,11 +410,28 @@ impl ModuleLayout {
                 }),
             }
         }
+        let mesh_follows = mesh_follows(model, context, &usable, &top, parts)?;
+        let colliders = doc
+            .physics()
+            .map(|physics| {
+                context
+                    .slot()
+                    .colliders
+                    .iter()
+                    .filter(|id| physics.colliders.iter().any(|c| &c.id == *id))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+        let variants = pose::variants(model, context);
         Ok(Self {
             anchor,
             groups,
             labels: parts.clone(),
             bounds,
+            mesh_follows,
+            colliders,
+            variants,
             skipped,
         })
     }
@@ -368,6 +441,52 @@ impl ModuleLayout {
             .filter_map(|id| self.bounds.get(id).copied())
             .reduce(Rect::union)
     }
+}
+
+/// 本体のメッシュのキーフォームに従う衣装のメッシュ ([`mesh::find`])。形の決まった飾り (帽子・眼鏡・耳飾り)・髪・
+/// 服・体のラベルの衣装は従わない (目を閉じても眼鏡は潰れない)。ラベルのないものと、顔・目・口のラベルのもの
+/// (化粧・まつ毛など) が従う。
+fn mesh_follows(
+    model: &Model,
+    context: &ModuleContext,
+    usable: &BTreeSet<ParamId>,
+    top: &[MeshId],
+    parts: &BTreeMap<MeshId, MeshPart>,
+) -> Result<MeshFollows, AiError> {
+    let mut poser = Poser::new(model)?;
+    let mut out = MeshFollows::new();
+    for id in top {
+        let follows = parts.get(id).is_none_or(|p| {
+            matches!(
+                p.label.category(),
+                LabelCategory::Face
+                    | LabelCategory::Eye
+                    | LabelCategory::Mouth
+                    | LabelCategory::Other
+            )
+        });
+        if !follows {
+            continue;
+        }
+        let Some(mesh) = model.meshes.iter().find(|m| &m.id == id) else {
+            continue;
+        };
+        let Some(points) = poser.mesh(&[], id) else {
+            continue;
+        };
+        let order = draw_order(mesh).unwrap_or(0.0);
+        if let Some(found) = mesh::find(
+            &mut poser,
+            model,
+            |m| context.is_base_mesh(m),
+            usable,
+            &points,
+            order,
+        ) {
+            out.insert(id.clone(), found);
+        }
+    }
+    Ok(out)
 }
 
 /// `rect` のうち `region` が覆う割合 (0〜1)。
@@ -537,21 +656,24 @@ fn fresh_id<'a>(
 /// モジュールのリグをテンプレートで提案する (AI を使わない)。
 ///
 /// `doc` はモジュールのプロジェクトの作業用のドキュメント、`parts` は衣装のメッシュの意味ラベル
-/// ([`module_mesh_parts`] でレイヤーの分類から作れる。ラベルのないメッシュは追従だけ)。返す提案は `doc` に
-/// `Command::Batch` として適用でき、パラメータを足さず本体を変えない。組むものがなければ [`AiError::InvalidRequest`]。
+/// ([`module_mesh_parts`] でレイヤーの分類から作れる。ラベルのないメッシュは追従だけ)、`options` は組み方
+/// (追従の形・衝突体・ポーズ)。返す提案は `doc` に `Command::Batch` として適用でき、パラメータを足さず本体を
+/// 変えない。組むものがなければ [`AiError::InvalidRequest`]。
 pub fn propose_module_rig(
     doc: &Document,
     parts: &BTreeMap<MeshId, MeshPart>,
     params: &ModuleRigParams,
+    options: &ModuleRigOptions,
 ) -> Result<Proposal, AiError> {
     let layout = ModuleLayout::new(doc, parts)?;
-    build(doc, &layout, params)
+    build(doc, &layout, params, options)
 }
 
 fn build(
     doc: &Document,
     layout: &ModuleLayout,
     params: &ModuleRigParams,
+    options: &ModuleRigOptions,
 ) -> Result<Proposal, AiError> {
     let errors = params.check();
     if !errors.is_empty() {
@@ -572,12 +694,29 @@ fn build(
         context.slot().id
     )];
     for group in &layout.groups {
-        rig_group(&mut rig, context, layout, group, params, &mut rationale)?;
+        rig_group(
+            &mut rig,
+            context,
+            layout,
+            group,
+            params,
+            options,
+            &mut rationale,
+        )?;
+    }
+    if options.poses {
+        pose::propose(
+            &mut rig,
+            context,
+            &layout.variants,
+            &layout.bounds,
+            &mut rationale,
+        )?;
     }
     if rig.b.commands.is_empty() {
         return Err(AiError::InvalidRequest(format!(
-            "nothing to rig: the costume already follows the slot's anchor, no base warp under it moves the costume, \
-             and no costume part is labeled to sway{}",
+            "nothing to rig: the costume already follows the slot's anchor, no base warp or mesh under it moves \
+             the costume, no costume part is labeled to sway, and no costume parts are variants{}",
             if layout.skipped.is_empty() {
                 String::new()
             } else {
@@ -604,12 +743,14 @@ fn build(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn rig_group(
     rig: &mut Rig,
     context: &ModuleContext,
     layout: &ModuleLayout,
     group: &Group,
     params: &ModuleRigParams,
+    options: &ModuleRigOptions,
     rationale: &mut Vec<String>,
 ) -> Result<(), AiError> {
     let names = group
@@ -619,77 +760,141 @@ fn rig_group(
         .collect::<Vec<_>>()
         .join("・");
     let sways = params.sway_scale > 0.0 && !group.sways.is_empty();
-    if group.followed.is_none() && !sways {
+    let follows_mesh = group
+        .meshes
+        .iter()
+        .any(|m| layout.mesh_follows.contains_key(m));
+    if group.followed.is_none() && !sways && !follows_mesh {
         rationale.push(format!(
             "{}: 取り付け先の下に覆う本体のワープがないので、取り付け先の動きだけに従う",
             names
         ));
         return Ok(());
     }
-    // 追従のワープ (揺れの振り子の取り付け先も兼ねる)。
-    let (base, name) = match &group.followed {
-        Some(f) => (
-            format!("Follow{}", f.deformer),
-            format!("Follow {}", f.name),
-        ),
-        None => ("SwayRoot".to_owned(), "Sway root".to_owned()),
+    // 本体のワープの変形を、ワープで写すか (追従のワープ) メッシュに直接写すか。
+    let (warp_follow, direct) = match (&group.followed, options.follow) {
+        (Some(f), FollowMode::Warp) => (Some(f), None),
+        (Some(f), FollowMode::Mesh) => (None, Some(f)),
+        (None, _) => (None, None),
     };
-    let id = DeformerId::new(fresh_id(
-        context,
-        &base,
-        rig.model().deformers.iter().map(|d| d.id.as_str()),
-    ));
-    let follow = rig.create_warp_as(
-        id,
-        &name,
-        &group.meshes,
-        FOLLOW_CELLS,
-        FOLLOW_CELLS,
-        layout.anchor.as_ref(),
-    )?;
-    match &group.followed {
-        Some(followed) => {
-            follow_keyforms(rig, &follow, followed)?;
-            let axes: Vec<String> = followed
-                .axes
-                .iter()
-                .map(|(p, keys)| format!("`{p}` ({} キー)", keys.len()))
-                .collect();
-            let mut line = format!(
-                "追従: {} を包むワープ `{follow}` に、本体のワープ `{}` の {} での変形を写す",
-                names,
-                followed.deformer,
-                axes.join("・")
-            );
-            if !followed.ignored.is_empty() {
-                let _ = write!(
-                    line,
-                    " (スロットが公開していない {} には従わない)",
-                    followed
-                        .ignored
-                        .iter()
-                        .map(|p| format!("`{p}`"))
-                        .collect::<Vec<_>>()
-                        .join("・")
-                );
+    // 衣装を包むワープ (追従のワープか、揺れの振り子の取り付け先)。
+    let frame = if warp_follow.is_some() || sways {
+        let (base, name) = match warp_follow {
+            Some(f) => (
+                format!("Follow{}", f.deformer),
+                format!("Follow {}", f.name),
+            ),
+            None => ("SwayRoot".to_owned(), "Sway root".to_owned()),
+        };
+        let id = DeformerId::new(fresh_id(
+            context,
+            &base,
+            rig.model().deformers.iter().map(|d| d.id.as_str()),
+        ));
+        Some(rig.create_warp_as(
+            id,
+            &name,
+            &group.meshes,
+            FOLLOW_CELLS,
+            FOLLOW_CELLS,
+            layout.anchor.as_ref(),
+        )?)
+    } else {
+        None
+    };
+    if let (Some(followed), Some(follow)) = (warp_follow, &frame) {
+        follow_keyforms(rig, follow, followed)?;
+        rationale.push(format!(
+            "追従: {} を包むワープ `{follow}` に、本体のワープ `{}` の {} での変形を写す{}",
+            names,
+            followed.deformer,
+            axes_text(&followed.axes),
+            ignored_text(followed)
+        ));
+    } else if let Some(frame) = &frame {
+        rationale.push(format!(
+            "{}: {}ので、揺れの取り付け先のワープ `{frame}` を作る",
+            names,
+            if direct.is_some() {
+                "本体のワープの変形はメッシュに直接写す"
+            } else {
+                "覆う本体のワープがない"
             }
-            rationale.push(line);
-        }
-        None => rationale.push(format!(
-            "{}: 覆う本体のワープがないので、揺れの取り付け先のワープ `{follow}` だけを作る",
-            names
-        )),
+        ));
     }
-    if !sways {
-        if !group.sways.is_empty() {
-            rationale.push("揺れ: 揺れの大きさが 0 なので揺らさない".into());
+    if sways {
+        let frame = frame
+            .as_ref()
+            .ok_or_else(|| template("no frame for the sway".into()))?;
+        for sway in &group.sways {
+            rig_sway(
+                rig, context, layout, frame, sway, params, options, rationale,
+            )?;
         }
-        return Ok(());
+    } else if !group.sways.is_empty() {
+        rationale.push("揺れ: 揺れの大きさが 0 なので揺らさない".into());
     }
-    for sway in &group.sways {
-        rig_sway(rig, context, layout, &follow, sway, params, rationale)?;
+    // メッシュのキーフォーム: 本体のワープの変形 (直接写すとき) と、本体のメッシュのキーフォームへの追従。
+    for mesh in &group.meshes {
+        let follow = layout.mesh_follows.get(mesh);
+        if direct.is_none() && follow.is_none() {
+            continue;
+        }
+        mesh_keyforms(rig, mesh, direct, follow)?;
+        if let Some(f) = follow {
+            rationale.push(format!(
+                "追従: `{}` の頂点に、本体のメッシュ `{}` の {} での形の変化を写す (目の開閉など、本体のメッシュ自身のキーフォームの動き)",
+                mesh_name(rig.model(), mesh),
+                f.base,
+                axes_text(&f.axes)
+            ));
+        }
+    }
+    if let Some(followed) = direct {
+        rationale.push(format!(
+            "追従: {} のメッシュのキーフォームに、本体のワープ `{}` の {} での変形を直接写す (キーの上で本体のワープの中の点と同じ所へ動く){}",
+            names,
+            followed.deformer,
+            axes_text(&followed.axes),
+            ignored_text(followed)
+        ));
     }
     Ok(())
+}
+
+fn axes_text(axes: &[(ParamId, Vec<f32>)]) -> String {
+    axes.iter()
+        .map(|(p, keys)| format!("`{p}` ({} キー)", keys.len()))
+        .collect::<Vec<_>>()
+        .join("・")
+}
+
+fn ignored_text(followed: &Followed) -> String {
+    if followed.ignored.is_empty() {
+        return String::new();
+    }
+    format!(
+        " (スロットが公開していない {} には従わない)",
+        followed
+            .ignored
+            .iter()
+            .map(|p| format!("`{p}`"))
+            .collect::<Vec<_>>()
+            .join("・")
+    )
+}
+
+/// 既定値のパラメータの値 (軸の並びの順)。
+fn defaults_of(model: &Model, axes: &[(ParamId, Vec<f32>)]) -> Vec<f32> {
+    axes.iter()
+        .map(|(p, _)| {
+            model
+                .parameters
+                .iter()
+                .find(|x| &x.id == p)
+                .map_or(0.0, |x| x.default)
+        })
+        .collect()
 }
 
 /// 追従のワープ `follow` のキーフォームを、本体のワープの各キーでの変形から作る。
@@ -717,19 +922,9 @@ fn follow_keyforms(rig: &mut Rig, follow: &DeformerId, followed: &Followed) -> R
     let inner = world
         .from_canvas(&rest, &guesses)
         .map_err(|e| template(format!("deformer `{}`: {e}", followed.deformer)))?;
-    let defaults: BTreeMap<&ParamId, f32> = rig
-        .model()
-        .parameters
-        .iter()
-        .map(|p| (&p.id, p.default))
-        .collect();
-    let defaults: Vec<f32> = followed
-        .axes
-        .iter()
-        .map(|(p, _)| defaults.get(p).copied().unwrap_or(0.0))
-        .collect();
+    let defaults = defaults_of(rig.model(), &followed.axes);
     for cell in cells(&followed.axes) {
-        if cell.iter().zip(&defaults).all(|(v, d)| v == d) {
+        if cell == defaults {
             continue;
         }
         let values: ParameterValues = followed
@@ -761,6 +956,122 @@ fn follow_keyforms(rig: &mut Rig, follow: &DeformerId, followed: &Followed) -> R
     Ok(())
 }
 
+/// 衣装のメッシュ `mesh` のキーフォームに、本体のワープ `warp` の変形 ([`FollowMode::Mesh`] のとき) と、
+/// 本体のメッシュのキーフォームでの形の変化 (`follow`) を写す。
+///
+/// 軸は両方の軸を合わせたもの。キーの組ごとに、基準の姿の頂点 (キャンバス座標) に本体のメッシュの変位を足し、
+/// それを本体のワープの基準の姿の局所座標に写してから、その組の姿の本体のワープで写す (目の変位は顔の向きと
+/// 一緒に動く)。すでにあるほかの軸のキーフォームは、既定値のセルだけを変える。
+fn mesh_keyforms(
+    rig: &mut Rig,
+    mesh: &MeshId,
+    warp: Option<&Followed>,
+    follow: Option<&MeshFollow>,
+) -> Result<(), AiError> {
+    let target = KeyformTarget::Mesh(mesh.clone());
+    let mut axes: Vec<(ParamId, Vec<f32>)> = Vec::new();
+    for (parameter, keys) in warp
+        .map(|w| w.axes.as_slice())
+        .into_iter()
+        .chain(follow.map(|f| f.axes.as_slice()))
+        .flatten()
+    {
+        match axes.iter_mut().find(|(p, _)| p == parameter) {
+            Some((_, existing)) => {
+                existing.extend(keys);
+                existing.sort_by(f32::total_cmp);
+                existing.dedup();
+            }
+            None => axes.push((parameter.clone(), keys.clone())),
+        }
+    }
+    let count: usize = axes.iter().map(|(_, k)| k.len()).product();
+    if axes.is_empty() || count > MAX_MESH_CELLS {
+        return Err(AiError::InvalidRequest(format!(
+            "mesh `{mesh}` would need {count} keyforms to follow the base, which is too many"
+        )));
+    }
+    for (parameter, keys) in &axes {
+        rig.add_keys(&target, parameter.as_str(), keys)?;
+    }
+    if warp.is_some_and(|w| w.smooth) || follow.is_some_and(|f| f.smooth) {
+        rig.apply(Command::SetKeyformInterpolation {
+            target: target.clone(),
+            blend_shape: None,
+            interpolation: KeyformInterpolation::Smooth,
+        })?;
+    }
+    let (rest_local, ..) = rig.keyform_at(&target, &[])?;
+    let rest = rig.canvas_points(&target)?;
+    let mut world = match warp {
+        Some(w) => {
+            let world = ParentWorld::new(rig.model(), Some(&w.deformer))
+                .map_err(|e| template(format!("deformer `{}`: {e}", w.deformer)))?;
+            let guesses: Vec<Vec2> = rest.iter().map(|p| w.region.normalize(*p)).collect();
+            let inner = world
+                .from_canvas(&rest, &guesses)
+                .map_err(|e| template(format!("deformer `{}`: {e}", w.deformer)))?;
+            Some((w, world, inner))
+        }
+        None => None,
+    };
+    let defaults = defaults_of(rig.model(), &axes);
+    for cell in cells(&axes) {
+        if cell == defaults {
+            continue;
+        }
+        let value_of = |p: &ParamId| {
+            axes.iter()
+                .zip(&cell)
+                .find(|((q, _), _)| q == p)
+                .map(|(_, v)| *v)
+        };
+        let mut points = rest.clone();
+        if let Some(f) = follow {
+            let key: Option<Vec<f32>> = f.axes.iter().map(|(p, _)| value_of(p)).collect();
+            if let Some(offsets) = key.as_deref().and_then(|k| f.offsets_at(k)) {
+                for (p, o) in points.iter_mut().zip(offsets) {
+                    *p += *o;
+                }
+            }
+        }
+        if let Some((w, world, inner)) = &mut world {
+            world.set_pose(std::iter::empty());
+            let inside = world
+                .from_canvas(&points, inner)
+                .map_err(|e| template(format!("deformer `{}`: {e}", w.deformer)))?;
+            world.set_pose(
+                w.axes
+                    .iter()
+                    .filter_map(|(p, _)| value_of(p).map(|v| (p.as_str(), v))),
+            );
+            points = world.to_canvas(&inside);
+        }
+        let values: ParameterValues = axes
+            .iter()
+            .zip(&cell)
+            .map(|((p, _), v)| (p.clone(), *v))
+            .collect();
+        let local = canvas_to_local(rig.model(), &target, &values, &points, &rest_local)
+            .map_err(|e| template(format!("{target}: {e}")))?;
+        let named: Vec<(&str, f32)> = axes
+            .iter()
+            .zip(&cell)
+            .map(|((p, _), v)| (p.as_str(), *v))
+            .collect();
+        rig.set_cell(&target, &named, |base| match base {
+            ugoe_editor_core::Keyform::Mesh(keyform) => {
+                Ok(ugoe_editor_core::Keyform::Mesh(MeshKeyform {
+                    positions: local,
+                    ..keyform
+                }))
+            }
+            _ => Err(template(format!("{target} is not a mesh"))),
+        })?;
+    }
+    Ok(())
+}
+
 /// 軸のキーの直積 (軸の並びの順の値の組)。
 fn cells(axes: &[(ParamId, Vec<f32>)]) -> Vec<Vec<f32>> {
     axes.iter().fold(vec![Vec::new()], |acc, (_, keys)| {
@@ -776,16 +1087,18 @@ fn cells(axes: &[(ParamId, Vec<f32>)]) -> Vec<Vec<f32>> {
     })
 }
 
-/// 揺れ: 揺れる衣装を包む揺れ用のワープを追従のワープの中に作り、追従のワープに取り付けた振り子の
-/// 先の横の変位を、制御点に重み付きで足す (`crate::rig` の髪揺れと同じ)。
+/// 揺れ: 揺れる衣装を包む揺れ用のワープを `frame` (追従のワープか `SwayRoot`) の中に作り、`frame` に取り付けた
+/// 振り子の先の横の変位を、制御点に重み付きで足す (`crate::rig` の髪揺れと同じ)。スロットが公開する本体の
+/// 衝突体があれば振り子を当てる ([`sway_colliders`])。
 #[allow(clippy::too_many_arguments)]
 fn rig_sway(
     rig: &mut Rig,
     context: &ModuleContext,
     layout: &ModuleLayout,
-    follow: &DeformerId,
+    frame: &DeformerId,
     group: &SwayGroup,
     params: &ModuleRigParams,
+    options: &ModuleRigOptions,
     rationale: &mut Vec<String>,
 ) -> Result<(), AiError> {
     let rect = layout
@@ -808,7 +1121,7 @@ fn rig_sway(
         &group.meshes,
         3,
         3,
-        Some(follow),
+        Some(frame),
     )?;
     let sway = group.sway;
     let max = (sway.max * params.sway_scale).min(1.0);
@@ -832,10 +1145,10 @@ fn rig_sway(
         .map(|p| p.rigs.iter().map(|r| r.id.clone()).collect())
         .unwrap_or_default();
     let rig_id = fresh_id(context, &base, existing.iter().map(String::as_str));
-    let physics = rig.pendulum(
+    let mut physics = rig.pendulum(
         &rig_id,
         &format!("Sway {} {}", group.label, group.side.as_str()),
-        follow,
+        frame,
         &target,
         group.input.as_str(),
         root,
@@ -845,16 +1158,106 @@ fn rig_sway(
         VertexOwner::Warp(warp),
         weights,
     )?;
+    let collide = if options.colliders {
+        sway_colliders(rig, &mut physics, &layout.colliders, rect)?
+    } else {
+        None
+    };
     rig.apply(Command::AddPhysicsRig { rig: physics })?;
     rationale.push(format!(
-        "揺れ: {} ({}、{} 枚) を、追従のワープ `{follow}` に取り付けた {} 区間 (長さ {length:.0} px) の振り子で揺らす (重みの最大 {max:.2}、`{}` の端で根元が {shift:.0} px 動く)",
+        "揺れ: {} ({}、{} 枚) を、`{frame}` に取り付けた {} 区間 (長さ {length:.0} px) の振り子で揺らす (重みの最大 {max:.2}、`{}` の端で根元が {shift:.0} px 動く)",
         group.label,
         group.side.as_str(),
         group.meshes.len(),
         sway.sections,
         group.input,
     ));
+    if let Some(line) = collide {
+        rationale.push(line);
+    }
     Ok(())
+}
+
+/// 振り子の粒子の衝突の半径 (揺れる衣装の幅に対する割合)。
+const COLLISION_RADIUS: f32 = 0.1;
+
+/// 揺れのリグ `physics` を、スロットが公開する本体の衝突体 `colliders` に当てる (体にめり込まないように)。
+/// 静止姿勢で当たる衝突体は外し、残りに当てる。粒子には衝突の半径 (衣装の幅の 1 割) を付け、それで静止姿勢で
+/// 当たるなら半径は 0 にする
+/// (静止姿勢で当たると、最初の更新で衝突体の手前に押し出されて垂れ方が変わる。`docs/spec/physics.md`)。
+/// 理由の文を返す。当てる衝突体がなければ `None`。
+fn sway_colliders(
+    rig: &Rig,
+    physics: &mut PhysicsRig,
+    colliders: &[String],
+    rect: Rect,
+) -> Result<Option<String>, AiError> {
+    let Some(settings) = rig.b.doc.physics() else {
+        return Ok(None);
+    };
+    if colliders.is_empty() {
+        return Ok(None);
+    }
+    let hits = |colliders: &[String], radius: f32| -> Result<Vec<String>, AiError> {
+        let mut candidate = physics.clone();
+        candidate.colliders = colliders.to_vec();
+        for particle in candidate.particles.iter_mut().skip(1) {
+            particle.collision_radius = radius;
+        }
+        let mut settings = settings.clone();
+        settings.rigs.push(candidate);
+        let found = rest_pose_collisions(rig.model(), &settings)
+            .map_err(|e| template(format!("the physics cannot be checked: {e}")))?;
+        Ok(found
+            .into_iter()
+            .filter(|c| c.rig == physics.id)
+            .map(|c| c.collider)
+            .collect())
+    };
+    // 半径 0 でも当たる衝突体は外し、残りに半径を付けても当たらなければ半径を付ける。
+    let dropped = hits(colliders, 0.0)?;
+    let used: Vec<String> = colliders
+        .iter()
+        .filter(|c| !dropped.contains(c))
+        .cloned()
+        .collect();
+    let wide = COLLISION_RADIUS * rect.size().x;
+    let radius = if !used.is_empty() && hits(&used, wide)?.is_empty() {
+        wide
+    } else {
+        0.0
+    };
+    let list = |ids: &[String]| {
+        ids.iter()
+            .map(|c| format!("`{c}`"))
+            .collect::<Vec<_>>()
+            .join("・")
+    };
+    let mut line = String::new();
+    if !used.is_empty() {
+        for particle in physics.particles.iter_mut().skip(1) {
+            particle.collision_radius = radius;
+        }
+        physics.colliders.clone_from(&used);
+        let _ = write!(
+            line,
+            "衝突: `{}` を、スロットが公開する本体の衝突体 {} に当てる (粒子の衝突の半径 {radius:.0} px。体にめり込まない)",
+            physics.id,
+            list(&used)
+        );
+    }
+    if !dropped.is_empty() {
+        if !line.is_empty() {
+            line.push('\n');
+        }
+        let _ = write!(
+            line,
+            "衝突: `{}` は静止姿勢で本体の衝突体 {} に当たるので、それには当てない",
+            physics.id,
+            list(&dropped)
+        );
+    }
+    Ok((!line.is_empty()).then_some(line))
 }
 
 // ---- AI が決める値 ----
@@ -1105,6 +1508,7 @@ pub fn propose_module_rig_with_ai(
         doc,
         parts,
         image,
+        &ModuleRigOptions::default(),
         max_attempts,
         &ModuleRigGuidance::default(),
     )
@@ -1112,11 +1516,13 @@ pub fn propose_module_rig_with_ai(
 
 /// [`propose_module_rig_with_ai`] の、利用者の注文と前の答え (作り直し) を添える版
 /// (`docs/ai-integration.md#利用者の注文`)。2 つの値で反映できない注文は [`AiModuleRig::unapplied`] に返す。
+/// `options` は利用者が選ぶ組み方 (AI には送らない)。
 pub fn propose_module_rig_with_ai_guided(
     provider: &dyn Provider,
     doc: &Document,
     parts: &BTreeMap<MeshId, MeshPart>,
     image: &[u8],
+    options: &ModuleRigOptions,
     max_attempts: usize,
     guidance: &ModuleRigGuidance,
 ) -> Result<AiModuleRig, AiError> {
@@ -1139,7 +1545,7 @@ pub fn propose_module_rig_with_ai_guided(
                 continue;
             }
         };
-        match build(doc, &layout, &params) {
+        match build(doc, &layout, &params, options) {
             Ok(mut proposal) => {
                 let (reason, unapplied) = split_unapplied(&reason);
                 proposal.rationale = format!(

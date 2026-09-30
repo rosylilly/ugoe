@@ -16,7 +16,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use ts_rs::TS;
 use ugoe_ai::classify::{
@@ -25,8 +25,9 @@ use ugoe_ai::classify::{
 };
 use ugoe_ai::instructions::Instructions;
 use ugoe_ai::module_rig::{
-    ModuleRigGuidance, ModuleRigParams, PreviousModuleRig, module_mesh_parts,
-    module_rig_request_guided, propose_module_rig, propose_module_rig_with_ai_guided,
+    FollowMode, ModuleRigGuidance, ModuleRigOptions, ModuleRigParams, PreviousModuleRig,
+    module_mesh_parts, module_rig_request_guided, propose_module_rig,
+    propose_module_rig_with_ai_guided,
 };
 use ugoe_ai::rig::{
     DEFAULT_MAX_ATTEMPTS, PreviousRig, RigGuidance, RigOptions, RigParams, mesh_parts, propose_rig,
@@ -213,6 +214,48 @@ pub(crate) enum PreviousAnswer {
     Module(PreviousModuleRig),
 }
 
+/// モジュールのプロジェクトのリグの組み方 (AI タブで選ぶ。`ugoe_ai::module_rig::ModuleRigOptions`)。
+/// AI には送らない。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ModuleRigChoice {
+    /// 本体のワープの変形を衣装のメッシュのキーフォームに直接写す (偽なら衣装を追従のワープで包む)。
+    pub direct: bool,
+    /// 揺れのリグを、スロットが公開する本体の衝突体に当てる。
+    pub colliders: bool,
+    /// 名前の末尾が A / B … で違うだけの衣装の差分をポーズにする。
+    pub poses: bool,
+}
+
+impl Default for ModuleRigChoice {
+    fn default() -> Self {
+        Self::from(ModuleRigOptions::default())
+    }
+}
+
+impl From<ModuleRigOptions> for ModuleRigChoice {
+    fn from(options: ModuleRigOptions) -> Self {
+        Self {
+            direct: options.follow == FollowMode::Mesh,
+            colliders: options.colliders,
+            poses: options.poses,
+        }
+    }
+}
+
+impl From<ModuleRigChoice> for ModuleRigOptions {
+    fn from(choice: ModuleRigChoice) -> Self {
+        Self {
+            follow: if choice.direct {
+                FollowMode::Mesh
+            } else {
+                FollowMode::Warp
+            },
+            colliders: choice.colliders,
+            poses: choice.poses,
+        }
+    }
+}
+
 /// リグの提案に添える、利用者の注文と前の答え (作り直し)。
 #[derive(Debug, Clone, Default)]
 pub(crate) struct RigAsk {
@@ -220,6 +263,8 @@ pub(crate) struct RigAsk {
     pub previous: Option<PreviousAnswer>,
     /// 同じ注文で AI がレイヤーを分類した (ラベルに関わる注文は分類で反映した)。
     pub labels_follow_instructions: bool,
+    /// モジュールのプロジェクトのリグの組み方 (モデルのプロジェクトでは使わない)。
+    pub module: ModuleRigChoice,
 }
 
 /// 前の答えがモデルとモジュールで食い違う (プロジェクトの種類が変わった) ときの断り。
@@ -363,6 +408,7 @@ fn module_rig(
                 document,
                 &parts,
                 image,
+                &ask.module.into(),
                 DEFAULT_MAX_ATTEMPTS,
                 &ask.module()?,
             )?;
@@ -382,7 +428,7 @@ fn module_rig(
         }
         None => {
             let params = ModuleRigParams::default();
-            let mut proposal = propose_module_rig(document, &parts, &params)?;
+            let mut proposal = propose_module_rig(document, &parts, &params, &ask.module.into())?;
             proposal.title.push_str(" — rules");
             let previous = PreviousModuleRig {
                 params,
@@ -464,16 +510,24 @@ pub async fn classify_psd_layers(
 
 /// 分類の結果からリグ (顔の角度・目・口) を提案し、提案の一覧に置く (ドキュメントは変えない)。
 /// `use_ai` なら原画を選んだ AI のプロバイダに送って値を決めさせる (答えが通らなければ問い直す)。偽ならテンプレートの既定値。
-/// `instructions` は AI に添える利用者の注文 (AI を使うときだけ送る)。
+/// `instructions` は AI に添える利用者の注文 (AI を使うときだけ送る)。`module_options` はモジュールのプロジェクトの
+/// リグの組み方 (省略すると既定。モデルのプロジェクトでは使わない)。
 #[tauri::command]
 pub async fn propose_rig_from_psd(
     app: AppHandle,
     use_ai: bool,
     instructions: Option<String>,
     consent: Option<ConsentAnswer>,
+    module_options: Option<ModuleRigChoice>,
 ) -> Result<AiReply<ProposalView>, String> {
     blocking(app, move |state| {
-        propose_guided_in(state, use_ai, instructions.as_deref(), consent.as_ref())
+        propose_guided_in(
+            state,
+            use_ai,
+            instructions.as_deref(),
+            module_options.unwrap_or_default(),
+            consent.as_ref(),
+        )
     })
     .await
 }
@@ -487,9 +541,16 @@ pub async fn regenerate_rig_proposal(
     id: u32,
     instructions: Option<String>,
     consent: Option<ConsentAnswer>,
+    module_options: Option<ModuleRigChoice>,
 ) -> Result<AiReply<ProposalView>, String> {
     blocking(app, move |state| {
-        regenerate_in(state, id, instructions.as_deref(), consent.as_ref())
+        regenerate_in(
+            state,
+            id,
+            instructions.as_deref(),
+            module_options.unwrap_or_default(),
+            consent.as_ref(),
+        )
     })
     .await
 }
@@ -559,15 +620,17 @@ pub(crate) fn propose_guided_in(
     state: &AppState,
     use_ai: bool,
     instructions_text: Option<&str>,
+    module: ModuleRigChoice,
     consent: Option<&ConsentAnswer>,
 ) -> Result<AiReply<ProposalView>, String> {
-    let ask = if use_ai {
-        RigAsk {
-            instructions: instructions(instructions_text)?,
-            ..RigAsk::default()
-        }
-    } else {
-        RigAsk::default()
+    let ask = RigAsk {
+        instructions: if use_ai {
+            instructions(instructions_text)?
+        } else {
+            None
+        },
+        module,
+        ..RigAsk::default()
     };
     make_rig(state, use_ai, ask, None, consent)
 }
@@ -577,6 +640,7 @@ pub(crate) fn regenerate_in(
     state: &AppState,
     id: u32,
     instructions_text: Option<&str>,
+    module: ModuleRigChoice,
     consent: Option<&ConsentAnswer>,
 ) -> Result<AiReply<ProposalView>, String> {
     let previous = lock_project(state)?
@@ -590,6 +654,7 @@ pub(crate) fn regenerate_in(
     let ask = RigAsk {
         instructions: instructions(instructions_text)?,
         previous: Some(previous),
+        module,
         ..RigAsk::default()
     };
     make_rig(state, true, ask, Some(id), consent)

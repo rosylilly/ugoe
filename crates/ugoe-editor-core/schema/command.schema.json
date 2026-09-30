@@ -2510,6 +2510,23 @@
         "slot",
         "requires"
       ]
+    },
+    {
+      "description": "ポーズ (`Model::pose`) を丸ごと置き換える。参照するパーツと、同じパーツが 2 回現れないことは適用後の\n検証 (`validate`) が調べる。モジュールのプロジェクトでは本体のグループと要素は変えられず、衣装のパーツ\nだけのグループを後ろに足すことと、本体の要素の `links` に衣装のパーツを加えることだけができる\n(`docs/spec/modules.md#ポーズ`)。",
+      "type": "object",
+      "properties": {
+        "op": {
+          "type": "string",
+          "const": "set_pose"
+        },
+        "pose": {
+          "$ref": "#/$defs/Pose"
+        }
+      },
+      "required": [
+        "op",
+        "pose"
+      ]
     }
   ],
   "$defs": {
@@ -4820,6 +4837,62 @@
       "required": [
         "t",
         "v"
+      ]
+    },
+    "Pose": {
+      "description": "ポーズ設定。グループごとに、表示中のパーツを 1 つに保つ。\n\n`groups` が空ならポーズは何もしない (`Default` はこの状態)。",
+      "type": "object",
+      "properties": {
+        "fade_duration": {
+          "description": "表示パーツを切り替えるときのクロスフェード時間 (秒)。0 以上。",
+          "type": "number",
+          "format": "float",
+          "default": 0.5
+        },
+        "groups": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PoseGroup"
+          }
+        }
+      }
+    },
+    "PoseEntry": {
+      "description": "ポーズグループの 1 要素。",
+      "type": "object",
+      "properties": {
+        "links": {
+          "description": "`part` と同じ不透明度に追従するパーツ (例: 腕に付属する袖)。",
+          "type": "array",
+          "default": [],
+          "items": {
+            "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+            "type": "string"
+          }
+        },
+        "part": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        }
+      },
+      "required": [
+        "part"
+      ]
+    },
+    "PoseGroup": {
+      "description": "互いに排他的なパーツの組 (例: 腕の差分 A / B)。",
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PoseEntry"
+          }
+        }
+      },
+      "required": [
+        "entries"
       ]
     },
     "Rgb": {

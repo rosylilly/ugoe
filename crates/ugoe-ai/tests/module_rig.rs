@@ -18,8 +18,8 @@ use ugoe_ai::classify::{Label, classify_by_name, overview_png};
 use ugoe_ai::claude::{ApiKey, ClaudeConfig, ClaudeProvider};
 use ugoe_ai::instructions::Instructions;
 use ugoe_ai::module_rig::{
-    ModuleRigGuidance, ModuleRigParams, module_mesh_parts, module_rig_request_guided,
-    propose_module_rig, propose_module_rig_with_ai_guided,
+    FollowMode, ModuleRigGuidance, ModuleRigOptions, ModuleRigParams, module_mesh_parts,
+    module_rig_request_guided, propose_module_rig, propose_module_rig_with_ai_guided,
 };
 use ugoe_ai::rig::{RigOptions, RigParams, mesh_parts, propose_rig};
 use ugoe_ai::transport::{Cassette, ReplayTransport};
@@ -231,7 +231,13 @@ fn the_costume_follows_the_face_turn_without_adding_parameters() {
     );
     assert!(still < 1e-3, "{still}");
 
-    let proposal = propose_module_rig(&doc, &parts, &ModuleRigParams::default()).unwrap();
+    let proposal = propose_module_rig(
+        &doc,
+        &parts,
+        &ModuleRigParams::default(),
+        &ModuleRigOptions::default(),
+    )
+    .unwrap();
     for command in &proposal.commands {
         assert!(
             !matches!(
@@ -305,7 +311,13 @@ fn the_costume_follows_the_face_turn_without_adding_parameters() {
 fn the_earrings_sway_when_the_head_turns() {
     let mut doc = module_doc("Headwear");
     let parts = module_mesh_parts(&doc, &classify_by_name(&costume()));
-    let proposal = propose_module_rig(&doc, &parts, &ModuleRigParams::default()).unwrap();
+    let proposal = propose_module_rig(
+        &doc,
+        &parts,
+        &ModuleRigParams::default(),
+        &ModuleRigOptions::default(),
+    )
+    .unwrap();
     apply(&mut doc, &proposal);
     let (module, _) = doc.split_module().unwrap().unwrap();
     let base_model = base().doc.model();
@@ -359,7 +371,13 @@ fn nothing_to_rig_is_reported() {
         .into_iter()
         .filter(|(_, p)| p.label == Label::Headwear)
         .collect();
-    let err = propose_module_rig(&doc, &hat_only, &ModuleRigParams::default()).unwrap_err();
+    let err = propose_module_rig(
+        &doc,
+        &hat_only,
+        &ModuleRigParams::default(),
+        &ModuleRigOptions::default(),
+    )
+    .unwrap_err();
     assert!(
         matches!(&err, AiError::InvalidRequest(m) if m.contains("nothing to rig")),
         "{err}"
@@ -370,11 +388,17 @@ fn nothing_to_rig_is_reported() {
         ..ModuleRigParams::default()
     };
     assert!(matches!(
-        propose_module_rig(&doc, &all, &off),
+        propose_module_rig(&doc, &all, &off, &ModuleRigOptions::default()),
         Err(AiError::InvalidRequest(_))
     ));
     // 揺らすなら、取り付け先の直下に揺れの取り付け先のワープを作る (従う本体のワープはない)。
-    let proposal = propose_module_rig(&doc, &all, &ModuleRigParams::default()).unwrap();
+    let proposal = propose_module_rig(
+        &doc,
+        &all,
+        &ModuleRigParams::default(),
+        &ModuleRigOptions::default(),
+    )
+    .unwrap();
     assert!(
         proposal.rationale.contains("SwayRoot"),
         "{}",
@@ -396,7 +420,13 @@ fn nothing_to_rig_is_reported() {
 #[test]
 fn a_model_project_is_rejected() {
     let doc = base().doc.detached();
-    let err = propose_module_rig(&doc, &BTreeMap::new(), &ModuleRigParams::default()).unwrap_err();
+    let err = propose_module_rig(
+        &doc,
+        &BTreeMap::new(),
+        &ModuleRigParams::default(),
+        &ModuleRigOptions::default(),
+    )
+    .unwrap_err();
     assert!(
         matches!(&err, AiError::InvalidRequest(m) if m.contains("not a module project")),
         "{err}"
@@ -424,8 +454,16 @@ fn the_ai_answer_is_retried_and_unapplied_instructions_are_listed() {
         .unwrap(),
         ..ModuleRigGuidance::default()
     };
-    let rig =
-        propose_module_rig_with_ai_guided(&provider, &doc, &parts, &image, 3, &guidance).unwrap();
+    let rig = propose_module_rig_with_ai_guided(
+        &provider,
+        &doc,
+        &parts,
+        &image,
+        &ModuleRigOptions::default(),
+        3,
+        &guidance,
+    )
+    .unwrap();
     assert_eq!(transport.remaining(), 0);
     assert_eq!(rig.rejected.len(), 1);
     assert!(
@@ -527,7 +565,13 @@ fn the_costume_follows_the_layer_it_is_drawn_over() {
     context.map_new_meshes(&mut import.command);
     doc.apply(import.command).unwrap();
     let parts = module_mesh_parts(&doc, &classify_by_name(&tree));
-    let proposal = propose_module_rig(&doc, &parts, &ModuleRigParams::default()).unwrap();
+    let proposal = propose_module_rig(
+        &doc,
+        &parts,
+        &ModuleRigParams::default(),
+        &ModuleRigOptions::default(),
+    )
+    .unwrap();
     assert!(
         proposal.rationale.contains("本体のワープ `FaceWarp`"),
         "{}",
@@ -546,4 +590,70 @@ fn the_costume_follows_the_layer_it_is_drawn_over() {
         p.iter().map(|v| v.x).sum::<f32>() / p.len() as f32
     };
     assert!(dx(&[("AngleX", 30.0)]) - dx(&[]) > 3.0);
+}
+
+/// 追従をメッシュに直接写す形では、追従のワープを作らず、帽子の頂点はキーの上で本体の顔のワープの中の点と
+/// ほぼ同じ所へ動く (ワープで近似する形の 2 割よりずっと小さい)。耳飾りは揺れの取り付け先のワープで揺れる。
+#[test]
+fn the_mesh_mode_follows_the_face_warp_at_the_keys() {
+    let mut doc = module_doc("Headwear");
+    let parts = module_mesh_parts(&doc, &classify_by_name(&costume()));
+    let options = ModuleRigOptions {
+        follow: FollowMode::Mesh,
+        ..ModuleRigOptions::default()
+    };
+    let proposal = propose_module_rig(&doc, &parts, &ModuleRigParams::default(), &options).unwrap();
+    assert!(
+        proposal.rationale.contains("直接写す"),
+        "{}",
+        proposal.rationale
+    );
+    apply(&mut doc, &proposal);
+    let model = doc.model();
+    let hat = mesh_id(&doc, "hat");
+    let mut world = ParentWorld::new(model, Some(&"FaceWarp".into())).unwrap();
+    let rest = positions(model, &[], &hat);
+    let guesses = vec![Vec2::splat(0.5); rest.len()];
+    let inner = world.from_canvas(&rest, &guesses).unwrap();
+    for values in [
+        vec![("AngleX", 30.0)],
+        vec![("AngleX", -30.0), ("AngleY", 30.0)],
+    ] {
+        world.set_pose(values.iter().copied());
+        let expected = world.to_canvas(&inner);
+        let actual = positions(model, &values, &hat);
+        let moved = max_distance(&rest, &expected);
+        let error = max_distance(&actual, &expected);
+        assert!(moved > 5.0, "{values:?}: {moved}px");
+        assert!(
+            error < 0.02 * moved,
+            "{values:?}: {error}px off (moved {moved}px)"
+        );
+    }
+    let (module, _) = doc.split_module().unwrap().unwrap();
+    assert!(
+        !module
+            .deformers
+            .iter()
+            .any(|d| d.id.as_str().starts_with("Follow")),
+        "{:?}",
+        module.deformers.iter().map(|d| &d.id).collect::<Vec<_>>()
+    );
+    let hat_mesh = module.meshes.iter().find(|m| m.name == "hat").unwrap();
+    let axes: Vec<&str> = hat_mesh
+        .keyforms
+        .bindings
+        .iter()
+        .map(|b| b.parameter.as_str())
+        .collect();
+    assert!(
+        axes.contains(&"AngleX") && axes.contains(&"AngleY"),
+        "{axes:?}"
+    );
+    assert_eq!(module.physics.rigs.len(), 2);
+    for rig in &module.physics.rigs {
+        assert_eq!(rig.frame.as_ref().unwrap().as_str(), "SwayRoot");
+    }
+    let base_model = base().doc.model();
+    compose(base_model, &[&module]).unwrap();
 }

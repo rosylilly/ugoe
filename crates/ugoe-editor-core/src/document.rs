@@ -1167,6 +1167,7 @@ fn apply_to(
         } => set_normal_map(model, textures, &texture, normal_map, png)?,
         Command::SetLighting { enabled } => model.lighting = enabled,
         Command::SetEffects { effects } => model.effects = effects,
+        Command::SetPose { pose } => model.pose = pose,
         Command::AddSlot { slot } => slot_edit::add(model, physics.as_ref(), slot)?,
         Command::SetSlot { id, slot } => slot_edit::set(model, physics.as_ref(), &id, slot)?,
         Command::RemoveSlot { id } => slot_edit::remove(model, &id)?,

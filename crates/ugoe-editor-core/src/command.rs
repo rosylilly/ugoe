@@ -15,6 +15,7 @@ use ugoe_model::part::PartKeyform;
 use ugoe_model::physics::{
     PhysicsCollider, PhysicsInput, PhysicsNormalization, PhysicsOutput, PhysicsParticle, PhysicsRig,
 };
+use ugoe_model::pose::Pose;
 use ugoe_model::{
     BlendMode, Deformer, DeformerId, HitArea, KeyformGrid, KeyformInference, KeyformInterpolation,
     MaskMode, MaskRef, Mesh, MeshId, ParamId, Parameter, Part, PartId,
@@ -732,6 +733,14 @@ pub enum Command {
         requires: ModuleRequirements,
         #[serde(default)]
         keep_look: bool,
+    },
+    // ---- ポーズ (T0519)。規則は `docs/editor.md#ポーズの編集` ----
+    /// ポーズ (`Model::pose`) を丸ごと置き換える。参照するパーツと、同じパーツが 2 回現れないことは適用後の
+    /// 検証 (`validate`) が調べる。モジュールのプロジェクトでは本体のグループと要素は変えられず、衣装のパーツ
+    /// だけのグループを後ろに足すことと、本体の要素の `links` に衣装のパーツを加えることだけができる
+    /// (`docs/spec/modules.md#ポーズ`)。
+    SetPose {
+        pose: Pose,
     },
 }
 

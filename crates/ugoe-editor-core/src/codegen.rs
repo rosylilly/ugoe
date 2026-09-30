@@ -794,6 +794,9 @@ pub(crate) fn lighting_samples() -> Vec<Command> {
         Command::SetEffects {
             effects: ugoe_model::effects::Effects::standard(),
         },
+        Command::SetPose {
+            pose: ugoe_model::fixtures::pose_and_effects().pose,
+        },
     ]
 }
 

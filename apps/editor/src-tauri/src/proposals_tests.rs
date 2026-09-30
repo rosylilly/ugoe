@@ -53,7 +53,7 @@ fn propose_in(
     use_ai: bool,
     consent: Option<&ConsentAnswer>,
 ) -> Result<AiReply<ProposalView>, String> {
-    propose_guided_in(state, use_ai, None, consent)
+    propose_guided_in(state, use_ai, None, ModuleRigChoice::default(), consent)
 }
 
 fn done<T>(reply: AiReply<T>) -> T {
@@ -437,19 +437,27 @@ fn instructions_are_disclosed_before_sending() {
     assert!(err.contains("classify"), "{err}");
 
     done(classify_in(&state, None, false, None).unwrap());
-    let AiReply::NeedsConsent { disclosure } =
-        propose_guided_in(&state, true, Some("振り向きは控えめに"), None).unwrap()
-    else {
+    let AiReply::NeedsConsent { disclosure } = propose_guided_in(
+        &state,
+        true,
+        Some("振り向きは控えめに"),
+        ModuleRigChoice::default(),
+        None,
+    )
+    .unwrap() else {
         panic!("expected to ask for consent");
     };
     assert_eq!(disclosure.instruction_chars, 9);
     assert_eq!(disclosure.retries, DEFAULT_MAX_ATTEMPTS - 1);
 
     let long = "a".repeat(Instructions::MAX_CHARS + 1);
-    let err = propose_guided_in(&state, true, Some(&long), None).unwrap_err();
+    let err =
+        propose_guided_in(&state, true, Some(&long), ModuleRigChoice::default(), None).unwrap_err();
     assert!(err.contains("limit"), "{err}");
     // AI を使わないなら注文は送らない (長さも問わない)。
-    let view = done(propose_guided_in(&state, false, Some(&long), None).unwrap());
+    let view = done(
+        propose_guided_in(&state, false, Some(&long), ModuleRigChoice::default(), None).unwrap(),
+    );
     assert_eq!(view.instructions, None);
 }
 
@@ -465,20 +473,26 @@ fn proposals_made_here_can_be_regenerated() {
     };
     assert_eq!(panel.regenerable, [view.id]);
 
-    let AiReply::NeedsConsent { disclosure } =
-        regenerate_in(&state, view.id, Some("目はもう少し細く閉じる"), None).unwrap()
-    else {
+    let AiReply::NeedsConsent { disclosure } = regenerate_in(
+        &state,
+        view.id,
+        Some("目はもう少し細く閉じる"),
+        ModuleRigChoice::default(),
+        None,
+    )
+    .unwrap() else {
         panic!("expected to ask for consent");
     };
     assert_eq!(disclosure.instruction_chars, 11);
     assert_eq!(disclosure.image_count, 1);
-    let err = regenerate_in(&state, view.id + 1, None, None).unwrap_err();
+    let err =
+        regenerate_in(&state, view.id + 1, None, ModuleRigChoice::default(), None).unwrap_err();
     assert!(err.contains("cannot be regenerated"), "{err}");
 
     // 「外部に送らない」のプロジェクトでは作り直さない (AI なしの作り直しはない)。
     state.project.lock().unwrap().set_ai_send_externally(false);
     assert_eq!(
-        regenerate_in(&state, view.id, None, None).unwrap_err(),
+        regenerate_in(&state, view.id, None, ModuleRigChoice::default(), None).unwrap_err(),
         SEND_DISABLED
     );
 
@@ -751,4 +765,44 @@ fn module_projects_get_module_rigs() {
     };
     let err = rig(&doc, &labels, b"png", Some(&fake), &wrong).unwrap_err();
     assert!(err.to_string().contains("another kind of project"), "{err}");
+}
+
+/// モジュールのリグの組み方 (AI タブの選択) が提案に届く: 直接写す形では追従のワープを作らず、衣装の
+/// メッシュのキーフォームに本体の顔のワープの軸が付く。
+#[test]
+fn module_rig_choice_reaches_the_proposal() {
+    let (state, _) = module_state();
+    let direct = ModuleRigChoice {
+        direct: true,
+        ..ModuleRigChoice::default()
+    };
+    let view = done(propose_guided_in(&state, false, None, direct, None).unwrap());
+    {
+        let mut document = state.document.lock().unwrap();
+        let mut session = state.project.lock().unwrap();
+        session
+            .proposals
+            .proposals
+            .adopt(&mut document, view.id, &[])
+            .unwrap();
+    }
+    let document = state.document.lock().unwrap().detached();
+    let (module, _) = document.split_module().unwrap().unwrap();
+    assert!(
+        !module
+            .deformers
+            .iter()
+            .any(|d| d.id.as_str().starts_with("Follow"))
+    );
+    let hat = module.meshes.iter().find(|m| m.name == "hat").unwrap();
+    assert!(
+        hat.keyforms
+            .bindings
+            .iter()
+            .any(|b| b.parameter.as_str() == "AngleX")
+    );
+    assert_eq!(
+        ModuleRigOptions::from(ModuleRigChoice::default()),
+        ModuleRigOptions::default()
+    );
 }

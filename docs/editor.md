@@ -54,6 +54,7 @@
 | テクスチャ | `add_texture`、`set_texture_image`、`remove_texture`、`set_normal_map` ([法線マップ](#法線マップ)) |
 | ライティング | `set_lighting` (`Model::lighting` を変える。[法線マップ](#法線マップ)) |
 | エフェクト | `set_effects` (`Model::effects` を丸ごと置き換える。[エフェクトの設定](#エフェクトの設定)) |
+| ポーズ | `set_pose` (`Model::pose` を丸ごと置き換える。[ポーズの編集](#ポーズの編集)) |
 | 着せ替えのスロット | `add_slot`、`set_slot`、`remove_slot` ([スロットの編集](#スロットの編集)) |
 | モジュールのプロジェクト | `set_module_settings` (名前・スロット・条件と、取り付け先の違うスロットへ見た目を保って移すか `keep_look`。[モジュールの設定](#モジュールの設定)) |
 | キャンバス | `set_canvas` (`width`・`height`・`origin`。大きさは 0 より大きい有限の値。要素の座標は変えない) |
@@ -691,7 +692,8 @@ base project.」と示します (`BaseLock.svelte`。`fieldset` の `disabled` �
   T0648 で確かめたのは、要素の追加・描画順・テクスチャの編集・PSD の取り込み・保存と開き直し・書き出し (テストとヘッドレスのブラウザ) です。
 - **AI の提案** (PSD からのリギング) は、モジュールのプロジェクトではモジュール向けの提案になります
   ([モジュールのプロジェクトでの AI の提案](#モジュールのプロジェクトでの-ai-の提案)、T0517)。パラメータは足しません。
-- **ポーズ:** `Module::pose` (グループと本体の要素への追従) は開いて保存すれば保たれますが、ポーズを編集する `Command` がまだ無いので作れません (モデルと同じ)。
+- **ポーズ:** `Module::pose` (グループと本体の要素への追従) は開いて保存すれば保たれます。`set_pose` ([ポーズの編集](#ポーズの編集)) で
+  作れますが、画面はまだ無く、AI の提案 (衣装の差分 A / B) が作ります (T0519)。
 - **まだ無い:** 本体の中からモジュールを切り出す操作 (ADR 0024 で見送り)。名前・条件・スロットは [モジュールの設定](#モジュールの設定) で変えられます (T0650)。
 
 ## PSD の取り込み
@@ -1034,6 +1036,16 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
 - 自動リギングの提案 (`ugoe_ai::rig`) は、作ったパラメータに向けた標準の設定をこのコマンドで足します ([ai-integration.md#テンプレート-ugoe_airigpropose_rig](ai-integration.md#テンプレート-ugoe_airigpropose_rig))。
 - 設定を編集する画面は後続 (今は提案か、読み込んだモデルの設定で動く)。
 
+## ポーズの編集
+
+- `set_pose` はポーズ (`Model::pose`、[model.md#ポーズ](spec/model.md#ポーズ)) を丸ごと置き換えます (T0519)。参照するパーツがあること・
+  同じパーツが 2 回現れないこと・`fade_duration` の範囲は、適用後の検証 (`validate`) が調べ、通らなければ拒否してモデルを変えません。Undo で戻ります。
+- モジュールのプロジェクトでは、本体のグループと要素は変えられません (作業用のモデルの本体の部分の検査で拒否する)。衣装のパーツだけの
+  グループを後ろに足すことと、本体の要素の `links` に衣装のパーツを加える (スロットの `pose_parts` にある要素だけ。合成が検査する) ことが
+  できます ([modules.md#ポーズ](spec/modules.md#ポーズ))。
+- 今は AI の提案 (モジュールの自動リギングの差分のポーズ、[ai-integration.md#モジュールの自動リギング](ai-integration.md#モジュールの自動リギング))
+  とエージェントが使います。ポーズを手で編集する画面は後続です。
+
 ## プロジェクト
 
 - 保存形式は [`.ugoeproj/`](spec/file-formats.md#プロジェクト-ugoeproj) です。`ugoe_editor_core::Project` がプロジェクト 1 つ分の中身 (`ProjectMeta`・モデル・テクスチャ・物理・モーション・表情) を持ち、`save(dir)` / `load(dir)` で読み書きし、`export_bundle(&Project)` で `.ugoe` のバイト列を作ります。
@@ -1253,6 +1265,8 @@ PSD の取り込みから「レイヤーの分類 → リギングの提案」�
 - **プレビュー:** 選んだコマンドを複製に適用し (`preview_proposal`)、そのモデル (と `get_proposal_preview_bundle` のテクスチャ付きの
   バンドル) をビューポートに渡します。ドキュメントは変えません。プレビュー中はビューポートに「Previewing an AI proposal…」と出し、
   編集のツール (選択・ギズモ) を隠します。パネルには複製のパラメータ (提案が足したものを含む) のスライダーを出します。
+  「Run physics」で提案の物理 (揺れ) を動かせます ([物理のプレビュー](#物理のプレビュー)と同じ `ViewportController.startPhysicsPreview`。
+  スライダーを動かすと揺れ、採用の前に揺れ方を確かめられる。T0519)。プレビューをやめると物理も止まります (`ProposalsView.endPreview`)。
   ドキュメントが変わったら (編集・Undo・採用) プレビューをやめます。
 - **採用:** 選んだコマンドを 1 つの `Batch` (ラベルは提案の題名。一部だけなら「(n of m commands)」を添える) として適用し、
   **1 回の Undo で戻ります**。採用した後に手で直したセルは、ほかの編集と同じく `authored` になります (推定に任せた `derived` の
@@ -1273,8 +1287,8 @@ PSD の取り込みから「レイヤーの分類 → リギングの提案」�
 | --- | --- |
 | `get_proposals` | `ProposalState { proposals, psd, classification, regenerable }` (一覧・元にする PSD・最後の分類・作り直せる提案) |
 | `classify_psd_layers(psd?, use_ai, instructions?, revise, consent?)` | 分類して覚える。`AiReply<Classification>`。`psd` を省くと取り込んだ PSD。`revise` なら今の分類を前の答えとして送る |
-| `propose_rig_from_psd(use_ai, instructions?, consent?)` | 分類からリグを提案し、一覧に置く。`AiReply<ProposalView>` |
-| `regenerate_rig_proposal(id, instructions?, consent?)` | 提案を前の答えと注文を添えて作り直し、後ろに並べる (いつも AI)。`AiReply<ProposalView>` |
+| `propose_rig_from_psd(use_ai, instructions?, consent?, module_options?)` | 分類からリグを提案し、一覧に置く。`AiReply<ProposalView>`。`module_options` はモジュールのプロジェクトの組み方 (`ModuleRigChoice`。省略すると既定) |
+| `regenerate_rig_proposal(id, instructions?, consent?, module_options?)` | 提案を前の答えと注文を添えて作り直し、後ろに並べる (いつも AI)。`AiReply<ProposalView>` |
 | `preview_proposal(id, excluded)` | 外したコマンドを除いて複製に適用した姿。`ProposalPreview { model_json, report }` |
 | `get_proposal_preview_bundle` / `clear_proposal_preview` | プレビューの `.ugoe` バンドル (生のバイト列) / プレビューの複製を捨てる |
 | `adopt_proposal(id, excluded)` | 外したコマンドを除いて採用する (1 回の Undo で戻る)。`ApplyReport` |
@@ -1287,7 +1301,8 @@ PSD の取り込みから「レイヤーの分類 → リギングの提案」�
 
 - **分類:** 取り込んだ衣装の PSD のレイヤーを、モデルと同じ規則・AI で分類します (`topwear`・`headwear` など)。ラベルは
   モジュールのメッシュだけに対応付けます (`module_mesh_parts`。本体に同じ名前のメッシュがあっても付く)。
-- **提案の中身:** 衣装を本体の変形に追従させるワープと、揺れるラベルの衣装の物理 (規則は
+- **提案の中身:** 衣装を本体の変形 (ワープと、目の開閉のような本体のメッシュのキーフォーム) に追従させるキーフォーム、
+  揺れるラベルの衣装の物理 (スロットが公開する本体の衝突体に当てる)、衣装の差分 (A / B) のポーズ (規則は
   [ai-integration.md#モジュールの自動リギング](ai-integration.md#モジュールの自動リギング))。キーの軸と物理の入力は、本体にある
   標準パラメータとスロットが公開するパラメータだけです。提案は作業用のドキュメントの複製に適用し、モジュールとして分けられる
   (`Document::split_module`) ことを確かめてから置きます。
@@ -1295,7 +1310,15 @@ PSD の取り込みから「レイヤーの分類 → リギングの提案」�
   作り直しには前の答えとしてモジュールの値を送ります (`proposals.rs` の `PreviousAnswer`。プロジェクトの種類が違う前の答えは断る)。
 - **画面:** AI タブの見出しと説明、注文の欄の説明がモジュール向けになります (`ProposalsPanel` の `module`)。新規作成の画面と
   `Module:` の印のツールチップでは、できることに出します (`MODULE_CAN`)。
-- 取り付け先の下に衣装を覆う本体のワープがなく、揺れるラベルの衣装もなければ、組むものがないと断ります (衣装は取り付け先の動きだけに従う)。
+- **組み方 (「How to rig」。AI には送らない。`ModuleRigChoice` → `ugoe_ai::module_rig::ModuleRigOptions`、T0519):**
+  - 「Follow the base warps exactly」: 本体のワープの変形を、衣装を包む追従のワープ (既定。衣装を描き直しても組み直さずに済むが、
+    格子で近似するので振り向きの移動量の 1 割ほどずれる) ではなく、衣装のメッシュのキーフォームに直接写します (キーの上でずれない。
+    メッシュの頂点を編集したら提案し直す)。
+  - 「Keep swaying parts out of the base's colliders」(既定で入): 揺れのリグを、スロットが公開する本体の衝突体に当てます。
+  - 「Turn A / B variants into poses」(既定で入): 名前の末尾の文字だけが違う衣装をポーズにします。
+  - 選択は提案と作り直しに渡し (`propose_rig_from_psd`・`regenerate_rig_proposal` の `module_options`)、エディタを開いている間だけ覚えます。
+- 取り付け先の下に衣装を覆う本体のワープも、衣装が重なる形の変わる本体のメッシュもなく、揺れるラベルの衣装も差分もなければ、組むものが
+  ないと断ります (衣装は取り付け先の動きだけに従う)。
 
 ### AI への注文と作り直し
 

@@ -22,7 +22,7 @@ use crate::module::{
     SlotSummary,
 };
 use crate::project::{ExternalChange, ProjectStatus};
-use crate::proposals::{Classification, ProposalPreview, ProposalState};
+use crate::proposals::{Classification, ModuleRigChoice, ProposalPreview, ProposalState};
 
 /// リポジトリのルート。
 pub fn repo_root() -> PathBuf {
@@ -49,6 +49,7 @@ pub fn generated_files() -> Result<Vec<(&'static str, String)>, serde_json::Erro
     types.add::<ProposalState>();
     types.add::<Classification>();
     types.add::<ProposalPreview>();
+    types.add::<ModuleRigChoice>();
     types.add::<ExportSettings>();
     types.add::<ExportReport>();
     types.add::<AvatarCheck>();

@@ -408,7 +408,7 @@ look_at?: LookAt | null, hit_areas?: Array<AvatarHitArea> | null, slots?: Array<
 /**
  * 法線マップの画像 (PNG)。JSON では数値の配列になるので、主にバックエンド内 (生成の提案など) から使う。
  */
-png?: Array<number> | null, } | { "op": "set_lighting", enabled: boolean, } | { "op": "set_effects", effects: Effects, } | { "op": "add_slot", slot: Slot, } | { "op": "set_slot", id: string, slot: Slot, } | { "op": "remove_slot", id: string, } | { "op": "set_module_settings", name: string, slot: string, requires: ModuleRequirements, keep_look: boolean, };
+png?: Array<number> | null, } | { "op": "set_lighting", enabled: boolean, } | { "op": "set_effects", effects: Effects, } | { "op": "add_slot", slot: Slot, } | { "op": "set_slot", id: string, slot: Slot, } | { "op": "remove_slot", id: string, } | { "op": "set_module_settings", name: string, slot: string, requires: ModuleRequirements, keep_look: boolean, } | { "op": "set_pose", pose: Pose, };
 
 /**
  * 商用利用の範囲。
@@ -1085,6 +1085,24 @@ slots: Array<string>,
  * 本体に必要なパラメータ。
  */
 parameters: Array<string>, };
+
+/**
+ * モジュールのプロジェクトのリグの組み方 (AI タブで選ぶ。`ugoe_ai::module_rig::ModuleRigOptions`)。
+ * AI には送らない。
+ */
+export type ModuleRigChoice = { 
+/**
+ * 本体のワープの変形を衣装のメッシュのキーフォームに直接写す (偽なら衣装を追従のワープで包む)。
+ */
+direct: boolean, 
+/**
+ * 揺れのリグを、スロットが公開する本体の衝突体に当てる。
+ */
+colliders: boolean, 
+/**
+ * 名前の末尾が A / B … で違うだけの衣装の差分をポーズにする。
+ */
+poses: boolean, };
 
 /**
  * 開いているモジュールのプロジェクトの情報 (`module_status` の戻り値)。

@@ -3,13 +3,15 @@
   - 提案の元にする PSD (「New from PSD…」「Import PSD…」で取り込んだもの。「Choose PSD…」で替えられる) の
     レイヤーを分類し (「Classify layers」)、分類からリグ (顔の角度・目・口) を提案する (「Propose rig」)。
     モジュールのプロジェクト (`module`) では、衣装を本体の変形に追従させ、揺れるラベルの衣装に物理を付ける提案になる
-    (パラメータを足さない。docs/editor.md#モジュールのプロジェクトでの-ai-の提案)。
+    (パラメータを足さない。docs/editor.md#モジュールのプロジェクトでの-ai-の提案)。組み方 (追従の形・衝突体・差分のポーズ) は
+    「How to rig」で選ぶ (`view.moduleOptions`。AI には送らない)。
     「Use <プロバイダ>」なら選んだ AI のプロバイダに画像を送る (外部に出るなら送る前に確認のダイアログ)。
     使えないときは理由と設定への案内を出す。
   - エディタにつないだエージェント (lib/agents/) の提案は「from <名前>」の印を付けて同じ一覧に出す。
   - 提案ごとに題名・理由・コマンドの一覧 (同じ対象への続いたコマンドはまとめる) を出す。コマンド (まとまり) の
     チェックを外すと、それに頼るコマンドも外れる (lib/ai/proposals.ts)。「Preview」は提案を複製に適用した姿をビューポートに出し (ドキュメントは変えない)、
-    提案が足したパラメータのスライダーをここに出す。「Adopt」は 1 回の Undo で戻る編集として適用する。
+    提案が足したパラメータのスライダーをここに出す。「Run physics」でプレビューの物理を動かす (揺れを確かめる)。
+    「Adopt」は 1 回の Undo で戻る編集として適用する。
   - AI への注文 (「Instructions for <プロバイダ>」): AI を使うときだけ分類・提案に添える。提案ごとの
     「Regenerate with instructions」は前の答えと注文を送って作り直し、新しい提案を後ろに並べる (前の提案は残る)。
     提案には添えた注文と、AI が反映できないと答えた注文 (「Not applied」) を出す。注文はプロジェクトに保存しない
@@ -92,9 +94,25 @@ function onSlider(id: string, e: Event): void {
   {#if module}
     <p class="muted note">
       Module project: the rig uses only the base's parameters. The costume follows the base deformers under the
-      slot's anchor (for example the face turn), and hair, tails, earrings, neckwear and skirts sway with physics.
-      No parameters are added.
+      slot's anchor (for example the face turn) and base meshes that change shape under it (for example closing
+      eyes), and hair, tails, earrings, neckwear and skirts sway with physics. No parameters are added.
     </p>
+    <fieldset class="options" disabled={busy}>
+      <legend class="note">How to rig (not sent to the AI)</legend>
+      <label class="check note"
+        title="Off: wrap the costume in a warp that approximates the base warp (keeps working if you redraw the costume). On: write the base warp's motion into the costume meshes' keyforms (exact at the keys; propose again after editing the mesh).">
+        <input type="checkbox" bind:checked={view.moduleOptions.direct} />
+        Follow the base warps exactly (write into the costume meshes)
+      </label>
+      <label class="check note" title="Swaying parts collide with the base colliders that the slot exposes, so they do not sink into the body">
+        <input type="checkbox" bind:checked={view.moduleOptions.colliders} />
+        Keep swaying parts out of the base's colliders
+      </label>
+      <label class="check note" title="Costume parts whose names differ only by a trailing A, B… (Sleeve A / Sleeve B) become a pose, following the base's variants when the slot exposes them">
+        <input type="checkbox" bind:checked={view.moduleOptions.poses} />
+        Turn A / B variants into poses
+      </label>
+    </fieldset>
   {/if}
   <div class="row">
     {#if panel?.psd}
@@ -302,6 +320,14 @@ function onSlider(id: string, e: Event): void {
         </div>
         {#if previewing && view.preview}
           <p class="muted note">Previewing. The model is unchanged until you adopt.</p>
+          <div class="row">
+            <button
+              class:active={view.physicsRunning}
+              onclick={() => view.togglePhysics()}
+              title="Run the proposal's physics in the viewport. Move the sliders to see the sway before adopting."
+            >{view.physicsRunning ? "Stop physics" : "Run physics"}</button>
+            {#if view.physicsRunning}<span class="muted note">Move the sliders to see the sway.</span>{/if}
+          </div>
           <div class="sliders">
             {#each view.preview.parameters as p (p.id)}
               <label>
@@ -344,6 +370,15 @@ function onSlider(id: string, e: Event): void {
   }
   .note {
     font-size: 12px;
+  }
+  .options {
+    margin: 6px 0;
+    padding: 2px 8px 4px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+  .options legend {
+    padding: 0 4px;
   }
   .instructions {
     display: block;
