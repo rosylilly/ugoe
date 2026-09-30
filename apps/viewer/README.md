@@ -16,11 +16,11 @@ src/                  フロントエンド (Svelte 5 + TS。npm パッケージ
   lib/Viewport.svelte   描画領域 (ズーム・パン・フィット)
   lib/ParameterPanel.svelte  パラメータのスライダー (グループごと)
   lib/LightingPanel.svelte   光源のパネル (ライティングを使うモデルのときだけ出す)。LightPad.svelte は向き・位置の面
-  lib/lighting.ts       光源の設定・既定の光源の組・set_lighting_json の JSON への変換・localStorage への保存
+  lib/lighting.ts       光源の設定・既定の光源の組・set_lighting_json の JSON への変換・localStorage への保存 (最後に使った設定と、モデルごとの設定 (T0709))
   lib/DressUpPanel.svelte  着せ替えのパネル (スロットのあるモデルか、モジュールを読み込んだときだけ出す)
   lib/dressUp.ts        着せ替えの一覧 (modules_json・slots_json・detached_modules_json) の読み取り、スロットごとのまとめ、エラーと警告の文
   lib/dressUpMemory.ts  付けていたモジュールの組をモデルごとに覚える形と、戻すときにファイルをどこから得るか (T0711)
-  lib/modelMemory.ts    モデルを見分ける鍵と、モデルごとの値を上限付きで localStorage に覚える入れ物 (T0711。T0709 と共有)
+  lib/modelMemory.ts    モデルを見分ける鍵と、モデルごとの値を上限付きで localStorage に覚える入れ物 (T0711。光源の T0709 と共有)
   lib/modelFile.ts      開いたファイルの形式の判別 (バンドル・JSON・モジュール)
   lib/samples.ts        同梱の見本の一覧と開き方 (ツールバーの「サンプル」)
   lib/wasm/             ugoe-wasm の読み込み。generated/ は `pnpm wasm` の出力 (gitignore 済み)
@@ -121,6 +121,9 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 `ugoe-viewer.dress-up` に覚える (`dressUpMemory.ts`。入れ物は下の `ModelMemory`)。
 
 - 着せ替えを操作する (付ける・外す・差し替える・×・モジュールを開く) たびに、開いているモデルの組を覚え直す。
+  覚えた組があれば (`dressUpRemembered`) パネルに「このモデル用に覚えた組があります」と「覚えた組を忘れる」(`forgetDressUp`) を出す。
+  忘れても付けているモジュールはそのままで、尋ねている組は取り消す。次に着せ替えを操作すると、そのときの組をまた覚える
+  (光源の「既定に戻す」と揃えた。T0709)。覚えた組だけがあってスロットもモジュールも無いモデルでも、忘れられるようにパネルを出す。
   モジュールを 1 つも読み込んでいなければ、そのモデルの組を忘れる。覚えるのは最近開いた 20 体まで (`MAX_MODELS`)、1 体に
   64 個まで (`MAX_MODULES`)。ファイルの中身は覚えない (容量のため)。
 - モデルを開いたとき (別のモデルか、同じモデルをモジュールと一緒に開き直したとき)、覚えていた組と違えば (付けているもの・その順・
@@ -139,7 +142,13 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 
 ## モデルごとに覚える (T0711)
 
-モデルごとの設定 (着せ替えの組。T0709 の光源の設定も) は、`modelMemory.ts` の部品で覚える。
+モデルごとの設定 (着せ替えの組と、光源の設定 (T0709)) は、`modelMemory.ts` の部品で覚える。
+
+| 覚えるもの | localStorage のキー | 上限 | 忘れる操作 |
+| --- | --- | --- | --- |
+| 着せ替えの組 (`dressUpMemory.ts`) | `ugoe-viewer.dress-up` | 20 体 | 着せ替えのパネルの「覚えた組を忘れる」 |
+| 光源の設定 (`lighting.ts` の `lightingMemory`) | `ugoe-viewer.lighting.models` | 50 体 | ライティングのパネルの「既定に戻す」 |
+
 
 - **モデルの鍵 (`ModelIdentity`):** `{ name, fingerprint, location? }`。
   - `location` (`FileLocation`) は後から読み直せる場所: `path:<絶対パス>` (Tauri のダイアログ・起動時の引数)、
@@ -154,8 +163,8 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
   `{"version": 1, "entries": [{"model": ModelIdentity, "value": T}]}` を最近使った順に置き、`limit` を超えたら古いものから消す。
   `get`・`set`・`delete` (「既定に戻す」)・`models`。値は `parse` (unknown → `T | null`) が確かめ、読めない項目・例外を出した項目・
   壊れた JSON・違う版・使えない localStorage では、何も覚えていないものとして動き、例外を出さない。
-- T0709 は、`Player.load` で作る鍵 (`modelIdentity(file)`) と同じ作り方で `ModelMemory<LightingSettings>` を持てばよい
-  (`parse` には `lighting.ts` の `sanitizeLighting` を使える)。
+- 光源の設定 (T0709) も `Player.load` で作る鍵 (`modelIdentity(file)`) で `ModelMemory<LightingSettings>` に覚える
+  (`parse` は `parseModelLighting`。オブジェクトでない値は読み飛ばし、中の壊れた値は `sanitizeLighting` で直す)。
 - 確かめるための本体とモジュールはリポジトリに無い。`ugoe_model::fixtures` の `dress_up_base`・`long_hair_module`・`dress_module` を
   `ugoe_format` の `write_bundle` / `module_file::write_module` で書き出して作る (T0706 のメモ)。
 
@@ -175,9 +184,17 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 
 - 渡す色は「色 × 強さ」(1 を超えてよい)。位置と範囲を割合で持つので、キャンバスの大きさが違うモデルでも同じように当たる。
   JSON への変換は `lighting.ts` の `toLightingJson` (平行光源の `direction` は光が進む向きなので、来る向きの逆にする)。
-- 設定はモデルを開き直しても保ち、`localStorage` (`ugoe-viewer.lighting`) に覚える。壊れた値・範囲の外の値は既定値で埋めるか範囲に収め、
-  読めなければ「標準」から始める。
-- ヘッドレスのブラウザからは `window.__UGOE_VIEWER__` の `lighting`・`setLighting`・`updateLighting`・`usesLighting` を触れる。
+- 設定は **モデルごとに覚える** (T0709。`ugoe-viewer.lighting.models`、最近開いた 50 体まで。鍵は [モデルごとに覚える](#モデルごとに覚える-t0711))。
+  - 光源を変える (`setLighting`・`updateLighting`) と、開いているモデルの設定として覚え、最近使ったものにする。
+  - モデルを開くと、覚えた設定があればそれにする (覚えた項目を最近使ったものにし、鍵も新しくする)。無ければ **最後に使った設定** を保つ
+    (最後に使った設定は T0705 と同じ `ugoe-viewer.lighting` にも覚え、起動し直した後に覚えていないモデルで使う)。開くだけでは覚えない。
+  - パネルに「このモデル用に覚えた設定」か「このモデル用の設定はまだありません」を出す (`lightingRemembered`)。「既定に戻す」
+    (`resetLighting`) はそのモデルの設定を忘れて「標準」にする (最後に使った設定も「標準」になる)。覚えておらず既定のままなら押せない。
+  - 既定を「最後に使った設定」にしたのは、T0705 までの「ビューアで 1 つ」の使い方 (好みの光源で見本を次々に見る) を保つため。
+- 壊れた値・範囲の外の値は既定値で埋めるか範囲に収め、読めなければ (壊れた JSON・違う版) 覚えていないものとして扱う。
+  最後に使った設定が読めなければ「標準」から始める。
+- ヘッドレスのブラウザからは `window.__UGOE_VIEWER__` の `lighting`・`setLighting`・`updateLighting`・`usesLighting`・
+  `lightingRemembered`・`resetLighting()`・`dressUpRemembered`・`forgetDressUp()` を触れる。
 - 確かめるには「サンプル」→「アバター (ライティング)」(`assets/samples/avatar-lit.ugoe`。見本のアバターに法線マップを付けた版、T0707) を開く。
 
 ## フェイストラッキング (T0703)

@@ -162,7 +162,7 @@ function onKeyDown(e: KeyboardEvent) {
     -->
     <aside class="sidebar">
       <TrackingPanel {tracker} parameterIds={player.trackingParameterIds} values={player.values} />
-      {#if player.slots.length > 0 || player.modules.length > 0 || player.dressUpError || player.restoreOffer}
+      {#if player.slots.length > 0 || player.modules.length > 0 || player.dressUpError || player.restoreOffer || player.dressUpRemembered}
         <DressUpPanel {player} hasModel={player.status === "ready"} />
       {/if}
       {#if player.usesLighting}

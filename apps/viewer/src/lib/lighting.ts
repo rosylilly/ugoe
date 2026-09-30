@@ -1,7 +1,9 @@
 // ライティングの光源の設定 (T0705)。画面で扱う形 (向きは角度、点光源の位置はキャンバスに対する割合) と、
-// `WebPuppet.set_lighting_json` に渡す JSON (キャンバス座標) の変換、既定の光源の組、localStorage への保存。
+// `WebPuppet.set_lighting_json` に渡す JSON (キャンバス座標) の変換、既定の光源の組、localStorage への保存
+// (最後に使った設定と、モデルごとの設定 (T0709))。
 // 光源の意味は docs/spec/rendering.md#ライティング。
 import { parseHexColor } from "./color";
+import { ModelMemory } from "./modelMemory";
 
 /** 色と強さ。渡す色は `color × intensity` (1 を超えてよい)。 */
 export interface LightColor {
@@ -273,6 +275,28 @@ export function saveLighting(settings: LightingSettings, storage?: Storage): voi
   } catch {
     // 覚えられないだけで、表示には影響しない。
   }
+}
+
+// --- モデルごとの設定 (T0709) ---
+
+/** モデルごとの光源の設定の localStorage のキー。入れ物は modelMemory.ts の `ModelMemory`。 */
+export const MODEL_LIGHTING_STORAGE_KEY = "ugoe-viewer.lighting.models";
+/** 光源の設定を覚えるモデルの数の上限 (1 体で 1 KB 足らず)。超えたら最も長く開いていないものから消す。 */
+export const MAX_LIGHTING_MODELS = 50;
+
+/** モデルごとに覚えた設定を読む。オブジェクトでなければ `null` (読み飛ばす)、中の壊れた値は `sanitizeLighting` が直す。 */
+export function parseModelLighting(value: unknown): LightingSettings | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? sanitizeLighting(value)
+    : null;
+}
+
+/** モデルごとの光源の設定の入れ物。 */
+export function lightingMemory(storage?: Storage): ModelMemory<LightingSettings> {
+  return new ModelMemory(MODEL_LIGHTING_STORAGE_KEY, parseModelLighting, {
+    limit: MAX_LIGHTING_MODELS,
+    storage,
+  });
 }
 
 // --- 向きの面 (LightPad) との変換 ---

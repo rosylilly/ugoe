@@ -26,7 +26,14 @@ import {
 } from "./dressUpMemory";
 import { DriverSet } from "./drivers";
 import { readFileAt } from "./host";
-import { type LightingSettings, loadLighting, saveLighting, toLightingJson } from "./lighting";
+import {
+  defaultLighting,
+  type LightingSettings,
+  lightingMemory,
+  loadLighting,
+  saveLighting,
+  toLightingJson,
+} from "./lighting";
 import { detectModelKind, type ModelFile, type ModuleToOpen } from "./modelFile";
 import { type ModelIdentity, modelIdentity, sameModel } from "./modelMemory";
 import {
@@ -83,8 +90,13 @@ export class Player {
   transparent = $state(false);
   /** 開いているモデルにライティングを受けるメッシュがあるか (光源のパネルを出すか)。 */
   usesLighting = $state(false);
-  /** 光源の設定 (lighting.ts)。モデルを開き直しても保ち、localStorage に覚える。 */
+  /**
+   * 光源の設定 (lighting.ts)。モデルごとに覚え (T0709)、覚えていないモデルを開いたときは、最後に使った設定を保つ。
+   * 最後に使った設定も localStorage に覚える (起動し直したときに、覚えていないモデルで使う)。
+   */
   lighting = $state<LightingSettings>(loadLighting());
+  /** 開いているモデルの光源の設定を覚えているか (「既定に戻す」で忘れる)。 */
+  lightingRemembered = $state(false);
   /** 読み込んだ着せ替えのモジュール (読み込んだ順)。同じモデルを開き直したときは残り、別のモデルを開くと空になる。 */
   modules = $state<ModuleInfo[]>([]);
   /** 開いているモデル (本体) のスロット。 */
@@ -98,6 +110,8 @@ export class Player {
   restoreOffer = $state<DressUpSet | null>(null);
   /** モデルを開いたとき、前に付けていた組を尋ねずに戻すか。localStorage に覚える。 */
   autoRestore = $state(loadAutoRestore());
+  /** 開いているモデルに付けていた組を覚えているか (「覚えた組を忘れる」で忘れる)。 */
+  dressUpRemembered = $state(false);
 
   /** パラメータを毎フレーム外から動かすもの (drivers.ts)。 */
   readonly drivers = new DriverSet();
@@ -126,6 +140,8 @@ export class Player {
   #model: ModelIdentity | null = null;
   /** モデルごとに覚えた着せ替えの組。 */
   #memory = dressUpMemory();
+  /** モデルごとに覚えた光源の設定 (T0709)。 */
+  #lightingMemory = lightingMemory();
   /** このセッションで読んだモジュールの中身 (指紋ごと。古いものから捨てる)。 */
   #sessionFiles = new Map<string, ModelFile>();
   /** 0 より大きい間は、着せ替えの変化を利用者の操作とみなさない (組を覚えず、尋ねているのを取り消さない)。 */
@@ -202,6 +218,8 @@ export class Player {
         return;
       }
       this.#model = identity;
+      this.dressUpRemembered = remembered !== null;
+      this.#recallLighting(identity);
       this.#afterLoad(file);
       for (const m of modules) this.loadModule(m.file, m.attach);
     } finally {
@@ -464,11 +482,37 @@ export class Player {
     this.#applyBackground();
   }
 
-  /** 光源の設定を変える (次のフレームから効く)。設定は覚えておく。 */
+  /** 光源の設定を変える (次のフレームから効く)。最後に使った設定と、開いているモデルの設定として覚える。 */
   setLighting(settings: LightingSettings): void {
     this.lighting = settings;
     saveLighting(settings);
+    const model = this.#model;
+    if (model !== null) {
+      this.#lightingMemory.set(model, settings);
+      this.lightingRemembered = true;
+    }
     this.#applyLighting();
+  }
+
+  /** 開いているモデルに覚えた光源の設定を忘れ、既定 (lighting.ts の `defaultLighting`) に戻す。 */
+  resetLighting(): void {
+    const model = this.#model;
+    if (model !== null) this.#lightingMemory.delete(model);
+    this.lightingRemembered = false;
+    this.lighting = defaultLighting();
+    saveLighting(this.lighting);
+    this.#applyLighting();
+  }
+
+  /**
+   * 開いているモデルに覚えた着せ替えの組を忘れる。付けているモジュールはそのままで、尋ねている組は取り消す。
+   * 次に着せ替えを操作すると、そのときの組をまた覚える。
+   */
+  forgetDressUp(): void {
+    const model = this.#model;
+    if (model !== null) this.#memory.delete(model);
+    this.dressUpRemembered = false;
+    this.restoreOffer = null;
   }
 
   /** 光源の設定の一部を書き換える (`edit` は写しを書き換える)。 */
@@ -521,6 +565,20 @@ export class Player {
     const modules = [...this.#moduleFiles].map(([name, m]) => ({ name, file: m.identity }));
     if (modules.length === 0) this.#memory.delete(model);
     else this.#memory.set(model, { modules, attached: [...this.#attached] });
+    this.dressUpRemembered = modules.length > 0;
+  }
+
+  /**
+   * 開いたモデルに覚えた光源の設定があれば、それにする (無ければ最後に使った設定のまま)。覚えた設定は最近使った
+   * ものにし、鍵も新しくする (ドロップで覚えたモデルを「開く」で開くと場所が付く)。渡すのは `#afterLoad`。
+   */
+  #recallLighting(model: ModelIdentity): void {
+    const saved = this.#lightingMemory.get(model);
+    this.lightingRemembered = saved !== null;
+    if (saved === null) return;
+    this.#lightingMemory.set(model, saved);
+    this.lighting = saved;
+    saveLighting(saved);
   }
 
   /** 付け外しを 1 つ行い、一覧を読み直す。失敗したら (wasm は何も変えない) 理由を `dressUpError` に入れる。 */

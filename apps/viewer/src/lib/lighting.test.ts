@@ -3,7 +3,10 @@ import {
   anglesFromPad,
   defaultLighting,
   type LightingSettings,
+  lightingMemory,
   loadLighting,
+  MAX_LIGHTING_MODELS,
+  MODEL_LIGHTING_STORAGE_KEY,
   PRESETS,
   padFromAngles,
   sameLighting,
@@ -12,6 +15,7 @@ import {
   toLightingJson,
   towardLight,
 } from "./lighting";
+import { type ModelIdentity, modelIdentity } from "./modelMemory";
 
 class MemoryStorage implements Storage {
   #items = new Map<string, string>();
@@ -174,6 +178,71 @@ describe("loadLighting / saveLighting", () => {
     };
     expect(loadLighting(storage)).toEqual(defaultLighting());
     expect(() => saveLighting(defaultLighting(), storage)).not.toThrow();
+  });
+});
+
+describe("lightingMemory", () => {
+  const model = (n: number, location?: string): ModelIdentity =>
+    modelIdentity(
+      location === undefined
+        ? { name: `m${n}.ugoe`, bytes: new Uint8Array([n, n >> 8]) }
+        : { name: `m${n}.ugoe`, bytes: new Uint8Array([n, n >> 8]), location: `path:${location}` },
+    );
+  const sunset = () => structuredClone(PRESETS[1]?.settings) as LightingSettings;
+
+  it("remembers settings per model and forgets them", () => {
+    const storage = new MemoryStorage();
+    const memory = lightingMemory(storage);
+    memory.set(model(1), sunset());
+    expect(memory.get(model(1))).toEqual(sanitizeLighting(sunset()));
+    expect(memory.get(model(2))).toBeNull();
+    // 同じ中身を場所付きで開いても同じモデル。書き出し直して中身が変わっても、場所が同じなら同じモデル。
+    memory.set(model(3, "/a.ugoe"), defaultLighting());
+    expect(memory.get(model(4, "/a.ugoe"))).toEqual(defaultLighting());
+    memory.delete(model(1));
+    expect(memory.get(model(1))).toBeNull();
+    expect(memory.get(model(3))).toEqual(defaultLighting());
+  });
+
+  it("keeps only the most recently used models", () => {
+    const storage = new MemoryStorage();
+    const memory = lightingMemory(storage);
+    for (let n = 0; n <= MAX_LIGHTING_MODELS; n++) memory.set(model(n), sunset());
+    expect(memory.models()).toHaveLength(MAX_LIGHTING_MODELS);
+    expect(memory.get(model(0))).toBeNull();
+    expect(memory.get(model(1))).not.toBeNull();
+  });
+
+  it("repairs broken settings and skips entries that are not settings", () => {
+    const storage = new MemoryStorage();
+    const m = model(1);
+    storage.setItem(
+      MODEL_LIGHTING_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        entries: [
+          { model: model(2), value: "nope" },
+          { model: model(3), value: [1, 2] },
+          { model: m, value: { ambient: { color: "nope", intensity: "x" }, point: { x: 1e99 } } },
+        ],
+      }),
+    );
+    const memory = lightingMemory(storage);
+    expect(memory.get(model(2))).toBeNull();
+    expect(memory.get(model(3))).toBeNull();
+    const repaired = memory.get(m);
+    expect(repaired?.ambient).toEqual(defaultLighting().ambient);
+    expect(repaired?.point.x).toBe(1.5);
+    storage.setItem(MODEL_LIGHTING_STORAGE_KEY, "{not json");
+    expect(memory.get(m)).toBeNull();
+    expect(() => memory.set(m, defaultLighting())).not.toThrow();
+  });
+
+  it("does not touch the last used settings", () => {
+    const storage = new MemoryStorage();
+    saveLighting(sunset(), storage);
+    lightingMemory(storage).set(model(1), defaultLighting());
+    expect(sameLighting(loadLighting(storage), sunset())).toBe(true);
   });
 });
 

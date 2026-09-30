@@ -2,7 +2,7 @@
 // 着せ替えのパネル (T0706)。スロットを持つモデルか、モジュールを読み込んだときに App.svelte が出す。
 // スロットごとに、読み込んだモジュールを並べて付ける・外す・差し替える・一覧から除く。
 // 付け外しは Player (WebPuppet の着せ替えの口) が行い、失敗の理由は `player.dressUpError`。
-// モデルに前に付けていた組があれば、戻すか尋ねる (T0711。`player.restoreOffer`)。
+// モデルに前に付けていた組があれば、戻すか尋ねる (T0711。`player.restoreOffer`)。覚えた組は「覚えた組を忘れる」で忘れる (T0709)。
 import { groupBySlot, type ModuleInfo } from "./dressUp";
 import { viewerHost } from "./host";
 import type { Player } from "./player.svelte";
@@ -65,6 +65,17 @@ function describe(m: ModuleInfo): string {
       前の組を自動で戻す
     </label>
   </div>
+
+  {#if player.dressUpRemembered}
+    <div class="memory">
+      <span title="付けているモジュールの組はモデルごとに覚え、次に開いたときに戻せる">このモデル用に覚えた組があります</span>
+      <button
+        type="button"
+        title="このモデルに覚えた組を忘れる (付けているモジュールはそのまま。次に着せ替えを操作すると、そのときの組をまた覚える)"
+        onclick={() => player.forgetDressUp()}>覚えた組を忘れる</button
+      >
+    </div>
+  {/if}
 
   {#if offer !== null}
     <div class="offer" role="status">
@@ -182,6 +193,19 @@ function describe(m: ModuleInfo): string {
     gap: 0.2rem;
     font-size: 0.75rem;
     color: var(--muted);
+  }
+  .memory {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+    margin-top: 0.4rem;
+    color: var(--muted);
+    font-size: 0.75rem;
+  }
+  .memory button {
+    font-size: 0.75rem;
+    padding: 0.1rem 0.5rem;
   }
   .offer {
     margin-top: 0.4rem;

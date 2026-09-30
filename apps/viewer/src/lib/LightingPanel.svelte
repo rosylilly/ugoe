@@ -1,9 +1,11 @@
 <script lang="ts">
 // 光源のパネル (T0705)。ライティングを使うモデル (`WebPuppet.uses_lighting`) のときだけ App.svelte が出す。
-// 環境光・平行光源 (向き)・点光源 (位置と範囲) の色と強さ、既定の光源の組。設定は Player が覚える。
+// 環境光・平行光源 (向き)・点光源 (位置と範囲) の色と強さ、既定の光源の組。設定は Player がモデルごとに覚え (T0709)、
+// 「既定に戻す」で開いているモデルの設定を忘れる。
 import LightPad from "./LightPad.svelte";
 import {
   anglesFromPad,
+  defaultLighting,
   LIMITS,
   type LightColor,
   type LightingSettings,
@@ -21,6 +23,8 @@ let s = $derived(player.lighting);
 let preset = $derived(PRESETS.find((p) => sameLighting(p.settings, s)) ?? null);
 let status = $derived(!s.enabled ? "切" : (preset?.name ?? "カスタム"));
 let directionPad = $derived(padFromAngles(s.directional.azimuth, s.directional.elevation));
+// 覚えておらず既定のままなら、戻すものが無い。
+let canReset = $derived(player.lightingRemembered || !sameLighting(s, defaultLighting()));
 
 function edit(change: (settings: LightingSettings) => void) {
   player.updateLighting(change);
@@ -115,6 +119,18 @@ const times = (v: number) => `×${v.toFixed(2)}`;
     />
     光源を当てる
   </label>
+
+  <div class="memory">
+    <span title="光源の設定はモデルごとに覚える。覚えていないモデルでは、最後に使った設定を使う">
+      {player.lightingRemembered ? "このモデル用に覚えた設定" : "このモデル用の設定はまだありません"}
+    </span>
+    <button
+      type="button"
+      disabled={!canReset}
+      title="このモデルに覚えた光源の設定を忘れ、既定 (標準) に戻す"
+      onclick={() => player.resetLighting()}>既定に戻す</button
+    >
+  </div>
 
   <div class="presets" role="group" aria-label="既定の光源の組">
     {#each PRESETS as p (p.id)}
@@ -321,6 +337,19 @@ const times = (v: number) => `×${v.toFixed(2)}`;
     align-items: center;
     gap: 0.3rem;
     margin-top: 0.4rem;
+  }
+  .memory {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+    margin-top: 0.4rem;
+    color: var(--muted);
+    font-size: 0.75rem;
+  }
+  .memory button {
+    font-size: 0.75rem;
+    padding: 0.1rem 0.5rem;
   }
   .presets {
     display: flex;
