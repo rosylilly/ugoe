@@ -1,11 +1,11 @@
 ---
 id: T0403
 title: crates.io への公開準備
-status: todo
+status: in-progress
 milestone: M7
 crates: [全クレートの Cargo.toml, CI]
 depends_on: []
-assignee:
+assignee: claude-worker-T0403
 ---
 
 # T0403: crates.io への公開準備
