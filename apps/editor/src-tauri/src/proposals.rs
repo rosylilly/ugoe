@@ -75,6 +75,11 @@ impl ProposalSession {
         self.psd = Some(path);
     }
 
+    /// 最後に分類した PSD のレイヤーのラベル (法線マップのまとまりに使う。`crate::lighting`)。
+    pub(crate) fn layer_labels(&self) -> Option<Vec<LayerLabel>> {
+        self.classification.as_ref().map(|c| c.labels.clone())
+    }
+
     /// 提案の置き場 (エディタにつないだエージェントの提案もここに置く。`crate::mcp`)。
     pub(crate) fn proposals_mut(&mut self) -> &mut Proposals {
         &mut self.proposals

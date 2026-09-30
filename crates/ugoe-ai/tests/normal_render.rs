@@ -8,8 +8,11 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
+use ugoe_ai::classify::label_meshes_by_name;
 use ugoe_ai::depth::DepthMap;
-use ugoe_ai::normal::{NormalMapOptions, plan_depth_normal_maps, propose_bulge_normal_maps};
+use ugoe_ai::normal::{
+    BulgeNormalMapOptions, NormalMapOptions, plan_depth_normal_maps, propose_bulge_normal_maps,
+};
 use ugoe_core::{Rgb, Vec2};
 use ugoe_editor_core::texture::{decode_rgba_png, encode_rgba_png};
 use ugoe_editor_core::{Command, Document, Project, PsdImportOptions, import_psd};
@@ -201,12 +204,13 @@ fn render(doc: &Document, lighting: &Lighting, width: u32) -> Image {
     }
 }
 
+/// アルファの形からの法線マップを付ける。メッシュの名前から付けたラベルで部位のまとまりを決める。
 fn apply_bulge(doc: &mut Document) {
     let proposal = propose_bulge_normal_maps(
         doc.model(),
         doc.textures(),
-        &BTreeMap::new(),
-        &NormalMapOptions::default(),
+        &label_meshes_by_name(doc.model()),
+        &BulgeNormalMapOptions::default(),
     )
     .unwrap();
     doc.apply(Command::Batch {
@@ -283,6 +287,21 @@ fn bustup_with_generated_normal_maps() {
     lit.dump("bustup-bulge");
     let unlit = render(&doc, &Lighting::default(), 512);
     unlit.dump("bustup-unlit");
+    // 目視確認用に、左・右・上から (高さ 45°) 照らしたもの。
+    for (name, direction) in [
+        ("left", [1.0, 0.0, -1.0]),
+        ("right", [-1.0, 0.0, -1.0]),
+        ("top", [0.0, 1.0, -1.0]),
+    ] {
+        let light = Lighting {
+            ambient: Rgb::new(0.55, 0.55, 0.55),
+            lights: vec![Light::Directional {
+                direction,
+                color: Rgb::new(0.6, 0.6, 0.6),
+            }],
+        };
+        render(&doc, &light, 512).dump(&format!("bustup-bulge-{name}"));
+    }
 
     // 法線マップで陰影が付く (平らな法線のときと画素が変わる)。光源がなければ変わらない
     // (環境光が白なので、ライティングを受けない場合と同じ色)。

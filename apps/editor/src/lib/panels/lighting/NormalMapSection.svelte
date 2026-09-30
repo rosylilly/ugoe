@@ -1,6 +1,8 @@
 <!--
   選んだメッシュのテクスチャの法線マップ (docs/editor.md#ライティングの画面)。
-  - 「Generate」: アルファの形からふくらみの法線マップを作る (AI なし。ipc.generateTextureNormalMap)。強さと縁の丸みを選ぶ。
+  - 「Generate」: 部位のまとまり (顔と目口鼻眉・首と体と腕・髪など。意味ラベルから決める) の形を 1 つのふくらみにして
+    法線マップを作る (AI なし。ipc.generateTextureNormalMap)。強さと縁の丸みはまとまりの既定から始まる (ipc.getNormalMapGroup)。
+    「Generate for the group」はまとまりのすべてのテクスチャに作る。
   - 「Assign PNG…」: PNG を選んで付ける (DirectX 形式なら「Flip green」)。
   - 「Remove」: set_normal_map で外す。
   どれも 1 回の Undo で戻る。テクスチャと法線マップの画像を並べて表示する。
@@ -8,7 +10,7 @@
 <script lang="ts">
 import type { EditorDocument } from "../../document.svelte";
 import { fileDialogs } from "../../fileDialogs";
-import { type ApplyReport, ipc, type Model } from "../../ipc";
+import { type ApplyReport, ipc, type Model, type NormalMapGroupView } from "../../ipc";
 import { textureLabel } from "../../labels";
 
 interface Props {
@@ -38,6 +40,9 @@ const sharedWith = $derived(
 let strength = $state(0.5);
 let roundEdgesOnly = $state(false);
 let edge = $state(12);
+let smoothing = $state(1);
+/** 選んだテクスチャの法線マップのまとまり (取れなければ null)。 */
+let group = $state<NormalMapGroupView | null>(null);
 let flipGreen = $state(false);
 let busy = $state(false);
 let error = $state<string | null>(null);
@@ -75,6 +80,46 @@ $effect(() => {
   };
 });
 
+/** 設定をまとまりの既定に戻す。 */
+function useDefaults(view: NormalMapGroupView | null): void {
+  const d = view?.defaults;
+  strength = d?.strength ?? 0.5;
+  roundEdgesOnly = d?.edge != null;
+  edge = Math.round(d?.edge ?? 12);
+  smoothing = d?.smoothing ?? 1;
+}
+
+// テクスチャを替えたら、まとまりと既定の設定を取り直す (ラベルはモデルの編集でも変わりうるので revision も見る)。
+let groupFor: string | null = null;
+$effect(() => {
+  void doc.revision;
+  const name = ref?.name ?? null;
+  let cancelled = false;
+  if (!name) {
+    group = null;
+    return;
+  }
+  void ipc
+    .getNormalMapGroup(name)
+    .catch(() => null)
+    .then((view) => {
+      if (cancelled) return;
+      group = view;
+      if (groupFor !== name) {
+        groupFor = name;
+        useDefaults(view);
+      }
+    });
+  return () => {
+    cancelled = true;
+  };
+});
+
+/** 縁の幅の欄の上限 (既定の幅が大きいまとまりでも選べるように)。 */
+const edgeMax = $derived(Math.max(64, Math.ceil((group?.defaults.edge ?? 0) * 2)));
+/** いっしょにふくらませるほかのテクスチャ。 */
+const partners = $derived(group ? group.textures.filter((t) => t !== ref?.name) : []);
+
 async function run(action: () => Promise<ApplyReport>): Promise<void> {
   if (busy) return;
   busy = true;
@@ -86,15 +131,15 @@ async function run(action: () => Promise<ApplyReport>): Promise<void> {
   }
 }
 
-function generate(): void {
+function generate(wholeGroup: boolean): void {
   if (!ref) return;
   const name = ref.name;
   void run(() =>
-    ipc.generateTextureNormalMap(name, {
-      strength,
-      edge: roundEdgesOnly ? edge : null,
-      smoothing: 1,
-    }),
+    ipc.generateTextureNormalMap(
+      name,
+      { strength, edge: roundEdgesOnly ? edge : null, smoothing },
+      wholeGroup,
+    ),
   );
 }
 
@@ -137,8 +182,21 @@ function remove(): void {
 
     <h4>Generate from the shape</h4>
     <p class="muted note">
-      Makes the texture's opaque shape bulge toward the viewer (no AI). Turns on lighting for the model if it is off.
+      Makes the opaque shape bulge toward the viewer (no AI). Parts of the same group are shaped as one surface, so eyes
+      follow the face and the neck joins the body. Turns on lighting for the model if it is off.
     </p>
+    {#if group}
+      <p class="muted note" data-testid="normal-map-group">
+        {#if group.group && partners.length > 0}
+          Group “{group.group}” with {partners.join(", ")}{#if group.shape_only.length > 0}; also shaped by {group.shape_only.join(", ")}{/if}.
+        {:else if group.group}
+          Group “{group.group}” (this texture only).
+        {:else}
+          No part label: shaped on its own.
+        {/if}
+        Labels from {group.from_classification ? "the PSD classification" : "the layer names"}.
+      </p>
+    {/if}
     <label class="row">
       <span>Strength</span>
       <span class="controls">
@@ -154,13 +212,17 @@ function remove(): void {
       <label class="row">
         <span>Edge width (px)</span>
         <span class="controls">
-          <input type="range" min="1" max="64" step="1" bind:value={edge} aria-label="Edge width" />
+          <input type="range" min="1" max={edgeMax} step="1" bind:value={edge} aria-label="Edge width" />
           <span class="value">{edge}</span>
         </span>
       </label>
     {/if}
     <div class="row buttons">
-      <button disabled={busy} onclick={generate}>{ref.normal_map ? "Regenerate" : "Generate"}</button>
+      <button disabled={busy} onclick={() => generate(false)}>{ref.normal_map ? "Regenerate" : "Generate"}</button>
+      {#if partners.length > 0}
+        <button disabled={busy} onclick={() => generate(true)}>Generate for the group</button>
+      {/if}
+      <button disabled={busy || !group} onclick={() => useDefaults(group)}>Defaults</button>
     </div>
 
     <h4>Image</h4>

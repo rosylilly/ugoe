@@ -132,6 +132,7 @@ pub fn run() {
             dress_up::get_preview_modules,
             dress_up::set_preview_modules,
             dress_up::read_module_file,
+            lighting::get_normal_map_group,
             lighting::generate_texture_normal_map,
             lighting::assign_texture_normal_map,
             lighting::get_texture_png,

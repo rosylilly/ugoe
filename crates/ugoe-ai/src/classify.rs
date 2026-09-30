@@ -436,6 +436,21 @@ pub fn classify_by_name(tree: &LayerTree) -> Vec<LayerLabel> {
     labels
 }
 
+/// メッシュの名前の規則だけで意味ラベルを付ける (API を使わない、決定的)。規則が当たらないメッシュは含めない。
+///
+/// PSD の分類 ([`classify_by_name`] など) がないときに、法線マップのまとまり (`crate::normal`) を決めるのに使う。
+/// PSD から取り込んだメッシュの名前はレイヤーの名前なので、グループの名前から受け継がない点のほかは
+/// [`classify_by_name`] と同じラベルになる。
+pub fn label_meshes_by_name(
+    model: &ugoe_model::Model,
+) -> std::collections::BTreeMap<ugoe_model::MeshId, Label> {
+    model
+        .meshes
+        .iter()
+        .filter_map(|m| Some((m.id.clone(), rules::label_from_name(&m.name)?.label)))
+        .collect()
+}
+
 /// 名前だけで 1 枚を分類する (位置による左右は後で決める)。
 fn label_target_by_name(target: &Target<'_>) -> LayerLabel {
     let (label, confidence) = target

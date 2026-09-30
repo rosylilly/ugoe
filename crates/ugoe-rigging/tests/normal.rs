@@ -1,6 +1,9 @@
 //! 法線マップの生成 (決定的な方法) のテスト。`docs/ai-integration.md#法線マップの生成`。
 
-use ugoe_rigging::{BulgeOptions, NormalMap, bulge_height, bulge_normal_map};
+use ugoe_core::Vec2;
+use ugoe_rigging::{
+    BulgeOptions, NormalMap, PlacedTexture, bulge_height, bulge_normal_map, group_bulge_normal_maps,
+};
 
 /// 一辺 `size` の画像に、中心 `(size/2, size/2)`・半径 `radius` の不透明な円を描く (RGBA8)。
 fn disc(size: u32, radius: f32) -> Vec<u8> {
@@ -198,4 +201,148 @@ fn ragged_shapes_match_the_reference_solution() {
             "{name}: height differs by {error} (peak {peak})"
         );
     }
+}
+
+// ---- まとまりでふくらませる (T0518) ----
+
+/// 一辺 `size` のテクスチャの画素を、キャンバスの `origin` から `scale` 倍で置いた位置 (画素の中心)。
+/// `mirror` なら左右を反転して置く。
+fn placed(size: u32, origin: Vec2, scale: f32, mirror: bool) -> Vec<Option<Vec2>> {
+    (0..size * size)
+        .map(|i| {
+            let (x, y) = ((i % size) as f32 + 0.5, (i / size) as f32 + 0.5);
+            let x = if mirror { size as f32 - x } else { x };
+            Some(origin + Vec2::new(x, y) * scale)
+        })
+        .collect()
+}
+
+fn texture<'a>(
+    size: u32,
+    rgba: &'a [u8],
+    positions: &'a [Option<Vec2>],
+    scale: f32,
+) -> PlacedTexture<'a> {
+    PlacedTexture {
+        width: size,
+        height: size,
+        rgba,
+        positions,
+        canvas_per_texel: scale,
+    }
+}
+
+fn angle(a: [f32; 3], b: [f32; 3]) -> f32 {
+    let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
+    dot.clamp(-1.0, 1.0).acos().to_degrees()
+}
+
+/// 顔 (大きな円) の上に目 (小さな円) を置くと、目は顔の面の向きを受ける (単独なら目の中心は正面を向く)。
+#[test]
+fn a_part_on_a_larger_part_takes_its_surface() {
+    let face_rgba = disc(96, 44.0);
+    let face_pos = placed(96, Vec2::ZERO, 1.0, false);
+    let eye_rgba = disc(16, 7.0);
+    // 目の中心はキャンバスの (68, 40): 顔の中心 (48, 48) から右上。
+    let eye_pos = placed(16, Vec2::new(60.0, 32.0), 1.0, false);
+    let options = BulgeOptions::default();
+    let maps = group_bulge_normal_maps(
+        &[
+            texture(96, &face_rgba, &face_pos, 1.0),
+            texture(16, &eye_rgba, &eye_pos, 1.0),
+        ],
+        &[],
+        &options,
+    )
+    .unwrap();
+    let (face, eye) = (&maps[0], &maps[1]);
+    assert_eq!((eye.width, eye.height), (16, 16));
+    for (ex, ey) in [(8.0, 8.0), (5.0, 8.0), (11.0, 11.0)] {
+        let e = normal_at(eye, ex, ey);
+        let f = normal_at(face, 60.0 + ex, 32.0 + ey);
+        assert!(angle(e, f) < 3.0, "eye {e:?} vs face {f:?}");
+    }
+    // 目の中心は右上 (法線マップの +x・+y) を向く。
+    let e = normal_at(eye, 8.0, 8.0);
+    assert!(e[0] > 0.2 && e[1] > 0.1, "{e:?}");
+    // 単独なら正面を向く。
+    let alone = bulge_normal_map(16, 16, &eye_rgba, &options).unwrap();
+    assert!(normal_at(&alone, 8.0, 8.0)[2] > 0.99);
+}
+
+/// 形にだけ加えたテクスチャは法線マップを作らないが、形を広げる。
+#[test]
+fn shape_only_parts_widen_the_shape() {
+    let rgba = vec![255u8; 32 * 32 * 4];
+    let neck = placed(32, Vec2::new(0.0, 32.0), 1.0, false);
+    let head = placed(32, Vec2::ZERO, 1.0, false);
+    let options = BulgeOptions::default();
+    let alone = group_bulge_normal_maps(&[texture(32, &rgba, &neck, 1.0)], &[], &options).unwrap();
+    let joined = group_bulge_normal_maps(
+        &[texture(32, &rgba, &neck, 1.0)],
+        &[texture(32, &rgba, &head, 1.0)],
+        &options,
+    )
+    .unwrap();
+    assert_eq!(joined.len(), 1);
+    // 首の上端は、単独なら上を向き、頭を加えると上を向かない。
+    assert!(normal_at(&alone[0], 16.0, 1.0)[1] > 0.3);
+    assert!(normal_at(&joined[0], 16.0, 1.0)[1] < 0.1);
+}
+
+/// 解像度の違うテクスチャ・左右を反転して置いたテクスチャも、キャンバスでの形が同じなら同じ向きになる。
+#[test]
+fn placement_follows_scale_and_mirroring() {
+    let options = BulgeOptions::default();
+    let fine_rgba = disc(64, 28.0);
+    let fine_pos = placed(64, Vec2::ZERO, 1.0, false);
+    let fine = &group_bulge_normal_maps(&[texture(64, &fine_rgba, &fine_pos, 1.0)], &[], &options)
+        .unwrap()[0];
+    let coarse_rgba = disc(32, 14.0);
+    let coarse_pos = placed(32, Vec2::ZERO, 2.0, false);
+    let coarse = &group_bulge_normal_maps(
+        &[texture(32, &coarse_rgba, &coarse_pos, 2.0)],
+        &[],
+        &options,
+    )
+    .unwrap()[0];
+    for (x, y) in [(20.0, 32.0), (32.0, 16.0), (44.0, 44.0)] {
+        let a = normal_at(fine, x, y);
+        let b = normal_at(coarse, x / 2.0, y / 2.0);
+        assert!(angle(a, b) < 5.0, "({x}, {y}): {a:?} vs {b:?}");
+    }
+    // 大きな円の右側に置いた小さな四角は、キャンバスの右を向く。左右を反転して置いたテクスチャでは、
+    // それがテクスチャの左 (法線マップの −x) になる。
+    let patch = vec![255u8; 8 * 8 * 4];
+    for (mirror, sign) in [(false, 1.0), (true, -1.0)] {
+        let pos = placed(8, Vec2::new(44.0, 28.0), 1.0, mirror);
+        let map = &group_bulge_normal_maps(
+            &[texture(8, &patch, &pos, 1.0)],
+            &[texture(64, &fine_rgba, &fine_pos, 1.0)],
+            &options,
+        )
+        .unwrap()[0];
+        let n = normal_at(map, 4.0, 4.0);
+        assert!(n[0] * sign > 0.2, "mirror {mirror}: {n:?}");
+    }
+}
+
+/// 形の外の画素には、輪郭の法線が広がる (正面向きのままにしない)。
+#[test]
+fn normals_extend_past_the_outline() {
+    let rgba = disc(64, 20.0);
+    let pos = placed(64, Vec2::ZERO, 1.0, false);
+    let map = &group_bulge_normal_maps(
+        &[texture(64, &rgba, &pos, 1.0)],
+        &[],
+        &BulgeOptions::default(),
+    )
+    .unwrap()[0];
+    // 円の右の輪郭 (x = 52) のすぐ外は右を向き、遠くは正面のまま。
+    assert!(
+        normal_at(map, 53.0, 32.0)[0] > 0.3,
+        "{:?}",
+        normal_at(map, 53.0, 32.0)
+    );
+    assert!(normal_at(map, 62.0, 32.0)[2] > 0.999);
 }

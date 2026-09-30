@@ -27,6 +27,7 @@ import type {
   ModuleExportReport,
   ModuleProblem,
   ModuleStatus,
+  NormalMapGroupView,
   OverflowReport,
   PhysicsSettings,
   PreviewLighting,
@@ -128,8 +129,15 @@ export const ipc = {
    * apps/editor/src-tauri/src/lighting.rs。テクスチャのアルファの形からふくらみの法線マップを作って付ける
    * (AI は使わない。モデルのライティングが無効なら有効にする。1 回の Undo で戻る)。
    */
-  generateTextureNormalMap: (texture: string, settings: BulgeSettings) =>
-    invoke<ApplyReport>("generate_texture_normal_map", { texture, settings }),
+  /** テクスチャの法線マップを作る部位のまとまりと、その既定の設定。 */
+  getNormalMapGroup: (texture: string) =>
+    invoke<NormalMapGroupView>("get_normal_map_group", { texture }),
+  /** まとまりの形から法線マップを作る (`settings` が null ならまとまりの既定、`wholeGroup` ならまとまり全体)。 */
+  generateTextureNormalMap: (
+    texture: string,
+    settings: BulgeSettings | null,
+    wholeGroup: boolean,
+  ) => invoke<ApplyReport>("generate_texture_normal_map", { texture, settings, wholeGroup }),
   /** PNG ファイル (絶対パス) をテクスチャの法線マップとして付ける。`flipGreen` は DirectX 形式の画像。 */
   assignTextureNormalMap: (texture: string, path: string, flipGreen: boolean) =>
     invoke<ApplyReport>("assign_texture_normal_map", { texture, path, flipGreen }),

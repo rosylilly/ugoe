@@ -1135,6 +1135,31 @@ duration: number, looping: boolean, fade_in: number, fade_out: number, curves: A
 
 export type MotionEvent = { t: number, value: string, };
 
+/**
+ * テクスチャの法線マップを、どのまとまりで作るか (`get_normal_map_group` の戻り値)。
+ */
+export type NormalMapGroupView = { 
+/**
+ * まとまり (`face`・`body`・`hair_front` など。`ugoe_ai::normal::SurfaceGroup`)。ラベルがなければ `null` (単独)。
+ */
+group: string | null, 
+/**
+ * いっしょにふくらませるテクスチャ (このテクスチャを含む)。
+ */
+textures: Array<string>, 
+/**
+ * 形にだけ加えるテクスチャ (体のまとまりの顔など)。
+ */
+shape_only: Array<string>, 
+/**
+ * まとまりの既定の設定 (長さはまとまりの格子の画素)。
+ */
+defaults: BulgeSettings, 
+/**
+ * ラベルを PSD の分類 (AI の提案のパネル) から取ったか。偽ならメッシュの名前の規則だけ。
+ */
+from_classification: boolean, };
+
 export type NormalizationRange = { min: number, default: number, max: number, };
 
 /**

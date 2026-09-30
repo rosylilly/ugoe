@@ -17,6 +17,10 @@
 //! 法線マップの向きは `docs/spec/rendering.md#ライティング` に従う (x が画像の右、y が画像の **上**、
 //! z が手前。`c = (n + 1) / 2` の RGB)。形の外の画素は平ら (`(0, 0, 1)`) にする。
 
+mod group;
+
+pub use group::{EDGE_PASSES, PlacedTexture, fill_missing, group_bulge_normal_maps};
+
 /// ふくらみの方程式を解くマルチグリッドの V サイクルの回数。
 const INFLATE_CYCLES: usize = 8;
 /// V サイクルの前後で掛ける緩和の回数。

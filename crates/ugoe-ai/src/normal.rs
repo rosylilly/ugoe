@@ -1,7 +1,9 @@
 //! 法線マップの生成の提案 (`docs/ai-integration.md#法線マップの生成`、ADR 0015)。
 //!
-//! - [`propose_bulge_normal_maps`] は、テクスチャのアルファの形からふくらみを作る決定的な方法
-//!   (`ugoe_rigging::bulge_normal_map`)。AI は使わない。
+//! - [`propose_bulge_normal_maps`] は、テクスチャのアルファの形からふくらみを作る決定的な方法。AI は使わない。
+//!   意味ラベルから部位のまとまり ([`SurfaceGroup`]。顔と目口鼻眉・首と体と腕・髪など) を決め、まとまりの形を
+//!   基準の姿のキャンバスに並べて 1 つの形としてふくらませる (`ugoe_rigging::group_bulge_normal_maps`)。
+//!   ラベルのないテクスチャは単独でふくらませる (`ugoe_rigging::bulge_normal_map`)。
 //! - [`propose_depth_normal_maps`] は、原画の深度推定 ([`DepthEstimator`]、振り向きの提案と共通) から、
 //!   テクスチャの画素ごとに基準の姿のキャンバス座標で深度を引き、その勾配を法線にする。
 //!
@@ -11,11 +13,15 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use serde::{Deserialize, Serialize};
 use ugoe_core::Vec2;
 use ugoe_editor_core::Command;
 use ugoe_editor_core::texture::{MAX_TEXTURE_NAME_LEN, Textures, decode_rgba_png, encode_rgba_png};
 use ugoe_model::{MeshId, Model};
-use ugoe_rigging::{BulgeOptions, HeightField, NormalMap, bulge_height};
+use ugoe_rigging::{
+    BulgeOptions, EDGE_PASSES, HeightField, NormalMap, PlacedTexture, bulge_height, fill_missing,
+    group_bulge_normal_maps,
+};
 use ugoe_runtime::{CompiledModel, ModelInstance};
 
 use crate::classify::Label;
@@ -26,8 +32,6 @@ use crate::{AiError, Proposal};
 /// 深度から作る起伏の大きさの基準: 対象のメッシュが覆う範囲の幅に対する比
 /// (振り向きの提案の頭の起伏と同じ。`docs/ai-integration.md#深度の決め方-ugoe_aiturn`)。
 const DEPTH_RELIEF: f32 = 0.3;
-/// メッシュの三角形が覆わない形の中の画素に、隣の画素の値を広げる回数の上限。
-const FILL_PASSES: usize = 64;
 /// 法線マップの画像の名前に付ける接尾辞。
 const SUFFIX: &str = "_normal";
 
@@ -77,46 +81,443 @@ impl Default for DepthNormalOptions {
     }
 }
 
-/// アルファの形から、テクスチャごとにふくらみの法線マップを作る提案 (決定的。AI は使わない)。
+/// 法線マップを作るときの部位のまとまり (`docs/ai-integration.md#まとまりでふくらませる`)。
 ///
-/// `textures` はテクスチャの画像 (`Document::textures`)。`labels` はメッシュの意味ラベルで、
-/// 対象を選ぶときに背景を除くのに使う (なくてよい)。
+/// 同じまとまりのテクスチャは、基準の姿のキャンバスに並べた形を 1 つのふくらみにする。顔の上の目・口は顔の面の
+/// 向きを受け (平らに浮かない)、首と体・肩の上の腕は境目でつながる (T0707)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SurfaceGroup {
+    /// 顔と、顔の上に描く部位 (鼻・頬・目・眉・口)。
+    Face,
+    /// 首・体・手足と服。形には顔 (`face`) も加える (首が形の上端として上を向かないように)。
+    Body,
+    HairFront,
+    HairSide,
+    HairBack,
+    Ear,
+    Earwear,
+    Headwear,
+    Tail,
+    /// まとめない (眼鏡・その他の装飾・分からないもの)。テクスチャごとに単独でふくらませる。
+    Alone,
+}
+
+impl SurfaceGroup {
+    /// ラベルのまとまり。`background` は法線マップを作らない (`None`)。
+    pub const fn of(label: Label) -> Option<Self> {
+        use Label::*;
+        Some(match label {
+            Face | Nose | Cheek | Eye | EyeWhite | Iris | EyeHighlight | EyelashUpper
+            | EyelashLower | EyeClosed | Eyebrow | Mouth | MouthOpen | MouthClosed | MouthInner
+            | Teeth | Tongue => Self::Face,
+            Neck | Body | Arm | Hand | Leg | Foot | Topwear | Bottomwear | Legwear | Footwear
+            | Handwear | Neckwear => Self::Body,
+            HairFront => Self::HairFront,
+            HairSide => Self::HairSide,
+            HairBack => Self::HairBack,
+            Ear => Self::Ear,
+            Earwear => Self::Earwear,
+            Headwear => Self::Headwear,
+            Tail => Self::Tail,
+            // 眼鏡のつるは顔の外に出るので、顔の形に加えない。
+            Eyewear | Accessory | Other => Self::Alone,
+            Background => return None,
+        })
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Face => "face",
+            Self::Body => "body",
+            Self::HairFront => "hair_front",
+            Self::HairSide => "hair_side",
+            Self::HairBack => "hair_back",
+            Self::Ear => "ear",
+            Self::Earwear => "earwear",
+            Self::Headwear => "headwear",
+            Self::Tail => "tail",
+            Self::Alone => "alone",
+        }
+    }
+
+    /// ラベルが `self` の形にだけ加わるか (法線マップはラベルのまとまりで作る)。
+    const fn takes_shape_of(self, label: Label) -> bool {
+        matches!((self, label), (Self::Body, Label::Face))
+    }
+
+    /// 既定の設定: 強さ (高さと幅の比)・縁だけを丸める幅 (まとまりの形の幅に対する比)・ならし (格子の画素)。
+    /// 顔と体のような大きな部位は弱く、髪の房・耳のような細い部位は強めにする (T0707 の見本の値)。
+    const fn defaults(self) -> (f32, Option<f32>, f32) {
+        match self {
+            Self::Face => (0.35, Some(FACE_EDGE), 6.0),
+            Self::Body => (0.3, None, 6.0),
+            Self::HairFront | Self::HairSide | Self::HairBack | Self::Tail => (0.5, None, 3.0),
+            Self::Ear | Self::Headwear => (0.5, None, 2.0),
+            Self::Earwear => (0.6, None, 1.0),
+            Self::Alone => (0.5, None, 1.0),
+        }
+    }
+}
+
+/// 顔のまとまりで、縁だけを丸める幅の、形の幅に対する比 (見本のアバターの顔の形の幅 約 230 画素で 48 画素)。
+const FACE_EDGE: f32 = 0.21;
+
+/// アルファの形からの法線マップの設定 ([`propose_bulge_normal_maps`])。
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct BulgeNormalMapOptions {
+    /// ラベルのないテクスチャ (単独でふくらませる) の設定。
+    pub default: BulgeOptions,
+    /// まとまりごとの設定 (既定の設定を置き換える。`radius`・`smoothing` はまとまりの格子の画素)。
+    pub per_group: BTreeMap<SurfaceGroup, BulgeOptions>,
+    /// テクスチャの名前ごとの設定。そのテクスチャはまとまりから外し、単独でこの設定でふくらませる。
+    pub per_texture: BTreeMap<String, BulgeOptions>,
+    /// 法線マップを作るテクスチャの名前。空なら、メッシュ (マスク専用と、ラベルが `background` の
+    /// ものを除く) が使うすべてのテクスチャ。まとまりのほかのテクスチャは、ここになくても形に加わる。
+    pub textures: Vec<String>,
+    /// すでに法線マップを持つテクスチャも作り直すか。`false` なら飛ばす。
+    pub replace_existing: bool,
+}
+
+/// テクスチャ 1 枚の法線マップのまとまり ([`normal_map_group`])。
+#[derive(Debug, Clone, PartialEq)]
+pub struct NormalMapGroup {
+    /// まとまり。ラベルがない・単独の設定があるなら `None` (単独でふくらませる)。
+    pub group: Option<SurfaceGroup>,
+    /// いっしょにふくらませるテクスチャ (このテクスチャを含む。形にだけ加えるものは含めない)。
+    pub textures: Vec<String>,
+    /// 形にだけ加えるテクスチャ。
+    pub shape_only: Vec<String>,
+    /// 使う設定 (まとまりの既定か、置き換えたもの)。
+    pub options: BulgeOptions,
+}
+
+/// アルファの形から、部位のまとまりごとにふくらみの法線マップを作る提案 (決定的。AI は使わない)。
+///
+/// `textures` はテクスチャの画像 (`Document::textures`)。`labels` はメッシュの意味ラベルで、まとまり
+/// ([`SurfaceGroup`]) を決め、対象を選ぶときに背景を除くのに使う。ラベルのないテクスチャは単独でふくらませる。
+/// 1 枚のテクスチャを使うメッシュのラベルが違えば、モデルで先のメッシュのラベルを使う。
 pub fn propose_bulge_normal_maps(
     model: &Model,
     textures: &Textures,
     labels: &BTreeMap<MeshId, Label>,
-    options: &NormalMapOptions<BulgeOptions>,
+    options: &BulgeNormalMapOptions,
 ) -> Result<Proposal, AiError> {
-    let targets = targets(model, labels, options)?;
+    let targets = targets(
+        model,
+        labels,
+        &options.textures,
+        options.per_texture.keys(),
+        options.replace_existing,
+    )?;
+    let mut planner = GroupPlanner::new(model, textures, labels, options);
     let mut maps = Vec::new();
-    for (index, name) in &targets {
-        let image = decode(textures, name)?;
-        let map = ugoe_rigging::bulge_normal_map(
-            image.width,
-            image.height,
-            &image.rgba,
-            options.for_texture(name),
-        )
-        .map_err(|e| invalid(format!("texture `{name}`: {e}")))?;
-        maps.push((*index, map));
+    let mut lines = Vec::new();
+    let mut done = BTreeSet::new();
+    for (index, _) in &targets {
+        if done.contains(index) {
+            continue;
+        }
+        let group = planner.group_of(*index)?;
+        let wanted: Vec<usize> = group
+            .members
+            .iter()
+            .copied()
+            .filter(|i| targets.iter().any(|(t, _)| t == i))
+            .collect();
+        let made = planner.make(&group)?;
+        for (i, map) in group.members.iter().zip(made) {
+            if wanted.contains(i) {
+                done.insert(*i);
+                maps.push((*i, map));
+            }
+        }
+        lines.push(group_line(model, &group, &wanted));
     }
-    let lines = maps
-        .iter()
-        .map(|(index, _)| {
-            let name = &model.textures[*index].name;
-            let s = options.for_texture(name).strength;
-            format!("- `{name}`: ふくらみ {s}")
-        })
-        .collect::<Vec<_>>();
     build(
         model,
         maps,
         "アルファの形からの法線マップ",
         format!(
-            "テクスチャのアルファの形から、輪郭からの距離に応じてふくらんだ高さを作り、その勾配を法線にした。\n{}",
+            "意味ラベルから部位のまとまりを決め、まとまりのテクスチャのアルファの形を基準の姿のキャンバスに並べて 1 つの形としてふくらませ、\
+             その高さの勾配を法線にした (ラベルのないテクスチャは単独で)。\n{}",
             lines.join("\n")
         ),
     )
+}
+
+/// テクスチャ `texture` をどのまとまりで、どの設定でふくらませるか ([`propose_bulge_normal_maps`] と同じ規則)。
+/// エディタで設定の既定値といっしょにふくらむテクスチャを示すのに使う。
+pub fn normal_map_group(
+    model: &Model,
+    textures: &Textures,
+    labels: &BTreeMap<MeshId, Label>,
+    options: &BulgeNormalMapOptions,
+    texture: &str,
+) -> Result<NormalMapGroup, AiError> {
+    let index = model
+        .textures
+        .iter()
+        .position(|t| t.name == texture)
+        .ok_or_else(|| invalid(format!("texture `{texture}` not found")))?;
+    let mut planner = GroupPlanner::new(model, textures, labels, options);
+    let group = planner.group_of(index)?;
+    let names = |list: &[usize]| {
+        list.iter()
+            .map(|&i| model.textures[i].name.clone())
+            .collect()
+    };
+    Ok(NormalMapGroup {
+        group: group.group,
+        textures: names(&group.members),
+        shape_only: names(&group.shape_only),
+        options: group.options,
+    })
+}
+
+/// 1 つのまとまりの計画: メンバー・形にだけ加えるもの (テクスチャの番号) と設定。
+struct PlannedGroup {
+    group: Option<SurfaceGroup>,
+    members: Vec<usize>,
+    shape_only: Vec<usize>,
+    options: BulgeOptions,
+}
+
+/// まとまりを決め、テクスチャの画素をキャンバスに置いて法線マップを作る (画像と置いた位置を覚えておく)。
+struct GroupPlanner<'a> {
+    model: &'a Model,
+    textures: &'a Textures,
+    labels: &'a BTreeMap<MeshId, Label>,
+    options: &'a BulgeNormalMapOptions,
+    /// テクスチャごとのまとまり (ラベルのないもの・背景だけが使うものは入らない)。
+    groups: BTreeMap<usize, (SurfaceGroup, Label)>,
+    instance: Option<ModelInstance>,
+    placed: BTreeMap<usize, (Image, TexelCanvas)>,
+}
+
+impl<'a> GroupPlanner<'a> {
+    fn new(
+        model: &'a Model,
+        textures: &'a Textures,
+        labels: &'a BTreeMap<MeshId, Label>,
+        options: &'a BulgeNormalMapOptions,
+    ) -> Self {
+        let mut groups = BTreeMap::new();
+        for mesh in &model.meshes {
+            let Some(&label) = labels.get(&mesh.id) else {
+                continue;
+            };
+            let Ok(index) = usize::try_from(mesh.texture) else {
+                continue;
+            };
+            if mesh.mask_only || index >= model.textures.len() {
+                continue;
+            }
+            if let Some(group) = SurfaceGroup::of(label) {
+                groups.entry(index).or_insert((group, label));
+            }
+        }
+        Self {
+            model,
+            textures,
+            labels,
+            options,
+            groups,
+            instance: None,
+            placed: BTreeMap::new(),
+        }
+    }
+
+    fn group_of(&mut self, index: usize) -> Result<PlannedGroup, AiError> {
+        let name = &self.model.textures[index].name;
+        let alone = |options: BulgeOptions| PlannedGroup {
+            group: None,
+            members: vec![index],
+            shape_only: Vec::new(),
+            options,
+        };
+        if let Some(o) = self.options.per_texture.get(name) {
+            return Ok(alone(*o));
+        }
+        let Some(&(group, _)) = self.groups.get(&index) else {
+            return Ok(alone(self.options.default));
+        };
+        if group == SurfaceGroup::Alone {
+            let options = self.options.per_group.get(&group).copied();
+            let mut planned = alone(options.unwrap_or_else(|| resolve(group, 0.0)));
+            planned.group = Some(group);
+            return Ok(planned);
+        }
+        let free = |i: &usize| {
+            !self
+                .options
+                .per_texture
+                .contains_key(&self.model.textures[*i].name)
+        };
+        let members: Vec<usize> = self
+            .groups
+            .iter()
+            .filter(|(i, (g, _))| *g == group && free(i))
+            .map(|(i, _)| *i)
+            .collect();
+        let shape_only: Vec<usize> = self
+            .groups
+            .iter()
+            .filter(|(i, (_, l))| group.takes_shape_of(*l) && free(i))
+            .map(|(i, _)| *i)
+            .collect();
+        let options = match self.options.per_group.get(&group) {
+            Some(o) => *o,
+            None => {
+                // 縁の幅は形の幅に比べて決めるので、置いてから測る。
+                let mut width = 0.0;
+                if group.defaults().1.is_some() {
+                    let (lo, hi, cell) = self.extent(&members)?;
+                    width = (hi - lo) / cell;
+                }
+                resolve(group, width)
+            }
+        };
+        Ok(PlannedGroup {
+            group: Some(group),
+            members,
+            shape_only,
+            options,
+        })
+    }
+
+    /// メンバーの形の中の画素が覆うキャンバスの x の範囲と、最も細かいテクスチャの 1 画素の大きさ。
+    fn extent(&mut self, members: &[usize]) -> Result<(f32, f32, f32), AiError> {
+        let (mut lo, mut hi, mut cell) = (f32::INFINITY, f32::NEG_INFINITY, f32::INFINITY);
+        for &i in members {
+            let (_, canvas) = self.place(i)?;
+            cell = cell.min(canvas.canvas_per_texel);
+            for p in canvas.positions.iter().flatten() {
+                lo = lo.min(p.x);
+                hi = hi.max(p.x);
+            }
+        }
+        if lo > hi {
+            return Ok((0.0, 0.0, 1.0));
+        }
+        Ok((lo, hi, cell))
+    }
+
+    fn place(&mut self, index: usize) -> Result<&(Image, TexelCanvas), AiError> {
+        if !self.placed.contains_key(&index) {
+            if self.instance.is_none() {
+                self.instance = Some(evaluate(self.model)?);
+            }
+            let name = &self.model.textures[index].name;
+            let image = decode(self.textures, name)?;
+            let instance = self
+                .instance
+                .as_ref()
+                .ok_or_else(|| invalid("no instance".into()))?;
+            let canvas = TexelCanvas::rasterize(
+                self.model,
+                instance,
+                self.labels,
+                index as u32,
+                &image,
+                BulgeOptions::default().alpha_threshold,
+            );
+            self.placed.insert(index, (image, canvas));
+        }
+        self.placed
+            .get(&index)
+            .ok_or_else(|| invalid("texture was not placed".into()))
+    }
+
+    /// まとまりのメンバーの法線マップ (メンバーの並び)。
+    fn make(&mut self, group: &PlannedGroup) -> Result<Vec<NormalMap>, AiError> {
+        if group.group.is_none() || group.group == Some(SurfaceGroup::Alone) {
+            // 単独: キャンバスに置かずテクスチャの画素でふくらませる (メッシュが覆わなくても作れる)。
+            let index = group.members[0];
+            let name = &self.model.textures[index].name;
+            let image = decode(self.textures, name)?;
+            let mut field = bulge_height(image.width, image.height, &image.rgba, &group.options)
+                .map_err(|e| invalid(format!("texture `{name}`: {e}")))?;
+            field.smooth(group.options.smoothing);
+            let mut map = field.to_normal_map();
+            map.extend_edges(&field.mask, EDGE_PASSES);
+            return Ok(vec![map]);
+        }
+        for &i in group.members.iter().chain(&group.shape_only) {
+            self.place(i)?;
+        }
+        let placed = |list: &[usize]| -> Vec<PlacedTexture<'_>> {
+            list.iter()
+                .filter_map(|i| self.placed.get(i))
+                .map(|(image, canvas)| PlacedTexture {
+                    width: image.width,
+                    height: image.height,
+                    rgba: &image.rgba,
+                    positions: &canvas.positions,
+                    canvas_per_texel: canvas.canvas_per_texel,
+                })
+                .collect()
+        };
+        group_bulge_normal_maps(
+            &placed(&group.members),
+            &placed(&group.shape_only),
+            &group.options,
+        )
+        .map_err(|e| {
+            let g = group.group.map_or("", SurfaceGroup::as_str);
+            invalid(format!("group `{g}`: {e}"))
+        })
+    }
+}
+
+/// まとまりの既定の設定 (`width` は形の幅。格子の画素)。
+fn resolve(group: SurfaceGroup, width: f32) -> BulgeOptions {
+    let (strength, edge, smoothing) = group.defaults();
+    BulgeOptions {
+        strength,
+        radius: edge.map(|r| (r * width).max(1.0)),
+        smoothing,
+        ..BulgeOptions::default()
+    }
+}
+
+/// 提案の理由の 1 行。
+fn group_line(model: &Model, group: &PlannedGroup, made: &[usize]) -> String {
+    let name = |i: &usize| format!("`{}`", model.textures[*i].name);
+    let o = &group.options;
+    let mut settings = format!("ふくらみ {}", o.strength);
+    if let Some(r) = o.radius {
+        settings.push_str(&format!("・縁 {r:.0} px"));
+    }
+    settings.push_str(&format!("・ならし {}", o.smoothing));
+    match group.group {
+        Some(g) if g != SurfaceGroup::Alone => {
+            let mut line = format!(
+                "- まとまり `{}` ({}): {settings}。作った法線マップ: {}",
+                g.as_str(),
+                group
+                    .members
+                    .iter()
+                    .map(name)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                made.iter().map(name).collect::<Vec<_>>().join(", ")
+            );
+            if !group.shape_only.is_empty() {
+                line.push_str(&format!(
+                    "。形に加えたもの: {}",
+                    group
+                        .shape_only
+                        .iter()
+                        .map(name)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+            line
+        }
+        _ => format!("- {} (単独): {settings}", name(&group.members[0])),
+    }
 }
 
 /// 原画の深度推定から、テクスチャごとに法線マップを作る提案。
@@ -151,7 +552,13 @@ pub fn plan_depth_normal_maps(
     options: &NormalMapOptions<DepthNormalOptions>,
 ) -> Result<Proposal, AiError> {
     map.check()?;
-    let targets = targets(model, labels, options)?;
+    let targets = targets(
+        model,
+        labels,
+        &options.textures,
+        options.per_texture.keys(),
+        options.replace_existing,
+    )?;
     let canvas = Vec2::new(model.meta.canvas.width, model.meta.canvas.height);
     if !(canvas.x > 0.0 && canvas.y > 0.0) {
         return Err(invalid("the canvas is empty".into()));
@@ -163,7 +570,14 @@ pub fn plan_depth_normal_maps(
         let o = options.for_texture(name);
         check_depth_options(name, o)?;
         let image = decode(textures, name)?;
-        let layer = TexelCanvas::rasterize(model, &instance, labels, *index as u32, &image, o);
+        let layer = TexelCanvas::rasterize(
+            model,
+            &instance,
+            labels,
+            *index as u32,
+            &image,
+            o.alpha_threshold,
+        );
         layers.push((*index, image, layer));
     }
 
@@ -204,7 +618,7 @@ pub fn plan_depth_normal_maps(
             .iter()
             .map(|p| p.map(|p| normalize(map.sample(p.x / canvas.x, p.y / canvas.y)) * relief))
             .collect();
-        let values = fill(
+        let values = fill_missing(
             depth,
             &layer.mask,
             image.width as usize,
@@ -272,11 +686,13 @@ fn decode(textures: &Textures, name: &str) -> Result<Image, AiError> {
     })
 }
 
-/// 法線マップを作るテクスチャ (番号と名前)。
-fn targets<T>(
+/// 法線マップを作るテクスチャ (番号と名前)。`overridden` はテクスチャごとの設定があるテクスチャの名前 (あるか確かめる)。
+fn targets<'n>(
     model: &Model,
     labels: &BTreeMap<MeshId, Label>,
-    options: &NormalMapOptions<T>,
+    textures: &[String],
+    overridden: impl IntoIterator<Item = &'n String>,
+    replace_existing: bool,
 ) -> Result<Vec<(usize, String)>, AiError> {
     let find = |name: &str| {
         model
@@ -285,10 +701,10 @@ fn targets<T>(
             .position(|t| t.name == name)
             .ok_or_else(|| invalid(format!("texture `{name}` not found")))
     };
-    for name in options.per_texture.keys() {
+    for name in overridden {
         find(name)?;
     }
-    let indices: BTreeSet<usize> = if options.textures.is_empty() {
+    let indices: BTreeSet<usize> = if textures.is_empty() {
         model
             .meshes
             .iter()
@@ -297,15 +713,14 @@ fn targets<T>(
             .filter(|&i| i < model.textures.len())
             .collect()
     } else {
-        options
-            .textures
+        textures
             .iter()
             .map(|name| find(name))
             .collect::<Result<_, _>>()?
     };
     let targets: Vec<_> = indices
         .into_iter()
-        .filter(|&i| options.replace_existing || model.textures[i].normal_map.is_none())
+        .filter(|&i| replace_existing || model.textures[i].normal_map.is_none())
         .map(|i| (i, model.textures[i].name.clone()))
         .collect();
     if targets.is_empty() {
@@ -422,11 +837,11 @@ impl TexelCanvas {
         labels: &BTreeMap<MeshId, Label>,
         texture: u32,
         image: &Image,
-        options: &DepthNormalOptions,
+        alpha_threshold: u8,
     ) -> Self {
         let (w, h) = (image.width as usize, image.height as usize);
         let size = Vec2::new(image.width as f32, image.height as f32);
-        let threshold = options.alpha_threshold.max(1);
+        let threshold = alpha_threshold.max(1);
         let mask: Vec<bool> = image
             .rgba
             .as_chunks::<4>()
@@ -513,53 +928,6 @@ fn cross(a: Vec2, b: Vec2) -> f32 {
     a.x * b.y - a.y * b.x
 }
 
-/// 値のない形の中の画素に、隣 (上下左右) の値の平均を広げる ([`FILL_PASSES`] 回まで)。
-/// それでも値のない画素は、値のある画素の最小値 (なければ 0) にする。
-fn fill(mut values: Vec<Option<f32>>, mask: &[bool], w: usize, h: usize) -> Vec<f32> {
-    for _ in 0..FILL_PASSES {
-        let mut next = values.clone();
-        let mut changed = false;
-        for y in 0..h {
-            for x in 0..w {
-                let i = y * w + x;
-                if !mask[i] || values[i].is_some() {
-                    continue;
-                }
-                let neighbors = [
-                    x.checked_sub(1).map(|x| y * w + x),
-                    (x + 1 < w).then_some(i + 1),
-                    y.checked_sub(1).map(|y| y * w + x),
-                    (y + 1 < h).then_some(i + w),
-                ];
-                let (sum, n) = neighbors
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|j| values[j])
-                    .fold((0.0, 0), |(s, n), v| (s + v, n + 1));
-                if n > 0 {
-                    next[i] = Some(sum / n as f32);
-                    changed = true;
-                }
-            }
-        }
-        values = next;
-        if !changed {
-            break;
-        }
-    }
-    let floor = values
-        .iter()
-        .flatten()
-        .copied()
-        .fold(f32::INFINITY, f32::min);
-    let floor = if floor.is_finite() { floor } else { 0.0 };
-    values
-        .into_iter()
-        .zip(mask)
-        .map(|(v, &m)| if m { v.unwrap_or(floor) } else { 0.0 })
-        .collect()
-}
-
 fn invalid(message: String) -> AiError {
     AiError::InvalidRequest(message)
 }
@@ -578,14 +946,5 @@ mod tests {
         let name = unique_name(&long, &mut taken);
         assert_eq!(name.len(), MAX_TEXTURE_NAME_LEN);
         assert!(name.ends_with(SUFFIX));
-    }
-
-    #[test]
-    fn fill_spreads_values_into_uncovered_pixels() {
-        let values = vec![Some(1.0), None, None, None];
-        let mask = [true, true, true, false];
-        assert_eq!(fill(values, &mask, 4, 1), vec![1.0, 1.0, 1.0, 0.0]);
-        // 何も覆っていなければ 0。
-        assert_eq!(fill(vec![None; 2], &[true, true], 2, 1), vec![0.0, 0.0]);
     }
 }

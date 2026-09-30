@@ -979,19 +979,25 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 - `set_lighting` はモデル全体のライティングの有無 (`Model::lighting`) を変えます。メッシュごとの `lit` (既定 `true`) と両方が `true` のメッシュだけがライティングを受けます。
 - `set_mesh_properties` の `lit` でメッシュごとの有無を変えます (目のハイライトなど、陰影を付けたくない部分を外す)。
 - 法線マップの生成 (アルファの形・深度推定から) は `ugoe_ai::normal` が `set_normal_map` と `set_lighting` の列を提案します ([ai-integration.md#法線マップの生成](ai-integration.md#法線マップの生成))。
-  エディタの画面からは、AI を使わないアルファの形からの生成だけを [ライティングの画面](#ライティングの画面) で行います。
+  エディタの画面からは、AI を使わないアルファの形からの生成 (部位のまとまりごと) だけを [ライティングの画面](#ライティングの画面) で行います。
 
 ### ライティングの画面
 
 T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/tools/lighting/` (取っ手)・`src-tauri/src/lighting.rs`、
-コマンドの組み立ては `ugoe_editor_core::lighting`。操作の手順は [manual/lighting.md](manual/lighting.md)。
+コマンドの組み立ては `ugoe_editor_core::lighting` (画像の割り当て) と `ugoe_ai::normal` (生成)。操作の手順は [manual/lighting.md](manual/lighting.md)。
 
 - 右の列の「Lighting」タブ。モデルの「Receive lighting」(`set_lighting`) と、メッシュごとの「Lit」(`set_mesh_properties { lit }`。
   選んだメッシュか、選んでいなければすべてを「Light selected」「All on」などでまとめて `batch` で変える) を置きます。
   モデルがライティングを受けない (`Model::lighting` が偽か、`lit` のメッシュがない) ときは、光源を動かしても見た目が変わらない理由を出します。
 - **法線マップ:** 主な選択のメッシュのテクスチャについて、テクスチャと法線マップの画像を並べて出し (`get_texture_png(name)` で PNG を読む)、
-  - 「Generate」(`generate_texture_normal_map(texture, settings)`): アルファの形からのふくらみ (`ugoe_rigging::bulge_normal_map`。AI は使わない)。
-    `BulgeSettings { strength, edge, smoothing }` の強さ (0〜2、画面の既定 0.5) と「Round edges only」の縁の丸みの幅 (`edge`、画素) を選べます。
+  - 「Generate」(`generate_texture_normal_map(texture, settings, whole_group)`): 部位のまとまりの形のふくらみ (`ugoe_ai::normal::propose_bulge_normal_maps`。
+    AI は使わない。[ai-integration.md#まとまりでふくらませる](ai-integration.md#まとまりでふくらませる))。まとまりは意味ラベルから決めます。ラベルはメッシュの名前の規則
+    (`ugoe_ai::classify::label_meshes_by_name`) に、AI の提案のパネルで PSD を分類していればその結果 (`rig::mesh_parts`) を重ねたものです (T0518)。
+    - `get_normal_map_group(texture)` (`NormalMapGroupView`) で、まとまりの名前・いっしょにふくらむテクスチャ・形にだけ加えるテクスチャ・既定の設定を出し、
+      強さ (0〜2) と「Round edges only」の縁の丸みの幅 (`edge`、まとまりの格子の画素)・ならしは、テクスチャを選ぶたびにまとまりの既定から始めます (「Defaults」で戻す)。
+    - `settings` (`BulgeSettings { strength, edge, smoothing }`) はまとまり全体の設定です (`null` ならまとまりの既定)。「Regenerate」は選んだテクスチャの法線マップだけを、
+      「Generate for the group」(`whole_group`) はまとまりのすべてのテクスチャの法線マップを作ります。どちらも形はまとまり全体で決まるので、1 枚ずつ作っても同じ向きになります。
+    - `ugoe_editor_core::lighting::generate_normal_map` (テクスチャ単独のふくらみ) は画面からは使いません。
   - 「Assign PNG…」(`assign_texture_normal_map(texture, path, flip_green)`): 開くのダイアログで選んだ PNG を付けます。「Flip green (DirectX)」は G を反転します。
   - どちらも `set_normal_map` (モデルのライティングが無効なら `set_lighting { enabled: true }` も) を 1 つの `batch` にして適用するので、1 回の Undo で画像ごと戻ります。
     画像の名前は、今の法線マップをこのテクスチャだけが指していればその名前 (差し替え)、共有していれば `<texture>_normal` (重なれば `_normal2`…) です (`lighting::normal_map_name`)。

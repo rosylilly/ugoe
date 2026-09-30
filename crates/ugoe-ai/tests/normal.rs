@@ -9,10 +9,11 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use ugoe_ai::classify::label_meshes_by_name;
 use ugoe_ai::depth::{DepthMap, DepthRequest, FixedDepthEstimator};
 use ugoe_ai::normal::{
-    DepthNormalOptions, NormalMapOptions, plan_depth_normal_maps, propose_bulge_normal_maps,
-    propose_depth_normal_maps,
+    BulgeNormalMapOptions, DepthNormalOptions, NormalMapOptions, SurfaceGroup, normal_map_group,
+    plan_depth_normal_maps, propose_bulge_normal_maps, propose_depth_normal_maps,
 };
 use ugoe_ai::{AiError, Proposal};
 use ugoe_core::Vec2;
@@ -90,7 +91,7 @@ fn bulge_proposal_gives_every_part_a_normal_map() {
         doc.model(),
         doc.textures(),
         &BTreeMap::new(),
-        &NormalMapOptions::default(),
+        &BulgeNormalMapOptions::default(),
     )
     .unwrap();
     apply(&mut doc, &proposal);
@@ -119,7 +120,7 @@ fn strength_can_be_set_per_part() {
     let doc = bustup();
     let first = doc.model().textures[0].name.clone();
     let second = doc.model().textures[1].name.clone();
-    let options = NormalMapOptions {
+    let options = BulgeNormalMapOptions {
         per_texture: [(
             first.clone(),
             BulgeOptions {
@@ -145,7 +146,7 @@ fn strength_can_be_set_per_part() {
 fn existing_normal_maps_are_kept_or_replaced() {
     let mut doc = bustup();
     let texture = doc.model().textures[0].name.clone();
-    let only = |replace_existing| NormalMapOptions::<BulgeOptions> {
+    let only = |replace_existing| BulgeNormalMapOptions {
         textures: vec![texture.clone()],
         replace_existing,
         ..Default::default()
@@ -162,7 +163,7 @@ fn existing_normal_maps_are_kept_or_replaced() {
         Err(AiError::InvalidRequest(_))
     ));
     // 作り直すなら、同じ名前の画像を差し替える (ライティングはすでに有効なので触らない)。
-    let options = NormalMapOptions {
+    let options = BulgeNormalMapOptions {
         default: BulgeOptions {
             strength: 2.0,
             ..Default::default()
@@ -187,7 +188,7 @@ fn existing_normal_maps_are_kept_or_replaced() {
 #[test]
 fn unknown_textures_are_rejected() {
     let doc = bustup();
-    let options = NormalMapOptions::<BulgeOptions> {
+    let options = BulgeNormalMapOptions {
         textures: vec!["nope".into()],
         ..Default::default()
     };
@@ -195,6 +196,150 @@ fn unknown_textures_are_rejected() {
         propose_bulge_normal_maps(doc.model(), doc.textures(), &BTreeMap::new(), &options),
         Err(AiError::InvalidRequest(_))
     ));
+}
+
+/// メッシュ `mesh` の、キャンバスの点 `p` での法線 (取り込んだままのメッシュはテクスチャを等倍で置いている)。
+fn normal_on_canvas(doc: &Document, mesh: &str, p: Vec2) -> [f32; 3] {
+    let model = doc.model();
+    let m = model.meshes.iter().find(|m| m.name == mesh).unwrap();
+    let t = &model.textures[m.texture as usize];
+    let size = Vec2::new(t.width as f32, t.height as f32);
+    let origin = m.keyforms.keyforms[0].positions[0] - m.uvs[0] * size;
+    let texel = p - origin;
+    Decoded::of(doc, &t.name).normal(texel.x as u32, texel.y as u32)
+}
+
+fn angle(a: [f32; 3], b: [f32; 3]) -> f32 {
+    let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
+    dot.clamp(-1.0, 1.0).acos().to_degrees()
+}
+
+/// メッシュの形の中心 (キャンバス)。
+fn mesh_center(doc: &Document, mesh: &str) -> Vec2 {
+    let m = doc.model().meshes.iter().find(|m| m.name == mesh).unwrap();
+    let ps = &m.keyforms.keyforms[0].positions;
+    let (lo, hi) = ps.iter().fold(
+        (Vec2::splat(f32::INFINITY), Vec2::splat(f32::NEG_INFINITY)),
+        |(lo, hi), p| (lo.min(*p), hi.max(*p)),
+    );
+    (lo + hi) * 0.5
+}
+
+/// 名前から付けたラベルでまとまりを決めると、目・鼻・口は顔の面の向きを受け、首・腕は体と境目でつながる (T0518)。
+#[test]
+fn labelled_parts_bulge_as_groups() {
+    let mut doc = bustup();
+    let labels = label_meshes_by_name(doc.model());
+    let proposal = propose_bulge_normal_maps(
+        doc.model(),
+        doc.textures(),
+        &labels,
+        &BulgeNormalMapOptions::default(),
+    )
+    .unwrap();
+    assert!(
+        proposal.rationale.contains("`face`"),
+        "{}",
+        proposal.rationale
+    );
+    apply(&mut doc, &proposal);
+    for mesh in [
+        "eyewhite-l",
+        "eyewhite-r",
+        "nose",
+        "irides-l",
+        "mouth-close",
+    ] {
+        let p = mesh_center(&doc, mesh);
+        let (a, b) = (
+            normal_on_canvas(&doc, mesh, p),
+            normal_on_canvas(&doc, "face", p),
+        );
+        assert!(angle(a, b) < 3.0, "{mesh}: {a:?} vs face {b:?}");
+    }
+    for (a, b, p) in [
+        ("neck", "topwear", Vec2::new(512.0, 400.0)),
+        ("handwear-l", "topwear", Vec2::new(690.0, 520.0)),
+        ("handwear-r", "topwear", Vec2::new(335.0, 520.0)),
+    ] {
+        let (na, nb) = (normal_on_canvas(&doc, a, p), normal_on_canvas(&doc, b, p));
+        assert!(angle(na, nb) < 3.0, "{a} {na:?} vs {b} {nb:?} at {p:?}");
+    }
+    // 顔の中ほどは正面を向く。
+    assert!(normal_on_canvas(&doc, "face", mesh_center(&doc, "nose"))[2] > 0.97);
+}
+
+/// まとまりの一部だけを作るときも、形はまとまり全体で決まる (エディタで 1 枚ずつ作っても同じ向き)。
+#[test]
+fn one_texture_of_a_group_uses_the_whole_shape() {
+    let doc = bustup();
+    let labels = label_meshes_by_name(doc.model());
+    let eye = doc
+        .model()
+        .meshes
+        .iter()
+        .find(|m| m.name == "eyewhite-l")
+        .unwrap();
+    let eye_texture = doc.model().textures[eye.texture as usize].name.clone();
+    let group = normal_map_group(
+        doc.model(),
+        doc.textures(),
+        &labels,
+        &BulgeNormalMapOptions::default(),
+        &eye_texture,
+    )
+    .unwrap();
+    assert_eq!(group.group, Some(SurfaceGroup::Face));
+    assert_eq!(group.textures.len(), 14, "{:?}", group.textures);
+    // 縁の幅は顔のまとまりの形の幅 (約 230 画素) の 0.21 (見本のアバターと同じ 48 画素)。
+    let radius = group.options.radius.unwrap();
+    assert!((radius - 48.0).abs() < 3.0, "{radius}");
+
+    let options = BulgeNormalMapOptions {
+        textures: vec![eye_texture.clone()],
+        ..Default::default()
+    };
+    let one = propose_bulge_normal_maps(doc.model(), doc.textures(), &labels, &options).unwrap();
+    assert_eq!(one.commands.len(), 2, "the eye's normal map and lighting");
+    let all = propose_bulge_normal_maps(
+        doc.model(),
+        doc.textures(),
+        &labels,
+        &BulgeNormalMapOptions::default(),
+    )
+    .unwrap();
+    let png = |p: &Proposal| {
+        p.commands
+            .iter()
+            .find_map(|c| match c {
+                Command::SetNormalMap { texture, png, .. } if *texture == eye_texture => {
+                    png.clone()
+                }
+                _ => None,
+            })
+            .unwrap()
+    };
+    assert_eq!(png(&one), png(&all));
+
+    // 首は体のまとまりで、顔を形に加える。
+    let neck = doc
+        .model()
+        .meshes
+        .iter()
+        .find(|m| m.name == "neck")
+        .unwrap();
+    let neck_texture = &doc.model().textures[neck.texture as usize].name;
+    let group = normal_map_group(
+        doc.model(),
+        doc.textures(),
+        &labels,
+        &BulgeNormalMapOptions::default(),
+        neck_texture,
+    )
+    .unwrap();
+    assert_eq!(group.group, Some(SurfaceGroup::Body));
+    assert_eq!(group.shape_only.len(), 1);
+    assert!(group.options.radius.is_none());
 }
 
 // --- 深度推定から ---
