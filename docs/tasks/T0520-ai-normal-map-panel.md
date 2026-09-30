@@ -1,11 +1,11 @@
 ---
 id: T0520
 title: AI: すべてのテクスチャの法線マップを AI タブから提案する・眼鏡などの扱い
-status: todo
+status: in-progress
 milestone: M6
 crates: [ugoe-ai, apps/editor, docs]
 depends_on: [T0518]
-assignee:
+assignee: claude-worker-T0520
 ---
 
 # T0520: AI: 法線マップの提案の画面
