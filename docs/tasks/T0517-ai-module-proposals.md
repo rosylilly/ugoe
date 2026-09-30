@@ -1,11 +1,11 @@
 ---
 id: T0517
 title: AI: 着せ替えのモジュール向けの提案
-status: todo
+status: in-progress
 milestone: M6
 crates: [ugoe-ai, apps/editor, docs]
 depends_on: [T0648]
-assignee:
+assignee: claude-worker-T0517
 ---
 
 # T0517: AI: 着せ替えのモジュール向けの提案

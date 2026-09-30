@@ -1,11 +1,11 @@
 ---
 id: T0711
 title: ビューア: 付けているモジュールの組をモデルごとに覚える
-status: todo
+status: in-progress
 milestone: M4
 crates: [apps/viewer, docs]
 depends_on: [T0706]
-assignee:
+assignee: claude-worker-T0711
 ---
 
 # T0711: ビューア: 付けているモジュールの組をモデルごとに覚える

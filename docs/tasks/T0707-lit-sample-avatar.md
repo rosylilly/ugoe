@@ -1,11 +1,11 @@
 ---
 id: T0707
 title: 見本: 法線マップ付きの見本のアバターと、ビューアのサンプルで試せるようにする
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-cli, assets, apps/viewer, docs]
 depends_on: [T0506, T0705]
-assignee:
+assignee: claude-worker-T0707
 ---
 
 # T0707: 見本: 法線マップ付きの見本のアバターと、ビューアのサンプルで試せるようにする
