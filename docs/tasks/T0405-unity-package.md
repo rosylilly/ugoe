@@ -1,11 +1,11 @@
 ---
 id: T0405
 title: Unity パッケージ
-status: todo
+status: in-progress
 milestone: M7
 crates: [bindings/unity]
 depends_on: [T0401]
-assignee:
+assignee: claude-worker-T0405
 ---
 
 # T0405: Unity パッケージ
