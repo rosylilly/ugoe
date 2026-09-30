@@ -1,0 +1,142 @@
+{
+  "model": "model.json",
+  "summary": "Blend-shape grids on a mesh (Mouth), a warp deformer (Face) and a rotation deformer (Jaw). The difference from the value at the parameter's default is added to the ordinary result; Wide has the default 0.5.",
+  "cases": [
+    {
+      "parameters": {},
+      "meshes": {
+        "Mouth": {
+          "positions": [
+            [64, 64],
+            [192, 64],
+            [192, 192],
+            [64, 192]
+          ],
+          "opacity": 1,
+          "draw_order": 500
+        },
+        "Cheek": {
+          "positions": [
+            [96, 96],
+            [160, 96],
+            [160, 160],
+            [96, 160]
+          ],
+          "opacity": 1
+        },
+        "Chin": {
+          "positions": [
+            [128, 128],
+            [144, 128],
+            [144, 144],
+            [128, 144]
+          ],
+          "opacity": 1
+        }
+      }
+    },
+    {
+      "parameters": {
+        "X": 1,
+        "Smile": 1
+      },
+      "meshes": {
+        "Mouth": {
+          "positions": [
+            [120, 48],
+            [256, 64],
+            [256, 192],
+            [128, 192]
+          ],
+          "opacity": 0.5,
+          "draw_order": 600,
+          "multiply_color": {
+            "r": 1,
+            "g": 0.5,
+            "b": 0.5
+          },
+          "screen_color": {
+            "r": 0,
+            "g": 0,
+            "b": 0.25
+          },
+          "mask_strength": 0.5
+        },
+        "Cheek": {
+          "positions": [
+            [96, 104],
+            [160, 104],
+            [160, 184],
+            [96, 184]
+          ],
+          "opacity": 0.5
+        }
+      }
+    },
+    {
+      "parameters": {
+        "X": 1,
+        "Smile": 0.5
+      },
+      "meshes": {
+        "Mouth": {
+          "positions": [
+            [124, 56],
+            [256, 64],
+            [256, 192],
+            [128, 192]
+          ],
+          "opacity": 0.75,
+          "draw_order": 550
+        }
+      }
+    },
+    {
+      "parameters": {
+        "Wide": 1
+      },
+      "meshes": {
+        "Mouth": {
+          "positions": [
+            [48, 64],
+            [208, 64],
+            [208, 192],
+            [48, 192]
+          ]
+        },
+        "Chin": {
+          "positions": [
+            [136, 128],
+            [159.6354, 132.1676],
+            [155.4678, 155.8029],
+            [131.8324, 151.6354]
+          ],
+          "opacity": 0.75
+        }
+      }
+    },
+    {
+      "parameters": {
+        "Wide": 0
+      },
+      "meshes": {
+        "Mouth": {
+          "positions": [
+            [80, 64],
+            [176, 64],
+            [176, 192],
+            [80, 192]
+          ]
+        },
+        "Chin": {
+          "positions": [
+            [120, 128],
+            [127.8785, 126.6108],
+            [129.2676, 134.4893],
+            [121.3892, 135.8785]
+          ]
+        }
+      }
+    }
+  ]
+}

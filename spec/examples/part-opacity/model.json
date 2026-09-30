@@ -1,0 +1,548 @@
+{
+  "schema_version": 0,
+  "meta": {
+    "name": "part_opacity_hierarchy",
+    "canvas": {
+      "width": 256.0,
+      "height": 256.0,
+      "origin": [
+        128.0,
+        128.0
+      ]
+    }
+  },
+  "parameters": [
+    {
+      "id": "Fade",
+      "name": "Fade",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.0,
+      "kind": "normal",
+      "mirror": null,
+      "group": null
+    }
+  ],
+  "parameter_groups": [],
+  "parts": [
+    {
+      "id": "Root",
+      "name": "Root",
+      "parent": null,
+      "keyforms": {
+        "bindings": [
+          {
+            "parameter": "Fade",
+            "keys": [
+              0.0,
+              1.0
+            ]
+          }
+        ],
+        "keyforms": [
+          {
+            "opacity": 1.0
+          },
+          {
+            "opacity": 0.5
+          }
+        ]
+      }
+    },
+    {
+      "id": "Child",
+      "name": "Child",
+      "parent": "Root",
+      "keyforms": {
+        "bindings": [],
+        "keyforms": [
+          {
+            "opacity": 0.5
+          }
+        ]
+      }
+    },
+    {
+      "id": "Grandchild",
+      "name": "Grandchild",
+      "parent": "Child",
+      "keyforms": {
+        "bindings": [],
+        "keyforms": [
+          {
+            "opacity": 0.8
+          }
+        ]
+      }
+    }
+  ],
+  "deformers": [
+    {
+      "id": "InnerRot",
+      "name": "InnerRot",
+      "part": "Root",
+      "parent": "Outer",
+      "kind": {
+        "type": "rotation",
+        "keyforms": {
+          "bindings": [],
+          "keyforms": [
+            {
+              "origin": [
+                0.0,
+                0.0
+              ],
+              "angle": 0.0,
+              "scale": 1.0,
+              "reflect_x": false,
+              "reflect_y": false,
+              "opacity": 0.5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "Outer",
+      "name": "Outer",
+      "part": "Root",
+      "parent": null,
+      "kind": {
+        "type": "rotation",
+        "keyforms": {
+          "bindings": [],
+          "keyforms": [
+            {
+              "origin": [
+                0.0,
+                0.0
+              ],
+              "angle": 0.0,
+              "scale": 1.0,
+              "reflect_x": false,
+              "reflect_y": false,
+              "opacity": 0.5
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "id": "A",
+      "name": "A",
+      "part": "Grandchild",
+      "parent": "InnerRot",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "blend": "normal",
+      "culling": false,
+      "masks": [],
+      "mask_mode": "union",
+      "mask_only": false,
+      "keyforms": {
+        "bindings": [],
+        "keyforms": [
+          {
+            "positions": [
+              [
+                64.0,
+                64.0
+              ],
+              [
+                192.0,
+                64.0
+              ],
+              [
+                192.0,
+                192.0
+              ],
+              [
+                64.0,
+                192.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "B",
+      "name": "B",
+      "part": "Root",
+      "parent": null,
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "blend": "normal",
+      "culling": false,
+      "masks": [],
+      "mask_mode": "union",
+      "mask_only": false,
+      "keyforms": {
+        "bindings": [
+          {
+            "parameter": "Fade",
+            "keys": [
+              0.0,
+              1.0
+            ]
+          }
+        ],
+        "keyforms": [
+          {
+            "positions": [
+              [
+                64.0,
+                64.0
+              ],
+              [
+                192.0,
+                64.0
+              ],
+              [
+                192.0,
+                192.0
+              ],
+              [
+                64.0,
+                192.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          },
+          {
+            "positions": [
+              [
+                64.0,
+                64.0
+              ],
+              [
+                192.0,
+                64.0
+              ],
+              [
+                192.0,
+                192.0
+              ],
+              [
+                64.0,
+                192.0
+              ]
+            ],
+            "opacity": 0.0,
+            "draw_order": 500.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "C",
+      "name": "C",
+      "part": "Child",
+      "parent": "Outer",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "blend": "normal",
+      "culling": false,
+      "masks": [],
+      "mask_mode": "union",
+      "mask_only": false,
+      "keyforms": {
+        "bindings": [],
+        "keyforms": [
+          {
+            "positions": [
+              [
+                64.0,
+                64.0
+              ],
+              [
+                192.0,
+                64.0
+              ],
+              [
+                192.0,
+                192.0
+              ],
+              [
+                64.0,
+                192.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 300.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "D",
+      "name": "D",
+      "part": "Root",
+      "parent": null,
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "blend": "normal",
+      "culling": false,
+      "masks": [],
+      "mask_mode": "union",
+      "mask_only": false,
+      "keyforms": {
+        "bindings": [
+          {
+            "parameter": "Fade",
+            "keys": [
+              0.0,
+              1.0
+            ]
+          }
+        ],
+        "keyforms": [
+          {
+            "positions": [
+              [
+                64.0,
+                64.0
+              ],
+              [
+                192.0,
+                64.0
+              ],
+              [
+                192.0,
+                192.0
+              ],
+              [
+                64.0,
+                192.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          },
+          {
+            "positions": [
+              [
+                64.0,
+                64.0
+              ],
+              [
+                192.0,
+                64.0
+              ],
+              [
+                192.0,
+                192.0
+              ],
+              [
+                64.0,
+                192.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 100.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          }
+        ]
+      }
+    }
+  ],
+  "glues": [],
+  "textures": [
+    {
+      "name": "white",
+      "width": 1,
+      "height": 1
+    }
+  ],
+  "hit_areas": [],
+  "pose": {
+    "fade_duration": 0.5,
+    "groups": []
+  },
+  "effects": {
+    "eye_blink": {
+      "parameters": [],
+      "interval": 4.0,
+      "closing": 0.1,
+      "closed": 0.05,
+      "opening": 0.15,
+      "seed": 0
+    },
+    "breath": {
+      "parameters": []
+    },
+    "lip_sync": {
+      "parameters": []
+    }
+  }
+}

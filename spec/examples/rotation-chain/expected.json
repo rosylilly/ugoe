@@ -1,0 +1,95 @@
+{
+  "model": "model.json",
+  "summary": "Nested rotation deformers (Arm, then Hand with scale 0.5 and a reflected keyform on Flip = 1) and a warp deformer (Cloth) under a rotation deformer.",
+  "cases": [
+    {
+      "parameters": {},
+      "meshes": {
+        "Palm": {
+          "positions": [
+            [192, 128],
+            [200, 128],
+            [200, 136],
+            [192, 136]
+          ]
+        },
+        "Sleeve": {
+          "positions": [
+            [138, 153],
+            [158, 153],
+            [158, 163],
+            [138, 163]
+          ]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "Angle": 30
+      },
+      "meshes": {
+        "Palm": {
+          "positions": [
+            [183.4256, 160],
+            [190.3538, 164],
+            [186.3538, 170.9282],
+            [179.4256, 166.9282]
+          ]
+        },
+        "Sleeve": {
+          "positions": [
+            [124.1603, 154.6506],
+            [141.4808, 164.6506],
+            [136.4808, 173.3109],
+            [119.1603, 163.3109]
+          ]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "Flip": 1
+      },
+      "meshes": {
+        "Palm": {
+          "positions": [
+            [192, 128],
+            [184, 128],
+            [184, 136],
+            [192, 136]
+          ]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "Flip": 0.5
+      },
+      "meshes": {
+        "Palm": {
+          "positions": [
+            [192, 128],
+            [200, 128],
+            [200, 136],
+            [192, 136]
+          ]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "Flip": 0.6
+      },
+      "meshes": {
+        "Palm": {
+          "positions": [
+            [192, 128],
+            [184, 128],
+            [184, 136],
+            [192, 136]
+          ]
+        }
+      }
+    }
+  ]
+}

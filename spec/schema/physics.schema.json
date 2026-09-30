@@ -1,0 +1,446 @@
+{
+  "$id": "https://raw.githubusercontent.com/rosylilly/ugoe/main/spec/schema/physics.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ugoe PhysicsSettings (Specification 0.1 Draft)",
+  "type": "object",
+  "properties": {
+    "colliders": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/PhysicsCollider"
+      }
+    },
+    "fps": {
+      "type": "number",
+      "format": "float"
+    },
+    "gravity": {
+      "$ref": "#/$defs/Vec2"
+    },
+    "rigs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PhysicsRig"
+      }
+    },
+    "wind": {
+      "$ref": "#/$defs/Vec2"
+    }
+  },
+  "$comment": "Part of the ugoe Specification 0.1 (Draft), Copyright (c) 2026 Sho KUSANO and the ugoe contributors, licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Generated from the reference implementation; see spec/schema/README.md.",
+  "required": [
+    "gravity",
+    "wind",
+    "fps",
+    "rigs"
+  ],
+  "$defs": {
+    "ColliderShape": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "center": {
+              "$ref": "#/$defs/Vec2"
+            },
+            "radius": {
+              "type": "number",
+              "format": "float"
+            },
+            "type": {
+              "type": "string",
+              "const": "circle"
+            }
+          },
+          "required": [
+            "type",
+            "center",
+            "radius"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "a": {
+              "$ref": "#/$defs/Vec2"
+            },
+            "b": {
+              "$ref": "#/$defs/Vec2"
+            },
+            "radius": {
+              "type": "number",
+              "format": "float"
+            },
+            "type": {
+              "type": "string",
+              "const": "capsule"
+            }
+          },
+          "required": [
+            "type",
+            "a",
+            "b",
+            "radius"
+          ]
+        }
+      ]
+    },
+    "NormalizationRange": {
+      "type": "object",
+      "properties": {
+        "default": {
+          "type": "number",
+          "format": "float"
+        },
+        "max": {
+          "type": "number",
+          "format": "float"
+        },
+        "min": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "min",
+        "default",
+        "max"
+      ]
+    },
+    "PhysicsBlend": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "overwrite"
+        },
+        {
+          "type": "string",
+          "const": "add"
+        }
+      ]
+    },
+    "PhysicsCollider": {
+      "type": "object",
+      "properties": {
+        "attach": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "shape": {
+          "$ref": "#/$defs/ColliderShape"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "shape"
+      ]
+    },
+    "PhysicsInput": {
+      "type": "object",
+      "properties": {
+        "parameter": {
+          "type": "string"
+        },
+        "reflect": {
+          "type": "boolean",
+          "default": false
+        },
+        "source": {
+          "$ref": "#/$defs/PhysicsSource"
+        },
+        "weight": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "parameter",
+        "source",
+        "weight"
+      ]
+    },
+    "PhysicsNormalization": {
+      "type": "object",
+      "properties": {
+        "angle": {
+          "$ref": "#/$defs/NormalizationRange"
+        },
+        "position": {
+          "$ref": "#/$defs/NormalizationRange"
+        }
+      },
+      "required": [
+        "position",
+        "angle"
+      ]
+    },
+    "PhysicsOutput": {
+      "type": "object",
+      "properties": {
+        "blend": {
+          "$ref": "#/$defs/PhysicsBlend"
+        },
+        "particle": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "reflect": {
+          "type": "boolean",
+          "default": false
+        },
+        "scale": {
+          "type": "number",
+          "format": "float"
+        },
+        "source": {
+          "$ref": "#/$defs/PhysicsSource"
+        },
+        "target": {
+          "$ref": "#/$defs/PhysicsTarget"
+        },
+        "weight": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "target",
+        "particle",
+        "source",
+        "scale",
+        "weight"
+      ]
+    },
+    "PhysicsParticle": {
+      "type": "object",
+      "properties": {
+        "acceleration": {
+          "type": "number",
+          "format": "float"
+        },
+        "collision_radius": {
+          "type": "number",
+          "format": "float",
+          "default": 0.0
+        },
+        "delay": {
+          "type": "number",
+          "format": "float"
+        },
+        "mobility": {
+          "type": "number",
+          "format": "float"
+        },
+        "position": {
+          "$ref": "#/$defs/Vec2"
+        },
+        "radius": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "position",
+        "mobility",
+        "delay",
+        "acceleration",
+        "radius"
+      ]
+    },
+    "PhysicsRig": {
+      "type": "object",
+      "properties": {
+        "colliders": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "frame": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PhysicsInput"
+          }
+        },
+        "name": {
+          "type": "string"
+        },
+        "normalization": {
+          "$ref": "#/$defs/PhysicsNormalization"
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PhysicsOutput"
+          }
+        },
+        "particles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PhysicsParticle"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "inputs",
+        "outputs",
+        "particles",
+        "normalization"
+      ]
+    },
+    "PhysicsSource": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "x",
+            "y",
+            "angle"
+          ]
+        }
+      ]
+    },
+    "PhysicsTarget": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "parameter"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "deformer": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "deformer_angle"
+            }
+          },
+          "required": [
+            "type",
+            "deformer"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "deformer": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "deformer_offset"
+            }
+          },
+          "required": [
+            "type",
+            "deformer"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "owner": {
+              "$ref": "#/$defs/VertexOwner"
+            },
+            "type": {
+              "type": "string",
+              "const": "vertices"
+            },
+            "weights": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "float"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "owner",
+            "weights"
+          ]
+        }
+      ]
+    },
+    "Vec2": {
+      "type": "array",
+      "maxItems": 2,
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "type": "number",
+          "format": "float"
+        },
+        {
+          "type": "number",
+          "format": "float"
+        }
+      ]
+    },
+    "VertexOwner": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "mesh": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "mesh"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "warp": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "warp"
+          ]
+        }
+      ]
+    }
+  }
+}

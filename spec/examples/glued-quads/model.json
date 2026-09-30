@@ -1,0 +1,283 @@
+{
+  "schema_version": 0,
+  "meta": {
+    "name": "glued_quads",
+    "canvas": {
+      "width": 256.0,
+      "height": 256.0,
+      "origin": [
+        128.0,
+        128.0
+      ]
+    }
+  },
+  "parameters": [
+    {
+      "id": "Glue",
+      "name": "Glue",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 1.0,
+      "kind": "normal",
+      "mirror": null,
+      "group": null
+    }
+  ],
+  "parameter_groups": [],
+  "parts": [
+    {
+      "id": "Root",
+      "name": "Root",
+      "parent": null,
+      "keyforms": {
+        "bindings": [],
+        "keyforms": [
+          {
+            "opacity": 1.0
+          }
+        ]
+      }
+    }
+  ],
+  "deformers": [],
+  "meshes": [
+    {
+      "id": "Left",
+      "name": "Left",
+      "part": "Root",
+      "parent": null,
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "blend": "normal",
+      "culling": false,
+      "masks": [],
+      "mask_mode": "union",
+      "mask_only": false,
+      "keyforms": {
+        "bindings": [],
+        "keyforms": [
+          {
+            "positions": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                100.0,
+                0.0
+              ],
+              [
+                100.0,
+                100.0
+              ],
+              [
+                0.0,
+                100.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "Right",
+      "name": "Right",
+      "part": "Root",
+      "parent": null,
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "blend": "normal",
+      "culling": false,
+      "masks": [],
+      "mask_mode": "union",
+      "mask_only": false,
+      "keyforms": {
+        "bindings": [],
+        "keyforms": [
+          {
+            "positions": [
+              [
+                110.0,
+                0.0
+              ],
+              [
+                210.0,
+                0.0
+              ],
+              [
+                210.0,
+                100.0
+              ],
+              [
+                110.0,
+                100.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          }
+        ]
+      }
+    }
+  ],
+  "glues": [
+    {
+      "id": "Seam",
+      "mesh_a": "Left",
+      "mesh_b": "Right",
+      "pairs": [
+        {
+          "a": 1,
+          "b": 0,
+          "weight": 0.5
+        },
+        {
+          "a": 2,
+          "b": 3,
+          "weight": 0.5
+        }
+      ],
+      "keyforms": {
+        "bindings": [
+          {
+            "parameter": "Glue",
+            "keys": [
+              0.0,
+              1.0
+            ]
+          }
+        ],
+        "keyforms": [
+          {
+            "intensity": 0.0
+          },
+          {
+            "intensity": 1.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "Pull",
+      "mesh_a": "Left",
+      "mesh_b": "Right",
+      "pairs": [
+        {
+          "a": 1,
+          "b": 1,
+          "weight": 0.0
+        }
+      ],
+      "keyforms": {
+        "bindings": [],
+        "keyforms": [
+          {
+            "intensity": 0.5
+          }
+        ]
+      }
+    }
+  ],
+  "textures": [
+    {
+      "name": "white",
+      "width": 1,
+      "height": 1
+    }
+  ],
+  "hit_areas": [],
+  "pose": {
+    "fade_duration": 0.5,
+    "groups": []
+  },
+  "effects": {
+    "eye_blink": {
+      "parameters": [],
+      "interval": 4.0,
+      "closing": 0.1,
+      "closed": 0.05,
+      "opening": 0.15,
+      "seed": 0
+    },
+    "breath": {
+      "parameters": []
+    },
+    "lip_sync": {
+      "parameters": []
+    }
+  }
+}

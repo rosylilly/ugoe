@@ -17,6 +17,8 @@ pub mod parameter;
 pub mod part;
 pub mod physics;
 pub mod pose;
+#[cfg(feature = "schema")]
+pub mod spec_files;
 pub mod standard;
 pub mod unknown;
 pub mod validate;

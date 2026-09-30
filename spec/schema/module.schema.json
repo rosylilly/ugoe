@@ -1,0 +1,1507 @@
+{
+  "$id": "https://raw.githubusercontent.com/rosylilly/ugoe/main/spec/schema/module.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ugoe Module (Specification 0.1 Draft)",
+  "type": "object",
+  "properties": {
+    "deformers": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Deformer"
+      }
+    },
+    "glues": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Glue"
+      }
+    },
+    "meshes": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Mesh"
+      }
+    },
+    "name": {
+      "type": "string"
+    },
+    "parts": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Part"
+      }
+    },
+    "physics": {
+      "$ref": "#/$defs/ModulePhysics"
+    },
+    "pose": {
+      "$ref": "#/$defs/ModulePose"
+    },
+    "requires": {
+      "$ref": "#/$defs/ModuleRequirements",
+      "default": {}
+    },
+    "schema_version": {
+      "type": "integer",
+      "format": "uint32",
+      "const": 0,
+      "minimum": 0
+    },
+    "slot": {
+      "type": "string"
+    },
+    "textures": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/TextureRef"
+      }
+    }
+  },
+  "$comment": "Part of the ugoe Specification 0.1 (Draft), Copyright (c) 2026 Sho KUSANO and the ugoe contributors, licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Generated from the reference implementation; see spec/schema/README.md.",
+  "required": [
+    "schema_version",
+    "name",
+    "slot"
+  ],
+  "$defs": {
+    "BlendMode": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "normal",
+            "additive",
+            "multiply"
+          ]
+        }
+      ]
+    },
+    "ColliderShape": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "center": {
+              "$ref": "#/$defs/Vec2"
+            },
+            "radius": {
+              "type": "number",
+              "format": "float"
+            },
+            "type": {
+              "type": "string",
+              "const": "circle"
+            }
+          },
+          "required": [
+            "type",
+            "center",
+            "radius"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "a": {
+              "$ref": "#/$defs/Vec2"
+            },
+            "b": {
+              "$ref": "#/$defs/Vec2"
+            },
+            "radius": {
+              "type": "number",
+              "format": "float"
+            },
+            "type": {
+              "type": "string",
+              "const": "capsule"
+            }
+          },
+          "required": [
+            "type",
+            "a",
+            "b",
+            "radius"
+          ]
+        }
+      ]
+    },
+    "Deformer": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/DeformerKind"
+        },
+        "mirror": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mirror_axis": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "part": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "part",
+        "kind"
+      ]
+    },
+    "DeformerKind": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "warp"
+            }
+          },
+          "$ref": "#/$defs/WarpDeformer",
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "rotation"
+            }
+          },
+          "$ref": "#/$defs/RotationDeformer",
+          "required": [
+            "type"
+          ]
+        }
+      ]
+    },
+    "DepthRotation": {
+      "type": "object",
+      "properties": {
+        "angle_scale": {
+          "type": "number",
+          "format": "float",
+          "default": 1.0
+        },
+        "pitch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pivot": {
+          "$ref": "#/$defs/Vec2"
+        },
+        "pivot_depth": {
+          "type": "number",
+          "format": "float",
+          "default": 0.0
+        },
+        "yaw": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pivot"
+      ]
+    },
+    "Glue": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "keyforms": {
+          "$ref": "#/$defs/KeyformGrid5"
+        },
+        "mesh_a": {
+          "type": "string"
+        },
+        "mesh_b": {
+          "type": "string"
+        },
+        "pairs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GluePair"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "mesh_a",
+        "mesh_b",
+        "pairs",
+        "keyforms"
+      ]
+    },
+    "GlueKeyform": {
+      "type": "object",
+      "properties": {
+        "intensity": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "intensity"
+      ]
+    },
+    "GluePair": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "b": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "weight": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "a",
+        "b",
+        "weight"
+      ]
+    },
+    "KeyformBinding": {
+      "type": "object",
+      "properties": {
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "float"
+          }
+        },
+        "parameter": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "parameter",
+        "keys"
+      ]
+    },
+    "KeyformGrid": {
+      "type": "object",
+      "properties": {
+        "bindings": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/KeyformBinding"
+          }
+        },
+        "blend_shapes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/KeyformGrid"
+          }
+        },
+        "inference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KeyformInference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "interpolation": {
+          "$ref": "#/$defs/KeyformInterpolation"
+        },
+        "keyforms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PartKeyform"
+          }
+        },
+        "mirror_source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MirrorSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origins": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/KeyformOrigin"
+          }
+        }
+      },
+      "required": [
+        "keyforms"
+      ]
+    },
+    "KeyformGrid2": {
+      "type": "object",
+      "properties": {
+        "bindings": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/KeyformBinding"
+          }
+        },
+        "blend_shapes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/KeyformGrid2"
+          }
+        },
+        "inference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KeyformInference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "interpolation": {
+          "$ref": "#/$defs/KeyformInterpolation"
+        },
+        "keyforms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WarpKeyform"
+          }
+        },
+        "mirror_source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MirrorSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origins": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/KeyformOrigin"
+          }
+        }
+      },
+      "required": [
+        "keyforms"
+      ]
+    },
+    "KeyformGrid3": {
+      "type": "object",
+      "properties": {
+        "bindings": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/KeyformBinding"
+          }
+        },
+        "blend_shapes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/KeyformGrid3"
+          }
+        },
+        "inference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KeyformInference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "interpolation": {
+          "$ref": "#/$defs/KeyformInterpolation"
+        },
+        "keyforms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RotationKeyform"
+          }
+        },
+        "mirror_source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MirrorSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origins": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/KeyformOrigin"
+          }
+        }
+      },
+      "required": [
+        "keyforms"
+      ]
+    },
+    "KeyformGrid4": {
+      "type": "object",
+      "properties": {
+        "bindings": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/KeyformBinding"
+          }
+        },
+        "blend_shapes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/KeyformGrid4"
+          }
+        },
+        "inference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KeyformInference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "interpolation": {
+          "$ref": "#/$defs/KeyformInterpolation"
+        },
+        "keyforms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MeshKeyform"
+          }
+        },
+        "mirror_source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MirrorSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origins": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/KeyformOrigin"
+          }
+        }
+      },
+      "required": [
+        "keyforms"
+      ]
+    },
+    "KeyformGrid5": {
+      "type": "object",
+      "properties": {
+        "bindings": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/KeyformBinding"
+          }
+        },
+        "blend_shapes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/KeyformGrid5"
+          }
+        },
+        "inference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KeyformInference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "interpolation": {
+          "$ref": "#/$defs/KeyformInterpolation"
+        },
+        "keyforms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GlueKeyform"
+          }
+        },
+        "mirror_source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MirrorSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origins": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/KeyformOrigin"
+          }
+        }
+      },
+      "required": [
+        "keyforms"
+      ]
+    },
+    "KeyformInference": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "additive"
+            }
+          },
+          "required": [
+            "method"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "depth_rotation"
+            }
+          },
+          "$ref": "#/$defs/DepthRotation",
+          "required": [
+            "method"
+          ]
+        }
+      ]
+    },
+    "KeyformInterpolation": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "linear"
+        },
+        {
+          "type": "string",
+          "const": "smooth"
+        }
+      ]
+    },
+    "KeyformOrigin": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "authored"
+        },
+        {
+          "type": "string",
+          "const": "derived"
+        },
+        {
+          "type": "string",
+          "const": "additive"
+        },
+        {
+          "type": "string",
+          "const": "depth_rotation"
+        },
+        {
+          "type": "string",
+          "const": "mirror"
+        }
+      ]
+    },
+    "MaskMode": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "union"
+        },
+        {
+          "type": "string",
+          "const": "intersection"
+        }
+      ]
+    },
+    "MaskRef": {
+      "type": "object",
+      "properties": {
+        "invert": {
+          "type": "boolean",
+          "default": false
+        },
+        "mesh": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "mesh"
+      ]
+    },
+    "Mesh": {
+      "type": "object",
+      "properties": {
+        "blend": {
+          "$ref": "#/$defs/BlendMode",
+          "default": "normal"
+        },
+        "culling": {
+          "type": "boolean",
+          "default": false
+        },
+        "depth": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "float"
+          }
+        },
+        "id": {
+          "type": "string"
+        },
+        "indices": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint16",
+            "maximum": 65535,
+            "minimum": 0
+          }
+        },
+        "keyforms": {
+          "$ref": "#/$defs/KeyformGrid4"
+        },
+        "lit": {
+          "type": "boolean"
+        },
+        "mask_mode": {
+          "$ref": "#/$defs/MaskMode",
+          "default": "union"
+        },
+        "mask_only": {
+          "type": "boolean",
+          "default": false
+        },
+        "masks": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/MaskRef"
+          }
+        },
+        "mirror": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mirror_axis": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "part": {
+          "type": "string"
+        },
+        "texture": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "uvs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vec2"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "part",
+        "texture",
+        "uvs",
+        "indices",
+        "keyforms"
+      ]
+    },
+    "MeshKeyform": {
+      "type": "object",
+      "properties": {
+        "draw_order": {
+          "type": "number",
+          "format": "float"
+        },
+        "mask_strength": {
+          "type": "number",
+          "format": "float",
+          "default": 1.0
+        },
+        "multiply_color": {
+          "$ref": "#/$defs/Rgb",
+          "default": {
+            "b": 1.0,
+            "g": 1.0,
+            "r": 1.0
+          }
+        },
+        "opacity": {
+          "type": "number",
+          "format": "float"
+        },
+        "positions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vec2"
+          }
+        },
+        "screen_color": {
+          "$ref": "#/$defs/Rgb",
+          "default": {
+            "b": 0.0,
+            "g": 0.0,
+            "r": 0.0
+          }
+        }
+      },
+      "required": [
+        "positions",
+        "opacity",
+        "draw_order"
+      ]
+    },
+    "MirrorSource": {
+      "type": "object",
+      "properties": {
+        "axis": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "id": {
+          "type": "string"
+        },
+        "tolerance": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "ModulePhysics": {
+      "type": "object",
+      "properties": {
+        "colliders": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PhysicsCollider"
+          }
+        },
+        "rigs": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PhysicsRig"
+          }
+        }
+      }
+    },
+    "ModulePose": {
+      "type": "object",
+      "properties": {
+        "groups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PoseGroup"
+          }
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PoseEntry"
+          }
+        }
+      }
+    },
+    "ModuleRequirements": {
+      "type": "object",
+      "properties": {
+        "avatar_level": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "slots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "NormalizationRange": {
+      "type": "object",
+      "properties": {
+        "default": {
+          "type": "number",
+          "format": "float"
+        },
+        "max": {
+          "type": "number",
+          "format": "float"
+        },
+        "min": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "min",
+        "default",
+        "max"
+      ]
+    },
+    "Part": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "keyforms": {
+          "$ref": "#/$defs/KeyformGrid"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "keyforms"
+      ]
+    },
+    "PartKeyform": {
+      "type": "object",
+      "properties": {
+        "opacity": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "opacity"
+      ]
+    },
+    "PhysicsBlend": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "overwrite"
+        },
+        {
+          "type": "string",
+          "const": "add"
+        }
+      ]
+    },
+    "PhysicsCollider": {
+      "type": "object",
+      "properties": {
+        "attach": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "shape": {
+          "$ref": "#/$defs/ColliderShape"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "shape"
+      ]
+    },
+    "PhysicsInput": {
+      "type": "object",
+      "properties": {
+        "parameter": {
+          "type": "string"
+        },
+        "reflect": {
+          "type": "boolean",
+          "default": false
+        },
+        "source": {
+          "$ref": "#/$defs/PhysicsSource"
+        },
+        "weight": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "parameter",
+        "source",
+        "weight"
+      ]
+    },
+    "PhysicsNormalization": {
+      "type": "object",
+      "properties": {
+        "angle": {
+          "$ref": "#/$defs/NormalizationRange"
+        },
+        "position": {
+          "$ref": "#/$defs/NormalizationRange"
+        }
+      },
+      "required": [
+        "position",
+        "angle"
+      ]
+    },
+    "PhysicsOutput": {
+      "type": "object",
+      "properties": {
+        "blend": {
+          "$ref": "#/$defs/PhysicsBlend"
+        },
+        "particle": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "reflect": {
+          "type": "boolean",
+          "default": false
+        },
+        "scale": {
+          "type": "number",
+          "format": "float"
+        },
+        "source": {
+          "$ref": "#/$defs/PhysicsSource"
+        },
+        "target": {
+          "$ref": "#/$defs/PhysicsTarget"
+        },
+        "weight": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "target",
+        "particle",
+        "source",
+        "scale",
+        "weight"
+      ]
+    },
+    "PhysicsParticle": {
+      "type": "object",
+      "properties": {
+        "acceleration": {
+          "type": "number",
+          "format": "float"
+        },
+        "collision_radius": {
+          "type": "number",
+          "format": "float",
+          "default": 0.0
+        },
+        "delay": {
+          "type": "number",
+          "format": "float"
+        },
+        "mobility": {
+          "type": "number",
+          "format": "float"
+        },
+        "position": {
+          "$ref": "#/$defs/Vec2"
+        },
+        "radius": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "position",
+        "mobility",
+        "delay",
+        "acceleration",
+        "radius"
+      ]
+    },
+    "PhysicsRig": {
+      "type": "object",
+      "properties": {
+        "colliders": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "frame": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PhysicsInput"
+          }
+        },
+        "name": {
+          "type": "string"
+        },
+        "normalization": {
+          "$ref": "#/$defs/PhysicsNormalization"
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PhysicsOutput"
+          }
+        },
+        "particles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PhysicsParticle"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "inputs",
+        "outputs",
+        "particles",
+        "normalization"
+      ]
+    },
+    "PhysicsSource": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "x",
+            "y",
+            "angle"
+          ]
+        }
+      ]
+    },
+    "PhysicsTarget": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "parameter"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "deformer": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "deformer_angle"
+            }
+          },
+          "required": [
+            "type",
+            "deformer"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "deformer": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "deformer_offset"
+            }
+          },
+          "required": [
+            "type",
+            "deformer"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "owner": {
+              "$ref": "#/$defs/VertexOwner"
+            },
+            "type": {
+              "type": "string",
+              "const": "vertices"
+            },
+            "weights": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "float"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "owner",
+            "weights"
+          ]
+        }
+      ]
+    },
+    "PoseEntry": {
+      "type": "object",
+      "properties": {
+        "links": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "part": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "part"
+      ]
+    },
+    "PoseGroup": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PoseEntry"
+          }
+        }
+      },
+      "required": [
+        "entries"
+      ]
+    },
+    "Rgb": {
+      "type": "object",
+      "properties": {
+        "b": {
+          "type": "number",
+          "format": "float"
+        },
+        "g": {
+          "type": "number",
+          "format": "float"
+        },
+        "r": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "r",
+        "g",
+        "b"
+      ]
+    },
+    "RotationDeformer": {
+      "type": "object",
+      "properties": {
+        "keyforms": {
+          "$ref": "#/$defs/KeyformGrid3"
+        }
+      },
+      "required": [
+        "keyforms"
+      ]
+    },
+    "RotationKeyform": {
+      "type": "object",
+      "properties": {
+        "angle": {
+          "type": "number",
+          "format": "float"
+        },
+        "opacity": {
+          "type": "number",
+          "format": "float"
+        },
+        "origin": {
+          "$ref": "#/$defs/Vec2"
+        },
+        "reflect_x": {
+          "type": "boolean",
+          "default": false
+        },
+        "reflect_y": {
+          "type": "boolean",
+          "default": false
+        },
+        "scale": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "origin",
+        "angle",
+        "scale",
+        "opacity"
+      ]
+    },
+    "TextureRef": {
+      "type": "object",
+      "properties": {
+        "height": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "name": {
+          "type": "string"
+        },
+        "normal_map": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "width": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "name",
+        "width",
+        "height"
+      ]
+    },
+    "Vec2": {
+      "type": "array",
+      "maxItems": 2,
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "type": "number",
+          "format": "float"
+        },
+        {
+          "type": "number",
+          "format": "float"
+        }
+      ]
+    },
+    "VertexOwner": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "mesh": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "mesh"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "warp": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "warp"
+          ]
+        }
+      ]
+    },
+    "WarpDeformer": {
+      "type": "object",
+      "properties": {
+        "cols": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "depth": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "float"
+          }
+        },
+        "keyforms": {
+          "$ref": "#/$defs/KeyformGrid2"
+        },
+        "rows": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        }
+      },
+      "required": [
+        "rows",
+        "cols",
+        "keyforms"
+      ]
+    },
+    "WarpKeyform": {
+      "type": "object",
+      "properties": {
+        "opacity": {
+          "type": "number",
+          "format": "float"
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vec2"
+          }
+        }
+      },
+      "required": [
+        "points",
+        "opacity"
+      ]
+    }
+  }
+}

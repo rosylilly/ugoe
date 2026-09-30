@@ -1008,9 +1008,10 @@ Rust の型を正として、次のファイルを生成します。**生成物�
 | `apps/editor/src/lib/generated/types.ts` | `Command`・`Model`・`Motion`・`Expression`・`PhysicsSettings` (とそれらが参照する型)、IPC の戻り値 (`AppInfo`・`ProjectStatus`・`AnimationData` など) | フロントエンド (`ipc.ts` が再エクスポート) |
 | `apps/editor/src/lib/generated/samples.ts` | フィクスチャのモデルと、全バリアントのコマンドを serde で書き出した JSON | 型検査だけ (生成した型と serde の JSON が合うことを `svelte-check` で確かめる) |
 | `crates/ugoe-editor-core/schema/command.schema.json` | `Command` の JSON Schema (draft 2020-12) | AI のツール定義 (`ugoe_editor_core::codegen::COMMAND_SCHEMA_JSON`、`command_schema()`) |
+| `spec/schema/*.schema.json` | `Model`・`Module`・`PhysicsSettings`・`Motion`・`Expression` の JSON Schema (draft 2020-12、`ugoe_model::spec_files`) | 公開仕様 ([spec/schema/README.md](../spec/schema/README.md)。CC BY 4.0) |
 
-- **作り直す:** Rust の型 (`Command`・モデルの型・IPC の戻り値) を変えたら `just gen` を実行し、生成物も同じコミットに含めます。`just gen` は `apps/editor/src-tauri/examples/gen.rs` を実行します。
-- **検査:** `just test` の `generated_files_are_up_to_date` (src-tauri) と `checked_in_command_schema_is_up_to_date` (ugoe-editor-core) が、生成物が最新でなければ失敗します。CI はさらに `just gen` の後に `git diff --exit-code` で差分がないことを確かめます。
+- **作り直す:** Rust の型 (`Command`・モデルの型・IPC の戻り値) を変えたら `just gen` を実行し、生成物も同じコミットに含めます。`just gen` は `apps/editor/src-tauri/examples/gen.rs` と `crates/ugoe-model/examples/spec_files.rs` を実行します。
+- **検査:** `just test` の `generated_files_are_up_to_date` (src-tauri)・`checked_in_command_schema_is_up_to_date` (ugoe-editor-core)・`checked_in_spec_files_are_up_to_date` (ugoe-model) が、生成物が最新でなければ失敗します。CI はさらに `just gen` の後に `git diff --exit-code` で差分がないことを確かめます。
 - **道具:** TypeScript は [ts-rs](https://github.com/Aleph-Alpha/ts-rs)、JSON Schema は [schemars](https://github.com/GREsau/schemars) (どちらも MIT)。どちらも serde の属性 (`tag`・`rename_all`・`default`・`skip_serializing_if` など) を読むので、生成した型は serde の JSON と一致します。
 - **ランタイム層:** `ugoe-core` と `ugoe-model` は feature `ts` / `schema` の裏で `TS` / `JsonSchema` を実装します。有効にするのは `ugoe-editor-core` だけで、ランタイム (`ugoe-wasm` など) の依存には入りません。
 - **型の対応:**

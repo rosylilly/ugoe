@@ -6,8 +6,7 @@
 - `ugoe-model` の型やファイル形式を変えたら、`docs/spec/` と同じ PR で、この表の対応する `spec/` の節も直します。
 - `spec/` は実装の型名 (Rust)・タスク ID・日本語の文書へのリンクに頼らず、それだけで読めるように書きます。フィールド名は JSON / MessagePack の名前で書きます。
 - `docs/spec/` にだけあるもの (実装の型名・API・判断の経緯・性能の計測・エディタのプロジェクト形式) は、`spec/` に書きません。
-- `spec/` の相対リンクは `node scripts/check-md-links.mjs spec` で検査できます。
-- 対応を CI で検査する仕組みは T0119 で作ります。
+- 食い違いと対応の漏れは `just spec` (`just ci` と CI に含まれる) で検査します ([同期の検査](#同期の検査))。
 
 ## モデル (`spec/model.md`)
 
@@ -108,6 +107,7 @@
 | [Masks](../../spec/rendering.md#masks) | [rendering.md#マスク](rendering.md#マスク) | 参照レンダラの実装方式 (アトラス) は含めない (Implementation notes に要約だけ) |
 | [Back-face culling](../../spec/rendering.md#back-face-culling) | [rendering.md#裏面カリング](rendering.md#裏面カリング) | |
 | [Lighting](../../spec/rendering.md#lighting) | [rendering.md#ライティング](rendering.md#ライティング) | 参照レンダラ・ホストでの扱いは含めない |
+| [Unknown values](../../spec/rendering.md#unknown-values) | [rendering.md#合成モード](rendering.md#合成モード)、[rendering.md#マスクの参照](rendering.md#マスクの参照) | |
 | [Conformance](../../spec/rendering.md#conformance) | [rendering.md#互換の基準](rendering.md#互換の基準) | |
 | [Implementation notes](../../spec/rendering.md#implementation-notes) | [rendering.md#描画の最適化](rendering.md#描画の最適化)、[rendering.md#転送の省略](rendering.md#転送の省略) | informative。見た目を変えない実装の工夫 |
 
@@ -115,6 +115,7 @@
 
 | `spec/physics.md` | `docs/spec/` | 備考 |
 | --- | --- | --- |
+| [Overview](../../spec/physics.md#overview) | [physics.md#概要](physics.md#概要) | |
 | [Coordinates and units](../../spec/physics.md#coordinates-and-units) | [physics.md#座標と単位](physics.md#座標と単位) | |
 | [State](../../spec/physics.md#state)・[Advancing time](../../spec/physics.md#advancing-time) | [physics.md#時間の進め方](physics.md#時間の進め方) | 英語版は 1 回の更新の手順を擬似コードで書く |
 | [Inputs](../../spec/physics.md#inputs) | [physics.md#入力](physics.md#入力) | |
@@ -130,6 +131,7 @@
 
 | `spec/motion.md` | `docs/spec/` | 備考 |
 | --- | --- | --- |
+| [Overview](../../spec/motion.md#overview) | [motion.md#モーション](motion.md#モーション) | |
 | [Curves](../../spec/motion.md#curves) | [motion.md#カーブ](motion.md#カーブ) | |
 | [Motion playback](../../spec/motion.md#motion-playback) | [motion.md#再生とフェード](motion.md#再生とフェード) | |
 | [Playing several motions](../../spec/motion.md#playing-several-motions) | [motion.md#モーションマネージャ](motion.md#モーションマネージャ)、[motion.md#エフェクトグループ](motion.md#エフェクトグループ) | 優先度は SHOULD (ランタイムの API のため) |
@@ -137,10 +139,50 @@
 | [Effects](../../spec/motion.md#effects) | [motion.md#エフェクト](motion.md#エフェクト) | `Effects::standard()` の推奨値は含めない |
 | [Pose](../../spec/motion.md#pose)・[Part opacity](../../spec/motion.md#part-opacity) | [motion.md#ポーズ](motion.md#ポーズ)、[motion.md#パーツの不透明度](motion.md#パーツの不透明度) | |
 | [Order of operations in a frame](../../spec/motion.md#order-of-operations-in-a-frame) | [motion.md#フレーム内の適用順](motion.md#フレーム内の適用順) | 決めたことの経緯 (T0303 など) は含めない |
+| [Unknown values](../../spec/motion.md#unknown-values) | [motion.md#カーブ](motion.md#カーブ)、[motion.md#表情](motion.md#表情) | |
+| [Determinism](../../spec/motion.md#determinism) | [motion.md#目パチ](motion.md#目パチ) | 乱数は目パチの種付きの生成器だけ |
 | [Conformance](../../spec/motion.md#conformance) | [motion.md#互換の基準](motion.md#互換の基準) | |
+
+## JSON Schema と例 (`spec/schema/`・`spec/examples/`)
+
+| 公開仕様 | 開発用 | 備考 |
+| --- | --- | --- |
+| [spec/schema/](../../spec/schema/README.md) | [editor.md#型の生成](../editor.md#型の生成) | `Model`・`Module`・`PhysicsSettings`・`Motion`・`Expression` の JSON Schema。`ugoe_model::spec_files` が Rust の型から生成する (`just gen`) |
+| [spec/examples/](../../spec/examples/README.md) | [testing.md#公開仕様の例](../testing.md#公開仕様の例) | 例のモデル (`model.json` はフィクスチャから生成) と、手で導いた期待値 (`expected.json`)。ランタイムが満たすことを `ugoe-format` の `tests/spec_examples.rs` で確かめる |
 
 ## まだ公開仕様にない文書
 
 | `docs/spec/` | 公開仕様 | タスク |
 | --- | --- | --- |
 | [keyform-inference.md](keyform-inference.md) | 含めない (ツールの内部。結果のデータは `spec/model.md` の Authoring data) | — |
+
+## 表の行にない節
+
+`docs/spec/` の節のうち、上の表の行で対応を示さないもの (公開仕様に含めないか、別の節にまとめて書いたもの) です。
+
+- [model.md#JSON と MessagePack での表現](model.md#json-と-messagepack-での表現): 英語版の [Data conventions](../../spec/model.md#data-conventions) と各節の表の要点
+- [model.md#予定されているデータ](model.md#予定されているデータ): 実装の予定 (公開仕様は実装したものだけを書く)
+- [file-formats.md#プロジェクト (`.ugoeproj/`)](file-formats.md#プロジェクト-ugoeproj): エディタのプロジェクト形式は含めない (ADR 0021)
+- [modules.md#旧ランタイムでの扱い](modules.md#旧ランタイムでの扱い): 英語版では [bundle.md#Baseline features](../../spec/bundle.md#baseline-features) の `modules` の行
+
+## 同期の検査
+
+`just spec` が次を検査します (`scripts/check-md-links.mjs docs spec` と `scripts/check-spec.mjs`)。`just ci` と CI の `web` ジョブに含まれます。
+
+- **リンク:** `docs/` と `spec/` の Markdown の相対リンクとアンカーの先があること。
+- **例とスキーマ:** `spec/examples/` の JSON (`model.json`・`module.json`・`*.physics.json`・`*.motion.json`・`*.expression.json`) が `spec/schema/` の JSON Schema を満たすこと (ajv、draft 2020-12)。
+- **型とコード:** `spec/model.md` の型の説明が、生成した JSON Schema (= Rust の型) と一致すること。
+  - 構造体: 「`` `TypeName`: ``」(または「`` `TypeName` (…): ``」など) の直後の `| Field |` の表の 1 列目と、スキーマの `properties`。
+    表のない型は、その段落に書いたフィールド名 (`` `min` `` など) と比べます。
+  - enum: 値の表 (`| Value |`)・タグの表 (`` | `type` | ``)・段落の中の値の一覧と、スキーマの値。タグ付きの enum は、
+    `Further fields` の列にコードのフィールドがすべて書かれていること。
+  - スキーマの型は、どれも `spec/model.md` に説明があること (`vec2`・`rgb` と、タグの表の中で説明する型を除く)。
+- **機能と未知の値:** 機能 ID の表 (`spec/bundle.md`・[file-formats.md#機能とフォールバックの一覧](file-formats.md#機能とフォールバックの一覧)) が
+  `ugoe_format::features::FEATURES` と一致し、未知の値のフォールバックの表の enum が `spec/model.md#unknown-values` と
+  [file-formats.md#未知の値の読み込み](file-formats.md#未知の値の読み込み) で一致し、拡張されうる enum をすべて含むこと。
+- **対応表 (この文書):**
+  - `spec/*.md` はどれもこの文書の左の列に出てきて、その `##` 見出し (`Contents` を除く) は、どれもそれか配下の見出しへのリンクとして左の列にあること。
+  - `docs/spec/*.md` はどれもこの文書に出てきて、「まだ公開仕様にない文書」の表にないものは、`##` 見出しがどれも右の列か「表の行にない節」にあること。
+- **文書の一覧:** `spec/README.md` の Documents の表が `spec/*.md` と一致し、`spec/schema/README.md` と `spec/examples/README.md` があること。
+
+検査が失敗したら、実装 (コード) を正として両方の文書を直します。新しい節を足したらこの文書に行を足します。

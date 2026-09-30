@@ -1,0 +1,78 @@
+{
+  "model": "model.json",
+  "summary": "Opacity multiplied through the part tree and the deformer tree, and the drawing order with ties broken by the order of meshes.",
+  "cases": [
+    {
+      "parameters": {},
+      "meshes": {
+        "A": {
+          "positions": [
+            [64, 64],
+            [192, 64],
+            [192, 192],
+            [64, 192]
+          ],
+          "opacity": 0.1
+        },
+        "B": {
+          "opacity": 1
+        },
+        "C": {
+          "opacity": 0.25
+        },
+        "D": {
+          "opacity": 1,
+          "draw_order": 500
+        }
+      },
+      "render_order": [
+        "C",
+        "A",
+        "B",
+        "D"
+      ]
+    },
+    {
+      "parameters": {
+        "Fade": 0.5
+      },
+      "meshes": {
+        "D": {
+          "draw_order": 300
+        }
+      },
+      "render_order": [
+        "C",
+        "D",
+        "A",
+        "B"
+      ]
+    },
+    {
+      "parameters": {
+        "Fade": 1
+      },
+      "meshes": {
+        "A": {
+          "opacity": 0.05
+        },
+        "B": {
+          "opacity": 0
+        },
+        "C": {
+          "opacity": 0.125
+        },
+        "D": {
+          "opacity": 0.5,
+          "draw_order": 100
+        }
+      },
+      "render_order": [
+        "D",
+        "C",
+        "A",
+        "B"
+      ]
+    }
+  ]
+}

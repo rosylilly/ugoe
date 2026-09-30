@@ -31,7 +31,7 @@ reference implementation to understand it.
 | [physics.md](physics.md) | Pendulum physics: time steps, inputs, outputs, rig order and relays, dynamic physics outputs, gravity frames, colliders. | Draft |
 | [motion.md](motion.md) | Motions, cross-fades, expressions, eye blink, breathing, lip sync, pose, part opacity, the order of operations within a frame. | Draft |
 | [avatar-profile.md](avatar-profile.md) | The avatar profile: standard and extended parameters and their meanings, conformance levels, the face tracking mapping (ARKit blend shapes) and its overrides, gaze, hit areas, license metadata, and the rules for applications that drive avatars. | Draft |
-| JSON Schema and examples | Machine-readable schemas and conformance examples. | Planned |
+| [schema/](schema/README.md), [examples/](examples/README.md) | JSON Schema for the JSON encodings of the data, and example models with the expected results of evaluating them. | Draft (informative) |
 
 Where this draft needs something that belongs to a planned document, it states only what is needed
 to read and write the data correctly and names the planned document.

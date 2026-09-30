@@ -175,6 +175,9 @@ importers:
       '@commitlint/config-conventional':
         specifier: ^21.2.3
         version: 21.2.3
+      ajv:
+        specifier: ^8.20.0
+        version: 8.20.0
       lefthook:
         specifier: ^2.1.14
         version: 2.1.14

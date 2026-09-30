@@ -1,0 +1,66 @@
+{
+  "$id": "https://raw.githubusercontent.com/rosylilly/ugoe/main/spec/schema/expression.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ugoe Expression (Specification 0.1 Draft)",
+  "type": "object",
+  "properties": {
+    "fade_in": {
+      "type": "number",
+      "format": "float",
+      "default": 0.0
+    },
+    "fade_out": {
+      "type": "number",
+      "format": "float",
+      "default": 0.0
+    },
+    "name": {
+      "type": "string"
+    },
+    "parameters": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ExpressionParameter"
+      }
+    }
+  },
+  "$comment": "Part of the ugoe Specification 0.1 (Draft), Copyright (c) 2026 Sho KUSANO and the ugoe contributors, licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Generated from the reference implementation; see spec/schema/README.md.",
+  "required": [
+    "name",
+    "parameters"
+  ],
+  "$defs": {
+    "ExpressionOp": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "add",
+            "multiply",
+            "overwrite"
+          ]
+        }
+      ]
+    },
+    "ExpressionParameter": {
+      "type": "object",
+      "properties": {
+        "op": {
+          "$ref": "#/$defs/ExpressionOp"
+        },
+        "parameter": {
+          "type": "string"
+        },
+        "value": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "parameter",
+        "value",
+        "op"
+      ]
+    }
+  }
+}

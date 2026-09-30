@@ -1,0 +1,261 @@
+{
+  "$id": "https://raw.githubusercontent.com/rosylilly/ugoe/main/spec/schema/motion.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ugoe Motion (Specification 0.1 Draft)",
+  "type": "object",
+  "properties": {
+    "curves": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Curve"
+      }
+    },
+    "duration": {
+      "type": "number",
+      "format": "float"
+    },
+    "events": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/MotionEvent"
+      }
+    },
+    "fade_in": {
+      "type": "number",
+      "format": "float",
+      "default": 0.0
+    },
+    "fade_out": {
+      "type": "number",
+      "format": "float",
+      "default": 0.0
+    },
+    "looping": {
+      "type": "boolean",
+      "default": false
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "$comment": "Part of the ugoe Specification 0.1 (Draft), Copyright (c) 2026 Sho KUSANO and the ugoe contributors, licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Generated from the reference implementation; see spec/schema/README.md.",
+  "required": [
+    "name",
+    "duration",
+    "curves"
+  ],
+  "$defs": {
+    "Curve": {
+      "type": "object",
+      "properties": {
+        "fade_in": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float",
+          "default": null
+        },
+        "fade_out": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float",
+          "default": null
+        },
+        "segments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Segment"
+          }
+        },
+        "target": {
+          "$ref": "#/$defs/CurveTarget"
+        }
+      },
+      "required": [
+        "target",
+        "segments"
+      ]
+    },
+    "CurveTarget": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "parameter"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "part_opacity"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "effect_group"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ]
+        }
+      ]
+    },
+    "MotionEvent": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "type": "number",
+          "format": "float"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "t",
+        "value"
+      ]
+    },
+    "Point": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "type": "number",
+          "format": "float"
+        },
+        "v": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "t",
+        "v"
+      ]
+    },
+    "Segment": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "p": {
+              "$ref": "#/$defs/Point"
+            },
+            "type": {
+              "type": "string",
+              "const": "start"
+            }
+          },
+          "required": [
+            "type",
+            "p"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "to": {
+              "$ref": "#/$defs/Point"
+            },
+            "type": {
+              "type": "string",
+              "const": "linear"
+            }
+          },
+          "required": [
+            "type",
+            "to"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "c1": {
+              "$ref": "#/$defs/Point"
+            },
+            "c2": {
+              "$ref": "#/$defs/Point"
+            },
+            "to": {
+              "$ref": "#/$defs/Point"
+            },
+            "type": {
+              "type": "string",
+              "const": "bezier"
+            }
+          },
+          "required": [
+            "type",
+            "c1",
+            "c2",
+            "to"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "to": {
+              "$ref": "#/$defs/Point"
+            },
+            "type": {
+              "type": "string",
+              "const": "stepped"
+            }
+          },
+          "required": [
+            "type",
+            "to"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "to": {
+              "$ref": "#/$defs/Point"
+            },
+            "type": {
+              "type": "string",
+              "const": "inverse_stepped"
+            }
+          },
+          "required": [
+            "type",
+            "to"
+          ]
+        }
+      ]
+    }
+  }
+}

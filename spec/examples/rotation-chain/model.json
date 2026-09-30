@@ -1,0 +1,362 @@
+{
+  "schema_version": 0,
+  "meta": {
+    "name": "rotation_chain",
+    "canvas": {
+      "width": 256.0,
+      "height": 256.0,
+      "origin": [
+        128.0,
+        128.0
+      ]
+    }
+  },
+  "parameters": [
+    {
+      "id": "Angle",
+      "name": "Angle",
+      "min": -30.0,
+      "max": 30.0,
+      "default": 0.0,
+      "kind": "normal",
+      "mirror": null,
+      "group": null
+    },
+    {
+      "id": "Flip",
+      "name": "Flip",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.0,
+      "kind": "normal",
+      "mirror": null,
+      "group": null
+    }
+  ],
+  "parameter_groups": [],
+  "parts": [
+    {
+      "id": "Root",
+      "name": "Root",
+      "parent": null,
+      "keyforms": {
+        "bindings": [],
+        "keyforms": [
+          {
+            "opacity": 1.0
+          }
+        ]
+      }
+    }
+  ],
+  "deformers": [
+    {
+      "id": "Arm",
+      "name": "Arm",
+      "part": "Root",
+      "parent": null,
+      "kind": {
+        "type": "rotation",
+        "keyforms": {
+          "bindings": [
+            {
+              "parameter": "Angle",
+              "keys": [
+                -30.0,
+                30.0
+              ]
+            }
+          ],
+          "keyforms": [
+            {
+              "origin": [
+                128.0,
+                128.0
+              ],
+              "angle": -30.0,
+              "scale": 1.0,
+              "reflect_x": false,
+              "reflect_y": false,
+              "opacity": 1.0
+            },
+            {
+              "origin": [
+                128.0,
+                128.0
+              ],
+              "angle": 30.0,
+              "scale": 1.0,
+              "reflect_x": false,
+              "reflect_y": false,
+              "opacity": 1.0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "Hand",
+      "name": "Hand",
+      "part": "Root",
+      "parent": "Arm",
+      "kind": {
+        "type": "rotation",
+        "keyforms": {
+          "bindings": [
+            {
+              "parameter": "Flip",
+              "keys": [
+                0.0,
+                1.0
+              ]
+            }
+          ],
+          "keyforms": [
+            {
+              "origin": [
+                64.0,
+                0.0
+              ],
+              "angle": 0.0,
+              "scale": 0.5,
+              "reflect_x": false,
+              "reflect_y": false,
+              "opacity": 1.0
+            },
+            {
+              "origin": [
+                64.0,
+                0.0
+              ],
+              "angle": 0.0,
+              "scale": 0.5,
+              "reflect_x": true,
+              "reflect_y": false,
+              "opacity": 1.0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "Cloth",
+      "name": "Cloth",
+      "part": "Root",
+      "parent": "Arm",
+      "kind": {
+        "type": "warp",
+        "rows": 1,
+        "cols": 1,
+        "keyforms": {
+          "bindings": [],
+          "keyforms": [
+            {
+              "points": [
+                [
+                  0.0,
+                  20.0
+                ],
+                [
+                  40.0,
+                  20.0
+                ],
+                [
+                  0.0,
+                  40.0
+                ],
+                [
+                  40.0,
+                  40.0
+                ]
+              ],
+              "opacity": 1.0
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "id": "Palm",
+      "name": "Palm",
+      "part": "Root",
+      "parent": "Hand",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "blend": "normal",
+      "culling": false,
+      "masks": [],
+      "mask_mode": "union",
+      "mask_only": false,
+      "keyforms": {
+        "bindings": [],
+        "keyforms": [
+          {
+            "positions": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                16.0,
+                0.0
+              ],
+              [
+                16.0,
+                16.0
+              ],
+              [
+                0.0,
+                16.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "Sleeve",
+      "name": "Sleeve",
+      "part": "Root",
+      "parent": "Cloth",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "blend": "normal",
+      "culling": false,
+      "masks": [],
+      "mask_mode": "union",
+      "mask_only": false,
+      "keyforms": {
+        "bindings": [],
+        "keyforms": [
+          {
+            "positions": [
+              [
+                0.25,
+                0.25
+              ],
+              [
+                0.75,
+                0.25
+              ],
+              [
+                0.75,
+                0.75
+              ],
+              [
+                0.25,
+                0.75
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          }
+        ]
+      }
+    }
+  ],
+  "glues": [],
+  "textures": [
+    {
+      "name": "white",
+      "width": 1,
+      "height": 1
+    }
+  ],
+  "hit_areas": [],
+  "pose": {
+    "fade_duration": 0.5,
+    "groups": []
+  },
+  "effects": {
+    "eye_blink": {
+      "parameters": [],
+      "interval": 4.0,
+      "closing": 0.1,
+      "closed": 0.05,
+      "opening": 0.15,
+      "seed": 0
+    },
+    "breath": {
+      "parameters": []
+    },
+    "lip_sync": {
+      "parameters": []
+    }
+  }
+}

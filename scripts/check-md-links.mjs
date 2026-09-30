@@ -8,6 +8,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, extname, join, relative, resolve } from "node:path";
+import { headings, stripCodeBlocks } from "./lib/markdown.mjs";
 
 const root = resolve(dirname(new URL(import.meta.url).pathname), "..");
 const targets = process.argv.slice(2);
@@ -23,47 +24,11 @@ function collect(path, out) {
   return out;
 }
 
-/** コードブロックを空行に置き換える (行番号を保つ)。 */
-function stripCodeBlocks(text) {
-  let inFence = false;
-  return text
-    .split("\n")
-    .map((line) => {
-      if (/^\s*(```|~~~)/.test(line)) {
-        inFence = !inFence;
-        return "";
-      }
-      return inFence ? "" : line;
-    })
-    .join("\n");
-}
-
-/** GitHub の見出しのアンカー: 小文字にし、英数字・空白・`-`・`_` 以外を除き、空白を `-` にする。 */
-function slug(heading) {
-  return heading
-    .replace(/`/g, "")
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .trim()
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\p{M} _-]/gu, "")
-    .replace(/ /g, "-");
-}
-
 const anchorCache = new Map();
-/** ファイルの見出しのアンカーの集合 (同じ見出しには -1, -2 … を付ける)。 */
+/** ファイルの見出しのアンカーの集合。 */
 function anchors(file) {
   if (!anchorCache.has(file)) {
-    const set = new Set();
-    const counts = new Map();
-    for (const line of stripCodeBlocks(readFileSync(file, "utf8")).split("\n")) {
-      const m = /^#{1,6}\s+(.*?)\s*#*\s*$/.exec(line);
-      if (!m) continue;
-      const base = slug(m[1]);
-      const n = counts.get(base) ?? 0;
-      counts.set(base, n + 1);
-      set.add(n === 0 ? base : `${base}-${n}`);
-    }
-    anchorCache.set(file, set);
+    anchorCache.set(file, new Set(headings(file).map((h) => h.anchor)));
   }
   return anchorCache.get(file);
 }

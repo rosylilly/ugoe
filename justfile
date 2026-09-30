@@ -19,7 +19,7 @@ setup:
     rustup show active-toolchain
 
 # CI と同じ検査一式
-ci: fmt-check lint test layers licenses web-check
+ci: fmt-check lint test layers licenses spec web-check
 
 # コミットメッセージを検査: `just commitlint "feat(runtime): add foo"`
 commitlint message:
@@ -68,6 +68,11 @@ tasks *args:
 licenses:
     @node scripts/check-licenses.mjs
 
+# 公開仕様 (spec/) の検査: Markdown のリンク、例と JSON Schema、docs/spec との同期 (docs/spec/public-spec.md#同期の検査)
+spec:
+    node scripts/check-md-links.mjs docs spec
+    node scripts/check-spec.mjs
+
 # クレート依存方向の検査
 layers:
     @node scripts/check-layers.mjs
@@ -84,9 +89,11 @@ wasm out="apps/editor/src/lib/viewport/generated":
     @node scripts/wasm.mjs build {{quote(out)}}
 
 # Rust の型から生成物を作り直す: エディタの TypeScript の型 (apps/editor/src/lib/generated/) と
-# Command の JSON Schema (crates/ugoe-editor-core/schema/)。生成物はコミットする (docs/editor.md#型の生成)。
+# Command の JSON Schema (crates/ugoe-editor-core/schema/)、公開仕様の JSON Schema (spec/schema/)。
+# 生成物はコミットする (docs/editor.md#型の生成)。
 gen:
     cargo run -q -p ugoe-editor --example gen
+    cargo run -q -p ugoe-model --features schema --example spec_files
 
 # Cargo.lock に記録された wasm-bindgen の版 (wasm-bindgen-cli はこれと一致させる)
 wasm-bindgen-version:

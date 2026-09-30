@@ -1,0 +1,73 @@
+{
+  "model": "model.json",
+  "summary": "A rotation deformer (Head) and a warp deformer (Cheek) under a warp deformer (Body) that turns by 90 degrees on Turn = 1. The rotation takes its origin and angle, but not the scale, from the warp.",
+  "cases": [
+    {
+      "parameters": {},
+      "meshes": {
+        "Face": {
+          "positions": [
+            [128, 86],
+            [138, 86],
+            [138, 96],
+            [128, 96]
+          ]
+        },
+        "Blush": {
+          "positions": [
+            [128, 160],
+            [128, 160],
+            [128, 160],
+            [128, 160]
+          ]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "Turn": 1
+      },
+      "meshes": {
+        "Face": {
+          "positions": [
+            [170, 128],
+            [170, 138],
+            [160, 138],
+            [160, 128]
+          ]
+        },
+        "Blush": {
+          "positions": [
+            [96, 128],
+            [96, 128],
+            [96, 128],
+            [96, 128]
+          ]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "Turn": 0.5
+      },
+      "meshes": {
+        "Face": {
+          "positions": [
+            [151.0711, 104.9289],
+            [158.1421, 112],
+            [151.0711, 119.0711],
+            [144, 112]
+          ]
+        },
+        "Blush": {
+          "positions": [
+            [112, 144],
+            [112, 144],
+            [112, 144],
+            [112, 144]
+          ]
+        }
+      }
+    }
+  ]
+}

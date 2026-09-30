@@ -1,0 +1,77 @@
+{
+  "model": "model.json",
+  "summary": "One quad whose keyforms translate it by 64 px on the parameter X (keys -1, 0, 1). Shows linear interpolation between keys and clamping to the parameter range.",
+  "cases": [
+    {
+      "parameters": {},
+      "meshes": {
+        "Quad": {
+          "positions": [
+            [64, 64],
+            [192, 64],
+            [192, 192],
+            [64, 192]
+          ],
+          "opacity": 1,
+          "draw_order": 500,
+          "multiply_color": {
+            "r": 1,
+            "g": 1,
+            "b": 1
+          },
+          "screen_color": {
+            "r": 0,
+            "g": 0,
+            "b": 0
+          }
+        }
+      }
+    },
+    {
+      "parameters": {
+        "X": 0.5
+      },
+      "meshes": {
+        "Quad": {
+          "positions": [
+            [96, 64],
+            [224, 64],
+            [224, 192],
+            [96, 192]
+          ],
+          "opacity": 1
+        }
+      }
+    },
+    {
+      "parameters": {
+        "X": -1
+      },
+      "meshes": {
+        "Quad": {
+          "positions": [
+            [0, 64],
+            [128, 64],
+            [128, 192],
+            [0, 192]
+          ]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "X": 2
+      },
+      "meshes": {
+        "Quad": {
+          "positions": [
+            [128, 64],
+            [256, 64],
+            [256, 192],
+            [128, 192]
+          ]
+        }
+      }
+    }
+  ]
+}

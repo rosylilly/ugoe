@@ -1,0 +1,73 @@
+{
+  "model": "model.json",
+  "summary": "A 2x2-cell warp deformer with a square (X = 0), sheared (X = 1) and keystone (X = -1) lattice. Inner has its vertices inside the lattice, Outer outside it (extrapolation).",
+  "cases": [
+    {
+      "parameters": {},
+      "meshes": {
+        "Inner": {
+          "positions": [
+            [96, 96],
+            [160, 96],
+            [160, 160],
+            [96, 160]
+          ]
+        },
+        "Outer": {
+          "positions": [
+            [0, 0],
+            [256, 0],
+            [256, 256],
+            [0, 256]
+          ]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "X": 1
+      },
+      "meshes": {
+        "Inner": {
+          "positions": [
+            [144, 96],
+            [208, 96],
+            [176, 160],
+            [112, 160]
+          ]
+        },
+        "Outer": {
+          "positions": [
+            [96, 0],
+            [352, 0],
+            [224, 256],
+            [-32, 256]
+          ]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "X": -1
+      },
+      "meshes": {
+        "Inner": {
+          "positions": [
+            [80, 96],
+            [176, 96],
+            [160, 160],
+            [96, 160]
+          ]
+        },
+        "Outer": {
+          "positions": [
+            [-96, 0],
+            [352, 0],
+            [288, 256],
+            [-32, 256]
+          ]
+        }
+      }
+    }
+  ]
+}

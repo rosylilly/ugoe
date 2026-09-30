@@ -85,8 +85,8 @@ Notation used in this document:
 This specification does not require bit-identical results. An implementation *conforms* to the
 evaluation rules when, for every model and parameter values, its outputs differ from the outputs
 defined here by no more than the following tolerances. The conformance examples published with this
-specification ([README.md](README.md#documents)) give expected outputs to be checked with these
-tolerances.
+specification ([examples/README.md](examples/README.md)) give expected outputs to be checked with
+these tolerances.
 
 | Output | Tolerance |
 | --- | --- |

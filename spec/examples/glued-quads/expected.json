@@ -1,0 +1,73 @@
+{
+  "model": "model.json",
+  "summary": "Two glues applied in array order: Seam pulls the facing edges of two quads to their midpoint with strength Glue, then Pull moves a vertex of Right halfway to a vertex of Left.",
+  "cases": [
+    {
+      "parameters": {},
+      "meshes": {
+        "Left": {
+          "positions": [
+            [0, 0],
+            [105, 0],
+            [105, 100],
+            [0, 100]
+          ]
+        },
+        "Right": {
+          "positions": [
+            [105, 0],
+            [157.5, 0],
+            [210, 100],
+            [105, 100]
+          ]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "Glue": 0.5
+      },
+      "meshes": {
+        "Left": {
+          "positions": [
+            [0, 0],
+            [102.5, 0],
+            [102.5, 100],
+            [0, 100]
+          ]
+        },
+        "Right": {
+          "positions": [
+            [107.5, 0],
+            [156.25, 0],
+            [210, 100],
+            [107.5, 100]
+          ]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "Glue": 0
+      },
+      "meshes": {
+        "Left": {
+          "positions": [
+            [0, 0],
+            [100, 0],
+            [100, 100],
+            [0, 100]
+          ]
+        },
+        "Right": {
+          "positions": [
+            [110, 0],
+            [155, 0],
+            [210, 100],
+            [110, 100]
+          ]
+        }
+      }
+    }
+  ]
+}
