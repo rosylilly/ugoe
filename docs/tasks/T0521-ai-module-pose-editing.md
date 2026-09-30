@@ -1,11 +1,11 @@
 ---
 id: T0521
 title: エディタと AI: ポーズを手で編集する画面・直接写す形の作り直しの知らせ・差分の判定
-status: todo
+status: in-progress
 milestone: M6
 crates: [ugoe-ai, ugoe-editor-core, apps/editor, docs]
 depends_on: [T0519]
-assignee:
+assignee: claude-worker-T0521
 ---
 
 # T0521: ポーズの手での編集と、モジュールの自動リギングの残り
