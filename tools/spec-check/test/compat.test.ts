@@ -69,7 +69,40 @@ test("dev modules compose together", () => {
   const composed = compose(b.model, b.physics, modules);
   const hidden = composed.model.parts.filter((p) => p.id.startsWith("#replaced/"));
   assert.ok(hidden.length > 0, "slots with replaces hide the replaced parts");
+  for (const h of hidden) {
+    const part = composed.model.parts.find((p) => p.parent === h.id);
+    assert.ok(part, `${h.id} is the parent of the hidden part`);
+    assert.equal(h.id, `#replaced/${part.id}`);
+    assert.equal(h.name, `#replaced/${part.name}`);
+    assert.equal(h.parent, b.model.parts.find((p) => p.id === part.id)?.parent);
+  }
   assertFinite(evaluateAll(composed.model));
+});
+
+test("隠すパーツはモジュールの順、スロットの中は replaces の順に、最初の 1 回だけ足す", () => {
+  const b = base();
+  const other = b.model.parts.find((p) => p.id !== "Hair");
+  assert.ok(other);
+  // Hair のスロットは [Hair]、Outfit のスロットは [<other>, Hair] を隠す
+  const model: M.Model = {
+    ...b.model,
+    slots: b.model.slots.map((s) =>
+      s.id === "Outfit" ? { ...s, replaces: [other.id, "Hair", other.id] } : s,
+    ),
+  };
+  const hair = moduleFile("dev/long-hair.ugoemod").module;
+  const dress = moduleFile("dev/dress.ugoemod").module;
+  const hidden = (modules: M.Module[]) => {
+    const parts = compose(model, b.physics, modules).model.parts;
+    const first = parts.findIndex((p) => p.id.startsWith("#replaced/"));
+    assert.ok(
+      parts.slice(first).every((p) => p.id.startsWith("#replaced/")),
+      "parts の末尾",
+    );
+    return parts.slice(first).map((p) => p.id);
+  };
+  assert.deepEqual(hidden([hair, dress]), ["#replaced/Hair", `#replaced/${other.id}`]);
+  assert.deepEqual(hidden([dress, hair]), [`#replaced/${other.id}`, "#replaced/Hair"]);
 });
 
 test("requires.avatar_level: プロファイルの無い本体は満たさない (level 0 でも)", () => {

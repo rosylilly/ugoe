@@ -81,6 +81,10 @@ enum Action {
     AddExpression {
         add_expression: String,
     },
+    StopExpressions {
+        #[allow(dead_code)]
+        stop_expressions: bool,
+    },
     LipSync {
         lip_sync: Option<f32>,
     },
@@ -313,6 +317,7 @@ fn perform(
             let expression = expression(expressions, add_expression, label);
             puppet.expressions_mut().add(expression);
         }
+        Action::StopExpressions { .. } => puppet.expressions_mut().stop_all(),
         Action::LipSync { lip_sync } => puppet.set_lip_sync_level(*lip_sync),
         Action::ResetPhysics { .. } => puppet.reset_physics(),
         Action::Stages { stages } => {

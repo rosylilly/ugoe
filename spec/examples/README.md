@@ -166,6 +166,7 @@ The files of a timeline example:
   | `{ "stop_motions": true }` | The host stops all motions. |
   | `{ "set_expression": <key> }` | The host sets the expression (stopping the active ones). |
   | `{ "add_expression": <key> }` | The host adds the expression on top of the active ones. |
+  | `{ "stop_expressions": true }` | The host stops all expressions ([Expressions](../motion.md#expressions)). |
   | `{ "lip_sync": <level> }` | The host supplies the lip sync level from now on; `null` removes it. Initially there is no level. |
   | `{ "reset_physics": true }` | The host resets physics ([physics.md](../physics.md#state)). |
   | `{ "stages": { <stage>: <bool>, … } }` | The host turns stages on or off. Stages: `physics`, `eye_blink`, `breath`, `lip_sync`, `pose`. Initially all are on. |

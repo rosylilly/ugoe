@@ -182,17 +182,17 @@ export function compose(
     }
   }
 
-  // 3. 置き換えるパーツを隠す
+  // 3. 置き換えるパーツを隠す (モジュールの順、スロットの中は replaces の順。同じパーツは最初の 1 回だけ)
   const replaced = new Set<string>();
-  for (const s of model.slots) {
-    if (!occupied.has(s.id)) continue;
+  for (const mod of modules) {
+    const s = modelSlots.get(mod.slot) as M.Slot;
     for (const id of s.replaces) {
       if (replaced.has(id)) continue;
       replaced.add(id);
       const part = out.parts.find((p) => p.id === id) as M.Part;
       const hider: M.Part = {
         id: `#replaced/${id}`,
-        name: `#replaced/${id}`,
+        name: `#replaced/${part.name}`,
         parent: part.parent,
         keyforms: {
           bindings: [],

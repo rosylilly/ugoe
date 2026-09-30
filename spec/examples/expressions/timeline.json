@@ -5,7 +5,7 @@
     "blush": "blush.expression.json",
     "sad": "sad.expression.json"
   },
-  "summary": "Expressions over host values. happy fades in over 0.5 s with the three operations (overwrite Smile with 1, add 0.5 to Brow, multiply Scale by 1.5); the host value of Brow (0.2, later -0.4) is the base value on which the addition is layered every frame without accumulating. blush is added on top without fades and is applied after happy. Setting sad stops both: happy fades out over its 0.5 s while sad fades in over 0.25 s; blush, without fade-out, is removed at once. Values are clamped to the parameters' ranges after every item.",
+  "summary": "Expressions over host values. happy fades in over 0.5 s with the three operations (overwrite Smile with 1, add 0.5 to Brow, multiply Scale by 1.5); the host value of Brow (0.2, later -0.4) is the base value on which the addition is layered every frame without accumulating. blush is added on top without fades and is applied after happy. Setting sad stops both: happy fades out over its 0.5 s while sad fades in over 0.25 s; blush, without fade-out, is removed at once. Values are clamped to the parameters' ranges after every item. With sad active, happy is added and fully faded in; stopping all expressions removes sad (no fade-out) at once and fades happy out over 0.5 s. happy, added and stopped before the same frame, fades in and out at the same time (weight 0.5 × 0.5); stopping it again keeps the earlier end.",
   "frames": [
     {
       "actions": [
@@ -130,6 +130,89 @@
         "parameters": {
           "Smile": 0,
           "Brow": -1,
+          "Scale": 1
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "add_expression": "happy"
+        }
+      ],
+      "dt": 0.5,
+      "expect": {
+        "parameters": {
+          "Smile": 1,
+          "Brow": -0.5,
+          "Scale": 1.5
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "stop_expressions": true
+        }
+      ],
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Smile": 0.5,
+          "Brow": -0.15,
+          "Scale": 1.25
+        }
+      }
+    },
+    {
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Smile": 0,
+          "Brow": -0.4,
+          "Scale": 1
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "add_expression": "happy"
+        },
+        {
+          "stop_expressions": true
+        }
+      ],
+      "dt": 0.25,
+      "expect": {
+        "parameters": {
+          "Smile": 0.25,
+          "Brow": -0.275,
+          "Scale": 1.125
+        }
+      }
+    },
+    {
+      "actions": [
+        {
+          "stop_expressions": true
+        }
+      ],
+      "dt": 0.125,
+      "expect": {
+        "parameters": {
+          "Smile": 0.125,
+          "Brow": -0.3375,
+          "Scale": 1.0625
+        }
+      }
+    },
+    {
+      "dt": 0.125,
+      "expect": {
+        "parameters": {
+          "Smile": 0,
+          "Brow": -0.4,
           "Scale": 1
         }
       }

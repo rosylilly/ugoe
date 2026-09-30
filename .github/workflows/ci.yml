@@ -133,6 +133,9 @@ jobs:
       # 公開仕様の検査 (docs/spec/public-spec.md#同期の検査)。ajv を使うので pnpm install の後に置く
       - name: Specification
         run: node scripts/check-md-links.mjs docs spec && node scripts/check-spec.mjs
+      # 公開仕様だけで書いた独立の読み込み器の型検査とテスト (tools/spec-check/README.md)
+      - run: pnpm --filter ugoe-spec-check check
+      - run: node --test tools/spec-check/test/
       - run: pnpm --filter @ugoe/editor test
       - run: pnpm --filter @ugoe/viewer test
       - run: pnpm --filter @ugoe/face-tracking check

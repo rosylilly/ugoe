@@ -16,6 +16,7 @@ export type Action =
   | { stop_motions: true }
   | { set_expression: string }
   | { add_expression: string }
+  | { stop_expressions: true }
   | { lip_sync: number | null }
   | { reset_physics: true }
   | { stages: Partial<Record<Stage, boolean>> };
@@ -126,6 +127,7 @@ export function runTimeline(ex: TimelineExample): string[] {
           failures.push(`${where}: start_motion ${action.start_motion}: accepted ${accepted}`);
         }
       } else if ("stop_motions" in action) rt.motions.stopAll();
+      else if ("stop_expressions" in action) rt.expressions.stopAll();
       else if ("set_expression" in action || "add_expression" in action) {
         const key = "set_expression" in action ? action.set_expression : action.add_expression;
         const e = ex.expressions.get(key);

@@ -45,8 +45,8 @@ A curve ([model.md](model.md#motions)) is a sequence of segments. The first segm
 the point `p`; each further segment runs from the end point of the previous segment (`p0`) to its
 own point `to`. The value of a curve at time `t`:
 
-1. If the curve contains a segment of an unknown type, if its first segment is not `start`, or if a
-   later segment is `start`, the curve has **no value** (it is ignored).
+1. If the curve has no segments, contains a segment of an unknown type, or its first segment is not
+   `start`, the curve has **no value** (it is ignored).
 2. If `t ≤ p.t` of the `start` segment, the value is `p.v`.
 3. Otherwise, find the first segment with `t ≤ to.t`. Let `u = (t − p0.t) / (to.t − p0.t)`, or
    `u = 1` if `to.t ≤ p0.t`. The value is:
@@ -59,6 +59,13 @@ own point `to`. The value of a curve at time `t`:
    | `inverse_stepped` | `to.v` if `u > 0`, `p0.v` if `u = 0` |
 
 4. If `t` is after the last point, the value is the last point's `v`.
+
+A curve with a `start` segment after the first one breaks the rule of
+[model.md](model.md#motions) that writers MUST follow. This document does not define its value: a
+runtime MAY ignore the whole curve (give it no value at every time), and [Conformance](#conformance)
+does not cover it. *Informative:* the reference runtime evaluates the segments before that `start` as
+above and gives the curve no value after the last of them; for `start (0, 0)`, `linear (1, 1)`,
+`start (2, 5)`, … the value is 0.5 at `t = 0.5` and there is no value for `t > 1`.
 
 **Bézier segments.** A `bezier` segment with control points `c1`, `c2` is the cubic Bézier curve
 `B(s) = (1−s)³ p0 + 3(1−s)² s c1 + 3(1−s) s² c2 + s³ to` for `s ∈ [0, 1]`, in both time and value.
@@ -199,9 +206,20 @@ The result is clamped to the parameter's range. Items with an unknown `op` are i
 - The fade weight uses the formula of [Motion playback](#motion-playback) with the expression's
   `fade_in` and `fade_out`, on a clock `elapsed` that starts at 0. An expression has no duration: it
   has no end until it is stopped. Advancing adds `dt > 0` to `elapsed`, but not beyond the end.
+- An expression is **stopped** and **finished** as a motion is ([Motion playback](#motion-playback)):
+  stopping sets `end = min(end, elapsed + max(fade_out, 0))`, so it fades out over its `fade_out` from
+  now, or stops having an effect at once if `fade_out = 0`; stopping it again keeps the earlier end.
 - Several expressions may be active. They are advanced and applied in the order they were started.
-  Setting an expression stops all active expressions (they fade out) and starts the new one; adding
-  an expression starts it on top of the active ones. Finished expressions are removed.
+  The host operations are:
+
+  | Operation | Effect |
+  | --- | --- |
+  | Add an expression | Starts it on top of the active ones. |
+  | Stop all expressions | Stops every active expression. |
+  | Stop an expression by name | Stops every active expression with that `name`. |
+  | Set an expression | Stops all expressions, then adds the new one. |
+
+  Finished expressions are removed.
 - Because the frame order restores the base values every frame
   ([Order of operations in a frame](#order-of-operations-in-a-frame)), `add` does not accumulate.
 
@@ -373,8 +391,9 @@ Consequences:
 ## Determinism
 
 Everything in this document is deterministic: the same model, the same sequence of host actions
-(starting motions, setting expressions, levels, tracking input, parameter changes) and the same
-sequence of `dt` values produce the same parameter values and part opacities. Randomness comes only
+(starting and stopping motions, setting, adding and stopping expressions, levels, tracking input,
+parameter changes) and the same sequence of `dt` values produce the same parameter values and part
+opacities. Randomness comes only
 from the seeded eye blink generator; the clock is never read.
 
 ## Conformance
@@ -382,5 +401,6 @@ from the seeded eye blink generator; the clock is never read.
 A runtime conforms when, fed the same sequence of host actions and `dt` values, the parameter values
 and part opacity overrides it passes to evaluation differ from the values defined here by at most
 `1e-4 × max(1, max − min)` for a parameter (with its range `min`, `max`) and `1e-4` for an opacity,
-in every frame. The eye blink's random intervals are computed with integer arithmetic and MUST be
+in every frame (curves that break the rule of [model.md](model.md#motions) excepted, see
+[Curves](#curves)). The eye blink's random intervals are computed with integer arithmetic and MUST be
 reproduced exactly (the single-precision `u` included).

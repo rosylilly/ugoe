@@ -35,7 +35,8 @@
 
 ## 使い方
 
-Node.js 24 以上 (型の除去で `.ts` を直接実行する。zstd は `node:zlib` のもの) だけで動き、依存するパッケージはありません。
+Node.js 24 以上 (型の除去で `.ts` を直接実行する。zstd は `node:zlib` のもの) だけで動き、実行時に依存するパッケージはありません。
+型検査のためだけに、開発用の依存として `typescript` と `@types/node` (エディタ・ビューアと同じ版) を持ちます (pnpm のワークスペースの一員)。
 
 ```sh
 node --test tools/spec-check/test/                                  # テスト
@@ -60,10 +61,10 @@ node tools/spec-check/src/roundtrip.ts target/debug/ugoe                 # 参�
 T0128 の時点では、法線マップのあるバンドル (`lit-quads.ugoe`・`dress-up-base.ugoe`) で `ugoe build` が
 `normal map … has no image data` で失敗する (参照実装の `build` の問題。`validate` は受け付ける)。ほかはすべて一致した。
 
-型の検査は、エディタの TypeScript を借りて行えます (`@types/node` が要るため):
+型の検査 (`tsc`。`just spec` に含まれる):
 
 ```sh
-cd tools/spec-check && ../../apps/editor/node_modules/.bin/tsc -p . --typeRoots ../../apps/editor/node_modules/@types
+pnpm --filter ugoe-spec-check check
 ```
 
 ## テスト
@@ -71,7 +72,7 @@ cd tools/spec-check && ../../apps/editor/node_modules/.bin/tsc -p . --typeRoots 
 | ファイル | 内容 |
 | --- | --- |
 | `test/examples.test.ts` | `spec/examples/` の評価の例 (`expected.json`) をすべて評価し、[許容誤差](../../spec/examples/README.md#tolerances) で期待値と比べる。 |
-| `test/timeline.test.ts` | `spec/examples/` の時間の例 (`timeline.json`) をはじめからフレームごとに走らせ、[許容誤差](../../spec/examples/README.md#timeline-tolerances) で期待値と比べる。 |
+| `test/timeline.test.ts` | `spec/examples/` の時間の例 (`timeline.json`) をはじめからフレームごとに走らせ、[許容誤差](../../spec/examples/README.md#timeline-tolerances) で期待値と比べる。ファイルの例のうち時間の例と同じ中身のもの (`physics-pendulum.ugoe`・`motion-crossfade.ugoe`・`expressions.ugoe`) は、バンドルから読んだデータでも走らせる (T0129)。 |
 | `test/compat.test.ts` | `assets/compat/` の資料を読む。`dev/` は警告なしに読めて評価できる、`future/` は仕様どおりに劣化して読める (評価の結果が元のファイルと同じ) か拒否される ([docs/testing.md](../../docs/testing.md#互換性テスト))。 |
 | `test/bundles.test.ts` | ファイルの例 (`spec/examples/bundles/`) を読み、目録 `bundles.json` (チャンクの表・結果・同じ中身の JSON の文書・画像の色) と比べる。目録から書き出しで作り直したものと、展開したペイロードが同じ。 |
 | `test/writer.test.ts` | MessagePack の符号化 (整数と長さの境目、float 32 と 64)、整数と `f32` のフィールドの型、2 通りの書き方、知らない値と基準の機能の宣言の拒否、コンテナの配置、すべての例と互換性の資料のこの実装での往復。 |
@@ -79,7 +80,7 @@ cd tools/spec-check && ../../apps/editor/node_modules/.bin/tsc -p . --typeRoots 
 
 ### CI
 
-テストは `just spec` (`just ci` に含まれる) で実行する。依存がなく 1 秒ほどで終わるので、公開仕様の例や `assets/compat/` の資料が変わったときに、
+型検査とテストは `just spec` (`just ci` に含まれる) で実行する。1 秒ほどで終わるので、公開仕様の例や `assets/compat/` の資料が変わったときに、
 仕様だけで読めることが保たれているかを毎回確かめる。参照実装と食い違ったら、どちらが仕様に合っていないかを調べる
 (仕様が曖昧なら仕様を直す)。
 

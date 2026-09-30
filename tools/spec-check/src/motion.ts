@@ -28,6 +28,7 @@ export function writeParameter(
 export function curveValue(segments: M.Segment[], t: number): number | null {
   const first = segments[0];
   if (first?.type !== "start") return null;
+  // 2 つ目以降に start がある曲線は規則を破る。仕様は値を決めず、全体を無視してよい (MAY) とするので、無視する。
   if (segments.slice(1).some((s) => s.type === "start")) return null;
   if (t <= first.p.t) return first.p.v;
   let p0 = first.p;
@@ -266,9 +267,15 @@ class ActiveExpression {
 export class ExpressionManager {
   active: ActiveExpression[] = [];
 
-  set(expression: M.Expression): void {
+  /** すべての表情を止める (フェードアウトで終わる)。 */
+  stopAll(): void {
     for (const a of this.active) a.stop();
-    this.active.push(new ActiveExpression(expression));
+  }
+
+  /** すべて止めてから足す。 */
+  set(expression: M.Expression): void {
+    this.stopAll();
+    this.add(expression);
   }
 
   add(expression: M.Expression): void {

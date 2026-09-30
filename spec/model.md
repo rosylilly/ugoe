@@ -218,7 +218,7 @@ A parameter is a named scalar input.
 | `max` | `f32` | — | Maximum value. |
 | `default` | `f32` | — | Default value. `min <= default <= max`. |
 | `kind` | `ParameterKind` | `"normal"` | See below. |
-| `mirror` | `id?` | none | The parameter that forms a left–right pair with this one (for example `EyeLOpen` and `EyeROpen`). Used by authoring tools only. |
+| `mirror` | `id?` | none | Authoring data: the parameter that forms a left–right pair with this one, for example `EyeLOpen` and `EyeROpen` ([Mirror pairs](#mirror-pairs)). |
 | `group` | `id?` | none | ID of a [parameter group](#parameter-groups). |
 | `internal` | `bool` | `false` | Marks a relay parameter that users and applications are not expected to drive directly. |
 
@@ -828,9 +828,11 @@ Fallback for readers that do not support dress-up: ignore the slots and show the
 ## Authoring data
 
 The fields in this section record how keyforms were made, so that authoring tools can redo the work.
-**They do not affect evaluation or rendering**: a runtime MAY ignore them, and a tool that does not
-understand them MAY drop them. Every one of them is optional, and a writer SHOULD omit them when they
-have their default value.
+They are the fields marked "Authoring data" in the field tables. **They do not affect evaluation,
+playback, physics or rendering**: a runtime MAY ignore them, and a tool that does not understand them
+MAY drop them. Every one of them is optional or nullable. A writer SHOULD omit an optional one when it
+has its default value; a nullable one without a value is written as `null` or omitted, as any
+nullable field ([Presence and default values](#presence-and-default-values)).
 
 ### Keyform grid authoring fields
 
@@ -883,6 +885,12 @@ value: do not rebuild the `derived` keyforms):
 - Pairs are bidirectional: if `A.mirror = B` with `B ≠ A`, then `B.mirror` MUST be `A`.
 - `mirror_axis` is the x coordinate of the vertical mirror axis in the element's parent coordinates.
   None: a default determined by the parent.
+- `mirror` on a parameter tells a tool that mirrors keyforms which key of which parameter a key
+  corresponds to. If `A.mirror = B` with `B ≠ A`, a key of `A` corresponds to the same key of `B`
+  (for example `EyeLOpen` and `EyeROpen`). If `A.mirror = A`, the parameter is its own counterpart
+  and a key corresponds to the negated key (for example `AngleX`: the key 30 corresponds to −30).
+  None: no counterpart is recorded. Pairs SHOULD be bidirectional (`B.mirror = A`); unlike those of
+  meshes and deformers, validation does not check it.
 
 ### Depth
 
@@ -1060,8 +1068,9 @@ ignore the whole curve). `Point` is `{ "t": f32, "v": f32 }` (time in seconds, v
 | `inverse_stepped` | `to` (`Point`) | Jumps to `to.v` right after the start of the segment. |
 
 - The first segment of a curve MUST be `start`, and only the first. Each following segment starts
-  at the end point of the previous one. Writers MUST follow this rule; a runtime MAY ignore a curve
-  that breaks it. The times of successive points SHOULD NOT decrease.
+  at the end point of the previous one. Writers MUST follow this rule. A curve with no segments or
+  whose first segment is not `start` has no value; a runtime MAY ignore a curve with a later `start`
+  ([motion.md](motion.md#curves)). The times of successive points SHOULD NOT decrease.
 
 `MotionEvent`:
 
@@ -1188,14 +1197,23 @@ be equivalent.
      the part MUST be listed in the slot's `pose_parts` and be the `part` of an entry of the model's
      pose.
    - Physics rigs and colliders are appended after the model's.
-3. For each part listed in the `replaces` of an occupied slot (once per part), insert a new part with
-   ID `#replaced/<part id>`, opacity 0 and the part's former parent, and make it the part's parent.
-   The new parts are appended at the end of the parts. This hides the part regardless of how its own
-   opacity is animated.
+3. For each module, in the given order, and for each part listed in the `replaces` of the slot it
+   attaches to, in that order, insert a new part with ID `#replaced/<part id>`, name
+   `#replaced/<part name>`, a constant opacity of 0 (one keyform, no bindings) and the part's former
+   parent, and make it the part's parent. A part listed more than once (in several
+   slots, or twice in one slot) gets only one new part, at its first occurrence. The new parts are
+   appended at the end of the parts, after the modules' parts, in this order. This hides the part
+   regardless of how its own opacity is animated. (The order does not change the result of
+   evaluation, but it fixes the composed model.)
 4. The composed model MUST satisfy the [validation rules](#validation).
 
 The elements of the model keep their positions, so the indices of the model's parts, deformers and
 meshes are the same before and after composition.
+
+*Informative:* the order of the modules is chosen by the host. When a module is attached to a model
+that already has modules, the reference runtime appends it to the end of the list, unless a module
+on the same slot or with the same name is already attached; then the new module takes that module's
+place in the list.
 
 *Informative:* when the model has no physics settings but a module has rigs, the reference runtime
 composes them into settings with gravity `(0, 1)`, no wind and 60 Hz.
