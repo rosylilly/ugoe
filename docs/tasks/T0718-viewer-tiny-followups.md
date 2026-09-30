@@ -1,11 +1,11 @@
 ---
 id: T0718
 title: ビューア: ブラウザのドラッグ中の見立て・範囲の取っ手の向き・一覧の並びを覚える
-status: todo
+status: in-progress
 milestone: M4
 crates: [apps/viewer, docs]
 depends_on: [T0717]
-assignee:
+assignee: claude-worker-T0718
 ---
 
 # T0718: ビューアの小さな残り
