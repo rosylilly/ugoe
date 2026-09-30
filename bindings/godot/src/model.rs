@@ -1,23 +1,22 @@
-//! Godot に依存しない部分: バンドルの読み込み、マスクの段取り、フレームごとの幾何の準備。
+//! Godot に依存しない部分: バンドルとモジュールの読み込み、マスクの段取りとアトラス、光源の変換、
+//! フレームごとの幾何の準備。
 //!
 //! Godot の型を使わないので、エンジンなしの `cargo test` で確かめられる。
 //! 描画の式は `docs/spec/rendering.md`。
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
-use ugoe::Puppet;
 use ugoe::core::Vec2;
+use ugoe::format::module_file::read_module;
 use ugoe::format::{Bundle, FormatError, TextureData};
 use ugoe::model::expression::Expression;
+use ugoe::model::module::Module;
 use ugoe::model::motion::Motion;
 use ugoe::model::{MaskMode, Model};
+use ugoe::render::{Light, Lighting, MAX_LIGHTS};
 use ugoe::runtime::{CompileError, CompiledModel};
-
-/// 1 つの描画可能要素が読めるマスクの数の上限。
-///
-/// シェーダのサンプラを要素ごとに固定の数だけ用意するため。仕様 (`docs/spec/rendering.md#精度`) では
-/// 上限がないが、このバインディングでは超えた分を無視する (読み込み時に警告を出す)。
-pub const MAX_MASKS: usize = 8;
+use ugoe::{DressUpChange, DressUpError, Puppet, TextureSource};
 
 /// 読み込みの失敗。
 #[derive(Debug, thiserror::Error)]
@@ -31,7 +30,7 @@ pub enum LoadError {
 /// 要素が読むマスク 1 つ。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MaskSlot {
-    /// [`MaskPlan::sources`] の番号 (マスクのテクスチャの番号)。
+    /// [`MaskPlan::sources`] の番号 (マスクのカバレッジの番号)。
     pub source: usize,
     pub invert: bool,
 }
@@ -40,23 +39,62 @@ pub struct MaskSlot {
 #[derive(Debug, Clone)]
 pub struct DrawableInfo {
     pub id: String,
-    /// テクスチャの番号 (`LoadedModel::textures`)。
+    /// テクスチャの番号 (`LoadedModel::texture`)。
     pub texture: usize,
     pub uvs: Vec<Vec2>,
     pub indices: Vec<u16>,
     pub culling: bool,
-    /// 読むマスク (同じメッシュ・同じ `invert` の重複は除く。最大 [`MAX_MASKS`])。
+    /// 読むマスク (同じメッシュ・同じ `invert` の重複は除く)。数に上限はない。
     pub masks: Vec<MaskSlot>,
     pub mask_mode: MaskMode,
+    /// ライティングを受けるか (`Model::lighting` と `Mesh::lit` の両方が true)。
+    pub lit: bool,
 }
 
-/// マスクの段取り: どのメッシュのカバレッジをテクスチャに描くか。
+/// マスクの段取り: どのメッシュのカバレッジを、どの段のアトラスに描くか。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MaskPlan {
     /// マスクとして参照されるメッシュの番号。入れ子のマスクが先に来る順 (依存するものが先)。
     pub sources: Vec<usize>,
-    /// 上限 ([`MAX_MASKS`]) を超えて無視したマスクの参照がある要素の ID。
-    pub truncated: Vec<String>,
+    /// `sources` ごとの段。自身がマスクを読まなければ 0、読むなら読むマスクの段の最大 + 1。
+    /// 段 `k` のカバレッジは、段 `k − 1` までのカバレッジを収めたアトラスを読んで描く。
+    pub levels: Vec<u32>,
+}
+
+impl MaskPlan {
+    /// アトラスの段の数 (マスクが無ければ 0)。
+    pub fn level_count(&self) -> usize {
+        self.levels.iter().max().map_or(0, |&l| l as usize + 1)
+    }
+}
+
+/// 着せ替えのモジュール (`.ugoemod`) 1 つ分: モジュールと、その画像。
+#[derive(Debug)]
+pub struct ModuleData {
+    pub module: Arc<Module>,
+    /// `module.textures` と同じ順。
+    textures: Vec<TextureData>,
+    /// `module.textures` と同じ順の法線マップ (無ければ `None`)。
+    normal_maps: Vec<Option<TextureData>>,
+}
+
+impl ModuleData {
+    /// `.ugoemod` のバイト列から読む。
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, FormatError> {
+        let file = read_module(bytes)?;
+        let normal_maps = (0..file.module.textures.len())
+            .map(|i| file.normal_map(i).cloned())
+            .collect();
+        Ok(Self {
+            module: Arc::new(file.module),
+            textures: file.textures,
+            normal_maps,
+        })
+    }
+
+    pub fn name(&self) -> &str {
+        &self.module.name
+    }
 }
 
 /// 読み込んだモデル 1 体分。
@@ -65,8 +103,14 @@ pub struct LoadedModel {
     pub puppet: Puppet,
     pub motions: Vec<Motion>,
     pub expressions: Vec<Expression>,
-    /// テクスチャの番号ごとの画像。バンドルに無い番号は `None` (白で代用する)。
-    pub textures: Vec<Option<TextureData>>,
+    /// 本体のテクスチャの番号ごとの画像。バンドルに無い番号は `None` (白で代用する)。
+    base_textures: Vec<Option<TextureData>>,
+    /// 本体のテクスチャの番号ごとの法線マップ。
+    base_normal_maps: Vec<Option<TextureData>>,
+    /// 取り付けているモジュール (`Puppet::modules` と同じ順)。
+    modules: Vec<Arc<ModuleData>>,
+    /// 今のモデルのテクスチャごとの出どころ (`Puppet::texture_sources`)。
+    sources: Vec<TextureSource>,
     pub drawables: Vec<DrawableInfo>,
     pub masks: MaskPlan,
 }
@@ -77,9 +121,10 @@ impl LoadedModel {
         Self::from_bundle(ugoe::format::read_bundle(bytes)?)
     }
 
-    /// 読み込んだバンドルから作る。物理・モーション・表情・テクスチャも使う。
+    /// 読み込んだバンドルから作る。物理・モーション・表情・テクスチャ・法線マップも使う。
     pub fn from_bundle(bundle: Bundle) -> Result<Self, LoadError> {
         let count = texture_count(&bundle.model);
+        let base_normal_maps = (0..count).map(|i| bundle.normal_map(i).cloned()).collect();
         let Bundle {
             model,
             physics,
@@ -94,21 +139,87 @@ impl LoadedModel {
             // `read_bundle` は物理の設定を検査済みで返す。
             puppet = puppet.with_physics(physics);
         }
-        let mut textures: Vec<Option<TextureData>> = textures.into_iter().map(Some).collect();
-        textures.resize(count, None);
-        let (drawables, masks) = drawables(puppet.instance().compiled().model());
-        Ok(Self {
+        let mut base_textures: Vec<Option<TextureData>> = textures.into_iter().map(Some).collect();
+        base_textures.resize(count, None);
+        let mut loaded = Self {
             puppet,
             motions,
             expressions,
-            textures,
-            drawables,
-            masks,
-        })
+            base_textures,
+            base_normal_maps,
+            modules: Vec::new(),
+            sources: Vec::new(),
+            drawables: Vec::new(),
+            masks: MaskPlan::default(),
+        };
+        loaded.refresh();
+        Ok(loaded)
     }
 
     pub fn model(&self) -> &Model {
         self.puppet.instance().compiled().model()
+    }
+
+    /// 描画に使うテクスチャの枚数。
+    pub fn texture_count(&self) -> usize {
+        texture_count(self.model())
+    }
+
+    /// 今のモデルの `index` 番のテクスチャの画像。無ければ `None` (白で代用する)。
+    pub fn texture(&self, index: usize) -> Option<&TextureData> {
+        match self.sources.get(index) {
+            Some(TextureSource::Module { module, index }) => {
+                self.module(module)?.textures.get(*index as usize)
+            }
+            Some(TextureSource::Base(i)) => self.base_textures.get(*i as usize)?.as_ref(),
+            // メッシュが `model.textures` の外を参照している (本体だけのとき)
+            None if self.modules.is_empty() => self.base_textures.get(index)?.as_ref(),
+            None => None,
+        }
+    }
+
+    /// 今のモデルの `index` 番のテクスチャの法線マップ。無ければ `None` (法線 `(0, 0, 1)`)。
+    pub fn normal_map(&self, index: usize) -> Option<&TextureData> {
+        match self.sources.get(index)? {
+            TextureSource::Module { module, index } => self
+                .module(module)?
+                .normal_maps
+                .get(*index as usize)?
+                .as_ref(),
+            TextureSource::Base(i) => self.base_normal_maps.get(*i as usize)?.as_ref(),
+        }
+    }
+
+    /// 取り付けているモジュール (合成の順)。
+    pub fn modules(&self) -> &[Arc<ModuleData>] {
+        &self.modules
+    }
+
+    fn module(&self, name: &str) -> Option<&ModuleData> {
+        self.modules
+            .iter()
+            .find(|m| m.name() == name)
+            .map(Arc::as_ref)
+    }
+
+    /// 取り付けるモジュールの組を `modules` にする (`Puppet::set_modules`。空なら本体だけに戻す)。
+    pub fn set_modules(
+        &mut self,
+        modules: Vec<Arc<ModuleData>>,
+    ) -> Result<DressUpChange, DressUpError> {
+        let arcs = modules.iter().map(|m| Arc::clone(&m.module)).collect();
+        let change = self.puppet.set_modules(arcs)?;
+        self.modules = modules;
+        self.refresh();
+        Ok(change)
+    }
+
+    /// モデルが変わったあとに、テクスチャの出どころと描画の情報を作り直す。
+    fn refresh(&mut self) {
+        self.sources = self.puppet.texture_sources();
+        let (drawables, masks) = drawables(self.model());
+        self.drawables = drawables;
+        self.masks = masks;
     }
 }
 
@@ -133,8 +244,7 @@ pub fn drawables(model: &Model) -> (Vec<DrawableInfo>, MaskPlan) {
         .enumerate()
         .map(|(i, m)| (m.id.as_str(), i))
         .collect();
-    // 各メッシュの参照 (メッシュの番号, invert)。重複を除き、上限で切る。
-    let mut truncated = Vec::new();
+    // 各メッシュの参照 (メッシュの番号, invert)。重複を除く。
     let refs: Vec<Vec<(usize, bool)>> = model
         .meshes
         .iter()
@@ -148,32 +258,50 @@ pub fn drawables(model: &Model) -> (Vec<DrawableInfo>, MaskPlan) {
                     out.push((i, r.invert));
                 }
             }
-            if out.len() > MAX_MASKS {
-                truncated.push(mesh.id.as_str().to_owned());
-                out.truncate(MAX_MASKS);
-            }
             out
         })
         .collect();
 
     // マスクとして使うメッシュを、入れ子のマスクが先に来る順に並べる (深さ優先の帰りがけ順)。
-    let mut order = Vec::new();
-    let mut seen = vec![false; model.meshes.len()];
-    fn visit(i: usize, refs: &[Vec<(usize, bool)>], seen: &mut [bool], order: &mut Vec<usize>) {
-        if seen[i] {
-            return;
-        }
-        seen[i] = true;
-        for &(j, _) in &refs[i] {
-            visit(j, refs, seen, order);
-        }
-        order.push(i);
+    // 段は、読むマスクの段の最大 + 1 (読まなければ 0)。
+    struct Walk<'a> {
+        refs: &'a [Vec<(usize, bool)>],
+        level: Vec<Option<u32>>,
+        order: Vec<usize>,
     }
+    impl Walk<'_> {
+        fn visit(&mut self, i: usize) -> u32 {
+            if let Some(level) = self.level[i] {
+                return level;
+            }
+            // 循環は検証で弾かれている。念のため、訪問中は 0 とみなして止める。
+            self.level[i] = Some(0);
+            let mut level = 0;
+            for k in 0..self.refs[i].len() {
+                let j = self.refs[i][k].0;
+                level = level.max(self.visit(j) + 1);
+            }
+            self.level[i] = Some(level);
+            self.order.push(i);
+            level
+        }
+    }
+    let mut walk = Walk {
+        refs: &refs,
+        level: vec![None; model.meshes.len()],
+        order: Vec::new(),
+    };
     for r in &refs {
         for &(j, _) in r {
-            visit(j, &refs, &mut seen, &mut order);
+            walk.visit(j);
         }
     }
+    let levels = walk
+        .order
+        .iter()
+        .map(|&i| walk.level[i].unwrap_or(0))
+        .collect();
+    let order = walk.order;
     let source_of: HashMap<usize, usize> = order.iter().enumerate().map(|(s, &i)| (i, s)).collect();
 
     let drawables = model
@@ -194,13 +322,14 @@ pub fn drawables(model: &Model) -> (Vec<DrawableInfo>, MaskPlan) {
                 })
                 .collect(),
             mask_mode: mesh.mask_mode.effective(),
+            lit: model.lighting && mesh.lit,
         })
         .collect();
     (
         drawables,
         MaskPlan {
             sources: order,
-            truncated,
+            levels,
         },
     )
 }
@@ -260,8 +389,11 @@ impl MaskArea {
         if largest > limit {
             scale *= limit / largest;
         }
-        let need = |len: f32| ((len * scale).ceil() as u32 + 2 * Self::PADDING).min(Self::MAX_SIZE);
-        let (need_w, need_h) = (need(size.x), need(size.y));
+        // 画素の格子をキャンバスの `1 / scale` 単位の格子に揃える (倍率 1 で画面の画素と重なり、縁がぼけない)。
+        let lo = (min * scale).floor();
+        let hi = (max * scale).ceil().max(lo);
+        let need = |len: f32| (len as u32 + 2 * Self::PADDING).min(Self::MAX_SIZE);
+        let (need_w, need_h) = (need(hi.x - lo.x), need(hi.y - lo.y));
         let (width, height) = match current {
             Some((w, h))
                 if w >= need_w
@@ -275,7 +407,7 @@ impl MaskArea {
         Self {
             width,
             height,
-            origin: min - Vec2::splat(pad / scale),
+            origin: (lo - Vec2::splat(pad)) / scale,
             scale,
         }
     }
@@ -288,6 +420,192 @@ impl MaskArea {
             self.width as f32 / self.scale,
             self.height as f32 / self.scale,
         ]
+    }
+}
+
+/// マスクのアトラスの配置: 各カバレッジの矩形の左上の画素と、アトラスの大きさ。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AtlasLayout {
+    pub width: u32,
+    pub height: u32,
+    pub positions: Vec<(u32, u32)>,
+}
+
+impl AtlasLayout {
+    /// 大きさ `sizes` の矩形を、1 辺 `max` 画素以内のアトラスに重ならないように並べる (棚詰め)。
+    /// 収まらなければ `None`。
+    pub fn pack(sizes: &[(u32, u32)], max: u32) -> Option<Self> {
+        if sizes.iter().any(|&(w, h)| w > max || h > max) {
+            return None;
+        }
+        let area: u64 = sizes
+            .iter()
+            .map(|&(w, h)| u64::from(w) * u64::from(h))
+            .sum();
+        let widest = sizes.iter().map(|s| s.0).max().unwrap_or(1).max(1);
+        // 正方形に近くなる幅から始め、高さが収まらなければ広げる。
+        let mut width = widest.max((area as f64).sqrt().ceil() as u32).min(max);
+        let mut order: Vec<usize> = (0..sizes.len()).collect();
+        order.sort_by_key(|&i| std::cmp::Reverse(sizes[i].1));
+        loop {
+            if let Some(layout) = Self::shelves(sizes, &order, width, max) {
+                return Some(layout);
+            }
+            if width == max {
+                return None;
+            }
+            width = (width + width / 4 + 1).min(max);
+        }
+    }
+
+    fn shelves(sizes: &[(u32, u32)], order: &[usize], width: u32, max: u32) -> Option<Self> {
+        let mut positions = vec![(0, 0); sizes.len()];
+        let (mut x, mut y, mut shelf, mut used) = (0u32, 0u32, 0u32, 1u32);
+        for &i in order {
+            let (w, h) = sizes[i];
+            if x + w > width {
+                y += shelf;
+                x = 0;
+                shelf = 0;
+            }
+            if y + h > max {
+                return None;
+            }
+            positions[i] = (x, y);
+            x += w;
+            shelf = shelf.max(h);
+            used = used.max(x);
+        }
+        Some(Self {
+            width: used,
+            height: (y + shelf).max(1),
+            positions,
+        })
+    }
+}
+
+/// マスクの表の 1 行の画素数 (表は RGBA の浮動小数点のテクスチャ)。
+pub const MASK_TABLE_WIDTH: usize = 256;
+
+/// シェーダがマスクを読むための表。1 画素が `vec4` 1 つ。
+///
+/// - 先頭にカバレッジ (`MaskPlan::sources`) ごとに 2 画素: キャンバス上の矩形 `(x, y, 幅, 高さ)` と、
+///   アトラスでの矩形 `(u, v, 幅, 高さ)` (0〜1)。
+/// - 続けて、要素ごとに読むマスクの列 (1 つが 1 画素: `(カバレッジの番号, 反転なら 1, 0, 0)`)。
+///   要素はその列の先頭の番号 ([`MaskTable::first`]) と数をシェーダに渡す。
+#[derive(Debug, Clone, PartialEq)]
+pub struct MaskTable {
+    texels: Vec<[f32; 4]>,
+    /// 要素ごとの、読むマスクの列の先頭の画素の番号。
+    pub first: Vec<i32>,
+}
+
+impl MaskTable {
+    pub fn new(drawables: &[DrawableInfo], sources: usize) -> Self {
+        let mut texels = vec![[0.0; 4]; 2 * sources];
+        let first = drawables
+            .iter()
+            .map(|d| {
+                let first = texels.len() as i32;
+                texels.extend(
+                    d.masks
+                        .iter()
+                        .map(|m| [m.source as f32, if m.invert { 1.0 } else { 0.0 }, 0.0, 0.0]),
+                );
+                first
+            })
+            .collect();
+        Self { texels, first }
+    }
+
+    /// カバレッジ `source` の場所を書く。`slot` はアトラスでの左上の画素、`atlas` はアトラスの大きさ。
+    pub fn set_source(
+        &mut self,
+        source: usize,
+        area: &MaskArea,
+        slot: (u32, u32),
+        atlas: (u32, u32),
+    ) {
+        let (aw, ah) = (atlas.0.max(1) as f32, atlas.1.max(1) as f32);
+        self.texels[2 * source] = area.rect();
+        self.texels[2 * source + 1] = [
+            slot.0 as f32 / aw,
+            slot.1 as f32 / ah,
+            area.width as f32 / aw,
+            area.height as f32 / ah,
+        ];
+    }
+
+    /// 表のテクスチャの大きさ (幅, 高さ)。
+    pub fn size(&self) -> (usize, usize) {
+        (
+            MASK_TABLE_WIDTH,
+            self.texels.len().div_ceil(MASK_TABLE_WIDTH).max(1),
+        )
+    }
+
+    /// テクスチャに書くバイト列 (RGBA の 32 ビット浮動小数点、リトルエンディアン)。
+    pub fn bytes(&self) -> Vec<u8> {
+        let (w, h) = self.size();
+        let mut out = Vec::with_capacity(w * h * 16);
+        for texel in &self.texels {
+            for v in texel {
+                out.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        out.resize(w * h * 16, 0);
+        out
+    }
+}
+
+/// シェーダに渡す光源 (`docs/spec/rendering.md#ライティング`)。参照レンダラと同じ形に直したもの。
+#[derive(Debug, Clone, PartialEq)]
+pub struct LightUniforms {
+    pub ambient: [f32; 3],
+    /// 平行光源: xyz = 光源へ向かう単位ベクトル, w = 0。点光源: xyz = 位置, w = 1。
+    pub vectors: Vec<[f32; 4]>,
+    /// rgb = 色, a = 点光源の `1 / range` (平行光源と減衰しない点光源は 0)。
+    pub colors: Vec<[f32; 4]>,
+}
+
+impl LightUniforms {
+    /// 使えない光源 (向きが 0・有限でない値・`range` が正でない) を除き、先頭の [`MAX_LIGHTS`] 個を使う。
+    pub fn new(lighting: &Lighting) -> Self {
+        let a = lighting.ambient;
+        let mut out = Self {
+            ambient: [a.r, a.g, a.b],
+            vectors: Vec::new(),
+            colors: Vec::new(),
+        };
+        for light in &lighting.lights {
+            if out.vectors.len() == MAX_LIGHTS {
+                break;
+            }
+            let (vector, color, inv_range) = match *light {
+                Light::Directional { direction, color } => {
+                    let [x, y, z] = direction;
+                    let length = (x * x + y * y + z * z).sqrt();
+                    if !(length.is_finite() && length > 0.0) {
+                        continue;
+                    }
+                    ([-x / length, -y / length, -z / length, 0.0], color, 0.0)
+                }
+                Light::Point {
+                    position,
+                    color,
+                    range,
+                } => {
+                    if !(position.iter().all(|v| v.is_finite()) && range > 0.0) {
+                        continue;
+                    }
+                    let [x, y, z] = position;
+                    ([x, y, z, 1.0], color, 1.0 / range)
+                }
+            };
+            out.vectors.push(vector);
+            out.colors.push([color.r, color.g, color.b, inv_range]);
+        }
+        out
     }
 }
 
@@ -329,7 +647,8 @@ mod tests {
         let mut loaded =
             LoadedModel::from_bundle_bytes(&bundle_bytes(fixtures::single_quad())).expect("load");
         assert_eq!(loaded.drawables.len(), 1);
-        assert_eq!(loaded.textures.len(), loaded.model().textures.len().max(1));
+        assert_eq!(loaded.texture_count(), loaded.model().textures.len().max(1));
+        assert!(loaded.texture(0).is_some());
         loaded.puppet.update(1.0 / 60.0);
         let state = &loaded.puppet.instance().drawables()[0];
         assert_eq!(state.positions.len(), loaded.drawables[0].uvs.len());
@@ -356,6 +675,9 @@ mod tests {
         };
         // Pupil -> Iris -> Sclera。Sclera のカバレッジを先に描く。
         assert_eq!(plan.sources, vec![pos("Sclera"), pos("Iris")]);
+        // Iris は Sclera を読むので 1 段目。
+        assert_eq!(plan.levels, vec![0, 1]);
+        assert_eq!(plan.level_count(), 2);
         let pupil = &drawables[pos("Pupil")];
         assert_eq!(
             pupil.masks,
@@ -373,7 +695,6 @@ mod tests {
             }]
         );
         assert!(drawables[pos("Sclera")].masks.is_empty());
-        assert!(plan.truncated.is_empty());
     }
 
     #[test]
@@ -385,6 +706,7 @@ mod tests {
         let invert: Vec<bool> = brow.masks.iter().map(|m| m.invert).collect();
         assert_eq!(invert, vec![false, true]);
         assert_eq!(plan.sources.len(), 2);
+        assert_eq!(plan.level_count(), 1);
 
         let model = fixtures::intersection_masks();
         let (drawables, _) = super::drawables(&model);
@@ -396,7 +718,7 @@ mod tests {
     }
 
     #[test]
-    fn masks_over_the_limit_are_truncated() {
+    fn many_masks_are_all_kept() {
         let mask_ref = |m: &ugoe::model::Mesh| MaskRef {
             mesh: m.id.clone(),
             invert: false,
@@ -405,21 +727,164 @@ mod tests {
         // 同じメッシュを同じ invert で 2 回参照しても 1 つと数える。
         let first = model.meshes[0].masks[0].clone();
         model.meshes[0].masks = vec![first.clone(), first];
-        let (d, plan) = drawables(&model);
+        let (d, _) = drawables(&model);
         assert_eq!(d[0].masks.len(), 1);
-        assert!(plan.truncated.is_empty());
 
-        // 上限を超える数の別のメッシュを参照させる。
+        // 以前の上限 (8) を超える数の別のメッシュを参照させても、すべて読む。
         let template = model.meshes[2].clone();
-        for i in 0..MAX_MASKS {
+        for i in 0..20 {
             let mut m = template.clone();
             m.id = MeshId::new(format!("Extra{i}"));
             model.meshes.push(m);
         }
         model.meshes[0].masks = model.meshes[1..].iter().map(mask_ref).collect();
         let (d, plan) = drawables(&model);
-        assert_eq!(d[0].masks.len(), MAX_MASKS);
-        assert_eq!(plan.truncated, vec![model.meshes[0].id.as_str().to_owned()]);
+        assert_eq!(d[0].masks.len(), model.meshes.len() - 1);
+        assert_eq!(plan.sources.len(), model.meshes.len() - 1);
+
+        let table = MaskTable::new(&d, plan.sources.len());
+        assert_eq!(table.first[0], 2 * plan.sources.len() as i32);
+        let (w, h) = table.size();
+        assert_eq!(table.bytes().len(), w * h * 16);
+    }
+
+    #[test]
+    fn mask_table_maps_canvas_to_the_atlas() {
+        let (d, plan) = drawables(&fixtures::nested_masks());
+        let mut table = MaskTable::new(&d, plan.sources.len());
+        let area = MaskArea::fit(Vec2::new(10.0, 20.0), Vec2::new(110.0, 70.0), 2.0, None);
+        table.set_source(1, &area, (100, 50), (400, 200));
+        assert_eq!(table.texels[2], area.rect());
+        assert_eq!(table.texels[3], [0.25, 0.25, 204.0 / 400.0, 104.0 / 200.0]);
+        // 要素ごとの列は表の後ろに続く (Pupil は Iris = カバレッジ 1 を読む)。
+        let pupil = d.iter().position(|d| d.id == "Pupil").expect("Pupil");
+        assert_eq!(
+            table.texels[table.first[pupil] as usize],
+            [1.0, 0.0, 0.0, 0.0]
+        );
+    }
+
+    #[test]
+    fn atlas_packs_without_overlap() {
+        let sizes = [(100, 40), (30, 80), (64, 64), (10, 10), (200, 20)];
+        let layout = AtlasLayout::pack(&sizes, 4096).expect("fits");
+        let rects: Vec<_> = sizes
+            .iter()
+            .zip(&layout.positions)
+            .map(|(&(w, h), &(x, y))| (x, y, x + w, y + h))
+            .collect();
+        for (i, a) in rects.iter().enumerate() {
+            assert!(a.2 <= layout.width && a.3 <= layout.height);
+            for b in &rects[i + 1..] {
+                assert!(
+                    a.2 <= b.0 || b.2 <= a.0 || a.3 <= b.1 || b.3 <= a.1,
+                    "{a:?} {b:?}"
+                );
+            }
+        }
+        // 収まらなければ None。
+        assert_eq!(AtlasLayout::pack(&[(100, 100); 5], 150), None);
+        assert!(AtlasLayout::pack(&[(100, 100); 2], 200).is_some());
+        assert_eq!(AtlasLayout::pack(&[(300, 10)], 200), None);
+    }
+
+    #[test]
+    fn lights_follow_the_reference_renderer() {
+        use ugoe::core::Rgb;
+        let lighting = Lighting {
+            ambient: Rgb::new(0.2, 0.3, 0.4),
+            lights: vec![
+                Light::Directional {
+                    direction: [0.0, 0.0, 0.0],
+                    color: Rgb::WHITE,
+                },
+                Light::Directional {
+                    direction: [3.0, 0.0, -4.0],
+                    color: Rgb::new(1.0, 0.5, 0.0),
+                },
+                Light::Point {
+                    position: [10.0, 20.0, 30.0],
+                    color: Rgb::WHITE,
+                    range: 4.0,
+                },
+                Light::Point {
+                    position: [0.0, 0.0, 0.0],
+                    color: Rgb::WHITE,
+                    range: f32::NAN,
+                },
+            ],
+        };
+        let u = LightUniforms::new(&lighting);
+        assert_eq!(u.ambient, [0.2, 0.3, 0.4]);
+        assert_eq!(
+            u.vectors,
+            vec![[-0.6, -0.0, 0.8, 0.0], [10.0, 20.0, 30.0, 1.0]]
+        );
+        assert_eq!(u.colors, vec![[1.0, 0.5, 0.0, 0.0], [1.0, 1.0, 1.0, 0.25]]);
+
+        let many = Lighting {
+            ambient: Rgb::WHITE,
+            lights: vec![
+                Light::Point {
+                    position: [0.0; 3],
+                    color: Rgb::WHITE,
+                    range: f32::INFINITY,
+                };
+                MAX_LIGHTS + 3
+            ],
+        };
+        let u = LightUniforms::new(&many);
+        assert_eq!(u.vectors.len(), MAX_LIGHTS);
+        assert_eq!(u.colors[0][3], 0.0);
+    }
+
+    #[test]
+    fn lit_meshes_need_the_model_switch() {
+        let mut model = fixtures::single_quad();
+        model.meshes[0].lit = true;
+        assert!(!drawables(&model).0[0].lit);
+        model.lighting = true;
+        assert!(drawables(&model).0[0].lit);
+    }
+
+    #[test]
+    fn modules_bring_their_textures() {
+        use ugoe::format::module_file::{ModuleFile, write_module};
+
+        let base = fixtures::dress_up_base();
+        let mut loaded = LoadedModel::from_bundle_bytes(&bundle_bytes(base.clone())).expect("load");
+        let base_count = loaded.texture_count();
+        let module = fixtures::dress_module();
+        let mut file = ModuleFile::new(module.clone());
+        file.textures = module
+            .textures
+            .iter()
+            .map(|_| TextureData {
+                format: ugoe::format::TextureFormat::Png,
+                bytes: FAKE_PNG.to_vec(),
+            })
+            .collect();
+        let data =
+            Arc::new(ModuleData::from_bytes(&write_module(&file).expect("write")).expect("read"));
+        let name = data.name().to_owned();
+        let change = loaded.set_modules(vec![Arc::clone(&data)]).expect("attach");
+        assert_eq!(loaded.modules().len(), 1);
+        assert_eq!(change.texture_count as usize, loaded.texture_count());
+        assert!(loaded.texture_count() > base_count || module.textures.is_empty());
+        if !module.textures.is_empty() {
+            assert_eq!(
+                loaded.texture(base_count).map(|t| t.bytes.clone()),
+                Some(FAKE_PNG.to_vec())
+            );
+        }
+        assert_eq!(loaded.drawables.len(), loaded.model().meshes.len());
+        assert!(loaded.model().meshes.len() > base.meshes.len());
+
+        assert_eq!(loaded.modules()[0].name(), name);
+        let change = loaded.set_modules(Vec::new()).expect("detach");
+        assert_eq!(change.texture_count as usize, base_count);
+        assert!(loaded.modules().is_empty());
+        assert_eq!(loaded.drawables.len(), base.meshes.len());
     }
 
     #[test]
@@ -464,6 +929,11 @@ mod tests {
         assert_eq!((b.width, b.height), (204, 104));
         let c = MaskArea::fit(Vec2::ZERO, Vec2::new(10.0, 10.0), 2.0, Some((204, 104)));
         assert_eq!((c.width, c.height), (24, 24));
+
+        // 原点は画素の格子に揃える。
+        let e = MaskArea::fit(Vec2::new(10.3, 20.7), Vec2::new(20.2, 30.1), 1.0, None);
+        assert_eq!(e.origin, Vec2::new(8.0, 18.0));
+        assert_eq!((e.width, e.height), (15, 15));
 
         // 上限を超えるなら解像度を下げる。
         let d = MaskArea::fit(Vec2::ZERO, Vec2::new(10000.0, 100.0), 1.0, None);

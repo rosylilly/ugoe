@@ -1,5 +1,7 @@
-# ビルドの出力 (build.mjs が example/bin/ にライブラリを、example/models/ に見本のモデルを置く)
+# ビルドの出力 (build.mjs が example/addons/ugoe/bin/ にライブラリを、example/models/ に見本のモデルを置く)
 /target/
 /example/.godot/
-/example/bin/
+/example/addons/ugoe/bin/
 /example/models/*.ugoe
+/example/models/*.ugoemod
+/example/models/*.uid

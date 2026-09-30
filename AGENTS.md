@@ -104,7 +104,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 ### 外部のコードとライセンス
 
 - **ライセンス:** `crates/`・`bindings/`・`docs/` は MIT、`apps/editor/`・`apps/viewer/`・`packages/` は GPL-3.0-only ([ADR 0018](docs/adr/0018-licensing-and-1.0-scope.md)・[ADR 0019](docs/adr/0019-viewer-license.md)・[ADR 0025](docs/adr/0025-web-runtime-package.md))。MIT の `bindings/` から GPL のコードを import したり写したりしない。新しいクレートは `license.workspace = true` を書く。
-- **MIT のクレートに、コピーレフト (MPL・LGPL・GPL など) のライブラリを依存させない。** `just licenses` (`just ci` に含まれる) が依存するクレートのライセンスを検査する。例外は `bindings/godot` で、ワークスペースの外に置いて godot-rust (MPL-2.0) にだけ依存を許す ([ADR 0026](docs/adr/0026-godot-binding.md)。検査は `bindings/godot/check-licenses.mjs`)。
+- **MIT のクレートに、コピーレフト (MPL・LGPL・GPL など) のライブラリを依存させない。** `just licenses` (`just ci` に含まれる) が依存するクレートのライセンスを検査する。例外は `bindings/godot` で、ワークスペースの外に置いて godot-rust (MPL-2.0) にだけ依存を許す ([ADR 0026](docs/adr/0026-godot-binding.md)。検査は `node scripts/check-licenses.mjs --godot`)。
 
 - **Live2D Cubism SDK などの外部 SDK のソースを、リポジトリの中に置かない (ダウンロードしない)。コードも写さない。** 挙動を調べるためにソースを読むのはよいが、読むときはリポジトリの外 (一時ディレクトリなど) で読む。
 - 調べて分かった挙動は、仕様書や ADR に「何をするか」として自分の言葉で書き、出典の URL を示す。

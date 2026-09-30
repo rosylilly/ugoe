@@ -117,6 +117,49 @@ jobs:
       - name: GPU tests
         run: just test-gpu -- --nocapture
 
+  # Godot のバインディング (bindings/godot。ワークスペースの外、ADR 0026): 依存のライセンス・ヘッドレスの Godot での
+  # 動作 (smoke.gd)・`ugoe render` の画像との比べ合わせ (conformance.gd)。`just godot-check` と同じ。
+  # 版を固定する: Godot は公式のビルド (SHA-512 を書いておいて確かめる)、Xvfb と Mesa はランナーの ubuntu-24.04 のもの。
+  # Godot を上げるときは、リリースの SHA512-SUMS.txt の値に GODOT_SHA512 を書き換える。
+  # Godot は Xvfb の上の llvmpipe (Compatibility / OpenGL) で、参照の画像 (ugoe render) は EGL の llvmpipe で描く。
+  godot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GODOT_VERSION: 4.7.1-stable
+      GODOT_SHA512: 4ccdab7a48eeccbe8819a2fc1f6262f8d72065d98601bcb3743fcbd7ebd39f373758a788ee3293a05ec5b2c48538266c437404312e372225cd2df273945a2de9
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      WGPU_BACKEND: gl
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Xvfb and Mesa
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb xauth libgl1-mesa-dri libegl1 libegl-mesa0 libglx-mesa0 \
+            libxcursor1 libxinerama1 libxrandr2 libxi6 libfontconfig1
+          dpkg-query -W xvfb libgl1-mesa-dri
+      - name: Install Godot
+        run: |
+          name="Godot_v${GODOT_VERSION}_linux.x86_64"
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}"
+          cd "$RUNNER_TEMP"
+          curl -fsSLO "$base/$name.zip"
+          echo "$GODOT_SHA512  $name.zip" | sha512sum -c -
+          unzip -q "$name.zip" -d godot
+          echo "GODOT=$RUNNER_TEMP/godot/$name" >> "$GITHUB_ENV"
+      - name: Install Rust toolchain (rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: godot
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .tool-versions
+      - uses: extractions/setup-just@v4
+      - name: Godot binding
+        run: just godot-check
+
   # フロントエンドは `just wasm` の生成物 (ugoe-wasm の JS バインディング) を読むので、
   # 先に wasm をビルドしてから、本物の型で検査・ビルドする。
   web:

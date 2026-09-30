@@ -89,6 +89,17 @@ ffi-header:
 ffi-check:
     @node scripts/ffi.mjs check
 
+# `just godot-build --release` でリリースビルド。Godot は要らない。
+# Godot のバインディング (bindings/godot、ADR 0026) をビルドし、見本 (bindings/godot/example) に置く
+godot-build *args:
+    node bindings/godot/build.mjs {{args}}
+
+# Godot 4.4 以降 (環境変数 GODOT、既定は godot) と、画面が無ければ xvfb-run が要る (無ければ入れ方を示して止まる)。
+# `just ci` には含めない (CI では別のジョブ)。`just godot-check --only dress-up` で比べるモデルを絞れる。
+# Godot のバインディングの検査 (ライセンス・ヘッドレスの Godot での動作・`ugoe render` との比べ合わせ)
+godot-check *args:
+    node bindings/godot/build.mjs --check --conformance {{args}}
+
 # wasm ターゲットでビルドできるか (ブラウザ専用のコード `src/web.rs` も clippy で検査する)
 wasm-check:
     cargo clippy -p ugoe-wasm --target wasm32-unknown-unknown -- -D warnings

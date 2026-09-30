@@ -10,10 +10,14 @@
 //   (docs/adr/0025-web-runtime-package.md)。
 // - 公開仕様 (spec/) は CC BY 4.0 (docs/adr/0021-public-specification.md)。spec/LICENSE が
 //   CC BY 4.0 の条文であることを確かめる。
+// - Godot のバインディング (bindings/godot) はルートのワークスペースの外にあり、`--godot` を付けたときだけ
+//   それを検査する (docs/adr/0026-godot-binding.md)。MIT で、依存は寛容なライセンスに限る。例外として
+//   godot-rust のクレートだけ MPL-2.0 を認める。`node bindings/godot/build.mjs --check` が実行する。
 // ライセンスが SPDX の式で書かれていない依存を追加する場合は、EXCEPTIONS に理由付きで登録する。
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const EDITOR_CRATES = new Set(["ugoe-editor", "ugoe-viewer"]);
 const EXPECTED = { mit: "MIT", editor: "GPL-3.0-only" };
@@ -51,6 +55,17 @@ const GPL_COMPATIBLE = new Set([
 const EXCEPTIONS_OK = new Set(["LLVM-exception"]);
 // SPDX の式を持たない依存 (名前 -> 理由)
 const EXCEPTIONS = {};
+// MPL-2.0 を認める godot-rust のクレート (--godot のときだけ。gdextension-api は Godot の API の定義を収めたクレート)
+const GODOT_RUST = new Set([
+  "gdextension-api",
+  "godot",
+  "godot-bindings",
+  "godot-cell",
+  "godot-codegen",
+  "godot-core",
+  "godot-ffi",
+  "godot-macros",
+]);
 
 /** SPDX のライセンス式が、許可された集合の範囲で満たせるか。 */
 function satisfies(expr, allowed) {
@@ -94,12 +109,60 @@ function satisfies(expr, allowed) {
   return or();
 }
 
-const meta = JSON.parse(
-  execFileSync("cargo", ["metadata", "--format-version", "1", "--locked"], {
-    encoding: "utf8",
-    maxBuffer: 256 * 1024 * 1024,
-  }),
-);
+/** `cargo metadata` の結果 (`manifest` を省くとルートのワークスペース)。 */
+function cargoMetadata(manifest) {
+  const args = ["metadata", "--format-version", "1", "--locked"];
+  if (manifest) args.push("--manifest-path", manifest);
+  return JSON.parse(
+    execFileSync("cargo", args, { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 }),
+  );
+}
+
+/** `id` から dev 以外の依存をたどったパッケージの ID の集合 (`id` 自身を含む)。 */
+function runtimeDeps(nodes, id) {
+  const seen = new Set();
+  const stack = [id];
+  while (stack.length > 0) {
+    const cur = stack.pop();
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    for (const dep of nodes.get(cur).deps) {
+      if (dep.dep_kinds.some((k) => k.kind !== "dev")) stack.push(dep.pkg);
+    }
+  }
+  return seen;
+}
+
+if (process.argv.includes("--godot")) {
+  const meta = cargoMetadata(
+    fileURLToPath(new URL("../bindings/godot/Cargo.toml", import.meta.url)),
+  );
+  const byId = new Map(meta.packages.map((p) => [p.id, p]));
+  const nodes = new Map(meta.resolve.nodes.map((n) => [n.id, n]));
+  const errors = [];
+  const [rootId] = meta.workspace_members;
+  const rootPkg = byId.get(rootId);
+  if (rootPkg.license !== EXPECTED.mit) {
+    errors.push(
+      `${rootPkg.name}: license は "${EXPECTED.mit}" であるべき (現在: ${rootPkg.license})`,
+    );
+  }
+  const deps = runtimeDeps(nodes, rootId);
+  for (const id of deps) {
+    if (id === rootId) continue;
+    const dep = byId.get(id);
+    const allowed = GODOT_RUST.has(dep.name) ? new Set([...PERMISSIVE, "MPL-2.0"]) : PERMISSIVE;
+    if (!dep.license || !satisfies(dep.license, allowed)) {
+      errors.push(`${rootPkg.name} -> ${dep.name} ${dep.version}: ${dep.license} は使えない`);
+    }
+  }
+  for (const e of errors) console.error(`error: ${e}`);
+  if (errors.length === 0)
+    console.log(`licenses ok (${rootPkg.name}, ${deps.size - 1} dependencies)`);
+  process.exit(errors.length > 0 ? 1 : 0);
+}
+
+const meta = cargoMetadata();
 const byId = new Map(meta.packages.map((p) => [p.id, p]));
 const nodes = new Map(meta.resolve.nodes.map((n) => [n.id, n]));
 const members = new Set(meta.workspace_members);
@@ -114,18 +177,7 @@ for (const id of members) {
   }
   const allowed = editor ? GPL_COMPATIBLE : PERMISSIVE;
 
-  // dev 以外の依存をたどる
-  const seen = new Set();
-  const stack = [id];
-  while (stack.length > 0) {
-    const cur = stack.pop();
-    if (seen.has(cur)) continue;
-    seen.add(cur);
-    for (const dep of nodes.get(cur).deps) {
-      if (dep.dep_kinds.some((k) => k.kind !== "dev")) stack.push(dep.pkg);
-    }
-  }
-  for (const depId of seen) {
+  for (const depId of runtimeDeps(nodes, id)) {
     if (members.has(depId)) continue;
     const dep = byId.get(depId);
     if (!dep.license) {

@@ -2,14 +2,18 @@
 //!
 //! `ugoe_model::fixtures` のマスクのモデルに色と半透明のテクスチャを付け、マスク・合成モード・
 //! 乗算色とスクリーン色・裏面カリング・乗算済みアルファへの変換の違いが画素に出るようにする。
+//! 1 つの要素が多くのマスクを読むモデル (`many-masks`) と、パラメータで入れ子のマスクが動くモデル
+//! (`moving-masks`。アニメーション中にマスクが 1 フレーム遅れないかを確かめる) も書き出す。
 //!
 //!   cargo run --example conformance_bundles -- <出力先のディレクトリ>
 
 use std::path::PathBuf;
 
-use ugoe::core::Rgb;
+use ugoe::core::{Rgb, Vec2};
 use ugoe::format::{Bundle, TextureData, TextureFormat};
-use ugoe::model::{BlendMode, Mesh, Model, TextureRef, fixtures};
+use ugoe::model::{
+    BlendMode, KeyformBinding, KeyformGrid, MaskRef, Mesh, MeshId, Model, TextureRef, fixtures,
+};
 
 /// 64x64 の、色とアルファが位置で変わるテクスチャ (PNG、乗算していないアルファ)。
 fn texture() -> Vec<u8> {
@@ -80,6 +84,85 @@ fn blend_modes() -> Model {
     model
 }
 
+/// 四角形のメッシュ `mesh` の位置を `(x0, y0)`〜`(x1, y1)` にする (頂点の順は元のまま)。
+fn place(mesh: &mut Mesh, x0: f32, y0: f32, x1: f32, y1: f32) {
+    for k in &mut mesh.keyforms.keyforms {
+        let lo = k.positions.iter().fold(k.positions[0], |lo, &p| lo.min(p));
+        for p in &mut k.positions {
+            p.x = if p.x <= lo.x { x0 } else { x1 };
+            p.y = if p.y <= lo.y { y0 } else { y1 };
+        }
+    }
+}
+
+/// `Face` が 12 個のマスク (うち 3 個は反転) を読む。以前のバインディングの上限 (8) を超える数。
+fn many_masks() -> Model {
+    let mut model = colored(fixtures::nested_masks());
+    model.meta.name = "many_masks".into();
+    let template = model.meshes[2].clone();
+    model.meshes.clear();
+    let mut face = template.clone();
+    face.id = MeshId::new("Face");
+    place(&mut face, 24.0, 24.0, 232.0, 232.0);
+    face.masks = Vec::new();
+    for i in 0..12u16 {
+        let mut mask = template.clone();
+        mask.id = MeshId::new(format!("Mask{i}"));
+        mask.masks.clear();
+        let (col, row) = (f32::from(i % 4), f32::from(i / 4));
+        let (x, y) = (16.0 + col * 56.0, 24.0 + row * 72.0);
+        place(&mut mask, x, y, x + 64.0, y + 60.0);
+        for k in &mut mask.keyforms.keyforms {
+            k.draw_order = 100.0 + f32::from(i);
+        }
+        face.masks.push(if i % 4 == 3 {
+            MaskRef::inverted(mask.id.as_str())
+        } else {
+            MaskRef::normal(mask.id.as_str())
+        });
+        model.meshes.push(mask);
+    }
+    for k in &mut face.keyforms.keyforms {
+        k.draw_order = 900.0;
+    }
+    model.meshes.push(face);
+    model
+}
+
+/// 入れ子のマスク (白目 → 黒目 → 瞳孔) の白目と黒目を、パラメータ `Move` (-1〜1) で左右に動かす。
+fn moving_masks() -> Model {
+    let mut model = colored(fixtures::nested_masks());
+    model.meta.name = "moving_masks".into();
+    let mut parameter = fixtures::mixed_masks().parameters[0].clone();
+    parameter.id = "Move".into();
+    parameter.name = "Move".into();
+    parameter.min = -1.0;
+    parameter.max = 1.0;
+    parameter.default = 0.0;
+    model.parameters.push(parameter);
+    for mesh in &mut model.meshes {
+        if mesh.id.as_str() == "Pupil" {
+            continue;
+        }
+        let base = mesh.keyforms.keyforms[0].clone();
+        let shifted = |dx: f32| {
+            let mut k = base.clone();
+            for p in &mut k.positions {
+                *p += Vec2::new(dx, 0.0);
+            }
+            k
+        };
+        mesh.keyforms = KeyformGrid::new(
+            vec![KeyformBinding {
+                parameter: "Move".into(),
+                keys: vec![-1.0, 1.0],
+            }],
+            vec![shifted(-40.0), shifted(40.0)],
+        );
+    }
+    model
+}
+
 fn main() {
     let out = PathBuf::from(
         std::env::args()
@@ -96,6 +179,8 @@ fn main() {
             colored(fixtures::intersection_masks()),
         ),
         ("blend-modes", blend_modes()),
+        ("many-masks", many_masks()),
+        ("moving-masks", moving_masks()),
     ];
     for (name, model) in models {
         let mut bundle = Bundle::new(model);

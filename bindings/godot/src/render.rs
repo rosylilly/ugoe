@@ -1,8 +1,13 @@
 //! 評価結果を Godot の 2D の描画 (RenderingServer のキャンバスアイテム) で描く。
 //!
 //! - 描画可能要素ごとに 1 つのキャンバスアイテムと `ShaderMaterial` を持ち、描画順は draw index で決める。
-//! - マスクとして参照されるメッシュごとに `SubViewport` を 1 つ持ち、そのメッシュのカバレッジを描く。
-//!   マスクを読む要素は、そのテクスチャをキャンバス座標から読む (ノードの変形に左右されない)。
+//! - マスクのカバレッジは、すべてを 1 枚のアトラス (`SubViewport`) に並べて描く (アトラスでの場所は
+//!   [`AtlasLayout`]、シェーダはそれを表 [`MaskTable`] から読む)。マスクを読む要素は、アトラスをキャンバス座標から読む
+//!   (ノードの変形に左右されない)。
+//! - 入れ子のマスク (マスク用メッシュ自身がマスクを読む) は段に分ける ([`crate::model::MaskPlan::levels`])。
+//!   段 `k` のアトラスは、段 `k − 1` のアトラスを写してから段 `k` のカバレッジを描く。段 `k − 1` のビューポートを
+//!   段 `k` のビューポートの子にするので、Godot は同じフレームの中で必ず先に描く (子のビューポートが先)。
+//!   要素は最後の段のアトラスだけを読む。
 //! - 裏面カリングは CPU で三角形を選んで行う (キャンバス座標の向きだけで決まるため)。
 
 use godot::classes::image::Format;
@@ -10,29 +15,39 @@ use godot::classes::rendering_server::{CanvasItemTextureFilter, CanvasItemTextur
 use godot::classes::sub_viewport::UpdateMode;
 use godot::classes::{
     Image, ImageTexture, Node, Node2D, RenderingServer, Shader, ShaderMaterial, SubViewport,
+    ViewportTexture,
 };
 use godot::prelude::*;
 use ugoe::core::Vec2 as UVec2;
-use ugoe::format::TextureFormat;
+use ugoe::format::{TextureData, TextureFormat};
 use ugoe::model::{BlendMode, MaskMode};
 use ugoe::runtime::{DrawableChanges, DrawableState};
 
 use crate::model::{
-    DrawableInfo, LoadedModel, MaskArea, MaskSlot, bounds, front_facing, premultiply,
+    AtlasLayout, LightUniforms, LoadedModel, MaskArea, MaskTable, bounds, front_facing, premultiply,
 };
 use crate::shader::{self, ShaderKind};
 
-/// マスクのカバレッジを描く `SubViewport` 1 つ分。
-struct MaskTarget {
+/// アトラスの段 1 つ分 (`SubViewport` 1 つ)。
+struct MaskLevel {
+    viewport: Gd<SubViewport>,
+    /// ビューポートの中の根。カバレッジのキャンバスアイテムの親の親。
+    _root: Gd<Node2D>,
+    /// 前の段のアトラスを写すキャンバスアイテム。カバレッジのキャンバスアイテムはこの子 (写した後に描く)。
+    copy: Rid,
+    _copy_material: Option<Gd<ShaderMaterial>>,
+    texture: Gd<ViewportTexture>,
+}
+
+/// マスクのカバレッジ 1 つ分。
+struct MaskItem {
     /// マスクとして使うメッシュの番号。
     mesh: usize,
-    viewport: Gd<SubViewport>,
-    /// キャンバス座標をテクスチャの画素へ写すノード。
-    root: Gd<Node2D>,
     item: Rid,
     material: Gd<ShaderMaterial>,
-    texture: Variant,
     area: Option<MaskArea>,
+    /// アトラスでの左上の画素。
+    slot: (u32, u32),
 }
 
 /// 描画可能要素 1 つ分。
@@ -41,16 +56,34 @@ struct DrawItem {
     material: Gd<ShaderMaterial>,
 }
 
+/// テクスチャの番号ごとの、デコードしたテクスチャと法線マップ。
+#[derive(Default)]
+pub struct DecodedTexture {
+    color: Option<Gd<ImageTexture>>,
+    normal: Option<Gd<ImageTexture>>,
+}
+
+/// テクスチャの番号ごとのデコードの結果 (`None` はまだデコードしていない)。
+/// 着せ替えでレンダラを作り直すときに、変わっていないテクスチャを使い回す。
+pub type TextureCache = Vec<Option<DecodedTexture>>;
+
 /// 1 体分の描画の資源。
 pub struct Renderer {
     container: Rid,
     items: Vec<DrawItem>,
-    masks: Vec<MaskTarget>,
-    textures: Vec<Option<Gd<ImageTexture>>>,
+    levels: Vec<MaskLevel>,
+    masks: Vec<MaskItem>,
+    table: MaskTable,
+    table_texture: Option<Gd<ImageTexture>>,
+    /// アトラスの大きさ (画素)。
+    atlas: (u32, u32),
+    textures: TextureCache,
     /// 読み込んでから最初の描画か (すべてを描き直す)。
     fresh: bool,
     /// 直前の描画で使ったマスクの解像度 (キャンバスの 1 単位あたりの画素数)。
     mask_scale: f32,
+    /// アトラスに収まらなかったときに、マスクの解像度に掛ける倍率 (解像度が変わると 1 に戻す)。
+    shrink: f32,
     // 毎フレームの作業用
     points: PackedVector2Array,
     uvs: Vec<PackedVector2Array>,
@@ -64,6 +97,7 @@ impl std::fmt::Debug for Renderer {
         f.debug_struct("Renderer")
             .field("drawables", &self.items.len())
             .field("masks", &self.masks.len())
+            .field("levels", &self.levels.len())
             .finish_non_exhaustive()
     }
 }
@@ -88,8 +122,8 @@ fn vec2(p: UVec2) -> Vector2 {
     Vector2::new(p.x, p.y)
 }
 
-/// 画像を Godot のテクスチャにする。PNG は乗算済みアルファに変換する。読めなければ `None` (白で描く)。
-fn load_texture(data: &ugoe::format::TextureData) -> Option<Gd<ImageTexture>> {
+/// 画像をデコードする。読めなければ `None`。
+fn decode(data: &TextureData, what: &str) -> Option<Gd<Image>> {
     let mut image = Image::new_gd();
     let bytes = PackedByteArray::from(data.bytes.as_slice());
     let err = match data.format {
@@ -97,9 +131,15 @@ fn load_texture(data: &ugoe::format::TextureData) -> Option<Gd<ImageTexture>> {
         TextureFormat::Ktx2 => image.load_ktx_from_buffer(&bytes),
     };
     if err != godot::global::Error::OK || image.is_empty() {
-        godot_warn!("ugoe: failed to decode a texture ({:?})", data.format);
+        godot_warn!("ugoe: failed to decode a {what} ({:?})", data.format);
         return None;
     }
+    Some(image)
+}
+
+/// 画像を Godot のテクスチャにする。PNG は乗算済みアルファに変換する。読めなければ `None` (白で描く)。
+fn load_texture(data: &TextureData) -> Option<Gd<ImageTexture>> {
+    let mut image = decode(data, "texture")?;
     // TODO(T0406): KTX2 が圧縮形式なら、乗算済みかどうかを確かめずにそのまま使っている。
     if data.format == TextureFormat::Png {
         if image.get_format() != Format::RGBA8 {
@@ -119,10 +159,18 @@ fn load_texture(data: &ugoe::format::TextureData) -> Option<Gd<ImageTexture>> {
     ImageTexture::create_from_image(&image)
 }
 
-fn texture_rid(textures: &[Option<Gd<ImageTexture>>], index: usize) -> Rid {
+/// 法線マップを Godot のテクスチャにする。アルファは掛けない (`docs/spec/rendering.md#ホストでのライティング`)。
+/// 読めなければ `None` (法線 `(0, 0, 1)`)。
+fn load_normal_map(data: &TextureData) -> Option<Gd<ImageTexture>> {
+    let image = decode(data, "normal map")?;
+    ImageTexture::create_from_image(&image)
+}
+
+fn texture_rid(textures: &TextureCache, index: usize) -> Rid {
     textures
         .get(index)
         .and_then(Option::as_ref)
+        .and_then(|t| t.color.as_ref())
         .map_or(Rid::Invalid, |t| t.get_rid())
 }
 
@@ -135,103 +183,153 @@ fn new_item(parent: Rid) -> Rid {
     item
 }
 
-/// 要素のマスクの uniform を設定する。
+/// マスクを読む uniform (表と、要素が読むマスクの列) を設定する。
 fn set_mask_params(
     material: &mut Gd<ShaderMaterial>,
-    info: &DrawableInfo,
-    masks: &[MaskTarget],
-    first: bool,
+    atlas: &Gd<ViewportTexture>,
+    table: &Option<Gd<ImageTexture>>,
+    first: i32,
+    count: usize,
+    mode: MaskMode,
 ) {
-    if info.masks.is_empty() {
+    if count == 0 {
         return;
     }
-    for (i, MaskSlot { source, .. }) in info.masks.iter().enumerate() {
-        let target = &masks[*source];
-        if first {
-            material.set_shader_parameter(&shader::mask_texture_param(i), &target.texture);
-        }
-        if let Some(area) = target.area {
-            let [x, y, w, h] = area.rect();
-            material.set_shader_parameter(
-                &shader::mask_rect_param(i),
-                &Vector4::new(x, y, w, h).to_variant(),
-            );
-        }
+    material.set_shader_parameter("mask_atlas", &atlas.to_variant());
+    if let Some(table) = table {
+        material.set_shader_parameter("mask_table", &table.to_variant());
     }
-    if first {
-        let inverts = info
-            .masks
-            .iter()
-            .enumerate()
-            .filter(|(_, m)| m.invert)
-            .fold(0i32, |acc, (i, _)| acc | (1 << i));
-        material.set_shader_parameter("mask_count", &(info.masks.len() as i32).to_variant());
-        material.set_shader_parameter("mask_inverts", &inverts.to_variant());
-        material.set_shader_parameter(
-            "mask_intersection",
-            &(info.mask_mode == MaskMode::Intersection).to_variant(),
-        );
-    }
+    material.set_shader_parameter("mask_first", &first.to_variant());
+    material.set_shader_parameter("mask_count", &(count as i32).to_variant());
+    material.set_shader_parameter(
+        "mask_intersection",
+        &(mode == MaskMode::Intersection).to_variant(),
+    );
 }
 
 impl Renderer {
     /// 資源を作る。`owner` はキャンバスアイテムの親とマスクのビューポートを持つノード。
-    pub fn new(owner: &mut Gd<Node2D>, model: &LoadedModel) -> Self {
+    /// `textures` は前のレンダラから引き継ぐデコード済みのテクスチャ (空でよい)。
+    pub fn new(
+        owner: &mut Gd<Node2D>,
+        model: &LoadedModel,
+        mut textures: TextureCache,
+        lighting: &LightUniforms,
+    ) -> Self {
         let premul = make_shader(ShaderKind::PremulAlpha);
         let multiply = make_shader(ShaderKind::Multiply);
         let coverage = make_shader(ShaderKind::Coverage);
-        let textures: Vec<_> = model
-            .textures
-            .iter()
-            .map(|t| t.as_ref().and_then(load_texture))
-            .collect();
+        textures.resize_with(model.texture_count(), || None);
+        for (i, slot) in textures.iter_mut().enumerate() {
+            if slot.is_none() {
+                *slot = Some(DecodedTexture {
+                    color: model.texture(i).and_then(load_texture),
+                    normal: model.normal_map(i).and_then(load_normal_map),
+                });
+            }
+        }
 
         let container = new_item(owner.get_canvas_item());
         let origin = model.model().meta.canvas.origin;
+        let plan = &model.masks;
+        let table = MaskTable::new(&model.drawables, plan.sources.len());
+        let table_texture = (!plan.sources.is_empty()).then(|| {
+            let (w, h) = table.size();
+            let image = Image::create_from_data(
+                w as i32,
+                h as i32,
+                false,
+                Format::RGBAF,
+                &PackedByteArray::from(table.bytes().as_slice()),
+            );
+            image
+                .and_then(|i| ImageTexture::create_from_image(&i))
+                .unwrap_or_else(ImageTexture::new_gd)
+        });
 
-        let masks = model
-            .masks
-            .sources
-            .iter()
-            .map(|&mesh| {
-                let mut viewport = SubViewport::new_alloc();
-                viewport.set_name(&format!("UgoeMask{mesh}"));
-                viewport.set_transparent_background(true);
-                viewport.set_disable_3d(true);
-                viewport.set_update_mode(UpdateMode::ALWAYS);
-                viewport.set_size(Vector2i::new(1, 1));
-                let root = Node2D::new_alloc();
-                viewport.add_child(&root);
-                // 入れ子のマスクを先に作るので、先に足したビューポートが先に描かれることを期待する。
-                owner
-                    .clone()
-                    .upcast::<Node>()
-                    .add_child_ex(&viewport)
-                    .internal(godot::classes::node::InternalMode::BACK)
-                    .done();
-                let item = new_item(root.get_canvas_item());
-                let material = material(&coverage);
-                rs().canvas_item_set_material(item, material.get_rid());
-                let texture = viewport
-                    .get_texture()
-                    .map_or(Variant::nil(), |t| t.to_variant());
-                MaskTarget {
-                    mesh,
-                    viewport,
-                    root,
-                    item,
-                    material,
-                    texture,
-                    area: None,
-                }
-            })
-            .collect::<Vec<_>>();
+        // アトラスの段。段 k − 1 のビューポートを段 k のビューポートの子にする (子が先に描かれる)。
+        let copy_shader = make_shader(ShaderKind::Copy);
+        let mut levels: Vec<MaskLevel> = Vec::new();
+        for k in 0..plan.level_count() {
+            let mut viewport = SubViewport::new_alloc();
+            viewport.set_name(&format!("UgoeMaskAtlas{k}"));
+            viewport.set_transparent_background(true);
+            viewport.set_disable_3d(true);
+            viewport.set_update_mode(UpdateMode::ALWAYS);
+            viewport.set_size(Vector2i::new(1, 1));
+            let root = Node2D::new_alloc();
+            viewport.add_child(&root);
+            if let Some(previous) = levels.last() {
+                viewport.add_child(&previous.viewport);
+            }
+            let copy = new_item(root.get_canvas_item());
+            let copy_material = (k > 0).then(|| {
+                let m = material(&copy_shader);
+                let mut rs = rs();
+                rs.canvas_item_set_material(copy, m.get_rid());
+                rs.canvas_item_set_default_texture_filter(copy, CanvasItemTextureFilter::NEAREST);
+                m
+            });
+            let Some(texture) = viewport.get_texture() else {
+                godot_error!("ugoe: a mask viewport has no texture");
+                break;
+            };
+            levels.push(MaskLevel {
+                viewport,
+                _root: root,
+                copy,
+                _copy_material: copy_material,
+                texture,
+            });
+        }
+        if let Some(top) = levels.last() {
+            owner
+                .clone()
+                .upcast::<Node>()
+                .add_child_ex(&top.viewport)
+                .internal(godot::classes::node::InternalMode::BACK)
+                .done();
+        }
+
+        let masks = if levels.len() == plan.level_count() {
+            plan.sources
+                .iter()
+                .zip(&plan.levels)
+                .map(|(&mesh, &level)| {
+                    let level = level as usize;
+                    let item = new_item(levels[level].copy);
+                    let mut material = material(&coverage);
+                    rs().canvas_item_set_material(item, material.get_rid());
+                    let info = &model.drawables[mesh];
+                    if level > 0 {
+                        set_mask_params(
+                            &mut material,
+                            &levels[level - 1].texture,
+                            &table_texture,
+                            table.first[mesh],
+                            info.masks.len(),
+                            info.mask_mode,
+                        );
+                    }
+                    MaskItem {
+                        mesh,
+                        item,
+                        material,
+                        area: None,
+                        slot: (0, 0),
+                    }
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         let items = model
             .drawables
             .iter()
             .zip(&model.model().meshes)
-            .map(|(_, mesh)| {
+            .enumerate()
+            .map(|(d, (info, mesh))| {
                 let item = new_item(container);
                 let shader = if mesh.blend.effective() == BlendMode::Multiply {
                     &multiply
@@ -244,6 +342,28 @@ impl Renderer {
                     "additive",
                     &(mesh.blend.effective() == BlendMode::Additive).to_variant(),
                 );
+                if let (Some(top), false) = (levels.last(), masks.is_empty()) {
+                    set_mask_params(
+                        &mut material,
+                        &top.texture,
+                        &table_texture,
+                        table.first[d],
+                        info.masks.len(),
+                        info.mask_mode,
+                    );
+                }
+                if info.lit {
+                    let normal = textures
+                        .get(info.texture)
+                        .and_then(Option::as_ref)
+                        .and_then(|t| t.normal.as_ref());
+                    let mode = if normal.is_some() { 2 } else { 1 };
+                    material.set_shader_parameter("lit_mode", &mode.to_variant());
+                    if let Some(normal) = normal {
+                        material.set_shader_parameter("normal_map", &normal.to_variant());
+                    }
+                    set_light_params(&mut material, lighting);
+                }
                 rs().canvas_item_set_material(item, material.get_rid());
                 DrawItem { item, material }
             })
@@ -263,16 +383,35 @@ impl Renderer {
         Self {
             container,
             items,
+            levels,
             masks,
+            table,
+            table_texture,
+            atlas: (0, 0),
             textures,
             fresh: true,
             mask_scale: 0.0,
+            shrink: 1.0,
             points: PackedVector2Array::new(),
             uvs,
             indices,
             culled: Vec::new(),
             colors: PackedColorArray::from([Color::WHITE].as_slice()),
         }
+    }
+
+    /// 光源を変える (ライティングを受ける要素だけ)。
+    pub fn set_lighting(&mut self, model: &LoadedModel, lighting: &LightUniforms) {
+        for (item, info) in self.items.iter_mut().zip(&model.drawables) {
+            if info.lit {
+                set_light_params(&mut item.material, lighting);
+            }
+        }
+    }
+
+    /// デコードしたテクスチャを取り出す (着せ替えでレンダラを作り直すときに使い回す)。
+    pub fn take_textures(&mut self) -> TextureCache {
+        std::mem::take(&mut self.textures)
     }
 
     /// 直前の `Puppet::update` の結果を描く。`mask_scale` はマスクのテクスチャのキャンバス 1 単位あたりの画素数。
@@ -284,57 +423,87 @@ impl Renderer {
         let fresh = std::mem::take(&mut self.fresh);
         let rescale = (mask_scale - self.mask_scale).abs() > 1e-3 * mask_scale;
         self.mask_scale = mask_scale;
+        if rescale {
+            self.shrink = 1.0;
+        }
         let mut rs = rs();
 
-        // 1. マスクのカバレッジ (入れ子のマスクが先)
+        // 1. マスクのカバレッジ: 大きさを決め、アトラスに並べ、幾何を送る。
+        let mut resized = false;
         let mut moved = vec![false; self.masks.len()];
-        for s in 0..self.masks.len() {
-            let mesh = self.masks[s].mesh;
-            let state = &states[mesh];
-            let changed = changes[mesh];
-            if fresh || rescale || changed.contains(DrawableChanges::POSITIONS) {
-                if let Some((min, max)) = bounds(&state.positions) {
-                    let target = &mut self.masks[s];
-                    let current = target.area.map(|a| (a.width, a.height));
-                    let area = MaskArea::fit(min, max, mask_scale, current);
-                    if target.area != Some(area) {
-                        if current != Some((area.width, area.height)) {
-                            target
-                                .viewport
-                                .set_size(Vector2i::new(area.width as i32, area.height as i32));
-                        }
-                        target.root.set_scale(Vector2::new(area.scale, area.scale));
-                        target.root.set_position(-vec2(area.origin) * area.scale);
-                        target.area = Some(area);
-                        moved[s] = true;
-                    }
-                }
-                self.points = state.positions.iter().map(|&p| vec2(p)).collect();
-                let target = &self.masks[s];
-                rs.canvas_item_clear(target.item);
-                if !self.indices[mesh].is_empty() {
-                    rs.canvas_item_add_triangle_array_ex(
-                        target.item,
-                        &self.indices[mesh],
-                        &self.points,
-                        &self.colors,
-                    )
-                    .uvs(&self.uvs[mesh])
-                    .texture(texture_rid(&self.textures, model.drawables[mesh].texture))
-                    .done();
-                }
+        for (s, mask) in self.masks.iter_mut().enumerate() {
+            let state = &states[mask.mesh];
+            if !(fresh || rescale || changes[mask.mesh].contains(DrawableChanges::POSITIONS)) {
+                continue;
             }
-            let info = &model.drawables[mesh];
-            let reads_moved = info.masks.iter().any(|m| moved[m.source]);
-            let (targets_before, rest) = self.masks.split_at_mut(s);
-            let target = &mut rest[0];
-            if fresh || reads_moved {
-                set_mask_params(&mut target.material, info, targets_before, fresh);
+            let (min, max) = bounds(&state.positions).unwrap_or((UVec2::ZERO, UVec2::ZERO));
+            let current = mask.area.map(|a| (a.width, a.height));
+            let area = MaskArea::fit(min, max, mask_scale * self.shrink, current);
+            if mask.area != Some(area) {
+                resized |= current != Some((area.width, area.height));
+                mask.area = Some(area);
+                moved[s] = true;
             }
-            if fresh || changed.contains(DrawableChanges::MASK_STRENGTH) {
-                target
-                    .material
-                    .set_shader_parameter("mask_strength", &state.mask_strength.to_variant());
+            self.points = state.positions.iter().map(|&p| vec2(p)).collect();
+            rs.canvas_item_clear(mask.item);
+            if !self.indices[mask.mesh].is_empty() {
+                rs.canvas_item_add_triangle_array_ex(
+                    mask.item,
+                    &self.indices[mask.mesh],
+                    &self.points,
+                    &self.colors,
+                )
+                .uvs(&self.uvs[mask.mesh])
+                .texture(texture_rid(
+                    &self.textures,
+                    model.drawables[mask.mesh].texture,
+                ))
+                .done();
+            }
+        }
+        if resized && !self.masks.is_empty() {
+            self.pack(model, mask_scale);
+            moved.fill(true);
+        }
+        for (s, mask) in self.masks.iter_mut().enumerate() {
+            if fresh || changes[mask.mesh].contains(DrawableChanges::MASK_STRENGTH) {
+                let strength = states[mask.mesh].mask_strength;
+                mask.material
+                    .set_shader_parameter("mask_strength", &strength.to_variant());
+            }
+            if !moved[s] {
+                continue;
+            }
+            let Some(area) = mask.area else { continue };
+            // キャンバス座標 → アトラスの画素: slot + (p − origin) × scale
+            let offset = Vector2::new(mask.slot.0 as f32, mask.slot.1 as f32)
+                - vec2(area.origin) * area.scale;
+            rs.canvas_item_set_transform(
+                mask.item,
+                Transform2D::from_cols(
+                    Vector2::new(area.scale, 0.0),
+                    Vector2::new(0.0, area.scale),
+                    offset,
+                ),
+            );
+            self.table.set_source(s, &area, mask.slot, self.atlas);
+        }
+        if moved.iter().any(|&m| m)
+            && let Some(texture) = &mut self.table_texture
+        {
+            let (w, h) = self.table.size();
+            if let Some(image) = Image::create_from_data(
+                w as i32,
+                h as i32,
+                false,
+                Format::RGBAF,
+                &PackedByteArray::from(self.table.bytes().as_slice()),
+            ) {
+                if texture.get_size() == Vector2::new(w as f32, h as f32) {
+                    texture.update(&image);
+                } else {
+                    texture.set_image(&image);
+                }
             }
         }
 
@@ -378,8 +547,60 @@ impl Renderer {
                 }
             }
             set_color_params(&mut item.material, state, changed, redraw);
-            if fresh || info.masks.iter().any(|m| moved[m.source]) {
-                set_mask_params(&mut item.material, info, &self.masks, fresh);
+        }
+    }
+
+    /// カバレッジをアトラスに並べ直し、ビューポートの大きさを合わせる。
+    /// 収まらなければ、収まるまでマスクの解像度を下げる。
+    fn pack(&mut self, model: &LoadedModel, mask_scale: f32) {
+        let states = model.puppet.instance().drawables();
+        let layout = loop {
+            let sizes: Vec<(u32, u32)> = self
+                .masks
+                .iter()
+                .map(|m| m.area.map_or((1, 1), |a| (a.width, a.height)))
+                .collect();
+            if let Some(layout) = AtlasLayout::pack(&sizes, MaskArea::MAX_SIZE) {
+                break layout;
+            }
+            if self.shrink < 1e-3 {
+                godot_error!("ugoe: masks do not fit in the mask atlas");
+                return;
+            }
+            self.shrink *= 0.75;
+            for mask in &mut self.masks {
+                let (min, max) =
+                    bounds(&states[mask.mesh].positions).unwrap_or((UVec2::ZERO, UVec2::ZERO));
+                mask.area = Some(MaskArea::fit(min, max, mask_scale * self.shrink, None));
+            }
+        };
+        for (mask, &slot) in self.masks.iter_mut().zip(&layout.positions) {
+            mask.slot = slot;
+        }
+        // 大きさは足りる間は使い回す (面積の 4 倍より大きければ縮める)。
+        let (w, h) = self.atlas;
+        let fits = w >= layout.width && h >= layout.height;
+        let too_big =
+            u64::from(w) * u64::from(h) > 4 * u64::from(layout.width) * u64::from(layout.height);
+        if fits && !too_big {
+            return;
+        }
+        // 少し余裕を持たせて、頻繁に作り直さないようにする。
+        let grow = |n: u32| n.next_multiple_of(64).min(MaskArea::MAX_SIZE);
+        self.atlas = (grow(layout.width), grow(layout.height));
+        let size = Vector2i::new(self.atlas.0 as i32, self.atlas.1 as i32);
+        let mut rs = rs();
+        for k in 0..self.levels.len() {
+            self.levels[k].viewport.set_size(size);
+            if k > 0 {
+                let copy = self.levels[k].copy;
+                let previous = self.levels[k - 1].texture.get_rid();
+                rs.canvas_item_clear(copy);
+                rs.canvas_item_add_texture_rect(
+                    copy,
+                    Rect2::new(Vector2::ZERO, Vector2::new(size.x as f32, size.y as f32)),
+                    previous,
+                );
             }
         }
     }
@@ -388,10 +609,11 @@ impl Renderer {
     ///
     /// ノードごと破棄されるときは Godot が子として解放するので呼ばなくてよい。
     pub fn remove_viewports(&mut self) {
-        for mask in &mut self.masks {
-            if mask.viewport.is_instance_valid() {
-                mask.viewport.queue_free();
-            }
+        // 下の段は上の段の子なので、いちばん上の段を外せば全部が外れる。
+        if let Some(top) = self.levels.last_mut()
+            && top.viewport.is_instance_valid()
+        {
+            top.viewport.queue_free();
         }
     }
 }
@@ -406,8 +628,27 @@ impl Drop for Renderer {
         for mask in &self.masks {
             rs.free_rid(mask.item);
         }
+        for level in &self.levels {
+            rs.free_rid(level.copy);
+        }
         rs.free_rid(self.container);
     }
+}
+
+fn set_light_params(material: &mut Gd<ShaderMaterial>, lighting: &LightUniforms) {
+    let [r, g, b] = lighting.ambient;
+    material.set_shader_parameter("ambient_light", &Vector3::new(r, g, b).to_variant());
+    material.set_shader_parameter("light_count", &(lighting.vectors.len() as i32).to_variant());
+    let pad = |v: &[[f32; 4]]| -> PackedVector4Array {
+        (0..ugoe::render::MAX_LIGHTS)
+            .map(|i| {
+                let [x, y, z, w] = v.get(i).copied().unwrap_or([0.0; 4]);
+                Vector4::new(x, y, z, w)
+            })
+            .collect()
+    };
+    material.set_shader_parameter("light_vectors", &pad(&lighting.vectors).to_variant());
+    material.set_shader_parameter("light_colors", &pad(&lighting.colors).to_variant());
 }
 
 fn set_color_params(

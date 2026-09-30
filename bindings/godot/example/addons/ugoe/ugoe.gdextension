@@ -1,0 +1,15 @@
+; ugoe の GDExtension (bindings/godot)。ライブラリは `node bindings/godot/build.mjs` が addons/ugoe/bin/ に置く。
+[configuration]
+entry_symbol = "gdext_rust_init"
+compatibility_minimum = 4.4
+reloadable = true
+
+[libraries]
+linux.debug.x86_64 = "res://addons/ugoe/bin/libugoe_godot.so"
+linux.release.x86_64 = "res://addons/ugoe/bin/libugoe_godot.so"
+linux.debug.arm64 = "res://addons/ugoe/bin/libugoe_godot.so"
+linux.release.arm64 = "res://addons/ugoe/bin/libugoe_godot.so"
+windows.debug.x86_64 = "res://addons/ugoe/bin/ugoe_godot.dll"
+windows.release.x86_64 = "res://addons/ugoe/bin/ugoe_godot.dll"
+macos.debug = "res://addons/ugoe/bin/libugoe_godot.dylib"
+macos.release = "res://addons/ugoe/bin/libugoe_godot.dylib"
