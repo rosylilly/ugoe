@@ -1,11 +1,11 @@
 ---
 id: T0706
 title: ビューア: 着せ替えのモジュールを付け外しする
-status: todo
+status: in-progress
 milestone: M4
 crates: [apps/viewer, docs]
 depends_on: [T0123]
-assignee:
+assignee: claude-worker-T0706
 ---
 
 # T0706: ビューア: 着せ替えのモジュールを付け外しする
