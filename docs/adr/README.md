@@ -32,3 +32,4 @@
 | [0020](0020-milestone-order-and-ai-in-1.0.md) | マイルストーンの順序と、AI 支援を 1.0 に含めること | Accepted |
 | [0021](0021-public-specification.md) | 公開のモデル仕様 (英語版を正とし、CC BY 4.0) | Accepted |
 | [0022](0022-multiple-ai-providers-and-agents.md) | 複数の AI プロバイダと、エージェントに判断を任せる経路 | Accepted |
+| [0023](0023-editor-mcp-bridge.md) | 実行中のエディタと MCP をつなぐ (エディタの中の MCP サーバと、stdio の中継) | Accepted |
