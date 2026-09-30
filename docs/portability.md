@@ -62,7 +62,7 @@
 | Unreal | プラグイン | T0407 |
 | C / その他 | `ugoe-ffi` の共有ライブラリとヘッダ | T0401 |
 
-- **適合テスト**: すべての配布物で、同じモデル・同じパラメータから同じ頂点と画像が得られることを CI で検査します (T0408)。参照となる出力は `ModelInstance` と `ugoe render` から作ります。
+- **適合テスト**: すべての配布物で、同じモデル・同じパラメータから同じ頂点と画像が得られることを CI で検査します (T0408、`just conformance`)。参照となる出力は `ModelInstance` と `ugoe render` から作ります。いまは C ABI と wasm (npm パッケージ) を比べています。バインディングを足すときの手順は [tests/conformance/README.md](../tests/conformance/README.md#エンジン向けのバインディングを足す)。
 - **リリースの自動化**: タグを打つと、すべての配布物をビルドして公開します。バージョン番号は揃えます。手順は [release.md](release.md)。
 - crates.io には `ugoe` とその依存のクレートだけを公開します (`ugoe-ffi`・`ugoe-wasm`・ツール層は公開しない。[ADR 0027](adr/0027-crates-io-publishing.md))。タグ `v*` で CI (`crates-release.yml`) が予行し、承認の後に公開します ([release.md#cratesio](release.md#cratesio))。
 - ランタイムとライブラリは MIT で配布します ([ADR 0018](adr/0018-licensing-and-1.0-scope.md))。

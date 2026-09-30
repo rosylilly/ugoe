@@ -1,0 +1,26 @@
+[package]
+name = "ugoe-conformance"
+description = "配布物の適合テスト: 参照の頂点の生成と、各バインディングの出力との比較 (tests/conformance/README.md)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+ugoe.workspace = true
+ugoe-format.workspace = true
+ugoe-headless.workspace = true
+ugoe-model.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "ugoe-conformance"
+path = "src/main.rs"

@@ -49,6 +49,8 @@ const ALLOWED = {
   "ugoe-cli": union(TOOL_BASE, ["ugoe-ai"]),
   "ugoe-mcp": union(TOOL_BASE, ["ugoe-ai"]),
   "ugoe-editor": union(TOOL_BASE, ["ugoe-ai", "ugoe-mcp"]),
+  // 配布物の適合テスト (tests/conformance): 参照は ugoe と ugoe render と同じ関数 (ugoe-headless) で作る
+  "ugoe-conformance": union(RUNTIME_TIER, HEADLESS),
 };
 
 const meta = JSON.parse(

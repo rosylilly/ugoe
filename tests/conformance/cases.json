@@ -1,0 +1,134 @@
+{
+  "cases": [
+    {
+      "name": "avatar-default",
+      "summary": "The sample avatar with the default parameter values.",
+      "model": "assets/samples/avatar.ugoe"
+    },
+    {
+      "name": "avatar-pose",
+      "summary": "Head and body turned, one eye half closed, gaze, brows and an open smiling mouth (warps rotated from depth, blend shapes, opacity switches and masks).",
+      "model": "assets/samples/avatar.ugoe",
+      "parameters": {
+        "AngleX": 22,
+        "AngleY": -14,
+        "AngleZ": 12,
+        "BodyAngleX": -6,
+        "BodyAngleZ": 4,
+        "Breath": 0.6,
+        "EyeLOpen": 0.25,
+        "EyeRSmile": 0.7,
+        "EyeBallX": 0.6,
+        "EyeBallY": -0.4,
+        "BrowLY": 0.5,
+        "BrowRAngle": -0.6,
+        "BrowInnerUp": 0.3,
+        "MouthOpenY": 0.7,
+        "MouthForm": 0.5,
+        "MouthX": -0.4
+      }
+    },
+    {
+      "name": "avatar-clamped",
+      "summary": "Values outside the ranges are clamped; closed eyes.",
+      "model": "assets/samples/avatar.ugoe",
+      "parameters": {
+        "AngleX": -45,
+        "AngleY": 40,
+        "EyeLOpen": 0,
+        "EyeROpen": -1,
+        "MouthPucker": 1,
+        "JawX": 2
+      }
+    },
+    {
+      "name": "avatar-physics",
+      "summary": "Half a second of dynamic physics (hair and earrings) after turning the head.",
+      "model": "assets/samples/avatar.ugoe",
+      "parameters": { "AngleX": 25, "AngleZ": -15 },
+      "time": 0.5
+    },
+    {
+      "name": "avatar-effects",
+      "summary": "Two seconds with eye blink and breathing (the eye blink uses the model's seed).",
+      "model": "assets/samples/avatar.ugoe",
+      "time": 2,
+      "effects": true
+    },
+    {
+      "name": "avatar-lit",
+      "summary": "The lit sample (normal maps) with ambient light, a directional light from the upper left and a point light.",
+      "model": "assets/samples/avatar-lit.ugoe",
+      "parameters": { "AngleX": -12, "MouthForm": 0.4 },
+      "lighting": {
+        "ambient": [0.55, 0.55, 0.55],
+        "lights": [
+          { "type": "directional", "direction": [1, 1, -1.4], "color": [0.6, 0.6, 0.6] },
+          { "type": "point", "position": [800, 300, 250], "color": [0.5, 0.35, 0.2], "range": 900 }
+        ]
+      }
+    },
+    {
+      "name": "dress-up-base",
+      "summary": "The dress-up base without modules.",
+      "model": "assets/samples/dress-up/dress-up.ugoe",
+      "parameters": { "AngleX": 10 }
+    },
+    {
+      "name": "dress-up-long-hair",
+      "summary": "Three modules attached (hair, headwear and outfit): composed meshes, textures after the base's, masks into the base.",
+      "model": "assets/samples/dress-up/dress-up.ugoe",
+      "modules": [
+        "assets/samples/dress-up/long-hair.ugoemod",
+        "assets/samples/dress-up/cat-ears.ugoemod",
+        "assets/samples/dress-up/sailor.ugoemod"
+      ],
+      "parameters": { "AngleX": -20, "BodyAngleX": 6, "EyeROpen": 0.3 }
+    },
+    {
+      "name": "dress-up-twin-tails",
+      "summary": "Modules with physics rigs, advanced in time.",
+      "model": "assets/samples/dress-up/dress-up.ugoe",
+      "modules": [
+        "assets/samples/dress-up/twin-tails.ugoemod",
+        "assets/samples/dress-up/sailor.ugoemod"
+      ],
+      "parameters": { "AngleX": 25, "MouthOpenY": 0.8 },
+      "time": 0.4
+    },
+    { "spec": "spec/examples/single-quad" },
+    { "spec": "spec/examples/warp-grid" },
+    { "spec": "spec/examples/rotation-chain" },
+    { "spec": "spec/examples/rotation-under-warp" },
+    { "spec": "spec/examples/part-opacity" },
+    { "spec": "spec/examples/glued-quads" },
+    { "spec": "spec/examples/blend-shapes" },
+    { "spec": "spec/examples/smooth-keys" },
+    {
+      "name": "bundle-single-quad-zstd",
+      "summary": "A bundle whose chunks are compressed with zstd.",
+      "model": "spec/examples/bundles/single-quad-zstd.ugoe"
+    },
+    {
+      "name": "bundle-optional-feature",
+      "summary": "A bundle that declares an unknown optional feature (read with the fallback).",
+      "model": "spec/examples/bundles/optional-feature.ugoe"
+    },
+    {
+      "name": "bundle-lit-quads",
+      "summary": "Lit quads with normal maps, lit by a directional light.",
+      "model": "spec/examples/bundles/lit-quads.ugoe",
+      "lighting": {
+        "ambient": [0.2, 0.2, 0.2],
+        "lights": [{ "type": "directional", "direction": [-1, 0, -1] }]
+      }
+    },
+    {
+      "name": "bundle-physics-pendulum",
+      "summary": "The pendulum of the physics example, one second after moving its input.",
+      "model": "spec/examples/bundles/physics-pendulum.ugoe",
+      "parameters": { "X": 1 },
+      "time": 1
+    }
+  ]
+}

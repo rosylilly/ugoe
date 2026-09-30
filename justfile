@@ -110,6 +110,12 @@ godot-build *args:
 godot-check *args:
     node bindings/godot/build.mjs --check --conformance {{args}}
 
+# 配布物の適合テスト (tests/conformance/README.md): C ABI と wasm (npm パッケージ) の頂点と画像を、ModelInstance と ugoe render の参照と比べる。
+# C コンパイラ・Chrome・wasm-bindgen-cli・GPU (無ければ Mesa) が要るので `just ci` には含めない (CI の conformance ジョブで実行する)。
+# 引数は run.mjs に渡す: `just conformance --only c`、`just conformance --backend webgpu`
+conformance *args:
+    @node tests/conformance/run.mjs {{args}}
+
 # wasm ターゲットでビルドできるか (ブラウザ専用のコード `src/web.rs` も clippy で検査する)
 wasm-check:
     cargo clippy -p ugoe-wasm --target wasm32-unknown-unknown -- -D warnings

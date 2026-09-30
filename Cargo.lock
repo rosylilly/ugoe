@@ -4997,6 +4997,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ugoe-conformance"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "ugoe",
+ "ugoe-format",
+ "ugoe-headless",
+ "ugoe-model",
+]
+
+[[package]]
 name = "ugoe-core"
 version = "0.0.0"
 dependencies = [

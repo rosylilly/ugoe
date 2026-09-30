@@ -12,6 +12,7 @@
       "bindings/**",
       "scripts/**",
       "tools/**",
+      "tests/**",
       "*.json",
       "*.mjs",
       "!**/dist",
