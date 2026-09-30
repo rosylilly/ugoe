@@ -9,6 +9,7 @@
     "includes": [
       "apps/**",
       "packages/**",
+      "bindings/**",
       "scripts/**",
       "tools/**",
       "*.json",
@@ -17,6 +18,7 @@
       "!**/node_modules",
       "!**/src-tauri",
       "!**/pkg",
+      "!bindings/web/src/wasm",
       "!apps/editor/src/lib/generated",
       "!.worktrees"
     ]

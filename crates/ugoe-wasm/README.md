@@ -3,6 +3,7 @@
 **層:** L5 バインディング (依存してよいクレートは `scripts/check-layers.mjs` を参照)
 
 WebAssembly バインディング。Web ビューア・ビューアのアプリ (`apps/viewer`)・エディタのビューポートで使う。
+npm のパッケージ `@ugoe/runtime` (と `<ugoe-avatar>`) は `bindings/web/` で、この JS バインディングを包んで配る (T0404)。
 
 ## 守ること
 
@@ -46,6 +47,7 @@ puppet.clear_tracking();
 - 画面座標は canvas の描画バッファの画素 (CSS ピクセル × `devicePixelRatio`)。
 - `set_parameter` は評価を遅らせ、次の `render` や問い合わせでまとめて評価する。物理やモーションを動かすときは `update(dt)` を呼ぶ。
 - モデルを読み直すと、同じ ID のパラメータの値は引き継がれる (エディタで編集・Undo のたびに読み直すため)。
+- 背景は透明 (既定の `set_background` は透明) で、WebGPU・WebGL2 のどちらでも canvas を乗算済みアルファでページに重ねる。
 - `"auto"` は WebGPU のアダプタを実際に要求して判定し、無ければ WebGL2 を使う。1 つの canvas は WebGPU と WebGL2 を併用できないので、作成に失敗したら新しい canvas で作り直す。
 - トラッキングの入力は次の `update(dt)` から毎フレーム適用される (モーションの直後、表情・目パチ・呼吸の前)。
   平滑化・キャリブレーション・回転行列からの角度の計算・鏡像の入れ替えはホストが行う

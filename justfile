@@ -99,6 +99,11 @@ wasm-check:
 wasm out="apps/editor/src/lib/viewport/generated":
     @node scripts/wasm.mjs build {{quote(out)}}
 
+# npm パッケージ @ugoe/runtime (bindings/web) をビルドする: wasm の生成・tsc・dist/ への出力 (ADR 0025)。
+# ローカルで入れるには、続けて `cd bindings/web && pnpm pack --out ugoe-runtime.tgz` (bindings/web/README.md)。
+web-runtime:
+    pnpm --filter '@ugoe/runtime' build
+
 # Rust の型から生成物を作り直す: エディタの TypeScript の型 (apps/editor/src/lib/generated/) と
 # Command の JSON Schema (crates/ugoe-editor-core/schema/)、公開仕様の JSON Schema (spec/schema/)。
 # 生成物はコミットする (docs/editor.md#型の生成)。
@@ -119,6 +124,8 @@ web-check:
     pnpm --filter '@ugoe/viewer' test
     pnpm --filter '@ugoe/face-tracking' check
     pnpm --filter '@ugoe/face-tracking' test
+    pnpm --filter '@ugoe/runtime' check
+    pnpm --filter '@ugoe/runtime' test
 
 # エディタを開発モードで起動
 editor:

@@ -1,0 +1,5 @@
+# ugoe-wasm の JS バインディング (`pnpm build` が生成する。scripts/check.mjs が型のスタブを置くこともある)
+/src/wasm/
+# `pnpm pack --out ugoe-runtime.tgz` の出力 (examples/basic が読む)
+/ugoe-runtime.tgz
+/examples/*/package-lock.json

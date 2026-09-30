@@ -34,3 +34,4 @@
 | [0022](0022-multiple-ai-providers-and-agents.md) | 複数の AI プロバイダと、エージェントに判断を任せる経路 | Accepted |
 | [0023](0023-editor-mcp-bridge.md) | 実行中のエディタと MCP をつなぐ (エディタの中の MCP サーバと、stdio の中継) | Accepted |
 | [0024](0024-module-authoring.md) | 着せ替えのモジュールは、本体を参照する別のプロジェクトとして作る | Accepted |
+| [0025](0025-web-runtime-package.md) | Web のランタイムのパッケージ (@ugoe/runtime) は MIT で bindings/web に置く | Accepted |

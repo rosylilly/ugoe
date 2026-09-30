@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@ugoe/runtime の見本</title>
+    <!-- バンドラを使わないので、import map で node_modules のパッケージを指す。バンドラを使うなら不要 -->
+    <script type="importmap">
+      {
+        "imports": {
+          "@ugoe/runtime": "./node_modules/@ugoe/runtime/dist/index.js",
+          "@ugoe/runtime/element": "./node_modules/@ugoe/runtime/dist/element.js"
+        }
+      }
+    </script>
+    <style>
+      body {
+        margin: 16px;
+        font-family: system-ui, sans-serif;
+        background: #f4f4f6;
+        color: #222;
+      }
+      main {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 24px;
+        align-items: flex-start;
+      }
+      section {
+        background: #fff;
+        border-radius: 8px;
+        padding: 12px;
+      }
+      ugoe-avatar,
+      #plain {
+        width: 360px;
+        height: 360px;
+        background: #dfe6ee;
+        border-radius: 4px;
+      }
+      #controls {
+        width: 320px;
+        max-height: 70vh;
+        overflow: auto;
+      }
+      label {
+        display: grid;
+        grid-template-columns: 110px 1fr 48px;
+        gap: 6px;
+        align-items: center;
+        font-size: 12px;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 8px;
+        flex-wrap: wrap;
+        font-size: 13px;
+      }
+      #status {
+        font-size: 12px;
+        color: #555;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>@ugoe/runtime</h1>
+    <p id="status">読み込み中…</p>
+    <main>
+      <section>
+        <h2>&lt;ugoe-avatar&gt;</h2>
+        <!-- 属性だけで表示と初期のパラメータを決める -->
+        <ugoe-avatar
+          id="avatar"
+          src="samples/avatar.ugoe"
+          parameters="AngleX: 12; AngleY: -6"
+        ></ugoe-avatar>
+      </section>
+      <section id="controls">
+        <div class="row">
+          <label style="display: flex">
+            backend
+            <select id="backend">
+              <option value="auto">auto</option>
+              <option value="webgpu">webgpu</option>
+              <option value="webgl2">webgl2</option>
+            </select>
+          </label>
+          <label style="display: flex"><input type="checkbox" id="paused" /> paused</label>
+        </div>
+        <div class="row">
+          <label style="display: flex">
+            expression
+            <select id="expression"><option value="">(なし)</option></select>
+          </label>
+          <label style="display: flex">
+            motion
+            <select id="motion"><option value="">(なし)</option></select>
+          </label>
+        </div>
+        <div id="sliders"></div>
+      </section>
+      <section>
+        <h2>API (createPuppet)</h2>
+        <!-- Web Component を使わず、canvas に WebPuppet を直接作る -->
+        <canvas id="plain"></canvas>
+      </section>
+    </main>
+
+    <script type="module">
+      import { createPuppet, fetchModel, initRuntime, version } from "@ugoe/runtime";
+
+      const query = new URLSearchParams(location.search);
+      const backend = query.get("backend") ?? "auto";
+      const avatar = document.getElementById("avatar");
+      const status = document.getElementById("status");
+      const result = { version: null, element: null, plain: null, errors: [] };
+      await initRuntime();
+      result.version = version();
+      // ヘッドレスのブラウザでの確認用
+      window.ugoeExample = result;
+
+      const backendSelect = document.getElementById("backend");
+      backendSelect.value = backend;
+      avatar.setAttribute("backend", backend);
+      // 属性を決めてから登録する (登録の後に backend を変えると作り直しになる)
+      await import("@ugoe/runtime/element");
+      backendSelect.addEventListener("change", () =>
+        avatar.setAttribute("backend", backendSelect.value),
+      );
+      document
+        .getElementById("paused")
+        .addEventListener("change", (e) => (avatar.paused = e.target.checked));
+
+      function fillSelect(id, names, attribute) {
+        const select = document.getElementById(id);
+        select.replaceChildren(new Option("(なし)", ""), ...names.map((n) => new Option(n, n)));
+        select.value = avatar.getAttribute(attribute) ?? "";
+        select.onchange = () =>
+          select.value
+            ? avatar.setAttribute(attribute, select.value)
+            : avatar.removeAttribute(attribute);
+      }
+
+      function buildSliders() {
+        const container = document.getElementById("sliders");
+        container.replaceChildren();
+        for (const def of avatar.parameterDefinitions) {
+          if (def.internal) continue;
+          const label = document.createElement("label");
+          const input = document.createElement("input");
+          const value = document.createElement("span");
+          Object.assign(input, { type: "range", min: def.min, max: def.max, step: "any" });
+          input.value = avatar.getParameter(def.id) ?? def.default;
+          value.textContent = Number(input.value).toFixed(2);
+          // JS から設定する
+          input.addEventListener("input", () => {
+            avatar.setParameter(def.id, Number(input.value));
+            value.textContent = Number(input.value).toFixed(2);
+          });
+          label.append(def.name || def.id, input, value);
+          container.append(label);
+        }
+      }
+
+      avatar.addEventListener("load", (e) => {
+        const { backend, warnings } = e.detail;
+        result.element = { backend, warnings, parameters: avatar.parameters };
+        status.textContent = `ugoe ${result.version}: <ugoe-avatar> は ${backend} で描画中 (警告 ${warnings.length} 件)`;
+        fillSelect("expression", avatar.puppet.expression_names(), "expression");
+        fillSelect("motion", avatar.puppet.motion_names(), "motion");
+        buildSliders();
+      });
+      avatar.addEventListener("error", (e) => {
+        result.errors.push(String(e.detail.error));
+        status.textContent = `エラー: ${e.detail.error.message}`;
+      });
+
+      // 低い層の API: canvas と WebPuppet をホストが持ち、ループも自分で回す
+      async function startPlain() {
+        const canvas = document.getElementById("plain");
+        const dpr = devicePixelRatio;
+        canvas.width = canvas.clientWidth * dpr;
+        canvas.height = canvas.clientHeight * dpr;
+        const puppet = await createPuppet(canvas, { backend });
+        const warnings = await fetchModel(puppet, "samples/dress-up/dress-up.ugoe");
+        puppet.set_parameter("AngleX", -15);
+        let last = performance.now();
+        const frame = (now) => {
+          puppet.update(Math.min((now - last) / 1000, 0.1));
+          last = now;
+          puppet.render();
+          requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+        result.plain = { backend: puppet.backend(), warnings };
+      }
+      startPlain().catch((e) => {
+        result.errors.push(String(e));
+        status.textContent = `エラー: ${e.message ?? e}`;
+      });
+    </script>
+  </body>
+</html>

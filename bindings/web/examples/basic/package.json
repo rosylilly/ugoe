@@ -1,0 +1,13 @@
+{
+  "name": "ugoe-runtime-example-basic",
+  "private": true,
+  "version": "0.0.0",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "start": "node serve.mjs"
+  },
+  "dependencies": {
+    "@ugoe/runtime": "file:../../ugoe-runtime.tgz"
+  }
+}

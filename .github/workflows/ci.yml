@@ -137,6 +137,7 @@ jobs:
       - run: pnpm --filter @ugoe/viewer test
       - run: pnpm --filter @ugoe/face-tracking check
       - run: pnpm --filter @ugoe/face-tracking test
+      - run: pnpm --filter @ugoe/runtime test
       - name: Install Rust toolchain (rust-toolchain.toml, wasm32 target included)
         run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
@@ -160,3 +161,6 @@ jobs:
         run: pnpm --filter @ugoe/viewer wasm
       - run: pnpm --filter @ugoe/viewer check
       - run: pnpm --filter @ugoe/viewer build
+      # npm パッケージ @ugoe/runtime (bindings/web。ADR 0025): wasm を生成して dist/ を作り、本物の型で検査する
+      - run: pnpm --filter @ugoe/runtime build
+      - run: pnpm --filter @ugoe/runtime check

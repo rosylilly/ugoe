@@ -148,9 +148,12 @@ impl WebPuppet {
             .ok_or_else(|| JsError::new("the canvas surface supports no texture format"))?;
         let view_format = format.remove_srgb_suffix();
         // 乗算済みアルファで合成できれば、透明な背景でページの上に重ねられる。
-        let alpha_mode = if caps
-            .alpha_modes
-            .contains(&wgpu::CompositeAlphaMode::PreMultiplied)
+        // WebGPU の canvas は常に `premultiplied` に対応するが、wgpu は対応を `Opaque` だけと報告するので
+        // (wgpu 30 の backend/webgpu.rs)、WebGPU では報告によらず乗算済みにする (しないと背景が黒になる。T0404)。
+        let alpha_mode = if adapter.get_info().backend == wgpu::Backend::BrowserWebGpu
+            || caps
+                .alpha_modes
+                .contains(&wgpu::CompositeAlphaMode::PreMultiplied)
         {
             wgpu::CompositeAlphaMode::PreMultiplied
         } else {

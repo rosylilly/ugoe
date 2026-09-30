@@ -1,0 +1,41 @@
+{
+  "name": "@ugoe/runtime",
+  "private": true,
+  "version": "0.0.0",
+  "description": "ugoe runtime for the web: WebAssembly bindings, TypeScript types and the <ugoe-avatar> element",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./element": {
+      "types": "./dist/element.d.ts",
+      "default": "./dist/element.js"
+    },
+    "./wasm": {
+      "types": "./dist/wasm/ugoe_wasm.d.ts",
+      "default": "./dist/wasm/ugoe_wasm.js"
+    },
+    "./ugoe_wasm_bg.wasm": "./dist/wasm/ugoe_wasm_bg.wasm",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": [
+    "./dist/element.js"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/check.mjs",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.2"
+  }
+}

@@ -1,6 +1,7 @@
 packages:
   - "apps/*"
   - "packages/*"
+  - "bindings/*"
 
 # 依存パッケージのビルドスクリプトは明示的に許可したものだけ実行する。
 # lefthook: Git フックはルートの `prepare` スクリプト (lefthook install) で入れるため不要。

@@ -6,6 +6,8 @@
 //   (docs/adr/0019-viewer-license.md)。
 // - MIT のクレートが (dev 以外で) 依存するクレートは、寛容なライセンスで使えること。
 // - アプリが依存するクレートは、GPL-3.0 と両立するライセンスで使えること。
+// - npm のパッケージ bindings/web (@ugoe/runtime) は MIT で、実行時の依存は寛容なライセンスに限る
+//   (docs/adr/0025-web-runtime-package.md)。
 // - 公開仕様 (spec/) は CC BY 4.0 (docs/adr/0021-public-specification.md)。spec/LICENSE が
 //   CC BY 4.0 の条文であることを確かめる。
 // ライセンスが SPDX の式で書かれていない依存を追加する場合は、EXCEPTIONS に理由付きで登録する。
@@ -141,6 +143,28 @@ for (const id of members) {
   }
 }
 
+// MIT の npm パッケージ (bindings/。docs/adr/0025-web-runtime-package.md): パッケージのライセンスが MIT で、
+// 実行時の依存 (dependencies) が寛容なライセンスで使えること。依存のライセンスは node_modules の package.json で読む。
+const BINDINGS = ["bindings/web"];
+for (const dir of BINDINGS) {
+  const base = new URL(`../${dir}/`, import.meta.url);
+  const pkg = JSON.parse(readFileSync(new URL("package.json", base), "utf8"));
+  if (pkg.license !== EXPECTED.mit) {
+    errors.push(`${pkg.name}: license は "${EXPECTED.mit}" であるべき (現在: ${pkg.license})`);
+  }
+  for (const dep of Object.keys(pkg.dependencies ?? {})) {
+    const manifest = new URL(`node_modules/${dep}/package.json`, base);
+    if (!existsSync(manifest)) {
+      errors.push(`${pkg.name} -> ${dep}: node_modules に無い (pnpm install を実行する)`);
+      continue;
+    }
+    const license = JSON.parse(readFileSync(manifest, "utf8")).license;
+    if (typeof license !== "string" || !satisfies(license, PERMISSIVE)) {
+      errors.push(`${pkg.name} -> ${dep}: ${license} は MIT のパッケージで使えない`);
+    }
+  }
+}
+
 // 公開仕様のライセンス (CC BY 4.0 の条文) が置かれていること。
 const SPEC_LICENSE = new URL("../spec/LICENSE", import.meta.url);
 const specLicense = existsSync(SPEC_LICENSE) ? readFileSync(SPEC_LICENSE, "utf8") : "";
@@ -152,5 +176,6 @@ if (
 }
 
 for (const e of [...new Set(errors)]) console.error(`error: ${e}`);
-if (errors.length === 0) console.log(`licenses ok (${members.size} crates)`);
+if (errors.length === 0)
+  console.log(`licenses ok (${members.size} crates, ${BINDINGS.length} npm packages)`);
 process.exitCode = errors.length > 0 ? 1 : 0;
