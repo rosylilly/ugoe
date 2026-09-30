@@ -1,11 +1,11 @@
 ---
 id: T0642
 title: エディタ: エディタの中の MCP サーバと、エージェントをつなぐ画面
-status: todo
+status: in-progress
 milestone: M6
 crates: [apps/editor, ugoe-editor-core, docs]
 depends_on: [T0516, T0641]
-assignee:
+assignee: claude-worker-T0642
 ---
 
 # T0642: エディタ: エディタの中の MCP サーバと、エージェントをつなぐ画面
