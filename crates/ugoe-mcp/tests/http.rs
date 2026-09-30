@@ -259,8 +259,9 @@ fn raw_request(stream: &mut TcpStream, head: &str, body: &str) -> (u16, String) 
 fn legacy_and_modern_clients_call_tools_over_http() {
     let tmp = TempDir::new("flow");
     let project = save_fixture_project(&tmp.0);
-    let path = project.to_str().unwrap();
-    let server = HttpServer::spawn(&[], None);
+    // ツールが触れるパスを一時ディレクトリの下に限る。相対パスはそこから解決する。
+    let path = "quad.ugoeproj";
+    let server = HttpServer::spawn(&["--root", tmp.0.to_str().unwrap()], None);
     let mut client = Client::new(&server.url);
 
     let init = client.request(
@@ -309,6 +310,21 @@ fn legacy_and_modern_clients_call_tools_over_http() {
 
     let opened = client.call_ok("open_project", json!({ "path": path }));
     assert_eq!(opened["counts"]["meshes"], 1);
+    // root の外は開けない。
+    let reply = client.request(
+        "tools/call",
+        json!({ "name": "open_project", "arguments": { "path": "../elsewhere.ugoeproj", "create": true } }),
+        &[("MCP-Protocol-Version", "2025-11-25")],
+    );
+    let result = &reply.json()["result"];
+    assert_eq!(result["isError"], true, "{result}");
+    assert!(
+        result["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("outside the root"),
+        "{result}"
+    );
     let proposal = client.call_ok(
         "propose_edit",
         json!({
@@ -374,7 +390,7 @@ fn legacy_and_modern_clients_call_tools_over_http() {
 /// 生の HTTP: GET と DELETE は 405、keep-alive で続けて送れる、Host と Origin の守り。
 #[test]
 fn raw_http_behaviour_and_guards() {
-    let server = HttpServer::spawn(&[], None);
+    let server = HttpServer::spawn(&["--allow-any-path"], None);
     let host = &server.authority;
     let ping = r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#;
     let post = |extra: &str| {
@@ -429,7 +445,7 @@ fn raw_http_behaviour_and_guards() {
 /// トークンを求めるサーバ: ヘッダ (Bearer) かパス (/mcp/<token>) で渡す。
 #[test]
 fn token_is_required_when_set() {
-    let server = HttpServer::spawn(&["--read-only"], Some(TOKEN));
+    let server = HttpServer::spawn(&["--read-only", "--allow-any-path"], Some(TOKEN));
     let ping = json!({ "jsonrpc": "2.0", "id": 1, "method": "ping" });
 
     let reply = Client::new(&server.url).post(&ping, &[]);
@@ -469,7 +485,7 @@ fn token_is_required_when_set() {
 #[test]
 fn refuses_to_listen_off_loopback_without_a_token() {
     let output = Command::new(env!("CARGO_BIN_EXE_ugoe-mcp"))
-        .args(["--http", "0.0.0.0:0"])
+        .args(["--http", "0.0.0.0:0", "--allow-any-path"])
         .env_remove("UGOE_MCP_TOKEN")
         .stdin(Stdio::null())
         .output()
@@ -479,7 +495,13 @@ fn refuses_to_listen_off_loopback_without_a_token() {
     assert!(stderr.contains("without a token"), "{stderr}");
 
     let output = Command::new(env!("CARGO_BIN_EXE_ugoe-mcp"))
-        .args(["--http", "127.0.0.1:0", "--token", "short"])
+        .args([
+            "--http",
+            "127.0.0.1:0",
+            "--allow-any-path",
+            "--token",
+            "short",
+        ])
         .stdin(Stdio::null())
         .output()
         .unwrap();
@@ -488,11 +510,51 @@ fn refuses_to_listen_off_loopback_without_a_token() {
     assert!(stderr.contains("at least 32"), "{stderr}");
 }
 
+/// HTTP では、パスを限るか (`--root`) 限らないか (`--allow-any-path`) を明示しないと起動しない
+/// (`--read-only` だけでは足りない)。`--root` は既存のディレクトリ。
+#[test]
+fn http_requires_root_or_allow_any_path() {
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_ugoe-mcp"))
+            .args(["--http", "127.0.0.1:0"])
+            .args(args)
+            .env_remove("UGOE_MCP_TOKEN")
+            .stdin(Stdio::null())
+            .output()
+            .unwrap()
+    };
+    for args in [&[][..], &["--read-only"][..]] {
+        let output = run(args);
+        assert!(!output.status.success(), "{args:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("--http needs --root"), "{args:?}: {stderr}");
+    }
+    let tmp = TempDir::new("no-root");
+    let missing = tmp.0.join("missing");
+    let output = run(&["--root", missing.to_str().unwrap()]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("invalid --root"), "{stderr}");
+    // 両方は付けられない。
+    let output = run(&["--root", tmp.0.to_str().unwrap(), "--allow-any-path"]);
+    assert!(!output.status.success());
+
+    // --root を付ければ起動する (最初の行に限る先を書く)。
+    let server = HttpServer::spawn(&["--root", tmp.0.to_str().unwrap()], None);
+    let mut client = Client::new(&server.url);
+    assert_eq!(client.request("ping", json!({}), &[]).status, 200);
+}
+
 /// `--generate-token` で作ったトークン (標準エラーに書く) を求める。
 #[test]
 fn generated_token_is_printed_and_required() {
     let mut child = Command::new(env!("CARGO_BIN_EXE_ugoe-mcp"))
-        .args(["--http", "127.0.0.1:0", "--generate-token"])
+        .args([
+            "--http",
+            "127.0.0.1:0",
+            "--allow-any-path",
+            "--generate-token",
+        ])
         .env_remove("UGOE_MCP_TOKEN")
         .stdin(Stdio::null())
         .stdout(Stdio::null())

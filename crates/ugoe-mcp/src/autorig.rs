@@ -36,7 +36,7 @@ use ugoe_psd::LayerTree;
 
 use crate::schema::object_schema;
 use crate::tools::{
-    Content, Draft, Kind, OpenProject, Output, ToolResult, path_property, tool_def,
+    Content, Draft, Kind, OpenProject, Output, PATH_NOTE, ToolResult, path_property, tool_def,
 };
 
 /// PSD がまだ分からないときの断りの文。
@@ -87,7 +87,7 @@ impl PsdSource {
 #[serde(deny_unknown_fields)]
 pub(crate) struct LayersArgs {
     pub(crate) path: String,
-    psd: Option<String>,
+    pub(crate) psd: Option<String>,
     #[serde(default)]
     start: usize,
     count: Option<usize>,
@@ -128,7 +128,7 @@ pub(crate) struct RigArgs {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ImportArgs {
     pub(crate) path: String,
-    psd: String,
+    pub(crate) psd: String,
     name: Option<String>,
     #[serde(default)]
     pub(crate) discard_changes: bool,
@@ -156,7 +156,7 @@ pub(crate) fn tools() -> Vec<Value> {
             object_schema(
                 json!({
                     "path": path_property(),
-                    "psd": { "type": "string", "description": "取り込む PSD のパス" },
+                    "psd": { "type": "string", "description": format!("取り込む PSD のパス。{PATH_NOTE}") },
                     "name": { "type": "string", "description": "プロジェクトの名前 (既定は PSD のファイル名)" },
                     "discard_changes": { "type": "boolean", "description": "同じパスで開いているプロジェクトの未保存の変更を捨てる" },
                 }),
@@ -181,7 +181,7 @@ pub(crate) fn tools() -> Vec<Value> {
             object_schema(
                 json!({
                     "path": path_property(),
-                    "psd": { "type": "string", "description": "このモデルの元の PSD のパス (import_psd で作ったプロジェクトでは不要。一度渡せば覚える)" },
+                    "psd": { "type": "string", "description": format!("このモデルの元の PSD のパス (import_psd で作ったプロジェクトでは不要。一度渡せば覚える)。{PATH_NOTE}") },
                     "start": { "type": "integer", "minimum": 0, "description": "最初のレイヤーの番号 (既定 0)" },
                     "count": { "type": "integer", "minimum": 1, "maximum": per_call, "description": format!("返すレイヤーの数 (既定 {DEFAULT_COUNT})") },
                     "indices": {
@@ -260,8 +260,8 @@ fn ai_error(e: AiError) -> String {
 }
 
 /// PSD から新しいプロジェクトを作る (まだ開いているプロジェクトの表に入れない)。
-pub(crate) fn import_psd(args: ImportArgs) -> Result<(OpenProject, Value), String> {
-    let psd = std::path::absolute(&args.psd).map_err(|e| format!("{}: {e}", args.psd))?;
+/// `psd` は解決したパス (`Tools::resolve`)。
+pub(crate) fn import_psd(args: ImportArgs, psd: PathBuf) -> Result<(OpenProject, Value), String> {
     let source = PsdSource::load(psd.clone())?;
     let name = args.name.unwrap_or_else(|| {
         psd.file_stem()
@@ -290,22 +290,26 @@ pub(crate) fn import_psd(args: ImportArgs) -> Result<(OpenProject, Value), Strin
     Ok((open, value))
 }
 
-/// 覚えている PSD。`psd` を渡されたら (違う PSD なら) 読み直し、分類を名前の規則の案に戻す。
-fn source<'a>(open: &'a mut OpenProject, psd: Option<&str>) -> Result<&'a mut PsdSource, String> {
-    if let Some(psd) = psd {
-        let path = std::path::absolute(psd).map_err(|e| format!("{psd}: {e}"))?;
-        if open.psd.as_ref().is_none_or(|s| s.path != path) {
-            open.psd = Some(PsdSource::load(path)?);
-        }
+/// 覚えている PSD。`psd` (解決したパス) を渡されたら (違う PSD なら) 読み直し、分類を名前の規則の案に戻す。
+fn source(open: &mut OpenProject, psd: Option<PathBuf>) -> Result<&mut PsdSource, String> {
+    if let Some(path) = psd
+        && open.psd.as_ref().is_none_or(|s| s.path != path)
+    {
+        open.psd = Some(PsdSource::load(path)?);
     }
     open.psd.as_mut().ok_or_else(|| NO_PSD.to_owned())
 }
 
-pub(crate) fn get_psd_layers(open: &mut OpenProject, args: LayersArgs) -> ToolResult {
+/// `psd` は `args.psd` を解決したパス (`Tools::resolve`)。
+pub(crate) fn get_psd_layers(
+    open: &mut OpenProject,
+    args: LayersArgs,
+    psd: Option<PathBuf>,
+) -> ToolResult {
     let defaults = ClassifyOptions::default();
     let per_call = defaults.max_layers_per_request;
     let meshes = unique_mesh_names(open);
-    let source = source(open, args.psd.as_deref())?;
+    let source = source(open, psd)?;
     let infos = layers(&source.tree);
     let total = infos.len();
     let selected: Vec<usize> = match &args.indices {

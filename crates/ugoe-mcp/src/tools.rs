@@ -21,6 +21,7 @@ use ugoe_editor_core::{
 use crate::autorig::{self, PsdSource};
 use crate::diff;
 use crate::render::{RenderRequest, Renderer};
+use crate::root::Root;
 use crate::schema::{CommandSchema, object_schema};
 use crate::summary::{ELEMENT_KINDS, element, model_summary};
 
@@ -32,6 +33,9 @@ pub struct Options {
     /// 描画に使う wgpu のバックエンド (`vulkan`・`gl` など。カンマ区切り)。`None` なら
     /// 環境変数 `WGPU_BACKEND`、それも無ければ wgpu の既定。
     pub backend: Option<String>,
+    /// ツールが触れるパスをこのディレクトリの下に限る (`--root`)。相対パスもここから解決する。
+    /// `None` なら限らず、相対パスはサーバの作業ディレクトリから解決する。
+    pub root: Option<Root>,
 }
 
 /// ツールの集まりと、開いているプロジェクト。
@@ -141,11 +145,15 @@ impl Kind {
     }
 }
 
+/// パスの引数の説明に添える、解決の規則。
+pub(crate) const PATH_NOTE: &str =
+    "相対パスは --root (あれば) かサーバの作業ディレクトリから解決する。--root の外は使えない。";
+
 /// プロジェクトのパスの引数。
 pub(crate) fn path_property() -> Value {
     json!({
         "type": "string",
-        "description": "プロジェクト (.ugoeproj ディレクトリ) のパス。相対パスはサーバの作業ディレクトリから解決する。",
+        "description": format!("プロジェクト (.ugoeproj ディレクトリ) のパス。{PATH_NOTE}"),
     })
 }
 
@@ -286,8 +294,8 @@ impl Tools {
                         "width": { "type": "integer", "minimum": 1, "maximum": 4096 },
                         "height": { "type": "integer", "minimum": 1, "maximum": 4096 },
                         "background": { "type": "string", "description": "transparent (既定)・white・black・#RRGGBB・#RRGGBBAA" },
-                        "motion": { "type": "string", "description": "再生するモーションの名前" },
-                        "expression": { "type": "string", "description": "使う表情の名前" },
+                        "motion": { "type": "string", "description": format!("再生するモーションの名前か .motion.json のパス。{PATH_NOTE}") },
+                        "expression": { "type": "string", "description": format!("使う表情の名前か .expression.json のパス。{PATH_NOTE}") },
                         "time": { "type": "number", "minimum": 0, "description": "この秒数だけ時間を進めてから描く (物理・モーション)" },
                     }),
                     &["path"],
@@ -342,7 +350,7 @@ impl Tools {
                     object_schema(
                         json!({
                             "path": path_property(),
-                            "bundle": { "type": "string", "description": "書き出す .ugoe のパス" },
+                            "bundle": { "type": "string", "description": format!("書き出す .ugoe のパス。{PATH_NOTE}") },
                         }),
                         &["path"],
                         None,
@@ -366,8 +374,9 @@ impl Tools {
             "list_proposals" => parse(arguments).and_then(|a| self.list_proposals(a)),
             "import_psd" => parse(arguments).and_then(|a| self.import_psd(a)),
             "get_psd_layers" => parse(arguments).and_then(|a: autorig::LayersArgs| {
+                let psd = a.psd.as_deref().map(|p| self.resolve(p)).transpose()?;
                 let (_, open) = self.project(&a.path)?;
-                autorig::get_psd_layers(open, a)
+                autorig::get_psd_layers(open, a, psd)
             }),
             "set_layer_labels" => parse(arguments).and_then(|a: autorig::LabelsArgs| {
                 let (_, open) = self.project(&a.path)?;
@@ -394,18 +403,53 @@ impl Tools {
         Some(tool_result(result))
     }
 
-    /// パスを絶対パスにする (あれば正規化する)。開いているプロジェクトの鍵に使う。
-    fn key(path: &str) -> Result<PathBuf, String> {
+    /// ツールが受け取ったパスを絶対パスにする (あれば正規化する)。開いているプロジェクトの鍵にも使う。
+    /// `--root` があれば root から解決し、root の外ならエラー (`crate::root`)。
+    pub(crate) fn resolve(&self, path: &str) -> Result<PathBuf, String> {
+        if let Some(root) = &self.options.root {
+            return root.resolve(path);
+        }
         let path = std::path::absolute(path).map_err(|e| format!("invalid path `{path}`: {e}"))?;
         Ok(path.canonicalize().unwrap_or(path))
+    }
+
+    /// `--root` があれば、プロジェクトのディレクトリの中の (読み書きする) シンボリックリンクが root の外を
+    /// 指していないことを確かめる。直下と `motions/`・`expressions/`・`textures/` の中を見る
+    /// (`Project::load`・`Project::save` が触れる場所)。
+    fn check_project_dir(&self, dir: &Path) -> Result<(), String> {
+        let Some(root) = &self.options.root else {
+            return Ok(());
+        };
+        for sub in ["", "motions", "expressions", "textures"] {
+            let Ok(entries) = std::fs::read_dir(dir.join(sub)) else {
+                continue;
+            };
+            for entry in entries {
+                let entry = entry.map_err(|e| format!("`{}`: {e}", dir.display()))?;
+                let is_link = entry
+                    .file_type()
+                    .map_err(|e| format!("`{}`: {e}", entry.path().display()))?
+                    .is_symlink();
+                if is_link {
+                    root.contains_existing(&entry.path())?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// ディスクからプロジェクトを読む。
+    fn load(&self, key: &Path) -> Result<Project, String> {
+        self.check_project_dir(key)?;
+        Project::load(key).map_err(|e| e.to_string())
     }
 
     /// 開いているプロジェクト。開いていなければディスクから開く (要求ごとに状態を渡す MCP の流儀に
     /// 合わせ、パスだけでプロジェクトを指せるようにする)。
     fn project(&mut self, path: &str) -> Result<(PathBuf, &mut OpenProject), String> {
-        let key = Self::key(path)?;
+        let key = self.resolve(path)?;
         if !self.projects.contains_key(&key) {
-            let project = Project::load(&key).map_err(|e| e.to_string())?;
+            let project = self.load(&key)?;
             self.projects.insert(key.clone(), OpenProject::new(project));
         }
         match self.projects.get_mut(&key) {
@@ -415,7 +459,7 @@ impl Tools {
     }
 
     fn open_project(&mut self, args: OpenArgs) -> ToolResult {
-        let key = Self::key(&args.path)?;
+        let key = self.resolve(&args.path)?;
         if let Some(open) = self.projects.get(&key)
             && open.doc.is_modified()
             && !args.discard_changes
@@ -439,7 +483,7 @@ impl Tools {
             });
             Project::empty(name)
         } else {
-            Project::load(&key).map_err(|e| e.to_string())?
+            self.load(&key)?
         };
         let open = OpenProject::new(project);
         let mut status = open.status(&key);
@@ -456,7 +500,7 @@ impl Tools {
     }
 
     fn close_project(&mut self, args: CloseArgs) -> ToolResult {
-        let key = Self::key(&args.path)?;
+        let key = self.resolve(&args.path)?;
         let Some(open) = self.projects.get(&key) else {
             return Err(format!("`{}` is not open", key.display()));
         };
@@ -557,7 +601,7 @@ impl Tools {
     }
 
     fn import_psd(&mut self, args: autorig::ImportArgs) -> ToolResult {
-        let key = Self::key(&args.path)?;
+        let key = self.resolve(&args.path)?;
         if let Some(open) = self.projects.get(&key)
             && open.doc.is_modified()
             && !args.discard_changes
@@ -573,7 +617,8 @@ impl Tools {
                 key.display()
             ));
         }
-        let (open, value) = autorig::import_psd(args)?;
+        let psd = self.resolve(&args.psd)?;
+        let (open, value) = autorig::import_psd(args, psd)?;
         let mut status = open.status(&key);
         if let (Value::Object(status), Value::Object(value)) = (&mut status, value) {
             status.extend(value);
@@ -598,29 +643,71 @@ impl Tools {
     }
 
     fn save_project(&mut self, args: SaveArgs) -> ToolResult {
+        // 書く前にパスを確かめる (保存の後で書き出し先が root の外と分かって半端にならないように)。
+        let bundle = args
+            .bundle
+            .as_deref()
+            .map(|b| self.resolve(b))
+            .transpose()?;
+        let key = self.resolve(&args.path)?;
+        self.check_project_dir(&key)?;
         let (key, open) = self.project(&args.path)?;
         let project = open.project();
         project.save(&key).map_err(|e| e.to_string())?;
         open.doc.mark_saved();
         let mut status = open.status(&key);
-        if let Some(bundle) = args.bundle {
+        if let Some(bundle) = bundle {
             let bytes = export_bundle(&project).map_err(|e| e.to_string())?;
-            std::fs::write(&bundle, bytes).map_err(|e| format!("failed to write {bundle}: {e}"))?;
-            status["bundle"] = json!(std::path::absolute(&bundle).unwrap_or(bundle.into()));
+            std::fs::write(&bundle, bytes)
+                .map_err(|e| format!("failed to write {}: {e}", bundle.display()))?;
+            status["bundle"] = json!(bundle);
         }
         Ok(status.into())
+    }
+
+    /// `render_png` の `motion`・`expression`: プロジェクトの中の名前ならそのまま。そうでなければ
+    /// JSON のファイルのパスとして解決する (`--root` の外なら拒否する。描画は解決したパスを読む)。
+    fn name_or_path(
+        &self,
+        arg: Option<String>,
+        names: &[&str],
+        what: &str,
+    ) -> Result<Option<String>, String> {
+        let Some(arg) = arg else {
+            return Ok(None);
+        };
+        if self.options.root.is_none() || names.contains(&arg.as_str()) {
+            return Ok(Some(arg));
+        }
+        let unknown = format!("no {what} named `{arg}` (known: {})", names.join(", "));
+        let path = self
+            .resolve(&arg)
+            .map_err(|e| format!("{unknown}, and it is not a usable path: {e}"))?;
+        // 無いパスを元の文字列のまま渡すと、描画が作業ディレクトリから読もうとするので、ここで断る。
+        if !path.is_file() {
+            return Err(format!("{unknown}, and `{arg}` is not a file"));
+        }
+        Ok(Some(path.to_string_lossy().into_owned()))
     }
 
     fn render_png(&mut self, args: RenderArgs) -> ToolResult {
         let (_, open) = self.project(&args.path)?;
         let project = open.project();
+        let motion_names: Vec<&str> = project.motions.iter().map(|m| m.name.as_str()).collect();
+        let expression_names: Vec<&str> = project
+            .expressions
+            .iter()
+            .map(|e| e.name.as_str())
+            .collect();
+        let motion = self.name_or_path(args.motion, &motion_names, "motion")?;
+        let expression = self.name_or_path(args.expression, &expression_names, "expression")?;
         let request = RenderRequest {
             params: args.params.into_iter().collect(),
             width: args.width,
             height: args.height,
             background: args.background,
-            motion: args.motion,
-            expression: args.expression,
+            motion,
+            expression,
             time: args.time,
         };
         let rendered = self

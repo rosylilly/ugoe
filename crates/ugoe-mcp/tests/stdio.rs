@@ -737,6 +737,126 @@ fn agent_driven_auto_rig_from_psd() {
     assert_eq!(page["layers"][0]["set_by"], "rules");
 }
 
+/// `--root` で、ツールが触れるパスを 1 つのディレクトリの下に限る。相対パスは root から解決し、
+/// `..`・root の外の絶対パス・外を指すシンボリックリンクは拒否する (読む・作る・書き出す・描く)。
+#[test]
+fn root_confines_tool_paths() {
+    let tmp = TempDir::new("root");
+    let root = tmp.0.join("root");
+    let outside = tmp.0.join("outside");
+    fs::create_dir_all(root.join("sub")).unwrap();
+    fs::create_dir_all(&outside).unwrap();
+    save_fixture_project(&root);
+    let other = save_fixture_project(&outside);
+    fs::write(outside.join("secret.psd"), b"8BPS").unwrap();
+    fs::write(outside.join("idle.motion.json"), b"{}").unwrap();
+    let root_arg = root.to_str().unwrap();
+    let mut client = Client::spawn(&["--root", root_arg]);
+    client.initialize();
+
+    // 相対パスは root から解決する (サーバの作業ディレクトリではない)。
+    let opened = client.call_ok("open_project", json!({ "path": "quad.ugoeproj" }));
+    let canonical_root = root.canonicalize().unwrap();
+    assert_eq!(opened["path"], json!(canonical_root.join("quad.ugoeproj")));
+    // root の下を指す絶対パスも使える。
+    let absolute = canonical_root.join("quad.ugoeproj");
+    client.call_ok(
+        "get_model_summary",
+        json!({ "path": absolute.to_str().unwrap() }),
+    );
+
+    let outside_abs = other.to_str().unwrap().to_owned();
+    for (tool, arguments) in [
+        (
+            "open_project",
+            json!({ "path": "../outside/quad.ugoeproj" }),
+        ),
+        ("open_project", json!({ "path": outside_abs })),
+        ("get_model_summary", json!({ "path": outside_abs })),
+        (
+            "open_project",
+            json!({ "path": "../outside/new.ugoeproj", "create": true }),
+        ),
+        (
+            "import_psd",
+            json!({ "path": "new.ugoeproj", "psd": "../outside/secret.psd" }),
+        ),
+        (
+            "get_psd_layers",
+            json!({ "path": "quad.ugoeproj", "psd": outside.join("secret.psd").to_str().unwrap() }),
+        ),
+        (
+            "save_project",
+            json!({ "path": "quad.ugoeproj", "bundle": "../outside/quad.ugoe" }),
+        ),
+        (
+            "save_project",
+            json!({ "path": "quad.ugoeproj", "bundle": "sub/../../outside/quad.ugoe" }),
+        ),
+    ] {
+        let err = client.call_err(tool, arguments.clone());
+        assert!(
+            err.contains("outside the root"),
+            "{tool} {arguments}: {err}"
+        );
+    }
+    assert!(!outside.join("new.ugoeproj").exists());
+    assert!(!outside.join("quad.ugoe").exists());
+    // 描くモーションや表情の JSON のパスも限る (GPU に触る前に断る)。
+    let err = client.call_err(
+        "render_png",
+        json!({ "path": "quad.ugoeproj", "motion": "../outside/idle.motion.json" }),
+    );
+    assert!(err.contains("outside the root"), "{err}");
+    // 名前でもファイルでもなければ、作業ディレクトリから読もうとせずに断る。
+    let err = client.call_err(
+        "render_png",
+        json!({ "path": "quad.ugoeproj", "expression": "smile.expression.json" }),
+    );
+    assert!(err.contains("no expression named"), "{err}");
+    assert!(err.contains("is not a file"), "{err}");
+
+    // root の下なら書き出せる。
+    let saved = client.call_ok(
+        "save_project",
+        json!({ "path": "quad.ugoeproj", "bundle": "quad.ugoe" }),
+    );
+    assert_eq!(saved["bundle"], json!(canonical_root.join("quad.ugoe")));
+    assert!(root.join("quad.ugoe").is_file());
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+
+        // root の外を指すリンク (プロジェクト・PSD・書き出し先)。
+        symlink(&other, root.join("link.ugoeproj")).unwrap();
+        symlink(outside.join("secret.psd"), root.join("secret.psd")).unwrap();
+        symlink(outside.join("planted.ugoe"), root.join("planted.ugoe")).unwrap();
+        let err = client.call_err("open_project", json!({ "path": "link.ugoeproj" }));
+        assert!(err.contains("outside the root"), "{err}");
+        let err = client.call_err(
+            "import_psd",
+            json!({ "path": "new.ugoeproj", "psd": "secret.psd" }),
+        );
+        assert!(err.contains("outside the root"), "{err}");
+        let err = client.call_err(
+            "save_project",
+            json!({ "path": "quad.ugoeproj", "bundle": "planted.ugoe" }),
+        );
+        assert!(err.contains("symbolic link"), "{err}");
+        assert!(!outside.join("planted.ugoe").exists());
+
+        // プロジェクトのディレクトリは root の中でも、中のファイルが外を指すリンク。
+        let leaky = root.join("leaky.ugoeproj");
+        fs::create_dir_all(&leaky).unwrap();
+        for name in ["project.json", "model.json", "textures"] {
+            symlink(other.join(name), leaky.join(name)).unwrap();
+        }
+        let err = client.call_err("open_project", json!({ "path": "leaky.ugoeproj" }));
+        assert!(err.contains("leads outside the root"), "{err}");
+    }
+}
+
 /// `render_png` が `ugoe` (ugoe-cli) の実行ファイルなしで描けること。GPU (または lavapipe などの
 /// ソフトウェアラスタライザ) が要る。`cargo test -p ugoe-mcp --features gpu-tests` で実行する。
 #[cfg(feature = "gpu-tests")]

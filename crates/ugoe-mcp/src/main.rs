@@ -1,11 +1,12 @@
 //! `ugoe-mcp`: stdio (既定) か HTTP で動く MCP サーバ。使い方は `crates/ugoe-mcp/README.md`。
 
 use std::io::{BufRead, Write};
+use std::path::PathBuf;
 
 use anyhow::Context;
 use clap::Parser;
 use ugoe_mcp::http::{ENDPOINT, HttpOptions, HttpServer, generate_token};
-use ugoe_mcp::{Options, Server};
+use ugoe_mcp::{Options, Root, Server};
 
 /// トークンを渡す環境変数 (コマンド行に書くとほかの利用者から見えることがあるので、こちらを勧める)。
 const TOKEN_ENV: &str = "UGOE_MCP_TOKEN";
@@ -20,6 +21,12 @@ struct Cli {
     /// 描画に使う wgpu のバックエンド (vulkan / metal / dx12 / gl。カンマ区切りで複数)。省略時は WGPU_BACKEND、それも無ければ wgpu の既定
     #[arg(long)]
     backend: Option<String>,
+    /// ツールが読み書きするパスをこのディレクトリの下に限る (相対パスもここから解決する)。--http では、これか --allow-any-path が要る
+    #[arg(long, value_name = "DIR")]
+    root: Option<PathBuf>,
+    /// --http で、--root を付けずに任意のパスを読み書きさせる (利用者の権限でどのファイルにも届くので、勧めない)
+    #[arg(long, requires = "http", conflicts_with = "root")]
+    allow_any_path: bool,
     /// stdio の代わりに HTTP (MCP の Streamable HTTP) で待ち受ける。`127.0.0.1:8765` の形か、ポート番号だけ (ループバック)。エンドポイントは /mcp
     #[arg(long, value_name = "ADDR")]
     http: Option<String>,
@@ -36,9 +43,23 @@ struct Cli {
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    // HTTP ではほかのプログラムやリモートのクライアントがツールを呼べるので、パスを限るかを明示させる
+    // (--read-only でも任意の PSD やプロジェクトを読んで画像で返せるので、それだけでは足りない)。
+    if cli.http.is_some() && cli.root.is_none() && !cli.allow_any_path {
+        anyhow::bail!(
+            "--http needs --root <DIR> to confine the paths the tools can read and write \
+             (or --allow-any-path to let them reach any path you can)"
+        );
+    }
+    let root = cli.root.as_deref().map(Root::new).transpose()?;
+    let paths = match &root {
+        Some(root) => format!("paths confined to {}", root.dir().display()),
+        None => "any path".to_owned(),
+    };
     let server = Server::new(Options {
         read_only: cli.read_only,
         backend: cli.backend,
+        root,
     });
     match cli.http {
         Some(addr) => {
@@ -48,17 +69,27 @@ fn main() -> anyhow::Result<()> {
                 cli.token
                     .or_else(|| std::env::var(TOKEN_ENV).ok().filter(|t| !t.is_empty()))
             };
-            serve_http(&addr, server, token, cli.generate_token, cli.allow_origins)
+            serve_http(
+                &addr,
+                server,
+                token,
+                cli.generate_token,
+                cli.allow_origins,
+                &paths,
+            )
         }
-        None => serve_stdio(server),
+        None => serve_stdio(server, &paths),
     }
 }
 
-fn serve_stdio(mut server: Server) -> anyhow::Result<()> {
+fn serve_stdio(mut server: Server, paths: &str) -> anyhow::Result<()> {
     let stdin = std::io::stdin().lock();
     let mut stdout = std::io::stdout().lock();
     // 標準出力には MCP のメッセージだけを書く。ログは標準エラーへ。
-    eprintln!("ugoe-mcp {} ready (stdio)", env!("CARGO_PKG_VERSION"));
+    eprintln!(
+        "ugoe-mcp {} ready (stdio; {paths})",
+        env!("CARGO_PKG_VERSION")
+    );
     for line in stdin.lines() {
         let line = line.context("failed to read stdin")?;
         if line.trim().is_empty() {
@@ -78,6 +109,7 @@ fn serve_http(
     token: Option<String>,
     show_token: bool,
     allowed_origins: Vec<String>,
+    paths: &str,
 ) -> anyhow::Result<()> {
     let auth = if token.is_some() {
         "token required"
@@ -96,7 +128,7 @@ fn serve_http(
         .local_addr()
         .context("failed to get the local address")?;
     eprintln!(
-        "ugoe-mcp {} listening on http://{local}{ENDPOINT} ({auth})",
+        "ugoe-mcp {} listening on http://{local}{ENDPOINT} ({auth}; {paths})",
         env!("CARGO_PKG_VERSION")
     );
     if show_token && let Some(token) = token {

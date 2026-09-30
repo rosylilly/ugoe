@@ -13,10 +13,12 @@ mod autorig;
 mod diff;
 pub mod http;
 pub mod render;
+pub mod root;
 pub mod schema;
 pub mod server;
 mod summary;
 pub mod tools;
 
+pub use root::Root;
 pub use server::Server;
 pub use tools::Options;

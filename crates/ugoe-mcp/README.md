@@ -21,6 +21,8 @@ cargo install --path crates/ugoe-mcp
 | オプション | 内容 |
 | --- | --- |
 | `--read-only` | 読むだけにする。`apply_proposal`・`undo`・`redo`・`save_project` を出さない (提案と描画はできる) |
+| `--root <DIR>` | ツールが読み書きするパスを `<DIR>` の下に限る。相対パスも `<DIR>` から解決する ([パスを限る](#パスを限る---root))。`--http` ではこれか `--allow-any-path` が要る |
+| `--allow-any-path` | `--http` で `--root` を付けずに、ツールに任意のパスを読み書きさせる (勧めない) |
 | `--backend <NAME>` | 描画に使う wgpu のバックエンド (`vulkan` `metal` `dx12` `gl`、カンマ区切り)。省略時は `WGPU_BACKEND`、それも無ければ wgpu の既定 |
 | `--http <ADDR>` | stdio の代わりに HTTP で待ち受ける。`127.0.0.1:8765` の形か、ポート番号だけ (`8765` はループバックの `127.0.0.1:8765`)。エンドポイントは `/mcp` |
 | `--token <TOKEN>` | HTTP の要求に求めるトークン (32 文字以上。16 進数で 128 ビット以上)。環境変数 `UGOE_MCP_TOKEN` でも渡せる (コマンド行は `ps` でほかの利用者から見えることがあるので、環境変数を勧める) |
@@ -38,10 +40,12 @@ claude mcp add --scope project ugoe -- /path/to/ugoe/target/release/ugoe-mcp
 claude mcp add --scope user ugoe -- ugoe-mcp
 # 読むだけにする。描画のバックエンドを GL に固定する
 claude mcp add ugoe-read -- ugoe-mcp --read-only --backend gl
+# 触れるパスを 1 つのディレクトリの下に限る
+claude mcp add ugoe-art -- ugoe-mcp --root ~/art
 ```
 
 `claude mcp list` で `ugoe` が `Connected` になっていればよい。Claude Code の中では `/mcp` で状態とツールを見られる。
-相対パスはサーバの作業ディレクトリ (Claude Code を起動したディレクトリ) から解決する。
+相対パスはサーバの作業ディレクトリ (Claude Code を起動したディレクトリ) から解決する (`--root` を付けたらそのディレクトリから)。
 
 読むだけのツールを確認なしで呼ばせるには、Claude Code の設定 (`.claude/settings.json` など) の `permissions.allow` に
 足す。`mcp__ugoe__apply_proposal` と `mcp__ugoe__save_project` は足さず、呼ぶたびに確認させる
@@ -100,20 +104,25 @@ ChatGPT のように、サーバを子プロセスとして起動せず HTTP で
 待ち受けられる。ツールと状態は stdio と同じ。
 
 ```sh
-ugoe-mcp --http 8765                      # http://127.0.0.1:8765/mcp (ループバックだけ。トークンなし)
-ugoe-mcp --http 8765 --generate-token    # トークンを作って求める (標準エラーに書く)
-UGOE_MCP_TOKEN=$(openssl rand -hex 32) ugoe-mcp --http 8765   # 自分で作ったトークンを求める
+ugoe-mcp --http 8765 --root ~/art                      # http://127.0.0.1:8765/mcp (ループバックだけ。トークンなし)
+ugoe-mcp --http 8765 --root ~/art --generate-token    # トークンを作って求める (標準エラーに書く)
+UGOE_MCP_TOKEN=$(openssl rand -hex 32) ugoe-mcp --http 8765 --root ~/art   # 自分で作ったトークンを求める
 ```
 
-起動すると標準エラーに `listening on http://127.0.0.1:8765/mcp (...)` と書く。サーバは Ctrl-C まで動き続け、
+HTTP では `--root <DIR>` (ツールが触れるパスを `<DIR>` の下に限る) か `--allow-any-path` (限らないことを明示する) の
+どちらかが要り、どちらも無ければ起動しない ([パスを限る](#パスを限る---root))。
+起動すると標準エラーに `listening on http://127.0.0.1:8765/mcp (...; paths confined to ...)` と書く。サーバは Ctrl-C まで動き続け、
 開いたプロジェクトと提案はプロセスに 1 つだけ持つ (つないだすべてのクライアントで共有する。保存するまで
 ディスクに書かないのは stdio と同じ)。
 
 #### 守り
 
 HTTP で待ち受けると、同じ計算機のほかのプログラムやブラウザのページからも届く。ツールは利用者の権限で
-任意のパスのプロジェクトと PSD を読み、`save_project` は任意のパスに書くので、次のように守る。
+プロジェクトと PSD を読み、`save_project` はディスクに書くので、次のように守る。
 
+- **パスを限る。** `--root <DIR>` で、ツールが触れるパスを `<DIR>` の下に限る ([パスを限る](#パスを限る---root))。
+  HTTP では `--root` か `--allow-any-path` のどちらかが要る。`--read-only` だけでは足りない (書けなくても、
+  任意のプロジェクトや PSD を読んで画像で返せる)。
 - **既定はループバックだけ。** `--http 8765` は `127.0.0.1` に束ねる。ループバック以外 (`0.0.0.0:8765` など) に
   束ねるにはトークンが要り、無ければ起動しない。
 - **トークン。** `--token` (または `UGOE_MCP_TOKEN`)・`--generate-token` で、すべての要求にトークンを求める。
@@ -135,6 +144,22 @@ HTTP で待ち受けると、同じ計算機のほかのプログラムやブラ
   `408`)、同時の接続は 32 まで (`503`)。超えたら答えて接続を閉じる。
 - TLS は扱わない (外に出すときは HTTPS を終端するトンネルを使う)。
 
+#### パスを限る (`--root`)
+
+`--root <DIR>` で起動すると、ツールが読み書きするすべてのパスを `<DIR>` の下に限る (`src/root.rs`)。プロジェクト
+(`path`)・`import_psd` と `get_psd_layers` の `psd`・`save_project` の `bundle`・`render_png` の `motion` と `expression`
+(プロジェクトの中の名前でなくファイルのパスのとき) が対象。stdio でも HTTP でも使える (stdio の既定は限らない)。
+
+- 相対パスは `<DIR>` から解決する。`<DIR>` の下を指す絶対パスも使える。
+- 正規化 (シンボリックリンクと `..` を解く) してから `<DIR>` の下にあるかを判定する。`..` で上に出るパス・外の絶対パス・
+  外を指すシンボリックリンク・Windows のほかのドライブや UNC のパスは、ツールのエラー (`... is outside the root
+  directory ...`) になる。まだ無いパス (新しいプロジェクト・書き出し先) は、存在する祖先を正規化して判定する
+  (無い部分に `..` があったり、行き先の無いリンクがあったりすれば拒否する)。
+- プロジェクトのディレクトリの中のファイルが外を指すシンボリックリンクなら、開く前と保存の前に拒否する。
+- **防がないこと:** 判定の後、読み書きの前に、ほかのプロセスが `<DIR>` の中をシンボリックリンクに差し替える競合 (TOCTOU)。
+  ツールはリンクを作れないので MCP のクライアントだけでは起こせないが、`<DIR>` を信頼しないほかのプログラムに書かせない
+  こと。判定はツールを呼ぶたびにし直す。設計は [docs/ai-integration.md#パスを限る---root](../../docs/ai-integration.md#パスを限る---root)。
+
 #### ChatGPT から使う
 
 ChatGPT の開発者モード (設定の「Security and login」→「Developer mode」。使えるプランは
@@ -150,12 +175,12 @@ Bearer のヘッダを付けられない)。
 
    ```sh
    tunnel-client init --sample sample_mcp_stdio_local --profile ugoe \
-     --tunnel-id <tunnel_id> --mcp-command "ugoe-mcp --read-only"
+     --tunnel-id <tunnel_id> --mcp-command "ugoe-mcp --read-only --root /path/to/art"
    tunnel-client doctor --profile ugoe --explain
    tunnel-client run --profile ugoe
    ```
 
-   HTTP のサーバにつなぐなら、`ugoe-mcp --http 8765 --read-only` を動かし、`--mcp-command` の代わりに
+   HTTP のサーバにつなぐなら、`ugoe-mcp --http 8765 --read-only --root /path/to/art` を動かし、`--mcp-command` の代わりに
    `--mcp-server-url http://127.0.0.1:8765/mcp` を渡す (対応する `--sample` の名前は OpenAI の文書で確かめる)。
    `tunnel-client` が転送ヘッダを付けるなどで `403` になるときは、トークンを付けてパスの形の URL
    (`http://127.0.0.1:8765/mcp/<token>`) を渡す。ChatGPT のプラグインの画面で開発者モードのアプリを作り、
@@ -164,7 +189,7 @@ Bearer のヘッダを付けられない)。
    ChatGPT はヘッダを送れないので、URL のパスにトークンを入れる。
 
    ```sh
-   ugoe-mcp --http 8765 --read-only --generate-token   # 標準エラーの token をひかえる
+   ugoe-mcp --http 8765 --read-only --root ~/art --generate-token   # 標準エラーの token をひかえる
    ngrok http 8765          # https://<name>.ngrok.app を得る
    ```
 
@@ -176,8 +201,7 @@ Bearer のヘッダを付けられない)。
 - ChatGPT は `readOnlyHint` の無いツール (`apply_proposal`・`undo`・`redo`・`save_project`) を書き込みとして扱い、
   呼ぶ前に確認を求める (ADR 0006 の承認にあたる)。外に出すときは `--read-only` で始め、提案 (`propose_edit`) と
   描画 (`render_png`) だけを使わせ、適用は手元の Claude Code やエディタで行うことを勧める。
-- パスはサーバの作業ディレクトリから解決する。ChatGPT には手元のパス (例: `~/art/character.ugoeproj` の絶対パス)
-  を伝える。
+- パスは `--root` のディレクトリから解決する。ChatGPT には root からの相対パス (例: `character.ugoeproj`) を伝える。
 
 **確かめていないこと:** 実際の ChatGPT (開発者モード・Secure MCP Tunnel・ngrok) からつなぐことは確かめていない。
 サーバの側は、HTTP で握手・ツールの一覧・ツールの呼び出し (提案・適用・保存) を流すテスト (`tests/http.rs`) で
@@ -272,7 +296,8 @@ Claude Code に次のように頼む:
 | `save_project` | 書く | ディスクに保存する。`bundle` で `.ugoe` にも書き出す |
 
 - 「読む」ツールはドキュメントもディスクも変えない (`readOnlyHint`)。「書く」は `destructiveHint` を付ける。
-- どのツールもプロジェクトをパスで指す。開いていないプロジェクトを指すと、ディスクから開く。
+- どのツールもプロジェクトをパスで指す。開いていないプロジェクトを指すと、ディスクから開く。`--root` があれば、
+  パスはその下に限る。
   サーバは開いたプロジェクトをパスごとにメモリに持ち、`save_project` まで書かない。
 - 失敗 (検証を通らない提案、未知の ID、引数の誤り) はツールの実行エラー (`isError: true`) で返し、
   エージェントが読んで直せるようにする。
@@ -333,7 +358,8 @@ Claude Code に次のように頼む:
 
 ```sh
 cargo test -p ugoe-mcp   # サーバを stdio で起動して、握手・ツールの一覧・提案と適用・Undo・保存、PSD からの自動リギングを確かめる
-                         # tests/http.rs は --http で起動して、HTTP での握手・ツールの呼び出しと、トークン・Origin・Host の守りを確かめる
+                         # tests/http.rs は --http で起動して、HTTP での握手・ツールの呼び出しと、トークン・Origin・Host の守り・--root の要求を確かめる
+                         # --root で外に出るパス (相対・..・絶対・シンボリックリンク) を拒否することは tests/stdio.rs と src/root.rs
 ```
 
 ```sh
@@ -349,3 +375,4 @@ GPU を使わないテストでは、GPU に触る前に引数の誤り (未知�
 - T0508 (`docs/tasks/T0508-mcp-server.md`)
 - T0513 (`docs/tasks/T0513-mcp-agent-auto-rig.md`): 自動リギングの判断をエージェントに任せるツール
 - T0514 (`docs/tasks/T0514-mcp-http-transport.md`): HTTP のトランスポート
+- T0515 (`docs/tasks/T0515-mcp-root-dir.md`): ツールが触れるパスを `--root` の下に限る
