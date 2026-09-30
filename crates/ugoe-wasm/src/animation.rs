@@ -11,6 +11,8 @@ use ugoe::model::physics::PhysicsSettings;
 use ugoe::model::validate::ValidationError;
 use ugoe::motion::Priority;
 
+use crate::load::LoadWarning;
+
 #[derive(Debug, thiserror::Error)]
 pub enum AnimationError {
     #[error(transparent)]
@@ -192,14 +194,16 @@ pub fn motion_events(puppet: &Puppet) -> Vec<String> {
 /// 段の有効・無効は常に引き継ぐ。`keep_physics` なら物理の設定も引き継ぐが、新しいモデルと
 /// 合わなくなった設定は外して警告を返す (エディタでモデルを編集しながら物理をプレビューするため)。
 /// 着せ替えのモジュールを付けていれば、合成した設定ではなく本体の設定を引き継ぐ (モジュールは付け直す側で加わる)。
-pub fn carry_over(old: &Puppet, new: &mut Puppet, keep_physics: bool) -> Vec<String> {
+pub fn carry_over(old: &Puppet, new: &mut Puppet, keep_physics: bool) -> Vec<LoadWarning> {
     new.set_toggles(old.toggles());
     let mut warnings = Vec::new();
     if keep_physics
         && let Some(physics) = old.base_physics()
         && let Err(e) = set_physics(new, Some(physics.clone()))
     {
-        warnings.push(format!("physics settings were removed: {e}"));
+        warnings.push(LoadWarning::PhysicsRemoved {
+            reason: e.to_string(),
+        });
     }
     warnings
 }
@@ -396,7 +400,11 @@ mod tests {
         // 合わなくなった設定は外して警告する。
         let mut new = Puppet::new(fixtures::single_quad()).unwrap();
         let warnings = carry_over(&old, &mut new, true);
-        assert_eq!(warnings.len(), 1);
+        assert!(
+            matches!(&warnings[..], [LoadWarning::PhysicsRemoved { reason }] if reason.contains("failed validation")),
+            "{warnings:?}"
+        );
+        assert_eq!(warnings[0].to_json()["code"], "physics_removed");
         assert!(new.physics().is_none());
 
         let mut new = Puppet::new(fixtures::physics_hair()).unwrap();

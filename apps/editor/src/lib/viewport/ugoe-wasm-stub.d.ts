@@ -11,6 +11,7 @@ export class WebPuppet {
 
   load_json(json: string): string[];
   load_bundle(bytes: Uint8Array): string[];
+  load_warnings_json(): string;
   unload(): void;
   has_model(): boolean;
 

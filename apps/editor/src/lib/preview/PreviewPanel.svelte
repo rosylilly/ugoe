@@ -64,6 +64,7 @@ function onValueKeyDown(e: KeyboardEvent) {
 <div class="preview-panel">
   <h2>Preview</h2>
   {#if preview.error}<p class="error">{preview.error}</p>{/if}
+  {#each preview.warnings as warning, i (i)}<p class="warning">{warning}</p>{/each}
   {#if viewport.status !== "ready"}<p class="muted">{viewport.message ?? "Loading viewport…"}</p>{/if}
 
   <section aria-label="Runtime stages">
@@ -227,6 +228,14 @@ function onValueKeyDown(e: KeyboardEvent) {
 </div>
 
 <style>
+/* 読み込みの警告 (T0125。DressUpSection の知らせと同じ枠) */
+.warning {
+  margin: 4px 0;
+  padding: 4px 6px;
+  border: 1px solid #d97706;
+  border-radius: 4px;
+}
+
 .preview-panel {
   display: flex;
   flex-direction: column;

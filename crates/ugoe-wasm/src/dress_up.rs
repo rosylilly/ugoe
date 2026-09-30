@@ -13,7 +13,7 @@ use ugoe::format::module_file;
 use ugoe::model::module::{Module, ModuleRequirements, Slot};
 use ugoe::{DressUpChange, DressUpError, Puppet, TextureSource};
 
-use crate::load::{self, LoadError, Rgba8};
+use crate::load::{self, LoadError, LoadWarning, Rgba8};
 
 /// 読み込んだ `.ugoemod` 1 つ分。
 #[derive(Debug)]
@@ -24,7 +24,7 @@ pub struct LoadedModule {
     /// 法線マップ (添字 = `Module::textures` の番号。アルファを掛けない)。`None` の番号は法線マップなし。
     pub normal_maps: Vec<Option<Rgba8>>,
     /// 読み込めたが注意が要ること (プレースホルダで代用したテクスチャなど)。
-    pub warnings: Vec<String>,
+    pub warnings: Vec<LoadWarning>,
 }
 
 /// `.ugoemod` を読み、テクスチャと法線マップをデコードする。
@@ -77,7 +77,10 @@ pub struct ModuleInfo<'a> {
     /// 今の Puppet に付けているか。
     pub attached: bool,
     pub textures: usize,
-    pub warnings: &'a [String],
+    /// 読み込めたが注意が要ること (英語の文。T0123 から変えていない)。
+    pub warnings: Vec<String>,
+    /// `warnings` と同じ順の構造 (`LoadWarning::to_json`。T0125)。
+    pub warning_details: Vec<serde_json::Value>,
 }
 
 /// モデルを読み直したときに付け直せず、外したモジュール (`detached_modules_json` の要素)。
@@ -97,9 +100,10 @@ impl Detached {
         format!("module `{}` was detached: {}", self.module, self.error)
     }
 
-    /// JSON: `{"module", "slot", "error": {"code", "message", "module"?, "slot"?, ...}, "warning"}`。
+    /// JSON: `{"code": "module_detached", "module", "slot", "error": {"code", "message", "module"?, "slot"?, ...}, "warning"}`。
     /// `error` は JS の `DressUpError` と同じ `code` と補足の値に、英語の文 `message` を添えたもの。
     /// `warning` は読み込みの戻り値に入る文の警告と同じ文字列 (ホストが一覧から除けるように)。
+    /// `code` は読み込みのほかの警告 ([`LoadWarning::to_json`]) と同じ一覧に並べるためのもの (T0125)。
     pub fn to_json(&self) -> serde_json::Value {
         let info = error_info(&self.error);
         let mut error = serde_json::Map::new();
@@ -109,6 +113,7 @@ impl Detached {
             error.insert(key.into(), value.into());
         }
         serde_json::json!({
+            "code": "module_detached",
             "module": self.module,
             "slot": self.slot,
             "error": error,
@@ -159,7 +164,8 @@ impl Wardrobe {
                 requires: &m.module.requires,
                 attached: attached.iter().any(|n| *n == m.module.name),
                 textures: m.textures.len(),
-                warnings: &m.warnings,
+                warnings: m.warnings.iter().map(ToString::to_string).collect(),
+                warning_details: m.warnings.iter().map(LoadWarning::to_json).collect(),
             })
             .collect()
     }

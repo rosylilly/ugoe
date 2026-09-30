@@ -1,5 +1,11 @@
 // 着せ替え (T0706): WebPuppet の着せ替えの口 (crates/ugoe-wasm/README.md#着せ替え-t0123) が返す値の読み取りと、
 // 利用者に見せる文。付け外しそのものは player.svelte.ts が行う。
+import {
+  describeLoadWarning,
+  type LoadWarning,
+  readLoadWarnings,
+  replaceWarnings,
+} from "./loadWarnings";
 
 /** 読み込んだモジュール (`WebPuppet.modules_json()` の要素)。 */
 export interface ModuleInfo {
@@ -9,7 +15,7 @@ export interface ModuleInfo {
   /** 今のモデルに付けているか。 */
   attached: boolean;
   textures: number;
-  /** 読み込めたが注意が要ること (テクスチャの代用など。英語)。 */
+  /** 読み込めたが注意が要ること (テクスチャの代用など)。`warning_details` から作った日本語の文 (T0125)。 */
   warnings: string[];
 }
 
@@ -57,7 +63,11 @@ export function parseModules(json: string): ModuleInfo[] {
         requires,
         attached: m.attached === true,
         textures: typeof m.textures === "number" ? m.textures : 0,
-        warnings: strings(m.warnings),
+        warnings: replaceWarnings(
+          strings(m.warnings),
+          readLoadWarnings(m.warning_details),
+          describeLoadWarning,
+        ),
       },
     ];
   });
@@ -184,55 +194,19 @@ export function describeDressUpInfo(info: DressUpErrorInfo): string {
   }
 }
 
-/** モデルを開き直したときに付け直せずに外したモジュール (`WebPuppet.detached_modules_json()` の要素)。 */
-export interface DetachedModule {
-  module: string;
-  slot: string;
-  /** 付けられなかった理由 (`DressUpError` と同じ `code` と補足の値)。 */
-  error: DressUpErrorInfo;
-  /** 読み込みの戻り値に入る文の警告と同じ文字列 (一覧から除くときに比べる)。 */
-  warning: string;
-}
-
-/** `detached_modules_json()` を読む。形の違う要素は読み飛ばす。 */
-export function parseDetachedModules(json: string): DetachedModule[] {
-  const list: unknown = JSON.parse(json);
-  if (!Array.isArray(list)) return [];
-  return list.flatMap((item) => {
-    const d = record(item);
-    const e = record(d.error);
-    if (typeof d.module !== "string" || typeof d.slot !== "string") return [];
-    const text = (key: string) => (typeof e[key] === "string" ? (e[key] as string) : undefined);
-    return [
-      {
-        module: d.module,
-        slot: d.slot,
-        error: {
-          code: text("code") ?? "unknown",
-          message: text("message") ?? "",
-          module: text("module"),
-          slot: text("slot"),
-          parameter: text("parameter"),
-          mesh: text("mesh"),
-          attached: text("attached"),
-        },
-        warning: typeof d.warning === "string" ? d.warning : "",
-      },
-    ];
-  });
+/** モジュールを外した警告 (`module_detached`) の文。 */
+function describeDetached(w: LoadWarning): string {
+  const reason = w.error ? describeDressUpInfo(w.error) : w.warning;
+  return `このモデルに合わないため、着せ替えの${q(w.module)}を外しました (${reason})`;
 }
 
 /**
- * モデルを開き直したときの警告を、利用者に見せる一覧にする。付け直せずに外したモジュール (`detached`) は
- * 文の警告を除き、`code` から日本語の知らせを作って後ろに並べる。ほかの警告 (英語) はそのまま。
+ * モデルを開いたときの警告 (`load_json` / `load_bundle` の戻り値) を、`load_warnings_json()` の構造から
+ * 日本語の一覧にする (T0125)。付け直せずに外したモジュールは付けられないときと同じ原因の文にする。
+ * 構造の無い文と知らない種類は、wasm の文 (英語) のまま残す。
  */
-export function describeLoadWarnings(warnings: string[], detached: DetachedModule[]): string[] {
-  const covered = new Set(detached.map((d) => d.warning));
-  return [
-    ...warnings.filter((w) => !covered.has(w)),
-    ...detached.map(
-      (d) =>
-        `このモデルに合わないため、着せ替えの${q(d.module)}を外しました (${describeDressUpInfo(d.error)})`,
-    ),
-  ];
+export function describeLoadWarnings(warnings: string[], structured: LoadWarning[]): string[] {
+  return replaceWarnings(warnings, structured, (w) =>
+    w.code === "module_detached" ? describeDetached(w) : describeLoadWarning(w),
+  );
 }

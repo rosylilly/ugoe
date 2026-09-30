@@ -424,6 +424,12 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
   「(none)」で `stop_expressions`。
 - **物理の設定:** バンドル (`get_model_bundle`) にはドキュメントの物理が入っています。バンドルが作れず JSON で表示している
   ときは物理が無いので、`WebPuppet` に物理が無ければ `set_physics_json` でドキュメントの物理を渡します。
+- **読み込みの警告 (T0125):** モデルを読み込むたびに `WebPuppet.load_warnings_json()` の `code` から英語の知らせを作り、
+  パネルの上に出します (`loadWarnings.ts`。読み込むたびに置き換える)。テクスチャ・法線マップを代用した (`texture_ktx2`・
+  `texture_missing`・`normal_map_ktx2`) と、前の物理を外した (`physics_removed`)。外したモジュール (`module_detached`) は
+  [着せ替え](#プレビューの着せ替え) の知らせに出すので除き、`physics_removed` もドキュメントの物理を渡し直せたときは除きます
+  (編集のたびの読み直しで、外れたのは古い設定のため)。知らない `code` は wasm の文をそのまま出します。
+  プレビューの外 (編集の画面) では、今までどおり文の警告をコンソールに出すだけです。
 - **値を別に持つ:** プレビューのスライダーの値 (`PreviewMode.values`) は、編集用の値
   (`ViewportController.parameterValues`) と別です。入るときに編集用の値を写して始め、毎フレーム `update` の後の値
   (物理・呼吸などを掛けた値) を表示します。プレビュー中は `ViewportController.setParameter` が編集用の値を書き換えても

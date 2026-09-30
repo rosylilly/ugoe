@@ -16,7 +16,7 @@ beforeAll(async () => {
 });
 
 /** 呼ばれた操作を記録する WebPuppet の偽物。 */
-function fakePuppet() {
+function fakePuppet(loadWarnings: unknown[] = []) {
   const calls: string[] = [];
   const values: Record<string, number> = { AngleX: 0, EyeLOpen: 1, Other: 0.5 };
   const puppet = {
@@ -43,13 +43,14 @@ function fakePuppet() {
     },
     modules_json: () => "[]",
     detached_modules_json: () => "[]",
+    load_warnings_json: () => JSON.stringify(loadWarnings),
     attached_modules: () => [],
   };
   return { puppet: puppet as unknown as WebPuppet, calls, values };
 }
 
-function setup() {
-  const { puppet, calls, values } = fakePuppet();
+function setup(loadWarnings: unknown[] = []) {
+  const { puppet, calls, values } = fakePuppet(loadWarnings);
   let driver: FrameDriver | null = null;
   const viewport = {
     puppet,
@@ -140,5 +141,18 @@ describe("PreviewMode as a tracking target", () => {
     preview.exit();
     expect(preview.tracking).toBe(false);
     expect(preview.tracker.status).toBe("idle");
+  });
+});
+
+describe("PreviewMode load warnings", () => {
+  it("shows the warnings of the last load in English, replacing the previous ones", () => {
+    const { preview, puppet } = setup([
+      { code: "texture_missing", warning: "no data for texture 1", texture: 1 },
+      { code: "module_detached", warning: "module `Dress` was detached", module: "Dress" },
+    ]);
+    // 外したモジュールは着せ替えの知らせに出るので、ここには出さない。
+    expect(preview.warnings).toEqual(["Texture 1 has no image, so it is drawn white."]);
+    preview.loaded(puppet);
+    expect(preview.warnings).toHaveLength(1);
   });
 });

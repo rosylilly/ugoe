@@ -30,7 +30,7 @@ WebAssembly バインディング。Web ビューア・ビューアのアプリ 
 import init, { WebPuppet } from "./generated/ugoe_wasm.js";
 await init();
 const puppet = await WebPuppet.create(canvas, "auto"); // "auto" | "webgpu" | "webgl2"
-puppet.load_json(json);           // または load_bundle(bytes)。戻り値は警告の配列
+puppet.load_json(json);           // または load_bundle(bytes)。戻り値は警告の配列 (構造は load_warnings_json())
 puppet.resize(canvas.clientWidth * devicePixelRatio, canvas.clientHeight * devicePixelRatio);
 puppet.parameters_json();         // 値域・既定値・グループ ({"parameters": [...], "groups": [...]})
 puppet.set_parameter("AngleX", 15);
@@ -114,10 +114,10 @@ puppet.detach_module(name);                  // 外す
 puppet.set_modules(["LongHair", "Dress"]);   // 付ける組をまとめて決める (合成の順)。[] で本体だけ
 puppet.unload_module(name);                  // 読み込んだモジュールを捨てる (付けていれば外す)
 puppet.attached_modules();                   // 付けている名前 (合成の順)
-JSON.parse(puppet.modules_json());           // [{name, slot, requires, attached, textures, warnings}] (読み込んだ順)
+JSON.parse(puppet.modules_json());           // [{name, slot, requires, attached, textures, warnings, warning_details}] (読み込んだ順)
 JSON.parse(puppet.slots_json());             // 本体のスロット [{id, anchor, draw_order, replaces, parameters, ...}]
 JSON.parse(puppet.detached_modules_json());  // 直前の load_json / load_bundle で付け直せずに外したもの
-                                             // [{module, slot, error: {code, message, module?, slot?, ...}, warning}]
+                                             // [{code: "module_detached", module, slot, error: {code, message, module?, slot?, ...}, warning}]
 try {
   puppet.attach_module("Hat");
 } catch (e) {
@@ -137,11 +137,38 @@ try {
   一覧は次の `load_json` / `load_bundle` まで変わらない (外したものが無ければ `[]`)。
 - **戻り値の文の警告は残す** (T0124 で決めた)。戻り値の `string[]` はほかの警告 (物理を外した・テクスチャを代用したなど) と
   同じ一覧で、ログに出すだけの組み込み先はそのままでよく、外すと知らせが黙って消えるため。文面は安定した値として扱わない。
-  利用者向けに言い換えるときは `detached_modules_json()` の `code` を使い、その要素の `warning` と同じ文字列を一覧から除く
-  (ビューアの `describeLoadWarnings`。エディタのプレビューは `DressUp.loaded` で知らせ、文の警告はコンソールに出すだけ)。
+  利用者向けに言い換えるときは `error.code` を使い、その要素の `warning` と同じ文字列を一覧の中で置き換える
+  (ビューアは T0125 から `load_warnings_json()` で読む。エディタのプレビューは `DressUp.loaded` で知らせ、文の警告はコンソールに出すだけ)。
+  外したものは読み込みのほかの警告と一緒に `load_warnings_json()` にも入る ([読み込みの警告](#読み込みの警告-t0125))。
   物理は本体の設定を引き継ぎ、モジュールのリグは付け直しで加わる。読み込んだモジュールはモデルを変えても残る。
 - 同じ名前のモジュールを `load_module` し直すと、付けていれば新しい版に付け替える (エディタで書き出し直したとき)。
 - モジュールを付けている間に `set_physics_json` で渡した設定は、次の付け外しで本体の設定から作り直される。
+
+### 読み込みの警告 (T0125)
+
+```js
+const warnings = puppet.load_bundle(bytes);        // 文の警告 (英語) の配列
+JSON.parse(puppet.load_warnings_json());           // 同じ警告の構造 (同じ順・同じ数): [{code, warning, ...}]
+```
+
+| `code` | 補足の値 | いつ |
+| --- | --- | --- |
+| `texture_ktx2` | `texture` (テクスチャの番号) | テクスチャが KTX2 (未対応) なので白のプレースホルダで代用した |
+| `texture_missing` | `texture` | テクスチャの画像が無いので白で代用した (`read_bundle` が数を検査するので通常は起きない) |
+| `normal_map_ktx2` | `texture` | 法線マップが KTX2 なので、法線マップなしで描く |
+| `physics_removed` | `reason` (英語の理由) | `load_json` で読み直したとき、引き継いだ物理の設定が新しいモデルと合わないので外した |
+| `module_detached` | `module`・`slot`・`error` (`detached_modules_json()` の要素と同じ) | 付けていたモジュールを付け直せないので外した |
+
+- `warning` は戻り値の配列の同じ位置の文と同じ文字列。一覧は次の `load_json` / `load_bundle` が成功するまで変わらない (無ければ `[]`)。
+  知らない `code` (将来の種類) は `warning` をそのまま出せばよい。
+- **1 つの一覧にまとめた** (T0125 で決めた)。戻り値の配列と 1 対 1 に並ぶので、利用者向けに言い換える組み込み先は
+  戻り値の代わりにこれだけを読めばよい。T0124 の `detached_modules_json()` は残す (外したモジュールだけを読む
+  組み込み先のため。要素に `code: "module_detached"` を足しただけで、ほかは変えていない)。
+- **戻り値の文の警告は残す** (T0124 と同じ理由: ログに出すだけの組み込み先はそのままでよく、外すと知らせが黙って消える)。
+  文面は安定した値として扱わず、言い換えは `code` で行う。
+- `.ugoemod` の読み込み (`load_module`) の警告 (テクスチャの代用) は `modules_json()` の各要素の `warnings` (文) と
+  `warning_details` (同じ順の構造。`code` と補足の値は上と同じ) にある。
+- 使う側: ビューアは日本語 (`apps/viewer/src/lib/loadWarnings.ts`)、エディタのプレビューは英語 (`apps/editor/src/lib/preview/loadWarnings.ts`)。
 
 ## ビルド
 

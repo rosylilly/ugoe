@@ -21,6 +21,7 @@ import type { Expression, Motion } from "../ipc";
 import type { FrameDriver, PuppetStage, ViewportController } from "../viewport/controller.svelte";
 import type { WebPuppet } from "../viewport/wasm";
 import { DressUp } from "./dressUp.svelte";
+import { describeLoadWarnings, parseLoadWarnings } from "./loadWarnings";
 import { defaultStages, pushEvents } from "./preview";
 import { saveTrackingRecording } from "./trackingHost";
 
@@ -46,6 +47,8 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
   events = $state<string[]>([]);
   /** 直近の失敗 (物理の設定がモデルと合わないなど)。 */
   error = $state<string | null>(null);
+  /** 直前の読み込みの警告 (テクスチャを白で代用したなど。読み込むたびに置き換える。T0125)。 */
+  warnings = $state<string[]>([]);
   /** フェイストラッキング (入力・キャリブレーション・平滑化・記録)。 */
   readonly tracker: FaceTracker;
   /** トラッキングが書き込むパラメータ (モデルの定義順。`avatar.tracking` の上書きを反映する)。 */
@@ -213,13 +216,16 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
 
   loaded(puppet: WebPuppet): void {
     const physics = this.#doc.physics;
+    let physicsReplaced = false;
     if (physics && !puppet.has_physics()) {
       try {
         puppet.set_physics_json(JSON.stringify(physics));
+        physicsReplaced = true;
       } catch (e) {
         this.error = `Physics: ${e}`;
       }
     }
+    this.warnings = this.#loadWarnings(puppet, physicsReplaced);
     // 物理を渡した後に付ける (付けるときの本体の物理が合成の元になる)。
     this.dressUp.loaded(puppet);
     for (const [id, value] of Object.entries(this.values)) puppet.set_parameter(id, value);
@@ -234,6 +240,16 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
     // 読み直すとトラッキングの入力も消えるので、最後の値を渡し直す。
     this.#pendingTracking = this.#lastTracking;
     this.#sync(puppet);
+  }
+
+  /** 直前の読み込みの警告 (`load_warnings_json`) を知らせの文にする。 */
+  #loadWarnings(puppet: WebPuppet, physicsReplaced: boolean): string[] {
+    try {
+      return describeLoadWarnings(parseLoadWarnings(puppet.load_warnings_json()), physicsReplaced);
+    } catch (e) {
+      console.warn("ugoe:", e);
+      return [];
+    }
   }
 
   beforeUpdate(puppet: WebPuppet): void {

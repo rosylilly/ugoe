@@ -9,7 +9,6 @@ import {
   describeDressUpError,
   describeLoadWarnings,
   type ModuleInfo,
-  parseDetachedModules,
   parseModules,
   parseSlots,
   type SlotInfo,
@@ -34,6 +33,7 @@ import {
   saveLighting,
   toLightingJson,
 } from "./lighting";
+import { parseLoadWarnings } from "./loadWarnings";
 import { detectModelKind, type ModelFile, type ModuleToOpen } from "./modelFile";
 import { type ModelIdentity, modelIdentity, sameModel } from "./modelMemory";
 import {
@@ -209,7 +209,7 @@ export class Player {
             : puppet.load_json(new TextDecoder().decode(file.bytes));
         this.warnings = describeLoadWarnings(
           warnings,
-          parseDetachedModules(puppet.detached_modules_json()),
+          parseLoadWarnings(puppet.load_warnings_json()),
         );
       } catch (e) {
         this.error = `${file.name}: ${message(e)}`;

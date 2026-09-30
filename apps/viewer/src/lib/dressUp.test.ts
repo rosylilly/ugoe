@@ -4,10 +4,10 @@ import {
   describeLoadWarnings,
   dressUpErrorInfo,
   groupBySlot,
-  parseDetachedModules,
   parseModules,
   parseSlots,
 } from "./dressUp";
+import { parseLoadWarnings } from "./loadWarnings";
 
 /** ugoe-wasm の `DressUpError` と同じ形の `Error`。 */
 function dressUpError(code: string, fields: Record<string, string> = {}, text = "failed") {
@@ -29,7 +29,8 @@ const modulesJson = JSON.stringify([
     requires: { parameters: ["BodySway"], avatar_level: 2 },
     attached: false,
     textures: 1,
-    warnings: ["texture 0: placeholder"],
+    warnings: ["texture 0: placeholder", "texture 1: odd"],
+    warning_details: [{ code: "texture_ktx2", warning: "texture 0: placeholder", texture: 0 }],
   },
   { name: "Hat", slot: "Hat", requires: {}, attached: false, textures: 0, warnings: [] },
   { slot: "Broken" },
@@ -41,7 +42,11 @@ describe("parseModules", () => {
     expect(modules.map((m) => m.name)).toEqual(["LongHair", "Dress", "Hat"]);
     expect(modules[0]?.attached).toBe(true);
     expect(modules[1]?.requires).toEqual({ parameters: ["BodySway"], avatar_level: 2 });
-    expect(modules[1]?.warnings).toEqual(["texture 0: placeholder"]);
+    // 構造のある警告は日本語にし、構造の無い文はそのまま残す。
+    expect(modules[1]?.warnings).toEqual([
+      "テクスチャ 0 は KTX2 の画像で、まだ表示できないため白で代わりに描いています",
+      "texture 1: odd",
+    ]);
   });
 
   it("returns nothing for a non-array", () => {
@@ -130,51 +135,54 @@ describe("describeDressUpError", () => {
 });
 
 describe("describeLoadWarnings", () => {
-  const detachedJson = JSON.stringify([
-    {
-      module: "Dress",
-      slot: "Outfit",
-      error: {
-        code: "unknown_slot",
-        message: "module `Dress` targets unknown slot `Outfit`",
+  const structured = parseLoadWarnings(
+    JSON.stringify([
+      { code: "texture_missing", warning: "texture 3: placeholder", texture: 3 },
+      { code: "physics_removed", warning: "physics settings were removed: x", reason: "x" },
+      {
+        code: "module_detached",
         module: "Dress",
         slot: "Outfit",
+        error: {
+          code: "unknown_slot",
+          message: "module `Dress` targets unknown slot `Outfit`",
+          module: "Dress",
+          slot: "Outfit",
+        },
+        warning: "module `Dress` was detached: module `Dress` targets unknown slot `Outfit`",
       },
-      warning: "module `Dress` was detached: module `Dress` targets unknown slot `Outfit`",
-    },
-    {
-      module: "Cape",
-      slot: "Outfit",
-      error: { code: "missing_parameter", message: "x", module: "Cape", parameter: "Tail" },
-      warning: "Cape could not be put back",
-    },
-    { slot: "Broken" },
-  ]);
+      {
+        code: "module_detached",
+        module: "Cape",
+        slot: "Outfit",
+        error: { code: "missing_parameter", message: "x", module: "Cape", parameter: "Tail" },
+        warning: "Cape could not be put back",
+      },
+      { code: "something_new", warning: "a new kind of warning" },
+    ]),
+  );
 
-  it("reads detached_modules_json and skips malformed entries", () => {
-    const detached = parseDetachedModules(detachedJson);
-    expect(detached.map((d) => d.module)).toEqual(["Dress", "Cape"]);
-    expect(detached[0]?.error).toMatchObject({ code: "unknown_slot", slot: "Outfit" });
-    expect(detached[1]?.error.parameter).toBe("Tail");
-    expect(parseDetachedModules("{}")).toEqual([]);
-  });
-
-  it("describes detached modules from their codes and keeps other warnings", () => {
-    const detached = parseDetachedModules(detachedJson);
-    // 文の警告は文面に関わらず `warning` と同じものを除く (照らし合わせない)。
+  it("describes every warning from its code, in the order of the returned warnings", () => {
+    // 文の警告は文面に関わらず `warning` と同じものを置き換える (照らし合わせない)。
     expect(
       describeLoadWarnings(
         [
           "texture 3: placeholder",
+          "physics settings were removed: x",
           "module `Dress` was detached: module `Dress` targets unknown slot `Outfit`",
           "Cape could not be put back",
+          "a new kind of warning",
+          "no structure",
         ],
-        detached,
+        structured,
       ),
     ).toEqual([
-      "texture 3: placeholder",
+      "テクスチャ 3 の画像がファイルに無いため、白で代わりに描いています",
+      "物理の設定がこのモデルに合わないため外しました (x)",
       "このモデルに合わないため、着せ替えの「Dress」を外しました (「Dress」を付けるスロット「Outfit」が、このモデルにありません)",
       "このモデルに合わないため、着せ替えの「Cape」を外しました (「Cape」に必要なパラメータ「Tail」が、このモデルにありません)",
+      "a new kind of warning",
+      "no structure",
     ]);
     expect(describeLoadWarnings(["physics settings were removed: x"], [])).toEqual([
       "physics settings were removed: x",

@@ -20,7 +20,7 @@ use web_sys::HtmlCanvasElement;
 
 use crate::animation::Library;
 use crate::dress_up::{Wardrobe, attached_names};
-use crate::load::{self, LoadError, LoadedModel, Rgba8};
+use crate::load::{self, LoadError, LoadWarning, LoadedModel, Rgba8};
 use crate::view::{Transform, ViewState};
 use crate::{gizmo, hit, view};
 
@@ -66,6 +66,8 @@ pub struct WebPuppet {
     /// 読み込んだ着せ替えのモジュールと、レンダラに登録したテクスチャの番号の範囲
     /// (モデルを読み直したときや付け外しのときに、使わなくなった画像を捨てるため)。
     wardrobe: Wardrobe,
+    /// 直前の `load_json` / `load_bundle` の警告のうち、外したモジュール (`wardrobe.detached()`) 以外のもの (T0125)。
+    load_warnings: Vec<LoadWarning>,
 }
 
 #[wasm_bindgen]
@@ -189,6 +191,7 @@ impl WebPuppet {
             dirty: false,
             lost,
             wardrobe: Wardrobe::default(),
+            load_warnings: Vec::new(),
         })
     }
 
@@ -224,6 +227,19 @@ impl WebPuppet {
     /// 付けていた着せ替えのモジュールは付け直す (付けられないものは外して警告する)。
     pub fn load_bundle(&mut self, bytes: &[u8]) -> Result<Vec<String>, JsError> {
         self.load(load::from_bundle(bytes).map_err(js_error)?)
+    }
+
+    /// 直前の `load_json` / `load_bundle` の警告の JSON (T0125)。戻り値の文の警告と同じ順・同じ数で、
+    /// 各要素は `{"code", "warning", ...}`。`warning` は戻り値の文と同じ文字列、`code` は
+    /// `"texture_ktx2"` | `"texture_missing"` | `"normal_map_ktx2"` (補足は `texture`: テクスチャの番号)、
+    /// `"physics_removed"` (`reason`: 英語の理由)、`"module_detached"` (`detached_modules_json` の要素と同じ項目)。
+    /// 一覧は次の読み込みが成功するまで変わらない (警告が無ければ `[]`)。
+    pub fn load_warnings_json(&self) -> Result<String, JsError> {
+        serde_json::to_string(&load::warnings_json(
+            &self.load_warnings,
+            self.wardrobe.detached(),
+        ))
+        .map_err(|e| JsError::new(&e.to_string()))
     }
 
     /// モデルを外す (背景だけを描くようになる)。モーションと表情の一覧も空にする。
@@ -589,7 +605,7 @@ impl WebPuppet {
             animation,
             textures,
             normal_maps,
-            mut warnings,
+            warnings: mut load_warnings,
         } = loaded;
         self.check_texture_sizes(&textures, &normal_maps)
             .map_err(|e| JsError::new(&e))?;
@@ -606,7 +622,7 @@ impl WebPuppet {
             None => None,
         };
         if let Some(old) = &self.puppet {
-            warnings.extend(crate::animation::carry_over(
+            load_warnings.extend(crate::animation::carry_over(
                 old,
                 &mut puppet,
                 library.is_none(),
@@ -622,12 +638,14 @@ impl WebPuppet {
             device: &self.device,
             queue: &self.queue,
         };
+        let mut warnings: Vec<String> = load_warnings.iter().map(ToString::to_string).collect();
         warnings.extend(
             self.wardrobe
                 .load_base(&mut puppet, &attached, &textures, &normal_maps, &mut sink)
                 .map_err(js_error)?,
         );
         self.puppet = Some(puppet);
+        self.load_warnings = load_warnings;
         if let Some(library) = library {
             self.library = library;
         }

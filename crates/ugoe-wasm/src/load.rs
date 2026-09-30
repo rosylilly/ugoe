@@ -57,7 +57,67 @@ pub struct LoadedModel {
     /// (`docs/spec/rendering.md#ライティング`)。JSON のモデルでは空。
     pub normal_maps: Vec<Option<Rgba8>>,
     /// 読み込めたが注意が要ること (プレースホルダで代用したテクスチャなど)。
-    pub warnings: Vec<String>,
+    pub warnings: Vec<LoadWarning>,
+}
+
+/// 読み込めたが注意が要ること (T0125)。`Display` は読み込みの戻り値に入る英語の文 (T0125 の前から変えていない)。
+/// 機械が読む形は [`LoadWarning::to_json`] (`load_warnings_json` の要素。`crates/ugoe-wasm/README.md#読み込みの警告-t0125`)。
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum LoadWarning {
+    /// テクスチャが KTX2 (未対応) なので、白のプレースホルダで代用した。
+    #[error("texture {texture} is KTX2, which is not supported yet; using a white placeholder")]
+    TextureKtx2 { texture: usize },
+    /// テクスチャの画像が無いので、白のプレースホルダで代用した。
+    #[error("no data for texture {texture}; using a white placeholder")]
+    TextureMissing { texture: usize },
+    /// 法線マップが KTX2 (未対応) なので、法線マップなしで描く。
+    #[error(
+        "the normal map of texture {texture} is KTX2, which is not supported yet; drawing without it"
+    )]
+    NormalMapKtx2 { texture: usize },
+    /// 読み直す前の物理の設定が新しいモデルと合わないので外した。`reason` は検査の結果 (英語)。
+    #[error("physics settings were removed: {reason}")]
+    PhysicsRemoved { reason: String },
+}
+
+impl LoadWarning {
+    /// 種類を表すコード (`load_warnings_json` の `code`)。
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::TextureKtx2 { .. } => "texture_ktx2",
+            Self::TextureMissing { .. } => "texture_missing",
+            Self::NormalMapKtx2 { .. } => "normal_map_ktx2",
+            Self::PhysicsRemoved { .. } => "physics_removed",
+        }
+    }
+
+    /// JSON: `{"code", "warning", "texture"?, "reason"?}`。`warning` は文の警告と同じ文字列。
+    pub fn to_json(&self) -> serde_json::Value {
+        let mut json = serde_json::json!({
+            "code": self.code(),
+            "warning": self.to_string(),
+        });
+        match self {
+            Self::TextureKtx2 { texture }
+            | Self::TextureMissing { texture }
+            | Self::NormalMapKtx2 { texture } => json["texture"] = (*texture).into(),
+            Self::PhysicsRemoved { reason } => json["reason"] = reason.as_str().into(),
+        }
+        json
+    }
+}
+
+/// 読み込みの警告の構造 (`load_warnings_json`)。戻り値の文の警告と同じ順: モデルの読み込みと物理の引き継ぎの
+/// 警告 (`warnings`) の後に、付け直せずに外したモジュール (`detached`)。
+pub fn warnings_json(
+    warnings: &[LoadWarning],
+    detached: &[crate::dress_up::Detached],
+) -> Vec<serde_json::Value> {
+    warnings
+        .iter()
+        .map(LoadWarning::to_json)
+        .chain(detached.iter().map(crate::dress_up::Detached::to_json))
+        .collect()
 }
 
 /// バンドルに入っていた物理・モーション・表情。
@@ -119,7 +179,7 @@ pub fn from_bundle(bytes: &[u8]) -> Result<LoadedModel, LoadError> {
 pub(crate) fn decode_textures<'a>(
     count: usize,
     data: impl Fn(usize) -> Option<&'a TextureData>,
-    warnings: &mut Vec<String>,
+    warnings: &mut Vec<LoadWarning>,
 ) -> Result<Vec<Rgba8>, LoadError> {
     (0..count)
         .map(|index| match data(index) {
@@ -133,16 +193,12 @@ pub(crate) fn decode_textures<'a>(
                 ..
             }) => {
                 // KTX2 のデコードは未対応 (`ugoe render` と同じ)。表示は止めずに白で代用する。
-                warnings.push(format!(
-                    "texture {index} is KTX2, which is not supported yet; using a white placeholder"
-                ));
+                warnings.push(LoadWarning::TextureKtx2 { texture: index });
                 Ok(Rgba8::placeholder())
             }
             // 読み込み (`read_bundle` / `read_module`) がテクスチャの数を検証するので、通常は起きない。
             None => {
-                warnings.push(format!(
-                    "no data for texture {index}; using a white placeholder"
-                ));
+                warnings.push(LoadWarning::TextureMissing { texture: index });
                 Ok(Rgba8::placeholder())
             }
         })
@@ -153,7 +209,7 @@ pub(crate) fn decode_textures<'a>(
 /// KTX2 は警告して使わない。
 pub(crate) fn decode_normal_maps<'a>(
     data: impl IntoIterator<Item = Option<&'a TextureData>>,
-    warnings: &mut Vec<String>,
+    warnings: &mut Vec<LoadWarning>,
 ) -> Result<Vec<Option<Rgba8>>, LoadError> {
     data.into_iter()
         .enumerate()
@@ -169,10 +225,7 @@ pub(crate) fn decode_normal_maps<'a>(
                 format: TextureFormat::Ktx2,
                 ..
             }) => {
-                warnings.push(format!(
-                    "the normal map of texture {index} is KTX2, which is not supported yet; \
-                     drawing without it"
-                ));
+                warnings.push(LoadWarning::NormalMapKtx2 { texture: index });
                 Ok(None)
             }
         })
@@ -345,6 +398,74 @@ mod tests {
                 height: 1,
                 pixels: vec![128, 200, 255, 0],
             })]
+        );
+    }
+
+    #[test]
+    fn ktx2_images_are_replaced_with_structured_warnings() {
+        let mut model = fixtures::single_quad();
+        model.textures[0].normal_map = Some("n".into());
+        let mut bundle = Bundle::new(model);
+        let ktx2 = TextureData {
+            format: TextureFormat::Ktx2,
+            bytes: b"\xABKTX 20\xBB\r\n\x1A\n".to_vec(),
+        };
+        bundle.textures = vec![ktx2.clone()];
+        bundle.normal_maps = vec![ktx2];
+        let loaded = from_bundle(&write_bundle(&bundle).unwrap()).unwrap();
+        assert_eq!(loaded.textures, vec![Rgba8::placeholder()]);
+        assert_eq!(loaded.normal_maps, vec![None]);
+        assert_eq!(
+            loaded.warnings,
+            [
+                LoadWarning::NormalMapKtx2 { texture: 0 },
+                LoadWarning::TextureKtx2 { texture: 0 },
+            ]
+        );
+        // 文の警告は T0125 の前と同じ文面。構造には同じ文字列を `warning` に入れる。
+        assert_eq!(
+            loaded.warnings[0].to_string(),
+            "the normal map of texture 0 is KTX2, which is not supported yet; drawing without it"
+        );
+        assert_eq!(
+            warnings_json(&loaded.warnings, &[]),
+            [
+                serde_json::json!({
+                    "code": "normal_map_ktx2",
+                    "warning": loaded.warnings[0].to_string(),
+                    "texture": 0,
+                }),
+                serde_json::json!({
+                    "code": "texture_ktx2",
+                    "warning": "texture 0 is KTX2, which is not supported yet; using a white placeholder",
+                    "texture": 0,
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn missing_textures_and_removed_physics_have_codes() {
+        let mut warnings = Vec::new();
+        let textures = decode_textures(2, |_| None, &mut warnings).unwrap();
+        assert_eq!(textures, vec![Rgba8::placeholder(); 2]);
+        warnings.push(LoadWarning::PhysicsRemoved {
+            reason: "bad rig".into(),
+        });
+        let json = warnings_json(&warnings, &[]);
+        assert_eq!(json[1]["code"], "texture_missing");
+        assert_eq!(json[1]["texture"], 1);
+        assert_eq!(
+            json[1]["warning"],
+            "no data for texture 1; using a white placeholder"
+        );
+        assert_eq!(
+            json[2],
+            serde_json::json!({
+                "code": "physics_removed",
+                "warning": "physics settings were removed: bad rig",
+                "reason": "bad rig",
+            })
         );
     }
 

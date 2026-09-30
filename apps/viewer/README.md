@@ -18,7 +18,8 @@ src/                  フロントエンド (Svelte 5 + TS。npm パッケージ
   lib/LightingPanel.svelte   光源のパネル (ライティングを使うモデルのときだけ出す)。LightPad.svelte は向き・位置の面
   lib/lighting.ts       光源の設定・既定の光源の組・set_lighting_json の JSON への変換・localStorage への保存 (最後に使った設定と、モデルごとの設定 (T0709))
   lib/DressUpPanel.svelte  着せ替えのパネル (スロットのあるモデルか、モジュールを読み込んだときだけ出す)
-  lib/dressUp.ts        着せ替えの一覧 (modules_json・slots_json・detached_modules_json) の読み取り、スロットごとのまとめ、エラーと警告の文
+  lib/dressUp.ts        着せ替えの一覧 (modules_json・slots_json) の読み取り、スロットごとのまとめ、エラーと警告の文
+  lib/loadWarnings.ts   読み込みの警告 (load_warnings_json・モジュールの warning_details) の読み取りと日本語の文 (T0125)
   lib/dressUpMemory.ts  付けていたモジュールの組をモデルごとに覚える形と、戻すときにファイルをどこから得るか (T0711)
   lib/modelMemory.ts    モデルを見分ける鍵と、モデルごとの値を上限付きで localStorage に覚える入れ物 (T0711。光源の T0709 と共有)
   lib/modelFile.ts      開いたファイルの形式の判別 (バンドル・JSON・モジュール)
@@ -103,8 +104,11 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
   合成・コンパイル・物理の検証など原因が細かいものは、wasm の文 (英語) を括弧で添える。知らないコードは wasm の文をそのまま出す。
 - **同じモデル** ([モデルの見分け方](#モデルごとに覚える-t0711)) を開き直すと、読み込んだモジュールは残り、付けていたモジュールを
   wasm が付け直す。合わなくなったものは外してステータスバーに「このモデルに合わないため、着せ替えの「Dress」を外しました (原因)」と
-  警告する。原因は wasm の `detached_modules_json()` の `code` から、付けられないときと同じ文にする (`describeLoadWarnings`。
-  wasm の文の警告は読まない。T0124)。
+  警告する。原因は wasm の `load_warnings_json()` の `module_detached` の要素の `error.code` から、付けられないときと同じ文にする
+  (`describeLoadWarnings`。wasm の文の警告は読まない。T0124・T0125)。
+- 読み込みのほかの警告 (T0125) も `load_warnings_json()` の `code` から日本語にする: テクスチャを白で代用した (`texture_ktx2`・
+  `texture_missing`)、法線マップを使わない (`normal_map_ktx2`)、物理の設定が合わないので外した (`physics_removed`。理由は英語のまま括弧で添える)。
+  モジュールの警告 (パネルの「警告 N」) も `modules_json()` の `warning_details` から同じ文にする。知らない `code` と構造の無い文は wasm の文 (英語) のまま出す。
 - **別のモデル** を開くと、読み込んでいたモジュールを一覧から除く (`unload_module`)。前のモデルに付けていた組はモデルごとに
   覚えてある (下の「付けていた組を覚える」)。T0706 では一覧に残ったまま外れていたが、見本を切り替えたときに前の見本の衣装が
   「モデルに無い」で並ぶだけになるので、組ごとモデルに結び付けた (T0711)。モデルが開けなかったときは除いたモジュールを戻す。モデルを開く前に読み込んだモジュールは残す。
