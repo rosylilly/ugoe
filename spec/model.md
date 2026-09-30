@@ -52,7 +52,7 @@ Field tables in this document use the following types.
 | `u8`, `u16`, `u32`, `u64` | integer number in the type's range | any MessagePack integer whose value is in the type's range |
 | `f32` | number | float 32, float 64 or any integer |
 | `vec2` | array of two `f32`: `[x, y]` | array of two `f32` |
-| `rgb` | object `{ "r": f32, "g": f32, "b": f32 }` | map with the same keys |
+| `rgb` | object `{ "r": f32, "g": f32, "b": f32 }` (all three fields required) | map with the same keys |
 | `id` | string | str |
 | `T[]` | array of `T` | array of `T` |
 | `T?` | `T` or `null` | `T` or nil |
@@ -67,6 +67,13 @@ Field tables in this document use the following types.
   a reader MAY reject other non-finite values.
 - Integer fields MUST be integers in the range of their type. A reader MUST reject a float where an
   integer is required.
+  - In MessagePack, an integer is a value of one of the integer types; a float 32 or float 64 is a
+    float even when its value is integral.
+  - In JSON, writers MUST write integers without a fraction or an exponent (`1`, not `1.0` or
+    `1e0`). A reader MUST reject a number that is not integral, and SHOULD also reject an integral
+    number written with a fraction or an exponent. *Informative:* the reference reader rejects
+    `1.0`; JSON parsers that do not keep the written form of numbers (for example `JSON.parse` in
+    JavaScript) cannot tell `1.0` from `1`, and such readers accept both.
 - `rgb` components are non-linear (sRGB-encoded) values, nominally 0 to 1.
 
 ### Presence and default values
@@ -79,7 +86,9 @@ Each field has one of these presences.
 | optional, default *d* | An absent field has the value *d*. | MAY omit the field when its value is *d*; otherwise MUST write it. |
 | nullable (`T?`) | An absent field and `null` both mean "no value". | MAY write `null` or omit the field when there is no value. |
 
-- A writer MUST NOT write `null` for a field whose type is not nullable.
+- A writer MUST NOT write `null` for a field whose type is not nullable. A reader MUST reject such a
+  `null` (it is a value of the wrong type), also for an optional field: `null` does not mean "use
+  the default".
 - The column "Default" in the field tables gives *d*; "—" means the field is required, and
   "none" means the field is nullable and has no value by default.
 - *Informative:* the ugoe reference writer omits some default-valued fields (for example
@@ -90,6 +99,9 @@ Each field has one of these presences.
 ### Objects
 
 - Objects are unordered. A reader MUST accept the fields of an object in any order.
+- A writer MUST NOT write the same field twice in one object. A reader MUST reject an object in which
+  a field that it knows appears more than once; it MAY also reject duplicates of fields it does not
+  know.
 - A reader MUST ignore fields it does not know. This is how new optional data is added without
   breaking older readers ([bundle.md](bundle.md#unknown-fields)).
 - In MessagePack, every object is a map whose keys are the field names as strings (never an array
@@ -311,6 +323,10 @@ all its descendant parts and of the meshes that belong to it.
 
 - Every mesh and every deformer belongs to exactly one part (its `part` field). The part tree and
   the deformer tree are independent.
+- The `part` of a deformer does not affect evaluation: a deformer's opacity is not multiplied by the
+  opacity of its part, and meshes under the deformer are not affected by that part unless they belong
+  to it themselves ([evaluation.md](evaluation.md#meshes)). It groups the deformer with the part in
+  tools.
 - The final opacity of a mesh is the product of the mesh's own opacity, the opacities of its part
   and all ancestor parts, and the opacity of its parent deformer (which already includes that
   deformer's ancestors).
@@ -1110,7 +1126,7 @@ parameter IDs. A module is carried by a `.ugoemod` file ([bundle.md](bundle.md#m
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `avatar_level` | `u8?` | none | The model's avatar profile `level` must be at least this. |
+| `avatar_level` | `u8?` | none | The `level` declared by the model's avatar profile must be at least this (the declared value, not the result of a conformance check). A model without an avatar profile does not satisfy the requirement. |
 | `slots` | `id[]` | `[]` | Slots the model must have (besides the one attached to). |
 | `parameters` | `id[]` | `[]` | Parameters the model must have. |
 

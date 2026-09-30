@@ -1,0 +1,13 @@
+{
+  "name": "ugoe-spec-check",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "An independent reader of ugoe files written from the public specification (spec/) only",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test test/"
+  }
+}

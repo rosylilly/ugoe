@@ -1,0 +1,151 @@
+{
+  "model": "model.json",
+  "summary": "Smooth (cubic Hermite) interpolation. Arc moves by 10 X^2 on the unevenly spaced keys 0, 1, 3 of X and linearly on the two keys of Lift; its opacity and drawing order stay linear. Swing is a rotation deformer whose angle is smooth on the same keys. Wave has the values 0, 0, 1, 0 on four keys of Y and overshoots between them.",
+  "cases": [
+    {
+      "parameters": {},
+      "meshes": {
+        "Arc": {
+          "positions": [
+            [16, 16],
+            [48, 16],
+            [48, 48],
+            [16, 48]
+          ],
+          "opacity": 1,
+          "draw_order": 500
+        },
+        "Tip": {
+          "positions": [
+            [160, 192],
+            [176, 192],
+            [176, 208],
+            [160, 208]
+          ]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "X": 0.5
+      },
+      "meshes": {
+        "Arc": {
+          "positions": [
+            [18.5, 16],
+            [50.5, 16],
+            [50.5, 48],
+            [18.5, 48]
+          ],
+          "opacity": 1,
+          "draw_order": 500
+        },
+        "Tip": {
+          "positions": [
+            [159.9695, 193.3958],
+            [175.9543, 194.0937],
+            [175.2564, 210.0785],
+            [159.2716, 209.3806]
+          ]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "X": 2,
+        "Lift": 0.5
+      },
+      "meshes": {
+        "Arc": {
+          "positions": [
+            [56, 26],
+            [88, 26],
+            [88, 58],
+            [56, 58]
+          ],
+          "opacity": 0.5,
+          "draw_order": 550
+        },
+        "Tip": {
+          "positions": [
+            [152.5134, 212.5692],
+            [164.7701, 222.8538],
+            [154.4855, 235.1105],
+            [142.2288, 224.8259]
+          ]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "X": 3,
+        "Lift": 1
+      },
+      "meshes": {
+        "Arc": {
+          "positions": [
+            [106, 36],
+            [138, 36],
+            [138, 68],
+            [106, 68]
+          ],
+          "opacity": 0,
+          "draw_order": 600
+        },
+        "Tip": {
+          "positions": [
+            [128, 224],
+            [128, 240],
+            [112, 240],
+            [112, 224]
+          ]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "Y": 0.5
+      },
+      "meshes": {
+        "Wave": {
+          "positions": [
+            [147.5, 16],
+            [179.5, 16],
+            [179.5, 48],
+            [147.5, 48]
+          ]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "Y": 1.5
+      },
+      "meshes": {
+        "Wave": {
+          "positions": [
+            [216.25, 16],
+            [248.25, 16],
+            [248.25, 48],
+            [216.25, 48]
+          ]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "Y": 2.5
+      },
+      "meshes": {
+        "Wave": {
+          "positions": [
+            [235, 16],
+            [267, 16],
+            [267, 48],
+            [235, 48]
+          ]
+        }
+      }
+    }
+  ]
+}

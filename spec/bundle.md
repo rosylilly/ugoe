@@ -69,7 +69,8 @@ The chunk table immediately follows the header. Each entry is 24 bytes:
 
 - The payload of an entry occupies the bytes `[offset, offset + length)`, which MUST lie within the
   file and MUST NOT overlap the header, the chunk table or the payload of another entry. A payload
-  of length 0 is allowed.
+  of length 0 is allowed; it occupies no bytes and overlaps nothing, but its `offset` is still
+  subject to the alignment rule and MUST NOT be greater than the length of the file.
 - Bytes that belong to no payload (alignment padding and gaps) have no meaning. Writers SHOULD fill
   padding with zeros; readers MUST NOT interpret it.
 - The order of entries in the table is significant for chunks of the same tag (for example, the
@@ -110,7 +111,7 @@ The chunk table immediately follows the header. Each entry is 24 bytes:
 
 | Chunks | Encoding |
 | --- | --- |
-| `FEAT` `MODL` `MODU` `PHYS` `MOTN` `EXPR` | [MessagePack](https://github.com/msgpack/msgpack/blob/master/spec.md). Every object is a map keyed by field name, as defined in [model.md](model.md#data-conventions). |
+| `FEAT` `MODL` `MODU` `PHYS` `MOTN` `EXPR` | [MessagePack](https://github.com/msgpack/msgpack/blob/master/spec.md). The payload (decompressed, if compressed) is exactly one MessagePack value. Every object is a map keyed by field name, as defined in [model.md](model.md#data-conventions). |
 | `TEXR` `NRML` | The bytes of a PNG file or a KTX2 file, unchanged. |
 | `META` | A UTF-8 JSON document ([RFC 8259](https://www.rfc-editor.org/rfc/rfc8259)). |
 
@@ -129,6 +130,10 @@ The chunk table immediately follows the header. Each entry is 24 bytes:
 
 A reader MAY limit the nesting depth of MessagePack payloads to protect itself. A limit MUST be at
 least 128 levels; the data defined by this specification nests far less deeply.
+
+Writers MUST NOT write bytes after the MessagePack value of a payload. A reader MAY either reject a
+payload that has bytes after its value or ignore those bytes. *Informative:* the reference reader
+ignores them; a stricter reader that rejects them is also conforming.
 
 ## Textures and normal maps
 
@@ -202,11 +207,12 @@ feature check is designed to happen before any payload is decoded:
    apply the [feature check](#reading-feature-declarations). An unknown required feature rejects the
    file.
 4. **Schema version.** Reject a `MODL` or `MODU` whose `schema_version` is greater than the reader
-   supports. Readers SHOULD read `schema_version` of the first `MODL` or `MODU` in table order before
-   decoding any other payload or the rest of that payload, so that a file from a newer, incompatible
-   version reports this error rather than a decoding error. The value of the `schema_version` key can
-   be read from the MessagePack map by skipping the values of the other keys without interpreting
-   them (within the nesting limit the reader applies). If it cannot be read this way, the reader
+   supports. Readers SHOULD read `schema_version` of the first `MODL` or `MODU` in table order
+   (after decompressing it, if it is compressed) before decoding any other payload or the rest of
+   that payload, so that a file from a newer, incompatible version reports this error rather than a
+   decoding error. The value of the `schema_version` key can be read from the MessagePack map by
+   skipping the values of the other keys without interpreting them (within the nesting limit the
+   reader applies). If it cannot be read this way, the reader
    continues and the next step reports the problem; the reader MUST still check `schema_version`
    after decoding.
 5. **Chunks.** Walk the table in order. Skip unknown chunks. Reject chunks that are not allowed in

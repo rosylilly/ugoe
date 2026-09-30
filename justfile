@@ -68,10 +68,12 @@ tasks *args:
 licenses:
     @node scripts/check-licenses.mjs
 
-# 公開仕様 (spec/) の検査: Markdown のリンク、例と JSON Schema、docs/spec との同期 (docs/spec/public-spec.md#同期の検査)
+# 公開仕様 (spec/) の検査: Markdown のリンク、例と JSON Schema、docs/spec との同期 (docs/spec/public-spec.md#同期の検査)、
+# 公開仕様だけで書いた独立の読み込み器のテスト (tools/spec-check/README.md)
 spec:
     node scripts/check-md-links.mjs docs spec
     node scripts/check-spec.mjs
+    node --test tools/spec-check/test/
 
 # クレート依存方向の検査
 layers:

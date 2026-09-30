@@ -1,0 +1,672 @@
+{
+  "schema_version": 0,
+  "meta": {
+    "name": "smooth_keys",
+    "canvas": {
+      "width": 256.0,
+      "height": 256.0,
+      "origin": [
+        128.0,
+        128.0
+      ]
+    }
+  },
+  "parameters": [
+    {
+      "id": "X",
+      "name": "X",
+      "min": 0.0,
+      "max": 3.0,
+      "default": 0.0,
+      "kind": "normal",
+      "mirror": null,
+      "group": null
+    },
+    {
+      "id": "Lift",
+      "name": "Lift",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.0,
+      "kind": "normal",
+      "mirror": null,
+      "group": null
+    },
+    {
+      "id": "Y",
+      "name": "Y",
+      "min": 0.0,
+      "max": 3.0,
+      "default": 0.0,
+      "kind": "normal",
+      "mirror": null,
+      "group": null
+    }
+  ],
+  "parameter_groups": [],
+  "parts": [
+    {
+      "id": "Root",
+      "name": "Root",
+      "parent": null,
+      "keyforms": {
+        "bindings": [],
+        "keyforms": [
+          {
+            "opacity": 1.0
+          }
+        ]
+      }
+    }
+  ],
+  "deformers": [
+    {
+      "id": "Swing",
+      "name": "Swing",
+      "part": "Root",
+      "parent": null,
+      "kind": {
+        "type": "rotation",
+        "keyforms": {
+          "bindings": [
+            {
+              "parameter": "X",
+              "keys": [
+                0.0,
+                1.0,
+                3.0
+              ]
+            }
+          ],
+          "keyforms": [
+            {
+              "origin": [
+                128.0,
+                192.0
+              ],
+              "angle": 0.0,
+              "scale": 1.0,
+              "reflect_x": false,
+              "reflect_y": false,
+              "opacity": 1.0
+            },
+            {
+              "origin": [
+                128.0,
+                192.0
+              ],
+              "angle": 10.0,
+              "scale": 1.0,
+              "reflect_x": false,
+              "reflect_y": false,
+              "opacity": 1.0
+            },
+            {
+              "origin": [
+                128.0,
+                192.0
+              ],
+              "angle": 90.0,
+              "scale": 1.0,
+              "reflect_x": false,
+              "reflect_y": false,
+              "opacity": 1.0
+            }
+          ],
+          "interpolation": "smooth"
+        }
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "id": "Arc",
+      "name": "Arc",
+      "part": "Root",
+      "parent": null,
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "blend": "normal",
+      "culling": false,
+      "masks": [],
+      "mask_mode": "union",
+      "mask_only": false,
+      "keyforms": {
+        "bindings": [
+          {
+            "parameter": "X",
+            "keys": [
+              0.0,
+              1.0,
+              3.0
+            ]
+          },
+          {
+            "parameter": "Lift",
+            "keys": [
+              0.0,
+              1.0
+            ]
+          }
+        ],
+        "keyforms": [
+          {
+            "positions": [
+              [
+                16.0,
+                16.0
+              ],
+              [
+                48.0,
+                16.0
+              ],
+              [
+                48.0,
+                48.0
+              ],
+              [
+                16.0,
+                48.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          },
+          {
+            "positions": [
+              [
+                26.0,
+                16.0
+              ],
+              [
+                58.0,
+                16.0
+              ],
+              [
+                58.0,
+                48.0
+              ],
+              [
+                26.0,
+                48.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          },
+          {
+            "positions": [
+              [
+                106.0,
+                16.0
+              ],
+              [
+                138.0,
+                16.0
+              ],
+              [
+                138.0,
+                48.0
+              ],
+              [
+                106.0,
+                48.0
+              ]
+            ],
+            "opacity": 0.0,
+            "draw_order": 600.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          },
+          {
+            "positions": [
+              [
+                16.0,
+                36.0
+              ],
+              [
+                48.0,
+                36.0
+              ],
+              [
+                48.0,
+                68.0
+              ],
+              [
+                16.0,
+                68.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          },
+          {
+            "positions": [
+              [
+                26.0,
+                36.0
+              ],
+              [
+                58.0,
+                36.0
+              ],
+              [
+                58.0,
+                68.0
+              ],
+              [
+                26.0,
+                68.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          },
+          {
+            "positions": [
+              [
+                106.0,
+                36.0
+              ],
+              [
+                138.0,
+                36.0
+              ],
+              [
+                138.0,
+                68.0
+              ],
+              [
+                106.0,
+                68.0
+              ]
+            ],
+            "opacity": 0.0,
+            "draw_order": 600.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          }
+        ],
+        "interpolation": "smooth"
+      }
+    },
+    {
+      "id": "Wave",
+      "name": "Wave",
+      "part": "Root",
+      "parent": null,
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "blend": "normal",
+      "culling": false,
+      "masks": [],
+      "mask_mode": "union",
+      "mask_only": false,
+      "keyforms": {
+        "bindings": [
+          {
+            "parameter": "Y",
+            "keys": [
+              0.0,
+              1.0,
+              2.0,
+              3.0
+            ]
+          }
+        ],
+        "keyforms": [
+          {
+            "positions": [
+              [
+                160.0,
+                16.0
+              ],
+              [
+                192.0,
+                16.0
+              ],
+              [
+                192.0,
+                48.0
+              ],
+              [
+                160.0,
+                48.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          },
+          {
+            "positions": [
+              [
+                160.0,
+                16.0
+              ],
+              [
+                192.0,
+                16.0
+              ],
+              [
+                192.0,
+                48.0
+              ],
+              [
+                160.0,
+                48.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          },
+          {
+            "positions": [
+              [
+                260.0,
+                16.0
+              ],
+              [
+                292.0,
+                16.0
+              ],
+              [
+                292.0,
+                48.0
+              ],
+              [
+                260.0,
+                48.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          },
+          {
+            "positions": [
+              [
+                160.0,
+                16.0
+              ],
+              [
+                192.0,
+                16.0
+              ],
+              [
+                192.0,
+                48.0
+              ],
+              [
+                160.0,
+                48.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          }
+        ],
+        "interpolation": "smooth"
+      }
+    },
+    {
+      "id": "Tip",
+      "name": "Tip",
+      "part": "Root",
+      "parent": "Swing",
+      "texture": 0,
+      "uvs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "blend": "normal",
+      "culling": false,
+      "masks": [],
+      "mask_mode": "union",
+      "mask_only": false,
+      "keyforms": {
+        "bindings": [],
+        "keyforms": [
+          {
+            "positions": [
+              [
+                32.0,
+                0.0
+              ],
+              [
+                48.0,
+                0.0
+              ],
+              [
+                48.0,
+                16.0
+              ],
+              [
+                32.0,
+                16.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0,
+            "multiply_color": {
+              "r": 1.0,
+              "g": 1.0,
+              "b": 1.0
+            },
+            "screen_color": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0
+            },
+            "mask_strength": 1.0
+          }
+        ]
+      }
+    }
+  ],
+  "glues": [],
+  "textures": [
+    {
+      "name": "white",
+      "width": 1,
+      "height": 1
+    }
+  ],
+  "hit_areas": [],
+  "pose": {
+    "fade_duration": 0.5,
+    "groups": []
+  },
+  "effects": {
+    "eye_blink": {
+      "parameters": [],
+      "interval": 4.0,
+      "closing": 0.1,
+      "closed": 0.05,
+      "opening": 0.15,
+      "seed": 0
+    },
+    "breath": {
+      "parameters": []
+    },
+    "lip_sync": {
+      "parameters": []
+    }
+  }
+}

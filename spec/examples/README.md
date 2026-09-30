@@ -18,6 +18,7 @@ correct (and the example is a bug in the specification).
 | [part-opacity](part-opacity/) | Opacity multiplied through the part tree and the deformer tree; drawing order and ties. |
 | [glued-quads](glued-quads/) | Glues applied in array order. |
 | [blend-shapes](blend-shapes/) | Blend-shape grids on a mesh, a warp deformer and a rotation deformer. |
+| [smooth-keys](smooth-keys/) | Smooth (cubic Hermite) interpolation on three and four keys, combined with a linear axis; fields that stay linear; a smooth rotation angle. |
 
 ## Files
 
