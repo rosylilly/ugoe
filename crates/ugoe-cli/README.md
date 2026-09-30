@@ -38,6 +38,7 @@ ugoe render fixture:nested_masks -o out.png --scale 2 --background black --backe
 ugoe render model.ugoe -o shake.png --motion Shake --time 0.25   # モーションの 0.25 秒の絵 (物理も進める)
 ugoe render model.ugoe -o lit.png --ambient 0.3 --light directional:1,1,-1   # 左上の手前から照らす
 ugoe render model.ugoe -o lamp.png --ambient 0.2 --light point:512,300,200:1.5,1.2,1:900
+ugoe render dress-up.ugoe -o dressed.png --module long-hair.ugoemod --module sailor.ugoemod   # 着せ替えのモジュールを付けて描く
 ```
 
 | オプション | 内容 |
@@ -58,6 +59,7 @@ ugoe render model.ugoe -o lamp.png --ambient 0.2 --light point:512,300,200:1.5,1
 | `--fps <N>` | 時間を進めるときの 1 秒あたりの `update` の回数 (既定 60) |
 | `--ambient <COLOR>` | 環境光の色。`V` (灰色) か `R,G,B` (0 以上、1 を超えてもよい)。既定 1 (白) |
 | `--light <LIGHT>` | 光源 (複数可)。`directional:DX,DY,DZ[:COLOR]` か `point:X,Y,Z[:COLOR[:RANGE]]` (下の「ライティング」) |
+| `--module <PATH>` | 本体に付ける着せ替えのモジュール (`.ugoemod`、複数可。付ける順は指定の順)。入力は `.ugoe` バンドル。合成 (`ugoe_runtime::compose`) と同じ規則で付け、付けられなければエラー。モジュールの物理のリグは本体の物理に加わる (本体に物理が無ければ重力 `(0, 1)`・60 Hz の設定に加える) |
 | `--backend <NAME>` | wgpu のバックエンド (`vulkan` `metal` `dx12` `gl`、カンマ区切り)。省略時は `WGPU_BACKEND`、それも無ければ wgpu の既定 |
 | `--stats` | 描画の統計 (`ugoe_render::FrameStats`) を標準出力に `stats: {"drawables":21,...}` の 1 行 (JSON、キーは名前順) で書く |
 
@@ -150,6 +152,19 @@ ugoe sample avatar -o avatar.ugoe --psd path/to/parts.psd --project avatar.ugoep
 | `-o, --output <PATH>` | 書き出す `.ugoe` バンドル |
 | `--psd <PATH>` | 入力の PSD (既定 `assets/fixtures/psd-real/comfyui-see-through-bustup-parts.psd`。レイヤー名 `face`・`eyelash-l`・`eyeclose-l`・`mouth-open` などで部位を探す) |
 | `--project <DIR>` | `.ugoeproj` プロジェクトにも保存する (エディタで開いてリグを見る用) |
+
+### `ugoe sample dress-up`
+
+着せ替えの見本 (スロットを持つ本体 `dress-up.ugoe` と、衣装のモジュール 4 つの `.ugoemod`) を、指定したディレクトリに書き出す
+(`src/sample/dress_up.rs`)。絵はコードで描く (`src/sample/paint.rs`)。中身は [assets/samples/README.md#dress-up](../../assets/samples/README.md#dress-up)。
+
+```sh
+just cli sample dress-up -o assets/samples/dress-up          # リポジトリのルートで実行する
+```
+
+| オプション | 内容 |
+| --- | --- |
+| `-o, --output <DIR>` | 書き出すディレクトリ (無ければ作る) |
 
 ## テスト
 

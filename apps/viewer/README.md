@@ -20,6 +20,7 @@ src/                  フロントエンド (Svelte 5 + TS。npm パッケージ
   lib/DressUpPanel.svelte  着せ替えのパネル (スロットのあるモデルか、モジュールを読み込んだときだけ出す)
   lib/dressUp.ts        着せ替えの一覧 (modules_json・slots_json・detached_modules_json) の読み取り、スロットごとのまとめ、エラーと警告の文
   lib/modelFile.ts      開いたファイルの形式の判別 (バンドル・JSON・モジュール)
+  lib/samples.ts        同梱の見本の一覧と開き方 (ツールバーの「サンプル」)
   lib/wasm/             ugoe-wasm の読み込み。generated/ は `pnpm wasm` の出力 (gitignore 済み)
 public/               そのまま配る静的ファイル。third-party-notices.txt (同梱物のライセンス) だけコミットする
   mediapipe/            MediaPipe の wasm とモデル。`pnpm mediapipe` が用意する (gitignore 済み)
@@ -42,8 +43,9 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
   いまは内部のクレートに依存していない。
 - 形式は中身で判別する (先頭が `UGOE` ならチャンク表を見て、`MODL` があればバンドル、`MODU` があれば着せ替えのモジュール。
   `{` なら JSON)。決まらなければ拡張子で決める (`modelFile.ts`)。
-- 見本のモデルはリポジトリの `assets/samples/avatar.ugoe` を写さずに使う。`vite.config.ts` の `sampleModel` が開発サーバーで
-  `samples/avatar.ugoe` として配り、ビルドの出力に入れる (約 1.3 MB)。ブラウザでは `?model=samples/avatar.ugoe` でも開ける。
+- 見本はリポジトリの `assets/samples/` の `.ugoe` と `.ugoemod` を写さずに使う。`vite.config.ts` の `sampleModels` が開発サーバーで
+  `samples/<パス>` として配り、ビルドの出力に入れる (合わせて約 1.5 MB)。メニューに出す見本と一緒に読み込むモジュールは `samples.ts` の `SAMPLES`。
+  ブラウザでは `?model=samples/avatar.ugoe` でも開ける。
 - パラメータの値域・既定値・グループは `WebPuppet.parameters_json()` から得る。
 
 ## 使い方
@@ -51,7 +53,7 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 | 操作 | 内容 |
 | --- | --- |
 | 開く (Ctrl+O / ⌘O) | OS のダイアログで `.ugoe`・`.json` か `.ugoemod` を選ぶ (`.ugoemod` は読み込んで付ける) |
-| サンプル | 同梱の見本のモデル (`assets/samples/avatar.ugoe`、アバタープロファイルのレベル 3、MIT) を開く。フェイストラッキングをすぐ試せる |
+| サンプル | 同梱の見本 (`assets/samples/`、MIT) をメニューから選んで開く。「アバター」はアバタープロファイルのレベル 3 の見本で、フェイストラッキングをすぐ試せる。「着せ替え」はスロットを持つ本体と衣装のモジュール 4 つを読み込み、`LongHair`・`CatEars`・`Sailor` を付ける (`TwinTails` はパネルで差し替えて試す) |
 | ファイルをウィンドウにドロップ | そのファイルを開く。`.ugoemod` は読み込んで付ける。モデルとモジュールを一緒に落とすと、モデルを先に開く |
 | `ugoe-viewer path/to/model.ugoe` | 起動時に開く |
 | ホイール | カーソルの位置を中心にズーム |

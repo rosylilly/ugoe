@@ -11,6 +11,9 @@
 //! 閉じ (`eyeclose`)、口は閉じ (`mouth-close`) と開き (`mouth-open`) の別のレイヤーがあるので、
 //! 不透明度と変形でつなぐ。
 
+pub mod dress_up;
+mod paint;
+
 use std::collections::BTreeMap;
 
 use anyhow::{Context, anyhow, bail};

@@ -7,6 +7,8 @@
 | `avatar.ugoe` | アバタープロファイル ([docs/spec/avatar-profile.md](../../docs/spec/avatar-profile.md)) のレベル 3 に準拠した胸から上のモデル。キャンバス 1024x1024、パラメータ 27、メッシュ 24、デフォーマ 12、動的物理のリグ 5 (前髪・後ろ髪・耳飾りの揺れ) | 約 1.3MB | `assets/fixtures/psd-real/comfyui-see-through-bustup-parts.psd` (AI 生成、MIT) から `ugoe sample avatar` で生成 / MIT |
 | `avatar-params.jpg` | `avatar.ugoe` を各パラメータの端と途中の値 (と表情の組み合わせ) で `ugoe render` した顔の拡大の一覧 | 約 270KB | 同上 |
 | `avatar-smooth.jpg` | 頭の向き (`AngleX` = `AngleY` = 15) の顔の拡大を、深度からの回転のワープ (`FaceWarp`・`BackHairWarp`) を線形で補間した場合 (T0314 より前の見本)・曲線補間 (今の見本)・キーを 7.5 度ごとに足して作り直した正解で並べ、下の段に正解との差を示したもの。頂点のずれの最大は線形 5.88px、曲線 0.52px ([evaluation.md#曲線補間](../../docs/spec/evaluation.md#曲線補間)) | 約 130KB | 同上 |
+| `dress-up/` | 着せ替えの見本 ([下](#dress-up))。スロットを持つ本体 `dress-up.ugoe` と、衣装のモジュール `long-hair`・`twin-tails`・`cat-ears`・`sailor` (`.ugoemod`) | 合わせて約 135KB | `ugoe sample dress-up` がコードで描いて生成 / MIT |
+| `dress-up.jpg` | `dress-up/` を `ugoe render --module` で描いたもの (左から本体だけ、`LongHair`+`CatEars`+`Sailor`、`TwinTails`+`Sailor` (向き・片目・口)、`LongHair` (向き・体)) | 約 40KB | 同上 |
 | `avatar-physics.jpg` | 頭を振る (`AngleX` 0→25→-25→0 を 0.8 秒) モーションと傾ける (`AngleZ` 0→30→0) モーションの途中を `ugoe render --motion --time` で描いたもの (上 4 つが振る、下 4 つが傾ける。0.3/0.5/0.7/0.9 秒) | 約 100KB | 同上 |
 
 T0702 の全身の絵 (`comfyui-see-through-full-body-parts.psd`) から作った前の見本は、目・口が 1 枚ずつで表情が不自然だったので、
@@ -51,3 +53,53 @@ PSD を取り込み、エディタと同じ `ugoe_editor_core::Command` の列�
 ![各パラメータの端と途中の値](avatar-params.jpg)
 
 ![頭を振る・傾けるときの揺れ](avatar-physics.jpg)
+
+## dress-up
+
+着せ替え ([docs/manual/dress-up.md](../../docs/manual/dress-up.md)・[docs/spec/modules.md](../../docs/spec/modules.md)) を試すための見本 (T0710)。
+ビューアの「サンプル」→「着せ替え」で、本体と 4 つのモジュールをまとめて開ける。
+
+作り直し (リポジトリのルートで):
+
+```sh
+just cli sample dress-up -o assets/samples/dress-up
+just cli render assets/samples/dress-up/dress-up.ugoe -o dressed.png \
+  --module assets/samples/dress-up/long-hair.ugoemod --module assets/samples/dress-up/sailor.ugoemod
+```
+
+ジェネレータ (`crates/ugoe-cli/src/sample/dress_up.rs`) を変えたら作り直してコミットします。
+`cargo test -p ugoe-cli` の `sample::dress_up::tests::committed_sample_is_up_to_date` が、コミットしたファイルと今の出力がバイト列で同じか確かめます
+(絵は四則と平方根だけで描くので、どこで生成しても同じバイト列になります)。
+
+![本体だけ・LongHair+CatEars+Sailor・TwinTails+Sailor・LongHair](dress-up.jpg)
+
+### 本体 (`dress-up.ugoe`)
+
+胸から上のデフォルメした人物 (キャンバス 512x512)。モデルも絵も PSD を使わずにコードで作る (要素を直接並べる。見本のアバターのような推定は使わない)。
+
+| 要素 | 内容 |
+| --- | --- |
+| パラメータ | `AngleX/Y/Z`・`BodyAngleX`・`Breath`・`EyeLOpen`・`EyeROpen`・`MouthOpenY` (標準の値域)。目パチ・呼吸・リップシンクは標準の設定 |
+| パーツ | `Body` → `Head` → `Hair` (既定の髪)、`Body` → `Clothes` (既定のシャツ) |
+| `BodyWarp` (ワープ 2x2) | 上ほど `BodyAngleX` で横に、`Breath` で上に動く |
+| `HeadRotation` (回転) | 首の付け根が中心。`AngleZ` ±30 で ±10 度。`BodyAngleX` で中心が体と一緒に動く |
+| `HeadWarp` (ワープ 8x8、`HeadRotation` の子) | 顔の中ほどを頂点にした丸みの分だけ `AngleX` で横 (最大 16px)、`AngleY` で縦 (最大 12px) に動かす。目・口は大きく、輪郭と後ろ髪は小さく動く |
+| 目・口 | 開いた目は `EyeLOpen` で下寄りの線へつぶれて消え、閉じた目の線が現れる。口は `MouthOpenY` で上の辺へつぶす |
+
+| スロット | 取り付け先 | 描画順 | 置き換える | その他 |
+| --- | --- | --- | --- | --- |
+| `Hair` | `HeadWarp` | 420〜680 (顔 500・目 530・眉 540 を挟む) | `Hair` | マスクに本体の肌 `Skin` を公開 (長い後ろ髪を体の奥に見せる) |
+| `Headwear` | `HeadWarp` | 900〜1000 | なし | |
+| `Outfit` | `BodyWarp` | 260〜340 (肌 200 と顔の間) | `Clothes` | |
+
+### モジュール
+
+| ファイル | モジュール | スロット | 内容 |
+| --- | --- | --- | --- |
+| `long-hair.ugoemod` | `LongHair` | `Hair` | 紺の長い髪。後ろ髪は頭の中心を軸にした回転デフォーマ `Sway` に付き、動的物理 (`deformer_angle`、長さ 250px の振り子) で揺れる。本体の肌を反転マスクにして体の奥に見せる。顔の横の房は胸の前に垂れる |
+| `twin-tails.ugoemod` | `TwinTails` | `Hair` | 金のツインテール。房とリボンは結び目を軸にした回転デフォーマ `TailL`・`TailR` に付き、それぞれ物理で揺れる |
+| `cat-ears.ugoemod` | `CatEars` | `Headwear` | 猫耳のカチューシャ |
+| `sailor.ugoemod` | `Sailor` | `Outfit` | セーラー服 (上着・襟・スカーフ)。体のワープと一緒に動く |
+
+`LongHair` と `TwinTails` は同じスロット `Hair` なので、付けると差し替わります。どのモジュールも `requires` は持たず、
+本体のパラメータは標準パラメータだけを使います。

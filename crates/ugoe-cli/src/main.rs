@@ -64,6 +64,15 @@ enum Cmd {
 enum SampleCmd {
     /// アバタープロファイル (レベル 3) に準拠した見本のモデルを、PSD からコマンドの列で組み立てる。
     Avatar(SampleAvatarArgs),
+    /// 着せ替えの見本 (スロットを持つ本体と衣装のモジュール) を書き出す。
+    DressUp(SampleDressUpArgs),
+}
+
+#[derive(Debug, Args)]
+struct SampleDressUpArgs {
+    /// 書き出すディレクトリ (無ければ作る)。本体 `dress-up.ugoe` とモジュールの `.ugoemod` を置く。
+    #[arg(short, long)]
+    output: PathBuf,
 }
 
 #[derive(Debug, Args)]
@@ -196,6 +205,9 @@ struct RenderArgs {
     /// `point:X,Y,Z[:COLOR[:RANGE]]`。座標はキャンバス座標 + 奥行き (手前が +z)。
     #[arg(long = "light", value_name = "LIGHT", value_parser = args::parse_light)]
     lights: Vec<Light>,
+    /// 本体に付ける着せ替えのモジュール (`.ugoemod`、複数指定可。入力は `.ugoe` バンドル)。
+    #[arg(long = "module", value_name = "PATH")]
+    modules: Vec<PathBuf>,
     /// wgpu のバックエンド (vulkan / metal / dx12 / gl。カンマ区切りで複数)。
     /// 省略時は環境変数 `WGPU_BACKEND`、それも無ければ wgpu の既定。
     #[arg(long)]
@@ -293,6 +305,7 @@ fn main() -> anyhow::Result<()> {
         Cmd::ImportPsd(args) => run_import_psd(args)?,
         Cmd::Build(args) => run_build(args)?,
         Cmd::Sample(SampleCmd::Avatar(args)) => run_sample_avatar(args)?,
+        Cmd::Sample(SampleCmd::DressUp(args)) => run_sample_dress_up(args)?,
     }
     Ok(())
 }
@@ -519,6 +532,72 @@ fn run_sample_avatar(args: SampleAvatarArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// `ugoe sample dress-up`: 着せ替えの見本を書き出す (`sample::dress_up`)。
+fn run_sample_dress_up(args: SampleDressUpArgs) -> anyhow::Result<()> {
+    let sample = sample::dress_up::build_dress_up()?;
+    std::fs::create_dir_all(&args.output)
+        .with_context(|| format!("creating {}", args.output.display()))?;
+    for (name, bytes) in sample.files()? {
+        let path = args.output.join(name);
+        std::fs::write(&path, &bytes).with_context(|| format!("writing {}", path.display()))?;
+        println!("wrote {} ({} bytes)", path.display(), bytes.len());
+    }
+    Ok(())
+}
+
+/// `--module` の `.ugoemod` を読む。
+fn read_modules(paths: &[PathBuf]) -> anyhow::Result<Vec<ugoe_format::ModuleFile>> {
+    paths
+        .iter()
+        .map(|path| {
+            let bytes =
+                std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+            ugoe_format::read_module(&bytes)
+                .with_context(|| format!("reading module {}", path.display()))
+        })
+        .collect()
+}
+
+/// `--module`: モジュールを本体に合成したシーンにする (`docs/spec/modules.md#合成`)。
+/// モジュールのテクスチャは本体のテクスチャの後ろに、モジュールの順に並ぶ (合成がメッシュの番号をずらすのと同じ)。
+fn attach_modules(scene: Scene, files: Vec<ugoe_format::ModuleFile>) -> anyhow::Result<Scene> {
+    if scene.textures.len() != scene.model.textures.len() {
+        bail!("--module needs a .ugoe bundle (with textures) as the input");
+    }
+    let modules: Vec<&ugoe_model::Module> = files.iter().map(|f| &f.module).collect();
+    let model = ugoe_runtime::compose(&scene.model, &modules)?;
+    let mut animation = scene.animation;
+    let has_rigs = modules.iter().any(|m| !m.physics.rigs.is_empty());
+    if animation.physics.is_some() || has_rigs {
+        let settings = animation
+            .physics
+            .take()
+            .unwrap_or_else(ugoe_editor_core::physics_edit::default_settings);
+        animation.physics = Some(ugoe_runtime::compose_physics(
+            &scene.model,
+            &settings,
+            &modules,
+        )?);
+    }
+    let mut textures = scene.textures;
+    let mut normal_maps = scene.normal_maps;
+    normal_maps.resize(scene.model.textures.len(), None);
+    for file in files {
+        textures.extend(file.textures);
+        // モジュールの法線マップは、`normal_map` を持つテクスチャの順に並ぶ。
+        let mut maps = file.normal_maps.into_iter();
+        for texture in &file.module.textures {
+            normal_maps.push(texture.normal_map.as_ref().and_then(|_| maps.next()));
+        }
+    }
+    Ok(Scene {
+        model,
+        textures,
+        normal_maps,
+        animation,
+    })
+}
+
 /// `fixture:<name>`、`.ugoe` バンドル (先頭のマジックで判別)、モデル JSON のいずれかを読む。
 fn load_input(input: &str) -> anyhow::Result<Scene> {
     if let Some(name) = input.strip_prefix("fixture:") {
@@ -565,7 +644,10 @@ fn info_json(m: &Model) -> serde_json::Value {
 
 fn run_render(args: RenderArgs) -> anyhow::Result<()> {
     // GPU を使う前に入力をすべて検査する (GPU の無い環境でも引数の誤りを報告できるように)。
-    let scene = load_input(&args.input)?;
+    let mut scene = load_input(&args.input)?;
+    if !args.modules.is_empty() {
+        scene = attach_modules(scene, read_modules(&args.modules)?)?;
+    }
     let lighting = (args.ambient.is_some() || !args.lights.is_empty()).then(|| Lighting {
         ambient: args.ambient.unwrap_or(Lighting::default().ambient),
         lights: args.lights,
@@ -633,6 +715,36 @@ mod tests {
 
     fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
         Cli::try_parse_from(std::iter::once("ugoe").chain(args.iter().copied()))
+    }
+
+    #[test]
+    fn render_attaches_modules_after_the_base_textures() {
+        let sample = sample::dress_up::build_dress_up().unwrap();
+        let base = sample.base.model.clone();
+        let files = vec![sample.modules[0].clone(), sample.modules[3].clone()];
+        let module_textures: usize = files.iter().map(|f| f.textures.len()).sum();
+        let scene = attach_modules(Scene::from_bundle(sample.base), files).unwrap();
+        assert_eq!(scene.textures.len(), base.textures.len() + module_textures);
+        assert_eq!(scene.textures.len(), scene.model.textures.len());
+        assert_eq!(scene.normal_maps.len(), scene.textures.len());
+        assert!(
+            scene
+                .model
+                .meshes
+                .iter()
+                .any(|m| m.id.as_str() == "LongHair/Back")
+        );
+        // モジュールに物理のリグがあるので、本体に物理が無くても物理の設定ができる。
+        assert!(!scene.animation.physics.unwrap().rigs.is_empty());
+        // テクスチャの無い入力 (フィクスチャ) には付けられない。
+        let fixture = Scene::from_model(ugoe_model::fixtures::dress_up_base());
+        let hair = ugoe_format::ModuleFile {
+            module: ugoe_model::fixtures::long_hair_module(),
+            textures: Vec::new(),
+            normal_maps: Vec::new(),
+            meta: None,
+        };
+        assert!(attach_modules(fixture, vec![hair]).is_err());
     }
 
     #[test]

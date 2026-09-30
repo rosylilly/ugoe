@@ -131,12 +131,15 @@ const browserHost: ViewerHost = {
   },
 };
 
-/** アプリに同梱した見本のモデル (vite.config.ts の `sampleModel`)。 */
-export async function readSampleModel(): Promise<ModelFile> {
-  const url = new URL("samples/avatar.ugoe", document.baseURI);
+/** アプリに同梱した見本のファイル (`samples/` からのパス。samples.ts・vite.config.ts の `sampleModels`)。 */
+export async function readSampleFile(path: string): Promise<ModelFile> {
+  const url = new URL(`samples/${path}`, document.baseURI);
   const response = await fetch(url);
   if (!response.ok) throw new Error(`${url}: ${response.status} ${response.statusText}`);
-  return { name: "avatar.ugoe (サンプル)", bytes: new Uint8Array(await response.arrayBuffer()) };
+  return {
+    name: `${baseName(path)} (サンプル)`,
+    bytes: new Uint8Array(await response.arrayBuffer()),
+  };
 }
 
 /** 今使う `ViewerHost`。 */
