@@ -1,11 +1,11 @@
 ---
 id: T0650
 title: エディタ: モジュールのプロジェクトの使い勝手 (設定の画面・本体の項目の無効化・本体の変化)
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-editor-core, apps/editor, docs]
 depends_on: [T0648, T0649]
-assignee:
+assignee: claude-worker-T0650
 ---
 
 # T0650: エディタ: モジュールのプロジェクトの使い勝手

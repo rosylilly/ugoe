@@ -1,11 +1,11 @@
 ---
 id: T0710
 title: 見本: 着せ替えの見本 (本体と衣装) と、ビューアのサンプルで試せるようにする
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-cli, assets, apps/viewer, docs]
 depends_on: [T0648, T0706]
-assignee:
+assignee: claude-worker-T0710
 ---
 
 # T0710: 見本: 着せ替えの見本 (本体と衣装) と、ビューアのサンプルで試せるようにする

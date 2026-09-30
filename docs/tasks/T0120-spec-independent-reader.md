@@ -1,11 +1,11 @@
 ---
 id: T0120
 title: 公開仕様だけで書いた独立の読み込み器による検証
-status: todo
+status: in-progress
 milestone: M5
 crates: [spec, tools/spec-check, docs]
 depends_on: [T0116, T0117, T0119]
-assignee:
+assignee: claude-worker-T0120
 ---
 
 # T0120: 公開仕様だけで書いた独立の読み込み器による検証

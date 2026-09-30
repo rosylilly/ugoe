@@ -1,11 +1,11 @@
 ---
 id: T0124
 title: 着せ替え: 付け直しで外れたモジュールを構造化されたデータで返す
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-wasm, apps/viewer, apps/editor, docs]
 depends_on: [T0123, T0706]
-assignee:
+assignee: claude-worker-T0124
 ---
 
 # T0124: 着せ替え: 付け直しで外れたモジュールを構造化されたデータで返す
