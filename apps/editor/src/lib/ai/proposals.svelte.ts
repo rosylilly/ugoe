@@ -41,6 +41,8 @@ export class ProposalsView {
   error = $state<string | null>(null);
   /** 分類と提案に外部の AI を使うか (偽なら名前の規則とテンプレートの既定値)。 */
   useAi = $state(false);
+  /** タブを開いていない間に、エディタにつないだエージェントが提案を置いた (タブに印を出す)。 */
+  fresh = $state(false);
 
   #doc: EditorDocument;
   /** プレビューを作ったときのドキュメントの版 (変わったらプレビューをやめる)。 */
@@ -69,6 +71,22 @@ export class ProposalsView {
   documentChanged(revision: number): void {
     if (this.preview && revision !== this.#previewRevision) this.endPreview();
     void this.refresh();
+  }
+
+  /** エディタにつないだエージェントが提案を置いた (lib/agents/)。一覧を取り直し、タブを開いていなければ印を出す。 */
+  async agentProposed(): Promise<void> {
+    if (!this.active) this.fresh = true;
+    await this.refresh();
+  }
+
+  /**
+   * エージェントが適用を求めた提案を、求めと同じコマンドを外してプレビューする (確認のダイアログの「Show in AI tab」)。
+   * タブを開くのは呼び出し側。
+   */
+  async previewRequested(id: number, excluded: number[]): Promise<void> {
+    this.excluded = { ...this.excluded, [id]: new Set(excluded) };
+    await this.refresh();
+    await this.showPreview(id);
   }
 
   /** 分類する PSD を選んで分類する。 */

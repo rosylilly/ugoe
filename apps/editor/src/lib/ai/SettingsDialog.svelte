@@ -1,10 +1,12 @@
 <!--
-  ヘッダーの「Settings」。今は AI の設定だけ (docs/editor.md#ai-の設定と送信の同意):
+  ヘッダーの「Settings」。「AI provider」と「Connect agents」(lib/agents/ConnectAgents.svelte。エディタの中の MCP サーバ) の 2 つのタブ。
+  「AI provider」は AI の設定 (docs/editor.md#ai-の設定と送信の同意):
   プロバイダ (Claude / OpenAI 互換) とモデル・ベースの URL の選択 (エディタ全体の設定)、選んだプロバイダの
   API キーの保存・削除 (OS の資格情報の保存先。キーは画面に出さず、入力欄も保存したら空にする)、
   開いているプロジェクトの「外部の AI に送らない」、「今後は確かめない」の取り消し、接続の確認。
 -->
 <script lang="ts">
+import ConnectAgents from "../agents/ConnectAgents.svelte";
 import { type AiSettings, ipc, type ProviderSettings } from "../ipc";
 import { aiSettings, consentPrompt } from "./ai.svelte";
 import { withConsent } from "./consent";
@@ -26,12 +28,16 @@ let busy = $state(false);
 let testResult = $state<{ ok: boolean; text: string } | null>(null);
 /** 編集中のプロバイダの設定 (「Apply」で保存する)。 */
 let draft = $state<ProviderSettings | null>(null);
+/** 開いているタブ。 */
+let tab = $state<"ai" | "agents">("ai");
 
 const saved = $derived(aiSettings.value?.provider ?? null);
 const dirty = $derived(!!draft && !!saved && JSON.stringify(draft) !== JSON.stringify(saved));
 const preset = $derived(draft ? presetFor(draft.openai.base_url) : undefined);
 
-export async function open(): Promise<void> {
+/** 開く。`agents` なら「Connect agents」のタブを開く。 */
+export async function open(which: "ai" | "agents" = "ai"): Promise<void> {
+  tab = which;
   testResult = null;
   dialog?.showModal();
   await aiSettings.refresh();
@@ -133,6 +139,15 @@ function keyStatus(s: AiSettings): string {
   }}
 >
   <h2 id="settings-title">Settings</h2>
+  <div class="tabs" role="tablist">
+    <button role="tab" aria-selected={tab === "ai"} class:current={tab === "ai"} onclick={() => (tab = "ai")}
+      >AI provider</button>
+    <button role="tab" aria-selected={tab === "agents"} class:current={tab === "agents"}
+      onclick={() => (tab = "agents")}>Connect agents</button>
+  </div>
+  {#if tab === "agents"}
+    <ConnectAgents />
+  {:else}
   <section>
     <h3>AI provider</h3>
     {#if aiSettings.error}<p class="error">{aiSettings.error}</p>{/if}
@@ -293,14 +308,31 @@ function keyStatus(s: AiSettings): string {
       </p>
     {/if}
   </section>
+  {/if}
   <div class="actions">
     <button onclick={close}>Close</button>
   </div>
 </dialog>
 
 <style>
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tabs button {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    border-bottom: 2px solid transparent;
+  }
+  .tabs button.current {
+    border-bottom-color: var(--accent);
+    color: var(--accent);
+  }
   .settings {
-    width: min(560px, calc(100vw - 32px));
+    width: min(640px, calc(100vw - 32px));
+    max-height: calc(100vh - 48px);
     padding: 16px 20px;
     background: var(--panel);
     color: var(--text);

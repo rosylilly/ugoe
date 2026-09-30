@@ -2,6 +2,7 @@
 // バックエンドのコマンドを変えたら、ここも同じ PR で更新すること。
 // 引数・戻り値の型は Rust から生成した ./generated/types.ts を使う (`just gen`、docs/editor.md#型の生成)。
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AiReply,
   AiSettings,
@@ -10,6 +11,7 @@ import type {
   ApplyReport,
   AutoMeshOptions,
   AvatarCheck,
+  BridgeEvent,
   Classification,
   Command,
   ConsentAnswer,
@@ -18,6 +20,7 @@ import type {
   ExportSettings,
   ExternalChange,
   KeyformTarget,
+  McpBridgeStatus,
   OverflowReport,
   PhysicsSettings,
   ProjectStatus,
@@ -157,6 +160,27 @@ export const ipc = {
   adoptProposal: (id: number, excluded: number[]) =>
     invoke<ApplyReport>("adopt_proposal", { id, excluded }),
   rejectProposal: (id: number) => invoke<ProposalState>("reject_proposal", { id }),
+  /**
+   * apps/editor/src-tauri/src/mcp.rs。エディタの中の MCP サーバ (エージェントをつなぐ) の状態。トークンは含まない。
+   * docs/editor.md#エージェントをつなぐ
+   */
+  mcpBridgeStatus: () => invoke<McpBridgeStatus>("mcp_bridge_status"),
+  /** ブリッジを有効・無効にする (設定に残す)。 */
+  setMcpBridgeEnabled: (enabled: boolean) =>
+    invoke<McpBridgeStatus>("set_mcp_bridge_enabled", { enabled }),
+  /** 待ち受けるポート (null なら起動のたびに空いているポート)。 */
+  setMcpBridgePort: (port: number | null) =>
+    invoke<McpBridgeStatus>("set_mcp_bridge_port", { port }),
+  /** トークンを作り直す (HTTP で直接つないだクライアントは設定し直す)。 */
+  regenerateMcpBridgeToken: () => invoke<McpBridgeStatus>("regenerate_mcp_bridge_token"),
+  /** トークン (写すときだけ読む)。 */
+  getMcpBridgeToken: () => invoke<string>("get_mcp_bridge_token"),
+  /** エージェントの求め (適用・Undo・Redo・保存) に答える。待っていなければ (時間切れの後など) false。 */
+  answerMcpApproval: (id: number, approved: boolean) =>
+    invoke<boolean>("answer_mcp_approval", { id, approved }),
+  /** ブリッジからのイベント (確認の求め・文書や提案の変化)。戻り値で購読をやめる。 */
+  onMcpBridgeEvent: (handler: (event: BridgeEvent) => void): Promise<UnlistenFn> =>
+    listen<BridgeEvent>("mcp-bridge", (e) => handler(e.payload)),
   /**
    * apps/editor/src-tauri/src/tracking.rs。JSON のテキスト (フェイストラッキングの記録) を `path` に書く。
    * パスは保存のダイアログで選んだもの。拡張子は `.json` だけ。

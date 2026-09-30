@@ -6,6 +6,7 @@ mod ai_provider;
 mod avatar;
 pub mod bindings;
 mod commands;
+mod mcp;
 mod overflow;
 mod physics_check;
 mod project;
@@ -29,6 +30,8 @@ pub struct AppState {
     pub api_keys: ai::ApiKeys,
     /// 選んだ AI のプロバイダ (エディタ全体の設定。起動時にアプリの設定のディレクトリから読む)。
     pub ai_provider: ai_provider::ProviderStore,
+    /// エディタの中の MCP サーバ (エージェントをつなぐ。既定は無効。`docs/editor.md#エージェントをつなぐ`)。
+    pub mcp: mcp::McpBridge,
 }
 
 pub fn run() {
@@ -38,6 +41,7 @@ pub fn run() {
         project: Mutex::new(session),
         api_keys: ai::ApiKeys::default(),
         ai_provider: ai_provider::ProviderStore::default(),
+        mcp: mcp::McpBridge::default(),
     };
     #[allow(clippy::expect_used)]
     tauri::Builder::default()
@@ -54,6 +58,7 @@ pub fn run() {
             if let Err(e) = loaded {
                 eprintln!("could not read the AI provider settings: {e}");
             }
+            mcp::setup(app.handle());
             Ok(())
         })
         .on_permission_request(|_, kind| tracking::permission_response(kind))
@@ -99,8 +104,21 @@ pub fn run() {
             proposals::clear_proposal_preview,
             proposals::adopt_proposal,
             proposals::reject_proposal,
+            mcp::mcp_bridge_status,
+            mcp::set_mcp_bridge_enabled,
+            mcp::set_mcp_bridge_port,
+            mcp::regenerate_mcp_bridge_token,
+            mcp::get_mcp_bridge_token,
+            mcp::answer_mcp_approval,
             tracking::write_json_file,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // 終えるときにブリッジを止め、発見用のファイルを消す (待っている確認は拒否になる)
+            if let tauri::RunEvent::Exit = event {
+                use tauri::Manager;
+                app.state::<AppState>().mcp.stop();
+            }
+        });
 }

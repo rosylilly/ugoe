@@ -45,7 +45,7 @@
 | T1 ヘッドレス描画 | `ugoe-headless` | ランタイム層 (`ugoe render` と `ugoe-mcp` の `render_png` が共有する) |
 | T2 エディタ中核 | `ugoe-editor-core` | ランタイム層, T1 (`ugoe-rigging` を含む) |
 | T3 自動化 | `ugoe-ai` | T2 以下 |
-| T4 アプリ | `ugoe-cli`, `ugoe-mcp`, `apps/editor` (`ugoe-editor`) | すべて |
+| T4 アプリ | `ugoe-cli`, `ugoe-mcp`, `apps/editor` (`ugoe-editor`) | すべて (エディタはライブラリとしての `ugoe-mcp` にも依存する。ADR 0023) |
 | アプリ (ランタイムの見本) | `apps/viewer` (`ugoe-viewer`) | ランタイム層だけ。描画は webview の `ugoe-wasm` |
 
 層を分ける理由:

@@ -1,0 +1,9 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "build": {
+    "beforeBuildCommand": "pnpm wasm && pnpm build && pnpm sidecar"
+  },
+  "bundle": {
+    "externalBin": ["binaries/ugoe-mcp"]
+  }
+}

@@ -98,6 +98,9 @@ const args = [
   "@ugoe/editor",
   "tauri",
   "build",
+  // ugoe-mcp をサイドカーとして同梱する (apps/editor/src-tauri/tauri.bundle.conf.json)
+  "--config",
+  "src-tauri/tauri.bundle.conf.json",
   "--runner",
   "cargo-xwin",
   "--target",

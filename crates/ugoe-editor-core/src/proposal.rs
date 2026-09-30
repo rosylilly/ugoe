@@ -40,6 +40,9 @@ pub struct ProposalView {
     pub commands: Vec<ProposalCommand>,
     /// 提案の後にドキュメントが変わった (プレビュー・採用できない。Undo で戻れば使える)。
     pub stale: bool,
+    /// 提案を作ったもの (エディタにつないだエージェントの名前など。[`Proposals::set_source`])。
+    /// エディタの中で作った提案は `null`。
+    pub source: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -67,6 +70,7 @@ struct Pending {
     base: u64,
     /// 採用した (ドキュメントが `base` に戻るまで一覧に出さない)。
     adopted: bool,
+    source: Option<String>,
 }
 
 /// 採用を待っている提案 (開いているプロジェクトごとに持つ)。
@@ -106,6 +110,7 @@ impl Proposals {
             commands,
             base: doc.state_id(),
             adopted: false,
+            source: None,
         };
         let view = view(&pending, doc);
         self.items.push(pending);
@@ -153,6 +158,17 @@ impl Proposals {
             p.adopted = true;
         }
         Ok(report)
+    }
+
+    /// 提案を作ったものを記す (画面に出す。例: MCP でつないだエージェントの名前)。提案が無ければ `false`。
+    pub fn set_source(&mut self, id: u32, source: impl Into<String>) -> bool {
+        match self.items.iter_mut().find(|p| p.id == id) {
+            Some(p) => {
+                p.source = Some(source.into());
+                true
+            }
+            None => false,
+        }
     }
 
     /// 提案を捨てる。
@@ -208,6 +224,7 @@ fn view(pending: &Pending, doc: &Document) -> ProposalView {
         rationale: pending.rationale.clone(),
         commands: pending.info.clone(),
         stale: pending.base != doc.state_id(),
+        source: pending.source.clone(),
     }
 }
 

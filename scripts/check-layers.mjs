@@ -48,7 +48,7 @@ const ALLOWED = {
   "ugoe-ai": TOOL_BASE,
   "ugoe-cli": union(TOOL_BASE, ["ugoe-ai"]),
   "ugoe-mcp": union(TOOL_BASE, ["ugoe-ai"]),
-  "ugoe-editor": union(TOOL_BASE, ["ugoe-ai"]),
+  "ugoe-editor": union(TOOL_BASE, ["ugoe-ai", "ugoe-mcp"]),
 };
 
 const meta = JSON.parse(

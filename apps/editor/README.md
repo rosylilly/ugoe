@@ -10,6 +10,9 @@ public/mediapipe/ MediaPipe の wasm とモデル。`pnpm mediapipe` (dev・buil
 src-tauri/        バックエンド (Rust クレート `ugoe-editor`)
   src/commands.rs   IPC コマンド。薄く保ち、編集ロジックは ugoe-editor-core に置く
   src/tracking.rs   フェイストラッキングのカメラの許可と記録の保存。Info.plist・Entitlements.plist は macOS のカメラ
+  src/mcp.rs        エディタの中の MCP サーバ (エージェントをつなぐ。docs/editor.md#エージェントをつなぐ)
+  tauri.bundle.conf.json  インストーラを作るときに重ねる設定 (ugoe-mcp のサイドカー)
+scripts/sidecar.mjs 同梱する ugoe-mcp をビルドして src-tauri/binaries/ に置く (`pnpm sidecar`)
 ```
 
 ## 守ること
@@ -28,6 +31,14 @@ just web-check      # Biome + svelte-check
 
 `just editor` と `just editor-build` は、先に `just wasm` (ugoe-wasm のビルドと JS バインディングの生成) を実行する
 (`tauri.conf.json` の `beforeDevCommand` / `beforeBuildCommand`)。
+
+`just editor-build` (と `just editor-build-windows`) は `--config src-tauri/tauri.bundle.conf.json` を重ね、MCP サーバの
+`ugoe-mcp` をサイドカー (Tauri の `externalBin`) として同梱する。重ねた設定の `beforeBuildCommand` が `pnpm sidecar`
+(`scripts/sidecar.mjs`) でビルドのターゲット向けに `ugoe-mcp` をリリースでビルドし、`src-tauri/binaries/ugoe-mcp-<三つ組>[.exe]`
+(gitignore 済み) に置く。インストールすると `ugoe-mcp` はエディタの実行ファイルの隣に入り、設定の「Connect agents」が
+エージェントの登録のコマンドにそのパスを埋める。`tauri.conf.json` に `externalBin` を書かないのは、tauri-build がファイルの
+無い `externalBin` で `cargo check` と `tauri dev` も失敗させるため。`just editor` (開発中) は同梱しないので、画面は PATH の
+`ugoe-mcp` を使うコマンドを出す (`cargo build --release -p ugoe-mcp` で作れる)。
 
 ## 各 OS でのビルド
 

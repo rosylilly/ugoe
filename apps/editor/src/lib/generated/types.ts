@@ -68,6 +68,40 @@ warnings: Array<RederiveWarning>,
 mirrored: Array<MirrorReport>, };
 
 /**
+ * エージェントが求めた、利用者の確認が要る操作の種類。
+ */
+export type ApprovalAction = "apply" | "undo" | "redo" | "save";
+
+/**
+ * 確認のダイアログに出す、エージェントの求め。
+ */
+export type ApprovalRequest = { 
+/**
+ * 答えるときの番号 (`answer_mcp_approval`)。
+ */
+id: number, action: ApprovalAction, 
+/**
+ * 最後に握手したクライアントの名前 (複数のクライアントが同時につながると区別できない)。
+ */
+client: string | null, 
+/**
+ * 適用する提案の番号と題名 (`apply`)。
+ */
+proposal: number | null, title: string | null, 
+/**
+ * 外すコマンドの番号 (`apply`)。
+ */
+excluded: Array<number>, 
+/**
+ * 保存と一緒に書き出す `.ugoe` (`save`)。
+ */
+bundle: string | null, 
+/**
+ * 答えを待つ秒数。
+ */
+timeout_secs: number, };
+
+/**
  * アトラス化の結果の要約。
  */
 export type AtlasReport = { 
@@ -244,6 +278,20 @@ cycle: number,
  * 加算するときに掛ける重み。
  */
 weight: number, };
+
+/**
+ * 握手したクライアント。
+ */
+export type BridgeClient = { name: string, version: string | null, 
+/**
+ * 最後に握手した時刻 (UNIX 時刻のミリ秒)。
+ */
+connected_at: number, };
+
+/**
+ * 画面へ送るイベント。
+ */
+export type BridgeEvent = { "kind": "status" } | { "kind": "approval", request: ApprovalRequest, } | { "kind": "approval_closed", id: number, } | { "kind": "document" } | { "kind": "proposals" };
 
 /**
  * キャンバス。モデル座標系は「キャンバス左上原点・ピクセル単位・Y 下向き」。
@@ -756,6 +804,39 @@ export type MaskRef = { mesh: string,
 invert: boolean, };
 
 /**
+ * 「Connect agents」の画面に出す状態。トークンは含めない (`get_mcp_bridge_token`)。
+ */
+export type McpBridgeStatus = { enabled: boolean, 
+/**
+ * 待ち受けている。
+ */
+running: boolean, 
+/**
+ * MCP の URL (`http://127.0.0.1:<port>/mcp`)。
+ */
+url: string | null, 
+/**
+ * 決めたポート。`null` なら起動のたびに空いているポート。
+ */
+port: number | null, 
+/**
+ * 発見用のファイル (`ugoe-mcp --editor` が読む)。
+ */
+discovery: string | null, 
+/**
+ * 始められなかった理由。
+ */
+error: string | null, clients: Array<BridgeClient>, 
+/**
+ * 答えを待っている確認 (画面を開き直したときに出し直す)。
+ */
+pending: Array<ApprovalRequest>, 
+/**
+ * エージェントがツールに渡すプロジェクトのパス。未保存なら `null` (パスで指せない)。
+ */
+project: string | null, sidecar: Sidecar, };
+
+/**
  * 描画単位となるテクスチャ付き三角形メッシュ。
  */
 export type Mesh = { id: string, name: string, part: string, 
@@ -1239,7 +1320,12 @@ rationale: string, commands: Array<ProposalCommand>,
 /**
  * 提案の後にドキュメントが変わった (プレビュー・採用できない。Undo で戻れば使える)。
  */
-stale: boolean, };
+stale: boolean, 
+/**
+ * 提案を作ったもの (エディタにつないだエージェントの名前など。[`Proposals::set_source`])。
+ * エディタの中で作った提案は `null`。
+ */
+source: string | null, };
 
 /**
  * 使うプロバイダ。
@@ -1333,6 +1419,28 @@ export type Segment = { "type": "start", p: Point, } | { "type": "linear", to: P
  * [`crate::Command::SetMotionSegment`] で設定する区間の種類。
  */
 export type SegmentShape = { "type": "linear" } | { "type": "bezier", c1?: Point | null, c2?: Point | null, } | { "type": "stepped" } | { "type": "inverse_stepped" };
+
+/**
+ * 同梱の `ugoe-mcp` (登録のコマンドに埋める)。
+ */
+export type Sidecar = { 
+/**
+ * エディタの実行ファイルの隣の `ugoe-mcp` (`.exe`)。開発中は同じ `target/` のビルド結果。
+ * 見つからなければ `null` (画面はビルドの方法を案内する)。
+ */
+path: string | null, 
+/**
+ * Windows で、`path` を WSL から指すパス (`/mnt/c/...`)。
+ */
+wsl_path: string | null, 
+/**
+ * `windows`・`macos`・`linux`。
+ */
+platform: string, 
+/**
+ * エディタ自身が WSL の中で動いている (Linux 版を WSLg で動かしている)。
+ */
+in_wsl: boolean, };
 
 /**
  * 着せ替えのスロット: モジュールの取り付け位置 (`docs/spec/modules.md#スロット`)。

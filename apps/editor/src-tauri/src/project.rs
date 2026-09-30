@@ -39,7 +39,7 @@ pub struct ProjectSession {
 
 impl ProjectSession {
     /// `disk` は `path` のファイルの指紋 (`path` と一緒に渡す)。
-    fn from_project(
+    pub(crate) fn from_project(
         project: Project,
         path: Option<(PathBuf, ProjectFingerprint)>,
     ) -> (Self, Document) {
@@ -81,6 +81,21 @@ impl ProjectSession {
         &mut self.ai_consent
     }
 
+    /// 保存先の `.ugoeproj` ディレクトリ (一度も保存していなければ `None`)。
+    pub(crate) fn path(&self) -> Option<&Path> {
+        self.path.as_deref()
+    }
+
+    /// エディタにつないだエージェント (`crate::mcp`) に貸す、メタ情報と提案の置き場。
+    pub(crate) fn lend(&mut self) -> (&ProjectMeta, &mut ugoe_editor_core::Proposals) {
+        (&self.meta, self.proposals.proposals_mut())
+    }
+
+    /// プロジェクトの書き出しの設定 (`export_bundle` と同じもの)。
+    pub(crate) fn export_settings(&self) -> ExportSettings {
+        self.meta.export_settings()
+    }
+
     pub(crate) fn to_project(&self, document: &Document) -> Project {
         Project::from_document(self.meta.clone(), document)
     }
@@ -108,7 +123,7 @@ impl ProjectSession {
     }
 
     /// `dir` に保存し、保存先と指紋を覚え直す (自分の保存を外の変更と取り違えないよう、書いた直後に取る)。
-    fn save_to(&mut self, document: &mut Document, dir: PathBuf) -> Result<(), String> {
+    pub(crate) fn save_to(&mut self, document: &mut Document, dir: PathBuf) -> Result<(), String> {
         self.to_project(document)
             .save(&dir)
             .map_err(|e| e.to_string())?;

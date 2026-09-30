@@ -967,6 +967,52 @@ PSD の取り込みから「レイヤーの分類 → リギングの提案」�
 | `adopt_proposal(id, excluded)` | 外したコマンドを除いて採用する (1 回の Undo で戻る)。`ApplyReport` |
 | `reject_proposal(id)` | 提案を捨てる。`ProposalState` |
 
+### エージェントをつなぐ
+
+実行中のエディタに外部のエージェント (Claude Code・OpenCode・ChatGPT) をつなぎ、その提案をエディタの画面で確かめて採用する
+([ADR 0023](adr/0023-editor-mcp-bridge.md) の 1・2・4・6、T0642)。`ugoe-mcp` の側 (持ち主の抽象・`EditorBridge`・`--editor` の中継・WSL) は
+T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエディタにつなぐ---editor))。バックエンドは `src-tauri/src/mcp.rs`、
+画面は `src/lib/agents/` (設定の「Connect agents」・確認のダイアログ・登録の手順)。操作は [マニュアル](manual/mcp.md)。
+
+- **持ち主 (`EditorHost`):** `AppState` の文書 (`document`) と `ProjectSession` のメタ情報・提案 (`ProposalSession` の `Proposals`。AI タブと
+  同じ置き場) を `ugoe_mcp::DocumentHost` として貸す。錠の順は `document` → `project` (IPC と同じ)。ツールは HTTP の接続のスレッドで
+  動き、Tauri のメインスレッドは止めない。
+  - **指せるのは開いているプロジェクトだけ:** パス (正規化して比べる) が `ProjectSession::path` と同じときだけ貸す。未保存 (パスなし) なら
+    保存を促すエラー。`open_project` は開いているプロジェクトなら状態を返すだけ (ディスクの内容で置き換えない)、作る・`import_psd`・
+    閉じるは断る (利用者の作業を奪わない)。`instructions` で、エディタにつながっていることと開いているプロジェクトのパスを伝える。
+  - **確認:** `apply_proposal`・`undo`・`redo`・`save_project` は `ugoe_mcp::host::Approvals` で確認を出し、画面の答えか **120 秒** の
+    時間切れまで待つ (拒否・時間切れはツールのエラー)。確認は `ApprovalRequest` (操作・最後に握手したクライアントの名前・提案の番号と題名・
+    外すコマンド・書き出し先) を Tauri のイベントで画面に送る。確認の間も錠は握らないので、利用者は編集を続けられる (その場合は提案が
+    古いというエラーになり、承認した差分と違う結果にしない)。**画面から「Adopt」するときは確認しない** (利用者自身の操作)。
+  - **保存:** エディタの保存と同じ `ProjectSession::save_to` (指紋を取り直すので、自分の保存を外の変更と取り違えない)。書き出し先 (`bundle`)
+    はプロジェクトの書き出しの設定 (アトラス化) で書く。開いた後で外で書き換えられていたら、エージェントの保存は断る (利用者が
+    [外での書き換え](#外での書き換え)のダイアログで決める)。
+  - **外での書き換えとぶつからない:** ブリッジの編集はエディタの文書に入り、ディスクには保存するまで書かないので、外の変更としては見えない。
+- **提案の出どころ:** `Change::Proposed` の名前を `Proposals::set_source` で提案に記し、`ProposalView::source` として画面に出す
+  (「from claude-code」。エディタの中で作った提案は `null`)。HTTP はセッションを持たないので、名前は最後に握手したクライアント。
+- **画面へのイベント (`mcp-bridge`、`BridgeEvent`):** `status` (始めた・止めた・握手した)・`approval` / `approval_closed`・`document`
+  (適用・Undo・Redo・保存。画面は `EditorDocument.refresh`)・`proposals` (一覧を取り直し、AI タブを開いていなければタブに「•」)。
+- **設定 (`mcp-bridge.json`):** アプリの設定のディレクトリに `enabled` (既定は偽)・`port` (無ければ空いているポート)・`token` を残す。
+  トークンは初めて有効にしたときに OS の乱数で作り、起動し直しても同じ (HTTP で直接つなぐクライアントの設定を保つ)。Unix では 0600 で書く。
+  「Regenerate token」で作り直す。起動時に有効なら始め、終了時 (`RunEvent::Exit`) に止めて発見用のファイルを消す (待っている確認は拒否)。
+- **登録の手順 (`src/lib/agents/setup.ts`、Vitest):** 同梱の `ugoe-mcp` (エディタの実行ファイルの隣。Windows では WSL から指すパス
+  `/mnt/c/…` も) を埋めた、Claude Code (`claude mcp add … -- <ugoe-mcp> --editor`)・OpenCode (`opencode.json`)・ChatGPT
+  (`tunnel-client` の `--mcp-command "<ugoe-mcp> --editor"`)・WSL (`ugoe-mcp.exe --editor --wsl-distro`、ミラーのときは Linux 版)・HTTP の
+  手順。パスは OS に合わせて引用する。
+- **ugoe-mcp の同梱 (サイドカー):** Tauri の `externalBin` (`binaries/ugoe-mcp-<ターゲットの三つ組>[.exe]`)。`tauri.conf.json` には書かず、
+  `src-tauri/tauri.bundle.conf.json` を `just editor-build` が `--config` で重ねる (tauri-build は `externalBin` のファイルが無いと
+  `cargo check`・`tauri dev` も失敗させるため)。重ねた設定の `beforeBuildCommand` が `pnpm sidecar` (`scripts/sidecar.mjs`) で
+  ターゲット向けに `ugoe-mcp` をリリースでビルドして置く (Linux から Windows 向けは cargo-xwin、`universal-apple-darwin` は lipo)。
+  開発中 (`just editor`) は同梱の `ugoe-mcp` が無いので、画面は PATH の `ugoe-mcp` を使うコマンドを出す。
+
+| コマンド | 内容 |
+| --- | --- |
+| `mcp_bridge_status` | `McpBridgeStatus` (有効・待ち受けの URL・ポート・発見用のファイル・エラー・握手したクライアント・待っている確認・エージェントが使うパス・同梱の `ugoe-mcp`)。トークンは含めない |
+| `set_mcp_bridge_enabled(enabled)` | 有効・無効を設定に残し、始める・止める |
+| `set_mcp_bridge_port(port?)` | 待ち受けるポート (`null` なら空いているポート)。動いていれば始め直す |
+| `regenerate_mcp_bridge_token` / `get_mcp_bridge_token` | トークンを作り直す (動いていれば始め直す) / 写すために読む |
+| `answer_mcp_approval(id, approved)` | 確認に答える。待っていなければ (時間切れの後など) `false` |
+
 ## ビューポート
 
 [ADR 0003](adr/0003-editor-viewport-in-webview.md) のとおり、ビューポートは WebView 内の wasm で描画します。

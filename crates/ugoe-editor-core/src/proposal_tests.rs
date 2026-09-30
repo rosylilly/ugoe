@@ -247,3 +247,16 @@ fn later_edits_of_the_same_element_depend_on_earlier_ones() {
         .collect();
     assert_eq!(requires, [&[][..], &[0][..]]);
 }
+
+/// 提案を作ったもの (エディタにつないだエージェント) を記すと一覧に出る。無い提案には記せない。
+#[test]
+fn records_where_a_proposal_came_from() {
+    let (doc, mut proposals, id) = setup();
+    assert_eq!(proposals.views(&doc)[0].source, None);
+    assert!(proposals.set_source(id, "claude-code"));
+    assert_eq!(
+        proposals.views(&doc)[0].source.as_deref(),
+        Some("claude-code")
+    );
+    assert!(!proposals.set_source(id + 1, "other"));
+}

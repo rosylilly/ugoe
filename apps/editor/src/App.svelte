@@ -9,10 +9,14 @@
   (lib/ai/ConsentDialog.svelte) もここに置く。
   上の区画の「AI」タブは AI の提案 (lib/ai/ProposalsPanel.svelte)。提案をプレビューしている間は、ビューポートに
   提案を適用した複製を渡し、編集のツールを隠す (docs/editor.md#ai-の提案)。
+  ヘッダーの「Agents」はエディタにつないだエージェント (lib/agents/。設定の「Connect agents」) の状態。エージェントの
+  適用・保存の確認 (lib/agents/ApprovalDialog.svelte) もここに置き、ブリッジのイベントで文書と提案を読み直す。
   プレビューモード (lib/preview/) では、左の列・タイムライン・編集のツールと右の列を隠し、右にプレビューのパネルを出す。
 -->
 <script lang="ts">
-import { untrack } from "svelte";
+import { onMount, untrack } from "svelte";
+import ApprovalDialog from "./lib/agents/ApprovalDialog.svelte";
+import { agentBridge } from "./lib/agents/bridge.svelte";
 import { consentPrompt } from "./lib/ai/ai.svelte";
 import ConsentDialog from "./lib/ai/ConsentDialog.svelte";
 import ProposalsPanel from "./lib/ai/ProposalsPanel.svelte";
@@ -55,6 +59,28 @@ ipc.appInfo().then((i) => {
   info = i;
 });
 doc.refresh();
+
+// エディタにつないだエージェント: 確認の求め・文書と提案の変化を受ける。
+onMount(() => {
+  void agentBridge.refresh();
+  const unlisten = ipc.onMcpBridgeEvent((event) =>
+    agentBridge.handle(event, {
+      document: () => void doc.refresh(),
+      proposals: () => void proposals.agentProposed(),
+    }),
+  );
+  return () => {
+    void unlisten.then((stop) => stop());
+  };
+});
+
+/** AI タブを開く。 */
+function openProposals(): void {
+  proposals.active = true;
+  proposals.fresh = false;
+  physics.active = false;
+  verify.active = false;
+}
 
 const mac = isMac(navigator.platform);
 const undoKeys = mac ? "Cmd+Z" : "Ctrl+Z";
@@ -137,7 +163,12 @@ $effect(() => {
       <button onclick={() => doc.undo()} title="Undo ({undoKeys})">Undo</button>
       <button onclick={() => doc.redo()} title="Redo ({redoKeys})">Redo</button>
     {/if}
-    <button onclick={() => settings?.open()} title="AI provider, API key and this project's AI settings">Settings</button>
+    {#if agentBridge.status?.running}
+      <button class="agents" onclick={() => settings?.open("agents")}
+        title="Agents can connect to this editor (Settings → Connect agents)"
+        ><span class="dot"></span>Agents{agentBridge.connected > 0 ? ` (${agentBridge.connected})` : ""}</button>
+    {/if}
+    <button onclick={() => settings?.open()} title="AI provider, API key, and connecting agents">Settings</button>
     <HelpButton />
   </header>
   <aside class="left">
@@ -167,9 +198,10 @@ $effect(() => {
         <button role="tab" aria-selected={verify.active} class:current={verify.active}
           onclick={() => ((verify.active = true), (physics.active = false), (proposals.active = false))}>Verify</button>
         <button role="tab" aria-selected={proposals.active} class:current={proposals.active}
-          title="Classify PSD layers and review rig proposals"
-          onclick={() => ((proposals.active = true), (physics.active = false), (verify.active = false))}
-          >AI{proposals.count > 0 ? ` (${proposals.count})` : ""}</button>
+          class:fresh={proposals.fresh}
+          title={proposals.fresh ? "An agent made a new proposal" : "Classify PSD layers and review rig proposals"}
+          onclick={openProposals}
+          >AI{proposals.count > 0 ? ` (${proposals.count})` : ""}{proposals.fresh ? " •" : ""}</button>
       </div>
       {#if doc.error}<p class="error">{doc.error}</p>{/if}
       {#if proposals.active}
@@ -213,6 +245,14 @@ $effect(() => {
 </div>
 <SettingsDialog bind:this={settings} onchange={() => fileMenu?.refresh()} />
 <ConsentDialog prompt={consentPrompt} />
+<ApprovalDialog
+  proposals={proposals.value?.proposals ?? []}
+  onshow={(id, excluded) => {
+    preview.exit();
+    openProposals();
+    void proposals.previewRequested(id, excluded);
+  }}
+/>
 
 <style>
   /* プレビュー中は編集の列を隠す (中身は壊さず、出たときに元の状態で戻る)。 */
@@ -242,6 +282,21 @@ $effect(() => {
     border-radius: 4px;
     background: var(--panel);
     color: var(--accent);
+  }
+  header .agents {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  header .agents .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #16a34a;
+  }
+  .tabs button.fresh {
+    color: var(--accent);
+    font-weight: 600;
   }
   header button.active {
     color: var(--accent);

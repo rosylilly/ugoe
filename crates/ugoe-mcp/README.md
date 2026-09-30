@@ -217,7 +217,7 @@ Bearer のヘッダを付けられない)。
 
 ### 実行中のエディタにつなぐ (`--editor`)
 
-エディタの設定で「エージェントをつなぐ」を有効にすると (T0642)、エディタは開いている文書を対象にした同じツールを
+エディタの設定の「Connect agents」で有効にすると (T0642)、エディタは開いている文書を対象にした同じツールを
 ループバックの HTTP で出し、ポートとトークンを [発見用のファイル](#発見用のファイル) に書く。`ugoe-mcp --editor` は
 そのファイルを読み、stdio のメッセージをエディタへ中継する。stdio しか話せないクライアント (Claude Code・OpenCode) は
 これを登録する。
@@ -256,7 +256,9 @@ claude mcp add --scope user ugoe-editor -- ugoe-mcp --editor
 #### Windows のエディタと WSL のエージェント
 
 推奨は、WSL から Windows 版の `ugoe-mcp.exe --editor` を登録すること (WSL の相互運用で .exe を起動でき、通信は
-Windows の中のループバックで完結する。エディタに同梱する。T0642)。
+Windows の中のループバックで完結する)。`ugoe-mcp.exe` はエディタに同梱され、エディタの実行ファイルの隣に入る
+(NSIS の利用者ごとのインストールなら `%LOCALAPPDATA%\ugoe\`)。エディタの設定の「Connect agents」の「Agents in WSL」が、
+実際のパスを埋めたコマンドを出す。
 
 ```sh
 # WSL の中で。エディタのインストール先の ugoe-mcp.exe を指す
@@ -289,7 +291,9 @@ claude mcp add --scope user ugoe-editor -- /mnt/c/Users/<名前>/AppData/Local/u
 ### エディタに組み込む
 
 エディタ (T0642) は、開いている文書を貸す持ち主 (`ugoe_mcp::host::DocumentHost`) を実装し、
-`ugoe_mcp::EditorBridge::start` で待ち受ける。
+`ugoe_mcp::EditorBridge::start` で待ち受ける。実装は `apps/editor/src-tauri/src/mcp.rs` の `EditorHost`
+(設計は [docs/editor.md#エージェントをつなぐ](../../docs/editor.md#エージェントをつなぐ)、操作は
+[操作マニュアル](../../docs/manual/mcp.md))。エディタはこのクレートの `ugoe-mcp` をサイドカーとして同梱する。
 
 ```rust,ignore
 let host: Arc<dyn DocumentHost> = Arc::new(EditorHost::new(app_handle));

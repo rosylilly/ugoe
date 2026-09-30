@@ -4,6 +4,7 @@
     レイヤーを分類し (「Classify layers」)、分類からリグ (顔の角度・目・口) を提案する (「Propose rig」)。
     「Use <プロバイダ>」なら選んだ AI のプロバイダに画像を送る (外部に出るなら送る前に確認のダイアログ)。
     使えないときは理由と設定への案内を出す。
+  - エディタにつないだエージェント (lib/agents/) の提案は「from <名前>」の印を付けて同じ一覧に出す。
   - 提案ごとに題名・理由・コマンドの一覧 (同じ対象への続いたコマンドはまとめる) を出す。コマンド (まとまり) の
     チェックを外すと、それに頼るコマンドも外れる (lib/ai/proposals.ts)。「Preview」は提案を複製に適用した姿をビューポートに出し (ドキュメントは変えない)、
     提案が足したパラメータのスライダーをここに出す。「Adopt」は 1 回の Undo で戻る編集として適用する。
@@ -127,6 +128,10 @@ function onSlider(id: string, e: Event): void {
       <article class="proposal" class:previewing>
         <header>
           <strong>{proposal.title}</strong>
+          {#if proposal.source}
+            <span class="source" title="Proposed by {proposal.source}, connected to this editor (Settings → Connect agents)"
+              >from {proposal.source}</span>
+          {/if}
           {#if proposal.stale}
             <span class="warn" title="The model changed after this proposal was made. Undo back to that state, or propose again.">
               outdated
@@ -282,8 +287,17 @@ function onSlider(id: string, e: Event): void {
   }
   .proposal header {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     gap: 6px;
+  }
+  .source {
+    padding: 0 6px;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    color: var(--accent);
+    font-size: 11px;
+    white-space: nowrap;
   }
   .rationale {
     max-height: 10em;

@@ -115,8 +115,9 @@ editor:
 
 # エディタのリリースビルド (インストーラを作る。手順は apps/editor/README.md)。
 # 引数は tauri build に渡す: `just editor-build --target universal-apple-darwin`
+# MCP サーバの ugoe-mcp をサイドカーとして同梱する (src-tauri/tauri.bundle.conf.json。docs/editor.md#エージェントをつなぐ)。
 editor-build *args:
-    pnpm --filter '@ugoe/editor' tauri build {{args}}
+    pnpm --filter '@ugoe/editor' tauri build --config src-tauri/tauri.bundle.conf.json {{args}}
 
 # Linux (WSL2 を含む) から Windows x86_64 向けのエディタをクロスビルドする (NSIS だけ。署名なし)。
 # 必要な道具を調べてから tauri build を cargo-xwin で実行する (scripts/editor-windows.mjs)。

@@ -1,0 +1,450 @@
+//! エディタの中の MCP サーバ (`crate::mcp`) のテスト。本物の `AppState` を持ち主にしてブリッジを始め、
+//! `ugoe_mcp::relay::Relay` (`ugoe-mcp --editor` と同じ中継。ここではプロセスの中で動かす) からツールを呼ぶ。
+//! 入力は `ugoe_model::fixtures::single_quad` を保存したプロジェクト。
+
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use serde_json::{Value, json};
+use ugoe_editor_core::texture::solid_png;
+use ugoe_editor_core::{Project, ProjectMeta, Textures};
+use ugoe_mcp::relay::{Relay, RelayOptions};
+use ugoe_model::fixtures;
+
+use super::*;
+use crate::project::ProjectSession;
+
+/// テスト用の一時ディレクトリ。破棄時に消す。
+struct TempDir(PathBuf);
+
+impl TempDir {
+    fn new(name: &str) -> Self {
+        let path =
+            std::env::temp_dir().join(format!("ugoe-editor-mcp-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).unwrap();
+        Self(path.canonicalize().unwrap())
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+fn save_fixture_project(dir: &Path) -> PathBuf {
+    let model = fixtures::single_quad();
+    let mut textures = Textures::new();
+    for t in &model.textures {
+        let png: Arc<[u8]> = solid_png(t.width, t.height, [255, 255, 255, 255]).into();
+        textures.insert(t.name.clone(), png);
+    }
+    let path = dir.join("quad.ugoeproj");
+    Project::new(ProjectMeta::new("quad"), model, textures)
+        .save(&path)
+        .unwrap();
+    path
+}
+
+/// 画面の代わり。確認にどう答えるかを決め、届いたイベントを覚える。
+struct TestApp {
+    state: AppState,
+    /// 確認への答え (`None` なら答えない = 時間切れ)。
+    answer: Mutex<Option<bool>>,
+    events: Mutex<Vec<BridgeEvent>>,
+}
+
+impl EditorApp for TestApp {
+    fn state(&self) -> &AppState {
+        &self.state
+    }
+
+    fn emit(&self, event: BridgeEvent) {
+        if let BridgeEvent::Approval { request } = &event
+            && let Some(approved) = *self.answer.lock().unwrap()
+        {
+            // 確認の番号は出す前に登録されているので、ここで答えてよい (答えは待たない)。
+            assert!(self.state.mcp.answer(request.id, approved));
+        }
+        self.events.lock().unwrap().push(event);
+    }
+}
+
+impl TestApp {
+    fn open(project: Option<&Path>, discovery: &Path) -> Arc<Self> {
+        let (session, document) = match project {
+            Some(dir) => {
+                let (project, disk) = Project::load_tracked(dir).unwrap();
+                ProjectSession::from_project(project, Some((dir.to_path_buf(), disk)))
+            }
+            None => crate::project::initial_state(),
+        };
+        let mut state = crate::ai::tests::state(None);
+        state.document = Mutex::new(document);
+        state.project = Mutex::new(session);
+        state.mcp = McpBridge {
+            discovery: Some(discovery.to_path_buf()),
+            shared: Arc::new(Shared {
+                timeout: Duration::from_millis(300),
+                ..Shared::default()
+            }),
+            ..McpBridge::default()
+        };
+        Arc::new(Self {
+            state,
+            answer: Mutex::new(Some(true)),
+            events: Mutex::new(Vec::new()),
+        })
+    }
+
+    fn enable(self: &Arc<Self>) {
+        let app: Arc<dyn EditorApp> = self.clone();
+        self.state.mcp.set_enabled(app, true).unwrap();
+        let status = self.status();
+        assert!(status.running, "{status:?}");
+    }
+
+    fn status(&self) -> McpBridgeStatus {
+        self.state.mcp.status(&self.state).unwrap()
+    }
+
+    fn set_answer(&self, answer: Option<bool>) {
+        *self.answer.lock().unwrap() = answer;
+    }
+
+    fn take_events(&self) -> Vec<BridgeEvent> {
+        std::mem::take(&mut *self.events.lock().unwrap())
+    }
+
+    fn parameter_ids(&self) -> Vec<String> {
+        let document = self.state.document.lock().unwrap();
+        document
+            .model()
+            .parameters
+            .iter()
+            .map(|p| p.id.as_str().to_owned())
+            .collect()
+    }
+}
+
+/// 中継 (プロセスの中) でつなぐクライアント。
+struct Client {
+    relay: Relay,
+    next_id: u64,
+}
+
+impl Client {
+    fn new(discovery: &Path) -> Self {
+        Self {
+            relay: Relay::new(RelayOptions {
+                discovery: Some(discovery.to_path_buf()),
+                wsl_distro: None,
+            }),
+            next_id: 1,
+        }
+    }
+
+    fn request(&mut self, method: &str, params: Value) -> Value {
+        let id = self.next_id;
+        self.next_id += 1;
+        let line = json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params });
+        let out = self.relay.handle_line(&line.to_string()).unwrap();
+        serde_json::from_str(&out).unwrap()
+    }
+
+    fn initialize(&mut self) -> Value {
+        self.request(
+            "initialize",
+            json!({
+                "protocolVersion": "2025-11-25",
+                "capabilities": {},
+                "clientInfo": { "name": "test-agent", "version": "1.2" },
+            }),
+        )
+    }
+
+    fn call(&mut self, name: &str, arguments: Value) -> Value {
+        self.request(
+            "tools/call",
+            json!({ "name": name, "arguments": arguments }),
+        )["result"]
+            .clone()
+    }
+
+    fn ok(&mut self, name: &str, arguments: Value) -> Value {
+        let result = self.call(name, arguments);
+        assert_eq!(result["isError"], false, "{name}: {result}");
+        result["structuredContent"].clone()
+    }
+
+    fn err(&mut self, name: &str, arguments: Value) -> String {
+        let result = self.call(name, arguments);
+        assert_eq!(result["isError"], true, "{name}: {result}");
+        result["content"][0]["text"].as_str().unwrap().to_owned()
+    }
+}
+
+fn add_angle(path: &str) -> Value {
+    json!({
+        "path": path,
+        "title": "Add AngleX",
+        "rationale": "face turns",
+        "commands": [
+            {
+                "op": "add_parameter",
+                "parameter": { "id": "AngleX", "name": "Angle X", "min": -30.0, "default": 0.0, "max": 30.0 },
+            },
+        ],
+    })
+}
+
+/// 提案 → エディタの一覧にエージェントの名前付きで出る → 確認 (拒否・時間切れ・承認) → 適用 → エディタの Undo で
+/// 提案が再び出る → 保存 (外の変更と取り違えない)。
+#[test]
+fn agents_propose_and_the_user_approves_in_the_editor() {
+    let tmp = TempDir::new("flow");
+    let project = save_fixture_project(&tmp.0);
+    let path = project.display().to_string();
+    let discovery = tmp.0.join("state").join("editor-mcp.json");
+    let app = TestApp::open(Some(&project), &discovery);
+    let mut client = Client::new(&discovery);
+
+    // 既定は無効: 発見用のファイルは無く、中継は「動いていない」と答える。
+    assert!(!app.status().enabled && !app.status().running);
+    let err = client.err("get_model_summary", json!({ "path": path }));
+    assert!(err.contains("Connect agents"), "{err}");
+
+    app.enable();
+    let status = app.status();
+    assert_eq!(status.project.as_deref(), Some(path.as_str()));
+    assert_eq!(
+        status.discovery.as_deref(),
+        Some(discovery.display().to_string().as_str())
+    );
+    let init = client.initialize();
+    let instructions = init["result"]["instructions"].as_str().unwrap();
+    assert!(
+        instructions.contains(&format!("`{path}`")),
+        "{instructions}"
+    );
+    let clients = app.status().clients;
+    assert_eq!(clients.len(), 1);
+    assert_eq!(
+        (clients[0].name.as_str(), clients[0].version.as_deref()),
+        ("test-agent", Some("1.2"))
+    );
+    app.take_events();
+
+    // 提案はエディタの提案の一覧に、エージェントの名前付きで出る。文書は変わらない。
+    let proposed = client.ok("propose_edit", add_angle(&path));
+    assert_eq!(proposed["proposal"], "p1");
+    {
+        let document = app.state.document.lock().unwrap();
+        let mut session = app.state.project.lock().unwrap();
+        let views = session.lend().1.views(&document);
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].title, "Add AngleX");
+        assert_eq!(views[0].source.as_deref(), Some("test-agent"));
+    }
+    assert_eq!(app.take_events(), vec![BridgeEvent::Proposals]);
+    assert_eq!(app.parameter_ids(), vec!["X"]);
+
+    // 拒否: エラーが返り、文書は変わらない。確認は画面に出て、閉じた知らせも届く。
+    app.set_answer(Some(false));
+    let err = client.err("apply_proposal", json!({ "path": path, "proposal": "p1" }));
+    assert!(err.contains("declined"), "{err}");
+    let events = app.take_events();
+    let BridgeEvent::Approval { request } = &events[0] else {
+        panic!("{events:?}")
+    };
+    assert_eq!(request.action, ApprovalAction::Apply);
+    assert_eq!(request.proposal, Some(1));
+    assert_eq!(request.title.as_deref(), Some("Add AngleX"));
+    assert_eq!(request.client.as_deref(), Some("test-agent"));
+    assert_eq!(events[1], BridgeEvent::ApprovalClosed { id: request.id });
+    assert_eq!(app.parameter_ids(), vec!["X"]);
+
+    // 時間切れ: エラーが返り、待っている確認は残らない。
+    app.set_answer(None);
+    let err = client.err("apply_proposal", json!({ "path": path, "proposal": "p1" }));
+    assert!(err.contains("did not answer in time"), "{err}");
+    assert!(app.status().pending.is_empty());
+    assert_eq!(app.parameter_ids(), vec!["X"]);
+
+    // 承認: 適用され、画面に読み直しを知らせる。
+    app.set_answer(Some(true));
+    app.take_events();
+    client.ok("apply_proposal", json!({ "path": path, "proposal": "p1" }));
+    assert_eq!(app.parameter_ids(), vec!["X", "AngleX"]);
+    assert!(app.take_events().contains(&BridgeEvent::Document));
+
+    // エディタの Undo (画面の操作) で戻すと、提案が再び一覧に出る。
+    {
+        let mut document = app.state.document.lock().unwrap();
+        assert!(document.undo());
+        let mut session = app.state.project.lock().unwrap();
+        let views = session.lend().1.views(&document);
+        assert_eq!(views.len(), 1);
+        assert!(!views[0].stale);
+    }
+    // エージェントの Redo も確認を通す。
+    let redone = client.ok("redo", json!({ "path": path }));
+    assert_eq!(redone["redone"], true);
+    assert_eq!(app.parameter_ids(), vec!["X", "AngleX"]);
+
+    // 保存と書き出し: エディタの保存と同じく、自分の保存は外の変更と取り違えない。
+    let bundle = tmp.0.join("quad.ugoe");
+    let saved = client.ok(
+        "save_project",
+        json!({ "path": path, "bundle": bundle.display().to_string() }),
+    );
+    assert_eq!(saved["modified"], false);
+    assert!(bundle.is_file());
+    assert_eq!(Project::load(&project).unwrap().model.parameters.len(), 2);
+    {
+        let document = app.state.document.lock().unwrap();
+        let session = app.state.project.lock().unwrap();
+        assert!(!document.is_modified());
+        assert_eq!(session.external_change().unwrap(), None);
+    }
+
+    // 外で書き換えられた後は、エージェントの保存は断る (利用者がエディタで選ぶ)。
+    let meta = project.join("project.json");
+    let text = std::fs::read_to_string(&meta).unwrap();
+    std::fs::write(&meta, text.replace("quad", "renamed")).unwrap();
+    let err = client.err("save_project", json!({ "path": path }));
+    assert!(err.contains("changed outside the editor"), "{err}");
+
+    // 止めると発見用のファイルが消え、中継は「動いていない」と答える。
+    let as_app: Arc<dyn EditorApp> = app.clone();
+    app.state.mcp.set_enabled(as_app, false).unwrap();
+    assert!(!discovery.exists());
+    let err = client.err("get_model_summary", json!({ "path": path }));
+    assert!(err.contains("not running"), "{err}");
+}
+
+/// ほかのプロジェクト・作る・閉じる・PSD から作るはできない。開いているプロジェクトの open_project は状態を返すだけ。
+#[test]
+fn agents_cannot_switch_the_editor_project() {
+    let tmp = TempDir::new("switch");
+    let project = save_fixture_project(&tmp.0);
+    let path = project.display().to_string();
+    std::fs::create_dir_all(tmp.0.join("other")).unwrap();
+    let other = save_fixture_project(&tmp.0.join("other"));
+    let discovery = tmp.0.join("editor-mcp.json");
+    let app = TestApp::open(Some(&project), &discovery);
+    app.enable();
+    let mut client = Client::new(&discovery);
+    client.initialize();
+
+    let opened = client.ok("open_project", json!({ "path": path }));
+    assert_eq!(opened["name"], "quad");
+    for (tool, args, expected) in [
+        (
+            "open_project",
+            json!({ "path": other }),
+            "can only use that project",
+        ),
+        (
+            "get_model_summary",
+            json!({ "path": other }),
+            "can only use that project",
+        ),
+        (
+            "open_project",
+            json!({ "path": tmp.0.join("new.ugoeproj"), "create": true }),
+            "cannot create projects",
+        ),
+        ("close_project", json!({ "path": path }), "cannot close"),
+        (
+            "import_psd",
+            json!({ "path": tmp.0.join("psd.ugoeproj"), "psd": tmp.0.join("a.psd") }),
+            "New from PSD",
+        ),
+    ] {
+        let err = client.err(tool, args);
+        assert!(err.contains(expected), "{tool}: {err}");
+    }
+    assert!(app.status().pending.is_empty());
+}
+
+/// 未保存のプロジェクトはパスで指せないので、保存を促す。
+#[test]
+fn unsaved_projects_ask_the_user_to_save() {
+    let tmp = TempDir::new("unsaved");
+    let discovery = tmp.0.join("editor-mcp.json");
+    let app = TestApp::open(None, &discovery);
+    app.enable();
+    assert_eq!(app.status().project, None);
+    let mut client = Client::new(&discovery);
+    let init = client.initialize();
+    let instructions = init["result"]["instructions"].as_str().unwrap();
+    assert!(instructions.contains("not been saved"), "{instructions}");
+    let err = client.err(
+        "get_model_summary",
+        json!({ "path": tmp.0.join("x.ugoeproj") }),
+    );
+    assert!(err.contains("Save As"), "{err}");
+}
+
+/// 設定はファイルに残り (トークンを含むので利用者だけが読める)、トークンを作り直すと始め直す。
+#[test]
+fn settings_are_kept_and_the_token_can_be_regenerated() {
+    let tmp = TempDir::new("settings");
+    let discovery = tmp.0.join("editor-mcp.json");
+    let app = TestApp::open(None, &discovery);
+    app.state.mcp.load(tmp.0.join("config")).unwrap();
+    app.enable();
+    let file = tmp.0.join("config").join(SETTINGS_FILE);
+    let stored: StoredSettings =
+        serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    assert!(stored.enabled);
+    let token = stored.token.clone().unwrap();
+    assert_eq!(app.state.mcp.token().unwrap(), token);
+    assert_eq!(ugoe_mcp::discovery::read(&discovery).unwrap().token, token);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&file).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+
+    let as_app: Arc<dyn EditorApp> = app.clone();
+    app.state.mcp.regenerate_token(as_app.clone()).unwrap();
+    let renewed = app.state.mcp.token().unwrap();
+    assert_ne!(renewed, token);
+    assert_eq!(
+        ugoe_mcp::discovery::read(&discovery).unwrap().token,
+        renewed
+    );
+
+    // 読み直すと同じ設定 (有効・トークン)。
+    let reloaded = McpBridge::default();
+    reloaded.load(tmp.0.join("config")).unwrap();
+    assert!(lock(&reloaded.settings).enabled);
+    assert_eq!(reloaded.token().unwrap(), renewed);
+
+    assert!(app.state.mcp.set_port(as_app.clone(), Some(0)).is_err());
+    app.state.mcp.set_enabled(as_app, false).unwrap();
+    assert!(!discovery.exists());
+}
+
+/// 開発中は同じ target/ のビルド結果も探す (インストールしたものは隣だけ)。
+#[test]
+fn sidecar_is_looked_up_next_to_the_editor_and_in_the_target_dir() {
+    let debug = Path::new("/w/target/debug");
+    assert_eq!(
+        sidecar_candidates(debug, "ugoe-mcp"),
+        vec![
+            debug.join("ugoe-mcp"),
+            PathBuf::from("/w/target/release/ugoe-mcp")
+        ]
+    );
+    let installed = Path::new("/usr/bin");
+    assert_eq!(
+        sidecar_candidates(installed, "ugoe-mcp"),
+        vec![installed.join("ugoe-mcp")]
+    );
+}

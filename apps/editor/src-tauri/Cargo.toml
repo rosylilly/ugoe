@@ -25,6 +25,7 @@ ts-rs.workspace = true
 ugoe-ai.workspace = true
 ugoe-editor-core.workspace = true
 ugoe-format.workspace = true
+ugoe-mcp.workspace = true
 ugoe-model.workspace = true
 ugoe-psd.workspace = true
 

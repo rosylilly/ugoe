@@ -316,6 +316,7 @@ pub(crate) fn state(secret: Option<&str>) -> AppState {
         project: Mutex::new(session),
         api_keys: keys(secrets, no_env),
         ai_provider: ProviderStore::default(),
+        mcp: crate::mcp::McpBridge::default(),
     }
 }
 

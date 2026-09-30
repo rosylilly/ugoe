@@ -60,6 +60,11 @@ impl ProposalSession {
         self.psd = Some(path);
     }
 
+    /// 提案の置き場 (エディタにつないだエージェントの提案もここに置く。`crate::mcp`)。
+    pub(crate) fn proposals_mut(&mut self) -> &mut Proposals {
+        &mut self.proposals
+    }
+
     fn state(&self, document: &Document) -> ProposalState {
         ProposalState {
             proposals: self.proposals.views(document),
