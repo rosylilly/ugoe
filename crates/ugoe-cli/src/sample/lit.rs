@@ -4,7 +4,8 @@
 //! 別々にふくらませると、顔の上の目・口が平らに浮いたり、首と肩の境目に段差が出たりする (T0506 のメモ)。そこで
 //! 部位をまとまり ([`GROUPS`]) に分け、まとまりの形 (メンバーのアルファを基準の姿のキャンバスに並べた和) を 1 つの
 //! ふくらみにして、その高さをメンバーのテクスチャに写してから法線にする。顔の上の目・口・鼻・眉は顔のふくらみを
-//! そのまま受け、首と体は 1 つの形としてつながる。
+//! そのまま受け、首と体は 1 つの形としてつながる。まとまりのふくらみはエディタの生成と同じ
+//! `ugoe_rigging::group_bulge_normal_maps` (T0518) で作る。
 //!
 //! 法線は変化がなだらかなので、ファイルを小さくするためにテクスチャの半分の解像度で持つ ([`DOWNSCALE`]。
 //! 法線マップはテクスチャと同じ UV の範囲に引き伸ばして使われる。`docs/spec/rendering.md#ライティング`)。
@@ -14,9 +15,7 @@ use anyhow::{Context, anyhow, bail};
 use ugoe_core::Vec2;
 use ugoe_editor_core::texture::{decode_rgba_png, encode_rgba_png};
 use ugoe_editor_core::{Command, Document, Project, PsdImportOptions};
-use ugoe_rigging::{
-    BulgeOptions, HeightField, NormalMap, bulge_height, decode_normal, encode_normal,
-};
+use ugoe_rigging::{BulgeOptions, NormalMap, PlacedTexture, group_bulge_normal_maps};
 
 /// 法線マップの解像度をテクスチャの何分の 1 にするか。
 pub const DOWNSCALE: u32 = 2;
@@ -131,7 +130,7 @@ pub fn light_avatar(project: &Project, psd: &[u8]) -> anyhow::Result<Project> {
         let shape = find(group.shape_only)?;
         let maps = group_normal_maps(&members, &shape, &group.bulge)?;
         for (layer, map) in members.iter().zip(maps) {
-            let map = downscale(&map, DOWNSCALE);
+            let map = map.downscale(DOWNSCALE);
             commands.push(Command::SetNormalMap {
                 texture: layer.texture.clone(),
                 normal_map: Some(format!("{}{SUFFIX}", layer.texture)),
@@ -231,148 +230,47 @@ impl Layer {
         }
         Ok(layers)
     }
+
+    /// 画素ごとの、画素の中心のキャンバス座標 (行優先)。
+    fn positions(&self) -> Vec<Option<Vec2>> {
+        (0..self.height)
+            .flat_map(|ty| {
+                (0..self.width).map(move |tx| Some(self.origin + Vec2::new(tx as f32, ty as f32)))
+            })
+            .collect()
+    }
 }
 
 /// まとまり `members` (と形にだけ加える `shape`) の形を 1 つのふくらみにし、`members` の法線マップ
-/// (テクスチャと同じ解像度) を返す。
+/// (テクスチャと同じ解像度) を返す (`ugoe_rigging::group_bulge_normal_maps`、T0518)。
 fn group_normal_maps(
     members: &[&Layer],
     shape: &[&Layer],
     options: &BulgeOptions,
 ) -> anyhow::Result<Vec<NormalMap>> {
-    // まとまりを覆うキャンバスの矩形 (整数の画素)。縁の外に 1 画素の余白を取る。
-    let (mut min, mut max) = (Vec2::splat(f32::INFINITY), Vec2::splat(f32::NEG_INFINITY));
-    for l in members.iter().chain(shape) {
-        min = min.min(l.origin);
-        max = max.max(l.origin + Vec2::new(l.width as f32, l.height as f32));
-    }
-    let x0 = min.x.floor() as i64 - 1;
-    let y0 = min.y.floor() as i64 - 1;
-    let w = (max.x.ceil() as i64 + 1 - x0) as usize;
-    let h = (max.y.ceil() as i64 + 1 - y0) as usize;
+    let member_positions: Vec<_> = members.iter().map(|l| l.positions()).collect();
+    let shape_positions: Vec<_> = shape.iter().map(|l| l.positions()).collect();
+    Ok(group_bulge_normal_maps(
+        &placed(members, &member_positions),
+        &placed(shape, &shape_positions),
+        options,
+    )?)
+}
 
-    // メンバーのアルファの最大をキャンバスに並べる (最も近い画素)。
-    let mut alpha = vec![0u8; w * h];
-    for l in members.iter().chain(shape) {
-        for ty in 0..l.height as usize {
-            for tx in 0..l.width as usize {
-                let a = l.rgba[(ty * l.width as usize + tx) * 4 + 3];
-                let cx = (l.origin.x + tx as f32).round() as i64 - x0;
-                let cy = (l.origin.y + ty as f32).round() as i64 - y0;
-                let i = cy as usize * w + cx as usize;
-                alpha[i] = alpha[i].max(a);
-            }
-        }
-    }
-    let rgba: Vec<u8> = alpha.iter().flat_map(|&a| [0, 0, 0, a]).collect();
-    let mut field = bulge_height(w as u32, h as u32, &rgba, options)?;
-    field.smooth(options.smoothing);
-
-    // キャンバスの高さを、メンバーのテクスチャの画素に写す (双線形)。
-    let sample = |p: Vec2| -> f32 {
-        let (fx, fy) = (p.x - x0 as f32, p.y - y0 as f32);
-        let (ix, iy) = (fx.floor(), fy.floor());
-        let (tx, ty) = (fx - ix, fy - iy);
-        let at = |x: f32, y: f32| {
-            let x = (x as i64).clamp(0, w as i64 - 1) as usize;
-            let y = (y as i64).clamp(0, h as i64 - 1) as usize;
-            field.values[y * w + x]
-        };
-        let top = at(ix, iy) * (1.0 - tx) + at(ix + 1.0, iy) * tx;
-        let bottom = at(ix, iy + 1.0) * (1.0 - tx) + at(ix + 1.0, iy + 1.0) * tx;
-        top * (1.0 - ty) + bottom * ty
-    };
-    members
+/// `layers` を、画素の位置 `positions` (`layers` と同じ並び) とともにまとまりに置く。
+fn placed<'a>(layers: &[&'a Layer], positions: &'a [Vec<Option<Vec2>>]) -> Vec<PlacedTexture<'a>> {
+    layers
         .iter()
-        .map(|l| {
-            let (lw, lh) = (l.width as usize, l.height as usize);
-            let mut values = Vec::with_capacity(lw * lh);
-            let mut mask = Vec::with_capacity(lw * lh);
-            for ty in 0..lh {
-                for tx in 0..lw {
-                    values.push(sample(l.origin + Vec2::new(tx as f32, ty as f32)));
-                    mask.push(l.rgba[(ty * lw + tx) * 4 + 3] >= options.alpha_threshold.max(1));
-                }
-            }
-            let mut member = HeightField::flat(l.width, l.height, mask)?;
-            member.values = values;
-            let mut map = member.to_normal_map();
-            extend_edges(&mut map, &member.mask, EDGE_PASSES);
-            Ok(map)
+        .zip(positions)
+        .map(|(l, positions)| PlacedTexture {
+            width: l.width,
+            height: l.height,
+            rgba: &l.rgba,
+            positions,
+            // PSD の取り込みはレイヤーを切り抜いたまま置く (テクスチャの 1 画素はキャンバスの 1 画素)。
+            canvas_per_texel: 1.0,
         })
         .collect()
-}
-
-/// 形の外の画素に、隣の形の中の画素の法線の平均を広げる回数 (テクスチャの画素)。
-const EDGE_PASSES: usize = 4;
-
-/// 形の外の画素の法線を、形の中から `passes` 画素だけ広げる。形の外は透明で見えないが、縮小や描画の
-/// 双線形の補間で輪郭の画素に混ざるので、正面向き `(0, 0, 1)` のままだと、重なった部位の輪郭 (肩の上の
-/// 腕など) に細い線が見える。
-fn extend_edges(map: &mut NormalMap, mask: &[bool], passes: usize) {
-    let (w, h) = (map.width as usize, map.height as usize);
-    let mut filled = mask.to_vec();
-    for _ in 0..passes {
-        let mut next = filled.clone();
-        let mut rgba = map.rgba.clone();
-        for y in 0..h {
-            for x in 0..w {
-                let i = y * w + x;
-                if filled[i] {
-                    continue;
-                }
-                let mut sum = [0.0f32; 3];
-                let mut count = 0;
-                for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
-                    let (nx, ny) = (x as i64 + dx, y as i64 + dy);
-                    if nx < 0 || ny < 0 || nx >= w as i64 || ny >= h as i64 {
-                        continue;
-                    }
-                    let j = ny as usize * w + nx as usize;
-                    if filled[j] {
-                        let c = &map.rgba[j * 4..j * 4 + 3];
-                        for (s, v) in sum.iter_mut().zip(decode_normal([c[0], c[1], c[2]])) {
-                            *s += v;
-                        }
-                        count += 1;
-                    }
-                }
-                if count > 0 {
-                    rgba[i * 4..i * 4 + 4].copy_from_slice(&encode_normal(sum));
-                    next[i] = true;
-                }
-            }
-        }
-        map.rgba = rgba;
-        filled = next;
-    }
-}
-
-/// 法線マップを `factor` 分の 1 の解像度にする (`factor × factor` 画素の法線の平均を正規化)。
-fn downscale(map: &NormalMap, factor: u32) -> NormalMap {
-    let width = map.width.div_ceil(factor);
-    let height = map.height.div_ceil(factor);
-    let mut rgba = Vec::with_capacity(width as usize * height as usize * 4);
-    for y in 0..height {
-        for x in 0..width {
-            let mut sum = [0.0f32; 3];
-            for dy in 0..factor {
-                for dx in 0..factor {
-                    if let Some(n) = map.normal(x * factor + dx, y * factor + dy) {
-                        for (s, v) in sum.iter_mut().zip(n) {
-                            *s += v;
-                        }
-                    }
-                }
-            }
-            rgba.extend(encode_normal(sum));
-        }
-    }
-    NormalMap {
-        width,
-        height,
-        rgba,
-    }
 }
 
 #[cfg(test)]
