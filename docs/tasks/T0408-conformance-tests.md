@@ -1,11 +1,11 @@
 ---
 id: T0408
 title: 配布物の適合テスト
-status: todo
+status: in-progress
 milestone: M7
 crates: [tests/conformance, CI]
 depends_on: [T0401, T0404]
-assignee:
+assignee: claude-worker-T0408
 ---
 
 # T0408: 配布物の適合テスト
