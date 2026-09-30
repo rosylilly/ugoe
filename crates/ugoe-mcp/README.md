@@ -7,10 +7,15 @@ MCP (Model Context Protocol) サーバ。Claude Code などの外部のエージ
 レイヤーを分類し、リグの値を決める判断をエージェントに任せる (ugoe は API を呼ばない。ADR 0022)。設計の判断
 (ADR 0006 との関係、`.ugoeproj` を直接扱うこと) は [docs/ai-integration.md#mcp-サーバ](../../docs/ai-integration.md#mcp-サーバ)。
 
+`.ugoeproj` を自分で開く形 (既定) のほかに、実行中のエディタの文書を扱う形がある (ADR 0023): エディタが同じツールを
+ループバックの HTTP で出し ([エディタに組み込む](#エディタに組み込む))、`ugoe-mcp --editor` が stdio のクライアントを
+そこへ中継する ([実行中のエディタにつなぐ](#実行中のエディタにつなぐ---editor))。
+
 ## 動かし方
 
 既定は stdio のサーバ (1 行 1 メッセージの JSON-RPC 2.0)。MCP クライアントが子プロセスとして起動する。
 `--http` を付けると HTTP (MCP の Streamable HTTP) で待ち受ける ([HTTP で動かす](#http-で動かす-chatgpt-など))。
+`--editor` を付けると、サーバの代わりに実行中のエディタへの中継になる ([実行中のエディタにつなぐ](#実行中のエディタにつなぐ---editor))。
 
 ```sh
 cargo build --release -p ugoe-mcp   # target/release/ugoe-mcp
@@ -28,6 +33,9 @@ cargo install --path crates/ugoe-mcp
 | `--token <TOKEN>` | HTTP の要求に求めるトークン (32 文字以上。16 進数で 128 ビット以上)。環境変数 `UGOE_MCP_TOKEN` でも渡せる (コマンド行は `ps` でほかの利用者から見えることがあるので、環境変数を勧める) |
 | `--generate-token` | トークンを OS の乱数で作り (256 ビット、16 進数で 64 文字)、標準エラーに書く |
 | `--allow-origin <ORIGIN>` | ループバックのほかに受け付ける `Origin` (`https://example.com` の形。繰り返せる) |
+| `--editor` | 実行中のエディタにつなぐ (stdio をエディタの MCP サーバへ中継する)。ほかのサーバのオプションとは一緒に使えない |
+| `--discovery <FILE>` | `--editor` で読む発見用のファイル (既定は [OS ごとの場所](#発見用のファイル)。環境変数 `UGOE_MCP_DISCOVERY` でも変えられる) |
+| `--wsl-distro <NAME>` | `--editor` で、エージェントが動く WSL のディストリビューションの名前 (Windows 版を WSL から使うとき。WSL のパスを Windows のパスに変える) |
 
 ログは標準エラーに書く (stdio では標準出力は MCP のメッセージだけ)。
 
@@ -207,6 +215,109 @@ Bearer のヘッダを付けられない)。
 サーバの側は、HTTP で握手・ツールの一覧・ツールの呼び出し (提案・適用・保存) を流すテスト (`tests/http.rs`) で
 確かめている。
 
+### 実行中のエディタにつなぐ (`--editor`)
+
+エディタの設定で「エージェントをつなぐ」を有効にすると (T0642)、エディタは開いている文書を対象にした同じツールを
+ループバックの HTTP で出し、ポートとトークンを [発見用のファイル](#発見用のファイル) に書く。`ugoe-mcp --editor` は
+そのファイルを読み、stdio のメッセージをエディタへ中継する。stdio しか話せないクライアント (Claude Code・OpenCode) は
+これを登録する。
+
+```sh
+claude mcp add --scope user ugoe-editor -- ugoe-mcp --editor
+```
+
+- **提案はエディタの画面に出る。** `propose_edit`・`propose_rig` の提案は、エディタの AI タブの提案の一覧に置かれる。
+  `apply_proposal`・`undo`・`redo`・`save_project` は、エディタが確認のダイアログを出し、利用者が承認したときだけ
+  行う (拒否・時間切れはツールのエラー)。確認の間に利用者がモデルを変えたら、提案が古いというエラーになる。
+- **開けるのはエディタで開いているプロジェクトだけ。** `open_project` はそのプロジェクトのパスなら状態を返し
+  (ディスクの内容で置き換えない)、ほかのプロジェクトを開く・作る・閉じる・`import_psd` はできない (エディタが断る)。
+  `instructions` に、開いているプロジェクトのパスが書かれる。
+- **相対パス:** 中継の作業ディレクトリ (Claude Code を起動したディレクトリ) から絶対パスにしてエディタへ渡す。
+- **エディタが無いとき:** 中継は起動したままにし、要求のたびに発見用のファイルを探す。見つからない・つながらない・
+  形の版が違うときは、直し方をツールのエラー (ツールの呼び出し) か JSON-RPC のエラー (ほかの要求) で返す。
+  エディタを後から起動・再起動 (ポートとトークンが変わる) してもよい。エディタと中継の ugoe の版が違えば、標準エラーに
+  警告を書く (ツールはエディタのものが使われる)。
+
+#### 発見用のファイル
+
+エディタが起動中に書き、止めると消す (`src/discovery.rs`)。中身はポート・トークン・PID・版 (`format` と `version`)。
+トークンを含むので、Unix ではディレクトリを 0700、ファイルを 0600 で作る (Windows の `%LOCALAPPDATA%` は利用者ごとの
+アクセス権を持つ)。ディレクトリの名前はエディタの識別子 (`app.ugoe.editor`)。
+
+| OS | 場所 |
+| --- | --- |
+| Windows | `%LOCALAPPDATA%\app.ugoe.editor\editor-mcp.json` |
+| macOS | `~/Library/Application Support/app.ugoe.editor/editor-mcp.json` |
+| Linux | `$XDG_STATE_HOME/app.ugoe.editor/editor-mcp.json` (無ければ `~/.local/state/…`) |
+
+環境変数 `UGOE_MCP_DISCOVERY` でファイルのパスを変えられる (エディタと中継の両方が見る)。エディタを 2 つ起動すると、
+後から有効にしたほうが書く (中継は後のほうにつなぐ)。
+
+#### Windows のエディタと WSL のエージェント
+
+推奨は、WSL から Windows 版の `ugoe-mcp.exe --editor` を登録すること (WSL の相互運用で .exe を起動でき、通信は
+Windows の中のループバックで完結する。エディタに同梱する。T0642)。
+
+```sh
+# WSL の中で。エディタのインストール先の ugoe-mcp.exe を指す
+claude mcp add --scope user ugoe-editor -- /mnt/c/Users/<名前>/AppData/Local/ugoe/ugoe-mcp.exe --editor --wsl-distro "$WSL_DISTRO_NAME"
+```
+
+- **パスの変換:** エージェントが渡す WSL のパスを Windows のパスに、結果のパスを WSL のパスに戻す (下の表)。
+  `--wsl-distro` を省いても、Linux のディレクトリ (`\\wsl.localhost\<名前>\…` になる) で起動すれば名前が分かる。
+  `/mnt/c/…` で起動するなら `--wsl-distro` が要る (無ければ `/home/…` のパスを変えられない)。
+- **Linux 版でもつなげる:** WSL の中の Linux 版の `ugoe-mcp --editor` は、Linux の場所に発見用のファイルが無ければ、
+  Windows の `%LOCALAPPDATA%` (相互運用の `cmd.exe` で尋ねる。相互運用が無効なら `/mnt/<ドライブ>/Users/*/AppData/Local`
+  の下を探す) の発見用のファイルを読み、パスを変換して `127.0.0.1` へつなぐ。WSL のネットワークが「ミラー」
+  (`%UserProfile%\.wslconfig` の `networkingMode=mirrored`) のときだけ Windows のループバックに届く。NAT のときは
+  つながらず、そう案内するエラーを返す (Windows 版を使うか、ミラーにする)。
+
+| WSL | Windows |
+| --- | --- |
+| `/mnt/c/Users/a/x.ugoeproj` | `C:\Users\a\x.ugoeproj` |
+| `/home/a/x.ugoeproj` | `\\wsl.localhost\<distro>\home\a\x.ugoeproj` |
+
+変換するのは、ツールの引数の `path`・`psd`・`bundle`・パスの形の `motion` と `expression`、結果の `path`・`psd`・
+`bundle`・`closed` と、エラーの文の `` `…` `` で囲んだパス (`src/relay.rs`・`src/wsl.rs`)。自動マウントの根は
+`/etc/wsl.conf` の `[automount] root` (既定 `/mnt/`) に従う。
+
+**確かめたこと (この環境は WSL2 のミラー):** Windows 側で `EditorBridge` (持ち主は `FileHost`) を動かし、WSL の Linux 版の
+`--editor` (Windows の `%LOCALAPPDATA%` を `cmd.exe` で見つけ、パスを変換) と、WSL から起動した Windows 版の `--editor`
+(作業ディレクトリからディストリビューションの名前を知る) の両方で、`C:` の下と WSL の `/tmp` の下のプロジェクトを作って保存し、
+結果のパスが WSL のパスで返ることを確かめた。NAT のネットワークと、相互運用が無効な WSL では確かめていない。
+
+### エディタに組み込む
+
+エディタ (T0642) は、開いている文書を貸す持ち主 (`ugoe_mcp::host::DocumentHost`) を実装し、
+`ugoe_mcp::EditorBridge::start` で待ち受ける。
+
+```rust,ignore
+let host: Arc<dyn DocumentHost> = Arc::new(EditorHost::new(app_handle));
+let bridge = EditorBridge::start(host, BridgeOptions::default())?; // 127.0.0.1 の空きポート・トークンを作る・発見用のファイルを書く
+// bridge.url()・bridge.token() を設定の画面に出す。止めるときは bridge.stop() (発見用のファイルを消す)
+```
+
+- **`with_project(path, f)`:** 開いているプロジェクトなら、文書 (`Mutex<Document>`)・メタ情報・提案 (`Proposals`) の錠を
+  取って `Lent` を `f` に渡す。ほかのパスは `HostError::Denied`。`f` の中でツールは待たない (描画や PSD の画像は複製を
+  取ってから錠の外で扱う)。
+- **`authorize(action)`:** 適用・Undo・Redo・保存は確認のダイアログを出して待つ (`host::Approvals`: `request` で番号を作って
+  画面にイベントを送り、答えか時間切れまで待つ。画面の Tauri のコマンドが `answer` で答える)。開く・閉じる・`import_psd` は
+  断る (開いているプロジェクトを `open_project` するのは許してよい)。どの錠も握らずに呼ばれる。
+- **`open`・`close`・`save`:** `open` は開いているプロジェクトの `Opening::Load` なら何もしない (利用者の文書を置き換えない)。
+  `save` はエディタの保存と同じ処理 (メタ情報の変更の扱いを含む)。
+- **`changed(change)`:** 提案が置かれた (クライアントの名前付き)・文書が変わった・保存した・クライアントが握手した、を知らせる。
+  画面へのイベントを送るだけにし、待たない。
+- **`instructions()`:** つながっていることと、開いているプロジェクトのパスを返す (エージェントがパスを知るため)。
+- **スレッド:** ツールは HTTP の接続ごとのスレッドで同期に動く (Tauri のイベントループの外)。確認を待つ間も、ほかの要求と
+  エディタの編集は進む。止めるときは `Approvals::deny_all` で待っている確認を終わらせてから `bridge.stop()` する。
+- **守り:** 待ち受けは `127.0.0.1` だけで、トークンは必須。パスの制限 (`--root` 相当) は `BridgeOptions::options.root` で
+  決める。既定は限らない (ほかのプロジェクトは開けず、書く操作は利用者が確認するので)。読むだけのツール (PSD・モーションの
+  JSON) は、トークンを持つクライアントなら利用者の権限で読める。
+- **確かめたこと:** `tests/editor.rs` の偽のエディタ (上の形で持ち主を実装する) に、子プロセスの `--editor` でつなぎ、
+  握手・一覧・開く (ほかは断る)・提案・拒否と時間切れ・承認して適用・Undo/Redo・保存と書き出し・エディタの停止と
+  再起動・古い発見用のファイル・知らない版を確かめる。確認を待つ間にほかのクライアントが答えを得ること、確認の間に
+  モデルが変わったら適用しないことも確かめる。
+
 ### 簡単な編集の例 (パラメータの作成とキーの追加)
 
 Claude Code に次のように頼む:
@@ -352,7 +463,10 @@ Claude Code に次のように頼む:
   HTTP も、要求に 1 つずつ JSON で答えるだけなので、HTTP のサーバのクレートを入れず std の `TcpListener` の上に
   書いた (接続ごとのスレッド、keep-alive、`Content-Length` と `chunked` の本文、`Expect: 100-continue`)。
   トークンの乱数は `getrandom` (OS の乱数。MIT/Apache-2.0、ワークスペースではすでに推移的に入っている)。
-  ツールの処理は `Mutex` で 1 つずつ行う (描画の GPU を同時に使わない)。
+  要求は接続ごとのスレッドで同時に処理する (エディタで確認を待つ適用が、ほかの要求を止めないように)。文書は持ち主の
+  錠の中で扱い、描画は GPU を同時に使わないよう `Mutex` で 1 つずつ行う。
+- `--editor` の中継 (`src/relay.rs`) はエディタへ HTTP で送る。クライアントはワークスペースの `ureq` (ugoe-ai が使う
+  もの) で、要求ごとに新しい接続にし、プロキシを使わない。答えの時間は限らない (エディタが確認の時間切れを決める)。
 
 ## テスト
 
@@ -360,7 +474,13 @@ Claude Code に次のように頼む:
 cargo test -p ugoe-mcp   # サーバを stdio で起動して、握手・ツールの一覧・提案と適用・Undo・保存、PSD からの自動リギングを確かめる
                          # tests/http.rs は --http で起動して、HTTP での握手・ツールの呼び出しと、トークン・Origin・Host の守り・--root の要求を確かめる
                          # --root で外に出るパス (相対・..・絶対・シンボリックリンク) を拒否することは tests/stdio.rs と src/root.rs
+                         # tests/editor.rs は偽のエディタ (持ち主) を EditorBridge で待ち受け、--editor の中継でツールを一通り動かす
+                         # パスの変換 (WSL と Windows) は src/wsl.rs と src/relay.rs の単体テスト
 ```
+
+Windows 向けのビルドは `cargo xwin clippy --target x86_64-pc-windows-msvc -p ugoe-mcp --tests` で確かめられる。WSL の中なら、
+`cargo xwin test --target x86_64-pc-windows-msvc -p ugoe-mcp --no-run` で作った単体テストの .exe を相互運用で動かせる
+(`tests/*.rs` の子プロセスを起動するテストは、実行ファイルのパスが Linux のパスになるので動かない)。
 
 ```sh
 cargo test -p ugoe-mcp --features gpu-tests   # render_png で実際に描く (GPU か lavapipe などが要る。just test-gpu に含まれる)
@@ -376,3 +496,4 @@ GPU を使わないテストでは、GPU に触る前に引数の誤り (未知�
 - T0513 (`docs/tasks/T0513-mcp-agent-auto-rig.md`): 自動リギングの判断をエージェントに任せるツール
 - T0514 (`docs/tasks/T0514-mcp-http-transport.md`): HTTP のトランスポート
 - T0515 (`docs/tasks/T0515-mcp-root-dir.md`): ツールが触れるパスを `--root` の下に限る
+- T0516 (`docs/tasks/T0516-mcp-document-host.md`): 文書の持ち主の抽象化・エディタに組み込む API・`--editor` の中継と WSL

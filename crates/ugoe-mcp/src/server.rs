@@ -4,8 +4,11 @@
 //! 旧来の `initialize` の握手をする版 (2025-11-25 以前) と、要求ごとに `_meta` で版を示す版
 //! (2026-07-28) の両方に応じる。仕様: https://modelcontextprotocol.io/specification/
 
+use std::sync::Arc;
+
 use serde_json::{Map, Value, json};
 
+use crate::host::DocumentHost;
 use crate::tools::{Options, Tools};
 
 /// 要求ごとに `_meta` で版を示す版 (握手をしない)。
@@ -15,6 +18,7 @@ pub const LEGACY_VERSIONS: &[&str] = &["2025-11-25", "2025-06-18", "2025-03-26",
 
 pub(crate) const META_PROTOCOL_VERSION: &str = "io.modelcontextprotocol/protocolVersion";
 const META_CLIENT_CAPABILITIES: &str = "io.modelcontextprotocol/clientCapabilities";
+const META_CLIENT_INFO: &str = "io.modelcontextprotocol/clientInfo";
 const META_SERVER_INFO: &str = "io.modelcontextprotocol/serverInfo";
 
 // JSON-RPC のエラーコード。
@@ -36,6 +40,7 @@ get_rig_guide (画像を見て値を選ぶ) → propose_rig → ユーザーの�
 分類と値はあなたが画像を見て決める (サーバは AI を呼ばない)。";
 
 /// サーバの状態。1 つのプロセスにつき 1 つ (stdio の接続、または HTTP のすべての要求で共有する)。
+/// `&self` で処理でき、HTTP の接続ごとのスレッドから同時に呼んでよい。
 #[derive(Debug)]
 pub struct Server {
     tools: Tools,
@@ -50,14 +55,22 @@ enum Era {
 }
 
 impl Server {
+    /// ファイルを自分で開くサーバ (`crate::host::FileHost`)。
     pub fn new(options: Options) -> Self {
         Self {
             tools: Tools::new(options),
         }
     }
 
+    /// 外から渡した持ち主 (エディタなど) の文書を扱うサーバ。
+    pub fn with_host(options: Options, host: Arc<dyn DocumentHost>) -> Self {
+        Self {
+            tools: Tools::with_host(options, host),
+        }
+    }
+
     /// 1 行 (1 メッセージ) を処理し、返す行を作る。通知と応答には何も返さない。
-    pub fn handle_line(&mut self, line: &str) -> Option<String> {
+    pub fn handle_line(&self, line: &str) -> Option<String> {
         let response = match serde_json::from_str::<Value>(line) {
             Ok(message) => self.handle(message),
             Err(e) => Some(error(
@@ -71,7 +84,7 @@ impl Server {
     }
 
     /// 1 つのメッセージを処理する。
-    pub fn handle(&mut self, message: Value) -> Option<Value> {
+    pub fn handle(&self, message: Value) -> Option<Value> {
         let Value::Object(message) = message else {
             // JSON-RPC のバッチ (配列) は 2025-06-18 で取り除かれたので受け付けない。
             return Some(error(
@@ -96,7 +109,7 @@ impl Server {
         Some(self.request(id, method, &params))
     }
 
-    fn request(&mut self, id: Value, method: &str, params: &Value) -> Value {
+    fn request(&self, id: Value, method: &str, params: &Value) -> Value {
         match method {
             "initialize" => return success(id, self.initialize(params)),
             "server/discover" => return success(id, self.discover()),
@@ -106,6 +119,9 @@ impl Server {
             Ok(era) => era,
             Err((code, message, data)) => return error_with_data(id, code, &message, data),
         };
+        if let Some(info) = params.get("_meta").and_then(|m| m.get(META_CLIENT_INFO)) {
+            self.client_info(info, false);
+        }
         let result = match method {
             "ping" => Ok(json!({})),
             "tools/list" => Ok(json!({ "tools": self.tools.list() })),
@@ -129,7 +145,25 @@ impl Server {
         }
     }
 
+    /// クライアントの名前と版 (`Implementation`) を覚えて持ち主に知らせる。
+    fn client_info(&self, info: &Value, handshake: bool) {
+        if let Some(name) = info.get("name").and_then(Value::as_str) {
+            let version = info.get("version").and_then(Value::as_str);
+            self.tools.client_connected(name, version, handshake);
+        }
+    }
+
+    fn instructions(&self) -> String {
+        match self.tools.host_instructions() {
+            Some(extra) => format!("{INSTRUCTIONS}\n{extra}"),
+            None => INSTRUCTIONS.to_owned(),
+        }
+    }
+
     fn initialize(&self, params: &Value) -> Value {
+        if let Some(info) = params.get("clientInfo") {
+            self.client_info(info, true);
+        }
         // 求められた版に応じられればその版、でなければ応じられる最新の版を返す (クライアントが判断する)。
         let requested = params.get("protocolVersion").and_then(Value::as_str);
         let version = requested
@@ -139,7 +173,7 @@ impl Server {
             "protocolVersion": version,
             "capabilities": capabilities(),
             "serverInfo": server_info(),
-            "instructions": INSTRUCTIONS,
+            "instructions": self.instructions(),
         })
     }
 
@@ -149,11 +183,11 @@ impl Server {
             "supportedVersions": supported_versions(),
             "capabilities": capabilities(),
             "_meta": { META_SERVER_INFO: server_info() },
-            "instructions": INSTRUCTIONS,
+            "instructions": self.instructions(),
         })
     }
 
-    fn call(&mut self, params: &Value) -> Result<Value, (i64, String)> {
+    fn call(&self, params: &Value) -> Result<Value, (i64, String)> {
         let name = params
             .get("name")
             .and_then(Value::as_str)

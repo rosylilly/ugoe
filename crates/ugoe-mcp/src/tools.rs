@@ -1,25 +1,28 @@
-//! ツールの定義と実行。開いているプロジェクトはパスごとに持つ。
+//! ツールの定義と実行。プロジェクトの文書は持ち主 ([`DocumentHost`]) から借りる
+//! (ファイルを自分で開く [`FileHost`] か、エディタ。`crate::host`)。
 //!
 //! 編集は提案 (`propose_edit`) と適用 (`apply_proposal`) に分ける (docs/ai-integration.md の
 //! 「MCP サーバ」、ADR 0006)。提案は複製したドキュメントに適用して検証と差分を返すだけで、
 //! 元のドキュメントは変えない。適用は提案の ID だけを受け取るので、承認する人は提案の中身と差分を
-//! 見てから、MCP クライアントの確認 (Claude Code の許可の確認など) で適用を許す。
+//! 見てから、MCP クライアントの確認 (Claude Code の許可の確認など) で適用を許す。エディタが持ち主なら、
+//! 適用・保存などの前にエディタの確認も通す ([`DocumentHost::authorize`])。
 //! 提案の置き場は、エディタと同じ `ugoe_editor_core::Proposals` (一部のコマンドを外した採用もできる)。
 //!
 //! PSD からの自動リギングの判断を外部のエージェントに任せるツールは [`crate::autorig`]。
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use base64::Engine;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use ugoe_editor_core::{
-    Command, Document, Project, ProjectMeta, ProposalError, ProposalView, Proposals, export_bundle,
-};
+use ugoe_editor_core::{Command, Document, Project, ProposalError, ProposalView};
 
 use crate::autorig::{self, PsdSource};
 use crate::diff;
+use crate::host::{Action, Change, DocumentHost, FileHost, HostError, Lent, Opening};
 use crate::render::{RenderRequest, Renderer};
 use crate::root::Root;
 use crate::schema::{CommandSchema, object_schema};
@@ -38,60 +41,42 @@ pub struct Options {
     pub root: Option<Root>,
 }
 
-/// ツールの集まりと、開いているプロジェクト。
-#[derive(Debug)]
+/// ツールの集まり。文書は持ち主から借り、ツールだけが使う状態 ([`Extra`]) をパスごとに持つ。
+///
+/// `&self` で呼べ、複数のスレッドから同時に呼んでよい (HTTP の接続ごとのスレッド)。持ち主の錠を
+/// 握るのは [`Tools::with`] の中だけで、その中ではほかの錠を取らない (錠の順序で詰まらないように)。
 pub struct Tools {
     options: Options,
     schema: CommandSchema,
-    /// 絶対パス → 開いているプロジェクト。
-    projects: BTreeMap<PathBuf, OpenProject>,
+    host: Arc<dyn DocumentHost>,
+    /// 絶対パス → ツールだけが使う状態。
+    extras: Mutex<BTreeMap<PathBuf, Extra>>,
     /// `render_png` の GPU (最初の描画で用意して使い回す)。
-    renderer: Renderer,
+    renderer: Mutex<Renderer>,
+    /// 最後に握手したクライアントの名前 (提案の出どころとして持ち主に知らせる)。
+    client: Mutex<Option<String>>,
 }
 
-/// 開いているプロジェクト。
-#[derive(Debug)]
-pub(crate) struct OpenProject {
-    meta: ProjectMeta,
-    pub(crate) doc: Document,
-    /// ドキュメントを変えるたび (適用・Undo・Redo) に増やす番号。
+impl fmt::Debug for Tools {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Tools")
+            .field("options", &self.options)
+            .field("extras", &self.extras)
+            .finish_non_exhaustive()
+    }
+}
+
+/// 覚えている PSD (プロジェクトごと。PSD の画像を扱う間は長く握るので、表とは別の錠)。
+type PsdSlot = Arc<Mutex<Option<PsdSource>>>;
+
+/// ツールだけが使う、プロジェクトごとの状態 (持ち主は知らない)。開き直すと消える。
+#[derive(Debug, Default)]
+struct Extra {
+    /// ツールがドキュメントを変えるたび (適用・Undo・Redo) に増やす番号。
     revision: u64,
-    /// 適用を待つ提案。提案は作ったときのドキュメントの状態に対するもので、ドキュメントが変わると
-    /// 適用できない (Undo で同じ状態に戻れば、また使える)。
-    proposals: Proposals,
     /// 自動リギングの元にする PSD と、レイヤーの分類 (`import_psd`・`get_psd_layers` で覚える)。
-    pub(crate) psd: Option<PsdSource>,
-}
-
-impl OpenProject {
-    pub(crate) fn new(project: Project) -> Self {
-        Self {
-            doc: project.document(),
-            meta: project.meta,
-            revision: 0,
-            proposals: Proposals::new(),
-            psd: None,
-        }
-    }
-
-    fn project(&self) -> Project {
-        Project::from_document(self.meta.clone(), &self.doc)
-    }
-
-    /// ドキュメントが変わった: 番号を進める。
-    fn changed(&mut self) {
-        self.revision += 1;
-    }
-
-    pub(crate) fn status(&self, path: &Path) -> Value {
-        json!({
-            "path": path,
-            "revision": self.revision,
-            "modified": self.doc.is_modified(),
-            // create で作ってまだ保存していなければ false。
-            "on_disk": path.join("project.json").is_file(),
-        })
-    }
+    /// PSD の画像を扱う間は長く握るので、表とは別の錠にする。
+    psd: PsdSlot,
 }
 
 /// ツールの結果: 構造化した値と、その後に添える中身 (画像と、画像の説明の文)。
@@ -174,13 +159,46 @@ pub(crate) fn tool_def(
     })
 }
 
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    // ツールの panic は描画の中で受け止めているが、万一毒されても状態は使い続ける。
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn host_error(e: HostError) -> String {
+    e.to_string()
+}
+
 impl Tools {
+    /// ファイルを自分で開く持ち主 ([`FileHost`]) で動かす。
     pub fn new(options: Options) -> Self {
+        let host = Arc::new(FileHost::new(options.root.clone()));
+        Self::with_host(options, host)
+    }
+
+    /// 外から渡した持ち主 (エディタなど) で動かす。
+    pub fn with_host(options: Options, host: Arc<dyn DocumentHost>) -> Self {
         Self {
-            renderer: Renderer::new(options.backend.clone()),
+            renderer: Mutex::new(Renderer::new(options.backend.clone())),
             options,
             schema: CommandSchema::generate(),
-            projects: BTreeMap::new(),
+            host,
+            extras: Mutex::default(),
+            client: Mutex::default(),
+        }
+    }
+
+    /// 持ち主がサーバの `instructions` に足す文。
+    pub fn host_instructions(&self) -> Option<String> {
+        self.host.instructions()
+    }
+
+    /// クライアントの名前を覚え、握手 (`handshake`) か名前が変わったときに持ち主に知らせる
+    /// (要求ごとに版を示す版では、要求のたびに名前が届く)。
+    pub fn client_connected(&self, name: &str, version: Option<&str>, handshake: bool) {
+        let previous = lock(&self.client).replace(name.to_owned());
+        if handshake || previous.as_deref() != Some(name) {
+            self.host
+                .changed(&Change::ClientConnected { name, version });
         }
     }
 
@@ -362,7 +380,7 @@ impl Tools {
     }
 
     /// `tools/call` を実行する。未知のツールなら `None`。
-    pub fn call(&mut self, name: &str, arguments: Value) -> Option<Value> {
+    pub fn call(&self, name: &str, arguments: Value) -> Option<Value> {
         let edit_tool = matches!(name, "apply_proposal" | "undo" | "redo" | "save_project");
         let result = match name {
             "open_project" => parse(arguments).and_then(|a| self.open_project(a)),
@@ -375,21 +393,25 @@ impl Tools {
             "import_psd" => parse(arguments).and_then(|a| self.import_psd(a)),
             "get_psd_layers" => parse(arguments).and_then(|a: autorig::LayersArgs| {
                 let psd = a.psd.as_deref().map(|p| self.resolve(p)).transpose()?;
-                let (_, open) = self.project(&a.path)?;
-                autorig::get_psd_layers(open, a, psd)
+                let key = self.resolve(&a.path)?;
+                let (doc, slot) = self.for_autorig(&key)?;
+                autorig::get_psd_layers(&doc, &mut lock(&slot), a, psd)
             }),
             "set_layer_labels" => parse(arguments).and_then(|a: autorig::LabelsArgs| {
-                let (_, open) = self.project(&a.path)?;
-                autorig::set_layer_labels(open, a)
+                let key = self.resolve(&a.path)?;
+                let (doc, slot) = self.for_autorig(&key)?;
+                autorig::set_layer_labels(&doc, &mut lock(&slot), a)
             }),
             "get_rig_guide" => parse(arguments).and_then(|a: PathArgs| {
-                let (_, open) = self.project(&a.path)?;
-                autorig::get_rig_guide(open)
+                let key = self.resolve(&a.path)?;
+                let (doc, slot) = self.for_autorig(&key)?;
+                autorig::get_rig_guide(&doc, &lock(&slot))
             }),
             "propose_rig" => parse(arguments).and_then(|a: autorig::RigArgs| {
-                let (key, open) = self.project(&a.path)?;
-                let proposal = autorig::propose_rig(open, a)?;
-                add_proposal(&key, open, proposal)
+                let key = self.resolve(&a.path)?;
+                let (doc, slot) = self.for_autorig(&key)?;
+                let draft = autorig::propose_rig(&doc, &lock(&slot), a)?;
+                self.add_proposal(&key, draft)
             }),
             _ if edit_tool && self.options.read_only => Err(format!(
                 "`{name}` is disabled (the server runs with --read-only)"
@@ -413,118 +435,142 @@ impl Tools {
         Ok(path.canonicalize().unwrap_or(path))
     }
 
-    /// `--root` があれば、プロジェクトのディレクトリの中の (読み書きする) シンボリックリンクが root の外を
-    /// 指していないことを確かめる。直下と `motions/`・`expressions/`・`textures/` の中を見る
-    /// (`Project::load`・`Project::save` が触れる場所)。
-    fn check_project_dir(&self, dir: &Path) -> Result<(), String> {
-        let Some(root) = &self.options.root else {
-            return Ok(());
-        };
-        for sub in ["", "motions", "expressions", "textures"] {
-            let Ok(entries) = std::fs::read_dir(dir.join(sub)) else {
-                continue;
-            };
-            for entry in entries {
-                let entry = entry.map_err(|e| format!("`{}`: {e}", dir.display()))?;
-                let is_link = entry
-                    .file_type()
-                    .map_err(|e| format!("`{}`: {e}", entry.path().display()))?
-                    .is_symlink();
-                if is_link {
-                    root.contains_existing(&entry.path())?;
+    /// 持ち主からプロジェクト `key` を借りて `f` を呼ぶ (開いていなければ持ち主が開くか断る。
+    /// `FileHost` はディスクから読む。要求ごとに状態を渡す MCP の流儀に合わせ、パスだけで
+    /// プロジェクトを指せるようにする)。`f` は持ち主の錠の中で動くので、短くし、ほかの錠を取らない。
+    fn with<R>(&self, key: &Path, f: impl FnOnce(Lent<'_>) -> R) -> Result<R, String> {
+        let mut f = Some(f);
+        let mut out = None;
+        self.host
+            .with_project(key, &mut |lent| {
+                if let Some(f) = f.take() {
+                    out = Some(f(lent));
                 }
-            }
-        }
-        Ok(())
+            })
+            .map_err(host_error)?;
+        out.ok_or_else(|| format!("project `{}` is not open", key.display()))
     }
 
-    /// ディスクからプロジェクトを読む。
-    fn load(&self, key: &Path) -> Result<Project, String> {
-        self.check_project_dir(key)?;
-        Project::load(key).map_err(|e| e.to_string())
+    fn authorize(&self, action: Action<'_>) -> Result<(), String> {
+        self.host.authorize(&action).map_err(host_error)
     }
 
-    /// 開いているプロジェクト。開いていなければディスクから開く (要求ごとに状態を渡す MCP の流儀に
-    /// 合わせ、パスだけでプロジェクトを指せるようにする)。
-    fn project(&mut self, path: &str) -> Result<(PathBuf, &mut OpenProject), String> {
-        let key = self.resolve(path)?;
-        if !self.projects.contains_key(&key) {
-            let project = self.load(&key)?;
-            self.projects.insert(key.clone(), OpenProject::new(project));
-        }
-        match self.projects.get_mut(&key) {
-            Some(open) => Ok((key, open)),
-            None => Err(format!("project `{}` is not open", key.display())),
-        }
+    fn extras(&self) -> MutexGuard<'_, BTreeMap<PathBuf, Extra>> {
+        lock(&self.extras)
     }
 
-    fn open_project(&mut self, args: OpenArgs) -> ToolResult {
+    /// ツールがドキュメントを変えた: 番号を進め、持ち主に知らせる。
+    fn edited(&self, key: &Path) {
+        self.extras().entry(key.to_path_buf()).or_default().revision += 1;
+        self.host.changed(&Change::Edited { project: key });
+    }
+
+    /// 開き直した・閉じた: ツールだけの状態を捨てる。
+    fn forget(&self, key: &Path) {
+        self.extras().remove(key);
+    }
+
+    /// プロジェクトの状態 (`modified` は借りたときの文書から)。
+    fn status(&self, key: &Path, modified: bool) -> Value {
+        let revision = self.extras().get(key).map_or(0, |e| e.revision);
+        json!({
+            "path": key,
+            "revision": revision,
+            "modified": modified,
+            // create で作ってまだ保存していなければ false。
+            "on_disk": key.join("project.json").is_file(),
+        })
+    }
+
+    /// 自動リギングのツールの入力: 文書の複製と、覚えている PSD。PSD の画像は重いので、持ち主の錠の
+    /// 外で扱う。
+    fn for_autorig(&self, key: &Path) -> Result<(Document, PsdSlot), String> {
+        let doc = self.with(key, |lent| lent.document.detached())?;
+        let slot = Arc::clone(&self.extras().entry(key.to_path_buf()).or_default().psd);
+        Ok((doc, slot))
+    }
+
+    fn open_project(&self, args: OpenArgs) -> ToolResult {
         let key = self.resolve(&args.path)?;
-        if let Some(open) = self.projects.get(&key)
-            && open.doc.is_modified()
-            && !args.discard_changes
-        {
+        if args.create && key.join("project.json").exists() {
             return Err(format!(
-                "`{}` has unsaved changes; save it or pass discard_changes=true",
+                "`{}` is already a project; open it without create",
                 key.display()
             ));
         }
-        let project = if args.create {
-            if key.join("project.json").exists() {
-                return Err(format!(
-                    "`{}` is already a project; open it without create",
-                    key.display()
-                ));
-            }
+        self.authorize(Action::Open {
+            project: &key,
+            create: args.create,
+            discard_changes: args.discard_changes,
+        })?;
+        let opening = if args.create {
             let name = args.name.unwrap_or_else(|| {
                 key.file_stem()
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or_else(|| "untitled".to_owned())
             });
-            Project::empty(name)
+            let project = Project::empty(name);
+            Opening::New {
+                document: Box::new(project.document()),
+                meta: project.meta,
+            }
         } else {
-            self.load(&key)?
+            Opening::Load
         };
-        let open = OpenProject::new(project);
-        let mut status = open.status(&key);
-        let model = open.doc.model();
-        status["name"] = json!(open.meta.name);
-        status["counts"] = json!({
-            "parameters": model.parameters.len(),
-            "parts": model.parts.len(),
-            "deformers": model.deformers.len(),
-            "meshes": model.meshes.len(),
-        });
-        self.projects.insert(key, open);
+        self.host
+            .open(&key, opening, args.discard_changes)
+            .map_err(host_error)?;
+        self.forget(&key);
+        self.host.changed(&Change::Opened { project: &key });
+        let (modified, name, counts) = self.with(&key, |lent| {
+            let model = lent.document.model();
+            (
+                lent.document.is_modified(),
+                lent.meta.name.clone(),
+                json!({
+                    "parameters": model.parameters.len(),
+                    "parts": model.parts.len(),
+                    "deformers": model.deformers.len(),
+                    "meshes": model.meshes.len(),
+                }),
+            )
+        })?;
+        let mut status = self.status(&key, modified);
+        status["name"] = json!(name);
+        status["counts"] = counts;
         Ok(status.into())
     }
 
-    fn close_project(&mut self, args: CloseArgs) -> ToolResult {
+    fn close_project(&self, args: CloseArgs) -> ToolResult {
         let key = self.resolve(&args.path)?;
-        let Some(open) = self.projects.get(&key) else {
-            return Err(format!("`{}` is not open", key.display()));
-        };
-        if open.doc.is_modified() && !args.discard_changes {
-            return Err(format!(
-                "`{}` has unsaved changes; save it or pass discard_changes=true",
-                key.display()
-            ));
-        }
-        self.projects.remove(&key);
+        self.authorize(Action::Close {
+            project: &key,
+            discard_changes: args.discard_changes,
+        })?;
+        self.host
+            .close(&key, args.discard_changes)
+            .map_err(host_error)?;
+        self.forget(&key);
+        self.host.changed(&Change::Closed { project: &key });
         Ok(json!({ "closed": key }).into())
     }
 
-    fn get_model_summary(&mut self, args: PathArgs) -> ToolResult {
-        let (key, open) = self.project(&args.path)?;
-        let mut summary = model_summary(&open.doc);
-        summary["project"] = open.status(&key);
+    fn get_model_summary(&self, args: PathArgs) -> ToolResult {
+        let key = self.resolve(&args.path)?;
+        let (mut summary, modified) = self.with(&key, |lent| {
+            (model_summary(lent.document), lent.document.is_modified())
+        })?;
+        summary["project"] = self.status(&key, modified);
         Ok(summary.into())
     }
 
-    fn get_element(&mut self, args: ElementArgs) -> ToolResult {
-        let (_, open) = self.project(&args.path)?;
-        match element(&open.doc, &args.kind, &args.id) {
-            Some(value) => Ok(value.map_err(|e| e.to_string())?.into()),
+    fn get_element(&self, args: ElementArgs) -> ToolResult {
+        let key = self.resolve(&args.path)?;
+        let found = self.with(&key, |lent| {
+            element(lent.document, &args.kind, &args.id).map(|v| v.map_err(|e| e.to_string()))
+        })?;
+        match found {
+            Some(value) => Ok(value?.into()),
             None if !ELEMENT_KINDS.contains(&args.kind.as_str()) => Err(format!(
                 "unknown kind `{}` (expected one of {})",
                 args.kind,
@@ -534,11 +580,10 @@ impl Tools {
         }
     }
 
-    fn propose_edit(&mut self, args: ProposeArgs) -> ToolResult {
-        let (key, open) = self.project(&args.path)?;
-        add_proposal(
+    fn propose_edit(&self, args: ProposeArgs) -> ToolResult {
+        let key = self.resolve(&args.path)?;
+        self.add_proposal(
             &key,
-            open,
             Draft {
                 title: args.title,
                 rationale: args.rationale,
@@ -548,19 +593,22 @@ impl Tools {
         )
     }
 
-    fn list_proposals(&mut self, args: PathArgs) -> ToolResult {
-        let (key, open) = self.project(&args.path)?;
-        let proposals: Vec<Value> = open
-            .proposals
-            .views(&open.doc)
-            .iter()
-            .map(proposal_json)
-            .collect();
-        Ok(json!({ "proposals": proposals, "project": open.status(&key) }).into())
+    fn list_proposals(&self, args: PathArgs) -> ToolResult {
+        let key = self.resolve(&args.path)?;
+        let (proposals, modified) = self.with(&key, |lent| {
+            let proposals: Vec<Value> = lent
+                .proposals
+                .views(lent.document)
+                .iter()
+                .map(proposal_json)
+                .collect();
+            (proposals, lent.document.is_modified())
+        })?;
+        Ok(json!({ "proposals": proposals, "project": self.status(&key, modified) }).into())
     }
 
-    fn apply_proposal(&mut self, args: ApplyArgs) -> ToolResult {
-        let (key, open) = self.project(&args.path)?;
+    fn apply_proposal(&self, args: ApplyArgs) -> ToolResult {
+        let key = self.resolve(&args.path)?;
         let id = proposal_number(&args.proposal)?;
         let explain = |e: ProposalError| match e {
             ProposalError::Stale => format!(
@@ -571,46 +619,55 @@ impl Tools {
             ProposalError::NotFound(_) => format!("proposal `{}` not found", args.proposal),
             e => format!("the proposal was rejected: {e}"),
         };
-        // 差分は、外したコマンドを除いた列を複製に適用して求める (承認した人が見るものと同じ)。
-        let (after, _) = open
-            .proposals
-            .preview(&open.doc, id, &args.exclude)
-            .map_err(explain)?;
-        let changes = diff::diff(&open.doc, &after);
-        let title = open
-            .proposals
-            .views(&open.doc)
-            .into_iter()
-            .find(|v| v.id == id)
-            .map(|v| v.title)
-            .unwrap_or_default();
-        let report = open
-            .proposals
-            .adopt(&mut open.doc, id, &args.exclude)
-            .map_err(explain)?;
-        open.changed();
+        // 確認を求める前に、適用できる提案かを確かめる (適用できない提案で利用者に尋ねないように)。
+        let title = self.with(&key, |lent| {
+            lent.proposals
+                .preview(lent.document, id, &args.exclude)
+                .map_err(explain)?;
+            Ok::<_, String>(
+                lent.proposals
+                    .views(lent.document)
+                    .into_iter()
+                    .find(|v| v.id == id)
+                    .map(|v| v.title)
+                    .unwrap_or_default(),
+            )
+        })??;
+        // 持ち主の確認 (エディタのダイアログ) を待つ間は、どの錠も握らない。
+        self.authorize(Action::Apply {
+            project: &key,
+            proposal: id,
+            title: &title,
+            excluded: &args.exclude,
+        })?;
+        // 確認の間にモデルが変わっていれば、提案が古いというエラーになる (承認した差分と違う結果にしない)。
+        let (report, changes, modified) = self.with(&key, |lent| {
+            // 差分は、外したコマンドを除いた列を複製に適用して求める (承認した人が見るものと同じ)。
+            let (after, _) = lent
+                .proposals
+                .preview(lent.document, id, &args.exclude)
+                .map_err(explain)?;
+            let changes = diff::diff(lent.document, &after);
+            let report = lent
+                .proposals
+                .adopt(lent.document, id, &args.exclude)
+                .map_err(explain)?;
+            Ok::<_, String>((report, changes, lent.document.is_modified()))
+        })??;
+        self.edited(&key);
         Ok(json!({
             "applied": args.proposal,
             "title": title,
             "excluded": args.exclude,
             "report": report,
             "changes": changes,
-            "project": open.status(&key),
+            "project": self.status(&key, modified),
         })
         .into())
     }
 
-    fn import_psd(&mut self, args: autorig::ImportArgs) -> ToolResult {
+    fn import_psd(&self, args: autorig::ImportArgs) -> ToolResult {
         let key = self.resolve(&args.path)?;
-        if let Some(open) = self.projects.get(&key)
-            && open.doc.is_modified()
-            && !args.discard_changes
-        {
-            return Err(format!(
-                "`{}` has unsaved changes; save it or pass discard_changes=true",
-                key.display()
-            ));
-        }
         if key.join("project.json").exists() {
             return Err(format!(
                 "`{}` is already a project; open it and pass `psd` to get_psd_layers instead",
@@ -618,31 +675,58 @@ impl Tools {
             ));
         }
         let psd = self.resolve(&args.psd)?;
-        let (open, value) = autorig::import_psd(args, psd)?;
-        let mut status = open.status(&key);
-        if let (Value::Object(status), Value::Object(value)) = (&mut status, value) {
+        self.authorize(Action::Import {
+            project: &key,
+            psd: &psd,
+            discard_changes: args.discard_changes,
+        })?;
+        let discard_changes = args.discard_changes;
+        let imported = autorig::import_psd(args, psd)?;
+        self.host
+            .open(
+                &key,
+                Opening::New {
+                    meta: imported.meta,
+                    document: Box::new(imported.document),
+                },
+                discard_changes,
+            )
+            .map_err(host_error)?;
+        self.forget(&key);
+        *lock(&self.extras().entry(key.clone()).or_default().psd) = Some(imported.source);
+        self.host.changed(&Change::Opened { project: &key });
+        let modified = self.with(&key, |lent| lent.document.is_modified())?;
+        let mut status = self.status(&key, modified);
+        if let (Value::Object(status), Value::Object(value)) = (&mut status, imported.value) {
             status.extend(value);
         }
-        self.projects.insert(key, open);
         Ok(status.into())
     }
 
-    fn undo(&mut self, args: PathArgs, undo: bool) -> ToolResult {
-        let (key, open) = self.project(&args.path)?;
-        let done = if undo {
-            open.doc.undo()
+    fn undo(&self, args: PathArgs, undo: bool) -> ToolResult {
+        let key = self.resolve(&args.path)?;
+        self.authorize(if undo {
+            Action::Undo { project: &key }
         } else {
-            open.doc.redo()
-        };
+            Action::Redo { project: &key }
+        })?;
+        let (done, modified) = self.with(&key, |lent| {
+            let done = if undo {
+                lent.document.undo()
+            } else {
+                lent.document.redo()
+            };
+            (done, lent.document.is_modified())
+        })?;
         if done {
-            open.changed();
+            self.edited(&key);
         }
-        let mut status = open.status(&key);
+        let mut status = self.status(&key, modified);
         status[if undo { "undone" } else { "redone" }] = json!(done);
         Ok(status.into())
     }
 
-    fn save_project(&mut self, args: SaveArgs) -> ToolResult {
+    fn save_project(&self, args: SaveArgs) -> ToolResult {
         // 書く前にパスを確かめる (保存の後で書き出し先が root の外と分かって半端にならないように)。
         let bundle = args
             .bundle
@@ -650,16 +734,17 @@ impl Tools {
             .map(|b| self.resolve(b))
             .transpose()?;
         let key = self.resolve(&args.path)?;
-        self.check_project_dir(&key)?;
-        let (key, open) = self.project(&args.path)?;
-        let project = open.project();
-        project.save(&key).map_err(|e| e.to_string())?;
-        open.doc.mark_saved();
-        let mut status = open.status(&key);
+        self.authorize(Action::Save {
+            project: &key,
+            bundle: bundle.as_deref(),
+        })?;
+        self.host
+            .save(&key, bundle.as_deref())
+            .map_err(host_error)?;
+        self.host.changed(&Change::Saved { project: &key });
+        let modified = self.with(&key, |lent| lent.document.is_modified())?;
+        let mut status = self.status(&key, modified);
         if let Some(bundle) = bundle {
-            let bytes = export_bundle(&project).map_err(|e| e.to_string())?;
-            std::fs::write(&bundle, bytes)
-                .map_err(|e| format!("failed to write {}: {e}", bundle.display()))?;
             status["bundle"] = json!(bundle);
         }
         Ok(status.into())
@@ -690,9 +775,12 @@ impl Tools {
         Ok(Some(path.to_string_lossy().into_owned()))
     }
 
-    fn render_png(&mut self, args: RenderArgs) -> ToolResult {
-        let (_, open) = self.project(&args.path)?;
-        let project = open.project();
+    fn render_png(&self, args: RenderArgs) -> ToolResult {
+        let key = self.resolve(&args.path)?;
+        // 描画は持ち主の錠の外で行う (エディタの画面を止めないように)。
+        let project = self.with(&key, |lent| {
+            Project::from_document(lent.meta.clone(), lent.document)
+        })?;
         let motion_names: Vec<&str> = project.motions.iter().map(|m| m.name.as_str()).collect();
         let expression_names: Vec<&str> = project
             .expressions
@@ -710,14 +798,52 @@ impl Tools {
             expression,
             time: args.time,
         };
-        let rendered = self
-            .renderer
+        let rendered = lock(&self.renderer)
             .render(&project, &request)
             .map_err(|e| e.to_string())?;
         Ok(Output {
             value: json!({ "log": rendered.log, "bytes": rendered.png.len() }),
             content: vec![Content::Png(rendered.png)],
         })
+    }
+
+    /// 提案を置き (複製に適用して検証する)、提案の ID・検証の結果・差分・コマンドの要約を返す。
+    /// モデルは変えない。
+    fn add_proposal(&self, key: &Path, draft: Draft) -> ToolResult {
+        let rejected = |e: ProposalError| format!("the proposal was rejected: {e}");
+        let (mut value, modified) = self.with(key, |lent| {
+            let view = lent
+                .proposals
+                .add(lent.document, draft.title, draft.rationale, draft.commands)
+                .map_err(rejected)?;
+            let (after, report) = lent
+                .proposals
+                .preview(lent.document, view.id, &[])
+                .map_err(rejected)?;
+            let mut value = proposal_json(&view);
+            value["report"] = json!(report);
+            value["changes"] = diff::diff(lent.document, &after);
+            Ok::<_, String>((value, lent.document.is_modified()))
+        })??;
+        value["project"] = self.status(key, modified);
+        value["next"] = json!(
+            "ユーザーに提案 (題・理由・差分) を示し、承認を得てから apply_proposal で適用する"
+        );
+        if let (Value::Object(value), Value::Object(extra)) = (&mut value, draft.extra) {
+            value.extend(extra);
+        }
+        if let Some(id) = value["proposal"]
+            .as_str()
+            .and_then(|p| proposal_number(p).ok())
+        {
+            let client = lock(&self.client).clone();
+            self.host.changed(&Change::Proposed {
+                project: key,
+                proposal: id,
+                client: client.as_deref(),
+            });
+        }
+        Ok(value.into())
     }
 }
 
@@ -728,31 +854,6 @@ pub(crate) struct Draft {
     pub(crate) commands: Vec<Command>,
     /// 結果に足す項目 (`propose_rig` の値など)。オブジェクト。
     pub(crate) extra: Value,
-}
-
-/// 提案を置き (複製に適用して検証する)、提案の ID・検証の結果・差分・コマンドの要約を返す。
-/// モデルは変えない。
-fn add_proposal(key: &Path, open: &mut OpenProject, draft: Draft) -> ToolResult {
-    let rejected = |e: ProposalError| format!("the proposal was rejected: {e}");
-    let view = open
-        .proposals
-        .add(&open.doc, draft.title, draft.rationale, draft.commands)
-        .map_err(rejected)?;
-    let (after, report) = open
-        .proposals
-        .preview(&open.doc, view.id, &[])
-        .map_err(rejected)?;
-    let changes = diff::diff(&open.doc, &after);
-    let mut value = proposal_json(&view);
-    value["report"] = json!(report);
-    value["changes"] = changes;
-    value["project"] = open.status(key);
-    value["next"] =
-        json!("ユーザーに提案 (題・理由・差分) を示し、承認を得てから apply_proposal で適用する");
-    if let (Value::Object(value), Value::Object(extra)) = (&mut value, draft.extra) {
-        value.extend(extra);
-    }
-    Ok(value.into())
 }
 
 /// 提案の ID の文字列 (`p3`)。

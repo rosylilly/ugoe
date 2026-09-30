@@ -211,6 +211,7 @@ mod tests {
         assert!(root.resolve("").is_err());
     }
 
+    #[cfg(unix)]
     #[test]
     fn rejects_dot_dot_in_the_missing_part() {
         let (_tmp, root) = layout("missing");
@@ -219,6 +220,18 @@ mod tests {
         assert!(err.contains("`..`"), "{err}");
         let err = root.resolve("nope/../../outside").unwrap_err();
         assert!(err.contains("`..`"), "{err}");
+    }
+
+    /// Windows はパスを開く前に `..` を字面で解く (無い部分の `..` も) ので、正規化の結果も字面で解いた
+    /// 場所になる。その場所で root の中かを判定する。
+    #[cfg(windows)]
+    #[test]
+    fn resolves_dot_dot_in_the_missing_part_lexically() {
+        let (_tmp, root) = layout("missing");
+        let inside = root.resolve("nope/../a.ugoeproj").unwrap();
+        assert_eq!(inside, root.dir().join("a.ugoeproj"));
+        let err = root.resolve("nope/../../outside").unwrap_err();
+        assert!(err.contains("outside the root"), "{err}");
     }
 
     #[cfg(unix)]

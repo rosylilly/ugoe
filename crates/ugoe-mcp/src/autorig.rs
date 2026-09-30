@@ -31,13 +31,11 @@ use ugoe_ai::rig::{
     rig_output_schema, rig_request,
 };
 use ugoe_editor_core::import::layer_tree_command;
-use ugoe_editor_core::{Project, PsdImportOptions};
+use ugoe_editor_core::{Document, Project, ProjectMeta, PsdImportOptions};
 use ugoe_psd::LayerTree;
 
 use crate::schema::object_schema;
-use crate::tools::{
-    Content, Draft, Kind, OpenProject, Output, PATH_NOTE, ToolResult, path_property, tool_def,
-};
+use crate::tools::{Content, Draft, Kind, Output, PATH_NOTE, ToolResult, path_property, tool_def};
 
 /// PSD がまだ分からないときの断りの文。
 const NO_PSD: &str = "no PSD is associated with this project: call import_psd, or pass `psd` \
@@ -259,57 +257,72 @@ fn ai_error(e: AiError) -> String {
     }
 }
 
-/// PSD から新しいプロジェクトを作る (まだ開いているプロジェクトの表に入れない)。
+/// PSD から取り込んだ新しいプロジェクト (まだ持ち主に渡していない)。
+pub(crate) struct Imported {
+    pub(crate) meta: ProjectMeta,
+    pub(crate) document: Document,
+    pub(crate) source: PsdSource,
+    pub(crate) value: Value,
+}
+
+/// PSD から新しいプロジェクトを作る (まだ持ち主に開かせない)。
 /// `psd` は解決したパス (`Tools::resolve`)。
-pub(crate) fn import_psd(args: ImportArgs, psd: PathBuf) -> Result<(OpenProject, Value), String> {
+pub(crate) fn import_psd(args: ImportArgs, psd: PathBuf) -> Result<Imported, String> {
     let source = PsdSource::load(psd.clone())?;
     let name = args.name.unwrap_or_else(|| {
         psd.file_stem()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| "untitled".to_owned())
     });
-    let mut open = OpenProject::new(Project::empty(name.clone()));
+    let project = Project::empty(name.clone());
+    let mut document = project.document();
     let import = layer_tree_command(
-        open.doc.model(),
+        document.model(),
         &source.tree,
         &PsdImportOptions::new(name.clone()),
     )
     .map_err(|e| e.to_string())?;
-    open.doc
+    document
         .apply(import.command)
         .map_err(|e| format!("the PSD could not be imported: {e}"))?;
     let value = json!({
         "name": name,
         "psd": psd,
         "layers": source.labels.len(),
-        "meshes": open.doc.model().meshes.len(),
+        "meshes": document.model().meshes.len(),
         "warnings": import.warnings,
         "next": "get_psd_layers でレイヤーと画像を見て分類する",
     });
-    open.psd = Some(source);
-    Ok((open, value))
+    Ok(Imported {
+        meta: project.meta,
+        document,
+        source,
+        value,
+    })
 }
 
 /// 覚えている PSD。`psd` (解決したパス) を渡されたら (違う PSD なら) 読み直し、分類を名前の規則の案に戻す。
-fn source(open: &mut OpenProject, psd: Option<PathBuf>) -> Result<&mut PsdSource, String> {
+fn source(slot: &mut Option<PsdSource>, psd: Option<PathBuf>) -> Result<&mut PsdSource, String> {
     if let Some(path) = psd
-        && open.psd.as_ref().is_none_or(|s| s.path != path)
+        && slot.as_ref().is_none_or(|s| s.path != path)
     {
-        open.psd = Some(PsdSource::load(path)?);
+        *slot = Some(PsdSource::load(path)?);
     }
-    open.psd.as_mut().ok_or_else(|| NO_PSD.to_owned())
+    slot.as_mut().ok_or_else(|| NO_PSD.to_owned())
 }
 
-/// `psd` は `args.psd` を解決したパス (`Tools::resolve`)。
+/// `doc` はプロジェクトの文書 (の複製)、`slot` は覚えている PSD、`psd` は `args.psd` を解決したパス
+/// (`Tools::resolve`)。
 pub(crate) fn get_psd_layers(
-    open: &mut OpenProject,
+    doc: &Document,
+    slot: &mut Option<PsdSource>,
     args: LayersArgs,
     psd: Option<PathBuf>,
 ) -> ToolResult {
     let defaults = ClassifyOptions::default();
     let per_call = defaults.max_layers_per_request;
-    let meshes = unique_mesh_names(open);
-    let source = source(open, psd)?;
+    let meshes = unique_mesh_names(doc);
+    let source = source(slot, psd)?;
     let infos = layers(&source.tree);
     let total = infos.len();
     let selected: Vec<usize> = match &args.indices {
@@ -412,9 +425,9 @@ pub(crate) fn get_psd_layers(
 }
 
 /// 名前が 1 つのメッシュだけのもの: 名前 → ID (`mesh_parts` と同じく名前で対応付ける)。
-fn unique_mesh_names(open: &OpenProject) -> BTreeMap<String, String> {
+fn unique_mesh_names(doc: &Document) -> BTreeMap<String, String> {
     let mut by_name: BTreeMap<String, Option<String>> = BTreeMap::new();
-    for mesh in &open.doc.model().meshes {
+    for mesh in &doc.model().meshes {
         by_name
             .entry(mesh.name.clone())
             .and_modify(|id| *id = None)
@@ -426,8 +439,12 @@ fn unique_mesh_names(open: &OpenProject) -> BTreeMap<String, String> {
         .collect()
 }
 
-pub(crate) fn set_layer_labels(open: &mut OpenProject, args: LabelsArgs) -> ToolResult {
-    let source = source(open, None)?;
+pub(crate) fn set_layer_labels(
+    doc: &Document,
+    slot: &mut Option<PsdSource>,
+    args: LabelsArgs,
+) -> ToolResult {
+    let source = source(slot, None)?;
     let mut labels = if args.reset {
         classify_by_name(&source.tree)
     } else {
@@ -447,15 +464,14 @@ pub(crate) fn set_layer_labels(open: &mut OpenProject, args: LabelsArgs) -> Tool
         source.by_agent.clear();
     }
     source.by_agent.extend(indices);
-    let mut value = labels_summary(open)?;
+    let mut value = labels_summary(doc, source);
     value["updated"] = json!(updated);
     Ok(value.into())
 }
 
 /// 分類の要約: メッシュとの対応・対応しないレイヤー・確かめたほうがよいレイヤー・リグを組めるか。
-fn labels_summary(open: &OpenProject) -> Result<Value, String> {
-    let source = open.psd.as_ref().ok_or(NO_PSD)?;
-    let model = open.doc.model();
+fn labels_summary(doc: &Document, source: &PsdSource) -> Value {
+    let model = doc.model();
     let parts = mesh_parts(model, &source.labels);
     let options = ClassifyOptions::default();
     let meshes: Vec<Value> = model
@@ -487,19 +503,19 @@ fn labels_summary(open: &OpenProject) -> Result<Value, String> {
         Ok(_) => json!({ "ready": true }),
         Err(e) => json!({ "ready": false, "error": ai_error(e) }),
     };
-    Ok(json!({
+    json!({
         "layers": source.labels.len(),
         "set_by_agent": source.by_agent.len(),
         "meshes": meshes,
         "unmatched_layers": unmatched,
         "needs_review": review,
         "rig": rig,
-    }))
+    })
 }
 
-pub(crate) fn get_rig_guide(open: &mut OpenProject) -> ToolResult {
-    let source = open.psd.as_ref().ok_or(NO_PSD)?;
-    let model = open.doc.model();
+pub(crate) fn get_rig_guide(doc: &Document, slot: &Option<PsdSource>) -> ToolResult {
+    let source = slot.as_ref().ok_or(NO_PSD)?;
+    let model = doc.model();
     let parts = mesh_parts(model, &source.labels);
     let max_side = ClassifyOptions::default().overview_max_side;
     let image = overview_png(&source.tree, max_side).map_err(ai_error)?;
@@ -524,9 +540,13 @@ pub(crate) fn get_rig_guide(open: &mut OpenProject) -> ToolResult {
 }
 
 /// リグの提案を作る (置くのは呼び出し側)。
-pub(crate) fn propose_rig(open: &mut OpenProject, args: RigArgs) -> Result<Draft, String> {
-    let source = open.psd.as_ref().ok_or(NO_PSD)?;
-    let model = open.doc.model();
+pub(crate) fn propose_rig(
+    doc: &Document,
+    slot: &Option<PsdSource>,
+    args: RigArgs,
+) -> Result<Draft, String> {
+    let source = slot.as_ref().ok_or(NO_PSD)?;
+    let model = doc.model();
     let (params, reason) = match &args.params {
         Some(answer) => {
             let (params, reason) = params_from_answer(answer).map_err(ai_error)?;

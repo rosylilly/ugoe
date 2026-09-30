@@ -1,4 +1,5 @@
-//! `ugoe-mcp`: stdio (既定) か HTTP で動く MCP サーバ。使い方は `crates/ugoe-mcp/README.md`。
+//! `ugoe-mcp`: stdio (既定) か HTTP で動く MCP サーバ、または実行中のエディタへの中継 (`--editor`)。
+//! 使い方は `crates/ugoe-mcp/README.md`。
 
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
@@ -6,6 +7,7 @@ use std::path::PathBuf;
 use anyhow::Context;
 use clap::Parser;
 use ugoe_mcp::http::{ENDPOINT, HttpOptions, HttpServer, generate_token};
+use ugoe_mcp::relay::{Relay, RelayOptions};
 use ugoe_mcp::{Options, Root, Server};
 
 /// トークンを渡す環境変数 (コマンド行に書くとほかの利用者から見えることがあるので、こちらを勧める)。
@@ -15,6 +17,15 @@ const TOKEN_ENV: &str = "UGOE_MCP_TOKEN";
 #[derive(Parser)]
 #[command(name = "ugoe-mcp", version)]
 struct Cli {
+    /// 実行中の ugoe エディタにつなぐ: stdio のメッセージを、エディタの MCP サーバへ中継する (エディタの設定で「エージェントをつなぐ」を有効にしておく)
+    #[arg(long, conflicts_with_all = ["read_only", "backend", "root", "allow_any_path", "http"])]
+    editor: bool,
+    /// --editor で読む発見用のファイル (既定は OS ごとの場所。環境変数 UGOE_MCP_DISCOVERY でも変えられる)
+    #[arg(long, value_name = "FILE", requires = "editor")]
+    discovery: Option<PathBuf>,
+    /// --editor で、エージェントが動く WSL のディストリビューションの名前 (Windows 版を WSL から使うとき。WSL のパスを Windows のパスに変える)
+    #[arg(long, value_name = "NAME", requires = "editor")]
+    wsl_distro: Option<String>,
     /// 読むだけにする (適用・Undo・Redo・保存のツールを出さない)
     #[arg(long)]
     read_only: bool,
@@ -43,6 +54,12 @@ struct Cli {
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    if cli.editor {
+        return relay(RelayOptions {
+            discovery: cli.discovery,
+            wsl_distro: cli.wsl_distro,
+        });
+    }
     // HTTP ではほかのプログラムやリモートのクライアントがツールを呼べるので、パスを限るかを明示させる
     // (--read-only でも任意の PSD やプロジェクトを読んで画像で返せるので、それだけでは足りない)。
     if cli.http.is_some() && cli.root.is_none() && !cli.allow_any_path {
@@ -82,7 +99,20 @@ fn main() -> anyhow::Result<()> {
     }
 }
 
-fn serve_stdio(mut server: Server, paths: &str) -> anyhow::Result<()> {
+fn relay(options: RelayOptions) -> anyhow::Result<()> {
+    let mut relay = Relay::new(options);
+    // 標準出力には MCP のメッセージだけを書く。ログは標準エラーへ。
+    eprintln!(
+        "ugoe-mcp {} --editor: {}",
+        env!("CARGO_PKG_VERSION"),
+        relay.describe()
+    );
+    relay
+        .run(std::io::stdin().lock(), std::io::stdout().lock())
+        .context("failed to relay stdio")
+}
+
+fn serve_stdio(server: Server, paths: &str) -> anyhow::Result<()> {
     let stdin = std::io::stdin().lock();
     let mut stdout = std::io::stdout().lock();
     // 標準出力には MCP のメッセージだけを書く。ログは標準エラーへ。

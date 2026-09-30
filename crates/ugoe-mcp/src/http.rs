@@ -24,8 +24,9 @@
 
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use base64::Engine;
@@ -125,6 +126,55 @@ pub struct HttpServer {
     endpoint: Arc<Endpoint>,
     connections: Arc<AtomicUsize>,
     limits: Limits,
+    /// 止めるように頼まれた ([`RunningHttpServer::stop`])。
+    stopping: Arc<AtomicBool>,
+}
+
+/// 別のスレッドで待ち受けているサーバ ([`HttpServer::spawn`])。止める (または捨てる) と、新しい接続を
+/// 受けなくなり、開いている接続への要求にも `503` で答える。
+#[derive(Debug)]
+pub struct RunningHttpServer {
+    addr: SocketAddr,
+    endpoint: Arc<Endpoint>,
+    stopping: Arc<AtomicBool>,
+    thread: Option<JoinHandle<io::Result<()>>>,
+}
+
+impl RunningHttpServer {
+    /// 束ねたアドレス。
+    pub fn local_addr(&self) -> SocketAddr {
+        self.addr
+    }
+
+    /// 止め、待ち受けのスレッドが終わるのを待つ。処理中の要求 (確認を待つ適用など) は待たない
+    /// (持ち主が確認を拒否して終わらせる。`crate::host::Approvals::deny_all`)。
+    pub fn stop(mut self) {
+        self.shutdown();
+    }
+
+    fn shutdown(&mut self) {
+        self.endpoint.closed.store(true, Ordering::SeqCst);
+        self.stopping.store(true, Ordering::SeqCst);
+        let Some(thread) = self.thread.take() else {
+            return;
+        };
+        // accept で止まっているスレッドを起こす (すべてのアドレスに束ねたならループバックへつなぐ)。
+        let mut wake = self.addr;
+        if wake.ip().is_unspecified() {
+            wake.set_ip(match wake {
+                SocketAddr::V4(_) => IpAddr::from([127, 0, 0, 1]),
+                SocketAddr::V6(_) => IpAddr::from([0, 0, 0, 0, 0, 0, 0, 1]),
+            });
+        }
+        let _ = TcpStream::connect_timeout(&wake, Duration::from_secs(1));
+        let _ = thread.join();
+    }
+}
+
+impl Drop for RunningHttpServer {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
 }
 
 impl HttpServer {
@@ -157,6 +207,7 @@ impl HttpServer {
             endpoint: Arc::new(Endpoint::new(server, options)),
             connections: Arc::new(AtomicUsize::new(0)),
             limits: Limits::default(),
+            stopping: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -172,9 +223,29 @@ impl HttpServer {
         self.listener.local_addr()
     }
 
-    /// 要求を受け続ける。接続ごとにスレッドを立て、MCP のメッセージの処理は 1 つずつ行う。
+    /// 別のスレッドで要求を受け続け、止める手段を返す (エディタに組み込むとき)。
+    pub fn spawn(self) -> io::Result<RunningHttpServer> {
+        let addr = self.local_addr()?;
+        let endpoint = Arc::clone(&self.endpoint);
+        let stopping = Arc::clone(&self.stopping);
+        let thread = std::thread::Builder::new()
+            .name("ugoe-mcp-http".to_owned())
+            .spawn(move || self.serve())?;
+        Ok(RunningHttpServer {
+            addr,
+            endpoint,
+            stopping,
+            thread: Some(thread),
+        })
+    }
+
+    /// 要求を受け続ける。接続ごとにスレッドを立てる。MCP のメッセージの処理は接続のスレッドで同時に
+    /// 進む ([`Server`] は `&self` で処理できる)。
     pub fn serve(self) -> io::Result<()> {
         for stream in self.listener.incoming() {
+            if self.stopping.load(Ordering::SeqCst) {
+                break;
+            }
             let mut stream = match stream {
                 Ok(stream) => stream,
                 Err(e) => {
@@ -551,19 +622,25 @@ fn reason(status: u16) -> &'static str {
 /// (ソケットに依らない部分)。
 #[derive(Debug)]
 pub(crate) struct Endpoint {
-    server: Mutex<Server>,
+    server: Server,
     options: HttpOptions,
+    /// 止めた ([`RunningHttpServer::stop`])。開いている接続への要求にも `503` で答える。
+    closed: AtomicBool,
 }
 
 impl Endpoint {
     pub(crate) fn new(server: Server, options: HttpOptions) -> Self {
         Self {
-            server: Mutex::new(server),
+            server,
             options,
+            closed: AtomicBool::new(false),
         }
     }
 
     pub(crate) fn respond(&self, request: &Request) -> Response {
+        if self.closed.load(Ordering::SeqCst) {
+            return Response::text(503, "the server is stopping");
+        }
         let path = request
             .target
             .split_once('?')
@@ -709,7 +786,7 @@ impl Endpoint {
         let (Some(method), Some(id)) = (method, id) else {
             // 通知 (method があり id が無い) と、クライアントからの応答。受け取ったら 202 を返す。
             if method.is_some() || object.contains_key("result") || object.contains_key("error") {
-                self.lock().handle(message);
+                self.server.handle(message);
                 return Response::empty(202);
             }
             return Response::rpc_error(400, INVALID_REQUEST, "missing method");
@@ -722,7 +799,7 @@ impl Endpoint {
         if let Err(response) = validate_headers(request, &id, method, &params) {
             return response;
         }
-        let Some(reply) = self.lock().handle(message) else {
+        let Some(reply) = self.server.handle(message) else {
             return Response::empty(202);
         };
         let status = match reply
@@ -737,11 +814,6 @@ impl Endpoint {
             _ => 200,
         };
         Response::json(status, &reply)
-    }
-
-    fn lock(&self) -> std::sync::MutexGuard<'_, Server> {
-        // ツールの panic は描画の中で受け止めているが、万一毒されても状態は使い続ける。
-        self.server.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 

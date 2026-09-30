@@ -21,9 +21,7 @@ ugoe-format.workspace = true
 ugoe-headless.workspace = true
 ugoe-model.workspace = true
 ugoe-psd.workspace = true
-
-[dev-dependencies]
-# HTTP のトランスポートのテストのクライアント (ワークスペースで ugoe-ai が使っているもの)。
+# `--editor` の中継がエディタへ送る HTTP のクライアント (ugoe-ai が使っているもので、新しい依存ではない)。
 ureq.workspace = true
 
 [lints]
