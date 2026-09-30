@@ -514,14 +514,24 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
   差し替えて見比べられ、ほかのスロットのモジュールとも重ねられます。
   - 今の編集の行は、除けず・ファイルから読み直さず・プロジェクトの一覧 (`editor.dress_up`) に残しません。付けるかは、差し替えても保ちます。
   - 編集でドキュメントを読み直すたびに (プレビューの中での編集。`EditorDocument.revision` が変わったとき)、今の編集を取り直します。
-    本体だけのモデルは、本体の版 (`ModuleStatus.base_revision`、`ModuleContext::base_revision`) が前に取ったものと違うときだけ取り、
+    本体だけのモデルは、本体の版 (`ModuleStatus.base_revision`、`ModuleContext::base_revision`) が描いているものと違うときだけ取り、
     読み込み直します (T0653)。本体の版は本体を読み込むたびにプロセスの中で重ならない番号になり、名前・スロット・条件を変えても変わりません。
-    取ったバイト列はプレビューを出ても覚えておくので、入り直しても本体が同じなら取りません。
+    本体だけのバイト列は **バックエンドのセッション** (`AppState.preview_base`、`module::PreviewBaseCache`) が最後の 1 つを覚えておき、
+    本体の版が同じか、本体のファイルの指紋 (`ProjectSession` が本体を開いた・読み直したときに取るもの) とパスが同じなら作り直しません (T0654)。
+    フロントエンドはバイト列を覚えないので、プレビューに入り直すと取り直しますが、同じ本体なら作り直しは起きません。同じ本体のファイルを
+    開き直したとき (モジュールのプロジェクトを開き直す・本体を読み直したが中身が同じ) も、指紋が同じなので作り直しません。
   - 今の編集は、モジュールの名前に ` (editing)` を付けた名前で読み込みます (`get_preview_module(name)`、`ugoe_editor_core::export_module_as`、
     `editingName`。T0653)。`WebPuppet` は同じ名前のモジュールを 1 つしか持てないので、こうして前に書き出した同じ名前の `.ugoemod` も並べて読み込み、
     同じスロットで差し替えて見比べられるようにしています。一覧の行にはモジュールの名前 (`DressUpEntry.label`) と `editing` の印を出し、
     スロットの選択肢には読み込んだ名前 (「CatEars (editing)」) を出します。名前を変えても要素の ID の接頭辞が変わるだけで、見た目は同じです。
     その名前と同じ名前のファイルを読み込んだときだけ、今の編集を残してファイルは付けません (`same_name` の説明「This file is also named …」)。
+  - 今の編集と同じ名前 (モジュールの名前) のファイルの行には、今の編集との違いを文字でも出します (`compare_preview_module`、
+    `ugoe_editor_core::compare_with_module_file`、`DressUpEntry.differences`。T0654)。違いは「ファイル → 今の編集」の向きの英語の 1 行ずつで、
+    要素 (パーツ・デフォーマ・メッシュ・グルー) の数と、足した・除いた・変えたものの ID、テクスチャ (足した・除いた・画像が違うもの)、
+    条件 (アバタープロファイルのレベル・スロット・パラメータ)、使うパラメータ、物理のリグと衝突体、ポーズです。メッシュのテクスチャは番号でなく
+    名前で比べます。同じなら「Same as your current edits.」。ファイルがアトラス化してあれば、その旨を 1 行足します (メッシュの UV が
+    変わるので、そのテクスチャを使うメッシュはすべて「変えた」に出る)。今の編集を取り直すたび・そのファイルを読み込み直すたびに比べ直し、
+    途中の結果は捨てます。今の編集を付けて比べていない (書き出しの検査に通らない) 間は出しません。
   - 今の編集を書き出せない (検査に通らない) 間は、理由 (「Your edits can't be put on the base …」) を出し、作業用のモデルを描きます。このときは
     T0650 と同じく、自分のスロットの行は出さず、そのスロットのモジュールは付けません (`DressUpHost.ownSlot`。`own_slot` の説明)。
   - 本体だけのモデルには本体の物理がバンドルに入っているので、ドキュメントの物理 (モジュールのものを含む) を `set_physics_json` で渡しません。
@@ -590,13 +600,14 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
 | `read_module_base(path)` | 本体の候補を読み、名前とスロットの一覧 (`BaseSummary`) を返す |
 | `new_module_project(base, slot, name)` | 空のモジュールのプロジェクトにする (未保存) |
 | `open_module_with_base(path, base)` | 本体を付け替えてモジュールのプロジェクトを開く |
-| `export_module(path)` | `validate_module` と本体との合成を確かめて `.ugoemod` を書き、大きさと警告 (`ModuleExportReport`) を返す |
+| `export_module(path)` | `validate_module` と本体との合成を確かめて `.ugoemod` を書き、大きさと警告とアトラス化の結果 (`ModuleExportReport`) を返す。書き出しの設定でアトラス化を選んでいればモジュールのテクスチャをまとめる ([書き出し](#書き出し)) |
 | `open_module_with_base(path, base, slot)` | 本体 (`base`) かスロット (`slot`) を付け替えて開く (`null` なら `project.json` のまま。`Project::load_module_with`) |
 | `module_open_problem(path, base)` | 本体の問題で開けないなら、問題の種類と直すための情報 (`ModuleProblem`)。`base` なら選び直した本体で確かめる |
 | `check_base_change()` | 本体のファイルが開いた (読み直した) 後で変わったか (`ExternalChange` か `null`) |
 | `reload_base(base, slot)` | 本体を読み直す。`base`・`slot` があれば本体・スロットを付け替える (開き直さない。未保存の印が付く)。読み直せなければ `problem` 付きで、ドキュメントはそのまま (`BaseReload`) |
 | `get_preview_base_bundle()` | 本体だけの `.ugoe` のバイト列 (プレビューで今の編集と比べる。[プレビューの着せ替え](#プレビューの着せ替え)) |
 | `get_preview_module(name)` | 今の編集の `.ugoemod` のバイト列 (ファイルには書かない。書き出しと同じ検査)。`name` があればモジュールの名前をそれにする |
+| `compare_preview_module(<bytes>)` | 今の編集と、書き出した `.ugoemod` (本文のバイト列で送る) の違いの行 (同じなら空。[プレビューの着せ替え](#プレビューの着せ替え)) |
 
 `ModuleStatus` は、本体のテクスチャ・物理のリグと衝突体・スロット・パラメータ・アバタープロファイルのレベルと、モジュールの条件 (`requires`) も返します
 (画面が本体のものの欄を無効にし、設定の画面で選ばせるため)。`base_revision` は本体の版で、プレビューが本体だけの `.ugoe` を取り直すかを決めます。
@@ -1142,6 +1153,7 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
 ### 書き出し
 
 「Export…」は書き出しの欄を開きます。欄で設定を選び、「Export .ugoe…」で保存のダイアログを開いて書き出します (`src/lib/ExportPanel.svelte`)。
+モジュールのプロジェクトでは、同じ欄を「Export Module…」で開き、「Export .ugoemod…」で書き出します (下の最後の項目)。
 
 - **設定 (`ugoe_editor_core::ExportSettings`):** テクスチャのアトラス化の有無 (既定はしない)、アトラス 1 枚の最大の大きさ
   (512〜16384px から選ぶ。既定 2048)、余白 (端の画素の複製の幅、0〜64px。既定 2)。規則は
@@ -1158,7 +1170,10 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
   マスクアトラスの違いは数えないので、マスクを多く使うモデルでは `ugoe render --stats` の `state_changes` より少なく出ることがあります
   (`character.psd` では前後とも `ugoe render --stats` と一致した: 12 枚 → 1 枚、切り替え 10 → 2、描画 11 → 3)。
 - 着せ替えのモジュール (T0111) のテクスチャはアトラスに含めません ([file-formats.md#テクスチャのアトラス化](spec/file-formats.md#テクスチャのアトラス化))。
-  モジュールの単位のアトラス化 (T0132) は、いまは `ugoe build <m>.ugoemod --atlas` だけで、エディタのモジュールの書き出しでは選べません。
+- **モジュールの書き出し (T0654):** モジュールのプロジェクトでも同じ設定 (`editor.export`) を使い、アトラス化を選んでいれば、モジュールのテクスチャだけを
+  モジュールの単位でまとめて書き出します (`ugoe_editor_core::export_module_with_settings`、`build_module_atlas`。`ugoe build <m>.ugoemod --atlas`
+  と同じ規則。T0132)。書き出しの検査はアトラス化の前に行います。結果として、ファイルの大きさとアトラス化の詳細を出します (描画の見積もりは、
+  本体に付けないと描画順が決まらないので出さない。`moduleExportSummary`)。
 
 ### ヘルプ
 

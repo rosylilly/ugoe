@@ -632,6 +632,8 @@ pub struct ModuleExport {
     pub bytes: Vec<u8>,
     /// 書き出しはしたが知らせたいこと (描画順が 0〜1000 の外にあり、スロットの範囲からはみ出すなど)。
     pub warnings: Vec<String>,
+    /// アトラス化したときの結果 ([`crate::export::export_module_with_settings`])。しなければ `None`。
+    pub atlas: Option<crate::atlas::AtlasReport>,
 }
 
 /// モジュールのプロジェクトを `.ugoemod` のバイト列に書き出す (`docs/editor.md#モジュールのプロジェクト`)。
@@ -653,6 +655,23 @@ pub fn export_module_as(project: &Project, name: &str) -> Result<ModuleExport, P
 }
 
 fn export_module_with(project: &Project, name: Option<&str>) -> Result<ModuleExport, ProjectError> {
+    let (module, images, warnings) = checked_module(project, name)?;
+    let file = module_file(module, &images)?;
+    let bytes = ugoe_format::write_module(&file).map_err(ProjectError::Export)?;
+    Ok(ModuleExport {
+        bytes,
+        warnings,
+        atlas: None,
+    })
+}
+
+/// モジュールのプロジェクトからモジュールを取り出し、書き出しの検査 (単体の検証と本体との合成) を通す。
+/// 画像 (テクスチャと法線マップの名前 → PNG) と、書き出しはできるが知らせたいことを一緒に返す。
+/// `name` があればモジュールの名前をそれにする。
+pub(crate) fn checked_module(
+    project: &Project,
+    name: Option<&str>,
+) -> Result<(Module, Textures, Vec<String>), ProjectError> {
     let context = project.module.as_ref().ok_or(ProjectError::NotAModule)?;
     let (mut module, images) =
         context.split(&project.model, project.physics.as_ref(), &project.textures)?;
@@ -692,7 +711,14 @@ fn export_module_with(project: &Project, name: Option<&str>) -> Result<ModuleExp
             ));
         }
     }
+    Ok((module, images, warnings))
+}
 
+/// モジュールと画像 (名前 → PNG) を `.ugoemod` の中身にする。テクスチャと法線マップを名前で引く。
+pub(crate) fn module_file(
+    module: Module,
+    images: &Textures,
+) -> Result<ugoe_format::ModuleFile, ProjectError> {
     let png = |name: &str| {
         images
             .get(name)
@@ -715,14 +741,12 @@ fn export_module_with(project: &Project, name: Option<&str>) -> Result<ModuleExp
         .filter_map(|t| t.normal_map.as_deref())
         .map(png)
         .collect::<Result<Vec<_>, _>>()?;
-    let file = ugoe_format::ModuleFile {
+    Ok(ugoe_format::ModuleFile {
         module,
         textures,
         normal_maps,
         meta: None,
-    };
-    let bytes = ugoe_format::write_module(&file).map_err(ProjectError::Export)?;
-    Ok(ModuleExport { bytes, warnings })
+    })
 }
 
 /// 保存先が、存在しない・空・既存のプロジェクトのいずれかであること。

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { exportSummary } from "./exportSummary";
+import { exportSummary, moduleExportSummary } from "./exportSummary";
 import type { DrawEstimate, ExportReport } from "./ipc";
 
 const estimate = (textures: number, state_changes: number, draw_calls: number): DrawEstimate => ({
@@ -42,5 +42,18 @@ describe("export summary", () => {
       "Kept separate: bg (UV outside 0–1)",
       "Removed unused: unused",
     ]);
+  });
+
+  it("summarizes a module export with its atlas (T0654)", () => {
+    expect(moduleExportSummary({ bytes: 21039, warnings: [], atlas: null })).toEqual([
+      "Size: 21,039 bytes",
+    ]);
+    expect(
+      moduleExportSummary({
+        bytes: 900,
+        warnings: [],
+        atlas: { packed: 2, atlases: [[64, 32]], kept: [], removed: [], deduplicated: [] },
+      }),
+    ).toEqual(["Size: 900 bytes", "Packed 2 textures into 1 atlas (64×32)"]);
   });
 });

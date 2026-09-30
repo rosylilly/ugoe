@@ -36,6 +36,8 @@ pub struct AppState {
     pub ai_provider: ai_provider::ProviderStore,
     /// エディタの中の MCP サーバ (エージェントをつなぐ。既定は無効。`docs/editor.md#エージェントをつなぐ`)。
     pub mcp: mcp::McpBridge,
+    /// プレビューの本体だけの `.ugoe` (モジュールのプロジェクト。`module::get_preview_base_bundle`)。
+    pub preview_base: module::PreviewBaseCache,
 }
 
 pub fn run() {
@@ -46,6 +48,7 @@ pub fn run() {
         api_keys: ai::ApiKeys::default(),
         ai_provider: ai_provider::ProviderStore::default(),
         mcp: mcp::McpBridge::default(),
+        preview_base: module::PreviewBaseCache::default(),
     };
     #[allow(clippy::expect_used)]
     tauri::Builder::default()
@@ -99,6 +102,7 @@ pub fn run() {
             module::reload_base,
             module::get_preview_base_bundle,
             module::get_preview_module,
+            module::compare_preview_module,
             psd::import_psd,
             space::local_to_canvas,
             space::canvas_to_local,

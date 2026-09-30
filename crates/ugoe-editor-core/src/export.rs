@@ -1,4 +1,4 @@
-//! エディタからの `.ugoe` の書き出し: プロジェクトに残す書き出しの設定と、アトラス化を含む書き出し。
+//! エディタからの `.ugoe`・`.ugoemod` の書き出し: プロジェクトに残す書き出しの設定と、アトラス化を含む書き出し。
 //! 設計: `docs/editor.md#書き出し`、アトラス化の規則: `docs/spec/file-formats.md#テクスチャのアトラス化`。
 
 use serde::{Deserialize, Serialize};
@@ -6,8 +6,10 @@ use ts_rs::TS;
 use ugoe_model::Model;
 use ugoe_runtime::{CompiledModel, ModelInstance};
 
-use crate::atlas::{AtlasError, AtlasOptions, AtlasReport};
-use crate::project::{Project, ProjectError, ProjectMeta, export_bundle};
+use crate::atlas::{AtlasError, AtlasOptions, AtlasReport, build_module_atlas};
+use crate::project::{
+    ModuleExport, Project, ProjectError, ProjectMeta, checked_module, export_bundle, module_file,
+};
 
 /// `project.json` の `editor` の中で、書き出しの設定を置くキー。
 const EXPORT_SETTINGS_KEY: &str = "export";
@@ -212,4 +214,29 @@ pub fn export_bundle_with_settings(
         atlas,
     };
     Ok((bytes, report))
+}
+
+/// モジュールのプロジェクトを `settings` に従って `.ugoemod` のバイト列に書き出す (アトラス化は任意。
+/// [`crate::atlas::build_module_atlas`] で、モジュールのテクスチャだけをまとめる)。書き出しの検査は
+/// [`crate::export_module`] と同じ。プロジェクト自体は変えない。
+pub fn export_module_with_settings(
+    project: &Project,
+    settings: &ExportSettings,
+) -> Result<ModuleExport, ExportError> {
+    settings.validate()?;
+    let (module, images, warnings) = checked_module(project, None)?;
+    let (module, images, atlas) = match settings.atlas_options() {
+        Some(options) => {
+            let atlased = build_module_atlas(&module, &images, &options)?;
+            (atlased.module, atlased.textures, Some(atlased.report))
+        }
+        None => (module, images, None),
+    };
+    let file = module_file(module, &images)?;
+    let bytes = ugoe_format::write_module(&file).map_err(ProjectError::Export)?;
+    Ok(ModuleExport {
+        bytes,
+        warnings,
+        atlas,
+    })
 }

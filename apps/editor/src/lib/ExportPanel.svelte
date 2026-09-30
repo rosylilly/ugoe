@@ -1,21 +1,24 @@
 <script lang="ts">
 // 書き出しの設定 (アトラス化の有無・最大の大きさ・余白) と、最後の書き出しの結果 (docs/editor.md#書き出し)。
 // 設定は変えるたびにプロジェクトに残す (保存で project.json の editor.export に書く)。
-import { ATLAS_SIZES, exportSummary, MAX_ATLAS_PADDING } from "./exportSummary";
-import { type ExportReport, type ExportSettings, ipc, type ProjectStatus } from "./ipc";
+// .ugoe の書き出しと、モジュールのプロジェクトの .ugoemod の書き出し (T0654) で同じ設定を使う。
+import { ATLAS_SIZES, MAX_ATLAS_PADDING } from "./exportSummary";
+import { type ExportSettings, ipc, type ProjectStatus } from "./ipc";
 
 interface Props {
   /** ダイアログを開いているか、その後の処理の途中か。 */
   busy: boolean;
-  /** 最後の書き出しの結果。 */
-  report: ExportReport | null;
+  /** 最後の書き出しの結果の要約の行 (exportSummary・moduleExportSummary)。 */
+  summary: string[] | null;
+  /** 書き出すボタンの文言。 */
+  label?: string;
   /** 書き出す (保存のダイアログを開く)。 */
   onexport: () => void;
   /** 設定を残した後のプロジェクトの状態 (未保存の印)。 */
   onstatus: (status: ProjectStatus) => void;
 }
 
-let { busy, report, onexport, onstatus }: Props = $props();
+let { busy, summary, label = "Export .ugoe…", onexport, onstatus }: Props = $props();
 
 let settings = $state<ExportSettings | null>(null);
 let error = $state<string | null>(null);
@@ -92,11 +95,11 @@ load();
     </label>
     <p class="hint">Settings are kept in the project. Identical images are packed once.</p>
   {/if}
-  <button class="primary" onclick={onexport} disabled={busy}>Export .ugoe…</button>
+  <button class="primary" onclick={onexport} disabled={busy}>{label}</button>
   {#if error}<p class="error">{error}</p>{/if}
-  {#if report}
+  {#if summary}
     <ul class="summary" aria-label="Last export">
-      {#each exportSummary(report) as line, i (i)}
+      {#each summary as line, i (i)}
         <li>{line}</li>
       {/each}
     </ul>

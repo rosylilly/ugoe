@@ -1041,7 +1041,11 @@ bytes: number,
 /**
  * 書き出しはしたが知らせたいこと。
  */
-warnings: Array<string>, };
+warnings: Array<string>, 
+/**
+ * アトラス化したときの結果 (書き出しの設定 `editor.export` の `atlas`)。しなければ `null`。
+ */
+atlas: AtlasReport | null, };
 
 /**
  * モジュールのプロジェクトが本体の問題で開けない・読み直せないこと (`module_open_problem`・`reload_base`)。

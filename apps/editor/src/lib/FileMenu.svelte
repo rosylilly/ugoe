@@ -9,6 +9,7 @@
 import BaseChangeDialog from "./BaseChangeDialog.svelte";
 import ExportPanel from "./ExportPanel.svelte";
 import ExternalChangeDialog from "./ExternalChangeDialog.svelte";
+import { exportSummary, moduleExportSummary } from "./exportSummary";
 import {
   baseAction,
   CHECK_INTERVAL_MS,
@@ -30,7 +31,6 @@ import {
 } from "./filePaths";
 import {
   type Command,
-  type ExportReport,
   type ExternalChange,
   ipc,
   type ModuleProblem,
@@ -103,8 +103,8 @@ let notice = $state<string | null>(null);
 let warnings = $state<PsdImportWarning[]>([]);
 /** 書き出しの設定の欄を開いているか。 */
 let exportOpen = $state(false);
-/** 最後の書き出しの結果 (テクスチャの枚数と状態の切り替えの変化)。 */
-let exportReport = $state<ExportReport | null>(null);
+/** 最後の書き出し (.ugoe か .ugoemod) の結果の要約の行 (テクスチャの枚数と状態の切り替えの変化・アトラス化)。 */
+let exportLines = $state<string[] | null>(null);
 /** 最後にダイアログで選んだ場所 (次のダイアログの最初の場所)。 */
 let lastDir = $state<string | null>(null);
 /** 外での書き換え (確認のダイアログを開いている間だけ)。 */
@@ -144,7 +144,7 @@ async function run(
     if (reload === "replaced") {
       // 別のプロジェクトの設定と結果を見せないよう、書き出しの欄を閉じる
       exportOpen = false;
-      exportReport = null;
+      exportLines = null;
     }
     if (reload !== "none") onchange(reload === "replaced", reload === "reloaded");
     return true;
@@ -300,6 +300,7 @@ function perform(kind: PathAction, path: string): Promise<boolean> {
       return run(async () => {
         const report = await ipc.exportModule(path);
         warnings = report.warnings.map((message) => ({ path: [], message }));
+        exportLines = moduleExportSummary(report);
         notice = `Exported to ${path}`;
         return undefined;
       }, "none");
@@ -311,7 +312,7 @@ function perform(kind: PathAction, path: string): Promise<boolean> {
       }, "none");
     case "export":
       return run(async () => {
-        exportReport = await ipc.exportBundle(path);
+        exportLines = exportSummary(await ipc.exportBundle(path));
         notice = `Exported to ${path}`;
         return undefined;
       }, "none");
@@ -589,27 +590,31 @@ refresh();
   >
   <button onclick={save} disabled={busy}>Save</button>
   <button onclick={() => pick("saveAs")} disabled={busy}>Save As…</button>
-  {#if moduleInfo}
-    <button onclick={() => pick("exportModule")} disabled={busy} title="Check the module against the base and write .ugoemod"
-      >Export Module…</button
-    >
-  {:else}
   <span class="export">
-    <button
-      onclick={() => (exportOpen = !exportOpen)}
-      disabled={busy}
-      aria-expanded={exportOpen}>Export…</button
-    >
+    {#if moduleInfo}
+      <button
+        onclick={() => (exportOpen = !exportOpen)}
+        disabled={busy}
+        aria-expanded={exportOpen}
+        title="Check the module against the base and write .ugoemod">Export Module…</button
+      >
+    {:else}
+      <button
+        onclick={() => (exportOpen = !exportOpen)}
+        disabled={busy}
+        aria-expanded={exportOpen}>Export…</button
+      >
+    {/if}
     {#if exportOpen}
       <ExportPanel
         {busy}
-        report={exportReport}
-        onexport={() => pick("export")}
+        summary={exportLines}
+        label={moduleInfo ? "Export .ugoemod…" : "Export .ugoe…"}
+        onexport={() => pick(moduleInfo ? "exportModule" : "export")}
         onstatus={(s) => (status = s)}
       />
     {/if}
   </span>
-  {/if}
   <button onclick={() => pick("importPsd")} disabled={busy}>Import PSD…</button>
   <span class="project" title={status?.path ?? "not saved yet"}>
     {status?.name ?? "…"}{#if status?.modified}<span class="dirty" aria-label="modified">●</span>{/if}

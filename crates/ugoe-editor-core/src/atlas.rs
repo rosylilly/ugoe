@@ -23,7 +23,7 @@ use crate::texture::{decode_rgba_png, encode_rgba_png};
 use crate::{Project, Textures};
 
 /// アトラスの名前の接頭辞 (`atlas-0`、`atlas-1`…)。
-const ATLAS_NAME_PREFIX: &str = "atlas-";
+pub(crate) const ATLAS_NAME_PREFIX: &str = "atlas-";
 
 /// アトラス化の設定。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

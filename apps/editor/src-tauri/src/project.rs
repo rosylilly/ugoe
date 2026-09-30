@@ -161,6 +161,11 @@ impl ProjectSession {
     }
 
     /// 本体を読み直した後で、本体の指紋を取り直す。
+    /// モジュールのプロジェクトの本体のファイルの、開いた (読み直した) ときの指紋の値。取れなければ `None`。
+    pub(crate) fn base_digest(&self) -> Option<u64> {
+        self.base_disk.as_ref().map(ProjectFingerprint::digest)
+    }
+
     pub(crate) fn remember_base(&mut self, document: &Document) {
         self.base_disk = base_fingerprint(document);
     }

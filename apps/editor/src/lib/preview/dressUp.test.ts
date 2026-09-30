@@ -13,6 +13,8 @@ import {
 import { DressUp } from "./dressUp.svelte";
 
 const saved: unknown[] = [];
+/** `comparePreviewModule` の結果 (バイト列はモジュールの名前)。 */
+let compared: (bytes: Uint8Array) => string[] = () => [];
 const files: Record<string, string> = {};
 
 vi.mock("../ipc", () => ({
@@ -25,6 +27,7 @@ vi.mock("../ipc", () => ({
       saved.push(modules);
       return { name: "p", path: null, modified: true };
     }),
+    comparePreviewModule: vi.fn(async (bytes: Uint8Array) => compared(bytes)),
     readModuleFile: vi.fn(async (path: string) => {
       const name = files[path];
       if (name === undefined) throw `${path}: No such file or directory`;
@@ -442,5 +445,35 @@ describe("DressUp in a module project", () => {
     dressUp.setOwn(bytes(editing), editing, true, "Hat");
     expect(fake.attached()).toEqual(["Hat"]);
     expect(dressUp.entries.map((e) => e.name)).toEqual([editing, "Hat"]);
+  });
+
+  it("shows how the exported file differs from the current edits (T0654)", async () => {
+    const editing = editingName("Hat");
+    const fake = fakePuppet({ [editing]: "Hair", Hat: "Hair", Cap: "Hair" });
+    const dressUp = new DressUp({
+      puppet: () => fake.puppet,
+      active: () => true,
+      changed: vi.fn(),
+      ownSlot: () => null,
+    });
+    compared = (b) => [`Meshes: 2 → 3 (added: ${new TextDecoder().decode(b)}Brim)`];
+    dressUp.setOwn(bytes(editing), editing, false, "Hat");
+    dressUp.loaded(fake.puppet);
+    await dressUp.add([{ path: "/work/Hat.ugoemod", bytes: bytes("Hat") }]);
+    await vi.waitFor(() =>
+      expect(entry(dressUp, "Hat")?.differences).toEqual(["Meshes: 2 → 3 (added: HatBrim)"]),
+    );
+    // ほかの名前のファイルと今の編集の行は比べない。
+    await dressUp.add([{ path: "/work/Cap.ugoemod", bytes: bytes("Cap") }]);
+    expect(entry(dressUp, "Cap")?.differences).toBeUndefined();
+    expect(dressUp.entries[0]?.differences).toBeUndefined();
+    // 今の編集を取り直すと比べ直す。
+    compared = () => [];
+    dressUp.setOwn(bytes(editing), editing, true, "Hat");
+    expect(entry(dressUp, "Hat")?.differences).toBeNull();
+    await vi.waitFor(() => expect(entry(dressUp, "Hat")?.differences).toEqual([]));
+    // 比べるのをやめると消える。
+    dressUp.setOwn(null, "", false);
+    expect(entry(dressUp, "Hat")?.differences).toBeUndefined();
   });
 });

@@ -3,6 +3,7 @@
   ドロップ)、スロットごとに付けるモジュールを選ぶ。付け外しの失敗は DressUpError の code から分かる言葉で出す (dressUp.ts)。
   状態と WebPuppet の操作は DressUp (dressUp.svelte.ts)。モデルは変えない。
   モジュールのプロジェクトでは、今の編集 (`own` の行) も一覧に出し、同じスロットのモジュールと差し替えて比べられる (T0651)。
+  同じ名前の書き出したファイルの行には、今の編集との違いを文字でも出す (T0654)。
 -->
 <script lang="ts">
 import { isTauri } from "@tauri-apps/api/core";
@@ -190,6 +191,21 @@ onMount(() => {
               <details class="detail"><summary>Details</summary>{entry.problem.detail}</details>
             {/if}
           {/if}
+          {#if entry.differences === null}
+            <p class="muted">Comparing with your current edits…</p>
+          {:else if entry.differences?.length === 0}
+            <p class="muted">Same as your current edits.</p>
+          {:else if entry.differences}
+            <details class="differences">
+              <summary
+                title="What changed from this file to your current edits (file → edits)"
+                >{entry.differences.length} difference{entry.differences.length === 1 ? "" : "s"} from your current edits</summary
+              >
+              <ul>
+                {#each entry.differences as line, i (i)}<li>{line}</li>{/each}
+              </ul>
+            </details>
+          {/if}
           {#each entry.warnings as warning, i (i)}<p class="muted">{warning}</p>{/each}
           {#if entry.path === null && !entry.own}<p class="muted">Dropped file: not kept in the project.</p>{/if}
         </li>
@@ -281,7 +297,7 @@ p {
   list-style: none;
 }
 
-.modules li {
+.modules > li {
   margin-bottom: 4px;
 }
 
@@ -323,7 +339,14 @@ p {
   overflow-wrap: anywhere;
 }
 
-.detail summary {
+.detail summary,
+.differences summary {
   cursor: pointer;
+}
+
+.differences ul {
+  margin: 2px 0;
+  padding-left: 16px;
+  overflow-wrap: anywhere;
 }
 </style>

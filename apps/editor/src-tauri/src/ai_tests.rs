@@ -317,6 +317,7 @@ pub(crate) fn state(secret: Option<&str>) -> AppState {
         api_keys: keys(secrets, no_env),
         ai_provider: ProviderStore::default(),
         mcp: crate::mcp::McpBridge::default(),
+        preview_base: crate::module::PreviewBaseCache::default(),
     }
 }
 

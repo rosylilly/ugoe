@@ -238,8 +238,12 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
 
 - 「Save」「Save As…」で `.ugoeproj` に保存します。保存するのは衣装の部分 (`module.json` と衣装の画像) だけで、本体は保存しません。
   本体の場所は、プロジェクトからの相対パスで覚えます。本体とモジュールのプロジェクトは、同じ親のフォルダーの中に置いておくと動かしやすくなります。
-- 「Export Module…」で `.ugoemod` に書き出します。書き出す前に、モジュールだけでの検査と、本体に付けたときの検査を行います。
-  描画順がスロットの範囲からはみ出したメッシュがあれば、書き出した後に警告が出ます。
+- 「Export Module…」で書き出しの欄を開き、「Export .ugoemod…」で `.ugoemod` に書き出します。書き出す前に、モジュールだけでの検査と、
+  本体に付けたときの検査を行います。描画順がスロットの範囲からはみ出したメッシュがあれば、書き出した後に警告が出ます。
+- 欄の「Pack textures into atlases」を入れると、衣装のテクスチャを 1 枚 (大きければ数枚) のアトラスにまとめて書き出します。本体に付けたときの
+  描画の回数が減ります。設定はプロジェクトに残ります。書き出した後、欄の下にファイルの大きさとまとめた枚数が出ます。
+
+  ![Export Module… の欄でアトラス化を選んで書き出す](images/module-export-atlas.png)
 
 ### うまくいかないとき
 
@@ -301,6 +305,10 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
   ほかのスロットの `.ugoemod` を付けて、ほかの衣装と重ねた見た目も確かめられます。`editing` の行は一覧から除けず、プロジェクトの一覧にも残りません。
 - 前に書き出した同じ名前の `.ugoemod` も読み込めます。いまの編集は「Slots」の欄で「CatEars (editing)」のように ` (editing)` を付けた名前で出るので、
   同じスロットで書き出したファイル (「CatEars」) と選び直して、どこを変えたかを見比べられます。一覧では、いまの編集は `editing` の印の付いた行です。
+  ファイルの行には、いまの編集との違いが「3 differences from your current edits」のように出て、開くと「Meshes: 5 → 4 (removed: EarL)」
+  「Textures: …」「Required slots: …」のような行 (ファイル → いまの編集の向き) が並びます。同じなら「Same as your current edits.」と出ます。
+
+  ![書き出した cat-ears.ugoemod の行に、耳を消したいまの編集との違いが出る](images/module-compare-differences.png)
 
   ![前に書き出した同じ名前の cat-ears.ugoemod を読み込み、いまの編集 (editing) と差し替えて比べる](images/module-compare-exported.png)
 - いまの編集が書き出しの検査に通らないとき (公開していないパラメータを使っているなど) は、「Your edits can't be put on the base …」と理由が出て、

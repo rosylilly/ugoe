@@ -3,13 +3,14 @@
 //! `ugoe_editor_core::project` にあり、ここはパスと状態の受け渡しだけを行う。
 //! 引数・戻り値の型を変えたら `apps/editor/src/lib/ipc.ts` も同じ PR で更新すること。
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use tauri::State;
 use ts_rs::TS;
 use ugoe_editor_core::project::{ProjectError, load_base, read_module_link};
-use ugoe_editor_core::{Document, ModuleError, Project, ProjectFingerprint};
+use ugoe_editor_core::{AtlasReport, Document, ModuleError, Project, ProjectFingerprint};
 use ugoe_model::module::ModuleRequirements;
 
 use crate::AppState;
@@ -116,6 +117,49 @@ pub struct ModuleExportReport {
     pub bytes: usize,
     /// 書き出しはしたが知らせたいこと。
     pub warnings: Vec<String>,
+    /// アトラス化したときの結果 (書き出しの設定 `editor.export` の `atlas`)。しなければ `null`。
+    pub atlas: Option<AtlasReport>,
+}
+
+/// プレビューの本体だけの `.ugoe` (`get_preview_base_bundle`) を、エディタのセッションで覚えておく (T0654)。
+/// 本体の版 (`ModuleContext::base_revision`) が同じか、本体のファイルの指紋が同じ (同じ本体を開き直した・
+/// 読み直した) なら作り直さない。覚えるのは最後の 1 つだけ。
+#[derive(Debug, Default)]
+pub struct PreviewBaseCache(Mutex<Option<CachedBase>>);
+
+#[derive(Debug)]
+struct CachedBase {
+    revision: u64,
+    /// 本体のファイルのパスと指紋 (`ProjectFingerprint::digest`)。取れなければ `None` (版だけで比べる)。
+    file: Option<(PathBuf, u64)>,
+    bytes: Arc<[u8]>,
+}
+
+impl PreviewBaseCache {
+    /// 開いているモジュールのプロジェクトの本体だけの `.ugoe`。覚えているものが使えればそれを返す。
+    fn bundle(&self, document: &Document, session: &ProjectSession) -> Result<Arc<[u8]>, String> {
+        let context = document.module().ok_or("this is not a module project")?;
+        let revision = context.base_revision();
+        let file = session
+            .base_digest()
+            .map(|digest| (context.base().path.clone(), digest));
+        let mut cached = self.0.lock().map_err(|_| "preview cache lock poisoned")?;
+        if let Some(entry) = cached.as_mut()
+            && (entry.revision == revision || (file.is_some() && entry.file == file))
+        {
+            entry.revision = revision;
+            return Ok(entry.bytes.clone());
+        }
+        let bytes: Arc<[u8]> = ugoe_editor_core::export_base_bundle(&session.to_project(document))
+            .map_err(|e| e.to_string())?
+            .into();
+        *cached = Some(CachedBase {
+            revision,
+            file,
+            bytes: bytes.clone(),
+        });
+        Ok(bytes)
+    }
 }
 
 fn slot_summary(slot: &ugoe_model::Slot) -> SlotSummary {
@@ -342,13 +386,38 @@ fn rebase(
 }
 
 /// モジュールのプロジェクトの本体だけの `.ugoe` のバイト列 (プレビューで、今の編集を書き出したモジュールを付けて
-/// ほかのモジュールと比べる。`docs/editor.md#プレビューの着せ替え`)。
+/// ほかのモジュールと比べる。`docs/editor.md#プレビューの着せ替え`)。作ったものはセッションで覚えておき、
+/// 本体が変わるまで作り直さない (`PreviewBaseCache`)。
 #[tauri::command]
 pub fn get_preview_base_bundle(state: State<'_, AppState>) -> Result<tauri::ipc::Response, String> {
     let (document, session) = lock_both(&state)?;
-    let bytes = ugoe_editor_core::export_base_bundle(&session.to_project(&document))
-        .map_err(|e| e.to_string())?;
-    Ok(tauri::ipc::Response::new(bytes))
+    let bytes = state.preview_base.bundle(&document, &session)?;
+    Ok(tauri::ipc::Response::new(bytes.to_vec()))
+}
+
+/// 開いているモジュールのプロジェクトの今の編集と、書き出した `.ugoemod` (本文のバイト列) の違い
+/// (`ugoe_editor_core::compare_with_module_file`。1 行ずつの英語、同じなら空)。プレビューの着せ替えの一覧で、
+/// 同じ名前のファイルの行に出す (T0654)。
+#[tauri::command]
+pub fn compare_preview_module(
+    state: State<'_, AppState>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<Vec<String>, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("expected the bytes of a .ugoemod file".into());
+    };
+    let (document, session) = lock_both(&state)?;
+    compare(&document, &session, bytes)
+}
+
+/// [`compare_preview_module`] の中身 (テストから呼ぶ)。
+fn compare(
+    document: &Document,
+    session: &ProjectSession,
+    bytes: &[u8],
+) -> Result<Vec<String>, String> {
+    ugoe_editor_core::compare_with_module_file(&session.to_project(document), bytes)
+        .map_err(|e| e.to_string())
 }
 
 /// 開いているモジュールのプロジェクトの今の編集を `.ugoemod` のバイト列にする (ファイルには書かない。
@@ -370,7 +439,8 @@ pub fn get_preview_module(
 }
 
 /// 開いているモジュールのプロジェクトを `.ugoemod` として書き出す。書き出す前に、モジュールの検証と
-/// 本体との合成を確かめる。保存状態は変えない。
+/// 本体との合成を確かめる。書き出しの設定 (`get_export_settings`。`.ugoe` の書き出しと同じもの) で
+/// アトラス化を選んでいれば、モジュールのテクスチャをアトラスにまとめる (T0654)。保存状態は変えない。
 #[tauri::command]
 pub fn export_module(
     state: State<'_, AppState>,
@@ -379,13 +449,17 @@ pub fn export_module(
     let path = absolute_path(&path)?;
     let export = {
         let (document, session) = lock_both(&state)?;
-        ugoe_editor_core::export_module(&session.to_project(&document))
-            .map_err(|e| e.to_string())?
+        ugoe_editor_core::export_module_with_settings(
+            &session.to_project(&document),
+            &session.export_settings(),
+        )
+        .map_err(|e| e.to_string())?
     };
     std::fs::write(&path, &export.bytes).map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(ModuleExportReport {
         bytes: export.bytes.len(),
         warnings: export.warnings,
+        atlas: export.atlas,
     })
 }
 
@@ -557,6 +631,68 @@ mod tests {
                 .any(|p| p.id.as_str() == "Hat/Brim")
         );
         assert_eq!(session.base_change(&document).unwrap(), None);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// 本体だけの `.ugoe` は、本体の版が同じか、同じ本体を開き直したときは作り直さない。本体のファイルが
+    /// 変わって読み直したときだけ作り直す (T0654)。
+    #[test]
+    fn preview_base_bundle_is_kept_in_the_session() {
+        let dir = temp("preview-base");
+        let base_dir = save_base(&dir);
+        let module_dir = dir.join("hat.ugoeproj");
+        Project::new_module("Hat", &base_dir, &"Hair".into())
+            .unwrap()
+            .save(&module_dir)
+            .unwrap();
+        let open = || {
+            let (project, disk) = Project::load_tracked(&module_dir).unwrap();
+            ProjectSession::from_project(project, Some((module_dir.clone(), disk)))
+        };
+        let cache = PreviewBaseCache::default();
+        let (mut session, mut document) = open();
+        let first = cache.bundle(&document, &session).unwrap();
+        assert!(Arc::ptr_eq(
+            &first,
+            &cache.bundle(&document, &session).unwrap()
+        ));
+        // 開き直すと本体の版は変わるが、ファイルは同じなので使い回す。
+        let (again_session, again) = open();
+        assert_ne!(
+            again.module().unwrap().base_revision(),
+            document.module().unwrap().base_revision()
+        );
+        assert!(Arc::ptr_eq(
+            &first,
+            &cache.bundle(&again, &again_session).unwrap()
+        ));
+        // 本体を変えて読み直すと作り直す。
+        let mut base = Project::load(&base_dir).unwrap();
+        base.model.meta.name = "changed".into();
+        base.save(&base_dir).unwrap();
+        rebase(&mut document, &mut session, None, None).unwrap();
+        let second = cache.bundle(&document, &session).unwrap();
+        assert!(!Arc::ptr_eq(&first, &second));
+        let bundle = ugoe_format::read_bundle(&second).unwrap();
+        assert_eq!(bundle.model.meta.name, "changed");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// 今の編集と、書き出したファイルの違いを文字にする。
+    #[test]
+    fn preview_module_is_compared_with_the_exported_file() {
+        let dir = temp("compare");
+        let base_dir = save_base(&dir);
+        let project = Project::new_module("Hat", &base_dir, &"Hair".into()).unwrap();
+        let (session, document) = ProjectSession::from_project(project, None);
+        let bytes = ugoe_editor_core::export_module(&session.to_project(&document))
+            .unwrap()
+            .bytes;
+        assert_eq!(
+            compare(&document, &session, &bytes).unwrap(),
+            Vec::<String>::new()
+        );
+        assert!(compare(&document, &session, b"nope").is_err());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

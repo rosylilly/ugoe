@@ -1,5 +1,5 @@
 // 書き出しの設定の範囲と、書き出しの結果の要約の文言 (docs/editor.md#書き出し)。
-import type { ExportReport } from "./ipc";
+import type { AtlasReport, ExportReport, ModuleExportReport } from "./ipc";
 
 /** アトラス 1 枚の大きさの上限として選べる値 (ugoe_editor_core::export::MAX_ATLAS_SIZE まで)。 */
 export const ATLAS_SIZES = [512, 1024, 2048, 4096, 8192, 16384] as const;
@@ -30,17 +30,31 @@ export function exportSummary(report: ExportReport): string[] {
     `State changes: ${change(before.state_changes, after.state_changes)}`,
     `Draw calls: ${change(before.draw_calls, after.draw_calls)}`,
   ];
-  if (atlas) {
-    const sizes = atlas.atlases.map(([w, h]) => `${w}×${h}`).join(", ");
-    const into = plural(atlas.atlases.length, "atlas", "atlases");
-    lines.push(
-      `Packed ${plural(atlas.packed, "texture")} into ${into}${sizes ? ` (${sizes})` : ""}`,
-    );
-    for (const [name, first] of atlas.deduplicated) lines.push(`Same image: ${name} → ${first}`);
-    for (const [name, reason] of atlas.kept) {
-      lines.push(`Kept separate: ${name} (${KEPT_REASONS[reason] ?? reason})`);
-    }
-    if (atlas.removed.length > 0) lines.push(`Removed unused: ${atlas.removed.join(", ")}`);
+  if (atlas) lines.push(...atlasSummary(atlas));
+  return lines;
+}
+
+/**
+ * モジュールの書き出し (.ugoemod) の結果の要約の行: 大きさと、アトラス化の詳細 (T0654)。書き出しの警告は
+ * 呼び出し側が別に出す。
+ */
+export function moduleExportSummary(report: ModuleExportReport): string[] {
+  const lines = [`Size: ${report.bytes.toLocaleString("en-US")} bytes`];
+  if (report.atlas) lines.push(...atlasSummary(report.atlas));
+  return lines;
+}
+
+/** アトラス化の詳細の行。 */
+function atlasSummary(atlas: AtlasReport): string[] {
+  const sizes = atlas.atlases.map(([w, h]) => `${w}×${h}`).join(", ");
+  const into = plural(atlas.atlases.length, "atlas", "atlases");
+  const lines = [
+    `Packed ${plural(atlas.packed, "texture")} into ${into}${sizes ? ` (${sizes})` : ""}`,
+  ];
+  for (const [name, first] of atlas.deduplicated) lines.push(`Same image: ${name} → ${first}`);
+  for (const [name, reason] of atlas.kept) {
+    lines.push(`Kept separate: ${name} (${KEPT_REASONS[reason] ?? reason})`);
   }
+  if (atlas.removed.length > 0) lines.push(`Removed unused: ${atlas.removed.join(", ")}`);
   return lines;
 }

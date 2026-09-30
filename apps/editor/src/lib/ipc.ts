@@ -100,8 +100,9 @@ export const ipc = {
   reloadBase: (base: string | null = null, slot: string | null = null) =>
     invoke<BaseReload>("reload_base", { base, slot }),
   /**
-   * モジュールのプロジェクトの本体だけの .ugoe (プレビューで今の編集のモジュールと比べる)。本体の版
-   * (ModuleStatus.base_revision) が変わったときだけ取り直す。
+   * モジュールのプロジェクトの本体だけの .ugoe (プレビューで今の編集のモジュールと比べる)。バックエンドのセッションが
+   * 覚えておき、本体が変わるまで作り直さない。プレビューは本体の版 (ModuleStatus.base_revision) が描いているものと
+   * 違うときだけ取る。
    */
   getPreviewBaseBundle: async () =>
     new Uint8Array(await invoke<ArrayBuffer>("get_preview_base_bundle")),
@@ -111,7 +112,15 @@ export const ipc = {
    */
   getPreviewModule: async (name: string | null = null) =>
     new Uint8Array(await invoke<ArrayBuffer>("get_preview_module", { name })),
-  /** モジュールのプロジェクトを .ugoemod に書き出す。 */
+  /**
+   * モジュールのプロジェクトの今の編集と、書き出した .ugoemod のバイト列の違い (1 行ずつの英語。同じなら空。
+   * 「ファイル → 今の編集」の向き。T0654)。バイト列はそのまま本文で送る。
+   */
+  comparePreviewModule: (bytes: Uint8Array) => invoke<string[]>("compare_preview_module", bytes),
+  /**
+   * モジュールのプロジェクトを .ugoemod に書き出す。書き出しの設定 (getExportSettings) でアトラス化を選んでいれば、
+   * モジュールのテクスチャをアトラスにまとめる。
+   */
   exportModule: (path: string) => invoke<ModuleExportReport>("export_module", { path }),
   /**
    * 開いた場所に保存する。開いた後で外で書き換えられていたら、`overwrite` でない限り書かずにエラー

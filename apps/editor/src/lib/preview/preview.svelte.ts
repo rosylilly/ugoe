@@ -11,7 +11,8 @@
 // - 着せ替え (T0649) は DressUp (dressUp.svelte.ts)。モジュールはプレビューの間だけ付ける。
 // - モジュールのプロジェクトでは、本体だけのモデル (ipc.getPreviewBaseBundle) を描き、今の編集を書き出したモジュール
 //   (ipc.getPreviewModule) を付けて、同じスロットのほかのモジュールと差し替えて比べる (T0651)。今の編集は編集のたびに
-//   取り直し、本体だけのモデルは本体の版 (ModuleStatus.base_revision) が変わったときだけ取り直す (T0653)。
+//   取り直し、本体だけのモデルは本体の版 (ModuleStatus.base_revision) が描いているものと違うときだけ取る (T0653)。
+//   本体だけのモデルのバイト列はバックエンドのセッションが覚えておく (ここでは覚えない。T0654)。
 //   書き出せない (検査に通らない) 間は、編集中の (合成した) モデルを描き、自分のスロットにはほかのモジュールを付けない。
 import {
   en,
@@ -81,8 +82,8 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
   comparing = $state(false);
   /** 今の編集を取り直した EditorDocument.revision。 */
   #ownRevision = -1;
-  /** 最後に取った本体だけのモデル (.ugoe) と、その本体の版。プレビューを出ても覚えておく。 */
-  #baseBundle: { revision: number; bytes: Uint8Array } | null = null;
+  /** 描いている本体だけのモデルの、本体の版 (比べていなければ `null`)。 */
+  #baseRevision: number | null = null;
 
   constructor(doc: EditorDocument, viewport: ViewportController) {
     this.#doc = doc;
@@ -126,6 +127,7 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
     // 本体だけのモデルは忘れ、編集中のモデルに戻る (setDriver(null) が読み直す)。
     this.comparing = false;
     this.#ownRevision = -1;
+    this.#baseRevision = null;
     this.#viewport.setDriver(null);
   }
 
@@ -292,7 +294,7 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
 
   /**
    * モジュールのプロジェクトで、本体だけのモデルと今の編集のモジュールを取り、本体に今の編集を付けて描く。
-   * 本体だけのモデルは、本体の版が前に取ったものと違うときだけ取る。
+   * 本体だけのモデルは、描いているものと本体の版が違うときだけ取る (作り直すかはバックエンドが決める)。
    * 書き出せなければ理由を出し、編集中の (合成した) モデルに戻す。取る間に編集されたら、その読み込みで取り直す。
    */
   async #compareOwn(): Promise<void> {
@@ -300,15 +302,17 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
     if (!module) return;
     const revision = this.#doc.revision;
     this.#ownRevision = revision;
-    const cached = this.#baseBundle;
     const baseRevision = module.base_revision;
-    let base: Uint8Array;
+    const drawn = this.comparing && this.#baseRevision === baseRevision;
+    let base: Uint8Array | null;
     let own: Uint8Array;
     try {
       [base, own] = await Promise.all([
-        cached?.revision === baseRevision ? cached.bytes : ipc.getPreviewBaseBundle(),
+        drawn ? null : ipc.getPreviewBaseBundle(),
         ipc.getPreviewModule(editingName(module.name)),
       ]);
+      // 取る間に比べるのをやめていたら、描き直すので本体も取る。
+      if (base === null && !this.comparing) base = await ipc.getPreviewBaseBundle();
     } catch (e) {
       if (!this.active || revision !== this.#doc.revision) return;
       this.dressUp.ownProblem = `Your edits can't be put on the base to compare with other modules: ${e}`;
@@ -321,9 +325,8 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
     this.comparing = true;
     // 描いている本体だけのモデルに付けるなら、ここで読み込み直す。初めてなら、本体を読み込んだ後の loaded で読み込む。
     this.dressUp.setOwn(own, editingName(module.name), comparing, module.name);
-    const baseChanged = this.#baseBundle?.bytes !== base;
-    this.#baseBundle = { revision: baseRevision, bytes: base };
-    if (!comparing || baseChanged) {
+    if (base !== null) {
+      this.#baseRevision = baseRevision;
       this.#viewport.setPreviewModel({ json: this.#doc.model?.json ?? "", bundle: base });
     }
   }
@@ -332,6 +335,7 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
   #stopComparing(): void {
     const comparing = this.comparing;
     this.comparing = false;
+    this.#baseRevision = null;
     this.dressUp.setOwn(null, "", false);
     if (comparing) this.#viewport.setPreviewModel(null);
   }

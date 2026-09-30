@@ -12,6 +12,8 @@
 // - モジュールのプロジェクトでは、PreviewMode が本体だけのモデルを描き、今の編集を書き出したモジュールを一覧の先頭の
 //   行 (`own`) として付ける (`setOwn`。T0651)。同じスロットのほかのモジュールと差し替えて比べられる。今の編集は
 //   `editingName` の名前で読み込むので、前に書き出した同じ名前の `.ugoemod` とも並べて比べられる (T0653)。
+//   そのファイルの行には、今の編集との違い (要素・テクスチャ・条件など) を文字でも出す (`differences`。
+//   ipc.comparePreviewModule。T0654)。
 import { ipc } from "../ipc";
 import type { WebPuppet } from "../viewport/wasm";
 import {
@@ -48,6 +50,11 @@ export interface DressUpEntry {
   own?: boolean;
   /** 一覧に出す名前 (`name` と違うとき。今の編集の行はモジュールの名前)。 */
   label?: string;
+  /**
+   * モジュールのプロジェクトで、今の編集と同じ名前のモジュールのファイルの行なら、今の編集との違い (「ファイル →
+   * 今の編集」の 1 行ずつ。同じなら空。比べている途中なら `null`)。ほかの行は `undefined`。
+   */
+  differences?: string[] | null;
 }
 
 /** 読み込むファイル。`bytes` がなければ `path` から読む。 */
@@ -109,6 +116,10 @@ export class DressUp {
   #bytes = new Map<string, Uint8Array>();
   /** 今の編集のモジュールの名前 (`setOwn`)。 */
   #ownName: string | null = null;
+  /** 今の編集のモジュールの本当の名前 (`setOwn` の `label`)。この名前のファイルの行に違いを出す。 */
+  #ownLabel: string | null = null;
+  /** 違いを比べた回数 (古い結果を捨てる)。 */
+  #compareToken = 0;
 
   constructor(host: DressUpHost) {
     this.#host = host;
@@ -128,6 +139,7 @@ export class DressUp {
     }
     this.#bytes.clear();
     this.#ownName = null;
+    this.#ownLabel = null;
     this.notices = [];
     this.error = null;
     try {
@@ -272,6 +284,7 @@ export class DressUp {
       if (puppet && old.loaded) this.#forget(puppet, old.name);
     }
     this.#ownName = bytes === null ? null : name;
+    this.#ownLabel = bytes === null ? null : label;
     if (bytes === null) {
       this.entries = this.entries.filter((e) => !e.own);
     } else {
@@ -314,6 +327,7 @@ export class DressUp {
       this.#update(active);
       this.#reconcile(active);
     }
+    void this.#compareFiles();
   }
 
   dismissNotice(index: number): void {
@@ -478,7 +492,37 @@ export class DressUp {
       this.entries = others;
     }
     this.#update(puppet);
+    if (name === this.#ownLabel) void this.#compareFiles();
     return name;
+  }
+
+  /**
+   * 今の編集と同じ名前のモジュールのファイルの行に、今の編集との違いを出す (ほかの行の違いは消す)。
+   * 比べる間に取り直したり読み込み直したりしたら、古い結果は捨てる。
+   */
+  async #compareFiles(): Promise<void> {
+    const token = ++this.#compareToken;
+    const label = this.#ownLabel;
+    const targets: [DressUpEntry, Uint8Array][] = [];
+    for (const entry of this.entries) {
+      const bytes = entry.own || entry.name !== label ? undefined : this.#bytes.get(entry.name);
+      if (bytes) {
+        entry.differences = null;
+        targets.push([entry, bytes]);
+      } else if (entry.differences !== undefined) {
+        entry.differences = undefined;
+      }
+    }
+    for (const [entry, bytes] of targets) {
+      let differences: string[] | undefined;
+      try {
+        differences = await ipc.comparePreviewModule(bytes);
+      } catch (e) {
+        console.warn("ugoe:", e);
+      }
+      if (token !== this.#compareToken) return;
+      entry.differences = differences;
+    }
   }
 
   /** 読み込んだモジュール `name` を WebPuppet と手元から捨てる。 */

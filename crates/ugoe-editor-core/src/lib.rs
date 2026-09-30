@@ -22,6 +22,7 @@ mod inference;
 pub mod keyform;
 pub mod lighting;
 mod mesh_edit;
+pub mod module_compare;
 pub mod module_project;
 pub mod motion_edit;
 pub mod overflow;
@@ -39,12 +40,15 @@ pub use automesh::AutoMeshOptions;
 pub use command::{ChildRef, Command, InferMethod, KeyformCell, KeyformTarget, VertexMove};
 pub use depth::DepthPreset;
 pub use document::{ApplyReport, Document, EditError};
-pub use export::{ExportReport, ExportSettings, export_bundle_with_settings};
+pub use export::{
+    ExportReport, ExportSettings, export_bundle_with_settings, export_module_with_settings,
+};
 pub use fingerprint::ProjectFingerprint;
 pub use grid::CellError;
 pub use import::{PsdImport, PsdImportError, PsdImportOptions, PsdImportWarning, import_psd};
 pub use inference::{MirrorReport, RederiveWarning};
 pub use keyform::Keyform;
+pub use module_compare::compare_with_module_file;
 pub use module_project::{ModuleBase, ModuleContext, ModuleError};
 pub use motion_edit::{Animations, SegmentShape};
 pub use physics_template::{PhysicsTemplate, PhysicsTemplateOptions};
@@ -83,6 +87,8 @@ mod keyform_tests;
 mod lighting_tests;
 #[cfg(test)]
 mod mesh_edit_tests;
+#[cfg(test)]
+mod module_compare_tests;
 #[cfg(test)]
 mod module_project_tests;
 #[cfg(test)]
