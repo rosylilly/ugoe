@@ -1,11 +1,11 @@
 ---
 id: T0122
 title: 形式: 読み込みで schema_version を先に確かめる
-status: todo
+status: in-progress
 milestone: M5
 crates: [ugoe-format, assets/compat, docs]
 depends_on: [T0115, T0116]
-assignee:
+assignee: claude-worker-T0122
 ---
 
 # T0122: 形式: 読み込みで schema_version を先に確かめる

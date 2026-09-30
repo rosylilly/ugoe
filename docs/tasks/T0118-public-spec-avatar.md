@@ -1,11 +1,11 @@
 ---
 id: T0118
 title: 公開仕様: アバタープロファイル (英語)
-status: todo
+status: in-progress
 milestone: M5
 crates: [spec, docs]
 depends_on: [T0116]
-assignee:
+assignee: claude-worker-T0118
 ---
 
 # T0118: 公開仕様: アバタープロファイル (英語)

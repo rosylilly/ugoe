@@ -1,11 +1,11 @@
 ---
 id: T0514
 title: MCP: HTTP のトランスポート
-status: todo
+status: in-progress
 milestone: M6
 crates: [ugoe-mcp, docs]
 depends_on: [T0513]
-assignee:
+assignee: claude-worker-T0514
 ---
 
 # T0514: MCP: HTTP のトランスポート

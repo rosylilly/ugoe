@@ -1,11 +1,11 @@
 ---
 id: T0119
 title: 公開仕様: JSON Schema・例のファイル・同期の検査
-status: todo
+status: in-progress
 milestone: M5
 crates: [spec, ugoe-model, scripts, justfile, .github/workflows, docs]
 depends_on: [T0116]
-assignee:
+assignee: claude-worker-T0119
 ---
 
 # T0119: 公開仕様: JSON Schema・例のファイル・同期の検査

@@ -1,11 +1,11 @@
 ---
 id: T0510
 title: M6 (AI 支援) の受け入れテスト
-status: todo
+status: in-progress
 milestone: M6
 crates: [ugoe-ai, ugoe-editor-core, ugoe-cli, docs]
 depends_on: [T0503, T0504, T0505, T0508, T0509, T0637, T0512, T0513]
-assignee:
+assignee: claude-worker-T0510
 ---
 
 # T0510: M6 (AI 支援) の受け入れテスト

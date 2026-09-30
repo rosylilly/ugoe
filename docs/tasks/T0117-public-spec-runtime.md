@@ -1,11 +1,11 @@
 ---
 id: T0117
 title: 公開仕様: 評価・描画・物理・モーション (英語)
-status: todo
+status: in-progress
 milestone: M5
 crates: [spec, docs]
 depends_on: [T0116]
-assignee:
+assignee: claude-worker-T0117
 ---
 
 # T0117: 公開仕様: 評価・描画・物理・モーション (英語)
