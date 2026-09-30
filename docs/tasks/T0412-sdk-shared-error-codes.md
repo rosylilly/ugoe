@@ -1,11 +1,11 @@
 ---
 id: T0412
 title: SDK: 着せ替えのエラーと読み込みの警告の code を SDK にまとめ、wasm と C ABI で揃える
-status: todo
+status: in-progress
 milestone: M7
 crates: [ugoe, ugoe-wasm, ugoe-ffi, docs]
 depends_on: [T0409, T0410]
-assignee:
+assignee: claude-worker-T0412
 ---
 
 # T0412: SDK: エラーと警告の code の共有
