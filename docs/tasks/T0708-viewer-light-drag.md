@@ -1,11 +1,11 @@
 ---
 id: T0708
 title: ビューア: 光源をビューポートの上で直接ドラッグする
-status: todo
+status: in-progress
 milestone: M4
 crates: [apps/viewer, docs]
 depends_on: [T0705]
-assignee:
+assignee: claude-worker-T0708
 ---
 
 # T0708: ビューア: 光源をビューポートの上で直接ドラッグする
