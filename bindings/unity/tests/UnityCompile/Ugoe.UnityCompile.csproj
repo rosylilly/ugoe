@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    com.ugoe.unity の Runtime/・Editor/・Samples~/ の C# を、Unity の API の形だけを書いたスタブ (UnityStubs.cs) に対して型検査する。
+    ビルドするだけで実行はしない。Unity で実際に通るかは Unity で確かめる (bindings/unity/README.md)。
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>$(DefineConstants);UNITY_EDITOR;UNITY_2022_3_OR_NEWER</DefineConstants>
+    <NoWarn>$(NoWarn);CS0436</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="UnityStubs.cs" />
+    <Compile Include="../../com.ugoe.unity/Runtime/**/*.cs" />
+    <Compile Include="../../com.ugoe.unity/Editor/**/*.cs" />
+    <Compile Include="../../com.ugoe.unity/Samples~/**/*.cs" />
+  </ItemGroup>
+</Project>

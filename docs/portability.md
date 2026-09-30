@@ -20,7 +20,7 @@
 | Windows / macOS / Linux | 段階 A (Vulkan / Metal / DX12 / GL) | |
 | iOS / Android | 段階 A または B | `ugoe-ffi` を staticlib / cdylib としてビルドする |
 | Web | `ugoe-wasm` (WebGPU、なければ WebGL2) | npm パッケージとして配布する (M4) |
-| Unity | 段階 B: `ugoe-ffi` + C# (P/Invoke) + Unity の Mesh / Material | 描画はエンジンのシェーダで行う |
+| Unity | 段階 B: `ugoe-ffi` + C# (P/Invoke) + Unity の Mesh / Material | 描画はエンジンのシェーダで行う。[bindings/unity/README.md](../bindings/unity/README.md) |
 | Unreal | 段階 B: `ugoe-ffi` + C++ プラグイン + ProceduralMesh または独自の SceneProxy | |
 | Godot | 段階 B: GDExtension (godot-rust で `ugoe` を直接使う。`bindings/godot`) | 描画は Godot の 2D (キャンバスアイテムとシェーダ)。ワークスペースの外に置く ([ADR 0026](adr/0026-godot-binding.md)) |
 | Bevy | 段階 A (wgpu のバージョンが一致する場合) または B | Bevy が使う wgpu のバージョンに合わせた ugoe-render のリリースを検討する |
@@ -57,7 +57,7 @@
 | --- | --- | --- |
 | Rust | crates.io の `ugoe` | T0403 |
 | Web | npm の `@ugoe/runtime` と Web Components の `<ugoe-avatar>` | T0404 |
-| Unity | UPM パッケージ | T0405 |
+| Unity | UPM パッケージ ([bindings/unity](../bindings/unity/README.md)) | T0405 |
 | Godot | GDExtension (`bindings/godot`。ワークスペースの外、[ADR 0026](adr/0026-godot-binding.md)) | T0406 |
 | Unreal | プラグイン | T0407 |
 | C / その他 | `ugoe-ffi` の共有ライブラリとヘッダ | T0401 |

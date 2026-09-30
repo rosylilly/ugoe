@@ -1,0 +1,27 @@
+{
+  "name": "com.ugoe.unity",
+  "version": "0.0.0",
+  "displayName": "ugoe",
+  "description": "Display and animate ugoe (.ugoe) 2D rigged models in Unity. The model is evaluated by the ugoe native library (C ABI) and drawn with Unity meshes and materials.",
+  "unity": "2022.3",
+  "license": "MIT",
+  "keywords": [
+    "ugoe",
+    "2d",
+    "rigging",
+    "avatar",
+    "vtuber"
+  ],
+  "author": {
+    "name": "Sho KUSANO and the ugoe contributors",
+    "url": "https://github.com/rosylilly/ugoe"
+  },
+  "documentationUrl": "https://github.com/rosylilly/ugoe/tree/main/bindings/unity",
+  "samples": [
+    {
+      "displayName": "Basic",
+      "description": "A scene that shows a model with parameter sliders, expressions, motions, dress-up modules and a light that follows the mouse.",
+      "path": "Samples~/Basic"
+    }
+  ]
+}

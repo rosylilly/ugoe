@@ -1,0 +1,166 @@
+name: Unity
+
+# Unity のパッケージ (bindings/unity): Unity に依存しない C# の層の検査と、各プラットフォームのネイティブライブラリ
+# (ugoe-ffi) のビルド。ビルドしたライブラリを UPM パッケージに並べた zip を成果物として残す (公開はしない)。
+# Unity のエディタは使わない (bindings/unity/README.md#制限と確かめていないこと)。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "bindings/unity/**"
+      - "assets/samples/**"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".github/workflows/unity.yml"
+  pull_request:
+    paths:
+      - "crates/**"
+      - "bindings/unity/**"
+      - "assets/samples/**"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".github/workflows/unity.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # .meta の検査・Runtime/Core の dotnet test (ホストの libugoe_ffi)・Unity の部分のスタブでの型検査。`just unity-check` と同じ。
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust toolchain (rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: unity
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .tool-versions
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "9.0.x"
+      - uses: extractions/setup-just@v4
+      - name: Unity package
+        run: just unity-check
+
+  # 各プラットフォームの ugoe-ffi (リリースビルド)。成果物の名前と中の配置は build.mjs の PLUGINS の from と揃える。
+  native:
+    name: native (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-24.04
+            file: libugoe_ffi.so
+          - name: windows-x86_64
+            os: windows-2022
+            file: ugoe_ffi.dll
+          - name: macos-universal
+            os: macos-14
+            file: libugoe_ffi.dylib
+          - name: android-arm64-v8a
+            os: ubuntu-24.04
+            android: arm64-v8a
+            rust_target: aarch64-linux-android
+            file: libugoe_ffi.so
+          - name: android-armeabi-v7a
+            os: ubuntu-24.04
+            android: armeabi-v7a
+            rust_target: armv7-linux-androideabi
+            file: libugoe_ffi.so
+          - name: android-x86_64
+            os: ubuntu-24.04
+            android: x86_64
+            rust_target: x86_64-linux-android
+            file: libugoe_ffi.so
+          - name: ios-arm64
+            os: macos-14
+            rust_target: aarch64-apple-ios
+            file: libugoe_ffi.a
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust toolchain (rust-toolchain.toml)
+        shell: bash
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: unity-${{ matrix.name }}
+      - name: Build (host)
+        if: matrix.rust_target == '' && matrix.name != 'macos-universal'
+        shell: bash
+        run: |
+          cargo build --locked --release -p ugoe-ffi
+          mkdir -p "out/${{ matrix.name }}"
+          cp "target/release/${{ matrix.file }}" "out/${{ matrix.name }}/"
+      - name: Build (macOS universal)
+        if: matrix.name == 'macos-universal'
+        run: |
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          cargo build --locked --release -p ugoe-ffi --target aarch64-apple-darwin
+          cargo build --locked --release -p ugoe-ffi --target x86_64-apple-darwin
+          mkdir -p "out/${{ matrix.name }}"
+          lipo -create -output "out/${{ matrix.name }}/libugoe_ffi.dylib" \
+            target/aarch64-apple-darwin/release/libugoe_ffi.dylib \
+            target/x86_64-apple-darwin/release/libugoe_ffi.dylib
+          # Unity が名前で読むので、インストール名をファイル名だけにする
+          install_name_tool -id @rpath/libugoe_ffi.dylib "out/${{ matrix.name }}/libugoe_ffi.dylib"
+          lipo -info "out/${{ matrix.name }}/libugoe_ffi.dylib"
+      - name: Install cargo-ndk
+        if: matrix.android != ''
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk@4.1.2
+      - name: Build (Android)
+        if: matrix.android != ''
+        run: |
+          rustup target add ${{ matrix.rust_target }}
+          # ランナーに入っている NDK を使う (ANDROID_NDK_LATEST_HOME)
+          export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          cargo ndk --target ${{ matrix.android }} --platform 21 build --locked --release -p ugoe-ffi
+          mkdir -p "out/${{ matrix.name }}"
+          cp "target/${{ matrix.rust_target }}/release/libugoe_ffi.so" "out/${{ matrix.name }}/"
+      - name: Build (iOS)
+        if: matrix.name == 'ios-arm64'
+        run: |
+          rustup target add aarch64-apple-ios
+          cargo build --locked --release -p ugoe-ffi --target aarch64-apple-ios
+          mkdir -p "out/${{ matrix.name }}"
+          cp target/aarch64-apple-ios/release/libugoe_ffi.a "out/${{ matrix.name }}/"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ugoe-ffi-${{ matrix.name }}
+          path: out/
+          if-no-files-found: error
+
+  # ネイティブライブラリを UPM パッケージ (com.ugoe.unity/Runtime/Plugins/) に並べ、.meta を作って zip にする。
+  package:
+    needs: native
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .tool-versions
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: ugoe-ffi-*
+          path: plugins
+          merge-multiple: true
+      - name: Place the native libraries
+        run: node bindings/unity/build.mjs --plugins plugins
+      - uses: actions/upload-artifact@v7
+        with:
+          name: com.ugoe.unity
+          path: bindings/unity/com.ugoe.unity/
+          if-no-files-found: error

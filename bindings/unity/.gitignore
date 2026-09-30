@@ -1,0 +1,8 @@
+# build.mjs が置くもの (ネイティブライブラリと見本のモデル。CI の成果物か手元のビルドで作る)
+/com.ugoe.unity/Runtime/Plugins/
+/com.ugoe.unity/Runtime/Plugins.meta
+/com.ugoe.unity/Samples~/Basic/Models/
+/com.ugoe.unity/Samples~/Basic/Models.meta
+# dotnet の出力
+bin/
+obj/

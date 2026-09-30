@@ -56,7 +56,7 @@ crates/             Rust クレート (ランタイム層とツール層。依�
 apps/editor/        Tauri エディタ (src/ = Svelte フロントエンド, src-tauri/ = Rust バックエンド)
 apps/viewer/        Tauri ビューア (.ugoe を開いて表示しパラメータを動かす。構成はエディタと同じ)
 packages/           エディタとビューアで共有するフロントエンドの部品 (face-tracking など。GPL-3.0-only)
-bindings/           ランタイムを別の環境へ出すパッケージ (MIT。web = npm の @ugoe/runtime と <ugoe-avatar>、godot = Godot 4 の GDExtension (ワークスペースの外、ADR 0026))
+bindings/           ランタイムを別の環境へ出すパッケージ (MIT。web = npm の @ugoe/runtime と <ugoe-avatar>、godot = Godot 4 の GDExtension (ワークスペースの外、ADR 0026)、unity = UPM パッケージ (C# から C ABI を呼ぶ))
 tests/conformance/  配布物の適合テスト (ugoe-conformance。C ABI・wasm の頂点と画像を参照と比べる。`just conformance`)
 docs/               設計・仕様・ADR・タスク
 scripts/            補助スクリプト (check-layers.mjs 等)

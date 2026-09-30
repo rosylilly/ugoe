@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Runtime/Core (Unity に依存しない C# の層) を、ホストの libugoe_ffi に対して検査する。
+    ネイティブライブラリの場所は UgoeFfiDir (既定はリポジトリのルートの target/debug) で変えられる。
+    実行: node bindings/unity/build.mjs に check を付ける (または dotnet test bindings/unity/tests)
+  -->
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <!-- Unity (2022.3) の C# に合わせる。新しい構文を使うと Unity で通らない。 -->
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <RepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../..'))</RepoRoot>
+    <UgoeFfiDir Condition="'$(UgoeFfiDir)' == ''">$(RepoRoot)/target/debug</UgoeFfiDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="UnityCompile/**" />
+    <Compile Include="../com.ugoe.unity/Runtime/Core/**/*.cs" Link="Core/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- すべて MIT (NUnit・NUnit3TestAdapter・Microsoft.NET.Test.Sdk)。 -->
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="NUnit" Version="4.2.2" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="$(UgoeFfiDir)/libugoe_ffi.so" Condition="Exists('$(UgoeFfiDir)/libugoe_ffi.so')" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <None Include="$(UgoeFfiDir)/libugoe_ffi.dylib" Condition="Exists('$(UgoeFfiDir)/libugoe_ffi.dylib')" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <None Include="$(UgoeFfiDir)/ugoe_ffi.dll" Condition="Exists('$(UgoeFfiDir)/ugoe_ffi.dll')" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+</Project>

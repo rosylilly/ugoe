@@ -116,6 +116,16 @@ godot-check *args:
 conformance *args:
     @node tests/conformance/run.mjs {{args}}
 
+# `just unity-build --release` でリリースビルド。Unity は要らない。
+# Unity のパッケージ (bindings/unity) にホスト向けの ugoe-ffi と見本のモデルを置く (.meta も作る)
+unity-build *args:
+    node bindings/unity/build.mjs {{args}}
+
+# .NET SDK 8 以降が要る (無ければ入れ方を示して止まる)。`just ci` には含めない (CI では unity.yml の check)。
+# Unity のパッケージの検査 (.meta・Runtime/Core の dotnet test・Unity の部分のスタブでの型検査)
+unity-check *args:
+    node bindings/unity/build.mjs --check {{args}}
+
 # wasm ターゲットでビルドできるか (ブラウザ専用のコード `src/web.rs` も clippy で検査する)
 wasm-check:
     cargo clippy -p ugoe-wasm --target wasm32-unknown-unknown -- -D warnings

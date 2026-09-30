@@ -27,6 +27,7 @@ const SCOPES = [
   "conformance",
   // bindings/
   "godot",
+  "unity",
   // apps/
   "editor",
   "viewer",
