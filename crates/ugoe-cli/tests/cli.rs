@@ -318,3 +318,89 @@ fn build_packs_textures_into_an_atlas() {
     ]);
     assert!(!output.status.success());
 }
+
+/// `ugoe build`: 互換性テストの資料 (`assets/compat/dev`) のすべてを入力にして、同じ内容のファイルを書ける。
+/// 法線マップ付きのバンドル (T0131) と、着せ替えのモジュール (`.ugoemod`) を含む。
+/// 資料は無圧縮のものと圧縮したものがあり、`--compress` の有無のどちらかとはバイト列まで一致する。
+#[test]
+fn build_round_trips_every_compat_file() {
+    let dev = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/compat/dev");
+    let tmp = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("build-compat-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).expect("create output dir");
+    let mut inputs: Vec<_> = std::fs::read_dir(&dev)
+        .expect("read assets/compat/dev")
+        .map(|e| e.expect("dir entry").path())
+        .collect();
+    inputs.sort();
+    let path = |p: &std::path::Path| p.to_str().expect("utf-8 path").to_owned();
+    let mut normal_maps = 0;
+    let mut modules = 0;
+    for input in &inputs {
+        let name = input.file_name().expect("file name").to_string_lossy();
+        let original = std::fs::read(input).expect("read compat file");
+        let is_module = input.extension().is_some_and(|e| e == "ugoemod");
+        let mut outputs = Vec::new();
+        for (prefix, extra) in [("plain", None), ("compressed", Some("--compress"))] {
+            let output = tmp.join(format!("{prefix}-{name}"));
+            let (input, output) = (path(input), path(&output));
+            let mut args = vec!["build", &input, "-o", &output];
+            args.extend(extra);
+            stdout(&ugoe(&args));
+            let rebuilt = std::fs::read(&output).expect("read rebuilt");
+            if is_module {
+                let before = ugoe_format::read_module(&original).expect("module");
+                let after = ugoe_format::read_module(&rebuilt).expect("rebuilt module");
+                assert_eq!(after, before, "{name}");
+            } else {
+                let before = ugoe_format::read_bundle(&original).expect("bundle");
+                let after = ugoe_format::read_bundle(&rebuilt).expect("rebuilt bundle");
+                assert_eq!(after, before, "{name}");
+                normal_maps += before.normal_maps.len();
+            }
+            outputs.push(rebuilt);
+        }
+        modules += usize::from(is_module);
+        assert!(
+            outputs.contains(&original),
+            "{name}: no byte-identical rebuild"
+        );
+    }
+    // 法線マップ付きのバンドルとモジュールを実際に通したこと。
+    assert!(normal_maps > 0, "no compat bundle has a normal map");
+    assert!(modules > 0, "no compat module");
+}
+
+/// `ugoe validate`: 着せ替えのモジュールを単体で検査し、`--module` で本体に付けた結果も検査する。
+/// モジュールは描けないので `info` は分かるエラーにする。
+#[test]
+fn validate_accepts_modules() {
+    let dev = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/compat/dev");
+    let file = |name: &str| dev.join(name).to_str().expect("utf-8 path").to_owned();
+    let (base, dress, hair) = (
+        file("dress-up-base.ugoe"),
+        file("dress.ugoemod"),
+        file("long-hair.ugoemod"),
+    );
+    assert_eq!(stdout(&ugoe(&["validate", &dress])).trim(), "ok");
+    assert_eq!(
+        stdout(&ugoe(&[
+            "validate", &base, "--module", &dress, "--module", &hair
+        ]))
+        .trim(),
+        "ok"
+    );
+
+    let output = ugoe(&["validate", &dress, "--profile", "avatar"]);
+    assert!(!output.status.success());
+    let output = ugoe(&["info", &dress]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("is a dress-up module"), "{stderr}");
+    // スロットの無い本体には付けられない。
+    let output = ugoe(&["validate", &file("single-quad.ugoe"), "--module", &dress]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("slot `Outfit` does not exist"), "{stderr}");
+}

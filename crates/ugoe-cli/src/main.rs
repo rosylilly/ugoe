@@ -16,6 +16,9 @@ use ugoe_model::Model;
 /// `INPUT` の書き方 (validate / info / render で共通)。
 const INPUT_HELP: &str =
     "Model JSON (.json), bundle (.ugoe), or built-in fixture as `fixture:<name>`";
+/// `validate` の `INPUT` の書き方。モジュールも受け付ける。
+const VALIDATE_INPUT_HELP: &str = "Model JSON (.json), bundle (.ugoe), dress-up module (.ugoemod), \
+     or built-in fixture as `fixture:<name>`";
 
 #[derive(Debug, Parser)]
 #[command(name = "ugoe", version, about = "ugoe toolchain CLI")]
@@ -26,9 +29,9 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Cmd {
-    /// モデルを検証する。
+    /// モデルか着せ替えのモジュール (`.ugoemod`) を検証する。
     Validate {
-        #[arg(help = INPUT_HELP)]
+        #[arg(help = VALIDATE_INPUT_HELP)]
         input: String,
         /// 構造の検証に加えて、プロファイルへの準拠を検査する。
         #[arg(long, value_enum)]
@@ -36,6 +39,10 @@ enum Cmd {
         /// 物理の設定の JSON。バンドルの物理の代わりに検証する (JSON のモデルの物理を調べるときに使う)。
         #[arg(long, value_name = "PATH")]
         physics: Option<PathBuf>,
+        /// 本体に付ける着せ替えのモジュール (`.ugoemod`、複数指定可。入力は `.ugoe` バンドル)。
+        /// 付けた結果のモデルと物理を検証する。
+        #[arg(long = "module", value_name = "PATH")]
+        modules: Vec<PathBuf>,
     },
     /// モデルの概要 (パラメータ・パーツ・メッシュ数など) を表示する。
     Info {
@@ -54,6 +61,7 @@ enum Cmd {
     /// PSD を取り込んで新しい `.ugoeproj` プロジェクトに保存する。
     ImportPsd(ImportPsdArgs),
     /// `.ugoeproj` プロジェクトか `.ugoe` バンドルから、配布用の `.ugoe` バンドルを書き出す。
+    /// `.ugoemod` モジュールはモジュールとして書き直す。
     Build(BuildArgs),
     /// 見本のモデルを生成する。
     #[command(subcommand)]
@@ -131,9 +139,9 @@ struct ImportPsdArgs {
 
 #[derive(Debug, Args)]
 struct BuildArgs {
-    /// 入力の `.ugoeproj` ディレクトリか `.ugoe` バンドル。
+    /// 入力の `.ugoeproj` ディレクトリか `.ugoe` バンドル (`.ugoemod` モジュールも可)。
     input: PathBuf,
-    /// 書き出す `.ugoe` バンドル。
+    /// 書き出す `.ugoe` バンドル (入力がモジュールなら `.ugoemod`)。
     #[arg(short, long)]
     output: PathBuf,
     /// テクスチャをアトラスにまとめる (`docs/spec/file-formats.md#テクスチャのアトラス化`)。
@@ -147,6 +155,9 @@ struct BuildArgs {
     #[arg(long, value_name = "PX", requires = "atlas",
           default_value_t = AtlasOptions::default().padding)]
     atlas_padding: u32,
+    /// 画像以外のチャンクを zstd で圧縮して書く (`docs/spec/file-formats.md`)。既定は無圧縮。
+    #[arg(long)]
+    compress: bool,
 }
 
 #[derive(Debug, Args)]
@@ -230,14 +241,33 @@ fn main() -> anyhow::Result<()> {
             input,
             profile,
             physics,
+            modules,
         } => {
+            let mut scene = match load(&input)? {
+                Input::Scene(scene) => *scene,
+                Input::Module => {
+                    if profile.is_some() || physics.is_some() || !modules.is_empty() {
+                        bail!(
+                            "--profile, --physics and --module need a model; {input} is a dress-up module"
+                        );
+                    }
+                    // 読み込みがモジュール単体の検査 (`validate_module`) をしている。
+                    // 本体との整合は `ugoe validate <base>.ugoe --module <module>.ugoemod` で調べる。
+                    println!("ok");
+                    return Ok(());
+                }
+            };
+            // `--physics` はバンドルの物理の代わり。モジュールのリグはそれに加わる。
+            if let Some(path) = physics {
+                scene.animation.physics = Some(animate::read_physics(&path)?);
+            }
+            if !modules.is_empty() {
+                scene = attach_modules(scene, read_modules(&modules)?)?;
+            }
             let Scene {
                 model, animation, ..
-            } = load_input(&input)?;
-            let settings = match physics {
-                Some(path) => Some(animate::read_physics(&path)?),
-                None => animation.physics,
-            };
+            } = scene;
+            let settings = animation.physics;
             let mut errors = ugoe_model::validate::validate(&model);
             if let Some(settings) = &settings {
                 errors.extend(ugoe_model::validate::validate_physics(settings, &model));
@@ -392,9 +422,10 @@ fn run_import_psd(args: ImportPsdArgs) -> anyhow::Result<()> {
 
 /// `ugoe build`: プロジェクトかバンドルを読み、必要ならテクスチャをアトラスにまとめてバンドルに書く。
 ///
-/// バンドルから作るときは、物理・モーション・表情・`META` をそのまま引き継ぐ。
+/// バンドルから作るときは、物理・モーション・表情・法線マップ・`META` をそのまま引き継ぐ。
+/// 入力が着せ替えのモジュールなら、モジュールとして書き直す ([`rebuild_module`])。
 fn run_build(args: BuildArgs) -> anyhow::Result<()> {
-    use ugoe_editor_core::{Project, ProjectMeta};
+    use ugoe_editor_core::Project;
 
     let (project, meta) = if args.input.is_dir() {
         let project = Project::load(&args.input)
@@ -403,33 +434,10 @@ fn run_build(args: BuildArgs) -> anyhow::Result<()> {
     } else {
         let bytes = std::fs::read(&args.input)
             .with_context(|| format!("reading {}", args.input.display()))?;
-        let bundle = ugoe_format::read_bundle(&bytes)
-            .with_context(|| format!("reading bundle {}", args.input.display()))?;
-        let mut textures = ugoe_editor_core::Textures::new();
-        for (i, (texture, data)) in bundle
-            .model
-            .textures
-            .iter()
-            .zip(&bundle.textures)
-            .enumerate()
-        {
-            if data.format != TextureFormat::Png {
-                bail!(
-                    "bundle texture {i} (`{}`) is not PNG; `ugoe build` needs PNG textures",
-                    texture.name
-                );
-            }
-            textures.insert(texture.name.clone(), data.bytes.clone().into());
+        match read_container(&args.input, &bytes)? {
+            Container::Bundle(bundle) => project_from_bundle(*bundle)?,
+            Container::Module(file) => return rebuild_module(&args, &file),
         }
-        let mut project = Project::new(
-            ProjectMeta::new(bundle.model.meta.name.clone()),
-            bundle.model,
-            textures,
-        );
-        project.physics = bundle.physics;
-        project.motions = bundle.motions;
-        project.expressions = bundle.expressions;
-        (project, bundle.meta)
     };
 
     let project = if args.atlas {
@@ -493,19 +501,85 @@ fn run_build(args: BuildArgs) -> anyhow::Result<()> {
             })
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
-    let bytes = ugoe_format::write_bundle(&ugoe_format::Bundle {
-        model: project.model,
-        physics: project.physics,
-        motions: project.motions,
-        expressions: project.expressions,
-        textures,
-        normal_maps,
-        meta,
-    })?;
+    let bytes = ugoe_format::write_bundle_with(
+        &ugoe_format::Bundle {
+            model: project.model,
+            physics: project.physics,
+            motions: project.motions,
+            expressions: project.expressions,
+            textures,
+            normal_maps,
+            meta,
+        },
+        write_options(&args),
+    )?;
     std::fs::write(&args.output, &bytes)
         .with_context(|| format!("writing {}", args.output.display()))?;
     println!("wrote {} ({} bytes)", args.output.display(), bytes.len());
     Ok(())
+}
+
+/// バンドルを、`ugoe build` が扱うプロジェクトと `META` にする。テクスチャと法線マップの画像は名前で
+/// `Project::textures` に入れる (プロジェクトと同じく、法線マップも `TextureRef::normal_map` の名前で引く)。
+fn project_from_bundle(
+    bundle: ugoe_format::Bundle,
+) -> anyhow::Result<(ugoe_editor_core::Project, Option<serde_json::Value>)> {
+    use ugoe_editor_core::{Project, ProjectMeta};
+
+    let mut textures = ugoe_editor_core::Textures::new();
+    for (i, (texture, data)) in bundle
+        .model
+        .textures
+        .iter()
+        .zip(&bundle.textures)
+        .enumerate()
+    {
+        if data.format != TextureFormat::Png {
+            bail!(
+                "bundle texture {i} (`{}`) is not PNG; `ugoe build` needs PNG textures",
+                texture.name
+            );
+        }
+        textures.insert(texture.name.clone(), data.bytes.clone().into());
+    }
+    let normal_names = bundle
+        .model
+        .textures
+        .iter()
+        .filter_map(|t| t.normal_map.as_deref());
+    for (name, data) in normal_names.zip(&bundle.normal_maps) {
+        if data.format != TextureFormat::Png {
+            bail!("bundle normal map `{name}` is not PNG; `ugoe build` needs PNG normal maps");
+        }
+        textures.insert(name.to_owned(), data.bytes.clone().into());
+    }
+    let mut project = Project::new(
+        ProjectMeta::new(bundle.model.meta.name.clone()),
+        bundle.model,
+        textures,
+    );
+    project.physics = bundle.physics;
+    project.motions = bundle.motions;
+    project.expressions = bundle.expressions;
+    Ok((project, bundle.meta))
+}
+
+/// `ugoe build <module>.ugoemod`: 着せ替えのモジュールを読み直して書き出す (中身はそのまま。アトラスは未対応)。
+fn rebuild_module(args: &BuildArgs, file: &ugoe_format::ModuleFile) -> anyhow::Result<()> {
+    if args.atlas {
+        bail!("--atlas is not supported for modules (.ugoemod)");
+    }
+    let bytes = ugoe_format::write_module_with(file, write_options(args))?;
+    std::fs::write(&args.output, &bytes)
+        .with_context(|| format!("writing {}", args.output.display()))?;
+    println!("wrote {} ({} bytes)", args.output.display(), bytes.len());
+    Ok(())
+}
+
+fn write_options(args: &BuildArgs) -> ugoe_format::WriteOptions {
+    ugoe_format::WriteOptions {
+        compress: args.compress,
+    }
 }
 
 fn kept_reason(reason: ugoe_editor_core::atlas::KeptReason) -> &'static str {
@@ -613,17 +687,57 @@ fn attach_modules(scene: Scene, files: Vec<ugoe_format::ModuleFile>) -> anyhow::
     })
 }
 
-/// `fixture:<name>`、`.ugoe` バンドル (先頭のマジックで判別)、モデル JSON のいずれかを読む。
-fn load_input(input: &str) -> anyhow::Result<Scene> {
+/// 入力として読んだもの: 描けるシーン (モデル JSON・バンドル・フィクスチャ) か、着せ替えのモジュール
+/// (読み込みで単体の検査 `validate_module` を済ませたもの)。
+enum Input {
+    Scene(Box<Scene>),
+    Module,
+}
+
+/// 先頭のマジック `UGOE` を持つファイルの中身。
+enum Container {
+    Bundle(Box<ugoe_format::Bundle>),
+    Module(Box<ugoe_format::ModuleFile>),
+}
+
+/// `.ugoe` バンドルか `.ugoemod` モジュールを読む。どちらも同じコンテナなので、拡張子ではなく中身で判別する
+/// (バンドルとして読んで `MODU` チャンクがあればモジュールとして読み直す)。
+/// モデルやモジュールが検証に通らなければ、各エラーを標準エラーに `error: ...` で書いてから失敗する。
+fn read_container(path: &Path, bytes: &[u8]) -> anyhow::Result<Container> {
+    use ugoe_format::{ChunkTag, FormatError};
+
+    let result = match ugoe_format::read_bundle(bytes) {
+        Ok(bundle) => return Ok(Container::Bundle(Box::new(bundle))),
+        Err(FormatError::UnexpectedChunk(ChunkTag::MODU)) => ugoe_format::read_module(bytes)
+            .map(|file| Container::Module(Box::new(file)))
+            .with_context(|| format!("reading module {}", path.display())),
+        Err(e) => Err(e).with_context(|| format!("reading bundle {}", path.display())),
+    };
+    if let Err(e) = &result
+        && let Some(FormatError::Invalid(errors) | FormatError::InvalidModule(errors)) =
+            e.downcast_ref::<FormatError>()
+    {
+        for error in errors {
+            eprintln!("error: {error}");
+        }
+    }
+    result
+}
+
+/// `fixture:<name>`、`.ugoe` バンドル・`.ugoemod` モジュール (先頭のマジックで判別)、モデル JSON のいずれかを読む。
+fn load(input: &str) -> anyhow::Result<Input> {
     if let Some(name) = input.strip_prefix("fixture:") {
-        return Ok(Scene::from_model(fixtures::by_name(name)?));
+        return Ok(Input::Scene(Box::new(Scene::from_model(
+            fixtures::by_name(name)?,
+        ))));
     }
     let path = Path::new(input);
     let bytes = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
     if bytes.starts_with(&ugoe_format::MAGIC) {
-        let bundle = ugoe_format::read_bundle(&bytes)
-            .with_context(|| format!("reading bundle {}", path.display()))?;
-        return Ok(Scene::from_bundle(bundle));
+        return Ok(match read_container(path, &bytes)? {
+            Container::Bundle(bundle) => Input::Scene(Box::new(Scene::from_bundle(*bundle))),
+            Container::Module(_) => Input::Module,
+        });
     }
     let json = String::from_utf8(bytes).with_context(|| {
         format!(
@@ -633,7 +747,17 @@ fn load_input(input: &str) -> anyhow::Result<Scene> {
     })?;
     let model = ugoe_format::model_from_json(&json)
         .with_context(|| format!("parsing {}", path.display()))?;
-    Ok(Scene::from_model(model))
+    Ok(Input::Scene(Box::new(Scene::from_model(model))))
+}
+
+/// 描けるシーンを読む ([`load`])。モジュールは本体に付けないと描けないのでエラーにする。
+fn load_input(input: &str) -> anyhow::Result<Scene> {
+    match load(input)? {
+        Input::Scene(scene) => Ok(*scene),
+        Input::Module => bail!(
+            "{input} is a dress-up module (.ugoemod), not a model (attach it to a base bundle with `--module`)"
+        ),
+    }
 }
 
 fn info_json(m: &Model) -> serde_json::Value {
