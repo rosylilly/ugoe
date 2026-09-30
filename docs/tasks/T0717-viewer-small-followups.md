@@ -1,11 +1,11 @@
 ---
 id: T0717
 title: ビューア: ドロップと光源の印の細かな残り
-status: todo
+status: in-progress
 milestone: M4
 crates: [apps/viewer, docs]
 depends_on: [T0713, T0714]
-assignee:
+assignee: claude-worker-T0717
 ---
 
 # T0717: ビューア: ドロップと光源の印の細かな残り

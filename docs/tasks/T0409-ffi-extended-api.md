@@ -1,11 +1,11 @@
 ---
 id: T0409
 title: C ABI: 着せ替え・ライティング・当たり判定・トラッキング・読み込みの警告を足す
-status: todo
+status: in-progress
 milestone: M7
 crates: [ugoe-ffi, docs]
 depends_on: [T0401]
-assignee:
+assignee: claude-worker-T0409
 ---
 
 # T0409: C ABI の拡張
