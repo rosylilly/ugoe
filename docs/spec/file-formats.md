@@ -145,8 +145,8 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 - 知らない必須の機能の宣言 (`UnsupportedFeatures`。ほかのチャンクをデコードする前に調べる)
 - `TEXR` の数が `Model.textures` と一致しない、PNG / KTX2 でないテクスチャ
 - `NRML` の数が `normal_map` を持つテクスチャの数と一致しない (`NormalMapCountMismatch`)、PNG / KTX2 でない法線マップ
-- ペイロードのデコード失敗、`schema_version` が新しすぎる
-  (いまの実装は `MODL` 全体をデコードしてから `schema_version` を調べるので、形の変わった新しい版のモデルは `UnsupportedVersion` ではなくデコードのエラーになる。公開仕様は `schema_version` を先に調べることを推奨している)
+- `MODL` の `schema_version` が新しすぎる (`UnsupportedVersion`。ほかのチャンクと `MODL` の残りをデコードする前に調べる。[バージョニング](#バージョニング))
+- ペイロードのデコード失敗
 - `ugoe_model::validate::validate` がエラーを返すモデル (下流の変形・描画で範囲外アクセスを起こさないため、ここで弾く)
 - `PHYS` があり、`ugoe_model::validate::validate_physics` がエラーを返す物理の設定 (`InvalidPhysics`)
 
@@ -194,7 +194,8 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 
 - `MODU` がない、`MODU` `META` `FEAT` が 2 つ以上ある、バンドル用のチャンクがある
 - `TEXR` の数が `Module.textures` と一致しない、`NRML` の数が `normal_map` を持つテクスチャの数と一致しない、PNG / KTX2 でない画像
-- ペイロードのデコード失敗、`schema_version` が新しすぎる
+- `MODU` の `schema_version` が新しすぎる (`UnsupportedVersion`。バンドルと同じく、デコードする前に調べる)
+- ペイロードのデコード失敗
 - `ugoe_model::validate::validate_module` がエラーを返すモジュール (`InvalidModule`)。本体との整合 (スロット・`requires`・
   パラメータ・マスクの参照先) は、本体が決まってから合成 (`ugoe_runtime::compose`) が検査します
 
@@ -307,6 +308,11 @@ FeatureTable {
 - `ugoe_model::SCHEMA_VERSION` はデータのスキーマのバージョンです。互換性を壊す変更をしたら 1 上げます。
 - 読み込み時は `schema_version` を必ず検査します。
   - 現在のバージョンより新しい → `UnsupportedVersion` エラー
+  - `.ugoe` / `.ugoemod` では、機能の宣言 (`FEAT`) を調べた後、どのペイロードもデコードする前に、`MODL` / `MODU` の
+    MessagePack のマップから `schema_version` の値だけを読みます (ほかのキーの値は型に当てはめずに読み飛ばす。入れ子の深さの上限は同じ 128)。
+    形の変わった新しい版のファイルも、デコードのエラーではなく `UnsupportedVersion` になります。
+    展開できない・マップでない・`schema_version` が `u32` として読めないなどで先読みできなければ、ここではエラーにせず、
+    チャンクを順にデコードするところで今までどおりのエラーになります (全体をデコードした後にも `schema_version` を検査します)。
   - 現在のバージョンより古い → マイグレーションを順に適用して現在のバージョンにする (`ugoe-format` の `migrate` モジュール。マイグレーションが必要になったときに作る)
 - 1.0 より前 (M4 まで) は互換性を保証しません。`SCHEMA_VERSION` は 0 のままにし、形式を壊してよいものとします。
 - 1.0 以降は、機能の追加を上の「機能の宣言」で行い、`SCHEMA_VERSION` は互換性を壊す変更 (必須の機能でも表現できない変更) のときだけ上げます。

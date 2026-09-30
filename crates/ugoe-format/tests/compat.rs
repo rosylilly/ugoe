@@ -5,7 +5,7 @@
 //! - `dev/`: 今の書き出し (`write_bundle` / `write_module`) で作ったファイル。今のコードと一致することを検査する。
 //! - `<版>/` (例 `1.0.0/`): リリースの時点の `dev/` の写し。作り直さず、今のランタイムで読めることだけを検査する。
 //! - `future/`: 新しい版で書き出したファイルを模したもの。知らない機能・知らない値・知らないフィールドと
-//!   チャンクを含む。コンテナはこのファイルの [`container`] で、書き出しのコードを使わずに組み立てる。
+//!   チャンク、新しいスキーマの版を含む。コンテナはこのファイルの [`container`] で、書き出しのコードを使わずに組み立てる。
 //!
 //! 資料を作り直すには `UGOE_UPDATE_FIXTURES=1 cargo test -p ugoe-format --test compat` を実行する。
 
@@ -389,12 +389,29 @@ fn future_required(tag: &[u8; 4]) -> Vec<u8> {
     ])
 }
 
+/// スキーマの版を上げたファイル。本体 (`tag`) は今の版では読めない形にしてあり
+/// (`schema_version` は先頭でなく、ほかのフィールドの形も違う)、デコードの前に版で拒否されることを確かめる。
+fn future_schema(tag: &[u8; 4]) -> Vec<u8> {
+    let payload = json!({
+        "meta": { "name": ["a", "newer", "layout"] },
+        "schema_version": ugoe_model::SCHEMA_VERSION + 1,
+        "parameters": { "AngleX": { "range": [-30.0, 30.0] } },
+        "nodes": [{ "id": "Root", "children": [] }],
+    });
+    container(&[
+        (tag, 0, msgpack(&payload)),
+        (b"TEXR", 0, WHITE_PNG.to_vec()),
+    ])
+}
+
 fn future_corpus() -> Vec<(&'static str, Vec<u8>)> {
     vec![
         ("optional-feature.ugoe", future_optional_bundle()),
         ("required-feature.ugoe", future_required(b"MODL")),
+        ("newer-schema.ugoe", future_schema(b"MODL")),
         ("optional-feature.ugoemod", future_optional_module()),
         ("required-feature.ugoemod", future_required(b"MODU")),
+        ("newer-schema.ugoemod", future_schema(b"MODU")),
     ]
 }
 
@@ -641,6 +658,20 @@ fn unknown_required_features_are_rejected() {
     assert_eq!(missing(bundle), [FUTURE_REQUIRED]);
     let module = read_module_with_report(&future_file("required-feature.ugoemod")).map(|_| ());
     assert_eq!(missing(module), [FUTURE_REQUIRED]);
+}
+
+/// スキーマの版が新しいファイルは、形が違っていてもデコードのエラーでなく版のエラーで拒否する。
+#[test]
+fn newer_schema_versions_are_rejected() {
+    let version = |result: Result<(), FormatError>| match result {
+        Err(FormatError::UnsupportedVersion { found, supported }) => (found, supported),
+        other => panic!("unexpected result: {other:?}"),
+    };
+    let expected = (ugoe_model::SCHEMA_VERSION + 1, ugoe_model::SCHEMA_VERSION);
+    let bundle = read_bundle_with_report(&future_file("newer-schema.ugoe")).map(|_| ());
+    assert_eq!(version(bundle), expected);
+    let module = read_module_with_report(&future_file("newer-schema.ugoemod")).map(|_| ());
+    assert_eq!(version(module), expected);
 }
 
 /// 描画可能要素の評価結果を、頂点に許容誤差を付けて比べる。

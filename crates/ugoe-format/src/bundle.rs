@@ -364,12 +364,14 @@ pub fn read_bundle(bytes: &[u8]) -> Result<Bundle, FormatError> {
 /// バイト列からバンドルを読み込み、警告を含む報告も返す。
 ///
 /// コンテナの整合性 (マジック・版・範囲・境界・重なり・必須チャンク) を検査したうえで、
-/// 機能の宣言 (`FEAT`) を調べ、モデルのスキーマバージョンを検査し、最後に
+/// 機能の宣言 (`FEAT`) を調べ、モデルのスキーマバージョンを (どのペイロードもデコードする前に) 検査し、最後に
 /// `ugoe_model::validate::validate` と (物理があれば) `validate_physics` を通す。
 /// 検証に失敗したモデルは下流 (変形・描画) でパニックしうるため、ここで弾く。
 ///
 /// - 知らない必須の機能があれば [`FormatError::UnsupportedFeatures`] で拒否する
 ///   (ペイロードのデコードより先に調べるので、知らない形のデータでもこのエラーになる)。
+/// - `MODL` の `schema_version` が新しすぎれば [`FormatError::UnsupportedVersion`] で拒否する。
+///   `schema_version` だけを先に読むので、形の変わった新しい版のモデルでもこのエラーになる。
 /// - 知らない任意の機能と未知の値は、[`ReadWarning`] として報告して読み込みを続ける。
 /// - 未知のタグのチャンクは読み飛ばす。
 pub fn read_bundle_with_report(bytes: &[u8]) -> Result<(Bundle, ReadReport), FormatError> {
@@ -386,6 +388,7 @@ pub(crate) fn read_with_known(
         declared,
         mut warnings,
     } = read_container(bytes, known)?;
+    let mut body = check_schema_version_first(&entries, bytes, ChunkTag::MODL)?;
 
     let mut model = None;
     let mut physics = None;
@@ -401,7 +404,11 @@ pub(crate) fn read_with_known(
                 if model.is_some() {
                     return Err(FormatError::DuplicateChunk(entry.tag));
                 }
-                let decoded: Model = decode(&entry.payload(bytes)?)?;
+                let payload = match body.take() {
+                    Some(payload) => payload,
+                    None => entry.payload(bytes)?,
+                };
+                let decoded: Model = decode(&payload)?;
                 check_schema_version(decoded.schema_version)?;
                 model = Some(decoded);
             }
@@ -725,6 +732,92 @@ pub(crate) fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, FormatError
     let mut de = rmp_serde::Deserializer::from_read_ref(bytes);
     de.set_max_depth(MAX_DEPTH);
     Ok(T::deserialize(&mut de)?)
+}
+
+/// 本体のチャンク `tag` (`MODL` / `MODU`) の `schema_version` を、どのペイロードもデコードする前に確かめる。
+///
+/// 新しすぎれば [`FormatError::UnsupportedVersion`] を返す。形の変わった新しい版のファイルが、
+/// デコードのエラーでなくこのエラーになるようにするため (`docs/spec/file-formats.md#バージョニング`)。
+/// 表で最初の `tag` のチャンクのペイロード (展開済み) を返すので、二度展開しないようにデコードではこれを使う。
+/// 展開や先読みに失敗したときはここではエラーにせず、チャンクを順に読むところに任せる
+/// (壊れた入力のエラーを今までと変えないため)。
+pub(crate) fn check_schema_version_first<'a>(
+    entries: &[Entry],
+    bytes: &'a [u8],
+    tag: ChunkTag,
+) -> Result<Option<Cow<'a, [u8]>>, FormatError> {
+    let Some(entry) = entries.iter().find(|e| e.tag == tag) else {
+        return Ok(None);
+    };
+    let Ok(payload) = entry.payload(bytes) else {
+        return Ok(None);
+    };
+    if let Some(version) = peek_schema_version(&payload) {
+        check_schema_version(version)?;
+    }
+    Ok(Some(payload))
+}
+
+/// MessagePack のマップから `schema_version` の値だけを読む。
+///
+/// マップのキーを順に見て、`schema_version` 以外の値は型に当てはめずに読み飛ばす
+/// (入れ子の深さの上限は [`decode`] と同じ。`rmp_serde` はマップを最後まで読まないとエラーにするので、
+/// 見つけた後も最後まで読み飛ばす)。マップでない・キーが文字列でない・値が `u32` でない・
+/// 見つからない・途中で壊れているときは `None`。
+pub(crate) fn peek_schema_version(bytes: &[u8]) -> Option<u32> {
+    use serde::de::{self, Deserializer as _, IgnoredAny, MapAccess, Visitor};
+
+    /// マップのキー: `schema_version` かそれ以外か。
+    enum Key {
+        SchemaVersion,
+        Other,
+    }
+
+    impl<'de> de::Deserialize<'de> for Key {
+        fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            struct KeyVisitor;
+            impl Visitor<'_> for KeyVisitor {
+                type Value = Key;
+                fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    f.write_str("a field name")
+                }
+                fn visit_str<E: de::Error>(self, key: &str) -> Result<Key, E> {
+                    Ok(if key == "schema_version" {
+                        Key::SchemaVersion
+                    } else {
+                        Key::Other
+                    })
+                }
+            }
+            deserializer.deserialize_str(KeyVisitor)
+        }
+    }
+
+    struct VersionVisitor;
+    impl<'de> Visitor<'de> for VersionVisitor {
+        type Value = Option<u32>;
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str("a map with schema_version")
+        }
+        fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Option<u32>, A::Error> {
+            let mut version = None;
+            while let Some(key) = map.next_key::<Key>()? {
+                match key {
+                    Key::SchemaVersion if version.is_none() => {
+                        version = Some(map.next_value::<u32>()?);
+                    }
+                    _ => {
+                        map.next_value::<IgnoredAny>()?;
+                    }
+                }
+            }
+            Ok(version)
+        }
+    }
+
+    let mut de = rmp_serde::Deserializer::from_read_ref(bytes);
+    de.set_max_depth(MAX_DEPTH);
+    de.deserialize_map(VersionVisitor).ok().flatten()
 }
 
 #[cfg(test)]
@@ -1343,6 +1436,93 @@ pub(crate) mod tests {
         assert_err(&assemble(&[model_chunk(&model), texture_chunk()]), |e| {
             matches!(e, FormatError::UnsupportedVersion { .. })
         });
+    }
+
+    #[test]
+    fn rejects_newer_schema_version_before_decoding() {
+        use serde_json::json;
+        // 新しい版で形が変わり、今の `Model` としてはデコードできないモデル。
+        let newer = json!({
+            "schema_version": ugoe_model::SCHEMA_VERSION + 1,
+            "meta": "a newer layout",
+            "nodes": [{ "id": "Root" }],
+        });
+        assert_err(
+            &assemble(&[
+                (ChunkTag::MODL, 0, encode(&newer).unwrap()),
+                texture_chunk(),
+            ]),
+            |e| {
+                matches!(
+                    e,
+                    FormatError::UnsupportedVersion { found, supported }
+                        if *found == ugoe_model::SCHEMA_VERSION + 1
+                            && *supported == ugoe_model::SCHEMA_VERSION
+                )
+            },
+        );
+        // 表で先にある別のチャンク (形の変わった物理) もデコードしない。
+        assert_err(
+            &assemble(&[
+                (ChunkTag::PHYS, 0, encode(&json!({ "rigs": 1 })).unwrap()),
+                (ChunkTag::MODL, 0, encode(&newer).unwrap()),
+                texture_chunk(),
+            ]),
+            |e| matches!(e, FormatError::UnsupportedVersion { .. }),
+        );
+        // 同じ版なら今までどおりデコードのエラー。
+        let same =
+            json!({ "schema_version": ugoe_model::SCHEMA_VERSION, "meta": "a newer layout" });
+        assert_err(
+            &assemble(&[(ChunkTag::MODL, 0, encode(&same).unwrap()), texture_chunk()]),
+            |e| matches!(e, FormatError::MsgPackDecode(_)),
+        );
+    }
+
+    #[test]
+    fn peeks_schema_version() {
+        use serde_json::json;
+        let peek = |value: serde_json::Value| peek_schema_version(&encode(&value).unwrap());
+        let model = ugoe_model::fixtures::single_quad();
+        assert_eq!(peek_schema_version(&encode(&model).unwrap()), Some(0));
+        // 前にあるフィールドは中身を見ずに読み飛ばす。
+        assert_eq!(
+            peek(json!({ "a": { "b": [1, 2, { "c": null }] }, "schema_version": 7, "z": 1 })),
+            Some(7)
+        );
+        // 読めないものは None (全体のデコードに任せる)。
+        assert_eq!(peek(json!({ "meta": {} })), None);
+        assert_eq!(peek(json!([0])), None);
+        assert_eq!(peek(json!(0)), None);
+        assert_eq!(peek(json!({ "schema_version": "1" })), None);
+        assert_eq!(peek(json!({ "schema_version": -1 })), None);
+        assert_eq!(
+            peek(json!({ "schema_version": u64::from(u32::MAX) + 1 })),
+            None
+        );
+        assert_eq!(peek_schema_version(&[]), None);
+        assert_eq!(peek_schema_version(&[0xc1]), None);
+        // キーが文字列でない。
+        let mut int_key = vec![0x81, 0x00, 0x00];
+        assert_eq!(peek_schema_version(&int_key), None);
+        // 値の途中で切れている。
+        int_key = encode(&json!({ "schema_version": 70000 })).unwrap();
+        int_key.pop();
+        assert_eq!(peek_schema_version(&int_key), None);
+        // 深すぎる入れ子はスタックを使い切らずに None。
+        let mut deep = vec![0x82, 0xa1, b'a'];
+        deep.extend(std::iter::repeat_n(0x91, 100_000));
+        deep.push(0xc0);
+        deep.extend(encode(&json!("schema_version")).unwrap());
+        deep.push(0x05);
+        assert_eq!(peek_schema_version(&deep), None);
+        // 上限より浅ければ読める。
+        let mut shallow = vec![0x82, 0xa1, b'a'];
+        shallow.extend(std::iter::repeat_n(0x91, 100));
+        shallow.push(0xc0);
+        shallow.extend(encode(&json!("schema_version")).unwrap());
+        shallow.push(0x05);
+        assert_eq!(peek_schema_version(&shallow), Some(5));
     }
 
     #[test]

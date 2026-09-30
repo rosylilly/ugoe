@@ -201,12 +201,17 @@ feature check is designed to happen before any payload is decoded:
 3. **Feature declarations.** If there is more than one `FEAT`, the file is invalid. Decode `FEAT` and
    apply the [feature check](#reading-feature-declarations). An unknown required feature rejects the
    file.
-4. **Chunks.** Walk the table in order. Skip unknown chunks. Reject chunks that are not allowed in
+4. **Schema version.** Reject a `MODL` or `MODU` whose `schema_version` is greater than the reader
+   supports. Readers SHOULD read `schema_version` of the first `MODL` or `MODU` in table order before
+   decoding any other payload or the rest of that payload, so that a file from a newer, incompatible
+   version reports this error rather than a decoding error. The value of the `schema_version` key can
+   be read from the MessagePack map by skipping the values of the other keys without interpreting
+   them (within the nesting limit the reader applies). If it cannot be read this way, the reader
+   continues and the next step reports the problem; the reader MUST still check `schema_version`
+   after decoding.
+5. **Chunks.** Walk the table in order. Skip unknown chunks. Reject chunks that are not allowed in
    this kind of file, and duplicates of chunks that may appear at most once. Decompress and decode
    the others. A payload that fails to decompress or decode is an error.
-5. **Schema version.** Reject a `MODL` or `MODU` whose `schema_version` is greater than the reader
-   supports. Readers SHOULD read `schema_version` before decoding the rest of the payload, so that a
-   file from a newer, incompatible version reports this error rather than a decoding error.
 6. **Counts.** The required chunk (`MODL` or `MODU`) is present; the numbers of `TEXR` and `NRML`
    chunks match the textures ([Textures and normal maps](#textures-and-normal-maps)); every image has
    a PNG or KTX2 signature.

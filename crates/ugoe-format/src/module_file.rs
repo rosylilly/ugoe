@@ -11,8 +11,8 @@ use ugoe_model::module::Module;
 
 use crate::bundle::{
     ChunkTag, ChunkWriter, Container, ReadReport, ReadWarning, TextureData, WriteOptions,
-    check_normal_map_count, check_texture_count, decode, encode, normal_map_of, read_container,
-    read_normal_map, read_texture,
+    check_normal_map_count, check_schema_version_first, check_texture_count, decode, encode,
+    normal_map_of, read_container, read_normal_map, read_texture,
 };
 use crate::features::{self, FeatureDecl};
 use crate::{FormatError, check_schema_version};
@@ -93,7 +93,7 @@ pub fn read_module(bytes: &[u8]) -> Result<ModuleFile, FormatError> {
 /// バイト列からモジュールを読み込み、警告を含む報告も返す。
 ///
 /// コンテナと機能の宣言の検査はバンドル ([`crate::read_bundle_with_report`]) と同じ。
-/// そのうえで、スキーマバージョンを検査し、`ugoe_model::validate::validate_module` を通す
+/// そのうえで、スキーマバージョンを (バンドルと同じく `MODU` をデコードする前に) 検査し、`ugoe_model::validate::validate_module` を通す
 /// (エラーは [`FormatError::InvalidModule`])。本体との整合 (スロット・パラメータ・マスクの参照先) は
 /// 合成 (`ugoe_runtime::compose`) が検査する。
 ///
@@ -114,6 +114,7 @@ pub(crate) fn read_with_known(
         declared,
         mut warnings,
     } = read_container(bytes, known)?;
+    let mut body = check_schema_version_first(&entries, bytes, ChunkTag::MODU)?;
 
     let mut module = None;
     let mut meta = None;
@@ -126,7 +127,11 @@ pub(crate) fn read_with_known(
                 if module.is_some() {
                     return Err(FormatError::DuplicateChunk(entry.tag));
                 }
-                let decoded: Module = decode(&entry.payload(bytes)?)?;
+                let payload = match body.take() {
+                    Some(payload) => payload,
+                    None => entry.payload(bytes)?,
+                };
+                let decoded: Module = decode(&payload)?;
                 check_schema_version(decoded.schema_version)?;
                 module = Some(decoded);
             }
