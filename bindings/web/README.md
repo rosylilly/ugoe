@@ -349,7 +349,7 @@ npm への公開は、パッケージを使う人 (このリポジトリを持�
 | コマンド | 内容 |
 | --- | --- |
 | `pnpm --filter @ugoe/runtime build` | = `just web-runtime`。wasm のビルド (`src/wasm/` に生成、gitignore 済み)・`tsc`・`dist/` への出力 |
-| `pnpm --filter @ugoe/runtime check` | 型検査。`src/wasm/` が無ければ手書きの型 `stub/ugoe_wasm.d.ts` で検査する |
+| `pnpm --filter @ugoe/runtime check` | 型検査。`src/wasm/` に生成物 (`ugoe_wasm_bg.wasm`) が無ければ、手書きの型 `stub/ugoe_wasm.d.ts` を `src/wasm/` に写し直して検査する (写しは毎回作り直すので、スタブを直せばそのまま反映される) |
 | `pnpm --filter @ugoe/runtime test` | 属性の解釈などの単体テスト (Vitest) |
 
 - `crates/ugoe-wasm` の公開 API を変えたら、`stub/ugoe_wasm.d.ts` を生成物 (`src/wasm/ugoe_wasm.d.ts`) から作り直します。
