@@ -92,8 +92,48 @@ function track() {
 - `trackingFromFaceLandmarker(result, { mirrored: true })`: トラッカーに**左右反転した映像**を入れたときに使います
   (左右の名前を入れ替え、ヨーとロールの符号を反転する)。表示だけを反転しているなら不要です。変換は `mirrorTracking` と
   `headRotationFromMatrix` (顔の変換行列 → 頭の回転) としても使えます。
-- 平滑化 (揺れを抑える)・キャリブレーション (利用者の中立の顔を差し引く)・顔を見失ったときの扱いはホストが行います。
-- 見本 (`examples/basic`) の「tracking (合成の入力)」は、時間の関数で作った入力を毎フレーム渡します (カメラを使わない)。
+- 平滑化 (揺れを抑える)・キャリブレーション (利用者の中立の顔を差し引く)・顔を見失ったときの扱いはホストが決めます。
+  そのための補助 (依存なし・使わなくてよい) を下の「平滑化とキャリブレーション」に置きました。
+- 見本 (`examples/basic`) の「tracking (合成の入力)」は、時間の関数で作った入力に揺れを足し、`TrackingFilter` で平滑化して
+  毎フレーム渡します (カメラを使わない。`?tracking-filter=off` で平滑化しない)。
+
+### 平滑化とキャリブレーション
+
+```js
+import { TrackingFilter, calibrateTracking, captureNeutral, trackingFromFaceLandmarker } from "@ugoe/runtime";
+
+const filter = new TrackingFilter(); // 値ごとの One Euro フィルタ
+let neutral = null; // 「正面を向いて力を抜いてください」の間に集めた入力から作る
+let calibrating = true;
+const frames = [];
+
+function track() {
+  const now = performance.now();
+  const input = trackingFromFaceLandmarker(landmarker.detectForVideo(video, now));
+  if (!input) {
+    filter.reset(); // 顔を見失った: フィルタを忘れる (最後の値を保つ。中立に戻すなら avatar.clearTracking())
+  } else if (calibrating) {
+    frames.push(input);
+  } else {
+    avatar.setTracking(filter.apply(neutral ? calibrateTracking(input, neutral) : input, now));
+  }
+  requestAnimationFrame(track);
+}
+// キャリブレーションを終えるとき (数秒後など)
+neutral = captureNeutral(frames); // 値ごとの平均
+calibrating = false;
+```
+
+- `new TrackingFilter(options?)` / `apply(input, timeMs)` / `reset()`: 値ごとの One Euro フィルタ
+  (止まっているときはカットオフを下げて揺れを抑え、速く動くほど上げて遅れを減らす。Casiez ほか, CHI 2012)。
+  回転 (度) と 0〜1 の値は単位が違うので、`{ rotation: { minCutoff, beta, derivativeCutoff }, blendshapes: {...} }` を別に決めます
+  (既定は回転 `minCutoff: 1, beta: 0.05`、0〜1 の値 `minCutoff: 1, beta: 2`、`derivativeCutoff` はどちらも 1)。
+  入力に無い値 (ブレンドシェイプの名前・体の値) のフィルタは忘れ、次に来たときはその値から始めます。
+- `captureNeutral(inputs)`: 中立の入力 (1 つか配列。配列なら値ごとに平均) から基準を作ります。
+- `calibrateTracking(input, neutral)`: 頭と体の回転は中立の角度を引きます。ブレンドシェイプは中立の値を 0 として
+  `(v − n) / (1 − n)` に引き伸ばします (力を抜いても少し開く口などを 0 にする)。体のピッチと肩の上下は、カメラの高さや体格で
+  基準が大きく変わるので、中立にその値が無ければ渡しません。
+- これらは `packages/face-tracking` (GPL) とは別に、論文の定義から書いたものです (MIT。ADR 0025)。
 
 ## `WebPuppet` を直接使う
 
@@ -223,19 +263,42 @@ npm への公開は、パッケージを使う人 (このリポジトリを持�
 
 | | 大きさ | gzip (-9) | brotli |
 | --- | --- | --- | --- |
-| 前 (`just wasm` と同じ: release、lto = "thin") | 7,920,320 | 1,974,207 | 1,310,795 |
-| いま | 4,452,501 | 1,300,532 | 964,480 |
+| 前 (`just wasm` と同じ: release、lto = "thin"。T0410 の前) | 7,920,320 | 1,974,207 | 1,310,795 |
+| **いま** (T0410: 下のプロファイルと名前の節を外す) | **4,455,303** | **1,301,592** | **964,869** |
 
-(バイト。T0410 の時点。gzip と brotli は Node の zlib で測った)
+(バイト。gzip と brotli は Node の zlib で測った。「いま」は T0413 の時点の main で測り直した値)
 
 - cargo のプロファイル `web-dist` を `--config` で定義して使います: `opt-level = "z"`・`lto = "fat"`・`codegen-units = 1`。
   ただし毎フレーム動くクレート (`ugoe-runtime`・`ugoe-physics`・`ugoe-motion`・`ugoe-render`・`ugoe`・`ugoe-core`・`glam`) は
-  `opt-level = 3` に戻します。すべてを `"z"` にすると 4,354,077 バイト (gzip 1,250,656) とさらに小さいものの、
+  `opt-level = 3` に戻します。すべてを `"z"` にすると 4,354,077 バイト (gzip 1,250,656。T0410 の時点) とさらに小さいものの、
   CPU の評価 (`update` と変形) が約 2.5 倍遅くなったためです (見本のアバターで 1 フレーム約 19µs → 48µs。ヘッドレスの Chrome)。
 - wasm-bindgen の `--remove-name-section` で関数名の節 (約 1.8MB。パニックのスタックトレースに名前が出るだけ) を外します。
 - **wasm-opt (binaryen) は使いません。** `-Oz` で生の大きさは約 1 割減りますが、gzip した大きさはかえって約 1 割増えました。
-- 残りの大部分は MessagePack の読み込み (`rmp_serde`、約 0.8MB)・naga (シェーダの変換、約 0.55MB)・wgpu です。
-  機能の切り分けで小さくするなら、まず `rmp_serde` の読み込みのコード (モデルの型ごとの展開) を見直すのがよさそうです (未着手)。
+- **MessagePack の読み込みは `rmp_serde` のまま (T0413 で試して入れなかった)**: `rmp_serde` の読み込みは型ごと (visitor ごと) に
+  マーカーの解釈まで展開され、約 1.15MB (モデルの型の `Deserialize` を含む) を占めている。T0413 で、読み込みの結果を `rmp_serde` と同じに保つ
+  自前の `Deserializer` を ugoe-format に書いて試すと、約 0.63MB になり全体で 508KB (生で −11%) 減ったが、繰り返しの多いコードだったので
+  gzip では 32KB (−2.4%)、brotli では 17KB (−1.7%) しか減らなかった。読み込みはネイティブで約 0.39ms → 約 0.46ms (見本のアバターの `MODL` 122KB)。
+  外から来る入力を読む部分を自前で持つ負担に対して、転送の大きさの効果が小さいので入れなかった (利用者の判断)。
+- 残りの大部分は MessagePack の読み込み (約 1.15MB)・naga (シェーダの変換、約 0.7MB)・wgpu (約 0.77MB)・
+  `serde_json` (約 0.37MB。表情・モーション・エフェクトなどの JSON の読み書き) です。
+
+### エディタとビューアの wasm は今のまま (T0413)
+
+エディタとビューアの wasm (`just wasm`。release・lto = "thin"・関数名の節あり) には、このプロファイルを使わないことにしました。
+
+| T0413 の時点 | 大きさ | gzip (-9) | brotli |
+| --- | --- | --- | --- |
+| `just wasm` (release、名前あり) | 7,922,205 | 1,975,421 | 1,312,668 |
+| release、名前なし | 6,092,526 | 1,760,368 | 1,194,868 |
+| `web-dist`、名前あり | 8,694,495 | 1,732,401 | 1,170,533 |
+| `web-dist`、名前なし (このパッケージ) | 4,455,303 | 1,301,592 | 964,869 |
+
+- 両方ともアプリ (Tauri) の中の wasm で、ネットワークを通らない。小さくして効くのはコンパイルの時間だが、
+  V8 (Node 26) の `WebAssembly.compile` は release で約 5.9ms、`web-dist` で約 4.9ms と、どちらも小さい。
+- 関数名の節は、開発中のパニックのスタックトレースに要る。名前を残すと `web-dist` でも release より大きい (名前が長くなる)。
+- `lto = "fat"`・`codegen-units = 1` は、`ugoe-runtime` を触った後の作り直しが約 4.1 秒 → 約 7.3 秒と遅くなる (`just wasm` は開発中に何度も回す)。
+- 評価の速さは変わらない (release はすべて `opt-level = 3`。`web-dist` も毎フレーム動くクレートは 3)。
+- ビューアをブラウザ版として Web に置くようになったら、そのビルドには `web-dist` (`scripts/build.mjs` の `PROFILE_CONFIG`・`HOT_CRATES`) を使う。
 
 ## 開発
 

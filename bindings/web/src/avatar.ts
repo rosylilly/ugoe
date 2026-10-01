@@ -208,7 +208,8 @@ export class UgoeAvatarElement extends BaseElement {
    *
    * 入力は次のフレームから、モーションの後・表情と目パチの前にパラメータへ書き込まれる (`paused` の間も反映する)。
    * トラッキングの間はモデルの目パチを止める。モデルを読み直したり作り直したりしても、最後の入力を渡し直す。
-   * 平滑化・キャリブレーション・左右反転の直しはホストが行う (MediaPipe の結果は `trackingFromFaceLandmarker` で変換できる)。
+   * 平滑化・キャリブレーション・左右反転の直しはホストが行う (MediaPipe の結果は `trackingFromFaceLandmarker` で変換でき、
+   * 平滑化とキャリブレーションには `TrackingFilter`・`captureNeutral`・`calibrateTracking` を使える)。
    */
   setTracking(input: TrackingInput | null): void {
     if (input === null) {

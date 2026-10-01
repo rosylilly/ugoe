@@ -62,3 +62,21 @@ ADR 0017 で、Web 向けの配布物を npm の `@ugoe/runtime` (wasm + TypeScr
 | MIT で書き直したトラッカーを同梱する (`packages/face-tracking` 相当) | 属性 1 つでカメラから動かせる | `@mediapipe/tasks-vision` (Apache-2.0。寛容なので可) が実行時の依存になり、wasm (約 10MB) とモデル (約 4MB) の置き場所・CDN・カメラの許可の UI まで決める必要がある。平滑化・キャリブレーションを含めると GPL の実装を写さずに書き直す量が大きい |
 
 トラッカーの同梱は、要望があれば別のパッケージ (`bindings/web` の中の `@ugoe/tracking` など、MIT) として検討する。
+
+## 追記: 平滑化とキャリブレーション (T0413)
+
+平滑化とキャリブレーションの補助を、**`@ugoe/runtime` の中に** MIT で置いた (`bindings/web/src/tracking-filter.ts`)。
+トラッカーは引き続き持たない (上の決定のまま)。
+
+- `TrackingFilter` (値ごとの One Euro フィルタ。途切れた値のフィルタは忘れる・`reset()`)、`captureNeutral` / `calibrateTracking`
+  (中立の回転を引き、ブレンドシェイプは中立を 0 として引き伸ばす。体のピッチと肩の上下は中立が無ければ渡さない)。
+- 使うかはホストが決める (`setTracking` は今までどおり、渡された入力をそのまま使う)。`docs/spec/avatar-profile.md#実装の範囲` の
+  「アプリが行うこと」は変えていない (これはアプリが使える補助)。
+- GPL の `packages/face-tracking` は**読まずに**、One Euro フィルタの論文 (Casiez, Roussel, Vogel, CHI 2012。
+  https://gery.casiez.net/1euro/) の定義から書いた。
+
+| 案 | 利点 | 欠点 |
+| --- | --- | --- |
+| **`@ugoe/runtime` に入れる (採用)** | 依存が無く小さい (数 KB の TS。使わなければバンドラが落とす)。変換 (`trackingFromFaceLandmarker`) と同じ場所で見つけやすい | パッケージの API が増える |
+| 別のパッケージ (`@ugoe/tracking`) にする | ランタイムと別に版を上げられる | 数十行のためにパッケージ・リリースの手順が増える。MediaPipe を同梱するなら別パッケージにする (上の決定のとおり) |
+| ホストに任せたまま | API が増えない | 利用者ごとに同じフィルタを書き直す。GPL の実装は写せない |

@@ -109,7 +109,7 @@
     </main>
 
     <script type="module">
-      import { createPuppet, fetchModel, initRuntime, version } from "@ugoe/runtime";
+      import { createPuppet, fetchModel, initRuntime, TrackingFilter, version } from "@ugoe/runtime";
 
       const query = new URLSearchParams(location.search);
       const backend = query.get("backend") ?? "auto";
@@ -147,20 +147,25 @@
         .getElementById("paused")
         .addEventListener("change", (e) => (avatar.paused = e.target.checked));
 
-      // フェイストラッキングの入力を渡す口 (setTracking)。ここでは時間の関数で作った合成の入力を毎フレーム渡す。
+      // フェイストラッキングの入力を渡す口 (setTracking)。ここでは時間の関数で作った合成の入力に揺れを足し、
+      // TrackingFilter で平滑化して毎フレーム渡す (?tracking-filter=off で平滑化しない)。
       // 本物のカメラでは MediaPipe の結果を trackingFromFaceLandmarker で変換して渡す (README の「フェイストラッキング」)
       let trackingFrame = 0;
+      const trackingFilter = new TrackingFilter();
+      const smooth = query.get("tracking-filter") !== "off";
       document.getElementById("tracking").addEventListener("change", (e) => {
         cancelAnimationFrame(trackingFrame);
+        trackingFilter.reset();
         if (!e.target.checked) {
           avatar.clearTracking();
           return;
         }
         const start = performance.now();
+        const jitter = (amount) => (Math.random() - 0.5) * 2 * amount;
         const feed = (now) => {
           const t = (now - start) / 1000;
           const blink = t % 3 < 0.15 ? 1 : 0;
-          avatar.setTracking({
+          const input = {
             blendshapes: {
               jawOpen: 0.5 + 0.5 * Math.sin(t * 3),
               eyeBlinkLeft: blink,
@@ -168,8 +173,13 @@
               mouthSmileLeft: 0.6,
               mouthSmileRight: 0.6,
             },
-            head: { yaw: 20 * Math.sin(t), pitch: 10 * Math.sin(t * 0.7), roll: 8 * Math.sin(t * 1.3) },
-          });
+            head: {
+              yaw: 20 * Math.sin(t) + jitter(3),
+              pitch: 10 * Math.sin(t * 0.7) + jitter(3),
+              roll: 8 * Math.sin(t * 1.3) + jitter(3),
+            },
+          };
+          avatar.setTracking(smooth ? trackingFilter.apply(input, now) : input);
           trackingFrame = requestAnimationFrame(feed);
         };
         trackingFrame = requestAnimationFrame(feed);
