@@ -1061,6 +1061,37 @@ UgoeResult ugoe_puppet_tracking_targets(const struct UgoePuppet *puppet,
                                         size_t capacity,
                                         size_t *out_count);
 
+// トラッキング中に、再生中のモーションが動かすパラメータではモーションを優先するか (既定は `false`。T0722)。
+//
+// `true` の間、`ugoe_puppet_update` はトラッキングの値をモーションの前に書き込み、モーションがフェードの重みで
+// その上に重なる。モーションが動かさないパラメータと `ugoe_puppet_set_tracking_kept` で選んだパラメータは
+// トラッキングの値のまま。`false` なら仕様の適用順 (モーション → トラッキング)
+// (`docs/spec/motion.md#トラッキング中のモーションの優先`)。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet` を指すこと。
+UgoeResult ugoe_puppet_set_motion_over_tracking(struct UgoePuppet *puppet,
+                                                bool enabled);
+
+// `ugoe_puppet_set_motion_over_tracking` で設定した値を `*out` に書く。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
+UgoeResult ugoe_puppet_motion_over_tracking(const struct UgoePuppet *puppet, bool *out);
+
+// モーションを優先しても (`ugoe_puppet_set_motion_over_tracking`)、トラッキングのままにするパラメータを、
+// パラメータの番号 `indices` (`count` 個) で設定する (目は除く、など。既定は無し)。`count` が 0 なら無しに戻す
+// (`indices` は NULL でもよい)。範囲外の番号があれば `UGOE_ERROR_OUT_OF_RANGE` を返し、何も変えない。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`indices` は `count` 個の `uint32_t` を読める領域を指すこと。
+UgoeResult ugoe_puppet_set_tracking_kept(struct UgoePuppet *puppet,
+                                         const uint32_t *indices,
+                                         size_t count);
+
 // `index` 番目の ARKit のブレンドシェイプの名前 (UTF-8、NUL 終端。`"eyeBlinkLeft"` など)。
 // ポインタはずっと有効。
 //

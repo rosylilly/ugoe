@@ -490,10 +490,26 @@ impl TrackingMap {
     /// `input` から計算した値を `parameters` に書き込む (値域にクランプする)。
     /// 対応のないパラメータには触らない。計算した値が有限値でなければ、そのパラメータには書き込まない。
     pub fn apply(&self, input: &TrackingInput, parameters: &mut ParameterValues) {
+        self.apply_where(input, parameters, |_| true);
+    }
+
+    /// [`Self::apply`] と同じだが、`filter` が `true` を返すパラメータにだけ書き込む (T0722。
+    /// `Puppet` がモーションの前と後に分けて書き込むため)。
+    pub fn apply_where(
+        &self,
+        input: &TrackingInput,
+        parameters: &mut ParameterValues,
+        mut filter: impl FnMut(ParamIndex) -> bool,
+    ) {
         for (formula, index) in &self.standard {
-            write(parameters, *index, formula.eval(input));
+            if filter(*index) {
+                write(parameters, *index, formula.eval(input));
+            }
         }
         for (index, start, end) in &self.groups {
+            if !filter(*index) {
+                continue;
+            }
             let value = self.overrides[*start..*end]
                 .iter()
                 .map(|m| m.source.eval(input) * m.scale + m.offset)
@@ -915,6 +931,23 @@ mod tests {
         assert_eq!(value(&params, standard::MOUTH_X), 1.0);
         // 対応のないパラメータ (呼吸) には触らない。
         assert_eq!(value(&params, standard::BREATH), 0.0);
+    }
+
+    #[test]
+    fn apply_where_writes_only_the_filtered_parameters() {
+        let mut params = params();
+        let map = TrackingMap::new(None, &params);
+        let mut input = input(&[("eyeBlinkLeft", 0.75)]);
+        input.head.yaw = 20.0;
+        let eye = params.index_of(standard::EYE_L_OPEN).unwrap();
+        map.apply_where(&input, &mut params, |i| i == eye);
+        assert!(close(value(&params, standard::EYE_L_OPEN), 0.25));
+        assert_eq!(value(&params, standard::ANGLE_X), 0.0);
+        // 残りを書けば `apply` と同じ。
+        map.apply_where(&input, &mut params, |i| i != eye);
+        let mut all = self::params();
+        map.apply(&input, &mut all);
+        assert_eq!(params.as_slice(), all.as_slice());
     }
 
     #[test]

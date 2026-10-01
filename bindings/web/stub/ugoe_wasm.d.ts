@@ -89,6 +89,7 @@ export class WebPuppet {
     shoulder_left?: number | null,
     shoulder_right?: number | null,
   ): void;
+  set_tracking_kept(ids: string[]): void;
   set_view(zoom: number, pan_x: number, pan_y: number): void;
   slots_json(): string;
   show_pose(part: string): boolean;
@@ -99,6 +100,7 @@ export class WebPuppet {
   stop_expression(name: string): void;
   stop_expressions(): void;
   stop_motions(): void;
+  tracking_kept(): string[];
   tracking_parameter_ids(): string[];
   unload(): void;
   unload_module(name: string): void;

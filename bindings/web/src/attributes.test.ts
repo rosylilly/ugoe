@@ -3,9 +3,22 @@ import {
   formatParameters,
   isBundle,
   parseBackend,
+  parseIdList,
   parseMotionPriority,
   parseParameters,
 } from "./attributes.js";
+
+describe("parseIdList", () => {
+  it("splits ids on spaces, commas and semicolons and drops duplicates", () => {
+    expect(parseIdList(" EyeLOpen, EyeROpen;EyeLOpen\n MouthOpenY ")).toEqual([
+      "EyeLOpen",
+      "EyeROpen",
+      "MouthOpenY",
+    ]);
+    expect(parseIdList("")).toEqual([]);
+    expect(parseIdList(null)).toEqual([]);
+  });
+});
 
 describe("parseParameters", () => {
   it("reads id and value pairs separated by semicolons or newlines", () => {

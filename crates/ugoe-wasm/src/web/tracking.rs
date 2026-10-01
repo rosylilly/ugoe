@@ -62,16 +62,34 @@ impl WebPuppet {
 
     /// トラッキング中に、再生中のモーションが動かすパラメータではモーションの値を優先するか (T0721)。既定は `false`。
     ///
-    /// `true` なら `update` でトラッキングの値をモーションより先に (ホストが書いた値として) 入れるので、モーションが
-    /// 動かすパラメータではモーションの値がトラッキングの上に重なる。ほかのパラメータはトラッキングの値のまま。
-    /// `false` なら仕様の適用順 (モーション → トラッキング) のまま (`docs/spec/motion.md#フレーム内の適用順`)。
+    /// `true` なら `update` でトラッキングの値をモーションより先に書き込むので、モーションが動かすパラメータでは
+    /// モーションの値がトラッキングの上に (フェードの重みで) 重なる。ほかのパラメータと `set_tracking_kept` で
+    /// 選んだパラメータはトラッキングの値のまま。`false` なら仕様の適用順 (モーション → トラッキング) のまま
+    /// (`Puppet::set_motion_over_tracking`、`docs/spec/motion.md#トラッキング中のモーションの優先`)。
     /// モデルを読み直しても保つ。
     pub fn set_motion_over_tracking(&mut self, enabled: bool) {
         self.motion_over_tracking = enabled;
+        if let Some(puppet) = &mut self.puppet {
+            puppet.set_motion_over_tracking(enabled);
+        }
     }
 
     pub fn is_motion_over_tracking(&self) -> bool {
         self.motion_over_tracking
+    }
+
+    /// モーションを優先しても (`set_motion_over_tracking(true)`)、トラッキングのままにするパラメータの ID (T0722)。
+    /// 目は除く、などに使う。既定は空 (すべてモーションを優先)。モデルに無い ID は無視する。モデルを読み直しても保つ。
+    pub fn set_tracking_kept(&mut self, ids: Vec<String>) {
+        if let Some(puppet) = &mut self.puppet {
+            puppet.set_tracking_kept(ids.iter().cloned());
+        }
+        self.tracking_kept = ids;
+    }
+
+    /// `set_tracking_kept` で設定した ID (設定した順)。
+    pub fn tracking_kept(&self) -> Vec<String> {
+        self.tracking_kept.clone()
     }
 
     /// トラッキングが書き込むパラメータの ID (モデルの定義順。`avatar.tracking` の上書きを反映する)。

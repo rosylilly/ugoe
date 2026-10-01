@@ -153,6 +153,87 @@ pub unsafe extern "C" fn ugoe_puppet_tracking_targets(
     })
 }
 
+/// トラッキング中に、再生中のモーションが動かすパラメータではモーションを優先するか (既定は `false`。T0722)。
+///
+/// `true` の間、`ugoe_puppet_update` はトラッキングの値をモーションの前に書き込み、モーションがフェードの重みで
+/// その上に重なる。モーションが動かさないパラメータと `ugoe_puppet_set_tracking_kept` で選んだパラメータは
+/// トラッキングの値のまま。`false` なら仕様の適用順 (モーション → トラッキング)
+/// (`docs/spec/motion.md#トラッキング中のモーションの優先`)。
+///
+/// # Safety
+///
+/// `puppet` は有効な `UgoePuppet` を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_puppet_set_motion_over_tracking(
+    puppet: *mut UgoePuppet,
+    enabled: bool,
+) -> UgoeResult {
+    guard(|| {
+        // SAFETY: 呼び出し側の約束。
+        unsafe { puppet_mut(puppet)? }
+            .puppet
+            .set_motion_over_tracking(enabled);
+        Ok(())
+    })
+}
+
+/// `ugoe_puppet_set_motion_over_tracking` で設定した値を `*out` に書く。
+///
+/// # Safety
+///
+/// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_puppet_motion_over_tracking(
+    puppet: *const UgoePuppet,
+    out: *mut bool,
+) -> UgoeResult {
+    guard(|| {
+        // SAFETY: 呼び出し側の約束。
+        let enabled = unsafe { puppet_ref(puppet)? }.puppet.motion_over_tracking();
+        // SAFETY: 呼び出し側の約束。
+        unsafe { write(out, "out", enabled) }
+    })
+}
+
+/// モーションを優先しても (`ugoe_puppet_set_motion_over_tracking`)、トラッキングのままにするパラメータを、
+/// パラメータの番号 `indices` (`count` 個) で設定する (目は除く、など。既定は無し)。`count` が 0 なら無しに戻す
+/// (`indices` は NULL でもよい)。範囲外の番号があれば `UGOE_ERROR_OUT_OF_RANGE` を返し、何も変えない。
+///
+/// # Safety
+///
+/// `puppet` は有効な `UgoePuppet`、`indices` は `count` 個の `uint32_t` を読める領域を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_puppet_set_tracking_kept(
+    puppet: *mut UgoePuppet,
+    indices: *const u32,
+    count: usize,
+) -> UgoeResult {
+    guard(|| {
+        // SAFETY: 呼び出し側の約束。
+        let p = unsafe { puppet_mut(puppet)? };
+        let indices: &[u32] = if count == 0 {
+            &[]
+        } else if indices.is_null() {
+            return Err(Error::null("indices"));
+        } else {
+            // SAFETY: 呼び出し側の約束で、`indices` は `count` 個を読める。
+            unsafe { std::slice::from_raw_parts(indices, count) }
+        };
+        let parameters = &p.puppet.instance().compiled().model().parameters;
+        let ids = indices
+            .iter()
+            .map(|&i| {
+                parameters
+                    .get(i as usize)
+                    .map(|param| param.id.as_str().to_owned())
+                    .ok_or_else(|| Error::out_of_range("parameter", i as usize, parameters.len()))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        p.puppet.set_tracking_kept(ids);
+        Ok(())
+    })
+}
+
 fn blend_shape_names() -> &'static [CString] {
     static NAMES: OnceLock<Vec<CString>> = OnceLock::new();
     NAMES.get_or_init(|| ARKIT_BLEND_SHAPES.iter().map(|n| c_string(n)).collect())

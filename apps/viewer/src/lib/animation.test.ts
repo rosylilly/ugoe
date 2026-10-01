@@ -1,15 +1,26 @@
 import { describe, expect, it } from "vitest";
 import {
   defaultIdleMotion,
+  describeIdleChoice,
   describeMotion,
   describeRejectedMotion,
+  groupTrackingParameters,
+  IDLE_MOTION_STORAGE_KEY,
+  idleMemory,
+  initialIdleMotion,
   loadToggle,
+  loadTrackingKept,
   type MotionInfo,
   motionOverTrackingActive,
   motionTrackingEffect,
   parseExpressions,
+  parseIdleChoice,
   parseMotions,
   saveToggle,
+  saveTrackingKept,
+  TRACKING_KEPT_STORAGE_KEY,
+  trackingGroup,
+  trackingWins,
 } from "./animation";
 
 const nod: MotionInfo = {
@@ -108,6 +119,92 @@ describe("defaultIdleMotion", () => {
     expect(defaultIdleMotion([m("idle_a")])).toBe("idle_a");
     expect(defaultIdleMotion([m("nod"), m("sidle")])).toBeNull();
     expect(defaultIdleMotion([])).toBeNull();
+  });
+});
+
+describe("idle motion memory (T0722)", () => {
+  const m = (name: string, looping = false): MotionInfo => ({ ...nod, name, looping });
+
+  it("starts with the remembered choice when the model still has it", () => {
+    const motions = [m("idle", true), m("tilt"), m("nod")];
+    expect(initialIdleMotion(motions, null)).toBe("idle");
+    expect(initialIdleMotion(motions, { motion: "tilt" })).toBe("tilt");
+    // 「(なし)」を選んだことも覚える。
+    expect(initialIdleMotion(motions, { motion: null })).toBeNull();
+    // モデルから消えたモーションなら既定に戻る。
+    expect(initialIdleMotion(motions, { motion: "gone" })).toBe("idle");
+  });
+
+  it("reads only the expected shape", () => {
+    expect(parseIdleChoice({ motion: "idle" })).toEqual({ motion: "idle" });
+    expect(parseIdleChoice({ motion: null })).toEqual({ motion: null });
+    expect(parseIdleChoice({ motion: 3 })).toBeNull();
+    expect(parseIdleChoice({})).toBeNull();
+    expect(parseIdleChoice("idle")).toBeNull();
+    expect(describeIdleChoice({ motion: "idle" })).toBe("idle");
+    expect(describeIdleChoice({ motion: null })).toBe("(なし)");
+  });
+
+  it("remembers the choice per model in localStorage", () => {
+    const items = new Map<string, string>();
+    const storage = {
+      getItem: (k: string) => items.get(k) ?? null,
+      setItem: (k: string, v: string) => void items.set(k, v),
+    } as unknown as Storage;
+    const memory = idleMemory(storage);
+    const a = { name: "a.ugoe", fingerprint: "fa" };
+    memory.set(a, { motion: "tilt" });
+    memory.set({ name: "b.ugoe", fingerprint: "fb" }, { motion: null });
+    expect(idleMemory(storage).get(a)).toEqual({ motion: "tilt" });
+    expect(idleMemory(storage).get({ name: "b.ugoe", fingerprint: "fb" })).toEqual({
+      motion: null,
+    });
+    expect(items.has(IDLE_MOTION_STORAGE_KEY)).toBe(true);
+  });
+});
+
+describe("motion over tracking per parameter (T0722)", () => {
+  it("groups the tracked parameters by the part of the face", () => {
+    expect(trackingGroup("AngleX")).toBe("head");
+    expect(trackingGroup("BodyAngleZ")).toBe("body");
+    expect(trackingGroup("ShoulderLY")).toBe("body");
+    expect(trackingGroup("EyeBallX")).toBe("eyes");
+    expect(trackingGroup("BrowInnerUp")).toBe("brows");
+    expect(trackingGroup("JawX")).toBe("mouth");
+    expect(trackingGroup("CheekPuff")).toBe("mouth");
+    expect(trackingGroup("HairSwing")).toBe("other");
+    expect(
+      groupTrackingParameters(["EyeLOpen", "AngleX", "MouthOpenY", "AngleY"]).map((g) => [
+        g.group,
+        g.ids,
+      ]),
+    ).toEqual([
+      ["head", ["AngleX", "AngleY"]],
+      ["eyes", ["EyeLOpen"]],
+      ["mouth", ["MouthOpenY"]],
+    ]);
+  });
+
+  it("lets only the kept parameters hide the motion while the motion wins", () => {
+    const tracked = new Set(["AngleX", "EyeLOpen"]);
+    expect([...trackingWins(tracked, false, ["EyeLOpen"])]).toEqual(["AngleX", "EyeLOpen"]);
+    expect([...trackingWins(tracked, true, ["EyeLOpen", "Other"])]).toEqual(["EyeLOpen"]);
+    expect([...trackingWins(tracked, true, [])]).toEqual([]);
+  });
+
+  it("remembers the kept parameters", () => {
+    const items = new Map<string, string>();
+    const storage = {
+      getItem: (k: string) => items.get(k) ?? null,
+      setItem: (k: string, v: string) => void items.set(k, v),
+    } as unknown as Storage;
+    expect(loadTrackingKept(storage)).toEqual([]);
+    saveTrackingKept(["EyeLOpen", "EyeROpen"], storage);
+    expect(loadTrackingKept(storage)).toEqual(["EyeLOpen", "EyeROpen"]);
+    items.set(TRACKING_KEPT_STORAGE_KEY, '["A", 3, "A"]');
+    expect(loadTrackingKept(storage)).toEqual(["A"]);
+    items.set(TRACKING_KEPT_STORAGE_KEY, "{broken");
+    expect(loadTrackingKept(storage)).toEqual([]);
   });
 });
 

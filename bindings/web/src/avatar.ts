@@ -6,13 +6,15 @@
 // - `parameters`: `"AngleX: 15; EyeLOpen: 0.5"` (読み込みのたびと、属性を変えたときに設定する)
 // - `expression` / `motion` (+ `motion-priority`): バンドルの表情・モーションの名前。再生中のモーションより優先度が低くて
 //   始められないモーションは、始められるまで毎フレーム試す
+// - `motion-over-tracking` (+ `tracking-kept`): トラッキング中も、再生中のモーションが動かすパラメータではモーションを
+//   優先する (`WebPuppet.set_motion_over_tracking`)。`tracking-kept` に並べた ID はトラッキングのまま (T0722)
 // - `paused`: 時間を止める (`update(dt)` を呼ばない。パラメータを変えたときだけ描き直す)
 //
 // JS からは `setParameter` / `parameters` / `load` / `setTracking` と、ugoe-wasm の `WebPuppet` そのもの (`puppet`) を使う。
 // フェイストラッキングはホストが入力を渡す口だけを持つ (トラッカーは持たない。ADR 0025)。
 // 画面外 (IntersectionObserver) と `paused` の間は requestAnimationFrame を回さない。
 
-import { parseBackend, parseMotionPriority, parseParameters } from "./attributes.js";
+import { parseBackend, parseIdList, parseMotionPriority, parseParameters } from "./attributes.js";
 import { createPuppet, loadModel } from "./runtime.js";
 import { type TrackingInput, trackingArguments } from "./tracking.js";
 import type { WebPuppet } from "./wasm/ugoe_wasm.js";
@@ -85,6 +87,8 @@ export class UgoeAvatarElement extends BaseElement {
     "expression",
     "motion",
     "motion-priority",
+    "motion-over-tracking",
+    "tracking-kept",
     "paused",
   ];
 
@@ -286,6 +290,10 @@ export class UgoeAvatarElement extends BaseElement {
       case "motion-priority":
         this.#guard(() => this.#applyMotion());
         break;
+      case "motion-over-tracking":
+      case "tracking-kept":
+        this.#applyMotionOverTracking();
+        break;
       case "paused":
         this.#last = null;
         this.requestRender();
@@ -311,6 +319,8 @@ export class UgoeAvatarElement extends BaseElement {
       return;
     }
     this.#puppet = puppet;
+    // WebPuppet はモデルを読み直しても保つので、作ったときに渡す。
+    this.#applyMotionOverTracking();
     const [w, h] = this.#size;
     if (w > 0 && h > 0) puppet.resize(w, h);
     this.#ready.resolve(puppet);
@@ -472,6 +482,14 @@ export class UgoeAvatarElement extends BaseElement {
     puppet.set_tracking(...trackingArguments(this.#tracking));
     puppet.set_enabled("eye_blink", false);
     this.#trackingDirty = true;
+    this.requestRender();
+  }
+
+  #applyMotionOverTracking(): void {
+    const puppet = this.#puppet;
+    if (!puppet) return;
+    puppet.set_motion_over_tracking(this.hasAttribute("motion-over-tracking"));
+    puppet.set_tracking_kept(parseIdList(this.getAttribute("tracking-kept")));
     this.requestRender();
   }
 

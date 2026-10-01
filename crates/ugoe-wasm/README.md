@@ -43,10 +43,11 @@ puppet.set_tracking(names, scores, yaw, pitch, roll); // MediaPipe のカテゴ�
 puppet.tracking_parameter_ids();  // トラッキングが書き込むパラメータ
 puppet.set_enabled("eye_blink", false); // トラッキング中はモデルの目パチを止める (T0309 の段の切り替え)
 puppet.set_motion_over_tracking(true); // 再生中のモーションが動かすパラメータではモーションを優先する (T0721)
+puppet.set_tracking_kept(["EyeLOpen", "EyeROpen"]); // 優先しても目はトラッキングのまま (T0722。既定は空)
 puppet.clear_tracking();
 ```
 
-- `set_motion_over_tracking(true)` の間、`update` はトラッキングの値を `Puppet::update` の前にホストの書き込みとして入れる。その値は基準値として残り (`docs/spec/motion.md#手で動かしたパラメータとの関係`)、モーションがその上に乗る。表情・目パチ・呼吸は、今までどおりさらにその上に重なる。`Puppet` の適用順は変えない。C ABI にはまだ無い (後続の候補)。
+- `set_motion_over_tracking(true)` の間、`update` はトラッキングの値をモーションの前に書き込み、モーションがその上に乗る (`Puppet::set_motion_over_tracking`、`docs/spec/motion.md#トラッキング中のモーションの優先`)。表情・目パチ・呼吸は、今までどおりさらにその上に重なる。C ABI では `ugoe_puppet_set_motion_over_tracking` (T0722)。
 - 画面座標は canvas の描画バッファの画素 (CSS ピクセル × `devicePixelRatio`)。
 - `set_parameter` は評価を遅らせ、次の `render` や問い合わせでまとめて評価する。物理やモーションを動かすときは `update(dt)` を呼ぶ。
 - モデルを読み直すと、同じ ID のパラメータの値は引き継がれる (エディタで編集・Undo のたびに読み直すため)。
@@ -55,10 +56,12 @@ puppet.clear_tracking();
 - トラッキングの入力は次の `update(dt)` から毎フレーム適用される (モーションの直後、表情・目パチ・呼吸の前)。
   平滑化・キャリブレーション・回転行列からの角度の計算・鏡像の入れ替えはホストが行う
   (`docs/spec/avatar-profile.md#実装の範囲`)。`clear_tracking()` の後も最後の値は残る。
-- `set_motion_over_tracking(true)` の間は、`update` がトラッキングの値をモーションより **先に** ホストの書き込みとして入れる
-  (`docs/spec/motion.md#手で動かしたパラメータとの関係` と同じ扱い)。モーションが動かすパラメータではモーションの値が
-  フェードの重みでトラッキングの値に重なり、ほかのパラメータはトラッキングの値のまま。`Puppet` の適用順は変えない。
-  既定は `false` (仕様の順。トラッキングがモーションの値を置き換える)。ビューアは待機以外の優先度のモーションの再生中だけ入れる。
+- `set_motion_over_tracking(true)` の間は、`update` がトラッキングの値をモーションより **先に** 書き込む。
+  モーションが動かすパラメータではモーションの値がフェードの重みでトラッキングの値に重なり、ほかのパラメータはトラッキングの値のまま。
+  `set_tracking_kept(ids)` (T0722) で選んだパラメータは、優先していてもモーションの後に書き込む (トラッキングのまま。目は除く、など)。
+  既定は `false` (仕様の順。トラッキングがモーションの値を置き換える) と空。どちらもモデルを読み直しても保つ。
+  T0721 では wasm が `Puppet::update` の前にホストの書き込みとして入れていたが、パラメータごとに分けるために `Puppet` に移した (T0722)。
+  ビューアは待機以外の優先度のモーションの再生中だけ入れる。
 - `is_lost()` が `true` になったら (GPU プロセスのクラッシュなど)、新しい canvas で作り直す。
 
 ### 描画結果の読み戻しと評価の結果 (T0418)

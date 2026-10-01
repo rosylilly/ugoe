@@ -6,10 +6,12 @@
 import { setPuppetTracking, type TrackingFrame } from "@ugoe/face-tracking";
 import {
   AUTO_IDLE_STORAGE_KEY,
-  defaultIdleMotion,
   describeRejectedMotion,
   type ExpressionInfo,
+  idleMemory,
+  initialIdleMotion,
   loadToggle,
+  loadTrackingKept,
   MOTION_OVER_TRACKING_STORAGE_KEY,
   type MotionInfo,
   type MotionPriority,
@@ -17,6 +19,7 @@ import {
   parseExpressions,
   parseMotions,
   saveToggle,
+  saveTrackingKept,
 } from "./animation";
 import { parseHexColor } from "./color";
 import {
@@ -167,13 +170,23 @@ export class Player {
    * `idleMotion` を待機の優先度で始める。localStorage に覚える。
    */
   autoIdle = $state(loadToggle(AUTO_IDLE_STORAGE_KEY, true));
-  /** 自動で流す待機モーション (開いているモデルのモーションの名前)。モデルを開くと既定 (`defaultIdleMotion`) に戻る。 */
+  /**
+   * 自動で流す待機モーション (開いているモデルのモーションの名前)。選ぶとモデルごとに覚え (T0722)、モデルを開くと
+   * 覚えた選択、無ければ既定 (`defaultIdleMotion`) になる (animation.ts の `initialIdleMotion`)。
+   */
   idleMotion = $state<string | null>(null);
+  /** 開いているモデルの待機モーションの選択を覚えているか (T0722)。 */
+  idleRemembered = $state(false);
   /**
    * トラッキング中も、待機以外のモーションが動かすパラメータではモーションを優先する (T0721)。localStorage に覚える。
    * 切ると仕様の適用順のまま (トラッキングがモーションの値を置き換える)。
    */
   motionOverTracking = $state(loadToggle(MOTION_OVER_TRACKING_STORAGE_KEY, true));
+  /**
+   * モーションを優先しても、トラッキングのままにするパラメータの ID (T0722。目は除く、など)。localStorage に覚える
+   * (モデルによらない)。WebPuppet の `set_tracking_kept` に渡す。
+   */
+  trackingKept = $state<string[]>(loadTrackingKept());
 
   /** パラメータを毎フレーム外から動かすもの (drivers.ts)。 */
   readonly drivers = new DriverSet();
@@ -204,6 +217,8 @@ export class Player {
   #memory = dressUpMemory();
   /** モデルごとに覚えた光源の設定 (T0709)。 */
   #lightingMemory = lightingMemory();
+  /** モデルごとに覚えた待機モーションの選択 (T0722)。 */
+  #idleMemory = idleMemory();
   /** このセッションで読んだモジュールの中身 (指紋ごと。古いものから捨てる)。 */
   #sessionFiles = new Map<string, ModelFile>();
   /** 0 より大きい間は、着せ替えの変化を利用者の操作とみなさない (組を覚えず、尋ねているのを取り消さない)。 */
@@ -214,6 +229,8 @@ export class Player {
   #currentPriority: MotionPriority = "normal";
   /** 直前に WebPuppet に渡した `set_motion_over_tracking` の値 (変わったときだけ渡す)。 */
   #overTracking = false;
+  /** `trackingKept` を WebPuppet に渡し直す必要があるか (変えたときと、WebPuppet を作り直したとき)。 */
+  #keptDirty = true;
 
   /** `container` の中に canvas を作り、描画を始める。 */
   async attach(container: HTMLElement): Promise<void> {
@@ -585,10 +602,18 @@ export class Player {
     }
   }
 
-  /** 自動で流す待機モーションを選ぶ (`null` で流さない)。待機を流しているなら選んだものに替える。 */
+  /**
+   * 自動で流す待機モーションを選ぶ (`null` で流さない)。待機を流しているなら選んだものに替える。
+   * 選択は開いているモデルの分として覚える (T0722)。
+   */
   setIdleMotion(name: string | null): void {
     const playingIdle = this.currentMotion !== null && this.currentMotion === this.idleMotion;
     this.idleMotion = name;
+    const model = this.#model;
+    if (model !== null) {
+      this.#idleMemory.set(model, { motion: name });
+      this.idleRemembered = true;
+    }
     if (playingIdle) {
       if (name === null) this.stopMotions();
       else this.#startIdle();
@@ -600,6 +625,20 @@ export class Player {
   setMotionOverTracking(enabled: boolean): void {
     this.motionOverTracking = enabled;
     saveToggle(MOTION_OVER_TRACKING_STORAGE_KEY, enabled);
+  }
+
+  /** モーションを優先しても、トラッキングのままにするパラメータを `ids` にする (覚える。次のフレームから効く)。 */
+  setTrackingKept(ids: readonly string[]): void {
+    this.trackingKept = [...new Set(ids)];
+    saveTrackingKept(this.trackingKept);
+    this.#keptDirty = true;
+  }
+
+  /** 開いているモデルに覚えた待機モーションの選択を忘れる (いまの選択はそのまま。次に選ぶとまた覚える)。 */
+  forgetIdleMotion(): void {
+    const model = this.#model;
+    if (model !== null) this.#idleMemory.delete(model);
+    this.idleRemembered = false;
   }
 
   /** 自動再生が入っていて待機モーションがあれば、待機の優先度で始める。 */
@@ -755,34 +794,46 @@ export class Player {
     if (this.#lightingPending) this.setLighting($state.snapshot(this.lighting) as LightingSettings);
   }
 
-  /** モデルごとに覚えたもの (光源の設定と着せ替えの組) の一覧 (rememberedModels.ts、T0714)。並びは `order` (T0717)。 */
+  /**
+   * モデルごとに覚えたもの (光源の設定・着せ替えの組・待機モーションの選択) の一覧 (rememberedModels.ts、T0714)。
+   * 並びは `order` (T0717)。
+   */
   rememberedModels(order: RememberedOrder = "recent"): RememberedModel[] {
     return mergeRemembered(
-      this.#lightingMemory.entries(),
-      this.#memory.entries(),
+      {
+        lighting: this.#lightingMemory.entries(),
+        dressUp: this.#memory.entries(),
+        idle: this.#idleMemory.entries(),
+      },
       this.#model,
       order,
     );
   }
 
   /**
-   * 一覧の `model` に覚えたものを忘れる (`lighting`・`dressUp` で選ぶ)。開いているモデルなら、いまの光源と
-   * 付けているモジュールはそのままで、パネルの「覚えた」の表示を消す (次に変えるとまた覚える)。
+   * 一覧の `model` に覚えたものを忘れる (`lighting`・`dressUp`・`idle` で選ぶ)。開いているモデルなら、いまの光源・
+   * 付けているモジュール・待機モーションはそのままで、パネルの「覚えた」の表示を消す (次に変えるとまた覚える)。
    */
   forgetRemembered(
     model: ModelIdentity,
-    { lighting = true, dressUp = true }: { lighting?: boolean; dressUp?: boolean } = {},
+    {
+      lighting = true,
+      dressUp = true,
+      idle = true,
+    }: { lighting?: boolean; dressUp?: boolean; idle?: boolean } = {},
   ): void {
     if (lighting) this.#lightingMemory.delete(model);
     if (dressUp) this.#memory.delete(model);
-    this.#afterForget((current) => sameModel(current, model), lighting, dressUp);
+    if (idle) this.#idleMemory.delete(model);
+    this.#afterForget((current) => sameModel(current, model), { lighting, dressUp, idle });
   }
 
-  /** モデルごとに覚えたものをすべて忘れる (最後に使った光源と、印・自動で戻すの設定は残す)。 */
+  /** モデルごとに覚えたものをすべて忘れる (最後に使った光源と、印・自動で戻す・自動で流すの設定は残す)。 */
   forgetAllRemembered(): void {
     this.#lightingMemory.clear();
     this.#memory.clear();
-    this.#afterForget(() => true, true, true);
+    this.#idleMemory.clear();
+    this.#afterForget(() => true, { lighting: true, dressUp: true, idle: true });
   }
 
   /** ビューポートに光源の印を出すかを変える (覚える)。 */
@@ -796,8 +847,7 @@ export class Player {
   /** 覚えたものを忘れた後、開いているモデルの分なら表示を合わせる。 */
   #afterForget(
     affects: (current: ModelIdentity) => boolean,
-    lighting: boolean,
-    dressUp: boolean,
+    { lighting, dressUp, idle }: { lighting: boolean; dressUp: boolean; idle: boolean },
   ): void {
     const current = this.#model;
     if (current === null || !affects(current)) return;
@@ -810,6 +860,7 @@ export class Player {
       this.dressUpRemembered = false;
       this.restoreOffer = null;
     }
+    if (idle) this.idleRemembered = false;
   }
 
   /**
@@ -900,8 +951,20 @@ export class Player {
     this.activeExpressions = puppet.active_expressions();
     this.motionEvents = [];
     this.motionNotice = null;
-    this.idleMotion = defaultIdleMotion(this.motions);
+    this.#recallIdleMotion();
     this.#startIdle();
+  }
+
+  /**
+   * 開いているモデルの待機モーションを、覚えた選択か既定にする (T0722)。覚えた選択は最近使ったものにし、鍵も新しくする
+   * (光源の `#recallLighting` と同じ)。
+   */
+  #recallIdleMotion(): void {
+    const model = this.#model;
+    const saved = model === null ? null : this.#idleMemory.get(model);
+    this.idleRemembered = saved !== null;
+    if (model !== null && saved !== null) this.#idleMemory.set(model, saved);
+    this.idleMotion = initialIdleMotion(this.motions, saved);
   }
 
   /** `update` の後で、モーションの終わりとイベントを読む。 */
@@ -977,6 +1040,10 @@ export class Player {
         this.currentMotion,
         this.#currentPriority,
       );
+      if (this.#keptDirty) {
+        this.#keptDirty = false;
+        puppet.set_tracking_kept($state.snapshot(this.trackingKept));
+      }
       if (over !== this.#overTracking) {
         this.#overTracking = over;
         puppet.set_motion_over_tracking(over);
@@ -1090,8 +1157,9 @@ export class Player {
     this.#puppet = null;
     this.#canvas?.remove();
     this.#canvas = null;
-    // 作り直した WebPuppet は既定 (`false`) から始まる。
+    // 作り直した WebPuppet は既定 (`false` と空) から始まる。
     this.#overTracking = false;
+    this.#keptDirty = true;
   }
 
   /** GPU を失った (GPU プロセスのクラッシュなど)。作り直して、開いていたモデルを読み直す。 */

@@ -45,6 +45,15 @@ export function isBundle(bytes: Uint8Array): boolean {
 /** モーションの優先度 (`WebPuppet.start_motion` の第 2 引数)。 */
 export type MotionPriority = "idle" | "normal" | "force";
 
+/**
+ * `tracking-kept` 属性の値 (`"EyeLOpen EyeROpen"`) をパラメータの ID の列にする。区切りは空白か `,` か `;`。
+ * 空の項目は除き、重なりは最初のものだけ残す。ID は大文字と小文字を区別する。
+ */
+export function parseIdList(value: string | null | undefined): string[] {
+  if (!value) return [];
+  return [...new Set(value.split(/[\s,;]+/).filter((id) => id !== ""))];
+}
+
 /** `motion-priority` 属性の値。知らない値や省略は `"idle"` (待機モーションとして流す)。 */
 export function parseMotionPriority(value: string | null | undefined): MotionPriority {
   const v = value?.trim().toLowerCase();

@@ -221,6 +221,24 @@
 - ポーズを止めると、モーションのパーツの不透明度のカーブはポーズの要素のパーツにもそのまま上書きになり、ポーズは何も書きません。
 - 物理の設定は `Puppet::set_physics(Option<PhysicsSettings>)` で差し替えられます。モデルと合わせて `validate_physics` で検査し、エラーがあれば何も変えません。差し替えると粒子は静止姿勢から始め、動的物理の加算量は 0 に戻します。
 
+### トラッキング中のモーションの優先
+
+`Puppet::set_motion_over_tracking(true)` (T0721 で `WebPuppet` に入れ、T0722 で `Puppet` に移した。既定は `false`) の間は、
+トラッキングの入力があるとき 2. と 3. を次のように変えます。
+
+- 2. の **前に**、トラッキングの値を書き込む。モーションはフェードの重みでその上に重なる (モーションが動かすパラメータではモーションが勝つ。
+  動かさないパラメータはトラッキングの値のまま)。
+- 3. では、`Puppet::set_tracking_kept(ids)` で選んだパラメータ (既定は無し) にだけ書き込む。選んだパラメータはモーションが動かしても
+  トラッキングの値になる (目はトラッキングのまま、など)。モデルに無い ID は無視する。
+
+どちらも 4. の前なので、書き込んだ値は基準値に含まれ、表情・目パチ・呼吸はその上に重なります。書き込みは
+`ugoe_motion::TrackingMap::apply_where` (対象を絞った `apply`) で行います。
+
+- **決めたこと (T0722):** T0721 では `WebPuppet` が `Puppet::update` の前にトラッキングの値をホストの書き込みとして入れ、その間 `Puppet` の入力を
+  外していた (結果は上の「選んだパラメータが無い」場合と同じ)。パラメータごとに分けるには 2. の後・4. の前に書き込む必要があり、外からは
+  割り込めないので `Puppet` に移した。C ABI (`ugoe_puppet_set_motion_over_tracking`・`ugoe_puppet_set_tracking_kept`) と `WebPuppet` は
+  これを呼ぶ。
+
 ### 手で動かしたパラメータとの関係
 
 エディタ・ビューアのスライダーのように、ホストが `update` の合間にパラメータを書き換えたときの扱いです (T0309)。上の「ホストの書き換えを検出する」から次が決まります。
@@ -238,6 +256,4 @@
 `update` を呼ばずに描画だけするホスト (エディタのビューポートの静止表示) では、書き換えた値がそのまま評価されます。
 
 `WebPuppet` (`crates/ugoe-wasm`) は同じ `Puppet` を使うので、`set_parameter` の値も同じ規則に従います。JS からは `start_motion` / `start_motion_json`・`set_expression` / `set_expression_json` / `add_expression` / `stop_expression` (使っている表情の名前は `active_expressions`)・`set_effects_json`・`set_lip_sync_level`・`set_enabled(stage, bool)`・`set_physics_json` で操作します (`crates/ugoe-wasm/README.md`)。
-`set_motion_over_tracking(true)` (T0721) の間は、`WebPuppet::update` がトラッキングの値を `Puppet::update` の前にホストの書き込みとして入れます
-(上の表の「どの段も触らないもの」と「モーションのカーブの対象」の扱いになり、モーションの対象ではモーションがトラッキングの値の上に重なります)。
-`Puppet` の適用順は変わりません。
+`set_motion_over_tracking(true)`・`set_tracking_kept(ids)` は `Puppet` の同じ名前の設定を渡します ([トラッキング中のモーションの優先](#トラッキング中のモーションの優先))。

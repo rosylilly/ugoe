@@ -91,6 +91,12 @@ pub struct Puppet {
     /// モデルの `avatar.tracking` を解決したトラッキングの対応。
     tracking_map: TrackingMap,
     tracking: Option<TrackingInput>,
+    /// トラッキング中のモーションの優先 (`set_motion_over_tracking`。T0722)。
+    motion_over_tracking: bool,
+    /// モーションを優先しても、トラッキングのままにするパラメータの ID (`set_tracking_kept`)。
+    tracking_kept_ids: Vec<String>,
+    /// `tracking_kept_ids` をパラメータの並びに引いたもの (パラメータごとに、トラッキングのままにするか)。
+    tracking_kept: Vec<bool>,
     toggles: Toggles,
     /// 着せ替えの本体と取り付けているモジュール (`dress_up.rs`)。モジュールを付けるまで `None`。
     wardrobe: Option<dress_up::Wardrobe>,
@@ -123,6 +129,9 @@ impl Puppet {
             output: values,
             tracking_map,
             tracking: None,
+            motion_over_tracking: false,
+            tracking_kept_ids: Vec::new(),
+            tracking_kept: Vec::new(),
             toggles: Toggles::default(),
             wardrobe: None,
         };
@@ -269,6 +278,46 @@ impl Puppet {
         self.tracking.as_ref()
     }
 
+    /// トラッキング中に、再生中のモーションが動かすパラメータではモーションを優先するか (T0722)。既定は `false`。
+    ///
+    /// `true` の間、[`Puppet::update`] はトラッキングの値をモーションの前に書き込み (モーションはフェードの重みで
+    /// その上に重なる)、[`Puppet::set_tracking_kept`] で選んだパラメータにだけモーションの後に書き込む
+    /// (`docs/spec/motion.md#トラッキング中のモーションの優先`)。`false` なら仕様の適用順 (モーション → トラッキング) のまま。
+    pub fn set_motion_over_tracking(&mut self, enabled: bool) {
+        self.motion_over_tracking = enabled;
+    }
+
+    pub fn motion_over_tracking(&self) -> bool {
+        self.motion_over_tracking
+    }
+
+    /// モーションを優先しても ([`Puppet::set_motion_over_tracking`])、トラッキングのままにするパラメータの ID
+    /// (目は除くなど。既定は空で、すべてモーションを優先する)。モデルに無い ID は無視する。
+    pub fn set_tracking_kept<I, S>(&mut self, ids: I)
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.tracking_kept_ids = ids.into_iter().map(Into::into).collect();
+        self.resolve_tracking_kept();
+    }
+
+    /// [`Puppet::set_tracking_kept`] で設定した ID (設定した順)。
+    pub fn tracking_kept(&self) -> &[String] {
+        &self.tracking_kept_ids
+    }
+
+    /// `tracking_kept_ids` をいまのパラメータの並びに引き直す。
+    fn resolve_tracking_kept(&mut self) {
+        let params = self.instance.parameters();
+        self.tracking_kept = vec![false; params.len()];
+        for id in &self.tracking_kept_ids {
+            if let Some(i) = params.index_of(id) {
+                self.tracking_kept[i.0 as usize] = true;
+            }
+        }
+    }
+
     /// ポーズの設定を差し替える (各グループは先頭の要素の表示から始める)。
     pub fn set_pose(&mut self, pose: Pose) {
         self.pose = PosePlayer::new(pose);
@@ -308,11 +357,23 @@ impl Puppet {
             params.set(index, *base);
         }
 
-        // 2. モーション
+        // 2. モーション。トラッキング中にモーションを優先するなら、トラッキングの値を先に書いてモーションを重ねる
+        // (トラッキングのままにするパラメータを除く。T0722)。
+        let kept = &self.tracking_kept;
+        let is_kept = |i: ParamIndex| kept.get(i.0 as usize).copied().unwrap_or(false);
+        let over = self.motion_over_tracking;
+        if let Some(input) = self.tracking.as_ref().filter(|_| over) {
+            self.tracking_map
+                .apply_where(input, params, |i| !is_kept(i));
+        }
         self.motions.update(params, dt);
         // 3. トラッキング (基準値に含める)
         if let Some(input) = &self.tracking {
-            self.tracking_map.apply(input, params);
+            if over {
+                self.tracking_map.apply_where(input, params, is_kept);
+            } else {
+                self.tracking_map.apply(input, params);
+            }
         }
 
         // 4. 基準値を保存する。これより後の処理は毎フレーム基準値に重ねるので累積しない。
@@ -490,6 +551,52 @@ mod tests {
         puppet.instance_mut().parameters_mut().set(eye, 0.5);
         puppet.update(DT);
         assert!(close(param(&puppet, standard::EYE_L_OPEN), 0.5));
+    }
+
+    /// トラッキング中のモーションの優先 (T0722): モーションが動かすパラメータではモーションが勝ち、
+    /// トラッキングのままにしたパラメータと、モーションが動かさないパラメータはトラッキングの値。
+    #[test]
+    fn motion_over_tracking_prefers_the_motion_except_kept_parameters() {
+        let mut input = TrackingInput::default();
+        input.set_blend_shape("eyeBlinkLeft", 0.75);
+        input.set_blend_shape("jawOpen", 0.5);
+        input.head.yaw = 15.0;
+        let run = |over: bool, kept: &[&str]| {
+            let mut model = fixtures::avatar_profile();
+            model.effects = Effects::default();
+            let mut puppet = Puppet::new(model).unwrap();
+            puppet.set_tracking(Some(input));
+            puppet.set_motion_over_tracking(over);
+            puppet.set_tracking_kept(kept.iter().copied());
+            assert!(puppet.start_motion(
+                motion(
+                    2.0,
+                    false,
+                    vec![
+                        param_curve(standard::ANGLE_X, -20.0),
+                        param_curve(standard::EYE_L_OPEN, 1.0),
+                    ]
+                ),
+                Priority::Normal
+            ));
+            for _ in 0..3 {
+                puppet.update(0.1);
+            }
+            [
+                param(&puppet, standard::ANGLE_X),
+                param(&puppet, standard::EYE_L_OPEN),
+                param(&puppet, standard::MOUTH_OPEN_Y),
+            ]
+        };
+        // 既定: トラッキングがモーションの値を置き換える。
+        let [angle, eye, mouth] = run(false, &[]);
+        assert!(close(angle, 15.0) && close(eye, 0.25) && close(mouth, 0.5));
+        // モーションを優先: モーションが動かす角度と目はモーション、口はトラッキング。
+        let [angle, eye, mouth] = run(true, &[]);
+        assert!(close(angle, -20.0) && close(eye, 1.0) && close(mouth, 0.5));
+        // 目はトラッキングのまま (モデルに無い ID は無視する)。
+        let [angle, eye, mouth] = run(true, &[standard::EYE_L_OPEN, "Missing"]);
+        assert!(close(angle, -20.0) && close(eye, 0.25) && close(mouth, 0.5));
     }
 
     fn set_param(puppet: &mut Puppet, id: &str, value: f32) {

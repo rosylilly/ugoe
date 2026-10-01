@@ -135,6 +135,11 @@ wasm にある `not_loaded`・`no_model`・`texture` は C ABI では起きな�
   体の回転と肩 (NaN で省略)、ARKit の 52 のブレンドシェイプ (添字は `ugoe_blend_shape_name` / `ugoe_blend_shape_index`。
   MediaPipe のカテゴリ名をそのまま引ける)。平滑化などはホストが行う。トラッキング中は `ugoe_puppet_set_stage_enabled` で
   目パチ (`UGOE_STAGE_EYE_BLINK`) を止めるとよい。書き込むパラメータは `ugoe_puppet_tracking_targets`。
+- トラッキング中のモーションの優先 (T0722): `ugoe_puppet_set_motion_over_tracking(puppet, true)` の間は、再生中のモーションが動かす
+  パラメータではモーションの値がトラッキングの上に乗る (既定は `false` で、トラッキングがモーションの値を置き換える)。
+  `ugoe_puppet_set_tracking_kept(puppet, indices, count)` (パラメータの番号) で選んだパラメータは、優先していてもトラッキングのまま
+  (目は除く、など)。設定は `ugoe_puppet_motion_over_tracking` で読める。`Puppet::set_motion_over_tracking`・`set_tracking_kept` と同じで、
+  wasm の `set_motion_over_tracking`・`set_tracking_kept` と揃えた (`docs/spec/motion.md#トラッキング中のモーションの優先`)。
 - `ugoe_puppet_set_parameters_by_id` (ID でまとめて設定。知らない ID は飛ばし、設定した数を返す)、
   `ugoe_puppet_stop_expressions` (表情の解除)。
 
@@ -217,3 +222,4 @@ ugoe_puppet_set_effects_json(puppet, json, len);    /* 目パチ・呼吸・リ�
 - T0409 (着せ替え・ライティング・当たり判定・トラッキング・読み込みの警告)
 - T0412 (エラーと警告の code を SDK にまとめる・モーションのイベント・物理の設定の差し替え)
 - T0414 (パーツの不透明度・ポーズの表示の選択・効果の設定の差し替え)
+- T0722 (トラッキング中のモーションの優先)

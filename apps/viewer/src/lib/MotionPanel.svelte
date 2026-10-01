@@ -4,15 +4,18 @@
 // 再生は Player (WebPuppet の start_motion・set_expression など) が行う。規則は docs/spec/motion.md。
 // フェイストラッキング中は、トラッキングが書き込むパラメータでモーションの値が置き換わる (印を出す。README の「モーションと表情」)。
 // 「モーションを優先」を入れると、待機以外のモーションが動かすパラメータではモーションが勝つ (T0721)。
-// 待機モーションは自動で流し、ほかのモーションが終わると待機に戻る (T0721)。
+// 優先する部分 (頭の向き・目など) とパラメータは選べ、外したものはトラッキングのまま (T0722)。
+// 待機モーションは自動で流し、ほかのモーションが終わると待機に戻る (T0721)。選んだ待機モーションはモデルごとに覚える (T0722)。
 import {
   describeMotion,
   type ExpressionInfo,
   formatSeconds,
+  groupTrackingParameters,
   MOTION_PRIORITIES,
   type MotionPriority,
   motionTrackingEffect,
   trackedOverlap,
+  trackingWins,
 } from "./animation";
 import type { Player } from "./player.svelte";
 
@@ -21,12 +24,36 @@ let { player }: { player: Player } = $props();
 let open = $state(true);
 
 let tracked = $derived(new Set(player.tracking ? player.trackingParameterIds : []));
-const none = new Set<string>();
 
-/** モーション `name` の値をトラッキングが置き換えるパラメータ (「モーションを優先」なら自動で流す待機モーションだけ)。 */
+/**
+ * モーション `name` の値をトラッキングが置き換えるパラメータ。「モーションを優先」なら、自動で流す待機モーションは
+ * すべて、ほかのモーションはトラッキングのままにしたものだけ。
+ */
 function trackedFor(name: string): ReadonlySet<string> {
-  if (!player.motionOverTracking) return tracked;
-  return player.autoIdle && name === player.idleMotion ? tracked : none;
+  if (player.motionOverTracking && player.autoIdle && name === player.idleMotion) return tracked;
+  return trackingWins(tracked, player.motionOverTracking, player.trackingKept);
+}
+
+/** 優先を選べるパラメータ (トラッキングが書き込むもの) のまとまり。 */
+let groups = $derived(groupTrackingParameters(player.trackingParameterIds));
+let kept = $derived(new Set(player.trackingKept));
+let preferredTotal = $derived(preferredCount(player.trackingParameterIds));
+
+/** まとまりのうちモーションを優先するものの数。 */
+function preferredCount(ids: readonly string[]): number {
+  return ids.filter((id) => !kept.has(id)).length;
+}
+
+/** まとまりをまとめて切り替える (すべて優先しているならトラッキングのままに、そうでなければすべて優先に)。 */
+function toggleGroup(ids: readonly string[]) {
+  const all = preferredCount(ids) === ids.length;
+  const rest = player.trackingKept.filter((id) => !ids.includes(id));
+  player.setTrackingKept(all ? [...rest, ...ids] : rest);
+}
+
+function toggleParameter(id: string, preferred: boolean) {
+  const rest = player.trackingKept.filter((k) => k !== id);
+  player.setTrackingKept(preferred ? rest : [...rest, id]);
 }
 let status = $derived(
   player.currentMotion !== null
@@ -57,7 +84,7 @@ function expressionOverlap(e: ExpressionInfo): string[] {
   {#if player.tracking}
     <p class="hint tracking-note">
       {#if player.motionOverTracking}
-        トラッキング中も、再生したモーションが動かすパラメータではモーションの値を使います (待機モーションを除く)。
+        トラッキング中も、再生したモーションが動かすパラメータではモーションの値を使います (待機モーションと、優先から外した部分を除く)。
       {:else}
         トラッキング中は、トラッキングが書き込むパラメータ (頭の向き・目・口など) でモーションの値が置き換わります。
       {/if}
@@ -120,6 +147,14 @@ function expressionOverlap(e: ExpressionInfo): string[] {
             <option value={m.name}>{m.name}</option>
           {/each}
         </select>
+        {#if player.idleRemembered}
+          <button
+            type="button"
+            class="small"
+            title="このモデル用に覚えた待機モーションの選択を忘れる (いまの選択はそのまま。次に開くと既定に戻る)"
+            onclick={() => player.forgetIdleMotion()}>覚えた選択を忘れる</button
+          >
+        {/if}
       </div>
       <div class="options">
         <label
@@ -133,6 +168,40 @@ function expressionOverlap(e: ExpressionInfo): string[] {
           トラッキング中もモーションを優先
         </label>
       </div>
+      {#if player.motionOverTracking && groups.length > 0}
+        <div class="options over-groups" role="group" aria-label="モーションを優先する部分">
+          <span>優先する部分</span>
+          {#each groups as g (g.group)}
+            {@const n = preferredCount(g.ids)}
+            <label title={`${g.ids.join(", ")}\n外すと、モーションが動かしてもトラッキングのまま`}>
+              <input
+                type="checkbox"
+                checked={n === g.ids.length}
+                indeterminate={n > 0 && n < g.ids.length}
+                onchange={() => toggleGroup(g.ids)}
+              />
+              {g.label}
+            </label>
+          {/each}
+        </div>
+        <details class="over-parameters">
+          <summary
+            >パラメータごとに選ぶ ({preferredTotal} / {player.trackingParameterIds.length} を優先)</summary
+          >
+          <div class="parameter-grid">
+            {#each player.trackingParameterIds as id (id)}
+              <label>
+                <input
+                  type="checkbox"
+                  checked={!kept.has(id)}
+                  onchange={(e) => toggleParameter(id, e.currentTarget.checked)}
+                />
+                {id}
+              </label>
+            {/each}
+          </div>
+        </details>
+      {/if}
       <ul>
         {#each player.motions as m (m.name)}
           {@const current = player.currentMotion === m.name}
@@ -302,8 +371,37 @@ function expressionOverlap(e: ExpressionInfo): string[] {
     align-items: center;
     gap: 0.25rem;
   }
-  .options select {
+  .over-groups {
+    gap: 0.5rem;
+  }
+  .over-parameters {
+    margin-top: 0.2rem;
     font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .over-parameters summary {
+    cursor: pointer;
+  }
+  .parameter-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+    gap: 0.1rem 0.5rem;
+    margin-top: 0.2rem;
+  }
+  .parameter-grid label {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .options select,
+  .options button.small {
+    font-size: 0.75rem;
+  }
+  .options button.small {
+    padding: 0.05rem 0.4rem;
   }
   ul {
     list-style: none;

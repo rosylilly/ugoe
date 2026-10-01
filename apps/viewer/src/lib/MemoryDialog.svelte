@@ -1,9 +1,10 @@
 <script lang="ts">
-// モデルごとに覚えたもの (光源の設定 (T0709) と着せ替えの組 (T0711)) の一覧 (T0714)。
-// ツールバーの「覚えたもの」とライティングのパネルから開く。モデルごとに光源・組を忘れるか、すべて忘れる。
+// モデルごとに覚えたもの (光源の設定 (T0709)・着せ替えの組 (T0711)・待機モーションの選択 (T0722)) の一覧 (T0714)。
+// ツールバーの「覚えたもの」とライティングのパネルから開く。モデルごとに光源・組・待機モーションを忘れるか、すべて忘れる。
 // パネルが出ないモデル (モジュールを外してライティングを受けなくなったモデルなど) や、開いていないモデルの分もここで忘れられる。
 // 並びは覚えた日時の新しい順と名前の順から選ぶ (T0717。日時を持たない前の保存値は「日時なし」で最後)。
 // 選んだ並びは覚えて、次に開いたときも使う (T0718)。
+import { describeIdleChoice } from "./animation";
 import { lightingLabel } from "./lighting";
 import type { Player } from "./player.svelte";
 import {
@@ -13,6 +14,7 @@ import {
   loadRememberedOrder,
   type RememberedModel,
   type RememberedOrder,
+  rememberedCount,
   saveRememberedOrder,
 } from "./rememberedModels";
 
@@ -37,7 +39,10 @@ function refresh() {
   rows = player.rememberedModels(order);
 }
 
-function forget(row: RememberedModel, what: { lighting?: boolean; dressUp?: boolean }) {
+function forget(
+  row: RememberedModel,
+  what: { lighting?: boolean; dressUp?: boolean; idle?: boolean },
+) {
   player.forgetRemembered(row.model, what);
   refresh();
 }
@@ -59,7 +64,7 @@ function forgetAll() {
     <button type="button" onclick={() => dialog?.close()}>閉じる</button>
   </header>
   <p class="lead">
-    光源の設定と着せ替えの組は、モデルごとにこのブラウザ (アプリ) に覚えています。忘れても、いま表示している光源と付けているモジュールは変わりません。
+    光源の設定・着せ替えの組・待機モーションの選択は、モデルごとにこのブラウザ (アプリ) に覚えています。忘れても、いま表示している光源・付けているモジュール・流している待機モーションは変わりません。
   </p>
 
   {#if rows.length > 1}
@@ -88,6 +93,7 @@ function forgetAll() {
           <th scope="col">モデル</th>
           <th scope="col">光源</th>
           <th scope="col">着せ替えの組</th>
+          <th scope="col">待機モーション</th>
           <th scope="col">覚えた日時</th>
           <th scope="col"><span class="visually-hidden">操作</span></th>
         </tr>
@@ -109,7 +115,8 @@ function forgetAll() {
                   type="button"
                   class="small"
                   aria-label="{row.model.name} の光源を忘れる"
-                  onclick={() => forget(row, { lighting: true, dressUp: false })}>忘れる</button
+                  onclick={() => forget(row, { lighting: true, dressUp: false, idle: false })}
+                  >忘れる</button
                 >
               {:else}
                 <span class="none">—</span>
@@ -122,7 +129,22 @@ function forgetAll() {
                   type="button"
                   class="small"
                   aria-label="{row.model.name} の着せ替えの組を忘れる"
-                  onclick={() => forget(row, { lighting: false, dressUp: true })}>忘れる</button
+                  onclick={() => forget(row, { lighting: false, dressUp: true, idle: false })}
+                  >忘れる</button
+                >
+              {:else}
+                <span class="none">—</span>
+              {/if}
+            </td>
+            <td>
+              {#if row.idle}
+                <span>{describeIdleChoice(row.idle)}</span>
+                <button
+                  type="button"
+                  class="small"
+                  aria-label="{row.model.name} の待機モーションを忘れる"
+                  onclick={() => forget(row, { lighting: false, dressUp: false, idle: true })}
+                  >忘れる</button
                 >
               {:else}
                 <span class="none">—</span>
@@ -132,12 +154,12 @@ function forgetAll() {
               {describeRememberedAt(row.rememberedAt)}
             </td>
             <td>
-              {#if row.lighting && row.dressUp}
+              {#if rememberedCount(row) > 1}
                 <button
                   type="button"
                   class="small"
-                  aria-label="{row.model.name} に覚えた光源と組を忘れる"
-                  onclick={() => forget(row, {})}>両方を忘れる</button
+                  aria-label="{row.model.name} に覚えたものをすべて忘れる"
+                  onclick={() => forget(row, {})}>すべて忘れる</button
                 >
               {/if}
             </td>
@@ -153,7 +175,7 @@ function forgetAll() {
       <button type="button" class="danger" onclick={forgetAll}>すべて忘れる</button>
       <button type="button" onclick={() => (confirming = false)}>やめる</button>
     {:else}
-      <span class="hint">最後に使った光源・光源の印・前の組を自動で戻すの設定は残ります。</span>
+      <span class="hint">最後に使った光源・光源の印・前の組を自動で戻す・待機モーションを自動で流すの設定は残ります。</span>
       <button type="button" disabled={rows.length === 0} onclick={() => (confirming = true)}
         >すべて忘れる…</button
       >

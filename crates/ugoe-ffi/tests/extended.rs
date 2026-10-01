@@ -872,3 +872,91 @@ fn physics_settings_can_be_replaced() {
     ok(unsafe { ugoe_puppet_set_physics_json(p.0, ptr::null(), 0) });
     assert_eq!(physics_json(&p), "");
 }
+
+const TURN: &str = r#"{
+    "name": "turn",
+    "duration": 2.0,
+    "looping": false,
+    "fade_in": 0.0,
+    "fade_out": 0.0,
+    "curves": [
+        {
+            "target": { "kind": "parameter", "id": "AngleX" },
+            "segments": [{ "type": "start", "p": { "t": 0.0, "v": -20.0 } }]
+        },
+        {
+            "target": { "kind": "parameter", "id": "EyeLOpen" },
+            "segments": [{ "type": "start", "p": { "t": 0.0, "v": 1.0 } }]
+        }
+    ]
+}"#;
+
+/// トラッキング中のモーションの優先 (T0722) は `ugoe::Puppet::set_motion_over_tracking` と
+/// `set_tracking_kept` と同じ結果になる。
+#[test]
+fn motion_over_tracking_follows_the_puppet() {
+    let mut model = fixtures::avatar_profile();
+    model.effects = ugoe::model::effects::Effects::default();
+    let mut bundle = Bundle::new(model.clone());
+    bundle.textures = model.textures.iter().map(|_| png(0)).collect();
+    bundle.motions = vec![ugoe::format::motion_from_json(TURN).unwrap()];
+
+    let eye_blink = CString::new("eyeBlinkLeft").unwrap();
+    let mut blink = 0;
+    ok(unsafe { ugoe_blend_shape_index(eye_blink.as_ptr(), &mut blink) });
+    let mut input = tracking_input();
+    input.blend_shapes[blink as usize] = 0.75;
+    input.head_yaw = 15.0;
+
+    // (優先, トラッキングのままにするパラメータ) → (AngleX, EyeLOpen)
+    let run = |over: bool, kept: &[&str]| {
+        let p = from_bundle(&bundle);
+        let mut enabled = true;
+        ok(unsafe { ugoe_puppet_motion_over_tracking(p.0, &mut enabled) });
+        assert!(!enabled, "off by default");
+        ok(unsafe { ugoe_puppet_set_motion_over_tracking(p.0, over) });
+        ok(unsafe { ugoe_puppet_motion_over_tracking(p.0, &mut enabled) });
+        assert_eq!(enabled, over);
+        let indices: Vec<u32> = kept
+            .iter()
+            .map(|id| {
+                let id = CString::new(*id).unwrap();
+                let mut index = 0;
+                ok(unsafe { ugoe_puppet_parameter_index(p.0, id.as_ptr(), &mut index) });
+                index
+            })
+            .collect();
+        ok(unsafe { ugoe_puppet_set_tracking_kept(p.0, indices.as_ptr(), indices.len()) });
+        ok(unsafe { ugoe_puppet_set_tracking(p.0, &input) });
+        ok(unsafe { ugoe_puppet_start_motion(p.0, 0, UGOE_PRIORITY_NORMAL, ptr::null_mut()) });
+        for _ in 0..3 {
+            ok(unsafe { ugoe_puppet_update(p.0, 0.1) });
+        }
+        (
+            param(&p, standard::ANGLE_X),
+            param(&p, standard::EYE_L_OPEN),
+        )
+    };
+    let close = |(a, e): (f32, f32), (ea, ee): (f32, f32)| {
+        assert!(
+            (a - ea).abs() < 1e-4 && (e - ee).abs() < 1e-4,
+            "({a}, {e}) != ({ea}, {ee})"
+        );
+    };
+    close(run(false, &[]), (15.0, 0.25));
+    close(run(true, &[]), (-20.0, 1.0));
+    close(run(true, &[standard::EYE_L_OPEN]), (-20.0, 0.25));
+
+    // 範囲外の番号は何も変えない。NULL は個数が 0 のときだけ許す。
+    let p = from_bundle(&bundle);
+    let bad = [u32::MAX];
+    assert_eq!(
+        unsafe { ugoe_puppet_set_tracking_kept(p.0, bad.as_ptr(), 1) },
+        UGOE_ERROR_OUT_OF_RANGE
+    );
+    assert_eq!(
+        unsafe { ugoe_puppet_set_tracking_kept(p.0, ptr::null(), 1) },
+        UGOE_ERROR_NULL_POINTER
+    );
+    ok(unsafe { ugoe_puppet_set_tracking_kept(p.0, ptr::null(), 0) });
+}

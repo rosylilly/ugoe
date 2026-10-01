@@ -398,6 +398,11 @@ Consequences:
   output; lip sync overrides it while a level is supplied.
 - Physics comes after expressions, eye blink and breathing because it reads the parameters they
   produce (the head angle, for example).
+- A host MAY ask that motions take precedence over tracking. Then, while tracking input is supplied,
+  the tracked values are written *before* step 2 (so a playing motion is applied on top of them,
+  according to its weight), and step 3 writes only the tracked parameters the host chose to keep
+  under tracking (none by default). Both writes happen before step 4, so the values are part of the
+  base values as usual. Without this request, the order above applies unchanged.
 - A host MAY turn off individual stages (physics, eye blink, breathing, lip sync, pose). A stage that
   is off does not touch parameters or part opacities; the eye blink and breathing clocks do not
   advance while they are off. When physics is turned off, its offsets are cleared; when it is turned

@@ -70,8 +70,10 @@ pub struct WebPuppet {
     wardrobe: Wardrobe,
     /// 直前の `load_json` / `load_bundle` の警告のうち、外したモジュール (`wardrobe.detached()`) 以外のもの (T0125)。
     load_warnings: Vec<LoadWarning>,
-    /// トラッキングをモーションより先に入れる (`set_motion_over_tracking`。T0721)。
+    /// トラッキング中のモーションの優先 (`set_motion_over_tracking`。T0721)。読み直した `Puppet` に渡し直す。
     motion_over_tracking: bool,
+    /// モーションを優先しても、トラッキングのままにするパラメータの ID (`set_tracking_kept`。T0722)。
+    tracking_kept: Vec<String>,
     /// 使っている表情の名前 (`active_expressions`。T0721)。
     active_expressions: crate::animation::ActiveExpressions,
 }
@@ -202,6 +204,7 @@ impl WebPuppet {
             wardrobe: Wardrobe::default(),
             load_warnings: Vec::new(),
             motion_over_tracking: false,
+            tracking_kept: Vec::new(),
             active_expressions: Default::default(),
         })
     }
@@ -323,11 +326,7 @@ impl WebPuppet {
     /// 物理・モーションを `dt` 秒進めて評価する。静止画の表示だけなら呼ばなくてよい。
     pub fn update(&mut self, dt: f32) {
         if let Some(puppet) = &mut self.puppet {
-            if self.motion_over_tracking {
-                crate::tracking::update_with_motion_over_tracking(puppet, dt);
-            } else {
-                puppet.update(dt);
-            }
+            puppet.update(dt);
             self.dirty = false;
         }
     }
@@ -660,6 +659,8 @@ impl WebPuppet {
                 .load_base(&mut puppet, &attached, &textures, &normal_maps, &mut sink)
                 .map_err(js_error)?,
         );
+        puppet.set_motion_over_tracking(self.motion_over_tracking);
+        puppet.set_tracking_kept(self.tracking_kept.iter().cloned());
         self.puppet = Some(puppet);
         self.load_warnings = load_warnings;
         // 再生の状態は読み直すと初めからになる。

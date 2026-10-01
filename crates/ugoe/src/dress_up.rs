@@ -273,6 +273,7 @@ impl Puppet {
         self.output = carry_values(old, &self.output, new);
         self.tracking_map = ugoe_motion::TrackingMap::for_model(instance.compiled().model(), new);
         self.instance = instance;
+        self.resolve_tracking_kept();
 
         let previous = self.pose.clone();
         self.set_pose(self.instance.compiled().model().pose.clone());
