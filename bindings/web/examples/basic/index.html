@@ -57,6 +57,22 @@
         flex-wrap: wrap;
         font-size: 13px;
       }
+      .coefficients label {
+        display: flex;
+      }
+      .coefficients input {
+        width: 56px;
+      }
+      #filter-stats {
+        font-size: 12px;
+        color: #555;
+        min-height: 1em;
+      }
+      #video {
+        width: 160px;
+        transform: scaleX(-1); /* 表示だけを鏡にする */
+        border-radius: 4px;
+      }
       #status {
         font-size: 12px;
         color: #555;
@@ -88,7 +104,17 @@
           </label>
           <label style="display: flex"><input type="checkbox" id="paused" /> paused</label>
           <label style="display: flex"><input type="checkbox" id="tracking" /> tracking (合成の入力)</label>
+          <label style="display: flex"><input type="checkbox" id="camera" /> camera (MediaPipe)</label>
         </div>
+        <!-- 平滑化 (TrackingFilter) の係数。既定は @ugoe/runtime の既定と同じ -->
+        <div class="row coefficients">
+          <label>回転 minCutoff <input id="rotation-min-cutoff" type="number" step="0.1" min="0" value="1" /></label>
+          <label>回転 beta <input id="rotation-beta" type="number" step="0.01" min="0" value="0.05" /></label>
+          <label>表情 minCutoff <input id="blend-min-cutoff" type="number" step="0.1" min="0" value="1" /></label>
+          <label>表情 beta <input id="blend-beta" type="number" step="0.1" min="0" value="2" /></label>
+        </div>
+        <p id="filter-stats"></p>
+        <video id="video" muted playsinline hidden></video>
         <div class="row">
           <label style="display: flex">
             expression
@@ -109,12 +135,19 @@
     </main>
 
     <script type="module">
-      import { createPuppet, fetchModel, initRuntime, TrackingFilter, version } from "@ugoe/runtime";
+      import {
+        createPuppet,
+        fetchModel,
+        initRuntime,
+        TrackingFilter,
+        trackingFromFaceLandmarker,
+        version,
+      } from "@ugoe/runtime";
 
       const query = new URLSearchParams(location.search);
       const backend = query.get("backend") ?? "auto";
       const avatar = document.getElementById("avatar");
-      // ?src=generated/avatar-motion.ugoe でモデルを変える (モーションと表情を含む見本は `npm run sample:motion` で作る)
+      // ?src=samples/dress-up/dress-up.ugoe などでモデルを変える
       if (query.get("src")) avatar.setAttribute("src", query.get("src"));
 
       // WebGPU が使えない環境を真似る (WebGL2 への切り替えを試す。README の「WebGL2 への切り替えを試す」)。
@@ -147,42 +180,165 @@
         .getElementById("paused")
         .addEventListener("change", (e) => (avatar.paused = e.target.checked));
 
-      // フェイストラッキングの入力を渡す口 (setTracking)。ここでは時間の関数で作った合成の入力に揺れを足し、
-      // TrackingFilter で平滑化して毎フレーム渡す (?tracking-filter=off で平滑化しない)。
-      // 本物のカメラでは MediaPipe の結果を trackingFromFaceLandmarker で変換して渡す (README の「フェイストラッキング」)
-      let trackingFrame = 0;
-      const trackingFilter = new TrackingFilter();
+      // フェイストラッキングの入力を渡す口 (setTracking)。入力は 2 通り:
+      // - tracking (合成の入力): 時間の関数で作った入力に揺れを足したもの (カメラを使わない)
+      // - camera (MediaPipe): カメラの映像を MediaPipe Face Landmarker (CDN から読む) で調べ、trackingFromFaceLandmarker で変換したもの
+      // どちらも TrackingFilter で平滑化して毎フレーム渡す (?tracking-filter=off で平滑化しない)。
+      // 平滑化の係数は画面の欄か URL (?rotation-min-cutoff=1&rotation-beta=0.05&blend-min-cutoff=1&blend-beta=2) で変えられる
+      // (README の「平滑化の係数を実際の顔で調整する」)。
       const smooth = query.get("tracking-filter") !== "off";
-      document.getElementById("tracking").addEventListener("change", (e) => {
-        cancelAnimationFrame(trackingFrame);
+      const coefficientInputs = ["rotation-min-cutoff", "rotation-beta", "blend-min-cutoff", "blend-beta"];
+      for (const id of coefficientInputs) {
+        const input = document.getElementById(id);
+        if (query.get(id)) input.value = query.get(id);
+        input.addEventListener("change", () => (trackingFilter = new TrackingFilter(filterOptions())));
+      }
+      /** 欄の値から TrackingFilter の係数を作る。 */
+      function filterOptions() {
+        const value = (id) => Number(document.getElementById(id).value);
+        return {
+          rotation: { minCutoff: value("rotation-min-cutoff"), beta: value("rotation-beta") },
+          blendshapes: { minCutoff: value("blend-min-cutoff"), beta: value("blend-beta") },
+        };
+      }
+      let trackingFilter = new TrackingFilter(filterOptions());
+
+      // 揺れの目安: 頭のヨーのフレームごとの 2 階差分の絶対値の平均 (直近 60 フレーム)。止まった顔で小さいほど揺れが少ない
+      const statsElement = document.getElementById("filter-stats");
+      let history = [];
+      function recordStats(raw, filtered) {
+        history.push([raw.head?.yaw ?? 0, filtered.head?.yaw ?? 0]);
+        if (history.length > 62) history.shift();
+        if (history.length < 3) return;
+        const roughness = (k) => {
+          let sum = 0;
+          for (let i = 2; i < history.length; i++) {
+            sum += Math.abs(history[i][k] - 2 * history[i - 1][k] + history[i - 2][k]);
+          }
+          return sum / (history.length - 2);
+        };
+        const [rawYaw, filteredYaw] = history.at(-1);
+        result.trackingStats = { raw: roughness(0), filtered: roughness(1) };
+        statsElement.textContent =
+          `ヨー 入力 ${rawYaw.toFixed(1)}° / 平滑化 ${filteredYaw.toFixed(1)}°、` +
+          `揺れ (2 階差分の平均) 入力 ${result.trackingStats.raw.toFixed(2)} → 平滑化 ${result.trackingStats.filtered.toFixed(2)}`;
+      }
+
+      /** 入力を 1 フレーム渡す (平滑化と揺れの目安も)。 */
+      function feedTracking(input, now) {
+        const filtered = smooth ? trackingFilter.apply(input, now) : input;
+        recordStats(input, filtered);
+        avatar.setTracking(filtered);
+      }
+
+      // 今の入力を止める関数 (合成の入力とカメラは同時に使わない)
+      let stopTracking = () => {};
+      function startTracking(start) {
+        stopTracking();
         trackingFilter.reset();
-        if (!e.target.checked) {
-          avatar.clearTracking();
+        history = [];
+        stopTracking = start();
+      }
+      function endTracking() {
+        stopTracking();
+        stopTracking = () => {};
+        avatar.clearTracking();
+        statsElement.textContent = "";
+      }
+
+      document.getElementById("tracking").addEventListener("change", (e) => {
+        if (!e.target.checked) return endTracking();
+        document.getElementById("camera").checked = false;
+        startTracking(() => {
+          let frame = 0;
+          const start = performance.now();
+          const jitter = (amount) => (Math.random() - 0.5) * 2 * amount;
+          const feed = (now) => {
+            const t = (now - start) / 1000;
+            const blink = t % 3 < 0.15 ? 1 : 0;
+            feedTracking(
+              {
+                blendshapes: {
+                  jawOpen: 0.5 + 0.5 * Math.sin(t * 3),
+                  eyeBlinkLeft: blink,
+                  eyeBlinkRight: blink,
+                  mouthSmileLeft: 0.6,
+                  mouthSmileRight: 0.6,
+                },
+                head: {
+                  yaw: 20 * Math.sin(t) + jitter(3),
+                  pitch: 10 * Math.sin(t * 0.7) + jitter(3),
+                  roll: 8 * Math.sin(t * 1.3) + jitter(3),
+                },
+              },
+              now,
+            );
+            frame = requestAnimationFrame(feed);
+          };
+          frame = requestAnimationFrame(feed);
+          return () => cancelAnimationFrame(frame);
+        });
+      });
+
+      // カメラ: MediaPipe Face Landmarker (Apache-2.0) を CDN から読む。パッケージは MediaPipe に依存しない
+      const MEDIAPIPE = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1";
+      const FACE_MODEL =
+        "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+      let landmarker = null;
+      document.getElementById("camera").addEventListener("change", async (e) => {
+        if (!e.target.checked) return endTracking();
+        document.getElementById("tracking").checked = false;
+        const video = document.getElementById("video");
+        try {
+          if (!landmarker) {
+            statsElement.textContent = "MediaPipe を読み込み中…";
+            const { FaceLandmarker, FilesetResolver } = await import(`${MEDIAPIPE}/vision_bundle.mjs`);
+            const fileset = await FilesetResolver.forVisionTasks(`${MEDIAPIPE}/wasm`);
+            landmarker = await FaceLandmarker.createFromOptions(fileset, {
+              baseOptions: { modelAssetPath: FACE_MODEL },
+              runningMode: "VIDEO",
+              numFaces: 1,
+              outputFaceBlendshapes: true,
+              outputFacialTransformationMatrixes: true,
+            });
+          }
+          video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+          await video.play();
+          video.hidden = false;
+        } catch (error) {
+          e.target.checked = false;
+          result.errors.push(String(error));
+          statsElement.textContent = `カメラを使えません: ${error.message ?? error}`;
           return;
         }
-        const start = performance.now();
-        const jitter = (amount) => (Math.random() - 0.5) * 2 * amount;
-        const feed = (now) => {
-          const t = (now - start) / 1000;
-          const blink = t % 3 < 0.15 ? 1 : 0;
-          const input = {
-            blendshapes: {
-              jawOpen: 0.5 + 0.5 * Math.sin(t * 3),
-              eyeBlinkLeft: blink,
-              eyeBlinkRight: blink,
-              mouthSmileLeft: 0.6,
-              mouthSmileRight: 0.6,
-            },
-            head: {
-              yaw: 20 * Math.sin(t) + jitter(3),
-              pitch: 10 * Math.sin(t * 0.7) + jitter(3),
-              roll: 8 * Math.sin(t * 1.3) + jitter(3),
-            },
+        startTracking(() => {
+          let frame = 0;
+          let lastTime = -1;
+          const detect = () => {
+            const now = performance.now();
+            if (video.currentTime !== lastTime) {
+              lastTime = video.currentTime;
+              // 映像は左右反転せずにトラッカーへ渡す (表示だけを CSS で反転している) ので mirrored は付けない
+              const input = trackingFromFaceLandmarker(landmarker.detectForVideo(video, now));
+              if (input) {
+                feedTracking(input, now);
+              } else {
+                // 顔を見失った: フィルタを忘れる (最後の値を保つ)
+                trackingFilter.reset();
+                statsElement.textContent = "顔が見つかりません";
+              }
+              result.cameraFrames = (result.cameraFrames ?? 0) + 1;
+            }
+            frame = requestAnimationFrame(detect);
           };
-          avatar.setTracking(smooth ? trackingFilter.apply(input, now) : input);
-          trackingFrame = requestAnimationFrame(feed);
-        };
-        trackingFrame = requestAnimationFrame(feed);
+          frame = requestAnimationFrame(detect);
+          return () => {
+            cancelAnimationFrame(frame);
+            for (const track of video.srcObject?.getTracks() ?? []) track.stop();
+            video.srcObject = null;
+            video.hidden = true;
+          };
+        });
       });
 
       function fillSelect(id, names, attribute) {

@@ -95,7 +95,8 @@ function track() {
 - 平滑化 (揺れを抑える)・キャリブレーション (利用者の中立の顔を差し引く)・顔を見失ったときの扱いはホストが決めます。
   そのための補助 (依存なし・使わなくてよい) を下の「平滑化とキャリブレーション」に置きました。
 - 見本 (`examples/basic`) の「tracking (合成の入力)」は、時間の関数で作った入力に揺れを足し、`TrackingFilter` で平滑化して
-  毎フレーム渡します (カメラを使わない。`?tracking-filter=off` で平滑化しない)。
+  毎フレーム渡します (カメラを使わない。`?tracking-filter=off` で平滑化しない)。「camera (MediaPipe)」は本物のカメラの入力を渡します
+  ([下](#平滑化の係数を実際の顔で調整する))。
 
 ### 平滑化とキャリブレーション
 
@@ -134,6 +135,34 @@ calibrating = false;
   `(v − n) / (1 − n)` に引き伸ばします (力を抜いても少し開く口などを 0 にする)。体のピッチと肩の上下は、カメラの高さや体格で
   基準が大きく変わるので、中立にその値が無ければ渡しません。
 - これらは `packages/face-tracking` (GPL) とは別に、論文の定義から書いたものです (MIT。ADR 0025)。
+
+### 平滑化の係数を実際の顔で調整する
+
+既定の係数は One Euro フィルタの一般的な値から選んだもので、**本物のカメラと顔ではまだ調整していません** (T0413・T0719)。
+見本 (`examples/basic`) の「camera (MediaPipe)」で、カメラの映像を MediaPipe Face Landmarker (CDN から読む。Apache-2.0。
+パッケージは MediaPipe に依存しません) で調べて `<ugoe-avatar>` に渡し、係数を画面の欄で変えながら確かめられます。
+
+```sh
+cd bindings/web/examples/basic && npm install && npm start
+# http://localhost:8080/ を開き、「camera (MediaPipe)」に印を付ける (カメラの許可を求められる)
+# 係数は欄か URL で: ?rotation-min-cutoff=1&rotation-beta=0.05&blend-min-cutoff=1&blend-beta=2
+# ?tracking-filter=off で平滑化しない入力と比べる
+```
+
+欄の下に、頭のヨーの入力と平滑化の後の値、揺れの目安 (直近 60 フレームの、フレームごとの 2 階差分の絶対値の平均。
+小さいほど揺れが少ない) を出します。次の順で確かめます。
+
+1. **止まった顔の揺れ**: 正面を向いて動かずにいる間、モデルの頭と目・口が細かく震えないか。震えるなら `minCutoff` を下げる
+   (回転なら 0.5 など。揺れの目安の「平滑化」の数字が下がる)。
+2. **速く動いたときの遅れ**: 首を素早く振る・口を素早く開け閉めしたとき、モデルが目に見えて遅れないか。遅れるなら `beta` を上げる
+   (回転なら 0.1 など)。上げすぎると、動いている間の揺れが戻る。
+3. **まばたき**: 目を閉じてすぐ開けたとき、モデルの目が閉じきるか (ブレンドシェイプの平滑化が強すぎると、短いまばたきが半分しか閉じない)。
+   閉じきらないなら表情の `beta` を上げるか `minCutoff` を上げる。
+4. 部屋の明るさ・カメラ (30fps と 60fps)・顔の距離を変えて、1〜3 を繰り返す。暗いと入力の揺れが大きくなる。
+
+よい値が見つかったら、`src/tracking-filter.ts` の `ROTATION_DEFAULTS`・`BLENDSHAPE_DEFAULTS` とこの README の既定の値、
+単体テストを合わせて直します。カメラが無ければ「tracking (合成の入力)」でも揺れの目安を見られます
+(ヘッドレスの Chrome で、合成の入力の揺れの目安は平滑化なしで約 3.3、既定の係数で約 0.55、回転の `beta: 0` で約 0.17)。
 
 ## `WebPuppet` を直接使う
 
@@ -205,17 +234,14 @@ npm start          # http://localhost:8080/ (?backend=webgl2 で WebGL2 に固�
 パッケージを作り直したら、`rm -rf node_modules package-lock.json && npm install` で入れ直します
 (npm は同じ名前の tarball の中身の変化を見ないため)。
 
-`<ugoe-avatar>` (属性・スライダーからの `setParameter`・表情とモーションの切り替え・`backend` の切り替え・合成のトラッキング) と、
+`<ugoe-avatar>` (属性・スライダーからの `setParameter`・表情とモーションの切り替え・`backend` の切り替え・合成の入力とカメラのトラッキング) と、
 `createPuppet` で canvas に直接描く例を並べています。モデルはリポジトリの `assets/samples/` (MIT) を配ります。
 URL の `?src=` で `<ugoe-avatar>` のモデルを、`?simulate=` で WebGPU の失敗を ([上](#webgpu-と-webgl2)) 変えられます。
 
-リポジトリの見本のモデルはモーションと表情を持たないので、`motion` / `expression` 属性を試すには、モーション
-(`motions/`: 待機の `idle`・うなずく `nod`・首を振る `shake`) と表情 (`expressions/`: `smile`) を足したバンドルを作ります。
-
-```sh
-npm run sample:motion   # generated/avatar-motion.ugoe を作る (ugoe-cli を cargo で動かす。リポジトリの中で)
-npm start               # http://localhost:8080/?src=generated/avatar-motion.ugoe
-```
+見本のモデル (`avatar.ugoe`・`avatar-lit.ugoe`・`dress-up/dress-up.ugoe`) はモーション (待機の `idle`・うなずく `nod`・
+首を振る `shake`・首をかしげる `tilt`) と表情 (`avatar.ugoe` は `smile`・`surprised`・`sad`・`angry`、`dress-up.ugoe` は
+`smile`・`surprised`・`sad`) を持つので、`motion` / `expression` 属性をそのまま試せます
+([assets/samples/README.md](../../assets/samples/README.md#モーションと表情)。T0719)。
 
 ## リリース
 
@@ -281,6 +307,15 @@ npm への公開は、パッケージを使う人 (このリポジトリを持�
   外から来る入力を読む部分を自前で持つ負担に対して、転送の大きさの効果が小さいので入れなかった (利用者の判断)。
 - 残りの大部分は MessagePack の読み込み (約 1.15MB)・naga (シェーダの変換、約 0.7MB)・wgpu (約 0.77MB)・
   `serde_json` (約 0.37MB。表情・モーション・エフェクトなどの JSON の読み書き) です。
+- **`serde_json` は今のまま (T0719 で見直して変えなかった)**: twiggy で見ると `serde_json` の関数は約 414KB (名前を残したビルドで数えた値) で、
+  ほとんどがモデルの型の `Deserialize` を JSON 用に展開したもの (`StrRead` の読み込み約 240KB、`#[serde(tag)]` などの enum の
+  中間の値など約 135KB)。その約半分 (約 200KB) はモデルの JSON (`load_json`・`loadModel` に文字列を渡す口。エディタのビューポートも使う) の読み込みで、
+  残りはモーション・表情・物理・エフェクト・ライティングの JSON (どれも公開の API)。読み込みの口をすべて残したまま型の展開を減らすには、
+  JSON を別の形 (MessagePack など) に写してから読む・自前の読み込みを書く、のどちらかが要り、エラーの文 (行と列) などの結果が変わる。
+  上限を知るため、モデルの JSON の読み込みを丸ごと外したビルドを測ると、4,475,706 → 4,289,977 (生で −4.2%)、
+  gzip 1,311,151 → 1,270,981 (**−3.1%**)、brotli 969,758 → 946,831 (−2.4%) だった (API を壊すので入れていない)。
+  どの方法でもこれより減らないうえ、T0413 の MessagePack と同じく圧縮後の効果が小さいので、変えないことにした。
+  ほかに、`serde_json::from_slice` (バンドルの `META`) と `from_str` で読み込みが 2 通りに展開されている分は約 13KB で、揃えても効果は無い。
 
 ### エディタとビューアの wasm は今のまま (T0413)
 

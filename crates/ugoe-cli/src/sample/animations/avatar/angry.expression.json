@@ -1,0 +1,13 @@
+{
+  "name": "angry",
+  "fade_in": 0.2,
+  "fade_out": 0.3,
+  "parameters": [
+    { "parameter": "BrowLY", "value": -0.8, "op": "overwrite" },
+    { "parameter": "BrowRY", "value": -0.8, "op": "overwrite" },
+    { "parameter": "BrowLAngle", "value": 1.0, "op": "overwrite" },
+    { "parameter": "BrowRAngle", "value": 1.0, "op": "overwrite" },
+    { "parameter": "MouthForm", "value": -0.6, "op": "overwrite" },
+    { "parameter": "MouthPress", "value": 0.7, "op": "overwrite" }
+  ]
+}

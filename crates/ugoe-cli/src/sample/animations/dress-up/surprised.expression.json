@@ -1,0 +1,11 @@
+{
+  "name": "surprised",
+  "fade_in": 0.15,
+  "fade_out": 0.4,
+  "parameters": [
+    { "parameter": "BrowLY", "value": 1.0, "op": "overwrite" },
+    { "parameter": "BrowRY", "value": 1.0, "op": "overwrite" },
+    { "parameter": "MouthOpenY", "value": 0.6, "op": "add" },
+    { "parameter": "MouthForm", "value": -0.3, "op": "overwrite" }
+  ]
+}

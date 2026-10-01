@@ -4,17 +4,44 @@
 
 | ファイル | 内容 | 大きさ | 出所 / ライセンス |
 | --- | --- | --- | --- |
-| `avatar.ugoe` | アバタープロファイル ([docs/spec/avatar-profile.md](../../docs/spec/avatar-profile.md)) のレベル 3 に準拠した胸から上のモデル。キャンバス 1024x1024、パラメータ 27、メッシュ 24、デフォーマ 12、動的物理のリグ 5 (前髪・後ろ髪・耳飾りの揺れ) | 約 1.3MB | `assets/fixtures/psd-real/comfyui-see-through-bustup-parts.psd` (AI 生成、MIT) から `ugoe sample avatar` で生成 / MIT |
+| `avatar.ugoe` | アバタープロファイル ([docs/spec/avatar-profile.md](../../docs/spec/avatar-profile.md)) のレベル 3 に準拠した胸から上のモデル。キャンバス 1024x1024、パラメータ 27、メッシュ 24、デフォーマ 12、動的物理のリグ 5 (前髪・後ろ髪・耳飾りの揺れ)、モーション 4・表情 4 ([下](#モーションと表情)) | 約 1.3MB | `assets/fixtures/psd-real/comfyui-see-through-bustup-parts.psd` (AI 生成、MIT) から `ugoe sample avatar` で生成 / MIT |
 | `avatar-params.jpg` | `avatar.ugoe` を各パラメータの端と途中の値 (と表情の組み合わせ) で `ugoe render` した顔の拡大の一覧 | 約 270KB | 同上 |
 | `avatar-smooth.jpg` | 頭の向き (`AngleX` = `AngleY` = 15) の顔の拡大を、深度からの回転のワープ (`FaceWarp`・`BackHairWarp`) を線形で補間した場合 (T0314 より前の見本)・曲線補間 (今の見本)・キーを 7.5 度ごとに足して作り直した正解で並べ、下の段に正解との差を示したもの。頂点のずれの最大は線形 5.88px、曲線 0.52px ([evaluation.md#曲線補間](../../docs/spec/evaluation.md#曲線補間)) | 約 130KB | 同上 |
 | `avatar-lit.ugoe` | `avatar.ugoe` のすべてのテクスチャに法線マップ (テクスチャの半分の解像度) を付け、ライティングを有効にした版 ([下](#avatar-litugoe))。リグ・物理・メタデータは `avatar.ugoe` と同じ | 約 1.5MB (法線マップは合わせて約 180KB) | `ugoe sample avatar --lit` で生成 / MIT |
 | `avatar-lit.jpg` | 左から `avatar.ugoe` (ライティングなし)、`avatar-lit.ugoe` に左・右・上から光を当てたもの (環境光 0.55、平行光源 0.6、高さ 45°) | 約 110KB | 同上 |
-| `dress-up/` | 着せ替えの見本 ([下](#dress-up))。スロットを持つ本体 `dress-up.ugoe` と、衣装のモジュール `long-hair`・`twin-tails`・`cat-ears`・`sailor` (`.ugoemod`) | 合わせて約 135KB | `ugoe sample dress-up` がコードで描いて生成 / MIT |
+| `dress-up/` | 着せ替えの見本 ([下](#dress-up))。スロットを持つ本体 `dress-up.ugoe` (モーション 4・表情 3) と、衣装のモジュール `long-hair`・`twin-tails`・`cat-ears`・`sailor` (`.ugoemod`) | 合わせて約 135KB | `ugoe sample dress-up` がコードで描いて生成 / MIT |
 | `dress-up.jpg` | `dress-up/` を `ugoe render --module` で描いたもの (左から本体だけ、`LongHair`+`CatEars`+`Sailor`、`TwinTails`+`Sailor` (向き・片目・口)、`LongHair` (向き・体)) | 約 40KB | 同上 |
 | `avatar-physics.jpg` | 頭を振る (`AngleX` 0→25→-25→0 を 0.8 秒) モーションと傾ける (`AngleZ` 0→30→0) モーションの途中を `ugoe render --motion --time` で描いたもの (上 4 つが振る、下 4 つが傾ける。0.3/0.5/0.7/0.9 秒) | 約 100KB | 同上 |
 
 T0702 の全身の絵 (`comfyui-see-through-full-body-parts.psd`) から作った前の見本は、目・口が 1 枚ずつで表情が不自然だったので、
 T0704 でこのバストアップの PSD から作ったものに置き換えました (全身の見本は残していません。要るなら T0702 のコミットのジェネレータで作れます)。
+
+## モーションと表情
+
+見本のモデル (`avatar.ugoe`・`avatar-lit.ugoe`・`dress-up/dress-up.ugoe`) は、モーションと表情を持ちます (T0719)。
+npm パッケージの `<ugoe-avatar motion="nod" expression="smile">` (`bindings/web/examples/basic` の選択欄) や
+`ugoe render --motion nod --time 0.3`・`--expression smile` でそのまま試せます (ビューアにはモーションと表情を再生する画面がまだありません)。中身は `crates/ugoe-cli/src/sample/animations/` の JSON (手で書いたもの。MIT) で、`ugoe sample` が
+バンドルに入れます (見本のアバターはエディタと同じ `Command::AddMotion`・`AddExpression` で)。
+
+| モーション | 長さ | 動かすもの |
+| --- | --- | --- |
+| `idle` | 4 秒・ループ | `AngleX` ±8・`BodyAngleZ` 0→3 (待機) |
+| `nod` | 1.2 秒 | `AngleY` 0→−25→5→−20→0 (うなずく)。終わりにイベント `nod-end` |
+| `shake` | 1.6 秒 | `AngleX` 0→25→−25→25→0 (首を振る) |
+| `tilt` | 1.5 秒 | `AngleZ` 0→25 (ベジェで入る)→25→0 と `EyeBallX` 0.5 (首をかしげて横を見る) |
+
+モーションは標準パラメータの頭と体の向き・目玉だけを動かすので、2 つのモデルで同じものを使います。
+`dress-up.ugoe` は標準の呼吸 (`AngleX/Y/Z` の小さな揺れを含む) を持つので、モーションの値にそれが足されます。
+
+| 表情 | `avatar.ugoe` | `dress-up.ugoe` |
+| --- | --- | --- |
+| `smile` | 笑い目 (`EyeLSmile`・`EyeRSmile` 1)・口角 (`MouthForm` 1) | 眉を少し上げ、口角を上げる |
+| `surprised` | 目を見開き (`EyeLWide`・`EyeRWide` 1)・眉を上げ、口を開ける (`MouthOpenY` +0.5 の加算) | 眉を上げ、口を開ける (+0.6) |
+| `sad` | 困り眉 (`BrowInnerUp` 1・外側を下げる)・目を細め (`EyeLOpen` ×0.75)・口角を下げる | 眉と口角を下げ、目を細める |
+| `angry` | 眉を下げて外側を上げ (`BrowLAngle` 1)・口を結ぶ (`MouthPress` 0.7) | (なし) |
+
+`dress-up.ugoe` の表情はレベル 2 のパラメータだけを使います (`EyeLSmile` などを持たないため)。
+`sample::animations::check` が、モーションと表情がモデルに無いパラメータを動かさないことを確かめます。
 
 ## avatar.ugoe
 

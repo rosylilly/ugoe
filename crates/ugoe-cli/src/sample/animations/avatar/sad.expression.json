@@ -1,0 +1,13 @@
+{
+  "name": "sad",
+  "fade_in": 0.4,
+  "fade_out": 0.4,
+  "parameters": [
+    { "parameter": "BrowInnerUp", "value": 1.0, "op": "overwrite" },
+    { "parameter": "BrowLAngle", "value": -0.6, "op": "overwrite" },
+    { "parameter": "BrowRAngle", "value": -0.6, "op": "overwrite" },
+    { "parameter": "EyeLOpen", "value": 0.75, "op": "multiply" },
+    { "parameter": "EyeROpen", "value": 0.75, "op": "multiply" },
+    { "parameter": "MouthForm", "value": -1.0, "op": "overwrite" }
+  ]
+}

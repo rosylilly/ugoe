@@ -176,6 +176,7 @@ ugoe render packed.ugoe -o check.png                 # 見た目が変わって�
 アバタープロファイル ([docs/spec/avatar-profile.md](../../docs/spec/avatar-profile.md)) のレベル 3 に準拠した見本のモデルを、
 PSD から `ugoe_editor_core::Command` の列で組み立てて `.ugoe` に書き出す (`src/sample.rs`)。
 組み立て方と出来上がりは [assets/samples/README.md](../../assets/samples/README.md)。
+モーションと表情 (`src/sample/animations/` の JSON) も入れる ([assets/samples/README.md#モーションと表情](../../assets/samples/README.md#モーションと表情))。
 
 ```sh
 just cli sample avatar -o assets/samples/avatar.ugoe          # リポジトリのルートで実行する
@@ -193,7 +194,7 @@ ugoe sample avatar -o avatar.ugoe --psd path/to/parts.psd --project avatar.ugoep
 
 着せ替えの見本 (スロットと物理のリグを持ち、アバタープロファイルのレベル 2 を名乗る本体 `dress-up.ugoe` と、衣装のモジュール 4 つの `.ugoemod`) を、
 指定したディレクトリに書き出す (`src/sample/dress_up.rs`)。絵はコードで描く (`src/sample/paint.rs`)。
-中身は [assets/samples/README.md#dress-up](../../assets/samples/README.md#dress-up)。
+中身は [assets/samples/README.md#dress-up](../../assets/samples/README.md#dress-up)。本体にはモーションと表情も入れる (`src/sample/animations/`)。
 
 ```sh
 just cli sample dress-up -o assets/samples/dress-up          # リポジトリのルートで実行する

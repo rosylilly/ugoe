@@ -11,6 +11,7 @@
 //! 閉じ (`eyeclose`)、口は閉じ (`mouth-close`) と開き (`mouth-open`) の別のレイヤーがあるので、
 //! 不透明度と変形でつなぐ。
 
+pub mod animations;
 pub mod dress_up;
 pub mod lit;
 mod paint;
@@ -219,6 +220,15 @@ pub fn build_avatar(psd: &[u8]) -> anyhow::Result<Project> {
     rig.apply(Command::SetAvatarProfile {
         profile: Some(avatar_profile()),
     })?;
+    let motions = animations::motions()?;
+    let expressions = animations::avatar_expressions()?;
+    animations::check(rig.model(), &motions, &expressions)?;
+    for motion in motions {
+        rig.apply(Command::AddMotion { motion })?;
+    }
+    for expression in expressions {
+        rig.apply(Command::AddExpression { expression })?;
+    }
     Ok(Project::from_document(empty.meta, &rig.document))
 }
 
@@ -1447,6 +1457,11 @@ mod tests {
             "regenerate assets/samples/avatar.ugoe"
         );
         assert_eq!(committed.avatar, fresh.avatar);
+        assert_eq!(
+            (&bundle.motions, &bundle.expressions),
+            (&project.motions, &project.expressions),
+            "regenerate assets/samples/avatar.ugoe"
+        );
         for params in [
             vec![],
             vec![

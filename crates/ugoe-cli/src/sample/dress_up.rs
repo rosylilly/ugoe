@@ -125,6 +125,8 @@ impl DressUpSample {
             images(&model.textures, &self.base.textures)?,
         );
         base.physics = self.base.physics.clone();
+        base.motions = self.base.motions.clone();
+        base.expressions = self.base.expressions.clone();
         base.save(&base_dir)
             .with_context(|| format!("saving {}", base_dir.display()))?;
         let mut written = vec![base_dir.clone()];
@@ -186,7 +188,10 @@ fn kebab_case(name: &str) -> String {
 
 /// 見本の本体とモジュールを作り、検証と合成を確かめる。
 pub fn build_dress_up() -> anyhow::Result<DressUpSample> {
-    let base = base();
+    let mut base = base();
+    base.motions = super::animations::motions()?;
+    base.expressions = super::animations::dress_up_expressions()?;
+    super::animations::check(&base.model, &base.motions, &base.expressions)?;
     let modules = vec![long_hair(), twin_tails(), cat_ears(), sailor()];
     let physics = base
         .physics
@@ -1523,6 +1528,8 @@ mod tests {
         assert!(base.module.is_none());
         assert_eq!(base.model, sample.base.model);
         assert_eq!(base.physics, sample.base.physics);
+        assert_eq!(base.motions, sample.base.motions);
+        assert_eq!(base.expressions, sample.base.expressions);
         let bundle =
             ugoe_format::read_bundle(&ugoe_editor_core::export_bundle(&base).unwrap()).unwrap();
         assert_eq!(bundle.textures, sample.base.textures);
