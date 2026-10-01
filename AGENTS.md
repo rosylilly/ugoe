@@ -74,6 +74,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 | `just crate <name>` | 1 クレートだけ clippy とテスト (反復中はこれを使う) |
 | `just fmt` | Rust と TS を整形 |
 | `just layers` | クレートの依存方向を検査 |
+| `just test-group <group>` / `just lint-group <group>` | CI の 1 つのグループ (`scripts/ci-groups.mjs`) だけテスト / clippy |
 | `just licenses` | 依存するクレートのライセンスを検査 (MIT のクレートにコピーレフトを入れない) |
 | `just publish-check` | crates.io に公開するクレートの準備を検査 (メタデータ・LICENSE の写し・内部の依存の版。[docs/release.md](docs/release.md#cratesio)) |
 | `just wasm-check` | wasm32 でビルドできるか (ランタイム層を触ったら実行) |
@@ -86,7 +87,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 
 ### アーキテクチャ
 
-1. **依存方向を守る。** ランタイム層 (`core` `model` `runtime` `format` `physics` `motion` `render` `ugoe` `ffi` `wasm`) は、ツール層 (`psd` `mesher` `rigging` `editor-core` `ai` `cli` `editor`) に依存してはならない。`just layers` で検査される。新しいクレートを作ったら `scripts/check-layers.mjs` に登録する。
+1. **依存方向を守る。** ランタイム層 (`core` `model` `runtime` `format` `physics` `motion` `render` `ugoe` `ffi` `wasm`) は、ツール層 (`psd` `mesher` `rigging` `editor-core` `ai` `cli` `editor`) に依存してはならない。`just layers` で検査される。新しいクレートを作ったら `scripts/check-layers.mjs` に登録し、`scripts/ci-groups.mjs` の CI のグループにも入れる ([docs/testing.md#ci-のジョブ](docs/testing.md#ci-のジョブ))。
 2. **`ugoe-model` はデータだけを持つ。** 補間・変形・再生などのロジックは下流クレートに置く。
 3. **ランタイム層は GPU・ファイル I/O・スレッド・時刻取得に依存しない** (`ugoe-render` の GPU と `ugoe-format` のバイト列処理を除く)。`dt` は引数で受け取る。wasm32 でビルドできる状態を保つ。
 4. **エディタの編集はすべて `ugoe_editor_core::Command` を通す。** Tauri コマンドや CLI に編集ロジックを直接書かない。

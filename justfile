@@ -19,7 +19,7 @@ setup:
     rustup show active-toolchain
 
 # CI と同じ検査一式
-ci: fmt-check lint test layers licenses publish-check spec web-check
+ci: fmt-check lint test layers groups licenses publish-check spec web-check
 
 # コミットメッセージを検査: `just commitlint "feat(runtime): add foo"`
 commitlint message:
@@ -41,6 +41,21 @@ lint:
 # 全テスト (GPU が必要なテストは除外される。`just test-gpu` を参照)
 test *args:
     cargo test --workspace {{args}}
+
+# CI のジョブのまとまり (グループ) の検査: すべてのクレートがどれか 1 つのグループに入っているか (scripts/ci-groups.mjs)
+groups:
+    @node --test --test-reporter=dot scripts/ci-groups.test.mjs
+    @node scripts/ci-groups.mjs check
+
+# グループの一覧は `node scripts/ci-groups.mjs list`。CI の rust (<グループ>) ジョブと同じ検査。
+# lint-group と test-group は bash の構文を使うので、Windows では Git Bash か WSL で実行する。
+# 1 つのグループだけの clippy: `just lint-group runtime`
+lint-group name:
+    args="$(node scripts/ci-groups.mjs args {{name}})"; cargo clippy $args --all-targets -- -D warnings
+
+# 1 つのグループだけのテスト: `just test-group tools`。引数は cargo test に渡す
+test-group name *args:
+    args="$(node scripts/ci-groups.mjs args {{name}})"; cargo test $args {{args}}
 
 # GPU を使う描画テスト。`gpu-tests` feature を持つ全クレートが対象 (scripts/gpu-test-args.mjs)。
 # アダプタ情報も表示するには `just test-gpu -- --nocapture`

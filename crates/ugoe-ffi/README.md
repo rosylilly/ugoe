@@ -47,7 +47,7 @@ cbindgen は MPL-2.0 なので、このクレートの依存 (`build-dependencie
 ワークスペースの外のツールとして使う。版は `scripts/ffi.mjs` の `CBINDGEN_VERSION` と CI (`.github/workflows/ci.yml` の `cbindgen@...`) で揃え、
 違う版や未導入なら `just ffi-check` / `just ffi-header` が入れ方を案内して止まる。ヘッダには cbindgen の版を書かない。
 
-`just ffi-check` は cbindgen と C コンパイラ (`cc`。`CC` で変えられる) が要るので `just ci` には含めず、CI の `rust` ジョブで別に実行する。
+`just ffi-check` は cbindgen と C コンパイラ (`cc`。`CC` で変えられる) が要るので `just ci` には含めず、CI の `rust (bindings)` ジョブで別に実行する。
 
 ```sh
 cargo install cbindgen --version 0.29.4 --locked
