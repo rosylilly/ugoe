@@ -388,9 +388,9 @@ fn proposal_from_plans(model: &Model, plans: &[TurnPlan]) -> Result<Proposal, Ai
         .collect::<Result<Vec<_>, _>>()?;
     b.validate()?;
     Ok(Proposal {
-        title: "深度推定による振り向き".into(),
+        title: "Head turn from estimated depth".into(),
         rationale: format!(
-            "原画から推定した深度をワープの制御点で標本化し、意味ラベルで補正して、深度からの回転で振り向きのキーフォームを作る。\n{}",
+            "Samples the depth estimated from the artwork at the warp control points, corrects it with the part labels, and makes the turn keyforms by rotating the depth.\n{}",
             rationale.join("\n")
         ),
         commands: b.commands,
@@ -442,11 +442,11 @@ pub(crate) fn push_turn(b: &mut Builder, plan: &TurnPlan) -> Result<String, AiEr
     })?;
     let covered: BTreeSet<&str> = plan.labels.iter().flatten().map(|l| l.as_str()).collect();
     Ok(format!(
-        "{} ({}): 起伏 {:.0}px、回転の中心 ({:.0}, {:.0})、角度の係数 {}、制御点を覆うラベル [{}]",
+        "{} ({}): relief {:.0} px, pivot ({:.0}, {:.0}), angle scale {}, labels under the control points [{}]",
         plan.deformer,
         match plan.role {
-            TurnRole::Head => "頭",
-            TurnRole::Body => "体",
+            TurnRole::Head => "head",
+            TurnRole::Body => "body",
         },
         plan.relief,
         plan.rotation.pivot.x,

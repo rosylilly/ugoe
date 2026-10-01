@@ -1056,7 +1056,11 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
     (`ugoe_ai::classify::label_meshes_by_name`) に、AI の提案のパネルで PSD を分類していればその結果 (`rig::mesh_parts`) を重ねたものです (T0518)。
     - `get_normal_map_group(texture)` (`NormalMapGroupView`) で、まとまりの名前・いっしょにふくらむテクスチャ・形にだけ加えるテクスチャ・向きだけを受けるテクスチャ
       (眼鏡。選んだテクスチャがそれなら「Takes the direction of group “face” … without bulging」)・既定の設定を出し、
-      強さ (0〜2) と「Round edges only」の縁の丸みの幅 (`edge`、まとまりの格子の画素)・ならしは、テクスチャを選ぶたびにまとまりの既定から始めます (「Defaults」で戻す)。
+      強さ (0〜2) と「Round edges only」の縁の丸みの幅・ならし (「Smoothing」) は、テクスチャを選ぶたびにまとまりの既定から始めます (「Defaults」で戻す)。
+    - **長さの単位 (T0522):** `BulgeSettings` の `edge`・`smoothing` はまとまりの格子 (形に加わるテクスチャのうち最も細かいものの 1 画素) の画素ですが、
+      画面は **キャンバスの px** で見せます (「Edge width (px)」「Smoothing (px)」)。`NormalMapGroupView::canvas_per_pixel` (格子の 1 画素のキャンバスの px) を掛けて見せ、
+      送るときに割ります (`src/lib/panels/lighting/lighting.ts` の `bulgeForm`・`bulgeSettings`)。見本のアバターの顔では格子の 144 画素がキャンバスの 48 px
+      (虹彩のテクスチャが細かいため、格子の 1 画素がキャンバスの約 0.33 px)。単独でふくらませるもの (`canvas_per_pixel` が `null`) はテクスチャの画素のままで、「(texture px)」と出します。
     - `settings` (`BulgeSettings { strength, edge, smoothing }`) はまとまり全体の設定です (`null` ならまとまりの既定)。「Regenerate」は選んだテクスチャの法線マップだけを、
       「Generate for the group」(`whole_group`) はまとまりのすべてのテクスチャの法線マップを作ります。どちらも形はまとまり全体で決まるので、1 枚ずつ作っても同じ向きになります。
     - `ugoe_editor_core::lighting::generate_normal_map` (テクスチャ単独のふくらみ) は画面からは使いません。
@@ -1346,6 +1350,7 @@ PSD の取り込みから「レイヤーの分類 → リギングの提案」�
   (AI にもう一度尋ねずに済むように)。却下 (「Reject」) は一覧から消します。
 - **一部だけの採用 (コマンドの単位):** コマンドごとにチェックを外せます。一覧は、同じ対象への続いたコマンドを 1 つのまとまりに
   まとめ (まとまりのチェックで全部を切り替える)、開くと 1 つずつ選べます。
+  - 一覧に出す対象 (`ProposalCommand::subject`) は `id`・`target`/`element`・要素そのもの (`parameter` など) の ID・テクスチャの名前 (`set_normal_map` の `texture`。T0522)・`name` の順に探します。
   - 各コマンドの依存 (`ProposalCommand::requires`) は `proposal::analyze` が、コマンドの JSON が前のコマンドの **作った要素** か
     **主に変える要素** (`id`・`target`・`element`) の ID を指すかで決めます。同じ要素への後の編集は前の編集に依存するとみなします
     (推定の設定の後の推定、キーの追加の後のセルの置き換えなど、前の結果に頼るため)。種類ごとの規則を持たない近似で、
@@ -1377,12 +1382,15 @@ AI タブの「Normal maps from the shapes」で、すべてのテクスチャ�
 - **まとまりの一覧:** `get_normal_map_groups` が、法線マップを作る対象 (マスク専用と背景を除くメッシュのテクスチャ) のまとまりを返します。ラベルは Lighting タブと同じく
   メッシュの名前の規則に、パネルで分類していればその結果を重ねたもので、分類し直すと一覧も読み直します。単独でふくらませるもの (`alone`・ラベルなし) は 1 行にまとめます。
   行ごとにテクスチャの数・法線マップを持つ数・向きだけを受ける数 (眼鏡) を出します。
-- **選ぶ:** 行ごとに含めるか (既定はすべて) と強さ (0〜2。既定はまとまりの既定) を選びます。縁の丸み・ならしはまとまりの既定のままです (細かく変えるなら Lighting タブ)。
+- **選ぶ:** 行ごとに含めるか (既定はすべて) と強さ (0〜2) を選び、行の下の開閉 (縁とならしの今の値を出す) で「Round edges only」・縁の幅・ならしを選びます
+  (T0522。既定はまとまりの既定、「Defaults」で戻す)。長さは Lighting タブと同じくキャンバスの px で見せ、送るときにまとまりの格子の画素に直します
+  ([ライティングの画面](#ライティングの画面)の「長さの単位」)。キャンバスの px で覚えるので、分類し直してまとまりの格子が変わっても見た目の幅は変わりません。
   選び方はエディタを開いている間だけ覚えます。「Replace existing normal maps」を付けなければ、法線マップを持つテクスチャは飛ばします。
 - **提案:** `propose_normal_maps` が `set_normal_map` の列 (ライティングが無効なら最後に `set_lighting`) を作り、一覧に置きます (題名の末尾は「— no AI」)。
   作る間はドキュメントのロックを持たず、その間にドキュメントが変わったら置きません。モジュールのプロジェクトでは断ります (本体のテクスチャとライティングは変えられない。
   パネルにも出さない)。
-- **区切り:** 提案のコマンドはまとまりごとの区切り (`ProposalState::sections`、`CommandSection { label, indices, subjects }`。`subjects` はコマンドごとのテクスチャの名前) にし、一覧はその単位でまとめます
+- **区切り:** 提案のコマンドはまとまりごとの区切り (`ProposalState::sections`、`CommandSection { label, indices }`) にし、一覧はその単位でまとめます (区切りの中のコマンドは `ProposalCommand::subject` のテクスチャの名前付きで出す。T0520 の `subjects` は
+  `proposal::analyze` がテクスチャの名前を拾うようにしたので T0522 で除いた)
   (まとまりのチェックで、そのまとまりの法線マップを外せる)。区切りのない提案 (リグなど) は今までどおり、同じ対象への続いたコマンドをまとめます。
 - **プレビュー:** 提案の複製はライティングが有効なので、ビューポートはプレビューの光源 (Lighting タブの Preview lights) で照らした姿を出します。
 

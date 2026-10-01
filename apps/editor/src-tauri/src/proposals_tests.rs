@@ -227,7 +227,7 @@ fn ai_rig_notes_retries() {
     assert_eq!(fake.calls().len(), 2);
     assert!(proposal.title.ends_with("— AI"), "{}", proposal.title);
     assert!(
-        proposal.rationale.contains("1 回分"),
+        proposal.rationale.contains("Asked the AI again 1 time(s)"),
         "{}",
         proposal.rationale
     );
@@ -274,7 +274,7 @@ fn an_openai_compatible_provider_classifies_and_rigs() {
     .proposal;
     assert!(proposal.title.ends_with("— AI"), "{}", proposal.title);
     assert!(
-        proposal.rationale.contains("1 回分"),
+        proposal.rationale.contains("Asked the AI again 1 time(s)"),
         "{}",
         proposal.rationale
     );
@@ -703,7 +703,7 @@ fn module_state() -> (AppState, Vec<LayerLabel>) {
 fn module_projects_get_module_rigs() {
     let (state, labels) = module_state();
     let view = done(propose_in(&state, false, None).unwrap());
-    assert!(view.title.contains("モジュール"), "{}", view.title);
+    assert!(view.title.contains("module"), "{}", view.title);
     assert!(view.title.ends_with("— rules"), "{}", view.title);
     let parameters = state.document.lock().unwrap().model().parameters.clone();
     {
@@ -931,7 +931,7 @@ fn normal_maps_are_proposed_by_group() {
     let view = propose_normal_maps_in(&state, &choices, false).unwrap();
     assert!(view.title.ends_with("— no AI"), "{}", view.title);
     assert!(
-        view.rationale.contains("ふくらみ 0.1"),
+        view.rationale.contains("strength 0.1"),
         "{}",
         view.rationale
     );
@@ -954,7 +954,12 @@ fn normal_maps_are_proposed_by_group() {
     assert_eq!(covered, view.commands.len());
     let face_section = &sections[0];
     assert_eq!(face_section.indices.len(), face.textures.len());
-    let mut subjects = face_section.subjects.clone();
+    // コマンドの対象はテクスチャの名前 (`proposal::analyze`)。
+    let mut subjects: Vec<String> = face_section
+        .indices
+        .iter()
+        .map(|&i| view.commands[i].subject.clone().unwrap())
+        .collect();
     subjects.sort();
     let mut textures = face.textures.clone();
     textures.sort();

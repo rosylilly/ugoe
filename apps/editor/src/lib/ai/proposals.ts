@@ -9,6 +9,7 @@ import type {
   NormalMapGroupView,
   ProposalCommand,
 } from "../ipc";
+import { type BulgeForm, bulgeForm, bulgeSettings } from "../panels/lighting/lighting";
 
 /** `index` を外した集合。`index` を (直接・間接に) 使うコマンドも外す。 */
 export function excludeCommand(
@@ -63,10 +64,8 @@ export interface CommandGroup {
   /** 対象 (`ProposalCommand.subject`)。なければ最初のコマンドの種類。 */
   label: string;
   indices: number[];
-  /** 提案の区切り (`ProposalState.sections`) から作ったか。1 つだけでも名前を付けて出す。 */
+  /** 提案の区切り (`ProposalState.sections`) から作ったか。1 つだけでも名前を付けて出し、中のコマンドは対象 (`subject`) 付きで出す。 */
   section?: boolean;
-  /** コマンドごとの対象 (`indices` と同じ並び。区切りから作ったとき)。 */
-  subjects?: string[];
 }
 
 /** 続いたコマンドを対象ごとにまとめる (順序は変えない)。 */
@@ -153,7 +152,6 @@ export function sectionGroups(sections: CommandSection[]): CommandGroup[] {
     label: surfaceGroupLabel(s.label),
     indices: [...s.indices],
     section: true,
-    subjects: [...s.subjects],
   }));
 }
 
@@ -187,14 +185,13 @@ export function normalGroupKey(group: NormalMapGroupView): string {
   return group.group ?? UNLABELED;
 }
 
-/** まとまりごとの選び方: 含めるか・強さ。 */
-export interface NormalMapPick {
+/** まとまりごとの選び方: 含めるか・強さ・縁の丸み・ならし (長さは画面の単位。panels/lighting/lighting.ts の `BulgeForm`)。 */
+export interface NormalMapPick extends BulgeForm {
   include: boolean;
-  strength: number;
 }
 
 /**
- * まとまりの一覧に合わせた選び方。前の選び方 (`previous`) にあるまとまりはそれを残し、新しいまとまりは含めて既定の強さにする。
+ * まとまりの一覧に合わせた選び方。前の選び方 (`previous`) にあるまとまりはそれを残し、新しいまとまりは含めてまとまりの既定の設定にする。
  */
 export function normalMapPicks(
   groups: NormalMapGroupView[],
@@ -203,12 +200,12 @@ export function normalMapPicks(
   const picks: Record<string, NormalMapPick> = {};
   for (const g of groups) {
     const key = normalGroupKey(g);
-    picks[key] = previous[key] ?? { include: true, strength: g.defaults.strength };
+    picks[key] = previous[key] ?? { include: true, ...bulgeForm(g) };
   }
   return picks;
 }
 
-/** IPC に渡す、含めるまとまりと設定 (強さのほかはまとまりの既定)。 */
+/** IPC に渡す、含めるまとまりと設定 (長さはまとまりの格子の画素に直す)。 */
 export function normalMapChoices(
   groups: NormalMapGroupView[],
   picks: Readonly<Record<string, NormalMapPick>>,
@@ -216,7 +213,7 @@ export function normalMapChoices(
   return groups.flatMap((g) => {
     const pick = picks[normalGroupKey(g)];
     if (!pick?.include) return [];
-    return [{ group: g.group, settings: { ...g.defaults, strength: pick.strength } }];
+    return [{ group: g.group, settings: bulgeSettings(pick, g) }];
   });
 }
 

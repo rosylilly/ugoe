@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { Model, PreviewLighting } from "../../ipc";
+import type { Model, NormalMapGroupView, PreviewLighting } from "../../ipc";
 import {
+  bulgeForm,
+  bulgeLimits,
+  bulgeSettings,
+  bulgeUnit,
   DEFAULT_PREVIEW_LIGHTING,
   directionToHandle,
   elevationDegrees,
@@ -136,5 +140,39 @@ describe("lightingHint", () => {
     expect(lightingHint({ meshes: [mesh(true)] } as unknown as Model)).toMatch(
       /off for this model/,
     );
+  });
+});
+
+describe("bulge settings", () => {
+  const view = (canvasPerPixel: number | null, edge: number | null): NormalMapGroupView => ({
+    group: canvasPerPixel === null ? null : "face",
+    textures: ["face"],
+    shape_only: [],
+    oriented: [],
+    with_normal_map: [],
+    defaults: { strength: 0.35, edge, smoothing: 6 },
+    canvas_per_pixel: canvasPerPixel,
+    from_classification: false,
+  });
+
+  it("shows lengths in canvas px for a group and converts them back", () => {
+    // 格子の 1 画素がキャンバスの 0.25 px: 格子の 192 画素は 48 px。
+    const face = view(0.25, 192);
+    const form = bulgeForm(face);
+    expect(bulgeUnit(face)).toBe("px");
+    expect(form.edge).toBeCloseTo(48);
+    expect(form.smoothing).toBeCloseTo(1.5);
+    const settings = bulgeSettings({ ...form, edge: 40 }, face);
+    expect(settings.edge).toBeCloseTo(160);
+    expect(settings.smoothing).toBeCloseTo(6);
+    expect(bulgeSettings({ ...form, roundEdges: false }, face).edge).toBeNull();
+    expect(bulgeLimits(face)).toEqual({ edge: 96, smoothing: 10 });
+  });
+
+  it("keeps texture pixels for parts shaped on their own", () => {
+    const alone = view(null, null);
+    expect(bulgeUnit(alone)).toBe("texture px");
+    expect(bulgeForm(alone)).toEqual({ strength: 0.35, roundEdges: false, edge: 12, smoothing: 6 });
+    expect(bulgeLimits(alone)).toEqual({ edge: 64, smoothing: 12 });
   });
 });

@@ -1,7 +1,8 @@
 <!--
   選んだメッシュのテクスチャの法線マップ (docs/editor.md#ライティングの画面)。
   - 「Generate」: 部位のまとまり (顔と目口鼻眉・首と体と腕・髪など。意味ラベルから決める) の形を 1 つのふくらみにして
-    法線マップを作る (AI なし。ipc.generateTextureNormalMap)。強さと縁の丸みはまとまりの既定から始まる (ipc.getNormalMapGroup)。
+    法線マップを作る (AI なし。ipc.generateTextureNormalMap)。強さ・縁の丸み・ならしはまとまりの既定から始まる (ipc.getNormalMapGroup)。
+    縁の幅とならしはキャンバスの px で見せる (単独でふくらませるものはテクスチャの px。lighting.ts の bulgeForm)。
     「Generate for the group」はまとまりのすべてのテクスチャに作る。眼鏡はまとまり (顔) の形に加えず、向きだけを受ける
     (`oriented`)。すべてのテクスチャをまとめて提案するのは AI タブ (lib/ai/ProposalsPanel.svelte)。
   - 「Assign PNG…」: PNG を選んで付ける (DirectX 形式なら「Flip green」)。
@@ -13,6 +14,7 @@ import type { EditorDocument } from "../../document.svelte";
 import { fileDialogs } from "../../fileDialogs";
 import { type ApplyReport, ipc, type Model, type NormalMapGroupView } from "../../ipc";
 import { textureLabel } from "../../labels";
+import { type BulgeForm, bulgeForm, bulgeLimits, bulgeSettings, bulgeUnit } from "./lighting";
 
 interface Props {
   doc: EditorDocument;
@@ -38,10 +40,8 @@ const sharedWith = $derived(
     : [],
 );
 
-let strength = $state(0.5);
-let roundEdgesOnly = $state(false);
-let edge = $state(12);
-let smoothing = $state(1);
+/** ふくらみの設定 (長さは画面の単位)。 */
+let form = $state<BulgeForm>(bulgeForm(null));
 /** 選んだテクスチャの法線マップのまとまり (取れなければ null)。 */
 let group = $state<NormalMapGroupView | null>(null);
 let flipGreen = $state(false);
@@ -83,11 +83,7 @@ $effect(() => {
 
 /** 設定をまとまりの既定に戻す。 */
 function useDefaults(view: NormalMapGroupView | null): void {
-  const d = view?.defaults;
-  strength = d?.strength ?? 0.5;
-  roundEdgesOnly = d?.edge != null;
-  edge = Math.round(d?.edge ?? 12);
-  smoothing = d?.smoothing ?? 1;
+  form = bulgeForm(view);
 }
 
 // テクスチャを替えたら、まとまりと既定の設定を取り直す (ラベルはモデルの編集でも変わりうるので revision も見る)。
@@ -116,8 +112,10 @@ $effect(() => {
   };
 });
 
-/** 縁の幅の欄の上限 (既定の幅が大きいまとまりでも選べるように)。 */
-const edgeMax = $derived(Math.max(64, Math.ceil((group?.defaults.edge ?? 0) * 2)));
+/** 縁の幅とならしの欄の上限。 */
+const limits = $derived(bulgeLimits(group));
+/** 長さの単位 (まとまりはキャンバスの px)。 */
+const unit = $derived(bulgeUnit(group));
 /** いっしょにふくらませるほかのテクスチャ。 */
 const partners = $derived(group ? group.textures.filter((t) => t !== ref?.name) : []);
 
@@ -135,13 +133,8 @@ async function run(action: () => Promise<ApplyReport>): Promise<void> {
 function generate(wholeGroup: boolean): void {
   if (!ref) return;
   const name = ref.name;
-  void run(() =>
-    ipc.generateTextureNormalMap(
-      name,
-      { strength, edge: roundEdgesOnly ? edge : null, smoothing },
-      wholeGroup,
-    ),
-  );
+  const settings = bulgeSettings(form, group);
+  void run(() => ipc.generateTextureNormalMap(name, settings, wholeGroup));
 }
 
 async function assign(): Promise<void> {
@@ -204,23 +197,37 @@ function remove(): void {
     <label class="row">
       <span>Strength</span>
       <span class="controls">
-        <input type="range" min="0" max="2" step="0.05" bind:value={strength} aria-label="Strength" />
-        <span class="value">{strength.toFixed(2)}</span>
+        <input type="range" min="0" max="2" step="0.05" bind:value={form.strength} aria-label="Strength" />
+        <span class="value">{form.strength.toFixed(2)}</span>
       </span>
     </label>
     <label class="row">
       <span>Round edges only</span>
-      <input type="checkbox" bind:checked={roundEdgesOnly} />
+      <input type="checkbox" bind:checked={form.roundEdges} />
     </label>
-    {#if roundEdgesOnly}
+    {#if form.roundEdges}
       <label class="row">
-        <span>Edge width (px)</span>
+        <span>Edge width ({unit})</span>
         <span class="controls">
-          <input type="range" min="1" max={edgeMax} step="1" bind:value={edge} aria-label="Edge width" />
-          <span class="value">{edge}</span>
+          <input type="range" min="1" max={limits.edge} step="1" bind:value={form.edge} aria-label="Edge width" />
+          <span class="value">{Math.round(form.edge)}</span>
         </span>
       </label>
     {/if}
+    <label class="row">
+      <span>Smoothing ({unit})</span>
+      <span class="controls">
+        <input
+          type="range"
+          min="0"
+          max={limits.smoothing}
+          step="0.5"
+          bind:value={form.smoothing}
+          aria-label="Smoothing"
+        />
+        <span class="value">{form.smoothing.toFixed(1)}</span>
+      </span>
+    </label>
     <div class="row buttons">
       <button disabled={busy} onclick={() => generate(false)}>{ref.normal_map ? "Regenerate" : "Generate"}</button>
       {#if partners.length > 0}

@@ -314,12 +314,12 @@ pub(super) fn propose(
                     }
                 }
                 rationale.push(format!(
-                    "ポーズ: 衣装の差分「{}」({letters}) を、本体のポーズの要素 {} に追従させる (同じ文字の差分を一緒に切り替える)",
+                    "Pose: the costume variants “{}” ({letters}) follow the base pose entries {} (variants with the same letter switch together)",
                     set.name,
                     base.iter()
                         .map(|p| format!("`{p}`"))
                         .collect::<Vec<_>>()
-                        .join("・")
+                        .join(", ")
                 ));
             }
             None if !set.named => {
@@ -341,12 +341,12 @@ pub(super) fn propose(
                             .iter()
                             .find(|p| &p.id == part)
                             .map_or(part.as_str(), |p| p.name.as_str());
-                        format!("「{name}」")
+                        format!("“{name}”")
                     })
                     .collect();
                 rationale.push(format!(
-                    "ポーズ: 絵が重なり意味ラベルが同じで、PSD で見えているものと隠してあるものの組 {} を、衣装だけのポーズのグループにする (最初は見えていた「{}」)",
-                    names.join("・"),
+                    "Pose: {} overlap, have the same label and are shown and hidden in the PSD, so they become a costume-only pose group (first shown: “{}”)",
+                    names.join(", "),
                     set.name
                 ));
             }
@@ -361,7 +361,7 @@ pub(super) fn propose(
                         .collect(),
                 });
                 rationale.push(format!(
-                    "ポーズ: 衣装の差分「{}」({letters}) を、衣装だけのポーズのグループにする (表示するのは 1 つ。最初は {})",
+                    "Pose: the costume variants “{}” ({letters}) become a costume-only pose group (one is shown at a time; first {})",
                     set.name,
                     parts.first().map_or('A', |(l, _)| *l)
                 ));

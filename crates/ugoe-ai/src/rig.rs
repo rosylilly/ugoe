@@ -482,7 +482,7 @@ impl Layout {
                         Side::Right
                     } else {
                         skipped.push(format!(
-                            "{} (`{}`) は左右の目にまたがるので開閉を付けない",
+                            "{} (`{}`) spans both eyes, so it does not open and close",
                             part.label,
                             mesh_name(model, id)
                         ));
@@ -502,8 +502,12 @@ impl Layout {
         eyes.retain(|eye| {
             if eye.open.is_empty() {
                 skipped.push(format!(
-                    "{} の目 (開いた目の部位) がないので `{}` を作らない",
-                    if eye.side == Side::Left { "左" } else { "右" },
+                    "no {} eye (open eye parts), so `{}` is not made",
+                    if eye.side == Side::Left {
+                        "left"
+                    } else {
+                        "right"
+                    },
                     eye.parameter()
                 ));
             }
@@ -520,7 +524,7 @@ impl Layout {
         let mouth = if with(&|l| l == Label::MouthOpen).is_empty() || closed.is_empty() {
             let all = with(&|l| l.category() == LabelCategory::Mouth);
             if all.is_empty() {
-                skipped.push("口がないので `MouthOpenY` を作らない".into());
+                skipped.push("no mouth, so `MouthOpenY` is not made".into());
                 None
             } else {
                 Some(MouthParts::Single(all))
@@ -547,7 +551,7 @@ impl Layout {
             }
         }
         if hair.is_empty() {
-            skipped.push("髪のラベルのメッシュがないので髪揺れの物理を作らない".into());
+            skipped.push("no meshes are labeled as hair, so there is no hair sway physics".into());
         }
 
         Ok(Self {
@@ -641,7 +645,7 @@ fn build(
         Some(MouthParts::Pair { open, closed }) => {
             rig.rig_mouth_pair(layout, open, closed)?;
             rationale.push(format!(
-                "口: 開いた口 ({} 枚) を閉じた口の大きさの細い隙間から開き、`MouthOpenY` {} で閉じた口 ({} 枚) と入れ替える",
+                "Mouth: opens the open mouth ({} meshes) from a thin slit the size of the closed mouth, and at `MouthOpenY` {} it has replaced the closed mouth ({} meshes)",
                 open.len(),
                 mouth_fade::OPEN_FULL,
                 closed.len()
@@ -650,7 +654,7 @@ fn build(
         Some(MouthParts::Single(ids)) => {
             rig.rig_mouth_single(layout, ids, params)?;
             rationale.push(format!(
-                "口: 開き・閉じの絵がないので、口 ({} 枚) を包むワープの下側を口の幅の {:.2} 倍下げて開く",
+                "Mouth: no open and closed drawings, so opens the mouth ({} meshes) by lowering the bottom of its warp by {:.2} × the mouth width",
                 ids.len(),
                 params.mouth_open_height
             ));
@@ -659,15 +663,10 @@ fn build(
     }
     rig.rig_hair(layout, &head, &face_warp, &mut rationale)?;
     rig.set_effects(&mut rationale)?;
-    rationale.extend(
-        layout
-            .skipped
-            .iter()
-            .map(|s| format!("組まなかったもの: {s}")),
-    );
+    rationale.extend(layout.skipped.iter().map(|s| format!("Not rigged: {s}")));
     rig.b.validate()?;
     Ok(Proposal {
-        title: "自動リギング (顔の角度・目・口・呼吸・髪揺れ)".into(),
+        title: "Auto rig (face angles, eyes, mouth, breath, hair sway)".into(),
         rationale: rationale.join("\n"),
         commands: rig.b.commands,
     })
@@ -991,8 +990,11 @@ impl Rig {
         )?;
         // 目・口のワープは顔のワープの中に作る (子の共通の親が顔のワープになる)。
         let (map, source) = match &options.turn {
-            TurnDepth::Rules => (dome_depth(self.model(), face)?, "顔に内接する楕円体"),
-            TurnDepth::Map(map) => (map.clone(), "推定した深度マップ"),
+            TurnDepth::Rules => (
+                dome_depth(self.model(), face)?,
+                "an ellipsoid inscribed in the face",
+            ),
+            TurnDepth::Map(map) => (map.clone(), "the estimated depth map"),
         };
         let labels: BTreeMap<MeshId, Label> =
             parts.iter().map(|(id, p)| (id.clone(), p.label)).collect();
@@ -1020,7 +1022,7 @@ impl Rig {
             })?;
         }
         rationale.push(format!(
-            "頭: `AngleZ` ±30 で ±{:.0} 度傾け、`AngleX` / `AngleY` は深度 ({source}) からの回転で振り向かせる。{line}",
+            "Head: tilts ±{:.0}° at `AngleZ` ±30, and turns with `AngleX` / `AngleY` by rotating the depth ({source}). {line}",
             30.0 * HEAD_TILT
         ));
         Ok((head, warp))
@@ -1070,7 +1072,7 @@ impl Rig {
 
         if eye.closed.is_empty() {
             rationale.push(format!(
-                "目 {side}: `{parameter}` で開いた目 ({} 枚) を高さ {:.2} の線へつぶす (弧 {:+.2})",
+                "Eye {side}: `{parameter}` squashes the open eye ({} meshes) onto a line at height {:.2} (bend {:+.2})",
                 eye.open.len(),
                 params.eye_close_line,
                 bend
@@ -1092,7 +1094,7 @@ impl Rig {
             )?;
         }
         rationale.push(format!(
-            "目 {side}: `{parameter}` で開いた目 ({} 枚) を閉じた目の絵の高さへつぶし (弧 {:+.2})、{CLOSED_IN}〜{OPEN_OUT} で閉じた目 ({} 枚) と入れ替える",
+            "Eye {side}: `{parameter}` squashes the open eye ({} meshes) to the height of the closed eye drawing (bend {:+.2}), and swaps it with the closed eye ({} meshes) between {CLOSED_IN} and {OPEN_OUT}",
             eye.open.len(),
             bend,
             eye.closed.len()
@@ -1186,7 +1188,7 @@ impl Rig {
             Vec2::new(0.0, -lift * t)
         })?;
         rationale.push(format!(
-            "呼吸: すべてのメッシュを包む体のワープを、`Breath` = 1 で上端ほど大きく (最大 {lift:.1} px、顔の高さの {:.1}%) 持ち上げる",
+            "Breath: `Breath` = 1 lifts the body warp around all meshes, more toward the top (up to {lift:.1} px, {:.1}% of the face height)",
             breath::LIFT * 100.0
         ));
         Ok(())
@@ -1266,7 +1268,7 @@ impl Rig {
             )?;
             self.apply(Command::AddPhysicsRig { rig })?;
             rationale.push(format!(
-                "髪揺れ: {} ({} 枚) を、頭に取り付けた {} 区間 (長さ {length:.0} px) の振り子で揺らす (`AngleX` ±30 で根元が {shift:.0} px 動く)",
+                "Hair sway: {} ({} meshes) sways with a {}-section pendulum ({length:.0} px long) attached to the head (`AngleX` ±30 moves the root by {shift:.0} px)",
                 group.label,
                 group.meshes.len(),
                 sway.sections,
@@ -1393,10 +1395,10 @@ impl Rig {
             ids.iter()
                 .map(|id| format!("`{id}`"))
                 .collect::<Vec<_>>()
-                .join("・")
+                .join(", ")
         };
         rationale.push(format!(
-            "エフェクト: 目パチ ({})、呼吸 ({})、リップシンク ({})",
+            "Effects: eye blink ({}); breath ({}); lip sync ({})",
             list(effects.eye_blink.parameters.iter().collect()),
             list(
                 effects
@@ -1757,7 +1759,7 @@ pub fn propose_rig_with_ai_guided(
             Ok(mut proposal) => {
                 let (reason, unapplied) = split_unapplied(&reason);
                 proposal.rationale = format!(
-                    "AI が決めた値: 振り向き {:.2}、目の閉じる線 {:.2}、弧 {:+.2}、口の開き {:.2} ({})\n{}",
+                    "Values chosen by the AI: turn {:.2}, eye close line {:.2}, bend {:+.2}, mouth open {:.2} ({})\n{}",
                     params.turn_angle_scale,
                     params.eye_close_line,
                     params.eye_close_bend,

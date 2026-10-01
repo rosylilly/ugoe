@@ -8,7 +8,8 @@ PSD を 1 枚渡すと、「顔の角度・目・口・呼吸・髪揺れが一�
 
 ## 原則
 
-1. **AI は提案するだけです。** AI は `Proposal { title, rationale, commands: Vec<Command> }` を返します。エディタはそれを差分としてプレビューし、ユーザーが採用して初めて `Document::apply` で適用します。適用は `Batch` として 1 回の Undo で取り消せます。
+1. **AI は提案するだけです。** AI は `Proposal { title, rationale, commands: Vec<Command> }` を返します (題名と理由はエディタの画面に合わせて英語。
+   AI の答えの理由 (`reason`) はそのまま添える。T0522)。エディタはそれを差分としてプレビューし、ユーザーが採用して初めて `Document::apply` で適用します。適用は `Batch` として 1 回の Undo で取り消せます。
 2. **AI でなくてもできることは、決定的なアルゴリズムで行います。** メッシュ生成は `ugoe-mesher` の幾何アルゴリズムで行います。AI が決めるのは「どのレイヤーが何か」「どのパラメータでどう動かすか」といった意味の判断と、アルゴリズムのパラメータ選びだけです。
 3. **プロバイダを差し替えられるようにします。** LLM や画像モデルの呼び出しは `ugoe_ai::Provider` トレイトの裏に隠します。既定のプロバイダは Anthropic の Claude API で、OpenAI 互換の API (OpenAI・OpenRouter・Gemini・手元の Ollama / LM Studio / vLLM など) も使えます ([ADR 0022](adr/0022-multiple-ai-providers-and-agents.md)、[OpenAI 互換の API](#openai-互換の-api))。プロンプトと出力の JSON Schema は特定のモデルに依存させません。
 4. **ネットワークなしでテストできるようにします。** テストでは、録画した応答を返す `FakeProvider` を使います。CI では実際の API を呼びません。
@@ -312,6 +313,8 @@ T0518 (方法は T0707 の見本 `ugoe sample avatar --lit` から)。テクス�
 エディタの「Generate」もこの方法です ([editor.md#ライティングの画面](editor.md#ライティングの画面))。1 枚のテクスチャのまとまりと既定の設定は `normal_map_group`、
 すべての対象のまとまりの一覧は `normal_map_groups` (まとまりの定義の順。単独でふくらませる `alone` とラベルのないものは、それぞれ 1 行にまとめて最後) で分かります。
 エディタの AI タブは一覧からまとまりごとに設定を選び、すべてのテクスチャの法線マップを 1 つの提案にします ([editor.md#法線マップの提案](editor.md#法線マップの提案))。
+`NormalMapGroup::canvas_per_pixel` は格子の 1 升のキャンバスのピクセル (形に加わるテクスチャのうち最も細かいものの 1 画素。単独でふくらませるものは `None`) で、
+エディタはこれで縁の幅とならしをキャンバスのピクセルに直して見せます (T0522)。提案の理由も縁の幅とならしをキャンバスのピクセルで書きます (単独のものは「texture px」)。
 
 #### 深度推定からの方法 (`ugoe_ai::normal::propose_depth_normal_maps` / `plan_depth_normal_maps`)
 

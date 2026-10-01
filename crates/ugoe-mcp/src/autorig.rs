@@ -562,20 +562,20 @@ pub(crate) fn propose_rig(
         )
     })?;
     let values = format!(
-        "振り向き {:.2}、目の閉じる線 {:.2}、弧 {:+.2}、口の開き {:.2}",
+        "turn {:.2}, eye close line {:.2}, bend {:+.2}, mouth open {:.2}",
         params.turn_angle_scale,
         params.eye_close_line,
         params.eye_close_bend,
         params.mouth_open_height
     );
     let head = match &reason {
-        Some(reason) => format!("エージェントが決めた値: {values} ({reason})"),
-        None => format!("既定の値: {values}"),
+        Some(reason) => format!("Values chosen by the agent: {values} ({reason})"),
+        None => format!("Default values: {values}"),
     };
     let by_agent = source.by_agent.len();
     let labels = format!(
-        "分類: {} 枚のうち {by_agent} 枚をエージェントが決め、残りは名前の規則",
-        source.labels.len()
+        "Labels: the agent chose {by_agent} of {total} layers; the rest follow the name rules",
+        total = source.labels.len()
     );
     let title = args.title.unwrap_or_else(|| {
         format!(

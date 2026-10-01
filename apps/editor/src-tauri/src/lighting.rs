@@ -40,8 +40,12 @@ pub struct NormalMapGroupView {
     pub oriented: Vec<String>,
     /// `textures` のうち、すでに法線マップを持つテクスチャ。
     pub with_normal_map: Vec<String>,
-    /// まとまりの既定の設定 (長さはまとまりの格子の画素)。
+    /// まとまりの既定の設定 (長さ `edge`・`smoothing` はまとまりの格子の画素)。
     pub defaults: BulgeSettings,
+    /// まとまりの格子の 1 画素がキャンバスの何ピクセルか。画面は縁の幅とならしをキャンバスのピクセルで見せ、
+    /// 送るときにこれで割って格子の画素に直す (T0522)。単独でふくらませるもの (`alone` と `null`) は、
+    /// テクスチャの画素が単位なので `null`。
+    pub canvas_per_pixel: Option<f32>,
     /// ラベルを PSD の分類 (AI の提案のパネル) から取ったか。偽ならメッシュの名前の規則だけ。
     pub from_classification: bool,
 }
@@ -88,6 +92,7 @@ impl NormalMapGroupView {
                 edge: group.options.radius,
                 smoothing: group.options.smoothing,
             },
+            canvas_per_pixel: group.canvas_per_pixel,
             from_classification,
         }
     }
@@ -146,10 +151,9 @@ pub struct NormalMapGroupChoice {
 pub struct CommandSection {
     /// 区切りの名前 (まとまり `face` など。ラベルのないものは `unlabeled`、ライティングを有効にするのは `lighting`)。
     pub label: String,
-    /// 区切りに入るコマンドの番号 (提案の中の 0 始まり)。
+    /// 区切りに入るコマンドの番号 (提案の中の 0 始まり)。コマンドの対象 (テクスチャの名前) は
+    /// `ProposalCommand::subject`。
     pub indices: Vec<usize>,
-    /// コマンドごとの対象 (`indices` と同じ並び。法線マップを作るテクスチャの名前。ライティングは空)。
-    pub subjects: Vec<String>,
 }
 
 /// ラベルのないテクスチャのまとまりの、区切りの名前。
@@ -213,25 +217,18 @@ pub(crate) fn normal_map_proposal_in(
     proposal.title.push_str(" — no AI");
     let mut sections: Vec<CommandSection> = Vec::new();
     for (i, command) in proposal.commands.iter().enumerate() {
-        let (label, subject) = match command {
-            Command::SetNormalMap { texture, .. } => (
-                section_of
-                    .get(texture)
-                    .cloned()
-                    .unwrap_or_else(|| UNLABELED.to_owned()),
-                texture.clone(),
-            ),
-            _ => ("lighting".to_owned(), String::new()),
+        let label = match command {
+            Command::SetNormalMap { texture, .. } => section_of
+                .get(texture)
+                .cloned()
+                .unwrap_or_else(|| UNLABELED.to_owned()),
+            _ => "lighting".to_owned(),
         };
         match sections.iter_mut().find(|s| s.label == label) {
-            Some(s) => {
-                s.indices.push(i);
-                s.subjects.push(subject);
-            }
+            Some(s) => s.indices.push(i),
             None => sections.push(CommandSection {
                 label,
                 indices: vec![i],
-                subjects: vec![subject],
             }),
         }
     }
@@ -420,6 +417,7 @@ mod tests {
         assert_eq!(view.group.as_deref(), Some("face"));
         assert!(view.textures.contains(&texture_of(&doc, "face")));
         assert!(view.defaults.edge.is_some());
+        assert!(view.canvas_per_pixel.is_some_and(|c| c > 0.0));
         assert!(!view.from_classification);
 
         // 既定の設定で作る: この 1 枚の法線マップと、ライティングを有効にする。1 回の Undo で戻る。

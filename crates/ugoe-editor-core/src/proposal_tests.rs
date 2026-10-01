@@ -286,3 +286,22 @@ fn a_revision_is_listed_beside_the_original() {
     assert_eq!(views[1].unapplied, ["hair sway"]);
     assert!(!proposals.set_origin(revision + 1, origin));
 }
+
+/// 法線マップを置くコマンドの対象はテクスチャの名前 (T0522。MCP のエージェントの提案でも一覧に名前が出る)。
+#[test]
+fn normal_map_commands_name_their_texture() {
+    let doc = Document::new(fixtures::single_quad());
+    let texture = doc.model().textures[0].name.clone();
+    let commands = vec![
+        Command::SetNormalMap {
+            texture: texture.clone(),
+            normal_map: Some(format!("{texture}_normal")),
+            png: Some(crate::texture::solid_png(2, 2, [128, 128, 255, 255])),
+        },
+        Command::SetLighting { enabled: true },
+    ];
+    let mut proposals = Proposals::new();
+    let view = proposals.add(&doc, "normal maps", "", commands).unwrap();
+    let subjects: Vec<Option<&str>> = view.commands.iter().map(|c| c.subject.as_deref()).collect();
+    assert_eq!(subjects, [Some(texture.as_str()), None]);
+}

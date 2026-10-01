@@ -473,7 +473,7 @@ pub(crate) fn rig(
             let mut proposal = rig.proposal;
             if !rig.rejected.is_empty() {
                 proposal.rationale.push_str(&format!(
-                    "\nAI の答えのうち {} 回分は範囲の外か検証を通らなかったので問い直した",
+                    "\nAsked the AI again {} time(s): its answer was out of range or did not pass the checks",
                     rig.rejected.len()
                 ));
             }
@@ -530,7 +530,7 @@ fn module_rig(
             let mut proposal = rig.proposal;
             if !rig.rejected.is_empty() {
                 proposal.rationale.push_str(&format!(
-                    "\nAI の答えのうち {} 回分は範囲の外か検証を通らなかったので問い直した",
+                    "\nAsked the AI again {} time(s): its answer was out of range or did not pass the checks",
                     rig.rejected.len()
                 ));
             }
@@ -578,7 +578,7 @@ fn labels_note(labels: &[LayerLabel]) -> String {
         return String::new();
     }
     format!(
-        "\n分類の確からしさが低いレイヤー ({} 枚。確かめてから採用する): {}",
+        "\nLayers classified with low confidence ({}; check them before adopting): {}",
         review.len(),
         review.join(", ")
     )

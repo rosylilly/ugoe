@@ -419,13 +419,10 @@ export type CommandSection = {
  */
 label: string, 
 /**
- * 区切りに入るコマンドの番号 (提案の中の 0 始まり)。
+ * 区切りに入るコマンドの番号 (提案の中の 0 始まり)。コマンドの対象 (テクスチャの名前) は
+ * `ProposalCommand::subject`。
  */
-indices: Array<number>, 
-/**
- * コマンドごとの対象 (`indices` と同じ並び。法線マップを作るテクスチャの名前。ライティングは空)。
- */
-subjects: Array<string>, };
+indices: Array<number>, };
 
 /**
  * 商用利用の範囲。
@@ -1265,9 +1262,15 @@ oriented: Array<string>,
  */
 with_normal_map: Array<string>, 
 /**
- * まとまりの既定の設定 (長さはまとまりの格子の画素)。
+ * まとまりの既定の設定 (長さ `edge`・`smoothing` はまとまりの格子の画素)。
  */
 defaults: BulgeSettings, 
+/**
+ * まとまりの格子の 1 画素がキャンバスの何ピクセルか。画面は縁の幅とならしをキャンバスのピクセルで見せ、
+ * 送るときにこれで割って格子の画素に直す (T0522)。単独でふくらませるもの (`alone` と `null`) は、
+ * テクスチャの画素が単位なので `null`。
+ */
+canvas_per_pixel: number | null, 
 /**
  * ラベルを PSD の分類 (AI の提案のパネル) から取ったか。偽ならメッシュの名前の規則だけ。
  */

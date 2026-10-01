@@ -279,7 +279,7 @@ fn an_estimated_depth_map_drives_the_turn() {
     .unwrap();
     apply(&input.model, &estimated);
     assert_ne!(depth_of(&rules), depth_of(&estimated));
-    assert!(estimated.rationale.contains("推定した深度マップ"));
+    assert!(estimated.rationale.contains("the estimated depth map"));
 }
 
 #[test]

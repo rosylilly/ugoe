@@ -378,7 +378,7 @@ fn eyewear_takes_the_face_orientation_only() {
     )
     .unwrap();
     assert!(
-        proposal.rationale.contains("向きだけを受けたもの"),
+        proposal.rationale.contains("only taking the direction"),
         "{}",
         proposal.rationale
     );
@@ -437,6 +437,27 @@ fn groups_list_every_target_once() {
     assert_eq!(alone.len(), 1);
     assert_eq!(alone[0].group, None);
     assert_eq!(alone[0].textures.len(), count);
+}
+
+/// まとまりの格子の 1 画素のキャンバスのピクセル (縁の幅の単位。T0522): キャンバス 256 を覆う 64 画素のテクスチャでは 4。
+/// 提案の理由の縁の幅はキャンバスのピクセルで書く。単独のものは `None`。
+#[test]
+fn groups_tell_the_canvas_size_of_their_pixels() {
+    let (model, textures) = canvas_quad(64, false);
+    let labels: BTreeMap<_, _> = [(model.meshes[0].id.clone(), Label::Face)].into();
+    let options = BulgeNormalMapOptions::default();
+    let group = normal_map_group(&model, &textures, &labels, &options, "skin").unwrap();
+    let scale = group.canvas_per_pixel.unwrap();
+    assert!((scale - 4.0).abs() < 1e-3, "{scale}");
+    let edge = group.options.radius.unwrap() * scale;
+    let proposal = propose_bulge_normal_maps(&model, &textures, &labels, &options).unwrap();
+    assert!(
+        proposal.rationale.contains(&format!("edge {edge:.0} px")),
+        "{edge}: {}",
+        proposal.rationale
+    );
+    let alone = normal_map_group(&model, &textures, &BTreeMap::new(), &options, "skin").unwrap();
+    assert_eq!(alone.canvas_per_pixel, None);
 }
 
 // --- 深度推定から ---

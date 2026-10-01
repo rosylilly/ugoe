@@ -2,9 +2,17 @@
 //
 // - プレビューの光源 (PreviewLighting、project.json の editor.lighting) を WebPuppet.set_lighting_json の JSON にする。
 // - 平行光源の向きと、ビューポートの円の上の取っ手の位置の変換。
+// - 法線マップのふくらみの設定 (BulgeSettings) の、画面の単位 (キャンバスの px) との変換。
 // - 光源の座標はキャンバス座標 (ピクセル・Y 下向き) + 奥行き (手前が +z)。`direction` は光が進む向き
 //   (docs/spec/rendering.md#ライティング)。
-import type { Mesh, Model, PreviewLight, PreviewLighting } from "../../ipc";
+import type {
+  BulgeSettings,
+  Mesh,
+  Model,
+  NormalMapGroupView,
+  PreviewLight,
+  PreviewLighting,
+} from "../../ipc";
 
 export type Rgb = [number, number, number];
 export type Vec3 = [number, number, number];
@@ -136,4 +144,63 @@ export function lightingHint(model: Model): string | null {
     return "No mesh receives lighting. Turn on “Lit” for the meshes that should be shaded.";
   }
   return null;
+}
+
+// ---- 法線マップのふくらみの設定 (docs/editor.md#ライティングの画面) ----
+
+/**
+ * 画面で選ぶふくらみの設定。縁の幅 `edge` とならし `smoothing` は画面の単位 ({@link bulgeUnit}): まとまりならキャンバスの
+ * px、単独でふくらませるものならテクスチャの px。`edge` は `roundEdges` でないときも欄の値として残す。
+ */
+export interface BulgeForm {
+  strength: number;
+  /** 縁だけを丸めるか (偽なら形全体を 1 つのふくらみにする)。 */
+  roundEdges: boolean;
+  edge: number;
+  smoothing: number;
+}
+
+/** 既定で縁を丸めないまとまりで、縁を丸めにしたときの幅 (画面の単位)。 */
+const DEFAULT_EDGE = 12;
+
+/** 画面の単位の 1 がバックエンドの長さ (まとまりの格子の画素) のいくつか (= 格子の 1 画素のキャンバスの px)。 */
+function bulgeScale(view: NormalMapGroupView | null): number {
+  const scale = view?.canvas_per_pixel;
+  return scale != null && scale > 0 ? scale : 1;
+}
+
+/** 長さの単位の表示 (まとまりはキャンバスの px、単独のものはテクスチャの px)。 */
+export function bulgeUnit(view: NormalMapGroupView | null): string {
+  return view?.canvas_per_pixel != null ? "px" : "texture px";
+}
+
+/** まとまりの既定の設定を画面の単位にしたもの (まとまりが分からなければ既定値)。 */
+export function bulgeForm(view: NormalMapGroupView | null): BulgeForm {
+  const scale = bulgeScale(view);
+  const d = view?.defaults;
+  return {
+    strength: d?.strength ?? 0.5,
+    roundEdges: d?.edge != null,
+    edge: d?.edge != null ? d.edge * scale : DEFAULT_EDGE,
+    smoothing: (d?.smoothing ?? 1) * scale,
+  };
+}
+
+/** 画面の設定を、バックエンドに送る設定 (長さはまとまりの格子の画素) にする。 */
+export function bulgeSettings(form: BulgeForm, view: NormalMapGroupView | null): BulgeSettings {
+  const scale = bulgeScale(view);
+  return {
+    strength: form.strength,
+    edge: form.roundEdges ? form.edge / scale : null,
+    smoothing: form.smoothing / scale,
+  };
+}
+
+/** 縁の幅とならしの欄の上限 (画面の単位。既定の値が大きいまとまりでも選べるように)。 */
+export function bulgeLimits(view: NormalMapGroupView | null): { edge: number; smoothing: number } {
+  const d = bulgeForm(view);
+  return {
+    edge: Math.max(64, Math.ceil(d.edge * 2)),
+    smoothing: Math.max(10, Math.ceil(d.smoothing * 2)),
+  };
 }

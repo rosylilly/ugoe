@@ -206,15 +206,15 @@ fn max_distance(a: &[Vec2], b: &[Vec2]) -> f32 {
 fn the_adopted_proposal_covers_every_part_and_the_profile_passes() {
     let adopted = adopted();
     let model = adopted.doc.model();
-    assert!(adopted.title.contains("呼吸") && adopted.title.contains("髪揺れ"));
+    assert!(adopted.title.contains("breath") && adopted.title.contains("hair sway"));
     for part in [
-        "頭:",
-        "目 L:",
-        "目 R:",
-        "口:",
-        "呼吸:",
-        "髪揺れ:",
-        "エフェクト:",
+        "Head:",
+        "Eye L:",
+        "Eye R:",
+        "Mouth:",
+        "Breath:",
+        "Hair sway:",
+        "Effects:",
     ] {
         assert!(adopted.rationale.contains(part), "{part}");
     }

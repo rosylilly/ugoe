@@ -478,7 +478,7 @@ fn the_ai_answer_is_retried_and_unapplied_instructions_are_listed() {
     assert_eq!(rig.unapplied.len(), 1, "{:?}", rig.unapplied);
     assert!(rig.unapplied[0].contains("hat brim"));
     assert!(!rig.reason.contains("Not applied"));
-    assert!(rig.proposal.rationale.contains("揺れの大きさ 1.60"));
+    assert!(rig.proposal.rationale.contains("sway scale 1.60"));
     apply(&mut doc, &rig.proposal);
     let (module, _) = doc.split_module().unwrap().unwrap();
     // 耳飾りの重みの最大 0.8 × 1.6 は 1 までに抑える。
@@ -573,7 +573,7 @@ fn the_costume_follows_the_layer_it_is_drawn_over() {
     )
     .unwrap();
     assert!(
-        proposal.rationale.contains("本体のワープ `FaceWarp`"),
+        proposal.rationale.contains("base warp `FaceWarp`"),
         "{}",
         proposal.rationale
     );
@@ -604,7 +604,7 @@ fn the_mesh_mode_follows_the_face_warp_at_the_keys() {
     };
     let proposal = propose_module_rig(&doc, &parts, &ModuleRigParams::default(), &options).unwrap();
     assert!(
-        proposal.rationale.contains("直接写す"),
+        proposal.rationale.contains("directly"),
         "{}",
         proposal.rationale
     );

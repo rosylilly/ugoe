@@ -17,10 +17,12 @@
     提案には添えた注文と、AI が反映できないと答えた注文 (「Not applied」) を出す。注文はプロジェクトに保存しない
     (docs/editor.md#ai-への注文と作り直し)。
   - 「Normal maps from the shapes」(モデルのプロジェクトだけ): 部位のまとまり (顔と目口鼻眉・首と体と腕・髪など。意味ラベルから
-    決める) ごとに含めるか・強さを選び、すべてのテクスチャの法線マップを 1 つの提案にする (AI なし。何も送らない)。
+    決める) ごとに含めるか・強さ・縁の丸み・ならしを選び、すべてのテクスチャの法線マップを 1 つの提案にする (AI なし。何も送らない)。
+    縁の幅とならしはキャンバスの px で見せる (単独でふくらませるものはテクスチャの px。panels/lighting/lighting.ts)。
     提案のコマンドはまとまりごとに区切って出す (まとまりを外して採用できる)。docs/editor.md#法線マップの提案
 -->
 <script lang="ts">
+import { bulgeForm, bulgeLimits, bulgeUnit } from "../panels/lighting/lighting";
 import type { ViewportController } from "../viewport/controller.svelte";
 import { aiSettings } from "./ai.svelte";
 import {
@@ -244,6 +246,8 @@ function onSlider(id: string, e: Event): void {
         {#each view.normalGroups as group (normalGroupKey(group))}
           {@const key = normalGroupKey(group)}
           {@const pick = view.normalPicks[key]}
+          {@const unit = bulgeUnit(group)}
+          {@const limits = bulgeLimits(group)}
           {#if pick}
             <li>
               <label class="check" title={group.textures.join(", ")}>
@@ -265,6 +269,49 @@ function onSlider(id: string, e: Event): void {
                 />
                 <span class="value">{pick.strength.toFixed(2)}</span>
               </span>
+              <details class="shape">
+                <summary class="muted">
+                  {pick.roundEdges ? `edges ${Math.round(pick.edge)} ${unit}` : "whole shape"} · smoothing
+                  {pick.smoothing.toFixed(1)} {unit}
+                </summary>
+                <label class="check">
+                  <input type="checkbox" bind:checked={pick.roundEdges} disabled={busy || !pick.include} />
+                  Round edges only
+                </label>
+                {#if pick.roundEdges}
+                  <label class="setting">
+                    <span>Edge width ({unit})</span>
+                    <input
+                      type="range"
+                      min="1"
+                      max={limits.edge}
+                      step="1"
+                      bind:value={pick.edge}
+                      disabled={busy || !pick.include}
+                      aria-label="Edge width of {surfaceGroupLabel(key)}"
+                    />
+                    <span class="value">{Math.round(pick.edge)}</span>
+                  </label>
+                {/if}
+                <label class="setting">
+                  <span>Smoothing ({unit})</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max={limits.smoothing}
+                    step="0.5"
+                    bind:value={pick.smoothing}
+                    disabled={busy || !pick.include}
+                    aria-label="Smoothing of {surfaceGroupLabel(key)}"
+                  />
+                  <span class="value">{pick.smoothing.toFixed(1)}</span>
+                </label>
+                <button
+                  disabled={busy}
+                  onclick={() => Object.assign(pick, bulgeForm(group))}
+                  title="Use this group's default strength, edges and smoothing"
+                >Defaults</button>
+              </details>
             </li>
           {/if}
         {/each}
@@ -351,9 +398,8 @@ function onSlider(id: string, e: Event): void {
                       <summary><code>{group.label}</code> · {group.indices.length}
                         {group.indices.length === 1 ? "command" : "commands"}</summary>
                       <ol class="commands">
-                        {#each group.indices as i, k (i)}
+                        {#each group.indices as i (i)}
                           {@const command = proposal.commands[i]}
-                          {@const subject = group.subjects?.[k]}
                           {#if command}
                             <li>
                               <label class="check" title={command.requires.length > 0
@@ -366,7 +412,7 @@ function onSlider(id: string, e: Event): void {
                                   onchange={() => view.toggleCommand(proposal.id, i)}
                                 />
                                 <span class="index">#{i}</span>
-                                <code>{subject ? `${command.op} ${subject}` : command.op}</code>
+                                <code>{group.section && command.subject ? `${command.op} ${command.subject}` : command.op}</code>
                               </label>
                             </li>
                           {/if}
@@ -600,6 +646,20 @@ function onSlider(id: string, e: Event): void {
   }
   .normal-groups input[type="range"] {
     width: 90px;
+  }
+  .normal-groups .shape {
+    grid-column: 1 / -1;
+    padding-left: 22px;
+    font-size: 11px;
+  }
+  .normal-groups .shape summary {
+    cursor: pointer;
+  }
+  .normal-groups .setting {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: 4px;
   }
   .normal-groups .value {
     width: 32px;

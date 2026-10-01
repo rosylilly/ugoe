@@ -125,7 +125,6 @@ describe("instructionsToSend", () => {
 });
 
 describe("normal map proposals", () => {
-  const defaults = { strength: 0.35, edge: 48, smoothing: 6 };
   const group = (
     name: string | null,
     textures: string[],
@@ -136,29 +135,42 @@ describe("normal map proposals", () => {
     shape_only: [],
     oriented: [],
     with_normal_map: withNormalMap,
-    defaults,
+    // まとまりの格子の 1 画素がキャンバスの 0.5 px (単独のものはテクスチャの画素)。
+    defaults: name
+      ? { strength: 0.35, edge: 48, smoothing: 6 }
+      : { strength: 0.5, edge: null, smoothing: 1 },
+    canvas_per_pixel: name ? 0.5 : null,
     from_classification: false,
   });
   const groups = [group("face", ["face", "eye"], ["face"]), group(null, ["prop"])];
 
-  it("includes every group at its default strength and keeps earlier picks", () => {
+  it("includes every group at its defaults in canvas px and keeps earlier picks", () => {
     const picks = normalMapPicks(groups);
     expect(picks).toEqual({
-      face: { include: true, strength: 0.35 },
-      unlabeled: { include: true, strength: 0.35 },
+      face: { include: true, strength: 0.35, roundEdges: true, edge: 24, smoothing: 3 },
+      unlabeled: { include: true, strength: 0.5, roundEdges: false, edge: 12, smoothing: 1 },
     });
-    const kept = normalMapPicks(groups, { face: { include: false, strength: 1 } });
-    expect(kept.face).toEqual({ include: false, strength: 1 });
+    const earlier = { include: false, strength: 1, roundEdges: false, edge: 10, smoothing: 2 };
+    const kept = normalMapPicks(groups, { face: earlier });
+    expect(kept.face).toEqual(earlier);
   });
 
-  it("sends the included groups with their strength", () => {
+  it("sends the included groups with their settings in grid pixels", () => {
     const picks = {
-      face: { include: true, strength: 0.1 },
-      unlabeled: { include: false, strength: 0.5 },
+      face: { include: true, strength: 0.1, roundEdges: true, edge: 30, smoothing: 2 },
+      unlabeled: { include: false, strength: 0.5, roundEdges: false, edge: 12, smoothing: 1 },
     };
     expect(normalMapChoices(groups, picks)).toEqual([
-      { group: "face", settings: { strength: 0.1, edge: 48, smoothing: 6 } },
+      { group: "face", settings: { strength: 0.1, edge: 60, smoothing: 4 } },
     ]);
+    picks.face.roundEdges = false;
+    picks.unlabeled.include = true;
+    picks.unlabeled.roundEdges = true;
+    expect(normalMapChoices(groups, picks)).toEqual([
+      { group: "face", settings: { strength: 0.1, edge: null, smoothing: 4 } },
+      { group: null, settings: { strength: 0.5, edge: 12, smoothing: 1 } },
+    ]);
+    picks.unlabeled.include = false;
     expect(normalMapTargetCount(groups, picks, false)).toBe(1);
     expect(normalMapTargetCount(groups, picks, true)).toBe(2);
   });
@@ -166,17 +178,16 @@ describe("normal map proposals", () => {
   it("names the sections", () => {
     expect(
       sectionGroups([
-        { label: "face", indices: [0, 2], subjects: ["face", "eye"] },
-        { label: "lighting", indices: [3], subjects: [""] },
+        { label: "face", indices: [0, 2] },
+        { label: "lighting", indices: [3] },
       ]),
     ).toEqual([
       {
         label: "Face, eyes, nose, mouth, brows",
         indices: [0, 2],
         section: true,
-        subjects: ["face", "eye"],
       },
-      { label: "Turn on lighting", indices: [3], section: true, subjects: [""] },
+      { label: "Turn on lighting", indices: [3], section: true },
     ]);
     expect(surfaceGroupLabel("wings")).toBe("wings");
   });

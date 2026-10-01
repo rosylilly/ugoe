@@ -183,7 +183,7 @@ fn eye_makeup_follows_the_closing_eye() {
     )
     .unwrap();
     assert!(
-        proposal.rationale.contains("本体のメッシュ `EyeL`"),
+        proposal.rationale.contains("base mesh `EyeL`"),
         "{}",
         proposal.rationale
     );
@@ -263,7 +263,7 @@ fn swaying_parts_collide_with_the_exposed_colliders() {
         proposal.rationale
     );
     assert!(
-        proposal.rationale.contains("静止姿勢で本体の衝突体 `Neck`"),
+        proposal.rationale.contains("base colliders `Neck` at rest"),
         "{}",
         proposal.rationale
     );
@@ -517,7 +517,7 @@ fn makeup_follows_the_face_warp_the_eye_rotation_and_the_eye_mesh_together() {
         let proposal =
             propose_module_rig(&doc, &parts, &ModuleRigParams::default(), &options).unwrap();
         assert!(
-            proposal.rationale.contains("本体のメッシュ `EyeL`")
+            proposal.rationale.contains("base mesh `EyeL`")
                 && proposal.rationale.contains("`EyeBallX`"),
             "{follow:?}: {}",
             proposal.rationale
@@ -587,7 +587,7 @@ fn overlapping_hidden_alternatives_become_poses() {
     )
     .unwrap();
     assert!(
-        proposal.rationale.contains("隠してあるもの"),
+        proposal.rationale.contains("shown and hidden in the PSD"),
         "{}",
         proposal.rationale
     );

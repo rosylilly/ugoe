@@ -18,7 +18,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 use ugoe_core::Vec2;
 use ugoe_editor_core::Command;
-use ugoe_editor_core::texture::{MAX_TEXTURE_NAME_LEN, Textures, decode_rgba_png, encode_rgba_png};
+use ugoe_editor_core::texture::{
+    MAX_TEXTURE_NAME_LEN, Textures, decode_rgba_png, encode_rgba_png, png_size,
+};
 use ugoe_model::{MeshId, Model};
 use ugoe_rigging::{
     BulgeOptions, EDGE_PASSES, HeightField, NormalMap, PlacedTexture, bulge_height, fill_missing,
@@ -205,6 +207,10 @@ pub struct NormalMapGroup {
     pub oriented: Vec<String>,
     /// 使う設定 (まとまりの既定か、置き換えたもの)。
     pub options: BulgeOptions,
+    /// まとまりの格子の 1 画素がキャンバスの何ピクセルか (`options` の `radius`・`smoothing` の単位。形に加わる
+    /// テクスチャのうち最も細かいものの 1 画素)。エディタで縁の幅をキャンバスのピクセルで見せるのに使う (T0522)。
+    /// 単独でふくらませるもの (`group` が `None` か `alone`) は、テクスチャの画素が単位なので `None`。
+    pub canvas_per_pixel: Option<f32>,
 }
 
 /// アルファの形から、部位のまとまりごとにふくらみの法線マップを作る提案 (決定的。AI は使わない)。
@@ -253,10 +259,11 @@ pub fn propose_bulge_normal_maps(
     build(
         model,
         maps,
-        "アルファの形からの法線マップ",
+        "Normal maps from the alpha shapes",
         format!(
-            "意味ラベルから部位のまとまりを決め、まとまりのテクスチャのアルファの形を基準の姿のキャンバスに並べて 1 つの形としてふくらませ、\
-             その高さの勾配を法線にした (ラベルのないテクスチャは単独で)。\n{}",
+            "Groups the parts by their labels, lays out the alpha shapes of each group's textures on the canvas in the rest \
+             pose, bulges them as one shape and takes the slope of the height as the normal (textures without a label \
+             bulge on their own).\n{}",
             lines.join("\n")
         ),
     )
@@ -333,6 +340,8 @@ struct PlannedGroup {
     /// 形に加えず向きだけを受けるもの ([`SurfaceGroup::orientation_only`])。
     oriented: Vec<usize>,
     options: BulgeOptions,
+    /// 格子の 1 画素のキャンバスのピクセル ([`NormalMapGroup::canvas_per_pixel`])。
+    cell: Option<f32>,
 }
 
 impl PlannedGroup {
@@ -350,6 +359,7 @@ impl PlannedGroup {
             shape_only: names(&self.shape_only),
             oriented: names(&self.oriented),
             options: self.options,
+            canvas_per_pixel: self.cell,
         }
     }
 }
@@ -364,6 +374,8 @@ struct GroupPlanner<'a> {
     groups: BTreeMap<usize, (SurfaceGroup, Label)>,
     instance: Option<ModelInstance>,
     placed: BTreeMap<usize, (Image, TexelCanvas)>,
+    /// テクスチャの 1 画素のキャンバスのピクセル (置かずに測ったもの)。
+    scales: BTreeMap<usize, f32>,
 }
 
 impl<'a> GroupPlanner<'a> {
@@ -396,6 +408,7 @@ impl<'a> GroupPlanner<'a> {
             groups,
             instance: None,
             placed: BTreeMap::new(),
+            scales: BTreeMap::new(),
         }
     }
 
@@ -407,6 +420,7 @@ impl<'a> GroupPlanner<'a> {
             shape_only: Vec::new(),
             oriented: Vec::new(),
             options,
+            cell: None,
         };
         if let Some(o) = self.options.per_texture.get(name) {
             return Ok(alone(*o));
@@ -456,13 +470,52 @@ impl<'a> GroupPlanner<'a> {
                 resolve(group, width)
             }
         };
+        // 格子は形に加わるテクスチャのうち最も細かいものの 1 画素 (`ugoe_rigging::group_bulge_normal_maps_oriented`)。
+        let mut cell: Option<f32> = None;
+        for &i in members.iter().chain(&shape_only) {
+            let scale = self.scale(i)?;
+            cell = Some(cell.map_or(scale, |c| c.min(scale)));
+        }
         Ok(PlannedGroup {
             group: Some(group),
             members,
             shape_only,
             oriented,
             options,
+            cell,
         })
+    }
+
+    /// テクスチャの 1 画素がキャンバスの何ピクセルか。置いたものはその値、なければ画像をデコードせずに測る。
+    fn scale(&mut self, index: usize) -> Result<f32, AiError> {
+        if let Some((_, canvas)) = self.placed.get(&index) {
+            return Ok(canvas.canvas_per_texel);
+        }
+        if let Some(&scale) = self.scales.get(&index) {
+            return Ok(scale);
+        }
+        let name = &self.model.textures[index].name;
+        let (width, height) = self
+            .textures
+            .get(name)
+            .and_then(|png| png_size(png))
+            .ok_or_else(|| invalid(format!("texture `{name}` is not a readable PNG")))?;
+        if self.instance.is_none() {
+            self.instance = Some(evaluate(self.model)?);
+        }
+        let instance = self
+            .instance
+            .as_ref()
+            .ok_or_else(|| invalid("no instance".into()))?;
+        let scale = canvas_per_texel(
+            self.model,
+            instance,
+            self.labels,
+            index as u32,
+            Vec2::new(width as f32, height as f32),
+        );
+        self.scales.insert(index, scale);
+        Ok(scale)
     }
 
     /// メンバーの形の中の画素が覆うキャンバスの x の範囲と、最も細かいテクスチャの 1 画素の大きさ。
@@ -571,15 +624,20 @@ fn resolve(group: SurfaceGroup, width: f32) -> BulgeOptions {
 fn group_line(model: &Model, group: &PlannedGroup, made: &[usize]) -> String {
     let name = |i: &usize| format!("`{}`", model.textures[*i].name);
     let o = &group.options;
-    let mut settings = format!("ふくらみ {}", o.strength);
+    // 長さはキャンバスのピクセルで書く (単独のものはテクスチャの画素)。
+    let (scale, unit) = match group.cell {
+        Some(c) => (c, "px"),
+        None => (1.0, "texture px"),
+    };
+    let mut settings = format!("strength {}", o.strength);
     if let Some(r) = o.radius {
-        settings.push_str(&format!("・縁 {r:.0} px"));
+        settings.push_str(&format!(", edge {:.0} {unit}", r * scale));
     }
-    settings.push_str(&format!("・ならし {}", o.smoothing));
+    settings.push_str(&format!(", smoothing {:.1} {unit}", o.smoothing * scale));
     match group.group {
         Some(g) if g != SurfaceGroup::Alone => {
             let mut line = format!(
-                "- まとまり `{}` ({}): {settings}。作った法線マップ: {}",
+                "- Group `{}` ({}): {settings}. Normal maps made: {}",
                 g.as_str(),
                 group
                     .members
@@ -591,7 +649,7 @@ fn group_line(model: &Model, group: &PlannedGroup, made: &[usize]) -> String {
             );
             if !group.shape_only.is_empty() {
                 line.push_str(&format!(
-                    "。形に加えたもの: {}",
+                    "; also shaped by {}",
                     group
                         .shape_only
                         .iter()
@@ -602,7 +660,7 @@ fn group_line(model: &Model, group: &PlannedGroup, made: &[usize]) -> String {
             }
             if !group.oriented.is_empty() {
                 line.push_str(&format!(
-                    "。形に加えず向きだけを受けたもの: {}",
+                    "; only taking the direction, not adding to the shape: {}",
                     group
                         .oriented
                         .iter()
@@ -613,7 +671,7 @@ fn group_line(model: &Model, group: &PlannedGroup, made: &[usize]) -> String {
             }
             line
         }
-        _ => format!("- {} (単独): {settings}", name(&group.members[0])),
+        _ => format!("- {} (on its own): {settings}", name(&group.members[0])),
     }
 }
 
@@ -746,7 +804,7 @@ pub fn plan_depth_normal_maps(
         }
         field.smooth(o.smoothing);
         lines.push(format!(
-            "- `{name}`: 起伏 {:.1} px (キャンバス)・縁の丸み {}",
+            "- `{name}`: relief {:.1} px, rim {}",
             relief * layer.canvas_per_texel,
             o.rim
         ));
@@ -755,9 +813,10 @@ pub fn plan_depth_normal_maps(
     build(
         model,
         maps,
-        "深度推定からの法線マップ",
+        "Normal maps from estimated depth",
         format!(
-            "原画から推定した深度をテクスチャの画素ごとに基準の姿の位置で引き、全体で正規化した起伏の勾配を法線にした。\n{}",
+            "Looks up the depth estimated from the artwork at each texture pixel's position in the rest pose, and takes \
+             the slope of the relief, normalized over all textures, as the normal.\n{}",
             lines.join("\n")
         ),
     )
@@ -947,21 +1006,7 @@ impl TexelCanvas {
             .map(|p| p[3] >= threshold)
             .collect();
         let mut positions = vec![None; w * h];
-        let (mut canvas_area, mut texel_area) = (0.0f32, 0.0f32);
-        let compiled = instance.compiled();
-        for mesh in &model.meshes {
-            if mesh.texture != texture
-                || mesh.mask_only
-                || labels.get(&mesh.id) == Some(&Label::Background)
-            {
-                continue;
-            }
-            let Some(state) = compiled
-                .mesh_index(mesh.id.as_str())
-                .and_then(|i| instance.drawables().get(i))
-            else {
-                continue;
-            };
+        for (mesh, state) in texture_meshes(model, instance, labels, texture) {
             for tri in mesh.indices.as_chunks::<3>().0 {
                 let [a, b, c] = [tri[0], tri[1], tri[2]].map(usize::from);
                 let (Some(&ua), Some(&ub), Some(&uc)) =
@@ -977,12 +1022,9 @@ impl TexelCanvas {
                     continue;
                 };
                 let (ta, tb, tc) = (ua * size, ub * size, uc * size);
-                let area = cross(tb - ta, tc - ta);
-                if area.abs() <= f32::EPSILON {
+                if cross(tb - ta, tc - ta).abs() <= f32::EPSILON {
                     continue;
                 }
-                texel_area += area.abs();
-                canvas_area += cross(pb - pa, pc - pa).abs();
                 // 画素の中心 `(x + 0.5, y + 0.5)` が外接矩形に入る範囲。
                 let lo = ta.min(tb).min(tc);
                 let hi = ta.max(tb).max(tc);
@@ -1008,16 +1050,76 @@ impl TexelCanvas {
                 }
             }
         }
-        let canvas_per_texel = if texel_area > 0.0 && canvas_area > 0.0 {
-            (canvas_area / texel_area).sqrt()
-        } else {
-            1.0
-        };
         Self {
             positions,
             mask,
-            canvas_per_texel,
+            canvas_per_texel: canvas_per_texel(model, instance, labels, texture, size),
         }
+    }
+}
+
+/// テクスチャ `texture` を使い、法線マップの形に入るメッシュ (マスク専用と背景を除く) と、その基準の姿の状態。
+fn texture_meshes<'m>(
+    model: &'m Model,
+    instance: &'m ModelInstance,
+    labels: &BTreeMap<MeshId, Label>,
+    texture: u32,
+) -> Vec<(&'m ugoe_model::Mesh, &'m ugoe_runtime::DrawableState)> {
+    let compiled = instance.compiled();
+    model
+        .meshes
+        .iter()
+        .filter(|mesh| {
+            mesh.texture == texture
+                && !mesh.mask_only
+                && labels.get(&mesh.id) != Some(&Label::Background)
+        })
+        .filter_map(|mesh| {
+            let state = compiled
+                .mesh_index(mesh.id.as_str())
+                .and_then(|i| instance.drawables().get(i))?;
+            Some((mesh, state))
+        })
+        .collect()
+}
+
+/// テクスチャの 1 画素がキャンバスの何ピクセルに当たるか (メッシュの三角形の面積で重み付けした平均。`size` は画像の
+/// 大きさ)。覆うメッシュがなければ 1。
+fn canvas_per_texel(
+    model: &Model,
+    instance: &ModelInstance,
+    labels: &BTreeMap<MeshId, Label>,
+    texture: u32,
+    size: Vec2,
+) -> f32 {
+    let (mut canvas_area, mut texel_area) = (0.0f32, 0.0f32);
+    for (mesh, state) in texture_meshes(model, instance, labels, texture) {
+        for tri in mesh.indices.as_chunks::<3>().0 {
+            let [a, b, c] = [tri[0], tri[1], tri[2]].map(usize::from);
+            let (Some(&ua), Some(&ub), Some(&uc)) =
+                (mesh.uvs.get(a), mesh.uvs.get(b), mesh.uvs.get(c))
+            else {
+                continue;
+            };
+            let (Some(&pa), Some(&pb), Some(&pc)) = (
+                state.positions.get(a),
+                state.positions.get(b),
+                state.positions.get(c),
+            ) else {
+                continue;
+            };
+            let area = cross((ub - ua) * size, (uc - ua) * size);
+            if area.abs() <= f32::EPSILON {
+                continue;
+            }
+            texel_area += area.abs();
+            canvas_area += cross(pb - pa, pc - pa).abs();
+        }
+    }
+    if texel_area > 0.0 && canvas_area > 0.0 {
+        (canvas_area / texel_area).sqrt()
+    } else {
+        1.0
     }
 }
 

@@ -291,7 +291,7 @@ impl ModuleLayout {
                 top.push(mesh.id.clone());
             } else {
                 skipped.push(format!(
-                    "`{}` はモジュールのデフォーマの中にあるので変えない",
+                    "`{}` is inside a deformer of the module, so it is left as is",
                     mesh_name(model, &mesh.id)
                 ));
             }
@@ -390,7 +390,7 @@ impl ModuleLayout {
                 _ if has(standard::ANGLE_X) => standard::ANGLE_X,
                 _ => {
                     skipped.push(format!(
-                        "{} (`{}`) は本体に `AngleX` が無いので揺らさない",
+                        "{} (`{}`) does not sway because the base has no `AngleX`",
                         part.label,
                         mesh_name(model, id)
                     ));
@@ -647,7 +647,7 @@ fn candidates(
             // 衣装と重なるものだけ理由に書く。
             if costume.iter().any(|r| overlap(*r, region) >= MIN_OVERLAP) {
                 skipped.push(format!(
-                    "本体のワープ `{}` はキーの組が {cells} 個あり多すぎるので、それに従うワープは作らない",
+                    "the base warp `{}` has too many key combinations ({cells}), so no warp follows it",
                     deformer.id
                 ));
             }
@@ -712,9 +712,9 @@ fn build(
     let anchor_name = layout
         .anchor
         .as_ref()
-        .map_or_else(|| "キャンバス".to_owned(), |a| format!("`{a}`"));
+        .map_or_else(|| "the canvas".to_owned(), |a| format!("`{a}`"));
     let mut rationale = vec![format!(
-        "衣装はスロット `{}` の取り付け先 {anchor_name} の子なので、その動きはそのまま受け継ぐ。パラメータは足さない",
+        "The costume is a child of {anchor_name}, the anchor of slot `{}`, so it inherits that motion as is. No parameters are added",
         context.slot().id
     )];
     for group in &layout.groups {
@@ -748,12 +748,7 @@ fn build(
             }
         )));
     }
-    rationale.extend(
-        layout
-            .skipped
-            .iter()
-            .map(|s| format!("組まなかったもの: {s}")),
-    );
+    rationale.extend(layout.skipped.iter().map(|s| format!("Not rigged: {s}")));
     rig.b.validate()?;
     if let Some(Err(e)) = rig.b.doc.split_module() {
         return Err(AiError::InvalidProposal(format!(
@@ -761,7 +756,7 @@ fn build(
         )));
     }
     Ok(Proposal {
-        title: "モジュールの自動リギング (取り付け先への追従・揺れ)".into(),
+        title: "Auto rig the module (follow the anchor, sway)".into(),
         rationale: rationale.join("\n"),
         commands: rig.b.commands,
     })
@@ -782,7 +777,7 @@ fn rig_group(
         .iter()
         .map(|id| format!("`{}`", mesh_name(rig.model(), id)))
         .collect::<Vec<_>>()
-        .join("・");
+        .join(", ");
     let sways = params.sway_scale > 0.0 && !group.sways.is_empty();
     let follows_mesh = group
         .meshes
@@ -790,7 +785,7 @@ fn rig_group(
         .any(|m| layout.mesh_follows.contains_key(m));
     if group.followed.is_none() && !sways && !follows_mesh {
         rationale.push(format!(
-            "{}: 取り付け先の下に覆う本体のワープがないので、取り付け先の動きだけに従う",
+            "{}: no base warp under the anchor covers it, so it only follows the anchor",
             names
         ));
         return Ok(());
@@ -829,7 +824,7 @@ fn rig_group(
     if let (Some(followed), Some(follow)) = (warp_follow, &frame) {
         follow_keyforms(rig, follow, followed)?;
         rationale.push(format!(
-            "追従: {} を包むワープ `{follow}` に、本体のワープ `{}` の {} での変形を写す{}",
+            "Follow: the warp `{follow}` around {} copies the deformation of the base warp `{}` over {}{}",
             names,
             followed.deformer,
             axes_text(&followed.axes),
@@ -837,12 +832,12 @@ fn rig_group(
         ));
     } else if let Some(frame) = &frame {
         rationale.push(format!(
-            "{}: {}ので、揺れの取り付け先のワープ `{frame}` を作る",
+            "{}: {}, so makes the warp `{frame}` to attach the sway to",
             names,
             if direct.is_some() {
-                "本体のワープの変形はメッシュに直接写す"
+                "the base warp's deformation is copied to the meshes directly"
             } else {
-                "覆う本体のワープがない"
+                "no base warp covers it"
             }
         ));
     }
@@ -856,7 +851,7 @@ fn rig_group(
             )?;
         }
     } else if !group.sways.is_empty() {
-        rationale.push("揺れ: 揺れの大きさが 0 なので揺らさない".into());
+        rationale.push("Sway: the sway scale is 0, so nothing sways".into());
     }
     // メッシュのキーフォーム: 本体のワープの変形 (直接写すとき) と、本体のメッシュのキーフォームへの追従。
     for mesh in &group.meshes {
@@ -867,7 +862,7 @@ fn rig_group(
         mesh_keyforms(rig, mesh, direct, follow)?;
         if let Some(f) = follow {
             rationale.push(format!(
-                "追従: `{}` の頂点に、本体のメッシュ `{}` の {} での形の変化を写す (目の開閉など、本体のメッシュ自身のキーフォームの動き)",
+                "Follow: the vertices of `{}` copy the shape changes of the base mesh `{}` over {} (motion of the base mesh's own keyforms, such as the eyes opening and closing)",
                 mesh_name(rig.model(), mesh),
                 f.base,
                 axes_text(&f.axes)
@@ -876,7 +871,7 @@ fn rig_group(
     }
     if let Some(followed) = direct {
         rationale.push(format!(
-            "追従: {} のメッシュのキーフォームに、本体のワープ `{}` の {} での変形を直接写す (キーの上で本体のワープの中の点と同じ所へ動く){}",
+            "Follow: the mesh keyforms of {} copy the deformation of the base warp `{}` over {} directly (on the keys they move where points inside the base warp move){}",
             names,
             followed.deformer,
             axes_text(&followed.axes),
@@ -888,9 +883,9 @@ fn rig_group(
 
 fn axes_text(axes: &[(ParamId, Vec<f32>)]) -> String {
     axes.iter()
-        .map(|(p, keys)| format!("`{p}` ({} キー)", keys.len()))
+        .map(|(p, keys)| format!("`{p}` ({} keys)", keys.len()))
         .collect::<Vec<_>>()
-        .join("・")
+        .join(", ")
 }
 
 fn ignored_text(followed: &Followed) -> String {
@@ -898,13 +893,13 @@ fn ignored_text(followed: &Followed) -> String {
         return String::new();
     }
     format!(
-        " (スロットが公開していない {} には従わない)",
+        " (does not follow {}, which the slot does not expose)",
         followed
             .ignored
             .iter()
             .map(|p| format!("`{p}`"))
             .collect::<Vec<_>>()
-            .join("・")
+            .join(", ")
     )
 }
 
@@ -1177,7 +1172,7 @@ fn rig_sway(
     };
     rig.apply(Command::AddPhysicsRig { rig: physics })?;
     rationale.push(format!(
-        "揺れ: {} ({}、{} 枚) を、`{frame}` に取り付けた {} 区間 (長さ {length:.0} px) の振り子で揺らす (重みの最大 {max:.2}、`{}` の端で根元が {shift:.0} px 動く)",
+        "Sway: {} ({}, {} meshes) sways with a {}-section pendulum ({length:.0} px long) attached to `{frame}` (weight up to {max:.2}; the root moves {shift:.0} px at the ends of `{}`)",
         group.label,
         group.side.as_str(),
         group.meshes.len(),
@@ -1243,7 +1238,7 @@ fn sway_colliders(
         ids.iter()
             .map(|c| format!("`{c}`"))
             .collect::<Vec<_>>()
-            .join("・")
+            .join(", ")
     };
     let mut line = String::new();
     if !used.is_empty() {
@@ -1253,7 +1248,7 @@ fn sway_colliders(
         physics.colliders.clone_from(&used);
         let _ = write!(
             line,
-            "衝突: `{}` を、スロットが公開する本体の衝突体 {} に当てる (粒子の衝突の半径 {radius:.0} px。体にめり込まない)",
+            "Collision: `{}` collides with the base colliders {} that the slot exposes (particle radius {radius:.0} px, so it does not sink into the body)",
             physics.id,
             list(&used)
         );
@@ -1264,7 +1259,7 @@ fn sway_colliders(
         }
         let _ = write!(
             line,
-            "衝突: `{}` は静止姿勢で本体の衝突体 {} に当たるので、それには当てない",
+            "Collision: `{}` touches the base colliders {} at rest, so it does not collide with them",
             physics.id,
             list(&dropped)
         );
@@ -1561,7 +1556,7 @@ pub fn propose_module_rig_with_ai_guided(
             Ok(mut proposal) => {
                 let (reason, unapplied) = split_unapplied(&reason);
                 proposal.rationale = format!(
-                    "AI が決めた値: 揺れの大きさ {:.2}、振り子の長さ {:.2} ({})\n{}",
+                    "Values chosen by the AI: sway scale {:.2}, pendulum length {:.2} ({})\n{}",
                     params.sway_scale, params.sway_length, reason, proposal.rationale
                 );
                 return Ok(AiModuleRig {
