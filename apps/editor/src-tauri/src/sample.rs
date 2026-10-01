@@ -135,6 +135,41 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// 見本のスロット `Hair` は本体の肩の衝突体を公開する。本体から物理を外すと、モジュールのプロジェクトの
+    /// 状態に当たれない衝突体として出て、リグがそれに当たるモジュールは本体に物理を足すよう案内する問題で
+    /// 開けない (T0660)。
+    #[test]
+    fn exposed_colliders_without_base_physics_are_explained() {
+        use crate::module::{ModuleProblemKind, module_open_problem, module_status_of};
+
+        let dir = temp_dir("sample-colliders");
+        let bundle = ugoe_format::read_bundle(BASE).unwrap();
+        let mut colliding = ugoe_format::read_module(MODULES[0]).unwrap();
+        colliding.module.physics.rigs[0].colliders = vec!["Shoulders".to_owned()];
+        let plain = ugoe_format::read_module(MODULES[1]).unwrap();
+        let written =
+            save_bundle_projects(&dir, BASE_PROJECT, &bundle, &[colliding, plain]).unwrap();
+        let open = |path: &Path| {
+            let (_, document) = ProjectSession::from_project(Project::load(path).unwrap(), None);
+            module_status_of(&document).unwrap()
+        };
+        let problem = |path: &Path| module_open_problem(path.display().to_string(), None).unwrap();
+        assert!(problem(&written[1]).is_none());
+        assert!(open(&written[1]).unavailable_colliders.is_empty());
+        assert_eq!(open(&written[2]).base_colliders, ["Shoulders"]);
+
+        let mut base = Project::load(&written[0]).unwrap();
+        base.physics = None;
+        base.save(&written[0]).unwrap();
+        let found = problem(&written[1]).unwrap();
+        assert_eq!(found.kind, ModuleProblemKind::BaseNeedsPhysics);
+        assert!(found.message.contains("`Shoulders`"), "{}", found.message);
+        assert!(found.message.contains("no physics"), "{}", found.message);
+        assert!(problem(&written[2]).is_none());
+        assert_eq!(open(&written[2]).unavailable_colliders, ["Shoulders"]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// 書き出すフォルダーは毎回新しく作り、前の見本を上書きしない。
     #[test]
     fn sample_folders_do_not_overwrite_earlier_ones() {

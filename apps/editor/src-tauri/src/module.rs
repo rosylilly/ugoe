@@ -64,6 +64,9 @@ pub struct ModuleStatus {
     /// 本体の物理のリグと衝突体の ID (読み取り専用)。
     pub base_rigs: Vec<String>,
     pub base_colliders: Vec<String>,
+    /// スロットが公開する本体の衝突体のうち、本体に無いもの (本体に物理が無いとき。モジュールのリグは当たれない。
+    /// 物理の画面で、本体に物理を足すよう案内する。`ModuleContext::unavailable_colliders`)。
+    pub unavailable_colliders: Vec<String>,
     /// モジュールの条件 (`Module::requires`)。変えるのは `Command::SetModuleSettings`。
     pub requires: ModuleRequirements,
     /// 本体のスロット (モジュールの設定の画面で、付けるスロットと条件のスロットを選ぶ)。
@@ -93,6 +96,9 @@ pub enum ModuleProblemKind {
     UnknownSlot,
     /// 本体はあるが、モジュールが合わない (条件・公開されたパラメータ・マスクなど)。本体を直すか、選び直す。
     DoesNotFit,
+    /// モジュールのリグがスロットの公開する本体の衝突体に当たるが、本体に物理が無い。本体に物理と衝突体を足す
+    /// (`ModuleError::ColliderNeedsBasePhysics`)。
+    BaseNeedsPhysics,
 }
 
 /// モジュールのプロジェクトが本体の問題で開けない・読み直せないこと (`module_open_problem`・`reload_base`)。
@@ -215,6 +221,7 @@ pub(crate) fn module_status_of(document: &Document) -> Option<ModuleStatus> {
         base_colliders: physics.map_or_else(Vec::new, |p| {
             p.colliders.iter().map(|c| c.id.clone()).collect()
         }),
+        unavailable_colliders: context.unavailable_colliders(),
         requires: context.requires().clone(),
         base_slots: base.slots.iter().map(slot_summary).collect(),
         base_parameters: base.parameters.iter().map(|p| p.id.to_string()).collect(),
@@ -232,6 +239,9 @@ fn diagnose(error: &ProjectError, base: &Path, slot: &str) -> Option<ModuleProbl
         | ProjectError::BaseIsModule { .. }
         | ProjectError::UnsupportedBaseTexture { .. } => ModuleProblemKind::BaseUnreadable,
         ProjectError::Module(ModuleError::UnknownSlot(_)) => ModuleProblemKind::UnknownSlot,
+        ProjectError::Module(ModuleError::ColliderNeedsBasePhysics { .. }) => {
+            ModuleProblemKind::BaseNeedsPhysics
+        }
         ProjectError::Module(ModuleError::Compose(_) | ModuleError::Shape { .. }) => {
             ModuleProblemKind::DoesNotFit
         }

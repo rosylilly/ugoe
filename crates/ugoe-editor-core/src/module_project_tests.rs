@@ -1063,3 +1063,73 @@ fn base_pose_groups_are_read_only() {
     assert!(document.undo());
     assert_eq!(document.model().pose, original);
 }
+
+/// 本体に物理が無いのに、モジュールのリグがスロットの公開する本体の衝突体を参照していれば、本体に物理を足すよう
+/// 案内するエラーにする。本体の物理に衝突体があれば開ける (T0660)。
+#[test]
+fn exposed_colliders_need_the_base_physics() {
+    let mut base = base();
+    let hair = base
+        .model
+        .slots
+        .iter_mut()
+        .find(|s| s.id.as_str() == "Hair")
+        .unwrap();
+    hair.colliders = vec!["Shoulders".to_owned()];
+    let mut module = long_hair_module();
+    module.physics.rigs[0].colliders = vec!["Shoulders".to_owned()];
+    let rig = module.physics.rigs[0].id.clone();
+    let context = |base: &ModuleBase| {
+        ModuleContext::new(
+            base.clone(),
+            &module.slot,
+            module.name.clone(),
+            module.requires.clone(),
+        )
+        .unwrap()
+    };
+
+    let without = context(&base);
+    assert_eq!(without.unavailable_colliders(), ["Shoulders"]);
+    let error = without.workspace(&module, &images(&module)).unwrap_err();
+    assert_eq!(
+        error,
+        ModuleError::ColliderNeedsBasePhysics {
+            rig,
+            collider: "Shoulders".into(),
+            slot: "Hair".into(),
+        }
+    );
+    assert!(
+        error.to_string().contains("the base model has no physics"),
+        "{error}"
+    );
+    // スロットが公開していない衝突体は、今までどおり合成のエラー。
+    module.physics.rigs[0].colliders = vec!["Elsewhere".to_owned()];
+    assert!(matches!(
+        without.workspace(&module, &images(&module)),
+        Err(ModuleError::Compose(
+            ugoe_runtime::ComposeError::UnknownCollider { .. }
+        ))
+    ));
+
+    module.physics.rigs[0].colliders = vec!["Shoulders".to_owned()];
+    let mut physics = crate::physics_edit::default_settings();
+    physics
+        .colliders
+        .push(ugoe_model::physics::PhysicsCollider {
+            id: "Shoulders".into(),
+            name: "Shoulders".into(),
+            attach: None,
+            shape: ugoe_model::physics::ColliderShape::Circle {
+                center: Vec2::new(0.0, 0.0),
+                radius: 10.0,
+            },
+        });
+    base.physics = Some(physics);
+    let with = context(&base);
+    assert!(with.unavailable_colliders().is_empty());
+    let workspace = with.workspace(&module, &images(&module)).unwrap();
+    let physics = workspace.physics.unwrap();
+    assert!(physics.rigs.iter().any(|r| r.colliders == ["Shoulders"]));
+}

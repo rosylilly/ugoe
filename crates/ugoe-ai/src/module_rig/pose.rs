@@ -15,7 +15,8 @@
 //!
 //! - 本体のポーズのグループの要素のうち、スロットが公開するパーツ (`Slot::pose_parts`) の名前が同じ文字の差分に
 //!   なっていて、同じ文字の衣装の差分と本体の差分の絵が基準の姿で重なれば、衣装の差分を本体の要素の `links` に
-//!   加える (本体の腕の差分に合わせて袖の差分を切り替える)。名前で見つけた組の決め方。
+//!   加える (本体の腕の差分に合わせて袖の差分を切り替える)。名前で見つけた組の決め方。本体の要素の名前が同じ文字で
+//!   合わず、PSD で見えている差分がちょうど 1 つなら、次の見えている / 隠してあるでの対応付けに回す (T0660)。
 //! - AI の手がかりと絵の重なりで見つけた組は、見えている / 隠してあるで本体の要素と対応付ける: 見えている衣装の差分は
 //!   本体のグループの最初の要素 (最初に表示される) に、隠してある差分は残りの要素のうち絵が最もよく重なるものに付ける。
 //!   本体のグループの最初の要素と、対応する要素のすべてをスロットが公開していて、どの組も絵が重なるときだけ追従させる。
@@ -357,8 +358,16 @@ pub(super) fn propose(
             parts.push((*letter, part));
         }
         let letters: String = parts.iter().map(|(l, _)| *l).collect();
+        // 名前で見つけた組が本体の文字と合わなければ、見えている / 隠してあるで追従させる (見えているものを先頭に並べ替える)。
+        let mut by_drawing = false;
         let linked = match set.source {
-            Source::Name => linked_group(rig.model(), context, &parts, bounds),
+            Source::Name => linked_group(rig.model(), context, &parts, bounds).or_else(|| {
+                let shown = shown_first(rig.model(), &parts)?;
+                let linked = linked_by_drawing(rig.model(), context, &shown, bounds)?;
+                parts = shown;
+                by_drawing = true;
+                Some(linked)
+            }),
             Source::Hint | Source::Drawing => {
                 linked_by_drawing(rig.model(), context, &parts, bounds)
             }
@@ -421,6 +430,10 @@ pub(super) fn propose(
             .collect::<Vec<_>>()
             .join(", ");
         rationale.push(match set.source {
+            Source::Name if by_drawing => format!(
+                "Pose: the costume variants “{}” ({letters}) follow the base pose entries {entries} (the base names have no matching letters, so the variant shown in the PSD follows the base entry shown first and hidden ones follow the base entries they overlap)",
+                set.name
+            ),
             Source::Name => format!(
                 "Pose: the costume variants “{}” ({letters}) follow the base pose entries {entries} (variants with the same letter switch together)",
                 set.name
@@ -488,6 +501,34 @@ fn mesh_part(rig: &mut Rig, context: &ModuleContext, mesh: &MeshId) -> Result<Pa
         })?;
     }
     Ok(id)
+}
+
+/// パーツが隠してある (どのキーフォームでも不透明度 0 か、中のメッシュがすべて隠してある)。
+fn part_hidden(model: &Model, part: &PartId) -> bool {
+    let Some(found) = model.parts.iter().find(|p| &p.id == part) else {
+        return false;
+    };
+    if found.keyforms.keyforms.iter().all(|k| k.opacity <= 0.0) {
+        return true;
+    }
+    let meshes = part_meshes(model, part);
+    !meshes.is_empty()
+        && meshes.iter().all(|id| {
+            model
+                .meshes
+                .iter()
+                .find(|m| &m.id == id)
+                .is_some_and(|m| mesh_hidden(&m.keyforms))
+        })
+}
+
+/// 差分 `parts` のうち PSD で見えているものがちょうど 1 つなら、それを先頭にした並び (ほかは元の順)。
+fn shown_first(model: &Model, parts: &[(char, PartId)]) -> Option<Vec<(char, PartId)>> {
+    let (shown, hidden): (Vec<_>, Vec<_>) = parts
+        .iter()
+        .cloned()
+        .partition(|(_, part)| !part_hidden(model, part));
+    (shown.len() == 1).then(|| shown.into_iter().chain(hidden).collect())
 }
 
 /// パーツ `part` とその子孫のパーツのメッシュ。

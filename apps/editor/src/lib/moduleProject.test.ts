@@ -18,6 +18,7 @@ import {
   requirementsOf,
   suggestModuleName,
   toggled,
+  unavailableCollidersNotice,
 } from "./moduleProject";
 
 const status: ModuleStatus = {
@@ -39,6 +40,7 @@ const status: ModuleStatus = {
   base_textures: ["face.png"],
   base_rigs: ["Sway"],
   base_colliders: [],
+  unavailable_colliders: [],
   // JSON では空の欄を書かない
   requires: { parameters: ["BodySway"] } as ModuleStatus["requires"],
   base_slots: [],
@@ -150,10 +152,25 @@ describe("module problems", () => {
     expect(describeModuleProblem(problem("base_not_found"))).toContain("moved or renamed");
     expect(describeModuleProblem(problem("unknown_slot"))).toContain('no longer has slot "Hair"');
     expect(describeModuleProblem(problem("does_not_fit"))).toContain("no longer fits");
+    expect(describeModuleProblem(problem("base_needs_physics"))).toContain("has no physics");
+    expect(moduleProblemFixes(problem("base_needs_physics"))).toContain("open_base");
     // ファイル名は引用符で囲み、文と続けて読めないようにする。
     expect(describeModuleProblem(problem("unknown_slot", "/p/moved.ugoeproj"))).toMatch(
       /^The base model "moved\.ugoeproj" no longer has slot "Hair"\./,
     );
+  });
+});
+
+describe("unavailableCollidersNotice", () => {
+  it("explains colliders the slot exposes without base physics", () => {
+    expect(unavailableCollidersNotice(null)).toBeNull();
+    expect(unavailableCollidersNotice(status)).toBeNull();
+    const one = unavailableCollidersNotice({ ...status, unavailable_colliders: ["Shoulders"] });
+    expect(one).toContain('Slot "Hair" exposes the base collider "Shoulders"');
+    expect(one).toContain("add physics with it");
+    const two = unavailableCollidersNotice({ ...status, unavailable_colliders: ["L", "R"] });
+    expect(two).toContain('base colliders "L", "R"');
+    expect(two).toContain("collide with them");
   });
 });
 

@@ -40,6 +40,17 @@ pub enum ModuleError {
     UnknownSlot(String),
     #[error(transparent)]
     Compose(#[from] ComposeError),
+    /// 本体に物理が無いのに、モジュールのリグがスロットの公開する本体の衝突体を参照している (本体に衝突体が無い。
+    /// `docs/spec/modules.md#合成`)。本体に物理と衝突体を足すか、リグから外す (T0660)。
+    #[error(
+        "rig `{rig}` collides with `{collider}`, which slot `{slot}` exposes, but the base model has no physics. \
+         Add physics with the collider `{collider}` to the base project, or remove the collider from the rig"
+    )]
+    ColliderNeedsBasePhysics {
+        rig: String,
+        collider: String,
+        slot: String,
+    },
     /// 本体の要素を変えた (`element` は ``parameter `AngleX` `` のような表記)。
     #[error(
         "{element} belongs to the base model and can't be edited here. Edit it in the base project"
@@ -240,11 +251,7 @@ impl ModuleContext {
         module.requires = self.requires.clone();
         let mut model = compose(&self.base.model, &[&module])?;
         let physics = if self.base.physics.is_some() || !module.physics.is_empty() {
-            Some(compose_physics(
-                &self.base.model,
-                &self.expected_physics,
-                &[&module],
-            )?)
+            Some(self.compose_physics(&module)?)
         } else {
             None
         };
@@ -268,6 +275,40 @@ impl ModuleContext {
             physics,
             textures,
         })
+    }
+
+    /// モジュール `module` の物理を、本体の物理 (なければ既定の設定) に合成する (`compose_physics`)。
+    ///
+    /// 作者のツールでは、本体に物理が無くても既定の設定で合成するので、スロットが公開する本体の衝突体への参照は
+    /// 指す先が無くエラーになる (保存のときに参照が黙って消えないように。T0655)。そのときは
+    /// [`ModuleError::ColliderNeedsBasePhysics`] で、本体に物理を足すよう案内する。
+    pub(crate) fn compose_physics(&self, module: &Module) -> Result<PhysicsSettings, ModuleError> {
+        compose_physics(&self.base.model, &self.expected_physics, &[module]).map_err(|error| {
+            match error {
+                ComposeError::UnknownCollider { rig, collider, .. }
+                    if self.base.physics.is_none() && self.slot.colliders.contains(&collider) =>
+                {
+                    ModuleError::ColliderNeedsBasePhysics {
+                        rig,
+                        collider,
+                        slot: self.slot.id.to_string(),
+                    }
+                }
+                other => other.into(),
+            }
+        })
+    }
+
+    /// スロットが公開する本体の衝突体のうち、本体の物理に無いもの (本体の物理の検証はスロットの `colliders` を
+    /// 確かめるので、実際には本体に物理が無いときのスロットの `colliders` のすべて)。モジュールのリグはこれに当たれない。
+    pub fn unavailable_colliders(&self) -> Vec<String> {
+        let base = self.base.physics.as_ref();
+        self.slot
+            .colliders
+            .iter()
+            .filter(|id| !base.is_some_and(|p| p.colliders.iter().any(|c| &c.id == *id)))
+            .cloned()
+            .collect()
     }
 
     fn prefixed(&self, id: &str) -> String {

@@ -33,8 +33,9 @@ use ugoe_model::module::DrawOrderRange;
 use ugoe_model::parameter::ParameterKind;
 use ugoe_model::part::PartKeyform;
 use ugoe_model::physics::{
-    NormalizationRange, PhysicsBlend, PhysicsInput, PhysicsNormalization, PhysicsOutput,
-    PhysicsParticle, PhysicsRig, PhysicsSettings, PhysicsSource, PhysicsTarget,
+    ColliderShape, NormalizationRange, PhysicsBlend, PhysicsCollider, PhysicsInput,
+    PhysicsNormalization, PhysicsOutput, PhysicsParticle, PhysicsRig, PhysicsSettings,
+    PhysicsSource, PhysicsTarget,
 };
 use ugoe_model::standard as sp;
 use ugoe_model::{
@@ -718,6 +719,8 @@ fn base() -> Bundle {
             replaces: vec!["Hair".into()],
             // 長い後ろ髪を体の奥に見せるため、肌を反転マスクに使える。
             mask_sources: vec!["Skin".into()],
+            // 揺れる髪が肩に当たるよう、本体の肩の衝突体を使える。
+            colliders: vec![SHOULDERS.to_owned()],
             ..slot("Hair", "HeadWarp", HAIR_RANGE, "Head")
         },
         slot("Headwear", "HeadWarp", HEADWEAR_RANGE, "Head"),
@@ -767,14 +770,29 @@ fn base() -> Bundle {
     }
 }
 
-/// 本体の物理: 既定の後ろ髪の揺れ (`HairSway`)。重力などはエディタの既定の設定と同じで、モジュールの物理も
-/// この設定で動く。
+/// 本体の肩の衝突体の ID (スロット `Hair` が公開する)。
+const SHOULDERS: &str = "Shoulders";
+
+/// 本体の物理: 既定の後ろ髪の揺れ (`HairSway`) と、体のワープに付けた肩の衝突体 (`Shoulders`。胴の上の辺に
+/// 沿うカプセル)。重力などはエディタの既定の設定と同じで、モジュールの物理もこの設定で動く。
 ///
-/// 衝突体はスロットに公開しない: 公開すると、物理を読まずにモデルだけを開いたホストでは、そのスロットに
-/// モジュールを付けられなくなる (スロットの `colliders` の参照先が無い)。
+/// 肩の衝突体はスロット `Hair` で公開する (髪のモジュールのリグが参照できる)。物理を読まずにモデルだけを
+/// 開いたホストでも、公開した衝突体は無視されるだけで、そのスロットにモジュールを付けられる
+/// (`docs/spec/modules.md` の合成。T0655)。見本の本体の後ろ髪とモジュールのリグは衝突体を使わない。
 fn base_physics() -> PhysicsSettings {
+    let shoulder = |x: f32| IN_BODY.local(Vec2::new(x, 372.0));
     PhysicsSettings {
         rigs: vec![pendulum("HairSway", 120.0, 6.0, 0.4)],
+        colliders: vec![PhysicsCollider {
+            id: SHOULDERS.to_owned(),
+            name: SHOULDERS.to_owned(),
+            attach: Some("BodyWarp".into()),
+            shape: ColliderShape::Capsule {
+                a: shoulder(198.0),
+                b: shoulder(314.0),
+                radius: 34.0,
+            },
+        }],
         ..ugoe_editor_core::physics_edit::default_settings()
     }
 }
@@ -1809,6 +1827,54 @@ mod tests {
         assert!(peak > 2.0 && peak < 60.0, "peak {peak}");
         let settled = max_shift(&puppet.instance().drawables()[index].positions, &rest);
         assert!(settled < 1.0, "did not settle: {settled}");
+    }
+
+    /// スロット `Hair` は本体の肩の衝突体を公開し、髪のモジュールのリグはそれを参照できる。物理を渡さずに
+    /// モデルだけで作った Puppet でも、スロット `Hair` に (衝突体を参照するものも) モジュールを付けられる (T0655)。
+    #[test]
+    fn hair_slot_exposes_the_shoulders() {
+        let sample = build_dress_up().unwrap();
+        let model = &sample.base.model;
+        let physics = sample.base.physics.clone().unwrap();
+        let hair = model
+            .slots
+            .iter()
+            .find(|s| s.id.as_str() == "Hair")
+            .unwrap();
+        assert_eq!(hair.colliders, [SHOULDERS]);
+        assert!(physics.colliders.iter().any(|c| c.id == SHOULDERS));
+        // 肩は胴の上の辺 (頭の下) にあり、体と一緒に動く。
+        let ColliderShape::Capsule { a, b, .. } = physics.colliders[0].shape else {
+            panic!("{:?}", physics.colliders[0].shape);
+        };
+        assert_eq!(
+            physics.colliders[0].attach.as_ref().unwrap().as_str(),
+            "BodyWarp"
+        );
+        assert!(a.y > IN_BODY.local(HEAD).y && (a.y - b.y).abs() < 1e-6);
+
+        let mut hair_module = sample.modules[0].module.clone();
+        assert_eq!(hair_module.slot.as_str(), "Hair");
+        hair_module.physics.rigs[0].colliders = vec![SHOULDERS.to_owned()];
+        assert!(ugoe_model::validate::validate_module(&hair_module).is_empty());
+        let composed = ugoe_runtime::compose(model, &[&hair_module]).unwrap();
+        let rigs = ugoe_runtime::compose_physics(model, &physics, &[&hair_module]).unwrap();
+        assert!(ugoe_model::validate::validate_physics(&rigs, &composed).is_empty());
+
+        for module in [sample.modules[0].module.clone(), hair_module] {
+            let module = std::sync::Arc::new(module);
+            let mut with_physics = ugoe::Puppet::new(model.clone())
+                .unwrap()
+                .with_physics(physics.clone());
+            with_physics.attach_module(module.clone()).unwrap();
+            let settings = with_physics.physics().unwrap().settings();
+            assert!(settings.colliders.iter().any(|c| c.id == SHOULDERS));
+            let mut model_only = ugoe::Puppet::new(model.clone()).unwrap();
+            model_only.attach_module(module).unwrap();
+            let settings = model_only.physics().unwrap().settings();
+            assert!(settings.rigs.iter().all(|r| r.colliders.is_empty()));
+            model_only.update(1.0 / 60.0);
+        }
     }
 
     /// 頭を振ると、髪のモジュールの揺れものが物理で遅れて揺れ、止めると元に戻る。

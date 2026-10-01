@@ -1,6 +1,6 @@
 <!--
   プレビューモードの右の列 (docs/editor.md#プレビューモード)。段 (物理・目パチ・呼吸・リップシンク・ポーズ) の切り替え、
-  着せ替え (DressUpSection、T0649)、フェイストラッキング (@ugoe/face-tracking、T0636)、プロジェクトのモーション・表情の再生、すべてのパラメータの
+  ポーズの表示する要素の切り替え (T0660)、着せ替え (DressUpSection、T0649)、フェイストラッキング (@ugoe/face-tracking、T0636)、プロジェクトのモーション・表情の再生、すべてのパラメータの
   スライダー (グループごと)。
   状態と WebPuppet の操作は PreviewMode (preview.svelte.ts)。コマンドは送らない。
 -->
@@ -8,9 +8,11 @@
 import { TrackingPanel } from "@ugoe/face-tracking";
 import type { EditorDocument } from "../document.svelte";
 import type { DifferenceItem, Model } from "../ipc";
+import { labelOf } from "../labels";
 import type { LightingView } from "../panels/lighting/lightingView.svelte";
 import PreviewLightsSection from "../panels/lighting/PreviewLightsSection.svelte";
 import { formatValue, parseValue } from "../panels/parameterValue";
+import { shownEntry } from "../panels/poses/poses";
 import type { ViewportController } from "../viewport/controller.svelte";
 import DressUpSection from "./DressUpSection.svelte";
 import LicenseDialog from "./LicenseDialog.svelte";
@@ -42,6 +44,7 @@ const model = $derived(doc.model ? (JSON.parse(doc.model.json) as Model) : null)
 const sections = $derived(groupParameters(doc.parameters, model?.parameter_groups ?? [], "Other"));
 const shown = $derived(filterSections(sections, filter));
 const available = $derived(stageAvailability(model, doc.physics !== null));
+const poseGroups = $derived(model?.pose.groups ?? []);
 
 function onValueChange(id: string, e: Event) {
   const input = e.currentTarget as HTMLInputElement;
@@ -105,6 +108,33 @@ function onValueKeyDown(e: KeyboardEvent) {
       </div>
     {/each}
   </section>
+
+  {#if poseGroups.length > 0}
+    <!-- 編集中のモデルのポーズのグループ (着せ替えで付けたモジュールのグループは出さない)。T0660 -->
+    <section aria-label="Pose">
+      <h3>Pose</h3>
+      {#if !preview.stages.pose}
+        <p class="muted hint">Turn on the Pose stage above to see the shown entries.</p>
+      {/if}
+      {#each poseGroups as group, gi (gi)}
+        {@const current = group.entries[shownEntry(group, preview.poseShown)]?.part ?? ""}
+        <label class="pose">
+          <span>Group {gi + 1}</span>
+          <select
+            value={current}
+            disabled={!preview.stages.pose}
+            aria-label="Shown entry of pose group {gi + 1}"
+            title="The entry shown in this group (the others fade out)"
+            onchange={(e) => preview.showPose(group, e.currentTarget.value)}
+          >
+            {#each group.entries as entry (entry.part)}
+              <option value={entry.part}>{labelOf(model?.parts, entry.part)}</option>
+            {/each}
+          </select>
+        </label>
+      {/each}
+    </section>
+  {/if}
 
   <!-- モジュールのプロジェクトでは、今の編集を付けて比べている間だけ自分のスロットも出す (T0650・T0651。
        比べられないときは、編集中のモデルで自分のスロットはもう埋まっている) -->
@@ -310,6 +340,20 @@ section {
 
 .level {
   width: 120px;
+}
+
+/* エディタの label は縦に並べる (app.css) ので、グループの名前と選択を横に並べ直す。 */
+.pose {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0;
+}
+
+.hint {
+  margin: 2px 0;
+  font-size: 11px;
 }
 
 .list {

@@ -292,7 +292,7 @@ AI や CLI は `commands` の結果を確かめてから `batch` として適用
 | 物理のパネル (`panels/physics/PhysicsPanel.svelte`) | 右の列の上の区画の「Physics」タブ (「Inspector」と切り替える)。「Preview」/「Stop preview」、「World」(重力・風・周波数 → `set_physics_world`)、リグの一覧 (上から処理する順。▲▼ で並べ替える → `reorder_physics_rig`。前のリグの出力を入力に読むリグには「relay」の印) と「+ Rig」(空のリグ → `add_physics_rig`)、「+ From selected deformers」(ツリーで選んだ回転デフォーマを親から子の順に並べて `create_physics_rig`) |
 | テンプレート (`panels/physics/TemplateSection.svelte`) | 物理のパネルの「Templates」。「Create missing parameters」(`create_missing`、既定で入)・「Body blend」(`blend`)・「Neck」(首の回転デフォーマ。既定は名前から選ぶ)、「+ Body follow」「+ Bounce」「+ Neck follow」で `apply_physics_template` を 1 つ送り、作ったリグを選ぶ。ないパラメータを作るか飛ばすかを横に出す。説明とパラメータの確認は `templates.ts` (Vitest) |
 | リグの編集 (`panels/physics/RigEditor.svelte`) | 名前、「Gravity frame」、「Delete rig」、粒子 (「Length」`radius`・「Sway」`mobility`・「Speed」`delay`・「Settle」`acceleration`・「Hit r」`collision_radius`・位置。「+ Particle」は最後の区間と同じ向き・長さで足す)、入力、出力 (種類・書き込み先・粒子・成分・倍率・重み・反転・パラメータへの出力の合成の方法「Overwrite」/「Add」([physics.md#合成の方法](spec/physics.md#合成の方法))。頂点の出力は作ったとき重みがすべて 1)、「Collides with」、「Input range」。欄を確定するたびにコマンドを 1 つ送る |
-| 衝突体 (`panels/physics/ColliderSection.svelte`) | 「+ Circle」「+ Capsule」(主な選択がデフォーマならその原点 (ワープは中心) に取り付け、なければキャンバスの中央)。名前・「Attach to」・「Shape」(どちらも今の見た目の位置を保って写し直す)・位置・半径・削除 |
+| 衝突体 (`panels/physics/ColliderSection.svelte`) | 「+ Circle」「+ Capsule」(主な選択がデフォーマならその原点 (ワープは中心) に取り付け、なければキャンバスの中央)。名前・「Attach to」・「Shape」(どちらも今の見た目の位置を保って写し直す)・位置・半径・削除。モジュールのプロジェクトで、スロットが公開する本体の衝突体が本体に無い (本体に物理が無い) ときは、見出しの下に案内を出す (`ModuleStatus.unavailable_colliders`、`moduleProject.ts` の `unavailableCollidersNotice`。T0660) |
 | ビューポート (`viewport/tools/physics/PhysicsOverlay.svelte`) | 物理のパネルを開いている間、衝突体 (青) と粒子の鎖 (オレンジ、根元は四角。選んだリグは濃い色) を重ねる。粒子は動的物理のリグのときだけ (物理空間がキャンバス座標なので。パラメータにだけ出力するリグは出さない)。衝突体をドラッグで動かし (カプセルは端の丸で端だけ)、離したときに `set_physics_collider` を 1 つ送る。鎖を押すとそのリグを選ぶ |
 
 - 衝突体と粒子の位置は wasm の `WebPuppet.deformer_point(id, x, y)` (デフォーマの局所座標 → キャンバス座標) で置き、ドラッグの逆写像は `deformer_jacobian` を使ったニュートン法です (`viewport/tools/physics/physicsGeometry.ts`、Vitest)。
@@ -420,6 +420,13 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
   ほかは有効です (リップシンクは音量を与えると口のパラメータを上書きするため)。リップシンクの音量はパネルの
   スライダー (0〜1) で与え、段を止めると `set_lip_sync_level(undefined)` に戻します。モデル (`effects`・`pose`) や
   物理の設定の無い段には「(not set up)」と出します。物理の「Reset」は `reset_physics`。
+- **ポーズ (T0660):** 編集中のモデル (`doc.model`) にポーズのグループがあれば「Pose」の節を出し、グループごとの選択で表示する要素を
+  `show_pose` で切り替えます (`PreviewMode.showPose`。クロスフェードはポーズの時間で、毎フレームの `update` が進める)。表示する要素は
+  `PreviewMode.poseShown` (グループに 1 つまで。`poses.ts` の `showEntry`) に持ち、入るときは編集中のビューポートで見ていた要素
+  (`ViewportController.posePreview`) から始め、モデルを読み直すたびに渡し直します。ポーズの段を止めている間は選べません。
+  モジュールのプロジェクトで今の編集を本体に付けて比べている間は、今の編集を別の名前 (`<名前> (editing)`) で付けるので、モジュールの
+  パーツの接頭辞を付け替えて渡します (`preview.ts` の `previewPart`)。着せ替えで付けたほかのモジュールのグループは出しません (WebPuppet に
+  ポーズのグループを返す口が無いため。本体の要素に追従する衣装の差分は、本体の要素と一緒に切り替わる)。
 - **モーション・表情:** ドキュメントのもの (`EditorDocument.motions` / `expressions`、保存前のものも) を JSON で
   `start_motion_json(json, "force")`・`set_expression_json` に渡します。モーションはフェード・ループ・イベント込みで
   再生し (発火したイベントを最近の 5 つまで出す)、「Stop」は `stop_motions` (フェードアウト)。表情は 1 つだけ選び、
@@ -646,7 +653,7 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
 
 | コマンド | 内容 (`src-tauri/src/module.rs`) |
 | --- | --- |
-| `module_status` | モジュールのプロジェクトなら名前・本体のパス・スロット (`pose_parts` を含む)・本体の要素の ID・本体のポーズのグループの数 (`base_pose_groups`) (`ModuleStatus`)、でなければ `null` |
+| `module_status` | モジュールのプロジェクトなら名前・本体のパス・スロット (`pose_parts` を含む)・本体の要素の ID・本体のポーズのグループの数 (`base_pose_groups`)・スロットが公開するが本体に無い衝突体 (`unavailable_colliders`。T0660) (`ModuleStatus`)、でなければ `null` |
 | `read_module_base(path)` | 本体の候補を読み、名前とスロットの一覧 (`BaseSummary`) を返す |
 | `new_module_project(base, slot, name)` | 空のモジュールのプロジェクトにする (未保存) |
 | `open_module_with_base(path, base)` | 本体を付け替えてモジュールのプロジェクトを開く |
@@ -735,6 +742,13 @@ base project.」と示します (`BaseLock.svelte`。`fieldset` の `disabled` �
 | `base_unreadable` | 本体を読めない (壊れている・モジュールのプロジェクトを指している・PNG でない画像) | 同上 |
 | `unknown_slot` | 本体にモジュールのスロットがない | スロットを選んで「Use this slot」、「Open base project」(スロットを戻す)、本体を選び直す |
 | `does_not_fit` | 本体はあるが、モジュールが合わない (条件・公開されたパラメータ・マスクなど) | 「Open base project」(本体を直す)、本体を選び直す |
+| `base_needs_physics` | モジュールのリグがスロットの公開する本体の衝突体に当たるが、本体に物理が無い (`ModuleError::ColliderNeedsBasePhysics`。T0660) | 「Open base project」(本体に物理と衝突体を戻す)、本体を選び直す |
+
+- **物理の無い本体が公開する衝突体 (T0660):** ランタイム (Puppet) は、本体に物理が無ければスロットの公開する衝突体への参照を外して
+  付けます ([spec/modules.md#合成](spec/modules.md#合成))。作者のツールは、保存のときに参照が黙って消えないよう、作業用のモデルと書き出しの
+  検査ではエラーのままにし、`ModuleContext::compose_physics` が `ComposeError::UnknownCollider` を `ModuleError::ColliderNeedsBasePhysics`
+  (リグ・衝突体・スロットと、本体に物理を足すよう促す文) に置き換えます。開けたモジュールのプロジェクトでも、物理の画面の「Colliders」に
+  当たれない衝突体を案内します。
 
 - 付け替え (本体・スロット) は `open_module_with_base` で開き直し、保存するまでファイルに書きません (未保存の印)。選び直した本体でも開けなければ
   (スロットがないなど)、その本体で確かめた次の問題を出し、次の直し方でもその本体を使います。

@@ -115,6 +115,18 @@ export function isBaseCollider(module: ModuleStatus | null, id: string): boolean
   return module?.base_colliders.includes(id) ?? false;
 }
 
+/**
+ * スロットが公開する本体の衝突体が本体に無い (本体に物理が無い) ときの、物理の画面の案内。無ければ `null`。
+ * モジュールのリグはその衝突体に当たれず、参照すると開けない・書き出せない (T0660)。
+ */
+export function unavailableCollidersNotice(module: ModuleStatus | null): string | null {
+  const missing = module?.unavailable_colliders ?? [];
+  if (!module || missing.length === 0) return null;
+  const names = missing.map((id) => `"${id}"`).join(", ");
+  const them = missing.length === 1 ? "it" : "them";
+  return `Slot "${module.slot.id}" exposes the base collider${missing.length === 1 ? "" : "s"} ${names}, but the base model has no physics, so this module's rigs can't collide with ${them}. To use ${them}, open the base project and add physics with ${them} in the Physics tab, then reload the base.`;
+}
+
 /** モジュールの条件の、省略された欄を埋めたもの (JSON では空の欄を書かない)。 */
 export function requirementsOf(module: ModuleStatus): {
   avatar_level: number | null;
@@ -165,6 +177,8 @@ export function describeModuleProblem(problem: ModuleProblem): string {
       return `The base model ${file} no longer has slot "${problem.slot}". Choose another slot for this module, or add the slot back in the base project.`;
     case "does_not_fit":
       return `This module no longer fits the base model ${file}. Fix the base (for example expose the parameter or mask in the slot), or choose another base.`;
+    case "base_needs_physics":
+      return `A physics rig of this module collides with a collider that slot "${problem.slot}" exposes, but the base model ${file} has no physics, so the collider doesn't exist. Open the base project and add physics with that collider (Physics tab), or choose another base.`;
   }
 }
 
@@ -173,7 +187,9 @@ export function moduleProblemFixes(problem: ModuleProblem): ProblemFix[] {
   const fixes: ProblemFix[] = [];
   if (problem.kind === "unknown_slot" && problem.base_slots.length > 0) fixes.push("choose_slot");
   if (
-    (problem.kind === "unknown_slot" || problem.kind === "does_not_fit") &&
+    (problem.kind === "unknown_slot" ||
+      problem.kind === "does_not_fit" ||
+      problem.kind === "base_needs_physics") &&
     baseIsProject(problem.base)
   ) {
     fixes.push("open_base");

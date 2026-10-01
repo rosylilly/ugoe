@@ -635,6 +635,45 @@ fn agent_driven_auto_rig_from_psd() {
     assert_eq!(summary["rig"]["ready"], true, "{summary}");
     assert_eq!(summary["needs_review"], json!([]));
     assert!(summary["meshes"].as_array().unwrap().len() > 10);
+    assert_eq!(summary["variant_sets"], json!([]));
+
+    // 差分の組 (同じ部品の別の絵) だけを渡す。分類は変わらず、組は一覧にも出る。
+    let sets = schema_of("set_layer_labels")["properties"]["variant_sets"].clone();
+    assert_eq!(
+        sets["items"],
+        ugoe_ai::classify::output_schema()["properties"]["variant_sets"]["items"]
+    );
+    let err = client.call_err("set_layer_labels", json!({ "path": path }));
+    assert!(err.contains("variant_sets"), "{err}");
+    let err = client.call_err(
+        "set_layer_labels",
+        json!({ "path": path, "variant_sets": [[1, 2], [2, 3]] }),
+    );
+    assert!(err.contains("more than one variant set"), "{err}");
+    let summary = client.call_ok(
+        "set_layer_labels",
+        json!({ "path": path, "variant_sets": [[3, 1], [5]] }),
+    );
+    assert_eq!(summary["updated"], 0);
+    assert_eq!(summary["set_by_agent"], total);
+    assert_eq!(summary["variant_sets"], json!([[1, 3]]));
+    let page = client.call_ok(
+        "get_psd_layers",
+        json!({ "path": path, "count": 4, "images": false, "overview": false }),
+    );
+    let variants: Vec<&Value> = page["layers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| &l["variant"])
+        .collect();
+    assert_eq!(variants, [&json!(null), &json!(1), &json!(null), &json!(1)]);
+    // 空の組で消える。
+    let summary = client.call_ok(
+        "set_layer_labels",
+        json!({ "path": path, "variant_sets": [] }),
+    );
+    assert_eq!(summary["variant_sets"], json!([]));
 
     // 値の説明・位置・原画。
     let result = client.call("get_rig_guide", json!({ "path": path }));

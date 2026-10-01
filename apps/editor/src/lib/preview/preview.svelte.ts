@@ -14,6 +14,8 @@
 //   取り直し、本体だけのモデルは本体の版 (ModuleStatus.base_revision) が描いているものと違うときだけ取る (T0653)。
 //   本体だけのモデルのバイト列はバックエンドのセッションが覚えておく (ここでは覚えない。T0654)。
 //   書き出せない (検査に通らない) 間は、編集中の (合成した) モデルを描き、自分のスロットにはほかのモジュールを付けない。
+// - ポーズ (T0660) は、編集中のモデルのポーズのグループごとに表示する要素を選べる (`show_pose`。ポーズの段が有効な間だけ
+//   見える)。入るときは編集中のビューポートで見ていた要素 (ViewportController.posePreview) から始め、読み直すと渡し直す。
 import {
   en,
   FaceTracker,
@@ -22,13 +24,14 @@ import {
   type TrackingTarget,
 } from "@ugoe/face-tracking";
 import type { EditorDocument } from "../document.svelte";
-import { type Expression, ipc, type Motion } from "../ipc";
+import { type Expression, ipc, type Motion, type PoseGroup } from "../ipc";
+import { showEntry } from "../panels/poses/poses";
 import type { FrameDriver, PuppetStage, ViewportController } from "../viewport/controller.svelte";
 import type { WebPuppet } from "../viewport/wasm";
 import { editingName } from "./dressUp";
 import { DressUp } from "./dressUp.svelte";
 import { describeLoadWarnings, parseLoadWarnings } from "./loadWarnings";
-import { defaultStages, pushEvents } from "./preview";
+import { defaultStages, previewPart, pushEvents } from "./preview";
 import { saveTrackingRecording } from "./trackingHost";
 
 /** 表示の値を書き換える差の下限 (毎フレームの細かな変化で画面を作り直さないため)。 */
@@ -68,6 +71,11 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
   autoEyeBlink = $state(true);
   /** 着せ替え (`.ugoemod` の付け外し)。 */
   readonly dressUp: DressUp;
+  /**
+   * ポーズで表示する要素のパーツ (編集中のモデルの ID。グループに 1 つまで)。挙げていないグループは最初の要素
+   * (ポーズの初期状態)。
+   */
+  poseShown = $state.raw<readonly string[]>([]);
 
   #doc: EditorDocument;
   #viewport: ViewportController;
@@ -111,6 +119,7 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
     this.expression = null;
     this.events = [];
     this.error = null;
+    this.poseShown = this.#viewport.posePreview ?? [];
     this.active = true;
     this.#viewport.setDriver(this);
     void this.dressUp.refresh();
@@ -174,6 +183,21 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
   /** 粒子を今の入力の静止姿勢に置き直す。 */
   resetPhysics(): void {
     this.#run((puppet) => puppet.reset_physics());
+  }
+
+  // --- ポーズ ---
+
+  /** グループ `group` で `part` (編集中のモデルのパーツ) を表示する。切り替えはポーズのフェードの時間で行う。 */
+  showPose(group: PoseGroup, part: string): void {
+    this.poseShown = showEntry(this.poseShown, group, part);
+    this.#run((puppet) => this.#applyPose(puppet));
+  }
+
+  #applyPose(puppet: WebPuppet): void {
+    const module = this.#doc.module;
+    const own =
+      this.comparing && module ? { name: module.name, editing: editingName(module.name) } : null;
+    for (const part of this.poseShown) puppet.show_pose(previewPart(part, own));
   }
 
   // --- モーション・表情 ---
@@ -258,6 +282,11 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
     this.motionPlaying = false;
     this.#applyLipSync(puppet);
     this.#applyEyeBlink(puppet);
+    try {
+      this.#applyPose(puppet);
+    } catch (e) {
+      console.warn("ugoe:", e);
+    }
     this.trackingParameterIds = puppet.tracking_parameter_ids();
     // 読み直すとトラッキングの入力も消えるので、最後の値を渡し直す。
     this.#pendingTracking = this.#lastTracking;

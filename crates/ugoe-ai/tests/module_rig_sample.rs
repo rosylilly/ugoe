@@ -700,6 +700,86 @@ fn drawn_variants_follow_the_base_shown_and_hidden_entries() {
     assert_eq!(module.pose.groups.len(), 1, "{:?}", module.pose);
 }
 
+/// 名前で見つけた衣装の差分 (Sleeve A / B) も、本体の要素の名前が同じ文字で合わなければ、見えている / 隠してあるで
+/// 本体の差分に追従する (PSD で隠した Sleeve A は、見えている Sleeve B のあとに並べ、2 番目の要素に付く)。
+/// どれも見えていれば決められないので、衣装だけのグループにする (T0660)。
+#[test]
+fn named_variants_follow_the_base_shown_and_hidden_entries() {
+    let mut base = base_with_arms(true);
+    for (id, name) in [("ArmA", "Arm Up"), ("ArmB", "Arm Down")] {
+        base.apply(Command::RenamePart {
+            id: id.into(),
+            name: name.into(),
+        })
+        .unwrap();
+    }
+    let costume = tree(vec![
+        hidden_layer("Sleeve A", Vec2::new(150.0, 304.0), (40, 56)),
+        layer("Sleeve B", Vec2::new(150.0, 300.0), (40, 60)),
+    ]);
+    let mut doc = module_doc(&base, "Sleeves", &costume);
+    let parts = module_mesh_parts(&doc, &classify_by_name(&costume));
+    let proposal = propose_module_rig(
+        &doc,
+        &parts,
+        &ModuleRigParams::default(),
+        &ModuleRigOptions::default(),
+    )
+    .unwrap();
+    assert!(
+        proposal.rationale.contains(
+            "follow the base pose entries `ArmA`, `ArmB` (the base names have no matching letters"
+        ),
+        "{}",
+        proposal.rationale
+    );
+    apply(&mut doc, &proposal);
+    let (module, _) = doc.split_module().unwrap().unwrap();
+    let name = |id: &ugoe_model::PartId| {
+        module
+            .parts
+            .iter()
+            .find(|p| &p.id == id)
+            .unwrap()
+            .name
+            .clone()
+    };
+    assert!(module.pose.groups.is_empty(), "{:?}", module.pose);
+    let links: Vec<(&str, Vec<String>)> = module
+        .pose
+        .links
+        .iter()
+        .map(|l| (l.part.as_str(), l.links.iter().map(name).collect()))
+        .collect();
+    assert_eq!(
+        links,
+        [
+            ("ArmA", vec!["Sleeve B".to_owned()]),
+            ("ArmB", vec!["Sleeve A".to_owned()])
+        ]
+    );
+    compose(base.model(), &[&module]).unwrap();
+
+    // どれも見えていれば、どれが最初に表示されるか決められないので衣装だけのグループ。
+    let costume = tree(vec![
+        layer("Sleeve A", Vec2::new(150.0, 304.0), (40, 56)),
+        layer("Sleeve B", Vec2::new(150.0, 300.0), (40, 60)),
+    ]);
+    let mut doc = module_doc(&base, "Sleeves", &costume);
+    let parts = module_mesh_parts(&doc, &classify_by_name(&costume));
+    let proposal = propose_module_rig(
+        &doc,
+        &parts,
+        &ModuleRigParams::default(),
+        &ModuleRigOptions::default(),
+    )
+    .unwrap();
+    apply(&mut doc, &proposal);
+    let (module, _) = doc.split_module().unwrap().unwrap();
+    assert!(module.pose.links.is_empty(), "{:?}", module.pose);
+    assert_eq!(module.pose.groups.len(), 1, "{:?}", module.pose);
+}
+
 /// AI の分類が同じ部品の別の絵とした衣装 (重ならない帽子とベレー帽) は、名前や絵の重なりで分からなくてもポーズにする。
 /// 見えているものが最初に表示される。手がかりがなければポーズにしない (T0523)。
 #[test]

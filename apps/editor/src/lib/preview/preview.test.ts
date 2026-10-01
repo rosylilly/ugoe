@@ -5,6 +5,7 @@ import {
   EVENT_HISTORY,
   filterSections,
   groupParameters,
+  previewPart,
   pushEvents,
   sliderStep,
   stageAvailability,
@@ -123,5 +124,16 @@ describe("pushEvents", () => {
   it("returns the same array when nothing fired", () => {
     const history = ["a"];
     expect(pushEvents(history, [])).toBe(history);
+  });
+});
+
+describe("previewPart", () => {
+  it("renames the module's own parts while comparing", () => {
+    expect(previewPart("Hat/Brim", null)).toBe("Hat/Brim");
+    const own = { name: "Hat", editing: "Hat (editing)" };
+    expect(previewPart("Hat/Brim", own)).toBe("Hat (editing)/Brim");
+    // 本体のパーツと、名前が前方で重なるだけのパーツはそのまま。
+    expect(previewPart("ArmA", own)).toBe("ArmA");
+    expect(previewPart("Hats/Brim", own)).toBe("Hats/Brim");
   });
 });

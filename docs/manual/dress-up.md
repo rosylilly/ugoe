@@ -179,7 +179,8 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
      AI でレイヤーを分類すると、AI が同じ部品の別の絵とみなしたもの (形や位置が違う帽子とベレー帽など) もポーズにします。分類の結果の
      「Labels」を開くと、「Alternative drawings of the same part」に組が並びます。
      名前以外で見つけた差分も、本体の差分をスロットが公開していれば、見せている衣装は本体で最初に表示される差分に、隠してある衣装は
-     重なる本体の差分に付いて一緒に切り替わります。
+     重なる本体の差分に付いて一緒に切り替わります。名前で見つけた差分の文字が本体の差分の名前と合わないとき (本体は「Arm Up」と
+     「Arm Down」など) も、PSD で 1 つだけを見せていれば同じように付きます。
 3. 「Preview」で本体のパラメータを動かして確かめ、「Adopt」で採用する (1 回の Undo で戻ります)。プレビュー中に「Run physics」を押すと
    物理が動き、スライダーを動かして揺れ方を確かめられます。
 
@@ -209,6 +210,8 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
   先頭の差分 (「first」) が最初に表示されます。差分をドラッグするか ▲▼ で並べ替え、✕ で外します。
 - 「Show the pose in the viewport」を入れると、ビューポートでグループごとに 1 つの差分だけが見えます (アプリでの見え方)。差分の「Show」で
   見せる差分を切り替えて確かめられます。モデルは変わりません。タブを離れると元の (すべて見える) 表示に戻ります。
+  プレビューの右の列の「Pose」の節でも、グループごとに見せる差分を選べます ([プレビュー](preview.md#ランタイム-runtime)。
+  モジュールのプロジェクトでは、いまの編集を付けて比べている間も選べます)。
 - 「Links」で、差分と一緒に切り替わるパーツ (袖など) を選びます。
 - モジュールのプロジェクトでは、本体のグループ (「base」の印) は変えられません。スロットの「Pose parts」で本体が公開した差分にだけ、
   衣装のパーツを「Links」で追従させられます (腕の A / B に袖の A / B を付けるなど)。衣装だけのグループは自由に作れます。
@@ -294,6 +297,7 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
 | `The base model "…" can't be read` | 本体が壊れている、またはモジュールのプロジェクトを選んだ。本体を選び直す |
 | `The base model "…" no longer has slot "…"` | 本体からスロットがなくなった (名前を変えた)。一覧からスロットを選んで「Use this slot」で開き (保存すると覚える)、または「Open base project」で本体を開いてスロットを戻す |
 | `This module no longer fits the base model "…"` | 本体はあるが衣装が合わない (公開していたパラメータ・マスクを外したなど)。「Open base project」で本体を直すか、本体を選び直す。「Details」に元のメッセージが出る |
+| `A physics rig of this module collides with a collider that slot "…" exposes, but the base model "…" has no physics` | 衣装の揺れものが、スロットの「Colliders」で公開した本体の衝突体に当たるが、本体に物理が無い (物理を消した本体・物理を含まない `.ugoe` など)。物理 (その衝突体を含むもの) のある本体を選び直すか、「Open base project」で本体の物理を戻して保存し、衣装を開き直す。「Details」に衝突体とリグの名前が出る。衣装に当たる衝突体が無いときは、「Physics」タブの「Colliders」にも同じ案内が出る |
 
 説明の中の本体のファイル名は `"…"` で囲んで出ます。本体を選び直してもスロットがないときは、その本体についての説明に替わり、続けてスロットを選べます。
 開いているモジュールの本体を読み直せなかったとき (本体を外で変えた・動かした) の選び直しと「Use this slot」は、開き直さずに下敷きを替えるので、

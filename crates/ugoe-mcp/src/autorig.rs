@@ -7,7 +7,8 @@
 //! 1. `import_psd`: PSD から新しいプロジェクトを作る (既存のプロジェクトなら `get_psd_layers` に `psd` を渡す)
 //! 2. `get_psd_layers`: レイヤーの一覧・全体の合成画像・レイヤーのサムネイル (MCP の image コンテンツ) と、
 //!    分類の指示と語彙。名前の規則による分類 (`classify_by_name`) を既定の案として付ける
-//! 3. `set_layer_labels`: エージェントが決めた分類を受け取る (形は `ugoe_ai::classify::output_schema`)
+//! 3. `set_layer_labels`: エージェントが決めた分類と差分の組 (`variant_sets`) を受け取る (形は
+//!    `ugoe_ai::classify::output_schema`)
 //! 4. `get_rig_guide`: テンプレートで決められない値 (`RigParams`) の説明・顔や目の位置・原画
 //! 5. `propose_rig`: 値 (形は `ugoe_ai::rig::rig_output_schema`) からリグの提案を作る。範囲の外・検証を通らない
 //!    値はツールのエラーで返し、エージェントが直して呼び直す
@@ -105,8 +106,12 @@ fn yes() -> bool {
 #[serde(deny_unknown_fields)]
 pub(crate) struct LabelsArgs {
     pub(crate) path: String,
-    /// `output_schema` の `layers` の形 (ugoe-ai が読む)。
-    layers: Value,
+    /// `output_schema` の `layers` の形 (ugoe-ai が読む)。省略すると分類を変えない。
+    #[serde(default)]
+    layers: Option<Value>,
+    /// `output_schema` の `variant_sets` の形 (同じ部品の別の絵のレイヤーの組)。渡すと PSD 全体の組を置き換える。
+    #[serde(default)]
+    variant_sets: Option<Value>,
     #[serde(default)]
     reset: bool,
 }
@@ -140,6 +145,14 @@ pub(crate) fn tools() -> Vec<Value> {
     label_items["items"]["properties"]["index"]["description"] =
         json!("The layer number from get_psd_layers.");
     label_items["minItems"] = json!(1);
+    let mut variant_sets = output_schema()["properties"]["variant_sets"].clone();
+    variant_sets["description"] = json!(
+        "Groups of layer numbers that are alternative drawings of the same part, shown one at a \
+         time (sleeve A / B, a hat and a cap worn in the same place). Not overlays drawn on top \
+         of each other (shadows, line art, highlights) and not open / closed eyes or mouths. \
+         Replaces every group set before; pass [] to clear them. Used when the module rig \
+         turns costume variants into poses."
+    );
     let mut params = rig_output_schema();
     params["description"] =
         json!("Values the template cannot decide (see get_rig_guide). Omit to use the defaults.");
@@ -206,16 +219,20 @@ pub(crate) fn tools() -> Vec<Value> {
             "Set layer labels",
             Kind::Read,
             "エージェントが決めたレイヤーの分類を渡す (get_psd_layers の番号・語彙・左右)。渡さなかった \
-             レイヤーは今の分類のまま。reset=true なら先に名前の規則の案に戻す。モデルは変えない。\
-             結果はメッシュとの対応・確かめたほうがよいレイヤー・リグを組めるか (rig.ready)。\
-             左右はキャラクター自身の左右 (正面を向いたキャラクターの左目は画像の右側)。",
+             レイヤーは今の分類のまま。reset=true なら先に名前の規則の案に戻す (差分の組も消える)。\
+             variant_sets には同じ部品の別の絵 (一度に 1 つだけ見せる袖 A / B・同じ所にかぶる帽子と \
+             キャップ) のレイヤーの番号の組を渡す (渡すと前の組をすべて置き換える。影・線画のように \
+             重ねて描く絵と、目や口の開閉は組にしない)。layers と variant_sets の少なくとも一方を渡す。\
+             モデルは変えない。結果はメッシュとの対応・差分の組・確かめたほうがよいレイヤー・リグを組めるか \
+             (rig.ready)。左右はキャラクター自身の左右 (正面を向いたキャラクターの左目は画像の右側)。",
             object_schema(
                 json!({
                     "path": path_property(),
                     "layers": label_items,
-                    "reset": { "type": "boolean", "description": "先に分類を名前の規則の案に戻す" },
+                    "variant_sets": variant_sets,
+                    "reset": { "type": "boolean", "description": "先に分類を名前の規則の案に戻す (差分の組も消える)" },
                 }),
-                &["path", "layers"],
+                &["path"],
                 None,
             ),
         ),
@@ -398,6 +415,7 @@ pub(crate) fn get_psd_layers(
             "confidence": (f64::from(label.confidence) * 100.0).round() / 100.0,
             "set_by": if source.by_agent.contains(&i) { "agent" } else { "rules" },
             "needs_review": label.needs_review(&options),
+            "variant": label.variant,
         }));
     }
     let next_start = match (&args.indices, selected.last()) {
@@ -444,21 +462,28 @@ pub(crate) fn set_layer_labels(
     slot: &mut Option<PsdSource>,
     args: LabelsArgs,
 ) -> ToolResult {
+    if args.layers.is_none() && args.variant_sets.is_none() {
+        return Err("pass `layers`, `variant_sets` or both".into());
+    }
     let source = source(slot, None)?;
     let mut labels = if args.reset {
         classify_by_name(&source.tree)
     } else {
         source.labels.clone()
     };
-    let indices: Vec<usize> = args
-        .layers
+    let layers = args.layers.unwrap_or_else(|| json!([]));
+    let indices: Vec<usize> = layers
         .as_array()
         .into_iter()
         .flatten()
         .filter_map(|l| l.get("index")?.as_u64())
         .filter_map(|i| usize::try_from(i).ok())
         .collect();
-    let updated = apply_answer(&mut labels, json!({ "layers": args.layers })).map_err(ai_error)?;
+    let mut answer = json!({ "layers": layers });
+    if let Some(sets) = args.variant_sets {
+        answer["variant_sets"] = sets;
+    }
+    let updated = apply_answer(&mut labels, answer).map_err(ai_error)?;
     source.labels = labels;
     if args.reset {
         source.by_agent.clear();
@@ -507,10 +532,22 @@ fn labels_summary(doc: &Document, source: &PsdSource) -> Value {
         "layers": source.labels.len(),
         "set_by_agent": source.by_agent.len(),
         "meshes": meshes,
+        "variant_sets": variant_sets(&source.labels),
         "unmatched_layers": unmatched,
         "needs_review": review,
         "rig": rig,
     })
+}
+
+/// 差分の組 (レイヤーの番号の組。組の番号の順)。
+fn variant_sets(labels: &[LayerLabel]) -> Vec<Vec<usize>> {
+    let mut sets: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
+    for (i, label) in labels.iter().enumerate() {
+        if let Some(id) = label.variant {
+            sets.entry(id).or_default().push(i);
+        }
+    }
+    sets.into_values().collect()
 }
 
 pub(crate) fn get_rig_guide(doc: &Document, slot: &Option<PsdSource>) -> ToolResult {

@@ -76,6 +76,11 @@ $effect(() => {
     border-radius: 4px;
     box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
   }
+  /* ヘッダーの直下に置かれ、ヘッダーの子を折り返さない指定 (App.svelte の `header > :not(.file-menu)`) を受けるので、
+     それより強い指定で戻す (長い説明が枠からはみ出さないように)。 */
+  :global(header) > div.problem {
+    white-space: normal;
+  }
   .summary {
     margin: 0 0 4px;
     color: #dc2626;

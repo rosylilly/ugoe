@@ -93,3 +93,17 @@ export function pushEvents(history: readonly string[], fired: readonly string[])
   if (fired.length === 0) return history as string[];
   return [...[...fired].reverse(), ...history].slice(0, EVENT_HISTORY);
 }
+
+/**
+ * プレビューの WebPuppet での、編集中のモデルのパーツの ID (ポーズの要素を表示するとき。T0660)。モジュールの
+ * プロジェクトで今の編集を本体に付けて比べている間は、今の編集を別の名前 (`editing`。dressUp.ts の `editingName`) で
+ * 付けるので、モジュールの接頭辞 `<name>/` をその名前に付け替える。本体のパーツはそのまま。
+ */
+export function previewPart(
+  part: string,
+  module: { name: string; editing: string } | null,
+): string {
+  if (!module) return part;
+  const prefix = `${module.name}/`;
+  return part.startsWith(prefix) ? `${module.editing}/${part.slice(prefix.length)}` : part;
+}

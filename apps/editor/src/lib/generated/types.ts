@@ -1137,7 +1137,7 @@ message: string, };
 /**
  * モジュールのプロジェクトが本体の問題で開けない・読み直せないときの、問題の種類 (直し方を選ぶ)。
  */
-export type ModuleProblemKind = "base_not_found" | "base_unreadable" | "unknown_slot" | "does_not_fit";
+export type ModuleProblemKind = "base_not_found" | "base_unreadable" | "unknown_slot" | "does_not_fit" | "base_needs_physics";
 
 /**
  * モジュールが対応する本体の条件。
@@ -1198,6 +1198,11 @@ base_textures: Array<string>,
  * 本体の物理のリグと衝突体の ID (読み取り専用)。
  */
 base_rigs: Array<string>, base_colliders: Array<string>, 
+/**
+ * スロットが公開する本体の衝突体のうち、本体に無いもの (本体に物理が無いとき。モジュールのリグは当たれない。
+ * 物理の画面で、本体に物理を足すよう案内する。`ModuleContext::unavailable_colliders`)。
+ */
+unavailable_colliders: Array<string>, 
 /**
  * モジュールの条件 (`Module::requires`)。変えるのは `Command::SetModuleSettings`。
  */

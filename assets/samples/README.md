@@ -149,7 +149,7 @@ just cli render assets/samples/dress-up/dress-up.ugoe -o dressed.png \
 | `HeadRotation` (回転) | 首の付け根が中心。`AngleZ` ±30 で ±10 度、`BodyAngleZ` ±10 で ±5 度を足す。`BodyAngleX/Y/Z` で中心が体と一緒に動く |
 | `HeadWarp` (ワープ 8x8、`HeadRotation` の子) | 顔の中ほどを頂点にした丸みの分だけ `AngleX` で横 (最大 16px)、`AngleY` で縦 (最大 12px) に動かす。目・口は大きく、輪郭と後ろ髪は小さく動く |
 | 目・眉・口 | 開いた目は `EyeLOpen` で下寄りの線へつぶれて消え、閉じた目の線が現れる。瞳 (`EyeLIris`・`EyeRIris`) は `EyeBallX/Y` で横 ±4px・縦 ±3px 動き、目の形をマスクにしてくり抜く。眉 (`BrowL`・`BrowR`) は `BrowLY`・`BrowRY` で ±5px 上下する。口は `MouthOpenY` で上の辺へつぶし、`MouthForm` で口角を ±4px 上げ下げする (正で笑顔) |
-| 物理 | 既定の後ろ髪 (`HairBack`) が頭の中心を軸にした回転デフォーマ `HairSway` に付き、リグ `HairSway` (長さ 120px の振り子) で揺れる。重力などはエディタの既定の設定。衝突体は持たない (T0715) |
+| 物理 | 既定の後ろ髪 (`HairBack`) が頭の中心を軸にした回転デフォーマ `HairSway` に付き、リグ `HairSway` (長さ 120px の振り子) で揺れる。重力などはエディタの既定の設定。肩の衝突体 `Shoulders` (体のワープ `BodyWarp` に付けた、胴の上の辺に沿う半径 34px のカプセル) を持ち、スロット `Hair` で公開する (T0660。見本の本体の後ろ髪とモジュールのリグは使わない。物理を渡さずにモデルだけで作った Puppet でも、スロット `Hair` にモジュールを付けられる) |
 | 当たり判定 | `Head` (顔 `Face`)・`Body` (肌 `Skin`) |
 | アバタープロファイル | レベル 2 (メタデータ・許諾は `avatar.ugoe` と同じく MIT で自由に使える形)。`slots` に 3 つのスロットをすべて書き、アプリに公開する (T0712) |
 

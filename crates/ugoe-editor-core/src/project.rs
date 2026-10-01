@@ -688,12 +688,7 @@ pub(crate) fn checked_module(
     let base = context.base();
     let model = ugoe_runtime::compose(&base.model, &[&module]).map_err(ModuleError::from)?;
     if base.physics.is_some() || !module.physics.is_empty() {
-        let physics = base
-            .physics
-            .clone()
-            .unwrap_or_else(crate::physics_edit::default_settings);
-        let composed = ugoe_runtime::compose_physics(&base.model, &physics, &[&module])
-            .map_err(ModuleError::from)?;
+        let composed = context.compose_physics(&module)?;
         let errors = ugoe_model::validate::validate_physics(&composed, &model);
         if !errors.is_empty() {
             return Err(ProjectError::InvalidModule(errors));

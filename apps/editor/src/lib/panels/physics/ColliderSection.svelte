@@ -8,7 +8,7 @@ import BaseLock from "../../BaseLock.svelte";
 import type { EditorDocument } from "../../document.svelte";
 import type { Command, Model, PhysicsCollider, Vec2 } from "../../ipc";
 import { elementLabel } from "../../labels";
-import { isBaseCollider } from "../../moduleProject";
+import { isBaseCollider, unavailableCollidersNotice } from "../../moduleProject";
 import type { Selection } from "../../selection.svelte";
 import type { ViewportController } from "../../viewport/controller.svelte";
 import { puppetJacobian, puppetMap } from "../../viewport/tools/physics/mapper";
@@ -35,6 +35,8 @@ let { doc, model, selection, viewport, view, send, busy }: Props = $props();
 const settings = $derived(doc.physics);
 const collider = $derived(settings?.colliders.find((c) => c.id === view.collider) ?? null);
 const deformers = $derived(model?.deformers ?? []);
+/** スロットが公開する本体の衝突体が本体に無い (本体に物理が無い) ときの案内 (T0660)。 */
+const unavailable = $derived(unavailableCollidersNotice(doc.module));
 
 $effect(() => {
   if (view.collider !== null && !collider) view.collider = null;
@@ -106,6 +108,9 @@ const points = $derived.by((): { key: "center" | "a" | "b"; label: string; p: Ve
 
 <section>
   <h3>Colliders</h3>
+  {#if unavailable}
+    <p class="notice" role="note">{unavailable}</p>
+  {/if}
   {#if settings && settings.colliders.length > 0}
     <ul class="list">
       {#each settings.colliders as c (c.id)}
@@ -235,5 +240,15 @@ select {
 
 .hint {
   font-size: 11px;
+}
+
+.notice {
+  font-size: 11px;
+  margin: 4px 0;
+  padding: 6px 8px;
+  border: 1px solid #d97706;
+  border-radius: 4px;
+  background: color-mix(in srgb, #d97706 12%, transparent);
+  overflow-wrap: anywhere;
 }
 </style>
