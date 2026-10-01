@@ -123,6 +123,7 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
     this.tracker.stop();
     // 編集の画面には本体だけを出す (付けたい組は覚えておき、次に入ったときに付け直す)。
     this.dressUp.takeOff();
+    this.dressUp.highlight = null;
     this.active = false;
     // 本体だけのモデルは忘れ、編集中のモデルに戻る (setDriver(null) が読み直す)。
     this.comparing = false;

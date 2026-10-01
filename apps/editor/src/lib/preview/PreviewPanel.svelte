@@ -7,11 +7,10 @@
 <script lang="ts">
 import { TrackingPanel } from "@ugoe/face-tracking";
 import type { EditorDocument } from "../document.svelte";
-import type { Model } from "../ipc";
+import type { DifferenceItem, Model } from "../ipc";
 import type { LightingView } from "../panels/lighting/lightingView.svelte";
 import PreviewLightsSection from "../panels/lighting/PreviewLightsSection.svelte";
 import { formatValue, parseValue } from "../panels/parameterValue";
-import type { ElementRef } from "../selection.svelte";
 import type { ViewportController } from "../viewport/controller.svelte";
 import DressUpSection from "./DressUpSection.svelte";
 import LicenseDialog from "./LicenseDialog.svelte";
@@ -24,8 +23,8 @@ interface Props {
   viewport: ViewportController;
   /** プレビューの光源 (ライティングのパネルと共有。docs/editor.md#ライティングの画面)。 */
   lighting: LightingView;
-  /** 着せ替えの違いの行から要素をツリーで選ぶ (プレビューを出て選ぶ。T0656)。 */
-  onselect?: (ref: ElementRef) => void;
+  /** 着せ替えの違いの行の要素を選ぶ (プレビューを出てツリーか Physics タブで選ぶ。T0656・T0657)。 */
+  onselect?: (item: DifferenceItem) => void;
 }
 
 let { preview, doc, viewport, lighting, onselect }: Props = $props();

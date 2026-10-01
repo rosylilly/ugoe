@@ -4,7 +4,6 @@ import type { ModuleDifference } from "../ipc";
 import type { WebPuppet } from "../viewport/wasm";
 import {
   describeProblem,
-  differenceRef,
   editingName,
   fileStem,
   isModuleFile,
@@ -460,7 +459,15 @@ describe("DressUp in a module project", () => {
     });
     const brim = (name: string): ModuleDifference => ({
       text: `Meshes: 2 → 3 (added: ${name}Brim)`,
-      items: [{ kind: "mesh", id: `${name}Brim`, text: "added", element: `${name}/${name}Brim` }],
+      items: [
+        {
+          kind: "mesh",
+          id: `${name}Brim`,
+          text: "added",
+          element: `${name}/${name}Brim`,
+          meshes: [`${name}Brim`],
+        },
+      ],
     });
     compared = (b) => [brim(new TextDecoder().decode(b))];
     dressUp.setOwn(bytes(editing), editing, false, "Hat");
@@ -481,10 +488,43 @@ describe("DressUp in a module project", () => {
     expect(entry(dressUp, "Hat")?.differences).toBeUndefined();
   });
 
-  it("selects the elements of a difference in the tree (T0656)", () => {
-    expect(
-      differenceRef({ kind: "mesh", id: "Ears", text: "vertices 4 → 6", element: "CatEars/Ears" }),
-    ).toEqual({ kind: "mesh", id: "CatEars/Ears" });
-    expect(differenceRef({ kind: "part", id: "Gone", text: "added", element: null })).toBeNull();
+  it("keeps the highlighted difference while comparing again (T0657)", async () => {
+    const editing = editingName("Hat");
+    const fake = fakePuppet({ [editing]: "Hair", Hat: "Hair" });
+    const dressUp = new DressUp({
+      puppet: () => fake.puppet,
+      active: () => true,
+      changed: vi.fn(),
+      ownSlot: () => null,
+    });
+    const brim = (text: string): ModuleDifference => ({
+      text: "Meshes: 2 → 2 (changed: Brim)",
+      items: [{ kind: "mesh", id: "Brim", text, element: "Hat/Brim", meshes: ["Brim"] }],
+    });
+    compared = () => [brim("vertices 4 → 6")];
+    dressUp.setOwn(bytes(editing), editing, false, "Hat");
+    dressUp.loaded(fake.puppet);
+    await dressUp.add([{ path: "/work/Hat.ugoemod", bytes: bytes("Hat") }]);
+    await vi.waitFor(() => expect(entry(dressUp, "Hat")?.differences).toHaveLength(1));
+    const item = entry(dressUp, "Hat")?.differences?.[0]?.items[0];
+    if (!item) throw new Error("no item");
+    dressUp.toggleHighlight("Hat", item);
+    expect(dressUp.highlight).toEqual({ module: "Hat", item });
+    // 比べ直すと、同じ要素の新しい中身に替わる。
+    compared = () => [brim("vertices 4 → 7")];
+    dressUp.setOwn(bytes(editing), editing, true, "Hat");
+    await vi.waitFor(() => expect(dressUp.highlight?.item.text).toBe("vertices 4 → 7"));
+    // もう一度押すとやめる。
+    dressUp.toggleHighlight("Hat", item);
+    expect(dressUp.highlight).toBeNull();
+    // 無くなった要素の強調はやめる。
+    dressUp.toggleHighlight("Hat", item);
+    compared = () => [];
+    dressUp.setOwn(bytes(editing), editing, true, "Hat");
+    await vi.waitFor(() => expect(dressUp.highlight).toBeNull());
+    // 比べるのをやめても消える。
+    dressUp.toggleHighlight("Hat", item);
+    dressUp.setOwn(null, "", false);
+    expect(dressUp.highlight).toBeNull();
   });
 });

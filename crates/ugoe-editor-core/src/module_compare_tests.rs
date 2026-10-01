@@ -5,8 +5,10 @@ use std::sync::Arc;
 
 use ugoe_core::Vec2;
 use ugoe_model::fixtures::{dress_up_base, long_hair_module};
+use ugoe_model::mesh::{GlueKeyform, GluePair};
 use ugoe_model::module::ModuleRequirements;
-use ugoe_model::{Module, TextureRef};
+use ugoe_model::physics::ColliderShape;
+use ugoe_model::{Glue, KeyformGrid, Module, TextureRef};
 
 use crate::module_compare::{DifferenceKind, ModuleDifference};
 use crate::module_project::{ModuleBase, ModuleContext};
@@ -294,7 +296,7 @@ fn changed_meshes_tell_what_changed_and_where_they_are() {
     assert_eq!(item.text, "vertices 4 → 5");
 }
 
-/// 足した要素も選べる。除いた要素は今の編集に無いので添えない。
+/// 足した要素も選べる。除いた要素も添えるが、今の編集に無いので選べない (ファイルを付けたプレビューで強調する)。
 #[test]
 fn added_elements_can_be_selected() {
     let project = project();
@@ -325,7 +327,127 @@ fn added_elements_can_be_selected() {
         .find(|d| d.text.starts_with("Meshes: "))
         .unwrap();
     assert_eq!(meshes.text, "Meshes: 2 → 1 (removed: Back; changed: Front)");
-    assert_eq!(meshes.items.len(), 1);
+    assert_eq!(meshes.items.len(), 2);
+    assert_eq!(meshes.items[1].id, "Back");
+    assert_eq!(meshes.items[1].text, "removed");
+    assert_eq!(meshes.items[1].element, None);
+    // ファイルのメッシュなので、プレビューでファイルを付けたときに強調できる。
+    assert_eq!(meshes.items[1].meshes, ["Back"]);
+}
+
+/// 物理のリグと衝突体も、何が違うかと、Physics タブで選ぶ作業用の物理の ID を添える。強調するメッシュは、
+/// リグなら出力先のデフォーマの下のメッシュ (T0657)。
+#[test]
+fn physics_differences_tell_what_changed() {
+    let project = project();
+    let bytes = export_module(&project).unwrap().bytes;
+    let mut changed = project.clone();
+    let physics = changed.physics.as_mut().unwrap();
+    let rig = physics
+        .rigs
+        .iter_mut()
+        .find(|r| r.id == "LongHair/Sway")
+        .unwrap();
+    rig.particles[1].mobility = 0.5;
+    rig.colliders.clear();
+    let collider = physics
+        .colliders
+        .iter_mut()
+        .find(|c| c.id == "LongHair/Collar")
+        .unwrap();
+    collider.shape = ColliderShape::Circle {
+        center: Vec2::new(0.0, 40.0),
+        radius: 12.0,
+    };
+    let differences = compare_with_module_file(&changed, &bytes).unwrap();
+    let find = |label: &str| {
+        differences
+            .iter()
+            .find(|d| d.text.starts_with(label))
+            .unwrap_or_else(|| panic!("{differences:?}"))
+    };
+    let rigs = find("Physics rigs: ");
+    assert_eq!(rigs.text, "Physics rigs: 1 → 1 (changed: Sway)");
+    let [rig] = &rigs.items[..] else {
+        panic!("{rigs:?}");
+    };
+    assert_eq!(rig.kind, DifferenceKind::PhysicsRig);
+    assert_eq!(
+        rig.text,
+        "settings of 1 particle; colliders (removed: Collar)"
+    );
+    assert_eq!(rig.element.as_deref(), Some("LongHair/Sway"));
+    assert_eq!(rig.meshes, ["Back", "Front"]);
+    let colliders = find("Colliders: ");
+    let [collider] = &colliders.items[..] else {
+        panic!("{colliders:?}");
+    };
+    assert_eq!(collider.kind, DifferenceKind::Collider);
+    assert_eq!(collider.text, "radius 8 → 12");
+    assert_eq!(collider.element.as_deref(), Some("LongHair/Collar"));
+    assert!(collider.meshes.is_empty());
+
+    // デフォーマ・パーツは、その下のメッシュを強調する。
+    let mut changed = project.clone();
+    let sway = changed
+        .model
+        .deformers
+        .iter_mut()
+        .find(|d| d.id.as_str() == "LongHair/Sway")
+        .unwrap();
+    sway.name = "Swing".into();
+    let differences = compare_with_module_file(&changed, &bytes).unwrap();
+    let deformers = &differences[0];
+    assert_eq!(deformers.text, "Deformers: 1 → 1 (changed: Sway)");
+    assert_eq!(deformers.items[0].text, "name Sway → Swing");
+    assert_eq!(deformers.items[0].meshes, ["Back", "Front"]);
+}
+
+/// グルーは両端のメッシュを強調する。除いたグルーはファイルの両端を強調し、選べない (T0657)。
+#[test]
+fn glue_differences_tell_what_changed() {
+    let mut module = long_hair_module();
+    module.glues.push(Glue {
+        id: "Seam".into(),
+        mesh_a: "Back".into(),
+        mesh_b: "Front".into(),
+        pairs: vec![GluePair {
+            a: 0,
+            b: 0,
+            weight: 0.5,
+        }],
+        keyforms: KeyformGrid::constant(GlueKeyform { intensity: 1.0 }),
+    });
+    let images: Textures = module
+        .textures
+        .iter()
+        .map(|t| (t.name.clone(), Arc::from(solid_png(2, 2, [1, 2, 3, 255]))))
+        .collect();
+    let project = project_of(&module, &images);
+    let bytes = export_module(&project).unwrap().bytes;
+    let mut changed = project.clone();
+    let glue = &mut changed.model.glues[0];
+    assert_eq!(glue.id, "LongHair/Seam");
+    glue.pairs[0].weight = 0.25;
+    glue.keyforms.keyforms[0].intensity = 0.5;
+    let differences = compare_with_module_file(&changed, &bytes).unwrap();
+    assert_eq!(texts(&differences), ["Glues: 1 → 1 (changed: Seam)"]);
+    let item = &differences[0].items[0];
+    assert_eq!(item.kind, DifferenceKind::Glue);
+    assert_eq!(item.text, "1 pair of vertices; intensity in 1 keyform");
+    assert_eq!(item.element.as_deref(), Some("LongHair/Seam"));
+    assert_eq!(item.meshes, ["Back", "Front"]);
+
+    let mut removed = project.clone();
+    removed.model.glues.clear();
+    let differences = compare_with_module_file(&removed, &bytes).unwrap();
+    assert_eq!(texts(&differences), ["Glues: 1 → 0 (removed: Seam)"]);
+    let item = &differences[0].items[0];
+    assert_eq!(
+        (item.text.as_str(), item.element.as_deref()),
+        ("removed", None)
+    );
+    assert_eq!(item.meshes, ["Back", "Front"]);
 }
 
 /// アトラス化したファイルとは、今の編集の画像をアトラスの中で見つけ、UV を戻して比べる (T0656)。

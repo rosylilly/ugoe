@@ -4,7 +4,8 @@
 //! 見るのは要素 (パーツ・デフォーマ・メッシュ・グルー) の ID と中身、テクスチャ (名前と画像)、条件、使うパラメータ、
 //! 物理のリグと衝突体、ポーズ。違いは英語の 1 行ずつ (エディタの画面にそのまま出す) で、「ファイル → 今の編集」の向きに書く。
 //! 足した・変えたパーツ・デフォーマ・メッシュは、何が違うか (メッシュなら頂点・キーフォーム・描画順など) を要素ごとに添え、
-//! ツリーで選べるように作業用のモデルの ID を付ける (T0656)。
+//! ツリーで選べるように作業用のモデルの ID を付ける (T0656)。グルー・物理のリグ・衝突体も同じように中身まで添え、
+//! 除いた要素も添える。要素ごとに、プレビューのビューポートで強調するメッシュを付ける (T0657)。
 //!
 //! ファイルのテクスチャがアトラス化してあれば (`crate::atlas::build_module_atlas`)、アトラスの中で今の編集の画像を
 //! 置いた場所を探し、メッシュのテクスチャと UV をアトラスの前に戻してから比べる (T0656)。ファイルには置いた場所が
@@ -18,7 +19,8 @@ use ts_rs::TS;
 use ugoe_core::Vec2;
 use ugoe_format::ModuleFile;
 use ugoe_model::mesh::MeshKeyform;
-use ugoe_model::{Deformer, DeformerKind, KeyformGrid, Mesh, Model, Module, Part, TextureRef};
+use ugoe_model::physics::{ColliderShape, PhysicsCollider, PhysicsRig, PhysicsTarget, VertexOwner};
+use ugoe_model::{Deformer, DeformerKind, Glue, KeyformGrid, Mesh, Module, Part, TextureRef};
 
 use crate::atlas::{ATLAS_NAME_PREFIX, Placement};
 use crate::module_project::ModuleContext;
@@ -30,7 +32,7 @@ use crate::texture::{Textures, decode_rgba_png};
 pub struct ModuleDifference {
     /// 英語の 1 行 (例: `Meshes: 2 → 1 (removed: Ears; changed: Band)`)。
     pub text: String,
-    /// 行の要素のうち、足したものと変えたもの (パーツ・デフォーマ・メッシュの行だけ)。
+    /// 行の要素のうち、足したもの・変えたもの・除いたもの (要素の行だけ)。
     pub items: Vec<DifferenceItem>,
 }
 
@@ -40,19 +42,27 @@ pub struct DifferenceItem {
     pub kind: DifferenceKind,
     /// モジュールの中の ID (表示用)。
     pub id: String,
-    /// 何が違うか (英語。例: `vertices 12 → 14; draw order 500 → 520`。足したものは `added`)。
+    /// 何が違うか (英語。例: `vertices 12 → 14; draw order 500 → 520`。足したものは `added`、除いたものは `removed`)。
     pub text: String,
-    /// ツリーで選ぶときの、作業用のモデルの ID。見つからなければ `None`。
+    /// 選ぶときの、今の編集の ID (パーツ・デフォーマ・メッシュ・グルーは作業用のモデル、物理のリグと衝突体は
+    /// 作業用の物理の ID)。見つからなければ (除いた要素など) `None`。
     pub element: Option<String>,
+    /// プレビューのビューポートで強調するメッシュの、モジュールの中の ID (ファイルと今の編集のどちらかにあるもの)。
+    /// パーツはその下のメッシュ、デフォーマはその下のメッシュ、グルーは両端、物理のリグは出力先のメッシュとデフォーマの
+    /// 下のメッシュ。衝突体は空 (形をそのまま描く)。
+    pub meshes: Vec<String>,
 }
 
-/// 違いの行の要素の種類 (エディタの選択の種類と同じ名前)。
+/// 違いの行の要素の種類 (パーツ・デフォーマ・メッシュはエディタの選択の種類と同じ名前)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum DifferenceKind {
     Part,
     Deformer,
     Mesh,
+    Glue,
+    PhysicsRig,
+    Collider,
 }
 
 /// モジュールのプロジェクトの今の編集と、書き出した `.ugoemod` のバイト列 `bytes` の違い。同じなら空。
@@ -68,19 +78,29 @@ pub fn compare_with_module_file(
         context.map_draw_order(order)
     });
     for item in differences.iter_mut().flat_map(|d| &mut d.items) {
-        item.element = workspace_id(&project.model, context, item.kind, &item.id);
+        // 除いた要素は今の編集に無い (同じ ID の本体の要素を指さないように探さない)。
+        if item.text != REMOVED {
+            item.element = workspace_id(project, context, item.kind, &item.id);
+        }
     }
     Ok(differences)
 }
 
-/// モジュールの中の ID `id` の要素の、作業用のモデル `model` での ID (本体の要素は除く)。
+/// 除いた要素の [`DifferenceItem::text`]。
+const REMOVED: &str = "removed";
+
+/// モジュールの中の ID `id` の要素の、作業用のモデル・物理での ID (本体の要素は除く)。
 fn workspace_id(
-    model: &Model,
+    project: &Project,
     context: &ModuleContext,
     kind: DifferenceKind,
     id: &str,
 ) -> Option<String> {
+    let model = &project.model;
     let own = |workspace: &str| context.display_id(workspace) == id;
+    let base = context.base();
+    let base_physics = base.physics.as_ref();
+    let physics = project.physics.as_ref();
     match kind {
         DifferenceKind::Part => model
             .parts
@@ -97,6 +117,26 @@ fn workspace_id(
             .iter()
             .find(|m| !context.is_base_mesh(&m.id) && own(m.id.as_str()))
             .map(|m| m.id.to_string()),
+        DifferenceKind::Glue => model
+            .glues
+            .iter()
+            .find(|g| !base.model.glues.iter().any(|b| b.id == g.id) && own(&g.id))
+            .map(|g| g.id.clone()),
+        DifferenceKind::PhysicsRig => physics?
+            .rigs
+            .iter()
+            .find(|r| {
+                !base_physics.is_some_and(|b| b.rigs.iter().any(|b| b.id == r.id)) && own(&r.id)
+            })
+            .map(|r| r.id.clone()),
+        DifferenceKind::Collider => physics?
+            .colliders
+            .iter()
+            .find(|c| {
+                !base_physics.is_some_and(|b| b.colliders.iter().any(|b| b.id == c.id))
+                    && own(&c.id)
+            })
+            .map(|c| c.id.clone()),
     }
 }
 
@@ -123,7 +163,7 @@ pub fn module_differences(
     elements(
         &mut lines,
         "Parts",
-        Some(DifferenceKind::Part),
+        DifferenceKind::Part,
         &keyed(&old.parts, |p| p.id.to_string()),
         &keyed(&module.parts, |p| p.id.to_string()),
         part_changes,
@@ -131,7 +171,7 @@ pub fn module_differences(
     elements(
         &mut lines,
         "Deformers",
-        Some(DifferenceKind::Deformer),
+        DifferenceKind::Deformer,
         &keyed(&old.deformers, |d| d.id.to_string()),
         &keyed(&module.deformers, |d| d.id.to_string()),
         deformer_changes,
@@ -140,7 +180,7 @@ pub fn module_differences(
     elements(
         &mut lines,
         "Meshes",
-        Some(DifferenceKind::Mesh),
+        DifferenceKind::Mesh,
         &keyed(&old.meshes, |m| m.id.to_string()),
         &keyed(&module.meshes, |m| m.id.to_string()),
         |a: &Mesh, b: &Mesh| {
@@ -154,10 +194,10 @@ pub fn module_differences(
     elements(
         &mut lines,
         "Glues",
-        None,
+        DifferenceKind::Glue,
         &keyed(&old.glues, |g| g.id.clone()),
         &keyed(&module.glues, |g| g.id.clone()),
-        changed_if_different,
+        glue_changes,
     );
     textures(&mut lines, &view, module, images);
 
@@ -193,21 +233,24 @@ pub fn module_differences(
     elements(
         &mut lines,
         "Physics rigs",
-        None,
+        DifferenceKind::PhysicsRig,
         &keyed(&old.physics.rigs, |r| r.id.clone()),
         &keyed(&module.physics.rigs, |r| r.id.clone()),
-        changed_if_different,
+        rig_changes,
     );
     elements(
         &mut lines,
         "Colliders",
-        None,
+        DifferenceKind::Collider,
         &keyed(&old.physics.colliders, |c| c.id.clone()),
         &keyed(&module.physics.colliders, |c| c.id.clone()),
-        changed_if_different,
+        collider_changes,
     );
     if old.pose != module.pose {
         lines.push(line("Pose groups or follows changed".to_owned()));
+    }
+    for item in lines.iter_mut().flat_map(|d| &mut d.items) {
+        item.meshes = highlighted_meshes(item.kind, &item.id, &[module, old]);
     }
     lines
 }
@@ -231,11 +274,11 @@ fn texture_name<'a>(module: &'a Module, mesh: &Mesh) -> Option<&'a str> {
 }
 
 /// ID で対応を取った要素の、数と、足した・除いた・変えたものの行 (違いがなければ書かない)。
-/// `changes` は要素の中身の違い (同じなら空)。`kind` があれば、足した・変えた要素を行に添える。
+/// `changes` は要素の中身の違い (同じなら空)。足した・変えた・除いた要素を行に添える。
 fn elements<T>(
     lines: &mut Vec<ModuleDifference>,
     label: &str,
-    kind: Option<DifferenceKind>,
+    kind: DifferenceKind,
     old: &[(String, &T)],
     new: &[(String, &T)],
     changes: impl Fn(&T, &T) -> Vec<String>,
@@ -243,14 +286,14 @@ fn elements<T>(
     let mut items = Vec::new();
     let mut added = Vec::new();
     let mut changed = Vec::new();
-    for (id, item) in new {
+    for (id, element) in new {
         let text = match find(old, id) {
             None => {
                 added.push(id.as_str());
                 "added".to_owned()
             }
             Some(o) => {
-                let what = changes(o, item);
+                let what = changes(o, element);
                 if what.is_empty() {
                     continue;
                 }
@@ -258,25 +301,29 @@ fn elements<T>(
                 what.join("; ")
             }
         };
-        if let Some(kind) = kind {
-            items.push(DifferenceItem {
-                kind,
-                id: id.clone(),
-                text,
-                element: None,
-            });
-        }
+        items.push(item(kind, id, text));
     }
     let removed: Vec<&str> = old
         .iter()
         .filter(|(id, _)| find(new, id).is_none())
         .map(|(id, _)| id.as_str())
         .collect();
+    items.extend(removed.iter().map(|id| item(kind, id, REMOVED.to_owned())));
     if let Some(details) = details(&added, &removed, &changed, "changed") {
         lines.push(ModuleDifference {
             text: format!("{label}: {} → {} ({details})", old.len(), new.len()),
             items,
         });
+    }
+}
+
+fn item(kind: DifferenceKind, id: &str, text: String) -> DifferenceItem {
+    DifferenceItem {
+        kind,
+        id: id.to_owned(),
+        text,
+        element: None,
+        meshes: Vec::new(),
     }
 }
 
@@ -306,14 +353,6 @@ fn names<T: Display + Ord>(lines: &mut Vec<ModuleDifference>, label: &str, old: 
 }
 
 // ---- 要素の中身の違い ----
-
-fn changed_if_different<T: PartialEq>(a: &T, b: &T) -> Vec<String> {
-    if a == b {
-        Vec::new()
-    } else {
-        vec!["changed".to_owned()]
-    }
-}
 
 /// `n` 個の `singular` (`plural`)。
 fn count(n: usize, singular: &str, plural: &str) -> String {
@@ -462,6 +501,171 @@ fn kind_name(kind: &DeformerKind) -> &'static str {
     }
 }
 
+/// グルーの中身の違い (両端のメッシュ・頂点の組・強さのキーフォーム)。
+fn glue_changes(old: &Glue, new: &Glue) -> Vec<String> {
+    if old == new {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    if (&old.mesh_a, &old.mesh_b) != (&new.mesh_a, &new.mesh_b) {
+        out.push(format!(
+            "meshes {} + {} → {} + {}",
+            old.mesh_a, old.mesh_b, new.mesh_a, new.mesh_b
+        ));
+    }
+    if old.pairs.len() == new.pairs.len() {
+        let n = old
+            .pairs
+            .iter()
+            .zip(&new.pairs)
+            .filter(|(a, b)| a != b)
+            .count();
+        if n > 0 {
+            out.push(format!("{} of vertices", count(n, "pair", "pairs")));
+        }
+    } else {
+        out.push(format!(
+            "vertex pairs {} → {}",
+            old.pairs.len(),
+            new.pairs.len()
+        ));
+    }
+    keyform_changes(&mut out, &old.keyforms, &new.keyforms, |pairs, out| {
+        in_keyforms(out, pairs, "intensity", |a, b| a != b);
+    });
+    or_other(out)
+}
+
+/// 物理のリグの中身の違い (入力・出力・粒子・正規化・衝突体・座標系の基準)。
+fn rig_changes(old: &PhysicsRig, new: &PhysicsRig) -> Vec<String> {
+    if old == new {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    if old.name != new.name {
+        out.push(format!("name {} → {}", old.name, new.name));
+    }
+    listed(&mut out, "inputs", &old.inputs, &new.inputs);
+    listed(&mut out, "outputs", &old.outputs, &new.outputs);
+    if old.particles.len() == new.particles.len() {
+        let n = old
+            .particles
+            .iter()
+            .zip(&new.particles)
+            .filter(|(a, b)| a != b)
+            .count();
+        if n > 0 {
+            out.push(format!("settings of {}", count(n, "particle", "particles")));
+        }
+    } else {
+        out.push(format!(
+            "particles {} → {}",
+            old.particles.len(),
+            new.particles.len()
+        ));
+    }
+    if old.normalization != new.normalization {
+        out.push("normalization".to_owned());
+    }
+    let colliders = |c: &[String]| c.iter().cloned().collect::<BTreeSet<String>>();
+    let (a, b) = (colliders(&old.colliders), colliders(&new.colliders));
+    if a != b {
+        let added: Vec<&str> = b.difference(&a).map(String::as_str).collect();
+        let removed: Vec<&str> = a.difference(&b).map(String::as_str).collect();
+        if let Some(details) = details(&added, &removed, &[], "changed") {
+            out.push(format!("colliders ({details})"));
+        }
+    }
+    if old.frame != new.frame {
+        out.push(format!(
+            "frame {} → {}",
+            or_none(old.frame.as_ref()),
+            or_none(new.frame.as_ref())
+        ));
+    }
+    or_other(out)
+}
+
+/// 並び (入力・出力) の違い。数が違えば数、同じなら違うものの数。
+fn listed<T: PartialEq>(out: &mut Vec<String>, what: &str, old: &[T], new: &[T]) {
+    if old.len() == new.len() {
+        let n = old.iter().zip(new).filter(|(a, b)| a != b).count();
+        if n > 0 {
+            out.push(format!("{n} {what}"));
+        }
+    } else {
+        out.push(format!("{what} {} → {}", old.len(), new.len()));
+    }
+}
+
+/// 衝突体の中身の違い (名前・取り付け先・形・位置・半径)。
+fn collider_changes(old: &PhysicsCollider, new: &PhysicsCollider) -> Vec<String> {
+    if old == new {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    if old.name != new.name {
+        out.push(format!("name {} → {}", old.name, new.name));
+    }
+    if old.attach != new.attach {
+        out.push(format!(
+            "attached to {} → {}",
+            or_none(old.attach.as_ref()),
+            or_none(new.attach.as_ref())
+        ));
+    }
+    match (&old.shape, &new.shape) {
+        (
+            ColliderShape::Circle {
+                center: c0,
+                radius: r0,
+            },
+            ColliderShape::Circle {
+                center: c1,
+                radius: r1,
+            },
+        ) => {
+            if c0 != c1 {
+                out.push("position".to_owned());
+            }
+            radius(&mut out, *r0, *r1);
+        }
+        (
+            ColliderShape::Capsule {
+                a: a0,
+                b: b0,
+                radius: r0,
+            },
+            ColliderShape::Capsule {
+                a: a1,
+                b: b1,
+                radius: r1,
+            },
+        ) => {
+            if (a0, b0) != (a1, b1) {
+                out.push("position".to_owned());
+            }
+            radius(&mut out, *r0, *r1);
+        }
+        (a, b) => out.push(format!("shape {} → {}", shape_name(a), shape_name(b))),
+    }
+    or_other(out)
+}
+
+fn radius(out: &mut Vec<String>, old: f32, new: f32) {
+    if old != new {
+        out.push(format!("radius {} → {}", number(old), number(new)));
+    }
+}
+
+fn shape_name(shape: &ColliderShape) -> &'static str {
+    match shape {
+        ColliderShape::Circle { .. } => "circle",
+        ColliderShape::Capsule { .. } => "capsule",
+        ColliderShape::Unknown => "unknown",
+    }
+}
+
 /// メッシュの中身の違い (頂点・三角形・キーフォーム・描画順・テクスチャなど)。テクスチャは名前で比べる。
 /// 描画順は `map` で写して書く。
 fn mesh_changes(
@@ -576,6 +780,121 @@ fn draw_order(
 fn number(value: f32) -> String {
     let rounded = (f64::from(value) * 100.0).round() / 100.0;
     format!("{rounded}")
+}
+
+// ---- ビューポートで強調するメッシュ ----
+
+/// 要素 `id` を強調するときに輪郭を描くメッシュ (モジュールの中の ID)。`modules` (今の編集とファイル) のどちらかに
+/// あるものを、最初に見つけた順に重ねずに並べる。
+fn highlighted_meshes(kind: DifferenceKind, id: &str, modules: &[&Module]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut push = |mesh: &str| {
+        if !out.iter().any(|m| m == mesh) {
+            out.push(mesh.to_owned());
+        }
+    };
+    for module in modules {
+        match kind {
+            DifferenceKind::Mesh => {
+                if module.meshes.iter().any(|m| m.id.as_str() == id) {
+                    push(id);
+                }
+            }
+            DifferenceKind::Part => {
+                for mesh in &module.meshes {
+                    if in_part(module, mesh.part.as_str(), id) {
+                        push(mesh.id.as_str());
+                    }
+                }
+            }
+            DifferenceKind::Deformer => {
+                for mesh in under_deformer(module, id) {
+                    push(mesh);
+                }
+            }
+            DifferenceKind::Glue => {
+                if let Some(glue) = module.glues.iter().find(|g| g.id == id) {
+                    push(glue.mesh_a.as_str());
+                    push(glue.mesh_b.as_str());
+                }
+            }
+            DifferenceKind::PhysicsRig => {
+                let Some(rig) = module.physics.rigs.iter().find(|r| r.id == id) else {
+                    continue;
+                };
+                for output in &rig.outputs {
+                    match &output.target {
+                        PhysicsTarget::DeformerAngle { deformer }
+                        | PhysicsTarget::DeformerOffset { deformer }
+                        | PhysicsTarget::Vertices {
+                            owner: VertexOwner::Warp(deformer),
+                            ..
+                        } => {
+                            for mesh in under_deformer(module, deformer.as_str()) {
+                                push(mesh);
+                            }
+                        }
+                        PhysicsTarget::Vertices {
+                            owner: VertexOwner::Mesh(mesh),
+                            ..
+                        } => push(mesh.as_str()),
+                        PhysicsTarget::Parameter { .. } | PhysicsTarget::Unknown => {}
+                    }
+                }
+            }
+            DifferenceKind::Collider => {}
+        }
+    }
+    out
+}
+
+/// パーツ `part` が `ancestor` か、その下 (モジュールの中の親をたどる) か。
+fn in_part(module: &Module, part: &str, ancestor: &str) -> bool {
+    let mut current = Some(part);
+    // 親の輪があっても止まるように、パーツの数だけたどる。
+    for _ in 0..=module.parts.len() {
+        let Some(id) = current else {
+            return false;
+        };
+        if id == ancestor {
+            return true;
+        }
+        current = module
+            .parts
+            .iter()
+            .find(|p| p.id.as_str() == id)
+            .and_then(|p| p.parent.as_ref())
+            .map(|p| p.as_str());
+    }
+    false
+}
+
+/// デフォーマ `deformer` の下 (子孫のデフォーマを含む) のメッシュ。
+fn under_deformer<'a>(module: &'a Module, deformer: &str) -> Vec<&'a str> {
+    let below = |parent: Option<&str>| {
+        let mut current = parent;
+        for _ in 0..=module.deformers.len() {
+            let Some(id) = current else {
+                return false;
+            };
+            if id == deformer {
+                return true;
+            }
+            current = module
+                .deformers
+                .iter()
+                .find(|d| d.id.as_str() == id)
+                .and_then(|d| d.parent.as_ref())
+                .map(|p| p.as_str());
+        }
+        false
+    };
+    module
+        .meshes
+        .iter()
+        .filter(|m| below(m.parent.as_ref().map(|p| p.as_str())))
+        .map(|m| m.id.as_str())
+        .collect()
 }
 
 // ---- テクスチャ ----

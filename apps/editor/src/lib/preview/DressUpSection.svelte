@@ -3,25 +3,25 @@
   ドロップ)、スロットごとに付けるモジュールを選ぶ。付け外しの失敗は DressUpError の code から分かる言葉で出す (dressUp.ts)。
   状態と WebPuppet の操作は DressUp (dressUp.svelte.ts)。モデルは変えない。
   モジュールのプロジェクトでは、今の編集 (`own` の行) も一覧に出し、同じスロットのモジュールと差し替えて比べられる (T0651)。
-  同じ名前の書き出したファイルの行には、今の編集との違いを文字でも出す (T0654)。足した・変えた要素は何が違うかを添え、
-  押すとプレビューを出てツリーで選ぶ (T0656)。
+  同じ名前の書き出したファイルの行には、今の編集との違いを文字でも出す (T0654)。足した・変えた・除いた要素は何が違うかを
+  添える (T0656)。要素の ID を押すと、プレビューのままビューポートで強調し (もう一度押すとやめる。T0657)、
+  「Select」でプレビューを出てツリーか Physics タブで選ぶ。
 -->
 <script lang="ts">
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { onMount } from "svelte";
 import { fileDialogs } from "../fileDialogs";
-import type { Slot } from "../ipc";
-import type { ElementRef } from "../selection.svelte";
-import { differenceRef, isModuleFile, MODULE_FILTER, slotRows } from "./dressUp";
+import type { DifferenceItem, Slot } from "../ipc";
+import { isModuleFile, MODULE_FILTER, slotRows } from "./dressUp";
 import type { DressUp, ModuleSource } from "./dressUp.svelte";
 
 interface Props {
   dressUp: DressUp;
   /** 本体のスロット (モデルの定義順)。 */
   slots: readonly Slot[];
-  /** 違いの行の要素をツリーで選ぶ (プレビューを出る)。無ければ選べない。 */
-  onselect?: (ref: ElementRef) => void;
+  /** 違いの行の要素を選ぶ (プレビューを出る)。無ければ選べない。 */
+  onselect?: (item: DifferenceItem) => void;
 }
 
 let { dressUp, slots, onselect }: Props = $props();
@@ -212,14 +212,29 @@ onMount(() => {
                     {#if line.items.length > 0}
                       <ul class="items">
                         {#each line.items as item (item.id)}
-                          {@const ref = differenceRef(item)}
+                          {@const shown =
+                            dressUp.highlight?.module === entry.name &&
+                            dressUp.highlight.item.kind === item.kind &&
+                            dressUp.highlight.item.id === item.id}
                           <li>
-                            {#if ref && onselect}
+                            <button
+                              class="link"
+                              class:highlighted={shown}
+                              aria-pressed={shown}
+                              title={shown
+                                ? `Stop highlighting ${item.id}`
+                                : `Highlight ${item.id} in the viewport`}
+                              onclick={() => dressUp.toggleHighlight(entry.name, item)}>{item.id}</button
+                            >: {item.text}
+                            {#if item.element !== null && onselect}
                               <button
-                                class="link"
-                                title="Leave the preview and select {item.id} in the tree"
-                                onclick={() => onselect?.(ref)}>{item.id}</button
-                              >{:else}<span class="item-id">{item.id}</span>{/if}: {item.text}
+                                class="select"
+                                title={item.kind === "physics_rig" || item.kind === "collider"
+                                  ? `Leave the preview and select ${item.id} in the Physics tab`
+                                  : `Leave the preview and select ${item.id} in the tree`}
+                                onclick={() => onselect?.(item)}>Select</button
+                              >
+                            {/if}
                           </li>
                         {/each}
                       </ul>
@@ -389,7 +404,14 @@ p {
   cursor: pointer;
 }
 
-.item-id {
+.link.highlighted {
   font-weight: 600;
+  text-decoration-style: double;
+}
+
+.select {
+  margin-left: 4px;
+  padding: 0 4px;
+  font-size: 11px;
 }
 </style>

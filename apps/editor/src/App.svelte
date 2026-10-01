@@ -30,7 +30,7 @@ import { EditorDocument } from "./lib/document.svelte";
 import { EMPTY_VIEWPORT_HINT } from "./lib/emptyState";
 import FileMenu from "./lib/FileMenu.svelte";
 import HelpButton from "./lib/HelpButton.svelte";
-import { type AppInfo, ipc } from "./lib/ipc";
+import { type AppInfo, type DifferenceItem, ipc } from "./lib/ipc";
 import { loadSplit, saveSplit, splitAt, splitByKey } from "./lib/layout";
 import { renamePrefix } from "./lib/moduleProject";
 import InspectorPanel from "./lib/panels/InspectorPanel.svelte";
@@ -46,6 +46,8 @@ import TreePanel from "./lib/panels/TreePanel.svelte";
 import TimelinePanel from "./lib/panels/timeline/TimelinePanel.svelte";
 import VerifyPanel from "./lib/panels/verify/VerifyPanel.svelte";
 import { VerifyView } from "./lib/panels/verify/verifyView.svelte";
+import DifferenceOverlay from "./lib/preview/DifferenceOverlay.svelte";
+import { differenceTarget } from "./lib/preview/differenceHighlight";
 import PreviewPanel from "./lib/preview/PreviewPanel.svelte";
 import { PreviewMode } from "./lib/preview/preview.svelte";
 import { Selection } from "./lib/selection.svelte";
@@ -53,6 +55,7 @@ import { historyShortcut, isMac, isTextEntry } from "./lib/shortcuts";
 import { ViewportController } from "./lib/viewport/controller.svelte";
 import ToolOverlay from "./lib/viewport/ToolOverlay.svelte";
 import LightingOverlay from "./lib/viewport/tools/lighting/LightingOverlay.svelte";
+import { summarizeModel } from "./lib/viewport/tools/model";
 import Viewport from "./lib/viewport/Viewport.svelte";
 
 const doc = new EditorDocument();
@@ -115,6 +118,22 @@ function openTab(tab: "inspector" | "physics" | "lighting" | "slots" | "poses" |
   posesActive = tab === "poses";
   verify.active = tab === "verify";
   proposals.active = false;
+}
+
+/** 着せ替えの違いの行の要素を選ぶ: プレビューを出て、ツリーか Physics タブで選ぶ (T0656・T0657)。 */
+function selectDifference(item: DifferenceItem): void {
+  const meshes = new Set(summarizeModel(doc.model?.json).meshes.map((m) => m.id));
+  const target = differenceTarget(item, doc.module?.name ?? "", (id) => meshes.has(id));
+  if (!target) return;
+  // ツリーと Physics タブはプレビューの間は隠れるので、出てから選ぶ。
+  preview.exit();
+  if (target.panel === "tree") {
+    selection.set(target.refs);
+    return;
+  }
+  openTab("physics");
+  if (target.rig !== null) physics.rig = target.rig;
+  if (target.collider !== null) physics.collider = target.collider;
 }
 
 const inspectorActive = $derived(
@@ -228,7 +247,8 @@ $effect(() => {
         {#snippet overlay(controller)}
           {#if proposals.preview}
             <p class="proposal-banner">Previewing an AI proposal. The model is unchanged until you adopt it.</p>
-          {:else if !preview.active}<ToolOverlay {controller} {doc} {selection} {physics} {verify} />{/if}
+          {:else if !preview.active}<ToolOverlay {controller} {doc} {selection} {physics} {verify} />
+          {:else}<DifferenceOverlay {controller} {doc} {preview} />{/if}
           {#if !proposals.preview && (lighting.active || preview.active)}
             <LightingOverlay {controller} {doc} view={lighting} />
           {/if}
@@ -319,11 +339,7 @@ $effect(() => {
   </aside>
   {#if preview.active}
     <aside class="preview">
-      <PreviewPanel {preview} {doc} {viewport} {lighting} onselect={(ref) => {
-        // ツリーはプレビューの間は隠れるので、出てから選ぶ (T0656)。
-        preview.exit();
-        selection.set([ref]);
-      }} />
+      <PreviewPanel {preview} {doc} {viewport} {lighting} onselect={selectDifference} />
     </aside>
   {/if}
 </div>

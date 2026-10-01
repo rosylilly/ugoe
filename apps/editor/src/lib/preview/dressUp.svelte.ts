@@ -14,7 +14,8 @@
 //   `editingName` の名前で読み込むので、前に書き出した同じ名前の `.ugoemod` とも並べて比べられる (T0653)。
 //   そのファイルの行には、今の編集との違い (要素・テクスチャ・条件など) を文字でも出す (`differences`。
 //   ipc.comparePreviewModule。T0654)。足した・変えた要素は何が違うかを添え、ツリーで選べる (T0656)。
-import { ipc, type ModuleDifference } from "../ipc";
+//   要素を押すと、プレビューを出ずにビューポートで強調する (`highlight`。描くのは DifferenceOverlay.svelte。T0657)。
+import { type DifferenceItem, ipc, type ModuleDifference } from "../ipc";
 import type { WebPuppet } from "../viewport/wasm";
 import {
   type DetachedModule,
@@ -55,6 +56,13 @@ export interface DressUpEntry {
    * 今の編集」の 1 行ずつ。同じなら空。比べている途中なら `null`)。ほかの行は `undefined`。
    */
   differences?: ModuleDifference[] | null;
+}
+
+/** ビューポートで強調している違いの要素 (T0657)。 */
+export interface DifferenceHighlight {
+  /** 違いを出している行 (今の編集と同じ名前のファイル) のモジュールの名前。 */
+  module: string;
+  item: DifferenceItem;
 }
 
 /** 読み込むファイル。`bytes` がなければ `path` から読む。 */
@@ -107,6 +115,8 @@ export class DressUp {
   busy = $state(false);
   /** モジュールのプロジェクトの今の編集を付けて比べられないときの理由 (PreviewMode が設定する)。 */
   ownProblem = $state<string | null>(null);
+  /** ビューポートで強調している違いの要素 (プレビューを出ると消える)。 */
+  highlight = $state<DifferenceHighlight | null>(null);
 
   /** 一覧をプロジェクトに残した後 (未保存の印が変わる) に呼ぶ。 */
   onsaved: (() => void) | null = null;
@@ -330,6 +340,13 @@ export class DressUp {
     void this.#compareFiles();
   }
 
+  /** 行 `module` の違いの要素 `item` を強調する。同じ要素ならやめる。 */
+  toggleHighlight(module: string, item: DifferenceItem): void {
+    const current = this.highlight;
+    this.highlight =
+      current?.module === module && sameItem(current.item, item) ? null : { module, item };
+  }
+
   dismissNotice(index: number): void {
     this.notices = this.notices.filter((_, i) => i !== index);
   }
@@ -513,6 +530,7 @@ export class DressUp {
         entry.differences = undefined;
       }
     }
+    if (!targets.some(([entry]) => entry.name === this.highlight?.module)) this.highlight = null;
     for (const [entry, bytes] of targets) {
       let differences: ModuleDifference[] | undefined;
       try {
@@ -522,6 +540,12 @@ export class DressUp {
       }
       if (token !== this.#compareToken) return;
       entry.differences = differences;
+      // 強調している要素は、比べ直した結果の同じ要素に替える (無くなったらやめる)。
+      const highlight = this.highlight;
+      if (highlight?.module === entry.name) {
+        const item = differences?.flatMap((d) => d.items).find((i) => sameItem(i, highlight.item));
+        this.highlight = item ? { module: entry.name, item } : null;
+      }
     }
   }
 
@@ -609,4 +633,9 @@ export class DressUp {
       this.error = describeProblem(e);
     }
   }
+}
+
+/** 違いの要素が同じものか (種類と ID)。 */
+function sameItem(a: DifferenceItem, b: DifferenceItem): boolean {
+  return a.kind === b.kind && a.id === b.id;
 }

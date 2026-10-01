@@ -526,18 +526,25 @@ export type DifferenceItem = { kind: DifferenceKind,
  */
 id: string, 
 /**
- * 何が違うか (英語。例: `vertices 12 → 14; draw order 500 → 520`。足したものは `added`)。
+ * 何が違うか (英語。例: `vertices 12 → 14; draw order 500 → 520`。足したものは `added`、除いたものは `removed`)。
  */
 text: string, 
 /**
- * ツリーで選ぶときの、作業用のモデルの ID。見つからなければ `None`。
+ * 選ぶときの、今の編集の ID (パーツ・デフォーマ・メッシュ・グルーは作業用のモデル、物理のリグと衝突体は
+ * 作業用の物理の ID)。見つからなければ (除いた要素など) `None`。
  */
-element: string | null, };
+element: string | null, 
+/**
+ * プレビューのビューポートで強調するメッシュの、モジュールの中の ID (ファイルと今の編集のどちらかにあるもの)。
+ * パーツはその下のメッシュ、デフォーマはその下のメッシュ、グルーは両端、物理のリグは出力先のメッシュとデフォーマの
+ * 下のメッシュ。衝突体は空 (形をそのまま描く)。
+ */
+meshes: Array<string>, };
 
 /**
- * 違いの行の要素の種類 (エディタの選択の種類と同じ名前)。
+ * 違いの行の要素の種類 (パーツ・デフォーマ・メッシュはエディタの選択の種類と同じ名前)。
  */
-export type DifferenceKind = "part" | "deformer" | "mesh";
+export type DifferenceKind = "part" | "deformer" | "mesh" | "glue" | "physics_rig" | "collider";
 
 /**
  * 外部に送る内容 (確認のダイアログに示す)。`ugoe_ai::Disclosure` の外部に送る場合の写し。
@@ -1078,7 +1085,7 @@ export type ModuleDifference = {
  */
 text: string, 
 /**
- * 行の要素のうち、足したものと変えたもの (パーツ・デフォーマ・メッシュの行だけ)。
+ * 行の要素のうち、足したもの・変えたもの・除いたもの (要素の行だけ)。
  */
 items: Array<DifferenceItem>, };
 
