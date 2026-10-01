@@ -5,6 +5,8 @@ import {
   EVENT_HISTORY,
   filterSections,
   groupParameters,
+  modulePoseGroups,
+  modulePoseLabels,
   previewPart,
   pushEvents,
   sliderStep,
@@ -135,5 +137,46 @@ describe("previewPart", () => {
     // 本体のパーツと、名前が前方で重なるだけのパーツはそのまま。
     expect(previewPart("ArmA", own)).toBe("ArmA");
     expect(previewPart("Hats/Brim", own)).toBe("Hats/Brim");
+  });
+});
+
+describe("modulePoseGroups (T0661)", () => {
+  const entry = (part: string) => ({ part, links: [] as string[] });
+  const own = [{ entries: [entry("ArmA"), entry("ArmB")] }, { entries: [entry("Hat/BrimA")] }];
+  const composed = JSON.stringify({
+    fade_duration: 0.5,
+    groups: [
+      // 本体のグループ (追従のリンクが増えていても同じグループ)
+      { entries: [{ part: "ArmA", links: ["Sailor/SleeveA"] }, entry("ArmB")] },
+      // 比べている間の今の編集のグループ
+      { entries: [entry("Hat (editing)/BrimA")] },
+      { entries: [entry("Sailor/CollarA"), entry("Sailor/CollarB")] },
+      { entries: [entry("Sailor/TieA")] },
+      { entries: [entry("LongHair/Tip")] },
+    ],
+  });
+  it("keeps the groups of the attached modules only", () => {
+    const groups = modulePoseGroups(composed, own, { name: "Hat", editing: "Hat (editing)" });
+    expect(groups.map((g) => g.module)).toEqual(["Sailor", "Sailor", "LongHair"]);
+    expect(groups[0]?.group.entries.map((e) => e.part)).toEqual([
+      "Sailor/CollarA",
+      "Sailor/CollarB",
+    ]);
+    expect(modulePoseLabels(groups)).toEqual([
+      "Sailor group 1",
+      "Sailor group 2",
+      "LongHair group 1",
+    ]);
+    // 比べていなければ今の編集のグループはモジュールの名前のまま。
+    expect(modulePoseGroups(composed, own, null).map((g) => g.module)).toEqual([
+      "Hat (editing)",
+      "Sailor",
+      "Sailor",
+      "LongHair",
+    ]);
+  });
+  it("is empty without a pose", () => {
+    expect(modulePoseGroups(undefined, own, null)).toEqual([]);
+    expect(modulePoseGroups("not json", own, null)).toEqual([]);
   });
 });

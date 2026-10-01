@@ -1,6 +1,6 @@
 <!--
   プレビューモードの右の列 (docs/editor.md#プレビューモード)。段 (物理・目パチ・呼吸・リップシンク・ポーズ) の切り替え、
-  ポーズの表示する要素の切り替え (T0660)、着せ替え (DressUpSection、T0649)、フェイストラッキング (@ugoe/face-tracking、T0636)、プロジェクトのモーション・表情の再生、すべてのパラメータの
+  ポーズの表示する要素の切り替え (T0660。着せ替えで付けたモジュールのグループも。T0661)、着せ替え (DressUpSection、T0649)、フェイストラッキング (@ugoe/face-tracking、T0636)、プロジェクトのモーション・表情の再生、すべてのパラメータの
   スライダー (グループごと)。
   状態と WebPuppet の操作は PreviewMode (preview.svelte.ts)。コマンドは送らない。
 -->
@@ -16,7 +16,14 @@ import { shownEntry } from "../panels/poses/poses";
 import type { ViewportController } from "../viewport/controller.svelte";
 import DressUpSection from "./DressUpSection.svelte";
 import LicenseDialog from "./LicenseDialog.svelte";
-import { filterSections, groupParameters, STAGES, sliderStep, stageAvailability } from "./preview";
+import {
+  filterSections,
+  groupParameters,
+  modulePoseLabels,
+  STAGES,
+  sliderStep,
+  stageAvailability,
+} from "./preview";
 import type { PreviewMode } from "./preview.svelte";
 
 interface Props {
@@ -43,8 +50,13 @@ let typing = $state<{ id: string; text: string } | null>(null);
 const model = $derived(doc.model ? (JSON.parse(doc.model.json) as Model) : null);
 const sections = $derived(groupParameters(doc.parameters, model?.parameter_groups ?? [], "Other"));
 const shown = $derived(filterSections(sections, filter));
-const available = $derived(stageAvailability(model, doc.physics !== null));
+const available = $derived.by(() => {
+  const found = stageAvailability(model, doc.physics !== null);
+  // 着せ替えで付けたモジュールのポーズのグループもポーズの段で動く (T0661)。
+  return preview.modulePoses.length > 0 ? { ...found, pose: true } : found;
+});
 const poseGroups = $derived(model?.pose.groups ?? []);
+const moduleLabels = $derived(modulePoseLabels(preview.modulePoses));
 
 function onValueChange(id: string, e: Event) {
   const input = e.currentTarget as HTMLInputElement;
@@ -109,8 +121,8 @@ function onValueKeyDown(e: KeyboardEvent) {
     {/each}
   </section>
 
-  {#if poseGroups.length > 0}
-    <!-- 編集中のモデルのポーズのグループ (着せ替えで付けたモジュールのグループは出さない)。T0660 -->
+  {#if poseGroups.length > 0 || preview.modulePoses.length > 0}
+    <!-- 編集中のモデルのポーズのグループ (T0660) と、着せ替えで付けたモジュールのグループ (T0661) -->
     <section aria-label="Pose">
       <h3>Pose</h3>
       {#if !preview.stages.pose}
@@ -129,6 +141,24 @@ function onValueKeyDown(e: KeyboardEvent) {
           >
             {#each group.entries as entry (entry.part)}
               <option value={entry.part}>{labelOf(model?.parts, entry.part)}</option>
+            {/each}
+          </select>
+        </label>
+      {/each}
+      {#each preview.modulePoses as { module, group }, mi (mi)}
+        {@const current = group.entries[shownEntry(group, preview.modulePoseShown)]?.part ?? ""}
+        {@const label = moduleLabels[mi] ?? `Module group ${mi + 1}`}
+        <label class="pose" title="A pose group of the module {module} you put on">
+          <span>{label}</span>
+          <select
+            value={current}
+            disabled={!preview.stages.pose}
+            aria-label="Shown entry of {label}"
+            title="The entry shown in this group of {module} (the others fade out)"
+            onchange={(e) => preview.showModulePose(group, e.currentTarget.value)}
+          >
+            {#each group.entries as entry (entry.part)}
+              <option value={entry.part}>{entry.part.startsWith(`${module}/`) ? entry.part.slice(module.length + 1) : entry.part}</option>
             {/each}
           </select>
         </label>

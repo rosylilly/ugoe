@@ -367,6 +367,12 @@ export type ClaudeSettings = {
 model: string, };
 
 /**
+ * モジュールの物理のリグが参照する、スロットの公開する本体の衝突体 1 つ (本体に物理が無いと当たれない。
+ * [`ModuleContext::drop_unavailable_colliders`] が外したもの。T0661)。ID はモジュールの中のもの。
+ */
+export type ColliderReference = { rig: string, collider: string, };
+
+/**
  * 衝突体の形状。半径はキャンバスのピクセル単位。
  */
 export type ColliderShape = { "type": "circle", center: Vec2, radius: number, } | { "type": "capsule", a: Vec2, b: Vec2, radius: number, };
@@ -1132,7 +1138,12 @@ base_slots: Array<string>,
 /**
  * 元のエラーの文。
  */
-message: string, };
+message: string, 
+/**
+ * `base_needs_physics` のとき、リグから外せば開ける、本体に無い衝突体への参照 (`open_module_with_base` の
+ * `drop_colliders`。外すことを利用者に確かめてから開く。T0661)。外しても開けない・ほかの種類なら空。
+ */
+collider_references: Array<ColliderReference>, };
 
 /**
  * モジュールのプロジェクトが本体の問題で開けない・読み直せないときの、問題の種類 (直し方を選ぶ)。

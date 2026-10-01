@@ -11,7 +11,8 @@ use tauri::State;
 use ts_rs::TS;
 use ugoe_editor_core::project::{ProjectError, load_base, read_module_link};
 use ugoe_editor_core::{
-    AtlasReport, Document, ModuleDifference, ModuleError, Project, ProjectFingerprint,
+    AtlasReport, ColliderReference, Document, ModuleDifference, ModuleError, Project,
+    ProjectFingerprint,
 };
 use ugoe_model::module::ModuleRequirements;
 
@@ -113,6 +114,9 @@ pub struct ModuleProblem {
     pub base_slots: Vec<String>,
     /// 元のエラーの文。
     pub message: String,
+    /// `base_needs_physics` のとき、リグから外せば開ける、本体に無い衝突体への参照 (`open_module_with_base` の
+    /// `drop_colliders`。外すことを利用者に確かめてから開く。T0661)。外しても開けない・ほかの種類なら空。
+    pub collider_references: Vec<ColliderReference>,
 }
 
 /// 本体の読み直し (`reload_base`) の結果。読み直せなければ `problem` があり、ドキュメントはそのまま。
@@ -256,6 +260,7 @@ fn diagnose(error: &ProjectError, base: &Path, slot: &str) -> Option<ModuleProbl
         slot: slot.to_owned(),
         base_slots,
         message: error.to_string(),
+        collider_references: Vec::new(),
     })
 }
 
@@ -293,20 +298,28 @@ pub fn new_module_project(
 
 /// モジュールのプロジェクト `path` を、本体を `base` に、スロットを `slot` に付け替えて開く (`null` なら
 /// `project.json` のまま。本体を動かした・見つからない・本体からスロットがなくなったとき)。
-/// 付け替えは保存するまでファイルに書かない (未保存の印が付く)。失敗したら今のプロジェクトはそのまま。
+/// `drop_colliders` なら、本体に無い (本体に物理が無い) スロットの公開する衝突体へのリグの参照を外して開く
+/// (`ModuleProblem.collider_references`。フロントエンドが外すことを確かめてから渡す。T0661)。
+/// 付け替えと外した参照は保存するまでファイルに書かない (未保存の印が付く)。失敗したら今のプロジェクトはそのまま。
 #[tauri::command]
 pub fn open_module_with_base(
     state: State<'_, AppState>,
     path: String,
     base: Option<String>,
     slot: Option<String>,
+    drop_colliders: bool,
 ) -> Result<ProjectStatus, String> {
     let dir = absolute_path(&path)?;
     let disk = ProjectFingerprint::read(&dir).map_err(|e| e.to_string())?;
     let base = base.as_deref().map(absolute_path).transpose()?;
     let slot = slot.map(|s| ugoe_model::SlotId::from(s.as_str()));
-    let project = Project::load_module_with(&dir, base.as_deref(), slot.as_ref())
-        .map_err(|e| e.to_string())?;
+    let project = if drop_colliders {
+        Project::load_module_without_unavailable_colliders(&dir, base.as_deref(), slot.as_ref())
+            .map(|(project, _)| project)
+    } else {
+        Project::load_module_with(&dir, base.as_deref(), slot.as_ref())
+    }
+    .map_err(|e| e.to_string())?;
     let (mut document, mut session) = lock_both(&state)?;
     (*session, *document) = ProjectSession::from_project(project, Some((dir, disk)));
     session.mark_meta_modified();
@@ -327,12 +340,21 @@ pub fn module_open_problem(
         return Ok(None);
     };
     let base = base.as_deref().map(absolute_path).transpose()?;
-    Ok(
-        match Project::load_module_with(&dir, base.as_deref(), None) {
-            Ok(_) => None,
-            Err(error) => diagnose(&error, base.as_deref().unwrap_or(&linked), slot.as_str()),
-        },
-    )
+    let Err(error) = Project::load_module_with(&dir, base.as_deref(), None) else {
+        return Ok(None);
+    };
+    let mut problem = diagnose(&error, base.as_deref().unwrap_or(&linked), slot.as_str());
+    if let Some(problem) = &mut problem
+        && problem.kind == ModuleProblemKind::BaseNeedsPhysics
+    {
+        // 外せば開けるときだけ、外す参照を知らせる (ほかの問題も残るなら空のまま)。
+        if let Ok((_, dropped)) =
+            Project::load_module_without_unavailable_colliders(&dir, base.as_deref(), None)
+        {
+            problem.collider_references = dropped;
+        }
+    }
+    Ok(problem)
 }
 
 /// モジュールのプロジェクトの本体のファイルが、開いた (読み直した) 後で変わったか。変わっていなければ `null`
@@ -395,6 +417,7 @@ fn rebase(
                 slot: slot.clone(),
                 base_slots: Vec::new(),
                 message: error.to_string(),
+                collider_references: Vec::new(),
             }),
         ),
     };

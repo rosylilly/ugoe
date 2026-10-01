@@ -53,7 +53,7 @@ pub use keyform::Keyform;
 pub use module_compare::{
     DifferenceItem, DifferenceKind, ModuleDifference, compare_with_module_file,
 };
-pub use module_project::{ModuleBase, ModuleContext, ModuleError};
+pub use module_project::{ColliderReference, ModuleBase, ModuleContext, ModuleError};
 pub use motion_edit::{Animations, SegmentShape};
 pub use physics_template::{PhysicsTemplate, PhysicsTemplateOptions};
 pub use project::{

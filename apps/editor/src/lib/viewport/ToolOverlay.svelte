@@ -12,12 +12,14 @@
   - 物理の表示 (T0629): tools/physics/PhysicsOverlay.svelte。物理のパネルを開いている間、粒子と衝突体を重ね、
     衝突体のドラッグを受ける (ほかのツールより上)。
   - はみ出しの表示 (T0632): tools/overflow/OverflowOverlay.svelte。「Verify」のパネルで切り替える (操作は受けない)。
+  - グルーの頂点の組 (T0661): tools/glue/GlueOverlay.svelte。「Glue」タブで選んだグルーの組を重ね、組を足す・外す。
   - モジュールのプロジェクト (T0650): 本体の要素の選択枠は灰色の破線にし、編集のツール (フォーム・ギズモ・メッシュ編集) を
     出さずに「本体のプロジェクトで直す」と示す。「Module outline」でモジュールのメッシュすべての輪郭を重ね、本体と見分ける。
 -->
 <script lang="ts">
 import type { EditorDocument } from "../document.svelte";
 import { baseElements, isBaseElement } from "../moduleProject";
+import type { GlueView } from "../panels/glues/glueView.svelte";
 import type { PhysicsView } from "../panels/physics/physicsView.svelte";
 import type { VerifyView } from "../panels/verify/verifyView.svelte";
 import type { Selection } from "../selection.svelte";
@@ -26,6 +28,7 @@ import DeformerGizmo from "./tools/deformer/DeformerGizmo.svelte";
 import DepthOverlay from "./tools/depth/DepthOverlay.svelte";
 import FormTool from "./tools/form/FormTool.svelte";
 import { boundaryEdges, cycleHit } from "./tools/geometry";
+import GlueOverlay from "./tools/glue/GlueOverlay.svelte";
 import MeshEditTool from "./tools/MeshEditTool.svelte";
 import OverflowOverlay from "./tools/overflow/OverflowOverlay.svelte";
 import PhysicsOverlay from "./tools/physics/PhysicsOverlay.svelte";
@@ -37,9 +40,10 @@ interface Props {
   selection: Selection;
   physics: PhysicsView;
   verify: VerifyView;
+  glue: GlueView;
 }
 
-let { controller, doc, selection, physics, verify }: Props = $props();
+let { controller, doc, selection, physics, verify, glue }: Props = $props();
 
 /** これより動かなければクリックとみなす (CSS ピクセル)。 */
 const CLICK_SLOP = 3;
@@ -216,6 +220,7 @@ function onKeyDown(e: KeyboardEvent): void {
 <DepthOverlay {controller} {doc} {selection} {scene} />
 <OverflowOverlay {controller} {doc} {scene} view={verify} />
 <PhysicsOverlay {controller} {doc} view={physics} />
+<GlueOverlay {doc} {scene} view={glue} />
 
 <div class="toolbar">
   {#if controller.previewingPhysics}

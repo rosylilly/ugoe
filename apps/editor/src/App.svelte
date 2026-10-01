@@ -269,7 +269,7 @@ $effect(() => {
         {#snippet overlay(controller)}
           {#if proposals.preview}
             <p class="proposal-banner">Previewing an AI proposal. The model is unchanged until you adopt it.</p>
-          {:else if !preview.active}<ToolOverlay {controller} {doc} {selection} {physics} {verify} />
+          {:else if !preview.active}<ToolOverlay {controller} {doc} {selection} {physics} {verify} {glue} />
           {:else}<DifferenceOverlay {controller} {doc} {preview} />{/if}
           {#if !proposals.preview && (lighting.active || preview.active)}
             <LightingOverlay {controller} {doc} view={lighting} />

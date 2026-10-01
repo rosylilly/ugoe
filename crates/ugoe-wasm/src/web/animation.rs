@@ -141,6 +141,15 @@ impl WebPuppet {
         Ok(animation::show_pose(self.puppet_mut()?, part))
     }
 
+    /// 今のポーズ (モデルの `pose` と同じ JSON。着せ替えで付けたモジュールのグループと追従も入る)。
+    /// モデルが無ければ `undefined`。
+    pub fn pose_json(&self) -> Result<Option<String>, JsError> {
+        match &self.puppet {
+            Some(puppet) => animation::pose_json(puppet).map(Some).map_err(js_error),
+            None => Ok(None),
+        }
+    }
+
     // --- エフェクト ---
 
     /// 目パチ・呼吸・リップシンクの設定 (モデルの `effects` と同じ JSON) を差し替える。

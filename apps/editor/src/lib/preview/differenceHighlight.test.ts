@@ -5,6 +5,7 @@ import {
   differenceTarget,
   fitMove,
   highlightNotice,
+  missingIn,
   selectTitle,
   shownVersion,
 } from "./differenceHighlight";
@@ -131,6 +132,17 @@ describe("differences in the preview (T0657)", () => {
     expect(highlightNotice({ id: "Brim", text: "added" }, file, false)).toBe(
       "Brim is not in the file. Put on your current edits to see it.",
     );
+    // 除いた要素のメッシュが今の編集に残っていても、除いたと分かるようにする (T0661)。
+    expect(highlightNotice({ id: "ArmA", text: "removed" }, own, true)).toBe(
+      "Removed: ArmA is not in your current edits; the outline shows its meshes that are still there. Put on the file to see it.",
+    );
+    expect(highlightNotice({ id: "Brim", text: "added" }, file, true)).toBe(
+      "Added: Brim is not in the file; the outline shows its meshes that are still there. Put on your current edits to see it.",
+    );
+    expect(missingIn({ text: "removed" }, own)).toBe(true);
+    expect(missingIn({ text: "removed" }, file)).toBe(false);
+    expect(missingIn({ text: "added" }, file)).toBe(true);
+    expect(missingIn({ text: "added" }, null)).toBe(false);
     expect(highlightNotice({ id: "Brim", text: "added" }, null, false)).toBe(
       "Put on your current edits or the file to see Brim.",
     );

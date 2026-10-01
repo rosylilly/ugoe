@@ -1,6 +1,6 @@
 // グルーの編集 (docs/editor.md#グルーの編集) の補助。DOM や IPC に依存しない純粋な関数だけを置く (glues.test.ts で検査する)。
 // 頂点の組を作るのは editor-core (`create_glue`・`set_glue` の `distance`)。ここでは送るコマンドを組み立てるだけ。
-import type { Command, Glue, ModuleStatus } from "../../ipc";
+import type { Command, Glue, GluePair, ModuleStatus, Parameter } from "../../ipc";
 import { cellAt } from "../inspector/keyforms/keyforms";
 
 /** 頂点の組を作るときの既定の距離 (キャンバスのピクセル)。 */
@@ -102,4 +102,59 @@ export function selectedPair(
 export function distanceValue(text: string): number | null {
   const value = Number(text);
   return text.trim() !== "" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+// --- 強さの軸 (T0661) ---
+
+/** グルーの強さの格子にキーを足すコマンド (軸が無ければ軸ごと作る。`add_keyform_key`)。 */
+export function addGlueKeyCommand(glue: string, parameter: string, key: number): Command {
+  return { op: "add_keyform_key", target: { kind: "glue", id: glue }, parameter, key };
+}
+
+/** グルーの強さの格子からキーを取り除くコマンド (軸の最後のキーなら軸ごと。`remove_keyform_key`)。 */
+export function removeGlueKeyCommand(glue: string, parameter: string, key: number): Command {
+  return { op: "remove_keyform_key", target: { kind: "glue", id: glue }, parameter, key };
+}
+
+/** 強さの軸にまだ使っていないパラメータ (軸に足せるもの。モデルの順)。 */
+export function unboundParameters<T extends Pick<Parameter, "id">>(
+  glue: Glue,
+  parameters: readonly T[],
+): T[] {
+  const bound = new Set(glue.keyforms.bindings.map((b) => b.parameter));
+  return parameters.filter((p) => !bound.has(p.id));
+}
+
+/**
+ * キーの入力 (パラメータの範囲の有限の値)。軸に同じキーがあれば `null`。
+ */
+export function keyValue(
+  text: string,
+  parameter: Pick<Parameter, "min" | "max">,
+  keys: readonly number[] = [],
+): number | null {
+  const value = Number(text);
+  if (text.trim() === "" || !Number.isFinite(value)) return null;
+  if (value < parameter.min || value > parameter.max) return null;
+  return keys.includes(value) ? null : value;
+}
+
+// --- 頂点の組をビューポートで編集する (T0661) ---
+
+/**
+ * 組 `(a, b)` を足したグルー。B の頂点はいつも 1 つの A の頂点とだけ組む (作るときと同じ) ので、同じ B の組があれば
+ * 置き換える。重みはグルーの重み (先頭の組。`glueWeight`)。同じ組がもうあれば `null`。
+ */
+export function withPair(glue: Glue, a: number, b: number): Glue | null {
+  if (glue.pairs.some((p) => p.a === a && p.b === b)) return null;
+  const pair: GluePair = { a, b, weight: glueWeight(glue) };
+  const index = glue.pairs.findIndex((p) => p.b === b);
+  const pairs =
+    index < 0 ? [...glue.pairs, pair] : glue.pairs.map((p, i) => (i === index ? pair : p));
+  return { ...glue, pairs };
+}
+
+/** `index` 番目の組を外したグルー。 */
+export function withoutPair(glue: Glue, index: number): Glue {
+  return { ...glue, pairs: glue.pairs.filter((_, i) => i !== index) };
 }

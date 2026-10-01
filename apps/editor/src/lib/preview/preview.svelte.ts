@@ -16,6 +16,8 @@
 //   書き出せない (検査に通らない) 間は、編集中の (合成した) モデルを描き、自分のスロットにはほかのモジュールを付けない。
 // - ポーズ (T0660) は、編集中のモデルのポーズのグループごとに表示する要素を選べる (`show_pose`。ポーズの段が有効な間だけ
 //   見える)。入るときは編集中のビューポートで見ていた要素 (ViewportController.posePreview) から始め、読み直すと渡し直す。
+//   着せ替えで付けたモジュールのグループ (T0661) は WebPuppet の合成したポーズ (`pose_json`) から読み、付け外しと
+//   読み込みのたびに読み直す (`modulePoseGroups`)。選んだ要素は WebPuppet の ID で `modulePoseShown` に持つ。
 import {
   en,
   FaceTracker,
@@ -24,14 +26,20 @@ import {
   type TrackingTarget,
 } from "@ugoe/face-tracking";
 import type { EditorDocument } from "../document.svelte";
-import { type Expression, ipc, type Motion, type PoseGroup } from "../ipc";
+import { type Expression, ipc, type Model, type Motion, type PoseGroup } from "../ipc";
 import { showEntry } from "../panels/poses/poses";
 import type { FrameDriver, PuppetStage, ViewportController } from "../viewport/controller.svelte";
 import type { WebPuppet } from "../viewport/wasm";
 import { editingName } from "./dressUp";
 import { DressUp } from "./dressUp.svelte";
 import { describeLoadWarnings, parseLoadWarnings } from "./loadWarnings";
-import { defaultStages, previewPart, pushEvents } from "./preview";
+import {
+  defaultStages,
+  type ModulePoseGroup,
+  modulePoseGroups,
+  previewPart,
+  pushEvents,
+} from "./preview";
 import { saveTrackingRecording } from "./trackingHost";
 
 /** 表示の値を書き換える差の下限 (毎フレームの細かな変化で画面を作り直さないため)。 */
@@ -76,6 +84,10 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
    * (ポーズの初期状態)。
    */
   poseShown = $state.raw<readonly string[]>([]);
+  /** 着せ替えで付けたモジュールのポーズのグループ (WebPuppet の ID。T0661)。 */
+  modulePoses = $state.raw<readonly ModulePoseGroup[]>([]);
+  /** モジュールのグループで表示する要素のパーツ (WebPuppet の ID。グループに 1 つまで)。 */
+  modulePoseShown = $state.raw<readonly string[]>([]);
 
   #doc: EditorDocument;
   #viewport: ViewportController;
@@ -102,6 +114,7 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
       active: () => this.active,
       changed: (puppet) => {
         this.trackingParameterIds = puppet.tracking_parameter_ids();
+        this.#readPose(puppet);
         this.#sync(puppet);
       },
       ownSlot: () => (this.comparing ? null : (this.#doc.module?.slot.id ?? null)),
@@ -120,6 +133,8 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
     this.events = [];
     this.error = null;
     this.poseShown = this.#viewport.posePreview ?? [];
+    this.modulePoses = [];
+    this.modulePoseShown = [];
     this.active = true;
     this.#viewport.setDriver(this);
     void this.dressUp.refresh();
@@ -193,11 +208,37 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
     this.#run((puppet) => this.#applyPose(puppet));
   }
 
-  #applyPose(puppet: WebPuppet): void {
+  /** モジュールのグループ `group` で `part` (WebPuppet の ID) を表示する (T0661)。 */
+  showModulePose(group: PoseGroup, part: string): void {
+    this.modulePoseShown = showEntry(this.modulePoseShown, group, part);
+    this.#run((puppet) => puppet.show_pose(part));
+  }
+
+  /** 今の編集を別の名前で付けて比べているなら、モジュールの名前と付けた名前 (`previewPart` に渡す)。 */
+  #ownModule(): { name: string; editing: string } | null {
     const module = this.#doc.module;
-    const own =
-      this.comparing && module ? { name: module.name, editing: editingName(module.name) } : null;
+    return this.comparing && module
+      ? { name: module.name, editing: editingName(module.name) }
+      : null;
+  }
+
+  #applyPose(puppet: WebPuppet): void {
+    const own = this.#ownModule();
     for (const part of this.poseShown) puppet.show_pose(previewPart(part, own));
+    // 外したモジュールのパーツは show_pose が false を返すだけ (付け直すと選んでいた要素に戻る)。
+    for (const part of this.modulePoseShown) puppet.show_pose(part);
+  }
+
+  /** WebPuppet の合成したポーズから、付けたモジュールのグループを読み直す。 */
+  #readPose(puppet: WebPuppet): void {
+    try {
+      const json = this.#doc.model?.json;
+      const own = json ? (JSON.parse(json) as Model).pose.groups : [];
+      this.modulePoses = modulePoseGroups(puppet.pose_json(), own, this.#ownModule());
+    } catch (e) {
+      console.warn("ugoe:", e);
+      this.modulePoses = [];
+    }
   }
 
   // --- モーション・表情 ---
@@ -283,6 +324,7 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
     this.#applyLipSync(puppet);
     this.#applyEyeBlink(puppet);
     try {
+      this.#readPose(puppet);
       this.#applyPose(puppet);
     } catch (e) {
       console.warn("ugoe:", e);

@@ -40,7 +40,7 @@ import {
 } from "./ipc";
 import ModuleProblemBar from "./ModuleProblemBar.svelte";
 import ModuleSettingsDialog from "./ModuleSettingsDialog.svelte";
-import { moduleLabel, moduleTitle } from "./moduleProject";
+import { droppedCollidersNotice, moduleLabel, moduleTitle } from "./moduleProject";
 import NewModuleDialog from "./NewModuleDialog.svelte";
 
 interface Props {
@@ -323,15 +323,24 @@ function perform(kind: PathAction, path: string): Promise<boolean> {
  * 本体の問題で開けなかったモジュールのプロジェクトを、本体 `base` かスロット `slot` を付け替えて開き直す
  * (`base` が null なら、前に選び直した本体があればそれ)。それでも本体の問題で開けなければ、新しい問題を出す。
  */
-async function reopenModule(base: string | null, slot: string | null): Promise<boolean> {
+async function reopenModule(
+  base: string | null,
+  slot: string | null,
+  dropColliders = false,
+): Promise<boolean> {
   const project = problem?.project;
   if (!project) return false;
   const useBase = base ?? problem?.base ?? null;
-  const ok = await run(() => ipc.openModuleWithBase(project, useBase, slot), "replaced");
+  const dropped = dropColliders ? (problem?.problem.collider_references ?? []) : [];
+  const ok = await run(
+    () => ipc.openModuleWithBase(project, useBase, slot, dropColliders),
+    "replaced",
+  );
   if (ok) {
     problem = null;
-    notice =
-      slot === null
+    notice = dropColliders
+      ? droppedCollidersNotice(dropped)
+      : slot === null
         ? "Opened with the new base. Save to remember it."
         : `Opened on slot ${slot}. Save to remember it.`;
   } else {
@@ -379,6 +388,17 @@ async function useSlot(slot: string) {
   try {
     if (problem?.opening) await reopenModule(null, slot);
     else await relocateBase(null, slot);
+  } finally {
+    busy = false;
+  }
+}
+
+/** 本体の問題の枠の「Remove and open」: 確かめた衝突体の参照を外して開き直す (T0661)。 */
+async function dropColliders() {
+  if (busy || !problem?.opening) return;
+  busy = true;
+  try {
+    await reopenModule(null, null, true);
   } finally {
     busy = false;
   }
@@ -648,6 +668,7 @@ refresh();
     onlocate={(kind) => pick(kind === "project" ? "locateBaseProject" : "locateBaseBundle")}
     onchooseslot={useSlot}
     onopenbase={openBase}
+    ondropcolliders={dropColliders}
     ondismiss={() => (problem = null)}
   />
 {/if}

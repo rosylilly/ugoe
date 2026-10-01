@@ -225,10 +225,18 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
 - 一覧のグルーを押すと、下に編集の欄が出ます。「Weight」は寄せる先 (0 で A に、1 で B に、0.5 で真ん中)、「Intensity」は引き寄せる強さ
   (1 で完全に重なる)。「Swap」で A と B を入れ替え (見た目は同じ)、「Pair again within … px」で頂点の組を作り直し、「Remove glue」で消します。
   「Select meshes」で両端のメッシュをツリーで選べます。
+- 強さをパラメータで変えるには、編集の欄のパラメータとキーを選んで「+ Axis」を押します (例: 腕を下ろした角度で 0)。軸ごとに「+ Key」で
+  キーを足し、「×」で外します。キーごとに「AngleX = 30」のような強さの欄が並ぶので、それぞれの強さを入れます。
+- 選んだグルーの頂点の組は、ビューポートに線で重なります (A のメッシュは緑、B のメッシュは紫の破線)。ビューポートの下の「Add pairs」を
+  押して A と B の頂点を 1 つずつ押すと組が増え、「Remove pairs」を押して組の線の中の四角を押すとその組が外れます (Esc で終わる)。
+  B の頂点は 1 つの A の頂点とだけ組むので、同じ B の頂点を組み直すと前の組が置き換わります。組んだ頂点はグルーで引き寄せられて
+  重なって見えるので、新しく組むのはまだ組んでいない頂点 (中が白い丸) です。どれも Undo で戻せます。
 - モジュールのプロジェクトでは、本体のグルー (「base」の印) は変えられず、つなげるのは衣装のメッシュどうしだけです。描画用の複製のグルー
   (「clone」の印) は、インスペクタの「Sync」で作り直してください。
 
 ![Glue タブ。衣装の Back と Front をつなぐグルーを作り、重みを 0.25 にした](images/module-glue.png)
+
+![ビューポートに重なったグルーの組。「Add pairs」で A の頂点を押し、B の頂点を待っている](images/module-glue-pairs.png)
 
 ![本体の要素を選んだところ。インスペクタが無効になり、ビューポートに「Base model」と出る](images/module-base-readonly.png)
 
@@ -297,7 +305,9 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
 | `The base model "…" can't be read` | 本体が壊れている、またはモジュールのプロジェクトを選んだ。本体を選び直す |
 | `The base model "…" no longer has slot "…"` | 本体からスロットがなくなった (名前を変えた)。一覧からスロットを選んで「Use this slot」で開き (保存すると覚える)、または「Open base project」で本体を開いてスロットを戻す |
 | `This module no longer fits the base model "…"` | 本体はあるが衣装が合わない (公開していたパラメータ・マスクを外したなど)。「Open base project」で本体を直すか、本体を選び直す。「Details」に元のメッセージが出る |
-| `A physics rig of this module collides with a collider that slot "…" exposes, but the base model "…" has no physics` | 衣装の揺れものが、スロットの「Colliders」で公開した本体の衝突体に当たるが、本体に物理が無い (物理を消した本体・物理を含まない `.ugoe` など)。物理 (その衝突体を含むもの) のある本体を選び直すか、「Open base project」で本体の物理を戻して保存し、衣装を開き直す。「Details」に衝突体とリグの名前が出る。衣装に当たる衝突体が無いときは、「Physics」タブの「Colliders」にも同じ案内が出る |
+| `A physics rig of this module collides with a collider that slot "…" exposes, but the base model "…" has no physics` | 衣装の揺れものが、スロットの「Colliders」で公開した本体の衝突体に当たるが、本体に物理が無い (物理を消した本体・物理を含まない `.ugoe` など)。物理 (その衝突体を含むもの) のある本体を選び直すか、「Open base project」で本体の物理を戻して保存し、衣装を開き直す。「Details」に衝突体とリグの名前が出る。衣装に当たる衝突体が無いときは、「Physics」タブの「Colliders」にも同じ案内が出る。本体を直さずに開くなら「Open without these colliders…」: 外す当たり (リグ → 衝突体) が並ぶので、「Remove and open」で揺れものからその当たりを外して開く (保存するまでファイルは変わらない) |
+
+![揺れものの当たりを外して開く前に、外すものを確かめる](images/module-problem-drop.png)
 
 説明の中の本体のファイル名は `"…"` で囲んで出ます。本体を選び直してもスロットがないときは、その本体についての説明に替わり、続けてスロットを選べます。
 開いているモジュールの本体を読み直せなかったとき (本体を外で変えた・動かした) の選び直しと「Use this slot」は、開き直さずに下敷きを替えるので、
@@ -354,6 +364,8 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
   (ポーズのグループは差分のパーツを ` / ` でつないだ名前、追従は本体の差分のパーツの名前で出ます)。
   名前を押すと、プレビューのままビューポートでその要素が強調されます (メッシュは輪郭、物理のリグは粒子の鎖、衝突体は円やカプセル)。
   強調されるのは、いまスロットに付いている方 (いまの編集かファイル) の要素です。除いた要素は、ファイルの方を付けると見えます。
+  いまの編集で除いた要素 (ポーズのグループなど) のメッシュがいまの編集に残っていれば、その輪郭を破線で描き、下の知らせに
+  「Removed: … is not in your current edits」と出ます (ファイルに無い足した要素をファイルで見たときは「Added: …」)。
   もう一度押すか「Clear」でやめます。強調しているときに「Fit」を押すと、ビューポートがその要素に寄ります (全体に戻すのはビューポートの右上の「Fit」)。
   「Select」を押すと、プレビューを出て左のツリー (物理のリグと衝突体は「Physics」タブ、グルーは「Glue」タブ、ポーズは「Poses」タブとツリーの
   パーツ) でその要素が選ばれます (もう一度「Preview」を押すと、付けていたモジュールは付き直ります)。書き出すときに「Pack textures into atlases」を選んだファイルとも、アトラスの前の

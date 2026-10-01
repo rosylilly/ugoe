@@ -15,6 +15,8 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use serde::Serialize;
+use ts_rs::TS;
 use ugoe_core::{Id, Vec2};
 use ugoe_model::deformer::DeformerKind;
 use ugoe_model::keyform::KeyformGrid;
@@ -59,6 +61,14 @@ pub enum ModuleError {
     /// モジュールとして表せない (本体の要素への参照・接頭辞を外した ID の重なりなど)。
     #[error("cannot be kept as a module: {reason}")]
     Shape { reason: String },
+}
+
+/// モジュールの物理のリグが参照する、スロットの公開する本体の衝突体 1 つ (本体に物理が無いと当たれない。
+/// [`ModuleContext::drop_unavailable_colliders`] が外したもの。T0661)。ID はモジュールの中のもの。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct ColliderReference {
+    pub rig: String,
+    pub collider: String,
 }
 
 impl From<ModuleError> for EditError {
@@ -309,6 +319,33 @@ impl ModuleContext {
             .filter(|id| !base.is_some_and(|p| p.colliders.iter().any(|c| &c.id == *id)))
             .cloned()
             .collect()
+    }
+
+    /// モジュール `module` のリグから、[`Self::unavailable_colliders`] (本体に無い、スロットの公開する衝突体) への
+    /// 参照を外し、外したものを返す (リグの順・参照の順)。モジュール自身の衝突体への参照は残す。
+    /// 物理の無い本体でモジュールのプロジェクトを開くとき、利用者が外すことを確かめてから使う (黙って外さない。T0655・T0661)。
+    pub fn drop_unavailable_colliders(&self, module: &mut Module) -> Vec<ColliderReference> {
+        let unavailable = self.unavailable_colliders();
+        let own: HashSet<String> = module
+            .physics
+            .colliders
+            .iter()
+            .map(|c| c.id.clone())
+            .collect();
+        let mut dropped = Vec::new();
+        for rig in &mut module.physics.rigs {
+            rig.colliders.retain(|collider| {
+                let drop = !own.contains(collider) && unavailable.contains(collider);
+                if drop {
+                    dropped.push(ColliderReference {
+                        rig: rig.id.clone(),
+                        collider: collider.clone(),
+                    });
+                }
+                !drop
+            });
+        }
+        dropped
     }
 
     fn prefixed(&self, id: &str) -> String {

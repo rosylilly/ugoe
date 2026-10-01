@@ -266,6 +266,12 @@ pub fn show_pose(puppet: &mut Puppet, part: &str) -> bool {
     puppet.pose_mut().show(&part.into())
 }
 
+/// 今のポーズ (モデルの `pose` と同じ JSON)。着せ替えで付けたモジュールのグループ (`<モジュール>/<パーツ>`) と
+/// 本体の要素への追従も入る (合成したモデルのポーズ)。
+pub fn pose_json(puppet: &Puppet) -> Result<String, AnimationError> {
+    Ok(serde_json::to_string(puppet.pose().pose())?)
+}
+
 /// 物理の設定 (`*.physics.json` の形) を差し替える。`None` で外す。
 /// モデルと合わせて検査し、エラーがあれば何も変えない。
 pub fn set_physics_json(puppet: &mut Puppet, json: Option<&str>) -> Result<(), AnimationError> {
@@ -622,6 +628,34 @@ mod tests {
             puppet.update(DT);
         }
         assert_eq!(puppet.instance().part_opacity_override(arm_b), (1.0, 1.0));
+    }
+
+    /// ポーズの JSON はモデルの `pose` の形で、付けたモジュールのグループも入る。
+    #[test]
+    fn pose_json_includes_module_groups() {
+        let puppet = quiet(fixtures::pose_and_effects());
+        let pose: ugoe::model::pose::Pose =
+            serde_json::from_str(&pose_json(&puppet).unwrap()).unwrap();
+        assert_eq!(pose, fixtures::pose_and_effects().pose);
+
+        let mut puppet = quiet(fixtures::dress_up_base());
+        let mut module = fixtures::long_hair_module();
+        module.pose.groups = vec![ugoe::model::pose::PoseGroup {
+            entries: vec![ugoe::model::pose::PoseEntry {
+                part: "Hair".into(),
+                links: Vec::new(),
+            }],
+        }];
+        puppet.attach_module(std::sync::Arc::new(module)).unwrap();
+        let pose: ugoe::model::pose::Pose =
+            serde_json::from_str(&pose_json(&puppet).unwrap()).unwrap();
+        let parts: Vec<&str> = pose
+            .groups
+            .iter()
+            .flat_map(|g| &g.entries)
+            .map(|e| e.part.as_str())
+            .collect();
+        assert_eq!(parts, ["LongHair/Hair"]);
     }
 
     #[test]

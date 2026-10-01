@@ -28,7 +28,7 @@ use ugoe_model::{
 
 use crate::Document;
 use crate::fingerprint::ProjectFingerprint;
-use crate::module_project::{ModuleBase, ModuleContext, ModuleError, Workspace};
+use crate::module_project::{ColliderReference, ModuleBase, ModuleContext, ModuleError, Workspace};
 use crate::texture::{Textures, is_valid_texture_name, png_size};
 
 /// `project.json` の `format_version` の現在の値。プロジェクトのディレクトリ構成を変えたら上げる。
@@ -397,7 +397,7 @@ impl Project {
             });
         }
         if meta.kind == ProjectKind::Module {
-            return Self::load_module(dir, meta, None);
+            return Self::load_module(dir, meta, None, false).map(|(project, _)| project);
         }
 
         let model_path = dir.join(MODEL_JSON);
@@ -444,24 +444,35 @@ impl Project {
         base: Option<&Path>,
         slot: Option<&SlotId>,
     ) -> Result<Self, ProjectError> {
-        let mut meta = read_module_meta(dir)?;
-        if let (Some(link), Some(slot)) = (&mut meta.module, slot) {
-            link.slot = slot.clone();
-        }
-        Self::load_module(dir, meta, base)
+        let meta = module_meta_with(dir, slot)?;
+        Self::load_module(dir, meta, base, false).map(|(project, _)| project)
+    }
+
+    /// [`Self::load_module_with`] と同じだが、本体に無い (本体に物理が無い) スロットの公開する衝突体へのリグの
+    /// 参照を外して読み、外した参照を返す (`ModuleContext::drop_unavailable_colliders`。T0661)。
+    /// 外したことは次に保存したときに `module.json` に書く。利用者が外すことを確かめてから使う (T0655 の「黙って消さない」)。
+    pub fn load_module_without_unavailable_colliders(
+        dir: &Path,
+        base: Option<&Path>,
+        slot: Option<&SlotId>,
+    ) -> Result<(Self, Vec<ColliderReference>), ProjectError> {
+        let meta = module_meta_with(dir, slot)?;
+        Self::load_module(dir, meta, base, true)
     }
 
     /// モジュールのプロジェクトを読む: `module.json` と画像を読み、本体を読んで作業用のモデルを作る。
-    /// `base` があれば `project.json` の参照の代わりにそれを本体にする。
+    /// `base` があれば `project.json` の参照の代わりにそれを本体にする。`drop_colliders` なら、本体に無い衝突体への
+    /// リグの参照を外し、外したものを返す (でなければ空)。
     fn load_module(
         dir: &Path,
         meta: ProjectMeta,
         base: Option<&Path>,
-    ) -> Result<Self, ProjectError> {
+        drop_colliders: bool,
+    ) -> Result<(Self, Vec<ColliderReference>), ProjectError> {
         let link = meta.module.clone().ok_or(ProjectError::MissingModuleLink)?;
         let module_path = dir.join(MODULE_JSON);
         let json = fs::read_to_string(&module_path).map_err(io_error(&module_path))?;
-        let module =
+        let mut module =
             ugoe_format::module_from_json(&json).map_err(|source| ProjectError::Format {
                 path: module_path.clone(),
                 source,
@@ -478,8 +489,13 @@ impl Project {
             module.name.clone(),
             module.requires.clone(),
         )?;
+        let dropped = if drop_colliders {
+            context.drop_unavailable_colliders(&mut module)
+        } else {
+            Vec::new()
+        };
         let workspace = context.workspace(&module, &images)?;
-        Ok(Self::from_workspace(meta, workspace, context))
+        Ok((Self::from_workspace(meta, workspace, context), dropped))
     }
 
     /// モジュールのプロジェクトで保存するファイル (`module.json` と画像)。
@@ -828,6 +844,15 @@ fn read_images(dir: &Path, textures: &[TextureRef]) -> Result<Textures, ProjectE
 }
 
 /// モジュールのプロジェクト `dir` の `project.json` (モジュールのプロジェクトでなければ [`ProjectError::NotAModule`])。
+/// モジュールのプロジェクトの `project.json` を読み、`slot` があればスロットを替える。
+fn module_meta_with(dir: &Path, slot: Option<&SlotId>) -> Result<ProjectMeta, ProjectError> {
+    let mut meta = read_module_meta(dir)?;
+    if let (Some(link), Some(slot)) = (&mut meta.module, slot) {
+        link.slot = slot.clone();
+    }
+    Ok(meta)
+}
+
 fn read_module_meta(dir: &Path) -> Result<ProjectMeta, ProjectError> {
     let meta_path = dir.join(PROJECT_JSON);
     if !meta_path.is_file() {

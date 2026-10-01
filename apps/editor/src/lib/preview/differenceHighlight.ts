@@ -121,6 +121,15 @@ export function shownVersion(
   return null;
 }
 
+/**
+ * 要素が、描いている版 `shown` に無いか (今の編集で除いた要素か、ファイルに無い足した要素)。メッシュがその版に
+ * 残っていれば輪郭は描けるが、要素そのものではない (T0661)。
+ */
+export function missingIn(item: Pick<DifferenceItem, "text">, shown: ShownVersion | null): boolean {
+  if (shown === null) return false;
+  return shown.own ? item.text === "removed" : item.text === "added";
+}
+
 /** 強調の知らせ (ビューポートの下に出す)。`found` は描けた要素があったか。 */
 export function highlightNotice(
   item: Pick<DifferenceItem, "id" | "text">,
@@ -131,13 +140,19 @@ export function highlightNotice(
     return `Put on your current edits or the file to see ${item.id}.`;
   }
   const where = shown.own ? "your current edits" : "the file";
+  // 除いた (足した) 要素は、メッシュがこの版にも残っていれば輪郭を描けるが、要素そのものは無い。描けても
+  // 「Removed」(「Added」) と分かるようにする (T0661)。
+  if (missingIn(item, shown)) {
+    const other = shown.own ? "the file" : "your current edits";
+    if (!found) {
+      return shown.own
+        ? `${item.id} was removed in your current edits. Put on ${other} to see it.`
+        : `${item.id} is not in the file. Put on ${other} to see it.`;
+    }
+    const tag = shown.own ? "Removed" : "Added";
+    return `${tag}: ${item.id} is not in ${where}; the outline shows its meshes that are still there. Put on ${other} to see it.`;
+  }
   if (found) return `${item.id} in ${where}`;
-  if (shown.own && item.text === "removed") {
-    return `${item.id} was removed in your current edits. Put on the file to see it.`;
-  }
-  if (!shown.own && item.text === "added") {
-    return `${item.id} is not in the file. Put on your current edits to see it.`;
-  }
   return `${item.id} can't be drawn in ${where}.`;
 }
 

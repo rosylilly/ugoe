@@ -178,6 +178,39 @@ mod tests {
         assert_eq!(found.kind, ModuleProblemKind::BaseNeedsPhysics);
         assert!(found.message.contains("`Shoulders`"), "{}", found.message);
         assert!(found.message.contains("no physics"), "{}", found.message);
+        // 外せば開ける参照を知らせる (T0661)。`TwinTails` の房のリグは 2 つとも肩に当たる (T0662)。
+        let rigs: Vec<_> = ugoe_format::read_module(MODULES[1])
+            .unwrap()
+            .module
+            .physics
+            .rigs
+            .iter()
+            .filter(|r| r.colliders.contains(&"Shoulders".to_owned()))
+            .map(|r| r.id.clone())
+            .collect();
+        assert_eq!(rigs.len(), 2);
+        let found_rigs: Vec<_> = found
+            .collider_references
+            .iter()
+            .map(|c| c.rig.clone())
+            .collect();
+        assert_eq!(found_rigs, rigs);
+        assert!(
+            found
+                .collider_references
+                .iter()
+                .all(|c| c.collider == "Shoulders")
+        );
+        let (reopened, _) =
+            Project::load_module_without_unavailable_colliders(&written[1], None, None).unwrap();
+        assert!(
+            reopened
+                .physics
+                .unwrap()
+                .rigs
+                .iter()
+                .all(|r| r.colliders.is_empty())
+        );
         assert!(problem(&written[2]).is_none());
         assert_eq!(open(&written[2]).unavailable_colliders, ["Shoulders"]);
         std::fs::remove_dir_all(&dir).unwrap();

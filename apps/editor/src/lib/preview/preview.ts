@@ -1,6 +1,6 @@
 // プレビューモード (docs/editor.md#プレビューモード) の、DOM と wasm に依存しない部分 (preview.test.ts)。
 // スライダーのグループ分けはビューア (apps/viewer/src/lib/parameters.ts) と同じ規則。
-import type { Model, Parameter, ParameterGroup } from "../ipc";
+import type { Model, Parameter, ParameterGroup, Pose, PoseGroup } from "../ipc";
 import type { PuppetStage } from "../viewport/controller.svelte";
 
 /** スライダーの一覧の 1 区切り。`id` が `null` のものはグループに属さないパラメータ。 */
@@ -106,4 +106,47 @@ export function previewPart(
   if (!module) return part;
   const prefix = `${module.name}/`;
   return part.startsWith(prefix) ? `${module.editing}/${part.slice(prefix.length)}` : part;
+}
+
+/** 着せ替えで付けたモジュールのポーズのグループ (T0661)。パーツは WebPuppet の ID (`<モジュール>/<パーツ>`)。 */
+export interface ModulePoseGroup {
+  /** グループのパーツの接頭辞 (付けたモジュールの名前)。 */
+  module: string;
+  group: PoseGroup;
+}
+
+/**
+ * WebPuppet の合成したポーズ (`pose_json`) のうち、編集中のモデル (`own`) に無いグループ: 着せ替えで付けた
+ * モジュールのグループ。編集中のモデルのグループは、パーツを `previewPart` で WebPuppet の ID にして見分ける
+ * (要素を 1 つでも共有すれば同じグループ)。`composed` が読めなければ空。
+ */
+export function modulePoseGroups(
+  composed: string | undefined | null,
+  own: readonly PoseGroup[],
+  module: { name: string; editing: string } | null,
+): ModulePoseGroup[] {
+  let pose: Pose;
+  try {
+    pose = composed ? (JSON.parse(composed) as Pose) : { fade_duration: 0, groups: [] };
+  } catch {
+    return [];
+  }
+  const ownParts = new Set(own.flatMap((g) => g.entries.map((e) => previewPart(e.part, module))));
+  return (pose.groups ?? []).flatMap((group) => {
+    if (group.entries.length === 0) return [];
+    if (group.entries.some((e) => ownParts.has(e.part))) return [];
+    const first = group.entries[0]?.part ?? "";
+    const slash = first.indexOf("/");
+    return [{ module: slash < 0 ? "" : first.slice(0, slash), group }];
+  });
+}
+
+/** モジュールのグループの見出し (`LongHair group 1`。モジュールごとに数える)。 */
+export function modulePoseLabels(groups: readonly ModulePoseGroup[]): string[] {
+  const counts = new Map<string, number>();
+  return groups.map(({ module }) => {
+    const n = (counts.get(module) ?? 0) + 1;
+    counts.set(module, n);
+    return `${module || "Module"} group ${n}`;
+  });
 }

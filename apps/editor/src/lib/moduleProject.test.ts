@@ -5,6 +5,8 @@ import {
   baseIsProject,
   canMoveRig,
   describeModuleProblem,
+  dropCollidersPrompt,
+  droppedCollidersNotice,
   isBaseElement,
   isBaseMesh,
   isBaseRig,
@@ -129,6 +131,7 @@ describe("module problems", () => {
     slot: "Hair",
     base_slots: kind === "unknown_slot" ? ["Outfit"] : [],
     message: "x",
+    collider_references: [],
   });
   it("offers fixes for each kind", () => {
     expect(moduleProblemFixes(problem("base_not_found"))).toEqual([
@@ -154,9 +157,50 @@ describe("module problems", () => {
     expect(describeModuleProblem(problem("does_not_fit"))).toContain("no longer fits");
     expect(describeModuleProblem(problem("base_needs_physics"))).toContain("has no physics");
     expect(moduleProblemFixes(problem("base_needs_physics"))).toContain("open_base");
+    expect(moduleProblemFixes(problem("base_needs_physics"))).not.toContain("drop_colliders");
     // ファイル名は引用符で囲み、文と続けて読めないようにする。
     expect(describeModuleProblem(problem("unknown_slot", "/p/moved.ugoeproj"))).toMatch(
       /^The base model "moved\.ugoeproj" no longer has slot "Hair"\./,
+    );
+  });
+});
+
+describe("dropping collider references (T0661)", () => {
+  const references = [
+    { rig: "Sway", collider: "Shoulders" },
+    { rig: "Tip", collider: "Shoulders" },
+  ];
+  const problem: ModuleProblem = {
+    kind: "base_needs_physics",
+    base: "/p/avatar.ugoeproj",
+    slot: "Hair",
+    base_slots: [],
+    message: "x",
+    collider_references: references,
+  };
+  it("is offered only when dropping lets the module open", () => {
+    expect(moduleProblemFixes(problem)).toEqual([
+      "open_base",
+      "drop_colliders",
+      "locate_project",
+      "locate_bundle",
+    ]);
+    expect(moduleProblemFixes({ ...problem, kind: "does_not_fit" })).not.toContain(
+      "drop_colliders",
+    );
+  });
+  it("says what is removed and when the file changes", () => {
+    const prompt = dropCollidersPrompt(references);
+    expect(prompt).toContain("these 2 collider references: Sway → Shoulders, Tip → Shoulders");
+    expect(prompt).toContain("only when you save");
+    expect(dropCollidersPrompt(references.slice(0, 1))).toBe(
+      "Open the module without this collider reference: Sway → Shoulders. The rig will no longer collide with it. The module file changes only when you save; add physics with the collider to the base to use it again.",
+    );
+    expect(droppedCollidersNotice(references)).toMatch(
+      /^Opened without 2 collider references \(Sway/,
+    );
+    expect(droppedCollidersNotice(references.slice(0, 1))).toMatch(
+      /^Opened without 1 collider reference \(/,
     );
   });
 });

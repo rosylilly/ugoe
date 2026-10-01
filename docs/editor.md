@@ -425,8 +425,13 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
   `PreviewMode.poseShown` (グループに 1 つまで。`poses.ts` の `showEntry`) に持ち、入るときは編集中のビューポートで見ていた要素
   (`ViewportController.posePreview`) から始め、モデルを読み直すたびに渡し直します。ポーズの段を止めている間は選べません。
   モジュールのプロジェクトで今の編集を本体に付けて比べている間は、今の編集を別の名前 (`<名前> (editing)`) で付けるので、モジュールの
-  パーツの接頭辞を付け替えて渡します (`preview.ts` の `previewPart`)。着せ替えで付けたほかのモジュールのグループは出しません (WebPuppet に
-  ポーズのグループを返す口が無いため。本体の要素に追従する衣装の差分は、本体の要素と一緒に切り替わる)。
+  パーツの接頭辞を付け替えて渡します (`preview.ts` の `previewPart`)。
+  着せ替えで付けたモジュールのグループ (T0661) は、編集中のモデルのグループの後に「`<モジュール>` group N」で並べます。WebPuppet の
+  合成したポーズ (`pose_json`。モデルの `pose` の形) から、編集中のモデルのグループ (パーツを `previewPart` で WebPuppet の ID にして、
+  要素を 1 つでも共有するもの) を除いたものです (`preview.ts` の `modulePoseGroups`)。付け外し (`DressUp` の `changed`) と読み込みのたびに
+  読み直します。選んだ要素は WebPuppet の ID で `PreviewMode.modulePoseShown` に持ち、読み込みのたびに渡し直します (外したモジュールの
+  パーツは `show_pose` が `false` を返すだけで、付け直すと選んでいた要素に戻る)。このグループがあれば、モデルにポーズが無くても
+  「Pose」の段に「(not set up)」を出しません。本体の要素に追従する衣装の差分は、本体の要素と一緒に切り替わります。
 - **モーション・表情:** ドキュメントのもの (`EditorDocument.motions` / `expressions`、保存前のものも) を JSON で
   `start_motion_json(json, "force")`・`set_expression_json` に渡します。モーションはフェード・ループ・イベント込みで
   再生し (発火したイベントを最近の 5 つまで出す)、「Stop」は `stop_motions` (フェードアウト)。表情は 1 つだけ選び、
@@ -564,7 +569,10 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
     デフォーマはワープの制御点か回転の原点と軸、物理のリグは粒子の鎖 (動いていれば今の位置、でなければ初期位置。
     パラメータにだけ出すリグは描かない)、衝突体は円・カプセルを重ねます。輪郭は作業用のモデルに同じ頂点数のメッシュがあればその
     三角形の外周、無ければ (ファイルだけの形) 頂点の凸包です。下の知らせに、どちらの版の要素かを出し、描けなければ見える方法
-    (「… was removed in your current edits. Put on the file to see it.」など) を出します。比べ直すと、強調は同じ要素 (種類と ID) の
+    (「… was removed in your current edits. Put on the file to see it.」など) を出します。描いている版に無い要素 (今の編集で除いたもの・
+    ファイルに無い足したもの。`missingIn`) のメッシュがその版に残っていれば (除いたポーズのグループのパーツの下のメッシュなど)、輪郭を
+    破線で描き、知らせを「Removed: … is not in your current edits; the outline shows its meshes that are still there. Put on the file to see it.」
+    (足したものは「Added: …」) にします (T0661。T0659 では「… in your current edits」と出て、除いたと分からなかった)。比べ直すと、強調は同じ要素 (種類と ID) の
     新しい結果に替わり、無くなればやめます。
     知らせの「Fit」で、ビューポートを描いた要素に寄せます (T0659。`fitMove`: 描いた輪郭・点・形の範囲が、ビューポートの 80% に収まるように
     要素の中心でズームし (`ViewportController.zoomAt`)、中央へずらす (`panBy`)。範囲は 24 ピクセルより小さくみなさない)。
@@ -658,8 +666,8 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
 | `new_module_project(base, slot, name)` | 空のモジュールのプロジェクトにする (未保存) |
 | `open_module_with_base(path, base)` | 本体を付け替えてモジュールのプロジェクトを開く |
 | `export_module(path)` | `validate_module` と本体との合成を確かめて `.ugoemod` を書き、大きさと警告とアトラス化の結果 (`ModuleExportReport`) を返す。書き出しの設定でアトラス化を選んでいればモジュールのテクスチャをまとめる ([書き出し](#書き出し)) |
-| `open_module_with_base(path, base, slot)` | 本体 (`base`) かスロット (`slot`) を付け替えて開く (`null` なら `project.json` のまま。`Project::load_module_with`) |
-| `module_open_problem(path, base)` | 本体の問題で開けないなら、問題の種類と直すための情報 (`ModuleProblem`)。`base` なら選び直した本体で確かめる |
+| `open_module_with_base(path, base, slot, drop_colliders)` | 本体 (`base`) かスロット (`slot`) を付け替えて開く (`null` なら `project.json` のまま。`Project::load_module_with`)。`drop_colliders` なら本体に無い衝突体へのリグの参照を外して開く (T0661) |
+| `module_open_problem(path, base)` | 本体の問題で開けないなら、問題の種類と直すための情報 (`ModuleProblem`。`base_needs_physics` で外せば開けるなら `collider_references`)。`base` なら選び直した本体で確かめる |
 | `check_base_change()` | 本体のファイルが開いた (読み直した) 後で変わったか (`ExternalChange` か `null`) |
 | `reload_base(base, slot)` | 本体を読み直す。`base`・`slot` があれば本体・スロットを付け替える (開き直さない。未保存の印が付く)。読み直せなければ `problem` 付きで、ドキュメントはそのまま (`BaseReload`) |
 | `get_preview_base_bundle()` | 本体だけの `.ugoe` のバイト列 (プレビューで今の編集と比べる。[プレビューの着せ替え](#プレビューの着せ替え)) |
@@ -742,13 +750,21 @@ base project.」と示します (`BaseLock.svelte`。`fieldset` の `disabled` �
 | `base_unreadable` | 本体を読めない (壊れている・モジュールのプロジェクトを指している・PNG でない画像) | 同上 |
 | `unknown_slot` | 本体にモジュールのスロットがない | スロットを選んで「Use this slot」、「Open base project」(スロットを戻す)、本体を選び直す |
 | `does_not_fit` | 本体はあるが、モジュールが合わない (条件・公開されたパラメータ・マスクなど) | 「Open base project」(本体を直す)、本体を選び直す |
-| `base_needs_physics` | モジュールのリグがスロットの公開する本体の衝突体に当たるが、本体に物理が無い (`ModuleError::ColliderNeedsBasePhysics`。T0660) | 「Open base project」(本体に物理と衝突体を戻す)、本体を選び直す |
+| `base_needs_physics` | モジュールのリグがスロットの公開する本体の衝突体に当たるが、本体に物理が無い (`ModuleError::ColliderNeedsBasePhysics`。T0660) | 「Open base project」(本体に物理と衝突体を戻す)、本体を選び直す、「Open without these colliders…」(参照を外して開く。下の「衝突体の参照を外して開く」) |
 
 - **物理の無い本体が公開する衝突体 (T0660):** ランタイム (Puppet) は、本体に物理が無ければスロットの公開する衝突体への参照を外して
   付けます ([spec/modules.md#合成](spec/modules.md#合成))。作者のツールは、保存のときに参照が黙って消えないよう、作業用のモデルと書き出しの
   検査ではエラーのままにし、`ModuleContext::compose_physics` が `ComposeError::UnknownCollider` を `ModuleError::ColliderNeedsBasePhysics`
   (リグ・衝突体・スロットと、本体に物理を足すよう促す文) に置き換えます。開けたモジュールのプロジェクトでも、物理の画面の「Colliders」に
   当たれない衝突体を案内します。
+- **衝突体の参照を外して開く (T0661):** `base_needs_physics` で開けなかったとき、`module_open_problem` は、本体に無い衝突体への
+  リグの参照を外せば開けるなら、外す参照を `ModuleProblem.collider_references` (`ColliderReference { rig, collider }`。モジュールの中の ID)
+  に入れます。枠の「Open without these colliders…」で、外す参照 (見本の TwinTails なら `TailL → Shoulders`・`TailR → Shoulders`) と、保存するまでファイルは変わらないこと、本体に
+  物理と衝突体を足せば戻せることを並べて確かめ (`dropCollidersPrompt`)、「Remove and open」で `open_module_with_base` に `drop_colliders: true`
+  を渡して開きます (`Project::load_module_without_unavailable_colliders`。`ModuleContext::drop_unavailable_colliders` がスロットの公開する
+  衝突体のうち本体に無いものへの参照を外す。モジュール自身の衝突体への参照は残す)。開いたプロジェクトには未保存の印が付き、保存すると
+  `module.json` から参照が消えます。T0655 の「黙って消さない」を守るため、確かめずに外す道は作りません。本体を読み直せなかったとき
+  (`reload_base`) には出しません (開いているモジュールの物理を勝手に変えないため)。
 
 - 付け替え (本体・スロット) は `open_module_with_base` で開き直し、保存するまでファイルに書きません (未保存の印)。選び直した本体でも開けなければ
   (スロットがないなど)、その本体で確かめた次の問題を出し、次の直し方でもその本体を使います。
@@ -1147,7 +1163,15 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
 - **モジュールのプロジェクト:** 本体のグルー (どちらかの端が本体のメッシュ。`ModuleStatus.base_meshes`) は「base」の印を付け、編集の欄を
   無効にします (`BaseLock`)。Mesh A・B の候補はモジュールのメッシュだけです。描画用の複製のグルーは「clone」の印を付け、同じく無効にして
   インスペクタの「Sync」を案内します。
-- 組をビューポートに重ねる表示はまだありません (強調は着せ替えの違いの行から。[プレビューの着せ替え](#プレビューの着せ替え))。
+- **強さの軸 (T0661):** 編集の欄で、パラメータとキー (既定はパラメータの既定値) を選んで「+ Axis」で強さの格子に軸を足し、軸ごとに
+  「+ Key」でキーを足し、「×」で外します (`add_keyform_key`・`remove_keyform_key` の `target: { kind: "glue", id }`。軸の最後のキーを外すと
+  軸ごと消える)。キーは範囲の中の、軸にまだ無い値だけ (`keyValue`)。キーごとの強さは上の欄 (`AngleX = 30` など) で変えます。
+- **組をビューポートで編集する (T0661):** 「Glue」タブで選んだグルーを、ビューポートに重ねます (`viewport/tools/glue/GlueOverlay.svelte`。
+  ToolOverlay が出す)。両端のメッシュの輪郭 (A は緑、B は紫の破線)・組の線・組んだ頂点を描きます。位置は評価後 (グルーを掛けた後) なので、
+  強さ 1 の組の頂点は重なります。下のバーの「Add pairs」で両端の頂点をすべて出し、A と B の頂点を 1 つずつ (どちらからでも) 押すと
+  組を足します (`withPair`。B の頂点は 1 つの A の頂点とだけ組むので、同じ B の組があれば置き換える。重みはグルーの重み)。「Remove pairs」で
+  組の線の中点に四角を出し、押すとその組を外します (`withoutPair`)。どちらも `set_glue` (Undo の 1 単位) で、Esc でモードを抜けます。
+  本体のグルー・描画用の複製のグルーは重ねるだけで、モードを選べません。モードと先に押した頂点は `GlueView.pairMode`・`pending`。
 
 ## ポーズの編集
 

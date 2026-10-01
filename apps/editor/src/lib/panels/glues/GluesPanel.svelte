@@ -6,6 +6,8 @@
     ツリーで 2 つのメッシュを選んでいれば、それを既定にする。
   - 編集: 重み (どちらへ寄せるか。すべての組に同じ値)・強さ (キーフォームごと)・両端の入れ替え・組の作り直し・削除。
     どれも set_glue でグルーを丸ごと置き換える。
+  - 強さの軸 (T0661): パラメータとキーを選んで「+ Axis」、軸ごとにキーを足す・外す (add_keyform_key・remove_keyform_key)。
+  - 頂点の組はビューポートに重ね、ビューポートの「Add pairs」「Remove pairs」で組を足す・外す (viewport/tools/glue/GlueOverlay.svelte)。
   - モジュールのプロジェクトでは、本体のグルー (どちらかの端が本体のメッシュ) は読み取り専用 (BaseLock)。つなげるのは
     モジュールのメッシュだけ。描画用の複製のグルーは、インスペクタの「Sync」が作り直すので編集しない。
 -->
@@ -16,6 +18,7 @@ import type { Command, Glue, Model } from "../../ipc";
 import { elementLabel, labelOf } from "../../labels";
 import type { Selection } from "../../selection.svelte";
 import {
+  addGlueKeyCommand,
   createGlueCommand,
   DEFAULT_GLUE_DISTANCE,
   distanceValue,
@@ -24,9 +27,12 @@ import {
   isBaseGlue,
   isDrawCloneGlue,
   keyformLabels,
+  keyValue,
+  removeGlueKeyCommand,
   selectedPair,
   setGlueCommand,
   swapped,
+  unboundParameters,
   uniformWeight,
   withIntensity,
   withWeight,
@@ -71,6 +77,10 @@ let pickB = $state("");
 let distance = $state(String(DEFAULT_GLUE_DISTANCE));
 let repairDistance = $state(String(DEFAULT_GLUE_DISTANCE));
 let busy = $state(false);
+/** 強さの軸に足すパラメータと、そのキー (軸ごとのキーの入力はパラメータの ID ごと)。 */
+let axisParameter = $state("");
+let axisKey = $state("");
+let newKeys = $state<Record<string, string>>({});
 
 /** 選んでいなければ、ツリーの選択か一覧の先頭 2 つ。 */
 const meshA = $derived(
@@ -119,6 +129,17 @@ function number(event: Event): number | null {
 function meshLabel(id: string): string {
   return labelOf(meshes, id);
 }
+
+function parameterName(id: string): string {
+  return doc.parameters.find((p) => p.id === id)?.name || id;
+}
+
+/** 強さの軸に足せるパラメータ (選んでいなければ先頭)。 */
+const unbound = $derived(glue ? unboundParameters(glue, doc.parameters) : []);
+const axisChoice = $derived(unbound.find((p) => p.id === axisParameter) ?? unbound[0] ?? null);
+const axisKeyValue = $derived(
+  axisChoice ? keyValue(axisKey === "" ? String(axisChoice.default) : axisKey, axisChoice) : null,
+);
 </script>
 
 <h2>Glue</h2>
@@ -229,6 +250,85 @@ function meshLabel(id: string): string {
         {#if glue.keyforms.bindings.length > 0}
           <p class="help">The intensity follows the parameters of the keyforms above.</p>
         {/if}
+        <div class="axes" aria-label="Intensity axes">
+          {#each glue.keyforms.bindings as b (b.parameter)}
+            {@const param = doc.parameters.find((p) => p.id === b.parameter)}
+            {@const text = newKeys[b.parameter] ?? ""}
+            {@const key = param ? keyValue(text, param, b.keys) : null}
+            <div class="axis">
+              <span class="axis-name">{parameterName(b.parameter)}</span>
+              <span class="keys">
+                {#each b.keys as k (k)}
+                  <span class="chip"
+                    >{k}<button
+                      class="remove-key"
+                      disabled={busy}
+                      title="Remove key {k}{b.keys.length === 1 ? ' (removes the axis)' : ''}"
+                      onclick={() => send(removeGlueKeyCommand(glue.id, b.parameter, k))}>×</button
+                    ></span
+                  >
+                {/each}
+                <input
+                  type="number"
+                  step="any"
+                  placeholder="key"
+                  aria-label="New key of {parameterName(b.parameter)}"
+                  value={text}
+                  disabled={busy}
+                  oninput={(e) => (newKeys = { ...newKeys, [b.parameter]: e.currentTarget.value })}
+                />
+                <button
+                  disabled={busy || key === null}
+                  title={param ? `Add a key between ${param.min} and ${param.max}` : ""}
+                  onclick={async () => {
+                    if (key !== null && (await send(addGlueKeyCommand(glue.id, b.parameter, key)))) {
+                      newKeys = { ...newKeys, [b.parameter]: "" };
+                    }
+                  }}>+ Key</button
+                >
+              </span>
+            </div>
+          {/each}
+          {#if unbound.length > 0}
+            <div class="row">
+              <select
+                aria-label="Parameter for a new intensity axis"
+                value={axisChoice?.id ?? ""}
+                disabled={busy}
+                onchange={(e) => {
+                  axisParameter = e.currentTarget.value;
+                  axisKey = "";
+                }}
+              >
+                {#each unbound as p (p.id)}<option value={p.id}>{p.name || p.id}</option>{/each}
+              </select>
+              <input
+                type="number"
+                step="any"
+                aria-label="First key of the new axis"
+                value={axisKey === "" ? String(axisChoice?.default ?? 0) : axisKey}
+                disabled={busy}
+                oninput={(e) => (axisKey = e.currentTarget.value)}
+              />
+              <button
+                disabled={busy || axisChoice === null || axisKeyValue === null}
+                title="Make the intensity follow this parameter (the current intensity is kept at this key)"
+                onclick={async () => {
+                  if (axisChoice && axisKeyValue !== null && (await send(addGlueKeyCommand(glue.id, axisChoice.id, axisKeyValue)))) {
+                    axisKey = "";
+                  }
+                }}>+ Axis</button
+              >
+            </div>
+          {/if}
+          <p class="help">
+            Add an axis to change the intensity with a parameter (for example 0 when the arm is lowered), then add
+            keys and set the intensity of each.
+          </p>
+        </div>
+        <p class="help">
+          The pairs are shown in the viewport. Use Add pairs / Remove pairs there to pair vertices by hand.
+        </p>
         <div class="row">
           <label for="glue-repair">Pair again within</label>
           <input id="glue-repair" type="number" min="0" step="1" bind:value={repairDistance} disabled={busy} />
@@ -408,6 +508,55 @@ h3 {
 
 .row input {
   width: 5em;
+  min-width: 0;
+}
+
+.axes {
+  margin: 6px 0;
+}
+
+.axis {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+
+.axis-name {
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.keys input {
+  width: 5em;
+  min-width: 0;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.remove-key {
+  border: none;
+  background: none;
+  color: inherit;
+  padding: 0 4px;
+}
+
+.row select {
+  flex: 1;
   min-width: 0;
 }
 

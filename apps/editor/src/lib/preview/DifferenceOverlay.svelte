@@ -8,6 +8,8 @@
   - 物理のリグ: 粒子の鎖 (動かしていれば今の位置、でなければ初期位置)。衝突体: 円・カプセル。
 
   - ポーズのグループと追従: 要素とリンクのパーツの下のメッシュの輪郭 (T0659)。
+  - 描いている版に無い要素 (今の編集で除いたもの・ファイルに無い足したもの) は、残っているメッシュを破線で描き、
+    知らせに「Removed」「Added」と出す (T0661)。
 
   操作は受けない。下に何を強調しているか (描けなければ、どちらを付ければ見えるか) を出す。知らせの「Fit」で
   ビューポートを描いた要素に寄せる (fitMove。全体に戻すのはビューポートの「Fit」。T0659)。
@@ -27,7 +29,13 @@ import {
   type WorldShape,
   worldShape,
 } from "../viewport/tools/physics/physicsGeometry";
-import { convexHull, fitMove, highlightNotice, shownVersion } from "./differenceHighlight";
+import {
+  convexHull,
+  fitMove,
+  highlightNotice,
+  missingIn,
+  shownVersion,
+} from "./differenceHighlight";
 import type { PreviewMode } from "./preview.svelte";
 
 interface Props {
@@ -196,9 +204,11 @@ const found = $derived(
 </script>
 
 {#if highlight && drawn}
+  {@const missing = missingIn(highlight.item, drawn.shown)}
   <svg class="layer" role="presentation" bind:this={layer}>
     {#each drawn.outlines as o (o.id)}
-      <path class="outline" d={o.d} />
+      <!-- 除いた要素の、残っているメッシュは破線にする (T0661) -->
+      <path class="outline" class:missing d={o.d} />
     {/each}
     {#each drawn.points as p, k (k)}
       <circle class="point" cx={p[0]} cy={p[1]} r="3" />
@@ -247,6 +257,10 @@ const found = $derived(
   fill: none;
   stroke: var(--highlight, #ff9f1a);
   stroke-width: 2;
+}
+
+.outline.missing {
+  stroke-dasharray: 6 4;
 }
 
 .shape {

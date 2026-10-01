@@ -3,10 +3,12 @@
   FileMenu が出す。直し方はバックエンドの問題の種類 (`ModuleProblem.kind`) から選ぶ (moduleProject.ts の moduleProblemFixes):
   本体を選び直す (「Locate base project…」「Locate base .ugoe…」)、別のスロットで開く、本体のプロジェクトを開いて直す。
   開いているモジュールの本体を読み直せなかったときは、開き直さずに付け替える (保存していない編集は残る。T0651)。
+  物理の無い本体で開けないモジュールは、衝突体の参照を外して開ける (T0661)。外すものを並べて確かめてから開く
+  (T0655 の「黙って消さない」)。
 -->
 <script lang="ts">
 import type { ModuleProblem } from "./ipc";
-import { describeModuleProblem, moduleProblemFixes } from "./moduleProject";
+import { describeModuleProblem, dropCollidersPrompt, moduleProblemFixes } from "./moduleProject";
 
 interface Props {
   problem: ModuleProblem;
@@ -19,16 +21,30 @@ interface Props {
   onlocate: (kind: "project" | "bundle") => void;
   onchooseslot: (slot: string) => void;
   onopenbase: () => void;
+  /** 衝突体の参照 (`problem.collider_references`) を外して開く (利用者が確かめた後に呼ぶ)。 */
+  ondropcolliders: () => void;
   ondismiss: () => void;
 }
 
-let { problem, canReopen, busy, onlocate, onchooseslot, onopenbase, ondismiss }: Props = $props();
+let {
+  problem,
+  canReopen,
+  busy,
+  onlocate,
+  onchooseslot,
+  onopenbase,
+  ondropcolliders,
+  ondismiss,
+}: Props = $props();
 
 const fixes = $derived(moduleProblemFixes(problem));
 let slot = $state("");
+/** 衝突体の参照を外す確認を出しているか。 */
+let confirmDrop = $state(false);
 
 $effect(() => {
   slot = problem.base_slots[0] ?? "";
+  confirmDrop = false;
 });
 </script>
 
@@ -53,10 +69,27 @@ $effect(() => {
         >Open base project</button
       >
     {/if}
+    {#if fixes.includes("drop_colliders")}
+      <button
+        disabled={busy || !canReopen || confirmDrop}
+        onclick={() => (confirmDrop = true)}
+        title="Open the module without the collisions the base can't provide (asks first)"
+        >Open without these colliders…</button
+      >
+    {/if}
     <button disabled={busy || !canReopen} onclick={() => onlocate("project")}>Locate base project…</button>
     <button disabled={busy || !canReopen} onclick={() => onlocate("bundle")}>Locate base .ugoe…</button>
     <button class="close" onclick={ondismiss} aria-label="Close" title="Close">✕</button>
   </div>
+  {#if confirmDrop}
+    <div class="confirm" role="group" aria-label="Remove collider references">
+      <p>{dropCollidersPrompt(problem.collider_references)}</p>
+      <div class="actions">
+        <button class="danger" disabled={busy} onclick={ondropcolliders}>Remove and open</button>
+        <button disabled={busy} onclick={() => (confirmDrop = false)}>Cancel</button>
+      </div>
+    </div>
+  {/if}
   {#if !canReopen}
     <p class="muted">Save the module project first to choose another base or slot.</p>
   {/if}
@@ -94,6 +127,20 @@ $effect(() => {
     align-items: center;
     gap: 6px;
     margin-top: 6px;
+  }
+  .confirm {
+    margin-top: 8px;
+    padding: 6px 8px;
+    border: 1px dashed #dc2626;
+    border-radius: 4px;
+  }
+  .confirm p {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .danger {
+    border-color: #dc2626;
+    color: #dc2626;
   }
   .slot {
     display: inline-flex;

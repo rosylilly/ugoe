@@ -94,6 +94,7 @@ puppet.set_enabled("physics", false);  // "physics" | "eye_blink" | "breath" | "
 puppet.set_physics_json(json);         // 物理だけを差し替える (validate_physics で検査。undefined で外す)
 puppet.set_effects_json(json);         // 目パチ・呼吸・リップシンクの設定 (モデルの effects の形) を差し替える
 puppet.show_pose("ArmB");              // ポーズの要素 (part の ID) を表示する (T0414)。要素でなければ false
+puppet.pose_json();                    // 今のポーズ (モデルの pose の形。付けたモジュールのグループと追従も入る。T0661)
 puppet.update(dt);                     // Puppet::update と同じ順で 1 フレーム進める
 puppet.motion_events();                // 直前の update で発火したイベントの値
 puppet.hit_test_standard("Head", x, y); // Model.avatar.hit_areas の標準の名前で当たり判定

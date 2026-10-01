@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Glue, ModuleStatus } from "../../ipc";
 import {
+  addGlueKeyCommand,
   createGlueCommand,
   distanceValue,
   glueableMeshes,
@@ -8,11 +9,16 @@ import {
   isBaseGlue,
   isDrawCloneGlue,
   keyformLabels,
+  keyValue,
+  removeGlueKeyCommand,
   selectedPair,
   setGlueCommand,
   swapped,
+  unboundParameters,
   uniformWeight,
   withIntensity,
+  withoutPair,
+  withPair,
   withWeight,
 } from "./glues";
 
@@ -94,5 +100,57 @@ describe("glue editing (T0659)", () => {
     expect(distanceValue("8")).toBe(8);
     expect(distanceValue("")).toBeNull();
     expect(distanceValue("-1")).toBeNull();
+  });
+});
+
+describe("glue pairs and intensity axes (T0661)", () => {
+  it("adds a pair with the glue's weight and keeps one pair per B vertex", () => {
+    const g = glue({ pairs: [{ a: 1, b: 0, weight: 0.25 }] });
+    expect(withPair(g, 4, 2)?.pairs).toEqual([
+      { a: 1, b: 0, weight: 0.25 },
+      { a: 4, b: 2, weight: 0.25 },
+    ]);
+    // 同じ B の頂点の組は置き換える。
+    expect(withPair(g, 3, 0)?.pairs).toEqual([{ a: 3, b: 0, weight: 0.25 }]);
+    // 同じ組は足さない。
+    expect(withPair(g, 1, 0)).toBeNull();
+    expect(withPair(glue({ pairs: [] }), 0, 0)?.pairs).toEqual([{ a: 0, b: 0, weight: 0.5 }]);
+  });
+
+  it("removes a pair", () => {
+    expect(withoutPair(glue(), 0).pairs).toEqual([{ a: 2, b: 3, weight: 0.5 }]);
+  });
+
+  it("adds and removes keys of the intensity grid", () => {
+    expect(addGlueKeyCommand("Seam", "ArmL", 1)).toEqual({
+      op: "add_keyform_key",
+      target: { kind: "glue", id: "Seam" },
+      parameter: "ArmL",
+      key: 1,
+    });
+    expect(removeGlueKeyCommand("Seam", "ArmL", 1)).toEqual({
+      op: "remove_keyform_key",
+      target: { kind: "glue", id: "Seam" },
+      parameter: "ArmL",
+      key: 1,
+    });
+    const bound = glue({
+      keyforms: {
+        bindings: [{ parameter: "ArmL", keys: [0, 1] }],
+        keyforms: [{ intensity: 0 }, { intensity: 1 }],
+      },
+    });
+    expect(unboundParameters(bound, [{ id: "ArmL" }, { id: "AngleX" }])).toEqual([
+      { id: "AngleX" },
+    ]);
+  });
+
+  it("accepts keys inside the parameter range that are not on the axis yet", () => {
+    const range = { min: -1, max: 1 };
+    expect(keyValue("0.5", range)).toBe(0.5);
+    expect(keyValue("", range)).toBeNull();
+    expect(keyValue("2", range)).toBeNull();
+    expect(keyValue("x", range)).toBeNull();
+    expect(keyValue("1", range, [0, 1])).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 // モジュールのプロジェクト (ADR 0024、docs/editor.md#モジュールのプロジェクト) の表示の補助。
 // 作業用のモデルは本体と合成したもので、本体の要素は読み取り専用の下敷き。
-import type { ModuleProblem, ModuleStatus } from "./ipc";
+import type { ColliderReference, ModuleProblem, ModuleStatus } from "./ipc";
 import type { ElementRef } from "./selection.svelte";
 
 /** 本体の要素の集合 (`kind:id`)。本体のモデルのプロジェクトなら空。 */
@@ -155,7 +155,12 @@ export function toggled(
 }
 
 /** モジュールの問題の直し方 (モジュールの問題の枠のボタン)。 */
-export type ProblemFix = "locate_project" | "locate_bundle" | "choose_slot" | "open_base";
+export type ProblemFix =
+  | "locate_project"
+  | "locate_bundle"
+  | "choose_slot"
+  | "open_base"
+  | "drop_colliders";
 
 /** 本体が `.ugoeproj` (エディタで開いて直せる) か。`.ugoe` なら書き出した本体なので開けない。 */
 export function baseIsProject(base: string): boolean {
@@ -194,8 +199,34 @@ export function moduleProblemFixes(problem: ModuleProblem): ProblemFix[] {
   ) {
     fixes.push("open_base");
   }
+  // 外せば開けるときだけ (T0661)。外すことは確かめてから (dropCollidersPrompt)。
+  if (problem.kind === "base_needs_physics" && problem.collider_references.length > 0) {
+    fixes.push("drop_colliders");
+  }
   fixes.push("locate_project", "locate_bundle");
   return fixes;
+}
+
+/**
+ * 衝突体の参照を外して開く前に確かめる文 (T0661。T0655 の「黙って消さない」)。何を外し、いつファイルに書かれ、
+ * どうすれば戻せるかを言う。
+ */
+export function dropCollidersPrompt(references: readonly ColliderReference[]): string {
+  const list = references.map((r) => `${r.rig} → ${r.collider}`).join(", ");
+  const one = references.length === 1;
+  const what = one ? "this collider reference" : `these ${references.length} collider references`;
+  const rigs = one
+    ? "The rig will no longer collide with it"
+    : "The rigs will no longer collide with them";
+  const colliders = one ? "the collider" : "the colliders";
+  return `Open the module without ${what}: ${list}. ${rigs}. The module file changes only when you save; add physics with ${colliders} to the base to use ${one ? "it" : "them"} again.`;
+}
+
+/** 衝突体の参照を外して開いた後の知らせ。 */
+export function droppedCollidersNotice(references: readonly ColliderReference[]): string {
+  const n = references.length;
+  const list = references.map((r) => `${r.rig} → ${r.collider}`).join(", ");
+  return `Opened without ${n} collider reference${n === 1 ? "" : "s"} (${list}). Save to keep the change, or close without saving to keep ${n === 1 ? "it" : "them"} in the file.`;
 }
 
 /** 新しいモジュールの名前の候補: スロットの名前 (モジュールの名前に使えない文字は `_` にする)。 */

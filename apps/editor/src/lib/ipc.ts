@@ -82,10 +82,15 @@ export const ipc = {
     invoke<ProjectStatus>("new_module_project", { base, slot, name }),
   /**
    * モジュールのプロジェクトを、本体を `base` に、スロットを `slot` に付け替えて開く (null ならそのまま。
-   * 本体が見つからない・本体からスロットがなくなったとき)。
+   * 本体が見つからない・本体からスロットがなくなったとき)。`dropColliders` なら、本体に無い衝突体へのリグの参照
+   * (`ModuleProblem.collider_references`) を外して開く (外すことを利用者に確かめてから渡す。保存するまでファイルに書かない)。
    */
-  openModuleWithBase: (path: string, base: string | null, slot: string | null = null) =>
-    invoke<ProjectStatus>("open_module_with_base", { path, base, slot }),
+  openModuleWithBase: (
+    path: string,
+    base: string | null,
+    slot: string | null = null,
+    dropColliders = false,
+  ) => invoke<ProjectStatus>("open_module_with_base", { path, base, slot, dropColliders }),
   /**
    * `path` のモジュールのプロジェクトが本体の問題で開けないなら、その問題と直すための情報 (openProject の失敗の後に呼ぶ)。
    * `base` なら project.json の本体の代わりにそれで確かめる (選び直した本体)。
