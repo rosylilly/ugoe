@@ -237,4 +237,4 @@
 
 `update` を呼ばずに描画だけするホスト (エディタのビューポートの静止表示) では、書き換えた値がそのまま評価されます。
 
-`WebPuppet` (`crates/ugoe-wasm`) は同じ `Puppet` を使うので、`set_parameter` の値も同じ規則に従います。JS からは `start_motion` / `start_motion_json`・`set_expression` / `set_expression_json`・`set_effects_json`・`set_lip_sync_level`・`set_enabled(stage, bool)`・`set_physics_json` で操作します (`crates/ugoe-wasm/README.md`)。
+`WebPuppet` (`crates/ugoe-wasm`) は同じ `Puppet` を使うので、`set_parameter` の値も同じ規則に従います。JS からは `start_motion` / `start_motion_json`・`set_expression` / `set_expression_json` / `add_expression` / `stop_expression`・`set_effects_json`・`set_lip_sync_level`・`set_enabled(stage, bool)`・`set_physics_json` で操作します (`crates/ugoe-wasm/README.md`)。

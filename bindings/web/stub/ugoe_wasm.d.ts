@@ -6,6 +6,7 @@ export class WebPuppet {
   private constructor();
   free(): void;
   [Symbol.dispose](): void;
+  add_expression(name: string): void;
   attach_module(name: string): void;
   attached_modules(): string[];
   backend(): string;
@@ -23,6 +24,7 @@ export class WebPuppet {
   drawable_positions(index: number): Float32Array | undefined;
   drawable_states_json(): string;
   expression_names(): string[];
+  expressions_json(): string;
   fit(): void;
   has_model(): boolean;
   has_physics(): boolean;
@@ -45,6 +47,7 @@ export class WebPuppet {
   modules_json(): string;
   motion_events(): string[];
   motion_names(): string[];
+  motions_json(): string;
   pan_by(dx: number, dy: number): void;
   pan_x(): number;
   pan_y(): number;
@@ -90,6 +93,7 @@ export class WebPuppet {
   standard_hit_areas_at(x: number, y: number): string[];
   start_motion(name: string, priority?: string | null): boolean;
   start_motion_json(json: string, priority?: string | null): boolean;
+  stop_expression(name: string): void;
   stop_expressions(): void;
   stop_motions(): void;
   tracking_parameter_ids(): string[];

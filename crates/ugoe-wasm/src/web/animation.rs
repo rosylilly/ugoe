@@ -26,6 +26,12 @@ impl WebPuppet {
         self.library.motion_names()
     }
 
+    /// 読み込んだバンドルのモーションの一覧の JSON (長さ・ループ・フェード・動かすパラメータ。T0720。
+    /// 形は [`crate::animation::Library::motions_json`])。
+    pub fn motions_json(&self) -> String {
+        self.library.motions_json()
+    }
+
     /// バンドルのモーション `name` を開始する。`priority` は `"idle"`・`"normal"` (既定)・`"force"`。
     /// 再生中のモーションより優先度が低くて開始しなければ `false`。未知の名前はエラー。
     pub fn start_motion(&mut self, name: &str, priority: Option<String>) -> Result<bool, JsError> {
@@ -77,6 +83,26 @@ impl WebPuppet {
         let expression = self.library.expression(name).map_err(js_error)?.clone();
         self.puppet_mut()?.set_expression(expression);
         Ok(())
+    }
+
+    /// バンドルの表情 `name` を、使用中の表情の上に重ねる (T0720)。未知の名前はエラー。
+    /// 同じ表情を重ねるとその分だけ重なる (止めるときは `stop_expression` で同じ名前のものがすべて止まる)。
+    pub fn add_expression(&mut self, name: &str) -> Result<(), JsError> {
+        let expression = self.library.expression(name).map_err(js_error)?.clone();
+        self.puppet_mut()?.expressions_mut().add(expression);
+        Ok(())
+    }
+
+    /// 名前が `name` の表情をフェードアウトさせる (T0720)。使っていなければ何もしない。
+    pub fn stop_expression(&mut self, name: &str) {
+        if let Some(puppet) = &mut self.puppet {
+            puppet.expressions_mut().stop(name);
+        }
+    }
+
+    /// 読み込んだバンドルの表情の一覧の JSON (T0720。形は [`crate::animation::Library::expressions_json`])。
+    pub fn expressions_json(&self) -> String {
+        self.library.expressions_json()
     }
 
     /// 表情を JSON (`*.expression.json` の形) の表情だけにする。

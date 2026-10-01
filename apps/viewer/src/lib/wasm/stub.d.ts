@@ -50,6 +50,19 @@ export class WebPuppet {
   clear_tracking(): void;
   is_tracking(): boolean;
   tracking_parameter_ids(): string[];
+  motion_names(): string[];
+  motions_json(): string;
+  start_motion(name: string, priority?: string | null): boolean;
+  stop_motions(): void;
+  is_motion_playing(): boolean;
+  motion_events(): string[];
+  expression_names(): string[];
+  expressions_json(): string;
+  set_expression(name: string): void;
+  add_expression(name: string): void;
+  stop_expression(name: string): void;
+  stop_expressions(): void;
+
   set_enabled(stage: string, enabled: boolean): void;
   is_enabled(stage: string): boolean;
 

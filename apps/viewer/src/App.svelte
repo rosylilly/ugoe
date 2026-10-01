@@ -14,6 +14,7 @@ import { readBrowserFile, readFileAt, readSampleFile, saveJsonFile, viewerHost }
 import LicenseDialog from "./lib/LicenseDialog.svelte";
 import LightingPanel from "./lib/LightingPanel.svelte";
 import MemoryDialog from "./lib/MemoryDialog.svelte";
+import MotionPanel from "./lib/MotionPanel.svelte";
 import type { ModelFile } from "./lib/modelFile";
 import ParameterPanel from "./lib/ParameterPanel.svelte";
 import { Player } from "./lib/player.svelte";
@@ -215,8 +216,8 @@ function onKeyDown(e: KeyboardEvent) {
     {/if}
     <!--
       右のパネル。縦にパネルを積む: フェイストラッキング → モデルの機能ごとのパネル → パラメータ (残りの高さ)。
-      モデルの機能ごとのパネル (着せ替え・ライティング) は、そのモデルが使うときだけ出す
-      (着せ替えはスロットがあるか、モジュールを読み込んだとき)。畳める <details> にして、
+      モデルの機能ごとのパネル (着せ替え・ライティング・モーションと表情) は、そのモデルが使うときだけ出す
+      (着せ替えはスロットがあるか、モジュールを読み込んだとき。モーションと表情はバンドルにどちらかがあるとき)。畳める <details> にして、
       高さの上限 (max-height) を付ける。
     -->
     <aside class="sidebar">
@@ -226,6 +227,9 @@ function onKeyDown(e: KeyboardEvent) {
       {/if}
       {#if player.usesLighting}
         <LightingPanel {player} onshowmemory={() => memoryDialog?.open()} />
+      {/if}
+      {#if player.motions.length > 0 || player.expressions.length > 0}
+        <MotionPanel {player} />
       {/if}
       <ParameterPanel {player} />
     </aside>

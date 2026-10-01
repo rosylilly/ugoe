@@ -5,8 +5,8 @@
 
 use ugoe::Puppet;
 use ugoe::Toggles;
-use ugoe::model::expression::Expression;
-use ugoe::model::motion::Motion;
+use ugoe::model::expression::{Expression, ExpressionOp};
+use ugoe::model::motion::{CurveTarget, Motion};
 use ugoe::model::physics::PhysicsSettings;
 use ugoe::model::validate::ValidationError;
 use ugoe::motion::Priority;
@@ -50,6 +50,62 @@ impl Library {
 
     pub fn expression_names(&self) -> Vec<String> {
         self.expressions.iter().map(|e| e.name.clone()).collect()
+    }
+
+    /// モーションの一覧 (チャンクの順) の JSON。
+    /// `[{"name", "duration", "looping", "fade_in", "fade_out", "parameters": [ID, …], "events": [値, …]}]`。
+    /// `parameters` はカーブが動かすパラメータ (重なりなし、カーブの順)。ビューアのモーションのパネル用 (T0720)。
+    pub fn motions_json(&self) -> String {
+        let list: Vec<serde_json::Value> = self
+            .motions
+            .iter()
+            .map(|m| {
+                let mut parameters: Vec<&str> = Vec::new();
+                for c in &m.curves {
+                    if let CurveTarget::Parameter(id) = &c.target
+                        && !parameters.contains(&id.as_str())
+                    {
+                        parameters.push(id.as_str());
+                    }
+                }
+                let events: Vec<&str> = m.events.iter().map(|e| e.value.as_str()).collect();
+                serde_json::json!({
+                    "name": m.name,
+                    "duration": m.duration,
+                    "looping": m.looping,
+                    "fade_in": m.fade_in,
+                    "fade_out": m.fade_out,
+                    "parameters": parameters,
+                    "events": events,
+                })
+            })
+            .collect();
+        serde_json::Value::Array(list).to_string()
+    }
+
+    /// 表情の一覧 (チャンクの順) の JSON。`*.expression.json` の形
+    /// (`[{"name", "fade_in", "fade_out", "parameters": [{"parameter", "value", "op"}]}]`)。
+    /// 未知の `op` の項目 (新しい版のファイル。再生でも無視する) は出さない。
+    pub fn expressions_json(&self) -> String {
+        let list: Vec<serde_json::Value> = self
+            .expressions
+            .iter()
+            .map(|e| {
+                let parameters: Vec<serde_json::Value> = e
+                    .parameters
+                    .iter()
+                    .filter(|p| p.op != ExpressionOp::Unknown)
+                    .map(|p| serde_json::json!({ "parameter": p.parameter, "value": p.value, "op": p.op }))
+                    .collect();
+                serde_json::json!({
+                    "name": e.name,
+                    "fade_in": e.fade_in,
+                    "fade_out": e.fade_out,
+                    "parameters": parameters,
+                })
+            })
+            .collect();
+        serde_json::Value::Array(list).to_string()
     }
 
     /// 名前が `name` の最初のモーション。
@@ -306,6 +362,76 @@ mod tests {
             puppet.update(DT);
             assert!((param(&puppet, standard::ANGLE_X) - 15.0).abs() < 1e-4);
         }
+    }
+
+    #[test]
+    fn library_lists_motions_and_expressions() {
+        let looping = MOTION
+            .replace(r#""name": "nod""#, r#""name": "idle""#)
+            .replace(r#""looping": false"#, r#""looping": true"#);
+        let expression = r#"{
+            "name": "smile",
+            "fade_in": 0.3,
+            "fade_out": 0.2,
+            "parameters": [
+                { "parameter": "AngleX", "value": 5.0, "op": "add" },
+                { "parameter": "AngleY", "value": 1.0, "op": "future_op" }
+            ]
+        }"#;
+        let library = Library {
+            motions: vec![
+                ugoe::format::motion_from_json(MOTION).unwrap(),
+                ugoe::format::motion_from_json(&looping).unwrap(),
+            ],
+            expressions: vec![ugoe::format::expression_from_json(expression).unwrap()],
+        };
+        let motions: serde_json::Value = serde_json::from_str(&library.motions_json()).unwrap();
+        assert_eq!(motions[0]["name"], "nod");
+        assert_eq!(motions[0]["duration"], 1.0);
+        assert_eq!(motions[0]["looping"], false);
+        assert_eq!(motions[0]["parameters"], serde_json::json!(["AngleX"]));
+        assert_eq!(motions[0]["events"], serde_json::json!(["half"]));
+        assert_eq!(motions[1]["looping"], true);
+        let expressions: serde_json::Value =
+            serde_json::from_str(&library.expressions_json()).unwrap();
+        assert_eq!(expressions[0]["name"], "smile");
+        assert!((expressions[0]["fade_in"].as_f64().unwrap() - 0.3).abs() < 1e-6);
+        // 未知の op の項目は出さない。
+        assert_eq!(
+            expressions[0]["parameters"],
+            serde_json::json!([{ "parameter": "AngleX", "value": 5.0, "op": "add" }])
+        );
+        assert_eq!(Library::default().motions_json(), "[]");
+    }
+
+    #[test]
+    fn expressions_are_added_over_others_and_stopped_by_name() {
+        let mut puppet = quiet(fixtures::pose_and_effects());
+        let json = |name: &str, value: f32| {
+            format!(
+                r#"{{"name": "{name}", "parameters": [{{ "parameter": "AngleX", "value": {value}, "op": "add" }}]}}"#
+            )
+        };
+        let library = Library {
+            motions: vec![],
+            expressions: vec![
+                ugoe::format::expression_from_json(&json("a", 5.0)).unwrap(),
+                ugoe::format::expression_from_json(&json("b", 2.0)).unwrap(),
+            ],
+        };
+        puppet.set_expression(library.expression("a").unwrap().clone());
+        puppet
+            .expressions_mut()
+            .add(library.expression("b").unwrap().clone());
+        puppet.update(DT);
+        assert!((param(&puppet, standard::ANGLE_X) - 7.0).abs() < 1e-4);
+        puppet.expressions_mut().stop("a");
+        puppet.update(DT);
+        assert!((param(&puppet, standard::ANGLE_X) - 2.0).abs() < 1e-4);
+        // set はほかの表情を止める。
+        puppet.set_expression(library.expression("a").unwrap().clone());
+        puppet.update(DT);
+        assert!((param(&puppet, standard::ANGLE_X) - 5.0).abs() < 1e-4);
     }
 
     #[test]

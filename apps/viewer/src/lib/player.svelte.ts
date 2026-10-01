@@ -4,6 +4,15 @@
 // → スライダーの値を同期 → 描画。
 // 描画は WebGPU が無ければ WebGL2 で行う (docs/adr/0003-editor-viewport-in-webview.md)。
 import { setPuppetTracking, type TrackingFrame } from "@ugoe/face-tracking";
+import {
+  activeExpressions,
+  describeRejectedMotion,
+  type ExpressionInfo,
+  type MotionInfo,
+  type MotionPriority,
+  parseExpressions,
+  parseMotions,
+} from "./animation";
 import { parseHexColor } from "./color";
 import {
   describeDressUpError,
@@ -62,6 +71,8 @@ export type PlayerStatus =
 const MAX_DT = 0.1;
 /** スライダーの値を書き換える差の下限。 */
 const EPSILON = 1e-6;
+/** モーションのイベントを覚えておく数 (新しいものから)。 */
+const MOTION_EVENTS = 5;
 /** このセッションで読んだモジュールの中身を手元に置く数 (一覧から除いた後でも組を戻せるように)。 */
 const SESSION_FILES = 32;
 
@@ -130,6 +141,22 @@ export class Player {
   autoRestore = $state(loadAutoRestore());
   /** 開いているモデルに付けていた組を覚えているか (「覚えた組を忘れる」で忘れる)。 */
   dressUpRemembered = $state(false);
+  /** 開いているモデル (バンドル) のモーション (T0720)。 */
+  motions = $state<MotionInfo[]>([]);
+  /** 開いているモデル (バンドル) の表情 (T0720)。 */
+  expressions = $state<ExpressionInfo[]>([]);
+  /** 最後に始めて、まだ終わっていない (止めていない) モーション。フェードアウト中のものは含めない。 */
+  currentMotion = $state<string | null>(null);
+  /** 次に始めるモーションの優先度。 */
+  motionPriority = $state<MotionPriority>("normal");
+  /** 終わったモーションを同じ優先度で初めから始め直す (ループしないモーションを繰り返し見る)。 */
+  repeatMotion = $state(false);
+  /** モーションを始められなかったときの説明。 */
+  motionNotice = $state<string | null>(null);
+  /** 直近に発火したモーションのイベントの値 (新しい順、`MOTION_EVENTS` 個まで)。 */
+  motionEvents = $state<string[]>([]);
+  /** 使っている表情 (開始した順。フェードアウト中のものは含めない)。 */
+  activeExpressions = $state<string[]>([]);
 
   /** パラメータを毎フレーム外から動かすもの (drivers.ts)。 */
   readonly drivers = new DriverSet();
@@ -166,6 +193,8 @@ export class Player {
   #quiet = 0;
   /** ドラッグの途中で変えて、まだ覚えていない光源の設定があるか (`commitLighting` で覚える)。 */
   #lightingPending = false;
+  /** `currentMotion` を始めた優先度 (繰り返すときに使う)。 */
+  #currentPriority: MotionPriority = "normal";
 
   /** `container` の中に canvas を作り、描画を始める。 */
   async attach(container: HTMLElement): Promise<void> {
@@ -284,6 +313,8 @@ export class Player {
     this.#applyLighting();
     this.dressUpError = null;
     this.#syncDressUp();
+    // 再生の状態は読み直すと初めからになる (crates/ugoe-wasm/README.md)。
+    this.#syncAnimations(puppet);
     this.status = "ready";
     const size = puppet.canvas_size();
     this.canvasSize = [size[0] ?? 1, size[1] ?? 1];
@@ -486,6 +517,84 @@ export class Player {
   resetAllParameters(): void {
     this.#puppet?.reset_parameters();
     this.#syncValues();
+  }
+
+  // --- モーションと表情 (T0720)。規則は docs/spec/motion.md ---
+
+  /**
+   * バンドルのモーション `name` を始める (優先度は省くと `motionPriority`)。再生中のモーションより優先度が低くて
+   * 始まらなければ `motionNotice` に書いて `false`。
+   */
+  playMotion(name: string, priority: MotionPriority = this.motionPriority): boolean {
+    const puppet = this.#puppet;
+    if (puppet?.has_model() !== true) return false;
+    let started: boolean;
+    try {
+      started = puppet.start_motion(name, priority);
+    } catch (e) {
+      this.motionNotice = message(e);
+      return false;
+    }
+    if (!started) {
+      this.motionNotice = describeRejectedMotion(name, priority);
+      return false;
+    }
+    this.motionNotice = null;
+    this.currentMotion = name;
+    this.#currentPriority = priority;
+    return true;
+  }
+
+  /** 再生中のモーションをすべてフェードアウトさせる。最後に適用した値はそのまま残る。 */
+  stopMotions(): void {
+    this.#puppet?.stop_motions();
+    this.currentMotion = null;
+    this.motionNotice = null;
+  }
+
+  setMotionPriority(priority: MotionPriority): void {
+    this.motionPriority = priority;
+  }
+
+  setRepeatMotion(repeat: boolean): void {
+    this.repeatMotion = repeat;
+  }
+
+  /** 表情を `name` だけにする (使っている表情はフェードアウトする)。 */
+  setExpression(name: string): void {
+    if (this.#expressionOp((p) => p.set_expression(name)))
+      this.activeExpressions = activeExpressions.set(this.activeExpressions, name);
+  }
+
+  /** 使っている表情の上に `name` を重ねる。使っていれば何もしない。 */
+  addExpression(name: string): void {
+    if (this.activeExpressions.includes(name)) return;
+    if (this.#expressionOp((p) => p.add_expression(name)))
+      this.activeExpressions = activeExpressions.add(this.activeExpressions, name);
+  }
+
+  /** 表情 `name` をフェードアウトさせる。 */
+  stopExpression(name: string): void {
+    if (this.#expressionOp((p) => p.stop_expression(name)))
+      this.activeExpressions = activeExpressions.stop(this.activeExpressions, name);
+  }
+
+  /** 使っている表情をすべてフェードアウトさせる。 */
+  stopExpressions(): void {
+    if (this.#expressionOp((p) => p.stop_expressions())) this.activeExpressions = [];
+  }
+
+  #expressionOp(action: (puppet: WebPuppet) => void): boolean {
+    const puppet = this.#puppet;
+    if (puppet?.has_model() !== true) return false;
+    try {
+      action(puppet);
+      this.motionNotice = null;
+      return true;
+    } catch (e) {
+      this.motionNotice = message(e);
+      return false;
+    }
   }
 
   // --- ビュー。座標は canvas 要素の左上からの CSS ピクセル ---
@@ -713,6 +822,37 @@ export class Player {
     }
   }
 
+  /** モーションと表情の一覧を読み直し、再生の状態を初めに戻す (モデルを読んだ後)。 */
+  #syncAnimations(puppet: WebPuppet): void {
+    try {
+      this.motions = parseMotions(puppet.motions_json());
+      this.expressions = parseExpressions(puppet.expressions_json());
+    } catch (e) {
+      this.motions = [];
+      this.expressions = [];
+      this.motionNotice = message(e);
+      return;
+    }
+    this.currentMotion = null;
+    this.activeExpressions = [];
+    this.motionEvents = [];
+    this.motionNotice = null;
+  }
+
+  /** `update` の後で、モーションの終わりとイベントを読む。 */
+  #afterMotionUpdate(puppet: WebPuppet): void {
+    const fired = puppet.motion_events();
+    if (fired.length > 0)
+      this.motionEvents = [...fired.reverse(), ...this.motionEvents].slice(0, MOTION_EVENTS);
+    const current = this.currentMotion;
+    if (current === null || puppet.is_motion_playing()) return;
+    // 終わった。繰り返すなら同じ優先度で始め直す (終わったので、どの優先度でも始まる)。
+    if (this.repeatMotion && puppet.start_motion(current, this.#currentPriority)) return;
+    this.currentMotion = null;
+    // 始められなかった理由 (再生中のモーションの優先度) は、そのモーションが終わったので消す。
+    this.motionNotice = null;
+  }
+
   /** 着せ替えの一覧を WebPuppet から読み直す。モジュールのメッシュでライティングの有無も変わる。 */
   #syncDressUp(): void {
     const puppet = this.#puppet;
@@ -756,10 +896,17 @@ export class Player {
         // トラッキングは update の中で書き込むので、ドライバの値より優先される。
         for (const id of this.trackingParameterIds) ids.add(id);
       }
+      // 再生中のモーションが動かすパラメータは、スライダーで変えても上書きされる (docs/spec/motion.md#手で動かしたパラメータとの関係)。
+      const playing = this.currentMotion;
+      if (playing !== null) {
+        for (const id of this.motions.find((m) => m.name === playing)?.parameters ?? [])
+          ids.add(id);
+      }
       if (ids.size !== this.driven.size || [...ids].some((id) => !this.driven.has(id))) {
         this.driven = ids;
       }
       puppet.update(dt);
+      this.#afterMotionUpdate(puppet);
       this.#syncValues();
     }
     try {

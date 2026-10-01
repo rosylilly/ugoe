@@ -72,10 +72,13 @@ JSON.parse(puppet.drawable_states_json()); // [{opacity, draw_order, multiply_co
 ```js
 puppet.load_bundle(bytes);             // バンドルの物理・モーション・表情も読む (物理は検査済み)
 puppet.motion_names();                 // バンドルのモーションの名前
+puppet.motions_json();                 // [{name, duration, looping, fade_in, fade_out, parameters, events}] (T0720)
 puppet.start_motion("idle", "idle");   // 優先度は "idle" | "normal" (既定) | "force"。開始しなければ false
 puppet.start_motion_json(json);        // *.motion.json の形。タイムラインのプレビュー用
 sample_motion_json(json, t);           // (関数) 各カーブの時刻 t の値 (フェードなし) の JSON。タイムラインのシーク用
 puppet.set_expression("smile");        // または set_expression_json(json)。stop_expressions()
+puppet.add_expression("surprised");    // 使用中の表情に重ねる。stop_expression("smile") で名前を指定して止める (T0720)
+puppet.expressions_json();             // [{name, fade_in, fade_out, parameters: [{parameter, value, op}]}] (T0720)
 puppet.set_lip_sync_level(0.4);        // 0..1。undefined で口に触らない
 puppet.set_enabled("physics", false);  // "physics" | "eye_blink" | "breath" | "lip_sync" | "pose"
 puppet.set_physics_json(json);         // 物理だけを差し替える (validate_physics で検査。undefined で外す)
@@ -89,6 +92,8 @@ puppet.hit_test_standard("Head", x, y); // Model.avatar.hit_areas の標準の�
 - 適用順とスライダー (`set_parameter`) との関係は `docs/spec/motion.md#フレーム内の適用順` と `#手で動かしたパラメータとの関係`。
 - `load_json` で読み直すと、物理の設定・モーションと表情の一覧・段の有効無効を引き継ぐ (新しいモデルと合わない物理は外して警告を返す)。`load_bundle` は物理・モーション・表情をバンドルのものに置き換える。
 - モーション・表情の再生状態は、モデルを読み直すと初めからになる。
+- `motions_json` の `parameters` はカーブが動かすパラメータ (重なりなし)、`events` はイベントの値。`expressions_json` は未知の `op` の項目を出さない。
+  使っている表情の一覧は返さない (フェードアウト中のものも含めて Rust の `ExpressionManager::players`)。ビューアは操作から求める (`apps/viewer/src/lib/animation.ts`)。
 - `set_effects_json` は同じ設定でも目パチ・呼吸を初めからやり直し、リップシンクの音量は保つ。`show_pose` の不透明度は次の `update` からフェードし、
   モーションが同じグループの要素を要求すればそちらが勝つ (`docs/spec/motion.md#エフェクト設定の差し替え`・`#ポーズ`)。C ABI では
   `ugoe_puppet_set_effects_json`・`ugoe_puppet_show_pose` (T0414)。
