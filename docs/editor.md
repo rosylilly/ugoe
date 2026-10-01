@@ -639,7 +639,8 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
 ### 本体
 
 - 本体は `.ugoeproj` (本体のモデルのプロジェクト) か `.ugoe` です (`project::load_base`)。`.ugoe` のテクスチャは PNG に限ります。
-  モジュールのプロジェクトを本体にはできません。
+  モジュールのプロジェクトを本体にはできません (その本体まではたどらずにエラー)。読む前に本体のパスを確かめる口 (`load_base_checked`・
+  `Project::load_checking_base`) があり、MCP の `--root` が使います (エディタでは確かめません)。
 - 本体の参照は `project.json` の `module.base` に、保存するたびにプロジェクトからの相対パスで書きます。
 - 開くときに本体が見つからなければ `base model not found: …` のエラーで、ファイルメニューに「Locate base project…」「Locate base .ugoe…」が出ます
   (`open_module_with_base`。付け替えは保存するまでファイルに書かず、未保存の印が付く)。

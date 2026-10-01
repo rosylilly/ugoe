@@ -1060,6 +1060,142 @@ fn root_confines_tool_paths() {
     }
 }
 
+/// 着せ替えの見本の本体のスロット `Headwear` に付ける空のモジュールのプロジェクトを `dir` に保存し、
+/// `project.json` の本体の参照 (`module.base`) を `reference` に書き換える。
+fn save_module_project(dir: &Path, base: &Path, reference: &str) -> PathBuf {
+    Project::new_module("Hat", base, &"Headwear".into())
+        .unwrap()
+        .save(dir)
+        .unwrap();
+    let meta_path = dir.join("project.json");
+    let mut meta: Value = serde_json::from_slice(&fs::read(&meta_path).unwrap()).unwrap();
+    meta["module"]["base"] = json!(reference);
+    fs::write(&meta_path, serde_json::to_vec(&meta).unwrap()).unwrap();
+    dir.to_path_buf()
+}
+
+/// `--root` のとき、モジュールのプロジェクトの本体の参照も root の下に限る (T0524)。開く・読む・保存する
+/// ツールと `import_psd` の `base` で、外を指す参照 (相対・絶対・リンク・中のリンク) を本体を読まずに断る。
+#[test]
+fn root_confines_module_bases() {
+    let tmp = TempDir::new("root-module");
+    let root = tmp.0.join("root");
+    let outside = tmp.0.join("outside");
+    fs::create_dir_all(&root).unwrap();
+    fs::create_dir_all(&outside).unwrap();
+    let inside_base = root.join("dress-up.ugoe");
+    let outside_base = outside.join("dress-up.ugoe");
+    fs::copy(dress_up_base(), &inside_base).unwrap();
+    fs::copy(dress_up_base(), &outside_base).unwrap();
+    let outside_abs = outside_base.to_str().unwrap();
+
+    // root の下の本体を参照するモジュールは開ける。
+    save_module_project(&root.join("hat.ugoeproj"), &inside_base, "../dress-up.ugoe");
+    // 外を指す参照: 相対 (`..`)・絶対・途中に `..` を挟んだもの・まだ無いもの。
+    let rel = save_module_project(
+        &root.join("rel.ugoeproj"),
+        &inside_base,
+        "../../outside/dress-up.ugoe",
+    );
+    save_module_project(&root.join("abs.ugoeproj"), &inside_base, outside_abs);
+    save_module_project(
+        &root.join("dots.ugoeproj"),
+        &inside_base,
+        "../hat.ugoeproj/../../outside/dress-up.ugoe",
+    );
+    save_module_project(
+        &root.join("missing.ugoeproj"),
+        &inside_base,
+        "../../outside/nope.ugoe",
+    );
+
+    let mut client = Client::spawn(&["--root", root.to_str().unwrap()]);
+    client.initialize();
+    let opened = client.call_ok("open_project", json!({ "path": "hat.ugoeproj" }));
+    assert_eq!(opened["name"], "Hat", "{opened}");
+    client.call_ok("save_project", json!({ "path": "hat.ugoeproj" }));
+
+    let refused = |client: &mut Client, tool: &str, project: &str| {
+        let err = client.call_err(tool, json!({ "path": project }));
+        assert!(err.contains("outside the root"), "{tool} {project}: {err}");
+        // どの参照が外を指しているか (解決した本体のパス) を書く。
+        assert!(err.contains("base model "), "{tool} {project}: {err}");
+        assert!(err.contains("module.base"), "{tool} {project}: {err}");
+        err
+    };
+    for project in ["rel.ugoeproj", "abs.ugoeproj", "dots.ugoeproj"] {
+        let err = refused(&mut client, "open_project", project);
+        assert!(err.contains(outside_abs), "{project}: {err}");
+        // 開いていないプロジェクトを直接指すツール (読み込みが遅れて走る) も同じ。
+        refused(&mut client, "get_model_summary", project);
+        refused(&mut client, "save_project", project);
+    }
+    // 外のまだ無いファイルも「無い」ではなく「外」と答える (外にファイルがあるかを探らせない)。
+    let err = refused(&mut client, "open_project", "missing.ugoeproj");
+    assert!(!err.contains("not found"), "{err}");
+
+    // `import_psd` の `base` も同じ。
+    let psd = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/fixtures/character.psd");
+    fs::copy(&psd, root.join("character.psd")).unwrap();
+    let import = |base: &str| json!({ "path": "costume.ugoeproj", "psd": "character.psd", "base": base, "slot": "Headwear" });
+    for base in ["../outside/dress-up.ugoe", outside_abs] {
+        let err = client.call_err("import_psd", import(base));
+        assert!(err.contains("outside the root"), "{base}: {err}");
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+
+        // root の中のリンクが外の本体を指す。
+        symlink(&outside_base, root.join("base-link.ugoe")).unwrap();
+        save_module_project(
+            &root.join("link.ugoeproj"),
+            &inside_base,
+            "../base-link.ugoe",
+        );
+        let err = refused(&mut client, "open_project", "link.ugoeproj");
+        assert!(err.contains("base-link.ugoe"), "{err}");
+        let err = client.call_err("import_psd", import("base-link.ugoe"));
+        assert!(err.contains("outside the root"), "{err}");
+
+        // 本体の `.ugoeproj` は root の中でも、中のファイルが外を指すリンク。
+        let other = save_fixture_project(&outside);
+        let leaky = root.join("leaky-base.ugoeproj");
+        fs::create_dir_all(&leaky).unwrap();
+        for name in ["project.json", "model.json", "textures"] {
+            symlink(other.join(name), leaky.join(name)).unwrap();
+        }
+        save_module_project(
+            &root.join("leaky.ugoeproj"),
+            &inside_base,
+            "../leaky-base.ugoeproj",
+        );
+        let err = client.call_err("open_project", json!({ "path": "leaky.ugoeproj" }));
+        assert!(err.contains("leads outside the root"), "{err}");
+        let err = client.call_err("import_psd", import("leaky-base.ugoeproj"));
+        assert!(err.contains("leads outside the root"), "{err}");
+
+        // 本体にモジュールを選ぶと、その (外の) 本体までは読みに行かない。
+        save_module_project(
+            &root.join("chain.ugoeproj"),
+            &inside_base,
+            "../rel.ugoeproj",
+        );
+        let err = client.call_err("open_project", json!({ "path": "chain.ugoeproj" }));
+        assert!(err.contains("not a module project"), "{err}");
+        let err = client.call_err("import_psd", import("rel.ugoeproj"));
+        assert!(err.contains("not a module project"), "{err}");
+    }
+    assert!(!root.join("costume.ugoeproj").exists());
+
+    // `--root` を付けなければ、これまでどおり外の本体も読む。
+    let mut client = Client::spawn(&[]);
+    client.initialize();
+    let opened = client.call_ok("open_project", json!({ "path": rel.to_str().unwrap() }));
+    assert_eq!(opened["name"], "Hat", "{opened}");
+}
+
 /// `render_png` が `ugoe` (ugoe-cli) の実行ファイルなしで描けること。GPU (または lavapipe などの
 /// ソフトウェアラスタライザ) が要る。`cargo test -p ugoe-mcp --features gpu-tests` で実行する。
 #[cfg(feature = "gpu-tests")]

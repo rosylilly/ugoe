@@ -233,7 +233,8 @@ claude mcp add --scope user ugoe-read -- <同梱の ugoe-mcp のパス> --read-o
 ```
 
 - **`--root <フォルダ>` を付けることを勧めます。** ツールが読み書きするパスをそのフォルダの下に限ります (外を指すパス・
-  シンボリックリンクは断る)。
+  シンボリックリンクは断る)。着せ替えのモジュールのプロジェクトが参照する本体も、そのフォルダの下に無ければ開けません
+  (`base model ...: outside the root directory` のエラー)。本体とモジュールは同じフォルダの下に置きます。
 - エージェントは `save_project` を呼ぶまでディスクに書きません。適用と保存の前に確かめるかは、エージェントの許可の設定で決めます
   (Claude Code では `mcp__ugoe__apply_proposal`・`mcp__ugoe__save_project` を許可の一覧に入れない)。
 - 同じプロジェクトをエディタで開いていると、エージェントの保存にエディタが気づき、開き直すかを尋ねます。エディタで作業しながら
@@ -243,7 +244,7 @@ claude mcp add --scope user ugoe-read -- <同梱の ugoe-mcp のパス> --read-o
 
   > `ribbon.psd` を `character.ugoeproj` のスロット `Hair` に付けるモジュール `ribbon.ugoeproj` にして、自動リギングを提案して。
 
-  `--root` を付けたときは、本体もそのフォルダの下に置きます。
+  `--root` を付けたときは、本体もそのフォルダの下に置きます (外の本体を参照するモジュールは、開くときも断ります)。
 - ChatGPT から使う・HTTP で待ち受ける方法は [crates/ugoe-mcp/README.md](../../crates/ugoe-mcp/README.md#http-で動かす-chatgpt-など) にあります。
 
 ## 困ったとき

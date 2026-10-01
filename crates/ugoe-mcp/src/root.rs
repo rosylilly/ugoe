@@ -71,6 +71,48 @@ impl Root {
         Ok(resolved)
     }
 
+    /// モジュールのプロジェクトが参照する本体 (`project.json` の `module.base` を絶対パスにしたもの) を、読む前に
+    /// 確かめる (T0524。[`ugoe_editor_core::project::BaseCheck`])。正規化して root の下にあり、`.ugoeproj` なら
+    /// その中のシンボリックリンクも外を指さないときに、正規化したパス (読むパス) を返す。本体がまだ無くても、
+    /// root の下なら受ける (見つからないことは読む側が伝える)。
+    pub(crate) fn check_base(&self, path: &Path) -> Result<PathBuf, String> {
+        // エラーは本体のパスを前に付けて伝わる (`ProjectError::BaseRefused`)。
+        let resolved = canonicalize_lenient(path)?;
+        if !resolved.starts_with(&self.dir) {
+            return Err(format!(
+                "outside the root directory `{}` (the server runs with --root; the module project's \
+                 `module.base` in project.json must point under it)",
+                self.dir.display()
+            ));
+        }
+        if resolved.is_dir() {
+            self.check_project_dir(&resolved)?;
+        }
+        Ok(resolved)
+    }
+
+    /// プロジェクトのディレクトリの中の (読み書きする) シンボリックリンクが root の外を指していないことを
+    /// 確かめる。直下と `motions/`・`expressions/`・`textures/` の中を見る (`Project::load`・`Project::save` が
+    /// 触れる場所)。
+    pub(crate) fn check_project_dir(&self, dir: &Path) -> Result<(), String> {
+        for sub in ["", "motions", "expressions", "textures"] {
+            let Ok(entries) = fs::read_dir(dir.join(sub)) else {
+                continue;
+            };
+            for entry in entries {
+                let entry = entry.map_err(|e| format!("`{}`: {e}", dir.display()))?;
+                let is_link = entry
+                    .file_type()
+                    .map_err(|e| format!("`{}`: {e}", entry.path().display()))?
+                    .is_symlink();
+                if is_link {
+                    self.contains_existing(&entry.path())?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// 既存のパスを正規化し、root の下にあることを確かめる (プロジェクトの中のシンボリックリンクなど)。
     pub(crate) fn contains_existing(&self, path: &Path) -> Result<(), String> {
         let resolved = path

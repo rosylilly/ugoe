@@ -487,11 +487,57 @@ fn missing_base_and_slot_are_reported() {
         Project::new_module("Hat", &temp.0.join("moved.ugoeproj"), &"Nope".into()),
         Err(ProjectError::Module(ModuleError::UnknownSlot(_)))
     ));
-    // 本体にモジュールのプロジェクトは選べない。
+    // 本体にモジュールのプロジェクトは選べない。その本体 (ここでは見つからない) までは読みに行かない。
     assert!(matches!(
         Project::new_module("Hat2", &dir, &"Hair".into()),
-        Err(ProjectError::BaseIsModule { .. } | ProjectError::Base { .. })
+        Err(ProjectError::BaseIsModule { .. })
     ));
+}
+
+/// 本体を読む前に、解決した本体のパスを確かめる口 (T0524。MCP の `--root`)。
+#[test]
+fn base_check_runs_before_the_base_is_read() {
+    use std::cell::RefCell;
+
+    let temp = TempDir::new("check");
+    let base_path = save_base(&temp.0);
+    let dir = temp.0.join("mods/hat.ugoeproj");
+    Project::new_module("Hat", &base_path, &"Hair".into())
+        .unwrap()
+        .save(&dir)
+        .unwrap();
+
+    // `project.json` の参照 (`../../avatar.ugoeproj`) を絶対パスに解決して渡す。断れば本体を読まない。
+    let seen = RefCell::new(Vec::new());
+    let refuse = |path: &std::path::Path| {
+        seen.borrow_mut().push(path.to_path_buf());
+        Err("outside".to_owned())
+    };
+    let err = Project::load_checking_base(&dir, &refuse).unwrap_err();
+    assert!(
+        matches!(&err, ProjectError::BaseRefused { path, reason } if *path == base_path && reason == "outside"),
+        "{err}"
+    );
+    assert_eq!(*seen.borrow(), vec![base_path.clone()]);
+    // 本体が無くても、確かめるのは開く前 (見つからないことは確かめた後で分かる)。
+    let moved = temp.0.join("moved.ugoeproj");
+    std::fs::rename(&base_path, &moved).unwrap();
+    assert!(matches!(
+        Project::load_checking_base(&dir, &refuse),
+        Err(ProjectError::BaseRefused { .. })
+    ));
+
+    // 返したパスから読み、保存する参照は元のまま。
+    let redirect = |_: &std::path::Path| Ok(moved.clone());
+    let project = Project::load_checking_base(&dir, &redirect).unwrap();
+    assert_eq!(project.module.as_ref().unwrap().base().path, base_path);
+    assert_eq!(project.model.meshes.len(), dress_up_base().meshes.len());
+
+    // モデルのプロジェクトでは呼ばない。
+    let never = |_: &std::path::Path| -> Result<std::path::PathBuf, String> {
+        panic!("a model project has no base")
+    };
+    assert!(Project::load_checking_base(&moved, &never).is_ok());
 }
 
 #[test]

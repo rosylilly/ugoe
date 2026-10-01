@@ -216,34 +216,23 @@ impl FileHost {
     }
 
     /// `--root` があれば、プロジェクトのディレクトリの中の (読み書きする) シンボリックリンクが root の外を
-    /// 指していないことを確かめる。直下と `motions/`・`expressions/`・`textures/` の中を見る
-    /// (`Project::load`・`Project::save` が触れる場所)。
+    /// 指していないことを確かめる ([`Root::check_project_dir`])。
     fn check_project_dir(&self, dir: &Path) -> Result<(), String> {
-        let Some(root) = &self.root else {
-            return Ok(());
-        };
-        for sub in ["", "motions", "expressions", "textures"] {
-            let Ok(entries) = std::fs::read_dir(dir.join(sub)) else {
-                continue;
-            };
-            for entry in entries {
-                let entry = entry.map_err(|e| format!("`{}`: {e}", dir.display()))?;
-                let is_link = entry
-                    .file_type()
-                    .map_err(|e| format!("`{}`: {e}", entry.path().display()))?
-                    .is_symlink();
-                if is_link {
-                    root.contains_existing(&entry.path())?;
-                }
-            }
+        match &self.root {
+            Some(root) => root.check_project_dir(dir),
+            None => Ok(()),
         }
-        Ok(())
     }
 
-    /// ディスクからプロジェクトを読む。
+    /// ディスクからプロジェクトを読む。モジュールなら本体も読む。
     fn load(&self, dir: &Path) -> Result<FileProject, String> {
         self.check_project_dir(dir)?;
-        let project = Project::load(dir).map_err(|e| e.to_string())?;
+        // モジュールのプロジェクトの本体も、読む前に root の下かを確かめる (T0524)。
+        let project = match &self.root {
+            Some(root) => Project::load_checking_base(dir, &|base| root.check_base(base)),
+            None => Project::load(dir),
+        }
+        .map_err(|e| e.to_string())?;
         Ok(FileProject::new(project.meta.clone(), project.document()))
     }
 }

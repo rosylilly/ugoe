@@ -687,6 +687,11 @@ impl Tools {
         }
         let psd = self.resolve(&args.psd)?;
         let base = args.base.as_deref().map(|b| self.resolve(b)).transpose()?;
+        // 本体の `.ugoeproj` の中のシンボリックリンクも root の外を指さないこと (T0524)。
+        let base = match (&self.options.root, base) {
+            (Some(root), Some(base)) => Some(root.check_base(&base)?),
+            (_, base) => base,
+        };
         self.authorize(Action::Import {
             project: &key,
             psd: &psd,

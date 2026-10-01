@@ -99,6 +99,9 @@ pub enum ProjectError {
         path: PathBuf,
         source: Box<ProjectError>,
     },
+    /// 本体のパスを確かめる関数 ([`BaseCheck`]) が本体を読むことを断った (MCP の `--root` の外など)。本体は読んでいない。
+    #[error("base model {}: {reason}", path.display())]
+    BaseRefused { path: PathBuf, reason: String },
     /// 本体がモジュールのプロジェクト (本体にはモデルのプロジェクトか `.ugoe` を選ぶ)。
     #[error("{}: the base must be a model project or a .ugoe bundle, not a module project", path.display())]
     BaseIsModule { path: PathBuf },
@@ -383,6 +386,13 @@ impl Project {
     /// `Model::textures` のすべてと、その `normal_map` のすべてに `textures/<name>.png` が必要。
     /// 参照されない PNG は無視する。
     pub fn load(dir: &Path) -> Result<Self, ProjectError> {
+        Self::load_checking_base(dir, &unchecked)
+    }
+
+    /// [`Self::load`] と同じだが、モジュールのプロジェクトなら、本体を読む前に解決した本体のパスを `check` に渡し、
+    /// 返したパスから読む (T0524)。`check` がエラーを返したら本体を読まずに [`ProjectError::BaseRefused`]。
+    /// モデルのプロジェクトでは `check` を呼ばない。
+    pub fn load_checking_base(dir: &Path, check: BaseCheck<'_>) -> Result<Self, ProjectError> {
         let meta_path = dir.join(PROJECT_JSON);
         if !meta_path.is_file() {
             return Err(ProjectError::NotAProject {
@@ -397,7 +407,7 @@ impl Project {
             });
         }
         if meta.kind == ProjectKind::Module {
-            return Self::load_module(dir, meta, None, false).map(|(project, _)| project);
+            return Self::load_module(dir, meta, None, false, check).map(|(project, _)| project);
         }
 
         let model_path = dir.join(MODEL_JSON);
@@ -445,7 +455,7 @@ impl Project {
         slot: Option<&SlotId>,
     ) -> Result<Self, ProjectError> {
         let meta = module_meta_with(dir, slot)?;
-        Self::load_module(dir, meta, base, false).map(|(project, _)| project)
+        Self::load_module(dir, meta, base, false, &unchecked).map(|(project, _)| project)
     }
 
     /// [`Self::load_module_with`] と同じだが、本体に無い (本体に物理が無い) スロットの公開する衝突体へのリグの
@@ -457,17 +467,18 @@ impl Project {
         slot: Option<&SlotId>,
     ) -> Result<(Self, Vec<ColliderReference>), ProjectError> {
         let meta = module_meta_with(dir, slot)?;
-        Self::load_module(dir, meta, base, true)
+        Self::load_module(dir, meta, base, true, &unchecked)
     }
 
     /// モジュールのプロジェクトを読む: `module.json` と画像を読み、本体を読んで作業用のモデルを作る。
     /// `base` があれば `project.json` の参照の代わりにそれを本体にする。`drop_colliders` なら、本体に無い衝突体への
-    /// リグの参照を外し、外したものを返す (でなければ空)。
+    /// リグの参照を外し、外したものを返す (でなければ空)。本体は `check` で確かめてから読む ([`load_base_checked`])。
     fn load_module(
         dir: &Path,
         meta: ProjectMeta,
         base: Option<&Path>,
         drop_colliders: bool,
+        check: BaseCheck<'_>,
     ) -> Result<(Self, Vec<ColliderReference>), ProjectError> {
         let link = meta.module.clone().ok_or(ProjectError::MissingModuleLink)?;
         let module_path = dir.join(MODULE_JSON);
@@ -482,7 +493,7 @@ impl Project {
             Some(base) => normalize_path(base),
             None => resolve_base(dir, &link.base),
         };
-        let base = load_base(&base_path)?;
+        let base = load_base_checked(&base_path, check)?;
         let context = ModuleContext::new(
             base,
             &link.slot,
@@ -875,24 +886,48 @@ pub fn read_module_link(dir: &Path) -> Result<(PathBuf, SlotId), ProjectError> {
     Ok((resolve_base(dir, &link.base), link.slot))
 }
 
+/// 本体を読む前に、解決した本体のパス (絶対パス) を確かめる関数 (T0524)。読んでよければ読むパス (正規化した
+/// ものなど) を、だめなら理由を返す。本体を開く前に一度だけ呼ぶ。MCP の `--root` が本体を root の下に限るのに使う
+/// (editor-core はパスの規則を持たない)。
+pub type BaseCheck<'a> = &'a dyn Fn(&Path) -> Result<PathBuf, String>;
+
+/// 確かめずにそのまま読む [`BaseCheck`]。
+fn unchecked(path: &Path) -> Result<PathBuf, String> {
+    Ok(path.to_path_buf())
+}
+
 /// モジュールのプロジェクトの本体を読む。`path` は `.ugoeproj` のディレクトリか `.ugoe`。
 pub fn load_base(path: &Path) -> Result<ModuleBase, ProjectError> {
+    load_base_checked(path, &unchecked)
+}
+
+/// [`load_base`] と同じだが、読む前に `path` を `check` に渡し、返したパスから読む。`check` がエラーなら
+/// 何も開かずに [`ProjectError::BaseRefused`]。[`ModuleBase::path`] (保存する参照の元) は `path` のまま。
+pub fn load_base_checked(path: &Path, check: BaseCheck<'_>) -> Result<ModuleBase, ProjectError> {
     let wrap = |source: ProjectError| ProjectError::Base {
         path: path.to_path_buf(),
         source: Box::new(source),
     };
-    if !path.exists() {
+    let read = check(path).map_err(|reason| ProjectError::BaseRefused {
+        path: path.to_path_buf(),
+        reason,
+    })?;
+    if !read.exists() {
         return Err(ProjectError::BaseNotFound {
             path: path.to_path_buf(),
         });
     }
-    if path.is_dir() {
-        let project = Project::load(path).map_err(wrap)?;
-        if project.module.is_some() {
+    if read.is_dir() {
+        // 本体がモジュールなら、その本体まで読みに行かないように、読む前に種類を見る。
+        let meta_path = read.join(PROJECT_JSON);
+        if meta_path.is_file()
+            && read_json::<ProjectMeta>(&meta_path).map_err(wrap)?.kind == ProjectKind::Module
+        {
             return Err(ProjectError::BaseIsModule {
                 path: path.to_path_buf(),
             });
         }
+        let project = Project::load(&read).map_err(wrap)?;
         return Ok(ModuleBase {
             path: path.to_path_buf(),
             model: project.model,
@@ -900,7 +935,7 @@ pub fn load_base(path: &Path) -> Result<ModuleBase, ProjectError> {
             textures: project.textures,
         });
     }
-    let bytes = fs::read(path).map_err(io_error(path))?;
+    let bytes = fs::read(&read).map_err(io_error(path))?;
     let bundle = ugoe_format::read_bundle(&bytes).map_err(|source| {
         wrap(ProjectError::Format {
             path: path.to_path_buf(),
