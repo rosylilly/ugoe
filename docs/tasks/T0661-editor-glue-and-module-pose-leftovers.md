@@ -1,11 +1,11 @@
 ---
 id: T0661
 title: エディタ: グルーの頂点の組をビューポートで編集・強さの軸・着せ替えのモジュールのポーズをプレビューで切り替え
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-wasm, ugoe-editor-core, apps/editor, docs]
 depends_on: [T0659, T0660]
-assignee:
+assignee: claude-worker-T0661
 ---
 
 # T0661: グルーとモジュールのポーズの残り

@@ -1,11 +1,11 @@
 ---
 id: T0722
 title: ビューア: 待機モーションをモデルごとに覚える・優先をパラメータごとに・モーションの優先を C ABI と npm に出す
-status: todo
+status: in-progress
 milestone: M4
 crates: [apps/viewer, ugoe-wasm, ugoe-ffi, bindings/web, docs]
 depends_on: [T0721]
-assignee:
+assignee: claude-worker-T0722
 ---
 
 # T0722: ビューアのモーションの優先の残り

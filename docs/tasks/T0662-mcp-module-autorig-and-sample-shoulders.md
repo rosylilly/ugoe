@@ -1,11 +1,11 @@
 ---
 id: T0662
 title: MCP にモジュールの自動リギングのツール・見本の髪を肩の衝突体に当てる
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-ai, ugoe-mcp, ugoe-cli, assets, docs]
 depends_on: [T0660]
-assignee:
+assignee: claude-worker-T0662
 ---
 
 # T0662: モジュールの自動リギング (MCP) と見本の肩
