@@ -1,11 +1,11 @@
 ---
 id: T0522
 title: AI: 法線マップの提案の仕上げ (縁の幅の単位・丸みとならし・提案の対象の解析・英語の題名)
-status: todo
+status: in-progress
 milestone: M6
 crates: [ugoe-ai, ugoe-editor-core, apps/editor, docs]
 depends_on: [T0520]
-assignee:
+assignee: claude-worker-T0522
 ---
 
 # T0522: 法線マップの提案の仕上げ

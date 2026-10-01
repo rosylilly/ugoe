@@ -1,11 +1,11 @@
 ---
 id: T0657
 title: エディタ: 物理・衝突体・グルーの違いを出す・ビューポートで強調する・.ugoemod にアトラスの対応表
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-editor-core, apps/editor, docs]
 depends_on: [T0656]
-assignee:
+assignee: claude-worker-T0657
 ---
 
 # T0657: モジュールの違いの残り

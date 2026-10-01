@@ -1,11 +1,11 @@
 ---
 id: T0719
 title: 見本: 見本のモデルにモーションと表情を入れる・npm パッケージの serde_json の見直し・平滑化の係数
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-cli, assets, bindings/web, ugoe-wasm, docs]
 depends_on: [T0413]
-assignee:
+assignee: claude-worker-T0719
 ---
 
 # T0719: 見本のモーションと npm パッケージの残り
