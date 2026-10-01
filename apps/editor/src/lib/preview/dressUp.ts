@@ -159,12 +159,21 @@ export interface SlotRow {
   attached: string | null;
   /** このスロットを指す、読み込んだモジュールの名前 (読み込んだ順)。 */
   candidates: string[];
+  /**
+   * アバタープロファイルがアプリに公開するスロットか (`avatar.slots`。プロファイルが無ければすべて公開とみなす)。
+   * 公開していないスロットはビューアなどのアプリが利用者に見せない (T0715)。エディタは作者のツールなので隠さず印を付ける (T0655)。
+   */
+  published: boolean;
 }
 
-/** 本体のスロット (モデルの定義順) ごとの行。 */
+/**
+ * 本体のスロット (モデルの定義順) ごとの行。`published` はアバタープロファイルの `slots`
+ * (`docs/spec/avatar-profile.md#アプリ向けの情報`)。プロファイルが無ければ `null` (公開の区別が無い)。
+ */
 export function slotRows(
   slots: readonly Pick<Slot, "id">[],
   modules: readonly Pick<LoadedModuleInfo, "name" | "slot" | "attached">[],
+  published: readonly string[] | null = null,
 ): SlotRow[] {
   return slots.map(({ id }) => {
     const here = modules.filter((m) => m.slot === id);
@@ -172,6 +181,7 @@ export function slotRows(
       id,
       attached: here.find((m) => m.attached)?.name ?? null,
       candidates: here.map((m) => m.name),
+      published: published === null || published.includes(id),
     };
   });
 }

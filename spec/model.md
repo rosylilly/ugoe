@@ -1165,7 +1165,8 @@ parameter IDs. A module is carried by a `.ugoemod` file ([bundle.md](bundle.md#m
 - A mask reference names a mesh of the module or, if the module has no mesh with that ID, a mesh of
   the model listed in the slot's `mask_sources`.
 - A rig's `colliders` entry names a collider of the module or, if the module has none with that ID, a
-  collider of the model listed in the slot's `colliders`.
+  collider of the model listed in the slot's `colliders`. If the model has no physics settings, such
+  an entry names nothing ([Composition](#composition)).
 - A rig's `frame`, if present, names a deformer of the module. Without `frame`, the rig uses the
   canvas.
 - Drawing orders of the module's meshes are in the usual 0 to 1000 range; they are mapped into the
@@ -1199,7 +1200,11 @@ be equivalent.
      links, the linked parts are appended to the `links` of the model's pose entry with that `part`;
      the part MUST be listed in the slot's `pose_parts` and be the `part` of an entry of the model's
      pose.
-   - Physics rigs and colliders are appended after the model's.
+   - Physics rigs and colliders are appended after the model's. A rig's `colliders` entry that names
+     a collider of the model is kept. If the model has no physics settings, there are no colliders
+     of the model: such entries are removed (the rig does not collide with them), and the composed
+     model's slots get empty `colliders`. An entry that names neither a collider of the module nor
+     one listed in the slot's `colliders` makes composition fail, with or without physics settings.
 3. For each module, in the given order, and for each part listed in the `replaces` of the slot it
    attaches to, in that order, insert a new part with ID `#replaced/<part id>`, name
    `#replaced/<part name>`, a constant opacity of 0 (one keyform, no bindings) and the part's former

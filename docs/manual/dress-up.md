@@ -114,7 +114,7 @@
 
 | プロジェクト | 開くと |
 | --- | --- |
-| `dress-up.ugoeproj` | 本体。「Slots」タブにスロット `Hair`・`Headwear`・`Outfit` があり、3 つとも「Show to apps」が入っている (本体はアバタープロファイルのレベル 2 を名乗る)。物理のタブには既定の後ろ髪を揺らすリグ `HairSway` がある |
+| `dress-up.ugoeproj` | 本体。「Slots」タブにスロット `Hair`・`Headwear`・`Outfit` があり、3 つとも「Show to apps」が入っている (本体はアバタープロファイルのレベル 2 を名乗る)。物理のタブには既定の後ろ髪を揺らすリグ `HairSway` がある。モーション (`idle`・`nod`・`shake`・`tilt`) と表情 (`smile`・`surprised`・`sad`) も入っている |
 | `long-hair.ugoeproj` | スロット `Hair` のモジュール `LongHair`。後ろ髪は回転デフォーマ `Sway` と物理で揺れ、本体の肌を反転マスクに使う |
 | `twin-tails.ugoeproj` | スロット `Hair` のモジュール `TwinTails`。房が結び目を軸に揺れる |
 | `cat-ears.ugoeproj` | スロット `Headwear` のモジュール `CatEars` |
@@ -306,7 +306,7 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
 
 | 欄 | 内容 |
 | --- | --- |
-| 「Slots」 | 本体のスロットと、いま付いているモジュール。欄には、そのスロットに付けるモジュールのうち読み込んだものが出る。読み込んだものが無ければ「(no module)」 |
+| 「Slots」 | 本体のスロットと、いま付いているモジュール。欄には、そのスロットに付けるモジュールのうち読み込んだものが出る。読み込んだものが無ければ「(no module)」。アバタープロファイルの「Show to apps」に入れていないスロットには `authors only` と出る (ビューアなどのアプリでは利用者に見えない。ここでは試せる) |
 | 「Modules」 | 読み込んだモジュール。右にそのモジュールの付くスロット (`→ Hair`) が出る |
 | 「↻」 | ファイルから読み直す。モジュールを書き出し直したら押す (付いていれば新しい版に付け替わる) |
 | 「✕」 | 外して一覧から除く |

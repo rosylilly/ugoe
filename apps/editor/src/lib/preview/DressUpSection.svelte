@@ -1,5 +1,6 @@
 <!--
-  プレビューの着せ替え (docs/editor.md#プレビューの着せ替え)。`.ugoemod` を読み込み (ボタンか、プレビュー中のウィンドウへの
+  プレビューの着せ替え (docs/editor.md#プレビューの着せ替え)。アバタープロファイルがアプリに公開していないスロットには印を付ける
+  (ビューアは隠すが、作者のツールなので試せるようにしておく。T0655)。`.ugoemod` を読み込み (ボタンか、プレビュー中のウィンドウへの
   ドロップ)、スロットごとに付けるモジュールを選ぶ。付け外しの失敗は DressUpError の code から分かる言葉で出す (dressUp.ts)。
   状態と WebPuppet の操作は DressUp (dressUp.svelte.ts)。モデルは変えない。
   モジュールのプロジェクトでは、今の編集 (`own` の行) も一覧に出し、同じスロットのモジュールと差し替えて比べられる (T0651)。
@@ -20,11 +21,13 @@ interface Props {
   dressUp: DressUp;
   /** 本体のスロット (モデルの定義順)。 */
   slots: readonly Slot[];
+  /** アバタープロファイルがアプリに公開するスロット (`avatar.slots`)。プロファイルが無ければ `null`。 */
+  published?: readonly string[] | null;
   /** 違いの行の要素を選ぶ (プレビューを出る)。無ければ選べない。 */
   onselect?: (item: DifferenceItem) => void;
 }
 
-let { dressUp, slots, onselect }: Props = $props();
+let { dressUp, slots, published = null, onselect }: Props = $props();
 
 /** `.ugoemod` をウィンドウの上でドラッグしている。 */
 let dragging = $state(false);
@@ -36,6 +39,7 @@ const rows = $derived(
     dressUp.entries.flatMap((e) =>
       e.loaded && e.slot !== null ? [{ name: e.name, slot: e.slot, attached: e.attached }] : [],
     ),
+    published,
   ),
 );
 
@@ -131,7 +135,16 @@ onMount(() => {
   {:else}
     {#each rows as row (row.id)}
       <label class="slot">
-        <span class="slot-id">{row.id}</span>
+        <span class="slot-name">
+          <span class="slot-id">{row.id}</span>
+          {#if !row.published}
+            <span
+              class="badge authors"
+              title="The avatar profile does not list this slot, so apps such as the viewer hide it from users. Tick Show to apps in the Slots tab to offer it."
+              >authors only</span
+            >
+          {/if}
+        </span>
         <select
           value={row.attached ?? ""}
           disabled={row.candidates.length === 0 || dressUp.busy}
@@ -322,7 +335,22 @@ p {
   margin-bottom: 2px;
 }
 
+/* 狭いときは印をスロットの名前の下に回し、名前を切らない。 */
+.slot-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 4px;
+  min-width: 0;
+}
+
+.badge.authors {
+  border-color: var(--muted);
+  color: var(--muted);
+}
+
 .slot-id {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

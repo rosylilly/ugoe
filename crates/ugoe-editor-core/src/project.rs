@@ -105,6 +105,9 @@ pub enum ProjectError {
     /// 本体の `.ugoe` のテクスチャが PNG でない (エディタは PNG だけを扱う)。
     #[error("base texture `{name}` is not a PNG")]
     UnsupportedBaseTexture { name: String },
+    /// 取り込む `.ugoe`・`.ugoemod` のテクスチャが PNG でない ([`crate::bundle_project`])。
+    #[error("texture `{name}` is not a PNG")]
+    UnsupportedTexture { name: String },
     /// モジュールの作業用のモデルを作れない・分けられない (スロットがない・合成できないなど)。
     #[error(transparent)]
     Module(#[from] ModuleError),
@@ -884,27 +887,12 @@ pub fn load_base(path: &Path) -> Result<ModuleBase, ProjectError> {
             source,
         })
     })?;
-    let mut textures = Textures::new();
-    let mut png = |name: &str, data: &TextureData| {
-        if data.format != TextureFormat::Png {
-            return Err(ProjectError::UnsupportedBaseTexture {
-                name: name.to_owned(),
-            });
-        }
-        textures.insert(name.to_owned(), Arc::from(data.bytes.as_slice()));
-        Ok(())
-    };
-    for (texture, data) in bundle.model.textures.iter().zip(&bundle.textures) {
-        png(&texture.name, data)?;
-    }
-    let normal_names = bundle
-        .model
-        .textures
-        .iter()
-        .filter_map(|t| t.normal_map.as_deref());
-    for (name, data) in normal_names.zip(&bundle.normal_maps) {
-        png(name, data)?;
-    }
+    let textures = crate::bundle_project::images(
+        &bundle.model.textures,
+        &bundle.textures,
+        &bundle.normal_maps,
+        |name| ProjectError::UnsupportedBaseTexture { name },
+    )?;
     Ok(ModuleBase {
         path: path.to_path_buf(),
         model: bundle.model,

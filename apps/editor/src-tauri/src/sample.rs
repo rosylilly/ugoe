@@ -4,12 +4,10 @@
 //! 引数・戻り値の型を変えたら `apps/editor/src/lib/ipc.ts` も同じ PR で更新すること。
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use tauri::State;
-use ugoe_editor_core::{Project, ProjectMeta, Textures};
-use ugoe_format::{ModuleFile, TextureData, TextureFormat};
-use ugoe_model::TextureRef;
+use ugoe_editor_core::Project;
+use ugoe_editor_core::bundle_project::save_bundle_projects;
 
 use crate::AppState;
 use crate::project::{ProjectSession, ProjectStatus, absolute_path, lock_both, status};
@@ -17,24 +15,12 @@ use crate::project::{ProjectSession, ProjectStatus, absolute_path, lock_both, st
 /// 見本の本体。
 const BASE: &[u8] = include_bytes!("../../../../assets/samples/dress-up/dress-up.ugoe");
 
-/// 見本のモジュール (プロジェクトのディレクトリ名の元にするファイル名と中身)。
-const MODULES: [(&str, &[u8]); 4] = [
-    (
-        "long-hair",
-        include_bytes!("../../../../assets/samples/dress-up/long-hair.ugoemod"),
-    ),
-    (
-        "twin-tails",
-        include_bytes!("../../../../assets/samples/dress-up/twin-tails.ugoemod"),
-    ),
-    (
-        "cat-ears",
-        include_bytes!("../../../../assets/samples/dress-up/cat-ears.ugoemod"),
-    ),
-    (
-        "sailor",
-        include_bytes!("../../../../assets/samples/dress-up/sailor.ugoemod"),
-    ),
+/// 見本のモジュール。プロジェクトのディレクトリ名は名前の kebab-case (`long-hair.ugoeproj` など)。
+const MODULES: [&[u8]; 4] = [
+    include_bytes!("../../../../assets/samples/dress-up/long-hair.ugoemod"),
+    include_bytes!("../../../../assets/samples/dress-up/twin-tails.ugoemod"),
+    include_bytes!("../../../../assets/samples/dress-up/cat-ears.ugoemod"),
+    include_bytes!("../../../../assets/samples/dress-up/sailor.ugoemod"),
 ];
 
 /// 本体のプロジェクトのディレクトリ名。
@@ -81,63 +67,16 @@ fn new_folder(parent: &Path) -> Result<PathBuf, String> {
 }
 
 /// 見本の本体とモジュールのプロジェクトを `dir` に書く。書いたプロジェクトのパスを、本体を先に返す。
-/// 本体を保存してから、エディタの「New Module…」と同じ `Project::new_module` でモジュールのプロジェクトを作り、
-/// 見本のモジュールを入れる (`ugoe sample dress-up --project` と同じ手順)。
+/// 変換は `ugoe sample dress-up --project` と同じ `bundle_project::save_bundle_projects` (本体の物理・モーション・
+/// 表情も写す。T0655)。
 fn write_projects(dir: &Path) -> Result<Vec<PathBuf>, String> {
     let bundle = ugoe_format::read_bundle(BASE).map_err(|e| e.to_string())?;
-    let base_dir = dir.join(BASE_PROJECT);
-    let model = bundle.model;
-    let mut base = Project::new(
-        ProjectMeta::new(model.meta.name.clone()),
-        model.clone(),
-        images(&model.textures, &bundle.textures)?,
-    );
-    base.physics = bundle.physics;
-    base.save(&base_dir).map_err(|e| e.to_string())?;
-    let mut written = vec![base_dir.clone()];
-    for (file_name, bytes) in MODULES {
-        let ModuleFile {
-            module, textures, ..
-        } = ugoe_format::read_module(bytes).map_err(|e| e.to_string())?;
-        let path = dir.join(format!("{file_name}.ugoeproj"));
-        let empty = Project::new_module(&module.name, &base_dir, &module.slot)
-            .map_err(|e| e.to_string())?;
-        let context = empty
-            .module
-            .as_ref()
-            .ok_or_else(|| format!("`{}` is not a module project", module.name))?
-            .reconfigured(&module.slot, module.name.clone(), module.requires.clone())
-            .map_err(|e| e.to_string())?;
-        let workspace = context
-            .workspace(&module, &images(&module.textures, &textures)?)
-            .map_err(|e| e.to_string())?;
-        let project = Project {
-            model: workspace.model,
-            textures: workspace.textures,
-            physics: workspace.physics,
-            module: Some(Arc::new(context)),
-            ..empty
-        };
-        project.save(&path).map_err(|e| e.to_string())?;
-        written.push(path);
-    }
-    Ok(written)
-}
-
-/// テクスチャの参照と中身 (PNG) を、プロジェクトの画像 (名前 → PNG) にする。
-fn images(refs: &[TextureRef], data: &[TextureData]) -> Result<Textures, String> {
-    if refs.len() != data.len() {
-        return Err(format!("{} textures but {} images", refs.len(), data.len()));
-    }
-    refs.iter()
-        .zip(data)
-        .map(|(r, d)| {
-            if d.format != TextureFormat::Png {
-                return Err(format!("texture `{}` is not a PNG", r.name));
-            }
-            Ok((r.name.clone(), Arc::from(d.bytes.as_slice())))
-        })
-        .collect()
+    let modules = MODULES
+        .iter()
+        .map(|bytes| ugoe_format::read_module(bytes))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    save_bundle_projects(dir, BASE_PROJECT, &bundle, &modules).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -151,8 +90,8 @@ mod tests {
         dir
     }
 
-    /// 書き出した見本を開ける: 本体は見本の本体と同じモデルと物理、モジュールのプロジェクトは本体を参照し、
-    /// 書き出す (Export Module) と埋め込んだ `.ugoemod` とバイト列で同じになる。
+    /// 書き出した見本を開ける: 本体は見本の本体と同じモデル・物理・モーション・表情、モジュールのプロジェクトは
+    /// 本体を参照し、書き出す (Export Module) と埋め込んだ `.ugoemod` とバイト列で同じになる。
     #[test]
     fn sample_projects_open_and_export_the_same_modules() {
         let dir = temp_dir("sample");
@@ -164,8 +103,25 @@ mod tests {
         assert!(base.module.is_none());
         assert_eq!(base.model, bundle.model);
         assert_eq!(base.physics, bundle.physics);
+        assert!(!bundle.motions.is_empty() && !bundle.expressions.is_empty());
+        assert_eq!(base.motions, bundle.motions);
+        assert_eq!(base.expressions, bundle.expressions);
+        let names: Vec<_> = written
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "dress-up.ugoeproj",
+                "long-hair.ugoeproj",
+                "twin-tails.ugoeproj",
+                "cat-ears.ugoeproj",
+                "sailor.ugoeproj"
+            ]
+        );
 
-        for (path, (_, bytes)) in written[1..].iter().zip(MODULES) {
+        for (path, bytes) in written[1..].iter().zip(MODULES) {
             let project = Project::load(path).unwrap();
             assert!(project.module.is_some(), "{}", path.display());
             let export = ugoe_editor_core::export_module(&project).unwrap();

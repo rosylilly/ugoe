@@ -91,7 +91,8 @@
 
 ### 検証
 
-- `validate` は本体のスロットを検査します ([model.md#検証](model.md#検証))。スロットの `colliders` は `validate_physics` が検査します。
+- `validate` は本体のスロットを検査します ([model.md#検証](model.md#検証))。スロットの `colliders` は `validate_physics` が検査します
+  (本体に物理の設定が無ければ、スロットの `colliders` は何も指さない。[合成](#合成))。
 - `validate::validate_module` はモジュールを単体で検査します。モジュールの要素を 1 つのモデルとみなして `validate` と `validate_physics` を行い
   (参照するパラメータは存在するものとし、本体のメッシュへのマスク・本体の衝突体・本体のポーズの要素への参照は除く)、名前が上の規則を満たすかを調べます。
 - 本体との整合 (スロット・条件・パラメータ・マスク・衝突体・ポーズの参照先) は合成が検査します。
@@ -102,6 +103,8 @@
 ```
 compose(base: &Model, modules: &[&Module]) -> Result<Model, ComposeError>
 compose_physics(base: &Model, physics: &PhysicsSettings, modules: &[&Module]) -> Result<PhysicsSettings, ComposeError>
+compose_physics_without_base(base: &Model, composed: &mut Model, settings: &PhysicsSettings, modules: &[&Module])
+    -> Result<PhysicsSettings, ComposeError>
 ```
 
 取り付け先は各モジュールの `slot` で決まります。
@@ -129,6 +132,14 @@ compose_physics(base: &Model, physics: &PhysicsSettings, modules: &[&Module]) ->
 リグの衝突体の参照は、モジュールの衝突体なら付け替え、そうでなければスロットの `colliders` にあって本体の物理にある衝突体として
 そのまま残します。どちらでもなければ `ComposeError::UnknownCollider` です。
 
+**本体に物理の設定が無いとき** (ホストが物理を渡さずにモデルだけで Puppet を作ったときなど) は、本体に衝突体が無いので、
+スロットの `colliders` は何も指しません (T0655)。`compose_physics_without_base` は、重力などを決めた空の設定 `settings` に
+モジュールのリグと衝突体を加え、リグの衝突体の参照のうちスロットの `colliders` にあるもの (本体の衝突体) を外します (リグはそれに当たらない)。
+あわせて、`compose` で作ったモデル `composed` のスロットの `colliders` を空にします (合成した物理の `validate_physics` が
+スロットの衝突体を確かめないように)。スロットの `colliders` にもモジュールにも無い衝突体の参照は、これまでどおり `ComposeError::UnknownCollider` です。
+こうしないと、衝突体を公開するスロットには、物理を渡さないホストではモジュールを付けられませんでした (T0715 で見本に肩の衝突体を
+入れたときに見つかった)。
+
 組み替えは、合成とコンパイルをやり直して行います。パラメータの値は、合成の前後で同じ ID のものを引き継ぎます
 (`ParameterValues::carry_over`。新しい値域にクランプする)。
 
@@ -146,7 +157,7 @@ compose_physics(base: &Model, physics: &PhysicsSettings, modules: &[&Module]) ->
 
 最初にモジュールを付けたときの Puppet のモデルと物理の設定を本体として覚え、付け外しのたびに本体とモジュールの組を合成・コンパイルし直します。
 失敗したとき (`DressUpError`: 合成・コンパイル・合成した物理の検証) は何も変えません。本体に物理が無くてもモジュールにリグがあれば、
-重力 `(0, 1)`・風なし・60 Hz の設定に加えます。モジュールを付けている間に `set_physics` で渡した設定は、次の組み替えで本体の設定から作り直されます
+重力 `(0, 1)`・風なし・60 Hz の設定に加えます (`compose_physics_without_base`。スロットが公開する衝突体は何も指さない)。モジュールを付けている間に `set_physics` で渡した設定は、次の組み替えで本体の設定から作り直されます
 (保たない。T0414 で決めた)。渡されるのは合成した後の設定で、本体の分とモジュールのリグの分に分けられず、本体の設定として覚え直すと
 次の合成でモジュールのリグが二重になるためです。付けている間も設定を変えたいホストは、付け外しのたびに差し替え直します。
 wasm の `set_physics_json` と C ABI の `ugoe_puppet_set_physics_json` も同じです。

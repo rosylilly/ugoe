@@ -486,6 +486,9 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
   読み込むとすぐに付けます (同じスロットのモジュールは差し替わる)。
 - **付け外し:** スロットの行 (本体のスロットの定義順。そのスロットを指す読み込んだモジュールから選ぶ。「(none)」で外す) と、
   モジュールの行のチェックボックス。行の「↻」はファイルから読み直し (書き出し直した新しい版に付け替わる)、「✕」は一覧から除く。
+- **公開していないスロットの印 (T0655):** アバタープロファイルがアプリに公開していないスロット (`avatar.slots` に無いもの) の行には
+  `authors only` の印を付けます (`slotRows` の `published`)。ビューアはこのスロットを利用者に見せませんが (T0715)、エディタは作者のツールなので
+  隠さず、付け外しもできます。プロファイルが無ければ区別しません (印を付けない)。
 - **プレビューの間だけ付ける:** 出るときに `set_modules([])` で外し (付けたい組は覚えておく)、入るときに付け直します。
   編集の画面 (ツリー・選択・ヒットテスト) は本体の要素だけを扱うので、モジュールの要素を編集の画面に出さないためです。
   入るたびに、パスのあるモジュールをファイルから読み直します。
@@ -1142,7 +1145,7 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
 | `get_normal_map_group(texture)` / `get_normal_map_groups` | 1 枚のテクスチャのまとまりと既定の設定 / すべての対象のまとまりの一覧 (AI タブ。[法線マップの提案](#法線マップの提案))。`NormalMapGroupView` (`with_normal_map` はすでに法線マップを持つテクスチャ)。`src-tauri/src/lighting.rs` |
 | `generate_texture_normal_map(texture, settings)` / `assign_texture_normal_map(texture, path, flip_green)` / `get_texture_png(name)` | 法線マップの生成・PNG の割り当て (どちらも 1 回の Undo) と、テクスチャか法線マップの画像の PNG。`src-tauri/src/lighting.rs` |
 | `export_bundle(path)` | プロジェクトの書き出しの設定で `.ugoe` ファイルに書き出し (アトラス化は任意)、`ExportReport` を返す。保存状態は変えない |
-| `open_sample_project(parent)` | 着せ替えの見本 (`assets/samples/dress-up/` をバイナリに埋め込んだもの) を、`parent` の中の新しいフォルダー `ugoe-dress-up-sample` (あれば `-2`・`-3`…。既にあるフォルダーには書かない) に本体 `dress-up.ugoeproj` とモジュールのプロジェクト 4 つとして書き出し、本体を開く (T0715。`ugoe sample dress-up --project` と同じ形)。`src-tauri/src/sample.rs` |
+| `open_sample_project(parent)` | 着せ替えの見本 (`assets/samples/dress-up/` をバイナリに埋め込んだもの) を、`parent` の中の新しいフォルダー `ugoe-dress-up-sample` (あれば `-2`・`-3`…。既にあるフォルダーには書かない) に本体 `dress-up.ugoeproj` とモジュールのプロジェクト 4 つとして書き出し、本体を開く (T0715)。変換は `ugoe sample dress-up --project` と同じ `ugoe_editor_core::bundle_project::save_bundle_projects` で、本体の物理・モーション・表情も入る (T0655)。`src-tauri/src/sample.rs` |
 | `import_psd(path, mesh_options?)` | PSD ファイルを今のドキュメントに取り込み ([PSD の取り込み](#psd-の取り込み)、Undo の 1 単位)、警告 (`PsdImportWarning[]`) を返す。最上位のパーツの名前はファイル名。`src-tauri/src/psd.rs` |
 
 - パスの引数は **絶対パスだけ** を受け付けます (相対パスは `path must be absolute: …` のエラー)。相対パスはプロセスの作業ディレクトリ

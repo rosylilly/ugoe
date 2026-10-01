@@ -11,7 +11,7 @@ use ugoe_model::physics::PhysicsSettings;
 use ugoe_model::validate::{ValidationError, validate_physics};
 use ugoe_runtime::{
     CompileError, CompiledModel, ComposeError, ModelInstance, ParamIndex, ParameterValues, compose,
-    compose_physics,
+    compose_physics, compose_physics_without_base,
 };
 
 use crate::Puppet;
@@ -212,7 +212,9 @@ impl Puppet {
     ///   (本体のリグの揺れも止まる)。
     /// - 差し替えた直後に 1 回評価するので、`instance().drawables()` はすぐに新しいモデルのものになる。
     ///
-    /// 本体の物理が無くてもモジュールにリグがあれば、重力 `(0, 1)`・風なし・60 Hz の設定に加える。
+    /// 本体の物理が無くてもモジュールにリグがあれば、重力 `(0, 1)`・風なし・60 Hz の設定に加える。このとき
+    /// スロットが `colliders` で公開する本体の衝突体は何も指さず、リグはそれに当たらない
+    /// (`ugoe_runtime::compose_physics_without_base`。モデルだけで作った Puppet でも付けられる)。
     pub fn set_modules(
         &mut self,
         modules: Vec<Arc<Module>>,
@@ -228,11 +230,16 @@ impl Puppet {
         });
         let refs: Vec<&Module> = modules.iter().map(|m| m.as_ref()).collect();
         let base = &wardrobe.base;
-        let model = compose(base, &refs)?;
+        let mut model = compose(base, &refs)?;
         let has_rigs = refs.iter().any(|m| !m.physics.rigs.is_empty());
         let physics = match &wardrobe.base_physics {
             Some(settings) => Some(compose_physics(base, settings, &refs)?),
-            None if has_rigs => Some(compose_physics(base, &empty_physics(), &refs)?),
+            None if has_rigs => Some(compose_physics_without_base(
+                base,
+                &mut model,
+                &empty_physics(),
+                &refs,
+            )?),
             None => None,
         };
         if let Some(physics) = &physics {

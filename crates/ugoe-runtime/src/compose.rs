@@ -180,15 +180,45 @@ pub fn compose(base: &Model, modules: &[&Module]) -> Result<Model, ComposeError>
 /// [`compose`] と同じ組で、本体の物理 `physics` にモジュールの物理を加える。
 ///
 /// リグと衝突体は本体のものの後ろに加わる (本体のリグが先に評価される)。重力・風・周波数は本体のもの。
-/// 本体に物理がないときは、重力などを決めた空の設定を渡す。
+/// 本体に物理がないときは [`compose_physics_without_base`] を使う。
 pub fn compose_physics(
     base: &Model,
     physics: &PhysicsSettings,
     modules: &[&Module],
 ) -> Result<PhysicsSettings, ComposeError> {
+    compose_physics_with(base, physics, modules, true)
+}
+
+/// 物理の設定を持たない本体 `base` に付けたモジュールの物理を、`settings` (重力・風・周波数を決めた空の設定) に
+/// 加える (`docs/spec/modules.md#合成`)。モデルだけで作った Puppet などで使う。
+///
+/// 本体に衝突体が無いので、スロットの `colliders` は何も指さない: リグの `colliders` のうちスロットが公開する本体の
+/// 衝突体への参照は外し (リグはそれに当たらない)、[`compose`] で作ったモデル `composed` のスロットの `colliders` を
+/// 空にする (合成した物理の検証で、スロットの衝突体を確かめない)。スロットが公開していない衝突体への参照は、
+/// [`compose_physics`] と同じく [`ComposeError::UnknownCollider`]。
+pub fn compose_physics_without_base(
+    base: &Model,
+    composed: &mut Model,
+    settings: &PhysicsSettings,
+    modules: &[&Module],
+) -> Result<PhysicsSettings, ComposeError> {
+    let physics = compose_physics_with(base, settings, modules, false)?;
+    for slot in &mut composed.slots {
+        slot.colliders.clear();
+    }
+    Ok(physics)
+}
+
+/// `base_colliders` が偽なら、本体に衝突体が無い ([`compose_physics_without_base`])。
+fn compose_physics_with(
+    base: &Model,
+    physics: &PhysicsSettings,
+    modules: &[&Module],
+    base_colliders: bool,
+) -> Result<PhysicsSettings, ComposeError> {
     let attachments = attach(base, modules)?;
     let mut physics = physics.clone();
-    let base_colliders: HashSet<String> = physics.colliders.iter().map(|c| c.id.clone()).collect();
+    let base_ids: HashSet<String> = physics.colliders.iter().map(|c| c.id.clone()).collect();
     for Attachment { module, slot } in attachments {
         let rename = Renamer::new(&module.name);
         let own_colliders: HashSet<&str> = module
@@ -202,11 +232,18 @@ pub fn compose_physics(
             let original = rig.id.clone();
             rig.id = rename.string(&rig.id);
             rig.frame = rig.frame.as_ref().map(|f| rename.id(f));
-            for collider in &mut rig.colliders {
+            let mut colliders = Vec::with_capacity(rig.colliders.len());
+            for collider in &rig.colliders {
                 if own_colliders.contains(collider.as_str()) {
-                    *collider = rename.string(collider);
-                } else if !(slot.colliders.contains(collider) && base_colliders.contains(collider))
+                    colliders.push(rename.string(collider));
+                } else if slot.colliders.contains(collider)
+                    && (!base_colliders || base_ids.contains(collider))
                 {
+                    // 本体の衝突体はそのまま指す。本体に物理が無ければ指す先が無いので外す。
+                    if base_colliders {
+                        colliders.push(collider.clone());
+                    }
+                } else {
                     return Err(ComposeError::UnknownCollider {
                         module: module.name.clone(),
                         rig: original.clone(),
@@ -214,6 +251,7 @@ pub fn compose_physics(
                     });
                 }
             }
+            rig.colliders = colliders;
             for output in &mut rig.outputs {
                 match &mut output.target {
                     PhysicsTarget::DeformerAngle { deformer }
@@ -752,6 +790,49 @@ mod tests {
                 collider: "Collar".into(),
             }
         );
+    }
+
+    /// 本体に物理が無ければ、スロットが公開する衝突体は何も指さない: リグの参照は外れ、合成したモデルのスロットの
+    /// `colliders` は空になり、合成した物理は検証を通る (T0655)。
+    #[test]
+    fn exposed_colliders_are_ignored_without_base_physics() {
+        let mut base = dress_up_base();
+        base.slots[0].colliders = vec!["Collar".into()];
+        let empty = PhysicsSettings {
+            colliders: Vec::new(),
+            ..physics_with_chest()
+        };
+        let mut hair = long_hair_module();
+        hair.physics.colliders.clear();
+        let mut model = compose(&base, &[&hair]).unwrap();
+        // 本体の物理があるつもりで合成すると、本体に無い衝突体を指すのでエラー。
+        assert!(matches!(
+            compose_physics(&base, &empty, &[&hair]).unwrap_err(),
+            ComposeError::UnknownCollider { .. }
+        ));
+        assert!(!validate_physics(&empty, &model).is_empty());
+
+        let physics = compose_physics_without_base(&base, &mut model, &empty, &[&hair]).unwrap();
+        assert_eq!(physics.rigs[0].id, "LongHair/Sway");
+        assert!(physics.rigs[0].colliders.is_empty());
+        assert!(model.slots.iter().all(|s| s.colliders.is_empty()));
+        assert_eq!(validate_physics(&physics, &model), vec![]);
+
+        // モジュールの衝突体は今までどおり付け替えて指す。
+        let hair = long_hair_module();
+        let mut model = compose(&base, &[&hair]).unwrap();
+        let physics = compose_physics_without_base(&base, &mut model, &empty, &[&hair]).unwrap();
+        assert_eq!(physics.rigs[0].colliders, ["LongHair/Collar"]);
+
+        // スロットが公開していない衝突体はエラーのまま。
+        base.slots[0].colliders.clear();
+        let mut hair = long_hair_module();
+        hair.physics.colliders.clear();
+        let mut model = compose(&base, &[&hair]).unwrap();
+        assert!(matches!(
+            compose_physics_without_base(&base, &mut model, &empty, &[&hair]).unwrap_err(),
+            ComposeError::UnknownCollider { .. }
+        ));
     }
 
     #[test]

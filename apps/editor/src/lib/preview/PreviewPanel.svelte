@@ -111,6 +111,7 @@ function onValueKeyDown(e: KeyboardEvent) {
   <DressUpSection
     dressUp={preview.dressUp}
     slots={(model?.slots ?? []).filter((s) => preview.comparing || s.id !== doc.module?.slot.id)}
+    published={model?.avatar ? model.avatar.slots : null}
     {onselect}
   />
 

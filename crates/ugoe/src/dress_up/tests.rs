@@ -199,6 +199,29 @@ fn base_physics_is_kept_and_collides_through_the_slot() {
     assert_eq!(puppet.physics().unwrap().settings(), &settings);
 }
 
+/// 物理を渡さずにモデルだけで作った Puppet でも、スロットが衝突体を公開するスロットにモジュールを付けられる。
+/// 公開した本体の衝突体は何も指さず、リグの参照は外れる (T0655)。
+#[test]
+fn exposed_colliders_are_ignored_without_base_physics() {
+    let mut base = dress_up_base();
+    base.slots[0].colliders = vec!["Chest".into()];
+    let mut puppet = Puppet::new(base).unwrap();
+    let mut hair = long_hair_module();
+    hair.physics.rigs[0].colliders.push("Chest".into());
+    puppet.attach_module(Arc::new(hair)).unwrap();
+    let composed = puppet.physics().unwrap().settings();
+    assert_eq!(composed.rigs[0].colliders, ["LongHair/Collar"]);
+    assert!(puppet.base_physics().is_none());
+    // 本体として覚えたモデルのスロットは変えない (後から物理を持つ本体として使える)。
+    assert_eq!(puppet.base_model().slots[0].colliders, ["Chest"]);
+    set_param(&mut puppet, standard::ANGLE_X, 20.0);
+    for _ in 0..10 {
+        puppet.update(DT);
+    }
+    puppet.detach_module("LongHair").unwrap();
+    assert!(puppet.physics().is_none());
+}
+
 /// 腕の差分 `ArmA` / `ArmB` のポーズを持つ本体と、それに袖を追従させる `Dress`。
 fn pose_base_and_module() -> (ugoe_model::Model, Module) {
     let opaque = || KeyformGrid::constant(PartKeyform { opacity: 1.0 });

@@ -748,19 +748,27 @@ fn attach_modules(scene: Scene, files: Vec<ugoe_format::ModuleFile>) -> anyhow::
         bail!("--module needs a .ugoe bundle (with textures) as the input");
     }
     let modules: Vec<&ugoe_model::Module> = files.iter().map(|f| &f.module).collect();
-    let model = ugoe_runtime::compose(&scene.model, &modules)?;
+    let mut model = ugoe_runtime::compose(&scene.model, &modules)?;
     let mut animation = scene.animation;
     let has_rigs = modules.iter().any(|m| !m.physics.rigs.is_empty());
-    if animation.physics.is_some() || has_rigs {
-        let settings = animation
-            .physics
-            .take()
-            .unwrap_or_else(ugoe_editor_core::physics_edit::default_settings);
-        animation.physics = Some(ugoe_runtime::compose_physics(
-            &scene.model,
-            &settings,
-            &modules,
-        )?);
+    match animation.physics.take() {
+        Some(settings) => {
+            animation.physics = Some(ugoe_runtime::compose_physics(
+                &scene.model,
+                &settings,
+                &modules,
+            )?);
+        }
+        // 本体に物理が無ければ、スロットが公開する衝突体は何も指さない (`docs/spec/modules.md#合成`)。
+        None if has_rigs => {
+            animation.physics = Some(ugoe_runtime::compose_physics_without_base(
+                &scene.model,
+                &mut model,
+                &ugoe_editor_core::physics_edit::default_settings(),
+                &modules,
+            )?);
+        }
+        None => {}
     }
     let mut textures = scene.textures;
     let mut normal_maps = scene.normal_maps;

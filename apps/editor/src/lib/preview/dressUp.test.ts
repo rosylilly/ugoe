@@ -186,12 +186,22 @@ describe("dressUp helpers", () => {
       ],
     );
     expect(rows).toEqual([
-      { id: "Hair", attached: "ShortHair", candidates: ["LongHair", "ShortHair"] },
-      { id: "Outfit", attached: null, candidates: [] },
-      { id: "Hat", attached: null, candidates: [] },
+      { id: "Hair", attached: "ShortHair", candidates: ["LongHair", "ShortHair"], published: true },
+      { id: "Outfit", attached: null, candidates: [], published: true },
+      { id: "Hat", attached: null, candidates: [], published: true },
     ]);
     expect(sameNames(["a", "b"], ["b", "a"])).toBe(true);
     expect(sameNames(["a"], ["a", "b"])).toBe(false);
+  });
+
+  it("marks the slots that the avatar profile does not publish (T0655)", () => {
+    const slots = [{ id: "Hair" }, { id: "Outfit" }];
+    const published = (list: readonly string[] | null) =>
+      slotRows(slots, [], list).map((r) => r.published);
+    // プロファイルが無ければ公開の区別が無い。
+    expect(published(null)).toEqual([true, true]);
+    expect(published(["Hair"])).toEqual([true, false]);
+    expect(published([])).toEqual([false, false]);
   });
 
   it("reads modules_json and words the module warnings like the load warnings (T0652)", () => {

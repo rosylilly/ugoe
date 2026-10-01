@@ -18,11 +18,10 @@
 //! 座標はすべてキャンバス (512×512) で考え、要素の親の座標系へは [`Space`] で写す。
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
-use anyhow::{Context, anyhow, bail};
+use anyhow::{Context, bail};
 use ugoe_core::{Rgb, Vec2};
-use ugoe_editor_core::{Project, ProjectMeta, Textures as ProjectTextures};
+use ugoe_editor_core::bundle_project::save_bundle_projects;
 use ugoe_format::{Bundle, ModuleFile, TextureData, TextureFormat};
 use ugoe_model::avatar::{
     AvatarHitArea, AvatarMeta, AvatarPermission, CommercialUsage, CreditNotation, HIT_AREA_BODY,
@@ -114,64 +113,15 @@ impl DressUpSample {
     /// それを参照するモジュールのプロジェクト `<名前の kebab-case>.ugoeproj` (同じディレクトリに並べる)。
     /// 書いたプロジェクトのパスを、本体を先に返す。
     ///
-    /// 形式は `ugoe_editor_core::Project` が書く (エディタの「New Module…」と同じく、書いた本体を読み直して
-    /// モジュールのプロジェクトを作る)。
+    /// 変換はエディタの File > Open Sample… と同じ `ugoe_editor_core::bundle_project::save_bundle_projects`。
     pub fn save_projects(&self, dir: &Path) -> anyhow::Result<Vec<PathBuf>> {
-        let base_dir = dir.join(BASE_PROJECT);
-        let model = &self.base.model;
-        let mut base = Project::new(
-            ProjectMeta::new(NAME),
-            model.clone(),
-            images(&model.textures, &self.base.textures)?,
-        );
-        base.physics = self.base.physics.clone();
-        base.motions = self.base.motions.clone();
-        base.expressions = self.base.expressions.clone();
-        base.save(&base_dir)
-            .with_context(|| format!("saving {}", base_dir.display()))?;
-        let mut written = vec![base_dir.clone()];
-        for file in &self.modules {
-            let module = &file.module;
-            let path = dir.join(format!("{}.ugoeproj", kebab_case(&module.name)));
-            let empty = Project::new_module(&module.name, &base_dir, &module.slot)
-                .with_context(|| format!("creating the project of `{}`", module.name))?;
-            let context = empty
-                .module
-                .as_ref()
-                .ok_or_else(|| anyhow!("`{}` is not a module project", module.name))?
-                .reconfigured(&module.slot, module.name.clone(), module.requires.clone())?;
-            let workspace =
-                context.workspace(module, &images(&module.textures, &file.textures)?)?;
-            let project = Project {
-                model: workspace.model,
-                textures: workspace.textures,
-                physics: workspace.physics,
-                module: Some(Arc::new(context)),
-                ..empty
-            };
-            project
-                .save(&path)
-                .with_context(|| format!("saving {}", path.display()))?;
-            written.push(path);
-        }
-        Ok(written)
+        Ok(save_bundle_projects(
+            dir,
+            BASE_PROJECT,
+            &self.base,
+            &self.modules,
+        )?)
     }
-}
-
-/// テクスチャの参照と中身 (PNG) を、プロジェクトの画像 (名前 → PNG) にする。
-fn images(refs: &[TextureRef], data: &[TextureData]) -> anyhow::Result<ProjectTextures> {
-    if refs.len() != data.len() {
-        bail!("{} textures but {} images", refs.len(), data.len());
-    }
-    refs.iter()
-        .zip(data)
-        .map(|(r, d)| {
-            if d.format != TextureFormat::Png {
-                bail!("texture `{}` is not a PNG", r.name);
-            }
-            Ok((r.name.clone(), Arc::from(d.bytes.as_slice())))
-        })
-        .collect()
 }
 
 /// `LongHair` → `long-hair`。
@@ -1452,6 +1402,7 @@ fn sailor() -> ModuleFile {
 mod tests {
     use std::path::PathBuf;
 
+    use ugoe_editor_core::Project;
     use ugoe_runtime::{CompiledModel, ModelInstance};
 
     use super::*;
@@ -1557,6 +1508,53 @@ mod tests {
             );
         }
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// コミットした見本のファイル (エディタの File > Open Sample… が埋め込むもの) から書いたプロジェクトは、
+    /// `--project` の出力とファイルの中身まで同じ (変換は同じ `save_bundle_projects`。T0655)。
+    #[test]
+    fn projects_from_committed_files_match_the_generator() {
+        let sample = build_dress_up().unwrap();
+        let root =
+            std::env::temp_dir().join(format!("ugoe-cli-dress-up-same-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (generated, committed) = (root.join("generated"), root.join("committed"));
+        sample.save_projects(&generated).unwrap();
+
+        let dir = repo_path("assets/samples/dress-up");
+        let base = ugoe_format::read_bundle(&std::fs::read(dir.join(BASE_FILE)).unwrap()).unwrap();
+        let modules: Vec<ModuleFile> = sample
+            .modules
+            .iter()
+            .map(|file| {
+                let name = format!("{}.ugoemod", kebab_case(&file.module.name));
+                ugoe_format::read_module(&std::fs::read(dir.join(name)).unwrap()).unwrap()
+            })
+            .collect();
+        save_bundle_projects(&committed, BASE_PROJECT, &base, &modules).unwrap();
+
+        let generated_files = files_under(&generated);
+        assert!(generated_files.len() > 10, "{generated_files:?}");
+        assert_eq!(generated_files, files_under(&committed));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// `dir` の下のファイル (相対パス → 中身)。
+    fn files_under(dir: &std::path::Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+        let mut files = std::collections::BTreeMap::new();
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(next) = stack.pop() {
+            for entry in std::fs::read_dir(&next).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else {
+                    let bytes = std::fs::read(&path).unwrap();
+                    files.insert(path.strip_prefix(dir).unwrap().to_path_buf(), bytes);
+                }
+            }
+        }
+        files
     }
 
     /// モジュールのプロジェクトの作業用のモデルで、エディタの座標変換 (親の座標系 ⇔ キャンバス) が使える
