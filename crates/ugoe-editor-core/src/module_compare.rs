@@ -6,6 +6,7 @@
 //! 足した・変えたパーツ・デフォーマ・メッシュは、何が違うか (メッシュなら頂点・キーフォーム・描画順など) を要素ごとに添え、
 //! ツリーで選べるように作業用のモデルの ID を付ける (T0656)。グルー・物理のリグ・衝突体も同じように中身まで添え、
 //! 除いた要素も添える。要素ごとに、プレビューのビューポートで強調するメッシュを付ける (T0657)。
+//! ポーズはグループ (要素のパーツの並び) と追従 (本体の要素に加えるリンク) ごとに中身まで添える (T0659)。
 //!
 //! ファイルのテクスチャがアトラス化してあれば (`crate::atlas::build_module_atlas`)、アトラスの中で今の編集の画像を
 //! 置いた場所を探し、メッシュのテクスチャと UV をアトラスの前に戻してから比べる (T0656)。ファイルには置いた場所が
@@ -19,8 +20,12 @@ use ts_rs::TS;
 use ugoe_core::Vec2;
 use ugoe_format::ModuleFile;
 use ugoe_model::mesh::MeshKeyform;
+use ugoe_model::module::ModulePose;
 use ugoe_model::physics::{ColliderShape, PhysicsCollider, PhysicsRig, PhysicsTarget, VertexOwner};
-use ugoe_model::{Deformer, DeformerKind, Glue, KeyformGrid, Mesh, Module, Part, TextureRef};
+use ugoe_model::pose::{PoseEntry, PoseGroup};
+use ugoe_model::{
+    Deformer, DeformerKind, Glue, KeyformGrid, Mesh, Module, Part, PartId, TextureRef,
+};
 
 use crate::atlas::{ATLAS_NAME_PREFIX, Placement};
 use crate::module_project::ModuleContext;
@@ -49,8 +54,12 @@ pub struct DifferenceItem {
     pub element: Option<String>,
     /// プレビューのビューポートで強調するメッシュの、モジュールの中の ID (ファイルと今の編集のどちらかにあるもの)。
     /// パーツはその下のメッシュ、デフォーマはその下のメッシュ、グルーは両端、物理のリグは出力先のメッシュとデフォーマの
-    /// 下のメッシュ。衝突体は空 (形をそのまま描く)。
+    /// 下のメッシュ。衝突体は空 (形をそのまま描く)。ポーズのグループは要素とリンクのパーツの下、追従はリンクの
+    /// パーツの下のメッシュ。
     pub meshes: Vec<String>,
+    /// ポーズのグループと追従を選ぶときの、今の編集のパーツの ID (作業用のモデル。グループは要素のパーツ、
+    /// 追従は本体の要素のパーツとリンクのパーツ)。ほかの種類と除いた要素は空 (T0659)。
+    pub parts: Vec<String>,
 }
 
 /// 違いの行の要素の種類 (パーツ・デフォーマ・メッシュはエディタの選択の種類と同じ名前)。
@@ -63,6 +72,10 @@ pub enum DifferenceKind {
     Glue,
     PhysicsRig,
     Collider,
+    /// ポーズのグループ。ID は要素のパーツを ` / ` でつないだもの (例: `HatA / HatB`)。
+    PoseGroup,
+    /// 本体のポーズの要素に追従させるパーツ (`ModulePose::links`)。ID は本体の要素のパーツ。
+    PoseFollow,
 }
 
 /// モジュールのプロジェクトの今の編集と、書き出した `.ugoemod` のバイト列 `bytes` の違い。同じなら空。
@@ -79,7 +92,29 @@ pub fn compare_with_module_file(
     });
     for item in differences.iter_mut().flat_map(|d| &mut d.items) {
         // 除いた要素は今の編集に無い (同じ ID の本体の要素を指さないように探さない)。
-        if item.text != REMOVED {
+        if item.text == REMOVED {
+            continue;
+        }
+        if matches!(
+            item.kind,
+            DifferenceKind::PoseGroup | DifferenceKind::PoseFollow
+        ) {
+            // パーツはモジュールのもの (接頭辞を付けた ID) か、追従の本体の要素 (ID はそのまま)。
+            item.parts = pose_parts(&module, item.kind, &item.id)
+                .into_iter()
+                .filter_map(|part| {
+                    workspace_id(project, context, DifferenceKind::Part, part).or_else(|| {
+                        project
+                            .model
+                            .parts
+                            .iter()
+                            .any(|p| context.is_base_part(&p.id) && p.id.as_str() == part)
+                            .then(|| part.to_owned())
+                    })
+                })
+                .collect();
+            item.element = (!item.parts.is_empty()).then(|| item.id.clone());
+        } else {
             item.element = workspace_id(project, context, item.kind, &item.id);
         }
     }
@@ -137,6 +172,8 @@ fn workspace_id(
                     && own(&c.id)
             })
             .map(|c| c.id.clone()),
+        // [`compare_with_module_file`] がパーツから選ぶ。
+        DifferenceKind::PoseGroup | DifferenceKind::PoseFollow => None,
     }
 }
 
@@ -246,9 +283,7 @@ pub fn module_differences(
         &keyed(&module.physics.colliders, |c| c.id.clone()),
         collider_changes,
     );
-    if old.pose != module.pose {
-        lines.push(line("Pose groups or follows changed".to_owned()));
-    }
+    pose_differences(&mut lines, &old.pose, &module.pose);
     for item in lines.iter_mut().flat_map(|d| &mut d.items) {
         item.meshes = highlighted_meshes(item.kind, &item.id, &[module, old]);
     }
@@ -324,6 +359,7 @@ fn item(kind: DifferenceKind, id: &str, text: String) -> DifferenceItem {
         text,
         element: None,
         meshes: Vec::new(),
+        parts: Vec::new(),
     }
 }
 
@@ -843,9 +879,43 @@ fn highlighted_meshes(kind: DifferenceKind, id: &str, modules: &[&Module]) -> Ve
                 }
             }
             DifferenceKind::Collider => {}
+            DifferenceKind::PoseGroup | DifferenceKind::PoseFollow => {
+                for part in pose_parts(module, kind, id) {
+                    for mesh in &module.meshes {
+                        if in_part(module, mesh.part.as_str(), part) {
+                            push(mesh.id.as_str());
+                        }
+                    }
+                }
+            }
         }
     }
     out
+}
+
+/// ポーズのグループ `id` (要素のパーツと各要素のリンク) か、追従 `id` (本体の要素のパーツとリンク) のパーツ。
+/// `module` に無ければ空。
+fn pose_parts<'a>(module: &'a Module, kind: DifferenceKind, id: &'a str) -> Vec<&'a str> {
+    let entry_parts = |entry: &'a PoseEntry| {
+        std::iter::once(entry.part.as_str()).chain(entry.links.iter().map(|p| p.as_str()))
+    };
+    match kind {
+        DifferenceKind::PoseGroup => module
+            .pose
+            .groups
+            .iter()
+            .find(|g| group_label(g) == id)
+            .map(|g| g.entries.iter().flat_map(entry_parts).collect())
+            .unwrap_or_default(),
+        DifferenceKind::PoseFollow => module
+            .pose
+            .links
+            .iter()
+            .filter(|e| e.part.as_str() == id)
+            .flat_map(entry_parts)
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 /// パーツ `part` が `ancestor` か、その下 (モジュールの中の親をたどる) か。
@@ -895,6 +965,136 @@ fn under_deformer<'a>(module: &'a Module, deformer: &str) -> Vec<&'a str> {
         .filter(|m| below(m.parent.as_ref().map(|p| p.as_str())))
         .map(|m| m.id.as_str())
         .collect()
+}
+
+// ---- ポーズ ----
+
+/// グループの ID (要素のパーツを ` / ` でつなぐ。並びは最初に表示する要素から)。
+fn group_label(group: &PoseGroup) -> String {
+    group
+        .entries
+        .iter()
+        .map(|e| e.part.as_str())
+        .collect::<Vec<_>>()
+        .join(" / ")
+}
+
+/// ポーズの違い: グループ (要素のパーツを 1 つでも共有するものを同じグループとみなす) と、追従 (本体の要素の
+/// パーツごと)。どちらにも出ない違い (グループの並びだけ) は 1 行にまとめる。
+fn pose_differences(lines: &mut Vec<ModuleDifference>, old: &ModulePose, new: &ModulePose) {
+    if old == new {
+        return;
+    }
+    let before = lines.len();
+    let shares = |a: &PoseGroup, b: &PoseGroup| {
+        a.entries
+            .iter()
+            .any(|x| b.entries.iter().any(|y| x.part == y.part))
+    };
+    let mut matched = vec![false; old.groups.len()];
+    let (mut added, mut changed) = (Vec::new(), Vec::new());
+    let mut items = Vec::new();
+    for group in &new.groups {
+        let id = group_label(group);
+        let found = (0..old.groups.len()).find(|&k| !matched[k] && shares(&old.groups[k], group));
+        let Some(k) = found else {
+            added.push(id.clone());
+            items.push(item(DifferenceKind::PoseGroup, &id, "added".to_owned()));
+            continue;
+        };
+        matched[k] = true;
+        let what = group_changes(&old.groups[k], group);
+        if !what.is_empty() {
+            changed.push(id.clone());
+            items.push(item(DifferenceKind::PoseGroup, &id, what.join("; ")));
+        }
+    }
+    let removed: Vec<String> = old
+        .groups
+        .iter()
+        .zip(&matched)
+        .filter(|(_, m)| !**m)
+        .map(|(g, _)| group_label(g))
+        .collect();
+    items.extend(
+        removed
+            .iter()
+            .map(|id| item(DifferenceKind::PoseGroup, id, REMOVED.to_owned())),
+    );
+    if let Some(details) = details(&strs(&added), &strs(&removed), &strs(&changed), "changed") {
+        lines.push(ModuleDifference {
+            text: format!(
+                "Pose groups: {} → {} ({details})",
+                old.groups.len(),
+                new.groups.len()
+            ),
+            items,
+        });
+    }
+
+    elements(
+        lines,
+        "Pose follows",
+        DifferenceKind::PoseFollow,
+        &keyed(&old.links, |e| e.part.to_string()),
+        &keyed(&new.links, |e| e.part.to_string()),
+        |a: &PoseEntry, b: &PoseEntry| {
+            let mut out = Vec::new();
+            linked(&mut out, "links", &a.links, &b.links);
+            out
+        },
+    );
+    if lines.len() == before {
+        lines.push(line("Pose: order of groups changed".to_owned()));
+    }
+}
+
+fn strs(ids: &[String]) -> Vec<&str> {
+    ids.iter().map(String::as_str).collect()
+}
+
+/// 同じとみなしたグループの中身の違い (要素の並びと、要素ごとのリンク)。
+fn group_changes(old: &PoseGroup, new: &PoseGroup) -> Vec<String> {
+    if old == new {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let (a, b) = (group_label(old), group_label(new));
+    if a != b {
+        out.push(format!("entries {a} → {b}"));
+    }
+    for entry in &new.entries {
+        if let Some(before) = old.entries.iter().find(|e| e.part == entry.part) {
+            linked(
+                &mut out,
+                &format!("links of {}", entry.part),
+                &before.links,
+                &entry.links,
+            );
+        }
+    }
+    or_other(out)
+}
+
+/// リンクのパーツの違い (足した・除いた。並びだけなら `reordered`)。
+fn linked(out: &mut Vec<String>, what: &str, old: &[PartId], new: &[PartId]) {
+    if old == new {
+        return;
+    }
+    let added: Vec<&str> = new
+        .iter()
+        .filter(|p| !old.contains(p))
+        .map(|p| p.as_str())
+        .collect();
+    let removed: Vec<&str> = old
+        .iter()
+        .filter(|p| !new.contains(p))
+        .map(|p| p.as_str())
+        .collect();
+    match details(&added, &removed, &[], "changed") {
+        Some(details) => out.push(format!("{what} ({details})")),
+        None => out.push(format!("{what} reordered")),
+    }
 }
 
 // ---- テクスチャ ----

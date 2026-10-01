@@ -8,7 +8,8 @@ use ugoe_model::fixtures::{dress_up_base, long_hair_module};
 use ugoe_model::mesh::{GlueKeyform, GluePair};
 use ugoe_model::module::ModuleRequirements;
 use ugoe_model::physics::ColliderShape;
-use ugoe_model::{Glue, KeyformGrid, Module, TextureRef};
+use ugoe_model::pose::{PoseEntry, PoseGroup};
+use ugoe_model::{Glue, KeyformGrid, Module, Part, TextureRef};
 
 use crate::module_compare::{DifferenceKind, ModuleDifference};
 use crate::module_project::{ModuleBase, ModuleContext};
@@ -31,7 +32,11 @@ fn project() -> Project {
 
 /// `module` と画像 `images` のモジュールのプロジェクト (本体は `dress_up_base`)。
 fn project_of(module: &Module, images: &Textures) -> Project {
-    let model = dress_up_base();
+    project_on(dress_up_base(), module, images)
+}
+
+/// 本体 `model` に `module` を付けたモジュールのプロジェクト。
+fn project_on(model: ugoe_model::Model, module: &Module, images: &Textures) -> Project {
     let textures = model
         .textures
         .iter()
@@ -448,6 +453,109 @@ fn glue_differences_tell_what_changed() {
         ("removed", None)
     );
     assert_eq!(item.meshes, ["Back", "Front"]);
+}
+
+/// 本体にポーズのグループ `ArmA / ArmB` (スロット Hair が `ArmA` を公開) を足し、LongHair にグループ
+/// `HatA / HatB` (Back と Front) と、`ArmA` に追従する `Sleeve` を足したプロジェクト。
+fn pose_project() -> Project {
+    let entry = |part: &str, links: &[&str]| PoseEntry {
+        part: part.into(),
+        links: links.iter().map(|&l| l.into()).collect(),
+    };
+    let mut base = dress_up_base();
+    let template = base.parts[0].clone();
+    for id in ["ArmA", "ArmB"] {
+        base.parts.push(Part {
+            id: id.into(),
+            name: id.into(),
+            parent: None,
+            ..template.clone()
+        });
+    }
+    base.pose.groups = vec![PoseGroup {
+        entries: vec![entry("ArmA", &[]), entry("ArmB", &[])],
+    }];
+    base.slots[0].pose_parts = vec!["ArmA".into()];
+
+    let mut module = long_hair_module();
+    let template = module.parts[0].clone();
+    for id in ["HatA", "HatB", "Sleeve"] {
+        module.parts.push(Part {
+            id: id.into(),
+            name: id.into(),
+            parent: Some("Hair".into()),
+            ..template.clone()
+        });
+    }
+    module.meshes[0].part = "HatA".into();
+    module.meshes[1].part = "HatB".into();
+    module.pose.groups = vec![PoseGroup {
+        entries: vec![entry("HatA", &[]), entry("HatB", &[])],
+    }];
+    module.pose.links = vec![entry("ArmA", &["Sleeve"])];
+    let images: Textures = module
+        .textures
+        .iter()
+        .map(|t| (t.name.clone(), Arc::from(solid_png(2, 2, [1, 2, 3, 255]))))
+        .collect();
+    project_on(base, &module, &images)
+}
+
+/// ポーズのグループと追従の違いは、要素のパーツまで出し、パーツで選び、その下のメッシュを強調する (T0659)。
+#[test]
+fn pose_differences_tell_what_changed() {
+    let project = pose_project();
+    let bytes = export_module(&project).unwrap().bytes;
+    assert_eq!(compare_with_module_file(&project, &bytes).unwrap(), vec![]);
+
+    // グループの並びを入れ替え、追従を外す。
+    let mut changed = project.clone();
+    let pose = &mut changed.model.pose;
+    pose.groups[1].entries.reverse();
+    pose.groups[0].entries[0].links.clear();
+    let differences = compare_with_module_file(&changed, &bytes).unwrap();
+    assert_eq!(
+        texts(&differences),
+        [
+            "Pose groups: 1 → 1 (changed: HatB / HatA)",
+            "Pose follows: 1 → 0 (removed: ArmA)",
+        ]
+    );
+    let group = &differences[0].items[0];
+    assert_eq!(group.kind, DifferenceKind::PoseGroup);
+    assert_eq!(group.text, "entries HatA / HatB → HatB / HatA");
+    assert_eq!(group.element.as_deref(), Some("HatB / HatA"));
+    assert_eq!(group.parts, ["LongHair/HatB", "LongHair/HatA"]);
+    assert_eq!(group.meshes, ["Front", "Back"]);
+    let follow = &differences[1].items[0];
+    assert_eq!(follow.kind, DifferenceKind::PoseFollow);
+    assert_eq!(
+        (follow.text.as_str(), follow.element.as_deref()),
+        ("removed", None)
+    );
+    assert!(follow.parts.is_empty());
+
+    // リンクを変えた追従は、本体の要素とリンクのパーツで選ぶ。除いたグループは選べない。
+    let mut relinked = project.clone();
+    let pose = &mut relinked.model.pose;
+    pose.groups.truncate(1);
+    pose.groups[0].entries[0].links = vec!["LongHair/HatA".into()];
+    let differences = compare_with_module_file(&relinked, &bytes).unwrap();
+    assert_eq!(
+        texts(&differences),
+        [
+            "Pose groups: 1 → 0 (removed: HatA / HatB)",
+            "Pose follows: 1 → 1 (changed: ArmA)",
+        ]
+    );
+    let removed = &differences[0].items[0];
+    assert_eq!(removed.element, None);
+    assert_eq!(removed.meshes, ["Back", "Front"]);
+    let follow = &differences[1].items[0];
+    assert_eq!(follow.text, "links (added: HatA; removed: Sleeve)");
+    assert_eq!(follow.element.as_deref(), Some("ArmA"));
+    assert_eq!(follow.parts, ["ArmA", "LongHair/HatA"]);
+    assert_eq!(follow.meshes, ["Back"]);
 }
 
 /// アトラス化したファイルとは、今の編集の画像をアトラスの中で見つけ、UV を戻して比べる (T0656)。

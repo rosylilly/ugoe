@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { DifferenceItem } from "../ipc";
-import { convexHull, differenceTarget, highlightNotice, shownVersion } from "./differenceHighlight";
+import {
+  convexHull,
+  differenceTarget,
+  fitMove,
+  highlightNotice,
+  selectTitle,
+  shownVersion,
+} from "./differenceHighlight";
 
 const item = (fields: Partial<DifferenceItem>): DifferenceItem => ({
   kind: "mesh",
@@ -8,6 +15,7 @@ const item = (fields: Partial<DifferenceItem>): DifferenceItem => ({
   text: "vertices 4 → 6",
   element: "CatEars/Ears",
   meshes: ["Ears"],
+  parts: [],
   ...fields,
 });
 
@@ -38,7 +46,7 @@ describe("differences in the preview (T0657)", () => {
     ).toBeNull();
   });
 
-  it("selects the meshes at both ends of a glue that are still in the current edits", () => {
+  it("selects a glue in the Glue tab and its meshes that are still in the current edits (T0659)", () => {
     const glue = item({
       kind: "glue",
       id: "Seam",
@@ -46,13 +54,59 @@ describe("differences in the preview (T0657)", () => {
       meshes: ["Band", "Ears", "Old"],
     });
     expect(differenceTarget(glue, "CatEars", (id) => id !== "CatEars/Old")).toEqual({
-      panel: "tree",
+      panel: "glue",
+      glue: "CatEars/Seam",
       refs: [
         { kind: "mesh", id: "CatEars/Band" },
         { kind: "mesh", id: "CatEars/Ears" },
       ],
     });
-    expect(differenceTarget(glue, "CatEars", () => false)).toBeNull();
+    expect(differenceTarget(glue, "CatEars", () => false)).toEqual({
+      panel: "glue",
+      glue: "CatEars/Seam",
+      refs: [],
+    });
+    expect(selectTitle(glue)).toBe("Leave the preview and select Seam in the Glue tab");
+  });
+
+  it("selects pose groups and follows in the Poses tab with their parts (T0659)", () => {
+    const group = item({
+      kind: "pose_group",
+      id: "HatA / HatB",
+      element: "HatA / HatB",
+      parts: ["Hat/HatA", "Hat/HatB"],
+    });
+    expect(differenceTarget(group, "Hat", () => true)).toEqual({
+      panel: "poses",
+      refs: [
+        { kind: "part", id: "Hat/HatA" },
+        { kind: "part", id: "Hat/HatB" },
+      ],
+    });
+    expect(selectTitle(group)).toBe(
+      "Leave the preview and select HatA / HatB in the Poses tab and its parts in the tree",
+    );
+    const removed = item({ kind: "pose_follow", id: "ArmA", text: "removed", element: null });
+    expect(differenceTarget(removed, "Hat", () => true)).toBeNull();
+  });
+
+  it("zooms to the highlighted element and centers it (T0659)", () => {
+    const move = fitMove(
+      [
+        [100, 100],
+        [140, 120],
+      ],
+      400,
+      200,
+    );
+    // 範囲 40×20 (高さは最小の 24 にする) を、ビューポートの 80% (320×160) に収める: 倍率は
+    // min(320 / 40, 160 / 24) = 20 / 3。中心 (120, 110) をビューポートの中央 (200, 100) へ。
+    expect(move?.factor).toBeCloseTo(20 / 3);
+    expect(move?.center).toEqual([120, 110]);
+    expect(move?.pan).toEqual([80, -10]);
+    // 点 1 つでも寄りすぎない (最小の大きさ 24 を 240 の 80% に: 倍率 8)。
+    expect(fitMove([[10, 10]], 240, 240)?.factor).toBeCloseTo(8);
+    expect(fitMove([], 400, 200)).toBeNull();
   });
 
   it("highlights the version drawn in the viewport", () => {

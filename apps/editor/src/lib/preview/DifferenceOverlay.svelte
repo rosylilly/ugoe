@@ -7,7 +7,10 @@
   - デフォーマ: ワープの制御点、回転の原点と軸。
   - 物理のリグ: 粒子の鎖 (動かしていれば今の位置、でなければ初期位置)。衝突体: 円・カプセル。
 
-  操作は受けない。下に何を強調しているか (描けなければ、どちらを付ければ見えるか) を出す。
+  - ポーズのグループと追従: 要素とリンクのパーツの下のメッシュの輪郭 (T0659)。
+
+  操作は受けない。下に何を強調しているか (描けなければ、どちらを付ければ見えるか) を出す。知らせの「Fit」で
+  ビューポートを描いた要素に寄せる (fitMove。全体に戻すのはビューポートの「Fit」。T0659)。
 -->
 <script lang="ts">
 import type { EditorDocument } from "../document.svelte";
@@ -24,7 +27,7 @@ import {
   type WorldShape,
   worldShape,
 } from "../viewport/tools/physics/physicsGeometry";
-import { convexHull, highlightNotice, shownVersion } from "./differenceHighlight";
+import { convexHull, fitMove, highlightNotice, shownVersion } from "./differenceHighlight";
 import type { PreviewMode } from "./preview.svelte";
 
 interface Props {
@@ -63,6 +66,8 @@ function polyline(points: Point[], close = false): string {
 
 interface Drawn {
   outlines: { id: string; d: string }[];
+  /** 描いたものの画面の点 (寄せる範囲)。 */
+  bounds: Point[];
   points: Point[];
   axes: { origin: Point; x: Point; y: Point }[];
   chain: Point[];
@@ -78,7 +83,15 @@ const drawn = $derived.by((): Drawn | null => {
     return null;
   }
   const shown = shownVersion(highlight.module, preview.comparing, puppet.attached_modules());
-  const out: Drawn = { outlines: [], points: [], axes: [], chain: [], shape: null, shown };
+  const out: Drawn = {
+    outlines: [],
+    bounds: [],
+    points: [],
+    axes: [],
+    chain: [],
+    shape: null,
+    shown,
+  };
   if (!shown) return out;
   const item = highlight.item;
   const prefix = `${shown.name}/`;
@@ -96,6 +109,7 @@ const drawn = $derived.by((): Drawn | null => {
             .join("")
         : polyline(convexHull(p), true);
     out.outlines.push({ id: mesh, d });
+    out.bounds.push(...p);
   }
   if (item.kind === "deformer") {
     const id = prefix + item.id;
@@ -147,8 +161,29 @@ const drawn = $derived.by((): Drawn | null => {
       }
     }
   }
+  out.bounds.push(...out.points, ...out.axes.map((a) => a.origin), ...out.chain);
+  const shape = out.shape;
+  if (shape?.type === "circle") {
+    const [x, y] = shape.center;
+    out.bounds.push([x - shape.radius, y - shape.radius], [x + shape.radius, y + shape.radius]);
+  } else if (shape?.type === "capsule") {
+    for (const [x, y] of [shape.a, shape.b]) {
+      out.bounds.push([x - shape.radius, y - shape.radius], [x + shape.radius, y + shape.radius]);
+    }
+  }
   return out;
 });
+
+let layer = $state<SVGSVGElement>();
+
+/** ビューポートを強調している要素に寄せる。 */
+function fit(): void {
+  const box = layer?.getBoundingClientRect();
+  const move = drawn && box ? fitMove(drawn.bounds, box.width, box.height) : null;
+  if (!move) return;
+  controller.zoomAt(move.factor, move.center[0], move.center[1]);
+  controller.panBy(move.pan[0], move.pan[1]);
+}
 
 const found = $derived(
   drawn !== null &&
@@ -161,7 +196,7 @@ const found = $derived(
 </script>
 
 {#if highlight && drawn}
-  <svg class="layer" role="presentation">
+  <svg class="layer" role="presentation" bind:this={layer}>
     {#each drawn.outlines as o (o.id)}
       <path class="outline" d={o.d} />
     {/each}
@@ -188,6 +223,11 @@ const found = $derived(
   </svg>
   <div class="notice" role="status">
     <span>{highlightNotice(highlight.item, drawn.shown, found)}</span>
+    <button
+      onclick={fit}
+      disabled={!found}
+      title="Zoom the viewport to {highlight.item.id} (the viewport's Fit shows the whole canvas again)">Fit</button
+    >
     <button onclick={() => (preview.dressUp.highlight = null)} title="Stop highlighting">Clear</button>
   </div>
 {/if}

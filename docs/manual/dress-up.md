@@ -213,6 +213,20 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
 - モジュールのプロジェクトでは、本体のグループ (「base」の印) は変えられません。スロットの「Pose parts」で本体が公開した差分にだけ、
   衣装のパーツを「Links」で追従させられます (腕の A / B に袖の A / B を付けるなど)。衣装だけのグループは自由に作れます。
 
+### グルーで継ぎ目をつなぐ
+
+右の列の「Glue」タブで、2 つのメッシュの頂点を引き寄せるグルーを作り、直せます。袖と腕の境目のように、動くと隙間が開く継ぎ目に使います。
+
+- 「New glue」で Mesh A と Mesh B を選び、「Distance (px)」(基準の姿で、この距離より近い頂点どうしをつなぐ) を決めて「+ Glue」を押します。
+  ツリーで 2 つのメッシュを選んでおくと、それが最初から入っています。近い頂点が 1 つも無いと、パネルの上に理由が出ます。
+- 一覧のグルーを押すと、下に編集の欄が出ます。「Weight」は寄せる先 (0 で A に、1 で B に、0.5 で真ん中)、「Intensity」は引き寄せる強さ
+  (1 で完全に重なる)。「Swap」で A と B を入れ替え (見た目は同じ)、「Pair again within … px」で頂点の組を作り直し、「Remove glue」で消します。
+  「Select meshes」で両端のメッシュをツリーで選べます。
+- モジュールのプロジェクトでは、本体のグルー (「base」の印) は変えられず、つなげるのは衣装のメッシュどうしだけです。描画用の複製のグルー
+  (「clone」の印) は、インスペクタの「Sync」で作り直してください。
+
+![Glue タブ。衣装の Back と Front をつなぐグルーを作り、重みを 0.25 にした](images/module-glue.png)
+
 ![本体の要素を選んだところ。インスペクタが無効になり、ビューポートに「Base model」と出る](images/module-base-readonly.png)
 
 それでも本体を変える操作をすると、`… belongs to the base model and can't be edited here. Edit it in the base project` と出て、何も変わりません。
@@ -330,17 +344,22 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
   同じスロットで書き出したファイル (「CatEars」) と選び直して、どこを変えたかを見比べられます。一覧では、いまの編集は `editing` の印の付いた行です。
   ファイルの行には、いまの編集との違いが「3 differences from your current edits」のように出て、開くと「Meshes: 5 → 4 (removed: EarL)」
   「Textures: …」「Required slots: …」のような行 (ファイル → いまの編集の向き) が並びます。同じなら「Same as your current edits.」と出ます。
-  足したり変えたり除いたりしたメッシュ・デフォーマ・パーツ・グルー・物理のリグ・衝突体は、行の下に「Band: vertices 4 → 6; draw order 500 → 520」
-  「Sway: settings of 1 particle」「Collar: radius 8 → 12」のように何が違うかが出ます。
+  足したり変えたり除いたりしたメッシュ・デフォーマ・パーツ・グルー・物理のリグ・衝突体・ポーズのグループと追従は、行の下に
+  「Band: vertices 4 → 6; draw order 500 → 520」「Sway: settings of 1 particle」「Collar: radius 8 → 12」
+  「HairB / HairA: entries HairA / HairB → HairB / HairA」「ArmA: links (added: Sleeve)」のように何が違うかが出ます
+  (ポーズのグループは差分のパーツを ` / ` でつないだ名前、追従は本体の差分のパーツの名前で出ます)。
   名前を押すと、プレビューのままビューポートでその要素が強調されます (メッシュは輪郭、物理のリグは粒子の鎖、衝突体は円やカプセル)。
   強調されるのは、いまスロットに付いている方 (いまの編集かファイル) の要素です。除いた要素は、ファイルの方を付けると見えます。
-  もう一度押すか「Clear」でやめます。「Select」を押すと、プレビューを出て左のツリー (物理のリグと衝突体は「Physics」タブ) で
-  その要素が選ばれます (もう一度「Preview」を押すと、付けていたモジュールは付き直ります)。書き出すときに「Pack textures into atlases」を選んだファイルとも、アトラスの前の
+  もう一度押すか「Clear」でやめます。強調しているときに「Fit」を押すと、ビューポートがその要素に寄ります (全体に戻すのはビューポートの右上の「Fit」)。
+  「Select」を押すと、プレビューを出て左のツリー (物理のリグと衝突体は「Physics」タブ、グルーは「Glue」タブ、ポーズは「Poses」タブとツリーの
+  パーツ) でその要素が選ばれます (もう一度「Preview」を押すと、付けていたモジュールは付き直ります)。書き出すときに「Pack textures into atlases」を選んだファイルとも、アトラスの前の
   テクスチャと UV に戻して比べるので、変えていなければ「Same as your current edits.」と出ます。
 
   ![違いの行の下に、変えたメッシュの頂点と描画順が出る。「Select」でプレビューを出てツリーで選ばれる](images/module-compare-details.png)
 
   ![違いの名前を押すと、プレビューのままビューポートでその要素が強調される](images/module-compare-highlight.png)
+
+  ![ポーズのグループの違いを強調して「Fit」でビューポートを寄せた](images/module-compare-pose.png)
 
   ![書き出した cat-ears.ugoemod の行に、耳を消したいまの編集との違いが出る](images/module-compare-differences.png)
 

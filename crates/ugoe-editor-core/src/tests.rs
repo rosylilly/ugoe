@@ -1436,10 +1436,13 @@ fn op_name(command: &Command) -> &'static str {
         Command::RemoveSlot { .. } => "remove_slot",
         Command::SetModuleSettings { .. } => "set_module_settings",
         Command::SetPose { .. } => "set_pose",
+        Command::CreateGlue { .. } => "create_glue",
+        Command::SetGlue { .. } => "set_glue",
+        Command::RemoveGlue { .. } => "remove_glue",
     }
 }
 
-const OP_COUNT: usize = 101;
+const OP_COUNT: usize = 104;
 
 fn json_samples() -> Vec<Command> {
     let quad = fixtures::single_quad();
@@ -1689,6 +1692,7 @@ fn json_samples() -> Vec<Command> {
     .chain(crate::codegen::motion_sample_commands())
     .chain(crate::codegen::physics_samples())
     .chain(crate::codegen::draw_clone_samples())
+    .chain(crate::codegen::glue_samples())
     .chain(crate::codegen::avatar_samples())
     .chain(crate::codegen::lighting_samples())
     .chain(crate::codegen::slot_samples())

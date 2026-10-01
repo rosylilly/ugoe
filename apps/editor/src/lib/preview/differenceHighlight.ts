@@ -6,11 +6,13 @@ import type { Point } from "../viewport/tools/geometry";
 import { editingName } from "./dressUp";
 
 /**
- * 違いの要素を選ぶ先 (プレビューを出て選ぶ)。パーツ・デフォーマ・メッシュとグルー (両端のメッシュ) はツリー、
- * 物理のリグと衝突体は Physics タブ。
+ * 違いの要素を選ぶ先 (プレビューを出て選ぶ)。パーツ・デフォーマ・メッシュはツリー、グルーは Glue タブ (両端のメッシュを
+ * ツリーでも選ぶ)、物理のリグと衝突体は Physics タブ、ポーズのグループと追従は Poses タブ (パーツをツリーでも選ぶ。T0659)。
  */
 export type DifferenceTarget =
   | { panel: "tree"; refs: ElementRef[] }
+  | { panel: "glue"; glue: string; refs: ElementRef[] }
+  | { panel: "poses"; refs: ElementRef[] }
   | { panel: "physics"; rig: string | null; collider: string | null };
 
 /**
@@ -34,13 +36,66 @@ export function differenceTarget(
         .map((m) => `${moduleName}/${m}`)
         .filter(meshExists)
         .map((id): ElementRef => ({ kind: "mesh", id }));
-      return refs.length > 0 ? { panel: "tree", refs } : null;
+      return { panel: "glue", glue: element, refs };
     }
     case "physics_rig":
       return { panel: "physics", rig: element, collider: null };
     case "collider":
       return { panel: "physics", rig: null, collider: element };
+    case "pose_group":
+    case "pose_follow":
+      return { panel: "poses", refs: item.parts.map((id): ElementRef => ({ kind: "part", id })) };
   }
+}
+
+/** 違いの要素を選ぶボタンの説明。 */
+export function selectTitle(item: Pick<DifferenceItem, "kind" | "id">): string {
+  const where =
+    item.kind === "physics_rig" || item.kind === "collider"
+      ? "in the Physics tab"
+      : item.kind === "glue"
+        ? "in the Glue tab"
+        : item.kind === "pose_group" || item.kind === "pose_follow"
+          ? "in the Poses tab and its parts in the tree"
+          : "in the tree";
+  return `Leave the preview and select ${item.id} ${where}`;
+}
+
+/** ビューポートを要素に寄せる動き (`ViewportController.zoomAt` してから `panBy`)。 */
+export interface FitMove {
+  /** ズームの倍率 (今のズームに掛ける)。 */
+  factor: number;
+  /** ズームの中心 (CSS ピクセル。要素の範囲の中心)。 */
+  center: Point;
+  /** ズームの後にずらす量 (中心をビューポートの中央へ)。 */
+  pan: Point;
+}
+
+/** 要素を寄せたときに、ビューポートの短い辺に対して要素の範囲が占める割合。 */
+const FIT_FILL = 0.8;
+/** 寄せるときの範囲の最小の大きさ (CSS ピクセル。点や細い要素で寄りすぎないように)。 */
+const FIT_MIN_SIZE = 24;
+
+/**
+ * 画面の点 `points` (CSS ピクセル) を、大きさ `width`×`height` のビューポートの中央に、範囲の `FIT_FILL` の大きさで
+ * 映す動き。点が無ければ `null`。
+ */
+export function fitMove(points: readonly Point[], width: number, height: number): FitMove | null {
+  if (points.length === 0 || width <= 0 || height <= 0) return null;
+  const xs = points.map((p) => p[0]);
+  const ys = points.map((p) => p[1]);
+  const [minX, maxX, minY, maxY] = [
+    Math.min(...xs),
+    Math.max(...xs),
+    Math.min(...ys),
+    Math.max(...ys),
+  ];
+  if (![minX, maxX, minY, maxY].every(Number.isFinite)) return null;
+  const w = Math.max(maxX - minX, FIT_MIN_SIZE);
+  const h = Math.max(maxY - minY, FIT_MIN_SIZE);
+  const factor = Math.min((width * FIT_FILL) / w, (height * FIT_FILL) / h);
+  const center: Point = [(minX + maxX) / 2, (minY + maxY) / 2];
+  return { factor, center, pan: [width / 2 - center[0], height / 2 - center[1]] };
 }
 
 /** 違いを強調するときにビューポートに描いている版: 今の編集 (`own`) かファイル。 */

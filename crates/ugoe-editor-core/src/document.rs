@@ -24,7 +24,8 @@ use crate::motion_edit::{self, Animations};
 use crate::texture::{Textures, is_valid_texture_name, png_size};
 use crate::{Command, automesh, avatar, inference, keyform};
 use crate::{
-    deformer_edit, depth, draw_clone, mesh_edit, physics_edit, physics_template, slot_edit,
+    deformer_edit, depth, draw_clone, glue_edit, mesh_edit, physics_edit, physics_template,
+    slot_edit,
 };
 
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -165,6 +166,10 @@ pub enum EditError {
     /// `docs/editor.md#スロットの編集`)。
     #[error("slot `{id}`: {reason}")]
     InvalidSlot { id: String, reason: String },
+    /// グルーの作成・設定の値が不正 (同じメッシュ・組ができない距離・有限でない重みなど。
+    /// `docs/editor.md#グルーの編集`)。`id` はグルーの ID か、作るときは両端のメッシュ (`A + B`)。
+    #[error("glue `{id}`: {reason}")]
+    InvalidGlue { id: String, reason: String },
     /// モジュールのプロジェクトで、読み取り専用の本体の要素を変えようとした
     /// (`element` は ``parameter `AngleX` `` のような表記。`docs/editor.md#モジュールのプロジェクト`)。
     #[error(
@@ -1168,6 +1173,16 @@ fn apply_to(
         Command::SetLighting { enabled } => model.lighting = enabled,
         Command::SetEffects { effects } => model.effects = effects,
         Command::SetPose { pose } => model.pose = pose,
+        Command::CreateGlue {
+            id,
+            mesh_a,
+            mesh_b,
+            distance,
+        } => {
+            glue_edit::create(model, id, mesh_a, mesh_b, distance)?;
+        }
+        Command::SetGlue { glue, distance } => glue_edit::set(model, glue, distance)?,
+        Command::RemoveGlue { id } => glue_edit::remove(model, &id)?,
         Command::AddSlot { slot } => slot_edit::add(model, physics.as_ref(), slot)?,
         Command::SetSlot { id, slot } => slot_edit::set(model, physics.as_ref(), &id, slot)?,
         Command::RemoveSlot { id } => slot_edit::remove(model, &id)?,

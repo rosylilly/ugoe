@@ -14,6 +14,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { onMount } from "svelte";
 import { fileDialogs } from "../fileDialogs";
 import type { DifferenceItem, Slot } from "../ipc";
+import { selectTitle } from "./differenceHighlight";
 import { isModuleFile, MODULE_FILTER, slotRows } from "./dressUp";
 import type { DressUp, ModuleSource } from "./dressUp.svelte";
 
@@ -242,9 +243,7 @@ onMount(() => {
                             {#if item.element !== null && onselect}
                               <button
                                 class="select"
-                                title={item.kind === "physics_rig" || item.kind === "collider"
-                                  ? `Leave the preview and select ${item.id} in the Physics tab`
-                                  : `Leave the preview and select ${item.id} in the tree`}
+                                title={selectTitle(item)}
                                 onclick={() => onselect?.(item)}>Select</button
                               >
                             {/if}

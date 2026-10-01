@@ -3,8 +3,8 @@
   ViewportController (表示) に、各領域の中身は lib/panels/ と lib/viewport/ に置く。
   中央はビューポート (上) とタイムライン (下。モーションと表情、lib/panels/timeline/)。
   右の列はインスペクタ (上) とパラメータ (下) に分け、区切りをドラッグ (または矢印キー) で動かす (lib/layout.ts)。
-  上の区画は「Inspector」「Physics」(lib/panels/physics/)「Slots」(lib/panels/slots/)「Poses」(lib/panels/poses/)
-  「Verify」(lib/panels/verify/) をタブで切り替える。
+  上の区画は「Inspector」「Physics」(lib/panels/physics/)「Glue」(lib/panels/glues/)「Slots」(lib/panels/slots/)
+  「Poses」(lib/panels/poses/)「Verify」(lib/panels/verify/) をタブで切り替える。
   Undo / Redo のショートカット (lib/shortcuts.ts) もここで受ける。
   ヘッダーの「Settings」は AI の設定 (lib/ai/SettingsDialog.svelte)。外部の AI に送る前の確認
   (lib/ai/ConsentDialog.svelte) もここに置く。
@@ -33,6 +33,8 @@ import HelpButton from "./lib/HelpButton.svelte";
 import { type AppInfo, type DifferenceItem, ipc } from "./lib/ipc";
 import { loadSplit, saveSplit, splitAt, splitByKey } from "./lib/layout";
 import { renamePrefix } from "./lib/moduleProject";
+import GluesPanel from "./lib/panels/glues/GluesPanel.svelte";
+import { GlueView } from "./lib/panels/glues/glueView.svelte";
 import InspectorPanel from "./lib/panels/InspectorPanel.svelte";
 import LightingPanel from "./lib/panels/lighting/LightingPanel.svelte";
 import { LightingView } from "./lib/panels/lighting/lightingView.svelte";
@@ -62,6 +64,7 @@ const doc = new EditorDocument();
 const viewport = new ViewportController();
 const selection = new Selection();
 const physics = new PhysicsView();
+const glue = new GlueView();
 const verify = new VerifyView();
 const slots = new SlotsView();
 const preview = new PreviewMode(doc, viewport);
@@ -104,6 +107,7 @@ function openProposals(): void {
   proposals.active = true;
   proposals.fresh = false;
   physics.active = false;
+  glue.active = false;
   verify.active = false;
   lighting.active = false;
   slots.active = false;
@@ -111,8 +115,11 @@ function openProposals(): void {
 }
 
 /** 上の区画のタブを切り替える (AI タブは openProposals)。 */
-function openTab(tab: "inspector" | "physics" | "lighting" | "slots" | "poses" | "verify"): void {
+function openTab(
+  tab: "inspector" | "physics" | "glue" | "lighting" | "slots" | "poses" | "verify",
+): void {
   physics.active = tab === "physics";
+  glue.active = tab === "glue";
   lighting.active = tab === "lighting";
   slots.active = tab === "slots";
   posesActive = tab === "poses";
@@ -120,24 +127,39 @@ function openTab(tab: "inspector" | "physics" | "lighting" | "slots" | "poses" |
   proposals.active = false;
 }
 
-/** 着せ替えの違いの行の要素を選ぶ: プレビューを出て、ツリーか Physics タブで選ぶ (T0656・T0657)。 */
+/**
+ * 着せ替えの違いの行の要素を選ぶ: プレビューを出て、ツリーか Physics・Glue・Poses タブで選ぶ
+ * (T0656・T0657・T0659)。
+ */
 function selectDifference(item: DifferenceItem): void {
   const meshes = new Set(summarizeModel(doc.model?.json).meshes.map((m) => m.id));
   const target = differenceTarget(item, doc.module?.name ?? "", (id) => meshes.has(id));
   if (!target) return;
-  // ツリーと Physics タブはプレビューの間は隠れるので、出てから選ぶ。
+  // ツリーと右の列のタブはプレビューの間は隠れるので、出てから選ぶ。
   preview.exit();
-  if (target.panel === "tree") {
-    selection.set(target.refs);
-    return;
+  switch (target.panel) {
+    case "tree":
+      selection.set(target.refs);
+      return;
+    case "glue":
+      openTab("glue");
+      glue.glue = target.glue;
+      if (target.refs.length > 0) selection.set(target.refs);
+      return;
+    case "poses":
+      openTab("poses");
+      selection.set(target.refs);
+      return;
+    case "physics":
+      openTab("physics");
+      if (target.rig !== null) physics.rig = target.rig;
+      if (target.collider !== null) physics.collider = target.collider;
   }
-  openTab("physics");
-  if (target.rig !== null) physics.rig = target.rig;
-  if (target.collider !== null) physics.collider = target.collider;
 }
 
 const inspectorActive = $derived(
   !physics.active &&
+    !glue.active &&
     !lighting.active &&
     !slots.active &&
     !posesActive &&
@@ -264,6 +286,9 @@ $effect(() => {
           onclick={() => openTab("inspector")}>Inspector</button>
         <button role="tab" aria-selected={physics.active} class:current={physics.active}
           onclick={() => openTab("physics")}>Physics</button>
+        <button role="tab" aria-selected={glue.active} class:current={glue.active}
+          title="Glues: keep the seams of two meshes together"
+          onclick={() => openTab("glue")}>Glue</button>
         <button role="tab" aria-selected={lighting.active} class:current={lighting.active}
           title="Lighting, normal maps and preview lights"
           onclick={() => openTab("lighting")}>Lighting</button>
@@ -299,6 +324,8 @@ $effect(() => {
         <VerifyPanel {doc} {selection} {viewport} view={verify} {physics} />
       {:else if physics.active}
         <PhysicsPanel {doc} {selection} {viewport} view={physics} />
+      {:else if glue.active}
+        <GluesPanel {doc} {selection} view={glue} />
       {:else if lighting.active}
         <LightingPanel {doc} {selection} view={lighting} />
       {:else if slots.active}

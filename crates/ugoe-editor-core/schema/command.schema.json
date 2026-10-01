@@ -2527,6 +2527,81 @@
         "op",
         "pose"
       ]
+    },
+    {
+      "description": "メッシュ `mesh_a` と `mesh_b` をつなぐグルーを `glues` の末尾に加える。頂点の組は、基準の姿のキャンバス座標で\nB の頂点ごとに `distance` (ピクセル) 以内でいちばん近い A の頂点を選んで作る (組ができなければ拒否)。\n重みは 0.5、強さは 1 (パラメータに依存しない 1 つのキーフォーム)。`id` を省略すると\n`Glue_<A>_<B>` (モジュールのプロジェクトのメッシュは接頭辞を除いた ID) から作る。",
+      "type": "object",
+      "properties": {
+        "distance": {
+          "type": "number",
+          "format": "float"
+        },
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mesh_a": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "mesh_b": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "create_glue"
+        }
+      },
+      "required": [
+        "op",
+        "mesh_a",
+        "mesh_b",
+        "distance"
+      ]
+    },
+    {
+      "description": "グルー (`glue.id` のもの) を丸ごと置き換える (両端のメッシュ・頂点の組と重み・強さのキーフォーム)。\n`distance` があれば、頂点の組を `CreateGlue` と同じ方法で作り直す (重みは `glue.pairs` の先頭の重み)。\n参照するメッシュと頂点の番号は適用後の検証 (`validate`) が調べる。",
+      "type": "object",
+      "properties": {
+        "distance": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "glue": {
+          "$ref": "#/$defs/Glue"
+        },
+        "op": {
+          "type": "string",
+          "const": "set_glue"
+        }
+      },
+      "required": [
+        "op",
+        "glue"
+      ]
+    },
+    {
+      "description": "グルーを消す。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "remove_glue"
+        }
+      },
+      "required": [
+        "op",
+        "id"
+      ]
     }
   ],
   "$defs": {
@@ -3412,6 +3487,39 @@
         }
       }
     },
+    "Glue": {
+      "description": "2 つのメッシュの頂点同士を引き寄せて継ぎ目を防ぐ「接着」。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "keyforms": {
+          "$ref": "#/$defs/KeyformGrid5"
+        },
+        "mesh_a": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "mesh_b": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "pairs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GluePair"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "mesh_a",
+        "mesh_b",
+        "pairs",
+        "keyforms"
+      ]
+    },
     "GlueKeyform": {
       "type": "object",
       "properties": {
@@ -3422,6 +3530,33 @@
       },
       "required": [
         "intensity"
+      ]
+    },
+    "GluePair": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "b": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "weight": {
+          "description": "0.0 なら a 側に、1.0 なら b 側に寄せる。",
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "a",
+        "b",
+        "weight"
       ]
     },
     "HitArea": {
@@ -3775,6 +3910,68 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/MeshKeyform"
+          }
+        },
+        "mirror_source": {
+          "description": "`mirror` のセルのミラー元と、ミラーの設定。ミラーで作ったセルがあれば記録する。",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MirrorSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origins": {
+          "description": "セルごとの由来。並びは `keyforms` と同じ。\n空ならすべて `authored`。空でなければ長さは `keyforms` と同じ。",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/KeyformOrigin"
+          }
+        }
+      },
+      "required": [
+        "keyforms"
+      ]
+    },
+    "KeyformGrid5": {
+      "description": "N 本のパラメータ軸の直積格子上に並んだキーフォーム。\n\n`keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。\n並びは **軸 0 が最も速く変化する** 行優先 (column-major 的) 順。\n格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。\n\n`origins`・`inference`・`mirror_source` はオーサリング用のデータで、ランタイムは読み飛ばす\n(`docs/spec/keyform-inference.md`)。\n\n`blend_shapes` はブレンドシェイプ格子の列で、この格子の補間結果に差分を加算する\n(`docs/spec/evaluation.md#6-ブレンドシェイプ`)。",
+      "type": "object",
+      "properties": {
+        "bindings": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/KeyformBinding"
+          }
+        },
+        "blend_shapes": {
+          "description": "ブレンドシェイプ格子 (`docs/spec/model.md#ブレンドシェイプ`)。軸はすべて `kind = blend_shape` の\nパラメータで、補間した値と既定値での値の差を、宣言順にこの格子の補間結果へ加える。\nブレンドシェイプ格子自身は `blend_shapes` を持たない (入れ子にしない)。",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/KeyformGrid5"
+          }
+        },
+        "inference": {
+          "description": "方法を記録していない `derived` のセルを作り直すときの推定の設定。`None` なら加算合成 (`additive`)。",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KeyformInference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "interpolation": {
+          "description": "キーの間の補間の種類 (`docs/spec/evaluation.md#曲線補間`)。既定は線形。",
+          "$ref": "#/$defs/KeyformInterpolation"
+        },
+        "keyforms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GlueKeyform"
           }
         },
         "mirror_source": {

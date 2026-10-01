@@ -408,7 +408,7 @@ look_at?: LookAt | null, hit_areas?: Array<AvatarHitArea> | null, slots?: Array<
 /**
  * 法線マップの画像 (PNG)。JSON では数値の配列になるので、主にバックエンド内 (生成の提案など) から使う。
  */
-png?: Array<number> | null, } | { "op": "set_lighting", enabled: boolean, } | { "op": "set_effects", effects: Effects, } | { "op": "add_slot", slot: Slot, } | { "op": "set_slot", id: string, slot: Slot, } | { "op": "remove_slot", id: string, } | { "op": "set_module_settings", name: string, slot: string, requires: ModuleRequirements, keep_look: boolean, } | { "op": "set_pose", pose: Pose, };
+png?: Array<number> | null, } | { "op": "set_lighting", enabled: boolean, } | { "op": "set_effects", effects: Effects, } | { "op": "add_slot", slot: Slot, } | { "op": "set_slot", id: string, slot: Slot, } | { "op": "remove_slot", id: string, } | { "op": "set_module_settings", name: string, slot: string, requires: ModuleRequirements, keep_look: boolean, } | { "op": "set_pose", pose: Pose, } | { "op": "create_glue", id?: string | null, mesh_a: string, mesh_b: string, distance: number, } | { "op": "set_glue", glue: Glue, distance?: number | null, } | { "op": "remove_glue", id: string, };
 
 /**
  * 提案のコマンドを、画面でまとめて出す区切り (法線マップの提案のまとまりごと)。
@@ -534,14 +534,20 @@ element: string | null,
 /**
  * プレビューのビューポートで強調するメッシュの、モジュールの中の ID (ファイルと今の編集のどちらかにあるもの)。
  * パーツはその下のメッシュ、デフォーマはその下のメッシュ、グルーは両端、物理のリグは出力先のメッシュとデフォーマの
- * 下のメッシュ。衝突体は空 (形をそのまま描く)。
+ * 下のメッシュ。衝突体は空 (形をそのまま描く)。ポーズのグループは要素とリンクのパーツの下、追従はリンクの
+ * パーツの下のメッシュ。
  */
-meshes: Array<string>, };
+meshes: Array<string>, 
+/**
+ * ポーズのグループと追従を選ぶときの、今の編集のパーツの ID (作業用のモデル。グループは要素のパーツ、
+ * 追従は本体の要素のパーツとリンクのパーツ)。ほかの種類と除いた要素は空 (T0659)。
+ */
+parts: Array<string>, };
 
 /**
  * 違いの行の要素の種類 (パーツ・デフォーマ・メッシュはエディタの選択の種類と同じ名前)。
  */
-export type DifferenceKind = "part" | "deformer" | "mesh" | "glue" | "physics_rig" | "collider";
+export type DifferenceKind = "part" | "deformer" | "mesh" | "glue" | "physics_rig" | "collider" | "pose_group" | "pose_follow";
 
 /**
  * 外部に送る内容 (確認のダイアログに示す)。`ugoe_ai::Disclosure` の外部に送る場合の写し。

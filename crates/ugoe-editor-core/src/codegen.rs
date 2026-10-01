@@ -486,6 +486,7 @@ fn sample_commands() -> Vec<Command> {
     .chain(motion_sample_commands())
     .chain(physics_samples())
     .chain(draw_clone_samples())
+    .chain(glue_samples())
     .chain(avatar_samples())
     .chain(lighting_samples())
     .chain(slot_samples())
@@ -731,6 +732,38 @@ pub(crate) fn draw_clone_samples() -> Vec<Command> {
         },
         Command::SyncDrawClone {
             id: "Quad_Clone".into(),
+        },
+    ]
+}
+
+/// グルーのコマンドの見本 (`docs/editor.md#グルーの編集`)。
+pub(crate) fn glue_samples() -> Vec<Command> {
+    let glue = ugoe_model::mesh::Glue {
+        id: "Glue_Front_Back".to_owned(),
+        mesh_a: "Front".into(),
+        mesh_b: "Back".into(),
+        pairs: vec![ugoe_model::mesh::GluePair {
+            a: 0,
+            b: 1,
+            weight: 0.5,
+        }],
+        keyforms: ugoe_model::KeyformGrid::constant(ugoe_model::mesh::GlueKeyform {
+            intensity: 1.0,
+        }),
+    };
+    vec![
+        Command::CreateGlue {
+            id: None,
+            mesh_a: "Front".into(),
+            mesh_b: "Back".into(),
+            distance: 4.0,
+        },
+        Command::SetGlue {
+            glue,
+            distance: Some(4.0),
+        },
+        Command::RemoveGlue {
+            id: "Glue_Front_Back".into(),
         },
     ]
 }

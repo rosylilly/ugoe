@@ -476,6 +476,7 @@ describe("DressUp in a module project", () => {
           text: "added",
           element: `${name}/${name}Brim`,
           meshes: [`${name}Brim`],
+          parts: [],
         },
       ],
     });
@@ -509,7 +510,7 @@ describe("DressUp in a module project", () => {
     });
     const brim = (text: string): ModuleDifference => ({
       text: "Meshes: 2 → 2 (changed: Brim)",
-      items: [{ kind: "mesh", id: "Brim", text, element: "Hat/Brim", meshes: ["Brim"] }],
+      items: [{ kind: "mesh", id: "Brim", text, element: "Hat/Brim", meshes: ["Brim"], parts: [] }],
     });
     compared = () => [brim("vertices 4 → 6")];
     dressUp.setOwn(bytes(editing), editing, false, "Hat");

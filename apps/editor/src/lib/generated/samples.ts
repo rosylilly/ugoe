@@ -6375,6 +6375,40 @@ export const commands: Command[] = [
     "id": "Quad_Clone"
   },
   {
+    "op": "create_glue",
+    "mesh_a": "Front",
+    "mesh_b": "Back",
+    "distance": 4.0
+  },
+  {
+    "op": "set_glue",
+    "glue": {
+      "id": "Glue_Front_Back",
+      "mesh_a": "Front",
+      "mesh_b": "Back",
+      "pairs": [
+        {
+          "a": 0,
+          "b": 1,
+          "weight": 0.5
+        }
+      ],
+      "keyforms": {
+        "bindings": [],
+        "keyforms": [
+          {
+            "intensity": 1.0
+          }
+        ]
+      }
+    },
+    "distance": 4.0
+  },
+  {
+    "op": "remove_glue",
+    "id": "Glue_Front_Back"
+  },
+  {
     "op": "set_avatar_profile",
     "profile": {
       "profile_version": 0,

@@ -8,7 +8,7 @@ use ugoe_model::avatar::{AvatarHitArea, AvatarMeta, AvatarProfile, LookAt, Track
 use ugoe_model::deformer::{RotationKeyform, WarpKeyform};
 use ugoe_model::effects::Effects;
 use ugoe_model::expression::{Expression, ExpressionParameter};
-use ugoe_model::mesh::MeshKeyform;
+use ugoe_model::mesh::{Glue, MeshKeyform};
 use ugoe_model::module::{ModuleRequirements, Slot, SlotId};
 use ugoe_model::motion::{Curve, CurveTarget, Motion, MotionEvent, Point};
 use ugoe_model::part::PartKeyform;
@@ -741,6 +741,30 @@ pub enum Command {
     /// (`docs/spec/modules.md#ポーズ`)。
     SetPose {
         pose: Pose,
+    },
+    // ---- グルー (T0659)。規則は `docs/editor.md#グルーの編集` ----
+    /// メッシュ `mesh_a` と `mesh_b` をつなぐグルーを `glues` の末尾に加える。頂点の組は、基準の姿のキャンバス座標で
+    /// B の頂点ごとに `distance` (ピクセル) 以内でいちばん近い A の頂点を選んで作る (組ができなければ拒否)。
+    /// 重みは 0.5、強さは 1 (パラメータに依存しない 1 つのキーフォーム)。`id` を省略すると
+    /// `Glue_<A>_<B>` (モジュールのプロジェクトのメッシュは接頭辞を除いた ID) から作る。
+    CreateGlue {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+        mesh_a: MeshId,
+        mesh_b: MeshId,
+        distance: f32,
+    },
+    /// グルー (`glue.id` のもの) を丸ごと置き換える (両端のメッシュ・頂点の組と重み・強さのキーフォーム)。
+    /// `distance` があれば、頂点の組を `CreateGlue` と同じ方法で作り直す (重みは `glue.pairs` の先頭の重み)。
+    /// 参照するメッシュと頂点の番号は適用後の検証 (`validate`) が調べる。
+    SetGlue {
+        glue: Glue,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        distance: Option<f32>,
+    },
+    /// グルーを消す。
+    RemoveGlue {
+        id: String,
     },
 }
 

@@ -16,6 +16,7 @@ pub mod document;
 pub mod draw_clone;
 pub mod export;
 pub mod fingerprint;
+pub mod glue_edit;
 mod grid;
 pub mod ids;
 pub mod import;
@@ -80,6 +81,8 @@ mod draw_clone_tests;
 mod export_tests;
 #[cfg(test)]
 mod fingerprint_tests;
+#[cfg(test)]
+mod glue_edit_tests;
 #[cfg(test)]
 mod import_tests;
 #[cfg(test)]
