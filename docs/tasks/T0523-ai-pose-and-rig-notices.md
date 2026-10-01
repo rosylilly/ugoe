@@ -1,11 +1,11 @@
 ---
 id: T0523
 title: エディタと AI: 作り直しの知らせをプロジェクトに残す・差分のポーズの追従・ポーズの画面の操作
-status: todo
+status: in-progress
 milestone: M6
 crates: [ugoe-ai, ugoe-editor-core, apps/editor, docs]
 depends_on: [T0521]
-assignee:
+assignee: claude-worker-T0523
 ---
 
 # T0523: ポーズと自動リギングの知らせの残り

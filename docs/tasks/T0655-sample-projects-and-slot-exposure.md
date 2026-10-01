@@ -1,11 +1,11 @@
 ---
 id: T0655
 title: 見本のプロジェクトの変換を editor-core にまとめる・プレビューで公開していないスロットに印・物理の無いときのスロットの衝突体
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-editor-core, ugoe-cli, apps/editor, ugoe, ugoe-runtime, docs]
 depends_on: [T0715]
-assignee:
+assignee: claude-worker-T0655
 ---
 
 # T0655: 見本のプロジェクトとスロットの公開の残り
@@ -20,6 +20,7 @@ T0715 の後続の候補をまとめる。
 - [ ] エディタのプレビューの着せ替えで、アバタープロファイルが公開していないスロットに印を付ける (ビューアは T0715 で隠している)
 - [ ] スロットが `colliders` で本体の衝突体を公開しているとき、物理の設定を渡さずにモデルだけで作った Puppet では、そのスロットにモジュールを付けられなくなる。扱いを見直す (物理が無ければ衝突体の参照を無視するなど)。仕様 (spec/model.md の Slots と Composition) と合わせ、変えるなら spec/ と docs/spec/ を同じ変更で直す
 - [ ] 見本をアバタープロファイルのレベル 3 にするかを決める
+- [ ] エディタの File > Open Sample… が見本の本体の物理しか写さず、見本のモーションと表情 (T0719) がプロジェクトに入らない。変換を editor-core にまとめるときに、モーションと表情も写す (T0719 の後続の候補)
 - [ ] `just ci`・`just gen`・`cargo check -p ugoe-editor` が通る
 
 ## 参考

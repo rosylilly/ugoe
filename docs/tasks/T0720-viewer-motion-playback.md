@@ -1,11 +1,11 @@
 ---
 id: T0720
 title: ビューア: モーションと表情を再生する画面
-status: todo
+status: in-progress
 milestone: M4
 crates: [apps/viewer, docs]
 depends_on: [T0719]
-assignee:
+assignee: claude-worker-T0720
 ---
 
 # T0720: ビューア: モーションと表情を再生する画面
