@@ -46,6 +46,7 @@ puppet.set_motion_over_tracking(true); // 再生中のモーションが動か�
 puppet.clear_tracking();
 ```
 
+- `set_motion_over_tracking(true)` の間、`update` はトラッキングの値を `Puppet::update` の前にホストの書き込みとして入れる。その値は基準値として残り (`docs/spec/motion.md#手で動かしたパラメータとの関係`)、モーションがその上に乗る。表情・目パチ・呼吸は、今までどおりさらにその上に重なる。`Puppet` の適用順は変えない。C ABI にはまだ無い (後続の候補)。
 - 画面座標は canvas の描画バッファの画素 (CSS ピクセル × `devicePixelRatio`)。
 - `set_parameter` は評価を遅らせ、次の `render` や問い合わせでまとめて評価する。物理やモーションを動かすときは `update(dt)` を呼ぶ。
 - モデルを読み直すと、同じ ID のパラメータの値は引き継がれる (エディタで編集・Undo のたびに読み直すため)。
