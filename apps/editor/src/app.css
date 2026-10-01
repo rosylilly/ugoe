@@ -34,7 +34,7 @@ body {
 
 .shell {
   display: grid;
-  grid-template: "header header header" 36px "left viewport right" minmax(0, 1fr) / 240px minmax(
+  grid-template: "header header header" auto "left viewport right" minmax(0, 1fr) / 240px minmax(
       0,
       1fr
     ) 320px;

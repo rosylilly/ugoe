@@ -616,8 +616,11 @@ refresh();
     {/if}
   </span>
   <button onclick={() => pick("importPsd")} disabled={busy}>Import PSD…</button>
-  <span class="project" title={status?.path ?? "not saved yet"}>
-    {status?.name ?? "…"}{#if status?.modified}<span class="dirty" aria-label="modified">●</span>{/if}
+  <!-- 長い名前は省略し、マウスを載せると全体と保存先のパスが出る。未保存の印は省略されない。 -->
+  <span class="project" title={`${status?.name ?? "…"}\n${status?.path ?? "not saved yet"}`}>
+    <span class="name">{status?.name ?? "…"}</span>{#if status?.modified}<span class="dirty" aria-label="modified"
+        >●</span
+      >{/if}
   </span>
   {#if moduleInfo}
     <button class="module" title={moduleTitle(moduleInfo)} onclick={() => (settingsOpen = true)} disabled={busy}
@@ -682,8 +685,10 @@ refresh();
 />
 
 <style>
+  /* 幅が足りないときはボタンを次の行へ折り返す (ヘッダーの高さが伸びる)。 */
   .file-menu {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 4px;
     min-width: 0;
@@ -698,8 +703,16 @@ refresh();
     white-space: nowrap;
   }
   .project {
+    display: inline-flex;
+    min-width: 0;
     margin-left: 8px;
     font-weight: 600;
+    white-space: nowrap;
+  }
+  .project .name {
+    max-width: 16em;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .module {
     flex-shrink: 0;
@@ -710,6 +723,7 @@ refresh();
     white-space: nowrap;
   }
   .dirty {
+    flex-shrink: 0;
     margin-left: 4px;
     color: var(--accent);
   }

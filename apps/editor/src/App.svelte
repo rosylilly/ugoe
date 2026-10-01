@@ -383,6 +383,16 @@ $effect(() => {
     background: var(--panel);
     color: var(--accent);
   }
+  /* 幅が足りないときはファイルのメニューだけが縮んで折り返し、右のボタンと名前は縮めない
+     (ヘッダーの高さが伸びる)。 */
+  header {
+    min-height: 36px;
+    padding-block: 4px;
+  }
+  header > :global(:not(.file-menu)) {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
   header .agents {
     display: inline-flex;
     align-items: center;
