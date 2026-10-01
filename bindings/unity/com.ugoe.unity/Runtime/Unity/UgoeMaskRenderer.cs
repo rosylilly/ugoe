@@ -76,8 +76,26 @@ namespace Ugoe.Unity
             target.SetVector(MaskParamsId, new Vector4(c.PositiveOffset, c.PositiveScale, Mathf.Clamp01(maskStrength), 1));
         }
 
+        /// <summary>
+        /// バッチ (<see cref="DrawBatch"/>) が内容 <paramref name="content"/> を読むためのシェーダの値を <paramref name="target"/> に書く。
+        /// -1 か、まだ描いていなければ読まない設定にする。mask_strength は要素ごとの頂点属性で渡す。
+        /// </summary>
+        public void BindContentRead(MaterialPropertyBlock target, int content)
+        {
+            if (content < 0 || textures[content] == null)
+            {
+                target.SetVector(MaskParamsId, new Vector4(1, 0, 0, 0));
+                target.SetTexture(MaskTexId, Texture2D.whiteTexture);
+                return;
+            }
+            var c = plan.Contents[content];
+            target.SetTexture(MaskTexId, textures[content]);
+            target.SetVector(MaskRectId, rects[content]);
+            target.SetVector(MaskParamsId, new Vector4(c.PositiveOffset, c.PositiveScale, 1, 1));
+        }
+
         /// <summary>すべての内容を描く。</summary>
-        /// <param name="views">描画可能要素ごとのメッシュとテクスチャ。</param>
+        /// <param name="views">描画可能要素ごとのメッシュとテクスチャ (マスク用メッシュの分だけ使う)。</param>
         /// <param name="sync">直前の評価の頂点位置とマスクの効き具合。</param>
         /// <param name="scale">キャンバスの 1 ピクセルあたりの画素数。</param>
         public void Render(IReadOnlyList<UgoePuppet.DrawableView> views, FrameSync sync, float scale)
@@ -132,13 +150,13 @@ namespace Ugoe.Unity
             Graphics.ExecuteCommandBuffer(commands);
         }
 
-        // マスク用メッシュ 1 つのカバレッジを描く (自身のマスクを読む)。
+        // マスク用メッシュ 1 つのカバレッジを描く (自身のマスクを読む。裏向きの三角形も使う)。
         private void Cover(UgoePuppet.DrawableView view, int drawable, FrameSync sync, int pass)
         {
             block.Clear();
             block.SetTexture(MainTexId, view.Texture);
             BindMaskRead(block, drawable, sync.States[drawable].MaskStrength);
-            commands.DrawMesh(view.Mesh, Matrix4x4.identity, material, view.MaskSubmesh, pass, block);
+            commands.DrawMesh(view.Mesh, Matrix4x4.identity, material, 0, pass, block);
         }
 
         // 内容を読む要素の頂点の外接矩形 (キャンバス座標)。

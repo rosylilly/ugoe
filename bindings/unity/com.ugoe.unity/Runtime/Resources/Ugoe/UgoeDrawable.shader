@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MIT
-// ugoe の描画可能要素 1 つを描くシェーダ (spec/rendering.md の Mesh color・Blend modes・Masks・Lighting)。
+// ugoe の描画可能要素を描くシェーダ (spec/rendering.md の Mesh color・Blend modes・Masks・Lighting)。
+// 描画順で隣り合う要素を 1 つのメッシュにまとめて描く (docs/spec/rendering.md#描画の最適化、Runtime/Core/DrawBatches.cs)ので、
+// 要素ごとの値 (乗算色と不透明度・スクリーン色・マスクの効き具合・ライティングの種類) は頂点属性で受け取る。
+// テクスチャ・合成モード・読むマスクの内容はバッチごと (MaterialPropertyBlock と材質)。
 // 出力は乗算済みアルファ。合成モードは _SrcBlend などで材質ごとに決める (Runtime/Unity/UgoePuppet.cs):
 //   normal   = One, OneMinusSrcAlpha / One, OneMinusSrcAlpha
 //   additive = One, One              / Zero, One
@@ -11,9 +14,6 @@ Shader "Hidden/Ugoe/Drawable"
     {
         _MainTex ("Texture (premultiplied)", 2D) = "white" {}
         _NormalTex ("Normal map", 2D) = "bump" {}
-        _Color ("Multiply color (a = opacity)", Vector) = (1, 1, 1, 1)
-        _ScreenColor ("Screen color", Vector) = (0, 0, 0, 0)
-        _LitMode ("Lighting (0 = off, 1 = flat normal, 2 = normal map)", Float) = 0
         _MaskTex ("Mask", 2D) = "white" {}
         _MaskRect ("Mask rect", Vector) = (0, 0, 1, 1)
         _MaskParams ("Mask params", Vector) = (1, 0, 0, 0)
@@ -44,9 +44,6 @@ Shader "Hidden/Ugoe/Drawable"
 
             sampler2D _MainTex;
             sampler2D _NormalTex;
-            float4 _Color;
-            float4 _ScreenColor;
-            float _LitMode;
 
             // 光源 (Ugoe.LightingUniform と同じ中身。材質ごとに設定する)
             float4 _UgoeAmbient;
@@ -59,6 +56,9 @@ Shader "Hidden/Ugoe/Drawable"
                 float4 vertex : POSITION;
                 float2 uv : TEXCOORD0;     // Unity の UV (v は上向き)
                 float2 canvas : TEXCOORD1; // キャンバス座標 (ピクセル・Y 下向き)
+                float4 color : COLOR;      // 乗算色 (rgb) と不透明度 (a)
+                float4 screen : TEXCOORD2; // スクリーン色 (rgb)
+                float2 extra : TEXCOORD3;  // x = mask_strength (マスクを読まなければ 0)、y = ライティング (0 = なし、1 = 法線 (0, 0, 1)、2 = 法線マップ)
             };
 
             struct v2f
@@ -66,6 +66,10 @@ Shader "Hidden/Ugoe/Drawable"
                 float4 pos : SV_POSITION;
                 float2 uv : TEXCOORD0;
                 float2 canvas : TEXCOORD1;
+                // 1 つの三角形の頂点はすべて同じ要素なので、補間しても値は変わらない。
+                float4 color : TEXCOORD2;
+                float4 screen : TEXCOORD3;
+                float2 extra : TEXCOORD4;
             };
 
             v2f vert(appdata v)
@@ -74,15 +78,18 @@ Shader "Hidden/Ugoe/Drawable"
                 o.pos = UnityObjectToClipPos(v.vertex);
                 o.uv = v.uv;
                 o.canvas = v.canvas;
+                o.color = v.color;
+                o.screen = v.screen;
+                o.extra = v.extra;
                 return o;
             }
 
             // 画素の法線 (spec/rendering.md の Normals)。ugoe の UV (v は下向き) とキャンバス座標の画面での微分から、
             // UV → キャンバスの写像のヤコビ行列を求めて回す。画面の y の向きが API で違っても結果は変わらない。
-            float3 SurfaceNormal(float2 unityUv, float2 canvas)
+            float3 SurfaceNormal(float2 unityUv, float2 canvas, float litMode)
             {
                 float3 c = tex2D(_NormalTex, unityUv).rgb * 2.0 - 1.0;
-                float3 n = _LitMode > 1.5 ? float3(c.x, -c.y, c.z) : float3(0, 0, 1);
+                float3 n = litMode > 1.5 ? float3(c.x, -c.y, c.z) : float3(0, 0, 1);
                 float2 uv = float2(unityUv.x, 1.0 - unityUv.y);
                 float2 dpX = ddx(canvas);
                 float2 dpY = ddy(canvas);
@@ -135,14 +142,14 @@ Shader "Hidden/Ugoe/Drawable"
                 // テクスチャは読み込み時に乗算済みアルファにしてある (Runtime/Unity/UgoeTextures.cs)。
                 float4 c = tex2D(_MainTex, i.uv);
                 // 微分を使うので、一様な制御フローで求める。
-                float3 normal = SurfaceNormal(i.uv, i.canvas);
-                float3 rgb = c.rgb * _Color.rgb;
-                rgb = rgb + _ScreenColor.rgb * c.a - rgb * _ScreenColor.rgb;
-                if (_LitMode > 0.5)
+                float3 normal = SurfaceNormal(i.uv, i.canvas, i.extra.y);
+                float3 rgb = c.rgb * i.color.rgb;
+                rgb = rgb + i.screen.rgb * c.a - rgb * i.screen.rgb;
+                if (i.extra.y > 0.5)
                 {
                     rgb *= LightAt(i.canvas, normal);
                 }
-                float4 o = float4(rgb, c.a) * _Color.a * UgoeMaskFactor(i.canvas);
+                float4 o = float4(rgb, c.a) * i.color.a * UgoeMaskFactorWith(i.canvas, i.extra.x);
             #ifndef UNITY_COLORSPACE_GAMMA
                 // リニアの色空間では書き込み先が sRGB で、出力は線形の値として扱われる。ugoe の色は sRGB の値を
                 // そのまま使う約束なので、ストレートの色を線形に直して書く (合成は線形で行われるので、半透明の

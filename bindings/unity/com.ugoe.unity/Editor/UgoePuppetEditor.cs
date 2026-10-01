@@ -23,6 +23,11 @@ namespace Ugoe.Editor
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Drawables", puppet.Drawables.Count.ToString());
+            EditorGUILayout.LabelField("Draw calls", target.DrawCalls.ToString());
+            if (QualitySettings.activeColorSpace == ColorSpace.Linear)
+            {
+                EditorGUILayout.HelpBox(UgoePuppet.LinearColorSpaceWarning, MessageType.Warning);
+            }
             if (puppet.UsesLighting) EditorGUILayout.HelpBox("This model uses lighting (ambient light and lights above).", MessageType.Info);
 
             showParameters = EditorGUILayout.Foldout(showParameters, "Parameters", true);

@@ -69,6 +69,13 @@ namespace UnityEngine
         public static void LogError(object message, Object context) { }
     }
 
+    public enum ColorSpace { Uninitialized = -1, Gamma = 0, Linear = 1 }
+
+    public static class QualitySettings
+    {
+        public static ColorSpace activeColorSpace => ColorSpace.Gamma;
+    }
+
     public static class Time
     {
         public static float deltaTime => 0;
@@ -165,11 +172,15 @@ namespace UnityEngine
         public Vector3[] vertices { get; set; }
         public Vector2[] uv { get; set; }
         public Vector2[] uv2 { get; set; }
+        public Color[] colors { get; set; }
         public int subMeshCount { get; set; }
+        public void Clear() { }
         public Bounds bounds { get; set; }
         public void MarkDynamic() { }
         public void SetVertices(List<Vector3> v) { }
         public void SetUVs(int channel, List<Vector2> uvs) { }
+        public void SetUVs(int channel, Vector2[] uvs) { }
+        public void SetUVs(int channel, Vector4[] uvs) { }
         public void SetIndices(int[] indices, MeshTopology topology, int submesh, bool calculateBounds = true, int baseVertex = 0) { }
         public void SetIndices(int[] indices, int indicesStart, int indicesLength, MeshTopology topology, int submesh, bool calculateBounds = true, int baseVertex = 0) { }
         public void RecalculateBounds() { }

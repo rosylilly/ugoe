@@ -38,9 +38,13 @@ namespace Ugoe
         /// <param name="positions">キャンバス座標の x, y の組。</param>
         /// <param name="indices">三角形の頂点番号 (3 つで 1 つ)。</param>
         /// <param name="output">長さは <paramref name="indices"/> 以上。</param>
-        public static int FrontFacing(float[] positions, ushort[] indices, int[] output)
+        public static int FrontFacing(float[] positions, ushort[] indices, int[] output) =>
+            FrontFacing(positions, indices, output, 0);
+
+        /// <summary><paramref name="output"/> の <paramref name="start"/> から書く。書いた数を返す。</summary>
+        public static int FrontFacing(float[] positions, ushort[] indices, int[] output, int start)
         {
-            var n = 0;
+            var n = start;
             for (var t = 0; t + 2 < indices.Length; t += 3)
             {
                 int i0 = indices[t], i1 = indices[t + 1], i2 = indices[t + 2];
@@ -55,7 +59,7 @@ namespace Ugoe
                     output[n++] = i2;
                 }
             }
-            return n;
+            return n - start;
         }
     }
 

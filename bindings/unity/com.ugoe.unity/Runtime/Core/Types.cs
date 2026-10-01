@@ -208,6 +208,25 @@ namespace Ugoe
         public override string ToString() => $"{Value} @ {Time}";
     }
 
+    /// <summary>
+    /// パーツの不透明度の上書き (直前の <see cref="Puppet.Update"/> がモーションのパーツの不透明度のカーブとポーズから
+    /// 書いたもの。docs/spec/motion.md#フレーム内の適用順)。キーフォームと親を掛けた評価後の値ではない。
+    /// </summary>
+    public readonly struct PartOpacity
+    {
+        public readonly float Value;
+        /// <summary>上書きの重み (0〜1)。上書きしていなければ 0。</summary>
+        public readonly float Weight;
+
+        public PartOpacity(float value, float weight)
+        {
+            Value = value;
+            Weight = weight;
+        }
+
+        public override string ToString() => $"{Value} (weight {Weight})";
+    }
+
     /// <summary>モーションの優先度 (docs/spec/motion.md#モーションマネージャ)。</summary>
     public enum MotionPriority
     {

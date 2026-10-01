@@ -8,6 +8,7 @@
 | crates.io のクレート | `.github/workflows/crates-release.yml` | [crates.io](#cratesio) |
 | npm の `@ugoe/runtime` | `.github/workflows/web-runtime-release.yml` | [bindings/web/README.md#リリース](../bindings/web/README.md#リリース) |
 | エディタとビューアのインストーラ | `.github/workflows/editor-build.yml` | [apps/editor/README.md](../apps/editor/README.md) |
+| Unity の UPM パッケージ (tarball) | `.github/workflows/unity.yml` (成果物に残すだけ) | [bindings/unity/README.md#リリース](../bindings/unity/README.md#リリース) |
 
 公開するかどうか、いつ公開するかは、リポジトリを持つ人 (利用者) が決めて行います。
 
@@ -32,7 +33,8 @@ node scripts/crates.mjs order
 
 1. ルートの `Cargo.toml` の `[workspace.package] version` を変えます。
 2. `node scripts/crates.mjs sync` で、`[workspace.dependencies]` の公開するクレートの `version` を揃えます。
-3. `node bindings/web/scripts/release.mjs sync` で、npm のパッケージの版も揃えます。
+3. `node bindings/web/scripts/release.mjs sync` と `node bindings/unity/release.mjs sync` で、npm のパッケージと
+   Unity のパッケージの版も揃えます。
 4. `cargo update --workspace` で `Cargo.lock` を更新し、コミットします。
 5. `v<版>` のタグを打って push します。
 

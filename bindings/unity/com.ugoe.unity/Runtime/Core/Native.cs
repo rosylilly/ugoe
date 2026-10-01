@@ -92,6 +92,13 @@ namespace Ugoe
         }
 
         [StructLayout(LayoutKind.Sequential)]
+        internal struct PartOpacity
+        {
+            public float Value;
+            public float Weight;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
         internal struct Canvas
         {
             public float Width;
@@ -172,6 +179,15 @@ namespace Ugoe
         [DllImport(Library)] internal static extern int ugoe_puppet_stop_expressions(PuppetHandle puppet);
         [DllImport(Library)] internal static extern int ugoe_puppet_motion_event_count(PuppetHandle puppet, out uint count);
         [DllImport(Library)] internal static extern int ugoe_puppet_motion_event(PuppetHandle puppet, uint index, out MotionEvent motionEvent);
+        [DllImport(Library)] internal static extern int ugoe_puppet_set_effects_json(PuppetHandle puppet, byte[] json, UIntPtr len);
+
+        // --- パーツ・ポーズ ---
+
+        [DllImport(Library)] internal static extern int ugoe_puppet_part_count(PuppetHandle puppet, out uint count);
+        [DllImport(Library)] internal static extern int ugoe_puppet_part_id(PuppetHandle puppet, uint index, out IntPtr id);
+        [DllImport(Library)] internal static extern int ugoe_puppet_part_index(PuppetHandle puppet, byte[] id, out uint index);
+        [DllImport(Library)] internal static extern int ugoe_puppet_part_opacity(PuppetHandle puppet, uint index, out PartOpacity opacity);
+        [DllImport(Library)] internal static extern int ugoe_puppet_show_pose(PuppetHandle puppet, byte[] part, out byte shown);
 
         // --- 物理 ---
 

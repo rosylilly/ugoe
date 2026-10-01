@@ -5,10 +5,12 @@
 //                                                      # 見本のモデルを Samples~/Basic/Models/ に写す (.meta も作る)
 //   node bindings/unity/build.mjs --release    # リリースビルド
 //   node bindings/unity/build.mjs --check      # ビルドして、.meta の検査・Runtime/Core の dotnet test・
-//                                                      # Unity に依存する C# の型の検査 (tests/UnityCompile) を行う (dotnet が要る)
+//                                                      # Unity に依存する C# の型の検査 (tests/UnityCompile)・
+//                                                      # release.mjs のテストを行う (dotnet が要る)
 //   node bindings/unity/build.mjs --metas      # コミットするファイルに足りない .meta を作る (GUID はパスから決める)
 //   node bindings/unity/build.mjs --plugins <dir>
-//       # CI の成果物 (<dir>/<プラットフォーム>/<ライブラリ>。下の PLUGINS の from) を Runtime/Plugins/ に並べる。ビルドはしない
+//       # CI の成果物 (<dir>/<プラットフォーム>/<ライブラリ>。下の PLUGINS の from) を Runtime/Plugins/ に並べ、
+//       # 見本のモデルを写す。ビルドはしない (UPM の tarball は release.mjs pack で作る)
 //
 // ライブラリは target/ (リポジトリのルートと共有。CARGO_TARGET_DIR で変えられる) から写す。
 // パスは UPM パッケージ (com.ugoe.unity/) の中。Runtime/Plugins/ と Samples~/Basic/Models/ はコミットしない (.gitignore)。
@@ -29,7 +31,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // UPM パッケージのルート (package.json のあるところ)
-const pkg = join(here, "com.ugoe.unity");
+export const pkg = join(here, "com.ugoe.unity");
 const root = join(here, "..", "..");
 const args = process.argv.slice(2);
 const release = args.includes("--release");
@@ -40,7 +42,7 @@ const usePlugins = args.includes("--plugins");
 
 // ネイティブライブラリの置き場所と、Unity のプラグインの設定 (PluginImporter の platformData)。
 // from: CI の成果物での場所 (--plugins)。
-const PLUGINS = [
+export const PLUGINS = [
   {
     path: "Linux/x86_64/libugoe_ffi.so",
     from: "linux-x86_64/libugoe_ffi.so",
@@ -285,27 +287,37 @@ function dotnet(...dotnetArgs) {
   execFileSync("dotnet", dotnetArgs, { cwd: here, stdio: "inherit" });
 }
 
-if (metasOnly) {
-  console.log(`made ${makeMetas()} .meta file(s)`);
-} else if (usePlugins) {
-  if (!pluginsFrom || pluginsFrom.startsWith("--")) throw new Error("--plugins needs a directory");
-  let placed = 0;
-  for (const plugin of PLUGINS) {
-    const source = join(pluginsFrom, plugin.from);
-    if (existsSync(source)) {
-      placePlugin(plugin, source);
-      placed++;
-    } else {
-      console.warn(`missing ${plugin.from}; skipped`);
+// release.mjs が PLUGINS を読むために import したときは何もしない。
+if (import.meta.main) {
+  if (metasOnly) {
+    console.log(`made ${makeMetas()} .meta file(s)`);
+  } else if (usePlugins) {
+    if (!pluginsFrom || pluginsFrom.startsWith("--"))
+      throw new Error("--plugins needs a directory");
+    let placed = 0;
+    for (const plugin of PLUGINS) {
+      const source = join(pluginsFrom, plugin.from);
+      if (existsSync(source)) {
+        placePlugin(plugin, source);
+        placed++;
+      } else {
+        console.warn(`missing ${plugin.from}; skipped`);
+      }
     }
-  }
-  if (placed === 0) throw new Error(`no native libraries found in ${pluginsFrom}`);
-} else {
-  const out = buildHost();
-  copySamples();
-  if (check) {
-    checkMetas();
-    dotnet("test", "tests/Ugoe.Tests.csproj", `-p:UgoeFfiDir=${out}`);
-    dotnet("build", "tests/UnityCompile/Ugoe.UnityCompile.csproj");
+    if (placed === 0) throw new Error(`no native libraries found in ${pluginsFrom}`);
+    // 配る UPM パッケージ (release.mjs pack) には見本のモデルも入れる。
+    copySamples();
+  } else {
+    const out = buildHost();
+    copySamples();
+    if (check) {
+      checkMetas();
+      dotnet("test", "tests/Ugoe.Tests.csproj", `-p:UgoeFfiDir=${out}`);
+      dotnet("build", "tests/UnityCompile/Ugoe.UnityCompile.csproj");
+      execFileSync(process.execPath, ["--test", "release.test.mjs"], {
+        cwd: here,
+        stdio: "inherit",
+      });
+    }
   }
 }

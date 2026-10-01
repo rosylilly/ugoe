@@ -67,6 +67,7 @@
 - crates.io には `ugoe` とその依存のクレートだけを公開します (`ugoe-ffi`・`ugoe-wasm`・ツール層は公開しない。[ADR 0027](adr/0027-crates-io-publishing.md))。タグ `v*` で CI (`crates-release.yml`) が予行し、承認の後に公開します ([release.md#cratesio](release.md#cratesio))。
 - ランタイムとライブラリは MIT で配布します ([ADR 0018](adr/0018-licensing-and-1.0-scope.md))。
 - Web の `@ugoe/runtime` は `bindings/web/` に置き、MIT で配布します。GPL-3.0-only の `packages/` (アプリが共有する部品) とは分けます ([ADR 0025](adr/0025-web-runtime-package.md))。使い方は [bindings/web/README.md](../bindings/web/README.md)、npm への公開の手順 (タグ `v*` で CI から公開する `web-runtime-release.yml`) は [bindings/web/README.md#リリース](../bindings/web/README.md#リリース)。
+- Unity の UPM パッケージは `bindings/unity/` に置き、MIT で配布します。タグ `v*` で CI (`unity.yml`) が各プラットフォームのライブラリを入れた tarball を作って成果物に残し、配る場所に置くのは手で行います ([bindings/unity/README.md#リリース](../bindings/unity/README.md#リリース))。
 - Godot の GDExtension は `bindings/godot/` に置き、MIT で配布します。依存する godot-rust だけが MPL-2.0 なので、ルートのワークスペースの外に置きます ([ADR 0026](adr/0026-godot-binding.md))。使い方は [bindings/godot/README.md](../bindings/godot/README.md)。
 
 ## 前方互換

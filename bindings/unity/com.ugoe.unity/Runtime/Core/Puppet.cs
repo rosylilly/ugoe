@@ -282,6 +282,52 @@ namespace Ugoe
             return result;
         }
 
+        /// <summary>
+        /// 目パチ・呼吸・リップシンクの設定を JSON (モデルの <c>effects</c> と同じ形) で差し替える。省略したフィールドは既定値。
+        /// 目パチと呼吸は初めから (同じ設定でも) になり、リップシンクの音量は保つ (docs/spec/motion.md#エフェクト設定の差し替え)。
+        /// 読めなければ <see cref="UgoeResult.Format"/> (何も変えない)。
+        /// </summary>
+        public void SetEffectsJson(string json)
+        {
+            if (json == null) throw new ArgumentNullException(nameof(json));
+            var bytes = System.Text.Encoding.UTF8.GetBytes(json);
+            UgoeException.Check(Native.ugoe_puppet_set_effects_json(handle, bytes, (UIntPtr)bytes.Length));
+        }
+
+        // --- パーツ・ポーズ ---
+
+        /// <summary>パーツの ID (モデルの並び)。着せ替えで変わることがある。</summary>
+        public IReadOnlyList<string> PartIds { get; private set; }
+
+        /// <summary>ID からパーツの番号を引く。無ければ -1。</summary>
+        public int FindPart(string id)
+        {
+            if (id == null) return -1;
+            var r = Native.ugoe_puppet_part_index(handle, Utf8.Encode(id), out var index);
+            if (r == (int)UgoeResult.NotFound) return -1;
+            UgoeException.Check(r);
+            return (int)index;
+        }
+
+        /// <summary>直前の <see cref="Update"/> がパーツ <paramref name="index"/> に書いた不透明度の上書き。</summary>
+        public PartOpacity GetPartOpacity(int index)
+        {
+            UgoeException.Check(Native.ugoe_puppet_part_opacity(handle, (uint)index, out var o));
+            return new PartOpacity(o.Value, o.Weight);
+        }
+
+        /// <summary>
+        /// ポーズで、パーツ <paramref name="part"/> を持つ要素をそのグループの表示中の要素にする (次の <see cref="Update"/> から
+        /// フェードで近づく。そのフレームにモーションが同じグループの要素を要求すれば要求が勝つ。docs/spec/motion.md#ポーズ)。
+        /// どの要素のパーツでもない (リンクのパーツ・知らない ID) なら何も変えずに false。
+        /// </summary>
+        public bool ShowPose(string part)
+        {
+            if (part == null) throw new ArgumentNullException(nameof(part));
+            UgoeException.Check(Native.ugoe_puppet_show_pose(handle, Utf8.Encode(part), out var shown));
+            return shown != 0;
+        }
+
         // --- 物理 ---
 
         /// <summary>
@@ -439,7 +485,7 @@ namespace Ugoe
 
         // --- 内部 ---
 
-        // 着せ替えで変わるもの (描画可能要素・パラメータ・当たり判定・付けているモジュール) を読み直す。
+        // 着せ替えで変わるもの (描画可能要素・パラメータ・当たり判定・パーツ・付けているモジュール) を読み直す。
         private void Reload()
         {
             UgoeException.Check(Native.ugoe_puppet_drawable_count(handle, out var count));
@@ -472,6 +518,7 @@ namespace Ugoe
             }
 
             HitAreaIds = ReadNames(NameList.HitAreas);
+            PartIds = ReadNames(NameList.Parts);
             AttachedModuleNames = ReadNames(NameList.AttachedModules);
         }
 
@@ -481,6 +528,7 @@ namespace Ugoe
             Expressions,
             Slots,
             HitAreas,
+            Parts,
             AttachedModules,
         }
 
@@ -495,6 +543,7 @@ namespace Ugoe
                 case NameList.Expressions: r = Native.ugoe_puppet_expression_count(handle, out n); break;
                 case NameList.Slots: r = Native.ugoe_puppet_slot_count(handle, out n); break;
                 case NameList.HitAreas: r = Native.ugoe_puppet_hit_area_count(handle, out n); break;
+                case NameList.Parts: r = Native.ugoe_puppet_part_count(handle, out n); break;
                 default: r = Native.ugoe_puppet_attached_module_count(handle, out n); break;
             }
             UgoeException.Check(r);
@@ -508,6 +557,7 @@ namespace Ugoe
                     case NameList.Expressions: r = Native.ugoe_puppet_expression_name(handle, i, out ptr); break;
                     case NameList.Slots: r = Native.ugoe_puppet_slot_id(handle, i, out ptr); break;
                     case NameList.HitAreas: r = Native.ugoe_puppet_hit_area_id(handle, i, out ptr); break;
+                    case NameList.Parts: r = Native.ugoe_puppet_part_id(handle, i, out ptr); break;
                     default: r = Native.ugoe_puppet_attached_module_name(handle, i, out ptr); break;
                 }
                 UgoeException.Check(r);

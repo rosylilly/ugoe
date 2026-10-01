@@ -34,6 +34,7 @@
 | `tests/` | `Runtime/Core` の dotnet のテスト (ホストの `libugoe_ffi` と `assets/samples/` のモデルで実行) |
 | `tests/UnityCompile/` | Unity に依存する C# を、Unity の API の形だけを書いたスタブに対して型検査する (実行はしない) |
 | `build.mjs` | ビルド・配置・検査 (下) |
+| `release.mjs` | 版の照合と UPM の tarball ([リリース](#リリース)) |
 
 ## ビルドと検査
 
@@ -44,14 +45,15 @@ just unity-build                           # = node bindings/unity/build.mjs
 just unity-check                           # = node bindings/unity/build.mjs --check
 node bindings/unity/build.mjs              # ホスト向けの ugoe-ffi をビルドして Runtime/Plugins/<OS>/ に置き、見本のモデルを Samples~/Basic/Models/ に写す
 node bindings/unity/build.mjs --release    # リリースビルド
-node bindings/unity/build.mjs --check      # 上に加えて、.meta の検査・dotnet test (tests/)・Unity の部分の型検査 (tests/UnityCompile)
+node bindings/unity/build.mjs --check      # 上に加えて、.meta の検査・dotnet test (tests/)・Unity の部分の型検査 (tests/UnityCompile)・release.mjs のテスト
 node bindings/unity/build.mjs --metas      # 足りない .meta を作る (ファイルを足したら実行してコミットする)
-node bindings/unity/build.mjs --plugins <dir>   # CI の成果物のライブラリを Runtime/Plugins/ に並べる (ビルドしない)
+node bindings/unity/build.mjs --plugins <dir>   # CI の成果物のライブラリを Runtime/Plugins/ に並べ、見本のモデルを写す (ビルドしない)
 ```
 
 - `--check` には .NET SDK (8 以降) が要る (無ければ入れ方を示して止まる)。これらは `just ci` に含まれない。
   CI では `.github/workflows/unity.yml` が、`check` (= `just unity-check`)、`native` (下の表の各プラットフォームの
-  リリースビルド)、`package` (ライブラリを `Runtime/Plugins/` に並べた `com.ugoe.unity` を成果物に残す。公開はしない) を実行する。
+  リリースビルド)、`package` (ライブラリを `Runtime/Plugins/` に並べた `com.ugoe.unity` と、その UPM の tarball を成果物に残す。
+  公開はしない。[リリース](#リリース)) を実行する。
 - `.meta` の GUID はパッケージの中のパスから決める (作り直しても変わらない)。Unity は `.meta` の無いファイルを
   不変のパッケージの中では無視するので、ファイルを足したら `--metas` を実行してコミットする。`--check` が足りない
   `.meta`・残った `.meta`・GUID の重複を検出する。
@@ -74,7 +76,10 @@ WebGL は対象外 (Emscripten 向けの `ugoe-ffi` のビルドがまだ無い�
 2. Unity の Package Manager で **Add package from disk...** を選び、`bindings/unity/com.ugoe.unity/package.json` を開く
    (または `Packages/manifest.json` に `"com.ugoe.unity": "file:<パス>/bindings/unity/com.ugoe.unity"`)。
    Git の URL (`...ugoe.git?path=bindings/unity/com.ugoe.unity`) でも入るが、ネイティブライブラリが入っていないので、
-   別に置く必要がある。
+   別に置く必要がある。リリースの tarball (`com.ugoe.unity-<版>.tgz`。[リリース](#リリース)) なら、**Add package from tarball...**
+   ですべてのプラットフォームのライブラリと見本のモデルごと入る。
+   - **プロジェクトの色空間は Gamma にする** (Project Settings → Player → Other Settings → Color Space)。
+     Linear でも表示できるが、半透明の部分が参照実装と少しずれる ([色空間](#色空間))。
 3. Package Manager の ugoe の **Samples** から **Basic** を取り込み、`Basic.unity` を開いて再生する。見本のモデルは
    `build.mjs` が `Samples~/Basic/Models/` に置いたもの (取り込んだ後に `.ugoe` を `Models/` に足してもよい)。
    - 見本は、モデルの切り替え・パラメータのスライダー・表情とモーションのボタン・着せ替えのチェックボックス (`dress-up`)、
@@ -93,6 +98,9 @@ puppet.Model = model;                         // UgoeModel (.ugoe を取り込�
 puppet.SetParameter("AngleX", 15);            // 次の LateUpdate で評価・描画する
 puppet.StartMotion("idle", MotionPriority.Idle);
 puppet.SetExpression("smile");
+puppet.ShowPose("ArmB");                      // ポーズの表示の選択 (パーツの ID。フェードで切り替わる)
+puppet.Puppet.SetEffectsJson(effectsJson);    // 目パチ・呼吸・リップシンクの設定の差し替え (モデルの effects と同じ JSON)
+var arm = puppet.Puppet.GetPartOpacity(puppet.Puppet.FindPart("ArmB")); // 直前の評価のパーツの不透明度の上書き (Value, Weight)
 puppet.Puppet.SetLipSyncLevel(0.8f);          // Puppet (Ugoe.Puppet) は C ABI の薄い包み。直接使ってよい
 puppet.MotionEventFired += e => Debug.Log($"{e.Value} at {e.Time}");
 puppet.Puppet.ResetPhysics();                 // SetPhysicsJson / PhysicsJson で物理の設定の差し替えと読み出し
@@ -128,13 +136,14 @@ foreach (var id in puppet.HitAreasAt(worldPoint)) Debug.Log(id);
 | `Model` | 表示するモデル。代入すると読み直す |
 | `playing` / `speed` / `playInEditor` / `Advance(dt)` | 時間を進めるか・速さ・エディタで再生していない間も進めるか・手で進める |
 | `PixelsPerUnit` | 1 ユニットあたりのキャンバスのピクセル数 (既定 100)。キャンバスの原点がこのオブジェクトの原点に来る |
+| `batching` / `DrawCalls` | 描画をまとめるか (既定 true。[描画のしかた](#描画のしかた)) / 直前のフレームの描画の呼び出しの数 (インスペクタにも出る) |
 | `maskScale` / `maskCamera` | マスクの解像度の倍率 (1 で画面上の大きさ) / 画面上の大きさを測るカメラ (空なら `Camera.main`) |
 | `AmbientLight` / `SetLights` / `Lights` | 環境光 / 光源 (先頭の 8 個まで)。シーンに保存される |
 | `SetParameter` / `GetParameter` / `SetSavedParameter` | パラメータ (`SetSavedParameter` はシーンに保存する値。インスペクタのスライダーが使う) |
-| `StartMotion` / `SetExpression` | モーション・表情 |
+| `StartMotion` / `SetExpression` / `ShowPose` | モーション・表情・ポーズの表示の選択 |
 | `AttachModule` / `DetachModule` / `SetModules` | 着せ替え (付けたモジュールはシーンに保存される) |
 | `WorldToCanvas` / `CanvasToWorld` / `HitAreasAt` | 座標の変換・当たり判定 |
-| `Puppet` | `Ugoe.Puppet` (パラメータの一覧、`SetParameters`、`SetTracking`、`HitTest`、読み込みの警告など) |
+| `Puppet` | `Ugoe.Puppet` (パラメータの一覧、`SetParameters`、`SetTracking`、`HitTest`、パーツの一覧と不透明度の上書き (`PartIds`・`FindPart`・`GetPartOpacity`)、効果の差し替え (`SetEffectsJson`)、物理の設定 (`SetPhysicsJson`・`PhysicsJson`・`ResetPhysics`)、読み込みの警告など) |
 | イベント `ModelLoaded` / `MotionEventFired` | 読み込んだとき / モーションのイベントが発火したとき (評価の直後) |
 
 `Ugoe.Puppet` などの `Runtime/Core` の型は Unity に依存しないので、Unity の外 (dotnet のサーバなど) でも使える。
@@ -142,10 +151,22 @@ foreach (var id in puppet.HitAreasAt(worldPoint)) Debug.Log(id);
 
 ## 描画のしかた
 
-- 描画可能要素ごとに子の GameObject (`MeshRenderer`、保存しない) を作る。描画順は `sortingOrder` で決め、ルートの
+- **描画をまとめる** ([docs/spec/rendering.md#描画の最適化](../../docs/spec/rendering.md#描画の最適化) の条件どおり)。描画順で
+  隣り合い、テクスチャ・合成モード・読むマスクの内容が同じ要素を 1 つのメッシュにし (`DrawBatchPlan`、`Runtime/Core/DrawBatches.cs`)、
+  まとめたものごとに子の GameObject (`MeshRenderer`、保存しない) を作る。マスクを読まない要素は、どの内容を読む要素ともまとめる。
+  描画順は決して入れ替えない (メッシュの中の三角形を描画順に並べる)。描画順は `sortingOrder` で決め、ルートの
   `SortingGroup` (自動で付く) の中で並ぶので、ほかの 2D の物とは 1 つのまとまりとして並ぶ。
+  - 要素ごとの値 (乗算色と不透明度 = 頂点色、スクリーン色 = UV2、mask_strength とライティングの種類 = UV3) は頂点属性で渡す。
+    テクスチャ・法線マップ・マスクの内容はまとめたものごと (`MaterialPropertyBlock`)。
+  - 描画順か合成モードが変わったらまとめ直す (子の GameObject は使い回す)。表示・不透明度・色・頂点が変わっただけではまとめ直さない
+    (見えない要素は三角形を出さない)。1 つのメッシュは 65536 頂点まで (16 ビットの頂点番号)。
+  - **効くのはテクスチャをアトラスにまとめたモデル** (`ugoe build --atlas`、[docs/spec/file-formats.md#テクスチャのアトラス化](../../docs/spec/file-formats.md#テクスチャのアトラス化))。
+    見本の `avatar.ugoe` (24 要素、レイヤーごとのテクスチャ) はそのままでは 24 回のままだが、アトラスにすると 2 回になる
+    (`dress-up.ugoe` は 14 回 → 2 回。`tests/BatchTests.cs`)。`MaterialPropertyBlock` を使うので、Unity の動的バッチングと SRP Batcher は
+    もともと効かない。
+  - `batching` を false にすると要素ごとに描く (比べるとき・調べるとき)。
 - 毎フレーム LateUpdate で評価し (`ugoe_puppet_update`)、**変更フラグ** (`UGOE_CHANGED_*`・`render_order_changed`) の立った
-  要素だけ、頂点 (`Mesh.vertices`)・色 (`MaterialPropertyBlock`)・表示・描画順を送り直す (`FrameSync`)。
+  要素の分だけ、まとめたメッシュの頂点・頂点の色・三角形 (表示とカリング) を送り直す (`FrameSync`)。
   マスクも、関わる要素の頂点かマスクの効き具合が変わったときだけ描き直す。
 - テクスチャは読み込み時に乗算済みアルファ (参照実装と同じ `(c × a + 127) div 255`) にし、バイリニア・端で止める・
   ミップマップなし・sRGB のデコードなし (`linear: true`) で作る。法線マップはアルファを掛けない。KTX2 は白で代用して警告する。
@@ -154,7 +175,7 @@ foreach (var id in puppet.HitAreasAt(worldPoint)) Debug.Log(id);
   (normal = `One, OneMinusSrcAlpha`、additive = 色 `One, One`・アルファ `Zero, One`、multiply = 色 `DstColor, OneMinusSrcAlpha`・
   アルファ `Zero, One`)。法線は画面での微分から求めたヤコビ行列で回す。
 - 裏面カリングは CPU で表を向く三角形を選ぶ (向きはキャンバス座標だけで決まり、Unity の Y 上向きへの反転に左右されないため)。
-  マスクとしては裏向きの三角形も使う (サブメッシュ 1)。
+  マスクとしては裏向きの三角形も使う (マスク用メッシュは、ほかの要素のマスクになる要素だけ別に持つ)。
 - マスクは、同じマスクの組を読む要素でまとめた「内容」ごとに `RenderTexture` を作り、それを読む要素のキャンバス座標の外接矩形を
   写して描く (`UgoeMaskRenderer`)。R に通常マスク (和集合なら `Π(1 − c)`、共通部分なら作業用のテクスチャを使って `Π c`)、
   G に反転マスクの `Π(1 − c)` を乗算合成で描き、要素のシェーダが自分のキャンバス座標で読んで `k = 1 − s × (1 − m)` にする。
@@ -173,13 +194,44 @@ foreach (var id in puppet.HitAreasAt(worldPoint)) Debug.Log(id);
      吸収する前提) を Direct3D・Metal・Vulkan・OpenGL で。
   5. `avatar-lit.ugoe` の陰影、`dress-up.ugoe` の着せ替え、Built-in・URP の両方のパイプラインでの表示。
   6. Android・iOS のビルドでネイティブライブラリが読まれるか (iOS は `__Internal` の静的ライブラリ)。
-- 色空間: ugoe の色は sRGB の値のまま計算する約束なので、**プロジェクトの色空間を Gamma にすると** 参照と一致する。
-  Linear では、出力をストレートの色に戻してから線形に直して書くが、合成が線形で行われるので半透明の部分が少しずれる。
-- 描画可能要素ごとに `MeshRenderer` を持つ (バッチングはしない)。要素が多いモデルでは描画の呼び出しが多い。
+- 色空間は Gamma を前提にする ([色空間](#色空間))。
+- 描画をまとめた見た目 (まとめない場合と画素が一致すること) は Unity で比べていない (`batching` の切り替えで比べられる)。
 - 1 つの `UgoePuppet` は 1 つの解像度でマスクを描く (複数のカメラで大きさが大きく違うと、小さい方に合わない)。
-- パーツの不透明度・ポーズの表示の選択・効果の差し替えは C ABI に無い (T0414 で足す予定) ので出していない。
+- パーツの不透明度は「直前の評価に渡した上書き」だけを読める (キーフォームと親を掛けた評価後の値は C ABI に無い)。
 - 見本は旧入力 (`UnityEngine.Input`) を使う。
+
+## 色空間
+
+ugoe の色は sRGB の値のまま計算して合成する約束 (spec/rendering.md) なので、**プロジェクトの色空間を Gamma にすると参照実装と一致する**。
+Gamma を前提とし、Linear のプロジェクトでは読み込んだときに 1 度だけ警告を出す (インスペクタにも出す)。
+
+Linear でも表示はできる: シェーダが出力をストレートの色に戻してから線形に直して書くので、不透明な部分は同じ色になる。
+ただし書き込み先 (sRGB) との合成は線形の値で行われるので、半透明の部分 (輪郭のアンチエイリアス・不透明度の低い要素・加算と乗算の合成) は
+参照と少しずれる。一致させるには、Gamma の値のまま合成する中間のレンダーテクスチャ (sRGB の変換なし) に描いてから写す必要があり、
+パイプライン (Built-in・URP) ごとの組み込みが要るので行っていない (後続の候補)。
+
+## リリース
+
+版の正はルートの `Cargo.toml` の `[workspace.package] version` で、`com.ugoe.unity/package.json` の版をそれに合わせる
+([docs/release.md](../../docs/release.md))。公開する (配る場所に置く) かどうかは利用者が決めて行う。
+
+```sh
+node bindings/unity/release.mjs sync               # package.json の版をクレートの版にする
+node bindings/unity/release.mjs check [v<版>]      # 揃っているか (タグを渡すとタグとも比べる)
+node bindings/unity/build.mjs --plugins <dir>      # 各プラットフォームのライブラリ (CI の成果物) と見本のモデルを並べる
+node bindings/unity/release.mjs pack dist          # dist/com.ugoe.unity-<版>.tgz と .sha256 を作る
+```
+
+- `pack` は `npm pack` で、中身を `package/` の下に置いた tarball を作る (UPM の tarball の形。Package Manager の
+  **Add package from tarball...** か、`manifest.json` の `"com.ugoe.unity": "file:<パス>/com.ugoe.unity-<版>.tgz"` で入る)。
+  `build.mjs` の `PLUGINS` のすべてのライブラリと `.meta`、見本のモデルが入っていなければ失敗する
+  (`--allow-missing` で、手元の OS の分だけの tarball も作れる)。
+- **CI:** `v<版>` のタグを push すると `.github/workflows/unity.yml` が動き、`package` のジョブが版を確かめてから tarball を作り、
+  成果物 `com.ugoe.unity-tarball` (tarball と SHA-256) に残す。ブランチでも同じ tarball を作る (版の照合はタグと比べない)。
+- **公開は手で行う:** 成果物をダウンロードし、GitHub の Release に添付する (利用者は tarball をダウンロードして入れる)。
+  スコープ付きのレジストリ (OpenUPM や自前の npm レジストリ) に置くなら、tarball をそのまま `npm publish <tgz> --registry <URL>`
+  できる。OpenUPM は Git のタグからパッケージを作るので、ネイティブライブラリをコミットしないこのリポジトリのままでは使えない。
 
 ## 関連タスク
 
-- T0405 (`docs/tasks/T0405-unity-package.md`)、C ABI は T0401・T0409
+- T0405 (`docs/tasks/T0405-unity-package.md`)、T0419 (C# の API の追加・描画のまとめ・リリース・色空間)、C ABI は T0401・T0409・T0412・T0414

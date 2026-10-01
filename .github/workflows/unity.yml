@@ -1,12 +1,17 @@
 name: Unity
 
 # Unity のパッケージ (bindings/unity): Unity に依存しない C# の層の検査と、各プラットフォームのネイティブライブラリ
-# (ugoe-ffi) のビルド。ビルドしたライブラリを UPM パッケージに並べた zip を成果物として残す (公開はしない)。
+# (ugoe-ffi) のビルド。ビルドしたライブラリを UPM パッケージに並べ、成果物として残す (公開はしない)。
+# - `v*` のタグ (ほかの配布物と同じ。docs/release.md) では、タグ・クレートの版・package.json の版が揃っているかを確かめ、
+#   UPM の tarball (com.ugoe.unity-<版>.tgz と .sha256) を成果物 `com.ugoe.unity-tarball` に残す。
+#   配る場所 (GitHub の Release など) に置くのは利用者が行う (bindings/unity/README.md#リリース)。
 # Unity のエディタは使わない (bindings/unity/README.md#制限と確かめていないこと)。
 
 on:
   push:
     branches: [main]
+    # タグの push ではパスの絞り込みは効かない (常に動く)
+    tags: ["v*"]
     paths:
       - "crates/**"
       - "bindings/unity/**"
@@ -143,24 +148,36 @@ jobs:
           path: out/
           if-no-files-found: error
 
-  # ネイティブライブラリを UPM パッケージ (com.ugoe.unity/Runtime/Plugins/) に並べ、.meta を作って zip にする。
+  # ネイティブライブラリを UPM パッケージ (com.ugoe.unity/Runtime/Plugins/) に並べ、.meta を作って成果物にする。
+  # UPM の tarball も作る (タグでは版を確かめる)。
   package:
-    needs: native
+    needs: [check, native]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version-file: .tool-versions
+      - name: Check versions
+        env:
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: node bindings/unity/release.mjs check "$TAG"
       - uses: actions/download-artifact@v8
         with:
           pattern: ugoe-ffi-*
           path: plugins
           merge-multiple: true
-      - name: Place the native libraries
+      - name: Place the native libraries and the sample models
         run: node bindings/unity/build.mjs --plugins plugins
+      - name: Pack the UPM tarball
+        run: node bindings/unity/release.mjs pack dist
       - uses: actions/upload-artifact@v7
         with:
           name: com.ugoe.unity
           path: bindings/unity/com.ugoe.unity/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: com.ugoe.unity-tarball
+          path: dist/
           if-no-files-found: error

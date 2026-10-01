@@ -33,9 +33,10 @@ namespace Ugoe.Unity
     /// <c>.ugoe</c> のモデルを表示し、動かすコンポーネント (portability.md の段階 B: 評価は ugoe_ffi、描画は Unity)。
     /// </summary>
     /// <remarks>
-    /// <para>描画可能要素ごとに子の GameObject (<see cref="MeshRenderer"/>) を作り、描画順は <c>sortingOrder</c> で決める
-    /// (このオブジェクトの <see cref="SortingGroup"/> の中で並ぶので、ほかの 2D の物とは 1 つのまとまりとして並ぶ)。
-    /// 子は保存しない (<see cref="HideFlags.DontSave"/>)。</para>
+    /// <para>描画順で隣り合い、同じテクスチャ・合成モード・マスクの内容で描ける要素を 1 つのメッシュにまとめ
+    /// (<see cref="DrawBatchPlan"/>、docs/spec/rendering.md#描画の最適化)、まとめたものごとに子の GameObject
+    /// (<see cref="MeshRenderer"/>) を作る。描画順は <c>sortingOrder</c> で決める (このオブジェクトの <see cref="SortingGroup"/> の
+    /// 中で並ぶので、ほかの 2D の物とは 1 つのまとまりとして並ぶ)。子は保存しない (<see cref="HideFlags.DontSave"/>)。</para>
     /// <para>キャンバスの原点がこのオブジェクトの原点に来る。キャンバスの 1 ピクセルは <see cref="pixelsPerUnit"/> 分の 1 ユニットで、
     /// Y は上向きに直す。</para>
     /// <para>評価と転送は LateUpdate で行う (ほかのスクリプトが Update で設定したパラメータがそのフレームに効く)。
@@ -59,6 +60,8 @@ namespace Ugoe.Unity
         public bool playInEditor;
         [Tooltip("1 ユニットあたりのキャンバスのピクセル数")]
         [SerializeField] private float pixelsPerUnit = 100;
+        [Tooltip("描画順で隣り合い、同じ材質で描ける要素を 1 つのメッシュにまとめるか (テクスチャをアトラスにまとめたモデルで効く)")]
+        public bool batching = true;
         [Tooltip("マスクの解像度の倍率。1 で画面上の大きさと同じ")]
         [Range(0.125f, 4)] public float maskScale = 1;
         [Tooltip("マスクの解像度を画面上の大きさに合わせるカメラ (空なら Camera.main)")]
@@ -82,6 +85,10 @@ namespace Ugoe.Unity
         private UgoeMaskRenderer masks;
         private readonly UgoeTextures textures = new UgoeTextures();
         private readonly List<DrawableView> views = new List<DrawableView>();
+        private readonly List<BatchView> batchViews = new List<BatchView>();
+        private ushort[][] indexLists;
+        private DrawBatchPlan batchPlan;
+        private bool batchingUsed;
         private Material[] blendMaterials;
         private Material maskMaterial;
         private bool dirty;
@@ -94,29 +101,43 @@ namespace Ugoe.Unity
 
         private static readonly int MainTexId = Shader.PropertyToID("_MainTex");
         private static readonly int NormalTexId = Shader.PropertyToID("_NormalTex");
-        private static readonly int ColorId = Shader.PropertyToID("_Color");
-        private static readonly int ScreenColorId = Shader.PropertyToID("_ScreenColor");
-        private static readonly int LitModeId = Shader.PropertyToID("_LitMode");
         private static readonly int AmbientId = Shader.PropertyToID("_UgoeAmbient");
         private static readonly int LightCountId = Shader.PropertyToID("_UgoeLightCount");
         private static readonly int LightVectorsId = Shader.PropertyToID("_UgoeLightVectors");
         private static readonly int LightColorsId = Shader.PropertyToID("_UgoeLightColors");
 
-        /// <summary>描画可能要素 1 つ分の Unity の物。</summary>
+        /// <summary>描画可能要素 1 つ分の頂点と、マスク用メッシュ。</summary>
         internal sealed class DrawableView
+        {
+            /// <summary>ほかの要素のマスクとして使うときのメッシュ (すべての三角形。マスク用メッシュでなければ null)。</summary>
+            public Mesh Mesh;
+            public Texture Texture;
+            /// <summary>このオブジェクトの座標での頂点 (Y 上向き)。</summary>
+            public Vector3[] Vertices;
+            /// <summary>キャンバス座標の頂点 (マスクとライティングに使う)。</summary>
+            public Vector2[] Canvas;
+            /// <summary>Unity の UV (v は上向き)。</summary>
+            public Vector2[] Uvs;
+            /// <summary>ライティングの種類 (0 = なし、1 = 法線 (0, 0, 1)、2 = 法線マップ)。</summary>
+            public float LitMode;
+        }
+
+        /// <summary>1 回の描画でまとめて描く要素 (<see cref="DrawBatch"/>) の Unity の物。</summary>
+        private sealed class BatchView
         {
             public GameObject GameObject;
             public MeshRenderer Renderer;
             public Mesh Mesh;
-            public Texture Texture;
-            /// <summary>マスクとして描くときのサブメッシュ (カリングする要素は、裏向きも含めた 1 番)。</summary>
-            public int MaskSubmesh;
+            public DrawBatch Batch;
+            /// <summary>次の転送ですべてを送るか (作った直後とバッチを作り直した後)。</summary>
+            public bool Full;
             public Vector3[] Vertices;
             public Vector2[] Canvas;
-            public ushort[] Indices;
-            public int[] FrontIndices;
-            public bool Culling;
-            public BlendMode Blend = (BlendMode)(-1);
+            public Vector2[] Uvs;
+            public Color[] Colors;
+            public Vector4[] Screen;
+            public Vector2[] Extra;
+            public int[] Indices;
             public MaterialPropertyBlock Block = new MaterialPropertyBlock();
         }
 
@@ -131,7 +152,20 @@ namespace Ugoe.Unity
             }
         }
 
-        /// <summary>評価を行う <see cref="Ugoe.Puppet"/> (読み込んでいなければ null)。直接操作してよい
+        /// <summary>
+        /// 直前の転送での描画の呼び出しの数 (まとめたメッシュの数。マスクの内容を描く分は含まない)。
+        /// テクスチャをアトラスにまとめたモデル (<c>ugoe build --atlas</c>) では要素の数より少なくなる。
+        /// </summary>
+        public int DrawCalls => batchViews.Count;
+
+        /// <summary>プロジェクトの色空間が Linear のときの注意 (README の「色空間」)。</summary>
+        public const string LinearColorSpaceWarning =
+            "The project uses the Linear color space: semi-transparent pixels blend slightly differently from the ugoe " +
+            "reference renderer. Set Project Settings > Player > Other Settings > Color Space to Gamma to match it exactly.";
+
+        private static bool linearWarned;
+
+                /// <summary>評価を行う <see cref="Ugoe.Puppet"/> (読み込んでいなければ null)。直接操作してよい
         /// (着せ替えは <see cref="AttachModule"/> などを使うと描画も作り直す)。</summary>
         public Puppet Puppet => puppet;
 
@@ -166,6 +200,12 @@ namespace Ugoe.Unity
                 return;
             }
             foreach (var w in puppet.LoadWarnings) Debug.LogWarning($"ugoe: {model.name}: {w}", this);
+            if (QualitySettings.activeColorSpace == ColorSpace.Linear && !linearWarned)
+            {
+                // 1 回だけ知らせる (Gamma に切り替えない選択もある)。
+                linearWarned = true;
+                Debug.LogWarning($"ugoe: {LinearColorSpaceWarning}", this);
+            }
             var attach = new List<Module>();
             foreach (var m in modules)
             {
@@ -196,7 +236,8 @@ namespace Ugoe.Unity
             puppet = null;
         }
 
-        // 描画可能要素の並びに合わせて、子・メッシュ・マスクを作る (読み込みと着せ替えの後)。
+        // 描画可能要素の並びに合わせて、頂点の控え・マスク用メッシュ・マスクを作る (読み込みと着せ替えの後)。
+        // まとめたメッシュ (子の GameObject) は、最初の評価の後に描画順を見て作る (RebuildBatches)。
         private void Build()
         {
             DestroyViews();
@@ -205,69 +246,112 @@ namespace Ugoe.Unity
             plan = MaskPlan.Build(puppet.Drawables);
             masks = new UgoeMaskRenderer(plan, maskMaterial);
             var drawables = puppet.Drawables;
+            indexLists = new ushort[drawables.Count][];
             for (var i = 0; i < drawables.Count; i++)
             {
                 var info = drawables[i];
-                var go = new GameObject(info.Id) { hideFlags = HideFlags.DontSave | HideFlags.NotEditable };
-                go.layer = gameObject.layer;
-                go.transform.SetParent(transform, false);
-                var mesh = new Mesh { name = info.Id, hideFlags = HideFlags.DontSave };
-                mesh.MarkDynamic();
                 var uvs = puppet.GetUvs(i);
-                var unityUvs = new Vector2[info.VertexCount];
-                for (var v = 0; v < unityUvs.Length; v++) unityUvs[v] = new Vector2(uvs[v * 2], 1 - uvs[v * 2 + 1]);
                 var view = new DrawableView
                 {
-                    GameObject = go,
-                    Mesh = mesh,
                     Vertices = new Vector3[info.VertexCount],
                     Canvas = new Vector2[info.VertexCount],
-                    Indices = puppet.GetIndices(i),
-                    Culling = info.Culling,
+                    Uvs = new Vector2[info.VertexCount],
                     Texture = textures.GetColor(info.Texture),
+                    LitMode = info.Lit ? (textures.GetNormal(info.Texture) != null ? 2 : 1) : 0,
                 };
-                mesh.vertices = view.Vertices;
-                mesh.uv = unityUvs;
-                mesh.uv2 = view.Canvas;
-                var all = new int[view.Indices.Length];
-                for (var k = 0; k < all.Length; k++) all[k] = view.Indices[k];
-                if (info.Culling)
+                for (var v = 0; v < view.Uvs.Length; v++) view.Uvs[v] = new Vector2(uvs[v * 2], 1 - uvs[v * 2 + 1]);
+                indexLists[i] = puppet.GetIndices(i);
+                if (plan.IsMaskSource[i])
                 {
-                    view.FrontIndices = new int[all.Length];
-                    mesh.subMeshCount = 2;
-                    mesh.SetIndices(all, MeshTopology.Triangles, 1, false);
-                    view.MaskSubmesh = 1;
+                    view.Mesh = new Mesh { name = $"{info.Id} (mask)", hideFlags = HideFlags.DontSave };
+                    view.Mesh.MarkDynamic();
+                    view.Mesh.vertices = view.Vertices;
+                    view.Mesh.uv = view.Uvs;
+                    view.Mesh.uv2 = view.Canvas;
+                    var all = new int[indexLists[i].Length];
+                    for (var k = 0; k < all.Length; k++) all[k] = indexLists[i][k];
+                    view.Mesh.SetIndices(all, MeshTopology.Triangles, 0, false);
                 }
-                mesh.SetIndices(all, MeshTopology.Triangles, 0, false);
-
-                go.AddComponent<MeshFilter>().sharedMesh = mesh;
-                view.Renderer = go.AddComponent<MeshRenderer>();
-                view.Renderer.shadowCastingMode = ShadowCastingMode.Off;
-                view.Renderer.receiveShadows = false;
-                view.Renderer.lightProbeUsage = LightProbeUsage.Off;
-                view.Renderer.reflectionProbeUsage = ReflectionProbeUsage.Off;
-                view.Renderer.sortingOrder = i;
-
-                var normal = textures.GetNormal(info.Texture);
-                view.Block.SetTexture(MainTexId, view.Texture);
-                view.Block.SetTexture(NormalTexId, normal != null ? normal : UgoeTextures.FlatNormal);
-                view.Block.SetFloat(LitModeId, info.Lit ? (normal != null ? 2 : 1) : 0);
                 views.Add(view);
             }
+            batchPlan = null;
             lightsDirty = true;
             dirty = true;
             // 作った直後はすべての変更フラグが立っているので、次の Pull ですべて送る。
             Advance(0);
         }
 
+        // 描画順と合成モードからバッチを決め直し、まとめたメッシュを作り直す (子の GameObject は使い回す)。
+        private void RebuildBatches()
+        {
+            batchingUsed = batching;
+            batchPlan = DrawBatchPlan.Build(puppet.Drawables, sync.States, sync.RenderOrder, plan, batching);
+            var batches = batchPlan.Batches;
+            for (var b = 0; b < batches.Count; b++)
+            {
+                if (b == batchViews.Count) batchViews.Add(CreateBatchView());
+                var bv = batchViews[b];
+                var batch = batches[b];
+                var first = puppet.Drawables[batch.Members[0]].Id;
+                bv.GameObject.name = batch.Members.Length == 1 ? first : $"{first} (+{batch.Members.Length - 1})";
+                bv.Batch = batch;
+                bv.Full = true;
+                bv.Vertices = new Vector3[batch.VertexCount];
+                bv.Canvas = new Vector2[batch.VertexCount];
+                bv.Uvs = new Vector2[batch.VertexCount];
+                bv.Colors = new Color[batch.VertexCount];
+                bv.Screen = new Vector4[batch.VertexCount];
+                bv.Extra = new Vector2[batch.VertexCount];
+                bv.Indices = new int[batch.IndexCapacity];
+                for (var k = 0; k < batch.Members.Length; k++)
+                {
+                    var uvs = views[batch.Members[k]].Uvs;
+                    Array.Copy(uvs, 0, bv.Uvs, batch.VertexOffsets[k], uvs.Length);
+                }
+                bv.Renderer.sharedMaterial = blendMaterials[(int)batch.BlendMode];
+                bv.Renderer.sortingOrder = b;
+                var normal = textures.GetNormal(batch.Texture);
+                bv.Block.SetTexture(MainTexId, textures.GetColor(batch.Texture));
+                bv.Block.SetTexture(NormalTexId, normal != null ? normal : UgoeTextures.FlatNormal);
+                masks.BindContentRead(bv.Block, batch.MaskContent);
+                bv.Renderer.SetPropertyBlock(bv.Block);
+            }
+            while (batchViews.Count > batches.Count)
+            {
+                var last = batchViews[batchViews.Count - 1];
+                DestroyObject(last.Mesh);
+                DestroyObject(last.GameObject);
+                batchViews.RemoveAt(batchViews.Count - 1);
+            }
+        }
+
+        private BatchView CreateBatchView()
+        {
+            var go = new GameObject("ugoe batch") { hideFlags = HideFlags.DontSave | HideFlags.NotEditable };
+            go.layer = gameObject.layer;
+            go.transform.SetParent(transform, false);
+            var mesh = new Mesh { name = "ugoe batch", hideFlags = HideFlags.DontSave };
+            mesh.MarkDynamic();
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var renderer = go.AddComponent<MeshRenderer>();
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            renderer.lightProbeUsage = LightProbeUsage.Off;
+            renderer.reflectionProbeUsage = ReflectionProbeUsage.Off;
+            return new BatchView { GameObject = go, Renderer = renderer, Mesh = mesh };
+        }
+
         private void DestroyViews()
         {
-            foreach (var v in views)
-            {
-                DestroyObject(v.Mesh);
-                DestroyObject(v.GameObject);
-            }
+            foreach (var v in views) DestroyObject(v.Mesh);
             views.Clear();
+            foreach (var b in batchViews)
+            {
+                DestroyObject(b.Mesh);
+                DestroyObject(b.GameObject);
+            }
+            batchViews.Clear();
+            batchPlan = null;
             masks?.Dispose();
             masks = null;
         }
@@ -388,6 +472,10 @@ namespace Ugoe.Unity
         private void Sync()
         {
             sync.Pull();
+            if (batchPlan == null || sync.RenderOrderChanged || batching != batchingUsed || batchPlan.NeedsRebuild(sync.States))
+            {
+                RebuildBatches();
+            }
             var ox = puppet.Canvas.OriginX;
             var oy = puppet.Canvas.OriginY;
             var inv = 1 / pixelsPerUnit;
@@ -395,8 +483,6 @@ namespace Ugoe.Unity
             for (var i = 0; i < views.Count; i++)
             {
                 var view = views[i];
-                var state = sync.States[i];
-                var changes = state.Changes;
                 if (sync.PositionsChanged[i])
                 {
                     var p = sync.Positions[i];
@@ -406,35 +492,17 @@ namespace Ugoe.Unity
                         view.Canvas[v] = new Vector2(x, y);
                         view.Vertices[v] = new Vector3((x - ox) * inv, (oy - y) * inv, 0);
                     }
-                    view.Mesh.vertices = view.Vertices;
-                    view.Mesh.uv2 = view.Canvas;
-                    if (view.Culling)
+                    if (view.Mesh != null)
                     {
-                        var n = Culling.FrontFacing(p, view.Indices, view.FrontIndices);
-                        view.Mesh.SetIndices(view.FrontIndices, 0, n, MeshTopology.Triangles, 0, false);
+                        view.Mesh.vertices = view.Vertices;
+                        view.Mesh.uv2 = view.Canvas;
+                        view.Mesh.RecalculateBounds();
                     }
-                    view.Mesh.RecalculateBounds();
                     if (plan.IsMaskSource[i] || plan.ContentOf[i] >= 0) maskDirty = true;
                 }
-                if ((changes & DrawableChanges.MaskStrength) != 0 && plan.IsMaskSource[i] && plan.ContentOf[i] >= 0) maskDirty = true;
-                if (view.Blend != state.BlendMode)
-                {
-                    view.Blend = state.BlendMode;
-                    view.Renderer.sharedMaterial = blendMaterials[(int)state.BlendMode];
-                }
-                if ((changes & DrawableChanges.Visibility) != 0) view.Renderer.enabled = state.Visible;
-                if ((changes & (DrawableChanges.Opacity | DrawableChanges.MultiplyColor | DrawableChanges.ScreenColor | DrawableChanges.MaskStrength)) != 0)
-                {
-                    view.Block.SetVector(ColorId, new Vector4(state.MultiplyR, state.MultiplyG, state.MultiplyB, state.Opacity));
-                    view.Block.SetVector(ScreenColorId, new Vector4(state.ScreenR, state.ScreenG, state.ScreenB, 0));
-                    masks.BindMaskRead(view.Block, i, state.MaskStrength);
-                    view.Renderer.SetPropertyBlock(view.Block);
-                }
+                if ((sync.States[i].Changes & DrawableChanges.MaskStrength) != 0 && plan.IsMaskSource[i] && plan.ContentOf[i] >= 0) maskDirty = true;
             }
-            if (sync.RenderOrderChanged)
-            {
-                for (var rank = 0; rank < sync.RenderOrder.Length; rank++) views[sync.RenderOrder[rank]].Renderer.sortingOrder = rank;
-            }
+            foreach (var bv in batchViews) SyncBatch(bv);
 
             var scale = MaskResolution();
             if (!Mathf.Approximately(scale, lastMaskScale)) maskDirty = true;
@@ -442,14 +510,82 @@ namespace Ugoe.Unity
             {
                 lastMaskScale = scale;
                 masks.Render(views, sync, scale);
-                // 矩形とテクスチャが変わりうるので、マスクを読む要素の値を設定し直す。
-                for (var i = 0; i < views.Count; i++)
+                // 矩形とテクスチャが変わりうるので、マスクを読むバッチの値を設定し直す。
+                foreach (var bv in batchViews)
                 {
-                    if (plan.ContentOf[i] < 0) continue;
-                    masks.BindMaskRead(views[i].Block, i, sync.States[i].MaskStrength);
-                    views[i].Renderer.SetPropertyBlock(views[i].Block);
+                    if (bv.Batch.MaskContent < 0) continue;
+                    masks.BindContentRead(bv.Block, bv.Batch.MaskContent);
+                    bv.Renderer.SetPropertyBlock(bv.Block);
                 }
             }
+        }
+
+        private const DrawableChanges ColorChanges =
+            DrawableChanges.Opacity | DrawableChanges.MultiplyColor | DrawableChanges.ScreenColor | DrawableChanges.MaskStrength;
+
+        // まとめたメッシュ 1 つに、変わった要素の頂点・色・三角形を写して送る。
+        private void SyncBatch(BatchView bv)
+        {
+            var batch = bv.Batch;
+            var full = bv.Full;
+            bv.Full = false;
+            bool vertices = full, colors = full, indices = full;
+            for (var k = 0; k < batch.Members.Length; k++)
+            {
+                var i = batch.Members[k];
+                var offset = batch.VertexOffsets[k];
+                var view = views[i];
+                var state = sync.States[i];
+                if (full || sync.PositionsChanged[i])
+                {
+                    Array.Copy(view.Vertices, 0, bv.Vertices, offset, view.Vertices.Length);
+                    Array.Copy(view.Canvas, 0, bv.Canvas, offset, view.Canvas.Length);
+                    vertices = true;
+                    // 裏面カリングする要素は、頂点が動くと表を向く三角形が変わる。
+                    if (puppet.Drawables[i].Culling) indices = true;
+                }
+                if (full || (state.Changes & ColorChanges) != 0)
+                {
+                    var color = new Color(state.MultiplyR, state.MultiplyG, state.MultiplyB, state.Opacity);
+                    var screen = new Vector4(state.ScreenR, state.ScreenG, state.ScreenB, 0);
+                    // マスクを読まない要素は mask_strength 0 (バッチの内容を読んでも係数は 1)。
+                    var extra = new Vector2(plan.ContentOf[i] >= 0 ? Mathf.Clamp01(state.MaskStrength) : 0, view.LitMode);
+                    for (var v = 0; v < view.Vertices.Length; v++)
+                    {
+                        bv.Colors[offset + v] = color;
+                        bv.Screen[offset + v] = screen;
+                        bv.Extra[offset + v] = extra;
+                    }
+                    colors = true;
+                }
+                if ((state.Changes & DrawableChanges.Visibility) != 0) indices = true;
+            }
+            var mesh = bv.Mesh;
+            if (full)
+            {
+                // 頂点の数が変わるので、三角形を消してから頂点を入れ替える。
+                mesh.Clear();
+                mesh.vertices = bv.Vertices;
+                mesh.uv = bv.Uvs;
+            }
+            else if (vertices)
+            {
+                mesh.vertices = bv.Vertices;
+            }
+            if (vertices) mesh.uv2 = bv.Canvas;
+            if (colors)
+            {
+                mesh.colors = bv.Colors;
+                mesh.SetUVs(2, bv.Screen);
+                mesh.SetUVs(3, bv.Extra);
+            }
+            if (indices)
+            {
+                var n = batch.WriteIndices(puppet.Drawables, indexLists, sync.Positions, sync.States, bv.Indices);
+                mesh.SetIndices(bv.Indices, 0, n, MeshTopology.Triangles, 0, false);
+                bv.Renderer.enabled = n > 0;
+            }
+            if (vertices) mesh.RecalculateBounds();
         }
 
         // マスクの解像度 (キャンバスの 1 ピクセルあたりの画素数)。画面上の大きさに合わせ、揺れで作り直さないように 2^(1/4) 刻みに丸める。
@@ -584,6 +720,14 @@ namespace Ugoe.Unity
         {
             puppet?.SetExpression(name);
             dirty = true;
+        }
+
+        /// <summary>ポーズで、パーツ <paramref name="part"/> の要素を表示する (フェードで切り替わる)。ポーズの要素でなければ false。</summary>
+        public bool ShowPose(string part)
+        {
+            if (puppet == null || !puppet.ShowPose(part)) return false;
+            dirty = true;
+            return true;
         }
 
         // --- 着せ替え ---
