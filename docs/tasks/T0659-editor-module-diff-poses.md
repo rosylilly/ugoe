@@ -1,11 +1,11 @@
 ---
 id: T0659
 title: エディタ: モジュールのポーズの違いを中身まで出す・グルーの画面・強調した要素へ寄せる
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-editor-core, apps/editor, docs]
 depends_on: [T0657]
-assignee:
+assignee: claude-worker-T0659
 ---
 
 # T0659: モジュールの違いの仕上げ

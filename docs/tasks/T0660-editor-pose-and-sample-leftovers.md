@@ -1,11 +1,11 @@
 ---
 id: T0660
 title: エディタ: プレビューでのポーズの切り替え・名前で見つけた差分の追従・物理の無い本体の衝突体の案内・見本の肩の衝突体
-status: todo
+status: in-progress
 milestone: M4
 crates: [ugoe-ai, ugoe-editor-core, ugoe-mcp, ugoe-cli, assets, apps/editor, docs]
 depends_on: [T0523, T0655]
-assignee:
+assignee: claude-worker-T0660
 ---
 
 # T0660: ポーズと見本の残り

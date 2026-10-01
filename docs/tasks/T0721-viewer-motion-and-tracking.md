@@ -1,11 +1,11 @@
 ---
 id: T0721
 title: ビューア: トラッキング中にモーションを優先する・待機モーションを自動で流す・使っている表情の一覧
-status: todo
+status: in-progress
 milestone: M4
 crates: [apps/viewer, ugoe-wasm, bindings/web, docs]
 depends_on: [T0720]
-assignee:
+assignee: claude-worker-T0721
 ---
 
 # T0721: ビューアのモーションとトラッキングの残り
