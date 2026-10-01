@@ -776,6 +776,170 @@ fn agent_driven_auto_rig_from_psd() {
     assert_eq!(page["layers"][0]["set_by"], "rules");
 }
 
+/// 着せ替えの見本の本体 (`assets/samples/dress-up/`)。
+fn dress_up_base() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/samples/dress-up/dress-up.ugoe")
+}
+
+/// モジュールの自動リギング: 本体のスロットに付けるモジュールのプロジェクトを PSD から作り、差分の組
+/// (`variant_sets`) を渡して、ポーズを含むリグを提案 → 適用 → 保存する。パラメータは足さない。
+#[test]
+fn agent_driven_module_rig_from_psd() {
+    let tmp = TempDir::new("module-rig");
+    let project = tmp.0.join("costume.ugoeproj");
+    let path = project.to_str().unwrap();
+    let psd = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/fixtures/character.psd");
+    let psd = psd.to_str().unwrap();
+    let base = dress_up_base();
+    let base = base.to_str().unwrap();
+    let mut client = Client::spawn(&[]);
+    client.initialize();
+
+    // 値の形は ugoe_ai の JSON Schema から作る。
+    let list = client.request("tools/list", json!({}));
+    let tools = list["result"]["tools"].as_array().unwrap();
+    let schema = tools
+        .iter()
+        .find(|t| t["name"] == "propose_module_rig")
+        .unwrap()["inputSchema"]
+        .clone();
+    assert_eq!(
+        schema["properties"]["params"]["properties"],
+        ugoe_ai::module_rig::module_rig_output_schema()["properties"]
+    );
+    assert!(tools.iter().any(|t| t["name"] == "get_module_rig_guide"));
+
+    // 本体とスロットは一緒に渡す。
+    let err = client.call_err(
+        "import_psd",
+        json!({ "path": path, "psd": psd, "base": base }),
+    );
+    assert!(err.contains("`base` and `slot` together"), "{err}");
+    let err = client.call_err(
+        "import_psd",
+        json!({ "path": path, "psd": psd, "base": base, "slot": "Nope" }),
+    );
+    assert!(err.contains("module project could not be created"), "{err}");
+    let imported = client.call_ok(
+        "import_psd",
+        json!({ "path": path, "psd": psd, "base": base, "slot": "Headwear", "name": "Costume" }),
+    );
+    assert_eq!(imported["module"]["slot"], "Headwear", "{imported}");
+    let meshes = imported["meshes"].as_u64().unwrap();
+    assert!((5..20).contains(&meshes), "{imported}");
+    let parameters = parameter_ids(&client.call_ok("get_model_summary", json!({ "path": path })));
+    assert!(!parameters.is_empty());
+
+    // 本体向けのリグのツールは、モジュールのツールへ案内する。
+    let err = client.call_err("get_rig_guide", json!({ "path": path }));
+    assert!(err.contains("get_module_rig_guide"), "{err}");
+    let err = client.call_err("propose_rig", json!({ "path": path }));
+    assert!(err.contains("propose_module_rig"), "{err}");
+
+    // 左右の目を同じ部品の別の絵とする (名前や絵の重なりでは組にならないもの)。
+    let page = client.call_ok(
+        "get_psd_layers",
+        json!({ "path": path, "count": 32, "images": false, "overview": false }),
+    );
+    let index_of = |name: &str| {
+        page["layers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["path"].as_array().unwrap().last().unwrap() == name)
+            .unwrap()["index"]
+            .clone()
+    };
+    let (right, left) = (index_of("右目"), index_of("左目"));
+    let summary = client.call_ok(
+        "set_layer_labels",
+        json!({ "path": path, "variant_sets": [[right, left]] }),
+    );
+    assert_eq!(summary["rig"]["ready"], true, "{summary}");
+    assert_eq!(summary["rig"]["tool"], "propose_module_rig");
+
+    // 値の説明・衣装の位置・原画。
+    let result = client.call("get_module_rig_guide", json!({ "path": path }));
+    assert_eq!(result["isError"], false, "{result}");
+    let guide = &result["structuredContent"];
+    assert!(
+        guide["instructions"]
+            .as_str()
+            .unwrap()
+            .contains("sway_scale")
+    );
+    assert!(
+        guide["layout"]
+            .as_str()
+            .unwrap()
+            .contains("slot `Headwear`")
+    );
+    assert_eq!(guide["slot"], "Headwear");
+    assert_eq!(guide["defaults"]["sway_scale"], 1.0);
+    assert_eq!(guide["options"]["follow"], "warp");
+    assert_eq!(guide["variant_sets"].as_array().unwrap().len(), 1);
+    png_size(&result["content"][2]);
+
+    // 範囲の外の値と、知らない組み方はエラー。
+    let mut params = json!({ "sway_scale": 3.0, "sway_length": 1.0, "reason": "soft ribbons" });
+    let err = client.call_err(
+        "propose_module_rig",
+        json!({ "path": path, "params": params }),
+    );
+    assert!(err.contains("sway_scale is 3"), "{err}");
+    client.call_err(
+        "propose_module_rig",
+        json!({ "path": path, "follow": "glue" }),
+    );
+    params["sway_scale"] = json!(1.2);
+
+    // ポーズを作らない組み方では、差分の組は使わない。
+    let pose = "as alternative drawings of the same part";
+    let without = client.call_ok(
+        "propose_module_rig",
+        json!({ "path": path, "params": params, "poses": false }),
+    );
+    assert!(
+        !without["rationale"].as_str().unwrap().contains(pose),
+        "{without}"
+    );
+    assert_eq!(without["options"]["poses"], false);
+    let proposal = client.call_ok(
+        "propose_module_rig",
+        json!({ "path": path, "params": params }),
+    );
+    let rationale = proposal["rationale"].as_str().unwrap();
+    assert!(rationale.contains(pose), "{rationale}");
+    assert!(rationale.contains("soft ribbons"), "{rationale}");
+    assert!(rationale.contains("1 variant set(s)"), "{rationale}");
+    assert!(proposal["title"].as_str().unwrap().ends_with("agent"));
+    assert_eq!(proposal["params"]["sway_scale"], 1.2_f32 as f64);
+    let added = &proposal["changes"]["parameters"]["added"];
+    assert!(added.is_null() || added == &json!([]), "{added}");
+    let id = proposal["proposal"].as_str().unwrap().to_owned();
+
+    // 承認されたら適用して保存する。パラメータは増えず、ポーズはモジュールに残る。
+    client.call_ok("apply_proposal", json!({ "path": path, "proposal": id }));
+    let summary = client.call_ok("get_model_summary", json!({ "path": path }));
+    assert_eq!(parameter_ids(&summary), parameters);
+    client.call_ok("save_project", json!({ "path": path }));
+    let module: Value =
+        serde_json::from_str(&fs::read_to_string(project.join("module.json")).unwrap()).unwrap();
+    let groups = module["pose"]["groups"].as_array().unwrap();
+    assert_eq!(groups.len(), 1, "{}", module["pose"]);
+    assert_eq!(groups[0]["entries"].as_array().unwrap().len(), 2);
+    let on_disk = Project::load(&project).unwrap();
+    assert!(on_disk.module.is_some());
+
+    // モジュールのプロジェクトでなければ、本体向けのツールへ案内する。
+    let quad = save_fixture_project(&tmp.0);
+    let err = client.call_err(
+        "get_module_rig_guide",
+        json!({ "path": quad.to_str().unwrap() }),
+    );
+    assert!(err.contains("not a module project"), "{err}");
+}
+
 /// `--root` で、ツールが触れるパスを 1 つのディレクトリの下に限る。相対パスは root から解決し、
 /// `..`・root の外の絶対パス・外を指すシンボリックリンクは拒否する (読む・作る・書き出す・描く)。
 #[test]

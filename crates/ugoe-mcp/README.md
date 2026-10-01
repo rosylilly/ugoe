@@ -68,13 +68,14 @@ claude mcp add ugoe-art -- ugoe-mcp --root ~/art
       "mcp__ugoe__open_project", "mcp__ugoe__get_model_summary", "mcp__ugoe__get_element",
       "mcp__ugoe__propose_edit", "mcp__ugoe__list_proposals", "mcp__ugoe__render_png",
       "mcp__ugoe__import_psd", "mcp__ugoe__get_psd_layers", "mcp__ugoe__set_layer_labels",
-      "mcp__ugoe__get_rig_guide", "mcp__ugoe__propose_rig"
+      "mcp__ugoe__get_rig_guide", "mcp__ugoe__propose_rig",
+      "mcp__ugoe__get_module_rig_guide", "mcp__ugoe__propose_module_rig"
     ]
   }
 }
 ```
 
-`get_psd_layers` と `get_rig_guide` は画像を返す。Claude Code は MCP のツールの結果の大きさに上限 (既定 25,000 トークン。
+`get_psd_layers`・`get_rig_guide`・`get_module_rig_guide` は画像を返す。Claude Code は MCP のツールの結果の大きさに上限 (既定 25,000 トークン。
 画像も数える。環境変数 `MAX_MCP_OUTPUT_TOKENS` で変えられる) を設けるので、`get_psd_layers` は既定で 8 枚ずつ返す。
 
 ### OpenCode に登録する
@@ -424,6 +425,37 @@ Claude Code に次のように頼む:
 
 同じ流れ (胸から上の実際の PSD) を `tests/stdio.rs` の `agent_driven_auto_rig_from_psd` が確かめている。
 
+### 着せ替えのモジュールの自動リギング
+
+衣装の PSD から、本体のスロットに付けるモジュールのプロジェクトを作ってリギングする
+([docs/ai-integration.md#モジュールの自動リギング](../../docs/ai-integration.md#モジュールの自動リギング))。モジュールは
+パラメータを足せず本体を変えられないので、`get_rig_guide`・`propose_rig` の代わりに `get_module_rig_guide`・
+`propose_module_rig` を使う (モジュールのプロジェクトで `propose_rig` を呼ぶと、モジュールのツールへ案内するエラーになる)。
+
+1. `import_psd { "path": "ribbon.ugoeproj", "psd": "ribbon.psd", "base": "character.ugoeproj", "slot": "Hair" }`
+   (本体は `.ugoeproj` か `.ugoe`。スロットは本体の `get_model_summary` の `slots`)。衣装のレイヤーはエディタと
+   同じく描画順をスロットの範囲に写して取り付け先の下に入る。結果の `module` に本体とスロット、`meshes` は衣装の
+   メッシュの数。エディタで作ったモジュールのプロジェクトなら、`open_project` して `get_psd_layers` に `psd` を渡す
+2. `get_psd_layers` → `set_layer_labels` (上と同じ)。同じ部品の別の絵 (一度に 1 つだけ見せる袖 A / B・同じ所にかぶる
+   帽子とキャップ) を `variant_sets` で組にすると、**その組はポーズになる** (名前の末尾の A / B や、PSD で片方を
+   隠した重なる絵で見つからない組も拾う)。結果の `rig.tool` が `propose_module_rig`
+3. `get_module_rig_guide` → 値 (`sway_scale` 揺れの大きさ・`sway_length` 振り子の長さ) の説明と範囲・衣装の
+   メッシュごとのラベルと位置・従う本体のワープ・揺れるか (`layout`)・組み方の既定 (`options`)・差分の組・衣装の原画
+4. 値を選んで `propose_module_rig` に渡す。組み方 (`follow`: `warp` / `mesh`、`colliders`、`poses`) は利用者が
+   選ぶもので、省くと既定 (`warp`・衝突体に当てる・ポーズにする):
+
+   ```json
+   { "path": "ribbon.ugoeproj",
+     "params": { "sway_scale": 1.2, "sway_length": 1.0, "reason": "a light ribbon" } }
+   ```
+
+   成功すると提案の ID・理由 (従う本体のワープ・揺れ・当てる衝突体・ポーズ)・差分。パラメータは増えない
+5. ユーザーが承認したら `apply_proposal`。`render_png` で本体のパラメータを動かして確かめ、`save_project` で
+   保存する (モジュールの部分だけを書く)
+
+同じ流れ (`assets/fixtures/character.psd` を見本の本体のスロット `Headwear` に付け、左右の目を差分の組にする) を
+`tests/stdio.rs` の `agent_driven_module_rig_from_psd` が確かめている。
+
 ## ツール
 
 | ツール | 種類 | 内容 |
@@ -434,11 +466,13 @@ Claude Code に次のように頼む:
 | `get_element` | 読む | 要素 1 つの JSON (モデルのファイルでの形。キーフォームの中身を含む) |
 | `propose_edit` | 読む | `Command` の列を複製したモデルに `Batch` として適用し、検証・`ApplyReport`・変わる要素の ID・コマンドの要約と依存を返す。提案の ID を返す |
 | `list_proposals` | 読む | 適用を待っている提案の一覧 (`stale` は提案の後にモデルが変わったもの) |
-| `import_psd` | 読む | PSD から新しいプロジェクトを作る (保存するまでディスクに書かない)。PSD を覚える |
+| `import_psd` | 読む | PSD から新しいプロジェクトを作る (保存するまでディスクに書かない)。PSD を覚える。`base` と `slot` を渡すと着せ替えのモジュールのプロジェクト |
 | `get_psd_layers` | 読む | PSD のレイヤーの一覧・今の分類・対応するメッシュと、全体の合成画像・サムネイル (MCP の image)。分類の指示と語彙 |
 | `set_layer_labels` | 読む | エージェントが決めた分類と差分の組 (`variant_sets`) を受け取る (モデルは変えない)。メッシュとの対応・差分の組・リグを組めるかを返す |
 | `get_rig_guide` | 読む | リグのテンプレートで決められない値の説明・範囲・既定値、顔・目・口の位置、原画 |
 | `propose_rig` | 読む | 分類と値からリグ (AngleX/Y/Z・EyeL/ROpen・MouthOpenY) の提案を作る。値が通らなければエラー |
+| `get_module_rig_guide` | 読む | モジュールのプロジェクトで、リグのテンプレートで決められない値の説明・範囲・既定値、衣装のメッシュの位置と組み方、差分の組、衣装の原画 |
+| `propose_module_rig` | 読む | モジュールのプロジェクトで、分類と値からリグ (追従・揺れ・衝突体・差分の組などのポーズ) の提案を作る。パラメータは足さない。値が通らなければエラー |
 | `render_png` | 読む | 今のモデル (未保存の変更を含む) を PNG で描く。`ugoe render` と同じ |
 | `apply_proposal` | 編集 | 提案を適用する (1 回の `undo` で戻る)。`exclude` でコマンドの一部を外せる。提案の後にモデルが変わっていたら拒否する |
 | `undo` / `redo` | 編集 | 取り消し・やり直し |

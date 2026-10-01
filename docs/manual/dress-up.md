@@ -116,7 +116,7 @@
 | --- | --- |
 | `dress-up.ugoeproj` | 本体。「Slots」タブにスロット `Hair`・`Headwear`・`Outfit` があり、3 つとも「Show to apps」が入っている (本体はアバタープロファイルのレベル 2 を名乗る)。物理のタブには既定の後ろ髪を揺らすリグ `HairSway` がある。モーション (`idle`・`nod`・`shake`・`tilt`) と表情 (`smile`・`surprised`・`sad`) も入っている |
 | `long-hair.ugoeproj` | スロット `Hair` のモジュール `LongHair`。後ろ髪は回転デフォーマ `Sway` と物理で揺れ、本体の肌を反転マスクに使う |
-| `twin-tails.ugoeproj` | スロット `Hair` のモジュール `TwinTails`。房が結び目を軸に揺れる |
+| `twin-tails.ugoeproj` | スロット `Hair` のモジュール `TwinTails`。房が結び目を軸に揺れ、内側へ振れると本体の肩の衝突体 `Shoulders` に当たる |
 | `cat-ears.ugoeproj` | スロット `Headwear` のモジュール `CatEars` |
 | `sailor.ugoeproj` | スロット `Outfit` のモジュール `Sailor`。体のワープに付き、本体のシャツを置き換える |
 

@@ -138,7 +138,7 @@ compose_physics_without_base(base: &Model, composed: &mut Model, settings: &Phys
 あわせて、`compose` で作ったモデル `composed` のスロットの `colliders` を空にします (合成した物理の `validate_physics` が
 スロットの衝突体を確かめないように)。スロットの `colliders` にもモジュールにも無い衝突体の参照は、これまでどおり `ComposeError::UnknownCollider` です。
 こうしないと、衝突体を公開するスロットには、物理を渡さないホストではモジュールを付けられませんでした (T0715 で見本に肩の衝突体を
-入れたときに見つかった)。見本の着せ替えの本体はスロット `Hair` で肩の衝突体 `Shoulders` を公開します (T0660)。
+入れたときに見つかった)。見本の着せ替えの本体はスロット `Hair` で肩の衝突体 `Shoulders` を公開し (T0660)、見本のモジュール `TwinTails` の房のリグがそれに当たります (T0662)。
 
 作者のツール (エディタのモジュールのプロジェクトと書き出しの検査) は、本体に物理が無くても既定の設定で `compose_physics` するので、
 スロットが公開する本体の衝突体への参照はエラーのままです (保存のときに参照が黙って消えないように)。このときは

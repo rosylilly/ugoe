@@ -7,7 +7,7 @@
 //! | モジュール | スロット | 内容 |
 //! | --- | --- | --- |
 //! | `LongHair` | `Hair` | 紺の長い髪。後ろ髪は物理で揺れ、体の後ろに回る (本体の肌を反転マスクに使う) |
-//! | `TwinTails` | `Hair` | 金のツインテール。房が物理で揺れる |
+//! | `TwinTails` | `Hair` | 金のツインテール。房が物理で揺れ、内側へ振れると本体の肩 (`Shoulders`) に当たる |
 //! | `CatEars` | `Headwear` | 猫耳のカチューシャ |
 //! | `Sailor` | `Outfit` | セーラー服 |
 //!
@@ -778,7 +778,9 @@ const SHOULDERS: &str = "Shoulders";
 ///
 /// 肩の衝突体はスロット `Hair` で公開する (髪のモジュールのリグが参照できる)。物理を読まずにモデルだけを
 /// 開いたホストでも、公開した衝突体は無視されるだけで、そのスロットにモジュールを付けられる
-/// (`docs/spec/modules.md` の合成。T0655)。見本の本体の後ろ髪とモジュールのリグは衝突体を使わない。
+/// (`docs/spec/modules.md` の合成。T0655)。`TwinTails` の房のリグが当たる (T0662)。見本の本体の後ろ髪と
+/// `LongHair` の後ろ髪は当てない: どちらも頭の中心から真下に垂れる振り子で、静止姿勢の区間が肩を横切るので、
+/// 当てると最初の更新で横へ押しのけられる (`docs/spec/physics.md` の静止姿勢で衝突体に入っている場合)。
 fn base_physics() -> PhysicsSettings {
     let shoulder = |x: f32| IN_BODY.local(Vec2::new(x, 372.0));
     PhysicsSettings {
@@ -1227,7 +1229,8 @@ fn long_hair() -> ModuleFile {
     builder.finish()
 }
 
-/// `TwinTails` (スロット `Hair`): 金のツインテール。房は結び目を軸に物理で揺れる。
+/// `TwinTails` (スロット `Hair`): 金のツインテール。房は結び目を軸に物理で揺れ、本体がスロット `Hair` で
+/// 公開する肩の衝突体 (`Shoulders`) に当たる (体にめり込まない)。
 fn twin_tails() -> ModuleFile {
     let palette = Palette {
         fill: rgb(0xf2c35e),
@@ -1301,11 +1304,10 @@ fn twin_tails() -> ModuleFile {
             on_pivot(&id, "Hair", (&deformer, origin), 950.0, (1, 1)),
             &art,
         );
-        builder
-            .module
-            .physics
-            .rigs
-            .push(pendulum(&deformer, 280.0, 10.0, 1.0));
+        // 房は肩のすぐ外に垂れる (静止姿勢では当たらない) ので、内側へ振れたときに肩に当てる。
+        let mut rig = pendulum(&deformer, 280.0, 10.0, 1.0);
+        rig.colliders = vec![SHOULDERS.to_owned()];
+        builder.module.physics.rigs.push(rig);
     }
 
     let art = bangs(
@@ -1853,15 +1855,36 @@ mod tests {
         );
         assert!(a.y > IN_BODY.local(HEAD).y && (a.y - b.y).abs() < 1e-6);
 
-        let mut hair_module = sample.modules[0].module.clone();
-        assert_eq!(hair_module.slot.as_str(), "Hair");
-        hair_module.physics.rigs[0].colliders = vec![SHOULDERS.to_owned()];
-        assert!(ugoe_model::validate::validate_module(&hair_module).is_empty());
-        let composed = ugoe_runtime::compose(model, &[&hair_module]).unwrap();
-        let rigs = ugoe_runtime::compose_physics(model, &physics, &[&hair_module]).unwrap();
+        // `TwinTails` の房のリグは肩に当たる。`LongHair` は当てない。
+        let tails = sample.modules[1].module.clone();
+        assert_eq!(tails.name, "TwinTails");
+        assert_eq!(tails.slot.as_str(), "Hair");
+        assert!(
+            tails
+                .physics
+                .rigs
+                .iter()
+                .all(|r| r.colliders == [SHOULDERS])
+        );
+        let long_hair = sample.modules[0].module.clone();
+        assert!(
+            long_hair
+                .physics
+                .rigs
+                .iter()
+                .all(|r| r.colliders.is_empty())
+        );
+        let composed = ugoe_runtime::compose(model, &[&tails]).unwrap();
+        let rigs = ugoe_runtime::compose_physics(model, &physics, &[&tails]).unwrap();
         assert!(ugoe_model::validate::validate_physics(&rigs, &composed).is_empty());
+        let shoulders = rigs
+            .rigs
+            .iter()
+            .filter(|r| r.colliders == [SHOULDERS])
+            .count();
+        assert_eq!(shoulders, 2);
 
-        for module in [sample.modules[0].module.clone(), hair_module] {
+        for module in [long_hair, tails] {
             let module = std::sync::Arc::new(module);
             let mut with_physics = ugoe::Puppet::new(model.clone())
                 .unwrap()
@@ -1938,5 +1961,120 @@ mod tests {
                 assert!(settled < 1.0, "{id} did not settle: {settled}");
             }
         }
+    }
+
+    /// `TwinTails` の房は静止姿勢では肩に当たらず (垂れ方は変わらない)、頭と体を振って内側へ振れると、房の振り子の
+    /// 区間 (結び目から先) が肩のカプセルの縁で止まり、中へ入り込まない (肩に当てなければ入り込む)。`LongHair` の後ろ髪は
+    /// 静止姿勢で肩を横切るので当てない (当てると `rest_pose_collisions` が当たりを返す)。
+    #[test]
+    fn twin_tails_hit_the_shoulders() {
+        let sample = build_dress_up().unwrap();
+        let model = &sample.base.model;
+        let physics = sample.base.physics.clone().unwrap();
+        let rest_hits = |module: &Module| {
+            let composed = ugoe_runtime::compose(model, &[module]).unwrap();
+            let rigs = ugoe_runtime::compose_physics(model, &physics, &[module]).unwrap();
+            ugoe_editor_core::physics_check::rest_pose_collisions(&composed, &rigs).unwrap()
+        };
+        let tails = sample.modules[1].module.clone();
+        assert_eq!(rest_hits(&tails), []);
+        let mut long_hair = sample.modules[0].module.clone();
+        long_hair.physics.rigs[0].colliders = vec![SHOULDERS.to_owned()];
+        assert_eq!(rest_hits(&long_hair).len(), 1);
+
+        let ColliderShape::Capsule { a, b, radius } = physics.colliders[0].shape else {
+            panic!("{:?}", physics.colliders[0].shape);
+        };
+        // 肩の芯のキャンバス座標 (`base_physics`)。
+        let (a, b) = {
+            let canvas = (Vec2::new(198.0, 372.0), Vec2::new(314.0, 372.0));
+            assert_eq!((IN_BODY.local(canvas.0), IN_BODY.local(canvas.1)), (a, b));
+            canvas
+        };
+        // 頭と体を振る間の、房 (画面の左の `TailR`) の振り子の区間 (根元から先) と肩の芯 (線分) との距離の最小。
+        let closest = |module: Module| {
+            let mut puppet = ugoe::Puppet::new(model.clone())
+                .unwrap()
+                .with_physics(physics.clone());
+            puppet.set_toggles(ugoe::Toggles {
+                eye_blink: false,
+                breath: false,
+                ..ugoe::Toggles::default()
+            });
+            puppet.attach_module(std::sync::Arc::new(module)).unwrap();
+            let rig = puppet
+                .physics()
+                .unwrap()
+                .settings()
+                .rigs
+                .iter()
+                .position(|r| r.id == "TwinTails/TailR")
+                .unwrap();
+            let parameters = puppet.instance().parameters();
+            let (head, body) = (
+                parameters.index_of(sp::ANGLE_X).unwrap(),
+                parameters.index_of(sp::BODY_ANGLE_X).unwrap(),
+            );
+            let mut closest = f32::MAX;
+            const FPS: f32 = 60.0;
+            for frame in 0..(4.0 * FPS) as usize {
+                let t = frame as f32 / FPS;
+                // 0.4 秒ごとに頭を ±30 (体は逆に ±10) 行き来させてから止める。
+                let value = if t < 2.0 {
+                    if ((t / 0.4) as usize).is_multiple_of(2) {
+                        30.0
+                    } else {
+                        -30.0
+                    }
+                } else {
+                    0.0
+                };
+                let parameters = puppet.instance_mut().parameters_mut();
+                parameters.set(head, value);
+                parameters.set(body, -value / 3.0);
+                puppet.update(1.0 / FPS);
+                // 肩は体のワープと一緒に横へ動く (体のワープは `body_pose` をキーにした線形の補間)。
+                let (a, b) = (
+                    body_pose(a, -value / 3.0, 0.0, 0.0, 0.0),
+                    body_pose(b, -value / 3.0, 0.0, 0.0, 0.0),
+                );
+                let particles = puppet.physics().unwrap().chain(rig).unwrap().particles();
+                let (root, tip) = (particles[0].position, particles[1].position);
+                closest = closest.min(segments_distance((root, tip), (a, b)));
+            }
+            closest
+        };
+        let mut free = tails.clone();
+        for rig in &mut free.physics.rigs {
+            rig.colliders.clear();
+        }
+        let (hit, free) = (closest(tails), closest(free));
+        // 当てないと肩に入り込み、当てると縁で止まる (縁まで来る。`docs/spec/physics.md#衝突体` の区間の判定)。
+        assert!(free < radius - 5.0, "without shoulders {free}");
+        assert!(
+            hit > radius - 0.5 && hit < radius + 3.0,
+            "with shoulders {hit} (radius {radius})"
+        );
+    }
+
+    /// 点 `p` と線分 `a`–`b` の距離。
+    fn segment_distance(p: Vec2, a: Vec2, b: Vec2) -> f32 {
+        let ab = b - a;
+        let t = ((p - a).dot(ab) / ab.dot(ab)).clamp(0.0, 1.0);
+        (p - (a + ab * t)).length()
+    }
+
+    /// 2 つの線分の距離 (交われば 0)。
+    fn segments_distance((p, q): (Vec2, Vec2), (a, b): (Vec2, Vec2)) -> f32 {
+        let cross = |o: Vec2, u: Vec2, v: Vec2| (u - o).x * (v - o).y - (u - o).y * (v - o).x;
+        let (d1, d2) = (cross(a, b, p), cross(a, b, q));
+        let (d3, d4) = (cross(p, q, a), cross(p, q, b));
+        if d1 * d2 < 0.0 && d3 * d4 < 0.0 {
+            return 0.0;
+        }
+        segment_distance(p, a, b)
+            .min(segment_distance(q, a, b))
+            .min(segment_distance(a, p, q))
+            .min(segment_distance(b, p, q))
     }
 }

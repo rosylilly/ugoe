@@ -37,6 +37,8 @@ propose_edit で Command の列を提案する (検証と差分だけを返し�
 適用は 1 回の undo で取り消せる。save_project を呼ぶまでディスクには書かない。\n\
 PSD からの自動リギング: import_psd → get_psd_layers (画像を見て分類する) → set_layer_labels → \
 get_rig_guide (画像を見て値を選ぶ) → propose_rig → ユーザーの承認を得て apply_proposal。\
+着せ替えのモジュール (import_psd に base と slot を渡して作る) では、get_rig_guide と propose_rig の代わりに \
+get_module_rig_guide と propose_module_rig (パラメータを足さない。set_layer_labels の variant_sets はポーズになる)。\
 分類と値はあなたが画像を見て決める (サーバは AI を呼ばない)。";
 
 /// サーバの状態。1 つのプロセスにつき 1 つ (stdio の接続、または HTTP のすべての要求で共有する)。

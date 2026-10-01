@@ -92,8 +92,13 @@ Streamable HTTP で直接つなぐクライアントには、「Other clients (H
 - 新しいプロジェクトを PSD から作る (`import_psd`)・ほかのプロジェクトを開く・閉じるは、エージェントからはできません。
   エディタの「File」で行ってから、エージェントに頼みます。
 - レイヤーを分類するとき、エージェントは同じ部品の別の絵 (一度に 1 つだけ見せる袖 A / B・同じ所にかぶる帽子とキャップ) の組も
-  `set_layer_labels` の `variant_sets` で渡せます。組はエージェントとの間の分類に残るだけで、エディタの「AI」タブの分類には入りません
-  (衣装の差分をポーズにするモジュールの自動リギングは、今は「AI」タブから行います。[着せ替え](dress-up.md))。
+  `set_layer_labels` の `variant_sets` で渡せます。組はエージェントとの間の分類に残り、エディタの「AI」タブの分類には入りません。
+- 着せ替えのモジュールのプロジェクト ([着せ替え](dress-up.md#衣装を作る)) を開いているときは、エージェントは `get_module_rig_guide` と
+  `propose_module_rig` でリグを提案します (パラメータを足さず、衣装を本体に追従させて揺らし、`variant_sets` の組や名前の A / B の差分を
+  ポーズにする)。例:
+
+  > このモジュールは `ribbon.psd` から作ったもの。`get_psd_layers` に `psd` でその PSD を渡して分類し、帽子とキャップを差分の組にして、
+  > `propose_module_rig` でリグを提案して。
 
 ### 4. 確認に答える
 
@@ -233,6 +238,12 @@ claude mcp add --scope user ugoe-read -- <同梱の ugoe-mcp のパス> --read-o
   (Claude Code では `mcp__ugoe__apply_proposal`・`mcp__ugoe__save_project` を許可の一覧に入れない)。
 - 同じプロジェクトをエディタで開いていると、エージェントの保存にエディタが気づき、開き直すかを尋ねます。エディタで作業しながら
   頼むなら、「エディタにつなぐ」のほうが便利です。
+- この形では、エージェントが PSD から新しいプロジェクトを作れます (`import_psd`)。本体とスロットを伝えれば、衣装の PSD から
+  着せ替えのモジュールのプロジェクトを作り、`propose_module_rig` でリギングまで提案させられます。例:
+
+  > `ribbon.psd` を `character.ugoeproj` のスロット `Hair` に付けるモジュール `ribbon.ugoeproj` にして、自動リギングを提案して。
+
+  `--root` を付けたときは、本体もそのフォルダの下に置きます。
 - ChatGPT から使う・HTTP で待ち受ける方法は [crates/ugoe-mcp/README.md](../../crates/ugoe-mcp/README.md#http-で動かす-chatgpt-など) にあります。
 
 ## 困ったとき

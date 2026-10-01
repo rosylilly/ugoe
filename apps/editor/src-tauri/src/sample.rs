@@ -144,9 +144,22 @@ mod tests {
 
         let dir = temp_dir("sample-colliders");
         let bundle = ugoe_format::read_bundle(BASE).unwrap();
-        let mut colliding = ugoe_format::read_module(MODULES[0]).unwrap();
-        colliding.module.physics.rigs[0].colliders = vec!["Shoulders".to_owned()];
-        let plain = ugoe_format::read_module(MODULES[1]).unwrap();
+        // `TwinTails` の房は肩に当たり、`LongHair` は当たらない (T0662)。
+        let colliding = ugoe_format::read_module(MODULES[1]).unwrap();
+        assert!(
+            colliding.module.physics.rigs[0]
+                .colliders
+                .contains(&"Shoulders".to_owned())
+        );
+        let plain = ugoe_format::read_module(MODULES[0]).unwrap();
+        assert!(
+            plain
+                .module
+                .physics
+                .rigs
+                .iter()
+                .all(|r| r.colliders.is_empty())
+        );
         let written =
             save_bundle_projects(&dir, BASE_PROJECT, &bundle, &[colliding, plain]).unwrap();
         let open = |path: &Path| {

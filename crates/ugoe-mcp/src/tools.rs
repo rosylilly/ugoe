@@ -328,14 +328,14 @@ impl Tools {
                     "apply_proposal",
                     "Apply proposal",
                     Kind::Edit,
-                    "propose_edit・propose_rig で作った提案を適用する (1 回の undo で取り消せる)。\
+                    "propose_edit・propose_rig・propose_module_rig で作った提案を適用する (1 回の undo で取り消せる)。\
                      ユーザーが提案を承認してから呼ぶ。提案の後にモデルが変わっていたら拒否する \
                      (提案し直す)。exclude で一部のコマンドを外せる (外したコマンドに頼るコマンドも \
                      外さないと適用できない。commands[].requires を見る)。ディスクには書かない。",
                     object_schema(
                         json!({
                             "path": path_property(),
-                            "proposal": { "type": "string", "description": "propose_edit・propose_rig が返した提案の ID" },
+                            "proposal": { "type": "string", "description": "propose_edit・propose_rig・propose_module_rig が返した提案の ID" },
                             "exclude": {
                                 "type": "array",
                                 "items": { "type": "integer", "minimum": 0 },
@@ -411,6 +411,17 @@ impl Tools {
                 let key = self.resolve(&a.path)?;
                 let (doc, slot) = self.for_autorig(&key)?;
                 let draft = autorig::propose_rig(&doc, &lock(&slot), a)?;
+                self.add_proposal(&key, draft)
+            }),
+            "get_module_rig_guide" => parse(arguments).and_then(|a: PathArgs| {
+                let key = self.resolve(&a.path)?;
+                let (doc, slot) = self.for_autorig(&key)?;
+                autorig::get_module_rig_guide(&doc, &lock(&slot))
+            }),
+            "propose_module_rig" => parse(arguments).and_then(|a: autorig::ModuleRigArgs| {
+                let key = self.resolve(&a.path)?;
+                let (doc, slot) = self.for_autorig(&key)?;
+                let draft = autorig::propose_module_rig(&doc, &lock(&slot), a)?;
                 self.add_proposal(&key, draft)
             }),
             _ if edit_tool && self.options.read_only => Err(format!(
@@ -675,13 +686,14 @@ impl Tools {
             ));
         }
         let psd = self.resolve(&args.psd)?;
+        let base = args.base.as_deref().map(|b| self.resolve(b)).transpose()?;
         self.authorize(Action::Import {
             project: &key,
             psd: &psd,
             discard_changes: args.discard_changes,
         })?;
         let discard_changes = args.discard_changes;
-        let imported = autorig::import_psd(args, psd)?;
+        let imported = autorig::import_psd(args, psd, base)?;
         self.host
             .open(
                 &key,

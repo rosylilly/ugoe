@@ -119,7 +119,7 @@ pub enum Change<'a> {
         name: &'a str,
         version: Option<&'a str>,
     },
-    /// 提案を置いた (`propose_edit`・`propose_rig`)。`client` は最後に握手したクライアントの名前
+    /// 提案を置いた (`propose_edit`・`propose_rig`・`propose_module_rig`)。`client` は最後に握手したクライアントの名前
     /// (HTTP はセッションを持たないので、複数のクライアントが同時につながると区別できない)。
     Proposed {
         project: &'a Path,

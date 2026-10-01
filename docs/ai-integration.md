@@ -65,7 +65,7 @@ Proposal (Command 列) ──► ユーザーの確認 ──► Document::apply
 
 - 入力: レイヤーのサムネイル (個別の画像と、全体の合成画像)、レイヤー名、グループの構造。全体の中での位置は、合成画像の座標での外接矩形としてプロンプトに書きます。
 - 出力: レイヤーごとの `LayerLabel { layer_path, label, side: left|right|center, confidence, variant }`。モデルには `{ "layers": [{ index, label, side, confidence }], "variant_sets": [[index, ...]] }` の形 (`classify::output_schema`) で答えさせ、`index` はプロンプトに書いたレイヤーの番号です。
-- **差分の手がかり (T0523):** `variant_sets` は、同じ部品 (服・飾り) の別の絵で一度に 1 つだけ見せるレイヤーの組 (袖 A / B、同じ所にかぶる帽子とキャップ) です。影・線画・ハイライトのように重ねて描く絵と、目と口の開閉は組にしないよう、各リクエストの本文で頼みます (システムプロンプト `classification_instructions` は変えないので、MCP のエージェントに見せる指示も変わらない)。組の番号は組の中で最も小さいレイヤーの番号で、`LayerLabel::variant` に入れます。1 枚だけの組は捨て、リクエストにない番号・2 つの組に入る番号は `InvalidResponse` です。答えに `variant_sets` があれば、そのリクエストのレイヤーの手がかりを答えで置き換え、なければ変えません。外部のエージェントも MCP の `set_layer_labels` に `variant_sets` を渡せます (T0660。渡すと PSD 全体の組を置き換え、`[]` で消す。`layers` を省いて組だけを渡してもよい。組は `get_psd_layers` の各レイヤーの `variant` と結果の `variant_sets` に出る。MCP にはモジュールの自動リギングのツールがまだ無いので、今は分類の一部として持つだけ)。作り直しでは前の組をプロンプトに書きます。名前の規則 (`classify_by_name`) は手がかりを付けません。strict の構造化出力ではすべての項目が必須なので `variant_sets` も必須で、組がなければ空の配列を答えさせます (読む側は欠けを「手がかりなし」として扱う)。形が増えたので、手で作った OpenAI 互換の録画 `openai_classify_layers_bustup.json` の答えにだけ `"variant_sets": []` を足しました (`layers` の判断の中身は変えていない。Claude の録画は変えず、欠けを読むテストに使う)。モジュールの自動リギングがポーズを作るのに使います ([モジュールの自動リギング](#モジュールの自動リギング)の「ポーズ」)。
+- **差分の手がかり (T0523):** `variant_sets` は、同じ部品 (服・飾り) の別の絵で一度に 1 つだけ見せるレイヤーの組 (袖 A / B、同じ所にかぶる帽子とキャップ) です。影・線画・ハイライトのように重ねて描く絵と、目と口の開閉は組にしないよう、各リクエストの本文で頼みます (システムプロンプト `classification_instructions` は変えないので、MCP のエージェントに見せる指示も変わらない)。組の番号は組の中で最も小さいレイヤーの番号で、`LayerLabel::variant` に入れます。1 枚だけの組は捨て、リクエストにない番号・2 つの組に入る番号は `InvalidResponse` です。答えに `variant_sets` があれば、そのリクエストのレイヤーの手がかりを答えで置き換え、なければ変えません。外部のエージェントも MCP の `set_layer_labels` に `variant_sets` を渡せます (T0660。渡すと PSD 全体の組を置き換え、`[]` で消す。`layers` を省いて組だけを渡してもよい。組は `get_psd_layers` の各レイヤーの `variant` と結果の `variant_sets` に出る。モジュールのプロジェクトでは MCP の `propose_module_rig` がポーズにする。T0662)。作り直しでは前の組をプロンプトに書きます。名前の規則 (`classify_by_name`) は手がかりを付けません。strict の構造化出力ではすべての項目が必須なので `variant_sets` も必須で、組がなければ空の配列を答えさせます (読む側は欠けを「手がかりなし」として扱う)。形が増えたので、手で作った OpenAI 互換の録画 `openai_classify_layers_bustup.json` の答えにだけ `"variant_sets": []` を足しました (`layers` の判断の中身は変えていない。Claude の録画は変えず、欠けを読むテストに使う)。モジュールの自動リギングがポーズを作るのに使います ([モジュールの自動リギング](#モジュールの自動リギング)の「ポーズ」)。
 - ラベルの語彙は `ugoe_ai::classify::Label` (40 個) で、左右は `Side` で別に持ちます。左右は **キャラクター自身の左右** です ([avatar-profile.md#向きと左右の約束](spec/avatar-profile.md#向きと左右の約束))。
 
 | 分類 | ラベル |
@@ -406,10 +406,11 @@ ADR 0022 の「外部のエージェントに判断を任せる経路」(T0513)�
 
 | 段階 | ツール | エディタの中で API を呼ぶ経路との対応 |
 | --- | --- | --- |
-| PSD から作る | `import_psd` (既存のプロジェクトなら `get_psd_layers` に `psd` を渡す) | 「New from PSD…」 |
+| PSD から作る | `import_psd` (既存のプロジェクトなら `get_psd_layers` に `psd` を渡す)。`base` と `slot` を渡すと着せ替えのモジュールのプロジェクト (`Project::new_module` に取り込み、描画順をスロットの範囲に写す `ModuleContext::map_new_meshes`) | 「New from PSD…」・モジュールのプロジェクトを作って「Import PSD…」 |
 | 画像を見る | `get_psd_layers`: レイヤーの一覧・全体の合成画像・サムネイル (MCP の image コンテンツ)・分類の指示と語彙 | `classify::classification_requests` が送る画像と指示 |
 | 分類する | `set_layer_labels`: `classify::output_schema` の形の答え (`layers` と差分の組 `variant_sets`。どちらかを省ける) | `classify::classify_layers` の答え |
 | 値を決める | `get_rig_guide` (値の説明・顔や目の位置・原画) → `propose_rig` (`rig::rig_output_schema` の形の値) | `rig::rig_request` と `rig::propose_rig_with_ai` の答え |
+| 値を決める (モジュール) | `get_module_rig_guide` (値の説明・衣装のメッシュの位置と従う本体のワープ・組み方の既定・差分の組・衣装の原画) → `propose_module_rig` (`module_rig::module_rig_output_schema` の形の値と組み方 `follow`・`colliders`・`poses`) | `module_rig::module_rig_request_guided` と `module_rig::propose_module_rig_with_ai_guided` の答え。組み方はエディタの「AI」タブの選択にあたる |
 | 適用する | `apply_proposal` (利用者の確認) → `render_png` で確かめる → `save_project` | 提案のパネルの Adopt |
 
 - **同じ部品を使う:** 画像は API に送るものと同じ作り方と上限 (`ClassifyOptions` の既定値。合成画像は長い辺 1024 画素、サムネイルは 256 画素まで) で、指示の文は API に送るシステムプロンプトと同じ (`classify::classification_instructions`・`rig_request` の `system`) です。答えの読み方と確かめ方も同じ関数 (`classify::apply_answer`・`rig::params_from_answer`・`propose_rig` の範囲と検証) を通します。ツールの入力の型は ugoe-ai の JSON Schema から作り、語彙や値の範囲を手で写しません。
@@ -418,6 +419,11 @@ ADR 0022 の「外部のエージェントに判断を任せる経路」(T0513)�
 - **1 回に返す画像:** MCP クライアントは画像を含む結果の大きさに上限を設けることがある (Claude Code は既定で 25,000 トークン) ので、`get_psd_layers` は既定で 8 枚ずつ返し、`count` (32 枚まで)・`thumbnail_size`・`indices` で調整できます。サムネイルごとに `layer N: 名前` の文を直前に置き、画像と番号の対応が分かるようにします。
 - **覚えておくもの:** PSD のパスと分類は、サーバが開いているプロジェクトごとにメモリに持ちます (エディタと同じく、プロジェクトには保存しません)。開き直したら `get_psd_layers` に `psd` を渡します。
 - **深度:** 深度推定器は使わず、顔に内接する楕円体 (`TurnDepth::Rules`) で振り向かせます。
+- **モジュール (T0662):** モジュールのプロジェクト (`Document::module` があるもの) では、本体向けの `get_rig_guide`・`propose_rig` は
+  パラメータを足すので使えず、モジュールのツールへ案内するエラーを返します (逆も同じ)。`set_layer_labels` の結果の `rig.ready` は、
+  モジュールではモジュールのリグを組めるか (衣装のメッシュが取り付け先の下にあるか) で、`rig.tool` に呼ぶツールの名前を出します。
+  `variant_sets` は `module_mesh_parts` を通して `MeshPart::variant` に入り、モジュールの自動リギングの「ポーズ」の AI の手がかりになります。
+  利用者の注文と作り直し (`ModuleRigGuidance`) は MCP では使いません (エージェントとの会話がその役をする)。
 
 ### HTTP のトランスポート
 

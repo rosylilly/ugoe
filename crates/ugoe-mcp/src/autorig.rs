@@ -13,6 +13,10 @@
 //! 5. `propose_rig`: 値 (形は `ugoe_ai::rig::rig_output_schema`) からリグの提案を作る。範囲の外・検証を通らない
 //!    値はツールのエラーで返し、エージェントが直して呼び直す
 //!
+//! 着せ替えのモジュールのプロジェクト (`import_psd` に `base` と `slot` を渡して作るか、エディタで作ったもの) では、
+//! 4・5 の代わりに `get_module_rig_guide` と `propose_module_rig` を使う (`ugoe_ai::module_rig`。パラメータを足さず、
+//! 衣装を本体に追従させ、揺らし、差分の組 (`variant_sets`) と名前・絵の重なりで見つけた差分をポーズにする)。
+//!
 //! 提案の適用は `apply_proposal` (利用者の確認を通す。ADR 0006)。画像の大きさと 1 回に返す枚数は、
 //! API で分類するときと同じ上限 (`ClassifyOptions` の既定値) に合わせる。
 
@@ -27,12 +31,18 @@ use ugoe_ai::classify::{
     ClassifyOptions, Label, LayerLabel, apply_answer, classification_instructions,
     classify_by_name, layer_thumbnail_png, layers, output_schema, overview_png,
 };
+use ugoe_ai::module_rig::{
+    FollowMode, ModuleRigGuidance, ModuleRigOptions, ModuleRigParams, module_mesh_parts,
+    module_params_from_answer, module_rig_output_schema, module_rig_request_guided,
+    propose_module_rig as template_module_rig,
+};
 use ugoe_ai::rig::{
     RigOptions, RigParams, mesh_parts, params_from_answer, propose_rig as template_rig,
     rig_output_schema, rig_request,
 };
 use ugoe_editor_core::import::layer_tree_command;
 use ugoe_editor_core::{Document, Project, ProjectMeta, PsdImportOptions};
+use ugoe_model::SlotId;
 use ugoe_psd::LayerTree;
 
 use crate::schema::object_schema;
@@ -41,6 +51,14 @@ use crate::tools::{Content, Draft, Kind, Output, PATH_NOTE, ToolResult, path_pro
 /// PSD がまだ分からないときの断りの文。
 const NO_PSD: &str = "no PSD is associated with this project: call import_psd, or pass `psd` \
                       (the PSD this model was imported from) to get_psd_layers";
+
+/// モジュールのプロジェクトで本体向けのリグのツールを呼んだときの断りの文。
+const USE_MODULE_RIG: &str = "this is a module project, which cannot add parameters: use \
+                              get_module_rig_guide and propose_module_rig instead";
+
+/// モジュールのプロジェクトでないときにモジュールのリグのツールを呼んだときの断りの文。
+const NOT_A_MODULE: &str = "this is not a module project: use get_rig_guide and propose_rig, or \
+                            create a module project with import_psd and `base` and `slot`";
 
 /// `get_psd_layers` が既定で 1 回に返すレイヤーの数。上限 (`ClassifyOptions::max_layers_per_request`) より
 /// 小さくする: MCP クライアントは画像を含む結果の大きさに上限を設けることがある (Claude Code は既定で
@@ -126,6 +144,20 @@ pub(crate) struct RigArgs {
     title: Option<String>,
 }
 
+/// `propose_module_rig` の引数。
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ModuleRigArgs {
+    pub(crate) path: String,
+    /// `module_rig_output_schema` の形 (ugoe-ai が読む)。省略すると既定値。
+    params: Option<Value>,
+    /// 組み方 (`ModuleRigOptions`)。省略した欄は既定。
+    follow: Option<FollowMode>,
+    colliders: Option<bool>,
+    poses: Option<bool>,
+    title: Option<String>,
+}
+
 /// `import_psd` の引数。
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -133,6 +165,10 @@ pub(crate) struct ImportArgs {
     pub(crate) path: String,
     pub(crate) psd: String,
     name: Option<String>,
+    /// 着せ替えのモジュールのプロジェクトを作るときの本体 (`.ugoeproj` か `.ugoe`)。`slot` と一緒に渡す。
+    pub(crate) base: Option<String>,
+    /// モジュールを付ける本体のスロット。
+    slot: Option<String>,
     #[serde(default)]
     pub(crate) discard_changes: bool,
 }
@@ -150,12 +186,16 @@ pub(crate) fn tools() -> Vec<Value> {
         "Groups of layer numbers that are alternative drawings of the same part, shown one at a \
          time (sleeve A / B, a hat and a cap worn in the same place). Not overlays drawn on top \
          of each other (shadows, line art, highlights) and not open / closed eyes or mouths. \
-         Replaces every group set before; pass [] to clear them. Used when the module rig \
-         turns costume variants into poses."
+         Replaces every group set before; pass [] to clear them. In a module project, \
+         propose_module_rig turns each group of costume layers into a pose group."
     );
     let mut params = rig_output_schema();
     params["description"] =
         json!("Values the template cannot decide (see get_rig_guide). Omit to use the defaults.");
+    let mut module_params = module_rig_output_schema();
+    module_params["description"] = json!(
+        "Values the template cannot decide (see get_module_rig_guide). Omit to use the defaults."
+    );
     vec![
         tool_def(
             "import_psd",
@@ -163,12 +203,16 @@ pub(crate) fn tools() -> Vec<Value> {
             Kind::Read,
             "PSD を取り込んで新しいプロジェクトを作る (レイヤーごとのメッシュ。save_project まで \
              ディスクには書かない)。続けて get_psd_layers でレイヤーを見て分類する。\
-             PSD から作った既存のプロジェクトなら、open_project して get_psd_layers に psd を渡す。",
+             PSD から作った既存のプロジェクトなら、open_project して get_psd_layers に psd を渡す。\
+             base と slot を渡すと、本体のスロットに付ける着せ替えのモジュールのプロジェクトを作る \
+             (衣装の PSD を取り付け先の下に取り込む。リグは get_module_rig_guide と propose_module_rig)。",
             object_schema(
                 json!({
                     "path": path_property(),
                     "psd": { "type": "string", "description": format!("取り込む PSD のパス。{PATH_NOTE}") },
-                    "name": { "type": "string", "description": "プロジェクトの名前 (既定は PSD のファイル名)" },
+                    "name": { "type": "string", "description": "プロジェクトの名前 (既定は PSD のファイル名。モジュールではモジュールの名前)" },
+                    "base": { "type": "string", "description": format!("モジュールのプロジェクトを作るときの本体 (.ugoeproj か .ugoe) のパス。slot と一緒に渡す。{PATH_NOTE}") },
+                    "slot": { "type": "string", "description": "モジュールを付ける本体のスロットの ID (get_model_summary の slots)" },
                     "discard_changes": { "type": "boolean", "description": "同じパスで開いているプロジェクトの未保存の変更を捨てる" },
                 }),
                 &["path", "psd"],
@@ -263,6 +307,43 @@ pub(crate) fn tools() -> Vec<Value> {
                 None,
             ),
         ),
+        tool_def(
+            "get_module_rig_guide",
+            "Get module rig guide",
+            Kind::Read,
+            "着せ替えのモジュールのプロジェクトで、リグのテンプレートで決められない値 (揺れの大きさと \
+             振り子の長さ) の説明と範囲 (instructions)・衣装のメッシュごとのラベル・位置・従う本体の \
+             ワープ・揺れるか (layout)・値の形 (params_schema)・既定値・組み方の既定 (options)・差分の組 \
+             (variant_sets) と、衣装の原画を返す。画像を見て値を選び、propose_module_rig に渡す。",
+            object_schema(json!({ "path": path_property() }), &["path"], None),
+        ),
+        tool_def(
+            "propose_module_rig",
+            "Propose module rig",
+            Kind::Read,
+            "着せ替えのモジュールのプロジェクトで、今の分類とテンプレートでリグを組む提案を作る \
+             (パラメータを足さず、本体を変えない)。衣装を本体の変形に追従させ、揺れるラベル (髪・尻尾・\
+             耳飾り・首の飾り・下の服) を物理で揺らしてスロットが公開する本体の衝突体に当て、衣装の差分 \
+             (set_layer_labels の variant_sets の組・名前の末尾の A / B・PSD で片方を隠した重なる絵) を \
+             ポーズにする。モデルは変えない。値が範囲の外か、組んだリグが検証を通らなければエラーを返すので、\
+             直して呼び直す。成功したら提案の ID を返すので、ユーザーの承認を得てから apply_proposal で適用する。",
+            object_schema(
+                json!({
+                    "path": path_property(),
+                    "params": module_params,
+                    "follow": {
+                        "type": "string",
+                        "enum": ["warp", "mesh"],
+                        "description": "本体のワープへの追従の形。warp (既定) は衣装を追従のワープで包む (少しずれるが、衣装を描き足しても組み直さずに済む)。mesh は衣装のメッシュのキーフォームに直接写す (ずれないが、頂点を編集したら組み直す)",
+                    },
+                    "colliders": { "type": "boolean", "description": "揺れをスロットが公開する本体の衝突体に当てる (既定 true)" },
+                    "poses": { "type": "boolean", "description": "衣装の差分をポーズにする (既定 true)" },
+                    "title": { "type": "string", "description": "提案の題 (既定はテンプレートの題)" },
+                }),
+                &["path"],
+                None,
+            ),
+        ),
     ]
 }
 
@@ -283,32 +364,61 @@ pub(crate) struct Imported {
 }
 
 /// PSD から新しいプロジェクトを作る (まだ持ち主に開かせない)。
-/// `psd` は解決したパス (`Tools::resolve`)。
-pub(crate) fn import_psd(args: ImportArgs, psd: PathBuf) -> Result<Imported, String> {
-    let source = PsdSource::load(psd.clone())?;
+/// `psd` は解決したパス、`base` は `args.base` を解決したパス (`Tools::resolve`)。`base` があれば
+/// `args.slot` に付ける着せ替えのモジュールのプロジェクトを作り、エディタと同じく描画順をスロットの範囲に写して
+/// 取り付け先の下に取り込む (`docs/editor.md#モジュールのプロジェクト`)。
+pub(crate) fn import_psd(
+    args: ImportArgs,
+    psd: PathBuf,
+    base: Option<PathBuf>,
+) -> Result<Imported, String> {
     let name = args.name.unwrap_or_else(|| {
         psd.file_stem()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| "untitled".to_owned())
     });
-    let project = Project::empty(name.clone());
+    let project = match (&base, &args.slot) {
+        (None, None) => Project::empty(name.clone()),
+        (Some(base), Some(slot)) => Project::new_module(&name, base, &SlotId::from(slot.as_str()))
+            .map_err(|e| format!("the module project could not be created: {e}"))?,
+        _ => return Err("pass `base` and `slot` together to create a module project".into()),
+    };
+    let source = PsdSource::load(psd.clone())?;
     let mut document = project.document();
-    let import = layer_tree_command(
+    let mut import = layer_tree_command(
         document.model(),
         &source.tree,
         &PsdImportOptions::new(name.clone()),
     )
     .map_err(|e| e.to_string())?;
+    if let Some(context) = document.module() {
+        context.map_new_meshes(&mut import.command);
+    }
     document
         .apply(import.command)
         .map_err(|e| format!("the PSD could not be imported: {e}"))?;
+    let module = document
+        .module()
+        .map(|context| json!({ "base": context.base().path, "slot": context.slot().id }));
+    let next = if module.is_some() {
+        "get_psd_layers でレイヤーと画像を見て分類し、get_module_rig_guide → propose_module_rig"
+    } else {
+        "get_psd_layers でレイヤーと画像を見て分類する"
+    };
     let value = json!({
         "name": name,
         "psd": psd,
         "layers": source.labels.len(),
-        "meshes": document.model().meshes.len(),
+        // モジュールなら衣装のメッシュだけを数える。
+        "meshes": document
+            .model()
+            .meshes
+            .iter()
+            .filter(|m| document.module().is_none_or(|c| !c.is_base_mesh(&m.id)))
+            .count(),
+        "module": module,
         "warnings": import.warnings,
-        "next": "get_psd_layers でレイヤーと画像を見て分類する",
+        "next": next,
     });
     Ok(Imported {
         meta: project.meta,
@@ -524,9 +634,21 @@ fn labels_summary(doc: &Document, source: &PsdSource) -> Value {
             review.push(i);
         }
     }
-    let rig = match rig_request(model, &parts, &[], &[]) {
-        Ok(_) => json!({ "ready": true }),
-        Err(e) => json!({ "ready": false, "error": ai_error(e) }),
+    // モジュールのプロジェクトでは、モジュールのリグを組めるか (衣装のメッシュが取り付け先の下にあるか)。
+    let ready = if doc.module().is_some() {
+        let parts = module_mesh_parts(doc, &source.labels);
+        module_rig_request_guided(doc, &parts, &[], &[], &ModuleRigGuidance::default()).map(|_| ())
+    } else {
+        rig_request(model, &parts, &[], &[]).map(|_| ())
+    };
+    let tool = if doc.module().is_some() {
+        "propose_module_rig"
+    } else {
+        "propose_rig"
+    };
+    let rig = match ready {
+        Ok(()) => json!({ "ready": true, "tool": tool }),
+        Err(e) => json!({ "ready": false, "tool": tool, "error": ai_error(e) }),
     };
     json!({
         "layers": source.labels.len(),
@@ -551,6 +673,9 @@ fn variant_sets(labels: &[LayerLabel]) -> Vec<Vec<usize>> {
 }
 
 pub(crate) fn get_rig_guide(doc: &Document, slot: &Option<PsdSource>) -> ToolResult {
+    if doc.module().is_some() {
+        return Err(USE_MODULE_RIG.into());
+    }
     let source = slot.as_ref().ok_or(NO_PSD)?;
     let model = doc.model();
     let parts = mesh_parts(model, &source.labels);
@@ -582,6 +707,9 @@ pub(crate) fn propose_rig(
     slot: &Option<PsdSource>,
     args: RigArgs,
 ) -> Result<Draft, String> {
+    if doc.module().is_some() {
+        return Err(USE_MODULE_RIG.into());
+    }
     let source = slot.as_ref().ok_or(NO_PSD)?;
     let model = doc.model();
     let (params, reason) = match &args.params {
@@ -630,5 +758,104 @@ pub(crate) fn propose_rig(
         rationale: format!("{head}\n{labels}\n{}", proposal.rationale),
         commands: proposal.commands,
         extra: json!({ "params": params }),
+    })
+}
+
+/// モジュールのリグのツールの入力: モジュールのプロジェクトであることと、覚えている PSD を確かめる。
+fn module_source<'a>(doc: &Document, slot: &'a Option<PsdSource>) -> Result<&'a PsdSource, String> {
+    if doc.module().is_none() {
+        return Err(NOT_A_MODULE.into());
+    }
+    slot.as_ref().ok_or_else(|| NO_PSD.to_owned())
+}
+
+pub(crate) fn get_module_rig_guide(doc: &Document, slot: &Option<PsdSource>) -> ToolResult {
+    let source = module_source(doc, slot)?;
+    let parts = module_mesh_parts(doc, &source.labels);
+    let max_side = ClassifyOptions::default().overview_max_side;
+    // エディタが API に送るものと同じく、衣装の PSD の原画 (`docs/ai-integration.md#モジュールの自動リギング`)。
+    let image = overview_png(&source.tree, max_side).map_err(ai_error)?;
+    let request =
+        module_rig_request_guided(doc, &parts, &image, &[], &ModuleRigGuidance::default())
+            .map_err(ai_error)?;
+    let context = doc.module().ok_or(NOT_A_MODULE)?;
+    Ok(Output {
+        value: json!({
+            "instructions": request.system,
+            "layout": request.prompt,
+            "params_schema": module_rig_output_schema(),
+            "defaults": ModuleRigParams::default(),
+            "options": ModuleRigOptions::default(),
+            "slot": context.slot().id,
+            "variant_sets": variant_sets(&source.labels),
+            "labels": { "layers": source.labels.len(), "set_by_agent": source.by_agent.len() },
+            "next": "画像を見て値を選び、propose_module_rig の params に渡す",
+        }),
+        content: vec![
+            Content::Text(format!(
+                "the costume drawing (visible layers), long side at most {max_side} px"
+            )),
+            Content::Png(image),
+        ],
+    })
+}
+
+/// モジュールのリグの提案を作る (置くのは呼び出し側)。
+pub(crate) fn propose_module_rig(
+    doc: &Document,
+    slot: &Option<PsdSource>,
+    args: ModuleRigArgs,
+) -> Result<Draft, String> {
+    let source = module_source(doc, slot)?;
+    let (params, reason) = match &args.params {
+        Some(answer) => {
+            let (params, reason) = module_params_from_answer(answer).map_err(ai_error)?;
+            (params, Some(reason))
+        }
+        None => (ModuleRigParams::default(), None),
+    };
+    let defaults = ModuleRigOptions::default();
+    let options = ModuleRigOptions {
+        follow: args.follow.unwrap_or(defaults.follow),
+        colliders: args.colliders.unwrap_or(defaults.colliders),
+        poses: args.poses.unwrap_or(defaults.poses),
+    };
+    let parts = module_mesh_parts(doc, &source.labels);
+    let proposal = template_module_rig(doc, &parts, &params, &options).map_err(|e| {
+        format!(
+            "the module rig could not be built: {}; fix it and call propose_module_rig again",
+            ai_error(e)
+        )
+    })?;
+    let values = format!(
+        "sway {:.2}, pendulum length {:.2}",
+        params.sway_scale, params.sway_length
+    );
+    let head = match &reason {
+        Some(reason) => format!("Values chosen by the agent: {values} ({reason})"),
+        None => format!("Default values: {values}"),
+    };
+    let labels = format!(
+        "Labels: the agent chose {} of {} layers and {} variant set(s); the rest follow the name rules",
+        source.by_agent.len(),
+        source.labels.len(),
+        variant_sets(&source.labels).len()
+    );
+    let title = args.title.unwrap_or_else(|| {
+        format!(
+            "{} — {}",
+            proposal.title,
+            if reason.is_some() {
+                "agent"
+            } else {
+                "defaults"
+            }
+        )
+    });
+    Ok(Draft {
+        title,
+        rationale: format!("{head}\n{labels}\n{}", proposal.rationale),
+        commands: proposal.commands,
+        extra: json!({ "params": params, "options": options }),
     })
 }
