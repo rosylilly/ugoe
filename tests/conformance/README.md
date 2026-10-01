@@ -6,19 +6,23 @@
 ([ADR 0017](../../docs/adr/0017-single-runtime-distribution.md) の決定 3、[docs/portability.md](../../docs/portability.md#配布))。
 参照は `ugoe::Puppet` (の `ModelInstance`) と `ugoe render` で作り、各バインディングの出力を公開仕様の許容誤差で比べる。
 
-| 配布物 | 頂点 | 画像 | 実行器 |
+| 配布物 (`--only` の名前) | 頂点 | 画像 | 実行器 |
 | --- | --- | --- | --- |
-| C ABI (`ugoe-ffi`) | 位置・不透明度・描画順の値・乗算色・スクリーン色・マスクの効き具合・`visible`・描画の順番 | なし (C ABI は描画しない) | [`c/runner.c`](c/runner.c) |
-| wasm (npm パッケージ `@ugoe/runtime`) | 位置・描画の順番 (`WebPuppet` が出すもの) | あり (ヘッドレスの Chrome の WebGL2) | [`web/runner.js`](web/runner.js) |
-| Godot (`bindings/godot`) | — | いまは別に `just godot-check` で比べている | [下](#godot-bindingsgodot) |
+| C ABI (`ugoe-ffi`、`c`) | 位置・不透明度・描画順の値・乗算色・スクリーン色・マスクの効き具合・`visible`・描画の順番 | なし (C ABI は描画しない) | [`c/runner.c`](c/runner.c) |
+| wasm (npm パッケージ `@ugoe/runtime`、`wasm` と `wasm-webgpu`) | C ABI と同じすべての値 (`drawable_positions`・`drawable_states_json`・`render_order`) | あり (ヘッドレスの Chrome の WebGL2 と WebGPU。`read_pixels` で読み戻す) | [`web/runner.js`](web/runner.js) |
+| Unity (`bindings/unity` の Unity に依存しない C# の層 `Runtime/Core`、`unity`) | C ABI と同じすべての値 | なし (描画は Unity が要る) | [`unity/Program.cs`](unity/Program.cs) (dotnet) |
+| Godot (`bindings/godot`、`godot`) | なし (中で評価しているのは同じ `ugoe::Puppet`) | あり (Compatibility (OpenGL)。画面が無ければ Xvfb) | [`bindings/godot/example/tests/conformance.gd`](../../bindings/godot/example/tests/conformance.gd) |
 
 ## 実行
 
 ```sh
-just conformance                    # = node tests/conformance/run.mjs (C ABI と wasm)
-just conformance --only c           # C ABI だけ (Chrome も GPU も要らない)
-just conformance --backend webgpu   # wasm を WebGPU で描く (下の「確かめていないこと」)
-just conformance --no-web-build     # bindings/web/dist を作り直さない
+just conformance                          # = node tests/conformance/run.mjs (すべてのバインディング)
+just conformance --only c                 # C ABI だけ (Chrome も GPU も要らない)
+just conformance --only wasm,wasm-webgpu  # wasm だけ (WebGL2 と WebGPU)
+just conformance --only unity             # Unity の C# の層だけ (dotnet と C ABI のライブラリ)
+just conformance --only godot             # Godot だけ (= just godot-check の比べ合わせ)
+just conformance --cases avatar-pose,masks-moving   # ケースを絞る
+just conformance --no-web-build           # bindings/web/dist を作り直さない (--no-godot-build は Godot の拡張)
 ```
 
 結果は `target/conformance/` (`--out` で変えられる) に残る。
@@ -26,26 +30,41 @@ just conformance --no-web-build     # bindings/web/dist を作り直さない
 ```
 target/conformance/
   plan.json  plan.txt          計画 (展開したケース)
+  models/                      計画の `generated` のモデル (src/bundles.rs が作る)
   reference/<ケース>.json .png  参照
   c/<ケース>.json               C ABI の結果
-  wasm/<ケース>.json .png       wasm の結果。画像が合わなければ <ケース>.diff.png (違う画素が赤)
-  chrome.log                   Chrome のログ (ページのコンソールを含む)
+  wasm/<ケース>.json .png       wasm (WebGL2) の結果。画像が合わなければ <ケース>.diff.png (違う画素が赤)。chrome.log (ページのコンソールを含む)
+  wasm-webgpu/                 wasm (WebGPU) の結果 (同じ形)
+  unity/<ケース>.json           Unity の C# の層の結果
+  godot/<ケース>.png            Godot の結果。skipped.json (扱わなかったケースと理由)
 ```
 
 要るもの (`just ci` に含めない理由): C コンパイラ (`cc`。`CC` で変えられる)、Chrome (`CHROME` で指定。無ければ
 `google-chrome`・`chromium` などを探す)、wasm-bindgen-cli (`just wasm-bindgen-version` の版。パッケージのビルド)、
-参照の画像を描く GPU (無ければ Mesa の lavapipe / llvmpipe)。`run.mjs` は最初にこれらを cc・Chrome・wasm-bindgen-cli・GPU の順に調べ
-(`--only c` では C コンパイラだけ)、足りないものと入れ方を出して止まる。CI では `.github/workflows/ci.yml` の `conformance` ジョブで実行し、
-落ちたら `target/conformance` を成果物として残す。
-このクレートの単体テスト (ケースの展開・比べ合わせ・参照の評価) は `cargo test` に入るので `just ci` で動く。
+参照の画像を描く GPU (無ければ Mesa の lavapipe / llvmpipe)、.NET SDK 9 以降 (`unity`)、Godot 4.4 以降 (`GODOT` で指定。既定は `godot`) と、
+画面が無ければ xvfb-run (`godot`)。
+
+**足りない道具の扱い (T0418 で決めた):** `run.mjs` は最初に道具を調べる。
+
+- `--only` を付けないとき: `c`・`wasm`・`wasm-webgpu` の道具が足りなければ、足りないものと入れ方を出して止まる (終了コード 2)。
+  `unity` (dotnet) と `godot` (Godot・xvfb-run) は、足りなければ入れ方を出して **そのバインディングを飛ばし**、最後に `skipped` と表示する。
+  エンジンの道具は重く、C ABI と wasm だけを確かめたい人や CI のジョブが多いため。
+- `--only` で名前を挙げたとき: 挙げたバインディングの道具が足りなければ、どれでも止まる (飛ばしたのに通ったように見えないように)。
+
+CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just conformance` を実行し (ランナーに dotnet があれば Unity も、Godot は無いので飛ぶ)、
+`godot` ジョブの `just godot-check` (`build.mjs --conformance`) が `--only godot` を実行する。落ちたら `target/conformance` を成果物として残す。
+このクレートの単体テスト (ケースの展開・生成するモデル・比べ合わせ・参照の評価) は `cargo test` に入るので `just ci` で動く。
 
 ## 流れ
 
-1. `ugoe-conformance reference --out DIR`: [`cases.json`](cases.json) を計画に展開し (`DIR/plan.json`・`DIR/plan.txt`)、
+1. `ugoe-conformance reference --out DIR [--only ケース,...]`: 計画の `generated` のモデルを `DIR/models/` に作り
+   ([`src/bundles.rs`](src/bundles.rs))、[`cases.json`](cases.json) を計画に展開し (`DIR/plan.json`・`DIR/plan.txt`)、
    ケースごとに参照の評価の結果を `DIR/reference/<ケース>.json` に書く ([`src/reference.rs`](src/reference.rs))。
 2. 画像を比べるバインディングがあれば、`run.mjs` がケースごとに `ugoe render <plan.json の render_args> -o DIR/reference/<ケース>.png` を実行する。
-3. 各バインディングの実行器が、計画を読んで `DIR/<バインディング>/<ケース>.json` (と `.png`) を書く。
-4. `ugoe-conformance compare --out DIR --binding <名前> [--images]` が比べる ([`src/compare.rs`](src/compare.rs))。
+3. 各バインディングの実行器が、計画を読んで `DIR/<バインディング>/<ケース>.json` (と `.png`) を書く。扱えないケースは
+   `DIR/<バインディング>/skipped.json` (`{"<ケース>": "理由"}`) に書いてよい (比べ合わせは `skip` と表示し、失敗に数えない)。
+4. `ugoe-conformance compare --out DIR --binding <名前> [--images | --images-only]` が比べる ([`src/compare.rs`](src/compare.rs))。
+   `--images-only` は評価の結果を読み戻せないバインディング (Godot) 向けで、画像の無いケースは飛ばす。1 つも比べなければ失敗。
 
 ### ケース (`cases.json`)
 
@@ -53,15 +72,18 @@ target/conformance/
 | --- | --- |
 | `name` / `summary` | 名前 (出力のファイル名。英数字・`-`・`_`) と説明 |
 | `model` | `.ugoe` かモデルの JSON (リポジトリのルートからの相対パス) |
+| `generated` | `model` の代わりに、[`src/bundles.rs`](src/bundles.rs) が作るモデルの名前 (`nested-masks`・`mixed-masks`・`intersection-masks`・`blend-modes`・`many-masks`・`moving-masks`) |
 | `spec` | `spec/examples/<例>` を書くと、その `expected.json` のケースごとに展開する (`spec-<例>-<番号>`。モデルとパラメータはそこから取る) |
 | `modules` | 付ける `.ugoemod` (付ける順) |
 | `parameters` | パラメータの値 (値域の外はクランプされる) |
+| `before` | 先に描く値 (ID は `parameters` にもあること)。下の「実行器の約束」の 3 |
 | `time` / `fps` | 時間を進める秒数と 1 秒あたりの `update` の回数 (既定 60)。`ugoe render --time --fps` と同じ |
 | `effects` | 時間を進めるときに目パチと呼吸を使うか (既定 `false`) |
 | `lighting` | 光源 (画像だけに効く)。形は `WebPuppet::set_lighting_json` と同じ |
 | `image` | 画像も比べるか (既定 `true`) |
 
-入力は見本 (`assets/samples/avatar.ugoe`・`avatar-lit.ugoe`・`dress-up/`)、公開仕様の評価の例 (`spec/examples/*/expected.json`) と
+入力は見本 (`assets/samples/avatar.ugoe`・`avatar-lit.ugoe`・`dress-up/`)、生成するマスクと合成モードのモデル (もとは Godot の
+`build.mjs --conformance` だけにあったもの。T0418 で移した)、公開仕様の評価の例 (`spec/examples/*/expected.json`) と
 バンドルの例 (`spec/examples/bundles/`: zstd の圧縮・任意の機能・法線マップ・物理)。描画の例 (`render.json`) は、テクスチャを
 その場で作る必要があるので使っていない (参照レンダラは `crates/ugoe-render/tests/spec_render.rs` で確かめている)。
 
@@ -75,11 +97,15 @@ target/conformance/
    参照は `ModelInstance::update` 1 回で、`ugoe render` の `--time` なしと同じ)。
    `steps` があれば、目パチと呼吸を `effects` のとおりにし、ほかの段は動かして、`steps` の `dt` で順に `update` する
    (`ugoe render --time` と同じ列。実行器では `dt` を計算しない)。
+   `before` があるとき、値を変えてから描画に反映するまでにフレームの遅れが入りうる実行器 (Godot) は、先に `before` の値で
+   数フレーム描き、次のフレームで `parameters` にして上の評価をし、その直後のフレームを結果にする。同期して評価・描画する実行器
+   (C ABI・wasm・Unity の C# の層) と参照は `before` を使わない (結果は同じでなければならない)。`plan.txt` には書かない。
 4. 結果を書く。形は `src/frame.rs` の `Frame` で、公開仕様の評価の例 (`expected.json` のケース) と同じ
    (`{"meshes": {ID: {"positions": [[x, y], ...], "opacity", ...}}, "render_order": [ID, ...]}`)。取り出せない値は省いてよい
-   (`positions` と `render_order` は必須)。
+   (`positions` と `render_order` は必須)。評価の結果を読み戻せないなら書かず、比べ合わせを `--images-only` にする。
 5. 画像を描くなら: キャンバスと同じ大きさ (倍率 1、`round`)、キャンバス全体が収まるビュー、背景 `plan.background` (`#808080`、不透明)、
    `lighting` の光源で描き、ストレートアルファの PNG に書く。
+6. 扱えないケース (Godot のモデルの JSON など) は `skipped.json` に理由と一緒に書く。
 
 ### 許容誤差
 
@@ -90,45 +116,37 @@ target/conformance/
   ただし透明な黒ではなく**不透明な背景 `#808080`** の上で比べる (ブラウザの canvas の読み戻しはアルファを外して 8 ビットに丸めるので、
   透明な画素の色が比べられない。Godot の `build.mjs --conformance` と同じ背景)。
 
-T0408 の時点の結果 (WSL2): C ABI はすべてのケースで一致。wasm (WebGL2、SwiftShader) の画像は 99.9% 以上の画素が一致し、
-違いの最大は見本で 4〜7/255 (三角形の縁)。
+T0418 の時点の結果 (WSL2、53 ケース): C ABI・wasm (WebGL2 と WebGPU)・Unity の C# の層はすべてのケースで評価の結果が一致。
+wasm の画像は WebGL2・WebGPU (どちらも SwiftShader) とも 99.9% 以上の画素が一致し、違いの最大は見本で 5〜7/255 (三角形の縁。
+回転の例 2 つは 1〜2 画素だけ 127/255)。Godot (Compatibility、Mesa の llvmpipe) は扱う 20 ケースで 100% の画素が 3/255 以内 (最大 3/255)。
 
 ## エンジン向けのバインディングを足す
 
 1. 実行器を書く: `plan.json` (か `plan.txt`) を読み、上の「実行器の約束」のとおりに評価して `DIR/<名前>/<ケース>.json` を書く。
    描画できるなら `<ケース>.png` も書く。モデルの読み込み・モジュール・パラメータ・段の有効無効・`update` は、
    そのバインディングの公開 API で行う (内部の `ugoe` を直接呼ばない。配布物として検査するため)。
-2. `run.mjs` に `--only <名前>` の段を足す (ビルド → 実行器 → `compare("<名前>", 画像を比べるか)`)。
-   画像を比べるバインディングがあるときは、参照の画像も作られる (`only.has(...)` の条件に足す)。
+2. `run.mjs` の `BINDINGS` に名前を足し、道具の検査 (`need`)・段 (ビルド → 実行器 → `compare("<名前>", "frames" | "images" | "images-only")`) を足す。
+   画像を比べるなら `IMAGES` に、道具が重く既定では飛ばしてよいなら `OPTIONAL` に入れる。
 3. CI: 実行器に要るもの (エンジンの実行ファイルなど) を `conformance` ジョブに入れるか、別のジョブで
    `just conformance --only <名前>` を実行する。
 4. この README の表に足す。
 
-### Godot (`bindings/godot`)
+### Unreal (`bindings/unreal`、T0407)
 
-いまは `just godot-check` (`node bindings/godot/build.mjs --conformance`) が、`ugoe render --time 0` の画像と Godot で描いた画像を
-別に比べている (`example/tests/conformance.gd`。同じ基準・同じ背景 `#808080`)。ケースは `build.mjs` の中にあり、形
-(`model`・`modules`・`params`・光源) はこの計画に近い。この適合テストに乗せるには:
-
-1. `conformance.gd` を実行器にする: 計画 (`plan.json`) を読み、ケースごとに `UgoePuppet2D` を作って `<ケース>.png` (と、取り出せれば
-   `<ケース>.json`) を書く。比べ合わせは `ugoe-conformance compare --binding godot --images` に任せ、GDScript での比べ合わせは外す。
-   時間は `playing = false` のまま `advance(dt)` を `steps` の順に呼ぶ。
-2. 時間を進めないケース (`steps` が空) は、すべての段を止めた評価になっている。Godot のノードは読み込みの後に必ず `update(0)` を通す
-   (物理も初期化される) ので、段の有効無効をノードに出すか、Godot では `steps` のあるケースだけを使う
-   (`build.mjs` が `--time 0` で揃えているのと同じ)。
-3. `build.mjs` にだけある条件を `cases.json` に移す: `conformance_bundles` のモデル (入れ子・反転・共通部分のマスク、合成モード、
-   マスク 12 個) はバンドルとして置き、値を変えた直後のフレームを比べる `before` は、計画に「先に描く値」のフィールドを足して表す。
-4. `run.mjs` に `--only godot` を足し (Godot と、画面が無ければ xvfb-run が要る)、CI の `godot` ジョブで `just conformance --only godot` を実行する。
+まだ無い。できたら Unity と同じく、エンジンに依存しない層があればそれで頂点を、エンジンで描けるなら画像を比べる。
 
 ## 確かめていないこと・制限
 
-- **wasm の WebGPU:** `--backend webgpu` はヘッドレスの Chrome (SwiftShader の Vulkan) で、canvas の読み戻しが空になる・
-  途中で GPU のデバイスを失う・アダプタが取れなくなる、のどれかになった (Chrome 154、WSL2。`chrome.log` に
-  `SharedImageManager::ProduceMemory` の誤り)。画像の比べ合わせは WebGL2 だけで行っている。WebGPU を確かめるには、
-  wasm に描画先のテクスチャを読み戻す API を足すのがよい (後続の候補)。
-- wasm の頂点は位置と描画の順番だけ (`WebPuppet` は不透明度などを出さない)。
+- **CI の上では、T0418 で足したもの (wasm の WebGPU・Unity・Godot の計画への移行) を動かしていない** (push しないため)。
+  wasm の WebGPU はヘッドレスの Chrome の SwiftShader の Vulkan (`--use-webgpu-adapter=swiftshader`) で、WSL2 の Chrome 154 では通った。
+  T0408 の時点では canvas の読み戻しが空になる・デバイスを失う・アダプタが取れなくなることがあったが、`read_pixels`
+  (別のテクスチャに描いて読み戻す) に変えてからは起きていない。ランナーの Chrome で起きたら `--only c,wasm,unity` で外せる。
+- **Unity:** Unity に依存しない C# の層 (P/Invoke と C ABI) だけを比べる。Unity のメッシュ・シェーダ・マスクの描画は比べていない
+  (Unity のライセンスとエディタが要る。`bindings/unity/README.md#制限と確かめていないこと`)。
+- **Godot:** 画像だけを比べる。モデルの JSON は読まないので、公開仕様の評価の例は飛ばす。比べ合わせは Compatibility (OpenGL) だけ。
 - Windows と macOS では実行していない (`run.mjs` はリンクの引数だけ用意してある)。
 
 ## 関連タスク
 
 - T0408 (`docs/tasks/T0408-conformance-tests.md`)
+- T0418 (`docs/tasks/T0418-conformance-more-backends.md`: Godot と Unity・wasm の WebGPU)

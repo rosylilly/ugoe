@@ -2,6 +2,8 @@
 //
 // run.mjs のサーバーが配るページで動く。計画 (plan.json) のケースごとに、パッケージの `createPuppet` と
 // `loadModel` で WebPuppet を作り、評価の結果 (<ケース>.json) と描いた画像 (<ケース>.png) をサーバーへ送る。
+// 画像は `read_pixels` (canvas とは別のテクスチャに描いて読み戻す) で取る。canvas の読み戻しは WebGPU のヘッドレスの
+// Chrome で空になることがあったため (T0418)。
 //
 // - パッケージは /pkg/ (bindings/web/dist)、モデルは /file/<計画の番号>/<モジュールの番号 or "model"> で取る。
 // - 描画のバックエンドは URL の ?backend= (webgl2 / webgpu)。
@@ -27,29 +29,45 @@ async function bytes(url) {
   return new Uint8Array(await response.arrayBuffer());
 }
 
-/** WebPuppet から評価の結果を取り出す (形は tests/conformance/src/frame.rs。位置と描画順だけ)。 */
+/** WebPuppet から評価の結果を取り出す (形は tests/conformance/src/frame.rs)。 */
 function frame(puppet) {
   const ids = puppet.drawable_ids();
+  const states = JSON.parse(puppet.drawable_states_json());
+  const color = ([r, g, b]) => ({ r, g, b });
   const meshes = {};
   ids.forEach((id, i) => {
     const xy = puppet.drawable_positions(i);
     const positions = [];
     for (let v = 0; v + 1 < xy.length; v += 2) positions.push([xy[v], xy[v + 1]]);
-    meshes[id] = { positions };
+    const s = states[i];
+    meshes[id] = {
+      positions,
+      opacity: s.opacity,
+      draw_order: s.draw_order,
+      multiply_color: color(s.multiply_color),
+      screen_color: color(s.screen_color),
+      mask_strength: s.mask_strength,
+      visible: s.visible,
+    };
   });
   const render_order = Array.from(puppet.render_order(), (i) => ids[i]);
   return { meshes, render_order };
 }
 
-/** canvas の中身を PNG にする。描いた直後 (同じタスクの中) に 2D の canvas へ写す。 */
-function snapshot(canvas) {
-  const copy = document.createElement("canvas");
-  copy.width = canvas.width;
-  copy.height = canvas.height;
-  const context = copy.getContext("2d");
-  context.drawImage(canvas, 0, 0);
+/** 読み戻した画素 (ストレートアルファの RGBA) を PNG にする。 */
+async function png(puppet) {
+  const pixels = await puppet.read_pixels();
+  const [width, height] = [puppet.width(), puppet.height()];
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  context.putImageData(new ImageData(new Uint8ClampedArray(pixels.buffer), width, height), 0, 0);
   return new Promise((resolve, reject) =>
-    copy.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("toBlob failed"))), "image/png"),
+    canvas.toBlob(
+      (blob) => (blob ? resolve(blob) : reject(new Error("toBlob failed"))),
+      "image/png",
+    ),
   );
 }
 
@@ -62,6 +80,8 @@ async function runCase(plan, index) {
   document.body.append(canvas);
   const puppet = await createPuppet(canvas, { backend });
   try {
+    if (puppet.backend() !== backend)
+      throw new Error(`drawing with ${puppet.backend()}, not ${backend}`);
     loadModel(puppet, await bytes(`/file/${index}/model`));
     for (let m = 0; m < c.modules.length; m++) {
       const name = puppet.load_module(await bytes(`/file/${index}/${m}`));
@@ -85,8 +105,7 @@ async function runCase(plan, index) {
       const [r, g, b] = plan.background;
       puppet.set_background(r / 255, g / 255, b / 255, 1);
       if (c.lighting) puppet.set_lighting_json(JSON.stringify(c.lighting));
-      puppet.render();
-      await post(`/result/${c.name}.png`, await snapshot(canvas));
+      await post(`/result/${c.name}.png`, await png(puppet));
     }
   } finally {
     puppet.free();

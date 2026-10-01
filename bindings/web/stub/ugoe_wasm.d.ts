@@ -21,6 +21,7 @@ export class WebPuppet {
   drawable_bounds(): Float32Array;
   drawable_ids(): string[];
   drawable_positions(index: number): Float32Array | undefined;
+  drawable_states_json(): string;
   expression_names(): string[];
   fit(): void;
   has_model(): boolean;
@@ -52,6 +53,7 @@ export class WebPuppet {
   parameters_json(): string;
   physics_json(): string | undefined;
   physics_particles(rig: number): Float32Array;
+  read_pixels(): Promise<Uint8Array>;
   render(): void;
   render_order(): Uint32Array;
   reset_parameters(): void;

@@ -4,10 +4,12 @@
 //! 参照と同じ頂点と画像を出すことを検査する。このクレートは次の 3 つを持つ。
 //!
 //! - [`plan`] は、ケースの一覧 (`cases.json`) を、各バインディングが読む計画 (`plan.json`・`plan.txt`) に展開する。
+//!   [`bundles`] は、計画で `generated` と書いたモデル (マスクと合成モードを確かめる `.ugoe`) を作る。
 //! - [`frame`] と [`reference`] は、評価の結果 (頂点・不透明度・描画順など) の形と、参照 (`ugoe::Puppet` と
 //!   その `ModelInstance`) からそれを作る処理。
 //! - [`compare`] は、参照とバインディングの結果を、公開仕様の許容誤差で比べる。
 
+pub mod bundles;
 pub mod compare;
 pub mod frame;
 pub mod plan;
@@ -72,4 +74,25 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &std::path::Path) -> Result<T
 /// リポジトリのルート (このクレートは `tests/conformance` にある)。
 pub fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::sync::OnceLock;
+
+    use crate::plan::Plan;
+
+    /// コミットしたケースの一覧を展開した計画 (`generated` のモデルは一時ディレクトリに 1 度だけ作る)。
+    pub(crate) fn committed_plan() -> Plan {
+        static GENERATED: OnceLock<PathBuf> = OnceLock::new();
+        let generated = GENERATED.get_or_init(|| {
+            let dir =
+                std::env::temp_dir().join(format!("ugoe-conformance-plan-{}", std::process::id()));
+            crate::bundles::write_all(&dir).unwrap();
+            dir
+        });
+        let root = crate::repo_root();
+        Plan::load(&root.join("tests/conformance/cases.json"), &root, generated).unwrap()
+    }
 }

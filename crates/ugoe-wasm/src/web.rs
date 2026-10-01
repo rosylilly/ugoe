@@ -30,6 +30,8 @@ mod tracking;
 mod lighting;
 // 着せ替えの API (T0123)。
 mod dress_up;
+// 描画結果の読み戻しと評価の結果の取り出し (T0418)。
+mod readback;
 
 fn js_error(e: impl Display) -> JsError {
     JsError::new(&e.to_string())

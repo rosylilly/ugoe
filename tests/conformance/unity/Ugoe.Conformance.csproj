@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    適合テストの Unity (bindings/unity) の実行器 (tests/conformance/README.md)。
+    UPM パッケージの Unity に依存しない C# の層 (Runtime/Core) をそのまま取り込み、ホストの libugoe_ffi に対して動かす。
+    ネイティブライブラリの場所は UgoeFfiDir (既定はリポジトリのルートの target/debug) で変えられる。
+    実行: node tests/conformance/run.mjs に only unity を付ける
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <!-- Runtime/Core は Unity (2022.3) の C# に合わせてある (bindings/unity/tests と同じ)。 -->
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <RepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../..'))</RepoRoot>
+    <UgoeFfiDir Condition="'$(UgoeFfiDir)' == ''">$(RepoRoot)/target/debug</UgoeFfiDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(RepoRoot)/bindings/unity/com.ugoe.unity/Runtime/Core/**/*.cs" Link="Core/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="$(UgoeFfiDir)/libugoe_ffi.so" Condition="Exists('$(UgoeFfiDir)/libugoe_ffi.so')" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <None Include="$(UgoeFfiDir)/libugoe_ffi.dylib" Condition="Exists('$(UgoeFfiDir)/libugoe_ffi.dylib')" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <None Include="$(UgoeFfiDir)/ugoe_ffi.dll" Condition="Exists('$(UgoeFfiDir)/ugoe_ffi.dll')" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+</Project>

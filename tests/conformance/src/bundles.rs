@@ -1,22 +1,68 @@
-//! 描画の比べ合わせ (`build.mjs --conformance`) に使う `.ugoe` を書き出す。
+//! 計画で `generated` と書いたモデル (`.ugoe`) を作る。
 //!
 //! `ugoe_model::fixtures` のマスクのモデルに色と半透明のテクスチャを付け、マスク・合成モード・
 //! 乗算色とスクリーン色・裏面カリング・乗算済みアルファへの変換の違いが画素に出るようにする。
 //! 1 つの要素が多くのマスクを読むモデル (`many-masks`) と、パラメータで入れ子のマスクが動くモデル
-//! (`moving-masks`。アニメーション中にマスクが 1 フレーム遅れないかを確かめる) も書き出す。
-//!
-//!   cargo run --example conformance_bundles -- <出力先のディレクトリ>
+//! (`moving-masks`。アニメーション中にマスクが 1 フレーム遅れないかを `before` で確かめる) も作る。
+//! もとは Godot の `build.mjs --conformance` の `conformance_bundles` (T0411) で、T0418 でここに移した。
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use ugoe::core::{Rgb, Vec2};
 use ugoe::format::{Bundle, TextureData, TextureFormat};
 use ugoe::model::{
     BlendMode, KeyformBinding, KeyformGrid, MaskRef, Mesh, MeshId, Model, TextureRef, fixtures,
 };
+use ugoe_headless::{Rgba8, image};
+
+use crate::Error;
+
+/// 作るモデルの名前 (`<名前>.ugoe` に書く)。
+pub const NAMES: [&str; 6] = [
+    "nested-masks",
+    "mixed-masks",
+    "intersection-masks",
+    "blend-modes",
+    "many-masks",
+    "moving-masks",
+];
+
+/// すべてのモデルを `dir` に書き、書いたパスを返す。
+pub fn write_all(dir: &Path) -> Result<Vec<PathBuf>, Error> {
+    std::fs::create_dir_all(dir).map_err(Error::io(format!("creating {}", dir.display())))?;
+    let png = texture()?;
+    let mut paths = Vec::new();
+    for name in NAMES {
+        let mut bundle = Bundle::new(model(name)?);
+        bundle.textures = vec![TextureData {
+            format: TextureFormat::Png,
+            bytes: png.clone(),
+        }];
+        let bytes = ugoe::format::write_bundle(&bundle).map_err(|source| Error::Format {
+            context: format!("writing the generated bundle `{name}`"),
+            source,
+        })?;
+        let path = dir.join(format!("{name}.ugoe"));
+        std::fs::write(&path, bytes).map_err(Error::io(format!("writing {}", path.display())))?;
+        paths.push(path);
+    }
+    Ok(paths)
+}
+
+fn model(name: &str) -> Result<Model, Error> {
+    Ok(match name {
+        "nested-masks" => colored(fixtures::nested_masks()),
+        "mixed-masks" => colored(fixtures::mixed_masks()),
+        "intersection-masks" => colored(fixtures::intersection_masks()),
+        "blend-modes" => blend_modes(),
+        "many-masks" => many_masks(),
+        "moving-masks" => moving_masks(),
+        other => return Err(Error::Invalid(format!("unknown generated model `{other}`"))),
+    })
+}
 
 /// 64x64 の、色とアルファが位置で変わるテクスチャ (PNG、乗算していないアルファ)。
-fn texture() -> Vec<u8> {
+fn texture() -> Result<Vec<u8>, Error> {
     const SIZE: u32 = 64;
     let mut rgba = Vec::with_capacity((SIZE * SIZE * 4) as usize);
     for y in 0..SIZE {
@@ -30,14 +76,17 @@ fn texture() -> Vec<u8> {
             ]);
         }
     }
-    let mut out = Vec::new();
-    let mut encoder = png::Encoder::new(&mut out, SIZE, SIZE);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
-    let mut writer = encoder.write_header().expect("png header");
-    writer.write_image_data(&rgba).expect("png data");
-    writer.finish().expect("png finish");
-    out
+    // PNG はストレートアルファ。書き出しの関数は乗算済みを受け取るので、先に掛けておく。
+    image::premultiply(&mut rgba);
+    image::encode_png_unpremultiplied(&Rgba8 {
+        width: SIZE,
+        height: SIZE,
+        pixels: rgba,
+    })
+    .map_err(|source| Error::Headless {
+        context: "encoding the texture of the generated bundles".to_owned(),
+        source,
+    })
 }
 
 fn tint(mesh: &mut Mesh, multiply: Rgb, screen: Rgb) {
@@ -163,34 +212,21 @@ fn moving_masks() -> Model {
     model
 }
 
-fn main() {
-    let out = PathBuf::from(
-        std::env::args()
-            .nth(1)
-            .expect("usage: conformance_bundles <dir>"),
-    );
-    std::fs::create_dir_all(&out).expect("create dir");
-    let png = texture();
-    let models = [
-        ("nested-masks", colored(fixtures::nested_masks())),
-        ("mixed-masks", colored(fixtures::mixed_masks())),
-        (
-            "intersection-masks",
-            colored(fixtures::intersection_masks()),
-        ),
-        ("blend-modes", blend_modes()),
-        ("many-masks", many_masks()),
-        ("moving-masks", moving_masks()),
-    ];
-    for (name, model) in models {
-        let mut bundle = Bundle::new(model);
-        bundle.textures = vec![TextureData {
-            format: TextureFormat::Png,
-            bytes: png.clone(),
-        }];
-        let bytes = ugoe::format::write_bundle(&bundle).expect("write bundle");
-        let path = out.join(format!("{name}.ugoe"));
-        std::fs::write(&path, bytes).expect("write file");
-        println!("{}", path.display());
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generated_bundles_read_back() {
+        let dir =
+            std::env::temp_dir().join(format!("ugoe-conformance-bundles-{}", std::process::id()));
+        let paths = write_all(&dir).unwrap();
+        assert_eq!(paths.len(), NAMES.len());
+        for path in &paths {
+            let bundle = ugoe_format::read_bundle(&std::fs::read(path).unwrap()).unwrap();
+            assert_eq!(bundle.textures.len(), 1);
+            ugoe::Puppet::new(bundle.model).unwrap();
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -58,6 +58,17 @@ func _run() -> void:
 		names.append(p["name"])
 	_check(names.has("parameters/AngleX"), "property list has parameters/AngleX")
 
+	# 段の有効無効 (適合テストの時間を進めない評価に使う)。モデルを読み直しても保つ
+	_check(puppet.is_stage_enabled("breath"), "stages are enabled by default")
+	_check(puppet.set_stage_enabled("breath", false), "set_stage_enabled")
+	_check(not puppet.set_stage_enabled("dance", false), "unknown stage fails")
+	_check(puppet.load_model("res://models/avatar.ugoe"), "reload keeps the stages")
+	_check(not puppet.is_stage_enabled("breath"), "breath stays disabled")
+	puppet.set_parameter("Breath", 0.7)
+	puppet.advance(0.5)
+	_check(is_equal_approx(puppet.get_parameter("Breath"), 0.7), "disabled breath does not move Breath")
+	puppet.set_stage_enabled("breath", true)
+
 	# シーンに保存すると、設定したパラメータだけが残る (既定値のものは保存しない)。モデルはパスで参照する。
 	var packed := PackedScene.new()
 	packed.pack(puppet)

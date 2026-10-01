@@ -90,8 +90,7 @@ mod tests {
     use crate::plan::{DEFAULT_FPS, Plan};
 
     fn plan() -> Plan {
-        let root = crate::repo_root();
-        Plan::load(&root.join("tests/conformance/cases.json"), &root).unwrap()
+        crate::tests::committed_plan()
     }
 
     #[test]

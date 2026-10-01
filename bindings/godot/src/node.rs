@@ -6,12 +6,12 @@ use std::sync::Arc;
 use godot::classes::{Engine, INode2D, Node2D, Resource, ResourceLoader};
 use godot::prelude::*;
 use godot::register::info::{PropertyHint, PropertyHintInfo, PropertyInfo, PropertyUsageFlags};
-use ugoe::DressUpChange;
 use ugoe::core::Rgb;
 use ugoe::model::avatar::ARKIT_BLEND_SHAPES;
 use ugoe::motion::{BodyInput, Priority, Rotation, TrackingInput};
 use ugoe::render::{Light, Lighting};
 use ugoe::runtime::ParamIndex;
+use ugoe::{DressUpChange, Toggles};
 
 use crate::model::{LightUniforms, LoadedModel, ModuleData};
 use crate::render::{Renderer, TextureCache};
@@ -64,6 +64,8 @@ pub(crate) struct UgoePuppet2D {
     lighting: LightUniforms,
     /// トラッキングの入力 (モデルを読み直しても保つ)。
     tracking: Option<TrackingInput>,
+    /// `update` の各段を動かすか (モデルを読み直しても保つ)。
+    toggles: Toggles,
     /// 付けているモジュールのリソースと、読んだ中身 (付け外しで読み直さないため)。
     attached: Vec<(Gd<Resource>, Arc<ModuleData>)>,
     renderer: Option<Renderer>,
@@ -99,6 +101,7 @@ impl INode2D for UgoePuppet2D {
             loaded: None,
             lighting: LightUniforms::new(&Lighting::default()),
             tracking: None,
+            toggles: Toggles::default(),
             attached: Vec::new(),
             renderer: None,
             parameters: HashMap::new(),
@@ -438,6 +441,30 @@ impl UgoePuppet2D {
         }
     }
 
+    /// `update` の段 `stage` (`"physics"`・`"eye_blink"`・`"breath"`・`"lip_sync"`・`"pose"`) を動かすかを設定する
+    /// (`docs/spec/motion.md#段の有効無効`)。モデルを読み直しても保つので、読み込む前に設定すれば、読み込みの直後の
+    /// 評価から効く。未知の名前なら false。
+    #[func]
+    pub fn set_stage_enabled(&mut self, stage: GString, enabled: bool) -> bool {
+        let Some(flag) = stage_flag(&mut self.toggles, &stage.to_string()) else {
+            godot_error!("ugoe: unknown stage `{stage}`");
+            return false;
+        };
+        *flag = enabled;
+        if let Some(loaded) = &mut self.loaded {
+            loaded.puppet.set_toggles(self.toggles);
+        }
+        self.dirty = true;
+        true
+    }
+
+    /// `update` の段 `stage` を動かしているか。未知の名前なら false。
+    #[func]
+    pub fn is_stage_enabled(&self, stage: GString) -> bool {
+        let mut toggles = self.toggles;
+        stage_flag(&mut toggles, &stage.to_string()).is_some_and(|f| *f)
+    }
+
     /// ノードの座標 `local_position` が当たり判定 `hit_area` に入っているか。
     #[func]
     pub fn hit_test(&self, hit_area: GString, local_position: Vector2) -> bool {
@@ -675,6 +702,18 @@ impl UgoePuppet2D {
     }
 }
 
+/// 段の名前 (`ugoe-wasm` の `set_enabled` と同じ) に対応する `Toggles` の値。
+fn stage_flag<'a>(toggles: &'a mut Toggles, stage: &str) -> Option<&'a mut bool> {
+    match stage {
+        "physics" => Some(&mut toggles.physics),
+        "eye_blink" => Some(&mut toggles.eye_blink),
+        "breath" => Some(&mut toggles.breath),
+        "lip_sync" => Some(&mut toggles.lip_sync),
+        "pose" => Some(&mut toggles.pose),
+        _ => None,
+    }
+}
+
 /// 光源の辞書を読む。形が違えば `None`。
 fn light_from_dictionary(d: &VarDictionary) -> Option<Light> {
     let color = d
@@ -773,6 +812,7 @@ impl UgoePuppet2D {
                 None => false,
             });
         loaded.puppet.set_tracking(self.tracking);
+        loaded.puppet.set_toggles(self.toggles);
         self.loaded = Some(loaded);
         let modules = self.module_resources();
         if !modules.is_empty() && !self.apply_modules(modules) {

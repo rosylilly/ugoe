@@ -23,6 +23,7 @@ npm のパッケージ `@ugoe/runtime` (と `<ugoe-avatar>`) は `bindings/web/`
 | `physics_view` | エディタの物理の表示用の問い合わせ: デフォーマの写像とヤコビ行列、粒子の今の位置 (JS への公開は `src/web/physics.rs`) |
 | `dress_up` | `.ugoemod` の読み込み、付け外しに合わせたテクスチャの登録し直し (`Wardrobe`)、エラーのコード (JS への公開は `src/web/dress_up.rs`) |
 | `lighting` | 光源の JSON (`set_lighting_json`) を `ugoe::render::Lighting` にする (JS への公開は `src/web/lighting.rs`) |
+| `readback` | `drawable_states_json` の中身と、読み戻した画素をストレートアルファの RGBA にする処理 (JS への公開は `src/web/readback.rs`) |
 | `animation` | 物理・モーション・表情・エフェクトの JSON の受け渡し、バンドルのモーション・表情の名前の解決、モデルを読み直したときの物理と段の有効無効の引き継ぎ (JS への公開は `src/web/animation.rs`) |
 
 ## `WebPuppet` の使い方
@@ -53,6 +54,18 @@ puppet.clear_tracking();
   平滑化・キャリブレーション・回転行列からの角度の計算・鏡像の入れ替えはホストが行う
   (`docs/spec/avatar-profile.md#実装の範囲`)。`clear_tracking()` の後も最後の値は残る。
 - `is_lost()` が `true` になったら (GPU プロセスのクラッシュなど)、新しい canvas で作り直す。
+
+### 描画結果の読み戻しと評価の結果 (T0418)
+
+```js
+const pixels = await puppet.read_pixels(); // Uint8Array。width() × height() のストレートアルファの RGBA、行は上から下
+JSON.parse(puppet.drawable_states_json()); // [{opacity, draw_order, multiply_color: [r, g, b], screen_color, mask_strength, visible}]
+```
+
+- `read_pixels` は、今の状態を canvas と同じ大きさ・ビュー・背景・光源で canvas とは **別のテクスチャ** に描き、バッファに写して読む
+  (canvas には描かない)。canvas の読み戻し (`drawImage`・`toBlob`) はヘッドレスの Chrome の WebGPU で空になることがあったので、
+  配布物の適合テスト (`tests/conformance`) は WebGL2・WebGPU のどちらでもこれで画像を取る。スクリーンショットにも使える。
+- `drawable_states_json` は `drawable_ids()` の順。頂点は `drawable_positions`、描画の順番は `render_order` (`docs/spec/evaluation.md#8-出力`)。
 
 ### 物理・モーション・表情・エフェクト (T0309)
 
@@ -213,3 +226,4 @@ npm のパッケージ `@ugoe/runtime` の wasm は、`just web-runtime` が大�
 - T0402 (`docs/tasks/T0402-*.md`)
 - T0210 (ライティング: 法線マップの登録と光源の JSON)
 - T0123 (着せ替え: `.ugoemod` の読み込みと付け外し)
+- T0418 (描画結果の読み戻しと評価の結果の取り出し)

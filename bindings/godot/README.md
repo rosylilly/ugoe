@@ -14,7 +14,6 @@
 | `src/` | GDExtension (Rust)。ノード `UgoePuppet2D` と描画 |
 | `example/addons/ugoe/` | 配るアドオン: `ugoe.gdextension`、`bin/` (ビルドしたライブラリ。`build.mjs` が置く)、`.ugoe` / `.ugoemod` をリソースとして読む GDScript (`ugoe_resource_loader.gd`・`ugoe_model.gd`・`ugoe_module.gd`) |
 | `example/` | 見本のプロジェクト (`main.tscn`) と検査のスクリプト (`tests/`) |
-| `examples/conformance_bundles.rs` | 描画の比べ合わせに使うモデルを書き出す |
 
 リソースの読み込み器を GDScript で書いているのは、Godot がそれをワーカースレッドからも呼び、godot-rust のクラスは
 メインスレッド以外から呼べないため (ADR 0026)。
@@ -41,22 +40,22 @@ godot --path bindings/godot/example        # 見本のシーンを開く (エデ
 ```sh
 just godot-check        # = build.mjs --check --conformance (Godot と、画面が無ければ xvfb-run が要る)
 node bindings/godot/build.mjs --check        # 依存のライセンス + ヘッドレスの Godot で example/tests/smoke.gd
-node bindings/godot/build.mjs --conformance  # `ugoe render` の画像と Godot で描いた画像を比べる (画面が要る。無ければ xvfb-run)
-node bindings/godot/build.mjs --conformance --only dress-up   # 比べるモデルを絞る (複数可)
+node bindings/godot/build.mjs --conformance  # 配布物の適合テストを Godot で (= node tests/conformance/run.mjs --only godot。画面が要る。無ければ xvfb-run)
+node bindings/godot/build.mjs --conformance --only masks-moving   # 計画のケースを絞る (複数可)
 cargo test --manifest-path bindings/godot/Cargo.toml   # Godot なしで確かめられる部分 (src/model.rs・src/shader.rs)
 cargo clippy --manifest-path bindings/godot/Cargo.toml --all-targets -- -D warnings
 ```
 
 - Godot の実行ファイルは環境変数 `GODOT` (既定は `godot`) で指定する。見つからなければ入れ方を示して止まる。
-- `--conformance` は、次のモデルを倍率 1・背景 `#808080` で描いて `ugoe render --time 0` と比べる。
-  基準は [docs/spec/rendering.md#互換の基準](../../docs/spec/rendering.md#互換の基準)。
-  - `assets/samples/avatar.ugoe`
-  - `examples/conformance_bundles.rs` が `ugoe_model::fixtures` から作るモデル: 入れ子・反転・共通部分のマスク、3 つの合成モード、
-    乗算色とスクリーン色、裏面カリング、半透明のテクスチャ、1 つの要素が 12 個のマスクを読むモデル (`many-masks`)
-  - アニメーション中のマスク: 値を変えた **直後のフレーム** を比べる (`moving-masks` は入れ子のマスクをパラメータで動かす、
-    `avatar-moving` は `AngleX`・`AngleY` を動かす)。入れ子のマスクが 1 フレーム遅れると合わない
-  - ライティング: `avatar-lit.ugoe` に環境光・平行光源・点光源
-  - 着せ替え: `dress-up.ugoe` に `long-hair`・`sailor`・`cat-ears`
+- `--conformance` は、配布物の適合テスト ([tests/conformance/README.md](../../tests/conformance/README.md)) の計画のケースを、
+  実行器 `example/tests/conformance.gd` で倍率 1・背景 `#808080` で描き、`ugoe-conformance compare --images-only` で
+  `ugoe render` の画像と比べる (T0418 で、Godot だけにあったケースと比べ方を適合テストに移した)。
+  基準は [docs/spec/rendering.md#互換の基準](../../docs/spec/rendering.md#互換の基準)。ケースは見本 (`avatar`・`avatar-lit`・着せ替え)、
+  適合テストが `ugoe_model::fixtures` から作るモデル (入れ子・反転・共通部分のマスク、3 つの合成モード、乗算色とスクリーン色、
+  裏面カリング、1 つの要素が 12 個のマスクを読む `masks-many`)、アニメーション中のマスク (`before` のあるケース: 値を変えた
+  **直後のフレーム** を比べる。`masks-moving`・`avatar-moving`。入れ子のマスクが 1 フレーム遅れると合わない)、時間を進めた物理と目パチ・呼吸、
+  バンドルの例。Godot はモデルの JSON を読まないので、公開仕様の評価の例 (JSON) は飛ばす (`skipped.json`)。
+  頂点は比べない (Godot の中で評価しているのは C ABI・wasm と同じ `ugoe::Puppet`)。
 - これらは `just ci` に含まれない (ルートのワークスペースの外にあるため)。CI では別のジョブ (`.github/workflows/ci.yml` の
   `godot`) が、版を固定した Godot (4.7.1) と Xvfb の上で `just godot-check` を実行する。
 
@@ -102,6 +101,7 @@ puppet.set_tracking_blend_shapes({"jawOpen": 0.4, "eyeBlinkLeft": 1.0})
 | `get_motion_names()` / `start_motion(name, priority)` / `stop_motions()` / `is_motion_playing()` | モーション |
 | `get_expression_names()` / `set_expression(name)` | 表情 |
 | `set_lip_sync_level(level)` / `clear_lip_sync_level()` / `reset_physics()` | リップシンク・物理 |
+| `set_stage_enabled(stage, enabled)` / `is_stage_enabled(stage)` | `update` の段 (`"physics"`・`"eye_blink"`・`"breath"`・`"lip_sync"`・`"pose"`) を動かすか (既定はすべて動かす)。モデルを読み直しても保つので、読み込む前に設定すれば読み込みの直後の評価から効く。未知の名前は false |
 | `attach_module(module)` / `detach_module(name)` / `clear_modules()` / `get_module_names()` | 着せ替え。付けられなければエラーを出して false (何も変えない) |
 | `uses_lighting()` / `add_directional_light(direction, color)` / `add_point_light(position, color, range)` / `clear_lights()` | ライティング (光源は先頭の 8 個まで) |
 | `set_tracking_head(rotation)` / `set_tracking_body(dict)` / `set_tracking_blend_shapes(dict)` / `set_tracking_blend_shape(name, value)` / `clear_tracking()` / `is_tracking()` / `get_tracking_blend_shape_names()` | トラッキング。頭は度で `x` = ヨー・`y` = ピッチ・`z` = ロール。体は `yaw` `pitch` `roll` `shoulder_left` `shoulder_right` (無いキーは省略)。ブレンドシェイプは ARKit の 52 個の名前 (MediaPipe の名前もそのまま渡せる)。平滑化はホストが行う |

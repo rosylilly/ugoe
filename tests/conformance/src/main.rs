@@ -1,12 +1,16 @@
 //! `ugoe-conformance`: 配布物の適合テストの参照の生成と比べ合わせ (tests/conformance/README.md)。
 //!
 //! ```sh
-//! ugoe-conformance reference --out DIR          # DIR/plan.json・plan.txt と DIR/reference/<ケース>.json
-//! ugoe-conformance compare --out DIR --binding c [--images]
+//! ugoe-conformance reference --out DIR [--only CASE,...]   # DIR/plan.json・plan.txt・DIR/reference/<ケース>.json・DIR/models/
+//! ugoe-conformance compare --out DIR --binding c [--images | --images-only]
 //! ```
+//!
+//! 実行器は、扱えないケースを `DIR/<バインディング>/skipped.json` (`{"<ケース>": "理由"}`) に書いてよい。
+//! 比べ合わせはそのケースを飛ばしたと表示し、失敗には数えない。
 //!
 //! 参照の画像 (`DIR/reference/<ケース>.png`) は `ugoe render` で作る (`plan.json` の `render_args`。`run.mjs` が実行する)。
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -14,7 +18,7 @@ use anyhow::{Context, bail};
 use clap::{Parser, Subcommand};
 use ugoe_conformance::frame::Frame;
 use ugoe_conformance::plan::Plan;
-use ugoe_conformance::{compare, reference, repo_root};
+use ugoe_conformance::{bundles, compare, reference, repo_root};
 
 #[derive(Parser)]
 #[command(
@@ -36,6 +40,9 @@ enum Command {
         /// Case list (default: tests/conformance/cases.json)
         #[arg(long)]
         cases: Option<PathBuf>,
+        /// Keep only these cases (comma-separated names)
+        #[arg(long, value_delimiter = ',')]
+        only: Vec<String>,
     },
     /// Compare the results of a binding (DIR/<binding>/) with the reference (DIR/reference/)
     Compare {
@@ -48,6 +55,10 @@ enum Command {
         /// Also compare the images (<case>.png) of the cases that have `image: true`
         #[arg(long)]
         images: bool,
+        /// Compare only the images (for bindings that cannot read the evaluation results back);
+        /// cases without `image: true` are skipped
+        #[arg(long, conflicts_with = "images")]
+        images_only: bool,
     },
 }
 
@@ -64,10 +75,21 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> anyhow::Result<bool> {
     match cli.command {
-        Command::Reference { out, cases } => {
+        Command::Reference { out, cases, only } => {
             let root = repo_root();
             let cases = cases.unwrap_or_else(|| root.join("tests/conformance/cases.json"));
-            let plan = Plan::load(&cases, &root)?;
+            let models = out.join("models");
+            bundles::write_all(&models)?;
+            let mut plan = Plan::load(&cases, &root, &models)?;
+            if !only.is_empty() {
+                if let Some(unknown) = only
+                    .iter()
+                    .find(|n| !plan.cases.iter().any(|c| &c.name == *n))
+                {
+                    bail!("unknown case `{unknown}`");
+                }
+                plan.cases.retain(|c| only.contains(&c.name));
+            }
             let dir = out.join("reference");
             std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
             write(&out.join("plan.json"), &serde_json::to_vec_pretty(&plan)?)?;
@@ -86,29 +108,68 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             out,
             binding,
             images,
-        } => compare_binding(&out, &binding, images),
+            images_only,
+        } => {
+            let mode = match (images, images_only) {
+                (_, true) => Mode::ImagesOnly,
+                (true, false) => Mode::FramesAndImages,
+                (false, false) => Mode::Frames,
+            };
+            compare_binding(&out, &binding, mode)
+        }
     }
 }
 
-fn compare_binding(out: &Path, binding: &str, images: bool) -> anyhow::Result<bool> {
+/// 何を比べるか。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    Frames,
+    FramesAndImages,
+    ImagesOnly,
+}
+
+fn compare_binding(out: &Path, binding: &str, mode: Mode) -> anyhow::Result<bool> {
     let plan: Plan = serde_json::from_slice(&read(&out.join("plan.json"))?)?;
     let actual_dir = out.join(binding);
     if !actual_dir.is_dir() {
         bail!("{} does not exist", actual_dir.display());
     }
+    // 実行器が扱えないとしたケース (`{"<ケース>": "理由"}`)。
+    let skipped_path = actual_dir.join("skipped.json");
+    let mut skipped: BTreeMap<String, String> = if skipped_path.exists() {
+        serde_json::from_slice(&read(&skipped_path)?)
+            .with_context(|| format!("parsing {}", skipped_path.display()))?
+    } else {
+        BTreeMap::new()
+    };
+    if mode == Mode::ImagesOnly {
+        for case in plan.cases.iter().filter(|c| !c.image) {
+            skipped
+                .entry(case.name.clone())
+                .or_insert_with(|| "the case has no image".to_owned());
+        }
+    }
     let mut failed = 0;
+    let mut compared = 0;
     for case in &plan.cases {
+        if let Some(reason) = skipped.get(&case.name) {
+            println!("skip {} ({reason})", case.name);
+            continue;
+        }
+        compared += 1;
         let mut errors = Vec::new();
-        let reference: Frame = serde_json::from_slice(&read(
-            &out.join("reference").join(format!("{}.json", case.name)),
-        )?)?;
-        let path = actual_dir.join(format!("{}.json", case.name));
-        match read(&path).and_then(|b| Ok(serde_json::from_slice::<Frame>(&b)?)) {
-            Ok(actual) => errors.extend(compare::frames(&reference, &actual)),
-            Err(e) => errors.push(format!("{e:#}")),
+        if mode != Mode::ImagesOnly {
+            let reference: Frame = serde_json::from_slice(&read(
+                &out.join("reference").join(format!("{}.json", case.name)),
+            )?)?;
+            let path = actual_dir.join(format!("{}.json", case.name));
+            match read(&path).and_then(|b| Ok(serde_json::from_slice::<Frame>(&b)?)) {
+                Ok(actual) => errors.extend(compare::frames(&reference, &actual)),
+                Err(e) => errors.push(format!("{e:#}")),
+            }
         }
         let mut note = String::new();
-        if images && case.image {
+        if mode != Mode::Frames && case.image {
             match compare_image(out, &actual_dir, &case.name) {
                 Ok(c) => {
                     note = format!(
@@ -141,11 +202,19 @@ fn compare_binding(out: &Path, binding: &str, images: bool) -> anyhow::Result<bo
             }
         }
     }
+    let skips = plan.cases.len() - compared;
     println!(
-        "{binding}: {} of {} cases passed",
-        plan.cases.len() - failed,
-        plan.cases.len()
+        "{binding}: {} of {compared} cases passed{}",
+        compared - failed,
+        if skips > 0 {
+            format!(" ({skips} skipped)")
+        } else {
+            String::new()
+        }
     );
+    if compared == 0 {
+        bail!("{binding}: no case was compared");
+    }
     Ok(failed == 0)
 }
 

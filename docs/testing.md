@@ -11,7 +11,7 @@
 | 描画テスト (GPU) | `gpu-tests` feature を持つクレート (`ugoe-render` など) | `just test-gpu` |
 | フロントエンドの検査 | Biome + svelte-check + Vitest (`apps/editor/src/**/*.test.ts`) | `just web-check` |
 | 依存方向の検査 | `scripts/check-layers.mjs` | `just layers` |
-| 配布物の適合テスト | `tests/conformance` (`ugoe-conformance`)。C ABI と wasm (npm パッケージ) の頂点と画像を参照と比べる | `just conformance` (C コンパイラ・Chrome・GPU が要る。[下](#配布物の適合テスト)) |
+| 配布物の適合テスト | `tests/conformance` (`ugoe-conformance`)。C ABI・wasm (npm パッケージ。WebGL2 と WebGPU)・Unity (C# の層)・Godot の頂点と画像を参照と比べる | `just conformance` (C コンパイラ・Chrome・GPU が要る。dotnet・Godot は無ければ飛ばす。[下](#配布物の適合テスト)) |
 | C ABI の検査 | ヘッダ `crates/ugoe-ffi/include/ugoe.h` が最新か、C の見本 `crates/ugoe-ffi/examples/c/sample.c` のビルドと実行 | `just ffi-check` (cbindgen が要る。[crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#ヘッダの生成)) |
 
 `just ci` はこれらを (GPU テスト・C ABI の検査・配布物の適合テスト以外) すべて実行します。
@@ -171,7 +171,7 @@ WSL2 では環境変数を付けないと dzn (Vulkan on D3D12) が選ばれる�
 時間を進めた物理と、公開仕様の評価の例・バンドルの例)。
 
 ```sh
-just conformance            # C ABI と wasm (ヘッドレスの Chrome の WebGL2)
+just conformance            # C ABI・wasm (ヘッドレスの Chrome の WebGL2 と WebGPU)・Unity (dotnet)・Godot。dotnet・Godot が無ければ飛ばす
 just conformance --only c   # C ABI だけ
 ```
 

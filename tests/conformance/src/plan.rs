@@ -38,6 +38,8 @@ pub struct CaseSpec {
     pub summary: String,
     /// モデル (`.ugoe` かモデルの JSON)。リポジトリのルートからの相対パス。
     pub model: Option<String>,
+    /// [`crate::bundles`] が作るモデルの名前 (`model` の代わり)。
+    pub generated: Option<String>,
     /// 公開仕様の評価の例のディレクトリ (`spec/examples/<名前>`)。`model`・`parameters` とは一緒に使えない。
     pub spec: Option<String>,
     /// 付ける着せ替えのモジュール (`.ugoemod`、付ける順)。
@@ -45,6 +47,9 @@ pub struct CaseSpec {
     pub modules: Vec<String>,
     #[serde(default)]
     pub parameters: BTreeMap<String, f32>,
+    /// 先に描く値 (計画の [`Case::before`])。
+    #[serde(default)]
+    pub before: BTreeMap<String, f32>,
     /// 時間を進める秒数 (`ugoe render --time`)。省略すると時間を進めない。
     pub time: Option<f32>,
     pub fps: Option<f32>,
@@ -114,6 +119,11 @@ pub struct Case {
     pub modules: Vec<PathBuf>,
     /// 設定するパラメータ (値域の外はクランプされる)。
     pub parameters: BTreeMap<String, f32>,
+    /// 先に描く値。空でなければ、実行器はまずこの値で (数フレーム) 描き、`parameters` に変えた直後のフレームを結果にする。
+    /// 値を変えてから描画に反映するまでにフレームの遅れが入りうる実行器 (Godot) で、遅れが無いことを確かめるためのもの。
+    /// 結果は `before` が無いときと同じでなければならないので、参照と、同期して描く実行器 (C ABI・wasm) は使わない。
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub before: BTreeMap<String, f32>,
     /// 時間を進める秒数 (`ugoe render --time`)。
     pub time: Option<f32>,
     /// 時間を進める `update` の `dt` の列。空なら時間を進めない
@@ -129,15 +139,16 @@ pub struct Case {
 }
 
 impl Plan {
-    /// `cases.json` を読んで展開する。相対パスは `root` (リポジトリのルート) から解決する。
-    pub fn load(cases: &Path, root: &Path) -> Result<Self, Error> {
+    /// `cases.json` を読んで展開する。相対パスは `root` (リポジトリのルート) から、`generated` のモデルは
+    /// `generated` のディレクトリ ([`crate::bundles::write_all`] で書いたところ) から解決する。
+    pub fn load(cases: &Path, root: &Path, generated: &Path) -> Result<Self, Error> {
         let file: CaseFile = read_json(cases)?;
         let root = root
             .canonicalize()
             .map_err(Error::io(format!("resolving {}", root.display())))?;
         let mut out = Vec::new();
         for spec in file.cases {
-            out.extend(expand(spec, &root)?);
+            out.extend(expand(spec, &root, generated)?);
         }
         let mut names = std::collections::BTreeSet::new();
         for case in &out {
@@ -200,17 +211,21 @@ impl Plan {
     }
 }
 
-fn expand(spec: CaseSpec, root: &Path) -> Result<Vec<Case>, Error> {
+fn expand(spec: CaseSpec, root: &Path, generated: &Path) -> Result<Vec<Case>, Error> {
     let Some(example) = &spec.spec else {
         let name = spec
             .name
             .clone()
             .ok_or_else(|| Error::Invalid("a case needs `name` (or `spec`)".to_owned()))?;
-        let model = spec
-            .model
-            .as_deref()
-            .ok_or_else(|| Error::Invalid(format!("case `{name}` needs `model` (or `spec`)")))?;
-        let model = resolve(root, model)?;
+        let model = match (&spec.model, &spec.generated) {
+            (Some(model), None) => resolve(root, model)?,
+            (None, Some(model)) => resolve(generated, &format!("{model}.ugoe"))?,
+            _ => {
+                return Err(Error::Invalid(format!(
+                    "case `{name}` needs one of `model`, `generated` and `spec`"
+                )));
+            }
+        };
         let parameters = spec.parameters.clone();
         return Ok(vec![case(
             name,
@@ -221,7 +236,7 @@ fn expand(spec: CaseSpec, root: &Path) -> Result<Vec<Case>, Error> {
             root,
         )?]);
     };
-    if spec.model.is_some() || !spec.parameters.is_empty() {
+    if spec.model.is_some() || spec.generated.is_some() || !spec.parameters.is_empty() {
         return Err(Error::Invalid(format!(
             "`spec: {example}` takes the model and the parameters from expected.json"
         )));
@@ -280,6 +295,11 @@ fn case(
             "case `{name}`: modules need a .ugoe bundle as the model"
         )));
     }
+    if let Some(id) = spec.before.keys().find(|id| !parameters.contains_key(*id)) {
+        return Err(Error::Invalid(format!(
+            "case `{name}`: `before` sets `{id}`, which `parameters` does not"
+        )));
+    }
     let fps = spec.fps.unwrap_or(DEFAULT_FPS);
     let steps = match spec.time {
         Some(time) => steps(time, fps)
@@ -293,6 +313,7 @@ fn case(
         bundle,
         modules,
         parameters,
+        before: spec.before.clone(),
         time: spec.time,
         steps,
         effects: spec.effects,
@@ -397,8 +418,7 @@ mod tests {
 
     #[test]
     fn committed_cases_expand() {
-        let root = crate::repo_root();
-        let plan = Plan::load(&root.join("tests/conformance/cases.json"), &root).unwrap();
+        let plan = crate::tests::committed_plan();
         assert!(plan.cases.len() > 10);
         // 公開仕様の評価の例は expected.json のケースごとに展開する
         assert!(plan.cases.iter().any(|c| c.name == "spec-single-quad-0"));
@@ -425,7 +445,7 @@ mod tests {
         }))
         .unwrap();
         let root = root.canonicalize().unwrap();
-        let cases = expand(spec, &root).unwrap();
+        let cases = expand(spec, &root, &root).unwrap();
         let args = &cases[0].render_args;
         let args: Vec<&str> = args.iter().skip(1).map(String::as_str).collect();
         assert_eq!(

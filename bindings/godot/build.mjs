@@ -5,17 +5,18 @@
 //   node bindings/godot/build.mjs --release  # リリースビルド
 //   node bindings/godot/build.mjs --check    # ビルドして、依存のライセンスの検査 (scripts/check-licenses.mjs --godot) と、
 //                                            # ヘッドレスの Godot での example/tests/smoke.gd を実行する
-//   node bindings/godot/build.mjs --conformance [--only <名前>]
-//       # ビルドして、`ugoe render` の画像と Godot で描いた画像を比べる (example/tests/conformance.gd)。
-//       # 描画に画面が要る。DISPLAY が無ければ xvfb-run を使う。`--only` で比べるモデルを絞る (複数可)。
+//   node bindings/godot/build.mjs --import   # ビルドして、見本のプロジェクトを Godot で読み込む (.godot/ の作成と拡張の登録)
+//   node bindings/godot/build.mjs --conformance [--only <ケース>]
+//       # ビルドして、配布物の適合テスト (tests/conformance/README.md) を Godot で実行する
+//       # (= node tests/conformance/run.mjs --only godot。実行器は example/tests/conformance.gd)。
+//       # 描画に画面が要る。DISPLAY が無ければ xvfb-run を使う。`--only` で計画のケースを絞る (複数可)。
 //
 // ライブラリを example/addons/ugoe/bin/ に、見本のモデル (assets/samples/ の .ugoe と着せ替えの .ugoemod) を example/models/ に写す。
 // Godot の実行ファイルは環境変数 GODOT (既定は `godot`) で指定する。
 // このクレートはルートのワークスペースの外にある (docs/adr/0026-godot-binding.md)。
 
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { copyFileSync, mkdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -25,6 +26,7 @@ const args = process.argv.slice(2);
 const release = args.includes("--release");
 const check = args.includes("--check");
 const conformance = args.includes("--conformance");
+const importProject = args.includes("--import");
 const only = args.flatMap((a, i) => (args[i - 1] === "--only" ? [a] : []));
 
 // target/ はリポジトリのルートと共有する (ugoe のクレートのビルド済みの成果物を使い回す)。
@@ -96,7 +98,7 @@ function runGodot(godotArgs, { display = false } = {}) {
   execFileSync(cmd, cmdArgs, { stdio: "inherit", timeout: 10 * 60 * 1000 });
 }
 
-if (check || conformance) {
+if (check || conformance || importProject) {
   requireGodot({ display: conformance });
   // 初回はプロジェクトの読み込み (.godot/ の作成と拡張の登録) が要る。
   // Godot 4.7.1 は、GDExtension のクラスを持つプロジェクトの初回の --import の終わりに異常終了することがある
@@ -117,118 +119,21 @@ if (check) {
 }
 
 if (conformance) {
-  const work = mkdtempSync(join(tmpdir(), "ugoe-godot-"));
-  execFileSync(
-    "cargo",
-    [
-      "run",
-      "--locked",
-      "--quiet",
-      "--manifest-path",
-      join(here, "Cargo.toml"),
-      "--example",
-      "conformance_bundles",
-      "--",
-      work,
-    ],
-    { stdio: "inherit", env: { ...process.env, CARGO_TARGET_DIR: targetDir } },
-  );
-  execFileSync("cargo", ["build", "--locked", "--quiet", "-p", "ugoe-cli"], {
-    cwd: root,
-    stdio: "inherit",
-    env: { ...process.env, CARGO_TARGET_DIR: targetDir },
-  });
-  const ugoe = join(targetDir, "debug", process.platform === "win32" ? "ugoe.exe" : "ugoe");
-  const dressUp = (n) => join(samples, "dress-up", n);
-  // 比べるモデルと条件。`before` があれば、その値で描いてから `params` に変えた直後のフレームを比べる。
-  const cases = [
-    { name: "avatar", model: join(samples, "avatar.ugoe") },
-    ...["nested-masks", "mixed-masks", "intersection-masks", "blend-modes", "many-masks"].map(
-      (n) => ({ name: n, model: join(work, `${n}.ugoe`) }),
-    ),
-    {
-      name: "moving-masks",
-      model: join(work, "moving-masks.ugoe"),
-      before: { Move: -1 },
-      params: { Move: 1 },
-    },
-    {
-      name: "avatar-moving",
-      model: join(samples, "avatar.ugoe"),
-      before: { AngleX: -30, AngleY: 20 },
-      params: { AngleX: 30, AngleY: -20 },
-    },
-    {
-      name: "avatar-lit",
-      model: join(samples, "avatar-lit.ugoe"),
-      ambient: [0.35, 0.35, 0.4],
-      lights: [
-        { type: "directional", direction: [1, 1, -1], color: [0.8, 0.75, 0.7] },
-        { type: "point", position: [700, 300, 250], color: [0.6, 0.6, 0.9], range: 900 },
+  // 比べ合わせは適合テストの計画と `ugoe-conformance compare` で行う (Godot と xvfb-run は run.mjs も調べる)。
+  const cases = only.length > 0 ? ["--cases", only.join(",")] : [];
+  try {
+    execFileSync(
+      "node",
+      [
+        join(root, "tests", "conformance", "run.mjs"),
+        "--only",
+        "godot",
+        "--no-godot-build",
+        ...cases,
       ],
-    },
-    {
-      name: "dress-up",
-      model: dressUp("dress-up.ugoe"),
-      modules: ["long-hair.ugoemod", "sailor.ugoemod", "cat-ears.ugoemod"].map(dressUp),
-    },
-  ].filter((c) => only.length === 0 || only.includes(c.name));
-  let failed = 0;
-  for (const c of cases) {
-    const reference = join(work, `${c.name}.reference.png`);
-    const actual = join(work, `${c.name}.godot.png`);
-    const caseFile = join(work, `${c.name}.json`);
-    writeFileSync(caseFile, JSON.stringify(c));
-    // Godot の側は読み込みの後に必ず `Puppet::update(0)` を通す (物理も初期化される) ので、`--time 0` で揃える。
-    const renderArgs = [
-      "render",
-      c.model,
-      "-o",
-      reference,
-      "--background",
-      "#808080",
-      "--time",
-      "0",
-    ];
-    for (const [id, value] of Object.entries(c.params ?? {})) {
-      renderArgs.push("--param", `${id}=${value}`);
-    }
-    for (const m of c.modules ?? []) renderArgs.push("--module", m);
-    if (c.ambient) renderArgs.push("--ambient", c.ambient.join(","));
-    for (const l of c.lights ?? []) {
-      const color = l.color.join(",");
-      renderArgs.push(
-        "--light",
-        l.type === "directional"
-          ? `directional:${l.direction.join(",")}:${color}`
-          : `point:${l.position.join(",")}:${color}:${l.range ?? "inf"}`,
-      );
-    }
-    execFileSync(ugoe, renderArgs, { stdio: "ignore" });
-    console.log(`== ${c.name}`);
-    try {
-      runGodot(
-        [
-          "--path",
-          example,
-          "--rendering-driver",
-          "opengl3",
-          "--script",
-          "res://tests/conformance.gd",
-          "--",
-          caseFile,
-          reference,
-          actual,
-        ],
-        { display: true },
-      );
-    } catch {
-      failed += 1;
-    }
-  }
-  console.log(`images: ${work}`);
-  if (failed > 0) {
-    console.error(`${failed} model(s) did not match`);
+      { stdio: "inherit" },
+    );
+  } catch {
     process.exitCode = 1;
   }
 }

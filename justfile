@@ -105,12 +105,12 @@ godot-build *args:
     node bindings/godot/build.mjs {{args}}
 
 # Godot 4.4 以降 (環境変数 GODOT、既定は godot) と、画面が無ければ xvfb-run が要る (無ければ入れ方を示して止まる)。
-# `just ci` には含めない (CI では別のジョブ)。`just godot-check --only dress-up` で比べるモデルを絞れる。
+# `just ci` には含めない (CI では別のジョブ)。`just godot-check --only masks-nested` で比べるケース (tests/conformance/cases.json の名前) を絞れる。
 # Godot のバインディングの検査 (ライセンス・ヘッドレスの Godot での動作・`ugoe render` との比べ合わせ)
 godot-check *args:
     node bindings/godot/build.mjs --check --conformance {{args}}
 
-# 配布物の適合テスト (tests/conformance/README.md): C ABI と wasm (npm パッケージ) の頂点と画像を、ModelInstance と ugoe render の参照と比べる。
+# 配布物の適合テスト (tests/conformance/README.md): C ABI・wasm (npm パッケージ、WebGL2 と WebGPU)・Unity の C# の層・Godot の頂点と画像を、ModelInstance と ugoe render の参照と比べる。
 # C コンパイラ・Chrome・wasm-bindgen-cli・GPU (無ければ Mesa) が要るので `just ci` には含めない (CI の conformance ジョブで実行する)。
 # 引数は run.mjs に渡す: `just conformance --only c`、`just conformance --backend webgpu`
 conformance *args:

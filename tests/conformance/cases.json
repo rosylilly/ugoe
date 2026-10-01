@@ -96,6 +96,45 @@
       "parameters": { "AngleX": 25, "MouthOpenY": 0.8 },
       "time": 0.4
     },
+    {
+      "name": "avatar-moving",
+      "summary": "The head turned right after being drawn turned the other way (checks that no frame lags behind, e.g. the masks).",
+      "model": "assets/samples/avatar.ugoe",
+      "before": { "AngleX": -30, "AngleY": 20 },
+      "parameters": { "AngleX": 30, "AngleY": -20 }
+    },
+    {
+      "name": "masks-nested",
+      "summary": "Nested masks (white of the eye, iris, pupil) with colors and a translucent texture.",
+      "generated": "nested-masks"
+    },
+    {
+      "name": "masks-mixed",
+      "summary": "Normal and inverted masks on the same mesh.",
+      "generated": "mixed-masks"
+    },
+    {
+      "name": "masks-intersection",
+      "summary": "A mesh drawn where several masks intersect.",
+      "generated": "intersection-masks"
+    },
+    {
+      "name": "masks-many",
+      "summary": "One mesh read by twelve masks (three inverted).",
+      "generated": "many-masks"
+    },
+    {
+      "name": "masks-moving",
+      "summary": "Nested masks moved by a parameter right after being drawn at the other end.",
+      "generated": "moving-masks",
+      "before": { "Move": -1 },
+      "parameters": { "Move": 1 }
+    },
+    {
+      "name": "blend-modes",
+      "summary": "Multiply, additive and normal blending, multiply and screen colors, and back-face culling.",
+      "generated": "blend-modes"
+    },
     { "spec": "spec/examples/single-quad" },
     { "spec": "spec/examples/warp-grid" },
     { "spec": "spec/examples/rotation-chain" },
