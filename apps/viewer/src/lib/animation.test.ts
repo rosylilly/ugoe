@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-  activeExpressions,
+  defaultIdleMotion,
   describeMotion,
   describeRejectedMotion,
+  loadToggle,
   type MotionInfo,
+  motionOverTrackingActive,
   motionTrackingEffect,
   parseExpressions,
   parseMotions,
+  saveToggle,
 } from "./animation";
 
 const nod: MotionInfo = {
@@ -78,17 +81,6 @@ describe("describeMotion", () => {
   });
 });
 
-describe("activeExpressions", () => {
-  it("follows set, add and stop", () => {
-    let active = activeExpressions.set(["sad"], "smile");
-    expect(active).toEqual(["smile"]);
-    active = activeExpressions.add(active, "surprised");
-    expect(active).toEqual(["smile", "surprised"]);
-    expect(activeExpressions.add(active, "smile")).toEqual(["smile", "surprised"]);
-    expect(activeExpressions.stop(active, "smile")).toEqual(["surprised"]);
-  });
-});
-
 describe("motionTrackingEffect", () => {
   it("tells how much of the motion the tracking overrides", () => {
     expect(motionTrackingEffect(nod, new Set())).toEqual({ kind: "none", overlap: [] });
@@ -106,4 +98,63 @@ it("describes a rejected motion with the priority label", () => {
   expect(describeRejectedMotion("nod", "idle")).toBe(
     "「nod」は、再生中のモーションより優先度 (待機) が低いので始まりませんでした",
   );
+});
+
+describe("defaultIdleMotion", () => {
+  it("prefers a motion named idle, then a looping one starting with idle", () => {
+    const m = (name: string, looping = false): MotionInfo => ({ ...nod, name, looping });
+    expect(defaultIdleMotion([m("nod"), m("Idle"), m("idle_2", true)])).toBe("Idle");
+    expect(defaultIdleMotion([m("idle_a"), m("idle_b", true)])).toBe("idle_b");
+    expect(defaultIdleMotion([m("idle_a")])).toBe("idle_a");
+    expect(defaultIdleMotion([m("nod"), m("sidle")])).toBeNull();
+    expect(defaultIdleMotion([])).toBeNull();
+  });
+});
+
+describe("motionOverTrackingActive", () => {
+  it("applies only to motions above the idle priority while tracking", () => {
+    expect(motionOverTrackingActive(true, true, "nod", "normal")).toBe(true);
+    expect(motionOverTrackingActive(true, true, "nod", "force")).toBe(true);
+    expect(motionOverTrackingActive(true, true, "idle", "idle")).toBe(false);
+    expect(motionOverTrackingActive(true, true, null, "normal")).toBe(false);
+    expect(motionOverTrackingActive(true, false, "nod", "normal")).toBe(false);
+    expect(motionOverTrackingActive(false, true, "nod", "normal")).toBe(false);
+  });
+});
+
+describe("loadToggle / saveToggle", () => {
+  function memoryStorage(): Storage {
+    const map = new Map<string, string>();
+    return {
+      getItem: (k) => map.get(k) ?? null,
+      setItem: (k, v) => void map.set(k, v),
+      removeItem: (k) => void map.delete(k),
+      clear: () => map.clear(),
+      key: () => null,
+      get length() {
+        return map.size;
+      },
+    };
+  }
+
+  it("remembers on and off and falls back otherwise", () => {
+    const storage = memoryStorage();
+    expect(loadToggle("k", true, storage)).toBe(true);
+    saveToggle("k", false, storage);
+    expect(loadToggle("k", true, storage)).toBe(false);
+    saveToggle("k", true, storage);
+    expect(loadToggle("k", false, storage)).toBe(true);
+    storage.setItem("k", "maybe");
+    expect(loadToggle("k", false, storage)).toBe(false);
+    const broken = {
+      getItem: () => {
+        throw new Error("denied");
+      },
+      setItem: () => {
+        throw new Error("denied");
+      },
+    } as unknown as Storage;
+    expect(loadToggle("k", true, broken)).toBe(true);
+    expect(() => saveToggle("k", true, broken)).not.toThrow();
+  });
 });

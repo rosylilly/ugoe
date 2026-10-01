@@ -3,6 +3,8 @@
 // モーションは優先度を選んで再生・停止し、表情は「これだけ」(set)・「重ねる」(add)・「外す」(stop) と「すべて止める」。
 // 再生は Player (WebPuppet の start_motion・set_expression など) が行う。規則は docs/spec/motion.md。
 // フェイストラッキング中は、トラッキングが書き込むパラメータでモーションの値が置き換わる (印を出す。README の「モーションと表情」)。
+// 「モーションを優先」を入れると、待機以外のモーションが動かすパラメータではモーションが勝つ (T0721)。
+// 待機モーションは自動で流し、ほかのモーションが終わると待機に戻る (T0721)。
 import {
   describeMotion,
   type ExpressionInfo,
@@ -19,6 +21,13 @@ let { player }: { player: Player } = $props();
 let open = $state(true);
 
 let tracked = $derived(new Set(player.tracking ? player.trackingParameterIds : []));
+const none = new Set<string>();
+
+/** モーション `name` の値をトラッキングが置き換えるパラメータ (「モーションを優先」なら自動で流す待機モーションだけ)。 */
+function trackedFor(name: string): ReadonlySet<string> {
+  if (!player.motionOverTracking) return tracked;
+  return player.autoIdle && name === player.idleMotion ? tracked : none;
+}
 let status = $derived(
   player.currentMotion !== null
     ? `再生中: ${player.currentMotion}`
@@ -47,7 +56,11 @@ function expressionOverlap(e: ExpressionInfo): string[] {
 
   {#if player.tracking}
     <p class="hint tracking-note">
-      トラッキング中は、トラッキングが書き込むパラメータ (頭の向き・目・口など) でモーションの値が置き換わります。
+      {#if player.motionOverTracking}
+        トラッキング中も、再生したモーションが動かすパラメータではモーションの値を使います (待機モーションを除く)。
+      {:else}
+        トラッキング中は、トラッキングが書き込むパラメータ (頭の向き・目・口など) でモーションの値が置き換わります。
+      {/if}
       表情はトラッキングの上に重なります。
     </p>
   {/if}
@@ -87,10 +100,43 @@ function expressionOverlap(e: ExpressionInfo): string[] {
           繰り返す
         </label>
       </div>
+      <div class="options">
+        <label title="モデルを開いたときと、ほかのモーションが終わったときに、待機モーションを待機の優先度で流す">
+          <input
+            type="checkbox"
+            checked={player.autoIdle}
+            onchange={(e) => player.setAutoIdle(e.currentTarget.checked)}
+          />
+          待機モーションを自動で流す
+        </label>
+        <select
+          aria-label="待機モーション"
+          value={player.idleMotion ?? ""}
+          disabled={!player.autoIdle}
+          onchange={(e) => player.setIdleMotion(e.currentTarget.value === "" ? null : e.currentTarget.value)}
+        >
+          <option value="">(なし)</option>
+          {#each player.motions as m (m.name)}
+            <option value={m.name}>{m.name}</option>
+          {/each}
+        </select>
+      </div>
+      <div class="options">
+        <label
+          title="フェイストラッキング中も、待機以外のモーションが動かすパラメータ (頭の向きなど) ではモーションの値を使う。切るとトラッキングが置き換える"
+        >
+          <input
+            type="checkbox"
+            checked={player.motionOverTracking}
+            onchange={(e) => player.setMotionOverTracking(e.currentTarget.checked)}
+          />
+          トラッキング中もモーションを優先
+        </label>
+      </div>
       <ul>
         {#each player.motions as m (m.name)}
           {@const current = player.currentMotion === m.name}
-          {@const effect = motionTrackingEffect(m, tracked)}
+          {@const effect = motionTrackingEffect(m, trackedFor(m.name))}
           <li class:current>
             <button
               type="button"
@@ -103,6 +149,9 @@ function expressionOverlap(e: ExpressionInfo): string[] {
             <div class="info">
               <div class="line">
                 <span class="name" title={m.parameters.join(", ")}>{m.name}</span>
+                {#if player.autoIdle && m.name === player.idleMotion}
+                  <span class="idle-tag" title="自動で流す待機モーション">待機</span>
+                {/if}
                 {#if effect.kind !== "none"}
                   <span
                     class="badge"
@@ -240,6 +289,7 @@ function expressionOverlap(e: ExpressionInfo): string[] {
   }
   .options {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 0.8rem;
     margin-top: 0.3rem;
@@ -247,6 +297,7 @@ function expressionOverlap(e: ExpressionInfo): string[] {
     color: var(--muted);
   }
   .options label {
+    white-space: nowrap;
     display: flex;
     align-items: center;
     gap: 0.25rem;
@@ -296,6 +347,14 @@ function expressionOverlap(e: ExpressionInfo): string[] {
   }
   .meta {
     font-size: 0.7rem;
+    white-space: nowrap;
+  }
+  .idle-tag {
+    font-size: 0.65rem;
+    color: var(--muted);
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    padding: 0 0.25rem;
     white-space: nowrap;
   }
   .badge {

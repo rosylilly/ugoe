@@ -6,6 +6,7 @@ export class WebPuppet {
   private constructor();
   free(): void;
   [Symbol.dispose](): void;
+  active_expressions(): string[];
   add_expression(name: string): void;
   attach_module(name: string): void;
   attached_modules(): string[];
@@ -38,6 +39,7 @@ export class WebPuppet {
   is_dynamic_physics(): boolean;
   is_enabled(stage: string): boolean;
   is_lost(): boolean;
+  is_motion_over_tracking(): boolean;
   is_motion_playing(): boolean;
   is_tracking(): boolean;
   load_bundle(bytes: Uint8Array): string[];
@@ -72,6 +74,7 @@ export class WebPuppet {
   set_lighting_json(json?: string | null): void;
   set_lip_sync_level(level?: number | null): void;
   set_modules(names: string[]): void;
+  set_motion_over_tracking(enabled: boolean): void;
   set_parameter(id: string, value: number): boolean;
   set_physics_json(json?: string | null): void;
   set_tracking(

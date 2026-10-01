@@ -237,4 +237,7 @@
 
 `update` を呼ばずに描画だけするホスト (エディタのビューポートの静止表示) では、書き換えた値がそのまま評価されます。
 
-`WebPuppet` (`crates/ugoe-wasm`) は同じ `Puppet` を使うので、`set_parameter` の値も同じ規則に従います。JS からは `start_motion` / `start_motion_json`・`set_expression` / `set_expression_json` / `add_expression` / `stop_expression`・`set_effects_json`・`set_lip_sync_level`・`set_enabled(stage, bool)`・`set_physics_json` で操作します (`crates/ugoe-wasm/README.md`)。
+`WebPuppet` (`crates/ugoe-wasm`) は同じ `Puppet` を使うので、`set_parameter` の値も同じ規則に従います。JS からは `start_motion` / `start_motion_json`・`set_expression` / `set_expression_json` / `add_expression` / `stop_expression` (使っている表情の名前は `active_expressions`)・`set_effects_json`・`set_lip_sync_level`・`set_enabled(stage, bool)`・`set_physics_json` で操作します (`crates/ugoe-wasm/README.md`)。
+`set_motion_over_tracking(true)` (T0721) の間は、`WebPuppet::update` がトラッキングの値を `Puppet::update` の前にホストの書き込みとして入れます
+(上の表の「どの段も触らないもの」と「モーションのカーブの対象」の扱いになり、モーションの対象ではモーションがトラッキングの値の上に重なります)。
+`Puppet` の適用順は変わりません。

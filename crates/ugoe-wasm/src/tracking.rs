@@ -43,6 +43,25 @@ pub fn tracking_targets(puppet: &Puppet) -> Vec<String> {
         .collect()
 }
 
+/// トラッキングの入力をモーションより先に入れて 1 フレーム進める (T0721。「トラッキング中もモーションを優先する」)。
+///
+/// 入力があれば、[`Puppet::update`] の前にトラッキングの値をパラメータに書き込み (ホストが書いた値と同じく基準値になる。
+/// `docs/spec/motion.md#手で動かしたパラメータとの関係`)、その間だけ `Puppet` の入力を外して進める。モーションが動かす
+/// パラメータではモーションの値がトラッキングの値に (フェードの重みで) 重なり、ほかのパラメータはトラッキングの値のまま。
+/// `Puppet` のフレーム内の適用順は変えない。入力が無ければ [`Puppet::update`] と同じ。
+pub fn update_with_motion_over_tracking(puppet: &mut Puppet, dt: f32) {
+    let Some(input) = puppet.tracking().copied() else {
+        puppet.update(dt);
+        return;
+    };
+    let instance = puppet.instance();
+    let map = TrackingMap::for_model(instance.compiled().model(), instance.parameters());
+    map.apply(&input, puppet.instance_mut().parameters_mut());
+    puppet.set_tracking(None);
+    puppet.update(dt);
+    puppet.set_tracking(Some(input));
+}
+
 #[cfg(test)]
 mod tests {
     use ugoe::model::effects::Effects;
@@ -103,6 +122,69 @@ mod tests {
         // 体のヨーは省略したので頭 × 0.3、ロールは体の入力。
         assert!((get("BodyAngleX") - 4.5).abs() < 1e-5);
         assert!((get("BodyAngleZ") + 4.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn motion_over_tracking_keeps_the_motion_values() {
+        let motion = ugoe::format::motion_from_json(
+            r#"{
+                "name": "turn",
+                "duration": 2.0,
+                "looping": false,
+                "fade_in": 0.0,
+                "fade_out": 0.0,
+                "curves": [{
+                    "target": { "kind": "parameter", "id": "AngleX" },
+                    "segments": [
+                        { "type": "start", "p": { "t": 0.0, "v": -20.0 } },
+                        { "type": "linear", "to": { "t": 2.0, "v": -20.0 } }
+                    ]
+                }]
+            }"#,
+        )
+        .unwrap();
+        let input = tracking_input(
+            &names(&["jawOpen"]),
+            &[0.5],
+            Rotation {
+                yaw: 15.0,
+                ..Rotation::default()
+            },
+            BodyInput::default(),
+        );
+        let run = |over: bool| {
+            let mut puppet = Puppet::new(fixtures::avatar_profile()).unwrap();
+            puppet.set_effects(Effects::default());
+            puppet.set_tracking(Some(input));
+            assert!(puppet.start_motion(motion.clone(), ugoe::motion::Priority::Normal));
+            for _ in 0..3 {
+                if over {
+                    update_with_motion_over_tracking(&mut puppet, 0.1);
+                } else {
+                    puppet.update(0.1);
+                }
+            }
+            let params = puppet.instance().parameters();
+            let get = |id: &str| params.get(params.index_of(id).unwrap());
+            // 入力は戻してある。
+            assert!(puppet.tracking().is_some());
+            (get("AngleX"), get("MouthOpenY"))
+        };
+        // 既定: トラッキングがモーションの後に書き込む。
+        let (angle, mouth) = run(false);
+        assert!((angle - 15.0).abs() < 1e-5);
+        assert!((mouth - 0.5).abs() < 1e-6);
+        // モーションを優先: モーションが動かす AngleX はモーションの値、ほかはトラッキングの値。
+        let (angle, mouth) = run(true);
+        assert!((angle + 20.0).abs() < 1e-5);
+        assert!((mouth - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn motion_over_tracking_without_input_is_a_plain_update() {
+        let mut puppet = Puppet::new(fixtures::avatar_profile()).unwrap();
+        update_with_motion_over_tracking(&mut puppet, 0.1);
+        assert!(puppet.tracking().is_none());
     }
 
     #[test]

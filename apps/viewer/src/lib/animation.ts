@@ -1,6 +1,7 @@
 // モーションと表情のパネル (T0720) のための、一覧の読み取りと再生の状態の計算。
 // 一覧の形は WebPuppet の `motions_json()`・`expressions_json()`、再生の規則は docs/spec/motion.md
-// (優先度・フェード・表情の set と add・フレーム内の適用順)。
+// (優先度・フェード・表情の set と add・フレーム内の適用順)。待機モーションとトラッキング中のモーションの優先 (T0721) の
+// 決まりもここに置く。
 
 /** モーションの優先度 (docs/spec/motion.md#モーションマネージャ)。WebPuppet の `start_motion` に渡す文字列。 */
 export type MotionPriority = "idle" | "normal" | "force";
@@ -106,20 +107,6 @@ export function describeMotion(m: MotionInfo): string {
   return parts.join(" · ");
 }
 
-/**
- * 使っている表情の名前 (開始した順) の操作。WebPuppet は使っている表情を返さないので、操作から求める
- * (`ExpressionManager` の set・add・stop・stop_all と同じ規則。フェードアウト中のものは含めない)。
- */
-export const activeExpressions = {
-  /** `set`: ほかをすべて止めて `name` だけにする。 */
-  set: (_active: readonly string[], name: string): string[] => [name],
-  /** `add`: 重ねる。同じ名前を重ねても 1 つと数える (止めると同じ名前のものがすべて止まる)。 */
-  add: (active: readonly string[], name: string): string[] =>
-    active.includes(name) ? [...active] : [...active, name],
-  /** `stop(name)`: 名前の一致するものを止める。 */
-  stop: (active: readonly string[], name: string): string[] => active.filter((n) => n !== name),
-} as const;
-
 /** トラッキングが書き込むパラメータと重なるもの (`ids` の順)。 */
 export function trackedOverlap(ids: readonly string[], tracked: ReadonlySet<string>): string[] {
   return ids.filter((id) => tracked.has(id));
@@ -146,4 +133,51 @@ export function motionTrackingEffect(
 export function describeRejectedMotion(name: string, priority: MotionPriority): string {
   const label = MOTION_PRIORITIES.find((p) => p.value === priority)?.label ?? priority;
   return `「${name}」は、再生中のモーションより優先度 (${label}) が低いので始まりませんでした`;
+}
+
+/**
+ * 待機モーションの既定 (T0721): 名前が `idle` のもの (大文字小文字を区別しない)、無ければ `idle` で始まるもの
+ * (`Idle_01` など。ループするものを先に)。どれも無ければ `null` (自動では流さない)。
+ */
+export function defaultIdleMotion(motions: readonly MotionInfo[]): string | null {
+  const exact = motions.find((m) => m.name.toLowerCase() === "idle");
+  if (exact) return exact.name;
+  const prefixed = motions.filter((m) => m.name.toLowerCase().startsWith("idle"));
+  return (prefixed.find((m) => m.looping) ?? prefixed[0])?.name ?? null;
+}
+
+/**
+ * 「トラッキング中もモーションを優先する」を WebPuppet に渡すか (T0721)。再生中のモーションが待機 (idle) の優先度なら
+ * 渡さない (ループする待機モーションが、トラッキングの頭の向きなどをずっと上書きしないように)。
+ */
+export function motionOverTrackingActive(
+  enabled: boolean,
+  tracking: boolean,
+  current: string | null,
+  priority: MotionPriority,
+): boolean {
+  return enabled && tracking && current !== null && priority !== "idle";
+}
+
+/** 設定 (オン・オフ) の localStorage のキー (T0721)。 */
+export const AUTO_IDLE_STORAGE_KEY = "ugoe-viewer.auto-idle";
+export const MOTION_OVER_TRACKING_STORAGE_KEY = "ugoe-viewer.motion-over-tracking";
+
+/** 覚えたオン・オフ。覚えていない・読めなければ `fallback`。 */
+export function loadToggle(key: string, fallback: boolean, storage?: Storage): boolean {
+  try {
+    const value = (storage ?? globalThis.localStorage)?.getItem(key);
+    return value === "on" ? true : value === "off" ? false : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/** オン・オフを覚える。覚えられなくても無視する (今回の設定は効く)。 */
+export function saveToggle(key: string, value: boolean, storage?: Storage): void {
+  try {
+    (storage ?? globalThis.localStorage)?.setItem(key, value ? "on" : "off");
+  } catch {
+    // 覚えられないだけで、今回の設定は効く。
+  }
 }

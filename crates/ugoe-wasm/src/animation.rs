@@ -199,10 +199,59 @@ pub fn sample_motion_json(json: &str, t: f32) -> Result<String, AnimationError> 
     Ok(serde_json::to_string(&values)?)
 }
 
-/// JSON (`*.expression.json` の形) の表情だけにする。
-pub fn set_expression_json(puppet: &mut Puppet, json: &str) -> Result<(), AnimationError> {
-    puppet.set_expression(ugoe::format::expression_from_json(json)?);
-    Ok(())
+/// JSON (`*.expression.json` の形) の表情だけにする。表情の名前を返す。
+pub fn set_expression_json(puppet: &mut Puppet, json: &str) -> Result<String, AnimationError> {
+    let expression = ugoe::format::expression_from_json(json)?;
+    let name = expression.name.clone();
+    puppet.set_expression(expression);
+    Ok(name)
+}
+
+/// 使っている表情の名前 (開始した順、重なりなし。止めてフェードアウト中のものは含めない。T0721)。
+///
+/// `ExpressionManager::players` はフェードアウト中のものも含み、止めたかを返さないので、`WebPuppet` の表情の操作
+/// (set・add・stop・stop_all) を写して持つ。規則は `ExpressionManager` と同じ (set はほかをすべて止める、stop は
+/// 名前の一致するものをすべて止める)。同じ表情を重ねても名前は 1 つ。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ActiveExpressions(Vec<String>);
+
+impl ActiveExpressions {
+    /// `set`: `name` だけにする。
+    pub fn set(&mut self, name: &str) {
+        self.0.clear();
+        self.0.push(name.to_owned());
+    }
+
+    /// `add`: 重ねる (使っていれば何もしない)。
+    pub fn add(&mut self, name: &str) {
+        if !self.0.iter().any(|n| n == name) {
+            self.0.push(name.to_owned());
+        }
+    }
+
+    /// `stop(name)`: 名前の一致するものを外す。
+    pub fn stop(&mut self, name: &str) {
+        self.0.retain(|n| n != name);
+    }
+
+    /// `stop_all` とモデルの読み直し: 空にする。
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
+
+    /// 名前の一覧。`puppet` に再生中の表情が無い名前は除く (念のため。操作を写していれば起こらない)。
+    pub fn names(&self, puppet: &mut Puppet) -> Vec<String> {
+        let players = puppet.expressions_mut().players();
+        self.0
+            .iter()
+            .filter(|n| {
+                players
+                    .iter()
+                    .any(|p| &p.expression().name == *n && !p.is_finished())
+            })
+            .cloned()
+            .collect()
+    }
 }
 
 /// 目パチ・呼吸・リップシンクの設定 (モデルの `effects` と同じ JSON) を差し替える。
@@ -311,6 +360,40 @@ mod tests {
         }],
         "events": [{ "t": 0.5, "value": "half" }]
     }"#;
+
+    #[test]
+    fn active_expressions_follow_the_operations() {
+        let mut puppet = quiet(fixtures::pose_and_effects());
+        let mut active = ActiveExpressions::default();
+        let json = |name: &str| {
+            format!(r#"{{"name": "{name}", "fade_in": 0.0, "fade_out": 0.5, "parameters": []}}"#)
+        };
+        let expression = |name: &str| ugoe::format::expression_from_json(&json(name)).unwrap();
+        puppet.set_expression(expression("smile"));
+        active.set("smile");
+        puppet.expressions_mut().add(expression("wink"));
+        active.add("wink");
+        puppet.expressions_mut().add(expression("smile"));
+        active.add("smile");
+        puppet.update(DT);
+        assert_eq!(active.names(&mut puppet), ["smile", "wink"]);
+        // 止めた表情はフェードアウト中でも含めない。
+        puppet.expressions_mut().stop("smile");
+        active.stop("smile");
+        puppet.update(DT);
+        assert_eq!(puppet.expressions_mut().players().len(), 3);
+        assert_eq!(active.names(&mut puppet), ["wink"]);
+        // set はほかを止める。
+        puppet.set_expression(expression("sad"));
+        active.set("sad");
+        assert_eq!(active.names(&mut puppet), ["sad"]);
+        // 写した名前に再生中の表情が無ければ除く。
+        active.add("angry");
+        assert_eq!(active.names(&mut puppet), ["sad"]);
+        puppet.expressions_mut().stop_all();
+        active.clear();
+        assert!(active.names(&mut puppet).is_empty());
+    }
 
     #[test]
     fn motion_json_plays_and_reports_events() {

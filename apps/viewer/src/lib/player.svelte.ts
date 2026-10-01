@@ -5,13 +5,18 @@
 // 描画は WebGPU が無ければ WebGL2 で行う (docs/adr/0003-editor-viewport-in-webview.md)。
 import { setPuppetTracking, type TrackingFrame } from "@ugoe/face-tracking";
 import {
-  activeExpressions,
+  AUTO_IDLE_STORAGE_KEY,
+  defaultIdleMotion,
   describeRejectedMotion,
   type ExpressionInfo,
+  loadToggle,
+  MOTION_OVER_TRACKING_STORAGE_KEY,
   type MotionInfo,
   type MotionPriority,
+  motionOverTrackingActive,
   parseExpressions,
   parseMotions,
+  saveToggle,
 } from "./animation";
 import { parseHexColor } from "./color";
 import {
@@ -157,6 +162,18 @@ export class Player {
   motionEvents = $state<string[]>([]);
   /** 使っている表情 (開始した順。フェードアウト中のものは含めない)。 */
   activeExpressions = $state<string[]>([]);
+  /**
+   * 待機モーションを自動で流す (T0721)。モデルを開いたときと、ほかのモーションが終わったとき (止めたときも) に
+   * `idleMotion` を待機の優先度で始める。localStorage に覚える。
+   */
+  autoIdle = $state(loadToggle(AUTO_IDLE_STORAGE_KEY, true));
+  /** 自動で流す待機モーション (開いているモデルのモーションの名前)。モデルを開くと既定 (`defaultIdleMotion`) に戻る。 */
+  idleMotion = $state<string | null>(null);
+  /**
+   * トラッキング中も、待機以外のモーションが動かすパラメータではモーションを優先する (T0721)。localStorage に覚える。
+   * 切ると仕様の適用順のまま (トラッキングがモーションの値を置き換える)。
+   */
+  motionOverTracking = $state(loadToggle(MOTION_OVER_TRACKING_STORAGE_KEY, true));
 
   /** パラメータを毎フレーム外から動かすもの (drivers.ts)。 */
   readonly drivers = new DriverSet();
@@ -195,6 +212,8 @@ export class Player {
   #lightingPending = false;
   /** `currentMotion` を始めた優先度 (繰り返すときに使う)。 */
   #currentPriority: MotionPriority = "normal";
+  /** 直前に WebPuppet に渡した `set_motion_over_tracking` の値 (変わったときだけ渡す)。 */
+  #overTracking = false;
 
   /** `container` の中に canvas を作り、描画を始める。 */
   async attach(container: HTMLElement): Promise<void> {
@@ -547,9 +566,56 @@ export class Player {
 
   /** 再生中のモーションをすべてフェードアウトさせる。最後に適用した値はそのまま残る。 */
   stopMotions(): void {
+    const stopped = this.currentMotion;
     this.#puppet?.stop_motions();
     this.currentMotion = null;
     this.motionNotice = null;
+    // 待機モーションそのものを止めたのでなければ、待機に戻す (止めたモーションはフェードアウトしながら待機に移る)。
+    if (stopped !== null && stopped !== this.idleMotion) this.#startIdle();
+  }
+
+  /** 待機モーションの自動再生を切り替える。入れたら (何も再生していなければ) 待機を始め、切ったら流している待機を止める。 */
+  setAutoIdle(enabled: boolean): void {
+    this.autoIdle = enabled;
+    saveToggle(AUTO_IDLE_STORAGE_KEY, enabled);
+    if (enabled) {
+      if (this.currentMotion === null) this.#startIdle();
+    } else if (this.currentMotion !== null && this.currentMotion === this.idleMotion) {
+      this.stopMotions();
+    }
+  }
+
+  /** 自動で流す待機モーションを選ぶ (`null` で流さない)。待機を流しているなら選んだものに替える。 */
+  setIdleMotion(name: string | null): void {
+    const playingIdle = this.currentMotion !== null && this.currentMotion === this.idleMotion;
+    this.idleMotion = name;
+    if (playingIdle) {
+      if (name === null) this.stopMotions();
+      else this.#startIdle();
+    } else if (this.currentMotion === null) {
+      this.#startIdle();
+    }
+  }
+
+  setMotionOverTracking(enabled: boolean): void {
+    this.motionOverTracking = enabled;
+    saveToggle(MOTION_OVER_TRACKING_STORAGE_KEY, enabled);
+  }
+
+  /** 自動再生が入っていて待機モーションがあれば、待機の優先度で始める。 */
+  #startIdle(): void {
+    const name = this.idleMotion;
+    if (!this.autoIdle || name === null || !this.motions.some((m) => m.name === name)) return;
+    const puppet = this.#puppet;
+    if (puppet?.has_model() !== true) return;
+    try {
+      if (!puppet.start_motion(name, "idle")) return;
+    } catch (e) {
+      this.motionNotice = message(e);
+      return;
+    }
+    this.currentMotion = name;
+    this.#currentPriority = "idle";
   }
 
   setMotionPriority(priority: MotionPriority): void {
@@ -562,39 +628,36 @@ export class Player {
 
   /** 表情を `name` だけにする (使っている表情はフェードアウトする)。 */
   setExpression(name: string): void {
-    if (this.#expressionOp((p) => p.set_expression(name)))
-      this.activeExpressions = activeExpressions.set(this.activeExpressions, name);
+    this.#expressionOp((p) => p.set_expression(name));
   }
 
   /** 使っている表情の上に `name` を重ねる。使っていれば何もしない。 */
   addExpression(name: string): void {
     if (this.activeExpressions.includes(name)) return;
-    if (this.#expressionOp((p) => p.add_expression(name)))
-      this.activeExpressions = activeExpressions.add(this.activeExpressions, name);
+    this.#expressionOp((p) => p.add_expression(name));
   }
 
   /** 表情 `name` をフェードアウトさせる。 */
   stopExpression(name: string): void {
-    if (this.#expressionOp((p) => p.stop_expression(name)))
-      this.activeExpressions = activeExpressions.stop(this.activeExpressions, name);
+    this.#expressionOp((p) => p.stop_expression(name));
   }
 
   /** 使っている表情をすべてフェードアウトさせる。 */
   stopExpressions(): void {
-    if (this.#expressionOp((p) => p.stop_expressions())) this.activeExpressions = [];
+    this.#expressionOp((p) => p.stop_expressions());
   }
 
-  #expressionOp(action: (puppet: WebPuppet) => void): boolean {
+  /** 表情の操作を 1 つ行い、使っている表情の一覧を WebPuppet から読み直す (T0721)。 */
+  #expressionOp(action: (puppet: WebPuppet) => void): void {
     const puppet = this.#puppet;
-    if (puppet?.has_model() !== true) return false;
+    if (puppet?.has_model() !== true) return;
     try {
       action(puppet);
       this.motionNotice = null;
-      return true;
     } catch (e) {
       this.motionNotice = message(e);
-      return false;
     }
+    this.activeExpressions = puppet.active_expressions();
   }
 
   // --- ビュー。座標は canvas 要素の左上からの CSS ピクセル ---
@@ -834,9 +897,11 @@ export class Player {
       return;
     }
     this.currentMotion = null;
-    this.activeExpressions = [];
+    this.activeExpressions = puppet.active_expressions();
     this.motionEvents = [];
     this.motionNotice = null;
+    this.idleMotion = defaultIdleMotion(this.motions);
+    this.#startIdle();
   }
 
   /** `update` の後で、モーションの終わりとイベントを読む。 */
@@ -851,6 +916,7 @@ export class Player {
     this.currentMotion = null;
     // 始められなかった理由 (再生中のモーションの優先度) は、そのモーションが終わったので消す。
     this.motionNotice = null;
+    this.#startIdle();
   }
 
   /** 着せ替えの一覧を WebPuppet から読み直す。モジュールのメッシュでライティングの有無も変わる。 */
@@ -904,6 +970,16 @@ export class Player {
       }
       if (ids.size !== this.driven.size || [...ids].some((id) => !this.driven.has(id))) {
         this.driven = ids;
+      }
+      const over = motionOverTrackingActive(
+        this.motionOverTracking,
+        this.tracking,
+        this.currentMotion,
+        this.#currentPriority,
+      );
+      if (over !== this.#overTracking) {
+        this.#overTracking = over;
+        puppet.set_motion_over_tracking(over);
       }
       puppet.update(dt);
       this.#afterMotionUpdate(puppet);
@@ -1014,6 +1090,8 @@ export class Player {
     this.#puppet = null;
     this.#canvas?.remove();
     this.#canvas = null;
+    // 作り直した WebPuppet は既定 (`false`) から始まる。
+    this.#overTracking = false;
   }
 
   /** GPU を失った (GPU プロセスのクラッシュなど)。作り直して、開いていたモデルを読み直す。 */

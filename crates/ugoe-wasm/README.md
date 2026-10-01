@@ -42,6 +42,7 @@ puppet.render();                  // 呼ばれたときだけ描く。ループ�
 puppet.set_tracking(names, scores, yaw, pitch, roll); // MediaPipe のカテゴリ名と値、頭の回転 (度)
 puppet.tracking_parameter_ids();  // トラッキングが書き込むパラメータ
 puppet.set_enabled("eye_blink", false); // トラッキング中はモデルの目パチを止める (T0309 の段の切り替え)
+puppet.set_motion_over_tracking(true); // 再生中のモーションが動かすパラメータではモーションを優先する (T0721)
 puppet.clear_tracking();
 ```
 
@@ -53,6 +54,10 @@ puppet.clear_tracking();
 - トラッキングの入力は次の `update(dt)` から毎フレーム適用される (モーションの直後、表情・目パチ・呼吸の前)。
   平滑化・キャリブレーション・回転行列からの角度の計算・鏡像の入れ替えはホストが行う
   (`docs/spec/avatar-profile.md#実装の範囲`)。`clear_tracking()` の後も最後の値は残る。
+- `set_motion_over_tracking(true)` の間は、`update` がトラッキングの値をモーションより **先に** ホストの書き込みとして入れる
+  (`docs/spec/motion.md#手で動かしたパラメータとの関係` と同じ扱い)。モーションが動かすパラメータではモーションの値が
+  フェードの重みでトラッキングの値に重なり、ほかのパラメータはトラッキングの値のまま。`Puppet` の適用順は変えない。
+  既定は `false` (仕様の順。トラッキングがモーションの値を置き換える)。ビューアは待機以外の優先度のモーションの再生中だけ入れる。
 - `is_lost()` が `true` になったら (GPU プロセスのクラッシュなど)、新しい canvas で作り直す。
 
 ### 描画結果の読み戻しと評価の結果 (T0418)
@@ -79,6 +84,7 @@ sample_motion_json(json, t);           // (関数) 各カーブの時刻 t の�
 puppet.set_expression("smile");        // または set_expression_json(json)。stop_expressions()
 puppet.add_expression("surprised");    // 使用中の表情に重ねる。stop_expression("smile") で名前を指定して止める (T0720)
 puppet.expressions_json();             // [{name, fade_in, fade_out, parameters: [{parameter, value, op}]}] (T0720)
+puppet.active_expressions();           // 使っている表情の名前 (開始した順。止めてフェードアウト中のものは除く。T0721)
 puppet.set_lip_sync_level(0.4);        // 0..1。undefined で口に触らない
 puppet.set_enabled("physics", false);  // "physics" | "eye_blink" | "breath" | "lip_sync" | "pose"
 puppet.set_physics_json(json);         // 物理だけを差し替える (validate_physics で検査。undefined で外す)
@@ -93,7 +99,9 @@ puppet.hit_test_standard("Head", x, y); // Model.avatar.hit_areas の標準の�
 - `load_json` で読み直すと、物理の設定・モーションと表情の一覧・段の有効無効を引き継ぐ (新しいモデルと合わない物理は外して警告を返す)。`load_bundle` は物理・モーション・表情をバンドルのものに置き換える。
 - モーション・表情の再生状態は、モデルを読み直すと初めからになる。
 - `motions_json` の `parameters` はカーブが動かすパラメータ (重なりなし)、`events` はイベントの値。`expressions_json` は未知の `op` の項目を出さない。
-  使っている表情の一覧は返さない (フェードアウト中のものも含めて Rust の `ExpressionManager::players`)。ビューアは操作から求める (`apps/viewer/src/lib/animation.ts`)。
+  `active_expressions` は同じ名前を重ねても 1 つと数える。Rust の `ExpressionManager::players` はフェードアウト中のものも含み、止めたかを
+  返さないので、`WebPuppet` が表情の操作 (`set_expression`・`set_expression_json`・`add_expression`・`stop_expression`・`stop_expressions`) を写して
+  持ち、再生中の表情が無い名前は除いて返す (`crate::animation::ActiveExpressions`)。モデルを読み直すと空になる。
 - `set_effects_json` は同じ設定でも目パチ・呼吸を初めからやり直し、リップシンクの音量は保つ。`show_pose` の不透明度は次の `update` からフェードし、
   モーションが同じグループの要素を要求すればそちらが勝つ (`docs/spec/motion.md#エフェクト設定の差し替え`・`#ポーズ`)。C ABI では
   `ugoe_puppet_set_effects_json`・`ugoe_puppet_show_pose` (T0414)。

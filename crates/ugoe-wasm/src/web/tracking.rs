@@ -60,6 +60,20 @@ impl WebPuppet {
         self.puppet.as_ref().is_some_and(|p| p.tracking().is_some())
     }
 
+    /// トラッキング中に、再生中のモーションが動かすパラメータではモーションの値を優先するか (T0721)。既定は `false`。
+    ///
+    /// `true` なら `update` でトラッキングの値をモーションより先に (ホストが書いた値として) 入れるので、モーションが
+    /// 動かすパラメータではモーションの値がトラッキングの上に重なる。ほかのパラメータはトラッキングの値のまま。
+    /// `false` なら仕様の適用順 (モーション → トラッキング) のまま (`docs/spec/motion.md#フレーム内の適用順`)。
+    /// モデルを読み直しても保つ。
+    pub fn set_motion_over_tracking(&mut self, enabled: bool) {
+        self.motion_over_tracking = enabled;
+    }
+
+    pub fn is_motion_over_tracking(&self) -> bool {
+        self.motion_over_tracking
+    }
+
     /// トラッキングが書き込むパラメータの ID (モデルの定義順。`avatar.tracking` の上書きを反映する)。
     pub fn tracking_parameter_ids(&self) -> Vec<String> {
         self.puppet

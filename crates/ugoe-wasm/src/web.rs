@@ -70,6 +70,10 @@ pub struct WebPuppet {
     wardrobe: Wardrobe,
     /// 直前の `load_json` / `load_bundle` の警告のうち、外したモジュール (`wardrobe.detached()`) 以外のもの (T0125)。
     load_warnings: Vec<LoadWarning>,
+    /// トラッキングをモーションより先に入れる (`set_motion_over_tracking`。T0721)。
+    motion_over_tracking: bool,
+    /// 使っている表情の名前 (`active_expressions`。T0721)。
+    active_expressions: crate::animation::ActiveExpressions,
 }
 
 #[wasm_bindgen]
@@ -197,6 +201,8 @@ impl WebPuppet {
             lost,
             wardrobe: Wardrobe::default(),
             load_warnings: Vec::new(),
+            motion_over_tracking: false,
+            active_expressions: Default::default(),
         })
     }
 
@@ -251,6 +257,7 @@ impl WebPuppet {
     pub fn unload(&mut self) {
         self.puppet = None;
         self.library = Library::default();
+        self.active_expressions.clear();
     }
 
     pub fn has_model(&self) -> bool {
@@ -316,7 +323,11 @@ impl WebPuppet {
     /// 物理・モーションを `dt` 秒進めて評価する。静止画の表示だけなら呼ばなくてよい。
     pub fn update(&mut self, dt: f32) {
         if let Some(puppet) = &mut self.puppet {
-            puppet.update(dt);
+            if self.motion_over_tracking {
+                crate::tracking::update_with_motion_over_tracking(puppet, dt);
+            } else {
+                puppet.update(dt);
+            }
             self.dirty = false;
         }
     }
@@ -651,6 +662,8 @@ impl WebPuppet {
         );
         self.puppet = Some(puppet);
         self.load_warnings = load_warnings;
+        // 再生の状態は読み直すと初めからになる。
+        self.active_expressions.clear();
         if let Some(library) = library {
             self.library = library;
         }

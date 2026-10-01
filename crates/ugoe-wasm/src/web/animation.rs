@@ -82,6 +82,7 @@ impl WebPuppet {
     pub fn set_expression(&mut self, name: &str) -> Result<(), JsError> {
         let expression = self.library.expression(name).map_err(js_error)?.clone();
         self.puppet_mut()?.set_expression(expression);
+        self.active_expressions.set(name);
         Ok(())
     }
 
@@ -90,6 +91,7 @@ impl WebPuppet {
     pub fn add_expression(&mut self, name: &str) -> Result<(), JsError> {
         let expression = self.library.expression(name).map_err(js_error)?.clone();
         self.puppet_mut()?.expressions_mut().add(expression);
+        self.active_expressions.add(name);
         Ok(())
     }
 
@@ -97,6 +99,7 @@ impl WebPuppet {
     pub fn stop_expression(&mut self, name: &str) {
         if let Some(puppet) = &mut self.puppet {
             puppet.expressions_mut().stop(name);
+            self.active_expressions.stop(name);
         }
     }
 
@@ -105,15 +108,27 @@ impl WebPuppet {
         self.library.expressions_json()
     }
 
+    /// 使っている表情の名前 (開始した順、重なりなし。止めてフェードアウト中のものは含めない。T0721)。
+    /// `set_expression_json` の表情も、その JSON の `name` で含める。
+    pub fn active_expressions(&mut self) -> Vec<String> {
+        match &mut self.puppet {
+            Some(puppet) => self.active_expressions.names(puppet),
+            None => Vec::new(),
+        }
+    }
+
     /// 表情を JSON (`*.expression.json` の形) の表情だけにする。
     pub fn set_expression_json(&mut self, json: &str) -> Result<(), JsError> {
-        animation::set_expression_json(self.puppet_mut()?, json).map_err(js_error)
+        let name = animation::set_expression_json(self.puppet_mut()?, json).map_err(js_error)?;
+        self.active_expressions.set(&name);
+        Ok(())
     }
 
     /// 使用中の表情をすべてフェードアウトさせる。
     pub fn stop_expressions(&mut self) {
         if let Some(puppet) = &mut self.puppet {
             puppet.expressions_mut().stop_all();
+            self.active_expressions.clear();
         }
     }
 
