@@ -1,11 +1,11 @@
 ---
 id: T0003
 title: bindings/web の型検査が、古くなった型の写し (src/wasm/) を使い続けないようにする
-status: todo
+status: in-progress
 milestone: M7
 crates: [bindings/web, justfile, docs]
 depends_on: [T0722]
-assignee:
+assignee: claude-worker-T0003
 ---
 
 # T0003: 型の写しを作り直す

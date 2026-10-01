@@ -1,11 +1,11 @@
 ---
 id: T0524
 title: MCP: --root のとき、モジュールのプロジェクトが参照する本体も root の下に限る
-status: todo
+status: in-progress
 milestone: M6
 crates: [ugoe-mcp, ugoe-editor-core, docs]
 depends_on: [T0515, T0662]
-assignee:
+assignee: claude-worker-T0524
 ---
 
 # T0524: モジュールの本体の参照を --root で限る
