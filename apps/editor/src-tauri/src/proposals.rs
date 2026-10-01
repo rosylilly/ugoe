@@ -15,8 +15,11 @@
 //! - 法線マップの提案 ([`propose_normal_maps`]) は AI を使わず、何も送らない (`ugoe_ai::normal`。まとまりと設定の
 //!   決め方は `crate::lighting`)。コマンドをまとまりごとの区切り ([`CommandSection`]) にして画面に渡す
 //!   (`docs/editor.md#法線マップの提案`)。
+//! - モジュールのリグの提案は、衣装のメッシュのキーフォームに本体の変形を頂点ごとに写すことがある。採用した後に
+//!   そのメッシュの形 (頂点・三角形・親) を編集したら、写した変形が合わなくなるので、提案し直すよう知らせる
+//!   ([`ProposalState::stale_rigs`]。覚えるのはこのセッションの間だけ)。
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -37,7 +40,10 @@ use ugoe_ai::rig::{
     propose_rig_with_ai_guided, rig_request_guided,
 };
 use ugoe_ai::{AiError, Proposal, Provider, ProviderRequest};
-use ugoe_editor_core::{ApplyReport, Document, ProposalOrigin, ProposalView, Proposals};
+use ugoe_editor_core::{
+    ApplyReport, Command, Document, KeyformTarget, ProposalOrigin, ProposalView, Proposals,
+};
+use ugoe_model::{DeformerId, Mesh, MeshId};
 use ugoe_psd::LayerTree;
 
 use crate::AppState;
@@ -62,6 +68,51 @@ pub struct ProposalSession {
     rigs: HashMap<u32, PreviousAnswer>,
     /// 提案のコマンドの区切り (提案の番号ごと。法線マップの提案のまとまり)。
     sections: HashMap<u32, Vec<CommandSection>>,
+    /// モジュールのリグの提案がキーフォームを書く衣装のメッシュと、そのコマンドの番号 (提案の番号ごと)。
+    writes: HashMap<u32, Vec<(usize, MeshId)>>,
+    /// 採用したモジュールのリグの提案がキーフォームを書いた衣装のメッシュと、採用したときの形。
+    rigged: BTreeMap<MeshId, MeshShape>,
+}
+
+/// 本体の変形を写したメッシュの形 (これが変わったら、写した変形は合わない)。
+#[derive(Debug, Clone, PartialEq)]
+struct MeshShape {
+    parent: Option<DeformerId>,
+    uvs: Vec<[u32; 2]>,
+    indices: Vec<u16>,
+}
+
+impl MeshShape {
+    fn of(mesh: &Mesh) -> Self {
+        Self {
+            parent: mesh.parent.clone(),
+            uvs: mesh
+                .uvs
+                .iter()
+                .map(|u| [u.x.to_bits(), u.y.to_bits()])
+                .collect(),
+            indices: mesh.indices.clone(),
+        }
+    }
+}
+
+/// 提案のコマンドのうち、メッシュのキーフォームを書くもの (番号とメッシュ)。
+fn mesh_writes(commands: &[Command]) -> Vec<(usize, MeshId)> {
+    commands
+        .iter()
+        .enumerate()
+        .filter_map(|(i, command)| match command {
+            Command::AddKeyformKey {
+                target: KeyformTarget::Mesh(id),
+                ..
+            }
+            | Command::SetKeyformCell {
+                target: KeyformTarget::Mesh(id),
+                ..
+            } => Some((i, id.clone())),
+            _ => None,
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone)]
@@ -92,9 +143,39 @@ impl ProposalSession {
         &mut self.proposals
     }
 
+    /// 採用したモジュールのリグの提案がキーフォームを書いた衣装のメッシュのうち、その後に形を編集したもの。
+    /// 今キーフォームの軸を持たないもの (採用を Undo したもの) と、消えたものは除く。
+    fn stale_rigs(&self, document: &Document) -> Vec<StaleRig> {
+        let model = document.model();
+        self.rigged
+            .iter()
+            .filter_map(|(id, shape)| {
+                let mesh = model.meshes.iter().find(|m| &m.id == id)?;
+                let stale = !mesh.keyforms.bindings.is_empty() && MeshShape::of(mesh) != *shape;
+                stale.then(|| StaleRig {
+                    mesh: id.to_string(),
+                    name: mesh.name.clone(),
+                })
+            })
+            .collect()
+    }
+
+    /// 採用した提案 `id` (`excluded` を除く) がキーフォームを書いたメッシュの、今の形を覚える。
+    fn remember_rigged(&mut self, document: &Document, id: u32, excluded: &[usize]) {
+        let Some(writes) = self.writes.get(&id) else {
+            return;
+        };
+        for (_, mesh) in writes.iter().filter(|(i, _)| !excluded.contains(i)) {
+            if let Some(found) = document.model().meshes.iter().find(|m| &m.id == mesh) {
+                self.rigged.insert(mesh.clone(), MeshShape::of(found));
+            }
+        }
+    }
+
     fn state(&self, document: &Document) -> ProposalState {
         let proposals = self.proposals.views(document);
         ProposalState {
+            stale_rigs: self.stale_rigs(document),
             regenerable: proposals
                 .iter()
                 .map(|p| p.id)
@@ -179,6 +260,16 @@ pub struct ProposalState {
     pub regenerable: Vec<u32>,
     /// コマンドを区切って出す提案 (法線マップの提案)。ない提案は、同じ対象への続いたコマンドをまとめて出す。
     pub sections: Vec<ProposalSections>,
+    /// 採用したモジュールのリグの提案が本体の変形を写した衣装のメッシュのうち、その後に形 (頂点・三角形・親) を
+    /// 編集したもの。写した変形が合わないので、提案し直すよう知らせる。
+    pub stale_rigs: Vec<StaleRig>,
+}
+
+/// 本体の変形を写した後に形を編集した衣装のメッシュ。
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+pub struct StaleRig {
+    pub mesh: String,
+    pub name: String,
 }
 
 /// 提案 1 つのコマンドの区切り。
@@ -807,6 +898,8 @@ pub(crate) fn place(
     }
     let mut session = lock_project(state)?;
     let proposals = &mut session.proposals;
+    let writes = matches!(rigged.previous, PreviousAnswer::Module(_))
+        .then(|| mesh_writes(&rigged.proposal.commands));
     let view = proposals
         .proposals
         .add(
@@ -817,6 +910,9 @@ pub(crate) fn place(
         )
         .map_err(|e| e.to_string())?;
     proposals.proposals.set_origin(view.id, origin);
+    if let Some(writes) = writes {
+        proposals.writes.insert(view.id, writes);
+    }
     proposals.rigs.insert(view.id, rigged.previous);
     let view = proposals
         .proposals
@@ -879,15 +975,44 @@ pub fn adopt_proposal(
     id: u32,
     excluded: Vec<usize>,
 ) -> Result<ApplyReport, String> {
-    let mut document = lock_document(&state)?;
-    let mut session = lock_project(&state)?;
+    adopt_in(&state, id, &excluded)
+}
+
+/// [`adopt_proposal`] の本体。モジュールのリグの提案なら、キーフォームを書いたメッシュの形を覚える。
+pub(crate) fn adopt_in(
+    state: &AppState,
+    id: u32,
+    excluded: &[usize],
+) -> Result<ApplyReport, String> {
+    let mut document = lock_document(state)?;
+    let mut session = lock_project(state)?;
     let report = session
         .proposals
         .proposals
-        .adopt(&mut document, id, &excluded)
+        .adopt(&mut document, id, excluded)
         .map_err(|e| e.to_string())?;
     session.proposals.preview = None;
+    session.proposals.remember_rigged(&document, id, excluded);
     Ok(report)
+}
+
+/// 本体の変形を写した後に形を編集した衣装のメッシュの知らせを消す (今の形を覚え直す。提案し直さずに済ませるとき)。
+#[tauri::command]
+pub fn dismiss_stale_rigs(state: State<'_, AppState>) -> Result<ProposalState, String> {
+    dismiss_stale_rigs_in(&state)
+}
+
+/// [`dismiss_stale_rigs`] の本体。
+pub(crate) fn dismiss_stale_rigs_in(state: &AppState) -> Result<ProposalState, String> {
+    let document = lock_document(state)?;
+    let mut session = lock_project(state)?;
+    let proposals = &mut session.proposals;
+    for (id, shape) in proposals.rigged.iter_mut() {
+        if let Some(mesh) = document.model().meshes.iter().find(|m| &m.id == id) {
+            *shape = MeshShape::of(mesh);
+        }
+    }
+    Ok(proposals.state(&document))
 }
 
 /// 提案を捨てる。
@@ -907,6 +1032,7 @@ pub(crate) fn reject_in(state: &AppState, id: u32) -> Result<ProposalState, Stri
         .map_err(|e| e.to_string())?;
     session.proposals.rigs.remove(&id);
     session.proposals.sections.remove(&id);
+    session.proposals.writes.remove(&id);
     session.proposals.preview = None;
     Ok(session.proposals.state(&document))
 }

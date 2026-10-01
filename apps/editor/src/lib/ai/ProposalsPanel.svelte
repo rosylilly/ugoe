@@ -105,6 +105,17 @@ function onSlider(id: string, e: Event): void {
 
 <section>
   <h3>{module ? "Auto rig the costume from PSD" : "Auto rig from PSD"}</h3>
+  {#if view.staleRigs.length > 0}
+    <div class="unapplied stale" role="status">
+      <strong>Propose the rig again:</strong> these costume meshes were edited (vertices, triangles or parent) after an
+      adopted rig proposal wrote the base's motion into them, so they no longer follow the base exactly.
+      <ul>
+        {#each view.staleRigs as stale (stale.mesh)}<li>{stale.name}</li>{/each}
+      </ul>
+      <button class="link" disabled={busy} onclick={() => view.dismissStaleRigs()}
+        title="Keep the meshes as they are and hide this notice">Dismiss</button>
+    </div>
+  {/if}
   {#if module}
     <p class="muted note">
       Module project: the rig uses only the base's parameters. The costume follows the base deformers under the
@@ -122,7 +133,7 @@ function onSlider(id: string, e: Event): void {
         <input type="checkbox" bind:checked={view.moduleOptions.colliders} />
         Keep swaying parts out of the base's colliders
       </label>
-      <label class="check note" title="Costume parts whose names differ only by a trailing A, B… (Sleeve A / Sleeve B) become a pose, following the base's variants when the slot exposes them">
+      <label class="check note" title="Costume parts whose names differ only by a trailing A, B… (Sleeve A / Sleeve B) become a pose, following the base's variants when the slot exposes them. So do overlapping parts with the same label where the PSD shows one and hides the others.">
         <input type="checkbox" bind:checked={view.moduleOptions.poses} />
         Turn A / B variants into poses
       </label>

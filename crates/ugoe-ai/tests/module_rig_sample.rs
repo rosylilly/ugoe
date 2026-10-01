@@ -11,13 +11,16 @@ use std::sync::Arc;
 
 use ugoe_ai::classify::classify_by_name;
 use ugoe_ai::module_rig::{
-    ModuleRigOptions, ModuleRigParams, module_mesh_parts, propose_module_rig,
+    FollowMode, ModuleRigOptions, ModuleRigParams, module_mesh_parts, propose_module_rig,
 };
 use ugoe_ai::{AiError, Proposal};
 use ugoe_core::Vec2;
 use ugoe_editor_core::import::layer_tree_command;
 use ugoe_editor_core::physics_check::rest_pose_collisions;
-use ugoe_editor_core::{Command, Document, ModuleBase, ModuleContext, PsdImportOptions};
+use ugoe_editor_core::{
+    ChildRef, Command, Document, Keyform, KeyformTarget, ModuleBase, ModuleContext,
+    PsdImportOptions,
+};
 use ugoe_model::module::{DrawOrderRange, ModuleRequirements};
 use ugoe_model::part::PartKeyform;
 use ugoe_model::physics::{ColliderShape, PhysicsCollider};
@@ -421,4 +424,199 @@ fn variants_become_poses() {
     )
     .unwrap_err();
     assert!(matches!(err, AiError::InvalidRequest(_)), "{err}");
+}
+
+/// 点 `p` を含む三角形の重心座標で、`from` の点を `to` の点へ写す (三角形の外なら `None`)。
+fn carried(from: &[Vec2], to: &[Vec2], indices: &[u16], p: Vec2) -> Option<Vec2> {
+    indices.chunks(3).find_map(|t| {
+        let [a, b, c] = [t[0], t[1], t[2]].map(|i| from[i as usize]);
+        let (v0, v1, v2) = (b - a, c - a, p - a);
+        let det = v0.x * v1.y - v1.x * v0.y;
+        let v = (v2.x * v1.y - v1.x * v2.y) / det;
+        let w = (v0.x * v2.y - v2.x * v0.y) / det;
+        let u = 1.0 - v - w;
+        (u >= -1e-4 && v >= -1e-4 && w >= -1e-4).then(|| {
+            let [a, b, c] = [t[0], t[1], t[2]].map(|i| to[i as usize]);
+            a * u + b * v + c * w
+        })
+    })
+}
+
+/// 本体のワープ (顔の向き) と、その下の目の回転デフォーマ (視線で傾く) と目のメッシュのキーフォーム (開閉) の
+/// 動きを合わせて写す (T0521)。取り付け先が頭の回転なので、衣装は顔のワープに従い、化粧は目の上で、
+/// 振り向き・傾き・閉じ具合を重ねた目と同じ所へ動く。
+#[test]
+fn makeup_follows_the_face_warp_the_eye_rotation_and_the_eye_mesh_together() {
+    let mut base = sample();
+    // 目 `EyeL` を、視線 `EyeBallX` で傾く回転デフォーマ `EyeLTilt` (顔のワープの子) に入れる。
+    base.apply(Command::CreateRotationDeformer {
+        id: Some("EyeLTilt".into()),
+        name: "Eye L tilt".into(),
+        children: vec![ChildRef::Mesh("EyeL".into())],
+        parts: Vec::new(),
+        origin: None,
+        parent: None,
+    })
+    .unwrap();
+    let target = KeyformTarget::Deformer("EyeLTilt".into());
+    for key in [0.0, 1.0] {
+        base.apply(Command::AddKeyformKey {
+            target: target.clone(),
+            parameter: "EyeBallX".into(),
+            key,
+        })
+        .unwrap();
+    }
+    let tilt = base
+        .model()
+        .deformers
+        .iter()
+        .find(|d| d.id.as_str() == "EyeLTilt")
+        .unwrap();
+    let ugoe_model::DeformerKind::Rotation(rotation) = &tilt.kind else {
+        panic!("not a rotation deformer");
+    };
+    let mut tilted = rotation.keyforms.keyforms[0];
+    tilted.angle = 25.0;
+    base.apply(Command::SetKeyformCell {
+        target,
+        cell: [("EyeBallX".into(), 1.0)].into_iter().collect(),
+        keyform: Keyform::Rotation(tilted),
+    })
+    .unwrap();
+    base.apply(Command::AddSlot {
+        slot: slot("Face", "HeadRotation", (700.0, 800.0)),
+    })
+    .unwrap();
+
+    let eye_rest = positions(base.model(), &[], "EyeL");
+    let eye = bounds(&eye_rest);
+    let size = eye.1 - eye.0;
+    let costume = tree(vec![layer(
+        "makeup",
+        eye.0 + Vec2::new(0.05, 0.05) * size,
+        ((0.9 * size.x) as u32, (0.45 * size.y) as u32),
+    )]);
+    let pose = [("AngleX", 30.0), ("EyeLOpen", 0.3), ("EyeBallX", 1.0)];
+    let indices = base
+        .model()
+        .meshes
+        .iter()
+        .find(|m| m.id.as_str() == "EyeL")
+        .unwrap()
+        .indices
+        .clone();
+    let eye_posed = positions(base.model(), &pose, "EyeL");
+    for follow in [FollowMode::Mesh, FollowMode::Warp] {
+        let mut doc = module_doc(&base, "Face", &costume);
+        let parts = module_mesh_parts(&doc, &classify_by_name(&costume));
+        let options = ModuleRigOptions {
+            follow,
+            ..ModuleRigOptions::default()
+        };
+        let proposal =
+            propose_module_rig(&doc, &parts, &ModuleRigParams::default(), &options).unwrap();
+        assert!(
+            proposal.rationale.contains("本体のメッシュ `EyeL`")
+                && proposal.rationale.contains("`EyeBallX`"),
+            "{follow:?}: {}",
+            proposal.rationale
+        );
+        apply(&mut doc, &proposal);
+        let makeup = mesh_id(&doc, "makeup");
+        let rest = positions(doc.model(), &[], &makeup);
+        let posed = positions(doc.model(), &pose, &makeup);
+        let mut checked = 0;
+        let mut worst = 0.0_f32;
+        for (r, p) in rest.iter().zip(&posed) {
+            let Some(expected) = carried(&eye_rest, &eye_posed, &indices, *r) else {
+                continue;
+            };
+            checked += 1;
+            worst = worst.max((expected - *p).length());
+        }
+        // 取り込みの余白で、目の三角形の中にある頂点は一部 (目の中は重心座標で写すので、ずれは小さい。
+        // 顔のワープの曲がりの分だけ残る)。
+        assert!(
+            checked >= 3,
+            "{follow:?}: {checked} vertices inside the eye"
+        );
+        let motion = rest
+            .iter()
+            .zip(&posed)
+            .map(|(a, b)| (*a - *b).length())
+            .fold(0.0, f32::max);
+        assert!(motion > 10.0, "{follow:?}: moved only {motion} px");
+        assert!(
+            worst < 0.08 * motion,
+            "{follow:?}: off by {worst} px of {motion} px"
+        );
+        let (module, _) = doc.split_module().unwrap().unwrap();
+        compose(base.model(), &[&module]).unwrap();
+    }
+}
+
+fn hidden_layer(name: &str, min: Vec2, size: (u32, u32)) -> LayerNode {
+    let LayerNode::Layer(mut layer) = layer(name, min, size) else {
+        unreachable!()
+    };
+    layer.visible = false;
+    LayerNode::Layer(layer)
+}
+
+/// 名前では差分と分からない衣装も、絵が重なり意味ラベルが同じで、PSD で片方を隠してあればポーズにする (T0521)。
+/// 見えているものが最初に表示され、隠してあったメッシュは (作ったパーツで隠したまま) ポーズで出せるようになる。
+/// どれも見えている重なった絵 (眼鏡とレンズ) と、ラベルの違う隠した絵 (ネクタイ) は差分にしない。
+#[test]
+fn overlapping_hidden_alternatives_become_poses() {
+    let base = sample();
+    let costume = tree(vec![
+        layer("hat", Vec2::new(180.0, 20.0), (150, 60)),
+        hidden_layer("cap", Vec2::new(185.0, 22.0), (140, 60)),
+        hidden_layer("tie", Vec2::new(190.0, 30.0), (120, 40)),
+        layer("glasses", Vec2::new(200.0, 180.0), (110, 30)),
+        layer("glasses lens", Vec2::new(202.0, 182.0), (106, 26)),
+    ]);
+    let mut doc = module_doc(&base, "Headwear", &costume);
+    let parts = module_mesh_parts(&doc, &classify_by_name(&costume));
+    let proposal = propose_module_rig(
+        &doc,
+        &parts,
+        &ModuleRigParams::default(),
+        &ModuleRigOptions::default(),
+    )
+    .unwrap();
+    assert!(
+        proposal.rationale.contains("隠してあるもの"),
+        "{}",
+        proposal.rationale
+    );
+    apply(&mut doc, &proposal);
+    let model = doc.model();
+    assert_eq!(model.pose.groups.len(), 1, "{:?}", model.pose);
+    let part = |id: &ugoe_model::PartId| model.parts.iter().find(|p| &p.id == id).unwrap();
+    let entries: Vec<(&str, f32)> = model.pose.groups[0]
+        .entries
+        .iter()
+        .map(|e| {
+            let p = part(&e.part);
+            (p.name.as_str(), p.keyforms.keyforms[0].opacity)
+        })
+        .collect();
+    assert_eq!(entries, [("hat", 1.0), ("cap", 0.0)]);
+    let cap = model
+        .meshes
+        .iter()
+        .find(|m| m.id.as_str() == mesh_id(&doc, "cap"))
+        .unwrap();
+    assert!(cap.keyforms.keyforms.iter().all(|k| k.opacity == 1.0));
+    let tie = model
+        .meshes
+        .iter()
+        .find(|m| m.id.as_str() == mesh_id(&doc, "tie"))
+        .unwrap();
+    assert!(tie.keyforms.keyforms.iter().all(|k| k.opacity == 0.0));
+    let (module, _) = doc.split_module().unwrap().unwrap();
+    assert_eq!(module.pose.groups.len(), 1);
+    compose(base.model(), &[&module]).unwrap();
 }

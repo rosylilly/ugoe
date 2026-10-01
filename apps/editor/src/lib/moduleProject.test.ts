@@ -31,6 +31,7 @@ const status: ModuleStatus = {
     draw_order_max: 650,
     replaces: [],
     parameters: [],
+    pose_parts: [],
   },
   base_parts: ["Root"],
   base_deformers: ["Head"],
@@ -44,6 +45,7 @@ const status: ModuleStatus = {
   base_parameters: ["AngleX", "BodySway"],
   base_avatar_level: null,
   base_revision: 1,
+  base_pose_groups: 0,
 };
 
 describe("baseElements", () => {

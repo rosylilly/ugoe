@@ -306,6 +306,11 @@ export const ipc = {
     invoke<ApplyReport>("adopt_proposal", { id, excluded }),
   rejectProposal: (id: number) => invoke<ProposalState>("reject_proposal", { id }),
   /**
+   * 採用したモジュールのリグの提案が本体の変形を写した衣装のメッシュのうち、形を編集したものの知らせを消す
+   * (今の形を覚え直す)。知らせは `ProposalState.stale_rigs`。
+   */
+  dismissStaleRigs: () => invoke<ProposalState>("dismiss_stale_rigs"),
+  /**
    * apps/editor/src-tauri/src/mcp.rs。エディタの中の MCP サーバ (エージェントをつなぐ) の状態。トークンは含まない。
    * docs/editor.md#エージェントをつなぐ
    */

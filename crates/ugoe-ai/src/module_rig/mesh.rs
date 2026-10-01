@@ -1,29 +1,103 @@
-//! 本体のメッシュのキーフォームへの追従 (T0519)。
+//! 本体のメッシュのキーフォームへの追従 (T0519・T0521)。
 //!
-//! 目の開閉や口の開閉のように、デフォーマではなく本体のメッシュ自身のキーフォームで形が変わる部分は、
-//! 追従のワープでは写せない。衣装のメッシュ (アイシャドウ・化粧など) の頂点の多くがそのような本体のメッシュの
-//! 上にあれば、本体のメッシュの各キーでの頂点の変位を、衣装の頂点へ三角形の重心座標で写す (三角形の外の頂点は、
-//! いちばん近い辺の変位を距離で弱めて写す)。
+//! 目の開閉や口の開閉のように、デフォーマではなく本体のメッシュ自身のキーフォーム (と、衣装が従うワープより
+//! 下の本体のデフォーマ) で形が変わる部分は、追従のワープでは写せない。衣装のメッシュ (アイシャドウ・化粧など)
+//! の頂点の多くがそのような本体のメッシュの上にあれば、本体のメッシュの各キーでの頂点の変位を、衣装の頂点へ
+//! 三角形の重心座標で写す (三角形の外の頂点は、いちばん近い辺の変位を距離で弱めて写す)。
+//!
+//! 変位は、衣装が従う本体のワープ (なければ取り付け先) の局所座標 ([`Frame`]) で測る。キーの組ごとに、本体の
+//! メッシュの頂点をその組の姿のフレームで局所座標に戻してから基準の姿と比べるので、フレームの動き (顔の向きの
+//! ワープ) を二重に数えず、フレームより下のデフォーマ (目の回転など) の動きは変位に入る。衣装の頂点は、
+//! 局所座標で変位を足してから同じ姿のフレームで写す (本体のワープとメッシュの動きを合わせて写す)。
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use ugoe_core::Vec2;
-use ugoe_model::{KeyformInterpolation, Mesh, MeshId, Model, ParamId};
+use ugoe_model::{DeformerId, DeformerKind, Mesh, MeshId, Model, ParamId};
+use ugoe_rigging::ParentWorld;
 use ugoe_runtime::{CompiledModel, ModelInstance};
 
-use super::{MAX_FOLLOW_CELLS, cells};
+use super::{MAX_FOLLOW_CELLS, cells, find as find_deformer, grid_axes};
 use crate::AiError;
-use crate::rig::Rect;
+use crate::rig::{Rect, template};
 
 /// 衣装の頂点のうち、本体のメッシュの三角形の中 (か [`NEAR`] 以内) にあるべき割合。
 const MIN_INSIDE: f32 = 0.5;
 /// 三角形の外でも中とみなす距離 (px)。PSD の取り込みはレイヤーの絵の周りに余白を付けてメッシュを作るので、
 /// 本体の絵の内側に描いた衣装でも、輪郭の頂点は本体のメッシュの少し外に出る。
 const NEAR: f32 = 4.0;
-/// 本体のメッシュが動いたとみなす変位 (px)。
+/// 本体のメッシュがフレームに対して動いたとみなす変位 (px)。
 const MIN_MOTION: f32 = 0.5;
 /// 三角形の外の頂点の変位を 0 まで弱める距離 (本体のメッシュの外接矩形の長い辺に対する割合)。
 const FALLOFF: f32 = 0.25;
+
+/// 変位を測る座標系: 衣装が従う本体のワープか取り付け先 (`None` ならキャンバス) の子の座標系。
+pub(super) struct Frame {
+    id: Option<DeformerId>,
+    world: ParentWorld,
+    /// ワープなら、基準の姿で覆う矩形 (逆写像の初期値に使う)。
+    region: Option<Rect>,
+}
+
+impl Frame {
+    pub(super) fn new(model: &Model, id: Option<&DeformerId>) -> Result<Self, AiError> {
+        let world =
+            ParentWorld::new(model, id).map_err(|e| template(format!("frame {id:?}: {e}")))?;
+        let is_warp = id
+            .and_then(|id| find_deformer(model, id))
+            .is_some_and(|d| matches!(d.kind, DeformerKind::Warp(_)));
+        let region = if is_warp {
+            let samples: Vec<Vec2> = (0..=4)
+                .flat_map(|j| (0..=4).map(move |i| Vec2::new(i as f32 / 4.0, j as f32 / 4.0)))
+                .collect();
+            Rect::of(&world.to_canvas(&samples))
+        } else {
+            None
+        };
+        Ok(Self {
+            id: id.cloned(),
+            world,
+            region,
+        })
+    }
+
+    pub(super) fn id(&self) -> Option<&DeformerId> {
+        self.id.as_ref()
+    }
+
+    /// `values` のパラメータ (ほかは既定値) の姿にする。
+    pub(super) fn set_pose(&mut self, values: &[(ParamId, f32)]) {
+        self.world
+            .set_pose(values.iter().map(|(p, v)| (p.as_str(), *v)));
+    }
+
+    pub(super) fn canvas_of(&self, points: &[Vec2]) -> Vec<Vec2> {
+        self.world.to_canvas(points)
+    }
+
+    /// キャンバス座標の点を局所座標に写す。`guesses` がなければ、ワープは覆う矩形の中の位置、ほかは原点から解く
+    /// (回転デフォーマはアフィンなので 1 回で解ける)。
+    pub(super) fn local_of(
+        &self,
+        points: &[Vec2],
+        guesses: Option<&[Vec2]>,
+    ) -> Result<Vec<Vec2>, AiError> {
+        let initial: Vec<Vec2>;
+        let guesses = match guesses {
+            Some(g) => g,
+            None => {
+                initial = points
+                    .iter()
+                    .map(|p| self.region.map_or(Vec2::ZERO, |r| r.normalize(*p)))
+                    .collect();
+                &initial
+            }
+        };
+        self.world
+            .from_canvas(points, guesses)
+            .map_err(|e| template(format!("frame {:?}: {e}", self.id)))
+    }
+}
 
 /// 作業用のモデルを、任意のパラメータの値で評価する (メッシュの頂点をキャンバス座標で返す)。
 pub(super) struct Poser {
@@ -60,11 +134,14 @@ impl Poser {
 pub(super) struct MeshFollow {
     /// 従う本体のメッシュ。
     pub base: MeshId,
-    /// 本体のメッシュの軸のうち、使えるパラメータのもの (キーは既定値を含む)。
+    /// 本体のメッシュと、フレームより下のその祖先のデフォーマの軸のうち、使えるパラメータのもの
+    /// (キーは既定値を含む)。
     pub axes: Vec<(ParamId, Vec<f32>)>,
-    /// 本体のメッシュが曲線補間。
+    /// 本体のメッシュか祖先が曲線補間。
     pub smooth: bool,
-    /// 既定値でないキーの組 (軸の並びの順の値) ごとの、衣装の頂点の変位 (キャンバス座標)。
+    /// 変位を測ったフレーム ([`Frame`])。
+    pub frame: Option<DeformerId>,
+    /// 既定値でないキーの組 (軸の並びの順の値) ごとの、衣装の頂点の変位 (フレームの局所座標)。
     pub offsets: Vec<(Vec<f32>, Vec<Vec2>)>,
 }
 
@@ -84,32 +161,91 @@ struct Candidate<'a> {
     rest: Vec<Vec2>,
     inside: f32,
     gap: f32,
+    /// 本体のメッシュと、フレーム (か取り付け先) より下の祖先のデフォーマの軸 (使えるパラメータのもの)。
+    axes: Vec<(ParamId, Vec<f32>)>,
+    smooth: bool,
+}
+
+/// 本体のメッシュ `mesh` と、`stop` (フレームか取り付け先) に着くまでの祖先のデフォーマの、使えるパラメータの軸
+/// (キーに既定値を足したもの) と、曲線補間があるか。
+fn chain_axes(
+    model: &Model,
+    mesh: &Mesh,
+    usable: &BTreeSet<ParamId>,
+    stop: &[Option<&DeformerId>],
+) -> (Vec<(ParamId, Vec<f32>)>, bool) {
+    let mut grids = vec![grid_axes(&mesh.keyforms)];
+    let mut parent = mesh.parent.as_ref();
+    while let Some(id) = parent {
+        if stop.contains(&Some(id)) {
+            break;
+        }
+        let Some(deformer) = find_deformer(model, id) else {
+            break;
+        };
+        match &deformer.kind {
+            DeformerKind::Warp(w) => grids.push(grid_axes(&w.keyforms)),
+            DeformerKind::Rotation(r) => grids.push(grid_axes(&r.keyforms)),
+            DeformerKind::Unknown => {}
+        }
+        parent = deformer.parent.as_ref();
+    }
+    let mut axes: Vec<(ParamId, Vec<f32>)> = Vec::new();
+    let mut smooth = false;
+    for (grid, s) in grids {
+        let mut used = false;
+        for (parameter, keys) in grid {
+            if !usable.contains(&parameter) {
+                continue;
+            }
+            used = true;
+            let default = model
+                .parameters
+                .iter()
+                .find(|p| p.id == parameter)
+                .map_or(0.0, |p| p.default);
+            let keys = keys.into_iter().chain([default]);
+            match axes.iter_mut().find(|(p, _)| *p == parameter) {
+                Some((_, existing)) => existing.extend(keys),
+                None => axes.push((parameter, keys.collect())),
+            }
+        }
+        smooth |= s && used;
+    }
+    for (_, keys) in &mut axes {
+        keys.sort_by(f32::total_cmp);
+        keys.dedup();
+    }
+    (axes, smooth)
 }
 
 /// 衣装のメッシュ `costume` (基準の姿の頂点 `points`、描画順 `order`) が従う本体のメッシュを探す。
-/// 頂点の半分以上がその三角形の中にあり、使えるパラメータの軸で形が変わる本体のメッシュのうち、描画順が
-/// 衣装に最も近いもの (同じなら覆う割合の大きいもの)。なければ `None`。
+/// 頂点の半分以上がその三角形の中にあり、使えるパラメータの軸 (メッシュ自身か、フレームより下の祖先の
+/// デフォーマのもの) でフレームに対して形が変わる本体のメッシュのうち、描画順が衣装に最も近いもの
+/// (同じなら覆う割合の大きいもの)。なければ `None`。`anchor` はスロットの取り付け先。
+#[allow(clippy::too_many_arguments)]
 pub(super) fn find(
     poser: &mut Poser,
     model: &Model,
     is_base: impl Fn(&MeshId) -> bool,
     usable: &BTreeSet<ParamId>,
+    frame: &mut Frame,
+    anchor: Option<&DeformerId>,
     points: &[Vec2],
     order: f32,
-) -> Option<MeshFollow> {
+) -> Result<Option<MeshFollow>, AiError> {
     if points.is_empty() {
-        return None;
+        return Ok(None);
     }
+    let stop = [frame.id().cloned(), anchor.cloned()];
+    let stop: Vec<Option<&DeformerId>> = stop.iter().map(Option::as_ref).collect();
     let mut candidates = Vec::new();
     for mesh in &model.meshes {
-        if !is_base(&mesh.id)
-            || mesh.mask_only
-            || !mesh
-                .keyforms
-                .bindings
-                .iter()
-                .any(|b| usable.contains(&b.parameter))
-        {
+        if !is_base(&mesh.id) || mesh.mask_only {
+            continue;
+        }
+        let (axes, smooth) = chain_axes(model, mesh, usable, &stop);
+        if axes.is_empty() {
             continue;
         }
         let Some(rest) = poser.mesh(&[], &mesh.id) else {
@@ -133,42 +269,33 @@ pub(super) fn find(
             rest,
             inside,
             gap,
+            axes,
+            smooth,
         });
     }
     candidates.sort_by(|a, b| a.gap.total_cmp(&b.gap).then(b.inside.total_cmp(&a.inside)));
-    candidates
-        .into_iter()
-        .find_map(|c| follow(poser, model, usable, &c, points))
+    for candidate in &candidates {
+        if let Some(found) = follow(poser, model, frame, candidate, points)? {
+            return Ok(Some(found));
+        }
+    }
+    Ok(None)
 }
 
-/// 候補の本体のメッシュの各キーでの変位を衣装の頂点へ写す。形が変わらなければ `None`。
+/// 候補の本体のメッシュの、各キーでのフレームに対する変位を衣装の頂点へ写す。フレームに対して形が変わらなければ
+/// `None`。
 fn follow(
     poser: &mut Poser,
     model: &Model,
-    usable: &BTreeSet<ParamId>,
+    frame: &mut Frame,
     candidate: &Candidate<'_>,
     points: &[Vec2],
-) -> Option<MeshFollow> {
+) -> Result<Option<MeshFollow>, AiError> {
     let mesh = candidate.mesh;
-    let mut axes: Vec<(ParamId, Vec<f32>)> = Vec::new();
-    for binding in &mesh.keyforms.bindings {
-        if !usable.contains(&binding.parameter) {
-            continue;
-        }
-        let default = model
-            .parameters
-            .iter()
-            .find(|p| p.id == binding.parameter)
-            .map_or(0.0, |p| p.default);
-        let mut keys: Vec<f32> = binding.keys.clone();
-        keys.push(default);
-        keys.sort_by(f32::total_cmp);
-        keys.dedup();
-        axes.push((binding.parameter.clone(), keys));
-    }
+    let axes = &candidate.axes;
     let count: usize = axes.iter().map(|(_, k)| k.len()).product();
-    if axes.is_empty() || count > MAX_FOLLOW_CELLS {
-        return None;
+    if count > MAX_FOLLOW_CELLS {
+        return Ok(None);
     }
     let defaults: Vec<f32> = axes
         .iter()
@@ -180,15 +307,19 @@ fn follow(
                 .map_or(0.0, |x| x.default)
         })
         .collect();
-    let rect = Rect::of(&candidate.rest)?;
+    let Some(rect) = Rect::of(&candidate.rest) else {
+        return Ok(None);
+    };
     let falloff = FALLOFF * rect.size().x.max(rect.size().y).max(1.0);
     let binds: Vec<Binding> = points
         .iter()
         .map(|p| bind(&candidate.rest, &mesh.indices, *p, falloff))
         .collect();
+    frame.set_pose(&[]);
+    let rest_inner = frame.local_of(&candidate.rest, None)?;
     let mut offsets = Vec::new();
     let mut moved = 0.0_f32;
-    for cell in cells(&axes) {
+    for cell in cells(axes) {
         if cell == defaults {
             continue;
         }
@@ -197,21 +328,33 @@ fn follow(
             .zip(&cell)
             .map(|((p, _), v)| (p.clone(), *v))
             .collect();
-        let posed = poser.mesh(&values, &mesh.id)?;
-        let motion: Vec<Vec2> = posed
+        let Some(posed) = poser.mesh(&values, &mesh.id) else {
+            return Ok(None);
+        };
+        frame.set_pose(&values);
+        // フレームだけが動いたときの位置との差が、本体のメッシュ自身 (と下のデフォーマ) の動き。
+        let carried = frame.canvas_of(&rest_inner);
+        moved = posed
             .iter()
-            .zip(&candidate.rest)
+            .zip(&carried)
+            .map(|(a, b)| (*a - *b).length())
+            .fold(moved, f32::max);
+        let posed_inner = frame.local_of(&posed, Some(&rest_inner))?;
+        let motion: Vec<Vec2> = posed_inner
+            .iter()
+            .zip(&rest_inner)
             .map(|(a, b)| *a - *b)
             .collect();
-        moved = motion.iter().map(|d| d.length()).fold(moved, f32::max);
         offsets.push((cell, binds.iter().map(|b| b.apply(&motion)).collect()));
     }
-    (moved > MIN_MOTION).then(|| MeshFollow {
+    frame.set_pose(&[]);
+    Ok((moved > MIN_MOTION).then(|| MeshFollow {
         base: mesh.id.clone(),
-        axes,
-        smooth: mesh.keyforms.interpolation == KeyformInterpolation::Smooth,
+        axes: axes.clone(),
+        smooth: candidate.smooth,
+        frame: frame.id().cloned(),
         offsets,
-    })
+    }))
 }
 
 /// 衣装の頂点の、本体のメッシュの頂点への重み。

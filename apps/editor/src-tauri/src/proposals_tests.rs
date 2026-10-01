@@ -807,6 +807,89 @@ fn module_rig_choice_reaches_the_proposal() {
     );
 }
 
+/// モジュールのリグの提案を採用した後に、本体の変形を写した衣装のメッシュの形を編集すると、提案し直すよう知らせる
+/// (T0521)。形を変えないキーフォームの編集では知らせず、知らせを消すと今の形を覚え直す。
+#[test]
+fn editing_a_rigged_costume_mesh_asks_to_propose_again() {
+    let (state, _) = module_state();
+    let direct = ModuleRigChoice {
+        direct: true,
+        ..ModuleRigChoice::default()
+    };
+    let view = done(propose_guided_in(&state, false, None, direct, None).unwrap());
+    adopt_in(&state, view.id, &[]).unwrap();
+    let stale = |state: &AppState| {
+        let document = state.document.lock().unwrap();
+        state
+            .project
+            .lock()
+            .unwrap()
+            .proposals
+            .stale_rigs(&document)
+    };
+    assert!(stale(&state).is_empty());
+    let hat = {
+        let document = state.document.lock().unwrap();
+        let context = document.module().unwrap();
+        document
+            .model()
+            .meshes
+            .iter()
+            .find(|m| m.name == "hat" && !context.is_base_mesh(&m.id))
+            .unwrap()
+            .id
+            .clone()
+    };
+    // 形を変えない編集 (カリング) では知らせない。
+    state
+        .document
+        .lock()
+        .unwrap()
+        .apply(Command::SetMeshProperties {
+            id: hat.clone(),
+            part: None,
+            texture: None,
+            blend: None,
+            culling: Some(true),
+            masks: None,
+            mask_mode: None,
+            mask_only: None,
+            lit: None,
+        })
+        .unwrap();
+    assert!(stale(&state).is_empty());
+    let start = state
+        .document
+        .lock()
+        .unwrap()
+        .model()
+        .meshes
+        .iter()
+        .find(|m| m.id == hat)
+        .unwrap()
+        .uvs
+        .len();
+    state
+        .document
+        .lock()
+        .unwrap()
+        .apply(Command::RemoveMeshVertices {
+            id: hat.clone(),
+            indices: vec![u16::try_from(start - 1).unwrap()],
+        })
+        .unwrap();
+    let found = stale(&state);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].name, "hat");
+    let after = dismiss_stale_rigs_in(&state).unwrap();
+    assert!(after.stale_rigs.is_empty());
+    // 採用を取り消した (軸のない) メッシュは知らせない。
+    state.document.lock().unwrap().undo();
+    state.document.lock().unwrap().undo();
+    state.document.lock().unwrap().undo();
+    assert!(stale(&state).is_empty());
+}
+
 /// 法線マップの提案 (AI なし): まとまりごとに設定を選び、コマンドはまとまりごとに区切られる。まとまりを外して採用でき、
 /// 1 回の Undo で戻る (T0520)。
 #[test]

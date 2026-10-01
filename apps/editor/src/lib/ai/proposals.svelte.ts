@@ -126,6 +126,21 @@ export class ProposalsView {
     return this.value?.proposals.length ?? 0;
   }
 
+  /**
+   * 本体の変形を写した後に形を編集した衣装のメッシュ (提案し直すよう知らせる。タブにも印を出す)。
+   * docs/editor.md#モジュールのプロジェクトでの-ai-の提案
+   */
+  get staleRigs(): { mesh: string; name: string }[] {
+    return this.value?.stale_rigs ?? [];
+  }
+
+  /** 形を編集した衣装のメッシュの知らせを消す (提案し直さずに今の形のまま使う)。 */
+  async dismissStaleRigs(): Promise<void> {
+    await this.#task(null, async () => {
+      this.value = await ipc.dismissStaleRigs();
+    });
+  }
+
   excludedOf(id: number): ReadonlySet<number> {
     return this.excluded[id] ?? new Set();
   }

@@ -17,7 +17,8 @@
 //! - **揺れ:** 揺れる意味ラベル (髪・尻尾・耳飾り・首の飾り・下の服) の衣装は、揺れ用のワープで包み、
 //!   追従のワープに取り付けた振り子の動的物理で揺らす (`crate::rig` の髪揺れと同じ方法)。スロットが公開する
 //!   本体の衝突体 (`Slot::colliders`) があれば、振り子を当てる (体にめり込まない)。
-//! - **ポーズ:** 名前の末尾の A / B だけが違う衣装の差分をポーズにする (`pose.rs`)。
+//! - **ポーズ:** 衣装の差分 (名前の末尾の A / B だけが違うもの、絵が重なり意味ラベルが同じで PSD で片方を隠して
+//!   あるもの) をポーズにする (`pose.rs`)。
 //! - **AI が決める値** ([`ModuleRigParams`]): 揺れの大きさと振り子の長さ。問い直しと利用者の注文は
 //!   `crate::rig` と同じ ([`propose_module_rig_with_ai_guided`])。
 //!
@@ -55,7 +56,7 @@ use crate::{AiError, Proposal, Provider, ProviderRequest};
 mod mesh;
 mod pose;
 
-use mesh::{MeshFollow, MeshFollows, Poser};
+use mesh::{Frame, MeshFollow, MeshFollows, Poser};
 
 /// 追従のワープの分割数 (一辺のセルの数)。本体の顔のワープ (6×6 の曲線補間) の丸みを写せるよう細かめにする
 /// (見本の胸から上の人物で、4 では振り向きの移動量の 3 割、8 では 1 割ほどずれる)。
@@ -142,7 +143,8 @@ pub struct ModuleRigOptions {
     pub follow: FollowMode,
     /// 揺れのリグを、スロットが公開する本体の衝突体 (`Slot::colliders`) に当てる。
     pub colliders: bool,
-    /// 名前の末尾が A / B … で違うだけの衣装の差分を、ポーズにする。
+    /// 衣装の差分 (名前の末尾が A / B … で違うだけのもの、絵が重なり意味ラベルが同じで PSD で片方を隠してあるもの) を、
+    /// ポーズにする。
     pub poses: bool,
 }
 
@@ -410,7 +412,19 @@ impl ModuleLayout {
                 }),
             }
         }
-        let mesh_follows = mesh_follows(model, context, &usable, &top, parts)?;
+        // 本体のメッシュの変位は、衣装が従う本体のワープ (なければ取り付け先) の座標系で測る。
+        let frames: BTreeMap<MeshId, Option<DeformerId>> = groups
+            .iter()
+            .flat_map(|g| {
+                let frame = g
+                    .followed
+                    .as_ref()
+                    .map(|f| f.deformer.clone())
+                    .or_else(|| anchor.clone());
+                g.meshes.iter().map(move |m| (m.clone(), frame.clone()))
+            })
+            .collect();
+        let mesh_follows = mesh_follows(model, context, &usable, &frames, anchor.as_ref(), parts)?;
         let colliders = doc
             .physics()
             .map(|physics| {
@@ -423,7 +437,7 @@ impl ModuleLayout {
                     .collect()
             })
             .unwrap_or_default();
-        let variants = pose::variants(model, context);
+        let variants = pose::variants(model, context, parts, &bounds);
         Ok(Self {
             anchor,
             groups,
@@ -450,12 +464,14 @@ fn mesh_follows(
     model: &Model,
     context: &ModuleContext,
     usable: &BTreeSet<ParamId>,
-    top: &[MeshId],
+    frames: &BTreeMap<MeshId, Option<DeformerId>>,
+    anchor: Option<&DeformerId>,
     parts: &BTreeMap<MeshId, MeshPart>,
 ) -> Result<MeshFollows, AiError> {
     let mut poser = Poser::new(model)?;
+    let mut worlds: BTreeMap<Option<DeformerId>, Frame> = BTreeMap::new();
     let mut out = MeshFollows::new();
-    for id in top {
+    for (id, frame) in frames {
         let follows = parts.get(id).is_none_or(|p| {
             matches!(
                 p.label.category(),
@@ -475,14 +491,22 @@ fn mesh_follows(
             continue;
         };
         let order = draw_order(mesh).unwrap_or(0.0);
+        let world = match worlds.entry(frame.clone()) {
+            std::collections::btree_map::Entry::Occupied(e) => e.into_mut(),
+            std::collections::btree_map::Entry::Vacant(e) => {
+                e.insert(Frame::new(model, frame.as_ref())?)
+            }
+        };
         if let Some(found) = mesh::find(
             &mut poser,
             model,
             |m| context.is_base_mesh(m),
             usable,
+            world,
+            anchor,
             &points,
             order,
-        ) {
+        )? {
             out.insert(id.clone(), found);
         }
     }
@@ -957,11 +981,12 @@ fn follow_keyforms(rig: &mut Rig, follow: &DeformerId, followed: &Followed) -> R
 }
 
 /// 衣装のメッシュ `mesh` のキーフォームに、本体のワープ `warp` の変形 ([`FollowMode::Mesh`] のとき) と、
-/// 本体のメッシュのキーフォームでの形の変化 (`follow`) を写す。
+/// 本体のメッシュのキーフォームでの形の変化 (`follow`) を合わせて写す。
 ///
-/// 軸は両方の軸を合わせたもの。キーの組ごとに、基準の姿の頂点 (キャンバス座標) に本体のメッシュの変位を足し、
-/// それを本体のワープの基準の姿の局所座標に写してから、その組の姿の本体のワープで写す (目の変位は顔の向きと
-/// 一緒に動く)。すでにあるほかの軸のキーフォームは、既定値のセルだけを変える。
+/// 軸は両方の軸を合わせたもの。基準の姿の頂点をフレーム (本体のワープか取り付け先。[`mesh::Frame`]) の
+/// 局所座標に写し、キーの組ごとに本体のメッシュの変位 (フレームの局所座標) を足してから、その組の姿の
+/// フレームで写す (目の変位は顔の向きと一緒に動き、フレームの動きを二重に数えない)。すでにあるほかの軸の
+/// キーフォームは、既定値のセルだけを変える。
 fn mesh_keyforms(
     rig: &mut Rig,
     mesh: &MeshId,
@@ -1003,18 +1028,14 @@ fn mesh_keyforms(
     }
     let (rest_local, ..) = rig.keyform_at(&target, &[])?;
     let rest = rig.canvas_points(&target)?;
-    let mut world = match warp {
-        Some(w) => {
-            let world = ParentWorld::new(rig.model(), Some(&w.deformer))
-                .map_err(|e| template(format!("deformer `{}`: {e}", w.deformer)))?;
-            let guesses: Vec<Vec2> = rest.iter().map(|p| w.region.normalize(*p)).collect();
-            let inner = world
-                .from_canvas(&rest, &guesses)
-                .map_err(|e| template(format!("deformer `{}`: {e}", w.deformer)))?;
-            Some((w, world, inner))
-        }
-        None => None,
+    // 変位を測ったフレームと、直接写す本体のワープは同じ (どちらも衣装が従う本体のワープ)。
+    let frame_id = match (warp, follow) {
+        (Some(w), _) => Some(w.deformer.clone()),
+        (None, Some(f)) => f.frame.clone(),
+        (None, None) => None,
     };
+    let mut frame = Frame::new(rig.model(), frame_id.as_ref())?;
+    let inner = frame.local_of(&rest, None)?;
     let defaults = defaults_of(rig.model(), &axes);
     for cell in cells(&axes) {
         if cell == defaults {
@@ -1026,32 +1047,23 @@ fn mesh_keyforms(
                 .find(|((q, _), _)| q == p)
                 .map(|(_, v)| *v)
         };
-        let mut points = rest.clone();
+        let mut moved = inner.clone();
         if let Some(f) = follow {
             let key: Option<Vec<f32>> = f.axes.iter().map(|(p, _)| value_of(p)).collect();
             if let Some(offsets) = key.as_deref().and_then(|k| f.offsets_at(k)) {
-                for (p, o) in points.iter_mut().zip(offsets) {
+                for (p, o) in moved.iter_mut().zip(offsets) {
                     *p += *o;
                 }
             }
-        }
-        if let Some((w, world, inner)) = &mut world {
-            world.set_pose(std::iter::empty());
-            let inside = world
-                .from_canvas(&points, inner)
-                .map_err(|e| template(format!("deformer `{}`: {e}", w.deformer)))?;
-            world.set_pose(
-                w.axes
-                    .iter()
-                    .filter_map(|(p, _)| value_of(p).map(|v| (p.as_str(), v))),
-            );
-            points = world.to_canvas(&inside);
         }
         let values: ParameterValues = axes
             .iter()
             .zip(&cell)
             .map(|((p, _), v)| (p.clone(), *v))
             .collect();
+        let pose: Vec<(ParamId, f32)> = values.iter().map(|(p, v)| (p.clone(), *v)).collect();
+        frame.set_pose(&pose);
+        let points = frame.canvas_of(&moved);
         let local = canvas_to_local(rig.model(), &target, &values, &points, &rest_local)
             .map_err(|e| template(format!("{target}: {e}")))?;
         let named: Vec<(&str, f32)> = axes

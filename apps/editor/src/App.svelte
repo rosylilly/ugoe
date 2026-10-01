@@ -3,8 +3,8 @@
   ViewportController (表示) に、各領域の中身は lib/panels/ と lib/viewport/ に置く。
   中央はビューポート (上) とタイムライン (下。モーションと表情、lib/panels/timeline/)。
   右の列はインスペクタ (上) とパラメータ (下) に分け、区切りをドラッグ (または矢印キー) で動かす (lib/layout.ts)。
-  上の区画は「Inspector」「Physics」(lib/panels/physics/)「Slots」(lib/panels/slots/)「Verify」(lib/panels/verify/) を
-  タブで切り替える。
+  上の区画は「Inspector」「Physics」(lib/panels/physics/)「Slots」(lib/panels/slots/)「Poses」(lib/panels/poses/)
+  「Verify」(lib/panels/verify/) をタブで切り替える。
   Undo / Redo のショートカット (lib/shortcuts.ts) もここで受ける。
   ヘッダーの「Settings」は AI の設定 (lib/ai/SettingsDialog.svelte)。外部の AI に送る前の確認
   (lib/ai/ConsentDialog.svelte) もここに置く。
@@ -39,6 +39,7 @@ import { LightingView } from "./lib/panels/lighting/lightingView.svelte";
 import ParametersPanel from "./lib/panels/ParametersPanel.svelte";
 import PhysicsPanel from "./lib/panels/physics/PhysicsPanel.svelte";
 import { PhysicsView } from "./lib/panels/physics/physicsView.svelte";
+import PosesPanel from "./lib/panels/poses/PosesPanel.svelte";
 import SlotsPanel from "./lib/panels/slots/SlotsPanel.svelte";
 import { SlotsView } from "./lib/panels/slots/slotsView.svelte";
 import TreePanel from "./lib/panels/TreePanel.svelte";
@@ -63,6 +64,8 @@ const slots = new SlotsView();
 const preview = new PreviewMode(doc, viewport);
 const proposals = new ProposalsView(doc, viewport);
 const lighting = new LightingView();
+/** 「Poses」のタブを開いているか。 */
+let posesActive = $state(false);
 let info = $state<AppInfo | null>(null);
 let fileMenu = $state<FileMenu>();
 let settings = $state<SettingsDialog>();
@@ -101,19 +104,26 @@ function openProposals(): void {
   verify.active = false;
   lighting.active = false;
   slots.active = false;
+  posesActive = false;
 }
 
 /** 上の区画のタブを切り替える (AI タブは openProposals)。 */
-function openTab(tab: "inspector" | "physics" | "lighting" | "slots" | "verify"): void {
+function openTab(tab: "inspector" | "physics" | "lighting" | "slots" | "poses" | "verify"): void {
   physics.active = tab === "physics";
   lighting.active = tab === "lighting";
   slots.active = tab === "slots";
+  posesActive = tab === "poses";
   verify.active = tab === "verify";
   proposals.active = false;
 }
 
 const inspectorActive = $derived(
-  !physics.active && !lighting.active && !slots.active && !verify.active && !proposals.active,
+  !physics.active &&
+    !lighting.active &&
+    !slots.active &&
+    !posesActive &&
+    !verify.active &&
+    !proposals.active,
 );
 
 const mac = isMac(navigator.platform);
@@ -240,13 +250,22 @@ $effect(() => {
         <button role="tab" aria-selected={slots.active} class:current={slots.active}
           title="Dress-up slots: where outfit and accessory modules attach"
           onclick={() => openTab("slots")}>Slots</button>
+        <button role="tab" aria-selected={posesActive} class:current={posesActive}
+          title="Pose groups: variants that switch (arms A / B)"
+          onclick={() => openTab("poses")}>Poses</button>
         <button role="tab" aria-selected={verify.active} class:current={verify.active}
           onclick={() => openTab("verify")}>Verify</button>
         <button role="tab" aria-selected={proposals.active} class:current={proposals.active}
-          class:fresh={proposals.fresh}
-          title={proposals.fresh ? "An agent made a new proposal" : "Classify PSD layers and review rig proposals"}
+          class:fresh={proposals.fresh || proposals.staleRigs.length > 0}
+          title={proposals.staleRigs.length > 0
+            ? "Costume meshes were edited after the rig was proposed: propose the rig again"
+            : proposals.fresh
+              ? "An agent made a new proposal"
+              : "Classify PSD layers and review rig proposals"}
           onclick={openProposals}
-          >AI{proposals.count > 0 ? ` (${proposals.count})` : ""}{proposals.fresh ? " •" : ""}</button>
+          >AI{proposals.count > 0 ? ` (${proposals.count})` : ""}{proposals.fresh || proposals.staleRigs.length > 0
+            ? " •"
+            : ""}</button>
       </div>
       {#if doc.error}<p class="error">{doc.error}</p>{/if}
       {#if proposals.active}
@@ -269,6 +288,8 @@ $effect(() => {
         >
           <SlotsPanel {doc} {selection} view={slots} />
         </BaseLock>
+      {:else if posesActive}
+        <PosesPanel {doc} {selection} />
       {:else}
         <InspectorPanel {doc} {selection} {viewport} />
       {/if}

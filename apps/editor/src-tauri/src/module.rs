@@ -35,6 +35,8 @@ pub struct SlotSummary {
     pub replaces: Vec<String>,
     /// モジュールが使える本体のパラメータ (標準パラメータのほかに)。
     pub parameters: Vec<String>,
+    /// モジュールのパーツを追従させてよい本体のポーズの要素のパーツ (`Slot::pose_parts`)。
+    pub pose_parts: Vec<String>,
 }
 
 /// 本体として選んだファイルの要約 (`read_module_base` の戻り値)。
@@ -74,6 +76,9 @@ pub struct ModuleStatus {
     /// (`get_preview_base_bundle`) をこれが変わったときだけ取り直す。
     #[ts(type = "number")]
     pub base_revision: u64,
+    /// 作業用のモデルのポーズのグループのうち、先頭からこの数が本体のもの (読み取り専用。モジュールのグループは
+    /// その後ろに並ぶ)。本体の要素の `links` には、スロットの `pose_parts` の要素にだけモジュールのパーツを加えられる。
+    pub base_pose_groups: u32,
 }
 
 /// モジュールのプロジェクトが本体の問題で開けない・読み直せないときの、問題の種類 (直し方を選ぶ)。
@@ -174,6 +179,7 @@ fn slot_summary(slot: &ugoe_model::Slot) -> SlotSummary {
         draw_order_max: slot.draw_order.max,
         replaces: ids(&slot.replaces),
         parameters: slot.parameters.iter().map(ToString::to_string).collect(),
+        pose_parts: ids(&slot.pose_parts),
     }
 }
 
@@ -214,6 +220,7 @@ pub(crate) fn module_status_of(document: &Document) -> Option<ModuleStatus> {
         base_parameters: base.parameters.iter().map(|p| p.id.to_string()).collect(),
         base_avatar_level: base.avatar.as_ref().map(|a| a.level),
         base_revision: context.base_revision(),
+        base_pose_groups: u32::try_from(base.pose.groups.len()).unwrap_or(u32::MAX),
     })
 }
 
@@ -504,6 +511,8 @@ mod tests {
         let module = module_status_of(&document).unwrap();
         assert_eq!(module.slot.id, "Hair");
         assert!(module.base_meshes.contains(&"Face".to_owned()));
+        assert_eq!(module.base_pose_groups, 0);
+        assert!(module.slot.pose_parts.is_empty());
         // 本体は読み取り専用
         let error = document
             .apply(Command::RemoveMesh { id: "Face".into() })

@@ -1204,7 +1204,12 @@ base_avatar_level: number | null,
  * 本体の版 (`ModuleContext::base_revision`)。本体を読み込み直すと変わる。プレビューが、本体だけの `.ugoe`
  * (`get_preview_base_bundle`) をこれが変わったときだけ取り直す。
  */
-base_revision: number, };
+base_revision: number, 
+/**
+ * 作業用のモデルのポーズのグループのうち、先頭からこの数が本体のもの (読み取り専用。モジュールのグループは
+ * その後ろに並ぶ)。本体の要素の `links` には、スロットの `pose_parts` の要素にだけモジュールのパーツを加えられる。
+ */
+base_pose_groups: number, };
 
 export type Motion = { name: string, 
 /**
@@ -1626,7 +1631,12 @@ regenerable: Array<number>,
 /**
  * コマンドを区切って出す提案 (法線マップの提案)。ない提案は、同じ対象への続いたコマンドをまとめて出す。
  */
-sections: Array<ProposalSections>, };
+sections: Array<ProposalSections>, 
+/**
+ * 採用したモジュールのリグの提案が本体の変形を写した衣装のメッシュのうち、その後に形 (頂点・三角形・親) を
+ * 編集したもの。写した変形が合わないので、提案し直すよう知らせる。
+ */
+stale_rigs: Array<StaleRig>, };
 
 /**
  * 画面に出す提案。
@@ -1839,7 +1849,16 @@ replaces: Array<string>,
 /**
  * モジュールが使える本体のパラメータ (標準パラメータのほかに)。
  */
-parameters: Array<string>, };
+parameters: Array<string>, 
+/**
+ * モジュールのパーツを追従させてよい本体のポーズの要素のパーツ (`Slot::pose_parts`)。
+ */
+pose_parts: Array<string>, };
+
+/**
+ * 本体の変形を写した後に形を編集した衣装のメッシュ。
+ */
+export type StaleRig = { mesh: string, name: string, };
 
 /**
  * テクスチャ参照。実データはコンテナ (`ugoe-format`) 側が保持する。

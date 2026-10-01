@@ -127,6 +127,7 @@ pub fn run() {
             proposals::clear_proposal_preview,
             proposals::adopt_proposal,
             proposals::reject_proposal,
+            proposals::dismiss_stale_rigs,
             mcp::mcp_bridge_status,
             mcp::set_mcp_bridge_enabled,
             mcp::set_mcp_bridge_port,
