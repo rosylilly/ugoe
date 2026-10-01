@@ -2,19 +2,24 @@
   ポーズのパネル (docs/editor.md#ポーズの編集)。右の列の「Poses」タブ。
   操作はすべて、ポーズを丸ごと置き換える set_pose を送るだけで、組み立ては poses.ts にある。
 
-  - グループの一覧。グループの要素のうち表示されるのは 1 つで、先頭の要素が最初に表示される (▲▼ で並べ替える)。
+  - グループの一覧。グループの要素のうち表示されるのは 1 つで、先頭の要素が最初に表示される (ドラッグか ▲▼ で並べ替える)。
     要素の `links` (要素と一緒に切り替わるパーツ。腕の差分に付く袖など) は要素ごとに選ぶ。
   - 「+ Group」「+ Entry」で、ポーズでまだ使っていないパーツを足す。「+ Group from selection」は、ツリーで選んだパーツで
     グループを作る。要素の名前を押すとそのパーツを選ぶ。
   - モジュールのプロジェクトでは、本体のグループ (先頭の `base_pose_groups` 個) は読み取り専用。本体の要素のうちスロットが
     公開するもの (`pose_parts`) にだけ、モジュールのパーツをリンクに加えられる。モジュールのグループは後ろに足す
     (docs/spec/modules.md#ポーズ)。
+  - 「Show the pose in the viewport」で、編集中のビューポートにポーズを効かせ (グループごとに 1 つの要素だけが見える)、
+    要素の「Show」で表示する要素を切り替えて確かめる (ViewportController.setPosePreview。モデルは変えない)。
+    タブを離れると効かせるのをやめる。
 -->
 <script lang="ts">
+import { onDestroy } from "svelte";
 import type { EditorDocument } from "../../document.svelte";
 import type { Model, Pose } from "../../ipc";
 import { elementLabel, labelOf } from "../../labels";
 import type { Selection } from "../../selection.svelte";
+import type { ViewportController } from "../../viewport/controller.svelte";
 import PickList from "../slots/PickList.svelte";
 import {
   addEntry,
@@ -26,18 +31,65 @@ import {
   isBaseGroup,
   isBasePart,
   moveEntry,
+  moveEntryTo,
   removeEntry,
   removeGroup,
   setLinks,
   setPoseCommand,
+  showEntry,
+  shownEntry,
 } from "./poses";
 
 interface Props {
   doc: EditorDocument;
   selection: Selection;
+  viewport: Pick<ViewportController, "posePreview" | "setPosePreview">;
 }
 
-let { doc, selection }: Props = $props();
+let { doc, selection, viewport }: Props = $props();
+
+/** ビューポートにポーズを効かせているときの、表示する要素のパーツ (効かせていなければ null)。 */
+const shown = $derived(viewport.posePreview);
+
+// タブを離れたら、編集中のビューポートはすべての要素が見える姿に戻す。
+onDestroy(() => viewport.setPosePreview(null));
+
+/** ドラッグ中の要素 (グループと要素の番号) と、落とす先 (その要素の前。要素の数なら末尾)。 */
+let dragging = $state<{ group: number; entry: number } | null>(null);
+let dropAt = $state<{ group: number; index: number } | null>(null);
+
+function dragStart(event: DragEvent, group: number, entry: number): void {
+  dragging = { group, entry };
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    // Firefox はデータがないとドラッグを始めない。
+    event.dataTransfer.setData("text/plain", String(entry));
+  }
+}
+
+function dragOver(event: DragEvent, group: number, entry: number): void {
+  if (!dragging || dragging.group !== group) return;
+  event.preventDefault();
+  const target = event.currentTarget as HTMLElement;
+  const box = target.getBoundingClientRect();
+  const after = event.clientY > box.top + box.height / 2;
+  dropAt = { group, index: after ? entry + 1 : entry };
+}
+
+function drop(event: DragEvent): void {
+  event.preventDefault();
+  const from = dragging;
+  const to = dropAt;
+  dragEnd();
+  if (!pose || !from || !to || from.group !== to.group) return;
+  const next = moveEntryTo(pose, from.group, from.entry, to.index);
+  if (next.groups[from.group] !== pose.groups[from.group]) void send(next);
+}
+
+function dragEnd(): void {
+  dragging = null;
+  dropAt = null;
+}
 
 const model = $derived.by((): Model | null => {
   try {
@@ -124,6 +176,16 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
     />
   </div>
 
+  <label class="check" title="Show only one entry per group in the viewport, as apps do (the model doesn't change)">
+    <input
+      type="checkbox"
+      checked={shown !== null}
+      disabled={pose.groups.length === 0}
+      onchange={(e) => viewport.setPosePreview(e.currentTarget.checked ? [] : null)}
+    />
+    Show the pose in the viewport
+  </label>
+
   {#if pose.groups.length === 0}
     <p class="muted">No pose groups yet.</p>
   {/if}
@@ -142,7 +204,18 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
       <ol class="entries">
         {#each group.entries as entry, ei (entry.part)}
           {@const linkable = !base || canLinkTo(module, entry.part)}
-          <li>
+          {@const isShown = shown !== null && shownEntry(group, shown) === ei}
+          <li
+            draggable={!base && !busy && group.entries.length > 1}
+            class:dragging={dragging?.group === gi && dragging.entry === ei}
+            class:drop-before={dropAt?.group === gi && dropAt.index === ei}
+            class:drop-after={dropAt?.group === gi && dropAt.index === ei + 1 && ei === group.entries.length - 1}
+            title={base ? undefined : "Drag to reorder (the first entry shows at start)"}
+            ondragstart={(e) => dragStart(e, gi, ei)}
+            ondragover={(e) => dragOver(e, gi, ei)}
+            ondrop={drop}
+            ondragend={dragEnd}
+          >
             <div class="entry">
               <button
                 class="name"
@@ -151,6 +224,16 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
                 onclick={() => select(entry.part)}>{labelOf(parts, entry.part)}</button>
               {#if ei === 0}<span class="tag" title="Shown at start">first</span>{/if}
               <span class="buttons">
+                {#if shown !== null}
+                  <button
+                    class="show"
+                    class:on={isShown}
+                    aria-pressed={isShown}
+                    title={isShown ? "Shown in the viewport" : "Show this entry in the viewport"}
+                    onclick={() => viewport.setPosePreview(showEntry(shown, group, entry.part))}>{isShown
+                      ? "Shown"
+                      : "Show"}</button>
+                {/if}
                 <button
                   disabled={busy || base || ei === 0}
                   aria-label="Move up"
@@ -318,6 +401,36 @@ h3 {
 
 .entries li {
   margin: 4px 0;
+  border-top: 2px solid transparent;
+  border-bottom: 2px solid transparent;
+}
+
+.entries li[draggable="true"] {
+  cursor: grab;
+}
+
+.entries li.dragging {
+  opacity: 0.5;
+}
+
+.entries li.drop-before {
+  border-top-color: var(--accent);
+}
+
+.entries li.drop-after {
+  border-bottom-color: var(--accent);
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.show.on {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .entry {

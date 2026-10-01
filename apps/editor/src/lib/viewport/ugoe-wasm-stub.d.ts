@@ -90,6 +90,7 @@ export class WebPuppet {
   set_expression(name: string): void;
   set_expression_json(json: string): void;
   stop_expressions(): void;
+  show_pose(part: string): boolean;
   set_effects_json(json: string): void;
   set_lip_sync_level(level?: number | null): void;
   set_enabled(stage: string, enabled: boolean): void;

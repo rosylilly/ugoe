@@ -92,6 +92,35 @@ export function moveEntry(pose: Pose, group: number, entry: number, delta: -1 | 
 }
 
 /**
+ * 要素を `from` から `to` の位置へ動かす (ドラッグでの並べ替え。`to` は動かす前の並びでの落とした先の要素の番号で、
+ * その要素の前に入れる。`to` が要素の数なら末尾)。動かせなければそのまま。
+ */
+export function moveEntryTo(pose: Pose, group: number, from: number, to: number): Pose {
+  return mapGroup(pose, group, (g) => {
+    const moved = g.entries[from];
+    if (!moved || to < 0 || to > g.entries.length || to === from || to === from + 1) return g;
+    const entries = g.entries.filter((_, i) => i !== from);
+    entries.splice(to > from ? to - 1 : to, 0, moved);
+    return { entries };
+  });
+}
+
+/**
+ * ビューポートでポーズを見ているとき (`shown` は表示する要素のパーツ。ViewportController.posePreview)、
+ * グループで表示される要素の番号 (挙げたパーツがなければ最初の要素)。
+ */
+export function shownEntry(group: PoseGroup, shown: readonly string[]): number {
+  const i = group.entries.findIndex((e) => shown.includes(e.part));
+  return i < 0 ? 0 : i;
+}
+
+/** グループ `group` で `part` を表示するよう、表示する要素のパーツの一覧を作り直す (同じグループのほかの要素を外す)。 */
+export function showEntry(shown: readonly string[], group: PoseGroup, part: string): string[] {
+  const inGroup = new Set(group.entries.map((e) => e.part));
+  return [...shown.filter((p) => !inGroup.has(p)), part];
+}
+
+/**
  * 要素の `links` を `picked` にする。モジュールのプロジェクトでは、選べるのはモジュールのパーツだけなので、
  * 本体のリンク (本体のプロジェクトで決めたもの) はそのまま残す。
  */

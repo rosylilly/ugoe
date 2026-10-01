@@ -219,6 +219,12 @@ function onSlider(id: string, e: Event): void {
           <li><code>{label}</code> × {count}</li>
         {/each}
       </ul>
+      {#if summary.variants.length > 0}
+        <p class="muted note">Alternative drawings of the same part (one shows at a time; costume rigs make pose groups):</p>
+        <ul class="labels">
+          {#each summary.variants as names, i (i)}<li>{names.join(" / ")}</li>{/each}
+        </ul>
+      {/if}
       {#if review.length > 0}
         <p class="muted note">Low confidence (check these before adopting):</p>
         <ul class="labels">

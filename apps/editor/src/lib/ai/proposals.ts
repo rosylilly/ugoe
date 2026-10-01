@@ -119,13 +119,24 @@ export function classificationSummary(c: Classification): {
   layers: number;
   review: number;
   labels: [string, number][];
+  /** AI が同じ部品の別の絵 (差分) とみなしたレイヤーの組 (レイヤーの名前。組の番号の順)。 */
+  variants: string[][];
 } {
   const counts = new Map<string, number>();
-  for (const l of c.layers) counts.set(l.label, (counts.get(l.label) ?? 0) + 1);
+  const variants = new Map<number, string[]>();
+  for (const l of c.layers) {
+    counts.set(l.label, (counts.get(l.label) ?? 0) + 1);
+    if (l.variant !== null) {
+      const names = variants.get(l.variant) ?? [];
+      names.push(l.path[l.path.length - 1] ?? "");
+      variants.set(l.variant, names);
+    }
+  }
   return {
     layers: c.layers.length,
     review: c.layers.filter((l) => l.needs_review).length,
     labels: [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])),
+    variants: [...variants].sort((a, b) => a[0] - b[0]).map(([, names]) => names),
   };
 }
 

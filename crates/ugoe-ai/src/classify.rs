@@ -328,6 +328,11 @@ pub struct LayerLabel {
     pub side: Side,
     /// 確からしさ (0..=1)。低いものはエディタで人間に確認を求める。
     pub confidence: f32,
+    /// AI が同じ部品の別の絵 (一度に 1 つだけ見せる差分。袖 A / B など) とみなしたレイヤーの組の番号
+    /// (組の中で最も小さいレイヤーの番号)。名前の規則では付けない。衣装の差分をポーズにするときの手がかり
+    /// (`crate::module_rig`)。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant: Option<u32>,
 }
 
 impl LayerLabel {
@@ -475,6 +480,7 @@ fn label_target_by_name(target: &Target<'_>) -> LayerLabel {
         label,
         side,
         confidence,
+        variant: None,
     }
 }
 
@@ -504,9 +510,10 @@ fn side_from_position(layer: &Layer, center_x: f32) -> Side {
 
 /// モデルの出力の JSON Schema。
 ///
-/// `{ "layers": [{ "index", "label", "side", "confidence" }] }`。`index` はプロンプトに
-/// 書いたレイヤーの番号。構造化出力の制約により、数値の範囲 (`confidence` の 0..=1) は
-/// スキーマに書かず、受け取った後に丸める。
+/// `{ "layers": [{ "index", "label", "side", "confidence" }], "variant_sets": [[index, ...]] }`。`index` はプロンプトに
+/// 書いたレイヤーの番号。`variant_sets` は同じ部品の別の絵 (差分) のレイヤーの組 ([`LayerLabel::variant`])。
+/// 構造化出力の制約により、数値の範囲 (`confidence` の 0..=1) はスキーマに書かず、受け取った後に丸める
+/// (strict の構造化出力ではすべての項目が必須なので、`variant_sets` も必須にし、なければ空の配列を答えさせる)。
 pub fn output_schema() -> serde_json::Value {
     let labels: Vec<&str> = Label::ALL.iter().map(|l| l.as_str()).collect();
     let sides: Vec<&str> = Side::ALL.iter().map(|s| s.as_str()).collect();
@@ -526,9 +533,14 @@ pub fn output_schema() -> serde_json::Value {
                     "required": ["index", "label", "side", "confidence"],
                     "additionalProperties": false
                 }
+            },
+            "variant_sets": {
+                "type": "array",
+                "description": "Groups of layer numbers that are alternative drawings of the same part, of which only one is shown at a time. Empty if there are none.",
+                "items": { "type": "array", "items": { "type": "integer" } }
             }
         },
-        "required": ["layers"],
+        "required": ["layers", "variant_sets"],
         "additionalProperties": false
     })
 }
@@ -661,7 +673,17 @@ fn prompt(
             .previous
             .as_ref()
             .and_then(|p| p.get(*i))
-            .map(|p| format!("; previous: {} ({})", p.label.as_str(), p.side.as_str()))
+            .map(|p| {
+                let variant = p
+                    .variant
+                    .map(|v| format!(", variant set of layer {v}"))
+                    .unwrap_or_default();
+                format!(
+                    "; previous: {} ({}){variant}",
+                    p.label.as_str(),
+                    p.side.as_str()
+                )
+            })
             .unwrap_or_default();
         s.push_str(&format!(
             "{i}. name: {}; bbox: {}, {}, {}, {}{}{previous}\n",
@@ -677,7 +699,14 @@ fn prompt(
         s.push_str("\nThe user's instructions:\n");
         s.push_str(&instructions.block());
     }
-    s.push_str("\nReturn one entry for every listed layer, using its number as `index`.");
+    s.push_str(
+        "\nReturn one entry for every listed layer, using its number as `index`. In `variant_sets`, \
+         list the groups of listed layers that are alternative drawings of the same clothing or \
+         accessory part, of which only one is meant to be shown at a time (for example sleeves A \
+         and B, or a hat and a cap worn in the same place); hidden layers are often such \
+         alternatives. Do not group parts drawn on top of each other (shading, line art, \
+         highlights) or open and closed eyes and mouths. Answer [] if there are none.",
+    );
     s
 }
 
@@ -828,6 +857,9 @@ fn plan(
 #[derive(Deserialize)]
 struct Output {
     layers: Vec<OutputLayer>,
+    /// 差分の組。答えになければ (前からの答え・外部のエージェントの分類) 差分の手がかりを変えない。
+    #[serde(default)]
+    variant_sets: Option<Vec<Vec<i64>>>,
 }
 
 #[derive(Deserialize)]
@@ -937,6 +969,41 @@ fn merge_answer(
         slot.label = entry.label;
         slot.side = entry.side;
         slot.confidence = confidence;
+    }
+    if let Some(sets) = output.variant_sets {
+        let mut grouped: Vec<Vec<usize>> = Vec::new();
+        let mut placed = HashSet::new();
+        for set in sets {
+            let mut indices = Vec::with_capacity(set.len());
+            for index in set {
+                let i = usize::try_from(index)
+                    .ok()
+                    .filter(|&i| i < labels.len() && allowed(i))
+                    .ok_or_else(|| AiError::InvalidResponse(not_allowed(index)))?;
+                if !placed.insert(i) {
+                    return Err(AiError::InvalidResponse(format!(
+                        "layer {i} is in more than one variant set"
+                    )));
+                }
+                indices.push(i);
+            }
+            // 1 枚だけの組は差分にならないので捨てる。
+            if indices.len() >= 2 {
+                grouped.push(indices);
+            }
+        }
+        // 答えた範囲 (このリクエストのレイヤー) の手がかりを、答えで置き換える。
+        for (i, label) in labels.iter_mut().enumerate() {
+            if allowed(i) {
+                label.variant = None;
+            }
+        }
+        for set in grouped {
+            let id = set.iter().copied().min().unwrap_or_default() as u32;
+            for i in set {
+                labels[i].variant = Some(id);
+            }
+        }
     }
     Ok(seen.len())
 }

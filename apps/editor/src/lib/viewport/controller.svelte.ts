@@ -35,6 +35,12 @@ export interface FrameDriver {
 /** 1 フレームに進める時間の上限 (秒)。タブが裏に回って戻ったときに大きく跳ばないように。 */
 const MAX_FRAME_DT = 0.1;
 
+/**
+ * 編集中にポーズを見るとき (setPosePreview)、表示する要素を切り替えた後に進める時間 (秒)。クロスフェードを
+ * 待たずに切り替わった姿を出すため、ポーズのフェードの時間より長くする (編集中はポーズのほかの段は止めてある)。
+ */
+const POSE_SETTLE_DT = 3600;
+
 /** キャンバス座標 → CSS ピクセルの相似変換 (`css = offset + scale * canvas`)。 */
 export interface ViewTransform {
   scale: number;
@@ -69,6 +75,12 @@ export class ViewportController {
   animationFrame = $state(0);
   /** 読み込んだモデルにライティングを受けるメッシュがあるか (`WebPuppet.uses_lighting`)。 */
   usesLighting = $state(false);
+  /**
+   * 編集中のビューポートでポーズを効かせて見ているときの、表示する要素のパーツ (グループごとに 1 つまで。
+   * 挙げていないグループは最初の要素)。`null` ならポーズを効かせない (すべての要素が見える。既定)。
+   * Poses タブで切り替える (docs/editor.md#ポーズの編集)。プレビューモードはこれを使わない。
+   */
+  posePreview = $state.raw<readonly string[] | null>(null);
 
   #puppet: WebPuppet | null = null;
   #model: ViewportModel | null = null;
@@ -239,6 +251,34 @@ export class ViewportController {
     this.requestRender();
   }
 
+  /**
+   * 編集中のビューポートで、ポーズを効かせて `parts` の要素を表示する (`null` で効かせない)。モデルを読み直しても
+   * 続ける。クロスフェードは待たずに切り替わった姿を出す。
+   */
+  setPosePreview(parts: readonly string[] | null): void {
+    this.posePreview = parts;
+    const puppet = this.#puppet;
+    if (!puppet?.has_model()) return;
+    this.#applyStages();
+    this.#applyPosePreview(puppet);
+    this.animationFrame += 1;
+    this.requestRender();
+  }
+
+  /**
+   * 編集中のポーズを WebPuppet に渡す。効かせないときも 1 度 `update` して、前のポーズの不透明度の上書きを消す。
+   * プレビューモードと物理のプレビューの間は、毎フレームの `update` に任せる (表示する要素だけ伝える)。
+   */
+  #applyPosePreview(puppet: WebPuppet): void {
+    if (this.#driver) return;
+    try {
+      for (const part of this.posePreview ?? []) puppet.show_pose(part);
+      if (!this.previewingPhysics) puppet.update(this.posePreview ? POSE_SETTLE_DT : 0);
+    } catch (e) {
+      console.warn("ugoe:", e);
+    }
+  }
+
   /** 段の有効・無効を設定し直す (FrameDriver の `stages` を変えた後に呼ぶ)。 */
   applyStages(): void {
     this.#applyStages();
@@ -372,7 +412,7 @@ export class ViewportController {
       eye_blink: false,
       breath: false,
       lip_sync: false,
-      pose: false,
+      pose: this.posePreview !== null,
     };
     for (const [stage, enabled] of Object.entries(stages)) {
       try {
@@ -436,7 +476,10 @@ export class ViewportController {
           puppet.set_parameter(id, value);
         }
       }
-      if (!this.#driver) this.#syncParameters();
+      if (!this.#driver) {
+        this.#syncParameters();
+        if (this.posePreview) this.#applyPosePreview(puppet);
+      }
       if (this.status === "error") {
         this.status = "ready";
         this.message = null;

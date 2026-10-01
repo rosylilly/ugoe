@@ -308,11 +308,9 @@ fn swaying_parts_collide_with_the_exposed_colliders() {
     assert!(added.colliders.is_empty());
 }
 
-/// 名前の末尾の A / B だけが違う衣装は、ポーズにする。本体の腕の差分 (スロットが公開するもの) と同じ文字で
-/// 絵の重なる袖は本体の要素に追従させ、腕と重ならない飾りの差分は衣装だけのグループにする
-/// (メッシュの差分はパーツを作って入れる)。
-#[test]
-fn variants_become_poses() {
+/// 腕の差分 A / B (Arm A が最初に表示される) のポーズを持ち、それを公開するスロット `Sleeves` (体のワープに付く) を
+/// 持つ見本の本体。`expose` が偽ならスロットはポーズの要素を公開しない。
+fn base_with_arms(expose: bool) -> Document {
     let mut base = sample();
     for (id, name) in [("ArmA", "Arm A"), ("ArmB", "Arm B")] {
         base.apply(Command::AddPart {
@@ -356,9 +354,20 @@ fn variants_become_poses() {
     })
     .unwrap();
     let mut sleeves = slot("Sleeves", "BodyWarp", (350.0, 380.0));
-    sleeves.pose_parts = vec!["ArmA".into(), "ArmB".into()];
+    if expose {
+        sleeves.pose_parts = vec!["ArmA".into(), "ArmB".into()];
+    }
     base.apply(Command::AddSlot { slot: sleeves }).unwrap();
 
+    base
+}
+
+/// 名前の末尾の A / B だけが違う衣装は、ポーズにする。本体の腕の差分 (スロットが公開するもの) と同じ文字で
+/// 絵の重なる袖は本体の要素に追従させ、腕と重ならない飾りの差分は衣装だけのグループにする
+/// (メッシュの差分はパーツを作って入れる)。
+#[test]
+fn variants_become_poses() {
+    let base = base_with_arms(true);
     let costume = tree(vec![
         group(
             "Sleeve A",
@@ -618,5 +627,131 @@ fn overlapping_hidden_alternatives_become_poses() {
     assert!(tie.keyforms.keyforms.iter().all(|k| k.opacity == 0.0));
     let (module, _) = doc.split_module().unwrap().unwrap();
     assert_eq!(module.pose.groups.len(), 1);
+    compose(base.model(), &[&module]).unwrap();
+}
+
+/// 絵の重なりで見つけた衣装の差分 (見えている袖と隠したカフス) は、見えている / 隠してあるで本体の差分に追従する
+/// (見えている袖は最初に表示される Arm A に、隠したカフスは Arm B に)。スロットが公開しなければ衣装だけのグループ
+/// (T0523)。
+#[test]
+fn drawn_variants_follow_the_base_shown_and_hidden_entries() {
+    let costume = tree(vec![
+        layer("sleeve", Vec2::new(150.0, 300.0), (40, 60)),
+        hidden_layer("cuff", Vec2::new(150.0, 304.0), (40, 56)),
+    ]);
+    let base = base_with_arms(true);
+    let mut doc = module_doc(&base, "Sleeves", &costume);
+    let parts = module_mesh_parts(&doc, &classify_by_name(&costume));
+    let proposal = propose_module_rig(
+        &doc,
+        &parts,
+        &ModuleRigParams::default(),
+        &ModuleRigOptions::default(),
+    )
+    .unwrap();
+    assert!(
+        proposal
+            .rationale
+            .contains("follow the base pose entries `ArmA`, `ArmB`"),
+        "{}",
+        proposal.rationale
+    );
+    apply(&mut doc, &proposal);
+    let (module, _) = doc.split_module().unwrap().unwrap();
+    let name = |id: &ugoe_model::PartId| {
+        module
+            .parts
+            .iter()
+            .find(|p| &p.id == id)
+            .unwrap()
+            .name
+            .clone()
+    };
+    assert!(module.pose.groups.is_empty(), "{:?}", module.pose);
+    let links: Vec<(&str, Vec<String>)> = module
+        .pose
+        .links
+        .iter()
+        .map(|l| (l.part.as_str(), l.links.iter().map(name).collect()))
+        .collect();
+    assert_eq!(
+        links,
+        [
+            ("ArmA", vec!["sleeve".to_owned()]),
+            ("ArmB", vec!["cuff".to_owned()])
+        ]
+    );
+    compose(base.model(), &[&module]).unwrap();
+
+    // スロットが腕を公開しなければ、衣装だけのグループにする。
+    let base = base_with_arms(false);
+    let mut doc = module_doc(&base, "Sleeves", &costume);
+    let parts = module_mesh_parts(&doc, &classify_by_name(&costume));
+    let proposal = propose_module_rig(
+        &doc,
+        &parts,
+        &ModuleRigParams::default(),
+        &ModuleRigOptions::default(),
+    )
+    .unwrap();
+    apply(&mut doc, &proposal);
+    let (module, _) = doc.split_module().unwrap().unwrap();
+    assert!(module.pose.links.is_empty(), "{:?}", module.pose);
+    assert_eq!(module.pose.groups.len(), 1, "{:?}", module.pose);
+}
+
+/// AI の分類が同じ部品の別の絵とした衣装 (重ならない帽子とベレー帽) は、名前や絵の重なりで分からなくてもポーズにする。
+/// 見えているものが最初に表示される。手がかりがなければポーズにしない (T0523)。
+#[test]
+fn ai_variant_hints_become_poses() {
+    let base = sample();
+    let costume = tree(vec![
+        hidden_layer("beret", Vec2::new(300.0, 10.0), (90, 40)),
+        layer("hat", Vec2::new(150.0, 20.0), (150, 60)),
+    ]);
+    let mut labels = classify_by_name(&costume);
+    let mut doc = module_doc(&base, "Headwear", &costume);
+    // 手がかりがなければ差分にならない (ほかに組むものもないので断る)。
+    let err = propose_module_rig(
+        &doc,
+        &module_mesh_parts(&doc, &labels),
+        &ModuleRigParams::default(),
+        &ModuleRigOptions::default(),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(&err, AiError::InvalidRequest(m) if m.contains("no costume parts are variants")),
+        "{err}"
+    );
+    for label in &mut labels {
+        label.variant = Some(0);
+    }
+    let proposal = propose_module_rig(
+        &doc,
+        &module_mesh_parts(&doc, &labels),
+        &ModuleRigParams::default(),
+        &ModuleRigOptions::default(),
+    )
+    .unwrap();
+    assert!(
+        proposal
+            .rationale
+            .contains("the AI classified “hat”, “beret” as alternative drawings"),
+        "{}",
+        proposal.rationale
+    );
+    apply(&mut doc, &proposal);
+    let model = doc.model();
+    assert_eq!(model.pose.groups.len(), 1, "{:?}", model.pose);
+    let entries: Vec<(&str, f32)> = model.pose.groups[0]
+        .entries
+        .iter()
+        .map(|e| {
+            let p = model.parts.iter().find(|p| p.id == e.part).unwrap();
+            (p.name.as_str(), p.keyforms.keyforms[0].opacity)
+        })
+        .collect();
+    assert_eq!(entries, [("hat", 1.0), ("beret", 0.0)]);
+    let (module, _) = doc.split_module().unwrap().unwrap();
     compose(base.model(), &[&module]).unwrap();
 }

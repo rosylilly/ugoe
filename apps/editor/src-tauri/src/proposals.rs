@@ -17,7 +17,8 @@
 //!   (`docs/editor.md#法線マップの提案`)。
 //! - モジュールのリグの提案は、衣装のメッシュのキーフォームに本体の変形を頂点ごとに写すことがある。採用した後に
 //!   そのメッシュの形 (頂点・三角形・親) を編集したら、写した変形が合わなくなるので、提案し直すよう知らせる
-//!   ([`ProposalState::stale_rigs`]。覚えるのはこのセッションの間だけ)。
+//!   ([`ProposalState::stale_rigs`])。採用したときの形の指紋は `project.json` の `editor.rigged_meshes` に残し
+//!   (保存するまでファイルには書かない)、開き直しても知らせる (`docs/editor.md#モジュールのプロジェクトでの-ai-の提案`)。
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -43,7 +44,7 @@ use ugoe_ai::{AiError, Proposal, Provider, ProviderRequest};
 use ugoe_editor_core::{
     ApplyReport, Command, Document, KeyformTarget, ProposalOrigin, ProposalView, Proposals,
 };
-use ugoe_model::{DeformerId, Mesh, MeshId};
+use ugoe_model::{Mesh, MeshId};
 use ugoe_psd::LayerTree;
 
 use crate::AppState;
@@ -70,30 +71,56 @@ pub struct ProposalSession {
     sections: HashMap<u32, Vec<CommandSection>>,
     /// モジュールのリグの提案がキーフォームを書く衣装のメッシュと、そのコマンドの番号 (提案の番号ごと)。
     writes: HashMap<u32, Vec<(usize, MeshId)>>,
-    /// 採用したモジュールのリグの提案がキーフォームを書いた衣装のメッシュと、採用したときの形。
-    rigged: BTreeMap<MeshId, MeshShape>,
+    /// 採用したモジュールのリグの提案がキーフォームを書いた衣装のメッシュ (ファイルの中の ID。[`file_id`]) と、
+    /// 採用したときの形の指紋 ([`shape_digest`])。`project.json` の `editor.rigged_meshes` に残す。
+    rigged: BTreeMap<String, String>,
 }
 
-/// 本体の変形を写したメッシュの形 (これが変わったら、写した変形は合わない)。
-#[derive(Debug, Clone, PartialEq)]
-struct MeshShape {
-    parent: Option<DeformerId>,
-    uvs: Vec<[u32; 2]>,
-    indices: Vec<u16>,
-}
+/// `project.json` の `editor` のうち、本体の変形を写した衣装のメッシュの形の指紋を置く項目
+/// (`{"<メッシュの ID>": "<16 桁の 16 進>"}`。ID はファイルの中の ID)。
+pub(crate) const RIGGED_MESHES_KEY: &str = "rigged_meshes";
 
-impl MeshShape {
-    fn of(mesh: &Mesh) -> Self {
-        Self {
-            parent: mesh.parent.clone(),
-            uvs: mesh
-                .uvs
-                .iter()
-                .map(|u| [u.x.to_bits(), u.y.to_bits()])
-                .collect(),
-            indices: mesh.indices.clone(),
-        }
+/// メッシュや親のデフォーマの、ファイルの中の ID (モジュールのプロジェクトでは、作業用のモデルの接頭辞を外したもの。
+/// 名前が同じなら開き直しても変わらない)。
+fn file_id<'a>(document: &Document, id: &'a str) -> &'a str {
+    match document.module() {
+        Some(context) => context.display_id(id),
+        None => id,
     }
+}
+
+/// 本体の変形を写したメッシュの形 (親・UV・三角形。これが変わったら、写した変形は合わない) の指紋。
+///
+/// ファイルに残すので、Rust の版で変わりうる `DefaultHasher` ではなく FNV-1a (64 ビット) で作る。
+fn shape_digest(document: &Document, mesh: &Mesh) -> String {
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+    let mut hash = OFFSET;
+    let mut feed = |bytes: &[u8]| {
+        for b in bytes {
+            hash ^= u64::from(*b);
+            hash = hash.wrapping_mul(PRIME);
+        }
+    };
+    match &mesh.parent {
+        Some(parent) => {
+            feed(&[1]);
+            let id = file_id(document, parent.as_str());
+            feed(&(id.len() as u64).to_le_bytes());
+            feed(id.as_bytes());
+        }
+        None => feed(&[0]),
+    }
+    feed(&(mesh.uvs.len() as u64).to_le_bytes());
+    for uv in &mesh.uvs {
+        feed(&uv.x.to_bits().to_le_bytes());
+        feed(&uv.y.to_bits().to_le_bytes());
+    }
+    feed(&(mesh.indices.len() as u64).to_le_bytes());
+    for index in &mesh.indices {
+        feed(&index.to_le_bytes());
+    }
+    format!("{hash:016x}")
 }
 
 /// 提案のコマンドのうち、メッシュのキーフォームを書くもの (番号とメッシュ)。
@@ -143,19 +170,26 @@ impl ProposalSession {
         &mut self.proposals
     }
 
-    /// 採用したモジュールのリグの提案がキーフォームを書いた衣装のメッシュのうち、その後に形を編集したもの。
-    /// 今キーフォームの軸を持たないもの (採用を Undo したもの) と、消えたものは除く。
-    fn stale_rigs(&self, document: &Document) -> Vec<StaleRig> {
-        let model = document.model();
-        self.rigged
+    /// 採用したモジュールのリグの提案がキーフォームを書いた衣装のメッシュのうち、その後に形を編集したもの
+    /// (メッシュの順)。今キーフォームの軸を持たないもの (採用を Undo したもの) と、消えたものは除く。
+    pub(crate) fn stale_rigs(&self, document: &Document) -> Vec<StaleRig> {
+        if self.rigged.is_empty() {
+            return Vec::new();
+        }
+        document
+            .model()
+            .meshes
             .iter()
-            .filter_map(|(id, shape)| {
-                let mesh = model.meshes.iter().find(|m| &m.id == id)?;
-                let stale = !mesh.keyforms.bindings.is_empty() && MeshShape::of(mesh) != *shape;
-                stale.then(|| StaleRig {
-                    mesh: id.to_string(),
-                    name: mesh.name.clone(),
-                })
+            .filter(|mesh| {
+                !mesh.keyforms.bindings.is_empty()
+                    && self
+                        .rigged
+                        .get(file_id(document, mesh.id.as_str()))
+                        .is_some_and(|digest| *digest != shape_digest(document, mesh))
+            })
+            .map(|mesh| StaleRig {
+                mesh: mesh.id.to_string(),
+                name: mesh.name.clone(),
             })
             .collect()
     }
@@ -167,9 +201,45 @@ impl ProposalSession {
         };
         for (_, mesh) in writes.iter().filter(|(i, _)| !excluded.contains(i)) {
             if let Some(found) = document.model().meshes.iter().find(|m| &m.id == mesh) {
-                self.rigged.insert(mesh.clone(), MeshShape::of(found));
+                self.rigged.insert(
+                    file_id(document, mesh.as_str()).to_owned(),
+                    shape_digest(document, found),
+                );
             }
         }
+    }
+
+    /// 覚えている形を、今の形で覚え直す (知らせを消す)。
+    fn forget_stale(&mut self, document: &Document) {
+        for mesh in &document.model().meshes {
+            if let Some(digest) = self.rigged.get_mut(file_id(document, mesh.id.as_str())) {
+                *digest = shape_digest(document, mesh);
+            }
+        }
+    }
+
+    /// `project.json` の `editor.rigged_meshes` から、覚えた形の指紋を読む (開いたとき)。形の違う値は捨てる。
+    pub(crate) fn restore_rigged(&mut self, value: Option<&serde_json::Value>) {
+        self.rigged = value
+            .and_then(serde_json::Value::as_object)
+            .map(|map| {
+                map.iter()
+                    .filter_map(|(id, digest)| Some((id.clone(), digest.as_str()?.to_owned())))
+                    .collect()
+            })
+            .unwrap_or_default();
+    }
+
+    /// `editor.rigged_meshes` に書く値 (覚えたものがなければ `None` で、項目を書かない)。
+    pub(crate) fn rigged_value(&self) -> Option<serde_json::Value> {
+        (!self.rigged.is_empty()).then(|| {
+            serde_json::Value::Object(
+                self.rigged
+                    .iter()
+                    .map(|(id, digest)| (id.clone(), digest.clone().into()))
+                    .collect(),
+            )
+        })
     }
 
     fn state(&self, document: &Document) -> ProposalState {
@@ -211,6 +281,8 @@ pub struct LayerLabelView {
     pub confidence: f32,
     /// 確からしさが低く、人間が確かめたほうがよい。
     pub needs_review: bool,
+    /// AI が同じ部品の別の絵 (差分) とみなしたレイヤーの組の番号 (`LayerLabel::variant`)。なければ `null`。
+    pub variant: Option<u32>,
 }
 
 /// PSD のレイヤーの分類の結果。
@@ -241,6 +313,7 @@ impl Classified {
                     side: l.side.as_str().to_owned(),
                     confidence: l.confidence,
                     needs_review: l.needs_review(&options),
+                    variant: l.variant,
                 })
                 .collect(),
         }
@@ -993,10 +1066,13 @@ pub(crate) fn adopt_in(
         .map_err(|e| e.to_string())?;
     session.proposals.preview = None;
     session.proposals.remember_rigged(&document, id, excluded);
+    let rigged = session.proposals.rigged_value();
+    session.set_editor_value(RIGGED_MESHES_KEY, rigged);
     Ok(report)
 }
 
 /// 本体の変形を写した後に形を編集した衣装のメッシュの知らせを消す (今の形を覚え直す。提案し直さずに済ませるとき)。
+/// 覚え直した形はプロジェクトに残す (保存するまでファイルには書かない)。
 #[tauri::command]
 pub fn dismiss_stale_rigs(state: State<'_, AppState>) -> Result<ProposalState, String> {
     dismiss_stale_rigs_in(&state)
@@ -1006,13 +1082,10 @@ pub fn dismiss_stale_rigs(state: State<'_, AppState>) -> Result<ProposalState, S
 pub(crate) fn dismiss_stale_rigs_in(state: &AppState) -> Result<ProposalState, String> {
     let document = lock_document(state)?;
     let mut session = lock_project(state)?;
-    let proposals = &mut session.proposals;
-    for (id, shape) in proposals.rigged.iter_mut() {
-        if let Some(mesh) = document.model().meshes.iter().find(|m| &m.id == id) {
-            *shape = MeshShape::of(mesh);
-        }
-    }
-    Ok(proposals.state(&document))
+    session.proposals.forget_stale(&document);
+    let rigged = session.proposals.rigged_value();
+    session.set_editor_value(RIGGED_MESHES_KEY, rigged);
+    Ok(session.proposals.state(&document))
 }
 
 /// 提案を捨てる。

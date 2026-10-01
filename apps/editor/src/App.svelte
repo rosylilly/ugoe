@@ -309,9 +309,9 @@ $effect(() => {
           <SlotsPanel {doc} {selection} view={slots} />
         </BaseLock>
       {:else if posesActive}
-        <PosesPanel {doc} {selection} />
+        <PosesPanel {doc} {selection} {viewport} />
       {:else}
-        <InspectorPanel {doc} {selection} {viewport} />
+        <InspectorPanel {doc} {selection} {viewport} staleRigs={proposals.staleRigs} onopenai={openProposals} />
       {/if}
     </div>
     <!-- フォーカスできる区切り (ARIA の separator) はキー操作を受ける部品。 -->

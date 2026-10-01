@@ -61,6 +61,8 @@ pub struct MeshPart {
     pub label: Label,
     /// キャラクター自身から見た左右。
     pub side: Side,
+    /// AI が同じ部品の別の絵とみなしたレイヤーの組の番号 ([`LayerLabel::variant`])。
+    pub variant: Option<u32>,
 }
 
 /// レイヤーの分類の結果 ([`crate::classify`]) を、名前でメッシュに対応付ける。
@@ -84,6 +86,7 @@ pub(crate) fn mesh_parts_where(
             let part = MeshPart {
                 label: layer.label,
                 side: layer.side,
+                variant: layer.variant,
             };
             by_name
                 .entry(name.as_str())

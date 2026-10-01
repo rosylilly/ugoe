@@ -94,6 +94,7 @@ describe("classificationSummary", () => {
       side: "center",
       confidence: needs_review ? 0.3 : 0.9,
       needs_review,
+      variant: null as number | null,
     });
     const c: Classification = {
       psd: "/a.psd",
@@ -108,7 +109,35 @@ describe("classificationSummary", () => {
         ["eye_white", 2],
         ["face", 1],
       ],
+      variants: [],
     });
+  });
+
+  it("lists the alternative drawings the AI grouped", () => {
+    const layer = (name: string, variant: number | null) => ({
+      path: ["costume", name],
+      label: "headwear",
+      side: "center",
+      confidence: 0.9,
+      needs_review: false,
+      variant,
+    });
+    const c: Classification = {
+      psd: "/a.psd",
+      by_ai: true,
+      instructions: null,
+      layers: [
+        layer("sleeve b", 3),
+        layer("hat", 0),
+        layer("sleeve a", 3),
+        layer("cap", 0),
+        layer("x", null),
+      ],
+    };
+    expect(classificationSummary(c).variants).toEqual([
+      ["hat", "cap"],
+      ["sleeve b", "sleeve a"],
+    ]);
   });
 });
 

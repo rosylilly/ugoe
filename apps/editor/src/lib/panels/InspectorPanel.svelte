@@ -1,7 +1,7 @@
 <!--
   右パネル: 選択中の要素のプロパティとキーフォーム。
   プロパティは T0606 / T0607、キーの格子とキーフォームの編集は T0608、推定の操作は T0613、深度は T0617、描画用の複製は T0633、
-  何も選んでいないときのアバタープロファイルは T0631 で追加する。
+  何も選んでいないときのアバタープロファイルは T0631、リグを提案し直す知らせは T0523 で追加する。
   それぞれ lib/panels/inspector/ にコンポーネントを置き、ここではそれを並べるだけにする。
 -->
 <script lang="ts">
@@ -21,14 +21,19 @@ import RederiveNotice from "./inspector/inference/RederiveNotice.svelte";
 import KeyformInspector from "./inspector/keyforms/KeyformInspector.svelte";
 import { parseModel } from "./inspector/keyforms/keyforms";
 import MeshProperties from "./inspector/MeshProperties.svelte";
+import StaleRigNotice from "./inspector/StaleRigNotice.svelte";
 
 interface Props {
   doc: EditorDocument;
   selection: Selection;
   viewport: ViewportController;
+  /** 本体の変形を写した後に形を編集した衣装のメッシュ (`ProposalState.stale_rigs`)。 */
+  staleRigs?: readonly { mesh: string; name: string }[];
+  /** AI タブを開く (知らせから)。 */
+  onopenai?: () => void;
 }
 
-let { doc, selection, viewport }: Props = $props();
+let { doc, selection, viewport, staleRigs = [], onopenai = () => {} }: Props = $props();
 
 /** モジュールのプロジェクトで、主な選択が本体の要素 (読み取り専用) か。 */
 const primaryIsBase = $derived(
@@ -57,6 +62,7 @@ const primaryLabel = $derived.by(() => {
   <p class="heading">
     {selection.primary.kind}: {primaryLabel}{#if primaryIsBase}<span class="badge" title="Part of the base model: read-only in a module project">base</span>{/if}
   </p>
+  <StaleRigNotice {selection} {staleRigs} onopen={onopenai} />
   <BaseLock locked={primaryIsBase}>
     <MeshProperties {doc} {selection} />
     <DrawCloneSection {doc} {selection} {viewport} />

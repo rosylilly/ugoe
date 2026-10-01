@@ -1,10 +1,13 @@
 //! 衣装の差分 (A / B) をポーズにする提案 (T0519・T0521)。
 //!
-//! 差分は 2 通りの方法で見つける。
+//! 差分は 3 通りの方法で見つける (この順に見て、先に見つけた組の要素は後で使わない)。
 //!
 //! - **名前:** 名前の末尾の文字 (`A`〜`E`) だけが違う衣装のパーツ (PSD のグループ) かメッシュ (PSD のレイヤー)
 //!   (`Sleeve A` / `Sleeve B`、`ribbon_a` / `ribbon_b`、`HatA` / `HatB`)。区切りのない小文字は差分とみなさない
 //!   (`Tuba` は `Tub` の差分ではない)。
+//! - **AI の分類の手がかり:** AI がレイヤーを分類するときに、同じ部品の別の絵とみなした組
+//!   (`crate::classify::LayerLabel::variant`) の衣装のメッシュ。名前や絵の重なりで決められない組 (見えている帽子と、
+//!   形の違う隠したキャップ) も拾う。見えているものを最初に表示する。
 //! - **絵の重なりと意味ラベル:** 名前で見つからなかった衣装のうち、同じ親のパーツの中の同じ種類 (パーツかメッシュ) で、
 //!   意味ラベルと左右が同じ (どちらもラベルなしを含む) で、基準の姿の外接矩形の重なり (IoU) が [`MIN_IOU`] 以上のもの。
 //!   PSD で見えている 1 つと、隠してある (不透明度 0 で取り込まれた) ものの組だけを差分とみなす。どれも見えている
@@ -12,7 +15,10 @@
 //!
 //! - 本体のポーズのグループの要素のうち、スロットが公開するパーツ (`Slot::pose_parts`) の名前が同じ文字の差分に
 //!   なっていて、同じ文字の衣装の差分と本体の差分の絵が基準の姿で重なれば、衣装の差分を本体の要素の `links` に
-//!   加える (本体の腕の差分に合わせて袖の差分を切り替える)。
+//!   加える (本体の腕の差分に合わせて袖の差分を切り替える)。名前で見つけた組の決め方。
+//! - AI の手がかりと絵の重なりで見つけた組は、見えている / 隠してあるで本体の要素と対応付ける: 見えている衣装の差分は
+//!   本体のグループの最初の要素 (最初に表示される) に、隠してある差分は残りの要素のうち絵が最もよく重なるものに付ける。
+//!   本体のグループの最初の要素と、対応する要素のすべてをスロットが公開していて、どの組も絵が重なるときだけ追従させる。
 //! - そうでなければ、衣装の差分だけのポーズのグループを足す (帽子の差分 A / B)。
 //!
 //! メッシュの差分は、差分ごとにメッシュだけを持つパーツを作って入れる (ポーズはパーツを切り替えるため)。
@@ -39,16 +45,25 @@ pub(super) enum Element {
     Mesh(MeshId),
 }
 
+/// 差分の組を見つけた方法。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Source {
+    /// 名前の末尾の文字。本体の要素へは同じ文字の名前で追従する。
+    Name,
+    /// AI の分類の手がかり。本体の要素へは見えている / 隠してあるで追従する。
+    Hint,
+    /// 絵の重なりと意味ラベル。本体の要素へは見えている / 隠してあるで追従する。
+    Drawing,
+}
+
 /// 差分の組。
 #[derive(Debug, Clone)]
 pub(super) struct Variants {
-    /// 末尾の文字を除いた名前 (絵の重なりで見つけたものは、見えている差分の名前)。
+    /// 末尾の文字を除いた名前 (AI の手がかりと絵の重なりで見つけたものは、見えている差分の名前)。
     pub name: String,
-    /// 文字 (大文字) の順の差分。絵の重なりで見つけたものは、見えているものを `A` にした順。
+    /// 文字 (大文字) の順の差分。AI の手がかりと絵の重なりで見つけたものは、見えているものを `A` にした順。
     pub entries: Vec<(char, Element)>,
-    /// 名前で見つけた (偽なら絵の重なりと意味ラベル)。本体のポーズの要素への追従は、同じ文字の名前で決めるので
-    /// 名前で見つけたものだけ。
-    pub named: bool,
+    pub source: Source,
 }
 
 /// 名前の末尾の差分の文字 (大文字) と、それを除いた名前 (小文字にし、区切りを除いたもの)。
@@ -97,13 +112,58 @@ pub(super) fn variants(
     labels: &BTreeMap<MeshId, MeshPart>,
     bounds: &BTreeMap<MeshId, Rect>,
 ) -> Vec<Variants> {
+    let taken = |sets: &[Variants]| -> Vec<Element> {
+        sets.iter()
+            .flat_map(|v| v.entries.iter().map(|(_, e)| e.clone()))
+            .collect()
+    };
     let mut out = named_variants(model, context);
-    let taken: Vec<Element> = out
-        .iter()
-        .flat_map(|v| v.entries.iter().map(|(_, e)| e.clone()))
-        .collect();
-    out.extend(drawn_variants(model, context, labels, bounds, &taken));
+    out.extend(hinted_variants(model, context, labels, &taken(&out)));
+    out.extend(drawn_variants(model, context, labels, bounds, &taken(&out)));
     out
+}
+
+/// AI の分類で同じ部品の別の絵とされた衣装のメッシュの組 (見えているものを先に、そのあとはモデルの順)。
+/// `taken` は先に見つけた要素。6 つ以上の組は文字が足りないので使わない。
+fn hinted_variants(
+    model: &Model,
+    context: &ModuleContext,
+    labels: &BTreeMap<MeshId, MeshPart>,
+    taken: &[Element],
+) -> Vec<Variants> {
+    let posed = posed_parts(model);
+    let mut sets: BTreeMap<u32, Vec<(bool, &ugoe_model::Mesh)>> = BTreeMap::new();
+    for mesh in &model.meshes {
+        let Some(variant) = labels.get(&mesh.id).and_then(|p| p.variant) else {
+            continue;
+        };
+        if context.is_base_mesh(&mesh.id)
+            || mesh.mask_only
+            || taken.contains(&Element::Mesh(mesh.id.clone()))
+            || posed.contains(&&mesh.part)
+        {
+            continue;
+        }
+        sets.entry(variant)
+            .or_default()
+            .push((mesh_hidden(&mesh.keyforms), mesh));
+    }
+    sets.into_values()
+        .filter(|set| (2..=5).contains(&set.len()))
+        .map(|mut set| {
+            // 見えているものを先に (同じ中ではモデルの順のまま)。
+            set.sort_by_key(|(hidden, _)| *hidden);
+            Variants {
+                name: set[0].1.name.clone(),
+                entries: set
+                    .iter()
+                    .zip('A'..='E')
+                    .map(|((_, mesh), letter)| (letter, Element::Mesh(mesh.id.clone())))
+                    .collect(),
+                source: Source::Hint,
+            }
+        })
+        .collect()
 }
 
 /// 名前の末尾の文字だけが違う差分の組。
@@ -147,7 +207,7 @@ fn named_variants(model: &Model, context: &ModuleContext) -> Vec<Variants> {
         out.push(Variants {
             name,
             entries: entries.into_iter().map(|(l, e, _)| (l, e)).collect(),
-            named: true,
+            source: Source::Name,
         });
     }
     out
@@ -264,7 +324,7 @@ fn drawn_variants(
             Variants {
                 name: drawn[shown].name.clone(),
                 entries,
-                named: false,
+                source: Source::Drawing,
             }
         })
         .collect()
@@ -297,76 +357,84 @@ pub(super) fn propose(
             parts.push((*letter, part));
         }
         let letters: String = parts.iter().map(|(l, _)| *l).collect();
-        let linked = if set.named {
-            linked_group(rig.model(), context, &parts, bounds)
-        } else {
-            None
+        let linked = match set.source {
+            Source::Name => linked_group(rig.model(), context, &parts, bounds),
+            Source::Hint | Source::Drawing => {
+                linked_by_drawing(rig.model(), context, &parts, bounds)
+            }
         };
-        match linked {
-            Some((group, base)) => {
-                for ((_, part), base_part) in parts.iter().zip(&base) {
-                    if let Some(entry) = pose.groups[group]
-                        .entries
-                        .iter_mut()
-                        .find(|e| &e.part == base_part)
-                    {
-                        entry.links.push(part.clone());
-                    }
-                }
-                rationale.push(format!(
-                    "Pose: the costume variants “{}” ({letters}) follow the base pose entries {} (variants with the same letter switch together)",
-                    set.name,
-                    base.iter()
-                        .map(|p| format!("`{p}`"))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ));
-            }
-            None if !set.named => {
-                pose.groups.push(PoseGroup {
-                    entries: parts
+        let quoted = |parts: &[(char, PartId)]| -> Vec<String> {
+            let model = rig.model();
+            parts
+                .iter()
+                .map(|(_, part)| {
+                    let name = model
+                        .parts
                         .iter()
-                        .map(|(_, part)| PoseEntry {
-                            part: part.clone(),
-                            links: Vec::new(),
-                        })
-                        .collect(),
-                });
-                let names: Vec<String> = parts
+                        .find(|p| &p.id == part)
+                        .map_or(part.as_str(), |p| p.name.as_str());
+                    format!("“{name}”")
+                })
+                .collect()
+        };
+        let Some((group, base)) = linked else {
+            pose.groups.push(PoseGroup {
+                entries: parts
                     .iter()
-                    .map(|(_, part)| {
-                        let model = rig.model();
-                        let name = model
-                            .parts
-                            .iter()
-                            .find(|p| &p.id == part)
-                            .map_or(part.as_str(), |p| p.name.as_str());
-                        format!("“{name}”")
+                    .map(|(_, part)| PoseEntry {
+                        part: part.clone(),
+                        links: Vec::new(),
                     })
-                    .collect();
-                rationale.push(format!(
-                    "Pose: {} overlap, have the same label and are shown and hidden in the PSD, so they become a costume-only pose group (first shown: “{}”)",
-                    names.join(", "),
-                    set.name
-                ));
-            }
-            None => {
-                pose.groups.push(PoseGroup {
-                    entries: parts
-                        .iter()
-                        .map(|(_, part)| PoseEntry {
-                            part: part.clone(),
-                            links: Vec::new(),
-                        })
-                        .collect(),
-                });
-                rationale.push(format!(
+                    .collect(),
+            });
+            rationale.push(match set.source {
+                Source::Name => format!(
                     "Pose: the costume variants “{}” ({letters}) become a costume-only pose group (one is shown at a time; first {})",
                     set.name,
                     parts.first().map_or('A', |(l, _)| *l)
-                ));
+                ),
+                Source::Hint => format!(
+                    "Pose: the AI classified {} as alternative drawings of the same part, so they become a costume-only pose group (first shown: “{}”)",
+                    quoted(&parts).join(", "),
+                    set.name
+                ),
+                Source::Drawing => format!(
+                    "Pose: {} overlap, have the same label and are shown and hidden in the PSD, so they become a costume-only pose group (first shown: “{}”)",
+                    quoted(&parts).join(", "),
+                    set.name
+                ),
+            });
+            continue;
+        };
+        for ((_, part), base_part) in parts.iter().zip(&base) {
+            if let Some(entry) = pose.groups[group]
+                .entries
+                .iter_mut()
+                .find(|e| &e.part == base_part)
+            {
+                entry.links.push(part.clone());
             }
         }
+        let entries = base
+            .iter()
+            .map(|p| format!("`{p}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        rationale.push(match set.source {
+            Source::Name => format!(
+                "Pose: the costume variants “{}” ({letters}) follow the base pose entries {entries} (variants with the same letter switch together)",
+                set.name
+            ),
+            Source::Hint | Source::Drawing => format!(
+                "Pose: the costume variants {} ({}) follow the base pose entries {entries} (the shown variant follows the base entry shown first; hidden ones follow the base entries they overlap)",
+                quoted(&parts).join(", "),
+                if set.source == Source::Hint {
+                    "alternative drawings by the AI"
+                } else {
+                    "found by overlap"
+                }
+            ),
+        });
     }
     rig.apply(Command::SetPose { pose })
 }
@@ -491,6 +559,55 @@ fn linked_group(
                 })
                 .collect::<Option<Vec<_>>>()
                 .map(|base| (index, base))
+        })
+}
+
+/// 見えている / 隠してあるで見つけた衣装の差分 `parts` (先頭が見えているもの) が従う、本体のポーズのグループ
+/// (グループの添字と、`parts` の順の本体のパーツ)。見えている差分は本体のグループの最初の要素 (最初に表示される) に、
+/// 残りは使っていない要素のうち絵が最もよく重なる (外接矩形の IoU が最も大きい) ものに付ける。対応する本体の要素は
+/// すべてスロットが公開するもので、どの組も絵が重ならなければならない。
+fn linked_by_drawing(
+    model: &Model,
+    context: &ModuleContext,
+    parts: &[(char, PartId)],
+    bounds: &BTreeMap<MeshId, Rect>,
+) -> Option<(usize, Vec<PartId>)> {
+    let exposed = &context.slot().pose_parts;
+    let (shown, hidden) = parts.split_first()?;
+    let shown = part_bounds(model, bounds, &shown.1)?;
+    model
+        .pose
+        .groups
+        .iter()
+        .enumerate()
+        .find_map(|(index, group)| {
+            let (first, rest) = group.entries.split_first()?;
+            if !exposed.contains(&first.part) {
+                return None;
+            }
+            let first_rect = part_bounds(model, bounds, &first.part)?;
+            if iou(shown, first_rect) <= 0.0 {
+                return None;
+            }
+            let mut free: Vec<(&PartId, Rect)> = rest
+                .iter()
+                .filter(|e| exposed.contains(&e.part))
+                .filter_map(|e| Some((&e.part, part_bounds(model, bounds, &e.part)?)))
+                .collect();
+            let mut base = vec![first.part.clone()];
+            for (_, costume) in hidden {
+                let rect = part_bounds(model, bounds, costume)?;
+                let (best, score) = free
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (_, r))| (i, iou(rect, *r)))
+                    .max_by(|a, b| a.1.total_cmp(&b.1))?;
+                if score <= 0.0 {
+                    return None;
+                }
+                base.push(free.remove(best).0.clone());
+            }
+            Some((index, base))
         })
 }
 

@@ -324,6 +324,7 @@ fn layer_labels_are_matched_to_meshes_by_name() {
         label,
         side: Side::Center,
         confidence: 0.9,
+        variant: None,
     };
     let labels = mesh_labels(
         &model,

@@ -890,6 +890,89 @@ fn editing_a_rigged_costume_mesh_asks_to_propose_again() {
     assert!(stale(&state).is_empty());
 }
 
+/// 本体の変形を写した衣装のメッシュの形の指紋は `project.json` の `editor.rigged_meshes` に残り、プロジェクトを
+/// 開き直しても (同じメタ情報から作り直しても) 形を編集したことを知らせる。ID はファイルの中の ID (T0523)。
+#[test]
+fn rigged_costume_shapes_are_kept_in_the_project() {
+    use crate::project::ProjectSession;
+
+    let (state, _) = module_state();
+    let direct = ModuleRigChoice {
+        direct: true,
+        ..ModuleRigChoice::default()
+    };
+    let view = done(propose_guided_in(&state, false, None, direct, None).unwrap());
+    adopt_in(&state, view.id, &[]).unwrap();
+    let project = {
+        let document = state.document.lock().unwrap();
+        let session = state.project.lock().unwrap();
+        let context = document.module().unwrap();
+        let hat = document
+            .model()
+            .meshes
+            .iter()
+            .find(|m| m.name == "hat" && !context.is_base_mesh(&m.id))
+            .unwrap()
+            .id
+            .clone();
+        let saved = session.editor_value(RIGGED_MESHES_KEY).unwrap().clone();
+        let map = saved.as_object().unwrap();
+        // 新しく取り込んだメッシュは接頭辞がなく、開き直すと付く (どちらでも同じ ID で覚える)。
+        let file_id = context.display_id(hat.as_str());
+        assert_eq!(map[file_id].as_str().unwrap().len(), 16, "{saved}");
+        assert!(map.keys().all(|id| !id.starts_with("Costume/")), "{saved}");
+        session.to_project(&document)
+    };
+    // 開き直した姿: 残したメタ情報から作り直したセッションで、頂点を消すと知らせる。
+    let (mut session, mut document) = ProjectSession::from_project(project.clone(), None);
+    assert!(session.proposals.stale_rigs(&document).is_empty());
+    let hat = document
+        .model()
+        .meshes
+        .iter()
+        .find(|m| m.name == "hat" && !document.module().unwrap().is_base_mesh(&m.id))
+        .unwrap()
+        .id
+        .clone();
+    let last = document
+        .model()
+        .meshes
+        .iter()
+        .find(|m| m.id == hat)
+        .unwrap()
+        .uvs
+        .len()
+        - 1;
+    document
+        .apply(Command::RemoveMeshVertices {
+            id: hat.clone(),
+            indices: vec![u16::try_from(last).unwrap()],
+        })
+        .unwrap();
+    let found = session.proposals.stale_rigs(&document);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].mesh, hat.as_str());
+    // 知らせを消すと覚え直した指紋がメタ情報に入る。
+    session.proposals.forget_stale(&document);
+    let rigged = session.proposals.rigged_value();
+    session.set_editor_value(RIGGED_MESHES_KEY, rigged);
+    assert!(session.proposals.stale_rigs(&document).is_empty());
+    assert_ne!(
+        session.editor_value(RIGGED_MESHES_KEY),
+        project.meta.editor.get(RIGGED_MESHES_KEY)
+    );
+    // 項目のない (前からの) プロジェクトと、形の違う値は何も覚えない。
+    let mut old = project.clone();
+    old.meta.editor.remove(RIGGED_MESHES_KEY);
+    let (session, _) = ProjectSession::from_project(old.clone(), None);
+    assert!(session.proposals.rigged_value().is_none());
+    old.meta
+        .editor
+        .insert(RIGGED_MESHES_KEY.into(), json!(["hat"]));
+    let (session, _) = ProjectSession::from_project(old, None);
+    assert!(session.proposals.rigged_value().is_none());
+}
+
 /// 法線マップの提案 (AI なし): まとまりごとに設定を選び、コマンドはまとまりごとに区切られる。まとまりを外して採用でき、
 /// 1 回の Undo で戻る (T0520)。
 #[test]

@@ -1108,12 +1108,18 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
 `poses.ts`)。
 
 - **グループ:** グループごとに要素を並べます。表示されるのはグループの要素のうち 1 つで、先頭の要素 (「first」の印) が最初に
-  表示されます。▲▼ で並べ替え、✕ で要素を外します (最後の要素を外すとグループも消える)。「Remove group」はグループを消します
+  表示されます。要素をドラッグするか ▲▼ で並べ替え (ドラッグは同じグループの中だけ。落とした要素の前か後ろに入る。
+  `poses.ts` の `moveEntryTo`。T0523)、✕ で要素を外します (最後の要素を外すとグループも消える)。「Remove group」はグループを消します
   (パーツは残る)。要素の名前を押すとそのパーツを選びます。
 - **リンク:** 要素ごとの「Links」で、要素と一緒に切り替わるパーツ (腕の差分に付く袖など) をチェックで選びます。
 - **足す:** 「+ Entry」はグループに、「+ Group」は新しいグループに、ポーズでまだ使っていないパーツを足します (同じパーツはポーズの
   中で 1 度しか使えない。候補から除く)。「+ Group from selection」はツリーで選んだ 2 つ以上のパーツでグループを作ります。
 - **フェードの時間:** 「Fade time (s)」で `fade_duration` (0 以上) を変えます。
+- **ビューポートで確かめる (T0523):** 「Show the pose in the viewport」を入れると、編集中のビューポートにポーズを効かせ、グループごとに
+  1 つの要素だけを見せます (アプリでの見え方。モデルは変えない)。要素ごとの「Show」で表示する要素を切り替えます (クロスフェードは待たずに
+  切り替わった姿を出す)。`ViewportController.setPosePreview` が WebPuppet のポーズの段を有効にし、`show_pose` で要素を選んで
+  `update` で進めます (編集中はほかの段を止めてあるので、ポーズだけが進む)。モデルを読み直しても続け、タブを離れると効かせるのをやめます。
+  プレビューモードと物理のプレビューの間は、毎フレームの `update` に任せます。
 - **モジュールのプロジェクト:** 本体のグループ (作業用のモデルのポーズの先頭の `ModuleStatus.base_pose_groups` 個) は点線の枠と
   「base」の印で示し、並べ替え・外す・足す・消すを無効にします。本体の要素のうちスロットが公開するもの (`SlotSummary.pose_parts`)
   にだけ「Links」を出し、モジュールのパーツを選べます (本体のリンクは「Base links」として見せ、送るときにそのまま残す)。
@@ -1328,6 +1334,8 @@ PSD の取り込みから「レイヤーの分類 → リギングの提案」�
     `TurnDepth::Rules`) で組みます。推定器ができたら、同じ流れに「深度を推定する」段階を足します。
   - 分類とその PSD はプロジェクトを開いている間だけ持ちます (ファイルには残さない)。確からしさの低いレイヤー
     (`needs_review`) は、パネルと提案の理由の末尾に出します。分類の結果を画面で直す機能はまだありません。
+    AI が同じ部品の別の絵 (差分) とした組 (`LayerLabelView.variant`。[ai-integration.md](ai-integration.md#レイヤーの意味分類))
+    は、パネルの「Labels」の中に「Alternative drawings of the same part」として並べます (T0523)。
 - **外部に送るとき:** 送る IPC コマンド (`classify_psd_layers`・`propose_rig_from_psd`) は、[送る前の確認](#ai-の設定と送信の同意)を
   `ai::prepare_requests` で通します (手元のサーバなら確かめずに送る)。
   - 分類はレイヤーが多いと複数のリクエストに分かれる (1 回 32 枚まで) ので、確認には **合計** (`DisclosureView::combined`) を示し、
@@ -1365,7 +1373,7 @@ PSD の取り込みから「レイヤーの分類 → リギングの提案」�
 
 | コマンド | 内容 |
 | --- | --- |
-| `get_proposals` | `ProposalState { proposals, psd, classification, regenerable, sections }` (一覧・元にする PSD・最後の分類・作り直せる提案・コマンドの区切り) |
+| `get_proposals` | `ProposalState { proposals, psd, classification, regenerable, sections, stale_rigs }` (一覧・元にする PSD・最後の分類 (レイヤーごとの `LayerLabelView { path, label, side, confidence, needs_review, variant }`)・作り直せる提案・コマンドの区切り・作り直しの知らせ) |
 | `classify_psd_layers(psd?, use_ai, instructions?, revise, consent?)` | 分類して覚える。`AiReply<Classification>`。`psd` を省くと取り込んだ PSD。`revise` なら今の分類を前の答えとして送る |
 | `propose_rig_from_psd(use_ai, instructions?, consent?, module_options?)` | 分類からリグを提案し、一覧に置く。`AiReply<ProposalView>`。`module_options` はモジュールのプロジェクトの組み方 (`ModuleRigChoice`。省略すると既定) |
 | `regenerate_rig_proposal(id, instructions?, consent?, module_options?)` | 提案を前の答えと注文を添えて作り直し、後ろに並べる (いつも AI)。`AiReply<ProposalView>` |
@@ -1374,7 +1382,7 @@ PSD の取り込みから「レイヤーの分類 → リギングの提案」�
 | `get_proposal_preview_bundle` / `clear_proposal_preview` | プレビューの `.ugoe` バンドル (生のバイト列) / プレビューの複製を捨てる |
 | `adopt_proposal(id, excluded)` | 外したコマンドを除いて採用する (1 回の Undo で戻る)。`ApplyReport` |
 | `reject_proposal(id)` | 提案を捨てる。`ProposalState` |
-| `dismiss_stale_rigs()` | 本体の変形を写した後に形を編集した衣装のメッシュの知らせ (`ProposalState.stale_rigs`) を消す (今の形を覚え直す)。`ProposalState` |
+| `dismiss_stale_rigs()` | 本体の変形を写した後に形を編集した衣装のメッシュの知らせ (`ProposalState.stale_rigs`) を消す (今の形を覚え直し、`editor.rigged_meshes` に書く)。`ProposalState` |
 
 ### 法線マップの提案
 
@@ -1429,7 +1437,13 @@ AI タブの「Normal maps from the shapes」で、すべてのテクスチャ�
   コマンド (`add_keyform_key`・`set_keyform_cell`。外したコマンドは除く) の対象のメッシュと、採用したときの形を覚え、形が変わった
   ものを `ProposalState.stale_rigs` に出します。AI タブの上に「Propose the rig again」とメッシュの名前を出し、タブにも印を付けます。
   「Dismiss」(`dismiss_stale_rigs`) は今の形を覚え直して知らせを消します。今キーフォームの軸を持たないメッシュ (採用を Undo した
-  もの) と消えたメッシュは知らせません。覚えるのはエディタを開いている間だけです (プロジェクトを開き直すと消える)。
+  もの) と消えたメッシュは知らせません。インスペクタでも、選んだメッシュが知らせの対象なら上に「Propose the rig again」と
+  「Open AI tab」を出します (`panels/inspector/StaleRigNotice.svelte`、T0523)。
+  - **プロジェクトに残す (T0523):** 覚えた形は、形 (親のデフォーマの ID・UV・三角形) の指紋 (FNV-1a の 64 ビット。16 桁の 16 進) にして
+    `project.json` の `editor.rigged_meshes` (`{"<メッシュの ID>": "<指紋>"}`) に置き、開き直しても知らせます
+    ([file-formats.md](spec/file-formats.md#projectjson))。ID と親の ID はファイルの中の ID (モジュールのプロジェクトでは作業用のモデルの
+    接頭辞を外したもの。取り込んだばかりのメッシュと開き直したメッシュで同じになる)。採用と「Dismiss」で書き換え、未保存の印を付けます
+    (保存するまでファイルには書かない)。項目のない前からのプロジェクトは何も覚えていない状態で開き、形の違う値は捨てます。
 
 ### AI への注文と作り直し
 

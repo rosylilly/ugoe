@@ -18,7 +18,7 @@ use ugoe_editor_core::{
 
 use crate::AppState;
 use crate::ai::ConsentMemory;
-use crate::proposals::ProposalSession;
+use crate::proposals::{ProposalSession, RIGGED_MESHES_KEY};
 
 /// 開いているプロジェクトのうち、`Document` の外にあるもの (保存先・メタ情報)。
 /// モデル・物理・モーション・表情は `Document` が持つ (編集コマンドと Undo の対象)。
@@ -37,7 +37,8 @@ pub struct ProjectSession {
     meta_modified: bool,
     /// AI への送信の「今後は確かめない」。プロジェクトを替えると消え、ファイルには残さない。
     ai_consent: ConsentMemory,
-    /// AI の提案と、提案の元にする PSD。プロジェクトを替えると消え、ファイルには残さない。
+    /// AI の提案と、提案の元にする PSD。プロジェクトを替えると消え、ファイルには残さない (本体の変形を写した衣装の
+    /// メッシュの形の指紋だけは `editor.rigged_meshes` に残す。`crate::proposals`)。
     pub(crate) proposals: ProposalSession,
 }
 
@@ -49,6 +50,8 @@ impl ProjectSession {
     ) -> (Self, Document) {
         let document = project.document();
         let (path, disk) = path.unzip();
+        let mut proposals = ProposalSession::default();
+        proposals.restore_rigged(project.meta.editor.get(RIGGED_MESHES_KEY));
         let session = Self {
             path,
             disk,
@@ -56,7 +59,7 @@ impl ProjectSession {
             meta: project.meta,
             meta_modified: false,
             ai_consent: ConsentMemory::default(),
-            proposals: ProposalSession::default(),
+            proposals,
         };
         (session, document)
     }

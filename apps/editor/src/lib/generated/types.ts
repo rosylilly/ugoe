@@ -844,7 +844,11 @@ side: string, confidence: number,
 /**
  * 確からしさが低く、人間が確かめたほうがよい。
  */
-needs_review: boolean, };
+needs_review: boolean, 
+/**
+ * AI が同じ部品の別の絵 (差分) とみなしたレイヤーの組の番号 (`LayerLabel::variant`)。なければ `null`。
+ */
+variant: number | null, };
 
 /**
  * リップシンク。外部から与えた音量 (0〜1) を対象パラメータに書き込む。

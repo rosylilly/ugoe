@@ -5,6 +5,9 @@
 //!   Messages API の応答の形に合わせて手で作ったもの) を再生する [`ClaudeProvider`]。同じ答えを
 //!   Chat Completions の形にした録画 (`openai_classify_layers_bustup.json`) を再生する [`OpenAiProvider`]。
 //!   同じ録画で、利用者の注文と前の分類を添えた作り直しも確かめる。
+//! - 差分の手がかり (`variant_sets`、T0523): 答えの形に必須の項目が増えたので、OpenAI 互換の録画の答えにだけ
+//!   `"variant_sets": []` を手で足した (strict の形と照らし合わせるため。`layers` の判断の中身は変えていない)。
+//!   Claude の録画は変えず、欠けを「手がかりなし」として読むことを確かめる。
 
 #![allow(clippy::unwrap_used)]
 
@@ -96,6 +99,8 @@ fn bustup_truth() -> Vec<(String, Label, Side)> {
 fn names_classify_the_bustup_psd() {
     let labels = classify_by_name(&bustup());
     assert_eq!(summary(&labels), bustup_truth());
+    // 録画の答えに組はない (Claude の録画は `variant_sets` を持たない。欠けは手がかりなしとして読む)。
+    assert!(labels.iter().all(|l| l.variant.is_none()));
     assert_eq!(labels[13].layer_path, ["face", "eye-r", "eyewhite-r"]);
     assert!(labels.iter().all(|l| l.confidence >= 0.9));
 }
@@ -377,6 +382,57 @@ fn invalid_answers_are_rejected() {
     }
 }
 
+/// 差分の手がかり (T0523): 答えの `variant_sets` の組に、組の最も小さい番号を付ける。1 枚だけの組は捨て、
+/// 範囲の外・2 つの組に入る番号は断る。`variant_sets` のない答え (外部のエージェントの分類) は手がかりを変えない。
+#[test]
+fn variant_sets_mark_alternative_drawings() {
+    let tree = small_tree();
+    let fake = FakeProvider::new();
+    fake.push(json!({
+        "layers": [{ "index": 1, "label": "eye", "side": "left", "confidence": 0.9 }],
+        "variant_sets": [[3, 2], [0]]
+    }));
+    let labels = classify_layers(&fake, &tree, &ClassifyOptions::default()).unwrap();
+    let variants: Vec<Option<u32>> = labels.iter().map(|l| l.variant).collect();
+    assert_eq!(variants, [None, None, Some(2), Some(2), None, None]);
+    let (request, _) = &fake.calls()[0];
+    assert!(request.prompt.contains("variant_sets"));
+
+    // 前の分類の手がかりを、答えの組で置き換える (作り直し)。
+    let fake = FakeProvider::new();
+    fake.push(json!({ "layers": [], "variant_sets": [[1, 4]] }));
+    let revised = classify_layers_guided(
+        &fake,
+        &tree,
+        &ClassifyOptions::default(),
+        &ClassifyGuidance {
+            instructions: None,
+            previous: Some(labels.clone()),
+        },
+    )
+    .unwrap();
+    let variants: Vec<Option<u32>> = revised.iter().map(|l| l.variant).collect();
+    assert_eq!(variants, [None, Some(1), None, None, Some(1), None]);
+    assert!(fake.calls()[0].0.prompt.contains("variant set of layer 2"));
+
+    let mut kept = labels.clone();
+    apply_answer(&mut kept, json!({ "layers": [] })).unwrap();
+    assert_eq!(kept, labels);
+
+    for (sets, needle) in [
+        (json!([[1, 9]]), "not in the request"),
+        (json!([[1, 2], [2, 3]]), "more than one variant set"),
+    ] {
+        let fake = FakeProvider::new();
+        fake.push(json!({ "layers": [], "variant_sets": sets }));
+        let err = classify_layers(&fake, &tree, &ClassifyOptions::default()).unwrap_err();
+        assert!(
+            matches!(&err, AiError::InvalidResponse(m) if m.contains(needle)),
+            "{err}"
+        );
+    }
+}
+
 #[test]
 fn provider_errors_are_passed_through() {
     let fake = FakeProvider::new();
@@ -398,6 +454,8 @@ fn replays_a_recorded_claude_answer_for_the_bustup_psd() {
     let labels = classify_layers(&provider, &bustup(), &ClassifyOptions::default()).unwrap();
     assert_eq!(transport.remaining(), 0);
     assert_eq!(summary(&labels), bustup_truth());
+    // 録画の答えに組はない (Claude の録画は `variant_sets` を持たない。欠けは手がかりなしとして読む)。
+    assert!(labels.iter().all(|l| l.variant.is_none()));
 
     // 録画の答えの確からしさを使い、低いものは確認に回る
     let options = ClassifyOptions::default();

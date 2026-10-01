@@ -9,10 +9,13 @@ import {
   freeParts,
   isBaseGroup,
   moveEntry,
+  moveEntryTo,
   removeEntry,
   removeGroup,
   setLinks,
   setPoseCommand,
+  showEntry,
+  shownEntry,
   usedParts,
 } from "./poses";
 
@@ -97,5 +100,31 @@ describe("poses", () => {
     expect(fadeSeconds("-1")).toBeNull();
     expect(fadeSeconds("")).toBeNull();
     expect(fadeSeconds("abc")).toBeNull();
+  });
+
+  it("moves an entry by dragging it before another one", () => {
+    const three: Pose = {
+      fade_duration: 0,
+      groups: [{ entries: ["A", "B", "C"].map((part) => ({ part, links: [] })) }],
+    };
+    const order = (p: Pose) => p.groups[0]?.entries.map((e) => e.part);
+    expect(order(moveEntryTo(three, 0, 2, 0))).toEqual(["C", "A", "B"]);
+    expect(order(moveEntryTo(three, 0, 0, 2))).toEqual(["B", "A", "C"]);
+    expect(order(moveEntryTo(three, 0, 0, 3))).toEqual(["B", "C", "A"]);
+    // 自分の前後に落としても変わらない。範囲の外は無視する。
+    expect(order(moveEntryTo(three, 0, 1, 1))).toEqual(["A", "B", "C"]);
+    expect(order(moveEntryTo(three, 0, 1, 2))).toEqual(["A", "B", "C"]);
+    expect(order(moveEntryTo(three, 0, 5, 0))).toEqual(["A", "B", "C"]);
+    expect(order(moveEntryTo(three, 0, 0, 9))).toEqual(["A", "B", "C"]);
+  });
+
+  it("switches the entry shown in the viewport per group", () => {
+    const group = pose.groups[0];
+    if (!group) throw new Error("no group");
+    expect(shownEntry(group, [])).toBe(0);
+    const shown = showEntry(["Other"], group, "ArmB");
+    expect(shown).toEqual(["Other", "ArmB"]);
+    expect(shownEntry(group, shown)).toBe(1);
+    expect(showEntry(shown, group, "ArmA")).toEqual(["Other", "ArmA"]);
   });
 });
