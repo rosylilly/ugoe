@@ -397,20 +397,31 @@ struct Image {
 
 /// アトラスの中で画像を置いた場所 (周りの複製を除いた本体の左上)。
 #[derive(Debug, Clone, Copy)]
-struct Placement {
-    x: u32,
-    y: u32,
-    width: u32,
-    height: u32,
-    atlas_width: u32,
-    atlas_height: u32,
+pub(crate) struct Placement {
+    pub(crate) x: u32,
+    pub(crate) y: u32,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) atlas_width: u32,
+    pub(crate) atlas_height: u32,
 }
 
 impl Placement {
     /// 元の画像の UV をアトラスの UV に写す。
-    fn map(&self, uv: ugoe_core::Vec2) -> ugoe_core::Vec2 {
+    pub(crate) fn map(&self, uv: ugoe_core::Vec2) -> ugoe_core::Vec2 {
         let axis = |u: f32, offset: u32, size: u32, total: u32| {
             ((f64::from(offset) + f64::from(u) * f64::from(size)) / f64::from(total)) as f32
+        };
+        ugoe_core::Vec2::new(
+            axis(uv.x, self.x, self.width, self.atlas_width),
+            axis(uv.y, self.y, self.height, self.atlas_height),
+        )
+    }
+
+    /// アトラスの UV を元の画像の UV に戻す ([`Placement::map`] の逆。丸めの分だけずれ得る)。
+    pub(crate) fn unmap(&self, uv: ugoe_core::Vec2) -> ugoe_core::Vec2 {
+        let axis = |u: f32, offset: u32, size: u32, total: u32| {
+            ((f64::from(u) * f64::from(total) - f64::from(offset)) / f64::from(size)) as f32
         };
         ugoe_core::Vec2::new(
             axis(uv.x, self.x, self.width, self.atlas_width),

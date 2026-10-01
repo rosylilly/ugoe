@@ -518,6 +518,28 @@ yaw?: string | null,
 pitch?: string | null, };
 
 /**
+ * 違いの行の要素 1 つ。
+ */
+export type DifferenceItem = { kind: DifferenceKind, 
+/**
+ * モジュールの中の ID (表示用)。
+ */
+id: string, 
+/**
+ * 何が違うか (英語。例: `vertices 12 → 14; draw order 500 → 520`。足したものは `added`)。
+ */
+text: string, 
+/**
+ * ツリーで選ぶときの、作業用のモデルの ID。見つからなければ `None`。
+ */
+element: string | null, };
+
+/**
+ * 違いの行の要素の種類 (エディタの選択の種類と同じ名前)。
+ */
+export type DifferenceKind = "part" | "deformer" | "mesh";
+
+/**
  * 外部に送る内容 (確認のダイアログに示す)。`ugoe_ai::Disclosure` の外部に送る場合の写し。
  */
 export type DisclosureView = { 
@@ -1046,6 +1068,19 @@ export type ModelMeta = { name: string, canvas: Canvas, };
  * 改変の許諾。
  */
 export type Modification = "prohibited" | "allow" | "allow_redistribution";
+
+/**
+ * 違いの 1 行 (T0654)。足した・変えた要素ごとの中身の違いを添える (T0656)。
+ */
+export type ModuleDifference = { 
+/**
+ * 英語の 1 行 (例: `Meshes: 2 → 1 (removed: Ears; changed: Band)`)。
+ */
+text: string, 
+/**
+ * 行の要素のうち、足したものと変えたもの (パーツ・デフォーマ・メッシュの行だけ)。
+ */
+items: Array<DifferenceItem>, };
 
 /**
  * `.ugoemod` の書き出しの結果。

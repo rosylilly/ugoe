@@ -307,6 +307,11 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
   同じスロットで書き出したファイル (「CatEars」) と選び直して、どこを変えたかを見比べられます。一覧では、いまの編集は `editing` の印の付いた行です。
   ファイルの行には、いまの編集との違いが「3 differences from your current edits」のように出て、開くと「Meshes: 5 → 4 (removed: EarL)」
   「Textures: …」「Required slots: …」のような行 (ファイル → いまの編集の向き) が並びます。同じなら「Same as your current edits.」と出ます。
+  足したり変えたりしたメッシュ・デフォーマ・パーツは、行の下に「Band: vertices 4 → 6; draw order 500 → 520」のように何が違うかが出ます。
+  名前を押すと、プレビューを出て左のツリーでその要素が選ばれます (もう一度「Preview」を押すと、付けていたモジュールは付き直ります)。書き出すときに「Pack textures into atlases」を選んだファイルとも、アトラスの前の
+  テクスチャと UV に戻して比べるので、変えていなければ「Same as your current edits.」と出ます。
+
+  ![違いの行の下に、変えたメッシュの頂点と描画順が出る。名前を押すとプレビューを出てツリーで選ばれる](images/module-compare-details.png)
 
   ![書き出した cat-ears.ugoemod の行に、耳を消したいまの編集との違いが出る](images/module-compare-differences.png)
 

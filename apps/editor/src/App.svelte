@@ -298,7 +298,11 @@ $effect(() => {
   </aside>
   {#if preview.active}
     <aside class="preview">
-      <PreviewPanel {preview} {doc} {viewport} {lighting} />
+      <PreviewPanel {preview} {doc} {viewport} {lighting} onselect={(ref) => {
+        // ツリーはプレビューの間は隠れるので、出てから選ぶ (T0656)。
+        preview.exit();
+        selection.set([ref]);
+      }} />
     </aside>
   {/if}
 </div>

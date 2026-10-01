@@ -24,6 +24,7 @@ import type {
   ExternalChange,
   KeyformTarget,
   McpBridgeStatus,
+  ModuleDifference,
   ModuleExportReport,
   ModuleProblem,
   ModuleRigChoice,
@@ -114,10 +115,11 @@ export const ipc = {
   getPreviewModule: async (name: string | null = null) =>
     new Uint8Array(await invoke<ArrayBuffer>("get_preview_module", { name })),
   /**
-   * モジュールのプロジェクトの今の編集と、書き出した .ugoemod のバイト列の違い (1 行ずつの英語。同じなら空。
-   * 「ファイル → 今の編集」の向き。T0654)。バイト列はそのまま本文で送る。
+   * モジュールのプロジェクトの今の編集と、書き出した .ugoemod のバイト列の違い (1 行ずつの英語と、足した・変えた
+   * 要素ごとの詳細。同じなら空。「ファイル → 今の編集」の向き。T0654・T0656)。バイト列はそのまま本文で送る。
    */
-  comparePreviewModule: (bytes: Uint8Array) => invoke<string[]>("compare_preview_module", bytes),
+  comparePreviewModule: (bytes: Uint8Array) =>
+    invoke<ModuleDifference[]>("compare_preview_module", bytes),
   /**
    * モジュールのプロジェクトを .ugoemod に書き出す。書き出しの設定 (getExportSettings) でアトラス化を選んでいれば、
    * モジュールのテクスチャをアトラスにまとめる。

@@ -3,7 +3,8 @@
   ドロップ)、スロットごとに付けるモジュールを選ぶ。付け外しの失敗は DressUpError の code から分かる言葉で出す (dressUp.ts)。
   状態と WebPuppet の操作は DressUp (dressUp.svelte.ts)。モデルは変えない。
   モジュールのプロジェクトでは、今の編集 (`own` の行) も一覧に出し、同じスロットのモジュールと差し替えて比べられる (T0651)。
-  同じ名前の書き出したファイルの行には、今の編集との違いを文字でも出す (T0654)。
+  同じ名前の書き出したファイルの行には、今の編集との違いを文字でも出す (T0654)。足した・変えた要素は何が違うかを添え、
+  押すとプレビューを出てツリーで選ぶ (T0656)。
 -->
 <script lang="ts">
 import { isTauri } from "@tauri-apps/api/core";
@@ -11,16 +12,19 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { onMount } from "svelte";
 import { fileDialogs } from "../fileDialogs";
 import type { Slot } from "../ipc";
-import { isModuleFile, MODULE_FILTER, slotRows } from "./dressUp";
+import type { ElementRef } from "../selection.svelte";
+import { differenceRef, isModuleFile, MODULE_FILTER, slotRows } from "./dressUp";
 import type { DressUp, ModuleSource } from "./dressUp.svelte";
 
 interface Props {
   dressUp: DressUp;
   /** 本体のスロット (モデルの定義順)。 */
   slots: readonly Slot[];
+  /** 違いの行の要素をツリーで選ぶ (プレビューを出る)。無ければ選べない。 */
+  onselect?: (ref: ElementRef) => void;
 }
 
-let { dressUp, slots }: Props = $props();
+let { dressUp, slots, onselect }: Props = $props();
 
 /** `.ugoemod` をウィンドウの上でドラッグしている。 */
 let dragging = $state(false);
@@ -202,7 +206,26 @@ onMount(() => {
                 >{entry.differences.length} difference{entry.differences.length === 1 ? "" : "s"} from your current edits</summary
               >
               <ul>
-                {#each entry.differences as line, i (i)}<li>{line}</li>{/each}
+                {#each entry.differences as line, i (i)}
+                  <li>
+                    {line.text}
+                    {#if line.items.length > 0}
+                      <ul class="items">
+                        {#each line.items as item (item.id)}
+                          {@const ref = differenceRef(item)}
+                          <li>
+                            {#if ref && onselect}
+                              <button
+                                class="link"
+                                title="Leave the preview and select {item.id} in the tree"
+                                onclick={() => onselect?.(ref)}>{item.id}</button
+                              >{:else}<span class="item-id">{item.id}</span>{/if}: {item.text}
+                          </li>
+                        {/each}
+                      </ul>
+                    {/if}
+                  </li>
+                {/each}
               </ul>
             </details>
           {/if}
@@ -348,5 +371,25 @@ p {
   margin: 2px 0;
   padding-left: 16px;
   overflow-wrap: anywhere;
+}
+
+.differences .items {
+  margin: 0;
+  color: var(--muted);
+}
+
+/* 要素の ID は文字のように見せ、押すとツリーで選ぶ。 */
+.link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.item-id {
+  font-weight: 600;
 }
 </style>

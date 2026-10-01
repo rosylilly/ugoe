@@ -1,8 +1,10 @@
 // プレビューの着せ替え (T0649): 説明の文言・スロットの一覧と、DressUp の付け外し (WebPuppet と IPC は偽物)。
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ModuleDifference } from "../ipc";
 import type { WebPuppet } from "../viewport/wasm";
 import {
   describeProblem,
+  differenceRef,
   editingName,
   fileStem,
   isModuleFile,
@@ -14,7 +16,7 @@ import { DressUp } from "./dressUp.svelte";
 
 const saved: unknown[] = [];
 /** `comparePreviewModule` の結果 (バイト列はモジュールの名前)。 */
-let compared: (bytes: Uint8Array) => string[] = () => [];
+let compared: (bytes: Uint8Array) => ModuleDifference[] = () => [];
 const files: Record<string, string> = {};
 
 vi.mock("../ipc", () => ({
@@ -456,13 +458,15 @@ describe("DressUp in a module project", () => {
       changed: vi.fn(),
       ownSlot: () => null,
     });
-    compared = (b) => [`Meshes: 2 → 3 (added: ${new TextDecoder().decode(b)}Brim)`];
+    const brim = (name: string): ModuleDifference => ({
+      text: `Meshes: 2 → 3 (added: ${name}Brim)`,
+      items: [{ kind: "mesh", id: `${name}Brim`, text: "added", element: `${name}/${name}Brim` }],
+    });
+    compared = (b) => [brim(new TextDecoder().decode(b))];
     dressUp.setOwn(bytes(editing), editing, false, "Hat");
     dressUp.loaded(fake.puppet);
     await dressUp.add([{ path: "/work/Hat.ugoemod", bytes: bytes("Hat") }]);
-    await vi.waitFor(() =>
-      expect(entry(dressUp, "Hat")?.differences).toEqual(["Meshes: 2 → 3 (added: HatBrim)"]),
-    );
+    await vi.waitFor(() => expect(entry(dressUp, "Hat")?.differences).toEqual([brim("Hat")]));
     // ほかの名前のファイルと今の編集の行は比べない。
     await dressUp.add([{ path: "/work/Cap.ugoemod", bytes: bytes("Cap") }]);
     expect(entry(dressUp, "Cap")?.differences).toBeUndefined();
@@ -475,5 +479,12 @@ describe("DressUp in a module project", () => {
     // 比べるのをやめると消える。
     dressUp.setOwn(null, "", false);
     expect(entry(dressUp, "Hat")?.differences).toBeUndefined();
+  });
+
+  it("selects the elements of a difference in the tree (T0656)", () => {
+    expect(
+      differenceRef({ kind: "mesh", id: "Ears", text: "vertices 4 → 6", element: "CatEars/Ears" }),
+    ).toEqual({ kind: "mesh", id: "CatEars/Ears" });
+    expect(differenceRef({ kind: "part", id: "Gone", text: "added", element: null })).toBeNull();
   });
 });

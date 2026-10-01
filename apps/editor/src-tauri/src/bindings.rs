@@ -9,7 +9,10 @@ use ugoe_editor_core::codegen::{TsBindings, command_schema_json, typescript_samp
 use ugoe_editor_core::lighting::{BulgeSettings, PreviewLighting};
 use ugoe_editor_core::overflow::{ElementOverflow, OverflowReport};
 use ugoe_editor_core::physics_check::RestPoseCollision;
-use ugoe_editor_core::{ApplyReport, ExportReport, ExportSettings, PsdImportWarning};
+use ugoe_editor_core::{
+    ApplyReport, DifferenceItem, DifferenceKind, ExportReport, ExportSettings, ModuleDifference,
+    PsdImportWarning,
+};
 
 use crate::ai::{AiReply, AiSettings, ConsentAnswer};
 use crate::ai_provider::ProviderSettings;
@@ -67,6 +70,9 @@ pub fn generated_files() -> Result<Vec<(&'static str, String)>, serde_json::Erro
     types.add::<ModuleProblem>();
     types.add::<BaseReload>();
     types.add::<ModuleExportReport>();
+    types.add::<DifferenceKind>();
+    types.add::<DifferenceItem>();
+    types.add::<ModuleDifference>();
     Ok(vec![
         ("apps/editor/src/lib/generated/types.ts", types.render()),
         (

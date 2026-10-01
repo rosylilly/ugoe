@@ -48,7 +48,9 @@ pub use grid::CellError;
 pub use import::{PsdImport, PsdImportError, PsdImportOptions, PsdImportWarning, import_psd};
 pub use inference::{MirrorReport, RederiveWarning};
 pub use keyform::Keyform;
-pub use module_compare::compare_with_module_file;
+pub use module_compare::{
+    DifferenceItem, DifferenceKind, ModuleDifference, compare_with_module_file,
+};
 pub use module_project::{ModuleBase, ModuleContext, ModuleError};
 pub use motion_edit::{Animations, SegmentShape};
 pub use physics_template::{PhysicsTemplate, PhysicsTemplateOptions};

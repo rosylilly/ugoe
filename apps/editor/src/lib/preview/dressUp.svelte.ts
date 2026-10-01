@@ -13,8 +13,8 @@
 //   行 (`own`) として付ける (`setOwn`。T0651)。同じスロットのほかのモジュールと差し替えて比べられる。今の編集は
 //   `editingName` の名前で読み込むので、前に書き出した同じ名前の `.ugoemod` とも並べて比べられる (T0653)。
 //   そのファイルの行には、今の編集との違い (要素・テクスチャ・条件など) を文字でも出す (`differences`。
-//   ipc.comparePreviewModule。T0654)。
-import { ipc } from "../ipc";
+//   ipc.comparePreviewModule。T0654)。足した・変えた要素は何が違うかを添え、ツリーで選べる (T0656)。
+import { ipc, type ModuleDifference } from "../ipc";
 import type { WebPuppet } from "../viewport/wasm";
 import {
   type DetachedModule,
@@ -54,7 +54,7 @@ export interface DressUpEntry {
    * モジュールのプロジェクトで、今の編集と同じ名前のモジュールのファイルの行なら、今の編集との違い (「ファイル →
    * 今の編集」の 1 行ずつ。同じなら空。比べている途中なら `null`)。ほかの行は `undefined`。
    */
-  differences?: string[] | null;
+  differences?: ModuleDifference[] | null;
 }
 
 /** 読み込むファイル。`bytes` がなければ `path` から読む。 */
@@ -514,7 +514,7 @@ export class DressUp {
       }
     }
     for (const [entry, bytes] of targets) {
-      let differences: string[] | undefined;
+      let differences: ModuleDifference[] | undefined;
       try {
         differences = await ipc.comparePreviewModule(bytes);
       } catch (e) {

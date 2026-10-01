@@ -10,7 +10,9 @@ use serde::Serialize;
 use tauri::State;
 use ts_rs::TS;
 use ugoe_editor_core::project::{ProjectError, load_base, read_module_link};
-use ugoe_editor_core::{AtlasReport, Document, ModuleError, Project, ProjectFingerprint};
+use ugoe_editor_core::{
+    AtlasReport, Document, ModuleDifference, ModuleError, Project, ProjectFingerprint,
+};
 use ugoe_model::module::ModuleRequirements;
 
 use crate::AppState;
@@ -396,13 +398,13 @@ pub fn get_preview_base_bundle(state: State<'_, AppState>) -> Result<tauri::ipc:
 }
 
 /// 開いているモジュールのプロジェクトの今の編集と、書き出した `.ugoemod` (本文のバイト列) の違い
-/// (`ugoe_editor_core::compare_with_module_file`。1 行ずつの英語、同じなら空)。プレビューの着せ替えの一覧で、
-/// 同じ名前のファイルの行に出す (T0654)。
+/// (`ugoe_editor_core::compare_with_module_file`。1 行ずつの英語と、足した・変えた要素ごとの詳細。同じなら空)。
+/// プレビューの着せ替えの一覧で、同じ名前のファイルの行に出す (T0654・T0656)。
 #[tauri::command]
 pub fn compare_preview_module(
     state: State<'_, AppState>,
     request: tauri::ipc::Request<'_>,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<ModuleDifference>, String> {
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
         return Err("expected the bytes of a .ugoemod file".into());
     };
@@ -415,7 +417,7 @@ fn compare(
     document: &Document,
     session: &ProjectSession,
     bytes: &[u8],
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<ModuleDifference>, String> {
     ugoe_editor_core::compare_with_module_file(&session.to_project(document), bytes)
         .map_err(|e| e.to_string())
 }
@@ -688,10 +690,7 @@ mod tests {
         let bytes = ugoe_editor_core::export_module(&session.to_project(&document))
             .unwrap()
             .bytes;
-        assert_eq!(
-            compare(&document, &session, &bytes).unwrap(),
-            Vec::<String>::new()
-        );
+        assert_eq!(compare(&document, &session, &bytes).unwrap(), vec![]);
         assert!(compare(&document, &session, b"nope").is_err());
         std::fs::remove_dir_all(&dir).unwrap();
     }

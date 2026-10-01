@@ -1,7 +1,8 @@
 // プレビューの着せ替え (docs/editor.md#プレビューの着せ替え) の、DOM と wasm に依存しない部分 (dressUp.test.ts)。
 // 付け外しの失敗は ugoe-wasm の DressUpError (`code` と補足の値。crates/ugoe-wasm/README.md#着せ替え-t0123)。
 import type { FileFilter } from "../filePaths";
-import type { Slot } from "../ipc";
+import type { DifferenceItem, Slot } from "../ipc";
+import type { ElementRef } from "../selection.svelte";
 import { describeModuleWarnings } from "./loadWarnings";
 
 export const MODULE_FILTER: FileFilter = {
@@ -189,4 +190,11 @@ export function sameNames(a: readonly string[], b: readonly string[]): boolean {
  */
 export function editingName(name: string): string {
   return `${name} (editing)`;
+}
+
+/**
+ * 今の編集との違いの行の要素を、ツリーで選ぶときの参照 (T0656)。作業用のモデルに見つからない要素は選べない (`null`)。
+ */
+export function differenceRef(item: DifferenceItem): ElementRef | null {
+  return item.element === null ? null : { kind: item.kind, id: item.element };
 }
