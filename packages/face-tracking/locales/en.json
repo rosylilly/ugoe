@@ -1,0 +1,93 @@
+{
+  "title": "Face tracking",
+  "status": {
+    "loading": "Loading…",
+    "noFace": "No face found",
+    "noBody": "No body found",
+    "fps": "{{fps}} fps",
+    "replayPosition": "{{time}} / {{duration}} s"
+  },
+  "camera": {
+    "select": { "tooltip": "Camera" },
+    "default": "Camera (default)",
+    "numbered": "Camera {{index}}",
+    "fallbackName": "Camera",
+    "start": { "label": "Start" },
+    "stop": { "label": "Stop" }
+  },
+  "file": {
+    "label": "File…",
+    "tooltip": "Track a video, an image, or recorded values (JSON)"
+  },
+  "source": {
+    "camera": "Camera",
+    "video": "Video",
+    "image": "Image",
+    "replay": "Recording"
+  },
+  "options": {
+    "mirrorView": {
+      "label": "Mirror view",
+      "tooltip": "Show the video like a mirror (display only; the values do not change)"
+    },
+    "landmarks": {
+      "label": "Landmarks",
+      "tooltip": "Draw the landmarks (face oval, eyes, brows, lips) over the video"
+    },
+    "swapSides": {
+      "label": "Swap sides",
+      "tooltip": "Swap Left / Right and the signs of yaw and roll. Use it to move the model like your reflection, or when the video is already mirrored (such as a mirrored virtual camera)"
+    },
+    "stopEyeBlink": {
+      "label": "Stop eye blink",
+      "tooltip": "Stop the model's automatic eye blink while tracking (the eyes follow the tracking only)"
+    },
+    "trackBody": {
+      "label": "Body (shoulders)",
+      "tooltip": "Also track the body orientation and the shoulders with MediaPipe Pose Landmarker. Turn it off for lighter detection; the body then follows the head"
+    }
+  },
+  "smoothing": {
+    "label": "Smoothing",
+    "tooltip": "How much to suppress jitter (One Euro filter). Stronger is smoother but lags"
+  },
+  "calibration": {
+    "calibrate": {
+      "label": "Calibrate",
+      "tooltip": "Use the current face as neutral (facing forward, no expression)"
+    },
+    "clear": {
+      "label": "Clear",
+      "tooltip": "Undo the calibration"
+    }
+  },
+  "recording": {
+    "record": {
+      "label": "Record",
+      "tooltip": "Record the detected values (save them as JSON to replay without a camera)"
+    },
+    "stop": { "label": "Stop recording ({{frames}})" },
+    "save": { "label": "Save ({{frames}})" },
+    "defaultName": "Recording"
+  },
+  "values": {
+    "headAndBlendShapes": "Head and blend shapes",
+    "body": {
+      "label": "Body",
+      "tooltip": "Leaning and shoulders are used after calibration"
+    },
+    "parameters": "Tracked parameters"
+  },
+  "errors": {
+    "noMediaDevices": "Cameras are not available here (navigator.mediaDevices is missing)",
+    "camera": {
+      "notAllowed": "The camera was not allowed (check the OS and app settings)",
+      "notFound": "No camera found",
+      "busy": "Cannot open the camera (another app may be using it)",
+      "failed": "Cannot open the camera"
+    },
+    "modelMissing": "The MediaPipe model is not bundled (run `pnpm mediapipe` in the app's directory)",
+    "poseModelMissing": "The body tracking model is not bundled (run `pnpm mediapipe` in the app's directory). Tracking the face only",
+    "saveFailed": "Cannot save"
+  }
+}

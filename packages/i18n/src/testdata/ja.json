@@ -1,0 +1,8 @@
+{
+  "greeting": "こんにちは、{{name}}",
+  "files": {
+    "count_other": "{{count}} 個のファイル"
+  },
+  "only": { "english": "" },
+  "price": "合計: {{value, number}}"
+}

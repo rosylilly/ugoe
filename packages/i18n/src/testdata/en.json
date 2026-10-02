@@ -1,0 +1,9 @@
+{
+  "greeting": "Hello, {{name}}",
+  "files": {
+    "count_one": "{{count}} file",
+    "count_other": "{{count}} files"
+  },
+  "only": { "english": "Only in English" },
+  "price": "Total: {{value, number}}"
+}

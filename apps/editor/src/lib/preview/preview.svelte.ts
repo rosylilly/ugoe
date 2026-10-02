@@ -19,7 +19,6 @@
 //   着せ替えで付けたモジュールのグループ (T0661) は WebPuppet の合成したポーズ (`pose_json`) から読み、付け外しと
 //   読み込みのたびに読み直す (`modulePoseGroups`)。選んだ要素は WebPuppet の ID で `modulePoseShown` に持つ。
 import {
-  en,
   FaceTracker,
   setPuppetTracking,
   type TrackingFrame,
@@ -108,7 +107,7 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
   constructor(doc: EditorDocument, viewport: ViewportController) {
     this.#doc = doc;
     this.#viewport = viewport;
-    this.tracker = new FaceTracker(this, { strings: en, saveJson: saveTrackingRecording });
+    this.tracker = new FaceTracker(this, { saveJson: saveTrackingRecording });
     this.dressUp = new DressUp({
       puppet: () => this.#viewport.puppet,
       active: () => this.active,

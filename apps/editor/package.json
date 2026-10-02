@@ -19,7 +19,8 @@
     "@tauri-apps/api": "^2.12.0",
     "@tauri-apps/plugin-dialog": "^2.8.0",
     "@tauri-apps/plugin-opener": "^2.6.0",
-    "@ugoe/face-tracking": "workspace:*"
+    "@ugoe/face-tracking": "workspace:*",
+    "@ugoe/i18n": "workspace:*"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",

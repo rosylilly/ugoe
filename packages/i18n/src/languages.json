@@ -1,0 +1,7 @@
+{
+  "source": "en",
+  "languages": [
+    { "tag": "en", "name": "English" },
+    { "tag": "ja", "name": "日本語", "complete": true }
+  ]
+}

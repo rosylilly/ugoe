@@ -1,0 +1,93 @@
+{
+  "title": "フェイストラッキング",
+  "status": {
+    "loading": "準備中…",
+    "noFace": "顔が見つかりません",
+    "noBody": "体が見つかりません",
+    "fps": "{{fps}} fps",
+    "replayPosition": "{{time}} / {{duration}} 秒"
+  },
+  "camera": {
+    "select": { "tooltip": "カメラ" },
+    "default": "カメラ (既定)",
+    "numbered": "カメラ {{index}}",
+    "fallbackName": "カメラ",
+    "start": { "label": "開始" },
+    "stop": { "label": "停止" }
+  },
+  "file": {
+    "label": "ファイル…",
+    "tooltip": "動画・画像、または記録した値 (JSON) で確かめる"
+  },
+  "source": {
+    "camera": "カメラ",
+    "video": "動画",
+    "image": "画像",
+    "replay": "記録の再生"
+  },
+  "options": {
+    "mirrorView": {
+      "label": "鏡像で表示",
+      "tooltip": "映像を鏡のように表示する (表示だけで、値は変わらない)"
+    },
+    "landmarks": {
+      "label": "ランドマーク",
+      "tooltip": "ランドマーク (顔の輪郭・目・眉・唇) を重ねて描く"
+    },
+    "swapSides": {
+      "label": "左右を入れ替える",
+      "tooltip": "左右 (Left / Right) と、ヨー・ロールの符号を入れ替える。モデルを鏡に映った自分のように動かすとき、または入力の映像がすでに左右反転しているとき (反転済みの仮想カメラなど) に使う"
+    },
+    "stopEyeBlink": {
+      "label": "目パチを止める",
+      "tooltip": "トラッキング中はモデルの自動の目パチを止める (目の開閉はトラッキングの値だけになる)"
+    },
+    "trackBody": {
+      "label": "体 (肩) も",
+      "tooltip": "MediaPipe Pose Landmarker で体の向きと肩の上下も取り込む。切ると検出が軽くなり、体の向きは頭の動きから作る"
+    }
+  },
+  "smoothing": {
+    "label": "平滑化",
+    "tooltip": "揺れを抑える強さ (One Euro フィルタ)。強いほど滑らかで、動きが遅れる"
+  },
+  "calibration": {
+    "calibrate": {
+      "label": "キャリブレーション",
+      "tooltip": "今の顔を中立 (正面・無表情) にする"
+    },
+    "clear": {
+      "label": "解除",
+      "tooltip": "キャリブレーションを取り消す"
+    }
+  },
+  "recording": {
+    "record": {
+      "label": "記録",
+      "tooltip": "検出した値を記録する (JSON に保存して、カメラの無い環境で再生できる)"
+    },
+    "stop": { "label": "記録を止める ({{frames}})" },
+    "save": { "label": "保存 ({{frames}})" },
+    "defaultName": "記録"
+  },
+  "values": {
+    "headAndBlendShapes": "頭の向きとブレンドシェイプ",
+    "body": {
+      "label": "体",
+      "tooltip": "前後の傾きと肩はキャリブレーションの後に使います"
+    },
+    "parameters": "変換後のパラメータ"
+  },
+  "errors": {
+    "noMediaDevices": "この環境ではカメラを使えません (navigator.mediaDevices がありません)",
+    "camera": {
+      "notAllowed": "カメラの使用が許可されませんでした (OS やアプリの設定を確かめてください)",
+      "notFound": "カメラが見つかりません",
+      "busy": "カメラを開けません (ほかのアプリが使っているかもしれません)",
+      "failed": "カメラを開けません"
+    },
+    "modelMissing": "MediaPipe のモデルが同梱されていません (アプリのディレクトリで `pnpm mediapipe` を実行してください)",
+    "poseModelMissing": "体のトラッキングのモデルが同梱されていません (アプリのディレクトリで `pnpm mediapipe` を実行してください)。顔だけをトラッキングします",
+    "saveFailed": "保存できません"
+  }
+}

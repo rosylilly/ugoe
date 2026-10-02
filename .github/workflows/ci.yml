@@ -316,6 +316,10 @@ jobs:
       - run: pnpm --filter @ugoe/face-tracking test
       - run: pnpm --filter @ugoe/player check
       - run: pnpm --filter @ugoe/player test
+      - run: pnpm --filter @ugoe/i18n check
+      - run: pnpm --filter @ugoe/i18n test
+      # 翻訳のカタログの検査 (`just i18n`。packages/i18n/README.md)
+      - run: node packages/i18n/scripts/check-catalogs.mjs
       - run: pnpm --filter @ugoe/runtime test
       - name: Install Rust toolchain (rust-toolchain.toml, wasm32 target included)
         run: rustup show active-toolchain || rustup toolchain install

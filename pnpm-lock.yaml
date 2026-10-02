@@ -196,6 +196,9 @@ importers:
       '@ugoe/face-tracking':
         specifier: workspace:*
         version: link:../../packages/face-tracking
+      '@ugoe/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
     devDependencies:
       '@sveltejs/vite-plugin-svelte':
         specifier: ^7.3.1
@@ -236,6 +239,9 @@ importers:
       '@ugoe/face-tracking':
         specifier: workspace:*
         version: link:../../packages/face-tracking
+      '@ugoe/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
       '@ugoe/player':
         specifier: workspace:*
         version: link:../../packages/player
@@ -282,7 +288,38 @@ importers:
       '@mediapipe/tasks-vision':
         specifier: ^1.0.1
         version: 1.0.1
+      '@ugoe/i18n':
+        specifier: workspace:*
+        version: link:../i18n
     devDependencies:
+      '@tsconfig/svelte':
+        specifier: ^5.0.8
+        version: 5.0.8
+      '@types/node':
+        specifier: ^26.6.3
+        version: 26.6.3
+      svelte:
+        specifier: ^5.57.1
+        version: 5.57.1
+      svelte-check:
+        specifier: ^4.7.6
+        version: 4.7.6(picomatch@4.0.7)(svelte@5.57.1)(typescript@6.0.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^5.0.2
+        version: 5.0.2(@types/node@26.6.3)(vite@8.3.1(@types/node@26.6.3)(jiti@2.6.1))
+
+  packages/i18n:
+    dependencies:
+      i18next:
+        specifier: ^26.4.2
+        version: 26.4.2(typescript@6.0.3)
+    devDependencies:
+      '@sveltejs/vite-plugin-svelte':
+        specifier: ^7.3.1
+        version: 7.3.1(svelte@5.57.1)(vite@8.3.1(@types/node@26.6.3)(jiti@2.6.1))
       '@tsconfig/svelte':
         specifier: ^5.0.8
         version: 5.0.8
@@ -912,6 +949,14 @@ packages:
   global-directory@5.0.0:
     resolution: {integrity: sha512-1pgFdhK3J2LeM+dVf2Pd424yHx2ou338lC0ErNP2hPx4j8eW1Sp0XqSjNxtk6Tc4Kr5wlWtSvz8cn2yb7/SG/w==}
     engines: {node: '>=20'}
+
+  i18next@26.4.2:
+    resolution: {integrity: sha512-RX+R0VLg13IbvRuJSxnqykUFS9vQZTl8wYpWPCIUDWVrSGjsQywB5Y+pjzrkboxGAuYfJZVH1InFTdgBdxq6ug==}
+    peerDependencies:
+      typescript: ^5 || ^6 || ^7
+    peerDependenciesMeta:
+      typescript:
+        optional: true
 
   import-fresh@3.3.1:
     resolution: {integrity: sha512-TR3KfrTZTYLPB6jUjfx6MF9WcWrHL9su5TObK4ZkYgBdWKPOFoSoQIdEuTuR82pmtxH2spWG9h6etwfr1pLBqQ==}
@@ -1773,6 +1818,10 @@ snapshots:
   global-directory@5.0.0:
     dependencies:
       ini: 6.0.0
+
+  i18next@26.4.2(typescript@6.0.3):
+    optionalDependencies:
+      typescript: 6.0.3
 
   import-fresh@3.3.1:
     dependencies:

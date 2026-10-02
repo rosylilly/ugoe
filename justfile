@@ -19,7 +19,7 @@ setup:
     rustup show active-toolchain
 
 # CI と同じ検査一式
-ci: fmt-check lint test layers groups licenses publish-check spec web-check
+ci: fmt-check lint test layers groups licenses publish-check spec web-check i18n
 
 # コミットメッセージを検査: `just commitlint "feat(runtime): add foo"`
 commitlint message:
@@ -179,8 +179,14 @@ web-check:
     pnpm --filter '@ugoe/face-tracking' test
     pnpm --filter '@ugoe/player' check
     pnpm --filter '@ugoe/player' test
+    pnpm --filter '@ugoe/i18n' check
+    pnpm --filter '@ugoe/i18n' test
     pnpm --filter '@ugoe/runtime' check
     pnpm --filter '@ugoe/runtime' test
+
+# 翻訳のカタログの検査: 言語の間のキーの過不足・複数形・引数・未使用のキー (packages/i18n/README.md)
+i18n:
+    @node packages/i18n/scripts/check-catalogs.mjs
 
 # エディタを開発モードで起動
 editor:

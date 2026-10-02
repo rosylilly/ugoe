@@ -14,7 +14,7 @@ src/filter.ts           One Euro フィルタによる平滑化
 src/recording.ts        記録した値の列 (JSON) の形式・再生
 src/tracker.svelte.ts   FaceTracker: 入力 (カメラ・動画・画像・記録) → MediaPipe → 上の処理 → TrackingTarget
 src/TrackingPanel.svelte  パネル (入力の選択・映像とランドマーク・調整・記録・値の表示)
-src/strings.ts          画面の文言 (日本語 `ja` / 英語 `en`)
+src/i18n.ts             画面の文言 (@ugoe/i18n の名前空間 `face-tracking`。カタログは locales/<言語>.json、原文は英語)
 scripts/mediapipe-assets.mjs  `ugoe-mediapipe-assets <出力先> [--optional]`: MediaPipe の wasm を写し、モデルを取得して
                         SHA-256 を検証し、ライセンスの表記を写す
 ```
@@ -24,7 +24,9 @@ scripts/mediapipe-assets.mjs  `ugoe-mediapipe-assets <出力先> [--optional]`: 
 - アプリは `TrackingTarget` (`setTracking(frame | null)` と `setAutoEyeBlink(enabled)`) を実装して `FaceTracker` に渡す。
   値は次のフレームで `setPuppetTracking(puppet, frame)` (= `WebPuppet.set_tracking`) に渡す (パラメータへの変換は Rust の対応付け)。`null` を受けたら
   `clear_tracking` し、トラッキングが書き込んでいたパラメータを既定値に戻す。
-- `new FaceTracker(target, { strings, saveJson })`。`saveJson` を省くとブラウザのダウンロードで保存する。
+- `new FaceTracker(target, { saveJson })`。`saveJson` を省くとブラウザのダウンロードで保存する。
+- 文言の言語は、アプリが `@ugoe/i18n` の `setLocale()` で決める (エディタは英語、ビューアは日本語)。
+  パネルの文言は言語の切り替えに追従する。エラーの文は起きた時の言語のまま。
 - パネルは `import { TrackingPanel } from "@ugoe/face-tracking"` (`index.ts` から。サブパスで import すると
   svelte-check が同じ型を別物として扱うため)。パネルの見た目の変数 (`--muted` など) はアプリの CSS のもの。
 - アプリの `pnpm dev` / `pnpm build` の前に `ugoe-mediapipe-assets public/mediapipe` を実行する (`dev` は `--optional`)。

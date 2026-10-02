@@ -12,6 +12,7 @@ import type { FaceLandmarker, NormalizedLandmark, PoseLandmarker } from "@mediap
 import { applyCalibration, averageFrames } from "./calibration";
 import { FrameSmoother } from "./filter";
 import { frameFromLandmarker, NO_BODY, type TrackingFrame, unmirrorFrame } from "./frame";
+import { t } from "./i18n";
 import { PoseConverter } from "./pose";
 import {
   frameAt,
@@ -21,7 +22,6 @@ import {
   recordingDuration,
   serializeRecording,
 } from "./recording";
-import { ja, type TrackingStrings } from "./strings";
 
 /**
  * トラッキングの値を受け取るもの (ビューアの Player、エディタのプレビューモード)。値は次のフレームの
@@ -35,8 +35,6 @@ export interface TrackingTarget {
 }
 
 export interface FaceTrackerOptions {
-  /** 画面とエラーの文言。既定は日本語。 */
-  strings?: TrackingStrings;
   /**
    * JSON のテキスト (記録) を保存する。`name` は既定のファイル名。保存したら `true`、取り消したら `false`。
    * 省くとブラウザのダウンロードで保存する。
@@ -69,16 +67,16 @@ function message(e: unknown): string {
 }
 
 /** getUserMedia の失敗を、利用者に分かる言葉にする (元のメッセージも付ける)。 */
-function cameraError(e: unknown, strings: TrackingStrings): string {
+function cameraError(e: unknown): string {
   const name = e instanceof DOMException ? e.name : "";
   const reason =
     name === "NotAllowedError" || name === "SecurityError"
-      ? strings.cameraNotAllowed
+      ? t("errors.camera.notAllowed")
       : name === "NotFoundError" || name === "OverconstrainedError"
-        ? strings.cameraNotFound
+        ? t("errors.camera.notFound")
         : name === "NotReadableError"
-          ? strings.cameraBusy
-          : strings.cameraFailed;
+          ? t("errors.camera.busy")
+          : t("errors.camera.failed");
   return `${reason}: ${message(e)}`;
 }
 
@@ -136,7 +134,6 @@ export class FaceTracker {
   replayDuration = $state(0);
   replayTime = $state(0);
 
-  readonly strings: TrackingStrings;
   readonly #target: TrackingTarget;
   readonly #saveJson: (name: string, text: string) => Promise<boolean>;
   #landmarker: FaceLandmarker | null = null;
@@ -167,7 +164,6 @@ export class FaceTracker {
 
   constructor(target: TrackingTarget, options: FaceTrackerOptions = {}) {
     this.#target = target;
-    this.strings = options.strings ?? ja;
     this.#saveJson = options.saveJson ?? downloadJson;
   }
 
@@ -193,7 +189,10 @@ export class FaceTracker {
     const devices = await navigator.mediaDevices.enumerateDevices();
     this.cameras = devices
       .filter((d) => d.kind === "videoinput")
-      .map((d, i) => ({ id: d.deviceId, label: d.label || this.strings.cameraNumber(i + 1) }));
+      .map((d, i) => ({
+        id: d.deviceId,
+        label: d.label || t("camera.numbered", { index: i + 1 }),
+      }));
     if (!this.cameras.some((c) => c.id === this.cameraId))
       this.cameraId = this.cameras[0]?.id ?? "";
   }
@@ -202,7 +201,7 @@ export class FaceTracker {
   async startCamera(): Promise<void> {
     await this.#start(async () => {
       if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error(this.strings.noMediaDevices);
+        throw new Error(t("errors.noMediaDevices"));
       }
       const stream = await navigator.mediaDevices
         .getUserMedia({
@@ -210,7 +209,7 @@ export class FaceTracker {
           audio: false,
         })
         .catch((e: unknown) => {
-          throw new Error(cameraError(e, this.strings));
+          throw new Error(cameraError(e));
         });
       this.#stream = stream;
       const video = this.#newVideo();
@@ -220,7 +219,7 @@ export class FaceTracker {
       const track = stream.getVideoTracks()[0];
       const id = track?.getSettings().deviceId;
       if (id) this.cameraId = id;
-      return { kind: "camera", label: track?.label || this.strings.camera };
+      return { kind: "camera", label: track?.label || t("camera.fallbackName") };
     });
   }
 
@@ -251,7 +250,7 @@ export class FaceTracker {
   }
 
   /** 記録した値の列 (JSON のテキスト) を繰り返し再生する。MediaPipe は使わない。 */
-  async startReplay(text: string, label = this.strings.recording): Promise<void> {
+  async startReplay(text: string, label = t("recording.defaultName")): Promise<void> {
     await this.#start(async () => {
       this.#replay = parseRecording(text);
       this.replayDuration = recordingDuration(this.#replay);
@@ -333,7 +332,7 @@ export class FaceTracker {
     try {
       await this.#saveJson("face-tracking.json", text);
     } catch (e) {
-      this.error = `${this.strings.saveFailed}: ${message(e)}`;
+      this.error = `${t("errors.saveFailed")}: ${message(e)}`;
     }
   }
 
@@ -397,7 +396,7 @@ export class FaceTracker {
       const modelUrl = assetUrl("face_landmarker.task");
       const head = await fetch(modelUrl, { method: "HEAD" }).catch(() => null);
       if (!head?.ok) {
-        throw new Error(this.strings.modelMissing);
+        throw new Error(t("errors.modelMissing"));
       }
       const vision = await import("@mediapipe/tasks-vision");
       this.#drawing = vision;
@@ -435,7 +434,7 @@ export class FaceTracker {
     this.#poseLoading ??= (async () => {
       const modelUrl = assetUrl("pose_landmarker_lite.task");
       const head = await fetch(modelUrl, { method: "HEAD" }).catch(() => null);
-      if (!head?.ok) throw new Error(this.strings.poseModelMissing);
+      if (!head?.ok) throw new Error(t("errors.poseModelMissing"));
       const vision = await import("@mediapipe/tasks-vision");
       const fileset = await vision.FilesetResolver.forVisionTasks(assetUrl("wasm"));
       // 顔と同じく、WebKitGTK のためにふつうの canvas を渡す。

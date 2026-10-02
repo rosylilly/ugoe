@@ -16,7 +16,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@mediapipe/tasks-vision": "^1.0.1"
+    "@mediapipe/tasks-vision": "^1.0.1",
+    "@ugoe/i18n": "workspace:*"
   },
   "peerDependencies": {
     "svelte": "^5.57.1"

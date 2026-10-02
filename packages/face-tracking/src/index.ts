@@ -23,7 +23,6 @@ export {
   recordingDuration,
   serializeRecording,
 } from "./recording";
-export { en, ja, type TrackingStrings } from "./strings";
 export { default as TrackingPanel } from "./TrackingPanel.svelte";
 export {
   FaceTracker,

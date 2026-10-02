@@ -1,7 +1,9 @@
 <script lang="ts">
 // フェイストラッキングのパネル (T0703、ビューアとエディタで共有。T0636): 入力の選択、映像とランドマーク、
-// 調整、記録、値の表示。文言は `tracker.strings`。
+// 調整、記録、値の表示。文言は @ugoe/i18n の名前空間 `face-tracking` (i18n.ts)。
+import { formatNumber } from "@ugoe/i18n";
 import { onDestroy, onMount } from "svelte";
+import { t } from "./i18n";
 import type { FaceTracker } from "./tracker.svelte";
 
 interface Props {
@@ -18,7 +20,23 @@ interface Props {
 }
 
 let { tracker, parameterIds, values, open = $bindable(true) }: Props = $props();
-const t = $derived(tracker.strings);
+
+/** 入力の種類の名前のキー。 */
+const SOURCE_KIND = {
+  camera: "source.camera",
+  video: "source.video",
+  image: "source.image",
+  replay: "source.replay",
+} as const;
+
+/** 記録の再生の位置 (秒。小数第 1 位まで)。 */
+function seconds(value: number): string {
+  return formatNumber(value, {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+    useGrouping: false,
+  });
+}
 
 /** 値の表示 (小数第 3 位まで)。 */
 function formatValue(value: number): string {
@@ -50,14 +68,19 @@ function onFile(e: Event & { currentTarget: HTMLInputElement }) {
 let statusText = $derived.by(() => {
   switch (tracker.status) {
     case "loading":
-      return t.loading;
-    case "running":
+      return t("status.loading");
+    case "running": {
       if (tracker.source?.kind === "replay") {
-        return t.replayPosition(tracker.replayTime.toFixed(1), tracker.replayDuration.toFixed(1));
+        return t("status.replayPosition", {
+          time: seconds(tracker.replayTime),
+          duration: seconds(tracker.replayDuration),
+        });
       }
-      if (!tracker.faceFound) return t.noFace;
-      if (tracker.trackBody && !tracker.bodyFound) return `${t.fps(tracker.fps)} · ${t.noBody}`;
-      return t.fps(tracker.fps);
+      if (!tracker.faceFound) return t("status.noFace");
+      const fps = t("status.fps", { fps: tracker.fps });
+      if (tracker.trackBody && !tracker.bodyFound) return `${fps} · ${t("status.noBody")}`;
+      return fps;
+    }
     default:
       return "";
   }
@@ -83,7 +106,7 @@ let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
 
 <details class="tracking" bind:open>
   <summary>
-    <h2>{t.title}</h2>
+    <h2>{t("title")}</h2>
     <span class="status" class:warn={tracker.running && !tracker.faceFound}>{statusText}</span>
   </summary>
 
@@ -91,24 +114,24 @@ let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
     <select
       bind:value={tracker.cameraId}
       disabled={tracker.running}
-      title={t.camera}
+      title={t("camera.select.tooltip")}
       onfocus={() => void tracker.refreshCameras()}
     >
       {#each tracker.cameras as camera (camera.id)}
         <option value={camera.id}>{camera.label}</option>
       {:else}
-        <option value="">{t.defaultCamera}</option>
+        <option value="">{t("camera.default")}</option>
       {/each}
     </select>
     {#if tracker.running || tracker.status === "loading"}
-      <button type="button" onclick={() => tracker.stop()}>{t.stop}</button>
+      <button type="button" onclick={() => tracker.stop()}>{t("camera.stop.label")}</button>
     {:else}
-      <button type="button" onclick={() => void tracker.startCamera()}>{t.start}</button>
+      <button type="button" onclick={() => void tracker.startCamera()}>{t("camera.start.label")}</button>
     {/if}
     <button
       type="button"
       onclick={() => fileInput?.click()}
-      title={t.fileTitle}>{t.file}</button
+      title={t("file.tooltip")}>{t("file.label")}</button
     >
     <input
       bind:this={fileInput}
@@ -123,7 +146,7 @@ let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
     <p class="error">{tracker.error}</p>
   {/if}
   {#if tracker.source}
-    <p class="source">{t.sourceKind[tracker.source.kind]}: {tracker.source.label}</p>
+    <p class="source">{t(SOURCE_KIND[tracker.source.kind])}: {tracker.source.label}</p>
   {/if}
 
   <div class="preview" class:hidden={!showMedia}>
@@ -131,36 +154,36 @@ let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
   </div>
 
   <div class="options">
-    <label title={t.mirrorViewTitle}>
-      <input type="checkbox" bind:checked={tracker.mirrorView} /> {t.mirrorView}
+    <label title={t("options.mirrorView.tooltip")}>
+      <input type="checkbox" bind:checked={tracker.mirrorView} /> {t("options.mirrorView.label")}
     </label>
-    <label title={t.landmarksTitle}>
-      <input type="checkbox" bind:checked={tracker.showLandmarks} /> {t.landmarks}
+    <label title={t("options.landmarks.tooltip")}>
+      <input type="checkbox" bind:checked={tracker.showLandmarks} /> {t("options.landmarks.label")}
     </label>
-    <label title={t.swapSidesTitle}>
-      <input type="checkbox" bind:checked={tracker.swapSides} /> {t.swapSides}
+    <label title={t("options.swapSides.tooltip")}>
+      <input type="checkbox" bind:checked={tracker.swapSides} /> {t("options.swapSides.label")}
     </label>
-    <label title={t.stopEyeBlinkTitle}>
+    <label title={t("options.stopEyeBlink.tooltip")}>
       <input
         type="checkbox"
         checked={tracker.stopEyeBlink}
         onchange={(e) => tracker.setStopEyeBlink(e.currentTarget.checked)}
-      /> {t.stopEyeBlink}
+      /> {t("options.stopEyeBlink.label")}
     </label>
-    <label title={t.trackBodyTitle}>
+    <label title={t("options.trackBody.tooltip")}>
       <input
         type="checkbox"
         checked={tracker.trackBody}
         onchange={(e) => tracker.setTrackBody(e.currentTarget.checked)}
-      /> {t.trackBody}
+      /> {t("options.trackBody.label")}
     </label>
   </div>
   {#if tracker.trackBody && tracker.bodyError}
     <p class="error">{tracker.bodyError}</p>
   {/if}
 
-  <label class="slider" title={t.smoothingTitle}>
-    {t.smoothing}
+  <label class="slider" title={t("smoothing.tooltip")}>
+    {t("smoothing.label")}
     <input type="range" min="0" max="1" step="0.05" bind:value={tracker.smoothing} />
     <span class="value">{tracker.smoothing.toFixed(2)}</span>
   </label>
@@ -170,32 +193,32 @@ let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
       type="button"
       onclick={() => tracker.calibrate()}
       disabled={!tracker.running || !tracker.faceFound}
-      title={t.calibrateTitle}>{t.calibrate}</button
+      title={t("calibration.calibrate.tooltip")}>{t("calibration.calibrate.label")}</button
     >
     <button
       type="button"
       onclick={() => tracker.clearCalibration()}
       disabled={!tracker.calibrated}
-      title={t.clearCalibrationTitle}>{t.clearCalibration}</button
+      title={t("calibration.clear.tooltip")}>{t("calibration.clear.label")}</button
     >
   </div>
 
   <div class="row">
     {#if tracker.recording}
       <button type="button" class="rec" onclick={() => tracker.stopRecording()}
-        >{t.stopRecording(tracker.recordedCount)}</button
+        >{t("recording.stop.label", { frames: tracker.recordedCount })}</button
       >
     {:else}
       <button
         type="button"
         onclick={() => tracker.startRecording()}
         disabled={!tracker.running || tracker.source?.kind === "replay"}
-        title={t.recordTitle}>{t.record}</button
+        title={t("recording.record.tooltip")}>{t("recording.record.label")}</button
       >
       <button
         type="button"
         onclick={() => void tracker.saveRecording()}
-        disabled={tracker.recordedCount === 0}>{t.save(tracker.recordedCount)}</button
+        disabled={tracker.recordedCount === 0}>{t("recording.save.label", { frames: tracker.recordedCount })}</button
       >
     {/if}
   </div>
@@ -203,7 +226,7 @@ let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
   {#if tracker.output}
     {@const head = tracker.output.head}
     <details>
-      <summary>{t.headAndBlendShapes} <span class="count">{blendShapes.length}</span></summary>
+      <summary>{t("values.headAndBlendShapes")} <span class="count">{blendShapes.length}</span></summary>
       <dl class="values">
         <dt>yaw</dt>
         <dd>{head.yaw.toFixed(1)}°</dd>
@@ -212,7 +235,7 @@ let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
         <dt>roll</dt>
         <dd>{head.roll.toFixed(1)}°</dd>
         {#if bodyRows.length > 0}
-          <dt class="group" title={t.bodyNeedsCalibration}>{t.body}</dt>
+          <dt class="group" title={t("values.body.tooltip")}>{t("values.body.label")}</dt>
           <dd></dd>
           {#each bodyRows as [name, text] (name)}
             <dt title={name}>{name}</dt>
@@ -231,7 +254,7 @@ let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
   {/if}
   {#if parameterIds.length > 0}
     <details>
-      <summary>{t.parameters} <span class="count">{parameterIds.length}</span></summary>
+      <summary>{t("values.parameters")} <span class="count">{parameterIds.length}</span></summary>
       <dl class="values">
         {#each parameterIds as id (id)}
           <dt title={id}>{id}</dt>
