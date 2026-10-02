@@ -89,7 +89,7 @@ async function openTerms(url: string): Promise<void> {
         {t("consent.terms.unknown")}
       {/if}
     </p>
-    {#if linkError}<p class="error" role="alert">{linkError}</p>{/if}
+    {#if linkError}<p class="error ugoe-selectable" role="alert">{linkError}</p>{/if}
     <Checkbox bind:checked={remember} label={t("consent.remember.label")} />
   {/if}
 </AlertDialog>

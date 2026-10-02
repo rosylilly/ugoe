@@ -83,7 +83,7 @@ function switchTab(next: "motions" | "expressions") {
       onclick={toggleOpen}>{open ? "▾" : "▸"}</IconButton
     >
     <TabStrip {tabs} value={tab} ariaLabel={t("timeline.tabs.aria")} onselect={switchTab} />
-    {#if doc.error && open}<span class="error" title={doc.error}>{doc.error}</span>{/if}
+    {#if doc.error && open}<span class="error ugoe-selectable" title={doc.error}>{doc.error}</span>{/if}
   </div>
   {#if open}
     <div class="body">

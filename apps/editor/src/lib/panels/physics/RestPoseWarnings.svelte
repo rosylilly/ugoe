@@ -51,7 +51,7 @@ $effect(() => {
 </script>
 
 {#if error}
-  <p class="error">{error}</p>
+  <p class="error ugoe-selectable">{error}</p>
 {:else if found.length > 0}
   <p class="warn">{t("physics.restPose.hits", { count: found.length })}</p>
   <ul>

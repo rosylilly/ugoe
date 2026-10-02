@@ -113,6 +113,12 @@ initTheme("ugoe-viewer.theme");
 - CSS の変数を JS で読むところ (canvas の背景など) は、`$effect` の中で `currentTheme()` を読み、テーマ (設定・OS) が変わったら読み直す。
 - 透過の出力など、テーマを効かせない画面では `initTheme()` を呼ばず tokens.css も読まない。
 
+## 文字の選択 (T0911)
+
+- tokens.css を読むと、画面の文字は既定で選択できなくなり、画像とリンクはドラッグで持ち出せなくなる。入力の欄の中は選択できる。
+- 利用者に写させたい文字 (ライセンスの全文・エラーの詳細・URL など) にだけ `class="ugoe-selectable"` を付ける。
+  `Notice` と Toast のエラー (`danger`) の文は部品の側で選択できる。許している所の一覧は docs/ui.md の「文字の選択」。
+
 ## 見た目
 
 - 見た目はトークンだけで決める。部品の CSS は `.ugoe-*` のクラス (`:global`) で、Bits UI の `data-state` などの属性に当てている。

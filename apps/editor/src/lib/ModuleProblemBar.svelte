@@ -57,7 +57,7 @@ $effect(() => {
   <Notice tone="danger" title={describeModuleProblem(problem)} {ondismiss}>
     <details>
       <summary>{t("moduleProblem.details.label")}</summary>
-      <code>{messageText(problem)}</code>
+      <code class="ugoe-selectable">{messageText(problem)}</code>
     </details>
     {#if confirmDrop}
       <div class="confirm" role="group" aria-label={t("moduleProblem.dropColliders.aria")}>

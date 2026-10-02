@@ -13,6 +13,17 @@
         overflow: hidden;
         background: transparent;
       }
+
+      /* @ugoe/ui を読まないので、文字の選択と画像のドラッグの既定 (tokens.css の末尾) をここにも書く */
+      html {
+        -webkit-user-select: none;
+        user-select: none;
+      }
+
+      img,
+      a {
+        -webkit-user-drag: none;
+      }
     </style>
   </head>
   <body>

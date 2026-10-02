@@ -226,7 +226,7 @@ function label(e: Expression): string {
         />
       {/key}
     {/if}
-    {#if message}<span class="error">{message}</span>{/if}
+    {#if message}<span class="error ugoe-selectable">{message}</span>{/if}
   </div>
   {#if selected}
     <div class="table">

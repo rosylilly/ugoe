@@ -78,7 +78,7 @@ function seen(client: ApiClient): string {
   {#if api.enabled && api.listening}
     <div class="api__row">
       <span class="api__label">{t("api.address")}</span>
-      <code class="api__value">{apiUrl(api.port)}</code>
+      <code class="api__value ugoe-selectable">{apiUrl(api.port)}</code>
       <Button small onclick={() => copy("url", async () => apiUrl(api.port))}>{t("api.copy")}</Button>
     </div>
     <p class="api__hint">{t("api.connections", { count: api.connections })}</p>

@@ -169,3 +169,41 @@
   border: 0;
   white-space: nowrap;
 }
+
+/*
+ * 文字の選択とドラッグの既定 (デスクトップアプリらしく。docs/ui.md#文字の選択)。
+ * 画面の文字は選択できない。入力の欄の中と、`.ugoe-selectable` を付けた所 (とその中) だけ選択できる。
+ * 画像とリンクはドラッグで持ち出せない (draggable="true" を付けたアプリのドラッグは効く)。
+ * :where() で詳細度を 0 にし、部品やアプリの CSS で上書きしやすくする。
+ */
+:where(:root) {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+:where(
+  input:not(
+    [type="button"],
+    [type="checkbox"],
+    [type="color"],
+    [type="file"],
+    [type="radio"],
+    [type="range"],
+    [type="reset"],
+    [type="submit"]
+  ),
+  textarea,
+  [contenteditable]:not([contenteditable="false"]),
+  .ugoe-selectable
+) {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+:where(img, a) {
+  -webkit-user-drag: none;
+}
+
+:where([draggable="true"]) {
+  -webkit-user-drag: element;
+}

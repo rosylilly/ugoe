@@ -5,6 +5,7 @@
     開いておき (中身が無ければ見えず、クリックも通す)、知らせが来るたびに出し直して、後から開いた <dialog> より上にする。
   - 全体が `role="status"` の領域で、フォーカスを奪わない。ポインタかフォーカスが乗っている間は消えるまでの時間を止める。
   - 操作を含む知らせは Toast にしない (Notice にする)。閉じるボタンだけを持つ。
+  - エラー (`danger`) の文は、写して報告に貼れるよう選択できる (`.ugoe-selectable`)。
 -->
 <script lang="ts">
 import { t } from "../i18n";
@@ -47,7 +48,7 @@ $effect(() => {
   {#each list as item (item.id)}
     <div class="ugoe-toast" data-tone={item.tone}>
       <span class="ugoe-toast__icon"><Icon name={item.tone} /></span>
-      <p class="ugoe-toast__message">
+      <p class="ugoe-toast__message" class:ugoe-selectable={item.tone === "danger"}>
         <span class="ugoe-visually-hidden">{t(`notice.tone.${item.tone}`)}</span>
         {item.message}
       </p>

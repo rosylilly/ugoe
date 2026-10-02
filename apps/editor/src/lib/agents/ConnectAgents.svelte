@@ -127,7 +127,7 @@ async function openManual(): Promise<void> {
     <button type="button" class="link" onclick={openManual}>{t("agents.manual.label")}</button>
     {#if copied === "manual:failed"}<span class="muted">{MCP_MANUAL_URL}</span>{/if}
   </p>
-  {#if agentBridge.error}<p class="error">{agentBridge.error}</p>{/if}
+  {#if agentBridge.error}<p class="error ugoe-selectable">{agentBridge.error}</p>{/if}
   {#if status}
     <Toggle
       checked={status.enabled}
@@ -136,7 +136,7 @@ async function openManual(): Promise<void> {
       onchange={(on) => agentBridge.setEnabled(on)}
     />
     {#if status.error}
-      <p class="error">{t("agents.state.failed", { message: status.error.message })}</p>
+      <p class="error ugoe-selectable">{t("agents.state.failed", { message: status.error.message })}</p>
     {:else if status.running}
       <p class="state" data-state="on">
         <span class="dot on"></span>
@@ -224,7 +224,7 @@ async function openManual(): Promise<void> {
             </RichText>
           </p>
         {:else if bundle?.kind === "error"}
-          <p class="error">{bundle.message}</p>
+          <p class="error ugoe-selectable">{bundle.message}</p>
         {/if}
         <ul class="muted note checks">
           <li>{t("agents.desktop.check")}</li>
@@ -240,7 +240,7 @@ async function openManual(): Promise<void> {
             {#if copied === key}<span class="ok" role="status">{t("agents.copy.done")}</span>{/if}
             {#if copied === `${key}:failed`}<span class="warn" role="status">{t("agents.copy.failed")}</span>{/if}
           </div>
-          <pre>{step.text}</pre>
+          <pre class="ugoe-selectable">{step.text}</pre>
           {#if step.note}<p class="muted note">{step.note}</p>{/if}
         </div>
       {/each}
@@ -340,7 +340,6 @@ async function openManual(): Promise<void> {
     word-break: break-all;
     font-family: var(--ugoe-font-mono);
     font-size: var(--ugoe-font-size-sm);
-    user-select: text;
   }
   .note {
     font-size: var(--ugoe-font-size-sm);

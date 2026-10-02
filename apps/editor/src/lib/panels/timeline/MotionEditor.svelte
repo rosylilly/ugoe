@@ -467,7 +467,7 @@ function label(m: Motion): string {
         tooltip={t("timeline.motion.deleteKey.tooltip")}
         shortcut="Delete">{t("timeline.motion.deleteKey.label")}</TipButton
       >
-      {#if message}<span class="error">{message}</span>{/if}
+      {#if message}<span class="error ugoe-selectable">{message}</span>{/if}
     </div>
 
     <div class="sheet">

@@ -326,7 +326,7 @@ function moveToNearestKey() {
   {:else if enabled}
     <span class="muted">{t("viewport.form.empty")}</span>
   {/if}
-  {#if error}<span class="error">{error}</span>{/if}
+  {#if error}<span class="error ugoe-selectable">{error}</span>{/if}
 </div>
 
 {#if enabled && element && cell && canvasPoints}

@@ -186,9 +186,9 @@ function guideOf(notice: CameraNotice): CameraGuide | null {
   {#each notices as notice (notice.kind)}
     <Notice tone={notice.tone} title={noticeTitle(notice)}>
       {#if notice.kind === "unavailable" || notice.kind === "failed"}
-        <p class="camera__text">{errorText(notice.code)}</p>
+        <p class="camera__text ugoe-selectable">{errorText(notice.code)}</p>
         {#if notice.kind === "failed" && notice.detail !== ""}
-          <p class="camera__detail">{notice.detail}</p>
+          <p class="camera__detail ugoe-selectable">{notice.detail}</p>
         {/if}
       {:else if notice.kind === "noConsumer"}
         <p class="camera__text">{t("virtualCamera.notices.noConsumerHint")}</p>
@@ -197,7 +197,7 @@ function guideOf(notice: CameraNotice): CameraGuide | null {
       {/if}
       {#if guideOf(notice) === "linux"}
         <p class="camera__text">{t("virtualCamera.guide.linux.intro")}</p>
-        <pre class="camera__code">{t("virtualCamera.guide.linux.install")}
+        <pre class="camera__code ugoe-selectable">{t("virtualCamera.guide.linux.install")}
 
 {t("virtualCamera.guide.linux.load")}</pre>
         <p class="camera__text">{t("virtualCamera.guide.linux.after")}</p>

@@ -95,7 +95,7 @@ load();
   <div class="ed-buttons">
     <Button variant="primary" onclick={onexport} disabled={busy}>{label ?? t("fileMenu.export.bundle")}</Button>
   </div>
-  {#if error}<p class="error">{error}</p>{/if}
+  {#if error}<p class="error ugoe-selectable">{error}</p>{/if}
   {#if summary}
     <ul class="summary" aria-label={t("export.summary.aria")}>
       {#each summary as line, i (i)}

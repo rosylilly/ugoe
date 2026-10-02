@@ -143,7 +143,7 @@ let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
   </div>
 
   {#if tracker.error}
-    <p class="error">{tracker.error}</p>
+    <p class="error ugoe-selectable">{tracker.error}</p>
   {/if}
   {#if tracker.source}
     <p class="source">{t(SOURCE_KIND[tracker.source.kind])}: {tracker.source.label}</p>
@@ -179,7 +179,7 @@ let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
     </label>
   </div>
   {#if tracker.trackBody && tracker.bodyError}
-    <p class="error">{tracker.bodyError}</p>
+    <p class="error ugoe-selectable">{tracker.bodyError}</p>
   {/if}
 
   <label class="slider" title={t("smoothing.tooltip")}>

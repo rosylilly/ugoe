@@ -2,6 +2,7 @@
   Notice: 画面に残る知らせ (読み込みの警告など) (docs/ui.md#部品の一覧)。自作。
   - `role="status"` (エラーの `danger` は `role="alert"`)。描いた時点の中身が読み上げられる。
   - 種類は色に加えて印と読み上げの言葉 (「警告:」など) で示す (色だけで伝えない)。
+  - エラー (`danger`) のときだけ、見出しと本文 (`.ugoe-notice__body`) を選択できる (`.ugoe-selectable`)。
   - `ondismiss` を渡すと閉じるボタンを出す。消すのは呼び手 (Notice を描かなくする)。
 -->
 <script lang="ts">
@@ -26,11 +27,14 @@ interface Props {
 }
 
 let { tone = "info", title, children, actions, ondismiss, dismissLabel }: Props = $props();
+
+/** エラーの文は写して報告に貼れるよう、選択できるようにする (docs/ui.md#文字の選択)。 */
+const selectable = $derived(tone === "danger");
 </script>
 
 <div class="ugoe-notice" data-tone={tone} role={tone === "danger" ? "alert" : "status"}>
   <span class="ugoe-notice__icon"><Icon name={tone} /></span>
-  <div class="ugoe-notice__body">
+  <div class="ugoe-notice__body" class:ugoe-selectable={selectable}>
     <span class="ugoe-visually-hidden">{t(`notice.tone.${tone}`)}</span>
     {#if title}<p class="ugoe-notice__title">{title}</p>{/if}
     {#if children}<div class="ugoe-notice__text">{@render children()}</div>{/if}

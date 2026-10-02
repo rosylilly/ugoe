@@ -23,7 +23,7 @@ async function load() {
 </script>
 
 <Dialog bind:open title={t("license.title")} description={t("license.description")} size="lg">
-  <pre>{text}</pre>
+  <pre class="ugoe-selectable">{text}</pre>
 </Dialog>
 
 <style>

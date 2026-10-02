@@ -216,7 +216,7 @@ function finiteOrNull(value: number | null): number | null {
           />
         </div>
       {/if}
-      {#if error && edited}<p class="error">{error}</p>{/if}
+      {#if error && edited}<p class="error ugoe-selectable">{error}</p>{/if}
       <span class="row">
         <TipButton
           small

@@ -94,7 +94,7 @@ function lightName(light: PreviewLight, index: number): string {
     />
   </div>
   <p class="ed-hint note">{t("lighting.lights.description")}</p>
-  {#if view.error}<p class="error">{view.error}</p>{/if}
+  {#if view.error}<p class="error ugoe-selectable">{view.error}</p>{/if}
 
   <div class="row">
     <span>{t("lighting.lights.ambient.label")}</span>

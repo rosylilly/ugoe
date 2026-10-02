@@ -144,13 +144,13 @@ onMount(() => {
     {dragging ? t("preview.dressUp.dropping") : t("preview.dressUp.description")}
   </p>
   {#if dressUp.error}
-    <p class="error">{dressUp.error.summary}</p>
+    <p class="error ugoe-selectable">{dressUp.error.summary}</p>
     {#if dressUp.error.detail !== dressUp.error.summary}
-      <details class="detail"><summary>{t("preview.dressUp.details")}</summary>{dressUp.error.detail}</details>
+      <details class="detail ugoe-selectable"><summary>{t("preview.dressUp.details")}</summary>{dressUp.error.detail}</details>
     {/if}
   {/if}
-  {#if dressUp.ownProblem}<p class="error">{dressUp.ownProblem}</p>{/if}
-  {#if dropError}<p class="error">{dropError}</p>{/if}
+  {#if dressUp.ownProblem}<p class="error ugoe-selectable">{dressUp.ownProblem}</p>{/if}
+  {#if dropError}<p class="error ugoe-selectable">{dropError}</p>{/if}
   {#each dressUp.notices as notice, i (i)}
     <Notice tone="warning" ondismiss={() => dressUp.dismissNotice(i)}>{notice}</Notice>
   {/each}
@@ -228,9 +228,9 @@ onMount(() => {
           </div>
           {#if entry.path}<p class="ed-hint path">{entry.path}</p>{/if}
           {#if entry.problem}
-            <p class="error">{entry.problem.summary}</p>
+            <p class="error ugoe-selectable">{entry.problem.summary}</p>
             {#if entry.problem.detail !== entry.problem.summary}
-              <details class="detail"><summary>{t("preview.dressUp.details")}</summary>{entry.problem.detail}</details>
+              <details class="detail ugoe-selectable"><summary>{t("preview.dressUp.details")}</summary>{entry.problem.detail}</details>
             {/if}
           {/if}
           {#if entry.differences === null}

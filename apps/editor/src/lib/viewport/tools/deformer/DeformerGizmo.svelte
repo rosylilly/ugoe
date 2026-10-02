@@ -394,7 +394,7 @@ function onKeyDown(e: KeyboardEvent): void {
     <span class="warn">{t("viewport.cell.notOnKey")}</span>
     <Button small onclick={moveToNearestKey}>{t("viewport.cell.moveToNearestKey")}</Button>
   {/if}
-  {#if error}<span class="error">{error}</span>{/if}
+  {#if error}<span class="error ugoe-selectable">{error}</span>{/if}
 </div>
 
 <svg

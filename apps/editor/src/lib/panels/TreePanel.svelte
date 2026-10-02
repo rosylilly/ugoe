@@ -440,7 +440,7 @@ const dragHint = $derived.by(() => {
         {message.text}
       </Notice>
     {/if}
-    {#if dragHint}<p class="hint" class:error={drag?.result && !drag.result.ok}>{dragHint}</p>{/if}
+    {#if dragHint}<p class="hint" class:error={drag?.result && !drag.result.ok} class:ugoe-selectable={drag?.result && !drag.result.ok}>{dragHint}</p>{/if}
   </div>
 </div>
 

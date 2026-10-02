@@ -284,12 +284,12 @@ const ids = $props.id();
 
     <h4>{t("inspector.avatar.check.title")}</h4>
     {#if checkError}
-      <p class="error">{checkError}</p>
+      <p class="error ugoe-selectable">{checkError}</p>
     {:else if check && summary}
       <Notice tone={summary.ok ? "success" : "warning"}>{summary.text}</Notice>
       <!-- プロファイルがないときのエラーは「model has no avatar profile」だけで、見出しと同じなので出さない。 -->
       {#if check.claimed !== null && check.errors.length > 0}
-        <ul class="issues errors">
+        <ul class="issues errors ugoe-selectable">
           {#each check.errors as issue, i (i)}
             <li>{messageText(issue)}</li>
           {/each}

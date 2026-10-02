@@ -73,7 +73,7 @@ function onPointerUp(e: PointerEvent) {
   {:else if player.status === "starting"}
     <p class="hint">{t("viewport.starting")}</p>
   {:else if player.status === "unavailable"}
-    <p class="hint error">{player.error}</p>
+    <p class="hint error ugoe-selectable">{player.error}</p>
   {/if}
   {#if player.status === "ready" && player.usesLighting && player.lighting.enabled && player.lightMarkers}
     <LightMarkers {player} />

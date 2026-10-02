@@ -646,7 +646,7 @@ onMount(() => {
   </header>
 
   {#if error !== null}
-    <p class="studio__error" role="alert">{error}</p>
+    <p class="studio__error ugoe-selectable" role="alert">{error}</p>
   {/if}
   {#if profile !== null && profile.path === null && profile.dirty}
     <Notice tone="warning">
@@ -658,7 +658,7 @@ onMount(() => {
   {/if}
 
   {#if hotkeyError !== null}
-    <Notice tone="warning" ondismiss={() => (hotkeyError = null)}>{hotkeyError}</Notice>
+    <Notice tone="warning" ondismiss={() => (hotkeyError = null)}><span class="ugoe-selectable">{hotkeyError}</span></Notice>
   {/if}
 
   {#each approvals as client (client.id)}

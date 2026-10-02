@@ -25,7 +25,7 @@ async function open() {
 <span class="help">
   <TipButton variant="ghost" tooltip={t("help.open.tooltip")} onclick={open}>{t("help.open.label")}</TipButton>
   {#if failure !== null}
-    <div class="popup">
+    <div class="popup ugoe-selectable">
       <Notice tone="danger" title={t("help.failed.title")} ondismiss={() => (failure = null)}>
         <p>{t("help.failed.description", { reason: failure })}</p>
         <p><a href={MANUAL_URL} target="_blank" rel="noreferrer">{MANUAL_URL}</a></p>
@@ -47,6 +47,5 @@ async function open() {
     max-width: min(480px, calc(100vw - 32px));
     margin-top: var(--ugoe-space-2);
     white-space: normal;
-    user-select: text;
   }
 </style>

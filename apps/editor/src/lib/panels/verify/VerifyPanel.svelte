@@ -104,7 +104,7 @@ function goToPhysics(rig: string, collider: string): void {
   </div>
   {#if view.showOverflows}
     {#if view.error}
-      <p class="error">{view.error}</p>
+      <p class="error ugoe-selectable">{view.error}</p>
     {:else if currentPoints === 0}
       <p class="ed-hint">{t("verify.overflow.noneNow")}</p>
     {:else}
@@ -130,7 +130,7 @@ function goToPhysics(rig: string, collider: string): void {
       </span>
     {/if}
   </div>
-  {#if error}<p class="error">{error}</p>{/if}
+  {#if error}<p class="error ugoe-selectable">{error}</p>{/if}
 
   {#if report}
     {#if report.truncated.length > 0}

@@ -186,7 +186,7 @@ function keyPlaceholder(s: AiSettings): string {
   {:else}
   <section>
     <h3>{t("settings.ai.tab")}</h3>
-    {#if aiSettings.error}<p class="error">{aiSettings.error}</p>{/if}
+    {#if aiSettings.error}<p class="error ugoe-selectable">{aiSettings.error}</p>{/if}
     {#if draft}
       <form class="provider" onsubmit={applyProvider}>
         <div class="choices" role="radiogroup" aria-label={t("settings.ai.provider.aria")}>

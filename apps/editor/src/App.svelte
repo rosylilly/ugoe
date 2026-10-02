@@ -344,7 +344,7 @@ $effect(() => {
           onselect={(tab) => (tab === "ai" ? openProposals() : openTab(tab))}
         />
       </div>
-      {#if doc.error}<p class="error">{doc.error}</p>{/if}
+      {#if doc.error}<p class="error ugoe-selectable">{doc.error}</p>{/if}
       {#if proposals.active}
         <ProposalsPanel
           view={proposals}

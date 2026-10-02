@@ -300,7 +300,7 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
           </Tooltip>
         {/each}
       </span>
-      {#if valueError?.id === p.id}<p class="error">{valueError.message}</p>{/if}
+      {#if valueError?.id === p.id}<p class="error ugoe-selectable">{valueError.message}</p>{/if}
       {#if editing === p.id}
         <BaseLock locked={baseParameters} hint={t("parameters.baseHint")}>
           <div class="editor">

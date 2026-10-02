@@ -269,7 +269,7 @@ function remove(): void {
       <Button disabled={busy} onclick={() => void assign()}>{t("lighting.normalMap.assign.label")}</Button>
       <Button disabled={busy || !ref.normal_map} onclick={remove}>{t("lighting.normalMap.remove.label")}</Button>
     </div>
-    {#if error}<p class="error">{error}</p>{/if}
+    {#if error}<p class="error ugoe-selectable">{error}</p>{/if}
   </section>
 {/if}
 

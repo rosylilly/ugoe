@@ -68,7 +68,7 @@ const expressionOptions = $derived([
 
 <div class="preview-panel">
   <h2>{t("preview.title")}</h2>
-  {#if preview.error}<p class="error">{preview.error}</p>{/if}
+  {#if preview.error}<p class="error ugoe-selectable">{preview.error}</p>{/if}
   {#each preview.warnings as warning, i (i)}<Notice tone="warning">{warning}</Notice>{/each}
   {#if viewport.status !== "ready"}<p class="ed-hint">{viewport.message ?? t("preview.loadingViewport")}</p>{/if}
 

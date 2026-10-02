@@ -29,7 +29,7 @@ export async function open(): Promise<void> {
   size="lg"
   onclose={() => (shown = false)}
 >
-  <pre>{text}</pre>
+  <pre class="ugoe-selectable">{text}</pre>
 </Dialog>
 
 <style>

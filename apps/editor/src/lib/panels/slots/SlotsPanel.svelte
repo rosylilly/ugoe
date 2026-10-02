@@ -192,7 +192,7 @@ const ids = $props.id();
   <div class="ed-buttons row">
     <TipButton disabled={busy} onclick={addSlot} tooltip={t("slots.add.tooltip")}>{t("slots.add.label")}</TipButton>
   </div>
-  {#if message}<p class="error">{message}</p>{/if}
+  {#if message}<p class="error ugoe-selectable">{message}</p>{/if}
 
   {#if slot}
     {#key slot.id}

@@ -312,7 +312,7 @@ function onKeyDown(e: KeyboardEvent) {
 
     <footer class="status">
       {#if player.error}
-        <span class="error" role="alert">{player.error}</span>
+        <span class="error ugoe-selectable" role="alert">{player.error}</span>
       {:else if player.warnings.length > 0}
         <span class="warning" title={player.warnings.join("\n")}>
           {t("status.warnings", { count: player.warnings.length, first: player.warnings[0] })}

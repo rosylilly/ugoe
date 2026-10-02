@@ -147,7 +147,7 @@ const ready = $derived(basePath !== null && slot !== null && isValidModuleName(n
       {/if}
     {/if}
   {/if}
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if error}<p class="error ugoe-selectable" role="alert">{error}</p>{/if}
   {#snippet actions()}
     <Button onclick={onclose}>{t("newModule.cancel.label")}</Button>
     <Button variant="primary" onclick={create} disabled={!ready}>{t("newModule.create.label")}</Button>

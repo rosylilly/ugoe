@@ -167,7 +167,7 @@ async function apply(): Promise<void> {
       </div>
     </fieldset>
   {/if}
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if error}<p class="error ugoe-selectable" role="alert">{error}</p>{/if}
   {#snippet actions()}
     <Button onclick={onclose}>{t("moduleSettings.cancel.label")}</Button>
     <Button variant="primary" onclick={apply} disabled={busy || !isValidModuleName(name) || !slot}>

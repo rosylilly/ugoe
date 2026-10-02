@@ -232,7 +232,7 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
     </Button>
   </div>
   {#if view.busy}<p class="progress" role="status">{view.busy}</p>{/if}
-  {#if view.error}<p class="error">{view.error}</p>{/if}
+  {#if view.error}<p class="error ugoe-selectable">{view.error}</p>{/if}
   {#if summary && panel?.classification}
     <p
       class="muted"
