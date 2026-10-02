@@ -4,13 +4,11 @@ import {
   DEFAULT_TICK_RATE,
   LOCALE_STORAGE_KEY,
   loadLocalePreference,
-  loadOutputSize,
   loadTickRate,
-  OUTPUT_SIZE_STORAGE_KEY,
+  parseOutputSize,
   presetOf,
   presetSize,
   saveLocalePreference,
-  saveOutputSize,
   saveTickRate,
   TICK_RATE_STORAGE_KEY,
 } from "./settings";
@@ -40,12 +38,10 @@ describe("output size presets", () => {
     expect(presetOf(1000, 700)).toBe("free");
   });
 
-  it("remembers the preset and ignores unknown values", () => {
-    expect(loadOutputSize()).toBe(DEFAULT_OUTPUT_SIZE);
-    saveOutputSize("1080x1080");
-    expect(loadOutputSize()).toBe("1080x1080");
-    localStorage.setItem(OUTPUT_SIZE_STORAGE_KEY, "4x4");
-    expect(loadOutputSize()).toBe(DEFAULT_OUTPUT_SIZE);
+  it("reads the preset from the profile and ignores unknown values", () => {
+    expect(parseOutputSize("1080x1080")).toBe("1080x1080");
+    expect(parseOutputSize("4x4")).toBe(DEFAULT_OUTPUT_SIZE);
+    expect(parseOutputSize(undefined)).toBe(DEFAULT_OUTPUT_SIZE);
   });
 });
 

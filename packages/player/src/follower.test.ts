@@ -86,6 +86,34 @@ describe("FrameQueue", () => {
     ]);
   });
 
+  it("keeps the frames of the previous scene when continuing with the same model", () => {
+    const q = new FrameQueue();
+    q.continueScene(1);
+    q.push(frame(0, 1));
+    expect(seqs(q)).toEqual([[0, false]]);
+    // 見せ方が変わったシーン 2 の通知より前に届いたシーン 1 のフレームも、続けて適用する。
+    q.push(frame(1, 1));
+    q.push(frame(2, 2));
+    q.push(frame(3, 3));
+    q.continueScene(2);
+    expect(seqs(q)).toEqual([
+      [1, false],
+      [2, false],
+    ]);
+    // まだ受けていないシーン 3 は待たせ、受けたら seq の続きとして適用する。
+    q.continueScene(3);
+    expect(seqs(q)).toEqual([[3, false]]);
+    // 古い通知が後から来ても戻らない。
+    q.continueScene(2);
+    q.push(frame(4, 3));
+    expect(seqs(q)).toEqual([[4, false]]);
+    // モデルを読み直したら、前のシーンのフレームは捨てる。
+    q.push(frame(5, 3));
+    q.push(frame(6, 4));
+    q.setScene(4);
+    expect(seqs(q)).toEqual([[6, false]]);
+  });
+
   it("treats overflow as a gap", () => {
     const q = new FrameQueue();
     q.setScene(1);

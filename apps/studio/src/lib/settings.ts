@@ -1,11 +1,9 @@
-// 操作ウィンドウが覚える設定 (localStorage) と、出力ウィンドウの大きさのプリセット・刻みの速さ (docs/studio.md#出力ウィンドウ)。
-// プロファイル (T0802) ができたら、出力の設定はプロファイルへ移す。
+// 操作ウィンドウが覚える設定 (localStorage。言語・刻みの速さ) と、出力ウィンドウの大きさのプリセット (docs/studio.md#出力ウィンドウ)。
+// 出力の大きさはプロファイル (lib/profile.ts の `Profile.output`) に持つ (T0802)。刻みの速さもプロファイルへ移すのは後続の候補。
 import { isLocale, type LocalePreference } from "@ugoe/i18n";
 
 /** 画面の言語の設定のキー。 */
 export const LOCALE_STORAGE_KEY = "ugoe-studio.locale";
-/** 出力ウィンドウの大きさのプリセットのキー。 */
-export const OUTPUT_SIZE_STORAGE_KEY = "ugoe-studio.output-size";
 /** 刻みの速さのキー。 */
 export const TICK_RATE_STORAGE_KEY = "ugoe-studio.tick-rate";
 
@@ -68,13 +66,9 @@ export function saveLocalePreference(value: LocalePreference): void {
   write(LOCALE_STORAGE_KEY, value);
 }
 
-export function loadOutputSize(): OutputSizePreset {
-  const v = read(OUTPUT_SIZE_STORAGE_KEY);
-  return OUTPUT_SIZE_PRESETS.find((p) => p === v) ?? DEFAULT_OUTPUT_SIZE;
-}
-
-export function saveOutputSize(value: OutputSizePreset): void {
-  write(OUTPUT_SIZE_STORAGE_KEY, value);
+/** プロファイルに書いたプリセットを読む。知らない値なら既定。 */
+export function parseOutputSize(value: string | null | undefined): OutputSizePreset {
+  return OUTPUT_SIZE_PRESETS.find((p) => p === value) ?? DEFAULT_OUTPUT_SIZE;
 }
 
 export function loadTickRate(): TickRate {

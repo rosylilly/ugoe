@@ -1,27 +1,46 @@
 {
   "toolbar": {
     "label": "Studio",
-    "open": "Open model…",
-    "output": "Output window"
+    "open": "Choose model…",
+    "output": "Output window",
+    "profile": "Profile"
   },
   "language": {
     "label": "Language",
     "system": "Match the OS"
   },
   "file": {
-    "filter": "ugoe models"
+    "filter": "ugoe models",
+    "moduleFilter": "ugoe dress-up modules",
+    "imageFilter": "Images",
+    "profileFilter": "ugoe studio profiles",
+    "profileName": "profile.json"
   },
   "errors": {
-    "open": "Could not open {{name}}: {{message}}"
+    "io": "Could not read or write {{path}}: {{message}}",
+    "tooLarge": "{{path}} is too large.",
+    "notJson": "{{path}} is not a JSON file.",
+    "notProfile": "{{path}} is not an ugoe studio profile.",
+    "futureVersion": "{{path}} was saved by a newer studio (profile version {{version}}; this studio reads up to version {{supported}}). Update the studio to open it.",
+    "invalid": "{{path}} is broken: {{message}}",
+    "unknownScene": "The scene no longer exists.",
+    "missingModel": "The model was not found: {{path}}",
+    "missingModule": "The dress-up module was not found: {{path}}",
+    "missingBackground": "The background image was not found: {{path}}",
+    "unreadable": "Could not read {{path}}: {{message}}",
+    "wrongType": "{{path}} is not a supported file.",
+    "dressUp": "Could not attach the dress-up modules: {{message}}",
+    "chooseAgain": "Choose again…"
   },
   "state": {
     "heading": "Now",
-    "noModel": "No model is open. Open a .ugoe file to show it in the output window.",
+    "noModel": "No model is on air. Choose a model for the scene to show it in the output window.",
     "model": "Model",
     "frame": "Frame",
     "tick": "Time per tick",
     "tickValue": "{{value}} ms",
-    "receivers": "Receivers"
+    "receivers": "Receivers",
+    "scene": "Scene"
   },
   "output": {
     "heading": "Output window",
@@ -38,7 +57,7 @@
   "parameters": {
     "heading": "Parameters",
     "reset": "Reset all",
-    "empty": "Open a model to move its parameters.",
+    "empty": "Choose a model to move its parameters.",
     "showInternal": "Show relay parameters"
   },
   "load": {
@@ -68,5 +87,94 @@
       "dropped_other": "{{name}} dropped {{count}} frames. Physics was reset to catch up.",
       "stale": "{{name}} is not drawing. It may be hidden or minimized; streaming software may not capture it."
     }
+  },
+  "profile": {
+    "new": "New profile",
+    "open": "Open profile…",
+    "save": "Save",
+    "saveAs": "Save as…",
+    "recent": "Recent profiles",
+    "untitled": "Untitled profile",
+    "saved": "Saved",
+    "unsaved": "Not saved",
+    "unsavedHint": "Save the profile to keep your scenes. After that, changes are saved automatically.",
+    "discardTitle": "Discard the unsaved profile?",
+    "discardBody": "The scenes in this profile have not been saved. They are lost if you continue.",
+    "discardConfirm": "Discard and continue"
+  },
+  "scenes": {
+    "heading": "Scenes",
+    "listLabel": "Scenes",
+    "add": "Add",
+    "duplicate": "Duplicate",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "remove": "Delete",
+    "defaultName": "Scene {{n}}",
+    "copyName": "{{name}} (copy)",
+    "live": "On air",
+    "noModel": "No model",
+    "switchHint": "Click a scene to switch to it.",
+    "removeTitle": "Delete “{{name}}”?",
+    "removeBody": "The scene is removed from the profile. The output keeps showing it until you switch scenes.",
+    "empty": "No scenes. Add one to start."
+  },
+  "editor": {
+    "heading": "Scene",
+    "name": "Name",
+    "notLive": "This scene is not on air. Changes take effect when you switch to it.",
+    "activate": "Switch to this scene",
+    "model": "Model",
+    "chooseModel": "Choose model…",
+    "noModel": "No model chosen",
+    "modelChangeHint": "Choosing another model removes the dress-up modules of this scene.",
+    "modules": "Dress-up modules",
+    "addModule": "Add module…",
+    "noModules": "No modules. Modules are attached in this order.",
+    "moduleRemove": "Remove",
+    "placement": "Position, size and rotation",
+    "x": "Horizontal",
+    "y": "Vertical",
+    "scale": "Size",
+    "rotation": "Rotation",
+    "degrees": "°",
+    "times": "×",
+    "resetPlacement": "Reset",
+    "background": "Background",
+    "backgroundKind": "Background",
+    "bgTransparent": "Transparent",
+    "bgColor": "Color",
+    "bgChroma": "Chroma key",
+    "bgImage": "Image",
+    "color": "Color",
+    "chromaColor": "Key color",
+    "chromaGreen": "Green",
+    "chromaBlue": "Blue",
+    "chromaHint": "Key out this color in your streaming software.",
+    "transparentHint": "Your streaming software shows what is behind the model.",
+    "chooseImage": "Choose image…",
+    "lighting": "Lighting",
+    "noLighting": "This model has no meshes that receive lighting."
+  },
+  "lighting": {
+    "enabled": "Use lighting",
+    "preset": "Preset",
+    "presets": {
+      "standard": "Standard",
+      "sunset": "Sunset",
+      "lamp": "Night lamp",
+      "custom": "Custom"
+    },
+    "ambient": "Ambient light",
+    "directional": "Directional light",
+    "point": "Point light",
+    "on": "On",
+    "color": "Color",
+    "intensity": "Intensity",
+    "azimuth": "Direction",
+    "elevation": "Height",
+    "x": "Horizontal",
+    "y": "Vertical",
+    "range": "Reach"
   }
 }

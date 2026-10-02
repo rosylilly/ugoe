@@ -314,8 +314,8 @@ export class Player {
     }
     const identity = modelIdentity(file);
     const switching = this.#model === null || !sameModel(this.#model, identity);
-    // 一緒に開くモジュールが組を変えるので、覚えている組は先に読んでおく。
-    const remembered = this.#memory.get(identity);
+    // 一緒に開くモジュールが組を変えるので、覚えている組は先に読んでおく。受け手は覚えた組を使わない (組は指揮役が決める)。
+    const remembered = this.#follower === null ? this.#memory.get(identity) : null;
     this.#quiet++;
     try {
       // モデルを開く前に読み込んだモジュールは、どのモデルの組でもないので残す。
@@ -737,7 +737,8 @@ export class Player {
 
   /**
    * 受け手のモードにする。以後は時計の `dt` で `update` せず、`pushFrame` で届いたフレームを順に `follow` で適用する
-   * (ドライバ・トラッキング・モーション・目パチなどは使わない。値は指揮役が決める)。モデルは `load` で読み、
+   * (ドライバ・トラッキング・モーション・目パチなどは使わない。値は指揮役が決める)。光源の設定と着せ替えの組は
+   * 覚えず、覚えたものも使わない (シーンが決める)。モデルは `load` で読み、
    * 読み終えたら `followScene(revision)` でそのシーンのフレームを受け付ける。
    */
   startFollowing(onRender?: (stats: FollowRenderStats) => void): void {
@@ -753,6 +754,15 @@ export class Player {
   /** シーン `revision` のモデルを読み終えた。そのシーンのフレームを最初から適用する (前のシーンのフレームは捨てる)。 */
   followScene(revision: number): void {
     this.#follower?.setScene(revision);
+    this.#followPending();
+  }
+
+  /**
+   * モデルを読み直さずにシーン `revision` に移る (見せ方や着せ替えだけが変わった)。前のシーンのフレームも捨てずに
+   * 順に適用する (follower.ts の `FrameQueue.continueScene`)。
+   */
+  continueScene(revision: number): void {
+    this.#follower?.continueScene(revision);
     this.#followPending();
   }
 
@@ -841,6 +851,11 @@ export class Player {
   setLighting(settings: LightingSettings): void {
     this.#lightingPending = false;
     this.lighting = settings;
+    // 受け手は光源を覚えない (シーンが決める)。
+    if (this.#follower !== null) {
+      this.#applyLighting();
+      return;
+    }
     saveLighting(settings);
     const model = this.#model;
     if (model !== null) {
@@ -997,6 +1012,8 @@ export class Player {
   #remember(): void {
     const model = this.#model;
     if (model === null || this.#quiet > 0 || this.#puppet?.has_model() !== true) return;
+    // 受け手は着せ替えの組を覚えない (組は指揮役が決める)。
+    if (this.#follower !== null) return;
     const modules = [...this.#moduleFiles].map(([name, m]) => ({ name, file: m.identity }));
     if (modules.length === 0) this.#memory.delete(model);
     else this.#memory.set(model, { modules, attached: [...this.#attached] });
@@ -1008,6 +1025,7 @@ export class Player {
    * ものにし、鍵も新しくする (ドロップで覚えたモデルを「開く」で開くと場所が付く)。渡すのは `#afterLoad`。
    */
   #recallLighting(model: ModelIdentity): void {
+    if (this.#follower !== null) return;
     const saved = this.#lightingMemory.get(model);
     this.lightingRemembered = saved !== null;
     if (saved === null) return;

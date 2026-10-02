@@ -2,25 +2,34 @@
 
 ugoe のスタジオ (Tauri v2 + Svelte 5)。配信者が配信中に使うアプリで、モデルを **出力ウィンドウ** に出し、**操作ウィンドウ** から動かす。
 範囲・構成・描画の場所は [ADR 0028](../../docs/adr/0028-studio.md)、画面と配信の形は [docs/studio.md](../../docs/studio.md)。
-T0801 で骨組み (2 つのウィンドウ・指揮役と受け手) を作った。シーンとプロファイル (T0802)・入力 (T0803)・配信向けの出力 (T0804)・
+T0801 で骨組み (2 つのウィンドウ・指揮役と受け手)、T0802 でシーンとプロファイルを作った。入力 (T0803)・配信向けの出力 (T0804)・
 外部 API (T0805)・仮想カメラ (T0807・T0809)・ブラウザソース (T0808) は後続のタスク。
 
 **ライセンスは GPL-3.0-only** (エディタ・ビューアと同じ)。アプリ同士で import はしない (共有するものは `packages/` に置く)。
 
 ```
 index.html / src/control.ts   操作ウィンドウの入口 (@ugoe/ui のトークン・言語の設定)
-src/Control.svelte            操作ウィンドウ: モデルを開く・出力ウィンドウの表示/最前面/大きさ・いまの状態・パラメータ・言語
+src/Control.svelte            操作ウィンドウ: プロファイルのメニュー・モデルを選ぶ・出力ウィンドウの表示/最前面/大きさ・いまの状態・パラメータ・言語
 src/LoadPanel.svelte          操作ウィンドウの「フレームレートと負荷」: 刻みの速さ (30 / 60 / 120)・1 刻みの時間・出力ごとの描画の負荷
+src/ScenesPanel.svelte        シーンの一覧 (切り替え・追加・複製・並べ替え・削除)
+src/SceneEditor.svelte        シーンの編集 (名前・モデル・モジュール・位置と大きさと回転・背景・ライティング)
+src/LightingEditor.svelte     シーンの光源 (組・環境光・平行光源・点光源)
 output.html / src/output.ts   出力ウィンドウの入口 (背景は透過。@ugoe/ui と @ugoe/i18n は読まない)
-src/Output.svelte             出力ウィンドウ: @ugoe/player の受け手のモードでモデルだけを描く。Alt + ドラッグで動かす
+src/Output.svelte             出力ウィンドウ: @ugoe/player の受け手のモードでモデルだけを描く。シーンの見せ方を当てる。Alt + ドラッグで動かす
 src/lib/host.ts               バックエンドとの口 (StudioHost)。Tauri の外では window.__UGOE_STUDIO_HOST__ を使う
-src/lib/settings.ts           覚える設定 (言語・出力の大きさのプリセット・刻みの速さ。localStorage)
+src/lib/settings.ts           覚える設定 (言語・刻みの速さ。localStorage) と出力の大きさのプリセット
 src/lib/load.ts               負荷の注意の判断 (刻みが遅れた・揺れた・描画が重い・フレームを捨てた・描いていない)
+src/lib/profile.ts            プロファイルとシーンの形 (profile.rs と同じ)・エラーの形・背景や配置の既定値
+src/lib/outputLayout.ts       受け手がシーンの通知ですること (planScene)・配置を舞台とビューと CSS の回転に分ける計算
+src/lib/errors.ts             バックエンドのエラー (code) を文にする
+src/lib/labels.ts             シーンの表示名
 src/lib/i18n.ts               文言 (@ugoe/i18n の名前空間 `studio`。カタログは locales/)
 src/lib/wasm/                 ugoe-wasm の読み込み。generated/ は `pnpm wasm` の出力 (gitignore 済み)
 src-tauri/                    バックエンド (Rust クレート `ugoe-studio`)
-  src/conductor.rs              指揮役: 物理を切ったネイティブの Puppet。刻みごとにフレームを作る
+  src/conductor.rs              指揮役: 物理を切ったネイティブの Puppet。刻みごとにフレームを作る。シーンを替える (present)
   src/pacing.rs                 刻みの速さ (30 / 60 / 120)・次の刻みの時刻・実際の速さと揺れの測定
+  src/profile.rs                プロファイルの形式 (版の確かめ・値を収める・書き出し)・最近のプロファイル
+  src/stage.rs                  舞台: 開いているプロファイルとシーンの一覧の操作・シーンの切り替え (ファイルを読んで指揮役へ)・受け手に出すファイル
   src/stream.rs                 配信の形 (フレームのバイト列・シーンの JSON)
   src/follower.rs               ネイティブの受け手 (一致の検査で使う。仮想カメラ (T0807) も使う)
   src/lib.rs                    刻みのスレッド・Tauri のコマンド・出力ウィンドウの操作
@@ -41,24 +50,33 @@ src-tauri/                    バックエンド (Rust クレート `ugoe-studio
 - パラメータのスライダーは指揮役に書き込む (`set_parameter`。次の刻みから基準値になる)。動かしてから 0.5 秒は、指揮役からの値で表示を上書きしない。
 - 言語は「OS に合わせる」が既定で、OS の言語は `tauri-plugin-os` の `locale()` で取る (WebView の `navigator.languages` は OS と違うことがある。
   `packages/i18n/README.md`)。選んだ言語は `ugoe-studio.locale` に覚える。
-- 出力ウィンドウの大きさは物理ピクセルのプリセット (1920×1080・1280×720・1080×1920・1080×1080・自由)。選んだものは `ugoe-studio.output-size`
-  に覚え、起動したときに合わせる。プロファイル (T0802) ができたらそちらへ移す。
+- 出力ウィンドウの大きさは物理ピクセルのプリセット (1920×1080・1280×720・1080×1920・1080×1080・自由)。選んだものはプロファイルに持ち、
+  プロファイルを開いたときに合わせる (T0802。T0801 の `ugoe-studio.output-size` は使わない)。
+- **シーンとプロファイル (T0802):** プロファイル (版の番号付きの JSON) は舞台 (`stage.rs`) が持ち、変わるたびに操作ウィンドウへ `profile` の
+  通知を配る。シーンの切り替えは指揮役の `present` で行い、受け手には `scene` の通知 (モデルとモジュールの版・見せ方) を配る。
+  形式と切り替えの規則は [docs/studio.md](../../docs/studio.md#シーンとプロファイル)。
 
 ### Tauri のコマンド
 
 | コマンド | ウィンドウ | 内容 |
 | --- | --- | --- |
-| `open_model(path)` | 操作 | `.ugoe` か JSON のモデルを開いて新しいシーンにする (拡張子と大きさを確かめる) |
-| `subscribe_status(channel)` | 操作 | シーン・値・負荷・出力ウィンドウの状態を受け取る |
+| `restore_profile()` | 操作 | 起動して最初の 1 回だけ、最後に使ったプロファイルを開く |
+| `new_profile()` / `open_profile(path)` / `save_profile(path?)` / `forget_recent_profile(path)` | 操作 | プロファイル (`save_profile` は省くと今の保存先) |
+| `add_scene(name)` / `duplicate_scene(id, name)` / `move_scene(id, index)` / `remove_scene(id)` | 操作 | シーンの一覧 |
+| `update_scene(scene)` / `activate_scene(id)` | 操作 | シーンの設定を置き換える (配信中なら出し直す) / 切り替える (ファイルの拡張子と大きさを確かめる) |
+| `set_output_preset(preset)` | 操作 | 出力ウィンドウの大きさのプリセットをプロファイルに持つ |
+| `subscribe_status(channel)` | 操作 | プロファイル・シーン・値・負荷・出力ウィンドウの状態を受け取る |
 | `set_parameter(id, value)` / `reset_parameters()` | 操作 | 指揮役のパラメータを書き換える |
 | `output_state()` / `set_output_visible(visible)` / `set_output_on_top(onTop)` / `set_output_size(width, height)` | 操作 | 出力ウィンドウ |
 | `tick_rate()` / `set_tick_rate(rate)` | 操作 | 刻みの速さ (30 / 60 / 120。ほかの値はエラー) |
 | `subscribe_frames(channel)` | 出力 | シーンの通知 (JSON) とフレーム (バイト列) を受け取る。開き直したページは前の Channel を置き換える |
-| `scene_model(revision)` | 出力 | 今のシーンのモデルのバイト列 (今のシーンでなければエラー) |
+| `scene_model(revision)` / `scene_module(revision, index)` / `scene_background(revision)` | 出力 | 今のシーンのモデル・モジュール・背景の画像のバイト列 (今のシーンでなければエラー) |
 | `report_render_stats(stats)` | 出力 | 描画の負荷 (回/秒・1 回の時間の平均と最大・捨てたフレーム) を約 1 秒ごとに送る。操作ウィンドウに出す |
 
+- プロファイルとシーンのコマンドのエラーは `{ code, ... }` の形 (`profile.rs` の `ProfileError`・`stage.rs` の `SceneError`)。画面は `code` で文言を選ぶ。
+
 - 出力ウィンドウは閉じる操作で隠すだけにする (受け手を作り直さない)。操作ウィンドウを閉じるとアプリを終える。
-- 権限 (`src-tauri/capabilities/`): 操作ウィンドウはファイルを開くダイアログと OS の言語、出力ウィンドウはウィンドウのドラッグだけ。
+- 権限 (`src-tauri/capabilities/`): 操作ウィンドウはファイルを開く・保存先を選ぶダイアログと OS の言語、出力ウィンドウはウィンドウのドラッグだけ。
 - 出力ウィンドウの背景の透過は、macOS では `macOSPrivateApi` (tauri の `macos-private-api` feature) が要る (Mac App Store では配布できなくなる)。
 
 ## ヘッドレスのブラウザで確かめる

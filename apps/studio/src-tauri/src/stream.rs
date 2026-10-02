@@ -6,6 +6,8 @@
 use serde::Serialize;
 use ugoe::LipSyncInput;
 
+use crate::profile::{Background, Transform};
+
 /// フレームのバイト列の先頭の種類の値。
 pub const FRAME_KIND: u8 = 1;
 /// フラグ: このフレームを適用する前に物理をリセットする (着せ替えなど、モデルを読み直さずに形が変わるとき)。
@@ -123,18 +125,43 @@ impl Frame {
     }
 }
 
-/// シーンの通知 (JSON。`kind` は `"scene"`)。接続したときと、シーンが変わったときに配る。
+/// シーンの通知 (JSON。`kind` は `"scene"`)。接続したときと、シーンの状態が変わったときに配る。
 ///
 /// 受け手はモデルのバイト列を `scene_model` のコマンドで `revision` を付けて取る (任意のパスは読ませない)。
+/// モジュールと背景の画像も同じく `scene_module`・`scene_background` で取る。
+///
+/// 受け手は版の番号を比べて、することを決める (`docs/studio.md#シーンの切り替えと受け手`)。
+/// - `model_revision` が変わった: モデルを読み直し、`revision` のフレームを最初から適用する (物理は新しく始まる)。
+/// - `modules_revision` だけが変わった: モジュールを付け直す。物理のリセットはフレームの印で揃える。
+/// - どちらも同じ: 見せ方 (ライティング・配置・背景) だけを変え、前のシーンのフレームも続けて適用する。
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind", rename = "scene")]
 pub struct Scene {
-    /// シーンの版。モデルを読むたびに上がる。
+    /// シーンの版。シーンの状態 (モデル・着せ替え・見せ方) が変わるたびに上がる。
     pub revision: u32,
-    /// モデルの表示名 (ファイル名)。
+    /// モデルを読んだときの `revision`。モデルが無ければ 0。
+    pub model_revision: u32,
+    /// 付けるモジュールの組を変えたときの `revision`。
+    pub modules_revision: u32,
+    /// モデルの表示名 (ファイル名)。モデルが無ければ空。
     pub model_name: String,
     /// フレームの `values` の並び (モデルのパラメータの定義順)。
     pub parameter_ids: Vec<String>,
+    /// 付けているモジュールの名前 (合成の順。`scene_module` の添字と同じ順)。
+    pub modules: Vec<String>,
+    /// 見せ方。
+    #[serde(flatten)]
+    pub look: Look,
+}
+
+/// シーンの見せ方 (物理に関わらないもの)。
+#[derive(Debug, Clone, PartialEq, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Look {
+    /// 光源の設定 (`@ugoe/player` の `LightingSettings`)。`None` は既定の光源。
+    pub lighting: Option<serde_json::Value>,
+    pub transform: Transform,
+    pub background: Background,
 }
 
 #[cfg(test)]
@@ -206,12 +233,27 @@ mod tests {
     fn scene_is_tagged_json() {
         let scene = Scene {
             revision: 3,
+            model_revision: 2,
+            modules_revision: 2,
             model_name: "avatar.ugoe".into(),
             parameter_ids: vec!["AngleX".into()],
+            modules: vec!["cat-ears".into()],
+            look: Look::default(),
         };
         assert_eq!(
-            serde_json::to_string(&scene).unwrap(),
-            r#"{"kind":"scene","revision":3,"modelName":"avatar.ugoe","parameterIds":["AngleX"]}"#
+            serde_json::to_value(&scene).unwrap(),
+            serde_json::json!({
+                "kind": "scene",
+                "revision": 3,
+                "modelRevision": 2,
+                "modulesRevision": 2,
+                "modelName": "avatar.ugoe",
+                "parameterIds": ["AngleX"],
+                "modules": ["cat-ears"],
+                "lighting": null,
+                "transform": { "x": 0.0, "y": 0.0, "scale": 1.0, "rotation": 0.0 },
+                "background": { "kind": "transparent" }
+            })
         );
     }
 }

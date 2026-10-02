@@ -4,16 +4,19 @@
 //! - 操作ウィンドウへは、シーン (パラメータの定義) と、間引いた値と負荷 (毎秒 10 回) を配る。
 //! - 出力ウィンドウ (枠なし・背景の透過) の表示・最前面・大きさを操作する。
 //! - 刻みの速さ (30 / 60 / 120) を変え、実際の速さと、出力ウィンドウから届く描画の負荷を操作ウィンドウに配る (T0804)。
+//! - プロファイル (シーンの一覧) を読み書きし、シーンを切り替える ([`stage::Stage`])。
 //!
 //! 描画はしない (出力ウィンドウの WebView の wasm が受け手として描く)。
 
 pub mod conductor;
 pub mod follower;
 pub mod pacing;
+pub mod profile;
+pub mod stage;
 pub mod stream;
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
@@ -24,6 +27,8 @@ use tauri::{AppHandle, Manager, PhysicalSize, WebviewWindow, WindowEvent};
 
 use crate::conductor::Conductor;
 use crate::pacing::{Measured, Pacer, RateMeter, TickRate};
+use crate::profile::{ProfileError, SceneSettings};
+use crate::stage::{ProfileView, SceneError, Stage};
 use crate::stream::{Frame, Scene};
 
 /// 操作ウィンドウのラベル (tauri.conf.json)。
@@ -32,8 +37,8 @@ const CONTROL: &str = "main";
 const OUTPUT: &str = "output";
 /// 出力ウィンドウからの描画の負荷の報告が、これより古ければ「止まっている」とみなす (隠れて描いていないなど)。
 const RENDER_STATS_STALE: Duration = Duration::from_secs(2);
-/// 読み込むファイルの大きさの上限 (誤って巨大なファイルを選んだときにメモリを使い果たさないため)。
-const MAX_FILE_BYTES: u64 = 512 * 1024 * 1024;
+/// 最近のプロファイルを覚えるファイル (アプリのデータの場所)。
+const RECENT_PROFILES_FILE: &str = "recent-profiles.json";
 
 /// 毒された `Mutex` も使い続ける (刻みのスレッドが止まらないように)。
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -58,10 +63,12 @@ struct ParameterInfo {
 #[serde(rename_all = "camelCase", tag = "kind")]
 enum Monitor<'a> {
     /// シーンが変わった (接続したときも送る)。
-    #[serde(rename = "scene")]
+    #[serde(rename = "scene", rename_all = "camelCase")]
     Scene {
         scene: &'a Scene,
         parameters: Vec<ParameterInfo>,
+        /// モデル (と付けているモジュール) にライティングを受けるメッシュがあるか。
+        uses_lighting: bool,
     },
     /// 間引いた今の値と負荷。
     #[serde(rename = "status", rename_all = "camelCase")]
@@ -84,6 +91,29 @@ enum Monitor<'a> {
     /// 出力ウィンドウの状態が変わった。
     #[serde(rename = "output")]
     Output(OutputState),
+    /// プロファイル (シーンの一覧・保存先・出しているシーン・最近のプロファイル) が変わった (接続したときも送る)。
+    #[serde(rename = "profile")]
+    Profile(ProfileView<'a>),
+}
+
+/// コマンドのエラー。画面は `code` で文言を選ぶ (ADR 0029 の 4.)。
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+enum CommandError {
+    Profile(ProfileError),
+    Scene(SceneError),
+}
+
+impl From<ProfileError> for CommandError {
+    fn from(e: ProfileError) -> Self {
+        Self::Profile(e)
+    }
+}
+
+impl From<SceneError> for CommandError {
+    fn from(e: SceneError) -> Self {
+        Self::Scene(e)
+    }
 }
 
 /// 出力ウィンドウの状態。
@@ -131,13 +161,6 @@ struct RendererLoad {
     stale: bool,
 }
 
-/// 今のシーンのモデル (受け手が `scene_model` で取る)。
-#[derive(Debug)]
-struct SceneModel {
-    revision: u32,
-    bytes: Arc<Vec<u8>>,
-}
-
 /// フレームや通知を受ける WebView (ラベル → Channel)。開き直したページは前の Channel を置き換える。
 #[derive(Default)]
 struct Subscribers(Mutex<HashMap<String, Channel<InvokeResponseBody>>>);
@@ -166,8 +189,11 @@ impl Subscribers {
 /// 刻みのスレッドとコマンドが共有するもの。
 #[derive(Debug, Default)]
 struct Studio {
+    /// プロファイルと今のシーンのファイル。`conductor` と両方を握るときは、こちらを先に握る。
+    stage: Mutex<Stage>,
     conductor: Mutex<Conductor>,
-    model: Mutex<Option<SceneModel>>,
+    /// 起動して最初に、最後のプロファイルを開いたか (`restore_profile`)。
+    restored: std::sync::atomic::AtomicBool,
     /// フレームを受ける出力。
     outputs: Subscribers,
     /// 値と負荷を受ける操作ウィンドウ。
@@ -207,7 +233,11 @@ impl Studio {
                 internal: p.internal,
             })
             .collect();
-        Self::json(&Monitor::Scene { scene, parameters })
+        Self::json(&Monitor::Scene {
+            scene,
+            parameters,
+            uses_lighting: conductor.uses_lighting(),
+        })
     }
 
     fn tick_rate(&self) -> TickRate {
@@ -262,6 +292,36 @@ impl Studio {
         }
     }
 
+    /// シーンが変わった: 受け手と操作ウィンドウに配る。次の刻みのフレームより先に届くよう、指揮役を握ったまま呼ぶ。
+    fn send_scene(&self, conductor: &Conductor) {
+        if let Some(body) = Self::scene_message(conductor) {
+            self.outputs.send_all(&body);
+        }
+        if let Some(body) = Self::monitor_scene_message(conductor) {
+            self.monitors.send_all(&body);
+        }
+    }
+
+    fn send_profile(&self, stage: &Stage) {
+        if let Some(body) = Self::json(&Monitor::Profile(stage.view())) {
+            self.monitors.send_all(&body);
+        }
+    }
+
+    /// 舞台と指揮役を握って `action` を行い、プロファイルを配る。シーンが変わっていれば、それも配る。
+    fn with_stage<T>(&self, action: impl FnOnce(&mut Stage, &mut Conductor) -> T) -> T {
+        let mut stage = lock(&self.stage);
+        let mut conductor = lock(&self.conductor);
+        let before = conductor.scene().map(|s| s.revision);
+        let result = action(&mut stage, &mut conductor);
+        if conductor.scene().map(|s| s.revision) != before {
+            self.send_scene(&conductor);
+        }
+        drop(conductor);
+        self.send_profile(&stage);
+        result
+    }
+
     fn send_output_state(&self, state: OutputState) {
         if let Some(body) = Self::json(&Monitor::Output(state)) {
             self.monitors.send_all(&body);
@@ -304,59 +364,104 @@ fn run_ticks(studio: Arc<Studio>) {
     }
 }
 
-/// モデルのファイルか (拡張子で判断する)。`.ugoe` バンドルと JSON のモデル。
-fn is_model_path(path: &Path) -> bool {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| e.eq_ignore_ascii_case("ugoe") || e.eq_ignore_ascii_case("json"))
-}
-
-fn read_model_bytes(path: &Path) -> Result<Vec<u8>, String> {
-    if !is_model_path(path) {
-        return Err(format!(
-            "not a model file (.ugoe or .json): {}",
-            path.display()
-        ));
-    }
-    let len = std::fs::metadata(path)
-        .map_err(|e| format!("{}: {e}", path.display()))?
-        .len();
-    if len > MAX_FILE_BYTES {
-        return Err(format!(
-            "{}: file is too large ({len} bytes)",
-            path.display()
-        ));
-    }
-    std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))
-}
-
-/// モデルを開いて新しいシーンにし、受け手と操作ウィンドウにシーンを配る。
+/// 起動して最初の 1 回だけ、最後に使ったプロファイルを開く (無ければ何もしない)。開けなければエラー (新しいプロファイルのまま)。
 #[tauri::command]
-fn open_model(studio: tauri::State<'_, Arc<Studio>>, path: String) -> Result<(), String> {
-    let path = Path::new(&path);
-    let bytes = read_model_bytes(path)?;
-    let bundle = conductor::read_model(&bytes).map_err(|e| format!("{}: {e}", path.display()))?;
-    let name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let mut conductor = lock(&studio.conductor);
-    let revision = conductor
-        .load(&name, bundle)
-        .map_err(|e| format!("{}: {e}", path.display()))?
-        .revision;
-    *lock(&studio.model) = Some(SceneModel {
-        revision,
-        bytes: Arc::new(bytes),
-    });
-    // 次の刻みのフレームより先に届くよう、指揮役を握ったまま配る。
-    if let Some(body) = Studio::scene_message(&conductor) {
-        studio.outputs.send_all(&body);
+fn restore_profile(studio: tauri::State<'_, Arc<Studio>>) -> Result<(), CommandError> {
+    if studio.restored.swap(true, Ordering::SeqCst) {
+        return Ok(());
     }
-    if let Some(body) = Studio::monitor_scene_message(&conductor) {
-        studio.monitors.send_all(&body);
+    let Some(path) = lock(&studio.stage).recent().first().cloned() else {
+        return Ok(());
+    };
+    open_profile_at(&studio, &path)
+}
+
+fn open_profile_at(studio: &Studio, path: &Path) -> Result<(), CommandError> {
+    match studio.with_stage(|stage, conductor| stage.open_profile(path, conductor))? {
+        Some(error) => Err(error.into()),
+        None => Ok(()),
     }
-    Ok(())
+}
+
+/// 新しいプロファイルにする (空のシーンを 1 つ)。
+#[tauri::command]
+fn new_profile(studio: tauri::State<'_, Arc<Studio>>) {
+    studio.with_stage(Stage::new_profile);
+}
+
+/// プロファイルを開き、最後に使ったシーンにする。シーンを出せなくてもプロファイルは開く (エラーは返す)。
+#[tauri::command]
+fn open_profile(studio: tauri::State<'_, Arc<Studio>>, path: PathBuf) -> Result<(), CommandError> {
+    studio.restored.store(true, Ordering::SeqCst);
+    open_profile_at(&studio, &path)
+}
+
+/// 保存する。`path` を省くと今の保存先 (無ければ何もせず `null`)。保存先を返す。
+#[tauri::command]
+fn save_profile(
+    studio: tauri::State<'_, Arc<Studio>>,
+    path: Option<PathBuf>,
+) -> Result<Option<PathBuf>, CommandError> {
+    Ok(studio.with_stage(|stage, _| stage.save_profile(path.as_deref()))?)
+}
+
+/// 最近のプロファイルの一覧から外す。
+#[tauri::command]
+fn forget_recent_profile(studio: tauri::State<'_, Arc<Studio>>, path: PathBuf) {
+    studio.with_stage(|stage, _| stage.forget_recent(&path));
+}
+
+/// モデルの無いシーンを加え、その ID を返す。
+#[tauri::command]
+fn add_scene(studio: tauri::State<'_, Arc<Studio>>, name: String) -> String {
+    studio.with_stage(|stage, _| stage.add_scene(&name))
+}
+
+/// シーンを複製してすぐ後ろに置き、その ID を返す。
+#[tauri::command]
+fn duplicate_scene(
+    studio: tauri::State<'_, Arc<Studio>>,
+    id: String,
+    name: String,
+) -> Result<String, CommandError> {
+    Ok(studio.with_stage(|stage, _| stage.duplicate_scene(&id, &name))?)
+}
+
+/// シーンを `index` 番目に動かす。
+#[tauri::command]
+fn move_scene(
+    studio: tauri::State<'_, Arc<Studio>>,
+    id: String,
+    index: usize,
+) -> Result<(), CommandError> {
+    Ok(studio.with_stage(|stage, _| stage.move_scene(&id, index))?)
+}
+
+/// シーンを消す。
+#[tauri::command]
+fn remove_scene(studio: tauri::State<'_, Arc<Studio>>, id: String) -> Result<(), CommandError> {
+    Ok(studio.with_stage(|stage, _| stage.remove_scene(&id))?)
+}
+
+/// シーンの設定を置き換える。出しているシーンなら出し直す (出せなければ元に戻してエラー)。
+#[tauri::command]
+fn update_scene(
+    studio: tauri::State<'_, Arc<Studio>>,
+    scene: SceneSettings,
+) -> Result<(), CommandError> {
+    Ok(studio.with_stage(|stage, conductor| stage.update_scene(scene, conductor))?)
+}
+
+/// シーンに切り替える (出せなければ前のシーンのままエラー)。
+#[tauri::command]
+fn activate_scene(studio: tauri::State<'_, Arc<Studio>>, id: String) -> Result<(), CommandError> {
+    Ok(studio.with_stage(|stage, conductor| stage.activate(&id, conductor))?)
+}
+
+/// 出力ウィンドウの大きさのプリセットをプロファイルに覚える。
+#[tauri::command]
+fn set_output_preset(studio: tauri::State<'_, Arc<Studio>>, preset: String) {
+    studio.with_stage(|stage, _| stage.set_output_size(&preset));
 }
 
 /// 出力のフレームを受け取り始める。シーンがあれば最初に送る (以後は刻みごとのフレーム)。
@@ -373,13 +478,45 @@ fn subscribe_frames(
     studio.outputs.insert(webview.label(), channel);
 }
 
-/// シーン `revision` のモデルのバイト列。今のシーンでなければエラー (受け手は次のシーンを待つ)。
+/// 今のシーン `revision` のファイルを `pick` で選んで返す。今のシーンでなければエラー (受け手は次のシーンを待つ)。
+fn scene_file(
+    studio: &Studio,
+    revision: u32,
+    pick: impl FnOnce(&Stage) -> Option<Arc<Vec<u8>>>,
+) -> Result<Response, String> {
+    let stage = lock(&studio.stage);
+    let current = lock(&studio.conductor).scene().map(|s| s.revision);
+    if current != Some(revision) {
+        return Err(format!("scene {revision} is not the current scene"));
+    }
+    pick(&stage)
+        .map(|bytes| Response::new(bytes.to_vec()))
+        .ok_or_else(|| format!("scene {revision} has no such file"))
+}
+
+/// シーン `revision` のモデルのバイト列。
 #[tauri::command]
 fn scene_model(studio: tauri::State<'_, Arc<Studio>>, revision: u32) -> Result<Response, String> {
-    match &*lock(&studio.model) {
-        Some(model) if model.revision == revision => Ok(Response::new(model.bytes.to_vec())),
-        _ => Err(format!("scene {revision} is not the current scene")),
-    }
+    scene_file(&studio, revision, Stage::model_bytes)
+}
+
+/// シーン `revision` の `index` 番目 (合成の順) のモジュールのバイト列。
+#[tauri::command]
+fn scene_module(
+    studio: tauri::State<'_, Arc<Studio>>,
+    revision: u32,
+    index: usize,
+) -> Result<Response, String> {
+    scene_file(&studio, revision, |stage| stage.module_bytes(index))
+}
+
+/// シーン `revision` の背景の画像のバイト列。
+#[tauri::command]
+fn scene_background(
+    studio: tauri::State<'_, Arc<Studio>>,
+    revision: u32,
+) -> Result<Response, String> {
+    scene_file(&studio, revision, Stage::background_image)
 }
 
 /// 操作ウィンドウが値と負荷を受け取り始める。シーンがあれば最初に送る。
@@ -389,6 +526,10 @@ fn subscribe_status(
     webview: tauri::Webview,
     channel: Channel<InvokeResponseBody>,
 ) {
+    let stage = lock(&studio.stage);
+    if let Some(body) = Studio::json(&Monitor::Profile(stage.view())) {
+        let _ = channel.send(body);
+    }
     let conductor = lock(&studio.conductor);
     if let Some(body) = Studio::monitor_scene_message(&conductor) {
         let _ = channel.send(body);
@@ -495,12 +636,20 @@ fn set_output_size(app: AppHandle, width: u32, height: u32) -> Result<OutputStat
 pub fn run() {
     let studio = Arc::new(Studio::default());
     let ticking = Arc::clone(&studio);
+    let staging = Arc::clone(&studio);
     #[allow(clippy::expect_used)]
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
         .manage(studio)
-        .setup(move |_| {
+        .setup(move |app| {
+            // 最近のプロファイルはアプリのデータの場所に覚える (取れなければ覚えない)。
+            let recent = app
+                .path()
+                .app_config_dir()
+                .ok()
+                .map(|dir| dir.join(RECENT_PROFILES_FILE));
+            *lock(&staging.stage) = Stage::new(recent);
             std::thread::Builder::new()
                 .name("ugoe-studio-conductor".into())
                 .spawn(move || run_ticks(ticking))?;
@@ -522,7 +671,20 @@ pub fn run() {
             _ => {}
         })
         .invoke_handler(tauri::generate_handler![
-            open_model,
+            restore_profile,
+            new_profile,
+            open_profile,
+            save_profile,
+            forget_recent_profile,
+            add_scene,
+            duplicate_scene,
+            move_scene,
+            remove_scene,
+            update_scene,
+            activate_scene,
+            set_output_preset,
+            scene_module,
+            scene_background,
             subscribe_frames,
             scene_model,
             subscribe_status,
@@ -543,15 +705,6 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn accepts_bundles_and_json_only() {
-        assert!(is_model_path(Path::new("a/b/model.UGOE")));
-        assert!(is_model_path(Path::new("model.json")));
-        assert!(!is_model_path(Path::new("hair.ugoemod")));
-        assert!(!is_model_path(Path::new("model")));
-        assert!(read_model_bytes(Path::new("profile.toml")).is_err());
-    }
 
     #[test]
     fn monitor_messages_are_tagged() {

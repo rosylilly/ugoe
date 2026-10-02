@@ -1,27 +1,46 @@
 {
   "toolbar": {
     "label": "スタジオ",
-    "open": "モデルを開く…",
-    "output": "出力ウィンドウ"
+    "open": "モデルを選ぶ…",
+    "output": "出力ウィンドウ",
+    "profile": "プロファイル"
   },
   "language": {
     "label": "言語",
     "system": "OS に合わせる"
   },
   "file": {
-    "filter": "ugoe のモデル"
+    "filter": "ugoe のモデル",
+    "moduleFilter": "ugoe の着せ替えのモジュール",
+    "imageFilter": "画像",
+    "profileFilter": "ugoe スタジオのプロファイル",
+    "profileName": "profile.json"
   },
   "errors": {
-    "open": "{{name}} を開けません: {{message}}"
+    "io": "{{path}} を読み書きできません: {{message}}",
+    "tooLarge": "{{path}} は大きすぎます。",
+    "notJson": "{{path}} は JSON のファイルではありません。",
+    "notProfile": "{{path}} は ugoe スタジオのプロファイルではありません。",
+    "futureVersion": "{{path}} は新しいスタジオで保存されています (プロファイルの版 {{version}}。このスタジオが読めるのは版 {{supported}} まで)。スタジオを更新してから開いてください。",
+    "invalid": "{{path}} は壊れています: {{message}}",
+    "unknownScene": "シーンはもうありません。",
+    "missingModel": "モデルが見つかりません: {{path}}",
+    "missingModule": "着せ替えのモジュールが見つかりません: {{path}}",
+    "missingBackground": "背景の画像が見つかりません: {{path}}",
+    "unreadable": "{{path}} を読めません: {{message}}",
+    "wrongType": "{{path}} は使えないファイルです。",
+    "dressUp": "着せ替えのモジュールを付けられません: {{message}}",
+    "chooseAgain": "選び直す…"
   },
   "state": {
     "heading": "いまの状態",
-    "noModel": "モデルを開いていません。.ugoe のファイルを開くと、出力ウィンドウに出ます。",
+    "noModel": "配信しているモデルはありません。シーンのモデルを選ぶと、出力ウィンドウに出ます。",
     "model": "モデル",
     "frame": "フレーム",
     "tick": "1 刻みの時間",
     "tickValue": "{{value}} ms",
-    "receivers": "受け手"
+    "receivers": "受け手",
+    "scene": "シーン"
   },
   "output": {
     "heading": "出力ウィンドウ",
@@ -38,7 +57,7 @@
   "parameters": {
     "heading": "パラメータ",
     "reset": "すべて戻す",
-    "empty": "モデルを開くと、パラメータを動かせます。",
+    "empty": "モデルを選ぶと、パラメータを動かせます。",
     "showInternal": "中継用のパラメータも表示"
   },
   "load": {
@@ -66,5 +85,94 @@
       "dropped_other": "{{name}}がフレームを {{count}} 個捨てました。追いつくために物理をリセットしました。",
       "stale": "{{name}}が描いていません。隠れているか最小化されていると、配信ソフトが取り込めないことがあります。"
     }
+  },
+  "profile": {
+    "new": "新しいプロファイル",
+    "open": "プロファイルを開く…",
+    "save": "保存",
+    "saveAs": "名前を付けて保存…",
+    "recent": "最近のプロファイル",
+    "untitled": "名前の無いプロファイル",
+    "saved": "保存済み",
+    "unsaved": "未保存",
+    "unsavedHint": "シーンを残すには、プロファイルを保存してください。保存した後は、変更を自動で保存します。",
+    "discardTitle": "保存していないプロファイルを捨てますか?",
+    "discardBody": "このプロファイルのシーンは保存していません。続けると失われます。",
+    "discardConfirm": "捨てて続ける"
+  },
+  "scenes": {
+    "heading": "シーン",
+    "listLabel": "シーン",
+    "add": "追加",
+    "duplicate": "複製",
+    "moveUp": "上へ",
+    "moveDown": "下へ",
+    "remove": "削除",
+    "defaultName": "シーン {{n}}",
+    "copyName": "{{name}} (複製)",
+    "live": "配信中",
+    "noModel": "モデルなし",
+    "switchHint": "シーンを押すと切り替わります。",
+    "removeTitle": "「{{name}}」を削除しますか?",
+    "removeBody": "シーンをプロファイルから消します。出力は、シーンを切り替えるまでそのまま出し続けます。",
+    "empty": "シーンがありません。追加してください。"
+  },
+  "editor": {
+    "heading": "シーンの編集",
+    "name": "名前",
+    "notLive": "このシーンは配信していません。変更は、このシーンに切り替えたときに効きます。",
+    "activate": "このシーンに切り替える",
+    "model": "モデル",
+    "chooseModel": "モデルを選ぶ…",
+    "noModel": "モデルを選んでいません",
+    "modelChangeHint": "別のモデルを選ぶと、このシーンの着せ替えのモジュールは外れます。",
+    "modules": "着せ替えのモジュール",
+    "addModule": "モジュールを追加…",
+    "noModules": "モジュールはありません。モジュールはこの順に付きます。",
+    "moduleRemove": "外す",
+    "placement": "位置と大きさと回転",
+    "x": "横",
+    "y": "縦",
+    "scale": "大きさ",
+    "rotation": "回転",
+    "degrees": "°",
+    "times": "倍",
+    "resetPlacement": "元に戻す",
+    "background": "背景",
+    "backgroundKind": "背景",
+    "bgTransparent": "透過",
+    "bgColor": "単色",
+    "bgChroma": "クロマキー",
+    "bgImage": "画像",
+    "color": "色",
+    "chromaColor": "抜く色",
+    "chromaGreen": "緑",
+    "chromaBlue": "青",
+    "chromaHint": "配信ソフトでこの色を抜いてください。",
+    "transparentHint": "配信ソフトで、モデルの後ろに重ねたものが見えます。",
+    "chooseImage": "画像を選ぶ…",
+    "lighting": "ライティング",
+    "noLighting": "このモデルには、ライティングを受けるメッシュがありません。"
+  },
+  "lighting": {
+    "enabled": "ライティングを使う",
+    "preset": "組",
+    "presets": {
+      "standard": "標準",
+      "sunset": "夕日",
+      "lamp": "夜のランプ",
+      "custom": "カスタム"
+    },
+    "ambient": "環境光",
+    "directional": "平行光源",
+    "point": "点光源",
+    "on": "使う",
+    "color": "色",
+    "intensity": "強さ",
+    "azimuth": "向き",
+    "elevation": "高さ",
+    "x": "横",
+    "y": "縦",
+    "range": "届く距離"
   }
 }

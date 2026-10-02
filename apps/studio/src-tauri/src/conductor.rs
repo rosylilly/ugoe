@@ -5,11 +5,14 @@
 //! 物理 → リップシンク → ポーズの順に自分で進める (`docs/spec/motion.md#受け手として進める`、T0134)。
 //! 時計とスレッドは持たない (刻みは `lib.rs` の刻みのスレッドが `dt` を測って [`Conductor::tick`] を呼ぶ)。
 
+use std::sync::Arc;
+
 use ugoe::format::Bundle;
 use ugoe::model::Parameter;
-use ugoe::{Puppet, Toggles};
+use ugoe::model::module::Module;
+use ugoe::{DressUpError, Puppet, Toggles};
 
-use crate::stream::{Frame, Scene};
+use crate::stream::{Frame, Look, Scene};
 
 /// 1 刻みで進める時間の上限 (秒)。止まっていた後に物理が大きく飛ばないように (ADR 0028 の 3.)。
 pub const MAX_DT: f32 = 0.1;
@@ -21,6 +24,19 @@ pub enum LoadError {
     Format(#[from] ugoe::format::FormatError),
     #[error(transparent)]
     Compile(#[from] ugoe::runtime::CompileError),
+    #[error(transparent)]
+    DressUp(#[from] DressUpError),
+    /// モデルを読まずにシーンを替えようとした (モデルが無い)。
+    #[error("no model is loaded")]
+    NoModel,
+}
+
+/// 読むモデル (`Conductor::present` に渡す)。
+#[derive(Debug)]
+pub struct NewModel {
+    /// 表示名 (ファイル名)。
+    pub name: String,
+    pub bundle: Bundle,
 }
 
 /// `.ugoe` バンドルか JSON のモデルのバイト列を読む (先頭が `{` なら JSON)。
@@ -53,19 +69,82 @@ impl Conductor {
         Self::default()
     }
 
-    /// モデルを読み、新しいシーンにする (`revision` が上がる)。パラメータは既定値から始める。
-    ///
-    /// 物理の設定は持たせたうえで段を切る (受け手が回す)。モーション・表情の一覧は T0803 で使う。
+    /// モデルを読み、新しいシーンにする (`revision` が上がる)。パラメータは既定値から始める。モジュールは付けず、見せ方は既定。
     pub fn load(&mut self, model_name: &str, bundle: Bundle) -> Result<&Scene, LoadError> {
-        let mut puppet = Puppet::new(bundle.model)?;
-        if let Some(physics) = bundle.physics {
-            puppet = puppet.with_physics(physics);
+        let model = NewModel {
+            name: model_name.to_owned(),
+            bundle,
+        };
+        self.present(Some(model), Some(Vec::new()), Look::default())
+    }
+
+    /// シーンを替える (`revision` が上がる)。失敗したら何も変えない。
+    ///
+    /// - `model` が `Some` なら読み直す (パラメータは既定値から。受け手もモデルを読み直すので物理は新しく始まる)。
+    ///   `None` なら今のモデルのまま、パラメータの値・再生中のモーションなどを引き継ぐ (`docs/studio.md#シーンとプロファイル`)。
+    /// - `modules` が `Some` なら付けるモジュールの組をそれにする (合成の順)。今のモデルのまま組が変わったときは、
+    ///   次のフレームに物理のリセットを載せる (受け手どうしの物理を揃える)。`None` なら変えない。
+    /// - 見せ方 (`look`) は受け手に配るだけで、指揮役は使わない。
+    ///
+    /// 物理の設定は持たせたうえで段を切る (受け手が回す)。モデルが無ければ ([`Conductor::clear`] の後など) `model` が要る。
+    pub fn present(
+        &mut self,
+        model: Option<NewModel>,
+        modules: Option<Vec<Arc<Module>>>,
+        look: Look,
+    ) -> Result<&Scene, LoadError> {
+        let revision = self.revision + 1;
+        let previous = self.scene.as_ref();
+        let (model_revision, model_name) = match &model {
+            Some(m) => (revision, m.name.clone()),
+            None => (
+                previous.map_or(0, |s| s.model_revision),
+                previous.map(|s| s.model_name.clone()).unwrap_or_default(),
+            ),
+        };
+        let mut modules_revision = previous.map_or(revision, |s| s.modules_revision);
+        let mut reset = false;
+        match model {
+            Some(model) => {
+                let mut puppet = Puppet::new(model.bundle.model)?;
+                if let Some(physics) = model.bundle.physics {
+                    puppet = puppet.with_physics(physics);
+                }
+                puppet.set_toggles(Toggles {
+                    physics: false,
+                    ..Toggles::default()
+                });
+                if let Some(modules) = modules.filter(|m| !m.is_empty()) {
+                    puppet.set_modules(modules)?;
+                }
+                // 受け手は新しいモデルを読み直すので、物理は新しく始まる (リセットを載せなくてよい)。
+                self.puppet = Some(puppet);
+                modules_revision = revision;
+            }
+            None => {
+                let Some(puppet) = &mut self.puppet else {
+                    return Err(LoadError::NoModel);
+                };
+                if let Some(modules) = modules {
+                    let same = puppet.modules().len() == modules.len()
+                        && puppet
+                            .modules()
+                            .iter()
+                            .zip(&modules)
+                            .all(|(a, b)| Arc::ptr_eq(a, b));
+                    if !same {
+                        puppet.set_modules(modules)?;
+                        modules_revision = revision;
+                        reset = true;
+                    }
+                }
+            }
         }
-        puppet.set_toggles(Toggles {
-            physics: false,
-            ..Toggles::default()
-        });
-        self.revision += 1;
+        let Some(puppet) = &self.puppet else {
+            return Err(LoadError::NoModel);
+        };
+        self.revision = revision;
+        self.reset = reset || (self.reset && model_revision != revision);
         let parameter_ids = puppet
             .instance()
             .compiled()
@@ -74,14 +153,42 @@ impl Conductor {
             .iter()
             .map(|p| p.id.to_string())
             .collect();
-        self.puppet = Some(puppet);
-        // 受け手は新しいモデルを読み直すので、物理は新しく始まる (リセットを載せなくてよい)。
-        self.reset = false;
+        let modules = puppet.modules().iter().map(|m| m.name.clone()).collect();
         Ok(self.scene.insert(Scene {
-            revision: self.revision,
-            model_name: model_name.to_owned(),
+            revision,
+            model_revision,
+            modules_revision,
+            model_name,
             parameter_ids,
+            modules,
+            look,
         }))
+    }
+
+    /// モデルを外す (モデルの無いシーン)。`revision` が上がり、以後は [`Conductor::tick`] がフレームを作らない。
+    pub fn clear(&mut self, look: Look) -> &Scene {
+        self.revision += 1;
+        self.puppet = None;
+        self.reset = false;
+        self.scene.insert(Scene {
+            revision: self.revision,
+            model_revision: 0,
+            modules_revision: self.revision,
+            model_name: String::new(),
+            parameter_ids: Vec::new(),
+            modules: Vec::new(),
+            look,
+        })
+    }
+
+    /// モデル (と付けているモジュール) にライティングを受けるメッシュがあるか。モデルが無ければ `false`。
+    pub fn uses_lighting(&self) -> bool {
+        self.puppet.as_ref().is_some_and(Puppet::uses_lighting)
+    }
+
+    /// 付けているモジュール (合成の順)。
+    pub fn modules(&self) -> &[Arc<Module>] {
+        self.puppet.as_ref().map_or(&[], |p| p.modules())
     }
 
     /// 今のシーン。モデルを読んでいなければ `None`。
@@ -247,5 +354,107 @@ mod tests {
         let json = ugoe::format::model_to_json(&fixtures::single_quad()).unwrap();
         assert!(read_model(format!("  {json}").as_bytes()).is_ok());
         assert!(read_model(b"nope").is_err());
+    }
+
+    fn dress_up() -> Bundle {
+        Bundle::new(fixtures::dress_up_base())
+    }
+
+    #[test]
+    fn switching_within_a_model_keeps_values_and_versions_what_changed() {
+        let mut conductor = Conductor::new();
+        let hair = Arc::new(fixtures::long_hair_module());
+        let model = NewModel {
+            name: "base.ugoe".into(),
+            bundle: dress_up(),
+        };
+        let first = conductor
+            .present(Some(model), Some(vec![Arc::clone(&hair)]), Look::default())
+            .unwrap()
+            .clone();
+        assert_eq!(
+            (first.revision, first.model_revision, first.modules_revision),
+            (1, 1, 1)
+        );
+        assert_eq!(first.modules, std::slice::from_ref(&hair.name));
+        // モデルを読み直したときは、物理のリセットを載せない (受け手も読み直す)。
+        assert!(!conductor.tick(0.016).unwrap().reset);
+        assert!(conductor.set_parameter("AngleX", 20.0));
+
+        // 見せ方だけ: モデルとモジュールの版はそのまま、値も引き継ぐ。
+        let look = Look {
+            transform: crate::profile::Transform {
+                x: 0.25,
+                ..Default::default()
+            },
+            ..Look::default()
+        };
+        let second = conductor
+            .present(None, Some(vec![Arc::clone(&hair)]), look.clone())
+            .unwrap()
+            .clone();
+        assert_eq!(
+            (
+                second.revision,
+                second.model_revision,
+                second.modules_revision
+            ),
+            (2, 1, 1)
+        );
+        assert_eq!(second.look, look);
+        let frame = conductor.tick(0.016).unwrap();
+        assert!(!frame.reset);
+        let index = second
+            .parameter_ids
+            .iter()
+            .position(|id| id == "AngleX")
+            .unwrap();
+        assert_eq!(frame.values[index], 20.0);
+
+        // 着せ替え: モジュールの版が上がり、次のフレームで受け手の物理をリセットする。
+        let dress = Arc::new(fixtures::dress_module());
+        let third = conductor
+            .present(None, Some(vec![hair, Arc::clone(&dress)]), Look::default())
+            .unwrap()
+            .clone();
+        assert_eq!(
+            (third.revision, third.model_revision, third.modules_revision),
+            (3, 1, 3)
+        );
+        assert_eq!(third.parameter_ids, first.parameter_ids);
+        let frame = conductor.tick(0.016).unwrap();
+        assert!(frame.reset);
+        assert_eq!((frame.revision, frame.values[index]), (3, 20.0));
+    }
+
+    #[test]
+    fn a_failed_switch_changes_nothing() {
+        let mut conductor = Conductor::new();
+        assert!(matches!(
+            conductor.present(None, None, Look::default()),
+            Err(LoadError::NoModel)
+        ));
+        conductor.load("hair.ugoe", bundle()).unwrap();
+        // 本体にスロットが無いのでモジュールを付けられない。
+        let error = conductor.present(
+            None,
+            Some(vec![Arc::new(fixtures::long_hair_module())]),
+            Look::default(),
+        );
+        assert!(matches!(error, Err(LoadError::DressUp(_))));
+        let scene = conductor.scene().unwrap();
+        assert_eq!((scene.revision, scene.modules.len()), (1, 0));
+        assert!(conductor.modules().is_empty());
+    }
+
+    #[test]
+    fn clearing_stops_the_frames() {
+        let mut conductor = Conductor::new();
+        conductor.load("hair.ugoe", bundle()).unwrap();
+        let scene = conductor.clear(Look::default()).clone();
+        assert_eq!((scene.revision, scene.model_revision), (2, 0));
+        assert!(scene.parameter_ids.is_empty());
+        assert!(conductor.tick(0.016).is_none());
+        assert!(conductor.parameters().is_empty());
     }
 }

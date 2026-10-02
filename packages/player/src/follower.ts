@@ -93,10 +93,14 @@ export function applyFrame(puppet: FollowerPuppet, frame: FollowFrame, gap = fal
  * - 前のシーンのフレームは捨てる。まだ読んでいないシーンのフレームは、そのシーンのモデルを読むまで待たせる
  *   (新しいシーンの最初のフレームから適用するので、どの受け手も同じ形になる)。
  * - 同じシーンの中で `seq` が飛んだら (接続が切れていた・溢れて捨てた)、物理をリセットしてから続ける。
+ * - 同じモデルのまま次のシーンに移ったとき (`continueScene`。見せ方や着せ替えだけが変わった) は、前のシーンのフレームも
+ *   捨てずに順に適用し、`seq` の続きも保つ (受け手ごとに物理の刻みが抜けないように)。
  */
 export class FrameQueue {
   #pending: FollowFrame[] = [];
   #revision: number | null = null;
+  /** 適用するフレームの `revision` の下限 (モデルを読んだシーン。`continueScene` では変わらない)。 */
+  #from: number | null = null;
   #lastSeq: number | null = null;
   /** 溢れて捨てたので、次に適用するフレームは `seq` が飛んだものとして扱う。 */
   #dropped = false;
@@ -114,8 +118,21 @@ export class FrameQueue {
   /** シーン `revision` のモデルを読み終えた。以後はそのシーンのフレームを最初から適用する。 */
   setScene(revision: number): void {
     this.#revision = revision;
+    this.#from = revision;
     this.#lastSeq = null;
     this.#dropped = false;
+  }
+
+  /**
+   * 同じモデルのまま、シーン `revision` に移る。前のシーンのフレームも捨てずに順に適用し、`seq` の続きも保つ。
+   * まだシーンが無ければ `setScene` と同じ。
+   */
+  continueScene(revision: number): void {
+    if (this.#revision === null || this.#from === null) {
+      this.setScene(revision);
+      return;
+    }
+    this.#revision = Math.max(this.#revision, revision);
   }
 
   push(frame: FollowFrame): void {
@@ -133,11 +150,12 @@ export class FrameQueue {
   take(): { frame: FollowFrame; gap: boolean }[] {
     const out: { frame: FollowFrame; gap: boolean }[] = [];
     const revision = this.#revision;
-    if (revision === null) return out;
+    const from = this.#from ?? revision;
+    if (revision === null || from === null) return out;
     let i = 0;
     for (; i < this.#pending.length; i++) {
       const frame = this.#pending[i] as FollowFrame;
-      if (frame.revision < revision) continue;
+      if (frame.revision < from) continue;
       if (frame.revision > revision) break;
       const last = this.#lastSeq;
       const gap = this.#dropped || (last !== null && frame.seq !== last + 1);
