@@ -2,7 +2,7 @@
 id: T0417
 title: crates.io: 公開向けの README と英語の description・trusted publishing・版上げの一本化・docs.rs
 status: todo
-milestone: M7
+milestone: Release
 crates: [ugoe-core, ugoe-model, ugoe-runtime, ugoe-format, ugoe-physics, ugoe-motion, ugoe-render, ugoe, ugoe-cli, scripts, justfile, .github/workflows, docs]
 depends_on: [T0403]
 assignee:

@@ -1,6 +1,6 @@
 ---
 id: T0415
-title: Godot: 配布の自動化・Light2D と XRFaceTracker からの入力・マスクの解像度
+title: Godot: Light2D と XRFaceTracker からの入力・マスクの解像度
 status: todo
 milestone: M7
 crates: [bindings/godot, docs]
@@ -16,7 +16,7 @@ T0411 の後続の候補をまとめる。
 
 ## 受け入れ条件
 
-- [ ] 配布の自動化: 各 OS (Linux・Windows・macOS) のビルドと、アセットライブラリ向けの zip を CI で作る (公開は利用者が行う)。範囲外の ci.yml の変更は team-lead に相談する
+- 配布の自動化 (各 OS のビルドとアセットライブラリ向けの zip) は、公開のマイルストーン (Release) の T0421 に移した
 - [ ] Godot の `Light2D` から光源を取る (ノードのオプション)
 - [ ] Godot の `XRFaceTracker` からトラッキングの入力への対応表
 - [ ] アトラスに収まらずにマスクの解像度を下げたとき、元に戻す判断 (戻す条件と、画質の目安)
