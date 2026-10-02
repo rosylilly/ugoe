@@ -8,7 +8,8 @@
 // - パッケージは /pkg/ (bindings/web/dist)、モデルは /file/<計画の番号>/<モジュールの番号 or "model"> で取る。
 // - 描画のバックエンドは URL の ?backend= (webgl2 / webgpu)。
 // - 時間を進めないケースは、すべての段を止めて評価する (C の実行器と同じ)。
-// - `follow` のあるケースは、`update` の代わりに `follow(値, dt, リップシンクの音量, 強さ)` で進める (T0133・T0134)。
+// - `follow` のあるケースは、`update` の代わりに `follow(値, dt, リップシンクの音量, 強さ, パーツの番号, 値と重み)` で進める
+//   (T0133・T0134・T0135)。
 
 import { createPuppet, loadModel } from "/pkg/index.js";
 
@@ -100,7 +101,15 @@ async function runCase(plan, index) {
         // 受け手として進める (T0133): 各フレームの値を基準値として書き、物理とポーズだけを進める。
         c.steps.forEach((dt, i) => {
           const [level, strength] = c.follow_lip_sync?.[i] ?? [undefined, undefined];
-          puppet.follow(new Float32Array(c.follow[i]), dt, level, strength);
+          const parts = c.follow_part_opacities?.[i] ?? [];
+          puppet.follow(
+            new Float32Array(c.follow[i]),
+            dt,
+            level,
+            strength,
+            new Uint32Array(parts.map(([part]) => part)),
+            new Float32Array(parts.flatMap(([, value, weight]) => [value, weight])),
+          );
         });
       } else {
         for (const dt of c.steps) puppet.update(dt);

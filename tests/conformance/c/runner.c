@@ -9,8 +9,8 @@
  *
  * - update の行が無いケースは、すべての段を止めて ugoe_puppet_update(0) を 1 回呼ぶ (時間を進めない評価)。
  * - update の行があるケースは、目パチと呼吸を effects のとおりにし、ほかの段を動かして、その dt で順に呼ぶ。
- * - follow の行 (受け手として進めるケース。T0133・T0134) は、update の代わりに
- *   ugoe_puppet_follow(値, リップシンクの音量, 強さ, dt) を順に呼ぶ。
+ * - follow の行 (受け手として進めるケース。T0133・T0134・T0135) は、update の代わりに
+ *   ugoe_puppet_follow(値, リップシンクの音量, 強さ, パーツの不透明度, dt) を順に呼ぶ。
  */
 #include <errno.h>
 #include <stdbool.h>
@@ -53,13 +53,18 @@ typedef struct {
     float *follow[MAX_STEPS];
     size_t follow_len[MAX_STEPS];
     float follow_lip_sync[MAX_STEPS][2];
+    UgoePartOpacityInput *follow_parts[MAX_STEPS];
+    size_t follow_part_count[MAX_STEPS];
     size_t follow_count;
 } Case;
 
 static void clear_case(Case *c) {
     for (size_t i = 0; i < c->module_count; i++) free(c->modules[i]);
     for (size_t i = 0; i < c->param_count; i++) free(c->param_ids[i]);
-    for (size_t i = 0; i < c->follow_count; i++) free(c->follow[i]);
+    for (size_t i = 0; i < c->follow_count; i++) {
+        free(c->follow[i]);
+        free(c->follow_parts[i]);
+    }
     memset(c, 0, sizeof *c);
 }
 
@@ -179,6 +184,7 @@ static bool run_case(const Case *c, const char *out_dir) {
             if (c->follow_count > 0) {
                 CHECK(ugoe_puppet_follow(puppet, c->follow[i], c->follow_len[i],
                                          c->follow_lip_sync[i][0], c->follow_lip_sync[i][1],
+                                         c->follow_parts[i], c->follow_part_count[i],
                                          c->steps[i]));
             } else {
                 CHECK(ugoe_puppet_update(puppet, c->steps[i]));
@@ -296,7 +302,7 @@ int main(int argc, char **argv) {
             if (c.step_count == MAX_STEPS || c.follow_count > 0) goto invalid;
             c.steps[c.step_count++] = parse_float(arg);
         } else if (strcmp(line, "follow") == 0 && arg) {
-            /* follow <dt> <リップシンクの音量 (無ければ -1)> <強さ> <値> <値> ... */
+            /* follow <dt> <リップシンクの音量 (無ければ -1)> <強さ> <パーツの数 k> (<番号> <値> <重み>) × k <値> ... */
             if (c.step_count == MAX_STEPS || c.follow_count != c.step_count) goto invalid;
             size_t n = 0;
             for (const char *p = arg; *p; p++) n += *p == ' ';
@@ -313,6 +319,34 @@ int main(int argc, char **argv) {
                 }
                 lip_sync[k] = parse_float(token);
             }
+            token = strtok(NULL, " ");
+            if (!token) {
+                free(values);
+                goto invalid;
+            }
+            size_t part_count = strtoul(token, NULL, 10);
+            UgoePartOpacityInput *parts = NULL;
+            if (part_count > 0) {
+                parts = malloc(part_count * sizeof *parts);
+                if (!parts) {
+                    free(values);
+                    goto invalid;
+                }
+            }
+            for (size_t k = 0; k < part_count * 3; k++) {
+                token = strtok(NULL, " ");
+                if (!token) {
+                    free(values);
+                    free(parts);
+                    goto invalid;
+                }
+                UgoePartOpacityInput *part = &parts[k / 3];
+                if (k % 3 == 0) part->part = (uint32_t)strtoul(token, NULL, 10);
+                else if (k % 3 == 1) part->value = parse_float(token);
+                else part->weight = parse_float(token);
+            }
+            c.follow_parts[c.follow_count] = parts;
+            c.follow_part_count[c.follow_count] = part_count;
             size_t len = 0;
             while ((token = strtok(NULL, " ")) != NULL && len < n) values[len++] = parse_float(token);
             c.follow[c.follow_count] = values;

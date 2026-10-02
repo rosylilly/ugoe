@@ -34,8 +34,9 @@ export interface WebPuppet extends TrackingPuppet {
   reset_parameters(): void;
   update(dt: number): void;
   /**
-   * 受け手のモード (follower.ts) でだけ使う。値を基準値として書き、物理 → リップシンク → ポーズの順に `dt` 秒進める
-   * (`lipSyncLevel` を省くとリップシンクを当てない。`lipSyncStrength` を省くと 1)。
+   * 受け手のモード (follower.ts) でだけ使う。値を基準値として書き、物理 → リップシンク → パーツの不透明度 (モーションのカーブと
+   * ポーズ) の順に `dt` 秒進める (`lipSyncLevel` を省くとリップシンクを当てない。`lipSyncStrength` を省くと 1。
+   * `partOpacityParts` はパーツの番号、`partOpacityValues` は値と重みを交互に並べたもの。省くとカーブなし)。
    * 受け手のモードを使わないアプリ (ビューア) の型の宣言には無くてよいので省ける。
    */
   follow?(
@@ -43,6 +44,8 @@ export interface WebPuppet extends TrackingPuppet {
     dt: number,
     lipSyncLevel?: number | null,
     lipSyncStrength?: number | null,
+    partOpacityParts?: Uint32Array | null,
+    partOpacityValues?: Float32Array | null,
   ): void;
   reset_physics?(): void;
 

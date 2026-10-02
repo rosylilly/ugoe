@@ -24,10 +24,12 @@ pub fn evaluate(case: &Case) -> Result<Frame, Error> {
 pub struct FollowFrame {
     pub values: Vec<f32>,
     pub lip_sync: Option<ugoe::LipSyncInput>,
+    pub part_opacities: Vec<ugoe::PartOpacityInput>,
 }
 
 /// 受け手として進めるケースの各フレームの入力: 物理を切った指揮役の `Puppet` を `case.steps` で進め、各 `update` の
-/// 物理の段に入る直前の値とリップシンクの入力を並べる (ADR 0028 の 3.、`docs/spec/motion.md#受け手として進める`)。
+/// 物理の段に入る直前の値・リップシンクの入力・モーションのパーツの不透明度のカーブを並べる
+/// (ADR 0028 の 3.、`docs/spec/motion.md#受け手として進める`)。`case.motion` なら、指揮役は最初にそのモーションを再生する。
 ///
 /// `effects` なら、指揮役は標準の目パチと呼吸 (`EyeBlink::standard()`・`Breath::standard()`) を使う (見本のモデルは目パチと呼吸の対象を
 /// 持たないことがあるので、モデルの設定ではなく標準の設定で値を動かす)。`lip_sync` なら、指揮役はモデルのリップシンクの設定に
@@ -42,6 +44,7 @@ pub fn conductor_frames(
         frames.push(FollowFrame {
             values: conductor.values_before_physics().to_vec(),
             lip_sync: conductor.lip_sync_applied(),
+            part_opacities: conductor.part_opacities_applied().to_vec(),
         });
     })?;
     Ok(frames)
@@ -81,6 +84,10 @@ fn drive(
         breath: effects,
         ..ugoe::Toggles::default()
     });
+    if let Some(name) = &case.motion {
+        let motion = bundle_motion(case, name)?;
+        conductor.start_motion(motion, ugoe::motion::Priority::Normal);
+    }
     for (i, &dt) in case.steps.iter().enumerate() {
         if lip_sync {
             conductor.set_lip_sync_level(Some(lip_sync_level(i)));
@@ -118,13 +125,37 @@ pub fn puppet(case: &Case) -> Result<Puppet, Error> {
                     .copied()
                     .flatten()
                     .map(|[level, strength]| ugoe::LipSyncInput { level, strength });
+                let part_opacities: Vec<_> = case
+                    .follow_part_opacities
+                    .get(i)
+                    .into_iter()
+                    .flatten()
+                    .map(|&(part, value, weight)| ugoe::PartOpacityInput {
+                        part,
+                        value,
+                        weight,
+                    })
+                    .collect();
                 puppet
-                    .follow(values, lip_sync, dt)
+                    .follow(values, lip_sync, &part_opacities, dt)
                     .map_err(|e| invalid(case, e))?;
             }
         }
     }
     Ok(puppet)
+}
+
+/// バンドル `case.model` のモーション `name`。
+fn bundle_motion(case: &Case, name: &str) -> Result<ugoe::model::motion::Motion, Error> {
+    let bundle = ugoe_format::read_bundle(&read(&case.model)?).map_err(|source| Error::Format {
+        context: format!("reading {}", case.model.display()),
+        source,
+    })?;
+    bundle
+        .motions
+        .into_iter()
+        .find(|m| m.name == name)
+        .ok_or_else(|| invalid(case, format!("the bundle has no motion `{name}`")))
 }
 
 /// モデルを読み、モジュールを付け、パラメータを書いた `Puppet` (時間は進めない)。
@@ -238,7 +269,8 @@ mod tests {
     fn follow_cases_match_a_single_puppet_with_physics() {
         let plan = plan();
         let cases: Vec<_> = plan.cases.iter().filter(|c| !c.follow.is_empty()).collect();
-        assert!(cases.len() >= 3);
+        assert!(cases.len() >= 4);
+        assert!(cases.iter().any(|c| !c.follow_part_opacities.is_empty()));
         // 指揮役の目パチと呼吸は `effects` で決まるが、計画には残らないので、どの `follow` のケースも `effects` を使う約束にする。
         for case in cases {
             assert_eq!(case.follow.len(), case.steps.len());
@@ -249,6 +281,17 @@ mod tests {
             let expected = Frame::from_instance(single.instance());
             let errors = crate::compare::frames(&expected, &followed);
             assert!(errors.is_empty(), "{}: {errors:?}", case.name);
+            // パーツの不透明度のカーブを渡さない実行器は合わない (T0135)。
+            if !case.follow_part_opacities.is_empty() {
+                let mut without = case.clone();
+                without.follow_part_opacities.clear();
+                let without = evaluate(&without).unwrap();
+                assert!(
+                    !crate::compare::frames(&without, &followed).is_empty(),
+                    "{}",
+                    case.name
+                );
+            }
             // リップシンクの入力を渡さない実行器は合わない (物理の入力が変わる)。
             if lip_sync {
                 let mut without = case.clone();

@@ -11,11 +11,21 @@ import {
 /** apps/studio/src-tauri/src/stream.rs の `GOLDEN` と同じバイト列。 */
 const GOLDEN = new Uint8Array([
   1, 3, 0, 0, 7, 0, 0, 0, 0x2a, 0x01, 0, 0, 0, 0, 0, 0, 0x89, 0x88, 0x88, 0x3c, 0, 0, 0, 0x3f, 0, 0,
-  0x40, 0x3f, 2, 0, 0, 0, 0, 0, 0xc0, 0x3f, 0, 0, 0x20, 0xc1,
+  0x40, 0x3f, 2, 0, 0, 0, 0, 0, 0xc0, 0x3f, 0, 0, 0x20, 0xc1, 1, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0x80,
+  0x3e, 0, 0, 0, 0x3f,
 ]);
 
 function frame(seq: number, revision: number, reset = false): FollowFrame {
-  return { seq, revision, dt: 1 / 60, reset, values: new Float32Array([seq]), lipSync: null };
+  return {
+    seq,
+    revision,
+    dt: 1 / 60,
+    reset,
+    values: new Float32Array([seq]),
+    lipSync: null,
+    partOpacityParts: new Uint32Array(),
+    partOpacityValues: new Float32Array(),
+  };
 }
 
 describe("decodeFrame", () => {
@@ -27,6 +37,8 @@ describe("decodeFrame", () => {
     expect(f.reset).toBe(true);
     expect(f.lipSync).toEqual({ level: 0.5, strength: 0.75 });
     expect([...f.values]).toEqual([1.5, -10]);
+    expect([...f.partOpacityParts]).toEqual([3]);
+    expect([...f.partOpacityValues]).toEqual([0.25, 0.5]);
   });
 
   it("rejects broken bytes", () => {
@@ -34,7 +46,13 @@ describe("decodeFrame", () => {
     const kind = GOLDEN.slice();
     kind[0] = 2;
     expect(() => decodeFrame(kind.buffer)).toThrow(/kind 2/);
-    expect(() => decodeFrame(GOLDEN.slice(0, 38).buffer)).toThrow(/2 values/);
+    expect(() => decodeFrame(GOLDEN.slice(0, 54).buffer)).toThrow(
+      /24 bytes after the header but 22/,
+    );
+    // パーツの不透明度の数が無い (T0134 までの形)。
+    expect(() => decodeFrame(GOLDEN.slice(0, 40).buffer)).toThrow(
+      /12 bytes after the header but 8/,
+    );
     const silent = GOLDEN.slice();
     silent[1] = 0;
     expect(decodeFrame(silent.buffer).lipSync).toBeNull();
@@ -129,19 +147,27 @@ describe("applyFrame", () => {
   it("resets physics before the frame when asked", () => {
     const calls: string[] = [];
     const puppet: FollowerPuppet = {
-      follow: (values, dt, level, strength) =>
-        calls.push(`follow ${values[0]} ${dt.toFixed(3)} ${level ?? "-"} ${strength ?? "-"}`),
+      follow: (values, dt, level, strength, parts, opacities) =>
+        calls.push(
+          `follow ${values[0]} ${dt.toFixed(3)} ${level ?? "-"} ${strength ?? "-"} [${[...(parts ?? [])]}] [${[...(opacities ?? [])]}]`,
+        ),
       reset_physics: () => calls.push("reset"),
     };
     applyFrame(puppet, frame(1, 1));
     applyFrame(puppet, frame(2, 1, true));
     applyFrame(puppet, { ...frame(3, 1), lipSync: { level: 0.25, strength: 1 } }, true);
+    applyFrame(puppet, {
+      ...frame(4, 1),
+      partOpacityParts: new Uint32Array([2]),
+      partOpacityValues: new Float32Array([0.5, 1]),
+    });
     expect(calls).toEqual([
-      "follow 1 0.017 - -",
+      "follow 1 0.017 - - [] []",
       "reset",
-      "follow 2 0.017 - -",
+      "follow 2 0.017 - - [] []",
       "reset",
-      "follow 3 0.017 0.25 1",
+      "follow 3 0.017 0.25 1 [] []",
+      "follow 4 0.017 - - [2] [0.5,1]",
     ]);
   });
 });

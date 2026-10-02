@@ -1,11 +1,12 @@
 //! 受け手の口: 届いたパラメータの値を基準値として書き、物理より後の段だけを進める
 //! (`docs/spec/motion.md#受け手として進める`、ADR 0028 の 3.)。
 //!
-//! スタジオの指揮役は [`Puppet::update`] の後に、物理の段に入る直前の値 ([`Puppet::values_before_physics`]) と
-//! リップシンクの入力 ([`Puppet::lip_sync_applied`]) を配り、受け手 (出力ウィンドウ・ブラウザソース・仮想カメラ) は
-//! それを [`Puppet::follow`] で順に適用する。段の順は `update` と同じなので、同じ列なら、どの受け手も物理を含めて
+//! スタジオの指揮役は [`Puppet::update`] の後に、物理の段に入る直前の値 ([`Puppet::values_before_physics`])・
+//! リップシンクの入力 ([`Puppet::lip_sync_applied`])・モーションのパーツの不透明度のカーブ ([`Puppet::part_opacities_applied`])
+//! を配り、受け手 (出力ウィンドウ・ブラウザソース・仮想カメラ) はそれを [`Puppet::follow`] で順に適用する。段の順は `update` と同じなので、同じ列なら、どの受け手も物理を含めて
 //! 1 つの `Puppet` と同じ形になる。
 
+use ugoe_model::PartId;
 use ugoe_runtime::ParamIndex;
 
 use crate::Puppet;
@@ -22,6 +23,22 @@ pub struct LipSyncInput {
     pub strength: f32,
 }
 
+/// パーツの不透明度の段 (10.) の入力: モーションのパーツの不透明度のカーブが 1 つのパーツに求めた値と重み
+/// (`docs/spec/motion.md#パーツの不透明度`。T0135)。
+///
+/// パーツの不透明度 `o` は `lerp(o, value, weight)` で上書きされる (ポーズの要素のパーツなら、ポーズへの表示の要求
+/// `value * weight` になる)。同じパーツへの複数のカーブは合わせてある。指揮役の [`Puppet::part_opacities_applied`] を
+/// そのまま受け手の [`Puppet::follow`] に渡す。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PartOpacityInput {
+    /// パーツの番号 (コンパイルしたモデルの `parts` の順。指揮役と受け手は同じモデルを使う)。
+    pub part: u32,
+    /// カーブの値 (不透明度)。
+    pub value: f32,
+    /// フェードを含めた重み (0〜1)。
+    pub weight: f32,
+}
+
 /// パラメータの値の並びを受け付けられない。
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ParameterValuesError {
@@ -34,6 +51,9 @@ pub enum ParameterValuesError {
     /// リップシンクの音量か強さが NaN。
     #[error("the lip sync level or strength is NaN")]
     LipSyncNaN,
+    /// `index` 番目のパーツの不透明度の入力の値か重みが NaN。
+    #[error("part opacity input {index} is NaN")]
+    PartOpacityNaN { index: usize },
 }
 
 impl Puppet {
@@ -75,28 +95,59 @@ impl Puppet {
         self.lip_sync_applied
     }
 
-    /// 受け手として 1 フレーム進める: `values` を基準値として書き ([`Puppet::set_base_values`])、
-    /// 物理 → リップシンク → ポーズ → 評価の順に `dt` 秒進める (`Puppet::update` の 8.〜11. と同じ順。
-    /// `docs/spec/motion.md#受け手として進める`)。
+    /// 直前の [`Puppet::update`] で、モーションのパーツの不透明度のカーブが値を求めたパーツ (カーブのあるパーツだけ。
+    /// 段の有効無効やポーズとは関係なく、カーブの値と重み)。指揮役が受け手へ配る (`values_before_physics` と組で使う)。
     ///
-    /// `values` は指揮役の [`Puppet::values_before_physics`]、`lip_sync` は [`Puppet::lip_sync_applied`]。
+    /// モデルに無いパーツへのカーブは含まない (`update` でも何も書かない)。着せ替えの付け外しの後は、次の `update` まで空。
+    pub fn part_opacities_applied(&self) -> &[PartOpacityInput] {
+        &self.part_opacities_applied
+    }
+
+    /// モーションのパーツの不透明度のカーブ `(パーツ, 値, 重み)` を、受け手へ配る形で覚える。
+    pub(crate) fn record_part_opacities(&mut self, curves: &[(PartId, f32, f32)]) {
+        let compiled = self.instance.compiled();
+        self.part_opacities_applied.clear();
+        self.part_opacities_applied
+            .extend(curves.iter().filter_map(|(part, value, weight)| {
+                Some(PartOpacityInput {
+                    part: compiled.part_index(part.as_str())? as u32,
+                    value: *value,
+                    weight: *weight,
+                })
+            }));
+    }
+
+    /// 受け手として 1 フレーム進める: `values` を基準値として書き ([`Puppet::set_base_values`])、
+    /// 物理 → リップシンク → パーツの不透明度 (モーションのカーブとポーズ) → 評価の順に `dt` 秒進める
+    /// (`Puppet::update` の 8.〜11. と同じ順。`docs/spec/motion.md#受け手として進める`)。
+    ///
+    /// `values` は指揮役の [`Puppet::values_before_physics`]、`lip_sync` は [`Puppet::lip_sync_applied`]、
+    /// `part_opacities` は [`Puppet::part_opacities_applied`]。
     /// リップシンクはこの `Puppet` のモデルの設定 (対象のパラメータ) で、渡した音量と強さを当てる
     /// (この `Puppet` の [`Puppet::set_lip_sync_level`] の音量は使わず、変えもしない)。
+    /// パーツの不透明度は `update` の 10. と同じく、渡したカーブとこの `Puppet` のポーズで書く。モデルに無いパーツの番号は
+    /// 無視する (`update` がモデルに無いパーツへのカーブを無視するのと同じ)。
     ///
     /// モーション・トラッキング・表情・目パチ・呼吸の段は通さない (再生の状態も時刻も進まない)。
     /// それらは値を作った側 (指揮役) で済んでいるため。物理・リップシンク・ポーズは [`Puppet::set_toggles`] に従う。
-    /// パーツの不透明度はポーズだけが書く (モーションのパーツの不透明度のカーブは使わない)。
     ///
-    /// 同じ `values`・`lip_sync`・`dt` の列を与えた `Puppet` は、物理を含めて同じ形になる (決定的)。
-    /// 数が違うか、値かリップシンクの入力が NaN を含むときは、何も変えずにエラーを返す (時間も進めない)。
+    /// 同じ `values`・`lip_sync`・`part_opacities`・`dt` の列を与えた `Puppet` は、物理を含めて同じ形になる (決定的)。
+    /// 数が違うか、値・リップシンク・パーツの不透明度の入力が NaN を含むときは、何も変えずにエラーを返す (時間も進めない)。
     pub fn follow(
         &mut self,
         values: &[f32],
         lip_sync: Option<LipSyncInput>,
+        part_opacities: &[PartOpacityInput],
         dt: f32,
     ) -> Result<(), ParameterValuesError> {
         if lip_sync.is_some_and(|l| l.level.is_nan() || l.strength.is_nan()) {
             return Err(ParameterValuesError::LipSyncNaN);
+        }
+        if let Some(index) = part_opacities
+            .iter()
+            .position(|p| p.value.is_nan() || p.weight.is_nan())
+        {
+            return Err(ParameterValuesError::PartOpacityNaN { index });
         }
         self.set_base_values(values)?;
         self.before_physics
@@ -120,8 +171,17 @@ impl Puppet {
         }
         self.output
             .copy_from_slice(self.instance.parameters().as_slice());
-        // 10. パーツの不透明度 (ポーズだけ)
-        self.apply_part_opacities(dt, false);
+        // 10. パーツの不透明度 (届いたモーションのカーブとポーズ)
+        let parts = &self.instance.compiled().model().parts;
+        self.part_opacities_applied.clear();
+        let mut curves = Vec::with_capacity(part_opacities.len());
+        for input in part_opacities {
+            if let Some(part) = parts.get(input.part as usize) {
+                curves.push((part.id.clone(), input.value, input.weight));
+                self.part_opacities_applied.push(*input);
+            }
+        }
+        self.apply_part_opacities(dt, curves);
         // 11. 評価
         self.instance.update();
         Ok(())
@@ -258,9 +318,9 @@ mod tests {
                     })
                 );
                 follower
-                    .follow(conductor.values_before_physics(), lip_sync, dt)
+                    .follow(conductor.values_before_physics(), lip_sync, &[], dt)
                     .unwrap();
-                late.follow(&values(&conductor), None, dt).unwrap();
+                late.follow(&values(&conductor), None, &[], dt).unwrap();
                 let (a, b) = (state(&single), state(&follower));
                 assert_eq!(a.len(), b.len());
                 for (a, b) in a.iter().zip(&b) {
@@ -282,11 +342,179 @@ mod tests {
                 .follow(
                     conductor.values_before_physics(),
                     conductor.lip_sync_applied(),
+                    conductor.part_opacities_applied(),
                     DT,
                 )
                 .unwrap();
             assert_ne!(state(&still), state(&follower));
         }
+    }
+
+    /// パーツを切り替えるモーション: ポーズの要素へのカーブ (表示の要求) と、ポーズに属さないパーツへのカーブ (フェードで重みが変わる)。
+    fn switch_parts() -> Motion {
+        let p = |t: f32, v: f32| Point { t, v };
+        let curve = |part: &str, segments: Vec<Segment>| Curve {
+            target: CurveTarget::PartOpacity(part.into()),
+            segments,
+            fade_in: None,
+            fade_out: None,
+        };
+        Motion {
+            name: "switch".into(),
+            duration: 2.0,
+            looping: false,
+            fade_in: 0.3,
+            fade_out: 0.4,
+            curves: vec![
+                // 0.5 秒で ArmA から ArmB に切り替える (ポーズのクロスフェード)。
+                curve(
+                    "ArmA",
+                    vec![
+                        Segment::Start { p: p(0.0, 1.0) },
+                        Segment::Stepped { to: p(0.5, 0.0) },
+                    ],
+                ),
+                curve(
+                    "ArmB",
+                    vec![
+                        Segment::Start { p: p(0.0, 0.0) },
+                        Segment::Stepped { to: p(0.5, 1.0) },
+                    ],
+                ),
+                // Root (メッシュを持つ) の不透明度を直接上書きする。
+                curve(
+                    "Root",
+                    vec![
+                        Segment::Start { p: p(0.0, 1.0) },
+                        Segment::Linear { to: p(2.0, 0.2) },
+                    ],
+                ),
+            ],
+            events: vec![],
+        }
+    }
+
+    /// 比べるパーツの不透明度: すべてのパーツの上書き (値と重み) と、描画の要素の不透明度。
+    fn opacities(puppet: &Puppet) -> Vec<f32> {
+        let instance = puppet.instance();
+        let parts = (0..instance.compiled().model().parts.len()).flat_map(|i| {
+            let (value, weight) = instance.part_opacity_override(i);
+            [value, weight]
+        });
+        parts
+            .chain(instance.drawables().iter().map(|d| d.opacity))
+            .collect()
+    }
+
+    /// 指揮役のモーションのパーツの不透明度のカーブを受け手が `follow` で当てると、1 つの `Puppet` と同じパーツの不透明度に
+    /// なる (ポーズのクロスフェード・フェードの重み・モーションの終わりで元に戻ること。T0135)。カーブを渡さない受け手は合わない。
+    #[test]
+    fn follower_applies_the_conductors_part_opacity_curves() {
+        let make = || Puppet::new(fixtures::pose_and_effects()).unwrap();
+        let mut single = make();
+        let mut conductor = make();
+        conductor.set_toggles(Toggles {
+            physics: false,
+            ..Toggles::default()
+        });
+        let mut follower = make();
+        // T0133・T0134 の形 (パーツの不透明度を配らない) の受け手。
+        let mut blind = make();
+        for puppet in [&mut single, &mut conductor] {
+            assert!(puppet.start_motion(switch_parts(), Priority::Normal));
+        }
+        let mut blind_differs = false;
+        for frame in 0..180 {
+            let dt = if frame % 3 == 0 { DT * 2.0 } else { DT };
+            if frame == 100 {
+                // 途中で止めると、フェードアウトの重みで元の不透明度に戻っていく。
+                for puppet in [&mut single, &mut conductor] {
+                    puppet.motions_mut().stop_all();
+                }
+            }
+            single.update(dt);
+            conductor.update(dt);
+            let sent = conductor.values_before_physics().to_vec();
+            let parts = conductor.part_opacities_applied().to_vec();
+            follower.follow(&sent, None, &parts, dt).unwrap();
+            blind.follow(&sent, None, &[], dt).unwrap();
+            assert_eq!(follower.part_opacities_applied(), parts.as_slice());
+            let (a, b) = (opacities(&single), opacities(&follower));
+            for (a, b) in a.iter().zip(&b) {
+                assert!((a - b).abs() <= 1e-6, "frame {frame}: {a:?} != {b:?}");
+            }
+            blind_differs |= opacities(&single)
+                .iter()
+                .zip(opacities(&blind))
+                .any(|(a, b)| (a - b).abs() > 1e-3);
+        }
+        assert!(blind_differs);
+        // 終わった後はカーブが無く、ポーズの要素は切り替えたまま。
+        assert!(conductor.part_opacities_applied().is_empty());
+        let arm_b = follower.instance().compiled().part_index("ArmB").unwrap();
+        assert_eq!(follower.instance().part_opacity_override(arm_b), (1.0, 1.0));
+    }
+
+    /// `update` はカーブのあるパーツだけを、パーツの番号で覚える (モデルに無いパーツは含めない)。
+    #[test]
+    fn update_records_the_part_opacity_curves() {
+        let mut puppet = Puppet::new(fixtures::pose_and_effects()).unwrap();
+        puppet.update(DT);
+        assert!(puppet.part_opacities_applied().is_empty());
+        let mut motion = switch_parts();
+        motion.fade_in = 0.0;
+        motion.curves.push(Curve {
+            target: CurveTarget::PartOpacity("NoSuchPart".into()),
+            segments: vec![Segment::Start {
+                p: Point { t: 0.0, v: 0.5 },
+            }],
+            fade_in: None,
+            fade_out: None,
+        });
+        puppet.start_motion(motion, Priority::Normal);
+        puppet.update(DT);
+        let index = |id: &str| puppet.instance().compiled().part_index(id).unwrap() as u32;
+        let applied = puppet.part_opacities_applied();
+        assert_eq!(
+            applied.iter().map(|p| p.part).collect::<Vec<_>>(),
+            [index("ArmA"), index("ArmB"), index("Root")]
+        );
+        assert!(applied.iter().all(|p| p.weight == 1.0));
+        assert_eq!((applied[0].value, applied[1].value), (1.0, 0.0));
+    }
+
+    /// 受け手は NaN の入力を受け付けず (何も変えない)、モデルに無いパーツの番号は無視する。
+    #[test]
+    fn follow_checks_the_part_opacity_input() {
+        let mut puppet = Puppet::new(fixtures::pose_and_effects()).unwrap();
+        let sent = values(&puppet);
+        let count = puppet.instance().update_count();
+        let nan = PartOpacityInput {
+            part: 0,
+            value: 0.5,
+            weight: f32::NAN,
+        };
+        let root = PartOpacityInput {
+            part: 0,
+            value: 0.25,
+            weight: 1.0,
+        };
+        assert_eq!(
+            puppet.follow(&sent, None, &[root, nan], DT),
+            Err(ParameterValuesError::PartOpacityNaN { index: 1 })
+        );
+        assert_eq!(puppet.instance().update_count(), count);
+        let unknown = PartOpacityInput {
+            part: 999,
+            value: 0.0,
+            weight: 1.0,
+        };
+        puppet.follow(&sent, None, &[unknown, root], DT).unwrap();
+        assert_eq!(puppet.part_opacities_applied(), [root]);
+        assert!((puppet.instance().drawables()[0].opacity - 0.25).abs() < 1e-6);
+        // 次のフレームで渡さなければ元に戻る (上書きは毎フレーム作り直す)。
+        puppet.follow(&sent, None, &[], DT).unwrap();
+        assert_eq!(puppet.instance().drawables()[0].opacity, 1.0);
     }
 
     /// 受け手のリップシンクは渡した音量と強さで当て、自分の音量は使わず、変えもしない。段を止めれば当てない。
@@ -299,19 +527,19 @@ mod tests {
             level: 0.6,
             strength: 0.5,
         };
-        puppet.follow(&sent, Some(input), DT).unwrap();
+        puppet.follow(&sent, Some(input), &[], DT).unwrap();
         assert!((param(&puppet, standard::MOUTH_OPEN_Y) - 0.3).abs() < 1e-6);
         assert_eq!(puppet.lip_sync_applied(), Some(input));
         assert_eq!(puppet.lip_sync.level(), Some(0.9));
         // 前の値に重ならない (基準値は送った値)。
-        puppet.follow(&sent, None, DT).unwrap();
+        puppet.follow(&sent, None, &[], DT).unwrap();
         assert_eq!(param(&puppet, standard::MOUTH_OPEN_Y), 0.0);
         assert_eq!(puppet.lip_sync_applied(), None);
         puppet.set_toggles(Toggles {
             lip_sync: false,
             ..Toggles::default()
         });
-        puppet.follow(&sent, Some(input), DT).unwrap();
+        puppet.follow(&sent, Some(input), &[], DT).unwrap();
         assert_eq!(param(&puppet, standard::MOUTH_OPEN_Y), 0.0);
         // NaN の入力は何も変えない。
         let nan = LipSyncInput {
@@ -319,7 +547,7 @@ mod tests {
             strength: 1.0,
         };
         assert_eq!(
-            puppet.follow(&sent, Some(nan), DT),
+            puppet.follow(&sent, Some(nan), &[], DT),
             Err(ParameterValuesError::LipSyncNaN)
         );
     }
@@ -382,7 +610,7 @@ mod tests {
             .unwrap();
         sent[angle_x.0 as usize] = 12.0;
         for _ in 0..30 {
-            puppet.follow(&sent, None, DT).unwrap();
+            puppet.follow(&sent, None, &[], DT).unwrap();
             assert_eq!(values(&puppet), sent);
         }
         // 自分の層は止まったまま (モーションの時刻も進まない)。
@@ -436,7 +664,7 @@ mod tests {
         let before = values(&puppet);
         let count = puppet.instance().update_count();
         assert_eq!(
-            puppet.follow(&[0.0], None, DT),
+            puppet.follow(&[0.0], None, &[], DT),
             Err(ParameterValuesError::Count {
                 expected: before.len(),
                 actual: 1

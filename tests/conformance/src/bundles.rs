@@ -6,12 +6,15 @@
 //! (`moving-masks`。アニメーション中にマスクが 1 フレーム遅れないかを `before` で確かめる) も作る。
 //! `lip-sync-hair` は動的物理の髪で、リップシンクの対象を物理の入力 (`AngleX`) にしたもの
 //! (受け手が物理より後の段を同じ順に当てるかを確かめる。T0134)。
+//! `part-switch` はポーズ (`ArmA`+`SleeveA` と `ArmB`) とポーズに属さないパーツ `Badge` にメッシュを持たせ、
+//! パーツを切り替えるモーション `switch` を入れたもの (受け手がモーションのパーツの不透明度のカーブを当てるかを確かめる。T0135)。
 //! もとは Godot の `build.mjs --conformance` の `conformance_bundles` (T0411) で、T0418 でここに移した。
 
 use std::path::{Path, PathBuf};
 
 use ugoe::core::{Rgb, Vec2};
 use ugoe::format::{Bundle, TextureData, TextureFormat};
+use ugoe::model::motion::{Curve, CurveTarget, Motion, Point, Segment};
 use ugoe::model::{
     BlendMode, KeyformBinding, KeyformGrid, MaskRef, Mesh, MeshId, Model, TextureRef, fixtures,
 };
@@ -20,7 +23,7 @@ use ugoe_headless::{Rgba8, image};
 use crate::Error;
 
 /// 作るモデルの名前 (`<名前>.ugoe` に書く)。
-pub const NAMES: [&str; 7] = [
+pub const NAMES: [&str; 8] = [
     "nested-masks",
     "mixed-masks",
     "intersection-masks",
@@ -28,6 +31,7 @@ pub const NAMES: [&str; 7] = [
     "many-masks",
     "moving-masks",
     "lip-sync-hair",
+    "part-switch",
 ];
 
 /// すべてのモデルを `dir` に書き、書いたパスを返す。
@@ -39,6 +43,9 @@ pub fn write_all(dir: &Path) -> Result<Vec<PathBuf>, Error> {
         let mut bundle = Bundle::new(model(name)?);
         if name == "lip-sync-hair" {
             bundle.physics = Some(fixtures::dynamic_hair_settings());
+        }
+        if name == "part-switch" {
+            bundle.motions = vec![switch_motion()];
         }
         bundle.textures = vec![TextureData {
             format: TextureFormat::Png,
@@ -64,6 +71,7 @@ fn model(name: &str) -> Result<Model, Error> {
         "many-masks" => many_masks(),
         "moving-masks" => moving_masks(),
         "lip-sync-hair" => lip_sync_hair(),
+        "part-switch" => part_switch(),
         other => return Err(Error::Invalid(format!("unknown generated model `{other}`"))),
     })
 }
@@ -109,6 +117,79 @@ fn lip_sync_hair() -> Model {
     model.meta.name = "lip_sync_hair".into();
     model.effects.lip_sync.parameters = vec![ugoe::model::standard::ANGLE_X.into()];
     model
+}
+
+/// ポーズとエフェクトのフィクスチャ (`fixtures::pose_and_effects`) の、ポーズの要素のパーツ (`ArmA`・`SleeveA`・`ArmB`) と
+/// ポーズに属さないパーツ `Badge` に 1 枚ずつ四角形を置いたもの。パーツの不透明度がメッシュの不透明度に出る。
+fn part_switch() -> Model {
+    let mut model = fixtures::pose_and_effects();
+    model.meta.name = "part_switch".into();
+    let mut badge = model.parts[1].clone();
+    badge.id = "Badge".into();
+    badge.name = "Badge".into();
+    model.parts.push(badge);
+    let template = model.meshes[0].clone();
+    let boxes = [
+        ("ArmA", 16.0, 16.0, 112.0, 112.0),
+        ("SleeveA", 144.0, 16.0, 240.0, 112.0),
+        ("ArmB", 16.0, 144.0, 112.0, 240.0),
+        ("Badge", 144.0, 144.0, 240.0, 240.0),
+    ];
+    for (i, (part, x0, y0, x1, y1)) in boxes.into_iter().enumerate() {
+        let mut mesh = template.clone();
+        mesh.id = MeshId::new(format!("{part}Quad"));
+        mesh.name = mesh.id.as_str().to_owned();
+        mesh.part = part.into();
+        place(&mut mesh, x0, y0, x1, y1);
+        for k in &mut mesh.keyforms.keyforms {
+            k.draw_order = 600.0 + i as f32;
+        }
+        model.meshes.push(mesh);
+    }
+    colored(model)
+}
+
+/// `part-switch` のモーション `switch`: 0.4 秒で `ArmA` から `ArmB` に切り替え (ポーズのクロスフェード)、`Badge` の不透明度を
+/// 1 から 0.2 へ下げる。フェードインとフェードアウトがあるので、カーブの重みも変わる。
+fn switch_motion() -> Motion {
+    let p = |t: f32, v: f32| Point { t, v };
+    let curve = |part: &str, segments: Vec<Segment>| Curve {
+        target: CurveTarget::PartOpacity(part.into()),
+        segments,
+        fade_in: None,
+        fade_out: None,
+    };
+    Motion {
+        name: "switch".into(),
+        duration: 0.8,
+        looping: false,
+        fade_in: 0.3,
+        fade_out: 0.3,
+        curves: vec![
+            curve(
+                "ArmA",
+                vec![
+                    Segment::Start { p: p(0.0, 1.0) },
+                    Segment::Stepped { to: p(0.4, 0.0) },
+                ],
+            ),
+            curve(
+                "ArmB",
+                vec![
+                    Segment::Start { p: p(0.0, 0.0) },
+                    Segment::Stepped { to: p(0.4, 1.0) },
+                ],
+            ),
+            curve(
+                "Badge",
+                vec![
+                    Segment::Start { p: p(0.0, 1.0) },
+                    Segment::Linear { to: p(0.8, 0.2) },
+                ],
+            ),
+        ],
+        events: vec![],
+    }
 }
 
 fn colored(mut model: Model) -> Model {

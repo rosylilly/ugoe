@@ -203,6 +203,16 @@
       "follow": true,
       "lip_sync": true,
       "image": false
+    },
+    {
+      "name": "part-switch-follow",
+      "summary": "A follower (T0135) of a motion with part opacity curves: the conductor plays `switch` (a pose switch from ArmA to ArmB and a fading Badge, with fade in and out) and sends the curves, and follow applies them with the follower's own pose, in the order of a single puppet.",
+      "generated": "part-switch",
+      "time": 1.2,
+      "effects": true,
+      "follow": true,
+      "motion": "switch",
+      "image": false
     }
   ]
 }

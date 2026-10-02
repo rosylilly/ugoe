@@ -1,8 +1,8 @@
 // 受け手のモード (スタジオの出力ウィンドウ。ADR 0028 の 3.、docs/studio.md#フレームの配信-内部の形)。
 //
-// 指揮役 (スタジオのバックエンド) が刻みごとに配るフレーム `{seq, revision, dt, values, lipSync}` を、`seq` の順に 1 つずつ
-// `WebPuppet.follow(values, dt, level, strength)` で適用する (値を基準値として書き、物理 → リップシンク → ポーズの順に進める。
-// docs/spec/motion.md#受け手として進める)。描くのは最後のフレームだけでよい。
+// 指揮役 (スタジオのバックエンド) が刻みごとに配るフレーム `{seq, revision, dt, values, lipSync, partOpacity*}` を、`seq` の順に
+// 1 つずつ `WebPuppet.follow(values, dt, level, strength, parts, opacities)` で適用する (値を基準値として書き、物理 → リップシンク →
+// パーツの不透明度 (モーションのカーブとポーズ) の順に進める。docs/spec/motion.md#受け手として進める)。描くのは最後のフレームだけでよい。
 // フレームのバイト列の形は apps/studio/src-tauri/src/stream.rs の `Frame::encode` と同じ (両方のテストが同じバイト列を使う)。
 
 /** フレームのバイト列の先頭の種類の値。 */
@@ -29,6 +29,10 @@ export interface FollowFrame {
   values: Float32Array;
   /** 指揮役のリップシンクの音量と強さ。当てなければ `null`。 */
   lipSync: { level: number; strength: number } | null;
+  /** 指揮役のモーションのパーツの不透明度のカーブがあるパーツの番号 (モデルの `parts` の順。T0135)。 */
+  partOpacityParts: Uint32Array;
+  /** `partOpacityParts` の各パーツのカーブの値と重み (交互。`partOpacityParts` の 2 倍の数)。 */
+  partOpacityValues: Float32Array;
 }
 
 /** シーンの通知 (JSON)。受け手はこのシーンのモデルを読んでから `revision` のフレームを適用する。 */
@@ -46,6 +50,8 @@ export interface FollowerPuppet {
     dt: number,
     lipSyncLevel?: number | null,
     lipSyncStrength?: number | null,
+    partOpacityParts?: Uint32Array | null,
+    partOpacityValues?: Float32Array | null,
   ): void;
   reset_physics(): void;
 }
@@ -59,9 +65,13 @@ export function decodeFrame(buffer: ArrayBuffer): FollowFrame {
   if (kind !== FRAME_KIND) throw new Error(`not a frame (kind ${kind})`);
   const count = view.getUint32(28, true);
   const flags = view.getUint8(1);
-  if (buffer.byteLength - FRAME_HEADER !== count * 4)
+  // 値の後に、パーツの不透明度の数・パーツの番号・値と重みが続く (T0135)。
+  const partsAt = FRAME_HEADER + count * 4;
+  const parts = partsAt + 4 <= buffer.byteLength ? view.getUint32(partsAt, true) : 0;
+  const expected = (count + 1 + parts * 3) * 4;
+  if (buffer.byteLength - FRAME_HEADER !== expected)
     throw new Error(
-      `the frame has ${count} values but ${buffer.byteLength - FRAME_HEADER} bytes of values`,
+      `the frame has ${expected} bytes after the header but ${buffer.byteLength - FRAME_HEADER} bytes`,
     );
   // 値は 4 の倍数の位置から始まるので、写さずに重ねられる (Float32Array はプラットフォームのバイト順だが、
   // WebView が動く環境はすべてリトルエンディアン)。
@@ -75,16 +85,25 @@ export function decodeFrame(buffer: ArrayBuffer): FollowFrame {
         ? { level: view.getFloat32(20, true), strength: view.getFloat32(24, true) }
         : null,
     values: new Float32Array(buffer, FRAME_HEADER, count),
+    partOpacityParts: new Uint32Array(buffer, partsAt + 4, parts),
+    partOpacityValues: new Float32Array(buffer, partsAt + 4 + parts * 4, parts * 2),
   };
 }
 
 /**
- * フレームを 1 つ適用する。受け手で `follow` を呼ぶのはここだけにする (T0134 で引数が増えたときに合わせる場所を 1 つにするため)。
+ * フレームを 1 つ適用する。受け手で `follow` を呼ぶのはここだけにする (T0134・T0135 で引数が増えたときに合わせる場所を 1 つにするため)。
  * `gap` なら (`seq` が飛んだ) 物理をリセットしてから適用する。
  */
 export function applyFrame(puppet: FollowerPuppet, frame: FollowFrame, gap = false): void {
   if (frame.reset || gap) puppet.reset_physics();
-  puppet.follow(frame.values, frame.dt, frame.lipSync?.level, frame.lipSync?.strength);
+  puppet.follow(
+    frame.values,
+    frame.dt,
+    frame.lipSync?.level,
+    frame.lipSync?.strength,
+    frame.partOpacityParts,
+    frame.partOpacityValues,
+  );
 }
 
 /**

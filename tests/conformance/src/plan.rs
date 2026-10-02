@@ -62,6 +62,8 @@ pub struct CaseSpec {
     /// 受け手として進めるとき、指揮役がモデルのリップシンクの設定にフレームごとに変わる音量を当てるか (T0134)。
     #[serde(default)]
     pub lip_sync: bool,
+    /// 受け手として進めるとき、指揮役が最初に再生するバンドルのモーションの名前 (計画の [`Case::motion`]。T0135)。
+    pub motion: Option<String>,
     /// 光源 (描画だけに効く)。
     pub lighting: Option<Lighting>,
     /// 画像も比べるか (既定は比べる)。
@@ -148,6 +150,13 @@ pub struct Case {
     /// `follow` と同じ数。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub follow_lip_sync: Vec<Option<[f32; 2]>>,
+    /// 各フレームのモーションのパーツの不透明度のカーブ `[パーツの番号, 値, 重み]` の並び (指揮役の
+    /// `Puppet::part_opacities_applied`。カーブのあるパーツだけ。T0135)。空でなければ `follow` と同じ数。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub follow_part_opacities: Vec<Vec<(u32, f32, f32)>>,
+    /// 指揮役が最初に再生するバンドルのモーションの名前 (参照が計画を作るときだけ使う。実行器は読まなくてよい)。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motion: Option<String>,
     pub lighting: Option<Lighting>,
     /// 画像も比べるか。
     pub image: bool,
@@ -202,7 +211,7 @@ impl Plan {
     /// param <ID> <値>
     /// effects <0|1>
     /// update <dt>
-    /// follow <dt> <リップシンクの音量 (無ければ -1)> <強さ> <値> <値> ...
+    /// follow <dt> <リップシンクの音量 (無ければ -1)> <強さ> <パーツの数 k> (<パーツの番号> <値> <重み>) × k <値> <値> ...
     /// end
     /// ```
     ///
@@ -232,7 +241,14 @@ impl Plan {
                         .copied()
                         .flatten()
                         .unwrap_or([-1.0, 0.0]);
-                    let _ = write!(s, "follow {dt} {level} {strength}");
+                    let parts = case
+                        .follow_part_opacities
+                        .get(i)
+                        .map_or(&[][..], Vec::as_slice);
+                    let _ = write!(s, "follow {dt} {level} {strength} {}", parts.len());
+                    for (part, value, weight) in parts {
+                        let _ = write!(s, " {part} {value} {weight}");
+                    }
                     for v in values {
                         let _ = write!(s, " {v}");
                     }
@@ -353,6 +369,8 @@ fn case(
         effects: spec.effects,
         follow: Vec::new(),
         follow_lip_sync: Vec::new(),
+        follow_part_opacities: Vec::new(),
+        motion: spec.motion.clone(),
         lighting: spec.lighting.clone(),
         image: spec.image,
         render_args: Vec::new(),
@@ -361,6 +379,12 @@ fn case(
     if spec.lip_sync && !spec.follow {
         return Err(Error::Invalid(format!(
             "case `{}`: `lip_sync` needs `follow`",
+            case.name
+        )));
+    }
+    if spec.motion.is_some() && !(spec.follow && case.bundle) {
+        return Err(Error::Invalid(format!(
+            "case `{}`: `motion` needs `follow` and a bundle",
             case.name
         )));
     }
@@ -379,6 +403,17 @@ fn case(
             .iter()
             .map(|f| f.lip_sync.map(|l| [l.level, l.strength]))
             .collect();
+        if frames.iter().any(|f| !f.part_opacities.is_empty()) {
+            case.follow_part_opacities = frames
+                .iter()
+                .map(|f| {
+                    f.part_opacities
+                        .iter()
+                        .map(|p| (p.part, p.value, p.weight))
+                        .collect()
+                })
+                .collect();
+        }
         case.follow = frames.into_iter().map(|f| f.values).collect();
         case.effects = false;
     }

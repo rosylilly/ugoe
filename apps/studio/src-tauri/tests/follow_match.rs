@@ -3,23 +3,37 @@
 //!
 //! 入力の列は、パラメータの書き換え・揃っていない `dt`・リップシンクの音量を混ぜ、途中でモデルの読み直しと物理のリセットを含める。
 //! リップシンクの対象は物理の入力 (`AngleX`) にする (受け手が物理の後にリップシンクを当てることの確かめ。T0134)。
+//! ポーズのモデルでは、指揮役がパーツを切り替えるモーションを再生する (受け手がモーションのパーツの不透明度のカーブを当てることの確かめ。T0135)。
 //! 受け手の描画の頻度に依らないこと (まとめて適用してから比べても同じ) も確かめる。
 #![allow(clippy::unwrap_used)]
 
 use ugoe::Puppet;
 use ugoe::format::Bundle;
 use ugoe::model::effects::{Breath, BreathParameter, LipSync};
+use ugoe::model::motion::{Curve, CurveTarget, Motion, Point, Segment};
 use ugoe::model::physics::PhysicsSettings;
 use ugoe::model::{Model, fixtures};
+use ugoe::motion::Priority;
 use ugoe_studio_lib::conductor::Conductor;
 use ugoe_studio_lib::follower::{Follower, Received};
 use ugoe_studio_lib::stream::Frame;
 
 const EPSILON: f32 = 1e-3;
 
-/// 比べる状態: パラメータの値 (物理の出力を含む) と、描画物ごとの頂点の座標と不透明度。
+/// 比べる状態: パラメータの値 (物理の出力を含む)、パーツの不透明度の上書き (値と重み)、描画物ごとの頂点の座標と不透明度。
 fn shape(puppet: &Puppet) -> Vec<f32> {
-    let values = puppet.instance().parameters().as_slice().to_vec();
+    let instance = puppet.instance();
+    let parts = (0..instance.compiled().model().parts.len()).flat_map(|i| {
+        let (value, weight) = instance.part_opacity_override(i);
+        [value, weight]
+    });
+    let values: Vec<f32> = instance
+        .parameters()
+        .as_slice()
+        .iter()
+        .copied()
+        .chain(parts)
+        .collect();
     let drawables = puppet.instance().drawables().iter().flat_map(|d| {
         d.positions
             .iter()
@@ -79,9 +93,59 @@ fn with_effects(mut model: Model, input: &str) -> Model {
     model
 }
 
-fn run_case(name: &str, model: Model, physics: Option<PhysicsSettings>, input: &str) {
+/// パーツを切り替えるモーション `switch` (`pose_and_effects` の `ArmA` から `ArmB` へ。`Root` の不透明度も下げる。フェードあり)。
+fn switch_parts() -> Motion {
+    let p = |t: f32, v: f32| Point { t, v };
+    let curve = |part: &str, segments: Vec<Segment>| Curve {
+        target: CurveTarget::PartOpacity(part.into()),
+        segments,
+        fade_in: None,
+        fade_out: None,
+    };
+    Motion {
+        name: "switch".into(),
+        duration: 1.5,
+        looping: false,
+        fade_in: 0.3,
+        fade_out: 0.4,
+        curves: vec![
+            curve(
+                "ArmA",
+                vec![
+                    Segment::Start { p: p(0.0, 1.0) },
+                    Segment::Stepped { to: p(0.5, 0.0) },
+                ],
+            ),
+            curve(
+                "ArmB",
+                vec![
+                    Segment::Start { p: p(0.0, 0.0) },
+                    Segment::Stepped { to: p(0.5, 1.0) },
+                ],
+            ),
+            curve(
+                "Root",
+                vec![
+                    Segment::Start { p: p(0.0, 1.0) },
+                    Segment::Linear { to: p(1.5, 0.3) },
+                ],
+            ),
+        ],
+        events: vec![],
+    }
+}
+
+/// `motion` があれば、指揮役 (と比べる相手) はシーンごとに 10 フレーム目からそれを再生する。
+fn run_case(
+    name: &str,
+    model: Model,
+    physics: Option<PhysicsSettings>,
+    input: &str,
+    motion: Option<Motion>,
+) {
     let model = with_effects(model, input);
-    let source = bundle(&model, physics.as_ref());
+    let mut source = bundle(&model, physics.as_ref());
+    source.motions.extend(motion.clone());
     let mut conductor = Conductor::new();
     let mut reference = single(&source);
     let mut follower = Follower::new();
@@ -110,6 +174,13 @@ fn run_case(name: &str, model: Model, physics: Option<PhysicsSettings>, input: &
             // モデルの読み直し (新しいシーン。物理は新しく始まり、値は既定値から)。
             load(&mut conductor, recorded.len());
             reference = single(&source);
+        }
+        if let Some(motion) = motion.as_ref().filter(|_| frame == 10 || frame == 160) {
+            let played = conductor.perform(|animation, puppet| {
+                animation.play(puppet.unwrap(), &motion.name, Priority::Normal)
+            });
+            assert_eq!(played, Ok(true));
+            assert!(reference.start_motion(motion.clone(), Priority::Normal));
         }
         assert!(conductor.set_parameter(input, value));
         let params = reference.instance_mut().parameters_mut();
@@ -174,16 +245,42 @@ fn followers_match_a_single_puppet_with_physics() {
         fixtures::physics_hair(),
         Some(fixtures::physics_hair_settings()),
         "AngleX",
+        None,
     );
     run_case(
         "dynamic_hair",
         fixtures::dynamic_hair(),
         Some(fixtures::dynamic_hair_settings()),
         "AngleX",
+        None,
     );
     let pose = fixtures::pose_and_effects();
     let input = pose.parameters[0].id.to_string();
-    run_case("pose_and_effects", pose, None, &input);
+    run_case("pose_and_effects", pose, None, &input, Some(switch_parts()));
+}
+
+/// パーツの不透明度のカーブが実際に配られている (受け手のポーズが切り替わる)。上の検査が空振りしていないことの確認 (T0135)。
+#[test]
+fn part_opacity_curves_reach_the_follower() {
+    let mut source = bundle(&fixtures::pose_and_effects(), None);
+    source.motions.push(switch_parts());
+    let mut conductor = Conductor::new();
+    let revision = conductor.load("pose", source.clone()).unwrap().revision;
+    let mut follower = Follower::new();
+    follower.set_scene(revision, single(&source));
+    let played = conductor
+        .perform(|animation, puppet| animation.play(puppet.unwrap(), "switch", Priority::Normal));
+    assert_eq!(played, Ok(true));
+    let mut sent_curves = false;
+    for _ in 0..60 {
+        let sent = conductor.tick(1.0 / 60.0).unwrap();
+        sent_curves |= !sent.part_opacities.is_empty();
+        follower.receive(&sent).unwrap();
+    }
+    assert!(sent_curves);
+    let puppet = follower.puppet().unwrap();
+    let arm_b = puppet.instance().compiled().part_index("ArmB").unwrap();
+    assert_eq!(puppet.instance().part_opacity_override(arm_b), (1.0, 1.0));
 }
 
 /// 物理が実際に効いている (受け手の形が、物理を切った形と違う)。上の検査が空振りしていないことの確認。

@@ -304,7 +304,10 @@ impl Puppet {
         self.pose.carry_over(&previous);
 
         self.replace_physics(physics);
-        self.apply_part_opacities(0.0, true);
+        // 受け手へ配るパーツの番号は合成の前のモデルのものなので捨てる (次の `update` で作り直す)。
+        self.part_opacities_applied.clear();
+        let curves = self.motions.part_opacities();
+        self.apply_part_opacities(0.0, curves);
         self.instance.update();
     }
 }

@@ -1,8 +1,9 @@
 //! 指揮役 (conductor): パラメータの値を決める唯一の場所 (ADR 0028 の 3.、`docs/studio.md#全体の構成`)。
 //!
 //! ネイティブの [`Puppet`] を 1 つ持ち、**物理の段を切って** `update(dt)` する (描かない)。配るのは物理の段に入る直前の値
-//! (`Puppet::values_before_physics`) とリップシンクの入力 (`Puppet::lip_sync_applied`) で、受け手はそれを基準値として書き、
-//! 物理 → リップシンク → ポーズの順に自分で進める (`docs/spec/motion.md#受け手として進める`、T0134)。
+//! (`Puppet::values_before_physics`)・リップシンクの入力 (`Puppet::lip_sync_applied`)・モーションのパーツの不透明度のカーブ
+//! (`Puppet::part_opacities_applied`) で、受け手はそれを基準値として書き、物理 → リップシンク → パーツの不透明度 (カーブとポーズ) の
+//! 順に自分で進める (`docs/spec/motion.md#受け手として進める`、T0134・T0135)。
 //! 時計とスレッドは持たない (刻みは `lib.rs` の刻みのスレッドが `dt` を測って [`Conductor::tick`] を呼ぶ)。
 //!
 //! モーション・表情・待機モーション・トラッキング・口パクの入力 (T0803) は [`Animation`] が持ち、[`Conductor::perform`] で触る。
@@ -302,6 +303,7 @@ impl Conductor {
             reset: std::mem::take(&mut self.reset),
             values: puppet.values_before_physics().to_vec(),
             lip_sync: puppet.lip_sync_applied(),
+            part_opacities: puppet.part_opacities_applied().to_vec(),
         };
         self.next_seq += 1;
         Some(frame)

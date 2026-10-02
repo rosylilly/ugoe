@@ -8,12 +8,17 @@ use ugoe::{ParameterValuesError, Puppet};
 use crate::stream::Frame;
 
 /// フレームを 1 つ適用する。ネイティブで `Puppet::follow` を呼ぶのはここだけにする
-/// (T0134 で `follow` の引数が増えたときに合わせる場所を 1 つにするため)。
+/// (T0134・T0135 で `follow` の引数が増えたときに合わせる場所を 1 つにするため)。
 pub fn apply_frame(puppet: &mut Puppet, frame: &Frame) -> Result<(), ParameterValuesError> {
     if frame.reset {
         puppet.reset_physics();
     }
-    puppet.follow(&frame.values, frame.lip_sync, frame.dt)
+    puppet.follow(
+        &frame.values,
+        frame.lip_sync,
+        &frame.part_opacities,
+        frame.dt,
+    )
 }
 
 /// フレームを受け取った結果。
@@ -119,6 +124,7 @@ mod tests {
             reset: false,
             values: vec![0.0; n],
             lip_sync: None,
+            part_opacities: Vec::new(),
         }
     }
 

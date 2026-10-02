@@ -198,15 +198,18 @@ requestAnimationFrame(function frame(now) {
 
 ### 届いた値で動かす (受け手)
 
-別の場所 (配信のスタジオの指揮役など) で作ったパラメータの値を受け取って描くときは、`update` の代わりに `follow` を使います (T0133・T0134)。
+別の場所 (配信のスタジオの指揮役など) で作ったパラメータの値を受け取って描くときは、`update` の代わりに `follow` を使います (T0133・T0134・T0135)。
 
 ```js
 // values: Float32Array (puppet.parameter_ids() の順。指揮役の物理の前の値)。dt: 秒。lipSync: [音量, 強さ] か undefined
-for (const { values, dt, lipSync } of frames) puppet.follow(values, dt, lipSync?.[0], lipSync?.[1]); // 届いた順にすべて適用する (飛ばさない)
+// parts: Uint32Array (モーションのパーツの不透明度のカーブがあるパーツの番号)。opacities: Float32Array (値と重みを交互に)
+for (const { values, dt, lipSync, parts, opacities } of frames)
+  puppet.follow(values, dt, lipSync?.[0], lipSync?.[1], parts, opacities); // 届いた順にすべて適用する (飛ばさない)
 puppet.render(); // 描くのは最後だけでよい
 ```
 
-- `follow` は値を **基準値として** 書き、物理 → リップシンク (渡した音量と強さで、このモデルの対象に当てる) → ポーズの順に進めます。
+- `follow` は値を **基準値として** 書き、物理 → リップシンク (渡した音量と強さで、このモデルの対象に当てる) → パーツの不透明度
+  (渡したモーションのカーブとポーズ) の順に進めます。
   このパペットのモーション・表情・トラッキング・目パチ・呼吸と、`set_lip_sync_level` の音量は使いません。
   同じ列なら、どのページ・ネイティブの `Puppet::follow` でも物理を含めて同じ形になります (ネイティブとは許容誤差内)。
 - 値をまとめて読む・書くには `parameter_values()` / `set_base_values(values)` (どちらも `Float32Array`) を使います。

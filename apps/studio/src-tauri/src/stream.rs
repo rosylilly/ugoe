@@ -4,7 +4,7 @@
 //! フロントエンドの読み取りは `packages/player/src/follower.ts` の `decodeFrame`。両方のテストが同じバイト列を使う。
 
 use serde::Serialize;
-use ugoe::LipSyncInput;
+use ugoe::{LipSyncInput, PartOpacityInput};
 
 use crate::profile::{Background, Transform};
 
@@ -17,7 +17,7 @@ pub const FLAG_LIP_SYNC: u8 = 2;
 /// フレームの頭の大きさ (バイト)。`values` は 4 の倍数の位置から始まる (JS で `Float32Array` をそのまま重ねられる)。
 pub const FRAME_HEADER: usize = 32;
 
-/// 1 刻み分のフレーム。受け手は `seq` の順に 1 つずつ `Puppet::follow(values, lip_sync, dt)` で適用する。
+/// 1 刻み分のフレーム。受け手は `seq` の順に 1 つずつ `Puppet::follow(values, lip_sync, part_opacities, dt)` で適用する。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Frame {
     /// 刻みの通し番号。シーンが変わっても続けて数える。
@@ -32,6 +32,8 @@ pub struct Frame {
     pub values: Vec<f32>,
     /// 指揮役のリップシンクの音量と強さ (`Puppet::lip_sync_applied`)。当てなければ `None`。
     pub lip_sync: Option<LipSyncInput>,
+    /// 指揮役のモーションのパーツの不透明度のカーブ (`Puppet::part_opacities_applied`。カーブのあるパーツだけ。T0135)。
+    pub part_opacities: Vec<PartOpacityInput>,
 }
 
 /// フレームのバイト列を読めない。
@@ -41,7 +43,7 @@ pub enum FrameError {
     TooShort(usize),
     #[error("not a frame (kind {0})")]
     Kind(u8),
-    #[error("the frame has {expected} values but {actual} bytes of values")]
+    #[error("the frame has {expected} bytes after the header but {actual} bytes")]
     Length { expected: usize, actual: usize },
 }
 
@@ -58,10 +60,14 @@ impl Frame {
     /// | 16 | f32 | `dt` |
     /// | 20 | f32 | リップシンクの音量 (無ければ 0) |
     /// | 24 | f32 | リップシンクの強さ (無ければ 0) |
-    /// | 28 | u32 | 値の数 |
-    /// | 32 | f32 × 数 | `values` |
+    /// | 28 | u32 | 値の数 `n` |
+    /// | 32 | f32 × `n` | `values` |
+    /// | 32 + 4n | u32 | パーツの不透明度の数 `k` |
+    /// | 36 + 4n | u32 × `k` | パーツの番号 |
+    /// | 36 + 4n + 4k | f32 × 2`k` | 値と重み (パーツごとに交互) |
     pub fn encode(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(FRAME_HEADER + self.values.len() * 4);
+        let k = self.part_opacities.len();
+        let mut out = Vec::with_capacity(FRAME_HEADER + self.values.len() * 4 + 4 + k * 12);
         out.push(FRAME_KIND);
         let mut flags = 0;
         if self.reset {
@@ -83,6 +89,14 @@ impl Frame {
         for v in &self.values {
             out.extend_from_slice(&v.to_le_bytes());
         }
+        out.extend_from_slice(&(k as u32).to_le_bytes());
+        for p in &self.part_opacities {
+            out.extend_from_slice(&p.part.to_le_bytes());
+        }
+        for p in &self.part_opacities {
+            out.extend_from_slice(&p.value.to_le_bytes());
+            out.extend_from_slice(&p.weight.to_le_bytes());
+        }
         out
     }
 
@@ -100,12 +114,22 @@ impl Frame {
         seq.copy_from_slice(&header[8..16]);
         let count = u32_at(28) as usize;
         let rest = &bytes[FRAME_HEADER..];
-        if rest.len() != count * 4 {
+        let words: Vec<u32> = rest
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| u32::from_le_bytes(*c))
+            .collect();
+        // 値の後にパーツの不透明度の数が要る。
+        let parts = words.get(count).map_or(0, |&k| k as usize);
+        let expected = (count + 1 + parts * 3) * 4;
+        if rest.len() != expected {
             return Err(FrameError::Length {
-                expected: count,
+                expected,
                 actual: rest.len(),
             });
         }
+        let (part_ids, pairs) = words[count + 1..].split_at(parts);
         Ok(Self {
             seq: u64::from_le_bytes(seq),
             revision: u32_at(4),
@@ -115,11 +139,15 @@ impl Frame {
                 level: f32::from_bits(u32_at(20)),
                 strength: f32::from_bits(u32_at(24)),
             }),
-            values: rest
-                .as_chunks::<4>()
-                .0
+            values: words[..count].iter().map(|&w| f32::from_bits(w)).collect(),
+            part_opacities: part_ids
                 .iter()
-                .map(|c| f32::from_le_bytes(*c))
+                .zip(pairs.as_chunks::<2>().0)
+                .map(|(&part, &[value, weight])| PartOpacityInput {
+                    part,
+                    value: f32::from_bits(value),
+                    weight: f32::from_bits(weight),
+                })
                 .collect(),
         })
     }
@@ -169,7 +197,7 @@ mod tests {
     use super::*;
 
     /// `packages/player/src/follower.test.ts` の `GOLDEN` と同じバイト列。
-    const GOLDEN: [u8; 40] = [
+    const GOLDEN: [u8; 56] = [
         1, 3, 0, 0, // 種類・フラグ (リセットとリップシンク)・予約
         7, 0, 0, 0, // revision = 7
         0x2a, 0x01, 0, 0, 0, 0, 0, 0, // seq = 298
@@ -179,6 +207,10 @@ mod tests {
         2, 0, 0, 0, // 値の数 = 2
         0, 0, 0xc0, 0x3f, // 1.5
         0, 0, 0x20, 0xc1, // -10
+        1, 0, 0, 0, // パーツの不透明度の数 = 1
+        3, 0, 0, 0, // パーツの番号 = 3
+        0, 0, 0x80, 0x3e, // 値 = 0.25
+        0, 0, 0, 0x3f, // 重み = 0.5
     ];
 
     fn golden() -> Frame {
@@ -192,6 +224,11 @@ mod tests {
                 level: 0.5,
                 strength: 0.75,
             }),
+            part_opacities: vec![PartOpacityInput {
+                part: 3,
+                value: 0.25,
+                weight: 0.5,
+            }],
         }
     }
 
@@ -210,6 +247,13 @@ mod tests {
             reset: false,
             values: (0..100).map(|i| i as f32 * 0.25 - 3.0).collect(),
             lip_sync: None,
+            part_opacities: (0..5)
+                .map(|i| PartOpacityInput {
+                    part: i * 2,
+                    value: i as f32 * 0.2,
+                    weight: 1.0 - i as f32 * 0.1,
+                })
+                .collect(),
         };
         assert_eq!(Frame::decode(&frame.encode()).unwrap(), frame);
     }
@@ -221,10 +265,18 @@ mod tests {
         kind[0] = 2;
         assert_eq!(Frame::decode(&kind), Err(FrameError::Kind(2)));
         assert_eq!(
-            Frame::decode(&GOLDEN[..38]),
+            Frame::decode(&GOLDEN[..54]),
             Err(FrameError::Length {
-                expected: 2,
-                actual: 6
+                expected: 24,
+                actual: 22
+            })
+        );
+        // パーツの不透明度の数が無い (T0134 までの形)。
+        assert_eq!(
+            Frame::decode(&GOLDEN[..40]),
+            Err(FrameError::Length {
+                expected: 12,
+                actual: 8
             })
         );
     }

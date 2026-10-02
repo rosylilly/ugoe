@@ -21,7 +21,7 @@ pub use dress_up::{DressUpChange, DressUpError, TextureSource};
 // 受け手の口: 届いた値を基準値として書き、物理だけを進める (T0133)。
 mod follow;
 
-pub use follow::{LipSyncInput, ParameterValuesError};
+pub use follow::{LipSyncInput, ParameterValuesError, PartOpacityInput};
 
 // 読み込みの警告の種類 (T0412)。
 mod warning;
@@ -31,6 +31,7 @@ pub use warning::{FieldValue, LoadWarning};
 // ライティングの補助 (T0210)。
 pub mod lighting;
 
+use ugoe_model::PartId;
 use ugoe_model::effects::{EYE_BLINK_GROUP, Effects, LIP_SYNC_GROUP};
 use ugoe_model::expression::Expression;
 use ugoe_model::motion::{Motion, MotionEvent};
@@ -97,6 +98,8 @@ pub struct Puppet {
     before_physics: Vec<f32>,
     /// 直前の `update` でリップシンクの段が当てた音量と強さ (当てなければ `None`。T0134)。
     lip_sync_applied: Option<LipSyncInput>,
+    /// 直前の `update` (か `follow`) でモーションのパーツの不透明度のカーブが上書きしたパーツ (受け手へ配る。T0135)。
+    part_opacities_applied: Vec<PartOpacityInput>,
     /// モデルの `avatar.tracking` を解決したトラッキングの対応。
     tracking_map: TrackingMap,
     tracking: Option<TrackingInput>,
@@ -137,6 +140,7 @@ impl Puppet {
             base: values.clone(),
             before_physics: values.clone(),
             lip_sync_applied: None,
+            part_opacities_applied: Vec::new(),
             output: values,
             tracking_map,
             tracking: None,
@@ -426,7 +430,9 @@ impl Puppet {
         self.output.copy_from_slice(params.as_slice());
 
         // 10. パーツの不透明度 (モーションのカーブとポーズ)
-        self.apply_part_opacities(dt, true);
+        let curves = self.motions.part_opacities();
+        self.record_part_opacities(&curves);
+        self.apply_part_opacities(dt, curves);
 
         // 11. 評価
         self.instance.update();
@@ -436,14 +442,13 @@ impl Puppet {
     ///
     /// ポーズの要素のパーツへのカーブはポーズへの表示の要求 (値 × 重み) として扱い、
     /// それ以外のパーツへのカーブはそのまま上書きする。ポーズを止めているときは、
-    /// すべてのカーブをそのまま上書きし、ポーズは何も書かない。`motions` が `false` ならカーブを使わない
-    /// ([`Puppet::follow`])。
-    fn apply_part_opacities(&mut self, dt: f32, motions: bool) {
+    /// すべてのカーブをそのまま上書きし、ポーズは何も書かない。`curves` は `(パーツ, 値, 重み)`
+    /// (`MotionManager::part_opacities` か、受け手なら指揮役から届いたもの。[`Puppet::follow`])。
+    fn apply_part_opacities(&mut self, dt: f32, curves: Vec<(PartId, f32, f32)>) {
         self.instance.clear_part_opacity_overrides();
         let pose = self.toggles.pose;
         let mut requests = Vec::new();
-        let curves = motions.then(|| self.motions.part_opacities());
-        for (part, value, weight) in curves.into_iter().flatten() {
+        for (part, value, weight) in curves {
             if pose && self.pose.contains(&part) {
                 requests.push((part, value * weight));
             } else if let Some(i) = self.instance.compiled().part_index(part.as_str()) {

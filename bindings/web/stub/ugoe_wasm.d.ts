@@ -33,6 +33,8 @@ export class WebPuppet {
     dt: number,
     lip_sync_level?: number | null,
     lip_sync_strength?: number | null,
+    part_opacity_parts?: Uint32Array | null,
+    part_opacity_values?: Float32Array | null,
   ): void;
   has_model(): boolean;
   has_physics(): boolean;
