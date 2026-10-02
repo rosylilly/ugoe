@@ -3,7 +3,7 @@ id: T0807
 title: スタジオ: 仮想カメラ (Windows と Linux)
 status: todo
 milestone: M8
-crates: [apps/studio, ugoe-headless, ugoe-render, AGENTS.md, docs]
+crates: [apps/studio, ugoe-headless, ugoe-render, scripts, commitlint.config.mjs, docs]
 depends_on: [T0804]
 assignee:
 ---
@@ -21,6 +21,7 @@ assignee:
 - [ ] Windows: Windows 11 の仮想カメラの API (Media Foundation) で出す。COM の unsafe は ADR 0028 で決めた専用の 1 クレートに閉じ込める。登録はインストール時に管理者権限。使えない版では理由を出す
 - [ ] Linux: v4l2loopback の機器に書く。機器が無いときは入れ方を案内する
 - [ ] 開始・停止・解像度・フレームレートの設定を操作ウィンドウに置く。止まった・遅れたことを知らせる
+- [ ] unsafe を許す仮想カメラ専用のクレートを作る (ADR 0028 の 8.。場所は apps/studio の下)。scripts/check-layers.mjs・ci-groups.mjs・check-licenses.mjs と commitlint の scope に登録する
 - [ ] 作業の環境 (WSL) で確かめられない部分は、手順を docs に書いて利用者の確認に残す
 - [ ] 依存を足すならライセンスを確かめる (GPL-3.0 と両立)。`just ci` が通る
 
