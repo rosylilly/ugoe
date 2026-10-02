@@ -1,6 +1,7 @@
 // プロファイルとシーンの形 (src-tauri/src/profile.rs・stage.rs と同じ。docs/studio.md#プロファイルの形式) と、
 // 画面で使う小さな関数 (シーンの表示名・エラーの文・背景や配置の既定値)。
 import { defaultLighting, type LightingSettings, sanitizeLighting } from "@ugoe/player";
+import type { Hotkey, InputSettings, MotionSettings } from "./inputs";
 
 /** モデルの位置と大きさと回転 (profile.rs の `Transform`)。位置は出力の大きさに対する割合。 */
 export interface Transform {
@@ -41,6 +42,12 @@ export interface Profile {
   scenes: SceneSettings[];
   activeScene: string | null;
   output: { size: string };
+  /** ホットキーの割り当て (T0803)。 */
+  hotkeys: Hotkey[];
+  /** 入力の機器と調整 (T0803)。 */
+  input: InputSettings;
+  /** 待機モーションとトラッキング中のモーションの優先 (T0803)。 */
+  motion: MotionSettings;
 }
 
 /** 操作ウィンドウに届くプロファイルの状態 (stage.rs の `ProfileView`)。 */
@@ -71,7 +78,11 @@ export type StudioError =
   | { code: "missing"; asset: Asset; path: string }
   | { code: "unreadable"; asset: Asset; path: string; message: string }
   | { code: "wrongType"; asset: Asset; path: string }
-  | { code: "dressUp"; message: string };
+  | { code: "dressUp"; message: string }
+  | { code: "noModel" }
+  | { code: "unknownMotion"; name: string }
+  | { code: "unknownExpression"; name: string }
+  | { code: "motionRejected" };
 
 const CODES = new Set<string>([
   "io",
@@ -85,6 +96,10 @@ const CODES = new Set<string>([
   "unreadable",
   "wrongType",
   "dressUp",
+  "noModel",
+  "unknownMotion",
+  "unknownExpression",
+  "motionRejected",
 ]);
 
 /** バックエンドのエラーか (Tauri の invoke はエラーの値をそのまま投げる)。 */

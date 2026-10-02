@@ -4,6 +4,8 @@
 //! (`Puppet::values_before_physics`) とリップシンクの入力 (`Puppet::lip_sync_applied`) で、受け手はそれを基準値として書き、
 //! 物理 → リップシンク → ポーズの順に自分で進める (`docs/spec/motion.md#受け手として進める`、T0134)。
 //! 時計とスレッドは持たない (刻みは `lib.rs` の刻みのスレッドが `dt` を測って [`Conductor::tick`] を呼ぶ)。
+//!
+//! モーション・表情・待機モーション・トラッキング・口パクの入力 (T0803) は [`Animation`] が持ち、[`Conductor::perform`] で触る。
 
 use std::sync::Arc;
 
@@ -12,6 +14,7 @@ use ugoe::model::Parameter;
 use ugoe::model::module::Module;
 use ugoe::{DressUpError, Puppet, Toggles};
 
+use crate::animation::{Animation, AnimationView};
 use crate::stream::{Frame, Look, Scene};
 
 /// 1 刻みで進める時間の上限 (秒)。止まっていた後に物理が大きく飛ばないように (ADR 0028 の 3.)。
@@ -53,15 +56,30 @@ pub fn read_model(bytes: &[u8]) -> Result<Bundle, LoadError> {
 }
 
 /// 指揮役。
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Conductor {
     puppet: Option<Puppet>,
+    /// モーション・表情・入力 (モデルを読み直しても入力と設定は保つ)。
+    animation: Animation,
     scene: Option<Scene>,
     /// 次に配るフレームの `seq`。
     next_seq: u64,
     revision: u32,
     /// 次のフレームに物理のリセットを載せるか。
     reset: bool,
+}
+
+impl Default for Conductor {
+    fn default() -> Self {
+        Self {
+            puppet: None,
+            animation: Animation::new(),
+            scene: None,
+            next_seq: 0,
+            revision: 0,
+            reset: false,
+        }
+    }
 }
 
 impl Conductor {
@@ -106,8 +124,9 @@ impl Conductor {
         let mut reset = false;
         match model {
             Some(model) => {
-                let mut puppet = Puppet::new(model.bundle.model)?;
-                if let Some(physics) = model.bundle.physics {
+                let bundle = model.bundle;
+                let mut puppet = Puppet::new(bundle.model)?;
+                if let Some(physics) = bundle.physics {
                     puppet = puppet.with_physics(physics);
                 }
                 puppet.set_toggles(Toggles {
@@ -117,6 +136,8 @@ impl Conductor {
                 if let Some(modules) = modules.filter(|m| !m.is_empty()) {
                     puppet.set_modules(modules)?;
                 }
+                self.animation
+                    .load(&mut puppet, bundle.motions, bundle.expressions);
                 // 受け手は新しいモデルを読み直すので、物理は新しく始まる (リセットを載せなくてよい)。
                 self.puppet = Some(puppet);
                 modules_revision = revision;
@@ -169,6 +190,7 @@ impl Conductor {
     pub fn clear(&mut self, look: Look) -> &Scene {
         self.revision += 1;
         self.puppet = None;
+        self.animation.unload();
         self.reset = false;
         self.scene.insert(Scene {
             revision: self.revision,
@@ -235,9 +257,26 @@ impl Conductor {
 
     /// リップシンクの音量 (0〜1。マイクの入力、T0803)。`None` でリップシンクを当てない。
     pub fn set_lip_sync_level(&mut self, level: Option<f32>) {
-        if let Some(puppet) = &mut self.puppet {
-            puppet.set_lip_sync_level(level);
-        }
+        self.animation
+            .set_lip_sync_level(self.puppet.as_mut(), level);
+    }
+
+    /// 演技 (モーション・表情・入力) を `action` で触る。`Puppet` はモデルが無ければ `None`。
+    pub fn perform<T>(
+        &mut self,
+        action: impl FnOnce(&mut Animation, Option<&mut Puppet>) -> T,
+    ) -> T {
+        action(&mut self.animation, self.puppet.as_mut())
+    }
+
+    /// 演技の様子 (操作ウィンドウに出す)。
+    pub fn animation_view(&self) -> AnimationView {
+        self.animation.view(self.puppet.as_ref())
+    }
+
+    /// 演技の様子が変わったか (読むと戻る。刻みのスレッドが操作ウィンドウに知らせる)。
+    pub fn take_animation_changed(&mut self) -> bool {
+        self.animation.take_changed()
     }
 
     /// 受け手の物理を次のフレームでリセットさせる (着せ替えなど、モデルを読み直さずに形が変わるとき。T0802)。
@@ -253,7 +292,9 @@ impl Conductor {
         } else {
             0.0
         };
+        self.animation.before_update(puppet);
         puppet.update(dt);
+        self.animation.after_update(puppet);
         let frame = Frame {
             seq: self.next_seq,
             revision: self.revision,

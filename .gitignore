@@ -15,8 +15,9 @@ dist/
 # ローカル設定
 .claude/settings.local.json
 /.worktrees/
-# MediaPipe の wasm とモデル (apps/viewer と apps/editor の `pnpm mediapipe` が用意する。コミットしない)
+# MediaPipe の wasm とモデル (apps/viewer・apps/editor・apps/studio の `pnpm mediapipe` が用意する。コミットしない)
 /apps/viewer/public/mediapipe/
 /apps/editor/public/mediapipe/
+/apps/studio/public/mediapipe/
 # Claude Code などの MCP の登録 (利用者の環境に固有のパスを含むので共有しない)
 /.mcp.json

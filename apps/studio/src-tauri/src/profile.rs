@@ -2,11 +2,14 @@
 //!
 //! アプリの設定であって、モデルのファイル形式 (`docs/spec/file-formats.md`) ではない。読み込みでは `format` と `version` を
 //! 確かめ、未来の版は [`ProfileError::FutureVersion`] にする (黙って読み落とさない)。値の範囲を外れたものは収め直す
-//! ([`Profile::sanitize`])。ホットキー (T0803) などは同じ版のまま、省略できる項目として足す。
+//! ([`Profile::sanitize`])。ホットキー・入力・モーションの設定 (T0803) は同じ版のまま、省略できる項目として足した。
 
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+
+use crate::hotkeys::{self, Hotkey};
+use crate::input::{InputSettings, MotionSettings};
 
 /// `format` の値 (ほかの JSON、たとえば JSON のモデルを開いたときに分かるように)。
 pub const PROFILE_FORMAT: &str = "ugoe-studio-profile";
@@ -39,6 +42,15 @@ pub struct Profile {
     pub active_scene: Option<String>,
     #[serde(default)]
     pub output: OutputSettings,
+    /// ホットキーの割り当て (T0803)。
+    #[serde(default)]
+    pub hotkeys: Vec<Hotkey>,
+    /// 入力の機器と調整 (T0803)。
+    #[serde(default)]
+    pub input: InputSettings,
+    /// 待機モーションとトラッキング中のモーションの優先 (T0803)。
+    #[serde(default)]
+    pub motion: MotionSettings,
 }
 
 /// シーン: 1 体のアバターと、その見せ方。
@@ -163,6 +175,9 @@ impl Profile {
             scenes: vec![SceneSettings::new("scene-1".to_owned(), String::new())],
             active_scene: Some("scene-1".to_owned()),
             output: OutputSettings::default(),
+            hotkeys: Vec::new(),
+            input: InputSettings::default(),
+            motion: MotionSettings::default(),
         }
     }
 
@@ -262,6 +277,9 @@ impl Profile {
         {
             self.active_scene = self.scenes.first().map(|s| s.id.clone());
         }
+        hotkeys::sanitize(&mut self.hotkeys);
+        self.input.sanitize();
+        self.motion.sanitize();
     }
 
     pub fn scene(&self, id: &str) -> Option<&SceneSettings> {

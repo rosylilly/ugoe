@@ -5,11 +5,16 @@
 //! - 出力ウィンドウ (枠なし・背景の透過) の表示・最前面・大きさを操作する。
 //! - 刻みの速さ (30 / 60 / 120) を変え、実際の速さと、出力ウィンドウから届く描画の負荷を操作ウィンドウに配る (T0804)。
 //! - プロファイル (シーンの一覧) を読み書きし、シーンを切り替える ([`stage::Stage`])。
+//! - 入力 (T0803): 操作ウィンドウが取ったトラッキングとマイクの音量を指揮役に入れ、モーション・表情を操作する。
+//!   グローバルなホットキーを登録し、押されたら操作を行う。操作ウィンドウの入力の処理を刻みで動かす (`subscribe_pulse`)。
 //!
 //! 描画はしない (出力ウィンドウの WebView の wasm が受け手として描く)。
 
+pub mod animation;
 pub mod conductor;
 pub mod follower;
+pub mod hotkeys;
+pub mod input;
 pub mod pacing;
 pub mod profile;
 pub mod stage;
@@ -18,14 +23,19 @@ pub mod stream;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tauri::ipc::{Channel, InvokeResponseBody, Response};
+use tauri::webview::{PermissionKind, PermissionResponse};
 use tauri::{AppHandle, Manager, PhysicalSize, WebviewWindow, WindowEvent};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
+use crate::animation::{AnimationError, AnimationView};
 use crate::conductor::Conductor;
+use crate::hotkeys::{ExpressionMode, Hotkey, HotkeyAction, HotkeyProblem, MotionPriority};
+use crate::input::{InputSettings, MotionSettings, TrackingFrame};
 use crate::pacing::{Measured, Pacer, RateMeter, TickRate};
 use crate::profile::{ProfileError, SceneSettings};
 use crate::stage::{ProfileView, SceneError, Stage};
@@ -94,6 +104,36 @@ enum Monitor<'a> {
     /// プロファイル (シーンの一覧・保存先・出しているシーン・最近のプロファイル) が変わった (接続したときも送る)。
     #[serde(rename = "profile")]
     Profile(ProfileView<'a>),
+    /// モーション・表情・入力の様子が変わった (接続したときも送る。T0803)。
+    #[serde(rename = "animation")]
+    Animation(AnimationView),
+    /// ホットキーを登録し直した: 登録できなかった割り当てと理由 (接続したときも送る。T0803)。
+    #[serde(rename = "hotkeys", rename_all = "camelCase")]
+    Hotkeys {
+        problems: &'a [(usize, HotkeyProblem)],
+        /// 割り当ての画面でキーを押している間、登録を止めている。
+        suspended: bool,
+        /// Wayland のセッション (アプリが前面に無いとホットキーを受けられない。ADR 0028 の 9.)。
+        wayland: bool,
+    },
+    /// ホットキーが押された (キャリブレーションは操作ウィンドウが行う)。行えなければ `error`。
+    #[serde(rename = "hotkey")]
+    Hotkey {
+        action: &'a HotkeyAction,
+        error: Option<HotkeyError>,
+    },
+}
+
+/// ホットキーの操作を行えなかった理由。画面は `code` で文言を選ぶ。
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+enum HotkeyError {
+    Scene(SceneError),
+    Animation(AnimationError),
+    /// 再生中のモーションより優先度が低くて始まらなかった。
+    Rejected {
+        code: &'static str,
+    },
 }
 
 /// コマンドのエラー。画面は `code` で文言を選ぶ (ADR 0029 の 4.)。
@@ -102,6 +142,7 @@ enum Monitor<'a> {
 enum CommandError {
     Profile(ProfileError),
     Scene(SceneError),
+    Animation(AnimationError),
 }
 
 impl From<ProfileError> for CommandError {
@@ -113,6 +154,12 @@ impl From<ProfileError> for CommandError {
 impl From<SceneError> for CommandError {
     fn from(e: SceneError) -> Self {
         Self::Scene(e)
+    }
+}
+
+impl From<AnimationError> for CommandError {
+    fn from(e: AnimationError) -> Self {
+        Self::Animation(e)
     }
 }
 
@@ -206,6 +253,32 @@ struct Studio {
     measured: Mutex<Option<Measured>>,
     /// 出力ごとの描画の負荷と、報告を受けた時刻。
     renders: Mutex<HashMap<String, (RenderStats, Instant)>>,
+    /// 刻みごとに入力の処理を促す操作ウィンドウ (`subscribe_pulse`。T0803)。
+    pulses: Subscribers,
+    /// グローバルなホットキー (T0803)。
+    hotkeys: Mutex<Hotkeys>,
+    /// ホットキーの登録に使う (`setup` で入れる。テストでは無い)。
+    app: OnceLock<AppHandle>,
+}
+
+/// 登録しているホットキー。
+#[derive(Debug, Default)]
+struct Hotkeys {
+    /// 登録のもとにした割り当て (プロファイルの値。同じなら登録し直さない)。
+    source: Option<Vec<Hotkey>>,
+    /// 登録したキーの ID → 操作。
+    bindings: HashMap<u32, HotkeyAction>,
+    /// 登録できなかった割り当ての位置と理由。
+    problems: Vec<(usize, HotkeyProblem)>,
+    /// 割り当ての画面でキーを押している間は登録を外す。
+    suspended: bool,
+}
+
+/// Wayland のセッションか (グローバルなホットキーは X11 の窓が前面にあるときだけ届く)。
+fn wayland_session() -> bool {
+    cfg!(target_os = "linux")
+        && (std::env::var_os("WAYLAND_DISPLAY").is_some()
+            || std::env::var("XDG_SESSION_TYPE").is_ok_and(|v| v.eq_ignore_ascii_case("wayland")))
 }
 
 impl Studio {
@@ -262,11 +335,16 @@ impl Studio {
     fn tick(&self, dt: f32, status: bool) {
         let started = Instant::now();
         let mut conductor = lock(&self.conductor);
-        let Some(frame) = conductor.tick(dt) else {
+        let frame = conductor.tick(dt);
+        if conductor.take_animation_changed() {
+            self.send_animation(&conductor);
+        }
+        let Some(frame) = frame else {
             return;
         };
         self.outputs
             .send_all(&InvokeResponseBody::Raw(frame.encode()));
+        drop(conductor);
         let nanos = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
         self.tick_nanos.store(nanos, Ordering::Relaxed);
         if status {
@@ -319,7 +397,147 @@ impl Studio {
         }
         drop(conductor);
         self.send_profile(&stage);
+        self.sync_hotkeys(&stage.profile().hotkeys, false);
         result
+    }
+
+    fn send_animation(&self, conductor: &Conductor) {
+        if let Some(body) = Self::json(&Monitor::Animation(conductor.animation_view())) {
+            self.monitors.send_all(&body);
+        }
+    }
+
+    fn hotkeys_message(hotkeys: &Hotkeys) -> Option<InvokeResponseBody> {
+        Self::json(&Monitor::Hotkeys {
+            problems: &hotkeys.problems,
+            suspended: hotkeys.suspended,
+            wayland: wayland_session(),
+        })
+    }
+
+    /// プロファイルの割り当てが変わっていればホットキーを登録し直し、結果を操作ウィンドウに配る。`force` なら変わらなくても登録し直す。
+    fn sync_hotkeys(&self, list: &[Hotkey], force: bool) {
+        let mut hotkeys = lock(&self.hotkeys);
+        if !force && hotkeys.source.as_deref() == Some(list) {
+            return;
+        }
+        hotkeys.source = Some(list.to_vec());
+        hotkeys.bindings.clear();
+        let shortcuts = self.app.get().map(|app| app.global_shortcut());
+        if let Some(shortcuts) = shortcuts {
+            // 前の登録を外せなくても、新しい登録は試す。
+            let _ = shortcuts.unregister_all();
+        }
+        let plan = hotkeys::plan(list);
+        let mut problems = plan.problems;
+        if !hotkeys.suspended {
+            for (index, shortcut) in plan.register {
+                if let Some(shortcuts) = shortcuts
+                    && let Err(e) = shortcuts.register(shortcut)
+                {
+                    problems.push((
+                        index,
+                        HotkeyProblem::RegisterFailed {
+                            message: e.to_string(),
+                        },
+                    ));
+                    continue;
+                }
+                hotkeys
+                    .bindings
+                    .insert(shortcut.id(), list[index].action.clone());
+            }
+        }
+        problems.sort_by_key(|(index, _)| *index);
+        hotkeys.problems = problems;
+        if let Some(body) = Self::hotkeys_message(&hotkeys) {
+            self.monitors.send_all(&body);
+        }
+    }
+
+    /// 押されたホットキーの操作を行い、操作ウィンドウに知らせる。
+    fn run_hotkey(&self, id: u32) {
+        let Some(action) = lock(&self.hotkeys).bindings.get(&id).cloned() else {
+            return;
+        };
+        let error = self.perform_hotkey(&action);
+        if let Some(body) = Self::json(&Monitor::Hotkey {
+            action: &action,
+            error,
+        }) {
+            self.monitors.send_all(&body);
+        }
+    }
+
+    fn perform_hotkey(&self, action: &HotkeyAction) -> Option<HotkeyError> {
+        let animate = |f: &dyn Fn(
+            &mut crate::animation::Animation,
+            &mut ugoe::Puppet,
+        ) -> Result<bool, AnimationError>| {
+            lock(&self.conductor).perform(|animation, puppet| match puppet {
+                Some(puppet) => f(animation, puppet),
+                None => Err(AnimationError::NoModel),
+            })
+        };
+        let result = match action {
+            HotkeyAction::Scene { scene } => {
+                return self
+                    .with_stage(|stage, conductor| stage.activate(scene, conductor))
+                    .err()
+                    .map(HotkeyError::Scene);
+            }
+            HotkeyAction::DressUp { slot, module } => {
+                return self
+                    .with_stage(|stage, conductor| {
+                        stage.dress_up(slot, module.as_deref(), conductor)
+                    })
+                    .err()
+                    .map(HotkeyError::Scene);
+            }
+            HotkeyAction::Expression { expression, mode } => animate(&|animation, puppet| {
+                match mode {
+                    ExpressionMode::Set => animation.set_expression(puppet, expression),
+                    ExpressionMode::Toggle => animation.toggle_expression(puppet, expression),
+                }
+                .map(|()| true)
+            }),
+            HotkeyAction::ClearExpressions => animate(&|animation, puppet| {
+                animation.clear_expressions(puppet);
+                Ok(true)
+            }),
+            HotkeyAction::Motion { motion, priority } => {
+                animate(&|animation, puppet| animation.play(puppet, motion, (*priority).into()))
+            }
+            HotkeyAction::StopMotions => animate(&|animation, puppet| {
+                animation.stop(puppet);
+                Ok(true)
+            }),
+            HotkeyAction::TrackingPause => {
+                let mut conductor = lock(&self.conductor);
+                conductor.perform(|animation, puppet| {
+                    let paused = !animation.tracking_paused();
+                    animation.set_tracking_paused(puppet, paused);
+                });
+                Ok(true)
+            }
+            HotkeyAction::LipSyncPause => {
+                let mut conductor = lock(&self.conductor);
+                conductor.perform(|animation, puppet| {
+                    let paused = !animation.lip_sync_paused();
+                    animation.set_lip_sync_paused(puppet, paused);
+                });
+                Ok(true)
+            }
+            // キャリブレーションは操作ウィンドウのトラッカーが行う (知らせを受けて)。
+            HotkeyAction::TrackingCalibrate | HotkeyAction::Unknown => Ok(true),
+        };
+        match result {
+            Ok(true) => None,
+            Ok(false) => Some(HotkeyError::Rejected {
+                code: "motionRejected",
+            }),
+            Err(e) => Some(HotkeyError::Animation(e)),
+        }
     }
 
     fn send_output_state(&self, state: OutputState) {
@@ -353,6 +571,10 @@ fn run_ticks(studio: Arc<Studio>) {
         last = now;
         count = (count + 1) % rate.status_every();
         studio.tick(dt, count == 0);
+        // 操作ウィンドウの入力の処理を促す (隠れていても Channel のメッセージは届く。docs/studio.md#隠れても止まらない)。
+        studio
+            .pulses
+            .send_all(&InvokeResponseBody::Json("0".to_owned()));
         let wanted = studio.tick_rate();
         if wanted != rate {
             rate = wanted;
@@ -534,7 +756,180 @@ fn subscribe_status(
     if let Some(body) = Studio::monitor_scene_message(&conductor) {
         let _ = channel.send(body);
     }
+    if let Some(body) = Studio::json(&Monitor::Animation(conductor.animation_view())) {
+        let _ = channel.send(body);
+    }
+    if let Some(body) = Studio::hotkeys_message(&lock(&studio.hotkeys)) {
+        let _ = channel.send(body);
+    }
     studio.monitors.insert(webview.label(), channel);
+}
+
+/// 刻みごとに入力の処理を促すメッセージを受け取り始める (操作ウィンドウのカメラとマイク。`requestAnimationFrame` に頼らない)。
+#[tauri::command]
+fn subscribe_pulse(
+    studio: tauri::State<'_, Arc<Studio>>,
+    webview: tauri::Webview,
+    channel: Channel<InvokeResponseBody>,
+) {
+    studio.pulses.insert(webview.label(), channel);
+}
+
+/// トラッキングの入力 (キャリブレーションと平滑化の後)。`null` で外す (トラッキングが書き込んでいたパラメータは既定値に戻る)。
+#[tauri::command]
+fn set_tracking(studio: tauri::State<'_, Arc<Studio>>, frame: Option<TrackingFrame>) {
+    let input = frame.as_ref().map(TrackingFrame::to_input);
+    lock(&studio.conductor).perform(|animation, puppet| animation.set_tracking(puppet, input));
+}
+
+/// トラッキングを一時停止する・再開する。
+#[tauri::command]
+fn set_tracking_paused(studio: tauri::State<'_, Arc<Studio>>, paused: bool) {
+    lock(&studio.conductor)
+        .perform(|animation, puppet| animation.set_tracking_paused(puppet, paused));
+}
+
+/// モデルの自動の目パチを動かすか (トラッキング中は止める)。
+#[tauri::command]
+fn set_auto_eye_blink(studio: tauri::State<'_, Arc<Studio>>, enabled: bool) {
+    lock(&studio.conductor)
+        .perform(|animation, puppet| animation.set_auto_eye_blink(puppet, enabled));
+}
+
+/// マイクの音量 (0〜1)。`null` で口パクを止める。
+#[tauri::command]
+fn set_lip_sync_level(studio: tauri::State<'_, Arc<Studio>>, level: Option<f32>) {
+    lock(&studio.conductor).set_lip_sync_level(level);
+}
+
+/// 口パクを一時停止する・再開する。
+#[tauri::command]
+fn set_lip_sync_paused(studio: tauri::State<'_, Arc<Studio>>, paused: bool) {
+    lock(&studio.conductor)
+        .perform(|animation, puppet| animation.set_lip_sync_paused(puppet, paused));
+}
+
+/// 指揮役の演技を `action` で触る (モデルが無ければエラー)。
+fn animate<T>(
+    studio: &Studio,
+    action: impl FnOnce(
+        &mut crate::animation::Animation,
+        &mut ugoe::Puppet,
+    ) -> Result<T, AnimationError>,
+) -> Result<T, CommandError> {
+    lock(&studio.conductor)
+        .perform(|animation, puppet| match puppet {
+            Some(puppet) => action(animation, puppet),
+            None => Err(AnimationError::NoModel),
+        })
+        .map_err(CommandError::from)
+}
+
+/// モーションを優先度付きで始める。再生中のモーションより優先度が低くて始まらなければ `false`。
+#[tauri::command]
+fn play_motion(
+    studio: tauri::State<'_, Arc<Studio>>,
+    name: String,
+    priority: MotionPriority,
+) -> Result<bool, CommandError> {
+    animate(&studio, |animation, puppet| {
+        animation.play(puppet, &name, priority.into())
+    })
+}
+
+/// 再生中のモーションを止める (待機モーションに戻る)。
+#[tauri::command]
+fn stop_motions(studio: tauri::State<'_, Arc<Studio>>) -> Result<(), CommandError> {
+    animate(&studio, |animation, puppet| {
+        animation.stop(puppet);
+        Ok(())
+    })
+}
+
+/// 表情を `name` だけにする。
+#[tauri::command]
+fn set_expression(studio: tauri::State<'_, Arc<Studio>>, name: String) -> Result<(), CommandError> {
+    animate(&studio, |animation, puppet| {
+        animation.set_expression(puppet, &name)
+    })
+}
+
+/// 表情 `name` を重ねる。
+#[tauri::command]
+fn add_expression(studio: tauri::State<'_, Arc<Studio>>, name: String) -> Result<(), CommandError> {
+    animate(&studio, |animation, puppet| {
+        animation.add_expression(puppet, &name)
+    })
+}
+
+/// 表情 `name` を外す。
+#[tauri::command]
+fn remove_expression(
+    studio: tauri::State<'_, Arc<Studio>>,
+    name: String,
+) -> Result<(), CommandError> {
+    animate(&studio, |animation, puppet| {
+        animation.remove_expression(puppet, &name);
+        Ok(())
+    })
+}
+
+/// 表情をすべて外す。
+#[tauri::command]
+fn clear_expressions(studio: tauri::State<'_, Arc<Studio>>) -> Result<(), CommandError> {
+    animate(&studio, |animation, puppet| {
+        animation.clear_expressions(puppet);
+        Ok(())
+    })
+}
+
+/// 待機モーションとトラッキング中のモーションの優先の設定 (プロファイルに持つ)。
+#[tauri::command]
+fn set_motion_settings(studio: tauri::State<'_, Arc<Studio>>, settings: MotionSettings) {
+    studio.with_stage(|stage, conductor| stage.set_motion_settings(settings, conductor));
+}
+
+/// 入力の機器と調整 (プロファイルに持つ)。
+#[tauri::command]
+fn set_input_settings(studio: tauri::State<'_, Arc<Studio>>, settings: InputSettings) {
+    studio.with_stage(|stage, _| stage.set_input_settings(settings));
+}
+
+/// ホットキーの割り当て (プロファイルに持ち、登録し直す)。
+#[tauri::command]
+fn set_hotkeys(studio: tauri::State<'_, Arc<Studio>>, hotkeys: Vec<Hotkey>) {
+    studio.with_stage(|stage, _| stage.set_hotkeys(hotkeys));
+}
+
+/// 割り当ての画面でキーを押している間、ホットキーの登録を外す (押したキーが操作を行わないように)。
+#[tauri::command]
+fn suspend_hotkeys(studio: tauri::State<'_, Arc<Studio>>, suspended: bool) {
+    let list = {
+        let mut hotkeys = lock(&studio.hotkeys);
+        if hotkeys.suspended == suspended {
+            return;
+        }
+        hotkeys.suspended = suspended;
+        hotkeys.source.clone().unwrap_or_default()
+    };
+    studio.sync_hotkeys(&list, true);
+}
+
+/// モジュール (`.ugoemod`) が付くスロットの名前 (ホットキーの着せ替えの割り当て)。
+#[tauri::command]
+fn module_slot(path: PathBuf) -> Result<String, CommandError> {
+    let bytes = stage::read_asset(
+        stage::Asset::Module,
+        &path,
+        stage::MODULE_EXTENSIONS,
+        stage::MAX_MODEL_BYTES,
+    )?;
+    let file = ugoe::format::read_module(&bytes).map_err(|e| SceneError::Unreadable {
+        asset: stage::Asset::Module,
+        path: path.clone(),
+        message: e.to_string(),
+    })?;
+    Ok(file.module.slot.as_str().to_owned())
 }
 
 /// パラメータを書き換える (次の刻みから基準値になる)。ID が無ければ `false`。
@@ -633,14 +1028,40 @@ fn set_output_size(app: AppHandle, width: u32, height: u32) -> Result<OutputStat
     read_output_state(&window)
 }
 
+/// WebView からの許可の要求への応答。操作ウィンドウのカメラ (フェイストラッキング) とマイク (口パク) だけを許す (T0803)。
+/// ページはアプリに同梱したものだけなので、使うのは利用者が入力を始めたときに限られる。
+/// macOS では、これとは別に OS の許可 (`Info.plist` の `NSCameraUsageDescription`・`NSMicrophoneUsageDescription`) が要る。
+fn permission_response(label: &str, kind: PermissionKind) -> PermissionResponse {
+    match kind {
+        PermissionKind::Camera | PermissionKind::Microphone if label == CONTROL => {
+            PermissionResponse::Allow
+        }
+        _ => PermissionResponse::Default,
+    }
+}
+
 pub fn run() {
     let studio = Arc::new(Studio::default());
     let ticking = Arc::clone(&studio);
     let staging = Arc::clone(&studio);
+    let pressing = Arc::clone(&studio);
     #[allow(clippy::expect_used)]
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(move |_, shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        // シーンの切り替えはファイルを読むので、イベントのスレッド (メインのスレッド) を塞がない。
+                        let studio = Arc::clone(&pressing);
+                        let id = shortcut.id();
+                        tauri::async_runtime::spawn_blocking(move || studio.run_hotkey(id));
+                    }
+                })
+                .build(),
+        )
+        .on_permission_request(|webview, kind| permission_response(webview.label(), kind))
         .manage(studio)
         .setup(move |app| {
             // 最近のプロファイルはアプリのデータの場所に覚える (取れなければ覚えない)。
@@ -650,6 +1071,7 @@ pub fn run() {
                 .ok()
                 .map(|dir| dir.join(RECENT_PROFILES_FILE));
             *lock(&staging.stage) = Stage::new(recent);
+            let _ = staging.app.set(app.handle().clone());
             std::thread::Builder::new()
                 .name("ugoe-studio-conductor".into())
                 .spawn(move || run_ticks(ticking))?;
@@ -697,6 +1119,23 @@ pub fn run() {
             tick_rate,
             set_tick_rate,
             report_render_stats,
+            subscribe_pulse,
+            set_tracking,
+            set_tracking_paused,
+            set_auto_eye_blink,
+            set_lip_sync_level,
+            set_lip_sync_paused,
+            play_motion,
+            stop_motions,
+            set_expression,
+            add_expression,
+            remove_expression,
+            clear_expressions,
+            set_motion_settings,
+            set_input_settings,
+            set_hotkeys,
+            suspend_hotkeys,
+            module_slot,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the ugoe studio");
@@ -771,6 +1210,103 @@ mod tests {
         ] {
             assert!(args.contains(flag), "{flag}");
         }
+    }
+
+    /// カメラとマイクは操作ウィンドウだけに許す (T0803)。
+    #[test]
+    fn only_the_control_window_may_use_the_camera_and_the_microphone() {
+        for kind in [PermissionKind::Camera, PermissionKind::Microphone] {
+            assert!(matches!(
+                permission_response(CONTROL, kind),
+                PermissionResponse::Allow
+            ));
+            assert!(matches!(
+                permission_response(OUTPUT, kind),
+                PermissionResponse::Default
+            ));
+        }
+        assert!(matches!(
+            permission_response(CONTROL, PermissionKind::Notifications),
+            PermissionResponse::Default
+        ));
+    }
+
+    #[test]
+    fn hotkey_messages_are_tagged() {
+        let action = HotkeyAction::TrackingCalibrate;
+        assert_eq!(
+            serde_json::to_value(Monitor::Hotkey {
+                action: &action,
+                error: Some(HotkeyError::Rejected {
+                    code: "motionRejected"
+                }),
+            })
+            .unwrap(),
+            serde_json::json!({
+                "kind": "hotkey",
+                "action": { "kind": "trackingCalibrate" },
+                "error": { "code": "motionRejected" }
+            })
+        );
+        let problems = [(1, HotkeyProblem::Unassigned)];
+        assert_eq!(
+            serde_json::to_value(Monitor::Hotkeys {
+                problems: &problems,
+                suspended: false,
+                wayland: false,
+            })
+            .unwrap(),
+            serde_json::json!({
+                "kind": "hotkeys",
+                "problems": [[1, { "code": "unassigned" }]],
+                "suspended": false,
+                "wayland": false
+            })
+        );
+        let view = Conductor::new().animation_view();
+        let json = serde_json::to_value(Monitor::Animation(view)).unwrap();
+        assert_eq!(json["kind"], "animation");
+        assert_eq!(json["trackingPaused"], false);
+    }
+
+    /// OS に登録できない環境 (テスト) でも、割り当ての問題は判断して覚える。
+    #[test]
+    fn hotkeys_are_planned_without_the_app() {
+        let studio = Studio::default();
+        let list = vec![
+            Hotkey {
+                keys: "Ctrl+KeyA".into(),
+                action: HotkeyAction::StopMotions,
+            },
+            Hotkey {
+                keys: "Ctrl+KeyA".into(),
+                action: HotkeyAction::ClearExpressions,
+            },
+        ];
+        studio.sync_hotkeys(&list, false);
+        {
+            let hotkeys = lock(&studio.hotkeys);
+            assert_eq!(hotkeys.bindings.len(), 1);
+            assert_eq!(
+                hotkeys.problems,
+                [(1, HotkeyProblem::Duplicate { other: 0 })]
+            );
+        }
+        // 割り当ての画面でキーを押している間は、登録しない。
+        lock(&studio.hotkeys).suspended = true;
+        studio.sync_hotkeys(&list, true);
+        assert!(lock(&studio.hotkeys).bindings.is_empty());
+        // 押されたホットキーの操作: モデルが無ければ行えない。
+        lock(&studio.hotkeys).suspended = false;
+        studio.sync_hotkeys(&list, true);
+        let id = hotkeys::parse_keys("Ctrl+KeyA").unwrap().id();
+        assert!(lock(&studio.hotkeys).bindings.contains_key(&id));
+        assert!(matches!(
+            studio.perform_hotkey(&HotkeyAction::StopMotions),
+            Some(HotkeyError::Animation(AnimationError::NoModel))
+        ));
+        assert!(studio.perform_hotkey(&HotkeyAction::LipSyncPause).is_none());
+        assert!(lock(&studio.conductor).animation_view().lip_sync_paused);
     }
 
     #[test]

@@ -1,10 +1,12 @@
 <!--
   操作ウィンドウ (docs/studio.md#操作ウィンドウ)。モデルは描かない (描画は出力ウィンドウに任せる)。
   様子はパラメータの値・刻みの番号・負荷の数値で示す (負荷と刻みの速さは LoadPanel.svelte)。左にシーンの一覧、
-  右のパネルにシーンの編集 (T0802)。入力 (T0803) は後のタスク。
+  右のパネルにシーンの編集 (T0802)、表情とモーション・入力 (カメラ・マイク)・ホットキー (T0803)。
+  カメラとマイクはこのウィンドウの WebView で取り、バックエンドの刻み (`subscribe_pulse`) で処理する (最小化しても止まらない)。
   プロファイルはバックエンドが持ち、変わるたびに `profile` の通知で届く。保存先があれば、変えた後に自動で保存する。
 -->
 <script lang="ts">
+import { FaceTracker, type TrackingFrame } from "@ugoe/face-tracking";
 import {
   formatNumber,
   getLocalePreference,
@@ -12,6 +14,7 @@ import {
   type LocalePreference,
   setLocale,
 } from "@ugoe/i18n";
+import type { MotionPriority } from "@ugoe/player";
 import {
   AlertDialog,
   Button,
@@ -25,6 +28,8 @@ import {
   Toolbar,
 } from "@ugoe/ui";
 import { onMount } from "svelte";
+import HotkeysPanel from "./HotkeysPanel.svelte";
+import InputPanel from "./InputPanel.svelte";
 import LoadPanel from "./LoadPanel.svelte";
 import { describeError } from "./lib/errors";
 import type {
@@ -38,8 +43,21 @@ import type {
 } from "./lib/host";
 import { studioHost } from "./lib/host";
 import { t } from "./lib/i18n";
+import {
+  type AnimationView,
+  DEFAULT_INPUT,
+  DEFAULT_MOTION,
+  EMPTY_ANIMATION,
+  type Hotkey,
+  type HotkeyProblem,
+  type InputSettings,
+  type MotionSettings,
+} from "./lib/inputs";
 import { sceneLabel } from "./lib/labels";
+import { latestOnly } from "./lib/latest";
+import { Microphone } from "./lib/microphone.svelte";
 import { fileName, isStudioError, type ProfileView, type SceneSettings } from "./lib/profile";
+import { Pulse } from "./lib/pulse";
 import {
   loadTickRate,
   OUTPUT_SIZE_PRESETS,
@@ -51,6 +69,7 @@ import {
   saveTickRate,
   type TickRate,
 } from "./lib/settings";
+import MotionPanel from "./MotionPanel.svelte";
 import SceneEditor from "./SceneEditor.svelte";
 import ScenesPanel from "./ScenesPanel.svelte";
 
@@ -89,9 +108,43 @@ let error = $state<string | null>(null);
 /** 手で動かしたパラメータと、動かした時刻。 */
 const edited = new Map<string, number>();
 
+// --- 入力 (T0803) ---
+
+let animation = $state<AnimationView>(EMPTY_ANIMATION);
+let hotkeyProblems = $state<[number, HotkeyProblem][]>([]);
+let wayland = $state(false);
+/** ホットキーの操作を行えなかった理由。 */
+let hotkeyError = $state<string | null>(null);
+/** カメラとマイクの処理を回す刻み (バックエンドの刻みのスレッドから届く)。 */
+const pulse = new Pulse();
+const sendTracking = latestOnly((frame: TrackingFrame | null) =>
+  host === null ? Promise.resolve() : host.setTracking(frame),
+);
+const tracker = new FaceTracker(
+  {
+    setTracking: sendTracking,
+    setAutoEyeBlink: (enabled) => void run((h) => h.setAutoEyeBlink(enabled)),
+  },
+  { schedule: pulse.schedule },
+);
+window.__UGOE_TRACKER__ = tracker;
+const microphone = new Microphone(
+  latestOnly((level: number | null) =>
+    host === null ? Promise.resolve() : host.setLipSyncLevel(level),
+  ),
+  () => inputSettings,
+);
+/** 道具に当てた入力の設定 (プロファイルの値が変わったときだけ当て直す)。 */
+let appliedInput = "";
+
+const inputSettings = $derived<InputSettings>(profile?.profile.input ?? DEFAULT_INPUT);
+const motionSettings = $derived<MotionSettings>(profile?.profile.motion ?? DEFAULT_MOTION);
+const hotkeys = $derived<Hotkey[]>(profile?.profile.hotkeys ?? []);
+
 const shownParameters = $derived(parameters.filter((p) => showInternal || !p.internal));
 const outputSize = $derived(parseOutputSize(profile?.profile.output.size));
 const scenes = $derived(profile?.profile.scenes ?? []);
+const sceneChoices = $derived(scenes.map((s, i) => ({ id: s.id, label: sceneLabel(s, i) })));
 const selectedScene = $derived.by(() => {
   const found = scenes.find((s) => s.id === selected) ?? null;
   return editing !== null && editing.id === found?.id ? editing : found;
@@ -175,11 +228,61 @@ function onMonitor(message: MonitorMessage) {
       onProfile(view);
       break;
     }
+    case "animation": {
+      const { kind: _, ...view } = message;
+      animation = view;
+      break;
+    }
+    case "hotkeys":
+      hotkeyProblems = message.problems;
+      wayland = message.wayland;
+      break;
+    case "hotkey":
+      if (message.action.kind === "trackingCalibrate") tracker.calibrate();
+      if (message.error !== null) hotkeyError = describeError(message.error);
+      break;
   }
+}
+
+/** プロファイルの入力の設定を、トラッカーとマイクに当てる (変わったときだけ)。 */
+function applyInput(input: InputSettings) {
+  const key = JSON.stringify(input);
+  if (key === appliedInput) return;
+  appliedInput = key;
+  tracker.smoothing = input.smoothing;
+  tracker.swapSides = input.swapSides;
+  if (tracker.trackBody !== input.trackBody) tracker.setTrackBody(input.trackBody);
+  if (tracker.stopEyeBlink !== input.stopEyeBlink) tracker.setStopEyeBlink(input.stopEyeBlink);
+  const camera = input.camera;
+  if (camera !== null && !tracker.running) {
+    void tracker.refreshCameras().then(() => {
+      const found =
+        tracker.cameras.find((c) => c.id === camera.id) ??
+        tracker.cameras.find((c) => c.label === camera.label);
+      if (found !== undefined && !tracker.running) tracker.cameraId = found.id;
+    });
+  }
+  if (!microphone.running) microphone.choose(input.microphone);
+}
+
+function onExpression(op: "set" | "add" | "remove" | "clear", name?: string) {
+  void run((h) => {
+    if (op === "clear") return h.clearExpressions();
+    if (name === undefined) return Promise.resolve();
+    if (op === "set") return h.setExpression(name);
+    if (op === "add") return h.addExpression(name);
+    return h.removeExpression(name);
+  });
+}
+
+async function playMotion(name: string, priority: MotionPriority) {
+  const started = await run((h) => h.playMotion(name, priority));
+  if (started === false) hotkeyError = t("errors.motionRejected");
 }
 
 function onProfile(view: ProfileView) {
   profile = view;
+  applyInput(view.profile.input);
   const ids = view.profile.scenes.map((s) => s.id);
   if (selected === null || !ids.includes(selected)) selected = view.live ?? ids[0] ?? null;
   if (sceneError !== null && !ids.includes(sceneError.id)) sceneError = null;
@@ -367,7 +470,7 @@ async function run<T>(action: (host: StudioHost) => Promise<T>): Promise<T | und
   try {
     return await action(host);
   } catch (e) {
-    error = e instanceof Error ? e.message : String(e);
+    error = describeError(e);
     return undefined;
   }
 }
@@ -422,6 +525,9 @@ async function resetParameters() {
   await run((h) => h.resetParameters());
 }
 
+/** マイクの処理を刻みから外す。 */
+let stopMicrophoneSteps: (() => void) | null = null;
+
 onMount(() => {
   void (async () => {
     try {
@@ -433,6 +539,14 @@ onMount(() => {
     output = (await run((h) => h.outputState())) ?? null;
     await run((h) => h.setTickRate(tickRate));
     await run((h) => h.subscribeStatus(onMonitor));
+    // 入力の処理はバックエンドの刻みで回す (受け取れなければ requestAnimationFrame のまま)。
+    try {
+      await host.subscribePulse(() => pulse.beat(performance.now()));
+      pulse.connect();
+    } catch {
+      // 刻みを受け取れない口 (古いブリッジなど)。
+    }
+    stopMicrophoneSteps = pulse.schedule((now) => microphone.step(now));
     // 最後に使ったプロファイルを開く (起動して最初の 1 回だけ。開けなければ新しいプロファイルのまま)。
     try {
       await host.restoreProfile();
@@ -450,6 +564,9 @@ onMount(() => {
   return () => {
     window.removeEventListener("keydown", onKey);
     clearTimeout(autosaveTimer);
+    stopMicrophoneSteps?.();
+    microphone.stop();
+    tracker.stop();
   };
 });
 </script>
@@ -506,6 +623,10 @@ onMount(() => {
     </Notice>
   {/if}
 
+  {#if hotkeyError !== null}
+    <Notice tone="warning" ondismiss={() => (hotkeyError = null)}>{hotkeyError}</Notice>
+  {/if}
+
   {#if sceneError !== null}
     <Notice tone="danger" ondismiss={() => (sceneError = null)}>
       {sceneError.message}
@@ -550,6 +671,30 @@ onMount(() => {
           </dd>
           <dt>{t("state.receivers")}</dt>
           <dd class="studio__number">{formatNumber(receivers)}</dd>
+          <dt>{t("state.tracking")}</dt>
+          <dd>
+            {animation.trackingPaused
+              ? t("state.trackingPaused")
+              : !tracker.running
+                ? t("state.trackingOff")
+                : tracker.faceFound
+                  ? t("state.trackingFace", { fps: tracker.fps })
+                  : t("state.trackingNoFace")}
+          </dd>
+          <dt>{t("state.lipSync")}</dt>
+          <dd class="studio__lip">
+            {#if animation.lipSyncPaused}
+              {t("state.lipSyncPaused")}
+            {:else if microphone.running}
+              <meter min="0" max="1" value={microphone.level} aria-label={t("state.lipSync")}></meter>
+            {:else}
+              {t("state.lipSyncOff")}
+            {/if}
+          </dd>
+          <dt>{t("state.motion")}</dt>
+          <dd>{animation.current?.name ?? "—"}</dd>
+          <dt>{t("state.expressions")}</dt>
+          <dd>{animation.activeExpressions.length === 0 ? "—" : animation.activeExpressions.join(", ")}</dd>
         </dl>
       {/if}
     </section>
@@ -568,6 +713,55 @@ onMount(() => {
           />
         </Section>
       {/if}
+      <Section title={t("motion.heading")}>
+        <MotionPanel
+          {animation}
+          settings={motionSettings}
+          disabled={host === null || scene === null || scene.modelRevision === 0}
+          onplay={(name, priority) => void playMotion(name, priority)}
+          onstop={() => void run((h) => h.stopMotions())}
+          onexpression={onExpression}
+          onsettings={(settings) => void run((h) => h.setMotionSettings(settings))}
+        />
+      </Section>
+      <Section title={t("inputs.heading")}>
+        <InputPanel
+          {tracker}
+          {microphone}
+          settings={inputSettings}
+          trackingParameters={animation.trackingParameters}
+          {values}
+          trackingPaused={animation.trackingPaused}
+          lipSyncPaused={animation.lipSyncPaused}
+          disabled={host === null}
+          onsettings={(settings) => void run((h) => h.setInputSettings(settings))}
+          ontrackingpause={(paused) => void run((h) => h.setTrackingPaused(paused))}
+          onlipsyncpause={(paused) => void run((h) => h.setLipSyncPaused(paused))}
+        />
+      </Section>
+      <Section title={t("hotkeys.heading")}>
+        <HotkeysPanel
+          {hotkeys}
+          problems={hotkeyProblems}
+          {wayland}
+          scenes={sceneChoices}
+          expressions={animation.expressions}
+          motions={animation.motions.map((m) => m.name)}
+          slots={animation.slots}
+          disabled={host === null}
+          onchange={(list) => void run((h) => h.setHotkeys(list))}
+          onsuspend={(suspended) => void run((h) => h.suspendHotkeys(suspended))}
+          onpickmodule={() => pickFile("module")}
+          moduleSlot={async (path) => {
+            if (host === null) throw new Error("no host");
+            try {
+              return await host.moduleSlot(path);
+            } catch (e) {
+              throw new Error(describeError(e));
+            }
+          }}
+        />
+      </Section>
       <Section title={t("output.heading")}>
         <div class="studio__stack">
           <Toggle
@@ -766,6 +960,10 @@ onMount(() => {
 
   .studio__number {
     font-variant-numeric: tabular-nums;
+  }
+
+  .studio__lip meter {
+    width: 8rem;
   }
 
   .studio__panels {

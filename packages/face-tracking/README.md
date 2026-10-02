@@ -24,7 +24,9 @@ scripts/mediapipe-assets.mjs  `ugoe-mediapipe-assets <出力先> [--optional]`: 
 - アプリは `TrackingTarget` (`setTracking(frame | null)` と `setAutoEyeBlink(enabled)`) を実装して `FaceTracker` に渡す。
   値は次のフレームで `setPuppetTracking(puppet, frame)` (= `WebPuppet.set_tracking`) に渡す (パラメータへの変換は Rust の対応付け)。`null` を受けたら
   `clear_tracking` し、トラッキングが書き込んでいたパラメータを既定値に戻す。
-- `new FaceTracker(target, { saveJson })`。`saveJson` を省くとブラウザのダウンロードで保存する。
+- `new FaceTracker(target, { saveJson, schedule })`。`saveJson` を省くとブラウザのダウンロードで保存する。
+  `schedule` は入力の処理を繰り返し呼ぶ仕組み (止める関数を返す)。省くと `requestAnimationFrame` (`animationFrames`) で、ページが隠れると止まる。
+  スタジオは最小化しても止まらないように、バックエンドの刻みで回す (T0803、docs/studio.md#入力)。
 - 文言の言語は、アプリが `@ugoe/i18n` の `setLocale()` で決める (エディタは英語、ビューアは日本語)。
   パネルの文言は言語の切り替えに追従する。エラーの文は起きた時の言語のまま。
 - パネルは `import { TrackingPanel } from "@ugoe/face-tracking"` (`index.ts` から。サブパスで import すると

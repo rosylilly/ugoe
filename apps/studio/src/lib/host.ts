@@ -1,7 +1,16 @@
 // バックエンド (src-tauri/src/lib.rs) との口。Tauri の外 (ヘッドレスのブラウザでの確認) では
 // `window.__UGOE_STUDIO_HOST__` に置いたものを使う (README.md#ヘッドレスのブラウザで確かめる)。
-import type { LightingSettings, SceneMessage } from "@ugoe/player";
-import type { Background, ProfileView, SceneSettings, Transform } from "./profile";
+import type { TrackingFrame } from "@ugoe/face-tracking";
+import type { LightingSettings, MotionPriority, SceneMessage } from "@ugoe/player";
+import type {
+  AnimationView,
+  Hotkey,
+  HotkeyAction,
+  HotkeyProblem,
+  InputSettings,
+  MotionSettings,
+} from "./inputs";
+import type { Background, ProfileView, SceneSettings, StudioError, Transform } from "./profile";
 
 /** 操作ウィンドウに出すパラメータの定義 (lib.rs の `ParameterInfo`)。 */
 export interface ParameterInfo {
@@ -81,7 +90,18 @@ export type MonitorMessage =
   | { kind: "scene"; scene: StudioScene; parameters: ParameterInfo[]; usesLighting: boolean }
   | ({ kind: "profile" } & ProfileView)
   | StatusMessage
-  | ({ kind: "output" } & OutputState);
+  | ({ kind: "output" } & OutputState)
+  | ({ kind: "animation" } & AnimationView)
+  | {
+      kind: "hotkeys";
+      /** 登録できなかった割り当ての位置と理由。 */
+      problems: [number, HotkeyProblem][];
+      /** 割り当ての画面でキーを押している間、登録を止めている。 */
+      suspended: boolean;
+      /** Wayland のセッション (アプリが前面に無いとホットキーを受けられない)。 */
+      wayland: boolean;
+    }
+  | { kind: "hotkey"; action: HotkeyAction; error: StudioError | null };
 
 /** 出力ウィンドウへの配信: シーンの通知 (JSON) かフレームのバイト列 (@ugoe/player の `decodeFrame`)。 */
 export type StreamMessage = StudioScene | ArrayBuffer;
@@ -131,6 +151,30 @@ export interface StudioHost {
   setTickRate(rate: number): Promise<number>;
   /** OS の言語 (BCP 47)。取れなければ `null`。 */
   systemLocale(): Promise<string | null>;
+  // 入力 (T0803。エラーは profile.ts の `StudioError` を投げる)
+  /** 刻みごとに `onPulse` を呼ぶ (入力の処理。ウィンドウが隠れても止まらない)。 */
+  subscribePulse(onPulse: () => void): Promise<void>;
+  /** トラッキングの入力 (`null` で外す)。 */
+  setTracking(frame: TrackingFrame | null): Promise<void>;
+  setTrackingPaused(paused: boolean): Promise<void>;
+  setAutoEyeBlink(enabled: boolean): Promise<void>;
+  /** マイクの音量 (0〜1。`null` で口パクを止める)。 */
+  setLipSyncLevel(level: number | null): Promise<void>;
+  setLipSyncPaused(paused: boolean): Promise<void>;
+  /** モーションを始める。優先度が低くて始まらなければ `false`。 */
+  playMotion(name: string, priority: MotionPriority): Promise<boolean>;
+  stopMotions(): Promise<void>;
+  setExpression(name: string): Promise<void>;
+  addExpression(name: string): Promise<void>;
+  removeExpression(name: string): Promise<void>;
+  clearExpressions(): Promise<void>;
+  setMotionSettings(settings: MotionSettings): Promise<void>;
+  setInputSettings(settings: InputSettings): Promise<void>;
+  setHotkeys(hotkeys: Hotkey[]): Promise<void>;
+  /** 割り当ての画面でキーを押している間、ホットキーの登録を外す。 */
+  suspendHotkeys(suspended: boolean): Promise<void>;
+  /** モジュールが付くスロットの名前。 */
+  moduleSlot(path: string): Promise<string>;
   // --- 出力ウィンドウ ---
   subscribeFrames(onMessage: (message: StreamMessage) => void): Promise<void>;
   /** シーン `revision` のモデルのバイト列。今のシーンでなければ例外。 */
@@ -201,6 +245,23 @@ async function tauriHost(): Promise<StudioHost> {
       const { locale } = await import("@tauri-apps/plugin-os");
       return locale();
     },
+    subscribePulse: (onPulse) => subscribe("subscribe_pulse", onPulse),
+    setTracking: (frame) => invoke("set_tracking", { frame }),
+    setTrackingPaused: (paused) => invoke("set_tracking_paused", { paused }),
+    setAutoEyeBlink: (enabled) => invoke("set_auto_eye_blink", { enabled }),
+    setLipSyncLevel: (level) => invoke("set_lip_sync_level", { level }),
+    setLipSyncPaused: (paused) => invoke("set_lip_sync_paused", { paused }),
+    playMotion: (name, priority) => invoke("play_motion", { name, priority }),
+    stopMotions: () => invoke("stop_motions"),
+    setExpression: (name) => invoke("set_expression", { name }),
+    addExpression: (name) => invoke("add_expression", { name }),
+    removeExpression: (name) => invoke("remove_expression", { name }),
+    clearExpressions: () => invoke("clear_expressions"),
+    setMotionSettings: (settings) => invoke("set_motion_settings", { settings }),
+    setInputSettings: (settings) => invoke("set_input_settings", { settings }),
+    setHotkeys: (hotkeys) => invoke("set_hotkeys", { hotkeys }),
+    suspendHotkeys: (suspended) => invoke("suspend_hotkeys", { suspended }),
+    moduleSlot: (path) => invoke("module_slot", { path }),
     subscribeFrames: (onMessage) => subscribe("subscribe_frames", onMessage),
     async sceneModel(revision) {
       return new Uint8Array(await invoke<ArrayBuffer>("scene_model", { revision }));

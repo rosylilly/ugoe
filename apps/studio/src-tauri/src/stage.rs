@@ -11,6 +11,8 @@ use serde::Serialize;
 use ugoe::model::module::Module;
 
 use crate::conductor::{self, Conductor, NewModel};
+use crate::hotkeys::{self, Hotkey};
+use crate::input::{InputSettings, MotionSettings};
 use crate::profile::{Background, Profile, ProfileError, RecentProfiles, SceneSettings};
 use crate::stream::Look;
 
@@ -168,6 +170,7 @@ impl Stage {
         self.live = None;
         self.assets = Assets::default();
         conductor.clear(Look::default());
+        self.apply_motion_settings(conductor);
     }
 
     /// プロファイルを開いて、最後に使ったシーンに切り替える。プロファイルを読めなければ何も変えない。
@@ -193,6 +196,7 @@ impl Stage {
         self.dirty = false;
         self.live = None;
         self.touch_recent(path);
+        self.apply_motion_settings(conductor);
         let Some(id) = self.profile.active_scene.clone() else {
             self.assets = Assets::default();
             conductor.clear(Look::default());
@@ -228,6 +232,39 @@ impl Stage {
             self.profile.output.size = size.to_owned();
             self.dirty = true;
         }
+    }
+
+    /// ホットキーの割り当てを置き換える (T0803)。
+    pub fn set_hotkeys(&mut self, mut list: Vec<Hotkey>) {
+        hotkeys::sanitize(&mut list);
+        if self.profile.hotkeys != list {
+            self.profile.hotkeys = list;
+            self.dirty = true;
+        }
+    }
+
+    /// 入力の機器と調整を置き換える (T0803)。
+    pub fn set_input_settings(&mut self, mut settings: InputSettings) {
+        settings.sanitize();
+        if self.profile.input != settings {
+            self.profile.input = settings;
+            self.dirty = true;
+        }
+    }
+
+    /// モーションの設定を置き換え、指揮役に渡す (T0803)。
+    pub fn set_motion_settings(&mut self, mut settings: MotionSettings, conductor: &mut Conductor) {
+        settings.sanitize();
+        if self.profile.motion != settings {
+            self.profile.motion = settings;
+            self.dirty = true;
+            self.apply_motion_settings(conductor);
+        }
+    }
+
+    fn apply_motion_settings(&self, conductor: &mut Conductor) {
+        let settings = self.profile.motion.clone();
+        conductor.perform(|animation, puppet| animation.set_settings(puppet, settings));
     }
 
     fn touch_recent(&mut self, path: &Path) {
@@ -404,6 +441,43 @@ impl Stage {
         };
         self.set_live(id);
         Ok(())
+    }
+
+    /// 出しているシーンの着せ替え (ホットキー、T0803): スロット `slot` に付けているモジュールを外し、`module` があれば付ける。
+    /// シーンの設定 (`modules`) を書き換えて出し直す。出せなければ元に戻してエラー。出しているシーンが無ければ何もしない。
+    pub fn dress_up(
+        &mut self,
+        slot: &str,
+        module: Option<&Path>,
+        conductor: &mut Conductor,
+    ) -> Result<(), SceneError> {
+        let Some(id) = self.live.clone() else {
+            return Ok(());
+        };
+        let mut scene = self.profile.scenes[self.index_of(&id)?].clone();
+        let mut modules = Vec::with_capacity(scene.modules.len() + 1);
+        for path in &scene.modules {
+            if self.module(path)?.module.slot.as_str() != slot {
+                modules.push(path.clone());
+            }
+        }
+        if let Some(path) = module {
+            let loaded = self.module(path)?;
+            if loaded.module.slot.as_str() != slot {
+                // 割り当てたスロットと違うスロットのモジュール: そのモジュールのスロットを空けてから付ける。
+                let other = loaded.module.slot.as_str().to_owned();
+                let mut kept = Vec::with_capacity(modules.len());
+                for p in modules {
+                    if self.module(&p)?.module.slot.as_str() != other {
+                        kept.push(p);
+                    }
+                }
+                modules = kept;
+            }
+            modules.push(path.to_owned());
+        }
+        scene.modules = modules;
+        self.update_scene(scene, conductor)
     }
 
     fn set_live(&mut self, id: &str) {
@@ -632,6 +706,43 @@ mod tests {
         let third = conductor.scene().unwrap().clone();
         assert_eq!(third.modules_revision, second.modules_revision);
         assert!(third.revision > second.revision);
+    }
+
+    #[test]
+    fn dressing_up_swaps_the_module_in_the_slot() {
+        let dir = Dir::new("dress-up");
+        let base = dir.model("base.json", fixtures::dress_up_base());
+        let long = fixtures::long_hair_module();
+        let slot = long.slot.as_str().to_owned();
+        let mut short = long.clone();
+        short.name = "ShortHair".into();
+        let long = dir.module("long.ugoemod", long);
+        let short = dir.module("short.ugoemod", short);
+        let dress = dir.module("dress.ugoemod", fixtures::dress_module());
+        let mut stage = Stage::new(None);
+        let mut conductor = Conductor::new();
+        // 出しているシーンが無ければ何もしない。
+        stage.dress_up(&slot, Some(&long), &mut conductor).unwrap();
+
+        let live = scene(&mut stage, Some(&base), &[&long, &dress]);
+        stage.update_scene(live.clone(), &mut conductor).unwrap();
+        stage.activate(&live.id, &mut conductor).unwrap();
+        let modules = |stage: &Stage| stage.profile().scene(&live.id).unwrap().modules.clone();
+
+        stage.dress_up(&slot, Some(&short), &mut conductor).unwrap();
+        assert_eq!(modules(&stage), [dress.clone(), short.clone()]);
+        assert_eq!(conductor.scene().unwrap().modules.len(), 2);
+        assert!(conductor.tick(0.016).unwrap().reset);
+
+        stage.dress_up(&slot, None, &mut conductor).unwrap();
+        assert_eq!(modules(&stage), std::slice::from_ref(&dress));
+        assert_eq!(conductor.scene().unwrap().modules.len(), 1);
+        assert!(stage.dirty());
+
+        // 読めないモジュールなら元のまま。
+        let error = stage.dress_up(&slot, Some(&dir.0.join("gone.ugoemod")), &mut conductor);
+        assert!(matches!(error, Err(SceneError::Missing { .. })));
+        assert_eq!(modules(&stage), [dress]);
     }
 
     #[test]

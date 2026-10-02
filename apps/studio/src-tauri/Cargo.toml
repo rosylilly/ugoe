@@ -20,6 +20,7 @@ serde_json.workspace = true
 # macOS で出力ウィンドウの背景を透過するには macos-private-api が要る (tauri.conf.json の macOSPrivateApi)
 tauri = { workspace = true, features = ["macos-private-api"] }
 tauri-plugin-dialog.workspace = true
+tauri-plugin-global-shortcut.workspace = true
 tauri-plugin-os.workspace = true
 thiserror.workspace = true
 ugoe.workspace = true

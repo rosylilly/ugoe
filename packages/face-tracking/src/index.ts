@@ -25,8 +25,10 @@ export {
 } from "./recording";
 export { default as TrackingPanel } from "./TrackingPanel.svelte";
 export {
+  animationFrames,
   FaceTracker,
   type FaceTrackerOptions,
+  type TrackerSchedule,
   type TrackerSource,
   type TrackerStatus,
   type TrackingTarget,

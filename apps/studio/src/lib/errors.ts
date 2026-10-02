@@ -42,5 +42,13 @@ export function describeStudioError(e: StudioError): string {
       return t("errors.wrongType", { path: e.path });
     case "dressUp":
       return t("errors.dressUp", { message: e.message });
+    case "noModel":
+      return t("errors.noModel");
+    case "unknownMotion":
+      return t("errors.unknownMotion", { name: e.name });
+    case "unknownExpression":
+      return t("errors.unknownExpression", { name: e.name });
+    case "motionRejected":
+      return t("errors.motionRejected");
   }
 }

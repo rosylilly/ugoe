@@ -34,13 +34,34 @@ export interface TrackingTarget {
   setAutoEyeBlink(enabled: boolean): void;
 }
 
+/**
+ * 入力の処理 (`step`) を繰り返し呼ぶ仕組み。止める関数を返す。`step` には `performance.now()` の時刻を渡す。
+ */
+export type TrackerSchedule = (step: (now: number) => void) => () => void;
+
 export interface FaceTrackerOptions {
   /**
    * JSON のテキスト (記録) を保存する。`name` は既定のファイル名。保存したら `true`、取り消したら `false`。
    * 省くとブラウザのダウンロードで保存する。
    */
   saveJson?: (name: string, text: string) => Promise<boolean>;
+  /**
+   * 入力の処理を回す仕組み。省くと `requestAnimationFrame` (ページが隠れると止まる)。スタジオは、ウィンドウを最小化しても
+   * 止まらないように、バックエンドの刻みで回す (docs/studio.md#隠れても止まらない、T0803)。
+   */
+  schedule?: TrackerSchedule;
 }
+
+/** `requestAnimationFrame` で回す (既定)。 */
+export const animationFrames: TrackerSchedule = (step) => {
+  let frame = 0;
+  const loop = (now: number) => {
+    frame = requestAnimationFrame(loop);
+    step(now);
+  };
+  frame = requestAnimationFrame(loop);
+  return () => cancelAnimationFrame(frame);
+};
 
 export type TrackerSource =
   | { kind: "camera"; label: string }
@@ -136,6 +157,9 @@ export class FaceTracker {
 
   readonly #target: TrackingTarget;
   readonly #saveJson: (name: string, text: string) => Promise<boolean>;
+  readonly #schedule: TrackerSchedule;
+  /** 入力の処理を止める (回していなければ `null`)。 */
+  #cancel: (() => void) | null = null;
   #landmarker: FaceLandmarker | null = null;
   #landmarkerLoading: Promise<FaceLandmarker> | null = null;
   #pose: PoseLandmarker | null = null;
@@ -149,7 +173,6 @@ export class FaceTracker {
   #stream: MediaStream | null = null;
   #objectUrl: string | null = null;
   #replay: Recording | null = null;
-  #frame = 0;
   #lastNow: number | null = null;
   #lastVideoTime = -1;
   #lastDetect = 0;
@@ -165,6 +188,7 @@ export class FaceTracker {
   constructor(target: TrackingTarget, options: FaceTrackerOptions = {}) {
     this.#target = target;
     this.#saveJson = options.saveJson ?? downloadJson;
+    this.#schedule = options.schedule ?? animationFrames;
   }
 
   /** 映像とランドマークを描く canvas (パネルが渡す)。 */
@@ -259,8 +283,8 @@ export class FaceTracker {
   }
 
   stop(): void {
-    cancelAnimationFrame(this.#frame);
-    this.#frame = 0;
+    this.#cancel?.();
+    this.#cancel = null;
     if (this.recording) this.stopRecording();
     this.#releaseSource();
     this.#target.setTracking(null);
@@ -362,7 +386,7 @@ export class FaceTracker {
     this.#detectCount = 0;
     if (this.stopEyeBlink) this.#target.setAutoEyeBlink(false);
     this.status = "running";
-    this.#frame = requestAnimationFrame(this.#tick);
+    this.#cancel = this.#schedule(this.#tick);
   }
 
   #newVideo(): HTMLVideoElement {
@@ -458,7 +482,6 @@ export class FaceTracker {
   }
 
   #tick = (now: number): void => {
-    this.#frame = requestAnimationFrame(this.#tick);
     const dt = this.#lastNow === null ? 0 : Math.min((now - this.#lastNow) / 1000, MAX_DT);
     this.#lastNow = now;
     let raw: TrackingFrame | null | undefined;
