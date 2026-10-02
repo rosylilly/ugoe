@@ -1,11 +1,11 @@
 ---
 id: T0909
 title: UI: テーマの切り替えの設定 (OS に合わせる・ライト・ダーク) を 3 つのアプリに
-status: todo
+status: in-progress
 milestone: M8
 crates: [packages, apps/editor, apps/viewer, apps/studio, docs]
 depends_on: [T0723, T0663, T0801]
-assignee:
+assignee: claude-worker-T0909
 ---
 
 # T0909: テーマの切り替え

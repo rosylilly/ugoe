@@ -1,11 +1,11 @@
 ---
 id: T0664
 title: エディタ: パネルの移行 1 (インスペクタ・ツリー・パラメータ・タイムライン・ビューポートの道具)
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/editor, docs]
 depends_on: [T0663]
-assignee:
+assignee: claude-worker-T0664
 ---
 
 # T0664: エディタ: パネルの移行 1 (インスペクタ・ツリー・パラメータ・タイムライン・ビューポートの道具)

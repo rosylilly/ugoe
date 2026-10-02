@@ -1,11 +1,11 @@
 ---
 id: T0665
 title: エディタ: パネルの移行 2 (物理・ライティング・スロット・ポーズ・グルー・検証・AI・エージェント・書き出し・プレビュー)
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/editor, docs]
 depends_on: [T0663]
-assignee:
+assignee: claude-worker-T0665
 ---
 
 # T0665: エディタ: パネルの移行 2 (物理・ライティング・スロット・ポーズ・グルー・検証・AI・エージェント・書き出し・プレビュー)
