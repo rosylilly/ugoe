@@ -1,11 +1,11 @@
 ---
 id: T0809
 title: スタジオ: 仮想カメラ (macOS の Camera Extension)
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, docs]
 depends_on: [T0807]
-assignee:
+assignee: claude-worker-T0809
 ---
 
 # T0809: スタジオ: 仮想カメラ (macOS の Camera Extension)

@@ -1,11 +1,11 @@
 ---
 id: T0811
 title: スタジオ: 第三者のライセンスの表記 (MediaPipe などの同梱物) を出す画面
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, docs]
 depends_on: [T0803]
-assignee:
+assignee: claude-worker-T0811
 ---
 
 # T0811: スタジオのライセンスの表記
