@@ -21,7 +21,7 @@ pub use dress_up::{DressUpChange, DressUpError, TextureSource};
 // 受け手の口: 届いた値を基準値として書き、物理だけを進める (T0133)。
 mod follow;
 
-pub use follow::ParameterValuesError;
+pub use follow::{LipSyncInput, ParameterValuesError};
 
 // 読み込みの警告の種類 (T0412)。
 mod warning;
@@ -93,6 +93,10 @@ pub struct Puppet {
     base: Vec<f32>,
     /// 前フレームの `update` が最後に書き込んだパラメータ値 (ホストの書き換えの検出用)。
     output: Vec<f32>,
+    /// 直前の `update` (か `follow`) で物理の段に入る直前のパラメータ値 (受け手へ配る値。T0134)。
+    before_physics: Vec<f32>,
+    /// 直前の `update` でリップシンクの段が当てた音量と強さ (当てなければ `None`。T0134)。
+    lip_sync_applied: Option<LipSyncInput>,
     /// モデルの `avatar.tracking` を解決したトラッキングの対応。
     tracking_map: TrackingMap,
     tracking: Option<TrackingInput>,
@@ -131,6 +135,8 @@ impl Puppet {
             pose: PosePlayer::new(pose.clone()),
             pose_parts: Vec::new(),
             base: values.clone(),
+            before_physics: values.clone(),
+            lip_sync_applied: None,
             output: values,
             tracking_map,
             tracking: None,
@@ -402,14 +408,20 @@ impl Puppet {
         }
         // 8. 物理
         // 動的物理を使う設定では、ここで 1 段目の評価を行い、11. の評価が 2 段目になる。
+        self.before_physics.copy_from_slice(params.as_slice());
         if let Some(physics) = self.physics.as_mut().filter(|_| self.toggles.physics) {
             physics.update_instance(&mut self.instance, dt);
         }
         let params = self.instance.parameters_mut();
         // 9. リップシンク
+        self.lip_sync_applied = None;
         if self.toggles.lip_sync {
             let strength = self.motions.effect_group_weight(LIP_SYNC_GROUP);
             self.lip_sync.apply(params, strength);
+            self.lip_sync_applied = self
+                .lip_sync
+                .level()
+                .map(|level| LipSyncInput { level, strength });
         }
         self.output.copy_from_slice(params.as_slice());
 

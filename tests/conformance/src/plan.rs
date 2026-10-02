@@ -59,6 +59,9 @@ pub struct CaseSpec {
     /// 受け手として進めるか (計画の [`Case::follow`]。`time` と `"image": false` が要る)。
     #[serde(default)]
     pub follow: bool,
+    /// 受け手として進めるとき、指揮役がモデルのリップシンクの設定にフレームごとに変わる音量を当てるか (T0134)。
+    #[serde(default)]
+    pub lip_sync: bool,
     /// 光源 (描画だけに効く)。
     pub lighting: Option<Lighting>,
     /// 画像も比べるか (既定は比べる)。
@@ -136,11 +139,15 @@ pub struct Case {
     /// `follow` のケースでは常に `false` (`cases.json` の `effects` は指揮役だけに効き、指揮役は標準の目パチと呼吸を使う)。
     pub effects: bool,
     /// 受け手として進めるときの、各フレームのパラメータの値 (モデルの定義順。`steps` と同じ数。T0133)。
-    /// 空でなければ、実行器は `update(steps[i])` の代わりに `follow(follow[i], steps[i])` を呼ぶ。
-    /// 値は、物理を切った指揮役の `Puppet` を同じ `steps` で進めたときの各 `update` の後の値
-    /// ([`crate::reference::conductor_values`]。`docs/spec/motion.md#受け手として進める`)。
+    /// 空でなければ、実行器は `update(steps[i])` の代わりに `follow(follow[i], follow_lip_sync[i], steps[i])` を呼ぶ。
+    /// 値は、物理を切った指揮役の `Puppet` を同じ `steps` で進めたときの、各 `update` の物理の段に入る直前の値
+    /// ([`crate::reference::conductor_frames`]。`docs/spec/motion.md#受け手として進める`)。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub follow: Vec<Vec<f32>>,
+    /// 各フレームのリップシンクの入力 `[音量, 強さ]` (指揮役の `Puppet::lip_sync_applied`。当てなければ `null`。T0134)。
+    /// `follow` と同じ数。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub follow_lip_sync: Vec<Option<[f32; 2]>>,
     pub lighting: Option<Lighting>,
     /// 画像も比べるか。
     pub image: bool,
@@ -195,7 +202,7 @@ impl Plan {
     /// param <ID> <値>
     /// effects <0|1>
     /// update <dt>
-    /// follow <dt> <値> <値> ...
+    /// follow <dt> <リップシンクの音量 (無ければ -1)> <強さ> <値> <値> ...
     /// end
     /// ```
     ///
@@ -218,8 +225,14 @@ impl Plan {
                     let _ = writeln!(s, "update {dt}");
                 }
             } else {
-                for (dt, values) in case.steps.iter().zip(&case.follow) {
-                    let _ = write!(s, "follow {dt}");
+                for (i, (dt, values)) in case.steps.iter().zip(&case.follow).enumerate() {
+                    let [level, strength] = case
+                        .follow_lip_sync
+                        .get(i)
+                        .copied()
+                        .flatten()
+                        .unwrap_or([-1.0, 0.0]);
+                    let _ = write!(s, "follow {dt} {level} {strength}");
                     for v in values {
                         let _ = write!(s, " {v}");
                     }
@@ -339,11 +352,18 @@ fn case(
         steps,
         effects: spec.effects,
         follow: Vec::new(),
+        follow_lip_sync: Vec::new(),
         lighting: spec.lighting.clone(),
         image: spec.image,
         render_args: Vec::new(),
     };
     case.render_args = render_args(&case, spec.time.map(|t| (t, fps)));
+    if spec.lip_sync && !spec.follow {
+        return Err(Error::Invalid(format!(
+            "case `{}`: `lip_sync` needs `follow`",
+            case.name
+        )));
+    }
     if spec.follow {
         // 参照の画像は `ugoe render` で作るが、受け手として進める口を持たないので画像は比べない。
         if case.steps.is_empty() || case.image {
@@ -354,7 +374,12 @@ fn case(
         }
         // 目パチと呼吸は指揮役だけで使う (標準の設定)。受け手 (実行器) では切るので、`follow` を呼ばずに
         // `update` で進めた実行器は参照と合わない。
-        case.follow = crate::reference::conductor_values(&case, spec.effects)?;
+        let frames = crate::reference::conductor_frames(&case, spec.effects, spec.lip_sync)?;
+        case.follow_lip_sync = frames
+            .iter()
+            .map(|f| f.lip_sync.map(|l| [l.level, l.strength]))
+            .collect();
+        case.follow = frames.into_iter().map(|f| f.values).collect();
         case.effects = false;
     }
     Ok(case)

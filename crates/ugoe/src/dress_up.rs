@@ -294,6 +294,7 @@ impl Puppet {
         let new = instance.parameters();
         self.base = carry_values(old, &self.base, new);
         self.output = carry_values(old, &self.output, new);
+        self.before_physics = carry_values(old, &self.before_physics, new);
         self.tracking_map = ugoe_motion::TrackingMap::for_model(instance.compiled().model(), new);
         self.instance = instance;
         self.resolve_tracking_kept();

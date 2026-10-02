@@ -1063,8 +1063,8 @@ fn follow_matches_the_puppet() {
     for frame in 0..60 {
         let t = frame as f32 * DT;
         let values = [30.0 * (t * 6.0).sin(), 10.0 * (t * 4.0).cos()];
-        ok(unsafe { ugoe_puppet_follow(p.0, values.as_ptr(), values.len(), DT) });
-        native.follow(&values, DT).unwrap();
+        ok(unsafe { ugoe_puppet_follow(p.0, values.as_ptr(), values.len(), -1.0, 0.0, DT) });
+        native.follow(&values, None, DT).unwrap();
         for (i, drawable) in native.instance().drawables().iter().enumerate() {
             let mut positions = vec![f32::NAN; drawable.positions.len() * 2];
             ok(unsafe {
@@ -1078,14 +1078,14 @@ fn follow_matches_the_puppet() {
     // 受け付けない値は何も変えない。
     let before = (param(&p, "AngleX"), param(&p, "AngleZ"));
     let one = [0.0f32];
-    let code = unsafe { ugoe_puppet_follow(p.0, one.as_ptr(), one.len(), DT) };
+    let code = unsafe { ugoe_puppet_follow(p.0, one.as_ptr(), one.len(), -1.0, 0.0, DT) };
     assert_eq!(code, UGOE_ERROR_INVALID_ARGUMENT);
     assert!(text(ugoe_last_error()).contains("expected 2"));
     let nan = [0.0, f32::NAN];
     let code = unsafe { ugoe_puppet_set_base_values(p.0, nan.as_ptr(), nan.len()) };
     assert_eq!(code, UGOE_ERROR_INVALID_ARGUMENT);
     let values = [1.0f32, 2.0];
-    let code = unsafe { ugoe_puppet_follow(p.0, values.as_ptr(), values.len(), -1.0) };
+    let code = unsafe { ugoe_puppet_follow(p.0, values.as_ptr(), values.len(), -1.0, 0.0, -1.0) };
     assert_eq!(code, UGOE_ERROR_INVALID_ARGUMENT);
     let code = unsafe { ugoe_puppet_set_base_values(p.0, ptr::null(), 2) };
     assert_eq!(code, UGOE_ERROR_NULL_POINTER);
@@ -1095,4 +1095,32 @@ fn follow_matches_the_puppet() {
     ok(unsafe { ugoe_puppet_set_base_values(p.0, values.as_ptr(), values.len()) });
     ok(unsafe { ugoe_puppet_update(p.0, DT) });
     assert_eq!((param(&p, "AngleX"), param(&p, "AngleZ")), (1.0, 2.0));
+}
+
+/// 受け手のリップシンク (T0134): `ugoe_puppet_follow` の音量と強さは `ugoe::Puppet::follow` と同じに当たり、負の音量なら当てない。
+#[test]
+fn follow_applies_the_lip_sync_like_the_puppet() {
+    let model = fixtures::pose_and_effects();
+    let p = from_model(model.clone());
+    let mut native = Puppet::new(model).unwrap();
+    let values: Vec<f32> = native.instance().parameters().as_slice().to_vec();
+    let input = ugoe::LipSyncInput {
+        level: 0.8,
+        strength: 0.5,
+    };
+    ok(unsafe { ugoe_puppet_follow(p.0, values.as_ptr(), values.len(), 0.8, 0.5, DT) });
+    native.follow(&values, Some(input), DT).unwrap();
+    let mouth = param(&p, standard::MOUTH_OPEN_Y);
+    assert!((mouth - 0.4).abs() < 1e-6, "{mouth}");
+    let id = native
+        .instance()
+        .parameters()
+        .index_of(standard::MOUTH_OPEN_Y)
+        .unwrap();
+    assert_eq!(native.instance().parameters().get(id), mouth);
+
+    ok(unsafe { ugoe_puppet_follow(p.0, values.as_ptr(), values.len(), -1.0, 0.5, DT) });
+    assert_eq!(param(&p, standard::MOUTH_OPEN_Y), 0.0);
+    let code = unsafe { ugoe_puppet_follow(p.0, values.as_ptr(), values.len(), 0.5, f32::NAN, DT) };
+    assert_eq!(code, UGOE_ERROR_INVALID_ARGUMENT);
 }

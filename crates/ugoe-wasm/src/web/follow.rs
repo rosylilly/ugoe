@@ -1,8 +1,9 @@
-//! `WebPuppet` の受け手の口: 届いたパラメータの値を基準値として書き、物理だけを進める
-//! (`Puppet::set_base_values`・`Puppet::follow`。`docs/spec/motion.md#受け手として進める`、T0133)。
+//! `WebPuppet` の受け手の口: 届いたパラメータの値を基準値として書き、物理より後の段だけを進める
+//! (`Puppet::set_base_values`・`Puppet::follow`。`docs/spec/motion.md#受け手として進める`、T0133・T0134)。
 //!
 //! 値は `Float32Array` (パラメータの定義順。`parameter_ids()` と同じ並び) でまとめて渡す。
 
+use ugoe::LipSyncInput;
 use wasm_bindgen::prelude::*;
 
 use super::{WebPuppet, js_error};
@@ -31,17 +32,32 @@ impl WebPuppet {
         Ok(())
     }
 
-    /// 受け手として 1 フレーム進める: `values` を基準値として書き、物理とポーズの段だけを `dt` 秒進めて評価する。
+    /// 受け手として 1 フレーム進める: `values` を基準値として書き、物理 → リップシンク → ポーズ → 評価の順に `dt` 秒進める
+    /// (`Puppet::follow`。`update` の後半と同じ順)。
     ///
-    /// モーション・トラッキング・表情・目パチ・呼吸・リップシンクは通さない (値を作った指揮役で済んでいるため)。
-    /// 同じ `values` と `dt` の列を与えれば、物理を含めて同じ形になる (ネイティブの `Puppet::follow` とも許容誤差内で同じ)。
+    /// `values` は指揮役の物理の段に入る直前の値、`lip_sync_level` と `lip_sync_strength` は指揮役のリップシンクの音量と強さ
+    /// (`Puppet::values_before_physics`・`Puppet::lip_sync_applied`)。`lip_sync_level` を省くとリップシンクを当てない。
+    /// `lip_sync_strength` を省くと 1。リップシンクはこの `WebPuppet` のモデルの対象に当て、`set_lip_sync_level` の音量は使わない。
+    ///
+    /// モーション・トラッキング・表情・目パチ・呼吸は通さない (値を作った指揮役で済んでいるため)。
+    /// 同じ列を与えれば、物理を含めて同じ形になる (ネイティブの `Puppet::follow` とも許容誤差内で同じ)。
     /// 描くのは最後のフレームだけでよい。モデルが無い・数が違う・NaN を含むときは、何も変えずに例外を投げる。
-    pub fn follow(&mut self, values: &[f32], dt: f32) -> Result<(), JsError> {
+    pub fn follow(
+        &mut self,
+        values: &[f32],
+        dt: f32,
+        lip_sync_level: Option<f32>,
+        lip_sync_strength: Option<f32>,
+    ) -> Result<(), JsError> {
         let puppet = self
             .puppet
             .as_mut()
             .ok_or_else(|| JsError::new("no model is loaded"))?;
-        puppet.follow(values, dt).map_err(js_error)?;
+        let lip_sync = lip_sync_level.map(|level| LipSyncInput {
+            level,
+            strength: lip_sync_strength.unwrap_or(1.0),
+        });
+        puppet.follow(values, lip_sync, dt).map_err(js_error)?;
         self.dirty = false;
         Ok(())
     }

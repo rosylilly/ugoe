@@ -4,6 +4,8 @@
 //! 乗算色とスクリーン色・裏面カリング・乗算済みアルファへの変換の違いが画素に出るようにする。
 //! 1 つの要素が多くのマスクを読むモデル (`many-masks`) と、パラメータで入れ子のマスクが動くモデル
 //! (`moving-masks`。アニメーション中にマスクが 1 フレーム遅れないかを `before` で確かめる) も作る。
+//! `lip-sync-hair` は動的物理の髪で、リップシンクの対象を物理の入力 (`AngleX`) にしたもの
+//! (受け手が物理より後の段を同じ順に当てるかを確かめる。T0134)。
 //! もとは Godot の `build.mjs --conformance` の `conformance_bundles` (T0411) で、T0418 でここに移した。
 
 use std::path::{Path, PathBuf};
@@ -18,13 +20,14 @@ use ugoe_headless::{Rgba8, image};
 use crate::Error;
 
 /// 作るモデルの名前 (`<名前>.ugoe` に書く)。
-pub const NAMES: [&str; 6] = [
+pub const NAMES: [&str; 7] = [
     "nested-masks",
     "mixed-masks",
     "intersection-masks",
     "blend-modes",
     "many-masks",
     "moving-masks",
+    "lip-sync-hair",
 ];
 
 /// すべてのモデルを `dir` に書き、書いたパスを返す。
@@ -34,6 +37,9 @@ pub fn write_all(dir: &Path) -> Result<Vec<PathBuf>, Error> {
     let mut paths = Vec::new();
     for name in NAMES {
         let mut bundle = Bundle::new(model(name)?);
+        if name == "lip-sync-hair" {
+            bundle.physics = Some(fixtures::dynamic_hair_settings());
+        }
         bundle.textures = vec![TextureData {
             format: TextureFormat::Png,
             bytes: png.clone(),
@@ -57,6 +63,7 @@ fn model(name: &str) -> Result<Model, Error> {
         "blend-modes" => blend_modes(),
         "many-masks" => many_masks(),
         "moving-masks" => moving_masks(),
+        "lip-sync-hair" => lip_sync_hair(),
         other => return Err(Error::Invalid(format!("unknown generated model `{other}`"))),
     })
 }
@@ -94,6 +101,14 @@ fn tint(mesh: &mut Mesh, multiply: Rgb, screen: Rgb) {
         k.multiply_color = multiply;
         k.screen_color = screen;
     }
+}
+
+/// 動的物理の髪 (`fixtures::dynamic_hair`。物理は [`write_all`] が付ける) で、リップシンクの対象を物理の入力の `AngleX` にしたもの。
+fn lip_sync_hair() -> Model {
+    let mut model = colored(fixtures::dynamic_hair());
+    model.meta.name = "lip_sync_hair".into();
+    model.effects.lip_sync.parameters = vec![ugoe::model::standard::ANGLE_X.into()];
+    model
 }
 
 fn colored(mut model: Model) -> Model {

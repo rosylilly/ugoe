@@ -19,30 +19,60 @@ pub fn evaluate(case: &Case) -> Result<Frame, Error> {
     Ok(Frame::from_instance(puppet.instance()))
 }
 
-/// 受け手として進めるケースの各フレームの値: 物理を切った指揮役の `Puppet` を `case.steps` で進め、
-/// 各 `update` の後のパラメータの値を並べる (ADR 0028 の 3.、`docs/spec/motion.md#受け手として進める`)。
-/// `effects` なら、指揮役は標準の目パチと呼吸 (`EyeBlink::standard()`・`Breath::standard()`) を使う (見本のモデルは目パチと呼吸の対象を
-/// 持たないことがあるので、モデルの設定ではなく標準の設定で値を動かす)。
-pub fn conductor_values(case: &Case, effects: bool) -> Result<Vec<Vec<f32>>, Error> {
-    let mut conductor = conductor_with(case, effects, false)?;
-    Ok(case
-        .steps
-        .iter()
-        .map(|&dt| {
-            conductor.update(dt);
-            conductor.instance().parameters().as_slice().to_vec()
-        })
-        .collect())
+/// 受け手として進めるケースの 1 フレーム分の入力 (`Puppet::follow` の引数)。
+#[derive(Debug, Clone, PartialEq)]
+pub struct FollowFrame {
+    pub values: Vec<f32>,
+    pub lip_sync: Option<ugoe::LipSyncInput>,
 }
 
-/// [`conductor_values`] の指揮役 (物理は `physics` のとおり)。
-fn conductor_with(case: &Case, effects: bool, physics: bool) -> Result<Puppet, Error> {
+/// 受け手として進めるケースの各フレームの入力: 物理を切った指揮役の `Puppet` を `case.steps` で進め、各 `update` の
+/// 物理の段に入る直前の値とリップシンクの入力を並べる (ADR 0028 の 3.、`docs/spec/motion.md#受け手として進める`)。
+///
+/// `effects` なら、指揮役は標準の目パチと呼吸 (`EyeBlink::standard()`・`Breath::standard()`) を使う (見本のモデルは目パチと呼吸の対象を
+/// 持たないことがあるので、モデルの設定ではなく標準の設定で値を動かす)。`lip_sync` なら、指揮役はモデルのリップシンクの設定に
+/// フレームごとに変わる音量 ([`lip_sync_level`]) を当てる。
+pub fn conductor_frames(
+    case: &Case,
+    effects: bool,
+    lip_sync: bool,
+) -> Result<Vec<FollowFrame>, Error> {
+    let mut frames = Vec::new();
+    drive(case, effects, lip_sync, false, |conductor| {
+        frames.push(FollowFrame {
+            values: conductor.values_before_physics().to_vec(),
+            lip_sync: conductor.lip_sync_applied(),
+        });
+    })?;
+    Ok(frames)
+}
+
+/// 指揮役が `i` 番目のフレームで当てるリップシンクの音量 (0〜1 を行き来する)。
+pub fn lip_sync_level(i: usize) -> f32 {
+    (i % 7) as f32 / 6.0
+}
+
+/// [`conductor_frames`] の指揮役を作って `case.steps` で進め、各 `update` の後に `each` を呼ぶ (物理は `physics` のとおり)。
+fn drive(
+    case: &Case,
+    effects: bool,
+    lip_sync: bool,
+    physics: bool,
+    mut each: impl FnMut(&Puppet),
+) -> Result<Puppet, Error> {
     let mut conductor = loaded(case)?;
     if effects {
+        let lip_sync = conductor
+            .instance()
+            .compiled()
+            .model()
+            .effects
+            .lip_sync
+            .clone();
         conductor.set_effects(ugoe::model::effects::Effects {
             eye_blink: ugoe::model::effects::EyeBlink::standard(),
             breath: ugoe::model::effects::Breath::standard(),
-            ..Default::default()
+            lip_sync,
         });
     }
     conductor.set_toggles(ugoe::Toggles {
@@ -51,6 +81,13 @@ fn conductor_with(case: &Case, effects: bool, physics: bool) -> Result<Puppet, E
         breath: effects,
         ..ugoe::Toggles::default()
     });
+    for (i, &dt) in case.steps.iter().enumerate() {
+        if lip_sync {
+            conductor.set_lip_sync_level(Some(lip_sync_level(i)));
+        }
+        conductor.update(dt);
+        each(&conductor);
+    }
     Ok(conductor)
 }
 
@@ -74,8 +111,16 @@ pub fn puppet(case: &Case) -> Result<Puppet, Error> {
                 puppet.update(dt);
             }
         } else {
-            for (&dt, values) in case.steps.iter().zip(&case.follow) {
-                puppet.follow(values, dt).map_err(|e| invalid(case, e))?;
+            for (i, (&dt, values)) in case.steps.iter().zip(&case.follow).enumerate() {
+                let lip_sync = case
+                    .follow_lip_sync
+                    .get(i)
+                    .copied()
+                    .flatten()
+                    .map(|[level, strength]| ugoe::LipSyncInput { level, strength });
+                puppet
+                    .follow(values, lip_sync, dt)
+                    .map_err(|e| invalid(case, e))?;
             }
         }
     }
@@ -187,24 +232,34 @@ mod tests {
         assert_eq!(Frame::from_instance(puppet.instance()), expected);
     }
 
-    /// 受け手として進めたケース (T0133) は、物理を有効にした 1 つの `Puppet` で同じ列を進めた結果と許容誤差内で同じ
-    /// (ADR 0028 の「10. 一致の検査」の 2 つ目)。見本は物理の入力にリップシンクの対象を使っていない。
+    /// 受け手として進めたケース (T0133・T0134) は、物理を有効にした 1 つの `Puppet` で同じ列を進めた結果と許容誤差内で同じ
+    /// (ADR 0028 の「10. 一致の検査」の 2 つ目)。リップシンクの対象を物理の入力にするケース (`follow-lip-sync`) も含む。
     #[test]
     fn follow_cases_match_a_single_puppet_with_physics() {
         let plan = plan();
         let cases: Vec<_> = plan.cases.iter().filter(|c| !c.follow.is_empty()).collect();
-        assert!(cases.len() >= 2);
+        assert!(cases.len() >= 3);
+        // 指揮役の目パチと呼吸は `effects` で決まるが、計画には残らないので、どの `follow` のケースも `effects` を使う約束にする。
         for case in cases {
             assert_eq!(case.follow.len(), case.steps.len());
             let followed = evaluate(case).unwrap();
-            // 物理を有効にした 1 つの `Puppet` (指揮役と同じ目パチと呼吸) で同じ列を進める。
-            let mut single = conductor_with(case, true, true).unwrap();
-            for &dt in &case.steps {
-                single.update(dt);
-            }
+            // 物理を有効にした 1 つの `Puppet` (指揮役と同じ目パチ・呼吸・リップシンク) で同じ列を進める。
+            let lip_sync = case.follow_lip_sync.iter().any(Option::is_some);
+            let single = drive(case, true, lip_sync, true, |_| {}).unwrap();
             let expected = Frame::from_instance(single.instance());
             let errors = crate::compare::frames(&expected, &followed);
             assert!(errors.is_empty(), "{}: {errors:?}", case.name);
+            // リップシンクの入力を渡さない実行器は合わない (物理の入力が変わる)。
+            if lip_sync {
+                let mut without = case.clone();
+                without.follow_lip_sync.clear();
+                let without = evaluate(&without).unwrap();
+                assert!(
+                    !crate::compare::frames(&without, &followed).is_empty(),
+                    "{}",
+                    case.name
+                );
+            }
             // `follow` を呼ばずに `update` で進める実行器は合わない (目パチと呼吸は指揮役の値にしか無い)。
             let mut updated = case.clone();
             updated.follow.clear();

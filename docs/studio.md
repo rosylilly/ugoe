@@ -33,10 +33,11 @@
 | メッセージ | 中身 | いつ |
 | --- | --- | --- |
 | `scene` | `revision`・モデルの鍵 (受け手が読む場所)・付けるモジュールの組 (合成の順)・ライティング・位置と大きさと回転・背景・パラメータの ID の並び | 接続したとき、シーンが変わったとき |
-| `frame` | `seq`・`revision`・`dt`・`values` (`scene` の ID の並びの順の `f32`) | 刻みごと (30 / 60 / 120 回/秒) |
+| `frame` | `seq`・`revision`・`dt`・`values` (指揮役の物理の段に入る直前の値。`scene` の ID の並びの順の `f32`)・`lip_sync` (リップシンクの音量と強さの 2 つの `f32`。当てなければ無し) | 刻みごと (30 / 60 / 120 回/秒) |
 | `reset` | `seq` (このフレームを適用する前に物理をリセットする) | 着せ替え・モデルの読み直しなど |
 
-- 受け手は `frame` を `seq` の順に 1 つずつ適用する (`Puppet::follow(values, dt)`。`values` を基準値として書き、物理とポーズだけを進める。
+- 指揮役は `update` の後の `Puppet::values_before_physics()` と `Puppet::lip_sync_applied()` を `values` と `lip_sync` にする (T0134)。
+- 受け手は `frame` を `seq` の順に 1 つずつ適用する (`Puppet::follow(values, lip_sync, dt)`。`values` を基準値として書き、物理・リップシンク・ポーズを `update` と同じ順に進める。
   前のフレームの出力と同じ値でも基準値になる。[motion.md#受け手として進める](spec/motion.md#受け手として進める)、T0133)。`revision` が知らない版なら、`scene` を待つ。
 - `seq` が飛んだら (切断など)、最新の `scene` から作り直し、物理をリセットして続きから適用する。
 - 出力ウィンドウへは Tauri の `Channel` で、`values` はバイト列 (`Float32Array`) で送る。ブラウザソースへは WebSocket のバイナリのメッセージで送る。

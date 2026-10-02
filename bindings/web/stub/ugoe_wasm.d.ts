@@ -28,7 +28,12 @@ export class WebPuppet {
   expression_names(): string[];
   expressions_json(): string;
   fit(): void;
-  follow(values: Float32Array, dt: number): void;
+  follow(
+    values: Float32Array,
+    dt: number,
+    lip_sync_level?: number | null,
+    lip_sync_strength?: number | null,
+  ): void;
   has_model(): boolean;
   has_physics(): boolean;
   height(): number;

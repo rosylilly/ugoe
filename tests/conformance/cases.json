@@ -192,6 +192,17 @@
       "effects": true,
       "follow": true,
       "image": false
+    },
+    {
+      "name": "lip-sync-follow",
+      "summary": "A follower (T0134) of a model whose lip sync drives a physics input (AngleX of dynamic hair): the conductor sends the values before physics and the lip sync level and strength, and follow applies physics, then lip sync, in the order of a single puppet.",
+      "generated": "lip-sync-hair",
+      "parameters": { "AngleX": 20 },
+      "time": 1,
+      "effects": true,
+      "follow": true,
+      "lip_sync": true,
+      "image": false
     }
   ]
 }

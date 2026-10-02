@@ -702,14 +702,20 @@ UgoeResult ugoe_puppet_set_base_values(struct UgoePuppet *puppet,
                                        const float *values,
                                        size_t count);
 
-// 受け手として 1 フレーム進める: `values` (`count` 個) を基準値として書き、物理とポーズの段だけを `dt` 秒進めて評価する。
+// 受け手として 1 フレーム進める: `values` (`count` 個) を基準値として書き、物理 → リップシンク → ポーズ → 評価の順に
+// `dt` 秒進める (`ugoe_puppet_update` の後半と同じ順。`ugoe::Puppet::follow`)。
 //
-// モーション・トラッキング・表情・目パチ・呼吸・リップシンクは通さない (値を作った指揮役で済んでいるため)。
-// 同じ `values` と `dt` の列を与えれば、物理を含めて同じ形になる。モーションのイベント
+// `values` は指揮役の物理の段に入る直前の値 (`ugoe::Puppet::values_before_physics`)、`lip_sync_level` と
+// `lip_sync_strength` は指揮役のリップシンクの音量と強さ (`ugoe::Puppet::lip_sync_applied`)。`lip_sync_level` が負なら
+// リップシンクを当てない。リップシンクはこの `UgoePuppet` のモデルの対象に当て、`ugoe_puppet_set_lip_sync_level` の音量は使わない。
+//
+// モーション・トラッキング・表情・目パチ・呼吸は通さない (値を作った指揮役で済んでいるため)。
+// 同じ列を与えれば、物理を含めて同じ形になる。モーションのイベント
 // (`ugoe_puppet_motion_event_count`) は直前の `ugoe_puppet_update` のまま。
 // 呼ぶと、この `UgoePuppet` から借りた頂点位置と描画順のポインタは無効になる。
 //
-// `count` がパラメータの数と違うか NaN を含むか、`dt` が負か有限でなければ `UGOE_ERROR_INVALID_ARGUMENT` を返し、何も変えない。
+// `count` がパラメータの数と違う・NaN を含む・リップシンクの値が NaN・`dt` が負か有限でないときは
+// `UGOE_ERROR_INVALID_ARGUMENT` を返し、何も変えない。
 //
 // # Safety
 //
@@ -717,6 +723,8 @@ UgoeResult ugoe_puppet_set_base_values(struct UgoePuppet *puppet,
 UgoeResult ugoe_puppet_follow(struct UgoePuppet *puppet,
                               const float *values,
                               size_t count,
+                              float lip_sync_level,
+                              float lip_sync_strength,
                               float dt);
 
 // 当たり判定 (`Model::hit_areas`) の数。

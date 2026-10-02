@@ -9,7 +9,8 @@
  *
  * - update の行が無いケースは、すべての段を止めて ugoe_puppet_update(0) を 1 回呼ぶ (時間を進めない評価)。
  * - update の行があるケースは、目パチと呼吸を effects のとおりにし、ほかの段を動かして、その dt で順に呼ぶ。
- * - follow の行 (受け手として進めるケース。T0133) は、update の代わりに ugoe_puppet_follow(値, dt) を順に呼ぶ。
+ * - follow の行 (受け手として進めるケース。T0133・T0134) は、update の代わりに
+ *   ugoe_puppet_follow(値, リップシンクの音量, 強さ, dt) を順に呼ぶ。
  */
 #include <errno.h>
 #include <stdbool.h>
@@ -51,6 +52,7 @@ typedef struct {
     /* follow の行の値 (steps と同じ番号)。follow_count が 0 なら update で進める。 */
     float *follow[MAX_STEPS];
     size_t follow_len[MAX_STEPS];
+    float follow_lip_sync[MAX_STEPS][2];
     size_t follow_count;
 } Case;
 
@@ -175,7 +177,9 @@ static bool run_case(const Case *c, const char *out_dir) {
         CHECK(ugoe_puppet_set_stage_enabled(puppet, UGOE_STAGE_BREATH, c->effects));
         for (size_t i = 0; i < c->step_count; i++) {
             if (c->follow_count > 0) {
-                CHECK(ugoe_puppet_follow(puppet, c->follow[i], c->follow_len[i], c->steps[i]));
+                CHECK(ugoe_puppet_follow(puppet, c->follow[i], c->follow_len[i],
+                                         c->follow_lip_sync[i][0], c->follow_lip_sync[i][1],
+                                         c->steps[i]));
             } else {
                 CHECK(ugoe_puppet_update(puppet, c->steps[i]));
             }
@@ -292,14 +296,23 @@ int main(int argc, char **argv) {
             if (c.step_count == MAX_STEPS || c.follow_count > 0) goto invalid;
             c.steps[c.step_count++] = parse_float(arg);
         } else if (strcmp(line, "follow") == 0 && arg) {
-            /* follow <dt> <値> <値> ... */
+            /* follow <dt> <リップシンクの音量 (無ければ -1)> <強さ> <値> <値> ... */
             if (c.step_count == MAX_STEPS || c.follow_count != c.step_count) goto invalid;
             size_t n = 0;
             for (const char *p = arg; *p; p++) n += *p == ' ';
             float *values = malloc((n > 0 ? n : 1) * sizeof *values);
             if (!values) goto invalid;
             char *token = strtok(arg, " ");
+            float *lip_sync = c.follow_lip_sync[c.follow_count];
             c.steps[c.step_count++] = parse_float(token);
+            for (int k = 0; k < 2; k++) {
+                token = strtok(NULL, " ");
+                if (!token) {
+                    free(values);
+                    goto invalid;
+                }
+                lip_sync[k] = parse_float(token);
+            }
             size_t len = 0;
             while ((token = strtok(NULL, " ")) != NULL && len < n) values[len++] = parse_float(token);
             c.follow[c.follow_count] = values;

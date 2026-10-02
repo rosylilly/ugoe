@@ -73,7 +73,7 @@ CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just confor
 | --- | --- |
 | `name` / `summary` | 名前 (出力のファイル名。英数字・`-`・`_`) と説明 |
 | `model` | `.ugoe` かモデルの JSON (リポジトリのルートからの相対パス) |
-| `generated` | `model` の代わりに、[`src/bundles.rs`](src/bundles.rs) が作るモデルの名前 (`nested-masks`・`mixed-masks`・`intersection-masks`・`blend-modes`・`many-masks`・`moving-masks`) |
+| `generated` | `model` の代わりに、[`src/bundles.rs`](src/bundles.rs) が作るモデルの名前 (`nested-masks`・`mixed-masks`・`intersection-masks`・`blend-modes`・`many-masks`・`moving-masks`・`lip-sync-hair`) |
 | `spec` | `spec/examples/<例>` を書くと、その `expected.json` のケースごとに展開する (`spec-<例>-<番号>`。モデルとパラメータはそこから取る) |
 | `modules` | 付ける `.ugoemod` (付ける順) |
 | `parameters` | パラメータの値 (値域の外はクランプされる) |
@@ -81,6 +81,7 @@ CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just confor
 | `time` / `fps` | 時間を進める秒数と 1 秒あたりの `update` の回数 (既定 60)。`ugoe render --time --fps` と同じ |
 | `effects` | 時間を進めるときに目パチと呼吸を使うか (既定 `false`) |
 | `follow` | 受け手として進めるか (既定 `false`。T0133)。`time` と `"image": false` が要る。計画は、物理を切った指揮役の `Puppet` (`effects` なら標準の目パチと呼吸を使う) を `time` の列で進めた各フレームの値を `follow` に持ち、実行器は `update` の代わりに `follow(値, dt)` を呼ぶ (下の「実行器の約束」の 3) |
+| `lip_sync` | `follow` のケースで、指揮役がモデルのリップシンクの設定にフレームごとに変わる音量を当てるか (既定 `false`。T0134)。計画の `follow_lip_sync` に各フレームの `[音量, 強さ]` が入る |
 | `lighting` | 光源 (画像だけに効く)。形は `WebPuppet::set_lighting_json` と同じ |
 | `image` | 画像も比べるか (既定 `true`) |
 
@@ -99,9 +100,10 @@ CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just confor
    参照は `ModelInstance::update` 1 回で、`ugoe render` の `--time` なしと同じ)。
    `steps` があれば、目パチと呼吸を `effects` のとおりにし、ほかの段は動かして、`steps` の `dt` で順に `update` する
    (`ugoe render --time` と同じ列。実行器では `dt` を計算しない)。
-   計画に `follow` (各フレームのパラメータの値。モデルの定義順で `steps` と同じ数) があれば、`update(steps[i])` の代わりに
-   受け手の口 (C ABI の `ugoe_puppet_follow`・wasm の `follow`) で `follow(follow[i], steps[i])` を呼ぶ (`plan.txt` では
-   `follow <dt> <値> ...` の行。T0133)。このケースの `effects` は常に `false`。受け手の口を持たないバインディング (今は Unity と Godot) は、
+   計画に `follow` (各フレームの、指揮役の物理の段に入る直前のパラメータの値。モデルの定義順で `steps` と同じ数) があれば、
+   `update(steps[i])` の代わりに受け手の口 (C ABI の `ugoe_puppet_follow`・wasm の `follow`) で、`follow[i]` と
+   `follow_lip_sync[i]` (リップシンクの `[音量, 強さ]`。無いか `null` なら当てない) と `steps[i]` を渡す (`plan.txt` では
+   `follow <dt> <音量 (無ければ -1)> <強さ> <値> ...` の行。T0133・T0134)。このケースの `effects` は常に `false`。受け手の口を持たないバインディング (今は Unity と Godot) は、
    比べ合わせ (`src/main.rs` の `FOLLOW_BINDINGS`) が `skip` にする。
    `before` があるとき、値を変えてから描画に反映するまでにフレームの遅れが入りうる実行器 (Godot) は、先に `before` の値で
    数フレーム描き、次のフレームで `parameters` にして上の評価をし、その直後のフレームを結果にする。同期して評価・描画する実行器
