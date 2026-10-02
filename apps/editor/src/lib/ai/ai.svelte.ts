@@ -1,6 +1,7 @@
 // AI の設定と同意の、画面全体で共有する状態 (docs/editor.md#ai-の設定と送信の同意)。
 // AI の機能 (T0637 の提案など) は `aiSettings.canSend` で有効・無効を決め、送るときは
 // `withConsent(call, consentPrompt.ask)` を使う。
+import { errorText } from "../errors";
 import { type AiSettings, type ConsentAnswer, type DisclosureView, ipc } from "../ipc";
 import { aiBlockedReason } from "./providers";
 
@@ -53,7 +54,7 @@ export class AiSettingsState {
       this.error = null;
       return true;
     } catch (e) {
-      this.error = String(e);
+      this.error = errorText(e);
       return false;
     }
   }

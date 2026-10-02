@@ -12,6 +12,7 @@
 -->
 <script lang="ts">
 import { type Snippet, untrack } from "svelte";
+import { errorText } from "../errors";
 import type { ViewportController, ViewportModel } from "./controller.svelte";
 import { saveViewportScreenshot } from "./saveScreenshot";
 
@@ -49,10 +50,7 @@ async function screenshot() {
     const path = await saveViewportScreenshot(controller);
     if (path !== null) showShotNotice(`Saved screenshot to ${path}`, false);
   } catch (e) {
-    showShotNotice(
-      `Cannot save the screenshot: ${e instanceof Error ? e.message : String(e)}`,
-      true,
-    );
+    showShotNotice(`Cannot save the screenshot: ${errorText(e)}`, true);
   } finally {
     capturing = false;
   }

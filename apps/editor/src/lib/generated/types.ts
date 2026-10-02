@@ -165,13 +165,13 @@ claimed: number | null,
  */
 satisfied: number, 
 /**
- * エラー (1 つでもあれば準拠していない) の説明。
+ * エラー (1 つでもあれば準拠していない)。コードは `avatar.*` (`docs/editor.md#エラーと警告のコード`)。
  */
-errors: Array<string>, 
+errors: Array<Message>, 
 /**
- * 警告 (準拠は妨げない) の説明。
+ * 警告 (準拠は妨げない)。コードは `avatar.*`。
  */
-warnings: Array<string>, };
+warnings: Array<Message>, };
 
 /**
  * 標準の当たり判定の名前と `HitArea` の対応。
@@ -929,7 +929,7 @@ discovery: string | null,
 /**
  * 始められなかった理由。
  */
-error: string | null, clients: Array<BridgeClient>, 
+error: Message | null, clients: Array<BridgeClient>, 
 /**
  * 答えを待っている確認 (画面を開き直したときに出し直す)。
  */
@@ -1008,6 +1008,32 @@ draw_order: number, multiply_color: Rgb, screen_color: Rgb,
  * マスクの効き具合 (0〜1、既定 1)。範囲外の値はランタイムがクランプする。
  */
 mask_strength: number, };
+
+/**
+ * 画面に出すエラー・警告・問題 (ADR 0029)。Tauri のコマンドのエラーもこの形で返す。
+ */
+export type Message = { 
+/**
+ * 安定した識別子 (`project.not_a_project` など)。一覧は `docs/editor.md#エラーと警告のコード`。
+ */
+code: string, 
+/**
+ * 文に差し込む値。
+ */
+args: { [key in string]: MessageArg }, 
+/**
+ * 英語の文 (ログ・MCP・CLI・開発者向け。カタログに無いコードのときは画面もこれを出す)。
+ */
+message: string, 
+/**
+ * 原因になったエラー (`proposal.rejected` の中の `edit.*` など)。`message` は原因の文も含む。
+ */
+cause?: Message, };
+
+/**
+ * 文に差し込む値。
+ */
+export type MessageArg = string | number;
 
 /**
  * 明示的に実行したミラー ([`crate::Command::MirrorKeyforms`]) の結果 (`ApplyReport::mirrored`)。
@@ -1111,9 +1137,9 @@ export type ModuleExportReport = {
  */
 bytes: number, 
 /**
- * 書き出しはしたが知らせたいこと。
+ * 書き出しはしたが知らせたいこと (コードは `module.*`)。
  */
-warnings: Array<string>, 
+warnings: Array<Message>, 
 /**
  * アトラス化したときの結果 (書き出しの設定 `editor.export` の `atlas`)。しなければ `null`。
  */
@@ -1136,14 +1162,26 @@ slot: string,
  */
 base_slots: Array<string>, 
 /**
- * 元のエラーの文。
- */
-message: string, 
-/**
  * `base_needs_physics` のとき、リグから外せば開ける、本体に無い衝突体への参照 (`open_module_with_base` の
  * `drop_colliders`。外すことを利用者に確かめてから開く。T0661)。外しても開けない・ほかの種類なら空。
  */
-collider_references: Array<ColliderReference>, };
+collider_references: Array<ColliderReference>, 
+/**
+ * 安定した識別子 (`project.not_a_project` など)。一覧は `docs/editor.md#エラーと警告のコード`。
+ */
+code: string, 
+/**
+ * 文に差し込む値。
+ */
+args: { [key in string]: MessageArg }, 
+/**
+ * 英語の文 (ログ・MCP・CLI・開発者向け。カタログに無いコードのときは画面もこれを出す)。
+ */
+message: string, 
+/**
+ * 原因になったエラー (`proposal.rejected` の中の `edit.*` など)。`message` は原因の文も含む。
+ */
+cause?: Message, };
 
 /**
  * モジュールのプロジェクトが本体の問題で開けない・読み直せないときの、問題の種類 (直し方を選ぶ)。
@@ -1722,7 +1760,19 @@ export type PsdImportWarning = {
  * レイヤーの名前の列 (外側のグループから順に、最後がレイヤー自身)。
  * ドキュメント全体についての警告では空。
  */
-path: Array<string>, message: string, };
+path: Array<string>, 
+/**
+ * 安定した識別子 (`psd.*`。`docs/editor.md#エラーと警告のコード`)。
+ */
+code: string, 
+/**
+ * 文に差し込む値。
+ */
+args: { [key in string]: MessageArg }, 
+/**
+ * 英語の文 (レイヤーのパスを含まない)。
+ */
+message: string, };
 
 /**
  * 自動の作り直しで失敗したが、コマンドは拒否せずに続けたこと (`docs/editor.md#推定とミラー`)。
@@ -1741,6 +1791,14 @@ target: KeyformTarget,
  * ミラー元 (`mirror_source`) の要素。
  */
 source: KeyformTarget, 
+/**
+ * 安定した識別子 (いまは `inference.mirror_failed` だけ。`docs/editor.md#エラーと警告のコード`)。
+ */
+code: string, 
+/**
+ * 文に差し込む値 (`target`・`source`・`detail`)。
+ */
+args: { [key in string]: MessageArg }, 
 /**
  * 失敗の理由 (`ugoe_rigging::InferError` の表記)。
  */

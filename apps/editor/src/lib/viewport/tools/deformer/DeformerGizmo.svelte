@@ -16,6 +16,7 @@
 -->
 <script lang="ts">
 import type { EditorDocument } from "../../../document.svelte";
+import { errorText } from "../../../errors";
 import { ipc, type Keyform } from "../../../ipc";
 import {
   cellIndex,
@@ -331,7 +332,7 @@ async function commit(d: Drag): Promise<void> {
     }
     error = doc.error;
   } catch (err) {
-    error = String(err);
+    error = errorText(err);
   } finally {
     busy = false;
     drag = null;

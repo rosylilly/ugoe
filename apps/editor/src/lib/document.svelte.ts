@@ -1,6 +1,8 @@
 // バックエンドが持つドキュメント (モデルの正となる状態) の、フロントエンド側の写し。
 // 編集は必ず IPC の Command で行い、その後 refresh() で読み直す (docs/editor.md)。
+
 import { isEmptyModel } from "./emptyState";
+import { errorText } from "./errors";
 import {
   type ApplyReport,
   type Command,
@@ -67,7 +69,7 @@ export class EditorDocument {
       this.error = null;
       this.revision += 1;
     } catch (e) {
-      this.error = String(e);
+      this.error = errorText(e);
     }
   }
 
@@ -105,7 +107,7 @@ export class EditorDocument {
     try {
       await action();
     } catch (e) {
-      this.error = String(e);
+      this.error = errorText(e);
       return;
     }
     await this.refresh();

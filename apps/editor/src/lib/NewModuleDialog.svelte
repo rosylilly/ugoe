@@ -4,6 +4,7 @@
   スロットのない本体は、本体のプロジェクトの「Slots」タブでスロットを足してから選ぶ。Esc で閉じる。
 -->
 <script lang="ts">
+import { errorText } from "./errors";
 import { fileDialogs } from "./fileDialogs";
 import { BUNDLE_FILTER } from "./filePaths";
 import { type BaseSummary, ipc } from "./ipc";
@@ -58,7 +59,7 @@ async function chooseBase(kind: "project" | "bundle") {
     error = null;
     selectSlot(base.slots[0]?.id ?? null);
   } catch (e) {
-    error = String(e);
+    error = errorText(e);
   } finally {
     busy = false;
   }
@@ -76,7 +77,7 @@ async function create() {
     await oncreate(basePath, slot, name.trim());
     error = null;
   } catch (e) {
-    error = String(e);
+    error = errorText(e);
   } finally {
     busy = false;
   }

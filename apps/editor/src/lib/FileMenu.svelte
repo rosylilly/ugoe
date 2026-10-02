@@ -9,6 +9,7 @@
 import BaseChangeDialog from "./BaseChangeDialog.svelte";
 import ExportPanel from "./ExportPanel.svelte";
 import ExternalChangeDialog from "./ExternalChangeDialog.svelte";
+import { errorText } from "./errors";
 import { exportSummary, moduleExportSummary } from "./exportSummary";
 import {
   baseAction,
@@ -121,7 +122,7 @@ export async function refresh() {
     status = await ipc.projectStatus();
     moduleInfo = await ipc.moduleStatus();
   } catch (e) {
-    message = String(e);
+    message = errorText(e);
   }
 }
 
@@ -149,7 +150,7 @@ async function run(
     if (reload !== "none") onchange(reload === "replaced", reload === "reloaded");
     return true;
   } catch (e) {
-    message = String(e);
+    message = errorText(e);
     return false;
   }
 }
@@ -299,7 +300,12 @@ function perform(kind: PathAction, path: string): Promise<boolean> {
     case "exportModule":
       return run(async () => {
         const report = await ipc.exportModule(path);
-        warnings = report.warnings.map((message) => ({ path: [], message }));
+        warnings = report.warnings.map((w) => ({
+          path: [],
+          code: w.code,
+          args: w.args,
+          message: w.message,
+        }));
         exportLines = moduleExportSummary(report);
         notice = `Exported to ${path}`;
         return undefined;
@@ -376,7 +382,7 @@ async function relocateBase(base: string | null, slot: string | null): Promise<b
         : `Moved to slot ${slot}. Save to remember it.`;
     return true;
   } catch (e) {
-    message = String(e);
+    message = errorText(e);
     return false;
   }
 }
@@ -448,7 +454,7 @@ async function pick(kind: PathAction) {
       lastDir = parentDir(opened) ?? lastDir;
     }
   } catch (e) {
-    message = String(e);
+    message = errorText(e);
   } finally {
     busy = false;
   }
@@ -536,7 +542,7 @@ async function reloadBase(auto = false) {
       ? "Reloaded the base model: it was changed outside the editor"
       : "Reloaded the base model";
   } catch (e) {
-    message = String(e);
+    message = errorText(e);
   } finally {
     busy = false;
   }

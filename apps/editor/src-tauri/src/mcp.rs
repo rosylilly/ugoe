@@ -21,7 +21,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 use ts_rs::TS;
-use ugoe_editor_core::{Document, export_bundle_with_settings};
+use ugoe_editor_core::{Coded, Document, Message, export_bundle_with_settings};
 use ugoe_mcp::host::{Action, Approvals, Change, HostError, Lent, Opening};
 use ugoe_mcp::http::generate_token;
 use ugoe_mcp::mcpb::{Bundle, Platform};
@@ -29,6 +29,7 @@ use ugoe_mcp::wsl::WslPaths;
 use ugoe_mcp::{BridgeOptions, DocumentHost, EditorBridge};
 
 use crate::AppState;
+use crate::error::{EditorError, IpcResult};
 use crate::project::ProjectSession;
 
 /// 設定のファイル (アプリの設定のディレクトリの下)。トークンを含むので Unix では 0600 で書く。
@@ -121,7 +122,7 @@ pub struct McpBridgeStatus {
     /// 発見用のファイル (`ugoe-mcp --editor` が読む)。
     pub discovery: Option<String>,
     /// 始められなかった理由。
-    pub error: Option<String>,
+    pub error: Option<Message>,
     pub clients: Vec<BridgeClient>,
     /// 答えを待っている確認 (画面を開き直したときに出し直す)。
     pub pending: Vec<ApprovalRequest>,
@@ -215,7 +216,7 @@ pub struct McpBridge {
     settings_path: OnceLock<PathBuf>,
     settings: Mutex<StoredSettings>,
     running: Mutex<Option<EditorBridge>>,
-    error: Mutex<Option<String>>,
+    error: Mutex<Option<Message>>,
     shared: Arc<Shared>,
     /// 発見用のファイルの場所 (テストで変える。`None` なら `ugoe_mcp::discovery` の既定)。
     discovery: Option<PathBuf>,
@@ -223,30 +224,31 @@ pub struct McpBridge {
 
 impl McpBridge {
     /// 設定を `dir` (アプリの設定のディレクトリ) から読む。なければ既定 (無効) のまま。
-    pub fn load(&self, dir: PathBuf) -> Result<(), String> {
+    pub fn load(&self, dir: PathBuf) -> Result<(), EditorError> {
         let path = dir.join(SETTINGS_FILE);
         let _ = self.settings_path.set(path.clone());
         let text = match std::fs::read_to_string(&path) {
             Ok(text) => text,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-            Err(e) => return Err(format!("{}: {e}", path.display())),
+            Err(e) => return Err(EditorError::io(&path, e)),
         };
         let settings: StoredSettings =
-            serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+            serde_json::from_str(&text).map_err(|e| EditorError::io(&path, e))?;
         *lock(&self.settings) = settings;
         Ok(())
     }
 
-    fn save_settings(&self, settings: &StoredSettings) -> Result<(), String> {
+    fn save_settings(&self, settings: &StoredSettings) -> Result<(), EditorError> {
         let Some(path) = self.settings_path.get() else {
             return Ok(());
         };
-        let mut text = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
+        let mut text = serde_json::to_string_pretty(settings)
+            .map_err(|e| EditorError::Internal(e.to_string()))?;
         text.push('\n');
-        write_private(path, &text).map_err(|e| format!("{}: {e}", path.display()))
+        write_private(path, &text).map_err(|e| EditorError::io(path, e))
     }
 
-    fn update(&self, f: impl FnOnce(&mut StoredSettings)) -> Result<StoredSettings, String> {
+    fn update(&self, f: impl FnOnce(&mut StoredSettings)) -> Result<StoredSettings, EditorError> {
         let mut settings = lock(&self.settings);
         let mut next = settings.clone();
         f(&mut next);
@@ -279,14 +281,14 @@ impl McpBridge {
                     ..BridgeOptions::default()
                 },
             )
-            .map_err(|e| e.to_string())
+            .map_err(|e| EditorError::BridgeStart(e.to_string()))
         });
         match result {
             Ok(bridge) => {
                 *lock(&self.running) = Some(bridge);
                 *lock(&self.error) = None;
             }
-            Err(e) => *lock(&self.error) = Some(e),
+            Err(e) => *lock(&self.error) = Some(e.to_message()),
         }
         app.emit(BridgeEvent::Status);
     }
@@ -302,16 +304,20 @@ impl McpBridge {
     }
 
     /// 残したトークン。無ければ作って残す。
-    pub(crate) fn token(&self) -> Result<String, String> {
+    pub(crate) fn token(&self) -> Result<String, EditorError> {
         if let Some(token) = lock(&self.settings).token.clone() {
             return Ok(token);
         }
-        let token = generate_token().map_err(|e| e.to_string())?;
+        let token = generate_token().map_err(|e| EditorError::Internal(e.to_string()))?;
         self.update(|s| s.token = Some(token.clone()))?;
         Ok(token)
     }
 
-    pub(crate) fn set_enabled(&self, app: Arc<dyn EditorApp>, enabled: bool) -> Result<(), String> {
+    pub(crate) fn set_enabled(
+        &self,
+        app: Arc<dyn EditorApp>,
+        enabled: bool,
+    ) -> Result<(), EditorError> {
         self.update(|s| s.enabled = enabled)?;
         if enabled {
             self.start(app);
@@ -327,9 +333,9 @@ impl McpBridge {
         &self,
         app: Arc<dyn EditorApp>,
         port: Option<u16>,
-    ) -> Result<(), String> {
+    ) -> Result<(), EditorError> {
         if port == Some(0) {
-            return Err("choose a port between 1 and 65535, or leave it empty".into());
+            return Err(EditorError::InvalidPort);
         }
         let settings = self.update(|s| s.port = port)?;
         if settings.enabled {
@@ -339,8 +345,8 @@ impl McpBridge {
     }
 
     /// トークンを作り直す (前のトークンを知るクライアントは使えなくなる)。動いていれば始め直す。
-    pub(crate) fn regenerate_token(&self, app: Arc<dyn EditorApp>) -> Result<(), String> {
-        let token = generate_token().map_err(|e| e.to_string())?;
+    pub(crate) fn regenerate_token(&self, app: Arc<dyn EditorApp>) -> Result<(), EditorError> {
+        let token = generate_token().map_err(|e| EditorError::Internal(e.to_string()))?;
         let settings = self.update(|s| s.token = Some(token))?;
         if settings.enabled {
             self.start(app);
@@ -353,7 +359,7 @@ impl McpBridge {
         self.shared.approvals.answer(id, approved)
     }
 
-    pub(crate) fn status(&self, state: &AppState) -> Result<McpBridgeStatus, String> {
+    pub(crate) fn status(&self, state: &AppState) -> IpcResult<McpBridgeStatus> {
         let settings = lock(&self.settings).clone();
         let running = lock(&self.running);
         let project = crate::ai::lock_project(state)?
@@ -460,50 +466,51 @@ const BUNDLE_FILE: &str = "ugoe-editor.mcpb";
 /// 同梱の `ugoe-mcp` を `--editor` で動かす `.mcpb` を `out` に書く。束の OS はエディタの OS。
 /// 同梱の `ugoe-mcp` をその場で包むので、インストーラに `.mcpb` を別に入れない (同じ実行ファイルを 2 つ
 /// 持たずに済み、エディタと版が必ずそろう)。
-fn write_claude_desktop_bundle(binary: Option<PathBuf>, out: &Path) -> Result<(), String> {
-    let binary = binary.ok_or(
-        "no ugoe-mcp was found next to the editor; build it with `cargo build --release -p ugoe-mcp` \
-         (installers include it)",
-    )?;
-    let platform =
-        Platform::current().ok_or("Claude Desktop extensions need macOS, Windows or Linux")?;
+fn write_claude_desktop_bundle(binary: Option<PathBuf>, out: &Path) -> Result<(), EditorError> {
+    let binary = binary.ok_or(EditorError::NoMcpBinary)?;
+    let platform = Platform::current().ok_or(EditorError::UnsupportedPlatform)?;
     let mut bundle = Bundle::new(binary, platform);
     bundle.icon = Some(BUNDLE_ICON.to_vec());
-    bundle.write(out).map_err(|e| e.to_string())
+    bundle
+        .write(out)
+        .map_err(|e| EditorError::BundleWrite(e.to_string()))
 }
 
 /// 束を作る (数秒かかるので、画面のスレッドの外で)。
-async fn build_bundle(out: PathBuf) -> Result<String, String> {
+async fn build_bundle(out: PathBuf) -> IpcResult<String> {
     let display = out.display().to_string();
     tauri::async_runtime::spawn_blocking(move || write_claude_desktop_bundle(sidecar_path(), &out))
         .await
-        .map_err(|e| e.to_string())??;
+        .map_err(|e| EditorError::Task(e.to_string()))??;
     Ok(display)
 }
 
 /// Claude Desktop 用の `.mcpb` を作り、OS に開かせる (Claude Desktop がインストールの画面を出す)。
 /// 作ったファイルのパスを返す (開けなかったときに、Claude Desktop から選ばせるため)。
 #[tauri::command]
-pub async fn open_claude_desktop_bundle(app: AppHandle) -> Result<String, String> {
+pub async fn open_claude_desktop_bundle(app: AppHandle) -> IpcResult<String> {
     use tauri_plugin_opener::OpenerExt;
     let out = app
         .path()
         .app_cache_dir()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| EditorError::Internal(e.to_string()))?
         .join(BUNDLE_FILE);
     let path = build_bundle(out).await?;
     app.opener()
         .open_path(path.clone(), None::<&str>)
-        .map_err(|e| format!("could not open {path}: {e}"))?;
+        .map_err(|e| EditorError::OpenFailed {
+            path: path.clone(),
+            detail: e.to_string(),
+        })?;
     Ok(path)
 }
 
 /// Claude Desktop 用の `.mcpb` を `path` (保存のダイアログで選んだもの) に書く。
 #[tauri::command]
-pub async fn save_claude_desktop_bundle(path: String) -> Result<String, String> {
+pub async fn save_claude_desktop_bundle(path: String) -> IpcResult<String> {
     let out = PathBuf::from(path);
     if out.extension().is_none_or(|e| e != "mcpb") {
-        return Err("the file name must end with .mcpb".into());
+        return Err(EditorError::NotMcpbFile.into());
     }
     build_bundle(out).await
 }
@@ -518,6 +525,11 @@ struct EditorHost {
 
 fn same_path(a: &Path, b: &Path) -> bool {
     a == b || matches!((a.canonicalize(), b.canonicalize()), (Ok(x), Ok(y)) if x == y)
+}
+
+/// エディタのエラーを MCP の持ち主のエラーにする (英語の文をそのまま使う)。
+fn failed(error: Message) -> HostError {
+    HostError::Failed(error.message)
 }
 
 /// 保存していないプロジェクトを指せないときの文。
@@ -558,7 +570,7 @@ impl EditorHost {
     }
 
     fn check_current(&self, project: &Path) -> Result<(), HostError> {
-        let session = crate::ai::lock_project(self.app.state()).map_err(HostError::Failed)?;
+        let session = crate::ai::lock_project(self.app.state()).map_err(failed)?;
         Self::check(&session, project).map(drop)
     }
 
@@ -629,14 +641,14 @@ impl DocumentHost for EditorHost {
     fn save(&self, project: &Path, bundle: Option<&Path>) -> Result<(), HostError> {
         let (mut document, mut session) = self.lock_both()?;
         let dir = Self::check(&session, project)?;
-        if session.external_change()?.is_some() {
+        if session.external_change().map_err(failed)?.is_some() {
             return Err(HostError::Denied(
                 "the project files were changed outside the editor after it was opened; ask the \
                  user to reload or save it from the editor"
                     .into(),
             ));
         }
-        session.save_to(&mut document, dir)?;
+        session.save_to(&mut document, dir).map_err(failed)?;
         if let Some(bundle) = bundle {
             let (bytes, _) = export_bundle_with_settings(
                 &session.to_project(&document),
@@ -763,14 +775,14 @@ fn app(handle: AppHandle) -> Arc<dyn EditorApp> {
 
 /// 「Connect agents」の画面の状態。
 #[tauri::command]
-pub fn mcp_bridge_status(app: AppHandle) -> Result<McpBridgeStatus, String> {
+pub fn mcp_bridge_status(app: AppHandle) -> IpcResult<McpBridgeStatus> {
     let state = app.state::<AppState>();
     state.mcp.status(&state)
 }
 
 /// ブリッジを有効・無効にし (設定に残す)、始める・止める。
 #[tauri::command]
-pub fn set_mcp_bridge_enabled(app: AppHandle, enabled: bool) -> Result<McpBridgeStatus, String> {
+pub fn set_mcp_bridge_enabled(app: AppHandle, enabled: bool) -> IpcResult<McpBridgeStatus> {
     let state = app.state::<AppState>();
     state.mcp.set_enabled(self::app(app.clone()), enabled)?;
     state.mcp.status(&state)
@@ -778,7 +790,7 @@ pub fn set_mcp_bridge_enabled(app: AppHandle, enabled: bool) -> Result<McpBridge
 
 /// 待ち受けるポートを決める (`null` なら起動のたびに空いているポート)。動いていれば始め直す。
 #[tauri::command]
-pub fn set_mcp_bridge_port(app: AppHandle, port: Option<u16>) -> Result<McpBridgeStatus, String> {
+pub fn set_mcp_bridge_port(app: AppHandle, port: Option<u16>) -> IpcResult<McpBridgeStatus> {
     let state = app.state::<AppState>();
     state.mcp.set_port(self::app(app.clone()), port)?;
     state.mcp.status(&state)
@@ -786,7 +798,7 @@ pub fn set_mcp_bridge_port(app: AppHandle, port: Option<u16>) -> Result<McpBridg
 
 /// トークンを作り直す。動いていれば始め直す (中継は発見用のファイルを読み直すので登録は変えなくてよい)。
 #[tauri::command]
-pub fn regenerate_mcp_bridge_token(app: AppHandle) -> Result<McpBridgeStatus, String> {
+pub fn regenerate_mcp_bridge_token(app: AppHandle) -> IpcResult<McpBridgeStatus> {
     let state = app.state::<AppState>();
     state.mcp.regenerate_token(self::app(app.clone()))?;
     state.mcp.status(&state)
@@ -794,8 +806,8 @@ pub fn regenerate_mcp_bridge_token(app: AppHandle) -> Result<McpBridgeStatus, St
 
 /// トークン (HTTP で直接つなぐクライアントの設定に写すため。画面は求められたときだけ読む)。
 #[tauri::command]
-pub fn get_mcp_bridge_token(app: AppHandle) -> Result<String, String> {
-    app.state::<AppState>().mcp.token()
+pub fn get_mcp_bridge_token(app: AppHandle) -> IpcResult<String> {
+    Ok(app.state::<AppState>().mcp.token()?)
 }
 
 /// 確認に答える。待っている確認が無ければ (時間切れの後など) `false`。
@@ -809,7 +821,7 @@ pub fn setup(app: &AppHandle) {
     let state = app.state::<AppState>();
     let loaded = match app.path().app_config_dir() {
         Ok(dir) => state.mcp.load(dir),
-        Err(e) => Err(e.to_string()),
+        Err(e) => Err(EditorError::Internal(e.to_string())),
     };
     if let Err(e) = loaded {
         eprintln!("could not read the MCP bridge settings: {e}");

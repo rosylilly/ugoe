@@ -14,9 +14,11 @@ use ugoe_editor_core::{
     AtlasReport, ColliderReference, Document, ModuleDifference, ModuleError, Project,
     ProjectFingerprint,
 };
+use ugoe_editor_core::{Coded, Message};
 use ugoe_model::module::ModuleRequirements;
 
 use crate::AppState;
+use crate::error::{EditorError, IpcResult};
 use crate::project::{
     ExternalChange, ProjectSession, ProjectStatus, absolute_path, lock_both, status,
 };
@@ -112,8 +114,9 @@ pub struct ModuleProblem {
     pub slot: String,
     /// 本体を読めたなら、そのスロットの ID (別のスロットを選ぶ)。
     pub base_slots: Vec<String>,
-    /// 元のエラーの文。
-    pub message: String,
+    /// 元のエラー (コード・引数・英語の文。`code`・`args`・`message` として並ぶ。ADR 0029)。
+    #[serde(flatten)]
+    pub error: Message,
     /// `base_needs_physics` のとき、リグから外せば開ける、本体に無い衝突体への参照 (`open_module_with_base` の
     /// `drop_colliders`。外すことを利用者に確かめてから開く。T0661)。外しても開けない・ほかの種類なら空。
     pub collider_references: Vec<ColliderReference>,
@@ -132,8 +135,8 @@ pub struct ModuleExportReport {
     /// 書き出したファイルの大きさ (バイト)。
     #[ts(type = "number")]
     pub bytes: usize,
-    /// 書き出しはしたが知らせたいこと。
-    pub warnings: Vec<String>,
+    /// 書き出しはしたが知らせたいこと (コードは `module.*`)。
+    pub warnings: Vec<Message>,
     /// アトラス化したときの結果 (書き出しの設定 `editor.export` の `atlas`)。しなければ `null`。
     pub atlas: Option<AtlasReport>,
 }
@@ -154,22 +157,23 @@ struct CachedBase {
 
 impl PreviewBaseCache {
     /// 開いているモジュールのプロジェクトの本体だけの `.ugoe`。覚えているものが使えればそれを返す。
-    fn bundle(&self, document: &Document, session: &ProjectSession) -> Result<Arc<[u8]>, String> {
-        let context = document.module().ok_or("this is not a module project")?;
+    fn bundle(&self, document: &Document, session: &ProjectSession) -> IpcResult<Arc<[u8]>> {
+        let context = document.module().ok_or(EditorError::NotAModule)?;
         let revision = context.base_revision();
         let file = session
             .base_digest()
             .map(|digest| (context.base().path.clone(), digest));
-        let mut cached = self.0.lock().map_err(|_| "preview cache lock poisoned")?;
+        let mut cached = self.0.lock().map_err(|_| EditorError::LockPoisoned {
+            what: "preview cache",
+        })?;
         if let Some(entry) = cached.as_mut()
             && (entry.revision == revision || (file.is_some() && entry.file == file))
         {
             entry.revision = revision;
             return Ok(entry.bytes.clone());
         }
-        let bytes: Arc<[u8]> = ugoe_editor_core::export_base_bundle(&session.to_project(document))
-            .map_err(|e| e.to_string())?
-            .into();
+        let bytes: Arc<[u8]> =
+            ugoe_editor_core::export_base_bundle(&session.to_project(document))?.into();
         *cached = Some(CachedBase {
             revision,
             file,
@@ -259,21 +263,21 @@ fn diagnose(error: &ProjectError, base: &Path, slot: &str) -> Option<ModuleProbl
         base: base.display().to_string(),
         slot: slot.to_owned(),
         base_slots,
-        message: error.to_string(),
+        error: error.to_message(),
         collider_references: Vec::new(),
     })
 }
 
 /// 開いているのがモジュールのプロジェクトなら、その本体とスロット。本体のモデルのプロジェクトなら `null`。
 #[tauri::command]
-pub fn module_status(state: State<'_, AppState>) -> Result<Option<ModuleStatus>, String> {
+pub fn module_status(state: State<'_, AppState>) -> IpcResult<Option<ModuleStatus>> {
     Ok(module_status_of(&*crate::commands::lock(&state)?))
 }
 
 /// 本体の候補 (`.ugoeproj` のディレクトリか `.ugoe`) を読み、名前とスロットを返す (新規作成の画面)。
 #[tauri::command]
-pub fn read_module_base(path: String) -> Result<BaseSummary, String> {
-    let base = load_base(&absolute_path(&path)?).map_err(|e| e.to_string())?;
+pub fn read_module_base(path: String) -> IpcResult<BaseSummary> {
+    let base = load_base(&absolute_path(&path)?)?;
     Ok(BaseSummary {
         name: base.model.meta.name.clone(),
         slots: base.model.slots.iter().map(slot_summary).collect(),
@@ -288,9 +292,8 @@ pub fn new_module_project(
     base: String,
     slot: String,
     name: String,
-) -> Result<ProjectStatus, String> {
-    let project = Project::new_module(name.trim(), &absolute_path(&base)?, &slot.as_str().into())
-        .map_err(|e| e.to_string())?;
+) -> IpcResult<ProjectStatus> {
+    let project = Project::new_module(name.trim(), &absolute_path(&base)?, &slot.as_str().into())?;
     let (mut document, mut session) = lock_both(&state)?;
     (*session, *document) = ProjectSession::from_project(project, None);
     Ok(status(&session, &document))
@@ -308,9 +311,9 @@ pub fn open_module_with_base(
     base: Option<String>,
     slot: Option<String>,
     drop_colliders: bool,
-) -> Result<ProjectStatus, String> {
+) -> IpcResult<ProjectStatus> {
     let dir = absolute_path(&path)?;
-    let disk = ProjectFingerprint::read(&dir).map_err(|e| e.to_string())?;
+    let disk = ProjectFingerprint::read(&dir)?;
     let base = base.as_deref().map(absolute_path).transpose()?;
     let slot = slot.map(|s| ugoe_model::SlotId::from(s.as_str()));
     let project = if drop_colliders {
@@ -318,8 +321,7 @@ pub fn open_module_with_base(
             .map(|(project, _)| project)
     } else {
         Project::load_module_with(&dir, base.as_deref(), slot.as_ref())
-    }
-    .map_err(|e| e.to_string())?;
+    }?;
     let (mut document, mut session) = lock_both(&state)?;
     (*session, *document) = ProjectSession::from_project(project, Some((dir, disk)));
     session.mark_meta_modified();
@@ -331,10 +333,7 @@ pub fn open_module_with_base(
 /// エラーなら `null`。`base` があれば `project.json` の本体の代わりにそれで確かめる (選び直した本体)。
 /// `open_project`・`open_module_with_base` が失敗した後にフロントエンドが呼ぶ。
 #[tauri::command]
-pub fn module_open_problem(
-    path: String,
-    base: Option<String>,
-) -> Result<Option<ModuleProblem>, String> {
+pub fn module_open_problem(path: String, base: Option<String>) -> IpcResult<Option<ModuleProblem>> {
     let dir = absolute_path(&path)?;
     let Ok((linked, slot)) = read_module_link(&dir) else {
         return Ok(None);
@@ -360,7 +359,7 @@ pub fn module_open_problem(
 /// モジュールのプロジェクトの本体のファイルが、開いた (読み直した) 後で変わったか。変わっていなければ `null`
 /// (`docs/editor.md#本体の変化`)。フロントエンドが外での書き換えと同じ機会に呼ぶ。
 #[tauri::command]
-pub fn check_base_change(state: State<'_, AppState>) -> Result<Option<ExternalChange>, String> {
+pub fn check_base_change(state: State<'_, AppState>) -> IpcResult<Option<ExternalChange>> {
     let (document, session) = lock_both(&state)?;
     session.base_change(&document)
 }
@@ -374,7 +373,7 @@ pub fn reload_base(
     state: State<'_, AppState>,
     base: Option<String>,
     slot: Option<String>,
-) -> Result<BaseReload, String> {
+) -> IpcResult<BaseReload> {
     let base = base.as_deref().map(absolute_path).transpose()?;
     let (mut document, mut session) = lock_both(&state)?;
     rebase(&mut document, &mut session, base, slot)
@@ -386,11 +385,8 @@ fn rebase(
     session: &mut ProjectSession,
     base: Option<std::path::PathBuf>,
     slot: Option<String>,
-) -> Result<BaseReload, String> {
-    let context = document
-        .module()
-        .ok_or("this is not a module project")?
-        .clone();
+) -> IpcResult<BaseReload> {
+    let context = document.module().ok_or(EditorError::NotAModule)?.clone();
     let relocated = base.is_some() || slot.is_some();
     let path = base.unwrap_or_else(|| context.base().path.clone());
     let new_slot = slot.map(|s| ugoe_model::SlotId::from(s.as_str()));
@@ -416,7 +412,7 @@ fn rebase(
                 base: path.display().to_string(),
                 slot: slot.clone(),
                 base_slots: Vec::new(),
-                message: error.to_string(),
+                error: error.to_message(),
                 collider_references: Vec::new(),
             }),
         ),
@@ -431,7 +427,7 @@ fn rebase(
 /// ほかのモジュールと比べる。`docs/editor.md#プレビューの着せ替え`)。作ったものはセッションで覚えておき、
 /// 本体が変わるまで作り直さない (`PreviewBaseCache`)。
 #[tauri::command]
-pub fn get_preview_base_bundle(state: State<'_, AppState>) -> Result<tauri::ipc::Response, String> {
+pub fn get_preview_base_bundle(state: State<'_, AppState>) -> IpcResult<tauri::ipc::Response> {
     let (document, session) = lock_both(&state)?;
     let bytes = state.preview_base.bundle(&document, &session)?;
     Ok(tauri::ipc::Response::new(bytes.to_vec()))
@@ -444,9 +440,9 @@ pub fn get_preview_base_bundle(state: State<'_, AppState>) -> Result<tauri::ipc:
 pub fn compare_preview_module(
     state: State<'_, AppState>,
     request: tauri::ipc::Request<'_>,
-) -> Result<Vec<ModuleDifference>, String> {
+) -> IpcResult<Vec<ModuleDifference>> {
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
-        return Err("expected the bytes of a .ugoemod file".into());
+        return Err(EditorError::ExpectedModuleBytes.into());
     };
     let (document, session) = lock_both(&state)?;
     compare(&document, &session, bytes)
@@ -457,9 +453,9 @@ fn compare(
     document: &Document,
     session: &ProjectSession,
     bytes: &[u8],
-) -> Result<Vec<ModuleDifference>, String> {
+) -> IpcResult<Vec<ModuleDifference>> {
     ugoe_editor_core::compare_with_module_file(&session.to_project(document), bytes)
-        .map_err(|e| e.to_string())
+        .map_err(Message::from)
 }
 
 /// 開いているモジュールのプロジェクトの今の編集を `.ugoemod` のバイト列にする (ファイルには書かない。
@@ -469,14 +465,13 @@ fn compare(
 pub fn get_preview_module(
     state: State<'_, AppState>,
     name: Option<String>,
-) -> Result<tauri::ipc::Response, String> {
+) -> IpcResult<tauri::ipc::Response> {
     let (document, session) = lock_both(&state)?;
     let project = session.to_project(&document);
     let export = match &name {
         Some(name) => ugoe_editor_core::export_module_as(&project, name),
         None => ugoe_editor_core::export_module(&project),
-    }
-    .map_err(|e| e.to_string())?;
+    }?;
     Ok(tauri::ipc::Response::new(export.bytes))
 }
 
@@ -484,20 +479,16 @@ pub fn get_preview_module(
 /// 本体との合成を確かめる。書き出しの設定 (`get_export_settings`。`.ugoe` の書き出しと同じもの) で
 /// アトラス化を選んでいれば、モジュールのテクスチャをアトラスにまとめる (T0654)。保存状態は変えない。
 #[tauri::command]
-pub fn export_module(
-    state: State<'_, AppState>,
-    path: String,
-) -> Result<ModuleExportReport, String> {
+pub fn export_module(state: State<'_, AppState>, path: String) -> IpcResult<ModuleExportReport> {
     let path = absolute_path(&path)?;
     let export = {
         let (document, session) = lock_both(&state)?;
         ugoe_editor_core::export_module_with_settings(
             &session.to_project(&document),
             &session.export_settings(),
-        )
-        .map_err(|e| e.to_string())?
+        )?
     };
-    std::fs::write(&path, &export.bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+    std::fs::write(&path, &export.bytes).map_err(|e| EditorError::io(&path, e))?;
     Ok(ModuleExportReport {
         bytes: export.bytes.len(),
         warnings: export.warnings,

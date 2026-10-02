@@ -1237,7 +1237,7 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
 | `open_sample_project(parent)` | 着せ替えの見本 (`assets/samples/dress-up/` をバイナリに埋め込んだもの) を、`parent` の中の新しいフォルダー `ugoe-dress-up-sample` (あれば `-2`・`-3`…。既にあるフォルダーには書かない) に本体 `dress-up.ugoeproj` とモジュールのプロジェクト 4 つとして書き出し、本体を開く (T0715)。変換は `ugoe sample dress-up --project` と同じ `ugoe_editor_core::bundle_project::save_bundle_projects` で、本体の物理・モーション・表情も入る (T0655)。`src-tauri/src/sample.rs` |
 | `import_psd(path, mesh_options?)` | PSD ファイルを今のドキュメントに取り込み ([PSD の取り込み](#psd-の取り込み)、Undo の 1 単位)、警告 (`PsdImportWarning[]`) を返す。最上位のパーツの名前はファイル名。`src-tauri/src/psd.rs` |
 
-- パスの引数は **絶対パスだけ** を受け付けます (相対パスは `path must be absolute: …` のエラー)。相対パスはプロセスの作業ディレクトリ
+- パスの引数は **絶対パスだけ** を受け付けます (相対パスは `editor.relative_path` (`path must be absolute: …`) のエラー)。相対パスはプロセスの作業ディレクトリ
   (開発時は `apps/editor/src-tauri`) を基準にしてしまい、思わぬ場所に保存されるためです (T0619)。パスは [ファイルダイアログ](#ファイルダイアログ) で選びます。
 - ファイルメニューは「New」「New from PSD…」「New Module…」「Open…」「Open Sample…」「Save」「Save As…」「Export…」「Import PSD…」です
   (モジュールのプロジェクトでは「Export…」が「Export Module…」。[モジュールのプロジェクト](#モジュールのプロジェクト))。
@@ -1680,10 +1680,196 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 
 - Svelte 5 の runes (`$state`、`$derived`、`$effect`) を使います。ストアのライブラリは入れません。
 - バックエンドとの通信は `src/lib/ipc.ts` に集約します。コンポーネントから `invoke` を直接呼びません。
+- IPC のエラーは `Message` (コード・引数・英語の文) です。`String(e)` で文字列にせず、`src/lib/errors.ts` の `errorText` / `errorCode` で読みます ([エラーと警告のコード](#エラーと警告のコード))。
 - IPC の引数・戻り値の型は Rust から生成したもの (`src/lib/generated/types.ts`) を使い、手で書きません。`ipc.ts` が再エクスポートするので、コンポーネントは `./ipc` から import します。
 - lint と整形は Biome、型検査は `svelte-check` で行います (`just web-check`)。
 - 表示や操作のロジックのうち DOM に依存しないもの (ツリーの組み立て、ドロップの可否など) は素の `.ts` に置き、
   Vitest で単体テストします (`*.test.ts`、`pnpm --filter @ugoe/editor test`。`just web-check` に含まれる)。
+
+## エラーと警告のコード
+
+バックエンド (editor-core と Tauri のコマンド) が画面に渡すエラー・警告・問題は、コードと引数と英語の文の形
+(`ugoe_editor_core::Message`) で渡します ([ADR 0029](adr/0029-shared-ui-and-i18n.md) の「Rust 側のメッセージ」。T0666)。
+
+```json
+{ "code": "project.base_not_found", "args": { "path": "/work/body.ugoeproj" }, "message": "base model not found: /work/body.ugoeproj" }
+```
+
+- `code` は安定した識別子 (小文字の `snake_case` を `.` でつなぐ)。**公開の約束なので名前を変えません。** 意味が変わるなら新しいコードを作ります。
+- `args` は文に差し込む値 (文字列か数値)。パス・名前・ID はそのまま渡し、単位や書式は画面で付けます。NaN と無限大は文字列 (`NaN`・`inf`) です。
+- `message` は英語の文で、エラーの `Display` と同じです。ログ・MCP・CLI・開発者向けの表示で使い、**文言は前と変えていません** (MCP と CLI は今も文を返す)。
+- `cause` (省略できる) は原因になったエラーです (`proposal.rejected` の中の `edit.*`、`edit.invalid_cell` の中の `cell.*` など)。`message` は原因の文も含みます。
+- **IPC コマンドの失敗:** Tauri のコマンドは失敗すると `Message` で reject します (`ipc.ts` の `IpcError`)。画面は `src/lib/errors.ts` の `errorText` (いまは `message` を出す)・`errorCode` で読みます。カタログの `errors.<code>` から引く訳の付け替えは T0663〜T0665 で行い、カタログに無いコードは `message` を出します。
+- **警告・問題:** `PsdImportWarning`・`RederiveWarning` は `code`・`args`・`message` のフィールドを持ちます。`ModuleProblem` は `Message` のフィールドを平らに含みます (`kind` は直し方を選ぶ分類、`code` は元のエラー)。`AvatarCheck` の `errors`・`warnings`、`.ugoemod` の書き出しの `warnings`、エージェントの接続の状態の `error` は `Message` です。
+- **実装:** editor-core のエラーは `ugoe_editor_core::Coded` を実装し (`src/message_codes.rs`)、`?` で `Message` に変わります。Tauri だけで起きるエラーは `src-tauri/src/error.rs` の `EditorError` にまとめます。ほかのクレートのエラー (検証・合成・推定・自動メッシュ・PSD の読み込み・AI のプロバイダなど) を含むものは、いまはその英語の文を `detail` (検証の一覧は `count` と `details`) で渡します。
+- 自由な文の引数 (`reason`・`detail`・`details`) は英語のままです。訳すには、その元のエラーにもコードを付ける必要があります (後続)。
+
+### コードの一覧
+
+引数の名前は `args` のキーです。`kind` は要素の種類 (`parameter`・`part`・`deformer`・`mesh` など)、`target`・`element` は ``mesh `EyeL` `` のような表記です。
+
+**編集 (`EditError`。`apply_command` など)**
+
+| コード | 引数 |
+| --- | --- |
+| `edit.duplicate_id` / `edit.not_found` | `kind`・`id` |
+| `edit.invalid_range` | `min`・`default`・`max` |
+| `edit.has_children` | `kind`・`id`・`children` (`, ` でつないだ表記) |
+| `edit.self_reference` | `kind`・`id`・`field` |
+| `edit.deformer_kind_mismatch` | `id`・`expected` |
+| `edit.invalid_cell` | `kind`・`id` (原因は `cell.*`) |
+| `edit.invalid_texture_name` / `edit.texture_not_png` | `name` |
+| `edit.invalid_canvas` | `width`・`height` |
+| `edit.cannot_regenerate_mesh` / `edit.mesh_geometry` | `id`・`reason` |
+| `edit.automesh_failed` | `id`・`detail` |
+| `edit.vertex_out_of_range` | `id`・`index`・`vertices` |
+| `edit.too_few_vertices` | `id`・`remaining` |
+| `edit.invalid_draw_order` | `id`・`draw_order` |
+| `edit.keyform_kind_mismatch` | `kind`・`id`・`expected`・`actual` |
+| `edit.invalid_model` | `count`・`details` |
+| `edit.inference_failed` | `target`・`detail` |
+| `edit.unsupported_inference` / `edit.mirror_pair_not_supported` | `target` |
+| `edit.unsupported_interpolation` | `target`・`interpolation` |
+| `edit.deformer_edit_failed` / `edit.invalid_physics` / `edit.invalid_avatar_profile` / `edit.module_shape` | `reason` |
+| `edit.depth_length` | `target`・`expected`・`actual` |
+| `edit.non_finite_depth` | `target`・`value` |
+| `edit.depth_point_out_of_range` | `target`・`index`・`points` |
+| `edit.invalid_name` | `kind` (`motion`・`expression`)・`name` |
+| `edit.invalid_motion` | `motion`・`reason` |
+| `edit.invalid_expression` | `expression`・`reason` |
+| `edit.draw_clone_shape` | `id`・`original` |
+| `edit.not_draw_clone` | `id` |
+| `edit.invalid_normal_map` | `texture`・`reason` |
+| `edit.invalid_slot` / `edit.invalid_glue` | `id`・`reason` |
+| `edit.read_only_base` | `element` |
+| `edit.not_module` | なし |
+
+**キーフォームのセル (`CellError`)**
+
+| コード | 引数 |
+| --- | --- |
+| `cell.missing_axis` / `cell.unknown_axis` | `parameter` |
+| `cell.unknown_key` / `cell.duplicate_key` / `cell.non_finite_key` | `parameter`・`value` |
+| `cell.out_of_range` | `index`・`len` |
+| `cell.keyform_count` / `cell.shape_mismatch` | `expected`・`actual` |
+
+**プロジェクト (`ProjectError`)・モジュール (`ModuleError`)**
+
+| コード | 引数 |
+| --- | --- |
+| `project.io` / `project.json` | `path`・`detail` |
+| `project.format` | `path` (原因は `format.*`) |
+| `project.not_a_project` / `project.not_empty` / `project.not_png` / `project.base_not_found` / `project.base_is_module` | `path` |
+| `project.base_unreadable` | `path` (原因は本体を読んだときの `project.*` など) |
+| `project.base_refused` | `path`・`reason` |
+| `project.unsupported_version` | `found`・`supported` |
+| `project.invalid_name` / `project.duplicate_name` | `kind` (`texture`・`motion`・`expression`)・`name` |
+| `project.missing_texture` / `project.unsupported_base_texture` / `project.unsupported_texture` | `name` |
+| `project.export_failed` | なし (原因は `format.*`) |
+| `project.missing_module_link` / `project.not_a_module` | なし |
+| `project.invalid_module` | `count`・`details` |
+| `module.invalid_name` | `name` |
+| `module.unknown_slot` | `slot` |
+| `module.compose_failed` | `detail` |
+| `module.collider_needs_base_physics` | `rig`・`collider`・`slot` |
+| `module.read_only_base` | `element` |
+| `module.shape` | `reason` |
+| `module.draw_order_outside_slot` (書き出しの警告) | `mesh` |
+
+**ファイル形式 (`FormatError`)・書き出し・アトラス・評価**
+
+| コード | 引数 |
+| --- | --- |
+| `format.not_ugoe_file` / `format.too_large` | なし |
+| `format.unsupported_version` | `found`・`supported` |
+| `format.invalid_model` / `format.invalid_module` / `format.invalid_physics` | `count`・`details` |
+| `format.unsupported_features` | `features` |
+| `format.unknown_values` | `values` |
+| `format.corrupt` (チャンク・圧縮・テクスチャ・MessagePack・JSON の不正) | `detail` |
+| `export.invalid_max_size` / `export.invalid_padding` | `value`・`max` |
+| `export.invalid_settings` | `detail` |
+| `atlas.missing_texture` / `atlas.not_png` | `name` |
+| `atlas.texture_out_of_range` | `mesh`・`texture` |
+| `atlas.invalid_max_size` | なし |
+| `compile.invalid_model` | `count`・`details` |
+| `compile.unknown_parameter` | `parameter` |
+| `compile.unsupported` | `feature` |
+
+**提案・ライティング・座標・はみ出し**
+
+| コード | 引数 |
+| --- | --- |
+| `proposal.not_found` | `id` |
+| `proposal.stale` / `proposal.nothing_selected` | なし |
+| `proposal.invalid_index` | `index` |
+| `proposal.rejected` | なし (原因は `edit.*`) |
+| `proposal.model_changed` / `proposal.no_psd` / `proposal.not_classified` / `proposal.disappeared` / `proposal.no_preview` | なし |
+| `proposal.not_regenerable` | `id` |
+| `lighting.texture_not_found` / `lighting.unreadable_texture` | `texture` |
+| `lighting.unreadable_normal_map` / `lighting.normal_maps_model_only` / `lighting.no_group_chosen` | なし |
+| `lighting.generate_failed` / `lighting.invalid_settings` | `detail` |
+| `lighting.invalid_preview` | `reason` |
+| `lighting.unknown_group` / `lighting.empty_group` | `group` |
+| `lighting.image_not_found` | `name` |
+| `space.not_found` / `space.no_space` | `kind`・`id` |
+| `space.evaluate_failed` | `detail` |
+| `space.length_mismatch` | `points`・`guesses` |
+| `space.singular` | `index` |
+| `space.not_converged` | `index`・`residual` |
+| `overflow.unknown_parameter` | `target`・`parameter` |
+
+**PSD の取り込み (エラーと、`PsdImportWarning` の警告)**
+
+| コード | 引数 |
+| --- | --- |
+| `psd.read_failed` | `detail` |
+| `psd.read_file_failed` | `path`・`detail` |
+| `psd.invalid_mesh_options` | `reason` |
+| `psd.automesh_failed` | `layer`・`detail` |
+| `psd.canvas_mismatch` | `psd_width`・`psd_height`・`model_width`・`model_height` |
+| `psd.group_blend_mode_ignored` / `psd.blend_mode_unsupported` | `blend_mode` |
+| `psd.adjustment_layer` | `key` |
+| `psd.unsupported_compression` | `compression` |
+| `psd.group_clipping_unsupported` / `psd.empty_layer` / `psd.transparent_layer` / `psd.layer_too_complex` / `psd.clipping_base_missing` / `psd.smart_object_without_pixels` / `psd.layer_effects_ignored` / `psd.layer_mask_ignored` / `psd.missing_pixels` / `psd.flattened_image` | なし (レイヤーは警告の `path`) |
+
+**推定の警告 (`RederiveWarning`)・アバタープロファイルの検査 (`AvatarCheck`)**
+
+| コード | 引数 |
+| --- | --- |
+| `inference.mirror_failed` | `target`・`source`・`detail` |
+| `avatar.missing_profile` | なし |
+| `avatar.newer_profile_version` | `version`・`supported` |
+| `avatar.invalid_level` | `level`・`max` |
+| `avatar.missing_metadata` | `field` |
+| `avatar.missing_parameter` | `level`・`id` |
+| `avatar.too_few_extended_parameters` | `required`・`found` |
+| `avatar.parameter_range` | `id`・`min`・`default`・`max`・`expected_min`・`expected_default`・`expected_max` |
+| `avatar.unknown_reference` | `field`・`target_kind`・`target` |
+| `avatar.unknown_tracking_input` | `field`・`kind`・`input` |
+| `avatar.missing_tracking_target` / `avatar.unknown_value` | `field` |
+| `avatar.duplicate_hit_area_name` | `name` |
+| `avatar.invalid_value` | `field`・`value`・`expected` |
+| `avatar.internal_tracking_target` | `field`・`id` |
+
+**エディタのバックエンド (`EditorError`。`src-tauri/src/error.rs`)**
+
+| コード | 引数 |
+| --- | --- |
+| `editor.lock_poisoned` | `what` (`document`・`project`・`preview cache`) |
+| `editor.io` / `editor.create_folder` | `path`・`detail` |
+| `editor.internal` / `editor.task_failed` / `editor.invalid_percent_encoding` | `detail` |
+| `editor.empty_path` / `editor.not_saved` / `editor.not_saved_use_save_as` / `editor.external_change` / `editor.not_a_module` / `editor.expected_module_bytes` / `editor.expected_png_bytes` / `editor.not_png_data` | なし |
+| `editor.relative_path` / `editor.not_module_file` / `editor.not_png_file` / `editor.not_json_file` / `editor.too_many_sample_folders` | `path` |
+| `editor.missing_header` | `header` |
+| `editor.invalid_header` | `header`・`detail` |
+| `ai.claude_model_missing` / `ai.invalid_base_url` / `ai.model_missing` / `ai.api_key_required` / `ai.plain_http_api_key` / `ai.empty_api_key` / `ai.mixed_destinations` / `ai.send_disabled` / `ai.truncated` | なし |
+| `ai.credential_store` / `ai.provider` / `ai.invalid_proposal` / `ai.missing_api_key` / `ai.invalid_request` / `ai.network` / `ai.invalid_response` | `detail` |
+| `ai.api_error` | `status`・`kind`・`detail` |
+| `ai.rate_limited` | `retry_after` (秒。分からなければ無い) |
+| `ai.refused` | `category` (分からなければ無い) |
+| `mcp.invalid_port` / `mcp.no_binary` / `mcp.unsupported_platform` / `mcp.not_mcpb_file` | なし |
+| `mcp.bridge_start_failed` / `mcp.bundle_write_failed` | `detail` |
+| `mcp.open_failed` | `path`・`detail` |
 
 ## 型の生成
 

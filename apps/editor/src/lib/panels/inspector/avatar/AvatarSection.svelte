@@ -5,6 +5,7 @@
 -->
 <script lang="ts">
 import type { EditorDocument } from "../../../document.svelte";
+import { errorText } from "../../../errors";
 import type { AvatarCheck, AvatarMeta, Command, Model } from "../../../generated/types";
 import { ipc } from "../../../ipc";
 import { elementLabel } from "../../../labels";
@@ -68,7 +69,7 @@ $effect(() => {
     .catch((e) => {
       if (id !== request) return;
       check = null;
-      checkError = String(e);
+      checkError = errorText(e);
     });
 });
 
@@ -272,15 +273,15 @@ const optionalTexts: { key: OptionalText; label: string; placeholder?: string }[
       <!-- プロファイルがないときのエラーは「model has no avatar profile」だけで、見出しと同じなので出さない。 -->
       {#if check.claimed !== null && check.errors.length > 0}
         <ul class="issues errors">
-          {#each check.errors as message, i (i)}
-            <li>{message}</li>
+          {#each check.errors as issue, i (i)}
+            <li>{issue.message}</li>
           {/each}
         </ul>
       {/if}
       {#if check.warnings.length > 0}
         <ul class="issues warnings">
-          {#each check.warnings as message, i (i)}
-            <li>{message}</li>
+          {#each check.warnings as issue, i (i)}
+            <li>{issue.message}</li>
           {/each}
         </ul>
       {/if}

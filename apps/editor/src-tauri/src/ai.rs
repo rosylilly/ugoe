@@ -24,6 +24,7 @@ use ugoe_ai::{AiError, Destination, Disclosure, Provider, ProviderRequest};
 use crate::AppState;
 pub use crate::ai_provider::KeySlot;
 use crate::ai_provider::{ProviderSettings, Purpose};
+use crate::error::{EditorError, IpcResult};
 
 /// 資格情報の保存先での名前 (サービス名)。アカウント名はプロバイダごと ([`KeySlot::account`])。
 const KEYRING_SERVICE: &str = "ugoe-editor";
@@ -195,16 +196,20 @@ impl ApiKeys {
     }
 
     /// 保存先に保存する (前後の空白は除く)。
-    pub fn save(&self, slot: &KeySlot, key: &str) -> Result<(), String> {
+    pub fn save(&self, slot: &KeySlot, key: &str) -> Result<(), EditorError> {
         let key = key.trim();
         if key.is_empty() {
-            return Err("the API key is empty".into());
+            return Err(EditorError::EmptyApiKey);
         }
-        self.store()?.set(&slot.account, key)
+        self.store()
+            .and_then(|s| s.set(&slot.account, key))
+            .map_err(EditorError::CredentialStore)
     }
 
-    pub fn delete(&self, slot: &KeySlot) -> Result<(), String> {
-        self.store()?.delete(&slot.account)
+    pub fn delete(&self, slot: &KeySlot) -> Result<(), EditorError> {
+        self.store()
+            .and_then(|s| s.delete(&slot.account))
+            .map_err(EditorError::CredentialStore)
     }
 
     /// 使うキー: 保存先 → 環境変数の順。保存先が使えなければ環境変数だけを見る。どちらにもなければ `None`。
@@ -277,7 +282,7 @@ impl DisclosureView {
 
     /// 複数のリクエストをまとめたもの (枚数・バイト数は合計)。送り先の違うものは混ぜない。
     /// すべて外部に送らないなら `None`。
-    pub fn combined(disclosures: &[Disclosure]) -> Result<Option<Self>, String> {
+    pub fn combined(disclosures: &[Disclosure]) -> Result<Option<Self>, EditorError> {
         let mut total: Option<Self> = None;
         for view in disclosures.iter().filter_map(Self::new) {
             match &mut total {
@@ -287,7 +292,7 @@ impl DisclosureView {
                     t.image_bytes += view.image_bytes;
                     t.text_bytes += view.text_bytes;
                 }
-                Some(_) => return Err("the requests go to different services".into()),
+                Some(_) => return Err(EditorError::MixedDestinations),
             }
         }
         Ok(total)
@@ -344,10 +349,6 @@ pub enum Gate {
     Ask(DisclosureView),
 }
 
-/// プロジェクトが「外部に送らない」のときの断りの文言。
-pub const SEND_DISABLED: &str =
-    "this project is set not to send data to external AI services (see Settings)";
-
 /// 送る前の確認。`allowed` はプロジェクトの「外部に送ってよい」
 /// (`ProjectMeta::ai_send_externally`)。送ってよくなければ、外部に出る送信はすべて断る。
 /// `view` は送る内容 ([`DisclosureView::new`]。外部に出なければ `None`)。
@@ -356,12 +357,12 @@ pub fn check_consent(
     memory: &mut ConsentMemory,
     view: Option<DisclosureView>,
     answer: Option<&ConsentAnswer>,
-) -> Result<Gate, String> {
+) -> Result<Gate, EditorError> {
     let Some(view) = view else {
         return Ok(Gate::Proceed);
     };
     if !allowed {
-        return Err(SEND_DISABLED.into());
+        return Err(EditorError::SendDisabled);
     }
     if let Some(answer) = answer
         && answer.disclosure == view
@@ -415,7 +416,7 @@ pub fn prepare_requests(
     requests: &[ProviderRequest],
     retries: usize,
     consent: Option<&ConsentAnswer>,
-) -> Result<Prepared, String> {
+) -> IpcResult<Prepared> {
     prepare_instructed(state, purpose, requests, retries, 0, consent)
 }
 
@@ -428,7 +429,7 @@ pub fn prepare_instructed(
     retries: usize,
     instruction_chars: usize,
     consent: Option<&ConsentAnswer>,
-) -> Result<Prepared, String> {
+) -> IpcResult<Prepared> {
     let settings = state.ai_provider.get();
     prepare_with(
         state,
@@ -449,13 +450,13 @@ fn prepare_with(
     retries: usize,
     instruction_chars: usize,
     consent: Option<&ConsentAnswer>,
-) -> Result<Prepared, String> {
+) -> IpcResult<Prepared> {
     if !settings.is_local() && !lock_project(state)?.ai_send_externally() {
-        return Err(SEND_DISABLED.into());
+        return Err(EditorError::SendDisabled.into());
     }
     let slot = settings.key_slot();
     let key = if slot.required {
-        Some(state.api_keys.resolve(&slot).map_err(|e| e.to_string())?)
+        Some(state.api_keys.resolve(&slot).map_err(EditorError::Ai)?)
     } else {
         state.api_keys.find(&slot)
     };
@@ -503,14 +504,14 @@ pub struct AiSettings {
 
 pub(crate) fn lock_project(
     state: &AppState,
-) -> Result<std::sync::MutexGuard<'_, crate::project::ProjectSession>, String> {
+) -> IpcResult<std::sync::MutexGuard<'_, crate::project::ProjectSession>> {
     state
         .project
         .lock()
-        .map_err(|_| "project lock poisoned".to_string())
+        .map_err(|_| EditorError::LockPoisoned { what: "project" }.into())
 }
 
-fn settings(state: &AppState) -> Result<AiSettings, String> {
+fn settings(state: &AppState) -> IpcResult<AiSettings> {
     let provider = state.ai_provider.get();
     let slot = provider.key_slot();
     let key = state.api_keys.status(&slot);
@@ -532,25 +533,22 @@ fn settings(state: &AppState) -> Result<AiSettings, String> {
 /// 保存先の操作は時間がかかることがある (D-Bus の応答待ちなど) ので、画面を止めないよう別のスレッドで行う。
 pub(crate) async fn blocking<T: Send + 'static>(
     app: AppHandle,
-    task: impl FnOnce(&AppState) -> Result<T, String> + Send + 'static,
-) -> Result<T, String> {
+    task: impl FnOnce(&AppState) -> IpcResult<T> + Send + 'static,
+) -> IpcResult<T> {
     tauri::async_runtime::spawn_blocking(move || task(&app.state::<AppState>()))
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(|e| EditorError::Task(e.to_string()))?
 }
 
 #[tauri::command]
-pub async fn ai_settings(app: AppHandle) -> Result<AiSettings, String> {
+pub async fn ai_settings(app: AppHandle) -> IpcResult<AiSettings> {
     blocking(app, settings).await
 }
 
 /// プロバイダ・モデル・ベースの URL を変え、アプリの設定のディレクトリに保存する。
 /// 送り先が変わるので、「今後は確かめない」は次の送信で確かめ直す (覚えた送り先と違うため)。
 #[tauri::command]
-pub async fn set_ai_provider(
-    app: AppHandle,
-    provider: ProviderSettings,
-) -> Result<AiSettings, String> {
+pub async fn set_ai_provider(app: AppHandle, provider: ProviderSettings) -> IpcResult<AiSettings> {
     blocking(app, move |state| {
         state.ai_provider.set(provider)?;
         settings(state)
@@ -560,7 +558,7 @@ pub async fn set_ai_provider(
 
 /// 選んでいるプロバイダの API キーを資格情報の保存先に保存する。キーは応答に含めない。
 #[tauri::command]
-pub async fn store_api_key(app: AppHandle, key: String) -> Result<AiSettings, String> {
+pub async fn store_api_key(app: AppHandle, key: String) -> IpcResult<AiSettings> {
     blocking(app, move |state| {
         state
             .api_keys
@@ -572,7 +570,7 @@ pub async fn store_api_key(app: AppHandle, key: String) -> Result<AiSettings, St
 
 /// 選んでいるプロバイダの API キーを消す。
 #[tauri::command]
-pub async fn delete_api_key(app: AppHandle) -> Result<AiSettings, String> {
+pub async fn delete_api_key(app: AppHandle) -> IpcResult<AiSettings> {
     blocking(app, |state| {
         state.api_keys.delete(&state.ai_provider.get().key_slot())?;
         settings(state)
@@ -583,7 +581,7 @@ pub async fn delete_api_key(app: AppHandle) -> Result<AiSettings, String> {
 /// 開いているプロジェクトの「外部の AI に送ってよいか」を変える (プロジェクトを保存すると残る)。
 /// 送らないにすると「今後は確かめない」も忘れる。
 #[tauri::command]
-pub async fn set_ai_send_externally(app: AppHandle, allowed: bool) -> Result<AiSettings, String> {
+pub async fn set_ai_send_externally(app: AppHandle, allowed: bool) -> IpcResult<AiSettings> {
     blocking(app, move |state| {
         lock_project(state)?.set_ai_send_externally(allowed);
         settings(state)
@@ -593,7 +591,7 @@ pub async fn set_ai_send_externally(app: AppHandle, allowed: bool) -> Result<AiS
 
 /// 「今後は確かめない」を取り消す (次に送るときにまた確かめる)。
 #[tauri::command]
-pub async fn forget_ai_consent(app: AppHandle) -> Result<AiSettings, String> {
+pub async fn forget_ai_consent(app: AppHandle) -> IpcResult<AiSettings> {
     blocking(app, |state| {
         lock_project(state)?.ai_consent_mut().forget();
         settings(state)
@@ -623,7 +621,7 @@ fn test_request() -> (ProviderRequest, serde_json::Value) {
 pub async fn test_ai_connection(
     app: AppHandle,
     consent: Option<ConsentAnswer>,
-) -> Result<AiReply<()>, String> {
+) -> IpcResult<AiReply<()>> {
     blocking(app, move |state| {
         let (request, schema) = test_request();
         let requests = std::slice::from_ref(&request);
@@ -638,7 +636,7 @@ pub async fn test_ai_connection(
             Prepared::Ready(provider) => {
                 provider
                     .complete_json(&request, &schema)
-                    .map_err(|e| e.to_string())?;
+                    .map_err(EditorError::Ai)?;
                 Ok(AiReply::Done { value: () })
             }
         }

@@ -11,7 +11,7 @@ use ugoe_editor_core::overflow::{ElementOverflow, OverflowReport};
 use ugoe_editor_core::physics_check::RestPoseCollision;
 use ugoe_editor_core::{
     ApplyReport, ColliderReference, DifferenceItem, DifferenceKind, ExportReport, ExportSettings,
-    ModuleDifference, PsdImportWarning,
+    Message, ModuleDifference, PsdImportWarning,
 };
 
 use crate::ai::{AiReply, AiSettings, ConsentAnswer};
@@ -74,6 +74,8 @@ pub fn generated_files() -> Result<Vec<(&'static str, String)>, serde_json::Erro
     types.add::<DifferenceItem>();
     types.add::<ModuleDifference>();
     types.add::<ColliderReference>();
+    // IPC コマンドのエラー (ADR 0029)。
+    types.add::<Message>();
     Ok(vec![
         ("apps/editor/src/lib/generated/types.ts", types.render()),
         (

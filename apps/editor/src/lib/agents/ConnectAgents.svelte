@@ -6,6 +6,7 @@
   エージェントの適用・保存は、ここでの設定に関わらず確認のダイアログ (ApprovalDialog.svelte) を通る。
 -->
 <script lang="ts">
+import { errorText } from "../errors";
 import { fileDialogs } from "../fileDialogs";
 import { openExternal } from "../help";
 import { ipc } from "../ipc";
@@ -49,7 +50,7 @@ async function copyToken(): Promise<void> {
   try {
     await copy("token", await ipc.getMcpBridgeToken());
   } catch (e) {
-    agentBridge.error = String(e);
+    agentBridge.error = errorText(e);
   }
 }
 
@@ -80,7 +81,7 @@ async function installInClaudeDesktop(): Promise<void> {
   try {
     bundle = { kind: "opened", path: await ipc.openClaudeDesktopBundle() };
   } catch (e) {
-    bundle = { kind: "error", message: String(e) };
+    bundle = { kind: "error", message: errorText(e) };
   } finally {
     bundleBusy = false;
   }
@@ -99,7 +100,7 @@ async function saveBundle(): Promise<void> {
   try {
     bundle = { kind: "saved", path: await ipc.saveClaudeDesktopBundle(path) };
   } catch (e) {
-    bundle = { kind: "error", message: String(e) };
+    bundle = { kind: "error", message: errorText(e) };
   } finally {
     bundleBusy = false;
   }
@@ -133,7 +134,7 @@ async function openManual(): Promise<void> {
       Allow agents to connect to this editor
     </label>
     {#if status.error}
-      <p class="error">Could not start: {status.error}</p>
+      <p class="error">Could not start: {status.error.message}</p>
     {:else if status.running}
       <p class="state" data-state="on">
         <span class="dot on"></span> Listening on <code>{status.url}</code> (this computer only, token required)

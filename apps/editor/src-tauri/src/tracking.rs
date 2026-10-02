@@ -5,14 +5,16 @@ use std::path::Path;
 
 use tauri::webview::{PermissionKind, PermissionResponse};
 
+use crate::error::{EditorError, IpcResult};
+
 /// トラッキングの記録 (JSON) を書く。パスは保存のダイアログで利用者が選んだもの。`.json` だけを書く。
 #[tauri::command]
-pub fn write_json_file(path: String, contents: String) -> Result<(), String> {
+pub fn write_json_file(path: String, contents: String) -> IpcResult<()> {
     let path = Path::new(&path);
     if !is_json_path(path) {
-        return Err(format!("not a JSON file: {}", path.display()));
+        return Err(EditorError::NotJsonFile(path.display().to_string()).into());
     }
-    std::fs::write(path, contents).map_err(|e| format!("{}: {e}", path.display()))
+    std::fs::write(path, contents).map_err(|e| EditorError::io(path, e).into())
 }
 
 fn is_json_path(path: &Path) -> bool {

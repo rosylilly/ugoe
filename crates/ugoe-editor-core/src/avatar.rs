@@ -15,6 +15,7 @@ use ugoe_model::avatar::{
 use ugoe_model::{HitArea, Model};
 
 use crate::EditError;
+use crate::message::{Coded, Message};
 
 /// [`crate::Command::UpdateAvatarProfile`] の変更。`None` のフィールドは変えない。
 #[derive(Debug, Default)]
@@ -211,10 +212,10 @@ pub struct AvatarCheck {
     pub claimed: Option<u8>,
     /// メタデータと必要なパラメータから見て満たしているレベル (どのレベルも満たさなければ 0)。
     pub satisfied: u8,
-    /// エラー (1 つでもあれば準拠していない) の説明。
-    pub errors: Vec<String>,
-    /// 警告 (準拠は妨げない) の説明。
-    pub warnings: Vec<String>,
+    /// エラー (1 つでもあれば準拠していない)。コードは `avatar.*` (`docs/editor.md#エラーと警告のコード`)。
+    pub errors: Vec<Message>,
+    /// 警告 (準拠は妨げない)。コードは `avatar.*`。
+    pub warnings: Vec<Message>,
 }
 
 /// モデルのアバタープロファイルへの準拠を調べる。モデルは変えない。
@@ -225,7 +226,7 @@ pub fn check(model: &Model) -> AvatarCheck {
             .issues
             .iter()
             .filter(|i| i.severity() == severity)
-            .map(ToString::to_string)
+            .map(Coded::to_message)
             .collect()
     };
     AvatarCheck {

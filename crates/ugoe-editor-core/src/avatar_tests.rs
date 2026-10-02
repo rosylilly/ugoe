@@ -8,7 +8,7 @@ use ugoe_model::avatar::{
 use ugoe_model::validate::validate;
 use ugoe_model::{HitArea, Model, fixtures};
 
-use crate::{Command, Document, EditError, avatar};
+use crate::{Command, Document, EditError, MessageArg, avatar};
 
 // ---- 補助 (tests.rs と同じ規則) ----
 
@@ -360,6 +360,24 @@ fn check_reports_levels_errors_and_warnings() {
     }
     let check = avatar::check(&unnamed);
     assert_eq!(check.satisfied, 0);
-    assert!(check.errors.iter().any(|e| e.contains("meta.name")));
-    assert!(check.warnings.iter().any(|w| w.contains("profile_version")));
+    assert!(check.errors.iter().any(|e| e.message.contains("meta.name")));
+    assert!(
+        check
+            .warnings
+            .iter()
+            .any(|w| w.message.contains("profile_version"))
+    );
+    // 画面はコードと引数で訳す (ADR 0029)。
+    let missing = check
+        .errors
+        .iter()
+        .find(|e| e.code == "avatar.missing_metadata")
+        .unwrap();
+    assert_eq!(missing.args["field"], MessageArg::Text("name".into()));
+    let newer = check
+        .warnings
+        .iter()
+        .find(|w| w.code == "avatar.newer_profile_version")
+        .unwrap();
+    assert_eq!(newer.args["version"], MessageArg::Number(99.0));
 }

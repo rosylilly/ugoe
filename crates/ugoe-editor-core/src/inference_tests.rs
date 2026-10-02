@@ -1178,6 +1178,16 @@ fn failed_remirror_keeps_the_cells_and_warns() {
         "{}",
         warning.message
     );
+    // 画面はコードと引数で訳す (ADR 0029)。
+    assert_eq!(warning.code, "inference.mirror_failed");
+    assert_eq!(
+        warning.args,
+        crate::message_args! {
+            "target" => "mesh `EyeR`",
+            "source" => "mesh `EyeL`",
+            "detail" => &warning.message,
+        }
+    );
     // 右目のミラーのセルは前の値のまま。
     assert_eq!(mesh(&after, "EyeR").keyforms, mesh(&model, "EyeR").keyforms);
     // `apply` は同じ結果になり、警告を捨てるだけ。

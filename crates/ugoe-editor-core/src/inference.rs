@@ -18,6 +18,7 @@ use ugoe_rigging::{
 use crate::command::{InferMethod, KeyformCell, KeyformTarget};
 use crate::document::EditError;
 use crate::grid;
+use crate::message::MessageArgs;
 
 /// 自動の作り直しで、1 つの格子を作り直す回数の上限。ミラーが循環する (A が B を、B が A を
 /// ミラー元にする) と作り直しが往復するので、値が変わらなくなるか、この回数で止める。
@@ -35,8 +36,30 @@ pub struct RederiveWarning {
     pub target: KeyformTarget,
     /// ミラー元 (`mirror_source`) の要素。
     pub source: KeyformTarget,
+    /// 安定した識別子 (いまは `inference.mirror_failed` だけ。`docs/editor.md#エラーと警告のコード`)。
+    pub code: String,
+    /// 文に差し込む値 (`target`・`source`・`detail`)。
+    pub args: MessageArgs,
     /// 失敗の理由 (`ugoe_rigging::InferError` の表記)。
     pub message: String,
+}
+
+impl RederiveWarning {
+    /// ミラーし直せなかったことの警告。`error` は失敗の理由。
+    fn mirror_failed(target: KeyformTarget, source: KeyformTarget, error: impl ToString) -> Self {
+        let message = error.to_string();
+        Self {
+            code: "inference.mirror_failed".to_owned(),
+            args: crate::message_args! {
+                "target" => target.to_string(),
+                "source" => source.to_string(),
+                "detail" => &message,
+            },
+            target,
+            source,
+            message,
+        }
+    }
 }
 
 /// 型によらない格子の見え方 (軸・セル数・由来・推定の設定)。
@@ -457,11 +480,7 @@ pub(crate) fn check_reparented_pairs(
             continue; // 前からミラーできなかった (そのときに警告済み)。
         }
         if let Err(error) = check_mirror(after, &rigging_from, &rigging_to, &options) {
-            warnings.push(RederiveWarning {
-                target: to,
-                source: from,
-                message: error.to_string(),
-            });
+            warnings.push(RederiveWarning::mirror_failed(to, from, error));
         }
     }
 }
@@ -512,11 +531,7 @@ fn rederive_grid(
         let from = same_kind(target, &source.id);
         // 失敗してもエラーのときはモデルを変えないので、ミラーのセルは前の値のまま残る。
         if let Err(error) = mirror_keyforms(model, &(&from).into(), &target.into(), &options) {
-            let warning = RederiveWarning {
-                target: target.clone(),
-                source: from,
-                message: error.to_string(),
-            };
+            let warning = RederiveWarning::mirror_failed(target.clone(), from, error);
             // 循環で同じ格子を何度も作り直すことがあるので、同じ組の警告は 1 つにする。
             if !warnings
                 .iter()

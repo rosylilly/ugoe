@@ -7,14 +7,15 @@ use tauri::State;
 use ugoe_editor_core::{AutoMeshOptions, PsdImportOptions, PsdImportWarning, import};
 
 use crate::AppState;
+use crate::error::{EditorError, IpcResult};
 
 /// PSD ファイルを読み、取り込みの設定 (最上位のパーツの名前はファイル名) と合わせて返す。
 pub(crate) fn read_psd(
     path: &str,
     mesh_options: Option<AutoMeshOptions>,
-) -> Result<(Vec<u8>, PsdImportOptions), String> {
+) -> IpcResult<(Vec<u8>, PsdImportOptions)> {
     let path = crate::project::absolute_path(path)?;
-    let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let bytes = std::fs::read(&path).map_err(|e| EditorError::io(&path, e))?;
     let name = path
         .file_stem()
         .map_or_else(|| "PSD".to_owned(), |s| s.to_string_lossy().into_owned());
@@ -32,20 +33,19 @@ pub fn import_psd(
     state: State<'_, AppState>,
     path: String,
     mesh_options: Option<AutoMeshOptions>,
-) -> Result<Vec<PsdImportWarning>, String> {
+) -> IpcResult<Vec<PsdImportWarning>> {
     let (bytes, options) = read_psd(&path, mesh_options)?;
     let mut document = state
         .document
         .lock()
-        .map_err(|_| "document lock poisoned".to_string())?;
-    let mut import =
-        import::import_psd(document.model(), &bytes, &options).map_err(|e| e.to_string())?;
+        .map_err(|_| EditorError::LockPoisoned { what: "document" })?;
+    let mut import = import::import_psd(document.model(), &bytes, &options)?;
     // モジュールのプロジェクトでは、描画順 (0〜1000) をスロットの範囲に写す。最上位の要素は適用のときに
     // 見た目を保ったままスロットの取り付け先の下へ移る (`docs/editor.md#モジュールのプロジェクト`)。
     if let Some(context) = document.module() {
         context.map_new_meshes(&mut import.command);
     }
-    document.apply(import.command).map_err(|e| e.to_string())?;
+    document.apply(import.command)?;
     // AI の提案 (自動リギング) の元にする PSD を覚えておく (ロックの順序は document → project)。
     crate::ai::lock_project(&state)?
         .proposals

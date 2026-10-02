@@ -17,6 +17,7 @@ use ugoe_ai::normal::{
     propose_bulge_normal_maps,
 };
 use ugoe_ai::rig::mesh_parts;
+use ugoe_editor_core::Message;
 use ugoe_editor_core::lighting::{BulgeSettings, assign_normal_map};
 use ugoe_editor_core::{ApplyReport, Command, Document};
 use ugoe_model::{MeshId, Model};
@@ -24,6 +25,7 @@ use ugoe_model::{MeshId, Model};
 use crate::AppState;
 use crate::ai::lock_project;
 use crate::commands::lock;
+use crate::error::{EditorError, IpcResult};
 use crate::project::absolute_path;
 
 /// テクスチャの法線マップを、どのまとまりで作るか (`get_normal_map_group` の戻り値)。
@@ -64,7 +66,7 @@ fn mesh_labels(model: &Model, layers: Option<&[LayerLabel]>) -> BTreeMap<MeshId,
 }
 
 /// 最後に分類した PSD のレイヤーのラベル (ドキュメントのロックより先に取る)。
-fn layer_labels(state: &AppState) -> Result<Option<Vec<LayerLabel>>, String> {
+fn layer_labels(state: &AppState) -> IpcResult<Option<Vec<LayerLabel>>> {
     Ok(lock_project(state)?.proposals.layer_labels())
 }
 
@@ -103,7 +105,7 @@ pub(crate) fn normal_map_group_in(
     document: &Document,
     layers: Option<&[LayerLabel]>,
     texture: &str,
-) -> Result<NormalMapGroupView, String> {
+) -> IpcResult<NormalMapGroupView> {
     let model = document.model();
     let labels = mesh_labels(model, layers);
     let group = normal_map_group(
@@ -113,7 +115,7 @@ pub(crate) fn normal_map_group_in(
         &BulgeNormalMapOptions::default(),
         texture,
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(EditorError::Ai)?;
     Ok(NormalMapGroupView::new(model, group, layers.is_some()))
 }
 
@@ -121,7 +123,7 @@ pub(crate) fn normal_map_group_in(
 pub(crate) fn normal_map_groups_in(
     document: &Document,
     layers: Option<&[LayerLabel]>,
-) -> Result<Vec<NormalMapGroupView>, String> {
+) -> IpcResult<Vec<NormalMapGroupView>> {
     let model = document.model();
     let labels = mesh_labels(model, layers);
     let groups = normal_map_groups(
@@ -130,7 +132,7 @@ pub(crate) fn normal_map_groups_in(
         &labels,
         &BulgeNormalMapOptions::default(),
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(EditorError::Ai)?;
     Ok(groups
         .into_iter()
         .map(|g| NormalMapGroupView::new(model, g, layers.is_some()))
@@ -166,13 +168,13 @@ pub(crate) fn normal_map_proposal_in(
     layers: Option<&[LayerLabel]>,
     choices: &[NormalMapGroupChoice],
     replace_existing: bool,
-) -> Result<(Proposal, Vec<CommandSection>), String> {
+) -> IpcResult<(Proposal, Vec<CommandSection>)> {
     if document.module().is_some() {
         // 本体のテクスチャとライティングの設定は変えられない (ADR 0024)。
-        return Err("normal maps are proposed only in model projects".into());
+        return Err(EditorError::NormalMapsModelOnly.into());
     }
     if choices.is_empty() {
-        return Err("choose at least one group".into());
+        return Err(EditorError::NoGroupChosen.into());
     }
     let model = document.model();
     let labels = mesh_labels(model, layers);
@@ -182,7 +184,7 @@ pub(crate) fn normal_map_proposal_in(
         &labels,
         &BulgeNormalMapOptions::default(),
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(EditorError::Ai)?;
     let mut options = BulgeNormalMapOptions {
         replace_existing,
         ..Default::default()
@@ -194,13 +196,13 @@ pub(crate) fn normal_map_proposal_in(
             None => None,
             Some(name) => Some(
                 serde_json::from_value::<SurfaceGroup>(serde_json::Value::String(name.clone()))
-                    .map_err(|_| format!("unknown group `{name}`"))?,
+                    .map_err(|_| EditorError::UnknownGroup(name.clone()))?,
             ),
         };
         let row = groups
             .iter()
             .find(|g| g.group == group)
-            .ok_or_else(|| format!("no texture is in the group `{}`", section_name(group)))?;
+            .ok_or_else(|| EditorError::EmptyGroup(section_name(group)))?;
         match group {
             Some(g) => {
                 options.per_group.insert(g, choice.settings.into());
@@ -213,7 +215,7 @@ pub(crate) fn normal_map_proposal_in(
         }
     }
     let mut proposal = propose_bulge_normal_maps(model, document.textures(), &labels, &options)
-        .map_err(|e| e.to_string())?;
+        .map_err(EditorError::Ai)?;
     proposal.title.push_str(" — no AI");
     let mut sections: Vec<CommandSection> = Vec::new();
     for (i, command) in proposal.commands.iter().enumerate() {
@@ -258,7 +260,7 @@ pub(crate) fn generate_normal_map_in(
     texture: &str,
     settings: Option<BulgeSettings>,
     whole_group: bool,
-) -> Result<Command, String> {
+) -> IpcResult<Command> {
     let model = document.model();
     let labels = mesh_labels(model, layers);
     let mut options = BulgeNormalMapOptions {
@@ -267,7 +269,7 @@ pub(crate) fn generate_normal_map_in(
         ..Default::default()
     };
     let group = normal_map_group(model, document.textures(), &labels, &options, texture)
-        .map_err(|e| e.to_string())?;
+        .map_err(EditorError::Ai)?;
     if whole_group {
         options.textures = group.textures;
     }
@@ -280,7 +282,7 @@ pub(crate) fn generate_normal_map_in(
         }
     }
     let proposal = propose_bulge_normal_maps(model, document.textures(), &labels, &options)
-        .map_err(|e| e.to_string())?;
+        .map_err(EditorError::Ai)?;
     Ok(Command::Batch {
         label: "Generate normal map".into(),
         commands: proposal.commands,
@@ -292,7 +294,7 @@ pub(crate) fn generate_normal_map_in(
 pub fn get_normal_map_group(
     state: State<'_, AppState>,
     texture: String,
-) -> Result<NormalMapGroupView, String> {
+) -> IpcResult<NormalMapGroupView> {
     let layers = layer_labels(&state)?;
     let document = lock(&state)?;
     normal_map_group_in(&document, layers.as_deref(), &texture)
@@ -301,9 +303,7 @@ pub fn get_normal_map_group(
 /// 法線マップを作るすべてのテクスチャの、まとまりの一覧と既定の設定 (AI タブでまとまりごとに設定して提案する)。
 /// 単独でふくらませるもの (`alone` と、ラベルのない `null`) はそれぞれ 1 行にまとめて最後に置く。
 #[tauri::command]
-pub fn get_normal_map_groups(
-    state: State<'_, AppState>,
-) -> Result<Vec<NormalMapGroupView>, String> {
+pub fn get_normal_map_groups(state: State<'_, AppState>) -> IpcResult<Vec<NormalMapGroupView>> {
     let layers = layer_labels(&state)?;
     let document = lock(&state)?;
     normal_map_groups_in(&document, layers.as_deref())
@@ -318,7 +318,7 @@ pub fn generate_texture_normal_map(
     texture: String,
     settings: Option<BulgeSettings>,
     whole_group: bool,
-) -> Result<ApplyReport, String> {
+) -> IpcResult<ApplyReport> {
     let layers = layer_labels(&state)?;
     let mut document = lock(&state)?;
     let command = generate_normal_map_in(
@@ -328,9 +328,7 @@ pub fn generate_texture_normal_map(
         settings,
         whole_group,
     )?;
-    document
-        .apply_with_report(command)
-        .map_err(|e| e.to_string())
+    document.apply_with_report(command).map_err(Message::from)
 }
 
 /// PNG ファイル `path` (開くのダイアログで選んだもの) をテクスチャ `texture` の法線マップとして付ける。
@@ -341,15 +339,12 @@ pub fn assign_texture_normal_map(
     texture: String,
     path: String,
     flip_green: bool,
-) -> Result<ApplyReport, String> {
+) -> IpcResult<ApplyReport> {
     let path = absolute_path(&path)?;
-    let png = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let png = std::fs::read(&path).map_err(|e| EditorError::io(&path, e))?;
     let mut document = lock(&state)?;
-    let command = assign_normal_map(document.model(), &texture, png, flip_green)
-        .map_err(|e| e.to_string())?;
-    document
-        .apply_with_report(command)
-        .map_err(|e| e.to_string())
+    let command = assign_normal_map(document.model(), &texture, png, flip_green)?;
+    document.apply_with_report(command).map_err(Message::from)
 }
 
 /// テクスチャか法線マップの画像 `name` の PNG (画面で確かめるため)。生のバイト列で送る。
@@ -357,11 +352,11 @@ pub fn assign_texture_normal_map(
 pub fn get_texture_png(
     state: State<'_, AppState>,
     name: String,
-) -> Result<tauri::ipc::Response, String> {
+) -> IpcResult<tauri::ipc::Response> {
     let document = lock(&state)?;
     let png = document
         .texture(&name)
-        .ok_or_else(|| format!("image `{name}` not found"))?;
+        .ok_or_else(|| EditorError::ImageNotFound(name.clone()))?;
     Ok(tauri::ipc::Response::new(png.to_vec()))
 }
 

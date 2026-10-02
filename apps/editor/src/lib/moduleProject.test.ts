@@ -130,6 +130,8 @@ describe("module problems", () => {
     base,
     slot: "Hair",
     base_slots: kind === "unknown_slot" ? ["Outfit"] : [],
+    code: "project.base_not_found",
+    args: {},
     message: "x",
     collider_references: [],
   });
@@ -175,6 +177,8 @@ describe("dropping collider references (T0661)", () => {
     base: "/p/avatar.ugoeproj",
     slot: "Hair",
     base_slots: [],
+    code: "module.collider_needs_base_physics",
+    args: {},
     message: "x",
     collider_references: references,
   };

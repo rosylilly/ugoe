@@ -9,8 +9,9 @@ use ugoe_ai::classify::Label;
 use ugoe_model::Model;
 
 use super::*;
+use crate::ai::AiReply;
 use crate::ai::tests::state;
-use crate::ai::{AiReply, SEND_DISABLED};
+use crate::error::IpcResult;
 
 fn bustup_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -43,7 +44,7 @@ fn classify_in(
     psd: Option<String>,
     use_ai: bool,
     consent: Option<&ConsentAnswer>,
-) -> Result<AiReply<Classification>, String> {
+) -> IpcResult<AiReply<Classification>> {
     classify_guided_in(state, psd, use_ai, &Ask::default(), consent)
 }
 
@@ -52,7 +53,7 @@ fn propose_in(
     state: &AppState,
     use_ai: bool,
     consent: Option<&ConsentAnswer>,
-) -> Result<AiReply<ProposalView>, String> {
+) -> IpcResult<AiReply<ProposalView>> {
     propose_guided_in(state, use_ai, None, ModuleRigChoice::default(), consent)
 }
 
@@ -139,11 +140,14 @@ fn disabled_projects_do_not_send() {
     let state = from_psd(Some("sk-test"));
     state.project.lock().unwrap().set_ai_send_externally(false);
     assert_eq!(
-        classify_in(&state, None, true, None).unwrap_err(),
-        SEND_DISABLED
+        classify_in(&state, None, true, None).unwrap_err().code,
+        "ai.send_disabled"
     );
     done(classify_in(&state, None, false, None).unwrap());
-    assert_eq!(propose_in(&state, true, None).unwrap_err(), SEND_DISABLED);
+    assert_eq!(
+        propose_in(&state, true, None).unwrap_err().code,
+        "ai.send_disabled"
+    );
 }
 
 /// API キーがなければ、送る前に断る (案内の文言は `ApiKeys::resolve`)。
@@ -151,17 +155,20 @@ fn disabled_projects_do_not_send() {
 fn missing_key_is_reported_before_sending() {
     let state = from_psd(None);
     let err = classify_in(&state, None, true, None).unwrap_err();
-    assert!(err.contains("API key"), "{err}");
+    assert!(err.to_string().contains("API key"), "{err}");
 }
 
 #[test]
 fn inputs_are_required() {
     let state = state(None);
-    assert_eq!(classify_in(&state, None, false, None).unwrap_err(), NO_PSD);
+    assert_eq!(
+        classify_in(&state, None, false, None).unwrap_err().code,
+        "proposal.no_psd"
+    );
     let err = propose_in(&state, false, None).unwrap_err();
-    assert!(err.contains("classify"), "{err}");
+    assert!(err.to_string().contains("classify"), "{err}");
     let err = classify_in(&state, Some("relative.psd".into()), false, None).unwrap_err();
-    assert!(err.contains("absolute"), "{err}");
+    assert!(err.to_string().contains("absolute"), "{err}");
 }
 
 /// 顔のないモデル (分類した PSD と違うモデル) では提案せず、提案の一覧も変わらない。
@@ -434,7 +441,7 @@ fn instructions_are_disclosed_before_sending() {
         revise: true,
     };
     let err = classify_guided_in(&state, None, true, &revise, None).unwrap_err();
-    assert!(err.contains("classify"), "{err}");
+    assert!(err.to_string().contains("classify"), "{err}");
 
     done(classify_in(&state, None, false, None).unwrap());
     let AiReply::NeedsConsent { disclosure } = propose_guided_in(
@@ -453,7 +460,7 @@ fn instructions_are_disclosed_before_sending() {
     let long = "a".repeat(Instructions::MAX_CHARS + 1);
     let err =
         propose_guided_in(&state, true, Some(&long), ModuleRigChoice::default(), None).unwrap_err();
-    assert!(err.contains("limit"), "{err}");
+    assert!(err.to_string().contains("limit"), "{err}");
     // AI を使わないなら注文は送らない (長さも問わない)。
     let view = done(
         propose_guided_in(&state, false, Some(&long), ModuleRigChoice::default(), None).unwrap(),
@@ -487,13 +494,15 @@ fn proposals_made_here_can_be_regenerated() {
     assert_eq!(disclosure.image_count, 1);
     let err =
         regenerate_in(&state, view.id + 1, None, ModuleRigChoice::default(), None).unwrap_err();
-    assert!(err.contains("cannot be regenerated"), "{err}");
+    assert!(err.to_string().contains("cannot be regenerated"), "{err}");
 
     // 「外部に送らない」のプロジェクトでは作り直さない (AI なしの作り直しはない)。
     state.project.lock().unwrap().set_ai_send_externally(false);
     assert_eq!(
-        regenerate_in(&state, view.id, None, ModuleRigChoice::default(), None).unwrap_err(),
-        SEND_DISABLED
+        regenerate_in(&state, view.id, None, ModuleRigChoice::default(), None)
+            .unwrap_err()
+            .code,
+        "ai.send_disabled"
     );
 
     // 却下した提案は作り直せない。

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { Message } from "../../../generated/types";
 import {
   checkSummary,
   createCommand,
@@ -103,9 +104,14 @@ describe("hitAreaCommand", () => {
   });
 });
 
+/** 検査の問題 (`avatar.*` のコードの Message)。 */
+function issue(message: string): Message {
+  return { code: "avatar.missing_profile", args: {}, message };
+}
+
 describe("checkSummary", () => {
   it("reports a model without a profile", () => {
-    expect(checkSummary({ claimed: null, satisfied: 2, errors: ["no profile"] })).toEqual({
+    expect(checkSummary({ claimed: null, satisfied: 2, errors: [issue("no profile")] })).toEqual({
       ok: false,
       text: "No avatar profile: the model does not conform to any level. Satisfies level 2 (Standard).",
     });
@@ -119,7 +125,7 @@ describe("checkSummary", () => {
   });
 
   it("reports errors and the satisfied level", () => {
-    expect(checkSummary({ claimed: 3, satisfied: 0, errors: ["a", "b"] })).toEqual({
+    expect(checkSummary({ claimed: 3, satisfied: 0, errors: [issue("a"), issue("b")] })).toEqual({
       ok: false,
       text: "Claims level 3 (Expressive) but has 2 errors. Satisfies no level.",
     });

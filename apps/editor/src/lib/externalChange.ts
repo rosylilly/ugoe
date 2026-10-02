@@ -1,5 +1,6 @@
 // 外でのプロジェクトの書き換え (docs/editor.md#外での書き換え) の判定と表示の文。DOM に依存しない部分だけを置く
 // (externalChange.test.ts で検査する)。検出はバックエンドの `check_external_change` (ファイルの指紋を比べる)。
+import { errorCode } from "./errors";
 import type { ExternalChange } from "./ipc";
 
 /** 一定の間隔で確かめる間隔 (ミリ秒)。ウィンドウが見えているときだけ確かめる。 */
@@ -47,9 +48,9 @@ export function describeFiles(files: string[], max = 3): string {
   return `${files.slice(0, max).join(", ")} and ${rest} more file${rest === 1 ? "" : "s"}`;
 }
 
-/** 保存が外での書き換えで断られたときのエラー (apps/editor/src-tauri/src/project.rs の `EXTERNAL_CHANGE_ERROR`)。 */
+/** 保存が外での書き換えで断られたときのエラー (コード `editor.external_change`。apps/editor/src-tauri/src/error.rs)。 */
 export function isExternalChangeError(error: unknown): boolean {
-  return String(error).includes("changed outside the editor");
+  return errorCode(error) === "editor.external_change";
 }
 
 const AUTO_RELOAD_KEY = "ugoe.editor.autoReload";

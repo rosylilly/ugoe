@@ -18,6 +18,7 @@
 //   見える)。入るときは編集中のビューポートで見ていた要素 (ViewportController.posePreview) から始め、読み直すと渡し直す。
 //   着せ替えで付けたモジュールのグループ (T0661) は WebPuppet の合成したポーズ (`pose_json`) から読み、付け外しと
 //   読み込みのたびに読み直す (`modulePoseGroups`)。選んだ要素は WebPuppet の ID で `modulePoseShown` に持つ。
+
 import {
   FaceTracker,
   setPuppetTracking,
@@ -25,6 +26,7 @@ import {
   type TrackingTarget,
 } from "@ugoe/face-tracking";
 import type { EditorDocument } from "../document.svelte";
+import { errorText } from "../errors";
 import { type Expression, ipc, type Model, type Motion, type PoseGroup } from "../ipc";
 import { showEntry } from "../panels/poses/poses";
 import type { FrameDriver, PuppetStage, ViewportController } from "../viewport/controller.svelte";
@@ -308,7 +310,7 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
         puppet.set_physics_json(JSON.stringify(physics));
         physicsReplaced = true;
       } catch (e) {
-        this.error = `Physics: ${e}`;
+        this.error = `Physics: ${errorText(e)}`;
       }
     }
     this.warnings = this.#loadWarnings(puppet, physicsReplaced);
@@ -386,7 +388,7 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
       if (base === null && !this.comparing) base = await ipc.getPreviewBaseBundle();
     } catch (e) {
       if (!this.active || revision !== this.#doc.revision) return;
-      this.dressUp.ownProblem = `Your edits can't be put on the base to compare with other modules: ${e}`;
+      this.dressUp.ownProblem = `Your edits can't be put on the base to compare with other modules: ${errorText(e)}`;
       this.#stopComparing();
       return;
     }
@@ -427,7 +429,7 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
       action(puppet);
       this.error = null;
     } catch (e) {
-      this.error = String(e);
+      this.error = errorText(e);
     }
   }
 

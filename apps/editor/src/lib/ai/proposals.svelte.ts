@@ -9,7 +9,9 @@
 //   (エディタを開いている間だけ。docs/editor.md#ai-への注文と作り直し)。
 // - 法線マップの提案 (AI なし): まとまりの一覧 (`normalGroups`) を読み、まとまりごとに含めるか・強さを選んで
 //   (`normalPicks`) 提案する。提案のコマンドはまとまりごとに区切って出す (docs/editor.md#法線マップの提案)。
+
 import type { EditorDocument } from "../document.svelte";
+import { errorText } from "../errors";
 import { fileDialogs } from "../fileDialogs";
 import { PSD_FILTER, parentDir } from "../filePaths";
 import {
@@ -364,7 +366,7 @@ export class ProposalsView {
       this.error = null;
       return result;
     } catch (e) {
-      this.error = String(e instanceof Error ? e.message : e);
+      this.error = errorText(e);
       return false;
     } finally {
       if (label) this.busy = null;

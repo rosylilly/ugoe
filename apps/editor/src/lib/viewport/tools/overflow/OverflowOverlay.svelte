@@ -8,6 +8,7 @@
 -->
 <script lang="ts">
 import type { EditorDocument } from "../../../document.svelte";
+import { errorText } from "../../../errors";
 import { ipc, type KeyformTarget, type Model } from "../../../ipc";
 import { overflowDots } from "../../../panels/verify/overflow";
 import type { VerifyView } from "../../../panels/verify/verifyView.svelte";
@@ -49,7 +50,7 @@ async function request(parameters: Record<string, number>): Promise<void> {
     view.error = null;
   } catch (e) {
     view.current = [];
-    view.error = String(e);
+    view.error = errorText(e);
   } finally {
     busy = false;
     const next = queued;

@@ -11,6 +11,7 @@
 -->
 <script lang="ts">
 import type { EditorDocument } from "../../document.svelte";
+import { errorText } from "../../errors";
 import { ipc, type Model, type OverflowFinding, type OverflowReport } from "../../ipc";
 import type { Selection } from "../../selection.svelte";
 import type { ViewportController } from "../../viewport/controller.svelte";
@@ -63,7 +64,7 @@ async function verify(): Promise<void> {
     error = null;
   } catch (e) {
     report = null;
-    error = String(e);
+    error = errorText(e);
   } finally {
     running = false;
   }

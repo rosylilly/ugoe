@@ -50,11 +50,9 @@ use ugoe_psd::LayerTree;
 use crate::AppState;
 use crate::ai::{AiReply, ConsentAnswer, Prepared, blocking, lock_project, prepare_instructed};
 use crate::ai_provider::Purpose;
+use crate::error::{EditorError, IpcResult};
 use crate::lighting::{CommandSection, NormalMapGroupChoice, normal_map_proposal_in};
 use crate::project::absolute_path;
-
-/// 提案の元にする PSD がないときの断りの文言。
-const NO_PSD: &str = "no PSD to classify: choose the PSD this model was imported from";
 
 /// 開いているプロジェクトの AI の提案と、その入力 (`ProjectSession` が持つ。プロジェクトを替えると消える)。
 #[derive(Debug, Default)]
@@ -363,9 +361,9 @@ pub struct ProposalPreview {
 
 // ---- 分類と提案 (IPC から切り離した本体。テストでプロバイダを差し替える) ----
 
-fn read_tree(path: &Path) -> Result<LayerTree, String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    ugoe_psd::import(&bytes).map_err(|e| format!("{}: {e}", path.display()))
+fn read_tree(path: &Path) -> IpcResult<LayerTree> {
+    let bytes = std::fs::read(path).map_err(|e| EditorError::io(path, e))?;
+    ugoe_psd::import(&bytes).map_err(|e| EditorError::psd_read(path, e).into())
 }
 
 /// レイヤーを分類する。`provider` があれば AI で (注文と前の分類を添えて)、なければ名前の規則で。
@@ -381,8 +379,8 @@ pub(crate) fn classify(
 }
 
 /// 画面から受け取った注文 (空なら `None`、長すぎればエラー)。
-fn instructions(text: Option<&str>) -> Result<Option<Instructions>, String> {
-    Instructions::new(text.unwrap_or_default()).map_err(|e| e.to_string())
+fn instructions(text: Option<&str>) -> IpcResult<Option<Instructions>> {
+    Instructions::new(text.unwrap_or_default()).map_err(|e| EditorError::Ai(e).into())
 }
 
 /// 送る前の確認に示す注文の文字数。
@@ -659,16 +657,16 @@ fn labels_note(labels: &[LayerLabel]) -> String {
 
 // ---- IPC ----
 
-fn lock_document(state: &AppState) -> Result<std::sync::MutexGuard<'_, Document>, String> {
+fn lock_document(state: &AppState) -> IpcResult<std::sync::MutexGuard<'_, Document>> {
     state
         .document
         .lock()
-        .map_err(|_| "document lock poisoned".to_string())
+        .map_err(|_| EditorError::LockPoisoned { what: "document" }.into())
 }
 
 /// 提案の一覧・元にする PSD・分類の結果。
 #[tauri::command]
-pub fn get_proposals(state: State<'_, AppState>) -> Result<ProposalState, String> {
+pub fn get_proposals(state: State<'_, AppState>) -> IpcResult<ProposalState> {
     let document = lock_document(&state)?;
     Ok(lock_project(&state)?.proposals.state(&document))
 }
@@ -685,7 +683,7 @@ pub async fn classify_psd_layers(
     instructions: Option<String>,
     revise: bool,
     consent: Option<ConsentAnswer>,
-) -> Result<AiReply<Classification>, String> {
+) -> IpcResult<AiReply<Classification>> {
     blocking(app, move |state| {
         let ask = Ask {
             instructions: instructions.as_deref(),
@@ -707,7 +705,7 @@ pub async fn propose_rig_from_psd(
     instructions: Option<String>,
     consent: Option<ConsentAnswer>,
     module_options: Option<ModuleRigChoice>,
-) -> Result<AiReply<ProposalView>, String> {
+) -> IpcResult<AiReply<ProposalView>> {
     blocking(app, move |state| {
         propose_guided_in(
             state,
@@ -730,7 +728,7 @@ pub async fn regenerate_rig_proposal(
     instructions: Option<String>,
     consent: Option<ConsentAnswer>,
     module_options: Option<ModuleRigChoice>,
-) -> Result<AiReply<ProposalView>, String> {
+) -> IpcResult<AiReply<ProposalView>> {
     blocking(app, move |state| {
         regenerate_in(
             state,
@@ -752,7 +750,7 @@ pub async fn propose_normal_maps(
     app: AppHandle,
     choices: Vec<NormalMapGroupChoice>,
     replace_existing: bool,
-) -> Result<ProposalView, String> {
+) -> IpcResult<ProposalView> {
     blocking(app, move |state| {
         propose_normal_maps_in(state, &choices, replace_existing)
     })
@@ -764,7 +762,7 @@ pub(crate) fn propose_normal_maps_in(
     state: &AppState,
     choices: &[NormalMapGroupChoice],
     replace_existing: bool,
-) -> Result<ProposalView, String> {
+) -> IpcResult<ProposalView> {
     let layers = lock_project(state)?.proposals.layer_labels();
     // 作る間はロックを持たない (大きなテクスチャでは時間がかかる)。
     let (document, base) = {
@@ -775,19 +773,16 @@ pub(crate) fn propose_normal_maps_in(
         normal_map_proposal_in(&document, layers.as_deref(), choices, replace_existing)?;
     let document = lock_document(state)?;
     if document.state_id() != base {
-        return Err("the model changed while the proposal was being made; propose again".into());
+        return Err(EditorError::ProposalModelChanged.into());
     }
     let mut session = lock_project(state)?;
     let proposals = &mut session.proposals;
-    let view = proposals
-        .proposals
-        .add(
-            &document,
-            proposal.title,
-            proposal.rationale,
-            proposal.commands,
-        )
-        .map_err(|e| e.to_string())?;
+    let view = proposals.proposals.add(
+        &document,
+        proposal.title,
+        proposal.rationale,
+        proposal.commands,
+    )?;
     proposals.sections.insert(view.id, sections);
     Ok(view)
 }
@@ -806,10 +801,14 @@ pub(crate) fn classify_guided_in(
     use_ai: bool,
     ask: &Ask<'_>,
     consent: Option<&ConsentAnswer>,
-) -> Result<AiReply<Classification>, String> {
+) -> IpcResult<AiReply<Classification>> {
     let path = match psd {
         Some(p) => absolute_path(&p)?,
-        None => lock_project(state)?.proposals.psd.clone().ok_or(NO_PSD)?,
+        None => lock_project(state)?
+            .proposals
+            .psd
+            .clone()
+            .ok_or(EditorError::NoPsd)?,
     };
     let tree = read_tree(&path)?;
     let mut guidance = ClassifyGuidance::default();
@@ -822,12 +821,12 @@ pub(crate) fn classify_guided_in(
                 .classification
                 .as_ref()
                 .filter(|c| c.psd == path)
-                .ok_or("classify the PSD layers first")?;
+                .ok_or(EditorError::NotClassified)?;
             guidance.previous = Some(current.labels.clone());
         }
         let requests =
             classification_requests_guided(&tree, &ClassifyOptions::default(), &guidance)
-                .map_err(|e| e.to_string())?;
+                .map_err(EditorError::Ai)?;
         let chars = instruction_chars(&guidance.instructions);
         match prepare_instructed(state, Purpose::Proposal, &requests, 0, chars, consent)? {
             Prepared::NeedsConsent(disclosure) => {
@@ -838,7 +837,7 @@ pub(crate) fn classify_guided_in(
     } else {
         classify(&tree, None, &guidance)
     }
-    .map_err(|e| e.to_string())?;
+    .map_err(EditorError::Ai)?;
     let classified = Classified {
         psd: path.clone(),
         labels,
@@ -859,7 +858,7 @@ pub(crate) fn propose_guided_in(
     instructions_text: Option<&str>,
     module: ModuleRigChoice,
     consent: Option<&ConsentAnswer>,
-) -> Result<AiReply<ProposalView>, String> {
+) -> IpcResult<AiReply<ProposalView>> {
     let ask = RigAsk {
         instructions: if use_ai {
             instructions(instructions_text)?
@@ -879,15 +878,13 @@ pub(crate) fn regenerate_in(
     instructions_text: Option<&str>,
     module: ModuleRigChoice,
     consent: Option<&ConsentAnswer>,
-) -> Result<AiReply<ProposalView>, String> {
+) -> IpcResult<AiReply<ProposalView>> {
     let previous = lock_project(state)?
         .proposals
         .rigs
         .get(&id)
         .cloned()
-        .ok_or_else(|| {
-            format!("proposal {id} was not made in this panel, so it cannot be regenerated")
-        })?;
+        .ok_or(EditorError::NotRegenerable(id))?;
     let ask = RigAsk {
         instructions: instructions(instructions_text)?,
         previous: Some(previous),
@@ -904,7 +901,7 @@ fn make_rig(
     mut guidance: RigAsk,
     revises: Option<u32>,
     consent: Option<&ConsentAnswer>,
-) -> Result<AiReply<ProposalView>, String> {
+) -> IpcResult<AiReply<ProposalView>> {
     // 提案を作る間はロックを持たない (AI の応答を待つ)。複製は履歴を持たず、モジュールの情報は持つ。
     let (document, base) = {
         let document = lock_document(state)?;
@@ -914,16 +911,16 @@ fn make_rig(
         .proposals
         .classification
         .clone()
-        .ok_or("classify the PSD layers first")?;
+        .ok_or(EditorError::NotClassified)?;
     // 同じ注文で AI が分類したなら、ラベルに関わる注文は分類で反映した。
     guidance.labels_follow_instructions = classified.by_ai
         && guidance.instructions.is_some()
         && classified.instructions == guidance.instructions;
     let rigged = if use_ai {
         let tree = read_tree(&classified.psd)?;
-        let image = overview(&tree).map_err(|e| e.to_string())?;
+        let image = overview(&tree).map_err(EditorError::Ai)?;
         let request = rig_request(&document, &classified.labels, &image, &guidance)
-            .map_err(|e| e.to_string())?;
+            .map_err(EditorError::Ai)?;
         let retries = DEFAULT_MAX_ATTEMPTS - 1;
         let chars = instruction_chars(&guidance.instructions);
         match prepare_instructed(
@@ -948,7 +945,7 @@ fn make_rig(
     } else {
         rig(&document, &classified.labels, &[], None, &guidance)
     }
-    .map_err(|e| e.to_string())?;
+    .map_err(EditorError::Ai)?;
     let origin = ProposalOrigin {
         revises,
         instructions: guidance.instructions.map(|i| i.as_str().to_owned()),
@@ -964,24 +961,21 @@ pub(crate) fn place(
     base: u64,
     rigged: Rigged,
     origin: ProposalOrigin,
-) -> Result<ProposalView, String> {
+) -> IpcResult<ProposalView> {
     let document = lock_document(state)?;
     if document.state_id() != base {
-        return Err("the model changed while the proposal was being made; propose again".into());
+        return Err(EditorError::ProposalModelChanged.into());
     }
     let mut session = lock_project(state)?;
     let proposals = &mut session.proposals;
     let writes = matches!(rigged.previous, PreviousAnswer::Module(_))
         .then(|| mesh_writes(&rigged.proposal.commands));
-    let view = proposals
-        .proposals
-        .add(
-            &document,
-            rigged.proposal.title,
-            rigged.proposal.rationale,
-            rigged.proposal.commands,
-        )
-        .map_err(|e| e.to_string())?;
+    let view = proposals.proposals.add(
+        &document,
+        rigged.proposal.title,
+        rigged.proposal.rationale,
+        rigged.proposal.commands,
+    )?;
     proposals.proposals.set_origin(view.id, origin);
     if let Some(writes) = writes {
         proposals.writes.insert(view.id, writes);
@@ -992,7 +986,7 @@ pub(crate) fn place(
         .views(&document)
         .into_iter()
         .find(|v| v.id == view.id)
-        .ok_or("the proposal disappeared")?;
+        .ok_or(EditorError::ProposalDisappeared)?;
     Ok(view)
 }
 
@@ -1003,39 +997,35 @@ pub fn preview_proposal(
     state: State<'_, AppState>,
     id: u32,
     excluded: Vec<usize>,
-) -> Result<ProposalPreview, String> {
+) -> IpcResult<ProposalPreview> {
     let document = lock_document(&state)?;
     let mut session = lock_project(&state)?;
     session.proposals.preview = None;
     let (preview, report) = session
         .proposals
         .proposals
-        .preview(&document, id, &excluded)
-        .map_err(|e| e.to_string())?;
-    let model_json = ugoe_format::model_to_json(preview.model()).map_err(|e| e.to_string())?;
+        .preview(&document, id, &excluded)?;
+    let model_json = ugoe_format::model_to_json(preview.model())?;
     session.proposals.preview = Some(preview);
     Ok(ProposalPreview { model_json, report })
 }
 
 /// 最後にプレビューした姿の `.ugoe` バンドル (テクスチャ付き)。生のバイト列で送る。
 #[tauri::command]
-pub fn get_proposal_preview_bundle(
-    state: State<'_, AppState>,
-) -> Result<tauri::ipc::Response, String> {
+pub fn get_proposal_preview_bundle(state: State<'_, AppState>) -> IpcResult<tauri::ipc::Response> {
     let session = lock_project(&state)?;
     let preview = session
         .proposals
         .preview
         .as_ref()
-        .ok_or("no proposal is being previewed")?;
-    let bytes =
-        ugoe_editor_core::export_bundle(&session.to_project(preview)).map_err(|e| e.to_string())?;
+        .ok_or(EditorError::NoPreview)?;
+    let bytes = ugoe_editor_core::export_bundle(&session.to_project(preview))?;
     Ok(tauri::ipc::Response::new(bytes))
 }
 
 /// プレビューの複製を捨てる (プレビューをやめたとき)。
 #[tauri::command]
-pub fn clear_proposal_preview(state: State<'_, AppState>) -> Result<(), String> {
+pub fn clear_proposal_preview(state: State<'_, AppState>) -> IpcResult<()> {
     lock_project(&state)?.proposals.preview = None;
     Ok(())
 }
@@ -1047,23 +1037,18 @@ pub fn adopt_proposal(
     state: State<'_, AppState>,
     id: u32,
     excluded: Vec<usize>,
-) -> Result<ApplyReport, String> {
+) -> IpcResult<ApplyReport> {
     adopt_in(&state, id, &excluded)
 }
 
 /// [`adopt_proposal`] の本体。モジュールのリグの提案なら、キーフォームを書いたメッシュの形を覚える。
-pub(crate) fn adopt_in(
-    state: &AppState,
-    id: u32,
-    excluded: &[usize],
-) -> Result<ApplyReport, String> {
+pub(crate) fn adopt_in(state: &AppState, id: u32, excluded: &[usize]) -> IpcResult<ApplyReport> {
     let mut document = lock_document(state)?;
     let mut session = lock_project(state)?;
     let report = session
         .proposals
         .proposals
-        .adopt(&mut document, id, excluded)
-        .map_err(|e| e.to_string())?;
+        .adopt(&mut document, id, excluded)?;
     session.proposals.preview = None;
     session.proposals.remember_rigged(&document, id, excluded);
     let rigged = session.proposals.rigged_value();
@@ -1074,12 +1059,12 @@ pub(crate) fn adopt_in(
 /// 本体の変形を写した後に形を編集した衣装のメッシュの知らせを消す (今の形を覚え直す。提案し直さずに済ませるとき)。
 /// 覚え直した形はプロジェクトに残す (保存するまでファイルには書かない)。
 #[tauri::command]
-pub fn dismiss_stale_rigs(state: State<'_, AppState>) -> Result<ProposalState, String> {
+pub fn dismiss_stale_rigs(state: State<'_, AppState>) -> IpcResult<ProposalState> {
     dismiss_stale_rigs_in(&state)
 }
 
 /// [`dismiss_stale_rigs`] の本体。
-pub(crate) fn dismiss_stale_rigs_in(state: &AppState) -> Result<ProposalState, String> {
+pub(crate) fn dismiss_stale_rigs_in(state: &AppState) -> IpcResult<ProposalState> {
     let document = lock_document(state)?;
     let mut session = lock_project(state)?;
     session.proposals.forget_stale(&document);
@@ -1090,19 +1075,15 @@ pub(crate) fn dismiss_stale_rigs_in(state: &AppState) -> Result<ProposalState, S
 
 /// 提案を捨てる。
 #[tauri::command]
-pub fn reject_proposal(state: State<'_, AppState>, id: u32) -> Result<ProposalState, String> {
+pub fn reject_proposal(state: State<'_, AppState>, id: u32) -> IpcResult<ProposalState> {
     reject_in(&state, id)
 }
 
 /// [`reject_proposal`] の本体。作り直しに使う値と理由も捨てる。
-pub(crate) fn reject_in(state: &AppState, id: u32) -> Result<ProposalState, String> {
+pub(crate) fn reject_in(state: &AppState, id: u32) -> IpcResult<ProposalState> {
     let document = lock_document(state)?;
     let mut session = lock_project(state)?;
-    session
-        .proposals
-        .proposals
-        .reject(id)
-        .map_err(|e| e.to_string())?;
+    session.proposals.proposals.reject(id)?;
     session.proposals.rigs.remove(&id);
     session.proposals.sections.remove(&id);
     session.proposals.writes.remove(&id);

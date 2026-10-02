@@ -42,10 +42,16 @@ describe("external change", () => {
 
   it("recognizes the refused save", () => {
     expect(
-      isExternalChangeError(
-        "the project was changed outside the editor after it was opened; reload it, or save again to overwrite",
-      ),
+      isExternalChangeError({
+        code: "editor.external_change",
+        args: {},
+        message:
+          "the project was changed outside the editor after it was opened; reload it, or save again to overwrite",
+      }),
     ).toBe(true);
+    expect(isExternalChangeError({ code: "editor.io", args: {}, message: "disk full" })).toBe(
+      false,
+    );
     expect(isExternalChangeError("disk full")).toBe(false);
   });
 });

@@ -14,11 +14,13 @@ use ugoe_mesher::MeshError;
 use ugoe_model::mesh::MeshKeyform;
 use ugoe_model::part::PartKeyform;
 use ugoe_model::{BlendMode, KeyformGrid, MaskMode, MaskRef, Mesh, MeshId, Model, Part, PartId};
-use ugoe_psd::{Layer, LayerNode, LayerTree, PsdError};
+use ugoe_psd::{Layer, LayerNode, LayerTree, PsdError, WarningKind};
 
 use crate::Command;
 use crate::automesh::AutoMeshOptions;
 use crate::ids::unique_id;
+use crate::message::MessageArgs;
+use crate::message_args;
 use crate::texture::{MAX_TEXTURE_NAME_LEN, encode_rgba_png};
 
 /// 取り込んだメッシュの描画順を並べる範囲 (`docs/spec/model.md` の慣例 0〜1000)。
@@ -54,11 +56,16 @@ pub struct PsdImport {
 }
 
 /// 取り込みの警告。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
 pub struct PsdImportWarning {
     /// レイヤーの名前の列 (外側のグループから順に、最後がレイヤー自身)。
     /// ドキュメント全体についての警告では空。
     pub path: Vec<String>,
+    /// 安定した識別子 (`psd.*`。`docs/editor.md#エラーと警告のコード`)。
+    pub code: String,
+    /// 文に差し込む値。
+    pub args: MessageArgs,
+    /// 英語の文 (レイヤーのパスを含まない)。
     pub message: String,
 }
 
@@ -84,6 +91,26 @@ pub enum PsdImportError {
         #[source]
         source: MeshError,
     },
+}
+
+/// `ugoe-psd` の読み込みの警告のコードと引数。
+fn psd_warning_code(kind: &WarningKind) -> (&'static str, MessageArgs) {
+    match kind {
+        WarningKind::AdjustmentLayer { key } => {
+            ("psd.adjustment_layer", message_args! { "key" => key })
+        }
+        WarningKind::SmartObjectWithoutPixels => {
+            ("psd.smart_object_without_pixels", message_args! {})
+        }
+        WarningKind::LayerEffectsIgnored => ("psd.layer_effects_ignored", message_args! {}),
+        WarningKind::LayerMaskIgnored => ("psd.layer_mask_ignored", message_args! {}),
+        WarningKind::UnsupportedCompression { compression } => (
+            "psd.unsupported_compression",
+            message_args! { "compression" => *compression },
+        ),
+        WarningKind::MissingPixels => ("psd.missing_pixels", message_args! {}),
+        WarningKind::FlattenedImage => ("psd.flattened_image", message_args! {}),
+    }
 }
 
 /// PSD のバイト列を読み、`model` に取り込むコマンドを作る。
@@ -112,8 +139,11 @@ pub fn layer_tree_command(
         // `ImportWarning` の表示は `パス: 内容` なので、内容だけを取り出す。
         let prefix = format!("{}: ", w.path.join(" / "));
         let message = text.strip_prefix(&prefix).unwrap_or(&text).to_owned();
+        let (code, args) = psd_warning_code(&w.kind);
         PsdImportWarning {
             path: w.path.clone(),
+            code: code.to_owned(),
+            args,
             message,
         }
     }));
@@ -134,6 +164,13 @@ pub fn layer_tree_command(
     } else if model.meta.canvas.width != width || model.meta.canvas.height != height {
         builder.warn(
             &[],
+            "psd.canvas_mismatch",
+            message_args! {
+                "psd_width" => tree.width,
+                "psd_height" => tree.height,
+                "model_width" => model.meta.canvas.width,
+                "model_height" => model.meta.canvas.height,
+            },
             format!(
                 "the PSD canvas ({}x{}) differs from the model canvas ({}x{}); \
                  the model canvas is kept and the layers are placed at their PSD pixel \
@@ -222,9 +259,11 @@ impl Builder {
         }
     }
 
-    fn warn(&mut self, path: &[String], message: impl Into<String>) {
+    fn warn(&mut self, path: &[String], code: &str, args: MessageArgs, message: impl Into<String>) {
         self.warnings.push(PsdImportWarning {
             path: path.to_vec(),
+            code: code.to_owned(),
+            args,
             message: message.into(),
         });
     }
@@ -274,12 +313,16 @@ impl Builder {
                     if !matches!(blend_mode.as_str(), "pass" | "norm") {
                         self.warn(
                             &path,
+                            "psd.group_blend_mode_ignored",
+                            message_args! { "blend_mode" => blend_mode },
                             format!("group blend mode `{blend_mode}` ignored (parts have none)"),
                         );
                     }
                     if *clipping {
                         self.warn(
                             &path,
+                            "psd.group_clipping_unsupported",
+                            message_args! {},
                             "clipping of a group is not supported, imported unclipped",
                         );
                     }
@@ -329,7 +372,12 @@ impl Builder {
         clip: Option<&Base>,
     ) -> Result<Option<MeshId>, PsdImportError> {
         if layer.width == 0 || layer.height == 0 {
-            self.warn(path, "empty layer skipped");
+            self.warn(
+                path,
+                "psd.empty_layer",
+                message_args! {},
+                "empty layer skipped",
+            );
             return Ok(None);
         }
         let pad = self.padding;
@@ -338,11 +386,21 @@ impl Builder {
         let generated = match ugoe_mesher::generate(&rgba, width, height, &self.options.into()) {
             Ok(g) => g,
             Err(MeshError::Empty) => {
-                self.warn(path, "fully transparent layer skipped");
+                self.warn(
+                    path,
+                    "psd.transparent_layer",
+                    message_args! {},
+                    "fully transparent layer skipped",
+                );
                 return Ok(None);
             }
             Err(MeshError::TooComplex) => {
-                self.warn(path, "layer too complex to mesh, skipped");
+                self.warn(
+                    path,
+                    "psd.layer_too_complex",
+                    message_args! {},
+                    "layer too complex to mesh, skipped",
+                );
                 return Ok(None);
             }
             Err(source) => {
@@ -370,6 +428,8 @@ impl Builder {
             other => {
                 self.warn(
                     path,
+                    "psd.blend_mode_unsupported",
+                    message_args! { "blend_mode" => other },
                     format!("blend mode `{other}` is not supported, using normal"),
                 );
                 BlendMode::Normal
@@ -385,7 +445,12 @@ impl Builder {
         match clip {
             None | Some(Base::Nothing) => {}
             Some(Base::Skipped) => {
-                self.warn(path, "clipping base was not imported, imported unclipped");
+                self.warn(
+                    path,
+                    "psd.clipping_base_missing",
+                    message_args! {},
+                    "clipping base was not imported, imported unclipped",
+                );
             }
             Some(Base::Meshes { ids, opacity: base }) => {
                 masks = ids.iter().cloned().map(MaskRef::normal).collect();

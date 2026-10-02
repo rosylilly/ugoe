@@ -1,6 +1,8 @@
 // Tauri バックエンド (apps/editor/src-tauri/src/commands.rs など) への型付きラッパー。
 // バックエンドのコマンドを変えたら、ここも同じ PR で更新すること。
 // 引数・戻り値の型は Rust から生成した ./generated/types.ts を使う (`just gen`、docs/editor.md#型の生成)。
+// コマンドが失敗すると、Promise は `IpcError` (コード・引数・英語の文。ADR 0029) で reject する。
+// 画面に出す文は ./errors.ts の `errorText` で取る (コードは docs/editor.md#エラーと警告のコード)。
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
@@ -24,6 +26,7 @@ import type {
   ExternalChange,
   KeyformTarget,
   McpBridgeStatus,
+  Message,
   ModuleDifference,
   ModuleExportReport,
   ModuleProblem,
@@ -47,6 +50,9 @@ import type { Point } from "./panels/inspector/keyforms/keyforms";
 import { PNG_PATH_HEADER } from "./viewport/screenshot";
 
 export type * from "./generated/types";
+
+/** IPC コマンドが失敗したときの reject の値 (ugoe_editor_core::Message)。 */
+export type IpcError = Message;
 
 /** ugoe_editor_core::Command の JSON 表現。`Command` の別名 (既存のコードとの互換のため)。 */
 export type EditCommand = Command;

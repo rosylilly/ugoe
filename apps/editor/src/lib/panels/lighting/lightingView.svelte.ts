@@ -1,6 +1,7 @@
 // ライティングのパネル・ビューポートの取っ手・プレビューのパネルが共有する、プレビューの光源の状態
 // (docs/editor.md#ライティングの画面)。光源はモデルに入らないので、コマンドではなく project.json の
 // editor.lighting に残す (ipc.setPreviewLighting。Undo の対象ではない)。
+import { errorText } from "../../errors";
 import { ipc, type PreviewLight, type PreviewLighting } from "../../ipc";
 import { DEFAULT_PREVIEW_LIGHTING, lightingJson } from "./lighting";
 
@@ -24,7 +25,7 @@ export class LightingView {
       this.settings = await ipc.getPreviewLighting();
       this.error = null;
     } catch (e) {
-      this.error = String(e);
+      this.error = errorText(e);
     }
     if (this.selected !== null && this.selected >= this.settings.lights.length) {
       this.selected = this.settings.lights.length > 0 ? 0 : null;
@@ -44,7 +45,7 @@ export class LightingView {
       this.error = null;
       this.onsaved?.();
     } catch (e) {
-      this.error = String(e);
+      this.error = errorText(e);
       await this.load();
     }
   }

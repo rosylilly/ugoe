@@ -4,6 +4,7 @@
 
 use std::path::Path;
 
+use crate::error::{EditorError, IpcResult};
 use crate::project::absolute_path;
 
 /// 保存先のパスを渡すヘッダー (`src/lib/viewport/screenshot.ts` の `PNG_PATH_HEADER` と同じ)。
@@ -16,29 +17,32 @@ const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 /// PNG の画像を書く。本文は PNG のバイト列、パスはヘッダー `x-ugoe-path` (保存のダイアログで利用者が選んだ絶対パス)。
 /// 拡張子が `.png` で、中身が PNG のものだけを書く。
 #[tauri::command]
-pub fn write_png_file(request: tauri::ipc::Request<'_>) -> Result<(), String> {
+pub fn write_png_file(request: tauri::ipc::Request<'_>) -> IpcResult<()> {
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
-        return Err("expected the bytes of a PNG image".into());
+        return Err(EditorError::ExpectedPngBytes.into());
     };
     let header = request
         .headers()
         .get(PATH_HEADER)
-        .ok_or_else(|| format!("missing the {PATH_HEADER} header"))?
+        .ok_or(EditorError::MissingHeader(PATH_HEADER))?
         .to_str()
-        .map_err(|e| format!("{PATH_HEADER}: {e}"))?;
+        .map_err(|e| EditorError::InvalidHeader {
+            header: PATH_HEADER,
+            detail: e.to_string(),
+        })?;
     write_png(&percent_decode(header)?, bytes)
 }
 
 /// [`write_png_file`] の中身 (テストから呼ぶ)。
-fn write_png(path: &str, bytes: &[u8]) -> Result<(), String> {
+fn write_png(path: &str, bytes: &[u8]) -> IpcResult<()> {
     let path = absolute_path(path)?;
     if !is_png_path(&path) {
-        return Err(format!("not a PNG file: {}", path.display()));
+        return Err(EditorError::NotPngFile(path.display().to_string()).into());
     }
     if !bytes.starts_with(PNG_SIGNATURE) {
-        return Err("the data is not a PNG image".into());
+        return Err(EditorError::NotPngData.into());
     }
-    std::fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))
+    std::fs::write(&path, bytes).map_err(|e| EditorError::io(&path, e).into())
 }
 
 fn is_png_path(path: &Path) -> bool {
@@ -48,7 +52,7 @@ fn is_png_path(path: &Path) -> bool {
 }
 
 /// `encodeURIComponent` で符号化した文字列を戻す (`%XX` を 1 バイトに。結果は UTF-8)。
-fn percent_decode(text: &str) -> Result<String, String> {
+fn percent_decode(text: &str) -> IpcResult<String> {
     let bytes = text.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
@@ -58,7 +62,7 @@ fn percent_decode(text: &str) -> Result<String, String> {
                 .get(i + 1..i + 3)
                 .and_then(|h| std::str::from_utf8(h).ok())
                 .and_then(|h| u8::from_str_radix(h, 16).ok())
-                .ok_or_else(|| format!("invalid percent-encoding: {text}"))?;
+                .ok_or_else(|| EditorError::InvalidPercentEncoding(text.to_owned()))?;
             out.push(byte);
             i += 3;
         } else {
@@ -66,7 +70,7 @@ fn percent_decode(text: &str) -> Result<String, String> {
             i += 1;
         }
     }
-    String::from_utf8(out).map_err(|e| format!("invalid percent-encoding: {e}"))
+    String::from_utf8(out).map_err(|e| EditorError::InvalidPercentEncoding(e.to_string()).into())
 }
 
 #[cfg(test)]
@@ -97,7 +101,7 @@ mod tests {
         assert!(write_png(dir.join("other.png").to_str().unwrap(), b"not a png").is_err());
         assert!(!dir.join("other.png").exists());
         let err = write_png("shot.png", &png).unwrap_err();
-        assert!(err.contains("must be absolute"), "{err}");
+        assert!(err.to_string().contains("must be absolute"), "{err}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

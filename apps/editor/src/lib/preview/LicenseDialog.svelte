@@ -3,6 +3,8 @@
   本文は `pnpm mediapipe` が public/mediapipe/ に写した third-party-notices.txt (@ugoe/face-tracking のもの)。
 -->
 <script lang="ts">
+import { errorText } from "../errors";
+
 let dialog = $state<HTMLDialogElement | null>(null);
 let text = $state("");
 
@@ -13,7 +15,7 @@ export async function open(): Promise<void> {
     const res = await fetch(new URL("mediapipe/third-party-notices.txt", document.baseURI));
     text = res.ok ? await res.text() : `Cannot load the notices (${res.status})`;
   } catch (e) {
-    text = `Cannot load the notices: ${e instanceof Error ? e.message : String(e)}`;
+    text = `Cannot load the notices: ${errorText(e)}`;
   }
 }
 </script>

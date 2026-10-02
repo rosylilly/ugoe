@@ -225,6 +225,8 @@ describe("re-derivation warnings", () => {
   const warning = (message: string): RederiveWarning => ({
     target: eyeR,
     source: eyeL,
+    code: "inference.mirror_failed",
+    args: {},
     message,
   });
 
@@ -236,7 +238,13 @@ describe("re-derivation warnings", () => {
   });
 
   it("keeps one warning per grid and source, the newest", () => {
-    const other: RederiveWarning = { target: eyeL, source: eyeR, message: "x" };
+    const other: RederiveWarning = {
+      target: eyeL,
+      source: eyeR,
+      code: "inference.mirror_failed",
+      args: {},
+      message: "x",
+    };
     expect(mergeWarnings([warning("old"), other], [warning("new")])).toEqual([
       other,
       warning("new"),

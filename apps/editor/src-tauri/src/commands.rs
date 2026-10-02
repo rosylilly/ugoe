@@ -4,11 +4,12 @@
 use serde::Serialize;
 use tauri::State;
 use ts_rs::TS;
-use ugoe_editor_core::{ApplyReport, Command};
+use ugoe_editor_core::{ApplyReport, Command, Message};
 use ugoe_model::expression::Expression;
 use ugoe_model::motion::Motion;
 
 use crate::AppState;
+use crate::error::{EditorError, IpcResult};
 
 #[derive(Debug, Serialize, TS)]
 pub struct AppInfo {
@@ -25,15 +26,15 @@ pub fn app_info() -> AppInfo {
 /// 編集コマンドを適用する。JSON 形式は `ugoe_editor_core::Command` を参照。
 /// 適用はしたが知らせたいこと (自動のミラーのやり直しの失敗) を返す。
 #[tauri::command]
-pub fn apply_command(state: State<'_, AppState>, command: Command) -> Result<ApplyReport, String> {
+pub fn apply_command(state: State<'_, AppState>, command: Command) -> IpcResult<ApplyReport> {
     lock(&state)?
         .apply_with_report(command)
-        .map_err(|e| e.to_string())
+        .map_err(Message::from)
 }
 
 #[tauri::command]
-pub fn get_model_json(state: State<'_, AppState>) -> Result<String, String> {
-    ugoe_format::model_to_json(lock(&state)?.model()).map_err(|e| e.to_string())
+pub fn get_model_json(state: State<'_, AppState>) -> IpcResult<String> {
+    ugoe_format::model_to_json(lock(&state)?.model()).map_err(Message::from)
 }
 
 /// ドキュメントのモーションと表情 (`get_animations` の戻り値)。
@@ -45,7 +46,7 @@ pub struct AnimationData {
 
 /// ドキュメントのモーションと表情を返す (タイムラインの表示用。編集は `apply_command`)。
 #[tauri::command]
-pub fn get_animations(state: State<'_, AppState>) -> Result<AnimationData, String> {
+pub fn get_animations(state: State<'_, AppState>) -> IpcResult<AnimationData> {
     let document = lock(&state)?;
     Ok(AnimationData {
         motions: document.motions().to_vec(),
@@ -57,25 +58,25 @@ pub fn get_animations(state: State<'_, AppState>) -> Result<AnimationData, Strin
 #[tauri::command]
 pub fn get_physics(
     state: State<'_, AppState>,
-) -> Result<Option<ugoe_model::physics::PhysicsSettings>, String> {
+) -> IpcResult<Option<ugoe_model::physics::PhysicsSettings>> {
     Ok(lock(&state)?.physics().cloned())
 }
 
 #[tauri::command]
-pub fn undo(state: State<'_, AppState>) -> Result<bool, String> {
+pub fn undo(state: State<'_, AppState>) -> IpcResult<bool> {
     Ok(lock(&state)?.undo())
 }
 
 #[tauri::command]
-pub fn redo(state: State<'_, AppState>) -> Result<bool, String> {
+pub fn redo(state: State<'_, AppState>) -> IpcResult<bool> {
     Ok(lock(&state)?.redo())
 }
 
 pub(crate) fn lock<'a>(
     state: &'a State<'_, AppState>,
-) -> Result<std::sync::MutexGuard<'a, ugoe_editor_core::Document>, String> {
+) -> IpcResult<std::sync::MutexGuard<'a, ugoe_editor_core::Document>> {
     state
         .document
         .lock()
-        .map_err(|_| "document lock poisoned".to_string())
+        .map_err(|_| EditorError::LockPoisoned { what: "document" }.into())
 }

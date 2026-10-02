@@ -9,6 +9,7 @@
 - UI・Tauri・GPU に依存しない
 - すべての編集は `Command` を通す。`Document::apply` は失敗時にモデルを変更しない
 - `Command` のバリアントは末尾に追加する
+- 画面に出すエラー・警告には `Coded` (`src/message_codes.rs`) で安定したコードと引数を付け、`Message` で渡す。**コードは名前を変えない**。足したら `docs/editor.md#エラーと警告のコード` の一覧にも書く ([ADR 0029](../../docs/adr/0029-shared-ui-and-i18n.md))
 - `Command` やモデルの型を変えたら `just gen` で生成物 (TS の型・`schema/command.schema.json`) を作り直す ([型の生成](../../docs/editor.md#型の生成))
 
 ## 仕様
@@ -31,3 +32,4 @@
 - T0651 (`SetModuleSettings` の `keep_look`・本体とスロットの付け替えの `Document::rebase_module_on`・プレビュー用の本体だけの `.ugoe` の `export_base_bundle`)
 - T0653 (`keep_look` での衝突体の写し直し・本体の版 `ModuleContext::base_revision`・名前を替えた書き出し `export_module_as`)
 - T0654 (今の編集と書き出した `.ugoemod` の違い `compare_with_module_file`。`src/module_compare.rs`・アトラス化を選べるモジュールの書き出し `export_module_with_settings`)
+- T0666 (エラー・警告のコードと引数 `Message`・`Coded`。`src/message.rs`・`src/message_codes.rs`)

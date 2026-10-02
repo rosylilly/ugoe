@@ -24,6 +24,8 @@ mod inference;
 pub mod keyform;
 pub mod lighting;
 mod mesh_edit;
+pub mod message;
+mod message_codes;
 pub mod module_compare;
 pub mod module_project;
 pub mod motion_edit;
@@ -50,6 +52,7 @@ pub use grid::CellError;
 pub use import::{PsdImport, PsdImportError, PsdImportOptions, PsdImportWarning, import_psd};
 pub use inference::{MirrorReport, RederiveWarning};
 pub use keyform::Keyform;
+pub use message::{Coded, Message, MessageArg, MessageArgs};
 pub use module_compare::{
     DifferenceItem, DifferenceKind, ModuleDifference, compare_with_module_file,
 };
@@ -95,6 +98,8 @@ mod keyform_tests;
 mod lighting_tests;
 #[cfg(test)]
 mod mesh_edit_tests;
+#[cfg(test)]
+mod message_tests;
 #[cfg(test)]
 mod module_compare_tests;
 #[cfg(test)]

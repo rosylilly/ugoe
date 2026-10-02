@@ -228,6 +228,12 @@ fn reports_warnings() {
             .any(|m| m.starts_with("レベル補正: adjustment")),
         "{messages:?}"
     );
+    let adjustment = &import.warnings[0];
+    assert_eq!(adjustment.code, "psd.adjustment_layer");
+    assert_eq!(
+        adjustment.args["key"],
+        crate::MessageArg::Text("levl".into())
+    );
     // レイヤー効果の警告は `ugoe-psd` のテストで試す (`layers.psd` は仕様どおりに書けない偽の効果を持たない)。
     assert_eq!(messages.len(), 1, "{messages:?}");
 }
@@ -310,6 +316,20 @@ fn import_into_existing_model_uses_new_top_level_part() {
             "the PSD canvas (64x48) differs from the model canvas (256x256); \
                      the model canvas is kept"
         )));
+    let canvas = first
+        .warnings
+        .iter()
+        .find(|w| w.code == "psd.canvas_mismatch")
+        .unwrap();
+    assert_eq!(
+        canvas.args,
+        crate::message_args! {
+            "psd_width" => 64u32,
+            "psd_height" => 48u32,
+            "model_width" => 256.0f32,
+            "model_height" => 256.0f32,
+        }
+    );
     doc.apply(first.command).unwrap();
     // 同じ PSD をもう一度取り込むと、ID とテクスチャ名が重ならないように番号を付ける。
     let second = import_psd(doc.model(), &fixture_bytes(), &options).unwrap();

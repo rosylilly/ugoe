@@ -1,4 +1,5 @@
 <script lang="ts">
+import { errorText } from "./errors";
 // 書き出しの設定 (アトラス化の有無・最大の大きさ・余白) と、最後の書き出しの結果 (docs/editor.md#書き出し)。
 // 設定は変えるたびにプロジェクトに残す (保存で project.json の editor.export に書く)。
 // .ugoe の書き出しと、モジュールのプロジェクトの .ugoemod の書き出し (T0654) で同じ設定を使う。
@@ -27,7 +28,7 @@ async function load() {
   try {
     settings = await ipc.getExportSettings();
   } catch (e) {
-    error = String(e);
+    error = errorText(e);
   }
 }
 
@@ -39,7 +40,7 @@ async function update(patch: Partial<ExportSettings>) {
     settings = next;
     error = null;
   } catch (e) {
-    error = String(e);
+    error = errorText(e);
   }
 }
 

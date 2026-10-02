@@ -16,6 +16,8 @@ use ugoe_ai::claude::{self, ApiKey, ClaudeConfig, ClaudeProvider, Effort};
 use ugoe_ai::openai::{self, OpenAiConfig, OpenAiProvider, StructuredOutput};
 use ugoe_ai::transport::{is_loopback_url, url_host};
 
+use crate::error::EditorError;
+
 /// 設定のファイルの名前 (アプリの設定のディレクトリの中)。
 const SETTINGS_FILE: &str = "ai-provider.json";
 /// OpenAI 互換の API の既定のモデル。
@@ -123,10 +125,10 @@ pub struct KeySlot {
 
 impl ProviderSettings {
     /// 保存する前の検査。
-    pub fn check(&self) -> Result<(), String> {
+    pub fn check(&self) -> Result<(), EditorError> {
         match self.provider {
             ProviderKind::Claude if self.claude.model.trim().is_empty() => {
-                Err("choose a Claude model".into())
+                Err(EditorError::ClaudeModelMissing)
             }
             ProviderKind::Claude => Ok(()),
             ProviderKind::OpenaiCompatible => {
@@ -134,10 +136,10 @@ impl ProviderSettings {
                 if !(url.starts_with("https://") || url.starts_with("http://"))
                     || url_host(url).is_empty()
                 {
-                    return Err("the base URL must start with https:// or http://".into());
+                    return Err(EditorError::InvalidBaseUrl);
                 }
                 if self.openai.model.trim().is_empty() {
-                    return Err("choose a model".into());
+                    return Err(EditorError::ModelMissing);
                 }
                 Ok(())
             }
@@ -223,11 +225,11 @@ impl ProviderSettings {
         &self,
         key: Option<ApiKey>,
         purpose: Purpose,
-    ) -> Result<Box<dyn Provider>, String> {
+    ) -> Result<Box<dyn Provider>, EditorError> {
         self.check()?;
         match self.provider {
             ProviderKind::Claude => {
-                let key = key.ok_or("the Claude API needs an API key")?;
+                let key = key.ok_or(EditorError::ApiKeyRequired)?;
                 Ok(Box::new(ClaudeProvider::new(
                     self.claude_config(purpose),
                     key,
@@ -237,10 +239,7 @@ impl ProviderSettings {
                 let config = self.openai_config();
                 // 暗号化されない通信で、キーを外部に送らない
                 if key.is_some() && !config.is_local() && !config.base_url.starts_with("https://") {
-                    return Err(
-                        "refusing to send the API key over plain http to a remote server; use https"
-                            .into(),
-                    );
+                    return Err(EditorError::PlainHttpApiKey);
                 }
                 Ok(Box::new(OpenAiProvider::new(config, key)))
             }
@@ -258,16 +257,16 @@ pub struct ProviderStore {
 impl ProviderStore {
     /// `dir` (アプリの設定のディレクトリ) のファイルを読む。なければ既定のまま。
     /// 読めなければ既定のままエラーを返す (起動は止めない)。
-    pub fn load(&self, dir: PathBuf) -> Result<(), String> {
+    pub fn load(&self, dir: PathBuf) -> Result<(), EditorError> {
         let path = dir.join(SETTINGS_FILE);
         let _ = self.path.set(path.clone());
         let text = match std::fs::read_to_string(&path) {
             Ok(text) => text,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-            Err(e) => return Err(format!("{}: {e}", path.display())),
+            Err(e) => return Err(EditorError::io(&path, e)),
         };
         let settings: ProviderSettings =
-            serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+            serde_json::from_str(&text).map_err(|e| EditorError::io(&path, e))?;
         *self.lock() = settings;
         Ok(())
     }
@@ -277,15 +276,16 @@ impl ProviderStore {
     }
 
     /// 検査してから置き換え、ファイルに書く (ファイルの場所が決まっていれば)。
-    pub fn set(&self, settings: ProviderSettings) -> Result<(), String> {
+    pub fn set(&self, settings: ProviderSettings) -> Result<(), EditorError> {
         settings.check()?;
         if let Some(path) = self.path.get() {
             if let Some(dir) = path.parent() {
-                std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+                std::fs::create_dir_all(dir).map_err(|e| EditorError::io(dir, e))?;
             }
-            let mut text = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
+            let mut text = serde_json::to_string_pretty(&settings)
+                .map_err(|e| EditorError::Internal(e.to_string()))?;
             text.push('\n');
-            std::fs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+            std::fs::write(path, text).map_err(|e| EditorError::io(path, e))?;
         }
         *self.lock() = settings;
         Ok(())

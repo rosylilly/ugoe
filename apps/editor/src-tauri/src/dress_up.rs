@@ -12,6 +12,7 @@ use tauri::State;
 use ts_rs::TS;
 
 use crate::AppState;
+use crate::error::{EditorError, IpcResult};
 use crate::project::{ProjectStatus, absolute_path, lock_both, status};
 
 /// `project.json` の `editor` のうち、プレビューの着せ替えを置く項目。
@@ -101,7 +102,7 @@ fn is_module_path(path: &Path) -> bool {
 
 /// プロジェクトに残した、プレビューで試すモジュールの一覧 (パスは絶対パス)。
 #[tauri::command]
-pub fn get_preview_modules(state: State<'_, AppState>) -> Result<Vec<PreviewModule>, String> {
+pub fn get_preview_modules(state: State<'_, AppState>) -> IpcResult<Vec<PreviewModule>> {
     let (_document, session) = lock_both(&state)?;
     let base = base_dir(session.path());
     Ok(read_modules(
@@ -116,7 +117,7 @@ pub fn get_preview_modules(state: State<'_, AppState>) -> Result<Vec<PreviewModu
 pub fn set_preview_modules(
     state: State<'_, AppState>,
     modules: Vec<PreviewModule>,
-) -> Result<ProjectStatus, String> {
+) -> IpcResult<ProjectStatus> {
     for m in &modules {
         absolute_path(&m.path)?;
     }
@@ -130,12 +131,12 @@ pub fn set_preview_modules(
 /// `.ugoemod` のバイト列を返す (ファイルのダイアログで選んだ・ドロップした・プロジェクトに残したもの)。
 /// `.ugoemod` だけを読む。中身の検査と付け外しは webview の中の `WebPuppet.load_module` が行う。
 #[tauri::command]
-pub fn read_module_file(path: String) -> Result<tauri::ipc::Response, String> {
+pub fn read_module_file(path: String) -> IpcResult<tauri::ipc::Response> {
     let path = absolute_path(&path)?;
     if !is_module_path(&path) {
-        return Err(format!("not a .ugoemod file: {}", path.display()));
+        return Err(EditorError::NotModuleFile(path.display().to_string()).into());
     }
-    let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let bytes = std::fs::read(&path).map_err(|e| EditorError::io(&path, e))?;
     Ok(tauri::ipc::Response::new(bytes))
 }
 

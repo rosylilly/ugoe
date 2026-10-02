@@ -5,6 +5,7 @@
 // - 描画は要求されたときだけ requestAnimationFrame で 1 回行う (requestRender)。
 // - 座標: 公開するメソッドはすべて CSS ピクセル (ビューポート要素の左上原点)。
 //   WebPuppet は canvas の描画バッファの画素 (CSS ピクセル × devicePixelRatio) で受け取るので、ここで換算する。
+import { errorText } from "../errors";
 import type { Screenshot } from "./screenshot";
 import { loadUgoeWasm, type WebPuppet } from "./wasm";
 
@@ -142,7 +143,7 @@ export class ViewportController {
         return;
       }
       this.status = "error";
-      this.message = String(e);
+      this.message = errorText(e);
     }
   }
 
@@ -411,7 +412,7 @@ export class ViewportController {
         return;
       }
       this.status = "error";
-      this.message = String(e);
+      this.message = errorText(e);
     }
   }
 
@@ -502,7 +503,7 @@ export class ViewportController {
       this.requestRender();
     } catch (e) {
       this.status = "error";
-      this.message = String(e);
+      this.message = errorText(e);
     }
   }
 

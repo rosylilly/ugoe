@@ -6,10 +6,12 @@
 use std::path::{Path, PathBuf};
 
 use tauri::State;
+use ugoe_editor_core::Message;
 use ugoe_editor_core::Project;
 use ugoe_editor_core::bundle_project::save_bundle_projects;
 
 use crate::AppState;
+use crate::error::{EditorError, IpcResult};
 use crate::project::{ProjectSession, ProjectStatus, absolute_path, lock_both, status};
 
 /// 見本の本体。
@@ -33,20 +35,17 @@ const FOLDER: &str = "ugoe-dress-up-sample";
 /// 既にあるフォルダーには書かない (前に書き出して編集した見本を上書きしない)。未保存の変更は破棄する
 /// (確認はフロントエンドで行う)。失敗したら今のプロジェクトはそのまま。
 #[tauri::command]
-pub fn open_sample_project(
-    state: State<'_, AppState>,
-    parent: String,
-) -> Result<ProjectStatus, String> {
+pub fn open_sample_project(state: State<'_, AppState>, parent: String) -> IpcResult<ProjectStatus> {
     let dir = new_folder(&absolute_path(&parent)?)?;
     let written = write_projects(&dir)?;
-    let (project, disk) = Project::load_tracked(&written[0]).map_err(|e| e.to_string())?;
+    let (project, disk) = Project::load_tracked(&written[0])?;
     let (mut document, mut session) = lock_both(&state)?;
     (*session, *document) = ProjectSession::from_project(project, Some((written[0].clone(), disk)));
     Ok(status(&session, &document))
 }
 
 /// `parent` の中の、まだ無いフォルダーを作る。
-fn new_folder(parent: &Path) -> Result<PathBuf, String> {
+fn new_folder(parent: &Path) -> IpcResult<PathBuf> {
     for n in 1..100 {
         let name = if n == 1 {
             FOLDER.to_owned()
@@ -57,26 +56,28 @@ fn new_folder(parent: &Path) -> Result<PathBuf, String> {
         match std::fs::create_dir(&dir) {
             Ok(()) => return Ok(dir),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(e) => return Err(format!("creating {}: {e}", dir.display())),
+            Err(e) => {
+                return Err(EditorError::CreateFolder {
+                    path: dir.display().to_string(),
+                    detail: e.to_string(),
+                }
+                .into());
+            }
         }
     }
-    Err(format!(
-        "too many sample folders in {}; remove old ones",
-        parent.display()
-    ))
+    Err(EditorError::TooManySampleFolders(parent.display().to_string()).into())
 }
 
 /// 見本の本体とモジュールのプロジェクトを `dir` に書く。書いたプロジェクトのパスを、本体を先に返す。
 /// 変換は `ugoe sample dress-up --project` と同じ `bundle_project::save_bundle_projects` (本体の物理・モーション・
 /// 表情も写す。T0655)。
-fn write_projects(dir: &Path) -> Result<Vec<PathBuf>, String> {
-    let bundle = ugoe_format::read_bundle(BASE).map_err(|e| e.to_string())?;
+fn write_projects(dir: &Path) -> IpcResult<Vec<PathBuf>> {
+    let bundle = ugoe_format::read_bundle(BASE)?;
     let modules = MODULES
         .iter()
         .map(|bytes| ugoe_format::read_module(bytes))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
-    save_bundle_projects(dir, BASE_PROJECT, &bundle, &modules).map_err(|e| e.to_string())
+        .collect::<Result<Vec<_>, _>>()?;
+    save_bundle_projects(dir, BASE_PROJECT, &bundle, &modules).map_err(Message::from)
 }
 
 #[cfg(test)]
@@ -176,8 +177,17 @@ mod tests {
         base.save(&written[0]).unwrap();
         let found = problem(&written[1]).unwrap();
         assert_eq!(found.kind, ModuleProblemKind::BaseNeedsPhysics);
-        assert!(found.message.contains("`Shoulders`"), "{}", found.message);
-        assert!(found.message.contains("no physics"), "{}", found.message);
+        assert!(
+            found.error.message.contains("`Shoulders`"),
+            "{}",
+            found.error.message
+        );
+        assert!(
+            found.error.message.contains("no physics"),
+            "{}",
+            found.error.message
+        );
+        assert_eq!(found.error.code, "module.collider_needs_base_physics");
         // 外せば開ける参照を知らせる (T0661)。`TwinTails` の房のリグは 2 つとも肩に当たる (T0662)。
         let rigs: Vec<_> = ugoe_format::read_module(MODULES[1])
             .unwrap()

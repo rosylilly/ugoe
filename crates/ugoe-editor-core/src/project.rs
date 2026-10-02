@@ -28,6 +28,7 @@ use ugoe_model::{
 
 use crate::Document;
 use crate::fingerprint::ProjectFingerprint;
+use crate::message::Message;
 use crate::module_project::{ColliderReference, ModuleBase, ModuleContext, ModuleError, Workspace};
 use crate::texture::{Textures, is_valid_texture_name, png_size};
 
@@ -661,7 +662,7 @@ pub struct ModuleExport {
     /// `.ugoemod` のバイト列。
     pub bytes: Vec<u8>,
     /// 書き出しはしたが知らせたいこと (描画順が 0〜1000 の外にあり、スロットの範囲からはみ出すなど)。
-    pub warnings: Vec<String>,
+    pub warnings: Vec<Message>,
     /// アトラス化したときの結果 ([`crate::export::export_module_with_settings`])。しなければ `None`。
     pub atlas: Option<crate::atlas::AtlasReport>,
 }
@@ -701,7 +702,7 @@ fn export_module_with(project: &Project, name: Option<&str>) -> Result<ModuleExp
 pub(crate) fn checked_module(
     project: &Project,
     name: Option<&str>,
-) -> Result<(Module, Textures, Vec<String>), ProjectError> {
+) -> Result<(Module, Textures, Vec<Message>), ProjectError> {
     let context = project.module.as_ref().ok_or(ProjectError::NotAModule)?;
     let (mut module, images) =
         context.split(&project.model, project.physics.as_ref(), &project.textures)?;
@@ -730,9 +731,13 @@ pub(crate) fn checked_module(
             .all_keyforms()
             .any(|k| !range.contains(&k.draw_order))
         {
-            warnings.push(format!(
-                "mesh `{}`: the draw order is outside the slot range, so it is drawn outside the slot",
-                mesh.id
+            warnings.push(Message::new(
+                "module.draw_order_outside_slot",
+                crate::message_args! { "mesh" => mesh.id.to_string() },
+                format!(
+                    "mesh `{}`: the draw order is outside the slot range, so it is drawn outside the slot",
+                    mesh.id
+                ),
             ));
         }
     }

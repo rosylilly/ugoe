@@ -5,6 +5,7 @@
   取り付け先の違うスロットに移すときは、見た目を保って移すか (`keep_look`、既定) 局所座標のまま移すかを選ぶ (T0651)。
 -->
 <script lang="ts">
+import { errorText } from "./errors";
 import type { Command, ModuleStatus } from "./ipc";
 import { isValidModuleName, requirementsOf, toggled } from "./moduleProject";
 
@@ -79,7 +80,7 @@ async function apply(): Promise<void> {
     });
     error = null;
   } catch (e) {
-    error = String(e);
+    error = errorText(e);
   } finally {
     busy = false;
   }

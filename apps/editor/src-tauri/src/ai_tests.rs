@@ -137,7 +137,12 @@ fn unavailable_store_falls_back_to_env() {
     assert_eq!(keys.status(&slot), KeyStatus::Unavailable);
     assert!(keys.env_available(&slot));
     assert!(keys.resolve(&slot).is_ok());
-    assert!(keys.save(&slot, "sk-x").unwrap_err().contains("D-Bus"));
+    assert!(
+        keys.save(&slot, "sk-x")
+            .unwrap_err()
+            .to_string()
+            .contains("D-Bus")
+    );
 
     let failing = ApiKeys::new(
         Box::new(|| {
@@ -151,7 +156,7 @@ fn unavailable_store_falls_back_to_env() {
     assert_eq!(failing.status(&slot), KeyStatus::Unavailable);
     assert!(!failing.env_available(&slot));
     let err = failing.resolve(&slot).unwrap_err().to_string();
-    assert!(err.contains("ANTHROPIC_API_KEY"), "{err}");
+    assert!(err.to_string().contains("ANTHROPIC_API_KEY"), "{err}");
 }
 
 /// キーは `Debug` にもエラーにも出ない。空白だけの保存値は使わない。
@@ -292,7 +297,7 @@ fn disabled_projects_never_send_externally() {
         Some(&answer),
     )
     .unwrap_err();
-    assert_eq!(err, SEND_DISABLED);
+    assert!(matches!(err, EditorError::SendDisabled), "{err}");
     assert!(!memory.is_remembered());
 
     let local = FakeProvider::new().disclosure(&ProviderRequest::default());
@@ -330,7 +335,7 @@ fn prepare_checks_settings_key_and_consent() {
 
     let no_key = state(None);
     let err = prepare_requests(&no_key, test, requests, 0, None).unwrap_err();
-    assert!(err.contains("API key"), "{err}");
+    assert!(err.to_string().contains("API key"), "{err}");
 
     let state = state(Some("sk-test"));
     let Prepared::NeedsConsent(view) = prepare_requests(&state, test, requests, 0, None).unwrap()
@@ -352,7 +357,7 @@ fn prepare_checks_settings_key_and_consent() {
     // 「外部に送らない」にすると、同意があっても断る。
     state.project.lock().unwrap().set_ai_send_externally(false);
     let err = prepare_requests(&state, test, requests, 0, Some(&answer)).unwrap_err();
-    assert_eq!(err, SEND_DISABLED);
+    assert_eq!(err.code, "ai.send_disabled");
     let settings = settings(&state).unwrap();
     assert!(!settings.send_externally);
     assert_eq!(settings.key, KeyStatus::Stored);
@@ -393,8 +398,10 @@ fn openai_compatible_goes_through_the_same_consent() {
 
     state.project.lock().unwrap().set_ai_send_externally(false);
     assert_eq!(
-        prepare_requests(&state, Purpose::Proposal, requests, 0, None).unwrap_err(),
-        SEND_DISABLED
+        prepare_requests(&state, Purpose::Proposal, requests, 0, None)
+            .unwrap_err()
+            .code,
+        "ai.send_disabled"
     );
 }
 
@@ -433,7 +440,7 @@ fn keys_are_not_sent_over_plain_http() {
     let Err(err) = settings.build(Some(key.clone()), Purpose::Proposal) else {
         panic!("expected to refuse");
     };
-    assert!(err.contains("https"), "{err}");
+    assert!(err.to_string().contains("https"), "{err}");
     assert!(settings.build(None, Purpose::Proposal).is_ok());
     assert!(
         openai("http://127.0.0.1:1234/v1")

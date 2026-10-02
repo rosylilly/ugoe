@@ -214,7 +214,7 @@ fn agents_propose_and_the_user_approves_in_the_editor() {
     // 既定は無効: 発見用のファイルは無く、中継は「動いていない」と答える。
     assert!(!app.status().enabled && !app.status().running);
     let err = client.err("get_model_summary", json!({ "path": path }));
-    assert!(err.contains("Connect agents"), "{err}");
+    assert!(err.to_string().contains("Connect agents"), "{err}");
 
     app.enable();
     let status = app.status();
@@ -254,7 +254,7 @@ fn agents_propose_and_the_user_approves_in_the_editor() {
     // 拒否: エラーが返り、文書は変わらない。確認は画面に出て、閉じた知らせも届く。
     app.set_answer(Some(false));
     let err = client.err("apply_proposal", json!({ "path": path, "proposal": "p1" }));
-    assert!(err.contains("declined"), "{err}");
+    assert!(err.to_string().contains("declined"), "{err}");
     let events = app.take_events();
     let BridgeEvent::Approval { request } = &events[0] else {
         panic!("{events:?}")
@@ -269,7 +269,7 @@ fn agents_propose_and_the_user_approves_in_the_editor() {
     // 時間切れ: エラーが返り、待っている確認は残らない。
     app.set_answer(None);
     let err = client.err("apply_proposal", json!({ "path": path, "proposal": "p1" }));
-    assert!(err.contains("did not answer in time"), "{err}");
+    assert!(err.to_string().contains("did not answer in time"), "{err}");
     assert!(app.status().pending.is_empty());
     assert_eq!(app.parameter_ids(), vec!["X"]);
 
@@ -315,14 +315,17 @@ fn agents_propose_and_the_user_approves_in_the_editor() {
     let text = std::fs::read_to_string(&meta).unwrap();
     std::fs::write(&meta, text.replace("quad", "renamed")).unwrap();
     let err = client.err("save_project", json!({ "path": path }));
-    assert!(err.contains("changed outside the editor"), "{err}");
+    assert!(
+        err.to_string().contains("changed outside the editor"),
+        "{err}"
+    );
 
     // 止めると発見用のファイルが消え、中継は「動いていない」と答える。
     let as_app: Arc<dyn EditorApp> = app.clone();
     app.state.mcp.set_enabled(as_app, false).unwrap();
     assert!(!discovery.exists());
     let err = client.err("get_model_summary", json!({ "path": path }));
-    assert!(err.contains("not running"), "{err}");
+    assert!(err.to_string().contains("not running"), "{err}");
 }
 
 /// ほかのプロジェクト・作る・閉じる・PSD から作るはできない。開いているプロジェクトの open_project は状態を返すだけ。
@@ -365,7 +368,7 @@ fn agents_cannot_switch_the_editor_project() {
         ),
     ] {
         let err = client.err(tool, args);
-        assert!(err.contains(expected), "{tool}: {err}");
+        assert!(err.to_string().contains(expected), "{tool}: {err}");
     }
     assert!(app.status().pending.is_empty());
 }
@@ -386,7 +389,7 @@ fn unsaved_projects_ask_the_user_to_save() {
         "get_model_summary",
         json!({ "path": tmp.0.join("x.ugoeproj") }),
     );
-    assert!(err.contains("Save As"), "{err}");
+    assert!(err.to_string().contains("Save As"), "{err}");
 }
 
 /// 設定はファイルに残り (トークンを含むので利用者だけが読める)、トークンを作り直すと始め直す。
@@ -466,5 +469,9 @@ fn the_claude_desktop_bundle_wraps_the_sidecar_with_the_editor_icon() {
     assert!(BUNDLE_ICON.starts_with(b"\x89PNG"));
 
     let err = write_claude_desktop_bundle(None, &tmp.0.join("x.mcpb")).unwrap_err();
-    assert!(err.contains("cargo build --release -p ugoe-mcp"), "{err}");
+    assert!(
+        err.to_string()
+            .contains("cargo build --release -p ugoe-mcp"),
+        "{err}"
+    );
 }

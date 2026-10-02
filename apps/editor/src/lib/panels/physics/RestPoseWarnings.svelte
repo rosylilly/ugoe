@@ -5,6 +5,7 @@
 -->
 <script lang="ts">
 import type { EditorDocument } from "../../document.svelte";
+import { errorText } from "../../errors";
 import { ipc, type RestPoseCollision } from "../../ipc";
 import { formatSegments, restPoseKey, restPoseTitle } from "./restPose";
 
@@ -43,7 +44,7 @@ $effect(() => {
     .catch((e) => {
       if (id !== request) return;
       found = [];
-      error = String(e);
+      error = errorText(e);
     });
 });
 </script>

@@ -1,6 +1,7 @@
 // エディタの中の MCP サーバ (エージェントをつなぐ) の、画面全体で共有する状態 (docs/editor.md#エージェントをつなぐ)。
 // ブリッジはバックエンド (apps/editor/src-tauri/src/mcp.rs) が持ち、ここは状態の表示・設定の変更・確認への答えだけ。
 // バックエンドのイベント (`mcp-bridge`) は App が `handle` に渡す。
+import { errorText } from "../errors";
 import { type ApprovalRequest, type BridgeEvent, ipc, type McpBridgeStatus } from "../ipc";
 
 /** イベントを受けて App がすること。 */
@@ -45,7 +46,7 @@ export class AgentBridge {
     try {
       await ipc.answerMcpApproval(id, approved);
     } catch (e) {
-      this.error = String(e);
+      this.error = errorText(e);
     }
   }
 
@@ -85,7 +86,7 @@ export class AgentBridge {
       this.error = null;
       return true;
     } catch (e) {
-      this.error = String(e);
+      this.error = errorText(e);
       return false;
     } finally {
       this.busy = false;

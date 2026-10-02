@@ -7,6 +7,7 @@
 -->
 <script lang="ts">
 import ConnectAgents from "../agents/ConnectAgents.svelte";
+import { errorText } from "../errors";
 import { type AiSettings, ipc, type ProviderSettings } from "../ipc";
 import { aiSettings, consentPrompt } from "./ai.svelte";
 import { withConsent } from "./consent";
@@ -104,7 +105,7 @@ async function testConnection(): Promise<void> {
       ? { ok: true, text: "Connected. The server answered." }
       : { ok: false, text: "Not sent." };
   } catch (e) {
-    testResult = { ok: false, text: String(e) };
+    testResult = { ok: false, text: errorText(e) };
   } finally {
     busy = false;
     // 「今後は確かめない」を選んだかもしれない。

@@ -7,6 +7,7 @@ mod avatar;
 pub mod bindings;
 mod commands;
 mod dress_up;
+mod error;
 mod lighting;
 mod mcp;
 mod module;
@@ -60,7 +61,7 @@ pub fn run() {
             use tauri::Manager;
             let loaded = match app.path().app_config_dir() {
                 Ok(dir) => app.state::<AppState>().ai_provider.load(dir),
-                Err(e) => Err(e.to_string()),
+                Err(e) => Err(error::EditorError::Internal(e.to_string())),
             };
             // 読めなければ既定 (Claude) のまま起動する
             if let Err(e) = loaded {

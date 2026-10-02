@@ -3,9 +3,11 @@
 
 use tauri::State;
 use ugoe_editor_core::KeyformTarget;
+use ugoe_editor_core::Message;
 use ugoe_editor_core::space::{self, ParameterValues, Vec2};
 
 use crate::AppState;
+use crate::error::IpcResult;
 
 fn to_vec2(points: &[[f32; 2]]) -> Vec<Vec2> {
     points.iter().map(|&[x, y]| Vec2::new(x, y)).collect()
@@ -23,11 +25,11 @@ pub fn local_to_canvas(
     target: KeyformTarget,
     parameters: ParameterValues,
     points: Vec<[f32; 2]>,
-) -> Result<Vec<[f32; 2]>, String> {
+) -> IpcResult<Vec<[f32; 2]>> {
     let doc = crate::commands::lock(&state)?;
     space::local_to_canvas(doc.model(), &target, &parameters, &to_vec2(&points))
         .map(to_pairs)
-        .map_err(|e| e.to_string())
+        .map_err(Message::from)
 }
 
 /// キャンバス座標の点 `points` を `target` の親の座標系に写す。`guesses` は反復の初期値
@@ -39,7 +41,7 @@ pub fn canvas_to_local(
     parameters: ParameterValues,
     points: Vec<[f32; 2]>,
     guesses: Vec<[f32; 2]>,
-) -> Result<Vec<[f32; 2]>, String> {
+) -> IpcResult<Vec<[f32; 2]>> {
     let doc = crate::commands::lock(&state)?;
     space::canvas_to_local(
         doc.model(),
@@ -49,5 +51,5 @@ pub fn canvas_to_local(
         &to_vec2(&guesses),
     )
     .map(to_pairs)
-    .map_err(|e| e.to_string())
+    .map_err(Message::from)
 }

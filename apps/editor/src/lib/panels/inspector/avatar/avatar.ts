@@ -8,6 +8,7 @@ import type {
   Command,
   CommercialUsage,
   CreditNotation,
+  Message,
   Modification,
 } from "../../../generated/types";
 
@@ -155,7 +156,7 @@ export function hitAreaCommand(
 export function checkSummary(check: {
   claimed: number | null;
   satisfied: number;
-  errors: string[];
+  errors: Message[];
 }): { ok: boolean; text: string } {
   const satisfied = `Satisfies ${levelLabel(check.satisfied)}.`;
   if (check.claimed === null) {

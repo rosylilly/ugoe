@@ -3,6 +3,7 @@
   URL を選んで写せるように出す。
 -->
 <script lang="ts">
+import { errorText } from "./errors";
 import { MANUAL_URL, openExternal } from "./help";
 
 /** 開けなかったときの理由 (null なら出さない)。 */
@@ -13,7 +14,7 @@ async function open() {
     await openExternal(MANUAL_URL);
     failure = null;
   } catch (e) {
-    failure = String(e);
+    failure = errorText(e);
   }
 }
 </script>

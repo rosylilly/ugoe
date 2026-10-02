@@ -15,6 +15,7 @@
 -->
 <script lang="ts">
 import type { EditorDocument } from "../../../document.svelte";
+import { errorText } from "../../../errors";
 import { ipc, type Keyform } from "../../../ipc";
 import {
   cellIndex,
@@ -103,7 +104,7 @@ $effect(() => {
     .catch((e) => {
       if (id !== request) return;
       canvasPoints = null;
-      error = String(e);
+      error = errorText(e);
     });
 });
 
@@ -257,7 +258,7 @@ async function onPointerUp(e: PointerEvent) {
     });
     error = doc.error;
   } catch (err) {
-    error = String(err);
+    error = errorText(err);
   } finally {
     busy = false;
     drag = null;
