@@ -6,9 +6,12 @@
   (T0651、docs/editor.md#本体のものの表示)。
 -->
 <script lang="ts">
+import { Checkbox, Select } from "@ugoe/ui";
+import { t } from "../../i18n";
 import type { Command, Model, ModuleStatus, PhysicsBlend, PhysicsTemplate } from "../../ipc";
 import { elementLabel } from "../../labels";
 import { baseElements, isBaseRig } from "../../moduleProject";
+import TipButton from "../../ui/TipButton.svelte";
 import { BLENDS } from "./physics";
 import {
   defaultNeck,
@@ -49,8 +52,20 @@ function baseRigsOf(rigs: readonly string[]): string[] {
   return rigs.filter((id) => isBaseRig(module, id));
 }
 
+const blendOptions = $derived(BLENDS.map((b) => ({ value: b.blend, label: b.label })));
+const neckOptions = $derived(
+  necks.map((d) => ({ value: d.id, label: elementLabel(d.name, d.id) })),
+);
+const neckPlaceholder = $derived(
+  necks.length > 0
+    ? t("physics.templates.neck.choose")
+    : module
+      ? t("physics.templates.neck.noneModule")
+      : t("physics.templates.neck.none"),
+);
+
 async function apply(template: PhysicsTemplate): Promise<void> {
-  const info = TEMPLATES.find((t) => t.template === template);
+  const info = TEMPLATES.find((item) => item.template === template);
   if ((await send(templateCommand(template, createMissing, blend, neck))) && info) {
     onApplied(info.rigs);
   }
@@ -58,57 +73,45 @@ async function apply(template: PhysicsTemplate): Promise<void> {
 </script>
 
 <section>
-  <h3>Templates</h3>
-  <p class="muted hint">
-    Common rigs on the standard parameters. Applying one again resets its rigs. One Undo removes
-    everything a template made.
-  </p>
-  <label class="row" title={module ? "A module can't add parameters. Add them in the base project." : undefined}>
-    <input type="checkbox" checked={createMissing} disabled={module !== null}
-      onchange={(e) => (createMissingChoice = e.currentTarget.checked)} />
-    Create missing parameters
-  </label>
-  <label class="row" title="How the body rigs write BodyAngle*: Add keeps tracking and motion values and adds the lag">
-    Body blend
-    <select bind:value={blend} aria-label="Template blend">
-      {#each BLENDS as b (b.blend)}
-        <option value={b.blend} title={b.title}>{b.label}</option>
-      {/each}
-    </select>
-  </label>
-  <label class="row">
-    Neck
-    <select
+  <h3>{t("physics.templates.title")}</h3>
+  <p class="ed-hint">{t("physics.templates.hint")}</p>
+  <div class="row" title={module ? t("physics.templates.createMissing.moduleTooltip") : undefined}>
+    <Checkbox checked={createMissing} disabled={module !== null} label={t("physics.templates.createMissing.label")}
+      onchange={(on) => (createMissingChoice = on)} />
+  </div>
+  <div class="row" title={t("physics.templates.blend.tooltip")}>
+    <Select label={t("physics.templates.blend.label")} value={blend} options={blendOptions}
+      onchange={(v) => (blend = v)} />
+  </div>
+  <div class="row">
+    <Select
+      label={t("physics.templates.neck.label")}
       value={neck ?? ""}
+      options={neckOptions}
+      placeholder={neckPlaceholder}
       disabled={necks.length === 0}
-      aria-label="Neck deformer"
-      onchange={(e) => (neckChoice = e.currentTarget.value || null)}
-    >
-      {#if !neck}<option value=""
-          >{necks.length > 0 ? "(choose)" : module ? "(no rotation deformer of the module)" : "(no rotation deformer)"}</option
-        >{/if}
-      {#each necks as d (d.id)}
-        <option value={d.id}>{elementLabel(d.name, d.id)}</option>
-      {/each}
-    </select>
-  </label>
-  {#each TEMPLATES as t (t.template)}
-    {@const missing = missingParameters(model, t.template)}
-    {@const inBase = baseRigsOf(t.rigs)}
-    {@const relays = module ? missingRelays(model, t.template) : []}
-    <div class="row">
-      <button
-        disabled={busy || (t.template === "neck_follow" && !neck) || inBase.length > 0 || relays.length > 0}
-        title={t.title}
-        onclick={() => apply(t.template)}>+ {t.label}</button
+      onchange={(v) => (neckChoice = v || null)}
+    />
+  </div>
+  {#each TEMPLATES as tpl (tpl.template)}
+    {@const missing = missingParameters(model, tpl.template)}
+    {@const inBase = baseRigsOf(tpl.rigs)}
+    {@const relays = module ? missingRelays(model, tpl.template) : []}
+    <div class="ed-buttons row">
+      <TipButton
+        disabled={busy || (tpl.template === "neck_follow" && !neck) || inBase.length > 0 || relays.length > 0}
+        tooltip={tpl.title}
+        onclick={() => apply(tpl.template)}>{t("physics.templates.apply", { template: tpl.label })}</TipButton
       >
       {#if inBase.length > 0}
-        <span class="muted hint">the base model has {inBase.join(", ")}: edit it in the base project</span>
+        <span class="ed-hint">{t("physics.templates.inBase", { rigs: inBase.join(", ") })}</span>
       {:else if relays.length > 0}
-        <span class="muted hint">needs {relays.join(", ")} in the base model (a module can't add parameters)</span>
+        <span class="ed-hint">{t("physics.templates.needsRelays", { parameters: relays.join(", ") })}</span>
       {:else if missing.length > 0}
-        <span class="muted hint"
-          >{createMissing ? "creates" : "skips rigs using"} {missing.join(", ")}</span
+        <span class="ed-hint"
+          >{createMissing
+            ? t("physics.templates.creates", { parameters: missing.join(", ") })
+            : t("physics.templates.skips", { parameters: missing.join(", ") })}</span
         >
       {/if}
     </div>
@@ -116,27 +119,7 @@ async function apply(template: PhysicsTemplate): Promise<void> {
 </section>
 
 <style>
-h3 {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-}
-
 .row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  align-items: center;
-  margin: 4px 0;
-}
-
-select {
-  min-width: 0;
-  max-width: 14em;
-}
-
-.hint {
-  font-size: 11px;
+  margin: var(--ugoe-space-2) 0;
 }
 </style>

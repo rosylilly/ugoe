@@ -4,6 +4,9 @@
   プレビューしながら決められる。答えずに時間が過ぎると、エージェントには時間切れのエラーが返り、ここから消える。
 -->
 <script lang="ts">
+import { formatList, RichText } from "@ugoe/i18n";
+import { Button } from "@ugoe/ui";
+import { t } from "../i18n";
 import type { ApprovalRequest, ProposalView } from "../ipc";
 import { agentBridge } from "./bridge.svelte";
 
@@ -41,32 +44,32 @@ const remaining = $derived(
 );
 
 function who(r: ApprovalRequest): string {
-  return r.client ?? "An agent";
+  return r.client ?? t("agents.approval.agent");
 }
 
 function heading(r: ApprovalRequest): string {
   switch (r.action) {
     case "apply":
-      return `${who(r)} wants to apply a proposal`;
+      return t("agents.approval.heading.apply", { who: who(r) });
     case "undo":
-      return `${who(r)} wants to undo the last edit`;
+      return t("agents.approval.heading.undo", { who: who(r) });
     case "redo":
-      return `${who(r)} wants to redo the last undone edit`;
+      return t("agents.approval.heading.redo", { who: who(r) });
     case "save":
-      return `${who(r)} wants to save the project`;
+      return t("agents.approval.heading.save", { who: who(r) });
   }
 }
 
 function approveLabel(r: ApprovalRequest): string {
   switch (r.action) {
     case "apply":
-      return "Apply";
+      return t("agents.approval.approve.apply");
     case "undo":
-      return "Undo";
+      return t("agents.approval.approve.undo");
     case "redo":
-      return "Redo";
+      return t("agents.approval.approve.redo");
     case "save":
-      return "Save";
+      return t("agents.approval.approve.save");
   }
 }
 </script>
@@ -76,38 +79,47 @@ function approveLabel(r: ApprovalRequest): string {
     <h2 id="approval-title">{heading(request)}</h2>
     <div id="approval-body">
       {#if request.action === "apply"}
-        <p><strong>{request.title ?? `Proposal ${request.proposal}`}</strong></p>
+        <p><strong>{request.title ?? t("agents.approval.proposal", { id: request.proposal })}</strong></p>
         {#if proposal}
           <p class="muted">
-            {proposal.commands.length - request.excluded.length} of {proposal.commands.length} commands, applied as
-            one edit (one Undo reverts it).
+            {t("agents.approval.commands", {
+              count: proposal.commands.length - request.excluded.length,
+              total: proposal.commands.length,
+            })}
           </p>
         {/if}
         {#if request.excluded.length > 0}
-          <p class="muted">Leaves out commands #{request.excluded.join(", #")}.</p>
+          <p class="muted">
+            {t("agents.approval.excluded", { list: formatList(request.excluded.map((n) => `#${n}`)) })}
+          </p>
         {/if}
-      {:else if request.action === "undo" || request.action === "redo"}
-        <p class="muted">
-          This {request.action === "undo" ? "undoes" : "redoes"} the most recent edit in the editor, whoever made
-          it.
-        </p>
+      {:else if request.action === "undo"}
+        <p class="muted">{t("agents.approval.undo")}</p>
+      {:else if request.action === "redo"}
+        <p class="muted">{t("agents.approval.redo")}</p>
       {:else}
-        <p class="muted">Writes the project to its folder, as File → Save does.</p>
-        {#if request.bundle}<p>Also exports <code class="path">{request.bundle}</code></p>{/if}
+        <p class="muted">{t("agents.approval.save")}</p>
+        {#if request.bundle}
+          <p>
+            <RichText text={t("agents.approval.bundle", { path: request.bundle })}>
+              {#snippet code(text)}<code class="path">{text}</code>{/snippet}
+            </RichText>
+          </p>
+        {/if}
       {/if}
       <p class="muted small">
-        Answer within {remaining} s, or the agent is told you did not answer.
-        {#if waiting > 1}{waiting - 1} more waiting.{/if}
+        {t("agents.approval.remaining", { count: remaining })}
+        {#if waiting > 1}{t("agents.approval.waiting", { count: waiting - 1 })}{/if}
       </p>
     </div>
     <div class="actions">
       {#if request.action === "apply" && request.proposal != null && proposal}
-        <button onclick={() => request.proposal != null && onshow(request.proposal, request.excluded)}
-          >Show in AI tab</button>
+        <Button onclick={() => request.proposal != null && onshow(request.proposal, request.excluded)}
+          >{t("agents.approval.show.label")}</Button>
       {/if}
       <span class="spacer"></span>
-      <button onclick={() => agentBridge.answer(request.id, false)}>Decline</button>
-      <button class="primary" onclick={() => agentBridge.answer(request.id, true)}>{approveLabel(request)}</button>
+      <Button onclick={() => agentBridge.answer(request.id, false)}>{t("agents.approval.decline.label")}</Button>
+      <Button variant="primary" onclick={() => agentBridge.answer(request.id, true)}>{approveLabel(request)}</Button>
     </div>
   </div>
 {/if}
@@ -120,39 +132,36 @@ function approveLabel(r: ApprovalRequest): string {
     transform: translateX(-50%);
     z-index: 50;
     width: min(460px, calc(100vw - 32px));
-    padding: 12px 16px;
-    background: var(--panel);
-    color: var(--text);
-    border: 2px solid var(--accent);
-    border-radius: 6px;
-    box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+    padding: var(--ugoe-space-4) var(--ugoe-space-5);
+    background: var(--ugoe-color-surface);
+    color: var(--ugoe-color-text);
+    border: 2px solid var(--ugoe-color-accent);
+    border-radius: var(--ugoe-radius-lg);
+    box-shadow: var(--ugoe-shadow-overlay);
   }
   h2 {
-    margin: 0 0 6px;
-    font-size: 14px;
-    text-transform: none;
-    letter-spacing: normal;
-    color: var(--text);
+    margin: 0 0 var(--ugoe-space-2);
+    font-size: var(--ugoe-font-size-lg);
+    color: var(--ugoe-color-text);
   }
   p {
-    margin: 4px 0;
+    margin: var(--ugoe-space-2) 0;
+  }
+  .muted {
+    color: var(--ugoe-color-text-muted);
   }
   .small {
-    font-size: 12px;
+    font-size: var(--ugoe-font-size-sm);
   }
   .path {
     word-break: break-all;
   }
   .actions {
     display: flex;
-    gap: 8px;
-    margin-top: 10px;
+    gap: var(--ugoe-space-2);
+    margin-top: var(--ugoe-space-3);
   }
   .spacer {
     flex: 1;
-  }
-  .primary {
-    color: var(--accent);
-    border-color: var(--accent);
   }
 </style>

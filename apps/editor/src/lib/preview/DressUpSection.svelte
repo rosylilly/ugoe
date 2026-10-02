@@ -11,9 +11,12 @@
 <script lang="ts">
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { Checkbox, IconButton, Notice, Select, Tooltip } from "@ugoe/ui";
 import { onMount } from "svelte";
 import { fileDialogs } from "../fileDialogs";
+import { t } from "../i18n";
 import type { DifferenceItem, Slot } from "../ipc";
+import TipButton from "../ui/TipButton.svelte";
 import { selectTitle } from "./differenceHighlight";
 import { isModuleFile, MODULE_FILTER, slotRows } from "./dressUp";
 import type { DressUp, ModuleSource } from "./dressUp.svelte";
@@ -44,15 +47,35 @@ const rows = $derived(
   ),
 );
 
+/** スロットに何も付けない選択肢の値 (モジュールの名前は `#` で始まらない)。 */
+const NONE = "#none";
+
+/** スロットに付けるモジュールの選択肢。 */
+function slotOptions(candidates: readonly string[]): { value: string; label: string }[] {
+  return [
+    {
+      value: NONE,
+      label:
+        candidates.length === 0
+          ? t("preview.dressUp.slots.noModule")
+          : t("preview.dressUp.slots.none"),
+    },
+    ...candidates.map((name) => ({ value: name, label: name })),
+  ];
+}
+
 async function pick(): Promise<void> {
-  const path = await fileDialogs().openFile({ title: "Load a module", filters: [MODULE_FILTER] });
+  const path = await fileDialogs().openFile({
+    title: t("preview.dressUp.load.title"),
+    filters: [MODULE_FILTER],
+  });
   if (path) await dressUp.add([{ path }]);
 }
 
 /** ドロップしたもののうち `.ugoemod` だけを読み込む。 */
 function dropped(sources: (ModuleSource & { name: string })[]): void {
   const modules = sources.filter((s) => isModuleFile(s.name));
-  dropError = modules.length < sources.length ? "Only .ugoemod files can be loaded here." : null;
+  dropError = modules.length < sources.length ? t("preview.dressUp.dropError") : null;
   if (modules.length > 0) void dressUp.add(modules);
 }
 
@@ -110,115 +133,114 @@ onMount(() => {
 
 <svelte:window ondragover={onDragOver} ondragleave={() => (dragging = false)} ondrop={onDrop} />
 
-<section aria-label="Dress-up" class="dress-up" class:dragging>
+<section aria-label={t("preview.dressUp.title")} class="dress-up" class:dragging>
   <div class="head">
-    <h3>Dress-up</h3>
-    <button onclick={() => void pick()} disabled={dressUp.busy} title="Load a module file (.ugoemod) and put it on"
-      >Load .ugoemod…</button
+    <h3>{t("preview.dressUp.title")}</h3>
+    <TipButton small onclick={() => void pick()} disabled={dressUp.busy} tooltip={t("preview.dressUp.load.tooltip")}
+      >{t("preview.dressUp.load.label")}</TipButton
     >
   </div>
-  <p class="muted hint">
-    {dragging ? "Drop to load the modules." : "Try modules on this model. Load a file or drop .ugoemod files onto the window. The model is not changed."}
+  <p class="ed-hint hint">
+    {dragging ? t("preview.dressUp.dropping") : t("preview.dressUp.description")}
   </p>
-  {#if dressUp.error}<p class="error" title={dressUp.error.detail}>{dressUp.error.summary}</p>{/if}
+  {#if dressUp.error}
+    <p class="error">{dressUp.error.summary}</p>
+    {#if dressUp.error.detail !== dressUp.error.summary}
+      <details class="detail"><summary>{t("preview.dressUp.details")}</summary>{dressUp.error.detail}</details>
+    {/if}
+  {/if}
   {#if dressUp.ownProblem}<p class="error">{dressUp.ownProblem}</p>{/if}
   {#if dropError}<p class="error">{dropError}</p>{/if}
   {#each dressUp.notices as notice, i (i)}
-    <p class="notice">
-      <span>{notice}</span>
-      <button class="dismiss" aria-label="Dismiss" title="Dismiss" onclick={() => dressUp.dismissNotice(i)}>✕</button>
-    </p>
+    <Notice tone="warning" ondismiss={() => dressUp.dismissNotice(i)}>{notice}</Notice>
   {/each}
 
-  <h4>Slots</h4>
+  <h4>{t("preview.dressUp.slots.title")}</h4>
   {#if slots.length === 0}
-    <p class="muted">This model has no slots. Add them in the Slots tab.</p>
+    <p class="ed-hint">{t("preview.dressUp.slots.empty")}</p>
   {:else}
     {#each rows as row (row.id)}
-      <label class="slot">
+      <div class="slot">
         <span class="slot-name">
           <span class="slot-id">{row.id}</span>
           {#if !row.published}
-            <span
-              class="badge authors"
-              title="The avatar profile does not list this slot, so apps such as the viewer hide it from users. Tick Show to apps in the Slots tab to offer it."
-              >authors only</span
-            >
+            <Tooltip text={t("preview.dressUp.slots.authorsOnly.tooltip")}>
+              {#snippet children(attrs)}
+                <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+                <span {...attrs} class="badge authors" tabindex="0">{t("preview.dressUp.slots.authorsOnly.label")}</span>
+              {/snippet}
+            </Tooltip>
           {/if}
         </span>
-        <select
-          value={row.attached ?? ""}
+        <Select
+          ariaLabel={t("preview.dressUp.slots.aria", { slot: row.id })}
+          value={row.attached ?? NONE}
+          options={slotOptions(row.candidates)}
           disabled={row.candidates.length === 0 || dressUp.busy}
-          aria-label="Module in slot {row.id}"
-          title={row.candidates.length === 0 ? "No loaded module goes in this slot" : "Choose the module to put on this slot"}
-          onchange={(e) => dressUp.setSlot(row.id, e.currentTarget.value || null)}
-        >
-          <option value="">{row.candidates.length === 0 ? "(no module)" : "(none)"}</option>
-          {#each row.candidates as name (name)}
-            <option value={name}>{name}</option>
-          {/each}
-        </select>
-      </label>
+          onchange={(v) => dressUp.setSlot(row.id, v === NONE ? null : v)}
+        />
+      </div>
     {/each}
   {/if}
 
-  <h4>Modules</h4>
+  <h4>{t("preview.dressUp.modules.title")}</h4>
   {#if dressUp.entries.length === 0}
-    <p class="muted">No modules loaded.</p>
+    <p class="ed-hint">{t("preview.dressUp.modules.empty")}</p>
   {:else}
     <ul class="modules">
       {#each dressUp.entries as entry (entry.own ? "#own" : (entry.path ?? entry.name))}
         <li class:own={entry.own}>
           <div class="module">
-            <label
-              class="check"
-              title={entry.own
-                ? "Your current edits (not saved to a file). Swap with other modules of the slot to compare."
-                : (entry.path ?? "Dropped file (not kept in the project)")}
-            >
-              <input
-                type="checkbox"
+            <span class="check">
+              <Checkbox
+                label={entry.label ?? entry.name}
                 checked={entry.attached}
                 disabled={!entry.loaded || dressUp.busy}
-                aria-label="Put on {entry.name}"
-                onchange={(e) => (e.currentTarget.checked ? dressUp.attach(entry.name) : dressUp.detach(entry.name))}
+                onchange={(on) => (on ? dressUp.attach(entry.name) : dressUp.detach(entry.name))}
               />
-              <span class="name">{entry.label ?? entry.name}</span>
-              {#if entry.own}<span class="badge">editing</span>{/if}
-            </label>
+              {#if entry.own}
+                <Tooltip text={t("preview.dressUp.modules.editing.tooltip")}>
+                  {#snippet children(attrs)}
+                    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+                    <span {...attrs} class="badge" tabindex="0">{t("preview.dressUp.modules.editing.label")}</span>
+                  {/snippet}
+                </Tooltip>
+              {/if}
+            </span>
             <span class="muted slot-of">{entry.slot ? `→ ${entry.slot}` : ""}</span>
             {#if !entry.own}
-            <button
-              class="icon"
-              disabled={entry.path === null || dressUp.busy}
-              aria-label="Reload {entry.name}"
-              title="Read the file again (after exporting it again)"
-              onclick={() => void dressUp.reload(entry.name)}>↻</button
-            >
-            <button
-              class="icon"
-              aria-label="Remove {entry.name}"
-              title="Take it off and remove it from the list"
-              onclick={() => dressUp.remove(entry.name)}>✕</button
-            >
+              <IconButton
+                small
+                variant="ghost"
+                disabled={entry.path === null || dressUp.busy}
+                label={t("preview.dressUp.modules.reload.aria", { name: entry.name })}
+                tooltip={t("preview.dressUp.modules.reload.tooltip")}
+                onclick={() => void dressUp.reload(entry.name)}>↻</IconButton
+              >
+              <IconButton
+                small
+                variant="ghost"
+                label={t("preview.dressUp.modules.remove.aria", { name: entry.name })}
+                tooltip={t("preview.dressUp.modules.remove.tooltip")}
+                onclick={() => dressUp.remove(entry.name)}>✕</IconButton
+              >
             {/if}
           </div>
+          {#if entry.path}<p class="ed-hint path">{entry.path}</p>{/if}
           {#if entry.problem}
             <p class="error">{entry.problem.summary}</p>
             {#if entry.problem.detail !== entry.problem.summary}
-              <details class="detail"><summary>Details</summary>{entry.problem.detail}</details>
+              <details class="detail"><summary>{t("preview.dressUp.details")}</summary>{entry.problem.detail}</details>
             {/if}
           {/if}
           {#if entry.differences === null}
-            <p class="muted">Comparing with your current edits…</p>
+            <p class="ed-hint">{t("preview.dressUp.differences.comparing")}</p>
           {:else if entry.differences?.length === 0}
-            <p class="muted">Same as your current edits.</p>
+            <p class="ed-hint">{t("preview.dressUp.differences.same")}</p>
           {:else if entry.differences}
             <details class="differences">
-              <summary
-                title="What changed from this file to your current edits (file → edits)"
-                >{entry.differences.length} difference{entry.differences.length === 1 ? "" : "s"} from your current edits</summary
-              >
+              <summary>{t("preview.dressUp.differences.summary", { count: entry.differences.length })}</summary>
+              <p class="ed-hint">{t("preview.dressUp.differences.description")}</p>
               <ul>
                 {#each entry.differences as line, i (i)}
                   <li>
@@ -231,20 +253,27 @@ onMount(() => {
                             dressUp.highlight.item.kind === item.kind &&
                             dressUp.highlight.item.id === item.id}
                           <li>
-                            <button
-                              class="link"
-                              class:highlighted={shown}
-                              aria-pressed={shown}
-                              title={shown
-                                ? `Stop highlighting ${item.id}`
-                                : `Highlight ${item.id} in the viewport`}
-                              onclick={() => dressUp.toggleHighlight(entry.name, item)}>{item.id}</button
-                            >: {item.text}
+                            <Tooltip
+                              text={shown
+                                ? t("preview.dressUp.differences.unhighlight", { id: item.id })
+                                : t("preview.dressUp.differences.highlight", { id: item.id })}
+                            >
+                              {#snippet children(attrs)}
+                                <button
+                                  {...attrs}
+                                  class="link"
+                                  class:highlighted={shown}
+                                  aria-pressed={shown}
+                                  onclick={(e) => {
+                                    (attrs.onclick as ((e: MouseEvent) => void) | undefined)?.(e);
+                                    dressUp.toggleHighlight(entry.name, item);
+                                  }}>{item.id}</button
+                                >
+                              {/snippet}
+                            </Tooltip>: {item.text}
                             {#if item.element !== null && onselect}
-                              <button
-                                class="select"
-                                title={selectTitle(item)}
-                                onclick={() => onselect?.(item)}>Select</button
+                              <TipButton small tooltip={selectTitle(item)} onclick={() => onselect?.(item)}
+                                >{t("preview.dressUp.differences.select")}</TipButton
                               >
                             {/if}
                           </li>
@@ -256,8 +285,8 @@ onMount(() => {
               </ul>
             </details>
           {/if}
-          {#each entry.warnings as warning, i (i)}<p class="muted">{warning}</p>{/each}
-          {#if entry.path === null && !entry.own}<p class="muted">Dropped file: not kept in the project.</p>{/if}
+          {#each entry.warnings as warning, i (i)}<p class="ed-hint">{warning}</p>{/each}
+          {#if entry.path === null && !entry.own}<p class="ed-hint">{t("preview.dressUp.modules.dropped")}</p>{/if}
         </li>
       {/each}
     </ul>
@@ -267,20 +296,16 @@ onMount(() => {
 <style>
 /* 見出しと区切りはプレビューのパネルのほかの節に揃える。 */
 section {
-  border-top: 1px solid var(--border);
-  padding-top: 4px;
+  border-top: 1px solid var(--ugoe-color-border);
+  padding-top: var(--ugoe-space-2);
 }
 
 h3 {
-  margin: 4px 0;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
+  margin: var(--ugoe-space-2) 0;
 }
 
 .dress-up.dragging {
-  outline: 2px dashed var(--accent);
+  outline: 2px dashed var(--ugoe-color-accent);
   outline-offset: 2px;
 }
 
@@ -288,50 +313,38 @@ h3 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
+  gap: var(--ugoe-space-2);
 }
 
 h4 {
-  margin: 6px 0 2px;
-  font-size: 11px;
-  font-weight: 600;
+  margin: var(--ugoe-space-2) 0 var(--ugoe-space-1);
+  font-size: var(--ugoe-font-size-sm);
+  font-weight: var(--ugoe-font-weight-strong);
 }
 
 .hint {
-  margin: 2px 0 4px;
+  margin: var(--ugoe-space-1) 0 var(--ugoe-space-2);
 }
 
 p {
-  margin: 2px 0;
+  margin: var(--ugoe-space-1) 0;
   overflow-wrap: anywhere;
 }
 
-.notice {
-  display: flex;
-  align-items: flex-start;
-  gap: 4px;
-  padding: 4px 6px;
-  border: 1px solid #d97706;
-  border-radius: 4px;
+.error {
+  color: var(--ugoe-color-danger);
 }
 
-.notice span {
-  flex: 1;
-  min-width: 0;
+.muted {
+  color: var(--ugoe-color-text-muted);
 }
 
-.dismiss,
-.icon {
-  padding: 0 6px;
-}
-
-/* エディタの label は縦に並べる (app.css) ので、スロットの行は横に並べ直す。 */
 .slot {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
   align-items: center;
-  gap: 6px;
-  margin-bottom: 2px;
+  gap: var(--ugoe-space-2);
+  margin-bottom: var(--ugoe-space-1);
 }
 
 /* 狭いときは印をスロットの名前の下に回し、名前を切らない。 */
@@ -339,13 +352,8 @@ p {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0 4px;
+  gap: 0 var(--ugoe-space-2);
   min-width: 0;
-}
-
-.badge.authors {
-  border-color: var(--muted);
-  color: var(--muted);
 }
 
 .slot-id {
@@ -353,7 +361,7 @@ p {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 600;
+  font-weight: var(--ugoe-font-weight-strong);
 }
 
 .modules {
@@ -363,44 +371,47 @@ p {
 }
 
 .modules > li {
-  margin-bottom: 4px;
+  margin-bottom: var(--ugoe-space-2);
 }
 
 .module {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--ugoe-space-2);
 }
 
 .check {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--ugoe-space-2);
   flex: 1;
   min-width: 0;
 }
 
 .badge {
-  font-size: 10px;
-  padding: 0 4px;
-  border: 1px solid var(--accent);
-  border-radius: 3px;
-  color: var(--accent);
+  font-size: var(--ugoe-font-size-xs);
+  padding: 0 var(--ugoe-space-2);
+  border: 1px solid var(--ugoe-color-accent);
+  border-radius: var(--ugoe-radius-sm);
+  color: var(--ugoe-color-accent);
   white-space: nowrap;
 }
 
-.name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.badge.authors {
+  border-color: var(--ugoe-color-text-muted);
+  color: var(--ugoe-color-text-muted);
 }
 
 .slot-of {
   white-space: nowrap;
 }
 
+.path {
+  margin: 0;
+}
+
 .detail {
-  color: var(--muted);
+  color: var(--ugoe-color-text-muted);
   overflow-wrap: anywhere;
 }
 
@@ -410,35 +421,34 @@ p {
 }
 
 .differences ul {
-  margin: 2px 0;
+  margin: var(--ugoe-space-1) 0;
   padding-left: 16px;
   overflow-wrap: anywhere;
 }
 
 .differences .items {
   margin: 0;
-  color: var(--muted);
+  color: var(--ugoe-color-text-muted);
 }
 
-/* 要素の ID は文字のように見せ、押すとツリーで選ぶ。 */
+/* 要素の ID は文字のように見せ、押すとビューポートで強調する。 */
 .link {
   padding: 0;
   border: none;
   background: none;
-  color: var(--accent);
+  color: var(--ugoe-color-accent);
   font: inherit;
   text-decoration: underline;
   cursor: pointer;
 }
 
-.link.highlighted {
-  font-weight: 600;
-  text-decoration-style: double;
+.link:focus-visible {
+  outline: var(--ugoe-focus-ring);
+  outline-offset: 1px;
 }
 
-.select {
-  margin-left: 4px;
-  padding: 0 4px;
-  font-size: 11px;
+.link.highlighted {
+  font-weight: var(--ugoe-font-weight-strong);
+  text-decoration-style: double;
 }
 </style>

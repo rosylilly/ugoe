@@ -14,11 +14,15 @@
     タブを離れると効かせるのをやめる。
 -->
 <script lang="ts">
+import { formatList } from "@ugoe/i18n";
+import { Button, IconButton, NumberField, Select, Toggle, Tooltip } from "@ugoe/ui";
 import { onDestroy } from "svelte";
 import type { EditorDocument } from "../../document.svelte";
+import { t } from "../../i18n";
 import type { Model, Pose } from "../../ipc";
 import { elementLabel, labelOf } from "../../labels";
 import type { Selection } from "../../selection.svelte";
+import TipButton from "../../ui/TipButton.svelte";
 import type { ViewportController } from "../../viewport/controller.svelte";
 import PickList from "../slots/PickList.svelte";
 import {
@@ -127,15 +131,24 @@ function pickOf(group: number): string {
   return current && free.some((p) => p.id === current) ? current : (free[0]?.id ?? "");
 }
 
-function setFade(event: Event): void {
-  const input = event.currentTarget as HTMLInputElement;
-  const value = fadeSeconds(input.value);
+/** 待ち時間の欄を今の値に戻すために作り直す (受け付けなかったとき)。 */
+let fadeKey = $state(0);
+
+function setFade(seconds: number): void {
+  const value = fadeSeconds(String(seconds));
   if (!pose || value === null) {
-    if (pose) input.value = String(pose.fade_duration);
+    fadeKey++;
     return;
   }
-  void send({ ...pose, fade_duration: value });
+  void send({ ...pose, fade_duration: value }).then((ok) => {
+    if (!ok) fadeKey++;
+  });
 }
+
+const ids = $props.id();
+
+/** 「+ Entry」「+ Group」で選ぶパーツの選択肢。 */
+const freeOptions = $derived(free.map((p) => ({ value: p.id, label: elementLabel(p.name, p.id) })));
 
 function select(part: string): void {
   selection.set([{ kind: "part", id: part }]);
@@ -148,59 +161,68 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
 }
 </script>
 
-<h2>Poses</h2>
-<p class="help intro">
-  A pose group switches between variants of a part (for example arms A / B): only one entry of a group shows at a
-  time, and the first entry shows at start. Links fade in and out with their entry (for example sleeves with arms).
-  Motions choose the entry by animating part opacity; apps can also pick one.
-</p>
+<h2>{t("poses.title")}</h2>
+<p class="help intro">{t("poses.intro")}</p>
 {#if module}
-  <p class="base-note" role="note">
-    Module project: the base's pose groups are read-only. You can add groups of the module's parts, and link the
-    module's parts to the base entries that the slot exposes (Pose parts in the base's Slots tab).
-  </p>
+  <p class="base-note" role="note">{t("poses.moduleNote")}</p>
 {/if}
 
 {#if model && pose}
   <div class="field">
-    <label for="pose-fade">Fade time (s)</label>
-    <input
-      id="pose-fade"
-      type="number"
-      min="0"
-      step="0.1"
-      value={pose.fade_duration}
-      disabled={busy || module !== null}
-      title={module ? "The fade time belongs to the base model." : "Cross-fade time when the shown entry changes"}
-      onchange={setFade}
-    />
+    {#key fadeKey}
+      <NumberField
+        label={t("poses.fade.label")}
+        unit={t("poses.fade.unit")}
+        min={0}
+        step={0.1}
+        decimals={3}
+        value={pose.fade_duration}
+        disabled={busy || module !== null}
+        describedby="{ids}-fade"
+        onchange={setFade}
+      />
+    {/key}
   </div>
+  <p class="help" id="{ids}-fade">{module ? t("poses.fade.baseHint") : t("poses.fade.description")}</p>
 
-  <label class="check" title="Show only one entry per group in the viewport, as apps do (the model doesn't change)">
-    <input
-      type="checkbox"
+  <div class="check">
+    <Toggle
+      label={t("poses.preview.label")}
       checked={shown !== null}
       disabled={pose.groups.length === 0}
-      onchange={(e) => viewport.setPosePreview(e.currentTarget.checked ? [] : null)}
+      describedby="{ids}-preview"
+      onchange={(on) => viewport.setPosePreview(on ? [] : null)}
     />
-    Show the pose in the viewport
-  </label>
+  </div>
+  <p class="help" id="{ids}-preview">{t("poses.preview.description")}</p>
 
   {#if pose.groups.length === 0}
-    <p class="muted">No pose groups yet.</p>
+    <p class="ed-hint">{t("poses.empty")}</p>
   {/if}
   {#each pose.groups as group, gi (gi)}
     {@const base = isBaseGroup(module, gi)}
-    <section class="group" class:base aria-label="Pose group {gi + 1}">
+    <section class="group" class:base aria-labelledby="{ids}-group-{gi}">
       <header>
-        <h3>Group {gi + 1}</h3>
-        {#if base}<span class="tag" title="Belongs to the base model">base</span>{/if}
-        <button
-          class="remove"
-          disabled={busy || base}
-          title={base ? "Base groups can't be removed here." : "Remove this group (the parts stay)"}
-          onclick={() => send(removeGroup(pose, gi))}>Remove group</button>
+        <h3 id="{ids}-group-{gi}">{t("poses.group.title", { index: gi + 1 })}</h3>
+        {#if base}
+          <Tooltip text={t("poses.group.base.tooltip")}>
+            {#snippet children(attrs)}<span {...attrs} class="tag">{t("poses.group.base.label")}</span>{/snippet}
+          </Tooltip>
+        {/if}
+        <span class="remove">
+          <TipButton
+            small
+            disabled={busy || base}
+            tooltip={t("poses.group.remove.tooltip")}
+            onclick={() => send(removeGroup(pose, gi))}>{t("poses.group.remove.label")}</TipButton
+          >
+        </span>
       </header>
+      {#if base}
+        <p class="help">{t("poses.group.baseHint")}</p>
+      {:else if group.entries.length > 1}
+        <p class="help">{t("poses.entry.dragHint")}</p>
+      {/if}
       <ol class="entries">
         {#each group.entries as entry, ei (entry.part)}
           {@const linkable = !base || canLinkTo(module, entry.part)}
@@ -210,122 +232,137 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
             class:dragging={dragging?.group === gi && dragging.entry === ei}
             class:drop-before={dropAt?.group === gi && dropAt.index === ei}
             class:drop-after={dropAt?.group === gi && dropAt.index === ei + 1 && ei === group.entries.length - 1}
-            title={base ? undefined : "Drag to reorder (the first entry shows at start)"}
             ondragstart={(e) => dragStart(e, gi, ei)}
             ondragover={(e) => dragOver(e, gi, ei)}
             ondrop={drop}
             ondragend={dragEnd}
           >
             <div class="entry">
-              <button
-                class="name"
-                class:selected={selection.has({ kind: "part", id: entry.part })}
-                title="Select the part"
-                onclick={() => select(entry.part)}>{labelOf(parts, entry.part)}</button>
-              {#if ei === 0}<span class="tag" title="Shown at start">first</span>{/if}
+              <Tooltip text={t("poses.entry.select.tooltip")}>
+                {#snippet children(attrs)}
+                  <button
+                    {...attrs}
+                    class="name"
+                    class:selected={selection.has({ kind: "part", id: entry.part })}
+                    onclick={(e) => {
+                      (attrs.onclick as ((e: MouseEvent) => void) | undefined)?.(e);
+                      select(entry.part);
+                    }}>{labelOf(parts, entry.part)}</button
+                  >
+                {/snippet}
+              </Tooltip>
+              {#if ei === 0}
+                <Tooltip text={t("poses.entry.first.tooltip")}>
+                  {#snippet children(attrs)}<span {...attrs} class="tag">{t("poses.entry.first.label")}</span>{/snippet}
+                </Tooltip>
+              {/if}
               <span class="buttons">
                 {#if shown !== null}
-                  <button
-                    class="show"
-                    class:on={isShown}
-                    aria-pressed={isShown}
-                    title={isShown ? "Shown in the viewport" : "Show this entry in the viewport"}
-                    onclick={() => viewport.setPosePreview(showEntry(shown, group, entry.part))}>{isShown
-                      ? "Shown"
-                      : "Show"}</button>
+                  <TipButton
+                    small
+                    pressed={isShown}
+                    tooltip={isShown ? t("poses.entry.shown.tooltip") : t("poses.entry.show.tooltip")}
+                    onclick={() => viewport.setPosePreview(showEntry(shown, group, entry.part))}
+                    >{isShown ? t("poses.entry.shown.label") : t("poses.entry.show.label")}</TipButton
+                  >
                 {/if}
-                <button
+                <IconButton
+                  small
                   disabled={busy || base || ei === 0}
-                  aria-label="Move up"
-                  title="Move up (the first entry shows at start)"
-                  onclick={() => send(moveEntry(pose, gi, ei, -1))}>▲</button>
-                <button
+                  label={t("poses.entry.moveUp.aria")}
+                  tooltip={t("poses.entry.moveUp.tooltip")}
+                  onclick={() => send(moveEntry(pose, gi, ei, -1))}>▲</IconButton
+                >
+                <IconButton
+                  small
                   disabled={busy || base || ei === group.entries.length - 1}
-                  aria-label="Move down"
-                  title="Move down"
-                  onclick={() => send(moveEntry(pose, gi, ei, 1))}>▼</button>
-                <button
+                  label={t("poses.entry.moveDown.aria")}
+                  onclick={() => send(moveEntry(pose, gi, ei, 1))}>▼</IconButton
+                >
+                <IconButton
+                  small
                   disabled={busy || base}
-                  aria-label="Remove entry"
-                  title={base ? "Base entries can't be removed here." : "Remove this entry from the group"}
-                  onclick={() => send(removeEntry(pose, gi, ei))}>✕</button>
+                  label={t("poses.entry.remove.aria")}
+                  tooltip={t("poses.entry.remove.tooltip")}
+                  onclick={() => send(removeEntry(pose, gi, ei))}>✕</IconButton
+                >
               </span>
             </div>
             {#if base && entry.links.some((l) => isBasePart(module, l))}
               <p class="help">
-                Base links: {entry.links
-                  .filter((l) => isBasePart(module, l))
-                  .map((l) => labelOf(parts, l))
-                  .join(", ")}
+                {t("poses.entry.baseLinks", {
+                  parts: formatList(entry.links.filter((l) => isBasePart(module, l)).map((l) => labelOf(parts, l))),
+                })}
               </p>
             {/if}
             {#if linkable}
               <PickList
-                title="Links"
-                help={base
-                  ? "Module parts that switch with this base entry (for example sleeves A / B with arms A / B)."
-                  : "Parts that switch together with this entry (for example sleeves with arms)."}
+                title={t("poses.links.title")}
+                help={base ? t("poses.links.baseHelp") : t("poses.links.help")}
                 options={linkOptions(editableLinks(entry.links, module))}
                 selected={editableLinks(entry.links, module)}
-                empty="No free parts. A part can be in only one place in the pose."
+                empty={t("poses.links.empty")}
                 disabled={busy}
                 onchange={(links) => send(setLinks(pose, gi, ei, links, module))}
               />
             {:else}
-              <p class="help">The slot doesn't expose this entry, so module parts can't follow it.</p>
+              <p class="help">{t("poses.links.notExposed")}</p>
             {/if}
           </li>
         {/each}
       </ol>
       {#if !base}
         <div class="row">
-          <select
-            aria-label="Part to add to group {gi + 1}"
-            value={pickOf(gi)}
+          <span class="pick">
+            <Select
+              ariaLabel={t("poses.entry.add.aria", { index: gi + 1 })}
+              value={pickOf(gi)}
+              options={freeOptions}
+              disabled={busy || free.length === 0}
+              onchange={(v) => (picks[gi] = v)}
+            />
+          </span>
+          <TipButton
             disabled={busy || free.length === 0}
-            onchange={(e) => (picks[gi] = e.currentTarget.value)}
+            tooltip={t("poses.entry.add.tooltip")}
+            onclick={() => send(addEntry(pose, gi, pickOf(gi)))}>{t("poses.entry.add.label")}</TipButton
           >
-            {#each free as p (p.id)}<option value={p.id}>{elementLabel(p.name, p.id)}</option>{/each}
-          </select>
-          <button
-            disabled={busy || free.length === 0}
-            title="Add the part as another variant in this group"
-            onclick={() => send(addEntry(pose, gi, pickOf(gi)))}>+ Entry</button>
         </div>
       {/if}
     </section>
   {/each}
 
-  <section class="add">
-    <h3>New group</h3>
+  <section class="add" aria-labelledby="{ids}-new">
+    <h3 id="{ids}-new">{t("poses.newGroup.title")}</h3>
     {#if free.length === 0}
-      <p class="muted">
-        {module ? "Every module part is already in the pose, or the module has no parts." : "Every part is already in the pose."}
-      </p>
+      <p class="ed-hint">{module ? t("poses.newGroup.noModuleParts") : t("poses.newGroup.noParts")}</p>
     {:else}
       <div class="row">
-        <select
-          aria-label="First part of the new group"
-          value={pickOf(-1)}
-          disabled={busy}
-          onchange={(e) => (picks[-1] = e.currentTarget.value)}
-        >
-          {#each free as p (p.id)}<option value={p.id}>{elementLabel(p.name, p.id)}</option>{/each}
-        </select>
-        <button disabled={busy} onclick={() => send(addGroup(pose, pickOf(-1)))}>+ Group</button>
+        <span class="pick">
+          <Select
+            ariaLabel={t("poses.newGroup.first.aria")}
+            value={pickOf(-1)}
+            options={freeOptions}
+            disabled={busy}
+            onchange={(v) => (picks[-1] = v)}
+          />
+        </span>
+        <Button disabled={busy} onclick={() => send(addGroup(pose, pickOf(-1)))}>{t("poses.newGroup.add.label")}</Button>
       </div>
       <div class="row">
-        <button
+        <TipButton
           disabled={busy || selectedFree.length < 2}
-          title={selectedFree.length < 2
-            ? "Select two or more parts that aren't in the pose yet (in the tree)"
-            : `Make a group of ${selectedFree.length} selected parts`}
+          tooltip={t("poses.newGroup.fromSelection.tooltip", { count: selectedFree.length })}
           onclick={() => {
             const [first, ...rest] = selectedFree;
             if (first === undefined) return;
             send(rest.reduce((p, id) => addEntry(p, p.groups.length - 1, id), addGroup(pose, first)));
-          }}>+ Group from selection</button>
+          }}>{t("poses.newGroup.fromSelection.label")}</TipButton
+        >
       </div>
+      {#if selectedFree.length < 2}
+        <p class="help">{t("poses.newGroup.fromSelection.disabled")}</p>
+      {/if}
     {/if}
   </section>
 {/if}
@@ -333,50 +370,37 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
 <style>
 h3 {
   margin: 0;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
 }
 
 .help {
-  margin: 2px 0 6px;
-  color: var(--muted);
-  font-size: 11px;
+  margin: var(--ugoe-space-1) 0 var(--ugoe-space-2);
+  color: var(--ugoe-color-text-muted);
+  font-size: var(--ugoe-font-size-sm);
   overflow-wrap: anywhere;
 }
 
 .intro {
-  margin-bottom: 8px;
+  margin-bottom: var(--ugoe-space-3);
 }
 
 .base-note {
-  margin: 4px 0 8px;
-  padding: 4px 8px;
-  border-left: 3px solid var(--border);
-  font-size: 12px;
-  opacity: 0.85;
+  margin: var(--ugoe-space-2) 0 var(--ugoe-space-3);
+  padding: var(--ugoe-space-2) var(--ugoe-space-3);
+  border-left: 3px solid var(--ugoe-color-border);
+  color: var(--ugoe-color-text-muted);
+  font-size: var(--ugoe-font-size-sm);
 }
 
 .field {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin: 6px 0;
-}
-
-.field input {
-  width: 6em;
-  min-width: 0;
+  margin: var(--ugoe-space-2) 0 0;
 }
 
 .group,
 .add {
-  margin: 8px 0;
-  padding: 4px 8px 8px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
+  margin: var(--ugoe-space-3) 0;
+  padding: var(--ugoe-space-2) var(--ugoe-space-3) var(--ugoe-space-3);
+  border: 1px solid var(--ugoe-color-border);
+  border-radius: var(--ugoe-radius-md);
 }
 
 .group.base {
@@ -386,8 +410,8 @@ h3 {
 .group header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin: 2px 0 4px;
+  gap: var(--ugoe-space-2);
+  margin: var(--ugoe-space-1) 0 var(--ugoe-space-2);
 }
 
 .remove {
@@ -400,7 +424,7 @@ h3 {
 }
 
 .entries li {
-  margin: 4px 0;
+  margin: var(--ugoe-space-2) 0;
   border-top: 2px solid transparent;
   border-bottom: 2px solid transparent;
 }
@@ -414,29 +438,21 @@ h3 {
 }
 
 .entries li.drop-before {
-  border-top-color: var(--accent);
+  border-top-color: var(--ugoe-color-accent);
 }
 
 .entries li.drop-after {
-  border-bottom-color: var(--accent);
+  border-bottom-color: var(--ugoe-color-accent);
 }
 
 .check {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 6px 0;
-}
-
-.show.on {
-  border-color: var(--accent);
-  color: var(--accent);
+  margin: var(--ugoe-space-2) 0 0;
 }
 
 .entry {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--ugoe-space-2);
   min-width: 0;
 }
 
@@ -444,40 +460,41 @@ h3 {
   min-width: 0;
   border: 1px solid transparent;
   background: none;
-  padding: 0 2px;
+  padding: 0 var(--ugoe-space-1);
   text-align: left;
   overflow-wrap: anywhere;
 }
 
 .entry .name.selected {
-  border-color: var(--accent);
+  border-color: var(--ugoe-color-accent);
 }
 
 .buttons {
   display: flex;
   flex: none;
-  gap: 2px;
+  gap: var(--ugoe-space-1);
   margin-left: auto;
 }
 
 .tag {
   flex: none;
-  padding: 0 4px;
-  border: 1px solid var(--accent);
-  border-radius: 3px;
-  color: var(--accent);
-  font-size: 10px;
+  padding: 0 var(--ugoe-space-2);
+  border: 1px solid var(--ugoe-color-accent);
+  border-radius: var(--ugoe-radius-sm);
+  color: var(--ugoe-color-accent);
+  font-size: var(--ugoe-font-size-xs);
 }
 
 .row {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--ugoe-space-2);
   align-items: center;
-  margin: 4px 0;
+  margin: var(--ugoe-space-2) 0;
 }
 
-.row select {
+.pick {
+  display: grid;
   flex: 1;
   min-width: 0;
 }

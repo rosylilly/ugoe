@@ -15,6 +15,7 @@
 //   そのファイルの行には、今の編集との違い (要素・テクスチャ・条件など) を文字でも出す (`differences`。
 //   ipc.comparePreviewModule。T0654)。足した・変えた要素は何が違うかを添え、ツリーで選べる (T0656)。
 //   要素を押すと、プレビューを出ずにビューポートで強調する (`highlight`。描くのは DifferenceOverlay.svelte。T0657)。
+import { t } from "../i18n";
 import { type DifferenceItem, ipc, type ModuleDifference } from "../ipc";
 import type { WebPuppet } from "../viewport/wasm";
 import {
@@ -90,7 +91,7 @@ export interface DressUpHost {
 /** モジュールのプロジェクトの今の編集と同じ名前 (`editingName`) のモジュールを読み込んだときの説明。 */
 export function sameNameProblem(name: string): DressUpProblem {
   return {
-    summary: `This file is also named "${name}", the name your current edits use here, so only your current edits are shown. Rename the file's module to compare.`,
+    summary: t("preview.dressUp.problem.sameName", { name }),
     detail: `module ${name} has the same name as this module project`,
     code: "same_name",
   };
@@ -99,7 +100,7 @@ export function sameNameProblem(name: string): DressUpProblem {
 /** モジュールのプロジェクトで、自分のスロットに付けようとしたときの説明。 */
 export function ownSlotProblem(slot: string): DressUpProblem {
   return {
-    summary: `This project is the module for slot "${slot}", so another module can't go on it here. Try it in the base project.`,
+    summary: t("preview.dressUp.problem.ownSlot", { slot }),
     detail: `slot ${slot} is this module project's own slot`,
     code: "own_slot",
   };
@@ -427,7 +428,10 @@ export class DressUp {
       entry.wanted = false;
       entry.problem = problem;
     }
-    this.notices = [...this.notices, `${name} was taken off: ${problem.summary}`];
+    this.notices = [
+      ...this.notices,
+      t("preview.dressUp.takenOff", { name, summary: problem.summary }),
+    ];
   }
 
   /** `entry.path` から読み直す。読めなければ `entry.problem`。 */
@@ -460,7 +464,10 @@ export class DressUp {
       else
         this.error = {
           ...problem,
-          summary: `${fileStem(source.path ?? source.name ?? "File")}: ${problem.summary}`,
+          summary: t("preview.dressUp.fileProblem", {
+            file: fileStem(source.path ?? source.name ?? t("preview.dressUp.file")),
+            summary: problem.summary,
+          }),
         };
       return null;
     }

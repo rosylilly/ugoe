@@ -16,8 +16,10 @@
 -->
 <script lang="ts">
 import type { EditorDocument } from "../document.svelte";
+import { t } from "../i18n";
 import type { PhysicsSettings } from "../ipc";
 import { isDynamicRig } from "../panels/physics/physics";
+import TipButton from "../ui/TipButton.svelte";
 import type { ViewportController } from "../viewport/controller.svelte";
 import { boundaryEdges, type Point } from "../viewport/tools/geometry";
 import { summarizeModel } from "../viewport/tools/model";
@@ -233,12 +235,15 @@ const found = $derived(
   </svg>
   <div class="notice" role="status">
     <span>{highlightNotice(highlight.item, drawn.shown, found)}</span>
-    <button
+    <TipButton
+      small
       onclick={fit}
       disabled={!found}
-      title="Zoom the viewport to {highlight.item.id} (the viewport's Fit shows the whole canvas again)">Fit</button
+      tooltip={t("preview.difference.fit.tooltip", { id: highlight.item.id })}>{t("preview.difference.fit.label")}</TipButton
     >
-    <button onclick={() => (preview.dressUp.highlight = null)} title="Stop highlighting">Clear</button>
+    <TipButton small onclick={() => (preview.dressUp.highlight = null)} tooltip={t("preview.difference.clear.tooltip")}
+      >{t("preview.difference.clear.label")}</TipButton
+    >
   </div>
 {/if}
 
@@ -282,12 +287,12 @@ const found = $derived(
   left: 8px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--ugoe-space-2);
   max-width: calc(100% - 16px);
-  padding: 2px 6px;
-  background: var(--panel);
+  padding: var(--ugoe-space-1) var(--ugoe-space-2);
+  background: var(--ugoe-color-surface);
   border: 1px solid var(--highlight, #ff9f1a);
-  border-radius: 4px;
+  border-radius: var(--ugoe-radius-md);
   pointer-events: auto;
 }
 </style>

@@ -1,4 +1,6 @@
-// 書き出しの設定の範囲と、書き出しの結果の要約の文言 (docs/editor.md#書き出し)。
+// 書き出しの設定の範囲と、書き出しの結果の要約の文言 (docs/editor.md#書き出し)。文言はカタログの `export.summary`。
+import { formatNumber } from "@ugoe/i18n";
+import { t } from "./i18n";
 import type { AtlasReport, ExportReport, ModuleExportReport } from "./ipc";
 
 /** アトラス 1 枚の大きさの上限として選べる値 (ugoe_editor_core::export::MAX_ATLAS_SIZE まで)。 */
@@ -11,24 +13,29 @@ function change(before: number, after: number): string {
   return before === after ? String(before) : `${before} → ${after}`;
 }
 
-function plural(n: number, one: string, many = `${one}s`): string {
-  return `${n} ${n === 1 ? one : many}`;
-}
-
 /** まとめずに残した理由の表示 (知らない理由はそのまま出す)。 */
-const KEPT_REASONS: Record<string, string> = {
-  too_large: "too large",
-  uv_out_of_range: "UV outside 0–1",
-  has_normal_map: "has a normal map",
-};
+function keptReason(reason: string): string {
+  switch (reason) {
+    case "too_large":
+      return t("export.summary.kept.tooLarge");
+    case "uv_out_of_range":
+      return t("export.summary.kept.uvOutOfRange");
+    case "has_normal_map":
+      return t("export.summary.kept.hasNormalMap");
+    default:
+      return reason;
+  }
+}
 
 /** 書き出しの結果の要約の行: テクスチャの枚数・状態の切り替え・描画の回数と、アトラス化の詳細。 */
 export function exportSummary(report: ExportReport): string[] {
   const { before, after, atlas } = report;
   const lines = [
-    `Textures: ${change(before.textures, after.textures)}`,
-    `State changes: ${change(before.state_changes, after.state_changes)}`,
-    `Draw calls: ${change(before.draw_calls, after.draw_calls)}`,
+    t("export.summary.textures", { value: change(before.textures, after.textures) }),
+    t("export.summary.stateChanges", {
+      value: change(before.state_changes, after.state_changes),
+    }),
+    t("export.summary.drawCalls", { value: change(before.draw_calls, after.draw_calls) }),
   ];
   if (atlas) lines.push(...atlasSummary(atlas));
   return lines;
@@ -39,7 +46,9 @@ export function exportSummary(report: ExportReport): string[] {
  * 呼び出し側が別に出す。
  */
 export function moduleExportSummary(report: ModuleExportReport): string[] {
-  const lines = [`Size: ${report.bytes.toLocaleString("en-US")} bytes`];
+  const lines = [
+    t("export.summary.size", { count: report.bytes, bytes: formatNumber(report.bytes) }),
+  ];
   if (report.atlas) lines.push(...atlasSummary(report.atlas));
   return lines;
 }
@@ -47,14 +56,20 @@ export function moduleExportSummary(report: ModuleExportReport): string[] {
 /** アトラス化の詳細の行。 */
 function atlasSummary(atlas: AtlasReport): string[] {
   const sizes = atlas.atlases.map(([w, h]) => `${w}×${h}`).join(", ");
-  const into = plural(atlas.atlases.length, "atlas", "atlases");
+  const atlases = t("export.summary.atlases", { count: atlas.atlases.length });
   const lines = [
-    `Packed ${plural(atlas.packed, "texture")} into ${into}${sizes ? ` (${sizes})` : ""}`,
+    sizes
+      ? t("export.summary.packedSizes", { count: atlas.packed, atlases, sizes })
+      : t("export.summary.packed", { count: atlas.packed, atlases }),
   ];
-  for (const [name, first] of atlas.deduplicated) lines.push(`Same image: ${name} → ${first}`);
-  for (const [name, reason] of atlas.kept) {
-    lines.push(`Kept separate: ${name} (${KEPT_REASONS[reason] ?? reason})`);
+  for (const [name, first] of atlas.deduplicated) {
+    lines.push(t("export.summary.deduplicated", { name, first }));
   }
-  if (atlas.removed.length > 0) lines.push(`Removed unused: ${atlas.removed.join(", ")}`);
+  for (const [name, reason] of atlas.kept) {
+    lines.push(t("export.summary.kept.line", { name, reason: keptReason(reason) }));
+  }
+  if (atlas.removed.length > 0) {
+    lines.push(t("export.summary.removed", { names: atlas.removed.join(", ") }));
+  }
   return lines;
 }

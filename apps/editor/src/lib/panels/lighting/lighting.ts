@@ -5,6 +5,7 @@
 // - 法線マップのふくらみの設定 (BulgeSettings) の、画面の単位 (キャンバスの px) との変換。
 // - 光源の座標はキャンバス座標 (ピクセル・Y 下向き) + 奥行き (手前が +z)。`direction` は光が進む向き
 //   (docs/spec/rendering.md#ライティング)。
+import { t } from "../../i18n";
 import type {
   BulgeSettings,
   Mesh,
@@ -138,10 +139,10 @@ export function litCandidates(model: Model): Mesh[] {
 /** モデルがライティングを受けないときの案内 (受けるなら null)。 */
 export function lightingHint(model: Model): string | null {
   if (model.lighting !== true) {
-    return "Lighting is off for this model, so lights do not change how it looks. Turn on “Receive lighting” for the model.";
+    return t("lighting.hint.modelOff");
   }
   if (!model.meshes.some((m) => isLit(m) && !m.mask_only)) {
-    return "No mesh receives lighting. Turn on “Lit” for the meshes that should be shaded.";
+    return t("lighting.hint.noLitMesh");
   }
   return null;
 }
@@ -171,7 +172,7 @@ function bulgeScale(view: NormalMapGroupView | null): number {
 
 /** 長さの単位の表示 (まとまりはキャンバスの px、単独のものはテクスチャの px)。 */
 export function bulgeUnit(view: NormalMapGroupView | null): string {
-  return view?.canvas_per_pixel != null ? "px" : "texture px";
+  return view?.canvas_per_pixel != null ? t("lighting.unit.px") : t("lighting.unit.texturePx");
 }
 
 /** まとまりの既定の設定を画面の単位にしたもの (まとまりが分からなければ既定値)。 */

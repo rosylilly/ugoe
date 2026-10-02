@@ -1,6 +1,7 @@
 // プレビューの着せ替え (docs/editor.md#プレビューの着せ替え) の、DOM と wasm に依存しない部分 (dressUp.test.ts)。
 // 付け外しの失敗は ugoe-wasm の DressUpError (`code` と補足の値。crates/ugoe-wasm/README.md#着せ替え-t0123)。
 import type { FileFilter } from "../filePaths";
+import { t } from "../i18n";
 import type { Slot } from "../ipc";
 import { describeModuleWarnings } from "./loadWarnings";
 
@@ -99,52 +100,55 @@ export function describeProblem(error: unknown): DressUpProblem {
         ? fields.message
         : String(error);
   const code = typeof fields.code === "string" ? fields.code : null;
-  const module = text(fields.module, "The module");
+  const module = text(fields.module, t("preview.dressUp.problem.theModule"));
   const slot = text(fields.slot, "?");
   const parameter = text(fields.parameter, "?");
   const mesh = text(fields.mesh, "?");
   const summary = ((): string => {
     switch (code) {
       case "unknown_slot":
-        return `${module} goes in slot "${slot}", but this model has no such slot. Add it in the Slots tab (the name must match exactly).`;
+        return t("preview.dressUp.problem.unknownSlot", { module, slot });
       case "missing_slot":
-        return `${module} needs this model to have slot "${slot}". Add it in the Slots tab.`;
+        return t("preview.dressUp.problem.missingSlot", { module, slot });
       case "missing_parameter":
-        return `${module} uses parameter "${parameter}", which this model does not have.`;
+        return t("preview.dressUp.problem.missingParameter", { module, parameter });
       case "parameter_not_exposed":
-        return `${module} uses parameter "${parameter}", but slot "${slot}" does not allow it. Tick it under the slot's Parameters in the Slots tab.`;
+        return t("preview.dressUp.problem.parameterNotExposed", { module, parameter, slot });
       case "avatar_level":
-        return `${module} needs a higher avatar profile level than this model declares.`;
+        return t("preview.dressUp.problem.avatarLevel", { module });
       case "slot_occupied":
-        return `Slot "${slot}" already has ${text(fields.attached, "another module")}. Take that off first.`;
+        return t("preview.dressUp.problem.slotOccupied", {
+          slot,
+          attached: text(fields.attached, t("preview.dressUp.problem.anotherModule")),
+        });
       case "unknown_mask":
-        return `${module} masks mesh "${mesh}" with a mesh this model does not offer. Add it to the slot's Mask sources in the Slots tab.`;
+        return t("preview.dressUp.problem.unknownMask", { module, mesh });
       case "unknown_collider":
-        return `${module}'s physics collides with a collider this model does not offer. Add it to the slot's Colliders in the Slots tab.`;
+        return t("preview.dressUp.problem.unknownCollider", { module });
       case "pose_not_exposed":
-        return `${module} follows a pose part that slot "${slot}" does not offer. Add it to the slot's Pose parts in the Slots tab.`;
+        return t("preview.dressUp.problem.poseNotExposed", { module, slot });
       case "texture_out_of_range":
-        return `${module} is broken: mesh "${mesh}" uses a texture the module does not have. Export the module again.`;
+        return t("preview.dressUp.problem.textureOutOfRange", { module, mesh });
       case "invalid_composition":
-        return "The model with this module on is not valid. See the details.";
+        return t("preview.dressUp.problem.invalidComposition");
       case "invalid_module_name":
-        return `The module name "${module}" cannot be used (it must not be empty, contain / or start with #).`;
+        return t("preview.dressUp.problem.invalidModuleName", { module });
       case "duplicate_module":
-        return `Two modules are named "${module}".`;
+        return t("preview.dressUp.problem.duplicateModule", { module });
       case "compile":
-        return "The model with this module on could not be prepared for drawing. See the details.";
+        return t("preview.dressUp.problem.compile");
       case "invalid_physics":
-        return "The physics of the module does not fit this model. See the details.";
+        return t("preview.dressUp.problem.invalidPhysics");
       case "not_attached":
-        return `${module} is not on.`;
+        return t("preview.dressUp.problem.notAttached", { module });
       case "not_loaded":
-        return `${module} is not loaded. Load the file again.`;
+        return t("preview.dressUp.problem.notLoaded", { module });
       case "no_model":
-        return "There is no model in the viewport.";
+        return t("preview.dressUp.problem.noModel");
       case "invalid_file":
-        return "This is not a .ugoemod file, or it is damaged or from a newer version of ugoe.";
+        return t("preview.dressUp.problem.invalidFile");
       case "texture":
-        return "The module's images could not be put on the GPU.";
+        return t("preview.dressUp.problem.texture");
       default:
         return detail;
     }

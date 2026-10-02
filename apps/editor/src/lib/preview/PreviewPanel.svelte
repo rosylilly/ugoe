@@ -6,13 +6,16 @@
 -->
 <script lang="ts">
 import { TrackingPanel } from "@ugoe/face-tracking";
+import { Button, Notice, Section, Select, Slider, Toggle } from "@ugoe/ui";
 import type { EditorDocument } from "../document.svelte";
+import { t } from "../i18n";
 import type { DifferenceItem, Model } from "../ipc";
 import { labelOf } from "../labels";
 import type { LightingView } from "../panels/lighting/lightingView.svelte";
 import PreviewLightsSection from "../panels/lighting/PreviewLightsSection.svelte";
-import { formatValue, parseValue } from "../panels/parameterValue";
+import { formatValue } from "../panels/parameterValue";
 import { shownEntry } from "../panels/poses/poses";
+import TipButton from "../ui/TipButton.svelte";
 import type { ViewportController } from "../viewport/controller.svelte";
 import DressUpSection from "./DressUpSection.svelte";
 import LicenseDialog from "./LicenseDialog.svelte";
@@ -23,6 +26,7 @@ import {
   STAGES,
   sliderStep,
   stageAvailability,
+  stageLabel,
 } from "./preview";
 import type { PreviewMode } from "./preview.svelte";
 
@@ -40,15 +44,14 @@ let { preview, doc, viewport, lighting, onselect }: Props = $props();
 
 let filter = $state("");
 let licenses = $state<LicenseDialog | null>(null);
-/** 値の欄の入力の誤り (パラメータごとに 1 つ)。 */
-let valueError = $state<{ id: string; message: string } | null>(null);
-/**
- * 入力中の値の欄 (ID と入り始めの表示)。値は毎フレーム変わる (呼吸・物理) ので、入力中は表示を書き換えない。
- */
-let typing = $state<{ id: string; text: string } | null>(null);
+
+/** 表情を付けない選択肢の値 (表情の名前は空にならないが、念のため Select の「未選択」の空文字列と分ける)。 */
+const NO_EXPRESSION = "#none";
 
 const model = $derived(doc.model ? (JSON.parse(doc.model.json) as Model) : null);
-const sections = $derived(groupParameters(doc.parameters, model?.parameter_groups ?? [], "Other"));
+const sections = $derived(
+  groupParameters(doc.parameters, model?.parameter_groups ?? [], t("preview.parameters.other")),
+);
 const shown = $derived(filterSections(sections, filter));
 const available = $derived.by(() => {
   const found = stageAvailability(model, doc.physics !== null);
@@ -57,111 +60,90 @@ const available = $derived.by(() => {
 });
 const poseGroups = $derived(model?.pose.groups ?? []);
 const moduleLabels = $derived(modulePoseLabels(preview.modulePoses));
-
-function onValueChange(id: string, e: Event) {
-  const input = e.currentTarget as HTMLInputElement;
-  const p = doc.parameters.find((q) => q.id === id);
-  if (!p) return;
-  const parsed = parseValue(input.value, p);
-  if (!parsed.ok) {
-    valueError = { id, message: parsed.error };
-  } else {
-    valueError = null;
-    preview.setParameter(id, parsed.value);
-  }
-  typing = null;
-  input.value = formatValue(preview.values[id] ?? p.default);
-}
-
-function onValueKeyDown(e: KeyboardEvent) {
-  if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
-}
+const expressionOptions = $derived([
+  { value: NO_EXPRESSION, label: t("preview.expressions.none") },
+  ...doc.expressions.map((e) => ({ value: e.name, label: e.name })),
+]);
 </script>
 
 <div class="preview-panel">
-  <h2>Preview</h2>
+  <h2>{t("preview.title")}</h2>
   {#if preview.error}<p class="error">{preview.error}</p>{/if}
-  {#each preview.warnings as warning, i (i)}<p class="warning">{warning}</p>{/each}
-  {#if viewport.status !== "ready"}<p class="muted">{viewport.message ?? "Loading viewport…"}</p>{/if}
+  {#each preview.warnings as warning, i (i)}<Notice tone="warning">{warning}</Notice>{/each}
+  {#if viewport.status !== "ready"}<p class="ed-hint">{viewport.message ?? t("preview.loadingViewport")}</p>{/if}
 
-  <section aria-label="Runtime stages">
-    <h3>Runtime</h3>
-    {#each STAGES as stage (stage.id)}
+  <section aria-label={t("preview.stages.aria")}>
+    <h3>{t("preview.stages.title")}</h3>
+    {#each STAGES as stage (stage)}
       <div class="stage">
-        <label class="check" title={available[stage.id] ? "" : "This model has no settings for this stage"}>
-          <input
-            type="checkbox"
-            checked={preview.stages[stage.id]}
-            onchange={(e) => preview.setStage(stage.id, e.currentTarget.checked)}
-          />
-          {stage.label}
-          {#if !available[stage.id]}<span class="muted">(not set up)</span>{/if}
-        </label>
-        {#if stage.id === "physics"}
-          <button
+        <Toggle
+          label={available[stage] ? stageLabel(stage) : t("preview.stages.notSetUp", { stage: stageLabel(stage) })}
+          checked={preview.stages[stage]}
+          onchange={(on) => preview.setStage(stage, on)}
+        />
+        {#if stage === "physics"}
+          <TipButton
+            small
             onclick={() => preview.resetPhysics()}
             disabled={!preview.stages.physics || !available.physics}
-            title="Put the particles back to their rest pose">Reset</button
+            tooltip={t("preview.stages.resetPhysics.tooltip")}>{t("preview.stages.resetPhysics.label")}</TipButton
           >
-        {:else if stage.id === "lip_sync"}
-          <input
-            class="level"
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={preview.lipSyncLevel}
-            disabled={!preview.stages.lip_sync}
-            aria-label="Lip sync level"
-            title="Mouth opening from the voice level (0 to 1)"
-            oninput={(e) => preview.setLipSyncLevel(e.currentTarget.valueAsNumber)}
-          />
         {/if}
       </div>
+      {#if stage === "lip_sync"}
+        <div class="level">
+          <Slider
+            label={t("preview.stages.lipSyncLevel")}
+            min={0}
+            max={1}
+            step={0.01}
+            field={false}
+            value={preview.lipSyncLevel}
+            disabled={!preview.stages.lip_sync}
+            onchange={(v) => preview.setLipSyncLevel(v)}
+          />
+        </div>
+      {/if}
     {/each}
+    {#if STAGES.some((s) => !available[s])}<p class="ed-hint">{t("preview.stages.notSetUpHint")}</p>{/if}
   </section>
 
   {#if poseGroups.length > 0 || preview.modulePoses.length > 0}
     <!-- 編集中のモデルのポーズのグループ (T0660) と、着せ替えで付けたモジュールのグループ (T0661) -->
-    <section aria-label="Pose">
-      <h3>Pose</h3>
+    <section aria-label={t("preview.pose.title")}>
+      <h3>{t("preview.pose.title")}</h3>
       {#if !preview.stages.pose}
-        <p class="muted hint">Turn on the Pose stage above to see the shown entries.</p>
+        <p class="ed-hint">{t("preview.pose.off")}</p>
+      {:else}
+        <p class="ed-hint">{t("preview.pose.hint")}</p>
       {/if}
       {#each poseGroups as group, gi (gi)}
         {@const current = group.entries[shownEntry(group, preview.poseShown)]?.part ?? ""}
-        <label class="pose">
-          <span>Group {gi + 1}</span>
-          <select
+        <div class="pose">
+          <Select
+            label={t("preview.pose.group", { n: gi + 1 })}
             value={current}
+            options={group.entries.map((entry) => ({ value: entry.part, label: labelOf(model?.parts, entry.part) }))}
             disabled={!preview.stages.pose}
-            aria-label="Shown entry of pose group {gi + 1}"
-            title="The entry shown in this group (the others fade out)"
-            onchange={(e) => preview.showPose(group, e.currentTarget.value)}
-          >
-            {#each group.entries as entry (entry.part)}
-              <option value={entry.part}>{labelOf(model?.parts, entry.part)}</option>
-            {/each}
-          </select>
-        </label>
+            onchange={(v) => preview.showPose(group, v)}
+          />
+        </div>
       {/each}
       {#each preview.modulePoses as { module, group }, mi (mi)}
         {@const current = group.entries[shownEntry(group, preview.modulePoseShown)]?.part ?? ""}
-        {@const label = moduleLabels[mi] ?? `Module group ${mi + 1}`}
-        <label class="pose" title="A pose group of the module {module} you put on">
-          <span>{label}</span>
-          <select
+        {@const label = moduleLabels[mi] ?? t("preview.pose.moduleGroupUnnamed", { n: mi + 1 })}
+        <div class="pose">
+          <Select
+            {label}
             value={current}
+            options={group.entries.map((entry) => ({
+              value: entry.part,
+              label: entry.part.startsWith(`${module}/`) ? entry.part.slice(module.length + 1) : entry.part,
+            }))}
             disabled={!preview.stages.pose}
-            aria-label="Shown entry of {label}"
-            title="The entry shown in this group of {module} (the others fade out)"
-            onchange={(e) => preview.showModulePose(group, e.currentTarget.value)}
-          >
-            {#each group.entries as entry (entry.part)}
-              <option value={entry.part}>{entry.part.startsWith(`${module}/`) ? entry.part.slice(module.length + 1) : entry.part}</option>
-            {/each}
-          </select>
-        </label>
+            onchange={(v) => preview.showModulePose(group, v)}
+          />
+        </div>
       {/each}
     </section>
   {/if}
@@ -175,7 +157,7 @@ function onValueKeyDown(e: KeyboardEvent) {
     {onselect}
   />
 
-  <section aria-label="Face tracking" class="tracking">
+  <section aria-label={t("preview.tracking.aria")} class="tracking">
     <TrackingPanel
       tracker={preview.tracker}
       parameterIds={preview.trackingParameterIds}
@@ -183,7 +165,7 @@ function onValueKeyDown(e: KeyboardEvent) {
       open={false}
     />
     <button class="link" type="button" onclick={() => void licenses?.open()}
-      >Third-party licenses</button
+      >{t("preview.licenses.open")}</button
     >
   </section>
   <LicenseDialog bind:this={licenses} />
@@ -192,198 +174,181 @@ function onValueKeyDown(e: KeyboardEvent) {
     <PreviewLightsSection view={lighting} canvas={model?.meta.canvas ?? { width: 1024, height: 1024 }} />
   {/if}
 
-  <section aria-label="Motions">
+  <section aria-label={t("preview.motions.title")}>
     <div class="head">
-      <h3>Motions</h3>
-      <button onclick={() => preview.stopMotions()} disabled={!preview.motionPlaying}>Stop</button>
+      <h3>{t("preview.motions.title")}</h3>
+      <Button small onclick={() => preview.stopMotions()} disabled={!preview.motionPlaying}
+        >{t("preview.motions.stop")}</Button
+      >
     </div>
     {#if doc.motions.length === 0}
-      <p class="muted">No motions in this project.</p>
+      <p class="ed-hint">{t("preview.motions.empty")}</p>
     {:else}
       <ul class="list">
         {#each doc.motions as motion (motion.name)}
           {@const current = preview.motionPlaying && preview.motion === motion.name}
           <li>
-            <button class="play" class:current onclick={() => (current ? preview.stopMotions() : preview.playMotion(motion))}
-              title={current ? `Stop ${motion.name}` : `Play ${motion.name}`}
-              >{current ? "■" : "▶"} {motion.name}</button
+            <Button
+              small
+              class="play"
+              pressed={current}
+              aria-label={current
+                ? t("preview.motions.stopOne", { name: motion.name })
+                : t("preview.motions.play", { name: motion.name })}
+              onclick={() => (current ? preview.stopMotions() : preview.playMotion(motion))}
+              >{current ? "■" : "▶"} {motion.name}</Button
             >
-            <span class="muted">{formatValue(motion.duration)} s{motion.looping ? " · loop" : ""}</span>
+            <span class="muted"
+              >{motion.looping
+                ? t("preview.motions.durationLoop", { value: formatValue(motion.duration) })
+                : t("preview.motions.duration", { value: formatValue(motion.duration) })}</span
+            >
           </li>
         {/each}
       </ul>
     {/if}
     {#if preview.events.length > 0}
-      <p class="muted events">Events: {preview.events.join(", ")}</p>
+      <p class="ed-hint events">{t("preview.motions.events", { events: preview.events.join(", ") })}</p>
     {/if}
   </section>
 
-  <section aria-label="Expressions">
-    <h3>Expression</h3>
+  <section aria-label={t("preview.expressions.title")}>
+    <h3>{t("preview.expressions.title")}</h3>
     {#if doc.expressions.length === 0}
-      <p class="muted">No expressions in this project.</p>
+      <p class="ed-hint">{t("preview.expressions.empty")}</p>
     {:else}
-      <select
-        value={preview.expression ?? ""}
-        aria-label="Expression"
-        onchange={(e) => preview.setExpression(e.currentTarget.value || null)}
-      >
-        <option value="">(none)</option>
-        {#each doc.expressions as expression (expression.name)}
-          <option value={expression.name}>{expression.name}</option>
-        {/each}
-      </select>
+      <Select
+        ariaLabel={t("preview.expressions.title")}
+        value={preview.expression ?? NO_EXPRESSION}
+        options={expressionOptions}
+        onchange={(v) => preview.setExpression(v === NO_EXPRESSION ? null : v)}
+      />
     {/if}
   </section>
 
-  <section aria-label="Parameters" class="parameters">
+  <section aria-label={t("preview.parameters.title")} class="parameters">
     <div class="head">
-      <h3>Parameters</h3>
-      <button onclick={() => preview.resetAllParameters()} title="Set every parameter to its default"
-        >Reset all</button
+      <h3>{t("preview.parameters.title")}</h3>
+      <TipButton small onclick={() => preview.resetAllParameters()} tooltip={t("preview.parameters.resetAll.tooltip")}
+        >{t("preview.parameters.resetAll.label")}</TipButton
       >
     </div>
-    <input class="filter" type="search" placeholder="Filter (name or ID)" bind:value={filter} />
+    <input
+      class="filter"
+      type="search"
+      placeholder={t("preview.parameters.filter.placeholder")}
+      aria-label={t("preview.parameters.filter.aria")}
+      bind:value={filter}
+    />
     {#if doc.parameters.length === 0}
-      <p class="muted">This model has no parameters.</p>
+      <p class="ed-hint">{t("preview.parameters.empty")}</p>
     {/if}
     {#each shown as section (section.id ?? "")}
-      <details open>
-        <summary>{section.name} <span class="muted">{section.parameters.length}</span></summary>
+      <Section title={section.name} level={4}>
+        {#snippet actions()}<span class="muted">{section.parameters.length}</span>{/snippet}
         {#each section.parameters as p (p.id)}
-          {@const value = preview.values[p.id] ?? p.default}
-          <div class="row" title={p.id}>
-            <span class="name">{p.name || p.id}</span>
-            <input
-              class="value"
-              type="text"
-              inputmode="decimal"
-              value={typing?.id === p.id ? typing.text : formatValue(value)}
-              aria-label="{p.name} value"
-              title="Type a value between {p.min} and {p.max}, then press Enter"
-              onfocus={(e) => (typing = { id: p.id, text: e.currentTarget.value })}
-              onblur={() => (typing = null)}
-              onchange={(e) => onValueChange(p.id, e)}
-              onkeydown={onValueKeyDown}
-            />
-            <button
-              class="reset"
-              onclick={() => preview.resetParameter(p.id)}
-              disabled={Math.abs(value - p.default) < 1e-6}
-              title="Back to the default ({formatValue(p.default)})"
-              aria-label="Reset {p.name}">↺</button
-            >
-            <input
-              class="slider"
-              type="range"
+          <!-- 値は毎フレーム変わる (呼吸・物理) が、Slider は利用者の操作のときだけ onchange を呼ぶ (T0910)。 -->
+          <div class="row">
+            <Slider
+              label={p.name || p.id}
               min={p.min}
               max={p.max}
               step={sliderStep(p)}
-              {value}
-              aria-label={p.name}
-              oninput={(e) => preview.setParameter(p.id, e.currentTarget.valueAsNumber)}
-              ondblclick={() => preview.resetParameter(p.id)}
+              value={preview.values[p.id] ?? p.default}
+              defaultValue={p.default}
+              resetLabel={t("preview.parameters.reset.aria", {
+                name: p.name || p.id,
+                value: formatValue(p.default),
+              })}
+              onchange={(v) => preview.setParameter(p.id, v)}
             />
           </div>
-          {#if valueError?.id === p.id}<p class="error">{valueError.message}</p>{/if}
         {/each}
-      </details>
+      </Section>
     {/each}
   </section>
 </div>
 
 <style>
-/* 読み込みの警告 (T0125。DressUpSection の知らせと同じ枠) */
-.warning {
-  margin: 4px 0;
-  padding: 4px 6px;
-  border: 1px solid #d97706;
-  border-radius: 4px;
-}
-
 .preview-panel {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding-bottom: 8px;
+  gap: var(--ugoe-space-3);
+  padding-bottom: var(--ugoe-space-3);
 }
 
 .head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
+  gap: var(--ugoe-space-2);
 }
 
 h3 {
-  margin: 4px 0;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
+  margin: var(--ugoe-space-2) 0;
 }
 
 section {
-  border-top: 1px solid var(--border);
-  padding-top: 4px;
+  border-top: 1px solid var(--ugoe-color-border);
+  padding-top: var(--ugoe-space-2);
+}
+
+.error {
+  margin: 0;
+  color: var(--ugoe-color-danger);
+  overflow-wrap: anywhere;
+}
+
+.muted {
+  color: var(--ugoe-color-text-muted);
 }
 
 /* トラッキングのパネルは <details> で開閉する。見出しを他の節に揃える。 */
 .tracking :global(details.tracking > summary h2) {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
+  margin: var(--ugoe-space-2) 0;
+  font-size: var(--ugoe-font-size-md);
+  font-weight: var(--ugoe-font-weight-strong);
+  color: var(--ugoe-color-text);
 }
 
 /* エディタの label は縦に並べる (app.css) ので、チェックボックスと文言を横に並べ直す。 */
 .tracking :global(details.tracking .options label) {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--ugoe-space-2);
 }
 
 .link {
-  margin-top: 4px;
+  margin-top: var(--ugoe-space-2);
   padding: 0;
   border: none;
   background: none;
-  color: var(--muted);
-  font-size: 11px;
+  color: var(--ugoe-color-text-muted);
+  font: inherit;
+  font-size: var(--ugoe-font-size-sm);
   text-decoration: underline;
   cursor: pointer;
+}
+
+.link:focus-visible {
+  outline: var(--ugoe-focus-ring);
+  outline-offset: 1px;
 }
 
 .stage {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--ugoe-space-3);
   min-height: 26px;
 }
 
-.check {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
 .level {
-  width: 120px;
+  padding-left: var(--ugoe-space-5);
 }
 
-/* エディタの label は縦に並べる (app.css) ので、グループの名前と選択を横に並べ直す。 */
 .pose {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 6px;
-  margin: 2px 0;
-}
-
-.hint {
-  margin: 2px 0;
-  font-size: 11px;
+  margin: var(--ugoe-space-1) 0;
 }
 
 .list {
@@ -394,72 +359,46 @@ section {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 2px;
+  gap: var(--ugoe-space-3);
+  margin-bottom: var(--ugoe-space-1);
 }
 
-.play {
+.list li :global(.play) {
   flex: 1;
   min-width: 0;
-  text-align: left;
+  justify-content: flex-start;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.play.current {
-  color: var(--accent);
-  border-color: var(--accent);
+.list li .muted {
+  white-space: nowrap;
 }
 
 .events {
-  margin: 4px 0 0;
+  margin: var(--ugoe-space-2) 0 0;
   overflow-wrap: anywhere;
 }
 
-select,
 .filter {
   width: 100%;
+  min-height: var(--ugoe-control-height);
+  margin-bottom: var(--ugoe-space-2);
+  padding: 0 var(--ugoe-space-2);
+  border: 1px solid var(--ugoe-color-control-border);
+  border-radius: var(--ugoe-radius-md);
+  background: var(--ugoe-color-surface);
+  color: var(--ugoe-color-text);
+  font: inherit;
 }
 
-summary {
-  cursor: pointer;
-  padding: 4px 0;
-  font-weight: 600;
+.filter:focus-visible {
+  outline: var(--ugoe-focus-ring);
+  outline-offset: 1px;
 }
 
 .row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  grid-template-areas:
-    "name value reset"
-    "slider slider slider";
-  align-items: center;
-  column-gap: 4px;
-  padding: 2px 0 6px 8px;
-}
-
-.name {
-  grid-area: name;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.value {
-  grid-area: value;
-  width: 5em;
-  text-align: right;
-}
-
-.reset {
-  grid-area: reset;
-  padding: 0 6px;
-}
-
-.slider {
-  grid-area: slider;
-  width: 100%;
-  margin: 0;
+  padding: var(--ugoe-space-1) 0 var(--ugoe-space-2) var(--ugoe-space-3);
 }
 </style>

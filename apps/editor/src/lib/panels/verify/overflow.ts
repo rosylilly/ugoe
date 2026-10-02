@@ -1,5 +1,7 @@
 // 親のワープの格子からのはみ出し (docs/editor.md#はみ出しの検証) の表示用の純粋な関数。
 // 検出はバックエンド (ugoe_editor_core::overflow) が行い、ここは一覧とビューポートの表示を組み立てるだけ。
+
+import { t } from "../../i18n";
 import type {
   ElementOverflow,
   KeyformTarget,
@@ -62,22 +64,22 @@ export function formatCell(cell: Partial<Record<string, number>>, model: Model |
   const entries = Object.entries(cell).filter(
     (e): e is [string, number] => typeof e[1] === "number",
   );
-  if (entries.length === 0) return "(no axes)";
+  if (entries.length === 0) return t("verify.overflow.noAxes");
   return entries
     .map(([id, value]) => `${labelOf(model?.parameters, id)} = ${Number(value.toFixed(3))}`)
     .join(", ");
 }
 
-const KIND_LABELS: Record<OverflowPointKind, [string, string]> = {
-  vertex: ["vertex", "vertices"],
-  control_point: ["control point", "control points"],
-  origin: ["origin", "origins"],
-};
-
 /** 「3 vertices」のような点の数の表記。 */
 export function formatCount(kind: OverflowPointKind, count: number): string {
-  const [one, many] = KIND_LABELS[kind];
-  return `${count} ${count === 1 ? one : many}`;
+  switch (kind) {
+    case "vertex":
+      return t("verify.counts.vertex", { count });
+    case "control_point":
+      return t("verify.counts.controlPoint", { count });
+    case "origin":
+      return t("verify.counts.origin", { count });
+  }
 }
 
 /** 要素の表記 (名前と ID)。 */
@@ -123,13 +125,18 @@ export function overflowDots(
       const x = flat[2 * p.index];
       const y = flat[2 * p.index + 1];
       if (x === undefined || y === undefined) return [];
-      const point = element.kind === "origin" ? "origin" : `#${p.index}`;
+      const point = element.kind === "origin" ? t("verify.overflow.origin") : `#${p.index}`;
       return [
         {
           key: `${targetKey(element.target)}#${p.index}`,
           x,
           y,
-          title: `${label} ${point}: ${formatAmount(p.amount)} outside ${element.parent}`,
+          title: t("verify.overflow.dot", {
+            element: label,
+            point,
+            amount: formatAmount(p.amount),
+            parent: element.parent,
+          }),
         },
       ];
     });

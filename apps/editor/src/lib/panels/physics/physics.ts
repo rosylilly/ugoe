@@ -1,5 +1,7 @@
 // 物理のパネル (docs/editor.md#物理の編集) の、DOM に依存しない補助: 新しいリグ・衝突体の値、
 // 粒子の鎖の編集、出力先の組み立てと表記、コマンドの組み立て。physics.test.ts で検査する。
+
+import { t } from "../../i18n";
 import type {
   ColliderShape,
   Command,
@@ -164,21 +166,67 @@ export function setParticleField(
 /** 出力先の種類 (選択欄の値)。 */
 export type TargetKind = "parameter" | "deformer_angle" | "deformer_offset" | "mesh" | "warp";
 
-export const TARGET_KINDS: { kind: TargetKind; label: string }[] = [
-  { kind: "parameter", label: "Parameter" },
-  { kind: "deformer_angle", label: "Deformer angle" },
-  { kind: "deformer_offset", label: "Deformer offset" },
-  { kind: "mesh", label: "Mesh vertices" },
-  { kind: "warp", label: "Warp points" },
+// 選択肢の名前は読むたびに t() を通す (言語の切り替えに追従する)。
+export const TARGET_KINDS: { readonly kind: TargetKind; readonly label: string }[] = [
+  {
+    kind: "parameter",
+    get label() {
+      return t("physics.targetKinds.parameter");
+    },
+  },
+  {
+    kind: "deformer_angle",
+    get label() {
+      return t("physics.targetKinds.deformerAngle");
+    },
+  },
+  {
+    kind: "deformer_offset",
+    get label() {
+      return t("physics.targetKinds.deformerOffset");
+    },
+  },
+  {
+    kind: "mesh",
+    get label() {
+      return t("physics.targetKinds.mesh");
+    },
+  },
+  {
+    kind: "warp",
+    get label() {
+      return t("physics.targetKinds.warp");
+    },
+  },
 ];
 
 /**
  * パラメータへの合成の方法 (docs/spec/physics.md#合成の方法)。`add` は物理の揺れ (静止時からのずれ) を
  * トラッキングなどの値に足す。
  */
-export const BLENDS: { blend: PhysicsBlend; label: string; title: string }[] = [
-  { blend: "overwrite", label: "Overwrite", title: "Replace the value with the physics value" },
-  { blend: "add", label: "Add", title: "Add the physics sway on top of the current value" },
+export const BLENDS: {
+  readonly blend: PhysicsBlend;
+  readonly label: string;
+  readonly title: string;
+}[] = [
+  {
+    blend: "overwrite",
+    get label() {
+      return t("physics.blends.overwrite.label");
+    },
+    get title() {
+      return t("physics.blends.overwrite.description");
+    },
+  },
+  {
+    blend: "add",
+    get label() {
+      return t("physics.blends.add.label");
+    },
+    get title() {
+      return t("physics.blends.add.description");
+    },
+  },
 ];
 
 /** 出力の合成の方法。省略は `overwrite`。 */

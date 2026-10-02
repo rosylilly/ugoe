@@ -7,11 +7,13 @@
   モデルがライティングを受けないときは、光源を動かしても見た目が変わらない理由を出す。
 -->
 <script lang="ts">
+import { Button, Toggle, Tooltip } from "@ugoe/ui";
 import BaseLock from "../../BaseLock.svelte";
 import type { EditorDocument } from "../../document.svelte";
+import { t } from "../../i18n";
 import type { Command, Model } from "../../ipc";
 import { elementLabel } from "../../labels";
-import { baseEditHint, isBaseMesh, isBaseTexture } from "../../moduleProject";
+import { isBaseMesh, isBaseTexture } from "../../moduleProject";
 import type { Selection } from "../../selection.svelte";
 import { isLit, lightingHint, litCandidates } from "./lighting";
 import type { LightingView } from "./lightingView.svelte";
@@ -46,7 +48,11 @@ function setLit(ids: string[], lit: boolean): void {
   const commands: Command[] = ids.map((id) => ({ op: "set_mesh_properties", id, lit }));
   if (commands.length === 1 && commands[0]) void doc.apply(commands[0]);
   else if (commands.length > 1)
-    void doc.apply({ op: "batch", label: lit ? "Light meshes" : "Unlight meshes", commands });
+    void doc.apply({
+      op: "batch",
+      label: lit ? t("lighting.meshes.lightBatch") : t("lighting.meshes.unlightBatch"),
+      commands,
+    });
 }
 
 /** 変えられるメッシュ (モジュールのプロジェクトでは、本体のメッシュを除く)。 */
@@ -62,55 +68,51 @@ function setLitForSelection(lit: boolean): void {
   );
 }
 
+const meshesId = $props.id();
 const selectedCount = $derived(selection.items.filter((r) => r.kind === "mesh").length);
 </script>
 
-<h2>Lighting</h2>
+<h2>{t("lighting.title")}</h2>
 {#if !model || meshes.length === 0}
-  <p class="muted">Import a PSD first. Lighting shades meshes with the lights below.</p>
+  <p class="ed-hint">{t("lighting.empty")}</p>
 {:else}
-  <section aria-label="Model lighting">
-    <BaseLock
-      locked={doc.module !== null}
-      hint="Whether the model receives lighting is set in the base project."
-    >
-    <label class="row">
-      <span>Receive lighting (model)</span>
-      <input
-        type="checkbox"
-        checked={model.lighting === true}
-        onchange={(e) => void doc.apply({ op: "set_lighting", enabled: (e.currentTarget as HTMLInputElement).checked })}
-      />
-    </label>
+  <section aria-label={t("lighting.model.aria")}>
+    <BaseLock locked={doc.module !== null} hint={t("lighting.model.baseHint")}>
+      <div class="row">
+        <Toggle
+          label={t("lighting.model.receive.label")}
+          checked={model.lighting === true}
+          onchange={(enabled) => void doc.apply({ op: "set_lighting", enabled })}
+        />
+      </div>
     </BaseLock>
     {#if hint}<p class="hint">{hint}</p>{/if}
   </section>
 
-  <section aria-label="Lit meshes">
-    <h3 class="row">
-      <span>Lit meshes</span>
-      <span class="buttons">
-        <button disabled={editable.length === 0} onclick={() => setLitForSelection(true)}
-          >{selectedCount > 0 ? "Light selected" : "All on"}</button
+  <section aria-labelledby={meshesId}>
+    <div class="row">
+      <h3 id={meshesId}>{t("lighting.meshes.title")}</h3>
+      <span class="ed-buttons">
+        <Button small disabled={editable.length === 0} onclick={() => setLitForSelection(true)}
+          >{selectedCount > 0 ? t("lighting.meshes.lightSelected") : t("lighting.meshes.allOn")}</Button
         >
-        <button disabled={editable.length === 0} onclick={() => setLitForSelection(false)}
-          >{selectedCount > 0 ? "Unlight selected" : "All off"}</button
+        <Button small disabled={editable.length === 0} onclick={() => setLitForSelection(false)}
+          >{selectedCount > 0 ? t("lighting.meshes.unlightSelected") : t("lighting.meshes.allOff")}</Button
         >
       </span>
-    </h3>
-    <p class="muted note">
-      Turn lighting off for parts that should stay flat, such as eye highlights.
-      {#if doc.module}The base model's meshes are set in the base project; the buttons change only the module's
-        meshes.{/if}
+    </div>
+    <p class="ed-hint note">
+      {t("lighting.meshes.description")}
+      {#if doc.module}{t("lighting.meshes.moduleNote")}{/if}
     </p>
     <ul class="meshes">
       {#each meshes as mesh (mesh.id)}
         {@const base = isBaseMesh(doc.module, mesh.id)}
         <li class:selected={selection.has({ kind: "mesh", id: mesh.id })} class:base>
+          <!-- 行の名前のボタンは選ぶ操作なので、見えるラベルを持つ Checkbox にせず、名前を aria-label で付ける。 -->
           <input
             type="checkbox"
-            aria-label="Lit: {elementLabel(mesh.name, mesh.id)}"
-            title={base ? baseEditHint() : undefined}
+            aria-label={t("lighting.meshes.lit.aria", { name: elementLabel(mesh.name, mesh.id) })}
             disabled={base}
             checked={isLit(mesh)}
             onchange={(e) => setLit([mesh.id], (e.currentTarget as HTMLInputElement).checked)}
@@ -118,8 +120,18 @@ const selectedCount = $derived(selection.items.filter((r) => r.kind === "mesh").
           <button class="link" onclick={() => selection.set([{ kind: "mesh", id: mesh.id }])}>
             {elementLabel(mesh.name, mesh.id)}
           </button>
-          {#if base}<span class="badge" title="Part of the base model: read-only in a module project">base</span>{/if}
-          {#if model.textures[mesh.texture]?.normal_map}<span class="badge" title="Has a normal map">N</span>{/if}
+          {#if base}
+            <Tooltip text={t("lighting.meshes.base.tooltip")}>
+              {#snippet children(attrs)}<span {...attrs} class="badge">{t("lighting.meshes.base.label")}</span>{/snippet}
+            </Tooltip>
+          {/if}
+          {#if model.textures[mesh.texture]?.normal_map}
+            <Tooltip text={t("lighting.meshes.normalMap.tooltip")}>
+              {#snippet children(attrs)}<span {...attrs} class="badge"
+                  >{t("lighting.meshes.normalMap.label")}</span
+                >{/snippet}
+            </Tooltip>
+          {/if}
         </li>
       {/each}
     </ul>
@@ -130,8 +142,8 @@ const selectedCount = $derived(selection.items.filter((r) => r.kind === "mesh").
       <NormalMapSection {doc} {model} texture={selectedMesh.texture} />
     </BaseLock>
   {:else}
-    <h3>Normal map</h3>
-    <p class="muted">Select a mesh to generate or assign a normal map for its texture.</p>
+    <h3>{t("lighting.normalMap.title")}</h3>
+    <p class="ed-hint">{t("lighting.normalMap.empty")}</p>
   {/if}
 {/if}
 
@@ -142,21 +154,19 @@ const selectedCount = $derived(selection.items.filter((r) => r.kind === "mesh").
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin: 4px 0;
+  gap: var(--ugoe-space-3);
+  margin: var(--ugoe-space-2) 0;
 }
 
-.buttons {
-  display: flex;
-  gap: 4px;
-  font-weight: normal;
+.row h3 {
+  margin: 0;
 }
 
 .hint {
-  margin: 4px 0;
-  padding: 4px 8px;
-  border-left: 3px solid var(--accent);
-  font-size: 12px;
+  margin: var(--ugoe-space-2) 0;
+  padding: var(--ugoe-space-2) var(--ugoe-space-3);
+  border-left: 3px solid var(--ugoe-color-accent);
+  font-size: var(--ugoe-font-size-sm);
 }
 
 .meshes {
@@ -165,7 +175,7 @@ const selectedCount = $derived(selection.items.filter((r) => r.kind === "mesh").
   padding: 0;
   max-height: 180px;
   overflow-y: auto;
-  border: 1px solid var(--border);
+  border: 1px solid var(--ugoe-color-border);
 }
 
 .meshes li {
@@ -180,7 +190,7 @@ const selectedCount = $derived(selection.items.filter((r) => r.kind === "mesh").
 }
 
 .meshes li.selected {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  background: color-mix(in srgb, var(--ugoe-color-accent) 15%, transparent);
 }
 
 .link {
@@ -197,18 +207,13 @@ const selectedCount = $derived(selection.items.filter((r) => r.kind === "mesh").
 }
 
 .badge {
-  font-size: 10px;
-  padding: 0 4px;
-  border: 1px solid var(--border);
-  border-radius: 3px;
+  font-size: var(--ugoe-font-size-xs);
+  padding: 0 var(--ugoe-space-2);
+  border: 1px solid var(--ugoe-color-border);
+  border-radius: var(--ugoe-radius-sm);
 }
 
 .note {
-  margin: 2px 0 6px;
-  font-size: 11px;
-}
-
-h3 {
-  margin: 8px 0 4px;
+  margin: var(--ugoe-space-1) 0 var(--ugoe-space-2);
 }
 </style>

@@ -1,5 +1,6 @@
 // 着せ替えの違いの行の要素を、選ぶ先とプレビューのビューポートでの強調 (T0657) の、DOM と wasm に依存しない部分
 // (differenceHighlight.test.ts)。描くのは DifferenceOverlay.svelte。
+import { t } from "../i18n";
 import type { DifferenceItem } from "../ipc";
 import type { ElementRef } from "../selection.svelte";
 import type { Point } from "../viewport/tools/geometry";
@@ -50,15 +51,19 @@ export function differenceTarget(
 
 /** 違いの要素を選ぶボタンの説明。 */
 export function selectTitle(item: Pick<DifferenceItem, "kind" | "id">): string {
-  const where =
-    item.kind === "physics_rig" || item.kind === "collider"
-      ? "in the Physics tab"
-      : item.kind === "glue"
-        ? "in the Glue tab"
-        : item.kind === "pose_group" || item.kind === "pose_follow"
-          ? "in the Poses tab and its parts in the tree"
-          : "in the tree";
-  return `Leave the preview and select ${item.id} ${where}`;
+  const id = item.id;
+  switch (item.kind) {
+    case "physics_rig":
+    case "collider":
+      return t("preview.difference.select.physics", { id });
+    case "glue":
+      return t("preview.difference.select.glue", { id });
+    case "pose_group":
+    case "pose_follow":
+      return t("preview.difference.select.poses", { id });
+    default:
+      return t("preview.difference.select.tree", { id });
+  }
 }
 
 /** ビューポートを要素に寄せる動き (`ViewportController.zoomAt` してから `panBy`)。 */
@@ -136,24 +141,28 @@ export function highlightNotice(
   shown: ShownVersion | null,
   found: boolean,
 ): string {
-  if (shown === null) {
-    return `Put on your current edits or the file to see ${item.id}.`;
-  }
-  const where = shown.own ? "your current edits" : "the file";
+  const id = item.id;
+  if (shown === null) return t("preview.difference.notice.notShown", { id });
   // 除いた (足した) 要素は、メッシュがこの版にも残っていれば輪郭を描けるが、要素そのものは無い。描けても
   // 「Removed」(「Added」) と分かるようにする (T0661)。
   if (missingIn(item, shown)) {
-    const other = shown.own ? "the file" : "your current edits";
     if (!found) {
       return shown.own
-        ? `${item.id} was removed in your current edits. Put on ${other} to see it.`
-        : `${item.id} is not in the file. Put on ${other} to see it.`;
+        ? t("preview.difference.notice.removedNotDrawn", { id })
+        : t("preview.difference.notice.notInFile", { id });
     }
-    const tag = shown.own ? "Removed" : "Added";
-    return `${tag}: ${item.id} is not in ${where}; the outline shows its meshes that are still there. Put on ${other} to see it.`;
+    return shown.own
+      ? t("preview.difference.notice.removedOutline", { id })
+      : t("preview.difference.notice.addedOutline", { id });
   }
-  if (found) return `${item.id} in ${where}`;
-  return `${item.id} can't be drawn in ${where}.`;
+  if (shown.own) {
+    return found
+      ? t("preview.difference.notice.inEdits", { id })
+      : t("preview.difference.notice.notDrawnInEdits", { id });
+  }
+  return found
+    ? t("preview.difference.notice.inFile", { id })
+    : t("preview.difference.notice.notDrawnInFile", { id });
 }
 
 /** 点の凸包 (反時計回り。メッシュの三角形が分からないときの輪郭)。 */

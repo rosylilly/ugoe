@@ -1,5 +1,6 @@
 // グルーの編集 (docs/editor.md#グルーの編集) の補助。DOM や IPC に依存しない純粋な関数だけを置く (glues.test.ts で検査する)。
 // 頂点の組を作るのは editor-core (`create_glue`・`set_glue` の `distance`)。ここでは送るコマンドを組み立てるだけ。
+import { t } from "../../i18n";
 import type { Command, Glue, GluePair, ModuleStatus, Parameter } from "../../ipc";
 import { cellAt } from "../inspector/keyforms/keyforms";
 
@@ -70,7 +71,7 @@ export function swapped(glue: Glue): Glue {
 /** キーフォームの見出し (軸が無ければ `Intensity`、あれば `AngleX = 30, Glue = 1` のようなセル)。 */
 export function keyformLabels(glue: Glue): string[] {
   const { bindings, keyforms } = glue.keyforms;
-  if (bindings.length === 0) return keyforms.map(() => "Intensity");
+  if (bindings.length === 0) return keyforms.map(() => t("glues.intensity.label"));
   return keyforms.map((_, i) =>
     Object.entries(cellAt(bindings, i))
       .map(([p, v]) => `${p} = ${v}`)

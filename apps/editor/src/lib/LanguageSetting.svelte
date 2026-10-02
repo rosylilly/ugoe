@@ -15,7 +15,7 @@ const options = $derived([
 </script>
 
 <div class="language">
-  <!-- 選択肢が 4 つまでなので SegmentedControl (設定の画面は <dialog> の最上位の層にあり、body に出す Select の一覧が隠れるため)。 -->
+  <!-- 選択肢が 4 つまでなので SegmentedControl (すべての選択肢を見せる。docs/ui.md の部品の一覧)。 -->
   <SegmentedControl
     label={t("settings.language.label")}
     value={getLocalePreference()}

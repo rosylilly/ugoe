@@ -10,10 +10,14 @@
   どれも 1 回の Undo で戻る。テクスチャと法線マップの画像を並べて表示する。
 -->
 <script lang="ts">
+import { formatList } from "@ugoe/i18n";
+import { Button, Checkbox, Slider } from "@ugoe/ui";
 import type { EditorDocument } from "../../document.svelte";
 import { fileDialogs } from "../../fileDialogs";
+import { t } from "../../i18n";
 import { type ApplyReport, ipc, type Model, type NormalMapGroupView } from "../../ipc";
 import { textureLabel } from "../../labels";
+import { useBaseLock } from "../../ui/baseLock";
 import { type BulgeForm, bulgeForm, bulgeLimits, bulgeSettings, bulgeUnit } from "./lighting";
 
 interface Props {
@@ -25,7 +29,9 @@ interface Props {
 
 let { doc, model, texture }: Props = $props();
 
-const PNG_FILTER = { name: "PNG image (.png)", extensions: ["png"] };
+const headingId = $props.id();
+/** 本体のテクスチャなら BaseLock が無効にする (Slider のつまみには fieldset の disabled が効かない)。 */
+const locked = useBaseLock();
 
 const ref = $derived(model.textures[texture] ?? null);
 const users = $derived(
@@ -35,8 +41,8 @@ const users = $derived(
 const sharedWith = $derived(
   ref?.normal_map
     ? model.textures
-        .filter((t) => t.name !== ref.name && t.normal_map === ref.normal_map)
-        .map((t) => t.name)
+        .filter((tex) => tex.name !== ref.name && tex.normal_map === ref.normal_map)
+        .map((tex) => tex.name)
     : [],
 );
 
@@ -117,7 +123,7 @@ const limits = $derived(bulgeLimits(group));
 /** 長さの単位 (まとまりはキャンバスの px)。 */
 const unit = $derived(bulgeUnit(group));
 /** いっしょにふくらませるほかのテクスチャ。 */
-const partners = $derived(group ? group.textures.filter((t) => t !== ref?.name) : []);
+const partners = $derived(group ? group.textures.filter((name) => name !== ref?.name) : []);
 
 async function run(action: () => Promise<ApplyReport>): Promise<void> {
   if (busy) return;
@@ -140,7 +146,10 @@ function generate(wholeGroup: boolean): void {
 async function assign(): Promise<void> {
   if (!ref) return;
   const name = ref.name;
-  const path = await fileDialogs().openFile({ title: "Assign normal map", filters: [PNG_FILTER] });
+  const path = await fileDialogs().openFile({
+    title: t("lighting.normalMap.assign.title"),
+    filters: [{ name: t("lighting.normalMap.pngFilter"), extensions: ["png"] }],
+  });
   if (path) void run(() => ipc.assignTextureNormalMap(name, path, flipGreen));
 }
 
@@ -151,99 +160,114 @@ function remove(): void {
 </script>
 
 {#if ref}
-  <section aria-label="Normal map">
-    <h3>Normal map</h3>
-    <p class="muted">Texture: {textureLabel(ref.name, users)}</p>
+  <section aria-labelledby={headingId}>
+    <h3 id={headingId}>{t("lighting.normalMap.title")}</h3>
+    <p class="ed-hint">{t("lighting.normalMap.texture", { texture: textureLabel(ref.name, users) })}</p>
     <div class="images">
       <figure>
-        {#if textureUrl}<img src={textureUrl} alt="Texture {ref.name}" />{:else}<div class="empty"></div>{/if}
-        <figcaption>Texture</figcaption>
+        {#if textureUrl}
+          <img src={textureUrl} alt={t("lighting.normalMap.textureImage.alt", { name: ref.name })} />
+        {:else}<div class="empty"></div>{/if}
+        <figcaption>{t("lighting.normalMap.textureImage.caption")}</figcaption>
       </figure>
       <figure>
         {#if normalUrl}
-          <img src={normalUrl} alt="Normal map {ref.normal_map}" />
+          <img src={normalUrl} alt={t("lighting.normalMap.image.alt", { name: ref.normal_map ?? "" })} />
         {:else}
-          <div class="empty muted">none</div>
+          <div class="empty ed-hint">{t("lighting.normalMap.image.none")}</div>
         {/if}
-        <figcaption>{ref.normal_map ?? "No normal map"}</figcaption>
+        <figcaption>{ref.normal_map ?? t("lighting.normalMap.image.empty")}</figcaption>
       </figure>
     </div>
     {#if sharedWith.length > 0}
-      <p class="muted note">
-        Shared with {sharedWith.join(", ")}. Generating or assigning makes a separate image for this texture.
+      <p class="ed-hint note">
+        {t("lighting.normalMap.sharedWith", { textures: formatList(sharedWith) })}
       </p>
     {/if}
 
-    <h4>Generate from the shape</h4>
-    <p class="muted note">
-      Makes the opaque shape bulge toward the viewer (no AI). Parts of the same group are shaped as one surface, so eyes
-      follow the face and the neck joins the body; glasses take the face's direction without bulging. Turns on lighting
-      for the model if it is off. To propose maps for every texture at once, use the AI tab.
-    </p>
+    <h4>{t("lighting.normalMap.generate.title")}</h4>
+    <p class="ed-hint note">{t("lighting.normalMap.generate.description")}</p>
     {#if group}
-      <p class="muted note" data-testid="normal-map-group">
+      <p class="ed-hint note" data-testid="normal-map-group">
         {#if group.group && ref && group.oriented.includes(ref.name)}
-          Takes the direction of group “{group.group}” ({partners.filter((t) => !group?.oriented.includes(t)).join(", ")}) without bulging.
+          {t("lighting.normalMap.group.oriented", {
+            group: group.group,
+            textures: formatList(partners.filter((p) => !group?.oriented.includes(p))),
+          })}
         {:else if group.group && partners.length > 0}
-          Group “{group.group}” with {partners.join(", ")}{#if group.shape_only.length > 0}; also shaped by {group.shape_only.join(", ")}{/if}{#if group.oriented.length > 0}; {group.oriented.join(", ")} only take its direction{/if}.
+          {t("lighting.normalMap.group.with", { group: group.group, textures: formatList(partners) })}
+          {#if group.shape_only.length > 0}
+            {t("lighting.normalMap.group.shapeOnly", { textures: formatList(group.shape_only) })}
+          {/if}
+          {#if group.oriented.length > 0}
+            {t("lighting.normalMap.group.orientedOnly", { textures: formatList(group.oriented) })}
+          {/if}
         {:else if group.group}
-          Group “{group.group}” (this texture only).
+          {t("lighting.normalMap.group.alone", { group: group.group })}
         {:else}
-          No part label: shaped on its own.
+          {t("lighting.normalMap.group.none")}
         {/if}
-        Labels from {group.from_classification ? "the PSD classification" : "the layer names"}.
+        {group.from_classification
+          ? t("lighting.normalMap.group.fromClassification")
+          : t("lighting.normalMap.group.fromLayerNames")}
       </p>
     {/if}
-    <label class="row">
-      <span>Strength</span>
-      <span class="controls">
-        <input type="range" min="0" max="2" step="0.05" bind:value={form.strength} aria-label="Strength" />
-        <span class="value">{form.strength.toFixed(2)}</span>
-      </span>
-    </label>
-    <label class="row">
-      <span>Round edges only</span>
-      <input type="checkbox" bind:checked={form.roundEdges} />
-    </label>
+    <Slider
+      label={t("lighting.normalMap.strength.label")}
+      value={form.strength}
+      min={0}
+      max={2}
+      step={0.05}
+      decimals={2}
+      disabled={locked()}
+      onchange={(v) => (form.strength = v)}
+    />
+    <div class="row">
+      <Checkbox label={t("lighting.normalMap.roundEdges.label")} bind:checked={form.roundEdges} />
+    </div>
     {#if form.roundEdges}
-      <label class="row">
-        <span>Edge width ({unit})</span>
-        <span class="controls">
-          <input type="range" min="1" max={limits.edge} step="1" bind:value={form.edge} aria-label="Edge width" />
-          <span class="value">{Math.round(form.edge)}</span>
-        </span>
-      </label>
+      <Slider
+        label={t("lighting.normalMap.edge.label")}
+        {unit}
+        value={form.edge}
+        min={1}
+        max={limits.edge}
+        step={1}
+        decimals={0}
+        disabled={locked()}
+        onchange={(v) => (form.edge = v)}
+      />
     {/if}
-    <label class="row">
-      <span>Smoothing ({unit})</span>
-      <span class="controls">
-        <input
-          type="range"
-          min="0"
-          max={limits.smoothing}
-          step="0.5"
-          bind:value={form.smoothing}
-          aria-label="Smoothing"
-        />
-        <span class="value">{form.smoothing.toFixed(1)}</span>
-      </span>
-    </label>
-    <div class="row buttons">
-      <button disabled={busy} onclick={() => generate(false)}>{ref.normal_map ? "Regenerate" : "Generate"}</button>
+    <Slider
+      label={t("lighting.normalMap.smoothing.label")}
+      {unit}
+      value={form.smoothing}
+      min={0}
+      max={limits.smoothing}
+      step={0.5}
+      decimals={1}
+      disabled={locked()}
+      onchange={(v) => (form.smoothing = v)}
+    />
+    <div class="ed-buttons row">
+      <Button disabled={busy} onclick={() => generate(false)}
+        >{ref.normal_map ? t("lighting.normalMap.regenerate.label") : t("lighting.normalMap.generate.label")}</Button
+      >
       {#if partners.length > 0}
-        <button disabled={busy} onclick={() => generate(true)}>Generate for the group</button>
+        <Button disabled={busy} onclick={() => generate(true)}>{t("lighting.normalMap.generateGroup.label")}</Button>
       {/if}
-      <button disabled={busy || !group} onclick={() => useDefaults(group)}>Defaults</button>
+      <Button disabled={busy || !group} onclick={() => useDefaults(group)}
+        >{t("lighting.normalMap.defaults.label")}</Button
+      >
     </div>
 
-    <h4>Image</h4>
-    <label class="row">
-      <span>Flip green (DirectX)</span>
-      <input type="checkbox" bind:checked={flipGreen} />
-    </label>
-    <div class="row buttons">
-      <button disabled={busy} onclick={() => void assign()}>Assign PNG…</button>
-      <button disabled={busy || !ref.normal_map} onclick={remove}>Remove normal map</button>
+    <h4>{t("lighting.normalMap.imageSection.title")}</h4>
+    <div class="row">
+      <Checkbox label={t("lighting.normalMap.flipGreen.label")} bind:checked={flipGreen} />
+    </div>
+    <div class="ed-buttons row">
+      <Button disabled={busy} onclick={() => void assign()}>{t("lighting.normalMap.assign.label")}</Button>
+      <Button disabled={busy || !ref.normal_map} onclick={remove}>{t("lighting.normalMap.remove.label")}</Button>
     </div>
     {#if error}<p class="error">{error}</p>{/if}
   </section>
@@ -251,37 +275,12 @@ function remove(): void {
 
 <style>
 .row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin: 4px 0;
-}
-
-.controls {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.controls input[type="range"] {
-  width: 110px;
-}
-
-.value {
-  width: 32px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.buttons {
-  justify-content: flex-start;
-  flex-wrap: wrap;
+  margin: var(--ugoe-space-2) 0;
 }
 
 .images {
   display: flex;
-  gap: 8px;
+  gap: var(--ugoe-space-3);
 }
 
 figure {
@@ -296,7 +295,7 @@ img,
   width: 100%;
   aspect-ratio: 1;
   object-fit: contain;
-  border: 1px solid var(--border);
+  border: 1px solid var(--ugoe-color-border);
   /* 透明な部分が分かるように市松模様にする。 */
   background: repeating-conic-gradient(#8884 0% 25%, transparent 0% 50%) 50% / 16px 16px;
 }
@@ -307,17 +306,15 @@ img,
 }
 
 figcaption {
-  font-size: 11px;
+  font-size: var(--ugoe-font-size-xs);
   overflow-wrap: anywhere;
 }
 
 .note {
-  margin: 2px 0 6px;
-  font-size: 11px;
+  margin: var(--ugoe-space-1) 0 var(--ugoe-space-2);
 }
 
-h3,
 h4 {
-  margin: 8px 0 4px;
+  margin: var(--ugoe-space-3) 0 var(--ugoe-space-2);
 }
 </style>

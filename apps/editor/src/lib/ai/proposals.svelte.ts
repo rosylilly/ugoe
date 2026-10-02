@@ -14,6 +14,7 @@ import type { EditorDocument } from "../document.svelte";
 import { errorText } from "../errors";
 import { fileDialogs } from "../fileDialogs";
 import { PSD_FILTER, parentDir } from "../filePaths";
+import { t } from "../i18n";
 import {
   type ConsentAnswer,
   ipc,
@@ -48,7 +49,7 @@ export type PhysicsPreview = Pick<
 
 /** 選んだ AI のプロバイダの名前 (進み具合の文言に使う)。 */
 function aiName(): string {
-  return aiSettings.value ? providerLabel(aiSettings.value) : "the AI";
+  return aiSettings.value ? providerLabel(aiSettings.value) : t("proposals.aiName.inSentence");
 }
 
 /** プレビュー中の提案。 */
@@ -179,7 +180,7 @@ export class ProposalsView {
     if (!groups) return;
     const choices = normalMapChoices(groups, this.normalPicks);
     const replace = this.replaceNormalMaps;
-    await this.#task("Making normal maps from the shapes…", async () => {
+    await this.#task(t("proposals.busy.normalMaps"), async () => {
       await ipc.proposeNormalMaps(choices, replace);
       this.value = await ipc.getProposals();
     });
@@ -211,7 +212,7 @@ export class ProposalsView {
   async choosePsd(): Promise<void> {
     const current = this.value?.psd;
     const path = await fileDialogs().openFile({
-      title: "Choose the PSD to classify",
+      title: t("proposals.psd.dialogTitle"),
       defaultPath: (current && parentDir(current)) || undefined,
       filters: [PSD_FILTER],
     });
@@ -226,7 +227,9 @@ export class ProposalsView {
     const useAi = this.useAi;
     const instructions = instructionsToSend(this.instructions, useAi);
     return this.#task(
-      useAi ? `Classifying the layers with ${aiName()}…` : "Classifying the layers by name…",
+      useAi
+        ? t("proposals.busy.classifyingAi", { name: aiName() })
+        : t("proposals.busy.classifyingNames"),
       async () => {
         const reply = await withConsent(
           (consent: ConsentAnswer | null) =>
@@ -251,9 +254,7 @@ export class ProposalsView {
     const useAi = this.useAi;
     const instructions = instructionsToSend(this.instructions, useAi);
     await this.#task(
-      useAi
-        ? `Asking ${aiName()} for the rig values (it may ask again if an answer fails validation)…`
-        : "Building the rig from the templates…",
+      useAi ? t("proposals.busy.askingAi", { name: aiName() }) : t("proposals.busy.building"),
       async () => {
         const reply = await withConsent(
           (consent: ConsentAnswer | null) =>
@@ -312,7 +313,7 @@ export class ProposalsView {
 
   /** 提案を複製に適用した姿をビューポートに出す。 */
   async showPreview(id: number): Promise<void> {
-    await this.#task("Preparing the preview…", async () => {
+    await this.#task(t("proposals.busy.preparing"), async () => {
       const result = await ipc.previewProposal(id, excludedList(this.excludedOf(id)));
       const bundle = await ipc.getProposalPreviewBundle().catch(() => null);
       const parsed = JSON.parse(result.model_json) as Model;
@@ -344,7 +345,7 @@ export class ProposalsView {
   async adopt(id: number): Promise<void> {
     const excluded = excludedList(this.excludedOf(id));
     this.endPreview();
-    await this.#task("Applying the proposal…", async () => {
+    await this.#task(t("proposals.busy.applying"), async () => {
       const report = await this.#doc.applyWith(() => ipc.adoptProposal(id, excluded));
       if (!report) throw new Error(this.#doc.error ?? "the proposal could not be applied");
       this.value = await ipc.getProposals();

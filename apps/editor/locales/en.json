@@ -374,7 +374,93 @@
       "tab": "General"
     },
     "ai": {
-      "tab": "AI provider"
+      "tab": "AI provider",
+      "provider": {
+        "aria": "AI provider",
+        "claude": "Anthropic Claude API",
+        "openai": "OpenAI-compatible API (OpenAI, OpenRouter, Gemini, Ollama, LM Studio, vLLM…)"
+      },
+      "presets": {
+        "local": "{{name}} (this computer)",
+        "openRouterModel": "vendor/model (a vision model)",
+        "ollamaModel": "a vision model you pulled",
+        "lmStudioModel": "the loaded vision model"
+      },
+      "model": {
+        "label": "Model",
+        "placeholder": "model id (a vision model)"
+      },
+      "service": {
+        "label": "Service",
+        "other": "Other (enter the URL)"
+      },
+      "baseUrl": {
+        "label": "Base URL",
+        "description": "The address up to <code>/chat/completions</code>."
+      },
+      "output": {
+        "label": "JSON output",
+        "jsonSchema": "Structured output (JSON Schema)",
+        "jsonObject": "JSON mode, validated and asked again",
+        "prompt": "Schema in the prompt only, validated and asked again",
+        "description": "Use structured output when the server supports it. Otherwise answers are checked against the schema and asked again, which sends the same data more than once."
+      },
+      "apply": {
+        "label": "Apply"
+      },
+      "revert": {
+        "label": "Revert"
+      },
+      "notApplied": "Not applied yet.",
+      "loading": "Loading…",
+      "key": {
+        "title": "API key for {{service}}",
+        "stored": "An API key for {{service}} is saved in the OS credential store.",
+        "notStored": "No API key for {{service}} is saved.",
+        "notStoredOptional": "No API key for {{service}} is saved (not needed if the server has no authentication).",
+        "unavailableEnv": "The OS credential store is not available here (for example WSL or Linux without a keyring). Set the {{env}} environment variable instead.",
+        "unavailable": "The OS credential store is not available here (for example WSL or Linux without a keyring). Keys cannot be saved.",
+        "envAlso": "{{env}} is also set; the saved key is used first.",
+        "envUsed": "Using the API key from {{env}}.",
+        "replace": "Replace the saved key",
+        "placeholder": "API key",
+        "placeholderOptional": "API key (optional)",
+        "aria": "API key for {{service}}",
+        "save": {
+          "label": "Save"
+        },
+        "delete": {
+          "label": "Delete"
+        },
+        "applyFirst": "Apply the provider first; keys are saved per provider."
+      },
+      "project": {
+        "title": "This project",
+        "dontSend": {
+          "label": "Don't send this project's data to external AI services"
+        },
+        "asked": "You are asked before anything is sent to an external service.",
+        "off": "AI features that send data to external services are turned off for this project.",
+        "saved": "Saved with the project.",
+        "local": "The selected server is on this computer, so nothing leaves it and you are not asked before sending."
+      },
+      "consent": {
+        "remembered": "You chose not to be asked again for this project.",
+        "askAgain": {
+          "label": "Ask again"
+        }
+      },
+      "test": {
+        "label": "Test connection",
+        "tooltip": "Send a small request without images to check the provider and the API key",
+        "connected": "Connected. The server answered.",
+        "notSent": "Not sent."
+      },
+      "blocked": {
+        "notSending": "This project is set not to send data to external AI services.",
+        "noKey": "No API key for {{service}}. Add one in Settings.",
+        "noKeyEnv": "No API key for {{service}}. Add one in Settings, or set {{env}} before starting the editor."
+      }
     },
     "agents": {
       "tab": "Connect agents"
@@ -386,6 +472,1345 @@
       "label": "Language",
       "system": "Match the OS",
       "description": "The language of the editor's screens. The user manual is in Japanese only."
+    }
+  },
+  "export": {
+    "aria": "Export settings",
+    "atlas": {
+      "label": "Pack textures into atlases"
+    },
+    "maxSize": {
+      "label": "Max size"
+    },
+    "padding": {
+      "label": "Padding",
+      "unit": "px",
+      "invalid": "Padding must be an integer from 0 to {{max}}"
+    },
+    "px": "{{value}} px",
+    "hint": "Settings are kept in the project. Identical images are packed once.",
+    "summary": {
+      "aria": "Last export",
+      "textures": "Textures: {{value}}",
+      "stateChanges": "State changes: {{value}}",
+      "drawCalls": "Draw calls: {{value}}",
+      "size_one": "Size: {{bytes}} byte",
+      "size_other": "Size: {{bytes}} bytes",
+      "atlases_one": "{{count}} atlas",
+      "atlases_other": "{{count}} atlases",
+      "packed_one": "Packed {{count}} texture into {{atlases}}",
+      "packed_other": "Packed {{count}} textures into {{atlases}}",
+      "packedSizes_one": "Packed {{count}} texture into {{atlases}} ({{sizes}})",
+      "packedSizes_other": "Packed {{count}} textures into {{atlases}} ({{sizes}})",
+      "deduplicated": "Same image: {{name}} → {{first}}",
+      "kept": {
+        "line": "Kept separate: {{name}} ({{reason}})",
+        "tooLarge": "too large",
+        "uvOutOfRange": "UV outside 0–1",
+        "hasNormalMap": "has a normal map"
+      },
+      "removed": "Removed unused: {{names}}"
+    }
+  },
+  "glues": {
+    "title": "Glue",
+    "intro": "A glue pulls the vertices of two meshes toward each other so seams stay closed when they move (for example the edges of a sleeve and an arm). Vertices that are close in the rest pose are paired.",
+    "moduleNote": "Module project: glues of the base are read-only. You can glue the module's meshes to each other.",
+    "empty": "No glues yet.",
+    "list": {
+      "aria": "Glues",
+      "summary_one": "{{a}} + {{b}} · {{count}} pair",
+      "summary_other": "{{a}} + {{b}} · {{count}} pairs"
+    },
+    "tag": {
+      "base": {
+        "label": "base",
+        "tooltip": "Belongs to the base model"
+      },
+      "clone": {
+        "label": "clone",
+        "tooltip": "Keeps a draw clone on its original"
+      }
+    },
+    "editor": {
+      "aria": "Glue {{id}}"
+    },
+    "selectMeshes": {
+      "label": "Select meshes",
+      "tooltip": "Select both meshes in the tree"
+    },
+    "cloneHint": "This glue keeps a draw clone on its original. Use Sync on the clone in the inspector to rebuild it.",
+    "meshes": {
+      "label": "Meshes"
+    },
+    "swap": {
+      "label": "Swap",
+      "tooltip": "Swap the two meshes (the look stays the same)"
+    },
+    "weight": {
+      "label": "Weight",
+      "description": "0 pulls both meshes to {{a}}, 1 to {{b}}, 0.5 meets in the middle.",
+      "mixed": "The pairs have different weights; changing it sets them all."
+    },
+    "intensity": {
+      "label": "Intensity",
+      "description": "Intensity: how strongly the vertices are pulled (1 = all the way).",
+      "follows": "The intensity follows the parameters of the keyforms above."
+    },
+    "axes": {
+      "aria": "Intensity axes",
+      "description": "Add an axis to change the intensity with a parameter (for example 0 when the arm is lowered), then add keys and set the intensity of each."
+    },
+    "removeKey": {
+      "aria": "Remove key {{key}}",
+      "lastAria": "Remove key {{key}} (removes the axis)"
+    },
+    "newKey": {
+      "placeholder": "key",
+      "aria": "New key of {{parameter}}"
+    },
+    "addKey": {
+      "label": "+ Key",
+      "tooltip": "Add a key between {{min}} and {{max}}"
+    },
+    "axisParameter": {
+      "aria": "Parameter for a new intensity axis"
+    },
+    "axisKey": {
+      "aria": "First key of the new axis"
+    },
+    "addAxis": {
+      "label": "+ Axis",
+      "tooltip": "Make the intensity follow this parameter (the current intensity is kept at this key)"
+    },
+    "pairs": {
+      "description": "The pairs are shown in the viewport. Use Add pairs / Remove pairs there to pair vertices by hand."
+    },
+    "px": "px",
+    "repair": {
+      "label": "Pair again within",
+      "button": "Pair",
+      "tooltip": "Pair the vertices again by distance in the rest pose (keeps the weight and intensity)"
+    },
+    "remove": {
+      "label": "Remove glue"
+    },
+    "new": {
+      "title": "New glue",
+      "empty": "The model needs two or more meshes to glue.",
+      "emptyModule": "The module needs two or more meshes to glue.",
+      "meshA": "Mesh A",
+      "meshB": "Mesh B",
+      "distance": {
+        "label": "Distance",
+        "description": "Vertices that are this close in the rest pose are paired (canvas pixels)."
+      },
+      "create": {
+        "label": "+ Glue",
+        "tooltip": "Glue the two meshes where their vertices are close"
+      },
+      "fromSelection": "From the selected meshes",
+      "sameMesh": "Choose two different meshes."
+    }
+  },
+  "physics": {
+    "title": "Physics",
+    "preview": {
+      "label": "Preview",
+      "stop": "Stop preview",
+      "tooltip": "Run the physics. Move parameters (or the head) to see it swing; stop to return to the edit pose.",
+      "running": "Previewing…"
+    },
+    "parameterOnly": "These rigs only output to parameters, so their particles are not in canvas space and are not drawn in the viewport.",
+    "axis": {
+      "x": "x",
+      "y": "y"
+    },
+    "world": {
+      "title": "World",
+      "baseHint": "Gravity, wind and steps belong to the base model and can't be edited here. Edit them in the base project.",
+      "gravity": "Gravity",
+      "wind": "Wind",
+      "fps": {
+        "label": "Steps / s",
+        "aria": "Physics steps per second"
+      }
+    },
+    "rigs": {
+      "title": "Rigs",
+      "order": "Rigs run top to bottom. A rig that reads a parameter written by a rig above it gets that value in the same step (relay).",
+      "particles_one": "{{count}} particle",
+      "particles_other": "{{count}} particles",
+      "outputs_one": "{{count}} output",
+      "outputs_other": "{{count}} outputs",
+      "relay": {
+        "label": "relay",
+        "tooltip": "Reads {{parameters}} from the rigs above in the same step"
+      },
+      "moveUp": {
+        "aria": "Move {{name}} up",
+        "tooltip": "Move up (run earlier)"
+      },
+      "moveDown": {
+        "aria": "Move {{name}} down",
+        "tooltip": "Move down (run later)"
+      },
+      "baseOrder": "The base model's rig order is set in the base project.",
+      "moduleOrder": "A module's rigs run after the base model's rigs; they can only be reordered among themselves.",
+      "empty": "No physics rigs.",
+      "add": "+ Rig",
+      "fromSelection": {
+        "label": "+ From selected deformers",
+        "labelCount": "+ From selected deformers ({{count}})",
+        "tooltip": "Select rotation deformers (root to tip, e.g. a hair strand's deformers) in the tree, then create a rig whose particles follow them and swing them"
+      }
+    },
+    "rig": {
+      "title": "Rig",
+      "name": {
+        "label": "Name"
+      },
+      "frame": {
+        "label": "Gravity frame",
+        "tooltip": "Gravity and wind are measured in this deformer's space (tilting the head tilts the hanging direction)",
+        "canvas": "Canvas"
+      },
+      "delete": "Delete rig"
+    },
+    "particles": {
+      "title": "Particles",
+      "hint": "Particle 0 is the root. It follows the first deformer output (or the gravity frame).",
+      "aria": "Particle {{index}}",
+      "remove": "Remove particle {{index}}",
+      "add": "+ Particle",
+      "fields": {
+        "radius": {
+          "label": "Length",
+          "tooltip": "Distance from the previous particle (px)"
+        },
+        "mobility": {
+          "label": "Sway",
+          "tooltip": "Mobility: velocity kept per 1/30 s (0..1)"
+        },
+        "delay": {
+          "label": "Speed",
+          "tooltip": "Delay: time scale (1 = normal, larger reacts faster)"
+        },
+        "acceleration": {
+          "label": "Settle",
+          "tooltip": "Acceleration: gravity scale (larger settles faster)"
+        },
+        "collisionRadius": {
+          "label": "Hit r",
+          "tooltip": "Collision radius (px)"
+        },
+        "x": {
+          "label": "x",
+          "tooltip": "Initial position x (relative to the root, px)"
+        },
+        "y": {
+          "label": "y",
+          "tooltip": "Initial position y (relative to the root, px)"
+        }
+      }
+    },
+    "inputs": {
+      "title": "Inputs",
+      "aria": "Input {{index}}",
+      "parameter": "parameter",
+      "source": "source",
+      "weight": {
+        "label": "weight",
+        "tooltip": "Weight (%)"
+      },
+      "flip": "Flip",
+      "remove": "Remove input {{index}}",
+      "empty": "No inputs. The root still follows its deformer.",
+      "add": "+ Input"
+    },
+    "outputs": {
+      "title": "Outputs",
+      "aria": "Output {{index}}",
+      "kind": "kind",
+      "target": "target",
+      "particle": {
+        "label": "Particle",
+        "aria": "particle",
+        "tooltip": "Particle index (1 = end of the first segment)"
+      },
+      "source": "source",
+      "scale": {
+        "label": "scale",
+        "tooltip": "Scale"
+      },
+      "weight": {
+        "label": "weight",
+        "tooltip": "Weight (%)"
+      },
+      "flip": "Flip",
+      "blend": {
+        "label": "blend",
+        "tooltip": "How the output combines with the parameter value (Add keeps tracking and adds the sway)"
+      },
+      "weights_one": "{{count}} weight",
+      "weights_other": "{{count}} weights",
+      "remove": "Remove output {{index}}",
+      "empty": "No outputs. Add one to make the rig move something.",
+      "add": "+ Output"
+    },
+    "targetKinds": {
+      "parameter": "Parameter",
+      "deformerAngle": "Deformer angle",
+      "deformerOffset": "Deformer offset",
+      "mesh": "Mesh vertices",
+      "warp": "Warp points"
+    },
+    "blends": {
+      "overwrite": {
+        "label": "Overwrite",
+        "description": "Replace the value with the physics value"
+      },
+      "add": {
+        "label": "Add",
+        "description": "Add the physics sway on top of the current value"
+      }
+    },
+    "collides": {
+      "title": "Collides with",
+      "empty": "Add colliders below, then tick the ones this rig collides with."
+    },
+    "range": {
+      "title": "Input range",
+      "position": "Position",
+      "angle": "Angle",
+      "min": "min",
+      "default": "default",
+      "max": "max"
+    },
+    "templates": {
+      "title": "Templates",
+      "hint": "Common rigs on the standard parameters. Applying one again resets its rigs. One Undo removes everything a template made.",
+      "createMissing": {
+        "label": "Create missing parameters",
+        "moduleTooltip": "A module can't add parameters. Add them in the base project."
+      },
+      "blend": {
+        "label": "Body blend",
+        "tooltip": "How the body rigs write BodyAngle*: Add keeps tracking and motion values and adds the lag"
+      },
+      "neck": {
+        "label": "Neck",
+        "choose": "(choose)",
+        "noneModule": "(no rotation deformer of the module)",
+        "none": "(no rotation deformer)"
+      },
+      "apply": "+ {{template}}",
+      "inBase": "the base model has {{rigs}}: edit it in the base project",
+      "needsRelays": "needs {{parameters}} in the base model (a module can't add parameters)",
+      "creates": "creates {{parameters}}",
+      "skips": "skips rigs using {{parameters}}",
+      "items": {
+        "bodyFollow": {
+          "label": "Body follow",
+          "tooltip": "The body (BodyAngleX/Y/Z) follows the head (AngleX/Y/Z) late, overshoots a little and settles"
+        },
+        "bounce": {
+          "label": "Bounce",
+          "tooltip": "Turning the head swings the relay parameter BodyBounce, and a second pendulum adds the bounce to BodyAngleX"
+        },
+        "neckFollow": {
+          "label": "Neck follow",
+          "tooltip": "A neck rotation deformer tilts with the head (AngleZ, AngleX) late"
+        }
+      }
+    },
+    "colliders": {
+      "title": "Colliders",
+      "empty": "No colliders.",
+      "shapes": {
+        "circle": "Circle",
+        "capsule": "Capsule"
+      },
+      "summaryAttached": "{{shape}} on {{deformer}}",
+      "addCircle": {
+        "label": "+ Circle",
+        "tooltip": "Add a circle collider (attached to the selected deformer, if any)"
+      },
+      "addCapsule": {
+        "label": "+ Capsule",
+        "tooltip": "Add a capsule collider (attached to the selected deformer, if any)"
+      },
+      "name": {
+        "label": "Name"
+      },
+      "attach": {
+        "label": "Attach to",
+        "canvas": "Canvas"
+      },
+      "shape": "Shape",
+      "center": "Center",
+      "endA": "End A",
+      "endB": "End B",
+      "radius": "Radius",
+      "hint": "Positions are in the attached deformer's local space. Drag the collider in the viewport to move it.",
+      "delete": "Delete collider"
+    },
+    "restPose": {
+      "hits_one": "A rig hits a collider in the rest pose. The hair starts bent along the collider instead of hanging freely; move the collider out of the hanging hair unless this is intended.",
+      "hits_other": "{{count}} rig–collider pairs hit in the rest pose. The hair starts bent along the collider instead of hanging freely; move the collider out of the hanging hair unless this is intended.",
+      "select": "Select the rig and the collider in the Physics panel",
+      "none": "No rig hits a collider in the rest pose.",
+      "noSettings": "No physics settings.",
+      "pair": "{{rig}} hits {{collider}}",
+      "segments_one": "segment {{list}}",
+      "segments_other": "segments {{list}}"
+    }
+  },
+  "verify": {
+    "overflow": {
+      "title": "Deformer overflow",
+      "description": "Points whose position in the parent warp's grid is outside the grid follow the warp by extrapolation, which bends less than the inside.",
+      "show": "Show overflows in viewport",
+      "noneNow": "No points outside the parent warp at the current parameters.",
+      "now": "{{points}} in {{elements}} outside the parent warp now.",
+      "verify": {
+        "label": "Verify all cells",
+        "running": "Verifying…"
+      },
+      "checked": "{{elements}} · {{cells}}",
+      "truncated": "Too many key combinations: only the axis ends were checked for {{elements}}.",
+      "none": "No overflow in any keyform cell.",
+      "found_one": "{{count}} element overflows in {{cells}}.",
+      "found_other": "{{count}} elements overflow in {{cells}}.",
+      "parent": "in {{parent}} · max {{amount}}",
+      "cell": "Select the element and set the parameters to this cell",
+      "noAxes": "(no axes)",
+      "dot": "{{element}} {{point}}: {{amount}} outside {{parent}}",
+      "origin": "origin"
+    },
+    "counts": {
+      "points_one": "{{count}} point",
+      "points_other": "{{count}} points",
+      "elements_one": "{{count}} element",
+      "elements_other": "{{count}} elements",
+      "cells_one": "{{count}} cell",
+      "cells_other": "{{count}} cells",
+      "vertex_one": "{{count}} vertex",
+      "vertex_other": "{{count}} vertices",
+      "controlPoint_one": "{{count}} control point",
+      "controlPoint_other": "{{count}} control points",
+      "origin_one": "{{count}} origin",
+      "origin_other": "{{count}} origins"
+    },
+    "physics": "Physics"
+  },
+  "lighting": {
+    "title": "Lighting",
+    "empty": "Import a PSD first. Lighting shades meshes with the lights below.",
+    "model": {
+      "aria": "Model lighting",
+      "baseHint": "Whether the model receives lighting is set in the base project.",
+      "receive": {
+        "label": "Receive lighting (model)"
+      }
+    },
+    "hint": {
+      "modelOff": "Lighting is off for this model, so lights do not change how it looks. Turn on “Receive lighting” for the model.",
+      "noLitMesh": "No mesh receives lighting. Turn on “Lit” for the meshes that should be shaded."
+    },
+    "unit": {
+      "px": "px",
+      "texturePx": "texture px"
+    },
+    "meshes": {
+      "title": "Lit meshes",
+      "lightSelected": "Light selected",
+      "unlightSelected": "Unlight selected",
+      "allOn": "All on",
+      "allOff": "All off",
+      "lightBatch": "Light meshes",
+      "unlightBatch": "Unlight meshes",
+      "description": "Turn lighting off for parts that should stay flat, such as eye highlights.",
+      "moduleNote": "The base model's meshes are set in the base project; the buttons change only the module's meshes.",
+      "lit": {
+        "aria": "Lit: {{name}}"
+      },
+      "base": {
+        "label": "base",
+        "tooltip": "Part of the base model: read-only in a module project"
+      },
+      "normalMap": {
+        "label": "N",
+        "tooltip": "Has a normal map"
+      }
+    },
+    "normalMap": {
+      "title": "Normal map",
+      "empty": "Select a mesh to generate or assign a normal map for its texture.",
+      "texture": "Texture: {{texture}}",
+      "textureImage": {
+        "alt": "Texture {{name}}",
+        "caption": "Texture"
+      },
+      "image": {
+        "alt": "Normal map {{name}}",
+        "none": "none",
+        "empty": "No normal map"
+      },
+      "sharedWith": "Shared with {{textures}}. Generating or assigning makes a separate image for this texture.",
+      "generate": {
+        "title": "Generate from the shape",
+        "description": "Makes the opaque shape bulge toward the viewer (no AI). Parts of the same group are shaped as one surface, so eyes follow the face and the neck joins the body; glasses take the face's direction without bulging. Turns on lighting for the model if it is off. To propose maps for every texture at once, use the AI tab.",
+        "label": "Generate"
+      },
+      "group": {
+        "oriented": "Takes the direction of group “{{group}}” ({{textures}}) without bulging.",
+        "with": "Group “{{group}}” with {{textures}}.",
+        "shapeOnly": "Also shaped by {{textures}}.",
+        "orientedOnly": "{{textures}} only take its direction.",
+        "alone": "Group “{{group}}” (this texture only).",
+        "none": "No part label: shaped on its own.",
+        "fromClassification": "Labels from the PSD classification.",
+        "fromLayerNames": "Labels from the layer names."
+      },
+      "strength": {
+        "label": "Strength"
+      },
+      "roundEdges": {
+        "label": "Round edges only"
+      },
+      "edge": {
+        "label": "Edge width"
+      },
+      "smoothing": {
+        "label": "Smoothing"
+      },
+      "regenerate": {
+        "label": "Regenerate"
+      },
+      "generateGroup": {
+        "label": "Generate for the group"
+      },
+      "defaults": {
+        "label": "Defaults"
+      },
+      "imageSection": {
+        "title": "Image"
+      },
+      "flipGreen": {
+        "label": "Flip green (DirectX)"
+      },
+      "assign": {
+        "label": "Assign PNG…",
+        "title": "Assign normal map"
+      },
+      "pngFilter": "PNG image (.png)",
+      "remove": {
+        "label": "Remove normal map"
+      }
+    },
+    "lights": {
+      "title": "Preview lights",
+      "enabled": {
+        "label": "Light the viewport"
+      },
+      "description": "Lights are a preview setting kept in the project, not part of the model. Apps that show the model pass their own lights.",
+      "ambient": {
+        "label": "Ambient",
+        "color": {
+          "aria": "Ambient color"
+        },
+        "intensity": {
+          "aria": "Ambient intensity"
+        }
+      },
+      "name": {
+        "directional": "{{index}}. Directional",
+        "point": "{{index}}. Point"
+      },
+      "color": {
+        "aria": "Light {{index}} color"
+      },
+      "intensity": {
+        "aria": "Light {{index}} intensity"
+      },
+      "remove": {
+        "aria": "Remove light {{index}}"
+      },
+      "addDirectional": {
+        "label": "Add directional"
+      },
+      "addPoint": {
+        "label": "Add point"
+      },
+      "reset": {
+        "label": "Reset",
+        "tooltip": "Weak ambient and one light from the top left"
+      },
+      "directional": {
+        "description": "Drag the handle on the circle in the viewport to aim the light. Elevation {{elevation}}° (90° = straight from the front)."
+      },
+      "behind": {
+        "label": "From behind the canvas"
+      },
+      "point": {
+        "description": "Drag the light in the viewport to move it. Z is the distance in front of the canvas."
+      },
+      "direction": {
+        "label": "Direction"
+      },
+      "position": {
+        "label": "Position"
+      },
+      "limitRange": {
+        "label": "Limit the range"
+      },
+      "range": {
+        "label": "Range",
+        "unlimited": "unlimited"
+      }
+    }
+  },
+  "slots": {
+    "title": "Slots",
+    "intro": "Slots are the places where dress-up modules (outfits, hairstyles, accessories made as separate module projects) attach to this model. A module names only its slot, so define here where it attaches, where it draws, and which parts of this model it may use.",
+    "empty": "No slots yet.",
+    "noFreeRange": "No free draw order range between 0 and 1000. Narrow another slot first.",
+    "tag": {
+      "app": {
+        "label": "app",
+        "tooltip": "Listed in the avatar profile"
+      },
+      "overlap": {
+        "label": "overlap",
+        "tooltip": "Its draw order range overlaps {{slots}}"
+      }
+    },
+    "add": {
+      "label": "+ Slot",
+      "tooltip": "Add a slot in a free draw order range"
+    },
+    "slot": {
+      "title": "Slot"
+    },
+    "name": {
+      "label": "Name",
+      "help": "Modules refer to the slot by this name (e.g. Hair, Outfit, HeadAccessory).",
+      "invalid": "Slot names may use only letters, digits and _ (modules refer to the slot by this name)."
+    },
+    "anchor": {
+      "label": "Attach to",
+      "canvas": "Canvas",
+      "help": "The deformer the module moves with (e.g. the head for hair). The module's top-level meshes and deformers are placed in this deformer's space."
+    },
+    "part": {
+      "label": "Parent part",
+      "none": "None",
+      "help": "The module's parts become children of this part, so they fade out with it (poses, motions)."
+    },
+    "drawOrder": {
+      "label": "Draw order",
+      "from": {
+        "aria": "Draw order from"
+      },
+      "to": {
+        "aria": "Draw order to"
+      },
+      "help": "The module's meshes (draw order {{min}}–{{max}}) are squeezed into this range, so they draw in front of this model's meshes below it and behind those above it. Ranges of slots must not overlap. See “Draw order” below."
+    },
+    "replaces": {
+      "title": "Replaces",
+      "help": "Parts of this model hidden while a module is attached (e.g. the default hair).",
+      "empty": "The model has no parts."
+    },
+    "parameters": {
+      "title": "Parameters",
+      "help": "This model's own parameters the module may animate with. Standard parameters (AngleX, EyeLOpen, …) are always available and need not be ticked.",
+      "empty": "The model has no parameters."
+    },
+    "maskSources": {
+      "title": "Mask sources",
+      "help": "Meshes of this model the module may clip to (e.g. the face, to keep bangs inside it).",
+      "empty": "The model has no meshes."
+    },
+    "colliders": {
+      "title": "Colliders",
+      "help": "Physics colliders of this model the module's physics may hit (e.g. the neck, so long hair drapes over it).",
+      "empty": "The model has no colliders. Add them in the Physics tab."
+    },
+    "poseParts": {
+      "title": "Pose parts",
+      "help": "Parts in this model's pose groups the module's parts may follow (e.g. sleeves A / B follow arms A / B).",
+      "empty": "The model has no pose groups."
+    },
+    "showToApps": {
+      "label": "Show to apps",
+      "help": "Lists the slot in the avatar profile so apps offer it to users. Unlisted slots are for authors only.",
+      "noProfile": "Lists the slot in the avatar profile so apps offer it to users. Create an avatar profile first (Inspector with nothing selected)."
+    },
+    "selectInRange": {
+      "label": "Select meshes in range",
+      "tooltip": "Select this model's meshes whose draw order is in the range, to see them in the viewport"
+    },
+    "remove": {
+      "label": "Remove slot"
+    },
+    "drawOrderList": {
+      "title": "Draw order",
+      "description": "This model's meshes from front to back (at default parameters), with the slots' ranges. Meshes inside a range interleave with the module; the module draws between the meshes above and below the range.",
+      "empty": "The model has no meshes.",
+      "frontEnd": "{{slot}} · front end ▼",
+      "backEnd": "{{slot}} · back end ▲"
+    },
+    "pickList": {
+      "none": "none",
+      "missing": "{{id}} (missing)"
+    }
+  },
+  "poses": {
+    "title": "Poses",
+    "intro": "A pose group switches between variants of a part (for example arms A / B): only one entry of a group shows at a time, and the first entry shows at start. Links fade in and out with their entry (for example sleeves with arms). Motions choose the entry by animating part opacity; apps can also pick one.",
+    "moduleNote": "Module project: the base's pose groups are read-only. You can add groups of the module's parts, and link the module's parts to the base entries that the slot exposes (Pose parts in the base's Slots tab).",
+    "fade": {
+      "label": "Fade time",
+      "unit": "s",
+      "description": "Cross-fade time when the shown entry changes",
+      "baseHint": "The fade time belongs to the base model."
+    },
+    "preview": {
+      "label": "Show the pose in the viewport",
+      "description": "Show only one entry per group in the viewport, as apps do (the model doesn't change)"
+    },
+    "empty": "No pose groups yet.",
+    "group": {
+      "title": "Group {{index}}",
+      "base": {
+        "label": "base",
+        "tooltip": "Belongs to the base model"
+      },
+      "baseHint": "Base groups can't be changed or removed here.",
+      "remove": {
+        "label": "Remove group",
+        "tooltip": "Remove this group (the parts stay)"
+      }
+    },
+    "entry": {
+      "dragHint": "Drag entries to reorder (the first entry shows at start).",
+      "select": {
+        "tooltip": "Select the part"
+      },
+      "first": {
+        "label": "first",
+        "tooltip": "Shown at start"
+      },
+      "show": {
+        "label": "Show",
+        "tooltip": "Show this entry in the viewport"
+      },
+      "shown": {
+        "label": "Shown",
+        "tooltip": "Shown in the viewport"
+      },
+      "moveUp": {
+        "aria": "Move up",
+        "tooltip": "Move up (the first entry shows at start)"
+      },
+      "moveDown": {
+        "aria": "Move down"
+      },
+      "remove": {
+        "aria": "Remove entry",
+        "tooltip": "Remove this entry from the group"
+      },
+      "baseLinks": "Base links: {{parts}}",
+      "add": {
+        "label": "+ Entry",
+        "aria": "Part to add to group {{index}}",
+        "tooltip": "Add the part as another variant in this group"
+      }
+    },
+    "links": {
+      "title": "Links",
+      "help": "Parts that switch together with this entry (for example sleeves with arms).",
+      "baseHelp": "Module parts that switch with this base entry (for example sleeves A / B with arms A / B).",
+      "empty": "No free parts. A part can be in only one place in the pose.",
+      "notExposed": "The slot doesn't expose this entry, so module parts can't follow it."
+    },
+    "newGroup": {
+      "title": "New group",
+      "noParts": "Every part is already in the pose.",
+      "noModuleParts": "Every module part is already in the pose, or the module has no parts.",
+      "first": {
+        "aria": "First part of the new group"
+      },
+      "add": {
+        "label": "+ Group"
+      },
+      "fromSelection": {
+        "label": "+ Group from selection",
+        "tooltip_one": "Make a group of {{count}} selected part",
+        "tooltip_other": "Make a group of {{count}} selected parts",
+        "disabled": "Select two or more parts that aren't in the pose yet (in the tree)."
+      }
+    }
+  },
+  "preview": {
+    "title": "Preview",
+    "loadingViewport": "Loading viewport…",
+    "physicsError": "Physics: {{message}}",
+    "stages": {
+      "aria": "Runtime stages",
+      "title": "Runtime",
+      "physics": "Physics",
+      "eyeBlink": "Eye blink",
+      "breath": "Breath",
+      "lipSync": "Lip sync",
+      "pose": "Pose",
+      "notSetUp": "{{stage}} (not set up)",
+      "notSetUpHint": "Stages marked (not set up) have no settings in this model, so turning them on does nothing.",
+      "resetPhysics": {
+        "label": "Reset",
+        "tooltip": "Put the particles back to their rest pose"
+      },
+      "lipSyncLevel": "Lip sync level (mouth opening from the voice level)"
+    },
+    "pose": {
+      "title": "Pose",
+      "off": "Turn on the Pose stage above to see the shown entries.",
+      "hint": "Choose the entry shown in each group (the others fade out).",
+      "group": "Group {{n}}",
+      "moduleGroup": "{{module}} group {{n}}",
+      "moduleGroupUnnamed": "Module group {{n}}"
+    },
+    "tracking": {
+      "aria": "Face tracking",
+      "saveTitle": "Save face tracking recording"
+    },
+    "licenses": {
+      "open": "Third-party licenses",
+      "title": "Face tracking licenses",
+      "description": "The ugoe editor is distributed under GPL-3.0-only. Face tracking uses MediaPipe, bundled with the editor under the following licenses.",
+      "loadStatus": "Cannot load the notices ({{status}})",
+      "loadError": "Cannot load the notices: {{message}}"
+    },
+    "motions": {
+      "title": "Motions",
+      "stop": "Stop",
+      "empty": "No motions in this project.",
+      "play": "Play {{name}}",
+      "stopOne": "Stop {{name}}",
+      "duration": "{{value}} s",
+      "durationLoop": "{{value}} s · loop",
+      "events": "Events: {{events}}"
+    },
+    "expressions": {
+      "title": "Expression",
+      "empty": "No expressions in this project.",
+      "none": "(none)"
+    },
+    "parameters": {
+      "title": "Parameters",
+      "other": "Other",
+      "resetAll": {
+        "label": "Reset all",
+        "tooltip": "Set every parameter to its default"
+      },
+      "filter": {
+        "placeholder": "Filter (name or ID)",
+        "aria": "Filter the parameters"
+      },
+      "empty": "This model has no parameters.",
+      "reset": {
+        "aria": "Reset {{name}} to the default ({{value}})"
+      }
+    },
+    "loadWarnings": {
+      "physicsRemoved": "The physics settings no longer fit this model and were turned off ({{reason}}).",
+      "textureKtx2": "Texture {{texture}} is a KTX2 image, which the preview can't show yet, so it is drawn white.",
+      "textureMissing": "Texture {{texture}} has no image, so it is drawn white.",
+      "normalMapKtx2": "The normal map of texture {{texture}} is a KTX2 image, which the preview can't use yet, so it is lit without it.",
+      "unknownOptionalFeature": "This file uses the feature \"{{feature}}\" from a newer version, so the preview shows a fallback for it.",
+      "unknownValue": "This file has a value this version doesn't know ({{path}}), so the preview uses the default for it."
+    },
+    "difference": {
+      "select": {
+        "tree": "Leave the preview and select {{id}} in the tree",
+        "glue": "Leave the preview and select {{id}} in the Glue tab",
+        "physics": "Leave the preview and select {{id}} in the Physics tab",
+        "poses": "Leave the preview and select {{id}} in the Poses tab and its parts in the tree"
+      },
+      "notice": {
+        "notShown": "Put on your current edits or the file to see {{id}}.",
+        "removedNotDrawn": "{{id}} was removed in your current edits. Put on the file to see it.",
+        "notInFile": "{{id}} is not in the file. Put on your current edits to see it.",
+        "removedOutline": "Removed: {{id}} is not in your current edits; the outline shows its meshes that are still there. Put on the file to see it.",
+        "addedOutline": "Added: {{id}} is not in the file; the outline shows its meshes that are still there. Put on your current edits to see it.",
+        "inEdits": "{{id}} in your current edits",
+        "inFile": "{{id}} in the file",
+        "notDrawnInEdits": "{{id}} can't be drawn in your current edits.",
+        "notDrawnInFile": "{{id}} can't be drawn in the file."
+      },
+      "fit": {
+        "label": "Fit",
+        "tooltip": "Zoom the viewport to {{id}} (the viewport's Fit shows the whole canvas again)"
+      },
+      "clear": {
+        "label": "Clear",
+        "tooltip": "Stop highlighting"
+      }
+    },
+    "dressUp": {
+      "title": "Dress-up",
+      "load": {
+        "label": "Load .ugoemod…",
+        "tooltip": "Load a module file (.ugoemod) and put it on",
+        "title": "Load a module"
+      },
+      "dropping": "Drop to load the modules.",
+      "description": "Try modules on this model. Load a file or drop .ugoemod files onto the window. The model is not changed.",
+      "dropError": "Only .ugoemod files can be loaded here.",
+      "details": "Details",
+      "takenOff": "{{name}} was taken off: {{summary}}",
+      "fileProblem": "{{file}}: {{summary}}",
+      "file": "File",
+      "ownProblem": "Your edits can't be put on the base to compare with other modules: {{message}}",
+      "slots": {
+        "title": "Slots",
+        "empty": "This model has no slots. Add them in the Slots tab.",
+        "aria": "Module in slot {{slot}}",
+        "none": "(none)",
+        "noModule": "(no module)",
+        "authorsOnly": {
+          "label": "authors only",
+          "tooltip": "The avatar profile does not list this slot, so apps such as the viewer hide it from users. Tick Show to apps in the Slots tab to offer it."
+        }
+      },
+      "modules": {
+        "title": "Modules",
+        "empty": "No modules loaded.",
+        "editing": {
+          "label": "editing",
+          "tooltip": "Your current edits (not saved to a file). Swap with other modules of the slot to compare."
+        },
+        "reload": {
+          "aria": "Reload {{name}}",
+          "tooltip": "Read the file again (after exporting it again)"
+        },
+        "remove": {
+          "aria": "Remove {{name}}",
+          "tooltip": "Take it off and remove it from the list"
+        },
+        "dropped": "Dropped file: not kept in the project."
+      },
+      "differences": {
+        "comparing": "Comparing with your current edits…",
+        "same": "Same as your current edits.",
+        "summary_one": "{{count}} difference from your current edits",
+        "summary_other": "{{count}} differences from your current edits",
+        "description": "What changed from this file to your current edits (file → edits).",
+        "highlight": "Highlight {{id}} in the viewport",
+        "unhighlight": "Stop highlighting {{id}}",
+        "select": "Select"
+      },
+      "problem": {
+        "theModule": "The module",
+        "anotherModule": "another module",
+        "unknownSlot": "{{module}} goes in slot \"{{slot}}\", but this model has no such slot. Add it in the Slots tab (the name must match exactly).",
+        "missingSlot": "{{module}} needs this model to have slot \"{{slot}}\". Add it in the Slots tab.",
+        "missingParameter": "{{module}} uses parameter \"{{parameter}}\", which this model does not have.",
+        "parameterNotExposed": "{{module}} uses parameter \"{{parameter}}\", but slot \"{{slot}}\" does not allow it. Tick it under the slot's Parameters in the Slots tab.",
+        "avatarLevel": "{{module}} needs a higher avatar profile level than this model declares.",
+        "slotOccupied": "Slot \"{{slot}}\" already has {{attached}}. Take that off first.",
+        "unknownMask": "{{module}} masks mesh \"{{mesh}}\" with a mesh this model does not offer. Add it to the slot's Mask sources in the Slots tab.",
+        "unknownCollider": "{{module}}'s physics collides with a collider this model does not offer. Add it to the slot's Colliders in the Slots tab.",
+        "poseNotExposed": "{{module}} follows a pose part that slot \"{{slot}}\" does not offer. Add it to the slot's Pose parts in the Slots tab.",
+        "textureOutOfRange": "{{module}} is broken: mesh \"{{mesh}}\" uses a texture the module does not have. Export the module again.",
+        "invalidComposition": "The model with this module on is not valid. See the details.",
+        "invalidModuleName": "The module name \"{{module}}\" cannot be used (it must not be empty, contain / or start with #).",
+        "duplicateModule": "Two modules are named \"{{module}}\".",
+        "compile": "The model with this module on could not be prepared for drawing. See the details.",
+        "invalidPhysics": "The physics of the module does not fit this model. See the details.",
+        "notAttached": "{{module}} is not on.",
+        "notLoaded": "{{module}} is not loaded. Load the file again.",
+        "noModel": "There is no model in the viewport.",
+        "invalidFile": "This is not a .ugoemod file, or it is damaged or from a newer version of ugoe.",
+        "texture": "The module's images could not be put on the GPU.",
+        "sameName": "This file is also named \"{{name}}\", the name your current edits use here, so only your current edits are shown. Rename the file's module to compare.",
+        "ownSlot": "This project is the module for slot \"{{slot}}\", so another module can't go on it here. Try it in the base project."
+      }
+    }
+  },
+  "agents": {
+    "intro": "Let agents (Claude Code, Claude Desktop, OpenCode, ChatGPT…) work on the project open in this editor. Their proposals appear in the AI tab, and applying, undoing or saving always asks you here first.",
+    "manual": {
+      "label": "How to connect agents…"
+    },
+    "enable": {
+      "label": "Allow agents to connect to this editor"
+    },
+    "state": {
+      "failed": "Could not start: {{message}}",
+      "listening": "Listening on <code>{{url}}</code> (this computer only, token required)",
+      "off": "Off. Agents cannot connect."
+    },
+    "project": {
+      "label": "Agents work on <code>{{path}}</code>",
+      "unsaved": "Save the project first (File → Save As…). Agents refer to the project by its path, so they cannot use an unsaved one."
+    },
+    "clients": {
+      "title": "Connected agents",
+      "empty": "None yet. Register the editor in your agent below, then start it.",
+      "connected": "· connected {{ago}}",
+      "justNow": "just now",
+      "minutesAgo_one": "{{count}} min ago",
+      "minutesAgo_other": "{{count}} min ago",
+      "hoursAgo_one": "{{count}} h ago",
+      "hoursAgo_other": "{{count}} h ago"
+    },
+    "register": {
+      "title": "Register the editor in your agent",
+      "noSidecar": "No <code>ugoe-mcp</code> was found next to the editor or in the build folder (this is a development build; installers include it). Build it with <build>cargo build --release -p ugoe-mcp</build> and reopen this tab. Until then the commands use <code>ugoe-mcp</code> from the PATH.",
+      "choices": {
+        "aria": "Agent"
+      }
+    },
+    "desktop": {
+      "enableFirst": "Turn on “Allow agents to connect to this editor” above first. Claude Desktop reaches the editor only while it is on (you can install the extension now and turn it on later).",
+      "inWsl": "This editor runs inside WSL, so Claude Desktop on Windows cannot reach it. Run the Windows editor instead; its extension relays inside Windows.",
+      "install": {
+        "label": "Install in Claude Desktop…"
+      },
+      "save": {
+        "label": "Save .mcpb…",
+        "title": "Save the Claude Desktop extension",
+        "filter": "MCP Bundle"
+      },
+      "packing": "Packing the extension…",
+      "opened": "Opened the extension. Claude Desktop shows its install dialog: choose Install and enable it.",
+      "openedFallback": "Nothing happened, or another app opened it? In Claude Desktop, go to Settings → Extensions → Advanced settings → Install Extension… and choose <code>{{path}}</code>.",
+      "saved": "Saved <code>{{path}}</code>. Double-click it, drag it onto the Claude Desktop window, or use Settings → Extensions → Advanced settings → Install Extension… in Claude Desktop.",
+      "check": "Check it: Claude Desktop's Settings → Extensions lists “ugoe editor” as enabled, and in a chat the “+” button → Connectors shows its tools. Once Claude uses a tool, it appears under “Connected agents” here.",
+      "update": "The extension carries its own copy of ugoe-mcp. Install it again after updating the editor."
+    },
+    "copy": {
+      "label": "Copy",
+      "done": "Copied",
+      "failed": "Select the text and copy it"
+    },
+    "chatgptNote": "In ChatGPT, enable developer mode, create an app and choose the tunnel as its connection. ChatGPT asks before tools that change the project; the editor asks you too.",
+    "port": {
+      "title": "Port and token",
+      "label": "Port",
+      "placeholder": "automatic",
+      "apply": {
+        "label": "Apply"
+      },
+      "invalid": "Enter a port between 1 and 65535, or leave it empty to pick one automatically.",
+      "description": "The stdio relay (<code>ugoe-mcp --editor</code>) finds the port by itself. A fixed port is only needed for clients that connect over HTTP directly."
+    },
+    "token": {
+      "copy": {
+        "label": "Copy token"
+      },
+      "regenerate": {
+        "label": "Regenerate token"
+      },
+      "description": "The token is only needed by clients that connect over HTTP directly. Regenerate it if it was shown to someone else; the relay picks up the new one automatically.",
+      "discovery": "The port and token are written to <code>{{path}}</code> (readable only by you) while the bridge is on."
+    },
+    "loading": "Loading…",
+    "setup": {
+      "claude": {
+        "summary": "Register the bundled ugoe-mcp as a stdio server. It relays to this editor while the bridge is on.",
+        "run": "Run once in a terminal",
+        "runNote": "Then check it with “claude mcp list”, or with /mcp inside Claude Code."
+      },
+      "desktop": {
+        "summary": "Install the editor as a Claude Desktop extension (.mcpb). It contains a copy of the bundled ugoe-mcp and relays to this editor while the bridge is on.",
+        "config": "Alternative: add it to claude_desktop_config.json (Claude Desktop: Settings → Developer → Edit Config)",
+        "configNote": "Merge it into the existing “mcpServers”, then quit and restart Claude Desktop."
+      },
+      "opencode": {
+        "summary": "Add a local MCP server to opencode.json (the project folder or ~/.config/opencode/).",
+        "configNote": "“ask” makes OpenCode confirm applying and saving too; the editor asks you in any case."
+      },
+      "chatgpt": {
+        "summary": "ChatGPT connects from OpenAI's servers. OpenAI's tunnel-client starts the relay on this computer and connects out, so nothing is exposed to the internet. Needs ChatGPT developer mode and a tunnel ID.",
+        "init": "Create the tunnel profile",
+        "run": "Check and start the tunnel"
+      },
+      "wsl": {
+        "title": "Agents in WSL",
+        "summary": "Recommended: register the Windows ugoe-mcp.exe from inside WSL. WSL can start Windows programs, the connection stays inside Windows, and paths are converted between WSL and Windows.",
+        "claude": "Claude Code in WSL (run inside WSL)",
+        "opencode": "OpenCode in WSL (opencode.json; replace <distro> with the output of “echo $WSL_DISTRO_NAME”)",
+        "linux": "Alternative: the Linux ugoe-mcp inside WSL",
+        "linuxNote": "Works only with WSL's mirrored networking (networkingMode=mirrored in %UserProfile%\\.wslconfig). With the default NAT networking it cannot reach the editor; use ugoe-mcp.exe instead."
+      },
+      "http": {
+        "title": "Other clients (HTTP)",
+        "summary": "Clients that speak Streamable HTTP can connect directly with the token. Set a fixed port first, because the port changes each time the editor starts otherwise.",
+        "claude": "Claude Code over HTTP",
+        "claudeNoPort": "Claude Code over HTTP (set a fixed port first)",
+        "claudeNote": "Replace <token> with the copied token. Prefer the stdio relay above: it needs no token."
+      }
+    },
+    "approval": {
+      "agent": "An agent",
+      "heading": {
+        "apply": "{{who}} wants to apply a proposal",
+        "undo": "{{who}} wants to undo the last edit",
+        "redo": "{{who}} wants to redo the last undone edit",
+        "save": "{{who}} wants to save the project"
+      },
+      "approve": {
+        "apply": "Apply",
+        "undo": "Undo",
+        "redo": "Redo",
+        "save": "Save"
+      },
+      "proposal": "Proposal {{id}}",
+      "commands_one": "{{count}} of {{total}} command, applied as one edit (one Undo reverts it).",
+      "commands_other": "{{count}} of {{total}} commands, applied as one edit (one Undo reverts it).",
+      "excluded": "Leaves out commands {{list}}.",
+      "undo": "This undoes the most recent edit in the editor, whoever made it.",
+      "redo": "This redoes the most recent edit in the editor, whoever made it.",
+      "save": "Writes the project to its folder, as File → Save does.",
+      "bundle": "Also exports <code>{{path}}</code>",
+      "remaining_one": "Answer within {{count}} s, or the agent is told you did not answer.",
+      "remaining_other": "Answer within {{count}} s, or the agent is told you did not answer.",
+      "waiting_one": "{{count}} more waiting.",
+      "waiting_other": "{{count}} more waiting.",
+      "show": {
+        "label": "Show in AI tab"
+      },
+      "decline": {
+        "label": "Decline"
+      }
+    }
+  },
+  "consent": {
+    "title": "Send to {{service}}?",
+    "description": "This project's data leaves your computer and is sent to an external AI service.",
+    "destination": "Destination",
+    "model": "Model",
+    "images": {
+      "label": "Images",
+      "value": "{{count}} ({{size}})"
+    },
+    "text": "Text",
+    "instructions": {
+      "label": "Your instructions",
+      "value_one": "{{count}} character (included in the text)",
+      "value_other": "{{count}} characters (included in the text)"
+    },
+    "retries_one": "If an answer fails validation, the same data is sent again with the previous answer and the reason, up to {{count}} more time.",
+    "retries_other": "If an answer fails validation, the same data is sent again with the previous answer and the reason, up to {{count}} more times.",
+    "terms": {
+      "intro": "{{org}} handles the data under its terms:",
+      "unknown": "Check how this service handles your data before sending.",
+      "commercialTerms": "Commercial Terms",
+      "privacyPolicy": "Privacy Policy",
+      "servicesAgreement": "Services Agreement",
+      "terms": "Terms",
+      "geminiTerms": "Gemini API Terms"
+    },
+    "linkError": "Could not open the browser ({{error}}): {{url}}",
+    "remember": {
+      "label": "Don't ask again for this project until the editor is closed (same service and model)"
+    },
+    "send": {
+      "label": "Send"
+    },
+    "cancel": {
+      "label": "Cancel"
+    },
+    "changed": "The data to send changed after you agreed. Try again."
+  },
+  "proposals": {
+    "aiName": {
+      "short": "AI",
+      "inSentence": "the AI"
+    },
+    "autoRig": {
+      "title": "Auto rig from PSD",
+      "titleModule": "Auto rig the costume from PSD"
+    },
+    "stale": {
+      "title": "Propose the rig again",
+      "body": "These costume meshes were edited (vertices, triangles or parent) after an adopted rig proposal wrote the base's motion into them, so they no longer follow the base exactly.",
+      "dismiss": "Keep the meshes as they are and hide this notice"
+    },
+    "module": {
+      "note": "Module project: the rig uses only the base's parameters. The costume follows the base deformers under the slot's anchor (for example the face turn) and base meshes that change shape under it (for example closing eyes), and hair, tails, earrings, neckwear and skirts sway with physics. No parameters are added.",
+      "options": {
+        "legend": "How to rig (not sent to the AI)",
+        "direct": {
+          "label": "Follow the base warps exactly (write into the costume meshes)",
+          "description": "Off: wrap the costume in a warp that approximates the base warp (keeps working if you redraw the costume). On: write the base warp's motion into the costume meshes' keyforms (exact at the keys; propose again after editing the mesh)."
+        },
+        "colliders": {
+          "label": "Keep swaying parts out of the base's colliders",
+          "description": "Swaying parts collide with the base colliders that the slot exposes, so they do not sink into the body."
+        },
+        "poses": {
+          "label": "Turn A / B variants into poses",
+          "description": "Costume parts whose names differ only by a trailing A, B… (Sleeve A / Sleeve B) become a pose, following the base's variants when the slot exposes them. So do overlapping parts with the same label where the PSD shows one and hides the others."
+        }
+      }
+    },
+    "psd": {
+      "empty": "No PSD yet. Use File → New from PSD…, or choose one.",
+      "choose": "Choose PSD…",
+      "dialogTitle": "Choose the PSD to classify"
+    },
+    "useAi": {
+      "label": "Use {{name}} (sends images of the artwork)",
+      "labelLocal": "Use {{name}} (sends images to a server on this computer)",
+      "checking": "Checking the AI settings…",
+      "blocked": "{{reason}} Without AI, layers are classified by name and the rig uses the template defaults.",
+      "settings": "Settings…"
+    },
+    "instructions": {
+      "label": "Instructions for {{name}}",
+      "optional": "(optional)",
+      "placeholder": "e.g. Close the eyes a little narrower. Keep head turns subtle. The hat is headwear.",
+      "placeholderModule": "e.g. Let the earrings swing more. The ribbon is neckwear.",
+      "sent": "Sent with Classify, Propose rig and Regenerate.",
+      "sentOnlyWithAi": "Only sent when \"Use {{name}}\" is on.",
+      "scope": "The AI can change layer labels and four rig values (head turn, where and how the eyes close, how far a single mouth opens); it lists anything else as not applied. Not saved in the project.",
+      "scopeModule": "The AI can change layer labels and two sway values (how strongly and how slowly the swaying parts swing); it lists anything else as not applied. Not saved in the project."
+    },
+    "reclassify": "When regenerating, also reclassify the layers with these instructions (sends the layer images again)",
+    "classify": "Classify layers",
+    "propose": "Propose rig",
+    "busy": {
+      "normalMaps": "Making normal maps from the shapes…",
+      "classifyingAi": "Classifying the layers with {{name}}…",
+      "classifyingNames": "Classifying the layers by name…",
+      "askingAi": "Asking {{name}} for the rig values (it may ask again if an answer fails validation)…",
+      "building": "Building the rig from the templates…",
+      "preparing": "Preparing the preview…",
+      "applying": "Applying the proposal…"
+    },
+    "summary": {
+      "byAi_one": "{{count}} layer classified by AI",
+      "byAi_other": "{{count}} layers classified by AI",
+      "byName_one": "{{count}} layer classified by name",
+      "byName_other": "{{count}} layers classified by name",
+      "byAiInstructed_one": "{{count}} layer classified by AI with instructions",
+      "byAiInstructed_other": "{{count}} layers classified by AI with instructions",
+      "byNameInstructed_one": "{{count}} layer classified by name with instructions",
+      "byNameInstructed_other": "{{count}} layers classified by name with instructions",
+      "review_one": "{{count}} to review",
+      "review_other": "{{count}} to review",
+      "instructionsTooltip": "With instructions: {{instructions}}",
+      "labels": "Labels",
+      "variants": "Alternative drawings of the same part (one shows at a time; costume rigs make pose groups):",
+      "lowConfidence": "Low confidence (check these before adopting):"
+    },
+    "groups": {
+      "face": "Face, eyes, nose, mouth, brows",
+      "body": "Neck, body, arms, clothes",
+      "hairFront": "Front hair",
+      "hairSide": "Side hair",
+      "hairBack": "Back hair",
+      "ear": "Ears",
+      "earwear": "Earrings",
+      "headwear": "Headwear",
+      "tail": "Tail",
+      "alone": "Other parts (each on its own)",
+      "unlabeled": "Unlabeled parts (each on its own)",
+      "lighting": "Turn on lighting"
+    },
+    "normal": {
+      "title": "Normal maps from the shapes",
+      "descriptionClassification": "No AI; nothing is sent. Each group of parts bulges as one surface, so eyes follow the face and the neck joins the body. Glasses take the face's direction without bulging. Groups come from the layer classification above.",
+      "descriptionNames": "No AI; nothing is sent. Each group of parts bulges as one surface, so eyes follow the face and the neck joins the body. Glasses take the face's direction without bulging. Groups come from the layer names (classify the layers to use AI labels).",
+      "empty": "No textures to make normal maps for.",
+      "counts": {
+        "textures_one": "{{count}} texture",
+        "textures_other": "{{count}} textures",
+        "mapped_one": "{{count}} mapped",
+        "mapped_other": "{{count}} mapped",
+        "oriented_one": "{{count}} direction only",
+        "oriented_other": "{{count}} direction only"
+      },
+      "strength": {
+        "aria": "Strength of {{group}}"
+      },
+      "shape": {
+        "edges": "edges {{width}} {{unit}} · smoothing {{smoothing}} {{unit}}",
+        "whole": "whole shape · smoothing {{smoothing}} {{unit}}"
+      },
+      "roundEdges": "Round edges only",
+      "edgeWidth": "Edge width ({{unit}})",
+      "smoothing": "Smoothing ({{unit}})",
+      "defaults": {
+        "label": "Defaults",
+        "tooltip": "Use this group's default strength, edges and smoothing"
+      },
+      "replace": "Replace existing normal maps",
+      "propose": {
+        "label": "Propose normal maps",
+        "labelCount": "Propose normal maps ({{count}})",
+        "tooltip": "Make normal maps for the chosen groups as a proposal. Preview it to see the model lit by the Lighting tab's preview lights."
+      }
+    },
+    "list": {
+      "title": "Proposals",
+      "empty": "No proposals. Proposals change nothing until you adopt them.",
+      "aria": "Proposal #{{id}}",
+      "revision": {
+        "label": "revision of #{{id}}",
+        "tooltip": "Regenerated from proposal #{{id}}, which is kept so you can compare them"
+      },
+      "from": {
+        "label": "from {{name}}",
+        "tooltip": "Proposed by {{name}}, connected to this editor (Settings → Connect agents)"
+      },
+      "outdated": {
+        "label": "outdated",
+        "tooltip": "The model changed after this proposal was made. Undo back to that state, or propose again."
+      },
+      "instructions": "Instructions:",
+      "unapplied": {
+        "title": "Not applied",
+        "body": "— the AI says the current rig template cannot do these:"
+      },
+      "selected_one": "{{selected}} of {{count}} command selected",
+      "selected_other": "{{selected}} of {{count}} commands selected",
+      "include": "Include {{name}}",
+      "commands_one": "{{count}} command",
+      "commands_other": "{{count}} commands",
+      "dependsOn": "Depends on #{{list}}",
+      "preview": {
+        "label": "Preview",
+        "end": "End preview",
+        "tooltip": "Show the model with this proposal applied, without changing it"
+      },
+      "adopt": {
+        "label": "Adopt",
+        "labelCount": "Adopt {{count}}",
+        "tooltip": "Apply the selected commands as one edit (one Undo reverts it)"
+      },
+      "reject": "Reject",
+      "previewing": "Previewing. The model is unchanged until you adopt.",
+      "physics": {
+        "run": "Run physics",
+        "stop": "Stop physics",
+        "tooltip": "Run the proposal's physics in the viewport. Move the sliders to see the sway before adopting.",
+        "hint": "Move the sliders to see the sway."
+      }
+    },
+    "regenerate": {
+      "label": "Regenerate with instructions",
+      "tooltip": "Send this proposal's values and your instructions to {{name}}, and add the result as a new proposal (this one is kept)",
+      "blocked": {
+        "useAi": "Turn on \"Use {{name}}\" to regenerate with instructions",
+        "empty": "Write instructions for the AI above first",
+        "tooLong": "The instructions are longer than {{max}} characters"
+      }
     }
   },
   "errorCause": "{{message}} Cause: {{cause}}",

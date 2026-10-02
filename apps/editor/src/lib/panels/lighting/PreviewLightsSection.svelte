@@ -4,17 +4,18 @@
   (viewport/tools/lighting/LightingOverlay.svelte)。スライダーは動かしている間は表示だけを変え、離したときにプロジェクトに残す。
 -->
 <script lang="ts">
+import { Button, IconButton, NumberField, Slider, Toggle } from "@ugoe/ui";
+import { t } from "../../i18n";
 import type { PreviewLight, PreviewLighting } from "../../ipc";
+import TipButton from "../../ui/TipButton.svelte";
+import LightColor from "./LightColor.svelte";
 import {
   DEFAULT_PREVIEW_LIGHTING,
   directionToHandle,
   elevationDegrees,
   handleToDirection,
-  hexToRgb,
   MAX_PREVIEW_LIGHTS,
   newLight,
-  type Rgb,
-  rgbToHex,
 } from "./lighting";
 import type { LightingView } from "./lightingView.svelte";
 
@@ -28,13 +29,8 @@ let { view, canvas }: Props = $props();
 const settings = $derived(view.settings);
 const selected = $derived(view.selected === null ? null : (settings.lights[view.selected] ?? null));
 
-function num(e: Event): number {
-  return Number((e.currentTarget as HTMLInputElement).value);
-}
-
-function color(e: Event): Rgb | null {
-  return hexToRgb((e.currentTarget as HTMLInputElement).value);
-}
+const headingId = $props.id();
+const axesId = `${headingId}-axes`;
 
 /** 入力中は表示だけ、確定 (change) でプロジェクトに残す。 */
 function update(next: PreviewLighting, commit: boolean): void {
@@ -82,166 +78,156 @@ function setAxis(index: number, light: PreviewLight, axis: number, value: number
 }
 
 function lightName(light: PreviewLight, index: number): string {
-  return `${index + 1}. ${light.type === "directional" ? "Directional" : "Point"}`;
+  return light.type === "directional"
+    ? t("lighting.lights.name.directional", { index: index + 1 })
+    : t("lighting.lights.name.point", { index: index + 1 });
 }
-
-const fmt = (v: number) => String(Math.round(v * 100) / 100);
 </script>
 
-<section aria-label="Preview lights">
-  <h3>Preview lights</h3>
-  <label class="row">
-    <span>Light the viewport</span>
-    <input
-      type="checkbox"
+<section aria-labelledby={headingId}>
+  <h3 id={headingId}>{t("lighting.lights.title")}</h3>
+  <div class="row">
+    <Toggle
+      label={t("lighting.lights.enabled.label")}
       checked={settings.enabled}
-      onchange={(e) => update({ ...settings, enabled: (e.currentTarget as HTMLInputElement).checked }, true)}
+      onchange={(enabled) => update({ ...settings, enabled }, true)}
     />
-  </label>
-  <p class="muted note">
-    Lights are a preview setting kept in the project, not part of the model. Apps that show the model pass their own
-    lights.
-  </p>
+  </div>
+  <p class="ed-hint note">{t("lighting.lights.description")}</p>
   {#if view.error}<p class="error">{view.error}</p>{/if}
 
   <div class="row">
-    <span>Ambient</span>
+    <span>{t("lighting.lights.ambient.label")}</span>
     <span class="controls">
-      <input
-        type="color"
-        aria-label="Ambient color"
-        value={rgbToHex(settings.ambient)}
-        onchange={(e) => {
-          const c = color(e);
-          if (c) update({ ...settings, ambient: c }, true);
-        }}
+      <LightColor
+        value={settings.ambient}
+        ariaLabel={t("lighting.lights.ambient.color.aria")}
+        onpreview={(ambient) => update({ ...settings, ambient }, false)}
+        oncommit={(ambient) => update({ ...settings, ambient }, true)}
       />
-      <input
-        type="range"
-        aria-label="Ambient intensity"
-        min="0"
-        max="2"
-        step="0.01"
-        value={settings.ambient_intensity}
-        oninput={(e) => update({ ...settings, ambient_intensity: num(e) }, false)}
-        onchange={(e) => update({ ...settings, ambient_intensity: num(e) }, true)}
-      />
-      <span class="value">{fmt(settings.ambient_intensity)}</span>
+      <span class="slider">
+        <Slider
+          label={t("lighting.lights.ambient.intensity.aria")}
+          value={settings.ambient_intensity}
+          min={0}
+          max={2}
+          step={0.01}
+          decimals={2}
+          onchange={(v) => update({ ...settings, ambient_intensity: v }, false)}
+          oncommit={(v) => update({ ...settings, ambient_intensity: v }, true)}
+        />
+      </span>
     </span>
   </div>
 
   <ul class="lights">
     {#each settings.lights as light, i (i)}
       <li class:current={view.selected === i}>
-        <button class="name" onclick={() => (view.selected = i)} aria-pressed={view.selected === i}
-          >{lightName(light, i)}</button>
-        <input
-          type="color"
-          aria-label="Light {i + 1} color"
-          value={rgbToHex(light.color)}
-          onchange={(e) => {
-            const c = color(e);
-            if (c) updateLight(i, { ...light, color: c }, true);
-          }}
+        <Button small class="name" pressed={view.selected === i} onclick={() => (view.selected = i)}
+          >{lightName(light, i)}</Button
+        >
+        <LightColor
+          value={light.color}
+          ariaLabel={t("lighting.lights.color.aria", { index: i + 1 })}
+          onpreview={(color) => updateLight(i, { ...light, color }, false)}
+          oncommit={(color) => updateLight(i, { ...light, color }, true)}
         />
-        <input
-          type="range"
-          aria-label="Light {i + 1} intensity"
-          min="0"
-          max="3"
-          step="0.01"
-          value={light.intensity}
-          oninput={(e) => updateLight(i, { ...light, intensity: num(e) }, false)}
-          onchange={(e) => updateLight(i, { ...light, intensity: num(e) }, true)}
-        />
-        <span class="value">{fmt(light.intensity)}</span>
-        <button onclick={() => removeLight(i)} aria-label="Remove light {i + 1}">×</button>
+        <span class="slider">
+          <Slider
+            label={t("lighting.lights.intensity.aria", { index: i + 1 })}
+            value={light.intensity}
+            min={0}
+            max={3}
+            step={0.01}
+            decimals={2}
+            onchange={(v) => updateLight(i, { ...light, intensity: v }, false)}
+            oncommit={(v) => updateLight(i, { ...light, intensity: v }, true)}
+          />
+        </span>
+        <IconButton small label={t("lighting.lights.remove.aria", { index: i + 1 })} onclick={() => removeLight(i)}
+          >×</IconButton
+        >
       </li>
     {/each}
   </ul>
-  <div class="row buttons">
-    <button disabled={settings.lights.length >= MAX_PREVIEW_LIGHTS} onclick={() => addLight("directional")}
-      >Add directional</button>
-    <button disabled={settings.lights.length >= MAX_PREVIEW_LIGHTS} onclick={() => addLight("point")}
-      >Add point</button>
-    <button onclick={() => void view.commit(DEFAULT_PREVIEW_LIGHTING)} title="Weak ambient and one light from the top left">
-      Reset</button>
+  <div class="ed-buttons row">
+    <Button disabled={settings.lights.length >= MAX_PREVIEW_LIGHTS} onclick={() => addLight("directional")}
+      >{t("lighting.lights.addDirectional.label")}</Button
+    >
+    <Button disabled={settings.lights.length >= MAX_PREVIEW_LIGHTS} onclick={() => addLight("point")}
+      >{t("lighting.lights.addPoint.label")}</Button
+    >
+    <TipButton tooltip={t("lighting.lights.reset.tooltip")} onclick={() => void view.commit(DEFAULT_PREVIEW_LIGHTING)}
+      >{t("lighting.lights.reset.label")}</TipButton
+    >
   </div>
 
   {#if selected && view.selected !== null}
     {@const i = view.selected}
     <h4>{lightName(selected, i)}</h4>
     {#if selected.type === "directional"}
-      <p class="muted note">
-        Drag the handle on the circle in the viewport to aim the light. Elevation {Math.round(
-          elevationDegrees(selected.direction),
-        )}° (90° = straight from the front).
+      <p class="ed-hint note">
+        {t("lighting.lights.directional.description", {
+          elevation: Math.round(elevationDegrees(selected.direction)),
+        })}
       </p>
-      <label class="row">
-        <span>From behind the canvas</span>
-        <input
-          type="checkbox"
+      <div class="row">
+        <Toggle
+          label={t("lighting.lights.behind.label")}
           checked={directionToHandle(selected.direction).behind}
-          onchange={(e) => setBehind(i, selected, (e.currentTarget as HTMLInputElement).checked)}
+          onchange={(behind) => setBehind(i, selected, behind)}
         />
-      </label>
+      </div>
     {:else}
-      <p class="muted note">Drag the light in the viewport to move it. Z is the distance in front of the canvas.</p>
+      <p class="ed-hint note">{t("lighting.lights.point.description")}</p>
     {/if}
     <div class="row">
-      <span>{selected.type === "directional" ? "Direction" : "Position"}</span>
-      <span class="controls">
+      <span id={axesId}
+        >{selected.type === "directional" ? t("lighting.lights.direction.label") : t("lighting.lights.position.label")}</span
+      >
+      <span class="controls" role="group" aria-labelledby={axesId}>
         {#each ["x", "y", "z"] as axis, a (axis)}
           {@const v = selected.type === "directional" ? selected.direction[a] : selected.position[a]}
-          <input
-            type="number"
-            class="axis"
-            aria-label="{axis}"
+          <NumberField
+            label={axis}
+            size={5}
             step={selected.type === "directional" ? 0.1 : 10}
-            value={fmt(v ?? 0)}
-            onchange={(e) => setAxis(i, selected, a, num(e))}
+            decimals={2}
+            value={v ?? 0}
+            onchange={(value) => setAxis(i, selected, a, value)}
           />
         {/each}
       </span>
     </div>
     {#if selected.type === "point"}
-      <label class="row">
-        <span>Range (px)</span>
-        <span class="controls">
-          <input
-            type="checkbox"
-            aria-label="Limit the range"
-            checked={selected.range !== null}
-            onchange={(e) =>
-              updateLight(
-                i,
-                {
-                  ...selected,
-                  range: (e.currentTarget as HTMLInputElement).checked
-                    ? Math.round(Math.max(canvas.width, canvas.height) * 1.2)
-                    : null,
-                },
-                true,
-              )}
+      <div class="row">
+        <Toggle
+          label={t("lighting.lights.limitRange.label")}
+          checked={selected.range !== null}
+          onchange={(on) =>
+            updateLight(
+              i,
+              { ...selected, range: on ? Math.round(Math.max(canvas.width, canvas.height) * 1.2) : null },
+              true,
+            )}
+        />
+        {#if selected.range !== null}
+          <NumberField
+            label={t("lighting.lights.range.label")}
+            unit={t("lighting.unit.px")}
+            min={1}
+            step={10}
+            decimals={2}
+            size={6}
+            value={selected.range}
+            onchange={(r) => {
+              if (r > 0) updateLight(i, { ...selected, range: r }, true);
+            }}
           />
-          {#if selected.range !== null}
-            <input
-              type="number"
-              class="axis"
-              aria-label="Range"
-              min="1"
-              step="10"
-              value={fmt(selected.range)}
-              onchange={(e) => {
-                const r = num(e);
-                if (r > 0) updateLight(i, { ...selected, range: r }, true);
-              }}
-            />
-          {:else}
-            <span class="muted">unlimited</span>
-          {/if}
-        </span>
-      </label>
+        {:else}
+          <span class="ed-hint">{t("lighting.lights.range.unlimited")}</span>
+        {/if}
+      </div>
     {/if}
   {/if}
 </section>
@@ -251,77 +237,63 @@ const fmt = (v: number) => String(Math.round(v * 100) / 100);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin: 4px 0;
+  flex-wrap: wrap;
+  gap: var(--ugoe-space-2) var(--ugoe-space-3);
+  margin: var(--ugoe-space-2) 0;
 }
 
 .controls {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--ugoe-space-2);
   min-width: 0;
 }
 
-.controls input[type="range"],
-.lights input[type="range"] {
-  width: 90px;
+.slider {
+  flex: 1;
   min-width: 0;
 }
 
-input[type="color"] {
-  width: 28px;
-  height: 22px;
-  padding: 0;
-  border: 1px solid var(--border);
-  background: none;
+/* 行の中のスライダーは名前を見せない (読み上げの名前には使う)。 */
+.slider :global(.ugoe-slider__label) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
-.value {
-  width: 32px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.axis {
-  width: 58px;
+.slider :global(.ugoe-slider__root) {
+  min-width: 60px;
 }
 
 .lights {
   list-style: none;
-  margin: 4px 0;
+  margin: var(--ugoe-space-2) 0;
   padding: 0;
 }
 
 .lights li {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 0;
+  gap: var(--ugoe-space-2);
+  padding: var(--ugoe-space-1) 0;
 }
 
-.lights li.current .name {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.lights .name {
-  flex: 1;
-  min-width: 0;
-  text-align: left;
-}
-
-.buttons {
-  justify-content: flex-start;
-  flex-wrap: wrap;
+.lights :global(.name) {
+  flex: none;
+  max-width: 7em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .note {
-  margin: 2px 0 6px;
-  font-size: 11px;
+  margin: var(--ugoe-space-1) 0 var(--ugoe-space-2);
 }
 
-h3,
 h4 {
-  margin: 8px 0 4px;
+  margin: var(--ugoe-space-3) 0 var(--ugoe-space-2);
 }
 </style>

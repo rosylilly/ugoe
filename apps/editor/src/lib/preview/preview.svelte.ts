@@ -27,6 +27,7 @@ import {
 } from "@ugoe/face-tracking";
 import type { EditorDocument } from "../document.svelte";
 import { errorText } from "../errors";
+import { t } from "../i18n";
 import { type Expression, ipc, type Model, type Motion, type PoseGroup } from "../ipc";
 import { showEntry } from "../panels/poses/poses";
 import type { FrameDriver, PuppetStage, ViewportController } from "../viewport/controller.svelte";
@@ -310,7 +311,7 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
         puppet.set_physics_json(JSON.stringify(physics));
         physicsReplaced = true;
       } catch (e) {
-        this.error = `Physics: ${errorText(e)}`;
+        this.error = t("preview.physicsError", { message: errorText(e) });
       }
     }
     this.warnings = this.#loadWarnings(puppet, physicsReplaced);
@@ -388,7 +389,7 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
       if (base === null && !this.comparing) base = await ipc.getPreviewBaseBundle();
     } catch (e) {
       if (!this.active || revision !== this.#doc.revision) return;
-      this.dressUp.ownProblem = `Your edits can't be put on the base to compare with other modules: ${errorText(e)}`;
+      this.dressUp.ownProblem = t("preview.dressUp.ownProblem", { message: errorText(e) });
       this.#stopComparing();
       return;
     }

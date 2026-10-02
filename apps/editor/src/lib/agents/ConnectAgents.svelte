@@ -6,10 +6,14 @@
   エージェントの適用・保存は、ここでの設定に関わらず確認のダイアログ (ApprovalDialog.svelte) を通る。
 -->
 <script lang="ts">
+import { RichText } from "@ugoe/i18n";
+import { Button, Section, Toggle } from "@ugoe/ui";
 import { errorText } from "../errors";
 import { fileDialogs } from "../fileDialogs";
 import { openExternal } from "../help";
+import { t } from "../i18n";
 import { ipc } from "../ipc";
+import TabStrip, { type TabItem } from "../ui/TabStrip.svelte";
 import { agentBridge } from "./bridge.svelte";
 import { connectedAgo, type SetupSection, setupSections } from "./setup";
 
@@ -23,6 +27,9 @@ const status = $derived(agentBridge.status);
 const sections = $derived(status ? setupSections(status) : []);
 let chosen = $state<SetupSection["id"]>("claude");
 const section = $derived(sections.find((s) => s.id === chosen) ?? sections[0]);
+const choices = $derived<TabItem<SetupSection["id"]>[]>(
+  sections.map((s) => ({ value: s.id, label: s.title })),
+);
 /** 写した・写せなかったことの知らせ (手順の番号ごと)。 */
 let copied = $state<string | null>(null);
 let portInput = $state("");
@@ -63,8 +70,7 @@ async function applyPort(e: SubmitEvent): Promise<void> {
   }
   const port = Number(text);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    agentBridge.error =
-      "Enter a port between 1 and 65535, or leave it empty to pick one automatically.";
+    agentBridge.error = t("agents.port.invalid");
     return;
   }
   await agentBridge.setPort(port);
@@ -91,9 +97,9 @@ async function saveBundle(): Promise<void> {
   const dialogs = fileDialogs();
   const dir = await dialogs.defaultDirectory();
   const path = await dialogs.saveFile({
-    title: "Save the Claude Desktop extension",
+    title: t("agents.desktop.save.title"),
     defaultPath: dir ? `${dir}/ugoe-editor.mcpb` : "ugoe-editor.mcpb",
-    filters: [{ name: "MCP Bundle", extensions: ["mcpb"] }],
+    filters: [{ name: t("agents.desktop.save.filter"), extensions: ["mcpb"] }],
   });
   if (!path) return;
   bundleBusy = true;
@@ -117,116 +123,112 @@ async function openManual(): Promise<void> {
 
 <section class="agents">
   <p class="muted">
-    Let agents (Claude Code, Claude Desktop, OpenCode, ChatGPT…) work on the project open in this editor. Their proposals
-    appear in the AI tab, and applying, undoing or saving always asks you here first.
-    <button class="link" onclick={openManual}>How to connect agents…</button>
+    {t("agents.intro")}
+    <button type="button" class="link" onclick={openManual}>{t("agents.manual.label")}</button>
     {#if copied === "manual:failed"}<span class="muted">{MCP_MANUAL_URL}</span>{/if}
   </p>
   {#if agentBridge.error}<p class="error">{agentBridge.error}</p>{/if}
   {#if status}
-    <label class="check">
-      <input
-        type="checkbox"
-        checked={status.enabled}
-        disabled={agentBridge.busy}
-        onchange={(e) => agentBridge.setEnabled(e.currentTarget.checked)}
-      />
-      Allow agents to connect to this editor
-    </label>
+    <Toggle
+      checked={status.enabled}
+      disabled={agentBridge.busy}
+      label={t("agents.enable.label")}
+      onchange={(on) => agentBridge.setEnabled(on)}
+    />
     {#if status.error}
-      <p class="error">Could not start: {status.error.message}</p>
+      <p class="error">{t("agents.state.failed", { message: status.error.message })}</p>
     {:else if status.running}
       <p class="state" data-state="on">
-        <span class="dot on"></span> Listening on <code>{status.url}</code> (this computer only, token required)
+        <span class="dot on"></span>
+        <span>
+          <RichText text={t("agents.state.listening", { url: status.url ?? "" })}>
+            {#snippet code(text)}<code>{text}</code>{/snippet}
+          </RichText>
+        </span>
       </p>
     {:else}
-      <p class="state" data-state="off"><span class="dot"></span> Off. Agents cannot connect.</p>
+      <p class="state" data-state="off"><span class="dot"></span> {t("agents.state.off")}</p>
     {/if}
 
     {#if status.running}
       {#if status.project}
-        <p>Agents work on <code class="path">{status.project}</code></p>
-      {:else}
-        <p class="warn">
-          Save the project first (File → Save As…). Agents refer to the project by its path, so they cannot use an
-          unsaved one.
+        <p>
+          <RichText text={t("agents.project.label", { path: status.project })}>
+            {#snippet code(text)}<code class="path">{text}</code>{/snippet}
+          </RichText>
         </p>
+      {:else}
+        <p class="warn">{t("agents.project.unsaved")}</p>
       {/if}
-      <h4>Connected agents</h4>
+      <h4>{t("agents.clients.title")}</h4>
       {#if status.clients.length === 0}
-        <p class="muted">None yet. Register the editor in your agent below, then start it.</p>
+        <p class="muted">{t("agents.clients.empty")}</p>
       {:else}
         <ul class="clients">
           {#each status.clients as client (client.name)}
             <li>
               <strong>{client.name}</strong>{client.version ? ` ${client.version}` : ""}
-              <span class="muted">· connected {connectedAgo(client.connected_at, now)}</span>
+              <span class="muted">{t("agents.clients.connected", { ago: connectedAgo(client.connected_at, now) })}</span>
             </li>
           {/each}
         </ul>
       {/if}
     {/if}
 
-    <h4>Register the editor in your agent</h4>
+    <h4>{t("agents.register.title")}</h4>
     {#if !status.sidecar.path}
       <p class="warn note">
-        No <code>ugoe-mcp</code> was found next to the editor or in the build folder (this is a development build;
-        installers include it). Build it with <code>cargo build --release -p ugoe-mcp</code> and reopen this tab. Until then the
-        commands use <code>ugoe-mcp</code> from the PATH.
+        <RichText text={t("agents.register.noSidecar")}>
+          {#snippet code(text)}<code>{text}</code>{/snippet}
+          {#snippet build(text)}<code>{text}</code>{/snippet}
+        </RichText>
       </p>
     {/if}
-    <div class="choices" role="tablist" aria-label="Agent">
-      {#each sections as s (s.id)}
-        <button role="tab" aria-selected={section?.id === s.id} class:current={section?.id === s.id}
-          onclick={() => ((chosen = s.id), (copied = null))}>{s.title}</button>
-      {/each}
-    </div>
     {#if section}
+      <div class="choices">
+        <TabStrip
+          tabs={choices}
+          value={section.id}
+          ariaLabel={t("agents.register.choices.aria")}
+          onselect={(id) => ((chosen = id), (copied = null))}
+        />
+      </div>
       <p class="muted note">{section.summary}</p>
       {#if section.id === "claude-desktop"}
         {#if !status.enabled}
-          <p class="warn note">
-            Turn on “Allow agents to connect to this editor” above first. Claude Desktop reaches the editor only while
-            it is on (you can install the extension now and turn it on later).
-          </p>
+          <p class="warn note">{t("agents.desktop.enableFirst")}</p>
         {/if}
         {#if status.sidecar.in_wsl}
-          <p class="warn note">
-            This editor runs inside WSL, so Claude Desktop on Windows cannot reach it. Run the Windows editor
-            instead; its extension relays inside Windows.
-          </p>
+          <p class="warn note">{t("agents.desktop.inWsl")}</p>
         {/if}
-        <div class="bundle">
-          <button class="primary" onclick={installInClaudeDesktop} disabled={bundleBusy || !status.sidecar.path}>
-            Install in Claude Desktop…
-          </button>
-          <button onclick={saveBundle} disabled={bundleBusy || !status.sidecar.path}>Save .mcpb…</button>
-          {#if bundleBusy}<span class="muted">Packing the extension…</span>{/if}
+        <div class="ed-buttons bundle">
+          <Button variant="primary" onclick={installInClaudeDesktop} disabled={bundleBusy || !status.sidecar.path}>
+            {t("agents.desktop.install.label")}
+          </Button>
+          <Button onclick={saveBundle} disabled={bundleBusy || !status.sidecar.path}>
+            {t("agents.desktop.save.label")}
+          </Button>
+          {#if bundleBusy}<span class="muted">{t("agents.desktop.packing")}</span>{/if}
         </div>
         {#if bundle?.kind === "opened"}
-          <p class="ok note">
-            Opened the extension. Claude Desktop shows its install dialog: choose Install and enable it.
-          </p>
+          <p class="ok note">{t("agents.desktop.opened")}</p>
           <p class="muted note">
-            Nothing happened, or another app opened it? In Claude Desktop, go to Settings → Extensions → Advanced
-            settings → Install Extension… and choose <code class="path">{bundle.path}</code>.
+            <RichText text={t("agents.desktop.openedFallback", { path: bundle.path })}>
+              {#snippet code(text)}<code class="path">{text}</code>{/snippet}
+            </RichText>
           </p>
         {:else if bundle?.kind === "saved"}
           <p class="ok note">
-            Saved <code class="path">{bundle.path}</code>. Double-click it, drag it onto the Claude Desktop window, or
-            use Settings → Extensions → Advanced settings → Install Extension… in Claude Desktop.
+            <RichText text={t("agents.desktop.saved", { path: bundle.path })}>
+              {#snippet code(text)}<code class="path">{text}</code>{/snippet}
+            </RichText>
           </p>
         {:else if bundle?.kind === "error"}
           <p class="error">{bundle.message}</p>
         {/if}
         <ul class="muted note checks">
-          <li>
-            Check it: Claude Desktop's Settings → Extensions lists “ugoe editor” as enabled, and in a chat the “+”
-            button → Connectors shows its tools. Once Claude uses a tool, it appears under “Connected agents” here.
-          </li>
-          <li>
-            The extension carries its own copy of ugoe-mcp. Install it again after updating the editor.
-          </li>
+          <li>{t("agents.desktop.check")}</li>
+          <li>{t("agents.desktop.update")}</li>
         </ul>
       {/if}
       {#each section.steps as step, i (i)}
@@ -234,153 +236,166 @@ async function openManual(): Promise<void> {
         <div class="step">
           <div class="step-head">
             <span>{step.label}</span>
-            <button onclick={() => copy(key, step.text)}>Copy</button>
-            {#if copied === key}<span class="ok">Copied</span>{/if}
-            {#if copied === `${key}:failed`}<span class="warn">Select the text and copy it</span>{/if}
+            <Button small onclick={() => copy(key, step.text)}>{t("agents.copy.label")}</Button>
+            {#if copied === key}<span class="ok" role="status">{t("agents.copy.done")}</span>{/if}
+            {#if copied === `${key}:failed`}<span class="warn" role="status">{t("agents.copy.failed")}</span>{/if}
           </div>
           <pre>{step.text}</pre>
           {#if step.note}<p class="muted note">{step.note}</p>{/if}
         </div>
       {/each}
       {#if section.id === "chatgpt"}
-        <p class="muted note">
-          In ChatGPT, enable developer mode, create an app and choose the tunnel as its connection. ChatGPT asks
-          before tools that change the project; the editor asks you too.
-        </p>
+        <p class="muted note">{t("agents.chatgptNote")}</p>
       {/if}
     {/if}
 
-    <details>
-      <summary>Port and token</summary>
+    <Section title={t("agents.port.title")} open={false} level={4}>
       <form class="row" onsubmit={applyPort}>
-        <label for="mcp-port">Port</label>
-        <input id="mcp-port" bind:value={portInput} inputmode="numeric" placeholder="automatic" />
-        <button type="submit" disabled={agentBridge.busy}>Apply</button>
+        <label for="mcp-port">{t("agents.port.label")}</label>
+        <input
+          id="mcp-port"
+          class="port"
+          bind:value={portInput}
+          inputmode="numeric"
+          placeholder={t("agents.port.placeholder")}
+        />
+        <Button type="submit" disabled={agentBridge.busy}>{t("agents.port.apply.label")}</Button>
       </form>
       <p class="muted note">
-        The stdio relay (<code>ugoe-mcp --editor</code>) finds the port by itself. A fixed port is only needed for
-        clients that connect over HTTP directly.
+        <RichText text={t("agents.port.description")}>
+          {#snippet code(text)}<code>{text}</code>{/snippet}
+        </RichText>
       </p>
-      <p class="row">
-        <button onclick={copyToken} disabled={agentBridge.busy}>Copy token</button>
-        {#if copied === "token"}<span class="ok">Copied</span>{/if}
-        <button onclick={() => agentBridge.regenerateToken()} disabled={agentBridge.busy}>Regenerate token</button>
+      <p class="ed-buttons">
+        <Button onclick={copyToken} disabled={agentBridge.busy}>{t("agents.token.copy.label")}</Button>
+        {#if copied === "token"}<span class="ok" role="status">{t("agents.copy.done")}</span>{/if}
+        <Button onclick={() => agentBridge.regenerateToken()} disabled={agentBridge.busy}>
+          {t("agents.token.regenerate.label")}
+        </Button>
       </p>
       <p class="muted note">
-        The token is only needed by clients that connect over HTTP directly. Regenerate it if it was shown to
-        someone else; the relay picks up the new one automatically.
-        {#if status.discovery}The port and token are written to <code class="path">{status.discovery}</code> (readable
-          only by you) while the bridge is on.{/if}
+        {t("agents.token.description")}
+        {#if status.discovery}
+          <RichText text={t("agents.token.discovery", { path: status.discovery })}>
+            {#snippet code(text)}<code class="path">{text}</code>{/snippet}
+          </RichText>
+        {/if}
       </p>
-    </details>
+    </Section>
   {:else if !agentBridge.error}
-    <p class="muted">Loading…</p>
+    <p class="muted">{t("agents.loading")}</p>
   {/if}
 </section>
 
 <style>
-  .check {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
   .state {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--ugoe-space-2);
   }
   .dot {
     display: inline-block;
+    flex: none;
     width: 8px;
     height: 8px;
-    border-radius: 50%;
-    background: var(--muted);
+    border-radius: var(--ugoe-radius-full);
+    background: var(--ugoe-color-text-muted);
   }
   .dot.on {
-    background: #16a34a;
+    background: var(--ugoe-color-success);
   }
   .path {
     word-break: break-all;
   }
   h4 {
-    margin: 12px 0 4px;
-    font-size: 12px;
+    margin: var(--ugoe-space-4) 0 var(--ugoe-space-2);
+    font-size: var(--ugoe-font-size-sm);
+    font-weight: var(--ugoe-font-weight-strong);
   }
   .clients {
-    margin: 4px 0;
+    margin: var(--ugoe-space-2) 0;
     padding-left: 18px;
   }
   .choices {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    margin: 4px 0;
-  }
-  .choices button.current {
-    color: var(--accent);
-    border-color: var(--accent);
+    margin: var(--ugoe-space-2) 0;
   }
   .step {
-    margin: 6px 0;
+    margin: var(--ugoe-space-2) 0;
   }
   .step-head {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--ugoe-space-3);
   }
   .step-head span:first-child {
     flex: 1;
   }
   pre {
-    margin: 4px 0;
-    padding: 6px 8px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: var(--bg);
+    margin: var(--ugoe-space-2) 0;
+    padding: var(--ugoe-space-2) var(--ugoe-space-3);
+    border: 1px solid var(--ugoe-color-border);
+    border-radius: var(--ugoe-radius-md);
+    background: var(--ugoe-color-bg);
     white-space: pre-wrap;
     word-break: break-all;
-    font-size: 12px;
+    font-family: var(--ugoe-font-mono);
+    font-size: var(--ugoe-font-size-sm);
     user-select: text;
   }
   .note {
-    font-size: 12px;
-    margin: 2px 0 6px;
+    font-size: var(--ugoe-font-size-sm);
+    margin: var(--ugoe-space-1) 0 var(--ugoe-space-2);
   }
   .row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--ugoe-space-3);
   }
-  .row input {
+  .port {
+    box-sizing: border-box;
     width: 8em;
+    min-height: var(--ugoe-control-height);
+    padding: 0 var(--ugoe-space-2);
+    border: 1px solid var(--ugoe-color-control-border);
+    border-radius: var(--ugoe-radius-md);
+    background: var(--ugoe-color-surface);
+    color: var(--ugoe-color-text);
+    font: inherit;
+  }
+  .port:focus-visible {
+    outline: var(--ugoe-focus-ring);
+    outline-offset: 1px;
+  }
+  .muted {
+    color: var(--ugoe-color-text-muted);
   }
   .ok {
-    color: #16a34a;
+    color: var(--ugoe-color-success);
   }
   .bundle {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    margin: 6px 0;
-  }
-  .bundle .primary {
-    color: var(--accent);
-    border-color: var(--accent);
+    margin: var(--ugoe-space-2) 0;
   }
   .checks {
-    margin: 4px 0 8px;
+    margin: var(--ugoe-space-2) 0 var(--ugoe-space-3);
     padding-left: 18px;
   }
   .warn {
-    color: #b45309;
+    color: var(--ugoe-color-warning);
+  }
+  .error {
+    color: var(--ugoe-color-danger);
   }
   .link {
     border: none;
     background: none;
     padding: 0;
-    color: var(--accent);
+    color: var(--ugoe-color-accent);
+    font: inherit;
     text-decoration: underline;
     cursor: pointer;
+  }
+  .link:focus-visible {
+    outline: var(--ugoe-focus-ring);
+    outline-offset: 2px;
   }
 </style>

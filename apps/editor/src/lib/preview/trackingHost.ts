@@ -2,6 +2,7 @@
 // (apps/editor/src-tauri/src/tracking.rs)。ヘッドレスのブラウザでは `window.__UGOE_FILE_DIALOGS__` で差し替える。
 import { fileDialogs } from "../fileDialogs";
 import { joinPath, withExtension } from "../filePaths";
+import { t } from "../i18n";
 import { ipc } from "../ipc";
 
 /** 記録 (JSON のテキスト) を保存する。保存したら `true`、取り消したら `false`。 */
@@ -9,7 +10,7 @@ export async function saveTrackingRecording(name: string, text: string): Promise
   const dialogs = fileDialogs();
   const dir = await dialogs.defaultDirectory();
   const path = await dialogs.saveFile({
-    title: "Save face tracking recording",
+    title: t("preview.tracking.saveTitle"),
     defaultPath: dir === null ? name : joinPath(dir, name),
     filters: [{ name: "JSON", extensions: ["json"] }],
   });

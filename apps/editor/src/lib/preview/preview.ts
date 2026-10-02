@@ -1,5 +1,6 @@
 // プレビューモード (docs/editor.md#プレビューモード) の、DOM と wasm に依存しない部分 (preview.test.ts)。
 // スライダーのグループ分けはビューア (packages/player/src/parameters.ts) と同じ規則。
+import { t } from "../i18n";
 import type { Model, Parameter, ParameterGroup, Pose, PoseGroup } from "../ipc";
 import type { PuppetStage } from "../viewport/controller.svelte";
 
@@ -51,14 +52,30 @@ export function sliderStep(p: Pick<Parameter, "min" | "max">): number {
   return 10 ** Math.floor(Math.log10(range / 1000));
 }
 
-/** プレビューの段の並びと表示名。 */
-export const STAGES: readonly { id: PuppetStage; label: string }[] = [
-  { id: "physics", label: "Physics" },
-  { id: "eye_blink", label: "Eye blink" },
-  { id: "breath", label: "Breath" },
-  { id: "lip_sync", label: "Lip sync" },
-  { id: "pose", label: "Pose" },
+/** プレビューの段の並び。 */
+export const STAGES: readonly PuppetStage[] = [
+  "physics",
+  "eye_blink",
+  "breath",
+  "lip_sync",
+  "pose",
 ];
+
+/** 段の表示名。 */
+export function stageLabel(stage: PuppetStage): string {
+  switch (stage) {
+    case "physics":
+      return t("preview.stages.physics");
+    case "eye_blink":
+      return t("preview.stages.eyeBlink");
+    case "breath":
+      return t("preview.stages.breath");
+    case "lip_sync":
+      return t("preview.stages.lipSync");
+    case "pose":
+      return t("preview.stages.pose");
+  }
+}
 
 /**
  * 最初の段の有効・無効。リップシンクは音量を与えると口のパラメータを上書きするので、
@@ -147,6 +164,8 @@ export function modulePoseLabels(groups: readonly ModulePoseGroup[]): string[] {
   return groups.map(({ module }) => {
     const n = (counts.get(module) ?? 0) + 1;
     counts.set(module, n);
-    return `${module || "Module"} group ${n}`;
+    return module
+      ? t("preview.pose.moduleGroup", { module, n })
+      : t("preview.pose.moduleGroupUnnamed", { n });
   });
 }

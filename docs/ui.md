@@ -170,7 +170,7 @@ Bits UI を包むときの約束:
 
 | 形 | 使うもの | 約束 |
 | --- | --- | --- |
-| パネルの見出し | `<h2>` (`app.css`) | `--ugoe-font-size-sm`・太さ 600・`--ugoe-color-text-muted`、上 `--ugoe-space-4`・下 `--ugoe-space-2`。大文字化と字間は使わない (日本語で効かない)。パネルの中のまとまりは `<h3>` (`--ugoe-font-size-md`・600・本文の色。パネルを移すとき (T0664・T0665) に `app.css` に足す)。折りたためるまとまりは `Section` |
+| パネルの見出し | `<h2>` (`app.css`) | `--ugoe-font-size-sm`・太さ 600・`--ugoe-color-text-muted`、上 `--ugoe-space-4`・下 `--ugoe-space-2`。大文字化と字間は使わない (日本語で効かない)。パネルの中のまとまりは `<h3>` (`app.css`。`--ugoe-font-size-md`・600・本文の色)。折りたためるまとまりは `Section` |
 | 行 (欄の名前と部品) | `.ed-field` (`app.css`) | 2 列の格子 (名前 `minmax(5em, 2fr)`・部品 `3fr`)、行の間 `--ugoe-space-2`。名前は折り返してよく、固定の幅を付けない (英語は長くなる)。名前は `<label for>` か部品の `label`。単位は部品の後ろ (`NumberField` の `unit`)。名前を見せる部品 (`Slider`・`Checkbox`・`Toggle`・`Select` の `label`) は行に入れずにそのまま置く |
 | ボタンの並び | `.ed-buttons` (`app.css`) | 横に並べて折り返す (間 `--ugoe-space-2`)。決定は右端ではなく並びの最後 (パネルの中は左寄せ)。押せない理由は近くに書く |
 | 補足・空の状態 | `.ed-hint` (`app.css`) | `--ugoe-font-size-sm`・`--ugoe-color-text-muted`。空の状態は「何が無いか」と「次に何をするか」を 1 文で |
@@ -189,6 +189,9 @@ Bits UI を包むときの約束:
 - **`<dialog>` と body に出す部品:** `showModal()` の `<dialog>` は最上位の層 (top layer) に出るので、その中で `Select`・`Popover`・`Menu`
   (body に出す) を使うと一覧が後ろに隠れます。ダイアログを `@ugoe/ui` の `Dialog` に移してから使います。移すまでは `SegmentedControl` などの
   body に出さない部品にします。
+- **重なるダイアログ:** `Dialog` の上に `Dialog`・`AlertDialog` を開いてよいです (設定の中の「接続を確かめる」から送る前の確認を開くなど。T0665)。
+  Bits UI のフォーカスの閉じ込めと Esc・外のクリックの層は全体で重なった順に積まれるので、上のものだけが反応し、閉じると下に戻ります。
+  ただし、開いた元のボタンを待つ間に無効にすると、閉じたときにフォーカスを戻せないので、押せるようになってから戻します (`SettingsDialog` の「接続を確かめる」)。
 
 ### 数値の部品と onchange
 

@@ -2,6 +2,8 @@
 // 外したコマンドの番号の集合を `excluded` として持つ。あるコマンドを外すと、それが作る要素を使うコマンド
 // (`ProposalCommand.requires` で後から指すもの) も外す。戻すと、それが使う要素を作るコマンドも戻す。
 // バックエンドも同じ列を複製で確かめるので、ここの依存が足りなくても誤った採用にはならない (断られる)。
+
+import { t } from "../i18n";
 import type {
   Classification,
   CommandSection,
@@ -171,24 +173,25 @@ export function sectionGroups(sections: CommandSection[]): CommandGroup[] {
 /** ラベルのないテクスチャのまとまりの名前 (`NormalMapGroupView.group` が null)。 */
 export const UNLABELED = "unlabeled";
 
-const SURFACE_GROUP_LABELS: Record<string, string> = {
-  face: "Face, eyes, nose, mouth, brows",
-  body: "Neck, body, arms, clothes",
-  hair_front: "Front hair",
-  hair_side: "Side hair",
-  hair_back: "Back hair",
-  ear: "Ears",
-  earwear: "Earrings",
-  headwear: "Headwear",
-  tail: "Tail",
-  alone: "Other parts (each on its own)",
-  [UNLABELED]: "Unlabeled parts (each on its own)",
-  lighting: "Turn on lighting",
+/** まとまりの画面の名前 (呼ぶたびに今の言語で引く)。 */
+const SURFACE_GROUP_LABELS: Record<string, () => string> = {
+  face: () => t("proposals.groups.face"),
+  body: () => t("proposals.groups.body"),
+  hair_front: () => t("proposals.groups.hairFront"),
+  hair_side: () => t("proposals.groups.hairSide"),
+  hair_back: () => t("proposals.groups.hairBack"),
+  ear: () => t("proposals.groups.ear"),
+  earwear: () => t("proposals.groups.earwear"),
+  headwear: () => t("proposals.groups.headwear"),
+  tail: () => t("proposals.groups.tail"),
+  alone: () => t("proposals.groups.alone"),
+  [UNLABELED]: () => t("proposals.groups.unlabeled"),
+  lighting: () => t("proposals.groups.lighting"),
 };
 
 /** まとまり (`face` など) の画面の名前。知らない名前はそのまま。 */
 export function surfaceGroupLabel(group: string): string {
-  return SURFACE_GROUP_LABELS[group] ?? group;
+  return SURFACE_GROUP_LABELS[group]?.() ?? group;
 }
 
 /** まとまりの鍵 (`group`、ラベルがなければ `unlabeled`)。 */

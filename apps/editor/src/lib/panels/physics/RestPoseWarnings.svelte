@@ -6,6 +6,7 @@
 <script lang="ts">
 import type { EditorDocument } from "../../document.svelte";
 import { errorText } from "../../errors";
+import { t } from "../../i18n";
 import { ipc, type RestPoseCollision } from "../../ipc";
 import { formatSegments, restPoseKey, restPoseTitle } from "./restPose";
 
@@ -52,18 +53,14 @@ $effect(() => {
 {#if error}
   <p class="error">{error}</p>
 {:else if found.length > 0}
-  <p class="warn">
-    {found.length === 1 ? "A rig hits a collider" : `${found.length} rig–collider pairs hit`} in the
-    rest pose. The hair starts bent along the collider instead of hanging freely; move the collider
-    out of the hanging hair unless this is intended.
-  </p>
+  <p class="warn">{t("physics.restPose.hits", { count: found.length })}</p>
   <ul>
     {#each found as c (restPoseKey(c))}
       <li>
         <button
           class:current={selected?.rig === c.rig && selected?.collider === c.collider}
           onclick={() => onSelect(c.rig, c.collider)}
-          title="Select the rig and the collider in the Physics panel"
+          title={t("physics.restPose.select")}
         >
           <span>{restPoseTitle(c, doc.physics)}</span>
           <span class="muted small">{formatSegments(c.particles)}</span>
@@ -72,23 +69,26 @@ $effect(() => {
     {/each}
   </ul>
 {:else if showEmpty && doc.physics}
-  <p class="ok">No rig hits a collider in the rest pose.</p>
+  <p class="ok">{t("physics.restPose.none")}</p>
 {:else if showEmpty}
-  <p class="muted">No physics settings.</p>
+  <p class="ed-hint">{t("physics.restPose.noSettings")}</p>
 {/if}
 
 <style>
 p {
-  margin: 4px 0;
+  margin: var(--ugoe-space-2) 0;
 }
 
-.warn,
+.warn {
+  color: var(--ugoe-color-warning);
+}
+
 .error {
-  color: #dc2626;
+  color: var(--ugoe-color-danger);
 }
 
 .ok {
-  color: #16a34a;
+  color: var(--ugoe-color-success);
 }
 
 ul {
@@ -102,17 +102,28 @@ button {
   flex-direction: column;
   align-items: flex-start;
   width: 100%;
-  margin: 2px 0;
+  margin: var(--ugoe-space-1) 0;
+  padding: var(--ugoe-space-1) var(--ugoe-space-2);
+  border: 1px solid var(--ugoe-color-control-border);
+  border-radius: var(--ugoe-radius-md);
+  background: var(--ugoe-color-surface);
+  color: var(--ugoe-color-text);
+  font: inherit;
   text-align: left;
   gap: 1px;
   overflow-wrap: anywhere;
 }
 
 button.current {
-  border-color: var(--accent);
+  border-color: var(--ugoe-color-accent);
+}
+
+button:focus-visible {
+  outline: var(--ugoe-focus-ring);
+  outline-offset: 1px;
 }
 
 .small {
-  font-size: 11px;
+  font-size: var(--ugoe-font-size-xs);
 }
 </style>

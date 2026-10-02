@@ -3,10 +3,15 @@
   `consentPrompt.ask` (lib/ai/ai.svelte.ts) の問い合わせがあれば開く。送り先・モデル・画像の枚数と
   バイト数・テキストのバイト数 (利用者の注文の文字数と、答えが検証を通らなければ送り直す回数の上限も) と、送り先の規約へのリンク
   (知っている送り先だけ。lib/ai/consent.ts の `termsFor`) を示す。
-  Esc と「Cancel」は送らない。
+  送ると取り消せないので @ugoe/ui の AlertDialog (開くとフォーカスは「Cancel」)。Esc と「Cancel」は送らない。
+  設定のダイアログ (SettingsDialog の「Test connection」) の上に重なって開くこともある。Bits UI のフォーカスと Esc の層は
+  重なった順に積まれるので、Esc で閉じるのはこの確認だけで、閉じるとフォーカスは設定のダイアログに戻る。
 -->
 <script lang="ts">
+import { AlertDialog, Checkbox } from "@ugoe/ui";
+import { errorText } from "../errors";
 import { openExternal } from "../help";
+import { t } from "../i18n";
 import type { ConsentPrompt } from "./ai.svelte";
 import { formatBytes, termsFor } from "./consent";
 
@@ -16,18 +21,17 @@ interface Props {
 
 let { prompt }: Props = $props();
 
-let dialog = $state<HTMLDialogElement>();
 let remember = $state(false);
 let linkError = $state<string | null>(null);
 
+const disclosure = $derived(prompt.pending?.disclosure ?? null);
+const terms = $derived(disclosure ? termsFor(disclosure.endpoint) : null);
+
+// 問い合わせが来るたびに選択を戻す。
 $effect(() => {
-  if (!dialog) return;
-  if (prompt.pending && !dialog.open) {
+  if (prompt.pending) {
     remember = false;
     linkError = null;
-    dialog.showModal();
-  } else if (!prompt.pending && dialog.open) {
-    dialog.close();
   }
 });
 
@@ -40,112 +44,77 @@ async function openTerms(url: string): Promise<void> {
     await openExternal(url);
     linkError = null;
   } catch (e) {
-    linkError = `Could not open the browser (${e}): ${url}`;
+    linkError = t("consent.linkError", { error: errorText(e), url });
   }
 }
 </script>
 
-<dialog
-  bind:this={dialog}
-  class="consent"
-  aria-labelledby="consent-title"
-  oncancel={(e) => {
-    e.preventDefault();
-    answer(false);
-  }}
+<AlertDialog
+  open={prompt.pending !== null}
+  title={disclosure ? t("consent.title", { service: disclosure.service }) : ""}
+  description={t("consent.description")}
+  confirmLabel={t("consent.send.label")}
+  cancelLabel={t("consent.cancel.label")}
+  danger={false}
+  onconfirm={() => answer(true)}
+  oncancel={() => answer(false)}
 >
-  {#if prompt.pending}
-    {@const d = prompt.pending.disclosure}
-    {@const terms = termsFor(d.endpoint)}
-    <h2 id="consent-title">Send to {d.service}?</h2>
-    <p>This project's data leaves your computer and is sent to an external AI service.</p>
+  {#if disclosure}
+    {@const d = disclosure}
     <dl>
-      <dt>Destination</dt>
+      <dt>{t("consent.destination")}</dt>
       <dd><code>{d.endpoint}</code></dd>
-      <dt>Model</dt>
+      <dt>{t("consent.model")}</dt>
       <dd><code>{d.model}</code></dd>
-      <dt>Images</dt>
-      <dd>{d.image_count} ({formatBytes(d.image_bytes)})</dd>
-      <dt>Text</dt>
+      <dt>{t("consent.images.label")}</dt>
+      <dd>{t("consent.images.value", { count: d.image_count, size: formatBytes(d.image_bytes) })}</dd>
+      <dt>{t("consent.text")}</dt>
       <dd>{formatBytes(d.text_bytes)}</dd>
       {#if d.instruction_chars > 0}
-        <dt>Your instructions</dt>
-        <dd>{d.instruction_chars} {d.instruction_chars === 1 ? "character" : "characters"} (included in the text)</dd>
+        <dt>{t("consent.instructions.label")}</dt>
+        <dd>{t("consent.instructions.value", { count: d.instruction_chars })}</dd>
       {/if}
     </dl>
     {#if d.retries > 0}
-      <p class="muted">
-        If an answer fails validation, the same data is sent again with the previous answer and the reason, up to
-        {d.retries} more {d.retries === 1 ? "time" : "times"}.
-      </p>
+      <p class="ed-hint">{t("consent.retries", { count: d.retries })}</p>
     {/if}
-    <p class="muted">
+    <p class="ed-hint">
       {#if terms}
-        {terms.org} handles the data under its terms:
-        {#each terms.links as term, i}
+        {t("consent.terms.intro", { org: terms.org })}
+        {#each terms.links as term, i (term.url)}
           {#if i > 0}{" · "}{/if}
           <a href={term.url} onclick={(e) => (e.preventDefault(), openTerms(term.url))}>{term.label}</a>
         {/each}
       {:else}
-        Check how this service handles your data before sending.
+        {t("consent.terms.unknown")}
       {/if}
     </p>
-    {#if linkError}<p class="error">{linkError}</p>{/if}
-    <label class="check">
-      <input type="checkbox" bind:checked={remember} />
-      Don't ask again for this project until the editor is closed (same service and model)
-    </label>
-    <div class="actions">
-      <button onclick={() => answer(false)}>Cancel</button>
-      <button class="primary" onclick={() => answer(true)}>Send</button>
-    </div>
+    {#if linkError}<p class="error" role="alert">{linkError}</p>{/if}
+    <Checkbox bind:checked={remember} label={t("consent.remember.label")} />
   {/if}
-</dialog>
+</AlertDialog>
 
 <style>
-  .consent {
-    max-width: 480px;
-    padding: 16px 20px;
-    background: var(--panel);
-    color: var(--text);
-    border: 1px solid var(--border);
-  }
-  .consent::backdrop {
-    background: rgb(0 0 0 / 40%);
-  }
-  h2 {
-    margin: 0 0 8px;
-    font-size: 15px;
-    text-transform: none;
-    letter-spacing: normal;
-    color: var(--text);
-  }
-  .check {
-    display: flex;
-    align-items: flex-start;
-    gap: 6px;
-  }
   dl {
     display: grid;
     grid-template-columns: max-content 1fr;
-    gap: 4px 12px;
-    margin: 12px 0;
+    gap: var(--ugoe-space-2) var(--ugoe-space-4);
+    margin: 0 0 var(--ugoe-space-3);
   }
   dt {
-    color: var(--muted);
+    color: var(--ugoe-color-text-muted);
   }
   dd {
     margin: 0;
     overflow-wrap: anywhere;
   }
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    margin-top: 16px;
+  p {
+    margin: 0 0 var(--ugoe-space-3);
   }
-  .primary {
-    color: var(--accent);
-    border-color: var(--accent);
+  a {
+    color: var(--ugoe-color-accent);
+  }
+  .error {
+    overflow-wrap: anywhere;
   }
 </style>

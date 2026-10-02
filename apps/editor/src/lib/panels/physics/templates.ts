@@ -1,12 +1,14 @@
 // 物理のテンプレート (docs/editor.md#物理のテンプレート) の、DOM に依存しない補助。templates.test.ts で検査する。
 // リグの中身は Rust の ugoe_editor_core::physics_template が作る。ここでは画面に出す説明と、
 // 足りないパラメータ・首のデフォーマの候補を求めるだけ。
+import { t } from "../../i18n";
 import type { Command, Model, PhysicsBlend, PhysicsTemplate } from "../../ipc";
 
 export interface TemplateInfo {
   template: PhysicsTemplate;
-  label: string;
-  title: string;
+  /** 名前と説明 (読むたびに t() を通す)。 */
+  readonly label: string;
+  readonly title: string;
   /** 使う標準パラメータ (なければ作るか、それを使うリグを作らない)。 */
   parameters: string[];
   /** 作るリグの ID。 */
@@ -18,26 +20,36 @@ export interface TemplateInfo {
 export const TEMPLATES: TemplateInfo[] = [
   {
     template: "body_follow",
-    label: "Body follow",
-    title:
-      "The body (BodyAngleX/Y/Z) follows the head (AngleX/Y/Z) late, overshoots a little and settles",
+    get label() {
+      return t("physics.templates.items.bodyFollow.label");
+    },
+    get title() {
+      return t("physics.templates.items.bodyFollow.tooltip");
+    },
     parameters: ["AngleX", "BodyAngleX", "AngleY", "BodyAngleY", "AngleZ", "BodyAngleZ"],
     rigs: ["BodyFollowX", "BodyFollowY", "BodyFollowZ"],
     relays: [],
   },
   {
     template: "bounce",
-    label: "Bounce",
-    title:
-      "Turning the head swings the relay parameter BodyBounce, and a second pendulum adds the bounce to BodyAngleX",
+    get label() {
+      return t("physics.templates.items.bounce.label");
+    },
+    get title() {
+      return t("physics.templates.items.bounce.tooltip");
+    },
     parameters: ["AngleX", "BodyAngleX"],
     rigs: ["BodyBounce", "BodyBounceAngle"],
     relays: ["BodyBounce"],
   },
   {
     template: "neck_follow",
-    label: "Neck follow",
-    title: "A neck rotation deformer tilts with the head (AngleZ, AngleX) late",
+    get label() {
+      return t("physics.templates.items.neckFollow.label");
+    },
+    get title() {
+      return t("physics.templates.items.neckFollow.tooltip");
+    },
     parameters: ["AngleZ", "AngleX"],
     rigs: ["NeckFollow"],
     relays: [],
@@ -64,6 +76,7 @@ export function neckCandidates(model: Model): { id: string; name: string }[] {
 }
 
 function isNeckName(name: string): boolean {
+  // i18n-ignore: 表示しない。名前から首を探す語 (physics_template::default_neck と同じ)
   return name.toLowerCase().includes("neck") || name.includes("首");
 }
 

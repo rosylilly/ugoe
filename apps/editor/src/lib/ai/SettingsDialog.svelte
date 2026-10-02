@@ -5,15 +5,19 @@
   プロバイダ (Claude / OpenAI 互換) とモデル・ベースの URL の選択 (エディタ全体の設定)、選んだプロバイダの
   API キーの保存・削除 (OS の資格情報の保存先。キーは画面に出さず、入力欄も保存したら空にする)、
   開いているプロジェクトの「外部の AI に送らない」、「今後は確かめない」の取り消し、接続の確認。
+  @ugoe/ui の Dialog。接続の確認では、外部の AI に送る前の確認 (ConsentDialog。AlertDialog) がこの上に重なって開く
+  (Bits UI のフォーカスと Esc の層は重なった順に積まれるので、確認を閉じるとこのダイアログに戻る)。
 -->
 <script lang="ts">
-import { Button, ThemeSetting } from "@ugoe/ui";
+import { RichText } from "@ugoe/i18n";
+import { Button, Dialog, type Option, Select, ThemeSetting, Toggle } from "@ugoe/ui";
 import ConnectAgents from "../agents/ConnectAgents.svelte";
 import { errorText } from "../errors";
 import { t } from "../i18n";
-import { type AiSettings, ipc, type ProviderSettings } from "../ipc";
+import { type AiSettings, ipc, type OutputMode, type ProviderSettings } from "../ipc";
 import LanguageSetting from "../LanguageSetting.svelte";
 import TabStrip, { type TabItem } from "../ui/TabStrip.svelte";
+import TipButton from "../ui/TipButton.svelte";
 import { aiSettings, consentPrompt } from "./ai.svelte";
 import { withConsent } from "./consent";
 import { OPENAI_PRESETS, OUTPUT_MODES, presetFor } from "./providers";
@@ -25,17 +29,23 @@ interface Props {
 
 let { onchange }: Props = $props();
 
-let dialog = $state<HTMLDialogElement>();
+let isOpen = $state(false);
 let keyInput = $state<HTMLInputElement>();
 /** 入力欄が空でないか (キーそのものは状態に持たない)。 */
 let hasKeyInput = $state(false);
 let busy = $state(false);
+/**
+ * 接続を確かめている間。このボタンだけは無効にしない (無効にするとフォーカスが外れ、重ねて開く確認のダイアログ (ConsentDialog) を
+ * 閉じたときに Bits UI がフォーカスを戻す先を失う)。押し直しは testConnection で無視する。
+ */
+let testing = $state(false);
 /** 接続の確認の結果。 */
 let testResult = $state<{ ok: boolean; text: string } | null>(null);
 /** 編集中のプロバイダの設定 (「Apply」で保存する)。 */
 let draft = $state<ProviderSettings | null>(null);
 /** 開いているタブ。 */
 let tab = $state<SettingsTab>("general");
+const id = $props.id();
 
 type SettingsTab = "general" | "ai" | "agents";
 
@@ -48,12 +58,21 @@ const tabs = $derived<TabItem<SettingsTab>[]>([
 const saved = $derived(aiSettings.value?.provider ?? null);
 const dirty = $derived(!!draft && !!saved && JSON.stringify(draft) !== JSON.stringify(saved));
 const preset = $derived(draft ? presetFor(draft.openai.base_url) : undefined);
+/** OpenAI 互換の送り先の選択肢 (値はベースの URL)。どれにも合わなければ「Other」。 */
+const OTHER = "other";
+const serviceOptions = $derived<Option[]>([
+  ...OPENAI_PRESETS.map((p) => ({ value: p.base_url, label: p.label })),
+  { value: OTHER, label: t("settings.ai.service.other"), disabled: true },
+]);
+const outputOptions = $derived<Option<OutputMode>[]>(
+  OUTPUT_MODES.map((m) => ({ value: m.value, label: m.label })),
+);
 
 /** 開く。`ai` なら「AI provider」、`agents` なら「Connect agents」のタブを開く。 */
 export async function open(which: "general" | "ai" | "agents" = "general"): Promise<void> {
   tab = which;
   testResult = null;
-  dialog?.showModal();
+  isOpen = true;
   await aiSettings.refresh();
   resetDraft();
 }
@@ -64,7 +83,7 @@ function resetDraft(): void {
 
 function close(): void {
   clearKeyInput();
-  dialog?.close();
+  isOpen = false;
 }
 
 function clearKeyInput(): void {
@@ -90,8 +109,8 @@ async function applyProvider(e: SubmitEvent): Promise<void> {
   if (await run(() => ipc.setAiProvider(next))) resetDraft();
 }
 
-function choosePreset(label: string): void {
-  const p = OPENAI_PRESETS.find((x) => x.label === label);
+function choosePreset(baseUrl: string): void {
+  const p = OPENAI_PRESETS.find((x) => x.base_url === baseUrl);
   if (!draft || !p) return;
   draft.openai.base_url = p.base_url;
   draft.openai.model = p.model;
@@ -110,17 +129,20 @@ async function setSendExternally(allowed: boolean): Promise<void> {
 }
 
 async function testConnection(): Promise<void> {
+  if (testing) return;
+  testing = true;
   busy = true;
   testResult = null;
   try {
     const result = await withConsent(ipc.testAiConnection, consentPrompt.ask);
     testResult = result
-      ? { ok: true, text: "Connected. The server answered." }
-      : { ok: false, text: "Not sent." };
+      ? { ok: true, text: t("settings.ai.test.connected") }
+      : { ok: false, text: t("settings.ai.test.notSent") };
   } catch (e) {
     testResult = { ok: false, text: errorText(e) };
   } finally {
     busy = false;
+    testing = false;
     // 「今後は確かめない」を選んだかもしれない。
     await aiSettings.refresh();
   }
@@ -129,30 +151,27 @@ async function testConnection(): Promise<void> {
 function keyStatus(s: AiSettings): string {
   switch (s.key) {
     case "stored":
-      return `An API key for ${s.service} is saved in the OS credential store.`;
+      return t("settings.ai.key.stored", { service: s.service });
     case "not_stored":
       return s.key_required
-        ? `No API key for ${s.service} is saved.`
-        : `No API key for ${s.service} is saved (not needed if the server has no authentication).`;
+        ? t("settings.ai.key.notStored", { service: s.service })
+        : t("settings.ai.key.notStoredOptional", { service: s.service });
     case "unavailable":
-      return (
-        "The OS credential store is not available here (for example WSL or Linux without a keyring). " +
-        (s.key_env ? `Set the ${s.key_env} environment variable instead.` : "Keys cannot be saved.")
-      );
+      return s.key_env
+        ? t("settings.ai.key.unavailableEnv", { env: s.key_env })
+        : t("settings.ai.key.unavailable");
   }
+}
+
+function keyPlaceholder(s: AiSettings): string {
+  if (s.key === "stored") return t("settings.ai.key.replace");
+  return s.key_required
+    ? t("settings.ai.key.placeholder")
+    : t("settings.ai.key.placeholderOptional");
 }
 </script>
 
-<dialog
-  bind:this={dialog}
-  class="settings"
-  aria-labelledby="settings-title"
-  oncancel={(e) => {
-    e.preventDefault();
-    close();
-  }}
->
-  <h2 id="settings-title">{t("settings.title")}</h2>
+<Dialog bind:open={isOpen} title={t("settings.title")} size="lg" closeLabel={t("settings.close.label")} onclose={clearKeyInput}>
   <div class="tabs">
     <TabStrip {tabs} value={tab} ariaLabel={t("settings.tabs.aria")} onselect={(v) => (tab = v)} />
   </div>
@@ -166,14 +185,14 @@ function keyStatus(s: AiSettings): string {
     <ConnectAgents />
   {:else}
   <section>
-    <h3>AI provider</h3>
+    <h3>{t("settings.ai.tab")}</h3>
     {#if aiSettings.error}<p class="error">{aiSettings.error}</p>{/if}
     {#if draft}
       <form class="provider" onsubmit={applyProvider}>
-        <div class="choices" role="radiogroup" aria-label="AI provider">
+        <div class="choices" role="radiogroup" aria-label={t("settings.ai.provider.aria")}>
           <label class="check">
             <input type="radio" name="provider" value="claude" bind:group={draft.provider} disabled={busy} />
-            Anthropic Claude API
+            {t("settings.ai.provider.claude")}
           </label>
           <label class="check">
             <input
@@ -183,220 +202,197 @@ function keyStatus(s: AiSettings): string {
               bind:group={draft.provider}
               disabled={busy}
             />
-            OpenAI-compatible API (OpenAI, OpenRouter, Gemini, Ollama, LM Studio, vLLM…)
+            {t("settings.ai.provider.openai")}
           </label>
         </div>
         {#if draft.provider === "claude"}
-          <label class="field">
-            <span>Model</span>
-            <input
-              bind:value={draft.claude.model}
-              spellcheck="false"
-              placeholder="claude-opus-5-5"
-              aria-label="Model"
-            />
-          </label>
+          <div class="ed-field">
+            <label for={`${id}-claude-model`}>{t("settings.ai.model.label")}</label>
+            <!-- i18n-ignore: モデルの ID の例 -->
+            <input id={`${id}-claude-model`} type="text" bind:value={draft.claude.model} spellcheck="false" placeholder="claude-opus-5-5" />
+          </div>
         {:else}
-          <label class="field">
-            <span>Service</span>
-            <select
-              aria-label="Service"
-              value={preset?.label ?? ""}
-              onchange={(e) => choosePreset(e.currentTarget.value)}
+          <div class="ed-field">
+            <span id={`${id}-service`}>{t("settings.ai.service.label")}</span>
+            <Select
+              labelledby={`${id}-service`}
+              value={preset?.base_url ?? OTHER}
+              options={serviceOptions}
+              onchange={choosePreset}
               disabled={busy}
-            >
-              {#each OPENAI_PRESETS as p (p.label)}
-                <option value={p.label}>{p.label}</option>
-              {/each}
-              <option value="" disabled>Other (enter the URL)</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>Base URL</span>
-            <input
-              bind:value={draft.openai.base_url}
-              spellcheck="false"
-              placeholder="https://api.example.com/v1"
-              aria-label="Base URL"
-              aria-describedby="base-url-note"
             />
-          </label>
-          <p class="muted note" id="base-url-note">The address up to <code>/chat/completions</code>.</p>
-          <label class="field">
-            <span>Model</span>
+          </div>
+          <div class="ed-field">
+            <label for={`${id}-base-url`}>{t("settings.ai.baseUrl.label")}</label>
+            <!-- i18n-ignore: URL の例 -->
+            <input id={`${id}-base-url`} type="text" bind:value={draft.openai.base_url} spellcheck="false" placeholder="https://api.example.com/v1"
+              aria-describedby={`${id}-base-url-note`} />
+          </div>
+          <p class="ed-hint note" id={`${id}-base-url-note`}>
+            <RichText text={t("settings.ai.baseUrl.description")}>
+              {#snippet code(text: string)}<code>{text}</code>{/snippet}
+            </RichText>
+          </p>
+          <div class="ed-field">
+            <label for={`${id}-openai-model`}>{t("settings.ai.model.label")}</label>
             <input
+              id={`${id}-openai-model`}
+              type="text"
               bind:value={draft.openai.model}
               spellcheck="false"
-              placeholder={preset?.placeholder ?? "model id (a vision model)"}
-              aria-label="Model"
+              placeholder={preset?.placeholder ?? t("settings.ai.model.placeholder")}
             />
-          </label>
-          <label class="field">
-            <span>JSON output</span>
-            <select bind:value={draft.openai.output} disabled={busy} aria-label="JSON output">
-              {#each OUTPUT_MODES as mode (mode.value)}
-                <option value={mode.value}>{mode.label}</option>
-              {/each}
-            </select>
-          </label>
-          <p class="muted note">
-            Use structured output when the server supports it. Otherwise answers are checked against the schema
-            and asked again, which sends the same data more than once.
-          </p>
+          </div>
+          <div class="ed-field">
+            <span id={`${id}-output`}>{t("settings.ai.output.label")}</span>
+            <Select
+              labelledby={`${id}-output`}
+              value={draft.openai.output}
+              options={outputOptions}
+              onchange={(v) => draft && (draft.openai.output = v)}
+              disabled={busy}
+            />
+          </div>
+          <p class="ed-hint note">{t("settings.ai.output.description")}</p>
         {/if}
-        <p class="row">
-          <button type="submit" disabled={busy || !dirty}>Apply</button>
+        <div class="ed-buttons">
+          <Button type="submit" disabled={busy || !dirty}>{t("settings.ai.apply.label")}</Button>
           {#if dirty}
-            <button type="button" disabled={busy} onclick={resetDraft}>Revert</button>
-            <span class="muted">Not applied yet.</span>
+            <Button disabled={busy} onclick={resetDraft}>{t("settings.ai.revert.label")}</Button>
+            <span class="ed-hint">{t("settings.ai.notApplied")}</span>
           {/if}
-        </p>
+        </div>
       </form>
     {:else if !aiSettings.error}
-      <p class="muted">Loading…</p>
+      <p class="ed-hint">{t("settings.ai.loading")}</p>
     {/if}
 
     {#if aiSettings.value}
       {@const s = aiSettings.value}
-      <h3>API key for {s.service}</h3>
+      <h3>{t("settings.ai.key.title", { service: s.service })}</h3>
       <p data-key-status={s.key}>{keyStatus(s)}</p>
       {#if s.env_key && s.key_env}
-        <p class="muted">
+        <p class="ed-hint">
           {s.key === "stored"
-            ? `${s.key_env} is also set; the saved key is used first.`
-            : `Using the API key from ${s.key_env}.`}
+            ? t("settings.ai.key.envAlso", { env: s.key_env })
+            : t("settings.ai.key.envUsed", { env: s.key_env })}
         </p>
       {/if}
       {#if s.key !== "unavailable"}
-        <form class="row" onsubmit={saveKey}>
+        <form class="row key" onsubmit={saveKey}>
           <input
             bind:this={keyInput}
             type="password"
             autocomplete="off"
             spellcheck="false"
-            placeholder={s.key === "stored" ? "Replace the saved key" : s.key_required ? "API key" : "API key (optional)"}
-            aria-label={`API key for ${s.service}`}
+            placeholder={keyPlaceholder(s)}
+            aria-label={t("settings.ai.key.aria", { service: s.service })}
             oninput={(e) => (hasKeyInput = e.currentTarget.value.trim() !== "")}
           />
-          <button type="submit" disabled={busy || !hasKeyInput || dirty}>Save</button>
+          <Button type="submit" disabled={busy || !hasKeyInput || dirty}>{t("settings.ai.key.save.label")}</Button>
           {#if s.key === "stored"}
-            <button type="button" disabled={busy || dirty} onclick={() => run(ipc.deleteApiKey)}>Delete</button>
+            <Button variant="danger" disabled={busy || dirty} onclick={() => run(ipc.deleteApiKey)}>
+              {t("settings.ai.key.delete.label")}
+            </Button>
           {/if}
         </form>
-        {#if dirty}<p class="muted note">Apply the provider first; keys are saved per provider.</p>{/if}
+        {#if dirty}<p class="ed-hint note">{t("settings.ai.key.applyFirst")}</p>{/if}
       {/if}
 
-      <h3>This project</h3>
-      <label class="check">
-        <input
-          type="checkbox"
-          checked={!s.send_externally}
-          disabled={busy}
-          onchange={(e) => setSendExternally(!e.currentTarget.checked)}
-        />
-        Don't send this project's data to external AI services
-      </label>
-      <p class="muted">
-        {s.send_externally
-          ? "You are asked before anything is sent to an external service."
-          : "AI features that send data to external services are turned off for this project."}
-        Saved with the project.
+      <h3>{t("settings.ai.project.title")}</h3>
+      <Toggle
+        checked={!s.send_externally}
+        disabled={busy}
+        label={t("settings.ai.project.dontSend.label")}
+        onchange={(on) => setSendExternally(!on)}
+      />
+      <p class="ed-hint">
+        {s.send_externally ? t("settings.ai.project.asked") : t("settings.ai.project.off")}
+        {t("settings.ai.project.saved")}
       </p>
       {#if s.local}
-        <p class="muted" data-local>
-          The selected server is on this computer, so nothing leaves it and you are not asked before sending.
-        </p>
+        <p class="ed-hint" data-local>{t("settings.ai.project.local")}</p>
       {/if}
       {#if s.consent_remembered}
-        <p class="row">
-          <span>You chose not to be asked again for this project.</span>
-          <button disabled={busy} onclick={() => run(ipc.forgetAiConsent)}>Ask again</button>
-        </p>
+        <div class="ed-buttons">
+          <span>{t("settings.ai.consent.remembered")}</span>
+          <Button disabled={busy} onclick={() => run(ipc.forgetAiConsent)}>{t("settings.ai.consent.askAgain.label")}</Button>
+        </div>
       {/if}
-      <p class="row">
-        <button
-          disabled={busy || dirty || !aiSettings.canSend}
+      <div class="ed-buttons test">
+        <TipButton
+          disabled={(busy && !testing) || dirty || !aiSettings.canSend}
           onclick={testConnection}
-          title="Send a small request without images to check the provider and the API key"
-        >Test connection</button>
+          tooltip={t("settings.ai.test.tooltip")}
+        >{t("settings.ai.test.label")}</TipButton>
         {#if testResult}
-          <span class:error={!testResult.ok}>{testResult.text}</span>
+          <span class:error={!testResult.ok} role="status">{testResult.text}</span>
         {/if}
-      </p>
+      </div>
     {/if}
   </section>
   {/if}
-  <div class="actions">
+  {#snippet actions()}
     <Button onclick={close}>{t("settings.close.label")}</Button>
-  </div>
-</dialog>
+  {/snippet}
+</Dialog>
 
 <style>
   .tabs {
-    margin-bottom: var(--ugoe-space-3);
+    margin-bottom: var(--ugoe-space-1);
   }
-  /* 外枠は @ugoe/ui の Dialog と同じ見た目にそろえる (中で外部の AI に送る前の確認の <dialog> を開くので、T0665 で
-     中身と一緒に Dialog へ移すまでは <dialog> のまま)。 */
-  .settings {
-    width: min(640px, calc(100vw - 32px));
-    max-height: calc(100vh - 48px);
-    padding: var(--ugoe-space-5);
-    border: 1px solid var(--ugoe-color-border);
-    border-radius: var(--ugoe-radius-lg);
-    background: var(--ugoe-color-surface);
-    box-shadow: var(--ugoe-shadow-overlay);
-    color: var(--ugoe-color-text);
+  section > :global(h3:first-child) {
+    margin-top: 0;
   }
-  .settings::backdrop {
-    background: var(--ugoe-color-backdrop);
-  }
-  h2 {
-    margin: 0 0 var(--ugoe-space-3);
-    font-size: var(--ugoe-font-size-lg);
-    font-weight: var(--ugoe-font-weight-strong);
-    color: var(--ugoe-color-text);
+  p {
+    margin: var(--ugoe-space-2) 0;
   }
   .check {
     display: flex;
     align-items: flex-start;
-    gap: 6px;
+    gap: var(--ugoe-space-2);
+  }
+  .check input {
+    accent-color: var(--ugoe-color-accent);
   }
   .choices {
     display: grid;
-    gap: 4px;
-    margin-bottom: 8px;
+    gap: var(--ugoe-space-2);
+    margin-bottom: var(--ugoe-space-3);
   }
-  .field {
-    display: grid;
-    grid-template-columns: 7em 1fr;
-    align-items: center;
-    gap: 8px;
-    margin: 4px 0;
-  }
-  .field input,
-  .field select {
+  .ed-field input {
     min-width: 0;
   }
   .note {
-    margin: 2px 0 6px;
-  }
-  h3 {
-    margin: 16px 0 4px;
-    font-size: 13px;
+    margin: var(--ugoe-space-1) 0 var(--ugoe-space-2);
   }
   .row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--ugoe-space-3);
   }
-  .row input {
+  /* API キーの欄 (app.css の .ugoe-dialog input[type="text"] と同じ見た目)。 */
+  .key input {
     flex: 1;
     min-width: 0;
+    min-height: var(--ugoe-control-height);
+    padding: 0 var(--ugoe-space-2);
+    border: 1px solid var(--ugoe-color-control-border);
+    border-radius: var(--ugoe-radius-md);
+    background: var(--ugoe-color-surface);
+    color: var(--ugoe-color-text);
+    font: inherit;
   }
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: 16px;
+  .key input:focus-visible {
+    outline: var(--ugoe-focus-ring);
+    outline-offset: 1px;
+  }
+  .test {
+    margin-top: var(--ugoe-space-3);
+  }
+  .error {
+    color: var(--ugoe-color-danger);
+    overflow-wrap: anywhere;
   }
   .theme {
     margin-top: var(--ugoe-space-4);

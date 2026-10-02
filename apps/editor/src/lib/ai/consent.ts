@@ -1,6 +1,8 @@
 // 外部の AI サービスに送る前の同意の流れ (docs/editor.md#ai-の設定と送信の同意)。
 // 送る IPC コマンドは、同意がなければ送らずに `needs_consent` を返す。`withConsent` はそのときに
 // 確認のダイアログ (ConsentDialog.svelte) を出し、同意を付けて呼び直す。
+import { formatNumber } from "@ugoe/i18n";
+import { t } from "../i18n";
 import type { AiReply, ConsentAnswer, DisclosureView } from "../ipc";
 
 /** 送る内容を示して利用者に尋ねる。送らないなら `null`。 */
@@ -22,30 +24,60 @@ export async function withConsent<T>(
     reply = await call(answer);
     // 同意した内容と送る内容が食い違った (間に入力が変わった)。黙って送り直さない。
     if (reply.status === "needs_consent") {
-      throw new Error("The data to send changed after you agreed. Try again.");
+      throw new Error(t("consent.changed"));
     }
   }
   return { value: reply.value };
 }
 
-/** バイト数を読みやすく (1 KB = 1024 B)。 */
+/** バイト数を読みやすく (1 KB = 1024 B)。数値は今の言語で書き、単位の記号は訳さない。 */
 export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
+  // i18n-ignore: 単位の記号 (言語に依らない)
   const units = ["KB", "MB", "GB"];
+  if (bytes < 1024) return `${formatNumber(bytes, { useGrouping: false })} B`;
   let value = bytes / 1024;
   let unit = 0;
   while (value >= 1024 && unit < units.length - 1) {
     value /= 1024;
     unit += 1;
   }
-  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+  const digits = value < 10 ? 1 : 0;
+  return `${formatNumber(value, { minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: false })} ${units[unit]}`;
 }
 
 /** 送り先の規約へのリンク。 */
 export interface ProviderTerms {
   /** データを扱う組織の名前。 */
   org: string;
-  links: readonly { label: string; url: string }[];
+  /** `label` は読むたびに今の言語で作る。 */
+  links: readonly { readonly label: string; url: string }[];
+}
+
+/** 規約のリンク (名前は訳す。URL は訳さない)。 */
+function link(key: TermKey, url: string): { readonly label: string; url: string } {
+  return {
+    get label() {
+      return termLabel(key);
+    },
+    url,
+  };
+}
+
+type TermKey = "commercialTerms" | "privacyPolicy" | "servicesAgreement" | "terms" | "geminiTerms";
+
+function termLabel(key: TermKey): string {
+  switch (key) {
+    case "commercialTerms":
+      return t("consent.terms.commercialTerms");
+    case "privacyPolicy":
+      return t("consent.terms.privacyPolicy");
+    case "servicesAgreement":
+      return t("consent.terms.servicesAgreement");
+    case "terms":
+      return t("consent.terms.terms");
+    case "geminiTerms":
+      return t("consent.terms.geminiTerms");
+  }
 }
 
 /** 送り先のホストごとの規約 (確認の画面に示す)。 */
@@ -53,29 +85,29 @@ const TERMS_BY_HOST: Record<string, ProviderTerms> = {
   "api.anthropic.com": {
     org: "Anthropic",
     links: [
-      { label: "Commercial Terms", url: "https://www.anthropic.com/legal/commercial-terms" },
-      { label: "Privacy Policy", url: "https://www.anthropic.com/legal/privacy" },
+      link("commercialTerms", "https://www.anthropic.com/legal/commercial-terms"),
+      link("privacyPolicy", "https://www.anthropic.com/legal/privacy"),
     ],
   },
   "api.openai.com": {
     org: "OpenAI",
     links: [
-      { label: "Services Agreement", url: "https://openai.com/policies/services-agreement/" },
-      { label: "Privacy Policy", url: "https://openai.com/policies/privacy-policy/" },
+      link("servicesAgreement", "https://openai.com/policies/services-agreement/"),
+      link("privacyPolicy", "https://openai.com/policies/privacy-policy/"),
     ],
   },
   "openrouter.ai": {
     org: "OpenRouter",
     links: [
-      { label: "Terms", url: "https://openrouter.ai/terms" },
-      { label: "Privacy Policy", url: "https://openrouter.ai/privacy" },
+      link("terms", "https://openrouter.ai/terms"),
+      link("privacyPolicy", "https://openrouter.ai/privacy"),
     ],
   },
   "generativelanguage.googleapis.com": {
     org: "Google",
     links: [
-      { label: "Gemini API Terms", url: "https://ai.google.dev/gemini-api/terms" },
-      { label: "Privacy Policy", url: "https://policies.google.com/privacy" },
+      link("geminiTerms", "https://ai.google.dev/gemini-api/terms"),
+      link("privacyPolicy", "https://policies.google.com/privacy"),
     ],
   },
 };

@@ -1,6 +1,7 @@
 // プレビューで見せる、モデルの読み込みの警告 (T0125)。WebPuppet の `load_warnings_json()` と、着せ替えのモジュールの
-// `warning_details` (T0652) (crates/ugoe-wasm/README.md#読み込みの警告-t0125) の `code` から英語の知らせを作る。
+// `warning_details` (T0652) (crates/ugoe-wasm/README.md#読み込みの警告-t0125) の `code` から知らせを作る (カタログの `preview.loadWarnings`)。
 // DOM と wasm に依存しない。
+import { t } from "../i18n";
 
 /** `load_warnings_json()` の要素のうち、プレビューが読む項目。 */
 export interface LoadWarning {
@@ -37,22 +38,22 @@ export function parseLoadWarnings(json: string): LoadWarning[] {
   return readLoadWarnings(JSON.parse(json));
 }
 
-/** 警告 1 つの英語の知らせ。知らない種類は wasm の文 (`warning`) をそのまま返す。 */
+/** 警告 1 つの知らせ。知らない種類は wasm の文 (`warning`) をそのまま返す。 */
 export function describeLoadWarning(w: LoadWarning): string {
-  const texture = `Texture ${w.texture ?? "?"}`;
+  const texture = w.texture ?? "?";
   switch (w.code) {
     case "physics_removed":
-      return `The physics settings no longer fit this model and were turned off (${w.reason ?? w.warning}).`;
+      return t("preview.loadWarnings.physicsRemoved", { reason: w.reason ?? w.warning });
     case "texture_ktx2":
-      return `${texture} is a KTX2 image, which the preview can't show yet, so it is drawn white.`;
+      return t("preview.loadWarnings.textureKtx2", { texture });
     case "texture_missing":
-      return `${texture} has no image, so it is drawn white.`;
+      return t("preview.loadWarnings.textureMissing", { texture });
     case "normal_map_ktx2":
-      return `The normal map of ${texture.toLowerCase()} is a KTX2 image, which the preview can't use yet, so it is lit without it.`;
+      return t("preview.loadWarnings.normalMapKtx2", { texture });
     case "unknown_optional_feature":
-      return `This file uses the feature "${w.feature ?? "?"}" from a newer version, so the preview shows a fallback for it.`;
+      return t("preview.loadWarnings.unknownOptionalFeature", { feature: w.feature ?? "?" });
     case "unknown_value":
-      return `This file has a value this version doesn't know (${w.path ?? "?"}), so the preview uses the default for it.`;
+      return t("preview.loadWarnings.unknownValue", { path: w.path ?? "?" });
     default:
       return w.warning;
   }

@@ -1,5 +1,6 @@
 // 「Connect agents」の画面に出す、クライアントごとの登録の手順 (docs/manual/mcp.md)。
 // 同梱の ugoe-mcp のパス (Sidecar) を埋め、そのまま写して使えるコマンドと設定を作る。画面から切り離して Vitest で確かめる。
+import { t } from "../i18n";
 import type { McpBridgeStatus, Sidecar } from "../ipc";
 
 /** クライアントに登録するサーバの名前。 */
@@ -66,7 +67,7 @@ export function claudeDesktopConfig(command: string): string {
   return JSON.stringify(config, null, 2);
 }
 
-/** 登録の手順 (エディタの OS と同梱の ugoe-mcp のパスに合わせる)。 */
+/** 登録の手順 (エディタの OS と同梱の ugoe-mcp のパスに合わせる)。文言は呼ぶたびに今の言語で引く。 */
 export function setupSections(status: McpBridgeStatus): SetupSection[] {
   const { sidecar } = status;
   const exe = relayCommand(sidecar);
@@ -76,60 +77,61 @@ export function setupSections(status: McpBridgeStatus): SetupSection[] {
   const sections: SetupSection[] = [
     {
       id: "claude",
+      // i18n-ignore: 製品名
       title: "Claude Code",
-      summary:
-        "Register the bundled ugoe-mcp as a stdio server. It relays to this editor while the bridge is on.",
+      summary: t("agents.setup.claude.summary"),
       steps: [
         {
-          label: "Run once in a terminal",
+          label: t("agents.setup.claude.run"),
+          // i18n-ignore: シェルのコマンド
           text: `claude mcp add --scope user ${SERVER_NAME} -- ${q(exe)} --editor`,
-          note: "Then check it with “claude mcp list”, or with /mcp inside Claude Code.",
+          note: t("agents.setup.claude.runNote"),
         },
       ],
     },
     {
       id: "claude-desktop",
+      // i18n-ignore: 製品名
       title: "Claude Desktop",
-      summary:
-        "Install the editor as a Claude Desktop extension (.mcpb). It contains a copy of the bundled ugoe-mcp " +
-        "and relays to this editor while the bridge is on.",
+      summary: t("agents.setup.desktop.summary"),
       steps: [
         {
-          label:
-            "Alternative: add it to claude_desktop_config.json (Claude Desktop: Settings → Developer → Edit Config)",
+          label: t("agents.setup.desktop.config"),
           text: claudeDesktopConfig(exe),
-          note: "Merge it into the existing “mcpServers”, then quit and restart Claude Desktop.",
+          note: t("agents.setup.desktop.configNote"),
         },
       ],
     },
     {
       id: "opencode",
+      // i18n-ignore: 製品名
       title: "OpenCode",
-      summary:
-        "Add a local MCP server to opencode.json (the project folder or ~/.config/opencode/).",
+      summary: t("agents.setup.opencode.summary"),
       steps: [
         {
           label: "opencode.json",
           text: opencodeConfig([exe, "--editor"]),
-          note: "“ask” makes OpenCode confirm applying and saving too; the editor asks you in any case.",
+          note: t("agents.setup.opencode.configNote"),
         },
       ],
     },
     {
       id: "chatgpt",
+      // i18n-ignore: 製品名と機能の名前
       title: "ChatGPT (Secure MCP Tunnel)",
-      summary:
-        "ChatGPT connects from OpenAI's servers. OpenAI's tunnel-client starts the relay on this computer and " +
-        "connects out, so nothing is exposed to the internet. Needs ChatGPT developer mode and a tunnel ID.",
+      summary: t("agents.setup.chatgpt.summary"),
       steps: [
         {
-          label: "Create the tunnel profile",
+          label: t("agents.setup.chatgpt.init"),
           text:
+            // i18n-ignore: シェルのコマンド
             `tunnel-client init --sample sample_mcp_stdio_local --profile ${SERVER_NAME} ` +
+            // i18n-ignore: シェルのコマンド
             `--tunnel-id <tunnel_id> --mcp-command "${tunnelExe} --editor"`,
         },
         {
-          label: "Check and start the tunnel",
+          label: t("agents.setup.chatgpt.run"),
+          // i18n-ignore: シェルのコマンド
           text: `tunnel-client doctor --profile ${SERVER_NAME} --explain\ntunnel-client run --profile ${SERVER_NAME}`,
         },
       ],
@@ -139,26 +141,23 @@ export function setupSections(status: McpBridgeStatus): SetupSection[] {
     const wslExe = sidecar.wsl_path ?? "/mnt/c/<path to the editor>/ugoe-mcp.exe";
     sections.push({
       id: "wsl",
-      title: "Agents in WSL",
-      summary:
-        "Recommended: register the Windows ugoe-mcp.exe from inside WSL. WSL can start Windows programs, the " +
-        "connection stays inside Windows, and paths are converted between WSL and Windows.",
+      title: t("agents.setup.wsl.title"),
+      summary: t("agents.setup.wsl.summary"),
       steps: [
         {
-          label: "Claude Code in WSL (run inside WSL)",
+          label: t("agents.setup.wsl.claude"),
+          // i18n-ignore: シェルのコマンド
           text: `claude mcp add --scope user ${SERVER_NAME} -- ${shQuote(wslExe)} --editor --wsl-distro "$WSL_DISTRO_NAME"`,
         },
         {
-          label:
-            "OpenCode in WSL (opencode.json; replace <distro> with the output of “echo $WSL_DISTRO_NAME”)",
+          label: t("agents.setup.wsl.opencode"),
           text: opencodeConfig([wslExe, "--editor", "--wsl-distro", "<distro>"]),
         },
         {
-          label: "Alternative: the Linux ugoe-mcp inside WSL",
+          label: t("agents.setup.wsl.linux"),
+          // i18n-ignore: シェルのコマンド
           text: `claude mcp add --scope user ${SERVER_NAME} -- ugoe-mcp --editor`,
-          note:
-            "Works only with WSL's mirrored networking (networkingMode=mirrored in %UserProfile%\\.wslconfig). " +
-            "With the default NAT networking it cannot reach the editor; use ugoe-mcp.exe instead.",
+          note: t("agents.setup.wsl.linuxNote"),
         },
       ],
     });
@@ -167,15 +166,14 @@ export function setupSections(status: McpBridgeStatus): SetupSection[] {
     const port = status.port;
     sections.push({
       id: "http",
-      title: "Other clients (HTTP)",
-      summary:
-        "Clients that speak Streamable HTTP can connect directly with the token. Set a fixed port first, " +
-        "because the port changes each time the editor starts otherwise.",
+      title: t("agents.setup.http.title"),
+      summary: t("agents.setup.http.summary"),
       steps: [
         {
-          label: port ? "Claude Code over HTTP" : "Claude Code over HTTP (set a fixed port first)",
+          label: port ? t("agents.setup.http.claude") : t("agents.setup.http.claudeNoPort"),
+          // i18n-ignore: シェルのコマンド
           text: `claude mcp add --scope user --transport http ${SERVER_NAME} ${status.url} --header "Authorization: Bearer <token>"`,
-          note: "Replace <token> with the copied token. Prefer the stdio relay above: it needs no token.",
+          note: t("agents.setup.http.claudeNote"),
         },
       ],
     });
@@ -186,9 +184,9 @@ export function setupSections(status: McpBridgeStatus): SetupSection[] {
 /** クライアントの一覧に出す、握手してからの時間。 */
 export function connectedAgo(connectedAt: number, now: number): string {
   const seconds = Math.max(0, Math.round((now - connectedAt) / 1000));
-  if (seconds < 60) return "just now";
+  if (seconds < 60) return t("agents.clients.justNow");
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 60) return t("agents.clients.minutesAgo", { count: minutes });
   const hours = Math.round(minutes / 60);
-  return `${hours} h ago`;
+  return t("agents.clients.hoursAgo", { count: hours });
 }

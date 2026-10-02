@@ -3,6 +3,9 @@
   畳んだ見出しに選んだ数を出し、開くとチェックの一覧になる。チェックを変えるたびに onchange で新しい一覧を渡す。
 -->
 <script lang="ts">
+import { formatList } from "@ugoe/i18n";
+import { Checkbox } from "@ugoe/ui";
+import { t } from "../../i18n";
 import { toggled } from "./slots";
 
 interface Props {
@@ -27,7 +30,7 @@ const missing = $derived(selected.filter((id) => !options.some((o) => o.id === i
   <summary>
     <span>{title}</span>
     <span class="count" class:none={selected.length === 0}>
-      {selected.length === 0 ? "none" : selected.join(", ")}
+      {selected.length === 0 ? t("slots.pickList.none") : formatList(selected)}
     </span>
   </summary>
   <p class="help">{help}</p>
@@ -36,26 +39,22 @@ const missing = $derived(selected.filter((id) => !options.some((o) => o.id === i
   {:else}
     <div class="options">
       {#each options as option (option.id)}
-        <label>
-          <input
-            type="checkbox"
-            {disabled}
-            checked={selected.includes(option.id)}
-            onchange={(e) => onchange(toggled(selected, option.id, e.currentTarget.checked))}
-          />
-          <span>{option.label}</span>
-        </label>
+        <Checkbox
+          label={option.label}
+          {disabled}
+          checked={selected.includes(option.id)}
+          onchange={(checked) => onchange(toggled(selected, option.id, checked))}
+        />
       {/each}
       {#each missing as id (id)}
-        <label class="missing">
-          <input
-            type="checkbox"
+        <span class="missing">
+          <Checkbox
+            label={t("slots.pickList.missing", { id })}
             {disabled}
             checked
             onchange={() => onchange(toggled(selected, id, false))}
           />
-          <span>{id} (missing)</span>
-        </label>
+        </span>
       {/each}
     </div>
   {/if}
@@ -63,15 +62,15 @@ const missing = $derived(selected.filter((id) => !options.some((o) => o.id === i
 
 <style>
 .pick {
-  margin: 6px 0;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 2px 6px;
+  margin: var(--ugoe-space-2) 0;
+  border: 1px solid var(--ugoe-color-border);
+  border-radius: var(--ugoe-radius-md);
+  padding: var(--ugoe-space-1) var(--ugoe-space-2);
 }
 
 summary {
   display: flex;
-  gap: 8px;
+  gap: var(--ugoe-space-3);
   align-items: baseline;
   cursor: pointer;
 }
@@ -85,32 +84,29 @@ summary > span:first-child {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--accent);
+  color: var(--ugoe-color-accent);
 }
 
 .count.none {
-  color: var(--muted);
+  color: var(--ugoe-color-text-muted);
 }
 
 .help {
-  margin: 2px 0 4px;
-  color: var(--muted);
-  font-size: 11px;
+  margin: var(--ugoe-space-1) 0 var(--ugoe-space-2);
+  color: var(--ugoe-color-text-muted);
+  font-size: var(--ugoe-font-size-sm);
 }
 
 .options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ugoe-space-1);
   max-height: 11em;
   overflow-y: auto;
-}
-
-.options label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   overflow-wrap: anywhere;
 }
 
-.missing {
-  color: #dc2626;
+.missing :global(.ugoe-checkbox__label) {
+  color: var(--ugoe-color-danger);
 }
 </style>

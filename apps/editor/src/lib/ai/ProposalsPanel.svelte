@@ -22,7 +22,11 @@
     提案のコマンドはまとまりごとに区切って出す (まとまりを外して採用できる)。docs/editor.md#法線マップの提案
 -->
 <script lang="ts">
+import { formatList } from "@ugoe/i18n";
+import { Button, Checkbox, Notice, Slider, Tooltip } from "@ugoe/ui";
+import { t } from "../i18n";
 import { bulgeForm, bulgeLimits, bulgeUnit } from "../panels/lighting/lighting";
+import TipButton from "../ui/TipButton.svelte";
 import type { ViewportController } from "../viewport/controller.svelte";
 import { aiSettings } from "./ai.svelte";
 import {
@@ -49,6 +53,8 @@ interface Props {
 
 let { view, viewport, module = false, onopensettings }: Props = $props();
 
+const uid = $props.id();
+
 $effect(() => {
   void aiSettings.refresh();
   void view.refresh();
@@ -64,11 +70,13 @@ const busy = $derived(view.busy !== null);
 /** AI を使えない理由 (使えるなら null)。 */
 const aiBlocked = $derived.by((): string | null => {
   const s = aiSettings.value;
-  if (!s) return "Checking the AI settings…";
+  if (!s) return t("proposals.useAi.checking");
   return aiBlockedReason(s);
 });
 /** 選んだプロバイダの名前。 */
-const aiName = $derived(aiSettings.value ? providerLabel(aiSettings.value) : "AI");
+const aiName = $derived(
+  aiSettings.value ? providerLabel(aiSettings.value) : t("proposals.aiName.short"),
+);
 /** 選んだプロバイダがこの計算機のサーバか (画像は外に出ない)。 */
 const aiLocal = $derived(aiSettings.value?.local ?? false);
 
@@ -81,9 +89,9 @@ const chars = $derived(instructionChars(view.instructions));
 const tooLong = $derived(chars > MAX_INSTRUCTION_CHARS);
 /** 作り直せない理由 (作り直せるなら null)。 */
 const regenerateBlocked = $derived.by((): string | null => {
-  if (!view.useAi) return `Turn on "Use ${aiName}" to regenerate with instructions`;
-  if (chars === 0) return "Write instructions for the AI above first";
-  if (tooLong) return `The instructions are longer than ${MAX_INSTRUCTION_CHARS} characters`;
+  if (!view.useAi) return t("proposals.regenerate.blocked.useAi", { name: aiName });
+  if (chars === 0) return t("proposals.regenerate.blocked.empty");
+  if (tooLong) return t("proposals.regenerate.blocked.tooLong", { max: MAX_INSTRUCTION_CHARS });
   return null;
 });
 
@@ -100,133 +108,156 @@ function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
 }
 
-function onSlider(id: string, e: Event): void {
-  viewport.setParameter(id, (e.currentTarget as HTMLInputElement).valueAsNumber);
+/** 分類の要約の 1 行目 (AI か名前か・注文を添えたか)。 */
+function classifiedText(layers: number, byAi: boolean, instructed: boolean): string {
+  if (byAi) {
+    return instructed
+      ? t("proposals.summary.byAiInstructed", { count: layers })
+      : t("proposals.summary.byAi", { count: layers });
+  }
+  return instructed
+    ? t("proposals.summary.byNameInstructed", { count: layers })
+    : t("proposals.summary.byName", { count: layers });
+}
+
+/** まとまりのテクスチャの数 (法線マップを持つもの・向きだけのものも)。 */
+function groupCounts(textures: number, mapped: number, oriented: number): string {
+  const parts = [t("proposals.normal.counts.textures", { count: textures })];
+  if (mapped > 0) parts.push(t("proposals.normal.counts.mapped", { count: mapped }));
+  if (oriented > 0) parts.push(t("proposals.normal.counts.oriented", { count: oriented }));
+  return formatList(parts, { type: "unit", style: "short" });
 }
 </script>
 
 <section>
-  <h3>{module ? "Auto rig the costume from PSD" : "Auto rig from PSD"}</h3>
+  <h3>{module ? t("proposals.autoRig.titleModule") : t("proposals.autoRig.title")}</h3>
   {#if view.staleRigs.length > 0}
-    <div class="unapplied stale" role="status">
-      <strong>Propose the rig again:</strong> these costume meshes were edited (vertices, triangles or parent) after an
-      adopted rig proposal wrote the base's motion into them, so they no longer follow the base exactly.
-      <ul>
+    <Notice
+      tone="warning"
+      title={t("proposals.stale.title")}
+      dismissLabel={t("proposals.stale.dismiss")}
+      ondismiss={busy ? undefined : () => view.dismissStaleRigs()}
+    >
+      {t("proposals.stale.body")}
+      <ul class="stale-list">
         {#each view.staleRigs as stale (stale.mesh)}<li>{stale.name}</li>{/each}
       </ul>
-      <button class="link" disabled={busy} onclick={() => view.dismissStaleRigs()}
-        title="Keep the meshes as they are and hide this notice">Dismiss</button>
-    </div>
+    </Notice>
   {/if}
   {#if module}
-    <p class="muted note">
-      Module project: the rig uses only the base's parameters. The costume follows the base deformers under the
-      slot's anchor (for example the face turn) and base meshes that change shape under it (for example closing
-      eyes), and hair, tails, earrings, neckwear and skirts sway with physics. No parameters are added.
-    </p>
+    <p class="ed-hint note">{t("proposals.module.note")}</p>
     <fieldset class="options" disabled={busy}>
-      <legend class="note">How to rig (not sent to the AI)</legend>
-      <label class="check note"
-        title="Off: wrap the costume in a warp that approximates the base warp (keeps working if you redraw the costume). On: write the base warp's motion into the costume meshes' keyforms (exact at the keys; propose again after editing the mesh).">
-        <input type="checkbox" bind:checked={view.moduleOptions.direct} />
-        Follow the base warps exactly (write into the costume meshes)
-      </label>
-      <label class="check note" title="Swaying parts collide with the base colliders that the slot exposes, so they do not sink into the body">
-        <input type="checkbox" bind:checked={view.moduleOptions.colliders} />
-        Keep swaying parts out of the base's colliders
-      </label>
-      <label class="check note" title="Costume parts whose names differ only by a trailing A, B… (Sleeve A / Sleeve B) become a pose, following the base's variants when the slot exposes them. So do overlapping parts with the same label where the PSD shows one and hides the others.">
-        <input type="checkbox" bind:checked={view.moduleOptions.poses} />
-        Turn A / B variants into poses
-      </label>
+      <legend class="ed-hint">{t("proposals.module.options.legend")}</legend>
+      <Checkbox
+        bind:checked={view.moduleOptions.direct}
+        label={t("proposals.module.options.direct.label")}
+        describedby={`${uid}-direct`}
+        disabled={busy}
+      />
+      <p id={`${uid}-direct`} class="ed-hint option-hint">{t("proposals.module.options.direct.description")}</p>
+      <Checkbox
+        bind:checked={view.moduleOptions.colliders}
+        label={t("proposals.module.options.colliders.label")}
+        describedby={`${uid}-colliders`}
+        disabled={busy}
+      />
+      <p id={`${uid}-colliders`} class="ed-hint option-hint">
+        {t("proposals.module.options.colliders.description")}
+      </p>
+      <Checkbox
+        bind:checked={view.moduleOptions.poses}
+        label={t("proposals.module.options.poses.label")}
+        describedby={`${uid}-poses`}
+        disabled={busy}
+      />
+      <p id={`${uid}-poses`} class="ed-hint option-hint">{t("proposals.module.options.poses.description")}</p>
     </fieldset>
   {/if}
-  <div class="row">
+  <div class="ed-buttons row">
     {#if panel?.psd}
       <span class="psd" title={panel.psd}>{fileName(panel.psd)}</span>
     {:else}
-      <span class="muted">No PSD yet. Use File → New from PSD…, or choose one.</span>
+      <span class="ed-hint">{t("proposals.psd.empty")}</span>
     {/if}
-    <button onclick={() => view.choosePsd()} disabled={busy}>Choose PSD…</button>
+    <Button onclick={() => view.choosePsd()} disabled={busy}>{t("proposals.psd.choose")}</Button>
   </div>
-  <label
-    class="check"
-    title={aiBlocked ?? `Send the artwork to ${aiName} to classify the layers and pick the rig values`}
-  >
-    <input type="checkbox" bind:checked={view.useAi} disabled={!!aiBlocked || busy} />
-    Use {aiName} ({aiLocal ? "sends images to a server on this computer" : "sends images of the artwork"})
-  </label>
+  <Checkbox
+    bind:checked={view.useAi}
+    disabled={!!aiBlocked || busy}
+    label={aiLocal
+      ? t("proposals.useAi.labelLocal", { name: aiName })
+      : t("proposals.useAi.label", { name: aiName })}
+    describedby={aiBlocked && aiSettings.value ? `${uid}-blocked` : undefined}
+  />
   {#if aiBlocked && aiSettings.value}
-    <p class="muted note">
-      {aiBlocked} Without AI, layers are classified by name and the rig uses the template defaults.
-      <button class="link" onclick={onopensettings}>Settings…</button>
+    <p class="ed-hint" id={`${uid}-blocked`}>
+      {t("proposals.useAi.blocked", { reason: aiBlocked })}
+      <Button variant="ghost" small onclick={onopensettings}>{t("proposals.useAi.settings")}</Button>
     </p>
   {/if}
-  <label class="instructions" for="ai-instructions">
-    Instructions for {aiName} <span class="muted">(optional)</span>
+  <label class="instructions" for={`${uid}-instructions`}>
+    {t("proposals.instructions.label", { name: aiName })}
+    <span class="muted">{t("proposals.instructions.optional")}</span>
   </label>
   <textarea
-    id="ai-instructions"
+    id={`${uid}-instructions`}
     rows="3"
     bind:value={view.instructions}
     disabled={busy}
     placeholder={module
-      ? "e.g. Let the earrings swing more. The ribbon is neckwear."
-      : "e.g. Close the eyes a little narrower. Keep head turns subtle. The hat is headwear."}
-    aria-describedby="ai-instructions-note"
+      ? t("proposals.instructions.placeholderModule")
+      : t("proposals.instructions.placeholder")}
+    aria-describedby={`${uid}-instructions-note`}
   ></textarea>
-  <p id="ai-instructions-note" class="muted note">
+  <p id={`${uid}-instructions-note`} class="ed-hint">
     <span class:error={tooLong}>{chars} / {MAX_INSTRUCTION_CHARS}</span>{" · "}
-    {#if view.useAi}
-      Sent with Classify, Propose rig and Regenerate.
-    {:else}
-      Only sent when "Use {aiName}" is on.
-    {/if}
-    {#if module}
-      The AI can change layer labels and two sway values (how strongly and how slowly the swaying parts swing); it
-      lists anything else as not applied. Not saved in the project.
-    {:else}
-      The AI can change layer labels and four rig values (head turn, where and how the eyes close, how far a single
-      mouth opens); it lists anything else as not applied. Not saved in the project.
-    {/if}
+    {view.useAi
+      ? t("proposals.instructions.sent")
+      : t("proposals.instructions.sentOnlyWithAi", { name: aiName })}
+    {module ? t("proposals.instructions.scopeModule") : t("proposals.instructions.scope")}
   </p>
   {#if view.useAi && (panel?.regenerable.length ?? 0) > 0}
-    <label class="check note">
-      <input type="checkbox" bind:checked={view.reclassify} disabled={busy} />
-      When regenerating, also reclassify the layers with these instructions (sends the layer images again)
-    </label>
+    <Checkbox bind:checked={view.reclassify} disabled={busy} label={t("proposals.reclassify")} />
   {/if}
-  <div class="row">
-    <button onclick={() => view.classify()} disabled={busy || !panel?.psd || (view.useAi && tooLong)}>
-      Classify layers
-    </button>
-    <button class="primary" onclick={() => view.propose()} disabled={busy || !panel?.psd || (view.useAi && tooLong)}>
-      Propose rig
-    </button>
+  <div class="ed-buttons row">
+    <Button onclick={() => view.classify()} disabled={busy || !panel?.psd || (view.useAi && tooLong)}>
+      {t("proposals.classify")}
+    </Button>
+    <Button
+      variant="primary"
+      onclick={() => view.propose()}
+      disabled={busy || !panel?.psd || (view.useAi && tooLong)}
+    >
+      {t("proposals.propose")}
+    </Button>
   </div>
   {#if view.busy}<p class="progress" role="status">{view.busy}</p>{/if}
   {#if view.error}<p class="error">{view.error}</p>{/if}
   {#if summary && panel?.classification}
-    <p class="muted" title={panel.classification.instructions ? `With instructions: ${panel.classification.instructions}` : undefined}>
-      {summary.layers} layers classified {panel.classification.by_ai ? "by AI" : "by name"}
-      {#if panel.classification.instructions}{" "}with instructions{/if}
-      {#if summary.review > 0}{" · "}<span class="warn">{summary.review} to review</span>{/if}
+    <p
+      class="muted"
+      title={panel.classification.instructions
+        ? t("proposals.summary.instructionsTooltip", { instructions: panel.classification.instructions })
+        : undefined}
+    >
+      {classifiedText(summary.layers, panel.classification.by_ai, !!panel.classification.instructions)}
+      {#if summary.review > 0}{" · "}<span class="warn">{t("proposals.summary.review", { count: summary.review })}</span>{/if}
     </p>
     <details>
-      <summary>Labels</summary>
+      <summary>{t("proposals.summary.labels")}</summary>
       <ul class="labels">
         {#each summary.labels as [label, count] (label)}
           <li><code>{label}</code> × {count}</li>
         {/each}
       </ul>
       {#if summary.variants.length > 0}
-        <p class="muted note">Alternative drawings of the same part (one shows at a time; costume rigs make pose groups):</p>
+        <p class="ed-hint">{t("proposals.summary.variants")}</p>
         <ul class="labels">
           {#each summary.variants as names, i (i)}<li>{names.join(" / ")}</li>{/each}
         </ul>
       {/if}
       {#if review.length > 0}
-        <p class="muted note">Low confidence (check these before adopting):</p>
+        <p class="ed-hint">{t("proposals.summary.lowConfidence")}</p>
         <ul class="labels">
           {#each review as layer, i (i)}
             <li>{layer.path.join(" / ")} → <code>{layer.label}</code> ({Math.round(layer.confidence * 100)}%)</li>
@@ -238,15 +269,15 @@ function onSlider(id: string, e: Event): void {
 </section>
 
 {#if !module}
-  <section aria-label="Normal maps from the shapes">
-    <h3>Normal maps from the shapes</h3>
-    <p class="muted note">
-      No AI; nothing is sent. Each group of parts bulges as one surface, so eyes follow the face and the neck joins the
-      body. Glasses take the face's direction without bulging. Groups come from
-      {normalFromClassification ? "the layer classification above" : "the layer names (classify the layers to use AI labels)"}.
+  <section aria-label={t("proposals.normal.title")}>
+    <h3>{t("proposals.normal.title")}</h3>
+    <p class="ed-hint">
+      {normalFromClassification
+        ? t("proposals.normal.descriptionClassification")
+        : t("proposals.normal.descriptionNames")}
     </p>
     {#if view.normalGroups && view.normalGroups.length === 0}
-      <p class="muted">No textures to make normal maps for.</p>
+      <p class="muted">{t("proposals.normal.empty")}</p>
     {:else if view.normalGroups}
       <ul class="normal-groups">
         {#each view.normalGroups as group (normalGroupKey(group))}
@@ -254,123 +285,126 @@ function onSlider(id: string, e: Event): void {
           {@const pick = view.normalPicks[key]}
           {@const unit = bulgeUnit(group)}
           {@const limits = bulgeLimits(group)}
+          {@const name = surfaceGroupLabel(key)}
           {#if pick}
             <li>
-              <label class="check" title={group.textures.join(", ")}>
-                <input type="checkbox" bind:checked={pick.include} disabled={busy} />
-                <span class="group-name">{surfaceGroupLabel(key)}</span>
-              </label>
-              <span class="muted counts">
-                {group.textures.length} {group.textures.length === 1 ? "texture" : "textures"}{#if group.with_normal_map.length > 0}, {group.with_normal_map.length} mapped{/if}{#if group.oriented.length > 0}, {group.oriented.length} direction only{/if}
+              <span class="group-name">
+                <Checkbox bind:checked={pick.include} disabled={busy} label={name} />
               </span>
-              <span class="strength">
-                <input
-                  type="range"
-                  min="0"
-                  max="2"
-                  step="0.05"
+              <span class="muted counts" title={group.textures.join(", ")}>
+                {groupCounts(group.textures.length, group.with_normal_map.length, group.oriented.length)}
+              </span>
+              <span class="strength inline-slider">
+                <Slider
+                  label={t("proposals.normal.strength.aria", { group: name })}
                   bind:value={pick.strength}
+                  min={0}
+                  max={2}
+                  step={0.05}
+                  decimals={2}
                   disabled={busy || !pick.include}
-                  aria-label="Strength of {surfaceGroupLabel(key)}"
                 />
-                <span class="value">{pick.strength.toFixed(2)}</span>
               </span>
               <details class="shape">
                 <summary class="muted">
-                  {pick.roundEdges ? `edges ${Math.round(pick.edge)} ${unit}` : "whole shape"} · smoothing
-                  {pick.smoothing.toFixed(1)} {unit}
+                  {pick.roundEdges
+                    ? t("proposals.normal.shape.edges", {
+                        width: Math.round(pick.edge),
+                        smoothing: pick.smoothing.toFixed(1),
+                        unit,
+                      })
+                    : t("proposals.normal.shape.whole", { smoothing: pick.smoothing.toFixed(1), unit })}
                 </summary>
-                <label class="check">
-                  <input type="checkbox" bind:checked={pick.roundEdges} disabled={busy || !pick.include} />
-                  Round edges only
-                </label>
+                <Checkbox
+                  bind:checked={pick.roundEdges}
+                  disabled={busy || !pick.include}
+                  label={t("proposals.normal.roundEdges")}
+                />
                 {#if pick.roundEdges}
-                  <label class="setting">
-                    <span>Edge width ({unit})</span>
-                    <input
-                      type="range"
-                      min="1"
-                      max={limits.edge}
-                      step="1"
-                      bind:value={pick.edge}
-                      disabled={busy || !pick.include}
-                      aria-label="Edge width of {surfaceGroupLabel(key)}"
-                    />
-                    <span class="value">{Math.round(pick.edge)}</span>
-                  </label>
-                {/if}
-                <label class="setting">
-                  <span>Smoothing ({unit})</span>
-                  <input
-                    type="range"
-                    min="0"
-                    max={limits.smoothing}
-                    step="0.5"
-                    bind:value={pick.smoothing}
+                  <Slider
+                    label={t("proposals.normal.edgeWidth", { unit })}
+                    bind:value={pick.edge}
+                    min={1}
+                    max={limits.edge}
+                    step={1}
                     disabled={busy || !pick.include}
-                    aria-label="Smoothing of {surfaceGroupLabel(key)}"
                   />
-                  <span class="value">{pick.smoothing.toFixed(1)}</span>
-                </label>
-                <button
+                {/if}
+                <Slider
+                  label={t("proposals.normal.smoothing", { unit })}
+                  bind:value={pick.smoothing}
+                  min={0}
+                  max={limits.smoothing}
+                  step={0.5}
+                  disabled={busy || !pick.include}
+                />
+                <TipButton
+                  small
                   disabled={busy}
                   onclick={() => Object.assign(pick, bulgeForm(group))}
-                  title="Use this group's default strength, edges and smoothing"
-                >Defaults</button>
+                  tooltip={t("proposals.normal.defaults.tooltip")}
+                >{t("proposals.normal.defaults.label")}</TipButton>
               </details>
             </li>
           {/if}
         {/each}
       </ul>
-      <label class="check note">
-        <input type="checkbox" bind:checked={view.replaceNormalMaps} disabled={busy} />
-        Replace existing normal maps
-      </label>
-      <div class="row">
-        <button
-          class="primary"
+      <Checkbox
+        bind:checked={view.replaceNormalMaps}
+        disabled={busy}
+        label={t("proposals.normal.replace")}
+      />
+      <div class="ed-buttons row">
+        <TipButton
+          variant="primary"
           onclick={() => view.proposeNormalMaps()}
           disabled={busy || normalTargets === 0}
-          title="Make normal maps for the chosen groups as a proposal. Preview it to see the model lit by the Lighting tab's preview lights."
-        >Propose normal maps{normalTargets > 0 ? ` (${normalTargets})` : ""}</button>
+          tooltip={t("proposals.normal.propose.tooltip")}
+        >{normalTargets > 0
+            ? t("proposals.normal.propose.labelCount", { count: normalTargets })
+            : t("proposals.normal.propose.label")}</TipButton>
       </div>
     {/if}
   </section>
 {/if}
 
 <section>
-  <h3>Proposals</h3>
+  <h3>{t("proposals.list.title")}</h3>
   {#if !panel || panel.proposals.length === 0}
-    <p class="muted">No proposals. Proposals change nothing until you adopt them.</p>
+    <p class="ed-hint">{t("proposals.list.empty")}</p>
   {:else}
     {#each panel.proposals as proposal (proposal.id)}
       {@const excluded = view.excludedOf(proposal.id)}
       {@const selected = proposal.commands.length - excluded.size}
       {@const previewing = view.preview?.id === proposal.id}
       {@const regenerable = panel.regenerable.includes(proposal.id)}
-      <article class="proposal" class:previewing aria-label="Proposal #{proposal.id}">
+      <article class="proposal" class:previewing aria-label={t("proposals.list.aria", { id: proposal.id })}>
         <header>
           <strong><span class="index">#{proposal.id}</span> {proposal.title}</strong>
           {#if proposal.revises !== null}
-            <span class="source" title="Regenerated from proposal #{proposal.revises}, which is kept so you can compare them"
-              >revision of #{proposal.revises}</span>
+            {@render badge(
+              "source",
+              t("proposals.list.revision.label", { id: proposal.revises }),
+              t("proposals.list.revision.tooltip", { id: proposal.revises }),
+            )}
           {/if}
           {#if proposal.source}
-            <span class="source" title="Proposed by {proposal.source}, connected to this editor (Settings → Connect agents)"
-              >from {proposal.source}</span>
+            {@render badge(
+              "source",
+              t("proposals.list.from.label", { name: proposal.source }),
+              t("proposals.list.from.tooltip", { name: proposal.source }),
+            )}
           {/if}
           {#if proposal.stale}
-            <span class="warn" title="The model changed after this proposal was made. Undo back to that state, or propose again.">
-              outdated
-            </span>
+            {@render badge("warn", t("proposals.list.outdated.label"), t("proposals.list.outdated.tooltip"))}
           {/if}
         </header>
         {#if proposal.instructions}
-          <p class="note sent"><span class="muted">Instructions:</span> {proposal.instructions}</p>
+          <p class="note sent"><span class="muted">{t("proposals.list.instructions")}</span> {proposal.instructions}</p>
         {/if}
         {#if proposal.unapplied.length > 0}
           <div class="unapplied" role="note">
-            <strong>Not applied</strong> — the AI says the current rig template cannot do these:
+            <strong>{t("proposals.list.unapplied.title")}</strong> {t("proposals.list.unapplied.body")}
             <ul>
               {#each proposal.unapplied as item, i (i)}
                 <li>{item}</li>
@@ -380,7 +414,9 @@ function onSlider(id: string, e: Event): void {
         {/if}
         <p class="rationale">{proposal.rationale}</p>
         <details>
-          <summary>{selected} of {proposal.commands.length} commands selected</summary>
+          <summary>
+            {t("proposals.list.selected", { selected, count: proposal.commands.length })}
+          </summary>
           <ul class="groups">
             {#each view.commandGroups(proposal.id) as group (group.indices[0])}
               {@const state = groupState(group, excluded)}
@@ -388,9 +424,10 @@ function onSlider(id: string, e: Event): void {
                 group.indices.length === 1 && !group.section ? proposal.commands[group.indices[0] as number] : null}
               <li>
                 <div class="group">
+                  <!-- 一覧の行の入・切は、番号とコマンドの表記 (code) を並べるため標準のチェックボックスのまま。 -->
                   <input
                     type="checkbox"
-                    aria-label="Include {single ? commandLabel(single) : group.label}"
+                    aria-label={t("proposals.list.include", { name: single ? commandLabel(single) : group.label })}
                     checked={state !== "none"}
                     indeterminate={state === "some"}
                     disabled={busy || proposal.stale}
@@ -401,15 +438,14 @@ function onSlider(id: string, e: Event): void {
                     <code>{commandLabel(single)}</code>
                   {:else}
                     <details class="inner">
-                      <summary><code>{group.label}</code> · {group.indices.length}
-                        {group.indices.length === 1 ? "command" : "commands"}</summary>
+                      <summary><code>{group.label}</code> · {t("proposals.list.commands", { count: group.indices.length })}</summary>
                       <ol class="commands">
                         {#each group.indices as i (i)}
                           {@const command = proposal.commands[i]}
                           {#if command}
                             <li>
                               <label class="check" title={command.requires.length > 0
-                                ? `Depends on #${command.requires.join(", #")}`
+                                ? t("proposals.list.dependsOn", { list: command.requires.join(", #") })
                                 : undefined}>
                                 <input
                                   type="checkbox"
@@ -431,52 +467,55 @@ function onSlider(id: string, e: Event): void {
             {/each}
           </ul>
         </details>
-        <div class="row">
-          <button
-            class:active={previewing}
+        <div class="ed-buttons row">
+          <TipButton
+            pressed={previewing}
             onclick={() => view.togglePreview(proposal.id)}
             disabled={busy || proposal.stale || selected === 0}
-            title="Show the model with this proposal applied, without changing it"
-          >{previewing ? "End preview" : "Preview"}</button>
-          <button
-            class="primary"
+            tooltip={t("proposals.list.preview.tooltip")}
+          >{previewing ? t("proposals.list.preview.end") : t("proposals.list.preview.label")}</TipButton>
+          <TipButton
+            variant="primary"
             onclick={() => view.adopt(proposal.id)}
             disabled={busy || proposal.stale || selected === 0}
-            title="Apply the selected commands as one edit (one Undo reverts it)"
-          >Adopt{selected < proposal.commands.length ? ` ${selected}` : ""}</button>
-          <button onclick={() => view.reject(proposal.id)} disabled={busy}>Reject</button>
+            tooltip={t("proposals.list.adopt.tooltip")}
+          >{selected < proposal.commands.length
+              ? t("proposals.list.adopt.labelCount", { count: selected })
+              : t("proposals.list.adopt.label")}</TipButton>
+          <Button onclick={() => view.reject(proposal.id)} disabled={busy}>{t("proposals.list.reject")}</Button>
           {#if regenerable}
-            <button
+            <TipButton
               onclick={() => view.regenerate(proposal.id)}
               disabled={busy || !!regenerateBlocked}
-              title={regenerateBlocked ??
-                `Send this proposal's values and your instructions to ${aiName}, and add the result as a new proposal (this one is kept)`}
-            >Regenerate with instructions</button>
+              aria-describedby={regenerateBlocked ? `${uid}-regen-${proposal.id}` : undefined}
+              tooltip={t("proposals.regenerate.tooltip", { name: aiName })}
+            >{t("proposals.regenerate.label")}</TipButton>
           {/if}
         </div>
+        {#if regenerable && regenerateBlocked && !busy}
+          <p class="ed-hint" id={`${uid}-regen-${proposal.id}`}>{regenerateBlocked}</p>
+        {/if}
         {#if previewing && view.preview}
-          <p class="muted note">Previewing. The model is unchanged until you adopt.</p>
-          <div class="row">
-            <button
-              class:active={view.physicsRunning}
+          <p class="ed-hint">{t("proposals.list.previewing")}</p>
+          <div class="ed-buttons row">
+            <TipButton
+              pressed={view.physicsRunning}
               onclick={() => view.togglePhysics()}
-              title="Run the proposal's physics in the viewport. Move the sliders to see the sway before adopting."
-            >{view.physicsRunning ? "Stop physics" : "Run physics"}</button>
-            {#if view.physicsRunning}<span class="muted note">Move the sliders to see the sway.</span>{/if}
+              tooltip={t("proposals.list.physics.tooltip")}
+            >{view.physicsRunning ? t("proposals.list.physics.stop") : t("proposals.list.physics.run")}</TipButton>
+            {#if view.physicsRunning}<span class="ed-hint">{t("proposals.list.physics.hint")}</span>{/if}
           </div>
           <div class="sliders">
             {#each view.preview.parameters as p (p.id)}
-              <label>
-                <span class="name" title={p.id}>{p.name}</span>
-                <input
-                  type="range"
-                  min={p.min}
-                  max={p.max}
-                  step={(p.max - p.min) / 100}
-                  value={viewport.parameterValues[p.id] ?? p.default}
-                  oninput={(e) => onSlider(p.id, e)}
-                />
-              </label>
+              <Slider
+                label={p.name}
+                value={viewport.parameterValues[p.id] ?? p.default}
+                min={p.min}
+                max={p.max}
+                step={(p.max - p.min) / 100}
+                field={false}
+                onchange={(v) => viewport.setParameter(p.id, v)}
+              />
             {/each}
           </div>
         {/if}
@@ -484,6 +523,15 @@ function onSlider(id: string, e: Event): void {
     {/each}
   {/if}
 </section>
+
+{#snippet badge(kind: "source" | "warn", text: string, tooltip: string)}
+  <Tooltip text={tooltip}>
+    {#snippet children(attrs)}
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <span {...attrs} class={kind} tabindex="0">{text}</span>
+    {/snippet}
+  </Tooltip>
+{/snippet}
 
 <style>
   .row {
@@ -502,16 +550,36 @@ function onSlider(id: string, e: Event): void {
   .check {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--ugoe-space-2);
   }
   .note {
-    font-size: 12px;
+    font-size: var(--ugoe-font-size-sm);
+  }
+  .option-hint {
+    margin: 0 0 var(--ugoe-space-2) calc(var(--ugoe-space-5) + var(--ugoe-space-1));
+  }
+  .stale-list {
+    list-style: disc;
+    margin: var(--ugoe-space-1) 0 0;
+    padding-left: 18px;
+  }
+  /* 行の中のスライダーは名前を見せない (読み上げの名前には使う)。 */
+  .inline-slider :global(.ugoe-slider__label) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .inline-slider :global(.ugoe-slider__root) {
+    min-width: 60px;
   }
   .options {
     margin: 6px 0;
     padding: 2px 8px 4px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
+    border: 1px solid var(--ugoe-color-border);
+    border-radius: var(--ugoe-radius-md);
   }
   .options legend {
     padding: 0 4px;
@@ -523,9 +591,18 @@ function onSlider(id: string, e: Event): void {
   textarea {
     box-sizing: border-box;
     width: 100%;
+    padding: var(--ugoe-space-1) var(--ugoe-space-2);
     resize: vertical;
+    border: 1px solid var(--ugoe-color-control-border);
+    border-radius: var(--ugoe-radius-md);
+    background: var(--ugoe-color-surface);
+    color: var(--ugoe-color-text);
     font: inherit;
-    font-size: 12px;
+    font-size: var(--ugoe-font-size-sm);
+  }
+  textarea:focus-visible {
+    outline: var(--ugoe-focus-ring);
+    outline-offset: 1px;
   }
   .sent {
     margin: 4px 0;
@@ -535,35 +612,19 @@ function onSlider(id: string, e: Event): void {
   .unapplied {
     margin: 4px 0;
     padding: 4px 6px;
-    border-left: 3px solid #b45309;
-    font-size: 12px;
+    border-left: 3px solid var(--ugoe-color-warning);
+    font-size: var(--ugoe-font-size-sm);
   }
   .unapplied ul {
     list-style: disc;
     margin: 2px 0;
     padding-left: 18px;
   }
-  .link {
-    border: none;
-    background: none;
-    padding: 0;
-    color: var(--accent);
-    text-decoration: underline;
-    cursor: pointer;
-  }
   .progress {
-    color: var(--accent);
+    color: var(--ugoe-color-accent);
   }
   .warn {
-    color: #b45309;
-  }
-  .primary {
-    color: var(--accent);
-    border-color: var(--accent);
-  }
-  button.active {
-    color: var(--accent);
-    border-color: var(--accent);
+    color: var(--ugoe-color-warning);
   }
   .labels {
     margin: 4px 0;
@@ -571,13 +632,13 @@ function onSlider(id: string, e: Event): void {
     font-size: 12px;
   }
   .proposal {
-    border: 1px solid var(--border);
+    border: 1px solid var(--ugoe-color-border);
     border-radius: 4px;
     padding: 6px 8px;
     margin: 6px 0;
   }
   .proposal.previewing {
-    border-color: var(--accent);
+    border-color: var(--ugoe-color-accent);
   }
   .proposal header {
     display: flex;
@@ -587,9 +648,9 @@ function onSlider(id: string, e: Event): void {
   }
   .source {
     padding: 0 6px;
-    border: 1px solid var(--accent);
+    border: 1px solid var(--ugoe-color-accent);
     border-radius: 8px;
-    color: var(--accent);
+    color: var(--ugoe-color-accent);
     font-size: 11px;
     white-space: nowrap;
   }
@@ -622,7 +683,7 @@ function onSlider(id: string, e: Event): void {
     cursor: pointer;
   }
   .index {
-    color: var(--muted);
+    color: var(--ugoe-color-text-muted);
     min-width: 2.5em;
   }
   .normal-groups {
@@ -638,6 +699,9 @@ function onSlider(id: string, e: Event): void {
     column-gap: 6px;
     padding: 2px 0;
   }
+  .normal-groups .group-name {
+    min-width: 0;
+  }
   .normal-groups .counts {
     grid-column: 1;
     padding-left: 22px;
@@ -648,12 +712,16 @@ function onSlider(id: string, e: Event): void {
     grid-row: 1 / span 2;
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--ugoe-space-1);
+    width: 150px;
   }
-  .normal-groups input[type="range"] {
-    width: 90px;
+  .normal-groups .strength > :global(*) {
+    flex: 1;
+    min-width: 0;
   }
   .normal-groups .shape {
+    display: grid;
+    gap: var(--ugoe-space-1);
     grid-column: 1 / -1;
     padding-left: 22px;
     font-size: 11px;
@@ -661,31 +729,8 @@ function onSlider(id: string, e: Event): void {
   .normal-groups .shape summary {
     cursor: pointer;
   }
-  .normal-groups .setting {
-    display: grid;
-    grid-template-columns: 1fr auto auto;
-    align-items: center;
-    gap: 4px;
-  }
-  .normal-groups .value {
-    width: 32px;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-  }
   .sliders {
     display: grid;
-    gap: 2px;
-  }
-  .sliders label {
-    display: grid;
-    grid-template-columns: 7em 1fr;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-  }
-  .sliders .name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    gap: var(--ugoe-space-1);
   }
 </style>

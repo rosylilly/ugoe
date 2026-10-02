@@ -4,12 +4,15 @@
   取り付け先と形状の種類を変えるときは、今の見た目の位置を保つように写し直す (viewport/tools/physics/physicsGeometry.ts)。
 -->
 <script lang="ts">
+import { Button, Notice, NumberField, Select } from "@ugoe/ui";
 import BaseLock from "../../BaseLock.svelte";
 import type { EditorDocument } from "../../document.svelte";
+import { t } from "../../i18n";
 import type { Command, Model, PhysicsCollider, Vec2 } from "../../ipc";
 import { elementLabel } from "../../labels";
 import { isBaseCollider, unavailableCollidersNotice } from "../../moduleProject";
 import type { Selection } from "../../selection.svelte";
+import TipButton from "../../ui/TipButton.svelte";
 import type { ViewportController } from "../../viewport/controller.svelte";
 import { puppetJacobian, puppetMap } from "../../viewport/tools/physics/mapper";
 import {
@@ -90,26 +93,41 @@ function setRadius(raw: number): void {
   if (collider && value !== null) update({ ...collider, shape: withRadius(collider.shape, value) });
 }
 
-function number(e: Event): number {
-  return (e.currentTarget as HTMLInputElement).valueAsNumber;
-}
-
 const points = $derived.by((): { key: "center" | "a" | "b"; label: string; p: Vec2 }[] => {
   const shape = collider?.shape;
   if (!shape) return [];
   return shape.type === "circle"
-    ? [{ key: "center", label: "Center", p: shape.center }]
+    ? [{ key: "center", label: t("physics.colliders.center"), p: shape.center }]
     : [
-        { key: "a", label: "End A", p: shape.a },
-        { key: "b", label: "End B", p: shape.b },
+        { key: "a", label: t("physics.colliders.endA"), p: shape.a },
+        { key: "b", label: t("physics.colliders.endB"), p: shape.b },
       ];
 });
+
+/** 取り付け先の選択肢の「キャンバス」(取り付けなし) の値。デフォーマの ID は空にならない。 */
+const CANVAS = "\u0000canvas";
+const attachOptions = $derived([
+  { value: CANVAS, label: t("physics.colliders.attach.canvas") },
+  ...deformers.map((d) => ({ value: d.id, label: elementLabel(d.name, d.id) })),
+]);
+const shapeOptions = $derived([
+  { value: "circle" as const, label: t("physics.colliders.shapes.circle") },
+  { value: "capsule" as const, label: t("physics.colliders.shapes.capsule") },
+]);
+
+function shapeName(kind: "circle" | "capsule"): string {
+  return kind === "circle"
+    ? t("physics.colliders.shapes.circle")
+    : t("physics.colliders.shapes.capsule");
+}
+
+const ids = $props.id();
 </script>
 
 <section>
-  <h3>Colliders</h3>
+  <h3>{t("physics.colliders.title")}</h3>
   {#if unavailable}
-    <p class="notice" role="note">{unavailable}</p>
+    <Notice tone="warning">{unavailable}</Notice>
   {/if}
   {#if settings && settings.colliders.length > 0}
     <ul class="list">
@@ -118,106 +136,101 @@ const points = $derived.by((): { key: "center" | "a" | "b"; label: string; p: Ve
           <button class="item" class:selected={c.id === view.collider}
             onclick={() => (view.collider = c.id === view.collider ? null : c.id)}>
             {elementLabel(c.name, c.id)}
-            <span class="muted">· {c.shape.type}{c.attach ? ` on ${c.attach}` : ""}</span>
+            <span class="muted"
+              >· {c.attach
+                ? t("physics.colliders.summaryAttached", { shape: shapeName(c.shape.type), deformer: c.attach })
+                : shapeName(c.shape.type)}</span
+            >
           </button>
         </li>
       {/each}
     </ul>
   {:else}
-    <p class="muted hint">No colliders.</p>
+    <p class="ed-hint">{t("physics.colliders.empty")}</p>
   {/if}
-  <div class="row">
-    <button disabled={busy} onclick={() => add("circle")}
-      title="Add a circle collider (attached to the selected deformer, if any)">+ Circle</button>
-    <button disabled={busy} onclick={() => add("capsule")}
-      title="Add a capsule collider (attached to the selected deformer, if any)">+ Capsule</button>
+  <div class="ed-buttons row">
+    <TipButton disabled={busy} onclick={() => add("circle")} tooltip={t("physics.colliders.addCircle.tooltip")}
+      >{t("physics.colliders.addCircle.label")}</TipButton
+    >
+    <TipButton disabled={busy} onclick={() => add("capsule")} tooltip={t("physics.colliders.addCapsule.tooltip")}
+      >{t("physics.colliders.addCapsule.label")}</TipButton
+    >
   </div>
 
   {#if collider}
     <BaseLock locked={isBaseCollider(doc.module, collider.id)}>
-    <div class="grid editor">
-      <span>Name</span>
-      <input type="text" value={collider.name} aria-label="Collider name"
-        onchange={(e) => update({ ...collider, name: e.currentTarget.value })} />
-      <span>Attach to</span>
-      <select value={collider.attach ?? ""} aria-label="Collider attachment"
-        onchange={(e) => setAttach(e.currentTarget.value)}>
-        <option value="">Canvas</option>
-        {#each deformers as d (d.id)}
-          <option value={d.id}>{elementLabel(d.name, d.id)}</option>
-        {/each}
-      </select>
-      <span>Shape</span>
-      <select value={collider.shape.type} aria-label="Collider shape"
-        onchange={(e) => setKind(e.currentTarget.value as "circle" | "capsule")}>
-        <option value="circle">Circle</option>
-        <option value="capsule">Capsule</option>
-      </select>
+      <span hidden id="{ids}-x">{t("physics.axis.x")}</span>
+      <span hidden id="{ids}-y">{t("physics.axis.y")}</span>
+      <div class="ed-field">
+        <label for="{ids}-name">{t("physics.colliders.name.label")}</label>
+        <input id="{ids}-name" class="text" type="text" value={collider.name}
+          onchange={(e) => update({ ...collider, name: e.currentTarget.value })} />
+      </div>
+      <div class="ed-field">
+        <span id="{ids}-attach">{t("physics.colliders.attach.label")}</span>
+        <Select labelledby="{ids}-attach" value={collider.attach ?? CANVAS} options={attachOptions}
+          onchange={(v) => setAttach(v === CANVAS ? "" : v)} />
+      </div>
+      <div class="ed-field">
+        <span id="{ids}-shape">{t("physics.colliders.shape")}</span>
+        <Select labelledby="{ids}-shape" value={collider.shape.type} options={shapeOptions}
+          onchange={(v) => setKind(v)} />
+      </div>
       {#each points as pt (pt.key)}
-        <span>{pt.label}</span>
-        <span class="row">
-          <input type="number" step="1" value={pt.p[0]} aria-label="{pt.label} x"
-            onchange={(e) => setPoint(pt.key, 0, number(e))} />
-          <input type="number" step="1" value={pt.p[1]} aria-label="{pt.label} y"
-            onchange={(e) => setPoint(pt.key, 1, number(e))} />
-        </span>
+        <div class="ed-field">
+          <span id="{ids}-{pt.key}">{pt.label}</span>
+          <span class="pair">
+            <NumberField value={pt.p[0]} step={1} decimals={4} size={5}
+              labelledby="{ids}-{pt.key} {ids}-x" onchange={(v) => setPoint(pt.key, 0, v)} />
+            <NumberField value={pt.p[1]} step={1} decimals={4} size={5}
+              labelledby="{ids}-{pt.key} {ids}-y" onchange={(v) => setPoint(pt.key, 1, v)} />
+          </span>
+        </div>
       {/each}
-      <span>Radius</span>
-      <input type="number" step="1" min="0" value={collider.shape.radius}
-        aria-label="Collider radius" onchange={(e) => setRadius(number(e))} />
-    </div>
-    <p class="muted hint">
-      Positions are in the attached deformer's local space. Drag the collider in the viewport to move it.
-    </p>
-    <div class="row">
-      <button disabled={busy} onclick={() => send({ op: "remove_physics_collider", id: collider.id })}>
-        Delete collider
-      </button>
-    </div>
+      <div class="ed-field">
+        <span id="{ids}-radius">{t("physics.colliders.radius")}</span>
+        <span class="pair">
+          <NumberField value={collider.shape.radius} step={1} min={0} decimals={4} size={5}
+            labelledby="{ids}-radius" onchange={(v) => setRadius(v)} />
+        </span>
+      </div>
+      <p class="ed-hint">{t("physics.colliders.hint")}</p>
+      <div class="ed-buttons row">
+        <Button disabled={busy} onclick={() => send({ op: "remove_physics_collider", id: collider.id })}>
+          {t("physics.colliders.delete")}
+        </Button>
+      </div>
     </BaseLock>
   {/if}
 </section>
 
 <style>
-h3 {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: 6em 1fr;
-  gap: 4px;
-  align-items: center;
-}
-
-.editor {
-  margin-top: 6px;
-}
-
 .row {
+  margin: var(--ugoe-space-2) 0;
+}
+
+.pair {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--ugoe-space-2);
   align-items: center;
-  margin: 4px 0;
-}
-
-.grid .row {
-  margin: 0;
-}
-
-input[type="number"] {
-  width: 4.5em;
   min-width: 0;
 }
 
-input[type="text"],
-select {
+.text {
   min-width: 0;
-  max-width: 100%;
+  min-height: var(--ugoe-control-height);
+  padding: 0 var(--ugoe-space-2);
+  border: 1px solid var(--ugoe-color-control-border);
+  border-radius: var(--ugoe-radius-md);
+  background: var(--ugoe-color-surface);
+  color: var(--ugoe-color-text);
+  font: inherit;
+}
+
+.text:focus-visible {
+  outline: var(--ugoe-focus-ring);
+  outline-offset: 1px;
 }
 
 .list {
@@ -230,25 +243,19 @@ select {
   width: 100%;
   text-align: left;
   border: 1px solid transparent;
+  border-radius: var(--ugoe-radius-sm);
   background: none;
+  color: inherit;
+  font: inherit;
   overflow-wrap: anywhere;
 }
 
 .item.selected {
-  border-color: var(--accent);
+  border-color: var(--ugoe-color-accent);
 }
 
-.hint {
-  font-size: 11px;
-}
-
-.notice {
-  font-size: 11px;
-  margin: 4px 0;
-  padding: 6px 8px;
-  border: 1px solid #d97706;
-  border-radius: 4px;
-  background: color-mix(in srgb, #d97706 12%, transparent);
-  overflow-wrap: anywhere;
+.item:focus-visible {
+  outline: var(--ugoe-focus-ring);
+  outline-offset: 1px;
 }
 </style>

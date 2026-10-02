@@ -367,7 +367,93 @@
       "tab": "一般"
     },
     "ai": {
-      "tab": "AI のプロバイダ"
+      "tab": "AI のプロバイダ",
+      "provider": {
+        "aria": "AI のプロバイダ",
+        "claude": "Anthropic Claude API",
+        "openai": "OpenAI 互換の API (OpenAI・OpenRouter・Gemini・Ollama・LM Studio・vLLM など)"
+      },
+      "presets": {
+        "local": "{{name}} (このコンピュータ)",
+        "openRouterModel": "提供元/モデル (画像を読めるモデル)",
+        "ollamaModel": "取得した画像を読めるモデル",
+        "lmStudioModel": "読み込んだ画像を読めるモデル"
+      },
+      "model": {
+        "label": "モデル",
+        "placeholder": "モデルの ID (画像を読めるモデル)"
+      },
+      "service": {
+        "label": "サービス",
+        "other": "その他 (URL を入れる)"
+      },
+      "baseUrl": {
+        "label": "ベースの URL",
+        "description": "<code>/chat/completions</code> の手前までのアドレスです。"
+      },
+      "output": {
+        "label": "JSON の出力",
+        "jsonSchema": "構造化出力 (JSON Schema)",
+        "jsonObject": "JSON モード (検証して尋ね直す)",
+        "prompt": "プロンプトにスキーマを書くだけ (検証して尋ね直す)",
+        "description": "サーバが対応していれば構造化出力を使ってください。そうでなければ答えをスキーマで検証して尋ね直すので、同じデータを 2 回以上送ることがあります。"
+      },
+      "apply": {
+        "label": "適用"
+      },
+      "revert": {
+        "label": "元に戻す"
+      },
+      "notApplied": "まだ適用していません。",
+      "loading": "読み込んでいます…",
+      "key": {
+        "title": "{{service}} の API キー",
+        "stored": "{{service}} の API キーは OS の資格情報の保存先に保存されています。",
+        "notStored": "{{service}} の API キーは保存されていません。",
+        "notStoredOptional": "{{service}} の API キーは保存されていません (サーバに認証が無ければ要りません)。",
+        "unavailableEnv": "ここでは OS の資格情報の保存先を使えません (キーリングの無い WSL や Linux など)。代わりに環境変数 {{env}} を設定してください。",
+        "unavailable": "ここでは OS の資格情報の保存先を使えません (キーリングの無い WSL や Linux など)。キーを保存できません。",
+        "envAlso": "{{env}} も設定されています。保存したキーを先に使います。",
+        "envUsed": "{{env}} の API キーを使っています。",
+        "replace": "保存したキーを置き換える",
+        "placeholder": "API キー",
+        "placeholderOptional": "API キー (省略可)",
+        "aria": "{{service}} の API キー",
+        "save": {
+          "label": "保存"
+        },
+        "delete": {
+          "label": "削除"
+        },
+        "applyFirst": "先にプロバイダを適用してください。キーはプロバイダごとに保存します。"
+      },
+      "project": {
+        "title": "このプロジェクト",
+        "dontSend": {
+          "label": "このプロジェクトのデータを外部の AI サービスに送らない"
+        },
+        "asked": "外部のサービスに送る前に、毎回確かめます。",
+        "off": "このプロジェクトでは、外部のサービスにデータを送る AI の機能を切っています。",
+        "saved": "プロジェクトと一緒に保存します。",
+        "local": "選んだサーバはこのコンピュータの中にあるので、データは外に出ず、送る前に確かめません。"
+      },
+      "consent": {
+        "remembered": "このプロジェクトでは、今後は確かめないことを選んでいます。",
+        "askAgain": {
+          "label": "また確かめる"
+        }
+      },
+      "test": {
+        "label": "接続を確かめる",
+        "tooltip": "画像を含まない小さな要求を送り、プロバイダと API キーを確かめます",
+        "connected": "接続できました。サーバが答えました。",
+        "notSent": "送りませんでした。"
+      },
+      "blocked": {
+        "notSending": "このプロジェクトは、外部の AI サービスにデータを送らない設定です。",
+        "noKey": "{{service}} の API キーがありません。設定で追加してください。",
+        "noKeyEnv": "{{service}} の API キーがありません。設定で追加するか、エディタを起動する前に {{env}} を設定してください。"
+      }
     },
     "agents": {
       "tab": "エージェントの接続"
@@ -379,6 +465,1309 @@
       "label": "言語",
       "system": "OS に合わせる",
       "description": "エディタの画面の言語です。操作マニュアルは日本語だけです。"
+    }
+  },
+  "export": {
+    "aria": "書き出しの設定",
+    "atlas": {
+      "label": "テクスチャをアトラスにまとめる"
+    },
+    "maxSize": {
+      "label": "最大の大きさ"
+    },
+    "padding": {
+      "label": "余白",
+      "unit": "px",
+      "invalid": "余白は 0 から {{max}} までの整数にしてください。"
+    },
+    "px": "{{value}} px",
+    "hint": "設定はプロジェクトに残ります。同じ画像は 1 回だけまとめます。",
+    "summary": {
+      "aria": "最後の書き出し",
+      "textures": "テクスチャ: {{value}}",
+      "stateChanges": "状態の切り替え: {{value}}",
+      "drawCalls": "描画の回数: {{value}}",
+      "size_other": "大きさ: {{bytes}} バイト",
+      "atlases_other": "アトラス {{count}} 枚",
+      "packed_other": "テクスチャ {{count}} 枚を{{atlases}}にまとめました",
+      "packedSizes_other": "テクスチャ {{count}} 枚を{{atlases}}にまとめました ({{sizes}})",
+      "deduplicated": "同じ画像: {{name}} → {{first}}",
+      "kept": {
+        "line": "まとめずに残した: {{name}} ({{reason}})",
+        "tooLarge": "大きすぎる",
+        "uvOutOfRange": "UV が 0–1 の外",
+        "hasNormalMap": "法線マップがある"
+      },
+      "removed": "使っていないので消した: {{names}}"
+    }
+  },
+  "glues": {
+    "title": "グルー",
+    "intro": "グルーは 2 つのメッシュの頂点を互いに引き寄せ、動いても継ぎ目が開かないようにします (袖と腕の縁など)。基準の姿で近い頂点どうしを組にします。",
+    "moduleNote": "モジュールのプロジェクトです。本体のグルーは読み取り専用です。モジュールのメッシュどうしはつなげられます。",
+    "empty": "グルーはまだありません。",
+    "list": {
+      "aria": "グルー",
+      "summary_other": "{{a}} + {{b}} · {{count}} 組"
+    },
+    "tag": {
+      "base": {
+        "label": "本体",
+        "tooltip": "本体のモデルのもの"
+      },
+      "clone": {
+        "label": "複製",
+        "tooltip": "描画用の複製を元に留める"
+      }
+    },
+    "editor": {
+      "aria": "グルー {{id}}"
+    },
+    "selectMeshes": {
+      "label": "メッシュを選ぶ",
+      "tooltip": "両端のメッシュをツリーで選ぶ"
+    },
+    "cloneHint": "このグルーは描画用の複製を元に留めます。作り直すには、インスペクタで複製の「同期」を使ってください。",
+    "meshes": {
+      "label": "メッシュ"
+    },
+    "swap": {
+      "label": "入れ替え",
+      "tooltip": "2 つのメッシュを入れ替える (見た目は変わらない)"
+    },
+    "weight": {
+      "label": "重み",
+      "description": "0 で両方を {{a}} に、1 で {{b}} に寄せ、0.5 で中間で合わせます。",
+      "mixed": "組ごとに重みが違います。変えるとすべての組に同じ値を設定します。"
+    },
+    "intensity": {
+      "label": "強さ",
+      "description": "強さ: 頂点を引き寄せる強さです (1 で完全に寄せる)。",
+      "follows": "強さは上のキーフォームのパラメータに従います。"
+    },
+    "axes": {
+      "aria": "強さの軸",
+      "description": "パラメータで強さを変えるには軸を足し (腕を下ろしたときは 0 など)、キーを足してそれぞれの強さを設定します。"
+    },
+    "removeKey": {
+      "aria": "キー {{key}} を外す",
+      "lastAria": "キー {{key}} を外す (軸も外れる)"
+    },
+    "newKey": {
+      "placeholder": "キー",
+      "aria": "{{parameter}} の新しいキー"
+    },
+    "addKey": {
+      "label": "+ キー",
+      "tooltip": "{{min}} から {{max}} までのキーを足す"
+    },
+    "axisParameter": {
+      "aria": "新しい強さの軸のパラメータ"
+    },
+    "axisKey": {
+      "aria": "新しい軸の最初のキー"
+    },
+    "addAxis": {
+      "label": "+ 軸",
+      "tooltip": "強さをこのパラメータに従わせる (今の強さはこのキーに残る)"
+    },
+    "pairs": {
+      "description": "頂点の組はビューポートに出ます。手で組にするには、ビューポートの「組を足す」「組を外す」を使ってください。"
+    },
+    "px": "px",
+    "repair": {
+      "label": "組を作り直す距離",
+      "button": "組にする",
+      "tooltip": "基準の姿の距離で頂点を組にし直す (重みと強さは保つ)"
+    },
+    "remove": {
+      "label": "グルーを消す"
+    },
+    "new": {
+      "title": "新しいグルー",
+      "empty": "つなげるには、モデルにメッシュが 2 つ以上要ります。",
+      "emptyModule": "つなげるには、モジュールにメッシュが 2 つ以上要ります。",
+      "meshA": "メッシュ A",
+      "meshB": "メッシュ B",
+      "distance": {
+        "label": "距離",
+        "description": "基準の姿でこの距離より近い頂点を組にします (キャンバスのピクセル)。"
+      },
+      "create": {
+        "label": "+ グルー",
+        "tooltip": "頂点が近いところで 2 つのメッシュをつなげる"
+      },
+      "fromSelection": "選んだメッシュから",
+      "sameMesh": "違う 2 つのメッシュを選んでください。"
+    }
+  },
+  "physics": {
+    "title": "物理",
+    "preview": {
+      "label": "プレビュー",
+      "stop": "プレビューを止める",
+      "tooltip": "物理を動かします。パラメータ (や頭) を動かすと揺れます。止めると編集中の姿に戻ります。",
+      "running": "プレビュー中…"
+    },
+    "parameterOnly": "これらのリグはパラメータにだけ出力するので、粒子はキャンバスの座標になく、ビューポートには描きません。",
+    "axis": {
+      "x": "x",
+      "y": "y"
+    },
+    "world": {
+      "title": "ワールド",
+      "baseHint": "重力・風・ステップ数は本体のものなので、ここでは編集できません。本体のプロジェクトで編集してください。",
+      "gravity": "重力",
+      "wind": "風",
+      "fps": {
+        "label": "ステップ / 秒",
+        "aria": "物理の 1 秒あたりのステップ数"
+      }
+    },
+    "rigs": {
+      "title": "リグ",
+      "order": "リグは上から順に処理されます。上のリグが書いたパラメータを読むリグは、同じステップでその値を受け取ります (中継)。",
+      "particles_other": "粒子 {{count}} 個",
+      "outputs_other": "出力 {{count}} 個",
+      "relay": {
+        "label": "中継",
+        "tooltip": "同じステップで、上のリグから {{parameters}} を読みます"
+      },
+      "moveUp": {
+        "aria": "{{name}} を上へ",
+        "tooltip": "上へ (先に処理する)"
+      },
+      "moveDown": {
+        "aria": "{{name}} を下へ",
+        "tooltip": "下へ (後に処理する)"
+      },
+      "baseOrder": "本体のリグの順序は本体のプロジェクトで決めます。",
+      "moduleOrder": "モジュールのリグは本体のリグの後に処理されます。並べ替えはモジュールのリグどうしでだけできます。",
+      "empty": "物理のリグはありません。",
+      "add": "+ リグ",
+      "fromSelection": {
+        "label": "+ 選んだデフォーマから",
+        "labelCount": "+ 選んだデフォーマから ({{count}})",
+        "tooltip": "ツリーで回転デフォーマ (根元から先へ。髪の房のデフォーマなど) を選ぶと、粒子がそれに沿って揺らすリグを作ります"
+      }
+    },
+    "rig": {
+      "title": "リグ",
+      "name": {
+        "label": "名前"
+      },
+      "frame": {
+        "label": "重力の基準",
+        "tooltip": "重力と風をこのデフォーマの空間で測ります (頭を傾けると垂れる向きも傾きます)",
+        "canvas": "キャンバス"
+      },
+      "delete": "リグを削除"
+    },
+    "particles": {
+      "title": "粒子",
+      "hint": "粒子 0 は根元です。最初のデフォーマの出力 (または重力の基準) に従います。",
+      "aria": "粒子 {{index}}",
+      "remove": "粒子 {{index}} を削除",
+      "add": "+ 粒子",
+      "fields": {
+        "radius": {
+          "label": "長さ",
+          "tooltip": "前の粒子からの距離 (px)"
+        },
+        "mobility": {
+          "label": "揺れ",
+          "tooltip": "動きやすさ: 1/30 秒ごとに残す速度 (0..1)"
+        },
+        "delay": {
+          "label": "速さ",
+          "tooltip": "遅れ: 時間の倍率 (1 = 標準。大きいほど速く反応する)"
+        },
+        "acceleration": {
+          "label": "収まり",
+          "tooltip": "加速度: 重力の倍率 (大きいほど速く収まる)"
+        },
+        "collisionRadius": {
+          "label": "当たり r",
+          "tooltip": "当たりの半径 (px)"
+        },
+        "x": {
+          "label": "x",
+          "tooltip": "初めの位置の x (根元から、px)"
+        },
+        "y": {
+          "label": "y",
+          "tooltip": "初めの位置の y (根元から、px)"
+        }
+      }
+    },
+    "inputs": {
+      "title": "入力",
+      "aria": "入力 {{index}}",
+      "parameter": "パラメータ",
+      "source": "成分",
+      "weight": {
+        "label": "重み",
+        "tooltip": "重み (%)"
+      },
+      "flip": "反転",
+      "remove": "入力 {{index}} を削除",
+      "empty": "入力はありません。根元はデフォーマに従います。",
+      "add": "+ 入力"
+    },
+    "outputs": {
+      "title": "出力",
+      "aria": "出力 {{index}}",
+      "kind": "種類",
+      "target": "出力先",
+      "particle": {
+        "label": "粒子",
+        "aria": "粒子",
+        "tooltip": "粒子の番号 (1 = 最初の区間の先)"
+      },
+      "source": "成分",
+      "scale": {
+        "label": "倍率",
+        "tooltip": "倍率"
+      },
+      "weight": {
+        "label": "重み",
+        "tooltip": "重み (%)"
+      },
+      "flip": "反転",
+      "blend": {
+        "label": "合成",
+        "tooltip": "出力をパラメータの値にどう合成するか (加算はトラッキングを保って揺れを足します)"
+      },
+      "weights_other": "重み {{count}} 個",
+      "remove": "出力 {{index}} を削除",
+      "empty": "出力はありません。リグで何かを動かすには出力を足してください。",
+      "add": "+ 出力"
+    },
+    "targetKinds": {
+      "parameter": "パラメータ",
+      "deformerAngle": "デフォーマの角度",
+      "deformerOffset": "デフォーマの移動",
+      "mesh": "メッシュの頂点",
+      "warp": "ワープの制御点"
+    },
+    "blends": {
+      "overwrite": {
+        "label": "上書き",
+        "description": "値を物理の値で置き換えます"
+      },
+      "add": {
+        "label": "加算",
+        "description": "今の値に物理の揺れを足します"
+      }
+    },
+    "collides": {
+      "title": "当たる衝突体",
+      "empty": "下で衝突体を足し、このリグが当たるものに印を付けてください。"
+    },
+    "range": {
+      "title": "入力の範囲",
+      "position": "位置",
+      "angle": "角度",
+      "min": "最小",
+      "default": "既定",
+      "max": "最大"
+    },
+    "templates": {
+      "title": "テンプレート",
+      "hint": "標準パラメータでよく使うリグです。もう一度適用すると、そのリグを作り直します。1 回の Undo でテンプレートが作ったものをすべて消せます。",
+      "createMissing": {
+        "label": "足りないパラメータを作る",
+        "moduleTooltip": "モジュールはパラメータを足せません。本体のプロジェクトで足してください。"
+      },
+      "blend": {
+        "label": "体の合成",
+        "tooltip": "体のリグが BodyAngle* に書く方法: 加算はトラッキングとモーションの値を保って遅れを足します"
+      },
+      "neck": {
+        "label": "首",
+        "choose": "(選ぶ)",
+        "noneModule": "(モジュールの回転デフォーマがありません)",
+        "none": "(回転デフォーマがありません)"
+      },
+      "apply": "+ {{template}}",
+      "inBase": "本体に {{rigs}} があります: 本体のプロジェクトで編集してください",
+      "needsRelays": "本体に {{parameters}} が要ります (モジュールはパラメータを足せません)",
+      "creates": "{{parameters}} を作ります",
+      "skips": "{{parameters}} を使うリグは作りません",
+      "items": {
+        "bodyFollow": {
+          "label": "体の追従",
+          "tooltip": "体 (BodyAngleX/Y/Z) が頭 (AngleX/Y/Z) に遅れて従い、少し行き過ぎて収まります"
+        },
+        "bounce": {
+          "label": "弾み",
+          "tooltip": "頭を回すと中継パラメータ BodyBounce が揺れ、2 つ目の振り子が BodyAngleX に弾みを足します"
+        },
+        "neckFollow": {
+          "label": "首の追従",
+          "tooltip": "首の回転デフォーマが頭 (AngleZ・AngleX) に遅れて傾きます"
+        }
+      }
+    },
+    "colliders": {
+      "title": "衝突体",
+      "empty": "衝突体はありません。",
+      "shapes": {
+        "circle": "円",
+        "capsule": "カプセル"
+      },
+      "summaryAttached": "{{shape}}・{{deformer}} に取り付け",
+      "addCircle": {
+        "label": "+ 円",
+        "tooltip": "円の衝突体を足します (デフォーマを選んでいれば、それに取り付けます)"
+      },
+      "addCapsule": {
+        "label": "+ カプセル",
+        "tooltip": "カプセルの衝突体を足します (デフォーマを選んでいれば、それに取り付けます)"
+      },
+      "name": {
+        "label": "名前"
+      },
+      "attach": {
+        "label": "取り付け先",
+        "canvas": "キャンバス"
+      },
+      "shape": "形",
+      "center": "中心",
+      "endA": "端 A",
+      "endB": "端 B",
+      "radius": "半径",
+      "hint": "位置は取り付け先のデフォーマの局所座標です。ビューポートで衝突体をドラッグして動かせます。",
+      "delete": "衝突体を削除"
+    },
+    "restPose": {
+      "hits_other": "静止姿勢でリグと衝突体の組が {{count}} つ当たっています。髪は垂れずに衝突体に沿って曲がった姿で始まります。意図したものでなければ、垂れた髪から衝突体を外してください。",
+      "select": "物理のパネルでリグと衝突体を選びます",
+      "none": "静止姿勢で衝突体に当たっているリグはありません。",
+      "noSettings": "物理の設定はありません。",
+      "pair": "{{rig}} が {{collider}} に当たる",
+      "segments_other": "区間 {{list}}"
+    }
+  },
+  "verify": {
+    "overflow": {
+      "title": "デフォーマからのはみ出し",
+      "description": "親のワープの格子の外にある点は、外挿でワープに従うので、内側より曲がり方が小さくなります。",
+      "show": "ビューポートにはみ出しを表示",
+      "noneNow": "今のパラメータでは、親のワープの外にある点はありません。",
+      "now": "今、{{elements}}の {{points}}が親のワープの外にあります。",
+      "verify": {
+        "label": "すべてのセルを検証",
+        "running": "検証中…"
+      },
+      "checked": "{{elements}}・{{cells}}",
+      "truncated": "キーの組み合わせが多すぎるため、{{elements}} は軸の端だけを調べました。",
+      "none": "どのキーフォームのセルにもはみ出しはありません。",
+      "found_other": "{{count}} 個の要素が {{cells}}ではみ出しています。",
+      "parent": "{{parent}} の中・最大 {{amount}}",
+      "cell": "要素を選び、パラメータをこのセルの値にします",
+      "noAxes": "(軸なし)",
+      "dot": "{{element}} {{point}}: {{parent}} の外へ {{amount}}",
+      "origin": "原点"
+    },
+    "counts": {
+      "points_other": "{{count}} 個の点",
+      "elements_other": "{{count}} 個の要素",
+      "cells_other": "{{count}} 個のセル",
+      "vertex_other": "頂点 {{count}} 個",
+      "controlPoint_other": "制御点 {{count}} 個",
+      "origin_other": "原点 {{count}} 個"
+    },
+    "physics": "物理"
+  },
+  "lighting": {
+    "title": "ライティング",
+    "empty": "まず PSD を取り込んでください。ライティングは下の光源でメッシュに陰影を付けます。",
+    "model": {
+      "aria": "モデルのライティング",
+      "baseHint": "モデルがライティングを受けるかは、本体のプロジェクトで決めます。",
+      "receive": {
+        "label": "ライティングを受ける (モデル)"
+      }
+    },
+    "hint": {
+      "modelOff": "このモデルはライティングが切れているので、光源を変えても見た目は変わりません。モデルの「ライティングを受ける」を入れてください。",
+      "noLitMesh": "ライティングを受けるメッシュがありません。陰影を付けたいメッシュの「受ける」を入れてください。"
+    },
+    "unit": {
+      "px": "px",
+      "texturePx": "テクスチャの px"
+    },
+    "meshes": {
+      "title": "ライティングを受けるメッシュ",
+      "lightSelected": "選んだものを受ける",
+      "unlightSelected": "選んだものを受けない",
+      "allOn": "すべて入れる",
+      "allOff": "すべて切る",
+      "lightBatch": "メッシュにライティングを受けさせる",
+      "unlightBatch": "メッシュのライティングを切る",
+      "description": "目のハイライトなど、平らなままにしたいパーツはライティングを切ります。",
+      "moduleNote": "本体のモデルのメッシュは本体のプロジェクトで決めます。ボタンはモジュールのメッシュだけを変えます。",
+      "lit": {
+        "aria": "ライティングを受ける: {{name}}"
+      },
+      "base": {
+        "label": "本体",
+        "tooltip": "本体のモデルのもの: モジュールのプロジェクトでは読み取り専用です"
+      },
+      "normalMap": {
+        "label": "N",
+        "tooltip": "法線マップがあります"
+      }
+    },
+    "normalMap": {
+      "title": "法線マップ",
+      "empty": "メッシュを選ぶと、そのテクスチャの法線マップを作る・付けることができます。",
+      "texture": "テクスチャ: {{texture}}",
+      "textureImage": {
+        "alt": "テクスチャ {{name}}",
+        "caption": "テクスチャ"
+      },
+      "image": {
+        "alt": "法線マップ {{name}}",
+        "none": "なし",
+        "empty": "法線マップなし"
+      },
+      "sharedWith": "{{textures}} と共有しています。作る・付けると、このテクスチャ用の別の画像になります。",
+      "generate": {
+        "title": "形から作る",
+        "description": "不透明な形を手前にふくらませます (AI は使いません)。同じまとまりのパーツは 1 つの面としてふくらむので、目は顔に沿い、首は体につながります。眼鏡はふくらまず、顔の向きだけを受けます。モデルのライティングが切れていれば入れます。すべてのテクスチャの法線マップをまとめて提案するには、AI のタブを使います。",
+        "label": "作る"
+      },
+      "group": {
+        "oriented": "まとまり「{{group}}」({{textures}}) の向きを受け、ふくらみません。",
+        "with": "まとまり「{{group}}」: {{textures}} と一緒です。",
+        "shapeOnly": "{{textures}} の形も加えます。",
+        "orientedOnly": "{{textures}} は向きだけを受けます。",
+        "alone": "まとまり「{{group}}」(このテクスチャだけ)。",
+        "none": "部位のラベルがないので、単独でふくらませます。",
+        "fromClassification": "ラベルは PSD の分類から取りました。",
+        "fromLayerNames": "ラベルはレイヤーの名前から取りました。"
+      },
+      "strength": {
+        "label": "強さ"
+      },
+      "roundEdges": {
+        "label": "縁だけを丸める"
+      },
+      "edge": {
+        "label": "縁の幅"
+      },
+      "smoothing": {
+        "label": "ならし"
+      },
+      "regenerate": {
+        "label": "作り直す"
+      },
+      "generateGroup": {
+        "label": "まとまりに作る"
+      },
+      "defaults": {
+        "label": "既定に戻す"
+      },
+      "imageSection": {
+        "title": "画像"
+      },
+      "flipGreen": {
+        "label": "緑を反転 (DirectX)"
+      },
+      "assign": {
+        "label": "PNG を付ける…",
+        "title": "法線マップを付ける"
+      },
+      "pngFilter": "PNG 画像 (.png)",
+      "remove": {
+        "label": "法線マップを外す"
+      }
+    },
+    "lights": {
+      "title": "プレビューの光源",
+      "enabled": {
+        "label": "ビューポートを照らす"
+      },
+      "description": "光源はプロジェクトに残すプレビューの設定で、モデルには入りません。モデルを表示するアプリは自分の光源を渡します。",
+      "ambient": {
+        "label": "環境光",
+        "color": {
+          "aria": "環境光の色"
+        },
+        "intensity": {
+          "aria": "環境光の強さ"
+        }
+      },
+      "name": {
+        "directional": "{{index}}. 平行光源",
+        "point": "{{index}}. 点光源"
+      },
+      "color": {
+        "aria": "光源 {{index}} の色"
+      },
+      "intensity": {
+        "aria": "光源 {{index}} の強さ"
+      },
+      "remove": {
+        "aria": "光源 {{index}} を消す"
+      },
+      "addDirectional": {
+        "label": "平行光源を足す"
+      },
+      "addPoint": {
+        "label": "点光源を足す"
+      },
+      "reset": {
+        "label": "リセット",
+        "tooltip": "弱い環境光と、左上からの光源 1 つに戻します"
+      },
+      "directional": {
+        "description": "ビューポートの円の上の取っ手をドラッグして光の向きを決めます。仰角 {{elevation}}° (90° = 正面から)。"
+      },
+      "behind": {
+        "label": "キャンバスの裏から"
+      },
+      "point": {
+        "description": "ビューポートで光源をドラッグして動かします。Z はキャンバスの手前への距離です。"
+      },
+      "direction": {
+        "label": "向き"
+      },
+      "position": {
+        "label": "位置"
+      },
+      "limitRange": {
+        "label": "届く範囲を限る"
+      },
+      "range": {
+        "label": "範囲",
+        "unlimited": "無制限"
+      }
+    }
+  },
+  "slots": {
+    "title": "スロット",
+    "intro": "スロットは、着せ替えのモジュール (別のモジュールのプロジェクトとして作る服・髪型・アクセサリー) をこのモデルに付ける場所です。モジュールはスロットの名前だけを指すので、どこに付くか・どこに描くか・このモデルのどのパーツを使ってよいかをここで決めます。",
+    "empty": "スロットはまだありません。",
+    "noFreeRange": "0〜1000 の間に空いている描画順の範囲がありません。先にほかのスロットの範囲を狭めてください。",
+    "tag": {
+      "app": {
+        "label": "アプリ",
+        "tooltip": "アバタープロファイルに載せています"
+      },
+      "overlap": {
+        "label": "重なり",
+        "tooltip": "描画順の範囲が {{slots}} と重なっています"
+      }
+    },
+    "add": {
+      "label": "+ スロット",
+      "tooltip": "空いている描画順の範囲にスロットを足します"
+    },
+    "slot": {
+      "title": "スロット"
+    },
+    "name": {
+      "label": "名前",
+      "help": "モジュールはこの名前でスロットを指します (例: Hair・Outfit・HeadAccessory)。",
+      "invalid": "スロットの名前には英字・数字・_ だけを使えます (モジュールはこの名前でスロットを指します)。"
+    },
+    "anchor": {
+      "label": "取り付け先",
+      "canvas": "キャンバス",
+      "help": "モジュールが一緒に動くデフォーマです (例: 髪なら頭)。モジュールの最上位のメッシュとデフォーマは、このデフォーマの空間に置かれます。"
+    },
+    "part": {
+      "label": "親のパーツ",
+      "none": "なし",
+      "help": "モジュールのパーツはこのパーツの子になり、一緒に消えます (ポーズ・モーション)。"
+    },
+    "drawOrder": {
+      "label": "描画順",
+      "from": {
+        "aria": "描画順の始め"
+      },
+      "to": {
+        "aria": "描画順の終わり"
+      },
+      "help": "モジュールのメッシュ (描画順 {{min}}〜{{max}}) はこの範囲に詰め込まれ、このモデルの範囲より下のメッシュの手前、上のメッシュの奥に描かれます。スロットの範囲は重ねられません。下の「描画順」を見てください。"
+    },
+    "replaces": {
+      "title": "置き換えるパーツ",
+      "help": "モジュールを付けている間に隠す、このモデルのパーツです (例: 既定の髪)。",
+      "empty": "モデルにパーツがありません。"
+    },
+    "parameters": {
+      "title": "パラメータ",
+      "help": "モジュールが動きに使ってよい、このモデル独自のパラメータです。標準のパラメータ (AngleX・EyeLOpen など) はいつでも使えるので、選ばなくてかまいません。",
+      "empty": "モデルにパラメータがありません。"
+    },
+    "maskSources": {
+      "title": "マスクの元",
+      "help": "モジュールがクリッピングに使ってよい、このモデルのメッシュです (例: 前髪を顔の中に収めるための顔)。",
+      "empty": "モデルにメッシュがありません。"
+    },
+    "colliders": {
+      "title": "コライダー",
+      "help": "モジュールの物理が当たってよい、このモデルの物理のコライダーです (例: 長い髪がかかる首)。",
+      "empty": "モデルにコライダーがありません。物理のタブで足してください。"
+    },
+    "poseParts": {
+      "title": "ポーズのパーツ",
+      "help": "モジュールのパーツが従ってよい、このモデルのポーズのグループのパーツです (例: 袖 A / B が腕 A / B に従う)。",
+      "empty": "モデルにポーズのグループがありません。"
+    },
+    "showToApps": {
+      "label": "アプリに見せる",
+      "help": "アバタープロファイルにスロットを載せ、アプリが利用者に選ばせるようにします。載せないスロットは作者だけが使います。",
+      "noProfile": "アバタープロファイルにスロットを載せ、アプリが利用者に選ばせるようにします。先にアバタープロファイルを作ってください (何も選ばずにインスペクタで)。"
+    },
+    "selectInRange": {
+      "label": "範囲のメッシュを選ぶ",
+      "tooltip": "描画順が範囲に入る、このモデルのメッシュを選んでビューポートで確かめます"
+    },
+    "remove": {
+      "label": "スロットを消す"
+    },
+    "drawOrderList": {
+      "title": "描画順",
+      "description": "このモデルのメッシュを手前から奥へ (既定のパラメータで) 並べ、スロットの範囲を重ねています。範囲の中のメッシュはモジュールと交互に描かれ、モジュールは範囲の上と下のメッシュの間に描かれます。",
+      "empty": "モデルにメッシュがありません。",
+      "frontEnd": "{{slot}} · 手前の端 ▼",
+      "backEnd": "{{slot}} · 奥の端 ▲"
+    },
+    "pickList": {
+      "none": "なし",
+      "missing": "{{id}} (見つかりません)"
+    }
+  },
+  "poses": {
+    "title": "ポーズ",
+    "intro": "ポーズのグループは、パーツの差分 (例: 腕 A / B) を切り替えます。グループの要素は一度に 1 つだけが見え、最初は先頭の要素が見えます。リンクは要素と一緒にフェードします (例: 腕と一緒に袖)。モーションはパーツの不透明度を動かして要素を選び、アプリも要素を選べます。",
+    "moduleNote": "モジュールのプロジェクト: 本体のポーズのグループは読み取り専用です。モジュールのパーツのグループを足すことと、スロットが公開する本体の要素 (本体の「スロット」タブの「ポーズのパーツ」) にモジュールのパーツをリンクすることができます。",
+    "fade": {
+      "label": "フェードの時間",
+      "unit": "秒",
+      "description": "見える要素が変わるときのクロスフェードの時間です",
+      "baseHint": "フェードの時間は本体のモデルのものです。"
+    },
+    "preview": {
+      "label": "ビューポートでポーズを見る",
+      "description": "アプリと同じく、ビューポートでグループごとに 1 つの要素だけを見せます (モデルは変わりません)"
+    },
+    "empty": "ポーズのグループはまだありません。",
+    "group": {
+      "title": "グループ {{index}}",
+      "base": {
+        "label": "本体",
+        "tooltip": "本体のモデルのものです"
+      },
+      "baseHint": "本体のグループはここでは変えられず、消せません。",
+      "remove": {
+        "label": "グループを消す",
+        "tooltip": "このグループを消します (パーツは残ります)"
+      }
+    },
+    "entry": {
+      "dragHint": "要素はドラッグで並べ替えます (最初は先頭の要素が見えます)。",
+      "select": {
+        "tooltip": "パーツを選ぶ"
+      },
+      "first": {
+        "label": "先頭",
+        "tooltip": "最初に見えます"
+      },
+      "show": {
+        "label": "見せる",
+        "tooltip": "この要素をビューポートで見せます"
+      },
+      "shown": {
+        "label": "表示中",
+        "tooltip": "ビューポートで見えています"
+      },
+      "moveUp": {
+        "aria": "上へ",
+        "tooltip": "上へ移す (最初は先頭の要素が見えます)"
+      },
+      "moveDown": {
+        "aria": "下へ"
+      },
+      "remove": {
+        "aria": "要素を消す",
+        "tooltip": "この要素をグループから外します"
+      },
+      "baseLinks": "本体のリンク: {{parts}}",
+      "add": {
+        "label": "+ 要素",
+        "aria": "グループ {{index}} に足すパーツ",
+        "tooltip": "パーツをこのグループの差分として足します"
+      }
+    },
+    "links": {
+      "title": "リンク",
+      "help": "この要素と一緒に切り替わるパーツです (例: 腕と一緒に袖)。",
+      "baseHelp": "この本体の要素と一緒に切り替わるモジュールのパーツです (例: 腕 A / B と一緒に袖 A / B)。",
+      "empty": "空いているパーツがありません。パーツはポーズの中で 1 か所にしか置けません。",
+      "notExposed": "スロットがこの要素を公開していないので、モジュールのパーツは従えません。"
+    },
+    "newGroup": {
+      "title": "新しいグループ",
+      "noParts": "すべてのパーツがもうポーズに入っています。",
+      "noModuleParts": "モジュールのパーツがすべてポーズに入っているか、モジュールにパーツがありません。",
+      "first": {
+        "aria": "新しいグループの最初のパーツ"
+      },
+      "add": {
+        "label": "+ グループ"
+      },
+      "fromSelection": {
+        "label": "+ 選んだものでグループ",
+        "tooltip_other": "選んだ {{count}} 個のパーツでグループを作ります",
+        "disabled": "まだポーズに入っていないパーツを 2 つ以上 (ツリーで) 選んでください。"
+      }
+    }
+  },
+  "preview": {
+    "title": "プレビュー",
+    "loadingViewport": "ビューポートを読み込んでいます…",
+    "physicsError": "物理: {{message}}",
+    "stages": {
+      "aria": "ランタイムの段",
+      "title": "ランタイム",
+      "physics": "物理",
+      "eyeBlink": "目パチ",
+      "breath": "呼吸",
+      "lipSync": "リップシンク",
+      "pose": "ポーズ",
+      "notSetUp": "{{stage}} (設定なし)",
+      "notSetUpHint": "「設定なし」の段は、このモデルに設定が無いので、入れても何も起きません。",
+      "resetPhysics": {
+        "label": "リセット",
+        "tooltip": "粒子を基準の姿に戻す"
+      },
+      "lipSyncLevel": "リップシンクの大きさ (声の大きさからの口の開き)"
+    },
+    "pose": {
+      "title": "ポーズ",
+      "off": "表示する要素を見るには、上のポーズの段を入れてください。",
+      "hint": "グループごとに表示する要素を選びます (ほかの要素はフェードアウトします)。",
+      "group": "グループ {{n}}",
+      "moduleGroup": "{{module}} のグループ {{n}}",
+      "moduleGroupUnnamed": "モジュールのグループ {{n}}"
+    },
+    "tracking": {
+      "aria": "フェイストラッキング",
+      "saveTitle": "フェイストラッキングの記録を保存"
+    },
+    "licenses": {
+      "open": "サードパーティのライセンス",
+      "title": "フェイストラッキングのライセンス",
+      "description": "ugoe のエディタは GPL-3.0-only で配布しています。フェイストラッキングは MediaPipe を使い、次のライセンスでエディタに同梱しています。",
+      "loadStatus": "ライセンスの表示を読み込めません ({{status}})",
+      "loadError": "ライセンスの表示を読み込めません: {{message}}"
+    },
+    "motions": {
+      "title": "モーション",
+      "stop": "停止",
+      "empty": "このプロジェクトにモーションはありません。",
+      "play": "{{name}} を再生",
+      "stopOne": "{{name}} を停止",
+      "duration": "{{value}} 秒",
+      "durationLoop": "{{value}} 秒 · ループ",
+      "events": "イベント: {{events}}"
+    },
+    "expressions": {
+      "title": "表情",
+      "empty": "このプロジェクトに表情はありません。",
+      "none": "(なし)"
+    },
+    "parameters": {
+      "title": "パラメータ",
+      "other": "その他",
+      "resetAll": {
+        "label": "すべてリセット",
+        "tooltip": "すべてのパラメータを既定値に戻す"
+      },
+      "filter": {
+        "placeholder": "絞り込み (名前か ID)",
+        "aria": "パラメータを絞り込む"
+      },
+      "empty": "このモデルにパラメータはありません。",
+      "reset": {
+        "aria": "{{name}} を既定値 ({{value}}) に戻す"
+      }
+    },
+    "loadWarnings": {
+      "physicsRemoved": "物理の設定がこのモデルに合わなくなったので、外しました ({{reason}})。",
+      "textureKtx2": "テクスチャ {{texture}} は KTX2 の画像で、プレビューではまだ表示できないので、白で描きます。",
+      "textureMissing": "テクスチャ {{texture}} に画像が無いので、白で描きます。",
+      "normalMapKtx2": "テクスチャ {{texture}} の法線マップは KTX2 の画像で、プレビューではまだ使えないので、法線マップなしで照らします。",
+      "unknownOptionalFeature": "このファイルは新しい版の機能「{{feature}}」を使っているので、プレビューでは代わりの表示にします。",
+      "unknownValue": "このファイルには、この版が知らない値 ({{path}}) があるので、プレビューでは既定値を使います。"
+    },
+    "difference": {
+      "select": {
+        "tree": "プレビューを終えて、ツリーで {{id}} を選ぶ",
+        "glue": "プレビューを終えて、「グルー」タブで {{id}} を選ぶ",
+        "physics": "プレビューを終えて、「物理」タブで {{id}} を選ぶ",
+        "poses": "プレビューを終えて、「ポーズ」タブで {{id}} を、ツリーでそのパーツを選ぶ"
+      },
+      "notice": {
+        "notShown": "{{id}} を見るには、今の編集かファイルを付けてください。",
+        "removedNotDrawn": "{{id}} は今の編集で除きました。見るにはファイルを付けてください。",
+        "notInFile": "{{id}} はファイルにありません。見るには今の編集を付けてください。",
+        "removedOutline": "除いた要素: {{id}} は今の編集にありません。輪郭は残っているメッシュです。見るにはファイルを付けてください。",
+        "addedOutline": "足した要素: {{id}} はファイルにありません。輪郭は残っているメッシュです。見るには今の編集を付けてください。",
+        "inEdits": "今の編集の {{id}}",
+        "inFile": "ファイルの {{id}}",
+        "notDrawnInEdits": "今の編集では {{id}} を描けません。",
+        "notDrawnInFile": "ファイルでは {{id}} を描けません。"
+      },
+      "fit": {
+        "label": "合わせる",
+        "tooltip": "ビューポートを {{id}} に寄せる (キャンバスの全体に戻すにはビューポートの「全体」)"
+      },
+      "clear": {
+        "label": "やめる",
+        "tooltip": "強調をやめる"
+      }
+    },
+    "dressUp": {
+      "title": "着せ替え",
+      "load": {
+        "label": ".ugoemod を読み込む…",
+        "tooltip": "モジュールのファイル (.ugoemod) を読み込んで付ける",
+        "title": "モジュールを読み込む"
+      },
+      "dropping": "落とすとモジュールを読み込みます。",
+      "description": "このモデルにモジュールを付けて試します。ファイルを読み込むか、.ugoemod のファイルをウィンドウに落としてください。モデルは変わりません。",
+      "dropError": "ここで読み込めるのは .ugoemod のファイルだけです。",
+      "details": "詳細",
+      "takenOff": "{{name}} を外しました: {{summary}}",
+      "fileProblem": "{{file}}: {{summary}}",
+      "file": "ファイル",
+      "ownProblem": "ほかのモジュールと比べるために、今の編集を本体に付けられません: {{message}}",
+      "slots": {
+        "title": "スロット",
+        "empty": "このモデルにスロットはありません。「スロット」タブで足してください。",
+        "aria": "スロット {{slot}} のモジュール",
+        "none": "(なし)",
+        "noModule": "(モジュールなし)",
+        "authorsOnly": {
+          "label": "作者だけ",
+          "tooltip": "アバタープロファイルがこのスロットを挙げていないので、ビューアなどのアプリは利用者に見せません。見せるには「スロット」タブで「アプリに見せる」に印を付けてください。"
+        }
+      },
+      "modules": {
+        "title": "モジュール",
+        "empty": "モジュールを読み込んでいません。",
+        "editing": {
+          "label": "編集中",
+          "tooltip": "今の編集 (ファイルに保存していない)。スロットのほかのモジュールと差し替えて比べられます。"
+        },
+        "reload": {
+          "aria": "{{name}} を読み直す",
+          "tooltip": "ファイルを読み直す (書き出し直した後に)"
+        },
+        "remove": {
+          "aria": "{{name}} を除く",
+          "tooltip": "外して一覧から除く"
+        },
+        "dropped": "落としたファイルです。プロジェクトには残りません。"
+      },
+      "differences": {
+        "comparing": "今の編集と比べています…",
+        "same": "今の編集と同じです。",
+        "summary_other": "今の編集との違い {{count}} 件",
+        "description": "このファイルから今の編集で変わったところです (ファイル → 編集)。",
+        "highlight": "ビューポートで {{id}} を強調する",
+        "unhighlight": "{{id}} の強調をやめる",
+        "select": "選ぶ"
+      },
+      "problem": {
+        "theModule": "モジュール",
+        "anotherModule": "ほかのモジュール",
+        "unknownSlot": "{{module}} はスロット「{{slot}}」に付けますが、このモデルにそのスロットはありません。「スロット」タブで足してください (名前は完全に一致させます)。",
+        "missingSlot": "{{module}} には、このモデルにスロット「{{slot}}」が要ります。「スロット」タブで足してください。",
+        "missingParameter": "{{module}} はパラメータ「{{parameter}}」を使いますが、このモデルにはありません。",
+        "parameterNotExposed": "{{module}} はパラメータ「{{parameter}}」を使いますが、スロット「{{slot}}」が許していません。「スロット」タブでスロットのパラメータに印を付けてください。",
+        "avatarLevel": "{{module}} には、このモデルが名乗るより高いアバタープロファイルのレベルが要ります。",
+        "slotOccupied": "スロット「{{slot}}」には {{attached}} が付いています。先にそれを外してください。",
+        "unknownMask": "{{module}} はメッシュ「{{mesh}}」を、このモデルが出していないメッシュでマスクします。「スロット」タブでスロットのマスクの元に足してください。",
+        "unknownCollider": "{{module}} の物理は、このモデルが出していない衝突体とぶつかります。「スロット」タブでスロットの衝突体に足してください。",
+        "poseNotExposed": "{{module}} は、スロット「{{slot}}」が出していないポーズのパーツに従います。「スロット」タブでスロットのポーズのパーツに足してください。",
+        "textureOutOfRange": "{{module}} は壊れています: メッシュ「{{mesh}}」がモジュールに無いテクスチャを使っています。モジュールを書き出し直してください。",
+        "invalidComposition": "このモジュールを付けたモデルが正しくありません。詳細を見てください。",
+        "invalidModuleName": "モジュールの名前「{{module}}」は使えません (空にせず、/ を含めず、# で始めないでください)。",
+        "duplicateModule": "「{{module}}」という名前のモジュールが 2 つあります。",
+        "compile": "このモジュールを付けたモデルを、描く準備ができませんでした。詳細を見てください。",
+        "invalidPhysics": "モジュールの物理がこのモデルに合いません。詳細を見てください。",
+        "notAttached": "{{module}} は付いていません。",
+        "notLoaded": "{{module}} を読み込んでいません。ファイルを読み込み直してください。",
+        "noModel": "ビューポートにモデルがありません。",
+        "invalidFile": ".ugoemod のファイルでないか、壊れているか、新しい版の ugoe のものです。",
+        "texture": "モジュールの画像を GPU に載せられませんでした。",
+        "sameName": "このファイルも、ここで今の編集が使う名前「{{name}}」なので、今の編集だけを出します。比べるには、ファイルのモジュールの名前を変えてください。",
+        "ownSlot": "このプロジェクトはスロット「{{slot}}」のモジュールなので、ここにはほかのモジュールを付けられません。本体のプロジェクトで試してください。"
+      }
+    }
+  },
+  "agents": {
+    "intro": "エージェント (Claude Code・Claude Desktop・OpenCode・ChatGPT など) に、このエディタで開いているプロジェクトを扱わせます。提案は AI のタブに出ます。適用・Undo・保存の前には、必ずここで確かめます。",
+    "manual": {
+      "label": "エージェントのつなぎ方…"
+    },
+    "enable": {
+      "label": "このエディタにエージェントをつなぐことを許す"
+    },
+    "state": {
+      "failed": "始められませんでした: {{message}}",
+      "listening": "<code>{{url}}</code> で待ち受けています (このコンピュータからだけ。トークンが要ります)",
+      "off": "切れています。エージェントはつなげません。"
+    },
+    "project": {
+      "label": "エージェントが扱うプロジェクト: <code>{{path}}</code>",
+      "unsaved": "先にプロジェクトを保存してください (ファイル → 別名で保存…)。エージェントはプロジェクトをパスで指すので、保存していないプロジェクトは扱えません。"
+    },
+    "clients": {
+      "title": "つながっているエージェント",
+      "empty": "まだありません。下の手順でエージェントにエディタを登録してから、エージェントを起動してください。",
+      "connected": "· {{ago}}につながりました",
+      "justNow": "たった今",
+      "minutesAgo_other": "{{count}} 分前",
+      "hoursAgo_other": "{{count}} 時間前"
+    },
+    "register": {
+      "title": "エージェントにエディタを登録する",
+      "noSidecar": "エディタの隣にもビルドのフォルダーにも <code>ugoe-mcp</code> が見つかりません (開発用のビルドです。インストーラには含まれています)。<build>cargo build --release -p ugoe-mcp</build> でビルドしてから、このタブを開き直してください。それまでは、コマンドは PATH の <code>ugoe-mcp</code> を使います。",
+      "choices": {
+        "aria": "エージェント"
+      }
+    },
+    "desktop": {
+      "enableFirst": "先に上の「このエディタにエージェントをつなぐことを許す」を入れてください。Claude Desktop がエディタに届くのは、入れている間だけです (拡張機能は今入れて、後で入れてもかまいません)。",
+      "inWsl": "このエディタは WSL の中で動いているので、Windows の Claude Desktop からは届きません。代わりに Windows のエディタを使ってください。その拡張機能は Windows の中で中継します。",
+      "install": {
+        "label": "Claude Desktop に入れる…"
+      },
+      "save": {
+        "label": ".mcpb を保存…",
+        "title": "Claude Desktop の拡張機能を保存",
+        "filter": "MCP バンドル"
+      },
+      "packing": "拡張機能をまとめています…",
+      "opened": "拡張機能を開きました。Claude Desktop がインストールの画面を出すので、「インストール」を選んで有効にしてください。",
+      "openedFallback": "何も起きない、または別のアプリが開いた場合は、Claude Desktop の「設定 → 拡張機能 → 詳細設定 → 拡張機能をインストール…」で <code>{{path}}</code> を選んでください。",
+      "saved": "<code>{{path}}</code> に保存しました。ダブルクリックするか、Claude Desktop のウィンドウに落とすか、Claude Desktop の「設定 → 拡張機能 → 詳細設定 → 拡張機能をインストール…」を使ってください。",
+      "check": "確かめ方: Claude Desktop の「設定 → 拡張機能」に「ugoe editor」が有効として出て、チャットの「+」のボタン → コネクタにそのツールが出ます。Claude がツールを使うと、ここの「つながっているエージェント」に出ます。",
+      "update": "拡張機能は ugoe-mcp の写しを持っています。エディタを更新したら、入れ直してください。"
+    },
+    "copy": {
+      "label": "写す",
+      "done": "写しました",
+      "failed": "文字を選んで写してください"
+    },
+    "chatgptNote": "ChatGPT で開発者モードを有効にし、アプリを作って、つなぎ方にトンネルを選びます。プロジェクトを変えるツールの前に ChatGPT が確かめ、エディタでも確かめます。",
+    "port": {
+      "title": "ポートとトークン",
+      "label": "ポート",
+      "placeholder": "自動",
+      "apply": {
+        "label": "適用"
+      },
+      "invalid": "1 から 65535 のポートを入れるか、空にして自動で選ばせてください。",
+      "description": "stdio の中継 (<code>ugoe-mcp --editor</code>) は、ポートを自分で見つけます。ポートを固定するのは、HTTP で直接つなぐクライアントのときだけです。"
+    },
+    "token": {
+      "copy": {
+        "label": "トークンを写す"
+      },
+      "regenerate": {
+        "label": "トークンを作り直す"
+      },
+      "description": "トークンが要るのは、HTTP で直接つなぐクライアントだけです。ほかの人に見られたら作り直してください。中継は新しいトークンを自動で使います。",
+      "discovery": "ブリッジを入れている間、ポートとトークンを <code>{{path}}</code> (あなただけが読めます) に書きます。"
+    },
+    "loading": "読み込んでいます…",
+    "setup": {
+      "claude": {
+        "summary": "同梱の ugoe-mcp を stdio のサーバとして登録します。ブリッジを入れている間、このエディタへ中継します。",
+        "run": "ターミナルで 1 回実行する",
+        "runNote": "その後、「claude mcp list」か、Claude Code の中の /mcp で確かめてください。"
+      },
+      "desktop": {
+        "summary": "エディタを Claude Desktop の拡張機能 (.mcpb) として入れます。拡張機能は同梱の ugoe-mcp の写しを持ち、ブリッジを入れている間、このエディタへ中継します。",
+        "config": "別の方法: claude_desktop_config.json に足す (Claude Desktop の「設定 → 開発者 → 設定を編集」)",
+        "configNote": "今ある「mcpServers」に併せてから、Claude Desktop を終了して起動し直してください。"
+      },
+      "opencode": {
+        "summary": "opencode.json (プロジェクトのフォルダーか ~/.config/opencode/) に手元の MCP サーバを足します。",
+        "configNote": "「ask」にすると、適用と保存の前に OpenCode も確かめます。エディタはどちらにしても確かめます。"
+      },
+      "chatgpt": {
+        "summary": "ChatGPT は OpenAI のサーバからつなぎます。OpenAI の tunnel-client がこのコンピュータで中継を起動して外へつなぐので、インターネットに何も公開しません。ChatGPT の開発者モードとトンネルの ID が要ります。",
+        "init": "トンネルのプロファイルを作る",
+        "run": "トンネルを確かめて始める"
+      },
+      "wsl": {
+        "title": "WSL のエージェント",
+        "summary": "推奨: WSL の中から Windows の ugoe-mcp.exe を登録します。WSL は Windows のプログラムを起動でき、接続は Windows の中にとどまり、パスは WSL と Windows の間で変換されます。",
+        "claude": "WSL の Claude Code (WSL の中で実行する)",
+        "opencode": "WSL の OpenCode (opencode.json。<distro> は「echo $WSL_DISTRO_NAME」の出力に置き換える)",
+        "linux": "別の方法: WSL の中の Linux の ugoe-mcp",
+        "linuxNote": "WSL のミラーのネットワーク (%UserProfile%\\.wslconfig の networkingMode=mirrored) でだけ動きます。既定の NAT のネットワークではエディタに届かないので、ugoe-mcp.exe を使ってください。"
+      },
+      "http": {
+        "title": "ほかのクライアント (HTTP)",
+        "summary": "Streamable HTTP を話すクライアントは、トークンで直接つなげます。そうしないとエディタを起動するたびにポートが変わるので、先にポートを固定してください。",
+        "claude": "HTTP の Claude Code",
+        "claudeNoPort": "HTTP の Claude Code (先にポートを固定する)",
+        "claudeNote": "<token> を写したトークンに置き換えてください。トークンの要らない、上の stdio の中継をおすすめします。"
+      }
+    },
+    "approval": {
+      "agent": "エージェント",
+      "heading": {
+        "apply": "{{who}} が提案を適用しようとしています",
+        "undo": "{{who}} が最後の編集を元に戻そうとしています",
+        "redo": "{{who}} が最後に元に戻した編集をやり直そうとしています",
+        "save": "{{who}} がプロジェクトを保存しようとしています"
+      },
+      "approve": {
+        "apply": "適用",
+        "undo": "元に戻す",
+        "redo": "やり直す",
+        "save": "保存"
+      },
+      "proposal": "提案 {{id}}",
+      "commands_other": "{{total}} 個のうち {{count}} 個のコマンドを、1 つの編集として適用します (1 回の Undo で戻ります)。",
+      "excluded": "コマンド {{list}} を除きます。",
+      "undo": "誰がしたかに関わらず、エディタの最後の編集を元に戻します。",
+      "redo": "誰がしたかに関わらず、エディタで最後に元に戻した編集をやり直します。",
+      "save": "「ファイル → 保存」と同じく、プロジェクトをフォルダーに書きます。",
+      "bundle": "<code>{{path}}</code> にも書き出します",
+      "remaining_other": "{{count}} 秒以内に答えてください。答えないと、エージェントには答えがなかったと伝わります。",
+      "waiting_other": "ほかに {{count}} 件が待っています。",
+      "show": {
+        "label": "AI のタブで見る"
+      },
+      "decline": {
+        "label": "断る"
+      }
+    }
+  },
+  "consent": {
+    "title": "{{service}} に送りますか?",
+    "description": "このプロジェクトのデータがこのコンピュータの外に出て、外部の AI サービスに送られます。",
+    "destination": "送り先",
+    "model": "モデル",
+    "images": {
+      "label": "画像",
+      "value": "{{count}} 枚 ({{size}})"
+    },
+    "text": "テキスト",
+    "instructions": {
+      "label": "あなたの指示",
+      "value_other": "{{count}} 文字 (テキストに含まれます)"
+    },
+    "retries_other": "答えが検証を通らなければ、前の答えと理由を付けて同じデータをもう一度送ります (最大であと {{count}} 回)。",
+    "terms": {
+      "intro": "{{org}} が次の規約に従ってデータを扱います:",
+      "unknown": "送る前に、このサービスがデータをどう扱うかを確かめてください。",
+      "commercialTerms": "商用利用規約",
+      "privacyPolicy": "プライバシーポリシー",
+      "servicesAgreement": "サービス契約",
+      "terms": "利用規約",
+      "geminiTerms": "Gemini API 利用規約"
+    },
+    "linkError": "ブラウザを開けませんでした ({{error}}): {{url}}",
+    "remember": {
+      "label": "エディタを閉じるまで、このプロジェクトでは確かめない (同じサービスとモデル)"
+    },
+    "send": {
+      "label": "送る"
+    },
+    "cancel": {
+      "label": "キャンセル"
+    },
+    "changed": "同意した後に送るデータが変わりました。もう一度試してください。"
+  },
+  "proposals": {
+    "aiName": {
+      "short": "AI",
+      "inSentence": "AI"
+    },
+    "autoRig": {
+      "title": "PSD から自動でリグを組む",
+      "titleModule": "PSD から衣装のリグを自動で組む"
+    },
+    "stale": {
+      "title": "リグをもう一度提案してください",
+      "body": "採用したリグの提案が本体の動きを書き込んだ後に、これらの衣装のメッシュが編集されました (頂点・三角形・親)。そのため、本体に正確には追従しません。",
+      "dismiss": "メッシュをこのままにして、この知らせを隠す"
+    },
+    "module": {
+      "note": "モジュールのプロジェクト: リグは本体のパラメータだけを使います。衣装は、スロットの取り付け先の下にある本体のデフォーマ (顔の向きなど) と、その下で形が変わる本体のメッシュ (目を閉じるなど) に追従し、髪・しっぽ・イヤリング・首まわり・スカートは物理で揺れます。パラメータは足しません。",
+      "options": {
+        "legend": "組み方 (AI には送りません)",
+        "direct": {
+          "label": "本体のワープに正確に追従する (衣装のメッシュに書き込む)",
+          "description": "切: 本体のワープに近いワープで衣装を包みます (衣装を描き直しても使えます)。入: 本体のワープの動きを衣装のメッシュのキーフォームに書き込みます (キーでは正確です。メッシュを編集したら提案し直してください)。"
+        },
+        "colliders": {
+          "label": "揺れるパーツを本体の衝突体から外に出す",
+          "description": "揺れるパーツが、スロットが公開する本体の衝突体に当たり、体にめり込みません。"
+        },
+        "poses": {
+          "label": "A / B の差分をポーズにする",
+          "description": "名前が末尾の A・B… だけ違う衣装のパーツ (Sleeve A / Sleeve B) をポーズにします。スロットが公開していれば本体の差分に従います。同じラベルで重なり、PSD で 1 つだけを表示してほかを隠しているパーツも同じです。"
+        }
+      }
+    },
+    "psd": {
+      "empty": "PSD がまだありません。「ファイル」の「PSD から新規…」を使うか、PSD を選んでください。",
+      "choose": "PSD を選ぶ…",
+      "dialogTitle": "分類する PSD を選ぶ"
+    },
+    "useAi": {
+      "label": "{{name}} を使う (絵の画像を送ります)",
+      "labelLocal": "{{name}} を使う (この計算機のサーバに画像を送ります)",
+      "checking": "AI の設定を確かめています…",
+      "blocked": "{{reason}} AI を使わないときは、レイヤーを名前で分類し、リグはテンプレートの既定値を使います。",
+      "settings": "設定…"
+    },
+    "instructions": {
+      "label": "{{name}} への注文",
+      "optional": "(省略できます)",
+      "placeholder": "例: 目をもう少し細く閉じる。頭の向きは控えめに。帽子は headwear。",
+      "placeholderModule": "例: イヤリングをもっと揺らす。リボンは neckwear。",
+      "sent": "「レイヤーを分類」「リグを提案」「作り直す」で送ります。",
+      "sentOnlyWithAi": "「{{name}} を使う」が入のときだけ送ります。",
+      "scope": "AI が変えられるのは、レイヤーのラベルと 4 つのリグの値 (頭の向き・目の閉じる位置と閉じ方・1 つの口の開く大きさ) です。それ以外は「反映していない」として挙げます。プロジェクトには保存しません。",
+      "scopeModule": "AI が変えられるのは、レイヤーのラベルと 2 つの揺れの値 (揺れるパーツの揺れの強さと遅さ) です。それ以外は「反映していない」として挙げます。プロジェクトには保存しません。"
+    },
+    "reclassify": "作り直すときに、この注文でレイヤーも分類し直す (レイヤーの画像をもう一度送ります)",
+    "classify": "レイヤーを分類",
+    "propose": "リグを提案",
+    "busy": {
+      "normalMaps": "形から法線マップを作っています…",
+      "classifyingAi": "{{name}} でレイヤーを分類しています…",
+      "classifyingNames": "名前でレイヤーを分類しています…",
+      "askingAi": "{{name}} にリグの値を尋ねています (答えが検証を通らなければ、もう一度尋ねることがあります)…",
+      "building": "テンプレートからリグを組んでいます…",
+      "preparing": "プレビューを用意しています…",
+      "applying": "提案を適用しています…"
+    },
+    "summary": {
+      "byAi_other": "{{count}} 個のレイヤーを AI で分類",
+      "byName_other": "{{count}} 個のレイヤーを名前で分類",
+      "byAiInstructed_other": "{{count}} 個のレイヤーを注文付きで AI で分類",
+      "byNameInstructed_other": "{{count}} 個のレイヤーを注文付きで名前で分類",
+      "review_other": "{{count}} 個を確かめてください",
+      "instructionsTooltip": "注文: {{instructions}}",
+      "labels": "ラベル",
+      "variants": "同じパーツの描き分け (一度に 1 つだけ見えます。衣装のリグではポーズのグループになります):",
+      "lowConfidence": "確かさが低いもの (採用の前に確かめてください):"
+    },
+    "groups": {
+      "face": "顔・目・鼻・口・眉",
+      "body": "首・体・腕・服",
+      "hairFront": "前髪",
+      "hairSide": "横髪",
+      "hairBack": "後ろ髪",
+      "ear": "耳",
+      "earwear": "イヤリング",
+      "headwear": "帽子・髪飾り",
+      "tail": "しっぽ",
+      "alone": "そのほかのパーツ (1 つずつ)",
+      "unlabeled": "ラベルの無いパーツ (1 つずつ)",
+      "lighting": "ライティングを入にする"
+    },
+    "normal": {
+      "title": "形から法線マップを作る",
+      "descriptionClassification": "AI は使わず、何も送りません。パーツのまとまりごとに 1 つの面としてふくらませるので、目は顔に沿い、首は体につながります。眼鏡はふくらませずに顔の向きに合わせます。まとまりは上のレイヤーの分類から決めます。",
+      "descriptionNames": "AI は使わず、何も送りません。パーツのまとまりごとに 1 つの面としてふくらませるので、目は顔に沿い、首は体につながります。眼鏡はふくらませずに顔の向きに合わせます。まとまりはレイヤーの名前から決めます (AI のラベルを使うには、レイヤーを分類してください)。",
+      "empty": "法線マップを作るテクスチャがありません。",
+      "counts": {
+        "textures_other": "テクスチャ {{count}} 枚",
+        "mapped_other": "法線マップあり {{count}}",
+        "oriented_other": "向きだけ {{count}}"
+      },
+      "strength": {
+        "aria": "{{group}} の強さ"
+      },
+      "shape": {
+        "edges": "縁 {{width}} {{unit}} · ならし {{smoothing}} {{unit}}",
+        "whole": "形の全体 · ならし {{smoothing}} {{unit}}"
+      },
+      "roundEdges": "縁だけを丸める",
+      "edgeWidth": "縁の幅 ({{unit}})",
+      "smoothing": "ならし ({{unit}})",
+      "defaults": {
+        "label": "既定値",
+        "tooltip": "このまとまりの既定の強さ・縁・ならしに戻す"
+      },
+      "replace": "今の法線マップを置き換える",
+      "propose": {
+        "label": "法線マップを提案",
+        "labelCount": "法線マップを提案 ({{count}})",
+        "tooltip": "選んだまとまりの法線マップを提案として作ります。プレビューすると、「ライティング」タブのプレビューの光源で照らした姿を見られます。"
+      }
+    },
+    "list": {
+      "title": "提案",
+      "empty": "提案はありません。提案は採用するまで何も変えません。",
+      "aria": "提案 #{{id}}",
+      "revision": {
+        "label": "#{{id}} の作り直し",
+        "tooltip": "提案 #{{id}} から作り直しました。見比べられるよう、元の提案も残しています"
+      },
+      "from": {
+        "label": "{{name}} から",
+        "tooltip": "このエディタにつないだ {{name}} の提案です (「設定」の「エージェントの接続」)"
+      },
+      "outdated": {
+        "label": "古い",
+        "tooltip": "この提案を作った後にモデルが変わりました。その時点まで Undo で戻すか、もう一度提案してください。"
+      },
+      "instructions": "注文:",
+      "unapplied": {
+        "title": "反映していない",
+        "body": "— 今のリグのテンプレートではできない、と AI が答えたもの:"
+      },
+      "selected_other": "{{count}} 個のコマンドのうち {{selected}} 個を選択",
+      "include": "{{name}} を含める",
+      "commands_other": "{{count}} 個のコマンド",
+      "dependsOn": "#{{list}} に頼ります",
+      "preview": {
+        "label": "プレビュー",
+        "end": "プレビューを終える",
+        "tooltip": "この提案を適用した姿を、モデルを変えずに見せる"
+      },
+      "adopt": {
+        "label": "採用",
+        "labelCount": "{{count}} 個を採用",
+        "tooltip": "選んだコマンドを 1 つの編集として適用する (1 回の Undo で戻ります)"
+      },
+      "reject": "却下",
+      "previewing": "プレビュー中です。採用するまでモデルは変わりません。",
+      "physics": {
+        "run": "物理を動かす",
+        "stop": "物理を止める",
+        "tooltip": "提案の物理をビューポートで動かします。採用の前に、スライダーを動かして揺れを確かめてください。",
+        "hint": "スライダーを動かして揺れを確かめてください。"
+      }
+    },
+    "regenerate": {
+      "label": "注文で作り直す",
+      "tooltip": "この提案の値と注文を {{name}} に送り、結果を新しい提案として足す (この提案は残ります)",
+      "blocked": {
+        "useAi": "注文で作り直すには「{{name}} を使う」を入にしてください",
+        "empty": "先に上の欄に AI への注文を書いてください",
+        "tooLong": "注文が {{max}} 文字を超えています"
+      }
     }
   },
   "errorCause": "{{message}} 原因: {{cause}}",

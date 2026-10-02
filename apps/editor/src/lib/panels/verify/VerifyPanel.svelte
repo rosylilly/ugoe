@@ -10,8 +10,10 @@
     行を押すと「Physics」のタブに移り、そのリグと衝突体を選ぶ。
 -->
 <script lang="ts">
+import { Button, Toggle } from "@ugoe/ui";
 import type { EditorDocument } from "../../document.svelte";
 import { errorText } from "../../errors";
+import { t } from "../../i18n";
 import { ipc, type Model, type OverflowFinding, type OverflowReport } from "../../ipc";
 import type { Selection } from "../../selection.svelte";
 import type { ViewportController } from "../../viewport/controller.svelte";
@@ -95,35 +97,36 @@ function goToPhysics(rig: string, collider: string): void {
 </script>
 
 <section>
-  <h3>Deformer overflow</h3>
-  <p class="muted note">
-    Points whose position in the parent warp's grid is outside the grid follow the warp by
-    extrapolation, which bends less than the inside.
-  </p>
-  <label class="check">
-    <input type="checkbox" bind:checked={view.showOverflows} />
-    Show overflows in viewport
-  </label>
+  <h3>{t("verify.overflow.title")}</h3>
+  <p class="ed-hint">{t("verify.overflow.description")}</p>
+  <div class="check">
+    <Toggle bind:checked={view.showOverflows} label={t("verify.overflow.show")} />
+  </div>
   {#if view.showOverflows}
     {#if view.error}
       <p class="error">{view.error}</p>
     {:else if currentPoints === 0}
-      <p class="muted">No points outside the parent warp at the current parameters.</p>
+      <p class="ed-hint">{t("verify.overflow.noneNow")}</p>
     {:else}
       <p class="warn">
-        {currentPoints} {currentPoints === 1 ? "point" : "points"} in {view.current.length}
-        {view.current.length === 1 ? "element" : "elements"} outside the parent warp now.
+        {t("verify.overflow.now", {
+          points: t("verify.counts.points", { count: currentPoints }),
+          elements: t("verify.counts.elements", { count: view.current.length }),
+        })}
       </p>
     {/if}
   {/if}
 
-  <div class="row">
-    <button onclick={verify} disabled={running || !doc.model}>
-      {running ? "Verifying…" : "Verify all cells"}
-    </button>
+  <div class="ed-buttons row">
+    <Button onclick={verify} disabled={running || !doc.model}>
+      {running ? t("verify.overflow.verify.running") : t("verify.overflow.verify.label")}
+    </Button>
     {#if report}
       <span class="muted">
-        {report.elements} elements · {report.cells} cells
+        {t("verify.overflow.checked", {
+          elements: t("verify.counts.elements", { count: report.elements }),
+          cells: t("verify.counts.cells", { count: report.cells }),
+        })}
       </span>
     {/if}
   </div>
@@ -131,24 +134,32 @@ function goToPhysics(rig: string, collider: string): void {
 
   {#if report}
     {#if report.truncated.length > 0}
-      <p class="muted note">
-        Too many key combinations: only the axis ends were checked for
-        {report.truncated.map((t) => targetLabel(t, model)).join(", ")}.
+      <p class="ed-hint">
+        {t("verify.overflow.truncated", {
+          elements: report.truncated.map((target) => targetLabel(target, model)).join(", "),
+        })}
       </p>
     {/if}
     {#if groups.length === 0}
-      <p class="ok">No overflow in any keyform cell.</p>
+      <p class="ok">{t("verify.overflow.none")}</p>
     {:else}
       <p class="warn">
-        {groups.length} {groups.length === 1 ? "element overflows" : "elements overflow"} in
-        {report.findings.length} {report.findings.length === 1 ? "cell" : "cells"}.
+        {t("verify.overflow.found", {
+          count: groups.length,
+          cells: t("verify.counts.cells", { count: report.findings.length }),
+        })}
       </p>
       <ul class="groups">
         {#each groups as group (group.key)}
           <li>
             <div class="element">
               <strong>{targetLabel(group.target, model)}</strong>
-              <span class="muted">in {targetLabel({ kind: "deformer", id: group.parent }, model)} · max {formatAmount(group.maxAmount)}</span>
+              <span class="muted"
+                >{t("verify.overflow.parent", {
+                  parent: targetLabel({ kind: "deformer", id: group.parent }, model),
+                  amount: formatAmount(group.maxAmount),
+                })}</span
+              >
             </div>
             <ul class="cells">
               {#each group.findings as finding, i (i)}
@@ -158,7 +169,7 @@ function goToPhysics(rig: string, collider: string): void {
                     class:current={selection.primary?.id === group.target.id &&
                       cellParameters(finding.cell).every(([id, v]) => viewport.parameterValues[id] === v)}
                     onclick={() => goTo(finding)}
-                    title="Select the element and set the parameters to this cell"
+                    title={t("verify.overflow.cell")}
                   >
                     <span class="values">{formatCell(finding.cell, model)}</span>
                     <span class="amount">
@@ -176,48 +187,33 @@ function goToPhysics(rig: string, collider: string): void {
 </section>
 
 <section>
-  <h3>Physics</h3>
+  <h3>{t("verify.physics")}</h3>
   <RestPoseWarnings {doc} onSelect={goToPhysics} showEmpty />
 </section>
 
 <style>
-h3 {
-  margin: 8px 0 4px;
-  font-size: 13px;
-}
-
 p {
-  margin: 4px 0;
-}
-
-.note {
-  font-size: 11px;
+  margin: var(--ugoe-space-2) 0;
 }
 
 .check {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 6px 0;
+  margin: var(--ugoe-space-2) 0;
 }
 
 .row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 8px 0 4px;
+  margin: var(--ugoe-space-3) 0 var(--ugoe-space-2);
 }
 
 .error {
-  color: #dc2626;
+  color: var(--ugoe-color-danger);
 }
 
 .warn {
-  color: #dc2626;
+  color: var(--ugoe-color-warning);
 }
 
 .ok {
-  color: #16a34a;
+  color: var(--ugoe-color-success);
 }
 
 ul {
@@ -227,19 +223,19 @@ ul {
 }
 
 .groups > li {
-  margin: 8px 0;
+  margin: var(--ugoe-space-3) 0;
 }
 
 .element {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px 8px;
+  gap: var(--ugoe-space-1) var(--ugoe-space-3);
   align-items: baseline;
   overflow-wrap: anywhere;
 }
 
 .cells {
-  margin-top: 2px;
+  margin-top: var(--ugoe-space-1);
 }
 
 .cell {
@@ -247,13 +243,24 @@ ul {
   flex-direction: column;
   align-items: flex-start;
   width: 100%;
-  margin: 2px 0;
+  margin: var(--ugoe-space-1) 0;
+  padding: var(--ugoe-space-1) var(--ugoe-space-2);
+  border: 1px solid var(--ugoe-color-control-border);
+  border-radius: var(--ugoe-radius-md);
+  background: var(--ugoe-color-surface);
+  color: var(--ugoe-color-text);
+  font: inherit;
   text-align: left;
   gap: 1px;
 }
 
 .cell.current {
-  border-color: var(--accent);
+  border-color: var(--ugoe-color-accent);
+}
+
+.cell:focus-visible {
+  outline: var(--ugoe-focus-ring);
+  outline-offset: 1px;
 }
 
 .values {
@@ -261,7 +268,7 @@ ul {
 }
 
 .amount {
-  font-size: 11px;
-  color: var(--muted);
+  font-size: var(--ugoe-font-size-xs);
+  color: var(--ugoe-color-text-muted);
 }
 </style>

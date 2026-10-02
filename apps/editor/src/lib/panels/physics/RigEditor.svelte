@@ -4,6 +4,8 @@
   入力・出力・粒子は ID を持たないので、並びごと置き換える (set_physics_inputs など)。
 -->
 <script lang="ts">
+import { Button, Checkbox, IconButton, NumberField, Select } from "@ugoe/ui";
+import { t } from "../../i18n";
 import type {
   Command,
   Model,
@@ -47,29 +49,55 @@ let { rig, model, settings, send, busy }: Props = $props();
 
 const SOURCES: PhysicsSource[] = ["x", "y", "angle"];
 
-const PARTICLE_FIELDS: { field: ParticleField; label: string; title: string; step: number }[] = [
-  { field: "radius", label: "Length", title: "Distance from the previous particle (px)", step: 1 },
+/** 粒子の欄 (名前と説明は読むたびに t() を通す)。 */
+const PARTICLE_FIELDS: {
+  field: ParticleField;
+  label: () => string;
+  title: () => string;
+  step: number;
+}[] = [
+  {
+    field: "radius",
+    label: () => t("physics.particles.fields.radius.label"),
+    title: () => t("physics.particles.fields.radius.tooltip"),
+    step: 1,
+  },
   {
     field: "mobility",
-    label: "Sway",
-    title: "Mobility: velocity kept per 1/30 s (0..1)",
+    label: () => t("physics.particles.fields.mobility.label"),
+    title: () => t("physics.particles.fields.mobility.tooltip"),
     step: 0.05,
   },
   {
     field: "delay",
-    label: "Speed",
-    title: "Delay: time scale (1 = normal, larger reacts faster)",
+    label: () => t("physics.particles.fields.delay.label"),
+    title: () => t("physics.particles.fields.delay.tooltip"),
     step: 0.05,
   },
   {
     field: "acceleration",
-    label: "Settle",
-    title: "Acceleration: gravity scale (larger settles faster)",
+    label: () => t("physics.particles.fields.acceleration.label"),
+    title: () => t("physics.particles.fields.acceleration.tooltip"),
     step: 0.1,
   },
-  { field: "collision_radius", label: "Hit r", title: "Collision radius (px)", step: 1 },
-  { field: "x", label: "x", title: "Initial position x (relative to the root, px)", step: 1 },
-  { field: "y", label: "y", title: "Initial position y (relative to the root, px)", step: 1 },
+  {
+    field: "collision_radius",
+    label: () => t("physics.particles.fields.collisionRadius.label"),
+    title: () => t("physics.particles.fields.collisionRadius.tooltip"),
+    step: 1,
+  },
+  {
+    field: "x",
+    label: () => t("physics.particles.fields.x.label"),
+    title: () => t("physics.particles.fields.x.tooltip"),
+    step: 1,
+  },
+  {
+    field: "y",
+    label: () => t("physics.particles.fields.y.label"),
+    title: () => t("physics.particles.fields.y.tooltip"),
+    step: 1,
+  },
 ];
 
 const deformers = $derived(model.deformers);
@@ -160,257 +188,282 @@ function setNormalization(
   void send({ op: "set_physics_normalization", rig: rig.id, normalization });
 }
 
-function number(e: Event): number {
-  return (e.currentTarget as HTMLInputElement).valueAsNumber;
-}
+const ids = $props.id();
+
+/** 重力の基準の選択肢の「キャンバス」の値。デフォーマの ID は空にならない。 */
+const CANVAS = "\u0000canvas";
+const frameOptions = $derived([
+  { value: CANVAS, label: t("physics.rig.frame.canvas") },
+  ...deformers.map((d) => ({ value: d.id, label: elementLabel(d.name, d.id) })),
+]);
+const parameterOptions = $derived(
+  model.parameters.map((p) => ({ value: p.id, label: elementLabel(p.name, p.id) })),
+);
+// i18n-ignore: 成分の名前は値そのもの (x・y・angle) を出す
+const sourceOptions = SOURCES.map((s) => ({ value: s, label: s }));
+const kindOptions = $derived(
+  TARGET_KINDS.map((k) => ({
+    value: k.kind,
+    label: k.label,
+    disabled: targetCandidates(model, k.kind).length === 0,
+  })),
+);
+const blendOptions = $derived(BLENDS.map((b) => ({ value: b.blend, label: b.label })));
+const rangeFields = $derived([
+  { field: "min" as const, label: t("physics.range.min") },
+  { field: "default" as const, label: t("physics.range.default") },
+  { field: "max" as const, label: t("physics.range.max") },
+]);
 </script>
 
 <section>
-  <h3>Rig</h3>
-  <div class="grid">
-    <span>Name</span>
-    <span class="row">
-      <input type="text" value={rig.name} aria-label="Rig name"
+  <h3>{t("physics.rig.title")}</h3>
+  <div class="ed-field">
+    <label for="{ids}-name">{t("physics.rig.name.label")}</label>
+    <span class="pair">
+      <input id="{ids}-name" class="text" type="text" value={rig.name}
         onchange={(e) => rename(e.currentTarget.value)} />
       <span class="muted id">{rig.id}</span>
     </span>
-    <span title="Gravity and wind are measured in this deformer's space (tilting the head tilts the hanging direction)">Gravity frame</span>
-    <select value={rig.frame ?? ""} aria-label="Gravity frame" onchange={(e) => setFrame(e.currentTarget.value)}>
-      <option value="">Canvas</option>
-      {#each deformers as d (d.id)}
-        <option value={d.id}>{elementLabel(d.name, d.id)}</option>
-      {/each}
-    </select>
   </div>
-  <div class="row">
-    <button disabled={busy} onclick={() => send({ op: "remove_physics_rig", id: rig.id })}>
-      Delete rig
-    </button>
+  <div class="ed-field">
+    <span id="{ids}-frame" title={t("physics.rig.frame.tooltip")}>{t("physics.rig.frame.label")}</span>
+    <Select labelledby="{ids}-frame" value={rig.frame ?? CANVAS} options={frameOptions}
+      onchange={(v) => setFrame(v === CANVAS ? "" : v)} />
+  </div>
+  <div class="ed-buttons row">
+    <Button disabled={busy} onclick={() => send({ op: "remove_physics_rig", id: rig.id })}>
+      {t("physics.rig.delete")}
+    </Button>
   </div>
 </section>
 
 <section>
-  <h3>Particles</h3>
-  <p class="muted hint">Particle 0 is the root. It follows the first deformer output (or the gravity frame).</p>
+  <h3>{t("physics.particles.title")}</h3>
+  <p class="ed-hint">{t("physics.particles.hint")}</p>
   {#each rig.particles as p, i (i)}
     <div class="card">
-      <span class="index">#{i}</span>
+      <span class="index" id="{ids}-p{i}" aria-label={t("physics.particles.aria", { index: i })}>#{i}</span>
       {#each PARTICLE_FIELDS as f (f.field)}
         {#if i > 0 || f.field === "x" || f.field === "y"}
-          <label title={f.title}>
-            <span>{f.label}</span>
-            <input type="number" step={f.step} value={particleValue(p, f.field)}
-              aria-label="Particle {i} {f.label}"
-              onchange={(e) => setParticle(i, f.field, number(e))} />
-          </label>
+          <span class="labelled" title={f.title()}>
+            <span id="{ids}-p{i}-{f.field}">{f.label()}</span>
+            <NumberField value={particleValue(p, f.field)} step={f.step} decimals={4} size={4}
+              labelledby="{ids}-p{i} {ids}-p{i}-{f.field}"
+              onchange={(v) => setParticle(i, f.field, v)} />
+          </span>
         {/if}
       {/each}
       {#if i > 0}
-        <button class="remove" disabled={busy} aria-label="Remove particle {i}"
-          onclick={() => setParticles(removeParticle(rig.particles, i))}>×</button>
+        <span class="remove">
+          <IconButton small disabled={busy} label={t("physics.particles.remove", { index: i })}
+            onclick={() => setParticles(removeParticle(rig.particles, i))}>×</IconButton
+          >
+        </span>
       {/if}
     </div>
   {/each}
-  <div class="row">
-    <button disabled={busy} onclick={() => setParticles(appendParticle(rig.particles))}>+ Particle</button>
+  <div class="ed-buttons row">
+    <Button disabled={busy} onclick={() => setParticles(appendParticle(rig.particles))}
+      >{t("physics.particles.add")}</Button
+    >
   </div>
 </section>
 
 <section>
-  <h3>Inputs</h3>
+  <h3>{t("physics.inputs.title")}</h3>
+  <span hidden id="{ids}-in-parameter">{t("physics.inputs.parameter")}</span>
+  <span hidden id="{ids}-in-source">{t("physics.inputs.source")}</span>
+  <span hidden id="{ids}-in-weight">{t("physics.inputs.weight.label")}</span>
   {#each rig.inputs as input, i (i)}
     <div class="card">
-      <select value={input.parameter} aria-label="Input {i} parameter"
-        onchange={(e) => patchInput(i, { parameter: e.currentTarget.value })}>
-        {#each model.parameters as p (p.id)}
-          <option value={p.id}>{elementLabel(p.name, p.id)}</option>
-        {/each}
-      </select>
-      <select value={input.source} aria-label="Input {i} source"
-        onchange={(e) => patchInput(i, { source: e.currentTarget.value as PhysicsSource })}>
-        {#each SOURCES as s (s)}<option value={s}>{s}</option>{/each}
-      </select>
-      <label title="Weight (%)"><span>%</span>
-        <input type="number" step="5" value={input.weight} aria-label="Input {i} weight"
-          onchange={(e) => {
-            const w = finiteValue(number(e));
+      <span hidden id="{ids}-in{i}">{t("physics.inputs.aria", { index: i })}</span>
+      <Select labelledby="{ids}-in{i} {ids}-in-parameter" value={input.parameter} options={parameterOptions}
+        onchange={(v) => patchInput(i, { parameter: v })} />
+      <Select labelledby="{ids}-in{i} {ids}-in-source" value={input.source} options={sourceOptions}
+        onchange={(v) => patchInput(i, { source: v })} />
+      <span title={t("physics.inputs.weight.tooltip")}>
+        <NumberField value={input.weight} step={5} decimals={4} size={4} unit="%"
+          labelledby="{ids}-in{i} {ids}-in-weight"
+          onchange={(v) => {
+            const w = finiteValue(v);
             if (w !== null) patchInput(i, { weight: w });
           }} />
-      </label>
-      <label class="check"><input type="checkbox" checked={input.reflect}
-        onchange={(e) => patchInput(i, { reflect: e.currentTarget.checked })} />Flip</label>
-      <button class="remove" disabled={busy} aria-label="Remove input {i}"
-        onclick={() => setInputs(rig.inputs.filter((_, k) => k !== i))}>×</button>
+      </span>
+      <Checkbox checked={input.reflect} label={t("physics.inputs.flip")}
+        onchange={(on) => patchInput(i, { reflect: on })} />
+      <span class="remove">
+        <IconButton small disabled={busy} label={t("physics.inputs.remove", { index: i })}
+          onclick={() => setInputs(rig.inputs.filter((_, k) => k !== i))}>×</IconButton
+        >
+      </span>
     </div>
   {:else}
-    <p class="muted hint">No inputs. The root still follows its deformer.</p>
+    <p class="ed-hint">{t("physics.inputs.empty")}</p>
   {/each}
-  <div class="row">
-    <button disabled={busy || model.parameters.length === 0} onclick={addInput}>+ Input</button>
+  <div class="ed-buttons row">
+    <Button disabled={busy || model.parameters.length === 0} onclick={addInput}>{t("physics.inputs.add")}</Button>
   </div>
 </section>
 
 <section>
-  <h3>Outputs</h3>
+  <h3>{t("physics.outputs.title")}</h3>
+  <span hidden id="{ids}-out-kind">{t("physics.outputs.kind")}</span>
+  <span hidden id="{ids}-out-target">{t("physics.outputs.target")}</span>
+  <span hidden id="{ids}-out-particle">{t("physics.outputs.particle.aria")}</span>
+  <span hidden id="{ids}-out-source">{t("physics.outputs.source")}</span>
+  <span hidden id="{ids}-out-scale">{t("physics.outputs.scale.label")}</span>
+  <span hidden id="{ids}-out-weight">{t("physics.outputs.weight.label")}</span>
+  <span hidden id="{ids}-out-blend">{t("physics.outputs.blend.label")}</span>
   {#each rig.outputs as output, i (i)}
     {@const kind = targetKind(output.target)}
     <div class="card">
-      <select value={kind} aria-label="Output {i} kind"
-        onchange={(e) => setOutputKind(i, e.currentTarget.value as TargetKind)}>
-        {#each TARGET_KINDS as k (k.kind)}
-          <option value={k.kind} disabled={targetCandidates(model, k.kind).length === 0}>{k.label}</option>
-        {/each}
-      </select>
-      <select value={targetRef(output.target)} aria-label="Output {i} target"
-        onchange={(e) => setOutputRef(i, e.currentTarget.value)}>
-        {#each targetCandidates(model, kind) as c (c.id)}
-          <option value={c.id}>{elementLabel(c.name, c.id)}</option>
-        {/each}
-      </select>
-      <label title="Particle index (1 = end of the first segment)"><span>Particle</span>
-        <input type="number" min="1" max={rig.particles.length - 1} step="1" value={output.particle}
-          aria-label="Output {i} particle"
-          onchange={(e) => {
-            const v = finiteValue(number(e));
-            if (v !== null && v >= 1) patchOutput(i, { particle: Math.round(v) });
+      <span hidden id="{ids}-out{i}">{t("physics.outputs.aria", { index: i })}</span>
+      <Select labelledby="{ids}-out{i} {ids}-out-kind" value={kind} options={kindOptions}
+        onchange={(v) => setOutputKind(i, v)} />
+      <Select labelledby="{ids}-out{i} {ids}-out-target" value={targetRef(output.target)}
+        options={targetCandidates(model, kind).map((c) => ({ value: c.id, label: elementLabel(c.name, c.id) }))}
+        onchange={(v) => setOutputRef(i, v)} />
+      <span class="labelled" title={t("physics.outputs.particle.tooltip")}>
+        <span aria-hidden="true">{t("physics.outputs.particle.label")}</span>
+        <NumberField value={output.particle} min={1} max={rig.particles.length - 1} step={1} size={3}
+          labelledby="{ids}-out{i} {ids}-out-particle"
+          onchange={(v) => {
+            const n = finiteValue(v);
+            if (n !== null && n >= 1) patchOutput(i, { particle: Math.round(n) });
           }} />
-      </label>
-      <select value={output.source} aria-label="Output {i} source"
-        onchange={(e) => patchOutput(i, { source: e.currentTarget.value as PhysicsSource })}>
-        {#each SOURCES as s (s)}<option value={s}>{s}</option>{/each}
-      </select>
-      <label title="Scale"><span>×</span>
-        <input type="number" step="0.1" value={output.scale} aria-label="Output {i} scale"
-          onchange={(e) => {
-            const v = finiteValue(number(e));
-            if (v !== null) patchOutput(i, { scale: v });
+      </span>
+      <Select labelledby="{ids}-out{i} {ids}-out-source" value={output.source} options={sourceOptions}
+        onchange={(v) => patchOutput(i, { source: v })} />
+      <span class="labelled" title={t("physics.outputs.scale.tooltip")}>
+        <span aria-hidden="true">×</span>
+        <NumberField value={output.scale} step={0.1} decimals={4} size={4}
+          labelledby="{ids}-out{i} {ids}-out-scale"
+          onchange={(v) => {
+            const n = finiteValue(v);
+            if (n !== null) patchOutput(i, { scale: n });
           }} />
-      </label>
-      <label title="Weight (%)"><span>%</span>
-        <input type="number" step="5" value={output.weight} aria-label="Output {i} weight"
-          onchange={(e) => {
-            const v = finiteValue(number(e));
-            if (v !== null) patchOutput(i, { weight: v });
+      </span>
+      <span title={t("physics.outputs.weight.tooltip")}>
+        <NumberField value={output.weight} step={5} decimals={4} size={4} unit="%"
+          labelledby="{ids}-out{i} {ids}-out-weight"
+          onchange={(v) => {
+            const n = finiteValue(v);
+            if (n !== null) patchOutput(i, { weight: n });
           }} />
-      </label>
-      <label class="check"><input type="checkbox" checked={output.reflect}
-        onchange={(e) => patchOutput(i, { reflect: e.currentTarget.checked })} />Flip</label>
+      </span>
+      <Checkbox checked={output.reflect} label={t("physics.outputs.flip")}
+        onchange={(on) => patchOutput(i, { reflect: on })} />
       {#if hasBlend(output)}
-        <select value={outputBlend(output)} aria-label="Output {i} blend"
-          title="How the output combines with the parameter value (Add keeps tracking and adds the sway)"
-          onchange={(e) => patchOutput(i, { blend: e.currentTarget.value as PhysicsBlend })}>
-          {#each BLENDS as b (b.blend)}<option value={b.blend} title={b.title}>{b.label}</option>{/each}
-        </select>
+        <span title={t("physics.outputs.blend.tooltip")}>
+          <Select labelledby="{ids}-out{i} {ids}-out-blend" value={outputBlend(output)} options={blendOptions}
+            onchange={(v) => patchOutput(i, { blend: v })} />
+        </span>
       {/if}
       {#if output.target.type === "vertices"}
-        <span class="muted">{output.target.weights.length} weights</span>
+        <span class="muted">{t("physics.outputs.weights", { count: output.target.weights.length })}</span>
       {/if}
-      <button class="remove" disabled={busy} aria-label="Remove output {i}"
-        onclick={() => setOutputs(rig.outputs.filter((_, k) => k !== i))}>×</button>
+      <span class="remove">
+        <IconButton small disabled={busy} label={t("physics.outputs.remove", { index: i })}
+          onclick={() => setOutputs(rig.outputs.filter((_, k) => k !== i))}>×</IconButton
+        >
+      </span>
     </div>
   {:else}
-    <p class="muted hint">No outputs. Add one to make the rig move something.</p>
+    <p class="ed-hint">{t("physics.outputs.empty")}</p>
   {/each}
-  <div class="row">
-    <button disabled={busy} onclick={addOutput}>+ Output</button>
+  <div class="ed-buttons row">
+    <Button disabled={busy} onclick={addOutput}>{t("physics.outputs.add")}</Button>
   </div>
 </section>
 
 <section>
-  <h3>Collides with</h3>
+  <h3>{t("physics.collides.title")}</h3>
   {#if settings && settings.colliders.length > 0}
-    {#each settings.colliders as c (c.id)}
-      <label class="check">
-        <input type="checkbox" checked={rig.colliders.includes(c.id)} disabled={busy}
-          onchange={(e) => setColliders(c.id, e.currentTarget.checked)} />
-        {elementLabel(c.name, c.id)}
-      </label>
-    {/each}
+    <div class="checks">
+      {#each settings.colliders as c (c.id)}
+        <Checkbox checked={rig.colliders.includes(c.id)} disabled={busy} label={elementLabel(c.name, c.id)}
+          onchange={(on) => setColliders(c.id, on)} />
+      {/each}
+    </div>
   {:else}
-    <p class="muted hint">Add colliders below, then tick the ones this rig collides with.</p>
+    <p class="ed-hint">{t("physics.collides.empty")}</p>
   {/if}
 </section>
 
 <section>
-  <h3>Input range</h3>
-  <div class="grid">
-    {#each ["position", "angle"] as const as which (which)}
-      <span>{which === "position" ? "Position" : "Angle"}</span>
-      <span class="row">
-        {#each ["min", "default", "max"] as const as field (field)}
-          <input type="number" step="1" value={rig.normalization[which][field]}
-            aria-label="{which} {field}" title={field}
-            onchange={(e) => setNormalization(which, field, number(e))} />
+  <h3>{t("physics.range.title")}</h3>
+  {#each rangeFields as f (f.field)}
+    <span hidden id="{ids}-range-{f.field}">{f.label}</span>
+  {/each}
+  {#each ["position", "angle"] as const as which (which)}
+    <div class="ed-field">
+      <span id="{ids}-range-{which}">{which === "position" ? t("physics.range.position") : t("physics.range.angle")}</span>
+      <span class="pair">
+        {#each rangeFields as f (f.field)}
+          <span title={f.label}>
+            <NumberField value={rig.normalization[which][f.field]} step={1} decimals={4} size={4}
+              labelledby="{ids}-range-{which} {ids}-range-{f.field}"
+              onchange={(v) => setNormalization(which, f.field, v)} />
+          </span>
         {/each}
       </span>
-    {/each}
-  </div>
+    </div>
+  {/each}
 </section>
 
 <style>
-h3 {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: 6em 1fr;
-  gap: 4px;
-  align-items: center;
-}
-
 .row {
+  margin: var(--ugoe-space-2) 0;
+}
+
+.pair {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--ugoe-space-2);
   align-items: center;
-  margin: 4px 0;
-}
-
-.grid .row {
-  margin: 0;
+  min-width: 0;
 }
 
 .card {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 6px;
+  gap: var(--ugoe-space-2) var(--ugoe-space-3);
   align-items: center;
-  padding: 4px 0;
-  border-bottom: 1px solid var(--border);
+  padding: var(--ugoe-space-2) 0;
+  border-bottom: 1px solid var(--ugoe-color-border);
 }
 
-.card label {
+.labelled {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--ugoe-space-1);
 }
 
-.card label span {
-  font-size: 11px;
-  color: var(--muted);
+.labelled > span:first-child {
+  font-size: var(--ugoe-font-size-xs);
+  color: var(--ugoe-color-text-muted);
 }
 
-input[type="number"] {
-  width: 4.2em;
-  min-width: 0;
-}
-
-input[type="text"] {
-  min-width: 0;
+.text {
   flex: 1;
+  min-width: 0;
+  min-height: var(--ugoe-control-height);
+  padding: 0 var(--ugoe-space-2);
+  border: 1px solid var(--ugoe-color-control-border);
+  border-radius: var(--ugoe-radius-md);
+  background: var(--ugoe-color-surface);
+  color: var(--ugoe-color-text);
+  font: inherit;
 }
 
-select {
-  max-width: 100%;
-  min-width: 0;
+.text:focus-visible {
+  outline: var(--ugoe-focus-ring);
+  outline-offset: 1px;
 }
 
 .index {
-  font-weight: 600;
+  font-weight: var(--ugoe-font-weight-strong);
   min-width: 2em;
 }
 
@@ -418,18 +471,13 @@ select {
   margin-left: auto;
 }
 
-.check {
+.checks {
   display: flex;
-  align-items: center;
-  gap: 4px;
+  flex-direction: column;
+  gap: var(--ugoe-space-2);
 }
 
 .id {
-  font-size: 11px;
-}
-
-.hint {
-  font-size: 11px;
-  margin: 2px 0;
+  font-size: var(--ugoe-font-size-xs);
 }
 </style>
