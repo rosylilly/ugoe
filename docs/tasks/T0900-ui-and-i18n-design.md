@@ -1,11 +1,11 @@
 ---
 id: T0900
 title: UI と i18n: ADR とガイドライン (共有パッケージの構成・デザイントークン・翻訳の仕組み)
-status: todo
+status: in-progress
 milestone: M8
 crates: [docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0900
 ---
 
 # T0900: UI と i18n: ADR とガイドライン (共有パッケージの構成・デザイントークン・翻訳の仕組み)

@@ -1,11 +1,11 @@
 ---
 id: T0800
 title: スタジオ: ADR と設計書 (範囲・ウィンドウ構成・入力・外部 API の安全性・ライセンス)
-status: todo
+status: in-progress
 milestone: M8
 crates: [docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0800
 ---
 
 # T0800: スタジオ: ADR と設計書 (範囲・ウィンドウ構成・入力・外部 API の安全性・ライセンス)
