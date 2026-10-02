@@ -21,6 +21,9 @@ pub enum AnimationError {
     Json(#[from] serde_json::Error),
     #[error("{}", validation_message("physics settings", .0))]
     InvalidPhysics(Vec<ValidationError>),
+    /// 本体の物理の設定を、付けているモジュールと合成できなかった (`set_base_physics_json`)。
+    #[error(transparent)]
+    DressUp(ugoe::DressUpError),
     #[error("unknown motion `{0}`")]
     UnknownMotion(String),
     #[error("unknown expression `{0}`")]
@@ -286,6 +289,39 @@ fn set_physics(
     puppet
         .set_physics(settings)
         .map_err(AnimationError::InvalidPhysics)
+}
+
+/// 本体の物理の設定 (`*.physics.json` の形) を差し替える。`None` で外す (`ugoe::Puppet::set_base_physics`)。
+/// 着せ替えのモジュールを付けていれば合成し直し、この後の付け外しでもこの設定から合成する。
+/// 検査か合成に失敗すれば何も変えない。
+pub fn set_base_physics_json(
+    puppet: &mut Puppet,
+    json: Option<&str>,
+) -> Result<(), AnimationError> {
+    let settings = json.map(ugoe::format::physics_from_json).transpose()?;
+    puppet
+        .set_base_physics(settings)
+        .map_err(|error| match error {
+            ugoe::DressUpError::Physics(errors) => AnimationError::InvalidPhysics(errors),
+            error => AnimationError::DressUp(error),
+        })
+}
+
+/// 本体の物理の設定の JSON (`ugoe::Puppet::base_physics`)。物理が無ければ `None`。
+pub fn base_physics_json(puppet: &Puppet) -> Result<Option<String>, AnimationError> {
+    puppet
+        .base_physics()
+        .map(ugoe::format::physics_to_json)
+        .transpose()
+        .map_err(AnimationError::from)
+}
+
+/// パーツ `part` の評価後の不透明度 (祖先を掛けた値。`ugoe::runtime::ModelInstance::part_opacity`)。
+/// パーツが無ければ `None`。
+pub fn part_evaluated_opacity(puppet: &Puppet, part: &str) -> Option<f32> {
+    let instance = puppet.instance();
+    let index = instance.compiled().part_index(part)?;
+    Some(instance.part_opacity(index))
 }
 
 /// 今の物理の設定の JSON。物理が無ければ `None`。
@@ -628,6 +664,71 @@ mod tests {
             puppet.update(DT);
         }
         assert_eq!(puppet.instance().part_opacity_override(arm_b), (1.0, 1.0));
+    }
+
+    /// 評価後のパーツの不透明度は祖先を掛けた値で、無いパーツは `None`。
+    #[test]
+    fn part_evaluated_opacity_reads_the_evaluated_value() {
+        let mut puppet = quiet(fixtures::part_opacity_hierarchy());
+        assert_eq!(part_evaluated_opacity(&puppet, "Missing"), None);
+        let child = puppet.instance().compiled().part_index("Child").unwrap();
+        puppet
+            .instance_mut()
+            .set_part_opacity_override(child, 1.0, 1.0);
+        puppet.instance_mut().update();
+        let grandchild = part_evaluated_opacity(&puppet, "Grandchild").unwrap();
+        assert!((grandchild - 0.8).abs() < 1e-6, "{grandchild}");
+    }
+
+    /// 本体の物理の設定は付け外しの後も保たれる。合成できない・検査を通らない設定では何も変えない。
+    #[test]
+    fn base_physics_json_survives_dress_up() {
+        let mut puppet = quiet(fixtures::dress_up_base());
+        puppet
+            .attach_module(std::sync::Arc::new(fixtures::long_hair_module()))
+            .unwrap();
+        assert_eq!(base_physics_json(&puppet).unwrap(), None);
+        let windy = ugoe::model::physics::PhysicsSettings {
+            gravity: ugoe::core::Vec2::new(0.0, 1.0),
+            wind: ugoe::core::Vec2::new(0.3, 0.0),
+            fps: ugoe::physics::DEFAULT_FPS,
+            rigs: Vec::new(),
+            colliders: Vec::new(),
+        };
+        let json = ugoe::format::physics_to_json(&windy).unwrap();
+        set_base_physics_json(&mut puppet, Some(&json)).unwrap();
+        puppet
+            .attach_module(std::sync::Arc::new(fixtures::dress_module()))
+            .unwrap();
+        assert_eq!(base_physics_json(&puppet).unwrap(), Some(json));
+        let composed = puppet.physics().unwrap().settings();
+        assert_eq!(composed.wind, windy.wind);
+        assert_eq!(composed.rigs[0].id, "LongHair/Sway");
+
+        let mut bad = windy.clone();
+        bad.colliders.push(ugoe::model::physics::PhysicsCollider {
+            id: "Chest".into(),
+            name: "Chest".into(),
+            attach: Some("Missing".into()),
+            shape: ugoe::model::physics::ColliderShape::Circle {
+                center: ugoe::core::Vec2::ZERO,
+                radius: 1.0,
+            },
+        });
+        let bad = ugoe::format::physics_to_json(&bad).unwrap();
+        assert!(matches!(
+            set_base_physics_json(&mut puppet, Some(&bad)),
+            Err(AnimationError::InvalidPhysics(_))
+        ));
+        assert!(set_base_physics_json(&mut puppet, Some("{")).is_err());
+        assert_eq!(puppet.base_physics(), Some(&windy));
+
+        set_base_physics_json(&mut puppet, None).unwrap();
+        assert_eq!(base_physics_json(&puppet).unwrap(), None);
+        assert_eq!(
+            puppet.physics().unwrap().settings().wind,
+            ugoe::core::Vec2::ZERO
+        );
     }
 
     /// ポーズの JSON はモデルの `pose` の形で、付けたモジュールのグループも入る。

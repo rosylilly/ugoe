@@ -328,7 +328,8 @@ UgoeResult ugoe_puppet_motion_event(const struct UgoePuppet *puppet,
 // `UGOE_ERROR_INVALID_MODEL` を返し、何も変えない。
 //
 // 着せ替えのモジュールを付けているときは、付けたモデルに対して差し替える。次に付け外しをすると、
-// 最初にモジュールを付けたときの本体の設定から合成し直すので、ここで差し替えた設定は失われる。
+// 本体の設定から合成し直すので、ここで差し替えた設定は失われる。付けている間も保つ本体の設定は
+// `ugoe_puppet_set_base_physics_json` で渡す。
 //
 // # Safety
 //
@@ -336,6 +337,24 @@ UgoeResult ugoe_puppet_motion_event(const struct UgoePuppet *puppet,
 UgoeResult ugoe_puppet_set_physics_json(struct UgoePuppet *puppet,
                                         const uint8_t *json,
                                         size_t len);
+
+// 本体の物理の設定を JSON (`ugoe_puppet_set_physics_json` と同じ形) で差し替える。`json` が NULL なら外す
+// (`ugoe::Puppet::set_base_physics`、`docs/spec/modules.md#puppet-での着せ替え`)。
+//
+// 着せ替えのモジュールを付けていれば、付けているモジュールの組と合成し直した設定に差し替え、この後の付け外しでも
+// この設定から合成する (`ugoe_puppet_set_physics_json` で渡した設定は次の付け外しで失われる)。付けたことがなければ
+// `ugoe_puppet_set_physics_json` と同じ。粒子は次の `ugoe_puppet_update` で、その時の入力に対する静止姿勢から始める。
+//
+// JSON を読めなければ `UGOE_ERROR_FORMAT`、本体のモデルか合成したモデルに対する検査を通らなければ
+// `UGOE_ERROR_INVALID_MODEL`、合成できなければ `UGOE_ERROR_DRESS_UP` を返し、何も変えない。本体の物理の有無が変わって
+// モデルを差し替えたときは、着せ替えの操作と同じく ID の文字列のポインタが無効になる。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`json` は NULL か `len` バイトの読める領域を指すこと。
+UgoeResult ugoe_puppet_set_base_physics_json(struct UgoePuppet *puppet,
+                                             const uint8_t *json,
+                                             size_t len);
 
 // 今の物理の設定の JSON (UTF-8。NUL 終端しない) を `out` (`capacity` バイト) に書き、`*out_len` にバイト数を書く。
 // 物理が無ければ `*out_len` は 0。`capacity` が足りなければ `UGOE_ERROR_BUFFER_TOO_SMALL` を返し、`*out_len` だけを書く
@@ -348,6 +367,18 @@ UgoeResult ugoe_puppet_physics_json(const struct UgoePuppet *puppet,
                                     uint8_t *out,
                                     size_t capacity,
                                     size_t *out_len);
+
+// 本体の物理の設定 (`ugoe::Puppet::base_physics`) の JSON。書き方は `ugoe_puppet_physics_json` と同じ。
+// 着せ替えのモジュールを付けていれば、合成する前の本体の設定 (付けたことがなければ今の設定)。
+// モデルを読み直すホストが、モジュールのリグを含まない本体の設定を引き継ぐために使う。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`out` は `capacity` バイトを書き込める領域、`out_len` は書き込める領域を指すこと。
+UgoeResult ugoe_puppet_base_physics_json(const struct UgoePuppet *puppet,
+                                         uint8_t *out,
+                                         size_t capacity,
+                                         size_t *out_len);
 
 // 物理の粒子を初期姿勢に戻す (次の `ugoe_puppet_update` で静止姿勢に置き直す)。物理が無ければ何もしない。
 //
@@ -797,6 +828,17 @@ UgoeResult ugoe_puppet_part_index(const struct UgoePuppet *puppet,
 UgoeResult ugoe_puppet_part_opacity(const struct UgoePuppet *puppet,
                                     uint32_t index,
                                     struct UgoePartOpacity *out);
+
+// 直前の評価 (`ugoe_puppet_update` か着せ替えの操作) での `index` 番目のパーツの不透明度。上書きを当てた自身の値に
+// 祖先の値を掛けたもので、そのパーツのメッシュの不透明度に掛かる (`docs/spec/evaluation.md` の 2.、
+// `ugoe::runtime::ModelInstance::part_opacity`)。上書きの値は `ugoe_puppet_part_opacity`。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
+UgoeResult ugoe_puppet_part_evaluated_opacity(const struct UgoePuppet *puppet,
+                                              uint32_t index,
+                                              float *out);
 
 // ポーズで、`part` (UTF-8、NUL 終端) を `part` に持つ要素をそのグループの表示中の要素にする
 // (`links` のパーツは対象外)。不透明度は次の `ugoe_puppet_update` からフェードで近づく。

@@ -11,6 +11,7 @@ export class WebPuppet {
   attach_module(name: string): void;
   attached_modules(): string[];
   backend(): string;
+  base_physics_json(): string | undefined;
   canvas_size(): Float32Array;
   canvas_to_screen(x: number, y: number): Float32Array;
   clear_tracking(): void;
@@ -56,6 +57,7 @@ export class WebPuppet {
   parameter(id: string): number | undefined;
   parameter_ids(): string[];
   parameters_json(): string;
+  part_evaluated_opacity(part: string): number | undefined;
   physics_json(): string | undefined;
   physics_particles(rig: number): Float32Array;
   pose_json(): string | undefined;
@@ -68,6 +70,7 @@ export class WebPuppet {
   rotation_frame(id: string): Float32Array | undefined;
   screen_to_canvas(x: number, y: number): Float32Array;
   set_background(r: number, g: number, b: number, a: number): void;
+  set_base_physics_json(json?: string | null): void;
   set_effects_json(json: string): void;
   set_enabled(stage: string, enabled: boolean): void;
   set_expression(name: string): void;

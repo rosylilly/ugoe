@@ -291,13 +291,18 @@ static void animate(UgoePuppet *puppet, uint32_t motions) {
     CHECK(ugoe_puppet_physics_json(puppet, json, len, &len));
     CHECK(ugoe_puppet_set_physics_json(puppet, json, len));
     EXPECT(ugoe_puppet_set_physics_json(puppet, json, len / 2) == UGOE_ERROR_FORMAT);
+    /* モジュールを付けていなければ、本体の設定は今の設定と同じ (T0416)。 */
+    size_t base_len = 0;
+    EXPECT(ugoe_puppet_base_physics_json(puppet, NULL, 0, &base_len) == UGOE_ERROR_BUFFER_TOO_SMALL);
+    EXPECT(base_len == len);
+    CHECK(ugoe_puppet_set_base_physics_json(puppet, json, len));
     free(json);
     CHECK(ugoe_puppet_reset_physics(puppet));
     CHECK(ugoe_puppet_update(puppet, 1.0f / 60.0f));
     printf("physics settings: %zu bytes of JSON\n", len);
 }
 
-/* パーツの不透明度の上書きを読み、各パーツをポーズで表示してみて、効果の設定を差し替える (T0414)。 */
+/* パーツの不透明度の上書きと評価後の値を読み、各パーツをポーズで表示してみて、効果の設定を差し替える (T0414・T0416)。 */
 static void host_actions(UgoePuppet *puppet) {
     uint32_t parts = 0, entries = 0, overridden = 0;
     CHECK(ugoe_puppet_part_count(puppet, &parts));
@@ -313,6 +318,10 @@ static void host_actions(UgoePuppet *puppet) {
         if (opacity.weight > 0.0f) {
             overridden++;
         }
+        /* 評価後の不透明度 (祖先を掛けた値。T0416)。 */
+        float evaluated = -1.0f;
+        CHECK(ugoe_puppet_part_evaluated_opacity(puppet, i, &evaluated));
+        EXPECT(!isnan(evaluated));
         /* どの要素の part でもなければ false (エラーにはならない)。 */
         bool shown = false;
         CHECK(ugoe_puppet_show_pose(puppet, id, &shown));

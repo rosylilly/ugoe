@@ -1,5 +1,5 @@
-//! T0414 で足した C ABI (パーツの一覧と不透明度の上書き・ポーズの表示の選択・効果の設定の差し替え) を
-//! Rust から呼んで、`ugoe::Puppet` と同じ結果になることを確かめる。
+//! T0414 で足した C ABI (パーツの一覧と不透明度の上書き・ポーズの表示の選択・効果の設定の差し替え) と
+//! T0416 で足した評価後のパーツの不透明度を Rust から呼んで、`ugoe::Puppet` と同じ結果になることを確かめる。
 #![allow(unsafe_code)] // C ABI の関数は unsafe なので、呼ぶテストに限り許可する。
 #![allow(clippy::unwrap_used)]
 // SAFETY (このファイルの unsafe すべて): C ABI の関数には、このテストが作って破棄していない `UgoePuppet`、
@@ -161,6 +161,40 @@ fn showing_a_pose_entry_follows_the_puppet() {
     let (arm_a, _) = part_opacity(&p, parts[0]);
     assert!(arm_a > 0.0 && arm_a < 1.0, "{arm_a}");
     assert_eq!(part_opacity(&p, parts[1]).0, arm_a);
+}
+
+/// 評価後のパーツの不透明度は `ModelInstance::part_opacity` と同じで、ポーズのフェードと祖先が掛かる。
+#[test]
+fn evaluated_part_opacity_follows_the_puppet() {
+    let model = fixtures::pose_and_effects();
+    let p = from_model(&model);
+    let mut rust = Puppet::new(model.clone()).unwrap();
+    let evaluated = |index: u32| {
+        let mut out = f32::NAN;
+        ok(unsafe { ugoe_puppet_part_evaluated_opacity(p.0, index, &mut out) });
+        out
+    };
+    assert!(show_pose(&p, "ArmB"));
+    assert!(rust.pose_mut().show(&"ArmB".into()));
+    for frame in 0..20 {
+        ok(unsafe { ugoe_puppet_update(p.0, DT) });
+        rust.update(DT);
+        for i in 0..model.parts.len() {
+            let expected = rust.instance().part_opacity(i);
+            assert_eq!(evaluated(i as u32), expected, "part {i} at frame {frame}");
+        }
+    }
+    // フェードの途中。親 `Root` の不透明度は 1 なので、上書きの値と同じ。
+    let arm_b = part_index(&p, "ArmB");
+    let value = evaluated(arm_b);
+    assert!(value > 0.0 && value < 1.0, "{value}");
+    assert_eq!(part_opacity(&p, arm_b).0, value);
+
+    let mut out = 0.0;
+    assert_eq!(
+        unsafe { ugoe_puppet_part_evaluated_opacity(p.0, model.parts.len() as u32, &mut out) },
+        UGOE_ERROR_OUT_OF_RANGE
+    );
 }
 
 /// 効果の設定の差し替えは `Puppet::set_effects` と同じで、目パチ・呼吸が同じ値になる。

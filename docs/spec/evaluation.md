@@ -126,6 +126,7 @@ W の各要素 (i, w) について、順に:
 1. すべてのパーツ・デフォーマ・メッシュについて、キーフォームの重みを計算し、局所的な値を補間する。
 2. パーツの不透明度を根から葉へ伝播する: `part_opacity = own * parent_part_opacity`
    - `own` は、ホストが上書き `(value, weight)` を与えていれば (`ModelInstance::set_part_opacity_override`)、補間した値 `o` の代わりに `lerp(o, value, weight)` を使う。`weight` は 0〜1 にクランプする。既定は重み 0 (上書きしない)。パーツの不透明度はクランプしない。モーションのパーツの不透明度のカーブとポーズが使う ([motion.md](motion.md#パーツの不透明度))
+   - 評価後の値 `part_opacity` (祖先を掛けたもの) は `ModelInstance::part_opacity(part)` で読める (T0416)。C ABI は `ugoe_puppet_part_evaluated_opacity`、wasm は `part_evaluated_opacity`。上書きの値 (`part_opacity_override`) とは別のもの
 3. デフォーマを **トポロジカル順 (親が先)** に評価し (親が先という条件のほかは `deformers` の配列順。結果はこの順序に依存しません)、それぞれの **ワールド変換** (局所座標 → キャンバス座標の写像) を作る。
 4. メッシュの局所頂点を、親デフォーマのワールド変換でキャンバス座標に写す。
 5. グルーを適用する。

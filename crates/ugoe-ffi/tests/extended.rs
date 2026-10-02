@@ -960,3 +960,83 @@ fn motion_over_tracking_follows_the_puppet() {
     );
     ok(unsafe { ugoe_puppet_set_tracking_kept(p.0, ptr::null(), 0) });
 }
+
+fn base_physics_json(p: &Handle) -> String {
+    let mut len = usize::MAX;
+    let code = unsafe { ugoe_puppet_base_physics_json(p.0, ptr::null_mut(), 0, &mut len) };
+    if len == 0 {
+        ok(code);
+        return String::new();
+    }
+    assert_eq!(code, UGOE_ERROR_BUFFER_TOO_SMALL);
+    let mut buf = vec![0u8; len];
+    ok(unsafe { ugoe_puppet_base_physics_json(p.0, buf.as_mut_ptr(), buf.len(), &mut len) });
+    String::from_utf8(buf).unwrap()
+}
+
+fn set_base_physics(p: &Handle, json: &str) -> UgoeResult {
+    unsafe { ugoe_puppet_set_base_physics_json(p.0, json.as_ptr(), json.len()) }
+}
+
+/// 本体の物理の設定の差し替え (T0416) は `ugoe::Puppet::set_base_physics` と同じで、付け外しの後も保たれる。
+#[test]
+fn base_physics_survives_dress_up() {
+    let p = from_model(dress_up_base());
+    let mut rust = Puppet::new(dress_up_base()).unwrap();
+    let hair = module(long_hair_module(), 1);
+    ok(unsafe { ugoe_puppet_attach_module(p.0, hair.0) });
+    rust.attach_module(std::sync::Arc::new(long_hair_module()))
+        .unwrap();
+    assert_eq!(base_physics_json(&p), "");
+
+    let windy = ugoe::model::physics::PhysicsSettings {
+        gravity: ugoe::core::Vec2::new(0.0, 1.0),
+        wind: ugoe::core::Vec2::new(0.3, 0.0),
+        fps: ugoe::physics::DEFAULT_FPS,
+        rigs: Vec::new(),
+        colliders: Vec::new(),
+    };
+    ok(set_base_physics(
+        &p,
+        &ugoe::format::physics_to_json(&windy).unwrap(),
+    ));
+    rust.set_base_physics(Some(windy.clone())).unwrap();
+    let parse = |json: &str| ugoe::format::physics_from_json(json).unwrap();
+    assert_eq!(parse(&base_physics_json(&p)), windy);
+    assert_eq!(
+        &parse(&physics_json(&p)),
+        rust.physics().unwrap().settings()
+    );
+
+    let dress = module(dress_module(), 2);
+    ok(unsafe { ugoe_puppet_attach_module(p.0, dress.0) });
+    let composed = parse(&physics_json(&p));
+    assert_eq!(composed.wind, windy.wind);
+    assert_eq!(composed.rigs[0].id, "LongHair/Sway");
+
+    // 検査を通らない設定と読めない JSON は、何も変えずに失敗する。
+    let mut bad = windy.clone();
+    bad.colliders.push(ugoe::model::physics::PhysicsCollider {
+        id: "Chest".into(),
+        name: "Chest".into(),
+        attach: Some("Missing".into()),
+        shape: ugoe::model::physics::ColliderShape::Circle {
+            center: ugoe::core::Vec2::ZERO,
+            radius: 1.0,
+        },
+    });
+    assert_eq!(
+        set_base_physics(&p, &ugoe::format::physics_to_json(&bad).unwrap()),
+        UGOE_ERROR_INVALID_MODEL
+    );
+    assert_eq!(set_base_physics(&p, "{"), UGOE_ERROR_FORMAT);
+    assert_eq!(parse(&base_physics_json(&p)), windy);
+    assert_eq!(parse(&physics_json(&p)), composed);
+
+    // NULL で本体の物理を外す。モジュールのリグは既定の設定に加わる。
+    ok(unsafe { ugoe_puppet_set_base_physics_json(p.0, ptr::null(), 0) });
+    assert_eq!(base_physics_json(&p), "");
+    let composed = parse(&physics_json(&p));
+    assert_eq!(composed.wind, ugoe::core::Vec2::ZERO);
+    assert_eq!(composed.rigs.len(), 1);
+}

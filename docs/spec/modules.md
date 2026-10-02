@@ -157,14 +157,29 @@ compose_physics_without_base(base: &Model, composed: &mut Model, settings: &Phys
 | `detach_module(name)` | モジュールを外す。付いていなければ `DressUpError::NotAttached` |
 | `set_modules(Vec<Arc<Module>>)` | 付けるモジュールの組をまとめて決める。空なら本体だけに戻す |
 | `modules()` / `base_model()` | 付けているモジュール (合成の順) と本体のモデル |
+| `base_physics()` / `set_base_physics(Option<PhysicsSettings>)` | 本体の物理の設定を読む・差し替える。付けていれば今のモジュールの組と合成し直す (T0416) |
 | `texture_sources()` | 合成したモデルのテクスチャごとの出どころ (`TextureSource::Base(i)` か `TextureSource::Module { module, index }`) |
 
 最初にモジュールを付けたときの Puppet のモデルと物理の設定を本体として覚え、付け外しのたびに本体とモジュールの組を合成・コンパイルし直します。
 失敗したとき (`DressUpError`: 合成・コンパイル・合成した物理の検証) は何も変えません。本体に物理が無くてもモジュールにリグがあれば、
-重力 `(0, 1)`・風なし・60 Hz の設定に加えます (`compose_physics_without_base`。スロットが公開する衝突体は何も指さない)。モジュールを付けている間に `set_physics` で渡した設定は、次の組み替えで本体の設定から作り直されます
-(保たない。T0414 で決めた)。渡されるのは合成した後の設定で、本体の分とモジュールのリグの分に分けられず、本体の設定として覚え直すと
-次の合成でモジュールのリグが二重になるためです。付けている間も設定を変えたいホストは、付け外しのたびに差し替え直します。
-wasm の `set_physics_json` と C ABI の `ugoe_puppet_set_physics_json` も同じです。
+重力 `(0, 1)`・風なし・60 Hz の設定に加えます (`compose_physics_without_base`。スロットが公開する衝突体は何も指さない)。
+
+物理の設定の差し替えは 2 つあります。
+
+- `set_physics`: 今の (合成した後の) 設定を差し替えます。モジュールを付けている間に渡した設定は、次の組み替えで本体の設定から
+  作り直されます (保たない。T0414 で決めた)。渡されるのは合成した後の設定で、本体の分とモジュールのリグの分に分けられず、
+  本体の設定として覚え直すと次の合成でモジュールのリグが二重になるためです。wasm の `set_physics_json` と C ABI の
+  `ugoe_puppet_set_physics_json` も同じです。
+- `set_base_physics` (T0416): 本体の設定を差し替え、付けているモジュールの組と合成し直します。この後の組み替えもこの設定から合成するので、
+  付けている間も保たれます。本体のモデルに対して検査し (`validate_physics`)、合成した設定も合成したモデルに対して検査します。
+  失敗したときは何も変えません。モジュールを付けたことがなければ `set_physics` と同じです。物理は組み替えと同じく作り直し、
+  粒子は次の `update` で静止姿勢から始めます。本体の物理の有無が変わってスロットの `colliders` を空にするかどうかが変わるとき
+  (`compose_physics_without_base`) は、組み替えと同じくモデルも差し替えます (状態の扱いは下の組み替えと同じ)。そうでなければ物理だけを差し替えます。
+  wasm は `set_base_physics_json` / `base_physics_json`、C ABI は `ugoe_puppet_set_base_physics_json` / `ugoe_puppet_base_physics_json` です。
+
+公開仕様 (英語版の [Composition](../../spec/model.md#composition)) は、本体の物理の設定とモジュールの組から合成した設定を決めるだけで、
+どの設定を本体とするかや差し替えの API は決めません (`Puppet` の API は公開仕様に含めない。[public-spec.md](public-spec.md))。
+`set_base_physics` は合成の入力の本体の設定を差し替えるだけなので、公開仕様は変えていません。
 
 組み替えでは、状態を次のように扱います。
 

@@ -154,6 +154,9 @@ impl Puppet {
     ///
     /// 設定はモデルと合わせて `ugoe_model::validate::validate_physics` で検査し、エラーがあれば
     /// 何も変えずにそれを返す。エディタで設定を変えながらプレビューするために使う。
+    ///
+    /// 着せ替えのモジュールを付けているときは、合成した今の設定を差し替えるだけで、次の付け外しで本体の設定から
+    /// 合成し直す。付けている間も保ちたい本体の設定は [`Puppet::set_base_physics`] で渡す。
     pub fn set_physics(
         &mut self,
         settings: Option<PhysicsSettings>,

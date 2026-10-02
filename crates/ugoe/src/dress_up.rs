@@ -1,7 +1,8 @@
 //! 着せ替え: [`Puppet`] へのモジュールの付け外し (`docs/spec/modules.md#puppet-での着せ替え`)。
 //!
 //! 最初にモジュールを付けたときの Puppet のモデルと物理の設定を「本体」として覚え、付け外しのたびに
-//! 本体とモジュールの組を合成 ([`ugoe_runtime::compose`]) してコンパイルし直す。
+//! 本体とモジュールの組を合成 ([`ugoe_runtime::compose`]) してコンパイルし直す。本体の物理の設定は
+//! [`Puppet::set_base_physics`] で差し替えられる。
 
 use std::sync::Arc;
 
@@ -128,7 +129,7 @@ impl DressUpError {
 #[derive(Debug, Clone)]
 pub(crate) struct Wardrobe {
     base: Model,
-    /// 本体の物理の設定 (最初にモジュールを付けたときの設定)。
+    /// 本体の物理の設定 (最初にモジュールを付けたときの設定か、[`Puppet::set_base_physics`] で差し替えた設定)。
     base_physics: Option<PhysicsSettings>,
     modules: Vec<Arc<Module>>,
     textures: Vec<TextureSource>,
@@ -148,7 +149,8 @@ impl Puppet {
         }
     }
 
-    /// 本体の物理の設定 (モジュールを付ける前の設定)。モジュールを付けたことがなければ今の設定。
+    /// 本体の物理の設定 (モジュールを付ける前の設定。[`Puppet::set_base_physics`] で差し替えられる)。
+    /// モジュールを付けたことがなければ今の設定。
     ///
     /// モデルを読み直すホストが、合成した設定 (モジュールのリグを含む) ではなく本体の設定を引き継ぐために使う。
     pub fn base_physics(&self) -> Option<&PhysicsSettings> {
@@ -228,26 +230,8 @@ impl Puppet {
                 modules: Vec::new(),
             }
         });
-        let refs: Vec<&Module> = modules.iter().map(|m| m.as_ref()).collect();
         let base = &wardrobe.base;
-        let mut model = compose(base, &refs)?;
-        let has_rigs = refs.iter().any(|m| !m.physics.rigs.is_empty());
-        let physics = match &wardrobe.base_physics {
-            Some(settings) => Some(compose_physics(base, settings, &refs)?),
-            None if has_rigs => Some(compose_physics_without_base(
-                base,
-                &mut model,
-                &empty_physics(),
-                &refs,
-            )?),
-            None => None,
-        };
-        if let Some(physics) = &physics {
-            let errors = validate_physics(physics, &model);
-            if !errors.is_empty() {
-                return Err(DressUpError::Physics(errors));
-            }
-        }
+        let (model, physics) = compose_all(base, wardrobe.base_physics.as_ref(), &modules)?;
         let textures = texture_sources(base, &modules);
         let compiled = CompiledModel::compile(model)?;
 
@@ -261,6 +245,45 @@ impl Puppet {
             wardrobe.textures = textures;
         }
         Ok(change)
+    }
+
+    /// 本体の物理の設定を差し替える (`None` で外す)。モジュールを付けていれば、付けているモジュールの組と合成し直した
+    /// 設定に差し替え、この後の付け外しでもこの設定から合成する (`docs/spec/modules.md#puppet-での着せ替え`)。
+    /// モジュールを付けたことがなければ [`Puppet::set_physics`] と同じ。
+    ///
+    /// 設定は本体のモデルと合わせて `ugoe_model::validate::validate_physics` で検査し、合成した設定も合成したモデルと
+    /// 合わせて検査する。失敗したとき (検査・合成) は何も変えない。粒子は次の `update` で、その時の入力に対する
+    /// 静止姿勢から始める (付けているモジュールのリグの揺れも止まる)。
+    ///
+    /// [`Puppet::set_physics`] は今の (合成した) 設定を差し替えるだけなので、モジュールを付けている間に渡した設定は
+    /// 次の付け外しで失われる。付けている間も本体の設定を変えたいホストはこちらを使う。
+    pub fn set_base_physics(
+        &mut self,
+        settings: Option<PhysicsSettings>,
+    ) -> Result<(), DressUpError> {
+        if let Some(settings) = &settings {
+            let errors = validate_physics(settings, self.base_model());
+            if !errors.is_empty() {
+                return Err(DressUpError::Physics(errors));
+            }
+        }
+        let Some(wardrobe) = &self.wardrobe else {
+            self.replace_physics(settings);
+            return Ok(());
+        };
+        let (model, physics) = compose_all(&wardrobe.base, settings.as_ref(), &wardrobe.modules)?;
+        // 本体の物理の有無で、合成したモデルのスロットの `colliders` が変わることがある
+        // (`compose_physics_without_base`)。変わらなければ物理だけを差し替える。
+        if model.slots == self.instance.compiled().model().slots {
+            self.replace_physics(physics);
+        } else {
+            let compiled = CompiledModel::compile(model)?;
+            self.swap_model(compiled, physics);
+        }
+        if let Some(wardrobe) = &mut self.wardrobe {
+            wardrobe.base_physics = settings;
+        }
+        Ok(())
     }
 
     /// モデルを `compiled` に差し替え、状態を引き継ぐ ([`Puppet::set_modules`] の規則)。
@@ -283,6 +306,35 @@ impl Puppet {
         self.apply_part_opacities(0.0);
         self.instance.update();
     }
+}
+
+/// 本体 `base` と物理の設定 `base_physics` に `modules` を合成し、合成した物理を合成したモデルと合わせて検査する
+/// ([`Puppet::set_modules`] の規則)。
+fn compose_all(
+    base: &Model,
+    base_physics: Option<&PhysicsSettings>,
+    modules: &[Arc<Module>],
+) -> Result<(Model, Option<PhysicsSettings>), DressUpError> {
+    let refs: Vec<&Module> = modules.iter().map(|m| m.as_ref()).collect();
+    let mut model = compose(base, &refs)?;
+    let has_rigs = refs.iter().any(|m| !m.physics.rigs.is_empty());
+    let physics = match base_physics {
+        Some(settings) => Some(compose_physics(base, settings, &refs)?),
+        None if has_rigs => Some(compose_physics_without_base(
+            base,
+            &mut model,
+            &empty_physics(),
+            &refs,
+        )?),
+        None => None,
+    };
+    if let Some(physics) = &physics {
+        let errors = validate_physics(physics, &model);
+        if !errors.is_empty() {
+            return Err(DressUpError::Physics(errors));
+        }
+    }
+    Ok((model, physics))
 }
 
 /// 本体に物理が無いときに、モジュールの物理を加える空の設定。

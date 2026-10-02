@@ -729,6 +729,17 @@ impl ModelInstance {
         self.render_order_changed
     }
 
+    /// 直前の [`ModelInstance::update`] で評価したパーツ `part` (`Model::parts` のインデックス) の不透明度。
+    /// 上書き ([`ModelInstance::set_part_opacity_override`]) を当てた自身の値に祖先の値を掛けたもので、
+    /// メッシュの不透明度に掛かる値 (`docs/spec/evaluation.md` の 2.)。
+    ///
+    /// # Panics
+    ///
+    /// `part` が範囲外のとき。
+    pub fn part_opacity(&self, part: usize) -> f32 {
+        self.part_opacity[part]
+    }
+
     // ---- デフォーマのワールド変換 (docs/spec/evaluation.md#デフォーマのワールド変換を読む) ----
     //
     // どれも直前の `update` の結果を読むだけで、確保も再評価もしない (`mesh_local_positions` を除く)。
@@ -1316,6 +1327,30 @@ mod tests {
         instance.clear_part_opacity_overrides();
         instance.update();
         assert!((instance.part_opacity[child] - 0.5).abs() < 1e-6);
+    }
+
+    /// `part_opacity` は祖先を掛けた評価後の値で、`update` まで変わらない。
+    #[test]
+    fn part_opacity_reads_the_evaluated_value() {
+        let mut instance = instance(fixtures::part_opacity_hierarchy());
+        let [root, child, grandchild] =
+            ["Root", "Child", "Grandchild"].map(|id| instance.compiled().part_index(id).unwrap());
+        assert!((instance.part_opacity(root) - 1.0).abs() < 1e-6);
+        assert!((instance.part_opacity(child) - 0.5).abs() < 1e-6);
+        assert!((instance.part_opacity(grandchild) - 0.4).abs() < 1e-6);
+
+        set(&mut instance, "Fade", 1.0);
+        instance.set_part_opacity_override(child, 0.0, 0.5);
+        // update の前は前回の値のまま。
+        assert!((instance.part_opacity(child) - 0.5).abs() < 1e-6);
+        instance.update();
+        // Root = 0.5、Child = lerp(0.5, 0, 0.5) × 0.5 = 0.125、Grandchild = 0.8 × 0.125。
+        assert!((instance.part_opacity(root) - 0.5).abs() < 1e-6);
+        assert!((instance.part_opacity(child) - 0.125).abs() < 1e-6);
+        assert!((instance.part_opacity(grandchild) - 0.1).abs() < 1e-6);
+        // メッシュ A (Grandchild、デフォーマ 0.25) の不透明度に掛かる。
+        let a = mesh_index(&instance, "A");
+        assert!((instance.drawables()[a].opacity - 0.1 * 0.25).abs() < 1e-6);
     }
 
     /// 上書きを変えると、影響を受けるメッシュ (パーツ `Child` とその子孫) だけが変更ありになる。

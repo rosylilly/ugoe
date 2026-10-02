@@ -199,6 +199,123 @@ fn base_physics_is_kept_and_collides_through_the_slot() {
     assert_eq!(puppet.physics().unwrap().settings(), &settings);
 }
 
+/// 本体 (スロット `Hair` が衝突体 `Chest` を公開する) と、`Chest` を持つ物理の設定。
+fn chest_base() -> (ugoe_model::Model, PhysicsSettings) {
+    let mut base = dress_up_base();
+    base.slots[0].colliders = vec!["Chest".into()];
+    let settings = PhysicsSettings {
+        colliders: vec![ugoe_model::physics::PhysicsCollider {
+            id: "Chest".into(),
+            name: "Chest".into(),
+            attach: Some("Torso".into()),
+            shape: ugoe_model::physics::ColliderShape::Circle {
+                center: ugoe_core::Vec2::new(0.5, 0.0),
+                radius: 8.0,
+            },
+        }],
+        ..empty_physics()
+    };
+    (base, settings)
+}
+
+/// `Chest` に当たる `LongHair`。
+fn chest_hair() -> Arc<Module> {
+    let mut hair = long_hair_module();
+    hair.physics.rigs[0].colliders.push("Chest".into());
+    Arc::new(hair)
+}
+
+/// 付けている間に `set_base_physics` で差し替えた本体の設定は、合成し直して使い、付け外しの後も保たれる
+/// (`set_physics` で渡した設定は次の付け外しで失われる)。
+#[test]
+fn base_physics_replaced_while_dressed_survives_dress_up() {
+    let (base, settings) = chest_base();
+    let mut puppet = Puppet::new(base).unwrap().with_physics(settings.clone());
+    puppet.attach_module(chest_hair()).unwrap();
+    set_param(&mut puppet, standard::ANGLE_X, 20.0);
+
+    let windy = PhysicsSettings {
+        wind: ugoe_core::Vec2::new(0.3, 0.0),
+        ..settings.clone()
+    };
+    puppet.set_base_physics(Some(windy.clone())).unwrap();
+    assert_eq!(puppet.base_physics(), Some(&windy));
+    let composed = puppet.physics().unwrap().settings();
+    assert_eq!(composed.wind, windy.wind);
+    assert_eq!(composed.rigs[0].colliders, ["LongHair/Collar", "Chest"]);
+    // モデルは変わらないので、パラメータもそのまま。
+    assert_eq!(param(&puppet, standard::ANGLE_X), 20.0);
+    puppet.update(DT);
+
+    puppet.attach_module(Arc::new(dress_module())).unwrap();
+    assert_eq!(puppet.physics().unwrap().settings().wind, windy.wind);
+    puppet.set_modules(Vec::new()).unwrap();
+    assert_eq!(puppet.physics().unwrap().settings(), &windy);
+
+    // set_physics は今の設定だけを差し替える。
+    puppet.attach_module(chest_hair()).unwrap();
+    let mut calm = puppet.physics().unwrap().settings().clone();
+    calm.wind = ugoe_core::Vec2::ZERO;
+    puppet.set_physics(Some(calm)).unwrap();
+    puppet.attach_module(Arc::new(dress_module())).unwrap();
+    assert_eq!(puppet.physics().unwrap().settings().wind, windy.wind);
+}
+
+/// 本体の物理の有無を切り替えると、スロットが公開する衝突体を指すかどうかも変わる (モデルを差し替える)。
+#[test]
+fn base_physics_toggles_exposed_colliders_while_dressed() {
+    let (base, settings) = chest_base();
+    let mut puppet = Puppet::new(base).unwrap();
+    puppet.attach_module(chest_hair()).unwrap();
+    let rig_colliders = |puppet: &Puppet| {
+        puppet.physics().unwrap().settings().rigs[0]
+            .colliders
+            .clone()
+    };
+    let slot_colliders = |puppet: &Puppet| {
+        puppet.instance().compiled().model().slots[0]
+            .colliders
+            .clone()
+    };
+    assert_eq!(rig_colliders(&puppet), ["LongHair/Collar"]);
+    assert!(slot_colliders(&puppet).is_empty());
+    set_param(&mut puppet, standard::ANGLE_X, 20.0);
+
+    puppet.set_base_physics(Some(settings.clone())).unwrap();
+    assert_eq!(rig_colliders(&puppet), ["LongHair/Collar", "Chest"]);
+    assert_eq!(slot_colliders(&puppet), ["Chest"]);
+    assert_eq!(param(&puppet, standard::ANGLE_X), 20.0);
+    assert_eq!(names(&puppet), ["LongHair"]);
+    puppet.update(DT);
+
+    puppet.set_base_physics(None).unwrap();
+    assert!(puppet.base_physics().is_none());
+    assert_eq!(rig_colliders(&puppet), ["LongHair/Collar"]);
+    assert!(slot_colliders(&puppet).is_empty());
+    puppet.detach_module("LongHair").unwrap();
+    assert!(puppet.physics().is_none());
+}
+
+/// 本体のモデルに対する検査を通らない設定では、何も変えない。モジュールを付けたことがなければ `set_physics` と同じ。
+#[test]
+fn invalid_base_physics_changes_nothing() {
+    let (base, settings) = chest_base();
+    let mut puppet = Puppet::new(base).unwrap();
+    // スロットが公開する `Chest` が無い。
+    let err = puppet.set_base_physics(Some(empty_physics())).unwrap_err();
+    assert_eq!(err.code(), "invalid_physics");
+    assert!(puppet.physics().is_none());
+    puppet.set_base_physics(Some(settings.clone())).unwrap();
+    assert_eq!(puppet.physics().unwrap().settings(), &settings);
+    assert_eq!(puppet.base_physics(), Some(&settings));
+
+    puppet.attach_module(chest_hair()).unwrap();
+    let before = puppet.physics().unwrap().settings().clone();
+    assert!(puppet.set_base_physics(Some(empty_physics())).is_err());
+    assert_eq!(puppet.physics().unwrap().settings(), &before);
+    assert_eq!(puppet.base_physics(), Some(&settings));
+}
+
 /// 物理を渡さずにモデルだけで作った Puppet でも、スロットが衝突体を公開するスロットにモジュールを付けられる。
 /// 公開した本体の衝突体は何も指さず、リグの参照は外れる (T0655)。
 #[test]

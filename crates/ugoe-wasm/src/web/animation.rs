@@ -141,6 +141,13 @@ impl WebPuppet {
         Ok(animation::show_pose(self.puppet_mut()?, part))
     }
 
+    /// パーツ `part` の評価後の不透明度 (上書きを当てた自身の値に祖先の値を掛けたもの。そのパーツのメッシュの
+    /// 不透明度に掛かる)。必要なら評価してから読む。モデルかパーツが無ければ `undefined`。
+    pub fn part_evaluated_opacity(&mut self, part: &str) -> Option<f32> {
+        self.evaluate();
+        animation::part_evaluated_opacity(self.puppet.as_ref()?, part)
+    }
+
     /// 今のポーズ (モデルの `pose` と同じ JSON。着せ替えで付けたモジュールのグループと追従も入る)。
     /// モデルが無ければ `undefined`。
     pub fn pose_json(&self) -> Result<Option<String>, JsError> {
@@ -189,6 +196,23 @@ impl WebPuppet {
         animation::set_physics_json(self.puppet_mut()?, json.as_deref()).map_err(js_error)?;
         self.dirty = true;
         Ok(())
+    }
+
+    /// 本体の物理の設定 (`*.physics.json` の形) を差し替える。`undefined` で外す。着せ替えのモジュールを付けていれば
+    /// 合成し直し、この後の付け外しでもこの設定から合成する (`set_physics_json` で渡した設定は次の付け外しで失われる)。
+    /// 本体のモデルと合成したモデルに対して検査し、失敗すれば何も変えない。粒子は静止姿勢から始める。
+    pub fn set_base_physics_json(&mut self, json: Option<String>) -> Result<(), JsError> {
+        animation::set_base_physics_json(self.puppet_mut()?, json.as_deref()).map_err(js_error)?;
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// 本体の物理の設定の JSON (モジュールを付ける前の設定。付けたことがなければ今の設定)。物理が無ければ `undefined`。
+    pub fn base_physics_json(&self) -> Result<Option<String>, JsError> {
+        match &self.puppet {
+            Some(puppet) => animation::base_physics_json(puppet).map_err(js_error),
+            None => Ok(None),
+        }
     }
 
     /// 今の物理の設定の JSON。物理が無ければ `undefined`。

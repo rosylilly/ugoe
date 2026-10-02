@@ -41,7 +41,7 @@ pub struct UgoeModule {
 }
 
 /// 着せ替えの失敗を、種類と補足の値の付いたエラーにする。
-fn dress_up_error(error: DressUpError) -> Error {
+pub(crate) fn dress_up_error(error: DressUpError) -> Error {
     let fields = error
         .fields()
         .into_iter()

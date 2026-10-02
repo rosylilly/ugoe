@@ -177,6 +177,8 @@ size_t len = 0;
 ugoe_puppet_physics_json(puppet, NULL, 0, &len);      /* 物理が無ければ len == 0。あれば UGOE_ERROR_BUFFER_TOO_SMALL */
 ugoe_puppet_set_physics_json(puppet, json, json_len); /* *.physics.json の形で差し替える。NULL で外す */
 ugoe_puppet_reset_physics(puppet);                    /* 粒子を初期姿勢に戻す */
+ugoe_puppet_set_base_physics_json(puppet, json, json_len); /* 本体の設定を差し替える。付け外しの後も保つ (T0416) */
+ugoe_puppet_base_physics_json(puppet, NULL, 0, &len);      /* 本体の設定 (書き方は ugoe_puppet_physics_json と同じ) */
 ```
 
 - イベントは `ugoe::Puppet::motion_events` と同じ (開始した順のモーションごとに、発火した順)。wasm の `motion_events()` は値だけを返す。
@@ -184,7 +186,12 @@ ugoe_puppet_reset_physics(puppet);                    /* 粒子を初期姿勢�
   検査を通らなければ `UGOE_ERROR_INVALID_MODEL` で、どちらも何も変えない。粒子は次の `update` で静止姿勢から始める。
 - 着せ替えのモジュールを付けている間に差し替えた設定は、次の付け外しで本体の設定から作り直される (wasm の `set_physics_json` と同じ)。
   差し替えた設定を保たないことは T0414 で決めた (合成した設定は本体の分に戻せないため。`docs/spec/modules.md#puppet-での着せ替え`)。
-  付けている間も設定を変えたいなら、付け外しの後に差し替え直す。
+- 付けている間も保つ設定は `ugoe_puppet_set_base_physics_json` で本体の設定として渡す (`ugoe::Puppet::set_base_physics`、T0416)。
+  付けているモジュールの組と合成し直し、この後の付け外しでもこの設定から合成する。付けたことがなければ `ugoe_puppet_set_physics_json` と同じ。
+  JSON を読めなければ `UGOE_ERROR_FORMAT`、本体のモデルか合成したモデルに対する検査を通らなければ `UGOE_ERROR_INVALID_MODEL`、
+  合成できなければ `UGOE_ERROR_DRESS_UP` (種類は `ugoe_last_error_kind`) で、何も変えない。本体の物理の有無が変わってスロットの
+  衝突体の扱いが変わるとモデルを差し替えるので、そのときは着せ替えの操作と同じく ID のポインタが無効になる。
+- `ugoe_puppet_base_physics_json` は合成する前の本体の設定 (付けたことがなければ今の設定)。モデルを読み直すホストが引き継ぐために使う。
 - `ugoe_puppet_physics_json` は NUL 終端しない UTF-8 をホストのバッファに書く (可変長の結果の規約)。
 
 ## パーツ・ポーズ・効果の設定 (T0414)
@@ -195,6 +202,8 @@ ugoe_puppet_part_count(puppet, &parts);             /* パーツの数 (Model::p
 ugoe_puppet_part_index(puppet, "ArmA", &index);     /* ID から番号。ugoe_puppet_part_id で逆引き */
 UgoePartOpacity o;
 ugoe_puppet_part_opacity(puppet, index, &o);        /* 直前の update が書いた上書き (o.value, o.weight) */
+float evaluated = 0;
+ugoe_puppet_part_evaluated_opacity(puppet, index, &evaluated); /* 評価後の不透明度 (祖先を掛けた値。T0416) */
 
 bool shown = false;
 ugoe_puppet_show_pose(puppet, "ArmB", &shown);      /* ポーズの要素 (part の ID) を表示する。要素でなければ false */
@@ -203,7 +212,10 @@ ugoe_puppet_set_effects_json(puppet, json, len);    /* 目パチ・呼吸・リ�
 
 - `ugoe_puppet_part_opacity` はモーションのパーツの不透明度のカーブとポーズが書いた **上書き** (`lerp(o, value, weight)` の `value` と
   `weight`。上書きしなければ `weight` は 0) で、公開仕様の時間の例 (`spec/examples/README.md#timeline-examples`) の `part_opacity` と同じもの。
-  キーフォームと親を掛けた評価の後の不透明度ではない (ランタイムが公開していないため。メッシュの不透明度は `UgoeDrawableState::opacity`)。
+  キーフォームと親を掛けた評価の後の不透明度ではない。
+- `ugoe_puppet_part_evaluated_opacity` は評価の後の不透明度 (上書きを当てた自身の値に祖先の値を掛けたもの。
+  `ugoe::runtime::ModelInstance::part_opacity`、`docs/spec/evaluation.md` の 2.、T0416)。そのパーツのメッシュの不透明度に掛かる
+  (メッシュの不透明度は `UgoeDrawableState::opacity`)。直前の update (か着せ替えの操作) の結果。wasm は `part_evaluated_opacity(part)`。
 - `ugoe_puppet_show_pose` は `PosePlayer::show` と同じ (`docs/spec/motion.md#ポーズ`)。`links` のパーツや、どの要素の `part` でもない
   パーツは何も変えず `false` (エラーにはしない)。不透明度は次の update からフェードし、そのフレームにモーションが同じグループの要素を
   要求すれば要求が勝つ。ポーズの段を止めている間も表示中の要素は変わる。wasm は `show_pose(part)`。

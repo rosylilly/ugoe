@@ -92,9 +92,12 @@ puppet.active_expressions();           // 使っている表情の名前 (開始
 puppet.set_lip_sync_level(0.4);        // 0..1。undefined で口に触らない
 puppet.set_enabled("physics", false);  // "physics" | "eye_blink" | "breath" | "lip_sync" | "pose"
 puppet.set_physics_json(json);         // 物理だけを差し替える (validate_physics で検査。undefined で外す)
+puppet.set_base_physics_json(json);    // 本体の物理を差し替える。付けたモジュールと合成し直し、付け外しの後も保つ (T0416)
+puppet.base_physics_json();            // 本体の物理 (モジュールを付ける前の設定)。無ければ undefined
 puppet.set_effects_json(json);         // 目パチ・呼吸・リップシンクの設定 (モデルの effects の形) を差し替える
 puppet.show_pose("ArmB");              // ポーズの要素 (part の ID) を表示する (T0414)。要素でなければ false
 puppet.pose_json();                    // 今のポーズ (モデルの pose の形。付けたモジュールのグループと追従も入る。T0661)
+puppet.part_evaluated_opacity("ArmB"); // 評価後のパーツの不透明度 (祖先を掛けた値。T0416)。パーツが無ければ undefined
 puppet.update(dt);                     // Puppet::update と同じ順で 1 フレーム進める
 puppet.motion_events();                // 直前の update で発火したイベントの値
 puppet.hit_test_standard("Head", x, y); // Model.avatar.hit_areas の標準の名前で当たり判定
@@ -110,6 +113,8 @@ puppet.hit_test_standard("Head", x, y); // Model.avatar.hit_areas の標準の�
 - `set_effects_json` は同じ設定でも目パチ・呼吸を初めからやり直し、リップシンクの音量は保つ。`show_pose` の不透明度は次の `update` からフェードし、
   モーションが同じグループの要素を要求すればそちらが勝つ (`docs/spec/motion.md#エフェクト設定の差し替え`・`#ポーズ`)。C ABI では
   `ugoe_puppet_set_effects_json`・`ugoe_puppet_show_pose` (T0414)。
+- `part_evaluated_opacity` は上書きを当てた自身の値に祖先の値を掛けたもの (`ModelInstance::part_opacity`、`docs/spec/evaluation.md` の 2.)。
+  そのパーツのメッシュの不透明度に掛かる。必要なら評価してから読む。C ABI では `ugoe_puppet_part_evaluated_opacity` (T0416)。
 
 ### エディタ向けの問い合わせ (ギズモ・物理の表示)
 
@@ -187,6 +192,9 @@ C ABI の `ugoe_last_error_kind` と同じ (T0412)。`not_loaded`・`no_model`�
 - 同じ名前のモジュールを `load_module` し直すと、付けていれば新しい版に付け替える (エディタで書き出し直したとき)。
 - モジュールを付けている間に `set_physics_json` で渡した設定は、次の付け外しで本体の設定から作り直される。保たないことは T0414 で決めた
   (合成した設定は本体の分に戻せないため。`docs/spec/modules.md#puppet-での着せ替え`)。
+- 付けている間も保つ設定は `set_base_physics_json` で本体の設定として渡す (`Puppet::set_base_physics`、T0416)。付けているモジュールの組と
+  合成し直し、この後の付け外しでもこの設定から合成する。本体のモデルと合成したモデルに対して検査し、失敗すれば何も変えない。
+  モデルを読み直すと (`load_json`)、本体の設定が引き継がれる。C ABI では `ugoe_puppet_set_base_physics_json`・`ugoe_puppet_base_physics_json`。
 
 ### 読み込みの警告 (T0125)
 
