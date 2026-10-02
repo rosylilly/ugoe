@@ -13,6 +13,7 @@ import Select from "./components/Select.svelte";
 import Slider from "./components/Slider.svelte";
 import Tabs from "./components/Tabs.svelte";
 import Toggle from "./components/Toggle.svelte";
+import ExternalValueHarness from "./test/ExternalValueHarness.svelte";
 import { click, get, html, labelledByText, press, render } from "./test/render";
 import ToolbarHarness from "./test/ToolbarHarness.svelte";
 
@@ -232,6 +233,111 @@ describe("Slider", () => {
     expect(oncommit).toHaveBeenLastCalledWith(0.3);
     expect(get(root, '[role="slider"]').getAttribute("aria-valuenow")).toBe("0.3");
     expect(input.value).toBe("0.3");
+  });
+});
+
+// 外から渡した値 (指揮役の値など) を映すだけでは onchange を呼ばない (docs/ui.md#数値の部品と-onchange)
+describe("external values", () => {
+  function setup(kind: "slider" | "field", initial: number) {
+    const onchange = vi.fn();
+    const oncommit = vi.fn();
+    const control: { set?: (value: number) => void } = {};
+    const root = render(ExternalValueHarness, { kind, initial, control, onchange, oncommit });
+    const set = (value: number) => {
+      control.set?.(value);
+      flushSync();
+    };
+    return { root, onchange, oncommit, set };
+  }
+
+  function type(input: HTMLInputElement, text: string) {
+    input.focus();
+    input.value = text;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    flushSync();
+  }
+
+  it("does not call the slider's callbacks for values off the step grid", () => {
+    const { root, onchange, oncommit, set } = setup("slider", 0.43);
+    for (const v of [0.57, 0.12, 0.99, 0.31]) set(v);
+    const input = get<HTMLInputElement>(root, "input");
+    input.focus();
+    input.blur();
+    flushSync();
+    expect(onchange).not.toHaveBeenCalled();
+    expect(oncommit).not.toHaveBeenCalled();
+    // 外からの値は表示には映る
+    expect(input.value).toBe("0.3");
+  });
+
+  it("still calls the slider's callbacks for the keyboard, the field and the reset", () => {
+    const { root, onchange, oncommit, set } = setup("slider", 0.43);
+    const thumb = get(root, '[role="slider"]');
+    press(thumb, "ArrowRight");
+    expect(onchange).toHaveBeenLastCalledWith(0.5);
+    expect(oncommit).toHaveBeenLastCalledWith(0.5);
+    set(0.77);
+    expect(onchange).toHaveBeenCalledTimes(1);
+    const input = get<HTMLInputElement>(root, "input");
+    type(input, "0.2");
+    press(input, "Enter");
+    expect(onchange).toHaveBeenLastCalledWith(0.2);
+    set(0.64);
+    click(get(root, "button"));
+    expect(onchange).toHaveBeenLastCalledWith(0);
+    expect(oncommit).toHaveBeenLastCalledWith(0);
+    expect(onchange).toHaveBeenCalledTimes(3);
+  });
+
+  it("calls the slider's callbacks while dragging, and not after", () => {
+    const { root, onchange, oncommit, set } = setup("slider", 0.43);
+    const track = get(root, ".ugoe-slider__track");
+    // happy-dom では大きさが 0 なので、右へ押せば最大になる
+    track.dispatchEvent(
+      new PointerEvent("pointerdown", { button: 0, clientX: 10, bubbles: true, cancelable: true }),
+    );
+    flushSync();
+    expect(onchange).toHaveBeenLastCalledWith(1);
+    document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+    flushSync();
+    expect(oncommit).toHaveBeenLastCalledWith(1);
+    const calls = onchange.mock.calls.length;
+    set(0.33);
+    set(0.48);
+    expect(onchange).toHaveBeenCalledTimes(calls);
+  });
+
+  it("does not call the number field's onchange for rounding or stale text", () => {
+    const { root, onchange, set } = setup("field", 0.43);
+    const input = get<HTMLInputElement>(root, "input");
+    expect(input.value).toBe("0.4");
+    input.focus();
+    press(input, "Enter");
+    input.blur();
+    flushSync();
+    // フォーカスがある間も、書き換えていなければ外からの値に追従し、外すときに古い表示を書き込まない
+    input.focus();
+    set(0.57);
+    expect(input.value).toBe("0.6");
+    set(0.21);
+    input.blur();
+    flushSync();
+    expect(onchange).not.toHaveBeenCalled();
+  });
+
+  it("keeps the user's text against external values and commits it", () => {
+    const { root, onchange, set } = setup("field", 0.43);
+    const input = get<HTMLInputElement>(root, "input");
+    type(input, "0.8");
+    set(0.21);
+    expect(input.value).toBe("0.8");
+    input.blur();
+    flushSync();
+    expect(onchange).toHaveBeenLastCalledWith(0.8);
+    set(0.37);
+    press(input, "ArrowUp");
+    expect(onchange).toHaveBeenLastCalledWith(0.5);
+    expect(onchange).toHaveBeenCalledTimes(2);
   });
 });
 

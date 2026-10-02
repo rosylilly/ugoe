@@ -411,15 +411,7 @@ function parameterStep(p: ParameterInfo): number {
   return (p.max - p.min) / 200;
 }
 
-function setParameter(p: ParameterInfo, value: number) {
-  const { id } = p;
-  // 指揮役の値 (刻みの格子に乗らない) を表示したとき、スライダーは格子に寄せた値で onchange を呼ぶ。それを書き込むと
-  // 呼吸などの値を手の値で上書きし続けるので、手で動かしていないパラメータの、半刻みと表示の丸め (小数 2 桁) 以下の変化は送らない。
-  const at = edited.get(id);
-  const shown = values[id];
-  const touching = at !== undefined && performance.now() - at < EDIT_HOLD_MS;
-  const snap = parameterStep(p) / 2 + 0.005 + 1e-9;
-  if (!touching && shown !== undefined && Math.abs(value - shown) <= snap) return;
+function setParameter(id: string, value: number) {
   edited.set(id, performance.now());
   values[id] = value;
   void run((h) => h.setParameter(id, value));
@@ -631,7 +623,7 @@ onMount(() => {
                 step={parameterStep(p)}
                 decimals={2}
                 defaultValue={p.default}
-                onchange={(v) => setParameter(p, v)}
+                onchange={(v) => setParameter(p.id, v)}
               />
             {/each}
           </div>

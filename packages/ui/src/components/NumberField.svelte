@@ -3,6 +3,8 @@
   - 上下の矢印で `step` ずつ増減し、Shift を押しながらなら 10 倍。PageUp / PageDown も 10 倍。
   - Enter かフォーカスを外すと確定し、Esc で確定前の値に戻す。読めない入力は確定前の値に戻す。
   - 編集のための数値なので、桁の区切りを付けず小数点は "." に固定する。
+  - onchange は利用者の操作 (キー・入力の確定) で値が変わったときだけ呼ぶ。外から渡した値が `decimals` の桁に乗らなくても、
+    欄を書き換えずにフォーカスを外したり Enter を押したりしただけでは呼ばない (docs/ui.md#数値の部品と-onchange)。
 -->
 <script lang="ts">
 import { clamp, decimalsOf, formatEditable, parseEditable, roundTo, stepValue } from "../number";
@@ -27,7 +29,7 @@ interface Props {
   disabled?: boolean;
   /** 欄の幅 (文字数)。既定は 6。 */
   size?: number;
-  /** 値を確定したとき。 */
+  /** 利用者の操作で値を確定し、値が変わったとき。外から渡した値では呼ばない。 */
   onchange?: (value: number) => void;
 }
 
@@ -49,16 +51,23 @@ let {
 const id = $props.id();
 const digits = $derived(decimals ?? decimalsOf(step));
 let text = $state("");
-let editing = $state(false);
+// 利用者が欄を書き換えて、まだ確定も取り消しもしていないか
+let dirty = $state(false);
 
-// 編集中でなければ、値の変化を欄に映す
+// 書き換えの途中でなければ、値の変化を欄に映す
 $effect(() => {
   const shown = formatEditable(value, digits);
-  if (!editing) text = shown;
+  if (!dirty) text = shown;
 });
+
+function revert() {
+  dirty = false;
+  text = formatEditable(value, digits);
+}
 
 function commit(next: number) {
   const v = roundTo(clamp(next, min, max), digits);
+  dirty = false;
   text = formatEditable(v, digits);
   if (v !== value) {
     value = v;
@@ -67,8 +76,10 @@ function commit(next: number) {
 }
 
 function commitText() {
+  // 書き換えていなければ確定しない (表示の丸めや古い表示で、外から渡した値を書き換えないため)
+  if (!dirty) return;
   const parsed = parseEditable(text);
-  if (parsed === null) text = formatEditable(value, digits);
+  if (parsed === null) revert();
   else commit(parsed);
 }
 
@@ -93,10 +104,10 @@ function onkeydown(event: KeyboardEvent) {
       return;
     case "Escape":
       // 確定前の値に戻す。戻すものが無ければ、外側 (ダイアログなど) に Esc を渡す
-      if (text !== formatEditable(value, digits)) {
+      if (dirty) {
         event.preventDefault();
         event.stopPropagation();
-        text = formatEditable(value, digits);
+        revert();
       }
       return;
     default:
@@ -130,11 +141,8 @@ function onkeydown(event: KeyboardEvent) {
       aria-valuemax={max}
       aria-valuetext={unit ? `${text} ${unit}` : undefined}
       bind:value={text}
-      onfocus={() => (editing = true)}
-      onblur={() => {
-        editing = false;
-        commitText();
-      }}
+      oninput={() => (dirty = true)}
+      onblur={commitText}
       {onkeydown}
     />
     {#if unit}

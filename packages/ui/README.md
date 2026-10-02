@@ -45,6 +45,7 @@ import "@ugoe/ui/tokens.css";
 ```
 
 - テーマと密度は `<html data-theme="light|dark" data-density="compact|comfortable">` で決める。省くと OS のテーマと `compact`。
+- `Slider` と `NumberField` の `onchange` は利用者の操作のときだけ呼ばれる。外から渡した値が刻みに乗らなくても呼ばれない ([docs/ui.md](../../docs/ui.md#数値の部品と-onchange))。
 - **アプリと、ほかのパッケージは `bits-ui` を直接 import しない。** 部品の props は ugoe の言葉で決めてあり、Bits UI の props は外に出さない
   (Bits UI の破壊的な変更をこのパッケージの中で吸収するため)。
 - **見えるラベル・読み上げの名前・選択肢の名前は、翻訳を通した文言を props で渡す。** 部品が既定で出す文言

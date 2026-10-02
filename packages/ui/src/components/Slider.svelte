@@ -1,6 +1,8 @@
 <!--
   Slider: 範囲のある数値 (docs/ui.md#部品の一覧)。土台は Bits UI の Slider
   (矢印・PageUp / PageDown・Home / End)。NumberField とリセット (既定値に戻す) を並べて出せる (この組み合わせは自作)。
+  onchange と oncommit は利用者の操作 (ドラッグ・キー・欄・リセット) のときだけ呼ぶ。外から渡した値を Bits UI が刻みの格子に
+  寄せても呼ばない (docs/ui.md#数値の部品と-onchange)。
 -->
 <script lang="ts">
 import { Slider } from "bits-ui";
@@ -27,7 +29,7 @@ interface Props {
   /** リセットのボタンの読み上げの名前。省くと @ugoe/ui のカタログの「既定値に戻す」(`slider.reset.aria`)。 */
   resetLabel?: string;
   disabled?: boolean;
-  /** 値が変わるたび (つまみを動かしている間も)。 */
+  /** 利用者の操作で値が変わるたび (つまみを動かしている間も)。外から渡した値では呼ばない。 */
   onchange?: (value: number) => void;
   /** 値を確定したとき (つまみを離した・キーで動かした・欄で確定した・リセットした)。 */
   oncommit?: (value: number) => void;
@@ -52,6 +54,14 @@ let {
 const id = $props.id();
 const digits = $derived(decimals ?? decimalsOf(step));
 
+// 利用者がつまみを操作している間 (ポインタを押している間と、キーの処理の間) だけ true。
+// Bits UI は外から渡した値が刻みの格子に乗らないと、格子に寄せて onValueChange を呼ぶ。それを利用者の操作と区別する。
+let interacting = false;
+
+function endPointer() {
+  interacting = false;
+}
+
 function set(next: number, commit: boolean) {
   const v = roundTo(next, digits);
   if (v !== value) {
@@ -61,6 +71,8 @@ function set(next: number, commit: boolean) {
   if (commit) oncommit?.(v);
 }
 </script>
+
+<svelte:document onpointerup={endPointer} onpointercancel={endPointer} onpointerleave={endPointer} />
 
 <div class="ugoe-slider" data-disabled={disabled ? "" : undefined}>
   <span class="ugoe-slider__label" id={`${id}-label`}>{label}</span>
@@ -72,8 +84,15 @@ function set(next: number, commit: boolean) {
     {max}
     {step}
     {disabled}
-    onValueChange={(v) => set(v, false)}
+    onValueChange={(v) => {
+      if (interacting) set(v, false);
+    }}
     onValueCommit={(v) => set(v, true)}
+    onpointerdowncapture={(e: PointerEvent) => {
+      if (e.button === 0 && !disabled) interacting = true;
+    }}
+    onkeydowncapture={() => (interacting = true)}
+    onkeydown={() => (interacting = false)}
   >
     <span class="ugoe-slider__track">
       <Slider.Range class="ugoe-slider__range" />
