@@ -1,11 +1,11 @@
 ---
 id: T0908
 title: i18n: 画面の直書きの文言を見つける検査
-status: todo
+status: in-progress
 milestone: M8
 crates: [scripts, justfile, docs]
 depends_on: [T0901]
-assignee:
+assignee: claude-worker-T0908
 ---
 
 # T0908: i18n: 画面の直書きの文言を見つける検査

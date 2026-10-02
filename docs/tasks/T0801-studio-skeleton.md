@@ -1,11 +1,11 @@
 ---
 id: T0801
 title: スタジオ: アプリの骨組み (操作ウィンドウと出力ウィンドウ)
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, packages, AGENTS.md, scripts, justfile, commitlint.config.mjs, .github/workflows, docs]
 depends_on: [T0800, T0901, T0902, T0904, T0133]
-assignee:
+assignee: claude-worker-T0801
 ---
 
 # T0801: スタジオ: アプリの骨組み (操作ウィンドウと出力ウィンドウ)

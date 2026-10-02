@@ -1,11 +1,11 @@
 ---
 id: T0903
 title: UI: 共有部品の 2 段目 (ダイアログ・知らせ・ツールチップ・メニュー・色の選択・ファイルのドロップ)
-status: todo
+status: in-progress
 milestone: M8
 crates: [packages, docs]
 depends_on: [T0902]
-assignee:
+assignee: claude-worker-T0903
 ---
 
 # T0903: UI: 共有部品の 2 段目 (ダイアログ・知らせ・ツールチップ・メニュー・色の選択・ファイルのドロップ)
