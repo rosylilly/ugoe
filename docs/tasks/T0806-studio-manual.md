@@ -1,11 +1,11 @@
 ---
 id: T0806
 title: スタジオ: マニュアル・見本のプロファイル・画面の確認
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, docs]
 depends_on: [T0803, T0804, T0807, T0808, T0811, T0907]
-assignee:
+assignee: claude-worker-T0806
 ---
 
 # T0806: スタジオ: マニュアル・見本のプロファイル・画面の確認
