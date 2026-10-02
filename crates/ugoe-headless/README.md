@@ -60,6 +60,9 @@ if let Some(frame) = resident.poll(&gpu, Wait::No)? { /* frame.bytes は NV12 */
   計算シェーダの無いアダプタでは RGBA を読み戻して CPU で変換する (`yuv::convert`。式は同じ)。
 - 色の変換は BT.709 の限定範囲。YUV の形は幅を 4 の倍数、高さを 2 の倍数にする。
 - アルファは見ないので、クリアの色 (`background`) は不透明にする (仮想カメラは透過を出せないので単色で埋める)。
+- `set_lighting` で光源を変え、`set_backdrop` で背景の画像 (出力と同じ大きさの乗算済み RGBA8) を置く。背景の画像があれば、クリアの代わりに
+  毎フレームその画を描画先に写してから描く (GPU の中の写し。スタジオの仮想カメラがシーンの背景の画像に使う。T0808)。
+  `image::cover` は CSS の `background-size: cover` と同じ置き方で画像を出力に合わせ (バイリニア)、`image::over_color` は透過のところを色で埋める。
 
 ## GPU
 

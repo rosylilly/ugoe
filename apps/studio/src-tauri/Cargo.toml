@@ -17,6 +17,8 @@ tauri-build.workspace = true
 [dependencies]
 # 操作 API の秘密 (トークンと鍵) の生成 (T0805。ugoe-mcp が使っているもので、新しい依存ではない)。
 getrandom.workspace = true
+# 仮想カメラの背景の画像 (WebP) のデコード (T0808。利用者の判断 2026-10-02)。
+image-webp.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 # macOS で出力ウィンドウの背景を透過するには macos-private-api が要る (tauri.conf.json の macOSPrivateApi)
@@ -30,6 +32,8 @@ tungstenite.workspace = true
 ugoe.workspace = true
 ugoe-headless.workspace = true
 ugoe-studio-vcam.workspace = true
+# 仮想カメラの背景の画像 (JPEG) のデコード (T0808。利用者の判断 2026-10-02)。
+zune-jpeg.workspace = true
 
 [features]
 # GPU で描くテスト (`just test-gpu`。仮想カメラの受け手の画)。

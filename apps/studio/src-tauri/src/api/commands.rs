@@ -1,4 +1,4 @@
-//! 操作ウィンドウの「操作 API」のパネルが呼ぶ Tauri のコマンド (`apps/studio/src/lib/host.ts`)。
+//! 操作ウィンドウの「操作 API」と「ブラウザソース」のパネルが呼ぶ Tauri のコマンド (`apps/studio/src/lib/host.ts`)。
 //! 様子が変わると `Monitor::Api` の通知でも届く。
 
 use std::sync::Arc;
@@ -70,4 +70,25 @@ pub(crate) fn revoke_api_client(studio: tauri::State<'_, Arc<Studio>>, id: Strin
 #[tauri::command]
 pub(crate) fn disconnect_api_client(studio: tauri::State<'_, Arc<Studio>>, id: String) {
     studio.disconnect_api_client(&id);
+}
+
+/// ブラウザソースを出す・やめる (覚える。やめるとページの接続はすべて閉じる。T0808)。
+#[tauri::command]
+pub(crate) fn set_source_enabled(studio: tauri::State<'_, Arc<Studio>>, enabled: bool) -> ApiView {
+    studio.set_source_enabled(enabled);
+    studio.api_view()
+}
+
+/// OBS のブラウザソースに入れる URL (トークンを含む)。
+#[tauri::command]
+pub(crate) fn source_url(studio: tauri::State<'_, Arc<Studio>>) -> String {
+    studio.source_url()
+}
+
+/// ブラウザソースのトークンを作り直す (古い URL は使えなくなる)。新しい URL を返す。
+#[tauri::command]
+pub(crate) fn regenerate_source_token(
+    studio: tauri::State<'_, Arc<Studio>>,
+) -> Result<String, String> {
+    studio.regenerate_source_token()
 }

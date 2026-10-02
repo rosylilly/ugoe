@@ -40,6 +40,10 @@ function perSecond(value: number): string {
 function receiverName(label: string): string {
   if (label === "output") return t("load.outputWindow");
   if (label === "virtualCamera") return t("load.virtualCamera");
+  // ブラウザソースのページ (つないだ順に `browserSource`・`browserSource:2`…。api/source.rs の `LABEL`)。
+  if (label === "browserSource") return t("load.browserSource");
+  const page = /^browserSource:(\d+)$/.exec(label);
+  if (page !== null) return t("load.browserSourceN", { n: Number(page[1]) });
   return label;
 }
 

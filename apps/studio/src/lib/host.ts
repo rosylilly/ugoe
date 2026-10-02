@@ -204,6 +204,13 @@ export interface StudioHost {
   revokeApiClient(id: string): Promise<void>;
   /** 承認したクライアントの今の接続を切る (鍵は残す)。 */
   disconnectApiClient(id: string): Promise<void>;
+  // ブラウザソース (T0808。様子は `api` の通知の `source` でも届く)
+  /** ページを出す・やめる (覚える。やめるとページの接続はすべて閉じる)。 */
+  setSourceEnabled(enabled: boolean): Promise<ApiView>;
+  /** OBS のブラウザソースに入れる URL (トークンを含む)。 */
+  sourceUrl(): Promise<string>;
+  /** トークンを作り直す (古い URL は使えなくなる)。新しい URL を返す。 */
+  regenerateSourceToken(): Promise<string>;
   // --- 出力ウィンドウ ---
   subscribeFrames(onMessage: (message: StreamMessage) => void): Promise<void>;
   /** シーン `revision` のモデルのバイト列。今のシーンでなければ例外。 */
@@ -305,6 +312,9 @@ async function tauriHost(): Promise<StudioHost> {
     denyApiClient: (id) => invoke("deny_api_client", { id }),
     revokeApiClient: (id) => invoke("revoke_api_client", { id }),
     disconnectApiClient: (id) => invoke("disconnect_api_client", { id }),
+    setSourceEnabled: (enabled) => invoke("set_source_enabled", { enabled }),
+    sourceUrl: () => invoke("source_url"),
+    regenerateSourceToken: () => invoke("regenerate_source_token"),
     subscribeFrames: (onMessage) => subscribe("subscribe_frames", onMessage),
     async sceneModel(revision) {
       return new Uint8Array(await invoke<ArrayBuffer>("scene_model", { revision }));

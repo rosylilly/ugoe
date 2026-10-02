@@ -23,6 +23,9 @@ studio*. The panel shows the address (`ws://127.0.0.1:28451/api` by default), th
 **token**. Copy the address and the token into the client. While the API is on, the toolbar shows an **API** badge.
 
 - The default port is **28451**. Change it in the panel if another program uses it.
+- The port is shared with the **browser source** page for OBS (`http://127.0.0.1:<port>/source/<token>/`). The
+  browser source has its own switch and its own read-only token; while only the browser source is on, `/api` answers
+  `404`.
 - **Regenerate token** makes the old token useless for new clients. Clients that were already approved keep
   working (they use their own key, see below).
 - The token and the client keys are stored in the application data directory (`studio-api.json`), never in a
@@ -77,6 +80,7 @@ Calling a `control` method with `read` permission fails with `-32001`.
 - A WebSocket request with an `Origin` header is accepted only when the origin is the studio's own page
   (`http://127.0.0.1:<port>`, `http://localhost:<port>`, `http://[::1]:<port>`). Web pages opened in a browser cannot
   connect.
+  The browser source page is such a page, but it never calls `/api`; it only reads frames from its own path.
 - Tokens and keys are 256-bit random values and are compared in constant time.
 - Parameter overrides expire (see `parameter.set`), so a crashed client cannot leave the avatar stuck.
 

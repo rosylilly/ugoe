@@ -46,6 +46,7 @@ dbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] 
 encoding_rs = "0.8"
 getrandom = "0.3"
 glam = { version = "0.33", features = ["serde", "bytemuck"] }
+image-webp = "0.2"
 insta = { version = "1", features = ["json"] }
 js-sys = "0.3"
 keyring-core = "1"
@@ -85,6 +86,7 @@ wgpu = "30"
 windows = "0.62"
 windows-core = "0.62"
 windows-native-keyring-store = { version = "1", default-features = false }
+zune-jpeg = "0.5"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

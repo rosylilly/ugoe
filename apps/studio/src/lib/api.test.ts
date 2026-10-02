@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { apiUrl, EMPTY_API, isApiPort, pendingToShow } from "./api";
+import { apiUrl, EMPTY_API, isApiPort, maskSourceUrl, pendingToShow } from "./api";
 
 describe("api", () => {
   it("points clients at the loopback endpoint", () => {
     expect(apiUrl(28451)).toBe("ws://127.0.0.1:28451/api");
+  });
+
+  it("hides the browser source token on screen", () => {
+    const url = `http://127.0.0.1:28451/source/${"ab".repeat(32)}/`;
+    expect(maskSourceUrl(url)).toBe("http://127.0.0.1:28451/source/••••••••/");
+    expect(EMPTY_API.source).toEqual({ enabled: false, listening: false, connections: 0 });
   });
 
   it("accepts unprivileged ports only", () => {

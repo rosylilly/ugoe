@@ -1,4 +1,4 @@
-// 操作 API (T0805、src-tauri/src/api) の様子の形と、パネルで使う小さな計算。
+// 操作 API (T0805、src-tauri/src/api) とブラウザソース (T0808) の様子の形と、パネルで使う小さな計算。
 // 安全性の規則は ADR 0028 の 6.、メッセージは docs/studio-api.md。
 
 /** クライアントに与える権限 (store.rs の `Permission`)。 */
@@ -37,6 +37,17 @@ export interface ApiView {
   pending: ApiPendingClient[];
   /** 名乗る前と承認待ちも含めた接続の数。 */
   connections: number;
+  /** ブラウザソース (T0808。待ち受けとポートを共有する)。 */
+  source: SourceView;
+}
+
+/** ブラウザソースの様子 (mod.rs の `SourceView`)。URL はトークンを含むので `sourceUrl` で別に取る。 */
+export interface SourceView {
+  enabled: boolean;
+  /** ページを出している (有効でも、ポートを使えなければ `false`)。 */
+  listening: boolean;
+  /** つないでいるページの数。 */
+  connections: number;
 }
 
 export const EMPTY_API: ApiView = {
@@ -47,7 +58,13 @@ export const EMPTY_API: ApiView = {
   clients: [],
   pending: [],
   connections: 0,
+  source: { enabled: false, listening: false, connections: 0 },
 };
+
+/** ブラウザソースの URL のトークンを伏せたもの (画面に出す。コピーするのは伏せていない URL)。 */
+export function maskSourceUrl(url: string): string {
+  return url.replace(/\/source\/[^/]+\//, "/source/••••••••/");
+}
 
 /** 選べるポート (1024 未満は OS の管理者の権限が要るので選ばせない)。 */
 export const API_PORT_RANGE = { min: 1024, max: 65535 } as const;

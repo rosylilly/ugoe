@@ -781,8 +781,12 @@ fn http_status(port: u16, request: &str) -> u16 {
 }
 
 fn upgrade(port: u16, extra: &str) -> String {
+    upgrade_at(port, "/api", extra)
+}
+
+fn upgrade_at(port: u16, path: &str, extra: &str) -> String {
     format!(
-        "GET /api HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\
+        "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\
          Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n{extra}\r\n"
     )
 }
@@ -821,11 +825,17 @@ struct Socket(BufReader<TcpStream>);
 
 impl Socket {
     fn open(port: u16) -> Self {
+        Self::open_at(port, "/api", "")
+    }
+
+    fn open_at(port: u16, path: &str, extra: &str) -> Self {
         let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
         stream
             .set_read_timeout(Some(Duration::from_secs(5)))
             .unwrap();
-        stream.write_all(upgrade(port, "").as_bytes()).unwrap();
+        stream
+            .write_all(upgrade_at(port, path, extra).as_bytes())
+            .unwrap();
         let mut reader = BufReader::new(stream);
         let mut head = String::new();
         loop {
@@ -885,6 +895,7 @@ impl Socket {
 #[test]
 fn the_listener_checks_requests_and_speaks_websocket() {
     let studio = studio();
+    lock(&studio.api.0).settings.enabled = true;
     let server = server::Server::start(Arc::clone(&studio), 0).unwrap();
     let port = server.addrs()[0].port();
     assert!(server.addrs().iter().all(|a| a.ip().is_loopback()));
@@ -1161,3 +1172,267 @@ const SCHEMA_METHODS: &[&str] = &[
     "events.subscribe",
     "events.unsubscribe",
 ];
+
+// --- ブラウザソース (T0808) ---
+
+/// 待ち受けへ GET を送り、応答の状態・頭・本文を返す (応答は `Connection: close`)。
+fn http_get(port: u16, path: &str, extra: &str) -> (u16, String, Vec<u8>) {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    stream
+        .write_all(
+            format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{extra}\r\n").as_bytes(),
+        )
+        .unwrap();
+    let mut response = Vec::new();
+    stream.read_to_end(&mut response).unwrap();
+    let split = response.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+    let head = String::from_utf8(response[..split].to_vec()).unwrap();
+    let status = head.split(' ').nth(1).unwrap().parse().unwrap();
+    (status, head, response[split + 4..].to_vec())
+}
+
+/// ブラウザソースを出しているスタジオ (操作 API は切。ページのファイルは偽物)。待ち受けのポートとトークンを返す。
+fn source_studio() -> (Arc<Studio>, u16, String) {
+    let studio = studio();
+    studio.sources.set_assets(|path| match path {
+        "source.html" => Some(b"<!doctype html><title>source</title>".to_vec()),
+        "assets/source-1.js" => Some(b"export {};".to_vec()),
+        _ => None,
+    });
+    let port = std::net::TcpListener::bind(("127.0.0.1", 0))
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    lock(&studio.api.0).settings.source.token = store::generate_secret().unwrap();
+    studio.set_api_port(port).unwrap();
+    studio.set_source_enabled(true);
+    let token = lock(&studio.api.0).settings.source.token.clone();
+    assert_eq!(token.len(), 64);
+    (studio, port, token)
+}
+
+#[test]
+fn the_browser_source_has_its_own_switch_and_token() {
+    let studio = studio();
+    let view = studio.api_view();
+    assert!(
+        !view.source.enabled && !view.source.listening,
+        "off by default"
+    );
+    let (studio, port, token) = source_studio();
+    let view = studio.api_view();
+    assert!(view.source.enabled && view.source.listening, "{view:?}");
+    assert!(!view.enabled, "the API stays off");
+    assert_eq!(
+        studio.source_url(),
+        format!("http://127.0.0.1:{port}/source/{token}/")
+    );
+    // 操作 API は切ってあるので答えない。API のトークンではページを出さない。
+    assert_eq!(http_status(port, &upgrade(port, "")), 404);
+    let api_token = studio.api_token();
+    assert_eq!(http_get(port, &format!("/source/{api_token}/"), "").0, 404);
+    assert_eq!(http_get(port, "/source/", "").0, 404);
+    assert_eq!(
+        http_get(port, &format!("/source/{}/", &token[..63]), "").0,
+        404
+    );
+    // 正しいトークン: ページ・ファイル・末尾の `/` を付ける転送。
+    let (status, head, body) = http_get(port, &format!("/source/{token}/"), "");
+    assert_eq!(status, 200, "{head}");
+    assert!(head.contains("Content-Type: text/html; charset=utf-8"));
+    assert!(head.contains("Referrer-Policy: no-referrer"));
+    assert!(head.contains("Content-Security-Policy: default-src 'none'"));
+    assert!(body.starts_with(b"<!doctype html>"));
+    let (status, head, _) = http_get(port, &format!("/source/{token}"), "");
+    assert_eq!(status, 301);
+    assert!(
+        head.contains(&format!("Location: /source/{token}/\r\n")),
+        "{head}"
+    );
+    let (status, head, body) = http_get(port, &format!("/source/{token}/assets/source-1.js"), "");
+    assert_eq!((status, body.as_slice()), (200, &b"export {};"[..]));
+    assert!(head.contains("Content-Type: text/javascript"));
+    for missing in [
+        "assets/nope.js",
+        "assets/../source.html",
+        "output.html",
+        "index.html",
+        "scene/1/model",
+    ] {
+        assert_eq!(
+            http_get(port, &format!("/source/{token}/{missing}"), "").0,
+            404,
+            "{missing}"
+        );
+    }
+    // 開いた Web ページ (別の Origin) と、ループバックでない Host からは断る。
+    assert_eq!(
+        http_get(
+            port,
+            &format!("/source/{token}/"),
+            "Origin: https://evil.example\r\n"
+        )
+        .0,
+        403
+    );
+    assert_eq!(
+        http_status(
+            port,
+            &format!("GET /source/{token}/ HTTP/1.1\r\nHost: evil.example:{port}\r\n\r\n")
+        ),
+        403
+    );
+    assert_eq!(
+        http_status(
+            port,
+            &format!("POST /source/{token}/ HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n")
+        ),
+        405
+    );
+
+    // API を入れて切っても、ブラウザソースは出し続ける。
+    studio.set_api_enabled(true);
+    assert_eq!(http_status(port, &upgrade(port, "Origin: x\r\n")), 403);
+    studio.set_api_enabled(false);
+    assert_eq!(http_get(port, &format!("/source/{token}/"), "").0, 200);
+    assert_eq!(http_status(port, &upgrade(port, "")), 404);
+
+    // トークンを作り直すと古い URL は使えない。
+    let url = studio.regenerate_source_token().unwrap();
+    let fresh = lock(&studio.api.0).settings.source.token.clone();
+    assert_ne!(fresh, token);
+    assert!(url.ends_with(&format!("/source/{fresh}/")));
+    assert_eq!(http_get(port, &format!("/source/{token}/"), "").0, 404);
+    assert_eq!(http_get(port, &format!("/source/{fresh}/"), "").0, 200);
+
+    // どちらも切れば待ち受けない。
+    studio.set_source_enabled(false);
+    assert!(!studio.api_view().source.listening);
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(TcpStream::connect(("127.0.0.1", port)).is_err());
+}
+
+#[test]
+fn the_browser_source_serves_the_scene_and_streams_frames() {
+    let dir = Dir::new("source");
+    let model = dir.model();
+    let (studio, port, token) = source_studio();
+    let (_, game) = stage_scenes(&studio, &model, &[]);
+    let scene = lock(&studio.conductor).scene().unwrap().clone();
+
+    // 今のシーンのファイルだけを出す。
+    let base = format!("/source/{token}/scene");
+    let (status, head, body) = http_get(port, &format!("{base}/{}/model", scene.revision), "");
+    assert_eq!(status, 200);
+    assert!(head.contains("Content-Type: application/octet-stream"));
+    assert_eq!(body, std::fs::read(&model).unwrap());
+    assert_eq!(
+        http_get(port, &format!("{base}/{}/model", scene.revision + 1), "").0,
+        404
+    );
+    assert_eq!(
+        http_get(port, &format!("{base}/{}/module/0", scene.revision), "").0,
+        404
+    );
+    assert_eq!(
+        http_get(port, &format!("{base}/{}/background", scene.revision), "").0,
+        404
+    );
+    assert_eq!(http_get(port, &format!("{base}/x/model"), "").0, 404);
+
+    // ページの WebSocket (ページ自身の Origin)。最初にシーン、刻むとフレーム。
+    let origin = format!("Origin: http://127.0.0.1:{port}\r\n");
+    let mut socket = Socket::open_at(port, &format!("/source/{token}/frames"), &origin);
+    let first = socket.read_json();
+    assert_eq!(first["kind"], "scene");
+    assert_eq!(first["revision"], scene.revision);
+    assert_eq!(studio.api_view().source.connections, 1);
+    studio.tick(1.0 / 60.0, false);
+    studio.tick(1.0 / 30.0, false);
+    let frames: Vec<_> = (0..2)
+        .map(|_| {
+            let (op, payload) = socket.read();
+            assert_eq!(op, opcode::BINARY);
+            crate::stream::Frame::decode(&payload).unwrap()
+        })
+        .collect();
+    assert_eq!(frames[1].seq, frames[0].seq + 1);
+    assert_eq!(frames[0].revision, scene.revision);
+    assert!((frames[1].dt - 1.0 / 30.0).abs() < 1e-6);
+
+    // シーンを切り替えると、次のフレームより先にシーンが届く。
+    studio.with_stage(|stage, conductor| stage.activate(&game, conductor).unwrap());
+    studio.tick(1.0 / 60.0, false);
+    let next = socket.read_json();
+    assert_eq!(next["kind"], "scene");
+    let (op, payload) = socket.read();
+    assert_eq!(op, opcode::BINARY);
+    assert_eq!(
+        crate::stream::Frame::decode(&payload).unwrap().revision,
+        next["revision"].as_u64().unwrap() as u32
+    );
+
+    // ページは描画の負荷を返す (操作ウィンドウの負荷の表示に出る)。
+    socket.send(
+        opcode::TEXT,
+        br#"{"kind":"renderStats","fps":59.5,"renderMs":1.25,"renderMaxMs":3.0,"dropped":0}"#,
+    );
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !lock(&studio.renders).contains_key(source::LABEL) {
+        assert!(std::time::Instant::now() < deadline, "the stats arrive");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(lock(&studio.renders)[source::LABEL].stats.fps, 59.5);
+    // 2 つ目のページは別のラベル。
+    let mut second = Socket::open_at(port, &format!("/source/{token}/frames"), &origin);
+    assert_eq!(second.read_json()["kind"], "scene");
+    assert_eq!(studio.api_view().source.connections, 2);
+
+    // 読むだけ: バイナリは受けずに閉じる。
+    second.send(opcode::BINARY, b"\x01");
+    let (op, payload) = second.read();
+    assert_eq!(
+        (op, &payload[..2]),
+        (
+            opcode::CLOSE,
+            &ws::close::UNSUPPORTED_DATA.to_be_bytes()[..]
+        )
+    );
+
+    // 切ると閉じ、負荷の表示からも外す。
+    studio.set_source_enabled(false);
+    let (op, payload) = loop {
+        let (op, payload) = socket.read();
+        if op != opcode::BINARY {
+            break (op, payload);
+        }
+    };
+    assert_eq!(
+        (op, &payload[..2]),
+        (opcode::CLOSE, &source::CLOSE_GOING_AWAY.to_be_bytes()[..])
+    );
+    assert!(!lock(&studio.renders).contains_key(source::LABEL));
+    assert_eq!(studio.api_view().source.connections, 0);
+}
+
+#[test]
+fn a_page_that_stops_reading_is_dropped() {
+    let (studio, _port, _token) = source_studio();
+    let (tx, rx) = mpsc::sync_channel(source::QUEUE);
+    let id = studio.source_connect(tx).unwrap();
+    assert_eq!(studio.api_view().source.connections, 1);
+    for _ in 0..source::QUEUE {
+        studio.source_frame(vec![1]);
+    }
+    assert_eq!(studio.api_view().source.connections, 1);
+    studio.source_frame(vec![1]);
+    assert_eq!(studio.api_view().source.connections, 0, "dropped when full");
+    // 溜まった分は送れる。
+    assert_eq!(rx.try_iter().count(), source::QUEUE);
+    let _ = id;
+    studio.set_source_enabled(false);
+}

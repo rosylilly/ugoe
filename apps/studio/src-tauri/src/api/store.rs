@@ -1,4 +1,4 @@
-//! 操作 API の設定・トークン・承認したクライアントの鍵 (ADR 0028 の 6.、`docs/studio.md#外部-api`)。
+//! 操作 API の設定・トークン・承認したクライアントの鍵と、ブラウザソースのスイッチとトークン (ADR 0028 の 6.、`docs/studio.md#外部-api`)。
 //!
 //! **プロファイルに入れない** (プロファイルを人に渡しても漏れない)。アプリのデータの場所の `studio-api.json` に置き、
 //! 書くときは一時ファイルに書いてから置き換える。Unix では持ち主だけが読めるようにする (0600)。
@@ -65,6 +65,21 @@ pub struct ApiSettings {
     pub token: String,
     #[serde(default)]
     pub clients: Vec<ClientRecord>,
+    /// ブラウザソース (T0808)。待ち受けとポートは操作 API と共有し、スイッチとトークンは別に持つ。
+    #[serde(default)]
+    pub source: SourceSettings,
+}
+
+/// ブラウザソースの設定 (`studio-api.json` の `source`)。
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceSettings {
+    /// ページを出すか (既定は切)。
+    #[serde(default)]
+    pub enabled: bool,
+    /// URL のパスに入れるトークン (読むだけ。空なら次に読んだときに作る)。
+    #[serde(default)]
+    pub token: String,
 }
 
 fn default_port() -> u16 {
@@ -80,6 +95,7 @@ impl Default for ApiSettings {
             port: DEFAULT_PORT,
             token: String::new(),
             clients: Vec::new(),
+            source: SourceSettings::default(),
         }
     }
 }
@@ -159,6 +175,9 @@ impl ApiSettings {
         if !is_secret(&self.token) {
             self.token = generate_secret().unwrap_or_default();
         }
+        if !is_secret(&self.source.token) {
+            self.source.token = generate_secret().unwrap_or_default();
+        }
         let mut seen = std::collections::HashSet::new();
         self.clients
             .retain(|c| is_secret(&c.key) && !c.id.is_empty() && seen.insert(c.id.clone()));
@@ -236,6 +255,9 @@ mod tests {
         assert!(!settings.enabled);
         assert_eq!(settings.port, DEFAULT_PORT);
         assert!(is_secret(&settings.token));
+        assert!(!settings.source.enabled);
+        assert!(is_secret(&settings.source.token));
+        assert_ne!(settings.token, settings.source.token, "separate tokens");
         let (other, _) = ApiSettings::read(&dir.join("studio-api.json"));
         assert_ne!(settings.token, other.token, "a fresh token per read");
     }
@@ -247,6 +269,7 @@ mod tests {
         let (mut settings, _) = ApiSettings::read(&path);
         settings.enabled = true;
         settings.port = 30000;
+        settings.source.enabled = true;
         settings.clients.push(ClientRecord {
             id: "c1".into(),
             name: " Deck\u{7} ".into(),

@@ -4,7 +4,8 @@ ugoe のスタジオ (Tauri v2 + Svelte 5)。配信者が配信中に使うア�
 範囲・構成・描画の場所は [ADR 0028](../../docs/adr/0028-studio.md)、画面と配信の形は [docs/studio.md](../../docs/studio.md)。
 T0801 で骨組み (2 つのウィンドウ・指揮役と受け手)、T0802 でシーンとプロファイル、T0803 で入力 (カメラのトラッキング・マイクの口パク・
 モーションと表情・グローバルなホットキー)、T0804 で配信向けの出力、T0807 で仮想カメラ (Windows・Linux)、T0809 で macOS の仮想カメラ (Camera Extension。配布物に入れるのは後)、
-T0805 で外から操作する API (ループバックの WebSocket。[docs/studio-api.md](../../docs/studio-api.md)) を作った。ブラウザソース (T0808) は後続のタスク。
+T0805 で外から操作する API (ループバックの WebSocket。[docs/studio-api.md](../../docs/studio-api.md))、T0808 で OBS のブラウザソース用のページ
+([docs/studio.md#ブラウザソース](../../docs/studio.md#ブラウザソース)) を作った。
 
 **ライセンスは GPL-3.0-only** (エディタ・ビューアと同じ)。アプリ同士で import はしない (共有するものは `packages/` に置く)。
 
@@ -23,14 +24,18 @@ src/LicenseDialog.svelte      ライセンスの表示 (ツールバーの「ラ
 public/third-party-notices.txt 同梱する第三者のもの (MediaPipe の wasm とモデル・JS のライブラリ) のライセンスの表記
 src/ApiPanel.svelte           操作 API (有効にする・接続先・ポート・トークンの写しと作り直し・承認したアプリの切断と取り消し・承認を待つアプリ)
 src/ApiApproval.svelte        操作 API に初めて接続したアプリの承認の知らせ (権限の選択・承認・拒否・後で)
+src/SourcePanel.svelte        ブラウザソース (OBS): 出す・やめる・URL のコピー (トークンは伏せて出す)・作り直し・OBS での設定の手順
+source.html / src/source.ts   ブラウザソースのページの入口 (スタジオの待ち受けが `/source/<トークン>/` で出す。受け手は Output.svelte)
 output.html / src/output.ts   出力ウィンドウの入口 (背景は透過。@ugoe/ui と @ugoe/i18n は読まない)
-src/Output.svelte             出力ウィンドウ: @ugoe/player の受け手のモードでモデルだけを描く。シーンの見せ方を当てる。Alt + ドラッグで動かす
+src/Output.svelte             出力ウィンドウとブラウザソースのページの受け手: @ugoe/player の受け手のモードでモデルだけを描く。シーンの見せ方を当てる。
+                              配信の口 (`feed`) を受け取る。出力ウィンドウでは Alt + ドラッグで動かす
+src/lib/feed.ts               受け手の配信の口 (OutputFeed)。ブラウザソースは WebSocket とファイルの HTTP (`sourceFeed`。切れたらつなぎ直す)
 src/lib/host.ts               バックエンドとの口 (StudioHost)。Tauri の外では window.__UGOE_STUDIO_HOST__ を使う
 src/lib/settings.ts           覚える設定 (言語・刻みの速さ。localStorage) と出力の大きさのプリセット
 src/lib/load.ts               負荷の注意の判断 (刻みが遅れた・揺れた・描画が重い・フレームを捨てた・描いていない)
 src/lib/profile.ts            プロファイルとシーンの形 (profile.rs と同じ)・エラーの形・背景や配置の既定値
 src/lib/inputs.ts             入力・モーション・ホットキーの設定と演技の様子の形 (input.rs・hotkeys.rs・animation.rs と同じ)
-src/lib/api.ts                操作 API の様子の形 (mod.rs の ApiView と同じ)・接続先・ポートの範囲
+src/lib/api.ts                操作 API とブラウザソースの様子の形 (mod.rs の ApiView・SourceView と同じ)・接続先・ポートの範囲・URL のトークンを伏せる
 src/lib/hotkeys.ts            ホットキーのキーの書き方 (押したキー → `Ctrl+Shift+KeyA`、Kbd の表記)
 src/lib/lipSync.ts            マイクの音から口を開く量を作る式 (dB・ノイズの閾値・感度・開く速さと閉じる速さ)
 src/lib/microphone.svelte.ts  マイク (getUserMedia → AnalyserNode)。刻みごとに口を開く量を指揮役へ送る
@@ -52,18 +57,21 @@ src-tauri/                    バックエンド (Rust クレート `ugoe-studio
   src/stage.rs                  舞台: 開いているプロファイルとシーンの一覧の操作・シーンの切り替え (ファイルを読んで指揮役へ)・受け手に出すファイル
   src/stream.rs                 配信の形 (フレームのバイト列・シーンの JSON)
   src/follower.rs               ネイティブの受け手 (一致の検査と仮想カメラが使う)
+  src/lighting.rs               シーンの光源 (LightingSettings の JSON) をレンダラの光源にする (@ugoe/player と同じ規則。仮想カメラが使う)
   src/virtual_camera.rs         仮想カメラの受け手 (Feed: 受け手 + ugoe-headless の常駐の描画) とスレッド (T0807)
   src/lib.rs                    刻みのスレッド・Tauri のコマンド・出力ウィンドウの操作
   src/api/                      操作 API (T0805。docs/studio.md#外部-api、英語のリファレンスは docs/studio-api.md)
     mod.rs                        接続ごとの状態 (名乗る前・承認待ち・使える)・承認と取り消し・通知
     methods.rs                    メソッド (指揮役と舞台に入れる。ホットキーと同じ口)
-    server.rs                     ループバックの待ち受け・経路 (`/api`。T0808 のブラウザソースもここに足す)・接続ごとのスレッド (読むのを区切って通知を送る)
+    server.rs                     ループバックの待ち受け・経路 (`/api` と `/source/<トークン>/…`)・接続ごとのスレッド (読むのを区切って通知を送る)
+    source.rs                     ブラウザソース (T0808): ページ・ファイル・フレームの WebSocket・スイッチとトークン・描画の負荷の受け取り
+    source_check.rs               ブラウザソースの画の確かめの待ち受け (手で実行する ignored のテスト。下の「ブラウザソースの画を確かめる」)
     http.rs                       要求の頭の読み取りと検査 (Host・転送ヘッダ・Origin)
     ws.rs                         WebSocket の握手の検査と接続の設定 (フレームは tungstenite)
     rpc.rs                        JSON-RPC 2.0 の読み書きと誤りの符号
-    store.rs                      studio-api.json (有効・ポート・トークン・承認したクライアントの鍵。アプリのデータの場所)
+    store.rs                      studio-api.json (有効・ポート・トークン・承認したクライアントの鍵・ブラウザソースのスイッチとトークン。アプリのデータの場所)
     commands.rs                   操作ウィンドウのパネルが呼ぶコマンド
-    tests.rs                      接続と操作のテスト (承認・権限・操作・通知・本物の待ち受け・JSON Schema との一致)
+    tests.rs                      接続と操作のテスト (承認・権限・操作・通知・本物の待ち受け・JSON Schema との一致・ブラウザソースの経路と配信)
   tests/follow_match.rs         一致の検査 (ADR 0028 の 10.)
   tests/virtual_camera_gpu.rs   仮想カメラの画が、物理を有効にした 1 つの Puppet の画と一致する (`just test-gpu`)
   tauri.windows.conf.json       Windows のビルド: 仮想カメラの DLL を作る・NSIS を管理者の権限で入れる
@@ -121,6 +129,7 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
 | `api_state()` / `set_api_enabled(enabled)` / `set_api_port(port)` | 操作 | 操作 API の様子・待ち受けの切り替え (覚える)・ポート (1024〜65535) |
 | `api_token()` / `regenerate_api_token()` | 操作 | 操作 API のトークンを写す・作り直す |
 | `approve_api_client(id, permission)` / `deny_api_client(id)` / `revoke_api_client(id)` / `disconnect_api_client(id)` | 操作 | 承認を待つアプリの承認・拒否、承認したアプリの取り消し・切断 |
+| `set_source_enabled(enabled)` / `source_url()` / `regenerate_source_token()` | 操作 | ブラウザソースを出す・やめる (覚える)・OBS に入れる URL (トークンを含む)・トークンの作り直し (新しい URL を返す)。様子は `api` の通知の `source` |
 | `subscribe_frames(channel)` | 出力 | シーンの通知 (JSON) とフレーム (バイト列) を受け取る。開き直したページは前の Channel を置き換える |
 | `scene_model(revision)` / `scene_module(revision, index)` / `scene_background(revision)` | 出力 | 今のシーンのモデル・モジュール・背景の画像のバイト列 (今のシーンでなければエラー) |
 | `report_render_stats(stats)` | 出力 | 描画の負荷 (回/秒・1 回の時間の平均と最大・捨てたフレーム) を約 1 秒ごとに送る。操作ウィンドウに出す |
@@ -159,6 +168,24 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
     `clippy::undocumented_unsafe_blocks` (どの `unsafe` にも `// SAFETY:`) と `unsafe_op_in_unsafe_fn` を拒否にしている。
 - Windows のコードは Linux からも `cargo clippy -p ugoe-studio-vcam --target x86_64-pc-windows-msvc` で検査できる (リンクまでは `cargo xwin build`)。
   macOS の Rust のコードも `--target aarch64-apple-darwin` で検査できる (Swift の拡張は macOS でしか作れない)。
+
+## ブラウザソースの画を確かめる
+
+出力ウィンドウ・ブラウザソースのページ・仮想カメラの画を、同じフレームの列で止めて比べる ([docs/studio.md#画の確かめ](../../docs/studio.md#画の確かめ-adr-0028-の-10))。
+
+```sh
+pnpm --filter @ugoe/studio wasm && pnpm --filter @ugoe/studio exec vite build   # dist/ を作る
+UGOE_STUDIO_CHECK_DIR=/tmp/source-check cargo test -p ugoe-studio --features gpu-tests --lib \
+  serves_a_frozen_scene_for_a_browser_check -- --ignored --nocapture
+```
+
+待ち受けは `/tmp/source-check/url.txt` に URL を書き、ページが 2 つつなぐのを待つ。ヘッドレスの Chrome で、その URL (ブラウザソース) と、
+同じ Origin の別のパスで返した `dist/output.html` (`window.__UGOE_STUDIO_HOST__` に、同じ `frames` の WebSocket と `scene/…` を読む口を置く) を
+480×270 で開く。フレームを配り終えると `done.txt` と仮想カメラの画 `vcam.png` を書くので、その後に 2 つのページを撮って `vcam.png` と比べる。
+`UGOE_STUDIO_CHECK_PORT` (既定 28461)・`UGOE_STUDIO_CHECK_SECS` (止めた後に待ち受ける秒数、既定 60)・`UGOE_STUDIO_CHECK_ROTATION` (回転、既定 8)・
+`UGOE_STUDIO_CHECK_NO_LIGHT` (光源を切る) で条件を変えられる。ループバックの外の Origin のページ (Playwright の `route` で返したものなど) から
+ループバックへ接続するときは、Chrome の Local Network Access の検査で止められることがある (`--disable-features=LocalNetworkAccessChecks`)。
+OBS のページはスタジオ自身が出すので、この検査には当たらない。
 
 ## ヘッドレスのブラウザで確かめる
 

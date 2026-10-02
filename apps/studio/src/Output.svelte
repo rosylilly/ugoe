@@ -1,17 +1,20 @@
 <!--
-  出力ウィンドウ (docs/studio.md#出力ウィンドウ)。モデルだけを描く。UI の要素を一切重ねない。
+  出力ウィンドウ (docs/studio.md#出力ウィンドウ) とブラウザソースのページ (docs/studio.md#ブラウザソース) の受け手。
+  モデルだけを描く。UI の要素を一切重ねない。どちらも同じこの部品で描き、配信の受け取り方 (`feed`) だけが違う
+  (出力ウィンドウは Tauri の Channel、ブラウザソースは WebSocket。lib/feed.ts)。
   @ugoe/player の受け手のモードで、指揮役のフレームを順に適用して物理を回す (ADR 0028 の 3.)。
   シーンの通知を受けたら、版の番号を比べてモデルの読み直し・モジュールの付け直し・見せ方の変更を選ぶ
   (lib/outputLayout.ts の `planScene`、docs/studio.md#シーンの切り替えと受け手)。
   背景はシーンに従って要素の CSS で描き (透過・単色・クロマキー・画像)、モデルの canvas は常に透過にする。
   回転は描画の要素 (舞台) の CSS で回す (ビューに回転が無いため)。
-  枠が無いので、Alt を押しながらドラッグするとウィンドウを動かせる。
+  出力ウィンドウは枠が無いので、Alt を押しながらドラッグするとウィンドウを動かせる (`feed.startDragging` があるとき)。
   描画の負荷は約 1 秒ごとにバックエンドへ送り、操作ウィンドウに出す (ここには何も重ねない。docs/studio.md#負荷の表示)。
 -->
 <script lang="ts">
 import { decodeFrame, Player } from "@ugoe/player";
 import { onMount } from "svelte";
-import { type StudioScene, studioHost } from "./lib/host";
+import type { OutputFeed } from "./lib/feed";
+import type { StudioScene } from "./lib/host";
 import {
   backgroundCss,
   type FollowedScene,
@@ -22,6 +25,13 @@ import {
 import { sceneLighting } from "./lib/profile";
 import { RenderStatsWindow } from "./lib/renderStats";
 import { loadWasm } from "./lib/wasm/load";
+
+interface Props {
+  /** 配信を受け取る口 (出力ウィンドウは Tauri の StudioHost、ブラウザソースは lib/feed.ts の `sourceFeed`)。 */
+  feed: () => Promise<OutputFeed>;
+}
+
+let { feed }: Props = $props();
 
 let output: HTMLDivElement;
 let stage: HTMLDivElement;
@@ -34,7 +44,7 @@ const player = new Player({
 const renderStats = new RenderStatsWindow();
 player.startFollowing(({ at, renderMs, dropped }) => {
   const stats = renderStats.record(at, renderMs, dropped);
-  if (stats !== null) void studioHost().then((host) => host.reportRenderStats(stats));
+  if (stats !== null) void feed().then((f) => f.reportRenderStats(stats));
 });
 // 開発中やヘッドレスのブラウザで状態を見るため。
 window.__UGOE_STUDIO_OUTPUT__ = player;
@@ -73,7 +83,7 @@ function onScene(scene: StudioScene) {
 
 async function applyScene(scene: StudioScene): Promise<void> {
   if (scene.revision !== latest) return;
-  const host = await studioHost();
+  const host = await feed();
   const plan = planScene(followed, scene);
   if (plan === "empty") {
     followed = { modelRevision: 0, modulesRevision: scene.modulesRevision };
@@ -124,7 +134,7 @@ async function showLook(scene: StudioScene): Promise<void> {
   if (scene.background.kind === "image" && image?.path !== scene.background.path) {
     const path = scene.background.path;
     try {
-      const bytes = await (await studioHost()).sceneBackground(scene.revision);
+      const bytes = await (await feed()).sceneBackground(scene.revision);
       if (image !== null) URL.revokeObjectURL(image.url);
       image = { path, url: URL.createObjectURL(new Blob([bytes as BlobPart])) };
     } catch {
@@ -164,7 +174,7 @@ function layout() {
 function onPointerDown(event: PointerEvent) {
   if (!event.altKey || event.button !== 0) return;
   event.preventDefault();
-  void studioHost().then((host) => host.startDragging());
+  void feed().then((f) => f.startDragging?.());
 }
 
 onMount(() => {
@@ -174,7 +184,7 @@ onMount(() => {
   void (async () => {
     await player.attach(stage);
     player.setBackground("#000000", true);
-    const host = await studioHost();
+    const host = await feed();
     await host.subscribeFrames((message) => {
       if (message instanceof ArrayBuffer) player.pushFrame(decodeFrame(message));
       else if (message.kind === "scene") onScene(message);

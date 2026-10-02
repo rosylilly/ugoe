@@ -16,6 +16,7 @@ pub mod http;
 mod methods;
 pub mod rpc;
 pub mod server;
+pub mod source;
 pub mod store;
 pub mod ws;
 
@@ -123,14 +124,28 @@ pub struct ClientView {
 #[serde(rename_all = "camelCase")]
 pub struct ApiView {
     pub enabled: bool,
-    /// 待ち受けている (有効でも、ポートを使えなければ `false`)。
+    /// 操作 API を受け付けている (有効でも、ポートを使えなければ `false`)。
     pub listening: bool,
+    /// 待ち受けるポート (ブラウザソースと共有)。
     pub port: u16,
     /// 待ち受けられない・設定を読めない・書けない理由。
     pub error: Option<String>,
     pub clients: Vec<ClientView>,
     pub pending: Vec<PendingClient>,
     /// 名乗る前と承認待ちも含めた接続の数。
+    pub connections: usize,
+    /// ブラウザソース (T0808。待ち受けとポートを共有する)。
+    pub source: SourceView,
+}
+
+/// 操作ウィンドウに出すブラウザソースの様子 (URL はトークンを含むので `source_url` で別に取る)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceView {
+    pub enabled: bool,
+    /// ページを出している (有効でも、ポートを使えなければ `false`)。
+    pub listening: bool,
+    /// つないでいるページの数。
     pub connections: usize,
 }
 
@@ -181,12 +196,17 @@ impl ApiState {
             .collect();
         ApiView {
             enabled: self.settings.enabled,
-            listening: self.server.is_some(),
+            listening: self.server.is_some() && self.settings.enabled,
             port: self.settings.port,
             error: self.error.clone(),
             clients,
             pending: self.pending.clone(),
             connections: self.connections.len(),
+            source: SourceView {
+                enabled: self.settings.source.enabled,
+                listening: self.server.is_some() && self.settings.source.enabled,
+                connections: 0,
+            },
         }
     }
 
@@ -261,12 +281,14 @@ impl Studio {
             // 作ったトークンを覚える (読み直すたびに変わらないように)。
             state.save();
         }
-        self.restart_api();
+        self.sync_listener(false);
     }
 
     /// 操作ウィンドウに出す様子。
     pub(crate) fn api_view(&self) -> ApiView {
-        lock(&self.api.0).view()
+        let mut view = lock(&self.api.0).view();
+        view.source.connections = self.sources.len();
+        view
     }
 
     pub(crate) fn send_api_view(&self) {
@@ -276,14 +298,23 @@ impl Studio {
         }
     }
 
-    /// 設定に合わせて待ち受けを止める・始める (ポートを変えたときは始め直す)。
-    fn restart_api(self: &Arc<Self>) {
+    /// 設定に合わせて待ち受けを止める・始める。操作 API とブラウザソースのどちらかが有効なら待ち受ける (ADR 0028 の 6.)。
+    /// `restart` なら (ポートを変えた) 待ち受けていても始め直す。切った方の接続 (と始め直すときはすべての接続) を閉じる。
+    pub(crate) fn sync_listener(self: &Arc<Self>, restart: bool) {
         let mut state = lock(&self.api.0);
-        if let Some(server) = state.server.take() {
+        let wanted = state.settings.enabled || state.settings.source.enabled;
+        if (restart || !wanted)
+            && let Some(server) = state.server.take()
+        {
             server.stop();
+        }
+        if restart {
+            state.close_all(CLOSE_GOING_AWAY, "the port was changed");
+        } else if !state.settings.enabled {
             state.close_all(CLOSE_GOING_AWAY, "the API was turned off");
         }
-        if state.settings.enabled {
+        let close_sources = restart || !state.settings.source.enabled;
+        if wanted && state.server.is_none() {
             match server::Server::start(Arc::clone(self), state.settings.port) {
                 Ok(server) => {
                     state.server = Some(server);
@@ -291,23 +322,30 @@ impl Studio {
                 }
                 Err(e) => state.error = Some(e),
             }
-        } else {
+        } else if !wanted {
             state.error = None;
         }
         drop(state);
+        if close_sources {
+            self.close_sources(if restart {
+                "the port was changed"
+            } else {
+                "the browser source was turned off"
+            });
+        }
         self.send_api_view();
     }
 
     pub(crate) fn set_api_enabled(self: &Arc<Self>, enabled: bool) {
         {
             let mut state = lock(&self.api.0);
-            if state.settings.enabled == enabled && state.server.is_some() == enabled {
+            if state.settings.enabled == enabled && (!enabled || state.server.is_some()) {
                 return;
             }
             state.settings.enabled = enabled;
             state.save();
         }
-        self.restart_api();
+        self.sync_listener(false);
     }
 
     pub(crate) fn set_api_port(self: &Arc<Self>, port: u16) -> Result<(), String> {
@@ -322,7 +360,7 @@ impl Studio {
             state.settings.port = port;
             state.save();
         }
-        self.restart_api();
+        self.sync_listener(true);
         Ok(())
     }
 
@@ -825,5 +863,7 @@ impl StageSnapshot {
     }
 }
 
+#[cfg(all(test, feature = "gpu-tests"))]
+mod source_check;
 #[cfg(test)]
 mod tests;

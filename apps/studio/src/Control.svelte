@@ -79,6 +79,7 @@ import type { VirtualCameraStatus } from "./lib/virtualCamera";
 import MotionPanel from "./MotionPanel.svelte";
 import SceneEditor from "./SceneEditor.svelte";
 import ScenesPanel from "./ScenesPanel.svelte";
+import SourcePanel from "./SourcePanel.svelte";
 import VirtualCameraPanel from "./VirtualCameraPanel.svelte";
 
 /** スライダーを動かした後、指揮役からの値で表示を上書きしない時間 (ミリ秒)。 */
@@ -161,6 +162,11 @@ const hotkeys = $derived<Hotkey[]>(profile?.profile.hotkeys ?? []);
 
 const shownParameters = $derived(parameters.filter((p) => showInternal || !p.internal));
 const outputSize = $derived(parseOutputSize(profile?.profile.output.size));
+/** ブラウザソースの手順で案内する大きさ (出力ウィンドウの大きさのプリセット)。 */
+const sourceSize = $derived.by(() => {
+  const size = presetSize(outputSize);
+  return size === null ? null : { width: size[0], height: size[1] };
+});
 const scenes = $derived(profile?.profile.scenes ?? []);
 const sceneChoices = $derived(scenes.map((s, i) => ({ id: s.id, label: sceneLabel(s, i) })));
 const selectedScene = $derived.by(() => {
@@ -625,6 +631,9 @@ onMount(() => {
     {#if api.listening}
       <span class="studio__api" title={t("api.toolbarOn", { url: apiUrl(api.port) })}>{t("api.toolbar")}</span>
     {/if}
+    {#if api.source.listening}
+      <span class="studio__api" title={t("source.toolbarOn", { count: api.source.connections })}>{t("source.toolbar")}</span>
+    {/if}
     {#if status !== null}
       <span class="studio__load">
         {t("load.summary", {
@@ -841,6 +850,20 @@ onMount(() => {
 
       <Section title={t("virtualCamera.heading")}>
         <VirtualCameraPanel {host} status={camera} />
+      </Section>
+
+      <Section title={t("source.heading")}>
+        <SourcePanel
+          {api}
+          size={sourceSize}
+          disabled={host === null}
+          onenabled={(enabled) => void run((h) => h.setSourceEnabled(enabled))}
+          url={async () => {
+            if (host === null) throw new Error("no host");
+            return host.sourceUrl();
+          }}
+          onregenerate={async () => (await run((h) => h.regenerateSourceToken())) ?? null}
+        />
       </Section>
 
       <Section title={t("api.heading")}>

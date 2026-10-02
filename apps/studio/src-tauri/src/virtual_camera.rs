@@ -5,11 +5,14 @@
 //!
 //! - 刻み (30 / 60 / 120) と仮想カメラのフレームレート (30 / 60) は別。フレームは届いたものをすべて順に適用し、描くのは
 //!   仮想カメラのフレームレートだけ (ADR 0028 の 3. の「描画の頻度に依らない」)。
-//! - 背景は不透明にする (透過のシーンは設定した単色で埋める)。モデルが無い間は単色だけを出す。
+//! - 背景は不透明にする (透過のシーンは設定した単色で埋める)。画像の背景は出力ウィンドウと同じく出力を覆うように置き
+//!   (透過のところは設定の色で埋める)、モデルが無い間は背景だけを出す。
+//! - 光源はシーンの光源を出力ウィンドウと同じ規則でレンダラに渡し ([`crate::lighting`])、モデルとモジュールの法線マップも渡す (T0808)。
 //! - 止めている間は、このスレッドも受け手も作らない (GPU を使わない)。GPU (`Gpu`) は一度作ったら破棄しない
 //!   (`crates/ugoe-headless/README.md#gpu`)。
 //! - OS の部品 (`VirtualCamera`) は、作ったスレッドで使って落とす (Windows の COM)。
 
+use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
@@ -19,16 +22,17 @@ use ugoe::format::TextureFormat;
 use ugoe::model::module::Module;
 use ugoe::render::View;
 use ugoe::{Puppet, TextureSource};
-use ugoe_headless::image::decode_png_premultiplied;
+use ugoe_headless::image::{self, decode_png, decode_png_premultiplied};
 use ugoe_headless::yuv::{self, PixelFormat};
 use ugoe_headless::{
     DEFAULT_SLOTS, Gpu, Readback, Resident, ResidentOptions, Rgba8, Scene as HeadlessScene,
-    Shading, Wait, placeholder_texture, resolve_textures,
+    Shading, Wait, placeholder_texture, resolve_normal_maps, resolve_textures,
 };
 use ugoe_studio_vcam::{Config, Delivery, PixelLayout, VirtualCamera};
 
 use crate::conductor;
 use crate::follower::{Follower, Received};
+use crate::lighting::scene_lighting;
 use crate::profile::{Background, Transform};
 use crate::stream::{Frame, Look, Scene as StreamScene};
 
@@ -132,6 +136,8 @@ pub struct SceneFiles {
     pub model: Option<Arc<Vec<u8>>>,
     /// 付けるモジュールのバイト列 (合成の順。`scene.modules` と同じ順)。
     pub modules: Vec<Arc<Vec<u8>>>,
+    /// 背景の画像のバイト列 (画像の背景のシーンだけ。`scene_background`)。
+    pub background: Option<Arc<Vec<u8>>>,
 }
 
 /// 仮想カメラのスレッドからの知らせ。
@@ -181,7 +187,11 @@ pub struct Feed {
     modules_revision: u32,
     /// 今のシーンの見せ方。
     look: Look,
-    /// モデルの無い間に出す単色の画。
+    /// デコードした背景の画像 (パスと、乗算済みの画)。読めなかった画像は `None` の画で覚える (何度も読まない)。
+    image: Option<(PathBuf, Option<Rgba8>)>,
+    /// 出力を覆うように置いて透過のところを埋めた背景の画像 (画像の背景で、読めたときだけ)。
+    backdrop: Option<Rgba8>,
+    /// モデルの無い間に出す背景だけの画。
     blank: Option<Vec<u8>>,
     /// 最後に適用したフレームの `seq`。
     last_seq: Option<u64>,
@@ -196,6 +206,8 @@ struct LoadedModel {
     canvas: (f32, f32),
     /// 本体のテクスチャ (乗算済み。`Model::textures` の順)。
     textures: Vec<Rgba8>,
+    /// 本体の法線マップ (乗算しない。`Model::textures` の順。無いものは `None`)。
+    normal_maps: Vec<Option<Rgba8>>,
 }
 
 impl Feed {
@@ -209,6 +221,8 @@ impl Feed {
             model: None,
             modules_revision: 0,
             look: Look::default(),
+            image: None,
+            backdrop: None,
             blank: None,
             last_seq: None,
             skipped: 0,
@@ -234,6 +248,8 @@ impl Feed {
             let textures =
                 resolve_textures(&headless.model, &headless.textures, &[], &mut warnings)
                     .map_err(|e| e.to_string())?;
+            let normal_maps = resolve_normal_maps(&headless.normal_maps, &mut warnings)
+                .map_err(|e| e.to_string())?;
             let canvas = (
                 headless.model.meta.canvas.width,
                 headless.model.meta.canvas.height,
@@ -245,14 +261,16 @@ impl Feed {
             let modules = read_modules(&files.modules)?;
             if !modules.is_empty() {
                 puppet
-                    .set_modules(modules.iter().map(|(m, _)| Arc::clone(m)).collect())
+                    .set_modules(modules.iter().map(|m| Arc::clone(&m.module)).collect())
                     .map_err(|e| e.to_string())?;
             }
             let model = LoadedModel {
                 revision: scene.model_revision,
                 canvas,
                 textures,
+                normal_maps,
             };
+            self.look = scene.look.clone();
             self.resident = Some(self.resident_for(gpu, &puppet, &model, &modules)?);
             self.model = Some(model);
             self.follower.set_scene(scene.revision, puppet);
@@ -263,8 +281,9 @@ impl Feed {
                 self.follower
                     .puppet_mut()
                     .ok_or("no model is loaded")?
-                    .set_modules(modules.iter().map(|(m, _)| Arc::clone(m)).collect())
+                    .set_modules(modules.iter().map(|m| Arc::clone(&m.module)).collect())
                     .map_err(|e| e.to_string())?;
+                self.look = scene.look.clone();
                 // 物理のリセットは、指揮役がフレームの印で揃える。テクスチャの並びが変わるので描画は作り直す。
                 let puppet = self.follower.puppet().ok_or("no model is loaded")?;
                 let model = self.model.as_ref().ok_or("no model is loaded")?;
@@ -275,8 +294,21 @@ impl Feed {
         }
         self.modules_revision = scene.modules_revision;
         self.look = scene.look.clone();
-        self.apply_look();
-        Ok(())
+        self.read_image(files.background.as_deref());
+        self.apply_look(gpu)
+    }
+
+    /// 画像の背景をデコードする (同じパスなら読み直さない)。読めない画像は設定の色で埋める。
+    fn read_image(&mut self, bytes: Option<&Vec<u8>>) {
+        let Background::Image { path } = &self.look.background else {
+            self.image = None;
+            return;
+        };
+        if self.image.as_ref().is_some_and(|(p, _)| p == path) {
+            return;
+        }
+        let decoded = bytes.and_then(|b| decode_background(b).ok());
+        self.image = Some((path.clone(), decoded));
     }
 
     /// 合成したモデルのテクスチャを揃えて、常駐の描画を作る。
@@ -287,25 +319,38 @@ impl Feed {
         model: &LoadedModel,
         modules: &[LoadedModule],
     ) -> Result<Resident, String> {
-        let textures = puppet
+        let (textures, normal_maps): (Vec<_>, Vec<_>) = puppet
             .texture_sources()
             .into_iter()
             .map(|source| {
-                let found = match source {
-                    TextureSource::Base(i) => model.textures.get(i as usize),
-                    TextureSource::Module { module, index } => modules
-                        .iter()
-                        .find(|(m, _)| m.name == module)
-                        .and_then(|(_, textures)| textures.get(index as usize)),
+                let (texture, normal_map) = match source {
+                    TextureSource::Base(i) => (
+                        model.textures.get(i as usize),
+                        model.normal_maps.get(i as usize).and_then(Option::as_ref),
+                    ),
+                    TextureSource::Module { module, index } => {
+                        let m = modules.iter().find(|m| m.module.name == module);
+                        (
+                            m.and_then(|m| m.textures.get(index as usize)),
+                            m.and_then(|m| m.normal_maps.get(index as usize))
+                                .and_then(Option::as_ref),
+                        )
+                    }
                 };
-                found.cloned().unwrap_or_else(placeholder_texture)
+                (
+                    texture.cloned().unwrap_or_else(placeholder_texture),
+                    normal_map.cloned(),
+                )
             })
-            .collect::<Vec<_>>();
+            .unzip();
+        let shading = Shading {
+            normal_maps,
+            lighting: scene_lighting(self.look.lighting.as_ref(), model.canvas),
+        };
         Resident::new(
             gpu,
             &textures,
-            // TODO(T0808): シーンのライティング (`Look::lighting`) と法線マップを渡す (出力ウィンドウの画と比べるときに揃える)。
-            &Shading::default(),
+            &shading,
             ResidentOptions {
                 size: self.size,
                 format: self.format,
@@ -327,32 +372,45 @@ impl Feed {
     }
 
     /// 透過のところを埋める色を変える (次の描画から)。
-    pub fn set_fill(&mut self, rgb: [u8; 3]) {
+    pub fn set_fill(&mut self, gpu: &Gpu, rgb: [u8; 3]) -> Result<(), String> {
         self.fill = rgb;
-        self.apply_look();
+        self.apply_look(gpu)
     }
 
-    /// 見せ方 (背景・配置) を描画に当てる。
-    fn apply_look(&mut self) {
+    /// 見せ方 (背景・配置・光源) を描画に当てる。
+    fn apply_look(&mut self, gpu: &Gpu) -> Result<(), String> {
         self.blank = None;
+        self.backdrop = match &self.image {
+            Some((_, Some(image))) => {
+                let mut covered = image::cover(image, self.size);
+                image::over_color(&mut covered, self.fill);
+                Some(covered)
+            }
+            _ => None,
+        };
         let background = self.clear_color();
-        let view = self
-            .model
-            .as_ref()
-            .map(|m| placement_view(m.canvas, self.size, &self.look.transform));
-        if let (Some(resident), Some(view)) = (&mut self.resident, view) {
+        let Some(model) = &self.model else {
+            return Ok(());
+        };
+        let view = placement_view(model.canvas, self.size, &self.look.transform);
+        let lighting = scene_lighting(self.look.lighting.as_ref(), model.canvas);
+        if let Some(resident) = &mut self.resident {
             resident.set_background(background);
             resident.set_view(view);
+            resident.set_lighting(lighting.as_ref());
+            resident
+                .set_backdrop(gpu, self.backdrop.as_ref())
+                .map_err(|e| e.to_string())?;
         }
+        Ok(())
     }
 
-    /// シーンの背景を不透明な色にする。透過と画像は設定の色で埋める。
+    /// シーンの背景を不透明な色にする。透過と画像 (の透過のところ・読めなかった画像) は設定の色で埋める。
     fn clear_color(&self) -> [u8; 4] {
         let [r, g, b] = match &self.look.background {
             Background::Color { color } | Background::Chroma { color } => {
                 parse_hex(color).unwrap_or(self.fill)
             }
-            // TODO(T0808): 背景の画像を描く (いまは設定の色で埋める)。
             Background::Transparent | Background::Image { .. } => self.fill,
         };
         [r, g, b, 255]
@@ -392,27 +450,133 @@ impl Feed {
     fn blank_frame(&mut self) -> Result<Vec<u8>, String> {
         if self.blank.is_none() {
             let (width, height) = self.size;
-            let rgba = Rgba8 {
+            let rgba = self.backdrop.clone().unwrap_or_else(|| Rgba8 {
                 width,
                 height,
                 pixels: self.clear_color().repeat(width as usize * height as usize),
-            };
+            });
             self.blank = Some(yuv::convert(&rgba, self.format).map_err(|e| e.to_string())?);
         }
         Ok(self.blank.clone().unwrap_or_default())
     }
 }
 
-/// 読んだモジュールと、そのテクスチャ (乗算済み。`Module::textures` の順)。
-type LoadedModule = (Arc<Module>, Vec<Rgba8>);
+/// 背景の画像の一辺の上限 (画素)。これを超える画像は読まない (巨大な画像でデコードが固まらないように)。
+pub const MAX_BACKGROUND_SIDE: u32 = 8192;
+/// 背景の画像の画素の数の上限 (RGBA で 128 MiB)。
+pub const MAX_BACKGROUND_PIXELS: u64 = 32 * 1024 * 1024;
 
-/// `.ugoemod` を読み、テクスチャをデコードする (合成の順)。
+/// 背景の画像を読めない。
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum BackgroundError {
+    #[error("the background image is not a PNG, JPEG or WebP image")]
+    Format,
+    #[error("the background image is {width}x{height}, which is too large")]
+    TooLarge { width: u32, height: u32 },
+    #[error("cannot decode the background image: {0}")]
+    Decode(String),
+}
+
+/// 大きさが上限の内か。
+fn check_background_size(width: u32, height: u32) -> Result<(), BackgroundError> {
+    if width == 0
+        || height == 0
+        || width > MAX_BACKGROUND_SIDE
+        || height > MAX_BACKGROUND_SIDE
+        || u64::from(width) * u64::from(height) > MAX_BACKGROUND_PIXELS
+    {
+        return Err(BackgroundError::TooLarge { width, height });
+    }
+    Ok(())
+}
+
+/// 背景の画像 (PNG・JPEG・WebP。中身の先頭で見分ける) を乗算済みの RGBA8 にする。デコードの前に大きさを確かめ、
+/// 上限 ([`MAX_BACKGROUND_SIDE`]・[`MAX_BACKGROUND_PIXELS`]) を超えるものは読まない。
+pub fn decode_background(bytes: &[u8]) -> Result<Rgba8, BackgroundError> {
+    let decode = |e: &dyn std::fmt::Display| BackgroundError::Decode(e.to_string());
+    let mut image = if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        // IHDR の幅と高さ (先頭から 16 バイト目から、ビッグエンディアンの u32 が 2 つ)。
+        let size = |i: usize| {
+            bytes
+                .get(i..i + 4)
+                .map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
+                .ok_or(BackgroundError::Format)
+        };
+        check_background_size(size(16)?, size(20)?)?;
+        return decode_png_premultiplied(bytes).map_err(|e| decode(&e));
+    } else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
+        use zune_jpeg::zune_core::colorspace::ColorSpace;
+        use zune_jpeg::zune_core::options::DecoderOptions;
+        let options = DecoderOptions::default()
+            .set_max_width(MAX_BACKGROUND_SIDE as usize)
+            .set_max_height(MAX_BACKGROUND_SIDE as usize)
+            .jpeg_set_out_colorspace(ColorSpace::RGBA);
+        let mut decoder =
+            zune_jpeg::JpegDecoder::new_with_options(std::io::Cursor::new(bytes), options);
+        decoder.decode_headers().map_err(|e| decode(&e))?;
+        let info = decoder.info().ok_or(BackgroundError::Format)?;
+        let (width, height) = (u32::from(info.width), u32::from(info.height));
+        check_background_size(width, height)?;
+        let pixels = decoder.decode().map_err(|e| decode(&e))?;
+        if decoder.output_colorspace() != Some(ColorSpace::RGBA)
+            || pixels.len() != width as usize * height as usize * 4
+        {
+            return Err(BackgroundError::Decode(
+                "unexpected JPEG output layout".to_owned(),
+            ));
+        }
+        Rgba8 {
+            width,
+            height,
+            pixels,
+        }
+    } else if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+        let mut decoder =
+            image_webp::WebPDecoder::new(std::io::Cursor::new(bytes)).map_err(|e| decode(&e))?;
+        let (width, height) = decoder.dimensions();
+        check_background_size(width, height)?;
+        let channels = if decoder.has_alpha() { 4 } else { 3 };
+        let mut buf = vec![0u8; width as usize * height as usize * channels];
+        decoder.read_image(&mut buf).map_err(|e| decode(&e))?;
+        let pixels = if channels == 4 {
+            buf
+        } else {
+            buf.as_chunks::<3>()
+                .0
+                .iter()
+                .flat_map(|[r, g, b]| [*r, *g, *b, 255])
+                .collect()
+        };
+        Rgba8 {
+            width,
+            height,
+            pixels,
+        }
+    } else {
+        return Err(BackgroundError::Format);
+    };
+    image::premultiply(&mut image.pixels);
+    Ok(image)
+}
+
+/// 読んだモジュール。
+#[derive(Debug)]
+struct LoadedModule {
+    module: Arc<Module>,
+    /// テクスチャ (乗算済み。`Module::textures` の順)。
+    textures: Vec<Rgba8>,
+    /// 法線マップ (乗算しない。`Module::textures` の順。無いもの・読めないものは `None`)。
+    normal_maps: Vec<Option<Rgba8>>,
+}
+
+/// `.ugoemod` を読み、テクスチャと法線マップをデコードする (合成の順)。
 fn read_modules(files: &[Arc<Vec<u8>>]) -> Result<Vec<LoadedModule>, String> {
     files
         .iter()
         .map(|bytes| {
             let file = ugoe::format::read_module(bytes).map_err(|e| e.to_string())?;
-            let textures = (0..file.module.textures.len())
+            let count = file.module.textures.len();
+            let textures = (0..count)
                 .map(|i| match file.textures.get(i) {
                     Some(data) if data.format == TextureFormat::Png => {
                         decode_png_premultiplied(&data.bytes)
@@ -421,7 +585,17 @@ fn read_modules(files: &[Arc<Vec<u8>>]) -> Result<Vec<LoadedModule>, String> {
                     _ => placeholder_texture(),
                 })
                 .collect();
-            Ok((Arc::new(file.module), textures))
+            let normal_maps = (0..count)
+                .map(|i| match file.normal_map(i) {
+                    Some(data) if data.format == TextureFormat::Png => decode_png(&data.bytes).ok(),
+                    _ => None,
+                })
+                .collect();
+            Ok(LoadedModule {
+                module: Arc::new(file.module),
+                textures,
+                normal_maps,
+            })
         })
         .collect()
 }
@@ -499,10 +673,10 @@ fn apply(feed: &mut Feed, gpu: &Gpu, command: Command) -> Result<bool, (&'static
             .set_scene(gpu, &files)
             .map(|()| true)
             .map_err(|e| ("model", e)),
-        Command::Background(rgb) => {
-            feed.set_fill(rgb);
-            Ok(true)
-        }
+        Command::Background(rgb) => feed
+            .set_fill(gpu, rgb)
+            .map(|()| true)
+            .map_err(|e| ("model", e)),
         Command::Stop => Ok(false),
     }
 }
@@ -697,6 +871,97 @@ mod tests {
         // 収める倍率は 2、大きさ 0.5 で 1。右へ 10 の点は、時計回りに 90 度回って下へ 10。
         assert!(close(apply(&view, (110.0, 50.0), size), (300.0, 90.0)));
         assert!(close(apply(&view, (100.0, 40.0), size), (310.0, 80.0)));
+    }
+
+    /// 背景の画像の画素 (乗算済み) の `(x, y)` の RGBA。
+    fn pixel(image: &Rgba8, x: u32, y: u32) -> [u8; 4] {
+        let i = ((y * image.width + x) * 4) as usize;
+        [
+            image.pixels[i],
+            image.pixels[i + 1],
+            image.pixels[i + 2],
+            image.pixels[i + 3],
+        ]
+    }
+
+    fn near(a: [u8; 4], b: [u8; 4]) -> bool {
+        a.iter().zip(b).all(|(x, y)| x.abs_diff(y) <= 24)
+    }
+
+    fn webp(pixels: &[u8], width: u32, height: u32, color: image_webp::ColorType) -> Vec<u8> {
+        let mut out = Vec::new();
+        image_webp::WebPEncoder::new(&mut out)
+            .encode(pixels, width, height, color)
+            .unwrap();
+        out
+    }
+
+    #[test]
+    fn decodes_png_jpeg_and_webp_backgrounds() {
+        // JPEG (左が赤・右が青の 16x8。Chrome で書いたもの)。
+        let jpeg = decode_background(include_bytes!("../tests/fixtures/red-blue.jpg")).unwrap();
+        assert_eq!((jpeg.width, jpeg.height), (16, 8));
+        assert!(
+            near(pixel(&jpeg, 2, 4), [255, 0, 0, 255]),
+            "{:?}",
+            pixel(&jpeg, 2, 4)
+        );
+        assert!(near(pixel(&jpeg, 13, 4), [0, 0, 255, 255]));
+        // WebP (透過あり・なし)。透過ありは乗算済みにする。
+        let rgba = [200, 100, 50, 128, 10, 20, 30, 255];
+        let alpha = decode_background(&webp(&rgba, 2, 1, image_webp::ColorType::Rgba8)).unwrap();
+        assert_eq!(alpha.pixels, vec![100, 50, 25, 128, 10, 20, 30, 255]);
+        let rgb = decode_background(&webp(
+            &[1, 2, 3, 4, 5, 6],
+            2,
+            1,
+            image_webp::ColorType::Rgb8,
+        ))
+        .unwrap();
+        assert_eq!(rgb.pixels, vec![1, 2, 3, 255, 4, 5, 6, 255]);
+        // PNG。
+        let png = ugoe_headless::image::encode_png_unpremultiplied(&Rgba8 {
+            width: 1,
+            height: 1,
+            pixels: vec![9, 8, 7, 255],
+        })
+        .unwrap();
+        assert_eq!(decode_background(&png).unwrap().pixels, vec![9, 8, 7, 255]);
+        assert_eq!(decode_background(b"GIF89a"), Err(BackgroundError::Format));
+        assert!(matches!(
+            decode_background(&[0xff, 0xd8, 0xff, 0]),
+            Err(BackgroundError::Decode(_))
+        ));
+    }
+
+    #[test]
+    fn huge_backgrounds_are_refused_before_decoding() {
+        let side = MAX_BACKGROUND_SIDE + 1;
+        // PNG は IHDR の大きさだけを見て断る (本体が無くても)。
+        let mut png = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR".to_vec();
+        png.extend_from_slice(&side.to_be_bytes());
+        png.extend_from_slice(&1u32.to_be_bytes());
+        assert_eq!(
+            decode_background(&png),
+            Err(BackgroundError::TooLarge {
+                width: side,
+                height: 1
+            })
+        );
+        let wide = webp(
+            &vec![0; side as usize * 3],
+            side,
+            1,
+            image_webp::ColorType::Rgb8,
+        );
+        assert!(matches!(
+            decode_background(&wide),
+            Err(BackgroundError::TooLarge { .. })
+        ));
+        // 一辺は収まっても、画素の数で断る。
+        assert!(check_background_size(MAX_BACKGROUND_SIDE, MAX_BACKGROUND_SIDE).is_err());
+        assert!(check_background_size(1920, 1080).is_ok());
+        assert!(check_background_size(0, 1).is_err());
     }
 
     #[test]

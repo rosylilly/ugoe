@@ -7,12 +7,13 @@
 //! - 画素の形は [`PixelFormat`]。NV12・YUY2 は GPU の計算シェーダ (`yuv.wgsl`) で変換してから読み戻す
 //!   (読み戻す量は RGBA の半分〜3/8)。計算シェーダの無いアダプタでは RGBA を読み戻して CPU で変換する ([`crate::yuv::convert`])。
 //! - クリアの色 (`background`) はストレートアルファ。仮想カメラでは不透明な色を渡す (透過は単色で埋める)。
+//!   背景の画像 ([`Resident::set_backdrop`]) を置くと、クリアの代わりに毎フレームその画を描画先に写してから描く (GPU の中の写し)。
 //! - 描画中の wgpu のエラーは [`Error::Gpu`] にする ([`Gpu::render`] と同じ)。
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 
-use ugoe_render::{FrameStats, Renderer, View};
+use ugoe_render::{FrameStats, Lighting, Renderer, View};
 use ugoe_runtime::ModelInstance;
 
 use crate::gpu::{clear, gpu_error, new_renderer, target_texture};
@@ -96,6 +97,8 @@ pub struct Resident {
     size: (u32, u32),
     format: PixelFormat,
     background: [u8; 4],
+    /// 背景の画像 (描画先と同じ大きさ・形。乗算済み)。あればクリアの代わりに写す。
+    backdrop: Option<wgpu::Texture>,
     view: View,
     converter: Option<Converter>,
     slots: Vec<Slot>,
@@ -128,11 +131,13 @@ impl Resident {
             let device = &gpu.device;
             let renderer = new_renderer(device, &gpu.queue, textures, shading, size)?;
             let compute = format != PixelFormat::Rgba8 && gpu.supports_compute();
-            let usage = if compute {
-                wgpu::TextureUsages::TEXTURE_BINDING
-            } else {
-                wgpu::TextureUsages::empty()
-            };
+            // 背景の画像 (`set_backdrop`) を写せるよう、描画先は写し先にもする。
+            let usage = wgpu::TextureUsages::COPY_DST
+                | if compute {
+                    wgpu::TextureUsages::TEXTURE_BINDING
+                } else {
+                    wgpu::TextureUsages::empty()
+                };
             let target = target_texture(device, size, usage);
             let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
             let converter = compute.then(|| Converter::new(gpu, &target_view, size, format));
@@ -162,6 +167,7 @@ impl Resident {
                 size,
                 format,
                 background,
+                backdrop: None,
                 view,
                 converter,
                 slots,
@@ -187,6 +193,48 @@ impl Resident {
     /// クリアの色を変える (次の [`Resident::submit`] から)。
     pub fn set_background(&mut self, background: [u8; 4]) {
         self.background = background;
+    }
+
+    /// 光源を変える (次の [`Resident::submit`] から)。`None` は光源を渡さないのと同じ (環境光が白で光源なし)。
+    pub fn set_lighting(&mut self, lighting: Option<&Lighting>) {
+        self.renderer
+            .set_lighting(lighting.unwrap_or(&Lighting::default()));
+    }
+
+    /// 背景の画像を置く・外す (次の [`Resident::submit`] から)。画像は出力と同じ大きさの乗算済みの RGBA8 で、
+    /// 毎フレーム、クリアの代わりに描画先へ写してからモデルを描く。外すとクリアの色に戻る。
+    pub fn set_backdrop(&mut self, gpu: &Gpu, image: Option<&Rgba8>) -> Result<(), Error> {
+        let Some(image) = image else {
+            self.backdrop = None;
+            return Ok(());
+        };
+        if (image.width, image.height) != self.size
+            || image.pixels.len() != self.size.0 as usize * self.size.1 as usize * 4
+        {
+            bail!(
+                "the backdrop is {}x{} but the output is {}x{}",
+                image.width,
+                image.height,
+                self.size.0,
+                self.size.1
+            );
+        }
+        let texture = gpu.scoped(|| {
+            let texture = target_texture(&gpu.device, self.size, wgpu::TextureUsages::COPY_DST);
+            gpu.queue.write_texture(
+                texture.as_image_copy(),
+                &image.pixels,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(self.size.0 * 4),
+                    rows_per_image: Some(self.size.1),
+                },
+                texture.size(),
+            );
+            Ok(texture)
+        })?;
+        self.backdrop = Some(texture);
+        Ok(())
     }
 
     /// ビューを変える (次の [`Resident::submit`] から)。
@@ -222,7 +270,14 @@ impl Resident {
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("ugoe resident render"),
             });
-            clear(&mut encoder, &self.target_view, self.background);
+            match &self.backdrop {
+                Some(backdrop) => encoder.copy_texture_to_texture(
+                    backdrop.as_image_copy(),
+                    self.target.as_image_copy(),
+                    self.target.size(),
+                ),
+                None => clear(&mut encoder, &self.target_view, self.background),
+            }
             self.renderer.encode(
                 device,
                 queue,

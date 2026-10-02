@@ -11,6 +11,9 @@
 //!   ネイティブの受け手と `ugoe-headless` の常駐の描画で描き、`ugoe-studio-vcam` で OS に渡す。
 //! - 操作 API (T0805): ループバックの WebSocket で外のツールから操作させる ([`api`])。
 //!
+//! - ブラウザソース (T0808): 操作 API と同じ待ち受けで、OBS のブラウザソース用のページ・ファイル・フレームを出す
+//!   ([`api::source`])。シーンの通知とフレームを、出力ウィンドウと同じ順にページの WebSocket へ配る。
+//!
 //! 出力ウィンドウとブラウザソースの描画はしない (出力ウィンドウの WebView の wasm が受け手として描く)。
 
 pub mod animation;
@@ -19,6 +22,7 @@ pub mod conductor;
 pub mod follower;
 pub mod hotkeys;
 pub mod input;
+pub mod lighting;
 pub mod pacing;
 pub mod profile;
 pub mod stage;
@@ -283,6 +287,8 @@ struct Studio {
     camera_status: Mutex<Option<virtual_camera::Status>>,
     /// 操作 API (T0805)。
     api: api::Api,
+    /// ブラウザソースのページの接続 (T0808。待ち受けは操作 API と共有する)。
+    sources: api::source::Sources,
 }
 
 /// 登録しているホットキー。
@@ -389,8 +395,9 @@ impl Studio {
         let Some(frame) = frame else {
             return;
         };
-        self.outputs
-            .send_all(&InvokeResponseBody::Raw(frame.encode()));
+        let bytes = frame.encode();
+        self.source_frame(bytes.clone());
+        self.outputs.send_all(&InvokeResponseBody::Raw(bytes));
         if let Some(camera) = &*lock(&self.camera) {
             let _ = camera.commands.send(CameraCommand::Frame(frame.clone()));
         }
@@ -423,6 +430,9 @@ impl Studio {
     /// シーンが変わった: 受け手と操作ウィンドウに配る。次の刻みのフレームより先に届くよう、指揮役を握ったまま呼ぶ。
     fn send_scene(&self, stage: &Stage, conductor: &Conductor) {
         if let Some(body) = Self::scene_message(conductor) {
+            if let InvokeResponseBody::Json(json) = &body {
+                self.source_scene(json);
+            }
             self.outputs.send_all(&body);
         }
         if let Some(camera) = &*lock(&self.camera)
@@ -605,6 +615,20 @@ impl Studio {
         }
     }
 
+    /// 今のシーン `revision` のファイルを `pick` で選ぶ。今のシーンでなければエラー (出力ウィンドウとブラウザソースの受け手が取る)。
+    fn scene_bytes(
+        &self,
+        revision: u32,
+        pick: impl FnOnce(&Stage) -> Option<Arc<Vec<u8>>>,
+    ) -> Result<Arc<Vec<u8>>, String> {
+        let stage = lock(&self.stage);
+        let current = lock(&self.conductor).scene().map(|s| s.revision);
+        if current != Some(revision) {
+            return Err(format!("scene {revision} is not the current scene"));
+        }
+        pick(&stage).ok_or_else(|| format!("scene {revision} has no such file"))
+    }
+
     /// 仮想カメラに渡す今のシーン (シーンの通知と、受け手が `scene_model` などで取るファイル)。
     fn camera_scene(stage: &Stage, conductor: &Conductor) -> Option<SceneFiles> {
         let scene = conductor.scene()?.clone();
@@ -614,6 +638,7 @@ impl Studio {
         Some(SceneFiles {
             model: stage.model_bytes(),
             modules,
+            background: stage.background_image(),
             scene,
         })
     }
@@ -831,14 +856,9 @@ fn scene_file(
     revision: u32,
     pick: impl FnOnce(&Stage) -> Option<Arc<Vec<u8>>>,
 ) -> Result<Response, String> {
-    let stage = lock(&studio.stage);
-    let current = lock(&studio.conductor).scene().map(|s| s.revision);
-    if current != Some(revision) {
-        return Err(format!("scene {revision} is not the current scene"));
-    }
-    pick(&stage)
+    studio
+        .scene_bytes(revision, pick)
         .map(|bytes| Response::new(bytes.to_vec()))
-        .ok_or_else(|| format!("scene {revision} has no such file"))
 }
 
 /// シーン `revision` のモデルのバイト列。
@@ -1268,6 +1288,14 @@ pub fn run() {
                 .app_data_dir()
                 .ok()
                 .map(|dir| dir.join(api::SETTINGS_FILE));
+            // ブラウザソースのページは、アプリに入れたフロントエンド (dist/) から出す (開発モードでは dist/ を直に読む)。
+            // 無いファイルを Tauri は index.html で答えるので、HTML でないはずのものが HTML なら無いものとする。
+            let resolver = app.asset_resolver();
+            staging.sources.set_assets(move |path| {
+                let asset = resolver.get(path.to_owned())?;
+                let html = asset.mime_type.starts_with("text/html");
+                (html == path.ends_with(".html")).then_some(asset.bytes)
+            });
             staging.load_api(api_settings);
             std::thread::Builder::new()
                 .name("ugoe-studio-conductor".into())
@@ -1350,6 +1378,9 @@ pub fn run() {
             api::commands::deny_api_client,
             api::commands::revoke_api_client,
             api::commands::disconnect_api_client,
+            api::commands::set_source_enabled,
+            api::commands::source_url,
+            api::commands::regenerate_source_token,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the ugoe studio");

@@ -1,7 +1,9 @@
 //! 待ち受け: ループバック (`127.0.0.1` と `::1`) にだけ束ね、接続ごとにスレッドで要求を読む (ADR 0028 の 6.)。
 //!
-//! 1 つの待ち受けで HTTP と WebSocket を扱う。経路は今は `/api` (操作 API の WebSocket) だけで、ブラウザソース (T0808) は
-//! 同じ待ち受けに経路を足す ([`route`])。どの経路も、先に [`http::check_request`] (Host・転送ヘッダ・Origin) を通す。
+//! 1 つの待ち受けで HTTP と WebSocket を扱う。経路は `/api` (操作 API の WebSocket) と `/source/<トークン>/…`
+//! (ブラウザソース、[`super::source`]、T0808) で ([`route`])、どちらも有効にしたときだけ答える (切っていれば `404`)。
+//! 待ち受けは、どちらかが有効な間だけ動かす ([`super::Studio::sync_listener`])。
+//! どの経路も、先に [`http::check_request`] (Host・転送ヘッダ・Origin) を通す。
 //!
 //! WebSocket のフレームは tungstenite に任せる ([`ws`])。送るものは [`Outgoing`] の列で渡すので、ほかのスレッド
 //! (刻みのスレッドの通知・操作ウィンドウの承認) が接続を待たずに送れる。
@@ -19,8 +21,8 @@ use tungstenite::protocol::{Message, Role, WebSocket};
 
 use super::Outgoing;
 use super::http::{self, Reject};
-use super::ws;
-use crate::Studio;
+use super::{source, ws};
+use crate::{Studio, lock};
 
 /// 要求の頭を読み終えるまでの時間の上限。
 const HEAD_TIMEOUT: Duration = Duration::from_secs(10);
@@ -74,7 +76,7 @@ impl Server {
         &self.addrs
     }
 
-    /// 待ち受けをやめる (今の接続は [`super::Studio::restart_api`] が閉じる)。
+    /// 待ち受けをやめる (今の接続は [`super::Studio::sync_listener`] が閉じる)。
     pub fn stop(self) {
         self.stopping.store(true, Ordering::SeqCst);
         for addr in &self.addrs {
@@ -128,15 +130,20 @@ fn serve(studio: &Arc<Studio>, stream: TcpStream, port: u16) {
     route(studio, &head, reader, writer);
 }
 
-/// 経路ごとの処理。T0808 (ブラウザソース) はここに `/source/<token>/...` を足す。
+/// 経路ごとの処理。
 fn route(
     studio: &Arc<Studio>,
     head: &http::RequestHead,
     reader: BufReader<TcpStream>,
     mut writer: TcpStream,
 ) {
-    match head.path() {
-        "/api" => match ws::handshake(head) {
+    let path = head.path();
+    if path.starts_with(source::PREFIX) {
+        source::serve(studio, head, reader, writer);
+        return;
+    }
+    match path {
+        "/api" if lock(&studio.api.0).settings.enabled => match ws::handshake(head) {
             Ok(response) => {
                 if writer.write_all(response.as_bytes()).is_ok() && writer.flush().is_ok() {
                     websocket(studio, reader);
