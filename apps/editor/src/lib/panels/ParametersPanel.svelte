@@ -7,10 +7,13 @@
   (set_parameter_internal。docs/spec/model.md#パラメータ)。
 -->
 <script lang="ts">
+import { Button, Checkbox, IconButton, NumberField, Tooltip } from "@ugoe/ui";
 import BaseLock from "../BaseLock.svelte";
 import type { EditorDocument, ParameterDef } from "../document.svelte";
+import { t } from "../i18n";
 import { baseElements, isBaseElement } from "../moduleProject";
 import type { Selection } from "../selection.svelte";
+import TipButton from "../ui/TipButton.svelte";
 import type { ViewportController } from "../viewport/controller.svelte";
 import {
   elementGrid,
@@ -79,8 +82,8 @@ function keysOf(id: string): number[] {
 /** キーの印の位置。スライダーのつまみ (幅 16px ほど) の中心が動く範囲に合わせる。 */
 function position(p: ParameterDef, key: number): string {
   const span = p.max - p.min;
-  const t = span > 0 ? (key - p.min) / span : 0.5;
-  return `calc(8px + (100% - 16px) * ${t})`;
+  const at = span > 0 ? (key - p.min) / span : 0.5;
+  return `calc(8px + (100% - 16px) * ${at})`;
 }
 
 function snap() {
@@ -101,7 +104,7 @@ async function saveEditor(p: ParameterDef) {
     commands.push({ op: "set_parameter_range", id: p.id, ...draft } as const);
   }
   if (commands.length > 0) {
-    await doc.apply({ op: "batch", label: `Edit parameter ${p.id}`, commands });
+    await doc.apply({ op: "batch", label: t("parameters.history.edit", { id: p.id }), commands });
   }
   if (!doc.error) editing = null;
 }
@@ -138,6 +141,16 @@ async function create(e: SubmitEvent) {
   }
 }
 
+const ids = $props.id();
+
+/** キーの印のボタンの説明。 */
+function keyLabel(value: number, onKey: number | undefined, target: string): string {
+  if (elementIsBase) return t("parameters.key.base");
+  return onKey === undefined
+    ? t("parameters.key.add", { value: formatValue(value), target })
+    : t("parameters.key.remove", { key: onKey, target });
+}
+
 /** 選択中の要素の、このパラメータの軸のキーを今の値に足す (または今の値のキーを消す)。 */
 async function toggleKey(p: ParameterDef, onKey: number | undefined) {
   if (!element) return;
@@ -159,37 +172,51 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
 </script>
 
 <div class="head">
-  <h2>Parameters</h2>
+  <h2>{t("parameters.title")}</h2>
   <span class="actions">
-    <button
+    <TipButton
+      small
       onclick={snap}
       disabled={bindings.length === 0}
-      title="Move the selected element's parameters to their nearest keys">Snap to keys</button
+      tooltip={t("parameters.snap.tooltip")}>{t("parameters.snap.label")}</TipButton
     >
-    <button onclick={() => viewport.resetParameters()}>Reset</button>
-    <button
+    <Button small onclick={() => viewport.resetParameters()}>{t("parameters.reset.label")}</Button>
+    <IconButton
+      small
+      variant="secondary"
       onclick={() => (creating = !creating)}
       disabled={baseParameters}
-      title={baseParameters
-        ? "A module can't add parameters. Add them in the base project and expose them in the slot."
-        : "New parameter"}
-      aria-label="New parameter">+</button
+      label={t("parameters.add.aria")}
+      aria-describedby={baseParameters ? `${ids}-add-note` : undefined}>+</IconButton
     >
   </span>
 </div>
+{#if baseParameters}<p class="ed-hint" id="{ids}-add-note">{t("parameters.add.moduleNote")}</p>{/if}
 
 {#if creating}
   <form class="editor" onsubmit={create}>
-    <label>ID <input bind:value={fresh.id} required placeholder="ParamAngleX" /></label>
-    <label>Name <input bind:value={fresh.name} placeholder="(same as ID)" /></label>
+    <label
+      >{t("parameters.field.id")}
+      <!-- i18n-ignore: パラメータの ID の例 (訳さない) -->
+      <input bind:value={fresh.id} required placeholder="ParamAngleX" /></label
+    >
+    <label
+      >{t("parameters.field.name")}
+      <input bind:value={fresh.name} placeholder={t("parameters.field.namePlaceholder")} /></label
+    >
     <span class="range">
-      <label>Min <input type="number" step="any" bind:value={fresh.min} /></label>
-      <label>Default <input type="number" step="any" bind:value={fresh.default} /></label>
-      <label>Max <input type="number" step="any" bind:value={fresh.max} /></label>
+      <NumberField label={t("parameters.field.min")} bind:value={fresh.min} decimals={3} size={5} />
+      <NumberField
+        label={t("parameters.field.default")}
+        bind:value={fresh.default}
+        decimals={3}
+        size={5}
+      />
+      <NumberField label={t("parameters.field.max")} bind:value={fresh.max} decimals={3} size={5} />
     </span>
-    <span class="row">
-      <button type="submit">Create</button>
-      <button type="button" onclick={() => (creating = false)}>Cancel</button>
+    <span class="buttons">
+      <Button small type="submit">{t("parameters.create.label")}</Button>
+      <Button small onclick={() => (creating = false)}>{t("parameters.cancel.label")}</Button>
     </span>
   </form>
 {/if}
@@ -201,37 +228,46 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
     {@const onKey = keyAt(keys, value, keyTolerance(p))}
     <li>
       <span class="row">
-        <button
-          class="name"
-          class:internal={p.internal}
-          onclick={() => openEditor(p)}
-          title={p.internal
-            ? `Edit ${p.id} (relay parameter: tracking does not write it, and viewers hide it)`
-            : `Edit ${p.id}`}
-          >{p.name}{#if p.internal}<span class="tag">relay</span>{/if}</button
+        <Tooltip
+          text={p.internal
+            ? t("parameters.edit.tooltipRelay", { id: p.id })
+            : t("parameters.edit.tooltip", { id: p.id })}
         >
-        <span class="row">
-          <input
-            class="value"
-            type="text"
-            inputmode="decimal"
-            value={formatValue(value)}
-            aria-label="{p.name} value"
-            title="Type a value between {p.min} and {p.max}, then press Enter"
-            onchange={(e) => onValueChange(p, e)}
-            onkeydown={onValueKeyDown}
-          />
-          {#if element}
+          {#snippet children(attrs)}
             <button
-              class="key"
-              class:on={onKey !== undefined}
+              {...attrs}
+              class="name"
+              class:internal={p.internal}
+              onclick={(e) => {
+                (attrs.onclick as ((e: MouseEvent) => void) | undefined)?.(e);
+                openEditor(p);
+              }}
+              >{p.name}{#if p.internal}<span class="tag">{t("parameters.relay.tag")}</span>{/if}</button
+            >
+          {/snippet}
+        </Tooltip>
+        <span class="row">
+          <Tooltip text={t("parameters.value.tooltip", { min: p.min, max: p.max })}>
+            {#snippet children(attrs)}
+              <input
+                {...attrs}
+                class="value"
+                type="text"
+                inputmode="decimal"
+                value={formatValue(value)}
+                aria-label={t("parameters.value.aria", { name: p.name })}
+                onchange={(e) => onValueChange(p, e)}
+                onkeydown={onValueKeyDown}
+              />
+            {/snippet}
+          </Tooltip>
+          {#if element}
+            <IconButton
+              small
+              class={onKey !== undefined ? "key on" : "key"}
               disabled={elementIsBase}
-              onclick={() => toggleKey(p, onKey)}
-              title={elementIsBase
-                ? "The selected element belongs to the base model. Edit it in the base project."
-                : onKey === undefined
-                ? `Add a key at ${formatValue(value)} to ${element.target.id}`
-                : `Remove the key ${onKey} from ${element.target.id}`}>◆</button
+              label={keyLabel(value, onKey, element.target.id)}
+              onclick={() => toggleKey(p, onKey)}>◆</IconButton
             >
           {/if}
         </span>
@@ -247,46 +283,63 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
           oninput={(e) => onInput(p.id, e)}
         />
         {#each keys as key (key)}
-          <button
-            class="marker"
-            class:current={key === onKey}
-            style:left={position(p, key)}
-            title="Key {key}"
-            aria-label="Go to key {key}"
-            onclick={() => viewport.setParameter(p.id, key)}
-          ></button>
+          <Tooltip text={t("parameters.key.marker", { key })}>
+            {#snippet children(attrs)}
+              <button
+                {...attrs}
+                class="marker"
+                class:current={key === onKey}
+                style:left={position(p, key)}
+                aria-label={t("parameters.key.goTo", { key })}
+                onclick={(e) => {
+                  (attrs.onclick as ((e: MouseEvent) => void) | undefined)?.(e);
+                  viewport.setParameter(p.id, key);
+                }}
+              ></button>
+            {/snippet}
+          </Tooltip>
         {/each}
       </span>
       {#if valueError?.id === p.id}<p class="error">{valueError.message}</p>{/if}
       {#if editing === p.id}
-        <BaseLock
-          locked={baseParameters}
-          hint="Parameters belong to the base model and can't be edited here. Edit them in the base project."
-        >
-        <div class="editor">
-          <label>Name <input bind:value={draft.name} /></label>
-          <span class="range">
-            <label>Min <input type="number" step="any" bind:value={draft.min} /></label>
-            <label>Default <input type="number" step="any" bind:value={draft.default} /></label>
-            <label>Max <input type="number" step="any" bind:value={draft.max} /></label>
-          </span>
-          <ParameterMirror {doc} parameter={p} {parameters} />
-          <label
-            class="check"
-            title="A relay parameter passes values between physics rigs. Tracking does not write it, and viewers hide it by default."
-          >
-            <input
-              type="checkbox"
+        <BaseLock locked={baseParameters} hint={t("parameters.baseHint")}>
+          <div class="editor">
+            <label>{t("parameters.field.name")} <input bind:value={draft.name} /></label>
+            <span class="range">
+              <NumberField
+                label={t("parameters.field.min")}
+                bind:value={draft.min}
+                decimals={3}
+                size={5}
+              />
+              <NumberField
+                label={t("parameters.field.default")}
+                bind:value={draft.default}
+                decimals={3}
+                size={5}
+              />
+              <NumberField
+                label={t("parameters.field.max")}
+                bind:value={draft.max}
+                decimals={3}
+                size={5}
+              />
+            </span>
+            <ParameterMirror {doc} parameter={p} {parameters} />
+            <Checkbox
+              label={t("parameters.relay.label")}
+              describedby="{ids}-relay-{p.id}"
               checked={p.internal ?? false}
-              onchange={(e) => setInternal(p, e.currentTarget.checked)}
+              onchange={(v) => setInternal(p, v)}
             />
-            Relay (internal)
-          </label>
-          <span class="row">
-            <button onclick={() => saveEditor(p)}>Apply</button>
-            <button class="danger" onclick={() => remove(p)} title="Delete {p.id}">Delete</button>
-          </span>
-        </div>
+            <p class="ed-hint" id="{ids}-relay-{p.id}">{t("parameters.relay.description")}</p>
+            <span class="buttons">
+              <Button small onclick={() => saveEditor(p)}>{t("parameters.apply.label")}</Button>
+              <Button small variant="danger" onclick={() => remove(p)}
+                >{t("parameters.delete.label")}</Button
+              >
+            </span>
+          </div>
         </BaseLock>
       {/if}
     </li>
@@ -339,9 +392,8 @@ li {
   font-style: normal;
 }
 
-.check {
+.buttons {
   display: flex;
-  align-items: center;
   gap: 4px;
 }
 
@@ -350,12 +402,11 @@ li {
   text-align: right;
 }
 
-.key {
-  padding: 0 4px;
+.row :global(.ugoe-icon-button.key) {
   opacity: 0.5;
 }
 
-.key.on {
+.row :global(.ugoe-icon-button.key.on) {
   opacity: 1;
   color: var(--accent);
 }
@@ -398,11 +449,7 @@ li {
   gap: 4px;
 }
 
-.range input {
-  width: 5em;
-}
-
-.danger {
-  color: #dc2626;
+.range {
+  flex-wrap: wrap;
 }
 </style>

@@ -11,6 +11,7 @@
 -->
 <script lang="ts">
 import type { EditorDocument } from "../../../document.svelte";
+import { t } from "../../../i18n";
 import type { PhysicsCollider } from "../../../ipc";
 import { isDynamicRig, isDynamicSettings } from "../../../panels/physics/physics";
 import type { PhysicsView } from "../../../panels/physics/physicsView.svelte";
@@ -201,7 +202,7 @@ async function onUp(e: PointerEvent): Promise<void> {
             <circle class="end" cx={p[0]} cy={p[1]} r="5" role="presentation"
               onpointerdown={(e) => onDown(e, c.collider, handle)}
               onpointermove={onMove} onpointerup={onUp} onpointercancel={onUp}>
-              <title>{c.collider.name}: end {handle.toUpperCase()}</title>
+              <title>{t("viewport.collider.end", { name: c.collider.name, end: handle.toUpperCase() })}</title>
             </circle>
           {/each}
         {/if}

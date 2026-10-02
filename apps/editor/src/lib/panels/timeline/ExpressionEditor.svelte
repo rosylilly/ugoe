@@ -1,15 +1,18 @@
 <!--
   表情の編集: 今のスライダーの値から表情を作り (既定値から動かしたパラメータを、選んだ op で)、
-  名前・フェード・パラメータごとの op と値を編集する。「Preview」で重み 1 で今の値に重ねて見せる (もう一度押すと戻す)。
+  名前・フェード・パラメータごとの op と値を編集する。「Preview」(プレビュー) で重み 1 で今の値に重ねて見せる (もう一度押すと戻す)。
   操作はすべて Command (docs/editor.md#表情)。
 -->
 <script lang="ts">
+import { Button, IconButton, NumberField, Select } from "@ugoe/ui";
 import { untrack } from "svelte";
 import type { EditorDocument } from "../../document.svelte";
+import { t } from "../../i18n";
 import type { Command, Expression, ExpressionOp, ExpressionParameter } from "../../ipc";
+import TipButton from "../../ui/TipButton.svelte";
 import type { ViewportController } from "../../viewport/controller.svelte";
-import { changedParameters, EXPRESSION_OPS, expressionFromValues, valueFor } from "./expressions";
-import { isValidName, uniqueName } from "./timeline";
+import { changedParameters, expressionFromValues, expressionOps, valueFor } from "./expressions";
+import { isValidName, parameterLabel, uniqueName } from "./timeline";
 import type { TimelineState } from "./timeline.svelte";
 
 interface Props {
@@ -27,9 +30,17 @@ let renaming = $state("");
 let adding = $state("");
 
 const selected = $derived(doc.expressions.find((e) => e.name === selectedName) ?? null);
+const ops = $derived(expressionOps());
+const expressionOptions = $derived(
+  doc.expressions.map((e) => ({ value: e.name, label: label(e) })),
+);
 const unused = $derived(
   doc.parameters.filter((p) => !selected?.parameters.some((q) => q.parameter === p.id)),
 );
+const unusedOptions = $derived(unused.map((p) => ({ value: p.id, label: paramLabel(p.id) })));
+/** 適用に失敗したとき、数値の欄を今の値に戻すために作り直す (数値の欄は確定した値を出したままになるので)。 */
+let fieldsKey = $state(0);
+const ids = $props.id();
 
 /** 名前を変えている途中の新しい名前 (読み直しで選択が外れないように、先に覚えておく)。 */
 let renamedTo: string | null = null;
@@ -71,7 +82,7 @@ async function createFromSliders() {
   const values = baseValues();
   const ids = changedParameters(doc.parameters, values);
   if (ids.length === 0) {
-    message = "Move some sliders away from their defaults first.";
+    message = t("timeline.expression.nothingMoved");
     return;
   }
   const name = uniqueName(
@@ -92,7 +103,7 @@ async function remove() {
 async function rename() {
   if (!selected || renaming === selected.name) return;
   if (!isValidName(renaming)) {
-    message = "Use letters, digits, _, - and . (not starting with .) in expression names.";
+    message = t("timeline.expression.nameInvalid");
     renaming = selected.name;
     return;
   }
@@ -107,34 +118,23 @@ async function rename() {
   }
 }
 
-async function setFade(field: "fade_in" | "fade_out", e: Event) {
+async function setFade(field: "fade_in" | "fade_out", value: number) {
   if (!selected) return;
-  const input = e.currentTarget as HTMLInputElement;
-  if (!Number.isFinite(input.valueAsNumber)) return;
-  if (
-    !(await apply({
-      op: "set_expression_properties",
-      name: selected.name,
-      [field]: input.valueAsNumber,
-    }))
-  ) {
-    input.value = String(selected[field]);
+  if (!(await apply({ op: "set_expression_properties", name: selected.name, [field]: value }))) {
+    fieldsKey++;
   }
 }
 
 async function setParameters(parameters: ExpressionParameter[]) {
   if (!selected) return;
-  await apply({ op: "set_expression_parameters", name: selected.name, parameters });
+  if (!(await apply({ op: "set_expression_parameters", name: selected.name, parameters }))) {
+    fieldsKey++;
+  }
 }
 
 function editRow(i: number, patch: Partial<ExpressionParameter>) {
   if (!selected) return;
   setParameters(selected.parameters.map((p, j) => (j === i ? { ...p, ...patch } : p)));
-}
-
-function onValue(i: number, e: Event) {
-  const value = (e.currentTarget as HTMLInputElement).valueAsNumber;
-  if (Number.isFinite(value)) editRow(i, { value });
 }
 
 function addRow() {
@@ -164,68 +164,67 @@ function setFromSliders() {
 
 function paramLabel(id: string): string {
   const p = doc.parameters.find((q) => q.id === id);
-  if (!p) return `${id} (missing)`;
-  return p.name && p.name !== p.id ? `${p.name} (${p.id})` : p.id;
+  return p ? parameterLabel(p) : t("timeline.expression.missing", { id });
 }
 
 function label(e: Expression): string {
-  return `${e.name} (${e.parameters.length})`;
+  return t("timeline.expression.option", { name: e.name, count: e.parameters.length });
 }
 </script>
 
 <div class="expressions">
   <div class="bar">
-    <select
-      aria-label="Expression"
+    <Select
+      ariaLabel={t("timeline.expression.select.aria")}
       value={selectedName ?? ""}
-      onchange={(e) => (selectedName = (e.currentTarget as HTMLSelectElement).value || null)}
+      options={expressionOptions}
+      placeholder={t("timeline.expression.select.empty")}
+      onchange={(v) => (selectedName = v || null)}
+    />
+    <TipButton small onclick={createFromSliders} tooltip={t("timeline.expression.new.tooltip")}
+      >{t("timeline.expression.new.label")}</TipButton
     >
-      {#if doc.expressions.length === 0}<option value="">(no expressions)</option>{/if}
-      {#each doc.expressions as e (e.name)}
-        <option value={e.name}>{label(e)}</option>
-      {/each}
-    </select>
-    <button onclick={createFromSliders} title="Create an expression from the sliders moved away from their defaults"
-      >New from sliders</button
-    >
-    <select aria-label="Operation for the new expression" bind:value={newOp}>
-      {#each EXPRESSION_OPS as o (o.op)}<option value={o.op}>{o.label}</option>{/each}
-    </select>
+    <Select ariaLabel={t("timeline.expression.newOp.aria")} bind:value={newOp} options={ops} />
     {#if selected}
       <span class="sep"></span>
-      <button
-        class:on={timeline.previewExpression === selected.name}
+      <TipButton
+        small
+        pressed={timeline.previewExpression === selected.name}
         onclick={() => selected && timeline.togglePreview(selected)}
-        title="Show the expression over the current sliders (press again to restore them)"
-        >{timeline.previewExpression === selected.name ? "End preview" : "Preview"}</button
+        tooltip={t("timeline.expression.preview.tooltip")}
+        >{timeline.previewExpression === selected.name
+          ? t("timeline.expression.endPreview.label")
+          : t("timeline.expression.preview.label")}</TipButton
       >
-      <button onclick={remove}>Delete</button>
-      <label class="inline"
-        >Name <input
-          class="name"
-          bind:value={renaming}
-          onchange={rename}
-          onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
-        /></label
-      >
-      <label class="inline"
-        >Fade in <input
-          type="number"
-          min="0"
-          step="0.1"
+      <Button small onclick={remove}>{t("timeline.delete")}</Button>
+      <label class="inline" for="{ids}-name">{t("timeline.name.label")}</label>
+      <input
+        id="{ids}-name"
+        class="name"
+        bind:value={renaming}
+        onchange={rename}
+        onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
+      />
+      {#key fieldsKey}
+        <NumberField
+          label={t("timeline.fadeIn.label")}
+          min={0}
+          step={0.1}
+          decimals={3}
+          unit={t("timeline.unit.seconds")}
           value={selected.fade_in}
-          onchange={(e) => setFade("fade_in", e)}
-        />s</label
-      >
-      <label class="inline"
-        >Fade out <input
-          type="number"
-          min="0"
-          step="0.1"
+          onchange={(v) => setFade("fade_in", v)}
+        />
+        <NumberField
+          label={t("timeline.fadeOut.label")}
+          min={0}
+          step={0.1}
+          decimals={3}
+          unit={t("timeline.unit.seconds")}
           value={selected.fade_out}
-          onchange={(e) => setFade("fade_out", e)}
-        />s</label
-      >
+          onchange={(v) => setFade("fade_out", v)}
+        />
+      {/key}
     {/if}
     {#if message}<span class="error">{message}</span>{/if}
   </div>
@@ -233,55 +232,64 @@ function label(e: Expression): string {
     <div class="table">
       <table>
         <thead>
-          <tr><th>Parameter</th><th>Operation</th><th>Value</th><th></th></tr>
+          <tr
+            ><th>{t("timeline.expression.column.parameter")}</th><th
+              >{t("timeline.expression.column.op")}</th
+            ><th id="{ids}-value">{t("timeline.expression.column.value")}</th><th></th></tr
+          >
         </thead>
         <tbody>
+          {#key fieldsKey}
           {#each selected.parameters as row, i (row.parameter)}
             <tr>
-              <td>{paramLabel(row.parameter)}</td>
+              <td id="{ids}-row-{i}">{paramLabel(row.parameter)}</td>
               <td>
-                <select
-                  aria-label="{row.parameter} operation"
+                <Select
+                  ariaLabel={t("timeline.expression.row.op.aria", { parameter: row.parameter })}
                   value={row.op}
-                  onchange={(e) => editRow(i, { op: (e.currentTarget as HTMLSelectElement).value as ExpressionOp })}
-                >
-                  {#each EXPRESSION_OPS as o (o.op)}<option value={o.op}>{o.label}</option>{/each}
-                </select>
-              </td>
-              <td>
-                <input
-                  type="number"
-                  step="any"
-                  value={row.value}
-                  aria-label="{row.parameter} value"
-                  onchange={(e) => onValue(i, e)}
+                  options={ops}
+                  onchange={(op) => editRow(i, { op })}
                 />
               </td>
               <td>
-                <button
-                  onclick={() => selected && setParameters(selected.parameters.filter((_, j) => j !== i))}
-                  aria-label="Remove {row.parameter}">×</button
+                <NumberField
+                  step={0.01}
+                  decimals={4}
+                  size={8}
+                  value={row.value}
+                  labelledby="{ids}-row-{i} {ids}-value"
+                  onchange={(value) => editRow(i, { value })}
+                />
+              </td>
+              <td>
+                <IconButton
+                  small
+                  label={t("timeline.expression.row.remove", { parameter: row.parameter })}
+                  onclick={() =>
+                    selected && setParameters(selected.parameters.filter((_, j) => j !== i))}
+                  >×</IconButton
                 >
               </td>
             </tr>
           {/each}
+          {/key}
         </tbody>
       </table>
       <div class="bar">
-        <select aria-label="Parameter to add" bind:value={adding}>
-          <option value="">Add parameter…</option>
-          {#each unused as p (p.id)}<option value={p.id}>{paramLabel(p.id)}</option>{/each}
-        </select>
-        <button onclick={addRow} disabled={!adding}>Add</button>
-        <button onclick={setFromSliders} title="Recompute the values from the current sliders (keeping each operation)"
-          >Set values from sliders</button
+        <Select
+          ariaLabel={t("timeline.expression.add.aria")}
+          bind:value={adding}
+          options={unusedOptions}
+          placeholder={t("timeline.expression.add.placeholder")}
+        />
+        <Button small onclick={addRow} disabled={!adding}>{t("timeline.expression.add.label")}</Button>
+        <TipButton small onclick={setFromSliders} tooltip={t("timeline.expression.fromSliders.tooltip")}
+          >{t("timeline.expression.fromSliders.label")}</TipButton
         >
       </div>
     </div>
   {:else}
-    <p class="muted empty">
-      No expressions yet. Move the sliders to make a face, then press “New from sliders”.
-    </p>
+    <p class="muted empty">{t("timeline.expression.empty")}</p>
   {/if}
 </div>
 
@@ -301,12 +309,7 @@ function label(e: Expression): string {
     border-bottom: 1px solid var(--border);
   }
   .inline {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-  }
-  input[type="number"] {
-    width: 72px;
+    display: inline;
   }
   input.name {
     width: 120px;
@@ -315,10 +318,6 @@ function label(e: Expression): string {
     width: 1px;
     align-self: stretch;
     background: var(--border);
-  }
-  button.on {
-    background: var(--accent);
-    color: white;
   }
   .table {
     flex: 1;

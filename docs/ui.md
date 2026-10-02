@@ -177,7 +177,7 @@ Bits UI を包むときの約束:
 | 説明付きのボタン | `TipButton` (`lib/ui/TipButton.svelte`) | `title` 属性の代わりに `Tooltip`。ショートカットがあれば `shortcut` (`Mod+Z`。実際に効くものだけ) |
 | タブの並び | `TabStrip` (`lib/ui/TabStrip.svelte`) / `Tabs` | 中身を部品が持てるなら `Tabs`。右の列のように、タブの状態が別々の表示の状態に分かれているときは `TabStrip` (APG の Tabs。矢印・Home・End、説明は Tooltip、見てほしい変化は `attention` で色・太さ・印と読み上げ) |
 | 失敗・知らせ | `Notice` / `showToast` | 操作の失敗はその場所に `Notice` (`danger`。閉じられる)。結果 (「保存しました」) は Toast。ヘッダーの操作の失敗はヘッダーの下の知らせの帯 (`FileMenu` の `.bands`) |
-| 本体のもの (モジュールのプロジェクト) | `BaseLock` | 欄をまとめて無効にし、直す場所を `role="note"` の文で示す |
+| 本体のもの (モジュールのプロジェクト) | `BaseLock` | 欄をまとめて無効にし、直す場所を `role="note"` の文で示す。`fieldset` の `disabled` は `<input>`・`<button>` にしか効かないので、`Slider` など中にそれらを持たない部品には `useBaseLock()` (`lib/ui/baseLock.ts`) の値を `disabled` に渡す |
 | 確かめ | `AlertDialog` | 取り消せない操作・保存していない変更を捨てる操作。同じボタンを 2 度押させる形にしない |
 | ダイアログ | `Dialog` | 見出しは `title`、説明は `description`、決定・取り消しは `actions`。Esc で閉じるときの意味 (「後で」など) を `onclose` で決める |
 | 文字の入力欄 | `<input type="text">` | `@ugoe/ui` に部品がまだ無い。ダイアログの中は `app.css` の `.ugoe-dialog input[type="text"]` で装う。名前は `<label for>` |

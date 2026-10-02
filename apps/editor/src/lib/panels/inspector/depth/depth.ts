@@ -2,6 +2,7 @@
 // (depth.test.ts で検査する)。深度の値を作るのはバックエンドのプリセット (apply_depth_preset) で、
 // ここではコマンドを組み立て、表示用に深度を読む。
 import type { ChildRef, Command, DepthPreset, Model } from "../../../generated/types";
+import { t } from "../../../i18n";
 import type { ElementRef } from "../../../selection.svelte";
 
 /** 深度を持てる要素 (メッシュかワープデフォーマ)。 */
@@ -48,9 +49,11 @@ export function depthRange(depth: readonly number[] | null): { min: number; max:
 /** 深度の範囲の説明 ("none"、"0 – 12 px" など)。 */
 export function describeDepth(depth: readonly number[] | null): string {
   const range = depthRange(depth);
-  if (!range) return "none";
+  if (!range) return t("inspector.depth.none");
   const f = (v: number) => String(Math.round(v * 100) / 100);
-  return range.min === range.max ? `${f(range.min)} px` : `${f(range.min)} – ${f(range.max)} px`;
+  return range.min === range.max
+    ? t("inspector.depth.value", { value: f(range.min) })
+    : t("inspector.depth.range", { min: f(range.min), max: f(range.max) });
 }
 
 export function setDepthCommand(target: ChildRef, depth: number[] | null): Command {

@@ -654,5 +654,860 @@
     "preview cache": "プレビューのキャッシュ",
     "finite": "有限の数",
     "finite and > 0": "0 より大きい有限の数"
+  },
+  "inspector": {
+    "title": "インスペクタ",
+    "heading": "{{kind}}: {{label}}",
+    "kind": {
+      "part": "パーツ",
+      "deformer": "デフォーマ",
+      "mesh": "メッシュ",
+      "parameter": "パラメータ"
+    },
+    "baseBadge": "本体",
+    "empty": "何も選んでいません (rev {{revision}})",
+    "avatarBaseHint": "アバタープロファイルは本体のモデルのもので、ここでは編集できません。本体のプロジェクトで編集してください。",
+    "mesh": {
+      "title": "メッシュ",
+      "summary": "{{name}} · {{vertices}} · {{triangles}}",
+      "vertices_other": "頂点 {{count, number}} 個",
+      "triangles_other": "三角形 {{count, number}} 個",
+      "texture": {
+        "label": "テクスチャ"
+      },
+      "blend": {
+        "label": "合成",
+        "normal": "通常",
+        "additive": "加算",
+        "multiply": "乗算"
+      },
+      "culling": {
+        "label": "裏面を描かない"
+      },
+      "maskOnly": {
+        "label": "マスク専用"
+      },
+      "masks": {
+        "title": "マスク",
+        "add": "追加",
+        "mesh": {
+          "aria": "マスク {{index}}"
+        },
+        "invert": "反転",
+        "remove": "マスクを外す"
+      },
+      "maskMode": {
+        "label": "重ね方",
+        "union": "和 (どれか)",
+        "intersection": "積 (すべて)"
+      }
+    },
+    "inference": {
+      "title": "推定",
+      "rederivedBy": "推定のセルは{{method}}で作り直します。",
+      "method": {
+        "label": "方法",
+        "additive": "加算合成",
+        "depthRotation": "深度からの回転",
+        "unknown": "不明な方法",
+        "option": {
+          "additive": "加算合成",
+          "depthRotation": "深度からの回転"
+        }
+      },
+      "angleScale": {
+        "label": "角度の倍率"
+      },
+      "pivotX": {
+        "label": "回転の中心 x"
+      },
+      "pivotY": {
+        "label": "回転の中心 y"
+      },
+      "pivotDepth": {
+        "label": "回転の中心の深度"
+      },
+      "yaw": {
+        "label": "左右 (yaw)"
+      },
+      "pitch": {
+        "label": "上下 (pitch)"
+      },
+      "axisNone": "(なし)",
+      "error": {
+        "notNumber": "{{field}}には数値を入れてください。",
+        "noAxis": "左右 (yaw) か上下 (pitch) のパラメータを選んでください。"
+      },
+      "apply": {
+        "label": "設定を適用",
+        "tooltip": "この格子の推定の設定を変え、推定のセルを作り直します"
+      },
+      "reset": {
+        "label": "元に戻す"
+      },
+      "infer": {
+        "label": "推定",
+        "tooltip": "格子の方法で作ったセルを作り直します (手で作ったセルは残します)"
+      },
+      "inferOverwrite": {
+        "label": "推定 (推定のセルを上書き)",
+        "tooltip": "ほかの方法で作ったセルも含め、推定のセルをすべて格子の方法で作り直します"
+      },
+      "selectedCells_other": "選んだセル {{count, number}} 個",
+      "currentCell": "今のセル",
+      "noCell": "セルがありません (格子でセルを選んでください)",
+      "markAuthored": {
+        "label": "手作りにする",
+        "tooltip": "このセルを今のまま残し、推定で上書きしないようにします"
+      },
+      "markDerived": {
+        "label": "推定にする",
+        "tooltip": "このセルを格子の方法で作り直せるようにします"
+      },
+      "mirror": {
+        "title": "ミラー",
+        "from": {
+          "label": "ミラー元"
+        },
+        "fromSelf": "{{element}} (自分自身、左 ↔ 右)",
+        "fromPartner": "{{element}} (対の相手)",
+        "axis": {
+          "label": "対称軸",
+          "placeholder": "既定"
+        },
+        "tolerance": {
+          "label": "許容距離",
+          "placeholder": "1 px"
+        },
+        "overwriteAuthored": {
+          "label": "手作りのセルも上書き"
+        },
+        "run": {
+          "label": "ミラー",
+          "tooltip": "元のキーフォームを反転して、この格子の推定のセルと、キーを足したときのままのセルに写します"
+        },
+        "rerunOverwrite": {
+          "label": "手作りのセルも上書きしてミラー",
+          "tooltip": "もう一度ミラーし、手作りのセルも置き換えます (Undo で戻せます)"
+        }
+      },
+      "partner": {
+        "title": "左右の対",
+        "label": "対の相手",
+        "none": "(なし、左右対称)",
+        "axis": {
+          "label": "対称軸",
+          "placeholder": "既定"
+        },
+        "set": {
+          "label": "対にする",
+          "tooltip": "2 つの要素を対にし (前の相手との対は外れます)、この要素の対称軸を設定します"
+        }
+      },
+      "source": {
+        "text": "ミラーのセルは {{from}} から写しています。",
+        "withOptions": "ミラーのセルは {{from}} から写しています ({{options}})。",
+        "separator": "、",
+        "itself": "{{element}} 自身",
+        "axis": "対称軸 {{axis}}",
+        "tolerance": "許容距離 {{tolerance}}"
+      },
+      "cells_other": "{{count, number}} 個のセル",
+      "report": {
+        "mirrored": "{{from}} から {{cells}}をミラーしました。",
+        "mirroredKept": "{{mirrored}}手作りの {{cells}}は上書きせずに残しました。",
+        "allAuthored": "何もミラーしませんでした: {{from}} が写る {{cells}}がすべて手作りです。手作りのセルは、上書きを選ばない限り残します。",
+        "nothing": "何もミラーしませんでした: {{from}} のセルが、この格子の書き込めるセルに写りません。"
+      },
+      "origin": {
+        "title": "{{name}}: {{description}}",
+        "derivedTitle": "{{name}}: {{method}}で作り直します",
+        "mirrorTitle": "{{name}}: {{source}} からミラー",
+        "mirrorNoSource": "{{name}}: ミラー元の記録がありません (作り直しません)",
+        "authored": {
+          "label": "手作り",
+          "description": "手で作った・直したセル。推定で上書きしません"
+        },
+        "additive": {
+          "label": "加算",
+          "description": "加算合成で推定したセル"
+        },
+        "depthRotation": {
+          "label": "深度の回転",
+          "description": "深度から回転して推定したセル"
+        },
+        "mirror": {
+          "label": "ミラー",
+          "description": "ミラー元から写したセル"
+        },
+        "derived": {
+          "label": "推定",
+          "description": "方法の記録が無い推定のセル。格子の方法で作り直します"
+        }
+      }
+    },
+    "rederive": {
+      "warning": "{{source}} から {{target}} へミラーし直せませんでした: {{detail}}。ミラーのセルは前の値のままです。",
+      "target": "{{kind}} {{id}}",
+      "kind": {
+        "part": "パーツ",
+        "mesh": "メッシュ",
+        "deformer": "デフォーマ",
+        "glue": "グルー"
+      },
+      "hint": "格子で「ミラー」をやり直すか、ミラー元を直してください。",
+      "dismiss": "閉じる"
+    },
+    "keyforms": {
+      "title": "キーフォーム",
+      "onCell": "セルの上: {{cell}}",
+      "noAxes": "(軸なし)",
+      "onlyCell": "唯一のセル",
+      "cellTooltip": "{{cell}} — {{origin}}",
+      "betweenKeys": "キーの間です。",
+      "moveToNearest": {
+        "label": "近いキーへ移る"
+      },
+      "key": {
+        "aria": "キー {{key}} へ移る"
+      },
+      "removeKey": {
+        "tooltip": "キー {{key}} を消す",
+        "tooltipLast": "キー {{key}} を消す (軸も消えます)"
+      },
+      "addKeyHere": {
+        "tooltip": "今の値にキーを足す"
+      },
+      "smooth": {
+        "label": "キーの間を曲線でつなぐ",
+        "description": "キーを通るなめらかな曲線で形を補間します (キーが 3 つ以上の軸)。不透明度・描画順・色は直線のままです。",
+        "unknown": "(不明な方式。直線として評価します)"
+      },
+      "newAxis": {
+        "aria": "新しい軸のパラメータ",
+        "placeholder": "軸を足す…"
+      },
+      "addKey": {
+        "label": "今の値にキーを足す"
+      },
+      "slice": "{{cell}} の断面を表示しています。",
+      "drawOrder": {
+        "label": "描画順",
+        "setAll": {
+          "label": "すべてのセルに設定",
+          "tooltip": "このメッシュのすべてのセルの描画順を設定します"
+        }
+      },
+      "hint": "セルを押すとそこへ移ります。Shift / Ctrl を押しながらで複数選べます。"
+    },
+    "deformer": {
+      "title": "デフォーマ",
+      "summary": {
+        "warp": "{{name}} · ワープ {{cols}}×{{rows}} · {{keyforms}} · 親 {{parent}}",
+        "rotation": "{{name}} · 回転 · {{keyforms}} · 親 {{parent}}"
+      },
+      "keyforms_other": "キーフォーム {{count, number}} 個",
+      "noParent": "(なし)",
+      "gizmoHint": "形はビューポートのギズモで編集します。",
+      "unwrap": {
+        "description": "子を見た目を保って親へ移し、このデフォーマを削除します",
+        "label": "包みを解く"
+      },
+      "wrap": {
+        "title": "デフォーマで包む",
+        "meshes_other": "メッシュ {{count, number}} 個",
+        "deformers_other": "デフォーマ {{count, number}} 個",
+        "parts_other": "パーツ {{count, number}} 個",
+        "summary": "{{items}} を選択中 · 子は見た目を保ちます (パラメータの既定値で)",
+        "summaryWithParts": "{{items}} を選択中 (パーツはいちばん外側のメッシュとデフォーマを包みます) · 子は見た目を保ちます (パラメータの既定値で)",
+        "name": {
+          "label": "名前",
+          "placeholder": "最初に選んだものから"
+        },
+        "rows": "行数",
+        "cols": "列数",
+        "warp": "ワープ",
+        "rotationOrigin": "原点: 選択の中心",
+        "rotation": "回転"
+      }
+    },
+    "staleRig": {
+      "title": "リグを提案し直してください",
+      "description": "この衣装のメッシュは、本体の変形を写したリグの提案を採用した後に編集されました (頂点・三角形・親)。そのため、本体の動きにぴったりとは付いていきません。",
+      "openAi": "AI タブを開く"
+    },
+    "avatar": {
+      "title": "アバタープロファイル",
+      "empty": "モデルにアバタープロファイルがありません。作ると、準拠のレベル・メタデータ・利用許諾を宣言できます。許諾は最も制限の強い値から始まります。",
+      "create": "アバタープロファイルを作る",
+      "level": "レベル",
+      "levelOption": "{{level}} — {{name}}",
+      "levelName": {
+        "basic": "基本",
+        "standard": "標準",
+        "expressive": "表現"
+      },
+      "none": "なし",
+      "meta": {
+        "title": "メタデータ",
+        "name": "名前",
+        "authors": "作者 (1 行に 1 人)",
+        "version": "版",
+        "copyright": "著作権の表示",
+        "contact": "連絡先",
+        "licenseUrl": "ライセンスの URL",
+        "references": "原作・参照 (1 行に 1 つ)",
+        "thumbnail": "サムネイル",
+        "thumbnailOption": "{{index}}: {{name}}",
+        "thirdPartyLicenses": "第三者のライセンス"
+      },
+      "permissions": {
+        "title": "利用許諾",
+        "avatar": "アバターとして使える人",
+        "commercial": "商用利用",
+        "credit": "クレジットの表記",
+        "modification": "改変",
+        "allow": "許すこと"
+      },
+      "permission": {
+        "onlyAuthor": "作者だけ",
+        "onlyLicensed": "許諾を受けた人だけ",
+        "everyone": "誰でも"
+      },
+      "commercial": {
+        "personalNonProfit": "個人の非営利",
+        "personalProfit": "個人の営利",
+        "corporation": "法人も"
+      },
+      "credit": {
+        "required": "必要",
+        "unnecessary": "不要"
+      },
+      "modification": {
+        "prohibited": "禁止",
+        "allow": "許可",
+        "allowRedistribution": "許可 (再配布も)"
+      },
+      "usage": {
+        "violent": "過度な暴力表現",
+        "sexual": "過度な性的表現",
+        "politicalOrReligious": "政治・宗教の目的",
+        "antisocialOrHate": "反社会的・憎悪の目的",
+        "redistribution": "再配布"
+      },
+      "hitAreas": {
+        "title": "標準の当たり判定",
+        "empty": "モデルに当たり判定がありません。",
+        "option": "{{id}} ({{mesh}})"
+      },
+      "remove": "アバタープロファイルを外す",
+      "check": {
+        "title": "準拠",
+        "noProfile": "アバタープロファイルがないので、どのレベルにも準拠していません。満たすのは{{satisfied}}です。",
+        "conforms": "{{claimed}}に準拠しています。満たすのは{{satisfied}}です。",
+        "errors_other": "{{claimed}}を名乗っていますが、エラーが {{count}} 件あります。満たすのは{{satisfied}}です。",
+        "noLevel": "レベルなし",
+        "level": "レベル {{level}} ({{name}})"
+      }
+    },
+    "depth": {
+      "title": "深度",
+      "summary": "{{points}} · {{depth}}",
+      "vertices_other": "頂点 {{count, number}} 個",
+      "controlPoints_other": "制御点 {{count, number}} 個",
+      "none": "なし",
+      "value": "{{value}} px",
+      "range": "{{min}} – {{max}} px",
+      "show": "ビューポートに表示",
+      "uniform": {
+        "label": "一様",
+        "apply": "すべてに設定"
+      },
+      "dome": {
+        "label": "ドームの頂",
+        "apply": "ドーム",
+        "tooltip": "基準の姿の外枠に内接する楕円の上で 0、中心で頂の値になるように深度を付けます"
+      },
+      "selected": {
+        "label": "選んだ点 ({{count}})",
+        "apply": "選んだ点に設定"
+      },
+      "pickHint": {
+        "mesh": "メッシュ編集モードで頂点を選んでください。",
+        "warp": "ギズモで制御点を選んでください。"
+      },
+      "clear": "深度を外す"
+    },
+    "drawClone": {
+      "title": "描画用の複製",
+      "cloneOf": "複製の元",
+      "description": "形は元と共有します。描画順と不透明度はここで、マスクはメッシュの節で、元と別に付けられます。",
+      "outOfSync": "元とずれています",
+      "resync": "合わせ直す",
+      "opacity": "不透明度 (このセル)",
+      "drawOrder": "描画順 (このセル)",
+      "betweenKeys": "キーの間です。このセルを編集するには、パラメータをキーの上に動かしてください。",
+      "clone": "複製",
+      "create": {
+        "label": "描画用の複製を作る",
+        "tooltip": "別の描画順やマスクのためにこのメッシュを複製します。複製はこのメッシュの形に付いていきます"
+      }
+    }
+  },
+  "viewport": {
+    "loading": "ビューポートを読み込んでいます…",
+    "screenshot": {
+      "label": "スクリーンショット",
+      "tooltip": "今の表示を PNG の画像で保存します (ギズモなどの重ね描きは写りません)",
+      "saved": "スクリーンショットを {{path}} に保存しました",
+      "failed": "スクリーンショットを保存できません: {{error}}",
+      "dialogTitle": "スクリーンショットを保存"
+    },
+    "fit": {
+      "label": "全体を表示"
+    },
+    "stopPhysics": {
+      "label": "物理を止める",
+      "tooltip": "物理のプレビューを止めて、編集の姿に戻します"
+    },
+    "editMesh": {
+      "label": "メッシュを編集",
+      "tooltip": "メッシュをダブルクリックしても入れます"
+    },
+    "moduleOutline": {
+      "label": "モジュールの輪郭",
+      "tooltip": "このモジュールのメッシュすべての輪郭を描き、下の本体のモデルと見分けます"
+    },
+    "baseNote": "本体のモデル: ここでは編集できません。本体のプロジェクトで編集してください。",
+    "meshEdit": {
+      "title": "メッシュ: {{mesh}}",
+      "retriangulate": "三角形を作り直す",
+      "deleteVertices": "頂点を消す",
+      "done": "完了",
+      "hint": "ドラッグ: 移動・範囲選択 · Shift: 追加 · Ctrl + クリック: 頂点を足す · Del: 消す · Esc: 抜ける",
+      "aria": "メッシュの編集"
+    },
+    "cell": {
+      "noAxes": "(軸なし)",
+      "selectAll": "すべて",
+      "notOnKey": "キーの上にありません。どのセルに書けばよいか決まらないので編集できません。",
+      "moveToNearestKey": "近いキーへ移る"
+    },
+    "form": {
+      "toggle": {
+        "label": "フォーム編集",
+        "tooltip": "今のセルのキーフォームを編集します"
+      },
+      "selectAll": {
+        "tooltip": "すべての点を選びます"
+      },
+      "selected": "{{count}} / {{total}} 個を選択",
+      "empty": "メッシュかデフォーマを選んでください"
+    },
+    "gizmo": {
+      "title": "{{kind}}: {{id}}",
+      "kind": {
+        "warp": "ワープ",
+        "rotation": "回転"
+      },
+      "originAllCells": {
+        "label": "原点: すべてのセル",
+        "tooltip": "すべてのセルで原点を動かし、子は今の位置に保ちます (Shift を押しながらでも同じ)"
+      },
+      "aria": "デフォーマのギズモ"
+    },
+    "glue": {
+      "readOnly": "ここでは読み取り専用です",
+      "addHint": "それぞれのメッシュの頂点をクリックして組にします",
+      "pendingHint": "次に {{mesh}} の頂点をクリックします",
+      "removeHint": "組の四角をクリックすると外します",
+      "withEsc": "{{hint}} · Esc: 終わる",
+      "aria": "グルーの頂点の組",
+      "pairs_other": "{{count}} 組",
+      "add": {
+        "label": "組を足す",
+        "tooltip": "それぞれのメッシュの頂点をクリックして組にします"
+      },
+      "remove": {
+        "label": "組を外す",
+        "tooltip": "組の四角をクリックして外します"
+      }
+    },
+    "light": {
+      "aria": "光源 {{index}}"
+    },
+    "collider": {
+      "end": "{{name}}: 端 {{end}}"
+    }
+  },
+  "tree": {
+    "view": {
+      "aria": "ツリー",
+      "parts": "パーツ",
+      "deformers": "デフォーマ"
+    },
+    "addPart": {
+      "label": "+ パーツ",
+      "tooltip": "選んでいるパーツの下にパーツを足します"
+    },
+    "rename": {
+      "label": "名前を変更",
+      "tooltip": "名前を変更"
+    },
+    "delete": {
+      "label": "削除",
+      "tooltip": "削除",
+      "title": "要素を削除しますか?",
+      "one": "{{kind}}「{{id}}」を削除しますか?",
+      "many_other": "{{count}} 個の要素を削除しますか?",
+      "confirm": "削除"
+    },
+    "empty": {
+      "noModel": "モデルがありません",
+      "parts": "パーツがありません",
+      "deformers": "デフォーマもメッシュもありません"
+    },
+    "kind": {
+      "part": "パーツ",
+      "deformer": "デフォーマ",
+      "mesh": "メッシュ",
+      "parameter": "パラメータ"
+    },
+    "element": "{{kind}}「{{name}}」",
+    "icon": {
+      "part": "パーツ",
+      "warp": "ワープデフォーマ",
+      "rotation": "回転デフォーマ",
+      "deformer": "デフォーマ (種類が不明)",
+      "mesh": "メッシュ",
+      "mask": "マスク専用のメッシュ"
+    },
+    "row": {
+      "collapse": "閉じる",
+      "expand": "開く",
+      "name": "名前",
+      "base": {
+        "label": "本体",
+        "tooltip": "本体のモデルのものです。モジュールのプロジェクトでは読み取り専用です"
+      },
+      "mask": {
+        "label": "マスク",
+        "tooltip": "マスク専用: 色としては描きません"
+      },
+      "hidden": {
+        "label": "非表示",
+        "tooltip": "パラメータが既定値のとき、不透明度が 0 です"
+      },
+      "drawOrder": "描画順"
+    },
+    "drop": {
+      "hint": "パーツ・デフォーマの上か、メッシュの間に落としてください",
+      "alreadyTop": "{{what}}はすでに最上位にあります",
+      "partInto": "パーツはほかのパーツの中にだけ移せます",
+      "cycle": "{{what}}を自分自身や子孫の中には移せません",
+      "alreadyIn": "{{what}}はすでに{{target}}の中にあります",
+      "alreadyUnder": "{{what}}はすでに{{target}}の下にあります",
+      "deformerNeedsPart": "デフォーマはパーツに属している必要があります",
+      "deformerInto": "デフォーマはパーツかほかのデフォーマの中にだけ移せます",
+      "meshNeedsPart": "メッシュはパーツに属している必要があります",
+      "meshInto": "メッシュはパーツかデフォーマの中にだけ移せます",
+      "notMovable": "{{kind}}はツリーの中で移せません",
+      "onlyMeshes": "並べ替えられるのはメッシュだけです",
+      "otherMesh": "並べ替えるには、ほかのメッシュの上に落としてください",
+      "drawOrder": "{{what}} (描画順 {{a}}) と{{target}} (描画順 {{b}}) は並べ替えられません。代わりに描画順を変えてください (インスペクタの描画順)",
+      "alreadyThere": "{{what}}はすでにそこにあります",
+      "alreadyThereAll": "すでにそこにあります",
+      "nothing": "移すものがありません",
+      "ontoMesh": "並べ替えるには、メッシュの上に落としてください",
+      "oneMesh": "並べ替えは 1 つのメッシュずつ行ってください",
+      "moveToPartFirst": "先にパーツの上に落として、メッシュを移してください",
+      "moveToDeformerFirst": "先にデフォーマの上に落として、メッシュを移してください",
+      "self": "{{what}}を自分自身の中には移せません"
+    },
+    "history": {
+      "move_other": "{{count}} 個の要素を移動",
+      "delete_other": "{{count}} 個の要素を削除"
+    }
+  },
+  "parameters": {
+    "title": "パラメータ",
+    "snap": {
+      "label": "キーに合わせる",
+      "tooltip": "選んでいる要素のパラメータを、いちばん近いキーに動かします"
+    },
+    "reset": {
+      "label": "リセット"
+    },
+    "add": {
+      "aria": "新しいパラメータ",
+      "moduleNote": "モジュールではパラメータを足せません。本体のプロジェクトで足し、スロットで公開してください。"
+    },
+    "field": {
+      "id": "ID",
+      "name": "名前",
+      "namePlaceholder": "(ID と同じ)",
+      "min": "最小",
+      "default": "既定",
+      "max": "最大"
+    },
+    "create": {
+      "label": "作成"
+    },
+    "cancel": {
+      "label": "キャンセル"
+    },
+    "apply": {
+      "label": "適用"
+    },
+    "delete": {
+      "label": "削除"
+    },
+    "edit": {
+      "tooltip": "{{id}} を編集",
+      "tooltipRelay": "{{id}} を編集 (中継用のパラメータ: トラッキングは書き込まず、ビューアでは隠れます)"
+    },
+    "relay": {
+      "tag": "中継",
+      "label": "中継用 (内部)",
+      "description": "中継用のパラメータは、物理のリグの間で値を渡します。トラッキングは書き込まず、ビューアでは既定で隠れます。"
+    },
+    "value": {
+      "aria": "{{name}} の値",
+      "tooltip": "{{min}} から {{max}} の値を入れて Enter を押します",
+      "notNumber": "「{{text}}」は数ではありません",
+      "outOfRange": "{{value}} は値域 ({{min}} から {{max}}) の外です"
+    },
+    "key": {
+      "base": "選んでいる要素は本体のモデルのものです。本体のプロジェクトで編集してください。",
+      "add": "{{target}} に {{value}} のキーを足す",
+      "remove": "{{target}} から {{key}} のキーを消す",
+      "marker": "キー {{key}}",
+      "goTo": "キー {{key}} へ移る",
+      "duplicate": "{{key}} はすでにキーです"
+    },
+    "baseHint": "パラメータは本体のモデルのもので、ここでは編集できません。本体のプロジェクトで編集してください。",
+    "history": {
+      "edit": "パラメータ {{id}} を編集"
+    },
+    "mirror": {
+      "label": "ミラー",
+      "tooltip": "反対側のパラメータ (キーフォームのミラーで使います)。対は両方のパラメータに設定されます。",
+      "none": "(なし)",
+      "itself": "自分自身 (符号を反転)",
+      "self": "自分自身",
+      "suggest": "{{name}} と対にする"
+    }
+  },
+  "timeline": {
+    "aria": "タイムライン",
+    "collapse": "タイムラインを畳む",
+    "expand": "タイムラインを広げる",
+    "tabs": {
+      "aria": "タイムラインのタブ",
+      "motions": "モーション ({{count, number}})",
+      "expressions": "表情 ({{count, number}})"
+    },
+    "unit": {
+      "seconds": "秒"
+    },
+    "name": {
+      "label": "名前"
+    },
+    "fadeIn": {
+      "label": "フェードイン"
+    },
+    "fadeOut": {
+      "label": "フェードアウト"
+    },
+    "delete": "削除",
+    "keyBatch_other": "{{count}} 個のパラメータにキーを打つ",
+    "keyBlocked": "キーを隣のキーより先へは動かせません。",
+    "track": {
+      "missing": "{{id}} (見つかりません)",
+      "partOpacity": "不透明度: {{id}}",
+      "effect": "エフェクト: {{id}}"
+    },
+    "segment": {
+      "linear": {
+        "label": "直線",
+        "description": "このキーに入る区間を直線にします"
+      },
+      "bezier": {
+        "label": "ベジェ",
+        "description": "このキーに入る区間を、取っ手の付いたベジェ曲線にします"
+      },
+      "stepped": {
+        "label": "ステップ",
+        "description": "このキーに入る区間を、このキーで切り替わる段にします"
+      },
+      "inverseStepped": {
+        "label": "逆ステップ",
+        "description": "このキーに入る区間を、前のキーの直後で切り替わる段にします"
+      }
+    },
+    "motion": {
+      "select": {
+        "aria": "モーション",
+        "empty": "(モーションがありません)"
+      },
+      "option": "{{name}} ({{duration}} 秒)",
+      "optionLoop": "{{name}} ({{duration}} 秒、ループ)",
+      "new": {
+        "label": "新しいモーション",
+        "tooltip": "新しいモーションを作ります"
+      },
+      "delete": {
+        "tooltip": "このモーションを削除します"
+      },
+      "nameInvalid": "モーションの名前には英数字と _・-・. を使ってください (. では始められません)。",
+      "duration": {
+        "label": "長さ"
+      },
+      "loop": {
+        "label": "ループ"
+      },
+      "events": {
+        "label": "イベント ({{count, number}})",
+        "aria": "イベント",
+        "time": {
+          "aria": "イベント {{index}} の時刻"
+        },
+        "value": {
+          "aria": "イベント {{index}} の値"
+        },
+        "remove": "イベント {{index}} を削除",
+        "add": "+ {{time}} 秒にイベント"
+      },
+      "play": {
+        "label": "再生",
+        "tooltip": "再生・停止"
+      },
+      "stop": {
+        "label": "停止"
+      },
+      "repeat": {
+        "label": "繰り返す",
+        "description": "再生を最初から繰り返します (モーションの「ループ」でも繰り返します)"
+      },
+      "previousFrame": "前のフレーム",
+      "nextFrame": "次のフレーム",
+      "time": {
+        "aria": "時刻"
+      },
+      "durationOf": "/ {{duration}} 秒",
+      "keyChanged": {
+        "label": "◆ 変えたものにキー",
+        "tooltip": "この時刻のモーションとスライダーの値が違うパラメータすべてにキーを打ちます",
+        "nothing": "この時刻のモーションと値が違うパラメータがありません。先にスライダーを動かしてください。"
+      },
+      "deleteKey": {
+        "label": "キーを削除",
+        "tooltip": "選んだキーを削除します"
+      },
+      "curves_other": "カーブ {{count, number}} 本",
+      "ruler": {
+        "tooltip": "クリックかドラッグで再生位置を移します (Shift: フレームに合わせない)"
+      },
+      "eventMark": "イベント: {{value}}",
+      "keyRow": {
+        "tooltip": "{{id}} に、{{time}} 秒の位置でスライダーの値のキーを打ちます"
+      },
+      "key": {
+        "tooltip": "{{label}}: {{time}} 秒で {{value}} (ドラッグで動かす)",
+        "aria": "{{label}} の {{time}} 秒のキー"
+      },
+      "empty": "モーションはまだありません。「新しいモーション」を押し、時刻ごとにスライダーのキーを打ってください。"
+    },
+    "curve": {
+      "keyTime": {
+        "label": "t",
+        "aria": "キーの時刻"
+      },
+      "keyValue": {
+        "label": "v",
+        "aria": "キーの値"
+      },
+      "segment": {
+        "aria": "このキーに入る区間"
+      },
+      "firstKey": "最初のキーの前には区間がありません。",
+      "hintKey": "キーをクリックすると編集できます。グラフをダブルクリックするとキーを足せます。",
+      "hintEmpty": "カーブはまだありません。◆ を押すか、グラフをダブルクリックしてキーを打ってください。",
+      "fade": {
+        "tooltip": "このカーブのフェード (空ならモーションのフェード)"
+      },
+      "fadeIn": {
+        "label": "イン"
+      },
+      "fadeOut": {
+        "label": "アウト"
+      },
+      "delete": {
+        "label": "カーブを削除",
+        "tooltip": "このカーブとそのキーをすべて削除します"
+      },
+      "plot": {
+        "aria": "{{label}} のカーブ"
+      },
+      "handleStart": {
+        "aria": "{{time}} に入る区間の始めの取っ手"
+      },
+      "handleEnd": {
+        "aria": "{{time}} に入る区間の終わりの取っ手"
+      },
+      "point": {
+        "aria": "{{time}} のキー: {{value}}"
+      }
+    },
+    "expression": {
+      "select": {
+        "aria": "表情",
+        "empty": "(表情がありません)"
+      },
+      "option": "{{name}} ({{count, number}})",
+      "new": {
+        "label": "スライダーから作る",
+        "tooltip": "既定値から動かしたスライダーで表情を作ります"
+      },
+      "newOp": {
+        "aria": "新しい表情の重ね方"
+      },
+      "nothingMoved": "先にスライダーを既定値から動かしてください。",
+      "nameInvalid": "表情の名前には英数字と _・-・. を使ってください (. では始められません)。",
+      "preview": {
+        "label": "プレビュー",
+        "tooltip": "今のスライダーに表情を重ねて見せます (もう一度押すと戻します)"
+      },
+      "endPreview": {
+        "label": "プレビューを終える"
+      },
+      "column": {
+        "parameter": "パラメータ",
+        "op": "重ね方",
+        "value": "値"
+      },
+      "row": {
+        "op": {
+          "aria": "{{parameter}} の重ね方"
+        },
+        "remove": "{{parameter}} を外す"
+      },
+      "missing": "{{id}} (見つかりません)",
+      "add": {
+        "aria": "足すパラメータ",
+        "placeholder": "パラメータを足す…",
+        "label": "追加"
+      },
+      "fromSliders": {
+        "label": "スライダーから値を作る",
+        "tooltip": "今のスライダーから値を作り直します (重ね方は保ちます)"
+      },
+      "empty": "表情はまだありません。スライダーを動かして顔を作り、「スライダーから作る」を押してください。",
+      "op": {
+        "add": "加算",
+        "multiply": "乗算",
+        "overwrite": "上書き"
+      }
+    }
   }
 }

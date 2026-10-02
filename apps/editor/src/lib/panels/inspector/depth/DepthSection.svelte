@@ -7,9 +7,12 @@
   - 「Show in viewport」で、ビューポートに点を深度の色 (手前が赤、奥が青) で重ねる (tools/depth/DepthOverlay.svelte)。
 -->
 <script lang="ts">
+import { Button, Checkbox, NumberField } from "@ugoe/ui";
 import type { EditorDocument } from "../../../document.svelte";
+import { t } from "../../../i18n";
 import type { Command, Model } from "../../../ipc";
 import type { Selection } from "../../../selection.svelte";
+import TipButton from "../../../ui/TipButton.svelte";
 import type { ViewportController } from "../../../viewport/controller.svelte";
 import {
   depthElement,
@@ -37,9 +40,9 @@ const model = $derived.by((): Model | null => {
 });
 const element = $derived(model ? depthElement(model, selection.primary) : null);
 
-let uniform = $state<number | null>(0);
-let peak = $state<number | null>(20);
-let pointValue = $state<number | null>(10);
+let uniform = $state(0);
+let peak = $state(20);
+let pointValue = $state(10);
 let busy = $state(false);
 
 /** 選んだ点 (メッシュの頂点・ワープの制御点)。 */
@@ -50,8 +53,8 @@ const picked = $derived.by((): number[] => {
 });
 const pickHint = $derived(
   element?.kind === "mesh"
-    ? "Select vertices in mesh edit mode."
-    : "Select control points with the gizmo.",
+    ? t("inspector.depth.pickHint.mesh")
+    : t("inspector.depth.pickHint.warp"),
 );
 
 async function send(command: Command | null): Promise<void> {
@@ -77,6 +80,8 @@ function applyDome(): void {
   }
 }
 
+const ids = $props.id();
+
 function applyPoints(): void {
   const value = finiteValue(pointValue);
   if (element && value !== null) void send(pointsCommand(element, picked, value));
@@ -85,43 +90,48 @@ function applyPoints(): void {
 
 {#if element}
   <section>
-    <h3>Depth</h3>
+    <h3>{t("inspector.depth.title")}</h3>
     <p class="muted">
-      {element.points}
-      {element.kind === "mesh" ? "vertices" : "control points"} · {describeDepth(element.depth)}
+      {t("inspector.depth.summary", {
+        points:
+          element.kind === "mesh"
+            ? t("inspector.depth.vertices", { count: element.points })
+            : t("inspector.depth.controlPoints", { count: element.points }),
+        depth: describeDepth(element.depth),
+      })}
     </p>
-    <label class="check">
-      <input type="checkbox" bind:checked={viewport.showDepth} />
-      Show in viewport
-    </label>
+    <Checkbox label={t("inspector.depth.show")} bind:checked={viewport.showDepth} />
 
     <div class="settings">
       <div class="field">
-        <span>Uniform</span>
+        <span id="{ids}-uniform">{t("inspector.depth.uniform.label")}</span>
         <span class="row">
-          <input type="number" step="1" bind:value={uniform} aria-label="Uniform depth" />
-          <button disabled={busy || finiteValue(uniform) === null} onclick={applyUniform}>Set all</button>
-        </span>
-      </div>
-      <div class="field">
-        <span>Dome peak</span>
-        <span class="row">
-          <input type="number" step="1" bind:value={peak} aria-label="Dome peak" />
-          <button
-            disabled={busy || finiteValue(peak) === null}
-            onclick={applyDome}
-            title="Depth rises from 0 on the ellipse inscribed in the rest-pose bounds to the peak at its center"
-            >Dome</button
+          <NumberField labelledby="{ids}-uniform" size={4} bind:value={uniform} />
+          <Button small disabled={busy || finiteValue(uniform) === null} onclick={applyUniform}
+            >{t("inspector.depth.uniform.apply")}</Button
           >
         </span>
       </div>
       <div class="field">
-        <span>Selected ({picked.length})</span>
+        <span id="{ids}-peak">{t("inspector.depth.dome.label")}</span>
         <span class="row">
-          <input type="number" step="1" bind:value={pointValue} aria-label="Selected points depth" />
-          <button
+          <NumberField labelledby="{ids}-peak" size={4} bind:value={peak} />
+          <TipButton
+            small
+            disabled={busy || finiteValue(peak) === null}
+            onclick={applyDome}
+            tooltip={t("inspector.depth.dome.tooltip")}>{t("inspector.depth.dome.apply")}</TipButton
+          >
+        </span>
+      </div>
+      <div class="field">
+        <span id="{ids}-points">{t("inspector.depth.selected.label", { count: picked.length })}</span>
+        <span class="row">
+          <NumberField labelledby="{ids}-points" size={4} bind:value={pointValue} />
+          <Button
+            small
             disabled={busy || picked.length === 0 || finiteValue(pointValue) === null}
-            onclick={applyPoints}>Set selected</button
+            onclick={applyPoints}>{t("inspector.depth.selected.apply")}</Button
           >
         </span>
       </div>
@@ -130,42 +140,32 @@ function applyPoints(): void {
       <p class="muted hint">{pickHint}</p>
     {/if}
     <span class="row">
-      <button
+      <Button
+        small
         disabled={busy || element.depth === null}
-        onclick={() => element && send(setDepthCommand(element.target, null))}>Clear depth</button
+        onclick={() => element && send(setDepthCommand(element.target, null))}
+        >{t("inspector.depth.clear")}</Button
       >
     </span>
   </section>
 {/if}
 
 <style>
-h3 {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-}
-
 p {
-  margin: 4px 0;
+  margin: var(--ugoe-space-2) 0;
 }
 
 .settings {
   display: grid;
-  gap: 4px;
-  margin: 6px 0;
+  gap: var(--ugoe-space-2);
+  margin: var(--ugoe-space-3) 0;
 }
 
 .settings .field {
   display: grid;
-  grid-template-columns: 7em 1fr;
+  grid-template-columns: minmax(5em, auto) 1fr;
   align-items: center;
-  gap: 4px;
-}
-
-.settings input[type="number"] {
-  width: 4.5em;
-  min-width: 0;
+  gap: var(--ugoe-space-2);
 }
 
 .field .row {
@@ -173,21 +173,15 @@ p {
   margin: 0;
 }
 
-.check {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
 .row {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--ugoe-space-2);
   align-items: center;
-  margin: 4px 0;
+  margin: var(--ugoe-space-2) 0;
 }
 
 .hint {
-  font-size: 11px;
+  font-size: var(--ugoe-font-size-sm);
 }
 </style>

@@ -12,6 +12,7 @@
 -->
 <script lang="ts">
 import type { EditorDocument } from "../../document.svelte";
+import { t } from "../../i18n";
 import type { Selection } from "../../selection.svelte";
 import {
   type Box,
@@ -188,7 +189,7 @@ function point(i: number): [number, number] {
   bind:this={svg}
   class="tool"
   role="application"
-  aria-label="Mesh editor"
+  aria-label={t("viewport.meshEdit.aria")}
   onpointerdown={onPointerDown}
   onpointermove={onPointerMove}
   onpointerup={onPointerUp}

@@ -4,9 +4,12 @@
   左右の対の設定を行う。操作はすべて Command を送るだけ (inference.ts で組み立てる)。
 -->
 <script lang="ts">
+import { Button, Checkbox, NumberField, Select } from "@ugoe/ui";
 import type { EditorDocument } from "../../../document.svelte";
+import { t } from "../../../i18n";
 import type { Command, KeyformTarget } from "../../../ipc";
 import type { Selection } from "../../../selection.svelte";
+import TipButton from "../../../ui/TipButton.svelte";
 import type { ViewportController } from "../../../viewport/controller.svelte";
 import { currentCell, editablePoints, elementGrid, parseModel } from "../keyforms/keyforms";
 import { cellSelection } from "./cellSelection.svelte";
@@ -128,6 +131,35 @@ async function mirror(overwrite: boolean) {
   mirrorResult = result ? describeMirrorReport(result, label) : null;
 }
 
+/** 選択欄の「なし」(Select の値は空にできないので、ID に使わない文字で表す)。 */
+const NONE = ":none";
+const ids = $props.id();
+
+const methodOptions = $derived([
+  { value: "additive" as const, label: t("inspector.inference.method.option.additive") },
+  {
+    value: "depth_rotation" as const,
+    label: t("inspector.inference.method.option.depthRotation"),
+    disabled: !canRotate && form.method !== "depth_rotation",
+  },
+]);
+const axisOptions = $derived([
+  { value: NONE, label: t("inspector.inference.axisNone") },
+  ...bindings.map((b) => ({ value: b.parameter, label: nameOf(b.parameter) })),
+]);
+const choiceOptions = $derived(choices.map((c, i) => ({ value: String(i), label: c.label })));
+const partnerOptions = $derived([
+  { value: NONE, label: t("inspector.inference.partner.none") },
+  ...partners.map((p) => ({ value: p.id, label: p.label })),
+]);
+const markStatus = $derived(
+  selected.length > 0
+    ? t("inspector.inference.selectedCells", { count: selected.length })
+    : current
+      ? t("inspector.inference.currentCell")
+      : t("inspector.inference.noCell"),
+);
+
 function finiteOrNull(value: number | null): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -135,86 +167,107 @@ function finiteOrNull(value: number | null): number | null {
 
 {#if element}
   <section>
-    <h3>Inference</h3>
-    <p class="muted">Derived cells are re-derived by {methodName(inference)}.</p>
+    <h3>{t("inspector.inference.title")}</h3>
+    <p class="muted">{t("inspector.inference.rederivedBy", { method: methodName(inference) })}</p>
 
     <div class="settings">
-      <label>
-        Method
-        <select bind:value={form.method}>
-          <option value="additive">Additive blending</option>
-          <option value="depth_rotation" disabled={!canRotate && form.method !== "depth_rotation"}>
-            Depth rotation
-          </option>
-        </select>
-      </label>
+      <div class="ed-field">
+        <span id="{ids}-method">{t("inspector.inference.method.label")}</span>
+        <Select
+          labelledby="{ids}-method"
+          value={form.method}
+          options={methodOptions}
+          onchange={(v) => (form.method = v)}
+        />
+      </div>
       {#if form.method === "depth_rotation"}
-        <label>Angle scale <input type="number" step="any" bind:value={form.angleScale} /></label>
-        <label>Pivot x <input type="number" step="any" bind:value={form.pivotX} /></label>
-        <label>Pivot y <input type="number" step="any" bind:value={form.pivotY} /></label>
-        <label>Pivot depth <input type="number" step="any" bind:value={form.pivotDepth} /></label>
-        <label>
-          Yaw
-          <select bind:value={form.yaw}>
-            <option value="">(none)</option>
-            {#each bindings as b (b.parameter)}<option value={b.parameter}>{nameOf(b.parameter)}</option>{/each}
-          </select>
-        </label>
-        <label>
-          Pitch
-          <select bind:value={form.pitch}>
-            <option value="">(none)</option>
-            {#each bindings as b (b.parameter)}<option value={b.parameter}>{nameOf(b.parameter)}</option>{/each}
-          </select>
-        </label>
+        <div class="ed-field">
+          <span id="{ids}-scale">{t("inspector.inference.angleScale.label")}</span>
+          <NumberField labelledby="{ids}-scale" step={0.1} decimals={4} bind:value={form.angleScale} />
+        </div>
+        <div class="ed-field">
+          <span id="{ids}-px">{t("inspector.inference.pivotX.label")}</span>
+          <NumberField labelledby="{ids}-px" step={1} decimals={4} bind:value={form.pivotX} />
+        </div>
+        <div class="ed-field">
+          <span id="{ids}-py">{t("inspector.inference.pivotY.label")}</span>
+          <NumberField labelledby="{ids}-py" step={1} decimals={4} bind:value={form.pivotY} />
+        </div>
+        <div class="ed-field">
+          <span id="{ids}-pd">{t("inspector.inference.pivotDepth.label")}</span>
+          <NumberField labelledby="{ids}-pd" step={0.1} decimals={4} bind:value={form.pivotDepth} />
+        </div>
+        <div class="ed-field">
+          <span id="{ids}-yaw">{t("inspector.inference.yaw.label")}</span>
+          <Select
+            labelledby="{ids}-yaw"
+            value={form.yaw || NONE}
+            options={axisOptions}
+            onchange={(v) => (form.yaw = v === NONE ? "" : v)}
+          />
+        </div>
+        <div class="ed-field">
+          <span id="{ids}-pitch">{t("inspector.inference.pitch.label")}</span>
+          <Select
+            labelledby="{ids}-pitch"
+            value={form.pitch || NONE}
+            options={axisOptions}
+            onchange={(v) => (form.pitch = v === NONE ? "" : v)}
+          />
+        </div>
       {/if}
       {#if error && edited}<p class="error">{error}</p>{/if}
       <span class="row">
-        <button
+        <TipButton
+          small
           disabled={!edited || error !== null}
-          title="Set this grid's inference settings and re-derive its derived cells"
+          tooltip={t("inspector.inference.apply.tooltip")}
           onclick={() => send(setInferenceCommand(element.target, inferenceFromForm(form)))}
-          >Apply settings</button
+          >{t("inspector.inference.apply.label")}</TipButton
         >
         {#if edited}
-          <button onclick={() => (form = inferenceForm(inference, bindings, defaultPivot))}>Reset</button>
+          <Button small onclick={() => (form = inferenceForm(inference, bindings, defaultPivot))}
+            >{t("inspector.inference.reset.label")}</Button
+          >
         {/if}
       </span>
     </div>
 
     <span class="row">
-      <button
-        title="Re-derive the cells made by the grid's method (authored cells are kept)"
-        onclick={() => send(inferCommand(element.target, false))}>Infer</button
+      <TipButton
+        small
+        tooltip={t("inspector.inference.infer.tooltip")}
+        onclick={() => send(inferCommand(element.target, false))}
+        >{t("inspector.inference.infer.label")}</TipButton
       >
-      <button
-        title="Re-derive every derived cell with the grid's method, including cells made by other methods"
-        onclick={() => send(inferCommand(element.target, true))}>Infer (overwrite derived)</button
+      <TipButton
+        small
+        tooltip={t("inspector.inference.inferOverwrite.tooltip")}
+        onclick={() => send(inferCommand(element.target, true))}
+        >{t("inspector.inference.inferOverwrite.label")}</TipButton
       >
     </span>
 
     <span class="row">
-      <span class="muted">
-        {selected.length > 0
-          ? `${selected.length} selected cell${selected.length === 1 ? "" : "s"}`
-          : current
-            ? "Current cell"
-            : "No cell (select cells in the grid)"}
-      </span>
-      <button
+      <span class="muted">{markStatus}</span>
+      <TipButton
+        small
         disabled={markCells.length === 0}
-        title="Keep these cells as they are; inference will not overwrite them"
-        onclick={() => send(markCommand(element.target, markCells, "authored"))}>Mark authored</button
+        tooltip={t("inspector.inference.markAuthored.tooltip")}
+        onclick={() => send(markCommand(element.target, markCells, "authored"))}
+        >{t("inspector.inference.markAuthored.label")}</TipButton
       >
-      <button
+      <TipButton
+        small
         disabled={markCells.length === 0}
-        title="Let inference re-derive these cells with the grid's method"
-        onclick={() => send(markCommand(element.target, markCells, "derived"))}>Mark derived</button
+        tooltip={t("inspector.inference.markDerived.tooltip")}
+        onclick={() => send(markCommand(element.target, markCells, "derived"))}
+        >{t("inspector.inference.markDerived.label")}</TipButton
       >
     </span>
 
     {#if choices.length > 0}
-      <h4>Mirror</h4>
+      <h4>{t("inspector.inference.mirror.title")}</h4>
       {#if grid?.mirror_source}
         <p class="source">
           {describeMirrorSource(grid.mirror_source, element.target.id, (id) =>
@@ -223,58 +276,90 @@ function finiteOrNull(value: number | null): number | null {
         </p>
       {/if}
       <div class="settings">
-        <label>
-          Mirror from
-          <select bind:value={mirrorFrom}>
-            {#each choices as choice, i (choice.label)}<option value={i}>{choice.label}</option>{/each}
-          </select>
+        <div class="ed-field">
+          <span id="{ids}-from">{t("inspector.inference.mirror.from.label")}</span>
+          <Select
+            labelledby="{ids}-from"
+            value={String(mirrorFrom)}
+            options={choiceOptions}
+            onchange={(v) => (mirrorFrom = Number(v))}
+          />
+        </div>
+        <!-- 空欄 (既定) に戻せるよう、空にできる数値の欄は標準の入力欄のまま -->
+        <label class="ed-field">
+          <span>{t("inspector.inference.mirror.axis.label")}</span>
+          <input
+            type="number"
+            step="any"
+            placeholder={t("inspector.inference.mirror.axis.placeholder")}
+            bind:value={mirrorAxis}
+          />
         </label>
-        <label>Axis <input type="number" step="any" placeholder="default" bind:value={mirrorAxis} /></label>
-        <label>
-          Tolerance
-          <input type="number" step="any" min="0" placeholder="1 px" bind:value={mirrorTolerance} />
+        <label class="ed-field">
+          <span>{t("inspector.inference.mirror.tolerance.label")}</span>
+          <input
+            type="number"
+            step="any"
+            min="0"
+            placeholder={t("inspector.inference.mirror.tolerance.placeholder")}
+            bind:value={mirrorTolerance}
+          />
         </label>
-        <label class="check"><input type="checkbox" bind:checked={overwriteAuthored} /> Overwrite authored cells</label>
+        <Checkbox
+          label={t("inspector.inference.mirror.overwriteAuthored.label")}
+          bind:checked={overwriteAuthored}
+        />
         <span class="row">
-          <button
+          <TipButton
+            small
             disabled={!chosen}
-            title="Flip the source's keyforms into this grid's derived cells and the cells still left as they were when their key was added"
-            onclick={() => mirror(overwriteAuthored)}>Mirror</button
+            tooltip={t("inspector.inference.mirror.run.tooltip")}
+            onclick={() => mirror(overwriteAuthored)}>{t("inspector.inference.mirror.run.label")}</TipButton
           >
         </span>
         {#if mirrorResult}
           <p class="result" class:empty={mirrorResult.overwrite} role="status">{mirrorResult.text}</p>
           {#if mirrorResult.overwrite}
             <span class="row">
-              <button
-                title="Mirror again and replace the authored cells too (Undo restores them)"
-                onclick={() => mirror(true)}>Overwrite authored cells and mirror</button
+              <TipButton
+                small
+                tooltip={t("inspector.inference.mirror.rerunOverwrite.tooltip")}
+                onclick={() => mirror(true)}
+                >{t("inspector.inference.mirror.rerunOverwrite.label")}</TipButton
               >
             </span>
           {/if}
         {/if}
       </div>
 
-      <h4>Mirror partner</h4>
+      <h4>{t("inspector.inference.partner.title")}</h4>
       <div class="settings">
-        <label>
-          Partner
-          <select bind:value={partnerInput}>
-            <option value="">(none, symmetric)</option>
-            {#each partners as p (p.id)}<option value={p.id}>{p.label}</option>{/each}
-          </select>
-        </label>
-        <label>
-          Mirror axis
-          <input type="number" step="any" placeholder="default" bind:value={pairAxisInput} />
+        <div class="ed-field">
+          <span id="{ids}-partner">{t("inspector.inference.partner.label")}</span>
+          <Select
+            labelledby="{ids}-partner"
+            value={partnerInput || NONE}
+            options={partnerOptions}
+            onchange={(v) => (partnerInput = v === NONE ? "" : v)}
+          />
+        </div>
+        <label class="ed-field">
+          <span>{t("inspector.inference.partner.axis.label")}</span>
+          <input
+            type="number"
+            step="any"
+            placeholder={t("inspector.inference.partner.axis.placeholder")}
+            bind:value={pairAxisInput}
+          />
         </label>
         <span class="row">
-          <button
+          <TipButton
+            small
             disabled={!pairEdited}
-            title="Pair both elements (their previous partners are unpaired) and set this element's mirror axis"
+            tooltip={t("inspector.inference.partner.set.tooltip")}
             onclick={() =>
               send(setMirrorPairCommand(element.target, partnerInput || null, finiteOrNull(pairAxisInput)))}
-            >Set partner</button
+            >{t("inspector.inference.partner.set.label")}</TipButton
           >
         </span>
       </div>
@@ -289,65 +374,65 @@ function finiteOrNull(value: number | null): number | null {
 {/if}
 
 <style>
-h3,
 h4 {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-}
-
-h4 {
-  margin: 12px 0 4px;
+  margin: var(--ugoe-space-4) 0 var(--ugoe-space-2);
+  font-size: var(--ugoe-font-size-sm);
+  font-weight: var(--ugoe-font-weight-strong);
+  color: var(--ugoe-color-text-muted);
 }
 
 p {
-  margin: 4px 0;
+  margin: var(--ugoe-space-2) 0;
 }
 
 .settings {
   display: grid;
-  gap: 4px;
-  margin: 6px 0;
+  gap: var(--ugoe-space-2);
+  margin: var(--ugoe-space-3) 0;
 }
 
-.settings label {
-  display: grid;
-  grid-template-columns: 7em minmax(0, 1fr);
-  align-items: center;
-  gap: 4px;
+.settings .ed-field {
+  margin: 0;
 }
 
-.settings label.check {
-  display: flex;
-}
-
-.settings input[type="number"],
-.settings select {
+.settings input[type="number"] {
+  box-sizing: border-box;
   width: 100%;
   min-width: 0;
+  min-height: var(--ugoe-control-height);
+  padding: 0 var(--ugoe-space-2);
+  border: 1px solid var(--ugoe-color-control-border);
+  border-radius: var(--ugoe-radius-md);
+  background: var(--ugoe-color-surface);
+  color: var(--ugoe-color-text);
+  font: inherit;
+}
+
+.settings input[type="number"]:focus-visible {
+  outline: var(--ugoe-focus-ring);
+  outline-offset: 1px;
 }
 
 .row {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--ugoe-space-2);
   align-items: center;
-  margin: 4px 0;
+  margin: var(--ugoe-space-2) 0;
 }
 
 .source {
-  font-size: 12px;
+  font-size: var(--ugoe-font-size-sm);
   color: #2563eb;
   overflow-wrap: anywhere;
 }
 
 .result {
-  font-size: 12px;
+  font-size: var(--ugoe-font-size-sm);
   overflow-wrap: anywhere;
 }
 
 .result.empty {
-  color: #d97706;
+  color: var(--ugoe-color-warning);
 }
 </style>

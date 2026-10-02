@@ -5,12 +5,16 @@
   親の付け替えは生のコマンドを送るだけで、見た目は保たない (見た目を保つ付け替えは T0607)。
 -->
 <script lang="ts">
+import { AlertDialog, Notice } from "@ugoe/ui";
 import { tick, untrack } from "svelte";
 import type { EditorDocument } from "../document.svelte";
 import { emptyTreeHint } from "../emptyState";
+import { t } from "../i18n";
 import type { EditCommand } from "../ipc";
 import { baseElements, isBaseElement } from "../moduleProject";
 import type { ElementRef, Selection } from "../selection.svelte";
+import TabStrip from "../ui/TabStrip.svelte";
+import TipButton from "../ui/TipButton.svelte";
 import {
   buildTree,
   exists,
@@ -163,6 +167,31 @@ function askDelete() {
   const refs = selection.items.filter((r) => r.kind !== "parameter");
   if (refs.length > 0) confirmDelete = refs;
 }
+
+/** 消す確かめの文 (1 つなら種類と名前、複数なら数)。 */
+const deleteDescription = $derived.by(() => {
+  const refs = confirmDelete;
+  if (!refs) return "";
+  const [first] = refs;
+  if (refs.length === 1 && first) {
+    return t("tree.delete.one", { kind: kindLabel(first.kind), id: first.id });
+  }
+  return t("tree.delete.many", { count: refs.length });
+});
+
+function kindLabel(kind: ElementRef["kind"]): string {
+  return {
+    part: t("tree.kind.part"),
+    deformer: t("tree.kind.deformer"),
+    mesh: t("tree.kind.mesh"),
+    parameter: t("tree.kind.parameter"),
+  }[kind];
+}
+
+const viewTabs = $derived([
+  { value: "parts" as const, label: t("tree.view.parts") },
+  { value: "deformers" as const, label: t("tree.view.deformers") },
+]);
 
 async function doDelete() {
   const refs = confirmDelete;
@@ -324,27 +353,38 @@ const rootDrop = $derived(
 );
 const dragHint = $derived.by(() => {
   const r = drag?.result;
-  if (!r) return drag ? "Drop onto a part, a deformer or between meshes" : null;
+  if (!r) return drag ? t("tree.drop.hint") : null;
   return r.ok ? null : r.noop ? null : r.reason;
 });
 </script>
 
 <div class="panel">
-  <div class="tabs" role="tablist" aria-label="Tree">
-    <button role="tab" aria-selected={view === "parts"} onclick={() => (view = "parts")}>Parts</button>
-    <button role="tab" aria-selected={view === "deformers"} onclick={() => (view = "deformers")}>
-      Deformers
-    </button>
-  </div>
+  <TabStrip
+    tabs={viewTabs}
+    value={view}
+    ariaLabel={t("tree.view.aria")}
+    onselect={(v) => (view = v)}
+  />
   <div class="toolbar">
-    <button onclick={addPart} disabled={!index} title="Add a part under the selected part">+ Part</button>
-    <button
+    <TipButton small onclick={addPart} disabled={!index} tooltip={t("tree.addPart.tooltip")}
+      >{t("tree.addPart.label")}</TipButton
+    >
+    <TipButton
+      small
       onclick={() => {
         if (cursor && rowIndex.has(cursor)) renaming = cursor;
       }}
       disabled={!cursor || !rowIndex.has(cursor)}
-      title="Rename (F2)">Rename</button>
-    <button onclick={askDelete} disabled={selection.items.length === 0} title="Delete (Del)">Delete</button>
+      tooltip={t("tree.rename.tooltip")}
+      shortcut="F2">{t("tree.rename.label")}</TipButton
+    >
+    <TipButton
+      small
+      onclick={askDelete}
+      disabled={selection.items.length === 0}
+      tooltip={t("tree.delete.tooltip")}
+      shortcut="Delete">{t("tree.delete.label")}</TipButton
+    >
   </div>
 
   <div
@@ -352,7 +392,7 @@ const dragHint = $derived.by(() => {
     class:drop-root={rootDrop}
     class:dragging={drag !== null}
     role="tree"
-    aria-label={view === "parts" ? "Parts" : "Deformers"}
+    aria-label={view === "parts" ? t("tree.view.parts") : t("tree.view.deformers")}
     aria-multiselectable="true"
     aria-activedescendant={cursor && rowIndex.has(cursor) ? rowId(cursor) : undefined}
     tabindex="0"
@@ -382,40 +422,39 @@ const dragHint = $derived.by(() => {
         onpointerdown={(e) => onRowPointerDown(row, e)}
       />
     {:else}
-      <p class="muted empty">
+      <p class="ed-hint empty">
         {!index
-          ? "No model"
+          ? t("tree.empty.noModel")
           : doc.empty
             ? emptyTreeHint()
             : view === "parts"
-              ? "No parts"
-              : "No deformers or meshes"}
+              ? t("tree.empty.parts")
+              : t("tree.empty.deformers")}
       </p>
     {/each}
   </div>
   <!-- メッセージは木の下に出す (上に出すと行がずれ、ドラッグ中の落とし先が変わるため)。 -->
   <div class="footer">
-    {#if confirmDelete}
-      <div class="confirm" role="alertdialog" aria-label="Confirm delete">
-        <span>
-          Delete {confirmDelete.length === 1
-            ? `${confirmDelete[0]?.kind} "${confirmDelete[0]?.id}"`
-            : `${confirmDelete.length} elements`}?
-        </span>
-        <!-- svelte-ignore a11y_autofocus -->
-        <button class="danger" autofocus onclick={doDelete}>Delete</button>
-        <button onclick={() => (confirmDelete = null)}>Cancel</button>
-      </div>
-    {/if}
     {#if message}
-      <p class:error={message.error} class="message" role="status">
+      <Notice tone={message.error ? "danger" : "info"} ondismiss={() => (message = null)}>
         {message.text}
-        <button class="dismiss" aria-label="Dismiss" onclick={() => (message = null)}>×</button>
-      </p>
+      </Notice>
     {/if}
     {#if dragHint}<p class="hint" class:error={drag?.result && !drag.result.ok}>{dragHint}</p>{/if}
   </div>
 </div>
+
+<AlertDialog
+  open={confirmDelete !== null}
+  title={t("tree.delete.title")}
+  description={deleteDescription}
+  confirmLabel={t("tree.delete.confirm")}
+  onconfirm={doDelete}
+  oncancel={() => {
+    confirmDelete = null;
+    treeEl?.focus();
+  }}
+/>
 
 <style>
 .panel {
@@ -423,26 +462,6 @@ const dragHint = $derived.by(() => {
   flex-direction: column;
   gap: 6px;
   min-height: 100%;
-}
-.tabs {
-  display: flex;
-  border-bottom: 1px solid var(--border);
-}
-.tabs button {
-  flex: 1;
-  padding: 4px;
-  border: none;
-  border-bottom: 2px solid transparent;
-  background: none;
-  color: var(--muted);
-  font: inherit;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-.tabs button[aria-selected="true"] {
-  color: var(--text);
-  border-bottom-color: var(--accent);
 }
 .toolbar {
   display: flex;
@@ -455,35 +474,6 @@ const dragHint = $derived.by(() => {
   flex-direction: column;
   gap: 4px;
   background: var(--panel);
-}
-.confirm {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-  padding: 6px;
-  border: 1px solid #dc2626;
-  border-radius: 4px;
-}
-.confirm span {
-  flex-basis: 100%;
-}
-.danger {
-  color: #dc2626;
-}
-.message {
-  display: flex;
-  gap: 4px;
-  align-items: flex-start;
-  margin: 0;
-  word-break: break-word;
-}
-.dismiss {
-  margin-left: auto;
-  padding: 0 4px;
-  border: none;
-  background: none;
-  color: inherit;
 }
 .tree {
   flex: 1;
@@ -507,10 +497,10 @@ const dragHint = $derived.by(() => {
 }
 .hint {
   margin: 0;
-  font-size: 11px;
+  font-size: var(--ugoe-font-size-sm);
   color: var(--muted);
 }
 .hint.error {
-  color: #dc2626;
+  color: var(--ugoe-color-danger);
 }
 </style>

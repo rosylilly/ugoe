@@ -4,6 +4,7 @@
 // ダイアログを差し替える。
 import { fileDialogs } from "../fileDialogs";
 import { joinPath, parentDir, withExtension } from "../filePaths";
+import { t } from "../i18n";
 import { ipc } from "../ipc";
 import type { ViewportController } from "./controller.svelte";
 import { encodePng, PNG_FILTER, screenshotFileName } from "./screenshot";
@@ -24,7 +25,7 @@ export async function saveViewportScreenshot(
   const dir = (status.path ? parentDir(status.path) : null) ?? (await dialogs.defaultDirectory());
   const name = screenshotFileName(status.name, new Date());
   const picked = await dialogs.saveFile({
-    title: "Save Screenshot",
+    title: t("viewport.screenshot.dialogTitle"),
     defaultPath: dir === null ? name : joinPath(dir, name),
     filters: [PNG_FILTER],
   });

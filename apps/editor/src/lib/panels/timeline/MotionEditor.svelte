@@ -4,9 +4,20 @@
   キーは「今のスライダーの値」で打つ (行の ◆・「Key changed」)。操作はすべて Command (docs/editor.md#タイムライン)。
 -->
 <script lang="ts">
+import {
+  Button,
+  type ButtonBaseProps,
+  Checkbox,
+  IconButton,
+  NumberField,
+  Popover,
+  Select,
+} from "@ugoe/ui";
 import { untrack } from "svelte";
 import type { EditorDocument } from "../../document.svelte";
+import { t } from "../../i18n";
 import type { Command, CurveTarget, Motion, MotionEvent, Point } from "../../ipc";
+import TipButton from "../../ui/TipButton.svelte";
 import type { ViewportController } from "../../viewport/controller.svelte";
 import CurveGraph from "./CurveGraph.svelte";
 import {
@@ -58,6 +69,10 @@ const ticks = $derived.by(() => {
 });
 let message = $state<string | null>(null);
 let renaming = $state("");
+/** 適用に失敗したとき、数値の欄を今の値に戻すために作り直す (数値の欄は確定した値を出したままになるので)。 */
+let fieldsKey = $state(0);
+const motionOptions = $derived(doc.motions.map((m) => ({ value: m.name, label: label(m) })));
+const ids = $props.id();
 
 /** 名前を変えている途中の新しい名前 (読み直しで選択が外れないように、先に覚えておく)。 */
 let renamedTo: string | null = null;
@@ -106,7 +121,7 @@ async function remove() {
 async function rename() {
   if (!motion || renaming === motion.name) return;
   if (!isValidName(renaming)) {
-    message = "Use letters, digits, _, - and . (not starting with .) in motion names.";
+    message = t("timeline.motion.nameInvalid");
     renaming = motion.name;
     return;
   }
@@ -118,22 +133,15 @@ async function rename() {
   }
 }
 
-async function setProperty(field: "duration" | "fade_in" | "fade_out", e: Event) {
+async function setProperty(field: "duration" | "fade_in" | "fade_out", value: number) {
   if (!motion) return;
-  const input = e.currentTarget as HTMLInputElement;
-  const value = input.valueAsNumber;
-  if (!Number.isFinite(value)) {
-    input.value = String(motion[field]);
-    return;
-  }
   if (!(await apply({ op: "set_motion_properties", name: motion.name, [field]: value }))) {
-    input.value = String(motion[field]);
+    fieldsKey++;
   }
 }
 
-async function setLooping(e: Event) {
+async function setLooping(looping: boolean) {
   if (!motion) return;
-  const looping = (e.currentTarget as HTMLInputElement).checked;
   await apply({ op: "set_motion_properties", name: motion.name, looping });
 }
 
@@ -166,7 +174,7 @@ async function keyChanged() {
     timeline.sample(timeline.time),
   );
   if (!command) {
-    message = "No parameter differs from the motion at this time. Move a slider first.";
+    message = t("timeline.motion.keyChanged.nothing");
     return;
   }
   await apply(command);
@@ -217,7 +225,7 @@ async function onKeyUp(e: PointerEvent) {
   const curve = motion?.curves.find((c) => targetKey(c.target) === targetKey(d.target));
   if (!curve || to === d.t) return;
   if (!canMoveKey(curve, d.t, to)) {
-    message = "A key cannot be moved past its neighbor.";
+    message = t("timeline.keyBlocked");
     return;
   }
   await moveKey(d.target, d.t, { t: to, v: d.v });
@@ -252,11 +260,6 @@ function onRulerMove(e: PointerEvent) {
   if (scrubbing) seekAt(e);
 }
 
-function onTimeChange(e: Event) {
-  const value = (e.currentTarget as HTMLInputElement).valueAsNumber;
-  if (Number.isFinite(value)) timeline.seek(value);
-}
-
 function stepFrame(n: number) {
   timeline.stop();
   timeline.seek(snapToFrame(timeline.time + n / FPS));
@@ -264,7 +267,8 @@ function stepFrame(n: number) {
 
 function onPanelKey(e: KeyboardEvent) {
   const target = e.target as HTMLElement;
-  if (target.closest("input, select, textarea")) return;
+  // 文字・数値の欄と選択の部品 (@ugoe/ui の Select・Checkbox はボタン) では、Space や矢印をその部品に任せる
+  if (target.closest('input, select, textarea, [role="combobox"], [role="checkbox"]')) return;
   if (e.key === "Delete" || e.key === "Backspace") {
     if (timeline.selectedKey) {
       e.preventDefault();
@@ -283,7 +287,7 @@ function onPanelKey(e: KeyboardEvent) {
 
 async function setEvents(events: MotionEvent[]) {
   if (!motion) return;
-  await apply({ op: "set_motion_events", motion: motion.name, events });
+  if (!(await apply({ op: "set_motion_events", motion: motion.name, events }))) fieldsKey++;
 }
 
 function addEvent() {
@@ -291,19 +295,9 @@ function addEvent() {
   setEvents([...motion.events, { t: timeline.time, value: "event" }]);
 }
 
-function editEvent(i: number, field: "t" | "value", e: Event) {
+function editEvent(i: number, change: Partial<MotionEvent>) {
   if (!motion) return;
-  const input = e.currentTarget as HTMLInputElement;
-  const events = motion.events.map((ev) => ({ ...ev }));
-  const event = events[i];
-  if (!event) return;
-  if (field === "t") {
-    if (!Number.isFinite(input.valueAsNumber)) return;
-    event.t = input.valueAsNumber;
-  } else {
-    event.value = input.value;
-  }
-  setEvents(events);
+  setEvents(motion.events.map((ev, j) => (j === i ? { ...ev, ...change } : ev)));
 }
 
 function removeEvent(i: number) {
@@ -312,129 +306,175 @@ function removeEvent(i: number) {
 }
 
 function label(m: Motion): string {
-  return `${m.name} (${m.duration}s${m.looping ? ", loop" : ""})`;
+  return m.looping
+    ? t("timeline.motion.optionLoop", { name: m.name, duration: m.duration })
+    : t("timeline.motion.option", { name: m.name, duration: m.duration });
 }
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="motion-editor" onkeydown={onPanelKey}>
   <div class="bar">
-    <select
-      aria-label="Motion"
+    <Select
+      ariaLabel={t("timeline.motion.select.aria")}
       value={timeline.motionName ?? ""}
-      onchange={(e) => timeline.select((e.currentTarget as HTMLSelectElement).value || null)}
+      options={motionOptions}
+      placeholder={t("timeline.motion.select.empty")}
+      onchange={(v) => timeline.select(v || null)}
+    />
+    <TipButton small onclick={create} tooltip={t("timeline.motion.new.tooltip")}
+      >{t("timeline.motion.new.label")}</TipButton
     >
-      {#if doc.motions.length === 0}<option value="">(no motions)</option>{/if}
-      {#each doc.motions as m (m.name)}
-        <option value={m.name}>{label(m)}</option>
-      {/each}
-    </select>
-    <button onclick={create} title="Create a new motion">New motion</button>
     {#if motion}
-      <button onclick={remove} title="Delete this motion">Delete</button>
+      <TipButton small onclick={remove} tooltip={t("timeline.motion.delete.tooltip")}
+        >{t("timeline.delete")}</TipButton
+      >
       <span class="sep"></span>
-      <label class="inline"
-        >Name <input
-          class="name"
-          bind:value={renaming}
-          onchange={rename}
-          onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
-        /></label
-      >
-      <label class="inline"
-        >Duration <input
-          type="number"
-          min="0.01"
-          step="0.1"
+      <label class="inline" for="{ids}-name">{t("timeline.name.label")}</label>
+      <input
+        id="{ids}-name"
+        class="name"
+        bind:value={renaming}
+        onchange={rename}
+        onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
+      />
+      {#key fieldsKey}
+        <NumberField
+          label={t("timeline.motion.duration.label")}
+          min={0.01}
+          step={0.1}
+          decimals={3}
+          unit={t("timeline.unit.seconds")}
           value={motion.duration}
-          onchange={(e) => setProperty("duration", e)}
-        />s</label
-      >
-      <label class="inline"
-        ><input type="checkbox" checked={motion.looping} onchange={setLooping} /> Loop</label
-      >
-      <label class="inline"
-        >Fade in <input
-          type="number"
-          min="0"
-          step="0.1"
+          onchange={(v) => setProperty("duration", v)}
+        />
+        <Checkbox
+          label={t("timeline.motion.loop.label")}
+          checked={motion.looping}
+          onchange={setLooping}
+        />
+        <NumberField
+          label={t("timeline.fadeIn.label")}
+          min={0}
+          step={0.1}
+          decimals={3}
+          unit={t("timeline.unit.seconds")}
           value={motion.fade_in}
-          onchange={(e) => setProperty("fade_in", e)}
-        />s</label
-      >
-      <label class="inline"
-        >Fade out <input
-          type="number"
-          min="0"
-          step="0.1"
+          onchange={(v) => setProperty("fade_in", v)}
+        />
+        <NumberField
+          label={t("timeline.fadeOut.label")}
+          min={0}
+          step={0.1}
+          decimals={3}
+          unit={t("timeline.unit.seconds")}
           value={motion.fade_out}
-          onchange={(e) => setProperty("fade_out", e)}
-        />s</label
-      >
-      <details class="events">
-        <summary>Events ({motion.events.length})</summary>
+          onchange={(v) => setProperty("fade_out", v)}
+        />
+      {/key}
+      <Popover label={t("timeline.motion.events.aria")} align="end">
+        {#snippet trigger(attrs)}
+          <Button small {...attrs as ButtonBaseProps}
+            >{t("timeline.motion.events.label", { count: motion.events.length })}</Button
+          >
+        {/snippet}
         <div class="popup">
-          {#each motion.events as ev, i (i)}
-            <div class="event">
-              <input
-                type="number"
-                min="0"
-                step="0.1"
-                value={ev.t}
-                aria-label="Event {i + 1} time"
-                onchange={(e) => editEvent(i, "t", e)}
-              />
-              <input value={ev.value} aria-label="Event {i + 1} value" onchange={(e) => editEvent(i, "value", e)} />
-              <button onclick={() => removeEvent(i)} aria-label="Remove event {i + 1}">×</button>
-            </div>
-          {/each}
-          <button onclick={addEvent}>+ Event at {timeline.time}s</button>
+          {#key fieldsKey}
+            {#each motion.events as ev, i (i)}
+              <div class="event">
+                <span class="visually-hidden" id="{ids}-event-{i}"
+                  >{t("timeline.motion.events.time.aria", { index: i + 1 })}</span
+                >
+                <NumberField
+                  min={0}
+                  step={0.1}
+                  decimals={3}
+                  value={ev.t}
+                  labelledby="{ids}-event-{i}"
+                  onchange={(v) => editEvent(i, { t: v })}
+                />
+                <input
+                  value={ev.value}
+                  aria-label={t("timeline.motion.events.value.aria", { index: i + 1 })}
+                  onchange={(e) => editEvent(i, { value: (e.currentTarget as HTMLInputElement).value })}
+                />
+                <IconButton
+                  small
+                  label={t("timeline.motion.events.remove", { index: i + 1 })}
+                  onclick={() => removeEvent(i)}>×</IconButton
+                >
+              </div>
+            {/each}
+          {/key}
+          <Button small onclick={addEvent}
+            >{t("timeline.motion.events.add", { time: timeline.time })}</Button
+          >
         </div>
-      </details>
+      </Popover>
     {/if}
   </div>
 
   {#if motion}
     <div class="bar transport">
-      <button
-        class="play"
+      <TipButton
+        small
         onclick={() => timeline.toggle()}
-        title="Play / stop (Space)"
-        aria-label={timeline.playing ? "Stop" : "Play"}>{timeline.playing ? "■ Stop" : "▶ Play"}</button
+        tooltip={t("timeline.motion.play.tooltip")}
+        shortcut="Space"
+        ><span aria-hidden="true">{timeline.playing ? "■" : "▶"}</span>
+        {timeline.playing ? t("timeline.motion.stop.label") : t("timeline.motion.play.label")}</TipButton
       >
-      <label class="inline" title="Repeat the playback from the start (the motion's Loop also repeats)"
-        ><input type="checkbox" bind:checked={timeline.repeat} /> Repeat</label
+      <span class="visually-hidden" id="{ids}-repeat">{t("timeline.motion.repeat.description")}</span>
+      <Checkbox
+        label={t("timeline.motion.repeat.label")}
+        describedby="{ids}-repeat"
+        bind:checked={timeline.repeat}
+      />
+      <IconButton
+        small
+        variant="secondary"
+        label={t("timeline.motion.previousFrame")}
+        shortcut="ArrowLeft"
+        onclick={() => stepFrame(-1)}>◀</IconButton
       >
-      <button onclick={() => stepFrame(-1)} aria-label="Previous frame" title="Previous frame (←)">◀</button>
-      <input
-        class="time"
-        type="number"
-        min="0"
+      <NumberField
+        min={0}
         max={motion.duration}
         step={1 / FPS}
+        decimals={3}
+        size={5}
         value={roundTime(timeline.time)}
-        aria-label="Time"
-        onchange={onTimeChange}
+        labelledby="{ids}-time"
+        onchange={(v) => timeline.seek(v)}
       />
-      <button onclick={() => stepFrame(1)} aria-label="Next frame" title="Next frame (→)">▶</button>
-      <span class="muted">/ {motion.duration}s</span>
-      <span class="sep"></span>
-      <button
-        onclick={keyChanged}
-        title="Key every parameter whose slider differs from the motion at this time"
-        >◆ Key changed</button
+      <span class="visually-hidden" id="{ids}-time">{t("timeline.motion.time.aria")}</span>
+      <IconButton
+        small
+        variant="secondary"
+        label={t("timeline.motion.nextFrame")}
+        shortcut="ArrowRight"
+        onclick={() => stepFrame(1)}>▶</IconButton
       >
-      <button
+      <span class="muted">{t("timeline.motion.durationOf", { duration: motion.duration })}</span>
+      <span class="sep"></span>
+      <TipButton small onclick={keyChanged} tooltip={t("timeline.motion.keyChanged.tooltip")}
+        >{t("timeline.motion.keyChanged.label")}</TipButton
+      >
+      <TipButton
+        small
         onclick={removeSelectedKey}
         disabled={!timeline.selectedKey}
-        title="Delete the selected key (Delete)">Delete key</button
+        tooltip={t("timeline.motion.deleteKey.tooltip")}
+        shortcut="Delete">{t("timeline.motion.deleteKey.label")}</TipButton
       >
       {#if message}<span class="error">{message}</span>{/if}
     </div>
 
     <div class="sheet">
       <div class="grid">
-        <div class="corner muted">{rows.filter((r) => r.curve).length} curves</div>
+        <div class="corner muted">
+          {t("timeline.motion.curves", { count: rows.filter((r) => r.curve).length })}
+        </div>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="ruler"
@@ -443,13 +483,14 @@ function label(m: Motion): string {
           onpointermove={onRulerMove}
           onpointerup={() => (scrubbing = false)}
           onpointercancel={() => (scrubbing = false)}
-          title="Click or drag to seek (Shift: without snapping to frames)"
+          title={t("timeline.motion.ruler.tooltip")}
         >
           {#each ticks as t (t)}
             <span class="tick" style:left="{timeToX(t, view)}px">{t}</span>
           {/each}
           {#each motion.events as ev, i (i)}
-            <span class="event-mark" style:left="{timeToX(ev.t, view)}px" title="Event: {ev.value}">▾</span>
+            <span class="event-mark" style:left="{timeToX(ev.t, view)}px" title={t("timeline.motion.eventMark", { value: ev.value })}>▾</span
+            >
           {/each}
           <span class="playhead" style:left="{timeToX(timeline.time, view)}px"></span>
         </div>
@@ -461,7 +502,8 @@ function label(m: Motion): string {
               <button
                 class="key"
                 onclick={() => keyRow(row.target)}
-                title="Key {row.target.id} at {timeline.time}s with its slider value">◆</button
+                title={t("timeline.motion.keyRow.tooltip", { id: row.target.id, time: timeline.time })}
+                >◆</button
               >
             {/if}
           </div>
@@ -479,8 +521,8 @@ function label(m: Motion): string {
                   class="diamond"
                   class:selected
                   style:left="{keyX(row.target, k)}px"
-                  title="{row.label}: {k.v} at {k.t}s (drag to move)"
-                  aria-label="Key {row.label} at {k.t}"
+                  title={t("timeline.motion.key.tooltip", { label: row.label, value: k.v, time: k.t })}
+                  aria-label={t("timeline.motion.key.aria", { label: row.label, time: k.t })}
                   onpointerdown={(e) => onKeyDown(e, row.target, k)}
                   onpointermove={onKeyMove}
                   onpointerup={onKeyUp}
@@ -497,7 +539,7 @@ function label(m: Motion): string {
       <CurveGraph {doc} {timeline} motion={motion} row={selectedRow} {view} onmessage={(m) => (message = m)} />
     {/if}
   {:else}
-    <p class="muted empty">No motions yet. Press “New motion”, then key the sliders over time.</p>
+    <p class="muted empty">{t("timeline.motion.empty")}</p>
   {/if}
 </div>
 
@@ -517,12 +559,7 @@ function label(m: Motion): string {
     border-bottom: 1px solid var(--border);
   }
   .inline {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-  }
-  input[type="number"] {
-    width: 56px;
+    display: inline;
   }
   input.name {
     width: 110px;
@@ -532,24 +569,23 @@ function label(m: Motion): string {
     align-self: stretch;
     background: var(--border);
   }
-  .events {
-    position: relative;
-  }
-  .events .popup {
-    position: absolute;
-    z-index: 10;
-    top: 100%;
-    right: 0;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    padding: 6px;
+  .popup {
     display: grid;
     gap: 4px;
     min-width: 260px;
   }
   .event {
     display: flex;
+    align-items: center;
     gap: 4px;
+  }
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   .sheet {
     flex: 1;

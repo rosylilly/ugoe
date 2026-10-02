@@ -1,12 +1,16 @@
 // 表情の作成とプレビューの、DOM に依存しない補助。Vitest で検査する (expressions.test.ts)。
 // 表情の式は docs/spec/motion.md#表情。
+import { t } from "../../i18n";
 import type { Expression, ExpressionOp, ExpressionParameter, Parameter } from "../../ipc";
 
-export const EXPRESSION_OPS: { op: ExpressionOp; label: string }[] = [
-  { op: "add", label: "Add" },
-  { op: "multiply", label: "Multiply" },
-  { op: "overwrite", label: "Overwrite" },
-];
+/** 表情の op の選択肢 (翻訳を通す。呼ぶたびに今の言語で作る)。 */
+export function expressionOps(): { value: ExpressionOp; label: string }[] {
+  return [
+    { value: "add", label: t("timeline.expression.op.add") },
+    { value: "multiply", label: t("timeline.expression.op.multiply") },
+    { value: "overwrite", label: t("timeline.expression.op.overwrite") },
+  ];
+}
 
 /**
  * 今の値から表情の値を作る。`add` は既定値との差、`multiply` は既定値との比 (既定値が 0 なら作れず null)、

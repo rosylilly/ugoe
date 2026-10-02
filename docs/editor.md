@@ -108,7 +108,7 @@
 | --- | --- |
 | キーの格子 (`inspector/keyforms/KeyformInspector.svelte`) | セルの記号と色で由来を示す: `A` authored (実線) / `+` additive / `R` depth_rotation / `M` mirror / `D` 方法の記録のない derived (推定のセルは方法の色の破線と薄い地)。凡例は `inspector/inference/OriginLegend.svelte`。ツールチップに、`derived` なら作り直す方法、`mirror` ならミラー元を出す。セルを押すとそのセルへ移動して選び、Shift / Ctrl / Cmd で押すと選択に加える (外す) |
 | 推定 (`inspector/inference/InferenceSection.svelte`) | 格子の推定の設定 (加算合成 / 深度からの回転の `angle_scale`・`pivot`・`pivot_depth`・`yaw`・`pitch`。回転はメッシュとワープだけ。回転の中心の初期値は基準のセルの点の外接矩形の中心) を編集して「Apply settings」(`set_keyform_inference`)。「Infer」「Infer (overwrite derived)」(`infer_keyforms` の `from_grid`)。選んだセル (なければ今のセル) の「Mark authored」「Mark derived」。メッシュ・デフォーマでは「Mirror from…」(元は対の相手と自分自身。軸・許容距離・authored の上書きは任意) と、記録されたミラー元 (`mirror_source`) の表示、「Mirror partner」で対と対称軸の設定 (`set_mirror_pair`)。「Mirror」の後は `MirrorReport` から結果 (`Mirrored 1 cell from 左目のワープ (Warp_2).` など) を出し、1 つも書かなければ理由 (残した `authored` のセルの数) と「Overwrite authored cells and mirror」を出す。要素の選択欄は表示名と ID (`左目のワープ (WarpLayer8)`) を出す |
-| 通知 (`inspector/inference/RederiveNotice.svelte`) | 適用したコマンドが返した `RederiveWarning` を、インスペクタの上に「Dismiss」で閉じるまで出す (同じ格子とミラー元の組は新しいもので置き換える) |
+| 通知 (`inspector/inference/RederiveNotice.svelte`) | 適用したコマンドが返した `RederiveWarning` を、インスペクタの上に、閉じるボタン (×) で閉じるまで出す (`Notice`) (同じ格子とミラー元の組は新しいもので置き換える) |
 
 - セルの選択 (`inspector/inference/cellSelection.svelte.ts`) は表示の状態で、Undo の対象にしません。別の格子のセルを選ぶと前の選択は消えます。
 
@@ -1652,7 +1652,7 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
   メッシュ編集の頂点・深度の点・光源の取っ手・違いの強調・提案の帯) と HUD。
 - 読み戻してから保存のダイアログ (`fileDialogs().saveFile`、フィルタ `.png`) を開くので、写るのは押したときの姿です。
   最初の場所はプロジェクトの隣 (保存していなければドキュメント、なければホーム)、既定の名前は `<プロジェクト名>-<年月日>-<時分秒>.png`。
-  拡張子が無ければ `.png` を付けます。保存した場所 (か失敗の理由) はビューポートの右上にしばらく出します。
+  拡張子が無ければ `.png` を付けます。保存した場所は Toast で知らせ、失敗の理由はビューポートの右上に閉じるまで出します (`Notice`。T0664)。
 - PNG への変換はフロントエンドの 2D canvas (`toBlob`) で行い、バックエンドの `write_png_file` (`src-tauri/src/screenshot.rs`) が
   書きます。バイト列は本文でそのまま送り、パスはヘッダー `x-ugoe-path` (`encodeURIComponent`) で渡します。絶対パス・拡張子 `.png`・
   中身が PNG (先頭の署名) のものだけを書きます。

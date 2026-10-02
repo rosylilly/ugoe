@@ -11,9 +11,11 @@
   オーバーレイの層は pointer-events: none なので、入力を受ける要素には pointer-events: auto を付ける。
 -->
 <script lang="ts">
-import { currentTheme } from "@ugoe/ui";
+import { Button, currentTheme, Notice, showToast } from "@ugoe/ui";
 import { type Snippet, untrack } from "svelte";
 import { errorText } from "../errors";
+import { t } from "../i18n";
+import TipButton from "../ui/TipButton.svelte";
 import type { ViewportController, ViewportModel } from "./controller.svelte";
 import { saveViewportScreenshot } from "./saveScreenshot";
 
@@ -33,15 +35,8 @@ let canvas = $state<HTMLCanvasElement>();
 let panning: { id: number; x: number; y: number } | null = null;
 /** スクリーンショットを保存している間 (ボタンを押せない)。 */
 let capturing = $state(false);
-/** 直近のスクリーンショットの結果 (保存した場所かエラー)。しばらくしたら消す。 */
-let shotNotice = $state<{ text: string; error: boolean } | null>(null);
-let shotNoticeTimer: ReturnType<typeof setTimeout> | undefined;
-
-function showShotNotice(text: string, error: boolean) {
-  shotNotice = { text, error };
-  clearTimeout(shotNoticeTimer);
-  shotNoticeTimer = setTimeout(() => (shotNotice = null), error ? 10000 : 5000);
-}
+/** 直近のスクリーンショットの失敗 (閉じるまで残す。保存した場所は Toast で出す)。 */
+let shotError = $state<string | null>(null);
 
 /** 今の表示を PNG で保存する (オーバーレイは写らない)。 */
 async function screenshot() {
@@ -49,9 +44,10 @@ async function screenshot() {
   capturing = true;
   try {
     const path = await saveViewportScreenshot(controller);
-    if (path !== null) showShotNotice(`Saved screenshot to ${path}`, false);
+    shotError = null;
+    if (path !== null) showToast(t("viewport.screenshot.saved", { path }), { tone: "success" });
   } catch (e) {
-    showShotNotice(`Cannot save the screenshot: ${errorText(e)}`, true);
+    shotError = t("viewport.screenshot.failed", { error: errorText(e) });
   } finally {
     capturing = false;
   }
@@ -142,17 +138,23 @@ function onPointerUp(e: PointerEvent) {
   <div class="hud">
     {#if controller.status !== "ready"}
       <span class={controller.status === "error" ? "error" : "muted"}>
-        {controller.message ?? "Loading viewport…"}
+        {controller.message ?? t("viewport.loading")}
       </span>
     {:else}
       <span class="muted">{controller.backend}</span>
     {/if}
-    <button onclick={() => void screenshot()} disabled={controller.status !== "ready" || capturing}
-      title="Save the current view as a PNG image (without gizmos and other overlays)">Screenshot</button>
-    <button onclick={() => controller.fit()}>Fit</button>
+    <TipButton
+      small
+      onclick={() => void screenshot()}
+      disabled={controller.status !== "ready" || capturing}
+      tooltip={t("viewport.screenshot.tooltip")}>{t("viewport.screenshot.label")}</TipButton
+    >
+    <Button small onclick={() => controller.fit()}>{t("viewport.fit.label")}</Button>
   </div>
-  {#if shotNotice}
-    <p class="shot-notice" class:error={shotNotice.error} role="status">{shotNotice.text}</p>
+  {#if shotError}
+    <div class="shot-notice">
+      <Notice tone="danger" ondismiss={() => (shotError = null)}>{shotError}</Notice>
+    </div>
   {/if}
 </div>
 
@@ -194,12 +196,7 @@ canvas {
   top: 40px;
   right: 8px;
   max-width: calc(100% - 16px);
-  margin: 0;
-  padding: 4px 8px;
   overflow-wrap: anywhere;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 4px;
 }
 
 .hud {

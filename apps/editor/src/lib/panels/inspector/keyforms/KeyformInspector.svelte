@@ -5,8 +5,12 @@
   Shift / Ctrl で押すと選択に加える (選んだセルは推定の操作 inference/InferenceSection.svelte が使う)。
 -->
 <script lang="ts">
+import { formatList } from "@ugoe/i18n";
+import { Button, Checkbox, NumberField, Select, Tooltip } from "@ugoe/ui";
 import type { EditorDocument } from "../../../document.svelte";
+import { t } from "../../../i18n";
 import type { Selection } from "../../../selection.svelte";
+import TipButton from "../../../ui/TipButton.svelte";
 import type { ViewportController } from "../../../viewport/controller.svelte";
 import { cellSelection } from "../inference/cellSelection.svelte";
 import { originStyle, originTitle } from "../inference/inference";
@@ -81,6 +85,31 @@ function nameOf(id: string): string {
   return params.find((p) => p.id === id)?.name ?? id;
 }
 
+/** セルの表記 (`AngleX = 30、AngleY = 0`)。軸が無ければ空。 */
+function cellText(cell: Cell, axes: readonly string[] = Object.keys(cell)): string {
+  return formatList(
+    axes.map((p) => `${nameOf(p)} = ${cell[p]}`),
+    { type: "unit" },
+  );
+}
+
+const ids = $props.id();
+const axisOptions = $derived(unbound.map((p) => ({ value: p.id, label: p.name })));
+
+/** Tooltip のトリガーの属性と自前の onclick を重ねる (トリガーの onclick も呼ぶ)。 */
+function withClick(
+  attrs: Record<string, unknown>,
+  onclick: (event: MouseEvent) => void,
+): Record<string, unknown> {
+  return {
+    ...attrs,
+    onclick: (event: MouseEvent) => {
+      (attrs.onclick as ((e: MouseEvent) => void) | undefined)?.(event);
+      onclick(event);
+    },
+  };
+}
+
 function cellFor(col: number | undefined, row: number | undefined): Cell {
   const cell: Cell = { ...slice };
   if (colAxis && col !== undefined) cell[colAxis.parameter] = col;
@@ -128,38 +157,47 @@ async function removeKey(parameter: string, key: number) {
 {#snippet cellButton(cell: Cell)}
   {@const index = element ? cellIndex(bindings, cell) : -1}
   {@const origin = element && index >= 0 ? cellOrigin(element.grid, index) : "authored"}
-  <button
-    class="cell"
-    data-origin={origin}
-    style="--origin: {originStyle(origin).color}"
-    class:current={isCurrent(cell)}
-    class:selected={element !== null && cellSelection.has(element.target, cell)}
-    title="{Object.entries(cell)
-      .map(([p, v]) => `${nameOf(p)} = ${v}`)
-      .join(', ') || 'Only cell'} — {originTitle(
-      origin,
-      element?.grid.inference,
-      element?.grid.mirror_source,
-    )}"
-    onclick={(event) => onCell(event, cell)}
-  >
-    {originStyle(origin).symbol}
-  </button>
+  {@const tip = t("inspector.keyforms.cellTooltip", {
+    cell: cellText(cell) || t("inspector.keyforms.onlyCell"),
+    origin: originTitle(origin, element?.grid.inference, element?.grid.mirror_source),
+  })}
+  <Tooltip text={tip}>
+    {#snippet children(attrs)}
+      <button
+        {...withClick(attrs, (event) => onCell(event, cell))}
+        class="cell"
+        data-origin={origin}
+        style="--origin: {originStyle(origin).color}"
+        class:current={isCurrent(cell)}
+        class:selected={element !== null && cellSelection.has(element.target, cell)}
+        aria-label={tip}
+        aria-describedby={undefined}
+      >
+        {originStyle(origin).symbol}
+      </button>
+    {/snippet}
+  </Tooltip>
 {/snippet}
 
 {#if element}
   <section>
-    <h3>Keyforms</h3>
+    <h3>{t("inspector.keyforms.title")}</h3>
     {#if current}
       <p class="status">
-        On cell
-        {bindings.map((b) => `${nameOf(b.parameter)} = ${current[b.parameter]}`).join(", ") ||
-          "(no axes)"}
+        {t("inspector.keyforms.onCell", {
+          cell:
+            cellText(
+              current,
+              bindings.map((b) => b.parameter),
+            ) || t("inspector.keyforms.noAxes"),
+        })}
       </p>
     {:else}
       <p class="status muted">
-        Between keys.
-        <button onclick={() => goTo(snapToKeys(bindings, values, params))}>Move to nearest key</button>
+        {t("inspector.keyforms.betweenKeys")}
+        <Button small onclick={() => goTo(snapToKeys(bindings, values, params))}
+          >{t("inspector.keyforms.moveToNearest.label")}</Button
+        >
       </p>
     {/if}
 
@@ -170,20 +208,35 @@ async function removeKey(parameter: string, key: number) {
           <span class="axis">{nameOf(b.parameter)}</span>
           <span class="keys">
             {#each b.keys as key (key)}
+              {@const removeTip =
+                b.keys.length === 1
+                  ? t("inspector.keyforms.removeKey.tooltipLast", { key })
+                  : t("inspector.keyforms.removeKey.tooltip", { key })}
               <span class="chip" class:current={key === on}>
-                <button class="go" onclick={() => viewport.setParameter(b.parameter, key)}>{key}</button>
                 <button
-                  class="remove"
-                  title="Remove key {key}{b.keys.length === 1 ? ' (removes the axis)' : ''}"
-                  onclick={() => removeKey(b.parameter, key)}>×</button
+                  class="go"
+                  aria-label={t("inspector.keyforms.key.aria", { key })}
+                  onclick={() => viewport.setParameter(b.parameter, key)}>{key}</button
                 >
+                <Tooltip text={removeTip}>
+                  {#snippet children(attrs)}
+                    <button
+                      {...withClick(attrs, () => removeKey(b.parameter, key))}
+                      class="remove"
+                      aria-label={removeTip}
+                      aria-describedby={undefined}>×</button
+                    >
+                  {/snippet}
+                </Tooltip>
               </span>
             {/each}
             {#if on === undefined}
-              <button
-                title="Add a key at the current value"
+              <TipButton
+                small
+                tooltip={t("inspector.keyforms.addKeyHere.tooltip")}
                 onclick={() => addKey(b.parameter)}
-              >+ {parameterValue(b.parameter, values, params).toFixed(2)}</button>
+                >+ {parameterValue(b.parameter, values, params).toFixed(2)}</TipButton
+              >
             {/if}
           </span>
         </li>
@@ -191,34 +244,33 @@ async function removeKey(parameter: string, key: number) {
     </ul>
 
     {#if supportsSmooth(element.kind)}
-      <label
-        class="interpolation"
-        title="Interpolate shapes along a smooth curve through the keys (axes with 3 or more keys). Opacity, draw order and colors stay linear."
-      >
-        <input
-          type="checkbox"
+      <div class="interpolation">
+        <Checkbox
+          label={t("inspector.keyforms.smooth.label")}
           checked={interpolation === "smooth"}
-          onchange={(event) => setSmooth(event.currentTarget.checked)}
+          describedby="{ids}-smooth"
+          onchange={(v) => setSmooth(v)}
         />
-        Smooth curve between keys
-        {#if interpolation === "unknown"}<span class="muted">(unknown mode; evaluated as linear)</span>{/if}
-      </label>
+        {#if interpolation === "unknown"}<span class="muted">{t("inspector.keyforms.smooth.unknown")}</span>{/if}
+        <p class="ed-hint" id="{ids}-smooth">{t("inspector.keyforms.smooth.description")}</p>
+      </div>
     {/if}
 
     {#if unbound.length > 0}
       <span class="add-axis">
-        <select bind:value={newAxis} aria-label="Parameter for a new axis">
-          <option value="" disabled>Add axis…</option>
-          {#each unbound as p (p.id)}
-            <option value={p.id}>{p.name}</option>
-          {/each}
-        </select>
-        <button
+        <Select
+          ariaLabel={t("inspector.keyforms.newAxis.aria")}
+          placeholder={t("inspector.keyforms.newAxis.placeholder")}
+          bind:value={newAxis}
+          options={axisOptions}
+        />
+        <Button
+          small
           disabled={!newAxis}
           onclick={async () => {
             await addKey(newAxis);
             newAxis = "";
-          }}>Add key at current value</button
+          }}>{t("inspector.keyforms.addKey.label")}</Button
         >
       </span>
     {/if}
@@ -260,35 +312,38 @@ async function removeKey(parameter: string, key: number) {
     </table>
     {#if bindings.length > 2}
       <p class="muted">
-        Showing the slice at {bindings
-          .slice(2)
-          .map((b) => `${nameOf(b.parameter)} = ${slice[b.parameter]}`)
-          .join(", ")}.
+        {t("inspector.keyforms.slice", {
+          cell: cellText(
+            slice,
+            bindings.slice(2).map((b) => b.parameter),
+          ),
+        })}
       </p>
     {/if}
     {#if drawOrder !== null}
       <span class="draw-order">
-        <label>Draw order <input type="number" step="any" bind:value={drawOrderInput} /></label>
-        <button
+        <NumberField
+          label={t("inspector.keyforms.drawOrder.label")}
+          step={1}
+          decimals={4}
+          value={drawOrderInput ?? 0}
+          onchange={(v) => (drawOrderInput = v)}
+        />
+        <TipButton
+          small
           disabled={drawOrderInput === drawOrder}
           onclick={setDrawOrder}
-          title="Set the draw order in every cell of this mesh">Set for all cells</button
+          tooltip={t("inspector.keyforms.drawOrder.setAll.tooltip")}
+          >{t("inspector.keyforms.drawOrder.setAll.label")}</TipButton
         >
       </span>
     {/if}
     <OriginLegend />
-    <p class="hint muted">Click a cell to go there; Shift/Ctrl-click to select several.</p>
+    <p class="hint muted">{t("inspector.keyforms.hint")}</p>
   </section>
 {/if}
 
 <style>
-h3 {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-}
-
 .status {
   margin: 4px 0;
 }
@@ -366,20 +421,21 @@ h3 {
 
 .interpolation {
   display: flex;
-  gap: 4px;
+  flex-wrap: wrap;
+  gap: var(--ugoe-space-2);
   align-items: center;
-  margin-bottom: 6px;
+  margin-bottom: var(--ugoe-space-3);
+}
+
+.interpolation .ed-hint {
+  flex-basis: 100%;
 }
 
 .draw-order {
   display: flex;
   gap: 4px;
-  align-items: end;
+  align-items: center;
   margin-top: 8px;
-}
-
-.draw-order input {
-  width: 6em;
 }
 
 .hint {

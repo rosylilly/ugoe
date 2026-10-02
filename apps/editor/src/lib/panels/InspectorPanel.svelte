@@ -7,10 +7,11 @@
 <script lang="ts">
 import BaseLock from "../BaseLock.svelte";
 import type { EditorDocument } from "../document.svelte";
+import { t } from "../i18n";
 import type { Model } from "../ipc";
 import { labelOf } from "../labels";
 import { baseElements, isBaseElement } from "../moduleProject";
-import type { Selection } from "../selection.svelte";
+import type { ElementKind, Selection } from "../selection.svelte";
 import type { ViewportController } from "../viewport/controller.svelte";
 import AvatarSection from "./inspector/avatar/AvatarSection.svelte";
 import DeformerProperties from "./inspector/DeformerProperties.svelte";
@@ -40,6 +41,16 @@ const primaryIsBase = $derived(
   selection.primary !== null && isBaseElement(baseElements(doc.module), selection.primary),
 );
 
+/** 要素の種類の名前。 */
+function kindLabel(kind: ElementKind): string {
+  return {
+    part: t("inspector.kind.part"),
+    deformer: t("inspector.kind.deformer"),
+    mesh: t("inspector.kind.mesh"),
+    parameter: t("inspector.kind.parameter"),
+  }[kind];
+}
+
 /** 主な選択の表記 (表示名と ID)。 */
 const primaryLabel = $derived.by(() => {
   const primary = selection.primary;
@@ -56,11 +67,13 @@ const primaryLabel = $derived.by(() => {
 });
 </script>
 
-<h2>Inspector</h2>
+<h2>{t("inspector.title")}</h2>
 <RederiveNotice {doc} />
 {#if selection.primary}
   <p class="heading">
-    {selection.primary.kind}: {primaryLabel}{#if primaryIsBase}<span class="badge" title="Part of the base model: read-only in a module project">base</span>{/if}
+    {t("inspector.heading", { kind: kindLabel(selection.primary.kind), label: primaryLabel })}{#if primaryIsBase}<span
+        class="badge">{t("inspector.baseBadge")}</span
+      >{/if}
   </p>
   <StaleRigNotice {selection} {staleRigs} onopen={onopenai} />
   <BaseLock locked={primaryIsBase}>
@@ -72,10 +85,10 @@ const primaryLabel = $derived.by(() => {
     <DepthSection {doc} {selection} {viewport} />
   </BaseLock>
 {:else}
-  <p class="muted">Nothing selected (rev {doc.revision})</p>
+  <p class="muted">{t("inspector.empty", { revision: doc.revision })}</p>
   <BaseLock
     locked={doc.module !== null}
-    hint="The avatar profile belongs to the base model and can't be edited here. Edit it in the base project."
+    hint={t("inspector.avatarBaseHint")}
   >
     <AvatarSection {doc} />
   </BaseLock>

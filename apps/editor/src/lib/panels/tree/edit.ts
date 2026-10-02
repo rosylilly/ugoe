@@ -4,6 +4,7 @@
 //
 // デフォーマ・メッシュの親の付け替えは reparent_preserving_look で行い、既定値のパラメータでの
 // 見た目を保つ (docs/editor.md#デフォーマの編集)。パーツの付け替えは座標に関わらない。
+import { t } from "../../i18n";
 import type { EditCommand } from "../../ipc";
 import type { ElementRef } from "../../selection.svelte";
 import { ancestors, type ModelIndex, meshDrawOrder, type TreeView } from "./build";
@@ -39,8 +40,18 @@ const label = (index: ModelIndex, r: ElementRef) => {
         : r.kind === "mesh"
           ? index.meshes.get(r.id)?.name
           : undefined;
-  return `${r.kind} "${name ?? r.id}"`;
+  return t("tree.element", { kind: kindName(r.kind), name: name ?? r.id });
 };
+
+/** 要素の種類の名前 (理由の文の中で使う)。 */
+function kindName(kind: ElementRef["kind"]): string {
+  return {
+    part: t("tree.kind.part"),
+    deformer: t("tree.kind.deformer"),
+    mesh: t("tree.kind.mesh"),
+    parameter: t("tree.kind.parameter"),
+  }[kind];
+}
 
 /** 複数のコマンドを 1 つの Undo 単位にまとめる。 */
 export function combine(label: string, commands: EditCommand[]): EditCommand | null {
@@ -68,15 +79,16 @@ function moveInto(
   const what = label(index, item);
   if (item.kind === "part") {
     if (target === null) {
-      if (index.parts.get(item.id)?.parent === null) return noop(`${what} is already at the top`);
+      if (index.parts.get(item.id)?.parent === null)
+        return noop(t("tree.drop.alreadyTop", { what }));
       return { ok: true, command: { op: "set_part_parent", id: item.id, parent: null } };
     }
-    if (target.kind !== "part") return reject(`a part can only be moved into another part`);
+    if (target.kind !== "part") return reject(t("tree.drop.partInto"));
     if (ancestors(index.parts, target.id).includes(item.id)) {
-      return reject(`cannot move ${what} into itself or its descendant`);
+      return reject(t("tree.drop.cycle", { what }));
     }
     if (index.parts.get(item.id)?.parent === target.id) {
-      return noop(`${what} is already in ${label(index, target)}`);
+      return noop(t("tree.drop.alreadyIn", { what, target: label(index, target) }));
     }
     return { ok: true, command: { op: "set_part_parent", id: item.id, parent: target.id } };
   }
@@ -84,43 +96,47 @@ function moveInto(
   if (item.kind === "deformer") {
     const d = index.deformers.get(item.id);
     if (target === null) {
-      if (view === "parts") return reject(`a deformer must belong to a part`);
-      if (d?.parent === null) return noop(`${what} is already at the top`);
+      if (view === "parts") return reject(t("tree.drop.deformerNeedsPart"));
+      if (d?.parent === null) return noop(t("tree.drop.alreadyTop", { what }));
       return reparent(item, null);
     }
     if (target.kind === "part") {
-      if (d?.part === target.id) return noop(`${what} is already in ${label(index, target)}`);
+      if (d?.part === target.id)
+        return noop(t("tree.drop.alreadyIn", { what, target: label(index, target) }));
       return { ok: true, command: { op: "set_deformer_part", id: item.id, part: target.id } };
     }
     if (target.kind !== "deformer") {
-      return reject(`a deformer can only be moved into a part or another deformer`);
+      return reject(t("tree.drop.deformerInto"));
     }
     if (ancestors(index.deformers, target.id).includes(item.id)) {
-      return reject(`cannot move ${what} into itself or its descendant`);
+      return reject(t("tree.drop.cycle", { what }));
     }
-    if (d?.parent === target.id) return noop(`${what} is already under ${label(index, target)}`);
+    if (d?.parent === target.id)
+      return noop(t("tree.drop.alreadyUnder", { what, target: label(index, target) }));
     return reparent(item, target.id);
   }
 
   if (item.kind === "mesh") {
     const m = index.meshes.get(item.id);
     if (target === null) {
-      if (view === "parts") return reject(`a mesh must belong to a part`);
-      if (m?.parent === null) return noop(`${what} is already at the top`);
+      if (view === "parts") return reject(t("tree.drop.meshNeedsPart"));
+      if (m?.parent === null) return noop(t("tree.drop.alreadyTop", { what }));
       return reparent(item, null);
     }
     if (target.kind === "part") {
-      if (m?.part === target.id) return noop(`${what} is already in ${label(index, target)}`);
+      if (m?.part === target.id)
+        return noop(t("tree.drop.alreadyIn", { what, target: label(index, target) }));
       return { ok: true, command: { op: "set_mesh_properties", id: item.id, part: target.id } };
     }
     if (target.kind === "deformer") {
-      if (m?.parent === target.id) return noop(`${what} is already under ${label(index, target)}`);
+      if (m?.parent === target.id)
+        return noop(t("tree.drop.alreadyUnder", { what, target: label(index, target) }));
       return reparent(item, target.id);
     }
-    return reject(`a mesh can only be moved into a part or a deformer`);
+    return reject(t("tree.drop.meshInto"));
   }
 
-  return reject(`${item.kind} cannot be moved in the tree`);
+  return reject(t("tree.drop.notMovable", { kind: kindName(item.kind) }));
 }
 
 /**
@@ -135,15 +151,19 @@ function reorder(
   position: "above" | "below",
 ): EditResult {
   if (item.kind !== "mesh" || target.kind !== "mesh") {
-    return reject(`only meshes can be reordered`);
+    return reject(t("tree.drop.onlyMeshes"));
   }
-  if (item.id === target.id) return reject(`drop onto another mesh to reorder`);
+  if (item.id === target.id) return reject(t("tree.drop.otherMesh"));
   const a = meshDrawOrder(index, item.id);
   const b = meshDrawOrder(index, target.id);
   if (a !== b) {
     return reject(
-      `${label(index, item)} (draw order ${a}) and ${label(index, target)} (draw order ${b}) ` +
-        `cannot be reordered: change the draw order instead (Inspector > Draw order, set_mesh_draw_order)`,
+      t("tree.drop.drawOrder", {
+        what: label(index, item),
+        a,
+        target: label(index, target),
+        b,
+      }),
     );
   }
   // 手前 = `meshes` で後ろ。above なら target の直後、below なら target の直前へ。
@@ -152,7 +172,7 @@ function reorder(
   const before = position === "above" ? (order[at + 1] ?? null) : target.id;
   const current = index.model.meshes.map((m) => m.id);
   const next = current[current.indexOf(item.id) + 1] ?? null;
-  if (next === before) return noop(`${label(index, item)} is already there`);
+  if (next === before) return noop(t("tree.drop.alreadyThere", { what: label(index, item) }));
   return { ok: true, command: { op: "reorder_mesh", id: item.id, before } };
 }
 
@@ -166,14 +186,14 @@ export function dropCommand(
   items: ElementRef[],
   drop: DropTarget,
 ): EditResult {
-  if (items.length === 0) return reject("nothing to move");
+  if (items.length === 0) return reject(t("tree.drop.nothing"));
   const { target, position } = drop;
 
   if (position !== "into") {
-    if (target === null) return reject("drop onto a mesh to reorder");
-    if (items.length !== 1) return reject("reorder one mesh at a time");
+    if (target === null) return reject(t("tree.drop.ontoMesh"));
+    if (items.length !== 1) return reject(t("tree.drop.oneMesh"));
     const [item] = items as [ElementRef];
-    if (item.kind !== "mesh") return reject("only meshes can be reordered");
+    if (item.kind !== "mesh") return reject(t("tree.drop.onlyMeshes"));
     const m = index.meshes.get(item.id);
     const container = drop.container ?? null;
     // 並べ替えは同じ親の中だけ。別の親のメッシュの間に落としても付け替えはしない (意図が曖昧なため)。
@@ -183,7 +203,7 @@ export function dropCommand(
         : (m?.parent ?? null) === (container?.id ?? null);
     if (!sameContainer) {
       return reject(
-        `drop onto the ${view === "parts" ? "part" : "deformer"} to move the mesh first`,
+        view === "parts" ? t("tree.drop.moveToPartFirst") : t("tree.drop.moveToDeformerFirst"),
       );
     }
     return reorder(index, item, target, position);
@@ -192,7 +212,7 @@ export function dropCommand(
   const commands: EditCommand[] = [];
   for (const item of items) {
     if (target && item.kind === target.kind && item.id === target.id) {
-      return reject(`cannot move ${label(index, item)} into itself`);
+      return reject(t("tree.drop.self", { what: label(index, item) }));
     }
     const r = moveInto(index, view, item, target);
     if (!r.ok) {
@@ -202,8 +222,8 @@ export function dropCommand(
     }
     commands.push(r.command);
   }
-  const command = combine(`Move ${commands.length} elements`, commands);
-  return command ? { ok: true, command } : noop("already there");
+  const command = combine(t("tree.history.move", { count: commands.length }), commands);
+  return command ? { ok: true, command } : noop(t("tree.drop.alreadyThereAll"));
 }
 
 export function renameCommand(ref: ElementRef, name: string): EditCommand | null {
@@ -239,7 +259,7 @@ export function deleteCommand(index: ModelIndex, refs: ElementRef[]): EditComman
         ? { op: "remove_deformer", id: r.id }
         : { op: "remove_mesh", id: r.id },
   );
-  return combine(`Delete ${commands.length} elements`, commands);
+  return combine(t("tree.history.delete", { count: commands.length }), commands);
 }
 
 /** `base`、`base2`、`base3` … のうち、まだ使われていない最初のもの。 */

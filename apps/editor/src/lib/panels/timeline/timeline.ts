@@ -1,5 +1,7 @@
 // タイムライン (モーションの編集) の、DOM に依存しない補助。Vitest で検査する (timeline.test.ts)。
 // コマンドの規則は docs/editor.md#モーションと表情の編集、カーブの式は docs/spec/motion.md#カーブ。
+// 時刻の引数 `t` と重なるので、文言を引く関数は `translate` の名前で使う。
+import { t as translate } from "../../i18n";
 import type {
   Command,
   Curve,
@@ -14,16 +16,31 @@ import type {
 /** 区間の種類 (`Segment` の `type` のうち `start` 以外)。 */
 export type SegmentKind = Exclude<Segment["type"], "start">;
 
-export const SEGMENT_KINDS: { kind: SegmentKind; label: string; description: string }[] = [
-  { kind: "linear", label: "Linear", description: "a straight line" },
-  { kind: "bezier", label: "Bezier", description: "a bezier curve with handles" },
-  { kind: "stepped", label: "Step", description: "a step at this key" },
-  {
-    kind: "inverse_stepped",
-    label: "Inv. step",
-    description: "a step right after the previous key",
-  },
-];
+/** 区間の種類と、その名前・説明 (翻訳を通す。呼ぶたびに今の言語で作る)。 */
+export function segmentKinds(): { kind: SegmentKind; label: string; description: string }[] {
+  return [
+    {
+      kind: "linear",
+      label: translate("timeline.segment.linear.label"),
+      description: translate("timeline.segment.linear.description"),
+    },
+    {
+      kind: "bezier",
+      label: translate("timeline.segment.bezier.label"),
+      description: translate("timeline.segment.bezier.description"),
+    },
+    {
+      kind: "stepped",
+      label: translate("timeline.segment.stepped.label"),
+      description: translate("timeline.segment.stepped.description"),
+    },
+    {
+      kind: "inverse_stepped",
+      label: translate("timeline.segment.inverseStepped.label"),
+      description: translate("timeline.segment.inverseStepped.description"),
+    },
+  ];
+}
 
 /** キーを打つ・動かすときに揃えるフレームの数 (1 秒あたり)。 */
 export const FPS = 30;
@@ -199,6 +216,11 @@ export interface Track {
   parameter: Parameter | null;
 }
 
+/** パラメータの表記 (`名前 (ID)`。名前が無いか ID と同じなら ID だけ)。 */
+export function parameterLabel(p: Pick<Parameter, "id" | "name">): string {
+  return p.name && p.name !== p.id ? `${p.name} (${p.id})` : p.id;
+}
+
 /**
  * 行の一覧: モデルのすべてのパラメータ (モデルの順) と、パラメータ以外を対象にするカーブ
  * (パーツの不透明度・エフェクトの強さ)、モデルにないパラメータのカーブ (最後)。
@@ -208,7 +230,7 @@ export function tracks(motion: Motion | null, parameters: Parameter[]): Track[] 
     const target: CurveTarget = { kind: "parameter", id: p.id };
     return {
       target,
-      label: p.name && p.name !== p.id ? `${p.name} (${p.id})` : p.id,
+      label: parameterLabel(p),
       curve: motion ? findCurve(motion, target) : null,
       parameter: p,
     };
@@ -216,12 +238,13 @@ export function tracks(motion: Motion | null, parameters: Parameter[]): Track[] 
   const known = new Set(parameters.map((p) => p.id));
   for (const curve of motion?.curves ?? []) {
     if (curve.target.kind === "parameter" && known.has(curve.target.id)) continue;
+    const id = curve.target.id;
     const label =
       curve.target.kind === "parameter"
-        ? `${curve.target.id} (missing)`
+        ? translate("timeline.track.missing", { id })
         : curve.target.kind === "part_opacity"
-          ? `Opacity: ${curve.target.id}`
-          : `Effect: ${curve.target.id}`;
+          ? translate("timeline.track.partOpacity", { id })
+          : translate("timeline.track.effect", { id });
     rows.push({ target: curve.target, label, curve, parameter: null });
   }
   return rows;
@@ -291,7 +314,11 @@ export function keyValuesCommand(
   }
   if (commands.length === 0) return null;
   if (commands.length === 1) return commands[0] ?? null;
-  return { op: "batch", label: `Key ${commands.length} parameters`, commands };
+  return {
+    op: "batch",
+    label: translate("timeline.keyBatch", { count: commands.length }),
+    commands,
+  };
 }
 
 /** 値が同じとみなす差 (値域の 1e-4 倍)。 */

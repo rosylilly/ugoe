@@ -4,10 +4,13 @@
   (描画順のキーを作るため。すべてのセルをそろえるのは KeyformInspector)。マスクは MeshProperties で編集する。
 -->
 <script lang="ts">
+import { Button, Notice, NumberField } from "@ugoe/ui";
 import type { EditorDocument } from "../../../document.svelte";
 import type { Model } from "../../../generated/types";
+import { t } from "../../../i18n";
 import { elementLabel } from "../../../labels";
 import type { Selection } from "../../../selection.svelte";
+import TipButton from "../../../ui/TipButton.svelte";
 import type { ViewportController } from "../../../viewport/controller.svelte";
 import { cellIndex, currentCell } from "../keyforms/keyforms";
 import { createCommand, drawCloneInfo, newClone } from "./drawClone";
@@ -46,12 +49,7 @@ const cell = $derived(
 const keyform = $derived(
   mesh && cell ? (mesh.keyforms.keyforms[cellIndex(mesh.keyforms.bindings, cell)] ?? null) : null,
 );
-let opacityInput = $state<number | null>(null);
-let drawOrderInput = $state<number | null>(null);
-$effect(() => {
-  opacityInput = keyform?.opacity ?? null;
-  drawOrderInput = keyform?.draw_order ?? null;
-});
+const ids = $props.id();
 
 function select(id: string): void {
   selection.set([{ kind: "mesh", id }]);
@@ -85,62 +83,64 @@ async function setCell(field: "opacity" | "draw_order", value: number | null): P
 
 {#if mesh && info}
   <section class="draw-clone">
-    <h3>Draw clone</h3>
+    <h3>{t("inspector.drawClone.title")}</h3>
     {#if info.role === "clone"}
       <p class="row">
-        <span>Clone of</span>
+        <span>{t("inspector.drawClone.cloneOf")}</span>
         {#if info.original}
-          <button onclick={() => info.original && select(info.original.id)}>
+          <Button small onclick={() => info.original && select(info.original.id)}>
             {elementLabel(info.original.name, info.original.id)}
-          </button>
+          </Button>
         {/if}
       </p>
-      <p class="muted">Shares the shape of the original. Give it its own draw order and opacity here, and masks in the Mesh section.</p>
+      <p class="muted">{t("inspector.drawClone.description")}</p>
       {#if !info.inSync}
-        <p class="warning row">
-          <span>Out of sync with the original</span>
-          <button onclick={sync}>Resync</button>
-        </p>
+        <Notice tone="warning">
+          {t("inspector.drawClone.outOfSync")}
+          {#snippet actions()}
+            <Button small onclick={sync}>{t("inspector.drawClone.resync")}</Button>
+          {/snippet}
+        </Notice>
       {/if}
-      <label class="row">
-        <span>Opacity (this cell)</span>
-        <input
-          type="number"
-          min="0"
-          max="1"
-          step="0.05"
+      <div class="row">
+        <span id="{ids}-opacity">{t("inspector.drawClone.opacity")}</span>
+        <NumberField
+          labelledby="{ids}-opacity"
+          min={0}
+          max={1}
+          step={0.05}
           disabled={!keyform}
-          bind:value={opacityInput}
-          onchange={() => setCell("opacity", opacityInput)}
+          value={keyform?.opacity ?? 0}
+          onchange={(v) => setCell("opacity", v)}
         />
-      </label>
-      <label class="row">
-        <span>Draw order (this cell)</span>
-        <input
-          type="number"
-          step="10"
+      </div>
+      <div class="row">
+        <span id="{ids}-draw-order">{t("inspector.drawClone.drawOrder")}</span>
+        <NumberField
+          labelledby="{ids}-draw-order"
+          step={10}
           disabled={!keyform}
-          bind:value={drawOrderInput}
-          onchange={() => setCell("draw_order", drawOrderInput)}
+          value={keyform?.draw_order ?? 0}
+          onchange={(v) => setCell("draw_order", v)}
         />
-      </label>
+      </div>
       {#if !keyform}
-        <p class="muted">Between keys: move the parameters onto a key to edit this cell.</p>
+        <p class="muted">{t("inspector.drawClone.betweenKeys")}</p>
       {/if}
     {:else}
       {#if info.clones.length > 0}
         <ul>
           {#each info.clones as clone (clone.id)}
             <li class="row">
-              <span>Clone</span>
-              <button onclick={() => select(clone.id)}>{elementLabel(clone.name, clone.id)}</button>
+              <span>{t("inspector.drawClone.clone")}</span>
+              <Button small onclick={() => select(clone.id)}>{elementLabel(clone.name, clone.id)}</Button>
             </li>
           {/each}
         </ul>
       {/if}
-      <button onclick={createClone} title="Duplicate this mesh for another draw order or mask; it follows this mesh's shape">
-        Create draw clone
-      </button>
+      <TipButton small onclick={createClone} tooltip={t("inspector.drawClone.create.tooltip")}>
+        {t("inspector.drawClone.create.label")}
+      </TipButton>
     {/if}
   </section>
 {/if}
@@ -150,19 +150,8 @@ async function setCell(field: "opacity" | "draw_order", value: number | null): P
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin: 4px 0;
-}
-
-.row input {
-  width: 6em;
-}
-
-.warning {
-  padding: 4px 6px;
-  border: 1px solid #d97706;
-  border-radius: 4px;
-  background: color-mix(in srgb, #d97706 12%, transparent);
+  gap: var(--ugoe-space-3);
+  margin: var(--ugoe-space-2) 0;
 }
 
 ul {
@@ -172,6 +161,6 @@ ul {
 }
 
 h3 {
-  margin: 8px 0 4px;
+  margin: var(--ugoe-space-3) 0 var(--ugoe-space-2);
 }
 </style>

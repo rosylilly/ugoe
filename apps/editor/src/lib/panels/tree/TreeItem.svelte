@@ -2,6 +2,7 @@
   ツリーの 1 行。状態 (選択・展開・名前の変更・ドロップの表示) は TreePanel が持ち、ここは表示と入力の中継だけ。
 -->
 <script lang="ts">
+import { t } from "../../i18n";
 import type { TreeRow } from "./build";
 import type { DropMark } from "./edit";
 import NodeIcon from "./NodeIcon.svelte";
@@ -92,7 +93,7 @@ function onKeydown(e: KeyboardEvent) {
     <button
       class="twisty"
       tabindex="-1"
-      aria-label={expanded ? "Collapse" : "Expand"}
+      aria-label={expanded ? t("tree.row.collapse") : t("tree.row.expand")}
       onclick={(e) => {
         e.stopPropagation();
         ontoggle();
@@ -108,7 +109,7 @@ function onKeydown(e: KeyboardEvent) {
     <input
       class="rename"
       value={node.name}
-      aria-label="Name"
+      aria-label={t("tree.row.name")}
       use:focusInput
       onkeydown={onKeydown}
       onblur={(e) => finish(e.currentTarget.value)}
@@ -118,10 +119,11 @@ function onKeydown(e: KeyboardEvent) {
   {:else}
     <span class="name" title={node.ref.id}>{node.name}</span>
   {/if}
-  {#if base}<span class="badge" title="Part of the base model: read-only in a module project">base</span>{/if}
-  {#if node.maskOnly}<span class="badge" title="Mask only: not drawn as color">mask</span>{/if}
-  {#if node.hidden}<span class="badge" title="Opacity is 0 at the default parameter values">hidden</span>{/if}
-  {#if node.drawOrder !== undefined}<span class="order" title="Draw order">{node.drawOrder}</span>{/if}
+  <!-- 行はフォーカスを受けない (木が aria-activedescendant で受ける) ので、印の説明は Tooltip ではなく title で出す。 -->
+  {#if base}<span class="badge" title={t("tree.row.base.tooltip")}>{t("tree.row.base.label")}</span>{/if}
+  {#if node.maskOnly}<span class="badge" title={t("tree.row.mask.tooltip")}>{t("tree.row.mask.label")}</span>{/if}
+  {#if node.hidden}<span class="badge" title={t("tree.row.hidden.tooltip")}>{t("tree.row.hidden.label")}</span>{/if}
+  {#if node.drawOrder !== undefined}<span class="order" title={t("tree.row.drawOrder")}>{node.drawOrder}</span>{/if}
 </div>
 
 <style>
@@ -166,9 +168,9 @@ function onKeydown(e: KeyboardEvent) {
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 .row.drop-bad {
-  border-color: #dc2626;
+  border-color: var(--ugoe-color-danger);
   box-shadow: none;
-  background: color-mix(in srgb, #dc2626 10%, transparent);
+  background: color-mix(in srgb, var(--ugoe-color-danger) 10%, transparent);
 }
 .twisty {
   flex: none;

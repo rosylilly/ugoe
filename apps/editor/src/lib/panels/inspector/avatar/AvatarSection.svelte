@@ -4,27 +4,29 @@
   準拠の検査 (check_avatar_profile) の結果を出す。トラッキングの上書き・視線・スロットはここでは編集しない。
 -->
 <script lang="ts">
+import { Button, Checkbox, Notice, Select } from "@ugoe/ui";
 import type { EditorDocument } from "../../../document.svelte";
-import { errorText } from "../../../errors";
+import { errorText, messageText } from "../../../errors";
 import type { AvatarCheck, AvatarMeta, Command, Model } from "../../../generated/types";
+import { t } from "../../../i18n";
 import { ipc } from "../../../ipc";
 import { elementLabel } from "../../../labels";
 import {
-  AVATAR_PERMISSIONS,
-  COMMERCIAL_USAGES,
-  CREDIT_NOTATIONS,
+  avatarPermissions,
   checkSummary,
+  commercialUsages,
   createCommand,
+  creditNotations,
   hitAreaCommand,
-  LEVEL_NAMES,
+  levelName,
   MAX_LEVEL,
-  MODIFICATIONS,
   metaCommand,
+  modifications,
   type OptionalText,
   optionalText,
   parseLines,
   STANDARD_HIT_AREAS,
-  USAGE_FLAGS,
+  usageFlags,
 } from "./avatar";
 
 interface Props {
@@ -88,200 +90,215 @@ function setText(field: OptionalText, event: Event): Promise<void> {
 }
 
 function inputValue(event: Event): string {
-  return (event.currentTarget as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).value;
+  return (event.currentTarget as HTMLInputElement | HTMLTextAreaElement).value;
 }
 
-const optionalTexts: { key: OptionalText; label: string; placeholder?: string }[] = [
-  { key: "version", label: "Version" },
-  { key: "copyright", label: "Copyright" },
-  { key: "contact", label: "Contact" },
-  { key: "license_url", label: "License URL", placeholder: "https://" },
-];
+const optionalTexts = $derived<{ key: OptionalText; label: string; placeholder?: string }[]>([
+  { key: "version", label: t("inspector.avatar.meta.version") },
+  { key: "copyright", label: t("inspector.avatar.meta.copyright") },
+  { key: "contact", label: t("inspector.avatar.meta.contact") },
+  // i18n-ignore: URL の書き出しの例
+  { key: "license_url", label: t("inspector.avatar.meta.licenseUrl"), placeholder: "https://" },
+]);
+
+const levelOptions = $derived(
+  Array.from({ length: MAX_LEVEL }, (_, i) => ({
+    value: String(i + 1),
+    label: t("inspector.avatar.levelOption", { level: i + 1, name: levelName(i + 1) ?? "" }),
+  })),
+);
+
+const thumbnailOptions = $derived([
+  { value: "", label: t("inspector.avatar.none") },
+  ...(model?.textures ?? []).map((texture, i) => ({
+    value: String(i),
+    label: t("inspector.avatar.meta.thumbnailOption", { index: i, name: texture.name }),
+  })),
+]);
+
+const hitAreaOptions = $derived([
+  { value: "", label: t("inspector.avatar.none") },
+  ...(model?.hit_areas ?? []).map((hit) => ({
+    value: hit.id,
+    label: t("inspector.avatar.hitAreas.option", {
+      id: hit.id,
+      mesh: elementLabel(model?.meshes.find((m) => m.id === hit.mesh)?.name ?? null, hit.mesh),
+    }),
+  })),
+]);
+
+const ids = $props.id();
 </script>
 
 {#if model}
   <section class="avatar">
-    <h3>Avatar profile</h3>
+    <h3>{t("inspector.avatar.title")}</h3>
     {#if !profile || !meta}
-      <p class="muted">
-        The model has no avatar profile. Create one to declare the conformance level, the metadata and the
-        usage permissions. Permissions start at the most restrictive values.
-      </p>
-      <button onclick={() => apply(createCommand(model.meta.name))}>Create avatar profile</button>
+      <p class="muted">{t("inspector.avatar.empty")}</p>
+      <Button small onclick={() => apply(createCommand(model.meta.name))}
+        >{t("inspector.avatar.create")}</Button
+      >
     {:else}
-      <label class="row">
-        <span>Level</span>
-        <select
-          value={profile.level}
-          onchange={(e) => apply({ op: "update_avatar_profile", level: Number(inputValue(e)) })}
-        >
-          {#each Array.from({ length: MAX_LEVEL }, (_, i) => i + 1) as level (level)}
-            <option value={level}>{level} — {LEVEL_NAMES[level]}</option>
-          {/each}
-        </select>
-      </label>
+      <div class="row">
+        <span id="{ids}-level">{t("inspector.avatar.level")}</span>
+        <Select
+          labelledby="{ids}-level"
+          value={String(profile.level)}
+          options={levelOptions}
+          onchange={(v) => apply({ op: "update_avatar_profile", level: Number(v) })}
+        />
+      </div>
 
-      <h4>Metadata</h4>
-      <label class="row">
-        <span>Name</span>
-        <input value={meta.name} onchange={(e) => setMeta({ name: inputValue(e).trim() })} />
-      </label>
-      <label class="column">
-        <span>Authors (one per line)</span>
+      <h4>{t("inspector.avatar.meta.title")}</h4>
+      <div class="row">
+        <label for="{ids}-name">{t("inspector.avatar.meta.name")}</label>
+        <input
+          id="{ids}-name"
+          type="text"
+          value={meta.name}
+          onchange={(e) => setMeta({ name: inputValue(e).trim() })}
+        />
+      </div>
+      <div class="column">
+        <label for="{ids}-authors">{t("inspector.avatar.meta.authors")}</label>
         <textarea
+          id="{ids}-authors"
           rows="2"
           value={meta.authors.join("\n")}
           onchange={(e) => setMeta({ authors: parseLines(inputValue(e)) })}
         ></textarea>
-      </label>
+      </div>
       {#each optionalTexts as field (field.key)}
-        <label class="row">
-          <span>{field.label}</span>
+        <div class="row">
+          <label for="{ids}-{field.key}">{field.label}</label>
           <input
+            id="{ids}-{field.key}"
+            type="text"
             value={meta[field.key] ?? ""}
             placeholder={field.placeholder}
             onchange={(e) => setText(field.key, e)}
           />
-        </label>
+        </div>
       {/each}
-      <label class="column">
-        <span>References (one per line)</span>
+      <div class="column">
+        <label for="{ids}-references">{t("inspector.avatar.meta.references")}</label>
         <textarea
+          id="{ids}-references"
           rows="2"
           value={meta.references.join("\n")}
           onchange={(e) => setMeta({ references: parseLines(inputValue(e)) })}
         ></textarea>
-      </label>
-      <label class="row">
-        <span>Thumbnail</span>
-        <select
+      </div>
+      <div class="row">
+        <span id="{ids}-thumbnail">{t("inspector.avatar.meta.thumbnail")}</span>
+        <Select
+          labelledby="{ids}-thumbnail"
           value={meta.thumbnail === null ? "" : String(meta.thumbnail)}
-          onchange={(e) => {
-            const v = inputValue(e);
-            return setMeta({ thumbnail: v === "" ? null : Number(v) });
-          }}
-        >
-          <option value="">None</option>
-          {#each model.textures as texture, i (i)}
-            <option value={String(i)}>{i}: {texture.name}</option>
-          {/each}
-        </select>
-      </label>
+          options={thumbnailOptions}
+          onchange={(v) => setMeta({ thumbnail: v === "" ? null : Number(v) })}
+        />
+      </div>
 
-      <h4>Permissions</h4>
-      <label class="row">
-        <span>Who may use it as an avatar</span>
-        <select
+      <h4>{t("inspector.avatar.permissions.title")}</h4>
+      <div class="row">
+        <span id="{ids}-avatar-permission">{t("inspector.avatar.permissions.avatar")}</span>
+        <Select
+          labelledby="{ids}-avatar-permission"
           value={meta.avatar_permission}
-          onchange={(e) => setMeta({ avatar_permission: inputValue(e) as AvatarMeta["avatar_permission"] })}
-        >
-          {#each AVATAR_PERMISSIONS as option (option.value)}
-            <option value={option.value}>{option.label}</option>
-          {/each}
-        </select>
-      </label>
-      <label class="row">
-        <span>Commercial use</span>
-        <select
+          options={avatarPermissions()}
+          onchange={(v) => setMeta({ avatar_permission: v })}
+        />
+      </div>
+      <div class="row">
+        <span id="{ids}-commercial">{t("inspector.avatar.permissions.commercial")}</span>
+        <Select
+          labelledby="{ids}-commercial"
           value={meta.commercial_usage}
-          onchange={(e) => setMeta({ commercial_usage: inputValue(e) as AvatarMeta["commercial_usage"] })}
-        >
-          {#each COMMERCIAL_USAGES as option (option.value)}
-            <option value={option.value}>{option.label}</option>
-          {/each}
-        </select>
-      </label>
-      <label class="row">
-        <span>Credit</span>
-        <select
+          options={commercialUsages()}
+          onchange={(v) => setMeta({ commercial_usage: v })}
+        />
+      </div>
+      <div class="row">
+        <span id="{ids}-credit">{t("inspector.avatar.permissions.credit")}</span>
+        <Select
+          labelledby="{ids}-credit"
           value={meta.credit_notation}
-          onchange={(e) => setMeta({ credit_notation: inputValue(e) as AvatarMeta["credit_notation"] })}
-        >
-          {#each CREDIT_NOTATIONS as option (option.value)}
-            <option value={option.value}>{option.label}</option>
-          {/each}
-        </select>
-      </label>
-      <label class="row">
-        <span>Modification</span>
-        <select
+          options={creditNotations()}
+          onchange={(v) => setMeta({ credit_notation: v })}
+        />
+      </div>
+      <div class="row">
+        <span id="{ids}-modification">{t("inspector.avatar.permissions.modification")}</span>
+        <Select
+          labelledby="{ids}-modification"
           value={meta.modification}
-          onchange={(e) => setMeta({ modification: inputValue(e) as AvatarMeta["modification"] })}
-        >
-          {#each MODIFICATIONS as option (option.value)}
-            <option value={option.value}>{option.label}</option>
-          {/each}
-        </select>
-      </label>
+          options={modifications()}
+          onchange={(v) => setMeta({ modification: v })}
+        />
+      </div>
       <fieldset>
-        <legend>Allow</legend>
-        {#each USAGE_FLAGS as flag (flag.key)}
-          <label class="check">
-            <input
-              type="checkbox"
+        <legend>{t("inspector.avatar.permissions.allow")}</legend>
+        {#each usageFlags() as flag (flag.key)}
+          <div class="check">
+            <Checkbox
+              label={flag.label}
               checked={meta[flag.key]}
-              onchange={(e) => setMeta({ [flag.key]: (e.currentTarget as HTMLInputElement).checked })}
+              onchange={(v) => setMeta({ [flag.key]: v })}
             />
-            {flag.label}
-          </label>
+          </div>
         {/each}
       </fieldset>
-      <label class="column">
-        <span>Third-party licenses</span>
+      <div class="column">
+        <label for="{ids}-third-party">{t("inspector.avatar.meta.thirdPartyLicenses")}</label>
         <textarea
+          id="{ids}-third-party"
           rows="2"
           value={meta.third_party_licenses ?? ""}
           onchange={(e) => setMeta({ third_party_licenses: optionalText(inputValue(e)) })}
         ></textarea>
-      </label>
+      </div>
 
-      <h4>Standard hit areas</h4>
+      <h4>{t("inspector.avatar.hitAreas.title")}</h4>
       {#if model.hit_areas.length === 0}
-        <p class="muted">The model has no hit areas.</p>
+        <p class="muted">{t("inspector.avatar.hitAreas.empty")}</p>
       {:else}
         {#each STANDARD_HIT_AREAS as name (name)}
-          <label class="row">
-            <span>{name}</span>
-            <select
+          <div class="row">
+            <span id="{ids}-hit-{name}">{name}</span>
+            <Select
+              labelledby="{ids}-hit-{name}"
               value={profile.hit_areas.find((a) => a.name === name)?.hit_area ?? ""}
-              onchange={(e) => {
-                const v = inputValue(e);
-                return apply(hitAreaCommand(profile.hit_areas, name, v === "" ? null : v));
-              }}
-            >
-              <option value="">None</option>
-              {#each model.hit_areas as hit (hit.id)}
-                <option value={hit.id}>
-                  {hit.id} ({elementLabel(model.meshes.find((m) => m.id === hit.mesh)?.name ?? null, hit.mesh)})
-                </option>
-              {/each}
-            </select>
-          </label>
+              options={hitAreaOptions}
+              onchange={(v) => apply(hitAreaCommand(profile.hit_areas, name, v === "" ? null : v))}
+            />
+          </div>
         {/each}
       {/if}
 
-      <button class="remove" onclick={() => apply({ op: "set_avatar_profile", profile: null })}>
-        Remove avatar profile
-      </button>
+      <div class="remove">
+        <Button small onclick={() => apply({ op: "set_avatar_profile", profile: null })}
+          >{t("inspector.avatar.remove")}</Button
+        >
+      </div>
     {/if}
 
-    <h4>Conformance</h4>
+    <h4>{t("inspector.avatar.check.title")}</h4>
     {#if checkError}
       <p class="error">{checkError}</p>
     {:else if check && summary}
-      <p class={summary.ok ? "ok" : "warn"}>{summary.text}</p>
+      <Notice tone={summary.ok ? "success" : "warning"}>{summary.text}</Notice>
       <!-- プロファイルがないときのエラーは「model has no avatar profile」だけで、見出しと同じなので出さない。 -->
       {#if check.claimed !== null && check.errors.length > 0}
         <ul class="issues errors">
           {#each check.errors as issue, i (i)}
-            <li>{issue.message}</li>
+            <li>{messageText(issue)}</li>
           {/each}
         </ul>
       {/if}
       {#if check.warnings.length > 0}
         <ul class="issues warnings">
           {#each check.warnings as issue, i (i)}
-            <li>{issue.message}</li>
+            <li>{messageText(issue)}</li>
           {/each}
         </ul>
       {/if}
@@ -294,73 +311,74 @@ const optionalTexts: { key: OptionalText; label: string; placeholder?: string }[
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin: 4px 0;
+  gap: var(--ugoe-space-3);
+  margin: var(--ugoe-space-2) 0;
 }
 
 .row input,
-.row select {
+.row :global(.ugoe-select__trigger) {
   width: 12em;
   min-width: 0;
 }
 
+.row input,
 .column textarea {
+  min-height: var(--ugoe-control-height);
+  padding: 0 var(--ugoe-space-2);
+  border: 1px solid var(--ugoe-color-control-border);
+  border-radius: var(--ugoe-radius-md);
+  background: var(--ugoe-color-surface);
+  color: var(--ugoe-color-text);
   font: inherit;
+}
+
+.column textarea {
+  padding: var(--ugoe-space-1) var(--ugoe-space-2);
+}
+
+.row input:focus-visible,
+.column textarea:focus-visible {
+  outline: var(--ugoe-focus-ring);
+  outline-offset: 1px;
 }
 
 .column {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin: 4px 0;
+  gap: var(--ugoe-space-1);
+  margin: var(--ugoe-space-2) 0;
 }
 
 .check {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  margin: var(--ugoe-space-1) 0;
 }
 
 fieldset {
-  margin: 4px 0;
-  padding: 4px 8px;
-  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
-  border-radius: 4px;
+  margin: var(--ugoe-space-2) 0;
+  padding: var(--ugoe-space-2) var(--ugoe-space-3);
+  border: 1px solid var(--ugoe-color-border);
+  border-radius: var(--ugoe-radius-md);
 }
 
 .remove {
-  margin-top: 8px;
-}
-
-.ok {
-  padding: 4px 6px;
-  border: 1px solid #16a34a;
-  border-radius: 4px;
-  background: color-mix(in srgb, #16a34a 12%, transparent);
-}
-
-.warn {
-  padding: 4px 6px;
-  border: 1px solid #d97706;
-  border-radius: 4px;
-  background: color-mix(in srgb, #d97706 12%, transparent);
+  margin-top: var(--ugoe-space-3);
 }
 
 .issues {
-  margin: 4px 0;
+  margin: var(--ugoe-space-2) 0;
   padding-left: 1.2em;
   overflow-wrap: anywhere;
 }
 
 .errors li {
-  color: #dc2626;
+  color: var(--ugoe-color-danger);
 }
 
 h3 {
-  margin: 8px 0 4px;
+  margin: var(--ugoe-space-3) 0 var(--ugoe-space-2);
 }
 
 h4 {
-  margin: 10px 0 2px;
+  margin: var(--ugoe-space-4) 0 var(--ugoe-space-1);
 }
 </style>

@@ -3,8 +3,11 @@
   状態 (選択中のモーション・再生位置など) は TimelineState、編集は Command (docs/editor.md#タイムライン)。
 -->
 <script lang="ts">
+import { IconButton } from "@ugoe/ui";
 import { onDestroy, untrack } from "svelte";
 import type { EditorDocument } from "../../document.svelte";
+import { t } from "../../i18n";
+import TabStrip, { type TabItem } from "../../ui/TabStrip.svelte";
 import type { ViewportController } from "../../viewport/controller.svelte";
 import ExpressionEditor from "./ExpressionEditor.svelte";
 import MotionEditor from "./MotionEditor.svelte";
@@ -54,6 +57,16 @@ function toggleOpen() {
   }
 }
 
+type Tab = "motions" | "expressions";
+
+const tabs = $derived<TabItem<Tab>[]>([
+  { value: "motions", label: t("timeline.tabs.motions", { count: doc.motions.length }) },
+  {
+    value: "expressions",
+    label: t("timeline.tabs.expressions", { count: doc.expressions.length }),
+  },
+]);
+
 function switchTab(next: "motions" | "expressions") {
   tab = next;
   if (next === "motions") timeline.endPreview();
@@ -61,23 +74,15 @@ function switchTab(next: "motions" | "expressions") {
 }
 </script>
 
-<section class="timeline" class:open aria-label="Timeline">
-  <div class="tabs" role="tablist">
-    <button
-      class="toggle"
-      onclick={toggleOpen}
+<section class="timeline" class:open aria-label={t("timeline.aria")}>
+  <div class="tabs">
+    <IconButton
+      small
+      label={open ? t("timeline.collapse") : t("timeline.expand")}
       aria-expanded={open}
-      title={open ? "Collapse the timeline" : "Expand the timeline"}>{open ? "▾" : "▸"}</button
+      onclick={toggleOpen}>{open ? "▾" : "▸"}</IconButton
     >
-    <button role="tab" aria-selected={tab === "motions"} onclick={() => switchTab("motions")}
-      >Motions <span class="count">{doc.motions.length}</span></button
-    >
-    <button
-      role="tab"
-      aria-selected={tab === "expressions"}
-      onclick={() => switchTab("expressions")}
-      >Expressions <span class="count">{doc.expressions.length}</span></button
-    >
+    <TabStrip {tabs} value={tab} ariaLabel={t("timeline.tabs.aria")} onselect={switchTab} />
     {#if doc.error && open}<span class="error" title={doc.error}>{doc.error}</span>{/if}
   </div>
   {#if open}
@@ -106,30 +111,13 @@ function switchTab(next: "motions" | "expressions") {
     display: flex;
     align-items: center;
     gap: 4px;
-    padding: 2px 8px;
+    padding: 0 8px;
     border-bottom: 1px solid var(--border);
     min-width: 0;
   }
-  .tabs button[role="tab"] {
-    border: none;
-    background: none;
-    color: var(--muted);
-    padding: 4px 8px;
-    border-bottom: 2px solid transparent;
-  }
-  .tabs button[aria-selected="true"] {
-    color: var(--text);
-    border-bottom-color: var(--accent);
-  }
-  .toggle {
-    border: none;
-    background: none;
-    color: var(--muted);
-    width: 20px;
-  }
-  .count {
-    color: var(--muted);
-    font-size: 11px;
+  /* 下の線は .tabs が引く (畳むボタンとエラーの下にも) */
+  .tabs :global(.tab-strip) {
+    border-bottom: 0;
   }
   .error {
     margin-left: 8px;

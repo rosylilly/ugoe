@@ -667,5 +667,877 @@
     "preview cache": "preview cache",
     "finite": "a finite number",
     "finite and > 0": "a finite number greater than 0"
+  },
+  "inspector": {
+    "title": "Inspector",
+    "heading": "{{kind}}: {{label}}",
+    "kind": {
+      "part": "Part",
+      "deformer": "Deformer",
+      "mesh": "Mesh",
+      "parameter": "Parameter"
+    },
+    "baseBadge": "base",
+    "empty": "Nothing selected (rev {{revision}})",
+    "avatarBaseHint": "The avatar profile belongs to the base model and can't be edited here. Edit it in the base project.",
+    "mesh": {
+      "title": "Mesh",
+      "summary": "{{name}} · {{vertices}} · {{triangles}}",
+      "vertices_one": "{{count, number}} vertex",
+      "vertices_other": "{{count, number}} vertices",
+      "triangles_one": "{{count, number}} triangle",
+      "triangles_other": "{{count, number}} triangles",
+      "texture": {
+        "label": "Texture"
+      },
+      "blend": {
+        "label": "Blend",
+        "normal": "Normal",
+        "additive": "Additive",
+        "multiply": "Multiply"
+      },
+      "culling": {
+        "label": "Back-face culling"
+      },
+      "maskOnly": {
+        "label": "Mask only"
+      },
+      "masks": {
+        "title": "Masks",
+        "add": "Add",
+        "mesh": {
+          "aria": "Mask {{index}}"
+        },
+        "invert": "Invert",
+        "remove": "Remove mask"
+      },
+      "maskMode": {
+        "label": "Combine",
+        "union": "Union",
+        "intersection": "Intersection"
+      }
+    },
+    "inference": {
+      "title": "Inference",
+      "rederivedBy": "Derived cells are re-derived by {{method}}.",
+      "method": {
+        "label": "Method",
+        "additive": "additive blending",
+        "depthRotation": "depth rotation",
+        "unknown": "an unknown method",
+        "option": {
+          "additive": "Additive blending",
+          "depthRotation": "Depth rotation"
+        }
+      },
+      "angleScale": {
+        "label": "Angle scale"
+      },
+      "pivotX": {
+        "label": "Pivot x"
+      },
+      "pivotY": {
+        "label": "Pivot y"
+      },
+      "pivotDepth": {
+        "label": "Pivot depth"
+      },
+      "yaw": {
+        "label": "Yaw"
+      },
+      "pitch": {
+        "label": "Pitch"
+      },
+      "axisNone": "(none)",
+      "error": {
+        "notNumber": "{{field}} must be a number",
+        "noAxis": "Choose a yaw or pitch parameter"
+      },
+      "apply": {
+        "label": "Apply settings",
+        "tooltip": "Set this grid's inference settings and re-derive its derived cells"
+      },
+      "reset": {
+        "label": "Reset"
+      },
+      "infer": {
+        "label": "Infer",
+        "tooltip": "Re-derive the cells made by the grid's method (authored cells are kept)"
+      },
+      "inferOverwrite": {
+        "label": "Infer (overwrite derived)",
+        "tooltip": "Re-derive every derived cell with the grid's method, including cells made by other methods"
+      },
+      "selectedCells_one": "{{count, number}} selected cell",
+      "selectedCells_other": "{{count, number}} selected cells",
+      "currentCell": "Current cell",
+      "noCell": "No cell (select cells in the grid)",
+      "markAuthored": {
+        "label": "Mark authored",
+        "tooltip": "Keep these cells as they are; inference will not overwrite them"
+      },
+      "markDerived": {
+        "label": "Mark derived",
+        "tooltip": "Let inference re-derive these cells with the grid's method"
+      },
+      "mirror": {
+        "title": "Mirror",
+        "from": {
+          "label": "Mirror from"
+        },
+        "fromSelf": "{{element}} (itself, left ↔ right)",
+        "fromPartner": "{{element}} (mirror partner)",
+        "axis": {
+          "label": "Axis",
+          "placeholder": "default"
+        },
+        "tolerance": {
+          "label": "Tolerance",
+          "placeholder": "1 px"
+        },
+        "overwriteAuthored": {
+          "label": "Overwrite authored cells"
+        },
+        "run": {
+          "label": "Mirror",
+          "tooltip": "Flip the source's keyforms into this grid's derived cells and the cells still left as they were when their key was added"
+        },
+        "rerunOverwrite": {
+          "label": "Overwrite authored cells and mirror",
+          "tooltip": "Mirror again and replace the authored cells too (Undo restores them)"
+        }
+      },
+      "partner": {
+        "title": "Mirror partner",
+        "label": "Partner",
+        "none": "(none, symmetric)",
+        "axis": {
+          "label": "Mirror axis",
+          "placeholder": "default"
+        },
+        "set": {
+          "label": "Set partner",
+          "tooltip": "Pair both elements (their previous partners are unpaired) and set this element's mirror axis"
+        }
+      },
+      "source": {
+        "text": "Mirrored cells come from {{from}}.",
+        "withOptions": "Mirrored cells come from {{from}} ({{options}}).",
+        "separator": ", ",
+        "itself": "{{element}} itself",
+        "axis": "axis {{axis}}",
+        "tolerance": "tolerance {{tolerance}}"
+      },
+      "cells_one": "{{count, number}} cell",
+      "cells_other": "{{count, number}} cells",
+      "report": {
+        "mirrored": "Mirrored {{cells}} from {{from}}.",
+        "mirroredKept": "{{mirrored}} Kept {{cells}} authored (not overwritten).",
+        "allAuthored": "Nothing was mirrored: all {{cells}} that {{from}} maps to are authored, and authored cells are kept unless overwritten.",
+        "nothing": "Nothing was mirrored: no cell of {{from}} maps to a cell of this grid that can be written."
+      },
+      "origin": {
+        "title": "{{name}}: {{description}}",
+        "derivedTitle": "{{name}}: re-derived by {{method}}",
+        "mirrorTitle": "{{name}}: mirrored from {{source}}",
+        "mirrorNoSource": "{{name}}: no mirror source recorded (not re-derived)",
+        "authored": {
+          "label": "Authored",
+          "description": "made or fixed by hand; inference never overwrites it"
+        },
+        "additive": {
+          "label": "Additive",
+          "description": "inferred by additive blending"
+        },
+        "depthRotation": {
+          "label": "Depth rotation",
+          "description": "inferred by rotating the depth"
+        },
+        "mirror": {
+          "label": "Mirror",
+          "description": "mirrored from the mirror source"
+        },
+        "derived": {
+          "label": "Derived",
+          "description": "inferred without a recorded method; re-derived with the grid's method"
+        }
+      }
+    },
+    "rederive": {
+      "warning": "Could not re-mirror {{target}} from {{source}}: {{detail}}. Its mirrored cells keep their previous values.",
+      "target": "{{kind}} {{id}}",
+      "kind": {
+        "part": "part",
+        "mesh": "mesh",
+        "deformer": "deformer",
+        "glue": "glue"
+      },
+      "hint": "Run “Mirror” on the grid to retry, or fix the source.",
+      "dismiss": "Dismiss"
+    },
+    "keyforms": {
+      "title": "Keyforms",
+      "onCell": "On cell {{cell}}",
+      "noAxes": "(no axes)",
+      "onlyCell": "Only cell",
+      "cellTooltip": "{{cell}} — {{origin}}",
+      "betweenKeys": "Between keys.",
+      "moveToNearest": {
+        "label": "Move to nearest key"
+      },
+      "key": {
+        "aria": "Go to key {{key}}"
+      },
+      "removeKey": {
+        "tooltip": "Remove key {{key}}",
+        "tooltipLast": "Remove key {{key}} (removes the axis)"
+      },
+      "addKeyHere": {
+        "tooltip": "Add a key at the current value"
+      },
+      "smooth": {
+        "label": "Smooth curve between keys",
+        "description": "Interpolate shapes along a smooth curve through the keys (axes with 3 or more keys). Opacity, draw order and colors stay linear.",
+        "unknown": "(unknown mode; evaluated as linear)"
+      },
+      "newAxis": {
+        "aria": "Parameter for a new axis",
+        "placeholder": "Add axis…"
+      },
+      "addKey": {
+        "label": "Add key at current value"
+      },
+      "slice": "Showing the slice at {{cell}}.",
+      "drawOrder": {
+        "label": "Draw order",
+        "setAll": {
+          "label": "Set for all cells",
+          "tooltip": "Set the draw order in every cell of this mesh"
+        }
+      },
+      "hint": "Click a cell to go there; Shift/Ctrl-click to select several."
+    },
+    "deformer": {
+      "title": "Deformer",
+      "summary": {
+        "warp": "{{name}} · warp {{cols}}×{{rows}} · {{keyforms}} · parent {{parent}}",
+        "rotation": "{{name}} · rotation · {{keyforms}} · parent {{parent}}"
+      },
+      "keyforms_one": "{{count, number}} keyform",
+      "keyforms_other": "{{count, number}} keyforms",
+      "noParent": "(none)",
+      "gizmoHint": "Edit the shape with the gizmo in the viewport.",
+      "unwrap": {
+        "description": "Move the children to the parent (keeping their look) and delete this",
+        "label": "Unwrap"
+      },
+      "wrap": {
+        "title": "Wrap in deformer",
+        "meshes_one": "{{count, number}} mesh",
+        "meshes_other": "{{count, number}} meshes",
+        "deformers_one": "{{count, number}} deformer",
+        "deformers_other": "{{count, number}} deformers",
+        "parts_one": "{{count, number}} part",
+        "parts_other": "{{count, number}} parts",
+        "summary": "{{items}} selected · children keep their look (at the default parameter values)",
+        "summaryWithParts": "{{items}} selected (a part wraps its outermost meshes and deformers) · children keep their look (at the default parameter values)",
+        "name": {
+          "label": "Name",
+          "placeholder": "from the first selected"
+        },
+        "rows": "Rows",
+        "cols": "Cols",
+        "warp": "Warp",
+        "rotationOrigin": "Origin: center of the selection",
+        "rotation": "Rotation"
+      }
+    },
+    "staleRig": {
+      "title": "Propose the rig again",
+      "description": "This costume mesh was edited (vertices, triangles or parent) after an adopted rig proposal wrote the base's motion into it, so it no longer follows the base exactly.",
+      "openAi": "Open AI tab"
+    },
+    "avatar": {
+      "title": "Avatar profile",
+      "empty": "The model has no avatar profile. Create one to declare the conformance level, the metadata and the usage permissions. Permissions start at the most restrictive values.",
+      "create": "Create avatar profile",
+      "level": "Level",
+      "levelOption": "{{level}} — {{name}}",
+      "levelName": {
+        "basic": "Basic",
+        "standard": "Standard",
+        "expressive": "Expressive"
+      },
+      "none": "None",
+      "meta": {
+        "title": "Metadata",
+        "name": "Name",
+        "authors": "Authors (one per line)",
+        "version": "Version",
+        "copyright": "Copyright",
+        "contact": "Contact",
+        "licenseUrl": "License URL",
+        "references": "References (one per line)",
+        "thumbnail": "Thumbnail",
+        "thumbnailOption": "{{index}}: {{name}}",
+        "thirdPartyLicenses": "Third-party licenses"
+      },
+      "permissions": {
+        "title": "Permissions",
+        "avatar": "Who may use it as an avatar",
+        "commercial": "Commercial use",
+        "credit": "Credit",
+        "modification": "Modification",
+        "allow": "Allow"
+      },
+      "permission": {
+        "onlyAuthor": "Only the author",
+        "onlyLicensed": "Only licensed people",
+        "everyone": "Everyone"
+      },
+      "commercial": {
+        "personalNonProfit": "Personal, non-profit",
+        "personalProfit": "Personal, for profit",
+        "corporation": "Corporations too"
+      },
+      "credit": {
+        "required": "Required",
+        "unnecessary": "Not needed"
+      },
+      "modification": {
+        "prohibited": "Prohibited",
+        "allow": "Allowed",
+        "allowRedistribution": "Allowed, redistributable"
+      },
+      "usage": {
+        "violent": "Excessively violent content",
+        "sexual": "Excessively sexual content",
+        "politicalOrReligious": "Political or religious purposes",
+        "antisocialOrHate": "Antisocial or hateful purposes",
+        "redistribution": "Redistribution"
+      },
+      "hitAreas": {
+        "title": "Standard hit areas",
+        "empty": "The model has no hit areas.",
+        "option": "{{id}} ({{mesh}})"
+      },
+      "remove": "Remove avatar profile",
+      "check": {
+        "title": "Conformance",
+        "noProfile": "No avatar profile: the model does not conform to any level. Satisfies {{satisfied}}.",
+        "conforms": "Conforms to {{claimed}}. Satisfies {{satisfied}}.",
+        "errors_one": "Claims {{claimed}} but has {{count}} error. Satisfies {{satisfied}}.",
+        "errors_other": "Claims {{claimed}} but has {{count}} errors. Satisfies {{satisfied}}.",
+        "noLevel": "no level",
+        "level": "level {{level}} ({{name}})"
+      }
+    },
+    "depth": {
+      "title": "Depth",
+      "summary": "{{points}} · {{depth}}",
+      "vertices_one": "{{count, number}} vertex",
+      "vertices_other": "{{count, number}} vertices",
+      "controlPoints_one": "{{count, number}} control point",
+      "controlPoints_other": "{{count, number}} control points",
+      "none": "none",
+      "value": "{{value}} px",
+      "range": "{{min}} – {{max}} px",
+      "show": "Show in viewport",
+      "uniform": {
+        "label": "Uniform",
+        "apply": "Set all"
+      },
+      "dome": {
+        "label": "Dome peak",
+        "apply": "Dome",
+        "tooltip": "Depth rises from 0 on the ellipse inscribed in the rest-pose bounds to the peak at its center"
+      },
+      "selected": {
+        "label": "Selected ({{count}})",
+        "apply": "Set selected"
+      },
+      "pickHint": {
+        "mesh": "Select vertices in mesh edit mode.",
+        "warp": "Select control points with the gizmo."
+      },
+      "clear": "Clear depth"
+    },
+    "drawClone": {
+      "title": "Draw clone",
+      "cloneOf": "Clone of",
+      "description": "Shares the shape of the original. Give it its own draw order and opacity here, and masks in the Mesh section.",
+      "outOfSync": "Out of sync with the original",
+      "resync": "Resync",
+      "opacity": "Opacity (this cell)",
+      "drawOrder": "Draw order (this cell)",
+      "betweenKeys": "Between keys: move the parameters onto a key to edit this cell.",
+      "clone": "Clone",
+      "create": {
+        "label": "Create draw clone",
+        "tooltip": "Duplicate this mesh for another draw order or mask; it follows this mesh's shape"
+      }
+    }
+  },
+  "viewport": {
+    "loading": "Loading viewport…",
+    "screenshot": {
+      "label": "Screenshot",
+      "tooltip": "Save the current view as a PNG image (without gizmos and other overlays)",
+      "saved": "Saved screenshot to {{path}}",
+      "failed": "Cannot save the screenshot: {{error}}",
+      "dialogTitle": "Save Screenshot"
+    },
+    "fit": {
+      "label": "Fit"
+    },
+    "stopPhysics": {
+      "label": "Stop physics",
+      "tooltip": "Stop the physics preview and return to the edit pose"
+    },
+    "editMesh": {
+      "label": "Edit mesh",
+      "tooltip": "Double-click a mesh"
+    },
+    "moduleOutline": {
+      "label": "Module outline",
+      "tooltip": "Outline every mesh of this module, to tell it from the base model underneath"
+    },
+    "baseNote": "Base model: can't be edited here. Edit it in the base project.",
+    "meshEdit": {
+      "title": "Mesh: {{mesh}}",
+      "retriangulate": "Retriangulate",
+      "deleteVertices": "Delete vertices",
+      "done": "Done",
+      "hint": "Drag: move / box select · Shift: add · Ctrl+click: add vertex · Del: remove · Esc: exit",
+      "aria": "Mesh editor"
+    },
+    "cell": {
+      "noAxes": "(no axes)",
+      "selectAll": "All",
+      "notOnKey": "Not on a key: editing would not know which cell to write.",
+      "moveToNearestKey": "Move to nearest key"
+    },
+    "form": {
+      "toggle": {
+        "label": "Form edit",
+        "tooltip": "Edit the keyform of the current cell"
+      },
+      "selectAll": {
+        "tooltip": "Select every point"
+      },
+      "selected": "{{count}} / {{total}} selected",
+      "empty": "Select a mesh or deformer"
+    },
+    "gizmo": {
+      "title": "{{kind}}: {{id}}",
+      "kind": {
+        "warp": "Warp",
+        "rotation": "Rotation"
+      },
+      "originAllCells": {
+        "label": "Origin: all cells",
+        "tooltip": "Move the origin in every cell and keep the children in place (or hold Shift)"
+      },
+      "aria": "Deformer gizmo"
+    },
+    "glue": {
+      "readOnly": "Read-only here",
+      "addHint": "Click a vertex of each mesh to pair them",
+      "pendingHint": "Now click a vertex of {{mesh}}",
+      "removeHint": "Click the square on a pair to remove it",
+      "withEsc": "{{hint}} · Esc: done",
+      "aria": "Glue pairs",
+      "pairs_one": "{{count}} pair",
+      "pairs_other": "{{count}} pairs",
+      "add": {
+        "label": "Add pairs",
+        "tooltip": "Pair a vertex of each mesh by clicking them"
+      },
+      "remove": {
+        "label": "Remove pairs",
+        "tooltip": "Remove a pair by clicking its square"
+      }
+    },
+    "light": {
+      "aria": "Light {{index}}"
+    },
+    "collider": {
+      "end": "{{name}}: end {{end}}"
+    }
+  },
+  "tree": {
+    "view": {
+      "aria": "Tree",
+      "parts": "Parts",
+      "deformers": "Deformers"
+    },
+    "addPart": {
+      "label": "+ Part",
+      "tooltip": "Add a part under the selected part"
+    },
+    "rename": {
+      "label": "Rename",
+      "tooltip": "Rename"
+    },
+    "delete": {
+      "label": "Delete",
+      "tooltip": "Delete",
+      "title": "Delete elements?",
+      "one": "Delete {{kind}} \"{{id}}\"?",
+      "many_one": "Delete {{count}} element?",
+      "many_other": "Delete {{count}} elements?",
+      "confirm": "Delete"
+    },
+    "empty": {
+      "noModel": "No model",
+      "parts": "No parts",
+      "deformers": "No deformers or meshes"
+    },
+    "kind": {
+      "part": "part",
+      "deformer": "deformer",
+      "mesh": "mesh",
+      "parameter": "parameter"
+    },
+    "element": "{{kind}} \"{{name}}\"",
+    "icon": {
+      "part": "Part",
+      "warp": "Warp deformer",
+      "rotation": "Rotation deformer",
+      "deformer": "Deformer (unknown kind)",
+      "mesh": "Mesh",
+      "mask": "Mask-only mesh"
+    },
+    "row": {
+      "collapse": "Collapse",
+      "expand": "Expand",
+      "name": "Name",
+      "base": {
+        "label": "base",
+        "tooltip": "Part of the base model: read-only in a module project"
+      },
+      "mask": {
+        "label": "mask",
+        "tooltip": "Mask only: not drawn as color"
+      },
+      "hidden": {
+        "label": "hidden",
+        "tooltip": "Opacity is 0 at the default parameter values"
+      },
+      "drawOrder": "Draw order"
+    },
+    "drop": {
+      "hint": "Drop onto a part, a deformer or between meshes",
+      "alreadyTop": "{{what}} is already at the top",
+      "partInto": "A part can only be moved into another part",
+      "cycle": "Cannot move {{what}} into itself or its descendant",
+      "alreadyIn": "{{what}} is already in {{target}}",
+      "alreadyUnder": "{{what}} is already under {{target}}",
+      "deformerNeedsPart": "A deformer must belong to a part",
+      "deformerInto": "A deformer can only be moved into a part or another deformer",
+      "meshNeedsPart": "A mesh must belong to a part",
+      "meshInto": "A mesh can only be moved into a part or a deformer",
+      "notMovable": "A {{kind}} cannot be moved in the tree",
+      "onlyMeshes": "Only meshes can be reordered",
+      "otherMesh": "Drop onto another mesh to reorder",
+      "drawOrder": "{{what}} (draw order {{a}}) and {{target}} (draw order {{b}}) cannot be reordered: change the draw order instead (Inspector > Draw order)",
+      "alreadyThere": "{{what}} is already there",
+      "alreadyThereAll": "Already there",
+      "nothing": "Nothing to move",
+      "ontoMesh": "Drop onto a mesh to reorder",
+      "oneMesh": "Reorder one mesh at a time",
+      "moveToPartFirst": "Drop onto the part to move the mesh first",
+      "moveToDeformerFirst": "Drop onto the deformer to move the mesh first",
+      "self": "Cannot move {{what}} into itself"
+    },
+    "history": {
+      "move_one": "Move {{count}} element",
+      "move_other": "Move {{count}} elements",
+      "delete_one": "Delete {{count}} element",
+      "delete_other": "Delete {{count}} elements"
+    }
+  },
+  "parameters": {
+    "title": "Parameters",
+    "snap": {
+      "label": "Snap to keys",
+      "tooltip": "Move the selected element's parameters to their nearest keys"
+    },
+    "reset": {
+      "label": "Reset"
+    },
+    "add": {
+      "aria": "New parameter",
+      "moduleNote": "A module can't add parameters. Add them in the base project and expose them in the slot."
+    },
+    "field": {
+      "id": "ID",
+      "name": "Name",
+      "namePlaceholder": "(same as ID)",
+      "min": "Min",
+      "default": "Default",
+      "max": "Max"
+    },
+    "create": {
+      "label": "Create"
+    },
+    "cancel": {
+      "label": "Cancel"
+    },
+    "apply": {
+      "label": "Apply"
+    },
+    "delete": {
+      "label": "Delete"
+    },
+    "edit": {
+      "tooltip": "Edit {{id}}",
+      "tooltipRelay": "Edit {{id}} (relay parameter: tracking does not write it, and viewers hide it)"
+    },
+    "relay": {
+      "tag": "relay",
+      "label": "Relay (internal)",
+      "description": "A relay parameter passes values between physics rigs. Tracking does not write it, and viewers hide it by default."
+    },
+    "value": {
+      "aria": "{{name}} value",
+      "tooltip": "Type a value between {{min}} and {{max}}, then press Enter",
+      "notNumber": "\"{{text}}\" is not a number",
+      "outOfRange": "{{value}} is outside the range {{min}} to {{max}}"
+    },
+    "key": {
+      "base": "The selected element belongs to the base model. Edit it in the base project.",
+      "add": "Add a key at {{value}} to {{target}}",
+      "remove": "Remove the key {{key}} from {{target}}",
+      "marker": "Key {{key}}",
+      "goTo": "Go to key {{key}}",
+      "duplicate": "{{key}} is already a key"
+    },
+    "baseHint": "Parameters belong to the base model and can't be edited here. Edit them in the base project.",
+    "history": {
+      "edit": "Edit parameter {{id}}"
+    },
+    "mirror": {
+      "label": "Mirror",
+      "tooltip": "The parameter on the other side (used when mirroring keyforms). Pairs are set on both parameters.",
+      "none": "(none)",
+      "itself": "Itself (flip the sign)",
+      "self": "itself",
+      "suggest": "Pair with {{name}}"
+    }
+  },
+  "timeline": {
+    "aria": "Timeline",
+    "collapse": "Collapse the timeline",
+    "expand": "Expand the timeline",
+    "tabs": {
+      "aria": "Timeline tabs",
+      "motions": "Motions ({{count, number}})",
+      "expressions": "Expressions ({{count, number}})"
+    },
+    "unit": {
+      "seconds": "s"
+    },
+    "name": {
+      "label": "Name"
+    },
+    "fadeIn": {
+      "label": "Fade in"
+    },
+    "fadeOut": {
+      "label": "Fade out"
+    },
+    "delete": "Delete",
+    "keyBatch_one": "Key {{count}} parameter",
+    "keyBatch_other": "Key {{count}} parameters",
+    "keyBlocked": "A key cannot be moved past its neighbor.",
+    "track": {
+      "missing": "{{id}} (missing)",
+      "partOpacity": "Opacity: {{id}}",
+      "effect": "Effect: {{id}}"
+    },
+    "segment": {
+      "linear": {
+        "label": "Linear",
+        "description": "Make the segment into this key a straight line"
+      },
+      "bezier": {
+        "label": "Bezier",
+        "description": "Make the segment into this key a bezier curve with handles"
+      },
+      "stepped": {
+        "label": "Step",
+        "description": "Make the segment into this key a step at this key"
+      },
+      "inverseStepped": {
+        "label": "Inv. step",
+        "description": "Make the segment into this key a step right after the previous key"
+      }
+    },
+    "motion": {
+      "select": {
+        "aria": "Motion",
+        "empty": "(no motions)"
+      },
+      "optionLoop": "{{name}} ({{duration}} s, loop)",
+      "new": {
+        "label": "New motion",
+        "tooltip": "Create a new motion"
+      },
+      "delete": {
+        "tooltip": "Delete this motion"
+      },
+      "nameInvalid": "Use letters, digits, _, - and . (not starting with .) in motion names.",
+      "duration": {
+        "label": "Duration"
+      },
+      "loop": {
+        "label": "Loop"
+      },
+      "events": {
+        "label": "Events ({{count, number}})",
+        "aria": "Events",
+        "time": {
+          "aria": "Event {{index}} time"
+        },
+        "value": {
+          "aria": "Event {{index}} value"
+        },
+        "remove": "Remove event {{index}}",
+        "add": "+ Event at {{time}} s"
+      },
+      "play": {
+        "label": "Play",
+        "tooltip": "Play / stop"
+      },
+      "stop": {
+        "label": "Stop"
+      },
+      "repeat": {
+        "label": "Repeat",
+        "description": "Repeat the playback from the start (the motion's Loop also repeats)"
+      },
+      "previousFrame": "Previous frame",
+      "nextFrame": "Next frame",
+      "time": {
+        "aria": "Time"
+      },
+      "keyChanged": {
+        "label": "◆ Key changed",
+        "tooltip": "Key every parameter whose slider differs from the motion at this time",
+        "nothing": "No parameter differs from the motion at this time. Move a slider first."
+      },
+      "deleteKey": {
+        "label": "Delete key",
+        "tooltip": "Delete the selected key"
+      },
+      "curves_one": "{{count, number}} curve",
+      "curves_other": "{{count, number}} curves",
+      "ruler": {
+        "tooltip": "Click or drag to seek (Shift: without snapping to frames)"
+      },
+      "eventMark": "Event: {{value}}",
+      "keyRow": {
+        "tooltip": "Key {{id}} at {{time}} s with its slider value"
+      },
+      "key": {
+        "tooltip": "{{label}}: {{value}} at {{time}} s (drag to move)",
+        "aria": "Key {{label}} at {{time}}"
+      },
+      "empty": "No motions yet. Press “New motion”, then key the sliders over time.",
+      "option": "{{name}} ({{duration}} s)",
+      "durationOf": "/ {{duration}} s"
+    },
+    "curve": {
+      "keyTime": {
+        "label": "t",
+        "aria": "Key time"
+      },
+      "keyValue": {
+        "label": "v",
+        "aria": "Key value"
+      },
+      "segment": {
+        "aria": "Segment into this key"
+      },
+      "firstKey": "The first key has no segment before it.",
+      "hintKey": "Click a key to edit it. Double-click the graph to add one.",
+      "hintEmpty": "No curve yet. Press ◆ or double-click the graph to key.",
+      "fade": {
+        "tooltip": "Fade of this curve (empty: the motion's fade)"
+      },
+      "fadeIn": {
+        "label": "In"
+      },
+      "fadeOut": {
+        "label": "Out"
+      },
+      "delete": {
+        "label": "Delete curve",
+        "tooltip": "Delete this curve and all its keys"
+      },
+      "plot": {
+        "aria": "Curve of {{label}}"
+      },
+      "handleStart": {
+        "aria": "Start handle of the segment into {{time}}"
+      },
+      "handleEnd": {
+        "aria": "End handle of the segment into {{time}}"
+      },
+      "point": {
+        "aria": "Key at {{time}}: {{value}}"
+      }
+    },
+    "expression": {
+      "select": {
+        "aria": "Expression",
+        "empty": "(no expressions)"
+      },
+      "option": "{{name}} ({{count, number}})",
+      "new": {
+        "label": "New from sliders",
+        "tooltip": "Create an expression from the sliders moved away from their defaults"
+      },
+      "newOp": {
+        "aria": "Operation for the new expression"
+      },
+      "nothingMoved": "Move some sliders away from their defaults first.",
+      "nameInvalid": "Use letters, digits, _, - and . (not starting with .) in expression names.",
+      "preview": {
+        "label": "Preview",
+        "tooltip": "Show the expression over the current sliders (press again to restore them)"
+      },
+      "endPreview": {
+        "label": "End preview"
+      },
+      "column": {
+        "parameter": "Parameter",
+        "op": "Operation",
+        "value": "Value"
+      },
+      "row": {
+        "op": {
+          "aria": "{{parameter}} operation"
+        },
+        "remove": "Remove {{parameter}}"
+      },
+      "missing": "{{id}} (missing)",
+      "add": {
+        "aria": "Parameter to add",
+        "placeholder": "Add parameter…",
+        "label": "Add"
+      },
+      "fromSliders": {
+        "label": "Set values from sliders",
+        "tooltip": "Recompute the values from the current sliders (keeping each operation)"
+      },
+      "empty": "No expressions yet. Move the sliders to make a face, then press “New from sliders”.",
+      "op": {
+        "add": "Add",
+        "multiply": "Multiply",
+        "overwrite": "Overwrite"
+      }
+    }
   }
 }

@@ -11,6 +11,7 @@
 -->
 <script lang="ts">
 import type { EditorDocument } from "../../../document.svelte";
+import { t } from "../../../i18n";
 import type { Glue, Model } from "../../../ipc";
 import { labelOf } from "../../../labels";
 import {
@@ -21,6 +22,7 @@ import {
   withPair,
 } from "../../../panels/glues/glues";
 import type { GlueView, PairMode } from "../../../panels/glues/glueView.svelte";
+import TipButton from "../../../ui/TipButton.svelte";
 import { boundaryEdges, type Point } from "../geometry";
 import type { ViewportScene } from "../scene.svelte";
 
@@ -136,13 +138,18 @@ function onKeyDown(e: KeyboardEvent): void {
 
 const hint = $derived(
   readOnly
-    ? "Read-only here"
+    ? t("viewport.glue.readOnly")
     : view.pairMode === "add"
       ? view.pending === null
-        ? "Click a vertex of each mesh to pair them"
-        : `Now click a vertex of ${labelOf(model?.meshes, view.pending.side === "a" ? (glue?.mesh_b ?? "") : (glue?.mesh_a ?? ""))}`
+        ? t("viewport.glue.addHint")
+        : t("viewport.glue.pendingHint", {
+            mesh: labelOf(
+              model?.meshes,
+              view.pending.side === "a" ? (glue?.mesh_b ?? "") : (glue?.mesh_a ?? ""),
+            ),
+          })
       : view.pairMode === "remove"
-        ? "Click the square on a pair to remove it"
+        ? t("viewport.glue.removeHint")
         : "",
 );
 </script>
@@ -203,27 +210,29 @@ const hint = $derived(
       {/if}
     </svg>
   {/if}
-  <div class="bar" role="group" aria-label="Glue pairs">
+  <div class="bar" role="group" aria-label={t("viewport.glue.aria")}>
     <span class="title">
       <span class="swatch a"></span>{labelOf(model?.meshes, glue.mesh_a)}
       <span class="swatch b"></span>{labelOf(model?.meshes, glue.mesh_b)}
-      · {glue.pairs.length} pair{glue.pairs.length === 1 ? "" : "s"}
+      · {t("viewport.glue.pairs", { count: glue.pairs.length })}
     </span>
-    <button
-      class:on={view.pairMode === "add"}
-      aria-pressed={view.pairMode === "add"}
+    <TipButton
+      small
+      pressed={view.pairMode === "add"}
       disabled={readOnly || busy || !drawn}
       onclick={() => setMode("add")}
-      title="Pair a vertex of each mesh by clicking them">Add pairs</button
+      tooltip={t("viewport.glue.add.tooltip")}>{t("viewport.glue.add.label")}</TipButton
     >
-    <button
-      class:on={view.pairMode === "remove"}
-      aria-pressed={view.pairMode === "remove"}
+    <TipButton
+      small
+      pressed={view.pairMode === "remove"}
       disabled={readOnly || busy || !drawn || glue.pairs.length === 0}
       onclick={() => setMode("remove")}
-      title="Remove a pair by clicking its square">Remove pairs</button
+      tooltip={t("viewport.glue.remove.tooltip")}>{t("viewport.glue.remove.label")}</TipButton
     >
-    {#if hint}<span class="hint muted">{hint}{view.pairMode !== "off" ? " · Esc: done" : ""}</span>{/if}
+    {#if hint}<span class="hint muted"
+        >{view.pairMode !== "off" ? t("viewport.glue.withEsc", { hint }) : hint}</span
+      >{/if}
   </div>
 {/if}
 
@@ -318,11 +327,6 @@ const hint = $derived(
   height: 10px;
   border-radius: 2px;
   background: var(--glue);
-}
-
-button.on {
-  border-color: var(--accent);
-  color: var(--accent);
 }
 
 .hint {

@@ -1,5 +1,6 @@
 <!-- ツリーの節の種類を表す小さなアイコン。 -->
 <script lang="ts">
+import { t } from "../../i18n";
 import type { NodeIcon } from "./build";
 
 interface Props {
@@ -8,14 +9,14 @@ interface Props {
 
 let { icon }: Props = $props();
 
-const titles: Record<NodeIcon, string> = {
-  part: "Part",
-  warp: "Warp deformer",
-  rotation: "Rotation deformer",
-  deformer: "Deformer (unknown kind)",
-  mesh: "Mesh",
-  mask: "Mask-only mesh",
-};
+const titles = $derived<Record<NodeIcon, string>>({
+  part: t("tree.icon.part"),
+  warp: t("tree.icon.warp"),
+  rotation: t("tree.icon.rotation"),
+  deformer: t("tree.icon.deformer"),
+  mesh: t("tree.icon.mesh"),
+  mask: t("tree.icon.mask"),
+});
 </script>
 
 <svg class="icon {icon}" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">

@@ -14,8 +14,10 @@
   (ipc.localToCanvas / ipc.canvasToLocal、ugoe_editor_core::space)。
 -->
 <script lang="ts">
+import { Button } from "@ugoe/ui";
 import type { EditorDocument } from "../../../document.svelte";
 import { errorText } from "../../../errors";
+import { t } from "../../../i18n";
 import { ipc, type Keyform } from "../../../ipc";
 import {
   cellIndex,
@@ -28,6 +30,7 @@ import {
   withPoint,
 } from "../../../panels/inspector/keyforms/keyforms";
 import type { Selection } from "../../../selection.svelte";
+import TipButton from "../../../ui/TipButton.svelte";
 import type { ViewportController } from "../../controller.svelte";
 import { flatten, gridOutline, movePoints } from "../deformer/gizmo";
 import { type Box, updateVertexSelection, verticesInBox } from "../geometry";
@@ -292,25 +295,36 @@ function moveToNearestKey() {
 <svelte:window onkeydown={onKeyDown} />
 
 <div class="bar">
-  <button class:active={enabled} onclick={() => (enabled = !enabled)} title="Edit the keyform of the current cell">
-    Form edit
-  </button>
+  <TipButton
+    small
+    pressed={enabled}
+    onclick={() => (enabled = !enabled)}
+    tooltip={t("viewport.form.toggle.tooltip")}>{t("viewport.form.toggle.label")}</TipButton
+  >
   {#if enabled && element}
     {#if cell}
       <span class="muted">
         {element.target.id}
-        {bindings.map((b) => `${b.parameter}=${cell[b.parameter]}`).join(" ") || "(no axes)"}
+        {bindings.map((b) => `${b.parameter}=${cell[b.parameter]}`).join(" ") ||
+          t("viewport.cell.noAxes")}
       </span>
       {#if localPoints.length > 1}
-        <button onclick={selectAll} title="Select every point (Ctrl+A)">All</button>
-        <span class="muted">{picked.length} / {localPoints.length} selected</span>
+        <TipButton
+          small
+          onclick={selectAll}
+          tooltip={t("viewport.form.selectAll.tooltip")}
+          shortcut="Mod+A">{t("viewport.cell.selectAll")}</TipButton
+        >
+        <span class="muted"
+          >{t("viewport.form.selected", { count: picked.length, total: localPoints.length })}</span
+        >
       {/if}
     {:else}
-      <span class="warn">Not on a key: editing would not know which cell to write.</span>
-      <button onclick={moveToNearestKey}>Move to nearest key</button>
+      <span class="warn">{t("viewport.cell.notOnKey")}</span>
+      <Button small onclick={moveToNearestKey}>{t("viewport.cell.moveToNearestKey")}</Button>
     {/if}
   {:else if enabled}
-    <span class="muted">Select a mesh or deformer</span>
+    <span class="muted">{t("viewport.form.empty")}</span>
   {/if}
   {#if error}<span class="error">{error}</span>{/if}
 </div>
@@ -367,10 +381,6 @@ function moveToNearestKey() {
   gap: 8px;
   align-items: center;
   pointer-events: auto;
-}
-
-.bar button.active {
-  outline: 2px solid var(--accent);
 }
 
 .warn {

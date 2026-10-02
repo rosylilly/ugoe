@@ -1,14 +1,25 @@
 <!-- キーの格子のセルの由来の凡例 (記号と色は inference.ts の ORIGIN_STYLES)。 -->
 <script lang="ts">
+import { Tooltip } from "@ugoe/ui";
 import { LEGEND_ORIGINS, originStyle } from "./inference";
 </script>
 
 <ul class="legend">
   {#each LEGEND_ORIGINS as origin (origin)}
     {@const style = originStyle(origin)}
-    <li title={style.description}>
-      <span class="swatch" class:derived={origin !== "authored"} style="--origin: {style.color}">{style.symbol}</span>
-      {style.name}
+    <li>
+      <Tooltip text={style.description}>
+        {#snippet children(attrs)}
+          <!-- 説明をキーボードでも出せるように、項目にフォーカスを受けさせる -->
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <span class="item" tabindex="0" {...attrs}>
+            <span class="swatch" class:derived={origin !== "authored"} style="--origin: {style.color}"
+              >{style.symbol}</span
+            >
+            {style.name}
+          </span>
+        {/snippet}
+      </Tooltip>
     </li>
   {/each}
 </ul>
@@ -25,7 +36,7 @@ import { LEGEND_ORIGINS, originStyle } from "./inference";
   color: var(--muted);
 }
 
-li {
+.item {
   display: inline-flex;
   align-items: center;
   gap: 4px;

@@ -3,7 +3,9 @@
   ミラーをやり直せなかった格子は、コマンドは適用されたままミラーのセルが前の値で残るので、ここで知らせる。
 -->
 <script lang="ts">
+import { Notice } from "@ugoe/ui";
 import type { EditorDocument } from "../../../document.svelte";
+import { t } from "../../../i18n";
 import { describeWarning } from "./inference";
 
 interface Props {
@@ -14,33 +16,33 @@ let { doc }: Props = $props();
 </script>
 
 {#if doc.warnings.length > 0}
-  <div class="notice" role="status">
-    <ul>
-      {#each doc.warnings as warning (`${warning.target.kind}:${warning.target.id}<-${warning.source.kind}:${warning.source.id}`)}
-        <li>{describeWarning(warning)}</li>
-      {/each}
-    </ul>
-    <p class="muted">Run “Mirror” on the grid to retry, or fix the source.</p>
-    <button onclick={() => doc.dismissWarnings()}>Dismiss</button>
+  <div class="notice">
+    <Notice
+      tone="warning"
+      ondismiss={() => doc.dismissWarnings()}
+      dismissLabel={t("inspector.rederive.dismiss")}
+    >
+      <ul>
+        {#each doc.warnings as warning (`${warning.target.kind}:${warning.target.id}<-${warning.source.kind}:${warning.source.id}`)}
+          <li>{describeWarning(warning)}</li>
+        {/each}
+      </ul>
+      <p class="ed-hint">{t("inspector.rederive.hint")}</p>
+    </Notice>
   </div>
 {/if}
 
 <style>
 .notice {
-  margin: 4px 0 8px;
-  padding: 6px 8px;
-  border: 1px solid #d97706;
-  border-radius: 4px;
-  background: color-mix(in srgb, #d97706 12%, transparent);
+  margin: var(--ugoe-space-2) 0 var(--ugoe-space-3);
 }
 
 ul {
   margin: 0;
-  padding-left: 16px;
+  padding-left: var(--ugoe-space-5);
 }
 
 p {
-  margin: 4px 0;
-  font-size: 11px;
+  margin: var(--ugoe-space-2) 0 0;
 }
 </style>

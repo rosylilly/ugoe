@@ -1,6 +1,7 @@
 // パラメータの左右の対 (Parameter::mirror) の選択肢と提案 (docs/editor.md#キーフォームの編集)。
 // DOM に依存しない純粋な関数だけを置く (mirror.test.ts で検査する)。
 import type { Command, Parameter } from "../../generated/types";
+import { t } from "../../i18n";
 import { elementLabel } from "../../labels";
 
 /** 選択欄の値: 対なし (空文字列)・自分自身 (符号の反転)・相手のパラメータの ID。 */
@@ -12,8 +13,8 @@ export interface MirrorOption {
 /** `self` の対の選択肢。先頭が「なし」、次が「自分自身」、残りは他のパラメータ (名前と ID)。 */
 export function mirrorOptions(parameters: readonly Parameter[], self: string): MirrorOption[] {
   return [
-    { value: "", label: "(none)" },
-    { value: self, label: "Itself (flip the sign)" },
+    { value: "", label: t("parameters.mirror.none") },
+    { value: self, label: t("parameters.mirror.itself") },
     ...parameters
       .filter((p) => p.id !== self)
       .map((p) => ({ value: p.id, label: elementLabel(p.name, p.id) })),

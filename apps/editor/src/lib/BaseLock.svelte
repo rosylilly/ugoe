@@ -6,6 +6,7 @@
 <script lang="ts">
 import type { Snippet } from "svelte";
 import { baseEditHint } from "./moduleProject";
+import { provideBaseLock, useBaseLock } from "./ui/baseLock";
 
 interface Props {
   locked: boolean;
@@ -15,6 +16,10 @@ interface Props {
 }
 
 let { locked, hint, children }: Props = $props();
+
+// 外側の BaseLock が無効にしていれば、中も無効 (Slider などは `useBaseLock()` で読む)
+const outer = useBaseLock();
+provideBaseLock(() => locked || outer());
 </script>
 
 {#if locked}<p class="base-note" role="note">{hint ?? baseEditHint()}</p>{/if}

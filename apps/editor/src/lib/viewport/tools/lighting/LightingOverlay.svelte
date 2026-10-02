@@ -8,6 +8,7 @@
 -->
 <script lang="ts">
 import type { EditorDocument } from "../../../document.svelte";
+import { t } from "../../../i18n";
 import type { Model } from "../../../ipc";
 import {
   directionToHandle,
@@ -165,7 +166,7 @@ function rays(x: number, y: number): string {
       stroke={h.behind ? h.color : undefined}
       role="button"
       tabindex="-1"
-      aria-label="Light {h.index + 1}"
+      aria-label={t("viewport.light.aria", { index: h.index + 1 })}
       onpointerdown={(e) => onDown(e, h.index)}
       onpointermove={onMove}
       onpointerup={onUp}

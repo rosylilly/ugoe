@@ -4,7 +4,9 @@
   (自分自身なら符号を反転した値) に対応させるのに使う。標準の命名 (EyeLOpen ↔ EyeROpen など) から対を提案する。
 -->
 <script lang="ts">
+import { Button, Select, Tooltip } from "@ugoe/ui";
 import type { EditorDocument, ParameterDef } from "../../document.svelte";
+import { t } from "../../i18n";
 import { labelOf } from "../../labels";
 import { mirrorOptions, setMirrorCommand, suggestedMirror } from "./mirror";
 
@@ -16,7 +18,12 @@ interface Props {
 
 let { doc, parameter, parameters }: Props = $props();
 
-const options = $derived(mirrorOptions(parameters, parameter.id));
+/** 「対なし」の選択肢の値。Select の空文字列は「何も選んでいない」なので、別の値に置き換える。 */
+const NONE = "\u0000none";
+
+const options = $derived(
+  mirrorOptions(parameters, parameter.id).map((o) => ({ ...o, value: o.value || NONE })),
+);
 const current = $derived(parameter.mirror ?? "");
 const suggestion = $derived(
   current === ""
@@ -26,9 +33,10 @@ const suggestion = $derived(
       )
     : null,
 );
+const id = $props.id();
 
 function suggestionLabel(id: string): string {
-  return id === parameter.id ? "itself" : labelOf(parameters, id);
+  return id === parameter.id ? t("parameters.mirror.self") : labelOf(parameters, id);
 }
 
 function set(value: string): void {
@@ -36,20 +44,25 @@ function set(value: string): void {
 }
 </script>
 
-<label class="mirror">
-  <span>Mirror</span>
-  <select
-    value={current}
-    onchange={(e) => set((e.currentTarget as HTMLSelectElement).value)}
-    title="The parameter on the other side (used when mirroring keyforms). Pairs are set on both parameters."
-  >
-    {#each options as option (option.value)}
-      <option value={option.value}>{option.label}</option>
-    {/each}
-  </select>
-</label>
+<Tooltip text={t("parameters.mirror.tooltip")}>
+  {#snippet children(attrs)}
+    <span class="mirror" {...attrs}>
+      <span id="{id}-label">{t("parameters.mirror.label")}</span>
+      <Select
+        labelledby="{id}-label"
+        value={current || NONE}
+        {options}
+        onchange={(v) => set(v === NONE ? "" : v)}
+      />
+    </span>
+  {/snippet}
+</Tooltip>
 {#if suggestion}
-  <button class="suggest" onclick={() => set(suggestion)}>Pair with {suggestionLabel(suggestion)}</button>
+  <span class="suggest">
+    <Button small onclick={() => set(suggestion)}
+      >{t("parameters.mirror.suggest", { name: suggestionLabel(suggestion) })}</Button
+    >
+  </span>
 {/if}
 
 <style>
@@ -57,15 +70,14 @@ function set(value: string): void {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 4px;
+  gap: var(--ugoe-space-2);
 }
 
-.mirror select {
+.mirror :global(.ugoe-select) {
   min-width: 0;
 }
 
 .suggest {
   align-self: flex-start;
-  font-size: 11px;
 }
 </style>

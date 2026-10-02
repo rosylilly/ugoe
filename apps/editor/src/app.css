@@ -75,6 +75,14 @@ h2 {
   color: var(--ugoe-color-text-muted);
 }
 
+/* パネルの中のまとまりの見出し。 */
+h3 {
+  margin: var(--ugoe-space-4) 0 var(--ugoe-space-2);
+  font-size: var(--ugoe-font-size-md);
+  font-weight: var(--ugoe-font-weight-strong);
+  color: var(--ugoe-color-text);
+}
+
 ul {
   list-style: none;
   padding: 0;

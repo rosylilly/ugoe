@@ -4,8 +4,11 @@
   左の欄: 選んだキーの時刻と値、そのキーに入る区間の種類 (直線・ベジェ・ステップ)、カーブ個別のフェード、カーブの削除。
 -->
 <script lang="ts">
+import { NumberField } from "@ugoe/ui";
 import type { EditorDocument } from "../../document.svelte";
+import { t } from "../../i18n";
 import type { Command, Curve, Motion, Point, Segment } from "../../ipc";
+import TipButton from "../../ui/TipButton.svelte";
 import {
   canMoveKey,
   clampHandle,
@@ -14,10 +17,10 @@ import {
   endPoint,
   type GraphView,
   keyCommand,
-  SEGMENT_KINDS,
   type SegmentKind,
   segmentEndingAt,
   segmentEnds,
+  segmentKinds,
   segmentShape,
   snapToFrame,
   type Track,
@@ -48,6 +51,10 @@ type Drag =
   | { kind: "key"; t: number; point: Point }
   | { kind: "c1" | "c2"; t: number; point: Point };
 let drag = $state<Drag | null>(null);
+/** 適用に失敗したとき、数値の欄を今の値に戻すために作り直す (数値の欄は確定した値を出したままになるので)。 */
+let fieldsKey = $state(0);
+const kinds = $derived(segmentKinds());
+const ids = $props.id();
 
 const key = $derived(targetKey(row.target));
 const selectedT = $derived(timeline.selectedKey?.track === key ? timeline.selectedKey.t : null);
@@ -179,22 +186,20 @@ async function onDoubleClick(e: MouseEvent) {
 
 // --- 左の欄 ---
 
-async function setKeyField(field: "t" | "v", e: Event) {
-  const input = e.currentTarget as HTMLInputElement;
-  const value = input.valueAsNumber;
+async function setKeyField(field: "t" | "v", value: number) {
   const p = selectedPoint;
-  if (!p || !row.curve || !Number.isFinite(value)) return;
+  if (!p || !row.curve) return;
   const to = field === "t" ? { t: value, v: p.v } : { t: p.t, v: value };
   if (field === "t" && !canMoveKey(row.curve, p.t, value)) {
-    onmessage("A key cannot be moved past its neighbor.");
-    input.value = String(p.t);
+    onmessage(t("timeline.keyBlocked"));
+    fieldsKey++;
     return;
   }
   if (await apply({ op: "move_motion_key", motion: motion.name, target: row.target, t: p.t, to })) {
     timeline.selectKey(row.target, to.t);
     timeline.seek(to.t);
   } else {
-    input.value = String(p[field]);
+    fieldsKey++;
   }
 }
 
@@ -235,45 +240,53 @@ async function removeCurve() {
     <strong class="title" title={row.label}>{row.label}</strong>
     {#if selectedPoint}
       <span class="fields">
-        <label class="inline"
-          >t <input
-            type="number"
-            step="any"
-            value={selectedPoint.t}
-            aria-label="Key time"
-            onchange={(e) => setKeyField("t", e)}
-          /></label
-        >
-        <label class="inline"
-          >v <input
-            type="number"
-            step="any"
-            value={selectedPoint.v}
-            aria-label="Key value"
-            onchange={(e) => setKeyField("v", e)}
-          /></label
-        >
+        {#key fieldsKey}
+          <span class="visually-hidden" id="{ids}-t">{t("timeline.curve.keyTime.aria")}</span>
+          <span class="visually-hidden" id="{ids}-v">{t("timeline.curve.keyValue.aria")}</span>
+          <span class="inline"
+            ><span aria-hidden="true">{t("timeline.curve.keyTime.label")}</span><NumberField
+              step={0.1}
+              decimals={4}
+              size={5}
+              value={selectedPoint.t}
+              labelledby="{ids}-t"
+              onchange={(v) => setKeyField("t", v)}
+            /></span
+          >
+          <span class="inline"
+            ><span aria-hidden="true">{t("timeline.curve.keyValue.label")}</span><NumberField
+              step={0.1}
+              decimals={4}
+              size={5}
+              value={selectedPoint.v}
+              labelledby="{ids}-v"
+              onchange={(v) => setKeyField("v", v)}
+            /></span
+          >
+        {/key}
       </span>
-      <span class="kinds" role="group" aria-label="Segment into this key">
-        {#each SEGMENT_KINDS as k (k.kind)}
-          <button
-            class:on={incoming?.type === k.kind}
+      <span class="kinds" role="group" aria-label={t("timeline.curve.segment.aria")}>
+        {#each kinds as k (k.kind)}
+          <TipButton
+            small
+            pressed={incoming?.type === k.kind}
             disabled={!incoming}
             onclick={() => setKind(k.kind)}
-            title={incoming ? `Make the segment into this key ${k.description}` : "The first key has no segment before it"}
-            >{k.label}</button
+            tooltip={k.description}>{k.label}</TipButton
           >
         {/each}
       </span>
+      {#if !incoming}<span class="muted">{t("timeline.curve.firstKey")}</span>{/if}
     {:else if row.curve}
-      <span class="muted">Click a key to edit it. Double-click the graph to add one.</span>
+      <span class="muted">{t("timeline.curve.hintKey")}</span>
     {:else}
-      <span class="muted">No curve yet. Press ◆ or double-click the graph to key.</span>
+      <span class="muted">{t("timeline.curve.hintEmpty")}</span>
     {/if}
     {#if row.curve}
       <span class="fields">
-        <label class="inline" title="Fade of this curve (empty: the motion's fade)"
-          >In <input
+        <label class="inline" title={t("timeline.curve.fade.tooltip")}
+          >{t("timeline.curve.fadeIn.label")}
+          <input
             type="number"
             min="0"
             step="0.1"
@@ -282,8 +295,9 @@ async function removeCurve() {
             onchange={(e) => setFade("fade_in", e)}
           /></label
         >
-        <label class="inline" title="Fade of this curve (empty: the motion's fade)"
-          >Out <input
+        <label class="inline" title={t("timeline.curve.fade.tooltip")}
+          >{t("timeline.curve.fadeOut.label")}
+          <input
             type="number"
             min="0"
             step="0.1"
@@ -292,7 +306,9 @@ async function removeCurve() {
             onchange={(e) => setFade("fade_out", e)}
           /></label
         >
-        <button onclick={removeCurve} title="Delete this curve and all its keys">Delete curve</button>
+        <TipButton small onclick={removeCurve} tooltip={t("timeline.curve.delete.tooltip")}
+          >{t("timeline.curve.delete.label")}</TipButton
+        >
       </span>
     {/if}
   </div>
@@ -301,7 +317,7 @@ async function removeCurve() {
     width={view.width}
     height={HEIGHT}
     role="application"
-    aria-label="Curve of {row.label}"
+    aria-label={t("timeline.curve.plot.aria", { label: row.label })}
     ondblclick={onDoubleClick}
   >
     <line class="zero" x1="0" x2={view.width} y1={y(row.parameter?.default ?? 0)} y2={y(row.parameter?.default ?? 0)} />
@@ -324,7 +340,9 @@ async function removeCurve() {
               height="8"
               role="button"
               tabindex="-1"
-              aria-label="{kind === 'c1' ? 'Start' : 'End'} handle of the segment into {s.to.t}"
+              aria-label={kind === "c1"
+                ? t("timeline.curve.handleStart.aria", { time: s.to.t })
+                : t("timeline.curve.handleEnd.aria", { time: s.to.t })}
               onpointerdown={(e) => onDown(e, kind, s.to.t, c)}
               onpointermove={onMove}
               onpointerup={onUp}
@@ -343,7 +361,7 @@ async function removeCurve() {
           r="5"
           role="button"
           tabindex="-1"
-          aria-label="Key at {k.t}: {k.v}"
+          aria-label={t("timeline.curve.point.aria", { time: k.t, value: k.v })}
           onpointerdown={(e) => original && onDown(e, "key", original.t, original)}
           onpointermove={onMove}
           onpointerup={onUp}
@@ -385,6 +403,9 @@ async function removeCurve() {
     align-items: center;
     gap: 2px;
   }
+  label.inline {
+    display: inline-flex;
+  }
   input[type="number"] {
     width: 56px;
   }
@@ -393,13 +414,13 @@ async function removeCurve() {
     flex-wrap: wrap;
     gap: 2px;
   }
-  .kinds button {
-    font-size: 11px;
-    padding: 1px 4px;
-  }
-  .kinds button.on {
-    background: var(--accent);
-    color: white;
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   .plot {
     display: block;

@@ -8,6 +8,7 @@ import type {
   MirrorSource,
   RederiveWarning,
 } from "../../../generated/types";
+import { t } from "../../../i18n";
 import { labelOf } from "../../../labels";
 import type {
   Cell,
@@ -26,38 +27,45 @@ export interface OriginStyle {
   color: string;
 }
 
-export const ORIGIN_STYLES: Record<KeyformOrigin, OriginStyle> = {
-  authored: {
-    symbol: "A",
-    name: "Authored",
-    description: "made or fixed by hand; inference never overwrites it",
-    color: "var(--text)",
-  },
-  additive: {
-    symbol: "+",
-    name: "Additive",
-    description: "inferred by additive blending",
-    color: "#0d9488",
-  },
-  depth_rotation: {
-    symbol: "R",
-    name: "Depth rotation",
-    description: "inferred by rotating the depth",
-    color: "#d97706",
-  },
-  mirror: {
-    symbol: "M",
-    name: "Mirror",
-    description: "mirrored from the mirror source",
-    color: "#2563eb",
-  },
-  derived: {
-    symbol: "D",
-    name: "Derived",
-    description: "inferred without a recorded method; re-derived with the grid's method",
-    color: "#a855f7",
-  },
+/** 由来ごとの記号と色 (名前と説明は言語ごとなので `originStyle` で引く)。 */
+const ORIGIN_MARKS: Record<KeyformOrigin, Pick<OriginStyle, "symbol" | "color">> = {
+  authored: { symbol: "A", color: "var(--text)" },
+  additive: { symbol: "+", color: "#0d9488" },
+  depth_rotation: { symbol: "R", color: "#d97706" },
+  mirror: { symbol: "M", color: "#2563eb" },
+  derived: { symbol: "D", color: "#a855f7" },
 };
+
+/** 由来ごとの名前と説明 (呼ぶたびに今の言語で引く)。 */
+function originText(origin: KeyformOrigin): Pick<OriginStyle, "name" | "description"> {
+  switch (origin) {
+    case "authored":
+      return {
+        name: t("inspector.inference.origin.authored.label"),
+        description: t("inspector.inference.origin.authored.description"),
+      };
+    case "additive":
+      return {
+        name: t("inspector.inference.origin.additive.label"),
+        description: t("inspector.inference.origin.additive.description"),
+      };
+    case "depth_rotation":
+      return {
+        name: t("inspector.inference.origin.depthRotation.label"),
+        description: t("inspector.inference.origin.depthRotation.description"),
+      };
+    case "mirror":
+      return {
+        name: t("inspector.inference.origin.mirror.label"),
+        description: t("inspector.inference.origin.mirror.description"),
+      };
+    case "derived":
+      return {
+        name: t("inspector.inference.origin.derived.label"),
+        description: t("inspector.inference.origin.derived.description"),
+      };
+  }
+}
 
 /** 凡例の並び。 */
 export const LEGEND_ORIGINS: readonly KeyformOrigin[] = [
@@ -69,7 +77,7 @@ export const LEGEND_ORIGINS: readonly KeyformOrigin[] = [
 ];
 
 export function originStyle(origin: KeyformOrigin): OriginStyle {
-  return ORIGIN_STYLES[origin];
+  return { ...ORIGIN_MARKS[origin], ...originText(origin) };
 }
 
 /** セルの説明 (ツールチップ用)。方法を記録していない `derived` は、作り直す方法も書く。 */
@@ -80,21 +88,28 @@ export function originTitle(
 ): string {
   const style = originStyle(origin);
   if (origin === "derived") {
-    return `${style.name}: re-derived by ${methodName(inference)}`;
+    return t("inspector.inference.origin.derivedTitle", {
+      name: style.name,
+      method: methodName(inference),
+    });
   }
   if (origin === "mirror") {
     return mirrorSource
-      ? `${style.name}: mirrored from ${mirrorSource.id}`
-      : `${style.name}: no mirror source recorded (not re-derived)`;
+      ? t("inspector.inference.origin.mirrorTitle", { name: style.name, source: mirrorSource.id })
+      : t("inspector.inference.origin.mirrorNoSource", { name: style.name });
   }
-  return `${style.name}: ${style.description}`;
+  return t("inspector.inference.origin.title", {
+    name: style.name,
+    description: style.description,
+  });
 }
 
 /** 格子の推定の方法の名前 (`inference` が省略なら加算合成)。 */
 export function methodName(inference: KeyformInference | null | undefined): string {
-  if (!inference || inference.method === "additive") return "additive blending";
-  if (inference.method === "depth_rotation") return "depth rotation";
-  return "an unknown method";
+  if (!inference || inference.method === "additive")
+    return t("inspector.inference.method.additive");
+  if (inference.method === "depth_rotation") return t("inspector.inference.method.depthRotation");
+  return t("inspector.inference.method.unknown");
 }
 
 // ---- 推定の設定のフォーム ----
@@ -147,14 +162,14 @@ export function inferenceForm(
 export function formError(form: InferenceForm): string | null {
   if (form.method === "additive") return null;
   const numbers: [string, number][] = [
-    ["Angle scale", form.angleScale],
-    ["Pivot x", form.pivotX],
-    ["Pivot y", form.pivotY],
-    ["Pivot depth", form.pivotDepth],
+    [t("inspector.inference.angleScale.label"), form.angleScale],
+    [t("inspector.inference.pivotX.label"), form.pivotX],
+    [t("inspector.inference.pivotY.label"), form.pivotY],
+    [t("inspector.inference.pivotDepth.label"), form.pivotDepth],
   ];
   const bad = numbers.find(([, v]) => typeof v !== "number" || !Number.isFinite(v));
-  if (bad) return `${bad[0]} must be a number`;
-  if (!form.yaw && !form.pitch) return "Choose a yaw or pitch parameter";
+  if (bad) return t("inspector.inference.error.notNumber", { field: bad[0] });
+  if (!form.yaw && !form.pitch) return t("inspector.inference.error.noAxis");
   return null;
 }
 
@@ -302,11 +317,17 @@ export function mirrorChoices(model: ModelData, element: ElementGrid): MirrorCho
   const items = sameKind(model, element.target);
   const self: MirrorChoice = {
     source: element.target,
-    label: `${labelOf(items, id)} (itself, left ↔ right)`,
+    label: t("inspector.inference.mirror.fromSelf", { element: labelOf(items, id) }),
   };
   if (!pair.mirror || pair.mirror === id) return [self];
   const partner = { kind, id: pair.mirror } as KeyformTarget;
-  return [{ source: partner, label: `${labelOf(items, pair.mirror)} (mirror partner)` }, self];
+  return [
+    {
+      source: partner,
+      label: t("inspector.inference.mirror.fromPartner", { element: labelOf(items, pair.mirror) }),
+    },
+    self,
+  ];
 }
 
 /** 対の相手の候補 (同じ種類の、自分以外の要素)。表示は名前と ID。 */
@@ -327,15 +348,25 @@ export function describeMirrorSource(
   label: (id: string) => string = (id) => id,
 ): string {
   const options = [
-    source.axis != null ? `axis ${source.axis}` : null,
-    source.tolerance != null ? `tolerance ${source.tolerance}` : null,
+    source.axis != null ? t("inspector.inference.source.axis", { axis: source.axis }) : null,
+    source.tolerance != null
+      ? t("inspector.inference.source.tolerance", { tolerance: source.tolerance })
+      : null,
   ].filter((s) => s !== null);
-  const from = source.id === self ? `${label(source.id)} itself` : label(source.id);
-  return `Mirrored cells come from ${from}${options.length ? ` (${options.join(", ")})` : ""}.`;
+  const from =
+    source.id === self
+      ? t("inspector.inference.source.itself", { element: label(source.id) })
+      : label(source.id);
+  return options.length
+    ? t("inspector.inference.source.withOptions", {
+        from,
+        options: options.join(t("inspector.inference.source.separator")),
+      })
+    : t("inspector.inference.source.text", { from });
 }
 
 function cells(n: number): string {
-  return `${n} cell${n === 1 ? "" : "s"}`;
+  return t("inspector.inference.cells", { count: n });
 }
 
 /**
@@ -348,22 +379,30 @@ export function describeMirrorReport(
 ): { text: string; overwrite: boolean } {
   const from = label(report.source);
   if (report.written > 0) {
-    const kept =
+    const mirrored = t("inspector.inference.report.mirrored", {
+      cells: cells(report.written),
+      from,
+    });
+    const text =
       report.kept_authored > 0
-        ? ` Kept ${cells(report.kept_authored)} authored (not overwritten).`
-        : "";
-    return { text: `Mirrored ${cells(report.written)} from ${from}.${kept}`, overwrite: false };
+        ? t("inspector.inference.report.mirroredKept", {
+            mirrored,
+            cells: cells(report.kept_authored),
+          })
+        : mirrored;
+    return { text, overwrite: false };
   }
   if (report.kept_authored > 0) {
     return {
-      text:
-        `Nothing was mirrored: all ${cells(report.kept_authored)} that ${from} maps to are ` +
-        "authored, and authored cells are kept unless overwritten.",
+      text: t("inspector.inference.report.allAuthored", {
+        cells: cells(report.kept_authored),
+        from,
+      }),
       overwrite: true,
     };
   }
   return {
-    text: `Nothing was mirrored: no cell of ${from} maps to a cell of this grid that can be written.`,
+    text: t("inspector.inference.report.nothing", { from }),
     overwrite: false,
   };
 }
@@ -390,15 +429,22 @@ export function targetKey(target: KeyformTarget): string {
 // ---- 自動の作り直しの警告 ----
 
 function targetLabel(target: KeyformTarget): string {
-  return `${target.kind} ${target.id}`;
+  const kind = {
+    part: t("inspector.rederive.kind.part"),
+    mesh: t("inspector.rederive.kind.mesh"),
+    deformer: t("inspector.rederive.kind.deformer"),
+    glue: t("inspector.rederive.kind.glue"),
+  }[target.kind];
+  return t("inspector.rederive.target", { kind, id: target.id });
 }
 
-/** 警告の文 (通知に出す)。 */
+/** 警告の文 (通知に出す)。`message` は失敗の理由 (バックエンドの英語の表記) で、そのまま差し込む。 */
 export function describeWarning(warning: RederiveWarning): string {
-  return (
-    `Could not re-mirror ${targetLabel(warning.target)} from ${targetLabel(warning.source)}: ` +
-    `${warning.message}. Its mirrored cells keep their previous values.`
-  );
+  return t("inspector.rederive.warning", {
+    target: targetLabel(warning.target),
+    source: targetLabel(warning.source),
+    detail: warning.message,
+  });
 }
 
 /** 通知に積む警告 (同じ格子とミラー元の組は新しいもので置き換える)。 */

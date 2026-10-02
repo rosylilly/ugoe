@@ -11,52 +11,76 @@ import type {
   Message,
   Modification,
 } from "../../../generated/types";
+import { t } from "../../../i18n";
 
 /** 準拠を主張できるレベルの上限 (ugoe_model::avatar::MAX_LEVEL)。 */
 export const MAX_LEVEL = 3;
 
-/** レベルの名前 (docs/spec/avatar-profile.md#準拠レベル)。 */
-export const LEVEL_NAMES: Record<number, string> = {
-  1: "Basic",
-  2: "Standard",
-  3: "Expressive",
-};
+/** レベルの名前 (docs/spec/avatar-profile.md#準拠レベル)。範囲の外なら null。 */
+export function levelName(level: number): string | null {
+  switch (level) {
+    case 1:
+      return t("inspector.avatar.levelName.basic");
+    case 2:
+      return t("inspector.avatar.levelName.standard");
+    case 3:
+      return t("inspector.avatar.levelName.expressive");
+    default:
+      return null;
+  }
+}
 
-/** 標準の当たり判定の名前 (ugoe_model::avatar::HIT_AREA_HEAD / HIT_AREA_BODY)。 */
+/** 標準の当たり判定の名前 (ugoe_model::avatar::HIT_AREA_HEAD / HIT_AREA_BODY)。データの名前なので訳さない。 */
 export const STANDARD_HIT_AREAS = ["Head", "Body"] as const;
 
-/** 選択肢。先頭が最も制限の強い値 (既定値)。 */
-export const AVATAR_PERMISSIONS: { value: AvatarPermission; label: string }[] = [
-  { value: "only_author", label: "Only the author" },
-  { value: "only_licensed", label: "Only licensed people" },
-  { value: "everyone", label: "Everyone" },
-];
+/** 選択肢。先頭が最も制限の強い値 (既定値)。呼ぶたびに今の言語で作る。 */
+export function avatarPermissions(): { value: AvatarPermission; label: string }[] {
+  return [
+    { value: "only_author", label: t("inspector.avatar.permission.onlyAuthor") },
+    { value: "only_licensed", label: t("inspector.avatar.permission.onlyLicensed") },
+    { value: "everyone", label: t("inspector.avatar.permission.everyone") },
+  ];
+}
 
-export const COMMERCIAL_USAGES: { value: CommercialUsage; label: string }[] = [
-  { value: "personal_non_profit", label: "Personal, non-profit" },
-  { value: "personal_profit", label: "Personal, for profit" },
-  { value: "corporation", label: "Corporations too" },
-];
+export function commercialUsages(): { value: CommercialUsage; label: string }[] {
+  return [
+    { value: "personal_non_profit", label: t("inspector.avatar.commercial.personalNonProfit") },
+    { value: "personal_profit", label: t("inspector.avatar.commercial.personalProfit") },
+    { value: "corporation", label: t("inspector.avatar.commercial.corporation") },
+  ];
+}
 
-export const CREDIT_NOTATIONS: { value: CreditNotation; label: string }[] = [
-  { value: "required", label: "Required" },
-  { value: "unnecessary", label: "Not needed" },
-];
+export function creditNotations(): { value: CreditNotation; label: string }[] {
+  return [
+    { value: "required", label: t("inspector.avatar.credit.required") },
+    { value: "unnecessary", label: t("inspector.avatar.credit.unnecessary") },
+  ];
+}
 
-export const MODIFICATIONS: { value: Modification; label: string }[] = [
-  { value: "prohibited", label: "Prohibited" },
-  { value: "allow", label: "Allowed" },
-  { value: "allow_redistribution", label: "Allowed, redistributable" },
-];
+export function modifications(): { value: Modification; label: string }[] {
+  return [
+    { value: "prohibited", label: t("inspector.avatar.modification.prohibited") },
+    { value: "allow", label: t("inspector.avatar.modification.allow") },
+    {
+      value: "allow_redistribution",
+      label: t("inspector.avatar.modification.allowRedistribution"),
+    },
+  ];
+}
 
 /** 真偽値の許諾 (既定はどれも false = 許さない)。 */
-export const USAGE_FLAGS: { key: UsageFlag; label: string }[] = [
-  { key: "allow_violent_usage", label: "Excessively violent content" },
-  { key: "allow_sexual_usage", label: "Excessively sexual content" },
-  { key: "allow_political_or_religious_usage", label: "Political or religious purposes" },
-  { key: "allow_antisocial_or_hate_usage", label: "Antisocial or hateful purposes" },
-  { key: "allow_redistribution", label: "Redistribution" },
-];
+export function usageFlags(): { key: UsageFlag; label: string }[] {
+  return [
+    { key: "allow_violent_usage", label: t("inspector.avatar.usage.violent") },
+    { key: "allow_sexual_usage", label: t("inspector.avatar.usage.sexual") },
+    {
+      key: "allow_political_or_religious_usage",
+      label: t("inspector.avatar.usage.politicalOrReligious"),
+    },
+    { key: "allow_antisocial_or_hate_usage", label: t("inspector.avatar.usage.antisocialOrHate") },
+    { key: "allow_redistribution", label: t("inspector.avatar.usage.redistribution") },
+  ];
+}
 
 export type UsageFlag =
   | "allow_violent_usage"
@@ -158,21 +182,23 @@ export function checkSummary(check: {
   satisfied: number;
   errors: Message[];
 }): { ok: boolean; text: string } {
-  const satisfied = `Satisfies ${levelLabel(check.satisfied)}.`;
+  const satisfied = levelLabel(check.satisfied);
   if (check.claimed === null) {
-    return {
-      ok: false,
-      text: `No avatar profile: the model does not conform to any level. ${satisfied}`,
-    };
+    return { ok: false, text: t("inspector.avatar.check.noProfile", { satisfied }) };
   }
   const claimed = levelLabel(check.claimed);
   if (check.errors.length === 0) {
-    return { ok: true, text: `Conforms to ${claimed}. ${satisfied}` };
+    return { ok: true, text: t("inspector.avatar.check.conforms", { claimed, satisfied }) };
   }
-  const count = check.errors.length === 1 ? "1 error" : `${check.errors.length} errors`;
-  return { ok: false, text: `Claims ${claimed} but has ${count}. ${satisfied}` };
+  return {
+    ok: false,
+    text: t("inspector.avatar.check.errors", { claimed, satisfied, count: check.errors.length }),
+  };
 }
 
-function levelLabel(level: number): string {
-  return level === 0 ? "no level" : `level ${level} (${LEVEL_NAMES[level] ?? "?"})`;
+/** レベルの表記 (`level 2 (Standard)`。0 は「レベルなし」)。 */
+export function levelLabel(level: number): string {
+  return level === 0
+    ? t("inspector.avatar.check.noLevel")
+    : t("inspector.avatar.check.level", { level, name: levelName(level) ?? "?" });
 }

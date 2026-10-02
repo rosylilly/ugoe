@@ -4,6 +4,8 @@
   (`ProposalState.stale_rigs`。プロジェクトに残る)。
 -->
 <script lang="ts">
+import { Button, Notice } from "@ugoe/ui";
+import { t } from "../../i18n";
 import type { Selection } from "../../selection.svelte";
 
 interface Props {
@@ -21,27 +23,19 @@ const stale = $derived(
 </script>
 
 {#if stale}
-  <div class="notice" role="status">
-    <p>
-      <strong>Propose the rig again:</strong> this costume mesh was edited (vertices, triangles or parent) after an
-      adopted rig proposal wrote the base's motion into it, so it no longer follows the base exactly.
-    </p>
-    <button onclick={onopen}>Open AI tab</button>
+  <div class="stale">
+    <Notice tone="warning" title={t("inspector.staleRig.title")}>
+      {t("inspector.staleRig.description")}
+      {#snippet actions()}
+        <Button small onclick={onopen}>{t("inspector.staleRig.openAi")}</Button>
+      {/snippet}
+    </Notice>
   </div>
 {/if}
 
 <style>
-.notice {
-  margin: 4px 0 8px;
-  padding: 6px 8px;
-  border: 1px solid #d97706;
-  border-radius: 4px;
-  background: color-mix(in srgb, #d97706 12%, transparent);
-}
-
-p {
-  margin: 0 0 4px;
-  font-size: 12px;
+.stale {
+  margin: var(--ugoe-space-2) 0 var(--ugoe-space-3);
   overflow-wrap: anywhere;
 }
 </style>

@@ -17,12 +17,15 @@
     出さずに「本体のプロジェクトで直す」と示す。「Module outline」でモジュールのメッシュすべての輪郭を重ね、本体と見分ける。
 -->
 <script lang="ts">
+import { Button } from "@ugoe/ui";
 import type { EditorDocument } from "../document.svelte";
+import { t } from "../i18n";
 import { baseElements, isBaseElement } from "../moduleProject";
 import type { GlueView } from "../panels/glues/glueView.svelte";
 import type { PhysicsView } from "../panels/physics/physicsView.svelte";
 import type { VerifyView } from "../panels/verify/verifyView.svelte";
 import type { Selection } from "../selection.svelte";
+import TipButton from "../ui/TipButton.svelte";
 import type { ViewportController } from "./controller.svelte";
 import DeformerGizmo from "./tools/deformer/DeformerGizmo.svelte";
 import DepthOverlay from "./tools/depth/DepthOverlay.svelte";
@@ -224,31 +227,37 @@ function onKeyDown(e: KeyboardEvent): void {
 
 <div class="toolbar">
   {#if controller.previewingPhysics}
-    <button class="previewing" onclick={() => controller.stopPhysicsPreview()}
-      title="Stop the physics preview and return to the edit pose">Stop physics</button>
+    <TipButton
+      small
+      class="previewing"
+      onclick={() => controller.stopPhysicsPreview()}
+      tooltip={t("viewport.stopPhysics.tooltip")}>{t("viewport.stopPhysics.label")}</TipButton
+    >
   {/if}
   {#if editing === null}
-    <button disabled={primaryMesh === null || primaryIsBase} onclick={enterMeshEdit} title="Double-click a mesh">
-      Edit mesh
-    </button>
+    <TipButton
+      small
+      disabled={primaryMesh === null || primaryIsBase}
+      onclick={enterMeshEdit}
+      tooltip={t("viewport.editMesh.tooltip")}>{t("viewport.editMesh.label")}</TipButton
+    >
     {#if doc.module}
-      <label class="check" title="Outline every mesh of this module, to tell it from the base model underneath">
-        <input type="checkbox" bind:checked={moduleOutline} /> Module outline
-      </label>
-    {/if}
-    {#if primaryIsBase}
-      <span class="base-tag" role="note"
-        >Base model: can't be edited here. Edit it in the base project.</span
+      <TipButton
+        small
+        pressed={moduleOutline}
+        onclick={() => (moduleOutline = !moduleOutline)}
+        tooltip={t("viewport.moduleOutline.tooltip")}>{t("viewport.moduleOutline.label")}</TipButton
       >
     {/if}
+    {#if primaryIsBase}
+      <span class="base-tag" role="note">{t("viewport.baseNote")}</span>
+    {/if}
   {:else}
-    <span class="muted">Mesh: {editing}</span>
-    <button onclick={() => meshTool?.retriangulate()}>Retriangulate</button>
-    <button onclick={() => meshTool?.removeSelected()}>Delete vertices</button>
-    <button onclick={() => (selection.meshEdit = null)}>Done</button>
-    <span class="hint muted">
-      Drag: move / box select · Shift: add · Ctrl+click: add vertex · Del: remove · Esc: exit
-    </span>
+    <span class="muted">{t("viewport.meshEdit.title", { mesh: editing })}</span>
+    <Button small onclick={() => meshTool?.retriangulate()}>{t("viewport.meshEdit.retriangulate")}</Button>
+    <Button small onclick={() => meshTool?.removeSelected()}>{t("viewport.meshEdit.deleteVertices")}</Button>
+    <Button small onclick={() => (selection.meshEdit = null)}>{t("viewport.meshEdit.done")}</Button>
+    <span class="hint muted">{t("viewport.meshEdit.hint")}</span>
   {/if}
 </div>
 
@@ -290,16 +299,6 @@ function onKeyDown(e: KeyboardEvent): void {
   opacity: 0.55;
 }
 
-.check {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-}
-
 .base-tag {
   padding: 2px 6px;
   background: var(--panel);
@@ -322,7 +321,7 @@ function onKeyDown(e: KeyboardEvent): void {
   font-size: 11px;
 }
 
-.previewing {
+.toolbar :global(.previewing) {
   border-color: var(--accent);
   color: var(--accent);
 }

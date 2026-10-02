@@ -15,8 +15,10 @@
   パラメータ値がどれかの軸でキーの上にないときは編集しない (フォーム編集と同じ。T0608)。
 -->
 <script lang="ts">
+import { Button, Checkbox, Tooltip } from "@ugoe/ui";
 import type { EditorDocument } from "../../../document.svelte";
 import { errorText } from "../../../errors";
+import { t } from "../../../i18n";
 import { ipc, type Keyform } from "../../../ipc";
 import {
   cellIndex,
@@ -366,21 +368,31 @@ function onKeyDown(e: KeyboardEvent): void {
 <svelte:window onkeydown={onKeyDown} />
 
 <div class="bar">
-  <span class="muted">{element?.kind === "warp" ? "Warp" : "Rotation"}: {deformerId}</span>
+  <span class="muted"
+    >{t("viewport.gizmo.title", {
+      kind: element?.kind === "warp" ? t("viewport.gizmo.kind.warp") : t("viewport.gizmo.kind.rotation"),
+      id: deformerId,
+    })}</span
+  >
   {#if cell}
     <span class="muted">
-      {bindings.map((b) => `${b.parameter}=${cell[b.parameter]}`).join(" ") || "(no axes)"}
+      {bindings.map((b) => `${b.parameter}=${cell[b.parameter]}`).join(" ") ||
+        t("viewport.cell.noAxes")}
     </span>
     {#if element?.kind === "warp"}
-      <button onclick={selectAll}>All</button>
+      <Button small onclick={selectAll}>{t("viewport.cell.selectAll")}</Button>
     {:else if element?.kind === "rotation"}
-      <label title="Move the origin in every cell and keep the children in place (or hold Shift)">
-        <input type="checkbox" bind:checked={originAllCells} /> Origin: all cells
-      </label>
+      <Tooltip text={t("viewport.gizmo.originAllCells.tooltip")}>
+        {#snippet children(attrs)}
+          <span class="check" {...attrs}>
+            <Checkbox label={t("viewport.gizmo.originAllCells.label")} bind:checked={originAllCells} />
+          </span>
+        {/snippet}
+      </Tooltip>
     {/if}
   {:else if element}
-    <span class="warn">Not on a key: editing would not know which cell to write.</span>
-    <button onclick={moveToNearestKey}>Move to nearest key</button>
+    <span class="warn">{t("viewport.cell.notOnKey")}</span>
+    <Button small onclick={moveToNearestKey}>{t("viewport.cell.moveToNearestKey")}</Button>
   {/if}
   {#if error}<span class="error">{error}</span>{/if}
 </div>
@@ -390,7 +402,7 @@ function onKeyDown(e: KeyboardEvent): void {
   class="gizmo"
   class:editable={cell !== null}
   role="application"
-  aria-label="Deformer gizmo"
+  aria-label={t("viewport.gizmo.aria")}
   onpointerdown={onPointerDown}
   onpointermove={onPointerMove}
   onpointerup={onPointerUp}
@@ -450,16 +462,9 @@ function onKeyDown(e: KeyboardEvent): void {
   color: #b45309;
 }
 
-.bar label {
+.check {
   display: inline-flex;
-  align-items: center;
-  gap: 4px;
   white-space: nowrap;
-}
-
-.bar label input {
-  width: auto;
-  margin: 0;
 }
 
 .gizmo {
