@@ -235,6 +235,7 @@ declare global {
 
 async function tauriHost(): Promise<StudioHost> {
   const { Channel, invoke } = await import("@tauri-apps/api/core");
+  const windowModule = import("@tauri-apps/api/window");
   async function subscribe<T>(command: string, onMessage: (message: T) => void): Promise<void> {
     const channel = new Channel<T>();
     channel.onmessage = safeChannelHandler(onMessage);
@@ -327,7 +328,8 @@ async function tauriHost(): Promise<StudioHost> {
       return new Uint8Array(await invoke<ArrayBuffer>("scene_background", { revision }));
     },
     async startDragging() {
-      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      // 押した直後に呼ばれる (ボタンを放す前に OS へ渡す必要がある)。モジュールは先に読み込んでおく
+      const { getCurrentWindow } = await windowModule;
       await getCurrentWindow().startDragging();
     },
     reportRenderStats: (stats) => invoke("report_render_stats", { stats }),

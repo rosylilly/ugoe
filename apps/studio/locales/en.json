@@ -75,7 +75,7 @@
     "sizePortrait": "{{width}} × {{height}} (portrait)",
     "current": "Current size: {{width}} × {{height}} px",
     "scaled": "The OS kept the window smaller than the chosen size (it may not fit on the screen).",
-    "moveHint": "The output window has no frame. Hold Alt and drag it to move it."
+    "moveHint": "The output window has no frame. Drag it to move it."
   },
   "parameters": {
     "heading": "Parameters",

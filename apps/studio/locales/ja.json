@@ -75,7 +75,7 @@
     "sizePortrait": "{{width}} × {{height}} (縦)",
     "current": "いまの大きさ: {{width}} × {{height}} px",
     "scaled": "OS が、選んだ大きさより小さくしました (画面に収まらないことがあります)。",
-    "moveHint": "出力ウィンドウには枠がありません。Alt を押しながらドラッグすると動かせます。"
+    "moveHint": "出力ウィンドウには枠がありません。ドラッグすると動かせます。"
   },
   "parameters": {
     "heading": "パラメータ",

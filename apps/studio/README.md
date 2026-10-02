@@ -30,7 +30,7 @@ src/SourcePanel.svelte        ブラウザソース (OBS): 出す・やめる・
 source.html / src/source.ts   ブラウザソースのページの入口 (スタジオの待ち受けが `/source/<トークン>/` で出す。受け手は Output.svelte)
 output.html / src/output.ts   出力ウィンドウの入口 (背景は透過。@ugoe/ui と @ugoe/i18n は読まない)
 src/Output.svelte             出力ウィンドウとブラウザソースのページの受け手: @ugoe/player の受け手のモードでモデルだけを描く。シーンの見せ方を当てる。
-                              配信の口 (`feed`) を受け取る。出力ウィンドウでは Alt + ドラッグで動かす
+                              配信の口 (`feed`) を受け取る。出力ウィンドウではドラッグで動かす
 src/lib/feed.ts               受け手の配信の口 (OutputFeed)。ブラウザソースは WebSocket とファイルの HTTP (`sourceFeed`。切れたらつなぎ直す)
 src/lib/host.ts               バックエンドとの口 (StudioHost)。Tauri の外では window.__UGOE_STUDIO_HOST__ を使う
 src/lib/settings.ts           覚える設定 (言語・刻みの速さ。localStorage) と出力の大きさのプリセット

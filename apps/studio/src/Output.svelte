@@ -7,7 +7,7 @@
   (lib/outputLayout.ts の `planScene`、docs/studio.md#シーンの切り替えと受け手)。
   背景はシーンに従って要素の CSS で描き (透過・単色・クロマキー・画像)、モデルの canvas は常に透過にする。
   回転は描画の要素 (舞台) の CSS で回す (ビューに回転が無いため)。
-  出力ウィンドウは枠が無いので、Alt を押しながらドラッグするとウィンドウを動かせる (`feed.startDragging` があるとき)。
+  出力ウィンドウは枠が無いので、左ボタンでドラッグするとウィンドウを動かせる (`feed.startDragging` があるとき。T0813)。
   描画の負荷は約 1 秒ごとにバックエンドへ送り、操作ウィンドウに出す (ここには何も重ねない。docs/studio.md#負荷の表示)。
 -->
 <script lang="ts">
@@ -171,10 +171,15 @@ function layout() {
   player.panBy(l.offsetX, l.offsetY);
 }
 
+/** 解決済みの配信の口。押した瞬間に `startDragging` を呼ぶために、先に受け取っておく。 */
+let resolvedFeed: OutputFeed | null = null;
+
 function onPointerDown(event: PointerEvent) {
-  if (!event.altKey || event.button !== 0) return;
+  if (event.button !== 0) return;
+  const start = resolvedFeed?.startDragging;
+  if (start === undefined) return;
   event.preventDefault();
-  void feed().then((f) => f.startDragging?.());
+  void start.call(resolvedFeed);
 }
 
 onMount(() => {
@@ -185,6 +190,7 @@ onMount(() => {
     await player.attach(stage);
     player.setBackground("#000000", true);
     const host = await feed();
+    resolvedFeed = host;
     await host.subscribeFrames((message) => {
       if (message instanceof ArrayBuffer) player.pushFrame(decodeFrame(message));
       else if (message.kind === "scene") onScene(message);
