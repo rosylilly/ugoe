@@ -5344,6 +5344,18 @@ dependencies = [
  "tauri-plugin-os",
  "thiserror 2.0.21",
  "ugoe",
+ "ugoe-headless",
+ "ugoe-studio-vcam",
+]
+
+[[package]]
+name = "ugoe-studio-vcam"
+version = "0.0.0"
+dependencies = [
+ "libc",
+ "thiserror 2.0.21",
+ "windows 0.62.2",
+ "windows-core 0.62.2",
 ]
 
 [[package]]

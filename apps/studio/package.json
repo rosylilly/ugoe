@@ -8,6 +8,7 @@
     "dev": "ugoe-mediapipe-assets public/mediapipe --optional && vite",
     "wasm": "just wasm apps/studio/src/lib/wasm/generated",
     "mediapipe": "ugoe-mediapipe-assets public/mediapipe",
+    "vcam": "node scripts/build-vcam.mjs",
     "build": "ugoe-mediapipe-assets public/mediapipe && vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",

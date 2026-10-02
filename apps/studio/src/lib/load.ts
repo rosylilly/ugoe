@@ -27,12 +27,17 @@ function rendererWarnings(load: RendererLoad, tickRate: number): LoadWarning[] {
   // 隠れているなど、報告が途絶えている出力の数値は古いので、ほかの注意は出さない。
   if (load.stale) return [{ kind: "stale", label: load.label }];
   const out: LoadWarning[] = [];
-  const period = periodMs(tickRate);
+  // 出力ウィンドウは刻みごとに描く。仮想カメラは自分のフレームレートで描く (刻みより遅いことがある)。
+  const target = load.targetFps ?? tickRate;
+  const period = periodMs(target);
   if (load.renderMs > period * BUDGET_SHARE)
     out.push({ kind: "renderHeavy", label: load.label, renderMs: load.renderMs, periodMs: period });
-  if (load.fps < tickRate * RATE_SHORTFALL)
-    out.push({ kind: "renderSlow", label: load.label, fps: load.fps, target: tickRate });
-  if (load.dropped > 0) out.push({ kind: "dropped", label: load.label, dropped: load.dropped });
+  if (load.fps < target * RATE_SHORTFALL)
+    out.push({ kind: "renderSlow", label: load.label, fps: load.fps, target });
+  // 捨てたフレーム (物理のリセットを伴う) は、刻みごとに描く出力だけのもの。仮想カメラが描かなかった画は数値だけに出し、
+  // 追いつかないことは仮想カメラの「遅れた」で知らせる (VirtualCameraPanel.svelte)。
+  if (load.dropped > 0 && load.targetFps === null)
+    out.push({ kind: "dropped", label: load.label, dropped: load.dropped });
   return out;
 }
 

@@ -8,13 +8,18 @@
 //!    [`Rgba8`] で、[`image::encode_png_unpremultiplied`] で PNG にする。
 //!
 //! 描画の規則は `crates/ugoe-cli/README.md` の `ugoe render` の節。
+//!
+//! 毎フレーム描き続ける用途 (スタジオの仮想カメラ) には、レンダラとテクスチャを持ち続けて読み戻しを待たない
+//! [`Resident`] (常駐の描画の口) を使う。
 
 pub mod animate;
 pub mod args;
 mod gpu;
 pub mod image;
+mod resident;
 mod textures;
 mod view;
+pub mod yuv;
 
 use std::path::PathBuf;
 
@@ -26,6 +31,7 @@ use ugoe_render::FrameStats;
 pub use animate::Animation;
 pub use gpu::{Gpu, stats_json};
 pub use image::Rgba8;
+pub use resident::{DEFAULT_SLOTS, Readback, Resident, ResidentOptions, Wait};
 pub use textures::{placeholder_texture, resolve_normal_maps, resolve_textures, texture_count};
 pub use ugoe_render::{Light, Lighting};
 pub use view::{Fit, MAX_SIZE, fit_view, output_size};

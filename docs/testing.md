@@ -186,7 +186,7 @@ GPU のない GitHub Actions の Linux ランナーでは、Mesa のソフトウ
 | `VK_DRIVER_FILES` (と旧名の `VK_ICD_FILENAMES`) | `/usr/share/vulkan/icd.d/lvp_icd*.json` | Vulkan ローダーが lavapipe 以外のドライバを読まないようにする |
 | `LIBGL_ALWAYS_SOFTWARE` | `1` | GL を llvmpipe に固定する |
 
-ジョブは Tauri のシステム依存を入れず、`just test-gpu` が指定するクレートのテストだけをビルドします。ログの `vulkaninfo --summary` (vulkan のみ) と `ugoe-render gpu tests: using adapter ...` の行で、どのドライバで走ったかを確認できます。
+ジョブは Tauri のシステム依存を入れず、`just test-gpu` が指定するクレートのテストだけをビルドします。Tauri のアプリ (`scripts/ci-groups.mjs` で `tauri: true` のグループ。スタジオの仮想カメラの画のテスト) の `gpu-tests` は、環境変数 `CI` があると `scripts/gpu-test-args.mjs` が外すので、手元の `just test-gpu` だけで走ります。ログの `vulkaninfo --summary` (vulkan のみ) と `ugoe-render gpu tests: using adapter ...` の行で、どのドライバで走ったかを確認できます。
 
 ### 手元で CI と同じ条件で動かす
 

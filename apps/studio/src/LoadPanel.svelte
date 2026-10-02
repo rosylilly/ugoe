@@ -38,7 +38,9 @@ function perSecond(value: number): string {
 }
 
 function receiverName(label: string): string {
-  return label === "output" ? t("load.outputWindow") : label;
+  if (label === "output") return t("load.outputWindow");
+  if (label === "virtualCamera") return t("load.virtualCamera");
+  return label;
 }
 
 function warningText(w: LoadWarning): string {

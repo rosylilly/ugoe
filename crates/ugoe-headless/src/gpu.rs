@@ -12,16 +12,18 @@ use crate::image::Rgba8;
 use crate::{Error, Shading, bail};
 
 /// 描画先の形式。レンダラの前提 (リニア化しない) に合わせて sRGB 形式にしない。
-const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+pub(crate) const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
 /// ヘッドレスの GPU。
 #[derive(Debug)]
 pub struct Gpu {
     _instance: wgpu::Instance,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    pub(crate) device: wgpu::Device,
+    pub(crate) queue: wgpu::Queue,
     /// 選ばれたアダプタ。
     pub adapter_info: wgpu::AdapterInfo,
+    /// アダプタが WebGPU の全機能を持たないときに、使える機能 (計算シェーダの有無など)。
+    downlevel: wgpu::DownlevelCapabilities,
 }
 
 impl Gpu {
@@ -54,6 +56,7 @@ impl Gpu {
                 }
             };
         let adapter_info = adapter.get_info();
+        let downlevel = adapter.get_downlevel_capabilities();
         let limits = wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits());
         let (device, queue) =
             match pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
@@ -72,6 +75,7 @@ impl Gpu {
             device,
             queue,
             adapter_info,
+            downlevel,
         })
     }
 
@@ -81,6 +85,13 @@ impl Gpu {
             "{} ({:?})",
             self.adapter_info.name, self.adapter_info.backend
         )
+    }
+
+    /// 計算シェーダを使えるか (常駐の描画は、使えなければ YUV への変換を CPU で行う)。
+    pub fn supports_compute(&self) -> bool {
+        self.downlevel
+            .flags
+            .contains(wgpu::DownlevelFlags::COMPUTE_SHADERS)
     }
 
     /// インスタンスとデバイスを破棄せずに手放す (プロセスの終了でまとめて解放される)。
@@ -105,11 +116,16 @@ impl Gpu {
         view: &View,
         background: [u8; 4],
     ) -> Result<(Rgba8, FrameStats), Error> {
+        self.scoped(|| self.render_unscoped(instance, textures, shading, size, view, background))
+    }
+
+    /// `f` の間の wgpu のエラー (検証・メモリ不足・内部) を受け取り、[`Error::Gpu`] にする。
+    pub(crate) fn scoped<T>(&self, f: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
         // スコープは積んだのと逆の順に外す (変数は宣言と逆の順に破棄されるので、途中で戻っても崩れない)。
         let internal = self.device.push_error_scope(wgpu::ErrorFilter::Internal);
         let out_of_memory = self.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
         let validation = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let result = self.render_unscoped(instance, textures, shading, size, view, background);
+        let result = f();
         for scope in [validation, out_of_memory, internal] {
             if let Some(e) = pollster::block_on(scope.pop()) {
                 return Err(Error::Gpu {
@@ -132,84 +148,14 @@ impl Gpu {
     ) -> Result<(Rgba8, FrameStats), Error> {
         let (device, queue) = (&self.device, &self.queue);
         let (width, height) = size;
-        let max = device.limits().max_texture_dimension_2d;
-        if width > max || height > max {
-            bail!("output size {width}x{height} exceeds the device limit {max}");
-        }
-        for (i, t) in textures.iter().enumerate() {
-            if t.width > max || t.height > max {
-                bail!(
-                    "texture {i} is {}x{}, which exceeds the device limit {max}",
-                    t.width,
-                    t.height
-                );
-            }
-        }
-        for (i, t) in shading.normal_maps.iter().enumerate() {
-            if let Some(t) = t
-                && (t.width > max || t.height > max)
-            {
-                bail!(
-                    "the normal map of texture {i} is {}x{}, which exceeds the device limit {max}",
-                    t.width,
-                    t.height
-                );
-            }
-        }
-
-        let mut renderer = Renderer::new(device, FORMAT);
-        for (i, t) in textures.iter().enumerate() {
-            renderer.set_texture(device, queue, i as u32, t.width, t.height, &t.pixels)?;
-        }
-        for (i, t) in shading.normal_maps.iter().enumerate() {
-            if let Some(t) = t {
-                renderer.set_normal_map(device, queue, i as u32, t.width, t.height, &t.pixels)?;
-            }
-        }
-        if let Some(lighting) = &shading.lighting {
-            renderer.set_lighting(lighting);
-        }
-
-        let target = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("ugoe render target"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
+        let mut renderer = new_renderer(device, queue, textures, shading, size)?;
+        let target = target_texture(device, size, wgpu::TextureUsages::empty());
         let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("ugoe render"),
         });
-        // クリアはホストの責務 (レンダラは LoadOp::Load で重ねる)。
-        let a = f64::from(background[3]) / 255.0;
-        let premul = |c: u8| f64::from(c) / 255.0 * a;
-        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("clear"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &target_view,
-                depth_slice: None,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: premul(background[0]),
-                        g: premul(background[1]),
-                        b: premul(background[2]),
-                        a,
-                    }),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            ..Default::default()
-        });
+        clear(&mut encoder, &target_view, background);
         renderer.encode(device, queue, &mut encoder, &target_view, view, instance)?;
         let stats = renderer.last_frame_stats();
 
@@ -264,6 +210,105 @@ impl Gpu {
     }
 }
 
+/// `size` の描画先と、`textures`・`shading` を上げたレンダラを作る。大きさがデバイスの上限を超えればエラー。
+pub(crate) fn new_renderer(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    textures: &[Rgba8],
+    shading: &Shading,
+    size: (u32, u32),
+) -> Result<Renderer, Error> {
+    let (width, height) = size;
+    let max = device.limits().max_texture_dimension_2d;
+    if width > max || height > max {
+        bail!("output size {width}x{height} exceeds the device limit {max}");
+    }
+    for (i, t) in textures.iter().enumerate() {
+        if t.width > max || t.height > max {
+            bail!(
+                "texture {i} is {}x{}, which exceeds the device limit {max}",
+                t.width,
+                t.height
+            );
+        }
+    }
+    for (i, t) in shading.normal_maps.iter().enumerate() {
+        if let Some(t) = t
+            && (t.width > max || t.height > max)
+        {
+            bail!(
+                "the normal map of texture {i} is {}x{}, which exceeds the device limit {max}",
+                t.width,
+                t.height
+            );
+        }
+    }
+    let mut renderer = Renderer::new(device, FORMAT);
+    for (i, t) in textures.iter().enumerate() {
+        renderer.set_texture(device, queue, i as u32, t.width, t.height, &t.pixels)?;
+    }
+    for (i, t) in shading.normal_maps.iter().enumerate() {
+        if let Some(t) = t {
+            renderer.set_normal_map(device, queue, i as u32, t.width, t.height, &t.pixels)?;
+        }
+    }
+    if let Some(lighting) = &shading.lighting {
+        renderer.set_lighting(lighting);
+    }
+    Ok(renderer)
+}
+
+/// 描画先のテクスチャ (`RENDER_ATTACHMENT | COPY_SRC` に `usage` を足す)。
+pub(crate) fn target_texture(
+    device: &wgpu::Device,
+    (width, height): (u32, u32),
+    usage: wgpu::TextureUsages,
+) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("ugoe render target"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC | usage,
+        view_formats: &[],
+    })
+}
+
+/// 描画先を `background` (ストレートアルファの RGBA8) でクリアする。クリアはホストの責務
+/// (レンダラは `LoadOp::Load` で重ねる)。
+pub(crate) fn clear(
+    encoder: &mut wgpu::CommandEncoder,
+    target: &wgpu::TextureView,
+    background: [u8; 4],
+) {
+    let a = f64::from(background[3]) / 255.0;
+    let premul = |c: u8| f64::from(c) / 255.0 * a;
+    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("clear"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: target,
+            depth_slice: None,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(wgpu::Color {
+                    r: premul(background[0]),
+                    g: premul(background[1]),
+                    b: premul(background[2]),
+                    a,
+                }),
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        ..Default::default()
+    });
+}
+
 /// `ugoe render --stats` で出す描画の統計 (`ugoe_render::FrameStats`) の JSON。
 pub fn stats_json(stats: &FrameStats) -> serde_json::Value {
     serde_json::json!({
@@ -282,7 +327,7 @@ pub fn stats_json(stats: &FrameStats) -> serde_json::Value {
     })
 }
 
-fn gpu_error<E: std::fmt::Display>(context: &'static str) -> impl FnOnce(E) -> Error {
+pub(crate) fn gpu_error<E: std::fmt::Display>(context: &'static str) -> impl FnOnce(E) -> Error {
     move |e| Error::Gpu {
         context,
         detail: e.to_string(),

@@ -24,6 +24,12 @@ tauri-plugin-global-shortcut.workspace = true
 tauri-plugin-os.workspace = true
 thiserror.workspace = true
 ugoe.workspace = true
+ugoe-headless.workspace = true
+ugoe-studio-vcam.workspace = true
+
+[features]
+# GPU で描くテスト (`just test-gpu`。仮想カメラの受け手の画)。
+gpu-tests = []
 
 [lints]
 workspace = true

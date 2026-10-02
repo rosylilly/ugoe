@@ -3,7 +3,8 @@
 ugoe のスタジオ (Tauri v2 + Svelte 5)。配信者が配信中に使うアプリで、モデルを **出力ウィンドウ** に出し、**操作ウィンドウ** から動かす。
 範囲・構成・描画の場所は [ADR 0028](../../docs/adr/0028-studio.md)、画面と配信の形は [docs/studio.md](../../docs/studio.md)。
 T0801 で骨組み (2 つのウィンドウ・指揮役と受け手)、T0802 でシーンとプロファイル、T0803 で入力 (カメラのトラッキング・マイクの口パク・
-モーションと表情・グローバルなホットキー)、T0804 で配信向けの出力を作った。外部 API (T0805)・仮想カメラ (T0807・T0809)・ブラウザソース (T0808) は後続のタスク。
+モーションと表情・グローバルなホットキー)、T0804 で配信向けの出力、T0807 で仮想カメラ (Windows・Linux) を作った。
+外部 API (T0805)・macOS の仮想カメラ (T0809)・ブラウザソース (T0808) は後続のタスク。
 
 **ライセンスは GPL-3.0-only** (エディタ・ビューアと同じ)。アプリ同士で import はしない (共有するものは `packages/` に置く)。
 
@@ -17,6 +18,7 @@ src/LightingEditor.svelte     シーンの光源 (組・環境光・平行光源
 src/MotionPanel.svelte        表情とモーション (表情の付け外し・モーションの再生と優先度・待機モーション・トラッキング中のモーションの優先)
 src/InputPanel.svelte         入力 (@ugoe/face-tracking のパネルでカメラのトラッキング、マイクの機器・感度・ノイズの閾値・メーター)
 src/HotkeysPanel.svelte       ホットキーの割り当て (キーを押して決める・操作と引数・登録できない理由)
+src/VirtualCameraPanel.svelte 操作ウィンドウの「仮想カメラ」: 開始と停止・解像度・フレームレート・透過を埋める色・止まった/遅れたの知らせと案内
 output.html / src/output.ts   出力ウィンドウの入口 (背景は透過。@ugoe/ui と @ugoe/i18n は読まない)
 src/Output.svelte             出力ウィンドウ: @ugoe/player の受け手のモードでモデルだけを描く。シーンの見せ方を当てる。Alt + ドラッグで動かす
 src/lib/host.ts               バックエンドとの口 (StudioHost)。Tauri の外では window.__UGOE_STUDIO_HOST__ を使う
@@ -32,6 +34,7 @@ src/lib/latest.ts             送っている間に届いた値は最後のも�
 src/lib/outputLayout.ts       受け手がシーンの通知ですること (planScene)・配置を舞台とビューと CSS の回転に分ける計算
 src/lib/errors.ts             バックエンドのエラー (code) を文にする
 src/lib/labels.ts             シーンの表示名
+src/lib/virtualCamera.ts      仮想カメラの設定 (localStorage) と状態・知らせの判断
 src/lib/i18n.ts               文言 (@ugoe/i18n の名前空間 `studio`。カタログは locales/)
 src/lib/wasm/                 ugoe-wasm の読み込み。generated/ は `pnpm wasm` の出力 (gitignore 済み)
 src-tauri/                    バックエンド (Rust クレート `ugoe-studio`)
@@ -43,9 +46,15 @@ src-tauri/                    バックエンド (Rust クレート `ugoe-studio
   src/profile.rs                プロファイルの形式 (版の確かめ・値を収める・書き出し)・最近のプロファイル
   src/stage.rs                  舞台: 開いているプロファイルとシーンの一覧の操作・シーンの切り替え (ファイルを読んで指揮役へ)・受け手に出すファイル
   src/stream.rs                 配信の形 (フレームのバイト列・シーンの JSON)
-  src/follower.rs               ネイティブの受け手 (一致の検査で使う。仮想カメラ (T0807) も使う)
+  src/follower.rs               ネイティブの受け手 (一致の検査と仮想カメラが使う)
+  src/virtual_camera.rs         仮想カメラの受け手 (Feed: 受け手 + ugoe-headless の常駐の描画) とスレッド (T0807)
   src/lib.rs                    刻みのスレッド・Tauri のコマンド・出力ウィンドウの操作
   tests/follow_match.rs         一致の検査 (ADR 0028 の 10.)
+  tests/virtual_camera_gpu.rs   仮想カメラの画が、物理を有効にした 1 つの Puppet の画と一致する (`just test-gpu`)
+  tauri.windows.conf.json       Windows のビルド: 仮想カメラの DLL を作る・NSIS を管理者の権限で入れる
+  windows/hooks.nsh             NSIS: 仮想カメラの DLL を入れて regsvr32 で登録する・消す
+scripts/build-vcam.mjs        `pnpm vcam`: 仮想カメラのメディアソースの DLL を作る (Windows 向け。CRT は静的)
+vcam/                         仮想カメラの OS の境界 (クレート `ugoe-studio-vcam`。unsafe を許す唯一のアプリのクレート。下の「仮想カメラ」)
 ```
 
 ## 仕組み
@@ -94,16 +103,35 @@ src-tauri/                    バックエンド (Rust クレート `ugoe-studio
 | `subscribe_frames(channel)` | 出力 | シーンの通知 (JSON) とフレーム (バイト列) を受け取る。開き直したページは前の Channel を置き換える |
 | `scene_model(revision)` / `scene_module(revision, index)` / `scene_background(revision)` | 出力 | 今のシーンのモデル・モジュール・背景の画像のバイト列 (今のシーンでなければエラー) |
 | `report_render_stats(stats)` | 出力 | 描画の負荷 (回/秒・1 回の時間の平均と最大・捨てたフレーム) を約 1 秒ごとに送る。操作ウィンドウに出す |
+| `virtual_camera_state()` | 操作 | 仮想カメラの状態 (止めている・始めている・動いている・止まった。始められない理由も) |
+| `start_virtual_camera(settings)` / `stop_virtual_camera()` | 操作 | 仮想カメラを始める (動いていれば始め直す)・止める。状態の変化は `subscribe_status` の `virtualCamera` で届く |
+| `set_virtual_camera_background(background)` | 操作 | 透過を埋める色 (RGB) を変える |
 
 - プロファイルとシーンのコマンドのエラーは `{ code, ... }` の形 (`profile.rs` の `ProfileError`・`stage.rs` の `SceneError`)。画面は `code` で文言を選ぶ。
 
-- 出力ウィンドウは閉じる操作で隠すだけにする (受け手を作り直さない)。操作ウィンドウを閉じるとアプリを終える。
+- 出力ウィンドウは閉じる操作で隠すだけにする (受け手を作り直さない)。操作ウィンドウを閉じるとアプリを終える (仮想カメラも止める)。
 - 権限 (`src-tauri/capabilities/`): 操作ウィンドウはファイルを開く・保存先を選ぶダイアログと OS の言語、出力ウィンドウはウィンドウのドラッグだけ。
   カメラとマイクは、バックエンドの `on_permission_request` が操作ウィンドウの要求だけを許す (macOS は `Info.plist` と `Entitlements.plist`)。
   ホットキーはバックエンドが `tauri-plugin-global-shortcut` で登録する (JS の口は使わないので、プラグインの権限は付けない)。
 - 操作ウィンドウへの通知には、ほかに `animation` (モーション・表情・トラッキングの様子)・`hotkeys` (登録できなかった割り当て)・
   `hotkey` (押されたホットキー。キャリブレーションと、行えなかったときの理由) がある。
 - 出力ウィンドウの背景の透過は、macOS では `macOSPrivateApi` (tauri の `macos-private-api` feature) が要る (Mac App Store では配布できなくなる)。
+
+## 仮想カメラ
+
+[docs/studio.md#仮想カメラ](../../docs/studio.md#仮想カメラ) と [ADR 0028 の 8.](../../docs/adr/0028-studio.md#8-仮想カメラの-os-の部品と-unsafe-の例外)。
+
+- バックエンドの仮想カメラのスレッド (`src-tauri/src/virtual_camera.rs`) が、指揮役のフレームをネイティブの受け手で適用し、`ugoe-headless` の
+  常駐の描画 (`Resident`) で描いて NV12 (Windows) / YUY2 (Linux) で読み戻し、`ugoe-studio-vcam` に渡す。止めている間はスレッドを作らない。
+- `vcam/` (`ugoe-studio-vcam`、GPL-3.0-only) は OS の境界だけを持つ。内部のクレートに依存しない。
+  - `src/lib.rs`: スタジオが使う safe な API (`VirtualCamera::start`・`send`・`availability`・`Error::code`)。
+  - `src/shared.rs`: スタジオと Windows のメディアソースの間の共有メモリの形 (safe な Rust でテストする)。
+  - `src/v4l2.rs`: Linux。v4l2loopback の機器を探し、`VIDIOC_S_FMT` してから `write` する。
+  - `src/mf/`: Windows。`mod.rs` はスタジオ側 (`MFCreateVirtualCamera` を実行時に引く・共有メモリに書く)、`source.rs` は
+    Frame Server が読み込むメディアソースの DLL (`DllGetClassObject`・`DllRegisterServer` など)。
+  - **`unsafe` を許す** (ADR 0028 の 8.)。ワークスペースの lint を `Cargo.toml` で写して `unsafe_code` だけを許し、
+    `clippy::undocumented_unsafe_blocks` (どの `unsafe` にも `// SAFETY:`) と `unsafe_op_in_unsafe_fn` を拒否にしている。
+- Windows のコードは Linux からも `cargo clippy -p ugoe-studio-vcam --target x86_64-pc-windows-msvc` で検査できる (リンクまでは `cargo xwin build`)。
 
 ## ヘッドレスのブラウザで確かめる
 
@@ -121,7 +149,10 @@ just studio                       # 開発モードで起動 (vite の 1440 番�
 just studio-build                 # リリースビルド (インストーラを作る)。例: just studio-build --bundles deb
 pnpm --filter @ugoe/studio wasm   # ugoe-wasm をビルドして src/lib/wasm/generated/ に JS バインディングを出す
 pnpm --filter @ugoe/studio mediapipe  # MediaPipe の wasm とモデルを public/mediapipe/ に用意する (dev・build でも実行される。gitignore 済み)
+pnpm --filter @ugoe/studio vcam   # 仮想カメラの DLL (Windows 向け。Linux からは cargo-xwin でクロスビルド)
 cargo test -p ugoe-studio         # 指揮役・配信の形・一致の検査
+cargo test -p ugoe-studio-vcam    # 仮想カメラの共有メモリの形・設定・v4l2 の構造体
+cargo test -p ugoe-studio --features gpu-tests --test virtual_camera_gpu  # 仮想カメラの画 (just test-gpu に含まれる。CI では除く)
 ```
 
 必要な道具 (Rust・Node.js・pnpm・just・wasm-bindgen-cli・各 OS の前提パッケージ) はエディタと同じ

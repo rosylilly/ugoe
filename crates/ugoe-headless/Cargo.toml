@@ -24,5 +24,7 @@ wgpu.workspace = true
 workspace = true
 
 [features]
+# GPU で描くテスト (`just test-gpu`)。
+gpu-tests = []
 # `Fit` に `clap::ValueEnum` を付ける (CLI の引数にそのまま使う)。
 clap = ["dep:clap"]

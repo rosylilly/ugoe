@@ -85,6 +85,7 @@
     "measuring": "Measuring…",
     "measuredValue": "{{rate}} (longest interval {{max}})",
     "outputWindow": "Output window",
+    "virtualCamera": "Virtual camera",
     "rendererValue_one": "{{fps}}, {{render}} per frame (max {{max}}), {{count}} frame dropped",
     "rendererValue_other": "{{fps}}, {{render}} per frame (max {{max}}), {{count}} frames dropped",
     "stale": "Not drawing (hidden or minimized)",
@@ -294,6 +295,52 @@
       "duplicate": "The same keys as hotkey {{n}}. Only the first one works.",
       "registerFailed": "Could not register the keys (another app or the OS may use them): {{message}}",
       "unknownAction": "This studio does not know the action."
+    }
+  },
+  "virtualCamera": {
+    "heading": "Virtual camera",
+    "enable": "Send to the virtual camera",
+    "resolution": "Resolution",
+    "resolutionValue": "{{width}} × {{height}}",
+    "fps": "Frame rate",
+    "fpsValue": "{{value}} fps",
+    "background": "Background",
+    "backgroundHint": "Cameras cannot be transparent. Transparent parts of the scene are filled with this color.",
+    "state": {
+      "unknown": "Checking the virtual camera…",
+      "stopped": "Off",
+      "starting": "Starting…",
+      "running": "On: {{device}}, {{width}} × {{height}} at {{fps}} fps",
+      "failed": "Stopped"
+    },
+    "notices": {
+      "unavailable": "The virtual camera is not available",
+      "failed": "The virtual camera stopped",
+      "noConsumer": "No app is using the camera",
+      "noConsumerHint": "Choose “ugoe studio” as the camera in your meeting or streaming app.",
+      "late": "The virtual camera is falling behind",
+      "lateHint": "Drawing cannot keep up with the frame rate. Try a lower resolution or frame rate."
+    },
+    "errors": {
+      "unsupported": "Virtual cameras are not supported on this OS yet. Capture the output window or use the browser source instead.",
+      "windowsTooOld": "The virtual camera needs Windows 11.",
+      "notRegistered": "The virtual camera driver is not installed.",
+      "noDevice": "No v4l2loopback device was found.",
+      "busy": "Every v4l2loopback device is in use by another program.",
+      "invalidConfig": "This resolution or frame rate is not supported.",
+      "gpu": "No GPU is available for drawing the camera image.",
+      "model": "The camera could not draw the model.",
+      "os": "The OS reported an error."
+    },
+    "guide": {
+      "linux": {
+        "intro": "Install v4l2loopback and load it with administrator rights. The studio does not install it for you.",
+        "install": "# Debian / Ubuntu\nsudo apt install v4l2loopback-dkms\n# Fedora (RPM Fusion)\nsudo dnf install v4l2loopback\n# Arch Linux\nsudo pacman -S v4l2loopback-dkms",
+        "load": "sudo modprobe v4l2loopback devices=1 video_nr=10 card_label=\"ugoe studio\" exclusive_caps=1",
+        "after": "Then turn the virtual camera on again. To load it at every boot, put “v4l2loopback” in /etc/modules-load.d/ and the options above in /etc/modprobe.d/."
+      },
+      "windows": "On Windows 10, capture the output window in OBS Studio and use OBS's “Start Virtual Camera” instead.",
+      "reinstall": "Run the studio installer again. Registering the camera needs administrator rights."
     }
   }
 }

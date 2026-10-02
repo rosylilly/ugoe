@@ -11,6 +11,7 @@ import type {
   MotionSettings,
 } from "./inputs";
 import type { Background, ProfileView, SceneSettings, StudioError, Transform } from "./profile";
+import type { VirtualCameraSettings, VirtualCameraStatus } from "./virtualCamera";
 
 /** 操作ウィンドウに出すパラメータの定義 (lib.rs の `ParameterInfo`)。 */
 export interface ParameterInfo {
@@ -49,6 +50,8 @@ export interface RendererLoad extends RenderStats {
   label: string;
   /** 報告が途絶えている (隠れていて描いていない・閉じた)。 */
   stale: boolean;
+  /** この出力の目標の描く回数 (回/秒)。`null` なら刻みの速さ (出力ウィンドウ)。仮想カメラはそのフレームレート。 */
+  targetFps: number | null;
 }
 
 /** 間引いた今の値と負荷 (lib.rs の `Monitor::Status`)。 */
@@ -101,7 +104,8 @@ export type MonitorMessage =
       /** Wayland のセッション (アプリが前面に無いとホットキーを受けられない)。 */
       wayland: boolean;
     }
-  | { kind: "hotkey"; action: HotkeyAction; error: StudioError | null };
+  | { kind: "hotkey"; action: HotkeyAction; error: StudioError | null }
+  | ({ kind: "virtualCamera" } & VirtualCameraStatus);
 
 /** 出力ウィンドウへの配信: シーンの通知 (JSON) かフレームのバイト列 (@ugoe/player の `decodeFrame`)。 */
 export type StreamMessage = StudioScene | ArrayBuffer;
@@ -175,6 +179,13 @@ export interface StudioHost {
   suspendHotkeys(suspended: boolean): Promise<void>;
   /** モジュールが付くスロットの名前。 */
   moduleSlot(path: string): Promise<string>;
+  /** 仮想カメラの今の状態 (以後の変化は `subscribeStatus` の `virtualCamera` で届く)。 */
+  virtualCameraState(): Promise<VirtualCameraStatus>;
+  /** 仮想カメラを始める (動いていれば新しい設定で始め直す)。選べない設定なら例外。 */
+  startVirtualCamera(settings: VirtualCameraSettings): Promise<void>;
+  stopVirtualCamera(): Promise<void>;
+  /** 透過のところを埋める色を変える (動いていれば次の画から)。 */
+  setVirtualCameraBackground(background: [number, number, number]): Promise<void>;
   // --- 出力ウィンドウ ---
   subscribeFrames(onMessage: (message: StreamMessage) => void): Promise<void>;
   /** シーン `revision` のモデルのバイト列。今のシーンでなければ例外。 */
@@ -262,6 +273,11 @@ async function tauriHost(): Promise<StudioHost> {
     setHotkeys: (hotkeys) => invoke("set_hotkeys", { hotkeys }),
     suspendHotkeys: (suspended) => invoke("suspend_hotkeys", { suspended }),
     moduleSlot: (path) => invoke("module_slot", { path }),
+    virtualCameraState: () => invoke("virtual_camera_state"),
+    startVirtualCamera: (settings) => invoke("start_virtual_camera", { settings }),
+    stopVirtualCamera: () => invoke("stop_virtual_camera"),
+    setVirtualCameraBackground: (background) =>
+      invoke("set_virtual_camera_background", { background }),
     subscribeFrames: (onMessage) => subscribe("subscribe_frames", onMessage),
     async sceneModel(revision) {
       return new Uint8Array(await invoke<ArrayBuffer>("scene_model", { revision }));

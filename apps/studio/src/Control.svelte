@@ -70,9 +70,11 @@ import {
   saveTickRate,
   type TickRate,
 } from "./lib/settings";
+import type { VirtualCameraStatus } from "./lib/virtualCamera";
 import MotionPanel from "./MotionPanel.svelte";
 import SceneEditor from "./SceneEditor.svelte";
 import ScenesPanel from "./ScenesPanel.svelte";
+import VirtualCameraPanel from "./VirtualCameraPanel.svelte";
 
 /** スライダーを動かした後、指揮役からの値で表示を上書きしない時間 (ミリ秒)。 */
 const EDIT_HOLD_MS = 500;
@@ -105,6 +107,8 @@ let status = $state<StatusMessage | null>(null);
 let appliedSize: OutputSizePreset | null = null;
 let localePreference = $state<LocalePreference>(getLocalePreference());
 let showInternal = $state(false);
+/** 仮想カメラの状態 (VirtualCameraPanel.svelte)。 */
+let camera = $state<VirtualCameraStatus | null>(null);
 let error = $state<string | null>(null);
 /** 手で動かしたパラメータと、動かした時刻。 */
 const edited = new Map<string, number>();
@@ -242,6 +246,11 @@ function onMonitor(message: MonitorMessage) {
       if (message.action.kind === "trackingCalibrate") tracker.calibrate();
       if (message.error !== null) hotkeyError = describeError(message.error);
       break;
+    case "virtualCamera": {
+      const { kind: _, ...state } = message;
+      camera = state;
+      break;
+    }
   }
 }
 
@@ -538,6 +547,7 @@ onMount(() => {
       return;
     }
     output = (await run((h) => h.outputState())) ?? null;
+    camera = (await run((h) => h.virtualCameraState())) ?? null;
     await run((h) => h.setTickRate(tickRate));
     await run((h) => h.subscribeStatus(onMonitor));
     // 入力の処理はバックエンドの刻みで回す (受け取れなければ requestAnimationFrame のまま)。
@@ -795,6 +805,10 @@ onMount(() => {
           {/if}
           <p class="studio__hint">{t("output.moveHint")}</p>
         </div>
+      </Section>
+
+      <Section title={t("virtualCamera.heading")}>
+        <VirtualCameraPanel {host} status={camera} />
       </Section>
 
       <Section title={t("load.heading")}>

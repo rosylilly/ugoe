@@ -1,0 +1,55 @@
+[package]
+name = "ugoe-studio-vcam"
+description = "ugoe スタジオの仮想カメラ (Windows の Media Foundation のメディアソースと、v4l2loopback への書き込み。docs/adr/0028-studio.md の 8.)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license = "GPL-3.0-only"
+
+[lib]
+name = "ugoe_studio_vcam"
+# rlib: スタジオ (ugoe-studio) が使う。cdylib: Windows の Frame Server が読み込むメディアソースの DLL (ugoe_studio_vcam.dll)。
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+thiserror.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+# COM のインターフェースの実装 (`#[implement]`) は windows-core の名前で展開されるので、両方に依存する。
+windows-core.workspace = true
+
+[target.'cfg(windows)'.dependencies.windows]
+workspace = true
+features = [
+  "Win32_Devices_DeviceAndDriverInstallation",
+  "Win32_Devices_Properties",
+  "Win32_Foundation",
+  "Win32_Media_KernelStreaming",
+  "Win32_Media_MediaFoundation",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Memory",
+  "Win32_System_Registry",
+  "Win32_System_Variant",
+]
+
+# ワークスペースの lint を写し、unsafe だけを許す (ADR 0028 の 8.: unsafe の例外は、このクレートだけ)。
+# 代わりに、unsafe のブロックに `// SAFETY:` のコメントを必ず書かせ、unsafe fn の中でも unsafe のブロックを要求する。
+[lints.rust]
+unsafe_code = "allow"
+unsafe_op_in_unsafe_fn = "deny"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"
+undocumented_unsafe_blocks = "deny"

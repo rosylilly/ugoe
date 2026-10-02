@@ -29,6 +29,8 @@ gpu.leak();                                // 破棄しない (下の「GPU」)
 | `textures` | テクスチャを揃える (`--texture` の差し替え → バンドルの PNG → 不透明な白 1x1)・バンドルの法線マップをデコードする |
 | `animate` | パラメータの書き込みと、`ugoe::Puppet` で時間を進める処理 |
 | `gpu` | ヘッドレスの `Gpu` (アダプタとデバイス)・描いて読み戻す・`stats_json` |
+| `resident` | 常駐の描画の口 `Resident` (毎フレーム描き続ける。下の「常駐の描画」) |
+| `yuv` | 画素の形 `PixelFormat` (RGBA8・NV12・YUY2) と、RGBA からの変換の CPU の参照実装 |
 | `image` | PNG の読み書きと乗算済みアルファの変換 |
 
 - **ライティング:** `Scene::from_bundle` がバンドルの法線マップを持ち、`prepare` がデコードして `Prepared::shading` に入れる。
@@ -36,6 +38,28 @@ gpu.leak();                                // 破棄しない (下の「GPU」)
   `Gpu::render` が `Renderer::set_normal_map` と `set_lighting` を呼ぶ。規則は `ugoe render` の節の「ライティング」。
 - feature `clap`: `Fit` に `clap::ValueEnum` を付ける (`ugoe-cli` が使う)。
 - エラーは `ugoe_headless::Error` (thiserror)。原因 (`source`) をたどると `anyhow` の `Caused by` と同じ情報になる。
+
+## 常駐の描画
+
+`Gpu::render` (`Prepared::render`) は 1 枚を描く口で、呼ぶたびにレンダラ・テクスチャ・描画先を作り直して読み戻しを待つ。
+スタジオの仮想カメラのように毎秒 30〜60 回描くときは `Resident` を使う (ADR 0028 の 3.)。
+
+```rust
+let mut resident = Resident::new(&gpu, &textures, &shading, ResidentOptions {
+    size: (1920, 1080), format: PixelFormat::Nv12, background: [255, 255, 255, 255],
+    view: fit_view(canvas, (1920, 1080), Fit::Contain), slots: DEFAULT_SLOTS,
+})?;
+// 毎フレーム: 描いて読み戻しを頼む (待たない)。空いたバッファが無ければ false (GPU が追いついていない)。
+resident.submit(&gpu, puppet.instance(), seq)?;
+// 終わったものから最も新しい 1 枚 (古いものは捨てて superseded() に数える)。
+if let Some(frame) = resident.poll(&gpu, Wait::No)? { /* frame.bytes は NV12 */ }
+```
+
+- レンダラ・テクスチャ・法線マップ・描画先・読み戻しのバッファ (既定 3 枚) を持ち続ける。モデルが変わったら作り直す。
+- NV12・YUY2 への変換は GPU の計算シェーダ (`src/yuv.wgsl`) で行ってから読み戻す (読み戻す量は RGBA の 3/8〜1/2)。
+  計算シェーダの無いアダプタでは RGBA を読み戻して CPU で変換する (`yuv::convert`。式は同じ)。
+- 色の変換は BT.709 の限定範囲。YUV の形は幅を 4 の倍数、高さを 2 の倍数にする。
+- アルファは見ないので、クリアの色 (`background`) は不透明にする (仮想カメラは透過を出せないので単色で埋める)。
 
 ## GPU
 
@@ -52,6 +76,9 @@ gpu.leak();                                // 破棄しない (下の「GPU」)
 cargo test -p ugoe-headless   # GPU を使わないテスト (引数・大きさ・fit・テクスチャ・時間の進め方・PNG)
 ```
 
+常駐の描画は `cargo test -p ugoe-headless --features gpu-tests` (`tests/resident_gpu.rs`。RGBA が 1 枚の口と同じ・
+GPU の YUV が CPU の参照と ±1 で一致・読み戻しを待たない) が確かめ、`just test-gpu` に含まれる。
+
 実際の描画は `ugoe render` のテスト (`cargo test -p ugoe-cli --features gpu-tests`) と、MCP サーバのテスト
 (`cargo test -p ugoe-mcp --features gpu-tests`) が確かめる。どちらも `just test-gpu` に含まれる。
 
@@ -59,3 +86,4 @@ cargo test -p ugoe-headless   # GPU を使わないテスト (引数・大きさ
 
 - T0511 (`docs/tasks/T0511-shared-headless-render.md`)
 - T0210 (法線マップと光源を渡す。`docs/tasks/T0210-lighting-hosts.md`)
+- T0807 (常駐の描画の口と YUV への変換。スタジオの仮想カメラ)

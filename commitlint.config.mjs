@@ -32,6 +32,8 @@ const SCOPES = [
   "editor",
   "viewer",
   "studio",
+  // apps/studio/vcam (ugoe-studio-vcam。スタジオの仮想カメラ)
+  "studio-vcam",
   // packages/ (共有のフロントエンドのパッケージ)
   "ui",
   "i18n",

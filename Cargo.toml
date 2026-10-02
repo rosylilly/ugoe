@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "apps/editor/src-tauri", "apps/viewer/src-tauri", "apps/studio/src-tauri", "tests/conformance"]
+members = ["crates/*", "apps/editor/src-tauri", "apps/viewer/src-tauri", "apps/studio/src-tauri", "apps/studio/vcam", "tests/conformance"]
 default-members = ["crates/*"]
 
 [workspace.package]
@@ -33,6 +33,7 @@ ugoe-psd = { path = "crates/ugoe-psd" }
 ugoe-render = { path = "crates/ugoe-render", version = "0.0.0" }
 ugoe-rigging = { path = "crates/ugoe-rigging" }
 ugoe-runtime = { path = "crates/ugoe-runtime", version = "0.0.0" }
+ugoe-studio-vcam = { path = "apps/studio/vcam" }
 # --- external ---
 anyhow = "1"
 apple-native-keyring-store = { version = "1", features = ["keychain"] }
@@ -47,6 +48,7 @@ glam = { version = "0.33", features = ["serde", "bytemuck"] }
 insta = { version = "1", features = ["json"] }
 js-sys = "0.3"
 keyring-core = "1"
+libc = "0.2"
 miniz_oxide = "0.9"
 naga = { version = "30", features = ["wgsl-in"] }
 png = "0.18"
@@ -71,6 +73,8 @@ wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = "0.3"
 wgpu = "30"
+windows = "0.62"
+windows-core = "0.62"
 windows-native-keyring-store = { version = "1", default-features = false }
 
 [workspace.lints.rust]

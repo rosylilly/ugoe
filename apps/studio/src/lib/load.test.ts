@@ -25,6 +25,7 @@ function renderer(patch: Partial<RendererLoad> = {}): RendererLoad {
     renderMaxMs: 2,
     dropped: 0,
     stale: false,
+    targetFps: null,
     ...patch,
   };
 }
@@ -57,6 +58,22 @@ describe("load warnings", () => {
       status({ renderers: [renderer({ renderMs: 12, fps: 40, dropped: 3 })] }),
     ).map((w) => w.kind);
     expect(kinds).toEqual(["renderHeavy", "renderSlow", "dropped"]);
+  });
+
+  it("judge the virtual camera by its own frame rate", () => {
+    const camera = renderer({
+      label: "virtualCamera",
+      targetFps: 30,
+      fps: 30,
+      renderMs: 10,
+      dropped: 2,
+    });
+    expect(loadWarnings(status({ renderers: [camera] }))).toEqual([]);
+    expect(
+      loadWarnings(status({ renderers: [{ ...camera, fps: 20, renderMs: 20 }] })).map(
+        (w) => w.kind,
+      ),
+    ).toEqual(["renderHeavy", "renderSlow"]);
   });
 
   it("report a stale renderer without judging its old numbers", () => {

@@ -85,6 +85,7 @@
     "measuring": "測っています…",
     "measuredValue": "{{rate}} (最も長い間隔 {{max}})",
     "outputWindow": "出力ウィンドウ",
+    "virtualCamera": "仮想カメラ",
     "rendererValue_other": "{{fps}}・1 回 {{render}} (最大 {{max}})・捨てたフレーム {{count}}",
     "stale": "描いていません (隠れているか最小化されています)",
     "ms": "{{value}} ms",
@@ -292,6 +293,52 @@
       "duplicate": "ホットキー {{n}} と同じキーです。前のものだけが効きます。",
       "registerFailed": "キーを登録できません (ほかのアプリや OS が使っているかもしれません): {{message}}",
       "unknownAction": "このスタジオは、この操作を知りません。"
+    }
+  },
+  "virtualCamera": {
+    "heading": "仮想カメラ",
+    "enable": "仮想カメラに出す",
+    "resolution": "解像度",
+    "resolutionValue": "{{width}} × {{height}}",
+    "fps": "フレームレート",
+    "fpsValue": "{{value}} fps",
+    "background": "背景",
+    "backgroundHint": "カメラは透過を出せません。シーンの透過のところはこの色で埋めます。",
+    "state": {
+      "unknown": "仮想カメラを確かめています…",
+      "stopped": "切",
+      "starting": "始めています…",
+      "running": "入: {{device}}・{{width}} × {{height}}・{{fps}} fps",
+      "failed": "止まりました"
+    },
+    "notices": {
+      "unavailable": "仮想カメラを使えません",
+      "failed": "仮想カメラが止まりました",
+      "noConsumer": "カメラを使っているアプリがありません",
+      "noConsumerHint": "会議アプリや配信ソフトで、カメラに「ugoe studio」を選んでください。",
+      "late": "仮想カメラが遅れています",
+      "lateHint": "描画がフレームレートに追いついていません。解像度かフレームレートを下げてください。"
+    },
+    "errors": {
+      "unsupported": "この OS ではまだ仮想カメラを出せません。出力ウィンドウの取り込みかブラウザソースを使ってください。",
+      "windowsTooOld": "仮想カメラには Windows 11 が要ります。",
+      "notRegistered": "仮想カメラのドライバが入っていません。",
+      "noDevice": "v4l2loopback の機器が見つかりません。",
+      "busy": "v4l2loopback の機器は、どれもほかのアプリが使っています。",
+      "invalidConfig": "この解像度かフレームレートは選べません。",
+      "gpu": "カメラの画を描く GPU がありません。",
+      "model": "カメラの画にモデルを描けませんでした。",
+      "os": "OS がエラーを返しました。"
+    },
+    "guide": {
+      "linux": {
+        "intro": "v4l2loopback を入れ、管理者の権限で読み込んでください。スタジオからは入れません。",
+        "install": "# Debian / Ubuntu\nsudo apt install v4l2loopback-dkms\n# Fedora (RPM Fusion)\nsudo dnf install v4l2loopback\n# Arch Linux\nsudo pacman -S v4l2loopback-dkms",
+        "load": "sudo modprobe v4l2loopback devices=1 video_nr=10 card_label=\"ugoe studio\" exclusive_caps=1",
+        "after": "その後で、もう一度仮想カメラを入れてください。起動のたびに読み込むには、/etc/modules-load.d/ に「v4l2loopback」を、/etc/modprobe.d/ に上のオプションを書きます。"
+      },
+      "windows": "Windows 10 では、OBS Studio で出力ウィンドウを取り込み、OBS の「仮想カメラ開始」を使ってください。",
+      "reinstall": "スタジオのインストーラをもう一度実行してください。カメラの登録には管理者の権限が要ります。"
     }
   }
 }

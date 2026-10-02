@@ -85,8 +85,9 @@
     (新しいモデルの物理は新しく始まるので、どの受け手も同じ形になる)。
   - 同じシーンの中で `seq` が飛んだら (切断など)、物理をリセットして続きから適用する。
   - 受け手が `follow` を呼ぶ場所は 1 つにまとめてある (wasm は `packages/player/src/follower.ts` の `applyFrame`、ネイティブは
-    `apps/studio/src-tauri/src/follower.rs` の `apply_frame`)。`follow` の引数が変わったら、ここと `Frame` の形を合わせる。
+    `apps/studio/src-tauri/src/follower.rs` の `apply_frame`。仮想カメラの受け手もこれを使う)。`follow` の引数が変わったら、ここと `Frame` の形を合わせる。
 - 出力ウィンドウへは Tauri の `Channel` で送る (順序を保つ)。ブラウザソースへは WebSocket のバイナリのメッセージで送る (T0808)。
+  仮想カメラへは同じプロセスのチャネルで `Frame` をそのまま渡す (バイト列にしない。[仮想カメラ](#仮想カメラ)、T0807)。
 - 一致の検査 (ADR 0028 の 10.) は `apps/studio/src-tauri/tests/follow_match.rs`: 指揮役のフレームの列 (書き換え・揃っていない `dt`・
   リップシンク・物理のリセット・モデルの読み直しを含む) をバイト列で記録し、ネイティブの受け手に適用して、物理を有効にした 1 つの `Puppet` と
   パラメータの値・頂点・不透明度を比べる (許容誤差 1e-3)。まとめて適用してから比べても同じになることも確かめる。
@@ -399,13 +400,134 @@ MediaPipe の wasm とモデルはアプリに同梱する (`pnpm mediapipe`。�
 
 ## 仮想カメラ
 
-- 操作ウィンドウの「出力」で開始と停止。解像度 (1920×1080・1280×720) とフレームレート (30・60) を選ぶ。
-- 背景は不透明にする。透過のシーンは単色 (既定は緑のクロマキー色ではなく、設定した色) で埋める。
-- 止まった (受け取るアプリが無い・OS の部品が無い)・遅れた (刻みに描画が追いつかない) ことを操作ウィンドウに出す。
-- OS ごと: Windows 11 は Media Foundation の仮想カメラ、Linux は v4l2loopback の機器、macOS は Camera Extension
-  (T0807・T0809。OS の部品の扱いは [ADR 0028 の 8.](adr/0028-studio.md#8-仮想カメラの-os-の部品と-unsafe-の例外))。
-- Windows 10 では Media Foundation の仮想カメラが使えないので、OBS で取り込んで OBS の仮想カメラを使う手順を案内する。
-  Linux で v4l2loopback の機器が無いときは、入れ方を案内する (スタジオからは入れない)。macOS は配布物に入るまで、ウィンドウの取り込みかブラウザソースを案内する。
+会議アプリや配信ソフトのカメラの入力として、スタジオの出力をそのまま選べるようにする (T0807。macOS は T0809)。
+OS の部品の扱いと `unsafe` の例外は [ADR 0028 の 8.](adr/0028-studio.md#8-仮想カメラの-os-の部品と-unsafe-の例外)。
+
+- 操作ウィンドウの「仮想カメラ」で開始と停止。解像度 (1920×1080・1280×720)・フレームレート (30・60)・透過を埋める色 (既定は `#f0f0f0`) を選ぶ。
+  選んだ設定は `ugoe-studio.virtual-camera` に覚える (プロファイル (T0802) ができたらそちらへ移す)。動いている間に解像度かフレームレートを
+  変えると始め直す (OS のカメラの形が変わるため)。色はその場で効く。
+- 背景は不透明にする。透過のシーンは設定した色で埋める (クロマキーの緑を既定にしない)。
+- 止まった・遅れたことを操作ウィンドウに出す:
+
+  | 知らせ | いつ |
+  | --- | --- |
+  | 使えません (注意) | 始める前から分かる理由: Windows 11 でない・ドライバが登録されていない・v4l2loopback が読み込まれていない・macOS |
+  | 止まりました (エラー) | 始められなかった・途中で失敗した (機器が無い・ほかのアプリが使っている・GPU が無い・OS のエラー) |
+  | カメラを使っているアプリがありません (案内) | Windows で、カメラを開いているアプリが無い (Linux では分からないので出さない) |
+  | 遅れています (注意) | 直近 1 秒に描けた回数が、フレームレートの 95% を下回った |
+
+  理由に合わせて、v4l2loopback の入れ方 (Linux)・OBS の仮想カメラを使う手順 (Windows 10)・インストーラでの入れ直し (登録が無い) を案内する。
+  負荷の表示 (「フレームレートと負荷」) にも「仮想カメラ」の行が出る (描いた回数・1 回の時間・描かなかった画の数。目標は仮想カメラのフレームレート)。
+
+### 描き方
+
+```
+指揮役 ─ フレーム {seq, dt, values, lip_sync} ─▶ 仮想カメラのスレッド (同じプロセスのチャネル)
+                                                 │ 受け手 (Follower): 届いたフレームをすべて順に follow で適用 (物理を回す)
+                                                 │ 常駐の描画 (ugoe-headless の Resident): フレームレートごとに描き、
+                                                 │   GPU で NV12 (Windows) / YUY2 (Linux) に変換してから読み戻す (待たない)
+                                                 ▼
+                                   ugoe-studio-vcam: Windows は共有メモリ → メディアソース、Linux は /dev/videoN に write
+```
+
+- 実装は `apps/studio/src-tauri/src/virtual_camera.rs` (受け手と描画の `Feed`、スレッドの `run`) と `apps/studio/vcam` (`ugoe-studio-vcam`。OS の境界)。
+- 受け手は出力ウィンドウと同じ規則で、物理を含めて同じ形になる (ADR 0028 の 3.)。刻み (30 / 60 / 120) と仮想カメラのフレームレートは別で、
+  フレームはすべて適用し、描くのはフレームレートの回数だけ。読み戻しは 3 枚のバッファを回して待たないので、画は 1〜2 フレーム遅れる。
+  GPU が追いつかなければその回は描かない (「遅れています」)。
+- シーンの通知は、出力ウィンドウの受け手と同じ規則で扱う ([シーンの切り替えと受け手](#シーンの切り替えと受け手)): モデルの版が変わったら読み直し、
+  モジュールの版だけが変わったら付け直し (テクスチャの並びが変わるので描画は作り直す)、どちらも同じなら見せ方だけを変えて前のシーンのフレームも
+  続けて適用する (`apps/studio/src-tauri/src/follower.rs` の `continue_scene`)。
+- 見せ方: 位置と大きさと回転は出力ウィンドウと同じ置き方 (`virtual_camera.rs` の `placement_view`。出力に収め、倍率を掛け、ずらした位置を中心に回す)。
+  背景は単色・クロマキーならその色、透過なら設定の色で埋める。**背景の画像とライティングはまだ反映しない** (画像は設定の色で埋め、光源は渡さない。
+  出力ウィンドウとの画の比べ合わせと一緒に T0808 で揃える)。
+- 始めたときに今のシーンを送り、物理はその時点から始める (出力ウィンドウより後から始めた受け手なので、揺れの途中の形は合わない)。
+  モデルが無いシーンでは背景の色だけの画を出す。
+- 色の変換は BT.709 の限定範囲 (Y は 16〜235)。描画先の値をそのまま R'G'B' とみなし、色差は 2×2 (NV12)・横 2 画素 (YUY2) の平均から作る。
+  計算シェーダの無い GPU では CPU で同じ式で変換する (`crates/ugoe-headless/src/yuv.rs`)。
+- 止めている間は、スレッドも受け手も作らない (GPU を使わない)。GPU の機器は一度作ったら破棄しない (`crates/ugoe-headless/README.md#gpu`)。
+- 一致の検査 (ADR 0028 の 10.): `apps/studio/src-tauri/tests/virtual_camera_gpu.rs` (`just test-gpu`) が、指揮役のフレームの列を適用して
+  読み戻した画を、物理を有効にした 1 つの `Puppet` を 1 枚の口で描いて同じ形に変換した画と比べる (許容誤差付き)。出力ウィンドウ (WebView) の画との
+  比べ合わせはブラウザソースと一緒に T0808 で行う。
+
+### Windows (Media Foundation)
+
+Windows 11 の Media Foundation の仮想カメラ (`MFCreateVirtualCamera`) で、「ugoe studio」という名前のカメラを出す。
+
+- **しくみ:** スタジオがカメラを作ると (寿命は `Session`。スタジオが終わると消える。今の利用者だけ)、OS のサービス Frame Server が
+  スタジオの DLL (`ugoe_studio_vcam.dll`。COM のメディアソース) を読み込む。メディアソースは共有メモリ (`Global\ugoe-studio-virtual-camera-1`)
+  を作り、カメラを開いたアプリの求めに応じて最新の画を NV12 で渡す。スタジオは共有メモリを開いて画を書く
+  (形は `apps/studio/vcam/src/shared.rs`。版の番号付きの seqlock)。
+  - 共有メモリはメディアソース (サービス) が作る。別のセッションから見える名前の共有メモリは、ふつうの利用者の権限では作れないため。
+    権限は SYSTEM・Local Service・管理者と、対話でログオンした利用者 (読み書き) に与える。**同じ計算機に対話でログオンした別の利用者も
+    カメラの画を書ける** (読めるのは画だけで、ほかの情報は流れない)。
+  - スタジオはカメラの機器に設定 (解像度とフレームレート) を付け、メディアソースはそれだけを出す。読めなければ選べる組をすべて出し、
+    アプリが選んだ大きさと違えば最も近い画素で拡大縮小する。画がまだ無ければ黒を出す。
+  - `MFCreateVirtualCamera` は Windows 11 にしか無いので、実行時に `mfsensorgroup.dll` から引く (Windows 10 でもスタジオは起動し、
+    「Windows 11 が要ります」を出す)。
+- **入れ方:** インストーラ (NSIS) は管理者の権限で動き (`installMode: perMachine`)、DLL を入れて `regsvr32` で登録する
+  (`HKLM\SOFTWARE\Classes\CLSID\{128A1A50-B227-494B-952E-0C011BB01869}`)。アンインストールで登録を消す。スタジオの実行中は権限を求めない。
+  - 設定は `apps/studio/src-tauri/tauri.windows.conf.json` と `apps/studio/src-tauri/windows/hooks.nsh`。DLL は `pnpm vcam`
+    (`apps/studio/scripts/build-vcam.mjs`) が `target/vcam/x86_64-pc-windows-msvc/release/` に作る (CRT を静的にリンクする。Linux からは cargo-xwin でクロスビルド)。
+  - COM の登録をインストーラで行うので、スタジオの Windows の配布物は NSIS だけにする (MSI は作らない)。
+  - 入れ直しのときに前の DLL を Frame Server が使っていれば、名前を変えて退け、再起動のときに消す。
+- **開発中 (`just studio`):** `pnpm vcam` で DLL を作ってから、管理者の PowerShell で一度だけ登録する:
+
+  ```powershell
+  regsvr32 "<リポジトリ>\target\vcam\x86_64-pc-windows-msvc\release\ugoe_studio_vcam.dll"
+  ```
+
+  DLL を作り直したら、Frame Server が古いものを読み込んだままのことがある。カメラを使うアプリをすべて閉じるか、
+  管理者で `Restart-Service FrameServer` を実行する。
+- **Windows 10 では (代わりの手順):** OBS Studio で出力ウィンドウを取り込み ([OBS でのウィンドウの取り込み](#obs-でのウィンドウの取り込み))、
+  OBS の「コントロール」→「仮想カメラ開始」を押す。会議アプリではカメラに「OBS Virtual Camera」を選ぶ。背景はシーンの背景になる
+  (透過は OBS の仮想カメラでも出せない)。
+
+**未確認 (利用者の確認に残す。WSL の上では Windows の仮想カメラを動かせない):** コンパイル (`cargo xwin clippy --target x86_64-pc-windows-msvc`) と
+DLL のリンク・書き出す関数 (`DllGetClassObject` など 4 つ) は確かめたが、実機では次を確かめていない。
+
+1. インストーラで入れると UAC が出て、`regsvr32` が成功する (`HKLM\SOFTWARE\Classes\CLSID\{128A1A50-...}\InprocServer32` に DLL のパス)。
+2. スタジオで仮想カメラを入れると、Windows の「設定」→「Bluetooth とデバイス」→「カメラ」と、カメラのアプリに「ugoe studio」が出る。
+3. カメラのアプリ・Teams・Zoom・Chrome (Google Meet) で「ugoe studio」を選ぶと、モデルが動いて映る (色が正しい: 白い背景が白く、
+   赤が赤く。色がずれるなら BT.709 / 限定範囲の扱いを確かめる)。1920×1080・1280×720、30・60 fps のそれぞれ。
+4. カメラを開いているアプリが無いと「カメラを使っているアプリがありません」が出て、開くと消える。
+5. スタジオを閉じるとカメラが一覧から消える。スタジオを強制終了しても、次に起動したときに使える。
+6. Windows 10 で「Windows 11 が要ります」と OBS の手順が出て、スタジオ自体は動く。
+7. アンインストールで登録が消える (再起動の後に DLL が残らない)。上書きの入れ直しが失敗しない。
+
+### Linux (v4l2loopback)
+
+v4l2loopback (仮想のビデオ機器を作るカーネルモジュール) の機器に YUYV の画を書く。**スタジオは v4l2loopback を入れない**
+(入れるには管理者の権限が要る)。機器が見つからなければ、操作ウィンドウに次の入れ方を出す (自動で `sudo` しない)。
+
+```sh
+# 入れる (ディストリビューションごと)
+sudo apt install v4l2loopback-dkms        # Debian / Ubuntu
+sudo dnf install v4l2loopback             # Fedora (RPM Fusion)
+sudo pacman -S v4l2loopback-dkms          # Arch Linux
+# 読み込む (1 つの機器を /dev/video10 に作る。exclusive_caps=1 は Chrome などがカメラとして見つけるのに要る)
+sudo modprobe v4l2loopback devices=1 video_nr=10 card_label="ugoe studio" exclusive_caps=1
+# 起動のたびに読み込む
+echo v4l2loopback | sudo tee /etc/modules-load.d/v4l2loopback.conf
+echo 'options v4l2loopback devices=1 video_nr=10 card_label="ugoe studio" exclusive_caps=1' | sudo tee /etc/modprobe.d/v4l2loopback.conf
+```
+
+- スタジオは `/dev/video*` を番号順に調べ、ドライバが `v4l2 loopback` で書き込みを受ける最初の機器を使う。`VIDIOC_S_FMT` で YUYV と大きさ
+  (BT.709・限定範囲) を決め、`VIDIOC_S_PARM` でフレームレートを伝え、1 枚ずつ `write` する (`apps/studio/vcam/src/v4l2.rs`)。
+- loopback の機器があってもほかのアプリが書いている (`exclusive_caps=1` の機器は書き込みを 1 つしか受けない) なら「ほかのアプリが使っています」。
+- 「使えません」の判断は `/sys/module/v4l2loopback` があるか (モジュールが読み込まれているか) だけで行い、機器は開始したときに開く。
+- Secure Boot を使っていると、DKMS で作ったモジュールに署名が要ることがある (ディストリビューションの手順に従う)。
+- 受け取るアプリがあるかは分からない (v4l2loopback は知らせない) ので、「カメラを使っているアプリがありません」は出さない。
+
+**未確認 (利用者の確認に残す。WSL のカーネルには v4l2loopback が無い):** ioctl の構造体の大きさと番号はテストで確かめたが、実機では次を確かめていない。
+
+1. 上の手順で `/dev/video10` を作り、スタジオで仮想カメラを入れると「入: /dev/video10・…」になる。
+2. `ffplay /dev/video10` (または `v4l2-ctl --device /dev/video10 --all`) で、YUYV・選んだ大きさで映る。
+3. Chrome (Google Meet)・OBS (映像キャプチャデバイス (V4L2))・Zoom で「ugoe studio」を選ぶと映り、色が正しい。
+4. v4l2loopback を読み込んでいないと「使えません」と入れ方が出る。ほかのアプリが同じ機器に書いていると「ほかのアプリが使っています」。
+
+### macOS
+
+T0809 (Camera Extension)。それまでは「この OS ではまだ仮想カメラを出せません」を出し、ウィンドウの取り込みかブラウザソースを案内する。
 
 ## 隠れても止まらない
 

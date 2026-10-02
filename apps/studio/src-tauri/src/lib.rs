@@ -7,8 +7,10 @@
 //! - プロファイル (シーンの一覧) を読み書きし、シーンを切り替える ([`stage::Stage`])。
 //! - 入力 (T0803): 操作ウィンドウが取ったトラッキングとマイクの音量を指揮役に入れ、モーション・表情を操作する。
 //!   グローバルなホットキーを登録し、押されたら操作を行う。操作ウィンドウの入力の処理を刻みで動かす (`subscribe_pulse`)。
+//! - 仮想カメラ ([`virtual_camera`]、T0807) を始めると、同じプロセスのチャネルでシーンとフレームを渡す。仮想カメラの受け手は
+//!   ネイティブの受け手と `ugoe-headless` の常駐の描画で描き、`ugoe-studio-vcam` で OS に渡す。
 //!
-//! 描画はしない (出力ウィンドウの WebView の wasm が受け手として描く)。
+//! 出力ウィンドウとブラウザソースの描画はしない (出力ウィンドウの WebView の wasm が受け手として描く)。
 
 pub mod animation;
 pub mod conductor;
@@ -19,11 +21,14 @@ pub mod pacing;
 pub mod profile;
 pub mod stage;
 pub mod stream;
+pub mod virtual_camera;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -40,6 +45,9 @@ use crate::pacing::{Measured, Pacer, RateMeter, TickRate};
 use crate::profile::{ProfileError, SceneSettings};
 use crate::stage::{ProfileView, SceneError, Stage};
 use crate::stream::{Frame, Scene};
+use crate::virtual_camera::{
+    Command as CameraCommand, Event as CameraEvent, SceneFiles, Settings as CameraSettings,
+};
 
 /// 操作ウィンドウのラベル (tauri.conf.json)。
 const CONTROL: &str = "main";
@@ -122,6 +130,9 @@ enum Monitor<'a> {
         action: &'a HotkeyAction,
         error: Option<HotkeyError>,
     },
+    /// 仮想カメラの状態が変わった (T0807)。
+    #[serde(rename = "virtualCamera")]
+    VirtualCamera(&'a virtual_camera::Status),
 }
 
 /// ホットキーの操作を行えなかった理由。画面は `code` で文言を選ぶ。
@@ -206,6 +217,8 @@ struct RendererLoad {
     stats: RenderStats,
     /// 報告が途絶えている (隠れていて描いていない・閉じた)。
     stale: bool,
+    /// この出力の目標の描く回数 (回/秒)。無ければ刻みの速さ (出力ウィンドウ)。仮想カメラはそのフレームレート。
+    target_fps: Option<u32>,
 }
 
 /// フレームや通知を受ける WebView (ラベル → Channel)。開き直したページは前の Channel を置き換える。
@@ -251,14 +264,18 @@ struct Studio {
     tick_rate: AtomicU32,
     /// 実際の刻みの速さと揺れ (刻みのスレッドが書く)。
     measured: Mutex<Option<Measured>>,
-    /// 出力ごとの描画の負荷と、報告を受けた時刻。
-    renders: Mutex<HashMap<String, (RenderStats, Instant)>>,
+    /// 出力ごとの描画の負荷 (ラベル → 報告)。
+    renders: Mutex<HashMap<String, Reported>>,
     /// 刻みごとに入力の処理を促す操作ウィンドウ (`subscribe_pulse`。T0803)。
     pulses: Subscribers,
     /// グローバルなホットキー (T0803)。
     hotkeys: Mutex<Hotkeys>,
     /// ホットキーの登録に使う (`setup` で入れる。テストでは無い)。
     app: OnceLock<AppHandle>,
+    /// 動いている仮想カメラ (止めている間は `None`。スレッドも受け手も作らない)。
+    camera: Mutex<Option<CameraThread>>,
+    /// 仮想カメラの最新の状態。
+    camera_status: Mutex<Option<virtual_camera::Status>>,
 }
 
 /// 登録しているホットキー。
@@ -279,6 +296,23 @@ fn wayland_session() -> bool {
     cfg!(target_os = "linux")
         && (std::env::var_os("WAYLAND_DISPLAY").is_some()
             || std::env::var("XDG_SESSION_TYPE").is_ok_and(|v| v.eq_ignore_ascii_case("wayland")))
+}
+
+/// 出力から届いた描画の負荷。
+#[derive(Debug, Clone, Copy)]
+struct Reported {
+    stats: RenderStats,
+    /// 目標の描く回数 (回/秒)。`None` は刻みの速さ。
+    target_fps: Option<u32>,
+    /// 報告を受けた時刻。
+    at: Instant,
+}
+
+/// 動いている仮想カメラのスレッド。
+#[derive(Debug)]
+struct CameraThread {
+    commands: Sender<CameraCommand>,
+    thread: JoinHandle<()>,
 }
 
 impl Studio {
@@ -321,10 +355,11 @@ impl Studio {
     fn renderer_loads(&self, now: Instant) -> Vec<RendererLoad> {
         let mut loads: Vec<_> = lock(&self.renders)
             .iter()
-            .map(|(label, (stats, at))| RendererLoad {
+            .map(|(label, reported)| RendererLoad {
                 label: label.clone(),
-                stats: *stats,
-                stale: now.saturating_duration_since(*at) > RENDER_STATS_STALE,
+                stats: reported.stats,
+                stale: now.saturating_duration_since(reported.at) > RENDER_STATS_STALE,
+                target_fps: reported.target_fps,
             })
             .collect();
         loads.sort_by(|a, b| a.label.cmp(&b.label));
@@ -344,6 +379,9 @@ impl Studio {
         };
         self.outputs
             .send_all(&InvokeResponseBody::Raw(frame.encode()));
+        if let Some(camera) = &*lock(&self.camera) {
+            let _ = camera.commands.send(CameraCommand::Frame(frame.clone()));
+        }
         drop(conductor);
         let nanos = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
         self.tick_nanos.store(nanos, Ordering::Relaxed);
@@ -371,9 +409,14 @@ impl Studio {
     }
 
     /// シーンが変わった: 受け手と操作ウィンドウに配る。次の刻みのフレームより先に届くよう、指揮役を握ったまま呼ぶ。
-    fn send_scene(&self, conductor: &Conductor) {
+    fn send_scene(&self, stage: &Stage, conductor: &Conductor) {
         if let Some(body) = Self::scene_message(conductor) {
             self.outputs.send_all(&body);
+        }
+        if let Some(camera) = &*lock(&self.camera)
+            && let Some(files) = Self::camera_scene(stage, conductor)
+        {
+            let _ = camera.commands.send(CameraCommand::Scene(Box::new(files)));
         }
         if let Some(body) = Self::monitor_scene_message(conductor) {
             self.monitors.send_all(&body);
@@ -393,7 +436,7 @@ impl Studio {
         let before = conductor.scene().map(|s| s.revision);
         let result = action(&mut stage, &mut conductor);
         if conductor.scene().map(|s| s.revision) != before {
-            self.send_scene(&conductor);
+            self.send_scene(&stage, &conductor);
         }
         drop(conductor);
         self.send_profile(&stage);
@@ -543,6 +586,72 @@ impl Studio {
     fn send_output_state(&self, state: OutputState) {
         if let Some(body) = Self::json(&Monitor::Output(state)) {
             self.monitors.send_all(&body);
+        }
+    }
+
+    /// 仮想カメラに渡す今のシーン (シーンの通知と、受け手が `scene_model` などで取るファイル)。
+    fn camera_scene(stage: &Stage, conductor: &Conductor) -> Option<SceneFiles> {
+        let scene = conductor.scene()?.clone();
+        let modules = (0..scene.modules.len())
+            .filter_map(|i| stage.module_bytes(i))
+            .collect();
+        Some(SceneFiles {
+            model: stage.model_bytes(),
+            modules,
+            scene,
+        })
+    }
+
+    /// 仮想カメラの今の状態 (動かしたことが無ければ、始められるかを調べる)。
+    fn camera_status(&self) -> virtual_camera::Status {
+        lock(&self.camera_status)
+            .get_or_insert_with(|| virtual_camera::Status::Stopped {
+                unavailable: virtual_camera::unavailable(),
+            })
+            .clone()
+    }
+
+    /// 仮想カメラのスレッドからの知らせを受ける。
+    fn camera_event(&self, event: CameraEvent, fps: u32) {
+        match event {
+            CameraEvent::Status(status) => {
+                if !matches!(status, virtual_camera::Status::Running { .. }) {
+                    lock(&self.renders).remove(virtual_camera::LABEL);
+                }
+                if let Some(body) = Self::json(&Monitor::VirtualCamera(&status)) {
+                    self.monitors.send_all(&body);
+                }
+                *lock(&self.camera_status) = Some(status);
+            }
+            CameraEvent::Stats {
+                fps: measured,
+                render_ms,
+                render_max_ms,
+                dropped,
+            } => {
+                let stats = RenderStats {
+                    fps: measured,
+                    render_ms,
+                    render_max_ms,
+                    dropped,
+                };
+                lock(&self.renders).insert(
+                    virtual_camera::LABEL.to_owned(),
+                    Reported {
+                        stats,
+                        target_fps: Some(fps),
+                        at: Instant::now(),
+                    },
+                );
+            }
+        }
+    }
+
+    /// 仮想カメラを止め、スレッドが終わるのを待つ。
+    fn stop_camera(&self) {
+        if let Some(camera) = lock(&self.camera).take() {
+            let _ = camera.commands.send(CameraCommand::Stop);
+            let _ = camera.thread.join();
         }
     }
 }
@@ -968,8 +1077,68 @@ fn report_render_stats(
     if !stats.is_valid() {
         return Err("invalid render stats".to_owned());
     }
-    lock(&studio.renders).insert(webview.label().to_owned(), (stats, Instant::now()));
+    lock(&studio.renders).insert(
+        webview.label().to_owned(),
+        Reported {
+            stats,
+            target_fps: None,
+            at: Instant::now(),
+        },
+    );
     Ok(())
+}
+
+/// 仮想カメラの今の状態 (止めているなら、始められない理由も)。
+#[tauri::command]
+fn virtual_camera_state(studio: tauri::State<'_, Arc<Studio>>) -> virtual_camera::Status {
+    studio.camera_status()
+}
+
+/// 仮想カメラを始める (動いていれば止めてから、新しい設定で始め直す)。状態の変化は操作ウィンドウへの通知で届く。
+#[tauri::command]
+fn start_virtual_camera(
+    studio: tauri::State<'_, Arc<Studio>>,
+    settings: CameraSettings,
+) -> Result<(), String> {
+    settings.config().validate().map_err(|e| e.to_string())?;
+    studio.stop_camera();
+    let (tx, rx) = std::sync::mpsc::channel();
+    // 刻みのスレッドより先にシーンが届くよう、舞台と指揮役を (この順に) 握ったままシーンを送り、送り先を置く。
+    let stage = lock(&studio.stage);
+    let conductor = lock(&studio.conductor);
+    if let Some(files) = Studio::camera_scene(&stage, &conductor) {
+        let _ = tx.send(CameraCommand::Scene(Box::new(files)));
+    }
+    let events = Arc::clone(&studio);
+    let thread = std::thread::Builder::new()
+        .name("ugoe-studio-virtual-camera".into())
+        .spawn(move || {
+            virtual_camera::run(settings, rx, |event| {
+                events.camera_event(event, settings.fps)
+            });
+        })
+        .map_err(|e| e.to_string())?;
+    *lock(&studio.camera) = Some(CameraThread {
+        commands: tx,
+        thread,
+    });
+    drop(conductor);
+    drop(stage);
+    Ok(())
+}
+
+/// 仮想カメラを止める (受け手と GPU の描画も止める)。
+#[tauri::command]
+fn stop_virtual_camera(studio: tauri::State<'_, Arc<Studio>>) {
+    studio.stop_camera();
+}
+
+/// 透過のところを埋める色を変える (動いていれば次の画から)。
+#[tauri::command]
+fn set_virtual_camera_background(studio: tauri::State<'_, Arc<Studio>>, background: [u8; 3]) {
+    if let Some(camera) = &*lock(&studio.camera) {
+        let _ = camera.commands.send(CameraCommand::Background(background));
+    }
 }
 
 fn output_window(app: &AppHandle) -> Result<WebviewWindow, String> {
@@ -1088,8 +1257,12 @@ pub fn run() {
                     window.state::<Arc<Studio>>().send_output_state(state);
                 }
             }
-            // 操作ウィンドウを閉じたらアプリを終える (隠れた出力ウィンドウを残さない)。
-            (CONTROL, WindowEvent::Destroyed) => window.app_handle().exit(0),
+            // 操作ウィンドウを閉じたらアプリを終える (隠れた出力ウィンドウを残さない)。仮想カメラは止めてから
+            // (Windows のカメラの機器を消し、Linux の機器を閉じる)。
+            (CONTROL, WindowEvent::Destroyed) => {
+                window.state::<Arc<Studio>>().stop_camera();
+                window.app_handle().exit(0);
+            }
             _ => {}
         })
         .invoke_handler(tauri::generate_handler![
@@ -1136,6 +1309,10 @@ pub fn run() {
             set_hotkeys,
             suspend_hotkeys,
             module_slot,
+            virtual_camera_state,
+            start_virtual_camera,
+            stop_virtual_camera,
+            set_virtual_camera_background,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the ugoe studio");
@@ -1174,6 +1351,7 @@ mod tests {
                     dropped: 0,
                 },
                 stale: false,
+                target_fps: None,
             }],
         };
         assert_eq!(
@@ -1181,7 +1359,7 @@ mod tests {
             concat!(
                 r#"{"kind":"status","seq":3,"values":[0.5],"tickMs":0.25,"outputs":1,"tickRate":60,"#,
                 r#""measuredRate":59.5,"maxIntervalMs":null,"renderers":[{"label":"output","fps":60.0,"#,
-                r#""renderMs":1.5,"renderMaxMs":2.0,"dropped":0,"stale":false}]}"#
+                r#""renderMs":1.5,"renderMaxMs":2.0,"dropped":0,"stale":false,"targetFps":null}]}"#
             )
         );
     }
@@ -1337,7 +1515,14 @@ mod tests {
             .is_valid()
         );
         let at = Instant::now();
-        lock(&studio.renders).insert("output".into(), (stats, at));
+        lock(&studio.renders).insert(
+            "output".into(),
+            Reported {
+                stats,
+                target_fps: None,
+                at,
+            },
+        );
         assert!(!studio.renderer_loads(at + Duration::from_secs(1))[0].stale);
         assert!(studio.renderer_loads(at + Duration::from_secs(3))[0].stale);
     }
