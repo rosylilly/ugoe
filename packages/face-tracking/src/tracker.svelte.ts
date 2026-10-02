@@ -10,7 +10,7 @@
 // 実行時にネットワークへ取りに行かない。
 import type { FaceLandmarker, NormalizedLandmark, PoseLandmarker } from "@mediapipe/tasks-vision";
 import { applyCalibration, averageFrames } from "./calibration";
-import { FrameSmoother } from "./filter";
+import { FrameInterval, FrameSmoother } from "./filter";
 import { frameFromLandmarker, NO_BODY, type TrackingFrame, unmirrorFrame } from "./frame";
 import { t } from "./i18n";
 import { PoseConverter } from "./pose";
@@ -184,6 +184,8 @@ export class FaceTracker {
   #recorded: RecordedFrame[] = [];
   #recordStart = 0;
   #smoother = new FrameSmoother();
+  /** 平滑化の `dt` (前の検出・再生の値から測る)。 */
+  #frameInterval = new FrameInterval(MAX_DT);
 
   constructor(target: TrackingTarget, options: FaceTrackerOptions = {}) {
     this.#target = target;
@@ -381,6 +383,7 @@ export class FaceTracker {
     this.#smoother.reset();
     this.#recent = [];
     this.#lastNow = null;
+    this.#frameInterval.reset();
     this.#lastVideoTime = -1;
     this.#fpsSince = performance.now();
     this.#detectCount = 0;
@@ -496,7 +499,9 @@ export class FaceTracker {
     // undefined: 新しい映像のフレームが無い (値は前のまま)。
     if (raw === undefined) return;
     this.faceFound = raw !== null;
-    if (raw !== null) this.#push(raw, dt, now);
+    // 平滑化の dt は前の刻みではなく前の値から測る (新しい映像のフレームが無い刻みは数えない)。
+    const frameDt = this.#frameInterval.next(now);
+    if (raw !== null) this.#push(raw, frameDt, now);
     this.#draw();
     this.#countFps(now);
   };

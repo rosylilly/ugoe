@@ -123,3 +123,26 @@ export class FrameSmoother {
     this.#filters.clear();
   }
 }
+
+/**
+ * 平滑化に渡す `dt` を、前の値 (検出・再生) から測る (T0812)。処理を回す刻みは値の出る間隔より細かいことがあり
+ * (60/s の刻みと 30fps のカメラ、検出が刻みより重いときなど)、刻みの間隔で測ると平滑化が実際より遅れる。
+ */
+export class FrameInterval {
+  #last: number | null = null;
+
+  /** @param maxDt 1 つの値で進める時間の上限 (秒)。止まっていた後に大きく飛ばないように。 */
+  constructor(readonly maxDt: number) {}
+
+  /** 時刻 `now` (ミリ秒) に値が出た。前の値からの秒数を返す (最初の値は 0)。 */
+  next(now: number): number {
+    const dt = this.#last === null ? 0 : Math.min((now - this.#last) / 1000, this.maxDt);
+    this.#last = now;
+    return dt;
+  }
+
+  /** 入力を切り替えたときに、前の値の時刻を忘れる。 */
+  reset(): void {
+    this.#last = null;
+  }
+}

@@ -41,7 +41,8 @@ src/lib/api.ts                操作 API とブラウザソースの様子の形
 src/lib/hotkeys.ts            ホットキーのキーの書き方 (押したキー → `Ctrl+Shift+KeyA`、Kbd の表記)
 src/lib/lipSync.ts            マイクの音から口を開く量を作る式 (dB・ノイズの閾値・感度・開く速さと閉じる速さ)
 src/lib/microphone.svelte.ts  マイク (getUserMedia → AnalyserNode)。刻みごとに口を開く量を指揮役へ送る
-src/lib/pulse.ts              入力の処理を回す刻み (バックエンドの `subscribe_pulse`。requestAnimationFrame に頼らない)
+src/lib/pulse.ts              入力の処理を回す刻み (バックエンドの `subscribe_pulse`。requestAnimationFrame に頼らない。重ければ間引く)
+src/lib/channel.ts            Tauri の Channel の受け取りを、例外を外へ出さない形に包む (投げると以後のメッセージが止まるため)
 src/lib/latest.ts             送っている間に届いた値は最後のものだけを次に送る (トラッキングと口パクの IPC)
 src/lib/outputLayout.ts       受け手がシーンの通知ですること (planScene)・配置を舞台とビューと CSS の回転に分ける計算
 src/lib/errors.ts             バックエンドのエラー (code) を文にする

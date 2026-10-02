@@ -3,6 +3,7 @@
 import type { TrackingFrame } from "@ugoe/face-tracking";
 import type { LightingSettings, MotionPriority, SceneMessage } from "@ugoe/player";
 import type { ApiPermission, ApiView } from "./api";
+import { safeChannelHandler } from "./channel";
 import type {
   AnimationView,
   Hotkey,
@@ -236,7 +237,7 @@ async function tauriHost(): Promise<StudioHost> {
   const { Channel, invoke } = await import("@tauri-apps/api/core");
   async function subscribe<T>(command: string, onMessage: (message: T) => void): Promise<void> {
     const channel = new Channel<T>();
-    channel.onmessage = onMessage;
+    channel.onmessage = safeChannelHandler(onMessage);
     await invoke(command, { channel });
   }
   return {

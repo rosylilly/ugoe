@@ -322,6 +322,7 @@ UTF-8 の JSON の 1 ファイルで、書くときは一時ファイルに書�
   (`apps/studio/src/lib/pulse.ts`、`@ugoe/face-tracking` の `FaceTracker` の `schedule`)。Channel のメッセージは隠れたページにも届くので、
   Linux で操作ウィンドウを最小化して `requestAnimationFrame` が止まっても、入力は止まらない (ヘッドレスの Chrome で `requestAnimationFrame` を
   止めても値が届き続けることを確かめた)。カメラは新しい映像のフレームがあるときだけ検出する。
+  検出が刻みより重いときは刻みを間引く ([隠れても止まらない](#隠れても止まらない)、T0812)。
   ただし、最小化した WebView がカメラの映像やマイクの音を取り続けるか (WebKitGTK・WebView2・WKWebView) は実機で確かめていない。
 - 値は IPC で送る。送っている途中に届いた値は最後のものだけを次に送る (`apps/studio/src/lib/latest.ts`。古い値を溜めない)。
 - トラッキングを止める (`null` を送る)・一時停止すると、トラッキングが書き込んでいたパラメータを既定値に戻す (最後の値が基準値として残るため)。
@@ -729,6 +730,14 @@ WebView は、隠れたり最小化されたりしたページの `requestAnimat
   取り込めないので、取り込むときは表示したまま、ほかのウィンドウの裏に置く。
 - 入力 (カメラ・マイク、T0803) は操作ウィンドウの WebView で取る。Linux で操作ウィンドウを最小化すると `requestAnimationFrame` が止まるので、
   入力の処理はバックエンドの刻みのスレッドが送るメッセージで回す ([入力](#入力))。
+- **刻みで回す処理は、重ければ間引く (T0812):** 刻みのメッセージは、JS の処理が追いつかなくても届き続けて WebView に溜まる
+  (`requestAnimationFrame` は溜まらない)。MediaPipe の検出 1 回が刻みの間隔より重いと (WSL2 では顔と体で約 200ms)、溜まった刻みが
+  ほかのメッセージや `set_tracking` の応答を十数秒待たせ、トラッキングが止まって見えた。そこで `apps/studio/src/lib/pulse.ts` の `Pulse.beat` は、
+  前の処理が終わってから前の処理にかかった時間が経つまで届いた刻みを飛ばす (飛ばすのは安い)。1 つの処理が投げても、ほかの処理と次の刻みは止めない。
+  平滑化の `dt` は刻みの間隔ではなく前の検出から測る (`@ugoe/face-tracking` の `FrameInterval`)。
+- **Channel の受け取りは投げない:** `@tauri-apps/api` の `Channel` は、`onmessage` が一度でも投げると以後のメッセージを配らなくなる。
+  スタジオの Channel (刻み・モニター・出力のフレーム) は `host.ts` の `subscribe` で `safeChannelHandler` (`lib/channel.ts`) に包み、
+  投げた例外は console に出して次のメッセージを受け取る。
 
 ### 刻みの速さと正確さ
 

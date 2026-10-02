@@ -1,6 +1,6 @@
 // フェイストラッキングの共有の部品 (T0703 のビューアから切り出した。T0636)。ビューアとエディタのプレビューで使う。
 export { applyCalibration, averageFrames } from "./calibration";
-export { FrameSmoother, minCutoffForStrength, OneEuroFilter } from "./filter";
+export { FrameInterval, FrameSmoother, minCutoffForStrength, OneEuroFilter } from "./filter";
 export {
   BODY_KEYS,
   type BodyPose,

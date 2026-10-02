@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FrameSmoother, minCutoffForStrength, OneEuroFilter } from "./filter";
+import { FrameInterval, FrameSmoother, minCutoffForStrength, OneEuroFilter } from "./filter";
 
 describe("OneEuroFilter", () => {
   it("passes the first value and converges to a constant", () => {
@@ -77,5 +77,37 @@ describe("FrameSmoother body", () => {
     expect(smoother.smooth(frame(null), 1 / 60).body?.yaw).toBeNull();
     // 戻ったときは古い値 (0) から追いかけない。
     expect(smoother.smooth(frame(10), 1 / 60).body?.yaw).toBe(10);
+  });
+});
+
+describe("FrameInterval", () => {
+  it("measures from the previous value, not from the previous tick", () => {
+    // 60/s の刻みで、30fps のカメラの新しいフレームは 1 刻みおきにしか出ない。値が出たときだけ測る。
+    const interval = new FrameInterval(0.1);
+    const dts: number[] = [];
+    for (let tick = 0; tick <= 8; tick++) {
+      const now = (tick * 1000) / 60;
+      if (tick % 2 === 0) dts.push(interval.next(now));
+    }
+    expect(dts[0]).toBe(0);
+    for (const dt of dts.slice(1)) expect(dt).toBeCloseTo(1 / 30, 9);
+  });
+
+  it("matches the tick interval when every tick has a value", () => {
+    // requestAnimationFrame で回し、毎回値が出る (ビューア・エディタの再生や 60fps の入力) なら、これまでと同じ dt。
+    const interval = new FrameInterval(0.1);
+    interval.next(0);
+    for (let tick = 1; tick <= 5; tick++) {
+      expect(interval.next((tick * 1000) / 60)).toBeCloseTo(1 / 60, 9);
+    }
+  });
+
+  it("caps the step and starts over after a reset", () => {
+    const interval = new FrameInterval(0.1);
+    interval.next(0);
+    expect(interval.next(200)).toBe(0.1);
+    interval.reset();
+    expect(interval.next(300)).toBe(0);
+    expect(interval.next(350)).toBeCloseTo(0.05, 9);
   });
 });
