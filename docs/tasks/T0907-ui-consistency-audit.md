@@ -1,11 +1,11 @@
 ---
 id: T0907
 title: UI: 3 つのアプリの見直し (キーボード操作・フォーカス・コントラスト・ライトとダーク・小さい画面)
-status: todo
+status: in-progress
 milestone: M8
 crates: [packages, apps/editor, apps/viewer, apps/studio, docs]
-depends_on: [T0723, T0664, T0665, T0806]
-assignee:
+depends_on: [T0723, T0664, T0665, T0808, T0911]
+assignee: claude-worker-T0907
 ---
 
 # T0907: UI: 3 つのアプリの見直し (キーボード操作・フォーカス・コントラスト・ライトとダーク・小さい画面)
