@@ -21,6 +21,8 @@ just tasks --ready  # ready のタスクだけ
 | T05xx | 取り込み・メッシュ・AI |
 | T06xx | エディタ |
 | T07xx | ビューア |
+| T08xx | スタジオ |
+| T09xx | 共有 UI・i18n |
 
 ## フロントマター
 
@@ -29,7 +31,7 @@ just tasks --ready  # ready のタスクだけ
 id: T0104
 title: デフォーマ・パーツ階層・グルーの評価
 status: todo            # todo | in-progress | review | done | blocked
-milestone: M1            # M0〜M7、または番号の無い Release (公開。時期は未定。docs/roadmap.md)
+milestone: M1            # M0〜M8、または番号の無い Release (公開。時期は未定。docs/roadmap.md)
 crates: [ugoe-runtime]  # このタスクで触ってよい範囲
 depends_on: [T0102]     # これらが done になるまで着手しない
 assignee:               # 着手したエージェントやセッションの名前
