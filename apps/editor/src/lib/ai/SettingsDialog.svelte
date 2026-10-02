@@ -1,14 +1,19 @@
 <!--
-  ヘッダーの「Settings」。「AI provider」と「Connect agents」(lib/agents/ConnectAgents.svelte。エディタの中の MCP サーバ) の 2 つのタブ。
+  ヘッダーの「Settings」。「General」(画面の言語。lib/LanguageSetting.svelte)・「AI provider」と
+  「Connect agents」(lib/agents/ConnectAgents.svelte。エディタの中の MCP サーバ) の 3 つのタブ。
   「AI provider」は AI の設定 (docs/editor.md#ai-の設定と送信の同意):
   プロバイダ (Claude / OpenAI 互換) とモデル・ベースの URL の選択 (エディタ全体の設定)、選んだプロバイダの
   API キーの保存・削除 (OS の資格情報の保存先。キーは画面に出さず、入力欄も保存したら空にする)、
   開いているプロジェクトの「外部の AI に送らない」、「今後は確かめない」の取り消し、接続の確認。
 -->
 <script lang="ts">
+import { Button } from "@ugoe/ui";
 import ConnectAgents from "../agents/ConnectAgents.svelte";
 import { errorText } from "../errors";
+import { t } from "../i18n";
 import { type AiSettings, ipc, type ProviderSettings } from "../ipc";
+import LanguageSetting from "../LanguageSetting.svelte";
+import TabStrip, { type TabItem } from "../ui/TabStrip.svelte";
 import { aiSettings, consentPrompt } from "./ai.svelte";
 import { withConsent } from "./consent";
 import { OPENAI_PRESETS, OUTPUT_MODES, presetFor } from "./providers";
@@ -30,14 +35,22 @@ let testResult = $state<{ ok: boolean; text: string } | null>(null);
 /** 編集中のプロバイダの設定 (「Apply」で保存する)。 */
 let draft = $state<ProviderSettings | null>(null);
 /** 開いているタブ。 */
-let tab = $state<"ai" | "agents">("ai");
+let tab = $state<SettingsTab>("general");
+
+type SettingsTab = "general" | "ai" | "agents";
+
+const tabs = $derived<TabItem<SettingsTab>[]>([
+  { value: "general", label: t("settings.general.tab") },
+  { value: "ai", label: t("settings.ai.tab") },
+  { value: "agents", label: t("settings.agents.tab") },
+]);
 
 const saved = $derived(aiSettings.value?.provider ?? null);
 const dirty = $derived(!!draft && !!saved && JSON.stringify(draft) !== JSON.stringify(saved));
 const preset = $derived(draft ? presetFor(draft.openai.base_url) : undefined);
 
-/** 開く。`agents` なら「Connect agents」のタブを開く。 */
-export async function open(which: "ai" | "agents" = "ai"): Promise<void> {
+/** 開く。`ai` なら「AI provider」、`agents` なら「Connect agents」のタブを開く。 */
+export async function open(which: "general" | "ai" | "agents" = "general"): Promise<void> {
   tab = which;
   testResult = null;
   dialog?.showModal();
@@ -139,14 +152,16 @@ function keyStatus(s: AiSettings): string {
     close();
   }}
 >
-  <h2 id="settings-title">Settings</h2>
-  <div class="tabs" role="tablist">
-    <button role="tab" aria-selected={tab === "ai"} class:current={tab === "ai"} onclick={() => (tab = "ai")}
-      >AI provider</button>
-    <button role="tab" aria-selected={tab === "agents"} class:current={tab === "agents"}
-      onclick={() => (tab = "agents")}>Connect agents</button>
+  <h2 id="settings-title">{t("settings.title")}</h2>
+  <div class="tabs">
+    <TabStrip {tabs} value={tab} ariaLabel={t("settings.tabs.aria")} onselect={(v) => (tab = v)} />
   </div>
-  {#if tab === "agents"}
+  {#if tab === "general"}
+    <section>
+      <h3>{t("settings.general.tab")}</h3>
+      <LanguageSetting />
+    </section>
+  {:else if tab === "agents"}
     <ConnectAgents />
   {:else}
   <section>
@@ -311,43 +326,34 @@ function keyStatus(s: AiSettings): string {
   </section>
   {/if}
   <div class="actions">
-    <button onclick={close}>Close</button>
+    <Button onclick={close}>{t("settings.close.label")}</Button>
   </div>
 </dialog>
 
 <style>
   .tabs {
-    display: flex;
-    gap: 4px;
-    margin-bottom: 8px;
-    border-bottom: 1px solid var(--border);
+    margin-bottom: var(--ugoe-space-3);
   }
-  .tabs button {
-    border-bottom-left-radius: 0;
-    border-bottom-right-radius: 0;
-    border-bottom: 2px solid transparent;
-  }
-  .tabs button.current {
-    border-bottom-color: var(--accent);
-    color: var(--accent);
-  }
+  /* 外枠は @ugoe/ui の Dialog と同じ見た目にそろえる (中で外部の AI に送る前の確認の <dialog> を開くので、T0665 で
+     中身と一緒に Dialog へ移すまでは <dialog> のまま)。 */
   .settings {
     width: min(640px, calc(100vw - 32px));
     max-height: calc(100vh - 48px);
-    padding: 16px 20px;
-    background: var(--panel);
-    color: var(--text);
-    border: 1px solid var(--border);
+    padding: var(--ugoe-space-5);
+    border: 1px solid var(--ugoe-color-border);
+    border-radius: var(--ugoe-radius-lg);
+    background: var(--ugoe-color-surface);
+    box-shadow: var(--ugoe-shadow-overlay);
+    color: var(--ugoe-color-text);
   }
   .settings::backdrop {
-    background: rgb(0 0 0 / 40%);
+    background: var(--ugoe-color-backdrop);
   }
   h2 {
-    margin: 0 0 8px;
-    font-size: 15px;
-    text-transform: none;
-    letter-spacing: normal;
-    color: var(--text);
+    margin: 0 0 var(--ugoe-space-3);
+    font-size: var(--ugoe-font-size-lg);
+    font-weight: var(--ugoe-font-weight-strong);
+    color: var(--ugoe-color-text);
   }
   .check {
     display: flex;

@@ -1,12 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "メインウィンドウの既定権限",
+  "description": "メインウィンドウの既定権限 (OS の言語を読む os:allow-locale を含む)",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "dialog:allow-open",
     "dialog:allow-save",
+    "os:allow-locale",
     {
       "identifier": "opener:allow-open-url",
       "allow": [

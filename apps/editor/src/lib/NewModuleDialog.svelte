@@ -4,11 +4,19 @@
   スロットのない本体は、本体のプロジェクトの「Slots」タブでスロットを足してから選ぶ。Esc で閉じる。
 -->
 <script lang="ts">
+import { Button, Dialog } from "@ugoe/ui";
 import { errorText } from "./errors";
 import { fileDialogs } from "./fileDialogs";
 import { BUNDLE_FILTER } from "./filePaths";
+import { t } from "./i18n";
 import { type BaseSummary, ipc } from "./ipc";
-import { isValidModuleName, MODULE_CAN, MODULE_CANNOT, suggestModuleName } from "./moduleProject";
+import {
+  isValidModuleName,
+  moduleCan,
+  moduleCannot,
+  slotSummary,
+  suggestModuleName,
+} from "./moduleProject";
 
 interface Props {
   open: boolean;
@@ -21,7 +29,6 @@ interface Props {
 
 let { open, startDir, oncreate, onclose }: Props = $props();
 
-let dialog = $state<HTMLDialogElement>();
 let basePath = $state<string | null>(null);
 let base = $state<BaseSummary | null>(null);
 let slot = $state<string | null>(null);
@@ -30,24 +37,16 @@ let name = $state("");
 let nameEdited = false;
 let error = $state<string | null>(null);
 let busy = $state(false);
-
-$effect(() => {
-  if (!dialog) return;
-  if (open && !dialog.open) dialog.showModal();
-  else if (!open && dialog.open) dialog.close();
-});
+const id = $props.id();
 
 async function chooseBase(kind: "project" | "bundle") {
   const dialogs = fileDialogs();
   const defaultPath = startDir ?? undefined;
   const path =
     kind === "project"
-      ? await dialogs.openDirectory({
-          title: "Choose the base project (.ugoeproj folder)",
-          defaultPath,
-        })
+      ? await dialogs.openDirectory({ title: t("newModule.chooseProject.title"), defaultPath })
       : await dialogs.openFile({
-          title: "Choose the base bundle",
+          title: t("newModule.chooseBundle.title"),
           defaultPath,
           filters: [BUNDLE_FILTER],
         });
@@ -86,48 +85,37 @@ async function create() {
 const ready = $derived(basePath !== null && slot !== null && isValidModuleName(name) && !busy);
 </script>
 
-<dialog
-  bind:this={dialog}
-  class="new-module"
-  aria-labelledby="new-module-title"
-  oncancel={(e) => {
-    e.preventDefault();
-    onclose();
-  }}
->
-  <h2 id="new-module-title">New dress-up module</h2>
-  <p class="muted">
-    A module is made in its own project that refers to a base model. The base is shown underneath and cannot be
-    edited here.
-  </p>
+<Dialog {open} title={t("newModule.title")} description={t("newModule.description")} {onclose}>
   <details class="features">
-    <summary>What you can do in a module project</summary>
+    <summary>{t("newModule.features.summary")}</summary>
     <div class="columns">
       <div>
-        <strong>You can</strong>
-        <ul>{#each MODULE_CAN as line (line)}<li>{line}</li>{/each}</ul>
+        <strong>{t("newModule.features.can")}</strong>
+        <ul>{#each moduleCan() as line (line)}<li>{line}</li>{/each}</ul>
       </div>
       <div>
-        <strong>Edit in the base project instead</strong>
-        <ul>{#each MODULE_CANNOT as line (line)}<li>{line}</li>{/each}</ul>
+        <strong>{t("newModule.features.cannot")}</strong>
+        <ul>{#each moduleCannot() as line (line)}<li>{line}</li>{/each}</ul>
       </div>
     </div>
-    <p class="muted">The name, slot and requirements can be changed later by clicking the “Module:” badge.</p>
+    <p class="muted">{t("newModule.features.later")}</p>
   </details>
-  <div class="row">
-    <span class="label">Base</span>
-    <button onclick={() => chooseBase("project")} disabled={busy}>Project folder…</button>
-    <button onclick={() => chooseBase("bundle")} disabled={busy}>.ugoe file…</button>
+  <div class="row" role="group" aria-labelledby={`${id}-base`}>
+    <span class="label" id={`${id}-base`}>{t("newModule.base.label")}</span>
+    <Button onclick={() => chooseBase("project")} disabled={busy}>
+      {t("newModule.base.project")}
+    </Button>
+    <Button onclick={() => chooseBase("bundle")} disabled={busy}>
+      {t("newModule.base.bundle")}
+    </Button>
   </div>
   {#if base && basePath}
-    <p class="base" title={basePath}><strong>{base.name}</strong> <code>{basePath}</code></p>
+    <p class="base"><strong>{base.name}</strong> <code>{basePath}</code></p>
     {#if base.slots.length === 0}
-      <p class="warn">
-        This base has no slots. Open the base project and add a slot in the Slots tab first.
-      </p>
+      <p class="warn">{t("newModule.noSlots")}</p>
     {:else}
       <fieldset>
-        <legend>Slot</legend>
+        <legend>{t("newModule.slot.label")}</legend>
         {#each base.slots as s (s.id)}
           <label class="slot">
             <input
@@ -138,16 +126,14 @@ const ready = $derived(basePath !== null && slot !== null && isValidModuleName(n
               onchange={() => selectSlot(s.id)}
             />
             <strong>{s.id}</strong>
-            <span class="muted">
-              on {s.anchor ?? "canvas"} · draw order {s.draw_order_min}–{s.draw_order_max}{#if s.replaces.length > 0}
-                · replaces {s.replaces.join(", ")}{/if}
-            </span>
+            <span class="muted">{slotSummary(s)}</span>
           </label>
         {/each}
       </fieldset>
-      <label class="row">
-        <span class="label">Module name</span>
+      <div class="row">
+        <label class="label" for={`${id}-name`}>{t("newModule.name.label")}</label>
         <input
+          id={`${id}-name`}
           type="text"
           value={name}
           oninput={(e) => {
@@ -155,91 +141,68 @@ const ready = $derived(basePath !== null && slot !== null && isValidModuleName(n
             name = e.currentTarget.value;
           }}
         />
-      </label>
+      </div>
       {#if name.length > 0 && !isValidModuleName(name)}
-        <p class="warn">The name must not contain "/" or start with "#".</p>
+        <p class="warn">{t("newModule.name.invalid")}</p>
       {/if}
     {/if}
   {/if}
-  {#if error}<p class="error">{error}</p>{/if}
-  <div class="actions">
-    <button onclick={onclose}>Cancel</button>
-    <button class="primary" onclick={create} disabled={!ready}>Create</button>
-  </div>
-</dialog>
+  {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#snippet actions()}
+    <Button onclick={onclose}>{t("newModule.cancel.label")}</Button>
+    <Button variant="primary" onclick={create} disabled={!ready}>{t("newModule.create.label")}</Button>
+  {/snippet}
+</Dialog>
 
 <style>
-  .new-module {
-    width: min(560px, 90vw);
-    padding: 16px 20px;
-    background: var(--panel);
-    color: var(--text);
-    border: 1px solid var(--border);
-  }
-  .new-module::backdrop {
-    background: rgb(0 0 0 / 40%);
-  }
-  h2 {
-    margin: 0 0 8px;
-    font-size: 15px;
-    text-transform: none;
-    letter-spacing: normal;
-    color: var(--text);
-  }
-  .features {
-    margin: 4px 0 8px;
+  p {
+    margin: 0;
   }
   .features ul {
-    margin: 4px 0;
-    padding-left: 18px;
+    margin: var(--ugoe-space-2) 0;
+    padding-left: var(--ugoe-space-5);
   }
   .columns {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 12px;
+    gap: var(--ugoe-space-4);
   }
   .row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin: 8px 0;
+    gap: var(--ugoe-space-3);
+  }
+  .row input {
+    flex: 1;
   }
   .label {
+    display: block;
     min-width: 96px;
   }
   .base code {
     overflow-wrap: anywhere;
-    opacity: 0.7;
+    color: var(--ugoe-color-text-muted);
   }
   fieldset {
-    border: 1px solid var(--border);
-    margin: 8px 0;
-    padding: 4px 8px;
+    margin: 0;
+    padding: var(--ugoe-space-2) var(--ugoe-space-3) var(--ugoe-space-3);
+    border: 1px solid var(--ugoe-color-border);
+    border-radius: var(--ugoe-radius-md);
   }
   .slot {
     display: flex;
     align-items: baseline;
-    gap: 6px;
-    padding: 2px 0;
+    gap: var(--ugoe-space-2);
+    padding: var(--ugoe-space-1) 0;
   }
   .muted {
-    opacity: 0.7;
+    color: var(--ugoe-color-text-muted);
   }
   .warn {
-    color: #b45309;
+    color: var(--ugoe-color-warning);
   }
   .error {
-    color: #dc2626;
+    color: var(--ugoe-color-danger);
     overflow-wrap: anywhere;
-  }
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    margin-top: 16px;
-  }
-  .primary {
-    color: var(--accent);
-    border-color: var(--accent);
   }
 </style>

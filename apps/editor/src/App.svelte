@@ -17,6 +17,7 @@
   プレビューモード (lib/preview/) では、左の列・タイムライン・編集のツールと右の列を隠し、右にプレビューのパネルを出す。
 -->
 <script lang="ts">
+import { Toaster, TooltipProvider } from "@ugoe/ui";
 import { onMount, untrack } from "svelte";
 import ApprovalDialog from "./lib/agents/ApprovalDialog.svelte";
 import { agentBridge } from "./lib/agents/bridge.svelte";
@@ -27,9 +28,10 @@ import { ProposalsView } from "./lib/ai/proposals.svelte";
 import SettingsDialog from "./lib/ai/SettingsDialog.svelte";
 import BaseLock from "./lib/BaseLock.svelte";
 import { EditorDocument } from "./lib/document.svelte";
-import { EMPTY_VIEWPORT_HINT } from "./lib/emptyState";
+import { emptyViewportHint } from "./lib/emptyState";
 import FileMenu from "./lib/FileMenu.svelte";
 import HelpButton from "./lib/HelpButton.svelte";
+import { t } from "./lib/i18n";
 import { type AppInfo, type DifferenceItem, ipc } from "./lib/ipc";
 import { loadSplit, saveSplit, splitAt, splitByKey } from "./lib/layout";
 import { renamePrefix } from "./lib/moduleProject";
@@ -54,6 +56,8 @@ import PreviewPanel from "./lib/preview/PreviewPanel.svelte";
 import { PreviewMode } from "./lib/preview/preview.svelte";
 import { Selection } from "./lib/selection.svelte";
 import { historyShortcut, isMac, isTextEntry } from "./lib/shortcuts";
+import TabStrip, { type TabItem } from "./lib/ui/TabStrip.svelte";
+import TipButton from "./lib/ui/TipButton.svelte";
 import { ViewportController } from "./lib/viewport/controller.svelte";
 import ToolOverlay from "./lib/viewport/ToolOverlay.svelte";
 import LightingOverlay from "./lib/viewport/tools/lighting/LightingOverlay.svelte";
@@ -157,19 +161,56 @@ function selectDifference(item: DifferenceItem): void {
   }
 }
 
-const inspectorActive = $derived(
-  !physics.active &&
-    !glue.active &&
-    !lighting.active &&
-    !slots.active &&
-    !posesActive &&
-    !verify.active &&
-    !proposals.active,
+/** 上の区画のタブ。 */
+type PaneTab = "inspector" | "physics" | "glue" | "lighting" | "slots" | "poses" | "verify" | "ai";
+
+const currentTab = $derived<PaneTab>(
+  proposals.active
+    ? "ai"
+    : verify.active
+      ? "verify"
+      : physics.active
+        ? "physics"
+        : glue.active
+          ? "glue"
+          : lighting.active
+            ? "lighting"
+            : slots.active
+              ? "slots"
+              : posesActive
+                ? "poses"
+                : "inspector",
 );
 
+const paneTabs = $derived<TabItem<PaneTab>[]>([
+  { value: "inspector", label: t("app.tabs.inspector.label") },
+  { value: "physics", label: t("app.tabs.physics.label") },
+  { value: "glue", label: t("app.tabs.glue.label"), tooltip: t("app.tabs.glue.tooltip") },
+  {
+    value: "lighting",
+    label: t("app.tabs.lighting.label"),
+    tooltip: t("app.tabs.lighting.tooltip"),
+  },
+  { value: "slots", label: t("app.tabs.slots.label"), tooltip: t("app.tabs.slots.tooltip") },
+  { value: "poses", label: t("app.tabs.poses.label"), tooltip: t("app.tabs.poses.tooltip") },
+  { value: "verify", label: t("app.tabs.verify.label") },
+  {
+    value: "ai",
+    label:
+      proposals.count > 0
+        ? t("app.tabs.ai.count", { count: proposals.count })
+        : t("app.tabs.ai.label"),
+    tooltip:
+      proposals.staleRigs.length > 0
+        ? t("app.tabs.ai.stale")
+        : proposals.fresh
+          ? t("app.tabs.ai.fresh")
+          : t("app.tabs.ai.tooltip"),
+    attention: proposals.fresh || proposals.staleRigs.length > 0,
+  },
+]);
+
 const mac = isMac(navigator.platform);
-const undoKeys = mac ? "Cmd+Z" : "Ctrl+Z";
-const redoKeys = mac ? "Cmd+Shift+Z" : "Ctrl+Shift+Z / Ctrl+Y";
 
 /** Undo / Redo のショートカット。入力欄の中では、入力欄自身の取り消しに任せる。 */
 function onKeydown(e: KeyboardEvent): void {
@@ -224,6 +265,7 @@ $effect(() => {
 
 <svelte:window onkeydown={onKeydown} />
 
+<TooltipProvider>
 <div class="shell" class:previewing={preview.active}>
   <header>
     <strong>ugoe</strong>
@@ -241,22 +283,34 @@ $effect(() => {
       }}
       onrenamemodule={(from, to) => selection.set(renamePrefix(selection.items, from, to))}
     />
-    <span class="spacer"></span>
-    <button class:active={preview.active} onclick={() => preview.toggle()}
-      title={preview.active
-        ? "Leave the preview and go back to the pose you were editing"
-        : "Preview the model with the runtime (physics, eye blink, breath, motions) and all parameters"}
-      >{preview.active ? "Exit preview" : "Preview"}</button>
+    <TipButton
+      variant="ghost"
+      pressed={preview.active}
+      onclick={() => preview.toggle()}
+      tooltip={preview.active ? t("app.preview.exitTooltip") : t("app.preview.tooltip")}
+      >{preview.active ? t("app.preview.exit") : t("app.preview.label")}</TipButton
+    >
     {#if !preview.active}
-      <button onclick={() => doc.undo()} title="Undo ({undoKeys})">Undo</button>
-      <button onclick={() => doc.redo()} title="Redo ({redoKeys})">Redo</button>
+      <TipButton variant="ghost" onclick={() => doc.undo()} tooltip={t("app.undo.tooltip")} shortcut="Mod+Z"
+        >{t("app.undo.label")}</TipButton
+      >
+      <TipButton
+        variant="ghost"
+        onclick={() => doc.redo()}
+        tooltip={t("app.redo.tooltip")}
+        shortcut={mac ? "Mod+Shift+Z" : "Mod+Y"}>{t("app.redo.label")}</TipButton
+      >
     {/if}
     {#if agentBridge.status?.running}
-      <button class="agents" onclick={() => settings?.open("agents")}
-        title="Agents can connect to this editor (Settings → Connect agents)"
-        ><span class="dot"></span>Agents{agentBridge.connected > 0 ? ` (${agentBridge.connected})` : ""}</button>
+      <TipButton variant="ghost" class="agents" onclick={() => settings?.open("agents")} tooltip={t("app.agents.tooltip")}
+        ><span class="dot" aria-hidden="true"></span>{agentBridge.connected > 0
+          ? t("app.agents.connected", { count: agentBridge.connected })
+          : t("app.agents.label")}</TipButton
+      >
     {/if}
-    <button onclick={() => settings?.open()} title="AI provider, API key, and connecting agents">Settings</button>
+    <TipButton variant="ghost" onclick={() => settings?.open()} tooltip={t("app.settings.tooltip")}
+      >{t("app.settings.label")}</TipButton
+    >
     <HelpButton />
   </header>
   <aside class="left">
@@ -265,10 +319,10 @@ $effect(() => {
   <main class="center">
     <div class="viewport-area">
       <Viewport controller={viewport} model={proposals.preview?.model ?? doc.model}
-        hint={doc.empty && !proposals.preview ? EMPTY_VIEWPORT_HINT : null}>
+        hint={doc.empty && !proposals.preview ? emptyViewportHint() : null}>
         {#snippet overlay(controller)}
           {#if proposals.preview}
-            <p class="proposal-banner">Previewing an AI proposal. The model is unchanged until you adopt it.</p>
+            <p class="proposal-banner" role="status">{t("app.proposalBanner")}</p>
           {:else if !preview.active}<ToolOverlay {controller} {doc} {selection} {physics} {verify} {glue} />
           {:else}<DifferenceOverlay {controller} {doc} {preview} />{/if}
           {#if !proposals.preview && (lighting.active || preview.active)}
@@ -281,36 +335,14 @@ $effect(() => {
   </main>
   <aside class="right" bind:this={rightColumn}>
     <div class="pane inspector" style:flex-basis="{split * 100}%">
-      <div class="tabs" role="tablist">
-        <button role="tab" aria-selected={inspectorActive} class:current={inspectorActive}
-          onclick={() => openTab("inspector")}>Inspector</button>
-        <button role="tab" aria-selected={physics.active} class:current={physics.active}
-          onclick={() => openTab("physics")}>Physics</button>
-        <button role="tab" aria-selected={glue.active} class:current={glue.active}
-          title="Glues: keep the seams of two meshes together"
-          onclick={() => openTab("glue")}>Glue</button>
-        <button role="tab" aria-selected={lighting.active} class:current={lighting.active}
-          title="Lighting, normal maps and preview lights"
-          onclick={() => openTab("lighting")}>Lighting</button>
-        <button role="tab" aria-selected={slots.active} class:current={slots.active}
-          title="Dress-up slots: where outfit and accessory modules attach"
-          onclick={() => openTab("slots")}>Slots</button>
-        <button role="tab" aria-selected={posesActive} class:current={posesActive}
-          title="Pose groups: variants that switch (arms A / B)"
-          onclick={() => openTab("poses")}>Poses</button>
-        <button role="tab" aria-selected={verify.active} class:current={verify.active}
-          onclick={() => openTab("verify")}>Verify</button>
-        <button role="tab" aria-selected={proposals.active} class:current={proposals.active}
-          class:fresh={proposals.fresh || proposals.staleRigs.length > 0}
-          title={proposals.staleRigs.length > 0
-            ? "Costume meshes were edited after the rig was proposed: propose the rig again"
-            : proposals.fresh
-              ? "An agent made a new proposal"
-              : "Classify PSD layers and review rig proposals"}
-          onclick={openProposals}
-          >AI{proposals.count > 0 ? ` (${proposals.count})` : ""}{proposals.fresh || proposals.staleRigs.length > 0
-            ? " •"
-            : ""}</button>
+      <div class="tabs">
+        <TabStrip
+          tabs={paneTabs}
+          value={currentTab}
+          ariaLabel={t("app.tabs.aria")}
+          attentionLabel={t("app.tabs.ai.attention")}
+          onselect={(tab) => (tab === "ai" ? openProposals() : openTab(tab))}
+        />
       </div>
       {#if doc.error}<p class="error">{doc.error}</p>{/if}
       {#if proposals.active}
@@ -318,7 +350,7 @@ $effect(() => {
           view={proposals}
           {viewport}
           module={doc.module !== null}
-          onopensettings={() => settings?.open()}
+          onopensettings={() => settings?.open("ai")}
         />
       {:else if verify.active}
         <VerifyPanel {doc} {selection} {viewport} view={verify} {physics} />
@@ -331,7 +363,7 @@ $effect(() => {
       {:else if slots.active}
         <BaseLock
           locked={doc.module !== null}
-          hint="Slots belong to the base model and can't be edited in a module project. Edit them in the base project."
+          hint={t("app.slotsBaseHint")}
         >
           <SlotsPanel {doc} {selection} view={slots} />
         </BaseLock>
@@ -348,12 +380,11 @@ $effect(() => {
       class:dragging
       role="separator"
       aria-orientation="horizontal"
-      aria-label="Resize the inspector and the parameters"
+      aria-label={t("app.splitter.aria")}
       aria-valuemin={15}
       aria-valuemax={85}
       aria-valuenow={Math.round(split * 100)}
       tabindex="0"
-      title="Drag (or press ↑ / ↓) to resize the inspector and the parameters"
       onpointerdown={onSplitterDown}
       onpointermove={onSplitterMove}
       onpointerup={onSplitterUp}
@@ -381,6 +412,9 @@ $effect(() => {
   }}
 />
 
+</TooltipProvider>
+<Toaster />
+
 <style>
   /* プレビュー中は編集の列を隠す (中身は壊さず、出たときに元の状態で戻る)。 */
   .shell.previewing {
@@ -397,47 +431,45 @@ $effect(() => {
   }
   .preview {
     grid-area: preview;
-    border-left: 1px solid var(--border);
+    border-left: 1px solid var(--ugoe-color-border);
   }
   .proposal-banner {
     position: absolute;
-    top: 8px;
-    left: 8px;
+    top: var(--ugoe-space-3);
+    left: var(--ugoe-space-3);
     margin: 0;
-    padding: 4px 8px;
-    border: 1px solid var(--accent);
-    border-radius: 4px;
-    background: var(--panel);
-    color: var(--accent);
+    padding: var(--ugoe-space-2) var(--ugoe-space-3);
+    border: 1px solid var(--ugoe-color-accent);
+    border-radius: var(--ugoe-radius-md);
+    background: var(--ugoe-color-surface);
+    color: var(--ugoe-color-accent);
   }
   /* 幅が足りないときはファイルのメニューだけが縮んで折り返し、右のボタンと名前は縮めない
      (ヘッダーの高さが伸びる)。 */
+  /* 失敗の知らせの帯 (FileMenu の .bands) は折り返して最後の行に入る。 */
   header {
+    flex-wrap: wrap;
     min-height: 36px;
-    padding-block: 4px;
+    padding-block: var(--ugoe-space-2);
   }
-  header > :global(:not(.file-menu)) {
+  header > :global(:not(.file-menu, .bands)) {
     flex-shrink: 0;
     white-space: nowrap;
   }
-  header .agents {
+  /* ヘッダーを 1 行に収めるため、ボタンの左右の余白を詰める (押せる大きさは変えない) */
+  header :global(.ugoe-button--ghost) {
+    padding-inline: var(--ugoe-space-2);
+  }
+  header :global(.agents) {
     display: inline-flex;
     align-items: center;
     gap: 6px;
   }
-  header .agents .dot {
+  header :global(.agents .dot) {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #16a34a;
-  }
-  .tabs button.fresh {
-    color: var(--accent);
-    font-weight: 600;
-  }
-  header button.active {
-    color: var(--accent);
-    border-color: var(--accent);
+    background: var(--ugoe-color-success);
   }
   .center {
     display: flex;
@@ -468,23 +500,9 @@ $effect(() => {
     position: sticky;
     top: 0;
     z-index: 1;
-    display: flex;
-    /* タブが列の幅に収まらなければ折り返す (横にはみ出すと列ごと横に送られて本文の左が切れる)。 */
-    flex-wrap: wrap;
-    gap: 4px;
-    padding: 8px 0 4px;
-    margin-bottom: 4px;
-    background: var(--panel, var(--bg));
-    border-bottom: 1px solid var(--border);
-  }
-  .tabs button {
-    border-bottom-left-radius: 0;
-    border-bottom-right-radius: 0;
-    border-bottom: 2px solid transparent;
-  }
-  .tabs button.current {
-    border-bottom-color: var(--accent);
-    color: var(--accent);
+    padding-top: var(--ugoe-space-3);
+    margin-bottom: var(--ugoe-space-2);
+    background: var(--ugoe-color-surface);
   }
   .pane.parameters {
     flex: 1 1 0;
@@ -492,15 +510,15 @@ $effect(() => {
   .splitter {
     flex: none;
     height: 6px;
-    border-block: 1px solid var(--border);
-    background: var(--bg);
+    border-block: 1px solid var(--ugoe-color-border);
+    background: var(--ugoe-color-bg);
     cursor: row-resize;
     touch-action: none;
   }
   .splitter:hover,
   .splitter:focus-visible,
   .splitter.dragging {
-    background: var(--accent);
+    background: var(--ugoe-color-accent);
     outline: none;
   }
 </style>

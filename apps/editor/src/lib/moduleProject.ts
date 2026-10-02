@@ -1,6 +1,8 @@
 // モジュールのプロジェクト (ADR 0024、docs/editor.md#モジュールのプロジェクト) の表示の補助。
 // 作業用のモデルは本体と合成したもので、本体の要素は読み取り専用の下敷き。
-import type { ColliderReference, ModuleProblem, ModuleStatus } from "./ipc";
+import { formatList } from "@ugoe/i18n";
+import { t } from "./i18n";
+import type { ColliderReference, ModuleProblem, ModuleStatus, SlotSummary } from "./ipc";
 import type { ElementRef } from "./selection.svelte";
 
 /** 本体の要素の集合 (`kind:id`)。本体のモデルのプロジェクトなら空。 */
@@ -33,7 +35,7 @@ export function isBaseElement(base: Set<string>, ref: ElementRef): boolean {
 
 /** ファイルメニューに出すモジュールの印 (例: `Module: Hair`)。本体は `moduleTitle` で見せる。 */
 export function moduleLabel(module: ModuleStatus): string {
-  return `Module: ${module.slot.id}`;
+  return t("module.badge.label", { slot: module.slot.id });
 }
 
 /** パスの最後の名前 (`/a/avatar.ugoeproj` → `avatar.ugoeproj`)。 */
@@ -41,43 +43,61 @@ export function baseFileName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
 
-/** モジュールのプロジェクトでできること (新規作成の画面と `Module:` の印のツールチップ。docs/editor.md#使えるもの・まだ無いもの)。 */
-export const MODULE_CAN: readonly string[] = [
-  "Add and edit the module's parts, deformers, meshes, glues and textures",
-  "Import PSD (draw order goes into the slot's range), auto mesh, mesh editing",
-  "Keyforms with standard parameters and the ones the slot exposes; inference and mirroring",
-  "Physics rigs and colliders of the module, normal maps of its textures",
-  "AI rig proposals for the costume: it follows the base deformers and meshes, swaying parts get physics that keeps out of the base's exposed colliders, and A / B variants become poses, without new parameters",
-  "Pose groups of the module's parts, and links to the base's pose entries that the slot exposes (Poses tab)",
-  "Move any base parameter with the sliders to check the look",
-  "Preview your current edits on the base and swap them with other modules of the slot",
-];
+/** モジュールのプロジェクトでできること (新規作成の画面。docs/editor.md#使えるもの・まだ無いもの)。 */
+export function moduleCan(): string[] {
+  return [
+    t("module.can.elements"),
+    t("module.can.psd"),
+    t("module.can.keyforms"),
+    t("module.can.physics"),
+    t("module.can.ai"),
+    t("module.can.poses"),
+    t("module.can.parameters"),
+    t("module.can.preview"),
+  ];
+}
 
 /** モジュールのプロジェクトでできないこと (本体のプロジェクトで直すもの・まだ無いもの)。 */
-export const MODULE_CANNOT: readonly string[] = [
-  "Change the base: its elements, parameters, avatar profile, slots, effects, lighting and physics settings",
-  "Add parameters (add them in the base project and expose them in the slot)",
-  "Motions and expressions",
-  "The base's pose groups and the pose fade time",
-];
-
-/** モジュールの印の説明 (本体の場所と、できること・できないこと)。 */
-export function moduleTitle(module: ModuleStatus): string {
+export function moduleCannot(): string[] {
   return [
-    `Module "${module.name}" for slot ${module.slot.id} of ${baseFileName(module.base)}`,
-    `Read-only base: ${module.base}`,
-    "Click for the module settings (name, slot, requirements).",
-    "",
-    "You can:",
-    ...MODULE_CAN.map((line) => `• ${line}`),
-    "Edit in the base project instead:",
-    ...MODULE_CANNOT.map((line) => `• ${line}`),
-  ].join("\n");
+    t("module.cannot.base"),
+    t("module.cannot.parameters"),
+    t("module.cannot.motions"),
+    t("module.cannot.poses"),
+  ];
+}
+
+/** モジュールの印の説明 (名前・スロット・本体の場所と、押すと設定が開くこと)。 */
+export function moduleTitle(module: ModuleStatus): string {
+  return t("module.badge.tooltip", {
+    name: module.name,
+    slot: module.slot.id,
+    file: baseFileName(module.base),
+    base: module.base,
+  });
+}
+
+/** 取り付け先の名前 (`null` はキャンバス)。 */
+export function anchorName(anchor: string | null): string {
+  return anchor ?? t("module.slot.canvas");
+}
+
+/** スロットの取り付け先・描画順の範囲・隠す本体のパーツの短い説明 (スロットを選ぶ欄)。 */
+export function slotSummary(slot: SlotSummary): string {
+  const summary = t("module.slot.summary", {
+    anchor: anchorName(slot.anchor),
+    min: slot.draw_order_min,
+    max: slot.draw_order_max,
+  });
+  return slot.replaces.length > 0
+    ? t("module.slot.summaryReplaces", { summary, parts: formatList(slot.replaces) })
+    : summary;
 }
 
 /** 本体のものを直す場所の案内 (無効にした欄に添える)。 */
-export const BASE_EDIT_HINT =
-  "This belongs to the base model and can't be edited here. Edit it in the base project.";
+export function baseEditHint(): string {
+  return t("module.baseEditHint");
+}
 
 /** テクスチャが本体のもの (モジュールのプロジェクトでは変えられない) か。 */
 export function isBaseTexture(module: ModuleStatus | null, name: string): boolean {
@@ -123,8 +143,11 @@ export function unavailableCollidersNotice(module: ModuleStatus | null): string 
   const missing = module?.unavailable_colliders ?? [];
   if (!module || missing.length === 0) return null;
   const names = missing.map((id) => `"${id}"`).join(", ");
-  const them = missing.length === 1 ? "it" : "them";
-  return `Slot "${module.slot.id}" exposes the base collider${missing.length === 1 ? "" : "s"} ${names}, but the base model has no physics, so this module's rigs can't collide with ${them}. To use ${them}, open the base project and add physics with ${them} in the Physics tab, then reload the base.`;
+  return t("module.unavailableColliders", {
+    slot: module.slot.id,
+    colliders: names,
+    count: missing.length,
+  });
 }
 
 /** モジュールの条件の、省略された欄を埋めたもの (JSON では空の欄を書かない)。 */
@@ -172,18 +195,18 @@ export function baseIsProject(base: string): boolean {
  * (`The base model "moved.ugoeproj" no longer has…`)。
  */
 export function describeModuleProblem(problem: ModuleProblem): string {
-  const file = `"${baseFileName(problem.base)}"`;
+  const file = baseFileName(problem.base);
   switch (problem.kind) {
     case "base_not_found":
-      return `The base model ${file} is not where this module expects it (${problem.base}). It may have been moved or renamed. Locate it to continue.`;
+      return t("moduleProblem.kind.baseNotFound", { file, path: problem.base });
     case "base_unreadable":
-      return `The base model ${file} can't be read. Choose another base (a model project or a .ugoe bundle, not a module project).`;
+      return t("moduleProblem.kind.baseUnreadable", { file });
     case "unknown_slot":
-      return `The base model ${file} no longer has slot "${problem.slot}". Choose another slot for this module, or add the slot back in the base project.`;
+      return t("moduleProblem.kind.unknownSlot", { file, slot: problem.slot });
     case "does_not_fit":
-      return `This module no longer fits the base model ${file}. Fix the base (for example expose the parameter or mask in the slot), or choose another base.`;
+      return t("moduleProblem.kind.doesNotFit", { file });
     case "base_needs_physics":
-      return `A physics rig of this module collides with a collider that slot "${problem.slot}" exposes, but the base model ${file} has no physics, so the collider doesn't exist. Open the base project and add physics with that collider (Physics tab), or choose another base.`;
+      return t("moduleProblem.kind.baseNeedsPhysics", { file, slot: problem.slot });
   }
 }
 
@@ -212,21 +235,23 @@ export function moduleProblemFixes(problem: ModuleProblem): ProblemFix[] {
  * どうすれば戻せるかを言う。
  */
 export function dropCollidersPrompt(references: readonly ColliderReference[]): string {
-  const list = references.map((r) => `${r.rig} → ${r.collider}`).join(", ");
-  const one = references.length === 1;
-  const what = one ? "this collider reference" : `these ${references.length} collider references`;
-  const rigs = one
-    ? "The rig will no longer collide with it"
-    : "The rigs will no longer collide with them";
-  const colliders = one ? "the collider" : "the colliders";
-  return `Open the module without ${what}: ${list}. ${rigs}. The module file changes only when you save; add physics with ${colliders} to the base to use ${one ? "it" : "them"} again.`;
+  return t("moduleProblem.dropColliders.prompt", {
+    list: colliderList(references),
+    count: references.length,
+  });
 }
 
 /** 衝突体の参照を外して開いた後の知らせ。 */
 export function droppedCollidersNotice(references: readonly ColliderReference[]): string {
-  const n = references.length;
-  const list = references.map((r) => `${r.rig} → ${r.collider}`).join(", ");
-  return `Opened without ${n} collider reference${n === 1 ? "" : "s"} (${list}). Save to keep the change, or close without saving to keep ${n === 1 ? "it" : "them"} in the file.`;
+  return t("moduleProblem.dropColliders.done", {
+    list: colliderList(references),
+    count: references.length,
+  });
+}
+
+/** 衝突体の参照の一覧 (`Sway → Shoulders, Tip → Shoulders`)。 */
+function colliderList(references: readonly ColliderReference[]): string {
+  return references.map((r) => `${r.rig} → ${r.collider}`).join(", ");
 }
 
 /** 新しいモジュールの名前の候補: スロットの名前 (モジュールの名前に使えない文字は `_` にする)。 */

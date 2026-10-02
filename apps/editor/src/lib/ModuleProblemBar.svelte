@@ -4,11 +4,15 @@
   本体を選び直す (「Locate base project…」「Locate base .ugoe…」)、別のスロットで開く、本体のプロジェクトを開いて直す。
   開いているモジュールの本体を読み直せなかったときは、開き直さずに付け替える (保存していない編集は残る。T0651)。
   物理の無い本体で開けないモジュールは、衝突体の参照を外して開ける (T0661)。外すものを並べて確かめてから開く
-  (T0655 の「黙って消さない」)。
+  (T0655 の「黙って消さない」)。知らせの帯 (Notice)。FileMenu がヘッダーの下に重ねる。
 -->
 <script lang="ts">
+import { Button, Notice, Select } from "@ugoe/ui";
+import { messageText } from "./errors";
+import { t } from "./i18n";
 import type { ModuleProblem } from "./ipc";
 import { describeModuleProblem, dropCollidersPrompt, moduleProblemFixes } from "./moduleProject";
+import TipButton from "./ui/TipButton.svelte";
 
 interface Props {
   problem: ModuleProblem;
@@ -38,6 +42,7 @@ let {
 }: Props = $props();
 
 const fixes = $derived(moduleProblemFixes(problem));
+const slotOptions = $derived(problem.base_slots.map((s) => ({ value: s, label: s })));
 let slot = $state("");
 /** 衝突体の参照を外す確認を出しているか。 */
 let confirmDrop = $state(false);
@@ -48,109 +53,96 @@ $effect(() => {
 });
 </script>
 
-<div class="problem" role="alert">
-  <p class="summary">{describeModuleProblem(problem)}</p>
-  <details>
-    <summary>Details</summary>
-    <code>{problem.message}</code>
-  </details>
-  <div class="actions">
-    {#if fixes.includes("choose_slot")}
-      <span class="slot">
-        <select bind:value={slot} aria-label="Slot to use" disabled={busy || !canReopen}>
-          {#each problem.base_slots as s (s)}<option value={s}>{s}</option>{/each}
-        </select>
-        <button disabled={busy || !canReopen || !slot} onclick={() => onchooseslot(slot)}
-          title="Open this module on another slot of the base (saving remembers it)">Use this slot</button>
-      </span>
-    {/if}
-    {#if fixes.includes("open_base")}
-      <button disabled={busy} onclick={onopenbase} title="Open the base project to fix it; open the module again afterwards"
-        >Open base project</button
-      >
-    {/if}
-    {#if fixes.includes("drop_colliders")}
-      <button
-        disabled={busy || !canReopen || confirmDrop}
-        onclick={() => (confirmDrop = true)}
-        title="Open the module without the collisions the base can't provide (asks first)"
-        >Open without these colliders…</button
-      >
-    {/if}
-    <button disabled={busy || !canReopen} onclick={() => onlocate("project")}>Locate base project…</button>
-    <button disabled={busy || !canReopen} onclick={() => onlocate("bundle")}>Locate base .ugoe…</button>
-    <button class="close" onclick={ondismiss} aria-label="Close" title="Close">✕</button>
-  </div>
-  {#if confirmDrop}
-    <div class="confirm" role="group" aria-label="Remove collider references">
-      <p>{dropCollidersPrompt(problem.collider_references)}</p>
-      <div class="actions">
-        <button class="danger" disabled={busy} onclick={ondropcolliders}>Remove and open</button>
-        <button disabled={busy} onclick={() => (confirmDrop = false)}>Cancel</button>
+<div class="problem">
+  <Notice tone="danger" title={describeModuleProblem(problem)} {ondismiss}>
+    <details>
+      <summary>{t("moduleProblem.details.label")}</summary>
+      <code>{messageText(problem)}</code>
+    </details>
+    {#if confirmDrop}
+      <div class="confirm" role="group" aria-label={t("moduleProblem.dropColliders.aria")}>
+        <p>{dropCollidersPrompt(problem.collider_references)}</p>
+        <div class="actions">
+          <Button variant="danger" disabled={busy} onclick={ondropcolliders}>
+            {t("moduleProblem.dropColliders.confirm")}
+          </Button>
+          <Button disabled={busy} onclick={() => (confirmDrop = false)}>
+            {t("moduleProblem.dropColliders.cancel")}
+          </Button>
+        </div>
       </div>
-    </div>
-  {/if}
-  {#if !canReopen}
-    <p class="muted">Save the module project first to choose another base or slot.</p>
-  {/if}
+    {/if}
+    {#if !canReopen}
+      <p class="muted">{t("moduleProblem.saveFirst")}</p>
+    {/if}
+    {#snippet actions()}
+      {#if fixes.includes("choose_slot")}
+        <span class="slot">
+          <Select
+            ariaLabel={t("moduleProblem.slot.aria")}
+            bind:value={slot}
+            options={slotOptions}
+            disabled={busy || !canReopen}
+          />
+          <TipButton
+            disabled={busy || !canReopen || !slot}
+            tooltip={t("moduleProblem.useSlot.tooltip")}
+            onclick={() => onchooseslot(slot)}>{t("moduleProblem.useSlot.label")}</TipButton
+          >
+        </span>
+      {/if}
+      {#if fixes.includes("open_base")}
+        <TipButton disabled={busy} tooltip={t("moduleProblem.openBase.tooltip")} onclick={onopenbase}>
+          {t("moduleProblem.openBase.label")}
+        </TipButton>
+      {/if}
+      {#if fixes.includes("drop_colliders")}
+        <TipButton
+          disabled={busy || !canReopen || confirmDrop}
+          tooltip={t("moduleProblem.dropColliders.tooltip")}
+          onclick={() => (confirmDrop = true)}>{t("moduleProblem.dropColliders.label")}</TipButton
+        >
+      {/if}
+      <Button disabled={busy || !canReopen} onclick={() => onlocate("project")}>
+        {t("moduleProblem.locateProject.label")}
+      </Button>
+      <Button disabled={busy || !canReopen} onclick={() => onlocate("bundle")}>
+        {t("moduleProblem.locateBundle.label")}
+      </Button>
+    {/snippet}
+  </Notice>
 </div>
 
 <style>
+  /* 置き場所は FileMenu の知らせの帯 (.bands)。地を敷いて、下のビューポートが透けないようにする。 */
   .problem {
-    position: fixed;
-    z-index: 20;
-    top: 44px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: min(620px, calc(100vw - 32px));
-    padding: 8px 12px;
-    background: var(--panel);
-    border: 1px solid #dc2626;
-    border-radius: 4px;
-    box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
+    border-radius: var(--ugoe-radius-lg);
+    background: var(--ugoe-color-surface);
   }
-  /* ヘッダーの直下に置かれ、ヘッダーの子を折り返さない指定 (App.svelte の `header > :not(.file-menu)`) を受けるので、
-     それより強い指定で戻す (長い説明が枠からはみ出さないように)。 */
-  :global(header) > div.problem {
-    white-space: normal;
-  }
-  .summary {
-    margin: 0 0 4px;
-    color: #dc2626;
+  p {
+    margin: 0;
   }
   code {
+    overflow-wrap: anywhere;
+  }
+  .confirm {
+    margin-top: var(--ugoe-space-2);
+    padding: var(--ugoe-space-2) var(--ugoe-space-3);
+    border: 1px dashed var(--ugoe-color-danger);
+    border-radius: var(--ugoe-radius-md);
     overflow-wrap: anywhere;
   }
   .actions {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-    margin-top: 6px;
-  }
-  .confirm {
-    margin-top: 8px;
-    padding: 6px 8px;
-    border: 1px dashed #dc2626;
-    border-radius: 4px;
-  }
-  .confirm p {
-    margin: 0;
-    overflow-wrap: anywhere;
-  }
-  .danger {
-    border-color: #dc2626;
-    color: #dc2626;
+    gap: var(--ugoe-space-2);
+    margin-top: var(--ugoe-space-2);
   }
   .slot {
     display: inline-flex;
-    gap: 4px;
-  }
-  .close {
-    margin-left: auto;
+    gap: var(--ugoe-space-2);
   }
   .muted {
-    margin: 4px 0 0;
-    opacity: 0.7;
+    color: var(--ugoe-color-text-muted);
   }
 </style>

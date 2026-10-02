@@ -193,12 +193,18 @@ importers:
       '@tauri-apps/plugin-opener':
         specifier: ^2.6.0
         version: 2.6.0
+      '@tauri-apps/plugin-os':
+        specifier: ^2.4.0
+        version: 2.4.0
       '@ugoe/face-tracking':
         specifier: workspace:*
         version: link:../../packages/face-tracking
       '@ugoe/i18n':
         specifier: workspace:*
         version: link:../../packages/i18n
+      '@ugoe/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
     devDependencies:
       '@sveltejs/vite-plugin-svelte':
         specifier: ^7.3.1

@@ -1282,7 +1282,10 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
 
 ファイルメニューのパスは OS のファイルダイアログ (`tauri-plugin-dialog` / `@tauri-apps/plugin-dialog`、MIT OR Apache-2.0) で選びます。
 パスの入力欄はありません (ダイアログが使えない環境の予備も置かない。ヘッドレスの確認では下の差し替えを使う)。
-取り込みの警告はメニューの横に一覧で、保存・書き出しの結果 (書いた場所の絶対パス) はメニューの横に出します。
+取り込みの警告はメニューの横のボタン (押すと一覧の Popover) で、保存・書き出しの結果 (書いた場所の絶対パス) は Toast で、
+失敗はヘッダーの下の知らせの帯 (Notice。閉じるまで残る) で出します。保存していない変更を捨てる操作 (New・New from PSD…・New Module…・
+Open…・Open Sample…・本体の問題の枠の「Open base project」) は、変更があれば確かめのダイアログ (AlertDialog) を出し、
+「Discard and continue」を選んだときだけ続けます (T0663。前は同じボタンを 2 度押す形だった)。
 
 | 操作 | ダイアログ | フィルタ | 既定 |
 | --- | --- | --- | --- |
@@ -1333,8 +1336,25 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
 (`tauri-plugin-opener` / `@tauri-apps/plugin-opener`、MIT OR Apache-2.0。Tauri v2 の WebView は `target="_blank"` のリンクを開かないため)。
 
 - 権限は `opener:allow-open-url` を **`https://github.com/rosylilly/ugoe/*` と `https://www.anthropic.com/legal/*`** (AI の確認の画面の規約) だけに限っています (`capabilities/default.json`)。ほかの URL・ファイルは開けません。
-- 開けなかったときは、理由と URL を選んで写せる形で出します (`src/lib/HelpButton.svelte`)。
+- 開けなかったときは、理由と URL を選んで写せる形で、ボタンの下に知らせ (Notice) を出します (`src/lib/HelpButton.svelte`)。
+- マニュアルは日本語だけです (ADR 0029 の 6)。英訳ができたら、今の言語のマニュアル (`docs/manual/en/`) があればそれを開きます。
 - **差し替え (テスト用):** `window.__UGOE_OPEN_URL__` に `(url) => Promise<void>` を置くと、プラグインの代わりにそれを呼びます (`src/lib/help.ts`)。
+
+### 言語
+
+画面の言語は、ヘッダーの「Settings」の「General」で「OS に合わせる」(既定)・言語自身の名前で書いた言語 (「English」・「日本語」) から選びます
+([ADR 0029](adr/0029-shared-ui-and-i18n.md) の 3、T0663)。選ぶとすぐに画面全体が切り替わり、`localStorage` (`ugoe-editor.locale`) に覚えます
+(`src/lib/locale.ts`・`src/lib/LanguageSetting.svelte`。選択肢が 4 つまでの間は SegmentedControl)。
+
+- **OS の言語:** 起動時に `tauri-plugin-os` (`@tauri-apps/plugin-os`、MIT OR Apache-2.0) の `locale()` で OS の言語を取り、
+  `@ugoe/i18n` の `setSystemLanguages()` に渡します。WebView の `navigator.languages` は OS の言語と違うことがあるため
+  ([packages/i18n/README.md の「OS の言語」](../packages/i18n/README.md#os-の言語))。権限は `os:allow-locale` だけ (`capabilities/default.json`)。
+  Tauri の外 (ヘッドレスのブラウザでの確認) では `navigator.languages` のまま。
+- **文言:** 画面の文言はカタログ `apps/editor/locales/<言語>.json` (名前空間 `editor`。原文は英語) から `src/lib/i18n.ts` の `t()` で引きます
+  ([docs/ui.md の「文言の書き方」](ui.md#文言の書き方))。バックエンドのエラーの訳は [エラーと警告のコード](#エラーと警告のコード)。
+- MCP・CLI・ログの文言は英語のまま変えません。マニュアルは日本語だけです。
+- 移行の途中: 外枠 (ヘッダー・ファイルの操作・ダイアログ・知らせ・タブ・ヘルプ) は T0663 で移しました。パネルの中 (`src/lib/panels/`・
+  `viewport/` の道具・`ai/`・`agents/`・`ExportPanel`・`preview/`) は T0664・T0665 で移すまで英語のままです。
 
 ### AI の設定と送信の同意
 
@@ -1658,6 +1678,8 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 | 下 | タイムライン (モーションと表情。ビューポートの下、畳める。[タイムライン](#タイムライン))、AI の提案パネル (M6、T0637) |
 
 - **Undo / Redo のショートカット:** Ctrl + Z / Ctrl + Shift + Z / Ctrl + Y (macOS は Cmd + Z / Cmd + Shift + Z) を `App.svelte` がウィンドウで受けます。入力欄・選択欄・編集可能な要素の中では、その要素自身の取り消しに任せて何もしません。判定は `src/lib/shortcuts.ts` (Vitest)。
+- **部品と文言:** 画面の部品は `@ugoe/ui`、文言は `@ugoe/i18n` を使います (ADR 0029)。エディタの中の共通の形 (パネルの見出し・行のレイアウト・
+  タブの並び・説明付きのボタン) は [docs/ui.md の「エディタの中の共通の形」](ui.md#エディタの中の共通の形) にあります。
 - **要素の表記:** 要素を選ぶ選択欄 (ミラーの相手・ミラー元・マスク・テクスチャ) と見出し (インスペクタの先頭・デフォーマの親) は、表示名と ID を `顔 (Layer8)` の形で出します (名前が ID と同じなら ID だけ。テクスチャは使っているメッシュの名前を添える)。`src/lib/labels.ts` (Vitest)。
 
 ### ツリー (左)
@@ -1699,7 +1721,12 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 - `args` は文に差し込む値 (文字列か数値)。パス・名前・ID はそのまま渡し、単位や書式は画面で付けます。NaN と無限大は文字列 (`NaN`・`inf`) です。
 - `message` は英語の文で、エラーの `Display` と同じです。ログ・MCP・CLI・開発者向けの表示で使い、**文言は前と変えていません** (MCP と CLI は今も文を返す)。
 - `cause` (省略できる) は原因になったエラーです (`proposal.rejected` の中の `edit.*`、`edit.invalid_cell` の中の `cell.*` など)。`message` は原因の文も含みます。
-- **IPC コマンドの失敗:** Tauri のコマンドは失敗すると `Message` で reject します (`ipc.ts` の `IpcError`)。画面は `src/lib/errors.ts` の `errorText` (いまは `message` を出す)・`errorCode` で読みます。カタログの `errors.<code>` から引く訳の付け替えは T0663〜T0665 で行い、カタログに無いコードは `message` を出します。
+- **IPC コマンドの失敗:** Tauri のコマンドは失敗すると `Message` で reject します (`ipc.ts` の `IpcError`)。画面は `src/lib/errors.ts` の `errorText`・`errorCode` で読みます。
+- **画面の文 (T0663):** `errorText` (`Message` には `messageText`) は、カタログ (`apps/editor/locales/<言語>.json`) の `errors.<code>` を `args` で引きます。
+  カタログに無いコード (新しいバックエンドと古い画面の組み合わせなど) は `message` を出します。値が英語の識別子になる引数 (`kind`・`what`・`expected`・
+  `actual`・`target_kind`。`mesh`・`parameter` など) は、`errorArgs.<値>` があれば訳してから差し込みます。`cause` があれば `errorCause` の形
+  (「… 原因: …」) で原因の文を後ろに付けます。`count` を持つコードは複数形のキー (`_one`・`_other`) です。
+  **コードを足したら、`en.json` と `ja.json` の `errors` にも足します** (無くても `message` が出るので壊れはしない)。
 - **警告・問題:** `PsdImportWarning`・`RederiveWarning` は `code`・`args`・`message` のフィールドを持ちます。`ModuleProblem` は `Message` のフィールドを平らに含みます (`kind` は直し方を選ぶ分類、`code` は元のエラー)。`AvatarCheck` の `errors`・`warnings`、`.ugoemod` の書き出しの `warnings`、エージェントの接続の状態の `error` は `Message` です。
 - **実装:** editor-core のエラーは `ugoe_editor_core::Coded` を実装し (`src/message_codes.rs`)、`?` で `Message` に変わります。Tauri だけで起きるエラーは `src-tauri/src/error.rs` の `EditorError` にまとめます。ほかのクレートのエラー (検証・合成・推定・自動メッシュ・PSD の読み込み・AI のプロバイダなど) を含むものは、いまはその英語の文を `detail` (検証の一覧は `count` と `details`) で渡します。
 - 自由な文の引数 (`reason`・`detail`・`details`) は英語のままです。訳すには、その元のエラーにもコードを付ける必要があります (後続)。

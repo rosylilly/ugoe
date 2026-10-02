@@ -1,10 +1,13 @@
 <!--
   ヘッダーの「Help」。操作マニュアルをブラウザで開く (lib/help.ts)。開けなかったときは、
-  URL を選んで写せるように出す。
+  URL を選んで写せるように出す。マニュアルは日本語だけ (ADR 0029 の 6)。
 -->
 <script lang="ts">
+import { Notice } from "@ugoe/ui";
 import { errorText } from "./errors";
 import { MANUAL_URL, openExternal } from "./help";
+import { t } from "./i18n";
+import TipButton from "./ui/TipButton.svelte";
 
 /** 開けなかったときの理由 (null なら出さない)。 */
 let failure = $state<string | null>(null);
@@ -20,13 +23,14 @@ async function open() {
 </script>
 
 <span class="help">
-  <button onclick={open} title="Open the user manual in your browser">Help</button>
+  <TipButton variant="ghost" tooltip={t("help.open.tooltip")} onclick={open}>{t("help.open.label")}</TipButton>
   {#if failure !== null}
-    <span class="popup" role="status">
-      Could not open the browser ({failure}). Manual:
-      <a href={MANUAL_URL} target="_blank" rel="noreferrer">{MANUAL_URL}</a>
-      <button onclick={() => (failure = null)} aria-label="Close">×</button>
-    </span>
+    <div class="popup">
+      <Notice tone="danger" title={t("help.failed.title")} ondismiss={() => (failure = null)}>
+        <p>{t("help.failed.description", { reason: failure })}</p>
+        <p><a href={MANUAL_URL} target="_blank" rel="noreferrer">{MANUAL_URL}</a></p>
+      </Notice>
+    </div>
   {/if}
 </span>
 
@@ -38,12 +42,11 @@ async function open() {
     position: absolute;
     right: 0;
     top: 100%;
-    z-index: 10;
-    margin-top: 4px;
-    padding: 8px;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    white-space: nowrap;
+    z-index: var(--ugoe-z-popover);
+    width: max-content;
+    max-width: min(480px, calc(100vw - 32px));
+    margin-top: var(--ugoe-space-2);
+    white-space: normal;
     user-select: text;
   }
 </style>

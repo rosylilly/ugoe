@@ -156,7 +156,34 @@ Bits UI を包むときの約束:
 - **`Dialog` と `Notice`:** 利用者の判断が要らない知らせにダイアログを使いません。
 - **取り消せない操作** (すべて忘れる・上書き保存の前の確認など) は `danger` のボタンにし、確かめのダイアログを出すか、Undo を用意します。確かめのダイアログでは、既定のフォーカスを取り消し側に置きます。
 - **無効のボタン**は、なぜ押せないかを近くに書くか、`Tooltip` で出します (無効のボタンはフォーカスを受けないので、説明は `aria-describedby` で別の要素から付ける)。
-- パネルの見出し・行のレイアウトなど、エディタの中の共通の形は T0663 でここに足します。
+- パネルの見出し・行のレイアウトなど、エディタの中の共通の形は下の「エディタの中の共通の形」にあります。
+
+## エディタの中の共通の形
+
+エディタのパネルとダイアログを `@ugoe/ui` に移すとき (T0663・T0664・T0665) にそろえる形です。エディタの中にしか無いものは
+`apps/editor/src/lib/ui/` と `apps/editor/src/app.css` に置き、2 つ以上のアプリで要るものになったら `@ugoe/ui` へ移します。
+
+| 形 | 使うもの | 約束 |
+| --- | --- | --- |
+| パネルの見出し | `<h2>` (`app.css`) | `--ugoe-font-size-sm`・太さ 600・`--ugoe-color-text-muted`、上 `--ugoe-space-4`・下 `--ugoe-space-2`。大文字化と字間は使わない (日本語で効かない)。パネルの中のまとまりは `<h3>` (`--ugoe-font-size-md`・600・本文の色。パネルを移すとき (T0664・T0665) に `app.css` に足す)。折りたためるまとまりは `Section` |
+| 行 (欄の名前と部品) | `.ed-field` (`app.css`) | 2 列の格子 (名前 `minmax(5em, 2fr)`・部品 `3fr`)、行の間 `--ugoe-space-2`。名前は折り返してよく、固定の幅を付けない (英語は長くなる)。名前は `<label for>` か部品の `label`。単位は部品の後ろ (`NumberField` の `unit`)。名前を見せる部品 (`Slider`・`Checkbox`・`Toggle`・`Select` の `label`) は行に入れずにそのまま置く |
+| ボタンの並び | `.ed-buttons` (`app.css`) | 横に並べて折り返す (間 `--ugoe-space-2`)。決定は右端ではなく並びの最後 (パネルの中は左寄せ)。押せない理由は近くに書く |
+| 補足・空の状態 | `.ed-hint` (`app.css`) | `--ugoe-font-size-sm`・`--ugoe-color-text-muted`。空の状態は「何が無いか」と「次に何をするか」を 1 文で |
+| 説明付きのボタン | `TipButton` (`lib/ui/TipButton.svelte`) | `title` 属性の代わりに `Tooltip`。ショートカットがあれば `shortcut` (`Mod+Z`。実際に効くものだけ) |
+| タブの並び | `TabStrip` (`lib/ui/TabStrip.svelte`) / `Tabs` | 中身を部品が持てるなら `Tabs`。右の列のように、タブの状態が別々の表示の状態に分かれているときは `TabStrip` (APG の Tabs。矢印・Home・End、説明は Tooltip、見てほしい変化は `attention` で色・太さ・印と読み上げ) |
+| 失敗・知らせ | `Notice` / `showToast` | 操作の失敗はその場所に `Notice` (`danger`。閉じられる)。結果 (「保存しました」) は Toast。ヘッダーの操作の失敗はヘッダーの下の知らせの帯 (`FileMenu` の `.bands`) |
+| 本体のもの (モジュールのプロジェクト) | `BaseLock` | 欄をまとめて無効にし、直す場所を `role="note"` の文で示す |
+| 確かめ | `AlertDialog` | 取り消せない操作・保存していない変更を捨てる操作。同じボタンを 2 度押させる形にしない |
+| ダイアログ | `Dialog` | 見出しは `title`、説明は `description`、決定・取り消しは `actions`。Esc で閉じるときの意味 (「後で」など) を `onclose` で決める |
+| 文字の入力欄 | `<input type="text">` | `@ugoe/ui` に部品がまだ無い。ダイアログの中は `app.css` の `.ugoe-dialog input[type="text"]` で装う。名前は `<label for>` |
+| 要素の名前 | `src/lib/labels.ts` | `顔 (Layer8)` の形 (名前と ID)。ID・パス・パラメータの名前は訳さない |
+
+- **文言の置き場所:** エディタのカタログ (`apps/editor/locales/<言語>.json`、名前空間 `editor`) のキーの最初の段は、画面の部分 (`app`・`fileMenu`・
+  `moduleSettings` など) か、パネルの名前 (`inspector`・`physics`・`timeline` など) にします。部品から作る文 (`moduleProject.ts` など) は
+  関数にして、呼ぶたびに `t()` を通します (モジュールの読み込み時に 1 度だけ評価した定数は言語の切り替えに追従しない)。
+- **`<dialog>` と body に出す部品:** `showModal()` の `<dialog>` は最上位の層 (top layer) に出るので、その中で `Select`・`Popover`・`Menu`
+  (body に出す) を使うと一覧が後ろに隠れます。ダイアログを `@ugoe/ui` の `Dialog` に移してから使います。移すまでは `SegmentedControl` などの
+  body に出さない部品にします。
 
 ## アクセシビリティの基準
 

@@ -1,0 +1,671 @@
+{
+  "app": {
+    "preview": {
+      "label": "Preview",
+      "exit": "Exit preview",
+      "tooltip": "Preview the model with the runtime (physics, eye blink, breath, motions) and all parameters",
+      "exitTooltip": "Leave the preview and go back to the pose you were editing"
+    },
+    "undo": {
+      "label": "Undo",
+      "tooltip": "Undo the last edit"
+    },
+    "redo": {
+      "label": "Redo",
+      "tooltip": "Redo the edit you undid"
+    },
+    "agents": {
+      "label": "Agents",
+      "connected_one": "Agents ({{count}})",
+      "connected_other": "Agents ({{count}})",
+      "tooltip": "Agents can connect to this editor (Settings → Connect agents)"
+    },
+    "settings": {
+      "label": "Settings",
+      "tooltip": "Language, AI provider, API key, and connecting agents"
+    },
+    "proposalBanner": "Previewing an AI proposal. The model is unchanged until you adopt it.",
+    "slotsBaseHint": "Slots belong to the base model and can't be edited in a module project. Edit them in the base project.",
+    "splitter": {
+      "aria": "Resize the inspector and the parameters"
+    },
+    "tabs": {
+      "aria": "Inspector panels",
+      "inspector": {
+        "label": "Inspector"
+      },
+      "physics": {
+        "label": "Physics"
+      },
+      "glue": {
+        "label": "Glue",
+        "tooltip": "Glues: keep the seams of two meshes together"
+      },
+      "lighting": {
+        "label": "Lighting",
+        "tooltip": "Lighting, normal maps and preview lights"
+      },
+      "slots": {
+        "label": "Slots",
+        "tooltip": "Dress-up slots: where outfit and accessory modules attach"
+      },
+      "poses": {
+        "label": "Poses",
+        "tooltip": "Pose groups: variants that switch (arms A / B)"
+      },
+      "verify": {
+        "label": "Verify"
+      },
+      "ai": {
+        "label": "AI",
+        "count_one": "AI ({{count}})",
+        "count_other": "AI ({{count}})",
+        "tooltip": "Classify PSD layers and review rig proposals",
+        "fresh": "An agent made a new proposal",
+        "stale": "Costume meshes were edited after the rig was proposed: propose the rig again",
+        "attention": "needs attention"
+      }
+    }
+  },
+  "help": {
+    "open": {
+      "label": "Help",
+      "tooltip": "Open the user manual in your browser (in Japanese)"
+    },
+    "failed": {
+      "title": "Could not open the browser",
+      "description": "{{reason}} Open the manual from this address:"
+    }
+  },
+  "emptyState": {
+    "viewport": "This project is empty. Use {{action}} to start from a PSD file.",
+    "tree": "No parts yet. Start with {{action}}"
+  },
+  "fileMenu": {
+    "aria": "File",
+    "new": {
+      "label": "New"
+    },
+    "newFromPsd": {
+      "label": "New from PSD…"
+    },
+    "newModule": {
+      "label": "New Module…",
+      "tooltip": "Make a dress-up module for a slot of a base model"
+    },
+    "open": {
+      "label": "Open…"
+    },
+    "openSample": {
+      "label": "Open Sample…",
+      "tooltip": "Write the dress-up sample (a base and its module projects) into a new folder and open the base"
+    },
+    "save": {
+      "label": "Save"
+    },
+    "saveAs": {
+      "label": "Save As…"
+    },
+    "export": {
+      "label": "Export…",
+      "bundle": "Export .ugoe…",
+      "module": "Export .ugoemod…"
+    },
+    "exportModule": {
+      "label": "Export Module…",
+      "tooltip": "Check the module against the base and write .ugoemod"
+    },
+    "importPsd": {
+      "label": "Import PSD…"
+    },
+    "project": {
+      "tooltip": "{{name}} ({{path}})",
+      "tooltipUnsaved": "{{name}} (not saved yet)",
+      "modified": "Unsaved changes"
+    },
+    "warnings": {
+      "label_one": "{{count}} import warning",
+      "label_other": "{{count}} import warnings",
+      "aria": "Import warnings",
+      "item": "{{layer}}: {{message}}"
+    },
+    "dialog": {
+      "newFromPsd": "New Project from PSD",
+      "importPsd": "Import PSD",
+      "open": "Open Project (.ugoeproj folder)",
+      "openSample": "Choose a folder to put the dress-up sample projects in",
+      "saveAs": "Save Project As",
+      "exportModule": "Export Module",
+      "export": "Export Bundle",
+      "locateProject": "Locate the base project (.ugoeproj folder)",
+      "locateBundle": "Locate the base bundle"
+    },
+    "discard": {
+      "title": "Discard unsaved changes?",
+      "description": "The project has changes that are not saved. They will be lost. To keep them, cancel and save first.",
+      "confirm": "Discard and continue"
+    },
+    "notice": {
+      "saved": "Saved to {{path}}",
+      "exported": "Exported to {{path}}",
+      "sampleOpened": "Opened the dress-up sample. Its module projects (long-hair, twin-tails, cat-ears, sailor) are next to it; open them with Open…",
+      "sampleOpenedIn": "Opened the dress-up sample. Its module projects (long-hair, twin-tails, cat-ears, sailor) are next to it in {{folder}}; open them with Open…",
+      "openedWithBase": "Opened with the new base. Save to remember it.",
+      "openedOnSlot": "Opened on slot {{slot}}. Save to remember it.",
+      "usingBase": "Using the new base. Save to remember it.",
+      "movedToSlot": "Moved to slot {{slot}}. Save to remember it.",
+      "openedBase": "Opened the base project. Fix it, save, then open the module again.",
+      "baseReloaded": "Reloaded the base model",
+      "baseReloadedAuto": "Reloaded the base model: it was changed outside the editor",
+      "reloaded": "Reloaded the project from disk",
+      "reloadedAuto": "Reloaded: the project was changed outside the editor"
+    }
+  },
+  "baseChange": {
+    "missing": {
+      "title": "The base model is gone",
+      "description": "<code>{{path}}</code> was moved or deleted. Your module is still open and can be saved. If the base is somewhere else now, locate it: your unsaved edits are kept."
+    },
+    "changed": {
+      "title": "The base model changed",
+      "description": "{{name}} was changed after you opened this module. The model underneath is out of date.",
+      "descriptionFiles": "{{name}} was changed after you opened this module ({{files}}). The model underneath is out of date.",
+      "hint": "Reloading puts the new base underneath. Your module edits, saved or not, are kept; the undo history is cleared. If the module no longer fits the new base, nothing changes and you are told how to fix it."
+    },
+    "autoReload": {
+      "label": "Reload automatically (the base whenever it changes; the project when there are no unsaved changes)"
+    },
+    "later": {
+      "label": "Later",
+      "tooltip": "Keep the old base underneath for now"
+    },
+    "locateBundle": {
+      "label": "Locate base .ugoe…"
+    },
+    "locateProject": {
+      "label": "Locate base project…"
+    },
+    "reload": {
+      "label": "Reload the base"
+    }
+  },
+  "externalChange": {
+    "missing": {
+      "title": "The project folder is gone",
+      "description": "The project was moved or deleted outside the editor. Your work is still open here."
+    },
+    "changed": {
+      "title": "The project was changed outside the editor",
+      "description": "Another program (for example an AI agent through <code>ugoe-mcp</code>, or another editor) changed <code>{{files}}</code> after you opened or saved it.",
+      "modifiedWarning": "You have unsaved changes. Reloading discards them; overwriting discards the other changes.",
+      "savingWarning": "Saving now overwrites the other changes."
+    },
+    "autoReload": {
+      "label": "Reload automatically when there are no unsaved changes"
+    },
+    "later": {
+      "label": "Later",
+      "tooltip": "Keep working on the open version; you will be asked again before saving"
+    },
+    "saveAs": {
+      "label": "Save As…"
+    },
+    "saveHere": {
+      "label": "Save here again"
+    },
+    "overwrite": {
+      "label": "Overwrite with my version"
+    },
+    "reloadDiscard": {
+      "label": "Reload and discard my changes"
+    },
+    "reload": {
+      "label": "Reload"
+    },
+    "files": {
+      "more_one": "{{files}} and {{count}} more file",
+      "more_other": "{{files}} and {{count}} more files"
+    }
+  },
+  "module": {
+    "badge": {
+      "label": "Module: {{slot}}",
+      "tooltip": "Module \"{{name}}\" for slot {{slot}} of {{file}}. Read-only base: {{base}}. Click for the module settings (name, slot, requirements)."
+    },
+    "can": {
+      "elements": "Add and edit the module's parts, deformers, meshes, glues and textures",
+      "psd": "Import PSD (draw order goes into the slot's range), auto mesh, mesh editing",
+      "keyforms": "Keyforms with standard parameters and the ones the slot exposes; inference and mirroring",
+      "physics": "Physics rigs and colliders of the module, normal maps of its textures",
+      "ai": "AI rig proposals for the costume: it follows the base deformers and meshes, swaying parts get physics that keeps out of the base's exposed colliders, and A / B variants become poses, without new parameters",
+      "poses": "Pose groups of the module's parts, and links to the base's pose entries that the slot exposes (Poses tab)",
+      "parameters": "Move any base parameter with the sliders to check the look",
+      "preview": "Preview your current edits on the base and swap them with other modules of the slot"
+    },
+    "cannot": {
+      "base": "Change the base: its elements, parameters, avatar profile, slots, effects, lighting and physics settings",
+      "parameters": "Add parameters (add them in the base project and expose them in the slot)",
+      "motions": "Motions and expressions",
+      "poses": "The base's pose groups and the pose fade time"
+    },
+    "slot": {
+      "canvas": "canvas",
+      "summary": "on {{anchor}} · draw order {{min}}–{{max}}",
+      "summaryReplaces": "{{summary}} · replaces {{parts}}"
+    },
+    "baseEditHint": "This belongs to the base model and can't be edited here. Edit it in the base project.",
+    "unavailableColliders_one": "Slot \"{{slot}}\" exposes the base collider {{colliders}}, but the base model has no physics, so this module's rigs can't collide with it. To use it, open the base project and add physics with it in the Physics tab, then reload the base.",
+    "unavailableColliders_other": "Slot \"{{slot}}\" exposes the base colliders {{colliders}}, but the base model has no physics, so this module's rigs can't collide with them. To use them, open the base project and add physics with them in the Physics tab, then reload the base."
+  },
+  "moduleProblem": {
+    "kind": {
+      "baseNotFound": "The base model \"{{file}}\" is not where this module expects it ({{path}}). It may have been moved or renamed. Locate it to continue.",
+      "baseUnreadable": "The base model \"{{file}}\" can't be read. Choose another base (a model project or a .ugoe bundle, not a module project).",
+      "unknownSlot": "The base model \"{{file}}\" no longer has slot \"{{slot}}\". Choose another slot for this module, or add the slot back in the base project.",
+      "doesNotFit": "This module no longer fits the base model \"{{file}}\". Fix the base (for example expose the parameter or mask in the slot), or choose another base.",
+      "baseNeedsPhysics": "A physics rig of this module collides with a collider that slot \"{{slot}}\" exposes, but the base model \"{{file}}\" has no physics, so the collider doesn't exist. Open the base project and add physics with that collider (Physics tab), or choose another base."
+    },
+    "details": {
+      "label": "Details"
+    },
+    "slot": {
+      "aria": "Slot to use"
+    },
+    "useSlot": {
+      "label": "Use this slot",
+      "tooltip": "Open this module on another slot of the base (saving remembers it)"
+    },
+    "openBase": {
+      "label": "Open base project",
+      "tooltip": "Open the base project to fix it; open the module again afterwards"
+    },
+    "dropColliders": {
+      "label": "Open without these colliders…",
+      "tooltip": "Open the module without the collisions the base can't provide (asks first)",
+      "aria": "Remove collider references",
+      "confirm": "Remove and open",
+      "cancel": "Cancel",
+      "prompt_one": "Open the module without this collider reference: {{list}}. The rig will no longer collide with it. The module file changes only when you save; add physics with the collider to the base to use it again.",
+      "prompt_other": "Open the module without these {{count}} collider references: {{list}}. The rigs will no longer collide with them. The module file changes only when you save; add physics with the colliders to the base to use them again.",
+      "done_one": "Opened without {{count}} collider reference ({{list}}). Save to keep the change, or close without saving to keep it in the file.",
+      "done_other": "Opened without {{count}} collider references ({{list}}). Save to keep the change, or close without saving to keep them in the file."
+    },
+    "locateProject": {
+      "label": "Locate base project…"
+    },
+    "locateBundle": {
+      "label": "Locate base .ugoe…"
+    },
+    "saveFirst": "Save the module project first to choose another base or slot."
+  },
+  "moduleSettings": {
+    "title": "Module settings",
+    "name": {
+      "label": "Module name",
+      "invalid": "The name must not contain \"/\" or start with \"#\".",
+      "renameHint": "The name is the prefix of the module's IDs in a model ({{name}}/…). Modules that go on the same model at once need different names."
+    },
+    "slot": {
+      "label": "Slot",
+      "anchorChanges": "This slot attaches to {{to}}, not {{from}}. The module then moves with {{to}}."
+    },
+    "keepLook": {
+      "label": "Keep where it appears (convert its top-level meshes and deformers into the new attachment's coordinates, at the default pose)",
+      "offHint": "The coordinates stay relative to the attachment, so the module may appear somewhere else. Check it after applying (Undo goes back)."
+    },
+    "requires": {
+      "label": "Requires (checked when an app puts the module on)",
+      "slots": "Other slots the model must have:",
+      "parameters": "Parameters the model must have:"
+    },
+    "avatarLevel": {
+      "label": "Avatar profile level",
+      "none": "(none)",
+      "atLeast": "{{level}} or higher"
+    },
+    "cancel": {
+      "label": "Cancel"
+    },
+    "apply": {
+      "label": "Apply"
+    }
+  },
+  "newModule": {
+    "title": "New dress-up module",
+    "description": "A module is made in its own project that refers to a base model. The base is shown underneath and cannot be edited here.",
+    "features": {
+      "summary": "What you can do in a module project",
+      "can": "You can",
+      "cannot": "Edit in the base project instead",
+      "later": "The name, slot and requirements can be changed later by clicking the “Module:” badge."
+    },
+    "base": {
+      "label": "Base",
+      "project": "Project folder…",
+      "bundle": ".ugoe file…"
+    },
+    "chooseProject": {
+      "title": "Choose the base project (.ugoeproj folder)"
+    },
+    "chooseBundle": {
+      "title": "Choose the base bundle"
+    },
+    "noSlots": "This base has no slots. Open the base project and add a slot in the Slots tab first.",
+    "slot": {
+      "label": "Slot"
+    },
+    "name": {
+      "label": "Module name",
+      "invalid": "The name must not contain \"/\" or start with \"#\"."
+    },
+    "cancel": {
+      "label": "Cancel"
+    },
+    "create": {
+      "label": "Create"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "tabs": {
+      "aria": "Settings"
+    },
+    "general": {
+      "tab": "General"
+    },
+    "ai": {
+      "tab": "AI provider"
+    },
+    "agents": {
+      "tab": "Connect agents"
+    },
+    "close": {
+      "label": "Close"
+    },
+    "language": {
+      "label": "Language",
+      "system": "Match the OS",
+      "description": "The language of the editor's screens. The user manual is in Japanese only."
+    }
+  },
+  "errorCause": "{{message}} Cause: {{cause}}",
+  "errors": {
+    "edit": {
+      "duplicate_id": "The {{kind}} {{id}} already exists.",
+      "not_found": "The {{kind}} {{id}} was not found.",
+      "invalid_range": "The range must satisfy min ≤ default ≤ max (min {{min}}, default {{default}}, max {{max}}).",
+      "has_children": "The {{kind}} {{id}} still has children ({{children}}), so it cannot be deleted.",
+      "self_reference": "The {{kind}} {{id}} cannot refer to itself in {{field}}.",
+      "deformer_kind_mismatch": "The deformer {{id}} is not a {{expected}} deformer.",
+      "invalid_cell": "The keyform cell of the {{kind}} {{id}} cannot be used.",
+      "invalid_texture_name": "The texture name {{name}} cannot be used. Use only letters, digits, _, . and -, and do not start with a period.",
+      "texture_not_png": "The image of the texture {{name}} is not a PNG.",
+      "invalid_canvas": "The canvas size {{width}} × {{height}} cannot be used. Use positive numbers.",
+      "cannot_regenerate_mesh": "The mesh {{id}} cannot be regenerated ({{reason}}).",
+      "mesh_geometry": "The shape of the mesh {{id}} cannot be changed ({{reason}}).",
+      "automesh_failed": "Automatic meshing failed for the mesh {{id}} ({{detail}}).",
+      "vertex_out_of_range": "The mesh {{id}} has no vertex {{index}} (it has {{vertices}} vertices).",
+      "too_few_vertices": "Only {{remaining}} vertices would remain in the mesh {{id}}. A mesh needs at least 3.",
+      "invalid_draw_order": "The draw order {{draw_order}} of the mesh {{id}} is not a finite number.",
+      "keyform_kind_mismatch": "The {{kind}} {{id}} needs a {{expected}} keyform, but a {{actual}} keyform was given.",
+      "invalid_model_one": "The command would make the model invalid ({{count}} problem: {{details}}).",
+      "invalid_model_other": "The command would make the model invalid ({{count}} problems: {{details}}).",
+      "inference_failed": "Keyform inference failed for {{target}} ({{detail}}).",
+      "unsupported_inference": "This version does not support the keyform inference method of {{target}}, so it cannot infer keyforms.",
+      "mirror_pair_not_supported": "Only meshes and deformers have mirror pairs, so {{target}} cannot have one.",
+      "unsupported_interpolation": "The keyform interpolation {{interpolation}} cannot be used for the grid of {{target}}.",
+      "deformer_edit_failed": "The deformer could not be edited ({{reason}}).",
+      "invalid_physics": "These physics settings cannot be used ({{reason}}).",
+      "invalid_avatar_profile": "These avatar profile settings cannot be used ({{reason}}).",
+      "module_shape": "The result cannot be kept as a module ({{reason}}).",
+      "depth_length": "The depth of {{target}} has {{actual}} values, but the element has {{expected}} points.",
+      "non_finite_depth": "The depth value {{value}} of {{target}} is not a finite number.",
+      "depth_point_out_of_range": "There is no point {{index}} in {{target}} (it has {{points}} points).",
+      "invalid_name": "The {{kind}} name {{name}} cannot be used. Use only letters, digits, _, . and -, and do not start with a period.",
+      "invalid_motion": "This change would leave a problem in the motion {{motion}} ({{reason}}).",
+      "invalid_expression": "This change would leave a problem in the expression {{expression}} ({{reason}}).",
+      "draw_clone_shape": "The mesh {{id}} is a draw clone of {{original}}. Edit the shape of the original.",
+      "not_draw_clone": "The mesh {{id}} is neither a draw clone nor has draw clones.",
+      "invalid_normal_map": "The normal map of the texture {{texture}} cannot be set ({{reason}}).",
+      "invalid_slot": "The slot {{id}} cannot be set ({{reason}}).",
+      "invalid_glue": "The glue {{id}} cannot be set ({{reason}}).",
+      "read_only_base": "The base model's {{element}} cannot be edited here. Edit it in the base project.",
+      "not_module": "This is not a module project."
+    },
+    "cell": {
+      "missing_axis": "The cell does not specify the axis {{parameter}}.",
+      "unknown_axis": "The parameter {{parameter}} is not an axis of the grid.",
+      "unknown_key": "The axis {{parameter}} has no key at {{value}}.",
+      "out_of_range": "Cell index {{index}} is out of range (the grid has {{len}} keyforms).",
+      "duplicate_key": "The axis {{parameter}} already has a key at {{value}}.",
+      "non_finite_key": "The key {{value}} of the axis {{parameter}} is not a finite number.",
+      "keyform_count": "The grid has {{actual}} keyforms, but its axes need {{expected}}.",
+      "shape_mismatch": "The keyform has {{actual}} vertices, but the cell has {{expected}}."
+    },
+    "project": {
+      "io": "Could not read or write {{path}} ({{detail}}).",
+      "json": "Could not read or write the JSON of {{path}} ({{detail}}).",
+      "format": "Could not read or write {{path}}.",
+      "not_a_project": "There is no ugoe project at {{path}} (project.json is missing).",
+      "not_empty": "The folder {{path}} is not empty and is not a ugoe project, so it cannot be used.",
+      "not_png": "The file {{path}} is not a PNG image.",
+      "base_not_found": "The base model was not found at {{path}}.",
+      "base_is_module": "The base {{path}} is a module project. Choose a model project or a .ugoe bundle as the base.",
+      "base_unreadable": "Could not read the base model {{path}}.",
+      "base_refused": "The base model {{path}} was not read ({{reason}}).",
+      "unsupported_version": "This project uses format version {{found}}, but this version supports up to {{supported}}.",
+      "invalid_name": "The {{kind}} name {{name}} cannot be used as a file name.",
+      "duplicate_name": "The {{kind}} name {{name}} is used more than once (upper and lower case are not distinguished).",
+      "missing_texture": "The texture {{name}} has no image.",
+      "unsupported_base_texture": "The base texture {{name}} is not a PNG.",
+      "unsupported_texture": "The texture {{name}} is not a PNG.",
+      "export_failed": "Could not export the bundle.",
+      "missing_module_link": "This module project does not say which base and slot it uses (module in project.json).",
+      "not_a_module": "This project is not a module project.",
+      "invalid_module_one": "The module did not pass validation ({{count}} problem: {{details}}).",
+      "invalid_module_other": "The module did not pass validation ({{count}} problems: {{details}})."
+    },
+    "module": {
+      "invalid_name": "The module name {{name}} cannot be used. Use a name that is not empty, contains no / and does not start with #.",
+      "unknown_slot": "The base model has no slot {{slot}}.",
+      "compose_failed": "Could not combine the module with the base model ({{detail}}).",
+      "collider_needs_base_physics": "The rig {{rig}} collides with {{collider}}, which the slot {{slot}} exposes, but the base model has no physics. Add physics with the collider {{collider}} to the base project, or remove the collider from the rig.",
+      "read_only_base": "The base model's {{element}} cannot be edited here. Edit it in the base project.",
+      "shape": "The result cannot be kept as a module ({{reason}}).",
+      "draw_order_outside_slot": "The draw order of the mesh {{mesh}} is outside the slot range, so it is drawn outside the slot."
+    },
+    "format": {
+      "not_ugoe_file": "This is not a ugoe file.",
+      "too_large": "The bundle is too large.",
+      "unsupported_version": "The file uses schema version {{found}}, but this version supports up to {{supported}}.",
+      "invalid_model_one": "The model did not pass validation ({{count}} problem: {{details}}).",
+      "invalid_model_other": "The model did not pass validation ({{count}} problems: {{details}}).",
+      "invalid_module_one": "The module did not pass validation ({{count}} problem: {{details}}).",
+      "invalid_module_other": "The module did not pass validation ({{count}} problems: {{details}}).",
+      "invalid_physics_one": "The physics settings did not pass validation ({{count}} problem: {{details}}).",
+      "invalid_physics_other": "The physics settings did not pass validation ({{count}} problems: {{details}}).",
+      "unsupported_features": "The file requires features that this version does not support ({{features}}).",
+      "unknown_values": "Values from a newer version cannot be written ({{values}}).",
+      "corrupt": "The file is damaged or could not be read or written ({{detail}})."
+    },
+    "export": {
+      "invalid_max_size": "The atlas max size must be between 1 and {{max}} (it is {{value}}).",
+      "invalid_padding": "The atlas padding must be at most {{max}} (it is {{value}}).",
+      "invalid_settings": "The export settings could not be read ({{detail}})."
+    },
+    "atlas": {
+      "missing_texture": "The texture {{name}} has no image.",
+      "not_png": "The texture {{name}} is not a readable PNG.",
+      "texture_out_of_range": "The mesh {{mesh}} refers to texture number {{texture}}, which does not exist.",
+      "invalid_max_size": "The atlas max size must be greater than 0."
+    },
+    "compile": {
+      "invalid_model_one": "The model did not pass validation, so it cannot be prepared for evaluation ({{count}} problem: {{details}}).",
+      "invalid_model_other": "The model did not pass validation, so it cannot be prepared for evaluation ({{count}} problems: {{details}}).",
+      "unknown_parameter": "The model refers to an unknown parameter {{parameter}}.",
+      "unsupported": "The model contains something that cannot be evaluated ({{feature}})."
+    },
+    "proposal": {
+      "not_found": "Proposal {{id}} was not found.",
+      "stale": "The model changed after this proposal was made. Undo the changes or propose again.",
+      "invalid_index": "Command {{index}} is not in the proposal.",
+      "nothing_selected": "No commands are selected.",
+      "rejected": "The proposal cannot be applied.",
+      "model_changed": "The model changed while the proposal was being made. Propose again.",
+      "no_psd": "There is no PSD to classify. Choose the PSD this model was imported from.",
+      "not_classified": "Classify the PSD layers first.",
+      "not_regenerable": "Proposal {{id}} was not made in this panel, so it cannot be regenerated.",
+      "disappeared": "The proposal is no longer available.",
+      "no_preview": "No proposal is being previewed."
+    },
+    "lighting": {
+      "texture_not_found": "The texture {{texture}} was not found.",
+      "unreadable_texture": "The image of the texture {{texture}} is missing or is not a PNG.",
+      "unreadable_normal_map": "The normal map is not a readable PNG.",
+      "normal_maps_model_only": "Normal maps can be proposed only in model projects.",
+      "no_group_chosen": "Choose at least one group.",
+      "generate_failed": "Could not generate the normal map ({{detail}}).",
+      "invalid_settings": "The preview lighting settings could not be read ({{detail}}).",
+      "invalid_preview": "This preview lighting cannot be used ({{reason}}).",
+      "unknown_group": "There is no group {{group}}.",
+      "empty_group": "The group {{group}} has no textures.",
+      "image_not_found": "The image {{name}} was not found."
+    },
+    "space": {
+      "not_found": "The {{kind}} {{id}} was not found.",
+      "no_space": "The {{kind}} {{id}} has no coordinate space.",
+      "evaluate_failed": "Could not evaluate the parent deformers ({{detail}}).",
+      "length_mismatch": "There are {{points}} points but {{guesses}} initial guesses.",
+      "singular": "The parent transform collapses near point {{index}}, so it cannot be inverted.",
+      "not_converged": "Point {{index}} did not converge (residual {{residual}} px)."
+    },
+    "overflow": {
+      "unknown_parameter": "The grid of {{target}} refers to an unknown parameter {{parameter}}."
+    },
+    "psd": {
+      "read_failed": "Could not read the PSD ({{detail}}).",
+      "read_file_failed": "Could not read the PSD file {{path}} ({{detail}}).",
+      "invalid_mesh_options": "The mesh options cannot be used ({{reason}}).",
+      "automesh_failed": "Automatic meshing failed for the layer {{layer}} ({{detail}}).",
+      "canvas_mismatch": "The PSD canvas ({{psd_width}} × {{psd_height}}) differs from the model canvas ({{model_width}} × {{model_height}}). The model canvas is kept and the layers are placed at their PSD pixel positions, so they may not line up with the canvas. To use the PSD canvas, import into an empty project.",
+      "group_blend_mode_ignored": "The group blend mode {{blend_mode}} was ignored because parts have no blend mode.",
+      "blend_mode_unsupported": "The blend mode {{blend_mode}} is not supported, so Normal was used.",
+      "adjustment_layer": "An adjustment or fill layer ({{key}}) was skipped.",
+      "unsupported_compression": "The channel compression {{compression}} is not supported, so the layer was skipped.",
+      "group_clipping_unsupported": "Clipping of a group is not supported, so the group was imported unclipped.",
+      "empty_layer": "The layer is empty, so it was skipped.",
+      "transparent_layer": "The layer is fully transparent, so it was skipped.",
+      "layer_too_complex": "The layer is too complex to mesh, so it was skipped.",
+      "clipping_base_missing": "The clipping base was not imported, so the layer was imported unclipped.",
+      "smart_object_without_pixels": "The smart object has no rendered pixels, so it was skipped.",
+      "layer_effects_ignored": "Layer effects were ignored; only the pixels without effects were imported.",
+      "layer_mask_ignored": "The layer mask could not be applied, so the pixels were imported without it.",
+      "missing_pixels": "The layer has no color channel data, so it was skipped.",
+      "flattened_image": "The PSD has no layer data, so the composite image was imported."
+    },
+    "inference": {
+      "mirror_failed": "Could not redo the mirror from {{source}} to {{target}} ({{detail}})."
+    },
+    "avatar": {
+      "missing_profile": "The model has no avatar profile.",
+      "newer_profile_version": "The avatar profile version {{version}} is newer than the supported version {{supported}}, so the checks may be incomplete.",
+      "invalid_level": "The avatar level must be between 1 and {{max}} (it is {{level}}).",
+      "missing_metadata": "The metadata avatar.meta.{{field}} is required.",
+      "missing_parameter": "Level {{level}} requires the parameter {{id}}.",
+      "too_few_extended_parameters": "Level 3 requires at least {{required}} extended parameters, but {{found}} were found.",
+      "parameter_range": "The range of the parameter {{id}} ({{min}} / {{default}} / {{max}}) differs from the profile ({{expected_min}} / {{expected_default}} / {{expected_max}}).",
+      "unknown_reference": "The value of {{field}} refers to an unknown {{target_kind}} {{target}}.",
+      "unknown_tracking_input": "The input {{input}} of {{field}} is not a known {{kind}} input.",
+      "missing_tracking_target": "The tracking override {{field}} needs a parameter unless its source is standard.",
+      "unknown_value": "The value of {{field}} comes from a newer file and is not known, so its fallback is used.",
+      "duplicate_hit_area_name": "The hit area name {{name}} appears more than once.",
+      "invalid_value": "The value {{value}} of {{field}} must be {{expected}}.",
+      "internal_tracking_target": "The parameter {{id}} in {{field}} is internal, so tracking does not write it."
+    },
+    "editor": {
+      "lock_poisoned": "The {{what}} became unusable after an internal error. Restart the editor.",
+      "io": "Could not read or write {{path}} ({{detail}}).",
+      "create_folder": "Could not create the folder {{path}} ({{detail}}).",
+      "internal": "An internal error occurred ({{detail}}).",
+      "task_failed": "A background task did not finish ({{detail}}).",
+      "invalid_percent_encoding": "The percent-encoding could not be decoded ({{detail}}).",
+      "empty_path": "The path is empty.",
+      "not_saved": "The project has not been saved yet.",
+      "not_saved_use_save_as": "The project has not been saved yet. Use Save As.",
+      "external_change": "The project was changed outside the editor after it was opened. Reload it, or save again to overwrite.",
+      "not_a_module": "This is not a module project.",
+      "expected_module_bytes": "The data of a .ugoemod file was expected.",
+      "expected_png_bytes": "The data of a PNG image was expected.",
+      "not_png_data": "The data is not a PNG image.",
+      "relative_path": "The path must be absolute ({{path}}).",
+      "not_module_file": "The file {{path}} is not a .ugoemod file.",
+      "not_png_file": "The file {{path}} is not a PNG file.",
+      "not_json_file": "The file {{path}} is not a JSON file.",
+      "too_many_sample_folders": "There are too many sample folders in {{path}}. Remove old ones.",
+      "missing_header": "The {{header}} header is missing.",
+      "invalid_header": "The {{header}} header could not be read ({{detail}})."
+    },
+    "ai": {
+      "claude_model_missing": "Choose a Claude model.",
+      "invalid_base_url": "The base URL must start with https:// or http://.",
+      "model_missing": "Choose a model.",
+      "api_key_required": "The Claude API needs an API key.",
+      "plain_http_api_key": "The API key is not sent to a remote server over plain http. Use https.",
+      "empty_api_key": "The API key is empty.",
+      "mixed_destinations": "The requests go to different services.",
+      "send_disabled": "This project is set not to send data to external AI services (see Settings).",
+      "truncated": "The response was cut off at the max_tokens limit.",
+      "credential_store": "Could not use the credential store ({{detail}}).",
+      "provider": "The AI provider returned an error ({{detail}}).",
+      "invalid_proposal": "The model returned a proposal that cannot be used ({{detail}}).",
+      "missing_api_key": "The API key is not configured ({{detail}}).",
+      "invalid_request": "The request cannot be sent ({{detail}}).",
+      "network": "A network error occurred ({{detail}}).",
+      "invalid_response": "The response could not be read ({{detail}}).",
+      "api_error": "The API returned error {{status}} ({{kind}}: {{detail}}).",
+      "rate_limited": "The rate limit was reached. Wait a while and try again.",
+      "refused": "The model declined the request."
+    },
+    "mcp": {
+      "invalid_port": "Choose a port between 1 and 65535, or leave it empty.",
+      "no_binary": "The ugoe-mcp program was not found next to the editor. Build it with cargo build --release -p ugoe-mcp (installers include it).",
+      "unsupported_platform": "Claude Desktop extensions need macOS, Windows or Linux.",
+      "not_mcpb_file": "The file name must end with .mcpb.",
+      "bridge_start_failed": "Could not start the agent connection ({{detail}}).",
+      "bundle_write_failed": "Could not write the .mcpb file ({{detail}}).",
+      "open_failed": "Could not open {{path}} ({{detail}})."
+    }
+  },
+  "errorArgs": {
+    "parameter": "parameter",
+    "part": "part",
+    "deformer": "deformer",
+    "mesh": "mesh",
+    "glue": "glue",
+    "texture": "texture",
+    "motion": "motion",
+    "expression": "expression",
+    "slot": "slot",
+    "physics rig": "physics rig",
+    "physics collider": "physics collider",
+    "curve": "curve",
+    "key": "key",
+    "keyform grid": "keyform grid",
+    "blend shape grid": "blend shape grid",
+    "normal map": "normal map",
+    "effect group": "effect group",
+    "curve target": "curve target",
+    "warp": "warp",
+    "rotation": "rotation",
+    "warp or rotation": "warp or rotation",
+    "hit area": "hit area",
+    "standard": "standard",
+    "blend_shape": "blend shape",
+    "head": "head",
+    "document": "document",
+    "project": "project",
+    "preview cache": "preview cache",
+    "finite": "a finite number",
+    "finite and > 0": "a finite number greater than 0"
+  }
+}

@@ -1,6 +1,7 @@
 // 外でのプロジェクトの書き換え (docs/editor.md#外での書き換え) の判定と表示の文。DOM に依存しない部分だけを置く
 // (externalChange.test.ts で検査する)。検出はバックエンドの `check_external_change` (ファイルの指紋を比べる)。
 import { errorCode } from "./errors";
+import { t } from "./i18n";
 import type { ExternalChange } from "./ipc";
 
 /** 一定の間隔で確かめる間隔 (ミリ秒)。ウィンドウが見えているときだけ確かめる。 */
@@ -44,8 +45,10 @@ export function baseAction(
 /** 変わったファイルの短い一覧 (`max` を超えたら「ほか N 件」)。 */
 export function describeFiles(files: string[], max = 3): string {
   if (files.length <= max) return files.join(", ");
-  const rest = files.length - max;
-  return `${files.slice(0, max).join(", ")} and ${rest} more file${rest === 1 ? "" : "s"}`;
+  return t("externalChange.files.more", {
+    files: files.slice(0, max).join(", "),
+    count: files.length - max,
+  });
 }
 
 /** 保存が外での書き換えで断られたときのエラー (コード `editor.external_change`。apps/editor/src-tauri/src/error.rs)。 */

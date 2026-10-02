@@ -4,11 +4,15 @@
   - 未保存の変更がない: 開き直す・今のまま (後で)
   - 未保存の変更がある (または保存しようとした): 開き直す (自分の変更を捨てる)・自分の版で上書き・別名で保存・後で
   - プロジェクトが消された: その場所に保存し直す・別名で保存・後で
-  Esc は「後で」。
+  Esc・閉じるボタンは「後で」。
 -->
 <script lang="ts">
+import { RichText } from "@ugoe/i18n";
+import { Button, Checkbox, Dialog } from "@ugoe/ui";
 import { describeFiles } from "./externalChange";
+import { t } from "./i18n";
 import type { ExternalChange } from "./ipc";
+import TipButton from "./ui/TipButton.svelte";
 
 interface Props {
   change: ExternalChange | null;
@@ -37,109 +41,65 @@ let {
   ondismiss,
 }: Props = $props();
 
-let dialog = $state<HTMLDialogElement>();
-
-$effect(() => {
-  if (!dialog) return;
-  if (change && !dialog.open) dialog.showModal();
-  else if (!change && dialog.open) dialog.close();
-});
-
 const canOverwrite = $derived(modified || saving);
 </script>
 
-<dialog
-  bind:this={dialog}
-  class="external"
-  aria-labelledby="external-title"
-  oncancel={(e) => {
-    e.preventDefault();
-    ondismiss();
-  }}
+<Dialog
+  open={change !== null}
+  title={change?.missing ? t("externalChange.missing.title") : t("externalChange.changed.title")}
+  onclose={ondismiss}
 >
   {#if change}
     {#if change.missing}
-      <h2 id="external-title">The project folder is gone</h2>
-      <p>The project was moved or deleted outside the editor. Your work is still open here.</p>
+      <p>{t("externalChange.missing.description")}</p>
     {:else}
-      <h2 id="external-title">The project was changed outside the editor</h2>
       <p>
-        Another program (for example an AI agent through <code>ugoe-mcp</code>, or another editor) changed
-        <code>{describeFiles(change.files)}</code> after you opened or saved it.
+        <RichText text={t("externalChange.changed.description", { files: describeFiles(change.files) })}>
+          {#snippet code(text: string)}<code>{text}</code>{/snippet}
+        </RichText>
       </p>
       {#if modified}
-        <p class="warn">You have unsaved changes. Reloading discards them; overwriting discards the other changes.</p>
+        <p class="warn">{t("externalChange.changed.modifiedWarning")}</p>
       {:else if saving}
-        <p class="warn">Saving now overwrites the other changes.</p>
+        <p class="warn">{t("externalChange.changed.savingWarning")}</p>
       {/if}
+      <Checkbox
+        checked={autoReload}
+        label={t("externalChange.autoReload.label")}
+        onchange={onautoreload}
+      />
     {/if}
-    {#if !change.missing}
-      <label class="check">
-        <input type="checkbox" checked={autoReload}
-          onchange={(e) => onautoreload((e.currentTarget as HTMLInputElement).checked)} />
-        Reload automatically when there are no unsaved changes
-      </label>
-    {/if}
-    <div class="actions">
-      <button onclick={ondismiss} title="Keep working on the open version; you will be asked again before saving">Later</button>
-      {#if canOverwrite || change.missing}
-        <button onclick={onsaveas}>Save As…</button>
-      {/if}
-      {#if change.missing}
-        <button class="primary" onclick={onoverwrite}>Save here again</button>
-      {:else}
-        {#if canOverwrite}
-          <button class="danger" onclick={onoverwrite}>Overwrite with my version</button>
-        {/if}
-        <button class={modified ? "danger" : "primary"} onclick={onreload}
-          >{modified ? "Reload and discard my changes" : "Reload"}</button>
-      {/if}
-    </div>
   {/if}
-</dialog>
+  {#snippet actions()}
+    <TipButton tooltip={t("externalChange.later.tooltip")} onclick={ondismiss}>
+      {t("externalChange.later.label")}
+    </TipButton>
+    {#if canOverwrite || change?.missing}
+      <Button onclick={onsaveas}>{t("externalChange.saveAs.label")}</Button>
+    {/if}
+    {#if change?.missing}
+      <Button variant="primary" onclick={onoverwrite}>{t("externalChange.saveHere.label")}</Button>
+    {:else}
+      {#if canOverwrite}
+        <Button variant="danger" onclick={onoverwrite}>{t("externalChange.overwrite.label")}</Button>
+      {/if}
+      {#if modified}
+        <Button variant="danger" onclick={onreload}>{t("externalChange.reloadDiscard.label")}</Button>
+      {:else}
+        <Button variant="primary" onclick={onreload}>{t("externalChange.reload.label")}</Button>
+      {/if}
+    {/if}
+  {/snippet}
+</Dialog>
 
 <style>
-  .external {
-    max-width: 520px;
-    padding: 16px 20px;
-    background: var(--panel);
-    color: var(--text);
-    border: 1px solid var(--border);
-  }
-  .external::backdrop {
-    background: rgb(0 0 0 / 40%);
-  }
-  h2 {
-    margin: 0 0 8px;
-    font-size: 15px;
-    text-transform: none;
-    letter-spacing: normal;
-    color: var(--text);
+  p {
+    margin: 0;
   }
   code {
     overflow-wrap: anywhere;
   }
   .warn {
-    color: #b45309;
-  }
-  .check {
-    display: flex;
-    align-items: flex-start;
-    gap: 6px;
-  }
-  .actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 8px;
-    margin-top: 16px;
-  }
-  .primary {
-    color: var(--accent);
-    border-color: var(--accent);
-  }
-  .danger {
-    color: #dc2626;
-    border-color: #dc2626;
+    color: var(--ugoe-color-warning);
   }
 </style>

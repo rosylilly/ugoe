@@ -5,7 +5,7 @@
 -->
 <script lang="ts">
 import type { Snippet } from "svelte";
-import { BASE_EDIT_HINT } from "./moduleProject";
+import { baseEditHint } from "./moduleProject";
 
 interface Props {
   locked: boolean;
@@ -14,10 +14,10 @@ interface Props {
   children: Snippet;
 }
 
-let { locked, hint = BASE_EDIT_HINT, children }: Props = $props();
+let { locked, hint, children }: Props = $props();
 </script>
 
-{#if locked}<p class="base-note" role="note">{hint}</p>{/if}
+{#if locked}<p class="base-note" role="note">{hint ?? baseEditHint()}</p>{/if}
 <fieldset class="base-lock" class:locked disabled={locked}>
   {@render children()}
 </fieldset>
@@ -33,10 +33,10 @@ let { locked, hint = BASE_EDIT_HINT, children }: Props = $props();
     opacity: 0.65;
   }
   .base-note {
-    margin: 4px 0;
-    padding: 4px 8px;
-    border-left: 3px solid var(--border);
-    font-size: 12px;
-    opacity: 0.85;
+    margin: var(--ugoe-space-2) 0;
+    padding: var(--ugoe-space-2) var(--ugoe-space-3);
+    border-left: 3px solid var(--ugoe-color-border);
+    color: var(--ugoe-color-text-muted);
+    font-size: var(--ugoe-font-size-sm);
   }
 </style>

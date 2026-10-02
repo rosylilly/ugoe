@@ -1,10 +1,11 @@
-import { setLocale } from "@ugoe/i18n";
+import "@ugoe/ui/tokens.css";
 import { mount } from "svelte";
 import App from "./App.svelte";
 import "./app.css";
+import { initLocale } from "./lib/locale";
 
-// 画面の言語。言語の切り替えの画面ができるまでは、いままでどおり英語で出す (@ugoe/i18n の README)。
-setLocale("en");
+// 画面の言語: 覚えた設定 (既定は OS に合わせる)。OS の言語は tauri-plugin-os で取る (lib/locale.ts)。
+initLocale();
 
 const target = document.getElementById("app");
 if (!target) throw new Error("#app not found");

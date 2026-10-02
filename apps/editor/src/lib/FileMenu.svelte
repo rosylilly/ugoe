@@ -6,10 +6,12 @@
 // 尋ねずに読み直す)、本体の問題で開けない・読み直せないときは直し方を出す (ModuleProblemBar)。開いている
 // モジュールの本体・スロットの付け替えは、開き直さずに reload_base で行う (保存していない編集を保つ)。
 // `Module:` の印を押すとモジュールの設定 (ModuleSettingsDialog)。
+// 保存・書き出しの結果は Toast、失敗はヘッダーの下の知らせの帯 (Notice)、保存していない変更を捨てる操作は確かめのダイアログ。
+import { AlertDialog, Button, Notice, Popover, showToast, Tooltip } from "@ugoe/ui";
 import BaseChangeDialog from "./BaseChangeDialog.svelte";
 import ExportPanel from "./ExportPanel.svelte";
 import ExternalChangeDialog from "./ExternalChangeDialog.svelte";
-import { errorText } from "./errors";
+import { errorText, messageText } from "./errors";
 import { exportSummary, moduleExportSummary } from "./exportSummary";
 import {
   baseAction,
@@ -30,6 +32,7 @@ import {
   safeFileName,
   withExtension,
 } from "./filePaths";
+import { t } from "./i18n";
 import {
   type Command,
   type ExternalChange,
@@ -43,6 +46,7 @@ import ModuleProblemBar from "./ModuleProblemBar.svelte";
 import ModuleSettingsDialog from "./ModuleSettingsDialog.svelte";
 import { droppedCollidersNotice, moduleLabel, moduleTitle } from "./moduleProject";
 import NewModuleDialog from "./NewModuleDialog.svelte";
+import TipButton from "./ui/TipButton.svelte";
 
 interface Props {
   /**
@@ -67,8 +71,6 @@ type PathAction =
   | "importPsd"
   | "locateBaseProject"
   | "locateBaseBundle";
-/** 未保存の変更を破棄する操作。 */
-type DiscardAction = "new" | "newFromPsd" | "newModule" | "open" | "openSample";
 
 let status = $state<ProjectStatus | null>(null);
 /** モジュールのプロジェクトなら、本体とスロット (docs/editor.md#モジュールのプロジェクト)。 */
@@ -95,11 +97,10 @@ let baseChange = $state<ExternalChange | null>(null);
 let dismissedBaseToken: string | null = null;
 /** ダイアログを開いているか、その後の処理の途中か。 */
 let busy = $state(false);
-/** 未保存の変更を破棄する操作の確認待ち。 */
-let pendingDiscard = $state<DiscardAction | null>(null);
+/** 未保存の変更を破棄する操作 (確かめのダイアログで「Discard」を選んだら続ける)。 */
+let pendingDiscard = $state<(() => void) | null>(null);
+/** 失敗の文 (知らせの帯に出す)。 */
 let message = $state<string | null>(null);
-/** 保存・書き出しの結果 (どこに書いたか)。 */
-let notice = $state<string | null>(null);
 /** 最後の PSD の取り込みの警告。 */
 let warnings = $state<PsdImportWarning[]>([]);
 /** 書き出しの設定の欄を開いているか。 */
@@ -155,24 +156,28 @@ async function run(
   }
 }
 
-function discardConfirmed(kind: DiscardAction): boolean {
-  if (!status?.modified || pendingDiscard === kind) {
-    pendingDiscard = null;
-    return true;
+/** 保存・書き出しなどの結果を知らせる (Toast)。`long` は読むのに時間のかかる案内。 */
+function inform(text: string, long = false) {
+  showToast(text, { tone: "success", duration: long ? 10000 : 5000 });
+}
+
+/** 保存していない変更を捨てる操作: 変更があれば確かめてから `proceed` を呼ぶ。 */
+function withDiscard(proceed: () => void) {
+  if (!status?.modified) {
+    proceed();
+    return;
   }
-  pendingDiscard = kind;
-  message = "Unsaved changes will be lost. Click again to continue.";
-  return false;
+  pendingDiscard = proceed;
 }
 
 function newProject() {
-  notice = null;
-  if (discardConfirmed("new")) run(ipc.newProject, "replaced");
+  withDiscard(() => void run(ipc.newProject, "replaced"));
 }
 
 function newModule() {
-  notice = null;
-  if (discardConfirmed("newModule")) newModuleOpen = true;
+  withDiscard(() => {
+    newModuleOpen = true;
+  });
 }
 
 async function createModule(base: string, slot: string, name: string) {
@@ -203,23 +208,24 @@ async function choose(kind: PathAction): Promise<string | null> {
   switch (kind) {
     case "newFromPsd":
       return dialogs.openFile({
-        title: "New Project from PSD",
+        title: t("fileMenu.dialog.newFromPsd"),
         defaultPath: dir,
         filters: [PSD_FILTER],
       });
     case "importPsd":
-      return dialogs.openFile({ title: "Import PSD", defaultPath: dir, filters: [PSD_FILTER] });
+      return dialogs.openFile({
+        title: t("fileMenu.dialog.importPsd"),
+        defaultPath: dir,
+        filters: [PSD_FILTER],
+      });
     case "open":
       // .ugoeproj はディレクトリなので、フォルダーを選ぶ
-      return dialogs.openDirectory({ title: "Open Project (.ugoeproj folder)", defaultPath: dir });
+      return dialogs.openDirectory({ title: t("fileMenu.dialog.open"), defaultPath: dir });
     case "openSample":
-      return dialogs.openDirectory({
-        title: "Choose a folder to put the dress-up sample projects in",
-        defaultPath: dir,
-      });
+      return dialogs.openDirectory({ title: t("fileMenu.dialog.openSample"), defaultPath: dir });
     case "saveAs": {
       const path = await dialogs.saveFile({
-        title: "Save Project As",
+        title: t("fileMenu.dialog.saveAs"),
         defaultPath: suggest(`${name}.ugoeproj`),
         filters: [PROJECT_FILTER],
       });
@@ -227,26 +233,23 @@ async function choose(kind: PathAction): Promise<string | null> {
     }
     case "exportModule": {
       const path = await dialogs.saveFile({
-        title: "Export Module",
+        title: t("fileMenu.dialog.exportModule"),
         defaultPath: suggest(`${safeFileName(moduleInfo?.name ?? name)}.ugoemod`),
         filters: [MODULE_FILTER],
       });
       return path && withExtension(path, "ugoemod");
     }
     case "locateBaseProject":
-      return dialogs.openDirectory({
-        title: "Locate the base project (.ugoeproj folder)",
-        defaultPath: dir,
-      });
+      return dialogs.openDirectory({ title: t("fileMenu.dialog.locateProject"), defaultPath: dir });
     case "locateBaseBundle":
       return dialogs.openFile({
-        title: "Locate the base bundle",
+        title: t("fileMenu.dialog.locateBundle"),
         defaultPath: dir,
         filters: [BUNDLE_FILTER],
       });
     case "export": {
       const path = await dialogs.saveFile({
-        title: "Export Bundle",
+        title: t("fileMenu.dialog.export"),
         defaultPath: suggest(`${name}.ugoe`),
         filters: [BUNDLE_FILTER],
       });
@@ -289,7 +292,12 @@ function perform(kind: PathAction, path: string): Promise<boolean> {
         if (ok) {
           problem = null;
           const folder = status?.path ? parentDir(status.path) : null;
-          notice = `Opened the dress-up sample. Its module projects (long-hair, twin-tails, cat-ears, sailor) are next to it${folder ? ` in ${folder}` : ""}; open them with Open…`;
+          inform(
+            folder
+              ? t("fileMenu.notice.sampleOpenedIn", { folder })
+              : t("fileMenu.notice.sampleOpened"),
+            true,
+          );
         }
         return ok;
       });
@@ -307,19 +315,19 @@ function perform(kind: PathAction, path: string): Promise<boolean> {
           message: w.message,
         }));
         exportLines = moduleExportSummary(report);
-        notice = `Exported to ${path}`;
+        inform(t("fileMenu.notice.exported", { path }));
         return undefined;
       }, "none");
     case "saveAs":
       return run(async () => {
         const result = await ipc.saveProjectAs(path);
-        notice = `Saved to ${result.path ?? path}`;
+        inform(t("fileMenu.notice.saved", { path: result.path ?? path }));
         return result;
       }, "none");
     case "export":
       return run(async () => {
         exportLines = exportSummary(await ipc.exportBundle(path));
-        notice = `Exported to ${path}`;
+        inform(t("fileMenu.notice.exported", { path }));
         return undefined;
       }, "none");
   }
@@ -344,11 +352,14 @@ async function reopenModule(
   );
   if (ok) {
     problem = null;
-    notice = dropColliders
-      ? droppedCollidersNotice(dropped)
-      : slot === null
-        ? "Opened with the new base. Save to remember it."
-        : `Opened on slot ${slot}. Save to remember it.`;
+    inform(
+      dropColliders
+        ? droppedCollidersNotice(dropped)
+        : slot === null
+          ? t("fileMenu.notice.openedWithBase")
+          : t("fileMenu.notice.openedOnSlot", { slot }),
+      true,
+    );
   } else {
     const found = await ipc.moduleOpenProblem(project, useBase).catch(() => null);
     if (found) {
@@ -376,10 +387,10 @@ async function relocateBase(base: string | null, slot: string | null): Promise<b
     }
     problem = null;
     await run(async () => undefined, "reloaded");
-    notice =
-      slot === null
-        ? "Using the new base. Save to remember it."
-        : `Moved to slot ${slot}. Save to remember it.`;
+    inform(
+      slot === null ? t("fileMenu.notice.usingBase") : t("fileMenu.notice.movedToSlot", { slot }),
+      true,
+    );
     return true;
   } catch (e) {
     message = errorText(e);
@@ -411,14 +422,18 @@ async function dropColliders() {
 }
 
 /** 本体の問題の枠の「Open base project」: 本体のプロジェクトを開いて直す (モジュールは後で開き直す)。 */
-async function openBase() {
+function openBase() {
   const base = problem?.problem.base;
-  if (!base || busy || !discardConfirmed("open")) return;
+  if (!base || busy) return;
+  withDiscard(() => void openBaseNow(base));
+}
+
+async function openBaseNow(base: string) {
   busy = true;
   try {
     if (await run(() => ipc.openProject(base), "replaced")) {
       problem = null;
-      notice = "Opened the base project. Fix it, save, then open the module again.";
+      inform(t("fileMenu.notice.openedBase"), true);
     }
   } finally {
     busy = false;
@@ -436,15 +451,16 @@ async function applyModuleSettings(command: Command) {
   await run(ipc.projectStatus, "reloaded");
 }
 
-async function pick(kind: PathAction) {
+function pick(kind: PathAction) {
   if (busy) return;
-  if (
-    (kind === "open" || kind === "openSample" || kind === "newFromPsd") &&
-    !discardConfirmed(kind)
-  )
-    return;
+  if (kind === "open" || kind === "openSample" || kind === "newFromPsd") {
+    withDiscard(() => void pickNow(kind));
+  } else void pickNow(kind);
+}
+
+async function pickNow(kind: PathAction) {
+  if (busy) return;
   busy = true;
-  notice = null;
   try {
     const path = await choose(kind);
     message = null;
@@ -461,7 +477,6 @@ async function pick(kind: PathAction) {
 }
 
 async function save() {
-  notice = null;
   if (!status?.path) return pick("saveAs");
   if (busy) return;
   // 保存の前に確かめ、外で変わっていれば選ばせる (バックエンドも保存の直前に確かめて断る)
@@ -470,8 +485,19 @@ async function save() {
     askExternal(change, true);
     return;
   }
-  const saved = await run(ipc.saveProject, "none");
-  if (!saved && isExternalChangeError(message)) {
+  /** バックエンドが外での書き換えを見つけて保存を断ったか。 */
+  let refused = false;
+  const saved = await run(async () => {
+    try {
+      const result = await ipc.saveProject();
+      inform(t("fileMenu.notice.saved", { path: result.path ?? "" }));
+      return result;
+    } catch (e) {
+      refused = isExternalChangeError(e);
+      throw e;
+    }
+  }, "none");
+  if (!saved && refused) {
     const again = await ipc.checkExternalChange().catch(() => null);
     if (again) {
       message = null;
@@ -538,9 +564,7 @@ async function reloadBase(auto = false) {
     }
     problem = null;
     await run(async () => undefined, "reloaded");
-    notice = auto
-      ? "Reloaded the base model: it was changed outside the editor"
-      : "Reloaded the base model";
+    inform(auto ? t("fileMenu.notice.baseReloadedAuto") : t("fileMenu.notice.baseReloaded"));
   } catch (e) {
     message = errorText(e);
   } finally {
@@ -557,9 +581,7 @@ async function reloadProject(auto: boolean) {
   external = null;
   dismissedToken = null;
   if (await run(ipc.reloadProject, "reloaded")) {
-    notice = auto
-      ? "Reloaded: the project was changed outside the editor"
-      : "Reloaded the project from disk";
+    inform(auto ? t("fileMenu.notice.reloadedAuto") : t("fileMenu.notice.reloaded"));
   }
 }
 
@@ -568,7 +590,7 @@ async function overwriteExternal() {
   dismissedToken = null;
   await run(async () => {
     const result = await ipc.saveProject(true);
-    notice = `Saved to ${result.path ?? ""}`;
+    inform(t("fileMenu.notice.saved", { path: result.path ?? "" }));
     return result;
   }, "none");
 }
@@ -601,71 +623,95 @@ refresh();
 
 <svelte:window onfocus={() => checkExternal()} />
 
-<nav class="file-menu">
-  <button onclick={newProject} disabled={busy}>New</button>
-  <button onclick={() => pick("newFromPsd")} disabled={busy}>New from PSD…</button>
-  <button onclick={newModule} disabled={busy} title="Make a dress-up module for a slot of a base model"
-    >New Module…</button
-  >
-  <button onclick={() => pick("open")} disabled={busy}>Open…</button>
-  <button
+<nav class="file-menu" aria-label={t("fileMenu.aria")}>
+  <Button variant="ghost" onclick={newProject} disabled={busy}>{t("fileMenu.new.label")}</Button>
+  <Button variant="ghost" onclick={() => pick("newFromPsd")} disabled={busy}>
+    {t("fileMenu.newFromPsd.label")}
+  </Button>
+  <TipButton variant="ghost" onclick={newModule} disabled={busy} tooltip={t("fileMenu.newModule.tooltip")}>
+    {t("fileMenu.newModule.label")}
+  </TipButton>
+  <Button variant="ghost" onclick={() => pick("open")} disabled={busy}>{t("fileMenu.open.label")}</Button>
+  <TipButton
+    variant="ghost"
     onclick={() => pick("openSample")}
     disabled={busy}
-    title="Write the dress-up sample (a base and its module projects) into a new folder and open the base"
-    >Open Sample…</button
+    tooltip={t("fileMenu.openSample.tooltip")}>{t("fileMenu.openSample.label")}</TipButton
   >
-  <button onclick={save} disabled={busy}>Save</button>
-  <button onclick={() => pick("saveAs")} disabled={busy}>Save As…</button>
+  <Button variant="ghost" onclick={save} disabled={busy}>{t("fileMenu.save.label")}</Button>
+  <Button variant="ghost" onclick={() => pick("saveAs")} disabled={busy}>{t("fileMenu.saveAs.label")}</Button>
   <span class="export">
     {#if moduleInfo}
-      <button
+      <TipButton
+        variant="ghost"
         onclick={() => (exportOpen = !exportOpen)}
         disabled={busy}
         aria-expanded={exportOpen}
-        title="Check the module against the base and write .ugoemod">Export Module…</button
+        tooltip={t("fileMenu.exportModule.tooltip")}>{t("fileMenu.exportModule.label")}</TipButton
       >
     {:else}
-      <button
+      <Button
+        variant="ghost"
         onclick={() => (exportOpen = !exportOpen)}
         disabled={busy}
-        aria-expanded={exportOpen}>Export…</button
+        aria-expanded={exportOpen}>{t("fileMenu.export.label")}</Button
       >
     {/if}
     {#if exportOpen}
       <ExportPanel
         {busy}
         summary={exportLines}
-        label={moduleInfo ? "Export .ugoemod…" : "Export .ugoe…"}
+        label={moduleInfo ? t("fileMenu.export.module") : t("fileMenu.export.bundle")}
         onexport={() => pick(moduleInfo ? "exportModule" : "export")}
         onstatus={(s) => (status = s)}
       />
     {/if}
   </span>
-  <button onclick={() => pick("importPsd")} disabled={busy}>Import PSD…</button>
-  <!-- 長い名前は省略し、マウスを載せると全体と保存先のパスが出る。未保存の印は省略されない。 -->
-  <span class="project" title={`${status?.name ?? "…"}\n${status?.path ?? "not saved yet"}`}>
-    <span class="name">{status?.name ?? "…"}</span>{#if status?.modified}<span class="dirty" aria-label="modified"
-        >●</span
-      >{/if}
-  </span>
+  <Button variant="ghost" onclick={() => pick("importPsd")} disabled={busy}>{t("fileMenu.importPsd.label")}</Button>
+  <!-- 長い名前は省略し、ツールチップに全体と保存先のパスを出す。未保存の印は省略されない。 -->
+  <Tooltip
+    text={status?.path
+      ? t("fileMenu.project.tooltip", { name: status.name, path: status.path })
+      : t("fileMenu.project.tooltipUnsaved", { name: status?.name ?? "…" })}
+  >
+    {#snippet children(attrs)}
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <span {...attrs} class="project" tabindex="0">
+        <span class="name">{status?.name ?? "…"}</span>{#if status?.modified}<span
+            class="dirty"
+            role="img"
+            aria-label={t("fileMenu.project.modified")}>●</span
+          >{/if}
+      </span>
+    {/snippet}
+  </Tooltip>
   {#if moduleInfo}
-    <button class="module" title={moduleTitle(moduleInfo)} onclick={() => (settingsOpen = true)} disabled={busy}
-      >{moduleLabel(moduleInfo)}</button
+    <TipButton small class="module" tooltip={moduleTitle(moduleInfo)} onclick={() => (settingsOpen = true)} disabled={busy}
+      >{moduleLabel(moduleInfo)}</TipButton
     >
   {/if}
-  {#if message}<span class="error">{message}</span>{/if}
-  {#if notice}<span class="notice" title={notice}>{notice}</span>{/if}
   {#if warnings.length > 0}
-    <details class="warnings">
-      <summary>{warnings.length} import warning{warnings.length === 1 ? "" : "s"}</summary>
-      <ul>
+    <Popover label={t("fileMenu.warnings.aria")}>
+      {#snippet trigger(attrs)}
+        <Button {...attrs} variant="ghost" class="warnings">
+          {t("fileMenu.warnings.label", { count: warnings.length })}
+        </Button>
+      {/snippet}
+      <ul class="warning-list">
         {#each warnings as w, i (i)}
-          <li>{w.path.length > 0 ? `${w.path.join(" / ")}: ` : ""}{w.message}</li>
+          <li>
+            {w.path.length > 0
+              ? t("fileMenu.warnings.item", { layer: w.path.join(" / "), message: messageText(w) })
+              : messageText(w)}
+          </li>
         {/each}
       </ul>
-    </details>
+    </Popover>
   {/if}
 </nav>
+<!-- 知らせの帯: ヘッダーの下に重ねる (本体の問題と、失敗の文)。 -->
+{#if problem || message}
+<div class="bands">
 {#if problem}
   <ModuleProblemBar
     problem={problem.problem}
@@ -678,6 +724,23 @@ refresh();
     ondismiss={() => (problem = null)}
   />
 {/if}
+{#if message}
+  <Notice tone="danger" ondismiss={() => (message = null)}><p>{message}</p></Notice>
+{/if}
+</div>
+{/if}
+<AlertDialog
+  open={pendingDiscard !== null}
+  title={t("fileMenu.discard.title")}
+  description={t("fileMenu.discard.description")}
+  confirmLabel={t("fileMenu.discard.confirm")}
+  onconfirm={() => {
+    const proceed = pendingDiscard;
+    pendingDiscard = null;
+    proceed?.();
+  }}
+  oncancel={() => (pendingDiscard = null)}
+/>
 <ModuleSettingsDialog
   open={settingsOpen}
   module={moduleInfo}
@@ -713,73 +776,75 @@ refresh();
 
 <style>
   /* 幅が足りないときはボタンを次の行へ折り返す (ヘッダーの高さが伸びる)。 */
+  /* ヘッダーの残りの幅を使い、プロジェクトの名前を省略して 1 行に収める。名前の欄も最小の幅に届かないほど狭い
+     ときだけ次の行へ折り返す (ヘッダーの高さが伸びる)。 */
   .file-menu {
     display: flex;
+    flex: 1 1 0;
     flex-wrap: wrap;
     align-items: center;
-    gap: 4px;
+    gap: var(--ugoe-space-1);
     min-width: 0;
   }
   .export {
     position: relative;
     flex-shrink: 0;
   }
-  .file-menu > button,
-  .export > button {
-    flex-shrink: 0;
-    white-space: nowrap;
-  }
   .project {
     display: inline-flex;
-    min-width: 0;
-    margin-left: 8px;
-    font-weight: 600;
+    /* 幅の基準を 0 にして、名前が長くてもボタンを折り返させない (余った幅だけを使う) */
+    flex: 1 1 0;
+    min-width: 4em;
+    margin-left: var(--ugoe-space-2);
+    font-weight: var(--ugoe-font-weight-strong);
     white-space: nowrap;
   }
+  .project:focus-visible {
+    outline: var(--ugoe-focus-ring);
+    outline-offset: 2px;
+  }
   .project .name {
+    min-width: 0;
     max-width: 16em;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .module {
-    flex-shrink: 0;
-    padding: 0 6px;
-    border: 1px solid var(--accent);
-    border-radius: 3px;
-    color: var(--accent);
-    white-space: nowrap;
+  .file-menu :global(.module) {
+    border-color: var(--ugoe-color-accent);
+    color: var(--ugoe-color-accent);
   }
   .dirty {
     flex-shrink: 0;
-    margin-left: 4px;
-    color: var(--accent);
+    margin-left: var(--ugoe-space-2);
+    color: var(--ugoe-color-accent);
   }
-  .warnings {
-    position: relative;
-    color: #b45309;
-    white-space: nowrap;
+  .file-menu :global(.warnings) {
+    color: var(--ugoe-color-warning);
   }
-  .warnings[open] ul {
-    position: absolute;
-    z-index: 10;
-    margin: 4px 0 0;
-    padding: 8px 8px 8px 24px;
-    background: var(--panel);
-    border: 1px solid currentColor;
+  .warning-list {
+    max-width: 480px;
+    max-height: 50vh;
+    margin: 0;
+    padding: 0 0 0 var(--ugoe-space-5);
+    overflow: auto;
+    list-style: disc;
+  }
+  /* ヘッダーの中の最後の行 (App.svelte の header は折り返す)。重ねずに場所を取るので、ビューポートのボタンを隠さない。 */
+  .bands {
+    display: flex;
+    flex: 0 0 100%;
+    order: 1;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--ugoe-space-2);
+    padding-bottom: var(--ugoe-space-1);
     white-space: normal;
-    min-width: 320px;
   }
-  .error,
-  .notice {
-    min-width: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  .bands > :global(*) {
+    width: min(720px, 100%);
   }
-  .error {
-    color: #dc2626;
-  }
-  .notice {
-    opacity: 0.7;
+  .bands p {
+    margin: 0;
+    overflow-wrap: anywhere;
   }
 </style>

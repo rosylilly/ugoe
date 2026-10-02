@@ -1,0 +1,658 @@
+{
+  "app": {
+    "preview": {
+      "label": "プレビュー",
+      "exit": "プレビューを終える",
+      "tooltip": "ランタイムでモデルを動かして見る (物理・目パチ・呼吸・モーションとすべてのパラメータ)",
+      "exitTooltip": "プレビューを終えて、編集していた姿に戻る"
+    },
+    "undo": {
+      "label": "元に戻す",
+      "tooltip": "最後の編集を元に戻す"
+    },
+    "redo": {
+      "label": "やり直す",
+      "tooltip": "元に戻した編集をやり直す"
+    },
+    "agents": {
+      "label": "エージェント",
+      "connected_other": "エージェント ({{count}})",
+      "tooltip": "エージェントがこのエディタにつなげます (設定 → エージェントの接続)"
+    },
+    "settings": {
+      "label": "設定",
+      "tooltip": "言語・AI のプロバイダ・API キー・エージェントの接続"
+    },
+    "proposalBanner": "AI の提案をプレビューしています。採用するまでモデルは変わりません。",
+    "slotsBaseHint": "スロットは本体のモデルのものなので、モジュールのプロジェクトでは編集できません。本体のプロジェクトで編集してください。",
+    "splitter": {
+      "aria": "インスペクタとパラメータの高さを変える"
+    },
+    "tabs": {
+      "aria": "インスペクタのパネル",
+      "inspector": {
+        "label": "インスペクタ"
+      },
+      "physics": {
+        "label": "物理"
+      },
+      "glue": {
+        "label": "グルー",
+        "tooltip": "グルー: 2 つのメッシュの継ぎ目を離さない"
+      },
+      "lighting": {
+        "label": "ライティング",
+        "tooltip": "ライティング・法線マップ・プレビューの光源"
+      },
+      "slots": {
+        "label": "スロット",
+        "tooltip": "着せ替えのスロット: 衣装や小物のモジュールを付ける場所"
+      },
+      "poses": {
+        "label": "ポーズ",
+        "tooltip": "ポーズのグループ: 切り替える変形 (腕の A / B など)"
+      },
+      "verify": {
+        "label": "検証"
+      },
+      "ai": {
+        "label": "AI",
+        "count_other": "AI ({{count}})",
+        "tooltip": "PSD のレイヤーを分類し、リグの提案を確かめる",
+        "fresh": "エージェントが新しい提案をしました",
+        "stale": "リグを提案した後に衣装のメッシュが編集されました。リグをもう一度提案してください",
+        "attention": "要確認"
+      }
+    }
+  },
+  "help": {
+    "open": {
+      "label": "ヘルプ",
+      "tooltip": "操作マニュアルをブラウザで開く"
+    },
+    "failed": {
+      "title": "ブラウザを開けません",
+      "description": "{{reason}} 次のアドレスからマニュアルを開いてください:"
+    }
+  },
+  "emptyState": {
+    "viewport": "このプロジェクトは空です。「{{action}}」で PSD から始めます。",
+    "tree": "パーツはまだありません。「{{action}}」から始めます"
+  },
+  "fileMenu": {
+    "aria": "ファイル",
+    "new": {
+      "label": "新規"
+    },
+    "newFromPsd": {
+      "label": "PSD から新規…"
+    },
+    "newModule": {
+      "label": "新しいモジュール…",
+      "tooltip": "本体のモデルのスロットに付ける着せ替えのモジュールを作る"
+    },
+    "open": {
+      "label": "開く…"
+    },
+    "openSample": {
+      "label": "見本を開く…",
+      "tooltip": "着せ替えの見本 (本体とモジュールのプロジェクト) を新しいフォルダーに書き出し、本体を開く"
+    },
+    "save": {
+      "label": "保存"
+    },
+    "saveAs": {
+      "label": "別名で保存…"
+    },
+    "export": {
+      "label": "書き出し…",
+      "bundle": ".ugoe を書き出す…",
+      "module": ".ugoemod を書き出す…"
+    },
+    "exportModule": {
+      "label": "モジュールを書き出す…",
+      "tooltip": "モジュールを本体と照らし合わせて確かめ、.ugoemod を書き出す"
+    },
+    "importPsd": {
+      "label": "PSD を取り込む…"
+    },
+    "project": {
+      "tooltip": "{{name}} ({{path}})",
+      "tooltipUnsaved": "{{name}} (まだ保存していません)",
+      "modified": "保存していない変更があります"
+    },
+    "warnings": {
+      "label_other": "取り込みの警告 {{count}} 件",
+      "aria": "取り込みの警告",
+      "item": "{{layer}}: {{message}}"
+    },
+    "dialog": {
+      "newFromPsd": "PSD から新しいプロジェクト",
+      "importPsd": "PSD を取り込む",
+      "open": "プロジェクトを開く (.ugoeproj のフォルダー)",
+      "openSample": "着せ替えの見本のプロジェクトを置くフォルダーを選ぶ",
+      "saveAs": "プロジェクトを別名で保存",
+      "exportModule": "モジュールを書き出す",
+      "export": "バンドルを書き出す",
+      "locateProject": "本体のプロジェクトを選ぶ (.ugoeproj のフォルダー)",
+      "locateBundle": "本体のバンドルを選ぶ"
+    },
+    "discard": {
+      "title": "保存していない変更を捨てますか?",
+      "description": "このプロジェクトには保存していない変更があり、捨てると戻せません。残すには、キャンセルして先に保存してください。",
+      "confirm": "捨てて続ける"
+    },
+    "notice": {
+      "saved": "{{path}} に保存しました",
+      "exported": "{{path}} に書き出しました",
+      "sampleOpened": "着せ替えの見本を開きました。モジュールのプロジェクト (long-hair・twin-tails・cat-ears・sailor) は隣にあります。「開く…」で開けます",
+      "sampleOpenedIn": "着せ替えの見本を開きました。モジュールのプロジェクト (long-hair・twin-tails・cat-ears・sailor) は隣の {{folder}} にあります。「開く…」で開けます",
+      "openedWithBase": "新しい本体で開きました。保存すると覚えます。",
+      "openedOnSlot": "スロット {{slot}} で開きました。保存すると覚えます。",
+      "usingBase": "新しい本体を使っています。保存すると覚えます。",
+      "movedToSlot": "スロット {{slot}} に移しました。保存すると覚えます。",
+      "openedBase": "本体のプロジェクトを開きました。直して保存してから、モジュールを開き直してください。",
+      "baseReloaded": "本体のモデルを読み直しました",
+      "baseReloadedAuto": "本体のモデルがエディタの外で変わったので、読み直しました",
+      "reloaded": "プロジェクトをディスクから読み直しました",
+      "reloadedAuto": "プロジェクトがエディタの外で変わったので、読み直しました"
+    }
+  },
+  "baseChange": {
+    "missing": {
+      "title": "本体のモデルが見つかりません",
+      "description": "<code>{{path}}</code> が移されたか、消されました。モジュールは開いたままで、保存できます。本体を別の場所に移したなら、選び直してください。保存していない編集は残ります。"
+    },
+    "changed": {
+      "title": "本体のモデルが変わりました",
+      "description": "このモジュールを開いた後に {{name}} が変わりました。下敷きのモデルは古くなっています。",
+      "descriptionFiles": "このモジュールを開いた後に {{name}} が変わりました ({{files}})。下敷きのモデルは古くなっています。",
+      "hint": "読み直すと、新しい本体を下敷きにします。モジュールの編集は保存したかどうかに関わらず残り、元に戻す履歴は消えます。モジュールが新しい本体に合わなくなっていれば、何も変えずに直し方を出します。"
+    },
+    "autoReload": {
+      "label": "自動で読み直す (本体は変わるたびに、プロジェクトは保存していない変更が無いときに)"
+    },
+    "later": {
+      "label": "後で",
+      "tooltip": "いまは古い本体を下敷きのままにする"
+    },
+    "locateBundle": {
+      "label": "本体の .ugoe を選ぶ…"
+    },
+    "locateProject": {
+      "label": "本体のプロジェクトを選ぶ…"
+    },
+    "reload": {
+      "label": "本体を読み直す"
+    }
+  },
+  "externalChange": {
+    "missing": {
+      "title": "プロジェクトのフォルダーが見つかりません",
+      "description": "プロジェクトがエディタの外で移されたか、消されました。作業中の内容はここに開いたままです。"
+    },
+    "changed": {
+      "title": "プロジェクトがエディタの外で変わりました",
+      "description": "開くか保存した後に、別のプログラム (<code>ugoe-mcp</code> を通した AI のエージェントや、別のエディタなど) が <code>{{files}}</code> を変えました。",
+      "modifiedWarning": "保存していない変更があります。読み直すと自分の変更が、上書きすると外の変更が消えます。",
+      "savingWarning": "いま保存すると、外の変更を上書きします。"
+    },
+    "autoReload": {
+      "label": "保存していない変更が無ければ自動で読み直す"
+    },
+    "later": {
+      "label": "後で",
+      "tooltip": "開いている版で作業を続ける (保存の前にもう一度尋ねます)"
+    },
+    "saveAs": {
+      "label": "別名で保存…"
+    },
+    "saveHere": {
+      "label": "同じ場所に保存し直す"
+    },
+    "overwrite": {
+      "label": "自分の版で上書きする"
+    },
+    "reloadDiscard": {
+      "label": "自分の変更を捨てて読み直す"
+    },
+    "reload": {
+      "label": "読み直す"
+    },
+    "files": {
+      "more_other": "{{files}} ほか {{count}} 件"
+    }
+  },
+  "module": {
+    "badge": {
+      "label": "モジュール: {{slot}}",
+      "tooltip": "{{file}} のスロット {{slot}} に付けるモジュール「{{name}}」。読み取り専用の本体: {{base}}。押すとモジュールの設定 (名前・スロット・条件) を開きます。"
+    },
+    "can": {
+      "elements": "モジュールのパーツ・デフォーマ・メッシュ・グルー・テクスチャの追加と編集",
+      "psd": "PSD の取り込み (描画順はスロットの範囲に入る)・自動メッシュ・メッシュの編集",
+      "keyforms": "標準パラメータとスロットが公開するパラメータでのキーフォーム、推定とミラー",
+      "physics": "モジュールの物理のリグと衝突体、テクスチャの法線マップ",
+      "ai": "衣装の AI のリグの提案: 本体のデフォーマとメッシュに沿わせ、揺れる部分には本体の公開する衝突体を避ける物理を付け、A / B の変形はポーズにする (新しいパラメータは作らない)",
+      "poses": "モジュールのパーツのポーズのグループと、スロットが公開する本体のポーズの項目への結び付け (ポーズのタブ)",
+      "parameters": "本体のどのパラメータもスライダーで動かして見た目を確かめる",
+      "preview": "今の編集を本体に付けてプレビューし、同じスロットのほかのモジュールと付け替える"
+    },
+    "cannot": {
+      "base": "本体を変える: 要素・パラメータ・アバタープロファイル・スロット・効果・ライティング・物理の設定",
+      "parameters": "パラメータを足す (本体のプロジェクトで足し、スロットで公開する)",
+      "motions": "モーションと表情",
+      "poses": "本体のポーズのグループと、ポーズの切り替えの時間"
+    },
+    "slot": {
+      "canvas": "キャンバス",
+      "summary": "取り付け先 {{anchor}} · 描画順 {{min}}–{{max}}",
+      "summaryReplaces": "{{summary}} · {{parts}} を隠す"
+    },
+    "baseEditHint": "これは本体のモデルのものなので、ここでは編集できません。本体のプロジェクトで編集してください。",
+    "unavailableColliders_other": "スロット「{{slot}}」は本体の衝突体 {{colliders}} を公開していますが、本体のモデルに物理が無いので、このモジュールのリグはそれに当たれません。使うには、本体のプロジェクトを開いて物理のタブでその衝突体を持つ物理を足し、本体を読み直してください。"
+  },
+  "moduleProblem": {
+    "kind": {
+      "baseNotFound": "本体のモデル「{{file}}」が、このモジュールの指す場所 ({{path}}) にありません。移されたか、名前が変わったのかもしれません。選び直すと続けられます。",
+      "baseUnreadable": "本体のモデル「{{file}}」を読めません。別の本体 (モジュールのプロジェクトではなく、モデルのプロジェクトか .ugoe のバンドル) を選んでください。",
+      "unknownSlot": "本体のモデル「{{file}}」にスロット「{{slot}}」がなくなりました。このモジュールに別のスロットを選ぶか、本体のプロジェクトでスロットを足し直してください。",
+      "doesNotFit": "このモジュールは本体のモデル「{{file}}」に合わなくなりました。本体を直す (スロットでパラメータやマスクを公開するなど) か、別の本体を選んでください。",
+      "baseNeedsPhysics": "このモジュールの物理のリグはスロット「{{slot}}」が公開する衝突体に当たりますが、本体のモデル「{{file}}」に物理が無いので、その衝突体がありません。本体のプロジェクトを開いてその衝突体を持つ物理を足す (物理のタブ) か、別の本体を選んでください。"
+    },
+    "details": {
+      "label": "詳しく"
+    },
+    "slot": {
+      "aria": "使うスロット"
+    },
+    "useSlot": {
+      "label": "このスロットを使う",
+      "tooltip": "このモジュールを本体の別のスロットで開く (保存すると覚えます)"
+    },
+    "openBase": {
+      "label": "本体のプロジェクトを開く",
+      "tooltip": "本体のプロジェクトを開いて直す (モジュールは後で開き直す)"
+    },
+    "dropColliders": {
+      "label": "これらの衝突体を外して開く…",
+      "tooltip": "本体に無い衝突体との当たりを外してモジュールを開く (先に確かめます)",
+      "aria": "衝突体の参照を外す",
+      "confirm": "外して開く",
+      "cancel": "キャンセル",
+      "prompt_other": "衝突体の参照 {{count}} 件 ({{list}}) を外してモジュールを開きます。リグはその衝突体に当たらなくなります。モジュールのファイルが変わるのは保存したときだけです。また使うには、本体にその衝突体を持つ物理を足してください。",
+      "done_other": "衝突体の参照 {{count}} 件 ({{list}}) を外して開きました。保存すると変更が残り、保存せずに閉じればファイルの参照は残ります。"
+    },
+    "locateProject": {
+      "label": "本体のプロジェクトを選ぶ…"
+    },
+    "locateBundle": {
+      "label": "本体の .ugoe を選ぶ…"
+    },
+    "saveFirst": "別の本体やスロットを選ぶには、先にモジュールのプロジェクトを保存してください。"
+  },
+  "moduleSettings": {
+    "title": "モジュールの設定",
+    "name": {
+      "label": "モジュールの名前",
+      "invalid": "名前に「/」を含めたり、「#」で始めたりはできません。",
+      "renameHint": "名前は、モデルの中でのモジュールの ID の頭 ({{name}}/…) になります。同じモデルに一緒に付けるモジュールには、別の名前が要ります。"
+    },
+    "slot": {
+      "label": "スロット",
+      "anchorChanges": "このスロットの取り付け先は {{from}} ではなく {{to}} です。モジュールは {{to}} と一緒に動くようになります。"
+    },
+    "keepLook": {
+      "label": "見える位置を保つ (最上位のメッシュとデフォーマを、既定の姿で新しい取り付け先の座標に変換する)",
+      "offHint": "座標は取り付け先からの相対のままなので、モジュールが別の場所に見えることがあります。適用した後に確かめてください (元に戻すで戻せます)。"
+    },
+    "requires": {
+      "label": "条件 (アプリがモジュールを付けるときに確かめる)",
+      "slots": "モデルに求めるほかのスロット:",
+      "parameters": "モデルに求めるパラメータ:"
+    },
+    "avatarLevel": {
+      "label": "アバタープロファイルのレベル",
+      "none": "(なし)",
+      "atLeast": "{{level}} 以上"
+    },
+    "cancel": {
+      "label": "キャンセル"
+    },
+    "apply": {
+      "label": "適用"
+    }
+  },
+  "newModule": {
+    "title": "新しい着せ替えのモジュール",
+    "description": "モジュールは、本体のモデルを参照する専用のプロジェクトで作ります。本体は下敷きとして見え、ここでは編集できません。",
+    "features": {
+      "summary": "モジュールのプロジェクトでできること",
+      "can": "できること",
+      "cannot": "本体のプロジェクトで行うこと",
+      "later": "名前・スロット・条件は、後から「モジュール:」の印を押して変えられます。"
+    },
+    "base": {
+      "label": "本体",
+      "project": "プロジェクトのフォルダー…",
+      "bundle": ".ugoe のファイル…"
+    },
+    "chooseProject": {
+      "title": "本体のプロジェクトを選ぶ (.ugoeproj のフォルダー)"
+    },
+    "chooseBundle": {
+      "title": "本体のバンドルを選ぶ"
+    },
+    "noSlots": "この本体にはスロットがありません。先に本体のプロジェクトを開き、スロットのタブでスロットを足してください。",
+    "slot": {
+      "label": "スロット"
+    },
+    "name": {
+      "label": "モジュールの名前",
+      "invalid": "名前に「/」を含めたり、「#」で始めたりはできません。"
+    },
+    "cancel": {
+      "label": "キャンセル"
+    },
+    "create": {
+      "label": "作る"
+    }
+  },
+  "settings": {
+    "title": "設定",
+    "tabs": {
+      "aria": "設定"
+    },
+    "general": {
+      "tab": "一般"
+    },
+    "ai": {
+      "tab": "AI のプロバイダ"
+    },
+    "agents": {
+      "tab": "エージェントの接続"
+    },
+    "close": {
+      "label": "閉じる"
+    },
+    "language": {
+      "label": "言語",
+      "system": "OS に合わせる",
+      "description": "エディタの画面の言語です。操作マニュアルは日本語だけです。"
+    }
+  },
+  "errorCause": "{{message}} 原因: {{cause}}",
+  "errors": {
+    "edit": {
+      "duplicate_id": "{{kind}} {{id}} はすでにあります。",
+      "not_found": "{{kind}} {{id}} が見つかりません。",
+      "invalid_range": "範囲は 最小 ≤ 既定 ≤ 最大 を満たすようにしてください (最小 {{min}}、既定 {{default}}、最大 {{max}})。",
+      "has_children": "{{kind}} {{id}} には子 ({{children}}) が残っているので、削除できません。",
+      "self_reference": "{{kind}} {{id}} の {{field}} に自分自身は指定できません。",
+      "deformer_kind_mismatch": "デフォーマ {{id}} の種類が {{expected}} ではありません。",
+      "invalid_cell": "{{kind}} {{id}} のキーフォームのセルの指定を使えません。",
+      "invalid_texture_name": "テクスチャの名前 {{name}} は使えません。英数字と _ . - だけを使い、. で始まらない名前にしてください。",
+      "texture_not_png": "テクスチャ {{name}} の画像が PNG ではありません。",
+      "invalid_canvas": "キャンバスの大きさ {{width}} × {{height}} は使えません。正の数にしてください。",
+      "cannot_regenerate_mesh": "メッシュ {{id}} を作り直せません ({{reason}})。",
+      "mesh_geometry": "メッシュ {{id}} の形を変えられません ({{reason}})。",
+      "automesh_failed": "メッシュ {{id}} の自動メッシュの生成に失敗しました ({{detail}})。",
+      "vertex_out_of_range": "メッシュ {{id}} に頂点 {{index}} はありません (頂点は {{vertices}} 個です)。",
+      "too_few_vertices": "メッシュ {{id}} の頂点が {{remaining}} 個しか残りません。メッシュには 3 個以上の頂点が要ります。",
+      "invalid_draw_order": "メッシュ {{id}} の描画順 {{draw_order}} が有限の数ではありません。",
+      "keyform_kind_mismatch": "{{kind}} {{id}} には {{expected}} のキーフォームが必要ですが、{{actual}} のキーフォームが渡されました。",
+      "invalid_model_other": "このコマンドを適用すると、モデルが検証を通らなくなります ({{count}} 件: {{details}})。",
+      "inference_failed": "{{target}} のキーフォームの推定に失敗しました ({{detail}})。",
+      "unsupported_inference": "{{target}} の推定の方法にこの版は対応していないので、キーフォームを推定できません。",
+      "mirror_pair_not_supported": "左右の対を持てるのはメッシュとデフォーマだけなので、{{target}} には設定できません。",
+      "unsupported_interpolation": "{{target}} の格子には補間 {{interpolation}} を使えません。",
+      "deformer_edit_failed": "デフォーマを編集できませんでした ({{reason}})。",
+      "invalid_physics": "この物理の設定は使えません ({{reason}})。",
+      "invalid_avatar_profile": "このアバタープロファイルの設定は使えません ({{reason}})。",
+      "module_shape": "編集の結果をモジュールとして表せません ({{reason}})。",
+      "depth_length": "{{target}} の深度の値は {{actual}} 個ですが、要素の点は {{expected}} 個です。",
+      "non_finite_depth": "{{target}} の深度の値 {{value}} が有限の数ではありません。",
+      "depth_point_out_of_range": "{{target}} に点 {{index}} はありません (点は {{points}} 個です)。",
+      "invalid_name": "{{kind}} の名前 {{name}} は使えません。英数字と _ . - だけを使い、. で始まらない名前にしてください。",
+      "invalid_motion": "この編集では、モーション {{motion}} に問題が残ります ({{reason}})。",
+      "invalid_expression": "この編集では、表情 {{expression}} に問題が残ります ({{reason}})。",
+      "draw_clone_shape": "メッシュ {{id}} は {{original}} の描画用の複製です。形は元のメッシュで編集してください。",
+      "not_draw_clone": "メッシュ {{id}} は描画用の複製ではなく、複製も持っていません。",
+      "invalid_normal_map": "テクスチャ {{texture}} の法線マップを設定できません ({{reason}})。",
+      "invalid_slot": "スロット {{id}} を設定できません ({{reason}})。",
+      "invalid_glue": "グルー {{id}} を設定できません ({{reason}})。",
+      "read_only_base": "{{element}} は本体のモデルの要素なので、ここでは編集できません。本体のプロジェクトで編集してください。",
+      "not_module": "このプロジェクトはモジュールのプロジェクトではありません。"
+    },
+    "cell": {
+      "missing_axis": "セルに軸 {{parameter}} の値が指定されていません。",
+      "unknown_axis": "パラメータ {{parameter}} は格子の軸ではありません。",
+      "unknown_key": "軸 {{parameter}} に {{value}} のキーはありません。",
+      "out_of_range": "セルの番号 {{index}} が範囲の外です (キーフォームは {{len}} 個です)。",
+      "duplicate_key": "軸 {{parameter}} には {{value}} のキーがすでにあります。",
+      "non_finite_key": "軸 {{parameter}} のキー {{value}} が有限の数ではありません。",
+      "keyform_count": "格子のキーフォームは {{actual}} 個ですが、軸からは {{expected}} 個が必要です。",
+      "shape_mismatch": "キーフォームの頂点は {{actual}} 個ですが、セルの頂点は {{expected}} 個です。"
+    },
+    "project": {
+      "io": "{{path}} を読み書きできません ({{detail}})。",
+      "json": "{{path}} の JSON を読み書きできません ({{detail}})。",
+      "format": "{{path}} を読み書きできません。",
+      "not_a_project": "{{path}} は ugoe のプロジェクトではありません (project.json がありません)。",
+      "not_empty": "フォルダ {{path}} は空でなく、ugoe のプロジェクトでもないので使えません。",
+      "not_png": "{{path}} は PNG の画像ではありません。",
+      "base_not_found": "{{path}} に本体のモデルが見つかりません。",
+      "base_is_module": "本体 {{path}} はモジュールのプロジェクトです。本体にはモデルのプロジェクトか .ugoe のバンドルを選んでください。",
+      "base_unreadable": "本体のモデル {{path}} を読めません。",
+      "base_refused": "本体のモデル {{path}} は読みませんでした ({{reason}})。",
+      "unsupported_version": "このプロジェクトの形式のバージョンは {{found}} ですが、対応しているのは {{supported}} までです。",
+      "invalid_name": "{{kind}} の名前 {{name}} はファイル名に使えません。",
+      "duplicate_name": "{{kind}} の名前 {{name}} が複数あります (大文字と小文字は区別しません)。",
+      "missing_texture": "テクスチャ {{name}} に画像がありません。",
+      "unsupported_base_texture": "本体のテクスチャ {{name}} が PNG ではありません。",
+      "unsupported_texture": "テクスチャ {{name}} が PNG ではありません。",
+      "export_failed": "バンドルを書き出せません。",
+      "missing_module_link": "モジュールのプロジェクトに、本体とスロットの指定 (project.json の module) がありません。",
+      "not_a_module": "このプロジェクトはモジュールのプロジェクトではありません。",
+      "invalid_module_other": "モジュールが検証を通りません ({{count}} 件: {{details}})。"
+    },
+    "module": {
+      "invalid_name": "モジュールの名前 {{name}} は使えません。空でなく、/ を含まず、# で始まらない名前にしてください。",
+      "unknown_slot": "本体のモデルにスロット {{slot}} がありません。",
+      "compose_failed": "モジュールを本体のモデルと合成できません ({{detail}})。",
+      "collider_needs_base_physics": "リグ {{rig}} はスロット {{slot}} が公開する衝突体 {{collider}} に当たりますが、本体のモデルに物理がありません。本体のプロジェクトに衝突体 {{collider}} を持つ物理を足すか、リグから衝突体を外してください。",
+      "read_only_base": "{{element}} は本体のモデルの要素なので、ここでは編集できません。本体のプロジェクトで編集してください。",
+      "shape": "モジュールとして表せません ({{reason}})。",
+      "draw_order_outside_slot": "メッシュ {{mesh}} の描画順がスロットの範囲の外にあるので、スロットの外に描かれます。"
+    },
+    "format": {
+      "not_ugoe_file": "ugoe のファイルではありません。",
+      "too_large": "バンドルが大きすぎます。",
+      "unsupported_version": "ファイルのスキーマのバージョンは {{found}} ですが、対応しているのは {{supported}} までです。",
+      "invalid_model_other": "モデルが検証を通りません ({{count}} 件: {{details}})。",
+      "invalid_module_other": "モジュールが検証を通りません ({{count}} 件: {{details}})。",
+      "invalid_physics_other": "物理の設定が検証を通りません ({{count}} 件: {{details}})。",
+      "unsupported_features": "ファイルが、この版の対応していない機能を必要としています ({{features}})。",
+      "unknown_values": "新しい版の未知の値は書き出せません ({{values}})。",
+      "corrupt": "ファイルが壊れているか、読み書きできません ({{detail}})。"
+    },
+    "export": {
+      "invalid_max_size": "アトラスの最大の大きさは 1 から {{max}} までにしてください (いまは {{value}} です)。",
+      "invalid_padding": "アトラスの余白は {{max}} 以下にしてください (いまは {{value}} です)。",
+      "invalid_settings": "書き出しの設定を読めません ({{detail}})。"
+    },
+    "atlas": {
+      "missing_texture": "テクスチャ {{name}} に画像がありません。",
+      "not_png": "テクスチャ {{name}} を PNG として読めません。",
+      "texture_out_of_range": "メッシュ {{mesh}} が、存在しないテクスチャの番号 {{texture}} を参照しています。",
+      "invalid_max_size": "アトラスの最大の大きさは 0 より大きくしてください。"
+    },
+    "compile": {
+      "invalid_model_other": "モデルが検証を通らないので、評価の準備ができません ({{count}} 件: {{details}})。",
+      "unknown_parameter": "モデルが未知のパラメータ {{parameter}} を参照しています。",
+      "unsupported": "モデルに評価できないところがあります ({{feature}})。"
+    },
+    "proposal": {
+      "not_found": "提案 {{id}} が見つかりません。",
+      "stale": "提案を作った後にモデルが変わりました。変更を元に戻すか、もう一度提案させてください。",
+      "invalid_index": "提案にコマンド {{index}} はありません。",
+      "nothing_selected": "コマンドが 1 つも選ばれていません。",
+      "rejected": "提案を適用できません。",
+      "model_changed": "提案を作っている間にモデルが変わりました。もう一度提案させてください。",
+      "no_psd": "分類する PSD がありません。このモデルの取り込み元の PSD を選んでください。",
+      "not_classified": "先に PSD のレイヤーを分類してください。",
+      "not_regenerable": "提案 {{id}} はこのパネルで作ったものではないので、作り直せません。",
+      "disappeared": "提案が見つからなくなりました。",
+      "no_preview": "プレビュー中の提案はありません。"
+    },
+    "lighting": {
+      "texture_not_found": "テクスチャ {{texture}} が見つかりません。",
+      "unreadable_texture": "テクスチャ {{texture}} の画像が無いか、PNG ではありません。",
+      "unreadable_normal_map": "法線マップを PNG として読めません。",
+      "normal_maps_model_only": "法線マップを提案できるのは、モデルのプロジェクトだけです。",
+      "no_group_chosen": "グループを 1 つ以上選んでください。",
+      "generate_failed": "法線マップを作れません ({{detail}})。",
+      "invalid_settings": "プレビューのライティングの設定を読めません ({{detail}})。",
+      "invalid_preview": "このプレビューのライティングは使えません ({{reason}})。",
+      "unknown_group": "グループ {{group}} がありません。",
+      "empty_group": "グループ {{group}} にテクスチャがありません。",
+      "image_not_found": "画像 {{name}} が見つかりません。"
+    },
+    "space": {
+      "not_found": "{{kind}} {{id}} が見つかりません。",
+      "no_space": "{{kind}} {{id}} は座標系を持ちません。",
+      "evaluate_failed": "親のデフォーマを評価できません ({{detail}})。",
+      "length_mismatch": "点は {{points}} 個ですが、初期値は {{guesses}} 個です。",
+      "singular": "親の変換が点 {{index}} の近くで潰れているので、逆に解けません。",
+      "not_converged": "点 {{index}} の計算が収束しませんでした (残差 {{residual}} px)。"
+    },
+    "overflow": {
+      "unknown_parameter": "{{target}} の格子が未知のパラメータ {{parameter}} を参照しています。"
+    },
+    "psd": {
+      "read_failed": "PSD を読めません ({{detail}})。",
+      "read_file_failed": "PSD のファイル {{path}} を読めません ({{detail}})。",
+      "invalid_mesh_options": "メッシュの設定を使えません ({{reason}})。",
+      "automesh_failed": "レイヤー {{layer}} の自動メッシュの生成に失敗しました ({{detail}})。",
+      "canvas_mismatch": "PSD のキャンバス ({{psd_width}} × {{psd_height}}) がモデルのキャンバス ({{model_width}} × {{model_height}}) と違います。モデルのキャンバスのまま、レイヤーを PSD のピクセルの位置に置くので、キャンバスと揃わないことがあります。PSD のキャンバスを使うには、空のプロジェクトに取り込んでください。",
+      "group_blend_mode_ignored": "パーツは合成モードを持たないので、グループの合成モード {{blend_mode}} は使いませんでした。",
+      "blend_mode_unsupported": "合成モード {{blend_mode}} には対応していないので、通常を使いました。",
+      "adjustment_layer": "調整レイヤーか塗りつぶしレイヤー ({{key}}) は取り込みませんでした。",
+      "unsupported_compression": "チャンネルの圧縮方式 {{compression}} に対応していないので、レイヤーを取り込みませんでした。",
+      "group_clipping_unsupported": "グループのクリッピングには対応していないので、クリッピングせずに取り込みました。",
+      "empty_layer": "空のレイヤーなので、取り込みませんでした。",
+      "transparent_layer": "完全に透明なレイヤーなので、取り込みませんでした。",
+      "layer_too_complex": "メッシュにするには複雑すぎるレイヤーなので、取り込みませんでした。",
+      "clipping_base_missing": "クリッピングの下のレイヤーを取り込まなかったので、クリッピングせずに取り込みました。",
+      "smart_object_without_pixels": "描画済みの画素を持たないスマートオブジェクトなので、取り込みませんでした。",
+      "layer_effects_ignored": "レイヤー効果は使わず、効果を除いた画素だけを取り込みました。",
+      "layer_mask_ignored": "レイヤーマスクを掛けられなかったので、マスクを掛けずに取り込みました。",
+      "missing_pixels": "色のチャンネルの画素がないレイヤーなので、取り込みませんでした。",
+      "flattened_image": "PSD にレイヤーの情報がないので、統合された画像を取り込みました。"
+    },
+    "inference": {
+      "mirror_failed": "{{source}} から {{target}} へのミラーをやり直せませんでした ({{detail}})。"
+    },
+    "avatar": {
+      "missing_profile": "モデルにアバタープロファイルがありません。",
+      "newer_profile_version": "アバタープロファイルのバージョン {{version}} は、対応しているバージョン {{supported}} より新しいので、検査が足りないことがあります。",
+      "invalid_level": "アバターのレベルは 1 から {{max}} までにしてください (いまは {{level}} です)。",
+      "missing_metadata": "メタデータ avatar.meta.{{field}} が必要です。",
+      "missing_parameter": "レベル {{level}} にはパラメータ {{id}} が必要です。",
+      "too_few_extended_parameters": "レベル 3 には拡張パラメータが {{required}} 個以上必要ですが、{{found}} 個しかありません。",
+      "parameter_range": "パラメータ {{id}} の範囲 ({{min}} / {{default}} / {{max}}) が、プロファイルの範囲 ({{expected_min}} / {{expected_default}} / {{expected_max}}) と違います。",
+      "unknown_reference": "{{field}} が未知の {{target_kind}} {{target}} を参照しています。",
+      "unknown_tracking_input": "{{field}} の入力 {{input}} は、{{kind}} の入力にありません。",
+      "missing_tracking_target": "トラッキングの上書き {{field}} には、入力元が standard でなければパラメータが必要です。",
+      "unknown_value": "{{field}} の値は新しい版のファイルのもので分からないので、代わりの値を使います。",
+      "duplicate_hit_area_name": "当たり判定の名前 {{name}} が複数あります。",
+      "invalid_value": "{{field}} の値 {{value}} は {{expected}} にしてください。",
+      "internal_tracking_target": "{{field}} のパラメータ {{id}} は中継用なので、トラッキングは書き込みません。"
+    },
+    "editor": {
+      "lock_poisoned": "内部のエラーで {{what}} を使えなくなりました。エディタを起動し直してください。",
+      "io": "{{path}} を読み書きできません ({{detail}})。",
+      "create_folder": "フォルダ {{path}} を作れません ({{detail}})。",
+      "internal": "内部のエラーが起きました ({{detail}})。",
+      "task_failed": "裏で動かした処理が終わりませんでした ({{detail}})。",
+      "invalid_percent_encoding": "パーセントエンコーディングを読めません ({{detail}})。",
+      "empty_path": "パスが空です。",
+      "not_saved": "プロジェクトはまだ保存されていません。",
+      "not_saved_use_save_as": "プロジェクトはまだ保存されていません。「名前を付けて保存」を使ってください。",
+      "external_change": "開いた後に、プロジェクトがエディタの外で変更されました。読み込み直すか、もう一度保存して上書きしてください。",
+      "not_a_module": "このプロジェクトはモジュールのプロジェクトではありません。",
+      "expected_module_bytes": ".ugoemod のファイルのデータが必要です。",
+      "expected_png_bytes": "PNG の画像のデータが必要です。",
+      "not_png_data": "データが PNG の画像ではありません。",
+      "relative_path": "パスは絶対パスにしてください ({{path}})。",
+      "not_module_file": "{{path}} は .ugoemod のファイルではありません。",
+      "not_png_file": "{{path}} は PNG のファイルではありません。",
+      "not_json_file": "{{path}} は JSON のファイルではありません。",
+      "too_many_sample_folders": "{{path}} にサンプルのフォルダが多すぎます。古いものを消してください。",
+      "missing_header": "ヘッダー {{header}} がありません。",
+      "invalid_header": "ヘッダー {{header}} を読めません ({{detail}})。"
+    },
+    "ai": {
+      "claude_model_missing": "Claude のモデルを選んでください。",
+      "invalid_base_url": "ベース URL は https:// か http:// で始めてください。",
+      "model_missing": "モデルを選んでください。",
+      "api_key_required": "Claude API には API キーが必要です。",
+      "plain_http_api_key": "API キーを http で外部のサーバーへ送ることはしません。https を使ってください。",
+      "empty_api_key": "API キーが空です。",
+      "mixed_destinations": "リクエストの送り先のサービスが揃っていません。",
+      "send_disabled": "このプロジェクトは、外部の AI サービスにデータを送らない設定です (設定を見てください)。",
+      "truncated": "応答が max_tokens の上限で途切れました。",
+      "credential_store": "資格情報の保存先を使えません ({{detail}})。",
+      "provider": "AI のプロバイダがエラーを返しました ({{detail}})。",
+      "invalid_proposal": "モデルが使えない提案を返しました ({{detail}})。",
+      "missing_api_key": "API キーが設定されていません ({{detail}})。",
+      "invalid_request": "リクエストを送れません ({{detail}})。",
+      "network": "ネットワークのエラーが起きました ({{detail}})。",
+      "invalid_response": "応答を読めません ({{detail}})。",
+      "api_error": "API がエラー {{status}} を返しました ({{kind}}: {{detail}})。",
+      "rate_limited": "レート制限に達しました。しばらく待ってからやり直してください。",
+      "refused": "モデルがリクエストを断りました。"
+    },
+    "mcp": {
+      "invalid_port": "ポートは 1 から 65535 までにするか、空にしてください。",
+      "no_binary": "エディタの隣に ugoe-mcp が見つかりません。cargo build --release -p ugoe-mcp でビルドしてください (インストーラには含まれています)。",
+      "unsupported_platform": "Claude Desktop の拡張機能には macOS・Windows・Linux が必要です。",
+      "not_mcpb_file": "ファイル名は .mcpb で終わるようにしてください。",
+      "bridge_start_failed": "エージェントの接続を始められません ({{detail}})。",
+      "bundle_write_failed": ".mcpb のファイルを書けません ({{detail}})。",
+      "open_failed": "{{path}} を開けません ({{detail}})。"
+    }
+  },
+  "errorArgs": {
+    "parameter": "パラメータ",
+    "part": "パーツ",
+    "deformer": "デフォーマ",
+    "mesh": "メッシュ",
+    "glue": "グルー",
+    "texture": "テクスチャ",
+    "motion": "モーション",
+    "expression": "表情",
+    "slot": "スロット",
+    "physics rig": "物理のリグ",
+    "physics collider": "物理の衝突体",
+    "curve": "カーブ",
+    "key": "キー",
+    "keyform grid": "キーフォームの格子",
+    "blend shape grid": "ブレンドシェイプの格子",
+    "normal map": "法線マップ",
+    "effect group": "効果のグループ",
+    "curve target": "カーブの対象",
+    "warp": "ワープ",
+    "rotation": "回転",
+    "warp or rotation": "ワープか回転",
+    "hit area": "当たり判定",
+    "standard": "標準",
+    "blend_shape": "ブレンドシェイプ",
+    "head": "頭",
+    "document": "ドキュメント",
+    "project": "プロジェクト",
+    "preview cache": "プレビューのキャッシュ",
+    "finite": "有限の数",
+    "finite and > 0": "0 より大きい有限の数"
+  }
+}

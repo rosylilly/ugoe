@@ -12,7 +12,6 @@ import {
   isBaseRig,
   isBaseTexture,
   isValidModuleName,
-  MODULE_CANNOT,
   moduleLabel,
   moduleProblemFixes,
   moduleTitle,
@@ -66,10 +65,8 @@ describe("labels and names", () => {
   it("describes the module", () => {
     expect(moduleLabel(status)).toBe("Module: Hair");
     const title = moduleTitle(status);
-    expect(title.split("\n")[0]).toBe('Module "Hat" for slot Hair of avatar.ugoeproj');
-    expect(title).toContain("Read-only base: /home/me/avatar.ugoeproj");
-    // できないことも示す
-    for (const line of MODULE_CANNOT) expect(title).toContain(line);
+    expect(title).toMatch(/^Module "Hat" for slot Hair of avatar\.ugoeproj\./);
+    expect(title).toContain("Read-only base: /home/me/avatar.ugoeproj.");
     expect(moduleTitle({ ...status, base: "C:\\x\\a.ugoe" })).toContain("of a.ugoe");
   });
   it("suggests and checks module names", () => {

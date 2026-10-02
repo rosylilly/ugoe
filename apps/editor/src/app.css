@@ -1,25 +1,15 @@
+/* 見た目の値は @ugoe/ui のトークン (docs/ui.md#デザイントークン)。ライト・ダークはトークンが OS の設定で切り替える。
+   古い変数は移行の途中の別名 (パネルの移行 T0664・T0665 の後、T0907 で消す)。 */
 :root {
-  color-scheme: light dark;
-  --bg: #f4f4f5;
-  --panel: #ffffff;
-  --border: #d4d4d8;
-  --text: #18181b;
-  --muted: #71717a;
-  --accent: #6d28d9;
-  --viewport-bg: #e4e4e7;
-  font-family: system-ui, sans-serif;
-  font-size: 13px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #18181b;
-    --panel: #232327;
-    --border: #3f3f46;
-    --text: #e4e4e7;
-    --muted: #a1a1aa;
-    --viewport-bg: #111113;
-  }
+  --bg: var(--ugoe-color-bg);
+  --panel: var(--ugoe-color-surface);
+  --border: var(--ugoe-color-border);
+  --text: var(--ugoe-color-text);
+  --muted: var(--ugoe-color-text-muted);
+  --accent: var(--ugoe-color-accent);
+  --viewport-bg: var(--ugoe-color-sunken);
+  font-family: var(--ugoe-font-sans);
+  font-size: var(--ugoe-font-size-md);
 }
 
 * {
@@ -77,11 +67,12 @@ aside {
   min-height: 0;
 }
 
+/* パネルの見出し (docs/ui.md#エディタの中の共通の形)。日本語で効かない大文字化と字間は使わず、色と大きさと太さで示す。 */
 h2 {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
+  margin: var(--ugoe-space-4) 0 var(--ugoe-space-2);
+  font-size: var(--ugoe-font-size-sm);
+  font-weight: var(--ugoe-font-weight-strong);
+  color: var(--ugoe-color-text-muted);
 }
 
 ul {
@@ -103,5 +94,52 @@ input[type="range"] {
 }
 
 .error {
-  color: #dc2626;
+  color: var(--ugoe-color-danger);
+}
+
+/* エディタの中の共通の形 (docs/ui.md#エディタの中の共通の形)。パネルの移行 (T0664・T0665) で使う。 */
+/* 行: 欄の名前と部品の 2 列。名前は折り返してよい。 */
+.ed-field {
+  display: grid;
+  grid-template-columns: minmax(5em, 2fr) 3fr;
+  align-items: center;
+  gap: var(--ugoe-space-2) var(--ugoe-space-3);
+  margin: var(--ugoe-space-2) 0;
+}
+
+.ed-field > :first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ボタンの並び。 */
+.ed-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ugoe-space-2);
+}
+
+/* 補足・空の状態。 */
+.ed-hint {
+  margin: 0;
+  color: var(--ugoe-color-text-muted);
+  font-size: var(--ugoe-font-size-sm);
+}
+
+/* ダイアログ (@ugoe/ui の Dialog) の中の文字の入力欄。@ugoe/ui に文字の欄の部品ができたら置き換える。 */
+.ugoe-dialog input[type="text"] {
+  box-sizing: border-box;
+  min-height: var(--ugoe-control-height);
+  padding: 0 var(--ugoe-space-2);
+  border: 1px solid var(--ugoe-color-control-border);
+  border-radius: var(--ugoe-radius-md);
+  background: var(--ugoe-color-surface);
+  color: var(--ugoe-color-text);
+  font: inherit;
+}
+
+.ugoe-dialog input[type="text"]:focus-visible {
+  outline: var(--ugoe-focus-ring);
+  outline-offset: 1px;
 }

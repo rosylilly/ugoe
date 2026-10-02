@@ -1,4 +1,6 @@
 // 空のプロジェクト (起動時・New の直後) の判定と、次の操作の案内 (docs/editor.md#プロジェクト)。
+import { t } from "./i18n";
+
 /**
  * パーツ・メッシュ・デフォーマ・テクスチャが 1 つもないモデルか。
  * PSD の取り込みがキャンバスを PSD の大きさにする条件 (ugoe_editor_core::import) と同じ。
@@ -15,8 +17,11 @@ export function isEmptyModel(
 }
 
 /** 空のプロジェクトでビューポートに出す案内。 */
-export const EMPTY_VIEWPORT_HINT =
-  "This project is empty. Use File > New from PSD… to start from a PSD file.";
+export function emptyViewportHint(): string {
+  return t("emptyState.viewport", { action: t("fileMenu.newFromPsd.label") });
+}
 
 /** 空のプロジェクトでツリーに出す案内。 */
-export const EMPTY_TREE_HINT = "No parts yet. Start with File > New from PSD…";
+export function emptyTreeHint(): string {
+  return t("emptyState.tree", { action: t("fileMenu.newFromPsd.label") });
+}

@@ -5100,6 +5100,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
+ "tauri-plugin-os",
  "thiserror 2.0.21",
  "ts-rs",
  "ugoe-ai",

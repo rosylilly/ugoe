@@ -11,7 +11,7 @@ import BaseLock from "../../BaseLock.svelte";
 import type { EditorDocument } from "../../document.svelte";
 import type { Command, Model } from "../../ipc";
 import { elementLabel } from "../../labels";
-import { BASE_EDIT_HINT, isBaseMesh, isBaseTexture } from "../../moduleProject";
+import { baseEditHint, isBaseMesh, isBaseTexture } from "../../moduleProject";
 import type { Selection } from "../../selection.svelte";
 import { isLit, lightingHint, litCandidates } from "./lighting";
 import type { LightingView } from "./lightingView.svelte";
@@ -110,7 +110,7 @@ const selectedCount = $derived(selection.items.filter((r) => r.kind === "mesh").
           <input
             type="checkbox"
             aria-label="Lit: {elementLabel(mesh.name, mesh.id)}"
-            title={base ? BASE_EDIT_HINT : undefined}
+            title={base ? baseEditHint() : undefined}
             disabled={base}
             checked={isLit(mesh)}
             onchange={(e) => setLit([mesh.id], (e.currentTarget as HTMLInputElement).checked)}
