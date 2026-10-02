@@ -1,11 +1,11 @@
 ---
 id: T0666
 title: エディタ: バックエンドのエラーと警告をコードと引数で返し、画面で訳す
-status: todo
+status: in-progress
 milestone: M8
 crates: [ugoe-editor-core, apps/editor, docs]
 depends_on: [T0900]
-assignee:
+assignee: claude-worker-T0666
 ---
 
 # T0666: エディタ: バックエンドのエラーと警告をコードと引数で返し、画面で訳す

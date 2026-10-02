@@ -1,11 +1,11 @@
 ---
 id: T0133
 title: ランタイム: 受け取ったパラメータの値を基準値として確実に書く口 (スタジオの受け手のため)
-status: todo
+status: in-progress
 milestone: M8
 crates: [ugoe-runtime, ugoe, ugoe-ffi, ugoe-wasm, bindings/web, docs]
 depends_on: [T0800]
-assignee:
+assignee: claude-worker-T0133
 ---
 
 # T0133: 受け取った値を基準値として書く口

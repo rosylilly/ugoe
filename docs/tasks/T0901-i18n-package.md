@@ -1,11 +1,11 @@
 ---
 id: T0901
 title: i18n: 翻訳の共有パッケージ @ugoe/i18n
-status: todo
+status: in-progress
 milestone: M8
 crates: [packages, scripts, justfile, docs]
 depends_on: [T0900]
-assignee:
+assignee: claude-worker-T0901
 ---
 
 # T0901: i18n: 翻訳の共有パッケージ @ugoe/i18n

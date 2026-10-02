@@ -1,11 +1,11 @@
 ---
 id: T0902
 title: UI: 共有部品 @ugoe/ui (デザイントークンと基本の部品・部品の見本の画面)
-status: todo
+status: in-progress
 milestone: M8
 crates: [packages, scripts, justfile, docs]
 depends_on: [T0900]
-assignee:
+assignee: claude-worker-T0902
 ---
 
 # T0902: UI: 共有部品 @ugoe/ui (デザイントークンと基本の部品・部品の見本の画面)

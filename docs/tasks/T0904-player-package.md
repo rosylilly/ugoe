@@ -1,11 +1,11 @@
 ---
 id: T0904
 title: 共有: ビューアのモデル再生の層を @ugoe/player に切り出す
-status: todo
+status: in-progress
 milestone: M8
 crates: [packages, apps/viewer, docs]
 depends_on: [T0900]
-assignee:
+assignee: claude-worker-T0904
 ---
 
 # T0904: 共有: ビューアのモデル再生の層を @ugoe/player に切り出す

@@ -31,6 +31,12 @@ const SCOPES = [
   // apps/
   "editor",
   "viewer",
+  "studio",
+  // packages/ (共有のフロントエンドのパッケージ)
+  "ui",
+  "i18n",
+  "player",
+  "face-tracking",
   // docs/
   "spec",
   "adr",
