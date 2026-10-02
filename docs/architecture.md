@@ -47,6 +47,7 @@
 | T3 自動化 | `ugoe-ai` | T2 以下 |
 | T4 アプリ | `ugoe-cli`, `ugoe-mcp`, `apps/editor` (`ugoe-editor`) | すべて (エディタはライブラリとしての `ugoe-mcp` にも依存する。ADR 0023) |
 | アプリ (ランタイムの見本) | `apps/viewer` (`ugoe-viewer`) | ランタイム層だけ。描画は webview の `ugoe-wasm` |
+| アプリ (配信) | `apps/studio` (`ugoe-studio`) | ランタイム層と `ugoe-headless` (仮想カメラの描画)。出力ウィンドウとブラウザソースの描画は `ugoe-wasm` ([studio.md](studio.md)) |
 
 層を分ける理由:
 
@@ -100,6 +101,7 @@
 | すべての配布物を 1 つのコアから作る | [0017](adr/0017-single-runtime-distribution.md) |
 | ライブラリは MIT、アプリ (エディタ・ビューア) は GPL-3.0-only。1.0 は AI 連携を除く全機能 | [0018](adr/0018-licensing-and-1.0-scope.md) |
 | ビューアもエディタと同じ GPL-3.0-only | [0019](adr/0019-viewer-license.md) |
+| 配信用のスタジオは、バックエンドの指揮役がパラメータと `dt` を配り、出力ごとに物理を回して描く | [0028](adr/0028-studio.md) |
 
 ## 座標系
 

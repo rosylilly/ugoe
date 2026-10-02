@@ -16,6 +16,7 @@
 | [spec/modules.md](spec/modules.md) | 着せ替えモジュール |
 | [spec/public-spec.md](spec/public-spec.md) | 英語の公開仕様 ([`spec/`](../spec/README.md)、CC BY 4.0) との対応表 |
 | [editor.md](editor.md) | エディタの設計 |
+| [studio.md](studio.md) | スタジオ (配信用のアプリ) の設計 |
 | [manual/](manual/README.md) | エディタの操作マニュアル (利用者向け) |
 | [ai-integration.md](ai-integration.md) | AI 連携の設計 |
 | [portability.md](portability.md) | ゲームエンジン・プラットフォームへの移植 |

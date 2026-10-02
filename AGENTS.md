@@ -26,6 +26,7 @@ ugoe は Live2D Cubism と **機能的に互換** な 2D リギング・アニ�
 | 物理 / モーション | [docs/spec/physics.md](docs/spec/physics.md) / [docs/spec/motion.md](docs/spec/motion.md) |
 | ファイル形式 | [docs/spec/file-formats.md](docs/spec/file-formats.md) |
 | エディタ | [docs/editor.md](docs/editor.md) |
+| スタジオ | [docs/studio.md](docs/studio.md) |
 | AI 連携 | [docs/ai-integration.md](docs/ai-integration.md) |
 | エンジン組み込み | [docs/portability.md](docs/portability.md) |
 | テスト | [docs/testing.md](docs/testing.md) |
@@ -55,6 +56,7 @@ crates/             Rust クレート (ランタイム層とツール層。依�
   ugoe-mcp            MCP サーバ (外部のエージェントが .ugoeproj を読み、編集を提案・適用する)
 apps/editor/        Tauri エディタ (src/ = Svelte フロントエンド, src-tauri/ = Rust バックエンド)
 apps/viewer/        Tauri ビューア (.ugoe を開いて表示しパラメータを動かす。構成はエディタと同じ)
+apps/studio/        Tauri スタジオ (配信用。出力ウィンドウ・仮想カメラ・ブラウザソース・外部 API。ADR 0028。M8 で作る)
 packages/           エディタとビューアで共有するフロントエンドの部品 (face-tracking など。GPL-3.0-only)
 bindings/           ランタイムを別の環境へ出すパッケージ (MIT。web = npm の @ugoe/runtime と <ugoe-avatar>、godot = Godot 4 の GDExtension (ワークスペースの外、ADR 0026)、unity = UPM パッケージ (C# から C ABI を呼ぶ))
 tests/conformance/  配布物の適合テスト (ugoe-conformance。C ABI・wasm の頂点と画像を参照と比べる。`just conformance`)
@@ -96,7 +98,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 
 ### コード
 
-- Rust edition 2024、toolchain は `rust-toolchain.toml` で固定。`unsafe` は禁止 (`ugoe-ffi` だけ例外)。
+- Rust edition 2024、toolchain は `rust-toolchain.toml` で固定。`unsafe` は禁止 (例外は `ugoe-ffi` と、[ADR 0028](docs/adr/0028-studio.md) で決めた仮想カメラの 1 クレートだけ)。
 - 依存クレートはルートの `Cargo.toml` の `[workspace.dependencies]` に追加し、各クレートでは `foo.workspace = true` と書く。1 行に 1 依存、アルファベット順に並べる (マージ衝突を減らすため)。
 - 新しい外部依存を入れるときは PR 本文に理由を書く。ランタイム層に重い依存を入れるなら ADR を書く。
 - ライブラリコードで `unwrap()` を使わない (テストでは可)。エラー型は `thiserror` で作り、`anyhow` はバイナリ (`ugoe-cli` 等) だけで使う。

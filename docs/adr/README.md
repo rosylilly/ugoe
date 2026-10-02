@@ -37,3 +37,4 @@
 | [0025](0025-web-runtime-package.md) | Web のランタイムのパッケージ (@ugoe/runtime) は MIT で bindings/web に置く | Accepted |
 | [0026](0026-godot-binding.md) | Godot のバインディング (godot-rust) をワークスペースの外に置く | Accepted |
 | [0027](0027-crates-io-publishing.md) | crates.io に公開するクレートの範囲 (`ugoe` とその依存) と公開の方法 | Accepted |
+| [0028](0028-studio.md) | 配信用のアプリ「スタジオ」の範囲・構成・描画の場所・外部 API の安全性 | Accepted |
