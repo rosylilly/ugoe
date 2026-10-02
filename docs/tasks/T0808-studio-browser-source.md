@@ -1,11 +1,11 @@
 ---
 id: T0808
 title: スタジオ: OBS のブラウザソース向けの URL をローカルで提供する
-status: todo
+status: in-progress
 milestone: M8
-crates: [apps/studio, bindings/web, docs]
+crates: [apps/studio, bindings/web, packages/player, ugoe-headless, docs]
 depends_on: [T0802, T0805, T0133]
-assignee:
+assignee: claude-worker-T0808
 ---
 
 # T0808: スタジオ: OBS のブラウザソース向けの URL
@@ -22,6 +22,7 @@ OBS の中で大きさや位置を変えやすい。
       シーンの切り替え・着せ替え・ライティングも追う
 - [ ] 操作ウィンドウに URL のコピーと、OBS への設定の手順 (大きさ・透過) を出す
 - [ ] ADR 0028 の 10. の一致の検査に、ブラウザソースのページの受け手を加える
+- [ ] 仮想カメラ (T0807) の画にも、シーンのライティングと背景の画像を当てる (`TODO(T0808)`)。出力ウィンドウ・ブラウザソース・仮想カメラの画を同じフレームで比べる
 - [ ] ヘッドレスの Chrome で、ページの画が出力ウィンドウと同じになることを確かめる (許容誤差付き)。実際の OBS での確認は利用者に残す
 - [ ] `just ci` が通る
 
