@@ -40,5 +40,31 @@
     "reset": "すべて戻す",
     "empty": "モデルを開くと、パラメータを動かせます。",
     "showInternal": "中継用のパラメータも表示"
+  },
+  "load": {
+    "heading": "フレームレートと負荷",
+    "tickRate": "刻みの速さ",
+    "rateValue": "{{value}} fps",
+    "tickRateHint": "出力のフレームレートです。出力はこれより速く新しい形を出せません。",
+    "empty": "モデルを開くと負荷を表示します。",
+    "tick": "1 刻みの時間",
+    "measured": "実際の刻みの速さ",
+    "measuring": "測っています…",
+    "measuredValue": "{{rate}} (最も長い間隔 {{max}})",
+    "outputWindow": "出力ウィンドウ",
+    "rendererValue_other": "{{fps}}・1 回 {{render}} (最大 {{max}})・捨てたフレーム {{count}}",
+    "stale": "描いていません (隠れているか最小化されています)",
+    "ms": "{{value}} ms",
+    "perSecond": "{{value}} 回/秒",
+    "summary": "負荷 {{tick}} / {{rate}}",
+    "warnings": {
+      "rateShortfall": "指揮役の刻みが {{measured}} で、{{target}} に届いていません。計算機が混んでいるかもしれません。",
+      "intervalSpike": "刻みの間隔が {{max}} 空きました ({{period}} のはず)。動きがかくつくことがあります。OS のタイマーが粗いか、計算機が混んでいます。",
+      "tickHeavy": "1 刻みに {{tick}} かかっています ({{period}} の中)。刻みの速さを下げてください。",
+      "renderHeavy": "{{name}}: 描画に {{render}} かかっています ({{period}} の中)。出力の大きさか刻みの速さを下げてください。",
+      "renderSlow": "{{name}}の描画が {{fps}} で、{{target}} に届いていません。",
+      "dropped_other": "{{name}}がフレームを {{count}} 個捨てました。追いつくために物理をリセットしました。",
+      "stale": "{{name}}が描いていません。隠れているか最小化されていると、配信ソフトが取り込めないことがあります。"
+    }
   }
 }

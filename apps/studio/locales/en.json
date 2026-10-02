@@ -40,5 +40,33 @@
     "reset": "Reset all",
     "empty": "Open a model to move its parameters.",
     "showInternal": "Show relay parameters"
+  },
+  "load": {
+    "heading": "Frame rate and load",
+    "tickRate": "Tick rate",
+    "rateValue": "{{value}} fps",
+    "tickRateHint": "The output frame rate. Outputs cannot show new poses faster than this.",
+    "empty": "Open a model to see the load.",
+    "tick": "Time per tick",
+    "measured": "Actual tick rate",
+    "measuring": "Measuring…",
+    "measuredValue": "{{rate}} (longest interval {{max}})",
+    "outputWindow": "Output window",
+    "rendererValue_one": "{{fps}}, {{render}} per frame (max {{max}}), {{count}} frame dropped",
+    "rendererValue_other": "{{fps}}, {{render}} per frame (max {{max}}), {{count}} frames dropped",
+    "stale": "Not drawing (hidden or minimized)",
+    "ms": "{{value}} ms",
+    "perSecond": "{{value}}/s",
+    "summary": "Load {{tick}} / {{rate}}",
+    "warnings": {
+      "rateShortfall": "The conductor ticks at {{measured}}, below {{target}}. The computer may be busy.",
+      "intervalSpike": "A tick was {{max}} apart (expected {{period}}). Motion may stutter; the OS timer may be coarse or the computer busy.",
+      "tickHeavy": "One tick takes {{tick}} of the {{period}} budget. Try a lower tick rate.",
+      "renderHeavy": "{{name}}: drawing takes {{render}} of the {{period}} budget. Try a smaller output size or a lower tick rate.",
+      "renderSlow": "{{name}} draws {{fps}}, below {{target}}.",
+      "dropped_one": "{{name}} dropped {{count}} frame. Physics was reset to catch up.",
+      "dropped_other": "{{name}} dropped {{count}} frames. Physics was reset to catch up.",
+      "stale": "{{name}} is not drawing. It may be hidden or minimized; streaming software may not capture it."
+    }
   }
 }

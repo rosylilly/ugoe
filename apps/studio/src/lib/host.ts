@@ -21,10 +21,48 @@ export interface OutputState {
   height: number;
 }
 
+/** 出力が報告する描画の負荷 (lib.rs の `RenderStats`。直近の約 1 秒)。 */
+export interface RenderStats {
+  /** 描いた回数 (回/秒)。 */
+  fps: number;
+  /** 1 回の描画 (届いたフレームの適用と描画) の CPU の時間の平均 (ミリ秒)。 */
+  renderMs: number;
+  /** 1 回の描画の CPU の時間の最大 (ミリ秒)。 */
+  renderMaxMs: number;
+  /** 溢れて捨てたフレームの数 (受け手を作ってからの合計)。 */
+  dropped: number;
+}
+
+/** 出力ごとの描画の負荷 (lib.rs の `RendererLoad`)。 */
+export interface RendererLoad extends RenderStats {
+  /** 出力のラベル (`output` は出力ウィンドウ)。 */
+  label: string;
+  /** 報告が途絶えている (隠れていて描いていない・閉じた)。 */
+  stale: boolean;
+}
+
+/** 間引いた今の値と負荷 (lib.rs の `Monitor::Status`)。 */
+export interface StatusMessage {
+  kind: "status";
+  seq: number;
+  values: number[];
+  /** 直近の 1 刻みにかかった時間 (ミリ秒)。 */
+  tickMs: number;
+  /** フレームを受けている出力の数。 */
+  outputs: number;
+  /** 設定した刻みの速さ (回/秒)。 */
+  tickRate: number;
+  /** 実際の刻みの速さ (回/秒。測り終えるまでは `null`)。 */
+  measuredRate: number | null;
+  /** 直近 1 秒の刻みの間隔の最大 (ミリ秒)。 */
+  maxIntervalMs: number | null;
+  renderers: RendererLoad[];
+}
+
 /** 操作ウィンドウへの通知 (lib.rs の `Monitor`)。 */
 export type MonitorMessage =
   | { kind: "scene"; scene: SceneMessage; parameters: ParameterInfo[] }
-  | { kind: "status"; seq: number; values: number[]; tickMs: number; outputs: number }
+  | StatusMessage
   | ({ kind: "output" } & OutputState);
 
 /** 出力ウィンドウへの配信: シーンの通知 (JSON) かフレームのバイト列 (@ugoe/player の `decodeFrame`)。 */
@@ -42,6 +80,10 @@ export interface StudioHost {
   setOutputVisible(visible: boolean): Promise<OutputState>;
   setOutputOnTop(onTop: boolean): Promise<OutputState>;
   setOutputSize(width: number, height: number): Promise<OutputState>;
+  /** 刻みの速さ (30 / 60 / 120 回/秒)。 */
+  tickRate(): Promise<number>;
+  /** 刻みの速さを選ぶ。選べない値なら例外。 */
+  setTickRate(rate: number): Promise<number>;
   /** OS の言語 (BCP 47)。取れなければ `null`。 */
   systemLocale(): Promise<string | null>;
   // --- 出力ウィンドウ ---
@@ -50,6 +92,8 @@ export interface StudioHost {
   sceneModel(revision: number): Promise<Uint8Array>;
   /** 枠の無い出力ウィンドウを、押しているポインタで動かし始める。 */
   startDragging(): Promise<void>;
+  /** 描画の負荷を報告する (操作ウィンドウに出す)。 */
+  reportRenderStats(stats: RenderStats): Promise<void>;
 }
 
 declare global {
@@ -84,6 +128,8 @@ async function tauriHost(): Promise<StudioHost> {
     setOutputVisible: (visible) => invoke("set_output_visible", { visible }),
     setOutputOnTop: (onTop) => invoke("set_output_on_top", { onTop }),
     setOutputSize: (width, height) => invoke("set_output_size", { width, height }),
+    tickRate: () => invoke("tick_rate"),
+    setTickRate: (rate) => invoke("set_tick_rate", { rate }),
     async systemLocale() {
       const { locale } = await import("@tauri-apps/plugin-os");
       return locale();
@@ -97,6 +143,7 @@ async function tauriHost(): Promise<StudioHost> {
       const { getCurrentWindow } = await import("@tauri-apps/api/window");
       await getCurrentWindow().startDragging();
     },
+    reportRenderStats: (stats) => invoke("report_render_stats", { stats }),
   };
 }
 

@@ -3,34 +3,35 @@
 //! - 指揮役 ([`conductor::Conductor`]) を刻みのスレッドで回し、刻みごとのフレームを出力ウィンドウへ Tauri の `Channel` で配る。
 //! - 操作ウィンドウへは、シーン (パラメータの定義) と、間引いた値と負荷 (毎秒 10 回) を配る。
 //! - 出力ウィンドウ (枠なし・背景の透過) の表示・最前面・大きさを操作する。
+//! - 刻みの速さ (30 / 60 / 120) を変え、実際の速さと、出力ウィンドウから届く描画の負荷を操作ウィンドウに配る (T0804)。
 //!
 //! 描画はしない (出力ウィンドウの WebView の wasm が受け手として描く)。
 
 pub mod conductor;
 pub mod follower;
+pub mod pacing;
 pub mod stream;
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::ipc::{Channel, InvokeResponseBody, Response};
 use tauri::{AppHandle, Manager, PhysicalSize, WebviewWindow, WindowEvent};
 
 use crate::conductor::Conductor;
+use crate::pacing::{Measured, Pacer, RateMeter, TickRate};
 use crate::stream::{Frame, Scene};
 
 /// 操作ウィンドウのラベル (tauri.conf.json)。
 const CONTROL: &str = "main";
 /// 出力ウィンドウのラベル (tauri.conf.json)。
 const OUTPUT: &str = "output";
-/// 刻みの速さ (回/秒)。設定で 30 / 60 / 120 から選べるようにするのは T0804。
-const TICK_RATE: u32 = 60;
-/// 操作ウィンドウへ値と負荷を送る間隔 (刻みの数。毎秒 10 回)。
-const STATUS_EVERY: u32 = TICK_RATE / 10;
+/// 出力ウィンドウからの描画の負荷の報告が、これより古ければ「止まっている」とみなす (隠れて描いていないなど)。
+const RENDER_STATS_STALE: Duration = Duration::from_secs(2);
 /// 読み込むファイルの大きさの上限 (誤って巨大なファイルを選んだときにメモリを使い果たさないため)。
 const MAX_FILE_BYTES: u64 = 512 * 1024 * 1024;
 
@@ -71,6 +72,14 @@ enum Monitor<'a> {
         tick_ms: f32,
         /// フレームを受けている出力の数。
         outputs: usize,
+        /// 設定した刻みの速さ (回/秒)。
+        tick_rate: u32,
+        /// 実際の刻みの速さ (回/秒。測り終えるまでは無し)。
+        measured_rate: Option<f32>,
+        /// 直近 1 秒の刻みの間隔の最大 (ミリ秒)。
+        max_interval_ms: Option<f32>,
+        /// 出力ごとの描画の負荷。
+        renderers: Vec<RendererLoad>,
     },
     /// 出力ウィンドウの状態が変わった。
     #[serde(rename = "output")]
@@ -86,6 +95,40 @@ struct OutputState {
     /// 中身の大きさ (物理ピクセル。配信ソフトが取り込む大きさ)。
     width: u32,
     height: u32,
+}
+
+/// 出力ウィンドウが報告する描画の負荷 (直近の約 1 秒)。
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RenderStats {
+    /// 描いた回数 (回/秒)。
+    fps: f32,
+    /// 1 回の描画 (届いたフレームの適用と描画) の CPU の時間の平均 (ミリ秒)。
+    render_ms: f32,
+    /// 1 回の描画の CPU の時間の最大 (ミリ秒)。
+    render_max_ms: f32,
+    /// 溢れて捨てたフレームの数 (受け手を作ってからの合計)。
+    dropped: u64,
+}
+
+impl RenderStats {
+    fn is_valid(&self) -> bool {
+        [self.fps, self.render_ms, self.render_max_ms]
+            .iter()
+            .all(|v| v.is_finite() && *v >= 0.0)
+    }
+}
+
+/// 操作ウィンドウに出す、出力ごとの描画の負荷。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RendererLoad {
+    /// 出力のラベル (`output` は出力ウィンドウ)。
+    label: String,
+    #[serde(flatten)]
+    stats: RenderStats,
+    /// 報告が途絶えている (隠れていて描いていない・閉じた)。
+    stale: bool,
 }
 
 /// 今のシーンのモデル (受け手が `scene_model` で取る)。
@@ -131,6 +174,12 @@ struct Studio {
     monitors: Subscribers,
     /// 直近の 1 刻みにかかった時間 (ナノ秒)。
     tick_nanos: AtomicU64,
+    /// 刻みの速さ (回/秒。0 は既定)。刻みのスレッドが刻みごとに読む。
+    tick_rate: AtomicU32,
+    /// 実際の刻みの速さと揺れ (刻みのスレッドが書く)。
+    measured: Mutex<Option<Measured>>,
+    /// 出力ごとの描画の負荷と、報告を受けた時刻。
+    renders: Mutex<HashMap<String, (RenderStats, Instant)>>,
 }
 
 impl Studio {
@@ -161,6 +210,24 @@ impl Studio {
         Self::json(&Monitor::Scene { scene, parameters })
     }
 
+    fn tick_rate(&self) -> TickRate {
+        TickRate::from_hz(self.tick_rate.load(Ordering::Relaxed)).unwrap_or(TickRate::DEFAULT)
+    }
+
+    /// 出力ごとの描画の負荷。報告の古いものは `stale` にする。
+    fn renderer_loads(&self, now: Instant) -> Vec<RendererLoad> {
+        let mut loads: Vec<_> = lock(&self.renders)
+            .iter()
+            .map(|(label, (stats, at))| RendererLoad {
+                label: label.clone(),
+                stats: *stats,
+                stale: now.saturating_duration_since(*at) > RENDER_STATS_STALE,
+            })
+            .collect();
+        loads.sort_by(|a, b| a.label.cmp(&b.label));
+        loads
+    }
+
     /// 1 刻み進めてフレームを配る。`status` なら操作ウィンドウにも値を送る。
     fn tick(&self, dt: f32, status: bool) {
         let started = Instant::now();
@@ -179,11 +246,16 @@ impl Studio {
 
     fn send_status(&self, frame: &Frame) {
         let outputs = self.outputs.len();
+        let measured = *lock(&self.measured);
         let message = Monitor::Status {
             seq: frame.seq,
             values: &frame.values,
             tick_ms: self.tick_nanos.load(Ordering::Relaxed) as f32 / 1e6,
             outputs,
+            tick_rate: self.tick_rate().hz(),
+            measured_rate: measured.map(|m| m.rate),
+            max_interval_ms: measured.map(|m| m.max_interval_ms),
+            renderers: self.renderer_loads(Instant::now()),
         };
         if let Some(body) = Self::json(&message) {
             self.monitors.send_all(&body);
@@ -197,27 +269,38 @@ impl Studio {
     }
 }
 
-/// 刻みのスレッド。`TICK_RATE` 回/秒で `dt` を測って指揮役を進める (WebView の抑制を受けない)。
-/// 遅れたときは取り戻そうとせず、次の刻みを今から数え直す (`dt` は実測なので時間は失わない)。
+/// 刻みのスレッド。設定した速さで `dt` を測って指揮役を進める (WebView の抑制を受けない)。
+/// 遅れたときは取り戻そうとせず、次の刻みを今から数え直す (`dt` は実測なので時間は失わない。`pacing.rs`)。
 fn run_ticks(studio: Arc<Studio>) {
-    let period = Duration::from_secs_f64(1.0 / f64::from(TICK_RATE));
+    let mut rate = studio.tick_rate();
     let mut last = Instant::now();
-    let mut next = last + period;
+    let mut pacer = Pacer::new(rate, last);
+    let mut meter = RateMeter::default();
     let mut count = 0u32;
     loop {
         let now = Instant::now();
-        if next > now {
-            std::thread::sleep(next - now);
+        let deadline = pacer.deadline();
+        if deadline > now {
+            std::thread::sleep(deadline - now);
         }
         let now = Instant::now();
-        next += period;
-        if next < now {
-            next = now + period;
+        pacer.tick(now);
+        meter.record(now);
+        if meter.measured() != *lock(&studio.measured) {
+            *lock(&studio.measured) = meter.measured();
         }
         let dt = now.duration_since(last).as_secs_f32();
         last = now;
-        count = (count + 1) % STATUS_EVERY;
+        count = (count + 1) % rate.status_every();
         studio.tick(dt, count == 0);
+        let wanted = studio.tick_rate();
+        if wanted != rate {
+            rate = wanted;
+            pacer.set_rate(rate, Instant::now());
+            meter.reset();
+            *lock(&studio.measured) = None;
+            count = 0;
+        }
     }
 }
 
@@ -325,6 +408,34 @@ fn reset_parameters(studio: tauri::State<'_, Arc<Studio>>) {
     lock(&studio.conductor).reset_parameters();
 }
 
+/// 刻みの速さ (回/秒)。
+#[tauri::command]
+fn tick_rate(studio: tauri::State<'_, Arc<Studio>>) -> u32 {
+    studio.tick_rate().hz()
+}
+
+/// 刻みの速さを 30 / 60 / 120 から選ぶ (次の刻みから)。
+#[tauri::command]
+fn set_tick_rate(studio: tauri::State<'_, Arc<Studio>>, rate: u32) -> Result<u32, String> {
+    let rate = TickRate::from_hz(rate).ok_or_else(|| format!("unsupported tick rate: {rate}"))?;
+    studio.tick_rate.store(rate.hz(), Ordering::Relaxed);
+    Ok(rate.hz())
+}
+
+/// 出力が描画の負荷を報告する (操作ウィンドウに出す。出力ウィンドウには何も重ねない)。
+#[tauri::command]
+fn report_render_stats(
+    studio: tauri::State<'_, Arc<Studio>>,
+    webview: tauri::Webview,
+    stats: RenderStats,
+) -> Result<(), String> {
+    if !stats.is_valid() {
+        return Err("invalid render stats".to_owned());
+    }
+    lock(&studio.renders).insert(webview.label().to_owned(), (stats, Instant::now()));
+    Ok(())
+}
+
 fn output_window(app: &AppHandle) -> Result<WebviewWindow, String> {
     app.get_webview_window(OUTPUT)
         .ok_or_else(|| "the output window is missing".to_owned())
@@ -421,6 +532,9 @@ pub fn run() {
             set_output_visible,
             set_output_on_top,
             set_output_size,
+            tick_rate,
+            set_tick_rate,
+            report_render_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the ugoe studio");
@@ -456,10 +570,86 @@ mod tests {
             values: &[0.5],
             tick_ms: 0.25,
             outputs: 1,
+            tick_rate: 60,
+            measured_rate: Some(59.5),
+            max_interval_ms: None,
+            renderers: vec![RendererLoad {
+                label: "output".into(),
+                stats: RenderStats {
+                    fps: 60.0,
+                    render_ms: 1.5,
+                    render_max_ms: 2.0,
+                    dropped: 0,
+                },
+                stale: false,
+            }],
         };
         assert_eq!(
             serde_json::to_string(&status).unwrap(),
-            r#"{"kind":"status","seq":3,"values":[0.5],"tickMs":0.25,"outputs":1}"#
+            concat!(
+                r#"{"kind":"status","seq":3,"values":[0.5],"tickMs":0.25,"outputs":1,"tickRate":60,"#,
+                r#""measuredRate":59.5,"maxIntervalMs":null,"renderers":[{"label":"output","fps":60.0,"#,
+                r#""renderMs":1.5,"renderMaxMs":2.0,"dropped":0,"stale":false}]}"#
+            )
         );
+    }
+
+    /// 隠れても最小化されても止まらないように、両方のウィンドウでバックグラウンドの抑制を切る (T0804)。
+    /// WebView2 は同じデータの場所を使う WebView の引数が食い違うと作れないので、両方を同じにする。
+    #[test]
+    fn both_windows_disable_background_throttling() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let windows = config["app"]["windows"].as_array().unwrap();
+        assert_eq!(windows.len(), 2);
+        let args = windows[0]["additionalBrowserArgs"].as_str().unwrap();
+        for window in windows {
+            assert_eq!(window["backgroundThrottling"], "disabled", "{window}");
+            assert_eq!(window["additionalBrowserArgs"], args, "{window}");
+        }
+        for flag in [
+            // wry の既定の引数 (上書きすると消えるので書き写す)
+            "msWebOOUI,msPdfOOUI,msSmartScreenProtection",
+            "CalculateNativeWinOcclusion",
+            "IntensiveWakeUpThrottling",
+            "--disable-background-timer-throttling",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-renderer-backgrounding",
+        ] {
+            assert!(args.contains(flag), "{flag}");
+        }
+    }
+
+    #[test]
+    fn tick_rate_defaults_to_60_and_accepts_the_presets_only() {
+        let studio = Studio::default();
+        assert_eq!(studio.tick_rate(), TickRate::Fps60);
+        studio.tick_rate.store(120, Ordering::Relaxed);
+        assert_eq!(studio.tick_rate(), TickRate::Fps120);
+        studio.tick_rate.store(75, Ordering::Relaxed);
+        assert_eq!(studio.tick_rate(), TickRate::DEFAULT);
+    }
+
+    #[test]
+    fn stale_render_stats_are_flagged() {
+        let studio = Studio::default();
+        let stats = RenderStats {
+            fps: 60.0,
+            render_ms: 1.0,
+            render_max_ms: 1.0,
+            dropped: 0,
+        };
+        assert!(stats.is_valid());
+        assert!(
+            !RenderStats {
+                render_ms: f32::NAN,
+                ..stats
+            }
+            .is_valid()
+        );
+        let at = Instant::now();
+        lock(&studio.renders).insert("output".into(), (stats, at));
+        assert!(!studio.renderer_loads(at + Duration::from_secs(1))[0].stale);
+        assert!(studio.renderer_loads(at + Duration::from_secs(3))[0].stale);
     }
 }

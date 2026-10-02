@@ -149,3 +149,13 @@ export class FrameQueue {
     return out;
   }
 }
+
+/** 受け手のモードで 1 回描いたときの負荷 (`Player.startFollowing` の引数に渡す。スタジオの負荷の表示、docs/studio.md#負荷の表示)。 */
+export interface FollowRenderStats {
+  /** 描いた時刻 (`requestAnimationFrame` の時刻。ミリ秒)。 */
+  at: number;
+  /** 前に描いてからのフレームの適用と、この描画にかかった CPU の時間 (ミリ秒)。 */
+  renderMs: number;
+  /** 溢れて捨てたフレームの数 (受け手を作ってからの合計)。 */
+  dropped: number;
+}

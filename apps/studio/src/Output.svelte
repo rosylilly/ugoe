@@ -2,11 +2,13 @@
   出力ウィンドウ (docs/studio.md#出力ウィンドウ)。モデルだけを、背景を透過して描く。UI の要素を一切重ねない。
   @ugoe/player の受け手のモードで、指揮役のフレームを順に適用して物理を回す (ADR 0028 の 3.)。
   枠が無いので、Alt を押しながらドラッグするとウィンドウを動かせる。
+  描画の負荷は約 1 秒ごとにバックエンドへ送り、操作ウィンドウに出す (ここには何も重ねない。docs/studio.md#負荷の表示)。
 -->
 <script lang="ts">
 import { decodeFrame, Player, type SceneMessage } from "@ugoe/player";
 import { onMount } from "svelte";
 import { studioHost } from "./lib/host";
+import { RenderStatsWindow } from "./lib/renderStats";
 import { loadWasm } from "./lib/wasm/load";
 
 let container: HTMLDivElement;
@@ -16,7 +18,11 @@ const player = new Player({
   // 着せ替えの組を戻す経路は使わない (モデルは指揮役のシーンから取る)。
   readFile: () => Promise.reject(new Error("the output window reads models from the scene only")),
 });
-player.startFollowing();
+const renderStats = new RenderStatsWindow();
+player.startFollowing(({ at, renderMs, dropped }) => {
+  const stats = renderStats.record(at, renderMs, dropped);
+  if (stats !== null) void studioHost().then((host) => host.reportRenderStats(stats));
+});
 // 開発中やヘッドレスのブラウザで状態を見るため。
 window.__UGOE_STUDIO_OUTPUT__ = player;
 

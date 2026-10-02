@@ -1,6 +1,6 @@
 <!--
   操作ウィンドウ (docs/studio.md#操作ウィンドウ)。モデルは描かない (描画は出力ウィンドウに任せる)。
-  様子はパラメータの値・刻みの番号・負荷の数値で示す。シーン (T0802)・入力 (T0803)・出力の詳細 (T0804) は後のタスク。
+  様子はパラメータの値・刻みの番号・負荷の数値で示す (負荷と刻みの速さは LoadPanel.svelte)。シーン (T0802)・入力 (T0803) は後のタスク。
 -->
 <script lang="ts">
 import {
@@ -13,17 +13,27 @@ import {
 import type { SceneMessage } from "@ugoe/player";
 import { Button, Section, Select, Slider, Toggle, Toolbar } from "@ugoe/ui";
 import { onMount } from "svelte";
-import type { MonitorMessage, OutputState, ParameterInfo, StudioHost } from "./lib/host";
+import LoadPanel from "./LoadPanel.svelte";
+import type {
+  MonitorMessage,
+  OutputState,
+  ParameterInfo,
+  StatusMessage,
+  StudioHost,
+} from "./lib/host";
 import { studioHost } from "./lib/host";
 import { t } from "./lib/i18n";
 import {
   loadOutputSize,
+  loadTickRate,
   OUTPUT_SIZE_PRESETS,
   type OutputSizePreset,
   presetOf,
   presetSize,
   saveLocalePreference,
   saveOutputSize,
+  saveTickRate,
+  type TickRate,
 } from "./lib/settings";
 
 /** スライダーを動かした後、指揮役からの値で表示を上書きしない時間 (ミリ秒)。 */
@@ -38,6 +48,9 @@ let tickMs = $state<number | null>(null);
 let receivers = $state(0);
 let output = $state<OutputState | null>(null);
 let outputSize = $state<OutputSizePreset>(loadOutputSize());
+let tickRate = $state<TickRate>(loadTickRate());
+/** 最新の値と負荷 (負荷の表示に使う)。 */
+let status = $state<StatusMessage | null>(null);
 let localePreference = $state<LocalePreference>(getLocalePreference());
 let showInternal = $state(false);
 let error = $state<string | null>(null);
@@ -74,6 +87,7 @@ function onMonitor(message: MonitorMessage) {
       edited.clear();
       break;
     case "status": {
+      status = message;
       seq = message.seq;
       tickMs = message.tickMs;
       receivers = message.outputs;
@@ -135,6 +149,12 @@ async function applyOutputSize(preset: OutputSizePreset) {
   if (size !== null) output = (await run((h) => h.setOutputSize(size[0], size[1]))) ?? output;
 }
 
+async function changeTickRate(rate: TickRate) {
+  tickRate = rate;
+  saveTickRate(rate);
+  await run((h) => h.setTickRate(rate));
+}
+
 function changeLocale(value: LocalePreference) {
   localePreference = value;
   setLocale(value);
@@ -162,6 +182,7 @@ onMount(() => {
     }
     await run((h) => h.subscribeStatus(onMonitor));
     output = (await run((h) => h.outputState())) ?? null;
+    await run((h) => h.setTickRate(tickRate));
     // 覚えた大きさにする (自由なら今の大きさのまま)。
     const size = presetSize(outputSize);
     if (
@@ -188,6 +209,14 @@ onMount(() => {
       </Button>
     </Toolbar>
     <div class="studio__spacer"></div>
+    {#if status !== null}
+      <span class="studio__load">
+        {t("load.summary", {
+          tick: t("load.ms", { value: formatNumber(status.tickMs, { maximumFractionDigits: 2 }) }),
+          rate: t("load.rateValue", { value: status.tickRate }),
+        })}
+      </span>
+    {/if}
     <div class="studio__language">
       <Select
         label={t("language.label")}
@@ -259,6 +288,10 @@ onMount(() => {
         </div>
       </Section>
 
+      <Section title={t("load.heading")}>
+        <LoadPanel {tickRate} {status} disabled={host === null} onTickRate={changeTickRate} />
+      </Section>
+
       <Section title={t("parameters.heading")}>
         {#snippet actions()}
           <Button small disabled={scene === null} onclick={resetParameters}>{t("parameters.reset")}</Button>
@@ -320,6 +353,12 @@ onMount(() => {
 
   .studio__spacer {
     flex: 1;
+  }
+
+  .studio__load {
+    color: var(--ugoe-color-text-muted);
+    font-size: var(--ugoe-font-size-sm);
+    font-variant-numeric: tabular-nums;
   }
 
   .studio__language {

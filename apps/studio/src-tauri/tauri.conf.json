@@ -17,7 +17,9 @@
         "title": "ugoe studio",
         "url": "index.html",
         "width": 1280,
-        "height": 800
+        "height": 800,
+        "backgroundThrottling": "disabled",
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion,IntensiveWakeUpThrottling --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding"
       },
       {
         "label": "output",
@@ -29,7 +31,9 @@
         "transparent": true,
         "shadow": false,
         "alwaysOnTop": false,
-        "visible": false
+        "visible": false,
+        "backgroundThrottling": "disabled",
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion,IntensiveWakeUpThrottling --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding"
       }
     ],
     "security": {

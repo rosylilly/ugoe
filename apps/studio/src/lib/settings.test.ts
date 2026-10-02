@@ -1,14 +1,18 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   DEFAULT_OUTPUT_SIZE,
+  DEFAULT_TICK_RATE,
   LOCALE_STORAGE_KEY,
   loadLocalePreference,
   loadOutputSize,
+  loadTickRate,
   OUTPUT_SIZE_STORAGE_KEY,
   presetOf,
   presetSize,
   saveLocalePreference,
   saveOutputSize,
+  saveTickRate,
+  TICK_RATE_STORAGE_KEY,
 } from "./settings";
 
 class MemoryStorage {
@@ -52,5 +56,15 @@ describe("locale preference", () => {
     expect(loadLocalePreference()).toBe("ja");
     localStorage.setItem(LOCALE_STORAGE_KEY, "xx");
     expect(loadLocalePreference()).toBe("system");
+  });
+});
+
+describe("tick rate", () => {
+  it("defaults to 60 and remembers 30 / 60 / 120 only", () => {
+    expect(loadTickRate()).toBe(DEFAULT_TICK_RATE);
+    saveTickRate(120);
+    expect(loadTickRate()).toBe(120);
+    localStorage.setItem(TICK_RATE_STORAGE_KEY, "144");
+    expect(loadTickRate()).toBe(DEFAULT_TICK_RATE);
   });
 });

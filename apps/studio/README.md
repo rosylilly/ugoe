@@ -10,14 +10,17 @@ T0801 で骨組み (2 つのウィンドウ・指揮役と受け手) を作っ�
 ```
 index.html / src/control.ts   操作ウィンドウの入口 (@ugoe/ui のトークン・言語の設定)
 src/Control.svelte            操作ウィンドウ: モデルを開く・出力ウィンドウの表示/最前面/大きさ・いまの状態・パラメータ・言語
+src/LoadPanel.svelte          操作ウィンドウの「フレームレートと負荷」: 刻みの速さ (30 / 60 / 120)・1 刻みの時間・出力ごとの描画の負荷
 output.html / src/output.ts   出力ウィンドウの入口 (背景は透過。@ugoe/ui と @ugoe/i18n は読まない)
 src/Output.svelte             出力ウィンドウ: @ugoe/player の受け手のモードでモデルだけを描く。Alt + ドラッグで動かす
 src/lib/host.ts               バックエンドとの口 (StudioHost)。Tauri の外では window.__UGOE_STUDIO_HOST__ を使う
-src/lib/settings.ts           覚える設定 (言語・出力の大きさのプリセット。localStorage)
+src/lib/settings.ts           覚える設定 (言語・出力の大きさのプリセット・刻みの速さ。localStorage)
+src/lib/load.ts               負荷の注意の判断 (刻みが遅れた・揺れた・描画が重い・フレームを捨てた・描いていない)
 src/lib/i18n.ts               文言 (@ugoe/i18n の名前空間 `studio`。カタログは locales/)
 src/lib/wasm/                 ugoe-wasm の読み込み。generated/ は `pnpm wasm` の出力 (gitignore 済み)
 src-tauri/                    バックエンド (Rust クレート `ugoe-studio`)
   src/conductor.rs              指揮役: 物理を切ったネイティブの Puppet。刻みごとにフレームを作る
+  src/pacing.rs                 刻みの速さ (30 / 60 / 120)・次の刻みの時刻・実際の速さと揺れの測定
   src/stream.rs                 配信の形 (フレームのバイト列・シーンの JSON)
   src/follower.rs               ネイティブの受け手 (一致の検査で使う。仮想カメラ (T0807) も使う)
   src/lib.rs                    刻みのスレッド・Tauri のコマンド・出力ウィンドウの操作
@@ -26,9 +29,12 @@ src-tauri/                    バックエンド (Rust クレート `ugoe-studio
 
 ## 仕組み
 
-- **指揮役 (バックエンド):** 刻みのスレッドが 60 回/秒で `dt` を測り (0.1 秒で頭打ち)、物理を切った `Puppet` を `update(dt)` して、
+- **指揮役 (バックエンド):** 刻みのスレッドが設定の速さ (30 / 60 / 120 回/秒。既定 60) で `dt` を測り (0.1 秒で頭打ち)、物理を切った `Puppet` を `update(dt)` して、
   `{seq, revision, dt, values, lip_sync}` のフレーム (`values` は物理の段に入る直前の値。T0134) を出力ウィンドウへ Tauri の `Channel` で配る。WebView の外で回すので、ウィンドウの抑制を受けない。
-  操作ウィンドウへは、シーン (パラメータの定義) と、毎秒 10 回に間引いた値・1 刻みの時間・受け手の数を別の `Channel` で配る。
+  操作ウィンドウへは、シーン (パラメータの定義) と、毎秒 10 回に間引いた値・1 刻みの時間・実際の刻みの速さ・受け手の数と描画の負荷を別の `Channel` で配る。
+- **隠れても止まらない:** 両方のウィンドウで WebView のバックグラウンドの抑制を切る (`tauri.conf.json` の `additionalBrowserArgs` と
+  `backgroundThrottling`)。出力ウィンドウは届いたフレームを届いたときに適用し、描画だけを `requestAnimationFrame` で行う。
+  OS ごとの効き方と、OBS での取り込みの手順は [docs/studio.md](../../docs/studio.md#隠れても止まらない)。
 - **受け手 (出力ウィンドウ):** `@ugoe/player` の受け手のモード (`Player.startFollowing`)。シーンの通知を受けたら `scene_model(revision)` で
   モデルのバイト列を取って読み、そのシーンのフレームを順にすべて `follow` で適用して (物理・リップシンク・ポーズだけが動く)、最後に 1 回描く。
 - **操作ウィンドウはモデルを描かない** (GPU の負荷を出力の分だけにする)。様子は値と数値で示す。
@@ -46,8 +52,10 @@ src-tauri/                    バックエンド (Rust クレート `ugoe-studio
 | `subscribe_status(channel)` | 操作 | シーン・値・負荷・出力ウィンドウの状態を受け取る |
 | `set_parameter(id, value)` / `reset_parameters()` | 操作 | 指揮役のパラメータを書き換える |
 | `output_state()` / `set_output_visible(visible)` / `set_output_on_top(onTop)` / `set_output_size(width, height)` | 操作 | 出力ウィンドウ |
+| `tick_rate()` / `set_tick_rate(rate)` | 操作 | 刻みの速さ (30 / 60 / 120。ほかの値はエラー) |
 | `subscribe_frames(channel)` | 出力 | シーンの通知 (JSON) とフレーム (バイト列) を受け取る。開き直したページは前の Channel を置き換える |
 | `scene_model(revision)` | 出力 | 今のシーンのモデルのバイト列 (今のシーンでなければエラー) |
+| `report_render_stats(stats)` | 出力 | 描画の負荷 (回/秒・1 回の時間の平均と最大・捨てたフレーム) を約 1 秒ごとに送る。操作ウィンドウに出す |
 
 - 出力ウィンドウは閉じる操作で隠すだけにする (受け手を作り直さない)。操作ウィンドウを閉じるとアプリを終える。
 - 権限 (`src-tauri/capabilities/`): 操作ウィンドウはファイルを開くダイアログと OS の言語、出力ウィンドウはウィンドウのドラッグだけ。

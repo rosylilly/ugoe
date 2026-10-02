@@ -66,9 +66,12 @@ player.followScene(scene.revision);
 player.pushFrame(decodeFrame(buffer));
 ```
 
-- `#tick` は、受け手のモードでは時計の `dt` の代わりに、届いたフレームを `FrameQueue` (`src/follower.ts`) から順にすべて取り出して
-  `follow` で適用し (物理 → リップシンク → ポーズ。T0134)、最後に 1 回だけ描く。ドライバ・トラッキング・モーション・待機モーションは使わない (値は指揮役が決める)。
-  `values` (スライダーの表示) も同期しない。
+- 受け手のモードでは時計の `dt` を使わず、届いたフレームを `FrameQueue` (`src/follower.ts`) から順にすべて取り出して `follow` で適用する
+  (物理 → リップシンク → ポーズ。T0134)。適用は `pushFrame`・`followScene` の **その場で** 行い、`#tick` (`requestAnimationFrame`) は描くだけ
+  (残っていれば適用してから描く)。ページが隠れて `requestAnimationFrame` が止まっても物理は止まらない (T0804、docs/studio.md#隠れても止まらない)。
+  ドライバ・トラッキング・モーション・待機モーションは使わない (値は指揮役が決める)。`values` (スライダーの表示) も同期しない。
+- `startFollowing(onRender)` の `onRender` は、描くたびに `{at, renderMs, dropped}` (前に描いてからの適用と描画の CPU の時間・溢れて捨てたフレームの合計) を受け取る
+  (スタジオの負荷の表示)。
 - 前のシーンのフレームは捨て、まだ読み終えていないシーンのフレームは待たせる。同じシーンの中で `seq` が飛んだら (待たせすぎて
   溢れたときも) 物理をリセットしてから続ける。
 - `WebPuppet.follow` を呼ぶのは `src/follower.ts` の `applyFrame` だけ (`follow` の引数が変わったら、こことフレームの形を合わせる)。

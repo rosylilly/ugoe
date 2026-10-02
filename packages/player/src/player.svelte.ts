@@ -43,7 +43,7 @@ import {
   saveAutoRestore,
 } from "./dressUpMemory";
 import { DriverSet } from "./drivers";
-import { applyFrame, type FollowFrame, FrameQueue } from "./follower";
+import { applyFrame, type FollowFrame, type FollowRenderStats, FrameQueue } from "./follower";
 import {
   defaultLighting,
   type LightingSettings,
@@ -210,6 +210,12 @@ export class Player {
   readonly drivers = new DriverSet();
   /** 受け手のモードのときの、適用を待つフレーム (follower.ts)。`null` なら時計で進める (ふつうのモード)。 */
   #follower: FrameQueue | null = null;
+  /** 受け手のモードで、1 回描くたびに呼ぶもの (`startFollowing` の引数)。 */
+  #onFollowRender: ((stats: FollowRenderStats) => void) | null = null;
+  /** 受け手のモードで、前に描いてからフレームの適用にかかった時間 (ミリ秒)。 */
+  #followMs = 0;
+  /** 受け手のモードで、溢れて捨てたフレームの数 (受け手を作ってからの合計)。 */
+  #droppedFrames = 0;
 
   #wasm: UgoeWasmModule | null = null;
   #puppet: WebPuppet | null = null;
@@ -733,8 +739,9 @@ export class Player {
    * (ドライバ・トラッキング・モーション・目パチなどは使わない。値は指揮役が決める)。モデルは `load` で読み、
    * 読み終えたら `followScene(revision)` でそのシーンのフレームを受け付ける。
    */
-  startFollowing(): void {
+  startFollowing(onRender?: (stats: FollowRenderStats) => void): void {
     this.#follower ??= new FrameQueue();
+    this.#onFollowRender = onRender ?? null;
   }
 
   /** 受け手のモードか。 */
@@ -745,11 +752,32 @@ export class Player {
   /** シーン `revision` のモデルを読み終えた。そのシーンのフレームを最初から適用する (前のシーンのフレームは捨てる)。 */
   followScene(revision: number): void {
     this.#follower?.setScene(revision);
+    this.#followPending();
   }
 
-  /** 指揮役のフレームを受け取る (次の描画のときに順に適用する)。受け手のモードでなければ何もしない。 */
+  /**
+   * 指揮役のフレームを受け取り、適用できるものはその場で `follow` まで適用する (描くのは次の `requestAnimationFrame`)。
+   * ページが隠れて `requestAnimationFrame` が止まっても、受け手の物理は止まらない (docs/studio.md#隠れても止まらない)。
+   * 受け手のモードでなければ何もしない。
+   */
   pushFrame(frame: FollowFrame): void {
-    this.#follower?.push(frame);
+    const queue = this.#follower;
+    if (queue === null) return;
+    const before = queue.pending;
+    queue.push(frame);
+    // 溢れて捨てた分 (待っているフレームが増えなかった)。
+    this.#droppedFrames += before + 1 - queue.pending;
+    this.#followPending();
+  }
+
+  /** 待っているフレームを、モデルを読み終えていれば今すぐ適用する。 */
+  #followPending(): void {
+    const puppet = this.#puppet;
+    const queue = this.#follower;
+    if (puppet === null || queue === null || !puppet.has_model() || puppet.is_lost()) return;
+    const started = performance.now();
+    this.#follow(puppet, queue);
+    this.#followMs += performance.now() - started;
   }
 
   // --- ビュー。座標は canvas 要素の左上からの CSS ピクセル ---
@@ -1079,7 +1107,9 @@ export class Player {
     }
     const dt = this.#lastTime === null ? 0 : Math.min((now - this.#lastTime) / 1000, MAX_DT);
     this.#lastTime = now;
+    const started = performance.now();
     if (this.#follower !== null) {
+      // ふつうは届いたときに適用済み。モデルを読み終える前に届いたものなどが残っていれば、ここで適用する。
       if (puppet.has_model()) this.#follow(puppet, this.#follower);
     } else if (puppet.has_model()) this.#advance(puppet, dt);
     try {
@@ -1087,6 +1117,11 @@ export class Player {
     } catch (e) {
       const text = message(e);
       if (this.error !== text) this.error = text;
+    }
+    if (this.#onFollowRender !== null) {
+      const renderMs = this.#followMs + performance.now() - started;
+      this.#followMs = 0;
+      this.#onFollowRender({ at: now, renderMs, dropped: this.#droppedFrames });
     }
   };
 
