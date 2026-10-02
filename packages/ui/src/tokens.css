@@ -1,0 +1,158 @@
+/*
+ * @ugoe/ui のデザイントークン (CSS 変数)。値と用途の正は docs/ui.md#デザイントークン。
+ * アプリの main.ts で 1 回だけ読む: `import "@ugoe/ui/tokens.css";`
+ *
+ * - テーマ: 既定は OS の設定 (prefers-color-scheme)。`data-theme="light"` / `"dark"` で上書きする。
+ * - 密度: `data-density="compact"` (既定。エディタ) / `"comfortable"` (ビューア・スタジオ)。
+ * どちらの属性も <html> に付けるのが基本だが、任意の要素に付けてその中だけを切り替えてもよい
+ * (ただし Portal で body に出す中身 (Select の一覧など) は <html> の値に従う)。
+ */
+
+/* ライト (既定) */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+  --ugoe-color-bg: #f4f4f5;
+  --ugoe-color-surface: #ffffff;
+  --ugoe-color-sunken: #e4e4e7;
+  --ugoe-color-border: #d4d4d8;
+  --ugoe-color-control-border: #7a7a83;
+  --ugoe-color-text: #18181b;
+  --ugoe-color-text-muted: #5f5f68;
+  --ugoe-color-accent: #6d28d9;
+  --ugoe-color-on-accent: #ffffff;
+  --ugoe-color-danger: #c81e1e;
+  --ugoe-color-warning: #a14a06;
+  --ugoe-color-success: #126c34;
+  --ugoe-color-backdrop: rgb(0 0 0 / 40%);
+  --ugoe-shadow-overlay: 0 4px 16px rgb(0 0 0 / 20%);
+}
+
+:root:not([data-theme]) {
+  color-scheme: light dark;
+}
+
+/* ダーク (OS の設定。data-theme="light" で打ち消せる) */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ugoe-color-bg: #18181b;
+    --ugoe-color-surface: #232327;
+    --ugoe-color-sunken: #111113;
+    --ugoe-color-border: #3f3f46;
+    --ugoe-color-control-border: #7c7c86;
+    --ugoe-color-text: #e4e4e7;
+    --ugoe-color-text-muted: #a1a1aa;
+    --ugoe-color-accent: #a78bfa;
+    --ugoe-color-on-accent: #18181b;
+    --ugoe-color-danger: #f87171;
+    --ugoe-color-warning: #fbbf24;
+    --ugoe-color-success: #4ade80;
+    --ugoe-color-backdrop: rgb(0 0 0 / 55%);
+    --ugoe-shadow-overlay: 0 4px 16px rgb(0 0 0 / 50%);
+  }
+}
+
+/* ダーク (明示)。値は上の @media と同じ */
+[data-theme="dark"] {
+  color-scheme: dark;
+  --ugoe-color-bg: #18181b;
+  --ugoe-color-surface: #232327;
+  --ugoe-color-sunken: #111113;
+  --ugoe-color-border: #3f3f46;
+  --ugoe-color-control-border: #7c7c86;
+  --ugoe-color-text: #e4e4e7;
+  --ugoe-color-text-muted: #a1a1aa;
+  --ugoe-color-accent: #a78bfa;
+  --ugoe-color-on-accent: #18181b;
+  --ugoe-color-danger: #f87171;
+  --ugoe-color-warning: #fbbf24;
+  --ugoe-color-success: #4ade80;
+  --ugoe-color-backdrop: rgb(0 0 0 / 55%);
+  --ugoe-shadow-overlay: 0 4px 16px rgb(0 0 0 / 50%);
+}
+
+/*
+ * ほかの色から作るトークン。var() は宣言した要素で解決されるので、テーマを切り替える要素ごとに宣言し直す。
+ */
+:root,
+[data-theme] {
+  --ugoe-color-focus: var(--ugoe-color-accent);
+  --ugoe-color-danger-soft: color-mix(in srgb, var(--ugoe-color-danger) 12%, var(--ugoe-color-bg));
+  --ugoe-color-warning-soft: color-mix(
+    in srgb,
+    var(--ugoe-color-warning) 12%,
+    var(--ugoe-color-bg)
+  );
+  --ugoe-color-success-soft: color-mix(
+    in srgb,
+    var(--ugoe-color-success) 12%,
+    var(--ugoe-color-bg)
+  );
+  --ugoe-color-accent-soft: color-mix(
+    in srgb,
+    var(--ugoe-color-accent) 12%,
+    var(--ugoe-color-surface)
+  );
+  --ugoe-focus-ring: 2px solid var(--ugoe-color-focus);
+}
+
+/* 密度: compact (既定) */
+:root,
+[data-density="compact"] {
+  --ugoe-space-1: 2px;
+  --ugoe-space-2: 4px;
+  --ugoe-space-3: 8px;
+  --ugoe-space-4: 12px;
+  --ugoe-space-5: 16px;
+  --ugoe-space-6: 24px;
+  --ugoe-control-height: 24px;
+  --ugoe-font-size-xs: 11px;
+  --ugoe-font-size-sm: 12px;
+  --ugoe-font-size-md: 13px;
+  --ugoe-font-size-lg: 15px;
+  --ugoe-font-size-xl: 18px;
+}
+
+/* 密度: comfortable */
+[data-density="comfortable"] {
+  --ugoe-space-1: 2px;
+  --ugoe-space-2: 6px;
+  --ugoe-space-3: 10px;
+  --ugoe-space-4: 16px;
+  --ugoe-space-5: 20px;
+  --ugoe-space-6: 32px;
+  --ugoe-control-height: 30px;
+  --ugoe-font-size-xs: 12px;
+  --ugoe-font-size-sm: 13px;
+  --ugoe-font-size-md: 15px;
+  --ugoe-font-size-lg: 17px;
+  --ugoe-font-size-xl: 21px;
+}
+
+/* 密度とテーマに依らないもの */
+:root {
+  --ugoe-font-sans:
+    system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  --ugoe-font-mono: ui-monospace, "Cascadia Mono", "SF Mono", "Noto Sans Mono", monospace;
+  --ugoe-line-height: 1.4;
+  --ugoe-line-height-control: 1.2;
+  --ugoe-font-weight-normal: 400;
+  --ugoe-font-weight-strong: 600;
+  --ugoe-radius-sm: 3px;
+  --ugoe-radius-md: 4px;
+  --ugoe-radius-lg: 8px;
+  --ugoe-radius-full: 999px;
+  --ugoe-z-popover: 100;
+  --ugoe-z-toast: 200;
+  --ugoe-duration-fast: 100ms;
+  --ugoe-duration-normal: 200ms;
+  /* 押せる部品の最小の大きさ (WCAG 2.5.8)。compact でもこれより小さくしない */
+  --ugoe-target-min: 24px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ugoe-duration-fast: 0ms;
+    --ugoe-duration-normal: 0ms;
+  }
+}

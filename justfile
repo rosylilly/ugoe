@@ -183,6 +183,8 @@ web-check:
     pnpm --filter '@ugoe/i18n' test
     pnpm --filter '@ugoe/runtime' check
     pnpm --filter '@ugoe/runtime' test
+    pnpm --filter '@ugoe/ui' check
+    pnpm --filter '@ugoe/ui' test
 
 # 翻訳のカタログの検査: 言語の間のキーの過不足・複数形・引数・未使用のキー (packages/i18n/README.md)
 i18n:
@@ -219,3 +221,7 @@ cli *args:
 # API ドキュメント
 doc:
     cargo doc --workspace --no-deps --open
+
+# @ugoe/ui の部品の見本の画面をヘッドレスの Chrome で撮って検査する (packages/ui/README.md): `just ui-shots /tmp/shots`
+ui-shots out:
+    node packages/ui/scripts/shots.mjs {{out}}

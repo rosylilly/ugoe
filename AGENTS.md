@@ -78,7 +78,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 | `just fmt` | Rust と TS を整形 |
 | `just layers` | クレートの依存方向を検査 |
 | `just test-group <group>` / `just lint-group <group>` | CI の 1 つのグループ (`scripts/ci-groups.mjs`) だけテスト / clippy |
-| `just licenses` | 依存するクレートのライセンスを検査 (MIT のクレートにコピーレフトを入れない) |
+| `just licenses` | 依存するクレートと npm パッケージのライセンスを検査 (MIT のクレートにコピーレフトを入れない。アプリと packages/ の npm の依存は GPL-3.0 と両立するもの) |
 | `just publish-check` | crates.io に公開するクレートの準備を検査 (メタデータ・LICENSE の写し・内部の依存の版。[docs/release.md](docs/release.md#cratesio)) |
 | `just wasm-check` | wasm32 でビルドできるか (ランタイム層を触ったら実行) |
 | `just wt-add <ID>` / `just wt-remove <ID>` | タスク用 worktree の作成・削除 (main の `target/` をコピーしてビルドを省く) |

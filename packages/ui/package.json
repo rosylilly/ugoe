@@ -1,0 +1,37 @@
+{
+  "name": "@ugoe/ui",
+  "private": true,
+  "version": "0.0.0",
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tokens.css": "./src/tokens.css"
+  },
+  "scripts": {
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run",
+    "gallery": "vite gallery",
+    "gallery:build": "vite build gallery",
+    "shots": "node scripts/shots.mjs"
+  },
+  "dependencies": {
+    "@internationalized/date": "3.12.4",
+    "@ugoe/i18n": "workspace:*",
+    "bits-ui": "2.19.4"
+  },
+  "peerDependencies": {
+    "svelte": "^5.57.1"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@tsconfig/svelte": "^5.0.8",
+    "@types/node": "^26.6.3",
+    "happy-dom": "^20.14.5",
+    "svelte": "^5.57.1",
+    "svelte-check": "^4.7.6",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
+  }
+}

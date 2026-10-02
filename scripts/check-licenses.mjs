@@ -8,6 +8,9 @@
 // - アプリが依存するクレートは、GPL-3.0 と両立するライセンスで使えること。
 // - npm のパッケージ bindings/web (@ugoe/runtime) は MIT で、実行時の依存は寛容なライセンスに限る
 //   (docs/adr/0025-web-runtime-package.md)。
+// - npm のアプリ (apps/*) と共有パッケージ (packages/*) は GPL-3.0-only で、実行時の依存 (推移的な依存を含む) は
+//   GPL-3.0 と両立するライセンスに限る (docs/adr/0029-shared-ui-and-i18n.md)。package.json に SPDX の式が無い
+//   依存は NPM_EXCEPTIONS に、確かめた版と理由を付けて登録する。版が変わったら例外は外れ、確かめ直す。
 // - 公開仕様 (spec/) は CC BY 4.0 (docs/adr/0021-public-specification.md)。spec/LICENSE が
 //   CC BY 4.0 の条文であることを確かめる。
 // - Godot のバインディング (bindings/godot) はルートのワークスペースの外にあり、`--godot` を付けたときだけ
@@ -16,7 +19,8 @@
 // ライセンスが SPDX の式で書かれていない依存を追加する場合は、EXCEPTIONS に理由付きで登録する。
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const EDITOR_CRATES = new Set(["ugoe-editor", "ugoe-viewer"]);
@@ -55,6 +59,16 @@ const GPL_COMPATIBLE = new Set([
 const EXCEPTIONS_OK = new Set(["LLVM-exception"]);
 // SPDX の式を持たない依存 (名前 -> 理由)
 const EXCEPTIONS = {};
+// npm の依存で、package.json に SPDX の式を持たないもの (名前 -> 確かめた版・実際のライセンス・確かめ方)。
+// 版が変わったら検査が失敗するので、同じ方法で確かめ直して版を書き換える。
+const NPM_EXCEPTIONS = {
+  "svelte-toolbelt": {
+    version: "0.10.6",
+    license: "MIT",
+    reason:
+      "package.json に license の欄が無い。npm の tarball の LICENSE が MIT の条文 (Hunter Johnston・Thomas G. Lopes) であることを読んで確かめた (2026-10-02、ADR 0029)",
+  },
+};
 // MPL-2.0 を認める godot-rust のクレート (--godot のときだけ。gdextension-api は Godot の API の定義を収めたクレート)
 const GODOT_RUST = new Set([
   "gdextension-api",
@@ -195,25 +209,112 @@ for (const id of members) {
   }
 }
 
+/** npm の package.json の license を SPDX の式として読む (古い `licenses: [{ type }]` の形も受ける)。 */
+function npmLicense(manifest) {
+  const { license, licenses } = manifest;
+  if (typeof license === "string") return license;
+  if (license && typeof license.type === "string") return license.type;
+  if (Array.isArray(licenses) && licenses.length > 0) {
+    return licenses.map((l) => (typeof l === "string" ? l : l.type)).join(" OR ");
+  }
+  return undefined;
+}
+
+/** Node の解決のしかたで、`fromDir` (パッケージの実体のディレクトリ) から依存 `name` のディレクトリを探す。 */
+function resolveNpm(fromDir, name) {
+  let dir = fromDir;
+  for (;;) {
+    if (basename(dir) !== "node_modules") {
+      const candidate = join(dir, "node_modules", name, "package.json");
+      if (existsSync(candidate)) return realpathSync(dirname(candidate));
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
+/**
+ * npm のパッケージ `dir` の実行時の依存 (dependencies・optionalDependencies・入っている peerDependencies) を
+ * 推移的にたどり、ライセンスを `allowed` で検査する。ワークスペースのパッケージ (node_modules の外) はたどらない
+ * (それぞれを別に検査する)。たどったパッケージの数を返す。
+ */
+function checkNpmDeps(dir, allowed, kind) {
+  const root = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+  const seen = new Set();
+  const stack = [{ from: realpathSync(dir), manifest: root, optional: false, path: [root.name] }];
+  while (stack.length > 0) {
+    const { from, manifest, path } = stack.pop();
+    const deps = [
+      ...Object.keys(manifest.dependencies ?? {}).map((n) => [n, false]),
+      ...Object.keys(manifest.optionalDependencies ?? {}).map((n) => [n, true]),
+      ...Object.keys(manifest.peerDependencies ?? {}).map((n) => [n, true]),
+    ];
+    for (const [name, optional] of deps) {
+      const depDir = resolveNpm(from, name);
+      if (!depDir) {
+        if (!optional)
+          errors.push(
+            `${path.join(" -> ")} -> ${name}: node_modules に無い (pnpm install を実行する)`,
+          );
+        continue;
+      }
+      if (!depDir.split(/[\\/]/).includes("node_modules")) continue; // ワークスペースのパッケージ
+      if (seen.has(depDir)) continue;
+      seen.add(depDir);
+      const dep = JSON.parse(readFileSync(join(depDir, "package.json"), "utf8"));
+      const where = `${[...path, `${dep.name} ${dep.version}`].join(" -> ")}`;
+      const license = npmLicense(dep);
+      const exception = NPM_EXCEPTIONS[dep.name];
+      if (exception && !license) {
+        if (exception.version !== dep.version) {
+          errors.push(
+            `${where}: NPM_EXCEPTIONS は ${exception.version} で確かめたもの。この版のライセンスを確かめ直して版を書き換える`,
+          );
+        } else if (!satisfies(exception.license, allowed)) {
+          errors.push(`${where}: ${exception.license} は${kind}`);
+        }
+      } else if (!license) {
+        errors.push(
+          `${where}: ライセンスの式がない (確かめて NPM_EXCEPTIONS に登録するか依存をやめる)`,
+        );
+      } else if (!satisfies(license, allowed)) {
+        errors.push(`${where}: ${license} は${kind}`);
+      }
+      stack.push({ from: depDir, manifest: dep, path: [...path, dep.name] });
+    }
+  }
+  return seen.size;
+}
+
+const npmPackages = [];
+let npmDeps = 0;
+
 // MIT の npm パッケージ (bindings/。docs/adr/0025-web-runtime-package.md): パッケージのライセンスが MIT で、
-// 実行時の依存 (dependencies) が寛容なライセンスで使えること。依存のライセンスは node_modules の package.json で読む。
+// 実行時の依存が推移的に寛容なライセンスで使えること。
 const BINDINGS = ["bindings/web"];
 for (const dir of BINDINGS) {
-  const base = new URL(`../${dir}/`, import.meta.url);
-  const pkg = JSON.parse(readFileSync(new URL("package.json", base), "utf8"));
+  const path = fileURLToPath(new URL(`../${dir}/`, import.meta.url));
+  const pkg = JSON.parse(readFileSync(join(path, "package.json"), "utf8"));
   if (pkg.license !== EXPECTED.mit) {
     errors.push(`${pkg.name}: license は "${EXPECTED.mit}" であるべき (現在: ${pkg.license})`);
   }
-  for (const dep of Object.keys(pkg.dependencies ?? {})) {
-    const manifest = new URL(`node_modules/${dep}/package.json`, base);
-    if (!existsSync(manifest)) {
-      errors.push(`${pkg.name} -> ${dep}: node_modules に無い (pnpm install を実行する)`);
-      continue;
+  npmDeps += checkNpmDeps(path, PERMISSIVE, "MIT のパッケージで使えない");
+  npmPackages.push(pkg.name);
+}
+
+// GPL-3.0-only の npm パッケージ (apps/*・packages/*。docs/adr/0029-shared-ui-and-i18n.md)
+for (const group of ["apps", "packages"]) {
+  const groupDir = fileURLToPath(new URL(`../${group}/`, import.meta.url));
+  for (const entry of readdirSync(groupDir, { withFileTypes: true })) {
+    const path = join(groupDir, entry.name);
+    if (!entry.isDirectory() || !existsSync(join(path, "package.json"))) continue;
+    const pkg = JSON.parse(readFileSync(join(path, "package.json"), "utf8"));
+    if (pkg.license !== EXPECTED.editor) {
+      errors.push(`${pkg.name}: license は "${EXPECTED.editor}" であるべき (現在: ${pkg.license})`);
     }
-    const license = JSON.parse(readFileSync(manifest, "utf8")).license;
-    if (typeof license !== "string" || !satisfies(license, PERMISSIVE)) {
-      errors.push(`${pkg.name} -> ${dep}: ${license} は MIT のパッケージで使えない`);
-    }
+    npmDeps += checkNpmDeps(path, GPL_COMPATIBLE, "GPL-3.0 と両立しない");
+    npmPackages.push(pkg.name);
   }
 }
 
@@ -229,5 +330,7 @@ if (
 
 for (const e of [...new Set(errors)]) console.error(`error: ${e}`);
 if (errors.length === 0)
-  console.log(`licenses ok (${members.size} crates, ${BINDINGS.length} npm packages)`);
+  console.log(
+    `licenses ok (${members.size} crates, ${npmPackages.length} npm packages, ${npmDeps} npm dependencies)`,
+  );
 process.exitCode = errors.length > 0 ? 1 : 0;
