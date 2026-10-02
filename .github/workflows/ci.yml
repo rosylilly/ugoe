@@ -316,6 +316,7 @@ jobs:
       - run: node --test tools/spec-check/test/
       - run: pnpm --filter @ugoe/editor test
       - run: pnpm --filter @ugoe/viewer test
+      - run: pnpm --filter @ugoe/studio test
       - run: pnpm --filter @ugoe/face-tracking check
       - run: pnpm --filter @ugoe/face-tracking test
       - run: pnpm --filter @ugoe/player check
@@ -350,6 +351,11 @@ jobs:
         run: pnpm --filter @ugoe/viewer wasm
       - run: pnpm --filter @ugoe/viewer check
       - run: pnpm --filter @ugoe/viewer build
+      # スタジオも同じ wasm の JS バインディングを自分の src/lib/wasm/generated/ に生成する (出力ウィンドウの受け手)
+      - name: Build ugoe-wasm for the studio
+        run: pnpm --filter @ugoe/studio wasm
+      - run: pnpm --filter @ugoe/studio check
+      - run: pnpm --filter @ugoe/studio build
       # npm パッケージ @ugoe/runtime (bindings/web。ADR 0025): wasm を生成して dist/ を作り、本物の型で検査する
       - run: pnpm --filter @ugoe/runtime build
       - run: pnpm --filter @ugoe/runtime check

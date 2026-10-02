@@ -1,0 +1,4 @@
+# tauri build が作るスキーマ
+/src-tauri/gen/schemas/
+# `pnpm wasm` (= `just wasm apps/studio/src/lib/wasm/generated`) の出力
+/src/lib/wasm/generated/

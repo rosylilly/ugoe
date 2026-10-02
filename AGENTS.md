@@ -57,8 +57,8 @@ crates/             Rust クレート (ランタイム層とツール層。依�
   ugoe-mcp            MCP サーバ (外部のエージェントが .ugoeproj を読み、編集を提案・適用する)
 apps/editor/        Tauri エディタ (src/ = Svelte フロントエンド, src-tauri/ = Rust バックエンド)
 apps/viewer/        Tauri ビューア (.ugoe を開いて表示しパラメータを動かす。構成はエディタと同じ)
-apps/studio/        Tauri スタジオ (配信用。出力ウィンドウ・仮想カメラ・ブラウザソース・外部 API。ADR 0028。M8 で作る)
-packages/           エディタとビューアで共有するフロントエンドの部品 (face-tracking など。GPL-3.0-only)
+apps/studio/        Tauri スタジオ (配信用。操作ウィンドウと出力ウィンドウ、指揮役と受け手。ADR 0028。仮想カメラ・ブラウザソース・外部 API は M8 の後続のタスク)
+packages/           アプリ (エディタ・ビューア・スタジオ) で共有するフロントエンドの部品 (face-tracking・ui・i18n・player。GPL-3.0-only)
 bindings/           ランタイムを別の環境へ出すパッケージ (MIT。web = npm の @ugoe/runtime と <ugoe-avatar>、godot = Godot 4 の GDExtension (ワークスペースの外、ADR 0026)、unity = UPM パッケージ (C# から C ABI を呼ぶ))
 tests/conformance/  配布物の適合テスト (ugoe-conformance。C ABI・wasm の頂点と画像を参照と比べる。`just conformance`)
 docs/               設計・仕様・ADR・タスク
@@ -84,6 +84,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 | `just wt-add <ID>` / `just wt-remove <ID>` | タスク用 worktree の作成・削除 (main の `target/` をコピーしてビルドを省く) |
 | `just editor` | エディタを開発モードで起動 |
 | `just viewer` | ビューアを開発モードで起動 |
+| `just studio` | スタジオを開発モードで起動 |
 | `just cli <args>` | CLI を実行 (例: `just cli fixture single-quad`) |
 
 ## 守るべきルール
@@ -109,7 +110,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 
 ### 外部のコードとライセンス
 
-- **ライセンス:** `crates/`・`bindings/`・`docs/` は MIT、`apps/editor/`・`apps/viewer/`・`packages/` は GPL-3.0-only ([ADR 0018](docs/adr/0018-licensing-and-1.0-scope.md)・[ADR 0019](docs/adr/0019-viewer-license.md)・[ADR 0025](docs/adr/0025-web-runtime-package.md))。MIT の `bindings/` から GPL のコードを import したり写したりしない。新しいクレートは `license.workspace = true` を書く。
+- **ライセンス:** `crates/`・`bindings/`・`docs/` は MIT、`apps/editor/`・`apps/viewer/`・`apps/studio/`・`packages/` は GPL-3.0-only ([ADR 0018](docs/adr/0018-licensing-and-1.0-scope.md)・[ADR 0019](docs/adr/0019-viewer-license.md)・[ADR 0025](docs/adr/0025-web-runtime-package.md)・[ADR 0028](docs/adr/0028-studio.md))。MIT の `bindings/` から GPL のコードを import したり写したりしない。新しいクレートは `license.workspace = true` を書く。
 - **MIT のクレートに、コピーレフト (MPL・LGPL・GPL など) のライブラリを依存させない。** `just licenses` (`just ci` に含まれる) が依存するクレートのライセンスを検査する。例外は `bindings/godot` で、ワークスペースの外に置いて godot-rust (MPL-2.0) にだけ依存を許す ([ADR 0026](docs/adr/0026-godot-binding.md)。検査は `node scripts/check-licenses.mjs --godot`)。
 
 - **Live2D Cubism SDK などの外部 SDK のソースを、リポジトリの中に置かない (ダウンロードしない)。コードも写さない。** 挙動を調べるためにソースを読むのはよいが、読むときはリポジトリの外 (一時ディレクトリなど) で読む。

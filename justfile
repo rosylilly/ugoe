@@ -175,6 +175,8 @@ web-check:
     pnpm --filter '@ugoe/editor' test
     pnpm --filter '@ugoe/viewer' check
     pnpm --filter '@ugoe/viewer' test
+    pnpm --filter '@ugoe/studio' check
+    pnpm --filter '@ugoe/studio' test
     pnpm --filter '@ugoe/face-tracking' check
     pnpm --filter '@ugoe/face-tracking' test
     pnpm --filter '@ugoe/player' check
@@ -216,6 +218,14 @@ viewer:
 # ビューアのリリースビルド。引数は tauri build に渡す: `just viewer-build --bundles deb`
 viewer-build *args:
     pnpm --filter '@ugoe/viewer' tauri build {{args}}
+
+# スタジオを開発モードで起動 (apps/studio/README.md)
+studio:
+    pnpm --filter '@ugoe/studio' tauri dev
+
+# スタジオのリリースビルド。引数は tauri build に渡す: `just studio-build --bundles deb`
+studio-build *args:
+    pnpm --filter '@ugoe/studio' tauri build {{args}}
 
 # CLI 実行: `just cli info model.json`
 cli *args:

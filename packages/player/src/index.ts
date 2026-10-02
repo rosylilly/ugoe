@@ -5,6 +5,7 @@ export * from "./color";
 export * from "./dressUp";
 export * from "./dressUpMemory";
 export * from "./drivers";
+export * from "./follower";
 export * from "./lighting";
 export * from "./loadWarnings";
 export * from "./modelFile";

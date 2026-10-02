@@ -43,6 +43,7 @@ import {
   saveAutoRestore,
 } from "./dressUpMemory";
 import { DriverSet } from "./drivers";
+import { applyFrame, type FollowFrame, FrameQueue } from "./follower";
 import {
   defaultLighting,
   type LightingSettings,
@@ -207,6 +208,8 @@ export class Player {
 
   /** パラメータを毎フレーム外から動かすもの (drivers.ts)。 */
   readonly drivers = new DriverSet();
+  /** 受け手のモードのときの、適用を待つフレーム (follower.ts)。`null` なら時計で進める (ふつうのモード)。 */
+  #follower: FrameQueue | null = null;
 
   #wasm: UgoeWasmModule | null = null;
   #puppet: WebPuppet | null = null;
@@ -665,6 +668,8 @@ export class Player {
 
   /** 自動再生が入っていて待機モーションがあれば、待機の優先度で始める。 */
   #startIdle(): void {
+    // 受け手はモーションを使わない (値は指揮役が決める)。
+    if (this.#follower !== null) return;
     const name = this.idleMotion;
     if (!this.autoIdle || name === null || !this.motions.some((m) => m.name === name)) return;
     const puppet = this.#puppet;
@@ -719,6 +724,32 @@ export class Player {
       this.motionNotice = message(e);
     }
     this.activeExpressions = puppet.active_expressions();
+  }
+
+  // --- 受け手のモード (スタジオの出力ウィンドウ。follower.ts、ADR 0028 の 3.) ---
+
+  /**
+   * 受け手のモードにする。以後は時計の `dt` で `update` せず、`pushFrame` で届いたフレームを順に `follow` で適用する
+   * (ドライバ・トラッキング・モーション・目パチなどは使わない。値は指揮役が決める)。モデルは `load` で読み、
+   * 読み終えたら `followScene(revision)` でそのシーンのフレームを受け付ける。
+   */
+  startFollowing(): void {
+    this.#follower ??= new FrameQueue();
+  }
+
+  /** 受け手のモードか。 */
+  get following(): boolean {
+    return this.#follower !== null;
+  }
+
+  /** シーン `revision` のモデルを読み終えた。そのシーンのフレームを最初から適用する (前のシーンのフレームは捨てる)。 */
+  followScene(revision: number): void {
+    this.#follower?.setScene(revision);
+  }
+
+  /** 指揮役のフレームを受け取る (次の描画のときに順に適用する)。受け手のモードでなければ何もしない。 */
+  pushFrame(frame: FollowFrame): void {
+    this.#follower?.push(frame);
   }
 
   // --- ビュー。座標は canvas 要素の左上からの CSS ピクセル ---
@@ -1048,7 +1079,9 @@ export class Player {
     }
     const dt = this.#lastTime === null ? 0 : Math.min((now - this.#lastTime) / 1000, MAX_DT);
     this.#lastTime = now;
-    if (puppet.has_model()) this.#advance(puppet, dt);
+    if (this.#follower !== null) {
+      if (puppet.has_model()) this.#follow(puppet, this.#follower);
+    } else if (puppet.has_model()) this.#advance(puppet, dt);
     try {
       puppet.render();
     } catch (e) {
@@ -1099,6 +1132,31 @@ export class Player {
     puppet.update(dt);
     this.#afterMotionUpdate(puppet);
     this.#syncValues();
+  }
+
+  /**
+   * 受け手のモードで、届いたフレームを順にすべて適用する (描くのは `#tick` が最後に 1 回)。時計の `dt` は使わない。
+   * 値の表示 (`values`) は同期しない (出力ウィンドウは値を出さないため)。
+   */
+  #follow(puppet: WebPuppet, queue: FrameQueue): void {
+    const { follow, reset_physics } = puppet;
+    if (follow === undefined || reset_physics === undefined) {
+      this.error = "ugoe-wasm has no follower API (WebPuppet.follow)";
+      return;
+    }
+    const follower = {
+      follow: follow.bind(puppet),
+      reset_physics: reset_physics.bind(puppet),
+    };
+    for (const { frame, gap } of queue.take()) {
+      try {
+        applyFrame(follower, frame, gap);
+      } catch (e) {
+        // 値の数が合わない (シーンとモデルが食い違う) など。そのフレームは飛ばし、次で物理をリセットする。
+        const text = message(e);
+        if (this.error !== text) this.error = text;
+      }
+    }
   }
 
   /** WebPuppet の値をスライダーの表示へ写す (変わったものだけ)。 */

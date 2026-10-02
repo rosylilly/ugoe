@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "apps/editor/src-tauri", "apps/viewer/src-tauri", "tests/conformance"]
+members = ["crates/*", "apps/editor/src-tauri", "apps/viewer/src-tauri", "apps/studio/src-tauri", "tests/conformance"]
 default-members = ["crates/*"]
 
 [workspace.package]
@@ -61,6 +61,7 @@ tauri = { version = "2", features = [] }
 tauri-build = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+tauri-plugin-os = "2"
 thiserror = "2"
 tracing = "0.1"
 ts-rs = "12"

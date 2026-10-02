@@ -160,7 +160,13 @@ const SKIP_KEYS = new Set(["type", "start", "end", "loc", "metadata", "name_loc"
 export function scan(source, kind) {
   // .ts は <script lang="ts"> に包んで同じパーサで読む (位置は包みの分だけずらす)
   const prefix = kind === "ts" ? '<script lang="ts">' : "";
-  const ast = parse(kind === "ts" ? `${prefix}${source}</script>` : source, { modern: true });
+  let ast;
+  try {
+    ast = parse(kind === "ts" ? `${prefix}${source}</script>` : source, { modern: true });
+  } catch (e) {
+    // svelte のパーサが読めない構文 (.ts の総称の矢印関数 `async <T>() =>` など) は、どのファイルかを付けて呼び出し元で失敗させる
+    throw Object.assign(new Error(`parse error: ${e.message}`), { cause: e, parseError: true });
+  }
   const lineStarts = [0];
   for (let i = 0; i < source.length; i++) if (source[i] === "\n") lineStarts.push(i + 1);
   const lineOf = (offset) => {
@@ -406,7 +412,13 @@ export function scanAll(root = ROOT) {
   for (const target of targets(root)) {
     for (const path of walk(join(root, target))) {
       const file = relative(root, path).split("\\").join("/");
-      const found = scan(readFileSync(path, "utf8"), path.endsWith(".svelte") ? "svelte" : "ts");
+      let found;
+      try {
+        found = scan(readFileSync(path, "utf8"), path.endsWith(".svelte") ? "svelte" : "ts");
+      } catch (e) {
+        if (e.parseError) throw new Error(`${file}: ${e.message}`, { cause: e.cause });
+        throw e;
+      }
       if (found.length) out.set(file, found);
     }
   }

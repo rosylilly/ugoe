@@ -1,0 +1,52 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ugoe-studio",
+  "version": "0.0.0",
+  "identifier": "app.ugoe.studio",
+  "build": {
+    "beforeDevCommand": "pnpm wasm && pnpm dev",
+    "devUrl": "http://localhost:1440",
+    "beforeBuildCommand": "pnpm wasm && pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "ugoe studio",
+        "url": "index.html",
+        "width": 1280,
+        "height": 800
+      },
+      {
+        "label": "output",
+        "title": "ugoe studio output",
+        "url": "output.html",
+        "width": 960,
+        "height": 540,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": false,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "license": "GPL-3.0-only",
+    "licenseFile": "../LICENSE",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

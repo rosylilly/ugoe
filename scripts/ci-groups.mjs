@@ -46,9 +46,9 @@ export const GROUPS = {
   tools: {
     crates: ["ugoe-editor-core", "ugoe-ai", "ugoe-cli", "ugoe-mcp"],
   },
-  // Tauri のアプリ (エディタとビューア)。CI では生成物の検査 (`just gen`) もこのジョブで行う
+  // Tauri のアプリ (エディタ・ビューア・スタジオ)。CI では生成物の検査 (`just gen`) もこのジョブで行う
   apps: {
-    crates: ["ugoe-editor", "ugoe-viewer"],
+    crates: ["ugoe-editor", "ugoe-viewer", "ugoe-studio"],
     tauri: true,
   },
 };

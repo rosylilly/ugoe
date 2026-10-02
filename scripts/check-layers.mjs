@@ -39,6 +39,9 @@ const ALLOWED = {
   "ugoe-wasm": RUNTIME_TIER,
   // ビューア (apps/viewer): 描画は webview の ugoe-wasm が行う。Rust 側はランタイム層だけに依存してよい
   "ugoe-viewer": RUNTIME_TIER,
+  // スタジオ (apps/studio、ADR 0028 の 1.): 指揮役はネイティブの Puppet。ランタイム層と ugoe-headless (仮想カメラの常駐の描画) に依存してよい。
+  // エディタの中核と AI には依存しない (スタジオはモデルを編集しない)
+  "ugoe-studio": union(RUNTIME_TIER, HEADLESS),
   // --- ツール層 ---
   "ugoe-psd": CORE,
   "ugoe-mesher": CORE,

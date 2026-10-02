@@ -10,6 +10,7 @@ src/index.ts             公開するもの (アプリはここからだけ impo
 src/player.svelte.ts     Player: WebPuppet (ugoe-wasm) を持ち、フレームのループを回す。UI に出す状態 ($state) もここ。
                          PlayerHost (アプリが渡すもの)・Screenshot (capture の結果)
 src/wasm.ts              Player が使う WebPuppet の口 (構造だけ。生成物はアプリが持つ)
+src/follower.ts          受け手のモード (スタジオの出力ウィンドウ): フレームの読み取り・並べ替え・適用 (T0801)
 src/drivers.ts           パラメータを毎フレーム外から動かす仕組み (ParameterDriver)
 src/parameters.ts        パラメータの一覧 (parameters_json) の読み取り・グループ分け・スライダーの刻み
 src/animation.ts         モーションと表情の一覧の読み取り、トラッキングとの重なり、待機モーション (T0720〜T0722)
@@ -49,10 +50,28 @@ await player.load(file, modules); // モデル (と一緒に開くモジュー�
   スタジオで使うときに、キーの接頭辞をアプリが渡せるようにする。
 - 文言は日本語の直書き。`@ugoe/i18n` に移すのは後の作業 (ADR 0029)。
 
-## 受け手のモード (T0801 で足す)
+## 受け手のモード (T0801)
 
-スタジオの出力ウィンドウは、指揮役が配るフレーム `{seq, dt, values}` を順に適用して物理を回す受け手になる
-([docs/studio.md](../../docs/studio.md))。`Player` のフレームのループは、時計と描画を受け持つ `#tick` と、1 フレーム分を
-進める `#advance(puppet, dt)` (ドライバ → トラッキング → モーションの設定 → `update(dt)` → 値の同期) に分けてある。
-受け手のモードは、`#tick` で時計の `dt` の代わりに届いたフレームを順に取り出し、`#advance` の代わりに「値を書いて
-`update(dt)`」する分岐として足す想定。
+スタジオの出力ウィンドウは、指揮役が配るフレーム `{seq, revision, dt, values, lipSync}` を順に適用して物理を回す受け手になる
+([docs/studio.md](../../docs/studio.md#フレームの配信-内部の形)、ADR 0028 の 3.)。
+
+```ts
+const player = new Player({ loadWasm, readFile });
+player.startFollowing();             // 受け手のモードにする (時計の dt では進めない)
+await player.attach(container);
+// シーンの通知を受けたら、そのモデルを読んでから、そのシーンのフレームを受け付ける
+await player.load({ name: scene.modelName, bytes });
+player.followScene(scene.revision);
+// フレーム (バイト列) が届くたびに
+player.pushFrame(decodeFrame(buffer));
+```
+
+- `#tick` は、受け手のモードでは時計の `dt` の代わりに、届いたフレームを `FrameQueue` (`src/follower.ts`) から順にすべて取り出して
+  `follow` で適用し (物理 → リップシンク → ポーズ。T0134)、最後に 1 回だけ描く。ドライバ・トラッキング・モーション・待機モーションは使わない (値は指揮役が決める)。
+  `values` (スライダーの表示) も同期しない。
+- 前のシーンのフレームは捨て、まだ読み終えていないシーンのフレームは待たせる。同じシーンの中で `seq` が飛んだら (待たせすぎて
+  溢れたときも) 物理をリセットしてから続ける。
+- `WebPuppet.follow` を呼ぶのは `src/follower.ts` の `applyFrame` だけ (`follow` の引数が変わったら、こことフレームの形を合わせる)。
+- `src/wasm.ts` の `follow`・`reset_physics` は省ける (受け手のモードを使わないビューアの型の宣言に無くてよいように)。
+  受け手のモードで無ければ `error` に書いて進めない。
+- フレームのバイト列の形はスタジオのバックエンド (`apps/studio/src-tauri/src/stream.rs`) と同じで、両方のテストが同じバイト列を読む。

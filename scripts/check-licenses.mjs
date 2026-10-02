@@ -2,8 +2,8 @@
 // クレートのライセンスと、依存しているクレートのライセンスを検査する。
 // 方針の正は docs/adr/0018-licensing.md。
 //
-// - ワークスペースのクレートは MIT。アプリ (エディタ ugoe-editor・ビューア ugoe-viewer) だけ GPL-3.0-only
-//   (docs/adr/0019-viewer-license.md)。
+// - ワークスペースのクレートは MIT。アプリ (エディタ ugoe-editor・ビューア ugoe-viewer・スタジオ ugoe-studio) だけ
+//   GPL-3.0-only (docs/adr/0019-viewer-license.md・docs/adr/0028-studio.md)。
 // - MIT のクレートが (dev 以外で) 依存するクレートは、寛容なライセンスで使えること。
 // - アプリが依存するクレートは、GPL-3.0 と両立するライセンスで使えること。
 // - npm のパッケージ bindings/web (@ugoe/runtime) は MIT で、実行時の依存は寛容なライセンスに限る
@@ -23,7 +23,7 @@ import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const EDITOR_CRATES = new Set(["ugoe-editor", "ugoe-viewer"]);
+const EDITOR_CRATES = new Set(["ugoe-editor", "ugoe-viewer", "ugoe-studio"]);
 const EXPECTED = { mit: "MIT", editor: "GPL-3.0-only" };
 
 // 寛容なライセンス (MIT のクレートの依存に使ってよい)

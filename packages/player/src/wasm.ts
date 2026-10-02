@@ -33,6 +33,18 @@ export interface WebPuppet extends TrackingPuppet {
   parameter(id: string): number | undefined;
   reset_parameters(): void;
   update(dt: number): void;
+  /**
+   * 受け手のモード (follower.ts) でだけ使う。値を基準値として書き、物理 → リップシンク → ポーズの順に `dt` 秒進める
+   * (`lipSyncLevel` を省くとリップシンクを当てない。`lipSyncStrength` を省くと 1)。
+   * 受け手のモードを使わないアプリ (ビューア) の型の宣言には無くてよいので省ける。
+   */
+  follow?(
+    values: Float32Array,
+    dt: number,
+    lipSyncLevel?: number | null,
+    lipSyncStrength?: number | null,
+  ): void;
+  reset_physics?(): void;
 
   clear_tracking(): void;
   tracking_parameter_ids(): string[];

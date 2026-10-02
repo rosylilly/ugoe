@@ -1,0 +1,44 @@
+{
+  "toolbar": {
+    "label": "Studio",
+    "open": "Open model…",
+    "output": "Output window"
+  },
+  "language": {
+    "label": "Language",
+    "system": "Match the OS"
+  },
+  "file": {
+    "filter": "ugoe models"
+  },
+  "errors": {
+    "open": "Could not open {{name}}: {{message}}"
+  },
+  "state": {
+    "heading": "Now",
+    "noModel": "No model is open. Open a .ugoe file to show it in the output window.",
+    "model": "Model",
+    "frame": "Frame",
+    "tick": "Time per tick",
+    "tickValue": "{{value}} ms",
+    "receivers": "Receivers"
+  },
+  "output": {
+    "heading": "Output window",
+    "show": "Show the output window",
+    "onTop": "Always on top",
+    "size": "Size",
+    "sizeFree": "Free",
+    "sizeValue": "{{width}} × {{height}}",
+    "sizePortrait": "{{width}} × {{height}} (portrait)",
+    "current": "Current size: {{width}} × {{height}} px",
+    "scaled": "The OS kept the window smaller than the chosen size (it may not fit on the screen).",
+    "moveHint": "The output window has no frame. Hold Alt and drag it to move it."
+  },
+  "parameters": {
+    "heading": "Parameters",
+    "reset": "Reset all",
+    "empty": "Open a model to move its parameters.",
+    "showInternal": "Show relay parameters"
+  }
+}

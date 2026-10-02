@@ -1,10 +1,10 @@
 name: Editor build
 
-# エディタとビューアのインストーラを各 OS のランナーでビルドし、成果物 (artifact) として置く。
+# エディタ・ビューア・スタジオのインストーラを各 OS のランナーでビルドし、成果物 (artifact) として置く。
 # Tauri は他の OS 向けのクロスビルドが難しいので、OS ごとにネイティブでビルドする。
 # (Linux から Windows 向けの NSIS だけを作る `just editor-build-windows` もあるが、MSI を作れないので CI では使わない。)
 # 署名はしていない (apps/editor/README.md#配布物の署名)。
-# ビューア (apps/viewer) も同じ手順でビルドできるので、アプリを行列に加えて一緒に作る (T0701)。
+# ビューア (apps/viewer) とスタジオ (apps/studio) も同じ手順でビルドできるので、アプリを行列に加えて一緒に作る (T0701・T0801)。
 on:
   workflow_dispatch:
   push:
@@ -25,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [editor, viewer]
+        app: [editor, viewer, studio]
         platform: [linux-x86_64, windows-x86_64, macos-universal]
         include:
           - platform: linux-x86_64

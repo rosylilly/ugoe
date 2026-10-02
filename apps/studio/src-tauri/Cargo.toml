@@ -1,0 +1,28 @@
+[package]
+name = "ugoe-studio"
+description = "ugoe スタジオ (Tauri バックエンド。配信用のアプリ、docs/adr/0028-studio.md)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license = "GPL-3.0-only"
+
+[lib]
+name = "ugoe_studio_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+# macOS で出力ウィンドウの背景を透過するには macos-private-api が要る (tauri.conf.json の macOSPrivateApi)
+tauri = { workspace = true, features = ["macos-private-api"] }
+tauri-plugin-dialog.workspace = true
+tauri-plugin-os.workspace = true
+thiserror.workspace = true
+ugoe.workspace = true
+
+[lints]
+workspace = true

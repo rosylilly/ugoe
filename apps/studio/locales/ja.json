@@ -1,0 +1,44 @@
+{
+  "toolbar": {
+    "label": "スタジオ",
+    "open": "モデルを開く…",
+    "output": "出力ウィンドウ"
+  },
+  "language": {
+    "label": "言語",
+    "system": "OS に合わせる"
+  },
+  "file": {
+    "filter": "ugoe のモデル"
+  },
+  "errors": {
+    "open": "{{name}} を開けません: {{message}}"
+  },
+  "state": {
+    "heading": "いまの状態",
+    "noModel": "モデルを開いていません。.ugoe のファイルを開くと、出力ウィンドウに出ます。",
+    "model": "モデル",
+    "frame": "フレーム",
+    "tick": "1 刻みの時間",
+    "tickValue": "{{value}} ms",
+    "receivers": "受け手"
+  },
+  "output": {
+    "heading": "出力ウィンドウ",
+    "show": "出力ウィンドウを表示",
+    "onTop": "最前面に置く",
+    "size": "大きさ",
+    "sizeFree": "自由",
+    "sizeValue": "{{width}} × {{height}}",
+    "sizePortrait": "{{width}} × {{height}} (縦)",
+    "current": "いまの大きさ: {{width}} × {{height}} px",
+    "scaled": "OS が、選んだ大きさより小さくしました (画面に収まらないことがあります)。",
+    "moveHint": "出力ウィンドウには枠がありません。Alt を押しながらドラッグすると動かせます。"
+  },
+  "parameters": {
+    "heading": "パラメータ",
+    "reset": "すべて戻す",
+    "empty": "モデルを開くと、パラメータを動かせます。",
+    "showInternal": "中継用のパラメータも表示"
+  }
+}
