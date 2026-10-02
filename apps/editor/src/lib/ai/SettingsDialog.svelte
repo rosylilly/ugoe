@@ -1,5 +1,5 @@
 <!--
-  ヘッダーの「Settings」。「General」(画面の言語。lib/LanguageSetting.svelte)・「AI provider」と
+  ヘッダーの「Settings」。「General」(画面の言語 (lib/LanguageSetting.svelte) とテーマ)・「AI provider」と
   「Connect agents」(lib/agents/ConnectAgents.svelte。エディタの中の MCP サーバ) の 3 つのタブ。
   「AI provider」は AI の設定 (docs/editor.md#ai-の設定と送信の同意):
   プロバイダ (Claude / OpenAI 互換) とモデル・ベースの URL の選択 (エディタ全体の設定)、選んだプロバイダの
@@ -7,7 +7,7 @@
   開いているプロジェクトの「外部の AI に送らない」、「今後は確かめない」の取り消し、接続の確認。
 -->
 <script lang="ts">
-import { Button } from "@ugoe/ui";
+import { Button, ThemeSetting } from "@ugoe/ui";
 import ConnectAgents from "../agents/ConnectAgents.svelte";
 import { errorText } from "../errors";
 import { t } from "../i18n";
@@ -160,6 +160,7 @@ function keyStatus(s: AiSettings): string {
     <section>
       <h3>{t("settings.general.tab")}</h3>
       <LanguageSetting />
+      <div class="theme"><ThemeSetting /></div>
     </section>
   {:else if tab === "agents"}
     <ConnectAgents />
@@ -396,5 +397,8 @@ function keyStatus(s: AiSettings): string {
     display: flex;
     justify-content: flex-end;
     margin-top: 16px;
+  }
+  .theme {
+    margin-top: var(--ugoe-space-4);
   }
 </style>

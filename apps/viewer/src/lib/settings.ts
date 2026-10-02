@@ -3,6 +3,8 @@ import { isLocale, type LocalePreference } from "@ugoe/i18n";
 
 /** 画面の言語の設定のキー (「OS に合わせる」は `system`)。 */
 export const LOCALE_STORAGE_KEY = "ugoe-viewer.locale";
+/** テーマの設定のキー (@ugoe/ui の initTheme に渡す。index.html の <head> のスクリプトも同じキーを読む)。 */
+export const THEME_STORAGE_KEY = "ugoe-viewer.theme";
 
 /** 覚えた言語の設定。覚えていない・読めない・知らない値なら「OS に合わせる」。 */
 export function loadLocalePreference(storage?: Storage): LocalePreference {

@@ -12,12 +12,13 @@ src/tokens.css          デザイントークン (CSS 変数)。ライト・ダ�
 src/index.ts            公開する部品と関数
 src/components/         部品 (Button・IconButton・Checkbox・Toggle・Slider・NumberField・Select・SegmentedControl・
                         Tabs・Section・Toolbar・Dialog・AlertDialog・Notice・Toaster・Tooltip・TooltipProvider・
-                        Menu・ContextMenu・Popover・ColorPicker・DropZone・Kbd)
+                        Menu・ContextMenu・Popover・ColorPicker・DropZone・Kbd・ThemeSetting)
 src/number.ts           数値の欄の解釈・書式・増減 (純粋な関数)
 src/shortcut.ts         ショートカットの表記 (Mod → ⌘ / Ctrl)・aria-keyshortcuts
 src/color.ts            色 (#rrggbb) と RGB
 src/files.ts            DropZone の accept による選り分け
 src/toast.svelte.ts     Toast の列 (showToast・dismissToast)
+src/theme.svelte.ts     テーマの設定 (initTheme・setThemePreference・currentTheme。ThemeSetting が使う)
 src/props.ts            Bits UI のトリガーの属性と ugoe の props を重ねる (内部用)
 src/i18n.ts             部品の既定の文言 (@ugoe/i18n の名前空間 `ui`。カタログは locales/)
 src/context.ts          部品の間の context (Toolbar の中の Button を Bits UI の Toolbar.Button で出す)
@@ -91,6 +92,26 @@ showToast(t("file.saved"), { tone: "success" }); // 既定で 5 秒。ポイン�
   `active` で見た目を変え、`onbrowse` で自前のダイアログを開く。
 - **Kbd:** `keys="Mod+Shift+Z"`。macOS は ⌘⇧Z、ほかは Ctrl+Shift+Z。`formatShortcut()`・`ariaKeyShortcuts()` も出している。
 - Bits UI 2.19.4 が付けないので、`@ugoe/ui` で足しているもの: Tooltip の `role="tooltip"`、Menu・ContextMenu の一覧の `aria-label`。
+
+## テーマ (T0909)
+
+設定の「OS に合わせる・ライト・ダーク」。選んだテーマは `<html data-theme>` に付け、「OS に合わせる」なら属性を外す
+(tokens.css が `prefers-color-scheme` で切り替えるので、OS のテーマの変化にもそのまま追従する)。
+
+```ts
+// main.ts で mount の前に 1 回。キーは `<アプリ>.theme` (言語の `<アプリ>.locale` と同じ流儀)
+import { initTheme } from "@ugoe/ui";
+initTheme("ugoe-viewer.theme");
+```
+
+```svelte
+<ThemeSetting />  <!-- 設定の画面に置く。選ぶとすぐに切り替えて覚える -->
+```
+
+- **ちらつき:** module のスクリプトは最初の描画の後に走ることがあるので、アプリの `index.html` の `<head>` に、同じキーを読んで
+  `data-theme` を付ける小さなスクリプトを置く (3 つのアプリの `index.html` を見本に)。
+- CSS の変数を JS で読むところ (canvas の背景など) は、`$effect` の中で `currentTheme()` を読み、テーマ (設定・OS) が変わったら読み直す。
+- 透過の出力など、テーマを効かせない画面では `initTheme()` を呼ばず tokens.css も読まない。
 
 ## 見た目
 

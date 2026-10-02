@@ -1,10 +1,14 @@
 import "@ugoe/ui/tokens.css";
 import { setLocale, setSystemLanguages } from "@ugoe/i18n";
+import { initTheme } from "@ugoe/ui";
 import { mount } from "svelte";
 import App from "./App.svelte";
 import "./app.css";
 import { systemLocale } from "./lib/host";
-import { loadLocalePreference } from "./lib/settings";
+import { loadLocalePreference, THEME_STORAGE_KEY } from "./lib/settings";
+
+// テーマ: 覚えた設定 (既定は OS に合わせる)。OS のテーマの変化にも追従する。
+initTheme(THEME_STORAGE_KEY);
 
 const target = document.getElementById("app");
 if (!target) throw new Error("#app not found");

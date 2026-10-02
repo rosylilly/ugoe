@@ -1350,6 +1350,9 @@ Open…・Open Sample…・本体の問題の枠の「Open base project」) は�
   `@ugoe/i18n` の `setSystemLanguages()` に渡します。WebView の `navigator.languages` は OS の言語と違うことがあるため
   ([packages/i18n/README.md の「OS の言語」](../packages/i18n/README.md#os-の言語))。権限は `os:allow-locale` だけ (`capabilities/default.json`)。
   Tauri の外 (ヘッドレスのブラウザでの確認) では `navigator.languages` のまま。
+
+「General」にはテーマ (「OS に合わせる」(既定)・ライト・ダーク) も置きます (`@ugoe/ui` の `ThemeSetting`、T0909)。`localStorage`
+(`ugoe-editor.theme`) に覚え、ビューポートの背景もテーマに合わせて読み直します ([docs/ui.md](ui.md#名前と切り替え))。
 - **文言:** 画面の文言はカタログ `apps/editor/locales/<言語>.json` (名前空間 `editor`。原文は英語) から `src/lib/i18n.ts` の `t()` で引きます
   ([docs/ui.md の「文言の書き方」](ui.md#文言の書き方))。バックエンドのエラーの訳は [エラーと警告のコード](#エラーと警告のコード)。
 - MCP・CLI・ログの文言は英語のまま変えません。マニュアルは日本語だけです。

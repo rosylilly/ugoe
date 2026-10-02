@@ -11,6 +11,7 @@
   オーバーレイの層は pointer-events: none なので、入力を受ける要素には pointer-events: auto を付ける。
 -->
 <script lang="ts">
+import { currentTheme } from "@ugoe/ui";
 import { type Snippet, untrack } from "svelte";
 import { errorText } from "../errors";
 import type { ViewportController, ViewportModel } from "./controller.svelte";
@@ -76,13 +77,13 @@ $effect(() => {
     controller.resize(width, height, window.devicePixelRatio || 1);
   });
   observer.observe(container);
-  applyBackground();
-  const scheme = window.matchMedia("(prefers-color-scheme: dark)");
-  scheme.addEventListener("change", applyBackground);
-  return () => {
-    observer.disconnect();
-    scheme.removeEventListener("change", applyBackground);
-  };
+  return () => observer.disconnect();
+});
+
+// テーマ (設定・OS) が変わったら背景を読み直す。
+$effect(() => {
+  currentTheme();
+  untrack(applyBackground);
 });
 
 /** CSS の --viewport-bg を描画の背景色にする (canvas が不透明にしか合成できない環境でも同じ色になる)。 */

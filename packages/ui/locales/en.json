@@ -49,5 +49,11 @@
     "browse": {
       "label": "Choose file…"
     }
+  },
+  "theme": {
+    "label": "Theme",
+    "system": "Match the OS",
+    "light": "Light",
+    "dark": "Dark"
   }
 }

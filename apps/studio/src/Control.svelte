@@ -24,6 +24,7 @@ import {
   Section,
   Select,
   Slider,
+  ThemeSetting,
   Toggle,
   Toolbar,
 } from "@ugoe/ui";
@@ -609,6 +610,7 @@ onMount(() => {
         onchange={changeLocale}
       />
     </div>
+    <ThemeSetting />
   </header>
 
   {#if error !== null}

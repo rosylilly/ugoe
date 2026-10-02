@@ -1,9 +1,11 @@
-// 操作ウィンドウが覚える設定 (localStorage。言語・刻みの速さ) と、出力ウィンドウの大きさのプリセット (docs/studio.md#出力ウィンドウ)。
+// 操作ウィンドウが覚える設定 (localStorage。言語・テーマ・刻みの速さ) と、出力ウィンドウの大きさのプリセット (docs/studio.md#出力ウィンドウ)。
 // 出力の大きさはプロファイル (lib/profile.ts の `Profile.output`) に持つ (T0802)。刻みの速さもプロファイルへ移すのは後続の候補。
 import { isLocale, type LocalePreference } from "@ugoe/i18n";
 
 /** 画面の言語の設定のキー。 */
 export const LOCALE_STORAGE_KEY = "ugoe-studio.locale";
+/** テーマの設定のキー (@ugoe/ui の initTheme に渡す。index.html の <head> のスクリプトも同じキーを読む)。出力ウィンドウには効かせない。 */
+export const THEME_STORAGE_KEY = "ugoe-studio.theme";
 /** 刻みの速さのキー。 */
 export const TICK_RATE_STORAGE_KEY = "ugoe-studio.tick-rate";
 

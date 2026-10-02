@@ -62,6 +62,8 @@ src-tauri/                    バックエンド (Rust クレート `ugoe-studio
 - パラメータのスライダーは指揮役に書き込む (`set_parameter`。次の刻みから基準値になる)。動かしてから 0.5 秒は、指揮役からの値で表示を上書きしない。
 - 言語は「OS に合わせる」が既定で、OS の言語は `tauri-plugin-os` の `locale()` で取る (WebView の `navigator.languages` は OS と違うことがある。
   `packages/i18n/README.md`)。選んだ言語は `ugoe-studio.locale` に覚える。
+- テーマ (OS に合わせる・ライト・ダーク) はヘッダーの言語の隣 (`@ugoe/ui` の `ThemeSetting`)。`ugoe-studio.theme` に覚える。
+  操作ウィンドウだけに効かせ、出力ウィンドウ (`output.ts`) は @ugoe/ui を読まないので透過のまま。
 - 出力ウィンドウの大きさは物理ピクセルのプリセット (1920×1080・1280×720・1080×1920・1080×1080・自由)。選んだものはプロファイルに持ち、
   プロファイルを開いたときに合わせる (T0802。T0801 の `ugoe-studio.output-size` は使わない)。
 - **シーンとプロファイル (T0802):** プロファイル (版の番号付きの JSON) は舞台 (`stage.rs`) が持ち、変わるたびに操作ウィンドウへ `profile` の

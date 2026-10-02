@@ -3,6 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- 覚えたテーマを最初の描画の前に付ける (ちらつきを避ける)。続きは @ugoe/ui の initTheme (packages/ui/README.md の「テーマ」) -->
+    <script>
+      try {
+        const theme = localStorage.getItem("ugoe-viewer.theme");
+        if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+      } catch {}
+    </script>
     <title>ugoe viewer</title>
   </head>
   <body>

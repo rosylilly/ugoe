@@ -17,7 +17,7 @@ src/                  フロントエンド (Svelte 5 + TS。npm パッケージ
   main.ts               トークン (@ugoe/ui/tokens.css) を読み、覚えた言語と OS の言語を決めてから App を描く
   App.svelte            ツールバー・ビューポート・右のパネル・ステータスバー、ドロップとショートカット
   lib/i18n.ts           文言の `t()` (名前空間 `viewer`)
-  lib/settings.ts       モデルによらない設定 (画面の言語) を localStorage に覚える
+  lib/settings.ts       モデルによらない設定 (画面の言語・テーマのキー) を localStorage に覚える
   lib/SettingsDialog.svelte  設定の画面 (言語: OS に合わせる・日本語・English)
   lib/LicenseDialog.svelte   ライセンスの画面 (public/third-party-notices.txt)
   lib/host.ts           ファイルの選択と読み込み・OS の言語 (Tauri / ブラウザ / 差し替え)
@@ -82,7 +82,7 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 | 覚えたもの | モデルごとに覚えた光源・着せ替えの組・待機モーションの一覧。モデルごとに・すべて忘れる (下の「[覚えたものの一覧](#覚えたものの一覧-t0714)」) |
 | 背景・透明 | 背景色。透明にすると市松模様の上に描く |
 | 画像を保存 | 今の表示を PNG で保存する (下の「[画像の保存](#画像の保存-t0420)」) |
-| 設定 (ツールバーの歯車) | 画面の言語を「OS に合わせる」(既定)・「日本語」・「English」から選ぶ。すぐに切り替わり、`ugoe-viewer.locale` に覚える。OS の言語は Tauri では tauri-plugin-os の `locale()` で取り (WebView の `navigator.languages` は OS の言語と違うことがあるため)、ブラウザでは `navigator.languages` を使う。対応していない言語なら English |
+| 設定 (ツールバーの歯車) | 画面の言語を「OS に合わせる」(既定)・「日本語」・「English」から選ぶ。すぐに切り替わり、`ugoe-viewer.locale` に覚える。OS の言語は Tauri では tauri-plugin-os の `locale()` で取り (WebView の `navigator.languages` は OS の言語と違うことがあるため)、ブラウザでは `navigator.languages` を使う。対応していない言語なら English。テーマ (「OS に合わせる」(既定)・ライト・ダーク) も選べ、`ugoe-viewer.theme` に覚える (`@ugoe/ui` の `ThemeSetting`) |
 | 着せ替え | スロットのあるモデルか、モジュールを読み込んだときに右のパネルに出る。スロットごとにモジュールを付ける・外す・差し替える (下の「着せ替え」) |
 | ライティング | ライティングを使うモデルのときだけ右のパネルに出る。光源の向き・位置・色・強さと既定の光源の組 (下の「ライティング」) |
 | モーションと表情 | バンドルにモーションか表情があるときに右のパネルに出る。モーションを優先度を選んで再生・停止し、表情を付け外しする (下の「モーションと表情」) |

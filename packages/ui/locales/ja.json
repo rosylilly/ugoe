@@ -49,5 +49,11 @@
     "browse": {
       "label": "ファイルを選ぶ…"
     }
+  },
+  "theme": {
+    "label": "テーマ",
+    "system": "OS に合わせる",
+    "light": "ライト",
+    "dark": "ダーク"
   }
 }

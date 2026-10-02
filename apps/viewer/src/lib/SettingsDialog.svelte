@@ -1,7 +1,8 @@
 <script lang="ts">
-// 設定の画面。いまは画面の言語 (OS に合わせる・日本語・English) だけ。選んだ言語は覚える (settings.ts)。
+// 設定の画面。画面の言語 (OS に合わせる・日本語・English) とテーマ (OS に合わせる・ライト・ダーク)。選んだものは覚える
+// (言語は settings.ts、テーマは @ugoe/ui の ThemeSetting)。
 import { getLocalePreference, LANGUAGES, type LocalePreference, setLocale } from "@ugoe/i18n";
-import { Dialog, Select } from "@ugoe/ui";
+import { Dialog, Select, ThemeSetting } from "@ugoe/ui";
 import { t } from "./i18n";
 import { saveLocalePreference } from "./settings";
 
@@ -25,6 +26,7 @@ function changeLocale(value: LocalePreference) {
 <Dialog bind:open title={t("settings.title")} size="sm">
   <Select label={t("settings.language.label")} value={locale} {options} onchange={changeLocale} />
   <p class="hint">{t("settings.language.description")}</p>
+  <div class="theme"><ThemeSetting /></div>
 </Dialog>
 
 <style>
@@ -32,5 +34,8 @@ function changeLocale(value: LocalePreference) {
     margin: var(--ugoe-space-2) 0 0;
     font-size: var(--ugoe-font-size-sm);
     color: var(--ugoe-color-text-muted);
+  }
+  .theme {
+    margin-top: var(--ugoe-space-4);
   }
 </style>

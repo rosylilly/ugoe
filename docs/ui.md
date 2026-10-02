@@ -24,6 +24,10 @@
 
 - 名前は `--ugoe-<分類>-<名前>` (例: `--ugoe-color-text`・`--ugoe-space-3`)。アプリの古い変数 (`--bg` など) と衝突させないため、接頭辞を付けます。
 - **ライトとダーク:** 既定は OS の設定 (`prefers-color-scheme`) に従います。`<html data-theme="light">` / `"dark"` で上書きできます (設定の「OS に合わせる・ライト・ダーク」)。
+  3 つのアプリの設定に `@ugoe/ui` の `ThemeSetting` を置き、選んだテーマは `localStorage` の `<アプリ>.theme`
+  (`ugoe-editor.theme`・`ugoe-viewer.theme`・`ugoe-studio.theme`) に覚えます (T0909。言語の `<アプリ>.locale` と同じ流儀)。
+  起動時のちらつきを避けるため、各アプリの `index.html` の `<head>` で同じキーを読んで先に `data-theme` を付けます。
+  CSS の変数を JS で読むところ (エディタのビューポートの背景) は `currentTheme()` で変化を知ります。スタジオの出力ウィンドウには効かせません (透過のまま)。
   `color-scheme` も合わせて切り替え、スクロールバーやフォームの標準の部品の色もそろえます。
 - **密度:** `<html data-density="compact">` (エディタ。基準の文字 13px。属性を省いたときもこれ) と `"comfortable"` (ビューア・スタジオ。基準の文字 15px)。
   余白と文字の大きさのトークンは密度によって変わり、部品は密度を意識せずにトークンを使います。
@@ -141,6 +145,7 @@ HTML の標準の要素の上に自作し、ふるまいは [WAI-ARIA APG](https
 | `ColorPicker` | 光源などの色 | 自作 (`Popover` の中に `<input type="color">` と `NumberField`) | 標準の操作 | 2 |
 | `DropZone` | ファイルを落とす領域。**同じことができるボタン (「ファイル…」) を必ず並べる** | 自作 (`<div>` と `Button`) | ボタンで開く | 2 |
 | `Kbd` | ショートカットの表記 (macOS は ⌘、ほかは Ctrl) | 自作 (`<kbd>`) | | 2 |
+| `ThemeSetting` | テーマの設定 (OS に合わせる・ライト・ダーク)。選ぶとすぐに切り替えて覚える | 自作 (`SegmentedControl`) | 矢印で移り、選ぶ | T0909 |
 
 Bits UI を包むときの約束:
 
