@@ -18,8 +18,9 @@ T0133 の `follow` は、指揮役が送った値 (リップシンクを済ま�
 
 ## 受け入れ条件
 
-- [ ] 指揮役が送るフレームを「物理の段に入る直前の値」と「物理より後の段 (リップシンクなど) の結果」に分け、受け手の `follow` が物理の後で同じ順に当てる
-      (Puppet::update と同じ段の順)。既存の `update` の挙動は変えない
+- [ ] 案 C (T0133 の担当の提案を team-lead が採用): フレームを {dt, values, lip_sync} にする。values は物理の段に入る直前の値 (Puppet に `values_before_physics()` を足す)、
+      lip_sync は音量と強さの 2 つの f32。受け手の `follow(values, lip_sync, dt)` は、基準値の書き込み → 物理 → 自分のモデルの設定でリップシンク → ポーズ → 評価の順に進める
+      (Puppet::update と同じ段の順)。既存の `update` と `set_base_values` の挙動は変えない
 - [ ] リップシンクの対象を物理の入力にするモデルで、指揮役と受け手の組み合わせが 1 つの Puppet と許容誤差内で一致するテスト (適合テストのケースも足す)
 - [ ] docs/spec/motion.md の制限の記述を消し、docs/studio.md のフレームの形を更新する
 - [ ] `just ci`・`just wasm-check`・`just ffi-check`・`just conformance --only c,wasm` が通る
