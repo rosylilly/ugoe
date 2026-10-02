@@ -1,11 +1,11 @@
 ---
 id: T0805
 title: スタジオ: 外から操作する API (ループバックの WebSocket・トークン・利用者の許可)
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, docs]
 depends_on: [T0803]
-assignee:
+assignee: claude-worker-T0805
 ---
 
 # T0805: スタジオ: 外から操作する API (ループバックの WebSocket・トークン・利用者の許可)

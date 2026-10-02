@@ -1,11 +1,11 @@
 ---
 id: T0135
 title: ランタイム: 受け手でもモーションのパーツの不透明度のカーブを当てる
-status: todo
+status: in-progress
 milestone: M8
 crates: [ugoe, ugoe-ffi, ugoe-wasm, bindings/web, tests/conformance, apps/studio, docs]
 depends_on: [T0134, T0803]
-assignee:
+assignee: claude-worker-T0135
 ---
 
 # T0135: 受け手のパーツの不透明度
