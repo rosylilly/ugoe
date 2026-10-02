@@ -156,3 +156,16 @@
     --ugoe-duration-normal: 0ms;
   }
 }
+
+/* 部品が使う補助のクラス: 見せずに読み上げだけさせる文字 */
+.ugoe-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  border: 0;
+  white-space: nowrap;
+}

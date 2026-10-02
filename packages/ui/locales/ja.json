@@ -1,7 +1,53 @@
 {
+  "common": {
+    "close": "閉じる",
+    "cancel": "キャンセル"
+  },
   "slider": {
     "reset": {
       "aria": "既定値に戻す"
+    }
+  },
+  "notice": {
+    "tone": {
+      "info": "お知らせ:",
+      "success": "完了:",
+      "warning": "警告:",
+      "danger": "エラー:"
+    }
+  },
+  "toast": {
+    "region": {
+      "aria": "通知"
+    }
+  },
+  "colorPicker": {
+    "panel": {
+      "aria": "色"
+    },
+    "system": {
+      "label": "OS の色の選択"
+    },
+    "hex": {
+      "label": "16 進"
+    },
+    "red": {
+      "label": "赤"
+    },
+    "green": {
+      "label": "緑"
+    },
+    "blue": {
+      "label": "青"
+    }
+  },
+  "dropZone": {
+    "prompt": {
+      "single": "ここにファイルを落とす",
+      "multiple": "ここにファイルを落とす (複数可)"
+    },
+    "browse": {
+      "label": "ファイルを選ぶ…"
     }
   }
 }

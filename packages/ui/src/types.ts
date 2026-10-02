@@ -24,8 +24,39 @@ export interface ButtonBaseProps {
   class?: string;
   /** 補足の説明を持つ要素の id (無効の理由など)。 */
   "aria-describedby"?: string;
+  /** 読み上げの名前を持つ要素の id (見えるラベルを別に置くとき)。 */
+  "aria-labelledby"?: string;
   "aria-controls"?: string;
   "aria-expanded"?: boolean;
   "aria-haspopup"?: "menu" | "dialog" | "listbox" | boolean;
   onclick?: (event: MouseEvent) => void;
 }
+
+/** 知らせ (Notice・Toast) の種類。色に加えて印 (アイコン) と読み上げの言葉でも区別する。 */
+export type Tone = "info" | "success" | "warning" | "danger";
+
+/** 重ねて出す部品 (Tooltip・Popover・Menu) を、トリガーのどちら側に出すか。 */
+export type Side = "top" | "right" | "bottom" | "left";
+
+/** Menu・ContextMenu の項目。`label` は翻訳を通した文言を渡す。 */
+export type MenuEntry =
+  | {
+      kind?: "item";
+      label: string;
+      onselect: () => void;
+      /** ショートカット (`"Mod+S"`。Kbd の書き方)。項目の右に出す。 */
+      shortcut?: string;
+      disabled?: boolean;
+      /** 取り消せない操作 (削除など)。 */
+      danger?: boolean;
+    }
+  | {
+      kind: "checkbox";
+      label: string;
+      checked: boolean;
+      onchange: (checked: boolean) => void;
+      shortcut?: string;
+      disabled?: boolean;
+    }
+  | { kind: "separator" }
+  | { kind: "submenu"; label: string; entries: MenuEntry[]; disabled?: boolean };

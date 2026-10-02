@@ -2,7 +2,7 @@
 
 エディタ・ビューア・スタジオで共有する UI の部品とデザイントークン (npm パッケージ `@ugoe/ui`、pnpm のワークスペース)。
 方針は [ADR 0029](../../docs/adr/0029-shared-ui-and-i18n.md)、トークンの値・部品の一覧・アクセシビリティの基準は
-[docs/ui.md](../../docs/ui.md) にある。T0902 で 1 段目の部品を作った (2 段目は T0903)。
+[docs/ui.md](../../docs/ui.md) にある。T0902 で 1 段目の部品、T0903 で 2 段目の部品 (重ねて出すもの・知らせ・色・ファイル・ショートカット) を作った。
 
 **ライセンスは GPL-3.0-only** (使うアプリと同じ)。ふるまいの土台の [Bits UI](https://bits-ui.com/) とその依存は MIT・Apache-2.0
 (`just licenses` が推移的に検査する)。
@@ -11,8 +11,14 @@
 src/tokens.css          デザイントークン (CSS 変数)。ライト・ダーク (data-theme)、compact・comfortable (data-density)
 src/index.ts            公開する部品と関数
 src/components/         部品 (Button・IconButton・Checkbox・Toggle・Slider・NumberField・Select・SegmentedControl・
-                        Tabs・Section・Toolbar)
+                        Tabs・Section・Toolbar・Dialog・AlertDialog・Notice・Toaster・Tooltip・TooltipProvider・
+                        Menu・ContextMenu・Popover・ColorPicker・DropZone・Kbd)
 src/number.ts           数値の欄の解釈・書式・増減 (純粋な関数)
+src/shortcut.ts         ショートカットの表記 (Mod → ⌘ / Ctrl)・aria-keyshortcuts
+src/color.ts            色 (#rrggbb) と RGB
+src/files.ts            DropZone の accept による選り分け
+src/toast.svelte.ts     Toast の列 (showToast・dismissToast)
+src/props.ts            Bits UI のトリガーの属性と ugoe の props を重ねる (内部用)
 src/i18n.ts             部品の既定の文言 (@ugoe/i18n の名前空間 `ui`。カタログは locales/)
 src/context.ts          部品の間の context (Toolbar の中の Button を Bits UI の Toolbar.Button で出す)
 src/*.test.ts           Vitest (happy-dom の上でキーボード操作と aria を検査する)
@@ -44,8 +50,49 @@ import "@ugoe/ui/tokens.css";
 - **見えるラベル・読み上げの名前・選択肢の名前は、翻訳を通した文言を props で渡す。** 部品が既定で出す文言
   (いまは `Slider` のリセットの名前 `slider.reset.aria` だけ) は、このパッケージのカタログ `locales/<言語>.json`
   (@ugoe/i18n の名前空間 `ui`) から引き、props で上書きできる。言語はアプリが @ugoe/i18n の `setLocale()` で決める。
-- `IconButton` の `label` は必須で、空だとコンソールにエラーを出す。`title` 属性は付けない (ツールチップは T0903)。
+- `IconButton` の `label` は必須で、空だとコンソールにエラーを出す。`title` 属性は付けず、同じ文言を `Tooltip` で出す
+  (`tooltip={false}` で消せる。`shortcut="Mod+Z"` でツールチップにショートカットを出し、`aria-keyshortcuts` を付ける)。
 - `Select` の一覧は body に出す (Portal) ので、`data-theme`・`data-density` は `<html>` に付ける。
+## 重ねて出す部品 (T0903)
+
+```svelte
+<script lang="ts">
+  import { AlertDialog, Dialog, Menu, Notice, showToast, Toaster, TooltipProvider } from "@ugoe/ui";
+</script>
+
+<!-- アプリの根元に 1 回だけ -->
+<TooltipProvider>
+  <App />
+  <Toaster />
+</TooltipProvider>
+
+<Dialog bind:open title={t("rename.title")} description={t("rename.description")} onclose={later}>
+  …中身…
+  {#snippet actions()}<Button onclick={…}>…</Button><Button variant="primary">…</Button>{/snippet}
+</Dialog>
+<AlertDialog bind:open title={…} description={…} confirmLabel={t("memory.forgetAll.label")} onconfirm={forgetAll} />
+<Menu label={t("menu.file.label")} entries={[{ label: t("menu.save.label"), shortcut: "Mod+S", onselect: save }]} />
+<Notice tone="warning" title={…} ondismiss={hide}>…</Notice>
+```
+
+```ts
+showToast(t("file.saved"), { tone: "success" }); // 既定で 5 秒。ポインタやフォーカスが乗っている間は止まる
+```
+
+- **Dialog:** `onclose` は利用者が閉じたとき (Esc・外のクリック・閉じるボタン) だけ呼ぶ。`dismissible={false}` なら中のボタンでしか閉じない。
+  閉じるボタンは並びの最後に置くので、開くと最初の入力欄やボタンにフォーカスが行く。
+- **AlertDialog:** 取り消せない操作の確認。開くとフォーカスは取り消し側。決定は既定で `danger`。
+- **Notice** は残る知らせ (`role="status"`、`danger` は `role="alert"`)、**Toast** はすぐ消えてよい知らせ。種類は印と読み上げの言葉でも示す。
+- **Tooltip・Popover・Menu の `trigger`:** 自前の要素をトリガーにするときは、スニペットが受け取る属性をフォーカスを受ける要素に広げる。
+  ugoe の `Button` に広げてよい (`<Button {...attrs as ButtonBaseProps}>`)。
+- **ContextMenu** の `label` は一覧の読み上げの名前。右クリックでしかできない操作は作らない。
+- **DropZone:** 同じことができる「ファイルを選ぶ…」のボタンを必ず出す。Tauri のように WebView の外でドロップを受けるアプリは、
+  `active` で見た目を変え、`onbrowse` で自前のダイアログを開く。
+- **Kbd:** `keys="Mod+Shift+Z"`。macOS は ⌘⇧Z、ほかは Ctrl+Shift+Z。`formatShortcut()`・`ariaKeyShortcuts()` も出している。
+- Bits UI 2.19.4 が付けないので、`@ugoe/ui` で足しているもの: Tooltip の `role="tooltip"`、Menu・ContextMenu の一覧の `aria-label`。
+
+## 見た目
+
 - 見た目はトークンだけで決める。部品の CSS は `.ugoe-*` のクラス (`:global`) で、Bits UI の `data-state` などの属性に当てている。
 
 ## Bits UI の版
@@ -64,10 +111,12 @@ import "@ugoe/ui/tokens.css";
 pnpm --filter @ugoe/ui test           # Vitest
 pnpm --filter @ugoe/ui check          # svelte-check
 pnpm --filter @ugoe/ui gallery        # 見本の画面 (http://localhost:1430/?theme=dark&density=comfortable&lang=ja)
-just ui-shots /tmp/ugoe-ui-shots      # 見本の画面を 9 通り撮って検査する
+just ui-shots /tmp/ugoe-ui-shots      # 見本の画面を 21 通り撮って検査する
 ```
 
 `test` と `check` は `just web-check` (`just ci`) に入っている。`ui-shots` は Chrome が要るので CI に入れていない。
-撮るのはテーマ (light・dark) × 密度 (compact・comfortable) × 言語 (en・ja) の 8 通りと、狭い幅 (360px) の 1 枚。
+撮るのはテーマ (light・dark) × 密度 (compact・comfortable) × 言語 (en・ja) の 8 通りと、狭い幅 (360px) の 1 枚、
+重ねて出す部品 (ダイアログ・確かめのダイアログ・メニュー・Popover・Toast・ツールチップ) を見本の画面の `?open=` で開いた 12 枚 (2 通りずつ)。
+動きの途中を撮らないよう、Chrome に `--force-prefers-reduced-motion` を渡す。
 それぞれで、描き終わったこと・スクリプトのエラーが無いこと・`<html>` の属性・操作できる部品のすべてに読み上げの名前があることを確かめる。
 Chrome は環境変数 `CHROME` で指定できる (無ければ PATH の `google-chrome` / `chromium`)。

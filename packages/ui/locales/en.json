@@ -1,7 +1,53 @@
 {
+  "common": {
+    "close": "Close",
+    "cancel": "Cancel"
+  },
   "slider": {
     "reset": {
       "aria": "Reset to default"
+    }
+  },
+  "notice": {
+    "tone": {
+      "info": "Information:",
+      "success": "Done:",
+      "warning": "Warning:",
+      "danger": "Error:"
+    }
+  },
+  "toast": {
+    "region": {
+      "aria": "Notifications"
+    }
+  },
+  "colorPicker": {
+    "panel": {
+      "aria": "Color"
+    },
+    "system": {
+      "label": "System picker"
+    },
+    "hex": {
+      "label": "Hex"
+    },
+    "red": {
+      "label": "Red"
+    },
+    "green": {
+      "label": "Green"
+    },
+    "blue": {
+      "label": "Blue"
+    }
+  },
+  "dropZone": {
+    "prompt": {
+      "single": "Drop a file here",
+      "multiple": "Drop files here"
+    },
+    "browse": {
+      "label": "Choose file…"
     }
   }
 }

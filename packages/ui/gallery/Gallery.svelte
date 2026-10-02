@@ -2,19 +2,32 @@
   部品の見本の画面。すべての部品を、URL の引数 (またはこの画面の上の設定) のテーマ・密度・言語で並べる。
 -->
 <script lang="ts">
-import { setLocale } from "@ugoe/i18n";
+import { formatList, setLocale } from "@ugoe/i18n";
+import { onMount } from "svelte";
 import {
+  AlertDialog,
   Button,
   Checkbox,
+  ColorPicker,
+  ContextMenu,
+  Dialog,
+  DropZone,
   IconButton,
+  Kbd,
+  Menu,
+  type MenuEntry,
+  Notice,
   NumberField,
   Section,
   SegmentedControl,
   Select,
   Slider,
+  showToast,
   Tabs,
+  Toaster,
   Toggle,
   Toolbar,
+  TooltipProvider,
 } from "../src/index";
 import { type Lang, strings } from "./strings";
 
@@ -30,6 +43,12 @@ const pick = <T extends string>(name: string, allowed: readonly T[], fallback: T
 let theme = $state<Theme>(pick("theme", ["system", "light", "dark"] as const, "system"));
 let density = $state<Density>(pick("density", ["compact", "comfortable"] as const, "compact"));
 let lang = $state<Lang>(pick("lang", ["en", "ja"] as const, "en"));
+// スクリーンショットで重ねて出す部品を撮るため、URL の `open` で 1 つを開いた状態にする
+const initialOpen = pick(
+  "open",
+  ["none", "dialog", "alert", "menu", "popover", "toast", "tooltip"] as const,
+  "none",
+);
 const s = $derived(strings[lang]);
 
 $effect(() => {
@@ -54,6 +73,53 @@ let camera = $state<string>("1");
 let fit = $state<string>("0");
 let tab = $state<string>("0");
 let mirrored = $state(true);
+let renameOpen = $state(initialOpen === "dialog");
+let forgetOpen = $state(initialOpen === "alert");
+let fileMenuOpen = $state(initialOpen === "menu");
+let colorOpen = $state(initialOpen === "popover");
+let opacity = $state(1);
+let autosave = $state(true);
+let lightColor = $state("#ffcc88");
+let rimColor = $state("#6d28d9");
+let dropResult = $state("");
+let noticeVisible = $state(true);
+
+const fileEntries = $derived<MenuEntry[]>([
+  { label: s.open, shortcut: "Mod+O", onselect: () => {} },
+  {
+    label: s.save,
+    shortcut: "Mod+S",
+    onselect: () => showToast(s.toastSaved, { tone: "success" }),
+  },
+  { label: s.saveAs, shortcut: "Mod+Shift+S", onselect: () => {}, disabled: true },
+  { kind: "separator" },
+  {
+    kind: "submenu",
+    label: s.export,
+    entries: [
+      { label: s.exportPng, onselect: () => {} },
+      { label: s.exportBundle, onselect: () => {} },
+    ],
+  },
+  { kind: "checkbox", label: s.autosave, checked: autosave, onchange: (v) => (autosave = v) },
+  { kind: "separator" },
+  { label: s.close, shortcut: "Mod+W", onselect: () => {} },
+]);
+const itemEntries = $derived<MenuEntry[]>([
+  { label: s.duplicate, shortcut: "Mod+D", onselect: () => {} },
+  { label: s.renameLayer, onselect: () => (renameOpen = true) },
+  { kind: "separator" },
+  { label: s.deleteItem, shortcut: "Delete", danger: true, onselect: () => {} },
+]);
+
+onMount(() => {
+  if (initialOpen === "toast") {
+    showToast(strings[lang].toastSaved, { tone: "success", duration: 0 });
+    showToast(strings[lang].toastWarning, { tone: "warning", duration: 0 });
+  } else if (initialOpen === "tooltip") {
+    document.getElementById("gallery-tooltip-target")?.focus();
+  }
+});
 
 const cameraOptions = $derived(
   s.cameras.map((label, i) => ({ value: String(i), label, disabled: i === 3 })),
@@ -97,12 +163,19 @@ const swatches = [
   </svg>
 {/snippet}
 
+{#snippet moreIcon()}
+  <svg viewBox="0 0 16 16" fill="currentColor" stroke="none">
+    <circle cx="3.5" cy="8" r="1.25" /><circle cx="8" cy="8" r="1.25" /><circle cx="12.5" cy="8" r="1.25" />
+  </svg>
+{/snippet}
+
 {#snippet trashIcon()}
   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
     <path d="M3 4h10M6 4V2.5h4V4M4.5 4l.5 9.5h6l.5-9.5" stroke-linejoin="round" />
   </svg>
 {/snippet}
 
+<TooltipProvider>
 <main class="gallery">
   <header class="gallery__header">
     <h1>{s.title}</h1>
@@ -230,6 +303,94 @@ const swatches = [
       </Section>
     </section>
 
+    <section class="gallery__card">
+      <h2>{s.overlays}</h2>
+      <div class="gallery__row">
+        <Button onclick={() => (renameOpen = true)}>{s.renameLayer}</Button>
+        <Button variant="danger" onclick={() => (forgetOpen = true)}>{s.forgetAll}</Button>
+      </div>
+      <div class="gallery__row">
+        <Button onclick={() => showToast(s.toastSaved, { tone: "success" })}>{s.showToast}</Button>
+        <Button onclick={() => showToast(s.toastWarning, { tone: "warning" })}>
+          {s.showWarningToast}
+        </Button>
+      </div>
+      <Dialog bind:open={renameOpen} title={s.renameTitle} description={s.renameDescription}>
+        <NumberField label={s.opacity} bind:value={opacity} min={0} max={1} step={0.05} />
+        {#snippet actions()}
+          <Button onclick={() => (renameOpen = false)}>{s.cancel}</Button>
+          <Button variant="primary" onclick={() => (renameOpen = false)}>{s.rename}</Button>
+        {/snippet}
+      </Dialog>
+      <AlertDialog
+        bind:open={forgetOpen}
+        title={s.forgetAllTitle}
+        description={s.forgetAllDescription}
+        confirmLabel={s.forgetAllConfirm}
+        onconfirm={() => {}}
+      />
+    </section>
+
+    <section class="gallery__card">
+      <h2>{s.menus}</h2>
+      <div class="gallery__row">
+        <Menu label={s.file} entries={fileEntries} bind:open={fileMenuOpen} />
+        <Menu label={s.moreActions} entries={itemEntries} icon={moreIcon} align="end" />
+        <IconButton id="gallery-tooltip-target" label={s.undo} shortcut="Mod+Z">
+          {@render undoIcon()}
+        </IconButton>
+      </div>
+      <ContextMenu entries={itemEntries} label={s.moreActions} class="gallery__context">
+        <p>{s.contextArea}</p>
+      </ContextMenu>
+    </section>
+
+    <section class="gallery__card gallery__card--wide">
+      <h2>{s.notices}</h2>
+      <div class="gallery__column gallery__column--stretch">
+        <Notice tone="info">{s.noticeInfo}</Notice>
+        <Notice tone="success">{s.noticeSuccess}</Notice>
+        {#if noticeVisible}
+          <Notice tone="warning" title={s.noticeWarningTitle} ondismiss={() => (noticeVisible = false)}>
+            {s.noticeWarning}
+            {#snippet actions()}<Button small>{s.reload}</Button>{/snippet}
+          </Notice>
+        {/if}
+        <Notice tone="danger" title={s.noticeDangerTitle}>{s.noticeDanger}</Notice>
+      </div>
+    </section>
+
+    <section class="gallery__card">
+      <h2>{s.colors}</h2>
+      <div class="gallery__column gallery__column--stretch">
+        <ColorPicker label={s.lightColor} bind:value={lightColor} bind:open={colorOpen} />
+        <ColorPicker label={s.rimColor} bind:value={rimColor} />
+        <DropZone
+          accept=".ugoe,.psd"
+          multiple
+          onfiles={(files) => (dropResult = s.dropped(formatList(files.map((f) => f.name))))}
+          onreject={(files) => (dropResult = s.rejected(formatList(files.map((f) => f.name))))}
+        >
+          {s.dropHint}
+        </DropZone>
+        {#if dropResult}<p role="status">{dropResult}</p>{/if}
+      </div>
+    </section>
+
+    <section class="gallery__card">
+      <h2>{s.shortcuts}</h2>
+      <dl class="gallery__shortcuts">
+        {#each s.shortcutList as [keys, action] (keys)}
+          <dt><Kbd {keys} /></dt>
+          <dd>{action}</dd>
+        {/each}
+        <dt><Kbd keys="Mod+Shift+Z" platform="mac" /></dt>
+        <dd>macOS</dd>
+        <dt><Kbd keys="Mod+Shift+Z" platform="other" /></dt>
+        <dd>Windows / Linux</dd>
+      </dl>
+    </section>
+
     <section class="gallery__card gallery__card--wide">
       <h2>{s.tokens}</h2>
       <ul class="gallery__swatches">
@@ -243,6 +404,8 @@ const swatches = [
     </section>
   </div>
 </main>
+<Toaster />
+</TooltipProvider>
 
 <style>
   /* 見本の画面だけの配置。部品の見た目は部品とトークンが決める */
@@ -318,6 +481,35 @@ const swatches = [
 
   .gallery__column > :global(.ugoe-slider) {
     align-self: stretch;
+  }
+
+  .gallery__column--stretch {
+    align-items: stretch;
+  }
+
+  .gallery__column--stretch > :global(.ugoe-color-picker) {
+    align-self: flex-start;
+  }
+
+  :global(.gallery__context) {
+    display: block;
+    margin-top: var(--ugoe-space-3);
+    padding: var(--ugoe-space-4);
+    border: 1px dashed var(--ugoe-color-control-border);
+    border-radius: var(--ugoe-radius-md);
+    color: var(--ugoe-color-text-muted);
+  }
+
+  .gallery__shortcuts {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: var(--ugoe-space-2) var(--ugoe-space-4);
+    margin: 0;
+  }
+
+  .gallery__shortcuts dd {
+    margin: 0;
   }
 
   .gallery__card p {

@@ -13,3 +13,15 @@ export function setInToolbar(): void {
 export function isInToolbar(): boolean {
   return getContext<boolean | undefined>(TOOLBAR) === true;
 }
+
+const TOOLTIP_PROVIDER = Symbol("ugoe-ui-tooltip-provider");
+
+/** TooltipProvider の中にあることを、中の Tooltip に知らせる (無ければ Tooltip が自分で Bits UI の Provider を置く)。 */
+export function setInTooltipProvider(): void {
+  setContext(TOOLTIP_PROVIDER, true);
+}
+
+/** TooltipProvider の中にあるか。 */
+export function isInTooltipProvider(): boolean {
+  return getContext<boolean | undefined>(TOOLTIP_PROVIDER) === true;
+}

@@ -6,6 +6,8 @@
 //
 // - 見本の画面を vite で書き出し (gallery/dist)、vite preview で配る。
 // - テーマ (light・dark) × 密度 (compact・comfortable) × 言語 (en・ja) の 8 通りと、狭い幅 (360px) を撮る。
+//   重ねて出す部品 (ダイアログ・確かめのダイアログ・メニュー・Popover・Toast・ツールチップ) は、見本の画面の `?open=` で
+//   開いた状態にして、2 通り (light-compact-en・dark-comfortable-ja) で撮る。
 // - それぞれで、画面が描き終わったこと・スクリプトのエラーが無いこと・属性が URL のとおりであること・
 //   操作できる部品のすべてに読み上げの名前があることを確かめる。PNG は <出力先>/<名前>.png。
 // - Chrome は環境変数 CHROME か、PATH の google-chrome / chromium を使う。CI には入れていない (人が Bits UI の
@@ -45,14 +47,26 @@ const chromeArgs = (width, height) => [
   "--no-first-run",
   "--no-default-browser-check",
   "--force-device-scale-factor=1",
+  // 開閉とテーマの切り替えの動き (トークンの duration) を 0 にして、動きの途中を撮らないようにする
+  "--force-prefers-reduced-motion",
   `--window-size=${width},${height}`,
   "--virtual-time-budget=5000",
 ];
 
 /** 中の文字を名前にできる役割 (ボタン・タブなど)。まとまり (toolbar など) と入力欄はできない。 */
-const NAME_FROM_CONTENT = new Set(["button", "tab", "radio", "checkbox", "switch", "option"]);
+const NAME_FROM_CONTENT = new Set([
+  "button",
+  "tab",
+  "radio",
+  "checkbox",
+  "switch",
+  "option",
+  "menuitem",
+  "menuitemcheckbox",
+  "tooltip",
+]);
 
-/** 読み上げの名前 (aria-label・aria-labelledby・<label for>・中の文字の順に見る)。 */
+/** 読み上げの名前 (aria-label・aria-labelledby・<label for>・囲む <label>・中の文字の順に見る)。 */
 function accessibleName(doc, el) {
   const label = el.getAttribute("aria-label");
   if (label?.trim()) return label.trim();
@@ -69,12 +83,25 @@ function accessibleName(doc, el) {
     const forLabel = doc.querySelector(`label[for="${el.id}"]`);
     if (forLabel?.textContent?.trim()) return forLabel.textContent.trim();
   }
+  // <label> の中に入れた入力欄
+  const wrapping = el.closest("label");
+  if (wrapping?.textContent?.trim()) return wrapping.textContent.trim();
   const role = el.getAttribute("role") ?? el.tagName.toLowerCase();
   return NAME_FROM_CONTENT.has(role) ? (el.textContent?.trim() ?? "") : "";
 }
 
 const INTERACTIVE =
-  'button, input:not([type="hidden"]), select, textarea, [role="slider"], [role="switch"], [role="checkbox"], [role="radio"], [role="tab"], [role="spinbutton"], [role="toolbar"], [role="radiogroup"], [role="tablist"]';
+  'button, input:not([type="hidden"]), select, textarea, [role="slider"], [role="switch"], [role="checkbox"], [role="radio"], [role="tab"], [role="spinbutton"], [role="toolbar"], [role="radiogroup"], [role="tablist"], [role="dialog"], [role="alertdialog"], [role="menu"], [role="menuitem"], [role="menuitemcheckbox"], [role="tooltip"]';
+
+/** `?open=` で開くものと、開いたときに DOM にあるはずの要素。 */
+const OVERLAYS = {
+  dialog: '[role="dialog"]',
+  alert: '[role="alertdialog"]',
+  menu: '[role="menu"]',
+  popover: ".ugoe-popover",
+  toast: ".ugoe-toast",
+  tooltip: '[role="tooltip"]',
+};
 
 /** 書き出した DOM を検査する。問題の一覧を返す。 */
 function inspect(html, expected) {
@@ -88,6 +115,9 @@ function inspect(html, expected) {
   if (root.dataset.density !== expected.density)
     problems.push(`data-density が ${root.dataset.density}`);
   if (root.lang !== expected.lang) problems.push(`lang が ${root.lang}`);
+  if (expected.open && !doc.querySelector(OVERLAYS[expected.open])) {
+    problems.push(`開いていない: ${expected.open} (${OVERLAYS[expected.open]})`);
+  }
   const controls = [...doc.querySelectorAll(INTERACTIVE)].filter(
     (el) => !el.closest('[aria-hidden="true"], [hidden]'),
   );
@@ -122,6 +152,24 @@ for (const theme of ["light", "dark"]) {
     }
   }
 }
+for (const open of Object.keys(OVERLAYS)) {
+  cases.push({
+    name: `${open}-light-compact-en`,
+    theme: "light",
+    density: "compact",
+    lang: "en",
+    width: 1280,
+    open,
+  });
+  cases.push({
+    name: `${open}-dark-comfortable-ja`,
+    theme: "dark",
+    density: "comfortable",
+    lang: "ja",
+    width: 1280,
+    open,
+  });
+}
 cases.push({
   name: "narrow-light-comfortable-ja",
   theme: "light",
@@ -133,8 +181,8 @@ cases.push({
 let failed = 0;
 try {
   for (const c of cases) {
-    const url = `${base}?theme=${c.theme}&density=${c.density}&lang=${c.lang}`;
-    const height = c.width < 600 ? 2400 : 1400;
+    const url = `${base}?theme=${c.theme}&density=${c.density}&lang=${c.lang}${c.open ? `&open=${c.open}` : ""}`;
+    const height = c.width < 600 ? 4600 : 2000;
     const { stdout: dom } = await run(chrome, [...chromeArgs(c.width, height), "--dump-dom", url], {
       encoding: "utf8",
       maxBuffer: 64 * 1024 * 1024,

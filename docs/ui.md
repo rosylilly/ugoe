@@ -134,9 +134,9 @@ HTML の標準の要素の上に自作し、ふるまいは [WAI-ARIA APG](https
 | `Toolbar` | ボタンの並び。中は 1 つのタブ止まりにする | Bits UI `Toolbar` | 左右の矢印 (roving tabindex) | 1 |
 | `Dialog` | 作業を止めて確認・入力させる (モーダル)。取り消せない操作の確認は `AlertDialog` | Bits UI `Dialog`・`AlertDialog` | Esc で閉じる・中でフォーカスが回る・閉じたら開いた元にフォーカスを戻す | 2 |
 | `Notice` | 画面に残る知らせ (読み込みの警告など)。閉じるボタン付き | 自作 (`role="status"`。エラーは `role="alert"`) | 閉じるボタンに届く | 2 |
-| `Toast` | すぐ消えてよい知らせ (「保存しました」)。操作を含むなら `Notice` にする | 自作 (`role="status"`、`popover="manual"`) | フォーカスを奪わない | 2 |
-| `Tooltip` | ボタンやアイコンの短い説明 | Bits UI `Tooltip` | フォーカスでも出る・Esc で消える | 2 |
-| `Menu` | 操作の一覧 (ファイルのメニュー・右クリック・メニューバー)。選択肢を選ぶなら `Select` | Bits UI `DropdownMenu`・`ContextMenu`・`Menubar` | 上下の矢印・Enter・Esc・頭文字で移る | 2 |
+| `Toast` | すぐ消えてよい知らせ (「保存しました」)。操作を含むなら `Notice` にする。`showToast()` で出し、アプリの根元の `Toaster` が描く | 自作 (`role="status"`、`popover="manual"`) | フォーカスを奪わない。ポインタやフォーカスが乗っている間は消えない | 2 |
+| `Tooltip` | ボタンやアイコンの短い説明。`IconButton` は `label` を既定で出す。根元に `TooltipProvider` を置くと、続けて出すときに待たない | Bits UI `Tooltip` | フォーカスでも出る・Esc で消える | 2 |
+| `Menu` / `ContextMenu` | 操作の一覧 (ファイルのメニュー・「その他」のボタン / 右クリック)。選択肢を選ぶなら `Select`。項目にショートカットを出せる (`aria-keyshortcuts` も付く) | Bits UI `DropdownMenu`・`ContextMenu` (メニューバー (`Menubar`) は使う画面ができたときに足す) | 上下の矢印・Enter・Esc・頭文字で移る | 2 |
 | `Popover` | 部品の近くに出す小さな編集の枠 (色の選択など) | Bits UI `Popover` | Esc で閉じ、開いた元に戻る | 2 |
 | `ColorPicker` | 光源などの色 | 自作 (`Popover` の中に `<input type="color">` と `NumberField`) | 標準の操作 | 2 |
 | `DropZone` | ファイルを落とす領域。**同じことができるボタン (「ファイル…」) を必ず並べる** | 自作 (`<div>` と `Button`) | ボタンで開く | 2 |
@@ -193,6 +193,7 @@ Bits UI を包むときの約束:
 - **確かめ方:** Bits UI に任せた部品も、包んだ後の名前・ラベルの付き方は自分で確かめます。部品は Vitest でキーボード操作と aria の属性を検査し、見本の画面をヘッドレスの Chrome で両方のテーマ・両方の言語・両方の密度で撮ります (T0902・T0903)。
   見本の画面は `pnpm --filter @ugoe/ui gallery`、撮って検査するのは `just ui-shots <出力先>` です ([packages/ui/README.md](../packages/ui/README.md))。
   例: Bits UI 2.19.4 の `Select` の項目は、無効でも `aria-disabled` を付けないので、`@ugoe/ui` で付けています。
+  同じく `Tooltip` の中身に `role="tooltip"` を、`DropdownMenu`・`ContextMenu` の一覧に読み上げの名前 (`aria-label`) を付けています。
   3 つのアプリは T0907 でまとめて見直します。
 
 ## 文言の書き方
