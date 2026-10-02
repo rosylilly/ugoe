@@ -4,7 +4,7 @@ title: スタジオ: マニュアル・見本のプロファイル・画面の�
 status: todo
 milestone: M8
 crates: [apps/studio, docs]
-depends_on: [T0803, T0804]
+depends_on: [T0803, T0804, T0807, T0808]
 assignee:
 ---
 
