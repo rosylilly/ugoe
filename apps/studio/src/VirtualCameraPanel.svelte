@@ -1,5 +1,5 @@
 <!--
-  仮想カメラ (docs/studio.md#仮想カメラ、T0807)。開始と停止・解像度・フレームレート・透過を埋める色を選び、
+  仮想カメラ (docs/studio.md#仮想カメラ、T0807・T0809)。開始と停止・解像度・フレームレート・透過を埋める色を選び、
   止まった (始められない・途中で失敗した)・遅れた・受け取るアプリがいないことを知らせる。始められない理由に合わせて、
   v4l2loopback の入れ方 (Linux)・OBS の仮想カメラを使う手順 (Windows 10)・入れ直し (登録が無い) を案内する。
 -->
@@ -115,6 +115,10 @@ function errorText(code: string): string {
   switch (code) {
     case "unsupported":
     case "windowsTooOld":
+    case "macosTooOld":
+    case "needsApproval":
+    case "notInApplications":
+    case "extensionFailed":
     case "notRegistered":
     case "noDevice":
     case "busy":

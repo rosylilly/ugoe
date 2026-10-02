@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Camera Extension の Info.plist (docs/studio.md#macos-camera-extension、T0809)。
+  ${...} は apps/studio/scripts/build-vcam-macos.mjs が埋める (TEAM_ID は Apple Developer のチーム ID、VERSION はスタジオの版、BUILD はビルドした時刻)。
+  macOS は CFBundleVersion が変わったときに拡張を入れ替えるので、BUILD はビルドのたびに変える。
+  CMIOExtensionMachServiceName はアプリグループ (チーム ID で始まる) の名前にする決まり。
+-->
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleDisplayName</key>
+  <string>ugoe studio camera</string>
+  <key>CFBundleExecutable</key>
+  <string>app.ugoe.studio.camera</string>
+  <key>CFBundleIdentifier</key>
+  <string>app.ugoe.studio.camera</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>app.ugoe.studio.camera</string>
+  <key>CFBundlePackageType</key>
+  <string>SYSX</string>
+  <key>CFBundleShortVersionString</key>
+  <string>${VERSION}</string>
+  <key>CFBundleVersion</key>
+  <string>${BUILD}</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>12.3</string>
+  <key>CMIOExtension</key>
+  <dict>
+    <key>CMIOExtensionMachServiceName</key>
+    <string>${TEAM_ID}.app.ugoe.studio.camera</string>
+  </dict>
+  <key>NSHumanReadableCopyright</key>
+  <string>GPL-3.0-only</string>
+  <key>NSSystemExtensionUsageDescription</key>
+  <string>Shows the ugoe studio output as a camera in other apps.</string>
+</dict>
+</plist>

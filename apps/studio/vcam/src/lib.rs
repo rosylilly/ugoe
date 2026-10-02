@@ -5,12 +5,16 @@
 //! - **Windows 11:** Media Foundation の仮想カメラ (`MFCreateVirtualCamera`)。OS のサービス (Frame Server) がこのクレートの
 //!   DLL (メディアソース。インストール時に管理者の権限で登録する) を読み込み、スタジオは共有メモリ ([`shared`]) で NV12 の画を渡す。
 //! - **Linux:** v4l2loopback の機器に YUYV (YUY2) の画を書く。機器はスタジオからは作らない (入れ方を案内する)。
-//! - **macOS:** T0809。いまは [`Error::Unsupported`]。
+//! - **macOS 12.3 以降:** CoreMediaIO の Camera Extension (`macos/`。Swift の System Extension)。スタジオは拡張を有効にし、
+//!   拡張の受ける側のストリームに NV12 の画を `CMSampleBuffer` で積む (`cmio`)。拡張を入れていない束 (開発中の `just studio` と、
+//!   Apple Developer のアカウントを用意するまでの配布物) では [`Error::Unsupported`]。
 //!
 //! **`unsafe` の例外 (ADR 0028 の 8.):** ワークスペースで `unsafe` を許すのは `ugoe-ffi` とこのクレートだけ。`unsafe` は
-//! COM と OS の境界 (インターフェースの実装・ポインタの受け渡し・共有メモリ・ioctl) に閉じ込め、どのブロックにも
+//! COM と OS の境界 (インターフェースの実装・ポインタの受け渡し・共有メモリ・ioctl・Objective-C と CoreMediaIO の呼び出し) に閉じ込め、どのブロックにも
 //! 成り立たせている前提を `// SAFETY:` で書く (clippy の `undocumented_unsafe_blocks` で検査する)。
 
+#[cfg(target_os = "macos")]
+mod cmio;
 #[cfg(windows)]
 mod mf;
 pub mod shared;
@@ -54,7 +58,7 @@ impl Config {
 /// OS の部品が受け取る画素の形。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PixelLayout {
-    /// Y の面の後に Cb Cr を交互に並べた面 (Windows)。
+    /// Y の面の後に Cb Cr を交互に並べた面 (Windows・macOS)。
     Nv12,
     /// 横の 2 画素ごとに Y0 Cb Y1 Cr (Linux の YUYV)。
     Yuy2,
@@ -62,7 +66,7 @@ pub enum PixelLayout {
 
 /// この OS の仮想カメラが受け取る画素の形。
 pub fn pixel_layout() -> PixelLayout {
-    if cfg!(windows) {
+    if cfg!(any(windows, target_os = "macos")) {
         PixelLayout::Nv12
     } else {
         PixelLayout::Yuy2
@@ -72,12 +76,24 @@ pub fn pixel_layout() -> PixelLayout {
 /// 仮想カメラを使えない・止まった理由。操作ウィンドウは [`Error::code`] で文言を選ぶ (ADR 0029 の 4.)。
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    /// この OS ではまだ出せない (macOS は T0809)。
+    /// この OS では出せない (macOS では、アプリの束に Camera Extension が入っていない)。
     #[error("virtual cameras are not supported on this OS yet")]
     Unsupported,
     /// Windows 11 より前の Windows (Media Foundation の仮想カメラが無い)。
     #[error("the Media Foundation virtual camera needs Windows 11")]
     WindowsTooOld,
+    /// macOS 12.3 より前の macOS (Camera Extension が無い)。
+    #[error("the camera extension needs macOS 12.3 or later")]
+    MacosTooOld,
+    /// macOS で、Camera Extension を「システム設定」で許可してもらう必要がある (許可の後でもう一度始める)。
+    #[error("allow the ugoe studio camera extension in System Settings")]
+    NeedsApproval,
+    /// macOS で、アプリが「アプリケーション」フォルダに無いので Camera Extension を有効にできない。
+    #[error("move ugoe studio to the Applications folder to use the virtual camera")]
+    NotInApplications,
+    /// macOS で、Camera Extension を有効にできなかった・機器が現れなかった。
+    #[error("the camera extension could not be activated: {0}")]
+    ExtensionFailed(String),
     /// メディアソースの DLL が登録されていない (インストーラで入れ直す)。
     #[error("the virtual camera driver is not registered; reinstall the studio")]
     NotRegistered,
@@ -107,6 +123,10 @@ impl Error {
         match self {
             Self::Unsupported => "unsupported",
             Self::WindowsTooOld => "windowsTooOld",
+            Self::MacosTooOld => "macosTooOld",
+            Self::NeedsApproval => "needsApproval",
+            Self::NotInApplications => "notInApplications",
+            Self::ExtensionFailed(_) => "extensionFailed",
             Self::NotRegistered => "notRegistered",
             Self::NoDevice => "noDevice",
             Self::Busy => "busy",
@@ -115,7 +135,7 @@ impl Error {
         }
     }
 
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     pub(crate) fn os(context: &'static str, detail: impl std::fmt::Display) -> Self {
         Self::Os {
             context,
@@ -129,7 +149,7 @@ impl Error {
 pub enum Delivery {
     /// OS の部品に渡した。受け取るアプリがいるかは分からない (Linux)、またはいる (Windows)。
     Delivered,
-    /// 渡したが、受け取るアプリがいない (Windows でカメラを開いているアプリが無い)。
+    /// 渡したが、受け取るアプリがいない (Windows・macOS でカメラを開いているアプリが無い)。
     NoConsumer,
 }
 
@@ -141,16 +161,18 @@ pub struct VirtualCamera {
     inner: v4l2::Loopback,
     #[cfg(windows)]
     inner: mf::Camera,
-    #[cfg(not(any(target_os = "linux", windows)))]
+    #[cfg(target_os = "macos")]
+    inner: cmio::Camera,
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     inner: Never,
 }
 
 /// 仮想カメラの無い OS の [`VirtualCamera`] の中身 (作れないので、値は存在しない)。
-#[cfg(not(any(target_os = "linux", windows)))]
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 #[derive(Debug)]
 enum Never {}
 
-#[cfg(not(any(target_os = "linux", windows)))]
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 impl Never {
     fn device(&self) -> String {
         match *self {}
@@ -175,7 +197,12 @@ impl VirtualCamera {
             config,
             inner: mf::Camera::start(config)?,
         });
-        #[cfg(not(any(target_os = "linux", windows)))]
+        #[cfg(target_os = "macos")]
+        return Ok(Self {
+            config,
+            inner: cmio::Camera::start(config)?,
+        });
+        #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
         Err(Error::Unsupported)
     }
 
@@ -183,7 +210,7 @@ impl VirtualCamera {
         self.config
     }
 
-    /// 画を書いている先 (Linux は `/dev/videoN`、Windows はカメラの名前)。
+    /// 画を書いている先 (Linux は `/dev/videoN`、Windows と macOS はカメラの名前)。
     pub fn device(&self) -> String {
         self.inner.device()
     }
@@ -212,7 +239,9 @@ pub fn availability() -> Result<(), Error> {
     return v4l2::availability();
     #[cfg(windows)]
     return mf::availability();
-    #[cfg(not(any(target_os = "linux", windows)))]
+    #[cfg(target_os = "macos")]
+    return cmio::availability();
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     Err(Error::Unsupported)
 }
 
@@ -249,8 +278,20 @@ mod tests {
     }
 
     #[test]
+    fn macos_reasons_have_their_own_codes() {
+        // 操作ウィンドウ (VirtualCameraPanel.svelte の errorText) と locales の `virtualCamera.errors.*` に合わせる。
+        assert_eq!(Error::MacosTooOld.code(), "macosTooOld");
+        assert_eq!(Error::NeedsApproval.code(), "needsApproval");
+        assert_eq!(Error::NotInApplications.code(), "notInApplications");
+        assert_eq!(
+            Error::ExtensionFailed("x".to_owned()).code(),
+            "extensionFailed"
+        );
+    }
+
+    #[test]
     fn layout_follows_the_os() {
-        let expected = if cfg!(windows) {
+        let expected = if cfg!(any(windows, target_os = "macos")) {
             PixelLayout::Nv12
         } else {
             PixelLayout::Yuy2

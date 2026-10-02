@@ -3,8 +3,8 @@
 ugoe のスタジオ (Tauri v2 + Svelte 5)。配信者が配信中に使うアプリで、モデルを **出力ウィンドウ** に出し、**操作ウィンドウ** から動かす。
 範囲・構成・描画の場所は [ADR 0028](../../docs/adr/0028-studio.md)、画面と配信の形は [docs/studio.md](../../docs/studio.md)。
 T0801 で骨組み (2 つのウィンドウ・指揮役と受け手)、T0802 でシーンとプロファイル、T0803 で入力 (カメラのトラッキング・マイクの口パク・
-モーションと表情・グローバルなホットキー)、T0804 で配信向けの出力、T0807 で仮想カメラ (Windows・Linux) を作った。
-外部 API (T0805)・macOS の仮想カメラ (T0809)・ブラウザソース (T0808) は後続のタスク。
+モーションと表情・グローバルなホットキー)、T0804 で配信向けの出力、T0807 で仮想カメラ (Windows・Linux)、T0809 で macOS の仮想カメラ (Camera Extension。配布物に入れるのは後) を作った。
+外部 API (T0805)・ブラウザソース (T0808) は後続のタスク。
 
 **ライセンスは GPL-3.0-only** (エディタ・ビューアと同じ)。アプリ同士で import はしない (共有するものは `packages/` に置く)。
 
@@ -55,7 +55,10 @@ src-tauri/                    バックエンド (Rust クレート `ugoe-studio
   tests/virtual_camera_gpu.rs   仮想カメラの画が、物理を有効にした 1 つの Puppet の画と一致する (`just test-gpu`)
   tauri.windows.conf.json       Windows のビルド: 仮想カメラの DLL を作る・NSIS を管理者の権限で入れる
   windows/hooks.nsh             NSIS: 仮想カメラの DLL を入れて regsvr32 で登録する・消す
+  tauri.macos-vcam.conf.json    macOS で Camera Extension を入れたスタジオを作る設定 (`--config` で渡す。docs/release.md#macos-の仮想カメラ)
+  Entitlements.vcam.plist       その entitlement (Entitlements.plist に System Extension を入れる権限を足したもの)
 scripts/build-vcam.mjs        `pnpm vcam`: 仮想カメラのメディアソースの DLL を作る (Windows 向け。CRT は静的)
+scripts/build-vcam-macos.mjs  `pnpm vcam:macos`: macOS の Camera Extension を swiftc で作って署名する (macOS だけ)
 vcam/                         仮想カメラの OS の境界 (クレート `ugoe-studio-vcam`。unsafe を許す唯一のアプリのクレート。下の「仮想カメラ」)
 ```
 
@@ -124,16 +127,21 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
 [docs/studio.md#仮想カメラ](../../docs/studio.md#仮想カメラ) と [ADR 0028 の 8.](../../docs/adr/0028-studio.md#8-仮想カメラの-os-の部品と-unsafe-の例外)。
 
 - バックエンドの仮想カメラのスレッド (`src-tauri/src/virtual_camera.rs`) が、指揮役のフレームをネイティブの受け手で適用し、`ugoe-headless` の
-  常駐の描画 (`Resident`) で描いて NV12 (Windows) / YUY2 (Linux) で読み戻し、`ugoe-studio-vcam` に渡す。止めている間はスレッドを作らない。
+  常駐の描画 (`Resident`) で描いて NV12 (Windows・macOS) / YUY2 (Linux) で読み戻し、`ugoe-studio-vcam` に渡す。止めている間はスレッドを作らない。
 - `vcam/` (`ugoe-studio-vcam`、GPL-3.0-only) は OS の境界だけを持つ。内部のクレートに依存しない。
   - `src/lib.rs`: スタジオが使う safe な API (`VirtualCamera::start`・`send`・`availability`・`Error::code`)。
   - `src/shared.rs`: スタジオと Windows のメディアソースの間の共有メモリの形 (safe な Rust でテストする)。
   - `src/v4l2.rs`: Linux。v4l2loopback の機器を探し、`VIDIOC_S_FMT` してから `write` する。
   - `src/mf/`: Windows。`mod.rs` はスタジオ側 (`MFCreateVirtualCamera` を実行時に引く・共有メモリに書く)、`source.rs` は
     Frame Server が読み込むメディアソースの DLL (`DllGetClassObject`・`DllRegisterServer` など)。
+  - `src/cmio.rs`: macOS。Camera Extension を有効にし (`OSSystemExtensionRequest`)、拡張の受ける側のストリームに `CMSampleBuffer` を積む
+    (objc2 の束縛)。
+  - `macos/`: macOS の Camera Extension (Swift。`Extension/Camera.swift` が機器と 2 つのストリーム、`Info.plist`・`Extension.entitlements`)。
+    Cargo のビルドには入らない (`pnpm vcam:macos` が作る)。
   - **`unsafe` を許す** (ADR 0028 の 8.)。ワークスペースの lint を `Cargo.toml` で写して `unsafe_code` だけを許し、
     `clippy::undocumented_unsafe_blocks` (どの `unsafe` にも `// SAFETY:`) と `unsafe_op_in_unsafe_fn` を拒否にしている。
 - Windows のコードは Linux からも `cargo clippy -p ugoe-studio-vcam --target x86_64-pc-windows-msvc` で検査できる (リンクまでは `cargo xwin build`)。
+  macOS の Rust のコードも `--target aarch64-apple-darwin` で検査できる (Swift の拡張は macOS でしか作れない)。
 
 ## ヘッドレスのブラウザで確かめる
 

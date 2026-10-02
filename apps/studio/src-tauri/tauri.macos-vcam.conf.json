@@ -1,0 +1,15 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "build": {
+    "beforeBuildCommand": "pnpm wasm && pnpm vcam:macos && pnpm build"
+  },
+  "bundle": {
+    "macOS": {
+      "entitlements": "Entitlements.vcam.plist",
+      "files": {
+        "Library/SystemExtensions/app.ugoe.studio.camera.systemextension": "../../../target/vcam/macos/app.ugoe.studio.camera.systemextension",
+        "embedded.provisionprofile": "../../../target/vcam/macos/studio.provisionprofile"
+      }
+    }
+  }
+}

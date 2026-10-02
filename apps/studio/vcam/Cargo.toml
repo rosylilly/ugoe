@@ -1,6 +1,6 @@
 [package]
 name = "ugoe-studio-vcam"
-description = "ugoe スタジオの仮想カメラ (Windows の Media Foundation のメディアソースと、v4l2loopback への書き込み。docs/adr/0028-studio.md の 8.)"
+description = "ugoe スタジオの仮想カメラ (Windows の Media Foundation のメディアソース・v4l2loopback への書き込み・macOS の Camera Extension への受け渡し。docs/adr/0028-studio.md の 8.)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -17,6 +17,17 @@ thiserror.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc.workspace = true
+
+# macOS: Camera Extension (vcam/macos) の有効化 (SystemExtensions) と、拡張の受ける側のストリームへの画の受け渡し (CoreMediaIO)。
+[target.'cfg(target_os = "macos")'.dependencies]
+dispatch2.workspace = true
+objc2.workspace = true
+objc2-core-foundation = { workspace = true, features = ["CFBase", "CFDictionary", "CFNumber", "CFString"] }
+objc2-core-media = { workspace = true, features = ["CMBase", "CMFormatDescription", "CMSampleBuffer", "CMSimpleQueue", "CMSync", "CMTime", "objc2-core-video"] }
+objc2-core-media-io = { workspace = true, features = ["CMIOHardware", "CMIOHardwareDevice", "CMIOHardwareObject", "CMIOHardwareStream", "CMIOHardwareSystem", "objc2-core-media"] }
+objc2-core-video = { workspace = true, features = ["CVBase", "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVPixelBufferPool", "CVReturn"] }
+objc2-foundation = { workspace = true, features = ["NSError", "NSObject", "NSProcessInfo", "NSString"] }
+objc2-system-extensions = { workspace = true, features = ["dispatch2"] }
 
 [target.'cfg(windows)'.dependencies]
 # COM のインターフェースの実装 (`#[implement]`) は windows-core の名前で展開されるので、両方に依存する。

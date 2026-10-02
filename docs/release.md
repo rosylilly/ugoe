@@ -9,6 +9,7 @@
 | npm の `@ugoe/runtime` | `.github/workflows/web-runtime-release.yml` | [bindings/web/README.md#リリース](../bindings/web/README.md#リリース) |
 | エディタとビューアのインストーラ | `.github/workflows/editor-build.yml` | [apps/editor/README.md](../apps/editor/README.md) |
 | Unity の UPM パッケージ (tarball) | `.github/workflows/unity.yml` (成果物に残すだけ) | [bindings/unity/README.md#リリース](../bindings/unity/README.md#リリース) |
+| スタジオの macOS の仮想カメラ (Camera Extension) | まだ無い (手で作る。配布物に入れるのは Release のマイルストーン) | [macOS の仮想カメラ](#macos-の仮想カメラ) |
 
 公開するかどうか、いつ公開するかは、リポジトリを持つ人 (利用者) が決めて行います。
 
@@ -73,3 +74,86 @@ cargo publish --locked -p ugoe-physics -p ugoe-render -p ugoe
 各クレートの `README.md` がそのまま crates.io のページになります。README の中のワークスペースの文書へのリンク
 (`../../docs/...`) は、crates.io がパッケージの `path_in_vcs` (`.cargo_vcs_info.json`) と `repository` から GitHub の URL に
 直して表示します。`path_in_vcs` は Git のチェックアウトから公開したときにだけ記録されるので、公開はタグのチェックアウトから行います。
+
+## macOS の仮想カメラ
+
+スタジオの macOS の仮想カメラ (Camera Extension、[studio.md](studio.md#macos-camera-extension)・ADR 0028 の 8.) を入れたスタジオの、
+署名・公証・entitlement の手順です。**いまは配布しません。** 配布物に入れるのは、利用者が Apple Developer Program のアカウントを
+用意し、署名の名義を Release のマイルストーンで決めてからです。それまでの配布物は `tauri.conf.json` のまま (拡張も
+System Extension の権限も入れない) で作り、スタジオは「この OS ではまだ仮想カメラを出せません」を出します。
+
+この手順は macOS の実機で確かめていません (T0809 は WSL の上で作った)。初めて行うときに、違っていたらここを直してください。
+
+### 用意するもの (初回だけ)
+
+Apple Developer の「Certificates, Identifiers & Profiles」で次を作ります。
+
+| もの | 中身 |
+| --- | --- |
+| 証明書 | 配布は **Developer ID Application** (開発中は Apple Development)。キーチェーンに入れておく |
+| App ID `app.ugoe.studio` (スタジオ) | Capabilities で **System Extension** を有効にする |
+| App ID `app.ugoe.studio.camera` (拡張) | Capabilities で **App Groups** を有効にし、下のグループを付ける |
+| App Group `<チーム ID>.app.ugoe.studio.camera` | 拡張の `CMIOExtensionMachServiceName` と同じ名前 (Camera Extension の決まり) |
+| プロビジョニングプロファイル 2 つ | 上の 2 つの App ID それぞれに、**Developer ID** の種類 (開発中は macOS App Development) で作って落とす |
+
+System Extension の権限 (`com.apple.developer.system-extension.install`) とアプリグループは、プロビジョニングプロファイルが無いと
+署名しても起動できない (macOS がアプリを止める) ので、プロファイルは必ず束に入れます。
+
+### entitlement
+
+| 対象 | ファイル | entitlement |
+| --- | --- | --- |
+| スタジオ | `apps/studio/src-tauri/Entitlements.vcam.plist` | `Entitlements.plist` の 2 つ (カメラ・マイク) と `com.apple.developer.system-extension.install` |
+| 拡張 | `apps/studio/vcam/macos/Extension.entitlements` | `com.apple.security.app-sandbox` (Camera Extension はサンドボックスの中で動く決まり) と `com.apple.security.application-groups` (`<チーム ID>.app.ugoe.studio.camera`) |
+
+拡張の `Info.plist` と entitlement の `${TEAM_ID}` は、ビルドのスクリプトが環境変数から埋めます。
+
+### 作る
+
+macOS で、Xcode (またはコマンドラインツール) と、エディタと同じ Rust・Node.js・pnpm を用意してから行います。
+
+```sh
+export UGOE_APPLE_TEAM_ID=XXXXXXXXXX                                   # 10 文字のチーム ID
+export APPLE_SIGNING_IDENTITY="Developer ID Application: <名義> (XXXXXXXXXX)"
+export UGOE_VCAM_PROVISIONING_PROFILE=/path/to/ugoe_studio_camera.provisionprofile
+export UGOE_STUDIO_PROVISIONING_PROFILE=/path/to/ugoe_studio.provisionprofile
+cd apps/studio
+pnpm tauri build --target universal-apple-darwin --config src-tauri/tauri.macos-vcam.conf.json
+```
+
+- `tauri.macos-vcam.conf.json` の `beforeBuildCommand` が `pnpm vcam:macos` (`scripts/build-vcam-macos.mjs`) を呼びます。
+  スクリプトは Swift の拡張を arm64 と x86_64 で作って束ね、`target/vcam/macos/app.ugoe.studio.camera.systemextension` に組み、
+  プロファイルを `Contents/embedded.provisionprofile` に入れて、拡張の entitlement と Hardened Runtime (`--options runtime`)・
+  タイムスタンプ付きで署名します。スタジオのプロファイルは `target/vcam/macos/studio.provisionprofile` に写します。
+- tauri は `bundle.macOS.files` で拡張を `Contents/Library/SystemExtensions/` に、プロファイルを `Contents/embedded.provisionprofile`
+  に入れ、`APPLE_SIGNING_IDENTITY` と `Entitlements.vcam.plist` でアプリを署名します。拡張は先に署名してあるので、中の署名はそのまま残ります。
+- 署名を確かめる:
+
+  ```sh
+  APP="target/universal-apple-darwin/release/bundle/macos/ugoe-studio.app"
+  codesign --verify --deep --strict --verbose=2 "$APP"
+  codesign -d --entitlements - "$APP"
+  codesign -d --entitlements - "$APP/Contents/Library/SystemExtensions/app.ugoe.studio.camera.systemextension"
+  ```
+
+### 公証する
+
+Developer ID で配るものは公証 (notarization) が要ります。tauri は `APPLE_ID`・`APPLE_PASSWORD` (App 用パスワード)・`APPLE_TEAM_ID`
+(または App Store Connect の API キーの `APPLE_API_ISSUER`・`APPLE_API_KEY`・`APPLE_API_KEY_PATH`) が設定されていれば、
+`tauri build` の中で公証とステープルまで行います。手で行うときは次のとおりです。
+
+```sh
+ditto -c -k --keepParent "$APP" ugoe-studio.zip
+xcrun notarytool submit ugoe-studio.zip --apple-id <Apple ID> --team-id "$UGOE_APPLE_TEAM_ID" --password <App 用パスワード> --wait
+xcrun stapler staple "$APP"
+spctl --assess --type execute --verbose "$APP"
+```
+
+`.dmg` で配るときは、`.dmg` も公証してステープルします。
+
+### 利用者の手順 (配布物に入れたとき)
+
+1. アプリを「アプリケーション」フォルダに入れて開く (System Extension はほかの場所のアプリからは有効にできない)。
+2. 仮想カメラを入れると macOS が許可を求めるので、「システム設定」で許可し、もう一度入れる
+   (操作ウィンドウが案内する。[studio.md の macOS](studio.md#macos-camera-extension))。
+3. アンインストールはアプリをゴミ箱に入れる。macOS が拡張も外す (外れるのは再起動の後のことがある)。

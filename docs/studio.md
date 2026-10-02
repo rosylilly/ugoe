@@ -409,7 +409,7 @@ MediaPipe の wasm とモデルはアプリに同梱する (`pnpm mediapipe`。�
 
 ## 仮想カメラ
 
-会議アプリや配信ソフトのカメラの入力として、スタジオの出力をそのまま選べるようにする (T0807。macOS は T0809)。
+会議アプリや配信ソフトのカメラの入力として、スタジオの出力をそのまま選べるようにする (T0807。macOS は T0809 の Camera Extension)。
 OS の部品の扱いと `unsafe` の例外は [ADR 0028 の 8.](adr/0028-studio.md#8-仮想カメラの-os-の部品と-unsafe-の例外)。
 
 - 操作ウィンドウの「仮想カメラ」で開始と停止。解像度 (1920×1080・1280×720)・フレームレート (30・60)・透過を埋める色 (既定は `#f0f0f0`) を選ぶ。
@@ -420,9 +420,9 @@ OS の部品の扱いと `unsafe` の例外は [ADR 0028 の 8.](adr/0028-studio
 
   | 知らせ | いつ |
   | --- | --- |
-  | 使えません (注意) | 始める前から分かる理由: Windows 11 でない・ドライバが登録されていない・v4l2loopback が読み込まれていない・macOS |
-  | 止まりました (エラー) | 始められなかった・途中で失敗した (機器が無い・ほかのアプリが使っている・GPU が無い・OS のエラー) |
-  | カメラを使っているアプリがありません (案内) | Windows で、カメラを開いているアプリが無い (Linux では分からないので出さない) |
+  | 使えません (注意) | 始める前から分かる理由: Windows 11 でない・ドライバが登録されていない・v4l2loopback が読み込まれていない・macOS 12.3 より前・macOS で拡張を入れていない束 |
+  | 止まりました (エラー) | 始められなかった・途中で失敗した (機器が無い・ほかのアプリが使っている・GPU が無い・OS のエラー・macOS で拡張の許可を待っている / 有効にできない) |
+  | カメラを使っているアプリがありません (案内) | Windows と macOS で、カメラを開いているアプリが無い (Linux では分からないので出さない) |
   | 遅れています (注意) | 直近 1 秒に描けた回数が、フレームレートの 95% を下回った |
 
   理由に合わせて、v4l2loopback の入れ方 (Linux)・OBS の仮想カメラを使う手順 (Windows 10)・インストーラでの入れ直し (登録が無い) を案内する。
@@ -434,9 +434,10 @@ OS の部品の扱いと `unsafe` の例外は [ADR 0028 の 8.](adr/0028-studio
 指揮役 ─ フレーム {seq, dt, values, lip_sync} ─▶ 仮想カメラのスレッド (同じプロセスのチャネル)
                                                  │ 受け手 (Follower): 届いたフレームをすべて順に follow で適用 (物理を回す)
                                                  │ 常駐の描画 (ugoe-headless の Resident): フレームレートごとに描き、
-                                                 │   GPU で NV12 (Windows) / YUY2 (Linux) に変換してから読み戻す (待たない)
+                                                 │   GPU で NV12 (Windows・macOS) / YUY2 (Linux) に変換してから読み戻す (待たない)
                                                  ▼
-                                   ugoe-studio-vcam: Windows は共有メモリ → メディアソース、Linux は /dev/videoN に write
+                                   ugoe-studio-vcam: Windows は共有メモリ → メディアソース、Linux は /dev/videoN に write、
+                                                     macOS は Camera Extension の受ける側のストリームに積む
 ```
 
 - 実装は `apps/studio/src-tauri/src/virtual_camera.rs` (受け手と描画の `Feed`、スレッドの `run`) と `apps/studio/vcam` (`ugoe-studio-vcam`。OS の境界)。
@@ -534,9 +535,79 @@ echo 'options v4l2loopback devices=1 video_nr=10 card_label="ugoe studio" exclus
 3. Chrome (Google Meet)・OBS (映像キャプチャデバイス (V4L2))・Zoom で「ugoe studio」を選ぶと映り、色が正しい。
 4. v4l2loopback を読み込んでいないと「使えません」と入れ方が出る。ほかのアプリが同じ機器に書いていると「ほかのアプリが使っています」。
 
-### macOS
+### macOS (Camera Extension)
 
-T0809 (Camera Extension)。それまでは「この OS ではまだ仮想カメラを出せません」を出し、ウィンドウの取り込みかブラウザソースを案内する。
+macOS 12.3 以降の CoreMediaIO の Camera Extension (System Extension) で、「ugoe studio」という名前のカメラを出す (T0809)。
+**配布物に入れるのは、利用者が Apple Developer Program のアカウントを用意してから** (ADR 0028 の 8.)。拡張を入れていない束
+(今の配布物と、開発中の `just studio`) では、これまでどおり「この OS ではまだ仮想カメラを出せません」と、ウィンドウの取り込みか
+ブラウザソースを案内する。
+
+- **しくみ:**
+
+  ```
+  スタジオ (ugoe-studio-vcam の cmio.rs)                 Camera Extension (apps/studio/vcam/macos、Swift)
+    NV12 ('420v') の CVPixelBuffer (IOSurface) ─┐         機器「ugoe studio」
+    → CMSampleBuffer → CMSimpleQueue に積む ─────┴──────▶ 受ける側 (sink) のストリーム「ugoe studio input」
+                                                           │ 出す側が動いている間、フレームレートごとに 1 枚取り出す
+                                                           ▼
+                                                         出す側 (source) のストリーム ──▶ 会議アプリ・配信ソフト
+  ```
+
+  - 拡張はアプリの束の `Contents/Library/SystemExtensions/app.ugoe.studio.camera.systemextension` に入れる。スタジオは、プロセスで
+    最初に仮想カメラを入れるときに `OSSystemExtensionRequest` で拡張を有効にする (すでに有効ならすぐ終わり、版が違えば入れ替える)。
+    初回は macOS が許可を求めるので、「システム設定」で許可してもらい (操作ウィンドウに「許可してください」を出す)、もう一度入れてもらう。
+  - 有効になった拡張は OS (CoreMediaIO) が動かし、スタジオが動いていない間も機器は残る (画は黒)。拡張は別の利用者
+    (`_cmiodalassistants`) のサンドボックスで動くので、Windows のような名前付きの共有メモリは使わず、CoreMediaIO の受ける側の
+    ストリーム (Apple が推奨する、アプリから Camera Extension へ画を渡す方法) を使う。
+  - 画は Windows と同じ NV12 (BT.709・限定範囲)。スタジオは CoreMediaIO の C の API で機器を UID
+    (`07DA1CFA-007F-4E78-873E-5FFA646E00B4`) で、受ける側のストリームを名前で探し、`CMIODeviceStartStream` の後に `CMSimpleQueue` に積む。
+    BT.709 の印 (`kCVImageBufferYCbCrMatrixKey` など) を画に付ける。
+  - 拡張は 1280×720 と 1920×1080、30 と 60 fps の書式を出す。カメラを開いたアプリが選んだ大きさと届いた画の大きさが違えば
+    VideoToolbox (`VTPixelTransferSession`) で拡大縮小する。画がまだ無い・スタジオが止めたときは黒を出す。
+  - 拡張は、カメラを開いているアプリがある間だけ受ける側から取り出す。スタジオはキューが埋まっていれば積まずに
+    「カメラを使っているアプリがありません」を出す (Windows と同じ知らせ)。
+  - 始められない理由: macOS 12.3 より前 (`macosTooOld`)・許可を待っている (`needsApproval`)・アプリが「アプリケーション」フォルダに無い
+    (`notInApplications`。System Extension は「アプリケーション」フォルダのアプリからしか有効にできない)・有効にできない / 機器が現れない
+    (`extensionFailed`。署名の誤りなど。詳細を添える)。
+- **コード:** Rust 側は `apps/studio/vcam/src/cmio.rs` (objc2 の束縛で SystemExtensions・CoreMediaIO・CoreMedia・CoreVideo を呼ぶ。
+  `unsafe` は ADR 0028 の 8. の例外のクレートの中)。拡張は `apps/studio/vcam/macos/` (`Extension/Camera.swift`・`main.swift`・
+  `Info.plist`・`Extension.entitlements`)。Camera Extension の API (CMIOExtension) は Swift と Objective-C 向けなので、拡張は Swift で書く。
+- **ビルド:** `pnpm vcam:macos` (`apps/studio/scripts/build-vcam-macos.mjs`) が `xcrun swiftc` で arm64 と x86_64 を作って `lipo` で束ね、
+  `target/vcam/macos/` に拡張の束を組み、拡張の entitlement で署名する。Xcode のプロジェクトは使わない (macOS と Xcode か
+  コマンドラインツールが要る)。拡張を入れたスタジオは `pnpm tauri build --config src-tauri/tauri.macos-vcam.conf.json` で作る
+  (`bundle.macOS.files` が拡張とプロビジョニングプロファイルを束に入れ、`Entitlements.vcam.plist` で署名する)。署名・公証・
+  entitlement・プロビジョニングプロファイルの用意は [release.md の macOS の仮想カメラ](release.md#macos-の仮想カメラ)。
+- **開発中の確かめ方:** System Extension は「アプリケーション」フォルダのアプリから、正しく署名したものしか有効にできない。
+  開発中は次のどちらかにする。どちらも Apple Developer Program のアカウント (System Extension の権限を付けたプロビジョニング
+  プロファイル) が要る見込み (無料のアカウントの開発用の署名では System Extension の権限を付けられない。確かめていない)。
+  1. **ふつうの手順:** Apple Development の証明書と開発用のプロファイルで上のビルドを行い、できた `ugoe-studio.app` を
+     `/Applications` に写して開く。
+  2. **束をどこに置いても有効にできるようにする:** 復旧モード (Apple シリコンは電源ボタンを長押し、Intel は Command + R で起動) の
+     ターミナルで `csrutil disable` を実行して SIP を切り、再起動してから `systemextensionsctl developer on` を実行する。
+     確かめ終わったら `systemextensionsctl developer off` と、復旧モードで `csrutil enable` を実行して戻す。
+  - 入っている拡張は `systemextensionsctl list` で見る (`app.ugoe.studio.camera` が `[activated enabled]` になる)。
+    外すには `systemextensionsctl uninstall <チーム ID> app.ugoe.studio.camera` (SIP を切っているときだけ) か、アプリを消して再起動する。
+  - 拡張のログは `log stream --predicate 'subsystem == "com.apple.cmio" OR process == "app.ugoe.studio.camera"'` で見る。
+  - 拡張を作り直したら版 (`CFBundleVersion`。ビルドの時刻) が変わるので、スタジオがもう一度有効にすると入れ替わる。カメラを使っている
+    アプリは、入れ替わった後に開き直す。
+
+**未確認 (利用者の確認に残す。WSL の上では macOS のビルドも実機の確認もできない):** Rust 側は `cargo clippy --target aarch64-apple-darwin`・
+`x86_64-apple-darwin` (`ugoe-studio-vcam` だけ。`ugoe-studio` は依存の objc2-exception-helper が Objective-C を macOS の SDK で
+コンパイルするので Linux では検査できない) を通したが、Swift の拡張はコンパイルもしていない。macOS で次を確かめる。
+
+1. `pnpm vcam:macos` で拡張が作れる (Swift のコンパイルの誤りがあれば直す)。`codesign -dv --entitlements - <拡張>` で entitlement が付いている。
+2. 拡張を入れたスタジオを `/Applications` から開き、仮想カメラを入れると、初回は「許可してください」が出て、macOS の通知か
+   「システム設定」→「一般」→「ログイン項目と機能拡張」→「カメラ機能拡張」(macOS 14 までは「プライバシーとセキュリティ」) で許可できる。
+   許可の後にもう一度入れると「入: ugoe studio・…」になる。`systemextensionsctl list` に出る。
+3. FaceTime・Photo Booth・QuickTime Player (新規ムービー収録)・Zoom・Chrome (Google Meet)・OBS (映像キャプチャデバイス) で
+   「ugoe studio」を選ぶと、モデルが動いて映る。色が正しい (白い背景が白く、赤が赤い)。1920×1080・1280×720、30・60 fps のそれぞれ。
+   アプリが別の大きさを選んだときに拡大縮小される。
+4. カメラを開いているアプリが無いと「カメラを使っているアプリがありません」が出て、開くと消える。スタジオを止める・閉じると黒になる。
+5. スタジオがカメラ (CoreMediaIO の機器) を開くときに、カメラの使用の許可 (TCC) を求められるか。求められるなら
+   `NSCameraUsageDescription` の文言 (いまはフェイストラッキングの説明) を仮想カメラにも合う文言にする。
+6. 「アプリケーション」フォルダの外から開くと「アプリケーション フォルダに移して」が出る。macOS 12.3 より前では「macOS 12.3 以降が要ります」。
+7. tauri の署名 (`bundle.macOS.signingIdentity`) が、中の拡張の署名を壊さない (`codesign --verify --deep --strict` が通る)。公証が通る。
+8. スタジオを更新した (拡張の版が変わった) ときに、拡張が入れ替わる。
 
 ## 隠れても止まらない
 

@@ -323,6 +323,10 @@
     "errors": {
       "unsupported": "この OS ではまだ仮想カメラを出せません。出力ウィンドウの取り込みかブラウザソースを使ってください。",
       "windowsTooOld": "仮想カメラには Windows 11 が要ります。",
+      "macosTooOld": "仮想カメラには macOS 12.3 以降が要ります。",
+      "needsApproval": "「システム設定」で ugoe studio のカメラ機能拡張を許可してから、もう一度仮想カメラを入れてください。",
+      "notInApplications": "ugoe studio を「アプリケーション」フォルダに移し、そこから開いてから、もう一度仮想カメラを入れてください。",
+      "extensionFailed": "カメラ機能拡張を有効にできませんでした。",
       "notRegistered": "仮想カメラのドライバが入っていません。",
       "noDevice": "v4l2loopback の機器が見つかりません。",
       "busy": "v4l2loopback の機器は、どれもほかのアプリが使っています。",

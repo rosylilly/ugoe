@@ -325,6 +325,10 @@
     "errors": {
       "unsupported": "Virtual cameras are not supported on this OS yet. Capture the output window or use the browser source instead.",
       "windowsTooOld": "The virtual camera needs Windows 11.",
+      "macosTooOld": "The virtual camera needs macOS 12.3 or later.",
+      "needsApproval": "Allow the ugoe studio camera extension in System Settings, then turn the virtual camera on again.",
+      "notInApplications": "Move ugoe studio to the Applications folder, open it from there, and turn the virtual camera on again.",
+      "extensionFailed": "The camera extension could not be turned on.",
       "notRegistered": "The virtual camera driver is not installed.",
       "noDevice": "No v4l2loopback device was found.",
       "busy": "Every v4l2loopback device is in use by another program.",
