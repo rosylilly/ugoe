@@ -84,7 +84,7 @@ function onKeydown(e: KeyboardEvent) {
   aria-level={row.depth + 1}
   aria-expanded={hasChildren ? expanded : undefined}
   data-key={node.key}
-  style:padding-left="{row.depth * 14 + 2}px"
+  style:padding-left="{row.depth * 14 + 7}px"
   onclick={onselect}
   ondblclick={onrenamestart}
   {onpointerdown}
@@ -131,7 +131,7 @@ function onKeydown(e: KeyboardEvent) {
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 22px;
+  height: var(--ugoe-target-min);
   padding-right: 4px;
   border-radius: 3px;
   border: 1px solid transparent;
@@ -140,45 +140,47 @@ function onKeydown(e: KeyboardEvent) {
   white-space: nowrap;
 }
 .row:hover {
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  background: color-mix(in srgb, var(--ugoe-color-accent) 8%, transparent);
 }
 .row.selected {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  background: color-mix(in srgb, var(--ugoe-color-accent) 22%, transparent);
 }
 .row.active {
-  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  border-color: color-mix(in srgb, var(--ugoe-color-accent) 60%, transparent);
 }
-.row.base .name {
-  opacity: 0.55;
-}
+.row.base .name,
 .row.hidden .name {
-  opacity: 0.5;
+  /* 薄くするのは不透明度ではなく控えめな文字の色で (opacity では 4.5:1 に届かない。T0907) */
+  color: var(--ugoe-color-text-muted);
 }
 .row.mask-only .name {
   font-style: italic;
 }
 .row.drop-into {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-color: var(--ugoe-color-accent);
+  background: color-mix(in srgb, var(--ugoe-color-accent) 15%, transparent);
 }
 .row.drop-above {
-  box-shadow: inset 0 2px 0 var(--accent);
+  box-shadow: inset 0 2px 0 var(--ugoe-color-accent);
 }
 .row.drop-below {
-  box-shadow: inset 0 -2px 0 var(--accent);
+  box-shadow: inset 0 -2px 0 var(--ugoe-color-accent);
 }
 .row.drop-bad {
   border-color: var(--ugoe-color-danger);
   box-shadow: none;
   background: color-mix(in srgb, var(--ugoe-color-danger) 10%, transparent);
 }
+/* 開閉の印: 並びの幅は 14px のまま、押せる範囲を 24×24 に広げる (左右に 5px ずつはみ出す。T0907) */
 .twisty {
   flex: none;
-  width: 14px;
+  width: var(--ugoe-target-min);
+  height: var(--ugoe-target-min);
+  margin-inline: -5px;
   padding: 0;
   border: none;
   background: none;
-  color: var(--muted);
+  color: var(--ugoe-color-text-muted);
   font-size: 10px;
   text-align: center;
 }
@@ -196,12 +198,12 @@ function onKeydown(e: KeyboardEvent) {
 .badge,
 .order {
   flex: none;
-  font-size: 10px;
-  color: var(--muted);
+  font-size: var(--ugoe-font-size-xs);
+  color: var(--ugoe-color-text-muted);
 }
 .badge {
   padding: 0 3px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--ugoe-color-border);
   border-radius: 3px;
 }
 </style>

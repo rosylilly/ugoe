@@ -101,7 +101,7 @@ const primaryLabel = $derived.by(() => {
 .badge {
   margin-left: 6px;
   padding: 0 4px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--ugoe-color-border);
   border-radius: 3px;
   font-size: 11px;
   opacity: 0.8;

@@ -4,11 +4,19 @@
     "open": "Choose model…",
     "output": "Output window",
     "profile": "Profile",
-    "license": "License"
+    "settings": "Settings"
   },
-  "language": {
-    "label": "Language",
-    "system": "Match the OS"
+  "settings": {
+    "title": "Settings",
+    "language": {
+      "label": "Language",
+      "system": "Match the OS",
+      "description": "The language of the studio. Match the OS uses the language of the operating system (English if it is not supported)."
+    },
+    "license": {
+      "open": "Show licenses…",
+      "description": "The license of ugoe studio and of the bundled software and models."
+    }
   },
   "file": {
     "filter": "ugoe models",

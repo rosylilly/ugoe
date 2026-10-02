@@ -240,14 +240,14 @@ function point(i: number): [number, number] {
 }
 
 .edges line {
-  stroke: var(--accent);
+  stroke: var(--ugoe-color-accent);
   stroke-width: 1;
   opacity: 0.8;
 }
 
 .vertices rect {
-  fill: var(--panel);
-  stroke: var(--accent);
+  fill: var(--ugoe-color-surface);
+  stroke: var(--ugoe-color-accent);
   stroke-width: 1.5;
 }
 
@@ -257,8 +257,8 @@ function point(i: number): [number, number] {
 }
 
 .box {
-  fill: color-mix(in srgb, var(--accent) 12%, transparent);
-  stroke: var(--accent);
+  fill: color-mix(in srgb, var(--ugoe-color-accent) 12%, transparent);
+  stroke: var(--ugoe-color-accent);
   stroke-dasharray: 4 3;
 }
 </style>

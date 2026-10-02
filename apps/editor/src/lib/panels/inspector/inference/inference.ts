@@ -29,7 +29,7 @@ export interface OriginStyle {
 
 /** 由来ごとの記号と色 (名前と説明は言語ごとなので `originStyle` で引く)。 */
 const ORIGIN_MARKS: Record<KeyformOrigin, Pick<OriginStyle, "symbol" | "color">> = {
-  authored: { symbol: "A", color: "var(--text)" },
+  authored: { symbol: "A", color: "var(--ugoe-color-text)" },
   additive: { symbol: "+", color: "#0d9488" },
   depth_rotation: { symbol: "R", color: "#d97706" },
   mirror: { symbol: "M", color: "#2563eb" },

@@ -435,6 +435,13 @@ function onKeyDown(e: KeyboardEvent) {
       border-top: 1px solid var(--ugoe-color-border);
       overflow-y: auto;
     }
+    /* 縦に積んだパネルを縮めず、パネルの列ごと送る (縮めるとライティングなどの中身がほぼ見えなくなる。T0907)。
+       各パネルの高さの上限と中のスクロールより強くするため、クラスを重ねて詳細度を上げる。 */
+    .sidebar.sidebar > :global(*) {
+      flex: none;
+      max-height: none;
+      overflow: visible;
+    }
   }
   .error {
     color: var(--ugoe-color-danger);

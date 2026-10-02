@@ -30,7 +30,8 @@ scripts/mediapipe-assets.mjs  `ugoe-mediapipe-assets <出力先> [--optional]`: 
 - 文言の言語は、アプリが `@ugoe/i18n` の `setLocale()` で決める (エディタは英語、ビューアは日本語)。
   パネルの文言は言語の切り替えに追従する。エラーの文は起きた時の言語のまま。
 - パネルは `import { TrackingPanel } from "@ugoe/face-tracking"` (`index.ts` から。サブパスで import すると
-  svelte-check が同じ型を別物として扱うため)。パネルの見た目の変数 (`--muted` など) はアプリの CSS のもの。
+  svelte-check が同じ型を別物として扱うため)。パネルの部品と見た目は `@ugoe/ui` (Section・Select・Toggle・Slider・Button・Tooltip。T0907)。
+  アプリは `@ugoe/ui` の `tokens.css` を読んでおく。
 - アプリの `pnpm dev` / `pnpm build` の前に `ugoe-mediapipe-assets public/mediapipe` を実行する (`dev` は `--optional`)。
   `public/mediapipe/` はコミットしない。実行時は `document.baseURI` からの `mediapipe/` を読む。
 

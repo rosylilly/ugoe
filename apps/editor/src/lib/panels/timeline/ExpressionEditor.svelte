@@ -306,7 +306,7 @@ function label(e: Expression): string {
     align-items: center;
     gap: 6px;
     padding: 4px 8px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--ugoe-color-border);
   }
   .inline {
     display: inline;
@@ -317,7 +317,7 @@ function label(e: Expression): string {
   .sep {
     width: 1px;
     align-self: stretch;
-    background: var(--border);
+    background: var(--ugoe-color-border);
   }
   .table {
     flex: 1;
@@ -331,7 +331,7 @@ function label(e: Expression): string {
   th {
     text-align: left;
     font-weight: normal;
-    color: var(--muted);
+    color: var(--ugoe-color-text-muted);
     font-size: 11px;
     padding: 2px 8px;
   }

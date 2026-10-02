@@ -370,6 +370,7 @@ li {
 }
 
 .name {
+  min-height: var(--ugoe-target-min);
   background: none;
   border: none;
   padding: 0;
@@ -380,13 +381,13 @@ li {
 
 .name.internal {
   font-style: italic;
-  color: var(--muted);
+  color: var(--ugoe-color-text-muted);
 }
 
 .tag {
   margin-left: 4px;
   padding: 0 4px;
-  border: 1px solid var(--muted);
+  border: 1px solid var(--ugoe-color-text-muted);
   border-radius: 3px;
   font-size: 10px;
   font-style: normal;
@@ -399,16 +400,16 @@ li {
 
 .value {
   width: 5em;
+  min-height: var(--ugoe-target-min);
   text-align: right;
 }
 
 .row :global(.ugoe-icon-button.key) {
-  opacity: 0.5;
+  color: var(--ugoe-color-text-muted);
 }
 
 .row :global(.ugoe-icon-button.key.on) {
-  opacity: 1;
-  color: var(--accent);
+  color: var(--ugoe-color-accent);
 }
 
 .slider {
@@ -429,12 +430,12 @@ li {
   padding: 0;
   border: none;
   transform: rotate(45deg);
-  background: var(--muted);
+  background: var(--ugoe-color-text-muted);
   cursor: pointer;
 }
 
 .marker.current {
-  background: var(--accent);
+  background: var(--ugoe-color-accent);
 }
 
 .editor {

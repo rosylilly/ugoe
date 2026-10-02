@@ -459,4 +459,16 @@ describe("Toolbar", () => {
     press(buttons[1] as HTMLElement, "End");
     expect(document.activeElement).toBe(buttons[2]);
   });
+
+  it("keeps one tab stop when the buttons were disabled at first", async () => {
+    const root = render(ToolbarHarness, { disabledAtFirst: true });
+    const toolbar = get(root, '[role="toolbar"]');
+    const buttons = [...toolbar.querySelectorAll<HTMLElement>("button")];
+    click(get(root, "#enable"));
+    await vi.waitFor(() => expect(buttons.map((b) => b.tabIndex)).toEqual([0, -1, -1]));
+    buttons[0]?.focus();
+    press(buttons[0] as HTMLElement, "ArrowRight");
+    expect(document.activeElement).toBe(buttons[1]);
+    await vi.waitFor(() => expect(buttons.map((b) => b.tabIndex)).toEqual([-1, 0, -1]));
+  });
 });

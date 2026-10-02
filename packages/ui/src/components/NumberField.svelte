@@ -49,6 +49,7 @@ let {
 }: Props = $props();
 
 const id = $props.id();
+let inputEl = $state<HTMLInputElement | null>(null);
 const digits = $derived(decimals ?? decimalsOf(step));
 let text = $state("");
 // 利用者が欄を書き換えて、まだ確定も取り消しもしていないか
@@ -123,8 +124,19 @@ function onkeydown(event: KeyboardEvent) {
   {#if label}
     <label class="ugoe-number-field__label" id={`${id}-label`} for={`${id}-input`}>{label}</label>
   {/if}
-  <span class="ugoe-number-field__box">
+  <!-- 枠の全体 (24px 以上) を押せる範囲にする: 欄の外の余白を押しても欄にフォーカスを移す (T0907) -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <span
+    class="ugoe-number-field__box"
+    onpointerdown={(e) => {
+      if (e.target === e.currentTarget && !disabled) {
+        e.preventDefault();
+        inputEl?.focus();
+      }
+    }}
+  >
     <input
+      bind:this={inputEl}
       id={`${id}-input`}
       class="ugoe-number-field__input"
       type="text"
@@ -185,6 +197,7 @@ function onkeydown(event: KeyboardEvent) {
     }
 
     .ugoe-number-field__input {
+      align-self: stretch;
       width: auto;
       min-width: 0;
       padding: 0;

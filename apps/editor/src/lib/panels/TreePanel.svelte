@@ -473,7 +473,7 @@ const dragHint = $derived.by(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  background: var(--panel);
+  background: var(--ugoe-color-surface);
 }
 .tree {
   flex: 1;
@@ -483,13 +483,14 @@ const dragHint = $derived.by(() => {
   border-radius: 4px;
 }
 .tree:focus-visible {
-  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  outline: var(--ugoe-focus-ring);
+  outline-offset: -2px;
 }
 .tree.dragging {
   cursor: grabbing;
 }
 .tree.drop-root {
-  border-color: var(--accent);
+  border-color: var(--ugoe-color-accent);
   border-style: dashed;
 }
 .empty {
@@ -498,7 +499,7 @@ const dragHint = $derived.by(() => {
 .hint {
   margin: 0;
   font-size: var(--ugoe-font-size-sm);
-  color: var(--muted);
+  color: var(--ugoe-color-text-muted);
 }
 .hint.error {
   color: var(--ugoe-color-danger);

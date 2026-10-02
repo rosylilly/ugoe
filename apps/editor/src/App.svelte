@@ -437,6 +437,8 @@ $effect(() => {
     position: absolute;
     top: var(--ugoe-space-3);
     left: var(--ugoe-space-3);
+    /* 右上の HUD (Viewport.svelte) と重ならないよう、その幅を空ける */
+    max-width: calc(100% - var(--viewport-hud-width, 0px) - 3 * var(--ugoe-space-3));
     margin: 0;
     padding: var(--ugoe-space-2) var(--ugoe-space-3);
     border: 1px solid var(--ugoe-color-accent);

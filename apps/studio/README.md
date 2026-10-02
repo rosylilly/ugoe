@@ -11,7 +11,8 @@ T0805 で外から操作する API (ループバックの WebSocket。[docs/stud
 
 ```
 index.html / src/control.ts   操作ウィンドウの入口 (@ugoe/ui のトークン・言語の設定)
-src/Control.svelte            操作ウィンドウ: プロファイルのメニュー・モデルを選ぶ・出力ウィンドウの表示/最前面/大きさ・いまの状態・パラメータ・言語
+src/Control.svelte            操作ウィンドウ: プロファイルのメニュー・モデルを選ぶ・出力ウィンドウの表示/最前面/大きさ・いまの状態・パラメータ
+src/SettingsDialog.svelte     設定 (ツールバーの歯車): 言語・テーマ・ライセンスの表示 (T0907)
 src/LoadPanel.svelte          操作ウィンドウの「フレームレートと負荷」: 刻みの速さ (30 / 60 / 120)・1 刻みの時間・出力ごとの描画の負荷
 src/ScenesPanel.svelte        シーンの一覧 (切り替え・追加・複製・並べ替え・削除)
 src/SceneEditor.svelte        シーンの編集 (名前・モデル・モジュール・位置と大きさと回転・背景・ライティング)
@@ -20,7 +21,7 @@ src/MotionPanel.svelte        表情とモーション (表情の付け外し・
 src/InputPanel.svelte         入力 (@ugoe/face-tracking のパネルでカメラのトラッキング、マイクの機器・感度・ノイズの閾値・メーター)
 src/HotkeysPanel.svelte       ホットキーの割り当て (キーを押して決める・操作と引数・登録できない理由)
 src/VirtualCameraPanel.svelte 操作ウィンドウの「仮想カメラ」: 開始と停止・解像度・フレームレート・透過を埋める色・止まった/遅れたの知らせと案内
-src/LicenseDialog.svelte      ライセンスの表示 (ツールバーの「ライセンス」)。本文は public/third-party-notices.txt
+src/LicenseDialog.svelte      ライセンスの表示 (設定の「ライセンスを表示…」)。本文は public/third-party-notices.txt
 public/third-party-notices.txt 同梱する第三者のもの (MediaPipe の wasm とモデル・JS のライブラリ) のライセンスの表記
 src/ApiPanel.svelte           操作 API (有効にする・接続先・ポート・トークンの写しと作り直し・承認したアプリの切断と取り消し・承認を待つアプリ)
 src/ApiApproval.svelte        操作 API に初めて接続したアプリの承認の知らせ (権限の選択・承認・拒否・後で)
@@ -97,7 +98,7 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
 - パラメータのスライダーは指揮役に書き込む (`set_parameter`。次の刻みから基準値になる)。動かしてから 0.5 秒は、指揮役からの値で表示を上書きしない。
 - 言語は「OS に合わせる」が既定で、OS の言語は `tauri-plugin-os` の `locale()` で取る (WebView の `navigator.languages` は OS と違うことがある。
   `packages/i18n/README.md`)。選んだ言語は `ugoe-studio.locale` に覚える。
-- テーマ (OS に合わせる・ライト・ダーク) はヘッダーの言語の隣 (`@ugoe/ui` の `ThemeSetting`)。`ugoe-studio.theme` に覚える。
+- 言語とテーマ (OS に合わせる・ライト・ダーク。`@ugoe/ui` の `ThemeSetting`) はツールバーの歯車の設定のダイアログ。テーマは `ugoe-studio.theme` に覚える。
   操作ウィンドウだけに効かせ、出力ウィンドウ (`output.ts`) は @ugoe/ui を読まないので透過のまま。
 - 出力ウィンドウの大きさは物理ピクセルのプリセット (1920×1080・1280×720・1080×1920・1080×1080・自由)。選んだものはプロファイルに持ち、
   プロファイルを開いたときに合わせる (T0802。T0801 の `ugoe-studio.output-size` は使わない)。

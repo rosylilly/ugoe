@@ -35,6 +35,9 @@ let canvas = $state<HTMLCanvasElement>();
 let panning: { id: number; x: number; y: number } | null = null;
 /** スクリーンショットを保存している間 (ボタンを押せない)。 */
 let capturing = $state(false);
+/** 右上の HUD (バックエンドの名前・スクリーンショット・全体を表示) の幅。左上の道具の並びがこれと重ならないよう、
+ * `--viewport-hud-width` で上に重ねるもの (ToolOverlay の .toolbar・提案のプレビューの帯) に渡す (T0907)。 */
+let hudWidth = $state(0);
 /** 直近のスクリーンショットの失敗 (閉じるまで残す。保存した場所は Toast で出す)。 */
 let shotError = $state<string | null>(null);
 
@@ -82,7 +85,7 @@ $effect(() => {
   untrack(applyBackground);
 });
 
-/** CSS の --viewport-bg を描画の背景色にする (canvas が不透明にしか合成できない環境でも同じ色になる)。 */
+/** ビューポートの地 (--ugoe-color-sunken) を描画の背景色にする (canvas が不透明にしか合成できない環境でも同じ色になる)。 */
 function applyBackground() {
   const color = getComputedStyle(container).backgroundColor;
   const m = color.match(/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/);
@@ -121,6 +124,7 @@ function onPointerUp(e: PointerEvent) {
 <div
   class="viewport"
   bind:this={container}
+  style:--viewport-hud-width="{hudWidth}px"
   role="presentation"
   onwheel={onWheel}
   onpointerdown={onPointerDown}
@@ -135,7 +139,7 @@ function onPointerUp(e: PointerEvent) {
     {#if overlay}{@render overlay(controller)}{/if}
   </div>
   {#if hint}<p class="hint muted">{hint}</p>{/if}
-  <div class="hud">
+  <div class="hud" bind:clientWidth={hudWidth}>
     {#if controller.status !== "ready"}
       <span class={controller.status === "error" ? "error" : "muted"}>
         {controller.message ?? t("viewport.loading")}
@@ -164,7 +168,7 @@ function onPointerUp(e: PointerEvent) {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: var(--viewport-bg);
+  background: var(--ugoe-color-sunken);
   touch-action: none;
 }
 

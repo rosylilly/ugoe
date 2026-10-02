@@ -4,6 +4,8 @@
 -->
 <script lang="ts">
 import { Switch } from "bits-ui";
+import type { TriggerAttributes } from "../props";
+import Tooltip from "./Tooltip.svelte";
 
 interface Props {
   /** 入っているか。 */
@@ -13,6 +15,8 @@ interface Props {
   disabled?: boolean;
   /** 補足の説明を持つ要素の id。 */
   describedby?: string;
+  /** スイッチに出す説明 (Tooltip。翻訳を通した文言)。`title` 属性の代わり。 */
+  tooltip?: string;
   onchange?: (checked: boolean) => void;
 }
 
@@ -21,23 +25,35 @@ let {
   label,
   disabled = false,
   describedby,
+  tooltip,
   onchange,
 }: Props = $props();
 
 const id = $props.id();
 </script>
 
-<span class="ugoe-toggle" data-disabled={disabled ? "" : undefined}>
+{#snippet root(attrs: TriggerAttributes)}
   <Switch.Root
+    {...attrs}
     id={`${id}-switch`}
     class="ugoe-toggle__switch"
     bind:checked
     {disabled}
-    aria-describedby={describedby}
+    aria-describedby={[attrs["aria-describedby"], describedby].filter(Boolean).join(" ") || undefined}
     onCheckedChange={(value) => onchange?.(value)}
   >
     <Switch.Thumb class="ugoe-toggle__thumb" />
   </Switch.Root>
+{/snippet}
+
+<span class="ugoe-toggle" data-disabled={disabled ? "" : undefined}>
+  {#if tooltip}
+    <Tooltip text={tooltip} id={`${id}-switch`} {disabled}>
+      {#snippet children(attrs)}{@render root(attrs)}{/snippet}
+    </Tooltip>
+  {:else}
+    {@render root({})}
+  {/if}
   <label class="ugoe-toggle__label" for={`${id}-switch`}>{label}</label>
 </span>
 

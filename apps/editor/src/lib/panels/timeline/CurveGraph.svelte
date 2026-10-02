@@ -46,6 +46,8 @@ let { doc, timeline, motion, row, view, onmessage }: Props = $props();
 
 const HEIGHT = 110;
 const PAD = 8;
+/** 印を押せる範囲の一辺 (CSS px。docs/ui.md の 24×24)。 */
+const HIT = 24;
 
 type Drag =
   | { kind: "key"; t: number; point: Point }
@@ -332,12 +334,14 @@ async function removeCurve() {
           <line class="arm" x1={x(p0.t)} y1={y(p0.v)} x2={x(s.c1.t)} y2={y(s.c1.v)} />
           <line class="arm" x1={x(s.to.t)} y1={y(s.to.v)} x2={x(s.c2.t)} y2={y(s.c2.v)} />
           {#each [["c1", s.c1], ["c2", s.c2]] as const as [kind, c] (kind)}
+            <rect class="handle" x={x(c.t) - 4} y={y(c.v) - 4} width="8" height="8" />
+            <!-- 押せる範囲は 24×24 (見た目の印より広い。docs/ui.md#そのほか。T0907) -->
             <rect
-              class="handle"
-              x={x(c.t) - 4}
-              y={y(c.v) - 4}
-              width="8"
-              height="8"
+              class="hit move"
+              x={x(c.t) - HIT / 2}
+              y={y(c.v) - HIT / 2}
+              width={HIT}
+              height={HIT}
               role="button"
               tabindex="-1"
               aria-label={kind === "c1"
@@ -353,12 +357,13 @@ async function removeCurve() {
       {/each}
       {#each curveKeys(shown) as k, i (i)}
         {@const original = row.curve ? curveKeys(row.curve)[i] : k}
-        <circle
-          class="point"
-          class:selected={original?.t === selectedT}
-          cx={x(k.t)}
-          cy={y(k.v)}
-          r="5"
+        <circle class="point" class:selected={original?.t === selectedT} cx={x(k.t)} cy={y(k.v)} r="5" />
+        <rect
+          class="hit grab"
+          x={x(k.t) - HIT / 2}
+          y={y(k.v) - HIT / 2}
+          width={HIT}
+          height={HIT}
           role="button"
           tabindex="-1"
           aria-label={t("timeline.curve.point.aria", { time: k.t, value: k.v })}
@@ -376,7 +381,7 @@ async function removeCurve() {
   .graph {
     display: grid;
     grid-template-columns: 200px minmax(0, 1fr);
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--ugoe-color-border);
     flex: none;
   }
   .side {
@@ -424,40 +429,49 @@ async function removeCurve() {
   }
   .plot {
     display: block;
-    background: var(--viewport-bg);
+    background: var(--ugoe-color-sunken);
     touch-action: none;
   }
   .zero {
-    stroke: var(--border);
+    stroke: var(--ugoe-color-border);
     stroke-dasharray: 3 3;
   }
   .bound {
-    stroke: var(--border);
+    stroke: var(--ugoe-color-border);
   }
   .playhead {
     stroke: #dc2626;
   }
   .curve {
     fill: none;
-    stroke: var(--accent);
+    stroke: var(--ugoe-color-accent);
     stroke-width: 2;
   }
   .arm {
-    stroke: var(--muted);
+    stroke: var(--ugoe-color-text-muted);
   }
   .handle {
-    fill: var(--panel);
-    stroke: var(--muted);
-    cursor: move;
+    fill: var(--ugoe-color-surface);
+    stroke: var(--ugoe-color-text-muted);
+    pointer-events: none;
   }
   .point {
-    fill: var(--panel);
-    stroke: var(--text);
+    fill: var(--ugoe-color-surface);
+    stroke: var(--ugoe-color-text);
     stroke-width: 1.5;
+    pointer-events: none;
+  }
+  .hit {
+    fill: transparent;
+  }
+  .hit.move {
+    cursor: move;
+  }
+  .hit.grab {
     cursor: grab;
   }
   .point.selected {
-    fill: var(--accent);
-    stroke: var(--accent);
+    fill: var(--ugoe-color-accent);
+    stroke: var(--ugoe-color-accent);
   }
 </style>

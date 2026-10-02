@@ -364,12 +364,12 @@ async function removeKey(parameter: string, key: number) {
 
 .chip {
   display: inline-flex;
-  border: 1px solid var(--border);
+  border: 1px solid var(--ugoe-color-border);
   border-radius: 4px;
 }
 
 .chip.current {
-  border-color: var(--accent);
+  border-color: var(--ugoe-color-accent);
 }
 
 .chip button {
@@ -396,9 +396,9 @@ async function removeKey(parameter: string, key: number) {
   width: 24px;
   height: 24px;
   padding: 0;
-  border: 1px solid var(--border);
+  border: 1px solid var(--ugoe-color-border);
   border-radius: 4px;
-  background: var(--panel);
+  background: var(--ugoe-color-surface);
   color: inherit;
   cursor: pointer;
 }
@@ -406,16 +406,16 @@ async function removeKey(parameter: string, key: number) {
 /* 推定で作ったセル: 方法の色 (--origin) の点線と薄い地。 */
 .cell:not([data-origin="authored"]) {
   border: 1px dashed var(--origin);
-  background: color-mix(in srgb, var(--origin) 14%, var(--panel));
+  background: color-mix(in srgb, var(--origin) 14%, var(--ugoe-color-surface));
   color: var(--origin);
 }
 
 .cell.current {
-  border: 2px solid var(--accent);
+  border: 2px solid var(--ugoe-color-accent);
 }
 
 .cell.selected {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ugoe-color-accent);
   outline-offset: 1px;
 }
 

@@ -276,7 +276,7 @@ function onKeyDown(e: KeyboardEvent): void {
 
 .outline {
   fill: none;
-  stroke: var(--accent);
+  stroke: var(--ugoe-color-accent);
   stroke-width: 1;
   opacity: 0.7;
 }
@@ -287,13 +287,13 @@ function onKeyDown(e: KeyboardEvent): void {
 }
 
 .outline.base {
-  stroke: var(--muted, #888);
+  stroke: var(--ugoe-color-text-muted);
   stroke-dasharray: 4 3;
 }
 
 .module-outline {
   fill: none;
-  stroke: var(--accent);
+  stroke: var(--ugoe-color-accent);
   stroke-width: 1;
   stroke-dasharray: 2 3;
   opacity: 0.55;
@@ -301,15 +301,17 @@ function onKeyDown(e: KeyboardEvent): void {
 
 .base-tag {
   padding: 2px 6px;
-  background: var(--panel);
-  border: 1px dashed var(--border);
+  background: var(--ugoe-color-surface);
+  border: 1px dashed var(--ugoe-color-border);
   border-radius: 4px;
 }
 
+/* 右上の HUD (Viewport.svelte) と重ならないよう、その幅を空けて折り返す (T0907) */
 .toolbar {
   position: absolute;
   top: 8px;
   left: 8px;
+  max-width: calc(100% - var(--viewport-hud-width, 0px) - 24px);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -317,12 +319,16 @@ function onKeyDown(e: KeyboardEvent): void {
   pointer-events: auto;
 }
 
+/* モデルの上に重なるので、地を敷いて読めるようにする (T0907) */
 .hint {
-  font-size: 11px;
+  padding: 0 var(--ugoe-space-1);
+  border-radius: var(--ugoe-radius-sm);
+  background: color-mix(in srgb, var(--ugoe-color-surface) 85%, transparent);
+  font-size: var(--ugoe-font-size-xs);
 }
 
 .toolbar :global(.previewing) {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--ugoe-color-accent);
+  color: var(--ugoe-color-accent);
 }
 </style>

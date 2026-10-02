@@ -100,8 +100,8 @@ function switchTab(next: "motions" | "expressions") {
   .timeline {
     display: flex;
     flex-direction: column;
-    border-top: 1px solid var(--border);
-    background: var(--panel);
+    border-top: 1px solid var(--ugoe-color-border);
+    background: var(--ugoe-color-surface);
     min-height: 0;
   }
   .timeline.open {
@@ -112,7 +112,7 @@ function switchTab(next: "motions" | "expressions") {
     align-items: center;
     gap: 4px;
     padding: 0 8px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--ugoe-color-border);
     min-width: 0;
   }
   /* 下の線は .tabs が引く (畳むボタンとエラーの下にも) */

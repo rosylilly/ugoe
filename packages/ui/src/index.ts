@@ -29,7 +29,7 @@ export { default as Tooltip } from "./components/Tooltip.svelte";
 export { default as TooltipProvider } from "./components/TooltipProvider.svelte";
 export * from "./files";
 export * from "./number";
-export type { TriggerAttributes } from "./props";
+export { mergeAttributes, type TriggerAttributes } from "./props";
 export * from "./shortcut";
 export * from "./theme.svelte";
 export {

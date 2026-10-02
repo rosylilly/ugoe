@@ -64,7 +64,7 @@ function setPadding(value: number) {
 load();
 </script>
 
-<div class="export-panel" role="dialog" aria-label={t("export.aria")}>
+<div class="export-panel">
   {#if settings}
     <Checkbox
       label={t("export.atlas.label")}
@@ -106,20 +106,13 @@ load();
 </div>
 
 <style>
+  /* 枠 (影・角丸・読み上げの名前) は FileMenu の Popover が付ける */
   .export-panel {
-    position: absolute;
-    z-index: 10;
-    top: 100%;
-    margin-top: var(--ugoe-space-2);
     display: flex;
     flex-direction: column;
     gap: var(--ugoe-space-2);
     min-width: 280px;
-    padding: var(--ugoe-space-3);
-    background: var(--ugoe-color-surface);
-    border: 1px solid var(--ugoe-color-border);
-    border-radius: var(--ugoe-radius-md);
-    box-shadow: var(--ugoe-shadow-overlay);
+    max-width: 360px;
   }
   .error {
     margin: 0;

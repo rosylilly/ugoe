@@ -1,9 +1,10 @@
 <!--
   説明 (Tooltip) 付きの文字のボタン (docs/ui.md#エディタの中の共通の形)。`title` 属性の代わりに使う。
   `tooltip` を省くと @ugoe/ui の Button と同じ。無効のボタンには説明が出ないので、押せない理由は近くに書く。
+  Popover・Menu のトリガーの属性 (rest に入る) も、Tooltip の属性と重ねて渡す (同じイベントは両方呼ぶ)。
 -->
 <script lang="ts">
-import { Button, type ButtonBaseProps, Tooltip } from "@ugoe/ui";
+import { Button, type ButtonBaseProps, mergeAttributes, Tooltip } from "@ugoe/ui";
 import type { Snippet } from "svelte";
 
 interface Props extends ButtonBaseProps {
@@ -20,14 +21,7 @@ let { tooltip, shortcut, onclick, children, ...rest }: Props = $props();
 {#if tooltip}
   <Tooltip text={tooltip} {shortcut}>
     {#snippet children(attrs)}
-      <Button
-        {...rest}
-        {...attrs as ButtonBaseProps}
-        onclick={(e: MouseEvent) => {
-          (attrs.onclick as ((e: MouseEvent) => void) | undefined)?.(e);
-          onclick?.(e);
-        }}>{@render label()}</Button
-      >
+      <Button {...mergeAttributes(attrs, rest, { onclick }) as ButtonBaseProps}>{@render label()}</Button>
     {/snippet}
   </Tooltip>
 {:else}

@@ -497,7 +497,7 @@ function onKeyDown(e: KeyboardEvent): void {
 }
 
 .points rect {
-  fill: var(--panel);
+  fill: var(--ugoe-color-surface);
   stroke: #0ea5e9;
   stroke-width: 1.5;
 }
@@ -514,7 +514,7 @@ function onKeyDown(e: KeyboardEvent): void {
 
 .rotation circle,
 .rotation rect {
-  fill: var(--panel);
+  fill: var(--ugoe-color-surface);
   stroke: #a855f7;
   stroke-width: 2;
 }

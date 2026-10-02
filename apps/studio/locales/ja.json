@@ -4,11 +4,19 @@
     "open": "モデルを選ぶ…",
     "output": "出力ウィンドウ",
     "profile": "プロファイル",
-    "license": "ライセンス"
+    "settings": "設定"
   },
-  "language": {
-    "label": "言語",
-    "system": "OS に合わせる"
+  "settings": {
+    "title": "設定",
+    "language": {
+      "label": "言語",
+      "system": "OS に合わせる",
+      "description": "スタジオの表示の言語です。「OS に合わせる」では OS の言語を使います (対応していない言語なら English)。"
+    },
+    "license": {
+      "open": "ライセンスを表示…",
+      "description": "ugoe studio と、同梱しているソフトウェアとモデルのライセンスです。"
+    }
   },
   "file": {
     "filter": "ugoe のモデル",

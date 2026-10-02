@@ -1,7 +1,8 @@
 <script lang="ts">
 // フェイストラッキングのパネル (T0703、ビューアとエディタで共有。T0636): 入力の選択、映像とランドマーク、
-// 調整、記録、値の表示。文言は @ugoe/i18n の名前空間 `face-tracking` (i18n.ts)。
+// 調整、記録、値の表示。文言は @ugoe/i18n の名前空間 `face-tracking` (i18n.ts)。部品は @ugoe/ui (T0907)。
 import { formatNumber } from "@ugoe/i18n";
+import { Button, type ButtonBaseProps, Section, Select, Slider, Toggle, Tooltip } from "@ugoe/ui";
 import { onDestroy, onMount } from "svelte";
 import { t } from "./i18n";
 import type { FaceTracker } from "./tracker.svelte";
@@ -102,229 +103,239 @@ let bodyRows = $derived.by(() => {
   ] as const;
 });
 let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
+let cameraOptions = $derived(
+  tracker.cameras.length > 0
+    ? tracker.cameras.map((c) => ({ value: c.id, label: c.label }))
+    : [{ value: "", label: t("camera.default") }],
+);
 </script>
 
-<details class="tracking" bind:open>
-  <summary>
-    <h2>{t("title")}</h2>
-    <span class="status" class:warn={tracker.running && !tracker.faceFound}>{statusText}</span>
-  </summary>
+<div class="tracking">
+  <Section title={t("title")} level={2} bind:open>
+    {#snippet actions()}
+      <span class="status" class:warn={tracker.running && !tracker.faceFound}>{statusText}</span>
+    {/snippet}
 
-  <div class="row">
-    <select
-      bind:value={tracker.cameraId}
-      disabled={tracker.running}
-      title={t("camera.select.tooltip")}
-      onfocus={() => void tracker.refreshCameras()}
-    >
-      {#each tracker.cameras as camera (camera.id)}
-        <option value={camera.id}>{camera.label}</option>
+    <div class="row">
+      <!-- 一覧を開く前に機器を数え直す (つないだばかりのカメラを出す) -->
+      <div class="camera" onfocusin={() => void tracker.refreshCameras()}>
+        <Select
+          ariaLabel={t("camera.select.tooltip")}
+          value={tracker.cameraId}
+          options={cameraOptions}
+          disabled={tracker.running}
+          onchange={(id) => (tracker.cameraId = id)}
+        />
+      </div>
+      {#if tracker.running || tracker.status === "loading"}
+        <Button small onclick={() => tracker.stop()}>{t("camera.stop.label")}</Button>
       {:else}
-        <option value="">{t("camera.default")}</option>
-      {/each}
-    </select>
-    {#if tracker.running || tracker.status === "loading"}
-      <button type="button" onclick={() => tracker.stop()}>{t("camera.stop.label")}</button>
-    {:else}
-      <button type="button" onclick={() => void tracker.startCamera()}>{t("camera.start.label")}</button>
-    {/if}
-    <button
-      type="button"
-      onclick={() => fileInput?.click()}
-      title={t("file.tooltip")}>{t("file.label")}</button
-    >
-    <input
-      bind:this={fileInput}
-      class="hidden"
-      type="file"
-      accept="video/*,image/*,.json,application/json"
-      onchange={onFile}
-    />
-  </div>
-
-  {#if tracker.error}
-    <p class="error ugoe-selectable">{tracker.error}</p>
-  {/if}
-  {#if tracker.source}
-    <p class="source">{t(SOURCE_KIND[tracker.source.kind])}: {tracker.source.label}</p>
-  {/if}
-
-  <div class="preview" class:hidden={!showMedia}>
-    <canvas bind:this={canvas} class:mirror={tracker.mirrorView}></canvas>
-  </div>
-
-  <div class="options">
-    <label title={t("options.mirrorView.tooltip")}>
-      <input type="checkbox" bind:checked={tracker.mirrorView} /> {t("options.mirrorView.label")}
-    </label>
-    <label title={t("options.landmarks.tooltip")}>
-      <input type="checkbox" bind:checked={tracker.showLandmarks} /> {t("options.landmarks.label")}
-    </label>
-    <label title={t("options.swapSides.tooltip")}>
-      <input type="checkbox" bind:checked={tracker.swapSides} /> {t("options.swapSides.label")}
-    </label>
-    <label title={t("options.stopEyeBlink.tooltip")}>
+        <Button small onclick={() => void tracker.startCamera()}>{t("camera.start.label")}</Button>
+      {/if}
+      {@render tip(t("file.label"), t("file.tooltip"), () => fileInput?.click())}
       <input
-        type="checkbox"
+        bind:this={fileInput}
+        class="hidden"
+        type="file"
+        accept="video/*,image/*,.json,application/json"
+        onchange={onFile}
+      />
+    </div>
+
+    {#if tracker.error}
+      <p class="error ugoe-selectable">{tracker.error}</p>
+    {/if}
+    {#if tracker.source}
+      <p class="source">{t(SOURCE_KIND[tracker.source.kind])}: {tracker.source.label}</p>
+    {/if}
+
+    <div class="preview" class:hidden={!showMedia}>
+      <canvas bind:this={canvas} class:mirror={tracker.mirrorView}></canvas>
+    </div>
+
+    <!-- すぐに効く入・切なので Toggle (docs/ui.md の使い分け) -->
+    <div class="options">
+      <Toggle
+        label={t("options.mirrorView.label")}
+        tooltip={t("options.mirrorView.tooltip")}
+        bind:checked={tracker.mirrorView}
+      />
+      <Toggle
+        label={t("options.landmarks.label")}
+        tooltip={t("options.landmarks.tooltip")}
+        bind:checked={tracker.showLandmarks}
+      />
+      <Toggle
+        label={t("options.swapSides.label")}
+        tooltip={t("options.swapSides.tooltip")}
+        bind:checked={tracker.swapSides}
+      />
+      <Toggle
+        label={t("options.stopEyeBlink.label")}
+        tooltip={t("options.stopEyeBlink.tooltip")}
         checked={tracker.stopEyeBlink}
-        onchange={(e) => tracker.setStopEyeBlink(e.currentTarget.checked)}
-      /> {t("options.stopEyeBlink.label")}
-    </label>
-    <label title={t("options.trackBody.tooltip")}>
-      <input
-        type="checkbox"
+        onchange={(on) => tracker.setStopEyeBlink(on)}
+      />
+      <Toggle
+        label={t("options.trackBody.label")}
+        tooltip={t("options.trackBody.tooltip")}
         checked={tracker.trackBody}
-        onchange={(e) => tracker.setTrackBody(e.currentTarget.checked)}
-      /> {t("options.trackBody.label")}
-    </label>
-  </div>
-  {#if tracker.trackBody && tracker.bodyError}
-    <p class="error ugoe-selectable">{tracker.bodyError}</p>
-  {/if}
-
-  <label class="slider" title={t("smoothing.tooltip")}>
-    {t("smoothing.label")}
-    <input type="range" min="0" max="1" step="0.05" bind:value={tracker.smoothing} />
-    <span class="value">{tracker.smoothing.toFixed(2)}</span>
-  </label>
-
-  <div class="row">
-    <button
-      type="button"
-      onclick={() => tracker.calibrate()}
-      disabled={!tracker.running || !tracker.faceFound}
-      title={t("calibration.calibrate.tooltip")}>{t("calibration.calibrate.label")}</button
-    >
-    <button
-      type="button"
-      onclick={() => tracker.clearCalibration()}
-      disabled={!tracker.calibrated}
-      title={t("calibration.clear.tooltip")}>{t("calibration.clear.label")}</button
-    >
-  </div>
-
-  <div class="row">
-    {#if tracker.recording}
-      <button type="button" class="rec" onclick={() => tracker.stopRecording()}
-        >{t("recording.stop.label", { frames: tracker.recordedCount })}</button
-      >
-    {:else}
-      <button
-        type="button"
-        onclick={() => tracker.startRecording()}
-        disabled={!tracker.running || tracker.source?.kind === "replay"}
-        title={t("recording.record.tooltip")}>{t("recording.record.label")}</button
-      >
-      <button
-        type="button"
-        onclick={() => void tracker.saveRecording()}
-        disabled={tracker.recordedCount === 0}>{t("recording.save.label", { frames: tracker.recordedCount })}</button
-      >
+        onchange={(on) => tracker.setTrackBody(on)}
+      />
+    </div>
+    {#if tracker.trackBody && tracker.bodyError}
+      <p class="error ugoe-selectable">{tracker.bodyError}</p>
     {/if}
-  </div>
 
-  {#if tracker.output}
-    {@const head = tracker.output.head}
-    <details>
-      <summary>{t("values.headAndBlendShapes")} <span class="count">{blendShapes.length}</span></summary>
-      <dl class="values">
-        <dt>yaw</dt>
-        <dd>{head.yaw.toFixed(1)}°</dd>
-        <dt>pitch</dt>
-        <dd>{head.pitch.toFixed(1)}°</dd>
-        <dt>roll</dt>
-        <dd>{head.roll.toFixed(1)}°</dd>
-        {#if bodyRows.length > 0}
-          <dt class="group" title={t("values.body.tooltip")}>{t("values.body.label")}</dt>
-          <dd></dd>
-          {#each bodyRows as [name, text] (name)}
-            <dt title={name}>{name}</dt>
-            <dd><span class="num">{text}</span></dd>
+    <div class="smoothing">
+      <Slider
+        label={t("smoothing.label")}
+        min={0}
+        max={1}
+        step={0.05}
+        decimals={2}
+        value={tracker.smoothing}
+        onchange={(v) => (tracker.smoothing = v)}
+      />
+      <p class="hint">{t("smoothing.tooltip")}</p>
+    </div>
+
+    <div class="row">
+      {@render tip(
+        t("calibration.calibrate.label"),
+        t("calibration.calibrate.tooltip"),
+        () => tracker.calibrate(),
+        !tracker.running || !tracker.faceFound,
+      )}
+      {@render tip(
+        t("calibration.clear.label"),
+        t("calibration.clear.tooltip"),
+        () => tracker.clearCalibration(),
+        !tracker.calibrated,
+      )}
+    </div>
+
+    <div class="row">
+      {#if tracker.recording}
+        <Button small variant="danger" onclick={() => tracker.stopRecording()}
+          >{t("recording.stop.label", { frames: tracker.recordedCount })}</Button
+        >
+      {:else}
+        {@render tip(
+          t("recording.record.label"),
+          t("recording.record.tooltip"),
+          () => tracker.startRecording(),
+          !tracker.running || tracker.source?.kind === "replay",
+        )}
+        <Button small onclick={() => void tracker.saveRecording()} disabled={tracker.recordedCount === 0}
+          >{t("recording.save.label", { frames: tracker.recordedCount })}</Button
+        >
+      {/if}
+    </div>
+
+    {#if tracker.output}
+      {@const head = tracker.output.head}
+      <Section title={t("values.headAndBlendShapes")} level={3} open={false}>
+        {#snippet actions()}<span class="count">{blendShapes.length}</span>{/snippet}
+        <dl class="values">
+          <dt>yaw</dt>
+          <dd>{head.yaw.toFixed(1)}°</dd>
+          <dt>pitch</dt>
+          <dd>{head.pitch.toFixed(1)}°</dd>
+          <dt>roll</dt>
+          <dd>{head.roll.toFixed(1)}°</dd>
+          {#if bodyRows.length > 0}
+            <dt class="group">{t("values.body.label")}</dt>
+            <dd class="note">{t("values.body.tooltip")}</dd>
+            {#each bodyRows as [name, text] (name)}
+              <dt>{name}</dt>
+              <dd><span class="num">{text}</span></dd>
+            {/each}
+          {/if}
+          {#each blendShapes as [name, score] (name)}
+            <dt>{name}</dt>
+            <dd>
+              <span class="bar" style:width="{Math.round(score * 100)}%"></span>
+              <span class="num">{score.toFixed(2)}</span>
+            </dd>
           {/each}
-        {/if}
-        {#each blendShapes as [name, score] (name)}
-          <dt title={name}>{name}</dt>
-          <dd>
-            <span class="bar" style:width="{Math.round(score * 100)}%"></span>
-            <span class="num">{score.toFixed(2)}</span>
-          </dd>
-        {/each}
-      </dl>
-    </details>
-  {/if}
-  {#if parameterIds.length > 0}
-    <details>
-      <summary>{t("values.parameters")} <span class="count">{parameterIds.length}</span></summary>
-      <dl class="values">
-        {#each parameterIds as id (id)}
-          <dt title={id}>{id}</dt>
-          <dd><span class="num">{formatValue(values[id] ?? 0)}</span></dd>
-        {/each}
-      </dl>
-    </details>
-  {/if}
-</details>
+        </dl>
+      </Section>
+    {/if}
+    {#if parameterIds.length > 0}
+      <Section title={t("values.parameters")} level={3} open={false}>
+        {#snippet actions()}<span class="count">{parameterIds.length}</span>{/snippet}
+        <dl class="values">
+          {#each parameterIds as id (id)}
+            <dt>{id}</dt>
+            <dd><span class="num">{formatValue(values[id] ?? 0)}</span></dd>
+          {/each}
+        </dl>
+      </Section>
+    {/if}
+  </Section>
+</div>
+
+<!-- 説明付きの小さなボタン (`title` 属性の代わりに Tooltip。無効のときは説明が出ない) -->
+{#snippet tip(label: string, tooltip: string, onclick: () => void, disabled = false)}
+  <Tooltip text={tooltip} {disabled}>
+    {#snippet children(attrs)}
+      <Button {...attrs as ButtonBaseProps} small {disabled} onclick={(e: MouseEvent) => {
+          (attrs.onclick as ((e: MouseEvent) => void) | undefined)?.(e);
+          onclick();
+        }}>{label}</Button
+      >
+    {/snippet}
+  </Tooltip>
+{/snippet}
 
 <style>
   .tracking {
     flex-shrink: 0;
-    max-height: 60%;
+    max-height: 45%;
     overflow-y: auto;
-    font-size: 0.8rem;
-  }
-  .tracking > summary {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    cursor: pointer;
-  }
-  h2 {
-    margin: 0;
-    font-size: 0.85rem;
-    font-weight: 600;
-    display: inline;
   }
   .status {
-    color: var(--muted);
+    color: var(--ugoe-color-text-muted);
+    font-size: var(--ugoe-font-size-sm);
     font-variant-numeric: tabular-nums;
   }
   .status.warn {
-    color: var(--warning, #b7791f);
+    color: var(--ugoe-color-warning);
   }
   .row {
     display: flex;
-    gap: 0.4rem;
+    flex-wrap: wrap;
+    gap: var(--ugoe-space-2);
     align-items: center;
-    margin-top: 0.4rem;
+    margin-top: var(--ugoe-space-2);
   }
-  select {
-    flex: 1;
+  .camera {
+    flex: 1 1 10rem;
     min-width: 0;
-    font: inherit;
-    color: inherit;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 0.2rem;
+  }
+  .camera :global(.ugoe-select),
+  .camera :global(.ugoe-select__trigger) {
+    width: 100%;
   }
   .hidden {
     display: none;
   }
   .error {
-    color: var(--danger, #c53030);
-    margin: 0.4rem 0 0;
+    color: var(--ugoe-color-danger);
+    margin: var(--ugoe-space-2) 0 0;
   }
   .source {
-    color: var(--muted);
-    margin: 0.4rem 0 0;
+    color: var(--ugoe-color-text-muted);
+    margin: var(--ugoe-space-2) 0 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .preview {
-    margin-top: 0.4rem;
+    margin-top: var(--ugoe-space-2);
     background: #000;
-    border-radius: 4px;
+    border-radius: var(--ugoe-radius-md);
     overflow: hidden;
   }
   .preview canvas {
@@ -337,46 +348,38 @@ let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
   }
   .options {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.2rem 0.5rem;
-    margin-top: 0.4rem;
+    grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+    gap: 0 var(--ugoe-space-3);
+    margin-top: var(--ugoe-space-2);
   }
-  .slider {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    margin-top: 0.4rem;
+  .smoothing {
+    margin-top: var(--ugoe-space-2);
   }
-  .slider input {
-    flex: 1;
+  .hint,
+  .note {
+    margin: var(--ugoe-space-1) 0 0;
+    font-size: var(--ugoe-font-size-sm);
+    color: var(--ugoe-color-text-muted);
   }
-  .value,
-  .num {
-    font-variant-numeric: tabular-nums;
-    color: var(--muted);
-  }
-  .rec {
-    border-color: var(--danger, #c53030);
-    color: var(--danger, #c53030);
-  }
-  details details > summary {
-    cursor: pointer;
-    font-weight: 600;
-    margin-top: 0.5rem;
-  }
+  .num,
   .count {
-    color: var(--muted);
-    font-weight: normal;
+    font-variant-numeric: tabular-nums;
+    color: var(--ugoe-color-text-muted);
   }
   .values {
     display: grid;
-    grid-template-columns: 9.5rem 1fr;
-    gap: 0.1rem 0.4rem;
-    margin: 0.3rem 0 0;
+    grid-template-columns: minmax(0, 9.5rem) 1fr;
+    gap: var(--ugoe-space-1) var(--ugoe-space-2);
+    margin: var(--ugoe-space-1) 0 0;
+    font-size: var(--ugoe-font-size-sm);
   }
   .values dt.group {
-    font-weight: 600;
-    margin-top: 0.2rem;
+    font-weight: var(--ugoe-font-weight-strong);
+    margin-top: var(--ugoe-space-1);
+  }
+  .values dd.note {
+    margin-top: var(--ugoe-space-1);
+    text-align: left;
   }
   .values dt {
     overflow: hidden;
@@ -393,9 +396,9 @@ let showMedia = $derived(tracker.running && tracker.source?.kind !== "replay");
     left: 0;
     top: 15%;
     height: 70%;
-    background: var(--accent);
+    background: var(--ugoe-color-accent);
     opacity: 0.3;
-    border-radius: 2px;
+    border-radius: var(--ugoe-radius-sm);
   }
   .num {
     position: relative;

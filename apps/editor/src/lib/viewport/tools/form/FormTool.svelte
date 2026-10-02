@@ -397,14 +397,14 @@ function moveToNearestKey() {
 }
 
 line {
-  stroke: var(--accent);
+  stroke: var(--ugoe-color-accent);
   stroke-width: 1;
   opacity: 0.6;
 }
 
 .handle {
-  fill: var(--panel);
-  stroke: var(--accent);
+  fill: var(--ugoe-color-surface);
+  stroke: var(--ugoe-color-accent);
   stroke-width: 1.5;
   pointer-events: auto;
   cursor: move;
@@ -422,8 +422,8 @@ line {
 }
 
 .box {
-  fill: color-mix(in srgb, var(--accent) 12%, transparent);
-  stroke: var(--accent);
+  fill: color-mix(in srgb, var(--ugoe-color-accent) 12%, transparent);
+  stroke: var(--ugoe-color-accent);
   stroke-dasharray: 4 3;
   pointer-events: none;
 }

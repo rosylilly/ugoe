@@ -33,7 +33,7 @@ import { LEGEND_ORIGINS, originStyle } from "./inference";
   padding: 0;
   list-style: none;
   font-size: 11px;
-  color: var(--muted);
+  color: var(--ugoe-color-text-muted);
 }
 
 .item {
@@ -47,9 +47,10 @@ import { LEGEND_ORIGINS, originStyle } from "./inference";
   place-items: center;
   width: 16px;
   height: 16px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--ugoe-color-border);
   border-radius: 3px;
-  color: var(--origin);
+  /* 記号は文字なので、色を本文の色へ寄せて 4.5:1 にする (枠と地は由来の色のまま。T0907) */
+  color: color-mix(in srgb, var(--origin) 60%, var(--ugoe-color-text));
 }
 
 .swatch.derived {

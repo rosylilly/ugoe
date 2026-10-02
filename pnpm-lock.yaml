@@ -355,6 +355,9 @@ importers:
       '@ugoe/i18n':
         specifier: workspace:*
         version: link:../i18n
+      '@ugoe/ui':
+        specifier: workspace:*
+        version: link:../ui
     devDependencies:
       '@tsconfig/svelte':
         specifier: ^5.0.8

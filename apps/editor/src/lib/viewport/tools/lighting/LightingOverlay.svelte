@@ -230,7 +230,7 @@ function rays(x: number, y: number): string {
 }
 
 .handle.current {
-  stroke: var(--accent);
+  stroke: var(--ugoe-color-accent);
   stroke-width: 3;
 }
 

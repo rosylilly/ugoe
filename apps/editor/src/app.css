@@ -1,13 +1,5 @@
-/* 見た目の値は @ugoe/ui のトークン (docs/ui.md#デザイントークン)。ライト・ダークはトークンが OS の設定で切り替える。
-   古い変数は移行の途中の別名 (パネルの移行 T0664・T0665 の後、T0907 で消す)。 */
+/* 見た目の値は @ugoe/ui のトークン (docs/ui.md#デザイントークン)。ライト・ダークはトークンが切り替える。 */
 :root {
-  --bg: var(--ugoe-color-bg);
-  --panel: var(--ugoe-color-surface);
-  --border: var(--ugoe-color-border);
-  --text: var(--ugoe-color-text);
-  --muted: var(--ugoe-color-text-muted);
-  --accent: var(--ugoe-color-accent);
-  --viewport-bg: var(--ugoe-color-sunken);
   font-family: var(--ugoe-font-sans);
   font-size: var(--ugoe-font-size-md);
 }
@@ -18,8 +10,8 @@
 
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--text);
+  background: var(--ugoe-color-bg);
+  color: var(--ugoe-color-text);
 }
 
 .shell {
@@ -37,8 +29,8 @@ header {
   align-items: center;
   gap: 8px;
   padding: 0 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--panel);
+  border-bottom: 1px solid var(--ugoe-color-border);
+  background: var(--ugoe-color-surface);
 }
 
 .spacer {
@@ -47,18 +39,18 @@ header {
 
 aside {
   padding: 8px 12px;
-  background: var(--panel);
+  background: var(--ugoe-color-surface);
   overflow: auto;
 }
 
 .left {
   grid-area: left;
-  border-right: 1px solid var(--border);
+  border-right: 1px solid var(--ugoe-color-border);
 }
 
 .right {
   grid-area: right;
-  border-left: 1px solid var(--border);
+  border-left: 1px solid var(--ugoe-color-border);
 }
 
 .center {
@@ -94,11 +86,24 @@ label {
 }
 
 input[type="range"] {
-  accent-color: var(--accent);
+  accent-color: var(--ugoe-color-accent);
+}
+
+/* @ugoe/ui に移していない標準の文字・数値の欄と選択の欄も、押せる大きさは 24px 以上 (docs/ui.md#そのほか。T0907) */
+input:not(
+  [type="checkbox"],
+  [type="radio"],
+  [type="range"],
+  [type="color"],
+  [type="file"],
+  [class*="ugoe-"]
+),
+select:not([class*="ugoe-"]) {
+  min-height: var(--ugoe-target-min);
 }
 
 .muted {
-  color: var(--muted);
+  color: var(--ugoe-color-text-muted);
 }
 
 .error {

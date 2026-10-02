@@ -13,7 +13,7 @@ import {
   Popover,
   Select,
 } from "@ugoe/ui";
-import { untrack } from "svelte";
+import { tick, untrack } from "svelte";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
 import type { Command, CurveTarget, Motion, MotionEvent, Point } from "../../ipc";
@@ -59,6 +59,23 @@ const span = $derived.by(() => {
   return { t0: -pad, t1: d + pad };
 });
 let laneWidth = $state(600);
+let sheet = $state<HTMLDivElement | null>(null);
+
+// 選んだ行 (キーを打った・グラフで選んだ行を含む) が、行の間から外れていたら見える所まで送る。
+// 行を 24px にして見える行数が減ったため (T0907)。グラフが出て表の高さが変わった後に測る。
+$effect(() => {
+  const track = timeline.selectedTrack;
+  void timeline.selectedKey; // グラフでキーを選び直したときも送る
+  const el = sheet;
+  if (track === null || el === null) return;
+  void tick().then(() => {
+    const row = [...el.querySelectorAll<HTMLElement>("[data-track]")].find(
+      (r) => r.dataset.track === track,
+    );
+    // 上に貼り付いた目盛りの行の下に収める (.label の scroll-margin-top)
+    row?.scrollIntoView({ block: "nearest" });
+  });
+});
 const view = $derived({ ...span, width: laneWidth });
 const ticks = $derived.by(() => {
   const d = motion?.duration ?? 0;
@@ -470,7 +487,7 @@ function label(m: Motion): string {
       {#if message}<span class="error ugoe-selectable">{message}</span>{/if}
     </div>
 
-    <div class="sheet">
+    <div class="sheet" bind:this={sheet}>
       <div class="grid">
         <div class="corner muted">
           {t("timeline.motion.curves", { count: rows.filter((r) => r.curve).length })}
@@ -496,7 +513,12 @@ function label(m: Motion): string {
         </div>
         {#each rows as row (targetKey(row.target))}
           {@const key = targetKey(row.target)}
-          <div class="label" class:selected={timeline.selectedTrack === key} class:has-curve={row.curve}>
+          <div
+            class="label"
+            class:selected={timeline.selectedTrack === key}
+            class:has-curve={row.curve}
+            data-track={key}
+          >
             <button class="track" onclick={() => (timeline.selectedTrack = key)} title={row.label}>{row.label}</button>
             {#if row.target.kind === "parameter" && row.parameter}
               <button
@@ -544,11 +566,15 @@ function label(m: Motion): string {
 </div>
 
 <style>
+  /* 低い画面では表 (3 行は残す) とグラフが収まらないので、全体を送る (T0907) */
   .motion-editor {
+    /* 表の行の高さ: 押せる範囲 24px と下の区切りの線 1px */
+    --row-height: calc(var(--ugoe-target-min) + 1px);
     display: flex;
     flex-direction: column;
     min-height: 0;
     flex: 1;
+    overflow-y: auto;
   }
   .bar {
     display: flex;
@@ -556,7 +582,7 @@ function label(m: Motion): string {
     align-items: center;
     gap: 6px;
     padding: 4px 8px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--ugoe-color-border);
   }
   .inline {
     display: inline;
@@ -567,7 +593,7 @@ function label(m: Motion): string {
   .sep {
     width: 1px;
     align-self: stretch;
-    background: var(--border);
+    background: var(--ugoe-color-border);
   }
   .popup {
     display: grid;
@@ -589,7 +615,7 @@ function label(m: Motion): string {
   }
   .sheet {
     flex: 1;
-    min-height: 0;
+    min-height: calc(21px + 3 * var(--row-height));
     overflow-y: auto;
   }
   .grid {
@@ -601,9 +627,9 @@ function label(m: Motion): string {
     position: sticky;
     top: 0;
     z-index: 2;
-    background: var(--panel);
+    background: var(--ugoe-color-surface);
     height: 20px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--ugoe-color-border);
     font-size: 11px;
   }
   .corner {
@@ -618,7 +644,7 @@ function label(m: Motion): string {
     position: absolute;
     top: 2px;
     transform: translateX(-50%);
-    color: var(--muted);
+    color: var(--ugoe-color-text-muted);
     pointer-events: none;
   }
   .event-mark {
@@ -628,14 +654,16 @@ function label(m: Motion): string {
     color: #d97706;
     pointer-events: none;
   }
+  /* 行と印の押せる範囲は 24px 以上 (docs/ui.md#そのほか。2026-10-02 の利用者の判断。T0907) */
   .label {
     display: flex;
     align-items: center;
     gap: 2px;
-    height: 20px;
+    height: var(--row-height);
     padding-left: 4px;
+    scroll-margin-top: 21px;
     min-width: 0;
-    border-bottom: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--ugoe-color-border) 40%, transparent);
   }
   .label .track {
     flex: 1;
@@ -643,32 +671,36 @@ function label(m: Motion): string {
     text-align: left;
     border: none;
     background: none;
-    color: var(--muted);
+    color: var(--ugoe-color-text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    align-self: stretch;
     padding: 0 2px;
   }
   .label.has-curve .track {
-    color: var(--text);
+    color: var(--ugoe-color-text);
   }
   .selected {
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    background: color-mix(in srgb, var(--ugoe-color-accent) 12%, transparent);
   }
   .key {
+    flex: none;
+    width: var(--ugoe-target-min);
+    align-self: stretch;
     border: none;
     background: none;
-    color: var(--muted);
+    color: var(--ugoe-color-text-muted);
     font-size: 10px;
-    padding: 0 4px;
+    padding: 0;
   }
   .key:hover {
-    color: var(--accent);
+    color: var(--ugoe-color-accent);
   }
   .lane {
     position: relative;
-    height: 20px;
-    border-bottom: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
+    height: var(--row-height);
+    border-bottom: 1px solid color-mix(in srgb, var(--ugoe-color-border) 40%, transparent);
   }
   .playhead {
     position: absolute;
@@ -678,22 +710,34 @@ function label(m: Motion): string {
     background: #dc2626;
     pointer-events: none;
   }
+  /* キーの印: 押せる範囲は 24×24 で、見た目の◆は中の 10px (::before) */
   .diamond {
     position: absolute;
-    top: 5px;
-    width: 10px;
-    height: 10px;
-    margin-left: -5px;
+    top: 0;
+    width: var(--ugoe-target-min);
+    height: var(--ugoe-target-min);
+    margin-left: calc(var(--ugoe-target-min) / -2);
     padding: 0;
-    border: 1px solid var(--text);
-    background: var(--panel);
-    transform: rotate(45deg);
+    border: none;
+    background: none;
     cursor: grab;
     touch-action: none;
   }
-  .diamond.selected {
-    background: var(--accent);
-    border-color: var(--accent);
+  .diamond::before {
+    content: "";
+    position: absolute;
+    inset: 7px;
+    border: 1px solid var(--ugoe-color-text);
+    background: var(--ugoe-color-surface);
+    transform: rotate(45deg);
+  }
+  .diamond.selected::before {
+    background: var(--ugoe-color-accent);
+    border-color: var(--ugoe-color-accent);
+  }
+  .diamond:focus-visible {
+    outline: var(--ugoe-focus-ring);
+    outline-offset: -2px;
   }
   .empty {
     padding: 12px;

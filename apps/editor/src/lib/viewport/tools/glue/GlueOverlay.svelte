@@ -274,7 +274,7 @@ const hint = $derived(
 }
 
 .vertex {
-  fill: var(--panel, #fff);
+  fill: var(--ugoe-color-surface);
   stroke: var(--glue);
   stroke-width: 1.5;
   pointer-events: visiblePainted;
@@ -292,7 +292,7 @@ const hint = $derived(
 
 .marker {
   fill: #f59e0b;
-  stroke: var(--panel, #fff);
+  stroke: var(--ugoe-color-surface);
   stroke-width: 1;
   pointer-events: visiblePainted;
   cursor: pointer;
@@ -308,8 +308,8 @@ const hint = $derived(
   gap: 6px;
   max-width: calc(100% - 16px);
   padding: 2px 6px;
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: var(--ugoe-color-surface);
+  border: 1px solid var(--ugoe-color-border);
   border-radius: 4px;
   pointer-events: auto;
 }

@@ -640,33 +640,25 @@ refresh();
   >
   <Button variant="ghost" onclick={save} disabled={busy}>{t("fileMenu.save.label")}</Button>
   <Button variant="ghost" onclick={() => pick("saveAs")} disabled={busy}>{t("fileMenu.saveAs.label")}</Button>
-  <span class="export">
-    {#if moduleInfo}
-      <TipButton
-        variant="ghost"
-        onclick={() => (exportOpen = !exportOpen)}
-        disabled={busy}
-        aria-expanded={exportOpen}
-        tooltip={t("fileMenu.exportModule.tooltip")}>{t("fileMenu.exportModule.label")}</TipButton
-      >
-    {:else}
-      <Button
-        variant="ghost"
-        onclick={() => (exportOpen = !exportOpen)}
-        disabled={busy}
-        aria-expanded={exportOpen}>{t("fileMenu.export.label")}</Button
-      >
-    {/if}
-    {#if exportOpen}
-      <ExportPanel
-        {busy}
-        summary={exportLines}
-        label={moduleInfo ? t("fileMenu.export.module") : t("fileMenu.export.bundle")}
-        onexport={() => pick(moduleInfo ? "exportModule" : "export")}
-        onstatus={(s) => (status = s)}
-      />
-    {/if}
-  </span>
+  <!-- 書き出しの設定と結果は Popover (Esc・外のクリックで閉じ、開いたボタンへフォーカスを戻す。T0907) -->
+  <Popover label={t("export.aria")} bind:open={exportOpen} disabled={busy}>
+    {#snippet trigger(attrs)}
+      {#if moduleInfo}
+        <TipButton {...attrs} variant="ghost" disabled={busy} tooltip={t("fileMenu.exportModule.tooltip")}
+          >{t("fileMenu.exportModule.label")}</TipButton
+        >
+      {:else}
+        <Button {...attrs} variant="ghost" disabled={busy}>{t("fileMenu.export.label")}</Button>
+      {/if}
+    {/snippet}
+    <ExportPanel
+      {busy}
+      summary={exportLines}
+      label={moduleInfo ? t("fileMenu.export.module") : t("fileMenu.export.bundle")}
+      onexport={() => pick(moduleInfo ? "exportModule" : "export")}
+      onstatus={(s) => (status = s)}
+    />
+  </Popover>
   <Button variant="ghost" onclick={() => pick("importPsd")} disabled={busy}>{t("fileMenu.importPsd.label")}</Button>
   <!-- 長い名前は省略し、ツールチップに全体と保存先のパスを出す。未保存の印は省略されない。 -->
   <Tooltip
@@ -785,10 +777,6 @@ refresh();
     align-items: center;
     gap: var(--ugoe-space-1);
     min-width: 0;
-  }
-  .export {
-    position: relative;
-    flex-shrink: 0;
   }
   .project {
     display: inline-flex;

@@ -8,33 +8,27 @@
 -->
 <script lang="ts">
 import { FaceTracker, type TrackingFrame } from "@ugoe/face-tracking";
-import {
-  formatNumber,
-  getLocalePreference,
-  LANGUAGES,
-  type LocalePreference,
-  setLocale,
-} from "@ugoe/i18n";
+import { formatNumber } from "@ugoe/i18n";
 import type { MotionPriority } from "@ugoe/player";
 import {
   AlertDialog,
   Button,
+  IconButton,
   Menu,
   type MenuEntry,
   Notice,
   Section,
   Select,
   Slider,
-  ThemeSetting,
   Toggle,
   Toolbar,
+  Tooltip,
 } from "@ugoe/ui";
 import { onMount } from "svelte";
 import ApiApproval from "./ApiApproval.svelte";
 import ApiPanel from "./ApiPanel.svelte";
 import HotkeysPanel from "./HotkeysPanel.svelte";
 import InputPanel from "./InputPanel.svelte";
-import LicenseDialog from "./LicenseDialog.svelte";
 import LoadPanel from "./LoadPanel.svelte";
 import { type ApiView, apiUrl, EMPTY_API, pendingToShow } from "./lib/api";
 import { describeError } from "./lib/errors";
@@ -71,7 +65,6 @@ import {
   parseOutputSize,
   presetOf,
   presetSize,
-  saveLocalePreference,
   saveTickRate,
   type TickRate,
 } from "./lib/settings";
@@ -79,6 +72,7 @@ import type { VirtualCameraStatus } from "./lib/virtualCamera";
 import MotionPanel from "./MotionPanel.svelte";
 import SceneEditor from "./SceneEditor.svelte";
 import ScenesPanel from "./ScenesPanel.svelte";
+import SettingsDialog from "./SettingsDialog.svelte";
 import SourcePanel from "./SourcePanel.svelte";
 import VirtualCameraPanel from "./VirtualCameraPanel.svelte";
 
@@ -111,12 +105,11 @@ let tickRate = $state<TickRate>(loadTickRate());
 let status = $state<StatusMessage | null>(null);
 /** 出力ウィンドウに当てたプリセット (プロファイルの値と比べて、変わったら当て直す)。 */
 let appliedSize: OutputSizePreset | null = null;
-let localePreference = $state<LocalePreference>(getLocalePreference());
 let showInternal = $state(false);
 /** 仮想カメラの状態 (VirtualCameraPanel.svelte)。 */
 let camera = $state<VirtualCameraStatus | null>(null);
 let error = $state<string | null>(null);
-let licenseOpen = $state(false);
+let settingsOpen = $state(false);
 /** 手で動かしたパラメータと、動かした時刻。 */
 const edited = new Map<string, number>();
 
@@ -197,10 +190,6 @@ const profileEntries = $derived<MenuEntry[]>([
       onselect: () => confirmDiscard(() => void openProfileAt(path)),
     })),
   },
-]);
-const languageOptions = $derived([
-  { value: "system" as LocalePreference, label: t("language.system") },
-  ...LANGUAGES.map((l) => ({ value: l.tag as LocalePreference, label: l.name })),
 ]);
 const sizeOptions = $derived(
   OUTPUT_SIZE_PRESETS.map((preset) => {
@@ -537,12 +526,6 @@ async function changeTickRate(rate: TickRate) {
   await run((h) => h.setTickRate(rate));
 }
 
-function changeLocale(value: LocalePreference) {
-  localePreference = value;
-  setLocale(value);
-  saveLocalePreference(value);
-}
-
 /** パラメータのスライダーの刻み。 */
 function parameterStep(p: ParameterInfo): number {
   return (p.max - p.min) / 200;
@@ -629,10 +612,10 @@ onMount(() => {
     </Toolbar>
     <div class="studio__spacer"></div>
     {#if api.listening}
-      <span class="studio__api" title={t("api.toolbarOn", { url: apiUrl(api.port) })}>{t("api.toolbar")}</span>
+      {@render badge(t("api.toolbar"), t("api.toolbarOn", { url: apiUrl(api.port) }))}
     {/if}
     {#if api.source.listening}
-      <span class="studio__api" title={t("source.toolbarOn", { count: api.source.connections })}>{t("source.toolbar")}</span>
+      {@render badge(t("source.toolbar"), t("source.toolbarOn", { count: api.source.connections }))}
     {/if}
     {#if status !== null}
       <span class="studio__load">
@@ -642,16 +625,15 @@ onMount(() => {
         })}
       </span>
     {/if}
-    <div class="studio__language">
-      <Select
-        label={t("language.label")}
-        value={localePreference}
-        options={languageOptions}
-        onchange={changeLocale}
-      />
-    </div>
-    <ThemeSetting />
-    <Button variant="ghost" small onclick={() => (licenseOpen = true)}>{t("toolbar.license")}</Button>
+    <IconButton label={t("toolbar.settings")} onclick={() => (settingsOpen = true)}>
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+        <circle cx="8" cy="8" r="2.2" />
+        <path
+          d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"
+          stroke-linecap="round"
+        />
+      </svg>
+    </IconButton>
   </header>
 
   {#if error !== null}
@@ -918,7 +900,17 @@ onMount(() => {
   </main>
 </div>
 
-<LicenseDialog bind:open={licenseOpen} />
+<SettingsDialog bind:open={settingsOpen} />
+
+<!-- ツールバーの印。説明は Tooltip で出す (キーボードでも出せるよう、印をフォーカスできるようにする) -->
+{#snippet badge(label: string, tooltip: string)}
+  <Tooltip text={tooltip}>
+    {#snippet children(attrs)}
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <span {...attrs} class="studio__api" tabindex="0">{label}</span>
+    {/snippet}
+  </Tooltip>
+{/snippet}
 
 <AlertDialog
   open={discarding !== null}
@@ -976,16 +968,17 @@ onMount(() => {
     font-variant-numeric: tabular-nums;
   }
 
+  .studio__api:focus-visible {
+    outline: var(--ugoe-focus-ring);
+    outline-offset: 2px;
+  }
+
   .studio__api {
     padding: 0 var(--ugoe-space-2);
     border-radius: var(--ugoe-radius-sm);
     background: var(--ugoe-color-accent-soft);
     color: var(--ugoe-color-text);
     font-size: var(--ugoe-font-size-sm);
-  }
-
-  .studio__language {
-    min-width: 12rem;
   }
 
   .studio__error {
@@ -1006,6 +999,8 @@ onMount(() => {
   @media (max-width: 960px) {
     .studio__main {
       grid-template-columns: minmax(0, 1fr);
+      /* 縦に積んだ列を中身の高さにして、列ごと送る (auto の行は中のスクロールに合わせて縮み、列が重なっていた。T0907) */
+      grid-auto-rows: max-content;
       overflow: auto;
     }
   }
