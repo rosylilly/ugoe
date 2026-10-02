@@ -10,7 +10,14 @@ import {
   describeDropTypes,
   openDroppedItems,
 } from "./lib/drop";
-import { readBrowserFile, readFileAt, readSampleFile, saveJsonFile, viewerHost } from "./lib/host";
+import {
+  readBrowserFile,
+  readFileAt,
+  readSampleFile,
+  saveJsonFile,
+  savePngFile,
+  viewerHost,
+} from "./lib/host";
 import LicenseDialog from "./lib/LicenseDialog.svelte";
 import LightingPanel from "./lib/LightingPanel.svelte";
 import MemoryDialog from "./lib/MemoryDialog.svelte";
@@ -19,6 +26,7 @@ import type { ModelFile } from "./lib/modelFile";
 import ParameterPanel from "./lib/ParameterPanel.svelte";
 import { Player } from "./lib/player.svelte";
 import { openSample, SAMPLES, type Sample } from "./lib/samples";
+import { encodePng, screenshotFileName } from "./lib/screenshot";
 import Viewport from "./lib/Viewport.svelte";
 
 const player = new Player();
@@ -40,9 +48,34 @@ let nativeDrop = false;
 let sampleMenu = $state<HTMLDetailsElement | null>(null);
 let licenseDialog = $state<LicenseDialog | null>(null);
 let memoryDialog = $state<MemoryDialog | null>(null);
+/** 画像の保存の結果 (保存した場所。次に開くまで出す。T0420)。 */
+let screenshotNotice = $state<string | null>(null);
+/** 画像を読み戻して保存している間 (ボタンを押せない)。 */
+let capturing = $state(false);
+
+/**
+ * 今の表示を PNG で保存する (T0420)。画像は WebPuppet.read_pixels() で取る (canvas の読み戻しではない。screenshot.ts)。
+ * ダイアログを開く前に読み戻すので、写るのはボタンを押したときの姿。
+ */
+async function saveScreenshot() {
+  if (capturing) return;
+  capturing = true;
+  try {
+    const shot = await player.capture();
+    if (shot === null) return;
+    const png = await encodePng(shot);
+    const saved = await savePngFile(screenshotFileName(player.modelName, new Date()), png);
+    if (saved !== null) screenshotNotice = `画像を保存しました: ${saved}`;
+  } catch (e) {
+    player.error = `画像を保存できません: ${e instanceof Error ? e.message : String(e)}`;
+  } finally {
+    capturing = false;
+  }
+}
 
 async function openWith(get: () => Promise<ModelFile | null>) {
   dropNotice = null;
+  screenshotNotice = null;
   try {
     const file = await get();
     if (file !== null) await player.load(file);
@@ -199,6 +232,12 @@ function onKeyDown(e: KeyboardEvent) {
       />
       透明
     </label>
+    <button
+      type="button"
+      onclick={() => void saveScreenshot()}
+      disabled={player.status !== "ready" || capturing}
+      title="今の表示 (背景と光源を含む。光源の印は含まない) を PNG で保存する">画像を保存</button
+    >
   </header>
 
   <main>
@@ -242,11 +281,14 @@ function onKeyDown(e: KeyboardEvent) {
       <span class="warning" title={player.warnings.join("\n")}>
         警告 {player.warnings.length} 件: {player.warnings[0]}
       </span>
-    {:else if !dropNotice}
+    {:else if !dropNotice && !screenshotNotice}
       <span>{player.status === "ready" ? "読み込みました" : ""}</span>
     {/if}
     {#if dropNotice}
       <span class="warning drop-notice" role="status" title={dropNotice}>{dropNotice}</span>
+    {/if}
+    {#if screenshotNotice}
+      <span class="screenshot-notice" role="status" title={screenshotNotice}>{screenshotNotice}</span>
     {/if}
     <span class="spacer"></span>
     {#if player.backend}<span class="backend">{player.backend}</span>{/if}
@@ -405,6 +447,11 @@ function onKeyDown(e: KeyboardEvent) {
     font-size: inherit;
     color: var(--muted);
     text-decoration: underline;
+  }
+  .screenshot-notice {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .warning {
     color: var(--warning);

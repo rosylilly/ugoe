@@ -116,6 +116,23 @@ just cli render assets/samples/avatar-lit.ugoe -o lit.png --ambient 0.55 --light
 
 ![左からライティングなし、左・右・上から光を当てたもの](avatar-lit.jpg)
 
+## avatar-atlas.ugoe
+
+`avatar.ugoe` のテクスチャ (PSD のレイヤーごとの 24 枚) を、`ugoe build --atlas` と同じ既定の設定 (1 辺 2048 まで・余白 2) で
+1 枚のアトラス (994x1698) にまとめた版です ([docs/spec/file-formats.md#テクスチャのアトラス化](../../docs/spec/file-formats.md#テクスチャのアトラス化))。
+見た目と動きは `avatar.ugoe` と同じで、描画順で隣り合うメッシュが同じテクスチャを使うので、描画をまとめるエンジンでは描画の呼び出しが
+減ります (Unity のパッケージでは 24 回 → 1 回。bindings/unity/README.md#描画のしかた)。Unity のパッケージの見本 (`Samples~/Basic/Models/`) に入ります。
+
+作り直し (リポジトリのルートで。`avatar.ugoe` を作り直したら一緒に):
+
+```sh
+just cli sample avatar --atlas -o assets/samples/avatar-atlas.ugoe
+```
+
+`cargo test -p ugoe-cli` の `committed_atlas_sample_is_up_to_date` が、コミットしたものが `avatar.ugoe` をアトラスにまとめたものと
+同じか (モデルとアトラスの PNG のバイト列) を確かめます。法線マップのある `avatar-lit.ugoe` はアトラスにまとめられません
+(法線マップを同じ配置で詰める必要があり、まだ対応していません)。
+
 ## dress-up
 
 着せ替え ([docs/manual/dress-up.md](../../docs/manual/dress-up.md)・[docs/spec/modules.md](../../docs/spec/modules.md)) を試すための見本 (T0710)。

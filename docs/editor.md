@@ -1232,6 +1232,7 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
 | `get_preview_lighting` / `set_preview_lighting(lighting)` | プレビューの光源 (`PreviewLighting`) を読む / プロジェクトに残す ([ライティングの画面](#ライティングの画面))。範囲の外はエラー |
 | `get_normal_map_group(texture)` / `get_normal_map_groups` | 1 枚のテクスチャのまとまりと既定の設定 / すべての対象のまとまりの一覧 (AI タブ。[法線マップの提案](#法線マップの提案))。`NormalMapGroupView` (`with_normal_map` はすでに法線マップを持つテクスチャ)。`src-tauri/src/lighting.rs` |
 | `generate_texture_normal_map(texture, settings)` / `assign_texture_normal_map(texture, path, flip_green)` / `get_texture_png(name)` | 法線マップの生成・PNG の割り当て (どちらも 1 回の Undo) と、テクスチャか法線マップの画像の PNG。`src-tauri/src/lighting.rs` |
+| `write_png_file` (本文 = PNG のバイト列、ヘッダー `x-ugoe-path` = パス) | ビューポートのスクリーンショットを書く ([スクリーンショット](#スクリーンショット))。`src-tauri/src/screenshot.rs` |
 | `export_bundle(path)` | プロジェクトの書き出しの設定で `.ugoe` ファイルに書き出し (アトラス化は任意)、`ExportReport` を返す。保存状態は変えない |
 | `open_sample_project(parent)` | 着せ替えの見本 (`assets/samples/dress-up/` をバイナリに埋め込んだもの) を、`parent` の中の新しいフォルダー `ugoe-dress-up-sample` (あれば `-2`・`-3`…。既にあるフォルダーには書かない) に本体 `dress-up.ugoeproj` とモジュールのプロジェクト 4 つとして書き出し、本体を開く (T0715)。変換は `ugoe sample dress-up --project` と同じ `ugoe_editor_core::bundle_project::save_bundle_projects` で、本体の物理・モーション・表情も入る (T0655)。`src-tauri/src/sample.rs` |
 | `import_psd(path, mesh_options?)` | PSD ファイルを今のドキュメントに取り込み ([PSD の取り込み](#psd-の取り込み)、Undo の 1 単位)、警告 (`PsdImportWarning[]`) を返す。最上位のパーツの名前はファイル名。`src-tauri/src/psd.rs` |
@@ -1615,6 +1616,24 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 - パラメータスライダーの操作はフロントエンドの wasm の中だけで完結させます (IPC を往復しない)。これにより 60fps を保ちます。スライダーの値はドキュメントの状態ではなく、表示の状態です。
 - WebGPU が使えない WebView (Linux の WebKitGTK など) では、wgpu の WebGL2 バックエンドにフォールバックします。
 - 大きなモデルで、モデル全体を送るのが遅くなった場合は、差分パッチを送る方式を検討します。
+
+### スクリーンショット
+
+ビューポートの右上の「Screenshot」で、今の表示を PNG で保存します (T0420)。
+
+- 画像は canvas の読み戻しではなく `WebPuppet.read_pixels()` で取ります (`ViewportController.capture`)。canvas と同じ大きさ
+  (描画バッファの画素 = CSS ピクセル × devicePixelRatio)・ビュー・背景 (`--viewport-bg`)・光源で canvas とは別のテクスチャに描いた、
+  ストレートアルファの RGBA です。WebGL2・WebGPU のどちらでも同じに取れます。
+- **写るもの:** WebPuppet が描くモデルだけ。編集中はスライダーの値の姿、プレビューモードでは押したときのフレーム (物理・目パチ・
+  モーションなどを含む)、AI の提案のプレビュー中は提案を適用した姿。**写らないもの:** オーバーレイ (ギズモ・選択の輪郭・
+  メッシュ編集の頂点・深度の点・光源の取っ手・違いの強調・提案の帯) と HUD。
+- 読み戻してから保存のダイアログ (`fileDialogs().saveFile`、フィルタ `.png`) を開くので、写るのは押したときの姿です。
+  最初の場所はプロジェクトの隣 (保存していなければドキュメント、なければホーム)、既定の名前は `<プロジェクト名>-<年月日>-<時分秒>.png`。
+  拡張子が無ければ `.png` を付けます。保存した場所 (か失敗の理由) はビューポートの右上にしばらく出します。
+- PNG への変換はフロントエンドの 2D canvas (`toBlob`) で行い、バックエンドの `write_png_file` (`src-tauri/src/screenshot.rs`) が
+  書きます。バイト列は本文でそのまま送り、パスはヘッダー `x-ugoe-path` (`encodeURIComponent`) で渡します。絶対パス・拡張子 `.png`・
+  中身が PNG (先頭の署名) のものだけを書きます。
+- コード: `src/lib/viewport/screenshot.ts` (ファイル名・画素の検査・PNG への変換。Vitest)、`src/lib/viewport/saveScreenshot.ts` (保存の流れ)。
 
 ### ツール (選択・メッシュ編集)
 

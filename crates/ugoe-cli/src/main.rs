@@ -102,6 +102,10 @@ struct SampleAvatarArgs {
     /// 法線マップを付けてライティングを有効にした版を書き出す (`assets/samples/avatar-lit.ugoe`)。
     #[arg(long)]
     lit: bool,
+    /// テクスチャを既定の設定でアトラスにまとめた版を書き出す (`assets/samples/avatar-atlas.ugoe`。
+    /// 描画をまとめるエンジンの見本)。法線マップのあるテクスチャはまとめられないので `--lit` とは使えない。
+    #[arg(long, conflicts_with = "lit")]
+    atlas: bool,
 }
 
 /// `ugoe validate --profile` で検査するプロファイル。
@@ -697,6 +701,11 @@ fn run_sample_avatar(args: SampleAvatarArgs) -> anyhow::Result<()> {
     if args.lit {
         project = sample::lit::light_avatar(&project, &psd)?;
     }
+    if args.atlas {
+        let (atlased, report) = project.with_atlas(&AtlasOptions::default())?;
+        print_atlas_report(&report);
+        project = atlased;
+    }
     let bytes = ugoe_editor_core::export_bundle(&project)?;
     std::fs::write(&args.output, &bytes)
         .with_context(|| format!("writing {}", args.output.display()))?;
@@ -1089,6 +1098,40 @@ mod tests {
 
     fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
         Cli::try_parse_from(std::iter::once("ugoe").chain(args.iter().copied()))
+    }
+
+    /// コミットした `assets/samples/avatar-atlas.ugoe` が、`avatar.ugoe` を既定の設定でアトラスにまとめたものと同じか。
+    /// 違えば `just cli sample avatar --atlas -o assets/samples/avatar-atlas.ugoe` で作り直す。
+    #[test]
+    fn committed_atlas_sample_is_up_to_date() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let read = |path: &str| {
+            ugoe_format::read_bundle(&std::fs::read(root.join(path)).unwrap()).unwrap()
+        };
+        let committed = read("assets/samples/avatar-atlas.ugoe");
+        let (project, _) = project_from_bundle(read("assets/samples/avatar.ugoe")).unwrap();
+        let (fresh, report) = project.with_atlas(&AtlasOptions::default()).unwrap();
+        assert!(report.kept.is_empty(), "{report:?}");
+        assert_eq!(report.atlases.len(), 1, "{report:?}");
+        let hint = "regenerate assets/samples/avatar-atlas.ugoe";
+        assert_eq!(committed.model, fresh.model, "{hint}");
+        assert_eq!(
+            (
+                &committed.physics,
+                &committed.motions,
+                &committed.expressions
+            ),
+            (&fresh.physics, &fresh.motions, &fresh.expressions),
+            "{hint}"
+        );
+        let committed_textures: Vec<_> = committed.textures.iter().map(|t| &t.bytes[..]).collect();
+        let fresh_textures: Vec<_> = fresh
+            .model
+            .textures
+            .iter()
+            .map(|t| &fresh.textures.get(&t.name).unwrap()[..])
+            .collect();
+        assert_eq!(committed_textures, fresh_textures, "{hint}");
     }
 
     #[test]

@@ -22,6 +22,8 @@ use crate::model::{LightUniforms, LoadedModel, ModuleData, directional_from_ligh
 use crate::render::{Renderer, TextureCache};
 use crate::xr::arkit_from_unified;
 
+mod readback;
+
 /// インスペクタに出すパラメータのプロパティ名の接頭辞 (`parameters/<ID>`)。
 const PARAMETER_PREFIX: &str = "parameters/";
 

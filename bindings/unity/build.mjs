@@ -83,6 +83,7 @@ export const PLUGINS = [
 const SAMPLE_MODELS = [
   "avatar.ugoe",
   "avatar-lit.ugoe",
+  "avatar-atlas.ugoe",
   ...[
     "dress-up.ugoe",
     "long-hair.ugoemod",

@@ -64,6 +64,7 @@ import {
   parseParameterList,
 } from "./parameters";
 import { mergeRemembered, type RememberedModel, type RememberedOrder } from "./rememberedModels";
+import type { Screenshot } from "./screenshot";
 import { loadWasm, type UgoeWasmModule, type WebPuppet } from "./wasm/load";
 
 export type PlayerStatus =
@@ -739,6 +740,20 @@ export class Player {
     this.background = color;
     this.transparent = transparent;
     this.#applyBackground();
+  }
+
+  /**
+   * 今の表示を画像で読み戻す (スクリーンショット、T0420。screenshot.ts)。`WebPuppet.read_pixels()` で、canvas と同じ
+   * 大きさ (描画バッファの画素)・ビュー・背景・光源で別のテクスチャに描いたものを取る。ビューポートに重ねる HTML
+   * (光源の印・市松模様) は写らない。モデルを開いていなければ `null`。
+   */
+  async capture(): Promise<Screenshot | null> {
+    const puppet = this.#puppet;
+    if (puppet === null || !puppet.has_model()) return null;
+    const width = puppet.width();
+    const height = puppet.height();
+    const pixels = await puppet.read_pixels();
+    return { width, height, pixels };
   }
 
   /** 光源の設定を変える (次のフレームから効く)。最後に使った設定と、開いているモデルの設定として覚える。 */

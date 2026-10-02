@@ -50,21 +50,25 @@ namespace Ugoe.Tests
         }
 
         [Test]
-        public void MaskReadersJoinTheSameContentOnly()
+        public void MaskReadersJoinWhenTheyReadTheSamePage()
         {
             var drawables = new[]
             {
                 Mesh("source", maskOnly: true), Mesh("a"),
                 Mesh("reader1", masks: new MaskRef(0, false)), Mesh("reader2", masks: new MaskRef(0, false)), Mesh("b"),
                 Mesh("inverted", masks: new MaskRef(0, true)), Mesh("c"), Mesh("reader3", masks: new MaskRef(0, false)),
+                // 入れ子: マスクを読むマスク用メッシュ (深さ 1 の内容を作る)
+                Mesh("nested-source", maskOnly: true, masks: new MaskRef(0, false)),
+                Mesh("nested-reader", masks: new MaskRef(8, false)), Mesh("d"),
             };
             var states = drawables.Select(_ => State()).ToArray();
             var masks = MaskPlan.Build(drawables);
             var plan = DrawBatchPlan.Build(drawables, states, Enumerable.Range(0, drawables.Length).ToArray(), masks, true);
-            // マスクを読まない要素はどの内容ともまとめる。違う内容 (反転マスク) を読む要素で切る。
-            Assert.That(Members(plan), Is.EqualTo(new[] { new[] { 1, 2, 3, 4 }, new[] { 5, 6 }, new[] { 7 } }));
-            Assert.That(plan.Batches.Select(b => b.MaskContent), Is.EqualTo(new[] { masks.ContentOf[2], masks.ContentOf[5], masks.ContentOf[7] }));
+            // 内容はページ (入れ子の深さ) ごとに 1 枚のテクスチャに並ぶので、違う内容 (反転マスク) を読む要素もまとめる。
+            // 深いページを読む要素で切る。
             Assert.That(masks.ContentOf[2], Is.Not.EqualTo(masks.ContentOf[5]));
+            Assert.That(Members(plan), Is.EqualTo(new[] { new[] { 1, 2, 3, 4, 5, 6, 7 }, new[] { 9, 10 } }));
+            Assert.That(plan.Batches.Select(b => b.MaskPage), Is.EqualTo(new[] { 0, 1 }));
         }
 
         [Test]
@@ -96,9 +100,9 @@ namespace Ugoe.Tests
 
         // 見本のモデルで、描画の呼び出しがどれだけ減るか (README の数と合わせる)。見本はレイヤーごとのテクスチャなので
         // そのままでは減らない。`ugoe build --atlas` で 1 枚のアトラスにまとめたとき (すべての要素のテクスチャが 0 になる) を真似る
-        // (法線マップのあるテクスチャはアトラスにまとめないので、avatar-lit.ugoe は除く)。
-        [TestCase(2, "avatar.ugoe")]
-        [TestCase(2, "dress-up", "dress-up.ugoe")]
+        // (法線マップのあるテクスチャはアトラスにまとめないので、avatar-lit.ugoe は除く。アトラスにした見本は下)。
+        [TestCase(1, "avatar.ugoe")]
+        [TestCase(1, "dress-up", "dress-up.ugoe")]
         public void SamplesNeedFewerDrawCallsWithAnAtlas(int expected, params string[] path)
         {
             using var puppet = Puppet.FromBundle(Paths.Read(path));
@@ -120,6 +124,27 @@ namespace Ugoe.Tests
             var order = single.Batches.SelectMany(b => b.Members).ToArray();
             Assert.That(asIs.Batches.SelectMany(b => b.Members), Is.EqualTo(order));
             Assert.That(atlased.Batches.SelectMany(b => b.Members), Is.EqualTo(order));
+        }
+
+        // 同梱するアトラスにした見本 (assets/samples/avatar-atlas.ugoe = `ugoe sample avatar --atlas`)。
+        [Test]
+        public void AtlasSampleIsBatched()
+        {
+            using var atlas = Puppet.FromBundle(Paths.Read("avatar-atlas.ugoe"));
+            using var layered = Puppet.FromBundle(Paths.Read("avatar.ugoe"));
+            int Calls(Puppet puppet, bool batching)
+            {
+                puppet.Update(0);
+                var sync = new FrameSync(puppet);
+                sync.Pull();
+                return DrawBatchPlan.Build(puppet.Drawables, sync.States, sync.RenderOrder, MaskPlan.Build(puppet.Drawables), batching)
+                    .Batches.Count;
+            }
+            Assert.That(atlas.Drawables.Select(d => d.Texture).Distinct(), Is.EqualTo(new[] { 0 }));
+            Assert.That(atlas.Drawables.Select(d => d.Id), Is.EqualTo(layered.Drawables.Select(d => d.Id)));
+            Assert.That(Calls(layered, true), Is.EqualTo(24));
+            Assert.That(Calls(atlas, false), Is.EqualTo(24));
+            Assert.That(Calls(atlas, true), Is.EqualTo(1));
         }
     }
 }

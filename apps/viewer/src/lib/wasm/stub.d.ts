@@ -67,8 +67,11 @@ export class WebPuppet {
   is_enabled(stage: string): boolean;
 
   resize(width: number, height: number): void;
+  width(): number;
+  height(): number;
   set_background(r: number, g: number, b: number, a: number): void;
   render(): void;
+  read_pixels(): Promise<Uint8Array>;
 
   fit(): void;
   zoom(): number;

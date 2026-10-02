@@ -25,9 +25,9 @@
 | パス | 内容 |
 | --- | --- |
 | `com.ugoe.unity/` | UPM パッケージ (`package.json` のあるところ) |
-| `com.ugoe.unity/Runtime/Core/` | **Unity に依存しない** C# の層: P/Invoke (`Native.cs`)、`Puppet`・`Module`・`LightingUniform`・`TrackingInput`、描画の準備の計算 (乗算済みアルファ・裏面カリング・マスクの内容の計画・変更フラグを見た取り出し) |
-| `com.ugoe.unity/Runtime/Unity/` | Unity の部分: `UgoePuppet` (コンポーネント)、`UgoeModel` / `UgoeModule` (アセット)、テクスチャのデコード、マスクの描画 |
-| `com.ugoe.unity/Runtime/Resources/Ugoe/` | シェーダ (`UgoeDrawable.shader`・`UgoeMask.shader`・`UgoeCommon.hlsl`) |
+| `com.ugoe.unity/Runtime/Core/` | **Unity に依存しない** C# の層: P/Invoke (`Native.cs`)、`Puppet`・`Module`・`LightingUniform`・`TrackingInput`、描画の準備の計算 (乗算済みアルファ・裏面カリング・マスクの内容の計画・変更フラグを見た取り出し・描画のまとめ・マスクのページと中間のテクスチャの配置・色空間の変換) |
+| `com.ugoe.unity/Runtime/Unity/` | Unity の部分: `UgoePuppet` (コンポーネント)、`UgoeModel` / `UgoeModule` (アセット)、テクスチャのデコード、マスクの描画、Linear の色空間の中間のテクスチャ (`UgoeIntermediate`) |
+| `com.ugoe.unity/Runtime/Resources/Ugoe/` | シェーダ (`UgoeDrawable.shader`・`UgoeMask.shader`・`UgoeComposite.shader`・`UgoeCommon.hlsl`) |
 | `com.ugoe.unity/Runtime/Plugins/` | ネイティブライブラリ (**コミットしない**。`build.mjs` か CI の成果物で置く) |
 | `com.ugoe.unity/Editor/` | `.ugoe` / `.ugoemod` の取り込み (ScriptedImporter) とインスペクタ |
 | `com.ugoe.unity/Samples~/Basic/` | 見本のシーン (`Basic.unity`) とスクリプト。`Models/` は `build.mjs` が置く (コミットしない) |
@@ -78,8 +78,8 @@ WebGL は対象外 (Emscripten 向けの `ugoe-ffi` のビルドがまだ無い�
    Git の URL (`...ugoe.git?path=bindings/unity/com.ugoe.unity`) でも入るが、ネイティブライブラリが入っていないので、
    別に置く必要がある。リリースの tarball (`com.ugoe.unity-<版>.tgz`。[リリース](#リリース)) なら、**Add package from tarball...**
    ですべてのプラットフォームのライブラリと見本のモデルごと入る。
-   - **プロジェクトの色空間は Gamma にする** (Project Settings → Player → Other Settings → Color Space)。
-     Linear でも表示できるが、半透明の部分が参照実装と少しずれる ([色空間](#色空間))。
+   - 色空間は Gamma でも Linear でもよい。Linear では中間のテクスチャに合成してから写し、参照実装と同じ色にする
+     ([色空間](#色空間))。
 3. Package Manager の ugoe の **Samples** から **Basic** を取り込み、`Basic.unity` を開いて再生する。見本のモデルは
    `build.mjs` が `Samples~/Basic/Models/` に置いたもの (取り込んだ後に `.ugoe` を `Models/` に足してもよい)。
    - 見本は、モデルの切り替え・パラメータのスライダー・表情とモーションのボタン・着せ替えのチェックボックス (`dress-up`)、
@@ -137,7 +137,8 @@ foreach (var id in puppet.HitAreasAt(worldPoint)) Debug.Log(id);
 | `playing` / `speed` / `playInEditor` / `Advance(dt)` | 時間を進めるか・速さ・エディタで再生していない間も進めるか・手で進める |
 | `PixelsPerUnit` | 1 ユニットあたりのキャンバスのピクセル数 (既定 100)。キャンバスの原点がこのオブジェクトの原点に来る |
 | `batching` / `DrawCalls` | 描画をまとめるか (既定 true。[描画のしかた](#描画のしかた)) / 直前のフレームの描画の呼び出しの数 (インスペクタにも出る) |
-| `maskScale` / `maskCamera` | マスクの解像度の倍率 (1 で画面上の大きさ) / 画面上の大きさを測るカメラ (空なら `Camera.main`) |
+| `maskScale` / `maskCamera` | マスクと中間のテクスチャの解像度の倍率 (1 で画面上の大きさ) / 画面上の大きさを測るカメラ (空なら `Camera.main`) |
+| `linearCompositing` / `UsesIntermediate` | Linear の色空間での描き方 (`Intermediate` (既定) か `Direct`。[色空間](#色空間)) / 中間のテクスチャを使っているか |
 | `AmbientLight` / `SetLights` / `Lights` | 環境光 / 光源 (先頭の 8 個まで)。シーンに保存される |
 | `SetParameter` / `GetParameter` / `SetSavedParameter` | パラメータ (`SetSavedParameter` はシーンに保存する値。インスペクタのスライダーが使う) |
 | `StartMotion` / `SetExpression` / `ShowPose` | モーション・表情・ポーズの表示の選択 |
@@ -152,18 +153,19 @@ foreach (var id in puppet.HitAreasAt(worldPoint)) Debug.Log(id);
 ## 描画のしかた
 
 - **描画をまとめる** ([docs/spec/rendering.md#描画の最適化](../../docs/spec/rendering.md#描画の最適化) の条件どおり)。描画順で
-  隣り合い、テクスチャ・合成モード・読むマスクの内容が同じ要素を 1 つのメッシュにし (`DrawBatchPlan`、`Runtime/Core/DrawBatches.cs`)、
-  まとめたものごとに子の GameObject (`MeshRenderer`、保存しない) を作る。マスクを読まない要素は、どの内容を読む要素ともまとめる。
+  隣り合い、テクスチャ・合成モード・読むマスクのテクスチャ (ページ。下) が同じ要素を 1 つのメッシュにし (`DrawBatchPlan`、`Runtime/Core/DrawBatches.cs`)、
+  まとめたものごとに子の GameObject (`MeshRenderer`、保存しない) を作る。マスクを読まない要素は、どの要素ともまとめる。
   描画順は決して入れ替えない (メッシュの中の三角形を描画順に並べる)。描画順は `sortingOrder` で決め、ルートの
   `SortingGroup` (自動で付く) の中で並ぶので、ほかの 2D の物とは 1 つのまとまりとして並ぶ。
-  - 要素ごとの値 (乗算色と不透明度 = 頂点色、スクリーン色 = UV2、mask_strength とライティングの種類 = UV3) は頂点属性で渡す。
-    テクスチャ・法線マップ・マスクの内容はまとめたものごと (`MaterialPropertyBlock`)。
+  - 要素ごとの値 (乗算色と不透明度 = 頂点色、スクリーン色 = UV2、mask_strength・ライティングの種類・通常マスクの結合の係数 = UV3、
+    読むマスクの内容のページの中の位置 = UV4) は頂点属性で渡す。テクスチャ・法線マップ・マスクのページはまとめたものごと (`MaterialPropertyBlock`)。
   - 描画順か合成モードが変わったらまとめ直す (子の GameObject は使い回す)。表示・不透明度・色・頂点が変わっただけではまとめ直さない
     (見えない要素は三角形を出さない)。1 つのメッシュは 65536 頂点まで (16 ビットの頂点番号)。
   - **効くのはテクスチャをアトラスにまとめたモデル** (`ugoe build --atlas`、[docs/spec/file-formats.md#テクスチャのアトラス化](../../docs/spec/file-formats.md#テクスチャのアトラス化))。
-    見本の `avatar.ugoe` (24 要素、レイヤーごとのテクスチャ) はそのままでは 24 回のままだが、アトラスにすると 2 回になる
-    (`dress-up.ugoe` は 14 回 → 2 回。`tests/BatchTests.cs`)。`MaterialPropertyBlock` を使うので、Unity の動的バッチングと SRP Batcher は
-    もともと効かない。
+    見本の `avatar.ugoe` (24 要素、レイヤーごとのテクスチャ) はそのままでは 24 回のままだが、それをアトラスにした同梱の見本
+    `avatar-atlas.ugoe` (`ugoe sample avatar --atlas`) は 1 回になる (`dress-up.ugoe` もアトラスにすると 14 回 → 1 回。`tests/BatchTests.cs`)。
+    法線マップのあるテクスチャ (`avatar-lit.ugoe`) はアトラスにまとめられない (法線マップを同じ配置で詰める必要があり、ugoe-editor-core の
+    アトラス化がまだ対応していない)。`MaterialPropertyBlock` を使うので、Unity の動的バッチングと SRP Batcher はもともと効かない。
   - `batching` を false にすると要素ごとに描く (比べるとき・調べるとき)。
 - 毎フレーム LateUpdate で評価し (`ugoe_puppet_update`)、**変更フラグ** (`UGOE_CHANGED_*`・`render_order_changed`) の立った
   要素の分だけ、まとめたメッシュの頂点・頂点の色・三角形 (表示とカリング) を送り直す (`FrameSync`)。
@@ -176,11 +178,12 @@ foreach (var id in puppet.HitAreasAt(worldPoint)) Debug.Log(id);
   アルファ `Zero, One`)。法線は画面での微分から求めたヤコビ行列で回す。
 - 裏面カリングは CPU で表を向く三角形を選ぶ (向きはキャンバス座標だけで決まり、Unity の Y 上向きへの反転に左右されないため)。
   マスクとしては裏向きの三角形も使う (マスク用メッシュは、ほかの要素のマスクになる要素だけ別に持つ)。
-- マスクは、同じマスクの組を読む要素でまとめた「内容」ごとに `RenderTexture` を作り、それを読む要素のキャンバス座標の外接矩形を
-  写して描く (`UgoeMaskRenderer`)。R に通常マスク (和集合なら `Π(1 − c)`、共通部分なら作業用のテクスチャを使って `Π c`)、
-  G に反転マスクの `Π(1 − c)` を乗算合成で描き、要素のシェーダが自分のキャンバス座標で読んで `k = 1 − s × (1 − m)` にする。
-  入れ子は深さの順に同じフレームで描くので遅れない。マスクの数と入れ子の深さに上限はない。1 辺は 4096 画素まで
-  (超えると解像度を下げる)。
+- マスクは、同じマスクの組を読む要素でまとめた「内容」ごとに、それを読む要素のキャンバス座標の外接矩形を写して描く
+  (`UgoeMaskRenderer`)。内容は入れ子の深さごとに 1 枚の `RenderTexture` (ページ) に並べ (`MaskAtlasLayout`、`Runtime/Core/Offscreen.cs`)、
+  要素は頂点属性で受けた写像で自分のキャンバス座標からページの位置を求めて読む。違う内容を読む要素も、同じページなら 1 回の描画にまとまる。
+  R に通常マスク (和集合なら `Π(1 − c)`、共通部分なら作業用のテクスチャを使って `Π c`)、G に反転マスクの `Π(1 − c)` を乗算合成で描き、
+  `k = 1 − s × (1 − m)` にする。入れ子は浅いページを読んで深いページに描くので、書いているテクスチャを読むことはなく、同じフレームで
+  描くので遅れない。マスクの数と入れ子の深さに上限はない。ページの 1 辺は 4096 画素まで (収まらなければそのページの解像度を下げる)。
 
 ## 制限と確かめていないこと
 
@@ -194,7 +197,9 @@ foreach (var id in puppet.HitAreasAt(worldPoint)) Debug.Log(id);
      吸収する前提) を Direct3D・Metal・Vulkan・OpenGL で。
   5. `avatar-lit.ugoe` の陰影、`dress-up.ugoe` の着せ替え、Built-in・URP の両方のパイプラインでの表示。
   6. Android・iOS のビルドでネイティブライブラリが読まれるか (iOS は `__Internal` の静的ライブラリ)。
-- 色空間は Gamma を前提にする ([色空間](#色空間))。
+- Linear の色空間の中間のテクスチャ ([色空間](#色空間)) は、C# の層の計算 (配置と色の変換。`tests/OffscreenTests.cs`) だけを
+  確かめた。Unity の上で、Gamma のプロジェクトと Linear のプロジェクトの画素が (輪郭を除いて) 一致すること、写す四角形の上下の向き
+  (マスクと同じ前提)、Built-in・URP の両方で表示されることを確かめる。
 - 描画をまとめた見た目 (まとめない場合と画素が一致すること) は Unity で比べていない (`batching` の切り替えで比べられる)。
 - 1 つの `UgoePuppet` は 1 つの解像度でマスクを描く (複数のカメラで大きさが大きく違うと、小さい方に合わない)。
 - パーツの不透明度は「直前の評価に渡した上書き」だけを読める (キーフォームと親を掛けた評価後の値は C ABI に無い)。
@@ -202,13 +207,24 @@ foreach (var id in puppet.HitAreasAt(worldPoint)) Debug.Log(id);
 
 ## 色空間
 
-ugoe の色は sRGB の値のまま計算して合成する約束 (spec/rendering.md) なので、**プロジェクトの色空間を Gamma にすると参照実装と一致する**。
-Gamma を前提とし、Linear のプロジェクトでは読み込んだときに 1 度だけ警告を出す (インスペクタにも出す)。
+ugoe の色は sRGB の値のまま計算して合成する約束 (spec/rendering.md) なので、**Gamma の色空間ではそのまま画面に描けば参照実装と一致する**。
 
-Linear でも表示はできる: シェーダが出力をストレートの色に戻してから線形に直して書くので、不透明な部分は同じ色になる。
-ただし書き込み先 (sRGB) との合成は線形の値で行われるので、半透明の部分 (輪郭のアンチエイリアス・不透明度の低い要素・加算と乗算の合成) は
-参照と少しずれる。一致させるには、Gamma の値のまま合成する中間のレンダーテクスチャ (sRGB の変換なし) に描いてから写す必要があり、
-パイプライン (Built-in・URP) ごとの組み込みが要るので行っていない (後続の候補)。
+**Linear の色空間** (`UgoePuppet.linearCompositing` が既定の `Intermediate`) では、中間のテクスチャを使って一致させる (`UgoeIntermediate`):
+
+1. まとめたメッシュを、sRGB の変換をしない `RenderTexture` (`RenderTextureReadWrite.Linear`) に、sRGB の値のまま描く
+   (シェーダのキーワード `UGOE_GAMMA_TARGET`)。合成も sRGB の値で行われるので、参照実装で透明な背景に描いた結果と同じになる。
+   テクスチャはモデルの外接矩形を写し、原点を画素の格子にそろえる (解像度の倍率が 1 なら `ugoe render` のキャンバスの画素と重なる)。
+   解像度はマスクと同じく画面上の大きさに合わせる (`maskScale`)。
+2. それを 1 枚の四角形 (子の GameObject `ugoe intermediate`) で画面に写す (`Hidden/Ugoe/Composite`)。ストレートの色を
+   IEC 61966-2-1 の式で線形に直してアルファを掛け直すので、不透明な画素は書き込み先の変換 (線形 → sRGB) で中間のテクスチャと同じ値に戻る
+   (UnityCG の `GammaToLinearSpace` は近似なので使わない)。
+
+モデルの中の合成 (重なった半透明の要素・加算と乗算・マスク・アンチエイリアス) は参照実装と一致する。シーンとの合成 (モデルの輪郭の
+半透明の画素) だけは、ほかのスプライトと同じく線形で行われる。描画パイプライン (Built-in・URP) には依存しない (`Graphics.ExecuteCommandBuffer`
+で LateUpdate に描く)。四角形 1 枚の描画とテクスチャ 1 枚が増え、中間のテクスチャを写すときにバイリニアで標本化し直す。
+
+`linearCompositing` を `Direct` にすると画面に直接描く (シェーダが出力を線形に直して書く)。不透明な部分は同じ色になるが、半透明の部分の
+合成が線形で行われ、参照と少しずれる (読み込んだときに 1 度だけ警告を出し、インスペクタにも出す)。
 
 ## リリース
 
@@ -234,4 +250,4 @@ node bindings/unity/release.mjs pack dist          # dist/com.ugoe.unity-<版>.t
 
 ## 関連タスク
 
-- T0405 (`docs/tasks/T0405-unity-package.md`)、T0419 (C# の API の追加・描画のまとめ・リリース・色空間)、C ABI は T0401・T0409・T0412・T0414
+- T0405 (`docs/tasks/T0405-unity-package.md`)、T0419 (C# の API の追加・描画のまとめ・リリース・色空間)、T0420 (Linear の中間のテクスチャ・マスクのページ・アトラスにした見本)、C ABI は T0401・T0409・T0412・T0414

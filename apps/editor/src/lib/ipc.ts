@@ -44,6 +44,7 @@ import type {
   RestPoseCollision,
 } from "./generated/types";
 import type { Point } from "./panels/inspector/keyforms/keyforms";
+import { PNG_PATH_HEADER } from "./viewport/screenshot";
 
 export type * from "./generated/types";
 
@@ -349,6 +350,15 @@ export const ipc = {
    */
   writeJsonFile: (path: string, contents: string) =>
     invoke<void>("write_json_file", { path, contents }),
+  /**
+   * apps/editor/src-tauri/src/screenshot.rs。ビューポートのスクリーンショット (PNG のバイト列) を `path` に書く (T0420)。
+   * パスは保存のダイアログで選んだ絶対パスで、拡張子は `.png` だけ。バイト列は本文でそのまま送り、パスはヘッダー
+   * (`PNG_PATH_HEADER`。ASCII だけなので `encodeURIComponent` で符号化する) で渡す。
+   */
+  writePngFile: (path: string, bytes: Uint8Array) =>
+    invoke<void>("write_png_file", bytes, {
+      headers: { [PNG_PATH_HEADER]: encodeURIComponent(path) },
+    }),
   /**
    * apps/editor/src-tauri/src/dress_up.rs。プロジェクトに残した、プレビューで試すモジュールの一覧
    * (`project.json` の `editor.dress_up`。パスは絶対パス)。

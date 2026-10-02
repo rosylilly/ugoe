@@ -54,6 +54,7 @@ export class WebPuppet {
   height(): number;
   set_background(r: number, g: number, b: number, a: number): void;
   render(): void;
+  read_pixels(): Promise<Uint8Array>;
 
   set_lighting_json(json?: string | null): void;
   uses_lighting(): boolean;

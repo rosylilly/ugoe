@@ -9,7 +9,7 @@
 // 3. wasm: npm パッケージ (bindings/web/dist) をヘッドレスの Chrome の WebGL2 (wasm) と WebGPU (wasm-webgpu) で動かし、
 //    評価の結果と画像を比べる
 // 4. Unity: UPM パッケージの Unity に依存しない C# の層 (Runtime/Core) を dotnet で動かし、評価の結果を比べる
-// 5. Godot: GDExtension で描いた画像を比べる (bindings/godot/example/tests/conformance.gd)
+// 5. Godot: GDExtension のノードから読み戻した評価の結果と、描いた画像を比べる (bindings/godot/example/tests/conformance.gd)
 //
 // 要るもの: C コンパイラ (`cc`。CC で変えられる)、Chrome (CHROME で指定。既定は google-chrome など)、
 // wasm-bindgen-cli (パッケージのビルド)、参照の画像を描く GPU (無ければ Mesa の lavapipe / llvmpipe)、
@@ -297,7 +297,7 @@ if (only.has("godot")) {
     : [godot, godotArgs];
   const r = spawnSync(cmd, cmdArgs, { cwd: root, stdio: "inherit", timeout: 20 * 60 * 1000 });
   if (r.error) console.error(`godot: ${r.error.message}`);
-  results.godot = r.status === 0 && compare("godot", "images-only");
+  results.godot = r.status === 0 && compare("godot", "images");
 }
 
 console.log(`results: ${out}`);

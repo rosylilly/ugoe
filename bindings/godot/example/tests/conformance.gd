@@ -1,6 +1,7 @@
 extends SceneTree
-## 適合テスト (tests/conformance/README.md) の Godot の実行器。計画 (plan.json) のケースごとに `UgoePuppet2D` で描き、
-## `<出力先>/<ケース>.png` に書く。比べ合わせは `ugoe-conformance compare --binding godot --images-only` が行う。
+## 適合テスト (tests/conformance/README.md) の Godot の実行器。計画 (plan.json) のケースごとに `UgoePuppet2D` で評価して描き、
+## 評価の結果を `<出力先>/<ケース>.json` (形は tests/conformance/src/frame.rs) に、画像を `<ケース>.png` に書く。
+## 比べ合わせは `ugoe-conformance compare --binding godot --images` が行う。
 ## 描画が要るので、ヘッドレスではなく画面 (Xvfb でもよい) のある環境で実行する:
 ##
 ##   godot --path bindings/godot/example --rendering-driver opengl3 --script res://tests/conformance.gd -- \
@@ -13,7 +14,9 @@ extends SceneTree
 ##   `advance(dt)` を `steps` の順に呼ぶ。
 ## - `before` があれば、まずその値で数フレーム描き、次のフレームで `parameters` に変えて、その直後のフレームを書く
 ##   (アニメーション中にマスクが 1 フレーム遅れないかを確かめる)。
-## - `.ugoe` バンドルでないケース (モデルの JSON) と、画像を比べないケースは扱わず、`skipped.json` に理由を書く。
+## - モデルは `.ugoe` バンドルなら `load_model_from_buffer`、違えば (モデルの JSON) `load_model_from_json` で読む。
+## - 評価の結果は、画像を読み戻すのと同じフレームでノードから読み戻す (`get_drawable_*`・`get_render_order`)。
+##   画像を比べないケースは画像を書かない。
 ## - キャンバスと同じ大きさ (倍率 1) のビューポートに、不透明な背景 (plan.background) を敷いて描く。
 
 const STAGES := ["physics", "eye_blink", "breath", "lip_sync", "pose"]
@@ -81,11 +84,7 @@ func _next_case() -> void:
 			quit(0 if _failed == 0 else 1)
 			return
 		_case = cases[_index]
-		if not _case["bundle"]:
-			_skipped[_case["name"]] = "the Godot binding reads only .ugoe bundles"
-		elif not _case["image"]:
-			_skipped[_case["name"]] = "the case has no image"
-		elif _setup():
+		if _setup():
 			return
 		else:
 			_failed += 1
@@ -109,7 +108,12 @@ func _setup() -> bool:
 	for path in _case["modules"]:
 		modules.append(UgoeModule.from_buffer(FileAccess.get_file_as_bytes(path)))
 	_puppet.modules = modules
-	if not _puppet.load_model_from_buffer(FileAccess.get_file_as_bytes(_case["model"])):
+	var loaded: bool
+	if _case["bundle"]:
+		loaded = _puppet.load_model_from_buffer(FileAccess.get_file_as_bytes(_case["model"]))
+	else:
+		loaded = _puppet.load_model_from_json(FileAccess.get_file_as_string(_case["model"]))
+	if not loaded:
 		printerr("%s: cannot load %s" % [name, _case["model"]])
 		_puppet.free()
 		return false
@@ -169,8 +173,39 @@ func _process(_delta: float) -> bool:
 		return false
 	if _frames < _capture_at:
 		return false
-	var image := _viewport.get_texture().get_image()
-	image.convert(Image.FORMAT_RGBA8)
-	image.save_png(_out.path_join("%s.png" % _case["name"]))
+	_write_frame()
+	if _case["image"]:
+		var image := _viewport.get_texture().get_image()
+		image.convert(Image.FORMAT_RGBA8)
+		image.save_png(_out.path_join("%s.png" % _case["name"]))
 	_next_case()
 	return false
+
+
+## 評価の結果をノードから読み戻して `<ケース>.json` に書く (形は tests/conformance/src/frame.rs)。
+func _write_frame() -> void:
+	var ids: PackedStringArray = _puppet.get_drawable_ids()
+	var meshes := {}
+	for i in ids.size():
+		var positions := []
+		for p: Vector2 in _puppet.get_drawable_positions(i):
+			positions.append([p.x, p.y])
+		var state: Dictionary = _puppet.get_drawable_state(i)
+		var multiply: Color = state["multiply_color"]
+		var screen: Color = state["screen_color"]
+		meshes[ids[i]] = {
+			"positions": positions,
+			"opacity": state["opacity"],
+			"draw_order": state["draw_order"],
+			"multiply_color": {"r": multiply.r, "g": multiply.g, "b": multiply.b},
+			"screen_color": {"r": screen.r, "g": screen.g, "b": screen.b},
+			"mask_strength": state["mask_strength"],
+			"visible": state["visible"],
+		}
+	var order := []
+	for i in _puppet.get_render_order():
+		order.append(ids[i])
+	var file := FileAccess.open(_out.path_join("%s.json" % _case["name"]), FileAccess.WRITE)
+	# 位置の許容誤差は 0.01 px なので、浮動小数点を丸めずに書く。
+	file.store_string(JSON.stringify({"meshes": meshes, "render_order": order}, "", false, true))
+	file.close()

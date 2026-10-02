@@ -125,7 +125,17 @@ namespace UnityEngine
 
     public struct Vector4
     {
-        public Vector4(float x, float y, float z, float w) { }
+        public float x, y, z, w;
+        public Vector4(float x, float y, float z, float w) { this.x = x; this.y = y; this.z = z; this.w = w; }
+        public static bool operator ==(Vector4 a, Vector4 b) => a.x == b.x && a.y == b.y && a.z == b.z && a.w == b.w;
+        public static bool operator !=(Vector4 a, Vector4 b) => !(a == b);
+        public override bool Equals(object o) => o is Vector4 v && v == this;
+        public override int GetHashCode() => 0;
+    }
+
+    public struct Quaternion
+    {
+        public static Quaternion identity => default;
     }
 
     public struct Color
@@ -163,6 +173,7 @@ namespace UnityEngine
     {
         public static Matrix4x4 identity => default;
         public static Matrix4x4 Ortho(float left, float right, float bottom, float top, float zNear, float zFar) => default;
+        public static Matrix4x4 TRS(Vector3 pos, Quaternion q, Vector3 s) => default;
     }
 
     public enum MeshTopology { Triangles = 0 }
@@ -194,6 +205,7 @@ namespace UnityEngine
     public class Renderer : Component
     {
         public bool enabled { get; set; }
+        public bool forceRenderingOff { get; set; }
         public Rendering.ShadowCastingMode shadowCastingMode { get; set; }
         public bool receiveShadows { get; set; }
         public Rendering.LightProbeUsage lightProbeUsage { get; set; }
@@ -213,6 +225,7 @@ namespace UnityEngine
     public class Material : Object
     {
         public Material(Shader shader) { }
+        public void EnableKeyword(string keyword) { }
         public void SetFloat(string name, float value) { }
         public void SetFloat(int id, float value) { }
         public void SetVector(int id, Vector4 value) { }
@@ -267,6 +280,7 @@ namespace UnityEngine
         public RenderTexture(int width, int height, int depth, RenderTextureFormat format, RenderTextureReadWrite readWrite) { }
         public bool useMipMap { get; set; }
         public bool Create() => true;
+        public bool IsCreated() => true;
         public void Release() { }
     }
 
@@ -359,6 +373,7 @@ namespace UnityEngine.Rendering
         public void Clear() { }
         public void SetRenderTarget(RenderTargetIdentifier rt) { }
         public void SetViewProjectionMatrices(Matrix4x4 view, Matrix4x4 proj) { }
+        public void SetViewport(Rect pixelRect) { }
         public void ClearRenderTarget(bool clearDepth, bool clearColor, Color backgroundColor) { }
         public void GetTemporaryRT(int nameID, int width, int height, int depthBuffer, FilterMode filter, RenderTextureFormat format) { }
         public void ReleaseTemporaryRT(int nameID) { }

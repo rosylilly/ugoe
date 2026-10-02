@@ -16,6 +16,7 @@ mod project;
 mod proposals;
 mod psd;
 mod sample;
+mod screenshot;
 mod space;
 mod tracking;
 
@@ -137,6 +138,7 @@ pub fn run() {
             mcp::open_claude_desktop_bundle,
             mcp::save_claude_desktop_bundle,
             tracking::write_json_file,
+            screenshot::write_png_file,
             dress_up::get_preview_modules,
             dress_up::set_preview_modules,
             dress_up::read_module_file,

@@ -48,14 +48,14 @@ cargo clippy --manifest-path bindings/godot/Cargo.toml --all-targets -- -D warni
 
 - Godot の実行ファイルは環境変数 `GODOT` (既定は `godot`) で指定する。見つからなければ入れ方を示して止まる。
 - `--conformance` は、配布物の適合テスト ([tests/conformance/README.md](../../tests/conformance/README.md)) の計画のケースを、
-  実行器 `example/tests/conformance.gd` で倍率 1・背景 `#808080` で描き、`ugoe-conformance compare --images-only` で
-  `ugoe render` の画像と比べる (T0418 で、Godot だけにあったケースと比べ方を適合テストに移した)。
+  実行器 `example/tests/conformance.gd` で倍率 1・背景 `#808080` で描き、`ugoe-conformance compare --images` で
+  `ugoe render` の画像と、ノードから読み戻した評価の結果 (頂点位置・不透明度・描画順の値・乗算色・スクリーン色・マスクの効き具合・
+  `visible`・描く順番) を参照と比べる (T0418 で、Godot だけにあったケースと比べ方を適合テストに移した。評価の結果は T0420 から)。
   基準は [docs/spec/rendering.md#互換の基準](../../docs/spec/rendering.md#互換の基準)。ケースは見本 (`avatar`・`avatar-lit`・着せ替え)、
   適合テストが `ugoe_model::fixtures` から作るモデル (入れ子・反転・共通部分のマスク、3 つの合成モード、乗算色とスクリーン色、
   裏面カリング、1 つの要素が 12 個のマスクを読む `masks-many`)、アニメーション中のマスク (`before` のあるケース: 値を変えた
   **直後のフレーム** を比べる。`masks-moving`・`avatar-moving`。入れ子のマスクが 1 フレーム遅れると合わない)、時間を進めた物理と目パチ・呼吸、
-  バンドルの例。Godot はモデルの JSON を読まないので、公開仕様の評価の例 (JSON) は飛ばす (`skipped.json`)。
-  頂点は比べない (Godot の中で評価しているのは C ABI・wasm と同じ `ugoe::Puppet`)。
+  バンドルの例、公開仕様の評価の例 (モデルの JSON。`load_model_from_json` で読み、テクスチャが無いので白で描く)。
 - これらは `just ci` に含まれない (ルートのワークスペースの外にあるため)。CI では別のジョブ (`.github/workflows/ci.yml` の
   `godot`) が、版を固定した Godot (4.7.1) と Xvfb の上で `just godot-check` を実行する。
 
@@ -104,7 +104,7 @@ puppet.xr_face_tracker = &"/user/face_tracker"
 | `use_scene_lights` / `get_scene_lights()` | シーンの `Light2D` も光源にする (`lights` の後ろに足す。下の「Light2D から取る光源」) / それから求めた今の光源 (`lights` と同じ形の辞書) |
 | `xr_face_tracker` | トラッキングの入力にする `XRFaceTracker` の名前 (`XRServer` に登録した名前、標準は `/user/face_tracker`)。空なら使わない。毎フレーム読み、見つからない間は前の値を保つ |
 | `parameters/<ID>` | インスペクタに出るパラメータ (シーンに保存される) |
-| `load_model(path)` / `load_model_from_buffer(bytes)` | 読み込む (`load_model` は `model` を設定する。`from_buffer` は `model` を null にする) |
+| `load_model(path)` / `load_model_from_buffer(bytes)` / `load_model_from_json(text)` | 読み込む (`load_model` は `model` を設定する。`from_buffer` と `from_json` は `model` を null にする)。`from_json` はモデルの JSON (テクスチャ・物理・モーションは無く、テクスチャは不透明な白で描く) |
 | `get_parameter_ids()` / `get_parameter_info(id)` / `get_parameter(id)` / `set_parameter(id, value)` / `reset_parameters()` | パラメータ |
 | `get_motion_names()` / `start_motion(name, priority)` / `stop_motions()` / `is_motion_playing()` | モーション |
 | `get_expression_names()` / `set_expression(name)` | 表情 |
@@ -116,6 +116,7 @@ puppet.xr_face_tracker = &"/user/face_tracker"
 | `set_tracking_head(rotation)` / `set_tracking_body(dict)` / `set_tracking_blend_shapes(dict)` / `set_tracking_blend_shape(name, value)` / `clear_tracking()` / `is_tracking()` / `get_tracking_blend_shape_names()` | トラッキング。頭は度で `x` = ヨー・`y` = ピッチ・`z` = ロール。体は `yaw` `pitch` `roll` `shoulder_left` `shoulder_right` (無いキーは省略)。ブレンドシェイプは ARKit の 52 個の名前 (MediaPipe の名前もそのまま渡せる)。平滑化はホストが行う |
 | `hit_test(id, local_position)` / `get_hit_areas_at(local_position)` | 当たり判定 (ノードの座標で渡す) |
 | `get_canvas_size()` / `get_canvas_origin()` | キャンバスの大きさと原点 |
+| `get_drawable_ids()` / `get_drawable_positions(index)` / `get_drawable_state(index)` / `get_render_order()` | 直前の評価の結果の読み戻し (`docs/spec/evaluation.md#8-出力`。適合テストで使う)。番号は `get_drawable_ids()` の順 (モデルのメッシュの順)。位置は **キャンバス座標** (ノードの座標は `get_canvas_origin()` を引く)。`get_drawable_state` は `{ "opacity", "draw_order", "multiply_color" (Color), "screen_color" (Color), "mask_strength", "visible" }`。`get_render_order` は奥から手前への番号。範囲の外の番号は空 |
 | シグナル `model_loaded` / `motion_event(value)` | 読み込み / モーションのイベント |
 
 ノードの原点にキャンバスの原点 (`canvas.origin`) が来る。座標はキャンバスのピクセル単位で、Godot の 2D と同じく Y 下向き。

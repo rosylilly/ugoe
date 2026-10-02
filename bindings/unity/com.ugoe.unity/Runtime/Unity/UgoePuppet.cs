@@ -21,6 +21,18 @@ namespace Ugoe.Unity
             range > 0 ? range : float.PositiveInfinity);
     }
 
+    /// <summary>Linear の色空間での描き方 (README の「色空間」)。Gamma の色空間ではどちらも画面に直接描く。</summary>
+    public enum LinearCompositing
+    {
+        /// <summary>
+        /// 中間のテクスチャに sRGB の値のまま合成してから画面に写す。モデルの中の合成は参照実装と一致する
+        /// (シーンとの合成だけが線形で行われる)。
+        /// </summary>
+        Intermediate,
+        /// <summary>画面に直接描く (描画の呼び出しが 1 つ少ない)。半透明の部分の合成が線形で行われ、参照実装と少しずれる。</summary>
+        Direct,
+    }
+
     /// <summary>シーンに保存するパラメータの値。</summary>
     [Serializable]
     public struct UgoeParameterValue
@@ -62,7 +74,9 @@ namespace Ugoe.Unity
         [SerializeField] private float pixelsPerUnit = 100;
         [Tooltip("描画順で隣り合い、同じ材質で描ける要素を 1 つのメッシュにまとめるか (テクスチャをアトラスにまとめたモデルで効く)")]
         public bool batching = true;
-        [Tooltip("マスクの解像度の倍率。1 で画面上の大きさと同じ")]
+        [Tooltip("Linear の色空間での描き方。Intermediate は中間のテクスチャに合成して参照実装と同じ色にする")]
+        public LinearCompositing linearCompositing = LinearCompositing.Intermediate;
+        [Tooltip("マスクと中間のテクスチャの解像度の倍率。1 で画面上の大きさと同じ")]
         [Range(0.125f, 4)] public float maskScale = 1;
         [Tooltip("マスクの解像度を画面上の大きさに合わせるカメラ (空なら Camera.main)")]
         public Camera maskCamera;
@@ -90,7 +104,13 @@ namespace Ugoe.Unity
         private DrawBatchPlan batchPlan;
         private bool batchingUsed;
         private Material[] blendMaterials;
+        // 中間のテクスチャに描く材質 (UGOE_GAMMA_TARGET。合成モードごと)
+        private Material[] gammaMaterials;
         private Material maskMaterial;
+        private Material compositeMaterial;
+        private UgoeIntermediate intermediate;
+        private bool intermediateDirty;
+        private bool intermediateUsed;
         private bool dirty;
         private bool needsLoad = true;
         private bool validated;
@@ -98,6 +118,7 @@ namespace Ugoe.Unity
         private readonly List<UgoeModule> loadedModules = new List<UgoeModule>();
         private bool lightsDirty = true;
         private float lastMaskScale;
+        private float lastResolution = 1;
 
         private static readonly int MainTexId = Shader.PropertyToID("_MainTex");
         private static readonly int NormalTexId = Shader.PropertyToID("_NormalTex");
@@ -136,7 +157,10 @@ namespace Ugoe.Unity
             public Vector2[] Uvs;
             public Color[] Colors;
             public Vector4[] Screen;
-            public Vector2[] Extra;
+            public Vector4[] Extra;
+            public Vector4[] MaskMap;
+            /// <summary>次の転送で、すべての要素の色と頂点属性を送るか (マスクのページの配置が変わったとき)。</summary>
+            public bool AllColors;
             public int[] Indices;
             public MaterialPropertyBlock Block = new MaterialPropertyBlock();
         }
@@ -153,19 +177,25 @@ namespace Ugoe.Unity
         }
 
         /// <summary>
-        /// 直前の転送での描画の呼び出しの数 (まとめたメッシュの数。マスクの内容を描く分は含まない)。
+        /// 直前の転送での描画の呼び出しの数 (まとめたメッシュの数。マスクの内容と、Linear の色空間で中間のテクスチャを
+        /// 画面に写す分は含まない)。
         /// テクスチャをアトラスにまとめたモデル (<c>ugoe build --atlas</c>) では要素の数より少なくなる。
         /// </summary>
         public int DrawCalls => batchViews.Count;
 
-        /// <summary>プロジェクトの色空間が Linear のときの注意 (README の「色空間」)。</summary>
+        /// <summary>中間のテクスチャを使っているか (Linear の色空間で <see cref="linearCompositing"/> が Intermediate)。</summary>
+        public bool UsesIntermediate =>
+            QualitySettings.activeColorSpace == ColorSpace.Linear && linearCompositing == LinearCompositing.Intermediate;
+
+        /// <summary>Linear の色空間で画面に直接描くときの注意 (README の「色空間」)。</summary>
         public const string LinearColorSpaceWarning =
-            "The project uses the Linear color space: semi-transparent pixels blend slightly differently from the ugoe " +
-            "reference renderer. Set Project Settings > Player > Other Settings > Color Space to Gamma to match it exactly.";
+            "The project uses the Linear color space and linearCompositing is Direct: semi-transparent pixels blend " +
+            "slightly differently from the ugoe reference renderer. Use Intermediate (the default) or the Gamma color " +
+            "space to match it exactly.";
 
         private static bool linearWarned;
 
-                /// <summary>評価を行う <see cref="Ugoe.Puppet"/> (読み込んでいなければ null)。直接操作してよい
+        /// <summary>評価を行う <see cref="Ugoe.Puppet"/> (読み込んでいなければ null)。直接操作してよい
         /// (着せ替えは <see cref="AttachModule"/> などを使うと描画も作り直す)。</summary>
         public Puppet Puppet => puppet;
 
@@ -200,7 +230,7 @@ namespace Ugoe.Unity
                 return;
             }
             foreach (var w in puppet.LoadWarnings) Debug.LogWarning($"ugoe: {model.name}: {w}", this);
-            if (QualitySettings.activeColorSpace == ColorSpace.Linear && !linearWarned)
+            if (QualitySettings.activeColorSpace == ColorSpace.Linear && linearCompositing == LinearCompositing.Direct && !linearWarned)
             {
                 // 1 回だけ知らせる (Gamma に切り替えない選択もある)。
                 linearWarned = true;
@@ -301,7 +331,8 @@ namespace Ugoe.Unity
                 bv.Uvs = new Vector2[batch.VertexCount];
                 bv.Colors = new Color[batch.VertexCount];
                 bv.Screen = new Vector4[batch.VertexCount];
-                bv.Extra = new Vector2[batch.VertexCount];
+                bv.Extra = new Vector4[batch.VertexCount];
+                bv.MaskMap = new Vector4[batch.VertexCount];
                 bv.Indices = new int[batch.IndexCapacity];
                 for (var k = 0; k < batch.Members.Length; k++)
                 {
@@ -313,8 +344,9 @@ namespace Ugoe.Unity
                 var normal = textures.GetNormal(batch.Texture);
                 bv.Block.SetTexture(MainTexId, textures.GetColor(batch.Texture));
                 bv.Block.SetTexture(NormalTexId, normal != null ? normal : UgoeTextures.FlatNormal);
-                masks.BindContentRead(bv.Block, batch.MaskContent);
+                masks.BindPageRead(bv.Block, batch.MaskPage);
                 bv.Renderer.SetPropertyBlock(bv.Block);
+                bv.Renderer.forceRenderingOff = intermediateUsed;
             }
             while (batchViews.Count > batches.Count)
             {
@@ -354,6 +386,8 @@ namespace Ugoe.Unity
             batchPlan = null;
             masks?.Dispose();
             masks = null;
+            intermediate?.Dispose();
+            intermediate = null;
         }
 
         private void EnsureMaterials()
@@ -361,13 +395,26 @@ namespace Ugoe.Unity
             if (blendMaterials != null && blendMaterials[0] != null) return;
             var drawable = Resources.Load<Shader>("Ugoe/UgoeDrawable");
             var mask = Resources.Load<Shader>("Ugoe/UgoeMask");
-            blendMaterials = new[]
+            var composite = Resources.Load<Shader>("Ugoe/UgoeComposite");
+            Material[] Blends(bool gammaTarget)
             {
-                BlendMaterial(drawable, "normal", BlendModeFactor.One, BlendModeFactor.OneMinusSrcAlpha, BlendModeFactor.One, BlendModeFactor.OneMinusSrcAlpha),
-                BlendMaterial(drawable, "additive", BlendModeFactor.One, BlendModeFactor.One, BlendModeFactor.Zero, BlendModeFactor.One),
-                BlendMaterial(drawable, "multiply", BlendModeFactor.DstColor, BlendModeFactor.OneMinusSrcAlpha, BlendModeFactor.Zero, BlendModeFactor.One),
-            };
+                var suffix = gammaTarget ? " (intermediate)" : "";
+                var materials = new[]
+                {
+                    BlendMaterial(drawable, "normal" + suffix, BlendModeFactor.One, BlendModeFactor.OneMinusSrcAlpha, BlendModeFactor.One, BlendModeFactor.OneMinusSrcAlpha),
+                    BlendMaterial(drawable, "additive" + suffix, BlendModeFactor.One, BlendModeFactor.One, BlendModeFactor.Zero, BlendModeFactor.One),
+                    BlendMaterial(drawable, "multiply" + suffix, BlendModeFactor.DstColor, BlendModeFactor.OneMinusSrcAlpha, BlendModeFactor.Zero, BlendModeFactor.One),
+                };
+                if (gammaTarget)
+                {
+                    foreach (var m in materials) m.EnableKeyword("UGOE_GAMMA_TARGET");
+                }
+                return materials;
+            }
+            blendMaterials = Blends(false);
+            gammaMaterials = Blends(true);
             maskMaterial = new Material(mask) { name = "ugoe mask", hideFlags = HideFlags.DontSave };
+            compositeMaterial = new Material(composite) { name = "ugoe composite", hideFlags = HideFlags.DontSave };
         }
 
         private enum BlendModeFactor
@@ -408,11 +455,13 @@ namespace Ugoe.Unity
         private void OnDestroy()
         {
             Unload();
-            if (blendMaterials != null)
+            foreach (var set in new[] { blendMaterials, gammaMaterials })
             {
-                foreach (var m in blendMaterials) DestroyObject(m);
+                if (set == null) continue;
+                foreach (var m in set) DestroyObject(m);
             }
             DestroyObject(maskMaterial);
+            DestroyObject(compositeMaterial);
         }
 
         private void OnValidate()
@@ -441,6 +490,43 @@ namespace Ugoe.Unity
             var dt = run ? Time.deltaTime * speed : 0f;
             if (run || dirty) Advance(dt);
             if (lightsDirty) ApplyLights();
+            RenderIntermediate();
+        }
+
+        // Linear の色空間で、まとめたメッシュを中間のテクスチャに描いて写す (UgoeIntermediate)。使わないときは画面に直接描く。
+        private void RenderIntermediate()
+        {
+            var use = UsesIntermediate && puppet != null;
+            if (use != intermediateUsed)
+            {
+                intermediateUsed = use;
+                foreach (var bv in batchViews) bv.Renderer.forceRenderingOff = use;
+                if (intermediate != null) intermediate.Visible = use;
+                intermediateDirty = true;
+            }
+            if (!use) return;
+            if (intermediate == null)
+            {
+                intermediate = new UgoeIntermediate(transform, compositeMaterial);
+                intermediateDirty = true;
+            }
+            if (!intermediateDirty && !intermediate.Lost) return;
+            intermediateDirty = false;
+            var bounds = CanvasRect.Empty;
+            var draws = new List<(Mesh, Material, MaterialPropertyBlock)>();
+            foreach (var bv in batchViews)
+            {
+                if (!bv.Renderer.enabled) continue;
+                foreach (var i in bv.Batch.Members) bounds = CanvasRect.Union(bounds, sync.Positions[i]);
+                draws.Add((bv.Mesh, gammaMaterials[(int)bv.Batch.BlendMode], bv.Block));
+            }
+            var ox = puppet.Canvas.OriginX;
+            var oy = puppet.Canvas.OriginY;
+            // バッチの頂点 ((x − ox) / ppu, (oy − y) / ppu) をキャンバス座標に戻す。
+            var toCanvas = Matrix4x4.TRS(new Vector3(ox, oy, 0), Quaternion.identity, new Vector3(pixelsPerUnit, -pixelsPerUnit, 1));
+            var inv = 1 / pixelsPerUnit;
+            intermediate.Render(bounds, lastResolution, toCanvas, c => new Vector3((c.x - ox) * inv, (oy - c.y) * inv, 0), draws);
+            intermediate.Visible = true;
         }
 
         private bool SameModules()
@@ -462,6 +548,7 @@ namespace Ugoe.Unity
             puppet.Update(dt);
             dirty = false;
             Sync();
+            intermediateDirty = true;
             if (MotionEventFired != null)
             {
                 foreach (var e in puppet.MotionEvents()) MotionEventFired(e);
@@ -502,22 +589,25 @@ namespace Ugoe.Unity
                 }
                 if ((sync.States[i].Changes & DrawableChanges.MaskStrength) != 0 && plan.IsMaskSource[i] && plan.ContentOf[i] >= 0) maskDirty = true;
             }
-            foreach (var bv in batchViews) SyncBatch(bv);
-
             var scale = MaskResolution();
             if (!Mathf.Approximately(scale, lastMaskScale)) maskDirty = true;
+            lastResolution = scale;
             if (masks.HasMasks && maskDirty)
             {
                 lastMaskScale = scale;
-                masks.Render(views, sync, scale);
-                // 矩形とテクスチャが変わりうるので、マスクを読むバッチの値を設定し直す。
-                foreach (var bv in batchViews)
+                if (masks.Render(views, sync, scale))
                 {
-                    if (bv.Batch.MaskContent < 0) continue;
-                    masks.BindContentRead(bv.Block, bv.Batch.MaskContent);
-                    bv.Renderer.SetPropertyBlock(bv.Block);
+                    // ページのテクスチャか内容の位置が変わったので、読むバッチのテクスチャと、要素ごとの写像を設定し直す。
+                    foreach (var bv in batchViews)
+                    {
+                        bv.AllColors = true;
+                        if (bv.Batch.MaskPage < 0) continue;
+                        masks.BindPageRead(bv.Block, bv.Batch.MaskPage);
+                        bv.Renderer.SetPropertyBlock(bv.Block);
+                    }
                 }
             }
+            foreach (var bv in batchViews) SyncBatch(bv);
         }
 
         private const DrawableChanges ColorChanges =
@@ -528,8 +618,10 @@ namespace Ugoe.Unity
         {
             var batch = bv.Batch;
             var full = bv.Full;
+            var allColors = full || bv.AllColors;
             bv.Full = false;
-            bool vertices = full, colors = full, indices = full;
+            bv.AllColors = false;
+            bool vertices = full, colors = allColors, indices = full;
             for (var k = 0; k < batch.Members.Length; k++)
             {
                 var i = batch.Members[k];
@@ -544,17 +636,20 @@ namespace Ugoe.Unity
                     // 裏面カリングする要素は、頂点が動くと表を向く三角形が変わる。
                     if (puppet.Drawables[i].Culling) indices = true;
                 }
-                if (full || (state.Changes & ColorChanges) != 0)
+                if (allColors || (state.Changes & ColorChanges) != 0)
                 {
                     var color = new Color(state.MultiplyR, state.MultiplyG, state.MultiplyB, state.Opacity);
                     var screen = new Vector4(state.ScreenR, state.ScreenG, state.ScreenB, 0);
-                    // マスクを読まない要素は mask_strength 0 (バッチの内容を読んでも係数は 1)。
-                    var extra = new Vector2(plan.ContentOf[i] >= 0 ? Mathf.Clamp01(state.MaskStrength) : 0, view.LitMode);
+                    // マスクを読まない要素 (とページをまだ描いていない要素) は mask_strength 0 (ページを読んでも係数は 1)。
+                    var read = masks.VertexAttributes(i);
+                    var reads = plan.ContentOf[i] >= 0 && masks.GetPage(bv.Batch.MaskPage) != null;
+                    var extra = new Vector4(reads ? Mathf.Clamp01(state.MaskStrength) : 0, view.LitMode, read.Positive.x, read.Positive.y);
                     for (var v = 0; v < view.Vertices.Length; v++)
                     {
                         bv.Colors[offset + v] = color;
                         bv.Screen[offset + v] = screen;
                         bv.Extra[offset + v] = extra;
+                        bv.MaskMap[offset + v] = read.Map;
                     }
                     colors = true;
                 }
@@ -578,6 +673,7 @@ namespace Ugoe.Unity
                 mesh.colors = bv.Colors;
                 mesh.SetUVs(2, bv.Screen);
                 mesh.SetUVs(3, bv.Extra);
+                mesh.SetUVs(4, bv.MaskMap);
             }
             if (indices)
             {
@@ -639,6 +735,7 @@ namespace Ugoe.Unity
         {
             lightsDirty = false;
             if (blendMaterials == null) return;
+            intermediateDirty = true;
             var sources = new List<LightSource>();
             foreach (var l in lights) sources.Add(l.ToSource());
             LightingUniform u;
@@ -658,13 +755,20 @@ namespace Ugoe.Unity
                 vectors[i] = new Vector4(u.Vectors[i * 4], u.Vectors[i * 4 + 1], u.Vectors[i * 4 + 2], u.Vectors[i * 4 + 3]);
                 colors[i] = new Vector4(u.Colors[i * 4], u.Colors[i * 4 + 1], u.Colors[i * 4 + 2], u.Colors[i * 4 + 3]);
             }
-            foreach (var m in blendMaterials)
+            foreach (var m in AllBlendMaterials())
             {
                 m.SetVector(AmbientId, new Vector4(u.Ambient[0], u.Ambient[1], u.Ambient[2], 0));
                 m.SetFloat(LightCountId, u.Count);
                 m.SetVectorArray(LightVectorsId, vectors);
                 m.SetVectorArray(LightColorsId, colors);
             }
+        }
+
+        private IEnumerable<Material> AllBlendMaterials()
+        {
+            foreach (var m in blendMaterials) yield return m;
+            if (gammaMaterials == null) yield break;
+            foreach (var m in gammaMaterials) yield return m;
         }
 
         // --- 座標 ---

@@ -6,7 +6,7 @@
 - GameObject に **Ugoe Puppet** のコンポーネントを付け、`.ugoe` のファイル (**Ugoe Model** として取り込まれる) を選ぶ。
 - `.ugoemod` (着せ替えのモジュール) は **Ugoe Module** として取り込まれる。
 - Package Manager から見本 **Basic** を取り込むと、動く見本のシーンがある。
-- プロジェクトの色空間は **Gamma** にする (Linear では半透明の部分が参照実装と少しずれる)。
+- 色空間は Gamma でも Linear でもよい (Linear では中間のテクスチャに合成してから写し、参照実装と同じ色にする)。
 
 ネイティブライブラリは `Runtime/Plugins/` に置く (リリースの tarball `com.ugoe.unity-<版>.tgz` には入っている。
 Git のリポジトリには入っていないので、CI で作ったパッケージを使うか、自分でビルドする)。使い方とビルドの方法: https://github.com/rosylilly/ugoe/tree/main/bindings/unity

@@ -26,7 +26,14 @@ namespace Ugoe.Editor
             EditorGUILayout.LabelField("Draw calls", target.DrawCalls.ToString());
             if (QualitySettings.activeColorSpace == ColorSpace.Linear)
             {
-                EditorGUILayout.HelpBox(UgoePuppet.LinearColorSpaceWarning, MessageType.Warning);
+                if (target.UsesIntermediate)
+                {
+                    EditorGUILayout.HelpBox("Linear color space: the model is blended in an intermediate texture to match the ugoe reference renderer.", MessageType.Info);
+                }
+                else
+                {
+                    EditorGUILayout.HelpBox(UgoePuppet.LinearColorSpaceWarning, MessageType.Warning);
+                }
             }
             if (puppet.UsesLighting) EditorGUILayout.HelpBox("This model uses lighting (ambient light and lights above).", MessageType.Info);
 

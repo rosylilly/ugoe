@@ -2,7 +2,8 @@
   ビューポート: ugoe-wasm でモデルを canvas に描き、その上にオーバーレイを重ねる。
 
   操作: ホイールでカーソル位置を中心にズーム、中ボタン (または Alt + 左ボタン) のドラッグでパン、
-  「Fit」でキャンバス全体を表示。左ボタンはツール (オーバーレイ) のために空けておく。
+  「Fit」でキャンバス全体を表示。「Screenshot」で今の表示を PNG で保存する (saveScreenshot.ts。WebPuppet.read_pixels で
+  取るので、オーバーレイは写らない。docs/editor.md#スクリーンショット)。左ボタンはツール (オーバーレイ) のために空けておく。
 
   オーバーレイ (ギズモ・選択枠・メッシュ編集など、T0606 以降):
   `overlay` スニペットに描く。ViewportController を受け取り、`controller.transform`
@@ -12,6 +13,7 @@
 <script lang="ts">
 import { type Snippet, untrack } from "svelte";
 import type { ViewportController, ViewportModel } from "./controller.svelte";
+import { saveViewportScreenshot } from "./saveScreenshot";
 
 interface Props {
   controller: ViewportController;
@@ -27,6 +29,34 @@ let { controller, model, overlay, hint = null }: Props = $props();
 let container: HTMLDivElement;
 let canvas = $state<HTMLCanvasElement>();
 let panning: { id: number; x: number; y: number } | null = null;
+/** スクリーンショットを保存している間 (ボタンを押せない)。 */
+let capturing = $state(false);
+/** 直近のスクリーンショットの結果 (保存した場所かエラー)。しばらくしたら消す。 */
+let shotNotice = $state<{ text: string; error: boolean } | null>(null);
+let shotNoticeTimer: ReturnType<typeof setTimeout> | undefined;
+
+function showShotNotice(text: string, error: boolean) {
+  shotNotice = { text, error };
+  clearTimeout(shotNoticeTimer);
+  shotNoticeTimer = setTimeout(() => (shotNotice = null), error ? 10000 : 5000);
+}
+
+/** 今の表示を PNG で保存する (オーバーレイは写らない)。 */
+async function screenshot() {
+  if (capturing) return;
+  capturing = true;
+  try {
+    const path = await saveViewportScreenshot(controller);
+    if (path !== null) showShotNotice(`Saved screenshot to ${path}`, false);
+  } catch (e) {
+    showShotNotice(
+      `Cannot save the screenshot: ${e instanceof Error ? e.message : String(e)}`,
+      true,
+    );
+  } finally {
+    capturing = false;
+  }
+}
 
 $effect(() => {
   const m = model;
@@ -118,8 +148,13 @@ function onPointerUp(e: PointerEvent) {
     {:else}
       <span class="muted">{controller.backend}</span>
     {/if}
+    <button onclick={() => void screenshot()} disabled={controller.status !== "ready" || capturing}
+      title="Save the current view as a PNG image (without gizmos and other overlays)">Screenshot</button>
     <button onclick={() => controller.fit()}>Fit</button>
   </div>
+  {#if shotNotice}
+    <p class="shot-notice" class:error={shotNotice.error} role="status">{shotNotice.text}</p>
+  {/if}
 </div>
 
 <style>
@@ -153,6 +188,19 @@ canvas {
   margin: 0;
   text-align: center;
   pointer-events: none;
+}
+
+.shot-notice {
+  position: absolute;
+  top: 40px;
+  right: 8px;
+  max-width: calc(100% - 16px);
+  margin: 0;
+  padding: 4px 8px;
+  overflow-wrap: anywhere;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
 }
 
 .hud {

@@ -11,7 +11,7 @@
 | C ABI (`ugoe-ffi`、`c`) | 位置・不透明度・描画順の値・乗算色・スクリーン色・マスクの効き具合・`visible`・描画の順番 | なし (C ABI は描画しない) | [`c/runner.c`](c/runner.c) |
 | wasm (npm パッケージ `@ugoe/runtime`、`wasm` と `wasm-webgpu`) | C ABI と同じすべての値 (`drawable_positions`・`drawable_states_json`・`render_order`) | あり (ヘッドレスの Chrome の WebGL2 と WebGPU。`read_pixels` で読み戻す) | [`web/runner.js`](web/runner.js) |
 | Unity (`bindings/unity` の Unity に依存しない C# の層 `Runtime/Core`、`unity`) | C ABI と同じすべての値 | なし (描画は Unity が要る) | [`unity/Program.cs`](unity/Program.cs) (dotnet) |
-| Godot (`bindings/godot`、`godot`) | なし (中で評価しているのは同じ `ugoe::Puppet`) | あり (Compatibility (OpenGL)。画面が無ければ Xvfb) | [`bindings/godot/example/tests/conformance.gd`](../../bindings/godot/example/tests/conformance.gd) |
+| Godot (`bindings/godot`、`godot`) | C ABI と同じすべての値 (ノードの `get_drawable_positions`・`get_drawable_state`・`get_render_order` で読み戻す) | あり (Compatibility (OpenGL)。画面が無ければ Xvfb) | [`bindings/godot/example/tests/conformance.gd`](../../bindings/godot/example/tests/conformance.gd) |
 
 ## 実行
 
@@ -36,7 +36,7 @@ target/conformance/
   wasm/<ケース>.json .png       wasm (WebGL2) の結果。画像が合わなければ <ケース>.diff.png (違う画素が赤)。chrome.log (ページのコンソールを含む)
   wasm-webgpu/                 wasm (WebGPU) の結果 (同じ形)
   unity/<ケース>.json           Unity の C# の層の結果
-  godot/<ケース>.png            Godot の結果。skipped.json (扱わなかったケースと理由)
+  godot/<ケース>.json .png      Godot の結果。skipped.json (扱わなかったケースと理由。今は空)
 ```
 
 要るもの (`just ci` に含めない理由): C コンパイラ (`cc`。`CC` で変えられる)、Chrome (`CHROME` で指定。無ければ
@@ -64,7 +64,8 @@ CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just confor
 3. 各バインディングの実行器が、計画を読んで `DIR/<バインディング>/<ケース>.json` (と `.png`) を書く。扱えないケースは
    `DIR/<バインディング>/skipped.json` (`{"<ケース>": "理由"}`) に書いてよい (比べ合わせは `skip` と表示し、失敗に数えない)。
 4. `ugoe-conformance compare --out DIR --binding <名前> [--images | --images-only]` が比べる ([`src/compare.rs`](src/compare.rs))。
-   `--images-only` は評価の結果を読み戻せないバインディング (Godot) 向けで、画像の無いケースは飛ばす。1 つも比べなければ失敗。
+   `--images-only` は評価の結果を読み戻せないバインディング向けで (今は使うものが無い。Godot は T0420 で読み戻すようにした)、
+   画像の無いケースは飛ばす。1 つも比べなければ失敗。
 
 ### ケース (`cases.json`)
 
@@ -105,7 +106,7 @@ CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just confor
    (`positions` と `render_order` は必須)。評価の結果を読み戻せないなら書かず、比べ合わせを `--images-only` にする。
 5. 画像を描くなら: キャンバスと同じ大きさ (倍率 1、`round`)、キャンバス全体が収まるビュー、背景 `plan.background` (`#808080`、不透明)、
    `lighting` の光源で描き、ストレートアルファの PNG に書く。
-6. 扱えないケース (Godot のモデルの JSON など) は `skipped.json` に理由と一緒に書く。
+6. 扱えないケースは `skipped.json` に理由と一緒に書く。
 
 ### 許容誤差
 
@@ -119,6 +120,10 @@ CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just confor
 T0418 の時点の結果 (WSL2、53 ケース): C ABI・wasm (WebGL2 と WebGPU)・Unity の C# の層はすべてのケースで評価の結果が一致。
 wasm の画像は WebGL2・WebGPU (どちらも SwiftShader) とも 99.9% 以上の画素が一致し、違いの最大は見本で 5〜7/255 (三角形の縁。
 回転の例 2 つは 1〜2 画素だけ 127/255)。Godot (Compatibility、Mesa の llvmpipe) は扱う 20 ケースで 100% の画素が 3/255 以内 (最大 3/255)。
+
+T0420 で Godot の評価の結果の読み戻しとモデルの JSON の読み込みを足した (WSL2、53 ケース): Godot はすべてのケースで評価の結果が一致し、
+画像は 100% の画素が 3/255 以内 (見本・マスク・合成モードで最大 2〜3/255、公開仕様の評価の例は 0〜1/255)。モデルの JSON は
+テクスチャが無いので、`ugoe render` と同じく不透明な白で描く。
 
 ## エンジン向けのバインディングを足す
 
@@ -143,10 +148,11 @@ wasm の画像は WebGL2・WebGPU (どちらも SwiftShader) とも 99.9% 以上
   (別のテクスチャに描いて読み戻す) に変えてからは起きていない。ランナーの Chrome で起きたら `--only c,wasm,unity` で外せる。
 - **Unity:** Unity に依存しない C# の層 (P/Invoke と C ABI) だけを比べる。Unity のメッシュ・シェーダ・マスクの描画は比べていない
   (Unity のライセンスとエディタが要る。`bindings/unity/README.md#制限と確かめていないこと`)。
-- **Godot:** 画像だけを比べる。モデルの JSON は読まないので、公開仕様の評価の例は飛ばす。比べ合わせは Compatibility (OpenGL) だけ。
+- **Godot:** 比べ合わせは Compatibility (OpenGL) だけ。評価の結果は画像を読み戻すのと同じフレームでノードから読み戻す。
 - Windows と macOS では実行していない (`run.mjs` はリンクの引数だけ用意してある)。
 
 ## 関連タスク
 
 - T0408 (`docs/tasks/T0408-conformance-tests.md`)
 - T0418 (`docs/tasks/T0418-conformance-more-backends.md`: Godot と Unity・wasm の WebGPU)
+- T0420 (`docs/tasks/T0420-unity-and-conformance-extras.md`: Godot の評価の結果の読み戻しとモデルの JSON)

@@ -19,6 +19,7 @@ import {
   MODULE_EXTENSIONS,
   type ModelFile,
 } from "./modelFile";
+import { PNG_PATH_HEADER, withPngExtension } from "./screenshot";
 
 export interface ViewerHost {
   /** モデル (か着せ替えのモジュール) のファイルを選んで読む。取り消したら `null`。 */
@@ -32,6 +33,11 @@ export interface ViewerHost {
    * 保存したら `true`、取り消したら `false`。省くとブラウザのダウンロードで保存する。
    */
   saveJsonFile?(name: string, text: string): Promise<boolean>;
+  /**
+   * PNG の画像を保存する (スクリーンショット、T0420)。`name` は既定のファイル名。保存した場所 (パスかファイル名) を返し、
+   * 取り消したら `null`。省くとブラウザのダウンロードで保存する。
+   */
+  savePngFile?(name: string, bytes: Uint8Array): Promise<string | null>;
   /**
    * パス (`FileLocation` の `path:` の後ろ) のファイルを読み直す (覚えていた着せ替えのモジュールを戻すときなど)。
    * 無ければ `path:` の場所は読み直せない (ブラウザ)。
@@ -100,6 +106,20 @@ const tauriHost: ViewerHost = {
     await invoke("write_json_file", { path, contents: text });
     return true;
   },
+  async savePngFile(name, bytes) {
+    const picked = await save({
+      title: "スクリーンショットを保存",
+      defaultPath: name,
+      filters: [{ name: "PNG 画像", extensions: ["png"] }],
+    });
+    if (picked === null) return null;
+    const path = withPngExtension(picked);
+    // バイト列は本文でそのまま送り、パスはヘッダーで渡す (ヘッダーは ASCII だけなので URI の形に符号化する)。
+    await invoke("write_png_file", bytes, {
+      headers: { [PNG_PATH_HEADER]: encodeURIComponent(path) },
+    });
+    return path;
+  },
   readPath: readTauriFile,
   listenFileDrop(listener) {
     return getCurrentWebview().onDragDropEvent(({ payload }) => {
@@ -120,7 +140,11 @@ const tauriHost: ViewerHost = {
 
 /** ブラウザのダウンロードで保存する。 */
 function downloadJson(name: string, text: string): void {
-  const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+  download(name, new Blob([text], { type: "application/json" }));
+}
+
+function download(name: string, blob: Blob): void {
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = name;
@@ -134,6 +158,14 @@ export async function saveJsonFile(name: string, text: string): Promise<boolean>
   if (host.saveJsonFile) return host.saveJsonFile(name, text);
   downloadJson(name, text);
   return true;
+}
+
+/** PNG の画像を、今の `ViewerHost` で保存する。保存した場所を返し、取り消したら `null`。 */
+export async function savePngFile(name: string, bytes: Uint8Array): Promise<string | null> {
+  const host = viewerHost();
+  if (host.savePngFile) return host.savePngFile(name, bytes);
+  download(name, new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "image/png" }));
+  return name;
 }
 
 /** File API の `File` を読む (ドロップ・`<input type="file">`)。 */

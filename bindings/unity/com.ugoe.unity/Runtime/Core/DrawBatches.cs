@@ -6,8 +6,9 @@ using System.Collections.Generic;
 namespace Ugoe
 {
     /// <summary>
-    /// 1 回の描画の呼び出しで描く要素の並び (描画順で連続し、テクスチャ・合成モード・読むマスクの内容が同じ。
-    /// docs/spec/rendering.md#描画の最適化)。マスクを読まない要素は、どの内容を読む要素ともまとめる。
+    /// 1 回の描画の呼び出しで描く要素の並び (描画順で連続し、テクスチャ・合成モード・読むマスクのテクスチャが同じ。
+    /// docs/spec/rendering.md#描画の最適化)。マスクの内容は入れ子の深さごとに 1 枚のテクスチャ (ページ) にまとめて描く
+    /// (<see cref="MaskAtlasLayout"/>) ので、同じページの違う内容を読む要素もまとめる。マスクを読まない要素は、どの要素ともまとめる。
     /// 要素ごとの値 (不透明度・乗算色・スクリーン色・マスクの効き具合・ライティングの種類) は頂点属性で渡す。
     /// 裏面カリングは CPU で三角形を選ぶので、状態の違いにならない。
     /// </summary>
@@ -22,10 +23,10 @@ namespace Ugoe
         public int IndexCapacity { get; }
         public int Texture { get; }
         public BlendMode BlendMode { get; }
-        /// <summary>読むマスクの内容 (<see cref="MaskPlan.Contents"/> の添字)。どの要素もマスクを読まなければ -1。</summary>
-        public int MaskContent { get; }
+        /// <summary>読むマスクのページ (<see cref="MaskAtlasLayout.PageOf"/>、= 内容の入れ子の深さ)。どの要素もマスクを読まなければ -1。</summary>
+        public int MaskPage { get; }
 
-        internal DrawBatch(List<int> members, IReadOnlyList<DrawableInfo> drawables, BlendMode blend, int maskContent)
+        internal DrawBatch(List<int> members, IReadOnlyList<DrawableInfo> drawables, BlendMode blend, int maskPage)
         {
             Members = members.ToArray();
             VertexOffsets = new int[Members.Length];
@@ -41,7 +42,7 @@ namespace Ugoe
             IndexCapacity = indices;
             Texture = drawables[Members[0]].Texture;
             BlendMode = blend;
-            MaskContent = maskContent;
+            MaskPage = maskPage;
         }
 
         /// <summary>
@@ -120,30 +121,31 @@ namespace Ugoe
             var members = new List<int>();
             var vertices = 0;
             var current = -1; // 今のバッチの最初の要素
-            var content = -1; // 今のバッチが読むマスクの内容
+            var page = -1; // 今のバッチが読むマスクのページ
             void Flush()
             {
                 if (members.Count == 0) return;
                 foreach (var m in members) batchOf[m] = batches.Count;
-                batches.Add(new DrawBatch(members, drawables, blends[current], content));
+                batches.Add(new DrawBatch(members, drawables, blends[current], page));
                 members.Clear();
                 vertices = 0;
                 current = -1;
-                content = -1;
+                page = -1;
             }
             foreach (var i in renderOrder)
             {
                 var d = drawables[i];
                 if (d.MaskOnly) continue;
-                var own = masks.ContentOf[i];
+                var content = masks.ContentOf[i];
+                var own = content >= 0 ? masks.Contents[content].Depth : -1;
                 var joins = batching && current >= 0
-                    && (own < 0 || content < 0 || own == content)
+                    && (own < 0 || page < 0 || own == page)
                     && drawables[current].Texture == d.Texture
                     && blends[current] == blends[i]
                     && vertices + d.VertexCount <= maxVertices;
                 if (!joins) Flush();
                 if (current < 0) current = i;
-                if (own >= 0) content = own;
+                if (own >= 0) page = own;
                 members.Add(i);
                 vertices += d.VertexCount;
             }

@@ -63,6 +63,61 @@ fn is_json_path(path: &Path) -> bool {
     has_extension(path, &["json"])
 }
 
+/// `write_png_file` に保存先のパスを渡すヘッダー (`src/lib/screenshot.ts` の `PNG_PATH_HEADER` と同じ)。
+/// バイト列は本文でそのまま受け取るので、パスはヘッダーに URI の形 (`encodeURIComponent`) で入れる。
+const PNG_PATH_HEADER: &str = "x-ugoe-path";
+
+/// PNG のファイルの先頭 8 バイト。
+const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
+
+/// スクリーンショット (T0420) の PNG を書く。本文は PNG のバイト列、パスはヘッダー `x-ugoe-path`
+/// (保存のダイアログで利用者が選んだもの)。拡張子が `.png` で、中身が PNG のものだけを書く。
+#[tauri::command]
+fn write_png_file(request: tauri::ipc::Request<'_>) -> Result<(), String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("expected the bytes of a PNG image".into());
+    };
+    let header = request
+        .headers()
+        .get(PNG_PATH_HEADER)
+        .ok_or_else(|| format!("missing the {PNG_PATH_HEADER} header"))?
+        .to_str()
+        .map_err(|e| format!("{PNG_PATH_HEADER}: {e}"))?;
+    write_png(Path::new(&percent_decode(header)?), bytes)
+}
+
+fn write_png(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    if !has_extension(path, &["png"]) {
+        return Err(format!("not a PNG file: {}", path.display()));
+    }
+    if !bytes.starts_with(PNG_SIGNATURE) {
+        return Err("the data is not a PNG image".into());
+    }
+    std::fs::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// `encodeURIComponent` で符号化した文字列を戻す (`%XX` を 1 バイトに。結果は UTF-8)。
+fn percent_decode(text: &str) -> Result<String, String> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            let hex = bytes
+                .get(i + 1..i + 3)
+                .and_then(|h| std::str::from_utf8(h).ok())
+                .and_then(|h| u8::from_str_radix(h, 16).ok())
+                .ok_or_else(|| format!("invalid percent-encoding: {text}"))?;
+            out.push(hex);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).map_err(|e| format!("invalid percent-encoding: {e}"))
+}
+
 /// webview からの許可の要求への応答。フェイストラッキング (T0703) のカメラだけを許す。
 /// ページはアプリに同梱したものだけなので、カメラを使うのは利用者がトラッキングを始めたときに限られる。
 /// macOS では、これとは別に OS の許可 (`Info.plist` の `NSCameraUsageDescription`) が要る。
@@ -89,6 +144,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             read_model_file,
             write_json_file,
+            write_png_file,
             initial_file
         ])
         .run(tauri::generate_context!())
@@ -132,6 +188,32 @@ mod tests {
             )
             .is_err()
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn decodes_percent_encoded_paths() {
+        assert_eq!(
+            percent_decode("%2Fhome%2F%E3%81%82%20b%2Fshot.png").unwrap(),
+            "/home/あ b/shot.png"
+        );
+        assert_eq!(percent_decode("C%3A%5Cshot.png").unwrap(), "C:\\shot.png");
+        assert!(percent_decode("%2").is_err());
+        assert!(percent_decode("%zz").is_err());
+        assert!(percent_decode("%FF").is_err());
+    }
+
+    #[test]
+    fn writes_png_files_only() {
+        let dir = std::env::temp_dir().join(format!("ugoe-viewer-png-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let png = [PNG_SIGNATURE, b"rest"].concat();
+        let path = dir.join("shot.PNG");
+        write_png(&path, &png).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), png);
+        assert!(write_png(&dir.join("shot.sh"), &png).is_err());
+        assert!(write_png(&dir.join("other.png"), b"not a png").is_err());
+        assert!(!dir.join("other.png").exists());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

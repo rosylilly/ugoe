@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MIT
 // ugoe の描画可能要素を描くシェーダ (spec/rendering.md の Mesh color・Blend modes・Masks・Lighting)。
 // 描画順で隣り合う要素を 1 つのメッシュにまとめて描く (docs/spec/rendering.md#描画の最適化、Runtime/Core/DrawBatches.cs)ので、
-// 要素ごとの値 (乗算色と不透明度・スクリーン色・マスクの効き具合・ライティングの種類) は頂点属性で受け取る。
-// テクスチャ・合成モード・読むマスクの内容はバッチごと (MaterialPropertyBlock と材質)。
+// 要素ごとの値 (乗算色と不透明度・スクリーン色・マスクの効き具合と読む内容の位置・ライティングの種類) は頂点属性で受け取る。
+// テクスチャ・合成モード・読むマスクのページ (_MaskTex) はバッチごと (MaterialPropertyBlock と材質)。
 // 出力は乗算済みアルファ。合成モードは _SrcBlend などで材質ごとに決める (Runtime/Unity/UgoePuppet.cs):
 //   normal   = One, OneMinusSrcAlpha / One, OneMinusSrcAlpha
 //   additive = One, One              / Zero, One
 //   multiply = DstColor, OneMinusSrcAlpha / Zero, One
 // 裏面カリングは CPU で三角形を選ぶ (向きはキャンバス座標だけで決まるため) ので、ここでは Cull Off。
+// 色空間: UGOE_GAMMA_TARGET (Linear の色空間で、sRGB の変換をしない中間のテクスチャに描くとき。Runtime/Unity/UgoeIntermediate.cs)
+// か Gamma の色空間では sRGB の値のまま書く。Linear の色空間で画面に直接描くときだけ線形に直す (README の「色空間」)。
 Shader "Hidden/Ugoe/Drawable"
 {
     Properties
@@ -37,6 +39,7 @@ Shader "Hidden/Ugoe/Drawable"
             #pragma vertex vert
             #pragma fragment frag
             #pragma target 3.0
+            #pragma multi_compile_local __ UGOE_GAMMA_TARGET
             #include "UnityCG.cginc"
             #include "UgoeCommon.hlsl"
 
@@ -58,7 +61,10 @@ Shader "Hidden/Ugoe/Drawable"
                 float2 canvas : TEXCOORD1; // キャンバス座標 (ピクセル・Y 下向き)
                 float4 color : COLOR;      // 乗算色 (rgb) と不透明度 (a)
                 float4 screen : TEXCOORD2; // スクリーン色 (rgb)
-                float2 extra : TEXCOORD3;  // x = mask_strength (マスクを読まなければ 0)、y = ライティング (0 = なし、1 = 法線 (0, 0, 1)、2 = 法線マップ)
+                // x = mask_strength (マスクを読まなければ 0)、y = ライティング (0 = なし、1 = 法線 (0, 0, 1)、2 = 法線マップ)、
+                // zw = 通常マスクの結合値の係数 (pos = z + w × R)
+                float4 extra : TEXCOORD3;
+                float4 maskMap : TEXCOORD4; // 読む内容の位置: ページの uv = canvas × xy + zw
             };
 
             struct v2f
@@ -69,7 +75,8 @@ Shader "Hidden/Ugoe/Drawable"
                 // 1 つの三角形の頂点はすべて同じ要素なので、補間しても値は変わらない。
                 float4 color : TEXCOORD2;
                 float4 screen : TEXCOORD3;
-                float2 extra : TEXCOORD4;
+                float4 extra : TEXCOORD4;
+                float4 maskMap : TEXCOORD5;
             };
 
             v2f vert(appdata v)
@@ -81,6 +88,7 @@ Shader "Hidden/Ugoe/Drawable"
                 o.color = v.color;
                 o.screen = v.screen;
                 o.extra = v.extra;
+                o.maskMap = v.maskMap;
                 return o;
             }
 
@@ -149,12 +157,12 @@ Shader "Hidden/Ugoe/Drawable"
                 {
                     rgb *= LightAt(i.canvas, normal);
                 }
-                float4 o = float4(rgb, c.a) * i.color.a * UgoeMaskFactorWith(i.canvas, i.extra.x);
-            #ifndef UNITY_COLORSPACE_GAMMA
-                // リニアの色空間では書き込み先が sRGB で、出力は線形の値として扱われる。ugoe の色は sRGB の値を
-                // そのまま使う約束なので、ストレートの色を線形に直して書く (合成は線形で行われるので、半透明の
-                // 部分は参照と少しずれる。一致させるにはプロジェクトの色空間を Gamma にする。README を参照)。
-                o.rgb = o.a > 0.0 ? GammaToLinearSpace(saturate(o.rgb / o.a)) * o.a : GammaToLinearSpace(o.rgb);
+                float4 o = float4(rgb, c.a) * i.color.a * UgoeMaskFactorAt(i.canvas, i.maskMap, i.extra.zw, i.extra.x);
+            #if !defined(UNITY_COLORSPACE_GAMMA) && !defined(UGOE_GAMMA_TARGET)
+                // Linear の色空間で画面に直接描くとき (UgoePuppet.linearCompositing = Direct): 書き込み先は sRGB で、出力は
+                // 線形の値として扱われる。ugoe の色は sRGB の値をそのまま使う約束なので、ストレートの色を線形に直して書く
+                // (合成は線形で行われるので、半透明の部分は参照と少しずれる。既定の Intermediate ではずれない)。
+                o = UgoeToLinearPremultiplied(o);
             #endif
                 return o;
             }
