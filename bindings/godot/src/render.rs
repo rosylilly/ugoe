@@ -24,7 +24,8 @@ use ugoe::model::{BlendMode, MaskMode};
 use ugoe::runtime::{DrawableChanges, DrawableState};
 
 use crate::model::{
-    AtlasLayout, LightUniforms, LoadedModel, MaskArea, MaskTable, bounds, front_facing, premultiply,
+    AtlasLayout, LightUniforms, LoadedModel, MaskArea, MaskShrink, MaskTable, bounds, front_facing,
+    premultiply,
 };
 use crate::shader::{self, ShaderKind};
 
@@ -83,7 +84,7 @@ pub struct Renderer {
     /// 直前の描画で使ったマスクの解像度 (キャンバスの 1 単位あたりの画素数)。
     mask_scale: f32,
     /// アトラスに収まらなかったときに、マスクの解像度に掛ける倍率 (解像度が変わると 1 に戻す)。
-    shrink: f32,
+    shrink: MaskShrink,
     // 毎フレームの作業用
     points: PackedVector2Array,
     uvs: Vec<PackedVector2Array>,
@@ -391,7 +392,7 @@ impl Renderer {
             textures,
             fresh: true,
             mask_scale: 0.0,
-            shrink: 1.0,
+            shrink: MaskShrink::default(),
             points: PackedVector2Array::new(),
             uvs,
             indices,
@@ -414,6 +415,11 @@ impl Renderer {
         std::mem::take(&mut self.textures)
     }
 
+    /// アトラスに収まらずにマスクの解像度に掛けている倍率 (1 なら下げていない)。
+    pub fn mask_shrink(&self) -> f32 {
+        self.shrink.factor
+    }
+
     /// 直前の `Puppet::update` の結果を描く。`mask_scale` はマスクのテクスチャのキャンバス 1 単位あたりの画素数。
     pub fn draw(&mut self, model: &LoadedModel, mask_scale: f32) {
         let instance = model.puppet.instance();
@@ -424,7 +430,7 @@ impl Renderer {
         let rescale = (mask_scale - self.mask_scale).abs() > 1e-3 * mask_scale;
         self.mask_scale = mask_scale;
         if rescale {
-            self.shrink = 1.0;
+            self.shrink = MaskShrink::default();
         }
         let mut rs = rs();
 
@@ -438,7 +444,7 @@ impl Renderer {
             }
             let (min, max) = bounds(&state.positions).unwrap_or((UVec2::ZERO, UVec2::ZERO));
             let current = mask.area.map(|a| (a.width, a.height));
-            let area = MaskArea::fit(min, max, mask_scale * self.shrink, current);
+            let area = MaskArea::fit(min, max, mask_scale * self.shrink.factor, current);
             if mask.area != Some(area) {
                 resized |= current != Some((area.width, area.height));
                 mask.area = Some(area);
@@ -461,8 +467,14 @@ impl Renderer {
                 .done();
             }
         }
-        if resized && !self.masks.is_empty() {
+        // 解像度を下げている間にマスクが動いたら、戻せるかを確かめる (戻したら並べ直す)。
+        let restored = self.shrink.factor < 1.0
+            && moved.iter().any(|&m| m)
+            && self.try_restore(model, mask_scale);
+        if resized && !restored && !self.masks.is_empty() {
             self.pack(model, mask_scale);
+        }
+        if resized || restored {
             moved.fill(true);
         }
         for (s, mask) in self.masks.iter_mut().enumerate() {
@@ -550,30 +562,55 @@ impl Renderer {
         }
     }
 
-    /// カバレッジをアトラスに並べ直し、ビューポートの大きさを合わせる。
-    /// 収まらなければ、収まるまでマスクの解像度を下げる。
-    fn pack(&mut self, model: &LoadedModel, mask_scale: f32) {
+    /// マスク用メッシュの今の外接矩形 (`self.masks` の順)。
+    fn mask_bounds(&self, model: &LoadedModel) -> Vec<(UVec2, UVec2)> {
         let states = model.puppet.instance().drawables();
-        let layout = loop {
-            let sizes: Vec<(u32, u32)> = self
-                .masks
-                .iter()
-                .map(|m| m.area.map_or((1, 1), |a| (a.width, a.height)))
-                .collect();
-            if let Some(layout) = AtlasLayout::pack(&sizes, MaskArea::MAX_SIZE) {
-                break layout;
-            }
-            if self.shrink < 1e-3 {
-                godot_error!("ugoe: masks do not fit in the mask atlas");
-                return;
-            }
-            self.shrink *= 0.75;
-            for mask in &mut self.masks {
-                let (min, max) =
-                    bounds(&states[mask.mesh].positions).unwrap_or((UVec2::ZERO, UVec2::ZERO));
-                mask.area = Some(MaskArea::fit(min, max, mask_scale * self.shrink, None));
+        self.masks
+            .iter()
+            .map(|m| bounds(&states[m.mesh].positions).unwrap_or((UVec2::ZERO, UVec2::ZERO)))
+            .collect()
+    }
+
+    /// 下げているマスクの解像度を 1 段戻せるなら戻して並べ直す (`MaskShrink::try_restore`)。戻したら true。
+    fn try_restore(&mut self, model: &LoadedModel, mask_scale: f32) -> bool {
+        let bounds = self.mask_bounds(model);
+        let Some((areas, layout)) = self.shrink.try_restore(&bounds, mask_scale) else {
+            return false;
+        };
+        for (mask, area) in self.masks.iter_mut().zip(areas) {
+            mask.area = Some(area);
+        }
+        self.apply_layout(&layout);
+        true
+    }
+
+    /// カバレッジをアトラスに並べ直し、ビューポートの大きさを合わせる。
+    /// 収まらなければ、収まるまでマスクの解像度を下げる (`MaskShrink::shrink_to_fit`)。
+    fn pack(&mut self, model: &LoadedModel, mask_scale: f32) {
+        let sizes: Vec<(u32, u32)> = self
+            .masks
+            .iter()
+            .map(|m| m.area.map_or((1, 1), |a| (a.width, a.height)))
+            .collect();
+        let layout = match AtlasLayout::pack(&sizes, MaskArea::MAX_SIZE) {
+            Some(layout) => layout,
+            None => {
+                let bounds = self.mask_bounds(model);
+                let Some((areas, layout)) = self.shrink.shrink_to_fit(&bounds, mask_scale) else {
+                    godot_error!("ugoe: masks do not fit in the mask atlas");
+                    return;
+                };
+                for (mask, area) in self.masks.iter_mut().zip(areas) {
+                    mask.area = Some(area);
+                }
+                layout
             }
         };
+        self.apply_layout(&layout);
+    }
+
+    /// カバレッジの配置 `layout` を当て、ビューポートの大きさを合わせる。
+    fn apply_layout(&mut self, layout: &AtlasLayout) {
         for (mask, &slot) in self.masks.iter_mut().zip(&layout.positions) {
             mask.slot = slot;
         }

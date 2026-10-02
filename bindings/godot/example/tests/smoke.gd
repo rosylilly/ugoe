@@ -151,6 +151,102 @@ func _run() -> void:
 	copy.queue_free()
 	puppet.clear_lights()
 
+	# XRFaceTracker (Unified Expressions) から ARKit のブレンドシェイプへ
+	_check(puppet.load_model("res://models/avatar.ugoe"), "load avatar for XR tracking")
+	puppet.reset_parameters()
+	puppet.set_stage_enabled("eye_blink", false)   # 目パチが EyeLOpen / EyeROpen に掛からないように
+	var face := XRFaceTracker.new()
+	face.name = "/user/ugoe_smoke_face"
+	face.set_blend_shape(XRFaceTracker.FT_JAW_OPEN, 1.0)
+	face.set_blend_shape(XRFaceTracker.FT_EYE_CLOSED_LEFT, 1.0)
+	face.set_blend_shape(XRFaceTracker.FT_MOUTH_CORNER_PULL_LEFT, 1.0)
+	face.set_blend_shape(XRFaceTracker.FT_MOUTH_CORNER_PULL_RIGHT, 1.0)
+	_check(puppet.set_tracking_from_xr_face_tracker(face), "set_tracking_from_xr_face_tracker")
+	_check(not puppet.set_tracking_from_xr_face_tracker(XRPositionalTracker.new()), "other trackers are rejected")
+	puppet.advance(1.0 / 60.0)
+	_check(puppet.get_parameter("MouthOpenY") > 0.9, "FT_JAW_OPEN reaches MouthOpenY (%f)" % puppet.get_parameter("MouthOpenY"))
+	_check(puppet.get_parameter("EyeLOpen") < 0.1, "FT_EYE_CLOSED_LEFT closes EyeLOpen (%f)" % puppet.get_parameter("EyeLOpen"))
+	_check(puppet.get_parameter("EyeROpen") > 0.9, "the right eye stays open (%f)" % puppet.get_parameter("EyeROpen"))
+	_check(puppet.get_parameter("MouthForm") > 0.9, "corner pull reaches MouthForm (%f)" % puppet.get_parameter("MouthForm"))
+	# xr_face_tracker の名前で XRServer から毎フレーム読む
+	XRServer.add_tracker(face)
+	puppet.xr_face_tracker = face.name
+	face.set_blend_shape(XRFaceTracker.FT_JAW_OPEN, 0.0)
+	face.set_blend_shape(XRFaceTracker.FT_EYE_CLOSED_LEFT, 0.0)
+	await process_frame
+	await process_frame
+	_check(puppet.get_parameter("MouthOpenY") < 0.1, "xr_face_tracker is read every frame (%f)" % puppet.get_parameter("MouthOpenY"))
+	_check(puppet.get_parameter("EyeLOpen") > 0.9, "xr_face_tracker opens the eye (%f)" % puppet.get_parameter("EyeLOpen"))
+	puppet.xr_face_tracker = &""
+	XRServer.remove_tracker(face)
+	puppet.clear_tracking()
+	puppet.set_stage_enabled("eye_blink", true)
+
+	# シーンの Light2D から光源を取る (ノードの位置と大きさを考えてキャンバス座標に直す)
+	_check(puppet.load_model("res://models/avatar-lit.ugoe"), "load avatar-lit for scene lights")
+	var origin: Vector2 = puppet.get_canvas_origin()
+	puppet.position = Vector2(100, 50)
+	puppet.scale = Vector2(2, 2)
+	var point := PointLight2D.new()
+	point.position = Vector2(300, 250)
+	point.height = 40.0
+	point.energy = 2.0
+	point.color = Color(1.0, 0.5, 0.25)
+	var gradient := GradientTexture2D.new()
+	gradient.width = 128
+	gradient.height = 64
+	point.texture = gradient
+	point.texture_scale = 1.5
+	root.add_child(point)
+	_check(puppet.get_scene_lights().is_empty(), "scene lights are off by default")
+	puppet.use_scene_lights = true
+	var found: Array = puppet.get_scene_lights()
+	_check(found.size() == 1, "one scene light (%d)" % found.size())
+	if found.size() == 1:
+		var light: Dictionary = found[0]
+		var expected := Vector3(100 + origin.x, 100 + origin.y, 20)
+		_check(light["type"] == "point", "PointLight2D is a point light")
+		_check(light["position"].is_equal_approx(expected), "point light position %s (%s)" % [light["position"], expected])
+		_check(is_equal_approx(light["range"], 48.0), "range is the texture radius in canvas units (%f)" % light["range"])
+		_check(light["color"].is_equal_approx(Color(2.0, 1.0, 0.5)), "color × energy (%s)" % light["color"])
+	# 後から足したライトも見つける (木の node_added)
+	var sun := DirectionalLight2D.new()
+	sun.rotation_degrees = -90.0   # +Y が右を向く
+	sun.height = 0.0
+	root.add_child(sun)
+	found = puppet.get_scene_lights()
+	_check(found.size() == 2, "a light added later is found (%d)" % found.size())
+	if found.size() == 2:
+		var direction: Vector3 = found[1]["direction"]
+		_check(direction.is_equal_approx(Vector3(1, 0, 0)), "DirectionalLight2D travels along its +Y (%s)" % direction)
+	# 外したライト・無効なライト・cull mask が重ならないライトは使わない
+	sun.enabled = false
+	_check(puppet.get_scene_lights().size() == 1, "disabled lights are ignored")
+	point.range_item_cull_mask = 2
+	_check(puppet.get_scene_lights().is_empty(), "lights whose cull mask misses light_mask are ignored")
+	point.range_item_cull_mask = 1
+	root.remove_child(sun)
+	sun.free()
+	_check(puppet.get_scene_lights().size() == 1, "a removed light is dropped")
+	puppet.advance(1.0 / 60.0)
+	puppet.use_scene_lights = false
+	_check(puppet.get_scene_lights().is_empty(), "use_scene_lights = false")
+	point.queue_free()
+	puppet.position = Vector2.ZERO
+	puppet.scale = Vector2.ONE
+
+	# マスクの解像度の倍率 (下げて戻す判断は src/model.rs の MaskShrink のテスト。見本のモデルはマスクが少なく、
+	# 1 枚ずつは MaskArea::fit が上限に収めるので、ここでは下がらない)
+	_check(puppet.load_model("res://models/avatar.ugoe"), "load avatar for mask resolution")
+	puppet.advance(1.0 / 60.0)
+	_check(puppet.get_mask_resolution_factor() == 1.0, "masks fit at mask_scale 1")
+	puppet.mask_scale = 40.0
+	puppet.advance(1.0 / 60.0)
+	_check(puppet.get_mask_resolution_factor() <= 1.0, "a large mask_scale still draws")
+	puppet.mask_scale = 1.0
+	puppet.advance(1.0 / 60.0)
+	_check(puppet.get_mask_resolution_factor() == 1.0, "mask resolution factor after mask_scale 1")
+
 	_check(not puppet.load_model("res://models/missing.ugoe"), "missing file fails")
 	_check(not puppet.is_model_loaded(), "unloaded after failure")
 	_check(puppet.load_model_from_buffer(FileAccess.get_file_as_bytes("res://models/avatar.ugoe")), "load_model_from_buffer")

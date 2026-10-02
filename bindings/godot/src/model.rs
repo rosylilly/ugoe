@@ -484,6 +484,82 @@ impl AtlasLayout {
     }
 }
 
+/// アトラスに収まらないときに下げるマスクの解像度の倍率と、それを戻す判断。
+///
+/// - 下げる: カバレッジの配置が 1 辺 [`MaskArea::MAX_SIZE`] 画素に収まらなければ、収まるまで [`Self::STEP`] 倍ずつ下げる。
+/// - 戻す: 下げている間に (アニメーションで) マスクが小さくなり、1 段上げた解像度の配置が 1 辺
+///   `MAX_SIZE` × [`Self::RESTORE_MARGIN`] 画素に収まるようになったら、1 段戻す。余裕を持たせるのは、
+///   収まるかどうかの境目でマスクの大きさが揺れるたびに、上げ下げ (と並べ直し) を繰り返さないため。
+///   1 段戻した直後に下げ直すのは、マスクの外接矩形がおよそ `1 / RESTORE_MARGIN` 倍に広がったときだけ。
+/// - 画面上の大きさか `mask_scale` が変わったら 1 から測り直す (呼ぶ側が [`Self::default`] に戻す)。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MaskShrink {
+    /// マスクの解像度に掛ける倍率 (1 なら下げていない)。
+    pub factor: f32,
+}
+
+impl Default for MaskShrink {
+    fn default() -> Self {
+        Self { factor: 1.0 }
+    }
+}
+
+impl MaskShrink {
+    /// 1 段で解像度に掛ける倍率。
+    pub const STEP: f32 = 0.75;
+    /// 戻すときに、配置が収まらなければならないアトラスの 1 辺の割合。
+    pub const RESTORE_MARGIN: f32 = 0.875;
+    /// これより下げても収まらなければ諦める。
+    const MIN: f32 = 1e-3;
+
+    /// 外接矩形 `bounds` を、解像度 `scale × factor` で覆う (今の大きさは使い回さない)。
+    pub fn areas(bounds: &[(Vec2, Vec2)], scale: f32, factor: f32) -> Vec<MaskArea> {
+        bounds
+            .iter()
+            .map(|&(min, max)| MaskArea::fit(min, max, scale * factor, None))
+            .collect()
+    }
+
+    /// 配置が収まるまで倍率を下げる (今の倍率で収まるなら変えない)。下げきっても収まらなければ `None`。
+    pub fn shrink_to_fit(
+        &mut self,
+        bounds: &[(Vec2, Vec2)],
+        scale: f32,
+    ) -> Option<(Vec<MaskArea>, AtlasLayout)> {
+        loop {
+            let areas = Self::areas(bounds, scale, self.factor);
+            let sizes: Vec<(u32, u32)> = areas.iter().map(|a| (a.width, a.height)).collect();
+            if let Some(layout) = AtlasLayout::pack(&sizes, MaskArea::MAX_SIZE) {
+                return Some((areas, layout));
+            }
+            if self.factor < Self::MIN {
+                return None;
+            }
+            self.factor *= Self::STEP;
+        }
+    }
+
+    /// 下げている倍率を 1 段戻せるなら戻し、その解像度での大きさと配置を返す。戻せなければ `None` (倍率は変えない)。
+    pub fn try_restore(
+        &mut self,
+        bounds: &[(Vec2, Vec2)],
+        scale: f32,
+    ) -> Option<(Vec<MaskArea>, AtlasLayout)> {
+        if self.factor >= 1.0 {
+            return None;
+        }
+        let up = self.factor / Self::STEP;
+        // 浮動小数点の誤差で 1 をわずかに下回ったままにしない。
+        let up = if up > 0.999 { 1.0 } else { up };
+        let areas = Self::areas(bounds, scale, up);
+        let sizes: Vec<(u32, u32)> = areas.iter().map(|a| (a.width, a.height)).collect();
+        let limit = (MaskArea::MAX_SIZE as f32 * Self::RESTORE_MARGIN) as u32;
+        let layout = AtlasLayout::pack(&sizes, limit)?;
+        self.factor = up;
+        Some((areas, layout))
+    }
+}
+
 /// マスクの表の 1 行の画素数 (表は RGBA の浮動小数点のテクスチャ)。
 pub const MASK_TABLE_WIDTH: usize = 256;
 
@@ -607,6 +683,30 @@ impl LightUniforms {
         }
         out
     }
+}
+
+/// Godot の `DirectionalLight2D` の向きから、光が進む向き (キャンバス座標 + 奥行き、手前が正) を求める。
+///
+/// `down` はライトのノードの +Y の向き (光が画面の上を進む向き。パペットのノードの座標)、`height` は Godot の
+/// `Light2D.height` (0〜1)。`height` の分だけ画面の奥 (−Z) へ傾ける: 0 で画面と平行、1 で正面から奥へ。
+/// 向きが 0 か有限でなければ `None`。
+pub fn directional_from_light2d(down: [f32; 2], height: f32) -> Option<[f32; 3]> {
+    let length = down[0].hypot(down[1]);
+    if !(length.is_finite() && length > 0.0) {
+        return None;
+    }
+    let h = if height.is_finite() {
+        height.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let v = [
+        down[0] / length * (1.0 - h),
+        down[1] / length * (1.0 - h),
+        -h,
+    ];
+    let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+    Some([v[0] / n, v[1] / n, v[2] / n])
 }
 
 /// 乗算していないアルファの RGBA8 を乗算済みにする (`docs/spec/rendering.md#前提`)。
@@ -939,6 +1039,70 @@ mod tests {
         let d = MaskArea::fit(Vec2::ZERO, Vec2::new(10000.0, 100.0), 1.0, None);
         assert_eq!(d.width, MaskArea::MAX_SIZE);
         assert!(d.scale < 1.0);
+    }
+
+    #[test]
+    fn directional_light2d_tilts_into_the_screen() {
+        let close = |a: [f32; 3], b: [f32; 3]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-5);
+        // 高さ 0 は画面と平行 (ノードの +Y の向きに進む)
+        assert!(close(
+            directional_from_light2d([0.0, 2.0], 0.0).expect("light"),
+            [0.0, 1.0, 0.0]
+        ));
+        // 高さ 1 は正面から奥へ
+        assert!(close(
+            directional_from_light2d([1.0, 0.0], 1.0).expect("light"),
+            [0.0, 0.0, -1.0]
+        ));
+        let h = std::f32::consts::FRAC_1_SQRT_2;
+        assert!(close(
+            directional_from_light2d([1.0, 0.0], 0.5).expect("light"),
+            [h, 0.0, -h]
+        ));
+        assert!(close(
+            directional_from_light2d([0.0, 1.0], f32::NAN).expect("light"),
+            [0.0, 1.0, 0.0]
+        ));
+        assert_eq!(directional_from_light2d([0.0, 0.0], 0.5), None);
+    }
+
+    #[test]
+    fn mask_shrink_lowers_and_restores_with_a_margin() {
+        let square = |side: f32| (Vec2::ZERO, Vec2::splat(side));
+        // 1 辺 3000 のマスクが 2 つ: 倍率 1 (3004 × 2) でも 0.75 (2254 × 2) でも収まらず、0.5625 で収まる。
+        let big = [square(3000.0), square(3000.0)];
+        let mut shrink = MaskShrink::default();
+        let (areas, layout) = shrink.shrink_to_fit(&big, 1.0).expect("fits");
+        assert!((shrink.factor - 0.5625).abs() < 1e-6);
+        assert!(layout.width <= MaskArea::MAX_SIZE && layout.height <= MaskArea::MAX_SIZE);
+        assert_eq!(areas[0].width, 1692);
+        // 収まっている間は戻さない (1 段上げると収まらない)。
+        assert_eq!(shrink.try_restore(&big, 1.0), None);
+        assert!((shrink.factor - 0.5625).abs() < 1e-6);
+
+        // 1 段上げた配置が上限には収まるが、余裕 (7/8 = 3584) に収まらないうちは戻さない
+        // (倍率 0.75 で 1 辺 1950 + 余白 4 = 1954 が 2 つで 3908)。
+        let edge = [square(2600.0), square(2600.0)];
+        assert_eq!(shrink.try_restore(&edge, 1.0), None);
+        // 余裕に収まれば 1 段ずつ戻す。
+        let small = [square(1500.0), square(1500.0)];
+        let (areas, _) = shrink.try_restore(&small, 1.0).expect("restored");
+        assert!((shrink.factor - 0.75).abs() < 1e-6);
+        assert_eq!(areas[0].width, 1129);
+        let (areas, _) = shrink.try_restore(&small, 1.0).expect("restored");
+        assert_eq!(shrink.factor, 1.0);
+        assert_eq!(areas[0].width, 1504);
+        // 下げていなければ何もしない。
+        assert_eq!(shrink.try_restore(&small, 1.0), None);
+
+        // 大きく下げたときも、1 回に戻すのは 1 段だけ。
+        let huge = [square(12000.0), square(12000.0)];
+        let mut shrink = MaskShrink::default();
+        shrink.shrink_to_fit(&huge, 1.0).expect("fits");
+        let low = shrink.factor;
+        assert!(low < 0.25);
+        shrink.try_restore(&small, 1.0).expect("restored");
+        assert!((shrink.factor - low / MaskShrink::STEP).abs() < 1e-6);
     }
 
     #[test]

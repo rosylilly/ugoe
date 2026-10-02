@@ -12,6 +12,7 @@ pub mod model;
 mod node;
 mod render;
 pub mod shader;
+pub mod xr;
 
 // GDExtension の入口。godot-rust の決まりで `unsafe impl` が要る (中で unsafe な操作はしない)。
 #[allow(unsafe_code)]

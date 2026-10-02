@@ -1,9 +1,14 @@
 //! `UgoePuppet2D`: `.ugoe` のモデル 1 体を表示して動かす 2D ノード。
 
+use std::cell::Cell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::Arc;
 
-use godot::classes::{Engine, INode2D, Node2D, Resource, ResourceLoader};
+use godot::classes::{
+    Engine, INode2D, Light2D, Node, Node2D, PointLight2D, RefCounted, Resource, ResourceLoader,
+    XrServer,
+};
 use godot::prelude::*;
 use godot::register::info::{PropertyHint, PropertyHintInfo, PropertyInfo, PropertyUsageFlags};
 use ugoe::core::Rgb;
@@ -13,8 +18,9 @@ use ugoe::render::{Light, Lighting};
 use ugoe::runtime::ParamIndex;
 use ugoe::{DressUpChange, Toggles};
 
-use crate::model::{LightUniforms, LoadedModel, ModuleData};
+use crate::model::{LightUniforms, LoadedModel, ModuleData, directional_from_light2d};
 use crate::render::{Renderer, TextureCache};
+use crate::xr::arkit_from_unified;
 
 /// インスペクタに出すパラメータのプロパティ名の接頭辞 (`parameters/<ID>`)。
 const PARAMETER_PREFIX: &str = "parameters/";
@@ -58,9 +64,27 @@ pub(crate) struct UgoePuppet2D {
     /// `{ "type": "point", "position": Vector3, "color": Color, "range": float }` (キャンバス座標 + 奥行き)。
     #[var(set = set_lights, hint = TYPE_STRING, hint_string = "27:", usage_flags = [DEFAULT])]
     lights: VarArray,
+    /// シーンの `Light2D` (`PointLight2D`・`DirectionalLight2D`) も光源にするか (`lights` の後ろに足す)。
+    /// 同じキャンバスにあり、有効で見えていて、`range_item_cull_mask` がこのノードの `light_mask` と重なるものを使う。
+    #[export]
+    #[var(set = set_use_scene_lights)]
+    use_scene_lights: bool,
+    /// フェイストラッキングの入力にする `XRFaceTracker` の名前 (`XRServer` に登録した名前。
+    /// 標準は `/user/face_tracker`)。空なら使わない。毎フレーム読み、見つからなければ前の値を保つ。
+    #[export_group(name = "Tracking")]
+    #[export]
+    xr_face_tracker: StringName,
 
     loaded: Option<LoadedModel>,
-    /// `ambient_light` と `lights` をシェーダの形に直したもの。
+    /// `lights` を読んだもの (読めない要素は除く)。
+    manual_lights: Vec<Light>,
+    /// シーンの光源のノード (`use_scene_lights` のとき)。
+    scene_lights: Vec<Gd<Light2D>>,
+    /// 木にノードが足されたか外された (シーンの光源を探し直す)。木の `node_added` と `node_removed` で立てる。
+    scene_changed: Rc<Cell<bool>>,
+    /// 木の変化を見ている接続 (木から出るときに外す)。
+    tree_watch: Option<Callable>,
+    /// 光源をシェーダの形に直したもの。
     lighting: LightUniforms,
     /// トラッキングの入力 (モデルを読み直しても保つ)。
     tracking: Option<TrackingInput>,
@@ -98,7 +122,13 @@ impl INode2D for UgoePuppet2D {
             modules: VarArray::new(),
             ambient_light: Color::WHITE,
             lights: VarArray::new(),
+            use_scene_lights: false,
+            xr_face_tracker: StringName::default(),
             loaded: None,
+            manual_lights: Vec::new(),
+            scene_lights: Vec::new(),
+            scene_changed: Rc::new(Cell::new(true)),
+            tree_watch: None,
             lighting: LightUniforms::new(&Lighting::default()),
             tracking: None,
             toggles: Toggles::default(),
@@ -108,6 +138,16 @@ impl INode2D for UgoePuppet2D {
             dirty: false,
             base,
         }
+    }
+
+    fn enter_tree(&mut self) {
+        if self.use_scene_lights {
+            self.watch_tree(true);
+        }
+    }
+
+    fn exit_tree(&mut self) {
+        self.watch_tree(false);
     }
 
     fn ready(&mut self) {
@@ -121,6 +161,12 @@ impl INode2D for UgoePuppet2D {
             return;
         }
         let editor = Engine::singleton().is_editor_hint();
+        if self.use_scene_lights {
+            self.update_scene_lights();
+        }
+        if !self.xr_face_tracker.is_empty() {
+            self.read_xr_face_tracker();
+        }
         let running = self.playing && (!editor || self.play_in_editor);
         if running {
             self.step(delta as f32 * self.speed);
@@ -208,6 +254,13 @@ impl UgoePuppet2D {
     pub fn set_mask_scale(&mut self, scale: f32) {
         self.mask_scale = scale.max(0.01);
         self.dirty = true;
+    }
+
+    /// マスクがアトラス (1 辺 4096 画素) に収まらずに、解像度に掛けている倍率 (1 なら下げていない)。
+    /// 下げた後にマスクが小さくなれば 1 段ずつ戻る (README の「描画のしかた」)。
+    #[func]
+    pub fn get_mask_resolution_factor(&self) -> f32 {
+        self.renderer.as_ref().map_or(1.0, Renderer::mask_shrink)
     }
 
     /// `.ugoe` をパスから (`ResourceLoader` で) 読み込み、`model` に設定する。成功したら true。
@@ -583,38 +636,67 @@ impl UgoePuppet2D {
     #[func]
     pub fn set_lights(&mut self, lights: VarArray) {
         self.lights = lights;
-        self.update_lighting();
+        self.read_lights();
     }
 
     /// 平行光源を足す。`direction` は光が進む向き (キャンバス座標 + 奥行き。例: 左上の手前から照らすなら `(1, 1, -1)`)。
     #[func]
     pub fn add_directional_light(&mut self, direction: Vector3, color: Color) {
-        let mut light = VarDictionary::new();
-        light.set("type", "directional");
-        light.set("direction", direction);
-        light.set("color", color);
+        let light = light_to_dictionary(&Light::Directional {
+            direction: [direction.x, direction.y, direction.z],
+            color: Rgb::new(color.r, color.g, color.b),
+        });
         self.lights.push(&light.to_variant());
-        self.update_lighting();
+        self.read_lights();
     }
 
     /// 点光源を足す。`position` はキャンバス座標 + 奥行き (手前が正)。`range` で 0 になるように減衰する
     /// (`INF` なら減衰しない)。
     #[func]
     pub fn add_point_light(&mut self, position: Vector3, color: Color, range: f32) {
-        let mut light = VarDictionary::new();
-        light.set("type", "point");
-        light.set("position", position);
-        light.set("color", color);
-        light.set("range", range);
+        let light = light_to_dictionary(&Light::Point {
+            position: [position.x, position.y, position.z],
+            color: Rgb::new(color.r, color.g, color.b),
+            range,
+        });
         self.lights.push(&light.to_variant());
-        self.update_lighting();
+        self.read_lights();
     }
 
-    /// 光源をすべて外す (環境光は変えない)。
+    /// 光源をすべて外す (環境光とシーンの光源は変えない)。
     #[func]
     pub fn clear_lights(&mut self) {
         self.lights = VarArray::new();
-        self.update_lighting();
+        self.read_lights();
+    }
+
+    #[func]
+    pub fn set_use_scene_lights(&mut self, enabled: bool) {
+        self.use_scene_lights = enabled;
+        self.scene_changed.set(true);
+        if self.base().is_inside_tree() {
+            self.watch_tree(enabled);
+        }
+        if enabled {
+            self.update_scene_lights();
+        } else {
+            self.scene_lights.clear();
+            self.update_lighting();
+        }
+    }
+
+    /// シーンの `Light2D` から求めた今の光源 (`lights` と同じ形の辞書。キャンバス座標)。
+    /// `use_scene_lights` が false なら空。
+    #[func]
+    pub fn get_scene_lights(&mut self) -> Array<VarDictionary> {
+        if !self.use_scene_lights {
+            return Array::new();
+        }
+        self.find_scene_lights();
+        self.scene_light_values()
+            .iter()
+            .map(light_to_dictionary)
+            .collect()
     }
 
     // --- トラッキング (docs/spec/avatar-profile.md#フェイストラッキングとの対応)
@@ -695,6 +777,30 @@ impl UgoePuppet2D {
             .collect()
     }
 
+    /// `XRFaceTracker` (Unified Expressions) のブレンドシェイプを、ARKit の 52 ブレンドシェイプに直して設定する
+    /// (対応は `src/xr.rs` と README の表)。頭の回転は `XRFaceTracker` に無いので変えない (`set_tracking_head` で渡す)。
+    /// トラッキングを始める。`XRFaceTracker` でなければ false。
+    #[func]
+    pub fn set_tracking_from_xr_face_tracker(&mut self, tracker: Gd<RefCounted>) -> bool {
+        if !tracker.is_class("XRFaceTracker") {
+            godot_error!("ugoe: {tracker} is not an XRFaceTracker");
+            return false;
+        }
+        // `XRFaceTracker` は godot-rust では実験的な API (機能 `experimental-godot-api`) なので、名前で呼ぶ。
+        let values = tracker
+            .clone()
+            .upcast::<Object>()
+            .call("get_blend_shapes", &[])
+            .try_to::<PackedFloat32Array>()
+            .unwrap_or_default();
+        let input = self.tracking_mut();
+        for (name, value) in arkit_from_unified(values.as_slice()) {
+            input.set_blend_shape(name, value);
+        }
+        self.push_tracking();
+        true
+    }
+
     /// 時間を `delta` 秒進めて描く (`playing` が false のときに手で進める用)。
     #[func]
     pub fn advance(&mut self, delta: f32) {
@@ -712,6 +818,24 @@ fn stage_flag<'a>(toggles: &'a mut Toggles, stage: &str) -> Option<&'a mut bool>
         "pose" => Some(&mut toggles.pose),
         _ => None,
     }
+}
+
+/// 光源を辞書 (`lights` の要素の形) にする。
+fn light_to_dictionary(light: &Light) -> VarDictionary {
+    let mut d = VarDictionary::new();
+    let (kind, key, [x, y, z], color) = match *light {
+        Light::Directional { direction, color } => ("directional", "direction", direction, color),
+        Light::Point {
+            position, color, ..
+        } => ("point", "position", position, color),
+    };
+    d.set("type", kind);
+    d.set(key, Vector3::new(x, y, z));
+    d.set("color", Color::from_rgb(color.r, color.g, color.b));
+    if let Light::Point { range, .. } = *light {
+        d.set("range", range);
+    }
+    d
 }
 
 /// 光源の辞書を読む。形が違えば `None`。
@@ -919,9 +1043,9 @@ impl UgoePuppet2D {
         }
     }
 
-    /// `ambient_light` と `lights` をシェーダに渡す。
-    fn update_lighting(&mut self) {
-        let lights = self
+    /// `lights` を読み直してシェーダに渡す。
+    fn read_lights(&mut self) {
+        self.manual_lights = self
             .lights
             .iter_shared()
             .filter_map(|v| {
@@ -935,13 +1059,156 @@ impl UgoePuppet2D {
                 light
             })
             .collect();
+        self.update_lighting();
+    }
+
+    /// `ambient_light`・`lights`・シーンの光源をシェーダに渡す (変わっていなければ何もしない)。
+    fn update_lighting(&mut self) {
+        let mut lights = self.manual_lights.clone();
+        lights.extend(self.scene_light_values());
         let c = self.ambient_light;
-        self.lighting = LightUniforms::new(&Lighting {
+        let lighting = LightUniforms::new(&Lighting {
             ambient: Rgb::new(c.r, c.g, c.b),
             lights,
         });
+        if lighting == self.lighting {
+            return;
+        }
+        self.lighting = lighting;
         if let (Some(renderer), Some(loaded)) = (&mut self.renderer, &self.loaded) {
             renderer.set_lighting(loaded, &self.lighting);
+        }
+    }
+
+    /// 木の `node_added` と `node_removed` を見る (`on`) か、見るのをやめる。
+    ///
+    /// 受け取る関数はノードを借りない (自分の中で木を変えたとき、たとえばマスクのビューポートを足したときにも呼ばれるため)。
+    fn watch_tree(&mut self, on: bool) {
+        let Some(mut tree) = self.base().get_tree_or_null() else {
+            return;
+        };
+        if let Some(callable) = self.tree_watch.take() {
+            for signal in ["node_added", "node_removed"] {
+                if tree.is_connected(signal, &callable) {
+                    tree.disconnect(signal, &callable);
+                }
+            }
+        }
+        if !on {
+            return;
+        }
+        let changed = Rc::clone(&self.scene_changed);
+        let callable = Callable::from_linked_fn("ugoe_watch_lights", &self.to_gd(), move |args| {
+            let is_light = args
+                .first()
+                .and_then(|v| v.try_to::<Gd<Node>>().ok())
+                .is_some_and(|n| n.is_class("Light2D"));
+            if is_light {
+                changed.set(true);
+            }
+        });
+        for signal in ["node_added", "node_removed"] {
+            tree.connect(signal, &callable);
+        }
+        self.tree_watch = Some(callable);
+        self.scene_changed.set(true);
+    }
+
+    /// 木が変わっていれば、シーンの `Light2D` を探し直す (このノードのビューポートの中)。
+    fn find_scene_lights(&mut self) {
+        if !self.scene_changed.replace(false) {
+            self.scene_lights.retain(|l| l.is_instance_valid());
+            return;
+        }
+        self.scene_lights.clear();
+        let Some(viewport) = self.base().get_viewport() else {
+            return;
+        };
+        self.scene_lights = viewport
+            .find_children_ex("*")
+            .type_("Light2D")
+            .owned(false)
+            .done()
+            .iter_shared()
+            .filter_map(|n| n.try_cast::<Light2D>().ok())
+            .collect();
+    }
+
+    /// シーンの光源を読み直し、変わっていればシェーダに渡す。
+    fn update_scene_lights(&mut self) {
+        self.find_scene_lights();
+        self.update_lighting();
+    }
+
+    /// シーンの `Light2D` をキャンバス座標の光源に直す (`docs/spec/rendering.md#ライティング`)。
+    ///
+    /// - 色は `color × energy`。合成のモード (`blend_mode`)・影・Z と層の範囲は見ない (いつも足す)。
+    /// - `DirectionalLight2D`: 光はノードの +Y の向きに進む。`height` (0〜1) で画面の奥へ傾ける
+    ///   (0 で画面と平行、1 で正面から)。`max_distance` は見ない。
+    /// - `PointLight2D`: 位置はノードの位置、奥行きは `height` (ピクセル、手前が正)。`range` はテクスチャの
+    ///   半径 (幅と高さの大きい方の半分 × `texture_scale`。テクスチャが無ければ減衰しない)。
+    ///   テクスチャの形 (明るさの分布) は使わず、参照レンダラと同じ式で減衰する。
+    fn scene_light_values(&self) -> Vec<Light> {
+        if !self.use_scene_lights || !self.base().is_inside_tree() {
+            return Vec::new();
+        }
+        let Some(loaded) = &self.loaded else {
+            return Vec::new();
+        };
+        let origin = loaded.model().meta.canvas.origin;
+        let base = self.base();
+        let canvas = base.get_canvas();
+        let mask = base.get_light_mask();
+        let editor = Engine::singleton().is_editor_hint();
+        let to_local = base.get_global_transform().affine_inverse();
+        // 全体の座標の 1 単位あたりの、このノードの座標の単位数 (高さと半径に掛ける)。
+        let unit = to_local.determinant().abs().sqrt();
+        self.scene_lights
+            .iter()
+            .filter(|l| {
+                l.is_instance_valid()
+                    && l.is_enabled()
+                    && l.is_visible_in_tree()
+                    && (editor || !l.is_editor_only())
+                    && l.get_item_cull_mask() & mask != 0
+                    && l.get_canvas() == canvas
+            })
+            .filter_map(|l| {
+                let c = l.get_color() * l.get_energy();
+                let color = Rgb::new(c.r, c.g, c.b);
+                let xform = l.get_global_transform();
+                if l.is_class("DirectionalLight2D") {
+                    let down = to_local.basis_xform(xform.basis_xform(Vector2::DOWN));
+                    let direction = directional_from_light2d([down.x, down.y], l.get_height())?;
+                    return Some(Light::Directional { direction, color });
+                }
+                let point = l.clone().try_cast::<PointLight2D>().ok()?;
+                let p = to_local * xform.origin;
+                let range = point.get_texture().map_or(f32::INFINITY, |t| {
+                    let size = t.get_size();
+                    let s = xform.scale();
+                    size.x.max(size.y) / 2.0
+                        * point.get_texture_scale()
+                        * s.x.abs().max(s.y.abs())
+                        * unit
+                });
+                Some(Light::Point {
+                    position: [p.x + origin.x, p.y + origin.y, l.get_height() * unit],
+                    color,
+                    range,
+                })
+            })
+            .collect()
+    }
+
+    /// `xr_face_tracker` の名前の `XRFaceTracker` を読む。見つからなければ何もしない (前の値を保つ)。
+    fn read_xr_face_tracker(&mut self) {
+        let Some(tracker) = XrServer::singleton().get_tracker(&self.xr_face_tracker) else {
+            return;
+        };
+        let tracker = tracker.upcast::<RefCounted>();
+        if tracker.is_class("XRFaceTracker") {
+            self.set_tracking_from_xr_face_tracker(tracker);
         }
     }
 

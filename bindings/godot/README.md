@@ -81,10 +81,15 @@ if puppet.uses_lighting():
     puppet.ambient_light = Color(0.4, 0.4, 0.45)
     puppet.add_directional_light(Vector3(1, 1, -1), Color.WHITE)       # 光が進む向き
     puppet.add_point_light(Vector3(512, 300, 250), Color(1, 0.9, 0.8), 900.0)
+    puppet.use_scene_lights = true      # シーンの PointLight2D / DirectionalLight2D も光源にする
 
 # フェイストラッキング (docs/spec/avatar-profile.md#フェイストラッキングとの対応)
 puppet.set_tracking_head(Vector3(yaw, pitch, roll))                 # 度
 puppet.set_tracking_blend_shapes({"jawOpen": 0.4, "eyeBlinkLeft": 1.0})
+
+# XR のフェイストラッキング (XRFaceTracker、Unified Expressions)。名前を設定すると毎フレーム読む
+puppet.xr_face_tracker = &"/user/face_tracker"
+# か、手で渡す: puppet.set_tracking_from_xr_face_tracker(XRServer.get_tracker(&"/user/face_tracker"))
 ```
 
 | メンバー | 内容 |
@@ -93,8 +98,11 @@ puppet.set_tracking_blend_shapes({"jawOpen": 0.4, "eyeBlinkLeft": 1.0})
 | `playing` / `speed` | 時間を進めるか / 速さ。止めている間もパラメータの変更は描き直す。`advance(delta)` で手で進められる |
 | `play_in_editor` | エディタの中でも時間を進めるか (既定は止める) |
 | `mask_scale` | マスクの解像度の倍率。1 で画面上の大きさと同じ |
+| `get_mask_resolution_factor()` | マスクがアトラスに収まらずに解像度に掛けている倍率 (1 なら下げていない。下の「描画のしかた」) |
 | `modules` | 取り付ける着せ替えのモジュール (`UgoeModule` の配列、合成の順)。シーンに保存される。モデルを読むときに付ける |
 | `ambient_light` / `lights` | 環境光 (既定は白) / 光源の辞書の配列 (`{ "type": "directional", "direction": Vector3, "color": Color }` か `{ "type": "point", "position": Vector3, "color": Color, "range": float }`)。シーンに保存される |
+| `use_scene_lights` / `get_scene_lights()` | シーンの `Light2D` も光源にする (`lights` の後ろに足す。下の「Light2D から取る光源」) / それから求めた今の光源 (`lights` と同じ形の辞書) |
+| `xr_face_tracker` | トラッキングの入力にする `XRFaceTracker` の名前 (`XRServer` に登録した名前、標準は `/user/face_tracker`)。空なら使わない。毎フレーム読み、見つからない間は前の値を保つ |
 | `parameters/<ID>` | インスペクタに出るパラメータ (シーンに保存される) |
 | `load_model(path)` / `load_model_from_buffer(bytes)` | 読み込む (`load_model` は `model` を設定する。`from_buffer` は `model` を null にする) |
 | `get_parameter_ids()` / `get_parameter_info(id)` / `get_parameter(id)` / `set_parameter(id, value)` / `reset_parameters()` | パラメータ |
@@ -104,6 +112,7 @@ puppet.set_tracking_blend_shapes({"jawOpen": 0.4, "eyeBlinkLeft": 1.0})
 | `set_stage_enabled(stage, enabled)` / `is_stage_enabled(stage)` | `update` の段 (`"physics"`・`"eye_blink"`・`"breath"`・`"lip_sync"`・`"pose"`) を動かすか (既定はすべて動かす)。モデルを読み直しても保つので、読み込む前に設定すれば読み込みの直後の評価から効く。未知の名前は false |
 | `attach_module(module)` / `detach_module(name)` / `clear_modules()` / `get_module_names()` | 着せ替え。付けられなければエラーを出して false (何も変えない) |
 | `uses_lighting()` / `add_directional_light(direction, color)` / `add_point_light(position, color, range)` / `clear_lights()` | ライティング (光源は先頭の 8 個まで) |
+| `set_tracking_from_xr_face_tracker(tracker)` | `XRFaceTracker` のブレンドシェイプを ARKit の形に直して設定する (下の「XRFaceTracker との対応」)。頭の回転は変えない。`XRFaceTracker` でなければ false |
 | `set_tracking_head(rotation)` / `set_tracking_body(dict)` / `set_tracking_blend_shapes(dict)` / `set_tracking_blend_shape(name, value)` / `clear_tracking()` / `is_tracking()` / `get_tracking_blend_shape_names()` | トラッキング。頭は度で `x` = ヨー・`y` = ピッチ・`z` = ロール。体は `yaw` `pitch` `roll` `shoulder_left` `shoulder_right` (無いキーは省略)。ブレンドシェイプは ARKit の 52 個の名前 (MediaPipe の名前もそのまま渡せる)。平滑化はホストが行う |
 | `hit_test(id, local_position)` / `get_hit_areas_at(local_position)` | 当たり判定 (ノードの座標で渡す) |
 | `get_canvas_size()` / `get_canvas_origin()` | キャンバスの大きさと原点 |
@@ -114,6 +123,58 @@ puppet.set_tracking_blend_shapes({"jawOpen": 0.4, "eyeBlinkLeft": 1.0})
 `UgoeModel.from_buffer(bytes)` / `UgoeModule.from_buffer(bytes)` でバイト列からリソースを作れる。
 
 `.ugoe` と `.ugoemod` はリソースとして書き出しに含まれる (エクスポートの設定は要らない)。
+
+### Light2D から取る光源
+
+`use_scene_lights` を true にすると、このノードと同じビューポートにある `PointLight2D` と `DirectionalLight2D` を毎フレーム読み、
+キャンバス座標の光源 ([docs/spec/rendering.md#ライティング](../../docs/spec/rendering.md#ライティング)) に直して `lights` の後ろに足す
+(合わせて先頭の 8 個まで)。ライトを動かすと陰影が付いてくる。ライトの足し外しは木の `node_added` / `node_removed` で気づく。
+
+- 使うライト: `enabled` で、木の中で見えていて (`is_visible_in_tree`)、同じキャンバス (同じ `CanvasLayer`) にあり、
+  `range_item_cull_mask` がこのノードの `light_mask` と重なるもの。`editor_only` のライトはエディタの中だけで使う。
+- 色: `color × energy`。
+- `PointLight2D`: 位置はライトの位置 (このノードの変形を外してキャンバス座標に直す)、奥行きは `height` (ピクセル、手前が正。
+  このノードの拡大縮小で直す)。`range` はテクスチャの半径 (幅と高さの大きい方の半分 × `texture_scale` × ライトの拡大縮小)。
+  テクスチャが無ければ減衰しない。
+- `DirectionalLight2D`: 光はライトの +Y の向き (回転 0 なら画面の下向き) に進み、`height` (0〜1) の分だけ画面の奥へ傾く
+  (0 で画面と平行、1 で正面から)。
+- 使わないもの: テクスチャの形 (明るさの分布。減衰は参照レンダラと同じ式)、`blend_mode` (いつも足す)、影、Z と層の範囲、
+  `DirectionalLight2D.max_distance`。Godot の 2D のライトの見た目そのものではなく、ugoe のライティングの式で照らす。
+
+### XRFaceTracker との対応
+
+Godot の `XRFaceTracker` は Unified Expressions (`BlendShapeEntry` の 143 個) の値を持つ。`xr_face_tracker` か
+`set_tracking_from_xr_face_tracker` で、それを ARKit の 52 ブレンドシェイプ ([docs/spec/avatar-profile.md#arkit-のブレンドシェイプ](../../docs/spec/avatar-profile.md#arkit-のブレンドシェイプ)
+の入力) に直して渡す (`src/xr.rs`)。左右はどちらもトラッキングされた人の左右なので入れ替えない。
+
+| ARKit | Unified Expressions (`FT_` を省く) |
+| --- | --- |
+| `eyeBlink*` | `EYE_CLOSED_*` |
+| `eyeLookDown*` / `eyeLookIn*` / `eyeLookOut*` / `eyeLookUp*` | `EYE_LOOK_DOWN_*` / `EYE_LOOK_IN_*` / `EYE_LOOK_OUT_*` / `EYE_LOOK_UP_*` |
+| `eyeSquint*` / `eyeWide*` | `EYE_SQUINT_*` / `EYE_WIDE_*` |
+| `jawForward` / `jawLeft` / `jawRight` / `jawOpen` | `JAW_FORWARD` / `JAW_LEFT` / `JAW_RIGHT` / `JAW_OPEN` |
+| `mouthClose` | `MOUTH_CLOSED` |
+| `mouthFunnel` | `LIP_FUNNEL_{UPPER,LOWER}_{RIGHT,LEFT}` の平均 (`LIP_FUNNEL` が大きければそれ) |
+| `mouthPucker` | `LIP_PUCKER_{UPPER,LOWER}_{RIGHT,LEFT}` の平均 (`LIP_PUCKER` が大きければそれ) |
+| `mouthLeft` / `mouthRight` | `MOUTH_UPPER_*` と `MOUTH_LOWER_*` の平均 (`MOUTH_LEFT` / `MOUTH_RIGHT` が大きければそれ) |
+| `mouthSmile*` | `MOUTH_CORNER_PULL_*`・`MOUTH_CORNER_SLANT_*`・`MOUTH_SMILE_*` の最大 |
+| `mouthFrown*` / `mouthDimple*` / `mouthStretch*` / `mouthPress*` | `MOUTH_FROWN_*` / `MOUTH_DIMPLE_*` / `MOUTH_STRETCH_*` / `MOUTH_PRESS_*` |
+| `mouthRollLower` / `mouthRollUpper` | `LIP_SUCK_LOWER_*` / `LIP_SUCK_UPPER_*` の平均 (`LIP_SUCK_LOWER` / `LIP_SUCK_UPPER` が大きければそれ) |
+| `mouthShrugLower` / `mouthShrugUpper` | `MOUTH_RAISER_LOWER` / `MOUTH_RAISER_UPPER` |
+| `mouthLowerDown*` / `mouthUpperUp*` | `MOUTH_LOWER_DOWN_*` / `MOUTH_UPPER_UP_*` |
+| `browDown*` | `BROW_LOWERER_*`・`BROW_PINCH_*`・`BROW_DOWN_*` の最大 |
+| `browInnerUp` | `BROW_INNER_UP_RIGHT` と `BROW_INNER_UP_LEFT` の平均 |
+| `browOuterUp*` | `BROW_OUTER_UP_*` |
+| `cheekPuff` | `CHEEK_PUFF_RIGHT` と `CHEEK_PUFF_LEFT` の平均 (`CHEEK_PUFF` が大きければそれ) |
+| `cheekSquint*` / `noseSneer*` / `tongueOut` | `CHEEK_SQUINT_*` / `NOSE_SNEER_*` / `TONGUE_OUT` |
+
+(`*` は `Left` / `Right` と `_LEFT` / `_RIGHT` の対応。)
+
+- 平均は「同時に動く部分を合わせた量」(唇のすぼめ・巻き込みなど)、最大は「どちらか一方でその表情になる」(笑いの口角・眉の下げ) の形に使う。
+- `FT_EYE_CLOSED` 以降の合成の形 (左右や上下をまとめたもの) は、トラッカーが書くとは限らないので、書かれていれば基本の形から求めた値との大きい方を使う。
+- 対応が無い形 (瞳孔・鼻孔・頬のへこみ・舌の細かい動き・喉・首など) は使わない。値は 0〜1 にクランプする。
+- `XRFaceTracker` に頭の回転は無い。頭は `set_tracking_head` で渡す (HMD やカメラの向きから求める方法はアプリが決める)。
+- 実機のトラッカー (OpenXR のフェイストラッキングの拡張など) では確かめていない。`example/tests/smoke.gd` で値を流し込んで確かめている。
 
 ## 描画のしかた
 
@@ -127,7 +188,17 @@ puppet.set_tracking_blend_shapes({"jawOpen": 0.4, "eyeBlinkLeft": 1.0})
   カバレッジの画素の格子はキャンバスの `1 / 解像度` の格子に揃える (倍率 1 なら画面の画素と重なる)。
 - 入れ子のマスク (マスク用メッシュ自身がマスクを読む) は段に分け、段ごとのアトラスのビューポートを前の段のビューポートの親にする。
   Godot は子のビューポートを先に描くので、同じフレームのうちに段の順に描かれる。
-- アトラスの 1 辺は 4096 画素まで。収まらなければマスクの解像度を下げる (`mask_scale` か画面上の大きさが変わるまで戻さない)。
+- アトラスの 1 辺は 4096 画素まで。収まらなければ、収まるまでマスクの解像度に 0.75 を掛けて下げる (`get_mask_resolution_factor()`)。
+  下げている間にマスクが動いて小さくなり、1 段上げた解像度の配置が 1 辺 3584 画素 (4096 の 7/8) に収まるようになったら、1 段戻す
+  (余裕を持たせて、境目で上げ下げを繰り返さないようにする。`src/model.rs` の `MaskShrink`)。`mask_scale` か画面上の大きさが
+  変わったら 1 から測り直す。
+  - 画質の目安 (適合テストのマスクのケースを `mask_scale` を下げて描き、`ugoe render` と比べた。Compatibility の Xvfb): 下げても
+    違うのはマスクの縁だけで、倍率 0.75 では 3/255 を超える画素が 0.1〜0.4% (縁の多い `masks-many` で 3%)、最大 25/255 ほど
+    (縁が 1 画素ほどぼける)。0.56 で最大 30〜90/255、0.42 以下では縁の段差が見え、最大 100/255 を超える (超える画素は 0.3〜0.9%、
+    `masks-many` で 4〜7%)。解像度を下げたマスクは互換の基準の対象外 (docs/spec/rendering.md#互換の基準)。
+  - 下がるのはマスクが多く、画面上で大きいときだけ (目安として、マスクの外接矩形の面積の合計が 4096² に近いとき。棚詰めの
+    隙間があるので、それより小さくても下がることがある)。
+    下がるなら `mask_scale` を下げるか、マスクを読む要素を減らす。
 - 着せ替えではレンダラを作り直す。変わっていないテクスチャ (`ugoe::DressUpChange`) はデコードし直さない。
 - 裏面カリングは CPU で三角形を選ぶ (向きはキャンバス座標だけで決まるため)。
 
@@ -153,11 +224,11 @@ puppet.set_tracking_blend_shapes({"jawOpen": 0.4, "eyeBlinkLeft": 1.0})
 
 - 画面のある Godot のエディタでの操作、Forward+ / Mobile のレンダラ (Vulkan) での見た目、Windows・macOS でのビルドは確かめていない
   (比べ合わせは Compatibility (OpenGL) の Xvfb だけ)。
-- 光源を Godot の `Light2D` から取る仕組みはない (`lights` に自分で渡す)。
+- `Light2D` から取る光源は、テクスチャの形・影・合成のモードを使わない (上の「Light2D から取る光源」)。
 - 当たり判定・パラメータなどの Godot の API の自動テストは、ヘッドレスの Godot で動く `example/tests/smoke.gd` だけ。
 - Godot 4.7.1 で、GDExtension のクラスを持つプロジェクトの初回の `--import` の終わりに異常終了することがある
   (godot-rust の最小のクラスでも起き、2 回目からは起きない)。`build.mjs` は 1 回だけやり直す。
 
 ## 関連タスク
 
-- T0406 (`docs/tasks/T0406-godot-extension.md`)、T0411 (`docs/tasks/T0411-godot-followups.md`)
+- T0406 (`docs/tasks/T0406-godot-extension.md`)、T0411 (`docs/tasks/T0411-godot-followups.md`)、T0415 (`docs/tasks/T0415-godot-distribution.md`)
