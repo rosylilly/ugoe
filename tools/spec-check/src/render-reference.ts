@@ -2,7 +2,8 @@
 //
 // 描画の例 (spec/examples/ の render.json のあるもの) を、参照実装に黒箱として描かせて比べる (T0127)。
 // コマンドだけを使う: 例のモデルとテクスチャをこの実装で .ugoe に書き、`ugoe render <bundle> --size WxH
-// --fit stretch [--ambient] [--light]` で PNG に描かせ、調べる画素を期待値と許容誤差で比べる。
+// (--fit stretch | --view=A,B,C,D,E,F) [--ambient] [--light]` で PNG に描かせ、調べる画素を期待値と許容誤差で比べる。
+// `view` のあるケースは `--view` に同じ 6 数を同じ順で渡す (CLI の説明が spec/examples/README.md の `view` と同じ意味とする)。
 //
 // PNG は非乗算なので、読んだ色に alpha を掛けて乗算済みに戻す。そのため次は比べられない (飛ばして数える):
 // alpha が 0 の画素の色、色が alpha を超える画素の色 (乗算済みの色が alpha を超えることは PNG で表せない)。
@@ -64,20 +65,15 @@ for (const name of names) {
   const bundle = join(work, `${name}.ugoe`);
   writeFileSync(bundle, renderExampleBundle(example));
   example.doc.cases.forEach((c, i) => {
-    if (c.view) {
-      // CLI はキャンバスを引き伸ばすビュー変換しか指定できない (鏡映・回転は参照実装の側のテストで確かめる)
-      console.log(`${name} case ${i}: skipped (the CLI cannot give the view transform)`);
-      return;
-    }
     const png = join(work, `${name}-${i}.png`);
     const { args, dropped } = lightArgs(c);
     const params = Object.entries(c.parameters ?? {}).flatMap(([k, v]) => ["--param", `${k}=${v}`]);
     const size = `${c.target[0]}x${c.target[1]}`;
-    execFileSync(
-      ugoe,
-      ["render", bundle, "-o", png, "--size", size, "--fit", "stretch", ...params, ...args],
-      { stdio: ["ignore", "ignore", "inherit"] },
-    );
+    // 負の数で始まる値をオプションと取り違えられないよう `=` でつなぐ
+    const view = c.view ? [`--view=${c.view.join(",")}`] : ["--fit", "stretch"];
+    execFileSync(ugoe, ["render", bundle, "-o", png, "--size", size, ...view, ...params, ...args], {
+      stdio: ["ignore", "ignore", "inherit"],
+    });
     if (dropped) console.log(`${name} case ${i}: lights the CLI refuses were left out`);
     const image = decodeRgbaPng(new Uint8Array(readFileSync(png)));
     for (const p of c.pixels) {
