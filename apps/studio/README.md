@@ -3,8 +3,8 @@
 ugoe のスタジオ (Tauri v2 + Svelte 5)。配信者が配信中に使うアプリで、モデルを **出力ウィンドウ** に出し、**操作ウィンドウ** から動かす。
 範囲・構成・描画の場所は [ADR 0028](../../docs/adr/0028-studio.md)、画面と配信の形は [docs/studio.md](../../docs/studio.md)。
 T0801 で骨組み (2 つのウィンドウ・指揮役と受け手)、T0802 でシーンとプロファイル、T0803 で入力 (カメラのトラッキング・マイクの口パク・
-モーションと表情・グローバルなホットキー)、T0804 で配信向けの出力、T0807 で仮想カメラ (Windows・Linux)、T0809 で macOS の仮想カメラ (Camera Extension。配布物に入れるのは後) を作った。
-外部 API (T0805)・ブラウザソース (T0808) は後続のタスク。
+モーションと表情・グローバルなホットキー)、T0804 で配信向けの出力、T0807 で仮想カメラ (Windows・Linux)、T0809 で macOS の仮想カメラ (Camera Extension。配布物に入れるのは後)、
+T0805 で外から操作する API (ループバックの WebSocket。[docs/studio-api.md](../../docs/studio-api.md)) を作った。ブラウザソース (T0808) は後続のタスク。
 
 **ライセンスは GPL-3.0-only** (エディタ・ビューアと同じ)。アプリ同士で import はしない (共有するものは `packages/` に置く)。
 
@@ -21,6 +21,8 @@ src/HotkeysPanel.svelte       ホットキーの割り当て (キーを押して
 src/VirtualCameraPanel.svelte 操作ウィンドウの「仮想カメラ」: 開始と停止・解像度・フレームレート・透過を埋める色・止まった/遅れたの知らせと案内
 src/LicenseDialog.svelte      ライセンスの表示 (ツールバーの「ライセンス」)。本文は public/third-party-notices.txt
 public/third-party-notices.txt 同梱する第三者のもの (MediaPipe の wasm とモデル・JS のライブラリ) のライセンスの表記
+src/ApiPanel.svelte           操作 API (有効にする・接続先・ポート・トークンの写しと作り直し・承認したアプリの切断と取り消し・承認を待つアプリ)
+src/ApiApproval.svelte        操作 API に初めて接続したアプリの承認の知らせ (権限の選択・承認・拒否・後で)
 output.html / src/output.ts   出力ウィンドウの入口 (背景は透過。@ugoe/ui と @ugoe/i18n は読まない)
 src/Output.svelte             出力ウィンドウ: @ugoe/player の受け手のモードでモデルだけを描く。シーンの見せ方を当てる。Alt + ドラッグで動かす
 src/lib/host.ts               バックエンドとの口 (StudioHost)。Tauri の外では window.__UGOE_STUDIO_HOST__ を使う
@@ -28,6 +30,7 @@ src/lib/settings.ts           覚える設定 (言語・刻みの速さ。localS
 src/lib/load.ts               負荷の注意の判断 (刻みが遅れた・揺れた・描画が重い・フレームを捨てた・描いていない)
 src/lib/profile.ts            プロファイルとシーンの形 (profile.rs と同じ)・エラーの形・背景や配置の既定値
 src/lib/inputs.ts             入力・モーション・ホットキーの設定と演技の様子の形 (input.rs・hotkeys.rs・animation.rs と同じ)
+src/lib/api.ts                操作 API の様子の形 (mod.rs の ApiView と同じ)・接続先・ポートの範囲
 src/lib/hotkeys.ts            ホットキーのキーの書き方 (押したキー → `Ctrl+Shift+KeyA`、Kbd の表記)
 src/lib/lipSync.ts            マイクの音から口を開く量を作る式 (dB・ノイズの閾値・感度・開く速さと閉じる速さ)
 src/lib/microphone.svelte.ts  マイク (getUserMedia → AnalyserNode)。刻みごとに口を開く量を指揮役へ送る
@@ -51,6 +54,16 @@ src-tauri/                    バックエンド (Rust クレート `ugoe-studio
   src/follower.rs               ネイティブの受け手 (一致の検査と仮想カメラが使う)
   src/virtual_camera.rs         仮想カメラの受け手 (Feed: 受け手 + ugoe-headless の常駐の描画) とスレッド (T0807)
   src/lib.rs                    刻みのスレッド・Tauri のコマンド・出力ウィンドウの操作
+  src/api/                      操作 API (T0805。docs/studio.md#外部-api、英語のリファレンスは docs/studio-api.md)
+    mod.rs                        接続ごとの状態 (名乗る前・承認待ち・使える)・承認と取り消し・通知
+    methods.rs                    メソッド (指揮役と舞台に入れる。ホットキーと同じ口)
+    server.rs                     ループバックの待ち受け・経路 (`/api`。T0808 のブラウザソースもここに足す)・接続ごとのスレッド (読むのを区切って通知を送る)
+    http.rs                       要求の頭の読み取りと検査 (Host・転送ヘッダ・Origin)
+    ws.rs                         WebSocket の握手の検査と接続の設定 (フレームは tungstenite)
+    rpc.rs                        JSON-RPC 2.0 の読み書きと誤りの符号
+    store.rs                      studio-api.json (有効・ポート・トークン・承認したクライアントの鍵。アプリのデータの場所)
+    commands.rs                   操作ウィンドウのパネルが呼ぶコマンド
+    tests.rs                      接続と操作のテスト (承認・権限・操作・通知・本物の待ち受け・JSON Schema との一致)
   tests/follow_match.rs         一致の検査 (ADR 0028 の 10.)
   tests/virtual_camera_gpu.rs   仮想カメラの画が、物理を有効にした 1 つの Puppet の画と一致する (`just test-gpu`)
   tauri.windows.conf.json       Windows のビルド: 仮想カメラの DLL を作る・NSIS を管理者の権限で入れる
@@ -105,6 +118,9 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
 | `set_motion_settings(settings)` / `set_input_settings(settings)` / `set_hotkeys(hotkeys)` | 操作 | プロファイルの `motion`・`input`・`hotkeys` (ホットキーは登録し直す) |
 | `suspend_hotkeys(suspended)` | 操作 | 割り当ての画面でキーを押している間、ホットキーの登録を外す |
 | `module_slot(path)` | 操作 | モジュールが付くスロットの名前 (ホットキーの着せ替え) |
+| `api_state()` / `set_api_enabled(enabled)` / `set_api_port(port)` | 操作 | 操作 API の様子・待ち受けの切り替え (覚える)・ポート (1024〜65535) |
+| `api_token()` / `regenerate_api_token()` | 操作 | 操作 API のトークンを写す・作り直す |
+| `approve_api_client(id, permission)` / `deny_api_client(id)` / `revoke_api_client(id)` / `disconnect_api_client(id)` | 操作 | 承認を待つアプリの承認・拒否、承認したアプリの取り消し・切断 |
 | `subscribe_frames(channel)` | 出力 | シーンの通知 (JSON) とフレーム (バイト列) を受け取る。開き直したページは前の Channel を置き換える |
 | `scene_model(revision)` / `scene_module(revision, index)` / `scene_background(revision)` | 出力 | 今のシーンのモデル・モジュール・背景の画像のバイト列 (今のシーンでなければエラー) |
 | `report_render_stats(stats)` | 出力 | 描画の負荷 (回/秒・1 回の時間の平均と最大・捨てたフレーム) を約 1 秒ごとに送る。操作ウィンドウに出す |
@@ -119,7 +135,8 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
   カメラとマイクは、バックエンドの `on_permission_request` が操作ウィンドウの要求だけを許す (macOS は `Info.plist` と `Entitlements.plist`)。
   ホットキーはバックエンドが `tauri-plugin-global-shortcut` で登録する (JS の口は使わないので、プラグインの権限は付けない)。
 - 操作ウィンドウへの通知には、ほかに `animation` (モーション・表情・トラッキングの様子)・`hotkeys` (登録できなかった割り当て)・
-  `hotkey` (押されたホットキー。キャリブレーションと、行えなかったときの理由) がある。
+  `hotkey` (押されたホットキー。キャリブレーションと、行えなかったときの理由。操作 API の `tracking.calibrate` も同じ通知を使う)・
+  `api` (操作 API の様子。待ち受け・承認したアプリ・承認を待つアプリ) がある。
 - 出力ウィンドウの背景の透過は、macOS では `macOSPrivateApi` (tauri の `macos-private-api` feature) が要る (Mac App Store では配布できなくなる)。
 
 ## 仮想カメラ
@@ -160,7 +177,7 @@ just studio-build                 # リリースビルド (インストーラを
 pnpm --filter @ugoe/studio wasm   # ugoe-wasm をビルドして src/lib/wasm/generated/ に JS バインディングを出す
 pnpm --filter @ugoe/studio mediapipe  # MediaPipe の wasm とモデルを public/mediapipe/ に用意する (dev・build でも実行される。gitignore 済み)
 pnpm --filter @ugoe/studio vcam   # 仮想カメラの DLL (Windows 向け。Linux からは cargo-xwin でクロスビルド)
-cargo test -p ugoe-studio         # 指揮役・配信の形・一致の検査
+cargo test -p ugoe-studio         # 指揮役・配信の形・一致の検査・操作 API (本物のループバックの待ち受けも使う)
 cargo test -p ugoe-studio-vcam    # 仮想カメラの共有メモリの形・設定・v4l2 の構造体
 cargo test -p ugoe-studio --features gpu-tests --test virtual_camera_gpu  # 仮想カメラの画 (just test-gpu に含まれる。CI では除く)
 ```

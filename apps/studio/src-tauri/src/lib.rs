@@ -9,10 +9,12 @@
 //!   グローバルなホットキーを登録し、押されたら操作を行う。操作ウィンドウの入力の処理を刻みで動かす (`subscribe_pulse`)。
 //! - 仮想カメラ ([`virtual_camera`]、T0807) を始めると、同じプロセスのチャネルでシーンとフレームを渡す。仮想カメラの受け手は
 //!   ネイティブの受け手と `ugoe-headless` の常駐の描画で描き、`ugoe-studio-vcam` で OS に渡す。
+//! - 操作 API (T0805): ループバックの WebSocket で外のツールから操作させる ([`api`])。
 //!
 //! 出力ウィンドウとブラウザソースの描画はしない (出力ウィンドウの WebView の wasm が受け手として描く)。
 
 pub mod animation;
+pub mod api;
 pub mod conductor;
 pub mod follower;
 pub mod hotkeys;
@@ -133,6 +135,9 @@ enum Monitor<'a> {
     /// 仮想カメラの状態が変わった (T0807)。
     #[serde(rename = "virtualCamera")]
     VirtualCamera(&'a virtual_camera::Status),
+    /// 操作 API の様子 (待ち受け・承認したクライアント・承認の待ち。接続したときも送る。T0805)。
+    #[serde(rename = "api")]
+    Api(api::ApiView),
 }
 
 /// ホットキーの操作を行えなかった理由。画面は `code` で文言を選ぶ。
@@ -276,6 +281,8 @@ struct Studio {
     camera: Mutex<Option<CameraThread>>,
     /// 仮想カメラの最新の状態。
     camera_status: Mutex<Option<virtual_camera::Status>>,
+    /// 操作 API (T0805)。
+    api: api::Api,
 }
 
 /// 登録しているホットキー。
@@ -374,6 +381,11 @@ impl Studio {
         if conductor.take_animation_changed() {
             self.send_animation(&conductor);
         }
+        let events = conductor.take_motion_events();
+        if !events.is_empty() {
+            let motion = conductor.animation_view().current.map(|m| m.name);
+            self.api_motion_events(motion.as_deref(), &events);
+        }
         let Some(frame) = frame else {
             return;
         };
@@ -434,18 +446,22 @@ impl Studio {
         let mut stage = lock(&self.stage);
         let mut conductor = lock(&self.conductor);
         let before = conductor.scene().map(|s| s.revision);
+        let snapshot = api::StageSnapshot::of(&stage);
         let result = action(&mut stage, &mut conductor);
         if conductor.scene().map(|s| s.revision) != before {
             self.send_scene(&stage, &conductor);
         }
         drop(conductor);
+        self.api_stage_changed(&snapshot, &api::StageSnapshot::of(&stage));
         self.send_profile(&stage);
         self.sync_hotkeys(&stage.profile().hotkeys, false);
         result
     }
 
     fn send_animation(&self, conductor: &Conductor) {
-        if let Some(body) = Self::json(&Monitor::Animation(conductor.animation_view())) {
+        let view = conductor.animation_view();
+        self.api_animation_changed(&view);
+        if let Some(body) = Self::json(&Monitor::Animation(view)) {
             self.monitors.send_all(&body);
         }
     }
@@ -871,6 +887,11 @@ fn subscribe_status(
     if let Some(body) = Studio::hotkeys_message(&lock(&studio.hotkeys)) {
         let _ = channel.send(body);
     }
+    drop(conductor);
+    drop(stage);
+    if let Some(body) = Studio::json(&Monitor::Api(studio.api_view())) {
+        let _ = channel.send(body);
+    }
     studio.monitors.insert(webview.label(), channel);
 }
 
@@ -1241,6 +1262,13 @@ pub fn run() {
                 .map(|dir| dir.join(RECENT_PROFILES_FILE));
             *lock(&staging.stage) = Stage::new(recent);
             let _ = staging.app.set(app.handle().clone());
+            // 操作 API の設定と鍵はアプリのデータの場所に置く (プロファイルには入れない。有効なら待ち受ける)。
+            let api_settings = app
+                .path()
+                .app_data_dir()
+                .ok()
+                .map(|dir| dir.join(api::SETTINGS_FILE));
+            staging.load_api(api_settings);
             std::thread::Builder::new()
                 .name("ugoe-studio-conductor".into())
                 .spawn(move || run_ticks(ticking))?;
@@ -1313,6 +1341,15 @@ pub fn run() {
             start_virtual_camera,
             stop_virtual_camera,
             set_virtual_camera_background,
+            api::commands::api_state,
+            api::commands::set_api_enabled,
+            api::commands::set_api_port,
+            api::commands::api_token,
+            api::commands::regenerate_api_token,
+            api::commands::approve_api_client,
+            api::commands::deny_api_client,
+            api::commands::revoke_api_client,
+            api::commands::disconnect_api_client,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the ugoe studio");

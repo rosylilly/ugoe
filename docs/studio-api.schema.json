@@ -1,0 +1,1461 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ugoe:studio-api:1",
+  "title": "ugoe Studio API messages, version 1",
+  "description": "JSON-RPC 2.0 messages exchanged over ws://127.0.0.1:<port>/api. Reference: docs/studio-api.md.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/request"
+    },
+    {
+      "$ref": "#/$defs/response"
+    },
+    {
+      "$ref": "#/$defs/notification"
+    }
+  ],
+  "$defs": {
+    "permission": {
+      "description": "What a client may do. `read` lists and watches; `control` also changes the studio.",
+      "enum": [
+        "read",
+        "control"
+      ]
+    },
+    "priority": {
+      "description": "Motion priority (docs/spec/motion.md).",
+      "enum": [
+        "idle",
+        "normal",
+        "force"
+      ]
+    },
+    "sceneRef": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Scene ID, unique in the profile."
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name (may be empty)."
+        },
+        "model": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "File name of the scene's model (never the full path)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "model"
+      ]
+    },
+    "module": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Module ID, used by dressup.set (currently the module's file path)."
+        },
+        "name": {
+          "type": "string",
+          "description": "Module name."
+        },
+        "slot": {
+          "type": "string",
+          "description": "Slot the module attaches to."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "slot"
+      ]
+    },
+    "currentMotion": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "priority": {
+          "$ref": "#/$defs/priority"
+        }
+      },
+      "required": [
+        "name",
+        "priority"
+      ]
+    },
+    "trackingState": {
+      "type": "object",
+      "properties": {
+        "tracking": {
+          "type": "boolean",
+          "description": "Face tracking input is arriving."
+        },
+        "trackingPaused": {
+          "type": "boolean"
+        },
+        "lipSyncPaused": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "tracking",
+        "trackingPaused",
+        "lipSyncPaused"
+      ]
+    },
+    "eventName": {
+      "enum": [
+        "scene.changed",
+        "scene.listChanged",
+        "expression.changed",
+        "motion.started",
+        "motion.finished",
+        "motion.event",
+        "dressup.changed",
+        "tracking.changed"
+      ]
+    },
+    "session.hello.params": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Client name shown to the user (1 to 64 characters).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "token": {
+          "type": "string",
+          "description": "The studio's token. Needed for the first connection."
+        },
+        "key": {
+          "type": "string",
+          "description": "The client key returned by an earlier approval."
+        },
+        "permission": {
+          "$ref": "#/$defs/permission"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "session.hello.result": {
+      "type": "object",
+      "properties": {
+        "studioVersion": {
+          "type": "string"
+        },
+        "apiVersion": {
+          "const": 1
+        },
+        "client": {
+          "type": "string",
+          "description": "Client ID."
+        },
+        "permission": {
+          "$ref": "#/$defs/permission"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/eventName"
+          },
+          "description": "Event names this studio can send."
+        },
+        "key": {
+          "type": "string",
+          "description": "Client key. Present only right after the user approves the client; store it."
+        }
+      },
+      "required": [
+        "studioVersion",
+        "apiVersion",
+        "client",
+        "permission",
+        "events"
+      ]
+    },
+    "studio.state.params": {
+      "description": "No parameters.",
+      "type": "object",
+      "properties": {}
+    },
+    "studio.state.result": {
+      "type": "object",
+      "properties": {
+        "scene": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sceneRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Display name of the model on air."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/module"
+          }
+        },
+        "expressions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Active expressions, in the order they were applied."
+        },
+        "motion": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/currentMotion"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tracking": {
+          "$ref": "#/$defs/trackingState"
+        }
+      },
+      "required": [
+        "scene",
+        "model",
+        "modules",
+        "expressions",
+        "motion",
+        "tracking"
+      ]
+    },
+    "scene.list.params": {
+      "description": "No parameters.",
+      "type": "object",
+      "properties": {}
+    },
+    "scene.list.result": {
+      "type": "object",
+      "properties": {
+        "scenes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/sceneRef"
+          }
+        },
+        "live": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "ID of the scene on air."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "scenes",
+        "live"
+      ]
+    },
+    "scene.activate.params": {
+      "type": "object",
+      "properties": {
+        "scene": {
+          "type": "string",
+          "description": "Scene ID."
+        }
+      },
+      "required": [
+        "scene"
+      ]
+    },
+    "scene.activate.result": {
+      "description": "An empty object.",
+      "type": "object",
+      "properties": {}
+    },
+    "expression.list.params": {
+      "description": "No parameters.",
+      "type": "object",
+      "properties": {}
+    },
+    "expression.list.result": {
+      "type": "object",
+      "properties": {
+        "expressions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "active": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "expressions",
+        "active"
+      ]
+    },
+    "expression.set.params": {
+      "type": "object",
+      "properties": {
+        "expression": {
+          "type": "string",
+          "description": "Expression name."
+        }
+      },
+      "required": [
+        "expression"
+      ]
+    },
+    "expression.set.result": {
+      "description": "An empty object.",
+      "type": "object",
+      "properties": {}
+    },
+    "expression.add.params": {
+      "type": "object",
+      "properties": {
+        "expression": {
+          "type": "string",
+          "description": "Expression name."
+        }
+      },
+      "required": [
+        "expression"
+      ]
+    },
+    "expression.add.result": {
+      "description": "An empty object.",
+      "type": "object",
+      "properties": {}
+    },
+    "expression.remove.params": {
+      "type": "object",
+      "properties": {
+        "expression": {
+          "type": "string",
+          "description": "Expression name."
+        }
+      },
+      "required": [
+        "expression"
+      ]
+    },
+    "expression.remove.result": {
+      "description": "An empty object.",
+      "type": "object",
+      "properties": {}
+    },
+    "expression.toggle.params": {
+      "type": "object",
+      "properties": {
+        "expression": {
+          "type": "string",
+          "description": "Expression name."
+        }
+      },
+      "required": [
+        "expression"
+      ]
+    },
+    "expression.toggle.result": {
+      "description": "An empty object.",
+      "type": "object",
+      "properties": {}
+    },
+    "expression.clear.params": {
+      "description": "No parameters.",
+      "type": "object",
+      "properties": {}
+    },
+    "expression.clear.result": {
+      "description": "An empty object.",
+      "type": "object",
+      "properties": {}
+    },
+    "motion.list.params": {
+      "description": "No parameters.",
+      "type": "object",
+      "properties": {}
+    },
+    "motion.list.result": {
+      "type": "object",
+      "properties": {
+        "motions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "duration": {
+                "type": "number",
+                "description": "Seconds."
+              },
+              "looping": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "name",
+              "duration",
+              "looping"
+            ]
+          }
+        },
+        "current": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/currentMotion"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "idle": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Idle motion played when nothing else plays."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "motions",
+        "current",
+        "idle"
+      ]
+    },
+    "motion.play.params": {
+      "type": "object",
+      "properties": {
+        "motion": {
+          "type": "string",
+          "description": "Motion name."
+        },
+        "priority": {
+          "$ref": "#/$defs/priority"
+        }
+      },
+      "required": [
+        "motion"
+      ]
+    },
+    "motion.play.result": {
+      "type": "object",
+      "properties": {
+        "started": {
+          "type": "boolean",
+          "description": "False when a motion with a higher priority is playing."
+        }
+      },
+      "required": [
+        "started"
+      ]
+    },
+    "motion.stop.params": {
+      "description": "No parameters.",
+      "type": "object",
+      "properties": {}
+    },
+    "motion.stop.result": {
+      "description": "An empty object.",
+      "type": "object",
+      "properties": {}
+    },
+    "parameter.list.params": {
+      "description": "No parameters.",
+      "type": "object",
+      "properties": {}
+    },
+    "parameter.list.result": {
+      "type": "object",
+      "properties": {
+        "parameters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "min": {
+                "type": "number"
+              },
+              "max": {
+                "type": "number"
+              },
+              "default": {
+                "type": "number"
+              },
+              "value": {
+                "type": "number",
+                "description": "Value sent in the latest frame, including overrides."
+              },
+              "internal": {
+                "type": "boolean",
+                "description": "Relay parameter; usually hidden."
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "min",
+              "max",
+              "default",
+              "value",
+              "internal"
+            ]
+          }
+        }
+      },
+      "required": [
+        "parameters"
+      ]
+    },
+    "parameter.set.params": {
+      "type": "object",
+      "properties": {
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Parameter ID."
+              },
+              "value": {
+                "type": "number",
+                "description": "Clamped to the parameter's range."
+              },
+              "weight": {
+                "type": "number",
+                "description": "How strongly the value wins (0 to 1, default 1).",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "required": [
+              "id",
+              "value"
+            ]
+          },
+          "description": "At most 256 values."
+        },
+        "duration": {
+          "type": "number",
+          "description": "Seconds the override lasts (default 1, at most 10). Send again to keep a value.",
+          "exclusiveMinimum": 0,
+          "maximum": 10
+        }
+      },
+      "required": [
+        "values"
+      ]
+    },
+    "parameter.set.result": {
+      "type": "object",
+      "properties": {
+        "unknown": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "IDs the model does not have (ignored)."
+        }
+      },
+      "required": [
+        "unknown"
+      ]
+    },
+    "dressup.list.params": {
+      "description": "No parameters.",
+      "type": "object",
+      "properties": {}
+    },
+    "dressup.list.result": {
+      "type": "object",
+      "properties": {
+        "slots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "slot": {
+                "type": "string"
+              },
+              "module": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "description": "Module ID worn in the slot."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "slot",
+              "module"
+            ]
+          }
+        },
+        "modules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/module"
+          },
+          "description": "Modules the API may attach: those used by the profile's scenes and dress-up hotkeys."
+        }
+      },
+      "required": [
+        "slots",
+        "modules"
+      ]
+    },
+    "dressup.set.params": {
+      "type": "object",
+      "properties": {
+        "slot": {
+          "type": "string"
+        },
+        "module": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Module ID from dressup.list; null empties the slot."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "slot",
+        "module"
+      ]
+    },
+    "dressup.set.result": {
+      "description": "An empty object.",
+      "type": "object",
+      "properties": {}
+    },
+    "tracking.pause.params": {
+      "type": "object",
+      "properties": {
+        "paused": {
+          "type": "boolean",
+          "description": "Omit to toggle."
+        }
+      }
+    },
+    "tracking.pause.result": {
+      "$ref": "#/$defs/trackingState"
+    },
+    "lipsync.pause.params": {
+      "type": "object",
+      "properties": {
+        "paused": {
+          "type": "boolean",
+          "description": "Omit to toggle."
+        }
+      }
+    },
+    "lipsync.pause.result": {
+      "$ref": "#/$defs/trackingState"
+    },
+    "tracking.calibrate.params": {
+      "description": "No parameters.",
+      "type": "object",
+      "properties": {}
+    },
+    "tracking.calibrate.result": {
+      "description": "An empty object.",
+      "type": "object",
+      "properties": {}
+    },
+    "events.subscribe.params": {
+      "type": "object",
+      "properties": {
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/eventName"
+          }
+        }
+      },
+      "required": [
+        "events"
+      ]
+    },
+    "events.subscribe.result": {
+      "type": "object",
+      "properties": {
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/eventName"
+          },
+          "description": "Events this connection now receives."
+        }
+      },
+      "required": [
+        "events"
+      ]
+    },
+    "events.unsubscribe.params": {
+      "type": "object",
+      "properties": {
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/eventName"
+          }
+        }
+      },
+      "required": [
+        "events"
+      ]
+    },
+    "events.unsubscribe.result": {
+      "type": "object",
+      "properties": {
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/eventName"
+          },
+          "description": "Events this connection now receives."
+        }
+      },
+      "required": [
+        "events"
+      ]
+    },
+    "scene.changed.event": {
+      "type": "object",
+      "properties": {
+        "scene": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sceneRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "scene"
+      ]
+    },
+    "scene.listChanged.event": {
+      "type": "object",
+      "properties": {
+        "scenes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/sceneRef"
+          }
+        }
+      },
+      "required": [
+        "scenes"
+      ]
+    },
+    "expression.changed.event": {
+      "type": "object",
+      "properties": {
+        "active": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "active"
+      ]
+    },
+    "motion.started.event": {
+      "type": "object",
+      "properties": {
+        "motion": {
+          "type": "string"
+        },
+        "priority": {
+          "$ref": "#/$defs/priority"
+        }
+      },
+      "required": [
+        "motion",
+        "priority"
+      ]
+    },
+    "motion.finished.event": {
+      "type": "object",
+      "properties": {
+        "motion": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "motion"
+      ]
+    },
+    "motion.event.event": {
+      "type": "object",
+      "properties": {
+        "motion": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "value": {
+          "type": "string",
+          "description": "The event's value, as authored in the motion."
+        },
+        "time": {
+          "type": "number",
+          "description": "Seconds into the motion."
+        }
+      },
+      "required": [
+        "motion",
+        "value",
+        "time"
+      ]
+    },
+    "dressup.changed.event": {
+      "type": "object",
+      "properties": {
+        "modules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/module"
+          }
+        }
+      },
+      "required": [
+        "modules"
+      ]
+    },
+    "tracking.changed.event": {
+      "$ref": "#/$defs/trackingState"
+    },
+    "id": {
+      "description": "Request ID. Omit it to send a notification (no response).",
+      "type": [
+        "string",
+        "number"
+      ]
+    },
+    "request": {
+      "description": "A request from a client to the studio.",
+      "type": "object",
+      "properties": {
+        "jsonrpc": {
+          "const": "2.0"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "method": {
+          "type": "string"
+        },
+        "params": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "method"
+      ],
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "session.hello"
+            },
+            "params": {
+              "$ref": "#/$defs/session.hello.params"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "description": "Permission: none."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "studio.state"
+            },
+            "params": {
+              "$ref": "#/$defs/studio.state.params"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "description": "Permission: read."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "scene.list"
+            },
+            "params": {
+              "$ref": "#/$defs/scene.list.params"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "description": "Permission: read."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "scene.activate"
+            },
+            "params": {
+              "$ref": "#/$defs/scene.activate.params"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "description": "Permission: control."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "expression.list"
+            },
+            "params": {
+              "$ref": "#/$defs/expression.list.params"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "description": "Permission: read."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "expression.set"
+            },
+            "params": {
+              "$ref": "#/$defs/expression.set.params"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "description": "Permission: control."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "expression.add"
+            },
+            "params": {
+              "$ref": "#/$defs/expression.add.params"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "description": "Permission: control."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "expression.remove"
+            },
+            "params": {
+              "$ref": "#/$defs/expression.remove.params"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "description": "Permission: control."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "expression.toggle"
+            },
+            "params": {
+              "$ref": "#/$defs/expression.toggle.params"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "description": "Permission: control."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "expression.clear"
+            },
+            "params": {
+              "$ref": "#/$defs/expression.clear.params"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "description": "Permission: control."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "motion.list"
+            },
+            "params": {
+              "$ref": "#/$defs/motion.list.params"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "description": "Permission: read."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "motion.play"
+            },
+            "params": {
+              "$ref": "#/$defs/motion.play.params"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "description": "Permission: control."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "motion.stop"
+            },
+            "params": {
+              "$ref": "#/$defs/motion.stop.params"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "description": "Permission: control."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "parameter.list"
+            },
+            "params": {
+              "$ref": "#/$defs/parameter.list.params"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "description": "Permission: read."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "parameter.set"
+            },
+            "params": {
+              "$ref": "#/$defs/parameter.set.params"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "description": "Permission: control."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "dressup.list"
+            },
+            "params": {
+              "$ref": "#/$defs/dressup.list.params"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "description": "Permission: read."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "dressup.set"
+            },
+            "params": {
+              "$ref": "#/$defs/dressup.set.params"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "description": "Permission: control."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "tracking.pause"
+            },
+            "params": {
+              "$ref": "#/$defs/tracking.pause.params"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "description": "Permission: control."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "lipsync.pause"
+            },
+            "params": {
+              "$ref": "#/$defs/lipsync.pause.params"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "description": "Permission: control."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "tracking.calibrate"
+            },
+            "params": {
+              "$ref": "#/$defs/tracking.calibrate.params"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "description": "Permission: control."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "events.subscribe"
+            },
+            "params": {
+              "$ref": "#/$defs/events.subscribe.params"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "description": "Permission: read."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "events.unsubscribe"
+            },
+            "params": {
+              "$ref": "#/$defs/events.unsubscribe.params"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "description": "Permission: read."
+        }
+      ]
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "description": "-32700 parse error, -32600 invalid request, -32601 method not found, -32602 invalid params, -32603 internal error, -32000 not authenticated, -32001 forbidden, -32002 access denied, -32010 operation failed."
+        },
+        "message": {
+          "type": "string",
+          "description": "English text for logs."
+        },
+        "data": {
+          "description": "For -32010: the studio's reason, with a machine-readable `code` (for example noModel, unknownMotion, unknownExpression, unknownScene, missing, unreadable, dressUp).",
+          "type": "object"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    },
+    "response": {
+      "description": "The studio's response to a request with an `id`.",
+      "type": "object",
+      "properties": {
+        "jsonrpc": {
+          "const": "2.0"
+        },
+        "id": {
+          "type": [
+            "string",
+            "number",
+            "null"
+          ]
+        },
+        "result": {
+          "description": "See `<method>.result`."
+        },
+        "error": {
+          "$ref": "#/$defs/error"
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "result"
+          ]
+        },
+        {
+          "required": [
+            "error"
+          ]
+        }
+      ]
+    },
+    "notification": {
+      "description": "A notification from the studio (after events.subscribe).",
+      "type": "object",
+      "properties": {
+        "jsonrpc": {
+          "const": "2.0"
+        },
+        "method": {
+          "$ref": "#/$defs/eventName"
+        },
+        "params": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "method",
+        "params"
+      ],
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "scene.changed"
+            },
+            "params": {
+              "$ref": "#/$defs/scene.changed.event"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "scene.listChanged"
+            },
+            "params": {
+              "$ref": "#/$defs/scene.listChanged.event"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "expression.changed"
+            },
+            "params": {
+              "$ref": "#/$defs/expression.changed.event"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "motion.started"
+            },
+            "params": {
+              "$ref": "#/$defs/motion.started.event"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "motion.finished"
+            },
+            "params": {
+              "$ref": "#/$defs/motion.finished.event"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "motion.event"
+            },
+            "params": {
+              "$ref": "#/$defs/motion.event.event"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "dressup.changed"
+            },
+            "params": {
+              "$ref": "#/$defs/dressup.changed.event"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "tracking.changed"
+            },
+            "params": {
+              "$ref": "#/$defs/tracking.changed.event"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        }
+      ]
+    }
+  }
+}

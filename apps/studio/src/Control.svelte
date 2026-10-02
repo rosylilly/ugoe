@@ -1,7 +1,8 @@
 <!--
   操作ウィンドウ (docs/studio.md#操作ウィンドウ)。モデルは描かない (描画は出力ウィンドウに任せる)。
   様子はパラメータの値・刻みの番号・負荷の数値で示す (負荷と刻みの速さは LoadPanel.svelte)。左にシーンの一覧、
-  右のパネルにシーンの編集 (T0802)、表情とモーション・入力 (カメラ・マイク)・ホットキー (T0803)。
+  右のパネルにシーンの編集 (T0802)、表情とモーション・入力 (カメラ・マイク)・ホットキー (T0803)・操作 API (T0805)。
+  操作 API に初めて接続したクライアントの承認は、どのパネルを開いていても上の知らせ (ApiApproval.svelte) で行う。
   カメラとマイクはこのウィンドウの WebView で取り、バックエンドの刻み (`subscribe_pulse`) で処理する (最小化しても止まらない)。
   プロファイルはバックエンドが持ち、変わるたびに `profile` の通知で届く。保存先があれば、変えた後に自動で保存する。
 -->
@@ -29,10 +30,13 @@ import {
   Toolbar,
 } from "@ugoe/ui";
 import { onMount } from "svelte";
+import ApiApproval from "./ApiApproval.svelte";
+import ApiPanel from "./ApiPanel.svelte";
 import HotkeysPanel from "./HotkeysPanel.svelte";
 import InputPanel from "./InputPanel.svelte";
 import LicenseDialog from "./LicenseDialog.svelte";
 import LoadPanel from "./LoadPanel.svelte";
+import { type ApiView, apiUrl, EMPTY_API, pendingToShow } from "./lib/api";
 import { describeError } from "./lib/errors";
 import type {
   FileKind,
@@ -122,6 +126,13 @@ let hotkeyProblems = $state<[number, HotkeyProblem][]>([]);
 let wayland = $state(false);
 /** ホットキーの操作を行えなかった理由。 */
 let hotkeyError = $state<string | null>(null);
+
+// --- 操作 API (T0805) ---
+
+let api = $state<ApiView>(EMPTY_API);
+/** 承認の知らせで「後で」を押したクライアント。 */
+let postponed = $state<ReadonlySet<string>>(new Set());
+const approvals = $derived(pendingToShow(api, postponed));
 /** カメラとマイクの処理を回す刻み (バックエンドの刻みのスレッドから届く)。 */
 const pulse = new Pulse();
 const sendTracking = latestOnly((frame: TrackingFrame | null) =>
@@ -251,6 +262,11 @@ function onMonitor(message: MonitorMessage) {
     case "virtualCamera": {
       const { kind: _, ...state } = message;
       camera = state;
+      break;
+    }
+    case "api": {
+      const { kind: _, ...view } = message;
+      api = view;
       break;
     }
   }
@@ -606,6 +622,9 @@ onMount(() => {
       </Button>
     </Toolbar>
     <div class="studio__spacer"></div>
+    {#if api.listening}
+      <span class="studio__api" title={t("api.toolbarOn", { url: apiUrl(api.port) })}>{t("api.toolbar")}</span>
+    {/if}
     {#if status !== null}
       <span class="studio__load">
         {t("load.summary", {
@@ -641,6 +660,16 @@ onMount(() => {
   {#if hotkeyError !== null}
     <Notice tone="warning" ondismiss={() => (hotkeyError = null)}>{hotkeyError}</Notice>
   {/if}
+
+  {#each approvals as client (client.id)}
+    <ApiApproval
+      {client}
+      disabled={host === null}
+      onapprove={(permission) => void run((h) => h.approveApiClient(client.id, permission))}
+      ondeny={() => void run((h) => h.denyApiClient(client.id))}
+      onlater={() => (postponed = new Set([...postponed, client.id]))}
+    />
+  {/each}
 
   {#if sceneError !== null}
     <Notice tone="danger" ondismiss={() => (sceneError = null)}>
@@ -814,6 +843,26 @@ onMount(() => {
         <VirtualCameraPanel {host} status={camera} />
       </Section>
 
+      <Section title={t("api.heading")}>
+        <ApiPanel
+          {api}
+          disabled={host === null}
+          onenabled={(enabled) => {
+            postponed = new Set();
+            void run((h) => h.setApiEnabled(enabled));
+          }}
+          onport={(port) => void run((h) => h.setApiPort(port))}
+          token={async () => {
+            if (host === null) throw new Error("no host");
+            return host.apiToken();
+          }}
+          onregenerate={() => void run((h) => h.regenerateApiToken())}
+          ondisconnect={(id) => void run((h) => h.disconnectApiClient(id))}
+          onrevoke={(id) => void run((h) => h.revokeApiClient(id))}
+          onreview={(id) => (postponed = new Set([...postponed].filter((p) => p !== id)))}
+        />
+      </Section>
+
       <Section title={t("load.heading")}>
         <LoadPanel {tickRate} {status} disabled={host === null} onTickRate={changeTickRate} />
       </Section>
@@ -902,6 +951,14 @@ onMount(() => {
     color: var(--ugoe-color-text-muted);
     font-size: var(--ugoe-font-size-sm);
     font-variant-numeric: tabular-nums;
+  }
+
+  .studio__api {
+    padding: 0 var(--ugoe-space-2);
+    border-radius: var(--ugoe-radius-sm);
+    background: var(--ugoe-color-accent-soft);
+    color: var(--ugoe-color-text);
+    font-size: var(--ugoe-font-size-sm);
   }
 
   .studio__language {

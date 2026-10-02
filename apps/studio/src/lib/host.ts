@@ -2,6 +2,7 @@
 // `window.__UGOE_STUDIO_HOST__` に置いたものを使う (README.md#ヘッドレスのブラウザで確かめる)。
 import type { TrackingFrame } from "@ugoe/face-tracking";
 import type { LightingSettings, MotionPriority, SceneMessage } from "@ugoe/player";
+import type { ApiPermission, ApiView } from "./api";
 import type {
   AnimationView,
   Hotkey,
@@ -105,7 +106,8 @@ export type MonitorMessage =
       wayland: boolean;
     }
   | { kind: "hotkey"; action: HotkeyAction; error: StudioError | null }
-  | ({ kind: "virtualCamera" } & VirtualCameraStatus);
+  | ({ kind: "virtualCamera" } & VirtualCameraStatus)
+  | ({ kind: "api" } & ApiView);
 
 /** 出力ウィンドウへの配信: シーンの通知 (JSON) かフレームのバイト列 (@ugoe/player の `decodeFrame`)。 */
 export type StreamMessage = StudioScene | ArrayBuffer;
@@ -186,6 +188,22 @@ export interface StudioHost {
   stopVirtualCamera(): Promise<void>;
   /** 透過のところを埋める色を変える (動いていれば次の画から)。 */
   setVirtualCameraBackground(background: [number, number, number]): Promise<void>;
+  // 操作 API (T0805。様子は `api` の通知でも届く)
+  apiState(): Promise<ApiView>;
+  /** 待ち受けを始める・止める (覚える)。 */
+  setApiEnabled(enabled: boolean): Promise<ApiView>;
+  /** ポートを変える (1024〜65535。待ち受けていれば始め直す)。 */
+  setApiPort(port: number): Promise<ApiView>;
+  /** トークン (クライアントに入れてもらうために写す)。 */
+  apiToken(): Promise<string>;
+  /** トークンを作り直す (古いトークンは使えなくなる)。 */
+  regenerateApiToken(): Promise<string>;
+  approveApiClient(id: string, permission: ApiPermission): Promise<void>;
+  denyApiClient(id: string): Promise<void>;
+  /** 承認したクライアントの鍵を取り消す (つないでいれば切る)。 */
+  revokeApiClient(id: string): Promise<void>;
+  /** 承認したクライアントの今の接続を切る (鍵は残す)。 */
+  disconnectApiClient(id: string): Promise<void>;
   // --- 出力ウィンドウ ---
   subscribeFrames(onMessage: (message: StreamMessage) => void): Promise<void>;
   /** シーン `revision` のモデルのバイト列。今のシーンでなければ例外。 */
@@ -278,6 +296,15 @@ async function tauriHost(): Promise<StudioHost> {
     stopVirtualCamera: () => invoke("stop_virtual_camera"),
     setVirtualCameraBackground: (background) =>
       invoke("set_virtual_camera_background", { background }),
+    apiState: () => invoke("api_state"),
+    setApiEnabled: (enabled) => invoke("set_api_enabled", { enabled }),
+    setApiPort: (port) => invoke("set_api_port", { port }),
+    apiToken: () => invoke("api_token"),
+    regenerateApiToken: () => invoke("regenerate_api_token"),
+    approveApiClient: (id, permission) => invoke("approve_api_client", { id, permission }),
+    denyApiClient: (id) => invoke("deny_api_client", { id }),
+    revokeApiClient: (id) => invoke("revoke_api_client", { id }),
+    disconnectApiClient: (id) => invoke("disconnect_api_client", { id }),
     subscribeFrames: (onMessage) => subscribe("subscribe_frames", onMessage),
     async sceneModel(revision) {
       return new Uint8Array(await invoke<ArrayBuffer>("scene_model", { revision }));

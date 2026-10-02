@@ -144,7 +144,7 @@ M8 で、配信で使う新しいデスクトップアプリ「スタジオ」�
 - **名前:** API は「スタジオの操作 API」(英語では ugoe Studio API) と呼び、メッセージと操作の名前は ugoe の言葉で付ける。
   他製品の API の名前・メッセージの名前・既定のポートを真似ない (互換を名乗らない)。
 - 形は WebSocket の上の JSON-RPC 2.0 (要求・応答と通知)。メッセージは JSON Schema で定め、英語の API リファレンスを書く (T0805)。
-  操作の骨子は [docs/studio.md](../studio.md#外部-api-の骨子)。
+  操作は [docs/studio.md](../studio.md#外部-api) と英語のリファレンス [docs/studio-api.md](../studio-api.md) (T0805)。
 
 ### 7. M8 でやらないこと
 

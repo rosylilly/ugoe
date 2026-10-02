@@ -13,6 +13,7 @@ use std::sync::Arc;
 use ugoe::format::Bundle;
 use ugoe::model::Parameter;
 use ugoe::model::module::Module;
+use ugoe::model::motion::MotionEvent;
 use ugoe::{DressUpError, Puppet, Toggles};
 
 use crate::animation::{Animation, AnimationView};
@@ -68,6 +69,22 @@ pub struct Conductor {
     revision: u32,
     /// 次のフレームに物理のリセットを載せるか。
     reset: bool,
+    /// 外部 API の値の上書き (T0805)。
+    overrides: Vec<Override>,
+    /// 直前に配った値 (上書きを含む)。
+    sent: Vec<f32>,
+    /// 刻みで発火したモーションのイベント (読むと空になる)。
+    motion_events: Vec<MotionEvent>,
+}
+
+/// 外部 API の値の上書き (ADR 0028 の 6.。期限を過ぎたらやめる)。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Override {
+    index: usize,
+    value: f32,
+    weight: f32,
+    /// 残りの時間 (秒。刻みの `dt` で減らす)。
+    remaining: f32,
 }
 
 impl Default for Conductor {
@@ -79,6 +96,9 @@ impl Default for Conductor {
             next_seq: 0,
             revision: 0,
             reset: false,
+            overrides: Vec::new(),
+            sent: Vec::new(),
+            motion_events: Vec::new(),
         }
     }
 }
@@ -141,6 +161,8 @@ impl Conductor {
                     .load(&mut puppet, bundle.motions, bundle.expressions);
                 // 受け手は新しいモデルを読み直すので、物理は新しく始まる (リセットを載せなくてよい)。
                 self.puppet = Some(puppet);
+                self.overrides.clear();
+                self.sent.clear();
                 modules_revision = revision;
             }
             None => {
@@ -193,6 +215,8 @@ impl Conductor {
         self.puppet = None;
         self.animation.unload();
         self.reset = false;
+        self.overrides.clear();
+        self.sent.clear();
         self.scene.insert(Scene {
             revision: self.revision,
             model_revision: 0,
@@ -249,6 +273,41 @@ impl Conductor {
         true
     }
 
+    /// 外部 API の値の上書き (T0805): 物理の段に入る直前の値を、`duration` 秒の間 `value` へ `weight` (0〜1) の割合で寄せる。
+    /// トラッキング・モーション・表情・目パチ・呼吸より後に書くので、外部 API の値が勝つ (リップシンクは受け手が後で重ねる)。
+    /// 同じパラメータの上書きは置き換える。値域にクランプする。ID が無ければ `false`。
+    pub fn override_parameter(&mut self, id: &str, value: f32, weight: f32, duration: f32) -> bool {
+        let Some(puppet) = &self.puppet else {
+            return false;
+        };
+        let model = puppet.instance().compiled().model();
+        let Some(index) = model.parameters.iter().position(|p| p.id.as_str() == id) else {
+            return false;
+        };
+        let p = &model.parameters[index];
+        let entry = Override {
+            index,
+            value: value.clamp(p.min, p.max),
+            weight: weight.clamp(0.0, 1.0),
+            remaining: duration,
+        };
+        match self.overrides.iter_mut().find(|o| o.index == index) {
+            Some(o) => *o = entry,
+            None => self.overrides.push(entry),
+        }
+        true
+    }
+
+    /// 直前の刻みで配った値 (定義順。外部 API の上書きを含む)。まだ配っていなければ空。
+    pub fn sent_values(&self) -> &[f32] {
+        &self.sent
+    }
+
+    /// 刻みで発火したモーションのイベント (読むと空になる)。
+    pub fn take_motion_events(&mut self) -> Vec<MotionEvent> {
+        std::mem::take(&mut self.motion_events)
+    }
+
     /// すべてのパラメータを既定値に戻す。
     pub fn reset_parameters(&mut self) {
         if let Some(puppet) = &mut self.puppet {
@@ -296,12 +355,22 @@ impl Conductor {
         self.animation.before_update(puppet);
         puppet.update(dt);
         self.animation.after_update(puppet);
+        self.motion_events.extend_from_slice(puppet.motion_events());
+        let mut values = puppet.values_before_physics().to_vec();
+        for o in &mut self.overrides {
+            if let Some(v) = values.get_mut(o.index) {
+                *v += (o.value - *v) * o.weight;
+            }
+            o.remaining -= dt;
+        }
+        self.overrides.retain(|o| o.remaining > 0.0);
+        self.sent.clone_from(&values);
         let frame = Frame {
             seq: self.next_seq,
             revision: self.revision,
             dt,
             reset: std::mem::take(&mut self.reset),
-            values: puppet.values_before_physics().to_vec(),
+            values,
             lip_sync: puppet.lip_sync_applied(),
             part_opacities: puppet.part_opacities_applied().to_vec(),
         };

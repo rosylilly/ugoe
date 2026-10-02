@@ -17,6 +17,7 @@
 | [spec/public-spec.md](spec/public-spec.md) | 英語の公開仕様 ([`spec/`](../spec/README.md)、CC BY 4.0) との対応表 |
 | [editor.md](editor.md) | エディタの設計 |
 | [studio.md](studio.md) | スタジオ (配信用のアプリ) の設計 |
+| [studio-api.md](studio-api.md) | スタジオの操作 API (外のツールから操作する WebSocket の API) の英語のリファレンスと JSON Schema |
 | [ui.md](ui.md) | 共有の UI 部品・デザイントークン・アクセシビリティの基準・文言の書き方 (翻訳のキー) |
 | [manual/](manual/README.md) | エディタの操作マニュアル (利用者向け) |
 | [ai-integration.md](ai-integration.md) | AI 連携の設計 |

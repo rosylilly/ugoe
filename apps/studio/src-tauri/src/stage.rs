@@ -531,6 +531,14 @@ impl Stage {
     pub fn background_image(&self) -> Option<Arc<Vec<u8>>> {
         self.assets.background.as_ref().map(|(_, b)| Arc::clone(b))
     }
+
+    /// 今のシーンに付けているモジュールのパスと中身 (合成の順。外部 API の着せ替えの一覧、T0805)。
+    pub fn live_modules(&self) -> impl Iterator<Item = (&Path, &Module)> {
+        self.assets
+            .modules
+            .iter()
+            .map(|m| (m.path.as_path(), m.module.as_ref()))
+    }
 }
 
 fn file_name(path: &Path) -> String {
