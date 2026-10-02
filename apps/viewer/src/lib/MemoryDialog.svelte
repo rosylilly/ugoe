@@ -4,19 +4,19 @@
 // パネルが出ないモデル (モジュールを外してライティングを受けなくなったモデルなど) や、開いていないモデルの分もここで忘れられる。
 // 並びは覚えた日時の新しい順と名前の順から選ぶ (T0717。日時を持たない前の保存値は「日時なし」で最後)。
 // 選んだ並びは覚えて、次に開いたときも使う (T0718)。
-import { describeIdleChoice } from "./animation";
-import { lightingLabel } from "./lighting";
-import type { Player } from "./player.svelte";
 import {
   describeDressUpSet,
+  describeIdleChoice,
   describeLocation,
   describeRememberedAt,
+  lightingLabel,
   loadRememberedOrder,
+  type Player,
   type RememberedModel,
   type RememberedOrder,
   rememberedCount,
   saveRememberedOrder,
-} from "./rememberedModels";
+} from "@ugoe/player";
 
 let { player }: { player: Player } = $props();
 

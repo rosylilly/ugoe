@@ -13,7 +13,7 @@ import {
   MODEL_EXTENSIONS,
   MODULE_EXTENSIONS,
   type ModelFile,
-} from "./modelFile";
+} from "@ugoe/player";
 import type { SampleTarget } from "./samples";
 
 /**

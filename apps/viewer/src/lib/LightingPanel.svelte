@@ -4,7 +4,7 @@
 // 「既定に戻す」で開いているモデルを「標準」にして覚える (T0714)。覚えた設定を忘れるのは「覚えたもの」の一覧。
 // スライダー・色・面をドラッグしている途中は描画だけを変え、離したときに覚える (`preview` と `commitLighting`)。
 // ビューポートの光源の印 (LightMarkers.svelte、T0708) の表示もここで切り替える。
-import LightPad from "./LightPad.svelte";
+
 import {
   anglesFromPad,
   defaultLighting,
@@ -12,11 +12,12 @@ import {
   type LightColor,
   type LightingSettings,
   lightingLabel,
+  type Player,
   PRESETS,
   padFromAngles,
   sameLighting,
-} from "./lighting";
-import type { Player } from "./player.svelte";
+} from "@ugoe/player";
+import LightPad from "./LightPad.svelte";
 
 let { player, onshowmemory }: { player: Player; onshowmemory?: () => void } = $props();
 

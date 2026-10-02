@@ -314,6 +314,8 @@ jobs:
       - run: pnpm --filter @ugoe/viewer test
       - run: pnpm --filter @ugoe/face-tracking check
       - run: pnpm --filter @ugoe/face-tracking test
+      - run: pnpm --filter @ugoe/player check
+      - run: pnpm --filter @ugoe/player test
       - run: pnpm --filter @ugoe/runtime test
       - name: Install Rust toolchain (rust-toolchain.toml, wasm32 target included)
         run: rustup show active-toolchain || rustup toolchain install

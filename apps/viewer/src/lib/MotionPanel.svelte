@@ -14,10 +14,10 @@ import {
   MOTION_PRIORITIES,
   type MotionPriority,
   motionTrackingEffect,
+  type Player,
   trackedOverlap,
   trackingWins,
-} from "./animation";
-import type { Player } from "./player.svelte";
+} from "@ugoe/player";
 
 let { player }: { player: Player } = $props();
 

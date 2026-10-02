@@ -1,7 +1,6 @@
 <script lang="ts">
 // パラメータのスライダーの一覧 (グループごと)。中継用 (internal) のパラメータは既定で隠し、切り替えて出せる。
-import { formatValue, internalCount, sliderStep, visibleSections } from "./parameters";
-import type { Player } from "./player.svelte";
+import { formatValue, internalCount, type Player, sliderStep, visibleSections } from "@ugoe/player";
 
 let { player }: { player: Player } = $props();
 

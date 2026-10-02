@@ -10,30 +10,28 @@ ugoe のビューア (Tauri v2 + Svelte 5)。`.ugoe` バンドルか JSON のモ
 ```
 src/                  フロントエンド (Svelte 5 + TS。npm パッケージ @ugoe/viewer)
   App.svelte            ツールバー・ビューポート・右のパネル・ステータスバー、ドロップとショートカット
-  lib/player.svelte.ts  WebPuppet (ugoe-wasm) を持ち、フレームのループを回す。UI の状態もここ
-  lib/drivers.ts        パラメータを毎フレーム外から動かす仕組み (ParameterDriver)
   lib/host.ts           ファイルの選択と読み込み (Tauri / ブラウザ / 差し替え)
   lib/Viewport.svelte   描画領域 (ズーム・パン・フィット)。LightMarkers.svelte は重ねる光源の印 (ドラッグ・キーボードで光源を動かす、T0708・T0714)
   lib/ParameterPanel.svelte  パラメータのスライダー (グループごと)
   lib/LightingPanel.svelte   光源のパネル (ライティングを使うモデルのときだけ出す)。LightPad.svelte は向き・位置の面
-  lib/lighting.ts       光源の設定・既定の光源の組・set_lighting_json の JSON への変換・localStorage への保存 (最後に使った設定と、モデルごとの設定 (T0709))
   lib/DressUpPanel.svelte  着せ替えのパネル (スロットのあるモデルか、モジュールを読み込んだときだけ出す)
-  lib/dressUp.ts        着せ替えの一覧 (modules_json・slots_json・avatar_slots_json) の読み取り、公開するスロットの絞り込み、スロットごとのまとめ、エラーと警告の文
   lib/MotionPanel.svelte  モーションと表情のパネル (バンドルにモーションか表情があるときだけ出す。T0720)
-  lib/animation.ts      モーションと表情の一覧 (motions_json・expressions_json) の読み取り、トラッキングとの重なり、待機モーションの既定と設定 (T0721)、モデルごとの待機モーションの選択とモーションを優先するパラメータ (T0722)
-  lib/loadWarnings.ts   読み込みの警告 (load_warnings_json・モジュールの warning_details) の読み取りと日本語の文 (T0125)
-  lib/dressUpMemory.ts  付けていたモジュールの組をモデルごとに覚える形と、戻すときにファイルをどこから得るか (T0711)
-  lib/modelMemory.ts    モデルを見分ける鍵と、モデルごとの値を上限付きで localStorage に覚える入れ物 (T0711。光源の T0709 と共有)
-  lib/rememberedModels.ts  モデルごとに覚えたもの (光源・着せ替えの組・待機モーション) を 1 モデル 1 行にまとめる (T0714)。MemoryDialog.svelte はその一覧の画面
-  lib/modelFile.ts      開いたファイルの形式の判別 (バンドル・JSON・モジュール)
+  lib/MemoryDialog.svelte  モデルごとに覚えたもの (光源・着せ替えの組・待機モーション) の一覧の画面 (T0714)
   lib/drop.ts           ドロップしたファイルの開き方 (モデルとモジュールを一緒に落としたとき。T0713)
   lib/samples.ts        同梱の見本の一覧と開き方 (ツールバーの「サンプル」)
   lib/screenshot.ts     画像の保存の既定のファイル名・画素の検査・RGBA から PNG への変換 (T0420)
-  lib/wasm/             ugoe-wasm の読み込み。generated/ は `pnpm wasm` の出力 (gitignore 済み)
+  lib/wasm/             ugoe-wasm の読み込み (`Player` に `loadWasm` として渡す)。generated/ は `pnpm wasm` の出力 (gitignore 済み)
+  global.d.ts           `window.__UGOE_VIEWER__` の型
 public/               そのまま配る静的ファイル。third-party-notices.txt (同梱物のライセンス) だけコミットする
   mediapipe/            MediaPipe の wasm とモデル。`pnpm mediapipe` が用意する (gitignore 済み)
 src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 ```
+
+モデルの再生の層 (`Player`。読み込み・パラメータ・モーションと表情・トラッキング・ライティング・着せ替え・モデルごとに
+覚えるもの) は、スタジオと共有するパッケージ `@ugoe/player` ([packages/player/](../../packages/player/)) にある (T0904)。
+このファイルで `player.svelte.ts`・`drivers.ts`・`lighting.ts`・`dressUp.ts`・`dressUpMemory.ts`・`animation.ts`・
+`loadWarnings.ts`・`modelMemory.ts`・`rememberedModels.ts`・`modelFile.ts` と書いているものは、そのパッケージの `src/` にある。
+ビューアは `App.svelte` で `new Player({ loadWasm, readFile: readFileAt })` を作る。
 
 フェイストラッキング (T0703) の部品 (MediaPipe の結果の変換・キャリブレーション・平滑化・記録・`FaceTracker`・
 `TrackingPanel`) と、MediaPipe の wasm を写しモデルを取得して SHA-256 を検証するスクリプト (`ugoe-mediapipe-assets`) は、

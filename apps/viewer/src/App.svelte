@@ -1,8 +1,8 @@
 <script lang="ts">
 import { FaceTracker, TrackingPanel } from "@ugoe/face-tracking";
+import { type ModelFile, Player, visibleSlots } from "@ugoe/player";
 import { onMount } from "svelte";
 import DressUpPanel from "./lib/DressUpPanel.svelte";
-import { visibleSlots } from "./lib/dressUp";
 import {
   type DropPreview,
   type DroppedItem,
@@ -22,14 +22,18 @@ import LicenseDialog from "./lib/LicenseDialog.svelte";
 import LightingPanel from "./lib/LightingPanel.svelte";
 import MemoryDialog from "./lib/MemoryDialog.svelte";
 import MotionPanel from "./lib/MotionPanel.svelte";
-import type { ModelFile } from "./lib/modelFile";
 import ParameterPanel from "./lib/ParameterPanel.svelte";
-import { Player } from "./lib/player.svelte";
 import { openSample, SAMPLES, type Sample } from "./lib/samples";
 import { encodePng, screenshotFileName } from "./lib/screenshot";
 import Viewport from "./lib/Viewport.svelte";
+import { loadWasm } from "./lib/wasm/load";
 
-const player = new Player();
+const player = new Player({
+  loadWasm,
+  readFile: readFileAt,
+  wasmMissingMessage:
+    "ugoe-wasm がビルドされていません (apps/viewer で `pnpm wasm` を実行してください)",
+});
 // 外から操作できるようにする (ヘッドレスのブラウザでの確認、ドライバの登録など)。
 window.__UGOE_VIEWER__ = player;
 const tracker = new FaceTracker(player, { saveJson: saveJsonFile });

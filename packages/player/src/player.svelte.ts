@@ -3,6 +3,7 @@
 // フレームごとに: ドライバ (drivers.ts) の値を設定 → トラッキングの入力を渡す → `update(dt)` (物理など)
 // → スライダーの値を同期 → 描画。
 // 描画は WebGPU が無ければ WebGL2 で行う (docs/adr/0003-editor-viewport-in-webview.md)。
+// wasm の読み込みとファイルの読み直しはアプリが `PlayerHost` で渡す。
 import { setPuppetTracking, type TrackingFrame } from "@ugoe/face-tracking";
 import {
   AUTO_IDLE_STORAGE_KEY,
@@ -42,7 +43,6 @@ import {
   saveAutoRestore,
 } from "./dressUpMemory";
 import { DriverSet } from "./drivers";
-import { readFileAt } from "./host";
 import {
   defaultLighting,
   type LightingSettings,
@@ -55,7 +55,7 @@ import {
   toLightingJson,
 } from "./lighting";
 import { parseLoadWarnings } from "./loadWarnings";
-import { detectModelKind, type ModelFile, type ModuleToOpen } from "./modelFile";
+import { detectModelKind, type FileLocation, type ModelFile, type ModuleToOpen } from "./modelFile";
 import { type ModelIdentity, modelIdentity, sameModel } from "./modelMemory";
 import {
   groupParameters,
@@ -64,8 +64,24 @@ import {
   parseParameterList,
 } from "./parameters";
 import { mergeRemembered, type RememberedModel, type RememberedOrder } from "./rememberedModels";
-import type { Screenshot } from "./screenshot";
-import { loadWasm, type UgoeWasmModule, type WebPuppet } from "./wasm/load";
+import type { UgoeWasmModule, WebPuppet } from "./wasm";
+
+/** 読み戻した画像 (`Player.capture`)。`pixels` はストレートアルファの RGBA (各 8 ビット)、行は上から下。 */
+export interface Screenshot {
+  width: number;
+  height: number;
+  pixels: Uint8Array;
+}
+
+/** プレーヤーを使うアプリが渡すもの (wasm の読み込みとファイルの読み直し)。 */
+export interface PlayerHost {
+  /** ugoe-wasm を初期化して返す (2 回目以降は同じもの)。生成物が無ければ `null`。 */
+  loadWasm(): Promise<UgoeWasmModule | null>;
+  /** 覚えた場所 (modelFile.ts の `FileLocation`) からファイルを読み直す (着せ替えの組を戻すとき)。 */
+  readFile(location: FileLocation): Promise<ModelFile>;
+  /** `loadWasm` が `null` を返したときに `error` に出す文。 */
+  wasmMissingMessage?: string;
+}
 
 export type PlayerStatus =
   /** wasm と GPU を用意している。 */
@@ -233,14 +249,19 @@ export class Player {
   /** `trackingKept` を WebPuppet に渡し直す必要があるか (変えたときと、WebPuppet を作り直したとき)。 */
   #keptDirty = true;
 
+  readonly #host: PlayerHost;
+
+  constructor(host: PlayerHost) {
+    this.#host = host;
+  }
+
   /** `container` の中に canvas を作り、描画を始める。 */
   async attach(container: HTMLElement): Promise<void> {
     this.#container = container;
-    this.#wasm = await loadWasm();
+    this.#wasm = await this.#host.loadWasm();
     if (this.#wasm === null) {
       this.status = "unavailable";
-      this.error =
-        "ugoe-wasm がビルドされていません (apps/viewer で `pnpm wasm` を実行してください)";
+      this.error = this.#host.wasmMissingMessage ?? "ugoe-wasm がビルドされていません";
       return;
     }
     await this.#createPuppet();
@@ -380,7 +401,7 @@ export class Player {
             return [module, source.file];
           case "location":
             try {
-              return [module, await readFileAt(source.location)];
+              return [module, await this.#host.readFile(source.location)];
             } catch (e) {
               failures.push(describeRestoreFailure(module, message(e)));
               return null;
@@ -743,8 +764,8 @@ export class Player {
   }
 
   /**
-   * 今の表示を画像で読み戻す (スクリーンショット、T0420。screenshot.ts)。`WebPuppet.read_pixels()` で、canvas と同じ
-   * 大きさ (描画バッファの画素)・ビュー・背景・光源で別のテクスチャに描いたものを取る。ビューポートに重ねる HTML
+   * 今の表示を画像で読み戻す (スクリーンショット、T0420。PNG にするのはアプリで、ビューアは screenshot.ts)。
+   * `WebPuppet.read_pixels()` で、canvas と同じ大きさ (描画バッファの画素)・ビュー・背景・光源で別のテクスチャに描いたものを取る。ビューポートに重ねる HTML
    * (光源の印・市松模様) は写らない。モデルを開いていなければ `null`。
    */
   async capture(): Promise<Screenshot | null> {
@@ -1027,46 +1048,7 @@ export class Player {
     }
     const dt = this.#lastTime === null ? 0 : Math.min((now - this.#lastTime) / 1000, MAX_DT);
     this.#lastTime = now;
-    if (puppet.has_model()) {
-      const driven = this.drivers.collect(dt);
-      for (const [id, value] of driven) puppet.set_parameter(id, value);
-      const frame = this.#pendingTracking;
-      if (frame !== null) {
-        this.#pendingTracking = null;
-        setPuppetTracking(puppet, frame);
-      }
-      const ids = new Set(driven.keys());
-      if (this.tracking) {
-        // トラッキングは update の中で書き込むので、ドライバの値より優先される。
-        for (const id of this.trackingParameterIds) ids.add(id);
-      }
-      // 再生中のモーションが動かすパラメータは、スライダーで変えても上書きされる (docs/spec/motion.md#手で動かしたパラメータとの関係)。
-      const playing = this.currentMotion;
-      if (playing !== null) {
-        for (const id of this.motions.find((m) => m.name === playing)?.parameters ?? [])
-          ids.add(id);
-      }
-      if (ids.size !== this.driven.size || [...ids].some((id) => !this.driven.has(id))) {
-        this.driven = ids;
-      }
-      const over = motionOverTrackingActive(
-        this.motionOverTracking,
-        this.tracking,
-        this.currentMotion,
-        this.#currentPriority,
-      );
-      if (this.#keptDirty) {
-        this.#keptDirty = false;
-        puppet.set_tracking_kept($state.snapshot(this.trackingKept));
-      }
-      if (over !== this.#overTracking) {
-        this.#overTracking = over;
-        puppet.set_motion_over_tracking(over);
-      }
-      puppet.update(dt);
-      this.#afterMotionUpdate(puppet);
-      this.#syncValues();
-    }
+    if (puppet.has_model()) this.#advance(puppet, dt);
     try {
       puppet.render();
     } catch (e) {
@@ -1074,6 +1056,50 @@ export class Player {
       if (this.error !== text) this.error = text;
     }
   };
+
+  /**
+   * 1 フレーム分進める: ドライバの値を設定 → トラッキングの入力を渡す → モーションとトラッキングの設定 → `update(dt)` →
+   * モーションの終わりとイベント → スライダーの値を同期。時計 (`dt`) と描画は `#tick` が受け持つ。
+   */
+  #advance(puppet: WebPuppet, dt: number): void {
+    const driven = this.drivers.collect(dt);
+    for (const [id, value] of driven) puppet.set_parameter(id, value);
+    const frame = this.#pendingTracking;
+    if (frame !== null) {
+      this.#pendingTracking = null;
+      setPuppetTracking(puppet, frame);
+    }
+    const ids = new Set(driven.keys());
+    if (this.tracking) {
+      // トラッキングは update の中で書き込むので、ドライバの値より優先される。
+      for (const id of this.trackingParameterIds) ids.add(id);
+    }
+    // 再生中のモーションが動かすパラメータは、スライダーで変えても上書きされる (docs/spec/motion.md#手で動かしたパラメータとの関係)。
+    const playing = this.currentMotion;
+    if (playing !== null) {
+      for (const id of this.motions.find((m) => m.name === playing)?.parameters ?? []) ids.add(id);
+    }
+    if (ids.size !== this.driven.size || [...ids].some((id) => !this.driven.has(id))) {
+      this.driven = ids;
+    }
+    const over = motionOverTrackingActive(
+      this.motionOverTracking,
+      this.tracking,
+      this.currentMotion,
+      this.#currentPriority,
+    );
+    if (this.#keptDirty) {
+      this.#keptDirty = false;
+      puppet.set_tracking_kept($state.snapshot(this.trackingKept));
+    }
+    if (over !== this.#overTracking) {
+      this.#overTracking = over;
+      puppet.set_motion_over_tracking(over);
+    }
+    puppet.update(dt);
+    this.#afterMotionUpdate(puppet);
+    this.#syncValues();
+  }
 
   /** WebPuppet の値をスライダーの表示へ写す (変わったものだけ)。 */
   #syncValues(): void {
@@ -1187,12 +1213,5 @@ export class Player {
     for (const [id, value] of Object.entries(values)) this.#puppet?.set_parameter(id, value);
     this.#syncValues();
     this.#recovering = false;
-  }
-}
-
-declare global {
-  interface Window {
-    /** 表示中のビューア (ヘッドレスのブラウザでの確認や、外からドライバを登録するため)。 */
-    __UGOE_VIEWER__?: Player;
   }
 }

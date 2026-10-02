@@ -18,7 +18,7 @@ import {
   MODEL_EXTENSIONS,
   MODULE_EXTENSIONS,
   type ModelFile,
-} from "./modelFile";
+} from "@ugoe/player";
 import { PNG_PATH_HEADER, withPngExtension } from "./screenshot";
 
 export interface ViewerHost {

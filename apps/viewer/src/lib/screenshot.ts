@@ -7,13 +7,10 @@
 //
 // PNG への変換はブラウザの 2D canvas の `toBlob` で行う (新しい依存を入れない)。ここの関数は DOM に直接触れず、
 // canvas を作る関数を受け取る (screenshot.test.ts で偽物を渡す)。
+import type { Screenshot } from "@ugoe/player";
 
-/** 読み戻した画像。`pixels` はストレートアルファの RGBA (各 8 ビット)、行は上から下。 */
-export interface Screenshot {
-  width: number;
-  height: number;
-  pixels: Uint8Array;
-}
+/** 読み戻した画像 (@ugoe/player の `Player.capture`)。 */
+export type { Screenshot };
 
 /** `encodePng` が使う canvas の一部 (`HTMLCanvasElement` を満たす)。 */
 export interface PngCanvas {

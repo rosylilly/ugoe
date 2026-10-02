@@ -1,6 +1,14 @@
 import type { DragDropEvent } from "@tauri-apps/api/webview";
+import {
+  defaultLighting,
+  dressUpMemory,
+  lightingMemory,
+  type ModelFile,
+  type ModuleToOpen,
+  modelIdentity,
+  planRestore,
+} from "@ugoe/player";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { dressUpMemory, planRestore } from "./dressUpMemory";
 import {
   classifyDragType,
   describeDropPaths,
@@ -10,9 +18,6 @@ import {
   skippedMessage,
 } from "./drop";
 import { type FileDropEvent, readFileAt, viewerHost } from "./host";
-import { defaultLighting, lightingMemory } from "./lighting";
-import type { ModelFile, ModuleToOpen } from "./modelFile";
-import { modelIdentity } from "./modelMemory";
 
 // Tauri のウィンドウを模す: `invoke("read_model_file")` はこの表から読み、ドロップのイベントは `dragDrop` で送る。
 const disk = new Map<string, Uint8Array>();

@@ -1,4 +1,4 @@
-// ビューアが開くファイル。`.ugoe` バンドルと JSON のモデル、着せ替えのモジュール `.ugoemod`
+// プレーヤーが開くファイル。`.ugoe` バンドルと JSON のモデル、着せ替えのモジュール `.ugoemod`
 // (docs/spec/file-formats.md)。
 
 /** 読み込んだファイル。どこから来たか (ダイアログ・ドロップ・URL) は問わない。 */
@@ -7,8 +7,8 @@ export interface ModelFile {
   name: string;
   bytes: Uint8Array;
   /**
-   * 後から読み直せる場所 (host.ts の `readFileAt`)。ブラウザでドロップしたファイルと `<input type="file">` で選んだファイルには無い
-   * (File API は場所を教えない)。
+   * 後から読み直せる場所 (アプリの `PlayerHost.readFile`。ビューアは host.ts の `readFileAt`)。
+   * ブラウザでドロップしたファイルと `<input type="file">` で選んだファイルには無い (File API は場所を教えない)。
    */
   location?: FileLocation;
 }

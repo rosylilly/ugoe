@@ -1,9 +1,10 @@
 <script lang="ts">
 // モデルを描く領域。ホイールでズーム、ドラッグでパン、ダブルクリックでフィット。
 // ライティングを使うモデルでは光源の印を重ね、印をドラッグすると光源が動く (LightMarkers.svelte、T0708)。
+
+import type { Player } from "@ugoe/player";
 import { onMount } from "svelte";
 import LightMarkers from "./LightMarkers.svelte";
-import type { Player } from "./player.svelte";
 
 let { player }: { player: Player } = $props();
 

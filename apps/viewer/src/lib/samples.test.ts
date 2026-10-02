@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import type { ModelFile } from "@ugoe/player";
 import { describe, expect, it } from "vitest";
-import type { ModelFile } from "./modelFile";
 import { openSample, SAMPLES, type Sample, sampleFiles } from "./samples";
 
 const file = (name: string): ModelFile => ({ name, bytes: new Uint8Array([name.length]) });

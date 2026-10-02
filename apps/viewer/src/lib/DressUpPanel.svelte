@@ -4,9 +4,8 @@
 // 付け外しは Player (WebPuppet の着せ替えの口) が行い、失敗の理由は `player.dressUpError`。
 // 本体のアバタープロファイルがアプリに公開していないスロット (作者用) は出さない (T0715。`player.publishedSlots`)。
 // モデルに前に付けていた組があれば、戻すか尋ねる (T0711。`player.restoreOffer`)。覚えた組は「覚えた組を忘れる」で忘れる (T0709)。
-import { groupBySlot, type ModuleInfo, visibleSlots } from "./dressUp";
+import { groupBySlot, type ModuleInfo, type Player, visibleSlots } from "@ugoe/player";
 import { viewerHost } from "./host";
-import type { Player } from "./player.svelte";
 
 let { player, hasModel }: { player: Player; hasModel: boolean } = $props();
 

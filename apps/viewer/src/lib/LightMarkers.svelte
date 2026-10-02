@@ -23,6 +23,7 @@ import {
   directionalHandle,
   type LightDial,
   lightDial,
+  type Player,
   pointFromScreen,
   pointHandle,
   pointHandleOnScreen,
@@ -33,8 +34,7 @@ import {
   rangeRadiusFromGrip,
   stepMarker,
   wheelPointZ,
-} from "./lighting";
-import type { Player } from "./player.svelte";
+} from "@ugoe/player";
 
 let { player }: { player: Player } = $props();
 

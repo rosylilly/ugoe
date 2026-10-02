@@ -177,6 +177,8 @@ web-check:
     pnpm --filter '@ugoe/viewer' test
     pnpm --filter '@ugoe/face-tracking' check
     pnpm --filter '@ugoe/face-tracking' test
+    pnpm --filter '@ugoe/player' check
+    pnpm --filter '@ugoe/player' test
     pnpm --filter '@ugoe/runtime' check
     pnpm --filter '@ugoe/runtime' test
 

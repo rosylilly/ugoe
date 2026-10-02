@@ -1,5 +1,5 @@
 // プレビューモード (docs/editor.md#プレビューモード) の、DOM と wasm に依存しない部分 (preview.test.ts)。
-// スライダーのグループ分けはビューア (apps/viewer/src/lib/parameters.ts) と同じ規則。
+// スライダーのグループ分けはビューア (packages/player/src/parameters.ts) と同じ規則。
 import type { Model, Parameter, ParameterGroup, Pose, PoseGroup } from "../ipc";
 import type { PuppetStage } from "../viewport/controller.svelte";
 

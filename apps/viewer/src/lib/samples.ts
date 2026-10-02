@@ -1,7 +1,7 @@
 // アプリに同梱した見本 (assets/samples、MIT)。ツールバーの「サンプル」から開く。
 // ファイルは vite.config.ts の `sampleModels` が assets/samples の .ugoe と .ugoemod をすべて開発サーバーで配り、
 // ビルドの出力の `samples/` に入れる。
-import type { ModelFile, ModuleToOpen } from "./modelFile";
+import type { ModelFile, ModuleToOpen } from "@ugoe/player";
 
 /** 見本と一緒に読み込む着せ替えのモジュール。 */
 export interface SampleModule {

@@ -34,6 +34,9 @@ export class WebPuppet {
   parameter(id: string): number | undefined;
   reset_parameters(): void;
   update(dt: number): void;
+  active_expressions(): string[];
+  set_motion_over_tracking(enabled: boolean): void;
+  set_tracking_kept(ids: string[]): void;
 
   set_tracking(
     names: string[],
