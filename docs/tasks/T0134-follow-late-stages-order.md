@@ -1,11 +1,11 @@
 ---
 id: T0134
 title: ランタイム: 受け手でも物理より後の段 (リップシンクなど) を同じ順に当てる
-status: todo
+status: in-progress
 milestone: M8
 crates: [ugoe, ugoe-ffi, ugoe-wasm, bindings/web, tests/conformance, docs]
 depends_on: [T0133]
-assignee:
+assignee: claude-worker-T0133
 ---
 
 # T0134: 受け手の段の順をそろえる
