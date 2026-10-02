@@ -2,11 +2,11 @@
 //
 //   node scripts/sidecar.mjs [ターゲットの三つ組]
 //
-// `tauri build --config src-tauri/tauri.bundle.conf.json` (just editor-build) の beforeBuildCommand から呼ばれる。
+// `tauri build --config src-tauri/tauri.bundle.conf.json` (just app::build TARGET=editor) の beforeBuildCommand から呼ばれる。
 // ターゲットは引数、無ければ Tauri が渡す TAURI_ENV_TARGET_TRIPLE、それも無ければ手元の rustc のホスト。
 // ugoe-mcp をリリースでビルドし、Tauri の externalBin の名前の規則どおり
 // src-tauri/binaries/ugoe-mcp-<三つ組>[.exe] に置く。
-// - Linux などから Windows (*-windows-msvc) 向けに作るときは cargo-xwin を使う (just editor-build-windows と同じ)。
+// - Linux などから Windows (*-windows-msvc) 向けに作るときは cargo-xwin を使う (just app::build PLATFORM=windows と同じ)。
 // - universal-apple-darwin は aarch64 と x86_64 を作って lipo で 1 つにする。
 // tauri.conf.json には externalBin を書かない (cargo check や tauri dev がサイドカーのビルドを待たずに済むように)。
 import { spawnSync } from "node:child_process";

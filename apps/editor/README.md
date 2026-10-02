@@ -25,14 +25,14 @@ scripts/sidecar.mjs 同梱する ugoe-mcp をビルドして src-tauri/binaries/
 
 ```sh
 just editor         # 開発モードで起動 (vite + tauri dev)
-just editor-build   # リリースビルド (インストーラを作る)
+just editor-build   # リリースビルド (インストーラを作る。`just app::build TARGET=editor` の別名)
 just web-check      # Biome + svelte-check
 ```
 
 `just editor` と `just editor-build` は、先に `just wasm` (ugoe-wasm のビルドと JS バインディングの生成) を実行する
 (`tauri.conf.json` の `beforeDevCommand` / `beforeBuildCommand`)。
 
-`just editor-build` (と `just editor-build-windows`) は `--config src-tauri/tauri.bundle.conf.json` を重ね、MCP サーバの
+`just editor-build` (`just app::build TARGET=editor`) は `--config src-tauri/tauri.bundle.conf.json` を重ね、MCP サーバの
 `ugoe-mcp` をサイドカー (Tauri の `externalBin`) として同梱する。重ねた設定の `beforeBuildCommand` が `pnpm sidecar`
 (`scripts/sidecar.mjs`) でビルドのターゲット向けに `ugoe-mcp` をリリースでビルドし、`src-tauri/binaries/ugoe-mcp-<三つ組>[.exe]`
 (gitignore 済み) に置く。インストールすると `ugoe-mcp` はエディタの実行ファイルの隣に入り、設定の「Connect agents」が
@@ -42,11 +42,41 @@ just web-check      # Biome + svelte-check
 
 ## 各 OS でのビルド
 
-Tauri は他の OS 向けのクロスビルドが難しいので、**インストーラは基本的にその OS の上でビルドする**。
-WSL の中で `just editor-build` を実行すると Linux 向けのバイナリができる (WSLg で動かせるが、Windows 向けではない)。
-Windows 向けは、Windows 上 (PowerShell) で直接ビルドするか、
-Linux (WSL2 を含む) から `just editor-build-windows` でクロスビルドする
-([Linux (WSL2) から Windows 向けにビルドする](#linux-wsl2-から-windows-向けにビルドする)。NSIS のインストーラだけ)。
+エディタ・ビューア・スタジオのインストーラは、1 つの入口 `just app::build` で作る (`scripts/app-build.mjs`)。
+ここに書く前提と手順は 3 つのアプリで同じ。
+
+```sh
+just app::build                                        # すべてのアプリを今の OS 向けに
+just app::build TARGET=editor                          # エディタだけ (`just editor-build` と同じ)
+just app::build TARGET=editor,viewer PLATFORM=linux,windows   # Linux (WSL2) から Linux 向けと Windows 向けを
+just app::build TARGET=studio --bundles deb            # KEY=値 でない引数は tauri build に渡す
+```
+
+| 指定 | 意味 |
+| --- | --- |
+| `TARGET=` | アプリ。`editor`・`viewer`・`studio` をカンマ区切りで (`all` か省略ですべて) |
+| `PLATFORM=` | 向ける OS。`windows`・`macos`・`linux` をカンマ区切りで (省略で今の OS) |
+| `VCAM=1` | macOS のスタジオに仮想カメラの Camera Extension を入れる ([docs/release.md#macos-の仮想カメラ](../../docs/release.md#macos-の仮想カメラ)。署名が要る) |
+| `DRY_RUN=1` | 道具を調べ、実行するコマンドを表示するだけ |
+| (環境変数) | 上の指定は環境変数でも書ける (`DRY_RUN=1 just app::build ...`)。引数に書いた方が優先 |
+| それ以外 | すべての `tauri build` にそのまま渡す (例: `--debug`・`--bundles deb`・`--target aarch64-apple-darwin`) |
+
+- **書き方:** just のレシピの名前には `:` を使えないので、`app:build` ではなくモジュール (`justfile` の `mod app`、`scripts/app.just`) の
+  `app::build` にしている (`just app build` でも同じ)。`TARGET=...` は just の変数の上書きではなく、レシピの引数としてスクリプトが読む
+  (just の変数の上書きはモジュールのレシピに届かないため)。そのため `just app::build` の **後ろ**に書く。
+- **作れる組み合わせ:** 今の OS 向けはその OS の `tauri build`。それに加えて、Linux (WSL2 を含む) からは Windows 向けを
+  cargo-xwin でクロスビルドできる ([Linux (WSL2) から Windows 向けにビルドする](#linux-wsl2-から-windows-向けにビルドする)。NSIS だけ)。
+  それ以外 (Linux から macOS 向け・Windows から Linux 向けなど) は、何も作らずに理由と代わりの方法 (その OS の上で実行する・
+  CI の [Editor build](../../.github/workflows/editor-build.yml)) を示して止まる。足りない道具があれば、入れ方を示して止まる。
+- **アプリごとの違い** は `scripts/app-build.mjs` の `APPS` だけに書く: エディタは MCP サーバのサイドカー (`tauri.bundle.conf.json`)、
+  スタジオは Windows 向けで仮想カメラの DLL と NSIS のフック (`tauri.windows.conf.json`。Tauri がターゲットの OS を見て自動で重ねる)、
+  macOS 向けで `VCAM=1` のときの Camera Extension (`tauri.macos-vcam.conf.json`)。
+- **できたもの** はアプリと OS ごとに `target/dist/<アプリ>/<OS>/` へ写し、最後に一覧を出す (前の中身は消す)。
+  tauri のバンドルのディレクトリ ([できるもの](#できるもの)) にも残る。
+- 複数のアプリと OS を指定すると、OS ごとにアプリを順にビルドする。1 つ失敗したらそこで止まる。
+- 前からある `just editor-build`・`just editor-build-windows`・`just viewer-build`・`just studio-build` は、
+  `just app::build TARGET=<アプリ> [PLATFORM=windows]` の別名として残している (引数も同じように渡せる)。
+- Windows の PowerShell は引数の `editor,viewer` を 2 つの引数に分けるが、スクリプトが続きとして読むのでそのまま書ける。
 
 ビルドせずに試すだけなら、GitHub Actions の [Editor build](../../.github/workflows/editor-build.yml) の成果物を使う
 (Actions のタブで実行を選び、Artifacts から `ugoe-editor-<OS>` をダウンロードする。手動実行か `v*` タグで動く)。
@@ -80,24 +110,19 @@ OS ごとの前提パッケージは [Tauri の Prerequisites](https://v2.tauri.
 just setup                  # pnpm install
 cargo install wasm-bindgen-cli --version "$(just wasm-bindgen-version)" --locked   # 初回のみ (PowerShell でも同じ)
 just editor                 # 開発モードで起動して確かめる
-just editor-build           # Windows・Linux: 手元の CPU 向けのインストーラ
+just app::build             # Windows・Linux: 手元の CPU 向けのインストーラ (TARGET= で絞れる)
 ```
 
-macOS では、Apple Silicon と Intel の両方で動く universal バイナリを作る (CI も同じ):
+macOS では、既定で Apple Silicon と Intel の両方で動く universal バイナリ (`--target universal-apple-darwin`) を作る (CI も同じ)。
+片方だけなら `--target aarch64-apple-darwin` のように渡す:
 
 ```sh
 rustup target add aarch64-apple-darwin x86_64-apple-darwin   # 初回のみ
-just editor-build --target universal-apple-darwin
+just app::build PLATFORM=macos
 ```
 
-`just editor-build` の引数は `tauri build` に渡される (例: `--bundles deb` で .deb だけを作る)。
-
-WSL では、AppImage を作る linuxdeploy が `PATH` に含まれる Windows のディレクトリ (`/mnt/c/...`) を読めずに失敗する。
-`PATH` から Windows のディレクトリを外して実行する:
-
-```sh
-PATH="$(printf '%s' "$PATH" | tr ':' '\n' | grep -v '^/mnt/' | paste -sd:)" just editor-build
-```
+WSL では、AppImage を作る linuxdeploy が `PATH` に含まれる Windows のディレクトリ (`/mnt/c/...`) を読めずに失敗するので、
+Linux 向けのビルドでは `PATH` から `/mnt/` で始まるディレクトリを外して `tauri build` を実行する (スクリプトが自動で行う)。
 
 ### Linux (WSL2) から Windows 向けにビルドする
 
@@ -114,12 +139,16 @@ cargo install cargo-xwin --locked
 ```
 
 ```sh
-just editor-build-windows   # 足りない道具があれば、入れ方を示して止まる
+just app::build PLATFORM=windows                 # 3 つのアプリ。足りない道具があれば、入れ方を示して止まる
+just app::build TARGET=editor PLATFORM=windows   # エディタだけ (`just editor-build-windows` と同じ)
 ```
 
-- できるもの: `target/x86_64-pc-windows-msvc/release/bundle/nsis/ugoe_<版>_x64-setup.exe` (インストーラ、約 4 MiB) と
-  `target/x86_64-pc-windows-msvc/release/ugoe-editor.exe` (実行ファイル、約 13 MiB)。
-  引数は `tauri build` に渡される (例: `just editor-build-windows --debug`)。
+- できるもの: `target/dist/<アプリ>/windows/<製品名>_<版>_x64-setup.exe` (インストーラ。エディタは約 29 MiB・ビューアは約 21 MiB・スタジオは約 20 MiB。
+  元は `target/x86_64-pc-windows-msvc/release/bundle/nsis/`) と、`target/x86_64-pc-windows-msvc/release/ugoe-editor.exe`
+  (実行ファイル、約 13 MiB。ビューアは `ugoe-viewer.exe`、スタジオは `ugoe-studio.exe`)。
+  `KEY=値` でない引数は `tauri build` に渡される (例: `just app::build PLATFORM=windows --debug`)。
+- スタジオは仮想カメラの DLL (`ugoe_studio_vcam.dll`) も cargo-xwin で作ってインストーラに入れる (`tauri.windows.conf.json`)。
+  インストーラは管理者の権限で入れる (perMachine)。
 - WSL2 からは、実行ファイルを Windows 側にコピーしてそのまま起動できる
   (例: `cp target/x86_64-pc-windows-msvc/release/ugoe-editor.exe /mnt/c/Users/<名前>/Downloads/` してエクスプローラーから開く)。
 - **NSIS だけ。** `.msi` (WiX) は Windows でしか作れない。
@@ -143,6 +172,11 @@ just editor-build-windows   # 足りない道具があれば、入れ方を示�
 | Windows (Linux からのクロスビルド) | `target/x86_64-pc-windows-msvc/release/bundle/nsis/` | セットアップ用の `.exe` (NSIS) |
 | macOS | `target/universal-apple-darwin/release/bundle/dmg/`・`.../bundle/macos/` | `.dmg`・`ugoe.app` |
 | Linux | `target/release/bundle/deb/`・`rpm/`・`appimage/` | `.deb`・`.rpm`・`.AppImage` |
+
+`just app::build` は、このうちインストーラ (`.deb`・`.rpm`・`.AppImage`・`.msi`・NSIS の `.exe`・`.dmg`) を
+`target/dist/<アプリ>/<OS>/` (`<OS>` は `windows`・`macos`・`linux`) に写す。バンドルのディレクトリはアプリの間で共有なので、
+製品名 (`tauri.conf.json` の `productName`。エディタは `ugoe`、ビューアは `ugoe-viewer`、スタジオは `ugoe-studio`) と版で始まり、
+そのビルドでできたファイルだけを選ぶ。CI はこのディレクトリを成果物として上げる。
 
 実行ファイルだけなら `target/release/ugoe-editor` (Windows は `ugoe-editor.exe`) にもできる。
 

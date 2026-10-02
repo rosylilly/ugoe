@@ -62,6 +62,9 @@ jobs:
         run: just publish-check
       - name: Tasks
         run: just tasks > /dev/null
+      # アプリのビルドの入口 (scripts/app-build.mjs) の引数と組み合わせ
+      - name: App build check
+        run: just app-build-check
 
   # rust-group の matrix を scripts/ci-groups.mjs の GROUPS から作る (グループの定義は 1 か所に置く)
   rust-groups:

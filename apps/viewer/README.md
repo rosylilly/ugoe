@@ -533,7 +533,7 @@ Tauri の外 (ふつうのブラウザ) で開くと、ファイルの選択は 
 
 ```sh
 just viewer                      # 開発モードで起動 (vite の 1430 番ポート + tauri dev)
-just viewer-build                # リリースビルド (インストーラを作る)。例: just viewer-build --bundles deb
+just viewer-build                # リリースビルド (`just app::build TARGET=viewer` の別名)。例: just viewer-build --bundles deb
 pnpm --filter @ugoe/viewer wasm  # ugoe-wasm をビルドして src/lib/wasm/generated/ に JS バインディングを出す
 pnpm --filter @ugoe/viewer mediapipe  # MediaPipe の wasm とモデルを public/mediapipe/ に用意する (dev・build でも実行される)
 just web-check                   # Biome + svelte-check + Vitest (エディタとビューアの両方)
@@ -542,6 +542,7 @@ just web-check                   # Biome + svelte-check + Vitest (エディタ�
 `just viewer` と `just viewer-build` は、先に `pnpm wasm` を実行する (`tauri.conf.json` の `beforeDevCommand` /
 `beforeBuildCommand`)。必要な道具 (Rust・Node.js・pnpm・just・wasm-bindgen-cli・各 OS の前提パッケージ) はエディタと同じなので、
 [apps/editor/README.md#各-os-でのビルド](../editor/README.md#各-os-でのビルド) を参照。
+Linux (WSL2) から Windows 向けのクロスビルドも同じ (`just app::build TARGET=viewer PLATFORM=windows`)。
 GitHub Actions の Editor build のワークフローは、ビューアのインストーラ (`ugoe-viewer-<OS>`) も作る。
 
 アイコンは `src-tauri/icons/icon.png` から `pnpm tauri icon src-tauri/icons/icon.png -o src-tauri/icons` で作り直せる

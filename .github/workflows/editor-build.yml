@@ -2,7 +2,9 @@ name: Editor build
 
 # エディタ・ビューア・スタジオのインストーラを各 OS のランナーでビルドし、成果物 (artifact) として置く。
 # Tauri は他の OS 向けのクロスビルドが難しいので、OS ごとにネイティブでビルドする。
-# (Linux から Windows 向けの NSIS だけを作る `just editor-build-windows` もあるが、MSI を作れないので CI では使わない。)
+# 手元と同じ入口 `just app::build TARGET=<アプリ> PLATFORM=<OS>` (scripts/app-build.mjs) を使い、アプリごとの違い
+# (エディタのサイドカー・スタジオの仮想カメラの DLL など) はそのスクリプトが持つ。できたものは target/dist/<アプリ>/<OS>/ に集まる。
+# (Linux から Windows 向けの NSIS だけを作るクロスビルドもあるが、MSI を作れないので CI では使わない。)
 # 署名はしていない (apps/editor/README.md#配布物の署名)。
 # ビューア (apps/viewer) とスタジオ (apps/studio) も同じ手順でビルドできるので、アプリを行列に加えて一緒に作る (T0701・T0801)。
 on:
@@ -19,30 +21,27 @@ env:
 
 jobs:
   build:
-    name: build (${{ matrix.app }}, ${{ matrix.platform }})
+    name: build (${{ matrix.app }}, ${{ matrix.label }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         app: [editor, viewer, studio]
-        platform: [linux-x86_64, windows-x86_64, macos-universal]
+        platform: [linux, windows, macos]
         include:
-          - platform: linux-x86_64
+          - platform: linux
             os: ubuntu-latest
-            bundle-dir: target/release/bundle
-            build-args: ""
+            label: linux-x86_64
             rust-targets: ""
-          - platform: windows-x86_64
+          - platform: windows
             os: windows-latest
-            bundle-dir: target/release/bundle
-            build-args: ""
+            label: windows-x86_64
             rust-targets: ""
-          # Apple Silicon と Intel の両方で動く universal バイナリを 1 つの .dmg にする
-          - platform: macos-universal
+          # Apple Silicon と Intel の両方で動く universal バイナリを 1 つの .dmg にする (app-build.mjs の macOS の既定)
+          - platform: macos
             os: macos-latest
-            bundle-dir: target/universal-apple-darwin/release/bundle
-            build-args: --target universal-apple-darwin
+            label: macos-universal
             rust-targets: aarch64-apple-darwin x86_64-apple-darwin
     defaults:
       run:
@@ -61,7 +60,7 @@ jobs:
         run: rustup target add ${{ matrix.rust-targets }}
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ${{ matrix.app }}-build-${{ matrix.platform }}
+          shared-key: ${{ matrix.app }}-build-${{ matrix.label }}
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -83,17 +82,9 @@ jobs:
       # beforeBuildCommand (tauri.conf.json) でも `pnpm wasm` が走るが、ビルド済みなのですぐ終わる。
       # Windows でも just はレシピを windows-shell (PowerShell) で実行するので、手元の Windows と同じ経路になる。
       - name: Build ${{ matrix.app }}
-        run: just ${{ matrix.app }}-build ${{ matrix.build-args }}
-      - name: List bundles
-        run: find "${{ matrix.bundle-dir }}" -maxdepth 2 -type f -exec ls -l {} +
+        run: just app::build TARGET=${{ matrix.app }} PLATFORM=${{ matrix.platform }}
       - uses: actions/upload-artifact@v7
         with:
-          name: ugoe-${{ matrix.app }}-${{ matrix.platform }}
+          name: ugoe-${{ matrix.app }}-${{ matrix.label }}
           if-no-files-found: error
-          path: |
-            ${{ matrix.bundle-dir }}/deb/*.deb
-            ${{ matrix.bundle-dir }}/rpm/*.rpm
-            ${{ matrix.bundle-dir }}/appimage/*.AppImage
-            ${{ matrix.bundle-dir }}/msi/*.msi
-            ${{ matrix.bundle-dir }}/nsis/*.exe
-            ${{ matrix.bundle-dir }}/dmg/*.dmg
+          path: target/dist/${{ matrix.app }}/${{ matrix.platform }}/

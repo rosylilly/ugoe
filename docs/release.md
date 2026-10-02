@@ -7,7 +7,7 @@
 | --- | --- | --- |
 | crates.io のクレート | `.github/workflows/crates-release.yml` | [crates.io](#cratesio) |
 | npm の `@ugoe/runtime` | `.github/workflows/web-runtime-release.yml` | [bindings/web/README.md#リリース](../bindings/web/README.md#リリース) |
-| エディタとビューアのインストーラ | `.github/workflows/editor-build.yml` | [apps/editor/README.md](../apps/editor/README.md) |
+| エディタ・ビューア・スタジオのインストーラ | `.github/workflows/editor-build.yml` (`just app::build` を OS ごとのランナーで実行) | [apps/editor/README.md#各-os-でのビルド](../apps/editor/README.md#各-os-でのビルド) |
 | Unity の UPM パッケージ (tarball) | `.github/workflows/unity.yml` (成果物に残すだけ) | [bindings/unity/README.md#リリース](../bindings/unity/README.md#リリース) |
 | スタジオの macOS の仮想カメラ (Camera Extension) | まだ無い (手で作る。配布物に入れるのは Release のマイルストーン) | [macOS の仮想カメラ](#macos-の仮想カメラ) |
 
@@ -117,9 +117,12 @@ export UGOE_APPLE_TEAM_ID=XXXXXXXXXX                                   # 10 文�
 export APPLE_SIGNING_IDENTITY="Developer ID Application: <名義> (XXXXXXXXXX)"
 export UGOE_VCAM_PROVISIONING_PROFILE=/path/to/ugoe_studio_camera.provisionprofile
 export UGOE_STUDIO_PROVISIONING_PROFILE=/path/to/ugoe_studio.provisionprofile
-cd apps/studio
-pnpm tauri build --target universal-apple-darwin --config src-tauri/tauri.macos-vcam.conf.json
+just app::build TARGET=studio PLATFORM=macos VCAM=1
 ```
+
+- `VCAM=1` は、`--target universal-apple-darwin` (macOS の既定) に `--config src-tauri/tauri.macos-vcam.conf.json` を重ねて
+  `tauri build` を実行します (`scripts/app-build.mjs`。上の 4 つの環境変数が無ければ、何も作らずに止まります)。
+  できた `.dmg` は `target/dist/studio/macos/` にも写します。
 
 - `tauri.macos-vcam.conf.json` の `beforeBuildCommand` が `pnpm vcam:macos` (`scripts/build-vcam-macos.mjs`) を呼びます。
   スクリプトは Swift の拡張を arm64 と x86_64 で作って束ね、`target/vcam/macos/app.ugoe.studio.camera.systemextension` に組み、

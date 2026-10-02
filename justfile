@@ -5,10 +5,13 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 
 # Windows では PowerShell で実行する (bash なしでエディタをビルドできるように)。
 # Windows で動くのは、1 行に 1 コマンドのレシピと Node のスクリプトを呼ぶレシピ
-# (setup・wasm・wasm-bindgen-version・editor・editor-build・viewer・viewer-build・ci など)。
+# (setup・wasm・wasm-bindgen-version・editor・editor-build・viewer・viewer-build・app::build・ci など)。
 # `@` で始まる引数が PowerShell の splatting と解釈されないよう、`@ugoe/editor` などは引用符で囲む。
 # `test-gpu` と `commitlint` は bash の構文を使うので、Windows では Git Bash か WSL で実行する。
 set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+# デスクトップアプリのビルド: `just app::build TARGET=editor,viewer,studio PLATFORM=windows,macos,linux` (scripts/app.just)
+mod app "scripts/app.just"
 
 default:
     @just --list
@@ -19,7 +22,7 @@ setup:
     rustup show active-toolchain
 
 # CI と同じ検査一式
-ci: fmt-check lint test layers groups licenses publish-check spec web-check i18n
+ci: fmt-check lint test layers groups licenses publish-check spec web-check i18n app-build-check
 
 # コミットメッセージを検査: `just commitlint "feat(runtime): add foo"`
 commitlint message:
@@ -199,33 +202,33 @@ i18n:
 editor:
     pnpm --filter '@ugoe/editor' tauri dev
 
-# エディタのリリースビルド (インストーラを作る。手順は apps/editor/README.md)。
-# 引数は tauri build に渡す: `just editor-build --target universal-apple-darwin`
-# MCP サーバの ugoe-mcp をサイドカーとして同梱する (src-tauri/tauri.bundle.conf.json。docs/editor.md#エージェントをつなぐ)。
+# エディタのリリースビルド。`just app::build TARGET=editor` の別名 (引数も同じ。apps/editor/README.md#各-os-でのビルド)
 editor-build *args:
-    pnpm --filter '@ugoe/editor' tauri build --config src-tauri/tauri.bundle.conf.json {{args}}
+    @node scripts/app-build.mjs TARGET=editor {{args}}
 
-# Linux (WSL2 を含む) から Windows x86_64 向けのエディタをクロスビルドする (NSIS だけ。署名なし)。
-# 必要な道具を調べてから tauri build を cargo-xwin で実行する (scripts/editor-windows.mjs)。
-# 手順と前提は apps/editor/README.md の「Linux (WSL2) から Windows 向けにビルドする」
+# Linux (WSL2 を含む) から Windows 向けのエディタをクロスビルドする。`just app::build TARGET=editor PLATFORM=windows` の別名
 editor-build-windows *args:
-    @node scripts/editor-windows.mjs {{args}}
+    @node scripts/app-build.mjs TARGET=editor PLATFORM=windows {{args}}
 
 # ビューアを開発モードで起動 (apps/viewer/README.md)
 viewer:
     pnpm --filter '@ugoe/viewer' tauri dev
 
-# ビューアのリリースビルド。引数は tauri build に渡す: `just viewer-build --bundles deb`
+# ビューアのリリースビルド。`just app::build TARGET=viewer` の別名: `just viewer-build --bundles deb`
 viewer-build *args:
-    pnpm --filter '@ugoe/viewer' tauri build {{args}}
+    @node scripts/app-build.mjs TARGET=viewer {{args}}
 
 # スタジオを開発モードで起動 (apps/studio/README.md)
 studio:
     pnpm --filter '@ugoe/studio' tauri dev
 
-# スタジオのリリースビルド。引数は tauri build に渡す: `just studio-build --bundles deb`
+# スタジオのリリースビルド。`just app::build TARGET=studio` の別名: `just studio-build --bundles deb`
 studio-build *args:
-    pnpm --filter '@ugoe/studio' tauri build {{args}}
+    @node scripts/app-build.mjs TARGET=studio {{args}}
+
+# アプリのビルドの入口 (scripts/app-build.mjs) の引数と組み合わせの検査
+app-build-check:
+    @node --test --test-reporter=dot scripts/app-build.test.mjs
 
 # CLI 実行: `just cli info model.json`
 cli *args:

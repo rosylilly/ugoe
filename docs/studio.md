@@ -602,7 +602,7 @@ macOS 12.3 以降の CoreMediaIO の Camera Extension (System Extension) で、�
   `Info.plist`・`Extension.entitlements`)。Camera Extension の API (CMIOExtension) は Swift と Objective-C 向けなので、拡張は Swift で書く。
 - **ビルド:** `pnpm vcam:macos` (`apps/studio/scripts/build-vcam-macos.mjs`) が `xcrun swiftc` で arm64 と x86_64 を作って `lipo` で束ね、
   `target/vcam/macos/` に拡張の束を組み、拡張の entitlement で署名する。Xcode のプロジェクトは使わない (macOS と Xcode か
-  コマンドラインツールが要る)。拡張を入れたスタジオは `pnpm tauri build --config src-tauri/tauri.macos-vcam.conf.json` で作る
+  コマンドラインツールが要る)。拡張を入れたスタジオは `just app::build TARGET=studio PLATFORM=macos VCAM=1` (`tauri.macos-vcam.conf.json` を重ねる) で作る
   (`bundle.macOS.files` が拡張とプロビジョニングプロファイルを束に入れ、`Entitlements.vcam.plist` で署名する)。署名・公証・
   entitlement・プロビジョニングプロファイルの用意は [release.md の macOS の仮想カメラ](release.md#macos-の仮想カメラ)。
 - **開発中の確かめ方:** System Extension は「アプリケーション」フォルダのアプリから、正しく署名したものしか有効にできない。

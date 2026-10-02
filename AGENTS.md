@@ -84,6 +84,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 | `just wt-add <ID>` / `just wt-remove <ID>` | タスク用 worktree の作成・削除 (main の `target/` をコピーしてビルドを省く) |
 | `just editor` | エディタを開発モードで起動 |
 | `just viewer` | ビューアを開発モードで起動 |
+| `just app::build TARGET=editor,viewer,studio PLATFORM=windows,macos,linux` | デスクトップアプリのビルド (既定はすべてのアプリを今の OS 向けに。`DRY_RUN=1` で表示だけ。docs/release.md) |
 | `just studio` | スタジオを開発モードで起動 |
 | `just cli <args>` | CLI を実行 (例: `just cli fixture single-quad`) |
 

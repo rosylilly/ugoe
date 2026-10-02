@@ -68,7 +68,7 @@ src-tauri/                    バックエンド (Rust クレート `ugoe-studio
   tests/virtual_camera_gpu.rs   仮想カメラの画が、物理を有効にした 1 つの Puppet の画と一致する (`just test-gpu`)
   tauri.windows.conf.json       Windows のビルド: 仮想カメラの DLL を作る・NSIS を管理者の権限で入れる
   windows/hooks.nsh             NSIS: 仮想カメラの DLL を入れて regsvr32 で登録する・消す
-  tauri.macos-vcam.conf.json    macOS で Camera Extension を入れたスタジオを作る設定 (`--config` で渡す。docs/release.md#macos-の仮想カメラ)
+  tauri.macos-vcam.conf.json    macOS で Camera Extension を入れたスタジオを作る設定 (`just app::build TARGET=studio PLATFORM=macos VCAM=1` が `--config` で重ねる。docs/release.md#macos-の仮想カメラ)
   Entitlements.vcam.plist       その entitlement (Entitlements.plist に System Extension を入れる権限を足したもの)
 scripts/build-vcam.mjs        `pnpm vcam`: 仮想カメラのメディアソースの DLL を作る (Windows 向け。CRT は静的)
 scripts/build-vcam-macos.mjs  `pnpm vcam:macos`: macOS の Camera Extension を swiftc で作って署名する (macOS だけ)
@@ -173,7 +173,9 @@ Tauri の外では、ページを読む前に `window.__UGOE_STUDIO_HOST__` に 
 
 ```sh
 just studio                       # 開発モードで起動 (vite の 1440 番ポート + tauri dev)
-just studio-build                 # リリースビルド (インストーラを作る)。例: just studio-build --bundles deb
+just studio-build                 # リリースビルド (`just app::build TARGET=studio` の別名)。例: just studio-build --bundles deb
+just app::build TARGET=studio PLATFORM=windows  # Linux (WSL2) から Windows 向け (仮想カメラの DLL も cargo-xwin で作って入れる)
+just app::build TARGET=studio PLATFORM=macos VCAM=1  # macOS で Camera Extension を入れる (署名が要る。docs/release.md#macos-の仮想カメラ)
 pnpm --filter @ugoe/studio wasm   # ugoe-wasm をビルドして src/lib/wasm/generated/ に JS バインディングを出す
 pnpm --filter @ugoe/studio mediapipe  # MediaPipe の wasm とモデルを public/mediapipe/ に用意する (dev・build でも実行される。gitignore 済み)
 pnpm --filter @ugoe/studio vcam   # 仮想カメラの DLL (Windows 向け。Linux からは cargo-xwin でクロスビルド)
