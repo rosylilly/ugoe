@@ -45,7 +45,7 @@ assignee: claude-worker-T0911
   アバターの検査のエラーの一覧・着せ替えの問題の詳細、ビューアの `player.error`、スタジオの `.studio__error`・仮想カメラの失敗の文) に
   `.ugoe-selectable` を付けた。ヘッドレスの Chrome で、`danger` の Notice の見出しと本文と Toast の文はドラッグで選択でき、info の Notice と
   success の Toast はできないことを確かめた (scratchpad の T0911/errors.png)。
-- **確かめていないこと:** 実際の Tauri のウィンドウ (WebKitGTK・WebView2・WKWebView) での動き。`packages/face-tracking` のエラーの文 2 か所は
-  範囲外なので付けていない (team-lead に相談中)。スタジオの `hotkeyError` も選択できるようにした (team-lead が本文に `.ugoe-selectable` を付けた)。
+- **確かめていないこと:** 実際の Tauri のウィンドウ (WebKitGTK・WebView2・WKWebView) での動き。`packages/face-tracking` のエラーの文 2 か所と
+  スタジオの `hotkeyError` も選択できるようにした (team-lead が本文に `.ugoe-selectable` を付けた)。
   T0808 のブラウザソースの頁が output.html と別の HTML なら、同じ指定が要る。
 - team-lead が review の後に、packages/face-tracking のエラーの文 2 か所 (承認済みの範囲外) とスタジオのホットキーのエラー (warning の Notice) の本文にも .ugoe-selectable を付けた。
