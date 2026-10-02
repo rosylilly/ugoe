@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { setLocale } from "@ugoe/i18n";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   anglesFromPad,
   anglesFromScreen,
@@ -31,6 +32,9 @@ import {
   wheelPointZ,
 } from "./lighting";
 import { type ModelIdentity, modelIdentity } from "./modelMemory";
+
+// 文言は日本語の訳で確かめる (英語の原文を確かめる it は、その中で言語を切り替える)。
+beforeEach(() => setLocale("ja"));
 
 class MemoryStorage implements Storage {
   #items = new Map<string, string>();
@@ -268,6 +272,9 @@ describe("lightingLabel", () => {
     custom.ambient.intensity = 0.1;
     expect(lightingLabel(custom)).toBe("カスタム");
     expect(lightingLabel({ ...defaultLighting(), enabled: false })).toBe("切");
+    setLocale("en");
+    expect(lightingLabel(defaultLighting())).toBe("Standard");
+    expect(lightingLabel({ ...defaultLighting(), enabled: false })).toBe("Off");
   });
 });
 

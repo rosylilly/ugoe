@@ -46,6 +46,58 @@ The model is used unmodified, only to estimate the orientation of the upper body
 the shoulders of the tracked person. It runs locally like the face landmarker model.
 
 
+JavaScript libraries bundled into the application
+-------------------------------------------------
+
+The following libraries are bundled into the JavaScript of the application and are
+licensed under the MIT License (full text at the end of this file).
+
+Svelte (svelte) 5.57.1
+  Source: https://github.com/sveltejs/svelte
+  Copyright (c) 2016-2025 Svelte Contributors
+
+Bits UI (bits-ui) 2.19.4
+  Source: https://github.com/huntabyte/bits-ui
+  Copyright (c) 2023 Hunter Johnston
+
+runed 0.35.1
+  Source: https://github.com/svecosystem/runed
+  Copyright (c) 2024 Hunter Johnston, Copyright (c) 2024 Thomas G. Lopes
+
+svelte-toolbelt 0.10.6
+  Source: https://www.npmjs.com/package/svelte-toolbelt
+  Copyright (c) 2024 Hunter Johnston, Copyright (c) 2024 Thomas G. Lopes
+
+Floating UI (@floating-ui/core 1.8.0, @floating-ui/dom 1.8.0, @floating-ui/utils 0.2.12)
+  Source: https://github.com/floating-ui/floating-ui
+  Copyright (c) 2021-present Floating UI contributors
+
+tabbable 6.5.0
+  Source: https://github.com/focus-trap/tabbable
+  Copyright (c) 2015 David Clark
+
+clsx 2.1.1
+  Source: https://github.com/lukeed/clsx
+  Copyright (c) Luke Edwards <luke.edwards05@gmail.com> (lukeed.com)
+
+style-to-object 1.0.14
+  Source: https://github.com/remarkablemark/style-to-object
+  Copyright (c) 2017 Menglin "Mark" Xu <mark@remarkablemark.org>
+
+inline-style-parser 0.2.7
+  Source: https://github.com/remarkablemark/inline-style-parser
+  Copyright (c) 2012 TJ Holowaychuk <tj@vision-media.ca>
+
+i18next 26.4.2
+  Source: https://github.com/i18next/i18next
+  Copyright (c) 2011-present i18next
+
+Tauri JavaScript API (@tauri-apps/api 2.12.0, @tauri-apps/plugin-dialog 2.8.0, @tauri-apps/plugin-os 2.4.0)
+  Source: https://github.com/tauri-apps/tauri, https://github.com/tauri-apps/plugins-workspace
+  Copyright (c) 2019-2022 The Tauri Programme in the Commons Conservancy
+           (dual-licensed under MIT or Apache-2.0; used here under the MIT License)
+
+
 ==============================================================================
 
 
@@ -250,3 +302,27 @@ the shoulders of the tracked person. It runs locally like the face landmarker mo
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+
+
+==============================================================================
+
+
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

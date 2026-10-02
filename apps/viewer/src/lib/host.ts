@@ -12,6 +12,7 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { locale } from "@tauri-apps/plugin-os";
 import {
   baseName,
   type FileLocation,
@@ -19,6 +20,7 @@ import {
   MODULE_EXTENSIONS,
   type ModelFile,
 } from "@ugoe/player";
+import { t } from "./i18n";
 import { PNG_PATH_HEADER, withPngExtension } from "./screenshot";
 
 export interface ViewerHost {
@@ -48,6 +50,11 @@ export interface ViewerHost {
    * 無ければ HTML のドロップ (File API) で受け取る (場所は分からない)。
    */
   listenFileDrop?(listener: (event: FileDropEvent) => void): Promise<() => void>;
+  /**
+   * OS の言語 (BCP 47 のタグ。Tauri は tauri-plugin-os の `locale()`)。取れなければ `null`。
+   * 無ければ WebView の `navigator.languages` を使う (@ugoe/i18n の既定)。
+   */
+  systemLocale?(): Promise<string | null>;
 }
 
 /**
@@ -74,21 +81,24 @@ async function readTauriFile(path: string): Promise<ModelFile> {
 const tauriHost: ViewerHost = {
   async pickModelFile() {
     const path = await open({
-      title: "モデルを開く",
+      title: t("files.openModel.title"),
       multiple: false,
       directory: false,
       filters: [
-        { name: "ugoe モデル・着せ替え", extensions: [...MODEL_EXTENSIONS, ...MODULE_EXTENSIONS] },
+        {
+          name: t("files.openModel.filter"),
+          extensions: [...MODEL_EXTENSIONS, ...MODULE_EXTENSIONS],
+        },
       ],
     });
     return path === null ? null : readTauriFile(path);
   },
   async pickModuleFiles() {
     const paths = await open({
-      title: "着せ替えのモジュールを開く",
+      title: t("files.openModules.title"),
       multiple: true,
       directory: false,
-      filters: [{ name: "着せ替えのモジュール", extensions: [...MODULE_EXTENSIONS] }],
+      filters: [{ name: t("files.openModules.filter"), extensions: [...MODULE_EXTENSIONS] }],
     });
     return paths === null ? [] : Promise.all(paths.map(readTauriFile));
   },
@@ -98,7 +108,7 @@ const tauriHost: ViewerHost = {
   },
   async saveJsonFile(name, text) {
     const path = await save({
-      title: "保存",
+      title: t("files.saveJson.title"),
       defaultPath: name,
       filters: [{ name: "JSON", extensions: ["json"] }],
     });
@@ -108,9 +118,9 @@ const tauriHost: ViewerHost = {
   },
   async savePngFile(name, bytes) {
     const picked = await save({
-      title: "スクリーンショットを保存",
+      title: t("files.savePng.title"),
       defaultPath: name,
-      filters: [{ name: "PNG 画像", extensions: ["png"] }],
+      filters: [{ name: t("files.savePng.filter"), extensions: ["png"] }],
     });
     if (picked === null) return null;
     const path = withPngExtension(picked);
@@ -121,6 +131,7 @@ const tauriHost: ViewerHost = {
     return path;
   },
   readPath: readTauriFile,
+  systemLocale: locale,
   listenFileDrop(listener) {
     return getCurrentWebview().onDragDropEvent(({ payload }) => {
       switch (payload.type) {
@@ -220,7 +231,7 @@ export async function readSampleFile(path: string): Promise<ModelFile> {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`${url}: ${response.status} ${response.statusText}`);
   return {
-    name: `${baseName(path)} (サンプル)`,
+    name: t("samples.fileName", { name: baseName(path) }),
     bytes: new Uint8Array(await response.arrayBuffer()),
     location: `sample:${path}`,
   };
@@ -240,11 +251,15 @@ export async function readFileAt(location: FileLocation): Promise<ModelFile> {
       return readUrl(rest);
     default: {
       const host = viewerHost();
-      if (host.readPath === undefined)
-        throw new Error("このアプリではパスからファイルを読めません");
+      if (host.readPath === undefined) throw new Error(t("files.noPaths"));
       return host.readPath(rest);
     }
   }
+}
+
+/** OS の言語 (今の `ViewerHost` で取る)。取れなければ `null`。 */
+export async function systemLocale(): Promise<string | null> {
+  return (await viewerHost().systemLocale?.()) ?? null;
 }
 
 /** 今使う `ViewerHost`。 */

@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { setLocale } from "@ugoe/i18n";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   type DressUpSet,
   describeRestoreFailure,
@@ -11,6 +12,9 @@ import {
   saveAutoRestore,
 } from "./dressUpMemory";
 import type { ModelFile } from "./modelFile";
+
+// 文言は日本語の訳で確かめる (英語の原文を確かめる it は、その中で言語を切り替える)。
+beforeEach(() => setLocale("ja"));
 
 class MemoryStorage implements Storage {
   #items = new Map<string, string>();

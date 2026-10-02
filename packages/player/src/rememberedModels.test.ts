@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { setLocale } from "@ugoe/i18n";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { DressUpSet } from "./dressUpMemory";
 import { defaultLighting } from "./lighting";
 import type { ModelIdentity } from "./modelMemory";
@@ -12,6 +13,9 @@ import {
   rememberedCount,
   saveRememberedOrder,
 } from "./rememberedModels";
+
+// 文言は日本語の訳で確かめる (英語の原文を確かめる it は、その中で言語を切り替える)。
+beforeEach(() => setLocale("ja"));
 
 const id = (name: string, fp: string, location?: ModelIdentity["location"]): ModelIdentity =>
   location === undefined ? { name, fingerprint: fp } : { name, fingerprint: fp, location };
@@ -131,9 +135,17 @@ describe("describe", () => {
   });
 
   it("summarizes a dress-up set", () => {
-    expect(describeDressUpSet(set(["Hair", "Dress"]))).toBe("Hair・Dress");
+    expect(describeDressUpSet(set(["Hair", "Dress"]))).toBe("Hair、Dress");
     expect(describeDressUpSet(set([], ["Hat"]))).toBe("付けていない (1 個を読み込み)");
     expect(describeDressUpSet(set([]))).toBe("なし");
+  });
+
+  it("follows the current language", () => {
+    setLocale("en");
+    expect(describeDressUpSet(set(["Hair", "Dress"]))).toBe("Hair and Dress");
+    expect(describeDressUpSet(set([], ["Hat"]))).toBe("Not attached (1 loaded)");
+    expect(describeRememberedAt(null)).toBe("No date");
+    expect(describeRememberedAt(new Date(2026, 9, 1, 9, 5).getTime())).toBe("10/01/2026, 09:05");
   });
 });
 

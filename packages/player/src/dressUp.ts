@@ -1,5 +1,6 @@
 // 着せ替え (T0706): WebPuppet の着せ替えの口 (crates/ugoe-wasm/README.md#着せ替え-t0123) が返す値の読み取りと、
-// 利用者に見せる文。付け外しそのものは player.svelte.ts が行う。
+// 利用者に見せる文 (名前空間 `player` のカタログ)。付け外しそのものは player.svelte.ts が行う。
+import { t } from "./i18n";
 import {
   describeLoadWarning,
   type LoadWarning,
@@ -15,7 +16,7 @@ export interface ModuleInfo {
   /** 今のモデルに付けているか。 */
   attached: boolean;
   textures: number;
-  /** 読み込めたが注意が要ること (テクスチャの代用など)。`warning_details` から作った日本語の文 (T0125)。 */
+  /** 読み込めたが注意が要ること (テクスチャの代用など)。`warning_details` から作った今の言語の文 (T0125)。 */
   warnings: string[];
 }
 
@@ -162,11 +163,36 @@ export function dressUpErrorInfo(e: unknown): DressUpErrorInfo {
   };
 }
 
-const q = (s: string | undefined) => `「${s ?? "?"}」`;
+/** 引数に入れる名前 (無ければ `?`)。 */
+const name = (s: string | undefined) => s ?? "?";
+
+/** `code` ごとの文のキー (コードの一覧は crates/ugoe-wasm/README.md#着せ替え-t0123)。 */
+const DRESS_UP_ERROR_KEYS = {
+  unknown_slot: "dressUp.error.unknownSlot",
+  missing_slot: "dressUp.error.missingSlot",
+  missing_parameter: "dressUp.error.missingParameter",
+  parameter_not_exposed: "dressUp.error.parameterNotExposed",
+  avatar_level: "dressUp.error.avatarLevel",
+  slot_occupied: "dressUp.error.slotOccupied",
+  unknown_mask: "dressUp.error.unknownMask",
+  unknown_collider: "dressUp.error.unknownCollider",
+  pose_not_exposed: "dressUp.error.poseNotExposed",
+  texture_out_of_range: "dressUp.error.textureOutOfRange",
+  invalid_module_name: "dressUp.error.invalidModuleName",
+  duplicate_module: "dressUp.error.duplicateModule",
+  invalid_composition: "dressUp.error.invalidComposition",
+  compile: "dressUp.error.compile",
+  invalid_physics: "dressUp.error.invalidPhysics",
+  not_attached: "dressUp.error.notAttached",
+  not_loaded: "dressUp.error.notLoaded",
+  no_model: "dressUp.error.noModel",
+  invalid_file: "dressUp.error.invalidFile",
+  texture: "dressUp.error.texture",
+} as const;
 
 /**
- * 付け外しの失敗を、利用者に分かる言葉にする (コードの一覧は crates/ugoe-wasm/README.md#着せ替え-t0123)。
- * 原因が細かいもの (合成・コンパイル・物理の検証など) は、wasm の文 (英語) を括弧で添える。
+ * 付け外しの失敗を、利用者に分かる言葉 (今の言語) にする。
+ * 原因が細かいもの (合成・コンパイル・物理の検証など) は、wasm の文 (英語) を括弧で添える (`detail`)。
  */
 export function describeDressUpError(e: unknown): string {
   return describeDressUpInfo(dressUpErrorInfo(e));
@@ -174,63 +200,27 @@ export function describeDressUpError(e: unknown): string {
 
 /** `describeDressUpError` の、読み取った後の中身から文を作る部分 (外したモジュールの `error` にも使う)。 */
 export function describeDressUpInfo(info: DressUpErrorInfo): string {
-  const m = q(info.module);
-  const detail = ` (${info.message})`;
-  switch (info.code) {
-    case "unknown_slot":
-      return `${m}を付けるスロット${q(info.slot)}が、このモデルにありません`;
-    case "missing_slot":
-      return `${m}には、モデルにスロット${q(info.slot)}が必要です`;
-    case "missing_parameter":
-      return `${m}に必要なパラメータ${q(info.parameter)}が、このモデルにありません`;
-    case "parameter_not_exposed":
-      return `${m}が使うパラメータ${q(info.parameter)}を、スロット${q(info.slot)}が公開していません`;
-    case "avatar_level":
-      return `${m}が求めるアバタープロファイルのレベルを、このモデルが満たしていません`;
-    case "slot_occupied":
-      return `スロット${q(info.slot)}には${q(info.attached)}が付いているので、${m}を一緒に付けられません`;
-    case "unknown_mask":
-      return `${m}のメッシュ${q(info.mesh)}のマスクが、モデルにもモジュールにもありません`;
-    case "unknown_collider":
-      return `${m}の物理が、このモデルに無い衝突体を使っています`;
-    case "pose_not_exposed":
-      return `${m}のポーズが、スロット${q(info.slot)}の公開していないパーツを使っています`;
-    case "texture_out_of_range":
-      return `${m}のメッシュ${q(info.mesh)}が、モジュールに無いテクスチャを使っています`;
-    case "invalid_module_name":
-      return `${m}はモジュールの名前として使えません`;
-    case "duplicate_module":
-      return `同じ名前のモジュール${m}を 2 つ付けることはできません`;
-    case "invalid_composition":
-      return `モデルとモジュールを合成できません${detail}`;
-    case "compile":
-      return `合成したモデルを組み立てられません${detail}`;
-    case "invalid_physics":
-      return `合成した物理の設定が正しくありません${detail}`;
-    case "not_attached":
-      return `${m}は付いていません`;
-    case "not_loaded":
-      return `${m}は読み込まれていません`;
-    case "no_model":
-      return "先にモデル (.ugoe か .json) を開いてください";
-    case "invalid_file":
-      return `着せ替えのモジュール (.ugoemod) として読めません${detail}`;
-    case "texture":
-      return `モジュールのテクスチャを登録できません${detail}`;
-    default:
-      return info.message;
-  }
+  const key = DRESS_UP_ERROR_KEYS[info.code as keyof typeof DRESS_UP_ERROR_KEYS];
+  if (key === undefined) return info.message;
+  return t(key, {
+    module: name(info.module),
+    slot: name(info.slot),
+    parameter: name(info.parameter),
+    mesh: name(info.mesh),
+    attached: name(info.attached),
+    detail: info.message,
+  });
 }
 
 /** モジュールを外した警告 (`module_detached`) の文。 */
 function describeDetached(w: LoadWarning): string {
   const reason = w.error ? describeDressUpInfo(w.error) : w.warning;
-  return `このモデルに合わないため、着せ替えの${q(w.module)}を外しました (${reason})`;
+  return t("dressUp.detached", { module: name(w.module), reason });
 }
 
 /**
  * モデルを開いたときの警告 (`load_json` / `load_bundle` の戻り値) を、`load_warnings_json()` の構造から
- * 日本語の一覧にする (T0125)。付け直せずに外したモジュールは付けられないときと同じ原因の文にする。
+ * 今の言語の文の一覧にする (T0125)。付け直せずに外したモジュールは付けられないときと同じ原因の文にする。
  * 構造の無い文と知らない種類は、wasm の文 (英語) のまま残す。
  */
 export function describeLoadWarnings(warnings: string[], structured: LoadWarning[]): string[] {

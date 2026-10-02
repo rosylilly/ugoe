@@ -3,7 +3,7 @@
 // ツールバーの「覚えたもの」とライティングのパネルから開く。モデルごとに光源・組・待機モーションを忘れるか、すべて忘れる。
 // パネルが出ないモデル (モジュールを外してライティングを受けなくなったモデルなど) や、開いていないモデルの分もここで忘れられる。
 // 並びは覚えた日時の新しい順と名前の順から選ぶ (T0717。日時を持たない前の保存値は「日時なし」で最後)。
-// 選んだ並びは覚えて、次に開いたときも使う (T0718)。
+// 選んだ並びは覚えて、次に開いたときも使う (T0718)。「すべて忘れる…」は確かめのダイアログ (AlertDialog) で確かめる。
 import {
   describeDressUpSet,
   describeIdleChoice,
@@ -17,26 +17,39 @@ import {
   rememberedCount,
   saveRememberedOrder,
 } from "@ugoe/player";
+import { AlertDialog, Button, Dialog, Select } from "@ugoe/ui";
+import { t } from "./i18n";
 
 let { player }: { player: Player } = $props();
 
-let dialog = $state<HTMLDialogElement | null>(null);
+let shown = $state(false);
 let rows = $state<RememberedModel[]>([]);
 /** 並び (覚えた日時の新しい順か名前の順。T0717)。開いているモデルはどちらでも先頭。選択は覚える (T0718)。 */
 let order = $state<RememberedOrder>(loadRememberedOrder());
-/** 「すべて忘れる」を押して、確かめている間。 */
+/** 「すべて忘れる…」を押して、確かめている間。 */
 let confirming = $state(false);
+
+let orderOptions = $derived([
+  { value: "recent" as RememberedOrder, label: t("memory.order.recent") },
+  { value: "name" as RememberedOrder, label: t("memory.order.name") },
+]);
 
 export function open(): void {
   // ほかのウィンドウ (タブ) で選び直した並びも拾う。
   order = loadRememberedOrder();
   refresh();
   confirming = false;
-  dialog?.showModal();
+  shown = true;
 }
 
 function refresh() {
   rows = player.rememberedModels(order);
+}
+
+function changeOrder(value: RememberedOrder) {
+  order = value;
+  saveRememberedOrder(order);
+  refresh();
 }
 
 function forget(
@@ -54,239 +67,171 @@ function forgetAll() {
 }
 </script>
 
-<dialog
-  bind:this={dialog}
-  aria-labelledby="memory-title"
-  onclick={(e) => e.target === dialog && dialog?.close()}
->
-  <header>
-    <h2 id="memory-title">モデルごとに覚えたもの</h2>
-    <button type="button" onclick={() => dialog?.close()}>閉じる</button>
-  </header>
-  <p class="lead">
-    光源の設定・着せ替えの組・待機モーションの選択は、モデルごとにこのブラウザ (アプリ) に覚えています。忘れても、いま表示している光源・付けているモジュール・流している待機モーションは変わりません。
-  </p>
-
+<Dialog bind:open={shown} title={t("memory.title")} description={t("memory.description")} size="lg">
   {#if rows.length > 1}
-    <label class="order">
-      並び
-      <select
-        value={order}
-        onchange={(e) => {
-          order = e.currentTarget.value as RememberedOrder;
-          saveRememberedOrder(order);
-          refresh();
-        }}
-      >
-        <option value="recent">覚えた日時の新しい順</option>
-        <option value="name">名前の順</option>
-      </select>
-    </label>
+    <div class="order">
+      <Select label={t("memory.order.label")} value={order} options={orderOptions} onchange={changeOrder} />
+    </div>
   {/if}
 
   {#if rows.length === 0}
-    <p class="empty">覚えているモデルはありません。</p>
+    <p class="empty">{t("memory.empty")}</p>
   {:else}
-    <table>
-      <thead>
-        <tr>
-          <th scope="col">モデル</th>
-          <th scope="col">光源</th>
-          <th scope="col">着せ替えの組</th>
-          <th scope="col">待機モーション</th>
-          <th scope="col">覚えた日時</th>
-          <th scope="col"><span class="visually-hidden">操作</span></th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each rows as row (`${row.model.location ?? ""}|${row.model.fingerprint}`)}
-          <tr class:current={row.current} data-model={row.model.name}>
-            <td>
-              <div class="name">
-                {row.model.name || "(名前なし)"}
-                {#if row.current}<span class="badge">開いている</span>{/if}
-              </div>
-              <div class="location" title={row.model.location ?? ""}>{describeLocation(row.model)}</div>
-            </td>
-            <td>
-              {#if row.lighting}
-                <span>{lightingLabel(row.lighting)}</span>
-                <button
-                  type="button"
-                  class="small"
-                  aria-label="{row.model.name} の光源を忘れる"
-                  onclick={() => forget(row, { lighting: true, dressUp: false, idle: false })}
-                  >忘れる</button
-                >
-              {:else}
-                <span class="none">—</span>
-              {/if}
-            </td>
-            <td>
-              {#if row.dressUp}
-                <span>{describeDressUpSet(row.dressUp)}</span>
-                <button
-                  type="button"
-                  class="small"
-                  aria-label="{row.model.name} の着せ替えの組を忘れる"
-                  onclick={() => forget(row, { lighting: false, dressUp: true, idle: false })}
-                  >忘れる</button
-                >
-              {:else}
-                <span class="none">—</span>
-              {/if}
-            </td>
-            <td>
-              {#if row.idle}
-                <span>{describeIdleChoice(row.idle)}</span>
-                <button
-                  type="button"
-                  class="small"
-                  aria-label="{row.model.name} の待機モーションを忘れる"
-                  onclick={() => forget(row, { lighting: false, dressUp: false, idle: true })}
-                  >忘れる</button
-                >
-              {:else}
-                <span class="none">—</span>
-              {/if}
-            </td>
-            <td class="date" class:none={row.rememberedAt === null}>
-              {describeRememberedAt(row.rememberedAt)}
-            </td>
-            <td>
-              {#if rememberedCount(row) > 1}
-                <button
-                  type="button"
-                  class="small"
-                  aria-label="{row.model.name} に覚えたものをすべて忘れる"
-                  onclick={() => forget(row, {})}>すべて忘れる</button
-                >
-              {/if}
-            </td>
+    <div class="table">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">{t("memory.column.model")}</th>
+            <th scope="col">{t("memory.column.lighting")}</th>
+            <th scope="col">{t("memory.column.dressUp")}</th>
+            <th scope="col">{t("memory.column.idle")}</th>
+            <th scope="col">{t("memory.column.date")}</th>
+            <th scope="col"><span class="visually-hidden">{t("memory.column.actions")}</span></th>
           </tr>
-        {/each}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {#each rows as row (`${row.model.location ?? ""}|${row.model.fingerprint}`)}
+            {@const name = row.model.name || t("memory.unnamed")}
+            <tr class:current={row.current} data-model={row.model.name}>
+              <td>
+                <div class="name">
+                  {name}
+                  {#if row.current}<span class="badge">{t("memory.current")}</span>{/if}
+                </div>
+                <div class="location" title={row.model.location ?? ""}>{describeLocation(row.model)}</div>
+              </td>
+              <td>
+                {#if row.lighting}
+                  <span>{lightingLabel(row.lighting)}</span>
+                  <Button small onclick={() => forget(row, { lighting: true, dressUp: false, idle: false })}
+                    ><span aria-hidden="true">{t("memory.forget.label")}</span><span class="visually-hidden"
+                      >{t("memory.forget.lighting.aria", { model: name })}</span
+                    ></Button
+                  >
+                {:else}
+                  <span class="none">—</span>
+                {/if}
+              </td>
+              <td>
+                {#if row.dressUp}
+                  <span>{describeDressUpSet(row.dressUp)}</span>
+                  <Button small onclick={() => forget(row, { lighting: false, dressUp: true, idle: false })}
+                    ><span aria-hidden="true">{t("memory.forget.label")}</span><span class="visually-hidden"
+                      >{t("memory.forget.dressUp.aria", { model: name })}</span
+                    ></Button
+                  >
+                {:else}
+                  <span class="none">—</span>
+                {/if}
+              </td>
+              <td>
+                {#if row.idle}
+                  <span>{describeIdleChoice(row.idle)}</span>
+                  <Button small onclick={() => forget(row, { lighting: false, dressUp: false, idle: true })}
+                    ><span aria-hidden="true">{t("memory.forget.label")}</span><span class="visually-hidden"
+                      >{t("memory.forget.idle.aria", { model: name })}</span
+                    ></Button
+                  >
+                {:else}
+                  <span class="none">—</span>
+                {/if}
+              </td>
+              <td class="date" class:none={row.rememberedAt === null}>
+                {describeRememberedAt(row.rememberedAt)}
+              </td>
+              <td>
+                {#if rememberedCount(row) > 1}
+                  <Button small onclick={() => forget(row, {})}
+                    ><span aria-hidden="true">{t("memory.forgetRow.label")}</span><span class="visually-hidden"
+                      >{t("memory.forgetRow.aria", { model: name })}</span
+                    ></Button
+                  >
+                {/if}
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
   {/if}
 
-  <footer>
-    {#if confirming}
-      <span role="alert">{rows.length} 体のモデルに覚えたものをすべて忘れます。よろしいですか?</span>
-      <button type="button" class="danger" onclick={forgetAll}>すべて忘れる</button>
-      <button type="button" onclick={() => (confirming = false)}>やめる</button>
-    {:else}
-      <span class="hint">最後に使った光源・光源の印・前の組を自動で戻す・待機モーションを自動で流すの設定は残ります。</span>
-      <button type="button" disabled={rows.length === 0} onclick={() => (confirming = true)}
-        >すべて忘れる…</button
-      >
-    {/if}
-  </footer>
-</dialog>
+  {#snippet actions()}
+    <span class="hint">{t("memory.kept")}</span>
+    <Button variant="danger" disabled={rows.length === 0} onclick={() => (confirming = true)}
+      >{t("memory.forgetAll.label")}</Button
+    >
+  {/snippet}
+</Dialog>
+
+<AlertDialog
+  bind:open={confirming}
+  title={t("memory.forgetAll.title")}
+  description={t("memory.forgetAll.description", { count: rows.length })}
+  confirmLabel={t("memory.forgetAll.confirm")}
+  onconfirm={forgetAll}
+/>
 
 <style>
-  dialog {
-    width: min(820px, 92vw);
-    max-height: 85vh;
-    padding: 1rem;
-    color: var(--text);
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    font-size: 0.85rem;
-  }
-  header,
-  footer {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-  header {
-    justify-content: space-between;
-  }
-  footer {
-    justify-content: flex-end;
-    margin-top: 0.75rem;
-  }
-  footer span {
-    flex: 1;
-  }
-  h2 {
-    margin: 0;
-    font-size: 1rem;
-  }
-  .lead,
-  .hint,
-  .location,
-  .none,
-  .empty {
-    color: var(--muted);
-  }
-  .lead {
-    font-size: 0.8rem;
-  }
   .order {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    margin-bottom: 0.4rem;
-    font-size: 0.75rem;
-    color: var(--muted);
+    margin-bottom: var(--ugoe-space-3);
   }
-  .date {
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-  }
-  .hint {
-    font-size: 0.75rem;
+  .table {
+    max-height: 55vh;
+    overflow: auto;
   }
   table {
     width: 100%;
     border-collapse: collapse;
+    font-size: var(--ugoe-font-size-sm);
   }
   th,
   td {
     text-align: left;
     vertical-align: top;
-    padding: 0.35rem 0.4rem;
-    border-bottom: 1px solid var(--border);
+    padding: var(--ugoe-space-2);
+    border-bottom: 1px solid var(--ugoe-color-border);
   }
   th {
-    font-weight: 600;
-    font-size: 0.75rem;
-    color: var(--muted);
+    font-weight: var(--ugoe-font-weight-strong);
+    font-size: var(--ugoe-font-size-xs);
+    color: var(--ugoe-color-text-muted);
+  }
+  td :global(.ugoe-button) {
+    margin-left: var(--ugoe-space-1);
   }
   tr.current td {
-    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    background: var(--ugoe-color-accent-soft);
   }
   .name {
-    font-weight: 600;
+    font-weight: var(--ugoe-font-weight-strong);
     word-break: break-all;
   }
   .location {
-    font-size: 0.7rem;
+    font-size: var(--ugoe-font-size-xs);
     word-break: break-all;
   }
+  .date {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .hint,
+  .location,
+  .none,
+  .empty {
+    color: var(--ugoe-color-text-muted);
+  }
+  .hint {
+    flex: 1;
+    font-size: var(--ugoe-font-size-xs);
+  }
   .badge {
-    margin-left: 0.3rem;
-    padding: 0 0.3rem;
-    font-size: 0.7rem;
-    font-weight: normal;
-    color: var(--accent);
-    border: 1px solid var(--accent);
-    border-radius: 3px;
-  }
-  td button.small {
-    margin-left: 0.3rem;
-    font-size: 0.75rem;
-    padding: 0.05rem 0.4rem;
-  }
-  button:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
-  }
-  .danger {
-    color: var(--danger);
-    border-color: var(--danger);
+    margin-left: var(--ugoe-space-1);
+    padding: 0 var(--ugoe-space-1);
+    font-size: var(--ugoe-font-size-xs);
+    font-weight: var(--ugoe-font-weight-normal);
+    color: var(--ugoe-color-accent);
+    border: 1px solid var(--ugoe-color-accent);
+    border-radius: var(--ugoe-radius-sm);
   }
   .visually-hidden {
     position: absolute;

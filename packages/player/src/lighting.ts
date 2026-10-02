@@ -3,6 +3,7 @@
 // (最後に使った設定と、モデルごとの設定 (T0709))。
 // 光源の意味は docs/spec/rendering.md#ライティング。
 import { parseHexColor } from "./color";
+import { t } from "./i18n";
 import { ModelMemory } from "./modelMemory";
 
 /** 色と強さ。渡す色は `color × intensity` (1 を超えてよい)。 */
@@ -55,7 +56,8 @@ export const LIMITS = {
 
 export interface LightingPreset {
   id: string;
-  name: string;
+  /** 表示する名前 (読むたびに今の言語で引く)。 */
+  readonly name: string;
   settings: LightingSettings;
 }
 
@@ -73,7 +75,9 @@ const OFF_POINT: PointSettings = {
 export const PRESETS: readonly LightingPreset[] = [
   {
     id: "standard",
-    name: "標準",
+    get name() {
+      return t("lighting.preset.standard");
+    },
     settings: {
       enabled: true,
       ambient: { color: "#ffffff", intensity: 0.55 },
@@ -89,7 +93,9 @@ export const PRESETS: readonly LightingPreset[] = [
   },
   {
     id: "sunset",
-    name: "夕日",
+    get name() {
+      return t("lighting.preset.sunset");
+    },
     settings: {
       enabled: true,
       ambient: { color: "#8c9bd0", intensity: 0.45 },
@@ -105,7 +111,9 @@ export const PRESETS: readonly LightingPreset[] = [
   },
   {
     id: "lamp",
-    name: "夜のランプ",
+    get name() {
+      return t("lighting.preset.lamp");
+    },
     settings: {
       enabled: true,
       ambient: { color: "#5a6aa0", intensity: 0.3 },
@@ -319,8 +327,8 @@ export function anglesFromPad(x: number, y: number): [number, number] {
 
 /** 設定の短い名前: 切っていれば「切」、既定の組と同じならその名前、違えば「カスタム」。 */
 export function lightingLabel(settings: LightingSettings): string {
-  if (!settings.enabled) return "切";
-  return PRESETS.find((p) => sameLighting(p.settings, settings))?.name ?? "カスタム";
+  if (!settings.enabled) return t("lighting.off");
+  return PRESETS.find((p) => sameLighting(p.settings, settings))?.name ?? t("lighting.custom");
 }
 
 /** 2 つの設定が同じか (フィールドの並びによらない)。どの既定の組を選んでいるかの表示に使う。 */

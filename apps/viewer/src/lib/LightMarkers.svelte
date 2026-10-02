@@ -18,6 +18,7 @@
   印の形はエディタの光源の取っ手 (apps/editor/src/lib/viewport/tools/lighting/LightingOverlay.svelte) に合わせる。
 -->
 <script lang="ts">
+import { formatNumber } from "@ugoe/i18n";
 import {
   anglesFromScreen,
   directionalHandle,
@@ -35,6 +36,7 @@ import {
   stepMarker,
   wheelPointZ,
 } from "@ugoe/player";
+import { t } from "./i18n";
 
 let { player }: { player: Player } = $props();
 
@@ -214,7 +216,7 @@ function gripArrows(g: RangeGrip): string {
   return `M${ax},${ay}L${cx},${cy}${head(-1)}${head(1)}`;
 }
 
-const pct = (v: number) => `${Math.round(v * 100)}%`;
+const pct = (v: number) => formatNumber(v, { style: "percent", maximumFractionDigits: 0 });
 
 /** 点光源の印 (放射する短い線)。 */
 function rays(x: number, y: number): string {
@@ -234,7 +236,7 @@ function rays(x: number, y: number): string {
     {#if dial.shifted}
       <!-- 寄せた円: 中心はキャンバスの中央ではない。中心から本当の中央の向きに矢印を出す。 -->
       <path class="to-center" d={toCenterArrow(dial)} data-light="to-center">
-        <title>キャンバスの中央は画面の外 (矢印の向き)。円は画面の端に寄せて出している</title>
+        <title>{t("markers.toCenter.tooltip")}</title>
       </path>
     {/if}
     <line class="beam" x1={directional[0]} y1={directional[1]} x2={dial.cx} y2={dial.cy} />
@@ -250,11 +252,14 @@ function rays(x: number, y: number): string {
       fill={s.directional.color}
       role="slider"
       tabindex="0"
-      aria-label="平行光源の来る向き (矢印キーで動かす、Shift で大きく)"
+      aria-label={t("markers.directional.aria")}
       aria-valuenow={s.directional.azimuth}
       aria-valuemin={-180}
       aria-valuemax={180}
-      aria-valuetext="方位 {Math.round(s.directional.azimuth)}°、高さ {Math.round(s.directional.elevation)}°"
+      aria-valuetext={t("markers.directional.value", {
+        azimuth: Math.round(s.directional.azimuth),
+        elevation: Math.round(s.directional.elevation),
+      })}
       data-light="directional"
       onpointerdown={(e) => onDown(e, "directional")}
       onpointermove={onMove}
@@ -265,7 +270,7 @@ function rays(x: number, y: number): string {
       onblur={() => (focused = null)}
       ondblclick={(e) => e.stopPropagation()}
     >
-      <title>平行光源: 取っ手のある向きから光が来る (中心 = 正面、縁 = 真横)。ドラッグか矢印キーで動かす</title>
+      <title>{t("markers.directional.tooltip")}</title>
     </circle>
   {/if}
   {#if point && pointShown}
@@ -289,7 +294,7 @@ function rays(x: number, y: number): string {
         onpointercancel={onUp}
         ondblclick={(e) => e.stopPropagation()}
       >
-        <title>点光源の届く範囲: 縁をドラッグで変える</title>
+        <title>{t("markers.range.tooltip")}</title>
       </circle>
     {/if}
     {#if grip}
@@ -307,7 +312,7 @@ function rays(x: number, y: number): string {
       >
         <circle class="grip-hit" cx={grip.x} cy={grip.y} r="12" />
         <path class="grip-arrows" d={gripArrows(grip)} />
-        <title>点光源の届く範囲: 範囲の円の縁は画面の外。矢印の向きにドラッグで広げ、逆向きで狭める</title>
+        <title>{t("markers.rangeGrip.tooltip")}</title>
       </g>
     {/if}
     <path class="rays" class:offscreen={pointShown.offscreen} d={rays(pointShown.x, pointShown.y)} />
@@ -324,11 +329,16 @@ function rays(x: number, y: number): string {
       fill={s.point.color}
       role="slider"
       tabindex="0"
-      aria-label="点光源 (矢印キーで動かす、Shift で大きく。PageUp・PageDown で手前、+・− で範囲)"
+      aria-label={t("markers.point.aria")}
       aria-valuenow={s.point.x}
       aria-valuemin={-0.5}
       aria-valuemax={1.5}
-      aria-valuetext="横 {pct(s.point.x)}、縦 {pct(s.point.y)}、手前 {pct(s.point.z)}、範囲 {pct(s.point.range)}"
+      aria-valuetext={t("markers.point.value", {
+        x: pct(s.point.x),
+        y: pct(s.point.y),
+        z: pct(s.point.z),
+        range: pct(s.point.range),
+      })}
       data-light="point"
       onpointerdown={(e) => onDown(e, "point")}
       onpointermove={onMove}
@@ -341,9 +351,7 @@ function rays(x: number, y: number): string {
       ondblclick={(e) => e.stopPropagation()}
     >
       <title
-        >点光源: ドラッグか矢印キーで動かす。Shift + ホイール・PageUp・PageDown で手前、範囲の円の縁のドラッグ・+・− で範囲{pointShown.offscreen
-          ? " (画面の外にあるので端に寄せて出している)"
-          : ""}</title
+        >{pointShown.offscreen ? t("markers.point.tooltipOffscreen") : t("markers.point.tooltip")}</title
       >
     </circle>
   {/if}
@@ -399,7 +407,7 @@ function rays(x: number, y: number): string {
   }
   .focus-ring {
     fill: none;
-    stroke: var(--accent);
+    stroke: var(--ugoe-color-accent);
     stroke-width: 2;
     pointer-events: none;
   }
@@ -411,7 +419,7 @@ function rays(x: number, y: number): string {
     cursor: ew-resize;
   }
   .range-edge.dragging {
-    stroke: var(--accent);
+    stroke: var(--ugoe-color-accent);
     stroke-width: 2;
   }
   .dial.shifted {
@@ -451,12 +459,12 @@ function rays(x: number, y: number): string {
     stroke-linejoin: round;
   }
   .range-grip.dragging .grip-hit {
-    stroke: var(--accent);
+    stroke: var(--ugoe-color-accent);
     stroke-dasharray: none;
     stroke-width: 2;
   }
   .handle.dragging {
-    stroke: var(--accent);
+    stroke: var(--ugoe-color-accent);
     stroke-width: 3;
     cursor: grabbing;
   }

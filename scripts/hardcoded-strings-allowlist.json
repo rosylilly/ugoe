@@ -80,28 +80,5 @@
     "apps/editor/src/lib/viewport/tools/glue/GlueOverlay.svelte": 9,
     "apps/editor/src/lib/viewport/tools/lighting/LightingOverlay.svelte": 1,
     "apps/editor/src/lib/viewport/tools/physics/PhysicsOverlay.svelte": 1
-  },
-  "apps/viewer": {
-    "apps/viewer/src/App.svelte": 25,
-    "apps/viewer/src/lib/DressUpPanel.svelte": 37,
-    "apps/viewer/src/lib/LicenseDialog.svelte": 5,
-    "apps/viewer/src/lib/LightMarkers.svelte": 14,
-    "apps/viewer/src/lib/LightingPanel.svelte": 30,
-    "apps/viewer/src/lib/MemoryDialog.svelte": 28,
-    "apps/viewer/src/lib/MotionPanel.svelte": 50,
-    "apps/viewer/src/lib/ParameterPanel.svelte": 11,
-    "apps/viewer/src/lib/Viewport.svelte": 3,
-    "apps/viewer/src/lib/drop.ts": 13,
-    "apps/viewer/src/lib/host.ts": 8,
-    "apps/viewer/src/lib/samples.ts": 6
-  },
-  "packages/player": {
-    "packages/player/src/animation.ts": 16,
-    "packages/player/src/dressUp.ts": 21,
-    "packages/player/src/dressUpMemory.ts": 2,
-    "packages/player/src/lighting.ts": 5,
-    "packages/player/src/loadWarnings.ts": 7,
-    "packages/player/src/player.svelte.ts": 6,
-    "packages/player/src/rememberedModels.ts": 5
   }
 }

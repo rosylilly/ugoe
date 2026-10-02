@@ -83,7 +83,6 @@ function onKeyDown(e: KeyboardEvent) {
   aria-valuetext="{Math.round(x * 100)}, {Math.round(y * 100)}"
   aria-valuenow={x}
   aria-disabled={disabled}
-  title={label}
   onpointerdown={onPointerDown}
   onpointermove={onPointerMove}
   onpointerup={onPointerUp}
@@ -99,11 +98,11 @@ function onKeyDown(e: KeyboardEvent) {
     width: 100%;
     aspect-ratio: 1;
     background:
-      linear-gradient(var(--border), var(--border)) center / 1px 100% no-repeat,
-      linear-gradient(var(--border), var(--border)) center / 100% 1px no-repeat,
-      var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 4px;
+      linear-gradient(var(--ugoe-color-border), var(--ugoe-color-border)) center / 1px 100% no-repeat,
+      linear-gradient(var(--ugoe-color-border), var(--ugoe-color-border)) center / 100% 1px no-repeat,
+      var(--ugoe-color-sunken);
+    border: 1px solid var(--ugoe-color-control-border);
+    border-radius: var(--ugoe-radius-md);
     touch-action: none;
     cursor: crosshair;
   }
@@ -111,20 +110,21 @@ function onKeyDown(e: KeyboardEvent) {
     border-radius: 50%;
   }
   .pad.disabled {
-    opacity: 0.45;
+    opacity: 0.5;
     cursor: default;
   }
   .pad:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: var(--ugoe-focus-ring);
+    outline-offset: 2px;
   }
   .dot {
     position: absolute;
     width: 12px;
     height: 12px;
     margin: -6px 0 0 -6px;
-    border-radius: 50%;
-    background: #ffd54a;
-    border: 2px solid var(--accent);
+    border-radius: var(--ugoe-radius-full);
+    background: var(--ugoe-color-surface);
+    border: 2px solid var(--ugoe-color-accent);
     pointer-events: none;
   }
 </style>

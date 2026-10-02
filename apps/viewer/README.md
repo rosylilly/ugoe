@@ -7,10 +7,20 @@ ugoe のビューア (Tauri v2 + Svelte 5)。`.ugoe` バンドルか JSON のモ
 **ライセンスは GPL-3.0-only** (エディタと同じ。[ADR 0019](../../docs/adr/0019-viewer-license.md))。
 エディタのコードは写してよいが、アプリ同士で import はしない。
 
+画面の部品は `@ugoe/ui`、文言は `@ugoe/i18n` (名前空間 `viewer`。カタログは `locales/<言語>.json`、原文は英語) を使う
+([ADR 0029](../../docs/adr/0029-shared-ui-and-i18n.md)・[docs/ui.md](../../docs/ui.md)。T0723)。強調色は 3 つのアプリで共通の紫、
+密度は `comfortable` (`index.html` の `data-density`)。ライト・ダークは OS の設定に従う。
+
 ```
+locales/              画面の文言 (en.json が原文、ja.json が日本語の訳。docs/translation.md)
 src/                  フロントエンド (Svelte 5 + TS。npm パッケージ @ugoe/viewer)
+  main.ts               トークン (@ugoe/ui/tokens.css) を読み、覚えた言語と OS の言語を決めてから App を描く
   App.svelte            ツールバー・ビューポート・右のパネル・ステータスバー、ドロップとショートカット
-  lib/host.ts           ファイルの選択と読み込み (Tauri / ブラウザ / 差し替え)
+  lib/i18n.ts           文言の `t()` (名前空間 `viewer`)
+  lib/settings.ts       モデルによらない設定 (画面の言語) を localStorage に覚える
+  lib/SettingsDialog.svelte  設定の画面 (言語: OS に合わせる・日本語・English)
+  lib/LicenseDialog.svelte   ライセンスの画面 (public/third-party-notices.txt)
+  lib/host.ts           ファイルの選択と読み込み・OS の言語 (Tauri / ブラウザ / 差し替え)
   lib/Viewport.svelte   描画領域 (ズーム・パン・フィット)。LightMarkers.svelte は重ねる光源の印 (ドラッグ・キーボードで光源を動かす、T0708・T0714)
   lib/ParameterPanel.svelte  パラメータのスライダー (グループごと)
   lib/LightingPanel.svelte   光源のパネル (ライティングを使うモデルのときだけ出す)。LightPad.svelte は向き・位置の面
@@ -36,7 +46,9 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 フェイストラッキング (T0703) の部品 (MediaPipe の結果の変換・キャリブレーション・平滑化・記録・`FaceTracker`・
 `TrackingPanel`) と、MediaPipe の wasm を写しモデルを取得して SHA-256 を検証するスクリプト (`ugoe-mediapipe-assets`) は、
 エディタのプレビューと共有するパッケージ `@ugoe/face-tracking` ([packages/face-tracking/](../../packages/face-tracking/)) にある (T0636)。
-ビューアは `Player` を `TrackingTarget` として渡し、文言は日本語 (`ja`)、記録の保存は `host.ts` の `saveJsonFile`。
+ビューアは `Player` を `TrackingTarget` として渡し、記録の保存は `host.ts` の `saveJsonFile`。文言はそのパッケージの名前空間 `face-tracking` で、
+ビューアの言語に従う。そのパネルはまだ `@ugoe/ui` の部品に移していないので、`app.css` で古い変数 (`--muted` など) をトークンへの別名にし、
+標準のボタンを装っている (パネルを移したら消す)。
 
 ## 仕組み
 
@@ -46,7 +58,8 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
   拡張子が `.ugoe`・`.json`・`.ugoemod` のものだけ) こと、
   トラッキングの記録を JSON で書く (`write_json_file`。保存のダイアログで選んだ `.json` だけ) こと、
   画像 (スクリーンショット) を PNG で書く (`write_png_file`。本文が PNG のバイト列、パスはヘッダー `x-ugoe-path`。保存のダイアログで選んだ `.png` で、中身が PNG のものだけ) こと、
-  起動時の引数のパスを返す (`initial_file`) こと、webview からのカメラの許可の要求に応じること。依存してよいのはランタイム層のクレートだけ (`scripts/check-layers.mjs`)。
+  起動時の引数のパスを返す (`initial_file`) こと、webview からのカメラの許可の要求に応じること、OS の言語を返すこと
+  (tauri-plugin-os の `locale()`。権限は `os:allow-locale` だけ)。依存してよいのはランタイム層のクレートだけ (`scripts/check-layers.mjs`)。
   いまは内部のクレートに依存していない。
 - 形式は中身で判別する (先頭が `UGOE` ならチャンク表を見て、`MODL` があればバンドル、`MODU` があれば着せ替えのモジュール。
   `{` なら JSON)。決まらなければ拡張子で決める (`modelFile.ts`)。
@@ -60,7 +73,7 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 | 操作 | 内容 |
 | --- | --- |
 | 開く (Ctrl+O / ⌘O) | OS のダイアログで `.ugoe`・`.json` か `.ugoemod` を選ぶ (`.ugoemod` は読み込んで付ける) |
-| サンプル | 同梱の見本 (`assets/samples/`、MIT) をメニューから選んで開く。「アバター」はアバタープロファイルのレベル 3 の見本で、フェイストラッキングをすぐ試せる。「アバター (ライティング)」は同じ見本に法線マップを付けた版で、ライティングのパネルが出る。「着せ替え」はスロットを持つ本体と衣装のモジュール 4 つを読み込み、`LongHair`・`CatEars`・`Sailor` を付ける (`TwinTails` はパネルで差し替えて試す) |
+| サンプル | 同梱の見本 (`assets/samples/`、MIT) をメニューから選んで開く (メニューには名前だけを出す)。「アバター」はアバタープロファイルのレベル 3 の見本で、フェイストラッキングをすぐ試せる。「アバター (ライティング)」は同じ見本に法線マップを付けた版で、ライティングのパネルが出る。「着せ替え」はスロットを持つ本体と衣装のモジュール 4 つを読み込み、`LongHair`・`CatEars`・`Sailor` を付ける (`TwinTails` はパネルで差し替えて試す) |
 | ファイルをウィンドウにドロップ | そのファイルを開く。`.ugoemod` は読み込んで付ける。モデルとモジュールを一緒に落とすと、モデルを先に開く。フォルダや開けないファイルが混ざっていたら、開けるものだけを開き、飛ばしたものをステータスバーに出す。落とす前 (ドラッグ中) に、開けるかを枠の色と文で示す (アプリはパスから。T0717。ブラウザは名前が分からないので種類と数から。T0718) |
 | `ugoe-viewer path/to/model.ugoe` | 起動時に開く |
 | ホイール | カーソルの位置を中心にズーム |
@@ -69,10 +82,11 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 | 覚えたもの | モデルごとに覚えた光源・着せ替えの組・待機モーションの一覧。モデルごとに・すべて忘れる (下の「[覚えたものの一覧](#覚えたものの一覧-t0714)」) |
 | 背景・透明 | 背景色。透明にすると市松模様の上に描く |
 | 画像を保存 | 今の表示を PNG で保存する (下の「[画像の保存](#画像の保存-t0420)」) |
+| 設定 (ツールバーの歯車) | 画面の言語を「OS に合わせる」(既定)・「日本語」・「English」から選ぶ。すぐに切り替わり、`ugoe-viewer.locale` に覚える。OS の言語は Tauri では tauri-plugin-os の `locale()` で取り (WebView の `navigator.languages` は OS の言語と違うことがあるため)、ブラウザでは `navigator.languages` を使う。対応していない言語なら English |
 | 着せ替え | スロットのあるモデルか、モジュールを読み込んだときに右のパネルに出る。スロットごとにモジュールを付ける・外す・差し替える (下の「着せ替え」) |
 | ライティング | ライティングを使うモデルのときだけ右のパネルに出る。光源の向き・位置・色・強さと既定の光源の組 (下の「ライティング」) |
 | モーションと表情 | バンドルにモーションか表情があるときに右のパネルに出る。モーションを優先度を選んで再生・停止し、表情を付け外しする (下の「モーションと表情」) |
-| スライダー | パラメータ。ダブルクリックか ↺ で既定値、「すべて戻す」で全部を既定値に戻す。中継用のパラメータ (`internal`、物理のリグの間の受け渡し用) は既定で隠し、「中継用のパラメータも表示」で出す |
+| スライダー | パラメータ (`@ugoe/ui` の `Slider`。数値の欄で値を入れられる)。ダブルクリックか ↺ で既定値、「すべて戻す」で全部を既定値に戻す。中継用のパラメータ (`internal`、物理のリグの間の受け渡し用) は既定で隠し、「中継用のパラメータも表示」で出す |
 
 ## 画像の保存 (T0420)
 
@@ -84,7 +98,7 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 - 写るのはモデルと背景だけ。光源の印・ドロップの枠などビューポートに重ねる HTML は写らない。「透明」のときは市松模様ではなく
   透明 (アルファ 0) のまま書く。
 - 押したときに読み戻してから保存のダイアログ (Tauri) を開く。既定の名前は `<モデルの名前>-<年月日>-<時分秒>.png` (拡張子と
-  「 (サンプル)」を除き、ファイル名に使えない文字は `_`)。拡張子が無ければ `.png` を付ける。保存した場所はステータスバーに出す。
+  「 (サンプル)」を除き、ファイル名に使えない文字は `_`)。拡張子が無ければ `.png` を付ける。保存した場所は知らせ (`@ugoe/ui` の Toast) で出す。
 - PNG への変換はフロントエンドの 2D canvas (`toBlob`) で行う (`screenshot.ts`)。ブラウザ (`pnpm dev`) ではダウンロードで保存する。
   `ViewerHost` を差し替えるときは `savePngFile(name, bytes)` を置ける (無ければダウンロード)。
 
@@ -136,7 +150,7 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
   wasm が付け直す。合わなくなったものは外してステータスバーに「このモデルに合わないため、着せ替えの「Dress」を外しました (原因)」と
   警告する。原因は wasm の `load_warnings_json()` の `module_detached` の要素の `error.code` から、付けられないときと同じ文にする
   (`describeLoadWarnings`。wasm の文の警告は読まない。T0124・T0125)。
-- 読み込みのほかの警告 (T0125) も `load_warnings_json()` の `code` から日本語にする: テクスチャを白で代用した (`texture_ktx2`・
+- 読み込みのほかの警告 (T0125) も `load_warnings_json()` の `code` から今の言語の文にする: テクスチャを白で代用した (`texture_ktx2`・
   `texture_missing`)、法線マップを使わない (`normal_map_ktx2`)、物理の設定が合わないので外した (`physics_removed`。理由は英語のまま括弧で添える)、
   新しい版のファイルの知らない機能・値をフォールバックで読んだ (`unknown_optional_feature`・`unknown_value`。T0412)。
   モジュールの警告 (パネルの「警告 N」) も `modules_json()` の `warning_details` から同じ文にする。知らない `code` と構造の無い文は wasm の文 (英語) のまま出す。
@@ -178,7 +192,7 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 - **開けないものが混ざったドロップ (T0717):** `drop.ts` の `openDroppedItems` が、拡張子 (`.ugoe`・`.json`・`.ugoemod`。
   `read_model_file` と同じ) で開けるものだけを読み、読めたものを開く。拡張子の無いもの (フォルダ) ・ほかの拡張子は読まずに飛ばし、
   読めなかったもの (拡張子の付いたフォルダ・消えたファイル。バックエンドのエラーは英語) も飛ばして、飛ばしたものの名前を
-  日本語でステータスバーに出す (`skippedMessage`。次に開くまで出す)。ブラウザの File API のドロップも同じ経路。
+  ステータスバーに出す (`skippedMessage`。次に開くまで出す)。ブラウザの File API のドロップも同じ経路。
   Tauri ではドラッグ中の `enter` にもパスが来るので (`FileDropEvent` の `hover` の `paths`)、`describeDropPaths` で見立て、
   落とす枠の色 (すべて開ける = 青、一部を飛ばす = 黄、開けるものが無い = 赤) と上の文で示す。落とす枠はビューポートの canvas の
   上にも見えるように、`main` に重ねた要素で描く。
@@ -238,7 +252,7 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 | 覚えた日時 | 光源と組のどちらかを最後に覚えた日時 (`2026/10/01 09:05`)。前の保存値だけなら「日時なし」 |
 | (操作) | 光源と組の両方を覚えていれば「両方を忘れる」 |
 
-- 「すべて忘れる…」は一覧の中で確かめてから (「すべて忘れる」「やめる」)、2 つの入れ物のキーを消す (`ModelMemory.clear`)。
+- 「すべて忘れる…」は確かめのダイアログ (`AlertDialog`。既定のフォーカスは「キャンセル」) で確かめてから、入れ物のキーを消す (`ModelMemory.clear`)。
   最後に使った光源 (`ugoe-viewer.lighting`)・光源の印・前の組を自動で戻す、の設定は残す (モデルごとのものではないため)。
 - 忘れても、いま表示している光源と付けているモジュールは変えない。開いているモデルの分を忘れたときは、パネルの「覚えた」の表示を消し、
   尋ねている組は取り消す。次に光源や着せ替えを変えると、そのときのものをまた覚える (`Player.forgetRemembered`・`forgetAllRemembered`)。
@@ -501,7 +515,8 @@ const remove = player.drivers.add({
 - 開発中やヘッドレスのブラウザでは、表示中の `Player` を `window.__UGOE_VIEWER__` から触れる。
 
 右のパネル (`App.svelte` の `.sidebar`) は縦にパネルを積む作りで、上からトラッキング → モデルの機能ごとのパネル (着せ替え・ライティング・モーションと表情。
-そのモデルが使うときだけ出す、畳める `<details>`) → パラメータ (残りの高さ) の順に並ぶ。
+そのモデルが使うときだけ出す、畳める `@ugoe/ui` の `Section`) → パラメータ (残りの高さ) の順に並ぶ。縦が足りないときは、モデルの機能ごとのパネルが
+見出しの高さまで縮んで中を送る。幅が 720px より狭いときは、パネルをビューポートの下に置く。
 
 ## ヘッドレスのブラウザで確かめる
 

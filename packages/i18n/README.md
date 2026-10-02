@@ -58,7 +58,7 @@ export const t = translator("face-tracking");
 - 既定は「OS に合わせる」(`"system"`): OS の優先する言語を前から見て、最初に対応している言語を使う。どれも対応していなければ英語。
 - `setLocale("ja" | "en" | "system")` で上書きする。設定を覚えるのはアプリ。`getLocale()` が今の言語、`LANGUAGES` が選択肢 (言語自身の名前)。
 - `<html lang>` は今の言語に合わせる。
-- いま (言語の切り替えの画面ができるまで) は、エディタが `setLocale("en")`、ビューアが `setLocale("ja")` を `main.ts` で呼び、元の表示を保っている。
+- ビューアは設定の言語 (OS に合わせる・日本語・English) で切り替える (T0723)。エディタは言語の切り替えの画面ができるまで `setLocale("en")` を `main.ts` で呼び、元の表示を保っている。
 
 ### OS の言語
 

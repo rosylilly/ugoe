@@ -1,0 +1,97 @@
+{
+  "motion": {
+    "priority": {
+      "idle": {
+        "label": "Idle",
+        "tooltip": "Idle: does not start while a normal or forced motion is playing, so that other motions can replace a looping idle motion."
+      },
+      "normal": {
+        "label": "Normal",
+        "tooltip": "Normal: replaces idle and normal motions. Does not start while a forced motion is playing."
+      },
+      "force": {
+        "label": "Force",
+        "tooltip": "Force: always starts and replaces the playing motion."
+      }
+    },
+    "seconds": "{{value}} s",
+    "looping": "{{duration}} loop",
+    "fade": "fade {{fadeIn}} / {{fadeOut}}",
+    "rejected": "\"{{name}}\" did not start because its priority ({{priority}}) is lower than the playing motion."
+  },
+  "idle": {
+    "none": "(None)"
+  },
+  "trackingGroup": {
+    "head": "Head direction",
+    "body": "Body and shoulders",
+    "eyes": "Eyes",
+    "brows": "Brows",
+    "mouth": "Mouth",
+    "other": "Other"
+  },
+  "parameters": {
+    "ungrouped": "Other"
+  },
+  "lighting": {
+    "preset": {
+      "standard": "Standard",
+      "sunset": "Sunset",
+      "lamp": "Night lamp"
+    },
+    "off": "Off",
+    "custom": "Custom",
+    "error": "Cannot set the lights: {{message}}"
+  },
+  "dressUp": {
+    "error": {
+      "unknownSlot": "This model has no slot \"{{slot}}\" to attach \"{{module}}\" to.",
+      "missingSlot": "\"{{module}}\" needs the slot \"{{slot}}\" in the model.",
+      "missingParameter": "This model does not have the parameter \"{{parameter}}\" that \"{{module}}\" needs.",
+      "parameterNotExposed": "The slot \"{{slot}}\" does not expose the parameter \"{{parameter}}\" that \"{{module}}\" uses.",
+      "avatarLevel": "This model does not meet the avatar profile level that \"{{module}}\" requires.",
+      "slotOccupied": "\"{{attached}}\" is attached to the slot \"{{slot}}\", so \"{{module}}\" cannot be attached with it.",
+      "unknownMask": "The mask of the mesh \"{{mesh}}\" in \"{{module}}\" is in neither the model nor the module.",
+      "unknownCollider": "The physics of \"{{module}}\" uses a collider that this model does not have.",
+      "poseNotExposed": "The pose of \"{{module}}\" uses parts that the slot \"{{slot}}\" does not expose.",
+      "textureOutOfRange": "The mesh \"{{mesh}}\" in \"{{module}}\" uses a texture that the module does not have.",
+      "invalidModuleName": "\"{{module}}\" cannot be used as a module name.",
+      "duplicateModule": "Two modules with the same name \"{{module}}\" cannot be attached.",
+      "invalidComposition": "Cannot combine the model and the modules ({{detail}}).",
+      "compile": "Cannot build the combined model ({{detail}}).",
+      "invalidPhysics": "The combined physics settings are not valid ({{detail}}).",
+      "notAttached": "\"{{module}}\" is not attached.",
+      "notLoaded": "\"{{module}}\" is not loaded.",
+      "noModel": "Open a model (.ugoe or .json) first.",
+      "invalidFile": "Cannot read this as a dress-up module (.ugoemod) ({{detail}}).",
+      "texture": "Cannot register the textures of the module ({{detail}})."
+    },
+    "detached": "Removed the dress-up module \"{{module}}\" because it does not fit this model ({{reason}}).",
+    "hiddenSlot": "Did not attach \"{{module}}\" because this model does not expose its slot \"{{slot}}\".",
+    "restore": {
+      "noLocation": "Cannot restore \"{{module}}\" ({{file}}) that was attached before, because its location is unknown. Open it again.",
+      "unreadable": "Cannot restore \"{{module}}\" ({{file}}) that was attached before, because its file cannot be read ({{reason}})."
+    }
+  },
+  "loadWarning": {
+    "textureKtx2": "Texture {{texture}} is a KTX2 image, which cannot be shown yet, so it is drawn in white instead.",
+    "textureMissing": "The image of texture {{texture}} is missing from the file, so it is drawn in white instead.",
+    "normalMapKtx2": "The normal map of texture {{texture}} is a KTX2 image, which cannot be used yet, so it is drawn without the normal map.",
+    "physicsRemoved": "Removed the physics settings because they do not fit this model ({{reason}}).",
+    "unknownOptionalFeature": "This file uses the feature \"{{feature}}\" from a newer version. This version shows it in another way.",
+    "unknownValue": "This file has a value that this version does not know ({{path}}). It is shown with the default handling."
+  },
+  "errors": {
+    "wasmMissing": "ugoe-wasm is not built.",
+    "notModel": "{{name}}: this is not a .ugoe or JSON model or a .ugoemod module.",
+    "renderStart": "Cannot start drawing: {{message}}"
+  },
+  "remembered": {
+    "noDate": "No date",
+    "noLocation": "No location (identified by the contents)",
+    "sample": "Sample ({{path}})",
+    "notAttached_one": "Not attached ({{count}} loaded)",
+    "notAttached_other": "Not attached ({{count}} loaded)",
+    "none": "None"
+  }
+}

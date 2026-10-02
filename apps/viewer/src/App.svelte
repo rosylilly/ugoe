@@ -1,6 +1,20 @@
 <script lang="ts">
 import { FaceTracker, TrackingPanel } from "@ugoe/face-tracking";
+import { formatNumber } from "@ugoe/i18n";
 import { type ModelFile, Player, visibleSlots } from "@ugoe/player";
+import {
+  Button,
+  type ButtonBaseProps,
+  ColorPicker,
+  IconButton,
+  Menu,
+  showToast,
+  Toaster,
+  Toggle,
+  Toolbar,
+  Tooltip,
+  TooltipProvider,
+} from "@ugoe/ui";
 import { onMount } from "svelte";
 import DressUpPanel from "./lib/DressUpPanel.svelte";
 import {
@@ -18,11 +32,13 @@ import {
   savePngFile,
   viewerHost,
 } from "./lib/host";
+import { t } from "./lib/i18n";
 import LicenseDialog from "./lib/LicenseDialog.svelte";
 import LightingPanel from "./lib/LightingPanel.svelte";
 import MemoryDialog from "./lib/MemoryDialog.svelte";
 import MotionPanel from "./lib/MotionPanel.svelte";
 import ParameterPanel from "./lib/ParameterPanel.svelte";
+import SettingsDialog from "./lib/SettingsDialog.svelte";
 import { openSample, SAMPLES, type Sample } from "./lib/samples";
 import { encodePng, screenshotFileName } from "./lib/screenshot";
 import Viewport from "./lib/Viewport.svelte";
@@ -31,8 +47,7 @@ import { loadWasm } from "./lib/wasm/load";
 const player = new Player({
   loadWasm,
   readFile: readFileAt,
-  wasmMissingMessage:
-    "ugoe-wasm がビルドされていません (apps/viewer で `pnpm wasm` を実行してください)",
+  wasmMissingMessage: t("errors.wasmMissing"),
 });
 // 外から操作できるようにする (ヘッドレスのブラウザでの確認、ドライバの登録など)。
 window.__UGOE_VIEWER__ = player;
@@ -49,17 +64,22 @@ let dropPreview = $state<DropPreview | null>(null);
 let dropNotice = $state<string | null>(null);
 /** OS からのドロップをホストがパスで受け取るか (Tauri)。そのときは HTML のドロップを扱わない。 */
 let nativeDrop = false;
-let sampleMenu = $state<HTMLDetailsElement | null>(null);
-let licenseDialog = $state<LicenseDialog | null>(null);
+let licenseOpen = $state(false);
+let settingsOpen = $state(false);
 let memoryDialog = $state<MemoryDialog | null>(null);
-/** 画像の保存の結果 (保存した場所。次に開くまで出す。T0420)。 */
-let screenshotNotice = $state<string | null>(null);
 /** 画像を読み戻して保存している間 (ボタンを押せない)。 */
 let capturing = $state(false);
 
+let sampleEntries = $derived(
+  SAMPLES.map((sample) => ({
+    label: sample.label,
+    onselect: () => void openSampleFromMenu(sample),
+  })),
+);
+
 /**
  * 今の表示を PNG で保存する (T0420)。画像は WebPuppet.read_pixels() で取る (canvas の読み戻しではない。screenshot.ts)。
- * ダイアログを開く前に読み戻すので、写るのはボタンを押したときの姿。
+ * ダイアログを開く前に読み戻すので、写るのはボタンを押したときの姿。保存した場所は知らせ (Toast) で出す。
  */
 async function saveScreenshot() {
   if (capturing) return;
@@ -69,9 +89,9 @@ async function saveScreenshot() {
     if (shot === null) return;
     const png = await encodePng(shot);
     const saved = await savePngFile(screenshotFileName(player.modelName, new Date()), png);
-    if (saved !== null) screenshotNotice = `画像を保存しました: ${saved}`;
+    if (saved !== null) showToast(t("screenshot.saved", { path: saved }), { tone: "success" });
   } catch (e) {
-    player.error = `画像を保存できません: ${e instanceof Error ? e.message : String(e)}`;
+    player.error = t("screenshot.error", { message: e instanceof Error ? e.message : String(e) });
   } finally {
     capturing = false;
   }
@@ -79,7 +99,6 @@ async function saveScreenshot() {
 
 async function openWith(get: () => Promise<ModelFile | null>) {
   dropNotice = null;
-  screenshotNotice = null;
   try {
     const file = await get();
     if (file !== null) await player.load(file);
@@ -90,7 +109,6 @@ async function openWith(get: () => Promise<ModelFile | null>) {
 
 /** 同梱の見本を開く (モデルと、着せ替えの見本ならモジュールも)。 */
 async function openSampleFromMenu(sample: Sample) {
-  if (sampleMenu) sampleMenu.open = false;
   dropNotice = null;
   try {
     await openSample(sample, player, readSampleFile);
@@ -164,7 +182,7 @@ function onDrop(e: DragEvent) {
 
 function onKeyDown(e: KeyboardEvent) {
   const target = e.target as HTMLElement | null;
-  if (target?.closest("input, textarea, select")) return;
+  if (target?.closest("input, textarea, select, [role=combobox], [role=listbox]")) return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "o") {
     e.preventDefault();
     openDialog();
@@ -186,121 +204,135 @@ function onKeyDown(e: KeyboardEvent) {
   ondrop={onDrop}
 />
 
-<div class="app">
-  <header class="toolbar">
-    <button
-      type="button"
-      onclick={openDialog}
-      title="モデル (.ugoe・.json) か着せ替えのモジュール (.ugoemod) を開く (Ctrl+O)">開く</button
-    >
-    <details class="menu" bind:this={sampleMenu}>
-      <summary title="同梱の見本を開く">サンプル</summary>
-      <div class="menu-items">
-        {#each SAMPLES as sample (sample.id)}
-          <button type="button" onclick={() => void openSampleFromMenu(sample)}>
-            <span class="menu-label">{sample.label}</span>
-            <span class="menu-description">{sample.description}</span>
-          </button>
-        {/each}
-      </div>
-    </details>
-    <button
-      type="button"
-      onclick={() => memoryDialog?.open()}
-      title="モデルごとに覚えた光源と着せ替えの組の一覧。モデルごとに、またはすべて忘れる"
-      >覚えたもの</button
-    >
-    <span class="name" title={player.modelName ?? ""}>{player.modelName ?? "モデルなし"}</span>
-    <span class="spacer"></span>
-    <div class="group" aria-label="表示">
-      <button type="button" onclick={() => player.zoomBy(1 / 1.25)} title="縮小">−</button>
-      <span class="zoom">{Math.round(player.zoom * 100)}%</span>
-      <button type="button" onclick={() => player.zoomBy(1.25)} title="拡大">+</button>
-      <button type="button" onclick={() => player.fit()} title="全体を表示 (F、ダブルクリック)"
-        >Fit</button
-      >
-    </div>
-    <label class="group" title="背景色">
-      背景
-      <input
-        type="color"
+<TooltipProvider>
+  <div class="app">
+    <header class="toolbar">
+      <Tooltip text={t("toolbar.open.tooltip")} shortcut="Mod+O">
+        {#snippet children(attrs)}
+          <Button {...attrs as ButtonBaseProps} variant="primary" onclick={openDialog}
+            >{t("toolbar.open.label")}</Button
+          >
+        {/snippet}
+      </Tooltip>
+      <Menu label={t("toolbar.samples.label")} entries={sampleEntries} />
+      <Tooltip text={t("toolbar.remembered.tooltip")}>
+        {#snippet children(attrs)}
+          <Button {...attrs as ButtonBaseProps} onclick={() => memoryDialog?.open()}
+            >{t("toolbar.remembered.label")}</Button
+          >
+        {/snippet}
+      </Tooltip>
+      <span class="name">{player.modelName ?? t("toolbar.noModel")}</span>
+      <span class="spacer"></span>
+      <Toolbar label={t("toolbar.view.aria")}>
+        <IconButton label={t("toolbar.zoomOut.aria")} onclick={() => player.zoomBy(1 / 1.25)}>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M3.5 8h9" stroke-linecap="round" />
+          </svg>
+        </IconButton>
+        <span class="zoom">{formatNumber(player.zoom, { style: "percent", maximumFractionDigits: 0 })}</span>
+        <IconButton label={t("toolbar.zoomIn.aria")} onclick={() => player.zoomBy(1.25)}>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M3.5 8h9M8 3.5v9" stroke-linecap="round" />
+          </svg>
+        </IconButton>
+        <IconButton label={t("toolbar.fit.aria")} shortcut="F" onclick={() => player.fit()}>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path
+              d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </IconButton>
+      </Toolbar>
+      <ColorPicker
+        label={t("toolbar.background.label")}
         value={player.background}
-        oninput={(e) => player.setBackground(e.currentTarget.value, player.transparent)}
+        onchange={(color) => player.setBackground(color, player.transparent)}
       />
-    </label>
-    <label class="group" title="背景を透明にする (市松模様で表示)">
-      <input
-        type="checkbox"
+      <Toggle
+        label={t("toolbar.transparent.label")}
         checked={player.transparent}
-        onchange={(e) => player.setBackground(player.background, e.currentTarget.checked)}
+        onchange={(on) => player.setBackground(player.background, on)}
       />
-      透明
-    </label>
-    <button
-      type="button"
-      onclick={() => void saveScreenshot()}
-      disabled={player.status !== "ready" || capturing}
-      title="今の表示 (背景と光源を含む。光源の印は含まない) を PNG で保存する">画像を保存</button
-    >
-  </header>
+      <Tooltip text={t("toolbar.screenshot.tooltip")}>
+        {#snippet children(attrs)}
+          <Button
+            {...attrs as ButtonBaseProps}
+            onclick={() => void saveScreenshot()}
+            disabled={player.status !== "ready" || capturing}>{t("toolbar.screenshot.label")}</Button
+          >
+        {/snippet}
+      </Tooltip>
+      <IconButton label={t("toolbar.settings.aria")} onclick={() => (settingsOpen = true)}>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+          <circle cx="8" cy="8" r="2.2" />
+          <path
+            d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"
+            stroke-linecap="round"
+          />
+        </svg>
+      </IconButton>
+    </header>
 
-  <main>
-    <Viewport {player} />
-    {#if dropping}
+    <main>
+      <Viewport {player} />
+      {#if dropping}
+        <!--
+          落とすときの枠。ビューポートの canvas の上にも見えるように、main の上に重ねる (T0717)。
+          開けるかを見立て (Tauri はパスから、ブラウザは種類と数から。T0718)、枠の色 (一部を飛ばす・開けるものが無い) と文で示す。
+        -->
+        <div class="drop-frame" data-kind={dropPreview?.kind ?? "all"}>
+          {#if dropPreview}
+            <div class="drop-preview" role="status">{dropPreview.message}</div>
+          {/if}
+        </div>
+      {/if}
       <!--
-        落とすときの枠。ビューポートの canvas の上にも見えるように、main の上に重ねる (T0717)。
-        開けるかを見立て (Tauri はパスから、ブラウザは種類と数から。T0718)、枠の色 (一部を飛ばす・開けるものが無い) と文で示す。
+        右のパネル。縦にパネルを積む: フェイストラッキング → モデルの機能ごとのパネル → パラメータ (残りの高さ)。
+        モデルの機能ごとのパネル (着せ替え・ライティング・モーションと表情) は、そのモデルが使うときだけ出す
+        (着せ替えはスロットがあるか、モジュールを読み込んだとき。モーションと表情はバンドルにどちらかがあるとき)。
+        畳めるまとまり (@ugoe/ui の Section) にして、高さの上限 (max-height) を付ける。
       -->
-      <div class="drop-frame" data-kind={dropPreview?.kind ?? "all"}>
-        {#if dropPreview}
-          <div class="drop-preview" role="status">{dropPreview.message}</div>
+      <aside class="sidebar">
+        <TrackingPanel {tracker} parameterIds={player.trackingParameterIds} values={player.values} />
+        {#if visibleSlots(player.slots, player.publishedSlots).length > 0 || player.modules.length > 0 || player.dressUpError || player.restoreOffer || player.dressUpRemembered}
+          <DressUpPanel {player} hasModel={player.status === "ready"} />
         {/if}
-      </div>
-    {/if}
-    <!--
-      右のパネル。縦にパネルを積む: フェイストラッキング → モデルの機能ごとのパネル → パラメータ (残りの高さ)。
-      モデルの機能ごとのパネル (着せ替え・ライティング・モーションと表情) は、そのモデルが使うときだけ出す
-      (着せ替えはスロットがあるか、モジュールを読み込んだとき。モーションと表情はバンドルにどちらかがあるとき)。畳める <details> にして、
-      高さの上限 (max-height) を付ける。
-    -->
-    <aside class="sidebar">
-      <TrackingPanel {tracker} parameterIds={player.trackingParameterIds} values={player.values} />
-      {#if visibleSlots(player.slots, player.publishedSlots).length > 0 || player.modules.length > 0 || player.dressUpError || player.restoreOffer || player.dressUpRemembered}
-        <DressUpPanel {player} hasModel={player.status === "ready"} />
-      {/if}
-      {#if player.usesLighting}
-        <LightingPanel {player} onshowmemory={() => memoryDialog?.open()} />
-      {/if}
-      {#if player.motions.length > 0 || player.expressions.length > 0}
-        <MotionPanel {player} />
-      {/if}
-      <ParameterPanel {player} />
-    </aside>
-  </main>
+        {#if player.usesLighting}
+          <LightingPanel {player} onshowmemory={() => memoryDialog?.open()} />
+        {/if}
+        {#if player.motions.length > 0 || player.expressions.length > 0}
+          <MotionPanel {player} />
+        {/if}
+        <ParameterPanel {player} />
+      </aside>
+    </main>
 
-  <footer class="status">
-    {#if player.error}
-      <span class="error">{player.error}</span>
-    {:else if player.warnings.length > 0}
-      <span class="warning" title={player.warnings.join("\n")}>
-        警告 {player.warnings.length} 件: {player.warnings[0]}
-      </span>
-    {:else if !dropNotice && !screenshotNotice}
-      <span>{player.status === "ready" ? "読み込みました" : ""}</span>
-    {/if}
-    {#if dropNotice}
-      <span class="warning drop-notice" role="status" title={dropNotice}>{dropNotice}</span>
-    {/if}
-    {#if screenshotNotice}
-      <span class="screenshot-notice" role="status" title={screenshotNotice}>{screenshotNotice}</span>
-    {/if}
-    <span class="spacer"></span>
-    {#if player.backend}<span class="backend">{player.backend}</span>{/if}
-    <button type="button" class="link" onclick={() => licenseDialog?.open()}>ライセンス</button>
-  </footer>
-  <LicenseDialog bind:this={licenseDialog} />
-  <MemoryDialog {player} bind:this={memoryDialog} />
-</div>
+    <footer class="status">
+      {#if player.error}
+        <span class="error" role="alert">{player.error}</span>
+      {:else if player.warnings.length > 0}
+        <span class="warning" title={player.warnings.join("\n")}>
+          {t("status.warnings", { count: player.warnings.length, first: player.warnings[0] })}
+        </span>
+      {:else if !dropNotice}
+        <span>{player.status === "ready" ? t("status.loaded") : ""}</span>
+      {/if}
+      {#if dropNotice}
+        <span class="warning drop-notice" role="status" title={dropNotice}>{dropNotice}</span>
+      {/if}
+      <span class="spacer"></span>
+      {#if player.backend}<span class="backend">{player.backend}</span>{/if}
+      <Button variant="ghost" small onclick={() => (licenseOpen = true)}>{t("status.license")}</Button>
+    </footer>
+    <LicenseDialog bind:open={licenseOpen} />
+    <SettingsDialog bind:open={settingsOpen} />
+    <MemoryDialog {player} bind:this={memoryDialog} />
+  </div>
+  <Toaster />
+</TooltipProvider>
 
 <style>
   .app {
@@ -309,7 +341,7 @@ function onKeyDown(e: KeyboardEvent) {
     flex-direction: column;
   }
   .drop-frame {
-    --frame: var(--accent);
+    --frame: var(--ugoe-color-accent);
     position: absolute;
     inset: 3px;
     z-index: 5;
@@ -318,111 +350,58 @@ function onKeyDown(e: KeyboardEvent) {
   }
   /* 一部を飛ばす・開けるものが無い (Tauri のドラッグ中にパスで見立てる、T0717)。 */
   .drop-frame[data-kind="some"] {
-    --frame: var(--warning);
+    --frame: var(--ugoe-color-warning);
   }
   .drop-frame[data-kind="none"] {
-    --frame: var(--danger);
+    --frame: var(--ugoe-color-danger);
   }
   .drop-preview {
     position: absolute;
-    top: 1rem;
+    top: var(--ugoe-space-5);
     left: 50%;
     transform: translateX(-50%);
     max-width: 80%;
-    padding: 0.4rem 0.8rem;
-    font-size: 0.85rem;
-    color: var(--text);
-    background: var(--panel);
+    padding: var(--ugoe-space-2) var(--ugoe-space-4);
+    font-size: var(--ugoe-font-size-sm);
+    color: var(--ugoe-color-text);
+    background: var(--ugoe-color-surface);
     border: 2px solid var(--frame);
-    border-radius: 6px;
+    border-radius: var(--ugoe-radius-lg);
   }
   .toolbar,
   .status {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.4rem 0.75rem;
-    background: var(--panel);
-    border-bottom: 1px solid var(--border);
+    gap: var(--ugoe-space-3);
+    padding: var(--ugoe-space-2) var(--ugoe-space-4);
+    background: var(--ugoe-color-surface);
+    border-bottom: 1px solid var(--ugoe-color-border);
+  }
+  .toolbar {
+    flex-wrap: wrap;
   }
   .status {
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--ugoe-color-border);
     border-bottom: none;
-    font-size: 0.75rem;
-    color: var(--muted);
-    min-height: 1.5rem;
+    padding-block: var(--ugoe-space-1);
+    font-size: var(--ugoe-font-size-xs);
+    color: var(--ugoe-color-text-muted);
+    min-height: calc(var(--ugoe-control-height) + 2 * var(--ugoe-space-1));
   }
   .spacer {
     flex: 1;
   }
-  .menu {
-    position: relative;
-  }
-  .menu summary {
-    list-style: none;
-    cursor: pointer;
-    padding: 0.2rem 0.6rem;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    font-size: 0.85rem;
-  }
-  .menu summary::-webkit-details-marker {
-    display: none;
-  }
-  .menu summary::after {
-    content: " ▾";
-  }
-  .menu-items {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
-    z-index: 10;
-    width: 22rem;
-    display: flex;
-    flex-direction: column;
-    padding: 0.25rem;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 4px 16px rgb(0 0 0 / 0.2);
-  }
-  .menu-items button {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.1rem;
-    text-align: left;
-    border: none;
-    background: none;
-    padding: 0.4rem 0.5rem;
-    border-radius: 4px;
-  }
-  .menu-items button:hover {
-    background: var(--border);
-  }
-  .menu-label {
-    font-weight: 600;
-  }
-  .menu-description {
-    font-size: 0.75rem;
-    color: var(--muted);
-  }
   .name {
-    font-weight: 600;
+    font-weight: var(--ugoe-font-weight-strong);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     max-width: 30ch;
   }
-  .group {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    font-size: 0.85rem;
-  }
   .zoom {
-    min-width: 4ch;
+    min-width: 5ch;
     text-align: center;
+    font-size: var(--ugoe-font-size-sm);
     font-variant-numeric: tabular-nums;
   }
   main {
@@ -432,33 +411,36 @@ function onKeyDown(e: KeyboardEvent) {
     display: flex;
   }
   .sidebar {
-    width: 320px;
+    width: 340px;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    padding: 0.75rem;
-    background: var(--panel);
-    border-left: 1px solid var(--border);
+    gap: var(--ugoe-space-3);
+    padding: var(--ugoe-space-3) var(--ugoe-space-4);
+    background: var(--ugoe-color-surface);
+    border-left: 1px solid var(--ugoe-color-border);
+    min-height: 0;
+    overflow: hidden;
+  }
+  /* 狭い幅 (docs/ui.md#そのほか の 360px) では、パネルをビューポートの下に置く。 */
+  @media (max-width: 720px) {
+    main {
+      flex-direction: column;
+    }
+    .sidebar {
+      width: auto;
+      height: 55%;
+      flex-shrink: 0;
+      border-left: none;
+      border-top: 1px solid var(--ugoe-color-border);
+      overflow-y: auto;
+    }
   }
   .error {
-    color: var(--danger);
-  }
-  .link {
-    border: none;
-    background: none;
-    padding: 0;
-    font-size: inherit;
-    color: var(--muted);
-    text-decoration: underline;
-  }
-  .screenshot-notice {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    color: var(--ugoe-color-danger);
   }
   .warning {
-    color: var(--warning);
+    color: var(--ugoe-color-warning);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

@@ -4,8 +4,11 @@
 // 付け外しは Player (WebPuppet の着せ替えの口) が行い、失敗の理由は `player.dressUpError`。
 // 本体のアバタープロファイルがアプリに公開していないスロット (作者用) は出さない (T0715。`player.publishedSlots`)。
 // モデルに前に付けていた組があれば、戻すか尋ねる (T0711。`player.restoreOffer`)。覚えた組は「覚えた組を忘れる」で忘れる (T0709)。
+import { formatList } from "@ugoe/i18n";
 import { groupBySlot, type ModuleInfo, type Player, visibleSlots } from "@ugoe/player";
+import { Button, IconButton, Notice, Section, Toggle } from "@ugoe/ui";
 import { viewerHost } from "./host";
+import { t } from "./i18n";
 
 let { player, hasModel }: { player: Player; hasModel: boolean } = $props();
 
@@ -17,7 +20,9 @@ let attachedCount = $derived(
   player.modules.filter((m) => m.attached && slots.some((s) => s.id === m.slot)).length,
 );
 let status = $derived(
-  slots.length === 0 ? "スロットなし" : `${attachedCount} / ${slots.length} スロット`,
+  slots.length === 0
+    ? t("dressUp.status.noSlots")
+    : t("dressUp.status.slots", { attached: attachedCount, count: slots.length }),
 );
 
 async function openModules() {
@@ -34,241 +39,212 @@ let offerText = $derived(
   offer === null
     ? ""
     : offer.attached.length > 0
-      ? offer.attached.join("・")
-      : `付けていないモジュール ${offer.modules.length} 個`,
+      ? formatList(offer.attached)
+      : t("dressUp.restore.notAttached", { count: offer.modules.length }),
 );
 
 function describe(m: ModuleInfo): string {
-  const lines = [`スロット: ${m.slot}`, `テクスチャ: ${m.textures} 枚`];
+  const lines = [
+    t("dressUp.module.slot", { slot: m.slot }),
+    t("dressUp.module.textures", { count: m.textures }),
+  ];
   const r = m.requires;
   if (r.avatar_level !== undefined)
-    lines.push(`アバタープロファイル: レベル ${r.avatar_level} 以上`);
-  if (r.slots?.length) lines.push(`必要なスロット: ${r.slots.join(", ")}`);
-  if (r.parameters?.length) lines.push(`必要なパラメータ: ${r.parameters.join(", ")}`);
+    lines.push(t("dressUp.module.avatarLevel", { level: r.avatar_level }));
+  if (r.slots?.length) lines.push(t("dressUp.module.slots", { slots: formatList(r.slots) }));
+  if (r.parameters?.length)
+    lines.push(t("dressUp.module.parameters", { parameters: formatList(r.parameters) }));
   return lines.join("\n");
 }
 </script>
 
-<details class="panel dress-up" bind:open>
-  <summary>
-    <h2>着せ替え</h2>
-    <span class="status">{status}</span>
-  </summary>
+<div class="panel dress-up">
+  <Section title={t("dressUp.title")} level={2} bind:open>
+    {#snippet actions()}
+      <span class="status">{status}</span>
+    {/snippet}
 
-  <div class="actions">
-    <button type="button" onclick={openModules} title=".ugoemod を選んで読み込み、付ける (ウィンドウへのドロップでも開ける)"
-      >モジュールを開く…</button
-    >
-    <label title="モデルを開いたとき、前にそのモデルに付けていた組を尋ねずに戻す">
-      <input
-        type="checkbox"
+    <div class="actions">
+      <Button small onclick={openModules}>{t("dressUp.openModules.label")}</Button>
+      <Toggle
+        label={t("dressUp.autoRestore.label")}
         checked={player.autoRestore}
-        onchange={(e) => player.setAutoRestore(e.currentTarget.checked)}
+        onchange={(on) => player.setAutoRestore(on)}
       />
-      前の組を自動で戻す
-    </label>
-  </div>
-
-  {#if player.dressUpRemembered}
-    <div class="memory">
-      <span title="付けているモジュールの組はモデルごとに覚え、次に開いたときに戻せる">このモデル用に覚えた組があります</span>
-      <button
-        type="button"
-        title="このモデルに覚えた組を忘れる (付けているモジュールはそのまま。次に着せ替えを操作すると、そのときの組をまた覚える)"
-        onclick={() => player.forgetDressUp()}>覚えた組を忘れる</button
-      >
     </div>
-  {/if}
 
-  {#if offer !== null}
-    <div class="offer" role="status">
-      <p>前にこのモデルに付けていた組があります: <strong>{offerText}</strong></p>
-      <div class="offer-actions">
-        <button type="button" onclick={() => void player.restoreDressUp()}>戻す</button>
-        <button type="button" onclick={() => player.dismissRestore()}>今回は戻さない</button>
+    {#if player.dressUpRemembered}
+      <div class="memory">
+        <span>{t("dressUp.memory.remembered")}</span>
+        <Button small onclick={() => player.forgetDressUp()}>{t("dressUp.memory.forget.label")}</Button>
       </div>
-    </div>
-  {/if}
+    {/if}
 
-  {#if player.dressUpError}
-    <p class="error" role="alert">{player.dressUpError}</p>
-  {/if}
-  {#if !hasModel}
-    <p class="hint">モデルを開くと付けられます</p>
-  {:else if player.slots.length === 0}
-    <p class="hint">このモデルにはスロットがありません (着せ替えに対応していません)</p>
-  {:else if slots.length === 0}
-    <p class="hint">このモデルは着せ替えのスロットを公開していません</p>
-  {/if}
+    {#if offer !== null}
+      <div class="notice">
+        <Notice title={t("dressUp.restore.title")}>
+          {offerText}
+          {#snippet actions()}
+            <Button small variant="primary" onclick={() => void player.restoreDressUp()}
+              >{t("dressUp.restore.accept.label")}</Button
+            >
+            <Button small onclick={() => player.dismissRestore()}
+              >{t("dressUp.restore.dismiss.label")}</Button
+            >
+          {/snippet}
+        </Notice>
+      </div>
+    {/if}
 
-  {#each groups as g (g.id)}
-    <section class:missing={g.missing || g.hidden}>
-      <h3>
-        {g.id}
-        {#if g.missing}
-          <span class="badge" title="このモデルに無いスロット。このモジュールは付けられない">モデルに無い</span>
-        {:else if g.hidden}
-          <span
-            class="badge"
-            title="モデルの作者用のスロット (アバタープロファイルでアプリに公開していない)。このモジュールは付けられない"
-            >公開されていない</span
-          >
-        {:else}
-          <span class="current">{g.attached?.name ?? "なし"}</span>
+    {#if player.dressUpError}
+      <div class="notice error">
+        <Notice tone="danger">{player.dressUpError}</Notice>
+      </div>
+    {/if}
+    {#if !hasModel}
+      <p class="hint">{t("dressUp.hint.noModel")}</p>
+    {:else if player.slots.length === 0}
+      <p class="hint">{t("dressUp.hint.noSlots")}</p>
+    {:else if slots.length === 0}
+      <p class="hint">{t("dressUp.hint.noPublishedSlots")}</p>
+    {/if}
+
+    {#each groups as g (g.id)}
+      <section class:missing={g.missing || g.hidden}>
+        <h3>
+          {g.id}
+          {#if g.missing}
+            <span class="badge">{t("dressUp.badge.missing")}</span>
+          {:else if g.hidden}
+            <span class="badge">{t("dressUp.badge.hidden")}</span>
+          {:else}
+            <span class="current">{g.attached?.name ?? t("dressUp.none")}</span>
+          {/if}
+        </h3>
+        {#if g.missing || g.hidden}
+          <p class="hint">
+            {g.missing ? t("dressUp.badge.missingDescription") : t("dressUp.badge.hiddenDescription")}
+          </p>
         {/if}
-      </h3>
-      {#if g.modules.length === 0}
-        <p class="empty">モジュールを読み込んでいません</p>
-      {:else}
-        <ul>
-          {#each g.modules as m (m.name)}
-            <li class:attached={m.attached}>
-              <span class="name" title={describe(m)}>{m.name}</span>
-              {#if m.warnings.length > 0}
-                <span class="warning" title={m.warnings.join("\n")}>警告 {m.warnings.length}</span>
-              {/if}
-              {#if m.attached}
-                <button type="button" onclick={() => player.detachModule(m.name)}>外す</button>
-              {:else}
-                <button
-                  type="button"
-                  disabled={g.missing || g.hidden || !hasModel}
-                  title={g.attached ? `「${g.attached.name}」と差し替える` : "付ける"}
-                  onclick={() => player.attachModule(m.name)}>{g.attached ? "差し替える" : "付ける"}</button
+        {#if g.modules.length === 0}
+          <p class="hint">{t("dressUp.empty")}</p>
+        {:else}
+          <ul>
+            {#each g.modules as m (m.name)}
+              <li class:attached={m.attached}>
+                <span class="name" title={describe(m)}>{m.name}</span>
+                {#if m.warnings.length > 0}
+                  <span class="warning" title={m.warnings.join("\n")}
+                    >{t("dressUp.module.warnings", { count: m.warnings.length })}</span
+                  >
+                {/if}
+                {#if m.attached}
+                  <Button small onclick={() => player.detachModule(m.name)}
+                    >{t("dressUp.detach.label")}</Button
+                  >
+                {:else}
+                  <Button
+                    small
+                    disabled={g.missing || g.hidden || !hasModel}
+                    onclick={() => player.attachModule(m.name)}
+                    >{g.attached ? t("dressUp.replace.label") : t("dressUp.attach.label")}</Button
+                  >
+                {/if}
+                <IconButton
+                  small
+                  variant="ghost"
+                  label={t("dressUp.unload.aria", { module: m.name })}
+                  onclick={() => player.unloadModule(m.name)}
                 >
-              {/if}
-              <button
-                type="button"
-                class="remove"
-                title="一覧から除く (付けていれば外す)"
-                aria-label="{m.name} を一覧から除く"
-                onclick={() => player.unloadModule(m.name)}>×</button
-              >
-            </li>
-          {/each}
-        </ul>
-      {/if}
-    </section>
-  {/each}
-</details>
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                    <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" stroke-linecap="round" />
+                  </svg>
+                </IconButton>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </section>
+    {/each}
+  </Section>
+</div>
 
 <style>
+  /* 縦が足りないときは、見出しが見える高さまで縮んで中を送る (パラメータの一覧の高さを残す)。 */
   .dress-up {
-    flex-shrink: 0;
+    flex: 0 1 auto;
+    min-height: calc(var(--ugoe-control-height) + var(--ugoe-space-3));
     max-height: 40%;
     overflow-y: auto;
-    font-size: 0.8rem;
+    font-size: var(--ugoe-font-size-sm);
   }
-  .dress-up > summary {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    cursor: pointer;
-  }
-  h2 {
-    margin: 0;
-    font-size: 0.85rem;
-    font-weight: 600;
-    display: inline;
+  .dress-up :global(.ugoe-toggle) {
+    font-size: var(--ugoe-font-size-sm);
   }
   h3 {
     margin: 0;
-    font-size: 0.8rem;
-    font-weight: 600;
+    font-size: var(--ugoe-font-size-sm);
+    font-weight: var(--ugoe-font-weight-strong);
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--ugoe-space-2);
   }
   .status,
   .current,
   .hint,
-  .empty {
-    color: var(--muted);
-    font-weight: normal;
+  .memory {
+    color: var(--ugoe-color-text-muted);
+    font-weight: var(--ugoe-font-weight-normal);
   }
-  .hint,
-  .empty {
-    margin: 0.3rem 0 0;
-    font-size: 0.75rem;
+  .status {
+    font-size: var(--ugoe-font-size-xs);
   }
-  .actions {
-    margin-top: 0.4rem;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.4rem;
+  .hint {
+    margin: var(--ugoe-space-1) 0 0;
+    font-size: var(--ugoe-font-size-xs);
   }
-  .actions label {
-    display: flex;
-    align-items: center;
-    gap: 0.2rem;
-    font-size: 0.75rem;
-    color: var(--muted);
-  }
+  .actions,
   .memory {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 0.4rem;
-    margin-top: 0.4rem;
-    color: var(--muted);
-    font-size: 0.75rem;
+    gap: var(--ugoe-space-2);
   }
-  .memory button {
-    font-size: 0.75rem;
-    padding: 0.1rem 0.5rem;
+  .memory {
+    margin-top: var(--ugoe-space-2);
+    font-size: var(--ugoe-font-size-xs);
   }
-  .offer {
-    margin-top: 0.4rem;
-    padding: 0.4rem 0.5rem;
-    border: 1px solid var(--accent);
-    border-radius: 4px;
+  .notice {
+    margin-top: var(--ugoe-space-2);
   }
-  .offer p {
-    margin: 0;
-  }
-  .offer-actions {
-    display: flex;
-    gap: 0.3rem;
-    margin-top: 0.3rem;
-  }
-  .offer-actions button {
-    font-size: 0.75rem;
-    padding: 0.1rem 0.5rem;
-  }
-  .actions button {
-    font-size: 0.75rem;
-    padding: 0.15rem 0.5rem;
-  }
-  .error {
-    margin: 0.4rem 0 0;
-    color: var(--danger);
+  .notice.error {
     white-space: pre-line;
   }
   section {
-    margin-top: 0.6rem;
+    margin-top: var(--ugoe-space-3);
   }
   section.missing h3 {
-    color: var(--muted);
+    color: var(--ugoe-color-text-muted);
   }
   .badge {
-    font-size: 0.7rem;
-    font-weight: normal;
-    color: var(--warning);
+    font-size: var(--ugoe-font-size-xs);
+    font-weight: var(--ugoe-font-weight-normal);
+    color: var(--ugoe-color-warning);
     border: 1px solid currentColor;
-    border-radius: 3px;
-    padding: 0 0.3rem;
+    border-radius: var(--ugoe-radius-sm);
+    padding: 0 var(--ugoe-space-1);
   }
   ul {
     list-style: none;
-    margin: 0.2rem 0 0;
+    margin: var(--ugoe-space-1) 0 0;
     padding: 0;
   }
   li {
     display: flex;
     align-items: center;
-    gap: 0.3rem;
-    padding: 0.1rem 0;
+    gap: var(--ugoe-space-2);
+    padding: var(--ugoe-space-1) 0;
   }
   li .name {
     flex: 1;
@@ -278,20 +254,11 @@ function describe(m: ModuleInfo): string {
     white-space: nowrap;
   }
   li.attached .name {
-    font-weight: 600;
-    color: var(--accent);
-  }
-  li button {
-    font-size: 0.75rem;
-    padding: 0.1rem 0.45rem;
-  }
-  .remove {
-    border: none;
-    background: none;
-    color: var(--muted);
+    font-weight: var(--ugoe-font-weight-strong);
+    color: var(--ugoe-color-accent);
   }
   .warning {
-    color: var(--warning);
-    font-size: 0.7rem;
+    color: var(--ugoe-color-warning);
+    font-size: var(--ugoe-font-size-xs);
   }
 </style>

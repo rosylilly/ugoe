@@ -4,6 +4,7 @@
 
 import type { Player } from "@ugoe/player";
 import { onMount } from "svelte";
+import { t } from "./i18n";
 import LightMarkers from "./LightMarkers.svelte";
 
 let { player }: { player: Player } = $props();
@@ -65,12 +66,12 @@ function onPointerUp(e: PointerEvent) {
   onpointercancel={onPointerUp}
   ondblclick={() => player.fit()}
   role="img"
-  aria-label={player.modelName ?? "モデルの表示"}
+  aria-label={player.modelName ?? t("viewport.aria")}
 >
   {#if player.status === "empty"}
-    <p class="hint">.ugoe か model.json をドロップするか、「開く」で選んでください</p>
+    <p class="hint">{t("viewport.empty")}</p>
   {:else if player.status === "starting"}
-    <p class="hint">準備しています…</p>
+    <p class="hint">{t("viewport.starting")}</p>
   {:else if player.status === "unavailable"}
     <p class="hint error">{player.error}</p>
   {/if}
@@ -92,7 +93,7 @@ function onPointerUp(e: PointerEvent) {
   .viewport.dragging {
     cursor: grabbing;
   }
-  /* 背景を透明にしたときは市松模様を見せる */
+  /* 背景を透明にしたときは市松模様を見せる (描画の中身なので、色はトークンの外で決める。docs/ui.md#デザイントークン) */
   .viewport.transparent {
     background-color: #fff;
     background-image:
@@ -120,12 +121,12 @@ function onPointerUp(e: PointerEvent) {
     display: grid;
     place-items: center;
     margin: 0;
-    padding: 2rem;
+    padding: var(--ugoe-space-6);
     text-align: center;
-    color: var(--muted);
+    color: var(--ugoe-color-text-muted);
     pointer-events: none;
   }
   .hint.error {
-    color: var(--danger);
+    color: var(--ugoe-color-danger);
   }
 </style>

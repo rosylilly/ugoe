@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { setLocale } from "@ugoe/i18n";
+import { beforeEach, describe, expect, it } from "vitest";
 import { describeLoadWarning, parseLoadWarnings, replaceWarnings } from "./loadWarnings";
+
+// 文言は日本語の訳で確かめる (英語の原文を確かめる it は、その中で言語を切り替える)。
+beforeEach(() => setLocale("ja"));
 
 describe("parseLoadWarnings", () => {
   it("reads load_warnings_json and skips malformed entries", () => {

@@ -140,6 +140,7 @@ pub fn run() {
     #[allow(clippy::expect_used)]
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_os::init())
         .on_permission_request(|_, kind| permission_response(kind))
         .invoke_handler(tauri::generate_handler![
             read_model_file,

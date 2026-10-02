@@ -1,73 +1,83 @@
 <script lang="ts">
 // パラメータのスライダーの一覧 (グループごと)。中継用 (internal) のパラメータは既定で隠し、切り替えて出せる。
 import { formatValue, internalCount, type Player, sliderStep, visibleSections } from "@ugoe/player";
+import { Button, Section, Slider, Toggle } from "@ugoe/ui";
+import { t } from "./i18n";
 
 let { player }: { player: Player } = $props();
 
 let filter = $state("");
 let showInternal = $state(false);
 
+const internalHintId = $props.id();
+
 let hidden = $derived(internalCount(player.sections));
 let sections = $derived(visibleSections(player.sections, filter, showInternal));
 </script>
 
-<section class="panel parameters">
+<section class="parameters" aria-labelledby="parameters-heading">
   <header>
-    <h2>パラメータ</h2>
-    <button
-      type="button"
-      onclick={() => player.resetAllParameters()}
-      disabled={player.status !== "ready"}
-      title="すべてのパラメータを既定値に戻す">すべて戻す</button
+    <h2 id="parameters-heading">{t("parameters.title")}</h2>
+    <Button small onclick={() => player.resetAllParameters()} disabled={player.status !== "ready"}
+      >{t("parameters.resetAll.label")}</Button
     >
   </header>
   {#if player.sections.length === 0}
     <p class="empty">
-      {player.status === "ready" ? "このモデルにはパラメータがありません" : "モデルを開くと表示されます"}
+      {player.status === "ready" ? t("parameters.empty") : t("parameters.noModel")}
     </p>
   {:else}
-    <input class="filter" type="search" placeholder="絞り込み (名前・ID)" bind:value={filter} />
+    <input
+      class="filter"
+      type="search"
+      aria-label={t("parameters.filter.aria")}
+      placeholder={t("parameters.filter.placeholder")}
+      bind:value={filter}
+    />
     {#if hidden > 0}
-      <label
-        class="internal-toggle"
-        title="物理のリグの間で値を受け渡す中継用のパラメータ。ふつうは動かしません"
-      >
-        <input type="checkbox" bind:checked={showInternal} />
-        中継用のパラメータも表示 ({hidden})
-      </label>
+      <div class="internal-toggle">
+        <Toggle
+          label={t("parameters.showInternal.label", { count: hidden })}
+          describedby={internalHintId}
+          bind:checked={showInternal}
+        />
+        <p class="hint" id={internalHintId}>{t("parameters.showInternal.description")}</p>
+      </div>
     {/if}
     <div class="list">
       {#each sections as section (section.id ?? "")}
-        <details open>
-          <summary>{section.name} <span class="count">{section.parameters.length}</span></summary>
+        <Section title={section.id === null ? t("parameters.ungrouped") : section.name}>
+          {#snippet actions()}
+            <span class="count">{section.parameters.length}</span>
+          {/snippet}
           {#each section.parameters as p (p.id)}
             {@const value = player.values[p.id] ?? p.default}
             {@const driven = player.driven.has(p.id)}
-            <div class="row" class:driven class:internal={p.internal} title={p.id}>
-              <label for="param-{p.id}">{p.name || p.id}</label>
-              <span class="value">{formatValue(value)}</span>
-              <input
-                id="param-{p.id}"
-                type="range"
+            {@const name = p.name || p.id}
+            <!-- ダブルクリックでも既定値に戻す (動かしているドライバが無いとき)。 -->
+            <div
+              class="row"
+              class:internal={p.internal}
+              data-parameter={p.id}
+              role="presentation"
+              ondblclick={() => {
+                if (!driven) player.resetParameter(p.id);
+              }}
+            >
+              <Slider
+                label={driven ? t("parameters.driven", { name }) : name}
+                {value}
                 min={p.min}
                 max={p.max}
                 step={sliderStep(p)}
-                {value}
+                defaultValue={p.default}
+                resetLabel={t("parameters.reset.aria", { name, value: formatValue(p.default) })}
                 disabled={driven}
-                oninput={(e) => player.setParameter(p.id, e.currentTarget.valueAsNumber)}
-                ondblclick={() => player.resetParameter(p.id)}
+                onchange={(v) => player.setParameter(p.id, v)}
               />
-              <button
-                type="button"
-                class="reset"
-                onclick={() => player.resetParameter(p.id)}
-                disabled={driven || Math.abs(value - p.default) < 1e-6}
-                title="既定値 ({formatValue(p.default)}) に戻す"
-                aria-label="{p.name || p.id} を既定値に戻す">↺</button
-              >
             </div>
           {/each}
-        </details>
+        </Section>
       {/each}
     </div>
   {/if}
@@ -76,7 +86,7 @@ let sections = $derived(visibleSections(player.sections, filter, showInternal));
 <style>
   .parameters {
     flex: 1;
-    min-height: 0;
+    min-height: 12rem;
     display: flex;
     flex-direction: column;
   }
@@ -84,80 +94,66 @@ let sections = $derived(visibleSections(player.sections, filter, showInternal));
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
+    gap: var(--ugoe-space-2);
   }
   h2 {
     margin: 0;
-    font-size: 0.85rem;
-    font-weight: 600;
+    font-size: var(--ugoe-font-size-md);
+    font-weight: var(--ugoe-font-weight-strong);
+  }
+  .empty,
+  .hint,
+  .count {
+    color: var(--ugoe-color-text-muted);
   }
   .empty {
-    color: var(--muted);
-    font-size: 0.85rem;
+    font-size: var(--ugoe-font-size-sm);
+  }
+  .hint {
+    margin: var(--ugoe-space-1) 0 0;
+    font-size: var(--ugoe-font-size-xs);
+  }
+  .count {
+    font-size: var(--ugoe-font-size-xs);
+    font-variant-numeric: tabular-nums;
   }
   .filter {
-    margin: 0.5rem 0;
+    margin: var(--ugoe-space-3) 0 var(--ugoe-space-2);
+    height: var(--ugoe-control-height);
+    padding: 0 var(--ugoe-space-2);
+    font: inherit;
+    font-size: var(--ugoe-font-size-sm);
+    color: var(--ugoe-color-text);
+    background: var(--ugoe-color-surface);
+    border: 1px solid var(--ugoe-color-control-border);
+    border-radius: var(--ugoe-radius-md);
+  }
+  .filter:focus-visible {
+    outline: var(--ugoe-focus-ring);
+    outline-offset: 2px;
+  }
+  .internal-toggle {
+    margin-bottom: var(--ugoe-space-2);
+    font-size: var(--ugoe-font-size-sm);
   }
   .list {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
   }
-  summary {
-    cursor: pointer;
-    padding: 0.35rem 0;
-    font-weight: 600;
-    font-size: 0.8rem;
-  }
-  .count {
-    color: var(--muted);
-    font-weight: normal;
-  }
   .row {
-    display: grid;
-    grid-template-columns: 1fr auto auto;
-    grid-template-areas:
-      "label value reset"
-      "slider slider reset";
-    align-items: center;
-    column-gap: 0.4rem;
-    padding: 0.2rem 0 0.35rem 0.5rem;
-    font-size: 0.8rem;
+    padding: var(--ugoe-space-1) 0 var(--ugoe-space-2) var(--ugoe-space-2);
   }
-  .row label {
-    grid-area: label;
+  .row :global(.ugoe-slider) {
+    font-size: var(--ugoe-font-size-sm);
+  }
+  .row :global(.ugoe-slider__label) {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .row .value {
-    grid-area: value;
-    font-variant-numeric: tabular-nums;
-    color: var(--muted);
-  }
-  .row input {
-    grid-area: slider;
-    width: 100%;
-    margin: 0;
-  }
-  .row .reset {
-    grid-area: reset;
-    padding: 0.1rem 0.4rem;
-  }
-  .internal-toggle {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    margin-bottom: 0.4rem;
-    font-size: 0.75rem;
-    color: var(--muted);
-  }
-  .row.internal label {
+  .row.internal :global(.ugoe-slider__label) {
     font-style: italic;
-    color: var(--muted);
-  }
-  .row.driven label::after {
-    content: " (自動)";
-    color: var(--accent);
+    color: var(--ugoe-color-text-muted);
   }
 </style>

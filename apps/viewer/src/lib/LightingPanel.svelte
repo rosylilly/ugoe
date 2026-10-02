@@ -2,8 +2,10 @@
 // 光源のパネル (T0705)。ライティングを使うモデル (`WebPuppet.uses_lighting`) のときだけ App.svelte が出す。
 // 環境光・平行光源 (向き)・点光源 (位置と範囲) の色と強さ、既定の光源の組。設定は Player がモデルごとに覚え (T0709)、
 // 「既定に戻す」で開いているモデルを「標準」にして覚える (T0714)。覚えた設定を忘れるのは「覚えたもの」の一覧。
-// スライダー・色・面をドラッグしている途中は描画だけを変え、離したときに覚える (`preview` と `commitLighting`)。
+// スライダー・面をドラッグしている途中は描画だけを変え、離したときに覚える (`preview` と `commitLighting`)。
+// 色はすぐ覚える (色の選択の枠の中の操作は、どれも確定した値として届くため)。
 // ビューポートの光源の印 (LightMarkers.svelte、T0708) の表示もここで切り替える。
+// 割合の値 (横・縦・手前・範囲) は、スライダーでは % で出す (保存する値は 0..1 のまま)。
 
 import {
   anglesFromPad,
@@ -17,6 +19,8 @@ import {
   padFromAngles,
   sameLighting,
 } from "@ugoe/player";
+import { Button, ColorPicker, Section, Slider, Toggle } from "@ugoe/ui";
+import { t } from "./i18n";
 import LightPad from "./LightPad.svelte";
 
 let { player, onshowmemory }: { player: Player; onshowmemory?: () => void } = $props();
@@ -25,7 +29,6 @@ let open = $state(true);
 
 let s = $derived(player.lighting);
 let preset = $derived(PRESETS.find((p) => sameLighting(p.settings, s)) ?? null);
-let status = $derived(lightingLabel(s));
 let directionPad = $derived(padFromAngles(s.directional.azimuth, s.directional.elevation));
 // 既定 (標準) をこのモデル用に覚えていれば、戻すものが無い。
 let canReset = $derived(!player.lightingRemembered || !sameLighting(s, defaultLighting()));
@@ -38,9 +41,8 @@ function applyPreset(settings: LightingSettings) {
   player.setLighting(structuredClone(settings));
 }
 
-const percent = (v: number) => `${Math.round(v * 100)}%`;
-const degrees = (v: number) => `${Math.round(v)}°`;
-const times = (v: number) => `×${v.toFixed(2)}`;
+/** スライダーの表し方: そのまま (`1`)、% (`100`。値は 0..1)。 */
+type Scale = 1 | 100;
 </script>
 
 {#snippet slider(
@@ -48,27 +50,22 @@ const times = (v: number) => `×${v.toFixed(2)}`;
   value: number,
   [min, max]: readonly [number, number],
   step: number,
-  format: (v: number) => string,
+  scale: Scale,
+  unit: string | undefined,
   set: (settings: LightingSettings, v: number) => void,
   disabled = false,
 )}
-  <label class="slider">
-    <span class="label">{label}</span>
-    <input
-      type="range"
-      {min}
-      {max}
-      {step}
-      {value}
-      {disabled}
-      oninput={(e) => {
-        const v = e.currentTarget.valueAsNumber;
-        edit((next) => set(next, v), true);
-      }}
-      onchange={() => player.commitLighting()}
-    />
-    <span class="value">{format(value)}</span>
-  </label>
+  <Slider
+    {label}
+    value={Math.round(value * scale * 1000) / 1000}
+    min={min * scale}
+    max={max * scale}
+    step={step * scale}
+    {unit}
+    disabled={disabled || !s.enabled}
+    onchange={(v) => edit((next) => set(next, v / scale), true)}
+    oncommit={() => player.commitLighting()}
+  />
 {/snippet}
 
 {#snippet colorRow(
@@ -78,26 +75,22 @@ const times = (v: number) => `×${v.toFixed(2)}`;
   disabled = false,
 )}
   <div class="color-row">
-    <label class="color" title="{label}の色">
-      <input
-        type="color"
-        value={light.color}
-        {disabled}
-        oninput={(e) => {
-          const color = e.currentTarget.value;
-          edit((next) => {
-            pick(next).color = color;
-          }, true);
-        }}
-        onchange={() => player.commitLighting()}
-      />
-    </label>
+    <ColorPicker
+      ariaLabel={t("lighting.color.aria", { light: label })}
+      value={light.color}
+      disabled={disabled || !s.enabled}
+      onchange={(color) =>
+        edit((next) => {
+          pick(next).color = color;
+        })}
+    />
     {@render slider(
-      "強さ",
+      t("lighting.intensity.label"),
       light.intensity,
       LIMITS.intensity,
       0.01,
-      times,
+      1,
+      undefined,
       (next, v) => {
         pick(next).intensity = v;
       },
@@ -106,94 +99,70 @@ const times = (v: number) => `×${v.toFixed(2)}`;
   </div>
 {/snippet}
 
-<details class="panel lighting" bind:open>
-  <summary>
-    <h2>ライティング</h2>
-    <span class="status">{status}</span>
-  </summary>
+<div class="panel lighting">
+  <Section title={t("lighting.title")} level={2} bind:open>
+    {#snippet actions()}
+      <span class="status">{lightingLabel(s)}</span>
+    {/snippet}
 
-  <label class="toggle" title="切ると光源を渡さず、ライティングを受けないのと同じ色で描く">
-    <input
-      type="checkbox"
-      checked={s.enabled}
-      onchange={(e) => {
-        const enabled = e.currentTarget.checked;
-        edit((next) => {
-          next.enabled = enabled;
-        });
-      }}
-    />
-    光源を当てる
-  </label>
-  <label
-    class="toggle"
-    title="ビューポートに光源の印を出す。印をドラッグすると、平行光源の向きと点光源の位置を変えられる"
-  >
-    <input
-      type="checkbox"
-      checked={player.lightMarkers}
-      onchange={(e) => player.setLightMarkers(e.currentTarget.checked)}
-    />
-    ビューポートに光源の印を出す
-  </label>
+    <div class="toggles">
+      <Toggle
+        label={t("lighting.enabled.label")}
+        checked={s.enabled}
+        onchange={(enabled) =>
+          edit((next) => {
+            next.enabled = enabled;
+          })}
+      />
+      <Toggle
+        label={t("lighting.markers.label")}
+        checked={player.lightMarkers}
+        onchange={(on) => player.setLightMarkers(on)}
+      />
+    </div>
 
-  <div class="memory">
-    <span title="光源の設定はモデルごとに覚える。覚えていないモデルでは、最後に使った設定を使う">
-      {player.lightingRemembered ? "このモデル用に覚えた設定" : "このモデル用の設定はまだありません"}
-    </span>
-    <span class="memory-actions">
-      <button
-        type="button"
-        disabled={!canReset}
-        title="このモデルの光源を既定 (標準) に戻す。次に開いたときも標準で始まる"
-        onclick={() => player.resetLighting()}>既定に戻す</button
-      >
-      {#if onshowmemory}
-        <button
-          type="button"
-          title="モデルごとに覚えた光源と着せ替えの組の一覧。ここで忘れられる"
-          onclick={onshowmemory}>覚えたもの…</button
+    <div class="memory">
+      <span>
+        {player.lightingRemembered ? t("lighting.memory.remembered") : t("lighting.memory.none")}
+      </span>
+      <span class="memory-actions">
+        <Button small disabled={!canReset} onclick={() => player.resetLighting()}
+          >{t("lighting.reset.label")}</Button
         >
-      {/if}
-    </span>
-  </div>
+        {#if onshowmemory}
+          <Button small onclick={onshowmemory}>{t("lighting.showMemory.label")}</Button>
+        {/if}
+      </span>
+    </div>
 
-  <div class="presets" role="group" aria-label="既定の光源の組">
-    {#each PRESETS as p (p.id)}
-      <button
-        type="button"
-        aria-pressed={preset?.id === p.id}
-        class:active={preset?.id === p.id}
-        onclick={() => applyPreset(p.settings)}>{p.name}</button
-      >
-    {/each}
-  </div>
+    <div class="presets" role="group" aria-label={t("lighting.presets.aria")}>
+      {#each PRESETS as p (p.id)}
+        <Button small pressed={preset?.id === p.id} onclick={() => applyPreset(p.settings)}
+          >{p.name}</Button
+        >
+      {/each}
+    </div>
 
-  <fieldset disabled={!s.enabled}>
-    <section>
-      <h3>環境光</h3>
-      {@render colorRow("環境光", s.ambient, (next) => next.ambient)}
+    <section aria-labelledby="lighting-ambient">
+      <h3 id="lighting-ambient">{t("lighting.ambient.title")}</h3>
+      {@render colorRow(t("lighting.ambient.title"), s.ambient, (next) => next.ambient)}
     </section>
 
     <section>
-      <label class="toggle">
-        <input
-          type="checkbox"
-          checked={s.directional.enabled}
-          onchange={(e) => {
-            const enabled = e.currentTarget.checked;
-            edit((next) => {
-              next.directional.enabled = enabled;
-            });
-          }}
-        />
-        <h3>平行光源</h3>
-      </label>
+      <Toggle
+        label={t("lighting.directional.title")}
+        checked={s.directional.enabled}
+        disabled={!s.enabled}
+        onchange={(enabled) =>
+          edit((next) => {
+            next.directional.enabled = enabled;
+          })}
+      />
       <div class="light">
         <div class="pad">
           <LightPad
             round
-            label="平行光源の来る向き (中心が正面)"
+            label={t("lighting.directional.pad.aria")}
             x={directionPad[0]}
             y={directionPad[1]}
             disabled={!s.enabled || !s.directional.enabled}
@@ -209,29 +178,31 @@ const times = (v: number) => `×${v.toFixed(2)}`;
         </div>
         <div class="controls">
           {@render slider(
-            "方位",
+            t("lighting.directional.azimuth.label"),
             s.directional.azimuth,
             LIMITS.azimuth,
             1,
-            degrees,
+            1,
+            "°",
             (next, v) => {
               next.directional.azimuth = v;
             },
             !s.directional.enabled,
           )}
           {@render slider(
-            "高さ",
+            t("lighting.directional.elevation.label"),
             s.directional.elevation,
             LIMITS.elevation,
             1,
-            degrees,
+            1,
+            "°",
             (next, v) => {
               next.directional.elevation = v;
             },
             !s.directional.enabled,
           )}
           {@render colorRow(
-            "平行光源",
+            t("lighting.directional.title"),
             s.directional,
             (next) => next.directional,
             !s.directional.enabled,
@@ -241,23 +212,19 @@ const times = (v: number) => `×${v.toFixed(2)}`;
     </section>
 
     <section>
-      <label class="toggle">
-        <input
-          type="checkbox"
-          checked={s.point.enabled}
-          onchange={(e) => {
-            const enabled = e.currentTarget.checked;
-            edit((next) => {
-              next.point.enabled = enabled;
-            });
-          }}
-        />
-        <h3>点光源</h3>
-      </label>
+      <Toggle
+        label={t("lighting.point.title")}
+        checked={s.point.enabled}
+        disabled={!s.enabled}
+        onchange={(enabled) =>
+          edit((next) => {
+            next.point.enabled = enabled;
+          })}
+      />
       <div class="light">
         <div class="pad">
           <LightPad
-            label="点光源の位置 (キャンバスの上での位置)"
+            label={t("lighting.point.pad.aria")}
             x={Math.min(1, Math.max(-1, s.point.x * 2 - 1))}
             y={Math.min(1, Math.max(-1, s.point.y * 2 - 1))}
             disabled={!s.enabled || !s.point.enabled}
@@ -272,174 +239,134 @@ const times = (v: number) => `×${v.toFixed(2)}`;
         </div>
         <div class="controls">
           {@render slider(
-            "横",
+            t("lighting.point.x.label"),
             s.point.x,
             LIMITS.x,
             0.01,
-            percent,
+            100,
+            "%",
             (next, v) => {
               next.point.x = v;
             },
             !s.point.enabled,
           )}
           {@render slider(
-            "縦",
+            t("lighting.point.y.label"),
             s.point.y,
             LIMITS.y,
             0.01,
-            percent,
+            100,
+            "%",
             (next, v) => {
               next.point.y = v;
             },
             !s.point.enabled,
           )}
           {@render slider(
-            "手前",
+            t("lighting.point.z.label"),
             s.point.z,
             LIMITS.z,
             0.01,
-            percent,
+            100,
+            "%",
             (next, v) => {
               next.point.z = v;
             },
             !s.point.enabled,
           )}
           {@render slider(
-            "範囲",
+            t("lighting.point.range.label"),
             s.point.range,
             LIMITS.range,
             0.01,
-            percent,
+            100,
+            "%",
             (next, v) => {
               next.point.range = v;
             },
             !s.point.enabled,
           )}
-          {@render colorRow("点光源", s.point, (next) => next.point, !s.point.enabled)}
+          {@render colorRow(t("lighting.point.title"), s.point, (next) => next.point, !s.point.enabled)}
         </div>
       </div>
     </section>
-  </fieldset>
-  <p class="hint">位置・手前・範囲はキャンバスに対する割合 (手前と範囲は長い辺に対する割合)</p>
-</details>
+    <p class="hint">{t("lighting.hint")}</p>
+  </Section>
+</div>
 
 <style>
+  /* 縦が足りないときは、見出しが見える高さまで縮んで中を送る (パラメータの一覧の高さを残す)。 */
   .lighting {
-    flex-shrink: 0;
+    flex: 0 1 auto;
+    min-height: calc(var(--ugoe-control-height) + var(--ugoe-space-3));
     max-height: 60%;
     overflow-y: auto;
-    font-size: 0.8rem;
+    font-size: var(--ugoe-font-size-sm);
   }
-  .lighting > summary {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    cursor: pointer;
-  }
-  h2 {
-    margin: 0;
-    font-size: 0.85rem;
-    font-weight: 600;
-    display: inline;
+  .lighting :global(.ugoe-slider),
+  .lighting :global(.ugoe-toggle) {
+    font-size: var(--ugoe-font-size-sm);
   }
   h3 {
-    margin: 0;
-    font-size: 0.8rem;
-    font-weight: 600;
-    display: inline;
+    margin: 0 0 var(--ugoe-space-1);
+    font-size: var(--ugoe-font-size-sm);
+    font-weight: var(--ugoe-font-weight-strong);
+  }
+  .status,
+  .memory,
+  .hint {
+    color: var(--ugoe-color-text-muted);
   }
   .status {
-    color: var(--muted);
-  }
-  fieldset {
-    border: none;
-    margin: 0;
-    padding: 0;
-    min-width: 0;
+    font-size: var(--ugoe-font-size-xs);
   }
   section {
-    margin-top: 0.6rem;
+    margin-top: var(--ugoe-space-4);
   }
-  .toggle {
+  .toggles {
     display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    margin-top: 0.4rem;
+    flex-direction: column;
+    gap: var(--ugoe-space-2);
   }
   .memory {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 0.4rem;
-    margin-top: 0.4rem;
-    color: var(--muted);
-    font-size: 0.75rem;
+    gap: var(--ugoe-space-2);
+    margin-top: var(--ugoe-space-3);
+    font-size: var(--ugoe-font-size-xs);
   }
   .memory-actions {
     display: flex;
-    gap: 0.3rem;
-    flex-shrink: 0;
-  }
-  .memory button {
-    font-size: 0.75rem;
-    padding: 0.1rem 0.5rem;
+    gap: var(--ugoe-space-2);
   }
   .presets {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.3rem;
-    margin-top: 0.4rem;
-  }
-  .presets button {
-    font-size: 0.75rem;
-    padding: 0.15rem 0.5rem;
-  }
-  .presets button.active {
-    border-color: var(--accent);
-    color: var(--accent);
+    gap: var(--ugoe-space-2);
+    margin-top: var(--ugoe-space-3);
   }
   .light {
     display: grid;
-    grid-template-columns: 72px 1fr;
-    gap: 0.5rem;
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: var(--ugoe-space-3);
     align-items: start;
-    margin-top: 0.3rem;
+    margin-top: var(--ugoe-space-2);
   }
   .controls {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ugoe-space-2);
     min-width: 0;
-  }
-  .slider {
-    display: grid;
-    grid-template-columns: 2.5em 1fr 3.5em;
-    align-items: center;
-    gap: 0.3rem;
-  }
-  .slider input {
-    width: 100%;
-    min-width: 0;
-    margin: 0;
-  }
-  .value {
-    font-variant-numeric: tabular-nums;
-    color: var(--muted);
-    text-align: right;
   }
   .color-row {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    align-items: center;
-    gap: 0.3rem;
-  }
-  .color input {
-    width: 1.8rem;
-    height: 1.4rem;
-    padding: 0;
-    border: 1px solid var(--border);
-    background: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--ugoe-space-1);
   }
   .hint {
-    margin: 0.5rem 0 0;
-    color: var(--muted);
-    font-size: 0.7rem;
+    margin: var(--ugoe-space-3) 0 0;
+    font-size: var(--ugoe-font-size-xs);
   }
 </style>

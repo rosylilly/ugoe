@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { setLocale } from "@ugoe/i18n";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   describeDressUpError,
   describeLoadWarnings,
@@ -10,6 +11,9 @@ import {
   visibleSlots,
 } from "./dressUp";
 import { parseLoadWarnings } from "./loadWarnings";
+
+// 文言は日本語の訳で確かめる (英語の原文を確かめる it は、その中で言語を切り替える)。
+beforeEach(() => setLocale("ja"));
 
 /** ugoe-wasm の `DressUpError` と同じ形の `Error`。 */
 function dressUpError(code: string, fields: Record<string, string> = {}, text = "failed") {
@@ -146,6 +150,11 @@ describe("describeDressUpError", () => {
       ),
     ).toContain("「A」が付いている");
     expect(describeDressUpError(dressUpError("no_model"))).toContain("先にモデル");
+    setLocale("en");
+    expect(describeDressUpError(dressUpError("no_model"))).toBe(
+      "Open a model (.ugoe or .json) first.",
+    );
+    setLocale("ja");
   });
 
   it("adds the original message for detailed failures", () => {

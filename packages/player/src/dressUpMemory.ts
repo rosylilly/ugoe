@@ -2,6 +2,7 @@
 // 覚えるのはモジュールの名前・ファイルの鍵 (名前・指紋・読み直せる場所) と、付けていたもの (合成の順)。
 // ファイルの中身は覚えない (localStorage の容量のため)。戻すときに場所から読み直す (player.svelte.ts)。
 
+import { t } from "./i18n";
 import type { FileLocation, ModelFile } from "./modelFile";
 import { type ModelIdentity, ModelMemory, parseIdentity } from "./modelMemory";
 
@@ -106,10 +107,10 @@ export function planRestore(
 
 /** 戻せなかったモジュールの知らせ。`reason` が無ければ読み直せる場所が無かった。 */
 export function describeRestoreFailure(module: RememberedModule, reason?: string): string {
-  const name = `「${module.name}」(${module.file.name})`;
+  const args = { module: module.name, file: module.file.name };
   return reason === undefined
-    ? `前に付けていた${name}は、ファイルの場所が分からないため戻せません。もう一度開いてください`
-    : `前に付けていた${name}のファイルを読めないため、戻せません (${reason})`;
+    ? t("dressUp.restore.noLocation", args)
+    : t("dressUp.restore.unreadable", { ...args, reason });
 }
 
 /** 開いたときに自動で戻すか (既定は尋ねる)。読めなければ `false`。 */

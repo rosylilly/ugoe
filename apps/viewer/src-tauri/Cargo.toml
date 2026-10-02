@@ -17,6 +17,7 @@ tauri-build.workspace = true
 [dependencies]
 tauri.workspace = true
 tauri-plugin-dialog.workspace = true
+tauri-plugin-os.workspace = true
 
 [lints]
 workspace = true

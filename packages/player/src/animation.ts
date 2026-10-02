@@ -2,29 +2,43 @@
 // 一覧の形は WebPuppet の `motions_json()`・`expressions_json()`、再生の規則は docs/spec/motion.md
 // (優先度・フェード・表情の set と add・フレーム内の適用順)。待機モーションとトラッキング中のモーションの優先 (T0721) の
 // 決まりもここに置く。モデルごとに覚える待機モーションの選択 (T0722) の入れ物は modelMemory.ts の `ModelMemory`。
+import { t } from "./i18n";
 import { ModelMemory } from "./modelMemory";
 
 /** モーションの優先度 (docs/spec/motion.md#モーションマネージャ)。WebPuppet の `start_motion` に渡す文字列。 */
 export type MotionPriority = "idle" | "normal" | "force";
 
+/**
+ * 優先度の選択肢。`label`・`title` は読むたびに今の言語で引く (言語の切り替えに追従する)。
+ */
 export const MOTION_PRIORITIES: readonly { value: MotionPriority; label: string; title: string }[] =
   [
     {
       value: "idle",
-      label: "待機",
-      title:
-        "待機 (idle): 通常・強制のモーションの再生中は始まらない。ループする待機モーションをほかのモーションで置き換えられるように",
+      get label() {
+        return t("motion.priority.idle.label");
+      },
+      get title() {
+        return t("motion.priority.idle.tooltip");
+      },
     },
     {
       value: "normal",
-      label: "通常",
-      title:
-        "通常 (normal): 待機・通常のモーションを置き換える。強制のモーションの再生中は始まらない",
+      get label() {
+        return t("motion.priority.normal.label");
+      },
+      get title() {
+        return t("motion.priority.normal.tooltip");
+      },
     },
     {
       value: "force",
-      label: "強制",
-      title: "強制 (force): いつでも始まり、再生中のモーションを置き換える",
+      get label() {
+        return t("motion.priority.force.label");
+      },
+      get title() {
+        return t("motion.priority.force.tooltip");
+      },
     },
   ];
 
@@ -97,14 +111,17 @@ export function parseExpressions(json: string): ExpressionInfo[] {
 
 /** 秒の表示 (`1.2 s`。小数は 2 桁まで)。 */
 export function formatSeconds(s: number): string {
-  return `${Number(s.toFixed(2))} s`;
+  return t("motion.seconds", { value: Number(s.toFixed(2)) });
 }
 
 /** モーションの長さ・ループ・フェードの短い説明 (`1.2 s · フェード 0.2 / 0.3 s`)。 */
 export function describeMotion(m: MotionInfo): string {
-  const parts = [m.looping ? `${formatSeconds(m.duration)} ループ` : formatSeconds(m.duration)];
+  const duration = formatSeconds(m.duration);
+  const parts = [m.looping ? t("motion.looping", { duration }) : duration];
   if (m.fadeIn > 0 || m.fadeOut > 0)
-    parts.push(`フェード ${Number(m.fadeIn.toFixed(2))} / ${formatSeconds(m.fadeOut)}`);
+    parts.push(
+      t("motion.fade", { fadeIn: Number(m.fadeIn.toFixed(2)), fadeOut: formatSeconds(m.fadeOut) }),
+    );
   return parts.join(" · ");
 }
 
@@ -133,7 +150,7 @@ export function motionTrackingEffect(
 /** 開始しなかったとき (優先度が低い) の説明。 */
 export function describeRejectedMotion(name: string, priority: MotionPriority): string {
   const label = MOTION_PRIORITIES.find((p) => p.value === priority)?.label ?? priority;
-  return `「${name}」は、再生中のモーションより優先度 (${label}) が低いので始まりませんでした`;
+  return t("motion.rejected", { name, priority: label });
 }
 
 /**
@@ -189,7 +206,7 @@ export function initialIdleMotion(
 
 /** 覚えたものの一覧に出す、待機モーションの選択の説明。 */
 export function describeIdleChoice(choice: IdleChoice): string {
-  return choice.motion ?? "(なし)";
+  return choice.motion ?? t("idle.none");
 }
 
 /**
@@ -208,14 +225,24 @@ export function motionOverTrackingActive(
 /** トラッキングが書き込むパラメータのまとまり (モーションの優先をまとめて切り替える。T0722)。 */
 export type TrackingGroup = "head" | "body" | "eyes" | "brows" | "mouth" | "other";
 
-export const TRACKING_GROUPS: readonly { value: TrackingGroup; label: string }[] = [
-  { value: "head", label: "頭の向き" },
-  { value: "body", label: "体・肩" },
-  { value: "eyes", label: "目" },
-  { value: "brows", label: "眉" },
-  { value: "mouth", label: "口" },
-  { value: "other", label: "その他" },
-];
+const TRACKING_GROUP_KEYS = {
+  head: "trackingGroup.head",
+  body: "trackingGroup.body",
+  eyes: "trackingGroup.eyes",
+  brows: "trackingGroup.brows",
+  mouth: "trackingGroup.mouth",
+  other: "trackingGroup.other",
+} as const;
+
+/** まとまりの選択肢。`label` は読むたびに今の言語で引く。 */
+export const TRACKING_GROUPS: readonly { value: TrackingGroup; label: string }[] = (
+  ["head", "body", "eyes", "brows", "mouth", "other"] as const
+).map((value) => ({
+  value,
+  get label() {
+    return t(TRACKING_GROUP_KEYS[value]);
+  },
+}));
 
 /**
  * パラメータ ID のまとまり。標準のパラメータ (docs/spec/avatar-profile.md#フェイストラッキングとの対応) の名前の

@@ -3,10 +3,12 @@
 モデルの再生の層 (npm パッケージ `@ugoe/player`、pnpm のワークスペース)。ビューア (`apps/viewer`) とスタジオ (`apps/studio`、
 [ADR 0028](../../docs/adr/0028-studio.md)) で共有する。T0904 でビューアから切り出した ([ADR 0029](../../docs/adr/0029-shared-ui-and-i18n.md))。
 
-**ライセンスは GPL-3.0-only** (使うアプリと同じ)。依存は `@ugoe/face-tracking` だけ。`@ugoe/ui` には、パネルをここへ移すときに依存する。
+**ライセンスは GPL-3.0-only** (使うアプリと同じ)。依存は `@ugoe/face-tracking` と `@ugoe/i18n`。`@ugoe/ui` には、パネルをここへ移すときに依存する。
 
 ```
+locales/                 利用者に見せる文 (エラー・警告・既定の光源の組の名前など) のカタログ (名前空間 `player`。en.json が原文)
 src/index.ts             公開するもの (アプリはここからだけ import する)
+src/i18n.ts              文言の `t()` (@ugoe/i18n の名前空間 `player`)
 src/player.svelte.ts     Player: WebPuppet (ugoe-wasm) を持ち、フレームのループを回す。UI に出す状態 ($state) もここ。
                          PlayerHost (アプリが渡すもの)・Screenshot (capture の結果)
 src/wasm.ts              Player が使う WebPuppet の口 (構造だけ。生成物はアプリが持つ)
@@ -48,7 +50,11 @@ await player.load(file, modules); // モデル (と一緒に開くモジュー�
 - 画像の保存は `capture()` で RGBA を受け取り、PNG にして書くのはアプリ。
 - 覚えるもの (光源・着せ替えの組・待機モーションなど) の `localStorage` のキーは、いまはビューアの名前 (`ugoe-viewer.*`) のまま。
   スタジオで使うときに、キーの接頭辞をアプリが渡せるようにする。
-- 文言は日本語の直書き。`@ugoe/i18n` に移すのは後の作業 (ADR 0029)。
+- 文言は `@ugoe/i18n` の名前空間 `player` (`locales/`。T0723)。言語はアプリが `setLocale()` で決める。
+  `describe*`・`lightingLabel` などの関数と、`MOTION_PRIORITIES`・`TRACKING_GROUPS`・`PRESETS` の `label`・`title`・`name` (読むたびに引く) は、
+  呼んだときの言語の文を返すので、画面のテンプレートや `$derived` の中で使えば言語の切り替えに追従する。
+  `error`・`warnings`・`dressUpError`・`motionNotice` のように状態に入れた文は、作ったときの言語のまま (次に作り直すまで)。
+- テストは Svelte のプラグインを通す (`vitest.config.ts`。@ugoe/i18n が runes を使うため)。文を確かめるテストは `setLocale("ja")` で言語を決めてから比べる。
 
 ## 受け手のモード (T0801)
 

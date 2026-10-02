@@ -2,6 +2,7 @@
 // ファイルは vite.config.ts の `sampleModels` が assets/samples の .ugoe と .ugoemod をすべて開発サーバーで配り、
 // ビルドの出力の `samples/` に入れる。
 import type { ModelFile, ModuleToOpen } from "@ugoe/player";
+import { t } from "./i18n";
 
 /** 見本と一緒に読み込む着せ替えのモジュール。 */
 export interface SampleModule {
@@ -13,10 +14,8 @@ export interface SampleModule {
 
 export interface Sample {
   id: string;
-  /** メニューに出す名前。 */
-  label: string;
-  /** メニューの説明。 */
-  description: string;
+  /** メニューに出す名前 (今の言語)。 */
+  readonly label: string;
   /** モデル (`samples/` からのパス)。 */
   model: string;
   modules: readonly SampleModule[];
@@ -25,26 +24,27 @@ export interface Sample {
 export const SAMPLES: readonly Sample[] = [
   {
     id: "avatar",
-    label: "アバター",
-    description: "アバタープロファイルのレベル 3 の見本。フェイストラッキングをすぐに試せる",
+    get label() {
+      return t("samples.avatar.label");
+    },
     model: "avatar.ugoe",
     modules: [],
   },
   {
     // `ugoe sample avatar --lit` で作る (assets/samples/README.md#avatar-lit)。
     id: "avatar-lit",
-    label: "アバター (ライティング)",
-    description:
-      "アバターの見本に法線マップを付けた版。ライティングのパネルで光の向きを変えると陰影が変わる",
+    get label() {
+      return t("samples.avatarLit.label");
+    },
     model: "avatar-lit.ugoe",
     modules: [],
   },
   {
     // `ugoe sample dress-up` で作る (assets/samples/README.md#dress-up)。
     id: "dress-up",
-    label: "着せ替え",
-    description:
-      "髪・頭の飾り・服のスロットを持つ見本と、衣装のモジュール 4 つ。着せ替えのパネルで付け替えられる",
+    get label() {
+      return t("samples.dressUp.label");
+    },
     model: "dress-up/dress-up.ugoe",
     modules: [
       { file: "dress-up/long-hair.ugoemod", attach: true },

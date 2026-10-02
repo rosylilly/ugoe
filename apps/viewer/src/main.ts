@@ -1,12 +1,23 @@
-import { setLocale } from "@ugoe/i18n";
+import "@ugoe/ui/tokens.css";
+import { setLocale, setSystemLanguages } from "@ugoe/i18n";
 import { mount } from "svelte";
 import App from "./App.svelte";
 import "./app.css";
-
-// 画面の言語。言語の切り替えの画面ができるまでは、いままでどおり日本語で出す (@ugoe/i18n の README)。
-setLocale("ja");
+import { systemLocale } from "./lib/host";
+import { loadLocalePreference } from "./lib/settings";
 
 const target = document.getElementById("app");
 if (!target) throw new Error("#app not found");
 
-export default mount(App, { target });
+// 画面の言語: 覚えた設定 (既定は OS に合わせる)。OS の言語は WebView の navigator.languages ではなく、
+// tauri-plugin-os の locale() で OS から取る (WebView によっては OS の言語と違う値を返すため。packages/i18n/README.md)。
+// 最初の画面から OS の言語で出すよう、取れてから描く (Tauri の外では navigator.languages のまま)。
+setLocale(loadLocalePreference());
+try {
+  const locale = await systemLocale();
+  if (locale !== null) setSystemLanguages([locale]);
+} catch {
+  // OS の言語が取れなくても、navigator.languages で動く。
+}
+
+mount(App, { target });

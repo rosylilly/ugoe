@@ -1,0 +1,429 @@
+{
+  "toolbar": {
+    "open": {
+      "label": "Open",
+      "tooltip": "Open a model (.ugoe, .json) or a dress-up module (.ugoemod)"
+    },
+    "samples": {
+      "label": "Samples"
+    },
+    "remembered": {
+      "label": "Remembered",
+      "tooltip": "Lights, dress-up sets and idle motions remembered for each model. Forget them per model or all at once"
+    },
+    "noModel": "No model",
+    "view": {
+      "aria": "View"
+    },
+    "zoomOut": {
+      "aria": "Zoom out"
+    },
+    "zoomIn": {
+      "aria": "Zoom in"
+    },
+    "fit": {
+      "aria": "Fit the whole model"
+    },
+    "background": {
+      "label": "Background"
+    },
+    "transparent": {
+      "label": "Transparent"
+    },
+    "screenshot": {
+      "label": "Save image",
+      "tooltip": "Save the current view as PNG (with the background and the lights, without the light markers)"
+    },
+    "settings": {
+      "aria": "Settings"
+    }
+  },
+  "samples": {
+    "avatar": {
+      "label": "Avatar"
+    },
+    "avatarLit": {
+      "label": "Avatar (lighting)"
+    },
+    "dressUp": {
+      "label": "Dress-up"
+    },
+    "fileName": "{{name}} (sample)"
+  },
+  "status": {
+    "loaded": "Loaded",
+    "warnings_one": "{{count}} warning: {{first}}",
+    "warnings_other": "{{count}} warnings: {{first}}",
+    "license": "License"
+  },
+  "screenshot": {
+    "saved": "Saved the image: {{path}}",
+    "error": "Cannot save the image: {{message}}"
+  },
+  "errors": {
+    "wasmMissing": "ugoe-wasm is not built (run `pnpm wasm` in apps/viewer)."
+  },
+  "files": {
+    "openModel": {
+      "title": "Open a model",
+      "filter": "ugoe models and dress-up modules"
+    },
+    "openModules": {
+      "title": "Open dress-up modules",
+      "filter": "Dress-up modules"
+    },
+    "saveJson": {
+      "title": "Save"
+    },
+    "savePng": {
+      "title": "Save the screenshot",
+      "filter": "PNG images"
+    },
+    "noPaths": "This app cannot read files from paths."
+  },
+  "drop": {
+    "names": {
+      "more_one": "{{names}} and {{count}} more",
+      "more_other": "{{names}} and {{count}} more"
+    },
+    "skipped": {
+      "none": "No files could be opened",
+      "some_one": "Skipped {{count}} item that cannot be opened",
+      "some_other": "Skipped {{count}} items that cannot be opened",
+      "extension": "{{names}} (only models (.ugoe, .json) and dress-up modules (.ugoemod) can be opened, and the contents of folders are not opened)",
+      "unreadable": "{{names}} (could not be read)",
+      "separator": "; ",
+      "message": "{{head}}: {{details}}"
+    },
+    "preview": {
+      "none": "Nothing here can be opened (drop a model (.ugoe, .json) or a dress-up module (.ugoemod))",
+      "all_one": "Opens {{count}} file",
+      "all_other": "Opens {{count}} files",
+      "some_one": "Opens {{count}} file ({{skipped}} cannot be opened and will be skipped)",
+      "some_other": "Opens {{count}} files ({{skipped}} cannot be opened and will be skipped)",
+      "later_one": "{{count}} file is checked by its name when dropped",
+      "later_other": "{{count}} files are checked by their names when dropped",
+      "skipTypes_one": "Skips {{count}} file of a type that cannot be opened ({{later}})",
+      "skipTypes_other": "Skips {{count}} files of a type that cannot be opened ({{later}})",
+      "unknown_one": "{{count}} file ({{later}})",
+      "unknown_other": "{{count}} files ({{later}})"
+    }
+  },
+  "viewport": {
+    "aria": "Model view",
+    "empty": "Drop a .ugoe or model.json here, or choose one with Open",
+    "starting": "Getting ready…"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": {
+      "label": "Language",
+      "system": "Match the OS",
+      "description": "The language of the viewer. Match the OS uses the language of the operating system (English if it is not supported)."
+    }
+  },
+  "license": {
+    "title": "License",
+    "description": "ugoe viewer is distributed under GPL-3.0-only. The licenses of the bundled software and models are as follows.",
+    "loadFailed": "Cannot load the notices ({{reason}})."
+  },
+  "parameters": {
+    "title": "Parameters",
+    "resetAll": {
+      "label": "Reset all"
+    },
+    "empty": "This model has no parameters",
+    "noModel": "Open a model to show its parameters",
+    "filter": {
+      "aria": "Filter the parameters",
+      "placeholder": "Filter (name, ID)"
+    },
+    "showInternal": {
+      "label_one": "Show the relay parameter ({{count}})",
+      "label_other": "Show the relay parameters ({{count}})",
+      "description": "Relay parameters pass values between physics rigs. You usually do not move them."
+    },
+    "ungrouped": "Other",
+    "driven": "{{name}} (auto)",
+    "reset": {
+      "aria": "Reset {{name}} to the default ({{value}})"
+    }
+  },
+  "lighting": {
+    "title": "Lighting",
+    "enabled": {
+      "label": "Use the lights"
+    },
+    "markers": {
+      "label": "Show the light markers in the viewport"
+    },
+    "memory": {
+      "remembered": "Remembered for this model",
+      "none": "Nothing remembered for this model yet"
+    },
+    "reset": {
+      "label": "Reset to the default"
+    },
+    "showMemory": {
+      "label": "Remembered…"
+    },
+    "presets": {
+      "aria": "Light presets"
+    },
+    "ambient": {
+      "title": "Ambient light"
+    },
+    "directional": {
+      "title": "Directional light",
+      "pad": {
+        "aria": "Direction the directional light comes from (the center is the front)"
+      },
+      "azimuth": {
+        "label": "Azimuth"
+      },
+      "elevation": {
+        "label": "Elevation"
+      }
+    },
+    "point": {
+      "title": "Point light",
+      "pad": {
+        "aria": "Position of the point light on the canvas"
+      },
+      "x": {
+        "label": "Horizontal"
+      },
+      "y": {
+        "label": "Vertical"
+      },
+      "z": {
+        "label": "Distance"
+      },
+      "range": {
+        "label": "Range"
+      }
+    },
+    "color": {
+      "aria": "Color of the {{light}}"
+    },
+    "intensity": {
+      "label": "Intensity"
+    },
+    "hint": "Position, distance and range are ratios to the canvas (distance and range to its longer side)."
+  },
+  "markers": {
+    "toCenter": {
+      "tooltip": "The center of the canvas is off screen (in the direction of the arrow). The dial is moved to the edge of the screen."
+    },
+    "directional": {
+      "aria": "Direction the directional light comes from (arrow keys move it, Shift for larger steps)",
+      "value": "Azimuth {{azimuth}}°, elevation {{elevation}}°",
+      "tooltip": "Directional light: the light comes from the side of the handle (center = front, edge = side). Drag it or use the arrow keys."
+    },
+    "range": {
+      "tooltip": "Range of the point light: drag the edge to change it."
+    },
+    "rangeGrip": {
+      "tooltip": "Range of the point light: its edge is off screen. Drag along the arrow to widen it, the other way to narrow it."
+    },
+    "point": {
+      "aria": "Point light (arrow keys move it, Shift for larger steps; Page Up and Page Down change the distance, + and − the range)",
+      "value": "Horizontal {{x}}, vertical {{y}}, distance {{z}}, range {{range}}",
+      "tooltip": "Point light: drag it or use the arrow keys. Shift + wheel, Page Up and Page Down change the distance; dragging the edge of the range circle, + and − change the range.",
+      "tooltipOffscreen": "Point light (off screen, shown at the edge): drag it or use the arrow keys. Shift + wheel, Page Up and Page Down change the distance; dragging the edge of the range circle, + and − change the range."
+    }
+  },
+  "dressUp": {
+    "title": "Dress-up",
+    "status": {
+      "noSlots": "No slots",
+      "slots_one": "{{attached}} / {{count}} slot",
+      "slots_other": "{{attached}} / {{count}} slots"
+    },
+    "openModules": {
+      "label": "Open modules…"
+    },
+    "autoRestore": {
+      "label": "Restore the previous set automatically"
+    },
+    "memory": {
+      "remembered": "A set is remembered for this model",
+      "forget": {
+        "label": "Forget the set"
+      }
+    },
+    "restore": {
+      "title": "This model had a set of modules attached before",
+      "notAttached_one": "{{count}} module that was not attached",
+      "notAttached_other": "{{count}} modules that were not attached",
+      "accept": {
+        "label": "Restore"
+      },
+      "dismiss": {
+        "label": "Not this time"
+      }
+    },
+    "hint": {
+      "noModel": "Open a model to attach modules",
+      "noSlots": "This model has no slots (it does not support dress-up)",
+      "noPublishedSlots": "This model does not expose any dress-up slots"
+    },
+    "badge": {
+      "missing": "Not in the model",
+      "missingDescription": "This model has no such slot, so these modules cannot be attached.",
+      "hidden": "Not exposed",
+      "hiddenDescription": "A slot for the author of the model (its avatar profile does not expose it to apps), so these modules cannot be attached."
+    },
+    "none": "None",
+    "empty": "No modules loaded",
+    "module": {
+      "slot": "Slot: {{slot}}",
+      "textures_one": "Textures: {{count}}",
+      "textures_other": "Textures: {{count}}",
+      "avatarLevel": "Avatar profile: level {{level}} or higher",
+      "slots": "Required slots: {{slots}}",
+      "parameters": "Required parameters: {{parameters}}",
+      "warnings_one": "{{count}} warning",
+      "warnings_other": "{{count}} warnings"
+    },
+    "attach": {
+      "label": "Attach"
+    },
+    "replace": {
+      "label": "Replace"
+    },
+    "detach": {
+      "label": "Detach"
+    },
+    "unload": {
+      "aria": "Remove {{module}} from the list"
+    }
+  },
+  "motions": {
+    "title": "Motions and expressions",
+    "status": {
+      "playing": "Playing: {{name}}",
+      "counts": "Motions: {{motions}}, expressions: {{expressions}}"
+    },
+    "trackingNote": {
+      "motionWins": "While tracking, the parameters that a played motion moves use the motion (except idle motions and the parts taken out of the preference). Expressions are added on top of the tracking.",
+      "trackingWins": "While tracking, the tracking replaces the motion on the parameters it writes (head direction, eyes, mouth and so on). Expressions are added on top of the tracking."
+    },
+    "motions": {
+      "title": "Motions",
+      "empty": "This model has no motions"
+    },
+    "stop": {
+      "label": "Stop"
+    },
+    "priority": {
+      "label": "Priority"
+    },
+    "repeat": {
+      "label": "Repeat"
+    },
+    "autoIdle": {
+      "label": "Play the idle motion automatically"
+    },
+    "idle": {
+      "label": "Idle motion",
+      "none": "(None)",
+      "forget": {
+        "label": "Forget the choice"
+      }
+    },
+    "overTracking": {
+      "label": "Prefer motions while tracking",
+      "groups": {
+        "label": "Prefer for",
+        "description": "Parts taken out stay with the tracking even when a motion moves them."
+      },
+      "parameters": {
+        "label_one": "Choose per parameter ({{preferred}} / {{count}} preferred)",
+        "label_other": "Choose per parameter ({{preferred}} / {{count}} preferred)"
+      }
+    },
+    "motion": {
+      "play": {
+        "aria": "Play {{name}}"
+      },
+      "stop": {
+        "aria": "Stop {{name}}"
+      },
+      "idleTag": "Idle",
+      "overlap": {
+        "all": "Hidden by tracking",
+        "some": "Partly tracked",
+        "tooltip": "Parameters that the tracking overrides: {{parameters}}"
+      }
+    },
+    "events": "Events: {{events}}",
+    "expressions": {
+      "title": "Expressions",
+      "empty": "This model has no expressions",
+      "stopAll": {
+        "label": "Stop all"
+      }
+    },
+    "expression": {
+      "fade": "Fade: {{fadeIn}} / {{fadeOut}}",
+      "overlap": {
+        "label": "Adds to tracking",
+        "tooltip": "Parameters added on top of the tracking: {{parameters}}"
+      },
+      "only": {
+        "label": "Only this"
+      },
+      "add": {
+        "label": "Add"
+      },
+      "remove": {
+        "label": "Remove"
+      }
+    }
+  },
+  "memory": {
+    "title": "Remembered for each model",
+    "description": "Lights, dress-up sets and idle motion choices are remembered for each model in this browser (app). Forgetting them does not change the current lights, the attached modules or the playing idle motion.",
+    "order": {
+      "label": "Order",
+      "recent": "Most recently remembered",
+      "name": "By name"
+    },
+    "empty": "No models are remembered.",
+    "column": {
+      "model": "Model",
+      "lighting": "Lights",
+      "dressUp": "Dress-up set",
+      "idle": "Idle motion",
+      "date": "Remembered",
+      "actions": "Actions"
+    },
+    "unnamed": "(Unnamed)",
+    "current": "Open",
+    "forget": {
+      "label": "Forget",
+      "lighting": {
+        "aria": "Forget the lights of {{model}}"
+      },
+      "dressUp": {
+        "aria": "Forget the dress-up set of {{model}}"
+      },
+      "idle": {
+        "aria": "Forget the idle motion of {{model}}"
+      }
+    },
+    "forgetRow": {
+      "label": "Forget all",
+      "aria": "Forget everything remembered for {{model}}"
+    },
+    "kept": "The last lights, the light markers, restoring the previous set and playing the idle motion automatically stay as they are.",
+    "forgetAll": {
+      "label": "Forget everything…",
+      "title": "Forget everything?",
+      "description_one": "Forgets everything remembered for {{count}} model. This cannot be undone.",
+      "description_other": "Forgets everything remembered for {{count}} models. This cannot be undone.",
+      "confirm": "Forget everything"
+    }
+  }
+}

@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { setLocale } from "@ugoe/i18n";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   defaultIdleMotion,
   describeIdleChoice,
@@ -22,6 +23,9 @@ import {
   trackingGroup,
   trackingWins,
 } from "./animation";
+
+// 文言は日本語の訳で確かめる (英語の原文を確かめる it は、その中で言語を切り替える)。
+beforeEach(() => setLocale("ja"));
 
 const nod: MotionInfo = {
   name: "nod",
@@ -109,6 +113,11 @@ it("describes a rejected motion with the priority label", () => {
   expect(describeRejectedMotion("nod", "idle")).toBe(
     "「nod」は、再生中のモーションより優先度 (待機) が低いので始まりませんでした",
   );
+  setLocale("en");
+  expect(describeRejectedMotion("nod", "idle")).toBe(
+    '"nod" did not start because its priority (Idle) is lower than the playing motion.',
+  );
+  expect(describeMotion(nod)).toBe("1.2 s · fade 0.2 / 0.3 s");
 });
 
 describe("defaultIdleMotion", () => {

@@ -1,0 +1,96 @@
+{
+  "motion": {
+    "priority": {
+      "idle": {
+        "label": "待機",
+        "tooltip": "待機 (idle): 通常・強制のモーションの再生中は始まらない。ループする待機モーションをほかのモーションで置き換えられるように"
+      },
+      "normal": {
+        "label": "通常",
+        "tooltip": "通常 (normal): 待機・通常のモーションを置き換える。強制のモーションの再生中は始まらない"
+      },
+      "force": {
+        "label": "強制",
+        "tooltip": "強制 (force): いつでも始まり、再生中のモーションを置き換える"
+      }
+    },
+    "seconds": "{{value}} s",
+    "looping": "{{duration}} ループ",
+    "fade": "フェード {{fadeIn}} / {{fadeOut}}",
+    "rejected": "「{{name}}」は、再生中のモーションより優先度 ({{priority}}) が低いので始まりませんでした"
+  },
+  "idle": {
+    "none": "(なし)"
+  },
+  "trackingGroup": {
+    "head": "頭の向き",
+    "body": "体・肩",
+    "eyes": "目",
+    "brows": "眉",
+    "mouth": "口",
+    "other": "その他"
+  },
+  "parameters": {
+    "ungrouped": "その他"
+  },
+  "lighting": {
+    "preset": {
+      "standard": "標準",
+      "sunset": "夕日",
+      "lamp": "夜のランプ"
+    },
+    "off": "切",
+    "custom": "カスタム",
+    "error": "光源を設定できません: {{message}}"
+  },
+  "dressUp": {
+    "error": {
+      "unknownSlot": "「{{module}}」を付けるスロット「{{slot}}」が、このモデルにありません",
+      "missingSlot": "「{{module}}」には、モデルにスロット「{{slot}}」が必要です",
+      "missingParameter": "「{{module}}」に必要なパラメータ「{{parameter}}」が、このモデルにありません",
+      "parameterNotExposed": "「{{module}}」が使うパラメータ「{{parameter}}」を、スロット「{{slot}}」が公開していません",
+      "avatarLevel": "「{{module}}」が求めるアバタープロファイルのレベルを、このモデルが満たしていません",
+      "slotOccupied": "スロット「{{slot}}」には「{{attached}}」が付いているので、「{{module}}」を一緒に付けられません",
+      "unknownMask": "「{{module}}」のメッシュ「{{mesh}}」のマスクが、モデルにもモジュールにもありません",
+      "unknownCollider": "「{{module}}」の物理が、このモデルに無い衝突体を使っています",
+      "poseNotExposed": "「{{module}}」のポーズが、スロット「{{slot}}」の公開していないパーツを使っています",
+      "textureOutOfRange": "「{{module}}」のメッシュ「{{mesh}}」が、モジュールに無いテクスチャを使っています",
+      "invalidModuleName": "「{{module}}」はモジュールの名前として使えません",
+      "duplicateModule": "同じ名前のモジュール「{{module}}」を 2 つ付けることはできません",
+      "invalidComposition": "モデルとモジュールを合成できません ({{detail}})",
+      "compile": "合成したモデルを組み立てられません ({{detail}})",
+      "invalidPhysics": "合成した物理の設定が正しくありません ({{detail}})",
+      "notAttached": "「{{module}}」は付いていません",
+      "notLoaded": "「{{module}}」は読み込まれていません",
+      "noModel": "先にモデル (.ugoe か .json) を開いてください",
+      "invalidFile": "着せ替えのモジュール (.ugoemod) として読めません ({{detail}})",
+      "texture": "モジュールのテクスチャを登録できません ({{detail}})"
+    },
+    "detached": "このモデルに合わないため、着せ替えの「{{module}}」を外しました ({{reason}})",
+    "hiddenSlot": "「{{module}}」のスロット「{{slot}}」は、このモデルが公開していないため付けませんでした",
+    "restore": {
+      "noLocation": "前に付けていた「{{module}}」({{file}}) は、ファイルの場所が分からないため戻せません。もう一度開いてください",
+      "unreadable": "前に付けていた「{{module}}」({{file}}) のファイルを読めないため、戻せません ({{reason}})"
+    }
+  },
+  "loadWarning": {
+    "textureKtx2": "テクスチャ {{texture}} は KTX2 の画像で、まだ表示できないため白で代わりに描いています",
+    "textureMissing": "テクスチャ {{texture}} の画像がファイルに無いため、白で代わりに描いています",
+    "normalMapKtx2": "テクスチャ {{texture}} の法線マップは KTX2 の画像で、まだ使えないため法線マップなしで描いています",
+    "physicsRemoved": "物理の設定がこのモデルに合わないため外しました ({{reason}})",
+    "unknownOptionalFeature": "このファイルは新しい版の機能「{{feature}}」を使っています。この版では代わりの方法で表示しています",
+    "unknownValue": "このファイルには、この版が知らない値があります ({{path}})。既定の扱いで表示しています"
+  },
+  "errors": {
+    "wasmMissing": "ugoe-wasm がビルドされていません",
+    "notModel": "{{name}}: .ugoe・JSON のモデルか .ugoemod のモジュールではありません",
+    "renderStart": "描画を始められません: {{message}}"
+  },
+  "remembered": {
+    "noDate": "日時なし",
+    "noLocation": "場所なし (中身で見分ける)",
+    "sample": "見本 ({{path}})",
+    "notAttached_other": "付けていない ({{count}} 個を読み込み)",
+    "none": "なし"
+  }
+}

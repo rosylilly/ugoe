@@ -1,7 +1,9 @@
 // モデルごとに覚えたもの (光源の設定 (T0709)・着せ替えの組 (T0711)・待機モーションの選択 (T0722)) の一覧 (T0714)。
 // 入れ物 (modelMemory.ts の `ModelMemory`) の項目を、同じモデル (`sameModel`) ごとに 1 行にまとめる。
+import { formatDate, formatList } from "@ugoe/i18n";
 import type { IdleChoice } from "./animation";
 import type { DressUpSet } from "./dressUpMemory";
+import { t } from "./i18n";
 import type { LightingSettings } from "./lighting";
 import { type MemoryEntry, type ModelIdentity, sameModel } from "./modelMemory";
 
@@ -111,27 +113,34 @@ function newer(a: number | null, b: number | null): number | null {
   return b === null ? a : Math.max(a, b);
 }
 
-/** 覚えた日時の表示 (`2026/10/01 09:05`、その環境の時刻)。日時が無ければ「日時なし」。 */
+/** 覚えた日時の表示 (日本語は `2026/10/01 09:05`、その環境の時刻)。日時が無ければ「日時なし」。 */
 export function describeRememberedAt(at: number | null): string {
-  if (at === null) return "日時なし";
-  const d = new Date(at);
-  const two = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}/${two(d.getMonth() + 1)}/${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`;
+  if (at === null) return t("remembered.noDate");
+  return formatDate(at, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
 }
 
 /** 覚えた場所の表示 (`sample:` は見本、`path:` はパス、`url:` は URL。無ければ中身で見分けることを書く)。 */
 export function describeLocation(model: ModelIdentity): string {
   const location = model.location;
-  if (location === undefined) return "場所なし (中身で見分ける)";
+  if (location === undefined) return t("remembered.noLocation");
   const colon = location.indexOf(":");
   const kind = location.slice(0, colon);
   const rest = location.slice(colon + 1);
-  if (kind === "sample") return `見本 (${rest})`;
+  if (kind === "sample") return t("remembered.sample", { path: rest });
   return rest;
 }
 
 /** 着せ替えの組の短い説明 (付けていたモジュールの名前)。 */
 export function describeDressUpSet(set: DressUpSet): string {
-  if (set.attached.length > 0) return set.attached.join("・");
-  return set.modules.length > 0 ? `付けていない (${set.modules.length} 個を読み込み)` : "なし";
+  if (set.attached.length > 0) return formatList(set.attached);
+  return set.modules.length > 0
+    ? t("remembered.notAttached", { count: set.modules.length })
+    : t("remembered.none");
 }

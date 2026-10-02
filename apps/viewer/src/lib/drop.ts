@@ -7,6 +7,7 @@
 // フォルダや読めない拡張子のファイルが混ざっていても、読めるものだけを開き、残りは飛ばしたと知らせる (T0717)。
 // Tauri ではドラッグ中 (`enter`) にもパスが分かるので、落とす前に開けるかを示す (`describeDropPaths`)。
 // ブラウザではドラッグ中は名前が分からず、数と種類 (MIME) だけが分かるので、種類から分かる範囲で示す (`describeDropTypes`。T0718)。
+import { formatList } from "@ugoe/i18n";
 import {
   baseName,
   detectModelKind,
@@ -14,6 +15,7 @@ import {
   MODULE_EXTENSIONS,
   type ModelFile,
 } from "@ugoe/player";
+import { t } from "./i18n";
 import type { SampleTarget } from "./samples";
 
 /**
@@ -65,7 +67,7 @@ export interface SkippedItem {
 
 /**
  * ドロップしたものを読んで開く。開ける拡張子のものだけを読み、読めたものを `openDroppedFiles` で開く。
- * 飛ばしたものがあれば、知らせる日本語の文 (`skippedMessage`) を返す。無ければ `null`。
+ * 飛ばしたものがあれば、知らせる今の言語の文 (`skippedMessage`) を返す。無ければ `null`。
  * 開くとき (モデルの読み込み) の失敗は例外のまま投げる。
  */
 export async function openDroppedItems(
@@ -97,26 +99,27 @@ export async function openDroppedItems(
 const MAX_NAMES = 3;
 
 function listNames(names: readonly string[]): string {
-  const shown = names.slice(0, MAX_NAMES).join("、");
-  return names.length > MAX_NAMES ? `${shown} ほか ${names.length - MAX_NAMES} 個` : shown;
+  const shown = formatList(names.slice(0, MAX_NAMES));
+  return names.length > MAX_NAMES
+    ? t("drop.names.more", { names: shown, count: names.length - MAX_NAMES })
+    : shown;
 }
 
 /** 飛ばしたものを知らせる文。飛ばしたものが無ければ `null`。`opened` は開いたファイルの数。 */
 export function skippedMessage(skipped: readonly SkippedItem[], opened: number): string | null {
   if (skipped.length === 0) return null;
   const head =
-    opened === 0
-      ? "開けるファイルがありませんでした"
-      : `開けないものを ${skipped.length} 個飛ばしました`;
+    opened === 0 ? t("drop.skipped.none") : t("drop.skipped.some", { count: skipped.length });
   const parts: string[] = [];
   const ext = skipped.filter((s) => s.reason === "extension").map((s) => s.name);
   const unreadable = skipped.filter((s) => s.reason === "unreadable").map((s) => s.name);
-  if (ext.length > 0)
-    parts.push(
-      `${listNames(ext)} (開けるのはモデル .ugoe・.json と着せ替えのモジュール .ugoemod。フォルダの中は開きません)`,
-    );
-  if (unreadable.length > 0) parts.push(`${listNames(unreadable)} (読めませんでした)`);
-  return `${head}: ${parts.join("。")}`;
+  if (ext.length > 0) parts.push(t("drop.skipped.extension", { names: listNames(ext) }));
+  if (unreadable.length > 0)
+    parts.push(t("drop.skipped.unreadable", { names: listNames(unreadable) }));
+  return t("drop.skipped.message", {
+    head,
+    details: parts.join(t("drop.skipped.separator")),
+  });
 }
 
 /**
@@ -132,18 +135,10 @@ export interface DropPreview {
 export function describeDropPaths(paths: readonly string[]): DropPreview {
   const openable = paths.filter(isOpenableName).length;
   const skipped = paths.length - openable;
-  if (openable === 0)
-    return {
-      kind: "none",
-      message:
-        "開けるファイルがありません (モデル .ugoe・.json か着せ替えのモジュール .ugoemod を落とす)",
-    };
+  if (openable === 0) return { kind: "none", message: t("drop.preview.none") };
   if (skipped > 0)
-    return {
-      kind: "some",
-      message: `${openable} 個を開きます (${skipped} 個は開けないので飛ばします)`,
-    };
-  return { kind: "all", message: `${openable} 個を開きます` };
+    return { kind: "some", message: t("drop.preview.some", { count: openable, skipped }) };
+  return { kind: "all", message: t("drop.preview.all", { count: openable }) };
 }
 
 /** ドラッグ中のもの 1 つ (ブラウザの `DataTransferItem` の `kind` と `type`)。 */
@@ -182,10 +177,10 @@ export function describeDropTypes(items: readonly DragItemInfo[]): DropPreview |
   if (skipped === files.length) return describeDropPaths([]);
   if (unknown === 0)
     return skipped > 0
-      ? { kind: "some", message: `${open} 個を開きます (${skipped} 個は開けないので飛ばします)` }
-      : { kind: "all", message: `${open} 個を開きます` };
-  const later = `${files.length - skipped} 個は、開けるかを落としたときに名前で確かめます`;
+      ? { kind: "some", message: t("drop.preview.some", { count: open, skipped }) }
+      : { kind: "all", message: t("drop.preview.all", { count: open }) };
+  const later = t("drop.preview.later", { count: files.length - skipped });
   return skipped > 0
-    ? { kind: "some", message: `${skipped} 個は開けない種類なので飛ばします (${later})` }
-    : { kind: "unknown", message: `${files.length} 個のファイル (${later})` };
+    ? { kind: "some", message: t("drop.preview.skipTypes", { count: skipped, later }) }
+    : { kind: "unknown", message: t("drop.preview.unknown", { count: files.length, later }) };
 }

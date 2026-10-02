@@ -1,4 +1,5 @@
 import type { DragDropEvent } from "@tauri-apps/api/webview";
+import { setLocale } from "@ugoe/i18n";
 import {
   defaultLighting,
   dressUpMemory,
@@ -18,6 +19,9 @@ import {
   skippedMessage,
 } from "./drop";
 import { type FileDropEvent, readFileAt, viewerHost } from "./host";
+
+// 文言は日本語の訳で確かめる。
+beforeEach(() => setLocale("ja"));
 
 // Tauri のウィンドウを模す: `invoke("read_model_file")` はこの表から読み、ドロップのイベントは `dragDrop` で送る。
 const disk = new Map<string, Uint8Array>();
@@ -222,6 +226,23 @@ describe("drop checks (T0717)", () => {
       message: "1 個を開きます (1 個は開けないので飛ばします)",
     });
     expect(describeDropPaths(["/a/folder"]).kind).toBe("none");
+  });
+
+  it("speaks the current language", () => {
+    setLocale("en");
+    expect(describeDropPaths([MODEL])).toEqual({ kind: "all", message: "Opens 1 file" });
+    expect(describeDropPaths([MODEL, HAIR, "/a/folder"]).message).toBe(
+      "Opens 2 files (1 cannot be opened and will be skipped)",
+    );
+    expect(
+      skippedMessage(
+        ["a.psd", "b.psd", "c.psd", "d.psd"].map((name) => ({
+          name,
+          reason: "extension" as const,
+        })),
+        0,
+      ),
+    ).toMatch(/^No files could be opened: a\.psd, b\.psd, and c\.psd and 1 more \(only models/);
   });
 
   it("classifies the dragged types (T0718)", () => {

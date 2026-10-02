@@ -2,6 +2,7 @@
 // (crates/ugoe-wasm/README.md#読み込みの警告-t0125) の読み取りと、利用者に見せる文。
 // 着せ替えのモジュールを外した警告 (`module_detached`) の文は dressUp.ts の `describeLoadWarnings` が作る。
 import type { DressUpErrorInfo } from "./dressUp";
+import { t } from "./i18n";
 
 /** 構造にした警告 1 つ。`warning` は wasm の文の警告 (英語) と同じ文字列。 */
 export interface LoadWarning {
@@ -70,20 +71,20 @@ export function parseLoadWarnings(json: string): LoadWarning[] {
  * (呼ぶ側が決める)。
  */
 export function describeLoadWarning(w: LoadWarning): string | null {
-  const texture = `テクスチャ ${w.texture ?? "?"}`;
+  const texture = w.texture ?? "?";
   switch (w.code) {
     case "texture_ktx2":
-      return `${texture} は KTX2 の画像で、まだ表示できないため白で代わりに描いています`;
+      return t("loadWarning.textureKtx2", { texture });
     case "texture_missing":
-      return `${texture} の画像がファイルに無いため、白で代わりに描いています`;
+      return t("loadWarning.textureMissing", { texture });
     case "normal_map_ktx2":
-      return `${texture} の法線マップは KTX2 の画像で、まだ使えないため法線マップなしで描いています`;
+      return t("loadWarning.normalMapKtx2", { texture });
     case "physics_removed":
-      return `物理の設定がこのモデルに合わないため外しました (${w.reason ?? w.warning})`;
+      return t("loadWarning.physicsRemoved", { reason: w.reason ?? w.warning });
     case "unknown_optional_feature":
-      return `このファイルは新しい版の機能「${w.feature ?? "?"}」を使っています。この版では代わりの方法で表示しています`;
+      return t("loadWarning.unknownOptionalFeature", { feature: w.feature ?? "?" });
     case "unknown_value":
-      return `このファイルには、この版が知らない値があります (${w.path ?? "?"})。既定の扱いで表示しています`;
+      return t("loadWarning.unknownValue", { path: w.path ?? "?" });
     default:
       return null;
   }

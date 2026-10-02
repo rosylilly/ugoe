@@ -1,0 +1,414 @@
+{
+  "toolbar": {
+    "open": {
+      "label": "開く",
+      "tooltip": "モデル (.ugoe・.json) か着せ替えのモジュール (.ugoemod) を開く"
+    },
+    "samples": {
+      "label": "サンプル"
+    },
+    "remembered": {
+      "label": "覚えたもの",
+      "tooltip": "モデルごとに覚えた光源・着せ替えの組・待機モーションの一覧。モデルごとに、またはすべて忘れる"
+    },
+    "noModel": "モデルなし",
+    "view": {
+      "aria": "表示"
+    },
+    "zoomOut": {
+      "aria": "縮小"
+    },
+    "zoomIn": {
+      "aria": "拡大"
+    },
+    "fit": {
+      "aria": "全体を表示"
+    },
+    "background": {
+      "label": "背景"
+    },
+    "transparent": {
+      "label": "透明"
+    },
+    "screenshot": {
+      "label": "画像を保存",
+      "tooltip": "今の表示 (背景と光源を含む。光源の印は含まない) を PNG で保存する"
+    },
+    "settings": {
+      "aria": "設定"
+    }
+  },
+  "samples": {
+    "avatar": {
+      "label": "アバター"
+    },
+    "avatarLit": {
+      "label": "アバター (ライティング)"
+    },
+    "dressUp": {
+      "label": "着せ替え"
+    },
+    "fileName": "{{name}} (サンプル)"
+  },
+  "status": {
+    "loaded": "読み込みました",
+    "warnings_other": "警告 {{count}} 件: {{first}}",
+    "license": "ライセンス"
+  },
+  "screenshot": {
+    "saved": "画像を保存しました: {{path}}",
+    "error": "画像を保存できません: {{message}}"
+  },
+  "errors": {
+    "wasmMissing": "ugoe-wasm がビルドされていません (apps/viewer で `pnpm wasm` を実行してください)"
+  },
+  "files": {
+    "openModel": {
+      "title": "モデルを開く",
+      "filter": "ugoe モデル・着せ替え"
+    },
+    "openModules": {
+      "title": "着せ替えのモジュールを開く",
+      "filter": "着せ替えのモジュール"
+    },
+    "saveJson": {
+      "title": "保存"
+    },
+    "savePng": {
+      "title": "スクリーンショットを保存",
+      "filter": "PNG 画像"
+    },
+    "noPaths": "このアプリではパスからファイルを読めません"
+  },
+  "drop": {
+    "names": {
+      "more_other": "{{names}} ほか {{count}} 個"
+    },
+    "skipped": {
+      "none": "開けるファイルがありませんでした",
+      "some_other": "開けないものを {{count}} 個飛ばしました",
+      "extension": "{{names}} (開けるのはモデル .ugoe・.json と着せ替えのモジュール .ugoemod。フォルダの中は開きません)",
+      "unreadable": "{{names}} (読めませんでした)",
+      "separator": "。",
+      "message": "{{head}}: {{details}}"
+    },
+    "preview": {
+      "none": "開けるファイルがありません (モデル .ugoe・.json か着せ替えのモジュール .ugoemod を落とす)",
+      "all_other": "{{count}} 個を開きます",
+      "some_other": "{{count}} 個を開きます ({{skipped}} 個は開けないので飛ばします)",
+      "later_other": "{{count}} 個は、開けるかを落としたときに名前で確かめます",
+      "skipTypes_other": "{{count}} 個は開けない種類なので飛ばします ({{later}})",
+      "unknown_other": "{{count}} 個のファイル ({{later}})"
+    }
+  },
+  "viewport": {
+    "aria": "モデルの表示",
+    "empty": ".ugoe か model.json をドロップするか、「開く」で選んでください",
+    "starting": "準備しています…"
+  },
+  "settings": {
+    "title": "設定",
+    "language": {
+      "label": "言語",
+      "system": "OS に合わせる",
+      "description": "ビューアの表示の言語です。「OS に合わせる」では OS の言語を使います (対応していない言語なら English)。"
+    }
+  },
+  "license": {
+    "title": "ライセンス",
+    "description": "ugoe viewer は GPL-3.0-only で配布しています。同梱しているソフトウェアとモデルのライセンスは次のとおりです。",
+    "loadFailed": "読み込めません ({{reason}})"
+  },
+  "parameters": {
+    "title": "パラメータ",
+    "resetAll": {
+      "label": "すべて戻す"
+    },
+    "empty": "このモデルにはパラメータがありません",
+    "noModel": "モデルを開くと表示されます",
+    "filter": {
+      "aria": "パラメータを絞り込む",
+      "placeholder": "絞り込み (名前・ID)"
+    },
+    "showInternal": {
+      "label_other": "中継用のパラメータも表示 ({{count}})",
+      "description": "物理のリグの間で値を受け渡す中継用のパラメータです。ふつうは動かしません。"
+    },
+    "ungrouped": "その他",
+    "driven": "{{name}} (自動)",
+    "reset": {
+      "aria": "{{name}} を既定値 ({{value}}) に戻す"
+    }
+  },
+  "lighting": {
+    "title": "ライティング",
+    "enabled": {
+      "label": "光源を当てる"
+    },
+    "markers": {
+      "label": "ビューポートに光源の印を出す"
+    },
+    "memory": {
+      "remembered": "このモデル用に覚えた設定",
+      "none": "このモデル用の設定はまだありません"
+    },
+    "reset": {
+      "label": "既定に戻す"
+    },
+    "showMemory": {
+      "label": "覚えたもの…"
+    },
+    "presets": {
+      "aria": "既定の光源の組"
+    },
+    "ambient": {
+      "title": "環境光"
+    },
+    "directional": {
+      "title": "平行光源",
+      "pad": {
+        "aria": "平行光源の来る向き (中心が正面)"
+      },
+      "azimuth": {
+        "label": "方位"
+      },
+      "elevation": {
+        "label": "高さ"
+      }
+    },
+    "point": {
+      "title": "点光源",
+      "pad": {
+        "aria": "点光源の位置 (キャンバスの上での位置)"
+      },
+      "x": {
+        "label": "横"
+      },
+      "y": {
+        "label": "縦"
+      },
+      "z": {
+        "label": "手前"
+      },
+      "range": {
+        "label": "範囲"
+      }
+    },
+    "color": {
+      "aria": "{{light}}の色"
+    },
+    "intensity": {
+      "label": "強さ"
+    },
+    "hint": "位置・手前・範囲はキャンバスに対する割合 (手前と範囲は長い辺に対する割合)"
+  },
+  "markers": {
+    "toCenter": {
+      "tooltip": "キャンバスの中央は画面の外 (矢印の向き)。円は画面の端に寄せて出している"
+    },
+    "directional": {
+      "aria": "平行光源の来る向き (矢印キーで動かす、Shift で大きく)",
+      "value": "方位 {{azimuth}}°、高さ {{elevation}}°",
+      "tooltip": "平行光源: 取っ手のある向きから光が来る (中心 = 正面、縁 = 真横)。ドラッグか矢印キーで動かす"
+    },
+    "range": {
+      "tooltip": "点光源の届く範囲: 縁をドラッグで変える"
+    },
+    "rangeGrip": {
+      "tooltip": "点光源の届く範囲: 範囲の円の縁は画面の外。矢印の向きにドラッグで広げ、逆向きで狭める"
+    },
+    "point": {
+      "aria": "点光源 (矢印キーで動かす、Shift で大きく。PageUp・PageDown で手前、+・− で範囲)",
+      "value": "横 {{x}}、縦 {{y}}、手前 {{z}}、範囲 {{range}}",
+      "tooltip": "点光源: ドラッグか矢印キーで動かす。Shift + ホイール・PageUp・PageDown で手前、範囲の円の縁のドラッグ・+・− で範囲",
+      "tooltipOffscreen": "点光源: ドラッグか矢印キーで動かす。Shift + ホイール・PageUp・PageDown で手前、範囲の円の縁のドラッグ・+・− で範囲 (画面の外にあるので端に寄せて出している)"
+    }
+  },
+  "dressUp": {
+    "title": "着せ替え",
+    "status": {
+      "noSlots": "スロットなし",
+      "slots_other": "{{attached}} / {{count}} スロット"
+    },
+    "openModules": {
+      "label": "モジュールを開く…"
+    },
+    "autoRestore": {
+      "label": "前の組を自動で戻す"
+    },
+    "memory": {
+      "remembered": "このモデル用に覚えた組があります",
+      "forget": {
+        "label": "覚えた組を忘れる"
+      }
+    },
+    "restore": {
+      "title": "前にこのモデルに付けていた組があります",
+      "notAttached_other": "付けていないモジュール {{count}} 個",
+      "accept": {
+        "label": "戻す"
+      },
+      "dismiss": {
+        "label": "今回は戻さない"
+      }
+    },
+    "hint": {
+      "noModel": "モデルを開くと付けられます",
+      "noSlots": "このモデルにはスロットがありません (着せ替えに対応していません)",
+      "noPublishedSlots": "このモデルは着せ替えのスロットを公開していません"
+    },
+    "badge": {
+      "missing": "モデルに無い",
+      "missingDescription": "このモデルに無いスロットです。このスロットのモジュールは付けられません。",
+      "hidden": "公開されていない",
+      "hiddenDescription": "モデルの作者用のスロット (アバタープロファイルでアプリに公開していない) です。このスロットのモジュールは付けられません。"
+    },
+    "none": "なし",
+    "empty": "モジュールを読み込んでいません",
+    "module": {
+      "slot": "スロット: {{slot}}",
+      "textures_other": "テクスチャ: {{count}} 枚",
+      "avatarLevel": "アバタープロファイル: レベル {{level}} 以上",
+      "slots": "必要なスロット: {{slots}}",
+      "parameters": "必要なパラメータ: {{parameters}}",
+      "warnings_other": "警告 {{count}}"
+    },
+    "attach": {
+      "label": "付ける"
+    },
+    "replace": {
+      "label": "差し替える"
+    },
+    "detach": {
+      "label": "外す"
+    },
+    "unload": {
+      "aria": "{{module}} を一覧から除く"
+    }
+  },
+  "motions": {
+    "title": "モーションと表情",
+    "status": {
+      "playing": "再生中: {{name}}",
+      "counts": "{{motions}} モーション・{{expressions}} 表情"
+    },
+    "trackingNote": {
+      "motionWins": "トラッキング中も、再生したモーションが動かすパラメータではモーションの値を使います (待機モーションと、優先から外した部分を除く)。表情はトラッキングの上に重なります。",
+      "trackingWins": "トラッキング中は、トラッキングが書き込むパラメータ (頭の向き・目・口など) でモーションの値が置き換わります。表情はトラッキングの上に重なります。"
+    },
+    "motions": {
+      "title": "モーション",
+      "empty": "このモデルにはモーションがありません"
+    },
+    "stop": {
+      "label": "止める"
+    },
+    "priority": {
+      "label": "優先度"
+    },
+    "repeat": {
+      "label": "繰り返す"
+    },
+    "autoIdle": {
+      "label": "待機モーションを自動で流す"
+    },
+    "idle": {
+      "label": "待機モーション",
+      "none": "(なし)",
+      "forget": {
+        "label": "覚えた選択を忘れる"
+      }
+    },
+    "overTracking": {
+      "label": "トラッキング中もモーションを優先",
+      "groups": {
+        "label": "優先する部分",
+        "description": "外した部分は、モーションが動かしてもトラッキングのままです。"
+      },
+      "parameters": {
+        "label_other": "パラメータごとに選ぶ ({{preferred}} / {{count}} を優先)"
+      }
+    },
+    "motion": {
+      "play": {
+        "aria": "「{{name}}」を再生する"
+      },
+      "stop": {
+        "aria": "「{{name}}」を止める"
+      },
+      "idleTag": "待機",
+      "overlap": {
+        "all": "トラッキングで隠れる",
+        "some": "一部トラッキング",
+        "tooltip": "トラッキングが上書きするパラメータ: {{parameters}}"
+      }
+    },
+    "events": "イベント: {{events}}",
+    "expressions": {
+      "title": "表情",
+      "empty": "このモデルには表情がありません",
+      "stopAll": {
+        "label": "すべて止める"
+      }
+    },
+    "expression": {
+      "fade": "フェード: {{fadeIn}} / {{fadeOut}}",
+      "overlap": {
+        "label": "トラッキングに重なる",
+        "tooltip": "トラッキングの値に重なるパラメータ: {{parameters}}"
+      },
+      "only": {
+        "label": "これだけ"
+      },
+      "add": {
+        "label": "重ねる"
+      },
+      "remove": {
+        "label": "外す"
+      }
+    }
+  },
+  "memory": {
+    "title": "モデルごとに覚えたもの",
+    "description": "光源の設定・着せ替えの組・待機モーションの選択は、モデルごとにこのブラウザ (アプリ) に覚えています。忘れても、いま表示している光源・付けているモジュール・流している待機モーションは変わりません。",
+    "order": {
+      "label": "並び",
+      "recent": "覚えた日時の新しい順",
+      "name": "名前の順"
+    },
+    "empty": "覚えているモデルはありません。",
+    "column": {
+      "model": "モデル",
+      "lighting": "光源",
+      "dressUp": "着せ替えの組",
+      "idle": "待機モーション",
+      "date": "覚えた日時",
+      "actions": "操作"
+    },
+    "unnamed": "(名前なし)",
+    "current": "開いている",
+    "forget": {
+      "label": "忘れる",
+      "lighting": {
+        "aria": "{{model}} の光源を忘れる"
+      },
+      "dressUp": {
+        "aria": "{{model}} の着せ替えの組を忘れる"
+      },
+      "idle": {
+        "aria": "{{model}} の待機モーションを忘れる"
+      }
+    },
+    "forgetRow": {
+      "label": "すべて忘れる",
+      "aria": "{{model}} に覚えたものをすべて忘れる"
+    },
+    "kept": "最後に使った光源・光源の印・前の組を自動で戻す・待機モーションを自動で流すの設定は残ります。",
+    "forgetAll": {
+      "label": "すべて忘れる…",
+      "title": "すべて忘れますか?",
+      "description_other": "{{count}} 体のモデルに覚えたものをすべて忘れます。元に戻せません。",
+      "confirm": "すべて忘れる"
+    }
+  }
+}

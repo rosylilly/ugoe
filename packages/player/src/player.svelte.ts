@@ -44,6 +44,7 @@ import {
 } from "./dressUpMemory";
 import { DriverSet } from "./drivers";
 import { applyFrame, type FollowFrame, type FollowRenderStats, FrameQueue } from "./follower";
+import { t } from "./i18n";
 import {
   defaultLighting,
   type LightingSettings,
@@ -270,7 +271,7 @@ export class Player {
     this.#wasm = await this.#host.loadWasm();
     if (this.#wasm === null) {
       this.status = "unavailable";
-      this.error = this.#host.wasmMissingMessage ?? "ugoe-wasm がビルドされていません";
+      this.error = this.#host.wasmMissingMessage ?? t("errors.wasmMissing");
       return;
     }
     await this.#createPuppet();
@@ -308,7 +309,7 @@ export class Player {
       return;
     }
     if (kind === null) {
-      this.error = `${file.name}: .ugoe・JSON のモデルか .ugoemod のモジュールではありません`;
+      this.error = t("errors.notModel", { name: file.name });
       return;
     }
     const identity = modelIdentity(file);
@@ -366,7 +367,7 @@ export class Player {
     puppet.reset_parameters();
     const list = parseParameterList(puppet.parameters_json());
     this.#parameters = list.parameters;
-    this.sections = groupParameters(list, "その他");
+    this.sections = groupParameters(list, t("parameters.ungrouped"));
     this.values = {};
     this.#syncValues();
     this.modelName = file.name;
@@ -493,7 +494,7 @@ export class Player {
     if (hidden !== null) {
       // 作者用の (公開していない) スロットには自動では付けない (T0715)。一覧には「公開されていない」として出る。
       this.#syncDressUp();
-      this.dressUpError = `「${name}」のスロット「${hidden}」は、このモデルが公開していないため付けませんでした`;
+      this.dressUpError = t("dressUp.hiddenSlot", { module: name, slot: hidden });
     } else if (attach && puppet.has_model()) this.attachModule(name);
     else this.#syncDressUp();
     return name;
@@ -1214,7 +1215,7 @@ export class Player {
     try {
       puppet.set_lighting_json(json === null ? undefined : JSON.stringify(json));
     } catch (e) {
-      this.error = `光源を設定できません: ${message(e)}`;
+      this.error = t("lighting.error", { message: message(e) });
     }
   }
 
@@ -1261,7 +1262,7 @@ export class Player {
     const puppet = this.#puppet;
     if (puppet === null) {
       this.status = "unavailable";
-      this.error = `描画を始められません: ${message(lastError)}`;
+      this.error = t("errors.renderStart", { message: message(lastError) });
       return;
     }
     this.backend = puppet.backend();
