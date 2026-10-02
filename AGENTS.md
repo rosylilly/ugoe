@@ -57,7 +57,7 @@ crates/             Rust クレート (ランタイム層とツール層。依�
   ugoe-mcp            MCP サーバ (外部のエージェントが .ugoeproj を読み、編集を提案・適用する)
 apps/editor/        Tauri エディタ (src/ = Svelte フロントエンド, src-tauri/ = Rust バックエンド)
 apps/viewer/        Tauri ビューア (.ugoe を開いて表示しパラメータを動かす。構成はエディタと同じ)
-apps/studio/        Tauri スタジオ (配信用。操作ウィンドウと出力ウィンドウ、指揮役と受け手。ADR 0028。仮想カメラ・ブラウザソース・外部 API は M8 の後続のタスク)
+apps/studio/        Tauri スタジオ (配信用。操作ウィンドウと出力ウィンドウ、指揮役と受け手、シーンとプロファイル、入力とホットキー。ADR 0028。vcam/ = 仮想カメラ (unsafe を許す唯一のアプリのクレート))
 packages/           アプリ (エディタ・ビューア・スタジオ) で共有するフロントエンドの部品 (face-tracking・ui・i18n・player。GPL-3.0-only)
 bindings/           ランタイムを別の環境へ出すパッケージ (MIT。web = npm の @ugoe/runtime と <ugoe-avatar>、godot = Godot 4 の GDExtension (ワークスペースの外、ADR 0026)、unity = UPM パッケージ (C# から C ABI を呼ぶ))
 tests/conformance/  配布物の適合テスト (ugoe-conformance。C ABI・wasm の頂点と画像を参照と比べる。`just conformance`)
