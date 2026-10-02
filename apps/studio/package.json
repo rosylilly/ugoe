@@ -10,6 +10,7 @@
     "mediapipe": "ugoe-mediapipe-assets public/mediapipe",
     "vcam": "node scripts/build-vcam.mjs",
     "vcam:macos": "node scripts/build-vcam-macos.mjs",
+    "sample-profile": "node scripts/sample-profile.mjs",
     "build": "ugoe-mediapipe-assets public/mediapipe && vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",

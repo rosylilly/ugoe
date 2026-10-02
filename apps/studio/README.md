@@ -6,6 +6,7 @@ T0801 で骨組み (2 つのウィンドウ・指揮役と受け手)、T0802 で
 モーションと表情・グローバルなホットキー)、T0804 で配信向けの出力、T0807 で仮想カメラ (Windows・Linux)、T0809 で macOS の仮想カメラ (Camera Extension。配布物に入れるのは後)、
 T0805 で外から操作する API (ループバックの WebSocket。[docs/studio-api.md](../../docs/studio-api.md))、T0808 で OBS のブラウザソース用のページ
 ([docs/studio.md#ブラウザソース](../../docs/studio.md#ブラウザソース)) を作った。
+配信者向けの使い方 (マニュアル) は [docs/manual/studio.md](../../docs/manual/studio.md)、見本のプロファイルは `pnpm sample-profile` (T0806)。
 
 **ライセンスは GPL-3.0-only** (エディタ・ビューアと同じ)。アプリ同士で import はしない (共有するものは `packages/` に置く)。
 
@@ -81,6 +82,7 @@ src-tauri/                    バックエンド (Rust クレート `ugoe-studio
   Entitlements.vcam.plist       その entitlement (Entitlements.plist に System Extension を入れる権限を足したもの)
 scripts/build-vcam.mjs        `pnpm vcam`: 仮想カメラのメディアソースの DLL を作る (Windows 向け。CRT は静的)
 scripts/build-vcam-macos.mjs  `pnpm vcam:macos`: macOS の Camera Extension を swiftc で作って署名する (macOS だけ)
+scripts/sample-profile.mjs    `pnpm sample-profile <出力>`: 見本のモデル (assets/samples) を使う見本のプロファイルを書き出す (T0806。docs/manual/studio.md#見本のプロファイル)
 vcam/                         仮想カメラの OS の境界 (クレート `ugoe-studio-vcam`。unsafe を許す唯一のアプリのクレート。下の「仮想カメラ」)
 ```
 
@@ -207,6 +209,7 @@ just app::build TARGET=studio PLATFORM=macos VCAM=1  # macOS で Camera Extensio
 pnpm --filter @ugoe/studio wasm   # ugoe-wasm をビルドして src/lib/wasm/generated/ に JS バインディングを出す
 pnpm --filter @ugoe/studio mediapipe  # MediaPipe の wasm とモデルを public/mediapipe/ に用意する (dev・build でも実行される。gitignore 済み)
 pnpm --filter @ugoe/studio vcam   # 仮想カメラの DLL (Windows 向け。Linux からは cargo-xwin でクロスビルド)
+pnpm --filter @ugoe/studio sample-profile ~/sample-profile.json  # 見本のプロファイル (--lang en でシーンの名前を英語に。--force で上書き)
 cargo test -p ugoe-studio         # 指揮役・配信の形・一致の検査・操作 API (本物のループバックの待ち受けも使う)
 cargo test -p ugoe-studio-vcam    # 仮想カメラの共有メモリの形・設定・v4l2 の構造体
 cargo test -p ugoe-studio --features gpu-tests --test virtual_camera_gpu  # 仮想カメラの画 (just test-gpu に含まれる。CI では除く)
