@@ -27,6 +27,7 @@ ugoe は Live2D Cubism と **機能的に互換** な 2D リギング・アニ�
 | ファイル形式 | [docs/spec/file-formats.md](docs/spec/file-formats.md) |
 | エディタ | [docs/editor.md](docs/editor.md) |
 | スタジオ | [docs/studio.md](docs/studio.md) |
+| 画面の部品・翻訳 | [docs/ui.md](docs/ui.md)、[ADR 0029](docs/adr/0029-shared-ui-and-i18n.md) |
 | AI 連携 | [docs/ai-integration.md](docs/ai-integration.md) |
 | エンジン組み込み | [docs/portability.md](docs/portability.md) |
 | テスト | [docs/testing.md](docs/testing.md) |
