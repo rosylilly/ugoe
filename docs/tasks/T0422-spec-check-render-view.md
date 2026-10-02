@@ -1,11 +1,11 @@
 ---
 id: T0422
 title: 独立の実装: 描画の例の view のケースで、参照の描画に view を渡して比べる
-status: todo
+status: in-progress
 milestone: M7
 crates: [tools/spec-check]
 depends_on: [T0414]
-assignee:
+assignee: claude-worker-T0422
 ---
 
 # T0422: 黒箱の比較で view を渡す

@@ -1,11 +1,11 @@
 ---
 id: T0416
 title: SDK: 評価後のパーツの不透明度を公開する・着せ替え中に本体の物理を差し替える
-status: todo
+status: in-progress
 milestone: M7
 crates: [ugoe-runtime, ugoe, ugoe-ffi, ugoe-wasm, docs]
 depends_on: [T0414]
-assignee:
+assignee: claude-worker-T0416
 ---
 
 # T0416: SDK の残り (T0414 の後続)

@@ -1,11 +1,11 @@
 ---
 id: T0415
 title: Godot: Light2D と XRFaceTracker からの入力・マスクの解像度
-status: todo
+status: in-progress
 milestone: M7
 crates: [bindings/godot, docs]
 depends_on: [T0411]
-assignee:
+assignee: claude-worker-T0415
 ---
 
 # T0415: Godot の配布と入力の後続

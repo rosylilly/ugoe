@@ -1,11 +1,11 @@
 ---
 id: T0420
 title: Unity と適合テスト: Linear の正確な一致・アトラス化した見本・Godot の頂点の比較
-status: todo
+status: in-progress
 milestone: M7
 crates: [bindings/unity, bindings/godot, tests/conformance, ugoe-cli, assets, apps/editor, apps/viewer, docs]
 depends_on: [T0419, T0418]
-assignee:
+assignee: claude-worker-T0420
 ---
 
 # T0420: Unity と適合テストの残り
