@@ -1,11 +1,11 @@
 ---
 id: T0807
 title: スタジオ: 仮想カメラ (Windows と Linux)
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, ugoe-headless, ugoe-render, scripts, commitlint.config.mjs, docs]
 depends_on: [T0804]
-assignee:
+assignee: claude-worker-T0807
 ---
 
 # T0807: スタジオ: 仮想カメラ (Windows と Linux)
