@@ -3,7 +3,8 @@
     "label": "スタジオ",
     "open": "モデルを選ぶ…",
     "output": "出力ウィンドウ",
-    "profile": "プロファイル"
+    "profile": "プロファイル",
+    "license": "ライセンス"
   },
   "language": {
     "label": "言語",
@@ -340,5 +341,10 @@
       "windows": "Windows 10 では、OBS Studio で出力ウィンドウを取り込み、OBS の「仮想カメラ開始」を使ってください。",
       "reinstall": "スタジオのインストーラをもう一度実行してください。カメラの登録には管理者の権限が要ります。"
     }
+  },
+  "license": {
+    "title": "ライセンス",
+    "description": "ugoe studio は GPL-3.0-only で配布しています。同梱しているソフトウェアとモデルのライセンスは次のとおりです。",
+    "loadFailed": "読み込めません ({{reason}})"
   }
 }

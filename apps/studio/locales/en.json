@@ -3,7 +3,8 @@
     "label": "Studio",
     "open": "Choose model…",
     "output": "Output window",
-    "profile": "Profile"
+    "profile": "Profile",
+    "license": "License"
   },
   "language": {
     "label": "Language",
@@ -342,5 +343,10 @@
       "windows": "On Windows 10, capture the output window in OBS Studio and use OBS's “Start Virtual Camera” instead.",
       "reinstall": "Run the studio installer again. Registering the camera needs administrator rights."
     }
+  },
+  "license": {
+    "title": "License",
+    "description": "ugoe studio is distributed under GPL-3.0-only. The licenses of the bundled software and models are as follows.",
+    "loadFailed": "Cannot load the notices ({{reason}})."
   }
 }

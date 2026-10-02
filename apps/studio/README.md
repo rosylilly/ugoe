@@ -19,6 +19,8 @@ src/MotionPanel.svelte        表情とモーション (表情の付け外し・
 src/InputPanel.svelte         入力 (@ugoe/face-tracking のパネルでカメラのトラッキング、マイクの機器・感度・ノイズの閾値・メーター)
 src/HotkeysPanel.svelte       ホットキーの割り当て (キーを押して決める・操作と引数・登録できない理由)
 src/VirtualCameraPanel.svelte 操作ウィンドウの「仮想カメラ」: 開始と停止・解像度・フレームレート・透過を埋める色・止まった/遅れたの知らせと案内
+src/LicenseDialog.svelte      ライセンスの表示 (ツールバーの「ライセンス」)。本文は public/third-party-notices.txt
+public/third-party-notices.txt 同梱する第三者のもの (MediaPipe の wasm とモデル・JS のライブラリ) のライセンスの表記
 output.html / src/output.ts   出力ウィンドウの入口 (背景は透過。@ugoe/ui と @ugoe/i18n は読まない)
 src/Output.svelte             出力ウィンドウ: @ugoe/player の受け手のモードでモデルだけを描く。シーンの見せ方を当てる。Alt + ドラッグで動かす
 src/lib/host.ts               バックエンドとの口 (StudioHost)。Tauri の外では window.__UGOE_STUDIO_HOST__ を使う

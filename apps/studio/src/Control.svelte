@@ -31,6 +31,7 @@ import {
 import { onMount } from "svelte";
 import HotkeysPanel from "./HotkeysPanel.svelte";
 import InputPanel from "./InputPanel.svelte";
+import LicenseDialog from "./LicenseDialog.svelte";
 import LoadPanel from "./LoadPanel.svelte";
 import { describeError } from "./lib/errors";
 import type {
@@ -110,6 +111,7 @@ let showInternal = $state(false);
 /** 仮想カメラの状態 (VirtualCameraPanel.svelte)。 */
 let camera = $state<VirtualCameraStatus | null>(null);
 let error = $state<string | null>(null);
+let licenseOpen = $state(false);
 /** 手で動かしたパラメータと、動かした時刻。 */
 const edited = new Map<string, number>();
 
@@ -621,6 +623,7 @@ onMount(() => {
       />
     </div>
     <ThemeSetting />
+    <Button variant="ghost" small onclick={() => (licenseOpen = true)}>{t("toolbar.license")}</Button>
   </header>
 
   {#if error !== null}
@@ -843,6 +846,8 @@ onMount(() => {
   </main>
 </div>
 
+<LicenseDialog bind:open={licenseOpen} />
+
 <AlertDialog
   open={discarding !== null}
   title={t("profile.discardTitle")}
@@ -881,6 +886,7 @@ onMount(() => {
 
   .studio__toolbar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--ugoe-space-3);
     padding: var(--ugoe-space-2) var(--ugoe-space-4);
