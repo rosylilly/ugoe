@@ -4,7 +4,7 @@ title: スタジオ: 入力 (カメラのトラッキング・マイクの口パ
 status: todo
 milestone: M8
 crates: [apps/studio, packages, docs]
-depends_on: [T0802]
+depends_on: [T0802, T0134]
 assignee:
 ---
 
