@@ -38,3 +38,4 @@
 | [0026](0026-godot-binding.md) | Godot のバインディング (godot-rust) をワークスペースの外に置く | Accepted |
 | [0027](0027-crates-io-publishing.md) | crates.io に公開するクレートの範囲 (`ugoe` とその依存) と公開の方法 | Accepted |
 | [0028](0028-studio.md) | 配信用のアプリ「スタジオ」の範囲・構成・描画の場所・外部 API の安全性 | Accepted |
+| [0029](0029-shared-ui-and-i18n.md) | 共有の UI 部品と翻訳 (@ugoe/ui・@ugoe/i18n・@ugoe/player)。翻訳は i18next、部品の土台は Bits UI | Accepted |
