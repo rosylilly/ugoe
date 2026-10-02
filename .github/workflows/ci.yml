@@ -324,6 +324,8 @@ jobs:
       - run: pnpm --filter @ugoe/i18n test
       # 翻訳のカタログの検査 (`just i18n`。packages/i18n/README.md)
       - run: node packages/i18n/scripts/check-catalogs.mjs
+      - run: node --test --test-reporter=dot scripts/check-hardcoded-strings.test.mjs
+      - run: node scripts/check-hardcoded-strings.mjs
       - run: pnpm --filter @ugoe/runtime test
       - name: Install Rust toolchain (rust-toolchain.toml, wasm32 target included)
         run: rustup show active-toolchain || rustup toolchain install

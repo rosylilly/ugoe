@@ -187,8 +187,11 @@ web-check:
     pnpm --filter '@ugoe/ui' test
 
 # 翻訳のカタログの検査: 言語の間のキーの過不足・複数形・引数・未使用のキー (packages/i18n/README.md)
+# と、画面の直書きの文言の検査 (docs/translation.md#直書きの文言の検査)
 i18n:
     @node packages/i18n/scripts/check-catalogs.mjs
+    @node --test --test-reporter=dot scripts/check-hardcoded-strings.test.mjs
+    @node scripts/check-hardcoded-strings.mjs
 
 # エディタを開発モードで起動
 editor:
