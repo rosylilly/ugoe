@@ -1,11 +1,11 @@
 ---
 id: T0663
 title: エディタ: 外枠 (メニュー・ツールバー・ダイアログ・ヘルプ) の共有部品への移行と日本語・英語
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/editor, docs]
 depends_on: [T0901, T0903, T0908]
-assignee:
+assignee: claude-worker-T0663
 ---
 
 # T0663: エディタ: 外枠 (メニュー・ツールバー・ダイアログ・ヘルプ) の共有部品への移行と日本語・英語

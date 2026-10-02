@@ -1,11 +1,11 @@
 ---
 id: T0804
 title: スタジオ: 配信向けの出力 (隠れても止まらない描画・フレームレート・負荷の表示・OBS の取り込み)
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, docs]
 depends_on: [T0801, T0133]
-assignee:
+assignee: claude-worker-T0804
 ---
 
 # T0804: スタジオ: 配信向けの出力 (隠れても止まらない描画・フレームレート・負荷の表示・OBS の取り込み)

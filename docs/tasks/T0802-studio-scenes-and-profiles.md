@@ -1,11 +1,11 @@
 ---
 id: T0802
 title: スタジオ: シーンとプロファイル (モデル・着せ替え・ライティング・配置・背景の保存と切り替え)
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, docs]
 depends_on: [T0801, T0903]
-assignee:
+assignee: claude-worker-T0802
 ---
 
 # T0802: スタジオ: シーンとプロファイル (モデル・着せ替え・ライティング・配置・背景の保存と切り替え)

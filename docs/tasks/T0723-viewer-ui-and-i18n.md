@@ -1,11 +1,11 @@
 ---
 id: T0723
 title: ビューア: 共有部品への移行と日本語・英語の切り替え
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/viewer, docs]
 depends_on: [T0901, T0903, T0904, T0908]
-assignee:
+assignee: claude-worker-T0723
 ---
 
 # T0723: ビューア: 共有部品への移行と日本語・英語の切り替え
