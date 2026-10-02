@@ -18,6 +18,11 @@ mod dress_up;
 
 pub use dress_up::{DressUpChange, DressUpError, TextureSource};
 
+// 受け手の口: 届いた値を基準値として書き、物理だけを進める (T0133)。
+mod follow;
+
+pub use follow::ParameterValuesError;
+
 // 読み込みの警告の種類 (T0412)。
 mod warning;
 
@@ -409,7 +414,7 @@ impl Puppet {
         self.output.copy_from_slice(params.as_slice());
 
         // 10. パーツの不透明度 (モーションのカーブとポーズ)
-        self.apply_part_opacities(dt);
+        self.apply_part_opacities(dt, true);
 
         // 11. 評価
         self.instance.update();
@@ -419,12 +424,14 @@ impl Puppet {
     ///
     /// ポーズの要素のパーツへのカーブはポーズへの表示の要求 (値 × 重み) として扱い、
     /// それ以外のパーツへのカーブはそのまま上書きする。ポーズを止めているときは、
-    /// すべてのカーブをそのまま上書きし、ポーズは何も書かない。
-    fn apply_part_opacities(&mut self, dt: f32) {
+    /// すべてのカーブをそのまま上書きし、ポーズは何も書かない。`motions` が `false` ならカーブを使わない
+    /// ([`Puppet::follow`])。
+    fn apply_part_opacities(&mut self, dt: f32, motions: bool) {
         self.instance.clear_part_opacity_overrides();
         let pose = self.toggles.pose;
         let mut requests = Vec::new();
-        for (part, value, weight) in self.motions.part_opacities() {
+        let curves = motions.then(|| self.motions.part_opacities());
+        for (part, value, weight) in curves.into_iter().flatten() {
             if pose && self.pose.contains(&part) {
                 requests.push((part, value * weight));
             } else if let Some(i) = self.instance.compiled().part_index(part.as_str()) {

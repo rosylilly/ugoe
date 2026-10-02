@@ -1040,3 +1040,59 @@ fn base_physics_survives_dress_up() {
     assert_eq!(composed.wind, ugoe::core::Vec2::ZERO);
     assert_eq!(composed.rigs.len(), 1);
 }
+
+/// 受け手の口 (T0133): 同じ値と `dt` の列を `ugoe_puppet_follow` で与えると、`ugoe::Puppet::follow` と同じ形になる。
+/// 数の違い・NaN・負の `dt` は何も変えない。
+#[test]
+fn follow_matches_the_puppet() {
+    let model = fixtures::dynamic_hair();
+    let mut bundle = Bundle::new(model.clone());
+    bundle.textures = model.textures.iter().map(|_| png(0)).collect();
+    bundle.physics = Some(fixtures::dynamic_hair_settings());
+    let p = from_bundle(&bundle);
+    let mut native = Puppet::new(model)
+        .unwrap()
+        .with_physics(fixtures::dynamic_hair_settings());
+    let mut count = 0;
+    ok(unsafe { ugoe_puppet_parameter_count(p.0, &mut count) });
+    assert_eq!(count, 2);
+    let mut drawables = 0;
+    ok(unsafe { ugoe_puppet_drawable_count(p.0, &mut drawables) });
+    assert!(drawables > 0);
+
+    for frame in 0..60 {
+        let t = frame as f32 * DT;
+        let values = [30.0 * (t * 6.0).sin(), 10.0 * (t * 4.0).cos()];
+        ok(unsafe { ugoe_puppet_follow(p.0, values.as_ptr(), values.len(), DT) });
+        native.follow(&values, DT).unwrap();
+        for (i, drawable) in native.instance().drawables().iter().enumerate() {
+            let mut positions = vec![f32::NAN; drawable.positions.len() * 2];
+            ok(unsafe {
+                ugoe_puppet_copy_positions(p.0, i as u32, positions.as_mut_ptr(), positions.len())
+            });
+            let expected: Vec<f32> = drawable.positions.iter().flat_map(|v| [v.x, v.y]).collect();
+            assert_eq!(positions, expected, "frame {frame}, drawable {i}");
+        }
+    }
+
+    // 受け付けない値は何も変えない。
+    let before = (param(&p, "AngleX"), param(&p, "AngleZ"));
+    let one = [0.0f32];
+    let code = unsafe { ugoe_puppet_follow(p.0, one.as_ptr(), one.len(), DT) };
+    assert_eq!(code, UGOE_ERROR_INVALID_ARGUMENT);
+    assert!(text(ugoe_last_error()).contains("expected 2"));
+    let nan = [0.0, f32::NAN];
+    let code = unsafe { ugoe_puppet_set_base_values(p.0, nan.as_ptr(), nan.len()) };
+    assert_eq!(code, UGOE_ERROR_INVALID_ARGUMENT);
+    let values = [1.0f32, 2.0];
+    let code = unsafe { ugoe_puppet_follow(p.0, values.as_ptr(), values.len(), -1.0) };
+    assert_eq!(code, UGOE_ERROR_INVALID_ARGUMENT);
+    let code = unsafe { ugoe_puppet_set_base_values(p.0, ptr::null(), 2) };
+    assert_eq!(code, UGOE_ERROR_NULL_POINTER);
+    assert_eq!((param(&p, "AngleX"), param(&p, "AngleZ")), before);
+
+    // 基準値として書くと、次の update でもその値のまま (段が何も重ならないモデル)。
+    ok(unsafe { ugoe_puppet_set_base_values(p.0, values.as_ptr(), values.len()) });
+    ok(unsafe { ugoe_puppet_update(p.0, DT) });
+    assert_eq!((param(&p, "AngleX"), param(&p, "AngleZ")), (1.0, 2.0));
+}

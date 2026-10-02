@@ -56,6 +56,9 @@ pub struct CaseSpec {
     /// 時間を進めるときに目パチと呼吸を使うか (既定は使わない)。
     #[serde(default)]
     pub effects: bool,
+    /// 受け手として進めるか (計画の [`Case::follow`]。`time` と `"image": false` が要る)。
+    #[serde(default)]
+    pub follow: bool,
     /// 光源 (描画だけに効く)。
     pub lighting: Option<Lighting>,
     /// 画像も比べるか (既定は比べる)。
@@ -130,7 +133,14 @@ pub struct Case {
     /// (すべての段 (物理・目パチ・呼吸・リップシンク・ポーズ) を止めて 1 回評価する)。
     pub steps: Vec<f32>,
     /// 時間を進めるときに目パチと呼吸を使うか。物理・リップシンク・ポーズは常に使う。
+    /// `follow` のケースでは常に `false` (`cases.json` の `effects` は指揮役だけに効き、指揮役は標準の目パチと呼吸を使う)。
     pub effects: bool,
+    /// 受け手として進めるときの、各フレームのパラメータの値 (モデルの定義順。`steps` と同じ数。T0133)。
+    /// 空でなければ、実行器は `update(steps[i])` の代わりに `follow(follow[i], steps[i])` を呼ぶ。
+    /// 値は、物理を切った指揮役の `Puppet` を同じ `steps` で進めたときの各 `update` の後の値
+    /// ([`crate::reference::conductor_values`]。`docs/spec/motion.md#受け手として進める`)。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub follow: Vec<Vec<f32>>,
     pub lighting: Option<Lighting>,
     /// 画像も比べるか。
     pub image: bool,
@@ -185,6 +195,7 @@ impl Plan {
     /// param <ID> <値>
     /// effects <0|1>
     /// update <dt>
+    /// follow <dt> <値> <値> ...
     /// end
     /// ```
     ///
@@ -202,8 +213,18 @@ impl Plan {
                 let _ = writeln!(s, "param {id} {value}");
             }
             let _ = writeln!(s, "effects {}", u8::from(case.effects));
-            for dt in &case.steps {
-                let _ = writeln!(s, "update {dt}");
+            if case.follow.is_empty() {
+                for dt in &case.steps {
+                    let _ = writeln!(s, "update {dt}");
+                }
+            } else {
+                for (dt, values) in case.steps.iter().zip(&case.follow) {
+                    let _ = write!(s, "follow {dt}");
+                    for v in values {
+                        let _ = write!(s, " {v}");
+                    }
+                    let _ = writeln!(s);
+                }
             }
             let _ = writeln!(s, "end");
         }
@@ -317,11 +338,25 @@ fn case(
         time: spec.time,
         steps,
         effects: spec.effects,
+        follow: Vec::new(),
         lighting: spec.lighting.clone(),
         image: spec.image,
         render_args: Vec::new(),
     };
     case.render_args = render_args(&case, spec.time.map(|t| (t, fps)));
+    if spec.follow {
+        // 参照の画像は `ugoe render` で作るが、受け手として進める口を持たないので画像は比べない。
+        if case.steps.is_empty() || case.image {
+            return Err(Error::Invalid(format!(
+                "case `{}`: `follow` needs `time` and `\"image\": false`",
+                case.name
+            )));
+        }
+        // 目パチと呼吸は指揮役だけで使う (標準の設定)。受け手 (実行器) では切るので、`follow` を呼ばずに
+        // `update` で進めた実行器は参照と合わない。
+        case.follow = crate::reference::conductor_values(&case, spec.effects)?;
+        case.effects = false;
+    }
     Ok(case)
 }
 

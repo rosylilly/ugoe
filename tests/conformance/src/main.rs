@@ -120,6 +120,10 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
     }
 }
 
+/// 受け手として進める口 (`Puppet::follow`) を実行器から呼べるバインディング (T0133)。
+/// Unity と Godot はまだ口を出していないので、`follow` のケースを飛ばす。
+const FOLLOW_BINDINGS: [&str; 3] = ["c", "wasm", "wasm-webgpu"];
+
 /// 何を比べるか。
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
@@ -142,6 +146,14 @@ fn compare_binding(out: &Path, binding: &str, mode: Mode) -> anyhow::Result<bool
     } else {
         BTreeMap::new()
     };
+    // 受け手として進める口 (`follow`。T0133) を持つバインディング。ほかはそのケースを飛ばす。
+    if !FOLLOW_BINDINGS.contains(&binding) {
+        for case in plan.cases.iter().filter(|c| !c.follow.is_empty()) {
+            skipped
+                .entry(case.name.clone())
+                .or_insert_with(|| "the binding does not expose follow yet".to_owned());
+        }
+    }
     if mode == Mode::ImagesOnly {
         for case in plan.cases.iter().filter(|c| !c.image) {
             skipped

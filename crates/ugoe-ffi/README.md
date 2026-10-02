@@ -223,6 +223,20 @@ ugoe_puppet_set_effects_json(puppet, json, len);    /* 目パチ・呼吸・リ�
   初めからやり直し、リップシンクの音量は保つ。省略したフィールドは既定値、`seed` は丸めずに読む。読めなければ `UGOE_ERROR_FORMAT`。
 - パーツの ID のポインタは、着せ替えの操作か `UgoePuppet` の破棄まで有効 (当たり判定の ID と同じ)。
 
+## 受け手として進める (T0133)
+
+```c
+float values[PARAM_COUNT];                          /* ugoe_puppet_parameter_count の数。パラメータの番号の順 */
+ugoe_puppet_follow(puppet, values, PARAM_COUNT, dt); /* values を基準値として書き、物理とポーズだけを dt 秒進めて評価する */
+ugoe_puppet_set_base_values(puppet, values, PARAM_COUNT); /* 基準値として書くだけ (評価しない) */
+```
+
+- `ugoe::Puppet::follow`・`set_base_values` と同じ (`docs/spec/motion.md#受け手として進める`)。スタジオの仮想カメラのような受け手が、指揮役から
+  届いた `{dt, values}` を順に適用するために使う (ADR 0028 の 3.)。モーション・トラッキング・表情・目パチ・呼吸・リップシンクは通さない。
+- `ugoe_puppet_set_parameter` の値は前のフレームの出力と同じなら基準値にならないが、これらは同じでも基準値にする (範囲に丸める)。
+- 数がパラメータの数と違う・NaN を含む・`dt` が負か有限でないときは `UGOE_ERROR_INVALID_ARGUMENT` を返し、何も変えない。
+  `ugoe_puppet_follow` の後も、モーションのイベントは直前の `ugoe_puppet_update` のまま。wasm は `follow`・`set_base_values` (`Float32Array`)。
+
 ## 範囲外 (後続)
 
 - Windows と macOS での C の見本のビルドは確かめていない (CI は Linux だけ)。
@@ -235,3 +249,4 @@ ugoe_puppet_set_effects_json(puppet, json, len);    /* 目パチ・呼吸・リ�
 - T0412 (エラーと警告の code を SDK にまとめる・モーションのイベント・物理の設定の差し替え)
 - T0414 (パーツの不透明度・ポーズの表示の選択・効果の設定の差し替え)
 - T0722 (トラッキング中のモーションの優先)
+- T0133 (受け手として進める: 基準値として書く口)

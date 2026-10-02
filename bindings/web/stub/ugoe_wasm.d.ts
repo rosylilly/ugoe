@@ -28,6 +28,7 @@ export class WebPuppet {
   expression_names(): string[];
   expressions_json(): string;
   fit(): void;
+  follow(values: Float32Array, dt: number): void;
   has_model(): boolean;
   has_physics(): boolean;
   height(): number;
@@ -56,6 +57,7 @@ export class WebPuppet {
   pan_y(): number;
   parameter(id: string): number | undefined;
   parameter_ids(): string[];
+  parameter_values(): Float32Array;
   parameters_json(): string;
   part_evaluated_opacity(part: string): number | undefined;
   physics_json(): string | undefined;
@@ -71,6 +73,7 @@ export class WebPuppet {
   screen_to_canvas(x: number, y: number): Float32Array;
   set_background(r: number, g: number, b: number, a: number): void;
   set_base_physics_json(json?: string | null): void;
+  set_base_values(values: Float32Array): void;
   set_effects_json(json: string): void;
   set_enabled(stage: string, enabled: boolean): void;
   set_expression(name: string): void;

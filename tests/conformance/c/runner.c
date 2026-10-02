@@ -9,6 +9,7 @@
  *
  * - update の行が無いケースは、すべての段を止めて ugoe_puppet_update(0) を 1 回呼ぶ (時間を進めない評価)。
  * - update の行があるケースは、目パチと呼吸を effects のとおりにし、ほかの段を動かして、その dt で順に呼ぶ。
+ * - follow の行 (受け手として進めるケース。T0133) は、update の代わりに ugoe_puppet_follow(値, dt) を順に呼ぶ。
  */
 #include <errno.h>
 #include <stdbool.h>
@@ -18,7 +19,7 @@
 
 #include "ugoe.h"
 
-#define MAX_LINE 4096
+#define MAX_LINE 65536
 #define MAX_ITEMS 256
 #define MAX_STEPS 4096
 
@@ -47,11 +48,16 @@ typedef struct {
     bool effects;
     float steps[MAX_STEPS];
     size_t step_count;
+    /* follow の行の値 (steps と同じ番号)。follow_count が 0 なら update で進める。 */
+    float *follow[MAX_STEPS];
+    size_t follow_len[MAX_STEPS];
+    size_t follow_count;
 } Case;
 
 static void clear_case(Case *c) {
     for (size_t i = 0; i < c->module_count; i++) free(c->modules[i]);
     for (size_t i = 0; i < c->param_count; i++) free(c->param_ids[i]);
+    for (size_t i = 0; i < c->follow_count; i++) free(c->follow[i]);
     memset(c, 0, sizeof *c);
 }
 
@@ -168,7 +174,11 @@ static bool run_case(const Case *c, const char *out_dir) {
         CHECK(ugoe_puppet_set_stage_enabled(puppet, UGOE_STAGE_EYE_BLINK, c->effects));
         CHECK(ugoe_puppet_set_stage_enabled(puppet, UGOE_STAGE_BREATH, c->effects));
         for (size_t i = 0; i < c->step_count; i++) {
-            CHECK(ugoe_puppet_update(puppet, c->steps[i]));
+            if (c->follow_count > 0) {
+                CHECK(ugoe_puppet_follow(puppet, c->follow[i], c->follow_len[i], c->steps[i]));
+            } else {
+                CHECK(ugoe_puppet_update(puppet, c->steps[i]));
+            }
         }
     }
 
@@ -279,8 +289,21 @@ int main(int argc, char **argv) {
         } else if (strcmp(line, "effects") == 0 && arg) {
             c.effects = strcmp(arg, "1") == 0;
         } else if (strcmp(line, "update") == 0 && arg) {
-            if (c.step_count == MAX_STEPS) goto invalid;
+            if (c.step_count == MAX_STEPS || c.follow_count > 0) goto invalid;
             c.steps[c.step_count++] = parse_float(arg);
+        } else if (strcmp(line, "follow") == 0 && arg) {
+            /* follow <dt> <値> <値> ... */
+            if (c.step_count == MAX_STEPS || c.follow_count != c.step_count) goto invalid;
+            size_t n = 0;
+            for (const char *p = arg; *p; p++) n += *p == ' ';
+            float *values = malloc((n > 0 ? n : 1) * sizeof *values);
+            if (!values) goto invalid;
+            char *token = strtok(arg, " ");
+            c.steps[c.step_count++] = parse_float(token);
+            size_t len = 0;
+            while ((token = strtok(NULL, " ")) != NULL && len < n) values[len++] = parse_float(token);
+            c.follow[c.follow_count] = values;
+            c.follow_len[c.follow_count++] = len;
         } else if (strcmp(line, "end") == 0) {
             total++;
             if (!run_case(&c, argv[2])) failed++;

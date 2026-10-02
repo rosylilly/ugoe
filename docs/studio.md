@@ -36,7 +36,8 @@
 | `frame` | `seq`・`revision`・`dt`・`values` (`scene` の ID の並びの順の `f32`) | 刻みごと (30 / 60 / 120 回/秒) |
 | `reset` | `seq` (このフレームを適用する前に物理をリセットする) | 着せ替え・モデルの読み直しなど |
 
-- 受け手は `frame` を `seq` の順に 1 つずつ適用する (`values` を書いてから `update(dt)`)。`revision` が知らない版なら、`scene` を待つ。
+- 受け手は `frame` を `seq` の順に 1 つずつ適用する (`Puppet::follow(values, dt)`。`values` を基準値として書き、物理とポーズだけを進める。
+  前のフレームの出力と同じ値でも基準値になる。[motion.md#受け手として進める](spec/motion.md#受け手として進める)、T0133)。`revision` が知らない版なら、`scene` を待つ。
 - `seq` が飛んだら (切断など)、最新の `scene` から作り直し、物理をリセットして続きから適用する。
 - 出力ウィンドウへは Tauri の `Channel` で、`values` はバイト列 (`Float32Array`) で送る。ブラウザソースへは WebSocket のバイナリのメッセージで送る。
 

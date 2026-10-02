@@ -690,6 +690,35 @@ const char *ugoe_last_error_kind(void);
 // `key` は NULL か、NUL 終端の文字列を指すこと。
 const char *ugoe_last_error_field(const char *key);
 
+// パラメータの値 `values` (`count` 個。パラメータの番号の順) を、すべて **基準値として** 書く (範囲に丸める)。
+//
+// `ugoe_puppet_set_parameter` で書いた値は、前のフレームの出力と同じなら基準値にならないが、これは同じでも基準値にする。
+// `count` がパラメータの数と違うか NaN を含めば `UGOE_ERROR_INVALID_ARGUMENT` を返し、何も変えない。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`values` は `count` 個の `float` を読める領域を指すこと。
+UgoeResult ugoe_puppet_set_base_values(struct UgoePuppet *puppet,
+                                       const float *values,
+                                       size_t count);
+
+// 受け手として 1 フレーム進める: `values` (`count` 個) を基準値として書き、物理とポーズの段だけを `dt` 秒進めて評価する。
+//
+// モーション・トラッキング・表情・目パチ・呼吸・リップシンクは通さない (値を作った指揮役で済んでいるため)。
+// 同じ `values` と `dt` の列を与えれば、物理を含めて同じ形になる。モーションのイベント
+// (`ugoe_puppet_motion_event_count`) は直前の `ugoe_puppet_update` のまま。
+// 呼ぶと、この `UgoePuppet` から借りた頂点位置と描画順のポインタは無効になる。
+//
+// `count` がパラメータの数と違うか NaN を含むか、`dt` が負か有限でなければ `UGOE_ERROR_INVALID_ARGUMENT` を返し、何も変えない。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`values` は `count` 個の `float` を読める領域を指すこと。
+UgoeResult ugoe_puppet_follow(struct UgoePuppet *puppet,
+                              const float *values,
+                              size_t count,
+                              float dt);
+
 // 当たり判定 (`Model::hit_areas`) の数。
 //
 // # Safety

@@ -32,6 +32,8 @@ mod lighting;
 mod dress_up;
 // 描画結果の読み戻しと評価の結果の取り出し (T0418)。
 mod readback;
+// 受け手の口: 届いた値を基準値として書き、物理だけを進める (T0133)。
+mod follow;
 
 fn js_error(e: impl Display) -> JsError {
     JsError::new(&e.to_string())

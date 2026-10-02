@@ -80,6 +80,7 @@ CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just confor
 | `before` | 先に描く値 (ID は `parameters` にもあること)。下の「実行器の約束」の 3 |
 | `time` / `fps` | 時間を進める秒数と 1 秒あたりの `update` の回数 (既定 60)。`ugoe render --time --fps` と同じ |
 | `effects` | 時間を進めるときに目パチと呼吸を使うか (既定 `false`) |
+| `follow` | 受け手として進めるか (既定 `false`。T0133)。`time` と `"image": false` が要る。計画は、物理を切った指揮役の `Puppet` (`effects` なら標準の目パチと呼吸を使う) を `time` の列で進めた各フレームの値を `follow` に持ち、実行器は `update` の代わりに `follow(値, dt)` を呼ぶ (下の「実行器の約束」の 3) |
 | `lighting` | 光源 (画像だけに効く)。形は `WebPuppet::set_lighting_json` と同じ |
 | `image` | 画像も比べるか (既定 `true`) |
 
@@ -98,6 +99,10 @@ CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just confor
    参照は `ModelInstance::update` 1 回で、`ugoe render` の `--time` なしと同じ)。
    `steps` があれば、目パチと呼吸を `effects` のとおりにし、ほかの段は動かして、`steps` の `dt` で順に `update` する
    (`ugoe render --time` と同じ列。実行器では `dt` を計算しない)。
+   計画に `follow` (各フレームのパラメータの値。モデルの定義順で `steps` と同じ数) があれば、`update(steps[i])` の代わりに
+   受け手の口 (C ABI の `ugoe_puppet_follow`・wasm の `follow`) で `follow(follow[i], steps[i])` を呼ぶ (`plan.txt` では
+   `follow <dt> <値> ...` の行。T0133)。このケースの `effects` は常に `false`。受け手の口を持たないバインディング (今は Unity と Godot) は、
+   比べ合わせ (`src/main.rs` の `FOLLOW_BINDINGS`) が `skip` にする。
    `before` があるとき、値を変えてから描画に反映するまでにフレームの遅れが入りうる実行器 (Godot) は、先に `before` の値で
    数フレーム描き、次のフレームで `parameters` にして上の評価をし、その直後のフレームを結果にする。同期して評価・描画する実行器
    (C ABI・wasm・Unity の C# の層) と参照は `before` を使わない (結果は同じでなければならない)。`plan.txt` には書かない。
@@ -156,3 +161,4 @@ T0420 で Godot の評価の結果の読み戻しとモデルの JSON の読み�
 - T0408 (`docs/tasks/T0408-conformance-tests.md`)
 - T0418 (`docs/tasks/T0418-conformance-more-backends.md`: Godot と Unity・wasm の WebGPU)
 - T0420 (`docs/tasks/T0420-unity-and-conformance-extras.md`: Godot の評価の結果の読み戻しとモデルの JSON)
+- T0133 (`docs/tasks/T0133-runtime-explicit-base-values.md`: 受け手として進めるケース (`follow`))

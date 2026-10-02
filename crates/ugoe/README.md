@@ -11,6 +11,7 @@
 ## 仕様
 
 - [docs/spec/motion.md#フレーム内の適用順](../../docs/spec/motion.md#フレーム内の適用順)
+- [docs/spec/motion.md#受け手として進める](../../docs/spec/motion.md#受け手として進める) (`Puppet::set_base_values` / `follow`。`src/follow.rs`)
 - [docs/spec/evaluation.md#9-当たり判定](../../docs/spec/evaluation.md#9-当たり判定) (`Puppet::hit_areas_at` / `hit_test`)
 - [docs/spec/modules.md#puppet-での着せ替え](../../docs/spec/modules.md#puppet-での着せ替え) (`Puppet::attach_module` / `detach_module` / `set_modules` / `set_base_physics`。`src/dress_up.rs`)
 - 着せ替えの失敗と読み込みの警告の種類 (`DressUpError::code`・`fields`、`LoadWarning`。`src/warning.rs`)。wasm と C ABI が同じ値を返すために
@@ -24,3 +25,4 @@
 - T0121 (着せ替え)
 - T0210 (ライティングの補助)
 - T0412 (エラーと警告の code)
+- T0133 (受け手として進める)

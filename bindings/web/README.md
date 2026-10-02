@@ -196,6 +196,22 @@ requestAnimationFrame(function frame(now) {
 `WebPuppet` の API (物理・モーション・表情・トラッキング・ライティング・着せ替えなど) は
 [crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md) を見てください。
 
+### 届いた値で動かす (受け手)
+
+別の場所 (配信のスタジオの指揮役など) で作ったパラメータの値を受け取って描くときは、`update` の代わりに `follow` を使います (T0133)。
+
+```js
+// values: Float32Array (puppet.parameter_ids() の順)。dt: 秒
+for (const { values, dt } of frames) puppet.follow(values, dt); // 届いた順にすべて適用する (飛ばさない)
+puppet.render();                                                 // 描くのは最後だけでよい
+```
+
+- `follow` は値を **基準値として** 書き、物理とポーズだけを進めます。このパペットのモーション・表情・トラッキング・目パチ・呼吸・リップシンクは使いません。
+  同じ値と `dt` の列なら、どのページ・ネイティブの `Puppet::follow` でも物理を含めて同じ形になります (ネイティブとは許容誤差内)。
+- 値をまとめて読む・書くには `parameter_values()` / `set_base_values(values)` (どちらも `Float32Array`) を使います。
+  `set_parameter` と違い、`set_base_values` は前のフレームの出力と同じ値でも基準値にします。
+- 数が `parameter_ids()` と違う・NaN を含むときは、何も変えずに例外を投げます。
+
 ### wasm の場所
 
 `dist/wasm/ugoe_wasm_bg.wasm` を `import.meta.url` からの相対で読みます。Vite などのバンドラはこれを資産として扱います。

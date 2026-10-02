@@ -303,7 +303,7 @@ impl Puppet {
         self.pose.carry_over(&previous);
 
         self.replace_physics(physics);
-        self.apply_part_opacities(0.0);
+        self.apply_part_opacities(0.0, true);
         self.instance.update();
     }
 }

@@ -116,6 +116,21 @@ puppet.hit_test_standard("Head", x, y); // Model.avatar.hit_areas の標準の�
 - `part_evaluated_opacity` は上書きを当てた自身の値に祖先の値を掛けたもの (`ModelInstance::part_opacity`、`docs/spec/evaluation.md` の 2.)。
   そのパーツのメッシュの不透明度に掛かる。必要なら評価してから読む。C ABI では `ugoe_puppet_part_evaluated_opacity` (T0416)。
 
+### 受け手として進める (T0133)
+
+```js
+puppet.parameter_values();              // Float32Array。parameter_ids() の順の現在値
+puppet.set_base_values(values);         // Float32Array をまとめて基準値として書く (値域にクランプ。評価は次の render まで遅らせる)
+puppet.follow(values, dt);              // values を基準値として書き、物理とポーズだけを dt 秒進めて評価する
+```
+
+- `Puppet::set_base_values`・`Puppet::follow` を呼ぶ (`docs/spec/motion.md#受け手として進める`)。スタジオの出力ウィンドウとブラウザソースの
+  受け手が、指揮役から届いた `{dt, values}` を順に適用するために使う (ADR 0028 の 3.)。
+- `follow` はこの `WebPuppet` のモーション・トラッキング・表情・目パチ・呼吸・リップシンクを通さない (再生の状態も時刻も進まない)。
+  物理とポーズは `set_enabled` に従う。`motion_events()` は直前の `update` のまま。
+- `set_parameter` の値は前のフレームの出力とビット列で同じなら基準値にならないが、`set_base_values` と `follow` は同じでも基準値にする。
+- モデルが無い・数が `parameter_ids()` と違う・NaN を含むときは、何も変えずに例外を投げる。C ABI では `ugoe_puppet_set_base_values`・`ugoe_puppet_follow`。
+
 ### エディタ向けの問い合わせ (ギズモ・物理の表示)
 
 ```js

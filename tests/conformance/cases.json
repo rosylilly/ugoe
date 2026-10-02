@@ -168,6 +168,30 @@
       "model": "spec/examples/bundles/physics-pendulum.ugoe",
       "parameters": { "X": 1 },
       "time": 1
+    },
+    {
+      "name": "avatar-follow",
+      "summary": "A follower (T0133): one second of values from a conductor with physics off (head turned, the standard eye blink and breathing), applied with follow so that only physics and the pose run.",
+      "model": "assets/samples/avatar.ugoe",
+      "parameters": { "AngleX": 25, "AngleZ": -15 },
+      "time": 1,
+      "effects": true,
+      "follow": true,
+      "image": false
+    },
+    {
+      "name": "dress-up-follow",
+      "summary": "A follower with modules attached (the values follow the composed parameters).",
+      "model": "assets/samples/dress-up/dress-up.ugoe",
+      "modules": [
+        "assets/samples/dress-up/long-hair.ugoemod",
+        "assets/samples/dress-up/cat-ears.ugoemod"
+      ],
+      "parameters": { "AngleX": -20, "BodyAngleX": 6 },
+      "time": 0.5,
+      "effects": true,
+      "follow": true,
+      "image": false
     }
   ]
 }
