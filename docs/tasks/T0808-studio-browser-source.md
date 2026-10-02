@@ -4,7 +4,7 @@ title: スタジオ: OBS のブラウザソース向けの URL をローカル�
 status: todo
 milestone: M8
 crates: [apps/studio, bindings/web, docs]
-depends_on: [T0802, T0805]
+depends_on: [T0802, T0805, T0133]
 assignee:
 ---
 

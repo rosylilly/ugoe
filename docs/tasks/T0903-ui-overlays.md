@@ -16,7 +16,7 @@ T0902 の続き。アプリごとに作りが違う、重ねて出す部品を�
 
 ## 受け入れ条件
 
-- [ ] Dialog (モーダル。フォーカスを閉じ込める・Esc で閉じる)、知らせの帯 (Notice / Toast)、Tooltip、Menu / Dropdown、ColorPicker、ファイルのドロップ領域、ショートカットの表記
+- [ ] bits-ui を土台にする (ADR 0029)。Dialog (モーダル。フォーカスを閉じ込める・Esc で閉じる)、知らせの帯 (Notice / Toast)、Tooltip、Menu / Dropdown、ColorPicker、ファイルのドロップ領域、ショートカットの表記
 - [ ] 見本の画面に足し、スクリーンショットの検査に入れる
 - [ ] Vitest のテストと README。`just ci` が通る
 
