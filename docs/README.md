@@ -27,6 +27,7 @@
 | [testing.md](testing.md) | テスト方針 |
 | [roadmap.md](roadmap.md) | マイルストーン |
 | [workflow/multi-agent.md](workflow/multi-agent.md) | マルチエージェントでの作業手順 |
+| [workflow/code-review.md](workflow/code-review.md) | コードレビューの手順と観点 (M9) |
 | [tasks/](tasks/README.md) | タスクボード |
 | [adr/](adr/README.md) | 設計判断の記録 |
 
