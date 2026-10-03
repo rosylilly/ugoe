@@ -229,9 +229,10 @@ M6 の完了の後に、利用者の要望で足したもの。エディタで�
 | ツール | headless (T0212)、psd と mesher (T0525)、rigging (T0526)、ai のプロバイダと通信 (T0527)、ai の自動リギング (T0528)、mcp (T0529)、cli (T0530)、editor-core の文書とコマンド (T0667)、editor-core の編集 (T0668) |
 | アプリ | エディタのバックエンド (T0669)、エディタの外枠・状態・AI (T0670)、パネル (T0671)、ビューポートとプレビュー (T0672)、ビューア (T0724)、スタジオのバックエンド (T0814)、フロントエンド (T0815)、仮想カメラ (T0816) |
 | 共有パッケージ | @ugoe/ui (T0912)、@ugoe/i18n と @ugoe/face-tracking (T0913)、@ugoe/player (T0914) |
+| バインディング | web (T0425)、unity (T0426)、godot (T0427) |
 | まとめ | 横断の所見のまとめと後続の整理 (T0008) |
 
-- 範囲に入れていないもの: `bindings/` (web・unity・godot)・`tests/`・`scripts/`・`tools/spec-check`。要望があれば起票する。
+- 範囲に入れていないもの: `tests/`・`scripts/`・`tools/spec-check`。要望があれば起票する。
 - 1.0 に含めるかは未決 (利用者が決める)。
 
 ## M10 UI のクオリティ
