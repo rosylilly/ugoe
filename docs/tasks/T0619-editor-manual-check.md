@@ -25,6 +25,8 @@ just editor
 
 ## 確認項目
 
+> 2026-10-03: 残りの項目は [実機の確認表](../manual-check.md) の「E. エディタ」に吸収した (T0007)。以後の結果はそちらに書く。
+
 - [x] ビューポートにモデルが表示される (WebGPU が使える環境では WebGPU、使えない環境では WebGL2。どちらで描いているかは開発者ツールのコンソールに出る)
 - [ ] File > Import PSD… で `assets/fixtures/layers.psd` を取り込み、ビューポートとツリーに表示される (T0605)
 - [x] File > Import PSD… で `assets/fixtures/character.psd` を取り込み、キャラクターの絵 (髪・顔・両目・頬・口・服) が崩れずに表示され、ツリーが `体` / `頭` / `目` のグループになる (T0620)

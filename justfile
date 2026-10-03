@@ -226,9 +226,9 @@ studio:
 studio-build *args:
     @node scripts/app-build.mjs TARGET=studio {{args}}
 
-# アプリのビルドの入口 (scripts/app-build.mjs) の引数と組み合わせの検査
+# アプリのビルドの入口 (scripts/app-build.mjs) の引数と組み合わせ、手で確かめる一式 (scripts/check-pack.mjs) のパスの検査
 app-build-check:
-    @node --test --test-reporter=dot scripts/app-build.test.mjs
+    @node --test --test-reporter=dot scripts/app-build.test.mjs scripts/check-pack.test.mjs
 
 # CLI 実行: `just cli info model.json`
 cli *args:
@@ -241,3 +241,7 @@ doc:
 # @ugoe/ui の部品の見本の画面をヘッドレスの Chrome で撮って検査する (packages/ui/README.md): `just ui-shots /tmp/shots`
 ui-shots out:
     node packages/ui/scripts/shots.mjs {{out}}
+
+# 実機で手で確かめる一式 (Windows のインストーラ・見本・見本のプロファイル・確認表) を Windows のフォルダーにまとめる (docs/manual-check.md)
+check-pack *args:
+    @node scripts/check-pack.mjs {{args}}
