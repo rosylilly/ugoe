@@ -245,3 +245,8 @@ ui-shots out:
 # 実機で手で確かめる一式 (Windows のインストーラ・見本・見本のプロファイル・確認表) を Windows のフォルダーにまとめる (docs/manual-check.md)
 check-pack *args:
     @node scripts/check-pack.mjs {{args}}
+
+# 本物の Tauri のアプリ (エディタ・ビューア・スタジオ) を起動して操作する e2e テスト (tests/e2e/README.md。Linux だけ)。
+# tauri-driver・WebKitWebDriver・Xvfb が要り、アプリをビルドするので `just ci` には含めない: `just e2e --only studio`
+e2e *args:
+    @node tests/e2e/run.mjs {{args}}

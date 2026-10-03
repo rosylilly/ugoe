@@ -12,12 +12,14 @@
 | フロントエンドの検査 | Biome + svelte-check + Vitest (`apps/*/src/**/*.test.ts`・`packages/*/src/**/*.test.ts`) | `just web-check` |
 | 依存方向の検査 | `scripts/check-layers.mjs` | `just layers` |
 | CI のグループの検査 | `scripts/ci-groups.mjs` (すべてのクレートがどれか 1 つのグループに入っているか) | `just groups` ([CI のジョブ](#ci-のジョブ)) |
+| 実機の e2e テスト | `tests/e2e`。本物の Tauri のアプリ (エディタ・ビューア・スタジオ。WebKitGTK) を起動し、WebDriver で主な流れを操作する | `just e2e` (Linux だけ。tauri-driver・WebKitWebDriver・Xvfb が要る。[下](#実機の-e2e-テスト)) |
 | 配布物の適合テスト | `tests/conformance` (`ugoe-conformance`)。C ABI・wasm (npm パッケージ。WebGL2 と WebGPU)・Unity (C# の層)・Godot の頂点と画像を参照と比べる | `just conformance` (C コンパイラ・Chrome・GPU が要る。dotnet・Godot は無ければ飛ばす。[下](#配布物の適合テスト)) |
 | C ABI の検査 | ヘッダ `crates/ugoe-ffi/include/ugoe.h` が最新か、C の見本 `crates/ugoe-ffi/examples/c/sample.c` のビルドと実行 | `just ffi-check` (cbindgen が要る。[crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#ヘッダの生成)) |
 
 `just ci` はこれらを (GPU テスト・C ABI の検査・配布物の適合テスト以外) すべて実行します。
 C ABI の検査はワークスペースの外のツール (cbindgen) と C コンパイラが要るので `just ci` に入れず、CI の `rust (bindings)` ジョブで別に実行します ([CI のジョブ](#ci-のジョブ))。
 配布物の適合テストも同じ理由で、CI の `conformance` ジョブで別に実行します (比べ合わせの単体テストは `just ci` に入る)。
+実機の e2e テストは 3 つのアプリをビルドし直すので、PR ごとの CI に入れず、別のワークフロー `e2e.yml` で流します ([下](#実機の-e2e-テスト))。
 
 ## CI のジョブ
 
@@ -217,6 +219,36 @@ just conformance --only c   # C ABI だけ
 
 ランタイムの評価・描画・C ABI・wasm の API を変えたら実行します。手順・計画の形式・エンジン向けのバインディングを足す手順は
 [tests/conformance/README.md](../tests/conformance/README.md)。
+
+## 実機の e2e テスト
+
+本物の Tauri のアプリを起動し、WebDriver で操作して主な流れを確かめます (T0006)。M8 のアプリはヘッドレスの Chrome とテストで
+確かめていたため、WebView と Tauri の間の不具合 (T0812 のトラッキングの固まり、T0813 の出力ウィンドウのドラッグ) を実機で触るまで
+見つけられなかったことから作りました。
+
+```sh
+just e2e                  # 3 つのアプリをビルドして流す (結果は target/e2e)
+just e2e --only studio    # スタジオだけ
+just e2e --no-build       # 前にビルドした実行ファイルで流し直す
+just e2e --headed         # Xvfb を使わず、今の画面にウィンドウを出す
+```
+
+- 道具: [tauri-driver](https://crates.io/crates/tauri-driver) **2.1.0** (`cargo install tauri-driver --version 2.1.0 --locked`。
+  CI の `e2e.yml` の `TAURI_DRIVER_VERSION` と揃える)・WebKitWebDriver (Debian・Ubuntu の `webkit2gtk-driver`)・Xvfb・dbus-run-session。
+  WebDriver のクライアントは npm の依存を足さず、使う分だけの小さなもの (`tests/e2e/lib/webdriver.mjs`) を持ち、筋書きは node:test で書く
+  (利用者の決定 2026-10-03)。
+- 利用者の環境を汚さない: アプリの `XDG_CONFIG_HOME`・`XDG_DATA_HOME`・`XDG_CACHE_HOME`・`XDG_STATE_HOME` を `target/e2e/<アプリ>/xdg/` に向け、
+  新しい D-Bus のセッションで動かす。画面は既定で Xvfb (利用者の画面にウィンドウを出さない)。
+- 筋書き: エディタ (見本のプロジェクトを開く・パラメータを動かす・編集して保存・言語の切り替え)、ビューア (見本を開く・トラッキングの記録で
+  パラメータが動く・設定)、スタジオ (見本のプロファイル・シーンの切り替え・出力ウィンドウ・重い検出の下のトラッキング (T0812 の回帰)・
+  出力ウィンドウを隠しても止まらない・操作 API・ブラウザソース・プロファイルの自動保存と開き直し)。カメラは記録の再生で代え、
+  重い検出は刻みの処理を 200ms 塞いで模す。
+- 失敗したとき: `target/e2e/<アプリ>/failures/<手順>/` にウィンドウごとと画面全体のスクリーンショット・ページの console、
+  `target/e2e/<アプリ>/driver.log` にアプリの出力が残る。CI では成果物として残す。
+- CI: `.github/workflows/e2e.yml` が main への push・毎晩・手動で流す (PR ごとの `ci.yml` には入れない)。
+- **Windows と macOS は流さない。** macOS の WKWebView には WebDriver が無く、tauri-driver も対応していない。Windows は tauri-driver が
+  Microsoft Edge Driver に中継して動くはずだが確かめていない。両方とも、リリースの前に手で確かめる一覧 [docs/manual-check.md](manual-check.md) で見る。
+- 手順・偽のカメラの作り・筋書きの足し方は [tests/e2e/README.md](../tests/e2e/README.md)。
 
 ## モーションの途中の絵を確かめる
 

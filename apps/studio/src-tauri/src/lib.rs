@@ -1212,7 +1212,12 @@ fn set_output_visible(app: AppHandle, visible: bool) -> Result<OutputState, Stri
     } else {
         window.hide().map_err(|e| e.to_string())?;
     }
-    read_output_state(&window)
+    // Linux (tao) はウィンドウの操作をイベントループへ送ってから行うので、直後の `is_visible` はまだ前の値を返す
+    // (操作ウィンドウのボタンが切り替わらなかった。T0006 の実機のテストで見つけた)。頼んだ値を返す。
+    Ok(OutputState {
+        visible,
+        ..read_output_state(&window)?
+    })
 }
 
 /// 出力ウィンドウを最前面にする・戻す。
@@ -1222,7 +1227,11 @@ fn set_output_on_top(app: AppHandle, on_top: bool) -> Result<OutputState, String
     window
         .set_always_on_top(on_top)
         .map_err(|e| e.to_string())?;
-    read_output_state(&window)
+    // `set_output_visible` と同じく、直後に読むと前の値のことがあるので、頼んだ値を返す。
+    Ok(OutputState {
+        on_top,
+        ..read_output_state(&window)?
+    })
 }
 
 /// 出力ウィンドウの中身の大きさを物理ピクセルで決める (配信ソフトが取り込む大きさ。1920×1080 など)。
