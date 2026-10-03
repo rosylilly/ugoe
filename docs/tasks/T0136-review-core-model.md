@@ -1,11 +1,11 @@
 ---
 id: T0136
 title: コードレビュー: ugoe-core と ugoe-model
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-core, ugoe-model, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0136
 ---
 
 # T0136: コードレビュー: ugoe-core と ugoe-model
@@ -36,3 +36,5 @@ ugoe-core と ugoe-model のコードを読み直し、誤り・規約の違反�
 - 対象の README.md と、関係する仕様書・ADR
 
 ## メモ
+
+- 後続のタスクの ID の枠: T0140〜T0144 (並行するレビューと番号が衝突しないようにオーケストレーターが割り当てた。足りなければ、残りをメモに書いてオーケストレーターが起票する)

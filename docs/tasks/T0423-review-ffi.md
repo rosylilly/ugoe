@@ -1,11 +1,11 @@
 ---
 id: T0423
 title: コードレビュー: ugoe-ffi
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-ffi, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0423
 ---
 
 # T0423: コードレビュー: ugoe-ffi
@@ -35,3 +35,5 @@ ugoe-ffi のコードを読み直し、誤り・規約の違反・テストの�
 - 対象の README.md と、関係する仕様書・ADR
 
 ## メモ
+
+- 後続のタスクの ID の枠: T0428〜T0432 (並行するレビューと番号が衝突しないようにオーケストレーターが割り当てた。足りなければ、残りをメモに書いてオーケストレーターが起票する)

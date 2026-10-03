@@ -1,11 +1,11 @@
 ---
 id: T0526
 title: コードレビュー: ugoe-rigging
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-rigging, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0526
 ---
 
 # T0526: コードレビュー: ugoe-rigging
@@ -34,3 +34,5 @@ ugoe-rigging のコードを読み直し、誤り・規約の違反・テスト�
 - 対象の README.md と、関係する仕様書・ADR
 
 ## メモ
+
+- 後続のタスクの ID の枠: T0536〜T0540 (並行するレビューと番号が衝突しないようにオーケストレーターが割り当てた。足りなければ、残りをメモに書いてオーケストレーターが起票する)

@@ -1,11 +1,11 @@
 ---
 id: T0671
 title: コードレビュー: エディタのフロントエンド (パネル)
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0671
 ---
 
 # T0671: コードレビュー: エディタのフロントエンド (パネル)
@@ -35,3 +35,5 @@ assignee:
 - 対象の README.md と、関係する仕様書・ADR
 
 ## メモ
+
+- 後続のタスクの ID の枠: T0693〜T0696 (並行するレビューと番号が衝突しないようにオーケストレーターが割り当てた。足りなければ、残りをメモに書いてオーケストレーターが起票する)

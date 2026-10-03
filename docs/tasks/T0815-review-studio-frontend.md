@@ -1,11 +1,11 @@
 ---
 id: T0815
 title: コードレビュー: スタジオのフロントエンド
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0815
 ---
 
 # T0815: コードレビュー: スタジオのフロントエンド
@@ -34,3 +34,5 @@ assignee:
 - 対象の README.md と、関係する仕様書・ADR
 
 ## メモ
+
+- 後続のタスクの ID の枠: T0824〜T0828 (並行するレビューと番号が衝突しないようにオーケストレーターが割り当てた。足りなければ、残りをメモに書いてオーケストレーターが起票する)

@@ -1,11 +1,11 @@
 ---
 id: T0530
 title: コードレビュー: ugoe-cli
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-cli, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0530
 ---
 
 # T0530: コードレビュー: ugoe-cli
@@ -34,3 +34,5 @@ ugoe-cli のコードを読み直し、誤り・規約の違反・テストの�
 - 対象の README.md と、関係する仕様書・ADR
 
 ## メモ
+
+- 後続のタスクの ID の枠: T0556〜T0560 (並行するレビューと番号が衝突しないようにオーケストレーターが割り当てた。足りなければ、残りをメモに書いてオーケストレーターが起票する)

@@ -1,11 +1,11 @@
 ---
 id: T0139
 title: コードレビュー: ugoe (ランタイム SDK)
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0139
 ---
 
 # T0139: コードレビュー: ugoe (ランタイム SDK)
@@ -35,3 +35,5 @@ ugoe (ランタイム SDK) のコードを読み直し、誤り・規約の違�
 - 対象の README.md と、関係する仕様書・ADR
 
 ## メモ
+
+- 後続のタスクの ID の枠: T0155〜T0159 (並行するレビューと番号が衝突しないようにオーケストレーターが割り当てた。足りなければ、残りをメモに書いてオーケストレーターが起票する)

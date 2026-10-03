@@ -1,11 +1,11 @@
 ---
 id: T0427
 title: コードレビュー: bindings/godot (GDExtension)
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/godot, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0427
 ---
 
 # T0427: コードレビュー: bindings/godot (GDExtension)
@@ -35,3 +35,5 @@ bindings/godot (GDExtension) のコードを読み直し、誤り・規約の違
 - 対象の README.md と、関係する仕様書・ADR
 
 ## メモ
+
+- 後続のタスクの ID の枠: T0448〜T0452 (並行するレビューと番号が衝突しないようにオーケストレーターが割り当てた。足りなければ、残りをメモに書いてオーケストレーターが起票する)

@@ -1,11 +1,11 @@
 ---
 id: T0913
 title: コードレビュー: @ugoe/i18n と @ugoe/face-tracking
-status: todo
+status: in-progress
 milestone: M9
 crates: [packages, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0913
 ---
 
 # T0913: コードレビュー: @ugoe/i18n と @ugoe/face-tracking
@@ -34,3 +34,5 @@ assignee:
 - 対象の README.md と、関係する仕様書・ADR
 
 ## メモ
+
+- 後続のタスクの ID の枠: T0925〜T0929 (並行するレビューと番号が衝突しないようにオーケストレーターが割り当てた。足りなければ、残りをメモに書いてオーケストレーターが起票する)

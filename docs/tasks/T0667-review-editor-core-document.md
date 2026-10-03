@@ -1,11 +1,11 @@
 ---
 id: T0667
 title: コードレビュー: ugoe-editor-core (文書・コマンド・プロジェクト)
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0667
 ---
 
 # T0667: コードレビュー: ugoe-editor-core (文書・コマンド・プロジェクト)
@@ -35,3 +35,5 @@ ugoe-editor-core (文書・コマンド・プロジェクト) のコードを読
 - 対象の README.md と、関係する仕様書・ADR
 
 ## メモ
+
+- 後続のタスクの ID の枠: T0677〜T0680 (並行するレビューと番号が衝突しないようにオーケストレーターが割り当てた。足りなければ、残りをメモに書いてオーケストレーターが起票する)

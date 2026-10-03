@@ -1,11 +1,11 @@
 ---
 id: T0669
 title: コードレビュー: エディタのバックエンド (src-tauri)
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0669
 ---
 
 # T0669: コードレビュー: エディタのバックエンド (src-tauri)
@@ -35,3 +35,5 @@ assignee:
 - 対象の README.md と、関係する仕様書・ADR
 
 ## メモ
+
+- 後続のタスクの ID の枠: T0685〜T0688 (並行するレビューと番号が衝突しないようにオーケストレーターが割り当てた。足りなければ、残りをメモに書いてオーケストレーターが起票する)

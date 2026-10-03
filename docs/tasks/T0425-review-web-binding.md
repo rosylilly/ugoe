@@ -1,11 +1,11 @@
 ---
 id: T0425
 title: コードレビュー: bindings/web (@ugoe/runtime と <ugoe-avatar>)
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/web, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0425
 ---
 
 # T0425: コードレビュー: bindings/web (@ugoe/runtime と <ugoe-avatar>)
@@ -35,3 +35,5 @@ bindings/web (@ugoe/runtime と <ugoe-avatar>) のコードを読み直し、誤
 - 対象の README.md と、関係する仕様書・ADR
 
 ## メモ
+
+- 後続のタスクの ID の枠: T0438〜T0442 (並行するレビューと番号が衝突しないようにオーケストレーターが割り当てた。足りなければ、残りをメモに書いてオーケストレーターが起票する)
