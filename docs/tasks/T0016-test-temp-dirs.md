@@ -1,11 +1,11 @@
 ---
 id: T0016
 title: テストの一時ディレクトリの手書きの補助を 1 つにまとめる
-status: todo
+status: in-progress
 milestone: M9
 crates: [Cargo.toml, ugoe-editor-core, ugoe-mcp, ugoe-cli, ugoe-headless, ugoe-psd, apps/editor, apps/viewer, apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0016
 ---
 
 # T0016: テストの一時ディレクトリの手書きの補助を 1 つにまとめる
