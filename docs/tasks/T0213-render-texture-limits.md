@@ -1,11 +1,11 @@
 ---
 id: T0213
 title: 参照レンダラ: テクスチャの大きさと番号の上限をエラーで返す
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-render, ugoe-headless, ugoe-wasm, docs]
 depends_on: [T0211]
-assignee:
+assignee: claude-worker-T0213
 ---
 
 # T0213: 参照レンダラ: テクスチャの大きさと番号の上限をエラーで返す
