@@ -1,11 +1,11 @@
 ---
 id: T0533
 title: ugoe-mesher の作業用の格子を中身の範囲に絞り、大きさに上限を設ける
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-mesher, docs]
 depends_on: [T0525]
-assignee:
+assignee: claude-worker-T0533
 ---
 
 # T0533: ugoe-mesher の作業用の格子を中身の範囲に絞り、大きさに上限を設ける
