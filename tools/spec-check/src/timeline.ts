@@ -10,7 +10,7 @@ import type { Priority } from "./motion.ts";
 import type { MsgValue } from "./msgpack.ts";
 import type { TrackingInput } from "./tracking.ts";
 import type * as M from "./types.ts";
-import { validatePhysics } from "./validate.ts";
+import { validateExpression, validateMotion, validatePhysics } from "./validate.ts";
 
 export type Action =
   | { set: Record<string, number> }
@@ -94,16 +94,21 @@ export function loadTimeline(dir: string): TimelineExample {
     const errors = validatePhysics(model, physics);
     if (errors.length > 0) throw new Error(`invalid physics: ${errors.join("; ")}`);
   }
+  const checked = <T>(f: string, value: T, validate: (v: T) => string[]): T => {
+    const errors = validate(value);
+    if (errors.length > 0) throw new Error(`invalid ${f}: ${errors.join("; ")}`);
+    return value;
+  };
   const motions = new Map(
     Object.entries(timeline.motions ?? {}).map(([k, f]) => [
       k,
-      readDoc(join(dir, f), D.motion, warnings),
+      checked(f, readDoc(join(dir, f), D.motion, warnings), validateMotion),
     ]),
   );
   const expressions = new Map(
     Object.entries(timeline.expressions ?? {}).map(([k, f]) => [
       k,
-      readDoc(join(dir, f), D.expression, warnings),
+      checked(f, readDoc(join(dir, f), D.expression, warnings), validateExpression),
     ]),
   );
   return { timeline, model, physics, motions, expressions, warnings };

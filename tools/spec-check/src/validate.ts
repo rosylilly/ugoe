@@ -1,5 +1,6 @@
-// モデル・物理・モジュールの検証 (spec/model.md#validation)。
-// 規則の番号は spec/model.md#model-validation と #physics-validation の番号。違反をすべて集めて返す。
+// モデル・物理・モーション・表情・モジュールの検証 (spec/model.md#validation)。
+// 規則の番号は spec/model.md#model-validation、spec/model.md#physics-validation、spec/model.md#motion-and-expression-validation の番号。
+// 違反をすべて集めて返す。
 
 import type * as M from "./types.ts";
 
@@ -442,6 +443,80 @@ export function validatePhysics(
       }
     }
   }
+  return errors;
+}
+
+/** セグメントの点 (`p`・`to`、`bezier` の `c1`・`c2`) を名前つきで返す。 */
+function segmentPoints(s: M.Segment): [string, M.Point][] {
+  switch (s.type) {
+    case "start":
+      return [["p", s.p]];
+    case "bezier":
+      return [
+        ["c1", s.c1],
+        ["c2", s.c2],
+        ["to", s.to],
+      ];
+    default:
+      return [["to", s.to]];
+  }
+}
+
+/**
+ * モーションを単独で検証する (spec/model.md#motion-and-expression-validation の 1)。
+ * 再生で無視する曲線 (知らない対象・知らない種類のセグメント) も、読めた数は検査する。
+ */
+export function validateMotion(motion: M.Motion): string[] {
+  const errors: string[] = [];
+  const err = (msg: string) => errors.push(`motion 1: ${msg}`);
+  if (!finite(motion.duration) || motion.duration < 0) {
+    err(`duration ${motion.duration} is not finite and at least 0`);
+  }
+  if (!finite(motion.fade_in)) err(`fade_in ${motion.fade_in} is not finite`);
+  if (!finite(motion.fade_out)) err(`fade_out ${motion.fade_out} is not finite`);
+  const curves: {
+    fade_in: number | null;
+    fade_out: number | null;
+    segments: (M.Segment | null)[];
+  }[] = [...motion.curves, ...(motion.ignored_curves ?? [])];
+  curves.forEach((c, i) => {
+    const where =
+      i < motion.curves.length ? `curve ${i}` : `ignored curve ${i - motion.curves.length}`;
+    if (c.fade_in !== null && !finite(c.fade_in))
+      err(`${where}: fade_in ${c.fade_in} is not finite`);
+    if (c.fade_out !== null && !finite(c.fade_out)) {
+      err(`${where}: fade_out ${c.fade_out} is not finite`);
+    }
+    c.segments.forEach((s, k) => {
+      if (s === null) return;
+      for (const [name, pt] of segmentPoints(s)) {
+        if (!finite(pt.t) || !finite(pt.v)) {
+          err(`${where}: segment ${k}: ${name} (${pt.t}, ${pt.v}) is not finite`);
+        }
+      }
+    });
+  });
+  motion.events.forEach((e, i) => {
+    if (!finite(e.t)) err(`event ${i}: t ${e.t} is not finite`);
+  });
+  return errors;
+}
+
+/**
+ * 表情を単独で検証する (spec/model.md#motion-and-expression-validation の 2)。
+ * 知らない演算の項目の値も検査する。
+ */
+export function validateExpression(expression: M.Expression): string[] {
+  const errors: string[] = [];
+  const err = (msg: string) => errors.push(`expression 2: ${msg}`);
+  if (!finite(expression.fade_in)) err(`fade_in ${expression.fade_in} is not finite`);
+  if (!finite(expression.fade_out)) err(`fade_out ${expression.fade_out} is not finite`);
+  expression.parameters.forEach((p, i) => {
+    if (!finite(p.value)) err(`parameter ${i} (${p.parameter}): value ${p.value} is not finite`);
+  });
+  (expression.ignored_values ?? []).forEach((v, i) => {
+    if (!finite(v)) err(`adjustment ${i} with an unknown op: value ${v} is not finite`);
+  });
   return errors;
 }
 

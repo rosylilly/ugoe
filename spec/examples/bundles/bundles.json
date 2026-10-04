@@ -516,6 +516,108 @@
           ]
         }
       ]
+    },
+    {
+      "file": "invalid-motion.ugoe",
+      "summary": "The model of single-quad with a motion whose last point has the value 1e39 in its JSON document, which converts to infinity (the MOTN chunk stores it as a float 32 infinity). A motion with a non-finite number breaks the motion validation rules, so a reader refuses the file.",
+      "style": "minimal",
+      "chunks": [
+        {
+          "tag": "MODL"
+        },
+        {
+          "tag": "MOTN"
+        },
+        {
+          "tag": "TEXR"
+        }
+      ],
+      "result": "error",
+      "error": "validation",
+      "model": "../single-quad/model.json",
+      "motions": [
+        "invalid-motion.json"
+      ],
+      "textures": [
+        {
+          "width": 1,
+          "height": 1,
+          "rgba": [
+            255,
+            255,
+            255,
+            255
+          ]
+        }
+      ]
+    },
+    {
+      "file": "invalid-motion-duration.ugoe",
+      "summary": "The model of single-quad with a motion whose duration is negative. A motion's duration must be at least 0, so a reader refuses the file.",
+      "style": "minimal",
+      "chunks": [
+        {
+          "tag": "MODL"
+        },
+        {
+          "tag": "MOTN"
+        },
+        {
+          "tag": "TEXR"
+        }
+      ],
+      "result": "error",
+      "error": "validation",
+      "model": "../single-quad/model.json",
+      "motions": [
+        "invalid-motion-duration.json"
+      ],
+      "textures": [
+        {
+          "width": 1,
+          "height": 1,
+          "rgba": [
+            255,
+            255,
+            255,
+            255
+          ]
+        }
+      ]
+    },
+    {
+      "file": "invalid-expression.ugoe",
+      "summary": "The model of single-quad with an expression whose adjustment has the value 1e39 in its JSON document, which converts to infinity (the EXPR chunk stores it as a float 32 infinity). An expression with a non-finite number breaks the expression validation rules, so a reader refuses the file.",
+      "style": "minimal",
+      "chunks": [
+        {
+          "tag": "MODL"
+        },
+        {
+          "tag": "EXPR"
+        },
+        {
+          "tag": "TEXR"
+        }
+      ],
+      "result": "error",
+      "error": "validation",
+      "model": "../single-quad/model.json",
+      "expressions": [
+        "invalid-expression.json"
+      ],
+      "textures": [
+        {
+          "width": 1,
+          "height": 1,
+          "rgba": [
+            255,
+            255,
+            255,
+            255
+          ]
+        }
+      ]
     }
   ]
 }

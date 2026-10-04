@@ -1,0 +1,12 @@
+{
+  "name": "non_finite_value",
+  "fade_in": 0.5,
+  "fade_out": 0.5,
+  "parameters": [
+    {
+      "parameter": "X",
+      "value": 1e39,
+      "op": "add"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "name": "non_finite_point",
+  "duration": 1.0,
+  "curves": [
+    {
+      "target": {
+        "kind": "parameter",
+        "id": "X"
+      },
+      "segments": [
+        {
+          "type": "start",
+          "p": {
+            "t": 0.0,
+            "v": 0.0
+          }
+        },
+        {
+          "type": "linear",
+          "to": {
+            "t": 1.0,
+            "v": 1e39
+          }
+        }
+      ]
+    }
+  ]
+}

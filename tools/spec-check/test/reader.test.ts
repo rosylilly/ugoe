@@ -12,7 +12,9 @@ import {
   readChunkTable,
   readModelJson,
 } from "../src/bundle.ts";
-import { decode, MAX_DEPTH, peekKey } from "../src/msgpack.ts";
+import * as D from "../src/decode.ts";
+import { decode, encode, MAX_DEPTH, type MsgValue, peekKey } from "../src/msgpack.ts";
+import { validateExpression, validateMotion } from "../src/validate.ts";
 import { COMPAT, SPEC_EXAMPLES } from "./paths.ts";
 
 interface RawChunk {
@@ -276,3 +278,125 @@ test("validation reports every violation", () => {
     (e) => e instanceof ReadError && e.kind === "validation" && e.details.length === 4,
   );
 });
+
+// ---- モーションと表情の検証 (spec/model.md#motion-and-expression-validation) ----
+
+const motionDoc = (): Record<string, unknown> => ({
+  name: "m",
+  duration: 1.0,
+  fade_in: -0.5, // 負のフェードは違反ではない
+  curves: [
+    {
+      target: { kind: "parameter", id: "X" },
+      segments: [
+        { type: "start", p: { t: 0.0, v: 0.0 } },
+        { type: "bezier", c1: { t: -1.0, v: 2.0 }, c2: { t: 3.0, v: 2.0 }, to: { t: 0.5, v: 1.0 } },
+      ],
+      fade_in: 0.25,
+    },
+    // 知らない対象の曲線 (再生では無視する)
+    {
+      target: { kind: "future", id: 7 },
+      segments: [{ type: "start", p: { t: 0.0, v: 0.0 } }],
+    },
+  ],
+  events: [{ t: 5.0, value: "after the end" }],
+});
+const expressionDoc = (): Record<string, unknown> => ({
+  name: "e",
+  fade_in: 0.5,
+  parameters: [
+    { parameter: "X", value: 1.0, op: "add" },
+    { parameter: "Y", value: 2.0, op: "future" },
+  ],
+});
+const readMotion = (doc: unknown) =>
+  D.motion(new D.Ctx([]), D.parseJson(JSON.stringify(doc).replaceAll('"INF"', "1e39")));
+const readExpression = (doc: unknown) =>
+  D.expression(new D.Ctx([]), D.parseJson(JSON.stringify(doc).replaceAll('"INF"', "1e39")));
+
+test("f32: numbers too large for f32 convert to infinity (JSON and MessagePack)", () => {
+  const c = new D.Ctx([]);
+  assert.equal(D.f32(c, D.parseJson("1e39")), Number.POSITIVE_INFINITY);
+  assert.equal(D.f32(c, D.parseJson("-1e39")), Number.NEGATIVE_INFINITY);
+  assert.equal(D.f32(c, D.parseJson("1e400")), Number.POSITIVE_INFINITY);
+  // 有限の f32 の最大値はそのまま
+  assert.equal(D.f32(c, D.parseJson("3.4028234663852886e38")), 3.4028234663852886e38);
+  // MessagePack の float 64 の 1e39 と、float 32 の無限大
+  assert.equal(D.f32(c, decode(encode(1e39))), Number.POSITIVE_INFINITY);
+  assert.equal(D.f32(c, decode(encode(Number.NEGATIVE_INFINITY))), Number.NEGATIVE_INFINITY);
+  assert.ok(Number.isNaN(D.f32(c, decode(encode(Number.NaN)))));
+});
+
+test("motion validation: a valid motion (negative fades, points and events outside the duration)", () => {
+  const m = readMotion(motionDoc());
+  assert.equal(m.curves.length, 1);
+  assert.equal(m.ignored_curves?.length, 1);
+  assert.deepEqual(validateMotion(m), []);
+});
+
+test("motion validation: every rule", () => {
+  const cases: [string, (d: Record<string, unknown>) => void][] = [
+    ["negative duration", (d) => (d.duration = -1.0)],
+    ["infinite duration", (d) => (d.duration = "INF")],
+    ["fade_in", (d) => (d.fade_in = "INF")],
+    ["fade_out", (d) => (d.fade_out = "INF")],
+    ["curve fade_in", (d) => (curve(d, 0).fade_in = "INF")],
+    ["curve fade_out", (d) => (curve(d, 0).fade_out = "INF")],
+    ["start p.t", (d) => (seg(d, 0, 0).p = { t: "INF", v: 0.0 })],
+    ["bezier c1.v", (d) => (seg(d, 0, 1).c1 = { t: 0.0, v: "INF" })],
+    ["bezier c2.t", (d) => (seg(d, 0, 1).c2 = { t: "INF", v: 0.0 })],
+    ["bezier to.v", (d) => (seg(d, 0, 1).to = { t: 0.5, v: "INF" })],
+    ["event t", (d) => (d.events = [{ t: "INF", value: "x" }])],
+    ["curve with an unknown target", (d) => (seg(d, 1, 0).p = { t: 0.0, v: "INF" })],
+  ];
+  for (const [name, edit] of cases) {
+    const d = motionDoc();
+    edit(d);
+    assert.equal(validateMotion(readMotion(d)).length, 1, name);
+  }
+});
+
+test("expression validation: every rule, including adjustments with an unknown op", () => {
+  assert.deepEqual(validateExpression(readExpression(expressionDoc())), []);
+  const cases: [string, (d: Record<string, unknown>) => void][] = [
+    ["fade_in", (d) => (d.fade_in = "INF")],
+    ["fade_out", (d) => (d.fade_out = "INF")],
+    ["value", (d) => (adjustment(d, 0).value = "INF")],
+    ["value with an unknown op", (d) => (adjustment(d, 1).value = "INF")],
+  ];
+  for (const [name, edit] of cases) {
+    const d = expressionDoc();
+    edit(d);
+    assert.equal(validateExpression(readExpression(d)).length, 1, name);
+  }
+});
+
+test("bundle: an invalid motion or expression is refused at validation", () => {
+  const base = [
+    { tag: "MODL", payload: parts.modl },
+    { tag: "TEXR", payload: parts.texr },
+  ];
+  const withChunk = (tag: string, value: MsgValue) =>
+    container([base[0], { tag, payload: encode(value) }, base[1]]);
+  const motion = D.parseJson(JSON.stringify(motionDoc())) as Record<string, MsgValue>;
+  const expression = D.parseJson(JSON.stringify(expressionDoc())) as Record<string, MsgValue>;
+  // 正しいものは読める
+  const ok = readBundle(withChunk("MOTN", motion));
+  assert.equal(ok.motions.length, 1);
+  assert.equal(readBundle(withChunk("EXPR", expression)).expressions.length, 1);
+  // MessagePack の float 64 の 1e39 は無限大になる
+  rejects(withChunk("MOTN", { ...motion, fade_out: 1e39 }), "validation");
+  rejects(withChunk("MOTN", { ...motion, duration: -0.5 }), "validation");
+  rejects(withChunk("EXPR", { ...expression, fade_in: Number.NaN }), "validation");
+});
+
+function curve(d: Record<string, unknown>, i: number): Record<string, unknown> {
+  return (d.curves as Record<string, unknown>[])[i];
+}
+function seg(d: Record<string, unknown>, i: number, k: number): Record<string, unknown> {
+  return (curve(d, i).segments as Record<string, unknown>[])[k];
+}
+function adjustment(d: Record<string, unknown>, i: number): Record<string, unknown> {
+  return (d.parameters as Record<string, unknown>[])[i];
+}

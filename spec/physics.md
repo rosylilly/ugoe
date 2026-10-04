@@ -103,8 +103,11 @@ An **update** by `dt` seconds with the current parameter values does the followi
 
 3. If dt is finite and positive: accumulator += dt.
    whole = floor(accumulator / step)
-   accumulator −= whole × step
-   n = min(whole, 8)                                                     (the rest of the time is dropped)
+   if whole ≤ 8:
+       accumulator −= whole × step; n = whole
+   else:                                                                 (the rest of the time is dropped)
+       accumulator = accumulator mod step; n = 8
+   mod is the remainder of the exact division (like C's fmod), in [0, step).
 
 4. Let start_r = external_r for every rig (target_r if external_r is not finite). For k = 1 … n:
        for each rig r in array order:
@@ -129,6 +132,10 @@ An **update** by `dt` seconds with the current parameter values does the followi
 - In the first update (and the first after a reset), the particles are placed in the rest pose for
   the current input, so a model loaded with its head tilted does not start swinging.
 - The limit of 8 steps per update avoids long stalls after a pause; the excess time is dropped.
+  Beyond the limit, the time left is the remainder of the division rather than
+  `accumulator − whole × step`: for a huge `dt` (up to the largest finite `f32`) the subtraction
+  loses precision and can leave a negative or infinite accumulator, after which physics would not
+  advance again. The remainder stays within one step.
 - The outputs are written in every update, even when no step was taken.
 
 ## Inputs

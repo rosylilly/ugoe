@@ -8,7 +8,7 @@
 - `.ugoe` と `.ugoemod` のコンテナの読み込み ([spec/bundle.md](../../spec/bundle.md#reading) の手順 1〜8): ヘッダとチャンクの表の検査、機能の宣言、
   `schema_version` の先読み、zstd の展開、MessagePack の復号、画像の数と署名、知らないチャンク・フィールド・値のフォールバックと警告
 - JSON の文書 (`model.json`) の読み込み
-- モデル・物理・モジュールの検証 ([spec/model.md](../../spec/model.md#validation))
+- モデル・物理・モーション・表情・モジュールの検証 ([spec/model.md](../../spec/model.md#validation))
 - 評価 ([spec/evaluation.md](../../spec/evaluation.md)): 線形と滑らかな補間、ブレンドシェイプ、ワープ・回転デフォーマ (ワープの下の回転、外挿を含む)、パーツとデフォーマの不透明度、グルー、描画順
 - 着せ替えのモジュールの取り付け ([spec/model.md](../../spec/model.md#composition))
 - 物理 ([spec/physics.md](../../spec/physics.md)): 振り子の鎖、固定の刻みと出力の補間、リグの順と中継、動的な物理 (根のアンカー・重力の座標系・
@@ -101,6 +101,7 @@ pnpm --filter ugoe-spec-check check
 | `test/writer.test.ts` | MessagePack の符号化 (整数と長さの境目、float 32 と 64)、整数と `f32` のフィールドの型、2 通りの書き方、知らない値と基準の機能の宣言の拒否、コンテナの配置、すべての例と互換性の資料のこの実装での往復。 |
 | `test/render.test.ts` | `spec/examples/` の描画の例 (`render.json`) をこの実装のラスタライザで描き、[許容誤差](../../spec/examples/README.md#rendering-tolerances) で調べる画素と比べる。調べる画素が三角形の辺から 1 画素以上離れていること (例の作り方の規則)、隣り合う三角形が共有する辺の画素を 1 度だけ塗ること、乗算済みでの補間。 |
 | `test/reader.test.ts` | コンテナの誤り (ヘッダ・表・重なり・許されないチャンク・画像の数)、機能の宣言、MessagePack、JSON の整数と `null`、知らない値、検証。 |
+| `test/physics.test.ts` | 物理の時間の進め方のうち時間の例で確かめにくいもの: 1 回の更新の刻みの上限を超える巨大な `dt` の後、残りの時間が割り算の余りになり、物理が進み続ける。 |
 
 ### CI
 

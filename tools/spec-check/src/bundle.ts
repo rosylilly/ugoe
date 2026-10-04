@@ -5,7 +5,13 @@ import { zstdDecompressSync } from "node:zlib";
 import * as D from "./decode.ts";
 import { decode, type MsgValue, peekKey } from "./msgpack.ts";
 import type * as M from "./types.ts";
-import { validateModel, validateModule, validatePhysics } from "./validate.ts";
+import {
+  validateExpression,
+  validateModel,
+  validateModule,
+  validateMotion,
+  validatePhysics,
+} from "./validate.ts";
 
 /** この実装が読めるコンテナの版。 */
 export const SUPPORTED_CONTAINER_VERSION = 0;
@@ -301,9 +307,16 @@ export function readBundle(bytes: Uint8Array): Bundle {
     typed(() => D.expression(new D.Ctx(warnings, `EXPR[${i}]`), decodeMsgpack(b, "EXPR"))),
   );
   checkImageCounts(model.textures, walked);
+  // 7. 検証 (spec/bundle.md#reading): モデル・物理と、モーション・表情 (単独で)
   const errors = validateModel(model);
   if (physics) errors.push(...validatePhysics(model, physics));
-  if (errors.length > 0) throw new ReadError("validation", "invalid model", errors);
+  motions.forEach((m, i) => {
+    errors.push(...validateMotion(m).map((e) => `MOTN[${i}]: ${e}`));
+  });
+  expressions.forEach((x, i) => {
+    errors.push(...validateExpression(x).map((e) => `EXPR[${i}]: ${e}`));
+  });
+  if (errors.length > 0) throw new ReadError("validation", "invalid bundle", errors);
   return {
     model,
     physics,
@@ -346,7 +359,10 @@ export function readModelJson(text: string): { model: M.Model; warnings: string[
   return { model, warnings };
 }
 
-/** JSON の文書 (物理・モーション・表情) を読む。検証はしない (物理は本体と合わせて検証する)。 */
+/**
+ * JSON の文書 (物理・モーション・表情) を読む。検証はしない (物理は本体と合わせて検証する。
+ * モーションと表情は validateMotion・validateExpression で検証する)。
+ */
 export function readJsonDocument<T>(
   text: string,
   conv: (c: D.Ctx, v: MsgValue) => T,

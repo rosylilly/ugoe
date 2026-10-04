@@ -394,6 +394,17 @@ export interface MotionEvent {
   value: string;
 }
 
+/**
+ * 再生では無視する曲線 (知らない対象か、知らない種類のセグメントを持つ)。検証
+ * (spec/model.md#motion-and-expression-validation) のためだけに、読めた数を残す。
+ */
+export interface IgnoredCurve {
+  fade_in: number | null;
+  fade_out: number | null;
+  /** 知らない種類のセグメントは `null`。 */
+  segments: (Segment | null)[];
+}
+
 export interface Motion {
   name: string;
   duration: number;
@@ -403,6 +414,8 @@ export interface Motion {
   /** 知らない対象やセグメントを持つ曲線は除いてある。 */
   curves: Curve[];
   events: MotionEvent[];
+  /** 除いた曲線 (検証のためだけに使う)。無ければフィールドごと無い。 */
+  ignored_curves?: IgnoredCurve[];
 }
 
 export interface ExpressionParameter {
@@ -417,6 +430,8 @@ export interface Expression {
   fade_out: number;
   /** 知らない演算の項目は除いてある。 */
   parameters: ExpressionParameter[];
+  /** 除いた知らない演算の項目の値 (検証のためだけに使う)。無ければフィールドごと無い。 */
+  ignored_values?: number[];
 }
 
 // ---- モジュール ----

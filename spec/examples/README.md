@@ -324,9 +324,17 @@ container of [bundle.md](../bundle.md):
 | `optional-feature.ugoe` | An unknown optional feature: the file is read and the feature is reported. |
 | `required-feature.ugoe` | An unknown required feature: the file is refused. |
 | `short-hair.ugoemod` | A module file with a compressed `MODU` chunk, a texture and metadata. |
+| `invalid-motion.ugoe` | A motion with a point whose value is not finite (written as `1e39` in its JSON document, which converts to infinity): the file is refused. |
+| `invalid-motion-duration.ugoe` | A motion with a negative `duration`: the file is refused. |
+| `invalid-expression.ugoe` | An expression with an adjustment whose `value` is not finite (written as `1e39`): the file is refused. |
 
 The directory also holds the JSON documents of the files that are not taken from the other examples
-(`lit-quads.model.json`, `short-hair.module.json`), and the list of the files, `bundles.json`:
+(`lit-quads.model.json`, `short-hair.module.json`, and `invalid-motion.json`,
+`invalid-motion-duration.json` and `invalid-expression.json`), and the list of the files,
+`bundles.json`. The documents of the refused files each break one
+[validation rule](../model.md#motion-and-expression-validation) on purpose; they are not named
+`*.motion.json` or `*.expression.json`, because they do not satisfy the rules (nor, for `1e39`, the
+range of `f32` in the [JSON Schema](../schema/)) that the other documents satisfy:
 
 ```json
 {
@@ -373,7 +381,7 @@ Values of `error`, named after the steps of [Reading](../bundle.md#reading):
 | `counts` | 6. Counts |
 | `validation` | 7. Validation |
 
-The examples of this version use only `chunk_table` and `feature_declarations`. A reader that checks in another order
+The examples of this version use only `chunk_table`, `feature_declarations` and `validation`. A reader that checks in another order
 than the one recommended may report a different step for a file that breaks several rules; the
 examples break only one.
 

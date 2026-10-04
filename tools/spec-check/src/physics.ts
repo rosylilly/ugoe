@@ -372,8 +372,16 @@ export class Physics {
     // 3. 蓄積
     if (Number.isFinite(dt) && dt > 0) this.accumulator += dt;
     const whole = Math.floor(this.accumulator / step);
-    this.accumulator -= whole * step;
-    const n = Math.min(whole, 8);
+    let n: number;
+    if (whole <= 8) {
+      this.accumulator -= whole * step;
+      n = whole;
+    } else {
+      // 残りの時間は捨てる。引き算ではなく割り算の正確な余り ([0, step)) にする。
+      // JavaScript の `%` は C の fmod と同じく正確な余りを返す。
+      this.accumulator %= step;
+      n = 8;
+    }
 
     // 4. 固定の刻み
     const starts = this.rigs.map((st) => st.external);

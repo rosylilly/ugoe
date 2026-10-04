@@ -816,8 +816,10 @@ function segment(c: Ctx, v: MsgValue | undefined): M.Segment | null {
   }
 }
 
-/** 曲線。対象かセグメントが知らない値なら `null` (曲線を無視する)。 */
-function curve(c: Ctx, v: MsgValue | undefined): M.Curve | null {
+/**
+ * 曲線。対象かセグメントが知らない値なら `ignored` (曲線を無視する。読めた数は検証のために残す)。
+ */
+function curve(c: Ctx, v: MsgValue | undefined): { curve: M.Curve } | { ignored: M.IgnoredCurve } {
   const o = object(c, v);
   const t = req(c, o, "target", object);
   const tc = c.at("target");
@@ -826,16 +828,19 @@ function curve(c: Ctx, v: MsgValue | undefined): M.Curve | null {
   const segments = req(c, o, "segments", array(segment));
   const fade_in = nul(c, o, "fade_in", f32);
   const fade_out = nul(c, o, "fade_out", f32);
+  const ignored = { ignored: { fade_in, fade_out, segments } };
   if (kind !== "parameter" && kind !== "part_opacity" && kind !== "effect_group") {
     tc.at("kind").warnUnknown("CurveTarget", kind);
-    return null;
+    return ignored;
   }
-  if (segments.some((s) => s === null)) return null;
+  if (segments.some((s) => s === null)) return ignored;
   return {
-    target: { kind, id: str(tc.at("id"), id) },
-    segments: segments as M.Segment[],
-    fade_in,
-    fade_out,
+    curve: {
+      target: { kind, id: str(tc.at("id"), id) },
+      segments: segments as M.Segment[],
+      fade_in,
+      fade_out,
+    },
   };
 }
 
@@ -851,14 +856,17 @@ function motionEvent(c: Ctx, v: MsgValue | undefined): M.MotionEvent {
 
 export function motion(c: Ctx, v: MsgValue | undefined): M.Motion {
   const o = object(c, v);
+  const curves = req(c, o, "curves", array(curve));
+  const ignored = curves.flatMap((x) => ("ignored" in x ? [x.ignored] : []));
   return {
     name: req(c, o, "name", str),
     duration: req(c, o, "duration", f32),
     looping: opt(c, o, "looping", bool, false),
     fade_in: opt(c, o, "fade_in", f32, 0),
     fade_out: opt(c, o, "fade_out", f32, 0),
-    curves: req(c, o, "curves", array(curve)).filter((x): x is M.Curve => x !== null),
+    curves: curves.flatMap((x) => ("curve" in x ? [x.curve] : [])),
     events: opt(c, o, "events", array(motionEvent), []),
+    ...(ignored.length > 0 ? { ignored_curves: ignored } : {}),
   };
 }
 
@@ -879,11 +887,13 @@ export function expression(c: Ctx, v: MsgValue | undefined): M.Expression {
       };
     }),
   );
+  const ignored = items.filter((x) => x.op === "unknown").map((x) => x.value);
   return {
     name: req(c, o, "name", str),
     fade_in: opt(c, o, "fade_in", f32, 0),
     fade_out: opt(c, o, "fade_out", f32, 0),
     parameters: items.filter((x): x is M.ExpressionParameter => x.op !== "unknown"),
+    ...(ignored.length > 0 ? { ignored_values: ignored } : {}),
   };
 }
 
