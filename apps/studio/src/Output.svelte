@@ -171,6 +171,8 @@ async function applyScene(scene: StudioScene): Promise<void> {
       fail(scene, { asset: "module", index: unreadable, code: "unreadable" });
   }
   await showLook(scene);
+  // 背景の画像を取っている間に次のシーンが届いたら、このシーンには移らない (次のシーンが移る)。
+  if (scene.revision !== latest) return;
   player.continueScene(scene.revision);
 }
 

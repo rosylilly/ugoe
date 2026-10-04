@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-// 受け手 (Output.svelte) が今のシーンのファイルを読めなかったことを返すか (T0825、docs/studio.md#受け手が読めなかったとき)。
+// 受け手 (Output.svelte) が今のシーンのファイルを読めなかったことを返すか (T0825、docs/studio.md#受け手が読めなかったとき) と、
+// シーンの通知を順に処理して最後のものだけを当てるか (T0826、docs/studio.md#シーンの切り替えと受け手)。
 // Player は偽物に置き換え、読めるかどうかはバイト列の先頭 (0 なら読めない) で決める。
 import type { ModelFile } from "@ugoe/player";
 import { flushSync, mount, unmount } from "svelte";
@@ -19,6 +20,8 @@ vi.mock("@ugoe/player", async (importOriginal) => {
     canvasSize = null;
     loaded: string[] = [];
     followed: number[] = [];
+    continued: number[] = [];
+    lightings = 0;
     constructor() {
       players.push(this);
     }
@@ -47,8 +50,12 @@ vi.mock("@ugoe/player", async (importOriginal) => {
     followScene(revision: number) {
       this.followed.push(revision);
     }
-    continueScene() {}
-    updateLighting() {}
+    continueScene(revision: number) {
+      this.continued.push(revision);
+    }
+    updateLighting() {
+      this.lightings++;
+    }
     resize() {}
     fit() {}
     zoomBy() {}
@@ -64,6 +71,8 @@ interface Fake {
   status: string;
   loaded: string[];
   followed: number[];
+  continued: number[];
+  lightings: number;
   modules: { name: string }[];
 }
 
@@ -117,21 +126,32 @@ function receiver(files: {
   const target = document.createElement("div");
   document.body.append(target);
   const instance = mount(Output, { target, props: { feed: async () => host } });
-  cleanups.push(() => {
+  let mounted = true;
+  const close = () => {
+    if (!mounted) return;
+    mounted = false;
     unmount(instance);
     target.remove();
-  });
+  };
+  cleanups.push(close);
   flushSync();
   const player = players.at(-1) as Fake;
   return {
     failures,
     player,
+    /** 出力の要素 (背景を描く)。 */
+    output: () => target.querySelector<HTMLDivElement>(".output"),
     /** 購読が始まるのを待ってからシーンを送る。 */
     async send(message: StudioScene) {
       await vi.waitFor(() => expect(send).not.toBeNull());
       await settle();
       send?.(message);
     },
+    /** 前のシーンの処理を待たずに、すぐ送る (購読が始まってから使う)。 */
+    post(message: StudioScene) {
+      send?.(message);
+    },
+    close,
   };
 }
 
@@ -230,5 +250,116 @@ describe("Output load failures", () => {
       ]),
     );
     expect(model).not.toHaveBeenCalled();
+  });
+});
+
+/** 解決を外から決める Promise。 */
+function deferred<T>() {
+  let resolve: (value: T) => void = () => {};
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+describe("Output scene changes", () => {
+  it("applies only the last of scenes that arrive in a row", async () => {
+    const first = deferred<Uint8Array>();
+    const model = vi.fn((revision: number) =>
+      revision === 1 ? first.promise : Promise.resolve(GOOD),
+    );
+    const r = receiver({ model });
+    await r.send(
+      scene(1, { modelName: "one.ugoe", background: { kind: "color", color: "#ff0000" } }),
+    );
+    await settle();
+    // 1 つ目のモデルを取っている間に、2 つ目と 3 つ目が続けて届く。
+    r.post(scene(2, { modelName: "two.ugoe", background: { kind: "chroma", color: "#00ff00" } }));
+    r.post(scene(3, { modelName: "three.ugoe", background: { kind: "transparent" } }));
+    first.resolve(GOOD);
+    await vi.waitFor(() => expect(r.player.followed).toEqual([3]));
+    await settle();
+    // 途中のモデルは取りも読みもしない。古いシーンの見せ方も当てない。
+    expect(model.mock.calls.map(([revision]) => revision)).toEqual([1, 3]);
+    expect(r.player.loaded).toEqual(["three.ugoe"]);
+    expect(r.player.lightings).toBe(1);
+    expect(r.output()?.dataset.background).toBe("transparent");
+  });
+
+  it("drops the look of a scene replaced while its background loads", async () => {
+    const image = deferred<Uint8Array>();
+    const r = receiver({ model: async () => GOOD, background: () => image.promise });
+    await r.send(scene(1));
+    await vi.waitFor(() => expect(r.player.lightings).toBe(1));
+    r.post(
+      scene(2, {
+        modelRevision: 1,
+        modulesRevision: 1,
+        background: { kind: "image", path: "/bg.png" },
+      }),
+    );
+    await settle();
+    r.post(
+      scene(3, {
+        modelRevision: 1,
+        modulesRevision: 1,
+        background: { kind: "color", color: "#0000ff" },
+      }),
+    );
+    image.resolve(GOOD);
+    await vi.waitFor(() => expect(r.player.continued).toEqual([3]));
+    expect(r.player.lightings).toBe(2);
+    expect(r.output()?.dataset.background).toBe("color");
+  });
+
+  it("keeps the model for the same model and attaches modules again when they change", async () => {
+    const model = vi.fn(async () => GOOD);
+    const module = vi.fn(async () => GOOD);
+    const r = receiver({ model, module });
+    await r.send(scene(1, { modules: ["CatEars"] }));
+    await vi.waitFor(() => expect(r.player.followed).toEqual([1]));
+    // 見せ方だけが変わった。
+    await r.send(scene(2, { modelRevision: 1, modulesRevision: 1, modules: ["CatEars"] }));
+    await vi.waitFor(() => expect(r.player.continued).toEqual([2]));
+    expect(model).toHaveBeenCalledTimes(1);
+    expect(module).toHaveBeenCalledTimes(1);
+    // モジュールの組だけが変わった。
+    await r.send(scene(3, { modelRevision: 1, modulesRevision: 3, modules: ["Hat", "Ribbon"] }));
+    await vi.waitFor(() => expect(r.player.continued).toEqual([2, 3]));
+    expect(model).toHaveBeenCalledTimes(1);
+    expect(r.player.loaded).toEqual(["avatar.ugoe"]);
+    expect(r.player.followed).toEqual([1]);
+    expect(module.mock.calls.slice(1)).toEqual([
+      [3, 0],
+      [3, 1],
+    ]);
+    expect(r.player.modules.map((m) => m.name)).toEqual(["Hat.ugoemod", "Ribbon.ugoemod"]);
+  });
+
+  it("revokes the previous blob URL when the background image changes", async () => {
+    let n = 0;
+    const create = vi.spyOn(URL, "createObjectURL").mockImplementation(() => `blob:${++n}`);
+    const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    cleanups.push(() => {
+      create.mockRestore();
+      revoke.mockRestore();
+    });
+    const background = vi.fn(async () => GOOD);
+    const r = receiver({ background });
+    const image = (path: string) => ({ kind: "image" as const, path });
+    await r.send(scene(1, { modelRevision: 0, background: image("/a.png") }));
+    await vi.waitFor(() => expect(r.output()?.style.background).toContain("blob:1"));
+    expect(revoke).not.toHaveBeenCalled();
+    await r.send(scene(2, { modelRevision: 0, background: image("/b.png") }));
+    await vi.waitFor(() => expect(r.output()?.style.background).toContain("blob:2"));
+    expect(revoke.mock.calls).toEqual([["blob:1"]]);
+    // 同じ画像なら取り直さない。
+    await r.send(scene(3, { modelRevision: 0, background: image("/b.png") }));
+    await settle();
+    expect(background).toHaveBeenCalledTimes(2);
+    expect(create).toHaveBeenCalledTimes(2);
+    // 閉じたら今の画像も解放する。
+    r.close();
+    expect(revoke.mock.calls).toEqual([["blob:1"], ["blob:2"]]);
   });
 });
