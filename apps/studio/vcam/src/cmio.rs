@@ -50,7 +50,7 @@ use objc2_system_extensions::{
     OSSystemExtensionRequestDelegate, OSSystemExtensionRequestResult,
 };
 
-use crate::{Config, Delivery, Error};
+use crate::{Config, ConsumerWatch, Delivery, Error};
 
 /// 拡張の束の ID (`macos/Info.plist` の `CFBundleIdentifier`)。
 const EXTENSION_ID: &str = "app.ugoe.studio.camera";
@@ -103,6 +103,7 @@ pub(crate) struct Camera {
     stream: CMIOObjectID,
     queue: CFRetained<CMSimpleQueue>,
     pool: CFRetained<CVPixelBufferPool>,
+    consumer: ConsumerWatch,
 }
 
 // SAFETY: CMSimpleQueue と CVPixelBufferPool はスレッドをまたいで使える (CoreMedia と CoreVideo の決まり。CMSimpleQueue は
@@ -117,9 +118,11 @@ impl Camera {
         let device = match find_device() {
             Some(device) => device,
             None => {
-                activated?;
-                // 有効になっているはずなのに機器が無い (利用者が拡張を外したなど) ので、求め直す。
-                activate(true)?;
+                // いま求めて有効になったばかりなら、機器が現れるのを待つ。前から有効なのに機器が無い
+                // (利用者が拡張を外したなど) なら、求め直してから待つ。
+                if !activated? {
+                    activate(true)?;
+                }
                 wait_for_device()?
             }
         };
@@ -144,6 +147,7 @@ impl Camera {
             stream,
             queue,
             pool,
+            consumer: ConsumerWatch::new(Instant::now()),
         })
     }
 
@@ -151,12 +155,14 @@ impl Camera {
         CAMERA_NAME.to_owned()
     }
 
-    /// NV12 の画を 1 枚積む。キューが埋まっていれば (拡張が取り出していない = カメラを開いているアプリが無い) 積まない。
+    /// NV12 の画を 1 枚積む。キューが埋まっていれば (拡張が取り出していない) 積まない。埋まったままの状態が続けば
+    /// カメラを開いているアプリが無い (受け取る側のフレームレートが低いと 1 枚ごとには埋まることがあるので、[`ConsumerWatch`] で均す)。
     pub(crate) fn send(&mut self, frame: &[u8]) -> Result<Delivery, Error> {
+        let now = Instant::now();
         // SAFETY: `queue` は生きているキュー。
         let (count, capacity) = unsafe { (self.queue.count(), self.queue.capacity()) };
         if capacity > 0 && count >= capacity {
-            return Ok(Delivery::NoConsumer);
+            return Ok(self.consumer.delivery(false, now));
         }
         let pixels = self.pixel_buffer(frame)?;
         let sample = sample_buffer(&pixels, self.config.fps)?;
@@ -167,9 +173,9 @@ impl Camera {
         if status != 0 {
             // SAFETY: 積めなかったので、所有権は手元に残っている。取り戻して解放する。
             drop(unsafe { CFRetained::from_raw(element.cast::<CMSampleBuffer>()) });
-            return Ok(Delivery::NoConsumer);
+            return Ok(self.consumer.delivery(false, now));
         }
-        Ok(Delivery::Delivered)
+        Ok(self.consumer.delivery(true, now))
     }
 
     /// 画を置き場の `CVPixelBuffer` (IOSurface) に写す。行の幅は CoreVideo が揃えるので、行ごとに写す。
@@ -477,8 +483,8 @@ fn set_activation(state: Activation) {
 }
 
 /// 拡張を有効にする。すでに有効ならすぐに終わる (版が違えば入れ替える)。利用者の許可が要れば待たずに理由を返す。
-/// このプロセスで有効にできていれば、`again` のときだけ求め直す。
-fn activate(again: bool) -> Result<(), Error> {
+/// このプロセスで有効にできていれば、`again` のときだけ求め直す。この呼び出しで求めたら `true`。
+fn activate(again: bool) -> Result<bool, Error> {
     fn lock_error<T>(_: T) -> Error {
         Error::os("activation", "lock poisoned")
     }
@@ -506,7 +512,7 @@ fn activate(again: bool) -> Result<(), Error> {
             .0;
     }
     match &*state {
-        Activation::Done => Ok(()),
+        Activation::Done => Ok(submit),
         Activation::NeedsApproval => Err(Error::NeedsApproval),
         Activation::Failed(Failure::NotInApplications) => Err(Error::NotInApplications),
         Activation::Failed(Failure::Other(detail)) => Err(Error::ExtensionFailed(detail.clone())),

@@ -119,6 +119,26 @@ pub fn decode_config(bytes: &[u8]) -> Option<crate::Config> {
     config.validate().ok().map(|()| config)
 }
 
+/// Media Foundation の media type の `MF_MT_FRAME_SIZE` (幅 << 32 | 高さ) と `MF_MT_FRAME_RATE` (分子 << 32 | 分母) を
+/// 設定にする。選べる組でなければ `None` (メディアソースは出した組のほかは受けない。巨大な大きさで確保しないため)。
+/// フレームレートは四捨五入する (30000/1001 は 30)。
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn decode_media_type(frame_size: u64, frame_rate: u64) -> Option<crate::Config> {
+    let (num, den) = (
+        u64::from((frame_rate >> 32) as u32),
+        u64::from(frame_rate as u32),
+    );
+    if den == 0 {
+        return None;
+    }
+    let config = crate::Config {
+        width: (frame_size >> 32) as u32,
+        height: frame_size as u32,
+        fps: u32::try_from((num + den / 2) / den).ok()?,
+    };
+    config.validate().ok().map(|()| config)
+}
+
 /// 黒 (BT.709 の限定範囲: Y = 16、Cb = Cr = 128) の NV12 で `out` を埋める (まだ画が届いていないとき)。
 pub fn fill_black_nv12(out: &mut [u8], width: u32, height: u32) {
     let luma = (width as usize * height as usize).min(out.len());
@@ -128,10 +148,10 @@ pub fn fill_black_nv12(out: &mut [u8], width: u32, height: u32) {
 }
 
 /// NV12 の画を最も近い画素で拡大縮小する (受け取るアプリが選んだ大きさとスタジオの設定が違うとき)。
-/// `src` は `sw`×`sh`、`dst` は `dw`×`dh` の NV12。大きさは偶数とする。
+/// `src` は `sw`×`sh`、`dst` は `dw`×`dh` の NV12。大きさは偶数とする。どちらかの大きさが 0 なら何もしない。
 pub fn scale_nv12_nearest(src: &[u8], (sw, sh): (u32, u32), dst: &mut [u8], (dw, dh): (u32, u32)) {
     let (sw, sh, dw, dh) = (sw as usize, sh as usize, dw as usize, dh as usize);
-    if src.len() < sw * sh * 3 / 2 || dst.len() < dw * dh * 3 / 2 || dw == 0 || dh == 0 {
+    if src.len() < sw * sh * 3 / 2 || dst.len() < dw * dh * 3 / 2 || [sw, sh, dw, dh].contains(&0) {
         return;
     }
     let (src_y, src_uv) = src.split_at(sw * sh);
@@ -257,7 +277,7 @@ impl<R: Region> Reader<R> {
         Ok(Self { region })
     }
 
-    /// 最新のフレームを `out` に写す。まだ無い・形が違う・書き換えの途中だったときは `None` (`out` は変えないとは限らない)。
+    /// 最新のフレームを `out` に写す。まだ無い・形が違う・大きさが 0 か奇数か大きすぎる・書き換えの途中だったときは `None` (`out` は変えないとは限らない)。
     pub fn read(&self, out: &mut Vec<u8>) -> Option<FrameInfo> {
         let r = &self.region;
         let latest = r.load(W_LATEST) as usize;
@@ -275,7 +295,13 @@ impl<R: Region> Reader<R> {
             fps: r.load(W_FPS),
             written: r.load(W_WRITTEN),
         };
-        if info.width > MAX_SIZE.0 || info.height > MAX_SIZE.1 {
+        // 書き手が書いた値でも確かめる (共有メモリは対話でログオンした利用者なら書ける)。NV12 は偶数の大きさ。
+        let even = |v: u32| v > 0 && v.is_multiple_of(2);
+        if !even(info.width)
+            || !even(info.height)
+            || info.width > MAX_SIZE.0
+            || info.height > MAX_SIZE.1
+        {
             return None;
         }
         out.resize(nv12_bytes(info.width, info.height), 0);
@@ -362,6 +388,32 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn only_offered_media_types_are_accepted() {
+        let size = |w: u64, h: u64| (w << 32) | h;
+        let rate = |n: u64, d: u64| (n << 32) | d;
+        assert_eq!(
+            decode_media_type(size(1920, 1080), rate(60, 1)),
+            Some(crate::Config {
+                width: 1920,
+                height: 1080,
+                fps: 60
+            })
+        );
+        assert_eq!(
+            decode_media_type(size(1280, 720), rate(30_000, 1001)).map(|c| c.fps),
+            Some(30)
+        );
+        assert_eq!(decode_media_type(size(65_535, 65_535), rate(30, 1)), None);
+        assert_eq!(decode_media_type(size(0, 0), rate(30, 1)), None);
+        assert_eq!(decode_media_type(size(1280, 720), rate(30, 0)), None);
+        assert_eq!(decode_media_type(size(1280, 720), rate(0, 1)), None);
+        assert_eq!(
+            decode_media_type(size(1280, 720), rate(u64::from(u32::MAX), 1)),
+            None
+        );
+    }
+
+    #[test]
     fn magic_reads_ugvc() {
         assert_eq!(&MAGIC.to_le_bytes(), b"UGVC");
     }
@@ -434,6 +486,29 @@ pub(crate) mod tests {
         assert_eq!(reader.read(&mut Vec::new()), None);
         (&memory).store(W_SLOT_SEQ + slot, seq + 2);
         assert!(reader.read(&mut Vec::new()).is_some());
+    }
+
+    #[test]
+    fn frames_of_odd_or_zero_size_are_not_read() {
+        // 共有メモリは対話でログオンした利用者なら書けるので、頭の大きさは信じない (NV12 は偶数の大きさ)。
+        let memory = Memory::new(REGION_BYTES);
+        let reader = Reader::new(&memory).unwrap();
+        let mut writer = Writer::new(&memory).unwrap();
+        writer.write(8, 4, 30, &[7; 48]).unwrap();
+        for (width, height) in [(0, 4), (8, 0), (0, 0), (7, 4), (8, 3)] {
+            (&memory).store(W_WIDTH, width);
+            (&memory).store(W_HEIGHT, height);
+            assert_eq!(reader.read(&mut Vec::new()), None, "{width}x{height}");
+        }
+    }
+
+    #[test]
+    fn scaling_from_an_empty_frame_does_nothing() {
+        let mut dst = vec![5; nv12_bytes(4, 2)];
+        scale_nv12_nearest(&[], (0, 0), &mut dst, (4, 2));
+        scale_nv12_nearest(&[], (4, 0), &mut dst, (4, 2));
+        scale_nv12_nearest(&[], (0, 2), &mut dst, (4, 2));
+        assert!(dst.iter().all(|&v| v == 5));
     }
 
     #[test]

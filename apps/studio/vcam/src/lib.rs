@@ -147,10 +147,42 @@ impl Error {
 /// 1 枚を渡した結果。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Delivery {
-    /// OS の部品に渡した。受け取るアプリがいるかは分からない (Linux)、またはいる (Windows)。
+    /// OS の部品に渡した。受け取るアプリがいるかは分からない (Linux)、またはいる (Windows・macOS)。
     Delivered,
     /// 渡したが、受け取るアプリがいない (Windows・macOS でカメラを開いているアプリが無い)。
     NoConsumer,
+}
+
+/// 受け取った印がこれより古ければ、受け取るアプリがいないとみなす (Windows・macOS)。
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+const CONSUMER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// 受け取るアプリがいるかの判断 (Windows・macOS)。1 枚ごとの結果ではなく、受け取った印が [`CONSUMER_TIMEOUT`] の間に
+/// あったかで決める (受け取る側のフレームレートがスタジオより低いと、1 枚ごとには受け取られないことがあり、知らせが明滅するため)。
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+#[derive(Debug, Clone, Copy)]
+struct ConsumerWatch {
+    /// 最後に受け取った印があった時刻 (始めた時刻から数える)。
+    last: std::time::Instant,
+}
+
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+impl ConsumerWatch {
+    fn new(now: std::time::Instant) -> Self {
+        Self { last: now }
+    }
+
+    /// 1 枚を渡したときの判断。`consumed` は、前に渡してからこれまでに受け取った印があったか。
+    fn delivery(&mut self, consumed: bool, now: std::time::Instant) -> Delivery {
+        if consumed {
+            self.last = now;
+        }
+        if now.saturating_duration_since(self.last) < CONSUMER_TIMEOUT {
+            Delivery::Delivered
+        } else {
+            Delivery::NoConsumer
+        }
+    }
 }
 
 /// 動いている仮想カメラ。落とすと止まる (Windows ではカメラの機器が消える)。
@@ -206,6 +238,7 @@ impl VirtualCamera {
         Err(Error::Unsupported)
     }
 
+    /// 始めたときの設定。
     pub fn config(&self) -> Config {
         self.config
     }
@@ -287,6 +320,36 @@ mod tests {
             Error::ExtensionFailed("x".to_owned()).code(),
             "extensionFailed"
         );
+    }
+
+    #[test]
+    fn a_consumer_counts_until_it_has_been_silent_for_a_while() {
+        let start = std::time::Instant::now();
+        let at = |ms: u64| start + std::time::Duration::from_millis(ms);
+        let mut watch = ConsumerWatch::new(start);
+        // 受け取る側が半分の速さで取り出す (1 枚おきにしか受け取られない) 間は、いるまま。
+        for frame in 0..120 {
+            let delivery = watch.delivery(frame % 2 == 0, at(frame * 16));
+            assert_eq!(delivery, Delivery::Delivered, "frame {frame}");
+        }
+        // 印が途絶えても、しばらくはいるとみなす。
+        let silent = 120 * 16;
+        assert_eq!(
+            watch.delivery(false, at(silent + 1_000)),
+            Delivery::Delivered
+        );
+        assert_eq!(
+            watch.delivery(false, at(silent + 2_500)),
+            Delivery::NoConsumer
+        );
+        // 受け取られればすぐに戻る。
+        assert_eq!(
+            watch.delivery(true, at(silent + 2_600)),
+            Delivery::Delivered
+        );
+        // 始めたばかりでまだ印が無いときは、いるとみなす。
+        let mut fresh = ConsumerWatch::new(start);
+        assert_eq!(fresh.delivery(false, at(100)), Delivery::Delivered);
     }
 
     #[test]

@@ -100,6 +100,19 @@ fn media_type(config: Config) -> Result<IMFMediaType> {
     }
 }
 
+/// media type の大きさとフレームレート。出した組 (選べる組) でなければ MF_E_INVALIDMEDIATYPE
+/// (受け取るアプリが選んだ media type をそのまま信じて、巨大な画を確保しないため)。
+fn offered_config(t: &IMFMediaType) -> Result<Config> {
+    // SAFETY: 生きている media type の属性を読むだけ。
+    let (size, rate) = unsafe {
+        (
+            t.GetUINT64(&MF_MT_FRAME_SIZE)?,
+            t.GetUINT64(&MF_MT_FRAME_RATE)?,
+        )
+    };
+    shared::decode_media_type(size, rate).ok_or_else(|| MF_E_INVALIDMEDIATYPE.into())
+}
+
 /// 出す組: スタジオの設定が読めればそれだけ、読めなければ選べる組をすべて (大きい順)。
 fn offered(config: Option<Config>) -> Vec<Config> {
     match config {
@@ -236,25 +249,17 @@ impl Stream {
 
     /// 今の media type の大きさとフレームレート。
     fn current(&self) -> Result<Config> {
-        // SAFETY: 自分のストリーム記述子から、今の media type の属性を読むだけ。
-        unsafe {
-            let t = self
-                .descriptor
+        // SAFETY: 自分のストリーム記述子から、今の media type を得るだけ。
+        let t = unsafe {
+            self.descriptor
                 .GetMediaTypeHandler()?
-                .GetCurrentMediaType()?;
-            let size = t.GetUINT64(&MF_MT_FRAME_SIZE)?;
-            let rate = t.GetUINT64(&MF_MT_FRAME_RATE)?;
-            let (num, den) = ((rate >> 32) as u32, (rate as u32).max(1));
-            Ok(Config {
-                width: (size >> 32) as u32,
-                height: size as u32,
-                fps: (num / den).max(1),
-            })
-        }
+                .GetCurrentMediaType()?
+        };
+        offered_config(&t)
     }
 
-    /// 共有メモリの最新の画を、受け取るアプリが選んだ大きさの NV12 にして返す。
-    fn next_frame(inner: &mut StreamState, want: Config) -> Vec<u8> {
+    /// 共有メモリの最新の画を、受け取るアプリが選んだ大きさの NV12 にして `inner.scaled` に置く。
+    fn next_frame(inner: &mut StreamState, want: Config) {
         let StreamState {
             reader,
             frame,
@@ -295,7 +300,6 @@ impl Stream {
             // 書き換えの途中で読めなかった: 前の画を使い続ける。
             None => {}
         }
-        scaled.clone()
     }
 }
 
@@ -363,17 +367,18 @@ impl IMFMediaStream_Impl for Stream_Impl {
                 return Err(MF_E_INVALIDREQUEST.into());
             }
             inner.last = Some(Instant::now());
-            let pixels = Stream::next_frame(&mut inner, want);
-            drop(inner);
-            // SAFETY: 新しいサンプルとバッファを作り、Lock で得た `len` バイトの領域に `pixels` を写して Unlock する。
-            // トークンは呼び出し元の参照をそのまま属性に付ける。
+            Stream::next_frame(&mut inner, want);
+            // SAFETY: 新しいサンプルとバッファを作り、Lock で得た `len` バイトの領域に画を写して Unlock する
+            // (毎回の画の複製を避けるため、写し終えるまで状態を握る)。トークンは呼び出し元の参照をそのまま属性に付ける。
             unsafe {
+                let pixels = &inner.scaled;
                 let len = pixels.len() as u32;
                 let buffer = MFCreateMemoryBuffer(len)?;
                 let mut data = std::ptr::null_mut();
                 buffer.Lock(&mut data, None, None)?;
                 std::ptr::copy_nonoverlapping(pixels.as_ptr(), data, pixels.len());
                 buffer.Unlock()?;
+                drop(inner);
                 buffer.SetCurrentLength(len)?;
                 let sample = MFCreateSample()?;
                 sample.AddBuffer(&buffer)?;
@@ -666,7 +671,8 @@ impl IMFMediaSource2_Impl for Source_Impl {
             if id != STREAM_ID {
                 return Err(MF_E_INVALIDSTREAMNUMBER.into());
             }
-            // SAFETY: 自分のストリーム記述子の今の media type を、呼び出し元が選んだもの (出した組のどれか) にする。
+            offered_config(media_type.as_ref().ok_or(E_POINTER)?)?;
+            // SAFETY: 自分のストリーム記述子の今の media type を、呼び出し元が選んだもの (上で選べる組だと確かめた) にする。
             unsafe {
                 self.stream
                     .descriptor

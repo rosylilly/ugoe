@@ -30,8 +30,8 @@ use windows::Win32::System::Memory::{
 use windows::Win32::System::Registry::{HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ, RegGetValueW};
 use windows_core::{GUID, HRESULT, HSTRING, Interface, PCWSTR, s, w};
 
-use crate::shared::{self, REGION_BYTES, Region, Writer};
-use crate::{Config, Delivery, Error};
+use crate::shared::{self, REGION_BYTES, Region, SharedError, Writer};
+use crate::{Config, ConsumerWatch, Delivery, Error};
 
 /// メディアソースの CLSID (DLL の登録と、カメラを作るときに渡す)。
 pub(crate) const CLSID_SOURCE: GUID = GUID::from_u128(0x128a1a50_b227_494b_952e_0c011bb01869);
@@ -46,8 +46,6 @@ pub(crate) const SECTION_NAME: PCWSTR = w!("Global\\ugoe-studio-virtual-camera-1
 const FRIENDLY_NAME: &str = "ugoe studio";
 /// 共有メモリが無い (受け取るアプリがいない) ときに、開き直すまでの間隔。
 const REOPEN_INTERVAL: Duration = Duration::from_secs(1);
-/// メディアソースが画を渡した印がこれより古ければ、受け取るアプリがいないとみなす。
-const CONSUMER_TIMEOUT: Duration = Duration::from_secs(2);
 /// クラスが登録されていない (`REGDB_E_CLASSNOTREG`)。
 const REGDB_E_CLASSNOTREG: HRESULT = HRESULT(0x8004_0154_u32 as i32);
 
@@ -223,8 +221,9 @@ pub(crate) struct Camera {
     writer: Option<Writer<Mapping>>,
     /// 最後に共有メモリを開こうとした時刻。
     opened_at: Option<Instant>,
-    /// メディアソースが渡したフレームの数と、それが変わった時刻。
-    delivered: (u32, Instant),
+    /// メディアソースが渡したフレームの数 (増えていれば受け取るアプリがいる)。
+    delivered: u32,
+    consumer: ConsumerWatch,
     /// CoInitializeEx が成功した (CoUninitialize で釣り合わせる)。
     com: bool,
     /// MFStartup が成功した (MFShutdown で釣り合わせる)。
@@ -242,7 +241,8 @@ impl Camera {
             config,
             writer: None,
             opened_at: None,
-            delivered: (0, Instant::now()),
+            delivered: 0,
+            consumer: ConsumerWatch::new(Instant::now()),
             com: false,
             media_foundation: false,
         };
@@ -303,8 +303,18 @@ impl Camera {
                 .is_none_or(|at| now.duration_since(at) >= REOPEN_INTERVAL)
         {
             self.opened_at = Some(now);
-            self.writer = Mapping::open().and_then(|m| Writer::new(m).ok());
-            self.delivered = (self.writer.as_ref().map_or(0, Writer::delivered), now);
+            self.writer = match Mapping::open().map(Writer::new) {
+                None => None,
+                Some(Ok(writer)) => Some(writer),
+                // メディアソースが頭を書いている途中: 次に開き直す。
+                Some(Err(SharedError::Magic)) => None,
+                // 形が違う (メディアソースの DLL とスタジオの版が違う) のは待っても直らないので、止めて知らせる。
+                Some(Err(e)) => {
+                    return Err(Error::os("opening the virtual camera's shared memory", e));
+                }
+            };
+            self.delivered = self.writer.as_ref().map_or(0, Writer::delivered);
+            self.consumer = ConsumerWatch::new(now);
         }
         let Some(writer) = &mut self.writer else {
             return Ok(Delivery::NoConsumer);
@@ -314,14 +324,9 @@ impl Camera {
             .write(width, height, fps, frame)
             .map_err(|e| Error::os("writing to the virtual camera", e))?;
         let delivered = writer.delivered();
-        if delivered != self.delivered.0 {
-            self.delivered = (delivered, now);
-        }
-        Ok(if now.duration_since(self.delivered.1) < CONSUMER_TIMEOUT {
-            Delivery::Delivered
-        } else {
-            Delivery::NoConsumer
-        })
+        let consumed = delivered != self.delivered;
+        self.delivered = delivered;
+        Ok(self.consumer.delivery(consumed, now))
     }
 }
 
