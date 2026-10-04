@@ -1,7 +1,7 @@
 ---
 id: T0559
 title: "ugoe-cli: AI のコマンドに Ctrl+C での取り消しと時間の上限のオプションを付ける"
-status: in-progress
+status: done
 milestone: M9
 crates: [ugoe-cli, docs]
 depends_on: []
@@ -31,3 +31,27 @@ Ctrl+C で今の要求を取り消し、`--timeout <SECONDS>` で上限を付け
 - T0026 で起票した (元の候補: T0541 の CLI)。
 - T0541 のもう 1 つの候補「`send_cancellable` (`crates/ugoe-ai/src/transport.rs`) が応答を待つたびにスレッドを作る。ureq に中断の手段ができたら通信そのものを止める形に替える」は、
   ureq の対応を待つので起票しない。ureq を上げるときに確かめる。
+
+### 判断が要る点 (blocked)
+
+タスクの前提 (「CLI の AI のコマンド」) が今のコードに無い。
+
+- `ugoe-cli` は `ugoe-ai` に依存しておらず、サブコマンドは `validate` `info` `fixture` `standard-params` `render` `import-psd`
+  `build` `sample` だけ。API を呼ぶコマンドは無い (`crates/ugoe-cli/Cargo.toml`・`src/main.rs`。`ugoe_ai` の名前は
+  `src/sample/lit.rs` のコメントに 1 か所あるだけ)。
+- `ugoe-mcp` も `ugoe-ai` のスキーマと検証を使うだけで、`Provider` を呼ばない (T0541 のメモのとおり)。
+- T0541 の起票の候補の「(今は上限なし・取り消しなし)」は、コマンドがあるものとして書かれていたが、そもそも無い。
+
+取り消しと時間の上限を付ける先が無いので、受け入れ条件はどれも満たせない。次から選んでほしい。
+
+- **案 A (推奨): このタスクを閉じる。** 付ける先が無いので作業は無い。将来 CLI に AI のコマンド (例: `ugoe ai autorig`) を
+  足すタスクを起票するときに、受け入れ条件に「Ctrl+C での取り消しと `--timeout` (`CancelToken::with_time_limit`。
+  エディタと同じ既定 15 分)」を最初から入れる。
+- **案 B: CLI に AI のコマンドを足すところから行う。** API を呼ぶ自動リギング・分類などのサブコマンドを新しく作る。
+  ADR 0006 (AI は提案だけで、利用者が承認してから適用) と送る内容の提示 (`Disclosure`) を CLI でどう扱うか
+  (対話の確認・`--yes`・提案を JSON で書き出すだけにする、など) の設計が要り、このタスクの範囲 (取り消しと上限の
+  オプション) を大きく超える。行うなら別のタスク (と、承認の扱いによっては ADR) にする。
+
+推奨は A。CLI で API を使いたい要望が出てから B を起票するのがよい。コードの変更はしていない。
+
+- **閉じた (オーケストレーター、2026-10-04):** 案 A で閉じる。CLI に AI のコマンドが無く、前提 (T0541 の候補) が誤っていた。CLI に AI のコマンドを足すタスクを起票するときに、Ctrl+C での取り消しと時間の上限を受け入れ条件に入れる。
