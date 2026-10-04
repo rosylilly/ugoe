@@ -5,12 +5,12 @@
 
 use std::path::{Path, PathBuf};
 
-use tauri::State;
+use tauri::AppHandle;
 use ugoe_editor_core::Message;
 use ugoe_editor_core::Project;
 use ugoe_editor_core::bundle_project::save_bundle_projects;
 
-use crate::AppState;
+use crate::commands::blocking;
 use crate::error::{EditorError, IpcResult};
 use crate::project::{ProjectSession, ProjectStatus, absolute_path, lock_both, status};
 
@@ -35,16 +35,19 @@ const FOLDER: &str = "ugoe-dress-up-sample";
 /// 既にあるフォルダーには書かない (前に書き出して編集した見本を上書きしない)。未保存の変更は破棄する
 /// (確認はフロントエンドで行う)。失敗したら今のプロジェクトはそのまま。
 #[tauri::command]
-pub fn open_sample_project(state: State<'_, AppState>, parent: String) -> IpcResult<ProjectStatus> {
-    let dir = new_folder(&absolute_path(&parent)?)?;
-    let base = write_projects(&dir)?
-        .into_iter()
-        .next()
-        .ok_or_else(|| EditorError::Internal("no sample project was written".into()))?;
-    let (project, disk) = Project::load_tracked(&base)?;
-    let (mut document, mut session) = lock_both(&state)?;
-    (*session, *document) = ProjectSession::from_project(project, Some((base, disk)));
-    Ok(status(&session, &document))
+pub async fn open_sample_project(app: AppHandle, parent: String) -> IpcResult<ProjectStatus> {
+    blocking(app, move |state| {
+        let dir = new_folder(&absolute_path(&parent)?)?;
+        let base = write_projects(&dir)?
+            .into_iter()
+            .next()
+            .ok_or_else(|| EditorError::Internal("no sample project was written".into()))?;
+        let (project, disk) = Project::load_tracked(&base)?;
+        let (mut document, mut session) = lock_both(state)?;
+        (*session, *document) = ProjectSession::from_project(project, Some((base, disk)));
+        Ok(status(&session, &document))
+    })
+    .await
 }
 
 /// `parent` の中の、まだ無いフォルダーを作る。
@@ -144,7 +147,7 @@ mod tests {
     /// 開けない (T0660)。
     #[test]
     fn exposed_colliders_without_base_physics_are_explained() {
-        use crate::module::{ModuleProblemKind, module_open_problem, module_status_of};
+        use crate::module::{ModuleProblemKind, module_status_of, open_problem};
 
         let dir = temp_dir("sample-colliders");
         let bundle = ugoe_format::read_bundle(BASE).unwrap();
@@ -170,7 +173,7 @@ mod tests {
             let (_, document) = ProjectSession::from_project(Project::load(path).unwrap(), None);
             module_status_of(&document).unwrap()
         };
-        let problem = |path: &Path| module_open_problem(path.display().to_string(), None).unwrap();
+        let problem = |path: &Path| open_problem(&path.display().to_string(), None).unwrap();
         assert!(problem(&written[1]).is_none());
         assert!(open(&written[1]).unavailable_colliders.is_empty());
         assert_eq!(open(&written[2]).base_colliders, ["Shoulders"]);

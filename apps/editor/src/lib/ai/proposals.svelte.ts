@@ -95,6 +95,11 @@ export class ProposalsView {
   #viewport: PhysicsPreview | null;
   /** プレビューを作ったときのドキュメントの版 (変わったらプレビューをやめる)。 */
   #previewRevision = -1;
+  /**
+   * 始めたプレビューの数。プレビューの IPC はメインのスレッドの外で並んで動くので (docs/editor.md)、続けて外す・戻すと
+   * 前に始めたものが後から終わることがある。最後に始めたものだけが結果を置く。
+   */
+  #previewGeneration = 0;
   /** プレビューのために物理を動かし始めた (プレビューをやめるときに止める)。 */
   #physics = false;
 
@@ -314,9 +319,12 @@ export class ProposalsView {
   /** 提案を複製に適用した姿をビューポートに出す。 */
   async showPreview(id: number): Promise<void> {
     const revision = this.#doc.revision;
+    const generation = ++this.#previewGeneration;
     await this.#task(t("proposals.busy.preparing"), async () => {
       const result = await ipc.previewProposal(id, excludedList(this.excludedOf(id)));
       const bundle = await ipc.getProposalPreviewBundle().catch(() => null);
+      // 後から始めたプレビューがあれば、それに任せる (バックエンドの複製もそちらで置き換わる)。
+      if (generation !== this.#previewGeneration) return;
       // 作る間にドキュメントが変わった (エージェントの適用・Undo など) なら、古いドキュメントの姿は出さない。
       if (this.#doc.revision !== revision) {
         ipc.clearProposalPreview().catch(() => {});
@@ -333,6 +341,8 @@ export class ProposalsView {
   }
 
   endPreview(): void {
+    // 作っている途中のプレビューも出さない
+    this.#previewGeneration += 1;
     if (!this.preview) return;
     if (this.#physics) {
       this.#physics = false;

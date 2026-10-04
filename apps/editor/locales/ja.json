@@ -1975,6 +1975,7 @@
       "create_folder": "フォルダ {{path}} を作れません ({{detail}})。",
       "internal": "内部のエラーが起きました ({{detail}})。",
       "task_failed": "裏で動かした処理が終わりませんでした ({{detail}})。",
+      "model_changed": "編集を作っている間にモデルが変わりました。もう一度やり直してください。",
       "invalid_percent_encoding": "パーセントエンコーディングを読めません ({{detail}})。",
       "empty_path": "パスが空です。",
       "not_saved": "プロジェクトはまだ保存されていません。",

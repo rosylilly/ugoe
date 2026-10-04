@@ -2,7 +2,7 @@
 //! 引数・戻り値の型を変えたら `apps/editor/src/lib/ipc.ts` も同じ PR で更新すること。
 
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 use ts_rs::TS;
 use ugoe_editor_core::{ApplyReport, Command, Message};
 use ugoe_model::expression::Expression;
@@ -72,11 +72,47 @@ pub fn redo(state: State<'_, AppState>) -> IpcResult<bool> {
     Ok(lock(&state)?.redo())
 }
 
-pub(crate) fn lock<'a>(
-    state: &'a State<'_, AppState>,
-) -> IpcResult<std::sync::MutexGuard<'a, ugoe_editor_core::Document>> {
+pub(crate) fn lock(
+    state: &AppState,
+) -> IpcResult<std::sync::MutexGuard<'_, ugoe_editor_core::Document>> {
     state
         .document
         .lock()
         .map_err(|_| EditorError::LockPoisoned { what: "document" }.into())
+}
+
+/// 重いコマンド (ファイルの読み書き・バンドルを作る・画像の計算・AI の応答待ちなど) の本体を、Tauri のメインのスレッド
+/// (イベントのループ) ではなく `spawn_blocking` のスレッドで動かす。同期のコマンドはメインのスレッドで動き、その間は
+/// ウィンドウが止まるため、重いコマンドは `async` にしてここへ渡す (`docs/editor.md#メインのスレッドの外で動くコマンド`)。
+pub(crate) async fn blocking<T: Send + 'static>(
+    app: AppHandle,
+    task: impl FnOnce(&AppState) -> IpcResult<T> + Send + 'static,
+) -> IpcResult<T> {
+    off_main(move || task(&app.state::<AppState>())).await
+}
+
+/// [`blocking`] の、アプリの状態を使わないもの (ファイルを読むだけのコマンドなど)。
+pub(crate) async fn off_main<T: Send + 'static>(
+    task: impl FnOnce() -> IpcResult<T> + Send + 'static,
+) -> IpcResult<T> {
+    tauri::async_runtime::spawn_blocking(task)
+        .await
+        .map_err(|e| EditorError::Task(e.to_string()))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 重いコマンドの本体は呼んだスレッド (Tauri のメインのスレッド) の外で動き、エラーはそのまま返る (T0685)。
+    #[test]
+    fn heavy_commands_run_off_the_calling_thread() {
+        let caller = std::thread::current().id();
+        let worker =
+            tauri::async_runtime::block_on(off_main(|| Ok(std::thread::current().id()))).unwrap();
+        assert_ne!(worker, caller);
+        let err: IpcResult<()> =
+            tauri::async_runtime::block_on(off_main(|| Err(EditorError::NotSaved.into())));
+        assert_eq!(err.unwrap_err().code, "editor.not_saved");
+    }
 }

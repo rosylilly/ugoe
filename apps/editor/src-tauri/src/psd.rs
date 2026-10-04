@@ -3,11 +3,14 @@
 //! PSD から新しいプロジェクトを作る `new_project_from_psd` は `project.rs` にある。
 //! 引数・戻り値の型を変えたら `apps/editor/src/lib/ipc.ts` も同じ PR で更新すること。
 
-use tauri::State;
+use tauri::AppHandle;
 use ugoe_editor_core::{AutoMeshOptions, PsdImportOptions, PsdImportWarning, import};
 
 use crate::AppState;
+use crate::commands::blocking;
 use crate::error::{EditorError, IpcResult};
+use crate::project::lock_both;
+use crate::proposals::Base;
 
 /// PSD ファイルを読み、取り込みの設定 (最上位のパーツの名前はファイル名) と合わせて返す。
 pub(crate) fn read_psd(
@@ -29,26 +32,38 @@ pub(crate) fn read_psd(
 /// PSD ファイルを読み、今のドキュメントに取り込む (Undo の 1 単位)。
 /// 失敗したらドキュメントは変わらない。戻り値は取り込みの警告。
 #[tauri::command]
-pub fn import_psd(
-    state: State<'_, AppState>,
+pub async fn import_psd(
+    app: AppHandle,
     path: String,
     mesh_options: Option<AutoMeshOptions>,
 ) -> IpcResult<Vec<PsdImportWarning>> {
-    let (bytes, options) = read_psd(&path, mesh_options)?;
-    let mut document = state
-        .document
-        .lock()
-        .map_err(|_| EditorError::LockPoisoned { what: "document" })?;
-    let mut import = import::import_psd(document.model(), &bytes, &options)?;
+    blocking(app, move |state| import_psd_in(state, &path, mesh_options)).await
+}
+
+/// [`import_psd`] の本体。PSD のデコードと自動メッシュはロックの外で、モデルの写しに対して行い、適用だけを
+/// ロックの中で行う。作る間にモデルが変わっていたら適用せずに [`EditorError::ModelChanged`]。
+pub(crate) fn import_psd_in(
+    state: &AppState,
+    path: &str,
+    mesh_options: Option<AutoMeshOptions>,
+) -> IpcResult<Vec<PsdImportWarning>> {
+    let (bytes, options) = read_psd(path, mesh_options)?;
+    let (model, base) = {
+        let (document, session) = lock_both(state)?;
+        (document.model().clone(), Base::of(&document, &session))
+    };
+    let mut import = import::import_psd(&model, &bytes, &options)?;
+    let (mut document, mut session) = lock_both(state)?;
+    base.check_edit(&document, &session)?;
     // モジュールのプロジェクトでは、描画順 (0〜1000) をスロットの範囲に写す。最上位の要素は適用のときに
     // 見た目を保ったままスロットの取り付け先の下へ移る (`docs/editor.md#モジュールのプロジェクト`)。
     if let Some(context) = document.module() {
         context.map_new_meshes(&mut import.command);
     }
     document.apply(import.command)?;
-    // AI の提案 (自動リギング) の元にする PSD を覚えておく (ロックの順序は document → project)。
-    crate::ai::lock_project(&state)?
+    // AI の提案 (自動リギング) の元にする PSD を覚えておく。
+    session
         .proposals
-        .set_psd(crate::project::absolute_path(&path)?);
+        .set_psd(crate::project::absolute_path(path)?);
     Ok(import.warnings)
 }

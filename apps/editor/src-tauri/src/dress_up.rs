@@ -12,6 +12,7 @@ use tauri::State;
 use ts_rs::TS;
 
 use crate::AppState;
+use crate::commands::off_main;
 use crate::error::{EditorError, IpcResult};
 use crate::project::{ProjectSession, ProjectStatus, absolute_path, lock_both, status};
 
@@ -145,13 +146,16 @@ pub fn set_preview_modules(
 /// `.ugoemod` のバイト列を返す (ファイルのダイアログで選んだ・ドロップした・プロジェクトに残したもの)。
 /// `.ugoemod` だけを読む。中身の検査と付け外しは webview の中の `WebPuppet.load_module` が行う。
 #[tauri::command]
-pub fn read_module_file(path: String) -> IpcResult<tauri::ipc::Response> {
-    let path = absolute_path(&path)?;
-    if !is_module_path(&path) {
-        return Err(EditorError::NotModuleFile(path.display().to_string()).into());
-    }
-    let bytes = std::fs::read(&path).map_err(|e| EditorError::io(&path, e))?;
-    Ok(tauri::ipc::Response::new(bytes))
+pub async fn read_module_file(path: String) -> IpcResult<tauri::ipc::Response> {
+    off_main(move || {
+        let path = absolute_path(&path)?;
+        if !is_module_path(&path) {
+            return Err(EditorError::NotModuleFile(path.display().to_string()).into());
+        }
+        let bytes = std::fs::read(&path).map_err(|e| EditorError::io(&path, e))?;
+        Ok(tauri::ipc::Response::new(bytes))
+    })
+    .await
 }
 
 #[cfg(test)]
@@ -202,18 +206,24 @@ mod tests {
 
     #[test]
     fn reads_module_files_only() {
+        use tauri::async_runtime::block_on;
         assert!(is_module_path(Path::new("Hair.UGOEMOD")));
         assert!(!is_module_path(Path::new("avatar.ugoe")));
         let dir = std::env::temp_dir().join(format!("ugoe-editor-dress-up-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let text = dir.join("notes.txt");
         std::fs::write(&text, "x").unwrap();
-        assert!(read_module_file(text.display().to_string()).is_err());
-        assert!(read_module_file("hair.ugoemod".into()).is_err());
-        assert!(read_module_file(dir.join("missing.ugoemod").display().to_string()).is_err());
+        assert!(block_on(read_module_file(text.display().to_string())).is_err());
+        assert!(block_on(read_module_file("hair.ugoemod".into())).is_err());
+        assert!(
+            block_on(read_module_file(
+                dir.join("missing.ugoemod").display().to_string()
+            ))
+            .is_err()
+        );
         let file = dir.join("hair.ugoemod");
         std::fs::write(&file, [1, 2, 3]).unwrap();
-        assert!(read_module_file(file.display().to_string()).is_ok());
+        assert!(block_on(read_module_file(file.display().to_string())).is_ok());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

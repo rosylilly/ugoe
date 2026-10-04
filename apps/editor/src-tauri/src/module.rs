@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, State};
 use ts_rs::TS;
 use ugoe_editor_core::project::{ProjectError, load_base, read_module_link};
 use ugoe_editor_core::{
@@ -18,6 +18,7 @@ use ugoe_editor_core::{Coded, Message};
 use ugoe_model::module::ModuleRequirements;
 
 use crate::AppState;
+use crate::commands::{blocking, off_main};
 use crate::error::{EditorError, IpcResult};
 use crate::project::{
     ExternalChange, ProjectSession, ProjectStatus, absolute_path, lock_both, status,
@@ -278,12 +279,15 @@ pub fn module_status(state: State<'_, AppState>) -> IpcResult<Option<ModuleStatu
 
 /// 本体の候補 (`.ugoeproj` のディレクトリか `.ugoe`) を読み、名前とスロットを返す (新規作成の画面)。
 #[tauri::command]
-pub fn read_module_base(path: String) -> IpcResult<BaseSummary> {
-    let base = load_base(&absolute_path(&path)?)?;
-    Ok(BaseSummary {
-        name: base.model.meta.name.clone(),
-        slots: base.model.slots.iter().map(slot_summary).collect(),
+pub async fn read_module_base(path: String) -> IpcResult<BaseSummary> {
+    off_main(move || {
+        let base = load_base(&absolute_path(&path)?)?;
+        Ok(BaseSummary {
+            name: base.model.meta.name.clone(),
+            slots: base.model.slots.iter().map(slot_summary).collect(),
+        })
     })
+    .await
 }
 
 /// 本体 `base` のスロット `slot` に付ける、名前 `name` の空のモジュールのプロジェクトにする
@@ -307,27 +311,30 @@ pub fn new_module_project(
 /// (`ModuleProblem.collider_references`。フロントエンドが外すことを確かめてから渡す。T0661)。
 /// 付け替えと外した参照は保存するまでファイルに書かない (未保存の印が付く)。失敗したら今のプロジェクトはそのまま。
 #[tauri::command]
-pub fn open_module_with_base(
-    state: State<'_, AppState>,
+pub async fn open_module_with_base(
+    app: AppHandle,
     path: String,
     base: Option<String>,
     slot: Option<String>,
     drop_colliders: bool,
 ) -> IpcResult<ProjectStatus> {
-    let dir = absolute_path(&path)?;
-    let disk = ProjectFingerprint::read(&dir)?;
-    let base = base.as_deref().map(absolute_path).transpose()?;
-    let slot = slot.map(|s| ugoe_model::SlotId::from(s.as_str()));
-    let project = if drop_colliders {
-        Project::load_module_without_unavailable_colliders(&dir, base.as_deref(), slot.as_ref())
-            .map(|(project, _)| project)
-    } else {
-        Project::load_module_with(&dir, base.as_deref(), slot.as_ref())
-    }?;
-    let (mut document, mut session) = lock_both(&state)?;
-    (*session, *document) = ProjectSession::from_project(project, Some((dir, disk)));
-    session.mark_meta_modified();
-    Ok(status(&session, &document))
+    blocking(app, move |state| {
+        let dir = absolute_path(&path)?;
+        let disk = ProjectFingerprint::read(&dir)?;
+        let base = base.as_deref().map(absolute_path).transpose()?;
+        let slot = slot.map(|s| ugoe_model::SlotId::from(s.as_str()));
+        let project = if drop_colliders {
+            Project::load_module_without_unavailable_colliders(&dir, base.as_deref(), slot.as_ref())
+                .map(|(project, _)| project)
+        } else {
+            Project::load_module_with(&dir, base.as_deref(), slot.as_ref())
+        }?;
+        let (mut document, mut session) = lock_both(state)?;
+        (*session, *document) = ProjectSession::from_project(project, Some((dir, disk)));
+        session.mark_meta_modified();
+        Ok(status(&session, &document))
+    })
+    .await
 }
 
 /// `path` がモジュールのプロジェクトで、本体の問題 (見つからない・読めない・スロットがない・合わない) で
@@ -335,12 +342,20 @@ pub fn open_module_with_base(
 /// エラーなら `null`。`base` があれば `project.json` の本体の代わりにそれで確かめる (選び直した本体)。
 /// `open_project`・`open_module_with_base` が失敗した後にフロントエンドが呼ぶ。
 #[tauri::command]
-pub fn module_open_problem(path: String, base: Option<String>) -> IpcResult<Option<ModuleProblem>> {
-    let dir = absolute_path(&path)?;
+pub async fn module_open_problem(
+    path: String,
+    base: Option<String>,
+) -> IpcResult<Option<ModuleProblem>> {
+    off_main(move || open_problem(&path, base.as_deref())).await
+}
+
+/// [`module_open_problem`] の中身。
+pub(crate) fn open_problem(path: &str, base: Option<&str>) -> IpcResult<Option<ModuleProblem>> {
+    let dir = absolute_path(path)?;
     let Ok((linked, slot)) = read_module_link(&dir) else {
         return Ok(None);
     };
-    let base = base.as_deref().map(absolute_path).transpose()?;
+    let base = base.map(absolute_path).transpose()?;
     let Err(error) = Project::load_module_with(&dir, base.as_deref(), None) else {
         return Ok(None);
     };
@@ -361,9 +376,12 @@ pub fn module_open_problem(path: String, base: Option<String>) -> IpcResult<Opti
 /// モジュールのプロジェクトの本体のファイルが、開いた (読み直した) 後で変わったか。変わっていなければ `null`
 /// (`docs/editor.md#本体の変化`)。フロントエンドが外での書き換えと同じ機会に呼ぶ。
 #[tauri::command]
-pub fn check_base_change(state: State<'_, AppState>) -> IpcResult<Option<ExternalChange>> {
-    let (document, session) = lock_both(&state)?;
-    session.base_change(&document)
+pub async fn check_base_change(app: AppHandle) -> IpcResult<Option<ExternalChange>> {
+    blocking(app, |state| {
+        let (document, session) = lock_both(state)?;
+        session.base_change(&document)
+    })
+    .await
 }
 
 /// モジュールのプロジェクトの本体をファイルから読み直す。保存していないモジュールの編集は保ち、Undo の履歴は消す。
@@ -371,14 +389,17 @@ pub fn check_base_change(state: State<'_, AppState>) -> IpcResult<Option<Externa
 /// なくなったときに、開き直さずに直す。付け替えは保存するまでファイルに書かず、未保存の印が付く)。
 /// 読み直せなければ (`problem`)、ドキュメントはそのまま。
 #[tauri::command]
-pub fn reload_base(
-    state: State<'_, AppState>,
+pub async fn reload_base(
+    app: AppHandle,
     base: Option<String>,
     slot: Option<String>,
 ) -> IpcResult<BaseReload> {
-    let base = base.as_deref().map(absolute_path).transpose()?;
-    let (mut document, mut session) = lock_both(&state)?;
-    rebase(&mut document, &mut session, base, slot)
+    blocking(app, move |state| {
+        let base = base.as_deref().map(absolute_path).transpose()?;
+        let (mut document, mut session) = lock_both(state)?;
+        rebase(&mut document, &mut session, base, slot)
+    })
+    .await
 }
 
 /// [`reload_base`] の中身 (テストから呼ぶ)。
@@ -429,10 +450,13 @@ fn rebase(
 /// ほかのモジュールと比べる。`docs/editor.md#プレビューの着せ替え`)。作ったものはセッションで覚えておき、
 /// 本体が変わるまで作り直さない (`PreviewBaseCache`)。
 #[tauri::command]
-pub fn get_preview_base_bundle(state: State<'_, AppState>) -> IpcResult<tauri::ipc::Response> {
-    let (document, session) = lock_both(&state)?;
-    let bytes = state.preview_base.bundle(&document, &session)?;
-    Ok(tauri::ipc::Response::new(bytes.to_vec()))
+pub async fn get_preview_base_bundle(app: AppHandle) -> IpcResult<tauri::ipc::Response> {
+    blocking(app, |state| {
+        let (document, session) = lock_both(state)?;
+        let bytes = state.preview_base.bundle(&document, &session)?;
+        Ok(tauri::ipc::Response::new(bytes.to_vec()))
+    })
+    .await
 }
 
 /// 開いているモジュールのプロジェクトの今の編集と、書き出した `.ugoemod` (本文のバイト列) の違い
@@ -464,38 +488,45 @@ fn compare(
 /// プレビューで付けて比べる)。書き出しと同じ検査をし、通らなければエラー。`name` があればモジュールの名前を
 /// それにする (前に書き出した同じ名前の `.ugoemod` と並べて読み込めるように。T0653)。
 #[tauri::command]
-pub fn get_preview_module(
-    state: State<'_, AppState>,
+pub async fn get_preview_module(
+    app: AppHandle,
     name: Option<String>,
 ) -> IpcResult<tauri::ipc::Response> {
-    let (document, session) = lock_both(&state)?;
-    let project = session.to_project(&document);
-    let export = match &name {
-        Some(name) => ugoe_editor_core::export_module_as(&project, name),
-        None => ugoe_editor_core::export_module(&project),
-    }?;
-    Ok(tauri::ipc::Response::new(export.bytes))
+    blocking(app, move |state| {
+        // 編集のたびに呼ぶので、ロックの中では写しを取るだけにし、書き出しはロックの外で行う。
+        let project = {
+            let (document, session) = lock_both(state)?;
+            session.to_project(&document)
+        };
+        let export = match &name {
+            Some(name) => ugoe_editor_core::export_module_as(&project, name),
+            None => ugoe_editor_core::export_module(&project),
+        }?;
+        Ok(tauri::ipc::Response::new(export.bytes))
+    })
+    .await
 }
 
 /// 開いているモジュールのプロジェクトを `.ugoemod` として書き出す。書き出す前に、モジュールの検証と
 /// 本体との合成を確かめる。書き出しの設定 (`get_export_settings`。`.ugoe` の書き出しと同じもの) で
 /// アトラス化を選んでいれば、モジュールのテクスチャをアトラスにまとめる (T0654)。保存状態は変えない。
 #[tauri::command]
-pub fn export_module(state: State<'_, AppState>, path: String) -> IpcResult<ModuleExportReport> {
-    let path = absolute_path(&path)?;
-    let export = {
-        let (document, session) = lock_both(&state)?;
-        ugoe_editor_core::export_module_with_settings(
-            &session.to_project(&document),
-            &session.export_settings(),
-        )?
-    };
-    std::fs::write(&path, &export.bytes).map_err(|e| EditorError::io(&path, e))?;
-    Ok(ModuleExportReport {
-        bytes: export.bytes.len(),
-        warnings: export.warnings,
-        atlas: export.atlas,
+pub async fn export_module(app: AppHandle, path: String) -> IpcResult<ModuleExportReport> {
+    blocking(app, move |state| {
+        let path = absolute_path(&path)?;
+        let (project, settings) = {
+            let (document, session) = lock_both(state)?;
+            (session.to_project(&document), session.export_settings())
+        };
+        let export = ugoe_editor_core::export_module_with_settings(&project, &settings)?;
+        std::fs::write(&path, &export.bytes).map_err(|e| EditorError::io(&path, e))?;
+        Ok(ModuleExportReport {
+            bytes: export.bytes.len(),
+            warnings: export.warnings,
+            atlas: export.atlas,
+        })
     })
+    .await
 }
 
 #[cfg(test)]
@@ -529,7 +560,9 @@ mod tests {
         Project::new(ProjectMeta::new("avatar"), model, textures)
             .save(&base_dir)
             .unwrap();
-        let summary = read_module_base(base_dir.display().to_string()).unwrap();
+        let summary =
+            tauri::async_runtime::block_on(read_module_base(base_dir.display().to_string()))
+                .unwrap();
         assert_eq!(summary.slots.len(), 2);
 
         let project = Project::new_module("Hat", &base_dir, &"Hair".into()).unwrap();
@@ -582,7 +615,7 @@ mod tests {
             ProjectSession::from_project(project, Some((module_dir.clone(), disk)));
         assert_eq!(session.base_change(&document).unwrap(), None);
         assert!(
-            module_open_problem(module_dir.display().to_string(), None)
+            open_problem(&module_dir.display().to_string(), None)
                 .unwrap()
                 .is_none()
         );
@@ -608,7 +641,7 @@ mod tests {
         base.model.slots.remove(0);
         base.model.avatar = None;
         base.save(&base_dir).unwrap();
-        let problem = module_open_problem(module_dir.display().to_string(), None)
+        let problem = open_problem(&module_dir.display().to_string(), None)
             .unwrap()
             .unwrap();
         assert_eq!(problem.kind, ModuleProblemKind::UnknownSlot);
@@ -617,14 +650,14 @@ mod tests {
         // 本体を動かすと、見つからない問題になる。
         std::fs::rename(&base_dir, dir.join("moved.ugoeproj")).unwrap();
         assert!(session.base_change(&document).unwrap().unwrap().missing);
-        let problem = module_open_problem(module_dir.display().to_string(), None)
+        let problem = open_problem(&module_dir.display().to_string(), None)
             .unwrap()
             .unwrap();
         assert_eq!(problem.kind, ModuleProblemKind::BaseNotFound);
         assert!(problem.base_slots.is_empty());
         // 選び直した本体で確かめると、スロットの問題になる。
         let moved = dir.join("moved.ugoeproj").display().to_string();
-        let problem = module_open_problem(module_dir.display().to_string(), Some(moved.clone()))
+        let problem = open_problem(&module_dir.display().to_string(), Some(&moved))
             .unwrap()
             .unwrap();
         assert_eq!(problem.kind, ModuleProblemKind::UnknownSlot);

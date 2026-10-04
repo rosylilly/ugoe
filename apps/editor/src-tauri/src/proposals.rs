@@ -48,8 +48,9 @@ use ugoe_model::{Mesh, MeshId};
 use ugoe_psd::LayerTree;
 
 use crate::AppState;
-use crate::ai::{AiReply, ConsentAnswer, Prepared, blocking, lock_project, prepare_instructed};
+use crate::ai::{AiReply, ConsentAnswer, Prepared, lock_project, prepare_instructed};
 use crate::ai_provider::Purpose;
+use crate::commands::blocking;
 use crate::error::{EditorError, IpcResult};
 use crate::lighting::{CommandSection, NormalMapGroupChoice, normal_map_proposal_in};
 use crate::project::{ProjectSession, absolute_path};
@@ -679,6 +680,16 @@ impl Base {
             Err(EditorError::ProposalModelChanged.into())
         }
     }
+
+    /// ロックの外で作った編集を適用する前に、今も同じプロジェクトの同じ状態かを確かめる (提案ではない編集。
+    /// `lighting::generate_texture_normal_map`・`psd::import_psd`)。変わっていれば [`EditorError::ModelChanged`]。
+    pub(crate) fn check_edit(self, document: &Document, session: &ProjectSession) -> IpcResult<()> {
+        if Self::of(document, session) == self {
+            Ok(())
+        } else {
+            Err(EditorError::ModelChanged.into())
+        }
+    }
 }
 
 // ---- IPC ----
@@ -1026,34 +1037,44 @@ pub(crate) fn place(
 /// `excluded` の番号のコマンドを除いた提案を、ドキュメントの複製に適用した姿を返す (ドキュメントは変えない)。
 /// 適用・検証に失敗したらエラー (一部だけの採用で、使う要素を作るコマンドを外したときなど)。
 #[tauri::command]
-pub fn preview_proposal(
-    state: State<'_, AppState>,
+pub async fn preview_proposal(
+    app: AppHandle,
     id: u32,
     excluded: Vec<usize>,
 ) -> IpcResult<ProposalPreview> {
-    let document = lock_document(&state)?;
-    let mut session = lock_project(&state)?;
-    session.proposals.preview = None;
-    let (preview, report) = session
-        .proposals
-        .proposals
-        .preview(&document, id, &excluded)?;
-    let model_json = ugoe_format::model_to_json(preview.model())?;
-    session.proposals.preview = Some(preview);
-    Ok(ProposalPreview { model_json, report })
+    blocking(app, move |state| {
+        let document = lock_document(state)?;
+        let mut session = lock_project(state)?;
+        session.proposals.preview = None;
+        let (preview, report) = session
+            .proposals
+            .proposals
+            .preview(&document, id, &excluded)?;
+        let model_json = ugoe_format::model_to_json(preview.model())?;
+        session.proposals.preview = Some(preview);
+        Ok(ProposalPreview { model_json, report })
+    })
+    .await
 }
 
 /// 最後にプレビューした姿の `.ugoe` バンドル (テクスチャ付き)。生のバイト列で送る。
 #[tauri::command]
-pub fn get_proposal_preview_bundle(state: State<'_, AppState>) -> IpcResult<tauri::ipc::Response> {
-    let session = lock_project(&state)?;
-    let preview = session
-        .proposals
-        .preview
-        .as_ref()
-        .ok_or(EditorError::NoPreview)?;
-    let bytes = ugoe_editor_core::export_bundle(&session.to_project(preview))?;
-    Ok(tauri::ipc::Response::new(bytes))
+pub async fn get_proposal_preview_bundle(app: AppHandle) -> IpcResult<tauri::ipc::Response> {
+    blocking(app, |state| {
+        // ロックの中では写しを取るだけにし、バンドル (PNG を含む) はロックの外で作る。
+        let project = {
+            let session = lock_project(state)?;
+            let preview = session
+                .proposals
+                .preview
+                .as_ref()
+                .ok_or(EditorError::NoPreview)?;
+            session.to_project(preview)
+        };
+        let bytes = ugoe_editor_core::export_bundle(&project)?;
+        Ok(tauri::ipc::Response::new(bytes))
+    })
+    .await
 }
 
 /// プレビューの複製を捨てる (プレビューをやめたとき)。

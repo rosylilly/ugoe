@@ -2024,6 +2024,7 @@
       "create_folder": "Could not create the folder {{path}} ({{detail}}).",
       "internal": "An internal error occurred ({{detail}}).",
       "task_failed": "A background task did not finish ({{detail}}).",
+      "model_changed": "The model changed while the edit was being made. Try again.",
       "invalid_percent_encoding": "The percent-encoding could not be decoded ({{detail}}).",
       "empty_path": "The path is empty.",
       "not_saved": "The project has not been saved yet.",

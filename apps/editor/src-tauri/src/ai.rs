@@ -16,7 +16,7 @@ use std::fmt;
 use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use ts_rs::TS;
 use ugoe_ai::claude::ApiKey;
 use ugoe_ai::{AiError, Destination, Disclosure, Provider, ProviderRequest};
@@ -24,6 +24,7 @@ use ugoe_ai::{AiError, Destination, Disclosure, Provider, ProviderRequest};
 use crate::AppState;
 pub use crate::ai_provider::KeySlot;
 use crate::ai_provider::{ProviderSettings, Purpose};
+use crate::commands::blocking;
 use crate::error::{EditorError, IpcResult};
 
 /// 資格情報の保存先での名前 (サービス名)。アカウント名はプロバイダごと ([`KeySlot::account`])。
@@ -528,16 +529,6 @@ fn settings(state: &AppState) -> IpcResult<AiSettings> {
         send_externally: session.ai_send_externally(),
         consent_remembered: session.ai_consent().is_remembered(),
     })
-}
-
-/// 保存先の操作は時間がかかることがある (D-Bus の応答待ちなど) ので、画面を止めないよう別のスレッドで行う。
-pub(crate) async fn blocking<T: Send + 'static>(
-    app: AppHandle,
-    task: impl FnOnce(&AppState) -> IpcResult<T> + Send + 'static,
-) -> IpcResult<T> {
-    tauri::async_runtime::spawn_blocking(move || task(&app.state::<AppState>()))
-        .await
-        .map_err(|e| EditorError::Task(e.to_string()))?
 }
 
 #[tauri::command]

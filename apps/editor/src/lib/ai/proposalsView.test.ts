@@ -37,6 +37,9 @@ vi.mock("../ipc", () => ({
 
 const preview = (): ProposalPreview =>
   ({ model_json: JSON.stringify({ parameters: [] }) }) as unknown as ProposalPreview;
+/** 見分けの付くプレビュー (`name` をモデルの JSON に入れる)。 */
+const previewOf = (name: string): ProposalPreview =>
+  ({ model_json: JSON.stringify({ name, parameters: [] }) }) as unknown as ProposalPreview;
 
 beforeEach(() => {
   cleared.mockClear();
@@ -68,6 +71,39 @@ describe("ProposalsView preview", () => {
     await shown;
     expect(view.preview).toBeNull();
     expect(cleared).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the latest preview when an earlier one finishes later", async () => {
+    // プレビューの IPC はメインのスレッドの外で並んで動くので、先に始めたものが後で終わることがある
+    const pending: ((p: ProposalPreview) => void)[] = [];
+    const later = () =>
+      new Promise<ProposalPreview>((r) => {
+        pending.push(r);
+      });
+    const doc = { revision: 1 } as EditorDocument;
+    const view = new ProposalsView(doc);
+    nextPreview = later();
+    const first = view.showPreview(3);
+    nextPreview = later();
+    const second = view.showPreview(3);
+    pending[1]?.(previewOf("second"));
+    await second;
+    pending[0]?.(previewOf("first"));
+    await first;
+    expect(view.preview?.model.json).toBe(previewOf("second").model_json);
+  });
+
+  it("does not show a preview that was ended while it was prepared", async () => {
+    let resolve: (p: ProposalPreview) => void = () => {};
+    nextPreview = new Promise((r) => {
+      resolve = r;
+    });
+    const view = new ProposalsView({ revision: 1 } as EditorDocument);
+    const shown = view.showPreview(3);
+    view.endPreview();
+    resolve(preview());
+    await shown;
+    expect(view.preview).toBeNull();
   });
 });
 

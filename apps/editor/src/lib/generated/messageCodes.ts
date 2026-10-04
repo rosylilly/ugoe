@@ -330,6 +330,7 @@ export const messageCodes: Record<string, readonly string[]> = {
   "editor.missing_header": [
     "header"
   ],
+  "editor.model_changed": [],
   "editor.not_a_module": [],
   "editor.not_json_file": [
     "path"

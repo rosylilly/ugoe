@@ -1121,3 +1121,66 @@ fn proposals_made_for_another_project_are_not_placed() {
     assert_eq!(err.code, "proposal.model_changed");
     assert!(state.project.lock().unwrap().proposals.proposals.is_empty());
 }
+
+/// 法線マップを作るコマンド (`generate_texture_normal_map`) は複製から作り、適用だけをロックの中で行う。1 回の Undo で戻る。
+/// 作る間にモデルが変われば適用しない (T0685)。
+#[test]
+fn texture_normal_maps_are_made_from_a_copy() {
+    use crate::lighting::generate_texture_normal_map_in;
+
+    let state = state(None);
+    let (bytes, options) =
+        crate::psd::read_psd(&bustup_path().display().to_string(), None).unwrap();
+    let (_, document, _) = crate::project::from_psd(&bytes, &options).unwrap();
+    *state.document.lock().unwrap() = document;
+    let texture = state.document.lock().unwrap().model().textures[0]
+        .name
+        .clone();
+    let report = generate_texture_normal_map_in(&state, &texture, None, false).unwrap();
+    assert!(report.warnings.is_empty());
+    {
+        let mut document = state.document.lock().unwrap();
+        let made = |d: &Document| {
+            d.model()
+                .textures
+                .iter()
+                .find(|t| t.name == texture)
+                .unwrap()
+                .normal_map
+                .is_some()
+        };
+        assert!(made(&document));
+        assert!(document.undo());
+        assert!(!made(&document));
+    }
+
+    // 作り始めた後でドキュメントが変わった (つないだエージェントの編集など) なら、作った編集は適用しない。
+    let base = {
+        let document = state.document.lock().unwrap();
+        let session = state.project.lock().unwrap();
+        Base::of(&document, &session)
+    };
+    assert!(state.document.lock().unwrap().redo());
+    let err = {
+        let document = state.document.lock().unwrap();
+        let session = state.project.lock().unwrap();
+        base.check_edit(&document, &session).unwrap_err()
+    };
+    assert_eq!(err.code, "editor.model_changed");
+}
+
+/// PSD の取り込み (`import_psd`) はモデルの写しに対して作り、適用は 1 回の Undo で戻る。取り込んだ PSD を覚える (T0685)。
+#[test]
+fn psd_imports_are_made_from_a_copy() {
+    let state = state(None);
+    let path = bustup_path().display().to_string();
+    crate::psd::import_psd_in(&state, &path, None).unwrap();
+    let mut document = state.document.lock().unwrap();
+    assert!(!document.model().meshes.is_empty());
+    assert_eq!(
+        state.project.lock().unwrap().proposals.psd.as_deref(),
+        Some(bustup_path().as_path())
+    );
+    assert!(document.undo());
+    assert!(document.model().meshes.is_empty());
+}

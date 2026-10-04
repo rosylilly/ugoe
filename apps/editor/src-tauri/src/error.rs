@@ -26,6 +26,10 @@ pub enum EditorError {
     /// 画面のスレッドの外で動かした処理が終わらなかった。
     #[error("{0}")]
     Task(String),
+    /// 時間のかかる編集 (PSD の取り込み・法線マップを作る) をロックの外で作る間に、モデルが変わった
+    /// (つないだエージェントの編集・別のプロジェクトを開いたなど)。作った編集は適用しない。
+    #[error("the model changed while the edit was being made; try again")]
+    ModelChanged,
     #[error("path is empty")]
     EmptyPath,
     #[error("path must be absolute: {0}")]
@@ -161,6 +165,7 @@ impl Coded for EditorError {
             Self::Io { .. } => "editor.io",
             Self::Internal(_) => "editor.internal",
             Self::Task(_) => "editor.task_failed",
+            Self::ModelChanged => "editor.model_changed",
             Self::EmptyPath => "editor.empty_path",
             Self::RelativePath(_) => "editor.relative_path",
             Self::NotSaved => "editor.not_saved",
@@ -240,7 +245,8 @@ impl Coded for EditorError {
             Self::ImageNotFound(name) => message_args! { "name" => name },
             Self::NotRegenerable(id) => message_args! { "id" => *id },
             Self::Ai(error) => ai_args(error),
-            Self::EmptyPath
+            Self::ModelChanged
+            | Self::EmptyPath
             | Self::NotSaved
             | Self::NotSavedUseSaveAs
             | Self::ExternalChange
@@ -284,6 +290,7 @@ pub fn message_samples() -> Vec<Message> {
         },
         EditorError::Internal(detail()),
         EditorError::Task(detail()),
+        EditorError::ModelChanged,
         EditorError::EmptyPath,
         EditorError::RelativePath(path()),
         EditorError::NotSaved,

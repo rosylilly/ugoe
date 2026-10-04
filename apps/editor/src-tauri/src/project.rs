@@ -7,7 +7,7 @@ use std::sync::MutexGuard;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, State};
 use ts_rs::TS;
 use ugoe_editor_core::lighting::PreviewLighting;
 use ugoe_editor_core::project::PROJECT_EXTENSION;
@@ -19,6 +19,7 @@ use ugoe_editor_core::{
 
 use crate::AppState;
 use crate::ai::ConsentMemory;
+use crate::commands::blocking;
 use crate::error::{EditorError, IpcResult};
 use crate::proposals::{ProposalSession, RIGGED_MESHES_KEY};
 
@@ -286,9 +287,9 @@ pub(crate) fn status(session: &ProjectSession, document: &Document) -> ProjectSt
 }
 
 /// ロックの順序は常に `document` → `project`。
-pub(crate) fn lock_both<'a>(
-    state: &'a State<'_, AppState>,
-) -> IpcResult<(MutexGuard<'a, Document>, MutexGuard<'a, ProjectSession>)> {
+pub(crate) fn lock_both(
+    state: &AppState,
+) -> IpcResult<(MutexGuard<'_, Document>, MutexGuard<'_, ProjectSession>)> {
     let document = state
         .document
         .lock()
@@ -350,79 +351,91 @@ pub fn new_project(state: State<'_, AppState>) -> IpcResult<ProjectStatus> {
 /// ファイル名 (拡張子を除く)、キャンバスは PSD の大きさ。未保存の変更は破棄する (確認はフロントエンドで行う)。
 /// 失敗したら今のプロジェクトはそのまま。戻り値は取り込みの警告。
 #[tauri::command]
-pub fn new_project_from_psd(
-    state: State<'_, AppState>,
+pub async fn new_project_from_psd(
+    app: AppHandle,
     path: String,
     mesh_options: Option<AutoMeshOptions>,
 ) -> IpcResult<Vec<PsdImportWarning>> {
-    let (bytes, options) = crate::psd::read_psd(&path, mesh_options)?;
-    let (mut new_session, new_document, warnings) = from_psd(&bytes, &options)?;
-    new_session.proposals.set_psd(absolute_path(&path)?);
-    let (mut document, mut session) = lock_both(&state)?;
-    (*session, *document) = (new_session, new_document);
-    Ok(warnings)
+    blocking(app, move |state| {
+        // 読み込みと自動メッシュはロックの外で行う
+        let (bytes, options) = crate::psd::read_psd(&path, mesh_options)?;
+        let (mut new_session, new_document, warnings) = from_psd(&bytes, &options)?;
+        new_session.proposals.set_psd(absolute_path(&path)?);
+        let (mut document, mut session) = lock_both(state)?;
+        (*session, *document) = (new_session, new_document);
+        Ok(warnings)
+    })
+    .await
 }
 
 /// `.ugoeproj` ディレクトリを開く。失敗したら今のプロジェクトはそのまま。
 #[tauri::command]
-pub fn open_project(state: State<'_, AppState>, path: String) -> IpcResult<ProjectStatus> {
-    let dir = absolute_path(&path)?;
-    let (project, disk) = Project::load_tracked(&dir)?;
-    let (mut document, mut session) = lock_both(&state)?;
-    (*session, *document) = ProjectSession::from_project(project, Some((dir, disk)));
-    Ok(status(&session, &document))
+pub async fn open_project(app: AppHandle, path: String) -> IpcResult<ProjectStatus> {
+    blocking(app, move |state| {
+        let dir = absolute_path(&path)?;
+        let (project, disk) = Project::load_tracked(&dir)?;
+        let (mut document, mut session) = lock_both(state)?;
+        (*session, *document) = ProjectSession::from_project(project, Some((dir, disk)));
+        Ok(status(&session, &document))
+    })
+    .await
 }
 
 /// 開いているプロジェクトを保存先から開き直す (外で書き換えられたとき)。未保存の変更は破棄する
 /// (確認はフロントエンドで行う)。AI への送信の「今後は確かめない」は同じプロジェクトなので残す。
 /// AI の提案は前のドキュメントに対するものなので消す。失敗したら今のプロジェクトはそのまま。
 #[tauri::command]
-pub fn reload_project(state: State<'_, AppState>) -> IpcResult<ProjectStatus> {
-    let (mut document, mut session) = lock_both(&state)?;
-    let dir = session.path.clone().ok_or(EditorError::NotSaved)?;
-    let (project, disk) = Project::load_tracked(&dir)?;
-    let consent = std::mem::take(session.ai_consent_mut());
-    (*session, *document) = ProjectSession::from_project(project, Some((dir, disk)));
-    *session.ai_consent_mut() = consent;
-    Ok(status(&session, &document))
+pub async fn reload_project(app: AppHandle) -> IpcResult<ProjectStatus> {
+    blocking(app, |state| {
+        let (mut document, mut session) = lock_both(state)?;
+        let dir = session.path.clone().ok_or(EditorError::NotSaved)?;
+        let (project, disk) = Project::load_tracked(&dir)?;
+        let consent = std::mem::take(session.ai_consent_mut());
+        (*session, *document) = ProjectSession::from_project(project, Some((dir, disk)));
+        *session.ai_consent_mut() = consent;
+        Ok(status(&session, &document))
+    })
+    .await
 }
 
 /// 開いたとき (または最後に保存したとき) から、保存先のファイルが外で変わったか。変わっていなければ `null`。
 /// 保存先がなければ `null`。フロントエンドがウィンドウに戻ったとき・一定の間隔・保存の前に呼ぶ。
 #[tauri::command]
-pub fn check_external_change(state: State<'_, AppState>) -> IpcResult<Option<ExternalChange>> {
-    // 保存とぶつからないよう、ロックを持ったまま比べる (保存は `document` → `project` の順にロックする)
-    let session = state
-        .project
-        .lock()
-        .map_err(|_| EditorError::LockPoisoned { what: "project" })?;
-    session.external_change()
+pub async fn check_external_change(app: AppHandle) -> IpcResult<Option<ExternalChange>> {
+    blocking(app, |state| {
+        // 保存とぶつからないよう、ロックを持ったまま比べる (保存は `document` → `project` の順にロックする)
+        crate::ai::lock_project(state)?.external_change()
+    })
+    .await
 }
 
 /// 開いたときの (または前回保存した) 場所に保存する。開いた後で外で書き換えられていたら、
 /// `overwrite` が真でない限り書かずに [`EditorError::ExternalChange`] を返す。
 #[tauri::command]
-pub fn save_project(
-    state: State<'_, AppState>,
-    overwrite: Option<bool>,
-) -> IpcResult<ProjectStatus> {
-    let (mut document, mut session) = lock_both(&state)?;
-    let dir = session.path.clone().ok_or(EditorError::NotSavedUseSaveAs)?;
-    if !overwrite.unwrap_or(false) && session.external_change()?.is_some() {
-        return Err(EditorError::ExternalChange.into());
-    }
-    session.save_to(&mut document, dir)?;
-    Ok(status(&session, &document))
+pub async fn save_project(app: AppHandle, overwrite: Option<bool>) -> IpcResult<ProjectStatus> {
+    blocking(app, move |state| {
+        let (mut document, mut session) = lock_both(state)?;
+        let dir = session.path.clone().ok_or(EditorError::NotSavedUseSaveAs)?;
+        if !overwrite.unwrap_or(false) && session.external_change()?.is_some() {
+            return Err(EditorError::ExternalChange.into());
+        }
+        session.save_to(&mut document, dir)?;
+        Ok(status(&session, &document))
+    })
+    .await
 }
 
 /// 別の場所に保存し、以後の保存先をそこにする。拡張子 `.ugoeproj` がなければ付ける。
 /// プロジェクト名はディレクトリ名 (拡張子を除く) にする。
 #[tauri::command]
-pub fn save_project_as(state: State<'_, AppState>, path: String) -> IpcResult<ProjectStatus> {
-    let dir = project_dir(&path)?;
-    let (mut document, mut session) = lock_both(&state)?;
-    save_as(&mut document, &mut session, dir)?;
-    Ok(status(&session, &document))
+pub async fn save_project_as(app: AppHandle, path: String) -> IpcResult<ProjectStatus> {
+    blocking(app, move |state| {
+        let dir = project_dir(&path)?;
+        let (mut document, mut session) = lock_both(state)?;
+        save_as(&mut document, &mut session, dir)?;
+        Ok(status(&session, &document))
+    })
+    .await
 }
 
 /// [`save_project_as`] の中身 (テストから呼ぶ)。失敗したらメタ情報は元のまま。
@@ -442,11 +455,18 @@ fn save_as(document: &mut Document, session: &mut ProjectSession, dir: PathBuf) 
 
 /// 今のドキュメントを `.ugoe` バンドルのバイト列で返す (ビューポートがテクスチャ付きで表示するため)。
 /// JSON を経由しないよう、生のバイト列 (`tauri::ipc::Response`) で送る (`docs/editor.md#ビューポート`)。
+/// 編集のたびに呼ぶので、ロックの中では写しを取るだけにし、バンドル (PNG を含む) はロックの外で作る。
 #[tauri::command]
-pub fn get_model_bundle(state: State<'_, AppState>) -> IpcResult<tauri::ipc::Response> {
-    let (document, session) = lock_both(&state)?;
-    let bytes = ugoe_editor_core::export_bundle(&session.to_project(&document))?;
-    Ok(tauri::ipc::Response::new(bytes))
+pub async fn get_model_bundle(app: AppHandle) -> IpcResult<tauri::ipc::Response> {
+    blocking(app, |state| {
+        let project = {
+            let (document, session) = lock_both(state)?;
+            session.to_project(&document)
+        };
+        let bytes = ugoe_editor_core::export_bundle(&project)?;
+        Ok(tauri::ipc::Response::new(bytes))
+    })
+    .await
 }
 
 /// プロジェクトに残した書き出しの設定 (`project.json` の `editor.export`、`docs/editor.md#書き出し`)。
@@ -494,15 +514,21 @@ pub fn set_preview_lighting(
 /// プロジェクトの書き出しの設定に従って (アトラス化は任意)、`.ugoe` バンドルとしてファイルに書き出す。
 /// 保存状態は変えない。書き出しの前後のテクスチャの枚数と描画の状態の切り替えの見積もりを返す。
 #[tauri::command]
-pub fn export_bundle(state: State<'_, AppState>, path: String) -> IpcResult<ExportReport> {
-    let path = absolute_path(&path)?;
-    let (bytes, report) = {
-        let (document, session) = lock_both(&state)?;
-        let settings = session.meta.export_settings();
-        export_bundle_with_settings(&session.to_project(&document), &settings)?
-    };
-    std::fs::write(&path, bytes).map_err(|e| EditorError::io(&path, e))?;
-    Ok(report)
+pub async fn export_bundle(app: AppHandle, path: String) -> IpcResult<ExportReport> {
+    blocking(app, move |state| {
+        let path = absolute_path(&path)?;
+        let (project, settings) = {
+            let (document, session) = lock_both(state)?;
+            (
+                session.to_project(&document),
+                session.meta.export_settings(),
+            )
+        };
+        let (bytes, report) = export_bundle_with_settings(&project, &settings)?;
+        std::fs::write(&path, bytes).map_err(|e| EditorError::io(&path, e))?;
+        Ok(report)
+    })
+    .await
 }
 
 #[cfg(test)]

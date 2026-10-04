@@ -4,6 +4,7 @@
 
 use std::path::Path;
 
+use crate::commands::off_main;
 use crate::error::{EditorError, IpcResult};
 use crate::project::absolute_path;
 
@@ -17,7 +18,7 @@ const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 /// PNG の画像を書く。本文は PNG のバイト列、パスはヘッダー `x-ugoe-path` (保存のダイアログで利用者が選んだ絶対パス)。
 /// 拡張子が `.png` で、中身が PNG のものだけを書く。
 #[tauri::command]
-pub fn write_png_file(request: tauri::ipc::Request<'_>) -> IpcResult<()> {
+pub async fn write_png_file(request: tauri::ipc::Request<'_>) -> IpcResult<()> {
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
         return Err(EditorError::ExpectedPngBytes.into());
     };
@@ -30,7 +31,10 @@ pub fn write_png_file(request: tauri::ipc::Request<'_>) -> IpcResult<()> {
             header: PATH_HEADER,
             detail: e.to_string(),
         })?;
-    write_png(&percent_decode(header)?, bytes)
+    let path = percent_decode(header)?;
+    // 要求は借りものなので、別のスレッドへはバイト列の写しを渡す。
+    let bytes = bytes.clone();
+    off_main(move || write_png(&path, &bytes)).await
 }
 
 /// [`write_png_file`] の中身 (テストから呼ぶ)。

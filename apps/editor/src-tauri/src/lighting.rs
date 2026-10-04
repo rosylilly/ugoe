@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, State};
 use ts_rs::TS;
 use ugoe_ai::Proposal;
 use ugoe_ai::classify::{Label, LayerLabel, label_meshes_by_name};
@@ -24,9 +24,10 @@ use ugoe_model::{MeshId, Model};
 
 use crate::AppState;
 use crate::ai::lock_project;
-use crate::commands::lock;
+use crate::commands::{blocking, lock};
 use crate::error::{EditorError, IpcResult};
-use crate::project::absolute_path;
+use crate::project::{absolute_path, lock_both};
+use crate::proposals::Base;
 
 /// テクスチャの法線マップを、どのまとまりで作るか (`get_normal_map_group` の戻り値)。
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
@@ -313,38 +314,56 @@ pub fn get_normal_map_groups(state: State<'_, AppState>) -> IpcResult<Vec<Normal
 /// (AI は使わない)。`settings` はまとまり全体の設定 (`null` ならまとまりの既定)。`whole_group` なら、
 /// まとまりのすべてのテクスチャに作り直す。モデルのライティングが無効なら有効にする。1 回の Undo で戻る。
 #[tauri::command]
-pub fn generate_texture_normal_map(
-    state: State<'_, AppState>,
+pub async fn generate_texture_normal_map(
+    app: AppHandle,
     texture: String,
     settings: Option<BulgeSettings>,
     whole_group: bool,
 ) -> IpcResult<ApplyReport> {
-    let layers = layer_labels(&state)?;
-    let mut document = lock(&state)?;
-    let command = generate_normal_map_in(
-        &document,
-        layers.as_deref(),
-        &texture,
-        settings,
-        whole_group,
-    )?;
+    blocking(app, move |state| {
+        generate_texture_normal_map_in(state, &texture, settings, whole_group)
+    })
+    .await
+}
+
+/// [`generate_texture_normal_map`] の本体。作る間はロックを持たず (まとまりのすべてのテクスチャでは時間がかかる)、
+/// 複製から作って、適用だけをロックの中で行う (提案の `propose_normal_maps_in` と同じ形)。作る間にモデルが
+/// 変わっていたら適用せずに [`EditorError::ModelChanged`]。
+pub(crate) fn generate_texture_normal_map_in(
+    state: &AppState,
+    texture: &str,
+    settings: Option<BulgeSettings>,
+    whole_group: bool,
+) -> IpcResult<ApplyReport> {
+    let (document, base, layers) = {
+        let (document, session) = lock_both(state)?;
+        let base = Base::of(&document, &session);
+        (document.detached(), base, session.proposals.layer_labels())
+    };
+    let command =
+        generate_normal_map_in(&document, layers.as_deref(), texture, settings, whole_group)?;
+    let (mut document, session) = lock_both(state)?;
+    base.check_edit(&document, &session)?;
     document.apply_with_report(command).map_err(Message::from)
 }
 
 /// PNG ファイル `path` (開くのダイアログで選んだもの) をテクスチャ `texture` の法線マップとして付ける。
 /// `flip_green` なら G を反転する (DirectX 形式の画像)。1 回の Undo で戻る。
 #[tauri::command]
-pub fn assign_texture_normal_map(
-    state: State<'_, AppState>,
+pub async fn assign_texture_normal_map(
+    app: AppHandle,
     texture: String,
     path: String,
     flip_green: bool,
 ) -> IpcResult<ApplyReport> {
-    let path = absolute_path(&path)?;
-    let png = std::fs::read(&path).map_err(|e| EditorError::io(&path, e))?;
-    let mut document = lock(&state)?;
-    let command = assign_normal_map(document.model(), &texture, png, flip_green)?;
-    document.apply_with_report(command).map_err(Message::from)
+    blocking(app, move |state| {
+        let path = absolute_path(&path)?;
+        let png = std::fs::read(&path).map_err(|e| EditorError::io(&path, e))?;
+        let mut document = lock(state)?;
+        let command = assign_normal_map(document.model(), &texture, png, flip_green)?;
+        document.apply_with_report(command).map_err(Message::from)
+    })
+    .await
 }
 
 /// テクスチャか法線マップの画像 `name` の PNG (画面で確かめるため)。生のバイト列で送る。

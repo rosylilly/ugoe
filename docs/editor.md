@@ -1728,6 +1728,35 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
   - 同じ親の中でメッシュの行の上半分 / 下半分に落とすと、その手前 / 奥へ並べ替えます (`reorder_mesh`)。
     `reorder_mesh` は描画順が同じメッシュどうしの前後しか変えられないので、描画順が違えば拒否します。
 
+## メインのスレッドの外で動くコマンド
+
+Tauri v2 では `async` でない IPC コマンドはメインのスレッド (ウィンドウのイベントのループ) で動き、その間は画面が止まります。
+ファイルを読み書きする・大きなバイト列を作る・計算が重い・応答を待つコマンドは `async fn` にし、本体を
+`commands::blocking` (アプリの状態を使う) か `commands::off_main` (使わない) で `spawn_blocking` のスレッドへ渡します (`.mcpb` のコマンドは `spawn_blocking` を直接呼ぶ)
+(T0685。ビューア T0726・スタジオ T0819 と同じ形)。スレッドが終わらなければ `editor.task_failed`。
+
+| まとまり | コマンド |
+| --- | --- |
+| プロジェクトのファイル | `open_project`・`reload_project`・`save_project`・`save_project_as`・`new_project_from_psd`・`open_sample_project`・`check_external_change` |
+| モジュールのプロジェクト | `open_module_with_base`・`module_open_problem`・`read_module_base`・`reload_base`・`check_base_change`・`export_module`・`get_preview_base_bundle`・`get_preview_module` |
+| 取り込み・書き出し・画像 | `import_psd`・`export_bundle`・`get_model_bundle`・`generate_texture_normal_map`・`assign_texture_normal_map`・`read_module_file`・`write_png_file` |
+| AI の提案 | `classify_psd_layers`・`propose_rig_from_psd`・`regenerate_rig_proposal`・`propose_normal_maps`・`preview_proposal`・`get_proposal_preview_bundle` |
+| 設定・連携 | `ai_settings`・`set_ai_provider`・`store_api_key`・`delete_api_key`・`set_ai_send_externally`・`forget_ai_consent`・`test_ai_connection`・`open_claude_desktop_bundle`・`save_claude_desktop_bundle` |
+
+ほかのコマンド (`apply_command`・`get_model_json`・`undo` など) はロックを取って値を写すだけなので、同期のままメインのスレッドで動きます。
+
+- **ロック:** 錠の順は `document` → `project` のまま。バンドルを作るコマンド (`get_model_bundle`・`get_preview_module`・
+  `get_proposal_preview_bundle`・`export_bundle`・`export_module`) は、ロックの中では `Project` の写しを取るだけにし、PNG を含む
+  バイト列はロックの外で作ります。`import_psd` と `generate_texture_normal_map` も、モデル (ドキュメント) の写しから編集を作り、
+  適用だけをロックの中で行います。作る間にプロジェクトかドキュメントの状態が変わっていたら (つないだエージェントの編集・
+  別のプロジェクトを開いたなど) 適用せず `editor.model_changed` を返します (提案の `proposal.model_changed` と同じ確かめ方)。
+  開く・保存は、ファイルを読み終えてから (保存は書く間も) ロックを持ちます。
+- **呼ぶ順:** メインのスレッドの外のコマンドは、ほかのコマンドと並んで動き、呼んだ順に終わるとは限りません。メインのスレッドの
+  コマンド (`apply_command` など) は届いた順に終わってから次が始まるので、`await` した適用の後の読み直し (`get_model_json`・
+  `get_model_bundle`) は適用の後の姿を読みます。重なった読み直しは最後に始めたものだけが結果を置き (`EditorDocument.refresh`)、
+  提案のプレビューも最後に始めたものだけを出します (`ProposalsView.showPreview`)。フロントエンドで、メインのスレッドの外の
+  コマンドの結果に頼る別のコマンドを `await` せずに続けて呼ばないでください。
+
 ## フロントエンドの規約
 
 - Svelte 5 の runes (`$state`、`$derived`、`$effect`) を使います。ストアのライブラリは入れません。
@@ -1923,7 +1952,7 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 | `editor.lock_poisoned` | `what` (`document`・`project`・`preview cache`) |
 | `editor.io` / `editor.create_folder` | `path`・`detail` |
 | `editor.internal` / `editor.task_failed` / `editor.invalid_percent_encoding` | `detail` |
-| `editor.empty_path` / `editor.not_saved` / `editor.not_saved_use_save_as` / `editor.external_change` / `editor.not_a_module` / `editor.expected_module_bytes` / `editor.expected_png_bytes` / `editor.not_png_data` | なし |
+| `editor.model_changed` / `editor.empty_path` / `editor.not_saved` / `editor.not_saved_use_save_as` / `editor.external_change` / `editor.not_a_module` / `editor.expected_module_bytes` / `editor.expected_png_bytes` / `editor.not_png_data` | なし |
 | `editor.relative_path` / `editor.not_module_file` / `editor.not_png_file` / `editor.not_json_file` / `editor.too_many_sample_folders` | `path` |
 | `editor.missing_header` | `header` |
 | `editor.invalid_header` | `header`・`detail` |
