@@ -1,11 +1,11 @@
 ---
 id: T0021
 title: worktree ごとのビルドの成果物 (約 16GB) を減らす
-status: todo
+status: in-progress
 milestone: M9
 crates: [Cargo.toml, justfile, scripts, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0021
 ---
 
 # T0021: worktree ごとのビルドの成果物 (約 16GB) を減らす
