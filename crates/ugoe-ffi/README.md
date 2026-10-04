@@ -241,7 +241,8 @@ ugoe_puppet_set_base_values(puppet, values, PARAM_COUNT); /* 基準値として�
   モーション・トラッキング・表情・目パチ・呼吸は通さない。
   リップシンクはこの `UgoePuppet` のモデルの対象に当て、`ugoe_puppet_set_lip_sync_level` の音量は使わない。
 - `ugoe_puppet_set_parameter` の値は前のフレームの出力と同じなら基準値にならないが、これらは同じでも基準値にする (範囲に丸める)。
-- 数がパラメータの数と違う・NaN を含む (音量と強さ、パーツの不透明度の値と重みも)・`dt` が負か有限でないときは `UGOE_ERROR_INVALID_ARGUMENT` を返し、何も変えない。
+- 数がパラメータの数と違う・NaN を含む (音量と強さ、パーツの不透明度の値と重みも)・(当てるときの) 強さかパーツの不透明度の値と重みが無限大・
+  `dt` が負か有限でないときは `UGOE_ERROR_INVALID_ARGUMENT` を返し、何も変えない (無限大は 0 × ∞ で NaN をパラメータに書きうるため)。
   `ugoe_puppet_follow` の後も、モーションのイベントは直前の `ugoe_puppet_update` のまま。wasm は `follow`・`set_base_values` (`Float32Array`)。
 
 ## 範囲外 (後続)

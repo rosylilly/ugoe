@@ -287,7 +287,7 @@ typedef struct UgoeTrackingInput {
 // 添字が範囲外だった。
 #define UGOE_ERROR_OUT_OF_RANGE 3
 
-// ホストが渡したバッファが小さすぎた。何も書き込んでいない。
+// ホストが渡したバッファが小さすぎた。バッファには何も書き込んでいない (可変長の結果では、要る数か長さだけを書く)。
 #define UGOE_ERROR_BUFFER_TOO_SMALL 4
 
 // ファイルを読めなかった (壊れたバイト列、対応していない版、知らない必須の機能など)。
@@ -728,8 +728,8 @@ UgoeResult ugoe_puppet_set_base_values(struct UgoePuppet *puppet,
 // (`ugoe_puppet_motion_event_count`) は直前の `ugoe_puppet_update` のまま。
 // 呼ぶと、この `UgoePuppet` から借りた頂点位置と描画順のポインタは無効になる。
 //
-// `count` がパラメータの数と違う・NaN を含む・リップシンクかパーツの不透明度の値が NaN・`dt` が負か有限でないときは
-// `UGOE_ERROR_INVALID_ARGUMENT` を返し、何も変えない。
+// `count` がパラメータの数と違う・NaN を含む・リップシンクの音量が NaN・(当てるときの) 強さかパーツの不透明度の値と重みが
+// 有限でない・`dt` が負か有限でないときは `UGOE_ERROR_INVALID_ARGUMENT` を返し、何も変えない。
 //
 // # Safety
 //

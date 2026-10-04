@@ -43,6 +43,25 @@ pub const UGOE_CHANGED_SCREEN_COLOR: u8 = 1 << 5;
 /// マスクの効き具合。
 pub const UGOE_CHANGED_MASK_STRENGTH: u8 = 1 << 6;
 
+// ビットは `ugoe::runtime::DrawableChanges` のものをそのまま渡す (`ugoe_puppet_drawable_state`)。
+const _: () = {
+    use ugoe::runtime::DrawableChanges as C;
+    assert!(UGOE_CHANGED_POSITIONS == C::POSITIONS.bits());
+    assert!(UGOE_CHANGED_OPACITY == C::OPACITY.bits());
+    assert!(UGOE_CHANGED_DRAW_ORDER == C::DRAW_ORDER.bits());
+    assert!(UGOE_CHANGED_VISIBILITY == C::VISIBILITY.bits());
+    assert!(UGOE_CHANGED_MULTIPLY_COLOR == C::MULTIPLY_COLOR.bits());
+    assert!(UGOE_CHANGED_SCREEN_COLOR == C::SCREEN_COLOR.bits());
+    assert!(UGOE_CHANGED_MASK_STRENGTH == C::MASK_STRENGTH.bits());
+    assert!(C::ALL.bits() == (1 << 7) - 1);
+};
+
+// 頂点位置と UV は `Vec2` の並びを float の並びとして貸す (`ugoe_puppet_positions`・`ugoe_puppet_drawable_uvs`)。
+const _: () = {
+    assert!(size_of::<ugoe::core::Vec2>() == 2 * size_of::<f32>());
+    assert!(align_of::<ugoe::core::Vec2>() == align_of::<f32>());
+};
+
 /// 描画可能要素の、評価で変わらない情報。
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]

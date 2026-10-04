@@ -818,8 +818,17 @@ pub unsafe extern "C" fn ugoe_puppet_set_parameters_by_id(
         let parameters = p.puppet.instance().parameters();
         let mut targets = Vec::with_capacity(count);
         for (i, (&id, &value)) in ids.iter().zip(values).enumerate() {
-            // SAFETY: 呼び出し側の約束。
-            let id = unsafe { c_str(id, "ids[i]")? };
+            // `c_str` と同じ検査。何番目かはエラーのときだけ文字列にする (成功する呼び出しで確保しない)。
+            if id.is_null() {
+                return Err(Error::null(&format!("ids[{i}]")));
+            }
+            // SAFETY: 呼び出し側の約束で、NULL でない `id` は NUL 終端の文字列。
+            let id = unsafe { CStr::from_ptr(id) }.to_str().map_err(|_| {
+                Error::new(
+                    UGOE_ERROR_INVALID_ARGUMENT,
+                    format!("`ids[{i}]` is not UTF-8"),
+                )
+            })?;
             if value.is_nan() {
                 return Err(Error::new(
                     UGOE_ERROR_INVALID_ARGUMENT,

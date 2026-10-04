@@ -39,6 +39,11 @@ fn single_quad_bundle() -> Vec<u8> {
     ugoe::format::write_bundle(&bundle).unwrap()
 }
 
+/// パラメータ `X` の ID (C の文字列。ずっと有効)。
+fn x_id() -> &'static CStr {
+    c"X"
+}
+
 /// 呼び出しの結果が成功であることを確かめる (失敗ならメッセージを出す)。
 #[track_caller]
 fn ok(code: UgoeResult) {
@@ -316,6 +321,43 @@ fn errors_are_reported_with_codes_and_messages() {
     assert_eq!(
         unsafe { ugoe_puppet_parameter_index(p.0, bad_utf8.as_ptr().cast(), &mut index) },
         UGOE_ERROR_INVALID_ARGUMENT
+    );
+
+    // NaN の値は、どの入口でも受け付けず何も変えない。
+    let mut value = f32::NAN;
+    ok(unsafe { ugoe_puppet_get_parameter(p.0, 0, &mut value) });
+    assert_eq!(
+        unsafe { ugoe_puppet_set_parameter(p.0, 0, f32::NAN) },
+        UGOE_ERROR_INVALID_ARGUMENT
+    );
+    assert_eq!(
+        unsafe { ugoe_puppet_set_lip_sync_level(p.0, f32::NAN) },
+        UGOE_ERROR_INVALID_ARGUMENT
+    );
+    let mut after = f32::NAN;
+    ok(unsafe { ugoe_puppet_get_parameter(p.0, 0, &mut after) });
+    assert_eq!(after, value);
+    // 無限大は範囲に丸める。
+    ok(unsafe { ugoe_puppet_set_parameter(p.0, 0, f32::NEG_INFINITY) });
+    ok(unsafe { ugoe_puppet_get_parameter(p.0, 0, &mut after) });
+    assert_eq!(after, -1.0);
+
+    // UTF-8 でない ID は、何番目かをメッセージに書く。
+    let ids = [x_id().as_ptr(), bad_utf8.as_ptr().cast()];
+    let values = [0.0f32, 0.0];
+    assert_eq!(
+        unsafe {
+            ugoe_puppet_set_parameters_by_id(p.0, ids.as_ptr(), values.as_ptr(), 2, ptr::null_mut())
+        },
+        UGOE_ERROR_INVALID_ARGUMENT
+    );
+    assert!(last_error().contains("ids[1]"), "{}", last_error());
+
+    // 作る関数は `out` が NULL なら何も作らない。
+    let bytes = single_quad_bundle();
+    assert_eq!(
+        unsafe { ugoe_puppet_create_from_bundle(bytes.as_ptr(), bytes.len(), ptr::null_mut()) },
+        UGOE_ERROR_NULL_POINTER
     );
 
     let mut small = [0.0f32; 3];

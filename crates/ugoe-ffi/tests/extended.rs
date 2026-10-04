@@ -212,6 +212,58 @@ fn modules_attach_detach_and_follow_the_puppet() {
     assert_eq!(count(&p, ugoe_puppet_attached_module_count), 1);
 }
 
+/// 同じスロットか同じ名前のモジュールを付けると、`ugoe::Puppet::attach_module` と同じく合成の順の同じ位置で差し替える。
+/// スロットと名前で別々のモジュールに当たれば、両方を外して前の方の位置に入れる。
+#[test]
+fn attaching_replaces_modules_like_the_puppet() {
+    let p = from_model(dress_up_base());
+    let mut reference = Puppet::new(dress_up_base()).unwrap();
+    let attached_names = |p: &Handle| -> Vec<String> {
+        (0..count(p, ugoe_puppet_attached_module_count))
+            .map(|i| {
+                let mut s = ptr::null();
+                ok(unsafe { ugoe_puppet_attached_module_name(p.0, i, &mut s) });
+                text(s)
+            })
+            .collect()
+    };
+    let reference_names = |puppet: &Puppet| -> Vec<String> {
+        puppet.modules().iter().map(|m| m.name.clone()).collect()
+    };
+    let mut attach = |m: Module, tag: u8| {
+        let handle = module(m.clone(), tag);
+        ok(unsafe { ugoe_puppet_attach_module(p.0, handle.0) });
+        let change = reference.attach_module(std::sync::Arc::new(m)).unwrap();
+        assert_eq!(changed_textures(&p), change.textures);
+        assert_eq!(attached_names(&p), reference_names(&reference));
+        let expected: Vec<&str> = reference
+            .instance()
+            .compiled()
+            .model()
+            .meshes
+            .iter()
+            .map(|m| m.id.as_str())
+            .collect();
+        assert_eq!(drawable_ids(&p), expected);
+    };
+    attach(long_hair_module(), 1);
+    attach(dress_module(), 2);
+
+    // 同じスロット (Hair) の別のモジュールは、LongHair の位置で差し替える。
+    let mut other_hair = long_hair_module();
+    other_hair.name = "OtherHair".into();
+    attach(other_hair, 3);
+    assert_eq!(attached_names(&p), ["OtherHair", "Dress"]);
+    assert_eq!(texture(&p, 1), png(3).bytes);
+
+    // スロットは OtherHair、名前は Dress に当たる。両方を外し、前の方 (OtherHair) の位置に入る。
+    let mut renamed = long_hair_module();
+    renamed.name = "Dress".into();
+    attach(renamed, 4);
+    assert_eq!(attached_names(&p), ["Dress"]);
+    assert_eq!(texture(&p, 1), png(4).bytes);
+}
+
 #[test]
 fn dress_up_failures_carry_the_wasm_codes() {
     let p = from_model(dress_up_base());
@@ -1179,6 +1231,38 @@ fn follow_applies_the_lip_sync_like_the_puppet() {
         )
     };
     assert_eq!(code, UGOE_ERROR_INVALID_ARGUMENT);
+
+    // 無限大の強さは、音量と今の値が等しいと 0 × ∞ で NaN を書くので受け付けない (何も変えない)。
+    let before = param(&p, standard::MOUTH_OPEN_Y);
+    for strength in [f32::INFINITY, f32::NEG_INFINITY] {
+        let code = unsafe {
+            ugoe_puppet_follow(
+                p.0,
+                values.as_ptr(),
+                values.len(),
+                before,
+                strength,
+                ptr::null(),
+                0,
+                DT,
+            )
+        };
+        assert_eq!(code, UGOE_ERROR_INVALID_ARGUMENT, "{strength}");
+        assert_eq!(param(&p, standard::MOUTH_OPEN_Y), before);
+    }
+    // 当てないとき (音量が負) は強さを見ない。
+    ok(unsafe {
+        ugoe_puppet_follow(
+            p.0,
+            values.as_ptr(),
+            values.len(),
+            -1.0,
+            f32::INFINITY,
+            ptr::null(),
+            0,
+            DT,
+        )
+    });
 }
 
 /// 受け手のパーツの不透明度 (T0135): `ugoe_puppet_follow` のパーツの不透明度のカーブは `ugoe::Puppet::follow` と同じに当たる。
@@ -1241,6 +1325,31 @@ fn follow_applies_the_part_opacities_like_the_puppet() {
         )
     };
     assert_eq!(code, UGOE_ERROR_INVALID_ARGUMENT);
+    // 無限大の値と重みも受け付けない。
+    for (value, weight) in [
+        (f32::INFINITY, 1.0),
+        (1.0, f32::INFINITY),
+        (f32::NEG_INFINITY, 0.5),
+    ] {
+        let infinite = [UgoePartOpacityInput {
+            part: 0,
+            value,
+            weight,
+        }];
+        let code = unsafe {
+            ugoe_puppet_follow(
+                p.0,
+                values.as_ptr(),
+                values.len(),
+                -1.0,
+                0.0,
+                infinite.as_ptr(),
+                1,
+                DT,
+            )
+        };
+        assert_eq!(code, UGOE_ERROR_INVALID_ARGUMENT, "{value} {weight}");
+    }
     let code = unsafe {
         ugoe_puppet_follow(
             p.0,

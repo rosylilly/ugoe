@@ -16,7 +16,7 @@ pub const UGOE_ERROR_NULL_POINTER: UgoeResult = 1;
 pub const UGOE_ERROR_INVALID_ARGUMENT: UgoeResult = 2;
 /// 添字が範囲外だった。
 pub const UGOE_ERROR_OUT_OF_RANGE: UgoeResult = 3;
-/// ホストが渡したバッファが小さすぎた。何も書き込んでいない。
+/// ホストが渡したバッファが小さすぎた。バッファには何も書き込んでいない (可変長の結果では、要る数か長さだけを書く)。
 pub const UGOE_ERROR_BUFFER_TOO_SMALL: UgoeResult = 4;
 /// ファイルを読めなかった (壊れたバイト列、対応していない版、知らない必須の機能など)。
 pub const UGOE_ERROR_FORMAT: UgoeResult = 5;

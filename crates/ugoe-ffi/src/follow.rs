@@ -87,8 +87,8 @@ pub unsafe extern "C" fn ugoe_puppet_set_base_values(
 /// (`ugoe_puppet_motion_event_count`) は直前の `ugoe_puppet_update` のまま。
 /// 呼ぶと、この `UgoePuppet` から借りた頂点位置と描画順のポインタは無効になる。
 ///
-/// `count` がパラメータの数と違う・NaN を含む・リップシンクかパーツの不透明度の値が NaN・`dt` が負か有限でないときは
-/// `UGOE_ERROR_INVALID_ARGUMENT` を返し、何も変えない。
+/// `count` がパラメータの数と違う・NaN を含む・リップシンクの音量が NaN・(当てるときの) 強さかパーツの不透明度の値と重みが
+/// 有限でない・`dt` が負か有限でないときは `UGOE_ERROR_INVALID_ARGUMENT` を返し、何も変えない。
 ///
 /// # Safety
 ///
@@ -120,6 +120,13 @@ pub unsafe extern "C" fn ugoe_puppet_follow(
             level: lip_sync_level,
             strength: lip_sync_strength,
         });
+        // NaN は `Puppet::follow` が拒む。無限大の強さ・値・重みは 0 × ∞ で NaN を書きうるので、ここで拒む。
+        if lip_sync.is_some() && lip_sync_strength.is_infinite() {
+            return Err(Error::new(
+                UGOE_ERROR_INVALID_ARGUMENT,
+                format!("`lip_sync_strength` must be finite (got {lip_sync_strength})"),
+            ));
+        }
         let part_opacities: Vec<PartOpacityInput> = if part_opacity_count == 0 {
             Vec::new()
         } else if part_opacities.is_null() {
@@ -131,6 +138,15 @@ pub unsafe extern "C" fn ugoe_puppet_follow(
                 .map(|&p| p.into())
                 .collect()
         };
+        if let Some(i) = part_opacities
+            .iter()
+            .position(|p| p.value.is_infinite() || p.weight.is_infinite())
+        {
+            return Err(Error::new(
+                UGOE_ERROR_INVALID_ARGUMENT,
+                format!("`part_opacities[{i}]` must be finite"),
+            ));
+        }
         p.puppet
             .follow(values, lip_sync, &part_opacities, dt)
             .map_err(invalid)
