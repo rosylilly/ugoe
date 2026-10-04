@@ -1,11 +1,11 @@
 ---
 id: T0457
 title: C ABI のモデルの読み込みの失敗にも種類を付けて wasm の LoadError と揃え、wasm の着せ替えの GPU の喪失にコードを付ける
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe, ugoe-ffi, ugoe-wasm, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0457
 ---
 
 # T0457: C ABI のモデルの読み込みの失敗にも種類を付けて wasm の LoadError と揃え、wasm の着せ替えの GPU の喪失にコードを付ける
