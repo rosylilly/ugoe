@@ -1,6 +1,8 @@
-// EditorDocument の読み直し (IPC は偽物)。重なった読み直しは、後から始めたものの結果を残す。
-import { beforeEach, describe, expect, it, vi } from "vitest";
+// EditorDocument の読み直しと編集の列 (IPC は偽物)。重なった読み直しは、後から始めたものの結果を残す。
+// 編集は前の適用と読み直しを待ってから、その時点の写しで組み立てる。
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EditorDocument } from "./document.svelte";
+import { type Command, ipc } from "./ipc";
 
 /** 呼ばれるたびに `get_model_json` が返すもの (先頭から順に使う)。 */
 let jsons: Promise<string>[] = [];
@@ -89,5 +91,95 @@ describe("EditorDocument.applyWith", () => {
       doc.applyWith(() => Promise.reject(new Error("refused")), { rethrow: true }),
     ).rejects.toThrow("refused");
     expect(doc.error).toBeNull();
+  });
+});
+
+describe("EditorDocument.send", () => {
+  /** 適用のたびに 1 つ数を増やすバックエンドの偽物 (読み直すと今の数が `parameters` の ID になる)。 */
+  function counter(): { applied: Command[]; release: () => void } {
+    const applied: Command[] = [];
+    const gate = deferred<void>();
+    vi.mocked(ipc.applyCommand).mockImplementation(async (command) => {
+      // 最初の適用だけ、release されるまで終わらない (適用中に次の編集が来る)。
+      if (applied.length === 0) await gate.promise;
+      applied.push(command);
+      jsons.push(Promise.resolve(model(String(applied.length))));
+      return { warnings: [], mirrored: [] };
+    });
+    return {
+      applied,
+      release: () => gate.resolve(),
+    };
+  }
+
+  afterEach(() => {
+    vi.mocked(ipc.applyCommand).mockImplementation(async () => ({ warnings: [], mirrored: [] }));
+  });
+
+  /** 今のパラメータの ID を名前にして消すコマンド (組み立てた時点の写しが分かる)。 */
+  function removeCurrent(doc: EditorDocument): Command {
+    return { op: "remove_parameter", id: doc.parameters[0]?.id ?? "none" };
+  }
+
+  it("waits for the edit in flight and builds the next command from the refreshed model", async () => {
+    const backend = counter();
+    const doc = new EditorDocument();
+    const first = doc.send(() => removeCurrent(doc));
+    const second = doc.send(() => removeCurrent(doc));
+    expect(doc.pending).toBe(2);
+    backend.release();
+    expect(await first).not.toBeNull();
+    expect(await second).not.toBeNull();
+    // 2 つ目は捨てられず、1 つ目を読み直した後の写し ("1") から組み立てる。
+    expect(backend.applied).toEqual([
+      { op: "remove_parameter", id: "none" },
+      { op: "remove_parameter", id: "1" },
+    ]);
+    expect(doc.parameters.map((p) => p.id)).toEqual(["2"]);
+    expect(doc.pending).toBe(0);
+  });
+
+  it("keeps the order with apply, undo and redo", async () => {
+    const backend = counter();
+    const doc = new EditorDocument();
+    const order: string[] = [];
+    vi.mocked(ipc.undo).mockImplementationOnce(async () => {
+      order.push(`undo after ${backend.applied.length}`);
+      return true;
+    });
+    const edit = doc.apply({ op: "remove_parameter", id: "a" });
+    const undo = doc.undo();
+    backend.release();
+    await Promise.all([edit, undo]);
+    expect(order).toEqual(["undo after 1"]);
+  });
+
+  it("sends nothing when the builder returns null", async () => {
+    const doc = new EditorDocument();
+    vi.mocked(ipc.applyCommand).mockClear();
+    expect(await doc.send(() => null)).toBeNull();
+    expect(ipc.applyCommand).not.toHaveBeenCalled();
+    expect(doc.error).toBeNull();
+  });
+
+  it("reports a failure through the return value and goes on with the next edit", async () => {
+    const doc = new EditorDocument();
+    vi.mocked(ipc.applyCommand).mockRejectedValueOnce(new Error("refused"));
+    jsons = [Promise.resolve(model("After"))];
+    const failed = doc.send(() => ({ op: "remove_parameter", id: "a" }));
+    const next = doc.send(() => ({ op: "remove_parameter", id: "b" }));
+    expect(await failed).toBeNull();
+    expect(await next).not.toBeNull();
+    expect(doc.parameters.map((p) => p.id)).toEqual(["After"]);
+    expect(doc.error).toBeNull();
+  });
+
+  it("shows an error thrown by the builder", async () => {
+    const doc = new EditorDocument();
+    const report = await doc.send(() => {
+      throw new Error("no such rig");
+    });
+    expect(report).toBeNull();
+    expect(doc.error).toBe("no such rig");
   });
 });

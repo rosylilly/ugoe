@@ -1,6 +1,8 @@
 // バックエンドが持つドキュメント (モデルの正となる状態) の、フロントエンド側の写し。
 // 編集は必ず IPC の Command で行い、その後 refresh() で読み直す (docs/editor.md)。
+// 編集 (send・apply・applyWith・undo・redo) は 1 本の列に並べ、前の適用と読み直しが終わってから次を始める。
 
+import { tick } from "svelte";
 import { isEmptyModel } from "./emptyState";
 import { errorText } from "./errors";
 import {
@@ -46,8 +48,15 @@ export class EditorDocument {
   empty = $state(false);
   /** refresh が成功するたびに増える (ファイルメニューの状態の取り直しなどに使う)。 */
   revision = $state(0);
+  /**
+   * 列に並べてまだ終わっていない編集の数 (`send`・`apply`・`applyWith`・`undo`・`redo`)。
+   * パネルは並べ替え・削除のように番号や今の姿に頼るボタンを、これが 0 でない間は無効にする。
+   */
+  pending = $state(0);
   /** 始めた読み直しの数。重なった読み直しは、最後に始めたものだけが結果を置く。 */
   #generation = 0;
+  /** 編集の列の末尾 (失敗しても次へ進むよう、拒否を飲み込んだもの)。 */
+  #queue: Promise<void> = Promise.resolve();
 
   async refresh(): Promise<void> {
     const generation = ++this.#generation;
@@ -82,18 +91,75 @@ export class EditorDocument {
     }
   }
 
-  /** コマンドを適用して読み直す。適用の報告 (ミラーの結果など) を返し、失敗したら null (`error` に理由)。 */
+  /**
+   * 前に並べた編集の適用と読み直しが終わるのを待ってから、`build` でコマンドを組み立てて適用し、読み直す。
+   * `build` は送る直前に呼ぶので、その時点の最新の写し (`physics`・`model` など) から組み立てる
+   * (画面が持つ古い写しから組み立てると、前の編集を戻してしまう)。null を返したら何も送らない。
+   * 適用の報告を返し、送らなかったとき・失敗したときは null (失敗の理由は `error`)。
+   */
+  async send(build: () => Command | null): Promise<ApplyReport | null> {
+    return this.#enqueue(async () => {
+      // 読み直した値を、画面の写し ($derived・each の要素) にも行き渡らせてから組み立てる。
+      await tick();
+      let command: Command | null;
+      try {
+        command = build();
+      } catch (e) {
+        this.error = errorText(e);
+        return null;
+      }
+      return command ? this.#applyNow(() => ipc.applyCommand(command)) : null;
+    });
+  }
+
+  /**
+   * コマンドを適用して読み直す (前に並べた編集の後に)。適用の報告 (ミラーの結果など) を返し、失敗したら null
+   * (`error` に理由)。今の値から組み立てるコマンドは `send` で送る。
+   */
   async apply(command: Command): Promise<ApplyReport | null> {
     return this.applyWith(() => ipc.applyCommand(command));
   }
 
   /**
-   * 適用の報告を返す IPC (AI の提案の採用など) を呼んで読み直す。`apply` と同じく失敗したら null。
+   * 適用の報告を返す IPC (AI の提案の採用など) を、前に並べた編集の後に呼んで読み直す。`apply` と同じく失敗したら null。
    * `rethrow` なら、失敗を `error` に置かずに例外のまま返す (ダイアログが自分のエラーとして出すとき)。
    */
   async applyWith(
     action: () => Promise<ApplyReport>,
     options: { rethrow?: boolean } = {},
+  ): Promise<ApplyReport | null> {
+    return this.#enqueue(() => this.#applyNow(action, options.rethrow));
+  }
+
+  dismissWarnings(): void {
+    this.warnings = [];
+  }
+
+  async undo(): Promise<void> {
+    await this.#enqueue(() => this.#run(ipc.undo));
+  }
+
+  async redo(): Promise<void> {
+    await this.#enqueue(() => this.#run(ipc.redo));
+  }
+
+  /** `task` を列の末尾に並べる。前のものが失敗しても次へ進む。 */
+  #enqueue<T>(task: () => Promise<T>): Promise<T> {
+    this.pending += 1;
+    const result = this.#queue.then(task).finally(() => {
+      this.pending -= 1;
+    });
+    this.#queue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  /** 適用して読み直す (列の中で呼ぶ)。 */
+  async #applyNow(
+    action: () => Promise<ApplyReport>,
+    rethrow = false,
   ): Promise<ApplyReport | null> {
     let applied: ApplyReport | null = null;
     await this.#run(async () => {
@@ -102,20 +168,8 @@ export class EditorDocument {
         this.warnings = mergeWarnings(this.warnings, report.warnings);
       }
       applied = report;
-    }, options.rethrow);
+    }, rethrow);
     return applied;
-  }
-
-  dismissWarnings(): void {
-    this.warnings = [];
-  }
-
-  async undo(): Promise<void> {
-    await this.#run(ipc.undo);
-  }
-
-  async redo(): Promise<void> {
-    await this.#run(ipc.redo);
   }
 
   async #run(action: () => Promise<unknown>, rethrow = false): Promise<void> {

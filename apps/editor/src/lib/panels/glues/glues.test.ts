@@ -153,4 +153,10 @@ describe("glue pairs and intensity axes (T0661)", () => {
     expect(keyValue("x", range)).toBeNull();
     expect(keyValue("1", range, [0, 1])).toBeNull();
   });
+
+  it("treats a key within the keyform tolerance as already on the axis", () => {
+    // f32 を経由したキー (0.1 は 0.10000000149011612 になる) も同じキーとみなす。
+    expect(keyValue("0.1", { min: -1, max: 1 }, [Math.fround(0.1)])).toBeNull();
+    expect(keyValue("0.2", { min: -1, max: 1 }, [Math.fround(0.1)])).toBe(0.2);
+  });
 });

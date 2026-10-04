@@ -101,10 +101,10 @@ $effect(() => {
 
 async function run(command: EditCommand | null): Promise<boolean> {
   if (!command) return false;
-  await doc.apply(command);
-  // apply は失敗を doc.error に残し、成功したら読み直して消す。
-  message = doc.error ? { text: doc.error, error: true } : null;
-  return !doc.error;
+  const ok = (await doc.apply(command)) !== null;
+  // 失敗したら apply は理由を doc.error に置く。
+  message = !ok && doc.error ? { text: doc.error, error: true } : null;
+  return ok;
 }
 
 function report(r: EditResult): EditCommand | null {

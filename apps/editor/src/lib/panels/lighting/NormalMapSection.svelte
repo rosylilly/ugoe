@@ -13,6 +13,7 @@
 import { formatList } from "@ugoe/i18n";
 import { Button, Checkbox, Slider } from "@ugoe/ui";
 import type { EditorDocument } from "../../document.svelte";
+import { errorText } from "../../errors";
 import { fileDialogs } from "../../fileDialogs";
 import { t } from "../../i18n";
 import { type ApplyReport, ipc, type Model, type NormalMapGroupView } from "../../ipc";
@@ -51,7 +52,8 @@ let form = $state<BulgeForm>(bulgeForm(null));
 /** 選んだテクスチャの法線マップのまとまり (取れなければ null)。 */
 let group = $state<NormalMapGroupView | null>(null);
 let flipGreen = $state(false);
-let busy = $state(false);
+/** 編集を送っている間 (法線マップを作っている間を含む) はボタンを無効にする (docs/editor.md#パネルからの編集)。 */
+const busy = $derived(doc.pending > 0);
 let error = $state<string | null>(null);
 
 // 画像の表示 (blob の URL)。モデルが変わるたびに取り直す。
@@ -125,14 +127,13 @@ const unit = $derived(bulgeUnit(group));
 /** いっしょにふくらませるほかのテクスチャ。 */
 const partners = $derived(group ? group.textures.filter((name) => name !== ref?.name) : []);
 
+/** 前の編集の後に `action` で法線マップを作る・割り当てる。失敗はこの節に出す。 */
 async function run(action: () => Promise<ApplyReport>): Promise<void> {
-  if (busy) return;
-  busy = true;
   error = null;
   try {
-    if ((await doc.applyWith(action)) === null) error = doc.error;
-  } finally {
-    busy = false;
+    await doc.applyWith(action, { rethrow: true });
+  } catch (e) {
+    error = errorText(e);
   }
 }
 

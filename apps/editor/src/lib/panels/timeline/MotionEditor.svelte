@@ -118,8 +118,8 @@ $effect(() => {
 
 async function apply(command: Command): Promise<boolean> {
   message = null;
-  await doc.apply(command);
-  return !doc.error;
+  // 失敗の理由は doc.error (タイムラインの見出し) に出る。
+  return (await doc.apply(command)) !== null;
 }
 
 async function create() {

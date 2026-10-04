@@ -3,7 +3,7 @@
 import { t } from "../../i18n";
 import type { Command, Glue, GluePair, ModuleStatus, Parameter } from "../../ipc";
 import { GLUE_PREFIX as DRAW_CLONE_PREFIX } from "../inspector/drawClone/drawClone";
-import { cellAt } from "../inspector/keyforms/keyforms";
+import { cellAt, keyAt, keyTolerance } from "../inspector/keyforms/keyforms";
 
 /** 頂点の組を作るときの既定の距離 (キャンバスのピクセル)。 */
 export const DEFAULT_GLUE_DISTANCE = 8;
@@ -125,7 +125,7 @@ export function unboundParameters<T extends Pick<Parameter, "id">>(
 }
 
 /**
- * キーの入力 (パラメータの範囲の有限の値)。軸に同じキーがあれば `null`。
+ * キーの入力 (パラメータの範囲の有限の値)。軸に同じキー (キーフォームの格子と同じ許容差で比べる) があれば `null`。
  */
 export function keyValue(
   text: string,
@@ -135,7 +135,7 @@ export function keyValue(
   const value = Number(text);
   if (text.trim() === "" || !Number.isFinite(value)) return null;
   if (value < parameter.min || value > parameter.max) return null;
-  return keys.includes(value) ? null : value;
+  return keyAt([...keys], value, keyTolerance(parameter)) === undefined ? value : null;
 }
 
 // --- 頂点の組をビューポートで編集する (T0661) ---

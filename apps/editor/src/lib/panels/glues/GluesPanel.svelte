@@ -5,7 +5,7 @@
   - 作る: 2 つのメッシュと距離を選んで「+ Glue」(create_glue。頂点の組は editor-core が基準の姿の近さで作る)。
     ツリーで 2 つのメッシュを選んでいれば、それを既定にする。
   - 編集: 重み (どちらへ寄せるか。すべての組に同じ値)・強さ (キーフォームごと)・両端の入れ替え・組の作り直し・削除。
-    どれも set_glue でグルーを丸ごと置き換える。
+    どれも set_glue でグルーを丸ごと置き換えるので、送る直前のグルーから組み立てる (updateGlue)。
   - 強さの軸 (T0661): パラメータとキーを選んで「+ Axis」、軸ごとにキーを足す・外す (add_keyform_key・remove_keyform_key)。
   - 頂点の組はビューポートに重ね、ビューポートの「Add pairs」「Remove pairs」で組を足す・外す (viewport/tools/glue/GlueOverlay.svelte)。
   - モジュールのプロジェクトでは、本体のグルー (どちらかの端が本体のメッシュ) は読み取り専用 (BaseLock)。つなげるのは
@@ -79,7 +79,8 @@ let pickA = $state("");
 let pickB = $state("");
 let distance = $state(DEFAULT_GLUE_DISTANCE);
 let repairDistance = $state(DEFAULT_GLUE_DISTANCE);
-let busy = $state(false);
+/** 編集を送っている間は、ボタンを無効にする (欄の編集は列に並べて送る。docs/editor.md#パネルからの編集)。 */
+const busy = $derived(doc.pending > 0);
 /** 強さの軸に足すパラメータと、そのキー (軸ごとのキーの入力はパラメータの ID ごと)。 */
 let axisParameter = $state("");
 let axisKey = $state("");
@@ -99,29 +100,32 @@ const canCreate = $derived(
   meshA !== "" && meshB !== "" && meshA !== meshB && createDistance !== null,
 );
 
-async function send(command: Command): Promise<boolean> {
-  if (busy) return false;
-  busy = true;
-  try {
-    // 失敗の理由は doc.error (パネルの上) に出る。
-    return (await doc.apply(command)) !== null;
-  } finally {
-    busy = false;
-  }
+/** 前の編集を読み直した後に `build` でコマンドを組み立てて送る。失敗の理由は doc.error (パネルの上) に出る。 */
+async function send(build: () => Command | null): Promise<boolean> {
+  return (await doc.send(build)) !== null;
 }
 
 async function create(): Promise<void> {
   if (!canCreate || createDistance === null) return;
-  const before = new Set(glues.map((g) => g.id));
-  if (await send(createGlueCommand(meshA, meshB, createDistance))) {
+  const [a, b, d] = [meshA, meshB, createDistance];
+  let before = new Set<string>();
+  const ok = await send(() => {
+    before = new Set((model?.glues ?? []).map((g) => g.id));
+    return createGlueCommand(a, b, d);
+  });
+  if (ok) {
     // 新しいグルーを選ぶ (ID は editor-core が決める)。
     const next = (model?.glues ?? []).find((g) => !before.has(g.id));
     if (next) view.glue = next.id;
   }
 }
 
-function update(next: Glue, pairWithin?: number): void {
-  void send(setGlueCommand(next, pairWithin));
+/** 送る直前のグルー `id` を `change` で作り直して set_glue を送る (消えていれば送らない)。 */
+function updateGlue(id: string, change: (current: Glue) => Glue, pairWithin?: number): void {
+  void send(() => {
+    const current = model?.glues.find((g) => g.id === id);
+    return current ? setGlueCommand(change(current), pairWithin) : null;
+  });
 }
 
 function meshLabel(id: string): string {
@@ -202,7 +206,7 @@ const axisKeyValue = $derived(
           <span>{t("glues.meshes.label")}</span>
           <span class="meshes">
             <span class="value">{meshLabel(glue.mesh_a)} + {meshLabel(glue.mesh_b)}</span>
-            <TipButton small disabled={busy} tooltip={t("glues.swap.tooltip")} onclick={() => update(swapped(glue))}
+            <TipButton small disabled={busy} tooltip={t("glues.swap.tooltip")} onclick={() => updateGlue(glue.id, swapped)}
               >{t("glues.swap.label")}</TipButton
             >
           </span>
@@ -215,8 +219,8 @@ const axisKeyValue = $derived(
           step={0.05}
           decimals={2}
           value={glueWeight(glue)}
-          disabled={busy || locked || glue.pairs.length === 0}
-          oncommit={(w) => update(withWeight(glue, w))}
+          disabled={locked || glue.pairs.length === 0}
+          oncommit={(w) => updateGlue(glue.id, (g) => withWeight(g, w))}
         />
         <p class="ed-hint help">
           {t("glues.weight.description", { a: meshLabel(glue.mesh_a), b: meshLabel(glue.mesh_b) })}
@@ -229,8 +233,8 @@ const axisKeyValue = $derived(
             decimals={4}
             describedby="glue-intensity-hint"
             value={glue.keyforms.keyforms[i]?.intensity ?? 0}
-            disabled={busy || locked}
-            onchange={(v) => update(withIntensity(glue, i, v))}
+            disabled={locked}
+            onchange={(v) => updateGlue(glue.id, (g) => withIntensity(g, i, v))}
           />
         {/each}
         <p class="ed-hint help" id="glue-intensity-hint">{t("glues.intensity.description")}</p>
@@ -254,7 +258,7 @@ const axisKeyValue = $derived(
                       label={b.keys.length === 1
                         ? t("glues.removeKey.lastAria", { key: k })
                         : t("glues.removeKey.aria", { key: k })}
-                      onclick={() => send(removeGlueKeyCommand(glue.id, b.parameter, k))}>×</IconButton
+                      onclick={() => send(() => removeGlueKeyCommand(glue.id, b.parameter, k))}>×</IconButton
                     ></span
                   >
                 {/each}
@@ -265,7 +269,6 @@ const axisKeyValue = $derived(
                   placeholder={t("glues.newKey.placeholder")}
                   aria-label={t("glues.newKey.aria", { parameter: parameterName(b.parameter) })}
                   value={text}
-                  disabled={busy}
                   oninput={(e) => (newKeys = { ...newKeys, [b.parameter]: e.currentTarget.value })}
                 />
                 <TipButton
@@ -273,7 +276,7 @@ const axisKeyValue = $derived(
                   disabled={busy || key === null}
                   tooltip={param ? t("glues.addKey.tooltip", { min: param.min, max: param.max }) : undefined}
                   onclick={async () => {
-                    if (key !== null && (await send(addGlueKeyCommand(glue.id, b.parameter, key)))) {
+                    if (key !== null && (await send(() => addGlueKeyCommand(glue.id, b.parameter, key)))) {
                       newKeys = { ...newKeys, [b.parameter]: "" };
                     }
                   }}>{t("glues.addKey.label")}</TipButton
@@ -288,7 +291,7 @@ const axisKeyValue = $derived(
                   ariaLabel={t("glues.axisParameter.aria")}
                   value={axisChoice?.id ?? ""}
                   options={axisOptions}
-                  disabled={busy || locked}
+                  disabled={locked}
                   onchange={(v) => {
                     axisParameter = v;
                     axisKey = "";
@@ -300,7 +303,6 @@ const axisKeyValue = $derived(
                 step="any"
                 aria-label={t("glues.axisKey.aria")}
                 value={axisKey === "" ? String(axisChoice?.default ?? 0) : axisKey}
-                disabled={busy}
                 oninput={(e) => (axisKey = e.currentTarget.value)}
               />
               <TipButton
@@ -308,7 +310,8 @@ const axisKeyValue = $derived(
                 disabled={busy || axisChoice === null || axisKeyValue === null}
                 tooltip={t("glues.addAxis.tooltip")}
                 onclick={async () => {
-                  if (axisChoice && axisKeyValue !== null && (await send(addGlueKeyCommand(glue.id, axisChoice.id, axisKeyValue)))) {
+                  const [parameter, key] = [axisChoice?.id, axisKeyValue];
+                  if (parameter !== undefined && key !== null && (await send(() => addGlueKeyCommand(glue.id, parameter, key)))) {
                     axisKey = "";
                   }
                 }}>{t("glues.addAxis.label")}</TipButton
@@ -326,7 +329,7 @@ const axisKeyValue = $derived(
             step={1}
             size={4}
             bind:value={repairDistance}
-            disabled={busy || locked}
+            disabled={locked}
           />
           <TipButton
             small
@@ -334,7 +337,7 @@ const axisKeyValue = $derived(
             tooltip={t("glues.repair.tooltip")}
             onclick={() => {
               const d = distanceValue(String(repairDistance));
-              if (d !== null) update(glue, d);
+              if (d !== null) updateGlue(glue.id, (g) => g, d);
             }}>{t("glues.repair.button")}</TipButton
           >
         </div>
@@ -343,7 +346,8 @@ const axisKeyValue = $derived(
             small
             disabled={busy}
             onclick={async () => {
-              if (await send({ op: "remove_glue", id: glue.id })) view.glue = null;
+              const id = glue.id;
+              if (await send(() => ({ op: "remove_glue", id }))) view.glue = null;
             }}>{t("glues.remove.label")}</Button
           >
         </div>
@@ -360,14 +364,12 @@ const axisKeyValue = $derived(
         label={t("glues.new.meshA")}
         value={meshA}
         options={meshOptions}
-        disabled={busy}
         onchange={(v) => (pickA = v)}
       />
       <Select
         label={t("glues.new.meshB")}
         value={meshB}
         options={meshOptions}
-        disabled={busy}
         onchange={(v) => (pickB = v)}
       />
       <NumberField
@@ -378,7 +380,6 @@ const axisKeyValue = $derived(
         size={4}
         describedby="glue-distance-hint"
         bind:value={distance}
-        disabled={busy}
       />
       <p class="ed-hint help" id="glue-distance-hint">{t("glues.new.distance.description")}</p>
       <div class="ed-buttons">

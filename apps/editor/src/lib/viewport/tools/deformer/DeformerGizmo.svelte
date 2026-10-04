@@ -305,6 +305,8 @@ async function commit(d: Drag): Promise<void> {
   try {
     const values = $state.snapshot(controller.parameterValues);
     let next: Record<string, unknown> | null = null;
+    /** 送ったコマンドが失敗したか (失敗の理由は doc.error)。 */
+    let failed = false;
     if (d.kind === "points" && warpCanvas && picked.length > 0) {
       const delta: Point = [d.delta[0] / scale, d.delta[1] / scale];
       const current = kf.points as Point[];
@@ -327,7 +329,7 @@ async function commit(d: Drag): Promise<void> {
       if (origin && d.all) {
         // 今のセルでの移動量 (親の座標系) を、すべてのセルに加える。
         const delta: Point = [origin[0] - current[0], origin[1] - current[1]];
-        await doc.apply({ op: "move_rotation_origin", id: deformerId, delta });
+        failed = !(await doc.apply({ op: "move_rotation_origin", id: deformerId, delta }));
       } else if (origin) {
         next = { ...kf, origin };
       }
@@ -339,14 +341,15 @@ async function commit(d: Drag): Promise<void> {
       if (f !== null) next = { ...kf, scale: Math.max(MIN_SCALE, (kf.scale as number) * f) };
     }
     if (next) {
-      await doc.apply({
+      const report = await doc.apply({
         op: "set_keyform_cell",
         target,
         cell: c,
         keyform: { ...next, kind: element?.kind } as unknown as Keyform,
       });
+      failed = report === null;
     }
-    error = doc.error;
+    error = failed ? doc.error : null;
   } catch (err) {
     error = errorText(err);
   } finally {

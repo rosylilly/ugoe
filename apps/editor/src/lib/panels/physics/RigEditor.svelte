@@ -1,7 +1,8 @@
 <!--
   物理のリグ 1 つの編集 (docs/editor.md#物理の画面での操作): 名前・重力の基準・衝突する衝突体・粒子の鎖と係数・
   入力・出力・正規化の範囲。変更は入力欄の確定 (Enter・フォーカスを外す) ごとに 1 つのコマンドを送る。
-  入力・出力・粒子は ID を持たないので、並びごと置き換える (set_physics_inputs など)。
+  入力・出力・粒子は ID を持たないので、並びごと置き換える (set_physics_inputs など)。並びは送る直前のリグから
+  組み立てる (sendRig。前の編集を読み直す前の写しから組み立てると、その編集を戻してしまう)。
 -->
 <script lang="ts">
 import { Button, Checkbox, IconButton, NumberField, Select } from "@ugoe/ui";
@@ -29,6 +30,8 @@ import {
   outputBlend,
   type ParticleField,
   removeParticle,
+  rigOf,
+  type SendPhysics,
   setParticleField,
   TARGET_KINDS,
   type TargetKind,
@@ -41,7 +44,7 @@ interface Props {
   rig: PhysicsRig;
   model: Model;
   settings: PhysicsSettings | null;
-  send: (command: Command) => Promise<boolean>;
+  send: SendPhysics;
   busy: boolean;
 }
 
@@ -102,30 +105,41 @@ const PARTICLE_FIELDS: {
 
 const deformers = $derived(model.deformers);
 
-function rename(name: string): void {
-  if (name !== rig.name) void send({ op: "rename_physics_rig", id: rig.id, name });
-}
-
-function setFrame(frame: string): void {
-  void send({
-    op: "set_physics_frame",
-    rig: rig.id,
-    ...(frame ? { frame } : {}),
+/** 送る直前のこのリグからコマンドを組み立てて送る (リグが消えていれば送らない)。 */
+function sendRig(build: (current: PhysicsRig) => Command | null): void {
+  const id = rig.id;
+  void send((settings) => {
+    const current = rigOf(settings, id);
+    return current ? build(current) : null;
   });
 }
 
-function setColliders(id: string, on: boolean): void {
-  const next = on ? [...rig.colliders, id] : rig.colliders.filter((c) => c !== id);
-  void send({ op: "set_physics_rig_colliders", rig: rig.id, colliders: next });
+function rename(name: string): void {
+  sendRig((r) => (name !== r.name ? { op: "rename_physics_rig", id: r.id, name } : null));
 }
 
-function setParticles(particles: PhysicsParticle[]): void {
-  void send({ op: "set_physics_particles", rig: rig.id, particles });
+function setFrame(frame: string): void {
+  sendRig((r) => ({
+    op: "set_physics_frame",
+    rig: r.id,
+    ...(frame ? { frame } : {}),
+  }));
+}
+
+function setColliders(id: string, on: boolean): void {
+  sendRig((r) => {
+    const rest = r.colliders.filter((c) => c !== id);
+    return { op: "set_physics_rig_colliders", rig: r.id, colliders: on ? [...rest, id] : rest };
+  });
+}
+
+function updateParticles(change: (particles: PhysicsParticle[]) => PhysicsParticle[]): void {
+  sendRig((r) => ({ op: "set_physics_particles", rig: r.id, particles: change(r.particles) }));
 }
 
 function setParticle(index: number, field: ParticleField, raw: number): void {
   const value = finiteValue(raw);
-  if (value !== null) setParticles(setParticleField(rig.particles, index, field, value));
+  if (value !== null) updateParticles((ps) => setParticleField(ps, index, field, value));
 }
 
 function particleValue(p: PhysicsParticle, field: ParticleField): number {
@@ -134,44 +148,55 @@ function particleValue(p: PhysicsParticle, field: ParticleField): number {
   return p[field];
 }
 
-function setInputs(inputs: PhysicsInput[]): void {
-  void send({ op: "set_physics_inputs", rig: rig.id, inputs });
+function updateInputs(change: (inputs: PhysicsInput[]) => PhysicsInput[]): void {
+  sendRig((r) => ({ op: "set_physics_inputs", rig: r.id, inputs: change(r.inputs) }));
 }
 
 function patchInput(index: number, patch: Partial<PhysicsInput>): void {
-  setInputs(rig.inputs.map((input, i) => (i === index ? { ...input, ...patch } : input)));
+  updateInputs((inputs) =>
+    inputs.map((input, i) => (i === index ? { ...input, ...patch } : input)),
+  );
 }
 
 function addInput(): void {
   const parameter = model.parameters[0];
   if (!parameter) return;
-  setInputs([...rig.inputs, { parameter: parameter.id, source: "x", weight: 100, reflect: false }]);
+  updateInputs((inputs) => [
+    ...inputs,
+    { parameter: parameter.id, source: "x", weight: 100, reflect: false },
+  ]);
 }
 
-function setOutputs(outputs: PhysicsOutput[]): void {
-  void send({ op: "set_physics_outputs", rig: rig.id, outputs });
+function updateOutputs(change: (outputs: PhysicsOutput[]) => PhysicsOutput[]): void {
+  sendRig((r) => ({ op: "set_physics_outputs", rig: r.id, outputs: change(r.outputs) }));
 }
 
-function patchOutput(index: number, patch: Partial<PhysicsOutput>): void {
-  setOutputs(rig.outputs.map((o, i) => (i === index ? { ...o, ...patch } : o)));
+/** `index` 番目の出力を変える (`patch` が関数なら、送る直前の出力から作る)。 */
+function patchOutput(
+  index: number,
+  patch: Partial<PhysicsOutput> | ((output: PhysicsOutput) => Partial<PhysicsOutput>),
+): void {
+  updateOutputs((outputs) =>
+    outputs.map((o, i) =>
+      i === index ? { ...o, ...(typeof patch === "function" ? patch(o) : patch) } : o,
+    ),
+  );
 }
 
 function setOutputKind(index: number, kind: TargetKind): void {
-  const output = rig.outputs[index];
   const first = targetCandidates(model, kind)[0];
-  if (!output || !first) return;
-  patchOutput(index, { target: makeTarget(model, kind, first.id) });
+  if (first) patchOutput(index, { target: makeTarget(model, kind, first.id) });
 }
 
 function setOutputRef(index: number, id: string): void {
-  const output = rig.outputs[index];
-  if (output)
-    patchOutput(index, { target: makeTarget(model, targetKind(output.target), id, output.target) });
+  patchOutput(index, (output) => ({
+    target: makeTarget(model, targetKind(output.target), id, output.target),
+  }));
 }
 
 function addOutput(): void {
   const output = newOutput(model, "deformer_angle", 1) ?? newOutput(model, "parameter", 1);
-  if (output) setOutputs([...rig.outputs, output]);
+  if (output) updateOutputs((outputs) => [...outputs, output]);
 }
 
 function setNormalization(
@@ -181,11 +206,14 @@ function setNormalization(
 ): void {
   const value = finiteValue(raw);
   if (value === null) return;
-  const normalization = {
-    ...rig.normalization,
-    [which]: { ...rig.normalization[which], [field]: value },
-  };
-  void send({ op: "set_physics_normalization", rig: rig.id, normalization });
+  sendRig((r) => ({
+    op: "set_physics_normalization",
+    rig: r.id,
+    normalization: {
+      ...r.normalization,
+      [which]: { ...r.normalization[which], [field]: value },
+    },
+  }));
 }
 
 const ids = $props.id();
@@ -232,7 +260,7 @@ const rangeFields = $derived([
       onchange={(v) => setFrame(v === CANVAS ? "" : v)} />
   </div>
   <div class="ed-buttons row">
-    <Button disabled={busy} onclick={() => send({ op: "remove_physics_rig", id: rig.id })}>
+    <Button disabled={busy} onclick={() => sendRig((r) => ({ op: "remove_physics_rig", id: r.id }))}>
       {t("physics.rig.delete")}
     </Button>
   </div>
@@ -257,14 +285,14 @@ const rangeFields = $derived([
       {#if i > 0}
         <span class="remove">
           <IconButton small disabled={busy} label={t("physics.particles.remove", { index: i })}
-            onclick={() => setParticles(removeParticle(rig.particles, i))}>×</IconButton
+            onclick={() => updateParticles((ps) => removeParticle(ps, i))}>×</IconButton
           >
         </span>
       {/if}
     </div>
   {/each}
   <div class="ed-buttons row">
-    <Button disabled={busy} onclick={() => setParticles(appendParticle(rig.particles))}
+    <Button disabled={busy} onclick={() => updateParticles(appendParticle)}
       >{t("physics.particles.add")}</Button
     >
   </div>
@@ -294,7 +322,7 @@ const rangeFields = $derived([
         onchange={(on) => patchInput(i, { reflect: on })} />
       <span class="remove">
         <IconButton small disabled={busy} label={t("physics.inputs.remove", { index: i })}
-          onclick={() => setInputs(rig.inputs.filter((_, k) => k !== i))}>×</IconButton
+          onclick={() => updateInputs((inputs) => inputs.filter((_, k) => k !== i))}>×</IconButton
         >
       </span>
     </div>
@@ -365,7 +393,7 @@ const rangeFields = $derived([
       {/if}
       <span class="remove">
         <IconButton small disabled={busy} label={t("physics.outputs.remove", { index: i })}
-          onclick={() => setOutputs(rig.outputs.filter((_, k) => k !== i))}>×</IconButton
+          onclick={() => updateOutputs((outputs) => outputs.filter((_, k) => k !== i))}>×</IconButton
         >
       </span>
     </div>

@@ -232,14 +232,14 @@ async function onPointerUp(e: PointerEvent) {
       const point: Point = mapped[k] ?? guesses[k] ?? [0, 0];
       next = withPoint(element.kind, next, index, point);
     });
-    await doc.apply({
+    const report = await doc.apply({
       op: "set_keyform_cell",
       target: element.target,
       cell,
       // 形はモデルの JSON のセルをそのまま写したもの (点だけを置き換えた)。
       keyform: { ...next, kind: element.kind } as unknown as Keyform,
     });
-    error = doc.error;
+    error = report ? null : doc.error;
   } catch (err) {
     error = errorText(err);
   } finally {

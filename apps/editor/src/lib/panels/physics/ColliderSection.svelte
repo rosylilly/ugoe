@@ -2,13 +2,14 @@
   衝突体の一覧と編集 (docs/editor.md#物理の画面での操作)。円とカプセル。位置は取り付け先のデフォーマの局所座標
   (取り付けなしならキャンバス座標)、半径はキャンバスのピクセル。ビューポートでもドラッグで動かせる。
   取り付け先と形状の種類を変えるときは、今の見た目の位置を保つように写し直す (viewport/tools/physics/physicsGeometry.ts)。
+  set_physics_collider は衝突体を丸ごと置き換えるので、送る直前の衝突体から組み立てる (updateCollider)。
 -->
 <script lang="ts">
 import { Button, Notice, NumberField, Select } from "@ugoe/ui";
 import BaseLock from "../../BaseLock.svelte";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
-import type { Command, Model, PhysicsCollider, Vec2 } from "../../ipc";
+import type { Model, PhysicsCollider, Vec2 } from "../../ipc";
 import { elementLabel } from "../../labels";
 import { isBaseCollider, unavailableCollidersNotice } from "../../moduleProject";
 import type { Selection } from "../../selection.svelte";
@@ -20,7 +21,7 @@ import {
   type LocalGuess,
   reattach,
 } from "../../viewport/tools/physics/physicsGeometry";
-import { finiteValue, newCollider, withRadius } from "./physics";
+import { colliderOf, finiteValue, newCollider, type SendPhysics, withRadius } from "./physics";
 import type { PhysicsView } from "./physicsView.svelte";
 
 interface Props {
@@ -29,7 +30,7 @@ interface Props {
   selection: Selection;
   viewport: ViewportController;
   view: PhysicsView;
-  send: (command: Command) => Promise<boolean>;
+  send: SendPhysics;
   busy: boolean;
 }
 
@@ -55,42 +56,61 @@ async function add(kind: "circle" | "capsule"): Promise<void> {
   const center: Vec2 = primary
     ? guess(primary)
     : [(model?.meta.canvas.width ?? 0) / 2, (model?.meta.canvas.height ?? 0) / 2];
-  const created = newCollider(settings, kind, primary, center);
-  if (await send({ op: "add_physics_collider", collider: created })) view.collider = created.id;
+  let created = null as PhysicsCollider | null;
+  const ok = await send((current) => {
+    created = newCollider(current, kind, primary, center);
+    return { op: "add_physics_collider", collider: created };
+  });
+  if (ok && created) view.collider = created.id;
 }
 
-function update(next: PhysicsCollider | null): void {
-  if (next) void send({ op: "set_physics_collider", collider: next });
+/** 選んでいる衝突体を、送る直前の値から作り直して送る (消えていたり `change` が null なら送らない)。 */
+function updateCollider(change: (current: PhysicsCollider) => PhysicsCollider | null): void {
+  const id = collider?.id;
+  if (id === undefined) return;
+  void send((settings) => {
+    const current = colliderOf(settings, id);
+    const next = current ? change(current) : null;
+    return next ? { op: "set_physics_collider", collider: next } : null;
+  });
 }
 
 function setAttach(attach: string): void {
   const puppet = viewport.puppet;
-  if (!collider || !puppet) return;
-  update(reattach(collider, attach || null, puppetMap(puppet), puppetJacobian(puppet), guess));
+  if (!puppet) return;
+  updateCollider((c) =>
+    reattach(c, attach || null, puppetMap(puppet), puppetJacobian(puppet), guess),
+  );
 }
 
 function setKind(kind: "circle" | "capsule"): void {
   const puppet = viewport.puppet;
-  if (!collider || !puppet) return;
-  const shape = changeShapeKind(collider, kind, puppetMap(puppet), puppetJacobian(puppet), guess);
-  if (shape) update({ ...collider, shape });
+  if (!puppet) return;
+  updateCollider((c) => {
+    const shape = changeShapeKind(c, kind, puppetMap(puppet), puppetJacobian(puppet), guess);
+    return shape ? { ...c, shape } : null;
+  });
 }
 
 function setPoint(which: "center" | "a" | "b", axis: 0 | 1, raw: number): void {
   const value = finiteValue(raw);
-  if (!collider || value === null) return;
-  const shape = collider.shape;
+  if (value === null) return;
   const point = (p: Vec2): Vec2 => (axis === 0 ? [value, p[1]] : [p[0], value]);
-  if (shape.type === "circle" && which === "center") {
-    update({ ...collider, shape: { ...shape, center: point(shape.center) } });
-  } else if (shape.type === "capsule" && which !== "center") {
-    update({ ...collider, shape: { ...shape, [which]: point(shape[which]) } });
-  }
+  updateCollider((c) => {
+    const shape = c.shape;
+    if (shape.type === "circle" && which === "center") {
+      return { ...c, shape: { ...shape, center: point(shape.center) } };
+    }
+    if (shape.type === "capsule" && which !== "center") {
+      return { ...c, shape: { ...shape, [which]: point(shape[which]) } };
+    }
+    return null;
+  });
 }
 
 function setRadius(raw: number): void {
   const value = finiteValue(raw);
-  if (collider && value !== null) update({ ...collider, shape: withRadius(collider.shape, value) });
+  if (value !== null) updateCollider((c) => ({ ...c, shape: withRadius(c.shape, value) }));
 }
 
 const points = $derived.by((): { key: "center" | "a" | "b"; label: string; p: Vec2 }[] => {
@@ -164,7 +184,10 @@ const ids = $props.id();
       <div class="ed-field">
         <label for="{ids}-name">{t("physics.colliders.name.label")}</label>
         <input id="{ids}-name" class="text" type="text" value={collider.name}
-          onchange={(e) => update({ ...collider, name: e.currentTarget.value })} />
+          onchange={(e) => {
+            const name = e.currentTarget.value;
+            updateCollider((c) => ({ ...c, name }));
+          }} />
       </div>
       <div class="ed-field">
         <span id="{ids}-attach">{t("physics.colliders.attach.label")}</span>
@@ -196,7 +219,13 @@ const ids = $props.id();
       </div>
       <p class="ed-hint">{t("physics.colliders.hint")}</p>
       <div class="ed-buttons row">
-        <Button disabled={busy} onclick={() => send({ op: "remove_physics_collider", id: collider.id })}>
+        <Button
+          disabled={busy}
+          onclick={() => {
+            const id = collider.id;
+            void send((current) => (colliderOf(current, id) ? { op: "remove_physics_collider", id } : null));
+          }}
+        >
           {t("physics.colliders.delete")}
         </Button>
       </div>

@@ -104,10 +104,10 @@ async function saveEditor(p: ParameterDef) {
     const { min, default: def, max } = draft;
     commands.push({ op: "set_parameter_range", id: p.id, min, default: def, max } as const);
   }
-  if (commands.length > 0) {
-    await doc.apply({ op: "batch", label: t("parameters.history.edit", { id: p.id }), commands });
+  const label = t("parameters.history.edit", { id: p.id });
+  if (commands.length === 0 || (await doc.apply({ op: "batch", label, commands })) !== null) {
+    editing = null;
   }
-  if (!doc.error) editing = null;
 }
 
 async function setInternal(p: ParameterDef, internal: boolean) {
@@ -117,15 +117,14 @@ async function setInternal(p: ParameterDef, internal: boolean) {
 }
 
 async function remove(p: ParameterDef) {
-  await doc.apply({ op: "remove_parameter", id: p.id });
-  if (!doc.error) editing = null;
+  if ((await doc.apply({ op: "remove_parameter", id: p.id })) !== null) editing = null;
 }
 
 async function create(e: SubmitEvent) {
   e.preventDefault();
   const id = fresh.id.trim();
   if (!id) return;
-  await doc.apply({
+  const report = await doc.apply({
     op: "add_parameter",
     parameter: {
       ...fresh,
@@ -136,7 +135,7 @@ async function create(e: SubmitEvent) {
       group: null,
     },
   });
-  if (!doc.error) {
+  if (report !== null) {
     creating = false;
     fresh = { id: "", name: "", min: -1, default: 0, max: 1 };
   }

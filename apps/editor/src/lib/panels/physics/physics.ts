@@ -389,6 +389,46 @@ export function finiteValue(value: number | null | undefined): number | null {
 
 // ---- コマンド ----
 
+/**
+ * 物理のパネルがコマンドを送る関数 (`EditorDocument.send`)。`build` は前の編集を読み直した後、送る直前の
+ * 物理の設定で呼ぶので、リスト・ベクトル全体を置き換えるコマンドもそこから組み立てる (前の編集を戻さない)。
+ * null を返したら送らない。適用できたら true。
+ */
+export type SendPhysics = (
+  build: (settings: PhysicsSettings | null) => Command | null,
+) => Promise<boolean>;
+
+/** ID のリグ (無ければ null。送る直前の設定から探す)。 */
+export function rigOf(settings: PhysicsSettings | null, id: string): PhysicsRig | null {
+  return settings?.rigs.find((r) => r.id === id) ?? null;
+}
+
+/** ID の衝突体 (無ければ null。送る直前の設定から探す)。 */
+export function colliderOf(settings: PhysicsSettings | null, id: string): PhysicsCollider | null {
+  return settings?.colliders.find((c) => c.id === id) ?? null;
+}
+
+/** 世界の設定の欄 (重力・風の成分と fps)。 */
+export type WorldField = "gx" | "gy" | "wx" | "wy" | "fps";
+
+/** 世界の設定の欄を 1 つ変えるコマンド (ほかの成分は `settings` の値のまま)。 */
+export function worldFieldCommand(
+  settings: PhysicsSettings | null,
+  field: WorldField,
+  value: number,
+): Command {
+  const s = settings ?? DEFAULT_SETTINGS;
+  const [gx, gy] = s.gravity;
+  const [wx, wy] = s.wind;
+  const patch =
+    field === "fps"
+      ? { fps: value }
+      : field === "gx" || field === "gy"
+        ? { gravity: (field === "gx" ? [value, gy] : [gx, value]) as [number, number] }
+        : { wind: (field === "wx" ? [value, wy] : [wx, value]) as [number, number] };
+  return worldCommand(settings, patch);
+}
+
 export function worldCommand(
   settings: PhysicsSettings | null,
   patch: Partial<PhysicsSettings>,

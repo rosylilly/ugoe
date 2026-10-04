@@ -31,7 +31,8 @@ let rows = $state(3);
 let cols = $state(3);
 /** 作るデフォーマの名前 (空なら子の名前から作る)。作るたびに空に戻す。 */
 let name = $state("");
-let busy = $state(false);
+/** 編集を送っている間はボタンを無効にする (docs/editor.md#パネルからの編集)。 */
+const busy = $derived(doc.pending > 0);
 
 const model = $derived.by((): Model | null => {
   try {
@@ -73,30 +74,30 @@ const divisionsValid = $derived(
 );
 
 async function create(kind: "warp" | "rotation"): Promise<void> {
-  if (busy || (children.length === 0 && parts.length === 0)) return;
-  busy = true;
-  try {
-    const before = new Set(model?.deformers.map((d) => d.id));
-    const common = { name: name.trim(), children, parts };
-    const report = await doc.apply(
-      kind === "warp"
-        ? { op: "create_warp_deformer", ...common, rows, cols }
-        : { op: "create_rotation_deformer", ...common },
-    );
-    if (!report) return;
-    name = "";
-    const created = model?.deformers.find((d) => !before.has(d.id));
-    if (created) selection.set([{ kind: "deformer", id: created.id }]);
-  } finally {
-    busy = false;
-  }
+  if (children.length === 0 && parts.length === 0) return;
+  const common = { name: name.trim(), children, parts };
+  const [r, c] = [rows, cols];
+  let before = new Set<string>();
+  const report = await doc.send(() => {
+    // 前の編集で増えたデフォーマを、作ったものと取り違えないよう送る直前に数える。
+    before = new Set(model?.deformers.map((d) => d.id));
+    return kind === "warp"
+      ? { op: "create_warp_deformer", ...common, rows: r, cols: c }
+      : { op: "create_rotation_deformer", ...common };
+  });
+  if (!report) return;
+  name = "";
+  const created = model?.deformers.find((d) => !before.has(d.id));
+  if (created) selection.set([{ kind: "deformer", id: created.id }]);
 }
 
 async function unwrap(id: string): Promise<void> {
-  if (busy || !model) return;
-  busy = true;
-  try {
-    const kids: ChildRef[] = [
+  if (!model) return;
+  let kids: ChildRef[] = [];
+  const report = await doc.send(() => {
+    if (!model) return null;
+    // 外した後に選ぶ子は、送る直前のモデルから集める。
+    kids = [
       ...model.deformers
         .filter((d) => d.parent === id)
         .map((d) => ({ kind: "deformer" as const, id: d.id })),
@@ -104,11 +105,9 @@ async function unwrap(id: string): Promise<void> {
         .filter((m) => m.parent === id)
         .map((m) => ({ kind: "mesh" as const, id: m.id })),
     ];
-    await doc.apply({ op: "unwrap_deformer", id });
-    if (!doc.error) selection.set(kids);
-  } finally {
-    busy = false;
-  }
+    return { op: "unwrap_deformer", id };
+  });
+  if (report) selection.set(kids);
 }
 </script>
 

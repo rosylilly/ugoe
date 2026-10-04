@@ -8,11 +8,11 @@
 <script lang="ts">
 import { Checkbox, Select } from "@ugoe/ui";
 import { t } from "../../i18n";
-import type { Command, Model, ModuleStatus, PhysicsBlend, PhysicsTemplate } from "../../ipc";
+import type { Model, ModuleStatus, PhysicsBlend, PhysicsTemplate } from "../../ipc";
 import { elementLabel } from "../../labels";
 import { baseElements, isBaseRig } from "../../moduleProject";
 import TipButton from "../../ui/TipButton.svelte";
-import { BLENDS } from "./physics";
+import { BLENDS, type SendPhysics } from "./physics";
 import {
   defaultNeck,
   missingParameters,
@@ -26,7 +26,7 @@ interface Props {
   model: Model;
   /** モジュールのプロジェクトなら、その情報 (本体の要素を選ばせない)。 */
   module?: ModuleStatus | null;
-  send: (command: Command) => Promise<boolean>;
+  send: SendPhysics;
   busy: boolean;
   /** 適用したら、テンプレートが作るリグの ID の列で呼ぶ (作られた最初のものを一覧で選ぶ)。 */
   onApplied: (rigs: string[]) => void;
@@ -66,7 +66,7 @@ const neckPlaceholder = $derived(
 
 async function apply(template: PhysicsTemplate): Promise<void> {
   const info = TEMPLATES.find((item) => item.template === template);
-  if ((await send(templateCommand(template, createMissing, blend, neck))) && info) {
+  if ((await send(() => templateCommand(template, createMissing, blend, neck))) && info) {
     onApplied(info.rigs);
   }
 }

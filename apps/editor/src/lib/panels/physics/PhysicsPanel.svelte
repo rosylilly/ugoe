@@ -16,7 +16,7 @@ import { Button, IconButton, NumberField } from "@ugoe/ui";
 import BaseLock from "../../BaseLock.svelte";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
-import type { Command, Model } from "../../ipc";
+import type { Model, PhysicsRig } from "../../ipc";
 import { elementLabel } from "../../labels";
 import { baseElements, canMoveRig, isBaseElement, isBaseRig } from "../../moduleProject";
 import type { Selection } from "../../selection.svelte";
@@ -32,7 +32,9 @@ import {
   moveRigCommand,
   newRig,
   relayInputs,
-  worldCommand,
+  type SendPhysics,
+  type WorldField,
+  worldFieldCommand,
 } from "./physics";
 import type { PhysicsView } from "./physicsView.svelte";
 import RestPoseWarnings from "./RestPoseWarnings.svelte";
@@ -78,48 +80,38 @@ const chain = $derived(
     : [],
 );
 
-let busy = $state(false);
+/** 編集を送っている間は、並べ替え・削除のように今の並びに頼るボタンを無効にする (欄の編集は列に並べて送る)。 */
+const busy = $derived(doc.pending > 0);
 
-async function send(command: Command): Promise<boolean> {
-  if (busy) return false;
-  busy = true;
-  try {
-    return (await doc.apply(command)) !== null;
-  } finally {
-    busy = false;
-  }
-}
+/** 前の編集を読み直した後の物理の設定からコマンドを組み立てて送る (docs/editor.md#パネルからの編集)。 */
+const send: SendPhysics = async (build) => (await doc.send(() => build(doc.physics))) !== null;
 
 async function addRig(): Promise<void> {
-  // i18n-ignore: 既定の名前から ID を作るので、言語によらず英語の識別子にする (衝突体の Circle と同じ)
-  const created = newRig(settings, `Rig ${(settings?.rigs.length ?? 0) + 1}`);
-  if (await send({ op: "add_physics_rig", rig: created })) view.rig = created.id;
+  let created = null as PhysicsRig | null;
+  const ok = await send((current) => {
+    // i18n-ignore: 既定の名前から ID を作るので、言語によらず英語の識別子にする (衝突体の Circle と同じ)
+    created = newRig(current, `Rig ${(current?.rigs.length ?? 0) + 1}`);
+    return { op: "add_physics_rig", rig: created };
+  });
+  if (ok && created) view.rig = created.id;
 }
 
 async function addChain(): Promise<void> {
-  const before = new Set(settings?.rigs.map((r) => r.id));
-  if (await send(chainCommand(chain))) {
-    view.rig = doc.physics?.rigs.find((r) => !before.has(r.id))?.id ?? view.rig;
-  }
+  let before = new Set<string>();
+  const ok = await send((current) => {
+    before = new Set(current?.rigs.map((r) => r.id));
+    return chain.length > 0 ? chainCommand(chain) : null;
+  });
+  if (ok) view.rig = doc.physics?.rigs.find((r) => !before.has(r.id))?.id ?? view.rig;
 }
 
-function setWorld(field: "gx" | "gy" | "wx" | "wy" | "fps", raw: number): void {
+function setWorld(field: WorldField, raw: number): void {
   const value = finiteValue(raw);
-  if (value === null) return;
-  const [gx, gy] = world.gravity;
-  const [wx, wy] = world.wind;
-  const patch =
-    field === "fps"
-      ? { fps: value }
-      : field === "gx" || field === "gy"
-        ? { gravity: (field === "gx" ? [value, gy] : [gx, value]) as [number, number] }
-        : { wind: (field === "wx" ? [value, wy] : [wx, value]) as [number, number] };
-  void send(worldCommand(settings, patch));
+  if (value !== null) void send((current) => worldFieldCommand(current, field, value));
 }
 
 function moveRig(id: string, delta: -1 | 1): void {
-  const command = moveRigCommand(settings, id, delta);
-  if (command) void send(command);
+  void send((current) => moveRigCommand(current, id, delta));
 }
 
 const rigIds = $derived(settings?.rigs.map((r) => r.id) ?? []);

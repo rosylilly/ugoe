@@ -166,8 +166,7 @@ export function removeSelected(): void {
   if (selected.length === 0) return;
   const indices = selected;
   run(async () => {
-    await doc.apply({ op: "remove_mesh_vertices", id: meshId, indices });
-    if (!doc.error) setVertices([]);
+    if (await doc.apply({ op: "remove_mesh_vertices", id: meshId, indices })) setVertices([]);
   });
 }
 

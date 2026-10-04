@@ -1,6 +1,7 @@
 <!--
   ポーズのパネル (docs/editor.md#ポーズの編集)。右の列の「Poses」タブ。
-  操作はすべて、ポーズを丸ごと置き換える set_pose を送るだけで、組み立ては poses.ts にある。
+  操作はすべて、ポーズを丸ごと置き換える set_pose を送るだけで、組み立ては poses.ts にある。ポーズは送る直前の
+  ものから組み立てる (send。前の編集を読み直す前の写しから組み立てると、その編集を戻してしまう)。
 
   - グループの一覧。グループの要素のうち表示されるのは 1 つで、先頭の要素が最初に表示される (ドラッグか ▲▼ で並べ替える。ドラッグはポインタのイベントで作る)。
     要素の `links` (要素と一緒に切り替わるパーツ。腕の差分に付く袖など) は要素ごとに選ぶ。
@@ -123,9 +124,11 @@ function dragEnd(event: PointerEvent): void {
   setTimeout(() => {
     suppressClick = false;
   });
-  if (!pose || !to || from.group !== to.group) return;
-  const next = moveEntryTo(pose, from.group, from.entry, to.index);
-  if (next.groups[from.group] !== pose.groups[from.group]) void send(next);
+  if (!to || from.group !== to.group) return;
+  void send((current) => {
+    const next = moveEntryTo(current, from.group, from.entry, to.index);
+    return next.groups[from.group] !== current.groups[from.group] ? next : null;
+  });
 }
 
 function cancelDrag(): void {
@@ -157,19 +160,22 @@ const selectedFree = $derived(
   free.filter((p) => selection.has({ kind: "part", id: p.id })).map((p) => p.id),
 );
 
-let busy = $state(false);
+/** 編集を送っている間は、番号に頼るボタンを無効にする (欄の編集は列に並べて送る。docs/editor.md#パネルからの編集)。 */
+const busy = $derived(doc.pending > 0);
 /** 「+ Group」「+ Entry」で選んでいるパーツ (グループの番号ごと。-1 は新しいグループ)。 */
 let picks = $state<Record<number, string>>({});
 
-async function send(next: Pose): Promise<boolean> {
-  if (busy) return false;
-  busy = true;
-  try {
-    // 失敗の理由は doc.error (パネルの上) に出る。
-    return (await doc.apply(setPoseCommand(next))) !== null;
-  } finally {
-    busy = false;
-  }
+/**
+ * 前の編集を読み直した後のポーズを `change` で作り直して送る (null なら送らない)。
+ * 失敗の理由は doc.error (パネルの上) に出る。
+ */
+async function send(change: (current: Pose) => Pose | null): Promise<boolean> {
+  const report = await doc.send(() => {
+    const current = model?.pose;
+    const next = current ? change(current) : null;
+    return next ? setPoseCommand(next) : null;
+  });
+  return report !== null;
 }
 
 function pickOf(group: number): string {
@@ -186,7 +192,7 @@ function setFade(seconds: number): void {
     fadeKey++;
     return;
   }
-  void send({ ...pose, fade_duration: value }).then((ok) => {
+  void send((current) => ({ ...current, fade_duration: value })).then((ok) => {
     if (!ok) fadeKey++;
   });
 }
@@ -225,7 +231,7 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
         step={0.1}
         decimals={3}
         value={pose.fade_duration}
-        disabled={busy || module !== null}
+        disabled={module !== null}
         describedby="{ids}-fade"
         onchange={setFade}
       />
@@ -262,7 +268,7 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
             small
             disabled={busy || base}
             tooltip={t("poses.group.remove.tooltip")}
-            onclick={() => send(removeGroup(pose, gi))}>{t("poses.group.remove.label")}</TipButton
+            onclick={() => send((p) => removeGroup(p, gi))}>{t("poses.group.remove.label")}</TipButton
           >
         </span>
       </header>
@@ -335,20 +341,20 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
                   disabled={busy || base || ei === 0}
                   label={t("poses.entry.moveUp.aria")}
                   tooltip={t("poses.entry.moveUp.tooltip")}
-                  onclick={() => send(moveEntry(pose, gi, ei, -1))}>▲</IconButton
+                  onclick={() => send((p) => moveEntry(p, gi, ei, -1))}>▲</IconButton
                 >
                 <IconButton
                   small
                   disabled={busy || base || ei === group.entries.length - 1}
                   label={t("poses.entry.moveDown.aria")}
-                  onclick={() => send(moveEntry(pose, gi, ei, 1))}>▼</IconButton
+                  onclick={() => send((p) => moveEntry(p, gi, ei, 1))}>▼</IconButton
                 >
                 <IconButton
                   small
                   disabled={busy || base}
                   label={t("poses.entry.remove.aria")}
                   tooltip={t("poses.entry.remove.tooltip")}
-                  onclick={() => send(removeEntry(pose, gi, ei))}>✕</IconButton
+                  onclick={() => send((p) => removeEntry(p, gi, ei))}>✕</IconButton
                 >
               </span>
             </div>
@@ -366,8 +372,7 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
                 options={linkOptions(editableLinks(entry.links, module))}
                 selected={editableLinks(entry.links, module)}
                 empty={t("poses.links.empty")}
-                disabled={busy}
-                onchange={(links) => send(setLinks(pose, gi, ei, links, module))}
+                onchange={(links) => send((p) => setLinks(p, gi, ei, links, module))}
               />
             {:else}
               <p class="help">{t("poses.links.notExposed")}</p>
@@ -382,14 +387,17 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
               ariaLabel={t("poses.entry.add.aria", { index: gi + 1 })}
               value={pickOf(gi)}
               options={freeOptions}
-              disabled={busy || free.length === 0}
+              disabled={free.length === 0}
               onchange={(v) => (picks[gi] = v)}
             />
           </span>
           <TipButton
             disabled={busy || free.length === 0}
             tooltip={t("poses.entry.add.tooltip")}
-            onclick={() => send(addEntry(pose, gi, pickOf(gi)))}>{t("poses.entry.add.label")}</TipButton
+            onclick={() => {
+              const part = pickOf(gi);
+              void send((p) => addEntry(p, gi, part));
+            }}>{t("poses.entry.add.label")}</TipButton
           >
         </div>
       {/if}
@@ -407,11 +415,13 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
             ariaLabel={t("poses.newGroup.first.aria")}
             value={pickOf(-1)}
             options={freeOptions}
-            disabled={busy}
             onchange={(v) => (picks[-1] = v)}
           />
         </span>
-        <Button disabled={busy} onclick={() => send(addGroup(pose, pickOf(-1)))}>{t("poses.newGroup.add.label")}</Button>
+        <Button disabled={busy} onclick={() => {
+          const part = pickOf(-1);
+          void send((p) => addGroup(p, part));
+        }}>{t("poses.newGroup.add.label")}</Button>
       </div>
       <div class="row">
         <TipButton
@@ -420,7 +430,9 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
           onclick={() => {
             const [first, ...rest] = selectedFree;
             if (first === undefined) return;
-            send(rest.reduce((p, id) => addEntry(p, p.groups.length - 1, id), addGroup(pose, first)));
+            void send((current) =>
+              rest.reduce((p, id) => addEntry(p, p.groups.length - 1, id), addGroup(current, first)),
+            );
           }}>{t("poses.newGroup.fromSelection.label")}</TipButton
         >
       </div>

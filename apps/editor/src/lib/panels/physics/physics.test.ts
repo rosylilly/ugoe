@@ -16,11 +16,13 @@ import {
   outputBlend,
   relayInputs,
   removeParticle,
+  rigOf,
   setParticleField,
   targetKind,
   targetRef,
   uniqueId,
   worldCommand,
+  worldFieldCommand,
 } from "./physics";
 
 // 物理が参照するフィールドだけを持つモデル (型検査のためにキャストする)。
@@ -99,6 +101,39 @@ describe("rigs", () => {
       wind: [0, 0],
       fps: 30,
     });
+  });
+
+  it("changes one world field and keeps the other components of the settings it is given", () => {
+    // 送る直前の設定 (前の編集で gx を 2 にした後) から組み立てるので、gy の編集が gx を戻さない。
+    const settings: PhysicsSettings = {
+      gravity: [2, 1],
+      wind: [0.5, 0],
+      fps: 60,
+      rigs: [],
+      colliders: [],
+    };
+    expect(worldFieldCommand(settings, "gy", 3)).toEqual({
+      op: "set_physics_world",
+      gravity: [2, 3],
+      wind: [0.5, 0],
+      fps: 60,
+    });
+    expect(worldFieldCommand(settings, "wx", 1)).toMatchObject({ gravity: [2, 1], wind: [1, 0] });
+    expect(worldFieldCommand(null, "fps", 30)).toMatchObject({ gravity: [0, 1], fps: 30 });
+  });
+
+  it("finds a rig of the latest settings by id", () => {
+    expect(rigOf(null, "Hair")).toBeNull();
+    const rig = newRig(null, "Hair");
+    const settings: PhysicsSettings = {
+      gravity: [0, 1],
+      wind: [0, 0],
+      fps: 60,
+      rigs: [rig],
+      colliders: [],
+    };
+    expect(rigOf(settings, rig.id)).toBe(rig);
+    expect(rigOf(settings, "Other")).toBeNull();
   });
 });
 
