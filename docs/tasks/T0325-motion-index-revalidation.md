@@ -1,11 +1,11 @@
 ---
 id: T0325
 title: "ugoe-motion: 解決した添字を並びの変化で解決し直し、毎フレームの探索と確保を減らす"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-motion, ugoe, docs]
 depends_on: [T0160]
-assignee:
+assignee: claude-worker-T0325
 ---
 
 # T0325: ugoe-motion: 解決した添字を並びの変化で解決し直し、毎フレームの探索と確保を減らす
