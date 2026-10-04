@@ -5,7 +5,7 @@
 //!
 //! - [`plan`] は、ケースの一覧 (`cases.json`) を、各バインディングが読む計画 (`plan.json`・`plan.txt`) に展開する。
 //!   [`bundles`] は、計画で `generated` と書いたモデル (マスクと合成モードを確かめる `.ugoe`) を作る。
-//! - [`frame`] と [`reference`] は、評価の結果 (頂点・不透明度・描画順など) の形と、参照 (`ugoe::Puppet` と
+//! - [`frame`] と [`reference`](mod@reference) は、評価の結果 (頂点・不透明度・描画順など) の形と、参照 (`ugoe::Puppet` と
 //!   その `ModelInstance`) からそれを作る処理。
 //! - [`compare`] は、参照とバインディングの結果を、公開仕様の許容誤差で比べる。
 

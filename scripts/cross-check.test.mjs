@@ -70,6 +70,13 @@ test("仮想カメラは Windows と macOS のターゲットで検査する", (
   assert.deepEqual(CHECKS.vcam.targets, ["x86_64-pc-windows-msvc", "aarch64-apple-darwin"]);
 });
 
+test("ugoe-ai と ugoe-mcp は MinGW のある windows-gnu で、すべての feature で検査する", () => {
+  assert.deepEqual(CHECKS.tools.crates, ["ugoe-ai", "ugoe-mcp"]);
+  assert.deepEqual(CHECKS.tools.targets, ["x86_64-pc-windows-gnu"]);
+  assert.deepEqual(CHECKS.tools.features, ["ugoe-ai/gpu-tests", "ugoe-mcp/gpu-tests"]);
+  assert.ok(CHECKS.tools.commands?.includes("x86_64-w64-mingw32-gcc"));
+});
+
 test("ツールのコマンドと apt のパッケージは重なりを除いて集める", () => {
   const defs = {
     a: { crates: ["x"], targets: ["t"] },

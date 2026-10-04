@@ -4,7 +4,7 @@
 //! エディタではバックエンドからモデルを受け取り、パラメータ操作は
 //! wasm 内で完結させて 60fps を保つ (`docs/editor.md#ビューポート`)。
 //!
-//! JS へ公開するのは [`WebPuppet`] (wasm32 のときだけ)。GPU に触れない部分
+//! JS へ公開するのは `WebPuppet` (wasm32 のときだけ)。GPU に触れない部分
 //! ([`load`]・[`view`]・[`hit`]・[`gizmo`]・[`animation`]・[`tracking`]・[`physics_view`]・[`lighting`]・[`readback`]) はネイティブでもビルドしてテストする。
 //!
 //! ビルド: `just wasm` (wasm-bindgen-cli が必要。README を参照)。

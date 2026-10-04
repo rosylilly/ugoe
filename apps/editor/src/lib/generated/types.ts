@@ -1844,7 +1844,7 @@ export type OverflowPoint = { index: number,
  */
 uv: Vec2, 
 /**
- * [0,1]² からの UV の距離 (格子の幅・高さを 1 とした量)。
+ * `[0,1]²` からの UV の距離 (格子の幅・高さを 1 とした量)。
  */
 amount: number, };
 
@@ -2783,7 +2783,7 @@ export type VertexOwner = { "mesh": string } | { "warp": string };
 
 /**
  * ワープデフォーマ: (rows+1)×(cols+1) 個の制御点を持つ格子による自由変形。
- * 子の局所座標は格子全体を [0,1]² に正規化した UV 空間。
+ * 子の局所座標は格子全体を `[0,1]²` に正規化した UV 空間。
  */
 export type WarpDeformer = { 
 /**

@@ -424,7 +424,7 @@ impl Puppet {
     /// 動的物理を使う設定では、物理の段で 1 段目の評価を行い、最後の `ModelInstance::update()` が
     /// 2 段目になる (動的物理を使わなければ評価は 1 回)。
     ///
-    /// `dt` (秒) が負か有限でなければ 0 とみなす (時間は進めずに各段を当て、評価する。[`sanitize_dt`])。
+    /// `dt` (秒) が負か有限でなければ 0 とみなす (時間は進めずに各段を当て、評価する。`sanitize_dt`)。
     pub fn update(&mut self, dt: f32) {
         let dt = sanitize_dt(dt);
         let params = self.instance.parameters_mut();

@@ -8,7 +8,7 @@
 //! 適用・保存などの前にエディタの確認も通す ([`DocumentHost::authorize`])。
 //! 提案の置き場は、エディタと同じ `ugoe_editor_core::Proposals` (一部のコマンドを外した採用もできる)。
 //!
-//! PSD からの自動リギングの判断を外部のエージェントに任せるツールは [`crate::autorig`]。
+//! PSD からの自動リギングの判断を外部のエージェントに任せるツールは `autorig` のモジュール。
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -44,10 +44,10 @@ pub struct Options {
     pub gpu_timeout: Option<std::time::Duration>,
 }
 
-/// ツールの集まり。文書は持ち主から借り、ツールだけが使う状態 ([`Extra`]) をパスごとに持つ。
+/// ツールの集まり。文書は持ち主から借り、ツールだけが使う状態 (`Extra`) をパスごとに持つ。
 ///
 /// `&self` で呼べ、複数のスレッドから同時に呼んでよい (HTTP の接続ごとのスレッド)。持ち主の錠を
-/// 握るのは [`Tools::with`] の中だけで、その中ではほかの錠を取らない (錠の順序で詰まらないように)。
+/// 握るのは `Tools::with` の中だけで、その中ではほかの錠を取らない (錠の順序で詰まらないように)。
 pub struct Tools {
     options: Options,
     schema: CommandSchema,

@@ -51,7 +51,7 @@ pub enum DeformerKind {
 }
 
 /// ワープデフォーマ: (rows+1)×(cols+1) 個の制御点を持つ格子による自由変形。
-/// 子の局所座標は格子全体を [0,1]² に正規化した UV 空間。
+/// 子の局所座標は格子全体を `[0,1]²` に正規化した UV 空間。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]

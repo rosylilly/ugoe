@@ -449,7 +449,7 @@ impl Stamp {
 }
 
 /// `dressup.list` が読んだ付けていないモジュールの概要 (パス → 時刻・大きさ・概要。読めなかったものは `None` を覚える)。T0833。
-/// 着せ替えに使えるモジュール ([`wardrobe`]) に無くなったものは忘れ、[`MAX_MODULE_SUMMARIES`] を超えては覚えない。
+/// 着せ替えに使えるモジュール (`wardrobe`) に無くなったものは忘れ、[`MAX_MODULE_SUMMARIES`] を超えては覚えない。
 #[derive(Debug, Default)]
 pub struct ModuleSummaries(HashMap<PathBuf, (Stamp, Option<Value>)>);
 

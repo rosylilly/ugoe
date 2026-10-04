@@ -28,7 +28,7 @@ setup:
     rustup show active-toolchain
 
 # CI と同じ検査一式
-ci: fmt-check lint sdk-no-render-check test layers refs groups licenses publish-check spec web-check i18n app-build-check script-check
+ci: fmt-check lint sdk-no-render-check test layers refs groups licenses publish-check spec web-check i18n app-build-check script-check doc-check
 
 # コミットメッセージを検査: `just commitlint "feat(runtime): add foo"`
 commitlint message:
@@ -294,6 +294,15 @@ cli *args:
 # API ドキュメント
 doc:
     cargo doc --workspace --no-deps --open
+
+# rustdoc の警告 (壊れた intra-doc link・公開の文書から非公開の項目へのリンクなど) をエラーにして API ドキュメントを作る
+# (docs/testing.md#ci-のジョブ)。`[0,1]` のような角括弧はリンクと読まれるので `` `[0,1]` `` か `\[0,1\]` と書く
+doc-check:
+    RUSTDOCFLAGS="${RUSTDOCFLAGS:-} -D warnings" cargo doc --workspace --no-deps
+
+# 1 つのグループだけの doc-check (CI の rust (<グループ>) ジョブ): `just doc-group tools`
+doc-group name:
+    args="$(node scripts/ci-groups.mjs args {{name}})"; RUSTDOCFLAGS="${RUSTDOCFLAGS:-} -D warnings" cargo doc $args --no-deps
 
 # @ugoe/ui の部品の見本の画面をヘッドレスの Chrome で撮って検査する (packages/ui/README.md): `just ui-shots /tmp/shots`
 ui-shots out:

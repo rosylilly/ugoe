@@ -38,6 +38,16 @@ export const CHECKS = {
     commands: ["x86_64-w64-mingw32-gcc", "x86_64-w64-mingw32-windres"],
     apt: ["gcc-mingw-w64-x86-64"],
   },
+  // ugoe-ai と ugoe-mcp の Windows のコード (ugoe-mcp のルートの扱いなど。T0027)。ugoe-mcp のテストは rust (windows) の
+  // ランナーでも流れるが、ugoe-ai はそこに入らない。依存の ring (ugoe-ai の rustls) の C をコンパイルするので、
+  // apps と同じく MinGW の gcc がある windows-gnu で検査する。feature は `just lint` の --all-features に揃える
+  tools: {
+    crates: ["ugoe-ai", "ugoe-mcp"],
+    targets: ["x86_64-pc-windows-gnu"],
+    features: ["ugoe-ai/gpu-tests", "ugoe-mcp/gpu-tests"],
+    commands: ["x86_64-w64-mingw32-gcc"],
+    apt: ["gcc-mingw-w64-x86-64"],
+  },
 };
 
 /** 名前の並びから検査を選ぶ (空ならすべて)。知らない名前は例外。 */

@@ -67,7 +67,7 @@ fn conductor_effects(conductor: &Puppet) -> ugoe::model::effects::Effects {
     }
 }
 
-/// [`conductor_effects`] を、実行器が指揮役の `set_effects_json` に渡す JSON にしたもの (計画の `Conduct::effects`。T0454)。
+/// `conductor_effects` を、実行器が指揮役の `set_effects_json` に渡す JSON にしたもの (計画の `Conduct::effects`。T0454)。
 pub fn conductor_effects_json(case: &Case) -> Result<String, Error> {
     let effects = conductor_effects(&loaded(case)?);
     serde_json::to_string(&effects).map_err(|e| invalid(case, e))

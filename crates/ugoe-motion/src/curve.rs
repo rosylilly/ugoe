@@ -92,7 +92,7 @@ impl SegmentIndex {
         }
     }
 
-    /// カーブを時刻 `t` で評価する。結果は [`evaluate`](crate::curve::evaluate) と同じ。
+    /// カーブを時刻 `t` で評価する。結果は [`evaluate`] と同じ。
     ///
     /// `segments` は [`new`](Self::new) に渡したものと同じ列でなければならない。
     pub fn evaluate(&self, segments: &[Segment], t: f32) -> Option<f32> {

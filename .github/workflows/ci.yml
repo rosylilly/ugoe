@@ -68,6 +68,9 @@ jobs:
       # アプリのビルドの入口 (scripts/app-build.mjs) の引数と組み合わせ
       - name: App build check
         run: just app-build-check
+      # 補助スクリプト (scripts/) の単体テスト。Node だけで動くので、ビルドしないこのジョブに置く (T0027)
+      - name: Script check
+        run: just script-check
 
   # rust-group の matrix を scripts/ci-groups.mjs の GROUPS から作る (グループの定義は 1 か所に置く)
   rust-groups:
@@ -125,6 +128,9 @@ jobs:
         run: just lint-group ${{ matrix.group }}
       - name: Test
         run: just test-group ${{ matrix.group }}
+      # rustdoc の警告をエラーにして API ドキュメントを作る (`just doc-check` のグループの分。T0027)
+      - name: Doc
+        run: just doc-group ${{ matrix.group }}
       # Rust から生成した TS の型と JSON Schema がコミット済みで最新か (docs/editor.md#型の生成)。
       # エディタ (Tauri) の example でつくるので apps で行う
       - name: Generated files

@@ -2,7 +2,7 @@
 //!
 //! 1 つのメッセージ (JSON-RPC の要求・通知・応答) を受け取り、返す応答を作る。
 //! 旧来の `initialize` の握手をする版 (2025-11-25 以前) と、要求ごとに `_meta` で版を示す版
-//! (2026-07-28) の両方に応じる。仕様: https://modelcontextprotocol.io/specification/
+//! (2026-07-28) の両方に応じる。仕様: <https://modelcontextprotocol.io/specification/>
 
 use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};

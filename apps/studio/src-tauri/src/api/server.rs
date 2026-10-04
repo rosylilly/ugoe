@@ -1,8 +1,8 @@
 //! 待ち受け: ループバック (`127.0.0.1` と `::1`) にだけ束ね、接続ごとにスレッドで要求を読む (ADR 0028 の 6.)。
 //!
 //! 1 つの待ち受けで HTTP と WebSocket を扱う。経路は `/api` (操作 API の WebSocket) と `/source/<トークン>/…`
-//! (ブラウザソース、[`super::source`]、T0808) で ([`route`])、どちらも有効にしたときだけ答える (切っていれば `404`)。
-//! 待ち受けは、どちらかが有効な間だけ動かす ([`super::Studio::sync_listener`])。
+//! (ブラウザソース、[`super::source`]、T0808) で (`route`)、どちらも有効にしたときだけ答える (切っていれば `404`)。
+//! 待ち受けは、どちらかが有効な間だけ動かす (`Studio::sync_listener`)。
 //! どの経路も、先に [`http::check_request`] (Host・転送ヘッダ・Origin) を通す。
 //!
 //! WebSocket のフレームは tungstenite に任せる ([`ws`])。送るものは [`Outgoing`] の列で渡すので、ほかのスレッド
@@ -241,7 +241,7 @@ impl Server {
         &self.addrs
     }
 
-    /// 待ち受けをやめる (今の接続は [`super::Studio::sync_listener`] が閉じる)。
+    /// 待ち受けをやめる (今の接続は `Studio::sync_listener` が閉じる)。
     pub fn stop(self) {
         self.stopping.store(true, Ordering::SeqCst);
         for addr in &self.addrs {

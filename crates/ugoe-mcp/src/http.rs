@@ -1,7 +1,7 @@
 //! HTTP のトランスポート (MCP の Streamable HTTP。T0514)。
 //!
-//! 仕様: https://modelcontextprotocol.io/specification/draft/basic/transports/streamable-http
-//! (2026-07-28) と https://modelcontextprotocol.io/specification/2025-11-25/basic/transports
+//! 仕様: <https://modelcontextprotocol.io/specification/draft/basic/transports/streamable-http>
+//! (2026-07-28) と <https://modelcontextprotocol.io/specification/2025-11-25/basic/transports>
 //! (`initialize` の握手をする版)。
 //!
 //! - エンドポイントは 1 つ (`/mcp`)。要求は 1 つずつ POST で受け、応答は JSON 1 つで返す
@@ -24,7 +24,7 @@
 //!
 //! HTTP/1.1 の処理は std の `TcpListener` の上に自分で書いた (接続ごとのスレッド・keep-alive・
 //! `Content-Length` と `chunked` の本文)。非同期ランタイムを持ち込まないため。外から届く口なので、
-//! 本文の大きさ・ヘッダの数と大きさ・読み込みの時間・同時の接続の数に上限を設け ([`Limits`])、
+//! 本文の大きさ・ヘッダの数と大きさ・読み込みの時間・同時の接続の数に上限を設け (`Limits`)、
 //! 超えたら `413`・`431`・`408`・`503` で答えて接続を閉じる。要求を読み終える前の誤りの答え (`408`・`413`・
 //! `431`・`400` など) の後は、書く側を閉じてから相手の残りを上限まで読み捨てて閉じる (lingering close。
 //! 読み残しのまま閉じると RST になり、Windows のクライアントが答えを失う。T0556)。
