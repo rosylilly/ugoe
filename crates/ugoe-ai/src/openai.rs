@@ -30,7 +30,9 @@ use crate::transport::{
     HttpRequest, HttpResponse, RetryPolicy, SendFailure, Transport, UreqTransport, error_excerpt,
     is_loopback_url, is_retryable_status, send_with_retry, url_host,
 };
-use crate::{AiError, Destination, Disclosure, PNG_SIGNATURE, Provider, ProviderRequest};
+use crate::{
+    AiError, CancelToken, Destination, Disclosure, PNG_SIGNATURE, Provider, ProviderRequest,
+};
 
 /// OpenAI の API の URL (`/chat/completions` の手前まで)。
 pub const OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
@@ -152,8 +154,10 @@ type Sleeper = Arc<dyn Fn(Duration) + Send + Sync>;
 pub struct OpenAiProvider {
     config: OpenAiConfig,
     api_key: Option<ApiKey>,
-    transport: Box<dyn Transport>,
-    sleep: Sleeper,
+    transport: Arc<dyn Transport>,
+    /// 再試行の前に待つ関数の差し替え (テスト用)。`None` なら取り消しで起きる待ち。
+    sleep: Option<Sleeper>,
+    cancel: CancelToken,
 }
 
 impl fmt::Debug for OpenAiProvider {
@@ -187,15 +191,24 @@ impl OpenAiProvider {
         Self {
             config,
             api_key,
-            transport: Box::new(transport),
-            sleep: Arc::new(std::thread::sleep),
+            transport: Arc::new(transport),
+            sleep: None,
+            cancel: CancelToken::new(),
         }
     }
 
     /// 再試行の前に待つ関数を差し替える (テストで実際に待たないため)。
     #[must_use]
     pub fn with_sleeper(mut self, sleep: impl Fn(Duration) + Send + Sync + 'static) -> Self {
-        self.sleep = Arc::new(sleep);
+        self.sleep = Some(Arc::new(sleep));
+        self
+    }
+
+    /// 取り消しの印と時間の上限を渡す (`docs/ai-integration.md#取り消しと時間の上限`)。送る前・応答を待つ間・
+    /// 再試行の待ちの間に確かめ、[`AiError::Cancelled`] か [`AiError::TimeLimitExceeded`] を返す。
+    #[must_use]
+    pub fn with_cancel(mut self, cancel: CancelToken) -> Self {
+        self.cancel = cancel;
         self
     }
 
@@ -276,14 +289,16 @@ impl OpenAiProvider {
             url: self.config.chat_url(),
             headers,
             body: body.to_string().into_bytes(),
+            timeout: None,
         }
     }
 
-    fn send(&self, request: &HttpRequest) -> Result<HttpResponse, AiError> {
+    fn send(&self, request: HttpRequest) -> Result<HttpResponse, AiError> {
         send_with_retry(
-            self.transport.as_ref(),
+            &self.transport,
             &self.config.retry,
-            self.sleep.as_ref(),
+            self.sleep.as_deref(),
+            &self.cancel,
             request,
             |r| is_retryable_status(r.status) && !is_quota_error(r),
         )
@@ -293,6 +308,7 @@ impl OpenAiProvider {
                 retry_after,
             } => self.status_error(&response, retry_after),
             SendFailure::Transport(e) => AiError::Network(self.redact(&e.to_string())),
+            SendFailure::Stopped(e) => e,
         })
     }
 
@@ -322,7 +338,7 @@ impl Provider for OpenAiProvider {
         let mut rejected = Vec::new();
         loop {
             let body = self.build_body(request, schema, &rejected)?;
-            let response = self.send(&self.http_request(&body))?;
+            let response = self.send(self.http_request(&body))?;
             let text = answer_text(&response)?;
             let error = match parse_json(&text) {
                 Ok(value) => match check_schema(&value, schema, "$") {

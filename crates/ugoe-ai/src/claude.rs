@@ -22,7 +22,9 @@ use crate::transport::{
     HttpRequest, HttpResponse, SendFailure, Transport, TransportError, UreqTransport,
     error_excerpt, is_retryable_status, send_with_retry,
 };
-use crate::{AiError, Destination, Disclosure, PNG_SIGNATURE, Provider, ProviderRequest};
+use crate::{
+    AiError, CancelToken, Destination, Disclosure, PNG_SIGNATURE, Provider, ProviderRequest,
+};
 
 /// 既定のモデル。
 pub const DEFAULT_MODEL: &str = "claude-opus-5-5";
@@ -125,8 +127,10 @@ type Sleeper = Arc<dyn Fn(Duration) + Send + Sync>;
 pub struct ClaudeProvider {
     config: ClaudeConfig,
     api_key: ApiKey,
-    transport: Box<dyn Transport>,
-    sleep: Sleeper,
+    transport: Arc<dyn Transport>,
+    /// 再試行の前に待つ関数の差し替え (テスト用)。`None` なら取り消しで起きる待ち。
+    sleep: Option<Sleeper>,
+    cancel: CancelToken,
 }
 
 impl fmt::Debug for ClaudeProvider {
@@ -154,14 +158,23 @@ impl ClaudeProvider {
         Self {
             config,
             api_key,
-            transport: Box::new(transport),
-            sleep: Arc::new(std::thread::sleep),
+            transport: Arc::new(transport),
+            sleep: None,
+            cancel: CancelToken::new(),
         }
     }
 
     /// 再試行の前に待つ関数を差し替える (テストで実際に待たないため)。
     pub fn with_sleeper(mut self, sleep: impl Fn(Duration) + Send + Sync + 'static) -> Self {
-        self.sleep = Arc::new(sleep);
+        self.sleep = Some(Arc::new(sleep));
+        self
+    }
+
+    /// 取り消しの印と時間の上限を渡す (`docs/ai-integration.md#取り消しと時間の上限`)。送る前・応答を待つ間・
+    /// 再試行の待ちの間に確かめ、[`AiError::Cancelled`] か [`AiError::TimeLimitExceeded`] を返す。
+    #[must_use]
+    pub fn with_cancel(mut self, cancel: CancelToken) -> Self {
+        self.cancel = cancel;
         self
     }
 
@@ -214,15 +227,17 @@ impl ClaudeProvider {
                 ("x-api-key".into(), self.api_key.expose().to_owned()),
             ],
             body: body.to_string().into_bytes(),
+            timeout: None,
         }
     }
 
     /// 再試行しながら送り、成功した応答を返す。
-    fn send_with_retry(&self, request: &HttpRequest) -> Result<HttpResponse, AiError> {
+    fn send_with_retry(&self, request: HttpRequest) -> Result<HttpResponse, AiError> {
         send_with_retry(
-            self.transport.as_ref(),
+            &self.transport,
             &self.config.retry,
-            self.sleep.as_ref(),
+            self.sleep.as_deref(),
+            &self.cancel,
             request,
             |r| is_retryable_status(r.status),
         )
@@ -232,6 +247,7 @@ impl ClaudeProvider {
                 retry_after,
             } => self.status_error(&response, retry_after),
             SendFailure::Transport(e) => self.transport_error(&e),
+            SendFailure::Stopped(e) => e,
         })
     }
 
@@ -268,7 +284,7 @@ impl Provider for ClaudeProvider {
         schema: &serde_json::Value,
     ) -> Result<serde_json::Value, AiError> {
         let body = self.build_body(request, schema)?;
-        let response = self.send_with_retry(&self.http_request(&body))?;
+        let response = self.send_with_retry(self.http_request(&body))?;
         let message: MessageResponse = serde_json::from_slice(&response.body)
             .map_err(|e| AiError::InvalidResponse(format!("not a Messages API response: {e}")))?;
         match message.stop_reason.as_deref() {

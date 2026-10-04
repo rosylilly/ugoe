@@ -8,6 +8,7 @@ export const messageCodes: Record<string, readonly string[]> = {
     "status"
   ],
   "ai.api_key_required": [],
+  "ai.cancelled": [],
   "ai.claude_model_missing": [],
   "ai.credential_store": [
     "detail"
@@ -22,6 +23,10 @@ export const messageCodes: Record<string, readonly string[]> = {
   ],
   "ai.invalid_response": [
     "detail"
+  ],
+  "ai.invalid_time_limit": [
+    "max",
+    "min"
   ],
   "ai.missing_api_key": [
     "detail"
@@ -42,6 +47,9 @@ export const messageCodes: Record<string, readonly string[]> = {
     "category"
   ],
   "ai.send_disabled": [],
+  "ai.time_limit": [
+    "minutes"
+  ],
   "ai.truncated": [],
   "atlas.invalid_max_size": [],
   "atlas.missing_texture": [

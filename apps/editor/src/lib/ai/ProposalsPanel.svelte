@@ -16,6 +16,8 @@
     「Regenerate with instructions」は前の答えと注文を送って作り直し、新しい提案を後ろに並べる (前の提案は残る)。
     提案には添えた注文と、AI が反映できないと答えた注文 (「Not applied」) を出す。注文はプロジェクトに保存しない
     (docs/editor.md#ai-への注文と作り直し)。
+  - AI に送っている間は進み具合の隣に「Cancel」を出す (`view.cancel`。応答を待たずに止め、「Cancelled」と出す。
+    docs/ai-integration.md#取り消しと時間の上限)。
   - 「Normal maps from the shapes」(モデルのプロジェクトだけ): 部位のまとまり (顔と目口鼻眉・首と体と腕・髪など。意味ラベルから
     決める) ごとに含めるか・強さ・縁の丸み・ならしを選び、すべてのテクスチャの法線マップを 1 つの提案にする (AI なし。何も送らない)。
     縁の幅とならしはキャンバスの px で見せる (単独でふくらませるものはテクスチャの px。panels/lighting/lighting.ts)。
@@ -231,7 +233,21 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
       {t("proposals.propose")}
     </Button>
   </div>
-  {#if view.busy}<p class="progress" role="status">{view.busy}</p>{/if}
+  {#if view.busy}
+    <div class="progress-row">
+      <p class="progress" role="status">
+        {view.cancelling ? t("proposals.cancel.cancelling") : view.busy}
+      </p>
+      {#if view.sending}
+        <TipButton
+          onclick={() => view.cancel()}
+          disabled={view.cancelling}
+          tooltip={t("proposals.cancel.tooltip")}
+        >{t("proposals.cancel.label")}</TipButton>
+      {/if}
+    </div>
+  {/if}
+  {#if view.notice}<p class="muted" role="status">{view.notice}</p>{/if}
   {#if view.error}<p class="error ugoe-selectable">{view.error}</p>{/if}
   {#if summary && panel?.classification}
     <p
@@ -622,6 +638,15 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
   }
   .progress {
     color: var(--ugoe-color-accent);
+  }
+  .progress-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .progress-row .progress {
+    flex: 1;
+    min-width: 0;
   }
   .warn {
     color: var(--ugoe-color-warning);

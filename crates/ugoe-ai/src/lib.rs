@@ -9,6 +9,7 @@
 //! - 既定のプロバイダは Anthropic の Claude API ([`claude::ClaudeProvider`])。OpenAI 互換の API
 //!   ([`openai::OpenAiProvider`]) も使える (ADR 0022)。
 
+pub mod cancel;
 pub mod classify;
 pub mod claude;
 pub mod depth;
@@ -27,6 +28,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use ugoe_editor_core::Command;
 
+pub use cancel::CancelToken;
 pub use fake::FakeProvider;
 
 /// PNG の署名。プロバイダは送る前に画像が PNG であることを確かめる。
@@ -69,6 +71,12 @@ pub enum AiError {
     /// 応答の形式が想定と違う (JSON として読めない、など)。
     #[error("invalid response: {0}")]
     InvalidResponse(String),
+    /// 利用者が取り消した ([`CancelToken::cancel`])。再試行も問い直しもしない。
+    #[error("the request was cancelled")]
+    Cancelled,
+    /// 1 回の提案の時間の合計 (再試行と問い直しを含む) が上限 ([`CancelToken::with_time_limit`]) を超えた。
+    #[error("the time limit of {}s was exceeded", limit.as_secs())]
+    TimeLimitExceeded { limit: Duration },
 }
 
 /// 画像とテキストを入力に構造化 JSON を返すモデルの抽象。

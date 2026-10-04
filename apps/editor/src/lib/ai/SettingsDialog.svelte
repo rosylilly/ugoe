@@ -4,7 +4,8 @@
   「AI provider」は AI の設定 (docs/editor.md#ai-の設定と送信の同意):
   プロバイダ (Claude / OpenAI 互換) とモデル・ベースの URL の選択 (エディタ全体の設定)、選んだプロバイダの
   API キーの保存・削除 (OS の資格情報の保存先。キーは画面に出さず、入力欄も保存したら空にする)、
-  開いているプロジェクトの「外部の AI に送らない」、「今後は確かめない」の取り消し、接続の確認。
+  開いているプロジェクトの「外部の AI に送らない」、「今後は確かめない」の取り消し、接続の確認 (確かめている間は取り消せる)。
+  1 回の提案の時間の上限 (分。プロバイダに関わらない。docs/ai-integration.md#取り消しと時間の上限) もプロバイダの設定と一緒に適用する。
   @ugoe/ui の Dialog。接続の確認では、外部の AI に送る前の確認 (ConsentDialog。AlertDialog) がこの上に重なって開く
   (Bits UI のフォーカスと Esc の層は重なった順に積まれるので、確認を閉じるとこのダイアログに戻る)。
 -->
@@ -12,7 +13,7 @@
 import { RichText } from "@ugoe/i18n";
 import { Button, Dialog, type Option, Select, ThemeSetting, Toggle } from "@ugoe/ui";
 import ConnectAgents from "../agents/ConnectAgents.svelte";
-import { errorText } from "../errors";
+import { errorCode, errorText } from "../errors";
 import { t } from "../i18n";
 import { type AiSettings, ipc, type OutputMode, type ProviderSettings } from "../ipc";
 import LanguageSetting from "../LanguageSetting.svelte";
@@ -56,6 +57,8 @@ const tabs = $derived<TabItem<SettingsTab>[]>([
 ]);
 
 const saved = $derived(aiSettings.value?.provider ?? null);
+/** 時間の上限の入力が整数か (空や小数なら適用しない。範囲はバックエンドが確かめる)。 */
+const timeLimitValid = $derived(!!draft && Number.isInteger(draft.time_limit_minutes));
 const dirty = $derived(!!draft && !!saved && JSON.stringify(draft) !== JSON.stringify(saved));
 const preset = $derived(draft ? presetFor(draft.openai.base_url) : undefined);
 /** OpenAI 互換の送り先の選択肢 (値はベースの URL)。どれにも合わなければ「Other」。 */
@@ -139,7 +142,10 @@ async function testConnection(): Promise<void> {
       ? { ok: true, text: t("settings.ai.test.connected") }
       : { ok: false, text: t("settings.ai.test.notSent") };
   } catch (e) {
-    testResult = { ok: false, text: errorText(e) };
+    testResult =
+      errorCode(e) === "ai.cancelled"
+        ? { ok: true, text: t("settings.ai.test.cancelled") }
+        : { ok: false, text: errorText(e) };
   } finally {
     busy = false;
     testing = false;
@@ -255,8 +261,21 @@ function keyPlaceholder(s: AiSettings): string {
           </div>
           <p class="ed-hint note">{t("settings.ai.output.description")}</p>
         {/if}
+        <div class="ed-field">
+          <label for={`${id}-time-limit`}>{t("settings.ai.timeLimit.label")}</label>
+          <input
+            id={`${id}-time-limit`}
+            type="number"
+            min="1"
+            max="120"
+            step="1"
+            bind:value={draft.time_limit_minutes}
+            aria-describedby={`${id}-time-limit-note`}
+          />
+        </div>
+        <p class="ed-hint note" id={`${id}-time-limit-note`}>{t("settings.ai.timeLimit.description")}</p>
         <div class="ed-buttons">
-          <Button type="submit" disabled={busy || !dirty}>{t("settings.ai.apply.label")}</Button>
+          <Button type="submit" disabled={busy || !dirty || !timeLimitValid}>{t("settings.ai.apply.label")}</Button>
           {#if dirty}
             <Button disabled={busy} onclick={resetDraft}>{t("settings.ai.revert.label")}</Button>
             <span class="ed-hint">{t("settings.ai.notApplied")}</span>
@@ -325,6 +344,9 @@ function keyPlaceholder(s: AiSettings): string {
           onclick={testConnection}
           tooltip={t("settings.ai.test.tooltip")}
         >{t("settings.ai.test.label")}</TipButton>
+        {#if testing}
+          <Button onclick={() => ipc.cancelAiRequests().catch(() => {})}>{t("settings.ai.test.cancel")}</Button>
+        {/if}
         {#if testResult}
           <span class:error={!testResult.ok} role="status">{testResult.text}</span>
         {/if}

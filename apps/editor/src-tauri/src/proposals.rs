@@ -868,7 +868,10 @@ pub(crate) fn classify_guided_in(
             Prepared::NeedsConsent(disclosure) => {
                 return Ok(AiReply::NeedsConsent { disclosure });
             }
-            Prepared::Ready(provider) => classify(&tree, Some(provider.as_ref()), &guidance),
+            Prepared::Ready(job) => {
+                let result = classify(&tree, Some(job.provider()), &guidance);
+                job.finish(result)
+            }
         }
     } else {
         classify(&tree, None, &guidance)
@@ -979,13 +982,16 @@ fn make_rig(
             Prepared::NeedsConsent(disclosure) => {
                 return Ok(AiReply::NeedsConsent { disclosure });
             }
-            Prepared::Ready(provider) => rig(
-                &document,
-                &classified.labels,
-                &image,
-                Some(provider.as_ref()),
-                &guidance,
-            ),
+            Prepared::Ready(job) => {
+                let result = rig(
+                    &document,
+                    &classified.labels,
+                    &image,
+                    Some(job.provider()),
+                    &guidance,
+                );
+                job.finish(result)
+            }
         }
     } else {
         rig(&document, &classified.labels, &[], None, &guidance)

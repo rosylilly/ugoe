@@ -320,6 +320,7 @@ pub(crate) fn state(secret: Option<&str>) -> AppState {
         document: Mutex::new(document),
         project: Mutex::new(session),
         api_keys: keys(secrets, no_env),
+        ai_jobs: AiJobs::default(),
         ai_provider: ProviderStore::default(),
         mcp: crate::mcp::McpBridge::default(),
         preview_base: crate::module::PreviewBaseCache::default(),
@@ -437,14 +438,18 @@ fn loopback_servers_need_no_consent() {
 fn keys_are_not_sent_over_plain_http() {
     let settings = openai("http://llm.example.com/v1");
     let key = ApiKey::new("sk-x").unwrap();
-    let Err(err) = settings.build(Some(key.clone()), Purpose::Proposal) else {
+    let Err(err) = settings.build(Some(key.clone()), Purpose::Proposal, CancelToken::new()) else {
         panic!("expected to refuse");
     };
     assert!(err.to_string().contains("https"), "{err}");
-    assert!(settings.build(None, Purpose::Proposal).is_ok());
+    assert!(
+        settings
+            .build(None, Purpose::Proposal, CancelToken::new())
+            .is_ok()
+    );
     assert!(
         openai("http://127.0.0.1:1234/v1")
-            .build(Some(key), Purpose::Proposal)
+            .build(Some(key), Purpose::Proposal, CancelToken::new())
             .is_ok()
     );
 }
@@ -537,4 +542,63 @@ fn combined_disclosures_add_up() {
         *model = "claude-sonnet-5-5".into();
     }
     assert!(DisclosureView::combined(&[external(1), other]).is_err());
+}
+
+/// 取り消し: 実行中の送信は一覧にあり、`cancel_ai_requests` で取り消すと送らずに `ai.cancelled` で終わる。
+/// 取り消した後に届いた結果も捨てる。終わった送信は一覧から外れる。
+#[test]
+fn running_requests_can_be_cancelled() {
+    let state = state(None);
+    state
+        .ai_provider
+        .set(openai("http://127.0.0.1:9/v1"))
+        .unwrap();
+    let (request, schema) = test_request();
+    let requests = std::slice::from_ref(&request);
+    let Prepared::Ready(job) =
+        prepare_requests(&state, Purpose::ConnectionTest, requests, 0, None).unwrap()
+    else {
+        panic!("expected to be ready");
+    };
+    assert_eq!(state.ai_jobs.running(), 1);
+    assert_eq!(state.ai_jobs.cancel_all(), 1);
+    // 取り消しの後は送らない (送っていればつながらずに network のエラーになる)
+    let err = job.provider().complete_json(&request, &schema).unwrap_err();
+    assert!(matches!(err, AiError::Cancelled), "{err}");
+    assert!(matches!(job.finish(Ok(())), Err(AiError::Cancelled)));
+    assert_eq!(state.ai_jobs.running(), 0);
+    assert_eq!(state.ai_jobs.cancel_all(), 0);
+    assert_eq!(
+        ugoe_editor_core::Coded::code(&EditorError::Ai(AiError::Cancelled)),
+        "ai.cancelled"
+    );
+
+    // 取り消していない送信の結果はそのまま
+    let Prepared::Ready(job) =
+        prepare_requests(&state, Purpose::ConnectionTest, requests, 0, None).unwrap()
+    else {
+        panic!("expected to be ready");
+    };
+    assert!(matches!(job.finish(Ok(7)), Ok(7)));
+}
+
+/// 時間の上限: 既定は 15 分。前の版の設定のファイル (上限がない) も既定で読み、範囲の外は保存しない。
+#[test]
+fn time_limit_setting() {
+    let settings = ProviderSettings::default();
+    assert_eq!(settings.time_limit_minutes, 15);
+    assert_eq!(settings.time_limit(), std::time::Duration::from_secs(900));
+    let old: ProviderSettings = serde_json::from_str(r#"{"provider":"claude"}"#).unwrap();
+    assert_eq!(old.time_limit_minutes, 15);
+    for minutes in [0, 121] {
+        let state = state(None);
+        let err = state
+            .ai_provider
+            .set(ProviderSettings {
+                time_limit_minutes: minutes,
+                ..ProviderSettings::default()
+            })
+            .unwrap_err();
+        assert_eq!(ugoe_editor_core::Coded::code(&err), "ai.invalid_time_limit");
+    }
 }

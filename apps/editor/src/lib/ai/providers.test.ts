@@ -9,6 +9,7 @@ function settings(patch: Partial<AiSettings> = {}): AiSettings {
       provider: "claude",
       claude: { model: "claude-opus-5-5" },
       openai: { base_url: "https://api.openai.com/v1", model: "gpt-6-sol", output: "json_schema" },
+      time_limit_minutes: 15,
     },
     service: "Anthropic Claude API",
     local: false,

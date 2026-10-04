@@ -1757,7 +1757,12 @@ export type ProviderKind = "claude" | "openai_compatible";
 /**
  * AI のプロバイダの設定 (`ai-provider.json`)。API キーは含めない。
  */
-export type ProviderSettings = { provider: ProviderKind, claude: ClaudeSettings, openai: OpenAiSettings, };
+export type ProviderSettings = { provider: ProviderKind, claude: ClaudeSettings, openai: OpenAiSettings, 
+/**
+ * 1 回の提案 (分類・リグの提案・接続の確認) にかける時間の合計の上限 (分)。再試行の待ちと問い直しを含む。
+ * 超えたら止めて `ai.time_limit` のエラーにする。範囲は [`TIME_LIMIT_RANGE_MINUTES`]。
+ */
+time_limit_minutes: number, };
 
 /**
  * 取り込みの警告。

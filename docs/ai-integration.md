@@ -381,6 +381,18 @@ T0518 (方法は T0707 の見本 `ugoe sample avatar --lit` から)。テクス�
 - 録画には画像のデータ (base64 のブロックと data URL) を残さず、長さだけにします。URL の利用者の部分 (`https://user:pass@host/...`) は `<redacted>` に置き換えます。
 - `RecordingTransport` で実際の通信を包むと録画を作れます (`tests/claude_replay.rs`・`tests/openai_replay.rs` の `record_live`。既定では動かしません)。
 
+### 取り消しと時間の上限
+
+1 回のリクエストの上限 (600 秒) に、再試行 (既定 2 回、`retry-after` は 60 秒まで待つ)・OpenAI 互換の API の問い直し (`json_retries`)・リギングの問い直し (`DEFAULT_MAX_ATTEMPTS`) が重なると、1 回の提案が数十分かかることがあります。そこで利用者が途中で止められるようにし、1 回の提案にかける時間の合計にも上限を設けます (T0541)。
+
+- **取り消しの印 (`ugoe_ai::CancelToken`):** 呼び出し側が 1 回の提案ごとに作り、プロバイダ (`ClaudeProvider::with_cancel`・`OpenAiProvider::with_cancel`) と深度推定器 (`HttpDepthEstimator::with_cancel`) に渡します。複製は同じ印を共有し、別のスレッドから `cancel()` で取り消せます。`CancelToken::with_time_limit(limit)` で作ると、作ったときから `limit` を過ぎたところで止まります。`Provider` トレイトの形は変えません (印はプロバイダを作るときに渡す)。
+- **確かめるところ (`transport::send_with_retry`):** 送る前、応答を待つ間、再試行の前の待ちの間。応答は別のスレッドで待ち、取り消されるとすぐに (50 ms ごとに確かめる) 待つのをやめます。通信そのものは止められないので、そのスレッドで時間の上限まで続いて結果は捨てられます。再試行の待ちは取り消しで起きます。問い直し (OpenAI 互換の API・リギング・分類の分けたリクエスト) は、次に送る前に確かめるので止まります。
+- **時間の上限:** 各リクエストの時間の上限 (`HttpRequest::timeout`) を上限の残りまでに縮めます (`UreqTransport` は自分の上限と短い方を使う)。再試行の待ち時間が残りより長ければ、待たずに諦めます。上限で切れた通信は `AiError::Network` ではなく `AiError::TimeLimitExceeded { limit }` にします。
+- **エラー:** 取り消しは `AiError::Cancelled`、上限は `AiError::TimeLimitExceeded`。どちらも再試行・問い直しをしません (リギングの問い直しは値の誤り (`InvalidProposal`) だけを問い直す)。
+- **ADR は書かない:** 公開 API に足すだけ (`CancelToken`・`with_cancel`・`AiError` の 2 つの種類・`HttpRequest::timeout`) で、提案だけを返す方針 (ADR 0006) とプロバイダの抽象 (ADR 0022) は変えないため。
+- **エディタ:** 送る IPC コマンドは `prepare_requests` が印を作り (上限はエディタ全体の設定 `ProviderSettings::time_limit_minutes`、既定 15 分、1〜120 分)、実行中の送信の一覧 (`AiJobs`) に載せます。`cancel_ai_requests` が一覧のすべてを取り消し、取り消した後に届いた結果は提案の一覧に置きません。画面では AI の提案のパネルの進み具合の隣と、設定の「接続を確かめる」の隣に「取り消す」を出し、取り消したらエラーではなく「取り消しました」と出します (`docs/editor.md#ai-の提案`)。エラーのコードは `ai.cancelled`・`ai.time_limit` (引数 `minutes`)・`ai.invalid_time_limit`。
+- テスト: `crates/ugoe-ai/tests/cancel.rs` (録画の再生と差し替えた `sleep` で、実際には待たない。通信の途中の取り消しは応答を返さない `Transport` で確かめる)。
+
 ## MCP サーバ
 
 `crates/ugoe-mcp` (T0508)。使い方とツールの一覧は [crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md)。

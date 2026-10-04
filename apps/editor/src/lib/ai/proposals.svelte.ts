@@ -9,9 +9,11 @@
 //   (エディタを開いている間だけ。docs/editor.md#ai-への注文と作り直し)。
 // - 法線マップの提案 (AI なし): まとまりの一覧 (`normalGroups`) を読み、まとまりごとに含めるか・強さを選んで
 //   (`normalPicks`) 提案する。提案のコマンドはまとまりごとに区切って出す (docs/editor.md#法線マップの提案)。
+// - AI に送っている間 (`sending`) は「取り消す」(`cancel`) で止められる。取り消したらエラーではなく「取り消しました」と
+//   出す (`notice`。docs/ai-integration.md#取り消しと時間の上限)。
 
 import type { EditorDocument } from "../document.svelte";
-import { errorText } from "../errors";
+import { errorCode, errorText } from "../errors";
 import { fileDialogs } from "../fileDialogs";
 import { PSD_FILTER, parentDir } from "../filePaths";
 import { t } from "../i18n";
@@ -71,6 +73,12 @@ export class ProposalsView {
   /** 実行中の段階の説明 (進み具合)。なければ null。 */
   busy = $state<string | null>(null);
   error = $state<string | null>(null);
+  /** 失敗ではない知らせ (取り消したなど)。次の操作で消える。 */
+  notice = $state<string | null>(null);
+  /** AI に送っている (取り消せる) 間。 */
+  sending = $state(false);
+  /** 取り消しを頼んだ後、送信が終わるまで。 */
+  cancelling = $state(false);
   /** 分類と提案に外部の AI を使うか (偽なら名前の規則とテンプレートの既定値)。 */
   useAi = $state(false);
   /** タブを開いていない間に、エディタにつないだエージェントが提案を置いた (タブに印を出す)。 */
@@ -247,6 +255,7 @@ export class ProposalsView {
         await this.loadNormalGroups();
         return true;
       },
+      useAi,
     );
   }
 
@@ -269,6 +278,7 @@ export class ProposalsView {
         if (!reply) return;
         this.value = await ipc.getProposals();
       },
+      useAi,
     );
   }
 
@@ -283,15 +293,19 @@ export class ProposalsView {
       const ok = await this.classify(null, true);
       if (!ok) return;
     }
-    await this.#task(t("proposals.busy.revising", { name: aiName(), id }), async () => {
-      const reply = await withConsent(
-        (consent: ConsentAnswer | null) =>
-          ipc.regenerateRigProposal(id, instructions, consent, { ...this.moduleOptions }),
-        consentPrompt.ask,
-      );
-      if (!reply) return;
-      this.value = await ipc.getProposals();
-    });
+    await this.#task(
+      t("proposals.busy.revising", { name: aiName(), id }),
+      async () => {
+        const reply = await withConsent(
+          (consent: ConsentAnswer | null) =>
+            ipc.regenerateRigProposal(id, instructions, consent, { ...this.moduleOptions }),
+          consentPrompt.ask,
+        );
+        if (!reply) return;
+        this.value = await ipc.getProposals();
+      },
+      true,
+    );
   }
 
   /** コマンドを外す・戻す (依存するものも一緒に)。プレビュー中ならプレビューも作り直す。 */
@@ -375,18 +389,56 @@ export class ProposalsView {
     });
   }
 
-  /** 失敗を `error` に出す。`label` があれば実行中に `busy` に出す。 */
-  async #task<T>(label: string | null, action: () => Promise<T>): Promise<T | false> {
-    if (label) this.busy = label;
+  /**
+   * 実行中の AI への送信を取り消す (`sending` の間だけ)。送信は応答を待たずに `ai.cancelled` で終わり、
+   * `notice` に「取り消しました」と出る。
+   */
+  async cancel(): Promise<void> {
+    if (!this.sending || this.cancelling) return;
+    this.cancelling = true;
+    try {
+      await ipc.cancelAiRequests();
+    } catch (e) {
+      this.cancelling = false;
+      this.error = errorText(e);
+    }
+  }
+
+  /**
+   * 失敗を `error` に出す。`label` があれば実行中に `busy` に出す。`sending` なら AI に送る操作で、実行中は取り消せる
+   * (取り消して終わったら、エラーではなく `notice` に出す)。
+   */
+  async #task<T>(
+    label: string | null,
+    action: () => Promise<T>,
+    sending = false,
+  ): Promise<T | false> {
+    if (label) {
+      this.busy = label;
+      this.notice = null;
+    }
+    if (sending) {
+      this.sending = true;
+      this.cancelling = false;
+    }
     try {
       const result = await action();
       this.error = null;
       return result;
     } catch (e) {
-      this.error = errorText(e);
+      if (errorCode(e) === "ai.cancelled") {
+        this.error = null;
+        this.notice = t("proposals.cancelled");
+      } else {
+        this.error = errorText(e);
+      }
       return false;
     } finally {
       if (label) this.busy = null;
+      if (sending) {
+        this.sending = false;
+        this.cancelling = false;
+      }
     }
   }
 }

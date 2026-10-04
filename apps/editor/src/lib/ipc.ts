@@ -244,6 +244,11 @@ export const ipc = {
   testAiConnection: (consent: ConsentAnswer | null) =>
     invoke<AiReply<null>>("test_ai_connection", { consent }),
   /**
+   * 実行中の AI の送信 (分類・リグの提案・作り直し・接続の確認) をすべて取り消す。取り消された呼び出しは
+   * `ai.cancelled` のエラーで終わる (応答を待たずに)。取り消した数を返す。docs/ai-integration.md#取り消しと時間の上限
+   */
+  cancelAiRequests: () => invoke<number>("cancel_ai_requests"),
+  /**
    * apps/editor/src-tauri/src/proposals.rs。AI の提案のパネルの状態 (提案の一覧・元にする PSD・分類の結果)。
    * docs/editor.md#ai-の提案
    */

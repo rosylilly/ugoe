@@ -103,6 +103,8 @@ pub enum EditorError {
     MixedDestinations,
     #[error("this project is set not to send data to external AI services (see Settings)")]
     SendDisabled,
+    #[error("the time limit must be {min} to {max} minutes")]
+    InvalidTimeLimit { min: u32, max: u32 },
     #[error(transparent)]
     Ai(#[from] AiError),
     // ---- 提案 ----
@@ -198,6 +200,7 @@ impl Coded for EditorError {
             Self::CredentialStore(_) => "ai.credential_store",
             Self::MixedDestinations => "ai.mixed_destinations",
             Self::SendDisabled => "ai.send_disabled",
+            Self::InvalidTimeLimit { .. } => "ai.invalid_time_limit",
             Self::Ai(error) => ai_code(error),
             Self::ProposalModelChanged => "proposal.model_changed",
             Self::NoPsd => "proposal.no_psd",
@@ -244,6 +247,7 @@ impl Coded for EditorError {
             }
             Self::ImageNotFound(name) => message_args! { "name" => name },
             Self::NotRegenerable(id) => message_args! { "id" => *id },
+            Self::InvalidTimeLimit { min, max } => message_args! { "min" => *min, "max" => *max },
             Self::Ai(error) => ai_args(error),
             Self::ModelChanged
             | Self::EmptyPath
@@ -332,6 +336,7 @@ pub fn message_samples() -> Vec<Message> {
         EditorError::CredentialStore(detail()),
         EditorError::MixedDestinations,
         EditorError::SendDisabled,
+        EditorError::InvalidTimeLimit { min: 1, max: 120 },
         EditorError::Ai(AiError::Provider(detail())),
         EditorError::Ai(AiError::InvalidProposal(detail())),
         EditorError::Ai(AiError::MissingApiKey(detail())),
@@ -352,6 +357,10 @@ pub fn message_samples() -> Vec<Message> {
         }),
         EditorError::Ai(AiError::Truncated),
         EditorError::Ai(AiError::InvalidResponse(detail())),
+        EditorError::Ai(AiError::Cancelled),
+        EditorError::Ai(AiError::TimeLimitExceeded {
+            limit: std::time::Duration::from_secs(900),
+        }),
         EditorError::ProposalModelChanged,
         EditorError::NoPsd,
         EditorError::NotClassified,
@@ -385,6 +394,8 @@ fn ai_code(error: &AiError) -> &'static str {
         AiError::Refused { .. } => "ai.refused",
         AiError::Truncated => "ai.truncated",
         AiError::InvalidResponse(_) => "ai.invalid_response",
+        AiError::Cancelled => "ai.cancelled",
+        AiError::TimeLimitExceeded { .. } => "ai.time_limit",
     }
 }
 
@@ -408,9 +419,14 @@ fn ai_args(error: &AiError) -> MessageArgs {
         AiError::Refused {
             category: Some(category),
         } => message_args! { "category" => category },
+        // 画面は分で示す (上限は分で選ぶ)
+        AiError::TimeLimitExceeded { limit } => {
+            message_args! { "minutes" => limit.as_secs().div_ceil(60) }
+        }
         AiError::RateLimited { retry_after: None }
         | AiError::Refused { category: None }
-        | AiError::Truncated => message_args! {},
+        | AiError::Truncated
+        | AiError::Cancelled => message_args! {},
     }
 }
 

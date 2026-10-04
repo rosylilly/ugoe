@@ -11,15 +11,19 @@
 //!   プロジェクトが「外部に送らない」なら断り、同意がなければ送らずに [`AiReply::NeedsConsent`] を返す
 //!   (フロントエンドが確認のダイアログを出して、[`ConsentAnswer`] を付けて呼び直す)。
 //!   送り先が手元 (ループバック) なら外部に出ないので、同意を求めない。
+//! - 送るときは取り消しの印 ([`AiJobs`]) を作ってプロバイダに渡す。[`cancel_ai_requests`] が実行中の送信を
+//!   すべて取り消し、設定の時間の上限 (`ProviderSettings::time_limit_minutes`) を超えた送信も止まる
+//!   (`docs/ai-integration.md#取り消しと時間の上限`)。
 
+use std::collections::BTreeMap;
 use std::fmt;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use serde::{Deserialize, Serialize};
-use tauri::AppHandle;
+use tauri::{AppHandle, State};
 use ts_rs::TS;
 use ugoe_ai::claude::ApiKey;
-use ugoe_ai::{AiError, Destination, Disclosure, Provider, ProviderRequest};
+use ugoe_ai::{AiError, CancelToken, Destination, Disclosure, Provider, ProviderRequest};
 
 use crate::AppState;
 pub use crate::ai_provider::KeySlot;
@@ -389,14 +393,94 @@ pub enum AiReply<T> {
     NeedsConsent { disclosure: DisclosureView },
 }
 
+// ---- 取り消し ----
+
+/// 実行中の AI の送信の取り消しの印 (`AppState` が持つ)。[`cancel_ai_requests`] がすべてを取り消す。
+#[derive(Debug, Default)]
+pub struct AiJobs {
+    running: Mutex<(u64, BTreeMap<u64, CancelToken>)>,
+}
+
+impl AiJobs {
+    /// 送信を始める。`cancel` はプロバイダに渡した印 (時間の上限を持つ)。返した [`AiJob`] を落とすと一覧から外れる。
+    pub fn start<'a>(&'a self, provider: Box<dyn Provider>, cancel: CancelToken) -> AiJob<'a> {
+        let mut running = self.lock();
+        running.0 += 1;
+        let id = running.0;
+        running.1.insert(id, cancel.clone());
+        AiJob {
+            jobs: self,
+            id,
+            cancel,
+            provider,
+        }
+    }
+
+    /// 実行中の送信をすべて取り消す。取り消した数を返す。
+    pub fn cancel_all(&self) -> usize {
+        let running = self.lock();
+        for token in running.1.values() {
+            token.cancel();
+        }
+        running.1.len()
+    }
+
+    /// 実行中の送信の数。
+    pub fn running(&self) -> usize {
+        self.lock().1.len()
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, (u64, BTreeMap<u64, CancelToken>)> {
+        // 中身は印の一覧だけで、途中で壊れた状態にならない
+        self.running.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// 実行中の 1 回の送信 (1 回の提案。再試行と問い直しを含む)。落とすと [`AiJobs`] の一覧から外れる。
+pub struct AiJob<'a> {
+    jobs: &'a AiJobs,
+    id: u64,
+    cancel: CancelToken,
+    provider: Box<dyn Provider>,
+}
+
+impl AiJob<'_> {
+    /// 送るプロバイダ (取り消しの印を持つ)。
+    pub fn provider(&self) -> &dyn Provider {
+        self.provider.as_ref()
+    }
+
+    /// 結果を受け取って送信を終える。取り消された後に届いた結果は捨てる ([`AiError::Cancelled`])。
+    pub fn finish<T>(self, result: Result<T, AiError>) -> Result<T, AiError> {
+        match result {
+            Ok(_) if self.cancel.is_cancelled() => Err(AiError::Cancelled),
+            result => result,
+        }
+    }
+}
+
+impl Drop for AiJob<'_> {
+    fn drop(&mut self) {
+        self.jobs.lock().1.remove(&self.id);
+    }
+}
+
+impl fmt::Debug for AiJob<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AiJob")
+            .field("id", &self.id)
+            .finish_non_exhaustive()
+    }
+}
+
 /// [`prepare_requests`] の結果。
-pub enum Prepared {
-    /// 送ってよい。このプロバイダで送る。
-    Ready(Box<dyn Provider>),
+pub enum Prepared<'a> {
+    /// 送ってよい。この送信 (プロバイダと取り消しの印) で送る。
+    Ready(AiJob<'a>),
     NeedsConsent(DisclosureView),
 }
 
-impl fmt::Debug for Prepared {
+impl fmt::Debug for Prepared<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Ready(_) => f.write_str("Ready"),
@@ -411,26 +495,26 @@ impl fmt::Debug for Prepared {
 /// `retries` は答えが検証を通らなかったときに呼び出し側が送り直すことがある回数の上限。確認に示す回数
 /// ([`DisclosureView::retries`]) には、プロバイダ自身の問い直し (OpenAI 互換の API で構造化出力を
 /// 使わないとき) も含める。ロックは返る前に外す (送信中に編集を止めないため)。
-pub fn prepare_requests(
-    state: &AppState,
+pub fn prepare_requests<'a>(
+    state: &'a AppState,
     purpose: Purpose,
     requests: &[ProviderRequest],
     retries: usize,
     consent: Option<&ConsentAnswer>,
-) -> IpcResult<Prepared> {
+) -> IpcResult<Prepared<'a>> {
     prepare_instructed(state, purpose, requests, retries, 0, consent)
 }
 
 /// [`prepare_requests`] の、利用者の注文を含むリクエストの版。確認に注文の文字数
 /// ([`DisclosureView::instruction_chars`]) を示す。
-pub fn prepare_instructed(
-    state: &AppState,
+pub fn prepare_instructed<'a>(
+    state: &'a AppState,
     purpose: Purpose,
     requests: &[ProviderRequest],
     retries: usize,
     instruction_chars: usize,
     consent: Option<&ConsentAnswer>,
-) -> IpcResult<Prepared> {
+) -> IpcResult<Prepared<'a>> {
     let settings = state.ai_provider.get();
     prepare_with(
         state,
@@ -443,15 +527,15 @@ pub fn prepare_instructed(
     )
 }
 
-fn prepare_with(
-    state: &AppState,
+fn prepare_with<'a>(
+    state: &'a AppState,
     settings: &ProviderSettings,
     purpose: Purpose,
     requests: &[ProviderRequest],
     retries: usize,
     instruction_chars: usize,
     consent: Option<&ConsentAnswer>,
-) -> IpcResult<Prepared> {
+) -> IpcResult<Prepared<'a>> {
     if !settings.is_local() && !lock_project(state)?.ai_send_externally() {
         return Err(EditorError::SendDisabled.into());
     }
@@ -461,7 +545,9 @@ fn prepare_with(
     } else {
         state.api_keys.find(&slot)
     };
-    let provider = settings.build(key, purpose)?;
+    // 上限は送り始めたときから数える (確認のダイアログを待つ時間は含めない)
+    let cancel = CancelToken::with_time_limit(settings.time_limit());
+    let provider = settings.build(key, purpose, cancel.clone())?;
     let json_retries = settings.json_retries();
     let retries = (retries + 1) * (json_retries + 1) - 1;
     let disclosures: Vec<Disclosure> = requests.iter().map(|r| provider.disclosure(r)).collect();
@@ -473,7 +559,7 @@ fn prepare_with(
     let mut session = lock_project(state)?;
     let allowed = session.ai_send_externally();
     match check_consent(allowed, session.ai_consent_mut(), view, consent)? {
-        Gate::Proceed => Ok(Prepared::Ready(provider)),
+        Gate::Proceed => Ok(Prepared::Ready(state.ai_jobs.start(provider, cancel))),
         Gate::Ask(view) => Ok(Prepared::NeedsConsent(view)),
     }
 }
@@ -624,15 +710,21 @@ pub async fn test_ai_connection(
             consent.as_ref(),
         )? {
             Prepared::NeedsConsent(disclosure) => Ok(AiReply::NeedsConsent { disclosure }),
-            Prepared::Ready(provider) => {
-                provider
-                    .complete_json(&request, &schema)
-                    .map_err(EditorError::Ai)?;
+            Prepared::Ready(job) => {
+                let result = job.provider().complete_json(&request, &schema);
+                job.finish(result).map_err(EditorError::Ai)?;
                 Ok(AiReply::Done { value: () })
             }
         }
     })
     .await
+}
+
+/// 実行中の AI の送信 (分類・リグの提案・作り直し・接続の確認) をすべて取り消す。取り消された送信は
+/// `ai.cancelled` のエラーで終わる (通信の途中でも応答を待たずに)。取り消した数を返す。
+#[tauri::command]
+pub async fn cancel_ai_requests(state: State<'_, AppState>) -> IpcResult<u32> {
+    Ok(u32::try_from(state.ai_jobs.cancel_all()).unwrap_or(u32::MAX))
 }
 
 #[cfg(test)]

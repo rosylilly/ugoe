@@ -38,6 +38,8 @@ pub struct AppState {
     pub project: Mutex<project::ProjectSession>,
     /// AI の API キー (OS の資格情報の保存先と環境変数)。
     pub api_keys: ai::ApiKeys,
+    /// 実行中の AI の送信の取り消しの印 (`ai::cancel_ai_requests`)。
+    pub ai_jobs: ai::AiJobs,
     /// 選んだ AI のプロバイダ (エディタ全体の設定。起動時にアプリの設定のディレクトリから読む)。
     pub ai_provider: ai_provider::ProviderStore,
     /// エディタの中の MCP サーバ (エージェントをつなぐ。既定は無効。`docs/editor.md#エージェントをつなぐ`)。
@@ -52,6 +54,7 @@ pub fn run() {
         document: Mutex::new(document),
         project: Mutex::new(session),
         api_keys: ai::ApiKeys::default(),
+        ai_jobs: ai::AiJobs::default(),
         ai_provider: ai_provider::ProviderStore::default(),
         mcp: mcp::McpBridge::default(),
         preview_base: module::PreviewBaseCache::default(),
@@ -124,6 +127,7 @@ pub fn run() {
             ai::set_ai_send_externally,
             ai::forget_ai_consent,
             ai::test_ai_connection,
+            ai::cancel_ai_requests,
             proposals::get_proposals,
             proposals::classify_psd_layers,
             proposals::propose_rig_from_psd,

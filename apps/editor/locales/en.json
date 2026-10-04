@@ -460,12 +460,18 @@
         "label": "Test connection",
         "tooltip": "Send a small request without images to check the provider and the API key",
         "connected": "Connected. The server answered.",
-        "notSent": "Not sent."
+        "notSent": "Not sent.",
+        "cancel": "Cancel",
+        "cancelled": "Cancelled."
       },
       "blocked": {
         "notSending": "This project is set not to send data to external AI services.",
         "noKey": "No API key for {{service}}. Add one in Settings.",
         "noKeyEnv": "No API key for {{service}}. Add one in Settings, or set {{env}} before starting the editor."
+      },
+      "timeLimit": {
+        "label": "Time limit per proposal (minutes)",
+        "description": "The total, including retry waits and asking again. The request stops when it is reached."
       }
     },
     "agents": {
@@ -1820,7 +1826,13 @@
         "tooLong": "The instructions are longer than {{max}} characters"
       }
     },
-    "adoptFailed": "The proposal could not be applied."
+    "adoptFailed": "The proposal could not be applied.",
+    "cancel": {
+      "label": "Cancel",
+      "tooltip": "Stop asking the AI (what was already sent is not taken back)",
+      "cancelling": "Cancelling…"
+    },
+    "cancelled": "Cancelled."
   },
   "errorCause": "{{message}} Cause: {{cause}}",
   "errors": {
@@ -2061,7 +2073,10 @@
       "invalid_response": "The response could not be read ({{detail}}).",
       "api_error": "The API returned error {{status}} ({{kind}}: {{detail}}).",
       "rate_limited": "The rate limit was reached. Wait a while and try again.",
-      "refused": "The model declined the request."
+      "refused": "The model declined the request.",
+      "cancelled": "Cancelled.",
+      "time_limit": "Stopped after the time limit ({{minutes}} min). You can raise the limit under AI provider in Settings.",
+      "invalid_time_limit": "Set the time limit to {{min}} to {{max}} minutes."
     },
     "mcp": {
       "invalid_port": "Choose a port between 1 and 65535, or leave it empty.",

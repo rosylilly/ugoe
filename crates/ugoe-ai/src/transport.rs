@@ -9,10 +9,13 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+
+use crate::{AiError, CancelToken};
 
 /// 値をログや録画に出してはならないヘッダ (小文字)。
 const SENSITIVE_HEADERS: &[&str] = &["x-api-key", "authorization"];
@@ -21,6 +24,8 @@ const RECORDED_RESPONSE_HEADERS: &[&str] =
     &["content-type", "request-id", "retry-after", "x-request-id"];
 /// 応答の本文の上限。深度マップは JSON で ureq の既定 (10 MB) を超えることがある。
 const MAX_RESPONSE_BYTES: u64 = 256 * 1024 * 1024;
+/// 応答を待つ間に取り消しと時間の上限を確かめる間隔。
+const CANCEL_POLL: Duration = Duration::from_millis(50);
 
 /// 送る HTTP リクエスト。
 #[derive(Clone)]
@@ -30,6 +35,9 @@ pub struct HttpRequest {
     /// ヘッダ名は小文字で持つ。
     pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
+    /// このリクエストの時間の上限。[`UreqTransport`] の上限より短ければこちらを使う
+    /// (提案の時間の合計の上限の残り。[`CancelToken::remaining`])。`None` なら通信の既定のまま。
+    pub timeout: Option<Duration>,
 }
 
 impl HttpRequest {
@@ -56,6 +64,7 @@ impl fmt::Debug for HttpRequest {
             .field("url", &redact_url(&self.url))
             .field("headers", &self.redacted_headers())
             .field("body_len", &self.body.len())
+            .field("timeout", &self.timeout)
             .finish()
     }
 }
@@ -131,6 +140,7 @@ impl<T: Transport + ?Sized> Transport for std::sync::Arc<T> {
 /// ureq による実際の通信。
 pub struct UreqTransport {
     agent: ureq::Agent,
+    timeout: Duration,
 }
 
 impl UreqTransport {
@@ -146,7 +156,7 @@ impl UreqTransport {
             .max_redirects(0)
             .build()
             .into();
-        Self { agent }
+        Self { agent, timeout }
     }
 }
 
@@ -169,6 +179,9 @@ impl Transport for UreqTransport {
         };
         for (k, v) in &request.headers {
             builder = builder.header(k, v);
+        }
+        if let Some(limit) = request.timeout.filter(|t| *t < self.timeout) {
+            builder = builder.config().timeout_global(Some(limit)).build();
         }
         let mut response = builder.send(&request.body[..]).map_err(map_ureq_error)?;
         let status = response.status().as_u16();
@@ -482,22 +495,33 @@ pub(crate) enum SendFailure {
     },
     /// 応答を受け取る前の失敗。
     Transport(TransportError),
+    /// 取り消された ([`AiError::Cancelled`])・時間の上限を超えた ([`AiError::TimeLimitExceeded`])。
+    Stopped(AiError),
 }
 
 /// 再試行しながら送り、成功 (2xx) の応答を返す。プロバイダで共通の再試行の規則:
 /// `retryable` が真の応答と、タイムアウト・接続の失敗を指数バックオフで再試行する。
 /// `retry-after` ヘッダ (秒) があればそれだけ待ち、`max_retry_after` より長ければ諦める。
+///
+/// 取り消しと時間の上限 (`cancel`) は、送る前・応答を待つ間・再試行の前の待ちの間に確かめる。応答は別のスレッドで
+/// 待ち、取り消されたらすぐに待つのをやめる (通信そのものは、そのスレッドで時間の上限まで続いて捨てられる)。
+/// 各リクエストの時間の上限は上限の残りまでに縮め、待ち時間が残りを超えるなら待たずに諦める。
+/// `sleep` は待つ関数の差し替え (テスト用。`None` なら取り消しで起きる待ち)。
 pub(crate) fn send_with_retry(
-    transport: &dyn Transport,
+    transport: &Arc<dyn Transport>,
     policy: &RetryPolicy,
-    sleep: &dyn Fn(Duration),
-    request: &HttpRequest,
+    sleep: Option<&(dyn Fn(Duration) + Send + Sync)>,
+    cancel: &CancelToken,
+    mut request: HttpRequest,
     retryable: impl Fn(&HttpResponse) -> bool,
 ) -> Result<HttpResponse, SendFailure> {
     let mut attempt = 0;
     loop {
+        cancel.check().map_err(SendFailure::Stopped)?;
+        request.timeout = cancel.remaining();
+        let result = send_cancellable(transport, &request, cancel).map_err(SendFailure::Stopped)?;
         let can_retry = attempt < policy.max_retries;
-        let wait = match transport.send(request) {
+        let wait = match result {
             Ok(response) if (200..300).contains(&response.status) => return Ok(response),
             Ok(response) => {
                 let retry_after = retry_after(&response);
@@ -518,11 +542,60 @@ pub(crate) fn send_with_retry(
                     None => policy.backoff(attempt),
                 }
             }
-            Err(e) if e.is_retryable() && can_retry => policy.backoff(attempt),
-            Err(e) => return Err(SendFailure::Transport(e)),
+            Err(e) => {
+                // 上限の残りで縮めたタイムアウトは、通信の失敗ではなく上限を超えたことにする
+                cancel.check().map_err(SendFailure::Stopped)?;
+                if !(e.is_retryable() && can_retry) {
+                    return Err(SendFailure::Transport(e));
+                }
+                policy.backoff(attempt)
+            }
         };
-        sleep(wait);
+        if cancel.remaining().is_some_and(|left| wait >= left) {
+            return Err(SendFailure::Stopped(cancel.exceeded()));
+        }
+        match sleep {
+            Some(sleep) => {
+                sleep(wait);
+                cancel.check()
+            }
+            None => cancel.wait(wait),
+        }
+        .map_err(SendFailure::Stopped)?;
         attempt += 1;
+    }
+}
+
+/// `request` を別のスレッドで送り、応答を待つ。取り消されるか時間の上限を過ぎたら待つのをやめる。
+fn send_cancellable(
+    transport: &Arc<dyn Transport>,
+    request: &HttpRequest,
+    cancel: &CancelToken,
+) -> Result<Result<HttpResponse, TransportError>, AiError> {
+    let (tx, rx) = mpsc::channel();
+    let worker = Arc::clone(transport);
+    let request = request.clone();
+    std::thread::Builder::new()
+        .name("ugoe-ai-request".into())
+        .spawn(move || {
+            // 待つのをやめた後に届いた応答は捨てる
+            let _ = tx.send(worker.send(&request));
+        })
+        .map_err(|e| AiError::Provider(format!("cannot start the request thread: {e}")))?;
+    loop {
+        let slice = cancel
+            .remaining()
+            .map_or(CANCEL_POLL, |left| left.min(CANCEL_POLL));
+        match rx.recv_timeout(slice) {
+            Ok(result) => return Ok(result),
+            Err(RecvTimeoutError::Timeout) => cancel.check()?,
+            Err(RecvTimeoutError::Disconnected) => {
+                return Ok(Err(TransportError::new(
+                    TransportErrorKind::Other,
+                    "the request thread stopped without a response",
+                )));
+            }
+        }
     }
 }
 
@@ -635,6 +708,7 @@ mod tests {
             url: "https://example.test/v1/messages".into(),
             headers: vec![("x-api-key".into(), "sk-secret".into())],
             body: body.to_string().into_bytes(),
+            timeout: None,
         }
     }
 
@@ -842,12 +916,13 @@ mod tests {
                 body_text: None,
             }),
         });
-        let t = ReplayTransport::new(cassette);
+        let t: Arc<dyn Transport> = Arc::new(ReplayTransport::new(cassette));
         let result = send_with_retry(
             &t,
             &RetryPolicy::default(),
-            &|_| panic!("must not wait"),
-            &request(json!({})),
+            Some(&|_| panic!("must not wait")),
+            &CancelToken::new(),
+            request(json!({})),
             |r| is_retryable_status(r.status),
         );
         assert!(matches!(

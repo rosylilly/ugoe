@@ -1458,6 +1458,13 @@ AI のプロバイダを選び、外部の AI サービスを安全に使うた�
 - **設定の画面:** ヘッダーの「Settings」(`SettingsDialog.svelte`)。プロバイダ・モデル・ベースの URL・JSON の出力の形の選択
   (「Apply」で保存)、選んだプロバイダのキーの保存・置き換え・削除 (プロバイダを変えたら先に Apply する)、「外部に送らない」、
   「Ask again」、「Test connection」(画像なしの小さなリクエストを、外部なら同意を得てから送ってプロバイダとキーを確かめる) があります。
+  「1 回の提案の時間の上限 (分)」(`ProviderSettings::time_limit_minutes`。既定 15 分、1〜120 分。プロバイダに関わらない) も
+  プロバイダの設定と一緒に Apply します。
+- **取り消しと時間の上限 (T0541):** 送る IPC コマンドは `prepare_requests` が取り消しの印 (`ugoe_ai::CancelToken`。時間の上限付き) を
+  作ってプロバイダに渡し、実行中の送信の一覧 (`AppState::ai_jobs`) に載せます。`Prepared::Ready` の `AiJob` で送り、結果は
+  `AiJob::finish` を通します (取り消した後に届いた結果は捨てて `ai.cancelled`)。`cancel_ai_requests` が実行中の送信をすべて取り消し、
+  送信は応答を待たずに終わります。上限を超えたら `ai.time_limit`。画面は AI の提案のパネルの進み具合の隣と「Test connection」の
+  隣に「Cancel」を出し、取り消したらエラーではなく「Cancelled」と出します。詳しくは `docs/ai-integration.md#取り消しと時間の上限`。
 - **AI の機能を足すとき (T0637 など):** 送る IPC コマンドは `consent: ConsentAnswer | null` を受け取り、`prepare_requests` の
   `Prepared::NeedsConsent` をそのまま `AiReply::NeedsConsent` で返します。画面は `aiSettings.canSend` (`src/lib/ai/ai.svelte.ts`) で
   ボタンの有効・無効を決めます (理由の文言は `aiBlockedReason`、プロバイダの名前は `providerLabel`。`src/lib/ai/providers.ts`)。
@@ -1470,6 +1477,7 @@ AI のプロバイダを選び、外部の AI サービスを安全に使うた�
 | `set_ai_send_externally(allowed)` | 開いているプロジェクトの「外部に送ってよいか」を変える |
 | `forget_ai_consent` | 「今後は確かめない」を取り消す |
 | `test_ai_connection(consent?)` | 接続の確認。`AiReply<null>` (`done` か `needs_consent`) |
+| `cancel_ai_requests` | 実行中の AI の送信 (分類・リグの提案・作り直し・接続の確認) をすべて取り消し、取り消した数を返す |
 
 ### AI の提案
 
@@ -1767,7 +1775,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | モジュールのプロジェクト | `open_module_with_base`・`module_open_problem`・`read_module_base`・`reload_base`・`check_base_change`・`export_module`・`get_preview_base_bundle`・`get_preview_module` |
 | 取り込み・書き出し・画像 | `import_psd`・`export_bundle`・`get_model_bundle`・`generate_texture_normal_map`・`assign_texture_normal_map`・`read_module_file`・`write_png_file` |
 | AI の提案 | `classify_psd_layers`・`propose_rig_from_psd`・`regenerate_rig_proposal`・`propose_normal_maps`・`preview_proposal`・`get_proposal_preview_bundle` |
-| 設定・連携 | `ai_settings`・`set_ai_provider`・`store_api_key`・`delete_api_key`・`set_ai_send_externally`・`forget_ai_consent`・`test_ai_connection`・`open_claude_desktop_bundle`・`save_claude_desktop_bundle` |
+| 設定・連携 | `ai_settings`・`set_ai_provider`・`store_api_key`・`delete_api_key`・`set_ai_send_externally`・`forget_ai_consent`・`test_ai_connection`・`cancel_ai_requests`・`open_claude_desktop_bundle`・`save_claude_desktop_bundle` |
 
 ほかのコマンド (`apply_command`・`get_model_json`・`undo` など) はロックを取って値を写すだけなので、同期のままメインのスレッドで動きます。
 
@@ -2007,11 +2015,13 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `editor.relative_path` / `editor.not_module_file` / `editor.not_png_file` / `editor.not_json_file` / `editor.too_many_sample_folders` | `path` |
 | `editor.missing_header` | `header` |
 | `editor.invalid_header` | `header`・`detail` |
-| `ai.claude_model_missing` / `ai.invalid_base_url` / `ai.model_missing` / `ai.api_key_required` / `ai.plain_http_api_key` / `ai.empty_api_key` / `ai.mixed_destinations` / `ai.send_disabled` / `ai.truncated` | なし |
+| `ai.claude_model_missing` / `ai.invalid_base_url` / `ai.model_missing` / `ai.api_key_required` / `ai.plain_http_api_key` / `ai.empty_api_key` / `ai.mixed_destinations` / `ai.send_disabled` / `ai.truncated` / `ai.cancelled` | なし |
 | `ai.credential_store` / `ai.provider` / `ai.invalid_proposal` / `ai.missing_api_key` / `ai.invalid_request` / `ai.network` / `ai.invalid_response` | `detail` |
 | `ai.api_error` | `status`・`kind`・`detail` |
 | `ai.rate_limited` | `retry_after` (秒。分からなければ無い) |
 | `ai.refused` | `category` (分からなければ無い) |
+| `ai.time_limit` | `minutes` (1 回の提案の時間の上限。分) |
+| `ai.invalid_time_limit` | `min`・`max` (選べる範囲。分) |
 | `mcp.invalid_port` / `mcp.no_binary` / `mcp.unsupported_platform` / `mcp.not_mcpb_file` | なし |
 | `mcp.bridge_start_failed` / `mcp.bundle_write_failed` | `detail` |
 | `mcp.open_failed` | `path`・`detail` |

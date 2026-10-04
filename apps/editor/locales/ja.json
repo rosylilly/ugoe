@@ -453,12 +453,18 @@
         "label": "接続を確かめる",
         "tooltip": "画像を含まない小さな要求を送り、プロバイダと API キーを確かめます",
         "connected": "接続できました。サーバが答えました。",
-        "notSent": "送りませんでした。"
+        "notSent": "送りませんでした。",
+        "cancel": "取り消す",
+        "cancelled": "取り消しました。"
       },
       "blocked": {
         "notSending": "このプロジェクトは、外部の AI サービスにデータを送らない設定です。",
         "noKey": "{{service}} の API キーがありません。設定で追加してください。",
         "noKeyEnv": "{{service}} の API キーがありません。設定で追加するか、エディタを起動する前に {{env}} を設定してください。"
+      },
+      "timeLimit": {
+        "label": "1 回の提案の時間の上限 (分)",
+        "description": "再試行の待ちと尋ね直しを含めた合計です。超えたら止めます。"
       }
     },
     "agents": {
@@ -1777,7 +1783,13 @@
         "tooLong": "注文が {{max}} 文字を超えています"
       }
     },
-    "adoptFailed": "提案を適用できませんでした。"
+    "adoptFailed": "提案を適用できませんでした。",
+    "cancel": {
+      "label": "取り消す",
+      "tooltip": "AI への問い合わせを止めます (送った分は戻りません)",
+      "cancelling": "取り消しています…"
+    },
+    "cancelled": "取り消しました。"
   },
   "errorCause": "{{message}} 原因: {{cause}}",
   "errors": {
@@ -2012,7 +2024,10 @@
       "invalid_response": "応答を読めません ({{detail}})。",
       "api_error": "API がエラー {{status}} を返しました ({{kind}}: {{detail}})。",
       "rate_limited": "レート制限に達しました。しばらく待ってからやり直してください。",
-      "refused": "モデルがリクエストを断りました。"
+      "refused": "モデルがリクエストを断りました。",
+      "cancelled": "取り消しました。",
+      "time_limit": "時間の上限 ({{minutes}} 分) を超えたので止めました。設定の「AI プロバイダ」で上限を延ばせます。",
+      "invalid_time_limit": "時間の上限は {{min}} 分から {{max}} 分にしてください。"
     },
     "mcp": {
       "invalid_port": "ポートは 1 から 65535 までにするか、空にしてください。",

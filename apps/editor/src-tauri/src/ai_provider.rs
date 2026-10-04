@@ -5,16 +5,19 @@
 //! - 既定は Claude (`claude-opus-5-5`)。ファイルがなければ既定のまま (既存の利用者の設定は変わらない)。
 //! - API キーの置き場 ([`KeySlot`]) はプロバイダごと。OpenAI 互換の API は送り先のホストごとに分ける
 //!   (OpenAI のキーを OpenRouter などの別の送り先に送らないため)。
+//! - 1 回の提案にかける時間の合計の上限 ([`ProviderSettings::time_limit_minutes`]。再試行と問い直しを含む) も
+//!   ここに置く (`docs/ai-integration.md#取り消しと時間の上限`)。
 
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use ugoe_ai::Provider;
 use ugoe_ai::claude::{self, ApiKey, ClaudeConfig, ClaudeProvider, Effort};
 use ugoe_ai::openai::{self, OpenAiConfig, OpenAiProvider, StructuredOutput};
 use ugoe_ai::transport::{is_loopback_url, url_host};
+use ugoe_ai::{CancelToken, Provider};
 
 use crate::error::EditorError;
 
@@ -22,6 +25,10 @@ use crate::error::EditorError;
 const SETTINGS_FILE: &str = "ai-provider.json";
 /// OpenAI 互換の API の既定のモデル。
 pub const DEFAULT_OPENAI_MODEL: &str = "gpt-6-sol";
+/// 1 回の提案にかける時間の合計の上限の既定 (分)。1 回のリクエストの上限 (10 分) に再試行の待ちを足した程度。
+pub const DEFAULT_TIME_LIMIT_MINUTES: u32 = 15;
+/// 時間の上限に選べる範囲 (分)。
+pub const TIME_LIMIT_RANGE_MINUTES: std::ops::RangeInclusive<u32> = 1..=120;
 
 /// 使うプロバイダ。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -95,12 +102,26 @@ impl Default for OpenAiSettings {
 }
 
 /// AI のプロバイダの設定 (`ai-provider.json`)。API キーは含めない。
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(default)]
 pub struct ProviderSettings {
     pub provider: ProviderKind,
     pub claude: ClaudeSettings,
     pub openai: OpenAiSettings,
+    /// 1 回の提案 (分類・リグの提案・接続の確認) にかける時間の合計の上限 (分)。再試行の待ちと問い直しを含む。
+    /// 超えたら止めて `ai.time_limit` のエラーにする。範囲は [`TIME_LIMIT_RANGE_MINUTES`]。
+    pub time_limit_minutes: u32,
+}
+
+impl Default for ProviderSettings {
+    fn default() -> Self {
+        Self {
+            provider: ProviderKind::default(),
+            claude: ClaudeSettings::default(),
+            openai: OpenAiSettings::default(),
+            time_limit_minutes: DEFAULT_TIME_LIMIT_MINUTES,
+        }
+    }
 }
 
 /// プロバイダを作る目的。
@@ -126,6 +147,12 @@ pub struct KeySlot {
 impl ProviderSettings {
     /// 保存する前の検査。
     pub fn check(&self) -> Result<(), EditorError> {
+        if !TIME_LIMIT_RANGE_MINUTES.contains(&self.time_limit_minutes) {
+            return Err(EditorError::InvalidTimeLimit {
+                min: *TIME_LIMIT_RANGE_MINUTES.start(),
+                max: *TIME_LIMIT_RANGE_MINUTES.end(),
+            });
+        }
         match self.provider {
             ProviderKind::Claude if self.claude.model.trim().is_empty() => {
                 Err(EditorError::ClaudeModelMissing)
@@ -200,6 +227,11 @@ impl ProviderSettings {
         }
     }
 
+    /// 1 回の提案にかける時間の合計の上限。
+    pub fn time_limit(&self) -> Duration {
+        Duration::from_secs(u64::from(self.time_limit_minutes) * 60)
+    }
+
     fn claude_config(&self, purpose: Purpose) -> ClaudeConfig {
         let config = ClaudeConfig {
             model: self.claude.model.trim().to_owned(),
@@ -220,20 +252,21 @@ impl ProviderSettings {
             .with_structured_output(self.openai.output.into())
     }
 
-    /// プロバイダを作る。`key` は [`Self::key_slot`] の置き場から読んだもの。
+    /// プロバイダを作る。`key` は [`Self::key_slot`] の置き場から読んだもの。`cancel` は取り消しの印と時間の上限
+    /// ([`crate::ai::AiJobs::start`] が作る)。
     pub fn build(
         &self,
         key: Option<ApiKey>,
         purpose: Purpose,
+        cancel: CancelToken,
     ) -> Result<Box<dyn Provider>, EditorError> {
         self.check()?;
         match self.provider {
             ProviderKind::Claude => {
                 let key = key.ok_or(EditorError::ApiKeyRequired)?;
-                Ok(Box::new(ClaudeProvider::new(
-                    self.claude_config(purpose),
-                    key,
-                )))
+                Ok(Box::new(
+                    ClaudeProvider::new(self.claude_config(purpose), key).with_cancel(cancel),
+                ))
             }
             ProviderKind::OpenaiCompatible => {
                 let config = self.openai_config();
@@ -241,7 +274,9 @@ impl ProviderSettings {
                 if key.is_some() && !config.is_local() && !config.base_url.starts_with("https://") {
                     return Err(EditorError::PlainHttpApiKey);
                 }
-                Ok(Box::new(OpenAiProvider::new(config, key)))
+                Ok(Box::new(
+                    OpenAiProvider::new(config, key).with_cancel(cancel),
+                ))
             }
         }
     }

@@ -54,6 +54,7 @@ pub const COMMANDS: &[&str] = &[
     "set_ai_send_externally",
     "forget_ai_consent",
     "test_ai_connection",
+    "cancel_ai_requests",
     "get_proposals",
     "classify_psd_layers",
     "propose_rig_from_psd",

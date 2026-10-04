@@ -1,5 +1,5 @@
 // ProposalsView (IPC は偽物): プレビューを作る間にドキュメントが変わったら古い姿を出さないこと、
-// 提案と送信の確認はドキュメントを変えず、採用だけがドキュメントの適用を通ること。
+// 提案と送信の確認はドキュメントを変えず、採用だけがドキュメントの適用を通ること。AI に送っている間は取り消せること。
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EditorDocument } from "../document.svelte";
 import type { AiReply, ConsentAnswer, ProposalPreview, ProposalState } from "../ipc";
@@ -17,6 +17,7 @@ const proposed = vi.fn(
       : { status: "needs_consent", disclosure: {} }) as AiReply<unknown>,
 );
 const adopted = vi.fn(async (_id: number, _excluded: number[]) => ({ warnings: [] }));
+const cancelled = vi.fn(async () => 1);
 const state = { proposals: [], psd: "/a.psd", classification: {} } as unknown as ProposalState;
 
 vi.mock("../ipc", () => ({
@@ -32,6 +33,7 @@ vi.mock("../ipc", () => ({
     adoptProposal: (id: number, excluded: number[]) => adopted(id, excluded),
     getProposals: vi.fn(async () => state),
     getNormalMapGroups: vi.fn(async () => []),
+    cancelAiRequests: () => cancelled(),
   },
 }));
 
@@ -45,6 +47,7 @@ beforeEach(() => {
   cleared.mockClear();
   proposed.mockClear();
   adopted.mockClear();
+  cancelled.mockClear();
 });
 
 describe("ProposalsView preview", () => {
@@ -150,5 +153,50 @@ describe("ProposalsView approval", () => {
     await view.adopt(3);
     expect(applyWith).toHaveBeenCalledOnce();
     expect(adopted).toHaveBeenCalledWith(3, [1, 2]);
+  });
+});
+
+describe("ProposalsView cancel", () => {
+  it("cancels while sending and reports it as a notice, not an error", async () => {
+    const view = new ProposalsView({ revision: 1 } as EditorDocument);
+    view.value = state;
+    view.useAi = true;
+    let reject: (e: unknown) => void = () => {};
+    proposed.mockImplementationOnce(
+      () =>
+        new Promise((_, r) => {
+          reject = r;
+        }),
+    );
+    const running = view.propose();
+    await vi.waitFor(() => expect(proposed).toHaveBeenCalledOnce());
+    expect(view.sending).toBe(true);
+    await view.cancel();
+    expect(cancelled).toHaveBeenCalledOnce();
+    expect(view.cancelling).toBe(true);
+    // 取り消すのは一度だけ
+    await view.cancel();
+    expect(cancelled).toHaveBeenCalledOnce();
+    reject({ code: "ai.cancelled", message: "the request was cancelled", args: {} });
+    await running;
+    expect(view.error).toBeNull();
+    expect(view.notice).not.toBeNull();
+    expect(view.sending).toBe(false);
+    expect(view.cancelling).toBe(false);
+    expect(view.busy).toBeNull();
+  });
+
+  it("cannot cancel what does not send to the AI", async () => {
+    const view = new ProposalsView({ revision: 1 } as EditorDocument);
+    view.value = state;
+    view.useAi = false;
+    proposed.mockImplementationOnce(
+      async () => ({ status: "done", value: {} }) as AiReply<unknown>,
+    );
+    const running = view.propose();
+    expect(view.sending).toBe(false);
+    await view.cancel();
+    await running;
+    expect(cancelled).not.toHaveBeenCalled();
   });
 });

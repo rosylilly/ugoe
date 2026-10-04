@@ -68,6 +68,7 @@
     "allow-set-ai-send-externally",
     "allow-forget-ai-consent",
     "allow-test-ai-connection",
+    "allow-cancel-ai-requests",
     "allow-get-proposals",
     "allow-classify-psd-layers",
     "allow-propose-rig-from-psd",

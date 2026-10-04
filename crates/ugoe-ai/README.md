@@ -18,6 +18,7 @@ AI プロバイダの抽象 (`Provider`) と、自動リギングのパイプラ
 - `transport.rs`: HTTP の差し替え (`UreqTransport`・`ReplayTransport`・`RecordingTransport`・`Cassette`)、プロバイダで共通の再試行 (`RetryPolicy`)、ループバックの判定 (`is_loopback_url`)
 - `classify.rs`: レイヤーの意味分類 (`Label`・`Side`・`LayerLabel`、名前の規則による `classify_by_name`、`Provider` による `classify_layers`)。`classify/rules.rs` が名前の規則、`classify/image.rs` が送る画像
 - `fake.rs`: テスト用の `FakeProvider`
+- `cancel.rs`: 提案の取り消しと時間の合計の上限 (`CancelToken`)。プロバイダと深度推定器に `with_cancel` で渡し、`transport::send_with_retry` が送る前・応答を待つ間・再試行の待ちの間に確かめる (`docs/ai-integration.md#取り消しと時間の上限`)
 - `depth.rs`: 深度推定 (`DepthEstimator`・`DepthMap`・`HttpDepthEstimator`・`FixedDepthEstimator`)。HTTP の推論サーバへはプロバイダと同じ規則で送る (再試行・任意の `Authorization: Bearer`)
 - `turn.rs`: 深度推定による振り向きリグの提案 (`propose_depth_turn`・`plan_turn`・`label_depth`・`mesh_labels`)
 - `instructions.rs`: 利用者の注文 (`Instructions`) をプロンプトに区切って入れる書き方と、反映できない注文 (`Not applied:`) の取り出し (`split_unapplied`)。分類・リグの `*_guided` が使う (`docs/ai-integration.md#利用者の注文`)
@@ -49,3 +50,4 @@ AI プロバイダの抽象 (`Provider`) と、自動リギングのパイプラ
 - T0506 (`docs/tasks/T0506-normal-map-gen.md`)
 - T0517 (`docs/tasks/T0517-ai-module-proposals.md`)
 - T0519 (`docs/tasks/T0519-ai-module-rig-followups.md`)
+- T0541 (`docs/tasks/T0541-ai-request-cancel.md`)

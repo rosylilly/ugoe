@@ -26,7 +26,7 @@ use crate::transport::{
     HttpRequest, HttpResponse, SendFailure, Transport, TransportError, UreqTransport,
     error_excerpt, is_loopback_url, is_retryable_status, send_with_retry,
 };
-use crate::{AiError, Destination, Disclosure, PNG_SIGNATURE};
+use crate::{AiError, CancelToken, Destination, Disclosure, PNG_SIGNATURE};
 
 /// 画素ごとの相対的な深度。値が大きいほど手前 (視差・逆深度と同じ向き)。
 ///
@@ -215,8 +215,10 @@ impl HttpDepthConfig {
 pub struct HttpDepthEstimator {
     config: HttpDepthConfig,
     api_key: Option<ApiKey>,
-    transport: Box<dyn Transport>,
-    sleep: Sleeper,
+    transport: Arc<dyn Transport>,
+    /// 再試行の前に待つ関数の差し替え (テスト用)。`None` なら取り消しで起きる待ち。
+    sleep: Option<Sleeper>,
+    cancel: CancelToken,
 }
 
 type Sleeper = Arc<dyn Fn(Duration) + Send + Sync>;
@@ -248,8 +250,9 @@ impl HttpDepthEstimator {
         Self {
             config,
             api_key: None,
-            transport: Box::new(transport),
-            sleep: Arc::new(std::thread::sleep),
+            transport: Arc::new(transport),
+            sleep: None,
+            cancel: CancelToken::new(),
         }
     }
 
@@ -263,7 +266,15 @@ impl HttpDepthEstimator {
     /// 再試行の前に待つ関数を差し替える (テストで実際に待たないため)。
     #[must_use]
     pub fn with_sleeper(mut self, sleep: impl Fn(Duration) + Send + Sync + 'static) -> Self {
-        self.sleep = Arc::new(sleep);
+        self.sleep = Some(Arc::new(sleep));
+        self
+    }
+
+    /// 取り消しの印と時間の上限を渡す (`docs/ai-integration.md#取り消しと時間の上限`)。送る前・応答を待つ間・
+    /// 再試行の待ちの間に確かめ、[`AiError::Cancelled`] か [`AiError::TimeLimitExceeded`] を返す。
+    #[must_use]
+    pub fn with_cancel(mut self, cancel: CancelToken) -> Self {
+        self.cancel = cancel;
         self
     }
 
@@ -281,15 +292,17 @@ impl HttpDepthEstimator {
             url: self.config.endpoint.clone(),
             headers,
             body: body.to_string().into_bytes(),
+            timeout: None,
         }
     }
 
     /// 再試行しながら送り、成功した応答を返す。
-    fn send(&self, request: &HttpRequest) -> Result<HttpResponse, AiError> {
+    fn send(&self, request: HttpRequest) -> Result<HttpResponse, AiError> {
         send_with_retry(
-            self.transport.as_ref(),
+            &self.transport,
             &self.config.retry,
-            self.sleep.as_ref(),
+            self.sleep.as_deref(),
+            &self.cancel,
             request,
             |r| is_retryable_status(r.status),
         )
@@ -299,6 +312,7 @@ impl HttpDepthEstimator {
                 retry_after,
             } => self.status_error(&response, retry_after),
             SendFailure::Transport(e) => self.transport_error(&e),
+            SendFailure::Stopped(e) => e,
         })
     }
 
@@ -336,7 +350,7 @@ impl DepthEstimator for HttpDepthEstimator {
         let body = json!({
             "image": { "type": "base64", "media_type": "image/png", "data": data },
         });
-        let response = self.send(&self.http_request(&body))?;
+        let response = self.send(self.http_request(&body))?;
         let parsed: DepthResponse = serde_json::from_slice(&response.body)
             .map_err(|e| AiError::InvalidResponse(format!("depth response: {e}")))?;
         let map = DepthMap::new(parsed.width, parsed.height, parsed.depth)?;
