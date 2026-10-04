@@ -115,7 +115,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 
 外から来るデータ (ファイル・IPC・FFI・ホストの引数) を扱うコードでは、次を守る。詳しくは [docs/workflow/code-review.md](docs/workflow/code-review.md#m9-で繰り返し見つかった誤り)。
 
-- **NaN と無限大:** `if x <= 0.0 { return }` は NaN を通す。`!(x > 0.0 && x.is_finite())` などで弾く。重みや強さは無限大も拒む。ホストから来る数の前提は下の層 (`Puppet`・`ugoe-runtime`) で決める。
+- **NaN と無限大:** `if x <= 0.0 { return }` は NaN を通す。`!(x > 0.0 && x.is_finite())` などで弾く。重みや強さは無限大も拒む。ホストから来る数の前提は下の層 (`Puppet`・`ugoe-runtime`) で決める ([docs/portability.md#ホストから来る数](docs/portability.md#ホストから来る数))。
 - **時間のループ:** 時間を消費する `while` には回数の上限を持たせる (巨大な `dt` で止まらない)。長く動く処理の時間の累積は `f64` か周期での折り返しにする。
 - **確保と積:** 外から来た大きさ・個数・番号で確保する前に上限を確かめる。大きさの積は `checked_mul`・`saturating_mul` で求める (wasm32 の `usize` は 32 ビット)。
 - **Tauri のコマンド:** ファイルを読み書きするコマンドは `async` にする (同期のコマンドはメインのスレッドで動く)。エラーはコードで返す ([ADR 0029](docs/adr/0029-shared-ui-and-i18n.md))。

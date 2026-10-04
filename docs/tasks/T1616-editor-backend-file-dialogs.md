@@ -1,0 +1,31 @@
+---
+id: T1616
+title: "エディタ: ファイルのダイアログをバックエンドで開き、コマンドが読み書きできるパスを利用者が選んだものに絞る"
+status: todo
+milestone: M9
+crates: [apps/editor, docs]
+depends_on: []
+assignee:
+---
+
+# T1616: エディタ: ファイルのダイアログをバックエンドで開き、コマンドが読み書きできるパスを利用者が選んだものに絞る
+
+## 目的
+
+ビューアは T0727 でファイルのダイアログをバックエンドで開き、コマンドが読み書きできるパスを利用者が選んだものに絞った (`FileAccess`)。
+エディタの `write_json_file` (`src-tauri/src/tracking.rs`)・`write_png_file` (`src-tauri/src/screenshot.rs`) などは、webview から渡されたパスに拡張子だけを確かめて書く (T0024 の候補)。
+
+## 受け入れ条件
+
+- [ ] ファイルを読み書きするエディタのコマンドを一覧にし、ダイアログで選んだパス (と開いているプロジェクトの中) だけを受け付ける。一覧と例外をメモに書いた
+- [ ] 選んでいないパスを拒むテストがある
+- [ ] `apps/editor/src/lib/ipc.ts` と docs/editor.md を更新した
+- [ ] `just ci` が通る (実際の OS のダイアログで確かめていないことはメモに)
+
+## 参考
+
+- T0024 のメモ (起票の候補)、apps/viewer/src-tauri/src/acl.rs・lib.rs (`FileAccess`)
+
+## メモ
+
+- T0026 で起票した (元の候補: T0024 のエディタ)。スタジオの側は T0838。

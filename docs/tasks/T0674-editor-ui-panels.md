@@ -34,3 +34,5 @@ assignee:
 - docs/manual/ の各パネルの章
 
 ## メモ
+
+- T0026 (2 回目の起票のまとめ) から: T0920 の候補「エディタの自前の部品 (`TabStrip`・`LightColor` など) の props (`ariaLabel` など) の名前を `@ugoe/ui` の部品に揃える (任意)」をこのタスクで扱う。

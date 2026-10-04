@@ -75,3 +75,12 @@ assignee: claude-worker-T0025
     `undo_tests::saving_a_copy_keeps_edits_made_while_writing`。docs/editor.md の「外での書き換え」に書いた。
 - T0025: ここまでの変更で `just ci` は通った (main 6e173503 の上)。置き換えが残るので受け入れ条件の `just ci` には印を付けていない。
 - 起票の候補: `save_project_as` もロックの外で書く (メタ情報の戻し方を写しの側で持つ)。
+- T0026 (2 回目の起票のまとめ) から: 次の候補はこのタスクの判断 (置き場所) が決まってから扱うので、起票せずここに書く。
+  - T0687: editor-core の `Project::save` の一時ファイルの名前を `.<名前>.<pid>.<連番>.tmp` に揃え、`rename` の前に閉じる。3 つの写しを 1 か所に (上の (b) の置き換えに含まれる)。
+  - T0687: `ugoe-mcp` の `mcpb::Bundle::write` が `sync_all` せず、書く途中の失敗で一時ファイルを残す (上の (b) の置き換えに含まれる)。
+  - T0687: エディタの `save_project` の書き込みをロックの外へ → このタスクで済んだ (`begin_save`・`PendingSave::write`・`WrittenSave::finish`)。
+  - T0025 自身: `save_project_as` もロックの外で書く (メタ情報の戻し方を写しの側で持つ)。置き換えの後に、このタスクの続きか別のタスクで扱う。
+  - T0730: アプリのバックエンドで共有する GPL のクレート (例: `apps/shared-backend`) を作り、`atomic_write.rs` と `write_png_file` の中身 (パーセント符号の復号・PNG の検査) を移す
+    → 上の案 (c) にあたる。(b) に決まれば `atomic_write.rs` は `ugoe-fs` (仮) へ移り、`write_png_file` の中身だけが残る。
+  - T0011: 3 つのアプリの Rust で共有する小さなクレート (一時ファイル経由の保存・通常のファイルの読み込み・パスの許可) を作るか → 上の案 (b) に `read_file.rs` を含める話と同じ。
+    editor-core の読み込みを通常のファイルに絞るのは T1607 で起票した (置き場所が決まれば共有の補助を使う)。
