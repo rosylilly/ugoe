@@ -50,6 +50,29 @@ pub fn conductor_frames(
     Ok(frames)
 }
 
+/// 指揮役の効果の設定 (`effects` のとき): 標準の目パチと呼吸 (`EyeBlink::standard()`・`Breath::standard()`) と、
+/// モデルのリップシンクの設定。
+fn conductor_effects(conductor: &Puppet) -> ugoe::model::effects::Effects {
+    let lip_sync = conductor
+        .instance()
+        .compiled()
+        .model()
+        .effects
+        .lip_sync
+        .clone();
+    ugoe::model::effects::Effects {
+        eye_blink: ugoe::model::effects::EyeBlink::standard(),
+        breath: ugoe::model::effects::Breath::standard(),
+        lip_sync,
+    }
+}
+
+/// [`conductor_effects`] を、実行器が指揮役の `set_effects_json` に渡す JSON にしたもの (計画の `Conduct::effects`。T0454)。
+pub fn conductor_effects_json(case: &Case) -> Result<String, Error> {
+    let effects = conductor_effects(&loaded(case)?);
+    serde_json::to_string(&effects).map_err(|e| invalid(case, e))
+}
+
 /// 指揮役が `i` 番目のフレームで当てるリップシンクの音量 (0〜1 を行き来する)。
 pub fn lip_sync_level(i: usize) -> f32 {
     (i % 7) as f32 / 6.0
@@ -65,18 +88,8 @@ fn drive(
 ) -> Result<Puppet, Error> {
     let mut conductor = loaded(case)?;
     if effects {
-        let lip_sync = conductor
-            .instance()
-            .compiled()
-            .model()
-            .effects
-            .lip_sync
-            .clone();
-        conductor.set_effects(ugoe::model::effects::Effects {
-            eye_blink: ugoe::model::effects::EyeBlink::standard(),
-            breath: ugoe::model::effects::Breath::standard(),
-            lip_sync,
-        });
+        let effects = conductor_effects(&conductor);
+        conductor.set_effects(effects);
     }
     conductor.set_toggles(ugoe::Toggles {
         physics,
@@ -309,6 +322,71 @@ mod tests {
             let updated = evaluate(&updated).unwrap();
             assert!(
                 !crate::compare::frames(&updated, &followed).is_empty(),
+                "{}",
+                case.name
+            );
+        }
+    }
+
+    /// 実行器の中で指揮役を進めるケース (T0454): 実行器と同じ手順 (計画の `Conduct` だけを読んで指揮役を作り、指揮役の口で読んだ値で
+    /// 受け手を `follow` させる) で進めると、計画の `follow` の値で進めた参照と同じになる。
+    #[test]
+    fn conduct_cases_match_the_planned_follow_values() {
+        let plan = plan();
+        let cases: Vec<_> = plan.cases.iter().filter(|c| c.conduct.is_some()).collect();
+        assert!(cases.len() >= 3);
+        assert!(
+            cases
+                .iter()
+                .any(|c| c.conduct.as_ref().unwrap().motion.is_some())
+        );
+        assert!(
+            cases
+                .iter()
+                .any(|c| !c.conduct.as_ref().unwrap().lip_sync.is_empty())
+        );
+        assert!(
+            cases
+                .iter()
+                .any(|c| c.conduct.as_ref().unwrap().effects.is_some())
+        );
+        for case in cases {
+            let conduct = case.conduct.as_ref().unwrap();
+            assert!(!case.follow.is_empty(), "{}", case.name);
+            let mut conductor = loaded(case).unwrap();
+            if let Some(json) = &conduct.effects {
+                conductor.set_effects(serde_json::from_str(json).unwrap());
+            }
+            conductor.set_toggles(ugoe::Toggles {
+                physics: false,
+                eye_blink: conduct.effects.is_some(),
+                breath: conduct.effects.is_some(),
+                ..ugoe::Toggles::default()
+            });
+            if let Some(name) = &conduct.motion {
+                let motion = bundle_motion(case, name).unwrap();
+                assert!(conductor.start_motion(motion, ugoe::motion::Priority::Normal));
+            }
+            let mut follower = loaded(case).unwrap();
+            follower.set_toggles(toggles(case));
+            for (i, &dt) in case.steps.iter().enumerate() {
+                if let Some(&level) = conduct.lip_sync.get(i) {
+                    conductor.set_lip_sync_level(Some(level));
+                }
+                conductor.update(dt);
+                follower
+                    .follow(
+                        conductor.values_before_physics(),
+                        conductor.lip_sync_applied(),
+                        conductor.part_opacities_applied(),
+                        dt,
+                    )
+                    .unwrap();
+            }
+            let expected = evaluate(case).unwrap();
+            assert_eq!(
+                Frame::from_instance(follower.instance()),
+                expected,
                 "{}",
                 case.name
             );

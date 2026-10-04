@@ -122,6 +122,14 @@ C ABI と Unity の C# の層は画像を扱わないので、頂点だけを比
    `follow_lip_sync[i]` (リップシンクの `[音量, 強さ]`。無いか `null` なら当てない) と `follow_part_opacities[i]`
    (モーションのパーツの不透明度のカーブ `[パーツの番号, 値, 重み]` の並び。無ければ空) と `steps[i]` を渡す (`plan.txt` では
    `follow <dt> <音量 (無ければ -1)> <強さ> <パーツの数 k> (<番号> <値> <重み>) × k <値> ...` の行。T0133・T0134・T0135)。このケースの `effects` は常に `false`。
+   計画に `conduct` (T0454) があれば、`follow` の値を読まずに、実行器の中で指揮役を進める: 同じモデル・モジュール・`parameters` で
+   もう 1 つ作り、`conduct.effects` (効果の設定の JSON。標準の目パチと呼吸) があれば効果の設定に書き、物理の段を止め、目パチと呼吸は
+   `conduct.effects` があるときだけ動かし、`conduct.motion` があれば普通の優先度で再生する。各フレームで `conduct.lip_sync[i]` (あれば)
+   を音量にして指揮役を `update(steps[i])` で進め、指揮役の口 (C ABI の `ugoe_puppet_values_before_physics`・`ugoe_puppet_lip_sync_applied`・
+   `ugoe_puppet_part_opacities_applied`、wasm の `values_before_physics`・`lip_sync_applied`・`part_opacities_applied_*`、Unity の
+   `ValuesBeforePhysics`・`LipSyncApplied`・`PartOpacitiesApplied`、Godot の `get_values_before_physics` など) で読んだ値で受け手の口を呼ぶ
+   (`plan.txt` では `conduct [<モーションの名前>]`・`conduct_effects <JSON>`・`lead <dt> <音量 (設定しなければ -1)>` の行)。
+   参照は計画の `follow` の値 (参照の側で同じ指揮役を進めて作ったもの) で進めるので、指揮役の口が返す値と受け手に渡す形が合っていることを確かめる。
    受け手の口を持つバインディングは `src/main.rs` の `FOLLOW_BINDINGS` に挙げる (今はすべて: C ABI・wasm・Unity の `Puppet.Follow` (T0455)・Godot)。
    挙げていないバインディングは比べ合わせが `skip` にする。
    `before` があるとき、値を変えてから描画に反映するまでにフレームの遅れが入りうる実行器 (Godot) は、先に `before` の値で

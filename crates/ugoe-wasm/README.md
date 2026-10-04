@@ -147,12 +147,18 @@ puppet.hit_test_standard("Head", x, y); // Model.avatar.hit_areas の標準の�
 - `part_evaluated_opacity` は上書きを当てた自身の値に祖先の値を掛けたもの (`ModelInstance::part_opacity`、`docs/spec/evaluation.md` の 2.)。
   そのパーツのメッシュの不透明度に掛かる。必要なら評価してから読む。C ABI では `ugoe_puppet_part_evaluated_opacity` (T0416)。
 
-### 受け手として進める (T0133・T0134・T0135)
+### 受け手として進める (T0133・T0134・T0135)・指揮役の値 (T0454)
 
 ```js
 puppet.parameter_values();              // Float32Array。parameter_ids() の順の現在値
 puppet.set_base_values(values);         // Float32Array をまとめて基準値として書く (値域にクランプ。評価は次の render まで遅らせる)
 puppet.follow(values, dt, level, strength, parts, opacities); // values を基準値として書き、物理 → リップシンク → パーツの不透明度 → 評価の順に dt 秒進める
+
+// 指揮役の側 (T0454): 直前の update が受け手へ配る値を、follow の引数と同じ形で読む
+conductor.update(dt);
+const lipSync = conductor.lip_sync_applied();       // Float32Array [音量, 強さ]。当てていなければ undefined
+follower.follow(conductor.values_before_physics(), dt, lipSync?.[0], lipSync?.[1],
+  conductor.part_opacities_applied_parts(), conductor.part_opacities_applied_values());
 ```
 
 - `Puppet::set_base_values`・`Puppet::follow` を呼ぶ (`docs/spec/motion.md#受け手として進める`)。スタジオの出力ウィンドウとブラウザソースの
@@ -167,6 +173,11 @@ puppet.follow(values, dt, level, strength, parts, opacities); // values を基�
 - `set_parameter` の値は前のフレームの出力とビット列で同じなら基準値にならないが、`set_base_values` と `follow` は同じでも基準値にする。
 - モデルが無い・数が `parameter_ids()` と違う・NaN を含むときは、何も変えずに例外を投げる。モデルに無いパーツの番号は無視する。
   C ABI では `ugoe_puppet_set_base_values`・`ugoe_puppet_follow`。
+- 指揮役の側の口 `values_before_physics()`・`lip_sync_applied()`・`part_opacities_applied_parts()` / `part_opacities_applied_values()` は
+  `Puppet::values_before_physics`・`lip_sync_applied`・`part_opacities_applied` (T0454)。`parameter_values()` は物理の後の値なので、物理を持つ
+  モデルではこちらを配る。直前が `follow` なら渡した値 (値域にクランプしたもの) を返すので、受け手からさらに中継できる。モデルが無ければ空か
+  `undefined`。C ABI では `ugoe_puppet_values_before_physics`・`ugoe_puppet_lip_sync_applied` (当てていなければ音量 -1)・
+  `ugoe_puppet_part_opacities_applied`。
 
 ### エディタ向けの問い合わせ (ギズモ・物理の表示)
 

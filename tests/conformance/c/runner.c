@@ -11,6 +11,9 @@
  * - update の行があるケースは、目パチと呼吸を effects のとおりにし、ほかの段を動かして、その dt で順に呼ぶ。
  * - follow の行 (受け手として進めるケース。T0133・T0134・T0135) は、update の代わりに
  *   ugoe_puppet_follow(値, リップシンクの音量, 強さ, パーツの不透明度, dt) を順に呼ぶ。
+ * - conduct の行 (実行器の中で指揮役を進めるケース。T0454) があれば、同じモデルで指揮役の UgoePuppet をもう 1 つ作り、
+ *   lead の行ごとに指揮役を ugoe_puppet_update で進め、指揮役の口 (ugoe_puppet_values_before_physics・
+ *   ugoe_puppet_lip_sync_applied・ugoe_puppet_part_opacities_applied) で読んだ値で受け手を ugoe_puppet_follow で進める。
  */
 #include <errno.h>
 #include <stdbool.h>
@@ -56,6 +59,12 @@ typedef struct {
     UgoePartOpacityInput *follow_parts[MAX_STEPS];
     size_t follow_part_count[MAX_STEPS];
     size_t follow_count;
+    /* conduct の行があったか、そのモーションの名前 (空なら再生しない)・効果の設定の JSON (NULL なら目パチと呼吸を止める)、
+       lead の行の音量 (steps と同じ番号。負なら設定しない)。 */
+    bool conduct;
+    char conduct_motion[256];
+    char *conduct_effects;
+    float lead_lip_sync[MAX_STEPS];
 } Case;
 
 static void clear_case(Case *c) {
@@ -65,6 +74,7 @@ static void clear_case(Case *c) {
         free(c->follow[i]);
         free(c->follow_parts[i]);
     }
+    free(c->conduct_effects);
     memset(c, 0, sizeof *c);
 }
 
@@ -139,36 +149,141 @@ static void write_rgb(FILE *f, const float rgb[3]) {
     fputc('}', f);
 }
 
-static bool run_case(const Case *c, const char *out_dir) {
+/* モデルから UgoePuppet を作り、モジュール (作ってあれば使い回す) を付け、パラメータを設定する。 */
+static bool create_puppet(const Case *c, const unsigned char *bytes, size_t len, UgoeModule **modules,
+                          UgoePuppet **out) {
     bool ok = true;
     UgoePuppet *puppet = NULL;
-    UgoeModule *modules[MAX_ITEMS] = {0};
-    FILE *f = NULL;
-    size_t len = 0;
-    unsigned char *bytes = read_file(c->model, &len);
-    if (!bytes) return false;
-
     if (c->bundle) {
         CHECK(ugoe_puppet_create_from_bundle(bytes, len, &puppet));
     } else {
         CHECK(ugoe_puppet_create_from_json(bytes, len, &puppet));
     }
     for (size_t i = 0; i < c->module_count; i++) {
-        size_t module_len = 0;
-        unsigned char *module_bytes = read_file(c->modules[i], &module_len);
-        if (!module_bytes) {
-            ok = false;
-            goto done;
+        if (!modules[i]) {
+            size_t module_len = 0;
+            unsigned char *module_bytes = read_file(c->modules[i], &module_len);
+            if (!module_bytes) {
+                ok = false;
+                goto done;
+            }
+            UgoeResult r = ugoe_module_create(module_bytes, module_len, &modules[i]);
+            free(module_bytes);
+            CHECK(r);
         }
-        UgoeResult r = ugoe_module_create(module_bytes, module_len, &modules[i]);
-        free(module_bytes);
-        CHECK(r);
         CHECK(ugoe_puppet_attach_module(puppet, modules[i]));
     }
     for (size_t i = 0; i < c->param_count; i++) {
         uint32_t index = 0;
         CHECK(ugoe_puppet_parameter_index(puppet, c->param_ids[i], &index));
         CHECK(ugoe_puppet_set_parameter(puppet, index, c->param_values[i]));
+    }
+done:
+    if (!ok) {
+        ugoe_puppet_destroy(puppet);
+        puppet = NULL;
+    }
+    *out = puppet;
+    return ok;
+}
+
+/* 指揮役を作る (T0454): 効果の設定を書き、物理の段を止め、目パチと呼吸は効果の設定があるときだけ動かし、モーションを再生する。 */
+static bool create_conductor(const Case *c, const unsigned char *bytes, size_t len, UgoeModule **modules,
+                             UgoePuppet **out) {
+    bool ok = true;
+    UgoePuppet *conductor = NULL;
+    if (!create_puppet(c, bytes, len, modules, &conductor)) return false;
+    if (c->conduct_effects) {
+        CHECK(ugoe_puppet_set_effects_json(conductor, (const uint8_t *)c->conduct_effects,
+                                           strlen(c->conduct_effects)));
+    }
+    CHECK(ugoe_puppet_set_stage_enabled(conductor, UGOE_STAGE_PHYSICS, false));
+    CHECK(ugoe_puppet_set_stage_enabled(conductor, UGOE_STAGE_EYE_BLINK, c->conduct_effects != NULL));
+    CHECK(ugoe_puppet_set_stage_enabled(conductor, UGOE_STAGE_BREATH, c->conduct_effects != NULL));
+    if (c->conduct_motion[0] != '\0') {
+        uint32_t count = 0;
+        CHECK(ugoe_puppet_motion_count(conductor, &count));
+        uint32_t index = count;
+        for (uint32_t i = 0; i < count; i++) {
+            const char *name = NULL;
+            CHECK(ugoe_puppet_motion_name(conductor, i, &name));
+            if (strcmp(name, c->conduct_motion) == 0) index = i;
+        }
+        if (index == count) {
+            fprintf(stderr, "%s: no motion `%s`\n", c->name, c->conduct_motion);
+            ok = false;
+            goto done;
+        }
+        bool started = false;
+        CHECK(ugoe_puppet_start_motion(conductor, index, UGOE_PRIORITY_NORMAL, &started));
+        if (!started) {
+            fprintf(stderr, "%s: motion `%s` did not start\n", c->name, c->conduct_motion);
+            ok = false;
+            goto done;
+        }
+    }
+done:
+    if (!ok) {
+        ugoe_puppet_destroy(conductor);
+        conductor = NULL;
+    }
+    *out = conductor;
+    return ok;
+}
+
+/* 指揮役を dt 秒進め、指揮役の口で読んだ値で受け手を進める (T0454)。 */
+static bool lead(const Case *c, UgoePuppet *conductor, UgoePuppet *puppet, float level, float dt) {
+    bool ok = true;
+    float *values = NULL;
+    UgoePartOpacityInput *parts = NULL;
+    if (level >= 0.0f) CHECK(ugoe_puppet_set_lip_sync_level(conductor, level));
+    CHECK(ugoe_puppet_update(conductor, dt));
+    size_t count = 0;
+    UgoeResult r = ugoe_puppet_values_before_physics(conductor, NULL, 0, &count);
+    if (r != UGOE_ERROR_BUFFER_TOO_SMALL) CHECK(r);
+    values = malloc((count > 0 ? count : 1) * sizeof *values);
+    if (!values) {
+        ok = false;
+        goto done;
+    }
+    CHECK(ugoe_puppet_values_before_physics(conductor, values, count, &count));
+    float strength = 0.0f;
+    CHECK(ugoe_puppet_lip_sync_applied(conductor, &level, &strength));
+    size_t part_count = 0;
+    r = ugoe_puppet_part_opacities_applied(conductor, NULL, 0, &part_count);
+    if (r != UGOE_ERROR_BUFFER_TOO_SMALL) CHECK(r);
+    if (part_count > 0) {
+        parts = malloc(part_count * sizeof *parts);
+        if (!parts) {
+            ok = false;
+            goto done;
+        }
+        CHECK(ugoe_puppet_part_opacities_applied(conductor, parts, part_count, &part_count));
+    }
+    CHECK(ugoe_puppet_follow(puppet, values, count, level, strength, parts, part_count, dt));
+done:
+    free(values);
+    free(parts);
+    return ok;
+}
+
+static bool run_case(const Case *c, const char *out_dir) {
+    bool ok = true;
+    UgoePuppet *puppet = NULL;
+    UgoePuppet *conductor = NULL;
+    UgoeModule *modules[MAX_ITEMS] = {0};
+    FILE *f = NULL;
+    size_t len = 0;
+    unsigned char *bytes = read_file(c->model, &len);
+    if (!bytes) return false;
+
+    if (!create_puppet(c, bytes, len, modules, &puppet)) {
+        ok = false;
+        goto done;
+    }
+    if (c->conduct && !create_conductor(c, bytes, len, modules, &conductor)) {
+        ok = false;
+        goto done;
     }
     if (c->step_count == 0) {
         const uint32_t stages[] = {UGOE_STAGE_PHYSICS, UGOE_STAGE_EYE_BLINK, UGOE_STAGE_BREATH,
@@ -181,7 +296,12 @@ static bool run_case(const Case *c, const char *out_dir) {
         CHECK(ugoe_puppet_set_stage_enabled(puppet, UGOE_STAGE_EYE_BLINK, c->effects));
         CHECK(ugoe_puppet_set_stage_enabled(puppet, UGOE_STAGE_BREATH, c->effects));
         for (size_t i = 0; i < c->step_count; i++) {
-            if (c->follow_count > 0) {
+            if (conductor) {
+                if (!lead(c, conductor, puppet, c->lead_lip_sync[i], c->steps[i])) {
+                    ok = false;
+                    goto done;
+                }
+            } else if (c->follow_count > 0) {
                 CHECK(ugoe_puppet_follow(puppet, c->follow[i], c->follow_len[i],
                                          c->follow_lip_sync[i][0], c->follow_lip_sync[i][1],
                                          c->follow_parts[i], c->follow_part_count[i],
@@ -249,6 +369,7 @@ static bool run_case(const Case *c, const char *out_dir) {
 done:
     if (f) fclose(f);
     for (size_t i = 0; i < c->module_count; i++) ugoe_module_destroy(modules[i]);
+    ugoe_puppet_destroy(conductor);
     ugoe_puppet_destroy(puppet);
     free(bytes);
     return ok;
@@ -299,11 +420,11 @@ int main(int argc, char **argv) {
         } else if (strcmp(line, "effects") == 0 && arg) {
             c.effects = strcmp(arg, "1") == 0;
         } else if (strcmp(line, "update") == 0 && arg) {
-            if (c.step_count == MAX_STEPS || c.follow_count > 0) goto invalid;
+            if (c.step_count == MAX_STEPS || c.follow_count > 0 || c.conduct) goto invalid;
             c.steps[c.step_count++] = parse_float(arg);
         } else if (strcmp(line, "follow") == 0 && arg) {
             /* follow <dt> <リップシンクの音量 (無ければ -1)> <強さ> <パーツの数 k> (<番号> <値> <重み>) × k <値> ... */
-            if (c.step_count == MAX_STEPS || c.follow_count != c.step_count) goto invalid;
+            if (c.step_count == MAX_STEPS || c.follow_count != c.step_count || c.conduct) goto invalid;
             size_t n = 0;
             for (const char *p = arg; *p; p++) n += *p == ' ';
             float *values = malloc((n > 0 ? n : 1) * sizeof *values);
@@ -351,6 +472,21 @@ int main(int argc, char **argv) {
             while ((token = strtok(NULL, " ")) != NULL && len < n) values[len++] = parse_float(token);
             c.follow[c.follow_count] = values;
             c.follow_len[c.follow_count++] = len;
+        } else if (strcmp(line, "conduct") == 0) {
+            if (c.step_count > 0 || c.follow_count > 0) goto invalid;
+            c.conduct = true;
+            snprintf(c.conduct_motion, sizeof c.conduct_motion, "%s", arg ? arg : "");
+        } else if (strcmp(line, "conduct_effects") == 0 && arg) {
+            if (!c.conduct || c.conduct_effects) goto invalid;
+            c.conduct_effects = duplicate(arg);
+        } else if (strcmp(line, "lead") == 0 && arg) {
+            /* lead <dt> <リップシンクの音量 (設定しなければ -1)> */
+            if (!c.conduct || c.step_count == MAX_STEPS) goto invalid;
+            char *level = strchr(arg, ' ');
+            if (!level) goto invalid;
+            *level++ = '\0';
+            c.lead_lip_sync[c.step_count] = parse_float(level);
+            c.steps[c.step_count++] = parse_float(arg);
         } else if (strcmp(line, "end") == 0) {
             total++;
             if (!run_case(&c, argv[2])) failed++;

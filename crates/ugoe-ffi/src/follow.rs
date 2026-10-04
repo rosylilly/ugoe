@@ -1,10 +1,14 @@
 //! 受け手の口: 届いたパラメータの値を基準値として書き、物理より後の段だけを進める
 //! (`ugoe::Puppet::set_base_values`・`follow`。`docs/spec/motion.md#受け手として進める`)。
+//! と、指揮役の口: 直前の `ugoe_puppet_update` (か `ugoe_puppet_follow`) が物理の段に入る直前に持っていた値などを読む
+//! (`ugoe::Puppet::values_before_physics`・`lip_sync_applied`・`part_opacities_applied`。T0454)。
 
 use ugoe::{LipSyncInput, ParameterValuesError, PartOpacityInput};
 
-use crate::error::{Error, UGOE_ERROR_INVALID_ARGUMENT, UgoeResult, guard};
-use crate::puppet::{UgoePuppet, puppet_mut};
+use crate::error::{
+    Error, UGOE_ERROR_BUFFER_TOO_SMALL, UGOE_ERROR_INVALID_ARGUMENT, UgoeResult, guard,
+};
+use crate::puppet::{UgoePuppet, puppet_mut, puppet_ref, write};
 
 /// `values` から `count` 個の `float` を借りる。`count` が 0 なら `values` は NULL でもよい。
 ///
@@ -34,6 +38,16 @@ pub struct UgoePartOpacityInput {
     pub value: f32,
     /// フェードを含めた重み (0〜1)。
     pub weight: f32,
+}
+
+impl From<PartOpacityInput> for UgoePartOpacityInput {
+    fn from(p: PartOpacityInput) -> Self {
+        Self {
+            part: p.part,
+            value: p.value,
+            weight: p.weight,
+        }
+    }
 }
 
 impl From<UgoePartOpacityInput> for PartOpacityInput {
@@ -135,5 +149,128 @@ pub unsafe extern "C" fn ugoe_puppet_follow(
         p.puppet
             .follow(values, lip_sync, &part_opacities, dt)
             .map_err(invalid)
+    })
+}
+
+/// `values` を `out` (`capacity` 個) に写し、数を `*out_count` に書く。足りなければ `UGOE_ERROR_BUFFER_TOO_SMALL` を返し、
+/// `*out_count` だけを書く (`ugoe_puppet_tracking_targets` と同じ)。
+///
+/// # Safety
+///
+/// `out` は NULL か `capacity` 個の `T` を書き込める領域、`out_count` は書き込める領域を指すこと。
+unsafe fn copy_out<S: Copy, T: From<S>>(
+    values: &[S],
+    out: *mut T,
+    capacity: usize,
+    out_count: *mut usize,
+) -> Result<(), Error> {
+    // SAFETY: 呼び出し側の約束。
+    unsafe { write(out_count, "out_count", values.len())? };
+    if capacity < values.len() {
+        return Err(Error::new(
+            UGOE_ERROR_BUFFER_TOO_SMALL,
+            format!(
+                "`out` holds {capacity} values but {} are needed",
+                values.len()
+            ),
+        ));
+    }
+    if values.is_empty() {
+        return Ok(());
+    }
+    if out.is_null() {
+        return Err(Error::null("out"));
+    }
+    // SAFETY: `out` は `capacity` (≥ values.len()) 個を書き込める (呼び出し側の約束)。
+    let out = unsafe { std::slice::from_raw_parts_mut(out, values.len()) };
+    for (dst, &v) in out.iter_mut().zip(values) {
+        *dst = v.into();
+    }
+    Ok(())
+}
+
+/// 指揮役の口: 直前の `ugoe_puppet_update` (か `ugoe_puppet_follow`) で、物理の段に入る直前のパラメータの値 (パラメータの番号の順。
+/// `ugoe::Puppet::values_before_physics`) を `out` (`capacity` 個) に写し、数 (パラメータの数) を `*out_count` に書く。
+/// 受け手の `ugoe_puppet_follow` の `values` にそのまま渡す。
+///
+/// 物理の段を止めていても同じ位置の値。`ugoe_puppet_update` の前は作ったときの値。`ugoe_puppet_follow` の後は渡した値
+/// (値域にクランプしたもの。受け手がさらに別の受け手へ中継できる。後の 2 つの口も同じ)。
+/// `capacity` が足りなければ `UGOE_ERROR_BUFFER_TOO_SMALL` を返し、`*out_count` だけを書く。
+///
+/// # Safety
+///
+/// `puppet` は有効な `UgoePuppet`、`out` は NULL か `capacity` 個の `float` を書き込める領域、
+/// `out_count` は書き込める領域を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_puppet_values_before_physics(
+    puppet: *const UgoePuppet,
+    out: *mut f32,
+    capacity: usize,
+    out_count: *mut usize,
+) -> UgoeResult {
+    guard(|| {
+        // SAFETY: 呼び出し側の約束。
+        let p = unsafe { puppet_ref(puppet)? };
+        // SAFETY: 呼び出し側の約束。
+        unsafe { copy_out(p.puppet.values_before_physics(), out, capacity, out_count) }
+    })
+}
+
+/// 指揮役の口: 直前の `ugoe_puppet_update` (か `ugoe_puppet_follow`) でリップシンクの段が当てた音量を `*out_level`、強さ (エフェクトグループ `LipSync`
+/// の強さ) を `*out_strength` に書く (`ugoe::Puppet::lip_sync_applied`)。受け手の `ugoe_puppet_follow` の `lip_sync_level` と
+/// `lip_sync_strength` にそのまま渡す。
+///
+/// 段を止めていたか音量が無ければ (当てていなければ) `*out_level` は -1、`*out_strength` は 1 (`ugoe_puppet_follow` は
+/// 負の音量を「当てない」とみなす)。
+///
+/// # Safety
+///
+/// `puppet` は有効な `UgoePuppet`、`out_level` と `out_strength` は書き込める領域を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_puppet_lip_sync_applied(
+    puppet: *const UgoePuppet,
+    out_level: *mut f32,
+    out_strength: *mut f32,
+) -> UgoeResult {
+    guard(|| {
+        // SAFETY: 呼び出し側の約束。
+        let p = unsafe { puppet_ref(puppet)? };
+        if out_strength.is_null() {
+            return Err(Error::null("out_strength"));
+        }
+        let (level, strength) = p
+            .puppet
+            .lip_sync_applied()
+            .map_or((-1.0, 1.0), |l| (l.level, l.strength));
+        // SAFETY: 呼び出し側の約束。
+        unsafe { write(out_level, "out_level", level)? };
+        // SAFETY: 呼び出し側の約束。
+        unsafe { write(out_strength, "out_strength", strength) }
+    })
+}
+
+/// 指揮役の口: 直前の `ugoe_puppet_update` (か `ugoe_puppet_follow`) で、モーションのパーツの不透明度のカーブが値を求めたパーツ (カーブのあるパーツだけ。
+/// `ugoe::Puppet::part_opacities_applied`) を `out` (`capacity` 個) に写し、数を `*out_count` に書く。受け手の
+/// `ugoe_puppet_follow` の `part_opacities` と `part_opacity_count` にそのまま渡す。
+///
+/// 段の有効無効やポーズとは関係なく、カーブの値と重み。着せ替えの操作の後は、次の `ugoe_puppet_update` まで 0 個。
+/// `capacity` が足りなければ `UGOE_ERROR_BUFFER_TOO_SMALL` を返し、`*out_count` だけを書く。
+///
+/// # Safety
+///
+/// `puppet` は有効な `UgoePuppet`、`out` は NULL か `capacity` 個の `UgoePartOpacityInput` を書き込める領域、
+/// `out_count` は書き込める領域を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_puppet_part_opacities_applied(
+    puppet: *const UgoePuppet,
+    out: *mut UgoePartOpacityInput,
+    capacity: usize,
+    out_count: *mut usize,
+) -> UgoeResult {
+    guard(|| {
+        // SAFETY: 呼び出し側の約束。
+        let p = unsafe { puppet_ref(puppet)? };
+        // SAFETY: 呼び出し側の約束。
+        unsafe { copy_out(p.puppet.part_opacities_applied(), out, capacity, out_count) }
     })
 }

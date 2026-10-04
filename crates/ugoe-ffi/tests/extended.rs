@@ -1383,3 +1383,169 @@ fn follow_applies_the_part_opacities_like_the_puppet() {
     };
     assert_eq!(code, UGOE_ERROR_NULL_POINTER);
 }
+
+fn values_before_physics(p: &Handle) -> Vec<f32> {
+    let mut len = usize::MAX;
+    let code = unsafe { ugoe_puppet_values_before_physics(p.0, ptr::null_mut(), 0, &mut len) };
+    assert_eq!(code, UGOE_ERROR_BUFFER_TOO_SMALL);
+    let mut values = vec![f32::NAN; len];
+    let mut written = usize::MAX;
+    ok(unsafe {
+        ugoe_puppet_values_before_physics(p.0, values.as_mut_ptr(), values.len(), &mut written)
+    });
+    assert_eq!(written, len);
+    values
+}
+
+fn lip_sync_applied(p: &Handle) -> (f32, f32) {
+    let (mut level, mut strength) = (f32::NAN, f32::NAN);
+    ok(unsafe { ugoe_puppet_lip_sync_applied(p.0, &mut level, &mut strength) });
+    (level, strength)
+}
+
+fn part_opacities_applied(p: &Handle) -> Vec<UgoePartOpacityInput> {
+    let mut len = usize::MAX;
+    let code = unsafe { ugoe_puppet_part_opacities_applied(p.0, ptr::null_mut(), 0, &mut len) };
+    if len == 0 {
+        ok(code);
+        return Vec::new();
+    }
+    assert_eq!(code, UGOE_ERROR_BUFFER_TOO_SMALL);
+    let mut parts = vec![UgoePartOpacityInput::default(); len];
+    let mut written = usize::MAX;
+    ok(unsafe {
+        ugoe_puppet_part_opacities_applied(p.0, parts.as_mut_ptr(), parts.len(), &mut written)
+    });
+    assert_eq!(written, len);
+    parts
+}
+
+/// 指揮役の口 (T0454): 物理の段に入る直前の値・当てたリップシンク・パーツの不透明度のカーブは `ugoe::Puppet` の
+/// `values_before_physics`・`lip_sync_applied`・`part_opacities_applied` と同じで、それを `ugoe_puppet_follow` に
+/// そのまま渡した受け手は、物理を含めて 1 つの `Puppet` と同じ形になる。
+#[test]
+fn conductor_values_match_the_puppet_and_drive_a_follower() {
+    use ugoe::model::motion::{Curve, CurveTarget, Motion, Point, Segment};
+    let p = |t: f32, v: f32| Point { t, v };
+    let motion = Motion {
+        name: "switch".into(),
+        duration: 1.0,
+        looping: false,
+        fade_in: 0.2,
+        fade_out: 0.2,
+        curves: vec![
+            Curve {
+                target: CurveTarget::PartOpacity("ArmB".into()),
+                segments: vec![
+                    Segment::Start { p: p(0.0, 0.0) },
+                    Segment::Stepped { to: p(0.5, 1.0) },
+                ],
+                fade_in: None,
+                fade_out: None,
+            },
+            Curve {
+                target: CurveTarget::Parameter(standard::ANGLE_X.into()),
+                segments: vec![
+                    Segment::Start { p: p(0.0, 0.0) },
+                    Segment::Linear { to: p(1.0, 30.0) },
+                ],
+                fade_in: None,
+                fade_out: None,
+            },
+        ],
+        events: vec![],
+    };
+    let model = fixtures::pose_and_effects();
+    let mut bundle = Bundle::new(model.clone());
+    bundle.textures = model.textures.iter().map(|_| png(0)).collect();
+    bundle.motions = vec![motion.clone()];
+    let conductor = from_bundle(&bundle);
+    let follower = from_bundle(&bundle);
+    let mut native = Puppet::new(model).unwrap();
+
+    // update の前は作ったときの値で、リップシンクもカーブも無い。
+    assert_eq!(
+        values_before_physics(&conductor),
+        native.values_before_physics()
+    );
+    assert_eq!(lip_sync_applied(&conductor), (-1.0, 1.0));
+    assert!(part_opacities_applied(&conductor).is_empty());
+
+    ok(unsafe { ugoe_puppet_start_motion(conductor.0, 0, UGOE_PRIORITY_NORMAL, ptr::null_mut()) });
+    native.start_motion(motion, ugoe::motion::Priority::Normal);
+    let mut saw_curves = false;
+    for frame in 0..80 {
+        let level = (frame % 5) as f32 / 4.0;
+        ok(unsafe { ugoe_puppet_set_lip_sync_level(conductor.0, level) });
+        native.set_lip_sync_level(Some(level));
+        ok(unsafe { ugoe_puppet_update(conductor.0, DT) });
+        native.update(DT);
+
+        let values = values_before_physics(&conductor);
+        assert_eq!(values, native.values_before_physics(), "frame {frame}");
+        let (level, strength) = lip_sync_applied(&conductor);
+        let expected = native.lip_sync_applied().unwrap();
+        assert_eq!((level, strength), (expected.level, expected.strength));
+        let parts = part_opacities_applied(&conductor);
+        let expected: Vec<UgoePartOpacityInput> = native
+            .part_opacities_applied()
+            .iter()
+            .map(|&p| p.into())
+            .collect();
+        assert_eq!(parts, expected, "frame {frame}");
+        saw_curves |= !parts.is_empty();
+
+        ok(unsafe {
+            ugoe_puppet_follow(
+                follower.0,
+                values.as_ptr(),
+                values.len(),
+                level,
+                strength,
+                parts.as_ptr(),
+                parts.len(),
+                DT,
+            )
+        });
+        for i in 0..count(&conductor, ugoe_puppet_drawable_count) {
+            let (mut a, mut b) = (UgoeDrawableState::default(), UgoeDrawableState::default());
+            ok(unsafe { ugoe_puppet_drawable_state(conductor.0, i, &mut a) });
+            ok(unsafe { ugoe_puppet_drawable_state(follower.0, i, &mut b) });
+            assert_eq!(a.opacity, b.opacity, "frame {frame}, drawable {i}");
+        }
+        assert_eq!(
+            param(&follower, standard::MOUTH_OPEN_Y),
+            param(&conductor, standard::MOUTH_OPEN_Y)
+        );
+        // 受け手も同じ値を持つ (さらに別の受け手へ中継できる)。
+        assert_eq!(values_before_physics(&follower), values);
+        assert_eq!(lip_sync_applied(&follower), (level, strength));
+        assert_eq!(part_opacities_applied(&follower), parts);
+    }
+    assert!(saw_curves);
+
+    // リップシンクの段を止めると当てていない。
+    ok(unsafe { ugoe_puppet_set_stage_enabled(conductor.0, UGOE_STAGE_LIP_SYNC, false) });
+    ok(unsafe { ugoe_puppet_update(conductor.0, DT) });
+    assert_eq!(lip_sync_applied(&conductor), (-1.0, 1.0));
+
+    // NULL は受け付けない。
+    let mut value = 0.0f32;
+    assert_eq!(
+        unsafe { ugoe_puppet_lip_sync_applied(conductor.0, &mut value, ptr::null_mut()) },
+        UGOE_ERROR_NULL_POINTER
+    );
+    assert_eq!(
+        unsafe { ugoe_puppet_lip_sync_applied(conductor.0, ptr::null_mut(), &mut value) },
+        UGOE_ERROR_NULL_POINTER
+    );
+    assert_eq!(
+        unsafe { ugoe_puppet_values_before_physics(conductor.0, &mut value, 1, ptr::null_mut()) },
+        UGOE_ERROR_NULL_POINTER
+    );
+    let mut len = 0;
+    assert_eq!(
+        unsafe { ugoe_puppet_values_before_physics(conductor.0, ptr::null_mut(), 100, &mut len) },
+        UGOE_ERROR_NULL_POINTER
+    );
+}

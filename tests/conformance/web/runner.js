@@ -10,6 +10,8 @@
 // - 時間を進めないケースは、すべての段を止めて評価する (C の実行器と同じ)。
 // - `follow` のあるケースは、`update` の代わりに `follow(値, dt, リップシンクの音量, 強さ, パーツの番号, 値と重み)` で進める
 //   (T0133・T0134・T0135)。
+// - `conduct` のあるケースは、同じモデルで指揮役の WebPuppet をもう 1 つ作って `update` で進め、指揮役の口
+//   (`values_before_physics`・`lip_sync_applied`・`part_opacities_applied_*`) で読んだ値で受け手を `follow` で進める (T0454)。
 
 import { createPuppet, loadModel } from "/pkg/index.js";
 
@@ -73,13 +75,8 @@ async function png(puppet) {
   );
 }
 
-async function runCase(plan, index) {
-  const c = plan.cases[index];
-  await post("/start", c.name);
-  const canvas = document.createElement("canvas");
-  canvas.width = 1;
-  canvas.height = 1;
-  document.body.append(canvas);
+/** 計画のケースのモデルを読み、モジュールを付け、パラメータを設定した WebPuppet を作る。 */
+async function load(c, index, canvas) {
   const puppet = await createPuppet(canvas, { backend });
   try {
     if (puppet.backend() !== backend)
@@ -92,12 +89,65 @@ async function runCase(plan, index) {
     for (const [id, value] of Object.entries(c.parameters)) {
       if (!puppet.set_parameter(id, value)) throw new Error(`unknown parameter ${id}`);
     }
+    return puppet;
+  } catch (e) {
+    puppet.free();
+    throw e;
+  }
+}
+
+/** 計画の `conduct` のとおりに、実行器の中で指揮役を進めて受け手 `puppet` を `follow` させる (T0454)。 */
+async function conduct(c, index, puppet) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1;
+  canvas.height = 1;
+  document.body.append(canvas);
+  const conductor = await load(c, index, canvas);
+  try {
+    const { effects, motion, lip_sync: levels = [] } = c.conduct;
+    if (effects) conductor.set_effects_json(effects);
+    conductor.set_enabled("physics", false);
+    conductor.set_enabled("eye_blink", Boolean(effects));
+    conductor.set_enabled("breath", Boolean(effects));
+    if (motion && !conductor.start_motion(motion, "normal"))
+      throw new Error(`motion ${motion} did not start`);
+    c.steps.forEach((dt, i) => {
+      if (i < levels.length) conductor.set_lip_sync_level(levels[i]);
+      conductor.update(dt);
+      const lipSync = conductor.lip_sync_applied();
+      puppet.follow(
+        conductor.values_before_physics(),
+        dt,
+        lipSync?.[0],
+        lipSync?.[1],
+        conductor.part_opacities_applied_parts(),
+        conductor.part_opacities_applied_values(),
+      );
+    });
+  } finally {
+    conductor.free();
+    canvas.remove();
+  }
+}
+
+async function runCase(plan, index) {
+  const c = plan.cases[index];
+  await post("/start", c.name);
+  const canvas = document.createElement("canvas");
+  canvas.width = 1;
+  canvas.height = 1;
+  document.body.append(canvas);
+  let puppet;
+  try {
+    puppet = await load(c, index, canvas);
     if (c.steps.length === 0) {
       for (const stage of STAGES) puppet.set_enabled(stage, false);
     } else {
       puppet.set_enabled("eye_blink", c.effects);
       puppet.set_enabled("breath", c.effects);
-      if (c.follow?.length) {
+      if (c.conduct) {
+        await conduct(c, index, puppet);
+      } else if (c.follow?.length) {
         // 受け手として進める (T0133): 各フレームの値を基準値として書き、物理とポーズだけを進める。
         c.steps.forEach((dt, i) => {
           const [level, strength] = c.follow_lip_sync?.[i] ?? [undefined, undefined];
@@ -126,7 +176,7 @@ async function runCase(plan, index) {
       await post(`/result/${c.name}.png`, await png(puppet));
     }
   } finally {
-    puppet.free();
+    puppet?.free();
     canvas.remove();
   }
 }

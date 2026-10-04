@@ -229,6 +229,26 @@ namespace Ugoe
     }
 
     /// <summary>
+    /// 指揮役のリップシンクの段が当てた音量と強さ (<c>ugoe::LipSyncInput</c>。<see cref="Puppet.LipSyncApplied"/> が返し、
+    /// 受け手が <see cref="Puppet.Follow"/> に渡す。T0454)。
+    /// </summary>
+    public readonly struct LipSyncInput
+    {
+        /// <summary>音量 (0〜1)。</summary>
+        public readonly float Level;
+        /// <summary>エフェクトグループ LipSync の強さ (モーションのカーブ。無ければ 1)。</summary>
+        public readonly float Strength;
+
+        public LipSyncInput(float level, float strength)
+        {
+            Level = level;
+            Strength = strength;
+        }
+
+        public override string ToString() => $"{Level} (strength {Strength})";
+    }
+
+    /// <summary>
     /// 指揮役のモーションのパーツの不透明度のカーブが 1 つのパーツに求めた値と重み (<c>UgoePartOpacityInput</c>。
     /// 受け手が <see cref="Puppet.Follow"/> に渡す)。
     /// </summary>

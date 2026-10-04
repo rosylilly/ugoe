@@ -164,6 +164,12 @@ namespace Ugoe
         [DllImport(Library)] internal static extern int ugoe_puppet_set_base_values(PuppetHandle puppet, float[] values, UIntPtr count);
         [DllImport(Library)] internal static extern int ugoe_puppet_follow(PuppetHandle puppet, float[] values, UIntPtr count, float lipSyncLevel, float lipSyncStrength, PartOpacityInput[] partOpacities, UIntPtr partOpacityCount, float dt);
 
+        // --- 指揮役 (T0454) ---
+
+        [DllImport(Library)] internal static extern int ugoe_puppet_values_before_physics(PuppetHandle puppet, [Out] float[] buffer, UIntPtr capacity, out UIntPtr count);
+        [DllImport(Library)] internal static extern int ugoe_puppet_lip_sync_applied(PuppetHandle puppet, out float level, out float strength);
+        [DllImport(Library)] internal static extern int ugoe_puppet_part_opacities_applied(PuppetHandle puppet, [Out] PartOpacityInput[] buffer, UIntPtr capacity, out UIntPtr count);
+
         // --- 描画可能要素 ---
 
         [DllImport(Library)] internal static extern int ugoe_puppet_drawable_count(PuppetHandle puppet, out uint count);

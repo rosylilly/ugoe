@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// 受け手 (follow)・トラッキングの優先・本体の物理・評価後のパーツの不透明度 (T0430 で C# に出した C ABI の関数)。
+// 受け手 (follow)・指揮役の値 (T0454)・トラッキングの優先・本体の物理・評価後のパーツの不透明度 (T0430 で C# に出した C ABI の関数)。
 using System.IO;
 using NUnit.Framework;
 
@@ -66,6 +66,37 @@ namespace Ugoe.Tests
                 puppet.Follow(new[] { value }, null, 0, new[] { new PartOpacityInput(hat, float.NaN, 1) }, 1f / 60));
             Assert.That(e.Result, Is.EqualTo(UgoeResult.InvalidArgument));
             Assert.Throws<UgoeException>(() => puppet.GetPartEvaluatedOpacity(puppet.PartIds.Count));
+        }
+
+        [Test]
+        public void ConductorValuesDriveAFollower()
+        {
+            using var conductor = Puppet.FromBundle(Paths.Read("avatar.ugoe"));
+            using var follower = Puppet.FromBundle(Paths.Read("avatar.ugoe"));
+            Assert.That(conductor.ValuesBeforePhysics(), Has.Length.EqualTo(conductor.Parameters.Count));
+            Assert.That(conductor.LipSyncApplied(), Is.Null, "nothing before the first update");
+            Assert.That(conductor.PartOpacitiesApplied(), Is.Empty);
+
+            conductor.SetStageEnabled(UpdateStage.Physics, false);
+            conductor.SetParameter(conductor.FindParameter("AngleX"), 20);
+            for (var frame = 0; frame < 30; frame++)
+            {
+                conductor.SetLipSyncLevel(frame % 3 / 2f);
+                conductor.Update(1f / 60);
+                var values = conductor.ValuesBeforePhysics();
+                var lipSync = conductor.LipSyncApplied();
+                Assert.That(lipSync.HasValue, Is.True);
+                Assert.That(lipSync.Value.Level, Is.EqualTo(frame % 3 / 2f));
+                follower.Follow(values, lipSync?.Level, lipSync?.Strength ?? 0, conductor.PartOpacitiesApplied(), 1f / 60);
+                // 受け手も同じ値を持つ (さらに中継できる)。
+                Assert.That(follower.ValuesBeforePhysics(), Is.EqualTo(values));
+                Assert.That(follower.LipSyncApplied(), Is.EqualTo(lipSync));
+            }
+            Assert.That(conductor.ValuesBeforePhysics()[conductor.FindParameter("AngleX")], Is.EqualTo(20f).Within(1e-5));
+
+            conductor.SetStageEnabled(UpdateStage.LipSync, false);
+            conductor.Update(1f / 60);
+            Assert.That(conductor.LipSyncApplied(), Is.Null, "the lip sync stage is off");
         }
 
         [Test]

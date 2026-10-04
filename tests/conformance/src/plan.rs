@@ -64,6 +64,9 @@ pub struct CaseSpec {
     pub lip_sync: bool,
     /// 受け手として進めるとき、指揮役が最初に再生するバンドルのモーションの名前 (計画の [`Case::motion`]。T0135)。
     pub motion: Option<String>,
+    /// 受け手として進めるとき、指揮役も実行器の中で進めるか (計画の [`Case::conduct`]。T0454)。`follow` が要る。
+    #[serde(default)]
+    pub conduct: bool,
     /// 光源 (描画だけに効く)。
     pub lighting: Option<Lighting>,
     /// 画像も比べるか (既定は比べる)。
@@ -157,11 +160,36 @@ pub struct Case {
     /// 指揮役が最初に再生するバンドルのモーションの名前 (参照が計画を作るときだけ使う。実行器は読まなくてよい)。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub motion: Option<String>,
+    /// 実行器の中で指揮役を進め、指揮役の口で読んだ値で受け手を進めるケース (T0454)。
+    ///
+    /// `Some` なら、実行器は `follow`・`follow_lip_sync`・`follow_part_opacities` を読まずに、同じモデル・モジュール・
+    /// `parameters` でもう 1 つ指揮役を作り、[`Conduct::effects`] があれば効果の設定に書き、物理の段を止め、目パチと呼吸の段は
+    /// [`Conduct::effects`] があるときだけ動かし (ほかの段は動かす)、[`Conduct::motion`] を普通の優先度で再生する。各フレームで [`Conduct::lip_sync`] の音量を設定して指揮役の `update(steps[i])` を呼び、物理の段に入る直前の値・
+    /// 当てたリップシンク・パーツの不透明度のカーブ (`values_before_physics`・`lip_sync_applied`・`part_opacities_applied`) を
+    /// 読んで、受け手の `follow(…, steps[i])` に渡す。結果は計画の `follow` の値で進めた参照と比べる
+    /// (`follow` の値は、同じ指揮役を参照の側で進めて作ったもの)。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conduct: Option<Conduct>,
     pub lighting: Option<Lighting>,
     /// 画像も比べるか。
     pub image: bool,
     /// 参照の画像を作る `ugoe render` の引数 (`-o` を除く)。
     pub render_args: Vec<String>,
+}
+
+/// 実行器の中で進める指揮役 ([`Case::conduct`])。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Conduct {
+    /// 指揮役に設定する効果の設定 (`set_effects_json` の JSON。標準の目パチと呼吸と、モデルのリップシンク)。
+    /// あれば目パチと呼吸の段を動かし、無ければ止める。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effects: Option<String>,
+    /// 指揮役が最初に (普通の優先度で) 再生するバンドルのモーションの名前。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motion: Option<String>,
+    /// 各フレームの `update` の前に指揮役に設定するリップシンクの音量 (`steps` と同じ数)。空なら設定しない。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lip_sync: Vec<f32>,
 }
 
 impl Plan {
@@ -212,8 +240,13 @@ impl Plan {
     /// effects <0|1>
     /// update <dt>
     /// follow <dt> <リップシンクの音量 (無ければ -1)> <強さ> <パーツの数 k> (<パーツの番号> <値> <重み>) × k <値> <値> ...
+    /// conduct [<モーションの名前>]
+    /// conduct_effects <効果の設定の JSON (1 行)>
+    /// lead <dt> <リップシンクの音量 (設定しなければ -1)>
     /// end
     /// ```
+    ///
+    /// `conduct` のケース ([`Case::conduct`]) は、`follow` の行の代わりに `conduct` の行と、フレームごとの `lead` の行を書く。
     ///
     /// 数は Rust の `f32` の最短の表記で書くので、`strtof` で同じ値に戻る。
     pub fn to_text(&self) -> String {
@@ -229,7 +262,23 @@ impl Plan {
                 let _ = writeln!(s, "param {id} {value}");
             }
             let _ = writeln!(s, "effects {}", u8::from(case.effects));
-            if case.follow.is_empty() {
+            if let Some(conduct) = &case.conduct {
+                match &conduct.motion {
+                    Some(motion) => {
+                        let _ = writeln!(s, "conduct {motion}");
+                    }
+                    None => {
+                        let _ = writeln!(s, "conduct");
+                    }
+                }
+                if let Some(effects) = &conduct.effects {
+                    let _ = writeln!(s, "conduct_effects {effects}");
+                }
+                for (i, dt) in case.steps.iter().enumerate() {
+                    let level = conduct.lip_sync.get(i).copied().unwrap_or(-1.0);
+                    let _ = writeln!(s, "lead {dt} {level}");
+                }
+            } else if case.follow.is_empty() {
                 for dt in &case.steps {
                     let _ = writeln!(s, "update {dt}");
                 }
@@ -371,6 +420,7 @@ fn case(
         follow_lip_sync: Vec::new(),
         follow_part_opacities: Vec::new(),
         motion: spec.motion.clone(),
+        conduct: None,
         lighting: spec.lighting.clone(),
         image: spec.image,
         render_args: Vec::new(),
@@ -385,6 +435,12 @@ fn case(
     if spec.motion.is_some() && !(spec.follow && case.bundle) {
         return Err(Error::Invalid(format!(
             "case `{}`: `motion` needs `follow` and a bundle",
+            case.name
+        )));
+    }
+    if spec.conduct && !spec.follow {
+        return Err(Error::Invalid(format!(
+            "case `{}`: `conduct` needs `follow`",
             case.name
         )));
     }
@@ -416,6 +472,25 @@ fn case(
         }
         case.follow = frames.into_iter().map(|f| f.values).collect();
         case.effects = false;
+        if spec.conduct {
+            let lip_sync = if spec.lip_sync {
+                (0..case.steps.len())
+                    .map(crate::reference::lip_sync_level)
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            let effects = if spec.effects {
+                Some(crate::reference::conductor_effects_json(&case)?)
+            } else {
+                None
+            };
+            case.conduct = Some(Conduct {
+                effects,
+                motion: spec.motion.clone(),
+                lip_sync,
+            });
+        }
     }
     Ok(case)
 }

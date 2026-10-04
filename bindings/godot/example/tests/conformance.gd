@@ -12,6 +12,8 @@ extends SceneTree
 ## - 計画のとおり、読み込む前にパラメータ・段の有効無効・モジュールを設定する (ノードは読み込みの直後に 1 度評価する)。
 ##   `steps` が空ならすべての段を止め、あれば目パチと呼吸を `effects` のとおりにして、`playing = false` のまま
 ##   `advance(dt)` を `steps` の順に呼ぶ。計画に `follow` があれば、`advance` の代わりに受け手の口 `follow` を呼ぶ (T0449)。
+## - 計画に `conduct` があれば、同じモデルで指揮役のノードをもう 1 つ作って `advance` で進め、指揮役の口
+##   (`get_values_before_physics`・`get_lip_sync_applied`・`get_part_opacities_applied`) で読んだ値で受け手を `follow` させる (T0454)。
 ## - `before` があれば、まずその値で数フレーム描き、次のフレームで `parameters` に変えて、その直後のフレームを書く
 ##   (アニメーション中にマスクが 1 フレーム遅れないかを確かめる)。
 ## - モデルは `.ugoe` バンドルなら `load_model_from_buffer`、違えば (モデルの JSON) `load_model_from_json` で読む。
@@ -158,6 +160,11 @@ func _advance() -> void:
 	var steps: Array = _case["steps"]
 	if steps.is_empty():
 		_puppet.advance(0.0)
+	var conduct = _case.get("conduct")
+	if conduct is Dictionary:
+		_puppet.reset_physics()
+		_conduct(conduct)
+		return
 	var follow: Array = _case.get("follow", [])
 	var lip_sync: Array = _case.get("follow_lip_sync", [])
 	var parts: Array = _case.get("follow_part_opacities", [])
@@ -180,6 +187,51 @@ func _advance() -> void:
 				opacities.append({"part": int(p[0]), "value": p[1], "weight": p[2]})
 		if not _puppet.follow(PackedFloat32Array(follow[i]), steps[i], level, strength, opacities):
 			printerr("%s: follow failed at frame %d" % [_case["name"], i])
+
+
+## 計画の `conduct` のとおりに指揮役のノードを作って進め、指揮役の口で読んだ値で `_puppet` を `follow` させる (T0454)。
+## 指揮役は描かないので木に入れない。
+func _conduct(conduct: Dictionary) -> void:
+	var name: String = _case["name"]
+	var conductor: Node2D = ClassDB.instantiate("UgoePuppet2D")
+	conductor.playing = false
+	for stage in STAGES:
+		conductor.set_stage_enabled(stage, stage == "lip_sync" or stage == "pose")
+	for id in _case["parameters"]:
+		conductor.set_parameter(id, _case["parameters"][id])
+	var modules := []
+	for path in _case["modules"]:
+		modules.append(UgoeModule.from_buffer(FileAccess.get_file_as_bytes(path)))
+	conductor.modules = modules
+	var loaded: bool
+	if _case["bundle"]:
+		loaded = conductor.load_model_from_buffer(FileAccess.get_file_as_bytes(_case["model"]))
+	else:
+		loaded = conductor.load_model_from_json(FileAccess.get_file_as_string(_case["model"]))
+	if not loaded:
+		printerr("%s: the conductor cannot load %s" % [name, _case["model"]])
+		conductor.free()
+		return
+	var effects = conduct.get("effects")
+	if effects is String:
+		if not conductor.set_effects_json(effects):
+			printerr("%s: the conductor rejects the effects" % name)
+		conductor.set_stage_enabled("eye_blink", true)
+		conductor.set_stage_enabled("breath", true)
+	var motion = conduct.get("motion")
+	if motion is String and not conductor.start_motion(motion, 1):
+		printerr("%s: motion %s did not start" % [name, motion])
+	var levels: Array = conduct.get("lip_sync", [])
+	var steps: Array = _case["steps"]
+	for i in steps.size():
+		if i < levels.size():
+			conductor.set_lip_sync_level(levels[i])
+		conductor.advance(steps[i])
+		var lip_sync: Vector2 = conductor.get_lip_sync_applied()
+		if not _puppet.follow(conductor.get_values_before_physics(), steps[i], lip_sync.x, lip_sync.y,
+				conductor.get_part_opacities_applied()):
+			printerr("%s: follow failed at frame %d" % [name, i])
+	conductor.free()
 
 
 func _process(_delta: float) -> bool:

@@ -243,6 +243,40 @@
       "follow": true,
       "motion": "switch",
       "image": false
+    },
+    {
+      "name": "avatar-conduct",
+      "summary": "A conductor inside the runner (T0454): avatar-follow, but the runner plays the conductor itself and follows the values it reads back from the conductor (values before physics, lip sync applied, part opacity curves), instead of the values in the plan.",
+      "model": "assets/samples/avatar.ugoe",
+      "parameters": { "AngleX": 25, "AngleZ": -15 },
+      "time": 1,
+      "effects": true,
+      "follow": true,
+      "conduct": true,
+      "image": false
+    },
+    {
+      "name": "lip-sync-conduct",
+      "summary": "lip-sync-follow with the conductor inside the runner (T0454): the runner sets the lip sync level of each frame on its conductor and passes the lip sync it reads back to the follower.",
+      "generated": "lip-sync-hair",
+      "parameters": { "AngleX": 20 },
+      "time": 1,
+      "effects": true,
+      "follow": true,
+      "lip_sync": true,
+      "conduct": true,
+      "image": false
+    },
+    {
+      "name": "part-switch-conduct",
+      "summary": "part-switch-follow with the conductor inside the runner (T0454): the runner's conductor plays `switch` and the follower gets the part opacity curves read back from it.",
+      "generated": "part-switch",
+      "time": 1.2,
+      "effects": true,
+      "follow": true,
+      "motion": "switch",
+      "conduct": true,
+      "image": false
     }
   ]
 }

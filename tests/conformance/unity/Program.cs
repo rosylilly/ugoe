@@ -11,6 +11,8 @@
 // - steps があるケースは、目パチと呼吸を effects のとおりにし、ほかの段を動かして、その dt で順に呼ぶ。
 // - follow があるケース (受け手として進める。T0455) は、Update の代わりに Puppet.Follow(値, リップシンクの音量, 強さ,
 //   パーツの不透明度, dt) を順に呼ぶ。
+// - conduct があるケース (T0454) は、同じモデルで指揮役の Puppet をもう 1 つ作って Update で進め、指揮役の口
+//   (ValuesBeforePhysics・LipSyncApplied・PartOpacitiesApplied) で読んだ値で受け手を Follow で進める。
 // - before は使わない (同期して評価するので、値を変えてから反映するまでの遅れが無い)。
 using System;
 using System.Collections.Generic;
@@ -56,13 +58,13 @@ namespace Ugoe.Conformance
             return failed == 0 ? 0 : 1;
         }
 
-        private static JsonObject Run(JsonNode c)
+        /// <summary>計画のケースのモデルから Puppet を作り、モジュールを付け、パラメータを設定する。</summary>
+        private static Puppet Load(JsonNode c, List<Module> modules)
         {
             var model = (string)c["model"];
-            using var puppet = (bool)c["bundle"]
+            var puppet = (bool)c["bundle"]
                 ? Puppet.FromBundle(File.ReadAllBytes(model))
                 : Puppet.FromJson(File.ReadAllText(model));
-            var modules = new List<Module>();
             try
             {
                 foreach (var path in c["modules"].AsArray())
@@ -75,6 +77,24 @@ namespace Ugoe.Conformance
                 {
                     if (!puppet.SetParameter(id, (float)value)) throw new ArgumentException($"unknown parameter {id}");
                 }
+                return puppet;
+            }
+            catch
+            {
+                puppet.Dispose();
+                throw;
+            }
+        }
+
+        private static JsonObject Run(JsonNode c)
+        {
+            var modules = new List<Module>();
+            Puppet conductor = null;
+            try
+            {
+                using var puppet = Load(c, modules);
+                var conduct = c["conduct"];
+                if (conduct != null) conductor = Conductor(c, conduct, modules);
                 var steps = c["steps"].AsArray();
                 if (steps.Count == 0)
                 {
@@ -90,7 +110,8 @@ namespace Ugoe.Conformance
                     for (var i = 0; i < steps.Count; i++)
                     {
                         var dt = (float)steps[i];
-                        if (follow == null) puppet.Update(dt);
+                        if (conductor != null) Lead(conductor, puppet, conduct, i, dt);
+                        else if (follow == null) puppet.Update(dt);
                         else Follow(puppet, c, follow, i, dt);
                     }
                 }
@@ -98,8 +119,36 @@ namespace Ugoe.Conformance
             }
             finally
             {
+                conductor?.Dispose();
                 foreach (var m in modules) m.Dispose();
             }
+        }
+
+        /// <summary>計画の <c>conduct</c> の指揮役を作る (T0454): 効果の設定を書き、物理の段を止め、目パチと呼吸は効果の設定があるときだけ動かし、モーションを再生する。</summary>
+        private static Puppet Conductor(JsonNode c, JsonNode conduct, List<Module> modules)
+        {
+            var conductor = Load(c, modules);
+            var effects = (string)conduct["effects"];
+            if (effects != null) conductor.SetEffectsJson(effects);
+            conductor.SetStageEnabled(UpdateStage.Physics, false);
+            conductor.SetStageEnabled(UpdateStage.EyeBlink, effects != null);
+            conductor.SetStageEnabled(UpdateStage.Breath, effects != null);
+            var motion = (string)conduct["motion"];
+            if (motion != null && !conductor.StartMotion(motion, MotionPriority.Normal))
+            {
+                conductor.Dispose();
+                throw new InvalidOperationException($"motion {motion} did not start");
+            }
+            return conductor;
+        }
+
+        /// <summary>指揮役を <paramref name="dt"/> 秒進め、指揮役の口で読んだ値で受け手を進める (T0454)。</summary>
+        private static void Lead(Puppet conductor, Puppet puppet, JsonNode conduct, int i, float dt)
+        {
+            if (conduct["lip_sync"] is JsonArray levels && i < levels.Count) conductor.SetLipSyncLevel((float)levels[i]);
+            conductor.Update(dt);
+            var lipSync = conductor.LipSyncApplied();
+            puppet.Follow(conductor.ValuesBeforePhysics(), lipSync?.Level, lipSync?.Strength ?? 0, conductor.PartOpacitiesApplied(), dt);
         }
 
         /// <summary>計画の <c>follow</c>・<c>follow_lip_sync</c>・<c>follow_part_opacities</c> の <paramref name="i"/> 番目で受け手として進める。</summary>

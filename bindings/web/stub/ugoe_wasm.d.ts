@@ -60,6 +60,7 @@ export class WebPuppet {
   is_motion_over_tracking(): boolean;
   is_motion_playing(): boolean;
   is_tracking(): boolean;
+  lip_sync_applied(): Float32Array | undefined;
   load_bundle(bytes: Uint8Array, limits_json?: string | null): string[];
   load_json(json: string): string[];
   load_module(bytes: Uint8Array, limits_json?: string | null): string;
@@ -76,6 +77,8 @@ export class WebPuppet {
   parameter_values(): Float32Array;
   parameters_json(): string;
   part_evaluated_opacity(part: string): number | undefined;
+  part_opacities_applied_parts(): Uint32Array;
+  part_opacities_applied_values(): Float32Array;
   physics_json(): string | undefined;
   physics_particles(rig: number): Float32Array;
   pose_json(): string | undefined;
@@ -129,6 +132,7 @@ export class WebPuppet {
   unload_module(name: string): void;
   update(dt: number): void;
   uses_lighting(): boolean;
+  values_before_physics(): Float32Array;
   view_transform(): Float32Array;
   warp_points(id: string): Float32Array | undefined;
   width(): number;

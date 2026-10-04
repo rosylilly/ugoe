@@ -3,6 +3,9 @@
 //!
 //! 値は `Float32Array` (パラメータの定義順。`parameter_ids()` と同じ並び) でまとめて渡す。
 //! モーションのパーツの不透明度のカーブ (T0135) は、パーツの番号の `Uint32Array` と、値と重みを交互に並べた `Float32Array` で渡す。
+//!
+//! 指揮役の側の口 (`values_before_physics`・`lip_sync_applied`・`part_opacities_applied_*`。T0454) は、直前の `update` (か `follow`)
+//! が受け手へ配る値を、`follow` の引数と同じ形で返す。
 
 use ugoe::{LipSyncInput, PartOpacityInput};
 use wasm_bindgen::prelude::*;
@@ -85,5 +88,47 @@ impl WebPuppet {
             .map_err(js_error)?;
         self.dirty = false;
         Ok(())
+    }
+
+    /// 指揮役の口: 直前の `update` (か `follow`) で、物理の段に入る直前のパラメータの値 (`parameter_ids()` の順。
+    /// `Puppet::values_before_physics`)。受け手の `follow` の `values` にそのまま渡す。物理の段を止めていても同じ位置の値。
+    /// `update` の前は読み込んだときの値。モデルが無ければ空。
+    pub fn values_before_physics(&self) -> Vec<f32> {
+        self.puppet
+            .as_ref()
+            .map(|p| p.values_before_physics().to_vec())
+            .unwrap_or_default()
+    }
+
+    /// 指揮役の口: 直前の `update` (か `follow`) でリップシンクの段が当てた `[音量, 強さ]` (`Puppet::lip_sync_applied`)。
+    /// 段を止めていたか音量が無ければ (当てていなければ) `undefined`。受け手の `follow` の `lip_sync_level` と `lip_sync_strength` に
+    /// `applied?.[0]`・`applied?.[1]` を渡す。モデルが無ければ `undefined`。
+    pub fn lip_sync_applied(&self) -> Option<Vec<f32>> {
+        let applied = self.puppet.as_ref()?.lip_sync_applied()?;
+        Some(vec![applied.level, applied.strength])
+    }
+
+    /// 指揮役の口: 直前の `update` (か `follow`) で、モーションのパーツの不透明度のカーブが値を求めたパーツの番号
+    /// (モデルの `parts` の順。カーブのあるパーツだけ。`Puppet::part_opacities_applied`)。受け手の `follow` の `part_opacity_parts`。
+    /// 値と重みは同じ順で `part_opacities_applied_values()`。モデルが無ければ空。
+    pub fn part_opacities_applied_parts(&self) -> Vec<u32> {
+        self.puppet
+            .as_ref()
+            .map(|p| p.part_opacities_applied().iter().map(|o| o.part).collect())
+            .unwrap_or_default()
+    }
+
+    /// 指揮役の口: `part_opacities_applied_parts()` の各パーツのカーブの値と重みを交互に並べたもの (番号の 2 倍の数)。
+    /// 受け手の `follow` の `part_opacity_values`。モデルが無ければ空。
+    pub fn part_opacities_applied_values(&self) -> Vec<f32> {
+        self.puppet
+            .as_ref()
+            .map(|p| {
+                p.part_opacities_applied()
+                    .iter()
+                    .flat_map(|o| [o.value, o.weight])
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 }

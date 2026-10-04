@@ -55,7 +55,8 @@ cargo clippy --manifest-path bindings/godot/Cargo.toml --all-targets -- -D warni
   適合テストが `ugoe_model::fixtures` から作るモデル (入れ子・反転・共通部分のマスク、3 つの合成モード、乗算色とスクリーン色、
   裏面カリング、1 つの要素が 12 個のマスクを読む `masks-many`)、アニメーション中のマスク (`before` のあるケース: 値を変えた
   **直後のフレーム** を比べる。`masks-moving`・`avatar-moving`。入れ子のマスクが 1 フレーム遅れると合わない)、時間を進めた物理と目パチ・呼吸、
-  受け手として進めるケース (`*-follow`。`advance` の代わりに `follow` を呼ぶ。T0449)、
+  受け手として進めるケース (`*-follow`。`advance` の代わりに `follow` を呼ぶ。T0449)、実行器の中の指揮役のノードの値で受け手を
+  進めるケース (`*-conduct`。T0454)、
   バンドルの例、公開仕様の評価の例 (モデルの JSON。`load_model_from_json` で読み、テクスチャが無いので白で描く)、
   圧縮していない KTX2 のテクスチャ (`ktx2-*`。見本のテクスチャと法線マップを `R8G8B8A8_SRGB` に、ミップマップ付きで zstd の `R8G8B8A8_UNORM`。T0222)。
 - `--conformance` は続けて `example/tests/ktx2.gd` を実行する (`--only` のときは飛ばす)。見本のモデルのテクスチャを、Godot の
@@ -123,6 +124,7 @@ puppet.xr_face_tracker = &"/user/face_tracker"
 | `set_effects_json(json)` | 目パチ・呼吸・リップシンクの設定をモデルの `effects` と同じ形の JSON で差し替える (再生の状態は初めから、リップシンクの音量は保つ。[docs/spec/motion.md#エフェクト設定の差し替え](../../docs/spec/motion.md#エフェクト設定の差し替え))。読めなければ false |
 | `set_physics_json(json)` / `set_base_physics_json(json)` / `get_physics_json()` / `get_base_physics_json()` | 物理の設定を `.ugoe` の物理と同じ形の JSON で差し替える (空の文字列で外す) / 読む (無ければ空)。`base` は本体の設定で、着せ替えのモジュールを付けている間も保ち、付け外しのたびにこれと合成する ([docs/spec/modules.md#puppet-での着せ替え](../../docs/spec/modules.md#puppet-での着せ替え))。`set_physics_json` の設定は次の付け外しで失われる。モデルに合わなければ false (何も変えない) |
 | `get_parameter_values()` / `set_base_values(values)` / `follow(values, delta, lip_sync_level, lip_sync_strength, part_opacities)` | 受け手 ([docs/spec/motion.md#受け手として進める](../../docs/spec/motion.md#受け手として進める))。値は `get_parameter_ids()` の順の `PackedFloat32Array`。`follow` は指揮役の値を基準値にして、物理 → リップシンク (`lip_sync_level` が負なら当てない) → パーツの不透明度 (`part_opacities` は `{ "part": get_part_ids() の番号, "value", "weight" }` の配列) → 評価の順に進めて描く。受け手のノードは `playing` を false にして毎フレーム `follow` を呼ぶ (ノードは読み込みの直後に 1 度評価して物理の粒子を置くので、指揮役と同じ形から始めるなら最初の `follow` の前に `reset_physics()` を呼ぶ。適合テストの `*-follow` のケースで C ABI と同じ値になることを確かめている)。失敗したら false (何も変えない) |
+| `get_values_before_physics()` / `get_lip_sync_applied()` / `get_part_opacities_applied()` | 指揮役 (T0454)。直前の `advance` (か `follow`) が受け手へ配る値を、`follow` の引数と同じ形で返す: 物理の段に入る直前の値 (`PackedFloat32Array`。`get_parameter_values()` は物理の後の値なので、物理を持つモデルではこちらを配る)、当てたリップシンクの `Vector2(音量, 強さ)` (当てていなければ `Vector2(-1, 1)`)、モーションのパーツの不透明度のカーブ (`{ "part", "value", "weight" }` の配列)。`ugoe::Puppet::values_before_physics`・`lip_sync_applied`・`part_opacities_applied`、C ABI の `ugoe_puppet_values_before_physics` などと同じ値。適合テストの `*-conduct` のケースで、実行器の中の指揮役のノードの値で別のノードを `follow` させて確かめている。`var ls := conductor.get_lip_sync_applied(); follower.follow(conductor.get_values_before_physics(), delta, ls.x, ls.y, conductor.get_part_opacities_applied())` |
 | `get_part_ids()` / `get_part_opacity(id)` / `get_part_evaluated_opacity(id)` / `show_pose(part)` | パーツの ID (モデルの順) / 直前の評価でパーツに書いた不透明度の上書き (`{ "value", "weight" }`。モーションのカーブとポーズの結果) / 祖先を掛けた評価後の不透明度 / ポーズで `part` を持つ要素を表示する (フェードで切り替わる。ポーズの要素のパーツでなければ false) |
 | `set_stage_enabled(stage, enabled)` / `is_stage_enabled(stage)` | `update` の段 (`"physics"`・`"eye_blink"`・`"breath"`・`"lip_sync"`・`"pose"`) を動かすか (既定はすべて動かす)。モデルを読み直しても保つので、読み込む前に設定すれば読み込みの直後の評価から効く。未知の名前は false |
 | `attach_module(module)` / `detach_module(name)` / `clear_modules()` / `get_module_names()` | 着せ替え。付けられなければエラーを出して false (何も変えない)。`get_module_names` は、モデルを読み込んでいれば実際に付いているものだけを返す (読み込むときに付けられなかったモジュールは `modules` に残るが、ここには出ない) |
@@ -266,9 +268,6 @@ Godot の `XRFaceTracker` は Unified Expressions (`BlendShapeEntry` の 143 個
 - 画面のある Godot のエディタでの操作、Forward+ / Mobile のレンダラ (Vulkan) での見た目、Windows・macOS でのビルドは確かめていない
   (比べ合わせは Compatibility (OpenGL) の Xvfb だけ)。
 - `Light2D` から取る光源は、テクスチャの形・影・合成のモードを使わない (上の「Light2D から取る光源」)。
-- 指揮役の側の値 (`ugoe::Puppet::values_before_physics`・`lip_sync_applied`・`part_opacities_applied`) は出していない
-  (C ABI・wasm にも無い)。Godot のノードを指揮役にして別のノードを `follow` で動かすには、これらを足す必要がある
-  (`get_parameter_values()` は物理の後の値なので、それを渡しても物理を持つモデルでは指揮役と同じ形にならない)。
 - 着せ替えのモジュールの読み込みの警告は、取り付けている間だけ読める (`get_module_load_warnings(name)`。`UgoeModule` は
   GDScript のリソースで中身を読まないため、付ける前のモジュールからは読めない)。
 - 当たり判定・パラメータなどの Godot の API の自動テストは、ヘッドレスの Godot で動く `example/tests/smoke.gd` だけ。

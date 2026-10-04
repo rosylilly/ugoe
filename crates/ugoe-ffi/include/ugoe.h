@@ -777,6 +777,53 @@ UgoeResult ugoe_puppet_follow(struct UgoePuppet *puppet,
                               size_t part_opacity_count,
                               float dt);
 
+// 指揮役の口: 直前の `ugoe_puppet_update` (か `ugoe_puppet_follow`) で、物理の段に入る直前のパラメータの値 (パラメータの番号の順。
+// `ugoe::Puppet::values_before_physics`) を `out` (`capacity` 個) に写し、数 (パラメータの数) を `*out_count` に書く。
+// 受け手の `ugoe_puppet_follow` の `values` にそのまま渡す。
+//
+// 物理の段を止めていても同じ位置の値。`ugoe_puppet_update` の前は作ったときの値。`ugoe_puppet_follow` の後は渡した値
+// (値域にクランプしたもの。受け手がさらに別の受け手へ中継できる。後の 2 つの口も同じ)。
+// `capacity` が足りなければ `UGOE_ERROR_BUFFER_TOO_SMALL` を返し、`*out_count` だけを書く。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`out` は NULL か `capacity` 個の `float` を書き込める領域、
+// `out_count` は書き込める領域を指すこと。
+UgoeResult ugoe_puppet_values_before_physics(const struct UgoePuppet *puppet,
+                                             float *out,
+                                             size_t capacity,
+                                             size_t *out_count);
+
+// 指揮役の口: 直前の `ugoe_puppet_update` (か `ugoe_puppet_follow`) でリップシンクの段が当てた音量を `*out_level`、強さ (エフェクトグループ `LipSync`
+// の強さ) を `*out_strength` に書く (`ugoe::Puppet::lip_sync_applied`)。受け手の `ugoe_puppet_follow` の `lip_sync_level` と
+// `lip_sync_strength` にそのまま渡す。
+//
+// 段を止めていたか音量が無ければ (当てていなければ) `*out_level` は -1、`*out_strength` は 1 (`ugoe_puppet_follow` は
+// 負の音量を「当てない」とみなす)。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`out_level` と `out_strength` は書き込める領域を指すこと。
+UgoeResult ugoe_puppet_lip_sync_applied(const struct UgoePuppet *puppet,
+                                        float *out_level,
+                                        float *out_strength);
+
+// 指揮役の口: 直前の `ugoe_puppet_update` (か `ugoe_puppet_follow`) で、モーションのパーツの不透明度のカーブが値を求めたパーツ (カーブのあるパーツだけ。
+// `ugoe::Puppet::part_opacities_applied`) を `out` (`capacity` 個) に写し、数を `*out_count` に書く。受け手の
+// `ugoe_puppet_follow` の `part_opacities` と `part_opacity_count` にそのまま渡す。
+//
+// 段の有効無効やポーズとは関係なく、カーブの値と重み。着せ替えの操作の後は、次の `ugoe_puppet_update` まで 0 個。
+// `capacity` が足りなければ `UGOE_ERROR_BUFFER_TOO_SMALL` を返し、`*out_count` だけを書く。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`out` は NULL か `capacity` 個の `UgoePartOpacityInput` を書き込める領域、
+// `out_count` は書き込める領域を指すこと。
+UgoeResult ugoe_puppet_part_opacities_applied(const struct UgoePuppet *puppet,
+                                              struct UgoePartOpacityInput *out,
+                                              size_t capacity,
+                                              size_t *out_count);
+
 // 当たり判定 (`Model::hit_areas`) の数。
 //
 // # Safety

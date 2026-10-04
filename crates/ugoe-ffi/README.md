@@ -265,6 +265,13 @@ UgoePartOpacityInput parts[2];                      /* モーションのパー�
    パーツの不透明度 (parts とポーズ) → 評価の順に dt 秒進める。カーブが無ければ NULL, 0 */
 ugoe_puppet_follow(puppet, values, PARAM_COUNT, level, strength, parts, 2, dt);
 ugoe_puppet_set_base_values(puppet, values, PARAM_COUNT); /* 基準値として書くだけ (評価しない) */
+
+/* 指揮役の側 (T0454): 直前の ugoe_puppet_update の、受け手へ配る値を読む */
+size_t n = 0;
+ugoe_puppet_values_before_physics(conductor, values, PARAM_COUNT, &n);   /* 物理の段に入る直前の値 */
+ugoe_puppet_lip_sync_applied(conductor, &level, &strength);              /* 当てていなければ level = -1 */
+ugoe_puppet_part_opacities_applied(conductor, parts, 2, &n);             /* 足りなければ UGOE_ERROR_BUFFER_TOO_SMALL と数 */
+ugoe_puppet_follow(follower, values, PARAM_COUNT, level, strength, parts, n, dt);
 ```
 
 - `ugoe::Puppet::follow`・`set_base_values` と同じ (`docs/spec/motion.md#受け手として進める`)。スタジオの仮想カメラのような受け手が、指揮役から
@@ -277,6 +284,15 @@ ugoe_puppet_set_base_values(puppet, values, PARAM_COUNT); /* 基準値として�
 - 数がパラメータの数と違う・NaN を含む (音量と強さ、パーツの不透明度の値と重みも)・(当てるときの) 強さかパーツの不透明度の値と重みが無限大・
   `dt` が負か有限でないときは `UGOE_ERROR_INVALID_ARGUMENT` を返し、何も変えない (無限大は 0 × ∞ で NaN をパラメータに書きうるため)。
   `ugoe_puppet_follow` の後も、モーションのイベントは直前の `ugoe_puppet_update` のまま。wasm は `follow`・`set_base_values` (`Float32Array`)。
+- 指揮役の側の口 `ugoe_puppet_values_before_physics`・`ugoe_puppet_lip_sync_applied`・`ugoe_puppet_part_opacities_applied` は
+  `ugoe::Puppet::values_before_physics`・`lip_sync_applied`・`part_opacities_applied` と同じ値を、そのまま `ugoe_puppet_follow` に渡せる形で返す
+  (T0454)。並びはホストのバッファ (`out`・`capacity`) に写し、数を `*out_count` に書く (`ugoe_puppet_tracking_targets` と同じ。
+  足りなければ `UGOE_ERROR_BUFFER_TOO_SMALL` で数だけを書く)。借りたポインタではなく写すのは、指揮役は毎フレーム値を送り出すので
+  コピーは避けられず、`update` で無効になるポインタの寿命の約束を増やさないため。リップシンクを当てていなければ音量は -1 (強さは 1)。
+  直前が `ugoe_puppet_follow` なら、受け手に渡した値 (値域にクランプしたもの) を返すので、受け手からさらに中継できる。
+  wasm は `values_before_physics()`・`lip_sync_applied()`・`part_opacities_applied_parts()` / `part_opacities_applied_values()`、
+  Godot は `get_values_before_physics()`・`get_lip_sync_applied()`・`get_part_opacities_applied()`、
+  Unity は `Puppet.ValuesBeforePhysics()`・`Puppet.LipSyncApplied()`・`Puppet.PartOpacitiesApplied()`。
 
 ## 範囲外 (後続)
 
@@ -292,3 +308,4 @@ ugoe_puppet_set_base_values(puppet, values, PARAM_COUNT); /* 基準値として�
 - T0722 (トラッキング中のモーションの優先)
 - T0133 (受け手として進める: 基準値として書く口)
 - T0134 (受け手でもリップシンクを物理の後に当てる)
+- T0454 (指揮役の側の値を読む口)

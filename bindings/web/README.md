@@ -403,6 +403,10 @@ puppet.render(); // 描くのは最後だけでよい
 - 値をまとめて読む・書くには `parameter_values()` / `set_base_values(values)` (どちらも `Float32Array`) を使います。
   `set_parameter` と違い、`set_base_values` は前のフレームの出力と同じ値でも基準値にします。
 - 数が `parameter_ids()` と違う・NaN を含むときは、何も変えずに例外を投げます。
+- 指揮役になる側のパペットは、`update` の後に `values_before_physics()` (`Float32Array`)・`lip_sync_applied()`
+  (`[音量, 強さ]` の `Float32Array`。当てていなければ `undefined`)・`part_opacities_applied_parts()` (`Uint32Array`)・
+  `part_opacities_applied_values()` (`Float32Array`) で、上の `values`・`lipSync`・`parts`・`opacities` を読めます (T0454)。
+  `parameter_values()` は物理の後の値なので、物理を持つモデルでは `follow` に渡しても指揮役と同じ形になりません。
 
 ### wasm の場所
 

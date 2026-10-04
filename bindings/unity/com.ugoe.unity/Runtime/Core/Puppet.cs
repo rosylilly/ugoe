@@ -204,6 +204,55 @@ namespace Ugoe
                 lipSyncLevel.HasValue ? lipSyncStrength : 0f, parts, (UIntPtr)count, dt));
         }
 
+        // --- 指揮役 (T0454) ---
+
+        /// <summary>
+        /// 直前の <see cref="Update"/> (か <see cref="Follow"/>) で、物理の段に入る直前のパラメータの値 (<see cref="Parameters"/> の順。
+        /// <c>ugoe::Puppet::values_before_physics</c>)。指揮役が受け手へ配り、受け手は <see cref="Follow"/> の values にそのまま渡す。
+        /// 物理の段を止めていても同じ位置の値。<see cref="Update"/> の前は作ったときの値。
+        /// </summary>
+        public float[] ValuesBeforePhysics()
+        {
+            var buffer = new float[Parameters.Count];
+            var r = Native.ugoe_puppet_values_before_physics(handle, buffer, (UIntPtr)buffer.Length, out var count);
+            if (r != (int)UgoeResult.BufferTooSmall)
+            {
+                UgoeException.Check(r);
+                return buffer;
+            }
+            buffer = new float[(int)count];
+            UgoeException.Check(Native.ugoe_puppet_values_before_physics(handle, buffer, (UIntPtr)buffer.Length, out _));
+            return buffer;
+        }
+
+        /// <summary>
+        /// 直前の <see cref="Update"/> (か <see cref="Follow"/>) でリップシンクの段が当てた音量と強さ (<c>ugoe::Puppet::lip_sync_applied</c>)。
+        /// 段を止めていたか音量が無ければ null。受け手は <see cref="Follow"/> に <c>applied?.Level</c> と <c>applied?.Strength ?? 0</c> を渡す。
+        /// </summary>
+        public LipSyncInput? LipSyncApplied()
+        {
+            UgoeException.Check(Native.ugoe_puppet_lip_sync_applied(handle, out var level, out var strength));
+            return level < 0 ? (LipSyncInput?)null : new LipSyncInput(level, strength);
+        }
+
+        /// <summary>
+        /// 直前の <see cref="Update"/> (か <see cref="Follow"/>) で、モーションのパーツの不透明度のカーブが値を求めたパーツ
+        /// (カーブのあるパーツだけ。<c>ugoe::Puppet::part_opacities_applied</c>)。受け手は <see cref="Follow"/> の partOpacities にそのまま渡す。
+        /// </summary>
+        public PartOpacityInput[] PartOpacitiesApplied()
+        {
+            var r = Native.ugoe_puppet_part_opacities_applied(handle, null, UIntPtr.Zero, out var count);
+            if (r != (int)UgoeResult.BufferTooSmall) UgoeException.Check(r);
+            var buffer = new Native.PartOpacityInput[(int)count];
+            if (buffer.Length > 0)
+            {
+                UgoeException.Check(Native.ugoe_puppet_part_opacities_applied(handle, buffer, (UIntPtr)buffer.Length, out count));
+            }
+            var result = new PartOpacityInput[(int)count];
+            for (var i = 0; i < result.Length; i++) result[i] = new PartOpacityInput((int)buffer[i].Part, buffer[i].Value, buffer[i].Weight);
+            return result;
+        }
+
         // --- 描画可能要素 ---
 
         /// <summary>描画可能要素の評価で変わらない情報 (番号順)。着せ替えの後に取り直される。</summary>

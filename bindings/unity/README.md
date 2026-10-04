@@ -167,8 +167,18 @@ NaN・無限大・負の `dt` は C ABI と同じく `UgoeResult.InvalidArgument
 
 指揮役 (スタジオなど、別の場所で評価するもの) の値で動かす受け手 ([docs/spec/motion.md#受け手として進める](../../docs/spec/motion.md#受け手として進める)) は、`playing` を false にして
 毎フレーム `UgoePuppet.Follow(values, lipSyncLevel, lipSyncStrength, partOpacities, dt)` を呼ぶ。値は指揮役の
-`ugoe::Puppet::values_before_physics`・`lip_sync_applied`・`part_opacities_applied` (C ABI・wasm には指揮役の側の取り出しが無いので、
-指揮役から受け取る)。物理・リップシンク・パーツの不透明度・評価だけをこの Puppet で行う。
+`ugoe::Puppet::values_before_physics`・`lip_sync_applied`・`part_opacities_applied`。物理・リップシンク・パーツの不透明度・評価だけを
+この Puppet で行う。
+
+指揮役の側は、`Update` の後に `Puppet.ValuesBeforePhysics()`・`Puppet.LipSyncApplied()` (当てていなければ null)・
+`Puppet.PartOpacitiesApplied()` で値を読んで受け手へ配る (C ABI の `ugoe_puppet_values_before_physics`・`ugoe_puppet_lip_sync_applied`・
+`ugoe_puppet_part_opacities_applied`。T0454):
+
+```csharp
+conductor.Update(dt);
+var lipSync = conductor.LipSyncApplied();
+follower.Follow(conductor.ValuesBeforePhysics(), lipSync?.Level, lipSync?.Strength ?? 0, conductor.PartOpacitiesApplied(), dt);
+```
 
 - `UgoePuppet` はモデルを読んだ直後の LateUpdate で 1 度評価し、物理の粒子を置く。指揮役と同じ物理の状態から始めるには、
   受け手として最初に `Follow` を呼ぶ前に `puppet.Puppet.ResetPhysics()` を呼ぶ (Godot の受け手と同じ。適合テストの実行器は
@@ -176,6 +186,7 @@ NaN・無限大・負の `dt` は C ABI と同じく `UgoeResult.InvalidArgument
 - 失敗は C ABI と同じ (`UgoeResult.InvalidArgument`、何も変えない): 値の数がパラメータの数と違う・値に NaN・音量が NaN・
   強さ・パーツの不透明度の値と重みが有限でない・`dt` が負か有限でない。`tests/ReceiverTests.cs` で確かめ、適合テスト
   (`just conformance --only unity`) の `*-follow` のケースで参照・C ABI と同じ評価の結果になることを確かめている (T0455)。
+  指揮役の側の口は `tests/ReceiverTests.cs` と、適合テストの `*-conduct` のケース (実行器の中の指揮役の値で受け手を進める) で確かめる (T0454)。
 
 ### C ABI との対応
 
@@ -284,4 +295,4 @@ node bindings/unity/release.mjs pack dist          # dist/com.ugoe.unity-<版>.t
 
 ## 関連タスク
 
-- T0405 (`docs/tasks/T0405-unity-package.md`)、T0455 (受け手の適合テスト・`LimitExceeded`)、T0419 (C# の API の追加・描画のまとめ・リリース・色空間)、T0420 (Linear の中間のテクスチャ・マスクのページ・アトラスにした見本)、C ABI は T0401・T0409・T0412・T0414
+- T0405 (`docs/tasks/T0405-unity-package.md`)、T0455 (受け手の適合テスト・`LimitExceeded`)、T0419 (C# の API の追加・描画のまとめ・リリース・色空間)、T0420 (Linear の中間のテクスチャ・マスクのページ・アトラスにした見本)、C ABI は T0401・T0409・T0412・T0414、指揮役の側の値は T0454

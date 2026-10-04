@@ -1,6 +1,6 @@
 //! `UgoePuppet2D` の、SDK (`ugoe::Puppet`) と C ABI にある機能のうち、ノードの基本の操作から分けたもの (T0449)。
 //!
-//! 読み込みの警告 (着せ替えのモジュールの分は T0456)・受け手 (`follow`)・標準の当たり判定・表情を止める・パーツの不透明度とポーズ・効果と物理の設定の差し替え・
+//! 読み込みの警告 (着せ替えのモジュールの分は T0456)・受け手 (`follow`)・指揮役の値 (T0454)・標準の当たり判定・表情を止める・パーツの不透明度とポーズ・効果と物理の設定の差し替え・
 //! スロットとトラッキングの対象の一覧。有限でない値の扱いは C ABI (`crates/ugoe-ffi`) と同じ。
 
 use godot::prelude::*;
@@ -121,6 +121,58 @@ impl UgoePuppet2D {
         }
         self.draw();
         true
+    }
+
+    // --- 指揮役 (T0454。docs/spec/motion.md#受け手として進める)
+
+    /// 指揮役の口: 直前の `advance` (か `follow`) で、物理の段に入る直前のパラメータの値 (`get_parameter_ids()` の順。
+    /// `ugoe::Puppet::values_before_physics`。C ABI の `ugoe_puppet_values_before_physics`)。受け手の `follow` の `values` に
+    /// そのまま渡す (`get_parameter_values()` は物理の後の値なので、物理を持つモデルでは指揮役と同じ形にならない)。
+    /// 物理の段を止めていても同じ位置の値。モデルが無ければ空。
+    #[func]
+    pub fn get_values_before_physics(&self) -> PackedFloat32Array {
+        self.loaded
+            .as_ref()
+            .map(|l| PackedFloat32Array::from(l.puppet.values_before_physics()))
+            .unwrap_or_default()
+    }
+
+    /// 指揮役の口: 直前の `advance` (か `follow`) でリップシンクの段が当てた音量 (`x`) と強さ (`y`)
+    /// (`ugoe::Puppet::lip_sync_applied`。C ABI の `ugoe_puppet_lip_sync_applied`)。受け手の `follow` の `lip_sync_level` と
+    /// `lip_sync_strength` にそのまま渡す。当てていなければ (段を止めていたか音量が無いか、モデルが無ければ) `Vector2(-1, 1)`
+    /// (`follow` は負の音量を「当てない」とみなす)。
+    #[func]
+    pub fn get_lip_sync_applied(&self) -> Vector2 {
+        self.loaded
+            .as_ref()
+            .and_then(|l| l.puppet.lip_sync_applied())
+            .map_or(Vector2::new(-1.0, 1.0), |l| {
+                Vector2::new(l.level, l.strength)
+            })
+    }
+
+    /// 指揮役の口: 直前の `advance` (か `follow`) で、モーションのパーツの不透明度のカーブが値を求めたパーツ (カーブのあるパーツだけ。
+    /// `ugoe::Puppet::part_opacities_applied`。C ABI の `ugoe_puppet_part_opacities_applied`)。要素は `follow` の
+    /// `part_opacities` と同じ `{ "part": パーツの番号 (get_part_ids() の順), "value", "weight" }` で、そのまま渡す。
+    /// 型の無い配列で返す (`follow` の `part_opacities` は型の無い `Array` なので、`Array[Dictionary]` は渡せない)。
+    /// モデルが無ければ空。
+    #[func]
+    pub fn get_part_opacities_applied(&self) -> VarArray {
+        let Some(loaded) = &self.loaded else {
+            return VarArray::new();
+        };
+        loaded
+            .puppet
+            .part_opacities_applied()
+            .iter()
+            .map(|p| {
+                let mut d = VarDictionary::new();
+                d.set("part", i64::from(p.part));
+                d.set("value", p.value);
+                d.set("weight", p.weight);
+                d.to_variant()
+            })
+            .collect()
     }
 
     // --- 標準の当たり判定 (docs/spec/avatar-profile.md#アプリ向けの情報)

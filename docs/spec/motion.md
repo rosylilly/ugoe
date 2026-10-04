@@ -272,6 +272,13 @@ C ABI の `ugoe_puppet_update`・`ugoe_puppet_follow` は、そうした `dt` �
 - C ABI は `ugoe_puppet_set_base_values`・`ugoe_puppet_follow` (音量が負ならリップシンクなし。カーブは `UgoePartOpacityInput` の並び)、
   `WebPuppet` は `set_base_values`・`follow(values, dt, level?, strength?, parts?, opacities?)` (`Float32Array`。カーブはパーツの番号の
   `Uint32Array` と、値と重みを交互に並べた `Float32Array`)。
+- 指揮役の側の 3 つの値は、C ABI では `ugoe_puppet_values_before_physics`・`ugoe_puppet_lip_sync_applied` (当てなければ音量 -1)・
+  `ugoe_puppet_part_opacities_applied` (ホストのバッファに写す)、`WebPuppet` では `values_before_physics()`・`lip_sync_applied()`
+  (`[音量, 強さ]` か `undefined`)・`part_opacities_applied_parts()` / `part_opacities_applied_values()`、Godot では
+  `get_values_before_physics()`・`get_lip_sync_applied()` (`Vector2`。当てなければ `(-1, 1)`)・`get_part_opacities_applied()`、
+  Unity では `Puppet.ValuesBeforePhysics()`・`LipSyncApplied()`・`PartOpacitiesApplied()` で読む (T0454)。どれもそのバインディングの
+  受け手の口にそのまま渡せる形。`follow` の後に読むと、受け手に渡した値 (値域にクランプしたもの) を返す (受け手からさらに中継できる)。
+  適合テストの `*-conduct` のケースは、実行器の中の指揮役からこれらで読んだ値で受け手を進めて、参照と比べる。
 - 決めたこと (T0133・T0134・T0135): 公開仕様 (`spec/motion.md`) は変えない。フレームの適用順はそのままで、ランタイムの API の口を足しただけのため
   (段を止めるのは公開仕様の「段の有効無効」の範囲、値の書き込みは「ホストが書き換えた値は基準値になる」の範囲)。
 
