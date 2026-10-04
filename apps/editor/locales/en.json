@@ -1924,6 +1924,7 @@
       "unsupported_base_texture": "The base texture {{name}} is not a PNG.",
       "unsupported_texture": "The texture {{name}} is not a PNG.",
       "export_failed": "Could not export the bundle.",
+      "module_file_unreadable": "Could not read the module file to compare.",
       "missing_module_link": "This module project does not say which base and slot it uses (module in project.json).",
       "not_a_module": "This project is not a module project.",
       "invalid_module_one": "The module did not pass validation ({{count}} problem: {{details}}).",
@@ -1936,6 +1937,7 @@
       "collider_needs_base_physics": "The rig {{rig}} collides with {{collider}}, which the slot {{slot}} exposes, but the base model has no physics. Add physics with the collider {{collider}} to the base project, or remove the collider from the rig.",
       "read_only_base": "The base model's {{element}} cannot be edited here. Edit it in the base project.",
       "shape": "The result cannot be kept as a module ({{reason}}).",
+      "not_module": "This is not a module project.",
       "draw_order_outside_slot": "The draw order of the mesh {{mesh}} is outside the slot range, so it is drawn outside the slot."
     },
     "format": {

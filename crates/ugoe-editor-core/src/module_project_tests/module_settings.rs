@@ -50,7 +50,10 @@ fn module_settings_move_to_another_slot() {
             ModuleRequirements::default(),
         ))
         .unwrap_err();
-    assert!(matches!(error, EditError::ModuleShape { .. }), "{error}");
+    assert!(
+        matches!(error, EditError::Module(ModuleError::Compose(_))),
+        "{error}"
+    );
     assert_eq!(document.module().unwrap().slot().id.as_str(), "Hair");
     assert!(!document.is_modified());
 
@@ -355,4 +358,66 @@ fn module_settings_keep_physics_in_place_when_the_anchor_changes() {
         split(&document).physics.colliders[0].shape,
         module.physics.colliders[0].shape
     );
+}
+
+/// `ModuleError` は `Document::apply` のエラーでも種類ごとのコードと引数を保つ (英語の文に畳まない。T0678)。
+#[test]
+fn module_errors_keep_their_codes_through_apply() {
+    use crate::Coded;
+
+    let mut document = document(&long_hair_module());
+    let error = document
+        .apply(settings(
+            "LongHair",
+            "Nowhere",
+            ModuleRequirements::default(),
+        ))
+        .unwrap_err();
+    assert_eq!(
+        error,
+        EditError::Module(ModuleError::UnknownSlot("Nowhere".into()))
+    );
+    let message = error.to_message();
+    assert_eq!(message.code, "module.unknown_slot");
+    assert_eq!(message.args, crate::message_args! { "slot" => "Nowhere" });
+
+    // `Outfit` は `Face` をマスクに公開しないので合成できない。
+    let error = document
+        .apply(settings(
+            "LongHair",
+            "Outfit",
+            ModuleRequirements::default(),
+        ))
+        .unwrap_err();
+    assert!(
+        matches!(error, EditError::Module(ModuleError::Compose(_))),
+        "{error:?}"
+    );
+    assert_eq!(error.to_message().code, "module.compose_failed");
+
+    // 読み取り専用の本体・モジュールとして表せないものは、編集のコードのまま。
+    assert_eq!(
+        EditError::from(ModuleError::ReadOnlyBase {
+            element: "x".into()
+        })
+        .code(),
+        "edit.read_only_base"
+    );
+    assert_eq!(
+        EditError::from(ModuleError::Shape { reason: "x".into() }).code(),
+        "edit.module_shape"
+    );
+}
+
+/// モジュールのプロジェクトでないときの `rebase_module_on` のエラーは、ほかの「モジュールでない」と同じ種類になる。
+#[test]
+fn rebasing_a_model_project_is_not_a_module_error() {
+    let mut document = Document::new(dress_up_base());
+    let error = document.rebase_module(base()).unwrap_err();
+    assert_eq!(error, ModuleError::NotModule);
+    assert_eq!(EditError::from(error.clone()), EditError::NotModule);
+    assert!(matches!(
+        ProjectError::from(error),
+        ProjectError::NotAModule
+    ));
 }

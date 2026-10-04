@@ -418,9 +418,7 @@ impl Document {
         slot: Option<&SlotId>,
     ) -> Result<(), ModuleError> {
         let Some(context) = self.current.module.as_ref() else {
-            return Err(ModuleError::Shape {
-                reason: "this is not a module project".into(),
-            });
+            return Err(ModuleError::NotModule);
         };
         let (module, images) = context.split(
             &self.current.model,

@@ -140,10 +140,15 @@ fn differences_list_elements_textures_and_requirements() {
 
 #[test]
 fn broken_files_are_errors() {
-    assert!(matches!(
-        compare_with_module_file(&project(), b"not a module"),
-        Err(ProjectError::Export(_))
-    ));
+    // 読めないのは読み込みの失敗で、書き出しの失敗 (`project.export_failed`) と区別する (T0678)。
+    let error = compare_with_module_file(&project(), b"not a module").unwrap_err();
+    assert!(
+        matches!(error, ProjectError::UnreadableModuleFile(_)),
+        "{error:?}"
+    );
+    let message = crate::Coded::to_message(&error);
+    assert_eq!(message.code, "project.module_file_unreadable");
+    assert!(message.cause.is_some());
 }
 
 /// アトラス化すると、テクスチャが `atlas-0` にまとまり、比べるとその旨が出る。しなければ `export_module` と同じ。

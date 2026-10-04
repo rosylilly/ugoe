@@ -83,12 +83,12 @@ pub enum DifferenceKind {
 }
 
 /// モジュールのプロジェクトの今の編集と、書き出した `.ugoemod` のバイト列 `bytes` の違い。同じなら空。
-/// 今の編集が書き出しの検査に通らなければ、そのエラー。`bytes` が読めなければ [`ProjectError::Export`]。
+/// 今の編集が書き出しの検査に通らなければ、そのエラー。`bytes` が読めなければ [`ProjectError::UnreadableModuleFile`]。
 pub fn compare_with_module_file(
     project: &Project,
     bytes: &[u8],
 ) -> Result<Vec<ModuleDifference>, ProjectError> {
-    let file = ugoe_format::read_module(bytes).map_err(ProjectError::Export)?;
+    let file = ugoe_format::read_module(bytes).map_err(ProjectError::UnreadableModuleFile)?;
     let (module, images, _) = checked_module(project, None)?;
     let context = project.module.as_ref().ok_or(ProjectError::NotAModule)?;
     let mut differences = module_differences(&file, &module, &images, &|order| {

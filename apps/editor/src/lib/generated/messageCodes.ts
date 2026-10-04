@@ -508,6 +508,7 @@ export const messageCodes: Record<string, readonly string[]> = {
   "module.invalid_name": [
     "name"
   ],
+  "module.not_module": [],
   "module.read_only_base": [
     "element"
   ],
@@ -562,6 +563,7 @@ export const messageCodes: Record<string, readonly string[]> = {
   "project.missing_texture": [
     "name"
   ],
+  "project.module_file_unreadable": [],
   "project.not_a_module": [],
   "project.not_a_project": [
     "path"

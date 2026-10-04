@@ -1939,6 +1939,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `edit.invalid_slot` / `edit.invalid_glue` | `id`・`reason` |
 | `edit.read_only_base` | `element` |
 | `edit.not_module` | なし |
+| `module.*` (モジュールのプロジェクトで作業用のモデルを作り直せない。`EditError::Module`) | 中の `ModuleError` のコードと引数 (下の「プロジェクト・モジュール」の表。本体の要素の編集は `edit.read_only_base`、モジュールとして表せないものは `edit.module_shape`、モジュールでないものは `edit.not_module`) |
 | `edit.texture_too_large` (メッシュの作り直しで、テクスチャの画像の一辺がデコードの上限を超える) | `texture`・`width`・`height`・`max` (画素) |
 
 **キーフォームのセル (`CellError`)**
@@ -1963,6 +1964,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `project.invalid_name` / `project.duplicate_name` | `kind` (`texture`・`motion`・`expression`)・`name` |
 | `project.missing_texture` / `project.unsupported_base_texture` / `project.unsupported_texture` | `name` |
 | `project.export_failed` | なし (原因は `format.*`) |
+| `project.module_file_unreadable` (比べる `.ugoemod` を読めない。書き出しの失敗と区別する) | なし (原因は `format.*`) |
 | `project.missing_module_link` / `project.not_a_module` | なし |
 | `project.invalid_module` | `count`・`details` |
 | `module.invalid_name` | `name` |
@@ -1971,6 +1973,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `module.collider_needs_base_physics` | `rig`・`collider`・`slot` |
 | `module.read_only_base` | `element` |
 | `module.shape` | `reason` |
+| `module.not_module` (`Document::rebase_module_on`。編集では `edit.not_module`、プロジェクトでは `project.not_a_module` に変わる) | なし |
 | `module.draw_order_outside_slot` (書き出しの警告) | `mesh` |
 
 **ファイル形式 (`FormatError`)・書き出し・アトラス・評価**

@@ -3,6 +3,7 @@
 use ugoe_model::validate::ValidationError;
 
 use crate::grid::CellError;
+use crate::module_project::ModuleError;
 use ugoe_rigging::InferError;
 
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -155,11 +156,15 @@ pub enum EditError {
     ReadOnlyBase { element: String },
     /// モジュールのプロジェクトで、編集した結果がモジュールとして表せない
     /// (本体の要素への参照・接頭辞を外した ID の重なりなど)。
-    #[error("{reason}")]
+    #[error("cannot be kept as a module: {reason}")]
     ModuleShape { reason: String },
     /// モジュールのプロジェクトでないのに、モジュールの設定を変えようとした (`Command::SetModuleSettings`)。
     #[error("this is not a module project")]
     NotModule,
+    /// モジュールのプロジェクトで、作業用のモデルを作り直せない (スロットがない・合成できない・本体に物理がないなど)。
+    /// コードと引数は中の [`ModuleError`] のもの (`module.*`)。
+    #[error(transparent)]
+    Module(ModuleError),
     /// テクスチャの画像の一辺が、デコードの上限 (`ugoe_format::image::ImageLimits`) を超える。
     #[error("texture `{texture}` is {width}x{height}, larger than the limit {max}x{max}")]
     TextureTooLarge {

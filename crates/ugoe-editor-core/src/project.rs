@@ -99,6 +99,10 @@ pub enum ProjectError {
     NotPng { path: PathBuf },
     #[error("bundle export failed: {0}")]
     Export(#[source] FormatError),
+    /// 比べる `.ugoemod` のバイト列を読めない ([`crate::compare_with_module_file`])。書き出しの失敗 ([`Self::Export`]) と
+    /// 区別する。
+    #[error("module file could not be read: {0}")]
+    UnreadableModuleFile(#[source] FormatError),
     /// `kind` が `module` なのに `module` (本体とスロット) がない。
     #[error("project.json: a module project needs `module` (the base and the slot)")]
     MissingModuleLink,
@@ -124,14 +128,24 @@ pub enum ProjectError {
     #[error("texture `{name}` is not a PNG")]
     UnsupportedTexture { name: String },
     /// モジュールの作業用のモデルを作れない・分けられない (スロットがない・合成できないなど)。
+    /// [`ModuleError::NotModule`] は [`Self::NotAModule`] に変わる。
     #[error(transparent)]
-    Module(#[from] ModuleError),
+    Module(ModuleError),
     /// モジュールのプロジェクトでない ([`export_module`])。
     #[error("this project is not a module project")]
     NotAModule,
     /// 書き出すモジュールが検証 (`validate_module`) を通らない。
     #[error("{}", describe_errors("module", .0))]
     InvalidModule(Vec<ValidationError>),
+}
+
+impl From<ModuleError> for ProjectError {
+    fn from(error: ModuleError) -> Self {
+        match error {
+            ModuleError::NotModule => Self::NotAModule,
+            other => Self::Module(other),
+        }
+    }
 }
 
 /// `project.json` の中身。

@@ -228,6 +228,7 @@ fn edit_errors() -> Vec<EditError> {
         EditError::ReadOnlyBase { element: id() },
         EditError::ModuleShape { reason: reason() },
         EditError::NotModule,
+        EditError::Module(ModuleError::UnknownSlot("hair".to_owned())),
         EditError::TextureTooLarge {
             texture: id(),
             width: 20000,
@@ -307,6 +308,7 @@ fn project_errors() -> Vec<ProjectError> {
         ProjectError::MissingTexture { name: id() },
         ProjectError::NotPng { path: path() },
         ProjectError::Export(FormatError::TooLarge),
+        ProjectError::UnreadableModuleFile(FormatError::BadMagic),
         ProjectError::MissingModuleLink,
         ProjectError::BaseNotFound { path: path() },
         ProjectError::Base {
@@ -337,6 +339,7 @@ fn module_errors() -> Vec<ModuleError> {
         },
         ModuleError::ReadOnlyBase { element: id() },
         ModuleError::Shape { reason: reason() },
+        ModuleError::NotModule,
     ]
 }
 

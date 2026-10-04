@@ -62,6 +62,10 @@ pub enum ModuleError {
     /// モジュールとして表せない (本体の要素への参照・接頭辞を外した ID の重なりなど)。
     #[error("cannot be kept as a module: {reason}")]
     Shape { reason: String },
+    /// モジュールのプロジェクトでない ([`crate::Document::rebase_module_on`])。[`EditError::NotModule`]・
+    /// [`crate::ProjectError::NotAModule`] に変わる。
+    #[error("this is not a module project")]
+    NotModule,
 }
 
 /// モジュールの物理のリグが参照する、スロットの公開する本体の衝突体 1 つ (本体に物理が無いと当たれない。
@@ -72,13 +76,15 @@ pub struct ColliderReference {
     pub collider: String,
 }
 
+/// 編集の側に同じ意味の種類があるもの (読み取り専用の本体・モジュールとして表せない・モジュールでない) はそれに、
+/// ほかは [`EditError::Module`] に包んで、コード (`module.*`) と引数を保つ (T0678)。
 impl From<ModuleError> for EditError {
     fn from(error: ModuleError) -> Self {
         match error {
             ModuleError::ReadOnlyBase { element } => EditError::ReadOnlyBase { element },
-            other => EditError::ModuleShape {
-                reason: other.to_string(),
-            },
+            ModuleError::Shape { reason } => EditError::ModuleShape { reason },
+            ModuleError::NotModule => EditError::NotModule,
+            other => EditError::Module(other),
         }
     }
 }

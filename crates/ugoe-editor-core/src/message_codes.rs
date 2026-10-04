@@ -94,6 +94,7 @@ impl Coded for EditError {
             Self::ReadOnlyBase { .. } => "edit.read_only_base",
             Self::ModuleShape { .. } => "edit.module_shape",
             Self::NotModule => "edit.not_module",
+            Self::Module(error) => error.code(),
             Self::TextureTooLarge { .. } => "edit.texture_too_large",
         }
     }
@@ -193,6 +194,7 @@ impl Coded for EditError {
             }
             Self::ReadOnlyBase { element } => args! { "element" => element },
             Self::NotModule => args! {},
+            Self::Module(error) => error.args(),
             Self::TextureTooLarge {
                 texture,
                 width,
@@ -207,6 +209,7 @@ impl Coded for EditError {
     fn cause(&self) -> Option<Message> {
         match self {
             Self::InvalidCell { error, .. } => Some(error.to_message()),
+            Self::Module(error) => error.cause(),
             _ => None,
         }
     }
@@ -285,6 +288,7 @@ impl Coded for ProjectError {
             Self::MissingTexture { .. } => "project.missing_texture",
             Self::NotPng { .. } => "project.not_png",
             Self::Export(_) => "project.export_failed",
+            Self::UnreadableModuleFile(_) => "project.module_file_unreadable",
             Self::MissingModuleLink => "project.missing_module_link",
             Self::BaseNotFound { .. } => "project.base_not_found",
             Self::Base { .. } => "project.base_unreadable",
@@ -328,13 +332,18 @@ impl Coded for ProjectError {
             }
             Self::Module(error) => error.args(),
             Self::InvalidModule(errors) => validation_args(errors),
-            Self::Export(_) | Self::MissingModuleLink | Self::NotAModule => args! {},
+            Self::Export(_)
+            | Self::UnreadableModuleFile(_)
+            | Self::MissingModuleLink
+            | Self::NotAModule => args! {},
         }
     }
 
     fn cause(&self) -> Option<Message> {
         match self {
-            Self::Format { source, .. } | Self::Export(source) => Some(source.to_message()),
+            Self::Format { source, .. }
+            | Self::Export(source)
+            | Self::UnreadableModuleFile(source) => Some(source.to_message()),
             Self::Base { source, .. } => Some(source.to_message()),
             Self::Module(error) => error.cause(),
             _ => None,
@@ -351,6 +360,7 @@ impl Coded for ModuleError {
             Self::ColliderNeedsBasePhysics { .. } => "module.collider_needs_base_physics",
             Self::ReadOnlyBase { .. } => "module.read_only_base",
             Self::Shape { .. } => "module.shape",
+            Self::NotModule => "module.not_module",
         }
     }
 
@@ -366,6 +376,7 @@ impl Coded for ModuleError {
             } => args! { "rig" => rig, "collider" => collider, "slot" => slot },
             Self::ReadOnlyBase { element } => args! { "element" => element },
             Self::Shape { reason } => args! { "reason" => reason },
+            Self::NotModule => args! {},
         }
     }
 }

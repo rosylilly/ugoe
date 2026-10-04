@@ -1880,6 +1880,7 @@
       "unsupported_base_texture": "本体のテクスチャ {{name}} が PNG ではありません。",
       "unsupported_texture": "テクスチャ {{name}} が PNG ではありません。",
       "export_failed": "バンドルを書き出せません。",
+      "module_file_unreadable": "比べるモジュールのファイルを読めません。",
       "missing_module_link": "モジュールのプロジェクトに、本体とスロットの指定 (project.json の module) がありません。",
       "not_a_module": "このプロジェクトはモジュールのプロジェクトではありません。",
       "invalid_module_other": "モジュールが検証を通りません ({{count}} 件: {{details}})。"
@@ -1891,6 +1892,7 @@
       "collider_needs_base_physics": "リグ {{rig}} はスロット {{slot}} が公開する衝突体 {{collider}} に当たりますが、本体のモデルに物理がありません。本体のプロジェクトに衝突体 {{collider}} を持つ物理を足すか、リグから衝突体を外してください。",
       "read_only_base": "{{element}} は本体のモデルの要素なので、ここでは編集できません。本体のプロジェクトで編集してください。",
       "shape": "モジュールとして表せません ({{reason}})。",
+      "not_module": "このプロジェクトはモジュールのプロジェクトではありません。",
       "draw_order_outside_slot": "メッシュ {{mesh}} の描画順がスロットの範囲の外にあるので、スロットの外に描かれます。"
     },
     "format": {

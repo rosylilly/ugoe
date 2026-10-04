@@ -1,7 +1,7 @@
 ---
 id: T0678
 title: モジュールのエラーをコードを保って EditError と ProjectError に渡す
-status: in-progress
+status: done
 milestone: M9
 crates: [ugoe-editor-core, ugoe-mcp, apps/editor, docs]
 depends_on: [T0667]
@@ -28,11 +28,11 @@ T0667 のレビューの所見。エラーのコード (ADR 0029、`Coded`) が�
 
 ## 受け入れ条件
 
-- [ ] `ModuleError` の種類ごとのコードと引数が、`Document::apply` のエラーからも取れる (テストで確かめる)
-- [ ] `rebase_module_on` のモジュールでないときのエラーが、ほかと同じ種類になる
-- [ ] `.ugoemod` が読めないときのエラーが、書き出しの失敗と区別できる
-- [ ] 足したコードを `docs/editor.md#エラーと警告のコード` の一覧と翻訳に書いた
-- [ ] `just ci` が通る
+- [x] `ModuleError` の種類ごとのコードと引数が、`Document::apply` のエラーからも取れる (テストで確かめる)
+- [x] `rebase_module_on` のモジュールでないときのエラーが、ほかと同じ種類になる
+- [x] `.ugoemod` が読めないときのエラーが、書き出しの失敗と区別できる
+- [x] 足したコードを `docs/editor.md#エラーと警告のコード` の一覧と翻訳に書いた
+- [x] `just ci` が通る
 
 ## 参考
 
@@ -41,3 +41,19 @@ T0667 のレビューの所見。エラーのコード (ADR 0029、`Coded`) が�
 - T0667 のメモ
 
 ## メモ
+
+- やったこと:
+  - `EditError::Module(ModuleError)` を足した (コード・引数・原因は中の `ModuleError` のもの、`module.*`)。`From<ModuleError> for EditError` は
+    `ReadOnlyBase` → `EditError::ReadOnlyBase`、`Shape` → `EditError::ModuleShape`、`NotModule` → `EditError::NotModule` に、ほかは
+    `Module` に包む。既存のコード (`edit.read_only_base`・`edit.module_shape`・`edit.not_module`) は名前を変えず、出る場面も変えていない。
+    `ModuleShape` の英語の文は `ModuleError::Shape` と同じ `cannot be kept as a module: {reason}` にした (以前は `reason` に前置きが入っていた)。
+  - `ModuleError::NotModule` (`module.not_module`) を足し、`rebase_module_on` はこれを返す。`ProjectError` への変換は `#[from]` をやめて手で書き、
+    `NotModule` → `ProjectError::NotAModule` にする (`EditError` でも `NotModule`)。
+  - `ProjectError::UnreadableModuleFile` (`project.module_file_unreadable`、原因は `format.*`) を足し、`compare_with_module_file` が使う。
+  - `docs/editor.md#コードの一覧`・`en.json`・`ja.json`・`message_catalog.rs` の見本・`just gen` の `messageCodes.ts` を合わせた。
+  - テスト: `module_errors_keep_their_codes_through_apply`・`rebasing_a_model_project_is_not_a_module_error`・`broken_files_are_errors` (直した)。
+- やらなかったこと: `ugoe-mcp` とエディタのバックエンド (`apps/editor/src-tauri`) はエラーを `to_message()` で汎用に渡すだけで、
+  `ModuleShape` などに合わせた分岐が無いので変更不要だった (`module.rs` の `diagnose` は `ProjectError::Module` の種類で分けており、そのまま)。
+  T0667 の所見の `set_module_settings` の `RederiveWarning` を捨てる件は扱っていない。
+- 起票の候補: `EditError::Module` を足したので、エディタの画面でモジュールの適用のエラー (`module.collider_needs_base_physics` など) に
+  直し方の案内 (本体を開くなど) を出すか検討する。
