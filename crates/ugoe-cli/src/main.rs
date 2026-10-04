@@ -813,7 +813,7 @@ enum Container {
 
 /// `.ugoe` バンドルか `.ugoemod` モジュールを読む。どちらも同じコンテナなので、拡張子ではなく中身で判別する
 /// (バンドルとして読んで `MODU` チャンクがあればモジュールとして読み直す)。
-/// モデルやモジュールが検証に通らなければ、各エラーを標準エラーに `error: ...` で書いてから失敗する。
+/// モデル・モジュール・バンドルの物理が検証に通らなければ、各エラーを標準エラーに `error: ...` で書いてから失敗する。
 fn read_container(path: &Path, bytes: &[u8]) -> anyhow::Result<Container> {
     use ugoe_format::{ChunkTag, FormatError};
 
@@ -825,8 +825,11 @@ fn read_container(path: &Path, bytes: &[u8]) -> anyhow::Result<Container> {
         Err(e) => Err(e).with_context(|| format!("reading bundle {}", path.display())),
     };
     if let Err(e) = &result
-        && let Some(FormatError::Invalid(errors) | FormatError::InvalidModule(errors)) =
-            e.downcast_ref::<FormatError>()
+        && let Some(
+            FormatError::Invalid(errors)
+            | FormatError::InvalidModule(errors)
+            | FormatError::InvalidPhysics(errors),
+        ) = e.downcast_ref::<FormatError>()
     {
         for error in errors {
             eprintln!("error: {error}");
@@ -990,37 +993,7 @@ fn format_name(format: TextureFormat) -> &'static str {
 }
 
 fn run_render(args: RenderArgs) -> anyhow::Result<()> {
-    // GPU を使う前に入力をすべて検査する (GPU の無い環境でも引数の誤りを報告できるように)。
-    let mut scene = load_input(&args.input)?;
-    if !args.modules.is_empty() {
-        scene = attach_modules(scene, read_modules(&args.modules)?)?;
-    }
-    let lighting = (args.ambient.is_some() || !args.lights.is_empty()).then(|| Lighting {
-        ambient: args.ambient.unwrap_or(Lighting::default().ambient),
-        lights: args.lights,
-    });
-    let options = RenderOptions {
-        params: args.params,
-        size: args.size,
-        width: args.width,
-        height: args.height,
-        scale: args.scale,
-        fit: args.fit,
-        background: args.background,
-        texture_overrides: args.textures,
-        time: args.time,
-        motion: args.motion,
-        expression: args.expression,
-        physics: args.physics,
-        no_physics: args.no_physics,
-        no_effects: args.no_effects,
-        fps: args.fps,
-        lighting,
-    };
-    let mut prepared = ugoe_headless::prepare(scene, &options)?;
-    if let Some(view) = args.view {
-        prepared.view = target_view(view, prepared.size);
-    }
+    let prepared = prepare_render(&args)?;
     if let Some(advanced) = prepared.advanced {
         println!(
             "advanced {}s in {} update(s)",
@@ -1050,6 +1023,49 @@ fn run_render(args: RenderArgs) -> anyhow::Result<()> {
         println!("stats: {}", ugoe_headless::stats_json(&stats));
     }
     Ok(())
+}
+
+/// `ugoe render` の引数から、GPU を使わずに描画の準備をする (`ugoe_headless::prepare`)。
+/// GPU を使う前に入力をすべて検査する (GPU の無い環境でも引数の誤りを報告できるように)。
+fn prepare_render(args: &RenderArgs) -> anyhow::Result<ugoe_headless::Prepared> {
+    let mut scene = load_input(&args.input)?;
+    let mut physics = args.physics.clone();
+    if !args.modules.is_empty() {
+        // `--physics` は本体の物理の代わりにし、モジュールのリグはそれに加える (`validate` と同じ)。
+        // 時間を進めないなら物理は使わないので、`prepare` に渡したまま (使わない旨の警告を出させる)。
+        let animating = args.time.is_some() || args.motion.is_some() || args.expression.is_some();
+        if animating && let Some(path) = physics.take() {
+            scene.animation.physics = Some(animate::read_physics(&path)?);
+        }
+        scene = attach_modules(scene, read_modules(&args.modules)?)?;
+    }
+    let lighting = (args.ambient.is_some() || !args.lights.is_empty()).then(|| Lighting {
+        ambient: args.ambient.unwrap_or(Lighting::default().ambient),
+        lights: args.lights.clone(),
+    });
+    let options = RenderOptions {
+        params: args.params.clone(),
+        size: args.size,
+        width: args.width,
+        height: args.height,
+        scale: args.scale,
+        fit: args.fit,
+        background: args.background,
+        texture_overrides: args.textures.clone(),
+        time: args.time,
+        motion: args.motion.clone(),
+        expression: args.expression.clone(),
+        physics,
+        no_physics: args.no_physics,
+        no_effects: args.no_effects,
+        fps: args.fps,
+        lighting,
+    };
+    let mut prepared = ugoe_headless::prepare(scene, &options)?;
+    if let Some(view) = args.view {
+        prepared.view = target_view(view, prepared.size);
+    }
+    Ok(prepared)
 }
 
 /// `--view` の 6 数 `A,B,C,D,E,F` を読む。どれも有限の数であること。
@@ -1162,6 +1178,55 @@ mod tests {
             meta: None,
         };
         assert!(attach_modules(fixture, vec![hair]).is_err());
+    }
+
+    /// `render --module --physics`: `--physics` は本体の物理の代わりで、モジュールの物理のリグはそれに加わる
+    /// (`validate` と同じ。差し替えでモジュールのリグが消えない)。
+    #[test]
+    fn render_adds_module_rigs_to_the_physics_file() {
+        let sample = sample::dress_up::build_dress_up().unwrap();
+        let tmp =
+            std::env::temp_dir().join(format!("ugoe-cli-render-physics-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let path = |name: &str| tmp.join(name).to_str().unwrap().to_owned();
+        let physics = sample.base.physics.clone().unwrap();
+        std::fs::write(
+            path("base.physics.json"),
+            ugoe_format::physics_to_json(&physics).unwrap(),
+        )
+        .unwrap();
+        for (name, bytes) in sample.files().unwrap() {
+            std::fs::write(path(&name), bytes).unwrap();
+        }
+        let cli = parse(&[
+            "render",
+            &path("dress-up.ugoe"),
+            "-o",
+            &path("never.png"),
+            "--module",
+            &path("long-hair.ugoemod"),
+            "--physics",
+            &path("base.physics.json"),
+            "--time",
+            "0.1",
+        ])
+        .unwrap();
+        let Cmd::Render(args) = cli.command else {
+            panic!("not render");
+        };
+        let prepared = prepare_render(&args).unwrap();
+        let rigs: Vec<&str> = prepared
+            .puppet
+            .physics()
+            .unwrap()
+            .settings()
+            .rigs
+            .iter()
+            .map(|r| r.id.as_str())
+            .collect();
+        assert!(rigs.contains(&"HairSway"), "{rigs:?}");
+        assert!(rigs.contains(&"LongHair/Sway"), "{rigs:?}");
+        std::fs::remove_dir_all(&tmp).unwrap();
     }
 
     #[test]

@@ -131,6 +131,43 @@ fn validate_warns_about_rest_pose_collisions() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("error:"));
 }
 
+/// `ugoe validate <bundle>`: バンドルの物理が検証に通らなければ、モデルと同じく各エラーを `error: ...` で書く。
+#[test]
+fn validate_lists_physics_errors_in_a_bundle() {
+    use ugoe_model::fixtures;
+
+    let tmp = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("validate-bundle-physics-{}", std::process::id()));
+    std::fs::create_dir_all(&tmp).expect("create output dir");
+    let mut settings = fixtures::dynamic_hair_settings();
+    settings.rigs[0].colliders = vec!["Missing".into()];
+    let mut bundle = ugoe_format::Bundle::new(fixtures::dynamic_hair());
+    bundle.textures = vec![
+        ugoe_format::TextureData {
+            format: ugoe_format::TextureFormat::Png,
+            bytes: ugoe_editor_core::texture::encode_rgba_png(1, 1, &[255; 4]),
+        };
+        bundle.model.textures.len()
+    ];
+    bundle.physics = Some(settings);
+    let path = tmp.join("broken-physics.ugoe");
+    std::fs::write(
+        &path,
+        ugoe_format::write_bundle(&bundle).expect("write bundle"),
+    )
+    .expect("write bundle file");
+
+    let output = ugoe(&["validate", path.to_str().expect("utf-8 path")]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr
+            .lines()
+            .any(|l| l.starts_with("error: ") && l.contains("Missing")),
+        "{stderr}"
+    );
+}
+
 #[test]
 fn standard_params_include_extended_parameters() {
     let out = stdout(&ugoe(&["standard-params"]));

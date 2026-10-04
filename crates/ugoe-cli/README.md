@@ -40,7 +40,7 @@ ugoe standard-params                     # 標準パラメータ・拡張パラ�
 - `ugoe validate <base>.ugoe --module <module>.ugoemod ...`: `render` の `--module` と同じ規則でモジュールを本体に付け
   (付けられなければエラー)、付けた結果のモデルと物理を検査する。`--physics` はバンドルの物理の代わりになり、モジュールのリグはそれに加わる。
   `--profile` は付けた結果のモデルを検査する。入力は `.ugoe` バンドル。
-- モデルやモジュールが検証に通らないときは、各エラーを標準エラーに `error: ...` で書く (バンドルも同じ)。
+- モデルやモジュールが検証に通らないときは、各エラーを標準エラーに `error: ...` で書く (バンドルとその物理も同じ)。
 
 ### モジュールの概要
 
@@ -80,7 +80,7 @@ ugoe render fixture:single_quad -o flipped.png --size 256x256 --view=-1,0,0,1,25
 | `--time <SECONDS>` | `ugoe::Puppet` でこの秒数だけ時間を進めてから描く (物理・モーション・表情・目パチ・呼吸・ポーズ) |
 | `--motion <NAME\|PATH>` | 再生するモーション。バンドルのモーションの名前か `.motion.json` のパス。未知の名前はエラー (既知の名前を列挙する) |
 | `--expression <NAME\|PATH>` | 使う表情。バンドルの表情の名前か `.expression.json` のパス |
-| `--physics <PATH>` | 物理の設定の JSON。省略するとバンドルの物理を使う。モデルと合わなければエラー |
+| `--physics <PATH>` | 物理の設定の JSON。省略するとバンドルの物理を使う。モデルと合わなければエラー。`--module` のモジュールのリグはこれに加わる |
 | `--no-physics` / `--no-effects` | 時間を進めるときに物理 / 目パチと呼吸を止める |
 | `--fps <N>` | 時間を進めるときの 1 秒あたりの `update` の回数 (既定 60) |
 | `--ambient <COLOR>` | 環境光の色。`V` (灰色) か `R,G,B` (0 以上、1 を超えてもよい)。既定 1 (白) |
@@ -189,6 +189,7 @@ ugoe sample avatar -o avatar.ugoe --psd path/to/parts.psd --project avatar.ugoep
 | `--psd <PATH>` | 入力の PSD (既定 `assets/fixtures/psd-real/comfyui-see-through-bustup-parts.psd`。レイヤー名 `face`・`eyelash-l`・`eyeclose-l`・`mouth-open` などで部位を探す) |
 | `--project <DIR>` | `.ugoeproj` プロジェクトにも保存する (エディタで開いてリグを見る用) |
 | `--lit` | 法線マップを付けてライティングを有効にした版を書き出す (`src/sample/lit.rs`。[assets/samples/README.md#avatar-litugoe](../../assets/samples/README.md#avatar-litugoe))。`just cli sample avatar --lit -o assets/samples/avatar-lit.ugoe` |
+| `--atlas` | テクスチャを既定の設定でアトラスにまとめた版を書き出す (描画をまとめるエンジンの見本)。法線マップのあるテクスチャはまとめられないので `--lit` とは使えない。`just cli sample avatar --atlas -o assets/samples/avatar-atlas.ugoe` |
 
 ### `ugoe sample dress-up`
 

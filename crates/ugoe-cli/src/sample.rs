@@ -3,8 +3,8 @@
 //!
 //! リグはすべて `ugoe_editor_core::Command` の列で組む (エディタで手で組むのと同じ操作)。
 //! 部位はレイヤーの名前で見つけ、変形の量はその部位の外接矩形の大きさに対する割合で決めるので、
-//! 座標の定数は持たない。`Model.avatar` と当たり判定だけは設定するコマンドがまだないので、組み終えた
-//! モデルに直接書く ([`avatar_profile`])。
+//! 座標の定数は持たない。アバタープロファイル ([`avatar_profile`]) と当たり判定も、コマンド
+//! (`SetAvatarProfile`・`SetHitAreas`) で設定する。
 //!
 //! 入力は `assets/fixtures/psd-real/comfyui-see-through-bustup-parts.psd` (胸から上の絵を
 //! 目・白目・まつげ・眉・口などに分けたもの)。目は開き (`eyewhite`・`irides`・`eyelash`) と

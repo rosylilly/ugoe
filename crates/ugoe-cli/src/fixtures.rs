@@ -4,7 +4,8 @@ use ugoe_model::{Model, fixtures};
 
 type Fixture = (&'static str, fn() -> Model);
 
-/// フィクスチャ名 (関数名と同じ snake_case) と生成関数。
+/// フィクスチャ名 (関数名と同じ snake_case) と生成関数。`Model` を返すフィクスチャはすべて載せる
+/// (物理の設定などモデル以外を返すものは、`fixture:` の入力にならないので載せない)。
 pub const FIXTURES: &[Fixture] = &[
     ("single_quad", fixtures::single_quad),
     ("pose_and_effects", fixtures::pose_and_effects),
@@ -16,7 +17,15 @@ pub const FIXTURES: &[Fixture] = &[
     ("nested_masks", fixtures::nested_masks),
     ("mixed_masks", fixtures::mixed_masks),
     ("intersection_masks", fixtures::intersection_masks),
+    ("keyform_inference", fixtures::keyform_inference),
+    ("blend_shapes", fixtures::blend_shapes),
+    ("smooth_arc", fixtures::smooth_arc),
+    ("physics_hair", fixtures::physics_hair),
+    ("physics_relay", fixtures::physics_relay),
+    ("physics_additive", fixtures::physics_additive),
+    ("dynamic_hair", fixtures::dynamic_hair),
     ("avatar_profile", fixtures::avatar_profile),
+    ("dress_up_base", fixtures::dress_up_base),
 ];
 
 /// 名前からフィクスチャを作る。`single-quad` のような kebab-case も受け付ける。
@@ -53,6 +62,9 @@ mod tests {
         assert_eq!(by_name("single_quad").unwrap().meta.name, "single_quad");
         assert_eq!(by_name("single-quad").unwrap().meta.name, "single_quad");
         assert_eq!(by_name("nested-masks").unwrap().meshes.len(), 3);
+        // 物理や着せ替えのテスト用のモデルも入力にできる。
+        assert_eq!(by_name("dynamic-hair").unwrap().meta.name, "dynamic_hair");
+        assert!(!by_name("dress_up_base").unwrap().slots.is_empty());
     }
 
     #[test]
