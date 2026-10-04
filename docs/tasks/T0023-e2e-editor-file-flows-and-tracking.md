@@ -1,11 +1,11 @@
 ---
 id: T0023
 title: "e2e: エディタの PSD の取り込み・書き出し・着せ替えのプレビューと、画像からのトラッキング"
-status: todo
+status: in-progress
 milestone: M9
 crates: [tests/e2e, docs]
 depends_on: [T0022]
-assignee:
+assignee: claude-worker-T0023
 ---
 
 # T0023: e2e: エディタの PSD の取り込み・書き出し・着せ替えのプレビューと、画像からのトラッキング
