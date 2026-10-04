@@ -19,7 +19,7 @@ use ugoe_model::expression::Expression;
 use ugoe_model::module::ModuleRequirements;
 use ugoe_model::motion::Motion;
 use ugoe_model::physics::PhysicsSettings;
-use ugoe_model::validate::ValidationError;
+use ugoe_model::validate::{ValidationError, describe_errors};
 use ugoe_model::{
     Canvas, Effects, Model, ModelMeta, Module, Pose, SCHEMA_VERSION, SlotId, TextureRef,
 };
@@ -130,7 +130,7 @@ pub enum ProjectError {
     #[error("this project is not a module project")]
     NotAModule,
     /// 書き出すモジュールが検証 (`validate_module`) を通らない。
-    #[error("the module is invalid: {}", .0.iter().map(ToString::to_string).collect::<Vec<_>>().join("; "))]
+    #[error("{}", describe_errors("module", .0))]
     InvalidModule(Vec<ValidationError>),
 }
 
@@ -435,8 +435,13 @@ impl Project {
         } else {
             None
         };
-        let motions = read_json_dir(&dir.join(MOTIONS_DIR), MOTION_SUFFIX)?;
-        let expressions = read_json_dir(&dir.join(EXPRESSIONS_DIR), EXPRESSION_SUFFIX)?;
+        // 書き出したバンドルを読み直すと拒まれる値は、プロジェクトの読み込みでも拒む (T1606)。
+        let motions = read_json_dir(&dir.join(MOTIONS_DIR), MOTION_SUFFIX, check_motion)?;
+        let expressions = read_json_dir(
+            &dir.join(EXPRESSIONS_DIR),
+            EXPRESSION_SUFFIX,
+            check_expression,
+        )?;
 
         let textures = read_images(dir, &model.textures)?;
 
@@ -726,6 +731,31 @@ pub(crate) fn module_file(
         textures,
         normal_maps,
         meta: None,
+    })
+}
+
+/// モーションの数値の検査 (`validate_motion`)。バンドルの読み込みと同じく [`FormatError::InvalidMotion`] で拒む
+/// (`docs/spec/model.md#モーションと表情の検証`)。
+fn check_motion(motion: &Motion) -> Result<(), FormatError> {
+    let errors = ugoe_model::validate::validate_motion(motion);
+    if errors.is_empty() {
+        return Ok(());
+    }
+    Err(FormatError::InvalidMotion {
+        name: motion.name.clone(),
+        errors,
+    })
+}
+
+/// 表情の数値の検査 (`validate_expression`)。通らなければ [`FormatError::InvalidExpression`]。
+fn check_expression(expression: &Expression) -> Result<(), FormatError> {
+    let errors = ugoe_model::validate::validate_expression(expression);
+    if errors.is_empty() {
+        return Ok(());
+    }
+    Err(FormatError::InvalidExpression {
+        name: expression.name.clone(),
+        errors,
     })
 }
 

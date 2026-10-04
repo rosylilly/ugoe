@@ -391,6 +391,11 @@ export const messageCodes: Record<string, readonly string[]> = {
   "format.corrupt": [
     "detail"
   ],
+  "format.invalid_expression": [
+    "count",
+    "details",
+    "name"
+  ],
   "format.invalid_model": [
     "count",
     "details"
@@ -398,6 +403,11 @@ export const messageCodes: Record<string, readonly string[]> = {
   "format.invalid_module": [
     "count",
     "details"
+  ],
+  "format.invalid_motion": [
+    "count",
+    "details",
+    "name"
   ],
   "format.invalid_physics": [
     "count",

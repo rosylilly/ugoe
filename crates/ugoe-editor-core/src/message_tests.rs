@@ -154,6 +154,62 @@ fn read_limit_errors_have_their_own_codes() {
     );
 }
 
+/// モーション・表情の検証エラーは `format.corrupt` に落とさず、名前と検証エラーの一覧を引数にする (T1606)。
+/// `details` は `describe_errors` と同じく先頭の `DESCRIBED_ERRORS_MAX` 件までで、残りは件数だけ。
+#[test]
+fn motion_and_expression_validation_errors_have_their_own_codes() {
+    use ugoe_format::FormatError;
+    use ugoe_model::validate::{DESCRIBED_ERRORS_MAX, ValidationError};
+    let error = |i: usize| ValidationError::DuplicateId {
+        kind: "part",
+        id: format!("p{i}"),
+    };
+
+    let motion = FormatError::InvalidMotion {
+        name: "idle".into(),
+        errors: vec![error(0)],
+    }
+    .to_message();
+    assert_eq!(motion.code, "format.invalid_motion");
+    assert_eq!(
+        motion.args,
+        message_args! { "count" => 1usize, "details" => error(0).to_string(), "name" => "idle" }
+    );
+
+    let errors: Vec<ValidationError> = (0..DESCRIBED_ERRORS_MAX + 2).map(error).collect();
+    let expression = FormatError::InvalidExpression {
+        name: "smile".into(),
+        errors: errors.clone(),
+    }
+    .to_message();
+    assert_eq!(expression.code, "format.invalid_expression");
+    let mut details = errors[..DESCRIBED_ERRORS_MAX]
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("; ");
+    details.push_str("; and 2 more");
+    assert_eq!(
+        expression.args,
+        message_args! { "count" => errors.len(), "details" => details, "name" => "smile" }
+    );
+
+    // プロジェクトの読み込みで拒んだときは、ファイルの場所の下に原因として付く。
+    let project = ProjectError::Format {
+        path: "motions/idle.motion.json".into(),
+        source: FormatError::InvalidMotion {
+            name: "idle".into(),
+            errors: vec![error(0)],
+        },
+    }
+    .to_message();
+    assert_eq!(project.code, "project.format");
+    assert_eq!(
+        project.cause.map(|cause| cause.code),
+        Some("format.invalid_motion".to_owned())
+    );
+}
+
 /// ソースに書いたコード (`"area.name"` の文字列) を取り出す。
 fn codes_in(source: &str) -> Vec<String> {
     const AREAS: [&str; 15] = [

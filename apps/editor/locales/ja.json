@@ -1889,6 +1889,8 @@
       "invalid_model_other": "モデルが検証を通りません ({{count}} 件: {{details}})。",
       "invalid_module_other": "モジュールが検証を通りません ({{count}} 件: {{details}})。",
       "invalid_physics_other": "物理の設定が検証を通りません ({{count}} 件: {{details}})。",
+      "invalid_motion_other": "モーション {{name}} が検証を通りません ({{count}} 件: {{details}})。",
+      "invalid_expression_other": "表情 {{name}} が検証を通りません ({{count}} 件: {{details}})。",
       "unsupported_features": "ファイルが、この版の対応していない機能を必要としています ({{features}})。",
       "unknown_values": "新しい版の未知の値は書き出せません ({{values}})。",
       "chunk_limit_exceeded": "ファイルを読みませんでした。チャンク {{chunk}} を展開すると上限の {{max}} バイトを超えます。",

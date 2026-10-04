@@ -414,6 +414,72 @@ fn load_corrupt_project_fails() {
     );
 }
 
+// T1606: モーション・表情の数値は、バンドルの読み込み (`ugoe-format`) と同じく検証して拒む。
+// JSON に NaN は書けないので、`f32` で無限大になる `1e39` と負の長さで確かめる。
+#[test]
+fn load_rejects_motions_and_expressions_with_invalid_numbers() {
+    let tmp = TempDir::new("invalid-motion");
+    let dir = tmp.project();
+    let save = || sample_project().save(&dir).unwrap();
+
+    save();
+    fs::write(
+        dir.join("motions/idle.motion.json"),
+        br#"{ "name": "idle", "duration": 1.0, "curves": [ {
+            "target": { "kind": "parameter", "id": "X" },
+            "segments": [ { "type": "start", "p": { "t": 0, "v": 1e39 } } ] } ] }"#,
+    )
+    .unwrap();
+    let err = Project::load(&dir).unwrap_err();
+    let ProjectError::Format { path, source } = &err else {
+        panic!("{err}");
+    };
+    assert_eq!(path, &dir.join("motions/idle.motion.json"));
+    assert!(
+        matches!(source, ugoe_format::FormatError::InvalidMotion { name, errors } if name == "idle" && errors.len() == 1),
+        "{err}"
+    );
+    // 文はファイルの場所とモーションの名前、検証エラーの場所を含む。
+    let text = err.to_string();
+    assert!(text.contains("idle.motion.json"), "{text}");
+    assert!(
+        text.contains("motion `idle` failed validation with 1 error(s)"),
+        "{text}"
+    );
+
+    save();
+    fs::write(
+        dir.join("motions/tap_body.motion.json"),
+        br#"{ "name": "tap_body", "duration": -1.0, "curves": [] }"#,
+    )
+    .unwrap();
+    let err = Project::load(&dir).unwrap_err();
+    assert!(
+        matches!(&err, ProjectError::Format { source: ugoe_format::FormatError::InvalidMotion { name, .. }, .. } if name == "tap_body"),
+        "{err}"
+    );
+
+    save();
+    fs::write(
+        dir.join("expressions/smile.expression.json"),
+        br#"{ "name": "smile", "parameters": [ { "parameter": "X", "value": -1e39, "op": "add" } ] }"#,
+    )
+    .unwrap();
+    let err = Project::load(&dir).unwrap_err();
+    let ProjectError::Format { path, source } = &err else {
+        panic!("{err}");
+    };
+    assert_eq!(path, &dir.join("expressions/smile.expression.json"));
+    assert!(
+        matches!(source, ugoe_format::FormatError::InvalidExpression { name, errors } if name == "smile" && errors.len() == 1),
+        "{err}"
+    );
+
+    // 正しい値に戻せば読める。
+    save();
+    assert!(Project::load(&dir).is_ok());
+}
+
 // ---- 法線マップ ----
 
 /// `sample_project` の `white` に法線マップ `white_normal` を付けたプロジェクト。

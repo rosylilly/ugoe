@@ -30,7 +30,7 @@ character.ugoeproj/
   .ugoe-cache/          サムネイルなどのキャッシュ (git 管理外。保存・読み込みでは触れない)
 ```
 
-読み書きは `ugoe_editor_core::project` (`Project::save` / `Project::load`) が行います。
+読み書きは `ugoe_editor_core::project` (`Project::save` / `Project::load`) が行います。読み込みではモーションと表情の数値も検証します ([model.md#モーションと表情の検証](model.md#モーションと表情の検証))。
 
 着せ替えのモジュールのプロジェクト ([モジュールのプロジェクト](#モジュールのプロジェクト)) は、`model.json` の代わりに `module.json` を置きます。
 

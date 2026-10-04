@@ -7,7 +7,7 @@
 use ugoe_format::{FormatError, ReadLimit};
 use ugoe_model::KeyformInterpolation;
 use ugoe_model::avatar::check::ProfileIssue;
-use ugoe_model::validate::ValidationError;
+use ugoe_model::validate::{DESCRIBED_ERRORS_MAX, ValidationError};
 use ugoe_runtime::CompileError;
 
 use crate::atlas::AtlasError;
@@ -25,12 +25,21 @@ use crate::proposal::ProposalError;
 use crate::space::SpaceError;
 
 /// 検証のエラーの一覧の引数 (`count` と、文を `; ` でつないだ `details`)。
+///
+/// `details` に並べるのは `describe_errors` と同じく先頭の [`DESCRIBED_ERRORS_MAX`] 件までで、残りは
+/// `; and {残り} more` にまとめる (`docs/spec/model.md#検証エラーの文`)。`count` は全件の数。
 fn validation_args(errors: &[ValidationError]) -> MessageArgs {
-    let details = errors
+    let mut details = errors
         .iter()
+        .take(DESCRIBED_ERRORS_MAX)
         .map(ToString::to_string)
         .collect::<Vec<_>>()
         .join("; ");
+    if let Some(rest) = errors.len().checked_sub(DESCRIBED_ERRORS_MAX)
+        && rest > 0
+    {
+        details.push_str(&format!("; and {rest} more"));
+    }
     args! { "count" => errors.len(), "details" => details }
 }
 
@@ -535,6 +544,8 @@ impl Coded for FormatError {
             Self::Invalid(_) => "format.invalid_model",
             Self::InvalidModule(_) => "format.invalid_module",
             Self::InvalidPhysics(_) => "format.invalid_physics",
+            Self::InvalidMotion { .. } => "format.invalid_motion",
+            Self::InvalidExpression { .. } => "format.invalid_expression",
             Self::UnsupportedFeatures(_) => "format.unsupported_features",
             Self::UnknownValues(_) => "format.unknown_values",
             // 読み込みの上限 (ファイルが壊れているとは限らない)。
@@ -549,13 +560,18 @@ impl Coded for FormatError {
     }
 
     fn args(&self) -> MessageArgs {
+        // 検証エラーの列を持つ種類は、種類ごとに展開せずに `validation_errors` で読む (種類が増えても取りこぼさない)。
+        if let Some(errors) = self.validation_errors() {
+            let mut out = validation_args(errors);
+            if let Self::InvalidMotion { name, .. } | Self::InvalidExpression { name, .. } = self {
+                out.extend(args! { "name" => name });
+            }
+            return out;
+        }
         match self {
             Self::BadMagic | Self::TooLarge => args! {},
             Self::UnsupportedVersion { found, supported } => {
                 args! { "found" => *found, "supported" => *supported }
-            }
-            Self::Invalid(errors) | Self::InvalidModule(errors) | Self::InvalidPhysics(errors) => {
-                validation_args(errors)
             }
             Self::UnsupportedFeatures(features) => args! { "features" => features.join(", ") },
             Self::UnknownValues(values) => args! { "values" => values.join(", ") },

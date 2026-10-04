@@ -1884,7 +1884,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
   `en.json` と `ja.json` の `errors` にあり、文の引数 (`{{name}}`) がそのコードの引数の名前に含まれることを確かめます。
   カタログは MIT のクレートからは読みません。
 - **警告・問題:** `PsdImportWarning`・`RederiveWarning` は `code`・`args`・`message` のフィールドを持ちます。`ModuleProblem` は `Message` のフィールドを平らに含みます (`kind` は直し方を選ぶ分類、`code` は元のエラー)。`AvatarCheck` の `errors`・`warnings`、`.ugoemod` の書き出しの `warnings`、エージェントの接続の状態の `error` は `Message` です。
-- **実装:** editor-core のエラーは `ugoe_editor_core::Coded` を実装し (`src/message_codes.rs`)、`?` で `Message` に変わります。Tauri だけで起きるエラーは `src-tauri/src/error.rs` の `EditorError` にまとめます。ほかのクレートのエラー (検証・合成・推定・自動メッシュ・PSD の読み込み・AI のプロバイダなど) を含むものは、いまはその英語の文を `detail` (検証の一覧は `count` と `details`) で渡します。
+- **実装:** editor-core のエラーは `ugoe_editor_core::Coded` を実装し (`src/message_codes.rs`)、`?` で `Message` に変わります。Tauri だけで起きるエラーは `src-tauri/src/error.rs` の `EditorError` にまとめます。ほかのクレートのエラー (検証・合成・推定・自動メッシュ・PSD の読み込み・AI のプロバイダなど) を含むものは、いまはその英語の文を `detail` (検証の一覧は `count` と `details`。`details` は先頭の 10 件 (`DESCRIBED_ERRORS_MAX`) までを `; ` でつなぎ、残りは `; and {残り} more` にまとめる) で渡します。
 - 自由な文の引数 (`reason`・`detail`・`details`) は英語のままです。訳すには、その元のエラーにもコードを付ける必要があります (後続)。
 
 ### コードの一覧
@@ -1967,6 +1967,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `format.not_ugoe_file` / `format.too_large` | なし |
 | `format.unsupported_version` | `found`・`supported` |
 | `format.invalid_model` / `format.invalid_module` / `format.invalid_physics` | `count`・`details` |
+| `format.invalid_motion` / `format.invalid_expression` (モーション・表情の数値が検証を通らない。`.ugoe` と `.ugoeproj` の読み込み) | `name`・`count`・`details` |
 | `format.unsupported_features` | `features` |
 | `format.unknown_values` | `values` |
 | `format.chunk_limit_exceeded` / `format.total_limit_exceeded` (読み込みの上限。1 チャンクの展開後の大きさ / 展開の合計) | `chunk`・`max` (バイト) |

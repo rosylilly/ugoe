@@ -444,6 +444,14 @@ fn format_errors() -> Vec<FormatError> {
         FormatError::Invalid(Vec::new()),
         FormatError::InvalidModule(Vec::new()),
         FormatError::InvalidPhysics(Vec::new()),
+        FormatError::InvalidMotion {
+            name: "idle".to_owned(),
+            errors: Vec::new(),
+        },
+        FormatError::InvalidExpression {
+            name: "smile".to_owned(),
+            errors: Vec::new(),
+        },
         FormatError::UnsupportedFeatures(vec!["feature".to_owned()]),
         FormatError::UnknownValues(vec!["value".to_owned()]),
         FormatError::ReadLimitExceeded {

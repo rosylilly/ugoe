@@ -54,13 +54,23 @@ pub(super) fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T, ProjectEr
 }
 
 /// `dir` の中の `*<suffix>` を、ファイル名の順に読む。`dir` がなければ空。
+///
+/// 読んだ値はそれぞれ `check` で検査し、通らなければ [`ProjectError::Format`] (場所はそのファイル)。
 pub(super) fn read_json_dir<T: DeserializeOwned>(
     dir: &Path,
     suffix: &str,
+    check: impl Fn(&T) -> Result<(), FormatError>,
 ) -> Result<Vec<T>, ProjectError> {
     list_files(dir, suffix)?
         .iter()
-        .map(|path| read_json(path))
+        .map(|path| {
+            let value = read_json(path)?;
+            check(&value).map_err(|source| ProjectError::Format {
+                path: path.clone(),
+                source,
+            })?;
+            Ok(value)
+        })
         .collect()
 }
 

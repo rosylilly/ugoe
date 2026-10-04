@@ -424,6 +424,9 @@ JSON は NaN と無限大を書けませんが、MessagePack (`.ugoe`) は書け
 - 単体の JSON (`motion_from_json`・`expression_from_json`): 読んだ後に検査し、同じエラーを返す。
   JSON は NaN を書けないが、`1e39` などは `f32` で無限大になる。モデルの JSON (`model_from_json`) と違い呼び出し側に任せないのは、
   ビューア・wasm・C ABI・`ugoe render --motion` が読んだモーションをそのまま再生するため
+- エディタのプロジェクトの読み込み (`Project::load`): `motions/*.motion.json`・`expressions/*.expression.json` のそれぞれを検査し、
+  最初に通らなかったものを `ProjectError::Format { path, source }` (`source` は上の 2 つのどちらか、`path` はそのファイル) で返す
+  (書き出したバンドルを読み直して拒まれないように。T1606)。エディタのコードは `format.invalid_motion`・`format.invalid_expression`
 - `ugoe validate`: バンドルの読み込みで検査したエラーを `error: <名前>: ...` で書く。時刻が減る点は ``warning: motion `<名前>`: ...`` で書く (失敗にしない)
 - `Puppet` (モーションを渡すとき) は検査しない。ファイルから読んだモーションは上で検査済みで、プログラムで作るホストは
   `validate_motion` を呼べる。検査しないモーションでも、`ugoe-motion` は NaN の長さや巨大な `dt` で止まらない (T0317) が、
