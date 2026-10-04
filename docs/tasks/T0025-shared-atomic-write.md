@@ -1,11 +1,11 @@
 ---
 id: T0025
 title: 一時ファイルを経た置き換えを 1 か所にまとめ、MCP の保存の書き込みをロックの外へ出す
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-fs, ugoe-editor-core, ugoe-mcp, apps/editor, apps/viewer, apps/studio, Cargo.toml, Cargo.lock, scripts, commitlint.config.mjs, AGENTS.md, docs]
 depends_on: [T0687]
-assignee:
+assignee: claude-worker-T0025
 ---
 
 # T0025: 一時ファイルを経た置き換えを 1 か所にまとめ、MCP の保存の書き込みをロックの外へ出す
