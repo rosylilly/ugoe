@@ -44,7 +44,6 @@ vi.mock("@tauri-apps/api/webview", () => ({
     },
   }),
 }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn(), save: vi.fn() }));
 
 class MemoryStorage implements Storage {
   #items = new Map<string, string>();

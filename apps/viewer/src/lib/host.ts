@@ -1,7 +1,9 @@
 // ビューアの外の世界 (ファイルの選択と読み込み・書き出し) とのやりとり。
 //
 // 実行する場所ごとに実装を切り替える:
-// - Tauri の中: OS のダイアログ (tauri-plugin-dialog) で選び、バックエンドの `read_model_file` で読む。
+// - Tauri の中: OS のダイアログをバックエンド (`open_file_dialog`・`save_file_dialog`) で開き、
+//   バックエンドの `read_model_file` で読み、`write_json_file`・`write_png_file` で書く。バックエンドは、
+//   利用者がダイアログで選んだ・ドロップした・起動時に渡したパスしか読み書きしない (T0727。README の「ファイルの読み書きの範囲」)。
 // - ふつうのブラウザ (`pnpm dev` を直接開いたとき): `<input type="file">` で選ぶ。
 //   `?model=<URL>` を付けると、起動時にその URL のモデルを開く。
 // - ヘッドレスのブラウザでの確認: `window.__UGOE_VIEWER_HOST__` に `ViewerHost` を置くと、それを使う。
@@ -11,7 +13,6 @@
 // ここを通らず、場所は分からない。
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { open, save } from "@tauri-apps/plugin-dialog";
 import { locale } from "@tauri-apps/plugin-os";
 import {
   baseName,
@@ -78,53 +79,66 @@ async function readTauriFile(path: string): Promise<ModelFile> {
   return { name: baseName(path), bytes: new Uint8Array(buffer), location: `path:${path}` };
 }
 
+/** 開くダイアログ (バックエンドの `open_file_dialog`)。選んだファイルのパスを返し、取り消したら空。 */
+function openFileDialog(
+  title: string,
+  filterName: string,
+  extensions: readonly string[],
+  multiple: boolean,
+): Promise<string[]> {
+  return invoke<string[]>("open_file_dialog", { title, filterName, extensions, multiple });
+}
+
+/**
+ * 保存のダイアログ (バックエンドの `save_file_dialog`)。選んだパス (拡張子が無ければバックエンドが付ける) を返し、
+ * 取り消したら `null`。返したパスにだけ、1 回書ける。
+ */
+function saveFileDialog(
+  title: string,
+  defaultName: string,
+  filterName: string,
+  extension: "json" | "png",
+): Promise<string | null> {
+  return invoke<string | null>("save_file_dialog", { title, defaultName, filterName, extension });
+}
+
 const tauriHost: ViewerHost = {
   async pickModelFile() {
-    const path = await open({
-      title: t("files.openModel.title"),
-      multiple: false,
-      directory: false,
-      filters: [
-        {
-          name: t("files.openModel.filter"),
-          extensions: [...MODEL_EXTENSIONS, ...MODULE_EXTENSIONS],
-        },
-      ],
-    });
-    return path === null ? null : readTauriFile(path);
+    const [path] = await openFileDialog(
+      t("files.openModel.title"),
+      t("files.openModel.filter"),
+      [...MODEL_EXTENSIONS, ...MODULE_EXTENSIONS],
+      false,
+    );
+    return path === undefined ? null : readTauriFile(path);
   },
   async pickModuleFiles() {
-    const paths = await open({
-      title: t("files.openModules.title"),
-      multiple: true,
-      directory: false,
-      filters: [{ name: t("files.openModules.filter"), extensions: [...MODULE_EXTENSIONS] }],
-    });
-    return paths === null ? [] : Promise.all(paths.map(readTauriFile));
+    const paths = await openFileDialog(
+      t("files.openModules.title"),
+      t("files.openModules.filter"),
+      MODULE_EXTENSIONS,
+      true,
+    );
+    return Promise.all(paths.map(readTauriFile));
   },
   async initialModelFile() {
     const path = await invoke<string | null>("initial_file");
     return path === null ? null : readTauriFile(path);
   },
   async saveJsonFile(name, text) {
-    const path = await save({
-      title: t("files.saveJson.title"),
-      defaultPath: name,
-      filters: [{ name: "JSON", extensions: ["json"] }],
-    });
+    const path = await saveFileDialog(t("files.saveJson.title"), name, "JSON", "json");
     if (path === null) return false;
-    // バックエンドは `.json` のパスしか書かない (Linux のダイアログは拡張子を付けずに返すことがある)。
-    await invoke("write_json_file", { path: withExtension(path, "json"), contents: text });
+    await invoke("write_json_file", { path, contents: text });
     return true;
   },
   async savePngFile(name, bytes) {
-    const picked = await save({
-      title: t("files.savePng.title"),
-      defaultPath: name,
-      filters: [{ name: t("files.savePng.filter"), extensions: ["png"] }],
-    });
-    if (picked === null) return null;
-    const path = withExtension(picked, "png");
+    const path = await saveFileDialog(
+      t("files.savePng.title"),
+      name,
+      t("files.savePng.filter"),
+      "png",
+    );
+    if (path === null) return null;
     // バイト列は本文でそのまま送り、パスはヘッダーで渡す (ヘッダーは ASCII だけなので URI の形に符号化する)。
     await invoke("write_png_file", bytes, {
       headers: { [PNG_PATH_HEADER]: encodeURIComponent(path) },
@@ -149,11 +163,6 @@ const tauriHost: ViewerHost = {
     });
   },
 };
-
-/** 拡張子 (大文字小文字は区別しない) が無ければ付け足す (保存のダイアログで拡張子を消されたとき)。 */
-export function withExtension(path: string, extension: string): string {
-  return path.toLowerCase().endsWith(`.${extension.toLowerCase()}`) ? path : `${path}.${extension}`;
-}
 
 /** ブラウザのダウンロードで保存する。 */
 function downloadJson(name: string, text: string): void {

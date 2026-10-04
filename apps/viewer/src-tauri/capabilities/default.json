@@ -1,7 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "ビューアのウィンドウの権限 (ファイルを選ぶ・保存する・OS の言語を読む)",
+  "description": "ビューアのウィンドウの権限 (アプリのコマンドと OS の言語。ファイルのダイアログはバックエンドが開くので dialog の権限は渡さない。T0727)",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:allow-open", "dialog:allow-save", "os:allow-locale"]
+  "permissions": [
+    "core:default",
+    "os:allow-locale",
+    "allow-initial-file",
+    "allow-open-file-dialog",
+    "allow-read-model-file",
+    "allow-save-file-dialog",
+    "allow-write-json-file",
+    "allow-write-png-file"
+  ]
 }

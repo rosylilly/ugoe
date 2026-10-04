@@ -1,11 +1,15 @@
 //! ビューアのバックエンド。モデルの描画とパラメータの操作はすべて webview の wasm (`ugoe-wasm`) で行い、
 //! ここはファイルの読み書きとカメラの許可など、webview だけではできないことに限る (`apps/viewer/README.md`)。
 
+use std::collections::HashSet;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard};
 
 use tauri::ipc::Response;
 use tauri::webview::{PermissionKind, PermissionResponse};
+use tauri::{DragDropEvent, Manager, State, WebviewEvent, WebviewWindow};
+use tauri_plugin_dialog::DialogExt;
 
 /// 読み込むファイルの大きさの上限 (誤って巨大なファイルを選んだときにメモリを使い果たさないため)。
 const MAX_FILE_BYTES: u64 = 512 * 1024 * 1024;
@@ -38,10 +42,13 @@ async fn blocking<T: Send + 'static>(
 }
 
 /// モデルかモジュールのファイルを読み、バイト列をそのまま返す (JS では `ArrayBuffer`)。
-/// 形式の判別と読み込みはフロントエンドの wasm が行う。
+/// 形式の判別と読み込みはフロントエンドの wasm が行う。読めるのは、利用者が渡したパス
+/// (ダイアログ・ドロップ・起動時の引数。前に渡したものも覚えている) だけ (`FileAccess`)。
 #[tauri::command]
-async fn read_model_file(path: String) -> Result<Response, String> {
-    blocking(move || read_model(Path::new(&path), MAX_FILE_BYTES))
+async fn read_model_file(access: State<'_, FileAccess>, path: String) -> Result<Response, String> {
+    let path = PathBuf::from(path);
+    access.check_readable(&path)?;
+    blocking(move || read_model(&path, MAX_FILE_BYTES))
         .await
         .map(Response::new)
 }
@@ -74,10 +81,16 @@ fn read_model(path: &Path, max: u64) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
-/// JSON のファイル (トラッキングの記録など) を書く。パスは保存のダイアログで利用者が選んだもの。
+/// JSON のファイル (トラッキングの記録など) を書く。パスは `save_file_dialog` で利用者が選んだもの (1 回だけ書ける)。
 #[tauri::command]
-async fn write_json_file(path: String, contents: String) -> Result<(), String> {
-    blocking(move || write_json(Path::new(&path), &contents)).await
+async fn write_json_file(
+    access: State<'_, FileAccess>,
+    path: String,
+    contents: String,
+) -> Result<(), String> {
+    let path = PathBuf::from(path);
+    access.take_writable(&path)?;
+    blocking(move || write_json(&path, &contents)).await
 }
 
 fn write_json(path: &Path, contents: &str) -> Result<(), String> {
@@ -99,9 +112,12 @@ const PNG_PATH_HEADER: &str = "x-ugoe-path";
 const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 
 /// スクリーンショット (T0420) の PNG を書く。本文は PNG のバイト列、パスはヘッダー `x-ugoe-path`
-/// (保存のダイアログで利用者が選んだもの)。拡張子が `.png` で、中身が PNG のものだけを書く。
+/// (`save_file_dialog` で利用者が選んだもの。1 回だけ書ける)。拡張子が `.png` で、中身が PNG のものだけを書く。
 #[tauri::command]
-async fn write_png_file(request: tauri::ipc::Request<'_>) -> Result<(), String> {
+async fn write_png_file(
+    access: State<'_, FileAccess>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<(), String> {
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
         return Err("expected the bytes of a PNG image".into());
     };
@@ -111,10 +127,11 @@ async fn write_png_file(request: tauri::ipc::Request<'_>) -> Result<(), String> 
         .ok_or_else(|| format!("missing the {PNG_PATH_HEADER} header"))?
         .to_str()
         .map_err(|e| format!("{PNG_PATH_HEADER}: {e}"))?;
-    let path = percent_decode(header)?;
+    let path = PathBuf::from(percent_decode(header)?);
+    access.take_writable(&path)?;
     // 要求は借りものなので、別のスレッドへはバイト列の写しを渡す。
     let bytes = bytes.clone();
-    blocking(move || write_png(Path::new(&path), &bytes)).await
+    blocking(move || write_png(&path, &bytes)).await
 }
 
 fn write_png(path: &Path, bytes: &[u8]) -> Result<(), String> {
@@ -159,25 +176,240 @@ fn permission_response(kind: PermissionKind) -> PermissionResponse {
     }
 }
 
-/// 起動時の引数で渡されたモデルのパス (`ugoe-viewer model.ugoe`、OS の「このアプリで開く」)。
+/// 起動時の引数で渡されたモデルのパス (`ugoe-viewer model.ugoe`、OS の「このアプリで開く」)。読めるパスに加える。
 #[tauri::command]
-fn initial_file() -> Option<String> {
-    std::env::args()
+fn initial_file(access: State<'_, FileAccess>) -> Option<String> {
+    let path = std::env::args()
         .skip(1)
-        .find(|a| !a.starts_with('-') && is_model_path(Path::new(a)))
+        .find(|a| !a.starts_with('-') && is_model_path(Path::new(a)))?;
+    access.grant_readable([PathBuf::from(&path)]);
+    Some(path)
 }
+
+/// 開くダイアログを開き、選ばれたファイルのパスを返す (取り消したら空)。選ばれたパスは読めるパスに加える。
+/// 文言 (`title`・`filter_name`) と拡張子のフィルタは画面が渡す。ダイアログをバックエンドで開くのは、
+/// 利用者が選んだパスをバックエンドが知るため (T0727)。
+#[tauri::command]
+async fn open_file_dialog(
+    window: WebviewWindow,
+    access: State<'_, FileAccess>,
+    title: String,
+    filter_name: String,
+    extensions: Vec<String>,
+    multiple: bool,
+) -> Result<Vec<String>, String> {
+    let paths = blocking(move || {
+        let extensions: Vec<&str> = extensions.iter().map(String::as_str).collect();
+        let dialog = window
+            .dialog()
+            .file()
+            .set_title(title)
+            .add_filter(filter_name, &extensions);
+        // tauri-plugin-dialog の `open` と同じく、親のウィンドウは Windows と macOS でだけ付ける。
+        #[cfg(any(windows, target_os = "macos"))]
+        let dialog = dialog.set_parent(&window);
+        let picked = if multiple {
+            dialog.blocking_pick_files().unwrap_or_default()
+        } else {
+            dialog.blocking_pick_file().into_iter().collect()
+        };
+        picked
+            .into_iter()
+            .map(|p| p.into_path().map(path_string).map_err(|e| e.to_string()))
+            .collect::<Result<Vec<_>, _>>()
+    })
+    .await?;
+    access.grant_readable(paths.iter().map(PathBuf::from));
+    Ok(paths)
+}
+
+/// 保存のダイアログを開き、選ばれたパスを返す (取り消したら `null`)。拡張子が無ければ `extension` を付ける
+/// (Linux のダイアログはフィルタの拡張子を付けずに返すことがある)。返したパスは 1 回だけ書ける
+/// (`write_json_file`・`write_png_file`)。書ける形式は `json` と `png` だけ。
+#[tauri::command]
+async fn save_file_dialog(
+    window: WebviewWindow,
+    access: State<'_, FileAccess>,
+    title: String,
+    default_name: String,
+    filter_name: String,
+    extension: String,
+) -> Result<Option<String>, String> {
+    if !WRITABLE_EXTENSIONS.contains(&extension.as_str()) {
+        return Err(format!("cannot save .{extension} files"));
+    }
+    let picked = blocking(move || {
+        window
+            .dialog()
+            .file()
+            .set_title(title)
+            .set_file_name(default_name)
+            .add_filter(filter_name, &[extension.as_str()])
+            .set_parent(&window)
+            .blocking_save_file()
+            .map(|p| p.into_path().map_err(|e| e.to_string()))
+            .transpose()
+            .map(|p| p.map(|p| with_extension(p, &extension)))
+    })
+    .await?;
+    let Some(path) = picked else {
+        return Ok(None);
+    };
+    let path = path_string(path);
+    access.grant_writable(PathBuf::from(&path));
+    Ok(Some(path))
+}
+
+/// 保存のダイアログで選べる (書ける) 拡張子。
+const WRITABLE_EXTENSIONS: &[&str] = &["json", "png"];
+
+/// 拡張子 (大文字小文字は区別しない) が無ければ付け足す。
+fn with_extension(path: PathBuf, extension: &str) -> PathBuf {
+    if has_extension(&path, &[extension]) {
+        return path;
+    }
+    let mut name = path.into_os_string();
+    name.push(".");
+    name.push(extension);
+    PathBuf::from(name)
+}
+
+/// 画面に渡すパスの文字列。画面はこの文字列のまま返してくるので、許したパスもこの文字列から作る。
+fn path_string(path: PathBuf) -> String {
+    path.to_string_lossy().into_owned()
+}
+
+/// 覚えておく読めるパスの数の上限 (古いものから忘れる)。
+const MAX_READABLE_PATHS: usize = 1000;
+
+/// webview に読み書きを許したパス (T0727)。webview で思わぬスクリプトが動いても、利用者が選んでいない
+/// ファイルを読み書きできないようにする。
+///
+/// - 読める: 開くダイアログで選んだ・ウィンドウにドロップした・起動時の引数のファイル。覚えた場所 (`path:`) から
+///   読み直せるよう、アプリのデータのディレクトリの `readable-files.json` に覚える (新しいものから
+///   `MAX_READABLE_PATHS` 件)。
+/// - 書ける: 保存のダイアログで選んだパス。1 回書いたら忘れる (覚えない)。
+#[derive(Default)]
+struct FileAccess {
+    readable: Mutex<ReadableFiles>,
+    writable: Mutex<HashSet<PathBuf>>,
+}
+
+/// 読めるパスの一覧 (古い順) と、それを覚えるファイル。
+#[derive(Default)]
+struct ReadableFiles {
+    paths: Vec<PathBuf>,
+    store: Option<PathBuf>,
+}
+
+impl FileAccess {
+    /// `store` に覚えた読めるパスを読み込む (無い・壊れていれば空から始める)。
+    fn load(store: Option<PathBuf>) -> Self {
+        let paths = store
+            .as_deref()
+            .and_then(|s| std::fs::read(s).ok())
+            .and_then(|bytes| serde_json::from_slice::<Vec<PathBuf>>(&bytes).ok())
+            .unwrap_or_default();
+        Self {
+            readable: Mutex::new(ReadableFiles { paths, store }),
+            writable: Mutex::default(),
+        }
+    }
+
+    fn check_readable(&self, path: &Path) -> Result<(), String> {
+        if lock(&self.readable).paths.iter().any(|p| p == path) {
+            Ok(())
+        } else {
+            Err(format!(
+                "{}: the file was not chosen by the user",
+                path.display()
+            ))
+        }
+    }
+
+    /// 読めるパスに加え (すでにあれば新しくし)、覚える。覚えるファイルに書けなくても、このセッションでは読める。
+    fn grant_readable(&self, paths: impl IntoIterator<Item = PathBuf>) {
+        let mut readable = lock(&self.readable);
+        for path in paths {
+            readable.paths.retain(|p| p != &path);
+            readable.paths.push(path);
+        }
+        let excess = readable.paths.len().saturating_sub(MAX_READABLE_PATHS);
+        readable.paths.drain(..excess);
+        if let Some(store) = &readable.store {
+            let _ = save_paths(store, &readable.paths);
+        }
+    }
+
+    fn grant_writable(&self, path: PathBuf) {
+        lock(&self.writable).insert(path);
+    }
+
+    /// 書けるパスなら、書けるパスから除いて `Ok` を返す (同じパスにもう 1 回書くには、またダイアログで選ぶ)。
+    fn take_writable(&self, path: &Path) -> Result<(), String> {
+        if lock(&self.writable).remove(path) {
+            Ok(())
+        } else {
+            Err(format!(
+                "{}: the path was not chosen in the save dialog",
+                path.display()
+            ))
+        }
+    }
+}
+
+fn save_paths(store: &Path, paths: &[PathBuf]) -> Result<(), String> {
+    if let Some(dir) = store.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let json = serde_json::to_vec(paths).map_err(|e| e.to_string())?;
+    std::fs::write(store, json).map_err(|e| e.to_string())
+}
+
+/// ロックを取る。ほかのスレッドがロック中に panic していても、中身 (パスの一覧) はそのまま使う。
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// ウィンドウにドロップされたファイルを読めるパスに加える。Tauri はこのハンドラーをドロップのイベント
+/// (`tauri://drag-drop`) を webview へ送った直後に、同じメインスレッドで呼ぶ。webview がそのイベントを受けて
+/// `read_model_file` を呼ぶのはその後になる (IPC もメインスレッドで受ける) ので、読むときには加えてある。
+fn on_webview_event(webview: &tauri::Webview, event: &WebviewEvent) {
+    if let WebviewEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {
+        webview
+            .state::<FileAccess>()
+            .grant_readable(paths.iter().cloned().map(path_string).map(PathBuf::from));
+    }
+}
+
+/// 読めるパスを覚えるファイル (アプリのデータのディレクトリ)。
+const READABLE_FILES_STORE: &str = "readable-files.json";
 
 pub fn run() {
     #[allow(clippy::expect_used)]
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
+        .setup(|app| {
+            let store = app
+                .path()
+                .app_data_dir()
+                .ok()
+                .map(|d| d.join(READABLE_FILES_STORE));
+            app.manage(FileAccess::load(store));
+            Ok(())
+        })
         .on_permission_request(|_, kind| permission_response(kind))
+        .on_webview_event(on_webview_event)
         .invoke_handler(tauri::generate_handler![
+            initial_file,
+            open_file_dialog,
             read_model_file,
+            save_file_dialog,
             write_json_file,
-            write_png_file,
-            initial_file
+            write_png_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running the ugoe viewer");
@@ -211,11 +443,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ugoe-viewer-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("rec.json");
-        tauri::async_runtime::block_on(write_json_file(
-            path.to_string_lossy().into_owned(),
-            "{}".into(),
-        ))
-        .unwrap();
+        write_json(&path, "{}").unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "{}");
         assert!(write_json(&dir.join("rec.sh"), "x").is_err());
         assert!(!dir.join("rec.sh").exists());
@@ -234,15 +462,6 @@ mod tests {
         std::fs::write(&other, b"{}").unwrap();
         assert!(read_model(&other, 8).unwrap_err().contains("not a model"));
         assert!(read_model(&dir.join("missing.ugoe"), 8).is_err());
-        // コマンドは別のスレッドで読み、同じ結果を返す。
-        assert!(
-            tauri::async_runtime::block_on(read_model_file(other.to_string_lossy().into_owned()))
-                .is_err()
-        );
-        assert!(
-            tauri::async_runtime::block_on(read_model_file(path.to_string_lossy().into_owned()))
-                .is_ok()
-        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -281,6 +500,101 @@ mod tests {
         assert!(write_png(&dir.join("other.png"), b"not a png").is_err());
         assert!(!dir.join("other.png").exists());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn reads_only_the_files_the_user_chose() {
+        let access = FileAccess::load(None);
+        let model = PathBuf::from("/home/u/model.ugoe");
+        assert!(access.check_readable(&model).is_err());
+        access.grant_readable([model.clone(), PathBuf::from("/home/u/hair.ugoemod")]);
+        assert!(access.check_readable(&model).is_ok());
+        assert!(
+            access
+                .check_readable(Path::new("/home/u/hair.ugoemod"))
+                .is_ok()
+        );
+        // 同じディレクトリのほかのファイル・ほかのアプリの設定は読めない。
+        assert!(
+            access
+                .check_readable(Path::new("/home/u/other.ugoe"))
+                .is_err()
+        );
+        assert!(
+            access
+                .check_readable(Path::new("/home/u/.config/app/settings.json"))
+                .unwrap_err()
+                .contains("not chosen")
+        );
+    }
+
+    #[test]
+    fn remembers_readable_files_across_sessions() {
+        let dir = std::env::temp_dir().join(format!("ugoe-viewer-grants-{}", std::process::id()));
+        let store = dir.join("data").join(READABLE_FILES_STORE);
+        let access = FileAccess::load(Some(store.clone()));
+        access.grant_readable([PathBuf::from("/a.ugoe"), PathBuf::from("/b.ugoemod")]);
+        // 読み直したアプリ (次のセッション) でも読める。
+        let next = FileAccess::load(Some(store.clone()));
+        assert!(next.check_readable(Path::new("/a.ugoe")).is_ok());
+        assert!(next.check_readable(Path::new("/b.ugoemod")).is_ok());
+        // 壊れたファイルなら空から始める。
+        std::fs::write(&store, b"not json").unwrap();
+        let broken = FileAccess::load(Some(store));
+        assert!(broken.check_readable(Path::new("/a.ugoe")).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn forgets_the_oldest_readable_files() {
+        let access = FileAccess::load(None);
+        access.grant_readable((0..MAX_READABLE_PATHS).map(|i| PathBuf::from(format!("/{i}.ugoe"))));
+        // 前に許したパスをもう 1 回許すと新しくなり、先に忘れられない。
+        access.grant_readable([PathBuf::from("/0.ugoe")]);
+        access.grant_readable([PathBuf::from("/new.ugoe")]);
+        assert_eq!(lock(&access.readable).paths.len(), MAX_READABLE_PATHS);
+        assert!(access.check_readable(Path::new("/0.ugoe")).is_ok());
+        assert!(access.check_readable(Path::new("/new.ugoe")).is_ok());
+        assert!(access.check_readable(Path::new("/1.ugoe")).is_err());
+        assert!(access.check_readable(Path::new("/2.ugoe")).is_ok());
+    }
+
+    #[test]
+    fn writes_only_once_to_the_path_chosen_in_the_save_dialog() {
+        let access = FileAccess::load(None);
+        let shot = PathBuf::from("/home/u/shot.png");
+        assert!(
+            access
+                .take_writable(&shot)
+                .unwrap_err()
+                .contains("save dialog")
+        );
+        access.grant_writable(shot.clone());
+        assert!(
+            access
+                .take_writable(Path::new("/home/u/.bashrc.png"))
+                .is_err()
+        );
+        assert!(access.take_writable(&shot).is_ok());
+        assert!(access.take_writable(&shot).is_err());
+        // 書けるパスは読めるパスにならない。
+        assert!(access.check_readable(&shot).is_err());
+    }
+
+    #[test]
+    fn adds_the_extension_of_the_save_dialog() {
+        assert_eq!(
+            with_extension(PathBuf::from("/home/u/rec"), "json"),
+            PathBuf::from("/home/u/rec.json")
+        );
+        assert_eq!(
+            with_extension(PathBuf::from("/home/u/shot.PNG"), "png"),
+            PathBuf::from("/home/u/shot.PNG")
+        );
+        assert_eq!(
+            with_extension(PathBuf::from("/a/shot.png.txt"), "png"),
+            PathBuf::from("/a/shot.png.txt.png")
+        );
     }
 
     #[test]
