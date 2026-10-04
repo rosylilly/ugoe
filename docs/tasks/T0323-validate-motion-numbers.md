@@ -1,11 +1,11 @@
 ---
 id: T0323
 title: モーションと表情の数値の検証 (NaN・無限大・負の長さ)
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-model, ugoe-format, ugoe-cli, docs]
 depends_on: [T0317, T0141]
-assignee:
+assignee: claude-worker-T0323
 ---
 
 # T0323: モーションと表情の数値の検証 (NaN・無限大・負の長さ)
