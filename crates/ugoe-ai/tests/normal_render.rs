@@ -84,11 +84,11 @@ impl Image {
         };
         let mut rgba = self.pixels.clone();
         for p in rgba.as_chunks_mut::<4>().0 {
-            let a = u32::from(p[3]);
-            if a > 0 {
-                for c in &mut p[..3] {
-                    *c = ((u32::from(*c) * 255 + a / 2) / a).min(255) as u8;
-                }
+            let Some(a) = std::num::NonZeroU32::new(u32::from(p[3])) else {
+                continue;
+            };
+            for c in &mut p[..3] {
+                *c = ((u32::from(*c) * 255 + a.get() / 2) / a).min(255) as u8;
             }
         }
         let path = PathBuf::from(dir).join(format!("{name}.png"));

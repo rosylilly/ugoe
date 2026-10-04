@@ -6,6 +6,7 @@ import {
   clippyArgs,
   missingTargets,
   requiredTargets,
+  requiredTools,
   select,
   validate,
 } from "./cross-check.mjs";
@@ -67,4 +68,22 @@ test("ワークスペースにないクレートと、空のクレート・タ�
 test("仮想カメラは Windows と macOS のターゲットで検査する", () => {
   assert.deepEqual(CHECKS.vcam.crates, ["ugoe-studio-vcam"]);
   assert.deepEqual(CHECKS.vcam.targets, ["x86_64-pc-windows-msvc", "aarch64-apple-darwin"]);
+});
+
+test("ツールのコマンドと apt のパッケージは重なりを除いて集める", () => {
+  const defs = {
+    a: { crates: ["x"], targets: ["t"] },
+    b: { crates: ["y"], targets: ["t"], commands: ["gcc", "windres"], apt: ["mingw"] },
+    c: { crates: ["z"], targets: ["t"], commands: ["gcc"], apt: ["mingw", "other"] },
+  };
+  assert.deepEqual(requiredTools(select(defs, [])), {
+    commands: ["gcc", "windres"],
+    apt: ["mingw", "other"],
+  });
+  assert.deepEqual(requiredTools(select(defs, ["a"])), { commands: [], apt: [] });
+});
+
+test("アプリの src-tauri は MinGW の windows-gnu で検査する", () => {
+  assert.deepEqual(CHECKS.apps.targets, ["x86_64-pc-windows-gnu"]);
+  assert.deepEqual(CHECKS.apps.apt, ["gcc-mingw-w64-x86-64"]);
 });

@@ -167,6 +167,11 @@ jobs:
           node-version-file: .tool-versions
       - name: Install Rust targets
         run: node scripts/cross-check.mjs targets | xargs rustup target add
+      # 依存のビルドスクリプトがターゲット向けにコンパイルする C とリソースのためのツール (アプリの windows-gnu の MinGW)
+      - name: Install cross tools
+        run: |
+          sudo apt-get update
+          node scripts/cross-check.mjs apt | xargs sudo apt-get install -y --no-install-recommends
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: cross
@@ -175,10 +180,51 @@ jobs:
       - name: Clippy
         run: just cross-check
 
+  # Windows と macOS の上で、ファイルを扱うクレート (scripts/ci-groups.mjs の OS_CRATES) の clippy とテストを流す
+  # (docs/testing.md#windows-と-macos)。大文字小文字を区別しないファイルシステムやパスの区切りの違いの誤りは
+  # ubuntu では見つからない (T0667)。macOS では、Apple の SDK が要って rust (cross) で検査できないアプリの
+  # src-tauri の macOS のコードを、`just lint-group apps` で検査する
+  rust-os:
+    name: rust (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows
+            os: windows-latest
+          - name: macos
+            os: macos-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust toolchain (rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.name }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .tool-versions
+      - uses: extractions/setup-just@v4
+      - name: Clippy
+        run: just lint-os
+      - name: Test
+        run: just test-os
+      - name: Clippy (apps)
+        if: matrix.name == 'macos'
+        run: just lint-group apps
+
   # Rust の全ジョブの結果を 1 つにまとめる (ブランチの保護で必須にする検査の名前を、グループが増えても変えないため)
   rust:
     if: always()
-    needs: [rust-checks, rust-groups, rust-group, cross]
+    needs: [rust-checks, rust-groups, rust-group, cross, rust-os]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -191,6 +237,7 @@ jobs:
           echo "rust-groups: ${{ needs.rust-groups.result }}"
           echo "rust-group: ${{ needs.rust-group.result }}"
           echo "cross: ${{ needs.cross.result }}"
+          echo "rust-os: ${{ needs.rust-os.result }}"
           exit 1
 
   # 描画テスト (`just test-gpu`)。GPU のないランナーで Mesa のソフトウェア実装を使う。

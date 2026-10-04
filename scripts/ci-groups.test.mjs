@@ -1,7 +1,7 @@
 // scripts/ci-groups.mjs の検査のテスト (`just groups`)
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cargoArgs, validate } from "./ci-groups.mjs";
+import { cargoArgs, OS_CRATES, osCargoArgs, validate, validateOs } from "./ci-groups.mjs";
 
 const pkg = (name, { features = {}, targets = [] } = {}) => ({
   name,
@@ -61,4 +61,45 @@ test("cargo の引数は -p の並びと --features", () => {
     "--features",
     "a/x,a/y",
   ]);
+});
+
+test("--all-features はグループの features の代わりに付ける", () => {
+  assert.deepEqual(cargoArgs({ crates: ["a"], features: ["a/x"] }, { allFeatures: true }), [
+    "-p",
+    "a",
+    "--all-features",
+  ]);
+});
+
+test("OS_CRATES はワークスペースのクレートに限る", () => {
+  const metadata = { packages: [pkg("a")] };
+  assert.deepEqual(validateOs(["a"], metadata), []);
+  assert.deepEqual(validateOs(["a", "gone"], metadata), [
+    "OS_CRATES: gone はワークスペースのクレートではない",
+  ]);
+  assert.deepEqual(validateOs([], metadata), ["OS_CRATES: クレートが 1 つもない"]);
+  assert.ok(OS_CRATES.length > 0);
+});
+
+test("OS のジョブの clippy はすべての feature で警告をエラーにし、test は引数をそのまま渡す", () => {
+  assert.deepEqual(osCargoArgs("clippy", ["a", "b"]), [
+    "clippy",
+    "-p",
+    "a",
+    "-p",
+    "b",
+    "--all-features",
+    "--all-targets",
+    "--",
+    "-D",
+    "warnings",
+  ]);
+  assert.deepEqual(osCargoArgs("test", ["a"], ["--", "--nocapture"]), [
+    "test",
+    "-p",
+    "a",
+    "--",
+    "--nocapture",
+  ]);
+  assert.throws(() => osCargoArgs("build", ["a"]), /unknown command: build/);
 });

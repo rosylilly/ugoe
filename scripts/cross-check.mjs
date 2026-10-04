@@ -6,14 +6,19 @@
 //   node scripts/cross-check.mjs run [<name>...]   検査を流す (名前を省けばすべて)。ターゲットが無ければ入れ方を出して失敗する
 //                                                  (`just cross-check` / `just vcam-check`。CI の rust (cross))
 //   node scripts/cross-check.mjs targets [<name>...]  要るターゲットを空白で区切って出す (CI の `rustup target add` が使う)
+//   node scripts/cross-check.mjs apt [<name>...]   要る apt のパッケージを空白で区切って出す (CI の `apt-get install` が使う)
 //   node scripts/cross-check.mjs check             定義のクレートがワークスペースにあるかを検査する (`just groups`)
 //   node scripts/cross-check.mjs list              検査とクレートとターゲットの一覧
 
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { delimiter, join } from "node:path";
 
 /**
  * 検査の定義。`crates` を `targets` のそれぞれで `cargo clippy --all-targets -- -D warnings` する。
- * @type {Record<string, { crates: string[], targets: string[], features?: string[] }>}
+ * 依存のビルドスクリプトがターゲット向けの C などをコンパイルするなら、そのツールのコマンドを `commands` に、
+ * 入れる apt のパッケージを `apt` に書く (無ければ run が入れ方を出して失敗する)。
+ * @type {Record<string, { crates: string[], targets: string[], features?: string[], commands?: string[], apt?: string[] }>}
  */
 export const CHECKS = {
   // スタジオの仮想カメラ (apps/studio/vcam、ADR 0028 の 8.)。unsafe の大半は Windows (Media Foundation) と
@@ -21,6 +26,17 @@ export const CHECKS = {
   vcam: {
     crates: ["ugoe-studio-vcam"],
     targets: ["x86_64-pc-windows-msvc", "aarch64-apple-darwin"],
+  },
+  // エディタ・ビューア・スタジオの src-tauri の Windows のコード (エディタの資格情報の保存先など。T0013)。
+  // 依存の ring (ugoe-ai の rustls) の C と tauri-build のリソース (.rc) はターゲット向けにコンパイルされるので、
+  // MinGW の gcc と windres がある windows-gnu で検査する (msvc は MSVC の SDK が要る)。macOS は Apple の SDK が要り
+  // ubuntu ではできないので、CI の rust (macos) のジョブが macOS の上で `just lint-group apps` を流す
+  apps: {
+    crates: ["ugoe-editor", "ugoe-viewer", "ugoe-studio"],
+    targets: ["x86_64-pc-windows-gnu"],
+    features: ["ugoe-studio/gpu-tests"],
+    commands: ["x86_64-w64-mingw32-gcc", "x86_64-w64-mingw32-windres"],
+    apt: ["gcc-mingw-w64-x86-64"],
   },
 };
 
@@ -39,6 +55,14 @@ export function select(checks, names) {
 /** 選んだ検査が要るターゲット (重なりを除き、出てきた順)。 */
 export function requiredTargets(selected) {
   return [...new Set(selected.flatMap(([, def]) => def.targets))];
+}
+
+/** 選んだ検査が要るツールのコマンドと apt のパッケージ (重なりを除き、出てきた順)。 */
+export function requiredTools(selected) {
+  return {
+    commands: [...new Set(selected.flatMap(([, def]) => def.commands ?? []))],
+    apt: [...new Set(selected.flatMap(([, def]) => def.apt ?? []))],
+  };
 }
 
 /** 要るターゲットのうち、入っていないもの。 */
@@ -81,6 +105,13 @@ function installedTargets() {
     .filter(Boolean);
 }
 
+/** PATH にコマンドがあるか。 */
+function hasCommand(command) {
+  const dirs = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
+  const exts = process.platform === "win32" ? ["", ".exe", ".cmd", ".bat"] : [""];
+  return dirs.some((dir) => exts.some((ext) => existsSync(join(dir, command + ext))));
+}
+
 function metadata() {
   return JSON.parse(
     execFileSync("cargo", ["metadata", "--no-deps", "--format-version", "1"], {
@@ -95,6 +126,13 @@ function run(selected) {
   if (missing.length > 0) {
     console.error(`error: ターゲットが入っていない: ${missing.join(", ")}`);
     console.error(`  入れ方: rustup target add ${missing.join(" ")}`);
+    return 1;
+  }
+  const tools = requiredTools(selected);
+  const absent = tools.commands.filter((c) => !hasCommand(c));
+  if (absent.length > 0) {
+    console.error(`error: コマンドが無い: ${absent.join(", ")}`);
+    console.error(`  入れ方 (Debian / Ubuntu): sudo apt-get install ${tools.apt.join(" ")}`);
     return 1;
   }
   for (const [name, def] of selected) {
@@ -115,7 +153,8 @@ function run(selected) {
 function main([command, ...names]) {
   switch (command) {
     case "run":
-    case "targets": {
+    case "targets":
+    case "apt": {
       let selected;
       try {
         selected = select(CHECKS, names);
@@ -124,7 +163,8 @@ function main([command, ...names]) {
         return 1;
       }
       if (command === "run") return run(selected);
-      console.log(requiredTargets(selected).join(" "));
+      if (command === "apt") console.log(requiredTools(selected).apt.join(" "));
+      else console.log(requiredTargets(selected).join(" "));
       return 0;
     }
     case "check": {
@@ -141,7 +181,7 @@ function main([command, ...names]) {
     }
     default:
       console.error(
-        "usage: node scripts/cross-check.mjs <run [<name>...]|targets [<name>...]|check|list>",
+        "usage: node scripts/cross-check.mjs <run [<name>...]|targets [<name>...]|apt [<name>...]|check|list>",
       );
       return 1;
   }

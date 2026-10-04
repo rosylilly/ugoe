@@ -37,9 +37,11 @@ C ABI の検査はワークスペースの外のツール (cbindgen) と C コ�
 | `rust (tools)` | `ugoe-editor-core`・`ugoe-ai`・`ugoe-cli`・`ugoe-mcp` の clippy とテスト |
 | `rust (apps)` | エディタ・ビューア・スタジオ (Tauri) の clippy とテスト、生成物の検査 (`just gen && git diff --exit-code`)。Tauri のシステムの依存はこのジョブでだけ入れる |
 | `rust (cross)` | 手元の OS 以外のターゲットでの clippy (`just cross-check`)。下の「別のターゲットの検査」 |
+| `rust (windows)`・`rust (macos)` | Windows と macOS のランナーでの、ファイルを扱うクレートの clippy とテスト (`just lint-os`・`just test-os`)。macOS ではアプリの clippy (`just lint-group apps`) も。下の「Windows と macOS」 |
 | `rust` | 上の全ジョブの結果をまとめる (ブランチの保護で必須にする検査の名前を、グループが増えても変えないため) |
 
 - 手元では `just lint-group <グループ>` と `just test-group <グループ>` で、CI の 1 つのジョブと同じ clippy とテストを走らせられます。`just ci` は今までどおりワークスペース全体を検査します。
+- clippy (`just lint`・`just lint-group`) は、既定の feature と、すべての feature (`--all-features`) の 2 回流します。`gpu-tests` などの feature の下のコード (GPU のテストなど) は既定の feature ではコンパイルされず、警告が溜まっていたためです (T0211・T0013)。グループでの `--all-features` は、選んだクレートの feature だけを有効にします。
 - `-p` で選んだクレートの間でだけ feature が統合されるので、ワークスペース全体では別のクレートが有効にする feature (例: `ugoe-editor-core` が有効にする `ugoe-model/schema`) は、グループの `features` に書きます。`required-features` を持つテストや例 (`gpu-tests` を除く) の feature が書かれていなければ `just groups` が失敗します。
 - 各ジョブは、最初にランナーの使わない SDK (.NET・Android SDK・Haskell・CodeQL) を消してディスクを空けます。
 - CI では `CARGO_PROFILE_DEV_DEBUG=0` でデバッグ情報を作りません。target がおよそ半分になります。パニックの位置 (ファイルと行) はデバッグ情報がなくても表示されますが、バックトレースには行番号が出ません。
@@ -68,6 +70,48 @@ clippy の拒否 (仮想カメラの `clippy::undocumented_unsafe_blocks` など
   (`ugoe-studio-vcam` を `x86_64-pc-windows-msvc` と `aarch64-apple-darwin` で)。ターゲットが入っていなければ `rustup target add …` の
   入れ方を出して止まります。`just ci` には含めないので、cfg で OS を分けたコードを触ったら実行してください。
 - 検査を足すときは `CHECKS` に書くだけでジョブに入ります。定義のクレートがワークスペースにあるかは `just groups` が検査します。
+- 依存のビルドスクリプトがターゲット向けに C やリソースをコンパイルするときは、そのツールが要ります。`CHECKS` の `commands` に
+  コマンドを、`apt` に apt のパッケージを書くと、`just cross-check` は無いときに入れ方を出して止まり、CI のジョブは
+  `node scripts/cross-check.mjs apt` のパッケージを入れます。
+
+| 検査 | クレート | ターゲット | 要るもの |
+| --- | --- | --- | --- |
+| `vcam` | `ugoe-studio-vcam` | `x86_64-pc-windows-msvc`・`aarch64-apple-darwin` | ターゲットの標準ライブラリだけ |
+| `apps` | `ugoe-editor`・`ugoe-viewer`・`ugoe-studio` | `x86_64-pc-windows-gnu` | MinGW の gcc と windres (`gcc-mingw-w64-x86-64`) |
+
+アプリ (`apps`) は Tauri と `ugoe-ai` の依存の C (ring) と、tauri-build のリソース (`.rc`) をターゲット向けにコンパイルするので、
+ターゲットの標準ライブラリだけでは検査できません (T0013)。
+
+- **Windows:** msvc のターゲットは MSVC の SDK (cargo-xwin などで Microsoft の SDK を落とす) が要るので、MinGW で済む `windows-gnu` で
+  検査します。アプリの Windows のコードは `cfg(windows)`・`target_os = "windows"` で分けていて、msvc と gnu の違い (`target_env`) に
+  依存しないので、型検査と lint の範囲は変わりません。
+- **macOS:** C のコンパイルに Apple の SDK (`TargetConditionals.h` など) が要り、ubuntu には入れられないので、`rust (macos)` のジョブが
+  macOS の上で `just lint-group apps` を流します (下の「Windows と macOS」)。
+
+### Windows と macOS
+
+ファイルを書き出す・パスを扱うクレートの誤り (大文字小文字だけが違う名前を同じファイルとして扱う、パスの区切り、ファイルの権限など。T0667) は
+ubuntu では見つからないので、`rust (windows)` (`windows-latest`) と `rust (macos)` (`macos-latest`) のジョブが、毎回の PR と main への push で
+次を流します (T0013)。
+
+- 対象のクレートの定義の正は `scripts/ci-groups.mjs` の `OS_CRATES`: `ugoe-format`・`ugoe-editor-core`・`ugoe-cli`・`ugoe-mcp`。
+  ワークスペースのクレートかは `just groups` が検査します。
+- `just lint-os`: 対象のクレートの clippy (すべての feature)。`just test-os`: 対象のクレートのテスト (`gpu-tests` の下のテストは動かない)。
+  どちらも Node から cargo を呼ぶので、Windows の PowerShell からも動きます。手元の Linux でも流せます。
+- macOS では、アプリの src-tauri の macOS のコード (エディタの資格情報の保存先など) と仮想カメラを、macOS の上の
+  `just lint-group apps` で検査します (上の「別のターゲットの検査」)。
+- ファイルを扱うクレートを足したら `OS_CRATES` に足します。GPU も Tauri のシステムの依存も入れないので、それらが要るクレートは入れません。
+- 手元の Linux で Windows のテストを近似するには、MinGW と Wine で `x86_64-pc-windows-gnu` のテストを流せます (CI の代わりにはならない。
+  Wine のソケットやファイルシステムは本物の Windows と細部が違う):
+
+  ```sh
+  rustup target add x86_64-pc-windows-gnu   # MinGW (gcc-mingw-w64-x86-64) と wine も要る
+  WINEPREFIX=/tmp/ugoe-wine WINEDLLOVERRIDES="mscoree,mshtml=" WINEDEBUG=-all DISPLAY= \
+    CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUNNER=wine \
+    cargo test -p ugoe-format -p ugoe-editor-core -p ugoe-cli -p ugoe-mcp --target x86_64-pc-windows-gnu
+  ```
+
+  `WINEDLLOVERRIDES` は、新しい Wine の環境を作るときの Mono と Gecko の導入 (画面が無いと止まる) を飛ばすためです。
 
 ### クレートを足したとき
 

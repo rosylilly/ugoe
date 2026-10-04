@@ -4,14 +4,21 @@
 //
 //   node scripts/ci-groups.mjs check          すべてのクレートがちょうど 1 つのグループに入っているかなどを検査する
 //                                            (`just groups`。`just ci` に含まれる)
-//   node scripts/ci-groups.mjs args <group>   `cargo clippy` / `cargo test` に渡す引数 (`-p <crate>` の並びと --features)。
-//                                            `just lint-group <group>` / `just test-group <group>` が使う
+//   node scripts/ci-groups.mjs args <group> [--all-features]
+//                                            `cargo clippy` / `cargo test` に渡す引数 (`-p <crate>` の並びと --features)。
+//                                            `just lint-group <group>` / `just test-group <group>` が使う。--all-features を付けると
+//                                            グループのクレートのすべての feature (`gpu-tests` など) を有効にする (lint-group の 2 回目の clippy)
+//   node scripts/ci-groups.mjs os <clippy|test> [<cargo の引数>...]
+//                                            OS_CRATES の clippy (すべての feature) / テストを流す (`just lint-os` / `just test-os`。
+//                                            CI の rust (windows)・rust (macos)。Windows の PowerShell からも動くよう cargo を直接呼ぶ)
 //   node scripts/ci-groups.mjs matrix         GitHub Actions の matrix (JSON の 1 行。.github/workflows/ci.yml の rust-groups)
 //   node scripts/ci-groups.mjs list           グループとクレートの一覧
 //
 // `cargo test --workspace` と違い、`-p` で選んだクレートの間でだけ feature が統合される。ワークスペース全体では
 // 別のクレートが有効にしていた feature の裏のテストを落とさないよう、グループの features に書く
 // (`required-features` を持つテスト・例は、ここに書かないと check が失敗する。`gpu-tests` は `just test-gpu` の担当なので除く)。
+// clippy は既定の feature と、すべての feature (`--all-features`) の 2 回流す。feature の下のコード (`gpu-tests` のテストなど) も
+// 型検査と lint をするため (T0013)。
 
 import { execFileSync } from "node:child_process";
 
@@ -53,6 +60,12 @@ export const GROUPS = {
     tauri: true,
   },
 };
+
+/**
+ * Windows と macOS のランナーでも clippy とテストを流すクレート (CI の rust (windows)・rust (macos)。docs/testing.md#ci-のジョブ)。
+ * ファイルを書き出す・パスを扱うクレート。大文字小文字だけが違う名前やパスの区切りの違いの誤りは、Linux では見つからない (T0667)。
+ */
+export const OS_CRATES = ["ugoe-format", "ugoe-editor-core", "ugoe-cli", "ugoe-mcp"];
 
 /** 検査から除く `required-features` (別のレシピが担当する)。 */
 const IGNORED_FEATURES = new Set(["gpu-tests"]);
@@ -108,11 +121,50 @@ export function validate(groups, metadata) {
   return errors;
 }
 
-/** `cargo clippy` / `cargo test` に渡す引数。 */
-export function cargoArgs(def) {
+/**
+ * OS_CRATES がワークスペースのクレートかを検査し、問題を文字列の配列で返す (空なら問題なし)。
+ * @param {string[]} crates
+ * @param {{ packages: Array<{ name: string }> }} metadata
+ */
+export function validateOs(crates, metadata) {
+  const packages = new Set(metadata.packages.map((p) => p.name));
+  if (crates.length === 0) return ["OS_CRATES: クレートが 1 つもない"];
+  return crates
+    .filter((name) => !packages.has(name))
+    .map((name) => `OS_CRATES: ${name} はワークスペースのクレートではない`);
+}
+
+/**
+ * `cargo clippy` / `cargo test` に渡す引数。`allFeatures` ならグループの features の代わりに --all-features を付ける
+ * (選んだクレートのすべての feature。依存先のクレートの feature は有効にしない)。
+ */
+export function cargoArgs(def, { allFeatures = false } = {}) {
   const args = def.crates.flatMap((name) => ["-p", name]);
-  if (def.features?.length) args.push("--features", def.features.join(","));
+  if (allFeatures) args.push("--all-features");
+  else if (def.features?.length) args.push("--features", def.features.join(","));
   return args;
+}
+
+/** OS_CRATES の `cargo` の引数。clippy はすべての feature で、警告をエラーにする。 */
+export function osCargoArgs(command, crates, extra = []) {
+  const packages = crates.flatMap((name) => ["-p", name]);
+  switch (command) {
+    case "clippy":
+      return [
+        "clippy",
+        ...packages,
+        "--all-features",
+        "--all-targets",
+        ...extra,
+        "--",
+        "-D",
+        "warnings",
+      ];
+    case "test":
+      return ["test", ...packages, ...extra];
+    default:
+      throw new Error(`unknown command: ${command} (clippy, test)`);
+  }
 }
 
 function metadata() {
@@ -124,10 +176,11 @@ function metadata() {
   );
 }
 
-function main([command, group]) {
+function main([command, group, ...rest]) {
   switch (command) {
     case "check": {
-      const errors = validate(GROUPS, metadata());
+      const meta = metadata();
+      const errors = [...validate(GROUPS, meta), ...validateOs(OS_CRATES, meta)];
       for (const e of errors) console.error(`error: ${e}`);
       if (errors.length === 0) console.log(`groups ok (${Object.keys(GROUPS).length} groups)`);
       return errors.length > 0 ? 1 : 0;
@@ -138,7 +191,24 @@ function main([command, group]) {
         console.error(`unknown group: ${group} (${Object.keys(GROUPS).join(", ")})`);
         return 1;
       }
-      console.log(cargoArgs(def).join(" "));
+      const allFeatures = rest.includes("--all-features");
+      console.log(cargoArgs(def, { allFeatures }).join(" "));
+      return 0;
+    }
+    case "os": {
+      let args;
+      try {
+        args = osCargoArgs(group, OS_CRATES, rest);
+      } catch (e) {
+        console.error(`error: ${e.message}`);
+        return 1;
+      }
+      console.log(`== cargo ${args.join(" ")}`);
+      try {
+        execFileSync("cargo", args, { stdio: "inherit" });
+      } catch {
+        return 1;
+      }
       return 0;
     }
     case "matrix": {
@@ -152,10 +222,13 @@ function main([command, group]) {
     case "list": {
       for (const [name, def] of Object.entries(GROUPS))
         console.log(`${name}: ${def.crates.join(" ")}`);
+      console.log(`(windows, macos): ${OS_CRATES.join(" ")}`);
       return 0;
     }
     default:
-      console.error("usage: node scripts/ci-groups.mjs <check|args <group>|matrix|list>");
+      console.error(
+        "usage: node scripts/ci-groups.mjs <check|args <group> [--all-features]|os <clippy|test>|matrix|list>",
+      );
       return 1;
   }
 }

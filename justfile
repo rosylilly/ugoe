@@ -43,9 +43,10 @@ fmt-check:
     cargo fmt --all -- --check
     pnpm biome format .
 
-# clippy (警告はエラー扱い)
+# clippy (警告はエラー扱い)。既定の feature と、すべての feature (`gpu-tests` などの下のコード) の 2 回
 lint:
     cargo clippy --workspace --all-targets -- -D warnings
+    cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 # 全テスト (GPU が必要なテストは除外される。`just test-gpu` を参照)
 test *args:
@@ -60,13 +61,22 @@ groups:
 
 # グループの一覧は `node scripts/ci-groups.mjs list`。CI の rust (<グループ>) ジョブと同じ検査。
 # lint-group と test-group は bash の構文を使うので、Windows では Git Bash か WSL で実行する。
-# 1 つのグループだけの clippy: `just lint-group runtime`
+# 1 つのグループだけの clippy: `just lint-group runtime`。既定の feature と、すべての feature (`gpu-tests` など) の 2 回
 lint-group name:
     args="$(node scripts/ci-groups.mjs args {{name}})"; cargo clippy $args --all-targets -- -D warnings
+    args="$(node scripts/ci-groups.mjs args {{name}} --all-features)"; cargo clippy $args --all-targets -- -D warnings
 
 # 1 つのグループだけのテスト: `just test-group tools`。引数は cargo test に渡す
 test-group name *args:
     args="$(node scripts/ci-groups.mjs args {{name}})"; cargo test $args {{args}}
+
+# Windows と macOS の CI (rust (windows)・rust (macos)) で流す、ファイルを扱うクレート (scripts/ci-groups.mjs の OS_CRATES) の
+# clippy (すべての feature) とテスト。PowerShell からも動く。手元の Linux でも流せる
+lint-os:
+    @node scripts/ci-groups.mjs os clippy
+
+test-os *args:
+    @node scripts/ci-groups.mjs os test {{args}}
 
 # GPU を使う描画テスト。`gpu-tests` feature を持つ全クレートが対象 (scripts/gpu-test-args.mjs)。
 # アダプタ情報も表示するには `just test-gpu -- --nocapture`
@@ -161,7 +171,8 @@ unity-check *args:
     node bindings/unity/build.mjs --check {{args}}
 
 # 手元の OS 以外のターゲットでの clippy (`#[cfg(windows)]` などの中のコード。定義は scripts/cross-check.mjs の CHECKS)。
-# 名前を省けばすべて: `just cross-check`、`just cross-check vcam`。ターゲットが無ければ `rustup target add` の入れ方を出して止まる。
+# 名前を省けばすべて: `just cross-check`、`just cross-check vcam`。ターゲットが無ければ `rustup target add` の入れ方を出して止まる
+# (アプリの `apps` は MinGW も要る。無ければ apt の入れ方を出して止まる)。
 # `just ci` には含めない (CI では rust (cross) のジョブ)。cfg で OS を分けたコードを触ったら実行する
 cross-check *names:
     @node scripts/cross-check.mjs run {{names}}
