@@ -16,6 +16,7 @@ import type { PhysicsCollider } from "../../../ipc";
 import { isDynamicRig, isDynamicSettings } from "../../../panels/physics/physics";
 import type { PhysicsView } from "../../../panels/physics/physicsView.svelte";
 import type { ViewportController } from "../../controller.svelte";
+import { toPoints } from "../deformer/gizmo";
 import type { Point } from "../geometry";
 import { puppetJacobian, puppetMap } from "./mapper";
 import {
@@ -23,7 +24,6 @@ import {
   capsulePath,
   dragShape,
   restParticles,
-  toPoints,
   type WorldShape,
   worldShape,
 } from "./physicsGeometry";
@@ -146,6 +146,11 @@ function onMove(e: PointerEvent): void {
   if (p) drag = { ...drag, delta: [p[0] - drag.start[0], p[1] - drag.start[1]] };
 }
 
+/** ドラッグを取り消された (ポインタを失った) ら、コマンドを送らずに元の形に戻す。 */
+function onCancel(e: PointerEvent): void {
+  if (drag?.pointer === e.pointerId) drag = null;
+}
+
 async function onUp(e: PointerEvent): Promise<void> {
   const d = drag;
   if (d?.pointer !== e.pointerId) return;
@@ -188,20 +193,20 @@ async function onUp(e: PointerEvent): Promise<void> {
           <circle class="body" cx={s.center[0]} cy={s.center[1]} r={Math.max(s.radius, 2)}
             role="presentation"
             onpointerdown={(e) => onDown(e, c.collider, "body")}
-            onpointermove={onMove} onpointerup={onUp} onpointercancel={onUp}>
+            onpointermove={onMove} onpointerup={onUp} onpointercancel={onCancel}>
             <title>{c.collider.name}</title>
           </circle>
         {:else}
           <path class="body" d={capsulePath(s.a, s.b, Math.max(s.radius, 2))} role="presentation"
             onpointerdown={(e) => onDown(e, c.collider, "body")}
-            onpointermove={onMove} onpointerup={onUp} onpointercancel={onUp}>
+            onpointermove={onMove} onpointerup={onUp} onpointercancel={onCancel}>
             <title>{c.collider.name}</title>
           </path>
           <line class="axis" x1={s.a[0]} y1={s.a[1]} x2={s.b[0]} y2={s.b[1]} />
           {#each [["a", s.a], ["b", s.b]] as const as [handle, p] (handle)}
             <circle class="end" cx={p[0]} cy={p[1]} r="5" role="presentation"
               onpointerdown={(e) => onDown(e, c.collider, handle)}
-              onpointermove={onMove} onpointerup={onUp} onpointercancel={onUp}>
+              onpointermove={onMove} onpointerup={onUp} onpointercancel={onCancel}>
               <title>{t("viewport.collider.end", { name: c.collider.name, end: handle.toUpperCase() })}</title>
             </circle>
           {/each}

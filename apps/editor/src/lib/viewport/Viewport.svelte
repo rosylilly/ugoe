@@ -79,6 +79,23 @@ $effect(() => {
   return () => observer.disconnect();
 });
 
+// devicePixelRatio だけが変わったとき (倍率の違う画面へウィンドウを移したなど) は ResizeObserver が知らせないので、
+// 今の倍率から外れたら描画バッファの大きさを合わせ直す (ぼやけないように)。
+$effect(() => {
+  let media: MediaQueryList | null = null;
+  const watch = (): void => {
+    media = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    media.addEventListener("change", changed, { once: true });
+  };
+  const changed = (): void => {
+    const { width, height } = container.getBoundingClientRect();
+    controller.resize(width, height, window.devicePixelRatio || 1);
+    watch();
+  };
+  watch();
+  return () => media?.removeEventListener("change", changed);
+});
+
 // テーマ (設定・OS) が変わったら背景を読み直す。
 $effect(() => {
   currentTheme();

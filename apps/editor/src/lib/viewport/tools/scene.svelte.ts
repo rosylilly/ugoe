@@ -5,6 +5,7 @@
 // invalidate() を呼び、それを読む $derived を計算し直させる。
 import type { EditorDocument } from "../../document.svelte";
 import type { ViewportController } from "../controller.svelte";
+import type { WebPuppet } from "../wasm";
 import type { Point } from "./geometry";
 import { type MeshInfo, type ModelSummary, summarizeModel } from "./model";
 
@@ -18,6 +19,12 @@ export class ViewportScene {
     new Map(this.model.meshes.map((m, i) => [m.id, i])),
   );
 
+  /**
+   * 描画可能要素の ID (`drawable_ids`)。wasm から文字列の配列を作り直すので、同じ印 (`#tick`) と WebPuppet の
+   * 間は使い回す (選択枠・モジュールの輪郭はメッシュごとに問い合わせ、物理のプレビュー中は毎フレーム読み直すため)。
+   */
+  #ids: { tick: number; puppet: WebPuppet; ids: string[] } | null = null;
+
   constructor(controller: ViewportController, doc: EditorDocument) {
     this.#controller = controller;
     this.#doc = doc;
@@ -25,6 +32,15 @@ export class ViewportScene {
 
   invalidate(): void {
     this.#tick += 1;
+  }
+
+  #drawableIds(puppet: WebPuppet): string[] {
+    const tick = this.#tick;
+    const cached = this.#ids;
+    if (cached?.tick === tick && cached.puppet === puppet) return cached.ids;
+    const ids = puppet.drawable_ids();
+    this.#ids = { tick, puppet, ids };
+    return ids;
   }
 
   mesh(id: string): MeshInfo | null {
@@ -42,7 +58,7 @@ export class ViewportScene {
     const i = this.#index.get(id);
     const mesh = this.mesh(id);
     if (!puppet || i === undefined || !mesh || this.#controller.status !== "ready") return null;
-    if (puppet.drawable_ids()[i] !== id) return null;
+    if (this.#drawableIds(puppet)[i] !== id) return null;
     const positions = puppet.drawable_positions(i);
     return positions && positions.length === mesh.vertices * 2 ? positions : null;
   }
@@ -60,7 +76,7 @@ export class ViewportScene {
     const p = this.#controller.screenToCanvas(x, y);
     const puppet = this.#controller.puppet;
     if (!p || !puppet) return [];
-    const ids = puppet.drawable_ids();
+    const ids = this.#drawableIds(puppet);
     return Array.from(puppet.hit_test_all(p[0], p[1]), (i) => ids[i]).filter(
       (id): id is string => id !== undefined,
     );

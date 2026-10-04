@@ -21,13 +21,13 @@ import type { PhysicsSettings } from "../ipc";
 import { isDynamicRig } from "../panels/physics/physics";
 import TipButton from "../ui/TipButton.svelte";
 import type { ViewportController } from "../viewport/controller.svelte";
+import { toPoints } from "../viewport/tools/deformer/gizmo";
 import { boundaryEdges, type Point } from "../viewport/tools/geometry";
 import { summarizeModel } from "../viewport/tools/model";
 import { puppetMap } from "../viewport/tools/physics/mapper";
 import {
   capsulePath,
   restParticles,
-  toPoints,
   type WorldShape,
   worldShape,
 } from "../viewport/tools/physics/physicsGeometry";
@@ -119,7 +119,8 @@ const drawn = $derived.by((): Drawn | null => {
             .join("")
         : polyline(convexHull(p), true);
     out.outlines.push({ id: mesh, d });
-    out.bounds.push(...p);
+    // push(...p) は引数の数の上限で止まるので、1 つずつ足す (頂点の多いメッシュ)。
+    for (const q of p) out.bounds.push(q);
   }
   if (item.kind === "deformer") {
     const id = prefix + item.id;

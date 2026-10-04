@@ -9,7 +9,7 @@
 <script lang="ts">
 import type { EditorDocument } from "../../../document.svelte";
 import { t } from "../../../i18n";
-import type { Model } from "../../../ipc";
+import type { Model, PreviewLighting } from "../../../ipc";
 import {
   directionToHandle,
   handleToDirection,
@@ -36,7 +36,8 @@ const canvas = $derived.by(() => {
 });
 
 let svg = $state<SVGSVGElement>();
-let drag: { pointer: number; index: number; moved: boolean } | null = null;
+/** ドラッグ中の光源。`before` は押したときの設定 (取り消したら戻す)。 */
+let drag: { pointer: number; index: number; moved: boolean; before: PreviewLighting } | null = null;
 
 /** 平行光源の円の中心と半径 (CSS ピクセル)。 */
 const dial = $derived.by(() => {
@@ -93,7 +94,7 @@ function onDown(e: PointerEvent, index: number): void {
   e.preventDefault();
   e.stopPropagation();
   view.selected = index;
-  drag = { pointer: e.pointerId, index, moved: false };
+  drag = { pointer: e.pointerId, index, moved: false, before: view.settings };
   (e.currentTarget as Element).setPointerCapture(e.pointerId);
 }
 
@@ -129,6 +130,14 @@ function onUp(e: PointerEvent): void {
   const moved = drag.moved;
   drag = null;
   if (moved) void view.commit();
+}
+
+/** ドラッグを取り消された (ポインタを失った) ら、プロジェクトに残さずに押したときの設定に戻す。 */
+function onCancel(e: PointerEvent): void {
+  if (drag?.pointer !== e.pointerId) return;
+  const { before, moved } = drag;
+  drag = null;
+  if (moved) view.preview(before);
 }
 
 /** 点光源の印 (放射する短い線)。 */
@@ -170,7 +179,7 @@ function rays(x: number, y: number): string {
       onpointerdown={(e) => onDown(e, h.index)}
       onpointermove={onMove}
       onpointerup={onUp}
-      onpointercancel={onUp}
+      onpointercancel={onCancel}
     />
     <text class="label" x={h.x + 12} y={h.y - 10}>{h.index + 1}</text>
   {/each}

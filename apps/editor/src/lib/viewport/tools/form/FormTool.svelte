@@ -32,8 +32,9 @@ import {
 import type { Selection } from "../../../selection.svelte";
 import TipButton from "../../../ui/TipButton.svelte";
 import type { ViewportController } from "../../controller.svelte";
-import { flatten, gridOutline, movePoints } from "../deformer/gizmo";
-import { type Box, updateVertexSelection, verticesInBox } from "../geometry";
+import { flatten, gridEdges, gridOutline, movePoints } from "../deformer/gizmo";
+import { type Box, meshEdges, updateVertexSelection, verticesInBox } from "../geometry";
+import { acceptsToolKey } from "../keys";
 import { pressPoint, trianglesPath, validIndices } from "./form";
 
 interface Props {
@@ -133,31 +134,10 @@ const area = $derived.by(() => {
   return "";
 });
 
-/** 点どうしを結ぶ線 (メッシュの三角形の辺・ワープの格子)。 */
+/** 点どうしを結ぶ線 (メッシュの三角形の辺 (共有する辺は 1 本)・ワープの格子)。 */
 const edges = $derived.by((): [number, number][] => {
-  if (!element) return [];
-  if (element.kind === "mesh") {
-    const out: [number, number][] = [];
-    const tri = element.indices ?? [];
-    for (let i = 0; i + 2 < tri.length; i += 3) {
-      const [a, b, c] = [tri[i] ?? 0, tri[i + 1] ?? 0, tri[i + 2] ?? 0];
-      out.push([a, b], [b, c], [c, a]);
-    }
-    return out;
-  }
-  if (element.kind === "warp") {
-    const cols = element.cols ?? 0;
-    const rows = element.rows ?? 0;
-    const at = (x: number, y: number) => y * (cols + 1) + x;
-    const out: [number, number][] = [];
-    for (let y = 0; y <= rows; y++) {
-      for (let x = 0; x <= cols; x++) {
-        if (x < cols) out.push([at(x, y), at(x + 1, y)]);
-        if (y < rows) out.push([at(x, y), at(x, y + 1)]);
-      }
-    }
-    return out;
-  }
+  if (element?.kind === "mesh") return meshEdges(element.indices ?? []);
+  if (element?.kind === "warp") return gridEdges(element.cols ?? 0, element.rows ?? 0);
   return [];
 });
 
@@ -273,9 +253,7 @@ function selectAll(): void {
 }
 
 function onKeyDown(e: KeyboardEvent): void {
-  if (!enabled || !element || !cell) return;
-  const target = e.target as HTMLElement | null;
-  if (target?.closest("input, textarea, select, [contenteditable]")) return;
+  if (!enabled || !element || !cell || !acceptsToolKey(e.target)) return;
   if (e.key === "Escape" && picked.length > 0) setPicked([]);
   else if (e.key === "a" && (e.ctrlKey || e.metaKey)) {
     e.preventDefault();

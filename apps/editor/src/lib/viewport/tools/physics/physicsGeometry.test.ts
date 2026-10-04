@@ -11,8 +11,6 @@ import {
   type MapPoint,
   reattach,
   restParticles,
-  segmentDistance,
-  toPoints,
   worldShape,
 } from "./physicsGeometry";
 
@@ -78,10 +76,6 @@ describe("particles", () => {
       [100, 62],
     ]);
     expect(restParticles(rig([output("Nope")]), map)).toBeNull();
-    expect(toPoints([1, 2, 3, 4, 5])).toEqual([
-      [1, 2],
-      [3, 4],
-    ]);
   });
 });
 
@@ -145,11 +139,6 @@ describe("colliders", () => {
 });
 
 describe("drawing", () => {
-  it("measures distance to segments", () => {
-    expect(segmentDistance([0, 1], [-1, 0], [1, 0])).toBe(1);
-    expect(segmentDistance([3, 0], [-1, 0], [1, 0])).toBe(2);
-  });
-
   it("outlines capsules", () => {
     expect(capsulePath([0, 0], [10, 0], 2)).toBe("M0,2L10,2A2,2 0 0,0 10,-2L0,-2A2,2 0 0,0 0,2Z");
     expect(capsulePath([0, 0], [0, 0], 2)).toContain("a2,2");

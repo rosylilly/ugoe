@@ -30,8 +30,9 @@ import {
 import type { Selection } from "../../../selection.svelte";
 import type { ViewportController } from "../../controller.svelte";
 import { type Box, nearestVertex, updateVertexSelection, verticesInBox } from "../geometry";
+import { acceptsToolKey } from "../keys";
 import {
-  angleBetween,
+  addTurn,
   flatten,
   gridEdges,
   gridOutline,
@@ -66,7 +67,17 @@ type Drag =
   | { kind: "points"; id: number; start: Point; delta: Point }
   | { kind: "box"; id: number; box: Box; toggle: boolean }
   | { kind: "origin"; id: number; start: Point; delta: Point; all: boolean }
-  | { kind: "rotate"; id: number; start: Point; now: Point; snap: boolean }
+  | {
+      kind: "rotate";
+      id: number;
+      start: Point;
+      now: Point;
+      /** 押してから回した角度 (度。1 周を超えても足していく)。 */
+      turn: number;
+      /** 押した所から `CLICK_SLOP` 以上離れたことがあるか (1 周して戻ってもクリックとみなさない)。 */
+      far: boolean;
+      snap: boolean;
+    }
   | { kind: "scale"; id: number; start: Point; now: Point };
 
 let svg = $state<SVGSVGElement>();
@@ -156,7 +167,7 @@ const handles = $derived.by(() => {
       p[1] += dy;
     }
   } else if (drag?.kind === "rotate") {
-    const turn = previewAngle(h.origin, drag);
+    const turn = previewAngle(drag);
     const rot = (p: Point): Point => {
       const [x, y] = [p[0] - h.origin[0], p[1] - h.origin[1]];
       const r = (turn * Math.PI) / 180;
@@ -176,9 +187,8 @@ const handles = $derived.by(() => {
   return { ...h, frame };
 });
 
-function previewAngle(origin: Point, d: { start: Point; now: Point; snap: boolean }): number {
-  const a = angleBetween(origin, d.start, d.now);
-  return d.snap ? snapAngle(a, 15) : a;
+function previewAngle(d: { turn: number; snap: boolean }): number {
+  return d.snap ? snapAngle(d.turn, 15) : d.turn;
 }
 
 function local(e: PointerEvent): Point {
@@ -206,7 +216,7 @@ function onPointerDown(e: PointerEvent): void {
       kind === "origin"
         ? { kind, id, start: p, delta: [0, 0], all: originAllCells || e.shiftKey }
         : kind === "rotate"
-          ? { kind, id, start: p, now: p, snap: e.shiftKey }
+          ? { kind, id, start: p, now: p, turn: 0, far: false, snap: e.shiftKey }
           : { kind, id, start: p, now: p };
     return;
   }
@@ -245,6 +255,8 @@ function onPointerMove(e: PointerEvent): void {
       drag.box.y1 = p[1];
       break;
     case "rotate":
+      if (handles) drag.turn = addTurn(drag.turn, handles.origin, drag.now, p);
+      drag.far ||= Math.hypot(p[0] - drag.start[0], p[1] - drag.start[1]) >= CLICK_SLOP;
       drag.now = p;
       drag.snap = e.shiftKey;
       break;
@@ -270,7 +282,9 @@ function onPointerUp(e: PointerEvent): void {
   const moved =
     d.kind === "points" || d.kind === "origin"
       ? Math.hypot(d.delta[0], d.delta[1]) >= CLICK_SLOP
-      : Math.hypot(d.now[0] - d.start[0], d.now[1] - d.start[1]) >= CLICK_SLOP;
+      : d.kind === "rotate"
+        ? d.far
+        : Math.hypot(d.now[0] - d.start[0], d.now[1] - d.start[1]) >= CLICK_SLOP;
   if (!moved) {
     drag = null;
     return;
@@ -319,7 +333,7 @@ async function commit(d: Drag): Promise<void> {
       }
     } else if (d.kind === "rotate" && handles && rotationCanvas) {
       const sense = rotationSense(rotationCanvas, !!kf.reflect_x, !!kf.reflect_y);
-      next = { ...kf, angle: (kf.angle as number) + sense * previewAngle(handles.origin, d) };
+      next = { ...kf, angle: (kf.angle as number) + sense * previewAngle(d) };
     } else if (d.kind === "scale" && handles) {
       const f = scaleFactor(handles.origin, d.start, d.now);
       if (f !== null) next = { ...kf, scale: Math.max(MIN_SCALE, (kf.scale as number) * f) };
@@ -355,8 +369,7 @@ function moveToNearestKey(): void {
 
 // 選択が外れたら (Esc) 点の選択を解く。
 function onKeyDown(e: KeyboardEvent): void {
-  const target = e.target as HTMLElement | null;
-  if (target?.closest("input, textarea, select, [contenteditable]")) return;
+  if (!acceptsToolKey(e.target)) return;
   if (e.key === "Escape" && picked.length > 0) setPicked([]);
   else if (e.key === "a" && (e.ctrlKey || e.metaKey) && warpCanvas) {
     e.preventDefault();

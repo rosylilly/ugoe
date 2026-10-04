@@ -101,6 +101,10 @@ export class ViewportController {
   #driver: FrameDriver | null = null;
   /** 光源の JSON (`set_lighting_json`)。null なら渡さない。WebPuppet を作り直しても渡し直す。 */
   #lighting: string | null = null;
+  /** attach・detach のたびに増える。待っている間に detach・attach されたら、作った WebPuppet を捨てる。 */
+  #attachToken = 0;
+  /** WebPuppet を作った canvas (コンテキストの喪失を聞くため)。 */
+  #canvas: HTMLCanvasElement | null = null;
 
   /** 描画中の WebPuppet (ヒットテストなどの問い合わせ用)。 */
   get puppet(): WebPuppet | null {
@@ -111,19 +115,23 @@ export class ViewportController {
   async attach(canvas: HTMLCanvasElement): Promise<void> {
     this.detach();
     const generation = this.generation;
+    const token = this.#attachToken;
     try {
       const wasm = await loadUgoeWasm();
+      if (token !== this.#attachToken) return;
       if (!wasm) {
         this.status = "unbuilt";
         this.message = "ugoe-wasm is not built. Run `just wasm` and reload.";
         return;
       }
       const puppet = await wasm.WebPuppet.create(canvas, this.#backendPreference);
-      if (generation !== this.generation) {
+      if (generation !== this.generation || token !== this.#attachToken) {
         puppet.free();
         return;
       }
       this.#puppet = puppet;
+      this.#canvas = canvas;
+      canvas.addEventListener("webglcontextlost", this.#onContextLost);
       this.backend = puppet.backend();
       this.status = "ready";
       this.message = null;
@@ -135,7 +143,7 @@ export class ViewportController {
       this.requestRender();
       this.#scheduleAnimation();
     } catch (e) {
-      if (generation !== this.generation) return;
+      if (generation !== this.generation || token !== this.#attachToken) return;
       if (this.#backendPreference === "auto") {
         console.warn("ugoe: falling back to WebGL2:", e);
         this.#backendPreference = "webgl2";
@@ -149,6 +157,9 @@ export class ViewportController {
 
   /** WebPuppet を破棄する。Viewport.svelte がアンマウント時に呼ぶ。 */
   detach(): void {
+    this.#attachToken += 1;
+    this.#canvas?.removeEventListener("webglcontextlost", this.#onContextLost);
+    this.#canvas = null;
     cancelAnimationFrame(this.#frame);
     this.#frame = 0;
     cancelAnimationFrame(this.#animation);
@@ -396,6 +407,16 @@ export class ViewportController {
       this.#render();
     });
   }
+
+  /**
+   * WebGL2 のコンテキストを失った (GPU のリセット・ドライバの更新など)。wgpu の GL のバックエンドはこれを
+   * `is_lost` で知らせず、描画も失敗しない (何も描かれない) ので、WebGPU の喪失と同じく canvas ごと作り直す。
+   */
+  #onContextLost = (): void => {
+    console.warn("ugoe: WebGL context lost; recreating the viewport");
+    this.detach();
+    this.generation += 1;
+  };
 
   #render(): void {
     const puppet = this.#puppet;

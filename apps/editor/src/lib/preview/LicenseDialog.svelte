@@ -9,13 +9,20 @@ import { t } from "../i18n";
 
 let shown = $state(false);
 let text = $state("");
+/** 本文を読めたか (読めなかったときは、次に開いたときに読み直す)。 */
+let loaded = false;
 
 export async function open(): Promise<void> {
   shown = true;
-  if (text !== "") return;
+  if (loaded) return;
   try {
     const res = await fetch(new URL("mediapipe/third-party-notices.txt", document.baseURI));
-    text = res.ok ? await res.text() : t("preview.licenses.loadStatus", { status: res.status });
+    if (res.ok) {
+      text = await res.text();
+      loaded = true;
+    } else {
+      text = t("preview.licenses.loadStatus", { status: res.status });
+    }
   } catch (e) {
     text = t("preview.licenses.loadError", { message: errorText(e) });
   }

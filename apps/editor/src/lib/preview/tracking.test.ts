@@ -1,11 +1,15 @@
 // プレビューモードのフェイストラッキングの受け口 (PreviewMode の TrackingTarget、T0636)。WebPuppet とビューポートは偽物。
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { EditorDocument } from "../document.svelte";
 import type { FrameDriver, ViewportController } from "../viewport/controller.svelte";
 import type { WebPuppet } from "../viewport/wasm";
 import type { PreviewMode as PreviewModeType } from "./preview.svelte";
 
 let PreviewMode: typeof PreviewModeType;
+
+// @ugoe/face-tracking の TrackingPanel.svelte が読む部品の集まり。ここでは描かないので空にする (読み込むと部品を
+// すべて変換するので数秒かかり、負荷が高いと beforeAll が時間切れになる)。
+vi.mock("@ugoe/ui", () => ({}));
 
 beforeAll(async () => {
   // PreviewMode はヘッドレスのブラウザでの確認のため window にトラッカーを置く。

@@ -118,6 +118,14 @@ export function angleBetween(center: Point, from: Point, to: Point): number {
 }
 
 /**
+ * 回転の取っ手のドラッグで、前の位置 `from` から今の位置 `to` までの回転 (度) を `turn` に足す。1 回の動きごとに
+ * 測って足すので、180 度を超えて回せる (始点からの角度だけで測ると ±180 度で反対向きに折り返す)。
+ */
+export function addTurn(turn: number, center: Point, from: Point, to: Point): number {
+  return turn + angleBetween(center, from, to);
+}
+
+/**
  * 画面上の回転角をキーフォームの `angle` の変化に直すときの符号。親の変換や自分の反転で向きが
  * 裏返っている (ワールドの線形部分の行列式と、反転による行列式の符号が違う) と、角度を増やすと画面上では
  * 反時計回りに回る。

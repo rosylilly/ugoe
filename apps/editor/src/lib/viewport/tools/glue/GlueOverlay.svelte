@@ -24,6 +24,7 @@ import {
 import type { GlueView, PairMode } from "../../../panels/glues/glueView.svelte";
 import TipButton from "../../../ui/TipButton.svelte";
 import { boundaryEdges, type Point } from "../geometry";
+import { acceptsToolKey } from "../keys";
 import type { ViewportScene } from "../scene.svelte";
 
 interface Props {
@@ -130,9 +131,7 @@ function setMode(mode: PairMode): void {
 }
 
 function onKeyDown(e: KeyboardEvent): void {
-  if (e.key !== "Escape" || view.pairMode === "off") return;
-  const target = e.target as HTMLElement | null;
-  if (target?.closest("input, textarea, select, [contenteditable]")) return;
+  if (e.key !== "Escape" || view.pairMode === "off" || !acceptsToolKey(e.target)) return;
   view.setPairMode("off");
 }
 

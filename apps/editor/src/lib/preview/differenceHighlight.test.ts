@@ -108,6 +108,9 @@ describe("differences in the preview (T0657)", () => {
     // 点 1 つでも寄りすぎない (最小の大きさ 24 を 240 の 80% に: 倍率 8)。
     expect(fitMove([[10, 10]], 240, 240)?.factor).toBeCloseTo(8);
     expect(fitMove([], 400, 200)).toBeNull();
+    // 引数の数に上限のある Math.min(...) では止まる大きさ (JavaScriptCore は 65536 個まで)。
+    const many = Array.from({ length: 300_000 }, (_, i): [number, number] => [i % 100, 0]);
+    expect(fitMove(many, 400, 200)?.center).toEqual([49.5, 0]);
   });
 
   it("highlights the version drawn in the viewport", () => {

@@ -87,14 +87,19 @@ const FIT_MIN_SIZE = 24;
  */
 export function fitMove(points: readonly Point[], width: number, height: number): FitMove | null {
   if (points.length === 0 || width <= 0 || height <= 0) return null;
-  const xs = points.map((p) => p[0]);
-  const ys = points.map((p) => p[1]);
-  const [minX, maxX, minY, maxY] = [
-    Math.min(...xs),
-    Math.max(...xs),
-    Math.min(...ys),
-    Math.max(...ys),
+  // Math.min(...xs) は引数の数の上限で止まるので、1 つずつ見る (頂点の多いメッシュ)。
+  let [minX, maxX, minY, maxY] = [
+    Number.POSITIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+    Number.POSITIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
   ];
+  for (const [x, y] of points) {
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y);
+  }
   if (![minX, maxX, minY, maxY].every(Number.isFinite)) return null;
   const w = Math.max(maxX - minX, FIT_MIN_SIZE);
   const h = Math.max(maxY - minY, FIT_MIN_SIZE);

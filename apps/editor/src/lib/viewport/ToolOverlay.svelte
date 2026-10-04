@@ -32,6 +32,7 @@ import DepthOverlay from "./tools/depth/DepthOverlay.svelte";
 import FormTool from "./tools/form/FormTool.svelte";
 import { boundaryEdges, cycleHit } from "./tools/geometry";
 import GlueOverlay from "./tools/glue/GlueOverlay.svelte";
+import { acceptsToolKey } from "./tools/keys";
 import MeshEditTool from "./tools/MeshEditTool.svelte";
 import OverflowOverlay from "./tools/overflow/OverflowOverlay.svelte";
 import PhysicsOverlay from "./tools/physics/PhysicsOverlay.svelte";
@@ -173,9 +174,7 @@ function onDoubleClick(e: MouseEvent): void {
 }
 
 function onKeyDown(e: KeyboardEvent): void {
-  if (editing === null) return;
-  const target = e.target as HTMLElement | null;
-  if (target?.closest("input, textarea, select, [contenteditable]")) return;
+  if (editing === null || !acceptsToolKey(e.target)) return;
   if (e.key === "Escape") {
     selection.meshEdit = null;
   } else if (e.key === "Delete" || e.key === "Backspace") {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  addTurn,
   angleBetween,
   flatten,
   gridEdges,
@@ -110,6 +111,19 @@ describe("angles and scale", () => {
     expect(angleBetween([0, 0], [1, 0], [0, 1])).toBeCloseTo(90);
     expect(angleBetween([0, 0], [0, -1], [-1, 0])).toBeCloseTo(-90);
     expect(angleBetween([0, 0], [-1, 0.01], [-1, -0.01])).toBeCloseTo(1.146, 2);
+  });
+
+  it("accumulates turns past 180 degrees", () => {
+    // 60 度ずつ 1 周と 30 度 (始点からの角度だけでは 30 度になる)。
+    let turn = 0;
+    let from: [number, number] = [1, 0];
+    for (let k = 1; k <= 7; k++) {
+      const a = (Math.min(k * 60, 390) * Math.PI) / 180;
+      const to: [number, number] = [Math.cos(a), Math.sin(a)];
+      turn = addTurn(turn, [0, 0], from, to);
+      from = to;
+    }
+    expect(turn).toBeCloseTo(390);
   });
 
   it("flips the sense when the frame is mirrored", () => {

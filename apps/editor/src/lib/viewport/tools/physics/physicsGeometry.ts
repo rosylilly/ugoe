@@ -58,13 +58,6 @@ export function restParticles(rig: PhysicsRig, map: MapPoint): Point[] | null {
   ]);
 }
 
-/** 平坦な配列 `[x0, y0, ...]` を点の配列にする。 */
-export function toPoints(flat: ArrayLike<number>): Point[] {
-  const points: Point[] = [];
-  for (let i = 0; i + 1 < flat.length; i += 2) points.push([flat[i] ?? 0, flat[i + 1] ?? 0]);
-  return points;
-}
-
 const MAX_ITERATIONS = 32;
 /** 逆写像の残差の許容 (キャンバスのピクセル)。 */
 const TOLERANCE = 1e-3;
@@ -141,15 +134,6 @@ export function dragShape(
   const a = handle === "b" ? shape.a : move(shape.a);
   const b = handle === "a" ? shape.b : move(shape.b);
   return a && b ? { ...shape, a, b } : null;
-}
-
-/** 点 `p` と線分 `a`–`b` の距離。 */
-export function segmentDistance(p: Point, a: Point, b: Point): number {
-  const ab: Point = [b[0] - a[0], b[1] - a[1]];
-  const len2 = ab[0] * ab[0] + ab[1] * ab[1];
-  const t =
-    len2 > 0 ? Math.min(1, Math.max(0, ((p[0] - a[0]) * ab[0] + (p[1] - a[1]) * ab[1]) / len2)) : 0;
-  return Math.hypot(p[0] - (a[0] + ab[0] * t), p[1] - (a[1] + ab[1] * t));
 }
 
 /** カプセルの輪郭の SVG パス (線分の両側の直線と両端の半円)。座標は描く空間 (CSS ピクセル)。 */

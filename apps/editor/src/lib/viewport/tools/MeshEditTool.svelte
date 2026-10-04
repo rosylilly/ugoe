@@ -85,7 +85,8 @@ async function run(action: () => Promise<void>): Promise<void> {
 
 function onPointerDown(e: PointerEvent): void {
   // 中ボタンと Alt + ドラッグはビューポートのパン (Viewport.svelte) に任せる。
-  if (e.button !== 0 || e.altKey || !positions || !mesh) return;
+  // 前の編集を送っている間は受けない (離したときの run が捨てられ、ずらした表示が残るため)。
+  if (e.button !== 0 || e.altKey || busy || !positions || !mesh) return;
   const [x, y] = local(e);
   if (e.ctrlKey || e.metaKey) {
     addVertex(x, y);
