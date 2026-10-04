@@ -41,6 +41,7 @@ src/lib/api.ts                操作 API とブラウザソースの様子の形
 src/lib/hotkeys.ts            ホットキーのキーの書き方 (押したキー → `Ctrl+Shift+KeyA`、Kbd の表記)
 src/lib/lipSync.ts            マイクの音から口を開く量を作る式 (dB・ノイズの閾値・感度・開く速さと閉じる速さ)
 src/lib/microphone.svelte.ts  マイク (getUserMedia → AnalyserNode)。刻みごとに口を開く量を指揮役へ送る
+src/lib/trackerSettings.svelte.ts トラッキングのパネルで変えた調整と使い始めたカメラを、プロファイルの入力の設定へ書き戻す
 src/lib/pulse.ts              入力の処理を回す刻み (バックエンドの `subscribe_pulse`。requestAnimationFrame に頼らない。重ければ間引く)
 src/lib/channel.ts            Tauri の Channel の受け取りを、例外を外へ出さない形に包む (投げると以後のメッセージが止まるため)
 src/lib/latest.ts             送っている間に届いた値は最後のものだけを次に送る (トラッキングと口パクの IPC)
@@ -84,6 +85,7 @@ src-tauri/                    バックエンド (Rust クレート `ugoe-studio
 scripts/build-vcam.mjs        `pnpm vcam`: 仮想カメラのメディアソースの DLL を作る (Windows 向け。CRT は静的)
 scripts/build-vcam-macos.mjs  `pnpm vcam:macos`: macOS の Camera Extension を swiftc で作って署名する (macOS だけ)
 scripts/sample-profile.mjs    `pnpm sample-profile <出力>`: 見本のモデル (assets/samples) を使う見本のプロファイルを書き出す (T0806。docs/manual/studio.md#見本のプロファイル)
+vitest.config.ts              フロントエンドのテスト (`pnpm test`)。部品と $effect のテストは先頭に `@vitest-environment happy-dom` を書く
 vcam/                         仮想カメラの OS の境界 (クレート `ugoe-studio-vcam`。unsafe を許す唯一のアプリのクレート。下の「仮想カメラ」)
 ```
 

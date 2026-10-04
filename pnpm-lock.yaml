@@ -270,6 +270,9 @@ importers:
       '@types/node':
         specifier: ^26.6.3
         version: 26.6.3
+      happy-dom:
+        specifier: ^20.14.5
+        version: 20.14.5
       svelte:
         specifier: ^5.57.1
         version: 5.57.1

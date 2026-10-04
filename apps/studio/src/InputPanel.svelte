@@ -11,6 +11,7 @@ import { onMount } from "svelte";
 import { t } from "./lib/i18n";
 import type { InputSettings } from "./lib/inputs";
 import type { Microphone } from "./lib/microphone.svelte";
+import { rememberTrackerSettings } from "./lib/trackerSettings.svelte";
 
 interface Props {
   tracker: FaceTracker;
@@ -57,18 +58,11 @@ function change(patch: Partial<InputSettings>) {
 }
 
 // トラッキングのパネルで変えた調整と、使ったカメラを覚える。
-$effect(() => {
-  const patch: Partial<InputSettings> = {
-    smoothing: tracker.smoothing,
-    swapSides: tracker.swapSides,
-    trackBody: tracker.trackBody,
-    stopEyeBlink: tracker.stopEyeBlink,
-  };
-  if (tracker.running && tracker.source?.kind === "camera" && tracker.cameraId !== "") {
-    patch.camera = { id: tracker.cameraId, label: tracker.source.label };
-  }
-  change(patch);
-});
+rememberTrackerSettings(
+  () => tracker,
+  () => settings,
+  (next) => onsettings(next),
+);
 
 function chooseMicrophone(value: string) {
   microphone.deviceId = value === DEFAULT_DEVICE ? "" : value;

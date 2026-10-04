@@ -27,6 +27,12 @@ function microphoneError(e: unknown): string {
   return `${reason}: ${e instanceof Error ? e.message : String(e)}`;
 }
 
+/** マイクのトラックを止め、AudioContext を閉じる。 */
+function release(stream: MediaStream | null, context: AudioContext | null): void {
+  for (const track of stream?.getTracks() ?? []) track.stop();
+  void context?.close().catch(() => undefined);
+}
+
 export class Microphone {
   status = $state<MicrophoneStatus>("idle");
   error = $state<string | null>(null);
@@ -46,6 +52,8 @@ export class Microphone {
   #buffer: Float32Array<ArrayBuffer> | null = null;
   #last: number | null = null;
   #sent: number | null = null;
+  /** 始めた回数 (`start` の途中で `stop` か次の `start` が来たら、古い方が取ったマイクを捨てるため)。 */
+  #attempt = 0;
 
   /** `send` は口を開く量 (`null` で止める)、`tuning` は今の感度と閾値を返す。 */
   constructor(send: (level: number | null) => void, tuning: () => LipSyncTuning) {
@@ -88,11 +96,14 @@ export class Microphone {
 
   async start(): Promise<void> {
     this.stop();
+    const attempt = this.#attempt;
     this.error = null;
     this.status = "loading";
+    let stream: MediaStream | null = null;
+    let context: AudioContext | null = null;
     try {
       if (!navigator.mediaDevices?.getUserMedia) throw new Error(t("microphone.errors.noDevices"));
-      const stream = await navigator.mediaDevices
+      stream = await navigator.mediaDevices
         .getUserMedia({
           audio: {
             ...(this.deviceId ? { deviceId: { exact: this.deviceId } } : {}),
@@ -106,21 +117,33 @@ export class Microphone {
         .catch((e: unknown) => {
           throw new Error(microphoneError(e));
         });
-      this.#stream = stream;
-      const context = new AudioContext();
+      // 待っている間に止めた・次に始めたなら、取ったマイクは使わない。
+      if (attempt !== this.#attempt) {
+        release(stream, null);
+        return;
+      }
+      context = new AudioContext();
       const analyser = context.createAnalyser();
       analyser.fftSize = 1024;
       context.createMediaStreamSource(stream).connect(analyser);
       // 作った直後に止まっている (自動再生の制限) ことがあるので動かす。
       if (context.state === "suspended") await context.resume();
+      if (attempt !== this.#attempt) {
+        release(stream, context);
+        return;
+      }
+      this.#stream = stream;
       this.#context = context;
       this.#analyser = analyser;
       this.#buffer = new Float32Array(analyser.fftSize);
       await this.refreshDevices();
+      if (attempt !== this.#attempt) return;
       const id = stream.getAudioTracks()[0]?.getSettings().deviceId;
       if (id) this.deviceId = id;
     } catch (e) {
-      this.#release();
+      release(stream, context);
+      // 止めた後・次に始めた後なら、今の状態は後の方のもの。
+      if (attempt !== this.#attempt) return;
       this.status = "error";
       this.error = e instanceof Error ? e.message : String(e);
       return;
@@ -130,7 +153,9 @@ export class Microphone {
     this.status = "running";
   }
 
+  /** 止める。始めている途中なら、後で届いたマイクも捨てる。 */
   stop(): void {
+    this.#attempt += 1;
     const wasRunning = this.status === "running";
     this.#release();
     this.status = "idle";
@@ -160,9 +185,8 @@ export class Microphone {
   }
 
   #release(): void {
-    for (const track of this.#stream?.getTracks() ?? []) track.stop();
+    release(this.#stream, this.#context);
     this.#stream = null;
-    void this.#context?.close().catch(() => undefined);
     this.#context = null;
     this.#analyser = null;
     this.#buffer = null;

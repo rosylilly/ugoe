@@ -5,6 +5,7 @@
 -->
 <script lang="ts">
 import { Button, Notice, SegmentedControl } from "@ugoe/ui";
+import { untrack } from "svelte";
 import { API_PERMISSIONS, type ApiPendingClient, type ApiPermission } from "./lib/api";
 import { t } from "./lib/i18n";
 
@@ -18,10 +19,14 @@ interface Props {
 
 let { client, disabled = false, onapprove, ondeny, onlater }: Props = $props();
 
-// 初めの選択はクライアントが求めた権限 (利用者が狭められる)。
+// 初めの選択はクライアントが求めた権限 (利用者が狭められる)。様子の通知のたびに `client` は新しいものが届くので、
+// 当て直すのは別のクライアントになったときだけ (利用者が狭めた選択を、承認の前に戻さない)。
 let permission = $state<ApiPermission>("read");
+let chosenFor: string | null = null;
 $effect.pre(() => {
-  permission = client.permission;
+  if (client.id === chosenFor) return;
+  chosenFor = client.id;
+  permission = untrack(() => client.permission);
 });
 
 const options = $derived(
