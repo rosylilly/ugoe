@@ -1,11 +1,11 @@
 ---
 id: T0680
 title: Undo の履歴の大きさと、適用ごとの検証の重複を抑える
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core, docs]
 depends_on: [T0667]
-assignee:
+assignee: claude-worker-T0680
 ---
 
 # T0680: Undo の履歴の大きさと、適用ごとの検証の重複を抑える
