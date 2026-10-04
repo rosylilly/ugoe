@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 // 配布物の適合テストを実行する (`just conformance`。tests/conformance/README.md)。
 //
-//   node tests/conformance/run.mjs [--only c,wasm,wasm-webgpu,unity,godot] [--cases A,B] [--out DIR]
+//   node tests/conformance/run.mjs [--only c,wasm,wasm-webgpu,avatar,unity,godot] [--cases A,B] [--out DIR]
 //                                  [--no-web-build] [--no-godot-build]
 //
 // 1. 参照を作る: `ugoe-conformance reference` (計画と参照の評価の結果) と `ugoe render` (参照の画像)
 // 2. C ABI: tests/conformance/c/runner.c を libugoe_ffi.a にリンクして実行し、評価の結果を比べる
 // 3. wasm: npm パッケージ (bindings/web/dist) をヘッドレスの Chrome の WebGL2 (wasm) と WebGPU (wasm-webgpu) で動かし、
-//    評価の結果と画像を比べる
+//    評価の結果と画像を比べる。avatar: 同じパッケージの `<ugoe-avatar>` を WebGL2 で動かし、作成・切り離しと再接続・
+//    `backend` の変更・コンテキストの喪失からの作り直しのシナリオを確かめる (web/avatar.js。参照とは比べない)
 // 4. Unity: UPM パッケージの Unity に依存しない C# の層 (Runtime/Core) を dotnet で動かし、評価の結果を比べる
 // 5. Godot: GDExtension のノードから読み戻した評価の結果と、描いた画像を比べる (bindings/godot/example/tests/conformance.gd)
 //
@@ -36,7 +37,11 @@ const root = resolve(here, "..", "..");
 const target = process.env.CARGO_TARGET_DIR ?? join(root, "target");
 const exe = (name) => join(target, "debug", process.platform === "win32" ? `${name}.exe` : name);
 
-const BINDINGS = ["c", "wasm", "wasm-webgpu", "unity", "godot"];
+const BINDINGS = ["c", "wasm", "wasm-webgpu", "avatar", "unity", "godot"];
+/** ヘッドレスの Chrome と npm パッケージ (bindings/web/dist) で動かすバインディング。 */
+const WEB = ["wasm", "wasm-webgpu", "avatar"];
+/** 参照 (計画・評価の結果・画像) と比べないバインディング (シナリオの成否だけを見る)。 */
+const NO_REFERENCE = new Set(["avatar"]);
 /** `--only` を付けないとき、道具が無ければ飛ばすバインディング。 */
 const OPTIONAL = new Set(["unity", "godot"]);
 /** 画像を比べるバインディング。 */
@@ -91,8 +96,8 @@ function compare(binding, mode) {
 const cc = process.env.CC ?? "cc";
 const godot = process.env.GODOT ?? "godot";
 const headless = !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY;
-const chrome =
-  only.has("wasm") || only.has("wasm-webgpu") ? (process.env.CHROME ?? findChrome()) : null;
+const web = WEB.some((b) => only.has(b));
+const chrome = web ? (process.env.CHROME ?? findChrome()) : null;
 const skipped = {};
 {
   /** バインディングごとの足りない道具 (と入れ方)。 */
@@ -106,7 +111,7 @@ const skipped = {};
       `C compiler \`${cc}\` was not found: install one (e.g. \`sudo apt-get install build-essential\`) or set CC`,
     );
   }
-  for (const binding of ["wasm", "wasm-webgpu"]) {
+  for (const binding of WEB) {
     if (!(chrome && works(chrome, ["--version"]))) {
       need(
         binding,
@@ -114,11 +119,11 @@ const skipped = {};
       );
     }
   }
-  if ((only.has("wasm") || only.has("wasm-webgpu")) && webBuild) {
+  if (web && webBuild) {
     const want = capture("node", [join(root, "scripts", "wasm.mjs"), "version"]);
     const have = capture("wasm-bindgen", ["--version"])?.split(/\s+/)[1];
     if (!want || have !== want) {
-      for (const binding of ["wasm", "wasm-webgpu"]) {
+      for (const binding of WEB) {
         need(
           binding,
           `wasm-bindgen-cli ${want ?? ""} is required (found: ${have ?? "none"}):\n` +
@@ -170,7 +175,10 @@ const skipped = {};
 }
 
 // --- 1. 参照 ---
-run("cargo", ["build", "-q", "-p", "ugoe-cli", "-p", "ugoe-conformance", "-p", "ugoe-ffi"]);
+const reference = [...only].some((b) => !NO_REFERENCE.has(b));
+if (reference) {
+  run("cargo", ["build", "-q", "-p", "ugoe-cli", "-p", "ugoe-conformance", "-p", "ugoe-ffi"]);
+}
 const images = [...only].some((b) => IMAGES.has(b));
 if (images) {
   // 参照の画像を描く GPU があるか (小さなフィクスチャを描いてみる)。
@@ -196,8 +204,11 @@ if (images) {
   }
 }
 rmSync(out, { recursive: true, force: true });
-run(exe("ugoe-conformance"), ["reference", "--out", out, ...(cases ? ["--only", cases] : [])]);
-const plan = JSON.parse(readFileSync(join(out, "plan.json"), "utf8"));
+mkdirSync(out, { recursive: true });
+if (reference) {
+  run(exe("ugoe-conformance"), ["reference", "--out", out, ...(cases ? ["--only", cases] : [])]);
+}
+const plan = reference ? JSON.parse(readFileSync(join(out, "plan.json"), "utf8")) : { cases: [] };
 if (images) {
   for (const c of plan.cases.filter((c) => c.image)) {
     const png = join(out, "reference", `${c.name}.png`);
@@ -240,8 +251,8 @@ if (only.has("c")) {
   results.c = r.status === 0 && compare("c", "frames");
 }
 
-// --- 3. wasm (WebGL2 と WebGPU) ---
-if (only.has("wasm") || only.has("wasm-webgpu")) {
+// --- 3. wasm (WebGL2 と WebGPU) と <ugoe-avatar> ---
+if (web) {
   if (webBuild) run("pnpm", ["--filter", "@ugoe/runtime", "build"]);
   const dist = join(root, "bindings", "web", "dist");
   if (!existsSync(join(dist, "index.js"))) {
@@ -254,7 +265,13 @@ if (only.has("wasm") || only.has("wasm-webgpu")) {
   ]) {
     if (!only.has(binding)) continue;
     mkdirSync(join(out, binding), { recursive: true });
-    results[binding] = (await runWeb(dist, binding, backend)) && compare(binding, "images");
+    results[binding] =
+      (await runWeb(dist, binding, backend, "index.html")) && compare(binding, "images");
+  }
+  // <ugoe-avatar> は WebGL2 だけで確かめる (コンテキストの喪失を `WEBGL_lose_context` で起こせるのは WebGL2 だけ)
+  if (only.has("avatar")) {
+    mkdirSync(join(out, "avatar"), { recursive: true });
+    results.avatar = await runWeb(dist, "avatar", "webgl2", "avatar.html");
   }
 }
 
@@ -306,8 +323,11 @@ for (const [binding, ok] of Object.entries(results))
 for (const binding of Object.keys(skipped)) console.log(`${binding}: skipped (missing tools)`);
 process.exit(Object.values(results).every(Boolean) ? 0 : 1);
 
-/** ヘッドレスの Chrome で web/index.html を開き、ページが /done を送るまで待つ。 */
-async function runWeb(dist, binding, backend) {
+/**
+ * ヘッドレスの Chrome で web/<page> (index.html は計画のケース、avatar.html は <ugoe-avatar> のシナリオ) を開き、
+ * ページが /done (`{total, failed}` か `{error}`) を送るまで待つ。
+ */
+async function runWeb(dist, binding, backend, page) {
   const types = {
     ".html": "text/html",
     ".js": "text/javascript",
@@ -357,14 +377,25 @@ async function runWeb(dist, binding, backend) {
       });
       return;
     }
-    // GET: ページ・パッケージ・計画・計画にあるモデルとモジュールだけを配る。
+    // GET: ページ・パッケージ・計画・計画にあるモデルとモジュールと、見本のモデル (avatar.html) だけを配る。
     let file;
     const m = url.pathname.match(/^\/file\/(\d+)\/(model|\d+)$/);
+    const sample = url.pathname.match(/^\/samples\/((?:dress-up\/)?[\w-]+\.ugoe)$/);
     if (url.pathname === "/" || url.pathname === "/index.html")
       file = join(here, "web", "index.html");
-    else if (url.pathname === "/runner.js") file = join(here, "web", "runner.js");
+    else if (["/runner.js", "/avatar.html", "/avatar.js"].includes(url.pathname))
+      file = join(here, "web", url.pathname.slice(1));
     else if (url.pathname === "/plan.json") file = join(out, "plan.json");
-    else if (url.pathname.startsWith("/pkg/")) {
+    else if (sample) {
+      // `?delay=ミリ秒` で応答を遅らせる (取得中の切り離しと `backend` の変更を確かめるため)
+      file = join(root, "assets", "samples", sample[1]);
+      const delay = Number(url.searchParams.get("delay") ?? 0);
+      if (delay > 0 && existsSync(file)) {
+        const body = readFileSync(file);
+        setTimeout(() => send(200, body, "application/octet-stream"), Math.min(delay, 10_000));
+        return;
+      }
+    } else if (url.pathname.startsWith("/pkg/")) {
       file = normalize(join(dist, url.pathname.slice("/pkg/".length)));
       if (!file.startsWith(dist)) return send(403, "forbidden");
     } else if (m) {
@@ -390,7 +421,7 @@ async function runWeb(dist, binding, backend) {
       ? ["--enable-unsafe-webgpu", "--enable-features=Vulkan", "--use-webgpu-adapter=swiftshader"]
       : ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]),
     ...(process.env.CI ? ["--no-sandbox"] : []),
-    `http://127.0.0.1:${port}/?backend=${backend}`,
+    `http://127.0.0.1:${port}/${page}?backend=${backend}`,
   ];
   // Chrome のログ (ページのコンソールを含む) は <出力>/<バインディング>/chrome.log に書く。
   const browser = spawn(chrome, flags, { stdio: ["ignore", "ignore", "pipe"] });
@@ -412,7 +443,7 @@ async function runWeb(dist, binding, backend) {
     return false;
   }
   console.log(
-    `${binding} (${backend}): ran ${result.total - result.failed} of ${result.total} cases`,
+    `${binding} (${backend}): passed ${result.total - result.failed} of ${result.total} ${page === "avatar.html" ? "scenarios" : "cases"}`,
   );
   return result.failed === 0;
 }

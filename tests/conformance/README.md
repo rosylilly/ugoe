@@ -10,6 +10,7 @@
 | --- | --- | --- | --- |
 | C ABI (`ugoe-ffi`、`c`) | 位置・不透明度・描画順の値・乗算色・スクリーン色・マスクの効き具合・`visible`・描画の順番 | なし (C ABI は描画しない) | [`c/runner.c`](c/runner.c) |
 | wasm (npm パッケージ `@ugoe/runtime`、`wasm` と `wasm-webgpu`) | C ABI と同じすべての値 (`drawable_positions`・`drawable_states_json`・`render_order`) | あり (ヘッドレスの Chrome の WebGL2 と WebGPU。`read_pixels` で読み戻す) | [`web/runner.js`](web/runner.js) |
+| `<ugoe-avatar>` (npm パッケージ `@ugoe/runtime` の要素、`avatar`) | 参照とは比べない。シナリオ (下の「`<ugoe-avatar>` のシナリオ」) の成否を見る | 要素の canvas に描いたか (背景でない画素があるか)。ヘッドレスの Chrome の WebGL2 | [`web/avatar.js`](web/avatar.js) |
 | Unity (`bindings/unity` の Unity に依存しない C# の層 `Runtime/Core`、`unity`) | C ABI と同じすべての値 | なし (描画は Unity が要る) | [`unity/Program.cs`](unity/Program.cs) (dotnet) |
 | Godot (`bindings/godot`、`godot`) | C ABI と同じすべての値 (ノードの `get_drawable_positions`・`get_drawable_state`・`get_render_order` で読み戻す) | あり (Compatibility (OpenGL)。画面が無ければ Xvfb) | [`bindings/godot/example/tests/conformance.gd`](../../bindings/godot/example/tests/conformance.gd) |
 
@@ -19,6 +20,7 @@
 just conformance                          # = node tests/conformance/run.mjs (すべてのバインディング)
 just conformance --only c                 # C ABI だけ (Chrome も GPU も要らない)
 just conformance --only wasm,wasm-webgpu  # wasm だけ (WebGL2 と WebGPU)
+just conformance --only avatar            # <ugoe-avatar> のシナリオだけ (参照を作らないので cargo のビルドも要らない)
 just conformance --only unity             # Unity の C# の層だけ (dotnet と C ABI のライブラリ)
 just conformance --only godot             # Godot だけ (= just godot-check の比べ合わせ)
 just conformance --cases avatar-pose,masks-moving   # ケースを絞る
@@ -35,6 +37,7 @@ target/conformance/
   c/<ケース>.json               C ABI の結果
   wasm/<ケース>.json .png       wasm (WebGL2) の結果。画像が合わなければ <ケース>.diff.png (違う画素が赤)。chrome.log (ページのコンソールを含む)
   wasm-webgpu/                 wasm (WebGPU) の結果 (同じ形)
+  avatar/avatar.json           <ugoe-avatar> のシナリオごとの結果 ("ok" か失敗の理由)。chrome.log
   unity/<ケース>.json           Unity の C# の層の結果
   godot/<ケース>.json .png      Godot の結果。skipped.json (扱わなかったケースと理由。今は空)
 ```
@@ -51,7 +54,7 @@ target/conformance/
   エンジンの道具は重く、C ABI と wasm だけを確かめたい人や CI のジョブが多いため。
 - `--only` で名前を挙げたとき: 挙げたバインディングの道具が足りなければ、どれでも止まる (飛ばしたのに通ったように見えないように)。
 
-CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just conformance` を実行し (ランナーに dotnet があれば Unity も、Godot は無いので飛ぶ)、
+CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just conformance` を実行し (`<ugoe-avatar>` のシナリオも含む。ランナーに dotnet があれば Unity も、Godot は無いので飛ぶ)、
 `godot` ジョブの `just godot-check` (`build.mjs --conformance`) が `--only godot` を実行する。落ちたら `target/conformance` を成果物として残す。
 このクレートの単体テスト (ケースの展開・生成するモデル・比べ合わせ・参照の評価) は `cargo test` に入るので `just ci` で動く。
 
@@ -133,6 +136,28 @@ wasm の画像は WebGL2・WebGPU (どちらも SwiftShader) とも 99.9% 以上
 T0420 で Godot の評価の結果の読み戻しとモデルの JSON の読み込みを足した (WSL2、53 ケース): Godot はすべてのケースで評価の結果が一致し、
 画像は 100% の画素が 3/255 以内 (見本・マスク・合成モードで最大 2〜3/255、公開仕様の評価の例は 0〜1/255)。モデルの JSON は
 テクスチャが無いので、`ugoe render` と同じく不透明な白で描く。
+
+## `<ugoe-avatar>` のシナリオ
+
+`avatar` は、ほかのバインディングと違って参照とは比べない。`bindings/web/src/avatar.test.ts` が happy-dom と `WebPuppet` の偽物で確かめている
+作成・切り離し・作り直しの順序が、本物の wasm と GPU (ヘッドレスの Chrome の WebGL2、SwiftShader) でも通ることを確かめる (T0440)。
+`run.mjs` のサーバーが [`web/avatar.html`](web/avatar.html) を配り、[`web/avatar.js`](web/avatar.js) がシナリオを順に動かす。
+
+- モデルは見本の `assets/samples/avatar.ugoe` と `assets/samples/dress-up/dress-up.ugoe` (サーバーの `/samples/`。`?delay=ミリ秒` で応答を遅らせ、
+  取得中の操作を確かめる)。どちらのモデルかは、描画するメッシュの ID の並びで見分ける (最初に要素を使わずに `WebPuppet` で読んで求める)。
+- `WebPuppet.create` と `free` を包んで生きている `WebPuppet` を数え、作成中のものが終わった後に数を確かめる (GPU の資源が残らないこと)。
+  各シナリオの後で要素を外し、0 個に戻らなければそのシナリオの失敗にする。
+- 描いたことは、要素の shadow root の canvas を 2D の canvas に写し、背景でない画素が 1% を超えるかで確かめる。
+
+| シナリオ | 確かめること |
+| --- | --- |
+| `load-and-draw` | `src` を読んで `load` (`detail.backend` が `webgl2`) を送り、`ready` が `puppet` で解決し、描く。`src` を変えると読み直す。外すと解放する |
+| `context-loss` | `WEBGL_lose_context` の `loseContext()` の間は作り直さず `error` も送らない。`restoreContext()` で新しい canvas に作り直し (古い canvas は外す)、モデルと `setParameter` の値が戻って描く。2 回続けて行う |
+| `detach-while-creating` | 作成中に外して戻すのを繰り返しても、`WebPuppet` は 1 つだけ残り、canvas も 1 つで、描く。外したまま作成が終わっても残らない |
+| `detach-while-fetching` | 新しい `src` の取得中に外して戻すと、前のモデルではなく新しい `src` を読んで描く |
+| `backend-change` | `backend` を変えると作り直してパラメータの値を引き継ぐ (`auto` はこの Chrome では WebGPU のアダプタが無く、同じ canvas の WebGL2 で描く)。取得中・作成中に続けて変えても、`WebPuppet` は 1 つで新しい `src` を描く |
+
+WebGPU のデバイスの喪失 (`is_lost`) はページから起こせないので、ここでは確かめていない (偽物のテストだけ)。
 
 ## エンジン向けのバインディングを足す
 
