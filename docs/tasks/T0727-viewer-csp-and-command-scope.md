@@ -1,11 +1,11 @@
 ---
 id: T0727
 title: ビューアの CSP を決め、コマンドが読み書きできるパスを絞る
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/viewer]
 depends_on: [T0724]
-assignee:
+assignee: claude-worker-T0727
 ---
 
 # T0727: ビューアの CSP を決め、コマンドが読み書きできるパスを絞る
