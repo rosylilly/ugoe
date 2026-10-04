@@ -37,8 +37,92 @@ pub const CHUNK_ALIGN: usize = 16;
 /// チャンクフラグ bit0: ペイロードが zstd で圧縮されている。
 pub const CHUNK_FLAG_ZSTD: u32 = 1;
 
-/// 圧縮チャンクを展開したときの上限 (バイト)。圧縮爆弾で無制限にメモリを使わないため。
+/// 圧縮チャンク 1 つの展開後の大きさで、仕様がどの読み込み器にも既定で読めることを求める下限 (256 MiB)。
+///
+/// [`ReadLimits::default`] の 1 チャンクの上限はこの値。書き出しは、展開後がこれを超えるチャンクを圧縮しない
+/// (仕様は SHOULD NOT。`docs/spec/file-formats.md#読み込みの上限`)。
 pub const MAX_DECOMPRESSED_CHUNK_LEN: usize = 256 * 1024 * 1024;
+
+/// [`ReadLimits::default`] の、1 つのファイルで展開するバイトの合計の上限 (1 GiB)。
+pub const DEFAULT_MAX_TOTAL_DECOMPRESSED: u64 = 1024 * 1024 * 1024;
+
+/// 読み込みの資源の上限 (`docs/spec/file-formats.md#読み込みの上限`)。
+///
+/// 上限はファイル形式の決まりではなく、読む側の方針。外から来るファイルの展開の爆発
+/// (数 KiB の zstd のフレームが数百 MiB に展開される) でメモリを使い切らないために持つ。
+/// 超えそうになったら展開の途中でやめ、[`FormatError::ReadLimitExceeded`] を返す (先に確保しない)。
+///
+/// 数えるのは圧縮したチャンクを展開したバイトだけ。圧縮していないチャンクは入力のバイト列を指すだけで、
+/// 大きさは入力の長さ (呼び出し側が分かる) で抑えられるので数えない。
+/// 未知のタグのチャンクは展開しないので数えない。
+///
+/// 将来ほかの上限を足せるように `#[non_exhaustive]` にしている。値を変えるときは
+/// `ReadLimits::default().with_max_total_decompressed(n)` のように既定値から始める。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ReadLimits {
+    /// 圧縮したチャンク 1 つを展開した後の大きさの上限 (バイト)。既定は [`MAX_DECOMPRESSED_CHUNK_LEN`] (256 MiB)。
+    pub max_chunk_decompressed: u64,
+    /// 1 つのファイルで、圧縮したチャンクを展開したバイトの合計の上限。既定は
+    /// [`DEFAULT_MAX_TOTAL_DECOMPRESSED`] (1 GiB)。
+    pub max_total_decompressed: u64,
+}
+
+impl Default for ReadLimits {
+    fn default() -> Self {
+        Self {
+            max_chunk_decompressed: MAX_DECOMPRESSED_CHUNK_LEN as u64,
+            max_total_decompressed: DEFAULT_MAX_TOTAL_DECOMPRESSED,
+        }
+    }
+}
+
+impl ReadLimits {
+    /// 1 チャンクの展開後の上限を `bytes` にしたもの。
+    pub const fn with_max_chunk_decompressed(self, bytes: u64) -> Self {
+        Self {
+            max_chunk_decompressed: bytes,
+            ..self
+        }
+    }
+
+    /// 展開したバイトの合計の上限を `bytes` にしたもの。
+    pub const fn with_max_total_decompressed(self, bytes: u64) -> Self {
+        Self {
+            max_total_decompressed: bytes,
+            ..self
+        }
+    }
+}
+
+/// どの読み込みの上限を超えたか ([`FormatError::ReadLimitExceeded`])。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ReadLimit {
+    /// 1 チャンクの展開後の大きさ ([`ReadLimits::max_chunk_decompressed`])。
+    ChunkDecompressed,
+    /// ファイル全体で展開したバイトの合計 ([`ReadLimits::max_total_decompressed`])。
+    TotalDecompressed,
+}
+
+impl ReadLimit {
+    /// 安定した名前 (`chunk_decompressed` / `total_decompressed`)。エラーのコードの引数に使う。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ChunkDecompressed => "chunk_decompressed",
+            Self::TotalDecompressed => "total_decompressed",
+        }
+    }
+}
+
+impl fmt::Display for ReadLimit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::ChunkDecompressed => "decompressed size of a chunk",
+            Self::TotalDecompressed => "total decompressed size",
+        })
+    }
+}
 
 /// MessagePack の入れ子の深さの上限。モデルの型の入れ子より十分大きく、スタックを使い切らない値。
 const MAX_DEPTH: usize = 128;
@@ -176,7 +260,7 @@ pub(crate) fn normal_map_of<'a>(
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct WriteOptions {
     /// `TEXR` と `NRML` 以外のチャンクを zstd で圧縮する。画像は既に圧縮済みなので対象外。
-    /// 展開後が [`MAX_DECOMPRESSED_CHUNK_LEN`] を超えるチャンクも圧縮しない。
+    /// 展開後が [`MAX_DECOMPRESSED_CHUNK_LEN`] を超えるチャンクも圧縮しない (既定の上限の読み込み器で読めるように)。
     pub compress: bool,
 }
 
@@ -258,8 +342,8 @@ impl<'a> ChunkWriter<'a> {
 
     /// エンコード済みのペイロードを加える。設定に従って圧縮する。
     ///
-    /// 展開後の上限 ([`MAX_DECOMPRESSED_CHUNK_LEN`]) を超えるペイロードは、圧縮すると読み込みで
-    /// 拒否されるので、設定によらず圧縮せずに置く (`docs/spec/file-formats.md#ペイロードのエンコード`)。
+    /// 展開後が [`MAX_DECOMPRESSED_CHUNK_LEN`] を超えるペイロードは、圧縮すると既定の上限の読み込み器で
+    /// 拒否されるので、設定によらず圧縮せずに置く (`docs/spec/file-formats.md#読み込みの上限`)。
     pub(crate) fn push_encoded(&mut self, tag: ChunkTag, raw: Vec<u8>) {
         if self.options.compress && raw.len() <= self.compress_limit {
             let compressed = ruzstd::encoding::compress_to_vec(
@@ -363,12 +447,13 @@ pub struct ReadReport {
     pub warnings: Vec<ReadWarning>,
 }
 
-/// バイト列からバンドルを読み込む。警告は捨てる ([`read_bundle_with_report`] を参照)。
+/// バイト列からバンドルを既定の上限 ([`ReadLimits::default`]) で読み込む。警告は捨てる
+/// ([`read_bundle_with_report`] を参照)。
 pub fn read_bundle(bytes: &[u8]) -> Result<Bundle, FormatError> {
     read_bundle_with_report(bytes).map(|(bundle, _)| bundle)
 }
 
-/// バイト列からバンドルを読み込み、警告を含む報告も返す。
+/// バイト列からバンドルを既定の上限 ([`ReadLimits::default`]) で読み込み、警告を含む報告も返す。
 ///
 /// コンテナの整合性 (マジック・版・範囲・境界・重なり・必須チャンク) を検査したうえで、
 /// 機能の宣言 (`FEAT`) を調べ、モデルのスキーマバージョンを (どのペイロードもデコードする前に) 検査し、最後に
@@ -382,20 +467,33 @@ pub fn read_bundle(bytes: &[u8]) -> Result<Bundle, FormatError> {
 /// - 知らない任意の機能と未知の値は、[`ReadWarning`] として報告して読み込みを続ける。
 /// - 未知のタグのチャンクは読み飛ばす。
 pub fn read_bundle_with_report(bytes: &[u8]) -> Result<(Bundle, ReadReport), FormatError> {
-    read_with_known(bytes, |id| features::find(id).is_some())
+    read_bundle_with(bytes, ReadLimits::default())
+}
+
+/// 読み込みの上限 `limits` を指定してバンドルを読み込み、警告を含む報告も返す。
+///
+/// 検査は [`read_bundle_with_report`] と同じ。展開したバイトが上限を超えそうになったら、展開の途中でやめて
+/// [`FormatError::ReadLimitExceeded`] を返す。
+pub fn read_bundle_with(
+    bytes: &[u8],
+    limits: ReadLimits,
+) -> Result<(Bundle, ReadReport), FormatError> {
+    read_with_known(bytes, limits, |id| features::find(id).is_some())
 }
 
 /// 知っている機能の判定 `known` を指定して読む (試験用の機能 ID で仕組みを確かめるため)。
 pub(crate) fn read_with_known(
     bytes: &[u8],
+    limits: ReadLimits,
     known: impl Fn(&str) -> bool,
 ) -> Result<(Bundle, ReadReport), FormatError> {
+    let mut payloads = Payloads::new(bytes, limits);
     let Container {
         entries,
         declared,
         mut warnings,
-    } = read_container(bytes, known)?;
-    let mut body = check_schema_version_first(&entries, bytes, ChunkTag::MODL)?;
+    } = read_container(&mut payloads, known)?;
+    let mut body = check_schema_version_first(&entries, &mut payloads, ChunkTag::MODL)?;
 
     let mut model = None;
     let mut physics = None;
@@ -413,7 +511,7 @@ pub(crate) fn read_with_known(
                 }
                 let payload = match body.take() {
                     Some(payload) => payload,
-                    None => entry.payload(bytes)?,
+                    None => payloads.get(entry)?,
                 };
                 let decoded: Model = decode(&payload)?;
                 check_schema_version(decoded.schema_version)?;
@@ -423,19 +521,19 @@ pub(crate) fn read_with_known(
                 if physics.is_some() {
                     return Err(FormatError::DuplicateChunk(entry.tag));
                 }
-                physics = Some(decode(&entry.payload(bytes)?)?);
+                physics = Some(decode(&payloads.get(entry)?)?);
             }
             ChunkTag::META => {
                 if meta.is_some() {
                     return Err(FormatError::DuplicateChunk(entry.tag));
                 }
-                meta = Some(serde_json::from_slice(&entry.payload(bytes)?)?);
+                meta = Some(serde_json::from_slice(&payloads.get(entry)?)?);
             }
-            ChunkTag::MOTN => motions.push(decode(&entry.payload(bytes)?)?),
-            ChunkTag::EXPR => expressions.push(decode(&entry.payload(bytes)?)?),
-            ChunkTag::TEXR => textures.push(read_texture(entry, bytes, textures.len())?),
+            ChunkTag::MOTN => motions.push(decode(&payloads.get(entry)?)?),
+            ChunkTag::EXPR => expressions.push(decode(&payloads.get(entry)?)?),
+            ChunkTag::TEXR => textures.push(read_texture(entry, &mut payloads, textures.len())?),
             ChunkTag::NRML => {
-                normal_maps.push(read_normal_map(entry, bytes, normal_maps.len())?);
+                normal_maps.push(read_normal_map(entry, &mut payloads, normal_maps.len())?);
             }
             // モジュールのファイルを取り違えたとき、黙って読み飛ばさずに知らせる。
             ChunkTag::MODU => return Err(FormatError::UnexpectedChunk(entry.tag)),
@@ -496,14 +594,14 @@ pub(crate) struct Container {
 /// 機能の宣言は、ほかのチャンクをデコードする前に調べる。知らない必須の機能があれば
 /// [`FormatError::UnsupportedFeatures`]。
 pub(crate) fn read_container(
-    bytes: &[u8],
+    payloads: &mut Payloads<'_>,
     known: impl Fn(&str) -> bool,
 ) -> Result<Container, FormatError> {
-    let entries = read_table(bytes)?;
+    let entries = read_table(payloads.bytes)?;
     let mut feat = entries.iter().filter(|e| e.tag == ChunkTag::FEAT);
     let declared = match (feat.next(), feat.next()) {
         (None, _) => Vec::new(),
-        (Some(entry), None) => decode::<FeatureTable>(&entry.payload(bytes)?)?.features,
+        (Some(entry), None) => decode::<FeatureTable>(&payloads.get(entry)?)?.features,
         (Some(_), Some(entry)) => return Err(FormatError::DuplicateChunk(entry.tag)),
     };
     let warnings = features::check(&declared, known)
@@ -521,10 +619,10 @@ pub(crate) fn read_container(
 /// `TEXR` チャンクを読む。`index` はテクスチャの番号 (エラーの報告用)。
 pub(crate) fn read_texture(
     entry: &Entry,
-    bytes: &[u8],
+    payloads: &mut Payloads<'_>,
     index: usize,
 ) -> Result<TextureData, FormatError> {
-    let bytes = entry.payload(bytes)?.into_owned();
+    let bytes = payloads.get(entry)?.into_owned();
     let format =
         TextureFormat::detect(&bytes).ok_or(FormatError::UnknownTextureFormat { index })?;
     Ok(TextureData { format, bytes })
@@ -533,10 +631,10 @@ pub(crate) fn read_texture(
 /// `NRML` チャンクを読む。`index` は `NRML` チャンクの順番 (エラーの報告用)。
 pub(crate) fn read_normal_map(
     entry: &Entry,
-    bytes: &[u8],
+    payloads: &mut Payloads<'_>,
     index: usize,
 ) -> Result<TextureData, FormatError> {
-    let bytes = entry.payload(bytes)?.into_owned();
+    let bytes = payloads.get(entry)?.into_owned();
     let format =
         TextureFormat::detect(&bytes).ok_or(FormatError::UnknownNormalMapFormat { index })?;
     Ok(TextureData { format, bytes })
@@ -586,34 +684,70 @@ pub(crate) struct Entry {
     end: usize,
 }
 
-impl Entry {
-    /// ペイロードを取り出す (圧縮されていれば展開する)。範囲は `read_table` で検査済み。
-    pub(crate) fn payload<'a>(&self, bytes: &'a [u8]) -> Result<Cow<'a, [u8]>, FormatError> {
-        self.payload_within(bytes, MAX_DECOMPRESSED_CHUNK_LEN)
+/// 1 つのファイルのペイロードを、読み込みの上限 ([`ReadLimits`]) の中で取り出す。
+/// 展開したバイトの合計を数える (バンドルとモジュールで共通)。
+pub(crate) struct Payloads<'a> {
+    bytes: &'a [u8],
+    limits: ReadLimits,
+    /// これまでに展開できたバイトの合計。失敗した展開は数えない。
+    decompressed: u64,
+}
+
+impl<'a> Payloads<'a> {
+    pub(crate) fn new(bytes: &'a [u8], limits: ReadLimits) -> Self {
+        Self {
+            bytes,
+            limits,
+            decompressed: 0,
+        }
     }
 
-    /// 展開後の上限 `limit` を指定してペイロードを取り出す (試験で小さな上限を使うため)。
-    fn payload_within<'a>(
-        &self,
-        bytes: &'a [u8],
-        limit: usize,
-    ) -> Result<Cow<'a, [u8]>, FormatError> {
-        let raw = bytes
-            .get(self.start..self.end)
-            .ok_or(FormatError::ChunkOutOfBounds { tag: self.tag })?;
-        if self.flags & CHUNK_FLAG_ZSTD == 0 {
+    /// `entry` のペイロードを取り出す (圧縮されていれば展開する)。範囲は `read_table` で検査済み。
+    ///
+    /// 展開は、1 チャンクの上限と合計の残りの小さいほうまでしか読まない。それを超えるバイトが続けば、
+    /// 展開しきらずに [`FormatError::ReadLimitExceeded`] を返す。
+    pub(crate) fn get(&mut self, entry: &Entry) -> Result<Cow<'a, [u8]>, FormatError> {
+        let raw = self
+            .bytes
+            .get(entry.start..entry.end)
+            .ok_or(FormatError::ChunkOutOfBounds { tag: entry.tag })?;
+        if entry.flags & CHUNK_FLAG_ZSTD == 0 {
             return Ok(Cow::Borrowed(raw));
         }
+        let ReadLimits {
+            max_chunk_decompressed,
+            max_total_decompressed,
+        } = self.limits;
+        let remaining = max_total_decompressed.saturating_sub(self.decompressed);
+        let (cap, limit, max) = if remaining < max_chunk_decompressed {
+            (
+                remaining,
+                ReadLimit::TotalDecompressed,
+                max_total_decompressed,
+            )
+        } else {
+            (
+                max_chunk_decompressed,
+                ReadLimit::ChunkDecompressed,
+                max_chunk_decompressed,
+            )
+        };
         let decoder = ruzstd::decoding::StreamingDecoder::new(raw)
             .map_err(|e| FormatError::Decompress(e.to_string()))?;
         let mut out = Vec::new();
         decoder
-            .take(limit as u64 + 1)
+            .take(cap.saturating_add(1))
             .read_to_end(&mut out)
             .map_err(|e| FormatError::Decompress(e.to_string()))?;
-        if out.len() > limit {
-            return Err(FormatError::DecompressedTooLarge { tag: self.tag });
+        let len = out.len() as u64;
+        if len > cap {
+            return Err(FormatError::ReadLimitExceeded {
+                tag: entry.tag,
+                limit,
+                max,
+            });
         }
+        self.decompressed += len;
         Ok(Cow::Owned(out))
     }
 }
@@ -763,13 +897,13 @@ pub(crate) fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, FormatError
 /// (壊れた入力のエラーを今までと変えないため)。
 pub(crate) fn check_schema_version_first<'a>(
     entries: &[Entry],
-    bytes: &'a [u8],
+    payloads: &mut Payloads<'a>,
     tag: ChunkTag,
 ) -> Result<Option<Cow<'a, [u8]>>, FormatError> {
     let Some(entry) = entries.iter().find(|e| e.tag == tag) else {
         return Ok(None);
     };
-    let Ok(payload) = entry.payload(bytes) else {
+    let Ok(payload) = payloads.get(entry) else {
         return Ok(None);
     };
     if let Some(version) = peek_schema_version(&payload) {
@@ -1160,22 +1294,135 @@ pub(crate) mod tests {
         assert_eq!(crate::model_from_json(&json).unwrap(), bundle.model);
     }
 
-    /// 展開後の大きさが上限を超えるチャンクは、展開しきらずに拒否する。
+    fn limits(chunk: u64, total: u64) -> ReadLimits {
+        ReadLimits::default()
+            .with_max_chunk_decompressed(chunk)
+            .with_max_total_decompressed(total)
+    }
+
+    fn zstd(raw: &[u8]) -> Vec<u8> {
+        ruzstd::encoding::compress_to_vec(raw, ruzstd::encoding::CompressionLevel::Fastest)
+    }
+
+    /// 既定の上限は、仕様がどの読み込み器にも求める 1 チャンク 256 MiB と、合計 1 GiB。
     #[test]
-    fn rejects_payloads_over_the_decompressed_limit() {
-        let compressed = ruzstd::encoding::compress_to_vec(
-            [7u8; 64].as_slice(),
-            ruzstd::encoding::CompressionLevel::Fastest,
-        );
-        let bytes = assemble(&[(ChunkTag::META, CHUNK_FLAG_ZSTD, compressed)]);
+    fn default_read_limits() {
+        let limits = ReadLimits::default();
+        assert_eq!(limits.max_chunk_decompressed, 256 * 1024 * 1024);
+        assert_eq!(limits.max_total_decompressed, 1024 * 1024 * 1024);
+    }
+
+    /// 展開後の大きさが 1 チャンクの上限を超えるチャンクは、展開しきらずに拒否する。
+    #[test]
+    fn rejects_payloads_over_the_chunk_limit() {
+        let bytes = assemble(&[(ChunkTag::META, CHUNK_FLAG_ZSTD, zstd(&[7u8; 64]))]);
         let entry = &read_table(&bytes).unwrap()[0];
-        assert_eq!(&*entry.payload_within(&bytes, 64).unwrap(), [7u8; 64]);
+        let mut payloads = Payloads::new(&bytes, limits(64, u64::MAX));
+        assert_eq!(&*payloads.get(entry).unwrap(), [7u8; 64]);
+        let mut payloads = Payloads::new(&bytes, limits(63, u64::MAX));
         assert!(matches!(
-            entry.payload_within(&bytes, 63),
-            Err(FormatError::DecompressedTooLarge {
-                tag: ChunkTag::META
+            payloads.get(entry),
+            Err(FormatError::ReadLimitExceeded {
+                tag: ChunkTag::META,
+                limit: ReadLimit::ChunkDecompressed,
+                max: 63,
             })
         ));
+    }
+
+    /// 合計の上限は、展開できたバイトを数えて、残りを超えるところで展開をやめる。失敗した展開は数えない。
+    #[test]
+    fn rejects_payloads_over_the_total_limit() {
+        let bytes = assemble(&[
+            (ChunkTag::META, CHUNK_FLAG_ZSTD, zstd(&[1u8; 40])),
+            (ChunkTag::META, CHUNK_FLAG_ZSTD, zstd(&[2u8; 30])),
+            (ChunkTag::META, CHUNK_FLAG_ZSTD, zstd(&[3u8; 20])),
+            (ChunkTag::META, 0, vec![4u8; 1000]),
+        ]);
+        let entries = read_table(&bytes).unwrap();
+        let mut payloads = Payloads::new(&bytes, limits(64, 64));
+        assert_eq!(payloads.get(&entries[0]).unwrap().len(), 40);
+        // 残りは 24 バイト。1 チャンクの上限 (64) より小さいので、合計の上限として報告する。
+        assert!(matches!(
+            payloads.get(&entries[1]),
+            Err(FormatError::ReadLimitExceeded {
+                limit: ReadLimit::TotalDecompressed,
+                max: 64,
+                ..
+            })
+        ));
+        assert_eq!(payloads.get(&entries[2]).unwrap().len(), 20);
+        // 圧縮していないチャンクは数えない。
+        assert_eq!(payloads.get(&entries[3]).unwrap().len(), 1000);
+        assert!(matches!(
+            payloads.get(&entries[2]),
+            Err(FormatError::ReadLimitExceeded {
+                limit: ReadLimit::TotalDecompressed,
+                ..
+            })
+        ));
+    }
+
+    /// 1 つずつは小さな上限に収まる圧縮チャンクを並べた小さなファイルが、合計の上限で拒否される
+    /// (T0138 の展開の爆発。テクスチャの数の検査より前、展開の途中で止まる)。
+    #[test]
+    fn rejects_small_files_that_decompress_over_the_total_limit() {
+        let mut image = png();
+        image.resize(64 * 1024, 0);
+        let texture = zstd(&image);
+        let mut chunks = vec![model_chunk(&ugoe_model::fixtures::single_quad())];
+        chunks.extend((0..32).map(|_| (ChunkTag::TEXR, CHUNK_FLAG_ZSTD, texture.clone())));
+        let bytes = assemble(&chunks);
+        assert!(bytes.len() < 64 * 1024, "{}", bytes.len());
+
+        let result = read_bundle_with(&bytes, limits(64 * 1024, 16 * 64 * 1024));
+        assert!(
+            matches!(
+                result,
+                Err(FormatError::ReadLimitExceeded {
+                    tag: ChunkTag::TEXR,
+                    limit: ReadLimit::TotalDecompressed,
+                    max: 1_048_576,
+                })
+            ),
+            "{result:?}"
+        );
+        // 上限を上げれば先へ進み、テクスチャの数の検査で拒否される。
+        let result = read_bundle_with(&bytes, limits(64 * 1024, 32 * 64 * 1024));
+        assert!(
+            matches!(result, Err(FormatError::TextureCountMismatch { .. })),
+            "{result:?}"
+        );
+    }
+
+    /// 上限は読み込みの全体 (機能の宣言・本体の先読み・各チャンク) に効き、展開したバイトだけを数える。
+    #[test]
+    fn read_limits_cover_the_whole_bundle() {
+        let bundle = full_bundle();
+        let compressed = write_bundle_with(&bundle, WriteOptions { compress: true }).unwrap();
+        let total: u64 = read_table(&compressed)
+            .unwrap()
+            .iter()
+            .filter(|e| e.flags & CHUNK_FLAG_ZSTD != 0)
+            .map(|e| {
+                Payloads::new(&compressed, ReadLimits::default())
+                    .get(e)
+                    .unwrap()
+                    .len() as u64
+            })
+            .sum();
+        let (read, _) = read_bundle_with(&compressed, limits(u64::MAX, total)).unwrap();
+        assert_eq!(read, bundle);
+        assert!(matches!(
+            read_bundle_with(&compressed, limits(u64::MAX, total - 1)),
+            Err(FormatError::ReadLimitExceeded {
+                limit: ReadLimit::TotalDecompressed,
+                ..
+            })
+        ));
+        // 圧縮していないファイルは、上限が 0 でも読める。
+        let plain = write_bundle(&bundle).unwrap();
+        assert_eq!(read_bundle_with(&plain, limits(0, 0)).unwrap().0, bundle);
     }
 
     /// 展開後の上限を超えるペイロードは圧縮しない (読み込みで拒否されるファイルを作らないため)。
@@ -1677,7 +1924,7 @@ pub(crate) mod tests {
             let bytes =
                 write_with_features(&bundle, WriteOptions { compress }, &test_features()).unwrap();
             assert_eq!(read_table(&bytes).unwrap()[0].tag, ChunkTag::FEAT);
-            let (read, report) = read_with_known(&bytes, known).unwrap();
+            let (read, report) = read_with_known(&bytes, ReadLimits::default(), known).unwrap();
             assert_eq!(read, bundle);
             assert_eq!(report.features, test_features());
             assert!(report.warnings.is_empty());

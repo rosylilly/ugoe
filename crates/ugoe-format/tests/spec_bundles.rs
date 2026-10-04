@@ -593,7 +593,7 @@ fn reading_step(error: &FormatError, bytes: &[u8]) -> &'static str {
         E::UnexpectedChunk(_)
         | E::DuplicateChunk(_)
         | E::Decompress(_)
-        | E::DecompressedTooLarge { .. }
+        | E::ReadLimitExceeded { .. }
         | E::TooLarge
         | E::Json(_)
         | E::MsgPackDecode(_) => "chunks",

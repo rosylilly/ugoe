@@ -123,10 +123,33 @@ The chunk table immediately follows the header. Each entry is 24 bytes:
   [zstd](https://www.rfc-editor.org/rfc/rfc8878) frame, and the payload is its decompressed content.
 - Compression is optional for writers. Writers SHOULD NOT compress `TEXR` and `NRML` chunks (the
   images are already compressed).
-- A reader MAY limit the decompressed size of a chunk. It MUST support at least 256 MiB
-  (268,435,456 bytes) per chunk, and writers MUST NOT write a compressed chunk that decompresses to
-  more than that. *Informative:* the reference reader rejects chunks that decompress
-  to more than exactly this size.
+- This specification sets no limit on the decompressed size of a chunk or on the total
+  decompressed size of a file. Limits are a policy of the reader ([Resource limits](#resource-limits)).
+- Writers SHOULD NOT write a compressed chunk that decompresses to more than 256 MiB (268,435,456
+  bytes), so that every reader with its default limits can read the file. A file that does is still
+  conforming, but a reader with a lower limit rejects it.
+
+### Resource limits
+
+A file can be small and still decompress to a very large size: a zstd frame of a few kilobytes can
+describe hundreds of megabytes of repeated bytes, and a file can contain many such chunks.
+
+- A reader MAY limit the resources it uses to read a file, for example the decompressed size of one
+  chunk or the total decompressed size of all the chunks of a file. The values of the limits are the
+  reader's choice; a reader SHOULD let its user set them.
+- When reading a file would exceed a limit, the reader MUST stop reading the file and report an
+  error. It MUST NOT crash or exhaust its memory. A reader SHOULD detect the excess while
+  decompressing, without first decompressing the whole chunk or trusting a size stated in the zstd
+  frame.
+- If a reader limits the decompressed size of one chunk, the default value of that limit MUST be at
+  least 256 MiB (268,435,456 bytes), the size that writers can rely on ([Compression](#compression)).
+  A default limit on the total decompressed size SHOULD be at least as large. A user of the reader
+  MAY set lower values.
+
+*Informative:* by default, the reference reader limits one chunk to 256 MiB and all the decompressed
+chunks of a file to 1 GiB (1,073,741,824 bytes) in total, and its user can change both. It counts
+only the bytes of compressed chunks after decompressing them; uncompressed payloads are part of the
+input, whose size the caller already knows.
 
 ### MessagePack limits
 
@@ -220,7 +243,8 @@ feature check is designed to happen before any payload is decoded:
    after decoding.
 5. **Chunks.** Walk the table in order. Skip unknown chunks. Reject chunks that are not allowed in
    this kind of file, and duplicates of chunks that may appear at most once. Decompress and decode
-   the others. A payload that fails to decompress or decode is an error.
+   the others. A payload that fails to decompress or decode is an error, and so is a payload that
+   exceeds a [resource limit](#resource-limits) of the reader.
 6. **Counts.** The required chunk (`MODL` or `MODU`) is present; the numbers of `TEXR` and `NRML`
    chunks match the textures ([Textures and normal maps](#textures-and-normal-maps)); every image has
    a PNG or KTX2 signature.

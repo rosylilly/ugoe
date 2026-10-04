@@ -124,6 +124,34 @@ fn codes_have_the_stable_shape() {
     );
 }
 
+/// 読み込みの上限を超えたエラーは、壊れたファイル (`format.corrupt`) と分けて、どの上限かをコードで示す。
+#[test]
+fn read_limit_errors_have_their_own_codes() {
+    use ugoe_format::{ChunkTag, FormatError, ReadLimit};
+    let chunk = FormatError::ReadLimitExceeded {
+        tag: ChunkTag::MOTN,
+        limit: ReadLimit::ChunkDecompressed,
+        max: 256,
+    }
+    .to_message();
+    assert_eq!(chunk.code, "format.chunk_limit_exceeded");
+    assert_eq!(
+        chunk.args,
+        message_args! { "chunk" => "MOTN", "max" => 256u64 }
+    );
+    let total = FormatError::ReadLimitExceeded {
+        tag: ChunkTag::TEXR,
+        limit: ReadLimit::TotalDecompressed,
+        max: 1024,
+    }
+    .to_message();
+    assert_eq!(total.code, "format.total_limit_exceeded");
+    assert_eq!(
+        total.args,
+        message_args! { "chunk" => "TEXR", "max" => 1024u64 }
+    );
+}
+
 /// ソースに書いたコード (`"area.name"` の文字列) を取り出す。
 fn codes_in(source: &str) -> Vec<String> {
     const AREAS: [&str; 15] = [

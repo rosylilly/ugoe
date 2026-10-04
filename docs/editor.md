@@ -1820,6 +1820,7 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 | `format.invalid_model` / `format.invalid_module` / `format.invalid_physics` | `count`・`details` |
 | `format.unsupported_features` | `features` |
 | `format.unknown_values` | `values` |
+| `format.chunk_limit_exceeded` / `format.total_limit_exceeded` (読み込みの上限。1 チャンクの展開後の大きさ / 展開の合計) | `chunk`・`max` (バイト) |
 | `format.corrupt` (チャンク・圧縮・テクスチャ・MessagePack・JSON の不正) | `detail` |
 | `export.invalid_max_size` / `export.invalid_padding` | `value`・`max` |
 | `export.invalid_settings` | `detail` |

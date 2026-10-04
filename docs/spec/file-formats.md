@@ -173,9 +173,26 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 | `META` | UTF-8 の JSON |
 
 - postcard などの自己記述的でない形式は、`ugoe-model` の内部タグ付き enum (`Segment` `DeformerKind`) を読めないため採用しませんでした。
-- `flags` の bit0 が立ったチャンクは、ペイロード全体が 1 つの zstd フレームです。書き出し時の圧縮は任意で (既定は無圧縮)、`TEXR` と `NRML` は圧縮しません。展開後の大きさの上限は 1 チャンクあたり 256 MiB です。書き出しは、展開後がこれを超えるチャンクを圧縮しません。
+- `flags` の bit0 が立ったチャンクは、ペイロード全体が 1 つの zstd フレームです。書き出し時の圧縮は任意で (既定は無圧縮)、`TEXR` と `NRML` は圧縮しません。書き出しは、展開後が 256 MiB (`MAX_DECOMPRESSED_CHUNK_LEN`) を超えるチャンクを圧縮しません (公開仕様では SHOULD NOT。既定の上限の読み込み器で読めるようにするため)。
+- 形式は、1 チャンク・ファイル全体のどちらの展開後の大きさにも上限を決めません。上限は読む側の方針です ([読み込みの上限](#読み込みの上限))。
 - MessagePack の入れ子の深さは 128 までに制限して読みます (スタックを使い切らないため。モデルの型の入れ子はずっと浅い)。
 - MessagePack の値の後ろに余りのバイトを書きません。読み込みは余りを無視します (公開仕様では、拒否する読み込み器も適合します)。
+
+### 読み込みの上限
+
+数 KiB の zstd のフレームが数百 MiB に展開されることがあり、そうしたチャンクを並べると、小さなファイルでもメモリを使い切れます。
+ファイルそのものに上限を決めると使える範囲を狭めるだけなので、上限は **読み込み器の設定** として持ちます (T0150。公開仕様は `spec/bundle.md` の Resource limits)。
+
+- 読み込み器は資源の上限を設けてよい (MAY) とします。超えるときは、落ちたりメモリを使い切ったりせず、読み込みをやめてエラーを返さなければなりません (MUST)。
+  展開しきってから大きさを調べたり、zstd のフレームに書かれた大きさを信用したりせず、展開しながら超えたことに気づくのがよい (SHOULD) とします。
+- 1 チャンクの展開後の大きさに上限を設けるなら、その既定値は 256 MiB 以上にします (MUST。書き出しが頼れる大きさ)。合計の既定値もそれ以上にするのがよい (SHOULD) とします。利用者はより小さな値を指定できます。
+- 参照実装 (`ugoe-format`) の上限は `ReadLimits { max_chunk_decompressed, max_total_decompressed }` で、既定値 (`ReadLimits::default()`) は 1 チャンク 256 MiB・合計 1 GiB です。
+  `read_bundle_with(bytes, limits)` / `read_module_with(bytes, limits)` で指定し、`read_bundle` などは既定値で読みます。
+  - 展開は、1 チャンクの上限と合計の残りの小さいほうまでしか読みません。それを超えるバイトが続けば、展開の途中でやめて `ReadLimitExceeded { tag, limit, max }` を返します
+    (`limit` は `ChunkDecompressed` か `TotalDecompressed`、`max` はその上限の値)。先に確保はしません。
+  - 合計に数えるのは、圧縮したチャンクを展開したバイトだけです。圧縮していないチャンクは入力のバイト列そのもので、大きさは呼び出し側が分かる入力の長さで抑えられるので数えません。展開に失敗したチャンクと、読み飛ばす未知のタグのチャンクも数えません。
+  - エディタなどの画面に出すときのコードは `format.chunk_limit_exceeded` / `format.total_limit_exceeded` です ([editor.md](../editor.md#エラーと警告のコード))。ファイルが壊れているとは限らないので、`format.corrupt` と分けています。
+  - SDK・C ABI・wasm・バインディングから上限を指定する口は T0152 で足します。
 
 ### 読み込み時の検査
 
@@ -188,7 +205,7 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 - `TEXR` の数が `Model.textures` と一致しない、PNG / KTX2 でないテクスチャ
 - `NRML` の数が `normal_map` を持つテクスチャの数と一致しない (`NormalMapCountMismatch`)、PNG / KTX2 でない法線マップ
 - `MODL` の `schema_version` が新しすぎる (`UnsupportedVersion`。ほかのチャンクと `MODL` の残りをデコードする前に調べる。[バージョニング](#バージョニング))
-- ペイロードのデコード失敗
+- ペイロードの展開・デコードの失敗、読み込みの上限を超える展開 (`ReadLimitExceeded`。[読み込みの上限](#読み込みの上限))
 - `ugoe_model::validate::validate` がエラーを返すモデル (下流の変形・描画で範囲外アクセスを起こさないため、ここで弾く)
 - `PHYS` があり、`ugoe_model::validate::validate_physics` がエラーを返す物理の設定 (`InvalidPhysics`)
 
@@ -200,6 +217,7 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
   - 使っている機能を `features::detect(&Bundle)` で自動で宣言し、宣言があれば `FEAT` を書きます。
   - 未知の値 (`Unknown`) を含むバンドルは `UnknownValues(場所の一覧)` で拒否します ([再保存](#再保存))。
 - `read_bundle(&[u8]) -> Result<Bundle, FormatError>`
+- `read_bundle_with(&[u8], ReadLimits) -> Result<(Bundle, ReadReport), FormatError>`: 読み込みの上限を指定して読みます ([読み込みの上限](#読み込みの上限))。ほかの読み込みの関数は `ReadLimits::default()` で読みます。
 - `read_bundle_with_report(&[u8]) -> Result<(Bundle, ReadReport), FormatError>`: 警告も返します。
   `ReadReport { features, warnings }` の `features` は `FEAT` の宣言のまま、`warnings` は
   `ReadWarning::UnknownOptionalFeature(id)` (知らない任意の機能) と `ReadWarning::UnknownValue(場所)` (未知の値。場所は `MODL: meshes[Face].blend` や `MOTN#0: curves[1].target`) です。
@@ -237,7 +255,7 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 - `MODU` がない、`MODU` `META` `FEAT` が 2 つ以上ある、バンドル用のチャンクがある
 - `TEXR` の数が `Module.textures` と一致しない、`NRML` の数が `normal_map` を持つテクスチャの数と一致しない、PNG / KTX2 でない画像
 - `MODU` の `schema_version` が新しすぎる (`UnsupportedVersion`。バンドルと同じく、デコードする前に調べる)
-- ペイロードのデコード失敗
+- ペイロードの展開・デコードの失敗、読み込みの上限を超える展開 (バンドルと同じ `ReadLimitExceeded`)
 - `ugoe_model::validate::validate_module` がエラーを返すモジュール (`InvalidModule`)。本体との整合 (スロット・`requires`・
   パラメータ・マスクの参照先) は、本体が決まってから合成 (`ugoe_runtime::compose`) が検査します
 
@@ -247,7 +265,7 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 
 - `ModuleFile { module, textures, normal_maps, meta }`。法線マップはテクスチャの番号から `ModuleFile::normal_map(index)` で引きます。
 - `write_module(&ModuleFile)` / `write_module_with(&ModuleFile, WriteOptions)`
-- `read_module(&[u8])` / `read_module_with_report(&[u8])` (報告の形はバンドルと同じ `ReadReport`)
+- `read_module(&[u8])` / `read_module_with_report(&[u8])` (報告の形はバンドルと同じ `ReadReport`) / `read_module_with(&[u8], ReadLimits)` (上限を指定する)
 
 ## 機能の宣言と段階的な劣化
 

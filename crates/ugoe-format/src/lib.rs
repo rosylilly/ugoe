@@ -18,12 +18,14 @@ use ugoe_model::physics::PhysicsSettings;
 use ugoe_model::validate::ValidationError;
 
 pub use bundle::{
-    Bundle, ChunkTag, ReadReport, ReadWarning, TextureData, TextureFormat, WriteOptions,
-    read_bundle, read_bundle_with_report, write_bundle, write_bundle_with,
+    Bundle, ChunkTag, ReadLimit, ReadLimits, ReadReport, ReadWarning, TextureData, TextureFormat,
+    WriteOptions, read_bundle, read_bundle_with, read_bundle_with_report, write_bundle,
+    write_bundle_with,
 };
 pub use features::{FEATURES, Feature, FeatureDecl};
 pub use module_file::{
-    ModuleFile, read_module, read_module_with_report, write_module, write_module_with,
+    ModuleFile, read_module, read_module_with, read_module_with_report, write_module,
+    write_module_with,
 };
 
 /// `.ugoe` ファイル先頭のマジックバイト。
@@ -74,8 +76,15 @@ pub enum FormatError {
     NormalMapFormatMismatch { index: usize },
     #[error("chunk decompression failed: {0}")]
     Decompress(String),
-    #[error("chunk {tag}: decompressed size exceeds the limit")]
-    DecompressedTooLarge { tag: ChunkTag },
+    /// 読み込みの上限 ([`ReadLimits`]) を超えたので、チャンク `tag` の展開を途中でやめた。
+    /// `limit` はどの上限か、`max` はその上限の値 (バイト)。ファイルが壊れているとは限らない
+    /// (上限を上げれば読めることがある。`docs/spec/file-formats.md#読み込みの上限`)。
+    #[error("chunk {tag}: {limit} exceeds the read limit of {max} bytes")]
+    ReadLimitExceeded {
+        tag: ChunkTag,
+        limit: ReadLimit,
+        max: u64,
+    },
     #[error("bundle is too large")]
     TooLarge,
     #[error("model failed validation with {} error(s)", .0.len())]

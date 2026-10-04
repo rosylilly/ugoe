@@ -4,7 +4,7 @@
 //! ほかのクレートのエラー (検証・合成・推定・自動メッシュなど) を含むものは、いまはその英語の文を
 //! `detail` (`details`) の引数で渡す。
 
-use ugoe_format::FormatError;
+use ugoe_format::{FormatError, ReadLimit};
 use ugoe_model::avatar::check::ProfileIssue;
 use ugoe_model::validate::ValidationError;
 use ugoe_runtime::CompileError;
@@ -496,6 +496,12 @@ impl Coded for FormatError {
             Self::InvalidPhysics(_) => "format.invalid_physics",
             Self::UnsupportedFeatures(_) => "format.unsupported_features",
             Self::UnknownValues(_) => "format.unknown_values",
+            // 読み込みの上限 (ファイルが壊れているとは限らない)。
+            Self::ReadLimitExceeded {
+                limit: ReadLimit::TotalDecompressed,
+                ..
+            } => "format.total_limit_exceeded",
+            Self::ReadLimitExceeded { .. } => "format.chunk_limit_exceeded",
             // 壊れたファイル (チャンク・圧縮・テクスチャ・MessagePack・JSON)。細かい理由は `detail`。
             _ => "format.corrupt",
         }
@@ -512,6 +518,9 @@ impl Coded for FormatError {
             }
             Self::UnsupportedFeatures(features) => args! { "features" => features.join(", ") },
             Self::UnknownValues(values) => args! { "values" => values.join(", ") },
+            Self::ReadLimitExceeded { tag, max, .. } => {
+                args! { "chunk" => tag.to_string(), "max" => *max }
+            }
             other => args! { "detail" => other.to_string() },
         }
     }

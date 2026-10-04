@@ -10,9 +10,9 @@
 use ugoe_model::module::Module;
 
 use crate::bundle::{
-    ChunkTag, ChunkWriter, Container, ReadReport, ReadWarning, TextureData, WriteOptions,
-    check_normal_map_count, check_schema_version_first, check_texture_count, decode, encode,
-    normal_map_of, read_container, read_normal_map, read_texture,
+    ChunkTag, ChunkWriter, Container, Payloads, ReadLimits, ReadReport, ReadWarning, TextureData,
+    WriteOptions, check_normal_map_count, check_schema_version_first, check_texture_count, decode,
+    encode, normal_map_of, read_container, read_normal_map, read_texture,
 };
 use crate::features::{self, FeatureDecl};
 use crate::{FormatError, check_schema_version};
@@ -85,12 +85,12 @@ pub(crate) fn write_with_features(
     writer.finish()
 }
 
-/// バイト列からモジュールを読み込む。警告は捨てる ([`read_module_with_report`] を参照)。
+/// バイト列からモジュールを既定の上限 ([`ReadLimits::default`]) で読み込む。警告は捨てる ([`read_module_with_report`] を参照)。
 pub fn read_module(bytes: &[u8]) -> Result<ModuleFile, FormatError> {
     read_module_with_report(bytes).map(|(file, _)| file)
 }
 
-/// バイト列からモジュールを読み込み、警告を含む報告も返す。
+/// バイト列からモジュールを既定の上限 ([`ReadLimits::default`]) で読み込み、警告を含む報告も返す。
 ///
 /// コンテナと機能の宣言の検査はバンドル ([`crate::read_bundle_with_report`]) と同じ。
 /// そのうえで、スキーマバージョンを (バンドルと同じく `MODU` をデコードする前に) 検査し、`ugoe_model::validate::validate_module` を通す
@@ -101,20 +101,31 @@ pub fn read_module(bytes: &[u8]) -> Result<ModuleFile, FormatError> {
 /// - 未知の値の警告の場所は `MODU: meshes[Hair].blend` や `MODU: physics.rigs[Sway].outputs[0].source`。
 /// - 未知のタグのチャンクは読み飛ばす。
 pub fn read_module_with_report(bytes: &[u8]) -> Result<(ModuleFile, ReadReport), FormatError> {
-    read_with_known(bytes, |id| features::find(id).is_some())
+    read_module_with(bytes, ReadLimits::default())
+}
+
+/// 読み込みの上限 `limits` を指定してモジュールを読み込み、警告を含む報告も返す
+/// (上限の扱いはバンドルの [`crate::read_bundle_with`] と同じ)。
+pub fn read_module_with(
+    bytes: &[u8],
+    limits: ReadLimits,
+) -> Result<(ModuleFile, ReadReport), FormatError> {
+    read_with_known(bytes, limits, |id| features::find(id).is_some())
 }
 
 /// 知っている機能の判定 `known` を指定して読む (試験用の機能 ID で仕組みを確かめるため)。
 pub(crate) fn read_with_known(
     bytes: &[u8],
+    limits: ReadLimits,
     known: impl Fn(&str) -> bool,
 ) -> Result<(ModuleFile, ReadReport), FormatError> {
+    let mut payloads = Payloads::new(bytes, limits);
     let Container {
         entries,
         declared,
         mut warnings,
-    } = read_container(bytes, known)?;
-    let mut body = check_schema_version_first(&entries, bytes, ChunkTag::MODU)?;
+    } = read_container(&mut payloads, known)?;
+    let mut body = check_schema_version_first(&entries, &mut payloads, ChunkTag::MODU)?;
 
     let mut module = None;
     let mut meta = None;
@@ -129,7 +140,7 @@ pub(crate) fn read_with_known(
                 }
                 let payload = match body.take() {
                     Some(payload) => payload,
-                    None => entry.payload(bytes)?,
+                    None => payloads.get(entry)?,
                 };
                 let decoded: Module = decode(&payload)?;
                 check_schema_version(decoded.schema_version)?;
@@ -139,11 +150,11 @@ pub(crate) fn read_with_known(
                 if meta.is_some() {
                     return Err(FormatError::DuplicateChunk(entry.tag));
                 }
-                meta = Some(serde_json::from_slice(&entry.payload(bytes)?)?);
+                meta = Some(serde_json::from_slice(&payloads.get(entry)?)?);
             }
-            ChunkTag::TEXR => textures.push(read_texture(entry, bytes, textures.len())?),
+            ChunkTag::TEXR => textures.push(read_texture(entry, &mut payloads, textures.len())?),
             ChunkTag::NRML => {
-                normal_maps.push(read_normal_map(entry, bytes, normal_maps.len())?);
+                normal_maps.push(read_normal_map(entry, &mut payloads, normal_maps.len())?);
             }
             // バンドルのファイルを取り違えたとき、黙って読み飛ばさずに知らせる。
             ChunkTag::MODL | ChunkTag::PHYS | ChunkTag::MOTN | ChunkTag::EXPR => {
@@ -515,6 +526,26 @@ mod tests {
         }
     }
 
+    /// 読み込みの上限はモジュールにもバンドルと同じく効く。
+    #[test]
+    fn read_limits_apply_to_modules() {
+        let file = full_module();
+        let bytes = write_module_with(&file, WriteOptions { compress: true }).unwrap();
+        assert_eq!(
+            read_module_with(&bytes, ReadLimits::default()).unwrap().0,
+            file
+        );
+        let limits = ReadLimits::default().with_max_total_decompressed(1);
+        assert!(matches!(
+            read_module_with(&bytes, limits),
+            Err(FormatError::ReadLimitExceeded {
+                limit: crate::ReadLimit::TotalDecompressed,
+                max: 1,
+                ..
+            })
+        ));
+    }
+
     #[test]
     fn feature_declarations_are_checked() {
         let declared = [
@@ -527,7 +558,8 @@ mod tests {
             &bytes,
             |e| matches!(e, FormatError::UnsupportedFeatures(ids) if ids == &["test.required"]),
         );
-        let (read, report) = read_with_known(&bytes, |id| id == "test.required").unwrap();
+        let (read, report) =
+            read_with_known(&bytes, ReadLimits::default(), |id| id == "test.required").unwrap();
         assert_eq!(read, module_only());
         assert_eq!(report.features, declared);
         assert_eq!(

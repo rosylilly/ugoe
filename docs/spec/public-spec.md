@@ -47,7 +47,8 @@
 | --- | --- | --- |
 | [File kinds](../../spec/bundle.md#file-kinds) | [file-formats.md#一覧](file-formats.md#一覧) | プロジェクト (`.ugoeproj`) は公開仕様に含めない (ADR 0021) |
 | [Container layout](../../spec/bundle.md#container-layout)・[Chunk types](../../spec/bundle.md#chunk-types) | [file-formats.md#バンドル-ugoe](file-formats.md#バンドル-ugoe) | |
-| [Payload encoding](../../spec/bundle.md#payload-encoding) | [file-formats.md#ペイロードのエンコード](file-formats.md#ペイロードのエンコード) | 展開後の上限と MessagePack の入れ子の上限は英語版に要件として書く |
+| [Payload encoding](../../spec/bundle.md#payload-encoding) | [file-formats.md#ペイロードのエンコード](file-formats.md#ペイロードのエンコード) | MessagePack の入れ子の上限は英語版に要件として書く |
+| [Resource limits](../../spec/bundle.md#resource-limits) | [file-formats.md#読み込みの上限](file-formats.md#読み込みの上限) | 上限は形式でなく読み込み器の設定 (T0150)。参照実装の既定値は Informative |
 | [Textures and normal maps](../../spec/bundle.md#textures-and-normal-maps) | [file-formats.md#バンドル-ugoe](file-formats.md#バンドル-ugoe)、[file-formats.md#モジュールと法線マップのファイル](file-formats.md#モジュールと法線マップのファイル) | |
 | [Metadata](../../spec/bundle.md#metadata) | [file-formats.md#バンドル-ugoe](file-formats.md#バンドル-ugoe) | |
 | [Bundle files](../../spec/bundle.md#bundle-files) | [file-formats.md#バンドル-ugoe](file-formats.md#バンドル-ugoe) | |
