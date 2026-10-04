@@ -150,7 +150,7 @@
 | `remove_deformer` | 子デフォーマ・子メッシュ・このデフォーマを取り付け先 (`anchor`) にするスロットが残っていれば **拒否する**。他のデフォーマの `mirror` からは外す |
 | `remove_mesh` | **連鎖して直す。** 他のメッシュの `masks` と `mirror` から外し、このメッシュを使うグルーと当たり判定を削除する (その当たり判定を指すアバタープロファイルの標準の当たり判定も外す)。スロットの `mask_sources` からも外す。描画用の複製の元を消すと、複製はつなぐグルーを失って普通のメッシュ (基準の形) として残る |
 
-- 削除 (`remove_part`・`remove_deformer`・`remove_mesh`) で要素がなくなったら、その要素をミラー元 (`keyforms.mirror_source`) にしている格子から記録を外し、その格子の `mirror` のセルを `authored` にします (値は変えない)。
+- 削除 (`remove_part`・`remove_deformer`・`remove_mesh`・`unwrap_deformer`) で要素がなくなったら、その要素をミラー元 (`keyforms.mirror_source`) にしている格子から記録を外し、その格子の `mirror` のセルを `authored` にします (値は変えない)。
 
 - 拒否する場合は、先に子を削除するか付け替えます。まとめて行うなら `batch` を使います。
 - 物理はドキュメントが持つので、パラメータ・デフォーマ・メッシュを消すと参照を外します ([物理の編集](#物理の編集))。モーション・表情は `Model` の外のデータなので、`remove_parameter` はこれらを書き換えません。消したパラメータへの参照が残ることがあります (ランタイムは無視する。タイムラインは `(missing)` の行として出す)。
@@ -1259,7 +1259,7 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
 ([ADR 0023](adr/0023-editor-mcp-bridge.md) の 5、T0641)。操作は [マニュアル](manual/screen.md#外でプロジェクトが書き換えられたとき)。
 
 - **検出の方法: ファイルの指紋を比べる (ファイルの監視は使わない)。** `ugoe_editor_core::ProjectFingerprint` が、`Project::load` の読むファイル
-  (`project.json`・`model.json`・`physics.json`・`motions/`・`expressions/`・`textures/*.png`) の中身のハッシュと大きさを持つ。
+  (`project.json`・`model.json`・`module.json`・`physics.json`・`motions/`・`expressions/`・`textures/*.png`) の中身のハッシュと大きさを持つ。
   OS のファイルの通知 (`notify` クレートなど) は、WSL 越しのパス (`\\wsl.localhost\...`、9P) やネットワークのドライブ (SMB) では届かないことが多く、
   エディタを Windows で動かし、エージェントを WSL で動かす使い方 (ADR 0023 の 4) で働かない。指紋を比べる方式はどのファイルシステムでも同じに働き、
   依存も増えない。代わりに、確かめた時点でしか気づかない。

@@ -37,7 +37,7 @@ pub enum EditError {
     NotFound { kind: &'static str, id: String },
     #[error("invalid range: min {min} <= default {default} <= max {max} must hold")]
     InvalidRange { min: f32, default: f32, max: f32 },
-    /// 子が残っている要素は削除できない。`children` は `mesh \`Quad\`` のような表記。
+    /// 子が残っている要素は削除できない。`children` は ``mesh `Quad` `` のような表記。
     #[error("{kind} `{id}` still has children: {}", children.join(", "))]
     HasChildren {
         kind: &'static str,
@@ -1059,6 +1059,7 @@ fn apply_to(
         Command::UnwrapDeformer { id } => {
             deformer_edit::unwrap(model, &id, touched)?;
             remove_deformer(model, &id)?;
+            inference::forget_missing_mirror_sources(model);
         }
         Command::AddMotion { motion } => motion_edit::add_motion(anim, model, motion)?,
         Command::RemoveMotion { name } => motion_edit::remove_motion(anim, &name)?,

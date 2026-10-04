@@ -115,10 +115,10 @@ pub enum ProjectError {
     /// モジュールの作業用のモデルを作れない・分けられない (スロットがない・合成できないなど)。
     #[error(transparent)]
     Module(#[from] ModuleError),
-    /// 書き出すモジュールが検証 (`validate_module`) を通らない。
     /// モジュールのプロジェクトでない ([`export_module`])。
     #[error("this project is not a module project")]
     NotAModule,
+    /// 書き出すモジュールが検証 (`validate_module`) を通らない。
     #[error("the module is invalid: {}", .0.iter().map(ToString::to_string).collect::<Vec<_>>().join("; "))]
     InvalidModule(Vec<ValidationError>),
 }
@@ -353,7 +353,7 @@ impl Project {
     /// 空でなく、`project.json` もないディレクトリには保存しない ([`ProjectError::NotEmpty`])。
     /// ディスクに書く前にすべてのファイルの中身を作るので、名前の不正などのエラーでは何も書かない。
     pub fn save(&self, dir: &Path) -> Result<(), ProjectError> {
-        let meta = to_json(&self.meta_for(dir))?;
+        let meta = to_json(Path::new(PROJECT_JSON), &self.meta_for(dir))?;
         let files = match &self.module {
             Some(context) => self.module_files(context)?,
             None => self.files()?,
@@ -364,7 +364,6 @@ impl Project {
         for (relative, bytes) in &files {
             write_if_changed(&dir.join(relative), bytes)?;
         }
-        let written: BTreeSet<&Path> = files.iter().map(|(p, _)| p.as_path()).collect();
         // 種類を変えて上書きしたときに、前の種類のファイルを残さない。
         if self.module.is_some() {
             remove_if_exists(&dir.join(MODEL_JSON))?;
@@ -374,9 +373,9 @@ impl Project {
         if self.physics.is_none() || self.module.is_some() {
             remove_if_exists(&dir.join(PHYSICS_JSON))?;
         }
-        remove_stale(dir, MOTIONS_DIR, MOTION_SUFFIX, &written)?;
-        remove_stale(dir, EXPRESSIONS_DIR, EXPRESSION_SUFFIX, &written)?;
-        remove_stale(dir, TEXTURES_DIR, TEXTURE_SUFFIX, &written)?;
+        remove_stale(dir, MOTIONS_DIR, MOTION_SUFFIX, &files)?;
+        remove_stale(dir, EXPRESSIONS_DIR, EXPRESSION_SUFFIX, &files)?;
+        remove_stale(dir, TEXTURES_DIR, TEXTURE_SUFFIX, &files)?;
         // project.json はプロジェクトとして完成したことの印になるので最後に書く。
         write_if_changed(&dir.join(PROJECT_JSON), &meta)
     }
@@ -557,13 +556,18 @@ impl Project {
             })?;
         files.push((PathBuf::from(MODEL_JSON), with_newline(model)));
         if let Some(physics) = &self.physics {
-            files.push((PathBuf::from(PHYSICS_JSON), to_json(physics)?));
+            let path = PathBuf::from(PHYSICS_JSON);
+            known(&path, ugoe_model::unknown::in_physics(physics))?;
+            let json = to_json(&path, physics)?;
+            files.push((path, json));
         }
 
         check_names("motion", self.motions.iter().map(|m| m.name.as_str()))?;
         for motion in &self.motions {
             let path = Path::new(MOTIONS_DIR).join(format!("{}{MOTION_SUFFIX}", motion.name));
-            files.push((path, to_json(motion)?));
+            known(&path, ugoe_model::unknown::in_motion(motion))?;
+            let json = to_json(&path, motion)?;
+            files.push((path, json));
         }
         check_names(
             "expression",
@@ -572,7 +576,9 @@ impl Project {
         for expression in &self.expressions {
             let path =
                 Path::new(EXPRESSIONS_DIR).join(format!("{}{EXPRESSION_SUFFIX}", expression.name));
-            files.push((path, to_json(expression)?));
+            known(&path, ugoe_model::unknown::in_expression(expression))?;
+            let json = to_json(&path, expression)?;
+            files.push((path, json));
         }
         check_names(
             "texture",
@@ -859,8 +865,8 @@ fn read_images(dir: &Path, textures: &[TextureRef]) -> Result<Textures, ProjectE
     Ok(images)
 }
 
-/// モジュールのプロジェクト `dir` の `project.json` (モジュールのプロジェクトでなければ [`ProjectError::NotAModule`])。
-/// モジュールのプロジェクトの `project.json` を読み、`slot` があればスロットを替える。
+/// モジュールのプロジェクト `dir` の `project.json` を読み、`slot` があればスロットを替える
+/// (モジュールのプロジェクトでなければ [`ProjectError::NotAModule`])。
 fn module_meta_with(dir: &Path, slot: Option<&SlotId>) -> Result<ProjectMeta, ProjectError> {
     let mut meta = read_module_meta(dir)?;
     if let (Some(link), Some(slot)) = (&mut meta.module, slot) {
@@ -1030,13 +1036,26 @@ pub(crate) fn io_error(path: &Path) -> impl FnOnce(std::io::Error) -> ProjectErr
 }
 
 /// 2 スペースで整形した JSON (末尾に改行)。フィールドは型定義の順になる。
-fn to_json<T: Serialize>(value: &T) -> Result<Vec<u8>, ProjectError> {
+/// `path` は書き込み先 (エラーの表示用。プロジェクトからの相対パス)。
+fn to_json<T: Serialize>(path: &Path, value: &T) -> Result<Vec<u8>, ProjectError> {
     serde_json::to_string_pretty(value)
         .map(with_newline)
         .map_err(|source| ProjectError::Json {
-            path: PathBuf::new(),
+            path: path.to_path_buf(),
             source,
         })
+}
+
+/// 未知の値 (新しい版のファイルから読んだ `Unknown`) は書けないので、`model.json` と同じく
+/// [`FormatError::UnknownValues`] で拒否する。`unknown` はその場所の一覧。
+fn known(path: &Path, unknown: Vec<String>) -> Result<(), ProjectError> {
+    if unknown.is_empty() {
+        return Ok(());
+    }
+    Err(ProjectError::Format {
+        path: path.to_path_buf(),
+        source: FormatError::UnknownValues(unknown),
+    })
 }
 
 fn with_newline(mut json: String) -> Vec<u8> {
@@ -1081,17 +1100,27 @@ pub(crate) fn list_files(dir: &Path, suffix: &str) -> Result<Vec<PathBuf>, Proje
     Ok(paths)
 }
 
-/// `dir/sub` の中の `*<suffix>` のうち、今回書いたもの (`written`) 以外を消す。
+/// `dir/sub` の中の `*<suffix>` のうち、今回書いたもの (`files`) 以外を消す。
+///
+/// 大文字小文字だけが違う名前で書いたファイル (`idle` から `Idle` への名前の変更など) は、大文字小文字を
+/// 区別しないファイルシステム (Windows・macOS) では今消したファイルと同じものなので、消した後に書き直す
+/// (区別するファイルシステムでは中身が同じなので書き直さない)。
 fn remove_stale(
     dir: &Path,
     sub: &str,
     suffix: &str,
-    written: &BTreeSet<&Path>,
+    files: &[(PathBuf, Vec<u8>)],
 ) -> Result<(), ProjectError> {
+    let folded = |path: &Path| path.to_string_lossy().to_ascii_lowercase();
     for path in list_files(&dir.join(sub), suffix)? {
         let relative = path.strip_prefix(dir).unwrap_or(&path);
-        if !written.contains(relative) {
-            remove_if_exists(&path)?;
+        if files.iter().any(|(p, _)| p == relative) {
+            continue;
+        }
+        remove_if_exists(&path)?;
+        let same_name = files.iter().find(|(p, _)| folded(p) == folded(relative));
+        if let Some((written, bytes)) = same_name {
+            write_if_changed(&dir.join(written), bytes)?;
         }
     }
     Ok(())

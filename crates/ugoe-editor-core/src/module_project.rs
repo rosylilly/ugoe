@@ -899,6 +899,15 @@ impl<'a> Splitter<'a> {
         let own_textures = &model.textures[offset as usize..];
         let texture_names =
             context.renames("texture", own_textures.iter().map(|t| t.name.as_str()))?;
+        // 法線マップの画像もテクスチャと同じ表 (`textures/`) に置くので、接頭辞を外した名前が重なれば
+        // 片方の画像が失われる。共有する法線マップは 1 度だけ数える。
+        let mut image_names: Vec<&str> = own_textures.iter().map(|t| t.name.as_str()).collect();
+        for normal in own_textures.iter().filter_map(|t| t.normal_map.as_deref()) {
+            if !image_names.contains(&normal) {
+                image_names.push(normal);
+            }
+        }
+        context.renames("image", image_names)?;
         let mut module_images = Textures::new();
         let mut copy_image = |from: &str, to: &str| -> Result<(), ModuleError> {
             let png = images

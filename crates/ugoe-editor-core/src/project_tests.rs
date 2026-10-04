@@ -200,6 +200,30 @@ fn save_removes_stale_files_but_keeps_sources() {
     assert_eq!(Project::load(&dir).unwrap(), project);
 }
 
+/// 大文字小文字だけを変えた名前で保存し直しても、ファイルが 1 つだけ新しい名前で残る。大文字小文字を区別しない
+/// ファイルシステム (Windows・macOS) では、古い名前のファイルを消すと新しく書いたファイルも消えるので、書き直す。
+#[test]
+fn renaming_only_the_case_keeps_the_file() {
+    let tmp = TempDir::new("case-rename");
+    let dir = tmp.project();
+    sample_project().save(&dir).unwrap();
+
+    let mut project = sample_project();
+    project.motions[0].name = "Idle".into();
+    project.save(&dir).unwrap();
+    let motions: Vec<String> = file_names(&dir)
+        .into_iter()
+        .filter(|name| name.starts_with("motions/"))
+        .collect();
+    assert_eq!(
+        motions,
+        ["motions/Idle.motion.json", "motions/tap_body.motion.json"]
+    );
+    let loaded = Project::load(&dir).unwrap();
+    let names: Vec<&str> = loaded.motions.iter().map(|m| m.name.as_str()).collect();
+    assert_eq!(names, ["Idle", "tap_body"]);
+}
+
 #[test]
 fn save_refuses_non_project_directory() {
     let tmp = TempDir::new("not-empty");
@@ -240,6 +264,30 @@ fn save_rejects_bad_names_without_writing() {
     project.textures.remove("white");
     let err = project.save(&tmp.project()).unwrap_err();
     assert!(matches!(err, ProjectError::MissingTexture { .. }), "{err}");
+    assert!(!tmp.project().exists());
+}
+
+/// 新しい版のファイルから読んだ未知の値 (`Unknown`) は書けないので、`model.json` と同じく
+/// [`ugoe_format::FormatError::UnknownValues`] で、どのファイルかを示して拒否する (何も書かない)。
+#[test]
+fn save_rejects_unknown_values_with_the_file_name() {
+    let tmp = TempDir::new("unknown-values");
+    let mut project = sample_project();
+    project.motions[0] = serde_json::from_value(serde_json::json!({
+        "name": "idle",
+        "duration": 1.0,
+        "curves": [{ "target": { "kind": "future_target", "id": "X" }, "segments": [] }],
+    }))
+    .unwrap();
+    let err = project.save(&tmp.project()).unwrap_err();
+    let ProjectError::Format { path, source } = &err else {
+        panic!("expected a format error: {err}");
+    };
+    assert_eq!(path, Path::new("motions/idle.motion.json"));
+    assert!(
+        matches!(source, ugoe_format::FormatError::UnknownValues(v) if v == &["curves[0].target"]),
+        "{err}"
+    );
     assert!(!tmp.project().exists());
 }
 

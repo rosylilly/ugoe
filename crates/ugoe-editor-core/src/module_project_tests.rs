@@ -332,6 +332,42 @@ fn module_textures_can_be_added() {
     assert!(matches!(error, EditError::ReadOnlyBase { .. }), "{error}");
 }
 
+/// 法線マップの画像もテクスチャと同じ表に置くので、接頭辞を外すと名前が重なる画像は拒否する
+/// (黙って片方の画像で上書きしない)。
+#[test]
+fn normal_maps_that_collide_without_the_prefix_are_rejected() {
+    let mut module = long_hair_module();
+    module.textures[0].normal_map = Some("normal".into());
+    let mut images = images(&module);
+    images.insert(
+        "normal".into(),
+        Arc::from(solid_png(2, 2, [128, 128, 255, 255])),
+    );
+    let context = Arc::new(context(&module));
+    let workspace = context.workspace(&module, &images).unwrap();
+    let mut document = Document::with_textures(workspace.model, workspace.textures)
+        .with_physics(workspace.physics)
+        .with_module(context);
+    document
+        .apply(Command::AddTexture {
+            name: "ribbon".into(),
+            png: solid_png(2, 2, [9, 9, 9, 255]),
+        })
+        .unwrap();
+    // 作業用の名前は `LongHair/normal` なので、`normal` は別の名前として受け付けてしまう。
+    let error = document
+        .apply(Command::SetNormalMap {
+            texture: "ribbon".into(),
+            normal_map: Some("normal".into()),
+            png: Some(solid_png(2, 2, [0, 0, 255, 255])),
+        })
+        .unwrap_err();
+    assert!(
+        matches!(&error, EditError::ModuleShape { reason } if reason.contains("would both be `normal`")),
+        "{error}"
+    );
+}
+
 #[test]
 fn unknown_slot_and_invalid_name() {
     let error = ModuleContext::new(base(), &"Nope".into(), "Hat", ModuleRequirements::default())
