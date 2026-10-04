@@ -1,11 +1,11 @@
 ---
 id: T0825
 title: スタジオ: 出力の受け手が読めなかったことを操作ウィンドウに知らせる
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, docs]
 depends_on: [T0815]
-assignee:
+assignee: claude-worker-T0825
 ---
 
 # T0825: スタジオ: 出力の受け手が読めなかったことを操作ウィンドウに知らせる

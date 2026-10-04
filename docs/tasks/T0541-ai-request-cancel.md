@@ -1,11 +1,11 @@
 ---
 id: T0541
 title: AI のリクエストのキャンセルと全体の時間の上限
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-ai, editor, docs]
 depends_on: [T0527]
-assignee:
+assignee: claude-worker-T0541
 ---
 
 # T0541: AI のリクエストのキャンセルと全体の時間の上限
