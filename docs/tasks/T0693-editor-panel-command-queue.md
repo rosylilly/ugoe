@@ -1,11 +1,11 @@
 ---
 id: T0693
 title: エディタのパネルの編集の送り方をそろえる (取りこぼし・古い写し・成否の判定)
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, docs]
 depends_on: [T0671]
-assignee:
+assignee: claude-worker-T0693
 ---
 
 # T0693: エディタのパネルの編集の送り方をそろえる (取りこぼし・古い写し・成否の判定)
