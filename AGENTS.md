@@ -79,7 +79,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 | `just layers` | クレートの依存方向を検査 |
 | `just refs` | コードのコメントから文書の見出しへの参照と、C ABI のヘッダとバインディング (Unity) の宣言の過不足を検査 |
 | `just test-group <group>` / `just lint-group <group>` | CI の 1 つのグループ (`scripts/ci-groups.mjs`) だけテスト / clippy |
-| `just licenses` | 依存するクレートと npm パッケージのライセンスを検査 (MIT のクレートにコピーレフトを入れない。アプリと packages/ の npm の依存は GPL-3.0 と両立するもの) |
+| `just licenses` | 依存するクレートと npm パッケージのライセンスを検査 (MIT のクレートにコピーレフトを入れない。アプリと packages/ の npm の依存は GPL-3.0 と両立するもの)。アプリが同梱するライセンスの表記 (`third-party-notices.txt`) が依存と食い違わないかも検査する ([docs/release.md](docs/release.md#同梱物のライセンスの表記)) |
 | `just publish-check` | crates.io に公開するクレートの準備を検査 (メタデータ・LICENSE の写し・内部の依存の版。[docs/release.md](docs/release.md#cratesio)) |
 | `just wasm-check` | wasm32 でビルドできるか (ランタイム層を触ったら実行) |
 | `just cross-check` / `just vcam-check` | 手元の OS 以外のターゲット (Windows・macOS) で clippy (`#[cfg(windows)]` などのコードを触ったら実行。[docs/testing.md](docs/testing.md#別のターゲットの検査)) |

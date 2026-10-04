@@ -100,9 +100,12 @@ wt-remove id *flags:
 tasks *args:
     @node scripts/tasks.mjs {{args}}
 
-# 依存クレートのライセンスの検査 (docs/adr/0018-licensing-and-1.0-scope.md)
+# 依存クレートのライセンスの検査 (docs/adr/0018-licensing-and-1.0-scope.md) と、アプリが同梱する表記の突き合わせ
+# (apps/*/public/third-party-notices.txt。食い違えば `node scripts/third-party-notices.mjs` で生成し直す。docs/release.md#同梱物のライセンスの表記)
 licenses:
     @node scripts/check-licenses.mjs
+    @node --test --test-reporter=dot scripts/third-party-notices.test.mjs
+    @node scripts/third-party-notices.mjs --check
 
 # crates.io に公開するクレートの準備の検査 (メタデータ・LICENSE の写し・内部の依存の版・missing_docs。docs/release.md#cratesio)
 publish-check:

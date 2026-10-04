@@ -33,7 +33,7 @@ src/                  フロントエンド (Svelte 5 + TS。npm パッケージ
   lib/screenshot.ts     画像の保存の既定のファイル名 (T0420。画素の検査と PNG への変換は @ugoe/player の screenshot.ts、T0730)
   lib/wasm/             ugoe-wasm の読み込み (`Player` に `loadWasm` として渡す)。generated/ は `pnpm wasm` の出力 (gitignore 済み)
   global.d.ts           `window.__UGOE_VIEWER__` の型
-public/               そのまま配る静的ファイル。third-party-notices.txt (同梱物のライセンス) だけコミットする
+public/               そのまま配る静的ファイル。third-party-notices.txt (同梱物のライセンス。`node scripts/third-party-notices.mjs` が生成する) だけコミットする
   mediapipe/            MediaPipe の wasm とモデル。`pnpm mediapipe` が用意する (gitignore 済み)
 src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 ```
@@ -590,7 +590,8 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
   検証済みのファイルがあれば取得しない。モデルを更新するときは、スクリプトの URL とハッシュを一緒に書き換える。
 - `pnpm build` (= `tauri build` の前) は取得できなければ失敗する。`pnpm dev` は取得できなくても警告だけで起動する
   (トラッキングを始めると「モデルが同梱されていません」と表示する)。手で用意するときは `pnpm mediapipe`。
-- ライセンスは両方とも Apache-2.0。表記は `public/third-party-notices.txt` にあり、アプリのステータスバーの「ライセンス」で表示する。
+- ライセンスは両方とも Apache-2.0。表記は `public/third-party-notices.txt` にあり、アプリのステータスバーの「ライセンス」で表示する
+  (MediaPipe の節は `packages/face-tracking/third-party-notices.txt` から生成する。[docs/release.md](../../docs/release.md#同梱物のライセンスの表記))。
 
 ### カメラの許可 (OS ごと)
 

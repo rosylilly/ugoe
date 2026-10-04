@@ -1,6 +1,6 @@
 <!--
-  フェイストラッキングで同梱する MediaPipe (wasm とモデル、Apache-2.0) のライセンスの表示 (T0636)。
-  本文は `pnpm mediapipe` が public/mediapipe/ に写した third-party-notices.txt (@ugoe/face-tracking のもの)。
+  同梱する第三者のもの (MediaPipe の wasm とモデル・バンドルに入る JS のライブラリ) のライセンスの表示 (T0636・T0926)。
+  本文は public/third-party-notices.txt (scripts/third-party-notices.mjs が生成する。docs/release.md#同梱物のライセンスの表記)。
 -->
 <script lang="ts">
 import { Dialog } from "@ugoe/ui";
@@ -16,7 +16,7 @@ export async function open(): Promise<void> {
   shown = true;
   if (loaded) return;
   try {
-    const res = await fetch(new URL("mediapipe/third-party-notices.txt", document.baseURI));
+    const res = await fetch(new URL("third-party-notices.txt", document.baseURI));
     if (res.ok) {
       text = await res.text();
       loaded = true;

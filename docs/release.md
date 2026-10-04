@@ -13,6 +13,31 @@
 
 公開するかどうか、いつ公開するかは、リポジトリを持つ人 (利用者) が決めて行います。
 
+## 同梱物のライセンスの表記
+
+エディタ・ビューア・スタジオは、同梱する第三者のもの (MediaPipe の wasm とモデル、バンドルに入る JS のライブラリ) のライセンスの
+表記を `apps/<アプリ>/public/third-party-notices.txt` に持ち、アプリの「ライセンス」の画面で表示します (T0926)。この 3 つのファイルは
+手で書かず、`scripts/third-party-notices.mjs` が次の 2 つから生成します。
+
+- MediaPipe の節: `packages/face-tracking/third-party-notices.txt` の最初の節から終わりまで (Apache-2.0 の条文を含む)。
+- JS のライブラリの節: アプリを書き出さずに `vite build` し、バンドルに入ったモジュールの node_modules のパッケージごとに、
+  名前・版・ライセンス・ソースと、パッケージのライセンスの文 (LICENSE をそのまま) を並べる。版はロックファイルで決まる
+  node_modules のもの。MIT と別のライセンスから選べるもの (Tauri の JS API など) は MIT の文を載せ、文のファイルが無い
+  Tauri のプラグインは `LICENSE.spdx` の著作権者と MIT の文を載せる。仮想のモジュール (Vite・rolldown が足す小さな補助) は載せない。
+
+`just licenses` (`just ci` に含まれる) が生成したものとコミットしたものを突き合わせ、食い違えば失敗します。
+
+依存やモデルを更新したときの手順:
+
+1. JS の依存を足す・上げる・外したら (`pnpm install` でロックファイルが変わったら)、`node scripts/third-party-notices.mjs` で
+   3 つのファイルを生成し直し、差分 (載るパッケージ・版・ライセンスの文) を読んでからコミットする。
+   ライセンスの文のファイルを持たないパッケージがバンドルに入ると生成が失敗するので、ライセンスを確かめてスクリプトに扱いを足す。
+2. MediaPipe の wasm やモデルを更新したら (`packages/face-tracking/scripts/mediapipe-assets.mjs` の URL とハッシュ)、
+   `packages/face-tracking/third-party-notices.txt` の節 (ファイル・取得元・モデルカード・ライセンス) を直してから、1 と同じく生成し直す。
+3. 新しいアプリを足したら、スクリプトの `APPS` に加え、アプリの「ライセンス」の画面が `third-party-notices.txt` を読むようにする。
+
+Rust のクレート (Tauri のバックエンドなど) のライセンスの表記は、ここではまだ扱っていません。
+
 ## crates.io
 
 公開する範囲と理由は [ADR 0027](adr/0027-crates-io-publishing.md)。`ugoe` とその依存の 8 つのクレートを、依存の順に公開します。

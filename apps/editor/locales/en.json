@@ -1307,8 +1307,8 @@
     },
     "licenses": {
       "open": "Third-party licenses",
-      "title": "Face tracking licenses",
-      "description": "The ugoe editor is distributed under GPL-3.0-only. Face tracking uses MediaPipe, bundled with the editor under the following licenses.",
+      "title": "Licenses",
+      "description": "The ugoe editor is distributed under GPL-3.0-only. It bundles MediaPipe (for face tracking) and JavaScript libraries under the following licenses.",
       "loadStatus": "Cannot load the notices ({{status}})",
       "loadError": "Cannot load the notices: {{message}}"
     },

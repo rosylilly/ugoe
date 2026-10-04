@@ -555,7 +555,8 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
   - MediaPipe の wasm とモデルは、`pnpm dev` / `pnpm build` の前に `ugoe-mediapipe-assets public/mediapipe`
     (パッケージの `scripts/mediapipe-assets.mjs`) が用意します。wasm は npm パッケージから写し、モデル
     (`face_landmarker.task`・`pose_landmarker_lite.task`) は版を固定した URL から取って SHA-256 を検証します。`public/mediapipe/` はコミットしません。
-    同じ場所にライセンスの表記 (`third-party-notices.txt`、Apache-2.0) を写し、パネルの「Third-party licenses」で表示します。
+    パネルの「Third-party licenses」は、MediaPipe とバンドルに入る JS のライブラリのライセンスの表記 (`public/third-party-notices.txt`。
+    ビューア・スタジオと同じ形) を表示します。生成と検査は [release.md](release.md#同梱物のライセンスの表記)。
   - Tauri 側 (`src-tauri/src/tracking.rs`): webview からのカメラの許可の要求だけを許し (`on_permission_request`)、
     記録の保存は `write_json_file` (保存のダイアログで選んだ絶対パスの `.json` だけ)。macOS は `Info.plist` の
     `NSCameraUsageDescription` と `Entitlements.plist` の `com.apple.security.device.camera`。

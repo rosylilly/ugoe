@@ -1282,8 +1282,8 @@
     },
     "licenses": {
       "open": "サードパーティのライセンス",
-      "title": "フェイストラッキングのライセンス",
-      "description": "ugoe のエディタは GPL-3.0-only で配布しています。フェイストラッキングは MediaPipe を使い、次のライセンスでエディタに同梱しています。",
+      "title": "ライセンス",
+      "description": "ugoe のエディタは GPL-3.0-only で配布しています。フェイストラッキングの MediaPipe と JavaScript のライブラリを、次のライセンスで同梱しています。",
       "loadStatus": "ライセンスの表示を読み込めません ({{status}})",
       "loadError": "ライセンスの表示を読み込めません: {{message}}"
     },

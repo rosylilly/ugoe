@@ -61,6 +61,7 @@ const EXCEPTIONS_OK = new Set(["LLVM-exception"]);
 const EXCEPTIONS = {};
 // npm の依存で、package.json に SPDX の式を持たないもの (名前 -> 確かめた版・実際のライセンス・確かめ方)。
 // 版が変わったら検査が失敗するので、同じ方法で確かめ直して版を書き換える。
+// アプリのバンドルに入るものは、scripts/third-party-notices.mjs の LICENSE_OVERRIDES にも同じライセンスを書く。
 const NPM_EXCEPTIONS = {
   "svelte-toolbelt": {
     version: "0.10.6",
