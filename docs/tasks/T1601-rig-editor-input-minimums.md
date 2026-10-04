@@ -1,11 +1,11 @@
 ---
 id: T1601
 title: エディタの物理の入力欄に下限を付ける (負の delay・acceleration を入れさせない)
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor]
 depends_on: [T0693]
-assignee:
+assignee: claude-worker-T1601
 ---
 
 # T1601: エディタの物理の入力欄に下限を付ける (負の delay・acceleration を入れさせない)
