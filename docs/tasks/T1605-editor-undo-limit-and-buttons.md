@@ -1,11 +1,11 @@
 ---
 id: T1605
 title: "エディタ: Undo の上限の設定と、戻れない・進めないときの Undo/Redo のボタン"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core, apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1605
 ---
 
 # T1605: エディタ: Undo の上限の設定と、戻れない・進めないときの Undo/Redo のボタン
