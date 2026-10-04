@@ -1,11 +1,11 @@
 ---
 id: T0009
 title: PNG のデコードと大きさの上限を 1 か所にまとめる (ugoe-headless と ugoe-wasm)
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-format, ugoe-headless, ugoe-wasm, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0009
 ---
 
 # T0009: PNG のデコードと大きさの上限を 1 か所にまとめる (ugoe-headless と ugoe-wasm)
