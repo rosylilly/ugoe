@@ -1423,9 +1423,10 @@ impl Rig {
     }
 }
 
-/// テンプレートの内部の失敗 (座標変換が解けない、など)。
+/// テンプレートの内部の失敗 (座標変換が解けない、など)。AI の値を変えても直らないので、問い直さない
+/// [`AiError::InvalidRequest`] にする ([`ask_until_valid`])。
 pub(crate) fn template(message: String) -> AiError {
-    AiError::InvalidProposal(message)
+    AiError::InvalidRequest(format!("the template cannot rig this model: {message}"))
 }
 
 /// [`propose_rig_with_ai`] の結果。
@@ -1737,8 +1738,9 @@ fn request(
 /// - AI の答えが範囲の外か、組んだリグが適用・検証を通らなければ、答えとエラーを添えて問い直す。
 ///   `max_attempts` 回で通らなければ [`AiError::InvalidProposal`] を返す (呼び出し側は
 ///   [`propose_rig`] と既定値に戻せる)。
-/// - 形式の合わない答え (JSON が読めない) も同じく問い直す。それ以外のエラー (送信の失敗など) は
-///   そのまま返す。
+/// - 形式の合わない答え (JSON が読めない) も同じく問い直す。それ以外のエラー (送信の失敗・値を変えても
+///   直らないテンプレートの失敗 ([`AiError::InvalidRequest`]) など) はそのまま返す。
+/// - `max_attempts` が 0 なら、問い合わせずに [`AiError::InvalidRequest`] を返す。
 pub fn propose_rig_with_ai(
     provider: &dyn Provider,
     model: &Model,
@@ -1819,9 +1821,10 @@ pub(crate) struct Answered<P> {
 /// テンプレートで決められない値を `provider` に決めさせ、組めるまで問い直す (リグとモジュールのリグで共有する)。
 ///
 /// `request` は捨てた答えを添えたリクエスト、`parse` は答えを値と理由に読む、`build` は値で提案を組む。
-/// 形の合わない答え (`parse` の失敗) と、範囲の外・検証を通らない値 (`build` の [`AiError::InvalidProposal`]) は
-/// 答えとエラーを添えて問い直す。それ以外のエラーはそのまま返す。`max_attempts` 回で通らなければ
-/// [`AiError::InvalidProposal`]。
+/// 形の合わない答え (`parse` の失敗) と、AI の値が原因で組めない答え (`build` の [`AiError::InvalidProposal`]。
+/// 範囲の外・適用や検証を通らない・組むものがなくなる値) は答えとエラーを添えて問い直す。それ以外のエラー
+/// (テンプレートの内部の失敗 ([`template`]) は [`AiError::InvalidRequest`]) はそのまま返す。`max_attempts` 回で
+/// 通らなければ [`AiError::InvalidProposal`]。`max_attempts` が 0 なら問い合わせずに [`AiError::InvalidRequest`]。
 pub(crate) fn ask_until_valid<P>(
     provider: &dyn Provider,
     schema: &serde_json::Value,
@@ -1830,6 +1833,11 @@ pub(crate) fn ask_until_valid<P>(
     parse: impl Fn(&serde_json::Value) -> Result<(P, String), AiError>,
     build: impl Fn(&P) -> Result<Proposal, AiError>,
 ) -> Result<Answered<P>, AiError> {
+    if max_attempts == 0 {
+        return Err(AiError::InvalidRequest(
+            "max_attempts is 0; the AI must be asked at least once".into(),
+        ));
+    }
     let mut rejected: Vec<RejectedAnswer> = Vec::new();
     for _ in 0..max_attempts {
         let value = provider.complete_json(&request(&rejected), schema)?;
@@ -1902,6 +1910,84 @@ mod tests {
             matches!(&err, AiError::InvalidProposal(m) if m.contains("does not match the schema")),
             "{err}"
         );
+    }
+
+    /// 答えを数 1 つとして読み、`build` に渡す (問い直しの規則だけを確かめる)。
+    fn ask(
+        fake: &crate::FakeProvider,
+        max_attempts: usize,
+        build: impl Fn(&f64) -> Result<Proposal, AiError>,
+    ) -> Result<Answered<f64>, AiError> {
+        ask_until_valid(
+            fake,
+            &json!({}),
+            max_attempts,
+            |_| ProviderRequest::default(),
+            |value| {
+                value["v"]
+                    .as_f64()
+                    .map(|v| (v, "why".to_owned()))
+                    .ok_or_else(|| {
+                        AiError::InvalidProposal("the answer does not match the schema".into())
+                    })
+            },
+            build,
+        )
+    }
+
+    fn proposal() -> Proposal {
+        Proposal {
+            title: "t".into(),
+            rationale: String::new(),
+            commands: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_wrong_value_is_asked_again() {
+        let fake = crate::FakeProvider::new();
+        fake.push(json!({ "v": 5.0 })).push(json!({ "v": 1.0 }));
+        let answered = ask(&fake, 3, |v| {
+            if *v > 2.0 {
+                Err(AiError::InvalidProposal(format!("v is {v}")))
+            } else {
+                Ok(proposal())
+            }
+        })
+        .unwrap();
+        assert_eq!(answered.params, 1.0);
+        assert_eq!(answered.rejected.len(), 1);
+        assert_eq!(answered.rejected[0].error, "v is 5");
+        assert_eq!(fake.calls().len(), 2);
+    }
+
+    /// テンプレートの内部の失敗は値を変えても直らないので、問い直さず、内部のエラー文を AI に送らない。
+    #[test]
+    fn a_template_failure_is_not_asked_again() {
+        let fake = crate::FakeProvider::new();
+        fake.push(json!({ "v": 1.0 })).push(json!({ "v": 1.0 }));
+        let err = ask(&fake, 3, |_| Err(template("axis A has no key 1".into())))
+            .map(|a| a.params)
+            .unwrap_err();
+        assert!(
+            matches!(&err, AiError::InvalidRequest(m) if m.contains("the template cannot rig this model: axis A has no key 1")),
+            "{err}"
+        );
+        assert_eq!(fake.calls().len(), 1);
+    }
+
+    #[test]
+    fn zero_attempts_is_an_invalid_request() {
+        let fake = crate::FakeProvider::new();
+        fake.push(json!({ "v": 1.0 }));
+        let err = ask(&fake, 0, |_| Ok(proposal()))
+            .map(|a| a.params)
+            .unwrap_err();
+        assert!(
+            matches!(&err, AiError::InvalidRequest(m) if m.contains("max_attempts is 0")),
+            "{err}"
+        );
+        assert!(fake.calls().is_empty());
     }
 
     #[test]

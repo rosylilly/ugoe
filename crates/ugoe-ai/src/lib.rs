@@ -35,12 +35,14 @@ pub(crate) const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 pub enum AiError {
     #[error("provider error: {0}")]
     Provider(String),
+    /// AI の答え (値) が原因で提案を組めない (範囲の外・検証を通らない、など)。リグの提案は答えを変えて問い直す。
     #[error("model returned an invalid proposal: {0}")]
     InvalidProposal(String),
     /// API キーが見つからない・空である。
     #[error("API key is not configured: {0}")]
     MissingApiKey(String),
-    /// 送る前に分かる入力の誤り (画像が PNG でない、など)。
+    /// 入力の誤りで、AI の答えを変えても直らないもの (画像が PNG でない・テンプレートがそのモデルを組めない、など)。
+    /// 問い直さない。
     #[error("invalid request: {0}")]
     InvalidRequest(String),
     /// API がエラーを返した (再試行しても直らないか、再試行の上限に達した)。

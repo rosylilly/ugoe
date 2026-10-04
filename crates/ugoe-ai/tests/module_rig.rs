@@ -13,17 +13,20 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
+use serde_json::json;
+
 use ugoe::{Puppet, Toggles};
 use ugoe_ai::classify::{Label, classify_by_name, overview_png};
 use ugoe_ai::claude::{ApiKey, ClaudeConfig, ClaudeProvider};
 use ugoe_ai::instructions::Instructions;
 use ugoe_ai::module_rig::{
     FollowMode, ModuleRigGuidance, ModuleRigOptions, ModuleRigParams, module_mesh_parts,
-    module_rig_request_guided, propose_module_rig, propose_module_rig_with_ai_guided,
+    module_rig_request_guided, propose_module_rig, propose_module_rig_with_ai,
+    propose_module_rig_with_ai_guided,
 };
 use ugoe_ai::rig::{RigOptions, RigParams, mesh_parts, propose_rig};
 use ugoe_ai::transport::{Cassette, ReplayTransport};
-use ugoe_ai::{AiError, Proposal};
+use ugoe_ai::{AiError, FakeProvider, Proposal};
 use ugoe_core::Vec2;
 use ugoe_editor_core::import::layer_tree_command;
 use ugoe_editor_core::{
@@ -387,10 +390,12 @@ fn nothing_to_rig_is_reported() {
         sway_scale: 0.0,
         ..ModuleRigParams::default()
     };
-    assert!(matches!(
-        propose_module_rig(&doc, &all, &off, &ModuleRigOptions::default()),
-        Err(AiError::InvalidRequest(_))
-    ));
+    // 揺らすラベルの部品があるのに揺れを 0 にした値は、値の誤り (AI になら問い直す)。
+    let err = propose_module_rig(&doc, &all, &off, &ModuleRigOptions::default()).unwrap_err();
+    assert!(
+        matches!(&err, AiError::InvalidProposal(m) if m.contains("sway_scale is 0")),
+        "{err}"
+    );
     // 揺らすなら、取り付け先の直下に揺れの取り付け先のワープを作る (従う本体のワープはない)。
     let proposal = propose_module_rig(
         &doc,
@@ -414,6 +419,44 @@ fn nothing_to_rig_is_reported() {
         .unwrap();
     assert!(root.parent.is_none());
     assert!(matches!(&root.kind, DeformerKind::Warp(w) if w.keyforms.bindings.is_empty()));
+}
+
+/// AI が範囲の中の揺れの大きさ 0 を答え、ほかに組むものがなくなったら、値の誤りとして問い直す。
+#[test]
+fn a_zero_sway_that_leaves_nothing_to_rig_is_asked_again() {
+    let doc = module_doc("FaceMask");
+    let tree = costume();
+    let parts = module_mesh_parts(&doc, &classify_by_name(&tree));
+    let image = overview_png(&tree, 64).unwrap();
+    let fake = FakeProvider::new();
+    fake.push(json!({ "sway_scale": 0.0, "sway_length": 1.0, "reason": "still" }))
+        .push(json!({ "sway_scale": 0.5, "sway_length": 1.0, "reason": "light" }));
+    let rig = propose_module_rig_with_ai(&fake, &doc, &parts, &image, 3).unwrap();
+    assert_eq!(rig.params.sway_scale, 0.5);
+    assert_eq!(rig.rejected.len(), 1);
+    assert!(
+        rig.rejected[0].error.contains("sway_scale is 0"),
+        "{}",
+        rig.rejected[0].error
+    );
+    assert_eq!(fake.calls().len(), 2);
+    assert!(fake.calls()[1].0.prompt.contains("sway_scale is 0"));
+}
+
+/// 問い合わせの上限 0 は、問い合わせずに入力の誤りにする。
+#[test]
+fn zero_attempts_is_an_invalid_request() {
+    let doc = module_doc("Headwear");
+    let tree = costume();
+    let parts = module_mesh_parts(&doc, &classify_by_name(&tree));
+    let fake = FakeProvider::new();
+    let err = propose_module_rig_with_ai(&fake, &doc, &parts, &overview_png(&tree, 64).unwrap(), 0)
+        .unwrap_err();
+    assert!(
+        matches!(&err, AiError::InvalidRequest(m) if m.contains("max_attempts is 0")),
+        "{err}"
+    );
+    assert!(fake.calls().is_empty());
 }
 
 /// モデルのプロジェクトには使えない。

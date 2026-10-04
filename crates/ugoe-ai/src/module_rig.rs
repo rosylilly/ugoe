@@ -732,6 +732,14 @@ fn build(
         )?;
     }
     if rig.b.commands.is_empty() {
+        // 揺らすラベルの部品があるのに AI が揺れを 0 にしたなら、値の誤りとして問い直す。
+        if params.sway_scale <= 0.0 && layout.groups.iter().any(|g| !g.sways.is_empty()) {
+            return Err(AiError::InvalidProposal(
+                "sway_scale is 0, which turns off the sway of every labeled part and leaves nothing to rig; \
+                 choose a sway_scale above 0"
+                    .into(),
+            ));
+        }
         return Err(AiError::InvalidRequest(format!(
             "nothing to rig: the costume already follows the slot's anchor, no base warp or mesh under it moves \
              the costume, no costume part is labeled to sway, and no costume parts are variants{}",
