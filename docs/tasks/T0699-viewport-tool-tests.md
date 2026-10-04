@@ -1,11 +1,11 @@
 ---
 id: T0699
 title: ビューポートのツールの操作をコンポーネントのテストで確かめる
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, docs]
 depends_on: [T0672]
-assignee:
+assignee: claude-worker-T0699
 ---
 
 # T0699: ビューポートのツールの操作をコンポーネントのテストで確かめる
