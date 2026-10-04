@@ -2732,6 +2732,9 @@ delta: Vec2, };
 
 /**
  * 頂点への出力の対象。JSON では `{"mesh": "Skirt"}` または `{"warp": "SkirtWarp"}` と書く。
+ *
+ * 外部タグの表現では `#[serde(other)]` が使えないので、読み込みは手で書く
+ * ([`VertexOwner::deserialize`])。
  */
 export type VertexOwner = { "mesh": string } | { "warp": string };
 

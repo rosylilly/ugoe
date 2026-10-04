@@ -1,5 +1,7 @@
 //! 物理演算 (振り子チェーン) の設定データ。アルゴリズムは `ugoe-physics`、仕様は `docs/spec/physics.md`。
 
+use std::fmt;
+
 use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
 use ugoe_core::{Id, Vec2};
@@ -247,7 +249,10 @@ pub enum PhysicsTarget {
 }
 
 /// 頂点への出力の対象。JSON では `{"mesh": "Skirt"}` または `{"warp": "SkirtWarp"}` と書く。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// 外部タグの表現では `#[serde(other)]` が使えないので、読み込みは手で書く
+/// ([`VertexOwner::deserialize`])。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
@@ -256,6 +261,55 @@ pub enum VertexOwner {
     Mesh(MeshId),
     /// ワープデフォーマの制御点。
     Warp(DeformerId),
+    /// 未知の対象 (新しい版のファイル)。その出力を無視する。
+    /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
+    #[serde(skip_serializing)]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    #[cfg_attr(feature = "schema", schemars(skip))]
+    Unknown,
+}
+
+impl<'de> Deserialize<'de> for VertexOwner {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+
+        impl<'de> de::Visitor<'de> for Visitor {
+            type Value = VertexOwner;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a single-key object such as {\"mesh\": id} or {\"warp\": id}")
+            }
+
+            /// 中身の無い未知の種類 (新しい版のユニットのバリアント) は文字列で書かれる。
+            /// 知っている種類は中身 (ID) が要るのでエラーにする。
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                match v {
+                    "mesh" | "warp" => Err(E::invalid_type(de::Unexpected::Str(v), &self)),
+                    _ => Ok(VertexOwner::Unknown),
+                }
+            }
+
+            fn visit_map<A: de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+                let Some(key) = map.next_key::<String>()? else {
+                    return Err(de::Error::invalid_length(0, &self));
+                };
+                let owner = match key.as_str() {
+                    "mesh" => VertexOwner::Mesh(map.next_value()?),
+                    "warp" => VertexOwner::Warp(map.next_value()?),
+                    _ => {
+                        map.next_value::<de::IgnoredAny>()?;
+                        VertexOwner::Unknown
+                    }
+                };
+                if map.next_key::<de::IgnoredAny>()?.is_some() {
+                    return Err(de::Error::invalid_length(2, &self));
+                }
+                Ok(owner)
+            }
+        }
+
+        deserializer.deserialize_any(Visitor)
+    }
 }
 
 /// 衝突体 (`docs/spec/physics.md#衝突体`)。
@@ -544,6 +598,75 @@ mod tests {
         assert_eq!(physics.rigs[0].outputs[0].parameter(), None);
         assert_eq!(physics.colliders[0].shape, ColliderShape::Unknown);
         assert!(serde_json::to_string(&physics).is_err());
+    }
+
+    /// 新しい版で増えた頂点への出力の対象 (`{"bone": ..}` など) と、中身の無い未知の種類。
+    fn future_owners() -> serde_json::Value {
+        let mut value = serde_json::to_value(dynamic()).unwrap();
+        let outputs = &mut value["rigs"][0]["outputs"];
+        outputs[2]["target"]["owner"] = json!({ "bone": { "id": "Spine", "segment": 2 } });
+        outputs[3]["target"]["owner"] = json!("all");
+        value
+    }
+
+    fn assert_future_owners(physics: &PhysicsSettings) {
+        let owner = |index: usize| match &physics.rigs[0].outputs[index].target {
+            PhysicsTarget::Vertices { owner, .. } => owner.clone(),
+            target => panic!("not vertices: {target:?}"),
+        };
+        assert_eq!(owner(2), VertexOwner::Unknown);
+        assert_eq!(owner(3), VertexOwner::Unknown);
+        // ほかの出力はそのまま読める。
+        assert_eq!(physics.rigs[0].outputs[..2], dynamic().rigs[0].outputs[..2]);
+        assert_eq!(
+            crate::unknown::in_physics(physics),
+            [
+                "rigs[Hair].outputs[2].target.owner",
+                "rigs[Hair].outputs[3].target.owner",
+            ]
+        );
+        assert!(serde_json::to_string(physics).is_err());
+    }
+
+    #[test]
+    fn unknown_vertex_owners_are_read_from_json() {
+        let physics: PhysicsSettings = serde_json::from_value(future_owners()).unwrap();
+        assert_future_owners(&physics);
+    }
+
+    #[test]
+    fn unknown_vertex_owners_are_read_from_msgpack() {
+        // `.ugoe` のバンドルと同じく、フィールド名付きの MessagePack で書く。
+        let bytes = rmp_serde::to_vec_named(&future_owners()).unwrap();
+        let physics: PhysicsSettings = rmp_serde::from_slice(&bytes).unwrap();
+        assert_future_owners(&physics);
+
+        // 知っている対象は MessagePack でも往復する。
+        let bytes = rmp_serde::to_vec_named(&dynamic()).unwrap();
+        let back: PhysicsSettings = rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!(back, dynamic());
+    }
+
+    #[test]
+    fn malformed_vertex_owners_are_errors() {
+        for owner in [
+            json!({ "mesh": 1 }),
+            json!({ "warp": null }),
+            json!("mesh"),
+            json!({}),
+            json!({ "mesh": "A", "warp": "B" }),
+            json!({ "bone": "A", "mesh": "B" }),
+            json!(["mesh", "A"]),
+        ] {
+            assert!(
+                serde_json::from_value::<VertexOwner>(owner.clone()).is_err(),
+                "{owner}"
+            );
+        }
+        assert_eq!(
+            serde_json::from_value::<VertexOwner>(json!({ "warp": "W" })).unwrap(),
+            VertexOwner::Warp("W".into())
+        );
     }
 
     /// 合成の方法: `add` は読み書きでき、未知の値は `Unknown` (`overwrite` として扱い、書き出せない)。

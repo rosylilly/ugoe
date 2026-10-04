@@ -5690,7 +5690,7 @@
       ]
     },
     "VertexOwner": {
-      "description": "頂点への出力の対象。JSON では `{\"mesh\": \"Skirt\"}` または `{\"warp\": \"SkirtWarp\"}` と書く。",
+      "description": "頂点への出力の対象。JSON では `{\"mesh\": \"Skirt\"}` または `{\"warp\": \"SkirtWarp\"}` と書く。\n\n外部タグの表現では `#[serde(other)]` が使えないので、読み込みは手で書く\n([`VertexOwner::deserialize`])。",
       "oneOf": [
         {
           "description": "メッシュの頂点。",

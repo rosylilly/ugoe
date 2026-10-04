@@ -363,13 +363,7 @@ function checkFeatures() {
   // 拡張されうる enum (JSON Schema で enum の形のもの) はすべて表にある
   const types = schemaTypes();
   const enums = [...types].filter(([, def]) => enumShape(def)).map(([name]) => name);
-  const notExtensible = ["VertexOwner"];
-  compare(
-    "spec/model.md#unknown-values",
-    "フォールバックの表",
-    [...specEnums, ...notExtensible],
-    enums,
-  );
+  compare("spec/model.md#unknown-values", "フォールバックの表", specEnums, enums);
 }
 
 // ---- 4. 対応表 ----

@@ -5461,6 +5461,7 @@ dependencies = [
 name = "ugoe-model"
 version = "0.0.0"
 dependencies = [
+ "rmp-serde",
  "schemars 1.2.2",
  "serde",
  "serde_json",

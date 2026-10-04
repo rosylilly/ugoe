@@ -399,6 +399,7 @@ impl PhysicsSystem {
                             VertexOwner::Mesh(id) => compiled
                                 .mesh_index(id.as_str())
                                 .map_or(Target::Ignore, Target::Mesh),
+                            VertexOwner::Unknown => Target::Ignore,
                         },
                         PhysicsTarget::Unknown => Target::Ignore,
                     })
@@ -824,7 +825,12 @@ fn is_dynamic_rig(rig: &PhysicsRig) -> bool {
         || rig.outputs.iter().any(|o| {
             !matches!(
                 o.target,
-                PhysicsTarget::Parameter { .. } | PhysicsTarget::Unknown
+                PhysicsTarget::Parameter { .. }
+                    | PhysicsTarget::Unknown
+                    | PhysicsTarget::Vertices {
+                        owner: VertexOwner::Unknown,
+                        ..
+                    }
             )
         })
 }
@@ -1003,7 +1009,11 @@ fn outputs(
                 return None;
             }
             let value = match output.target {
-                PhysicsTarget::Unknown => return None,
+                PhysicsTarget::Unknown
+                | PhysicsTarget::Vertices {
+                    owner: VertexOwner::Unknown,
+                    ..
+                } => return None,
                 PhysicsTarget::DeformerOffset { .. } | PhysicsTarget::Vertices { .. } => {
                     // 変位 = 根元からの相対位置 - 静止姿勢での相対位置。
                     let rest = chain::rest_offset(&rig.particles, i, input.gravity, input.wind);

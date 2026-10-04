@@ -7,7 +7,7 @@ use std::sync::Arc;
 use ugoe_core::Vec2;
 use ugoe_model::expression::Expression;
 use ugoe_model::motion::Motion;
-use ugoe_model::physics::PhysicsSettings;
+use ugoe_model::physics::{PhysicsSettings, PhysicsTarget, VertexOwner};
 use ugoe_model::{Model, fixtures};
 
 use crate::texture::solid_png;
@@ -286,6 +286,29 @@ fn save_rejects_unknown_values_with_the_file_name() {
     assert_eq!(path, Path::new("motions/idle.motion.json"));
     assert!(
         matches!(source, ugoe_format::FormatError::UnknownValues(v) if v == &["curves[0].target"]),
+        "{err}"
+    );
+    assert!(!tmp.project().exists());
+}
+
+/// 頂点への出力の未知の対象 (`VertexOwner::Unknown`) も同じく、`physics.json` の場所を示して拒否する。
+#[test]
+fn save_rejects_unknown_vertex_owners() {
+    let tmp = TempDir::new("unknown-owner");
+    let mut project = sample_project();
+    let mut physics = fixtures::dynamic_hair_settings();
+    if let PhysicsTarget::Vertices { owner, .. } = &mut physics.rigs[1].outputs[0].target {
+        *owner = VertexOwner::Unknown;
+    }
+    project.physics = Some(physics);
+    let err = project.save(&tmp.project()).unwrap_err();
+    let ProjectError::Format { path, source } = &err else {
+        panic!("expected a format error: {err}");
+    };
+    assert_eq!(path, Path::new("physics.json"));
+    assert!(
+        matches!(source, ugoe_format::FormatError::UnknownValues(v)
+            if v == &["rigs[Skirt].outputs[0].target.owner"]),
         "{err}"
     );
     assert!(!tmp.project().exists());

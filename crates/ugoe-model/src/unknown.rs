@@ -13,7 +13,9 @@ use crate::keyform::{KeyformGrid, KeyformInference, KeyformInterpolation, Keyfor
 use crate::mesh::{BlendMode, MaskMode};
 use crate::motion::{CurveTarget, Motion, Segment};
 use crate::parameter::ParameterKind;
-use crate::physics::{ColliderShape, PhysicsBlend, PhysicsSettings, PhysicsSource, PhysicsTarget};
+use crate::physics::{
+    ColliderShape, PhysicsBlend, PhysicsSettings, PhysicsSource, PhysicsTarget, VertexOwner,
+};
 use crate::{Model, Module};
 
 /// モデルの中の未知の値の場所をすべて返す (キーフォームの `origins` は格子ごとに最初の 1 つだけ)。
@@ -94,8 +96,15 @@ pub fn in_physics(physics: &PhysicsSettings) -> Vec<String> {
             }
         }
         for (index, output) in rig.outputs.iter().enumerate() {
-            if output.target == PhysicsTarget::Unknown {
-                found.push(format!("rigs[{}].outputs[{index}].target", rig.id));
+            match &output.target {
+                PhysicsTarget::Unknown => {
+                    found.push(format!("rigs[{}].outputs[{index}].target", rig.id));
+                }
+                PhysicsTarget::Vertices {
+                    owner: VertexOwner::Unknown,
+                    ..
+                } => found.push(format!("rigs[{}].outputs[{index}].target.owner", rig.id)),
+                _ => {}
             }
             if output.source == PhysicsSource::Unknown {
                 found.push(format!("rigs[{}].outputs[{index}].source", rig.id));

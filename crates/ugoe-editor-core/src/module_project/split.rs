@@ -327,6 +327,7 @@ impl<'a> Splitter<'a> {
                     PhysicsTarget::Vertices { owner, .. } => match owner {
                         VertexOwner::Mesh(mesh) => *mesh = self.mesh(mesh, &what)?,
                         VertexOwner::Warp(warp) => *warp = self.deformer(warp, &what)?,
+                        VertexOwner::Unknown => {}
                     },
                     PhysicsTarget::Parameter { .. } | PhysicsTarget::Unknown => {}
                 }

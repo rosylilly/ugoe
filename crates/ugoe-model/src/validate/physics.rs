@@ -109,6 +109,8 @@ pub fn validate_physics(physics: &PhysicsSettings, model: &Model) -> Vec<Validat
                                 Some(DeformerKind::Unknown) | None => None,
                             }
                         }
+                        // 未知の対象の出力は無視する (`docs/spec/file-formats.md#未知の値の読み込み`)。
+                        VertexOwner::Unknown => continue,
                     };
                     if let Some(expected) = expected.filter(|&e| e != weights.len()) {
                         errors.push(ValidationError::WeightCount {

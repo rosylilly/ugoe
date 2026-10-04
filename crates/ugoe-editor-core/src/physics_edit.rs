@@ -545,6 +545,7 @@ pub(crate) fn forget_removed(before: &Model, after: &Model, physics: &mut Option
             PhysicsTarget::Vertices { owner, .. } => match owner {
                 VertexOwner::Mesh(m) => !meshes.contains(m.as_str()),
                 VertexOwner::Warp(d) => !deformers.contains(d.as_str()),
+                VertexOwner::Unknown => true,
             },
             PhysicsTarget::Unknown => true,
         });

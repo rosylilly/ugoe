@@ -299,8 +299,10 @@ ARKit のブレンドシェイプ (52 種) のように、互いに独立した�
 
 拡張されうる enum (`BlendMode` `MaskMode` `DeformerKind` `ParameterKind` `KeyformOrigin` `KeyformInference` `KeyformInterpolation`、
 アバタープロファイルの `AvatarPermission` `CommercialUsage` `CreditNotation` `Modification` `TrackingSource`、
-モーション・表情・物理の `CurveTarget` `Segment` `ExpressionOp` `PhysicsSource` `PhysicsTarget` `PhysicsBlend` `ColliderShape`) は `Unknown` のバリアントを持ち、
+モーション・表情・物理の `CurveTarget` `Segment` `ExpressionOp` `PhysicsSource` `PhysicsTarget` `VertexOwner` `PhysicsBlend` `ColliderShape`) は `Unknown` のバリアントを持ち、
 新しい版のファイルにある知らないタグを `Unknown` として読みます。元のタグと中身は捨てます。
+`VertexOwner` は 1 要素のオブジェクト (`{"mesh": ID}`) で、知らないキーの 1 要素のオブジェクトと知らない文字列 (中身の無い種類) を `Unknown` として読みます。
+知っているキーで中身が ID でないもの、要素が 0 個や 2 個以上のオブジェクトはエラーです。
 
 - `Unknown` にはその種類のフォールバックを適用します。一覧は [file-formats.md#未知の値の読み込み](file-formats.md#未知の値の読み込み)。
   値で置き換えられる種類は `effective()` (`BlendMode` `MaskMode` `ParameterKind` `KeyformInterpolation` `PhysicsBlend` と許諾の 4 つ) や `KeyformGrid::origin` がフォールバック後の値を返します。
@@ -451,5 +453,5 @@ JSON は NaN と無限大を書けませんが、MessagePack (`.ugoe`) は書け
 - 粒子: `position` が有限値、`mobility` が 0〜1 (1 を超えると揺れが増幅して発散する)、`delay`・`acceleration`・`radius` が 0 以上の有限値であること
 - 正規化の範囲 (`position`・`angle`) の `min`・`default`・`max` が有限値で、`min <= default <= max` であること
   (順序の違反は `….normalization.position.default` の `InvalidValue` で報告する。3 つとも有限のときだけ見る)
-- 未知の出力先と形状 (`Unknown`) はエラーにしない
+- 未知の出力先・頂点への出力の対象 (`vertices` の `owner`)・形状 (`Unknown`) はエラーにしない (未知の対象の出力は `weights` も検査しない)
 - 出力の `particle` が 0 か粒子の数以上の出力と、粒子が 0 個のリグはエラーにしない (ランタイムがその出力を無視する。[physics.md#出力](physics.md#出力))

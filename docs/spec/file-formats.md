@@ -354,6 +354,7 @@ FeatureTable {
 | `AvatarMeta` の許諾 (`AvatarPermission` `CommercialUsage` `CreditNotation` `Modification`) | 最も制限の強い値 (`only_author`・`personal_non_profit`・`required`・`prohibited`) として扱う (`effective()`) | アプリ |
 | `TrackingOverride::source` (`TrackingSource`) | その上書きを無視する | トラッキング |
 | `PhysicsOutput::target` (`PhysicsTarget`) | その出力を無視する | 物理 |
+| `PhysicsTarget::Vertices::owner` (`VertexOwner`) | その出力を無視する (`ugoe_model::unknown::in_physics` の場所は `rigs[..].outputs[..].target.owner`) | 物理・合成・エディタ |
 | `PhysicsOutput::blend` (`PhysicsBlend`) | `overwrite` として扱う (揺れを足さずに値を置き換える) | 物理・エディタ |
 | `PhysicsCollider::shape` (`ColliderShape`) | その衝突体を無視する | 物理 |
 

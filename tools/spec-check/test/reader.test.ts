@@ -264,6 +264,56 @@ test("JSON: unknown values get their fallback and a warning", () => {
   assert.equal(warnings.length, 2);
 });
 
+test("an unknown VertexOwner makes the output unknown, with a warning", () => {
+  const output = (owner: unknown) => ({
+    target: { type: "vertices", owner, weights: [1] },
+    particle: 1,
+    source: "x",
+    scale: 1,
+    weight: 100,
+  });
+  const settings = (owner: unknown) => ({
+    gravity: [0, 1],
+    wind: [0, 0],
+    fps: 60,
+    rigs: [
+      {
+        id: "R",
+        name: "R",
+        inputs: [],
+        outputs: [output({ warp: "W" }), output(owner)],
+        particles: [],
+        normalization: {
+          position: { min: -1, default: 0, max: 1 },
+          angle: { min: -1, default: 0, max: 1 },
+        },
+      },
+    ],
+    colliders: [],
+  });
+  const read = (owner: unknown) => {
+    const warnings: string[] = [];
+    const physics = D.physicsSettings(
+      new D.Ctx(warnings),
+      D.parseJson(JSON.stringify(settings(owner))),
+    );
+    return { targets: physics.rigs[0].outputs.map((o) => o.target), warnings };
+  };
+  for (const owner of [{ bone: { id: "B", segment: 2 } }, "all"]) {
+    const { targets, warnings } = read(owner);
+    assert.deepEqual(targets[0], {
+      type: "vertices",
+      owner: { kind: "warp", id: "W" },
+      weights: [1],
+    });
+    assert.deepEqual(targets[1], { type: "unknown" });
+    assert.equal(warnings.length, 1);
+  }
+  for (const owner of [{}, { mesh: "A", warp: "B" }, { mesh: 1 }, "mesh"]) {
+    assert.throws(() => read(owner), JSON.stringify(owner));
+  }
+});
+
 test("JSON: a newer schema_version is refused", () => {
   jsonRejects(quadJson.replace('"schema_version": 0', '"schema_version": 1'), /schema_version/);
 });

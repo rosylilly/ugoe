@@ -337,6 +337,45 @@ fn vertices_follow_particle_displacement() {
     assert!(points[2].abs_diff_eq(rest[2], 0.05));
 }
 
+/// 未知の対象 (`VertexOwner::Unknown`) への頂点の出力は無視する。ほかの出力はそのまま動く
+/// (`docs/spec/file-formats.md#未知の値の読み込み`)。
+#[test]
+fn vertices_with_unknown_owner_are_ignored() {
+    let mut settings = dynamic_hair_settings();
+    let mut replaced = 0;
+    for output in settings.rigs.iter_mut().flat_map(|r| &mut r.outputs) {
+        if let PhysicsTarget::Vertices { owner, .. } = &mut output.target
+            && *owner == VertexOwner::Warp("Cloth".into())
+        {
+            *owner = VertexOwner::Unknown;
+            replaced += 1;
+        }
+    }
+    assert_eq!(replaced, 2);
+    let (mut physics, mut instance) = setup(settings);
+    let cloth = deformer(&instance, "Cloth");
+    let ribbon = instance.compiled().mesh_index("Ribbon").unwrap();
+    for _ in 0..10 {
+        frame(&mut physics, &mut instance);
+    }
+    let rest = instance.warp_world_points(cloth).unwrap().to_vec();
+    let rest_ribbon = instance.drawables()[ribbon].positions.clone();
+    set(&mut instance, ANGLE_X, 30.0);
+    for _ in 0..10 {
+        frame(&mut physics, &mut instance);
+    }
+    assert_eq!(instance.warp_world_points(cloth).unwrap(), rest.as_slice());
+    assert_ne!(instance.drawables()[ribbon].positions, rest_ribbon);
+
+    // 未知の対象への出力だけでは動的物理にならない (未知の出力先と同じ)。
+    let mut settings = physics_hair_settings();
+    settings.rigs[0].outputs[0].target = PhysicsTarget::Vertices {
+        owner: VertexOwner::Unknown,
+        weights: vec![1.0],
+    };
+    assert!(!PhysicsSystem::new(settings).is_dynamic());
+}
+
 /// 原点への出力: 粒子の変位だけ回転デフォーマの原点をずらす。
 #[test]
 fn deformer_offset_moves_the_origin() {

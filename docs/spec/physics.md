@@ -360,7 +360,7 @@ x と y を両方動かすには、`source` が `x` と `y` の出力を 1 つ�
 任意機能 `physics.dynamic` ([ADR 0013](../adr/0013-forward-compatibility.md)) です。知らないランタイムは、パラメータ以外への出力と衝突体を無視します (揺れない)。
 1.0 の基準の機能なので、1.0 以降のファイルでは宣言しません ([file-formats.md#10-の基準の機能](file-formats.md#10-の基準の機能))。
 
-1.0 より後に出力先や衝突体の形状が増えたときは、知らない `type` を `Unknown` として読み、その出力・衝突体を無視します ([file-formats.md#未知の値の読み込み](file-formats.md#未知の値の読み込み))。
+1.0 より後に出力先や衝突体の形状が増えたときは、知らない `type` を `Unknown` として読み、その出力・衝突体を無視します。`vertices` の `owner` の種類 (`mesh` / `warp`) が増えたときも、知らないキーを `Unknown` として読み、その出力を無視します ([file-formats.md#未知の値の読み込み](file-formats.md#未知の値の読み込み))。
 
 ### 検証
 

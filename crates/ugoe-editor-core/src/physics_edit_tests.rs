@@ -471,6 +471,36 @@ fn collider_add_edit_remove() {
     assert_eq!(physics(&doc).rigs[0].colliders.len(), 2);
 }
 
+/// 未知の対象 (`VertexOwner::Unknown`) への出力は、モデルの要素を消しても外さない
+/// (何を指すか分からないので、未知の出力先と同じく残す)。
+#[test]
+fn removing_model_elements_keeps_unknown_vertex_owners() {
+    let mut settings = fixtures::dynamic_hair_settings();
+    let unknown = PhysicsTarget::Vertices {
+        owner: VertexOwner::Unknown,
+        weights: vec![1.0],
+    };
+    settings.rigs[1].outputs[0].target = unknown.clone();
+    let mut doc = Document::new(fixtures::dynamic_hair()).with_physics(Some(settings));
+    doc.apply(Command::RemoveMesh {
+        id: "Ribbon".into(),
+    })
+    .unwrap();
+    doc.apply(Command::UnwrapDeformer { id: "Hair2".into() })
+        .unwrap();
+    let targets: Vec<_> = physics(&doc).rigs[1]
+        .outputs
+        .iter()
+        .map(|o| o.target.clone())
+        .collect();
+    assert_eq!(targets.len(), 2);
+    assert_eq!(targets[0], unknown);
+    assert!(matches!(
+        &targets[1],
+        PhysicsTarget::Vertices { owner: VertexOwner::Warp(w), .. } if w.as_str() == "Cloth"
+    ));
+}
+
 #[test]
 fn removing_model_elements_forgets_physics_references() {
     let mut doc = doc();

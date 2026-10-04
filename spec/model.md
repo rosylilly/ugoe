@@ -976,8 +976,11 @@ value: ignore that output):
 | `deformer_offset` | `deformer` (`id`) | Displace the origin of a rotation deformer. |
 | `vertices` | `owner` (`VertexOwner`), `weights` (`f32[]`) | Make the vertices of a mesh, or the control points of a warp deformer, follow the particle's displacement with a weight per vertex (0 to 1). `weights` has one entry per vertex (mesh) or per control point (warp), in the same order. |
 
-`VertexOwner` is a single-key object and is **not** extensible: `{ "mesh": <mesh id> }` or
-`{ "warp": <deformer id> }`.
+`VertexOwner` is a single-key object, `{ "mesh": <mesh id> }` or `{ "warp": <deformer id> }`, and
+is extensible ([unknown values](#unknown-values)): a reader MUST read a single-key object with
+another key, and a string other than `"mesh"` and `"warp"` (a later kind without content), as an
+unknown value. An object with no key or more than one key, and a known key whose content is not an
+`id`, make the payload invalid.
 
 ```json
 { "target": { "type": "vertices", "owner": { "warp": "SkirtWarp" }, "weights": [0, 0, 0.5, 1] },
@@ -1255,13 +1258,12 @@ from a file written for a later version of the format.
 | `TrackingOverride.source` | `TrackingSource` | Ignore the override. |
 | `PhysicsInput.source`, `PhysicsOutput.source` | `PhysicsSource` | Ignore the input or output. |
 | `PhysicsOutput.target` | `PhysicsTarget` | Ignore the output. |
+| `owner` of a `vertices` target | `VertexOwner` | Ignore the output. |
 | `PhysicsOutput.blend` | `PhysicsBlend` | `overwrite`. |
 | `PhysicsCollider.shape` | `ColliderShape` | Ignore the collider. |
 | `Curve.target` | `CurveTarget` | Ignore the curve. |
 | elements of `Curve.segments` | `Segment` | Ignore the whole curve. |
 | `ExpressionParameter.op` | `ExpressionOp` | Ignore the item. |
-
-`VertexOwner` is not extensible: an unknown variant makes the payload invalid.
 
 ## Validation
 

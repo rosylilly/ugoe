@@ -653,12 +653,21 @@ function physicsInput(c: Ctx, v: MsgValue | undefined): M.PhysicsInput {
   };
 }
 
-function vertexOwner(c: Ctx, v: MsgValue | undefined): M.VertexOwner {
+/** 知らない種類 (1 要素のオブジェクトの知らないキー、または知らない文字列) は `null` にして警告する。 */
+function vertexOwner(c: Ctx, v: MsgValue | undefined): M.VertexOwner | null {
+  if (typeof v === "string") {
+    if (v === "mesh" || v === "warp") c.fail(`VertexOwner "${v}" needs an id`);
+    c.warnUnknown("VertexOwner", v);
+    return null;
+  }
   const o = object(c, v);
   const keys = Object.keys(o);
   if (keys.length !== 1) c.fail("VertexOwner must have exactly one field");
   const [key] = keys;
-  if (key !== "mesh" && key !== "warp") c.fail(`unknown VertexOwner "${key}" (not extensible)`);
+  if (key !== "mesh" && key !== "warp") {
+    c.warnUnknown("VertexOwner", key);
+    return null;
+  }
   return { kind: key, id: str(c.at(key), o[key]) };
 }
 
@@ -671,12 +680,12 @@ function physicsTarget(c: Ctx, v: MsgValue | undefined): M.PhysicsTarget {
     case "deformer_angle":
     case "deformer_offset":
       return { type, deformer: req(c, o, "deformer", str) };
-    case "vertices":
-      return {
-        type,
-        owner: req(c, o, "owner", vertexOwner),
-        weights: req(c, o, "weights", array(f32)),
-      };
+    case "vertices": {
+      const owner = req(c, o, "owner", vertexOwner);
+      const weights = req(c, o, "weights", array(f32));
+      // 未知の対象の出力は無視する (未知の出力先と同じ)。
+      return owner ? { type, owner, weights } : { type: "unknown" };
+    }
     default:
       c.at("type").warnUnknown("PhysicsTarget", type);
       return { type: "unknown" };

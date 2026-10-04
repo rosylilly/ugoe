@@ -309,6 +309,7 @@ fn compose_physics_with(
                     PhysicsTarget::Vertices { owner, .. } => match owner {
                         VertexOwner::Mesh(mesh) => *mesh = rename.id(mesh),
                         VertexOwner::Warp(warp) => *warp = rename.id(warp),
+                        VertexOwner::Unknown => {}
                     },
                     PhysicsTarget::Parameter { .. } | PhysicsTarget::Unknown => {}
                 }
@@ -727,6 +728,33 @@ mod tests {
             "Head"
         );
         let model = compose(&base, &modules).unwrap();
+        assert_eq!(validate_physics(&physics, &model), vec![]);
+    }
+
+    /// 未知の対象 (`VertexOwner::Unknown`) への出力は付け替えずにそのまま残す (物理が無視する)。
+    #[test]
+    fn unknown_vertex_owners_are_kept_as_unknown() {
+        let base = dress_up_base();
+        let empty = PhysicsSettings {
+            gravity: Vec2::new(0.0, 1.0),
+            wind: Vec2::ZERO,
+            fps: 60.0,
+            rigs: Vec::new(),
+            colliders: Vec::new(),
+        };
+        let mut module = long_hair_module();
+        let unknown = PhysicsTarget::Vertices {
+            owner: VertexOwner::Unknown,
+            weights: vec![1.0],
+        };
+        module.physics.rigs[0].outputs[0].target = unknown.clone();
+        let physics = compose_physics(&base, &empty, &[&module]).unwrap();
+        assert_eq!(physics.rigs[0].outputs[0].target, unknown);
+        assert_eq!(
+            ugoe_model::unknown::in_physics(&physics),
+            ["rigs[LongHair/Sway].outputs[0].target.owner"]
+        );
+        let model = compose(&base, &[&module]).unwrap();
         assert_eq!(validate_physics(&physics, &model), vec![]);
     }
 
