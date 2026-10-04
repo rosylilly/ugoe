@@ -1,11 +1,11 @@
 ---
 id: T0930
 title: "@ugoe/player: localStorage のキーの接頭辞をアプリが渡せるようにする"
-status: todo
+status: in-progress
 milestone: M9
 crates: [packages, apps/viewer, apps/studio, docs]
 depends_on: [T0914]
-assignee:
+assignee: claude-worker-T0930
 ---
 
 # T0930: @ugoe/player: localStorage のキーの接頭辞をアプリが渡せるようにする
