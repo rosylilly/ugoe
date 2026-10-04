@@ -21,6 +21,7 @@ import {
   MODULE_EXTENSIONS,
   type ModelFile,
 } from "@ugoe/player";
+import { commandFailure } from "./errors";
 import { t } from "./i18n";
 import { PNG_PATH_HEADER } from "./screenshot";
 
@@ -74,8 +75,20 @@ declare global {
   }
 }
 
+/**
+ * バックエンドのコマンドを呼ぶ。失敗 (`code`・`args`・`message`。ADR 0029) は今の言語の文を持つ `CommandError` にして投げる
+ * (`errors.ts`)。
+ */
+async function command<T>(...args: Parameters<typeof invoke>): Promise<T> {
+  try {
+    return await invoke<T>(...args);
+  } catch (e) {
+    throw commandFailure(e);
+  }
+}
+
 async function readTauriFile(path: string): Promise<ModelFile> {
-  const buffer = await invoke<ArrayBuffer>("read_model_file", { path });
+  const buffer = await command<ArrayBuffer>("read_model_file", { path });
   return { name: baseName(path), bytes: new Uint8Array(buffer), location: `path:${path}` };
 }
 
@@ -86,7 +99,7 @@ function openFileDialog(
   extensions: readonly string[],
   multiple: boolean,
 ): Promise<string[]> {
-  return invoke<string[]>("open_file_dialog", { title, filterName, extensions, multiple });
+  return command<string[]>("open_file_dialog", { title, filterName, extensions, multiple });
 }
 
 /**
@@ -99,7 +112,7 @@ function saveFileDialog(
   filterName: string,
   extension: "json" | "png",
 ): Promise<string | null> {
-  return invoke<string | null>("save_file_dialog", { title, defaultName, filterName, extension });
+  return command<string | null>("save_file_dialog", { title, defaultName, filterName, extension });
 }
 
 const tauriHost: ViewerHost = {
@@ -122,13 +135,13 @@ const tauriHost: ViewerHost = {
     return Promise.all(paths.map(readTauriFile));
   },
   async initialModelFile() {
-    const path = await invoke<string | null>("initial_file");
+    const path = await command<string | null>("initial_file");
     return path === null ? null : readTauriFile(path);
   },
   async saveJsonFile(name, text) {
     const path = await saveFileDialog(t("files.saveJson.title"), name, "JSON", "json");
     if (path === null) return false;
-    await invoke("write_json_file", { path, contents: text });
+    await command("write_json_file", { path, contents: text });
     return true;
   },
   async savePngFile(name, bytes) {
@@ -140,7 +153,7 @@ const tauriHost: ViewerHost = {
     );
     if (path === null) return null;
     // バイト列は本文でそのまま送り、パスはヘッダーで渡す (ヘッダーは ASCII だけなので URI の形に符号化する)。
-    await invoke("write_png_file", bytes, {
+    await command("write_png_file", bytes, {
       headers: { [PNG_PATH_HEADER]: encodeURIComponent(path) },
     });
     return path;

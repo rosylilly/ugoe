@@ -2,6 +2,7 @@
 //! ここはファイルの読み書きとカメラの許可など、webview だけではできないことに限る (`apps/viewer/README.md`)。
 
 mod atomic_write;
+mod error;
 
 use std::collections::HashSet;
 use std::io::Read;
@@ -14,6 +15,7 @@ use tauri::{DragDropEvent, Manager, State, WebviewEvent, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
 use atomic_write::write_atomic;
+use error::CommandError;
 
 /// 読み込むファイルの大きさの上限 (誤って巨大なファイルを選んだときにメモリを使い果たさないため)。
 const MAX_FILE_BYTES: u64 = 512 * 1024 * 1024;
@@ -38,18 +40,21 @@ fn has_extension(path: &Path, extensions: &[&str]) -> bool {
 /// コマンドは `async` にして、読み書きはここに渡す (同期のコマンドはメインスレッドで動き、
 /// 大きなファイルやネットワークのドライブを読む間ウィンドウが止まるため。T0726)。
 async fn blocking<T: Send + 'static>(
-    task: impl FnOnce() -> Result<T, String> + Send + 'static,
-) -> Result<T, String> {
+    task: impl FnOnce() -> Result<T, CommandError> + Send + 'static,
+) -> Result<T, CommandError> {
     tauri::async_runtime::spawn_blocking(task)
         .await
-        .map_err(|e| format!("the file task failed: {e}"))?
+        .map_err(|e| CommandError::internal(e.to_string()))?
 }
 
 /// モデルかモジュールのファイルを読み、バイト列をそのまま返す (JS では `ArrayBuffer`)。
 /// 形式の判別と読み込みはフロントエンドの wasm が行う。読めるのは、利用者が渡したパス
 /// (ダイアログ・ドロップ・起動時の引数。前に渡したものも覚えている) だけ (`FileAccess`)。
 #[tauri::command]
-async fn read_model_file(access: State<'_, FileAccess>, path: String) -> Result<Response, String> {
+async fn read_model_file(
+    access: State<'_, FileAccess>,
+    path: String,
+) -> Result<Response, CommandError> {
     let path = PathBuf::from(path);
     access.check_readable(&path)?;
     blocking(move || read_model(&path, MAX_FILE_BYTES))
@@ -58,19 +63,14 @@ async fn read_model_file(access: State<'_, FileAccess>, path: String) -> Result<
 }
 
 /// `read_model_file` の中身。`max` バイトより大きいファイルは読まない。
-fn read_model(path: &Path, max: u64) -> Result<Vec<u8>, String> {
+fn read_model(path: &Path, max: u64) -> Result<Vec<u8>, CommandError> {
     if !is_readable_path(path) {
-        return Err(format!(
-            "not a model or module file (.ugoe, .json or .ugoemod): {}",
-            path.display()
-        ));
+        return Err(CommandError::not_model(path));
     }
-    let too_large = |len: u64| format!("{}: file is too large ({len} bytes)", path.display());
-    let file = std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let len = file
-        .metadata()
-        .map_err(|e| format!("{}: {e}", path.display()))?
-        .len();
+    let too_large = |len: u64| CommandError::too_large(path, len, max);
+    let read_failed = |e: std::io::Error| CommandError::read_failed(path, &e);
+    let file = std::fs::File::open(path).map_err(read_failed)?;
+    let len = file.metadata().map_err(read_failed)?.len();
     if len > max {
         return Err(too_large(len));
     }
@@ -78,7 +78,7 @@ fn read_model(path: &Path, max: u64) -> Result<Vec<u8>, String> {
     let mut bytes = Vec::with_capacity(usize::try_from(len).unwrap_or(0));
     file.take(max.saturating_add(1))
         .read_to_end(&mut bytes)
-        .map_err(|e| format!("{}: {e}", path.display()))?;
+        .map_err(read_failed)?;
     if bytes.len() as u64 > max {
         return Err(too_large(bytes.len() as u64));
     }
@@ -92,17 +92,17 @@ async fn write_json_file(
     access: State<'_, FileAccess>,
     path: String,
     contents: String,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     let path = PathBuf::from(path);
     access.take_writable(&path)?;
     blocking(move || write_json(&path, &contents)).await
 }
 
-fn write_json(path: &Path, contents: &str) -> Result<(), String> {
+fn write_json(path: &Path, contents: &str) -> Result<(), CommandError> {
     if !is_json_path(path) {
-        return Err(format!("not a JSON file: {}", path.display()));
+        return Err(CommandError::not_json(path));
     }
-    write_atomic(path, contents.as_bytes()).map_err(|e| format!("{}: {e}", path.display()))
+    write_atomic(path, contents.as_bytes()).map_err(|e| CommandError::write_failed(path, &e))
 }
 
 fn is_json_path(path: &Path) -> bool {
@@ -123,31 +123,31 @@ const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 async fn write_png_file(
     access: State<'_, FileAccess>,
     request: tauri::ipc::Request<'_>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
-        return Err("expected the bytes of a PNG image".into());
+        return Err(CommandError::not_png_data());
     };
     let header = request
         .headers()
         .get(PNG_PATH_HEADER)
-        .ok_or_else(|| format!("missing the {PNG_PATH_HEADER} header"))?
+        .ok_or_else(|| CommandError::missing_path(PNG_PATH_HEADER))?
         .to_str()
-        .map_err(|e| format!("{PNG_PATH_HEADER}: {e}"))?;
-    let path = PathBuf::from(percent_decode(header)?);
+        .map_err(|e| CommandError::invalid_path(format!("{PNG_PATH_HEADER}: {e}")))?;
+    let path = PathBuf::from(percent_decode(header).map_err(CommandError::invalid_path)?);
     access.take_writable(&path)?;
     // 要求は借りものなので、別のスレッドへはバイト列の写しを渡す。
     let bytes = bytes.clone();
     blocking(move || write_png(&path, &bytes)).await
 }
 
-fn write_png(path: &Path, bytes: &[u8]) -> Result<(), String> {
+fn write_png(path: &Path, bytes: &[u8]) -> Result<(), CommandError> {
     if !has_extension(path, &["png"]) {
-        return Err(format!("not a PNG file: {}", path.display()));
+        return Err(CommandError::not_png(path));
     }
     if !bytes.starts_with(PNG_SIGNATURE) {
-        return Err("the data is not a PNG image".into());
+        return Err(CommandError::not_png_data());
     }
-    write_atomic(path, bytes).map_err(|e| format!("{}: {e}", path.display()))
+    write_atomic(path, bytes).map_err(|e| CommandError::write_failed(path, &e))
 }
 
 /// `encodeURIComponent` で符号化した文字列を戻す (`%XX` を 1 バイトに。結果は UTF-8)。
@@ -203,7 +203,7 @@ async fn open_file_dialog(
     filter_name: String,
     extensions: Vec<String>,
     multiple: bool,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, CommandError> {
     let paths = blocking(move || {
         let extensions: Vec<&str> = extensions.iter().map(String::as_str).collect();
         let dialog = window
@@ -221,7 +221,11 @@ async fn open_file_dialog(
         };
         picked
             .into_iter()
-            .map(|p| p.into_path().map(path_string).map_err(|e| e.to_string()))
+            .map(|p| {
+                p.into_path()
+                    .map(path_string)
+                    .map_err(|e| CommandError::dialog_failed(e.to_string()))
+            })
             .collect::<Result<Vec<_>, _>>()
     })
     .await?;
@@ -240,9 +244,9 @@ async fn save_file_dialog(
     default_name: String,
     filter_name: String,
     extension: String,
-) -> Result<Option<String>, String> {
+) -> Result<Option<String>, CommandError> {
     if !WRITABLE_EXTENSIONS.contains(&extension.as_str()) {
-        return Err(format!("cannot save .{extension} files"));
+        return Err(CommandError::unsupported_save_type(&extension));
     }
     let picked = blocking(move || {
         window
@@ -253,7 +257,10 @@ async fn save_file_dialog(
             .add_filter(filter_name, &[extension.as_str()])
             .set_parent(&window)
             .blocking_save_file()
-            .map(|p| p.into_path().map_err(|e| e.to_string()))
+            .map(|p| {
+                p.into_path()
+                    .map_err(|e| CommandError::dialog_failed(e.to_string()))
+            })
             .transpose()
             .map(|p| p.map(|p| with_extension(p, &extension)))
     })
@@ -322,14 +329,11 @@ impl FileAccess {
         }
     }
 
-    fn check_readable(&self, path: &Path) -> Result<(), String> {
+    fn check_readable(&self, path: &Path) -> Result<(), CommandError> {
         if lock(&self.readable).paths.iter().any(|p| p == path) {
             Ok(())
         } else {
-            Err(format!(
-                "{}: the file was not chosen by the user",
-                path.display()
-            ))
+            Err(CommandError::not_chosen(path))
         }
     }
 
@@ -352,14 +356,11 @@ impl FileAccess {
     }
 
     /// 書けるパスなら、書けるパスから除いて `Ok` を返す (同じパスにもう 1 回書くには、またダイアログで選ぶ)。
-    fn take_writable(&self, path: &Path) -> Result<(), String> {
+    fn take_writable(&self, path: &Path) -> Result<(), CommandError> {
         if lock(&self.writable).remove(path) {
             Ok(())
         } else {
-            Err(format!(
-                "{}: the path was not chosen in the save dialog",
-                path.display()
-            ))
+            Err(CommandError::not_chosen_for_save(path))
         }
     }
 }
@@ -451,7 +452,10 @@ mod tests {
         let path = dir.join("rec.json");
         write_json(&path, "{}").unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "{}");
-        assert!(write_json(&dir.join("rec.sh"), "x").is_err());
+        assert_eq!(
+            write_json(&dir.join("rec.sh"), "x").unwrap_err().code,
+            "file.not_json"
+        );
         assert!(!dir.join("rec.sh").exists());
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -463,11 +467,16 @@ mod tests {
         let path = dir.join("model.ugoe");
         std::fs::write(&path, b"UGOE1234").unwrap();
         assert_eq!(read_model(&path, 8).unwrap(), b"UGOE1234");
-        assert!(read_model(&path, 7).unwrap_err().contains("too large"));
+        let too_large = read_model(&path, 7).unwrap_err();
+        assert_eq!(too_large.code, "file.too_large");
+        assert_eq!(too_large.args["size"], 8);
+        assert_eq!(too_large.args["max"], 7);
+        assert_eq!(too_large.args["path"], path.display().to_string());
         let other = dir.join("model.txt");
         std::fs::write(&other, b"{}").unwrap();
-        assert!(read_model(&other, 8).unwrap_err().contains("not a model"));
-        assert!(read_model(&dir.join("missing.ugoe"), 8).is_err());
+        assert_eq!(read_model(&other, 8).unwrap_err().code, "file.not_model");
+        let missing = read_model(&dir.join("missing.ugoe"), 8).unwrap_err();
+        assert_eq!(missing.code, "file.not_found");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -477,9 +486,14 @@ mod tests {
         let worker =
             tauri::async_runtime::block_on(blocking(|| Ok(std::thread::current().id()))).unwrap();
         assert_ne!(worker, caller);
-        let err: Result<(), String> =
-            tauri::async_runtime::block_on(blocking(|| Err("failed".into())));
-        assert_eq!(err.unwrap_err(), "failed");
+        let err: Result<(), CommandError> =
+            tauri::async_runtime::block_on(blocking(|| Err(CommandError::not_png_data())));
+        assert_eq!(err.unwrap_err().code, "request.not_png_data");
+        // 中でパニックしたら `internal` のコードのエラーにする (スタジオと同じ。T0819)。
+        let panicked: Result<(), CommandError> = tauri::async_runtime::block_on(blocking(|| {
+            std::panic::resume_unwind(Box::new("boom"))
+        }));
+        assert_eq!(panicked.unwrap_err().code, "internal");
     }
 
     #[test]
@@ -502,8 +516,16 @@ mod tests {
         let path = dir.join("shot.PNG");
         write_png(&path, &png).unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), png);
-        assert!(write_png(&dir.join("shot.sh"), &png).is_err());
-        assert!(write_png(&dir.join("other.png"), b"not a png").is_err());
+        assert_eq!(
+            write_png(&dir.join("shot.sh"), &png).unwrap_err().code,
+            "file.not_png"
+        );
+        assert_eq!(
+            write_png(&dir.join("other.png"), b"not a png")
+                .unwrap_err()
+                .code,
+            "request.not_png_data"
+        );
         assert!(!dir.join("other.png").exists());
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -530,7 +552,8 @@ mod tests {
             access
                 .check_readable(Path::new("/home/u/.config/app/settings.json"))
                 .unwrap_err()
-                .contains("not chosen")
+                .code
+                == "file.not_chosen"
         );
     }
 
@@ -569,12 +592,7 @@ mod tests {
     fn writes_only_once_to_the_path_chosen_in_the_save_dialog() {
         let access = FileAccess::load(None);
         let shot = PathBuf::from("/home/u/shot.png");
-        assert!(
-            access
-                .take_writable(&shot)
-                .unwrap_err()
-                .contains("save dialog")
-        );
+        assert!(access.take_writable(&shot).unwrap_err().code == "file.not_chosen_for_save");
         access.grant_writable(shot.clone());
         assert!(
             access

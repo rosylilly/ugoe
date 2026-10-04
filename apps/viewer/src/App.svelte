@@ -24,6 +24,7 @@ import {
   describeDropTypes,
   openDroppedItems,
 } from "./lib/drop";
+import { errorText } from "./lib/errors";
 import {
   readBrowserFile,
   readFileAt,
@@ -91,7 +92,7 @@ async function saveScreenshot() {
     const saved = await savePngFile(screenshotFileName(player.modelName, new Date()), png);
     if (saved !== null) showToast(t("screenshot.saved", { path: saved }), { tone: "success" });
   } catch (e) {
-    player.error = t("screenshot.error", { message: e instanceof Error ? e.message : String(e) });
+    player.error = t("screenshot.error", { message: errorText(e) });
   } finally {
     capturing = false;
   }
@@ -103,7 +104,7 @@ async function openWith(get: () => Promise<ModelFile | null>) {
     const file = await get();
     if (file !== null) await player.load(file);
   } catch (e) {
-    player.error = e instanceof Error ? e.message : String(e);
+    player.error = errorText(e);
   }
 }
 
@@ -113,7 +114,7 @@ async function openSampleFromMenu(sample: Sample) {
   try {
     await openSample(sample, player, readSampleFile);
   } catch (e) {
-    player.error = e instanceof Error ? e.message : String(e);
+    player.error = errorText(e);
   }
 }
 
@@ -166,7 +167,7 @@ async function openDropped(items: DroppedItem[]) {
   try {
     dropNotice = await openDroppedItems(items, player);
   } catch (e) {
-    player.error = e instanceof Error ? e.message : String(e);
+    player.error = errorText(e);
   }
 }
 

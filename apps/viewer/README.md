@@ -21,6 +21,7 @@ src/                  フロントエンド (Svelte 5 + TS。npm パッケージ
   lib/SettingsDialog.svelte  設定の画面 (言語: OS に合わせる・日本語・English)
   lib/LicenseDialog.svelte   ライセンスの画面 (public/third-party-notices.txt)
   lib/host.ts           ファイルの選択と読み込み・OS の言語 (Tauri / ブラウザ / 差し替え)
+  lib/errors.ts         バックエンドのコマンドのエラー (コード) を今の言語の文にする (T0729。下の「コマンドのエラー」)
   lib/Viewport.svelte   描画領域 (ズーム・パン・フィット)。LightMarkers.svelte は重ねる光源の印 (ドラッグ・キーボードで光源を動かす、T0708・T0714)
   lib/ParameterPanel.svelte  パラメータのスライダー (グループごと)
   lib/LightingPanel.svelte   光源のパネル (ライティングを使うモデルのときだけ出す)。LightPad.svelte は向き・位置の面
@@ -147,6 +148,37 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
   - ドロップのパスは、Tauri がドロップのイベントを webview へ送った直後に、同じメインスレッドで `on_webview_event` が加える。
     webview がそのイベントを受けて `read_model_file` を呼ぶのはその後になる。
 - 同梱の見本 (`sample:`) と `?model=` の URL (ブラウザ) は `fetch` で読むので、この範囲とは関わらない。
+
+### コマンドのエラー (T0729)
+
+コマンドは失敗すると、[ADR 0029](../../docs/adr/0029-shared-ui-and-i18n.md) の形 `{ code, args, message }` で reject する
+(`src-tauri/src/error.rs` の `CommandError`)。`message` は英語の文 (ログ・訳の無い画面の向け)。画面は `host.ts` でそれを受けて
+`CommandError` (`Error`。`message` はカタログの `errors.<code>` を `args` で引いた今の言語の文) にして投げ直す (`errors.ts`)。
+カタログに無いコード (新しいバックエンドと古い画面など) は `message` を出す。数の引数 (バイト数) は今の言語の書式にする。
+例外を受け取る側 (`@ugoe/player`・`@ugoe/face-tracking`・`drop.ts`) は、ほかの例外と同じく `Error` の文を出す。
+エディタ (`apps/editor/src/lib/errors.ts`) と同じく訳すのは画面で、Rust に訳のカタログは置かない。
+
+コードは公開の約束として扱い、名前を変えない (意味が変わるなら新しいコードにする)。
+
+| コード | 引数 | いつ |
+| --- | --- | --- |
+| `file.not_model` | `path` | 読もうとしたファイルが `.ugoe`・`.json`・`.ugoemod` でない |
+| `file.too_large` | `path`・`size`・`max` (バイト) | 読み込みの上限 (512 MiB) より大きい |
+| `file.not_found` | `path` | 読もうとしたファイルが無い |
+| `file.read_failed` | `path`・`reason` (OS の英語の文) | ほかの理由で読めない |
+| `file.write_failed` | `path`・`reason` | 書けない (一時ファイル・置き換えの失敗を含む) |
+| `file.not_json` / `file.not_png` | `path` | JSON・PNG を書くパスの拡張子が `.json`・`.png` でない |
+| `file.not_chosen` | `path` | 利用者が選んでいないファイルを読もうとした (「ファイルの読み書きの範囲」) |
+| `file.not_chosen_for_save` | `path` | 保存のダイアログで選んでいないパスに書こうとした |
+| `file.unsupported_save_type` | `extension` | 保存のダイアログで `json`・`png` 以外を求めた |
+| `request.not_png_data` | なし | `write_png_file` の本文が PNG のバイト列でない |
+| `request.missing_path` | `header` | `write_png_file` にパスのヘッダー (`x-ugoe-path`) が無い |
+| `request.invalid_path` | `reason` | パスのヘッダーが読めない (符号化の誤り) |
+| `dialog.failed` | `reason` | ダイアログで選ばれたものをパスにできない |
+| `internal` | `reason` | 読み書きのスレッドの処理が終わらなかった (パニック。スタジオと同じコード) |
+
+カタログには、読み込みの上限のコード `format.chunk_limit_exceeded`・`format.total_limit_exceeded` (T0150、引数 `chunk`・`max`) の訳も置く。
+いまの wasm (`ugoe-wasm`) は読み込みのエラーを英語の文で返すので、このコードがビューアに届くのは、wasm がコードを返すようになってから。
 
 ## 画像の保存 (T0420)
 

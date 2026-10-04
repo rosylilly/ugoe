@@ -65,7 +65,32 @@
     "encodeFailed": "Cannot convert the image to PNG"
   },
   "errors": {
-    "wasmMissing": "ugoe-wasm is not built (run `pnpm wasm` in apps/viewer)."
+    "wasmMissing": "ugoe-wasm is not built (run `pnpm wasm` in apps/viewer).",
+    "internal": "An internal error occurred ({{reason}})",
+    "file": {
+      "not_model": "{{path}} is not a model or a dress-up module (only .ugoe, .json and .ugoemod files can be opened)",
+      "too_large": "{{path}} is too large to open ({{size}} bytes; the limit is {{max}} bytes)",
+      "not_found": "{{path}} was not found",
+      "read_failed": "Cannot read {{path}} ({{reason}})",
+      "write_failed": "Cannot write {{path}} ({{reason}})",
+      "not_json": "{{path}} is not a JSON file (only .json files can be saved here)",
+      "not_png": "{{path}} is not a PNG file (only .png files can be saved here)",
+      "not_chosen": "{{path}} cannot be read because it was not chosen (open it from the dialog or drop it on the window)",
+      "not_chosen_for_save": "{{path}} cannot be written because it was not chosen in the save dialog",
+      "unsupported_save_type": ".{{extension}} files cannot be saved"
+    },
+    "request": {
+      "not_png_data": "The data to save is not a PNG image",
+      "missing_path": "The path to save to was not given",
+      "invalid_path": "The path to save to is invalid ({{reason}})"
+    },
+    "dialog": {
+      "failed": "The file dialog failed ({{reason}})"
+    },
+    "format": {
+      "chunk_limit_exceeded": "The file was not read: chunk {{chunk}} decompresses to more than the limit of {{max}} bytes",
+      "total_limit_exceeded": "The file was not read: its compressed chunks decompress to more than the limit of {{max}} bytes in total (at chunk {{chunk}})"
+    }
   },
   "files": {
     "openModel": {
@@ -96,6 +121,7 @@
       "some_other": "Skipped {{count}} items that cannot be opened",
       "extension": "{{names}} (only models (.ugoe, .json) and dress-up modules (.ugoemod) can be opened, and the contents of folders are not opened)",
       "unreadable": "{{names}} (could not be read)",
+      "unreadableReason": "{{name}} (could not be read: {{reason}})",
       "separator": "; ",
       "message": "{{head}}: {{details}}"
     },

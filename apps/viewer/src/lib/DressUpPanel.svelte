@@ -7,6 +7,7 @@
 import { formatList } from "@ugoe/i18n";
 import { groupBySlot, type ModuleInfo, type Player, visibleSlots } from "@ugoe/player";
 import { Button, IconButton, Notice, Section, Toggle } from "@ugoe/ui";
+import { errorText } from "./errors";
 import { viewerHost } from "./host";
 import { t } from "./i18n";
 
@@ -30,7 +31,7 @@ async function openModules() {
     const files = await viewerHost().pickModuleFiles();
     for (const file of files) player.loadModule(file);
   } catch (e) {
-    player.dressUpError = e instanceof Error ? e.message : String(e);
+    player.dressUpError = errorText(e);
   }
 }
 

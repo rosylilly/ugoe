@@ -1,10 +1,15 @@
+import { setLocale } from "@ugoe/i18n";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { saveJsonFile, savePngFile, viewerHost } from "./host";
+import { CommandError } from "./errors";
+import { readFileAt, saveJsonFile, savePngFile, viewerHost } from "./host";
 
 // Tauri のウィンドウを模す: ダイアログのコマンドは `picked` を返し、`invoke` は呼ばれた引数を覚える。
 // ダイアログはバックエンドが開く (選んだパスだけを読み書きできるようにするため。T0727)。
 let picked: string | string[] | null = null;
+/** 次のコマンドを失敗させる値 (バックエンドが reject する `code`・`args`・`message`)。 */
+let failure: unknown = null;
 const invoke = vi.fn(async (command: string, _args?: unknown, _options?: unknown) => {
+  if (failure !== null && command !== "save_file_dialog") throw failure;
   if (command === "save_file_dialog" || command === "open_file_dialog") return picked;
   if (command === "read_model_file") return new Uint8Array([7]).buffer;
   return undefined;
@@ -23,6 +28,8 @@ beforeAll(() => {
 beforeEach(() => {
   invoke.mockClear();
   picked = null;
+  failure = null;
+  setLocale("ja");
 });
 
 describe("saving in Tauri", () => {
@@ -92,5 +99,40 @@ describe("opening in Tauri", () => {
       "open_file_dialog",
       "open_file_dialog",
     ]);
+  });
+});
+
+describe("command errors (T0729)", () => {
+  it("throws the error of the backend translated into the current language", async () => {
+    failure = {
+      code: "file.too_large",
+      args: { path: "/m/big.ugoe", size: 600000000, max: 536870912 },
+      message: "/m/big.ugoe: file is too large (600000000 bytes; the limit is 536870912 bytes)",
+    };
+    const error = await readFileAt("path:/m/big.ugoe").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(CommandError);
+    expect(error).toMatchObject({
+      code: "file.too_large",
+      args: { path: "/m/big.ugoe" },
+      message: "/m/big.ugoe は大きすぎて開けません (600,000,000 バイト。上限は 536,870,912 バイト)",
+    });
+  });
+
+  it("throws the error of a failed save", async () => {
+    setLocale("en");
+    picked = "/home/u/rec.json";
+    failure = {
+      code: "file.write_failed",
+      args: { path: "/home/u/rec.json", reason: "Permission denied (os error 13)" },
+      message: "/home/u/rec.json: Permission denied (os error 13)",
+    };
+    await expect(saveJsonFile("rec.json", "{}")).rejects.toThrow(
+      "Cannot write /home/u/rec.json (Permission denied (os error 13))",
+    );
+  });
+
+  it("passes other failures through", async () => {
+    failure = new Error("IPC is gone");
+    await expect(readFileAt("path:/m/a.ugoe")).rejects.toThrow("IPC is gone");
   });
 });

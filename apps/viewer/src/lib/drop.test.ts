@@ -32,7 +32,13 @@ vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => true,
   invoke: vi.fn(async (command: string, args: { path: string }) => {
     const bytes = command === "read_model_file" ? disk.get(args.path) : undefined;
-    if (bytes === undefined) throw new Error(`${args.path}: not found`);
+    // 無いファイルはバックエンドと同じ形 (ADR 0029 の `code`・`args`・`message`) で reject する。
+    if (bytes === undefined)
+      throw {
+        code: "file.not_found",
+        args: { path: args.path },
+        message: `${args.path}: the file does not exist`,
+      };
     return bytes.slice().buffer;
   }),
 }));
@@ -155,7 +161,7 @@ describe("dropped files", () => {
     const target = new Target();
     const folder = "/home/u/mods";
     const image = "/home/u/Pictures/face.PNG";
-    // 拡張子は開けるが読めない (フォルダ・消えたファイル。read_model_file のエラーは英語)。
+    // 拡張子は開けるが読めない (フォルダ・消えたファイル)。read_model_file のエラーのコードを訳して理由に出す (T0729)。
     const gone = "/home/u/old.ugoe";
     const { notice } = await dropPaths([folder, MODEL, image, gone, HAIR], target);
     expect(target.calls).toHaveLength(1);
@@ -163,7 +169,7 @@ describe("dropped files", () => {
     expect(target.calls[0]?.modules.map((m) => m.file.location)).toEqual([`path:${HAIR}`]);
     expect(notice).toBe(
       "開けないものを 3 個飛ばしました: mods、face.PNG (開けるのはモデル .ugoe・.json と着せ替えのモジュール .ugoemod。" +
-        "フォルダの中は開きません)。old.ugoe (読めませんでした)",
+        "フォルダの中は開きません)。old.ugoe (読めませんでした: /home/u/old.ugoe が見つかりません)",
     );
   });
 
@@ -283,6 +289,20 @@ describe("drop checks (T0717)", () => {
     ).toMatch(/^1 個のファイル/);
     expect(describeDropTypes([])).toBeNull();
     expect(describeDropTypes([{ kind: "string", type: "text/plain" }])).toBeNull();
+  });
+
+  it("tells the reason only when one item could not be read (T0729)", () => {
+    const unreadable = (name: string) => ({
+      name,
+      reason: "unreadable" as const,
+      detail: `${name} が見つかりません`,
+    });
+    expect(skippedMessage([unreadable("a.ugoe")], 1)).toBe(
+      "開けないものを 1 個飛ばしました: a.ugoe (読めませんでした: a.ugoe が見つかりません)",
+    );
+    expect(skippedMessage([unreadable("a.ugoe"), unreadable("b.ugoe")], 0)).toBe(
+      "開けるファイルがありませんでした: a.ugoe、b.ugoe (読めませんでした)",
+    );
   });
 
   it("shortens a long list of names", () => {

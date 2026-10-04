@@ -64,7 +64,32 @@
     "encodeFailed": "PNG に変換できません"
   },
   "errors": {
-    "wasmMissing": "ugoe-wasm がビルドされていません (apps/viewer で `pnpm wasm` を実行してください)"
+    "wasmMissing": "ugoe-wasm がビルドされていません (apps/viewer で `pnpm wasm` を実行してください)",
+    "internal": "内部のエラーが起きました ({{reason}})",
+    "file": {
+      "not_model": "{{path}} はモデルでも着せ替えのモジュールでもありません (開けるのは .ugoe・.json・.ugoemod のファイル)",
+      "too_large": "{{path}} は大きすぎて開けません ({{size}} バイト。上限は {{max}} バイト)",
+      "not_found": "{{path}} が見つかりません",
+      "read_failed": "{{path}} を読めません ({{reason}})",
+      "write_failed": "{{path}} に書けません ({{reason}})",
+      "not_json": "{{path}} は JSON のファイルではありません (ここで保存できるのは .json のファイル)",
+      "not_png": "{{path}} は PNG のファイルではありません (ここで保存できるのは .png のファイル)",
+      "not_chosen": "{{path}} は選ばれていないので読めません (ダイアログで開くか、ウィンドウに落としてください)",
+      "not_chosen_for_save": "{{path}} は保存のダイアログで選ばれていないので書けません",
+      "unsupported_save_type": ".{{extension}} のファイルは保存できません"
+    },
+    "request": {
+      "not_png_data": "保存するデータが PNG の画像ではありません",
+      "missing_path": "保存先のパスが渡されていません",
+      "invalid_path": "保存先のパスが正しくありません ({{reason}})"
+    },
+    "dialog": {
+      "failed": "ファイルのダイアログが失敗しました ({{reason}})"
+    },
+    "format": {
+      "chunk_limit_exceeded": "ファイルを読みませんでした。チャンク {{chunk}} を展開すると上限の {{max}} バイトを超えます",
+      "total_limit_exceeded": "ファイルを読みませんでした。圧縮したチャンクを展開すると、合計が上限の {{max}} バイトを超えます (チャンク {{chunk}} で)"
+    }
   },
   "files": {
     "openModel": {
@@ -93,6 +118,7 @@
       "some_other": "開けないものを {{count}} 個飛ばしました",
       "extension": "{{names}} (開けるのはモデル .ugoe・.json と着せ替えのモジュール .ugoemod。フォルダの中は開きません)",
       "unreadable": "{{names}} (読めませんでした)",
+      "unreadableReason": "{{name}} (読めませんでした: {{reason}})",
       "separator": "。",
       "message": "{{head}}: {{details}}"
     },

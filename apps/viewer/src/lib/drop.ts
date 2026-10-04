@@ -15,6 +15,7 @@ import {
   MODULE_EXTENSIONS,
   type ModelFile,
 } from "@ugoe/player";
+import { errorText } from "./errors";
 import { t } from "./i18n";
 import type { SampleTarget } from "./samples";
 
@@ -61,7 +62,7 @@ export interface DroppedItem {
 export interface SkippedItem {
   name: string;
   reason: "extension" | "unreadable";
-  /** 読めなかった理由 (バックエンドのエラーなど。英語のことがある)。 */
+  /** 読めなかった理由 (今の言語の文。バックエンドのエラーはカタログで訳したもの。errors.ts)。 */
   detail?: string;
 }
 
@@ -88,7 +89,7 @@ export async function openDroppedItems(
       skipped.push({
         name: baseName(openable[i]?.name ?? ""),
         reason: "unreadable",
-        detail: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        detail: errorText(result.reason),
       });
   });
   if (files.length > 0) await openDroppedFiles(files, target);
@@ -112,10 +113,14 @@ export function skippedMessage(skipped: readonly SkippedItem[], opened: number):
     opened === 0 ? t("drop.skipped.none") : t("drop.skipped.some", { count: skipped.length });
   const parts: string[] = [];
   const ext = skipped.filter((s) => s.reason === "extension").map((s) => s.name);
-  const unreadable = skipped.filter((s) => s.reason === "unreadable").map((s) => s.name);
+  const unreadable = skipped.filter((s) => s.reason === "unreadable");
   if (ext.length > 0) parts.push(t("drop.skipped.extension", { names: listNames(ext) }));
-  if (unreadable.length > 0)
-    parts.push(t("drop.skipped.unreadable", { names: listNames(unreadable) }));
+  // 読めなかったものが 1 つなら理由も出す (いくつもあると長くなるので名前だけ)。
+  const [only] = unreadable;
+  if (unreadable.length === 1 && only?.detail)
+    parts.push(t("drop.skipped.unreadableReason", { name: only.name, reason: only.detail }));
+  else if (unreadable.length > 0)
+    parts.push(t("drop.skipped.unreadable", { names: listNames(unreadable.map((s) => s.name)) }));
   return t("drop.skipped.message", {
     head,
     details: parts.join(t("drop.skipped.separator")),

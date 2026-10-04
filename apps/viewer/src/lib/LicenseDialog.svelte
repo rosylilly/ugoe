@@ -1,6 +1,7 @@
 <script lang="ts">
 // ライセンスの表示。ビューア (GPL-3.0-only) と、同梱したものの表記 (public/third-party-notices.txt)。
 import { Dialog } from "@ugoe/ui";
+import { errorText } from "./errors";
 import { t } from "./i18n";
 
 let { open = $bindable(false) }: { open?: boolean } = $props();
@@ -17,7 +18,7 @@ async function load() {
     const res = await fetch(new URL("third-party-notices.txt", document.baseURI));
     text = res.ok ? await res.text() : t("license.loadFailed", { reason: String(res.status) });
   } catch (e) {
-    text = t("license.loadFailed", { reason: e instanceof Error ? e.message : String(e) });
+    text = t("license.loadFailed", { reason: errorText(e) });
   }
 }
 </script>
