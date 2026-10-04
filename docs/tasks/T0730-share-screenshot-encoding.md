@@ -1,11 +1,11 @@
 ---
 id: T0730
 title: スクリーンショットの PNG の変換と保存の重複をまとめる (エディタ・ビューア)
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/viewer, apps/editor, packages/player, docs]
 depends_on: [T0724]
-assignee:
+assignee: claude-worker-T0730
 ---
 
 # T0730: スクリーンショットの PNG の変換と保存の重複をまとめる (エディタ・ビューア)

@@ -1,11 +1,11 @@
 ---
 id: T1600
 title: editor-core のエラー型が持つ ID を型付きにするか決める
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core, docs]
 depends_on: [T0678]
-assignee:
+assignee: claude-worker-T1600
 ---
 
 # T1600: editor-core のエラー型が持つ ID を型付きにするか決める
