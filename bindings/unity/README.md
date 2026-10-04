@@ -16,6 +16,8 @@
 | (推移的) Microsoft.TestPlatform.ObjectModel・Microsoft.TestPlatform.TestHost・Microsoft.CodeCoverage | 17.12.0 | MIT |
 | (推移的) Newtonsoft.Json | 13.0.1 | MIT |
 | (推移的) System.Reflection.Metadata | 1.6.0 | MIT (dotnet/corefx の LICENSE) |
+| Microsoft.NETFramework.ReferenceAssemblies (`tests/UnityCompile` の net48 の参照アセンブリ) | 1.0.3 | MIT (Microsoft/dotnet の LICENSE) |
+| (推移的) Microsoft.NETFramework.ReferenceAssemblies.net48 | 1.0.3 | MIT (Microsoft/dotnet の LICENSE) |
 
 `scripts/check-licenses.mjs` (`just licenses`) は Cargo と npm の依存だけを見て、NuGet は見ない。NuGet の依存を足すときは、
 ライセンスが MIT と両立する (寛容な) ものかを手で確かめ、この表に書く。
@@ -32,7 +34,7 @@
 | `com.ugoe.unity/Editor/` | `.ugoe` / `.ugoemod` の取り込み (ScriptedImporter) とインスペクタ |
 | `com.ugoe.unity/Samples~/Basic/` | 見本のシーン (`Basic.unity`) とスクリプト。`Models/` は `build.mjs` が置く (コミットしない) |
 | `tests/` | `Runtime/Core` の dotnet のテスト (ホストの `libugoe_ffi` と `assets/samples/` のモデルで実行) |
-| `tests/UnityCompile/` | Unity に依存する C# を、Unity の API の形だけを書いたスタブに対して型検査する (実行はしない) |
+| `tests/UnityCompile/` | Unity に依存する C# を、Unity の API の形だけを書いたスタブに対して型検査する (実行はしない)。Unity の API 互換レベルの 2 つに合わせ、`netstandard2.1` (.NET Standard 2.1) と `net48` (.NET Framework) の両方でビルドする |
 | `build.mjs` | ビルド・配置・検査 (下) |
 | `release.mjs` | 版の照合と UPM の tarball ([リリース](#リリース)) |
 
@@ -50,6 +52,10 @@ node bindings/unity/build.mjs --metas      # 足りない .meta を作る (フ�
 node bindings/unity/build.mjs --plugins <dir>   # CI の成果物のライブラリを Runtime/Plugins/ に並べ、見本のモデルを写す (ビルドしない)
 ```
 
+- 型検査 (`tests/UnityCompile`) は `netstandard2.1` と `net48` の両方で行う。Unity 2022.3 の API 互換レベル「.NET Framework」は
+  .NET Framework 4.8 の API に近いので、パッケージの C# は両方で通る API だけを使う (例: `Math.Clamp` は .NET Standard 2.1 にはあるが
+  `net48` には無い)。`net48` の参照アセンブリは NuGet の `Microsoft.NETFramework.ReferenceAssemblies` から取るので、Windows 以外でも
+  Developer Pack は要らない。Unity の「.NET Framework」の実際の参照アセンブリ (Mono の) とは一致しないので、厳しめの近似として扱う。
 - `--check` には .NET SDK (8 以降) が要る (無ければ入れ方を示して止まる)。これらは `just ci` に含まれない。
   CI では `.github/workflows/unity.yml` が、`check` (= `just unity-check`)、`native` (下の表の各プラットフォームの
   リリースビルド)、`package` (ライブラリを `Runtime/Plugins/` に並べた `com.ugoe.unity` と、その UPM の tarball を成果物に残す。
@@ -202,7 +208,7 @@ foreach (var id in puppet.HitAreasAt(worldPoint)) Debug.Log(id);
 ## 制限と確かめていないこと
 
 - **Unity の上では実行していない** (この環境に Unity が無い)。確かめたのは `Runtime/Core` の dotnet のテストと、
-  Unity の部分のスタブでの型検査だけ。Unity で確かめること:
+  Unity の部分のスタブでの型検査 (`netstandard2.1` と `net48`) だけ。Unity で確かめること:
   1. `node bindings/unity/build.mjs` の後、Unity 2022.3 (と Unity 6) の新しいプロジェクトにパッケージを入れ、コンパイルが通るか。
   2. `.ugoe` / `.ugoemod` がアセットとして取り込まれるか (インスペクタで `UgoePuppet.Model` に選べるか)。
   3. 見本の `Basic.unity` が開けて (手で書いたシーンのファイル)、再生でモデルが表示され、`AngleX` が揺れるか。

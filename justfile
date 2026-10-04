@@ -147,7 +147,7 @@ unity-build *args:
     node bindings/unity/build.mjs {{args}}
 
 # .NET SDK 8 以降が要る (無ければ入れ方を示して止まる)。`just ci` には含めない (CI では unity.yml の check)。
-# Unity のパッケージの検査 (.meta・Runtime/Core の dotnet test・Unity の部分のスタブでの型検査)
+# Unity のパッケージの検査 (.meta・Runtime/Core の dotnet test・Unity の部分のスタブでの型検査を netstandard2.1 と net48 で)
 unity-check *args:
     node bindings/unity/build.mjs --check {{args}}
 

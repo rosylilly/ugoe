@@ -5,7 +5,7 @@
 //                                                      # 見本のモデルを Samples~/Basic/Models/ に写す (.meta も作る)
 //   node bindings/unity/build.mjs --release    # リリースビルド
 //   node bindings/unity/build.mjs --check      # ビルドして、.meta の検査・Runtime/Core の dotnet test・
-//                                                      # Unity に依存する C# の型の検査 (tests/UnityCompile)・
+//                                                      # Unity に依存する C# の型の検査 (tests/UnityCompile。netstandard2.1 と net48)・
 //                                                      # release.mjs のテストを行う (dotnet が要る)
 //   node bindings/unity/build.mjs --metas      # コミットするファイルに足りない .meta を作る (GUID はパスから決める)
 //   node bindings/unity/build.mjs --plugins <dir>

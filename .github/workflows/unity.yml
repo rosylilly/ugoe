@@ -37,7 +37,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # .meta の検査・Runtime/Core の dotnet test (ホストの libugoe_ffi)・Unity の部分のスタブでの型検査。`just unity-check` と同じ。
+  # .meta の検査・Runtime/Core の dotnet test (ホストの libugoe_ffi)・Unity の部分のスタブでの型検査 (netstandard2.1 と net48)。
+  # `just unity-check` と同じ。
   check:
     runs-on: ubuntu-24.04
     steps:

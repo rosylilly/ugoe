@@ -2,9 +2,11 @@
   <!--
     com.ugoe.unity の Runtime/・Editor/・Samples~/ の C# を、Unity の API の形だけを書いたスタブ (UnityStubs.cs) に対して型検査する。
     ビルドするだけで実行はしない。Unity で実際に通るかは Unity で確かめる (bindings/unity/README.md)。
+    Unity の API 互換レベルの 2 つ (.NET Standard 2.1 と .NET Framework) に合わせ、netstandard2.1 と net48 の両方でビルドする。
+    net48 の参照アセンブリは NuGet の Microsoft.NETFramework.ReferenceAssemblies から取る (Windows 以外にも Developer Pack が無くてよい)。
   -->
   <PropertyGroup>
-    <TargetFramework>netstandard2.1</TargetFramework>
+    <TargetFrameworks>netstandard2.1;net48</TargetFrameworks>
     <LangVersion>9.0</LangVersion>
     <Nullable>disable</Nullable>
     <IsPackable>false</IsPackable>
@@ -14,6 +16,9 @@
     <DefineConstants>$(DefineConstants);UNITY_EDITOR;UNITY_2022_3_OR_NEWER</DefineConstants>
     <NoWarn>$(NoWarn);CS0436</NoWarn>
   </PropertyGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
   <ItemGroup>
     <Compile Include="UnityStubs.cs" />
     <Compile Include="../../com.ugoe.unity/Runtime/**/*.cs" />
