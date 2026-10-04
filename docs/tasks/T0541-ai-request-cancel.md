@@ -35,3 +35,6 @@ OpenAI 互換の問い直し (`json_retries`)、リギングの問い直しが�
 - apps/editor/src-tauri/src/ai.rs (`blocking`)
 
 ## メモ
+
+- T0019: T0551 の起票の候補「自動リギングの途中の取り消し (必要が出たら)」はこのタスクの取り消しの範囲に入る。取り消しの印は、MCP の
+  `notifications/cancelled` からも渡せる形にしておく (`ugoe-mcp` から渡すのは `crates:` の外なので、要るなら起票の候補に。長い `render_png` の取り消しは見送り)。

@@ -30,3 +30,6 @@ assignee:
 - docs/adr/0029-shared-ui-and-i18n.md
 
 ## メモ
+
+- T0019: T0729 の起票の候補 (ugoe-wasm の読み込みのエラーをコードと引数で返し、`@ugoe/player` が訳す) はこのタスクに含まれる。
+  ビューアとスタジオは `format.*` の訳 (T0729 で足した) を持つので、`@ugoe/player` が同じコードで訳せばそのまま効く。
