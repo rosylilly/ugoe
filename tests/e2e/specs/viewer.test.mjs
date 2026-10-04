@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { describe } from "node:test";
-import { launch, shot, step } from "../lib/harness.mjs";
+import { checkNoCspViolations, launch, shot, step } from "../lib/harness.mjs";
 import { installPageHelpers } from "../lib/page.mjs";
 import { startFakeTracking, trackerState } from "../lib/tracking.mjs";
 import { Keys, waitFor } from "../lib/webdriver.mjs";
@@ -72,4 +72,6 @@ describe("viewer", () => {
       message: "the settings to close",
     });
   });
+
+  checkNoCspViolations(app);
 });

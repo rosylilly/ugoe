@@ -10,11 +10,13 @@ import { describe } from "node:test";
 import { SAMPLES_DIR, sampleProfile } from "../../../apps/studio/scripts/sample-profile.mjs";
 import {
   captureLogs,
+  checkNoCspViolations,
   invoke,
   launch,
   shot,
   step,
   switchToTauriWindow,
+  takeCspViolations,
   work,
 } from "../lib/harness.mjs";
 import { countInvokes, installPageHelpers, invokeStats, percentile } from "../lib/page.mjs";
@@ -193,9 +195,21 @@ describe("studio", () => {
     const evaluated = await s.execute(
       "try { return new Function('return true')(); } catch (e) { return String(e); }",
     );
+    // わざと止めさせたものは集めた違反に入る (最後の「CSP の違反が無い」の手順のために取り除く)
+    const violations = await waitFor(
+      async () => {
+        const taken = await takeCspViolations(s);
+        return taken.length > 0 ? taken : null;
+      },
+      { message: "the blocked eval in the collected CSP violations" },
+    );
     await switchToTauriWindow(s, "main");
     assert.match(denied ?? "", /not allowed/, "the output window could read the API token");
     assert.notEqual(evaluated, true, "the output window has no CSP");
+    assert.ok(
+      violations.every((v) => v.directive === "script-src" && v.blocked === "eval"),
+      `unexpected CSP violations: ${JSON.stringify(violations)}`,
+    );
   });
 
   step(
@@ -372,4 +386,6 @@ describe("studio", () => {
     await invoke(s, "open_profile", { path });
     await s.waitFindText(".scenes__item .scenes__name", "Scene 5");
   });
+
+  checkNoCspViolations(app);
 });

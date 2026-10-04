@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe } from "node:test";
-import { invoke, launch, shot, step, work } from "../lib/harness.mjs";
+import { checkNoCspViolations, invoke, launch, shot, step, work } from "../lib/harness.mjs";
 import { installPageHelpers } from "../lib/page.mjs";
 import { Keys, waitFor } from "../lib/webdriver.mjs";
 
@@ -54,6 +54,20 @@ describe("editor", () => {
         message: "the notice that the sample opened",
       },
     );
+    // ビューポートが wasm を読んで描ける。wasm は起動の直後 (集める仕掛けを入れる前) に読み、CSP で止まっても
+    // WebKitGTK はイベントを出さず HUD に出るだけなので、最後の「CSP の違反が無い」の手順では気づけない
+    const hud = await waitFor(
+      () =>
+        s.execute(`
+          const hud = document.querySelector(".viewport .hud");
+          const error = hud?.querySelector(".error");
+          if (error) return { error: error.textContent.trim() };
+          const screenshot = hud?.querySelector("button");
+          return screenshot && !screenshot.disabled ? { ready: true } : null;
+        `),
+      { timeout: 20_000, message: "the viewport to be ready" },
+    );
+    assert.equal(hud.error, undefined, `the viewport failed: ${hud.error}`);
     await shot(s, "editor-sample");
   });
 
@@ -136,4 +150,6 @@ describe("editor", () => {
     await s.waitFindText("nav.file-menu button", "保存", 20_000);
     await shot(s, "editor-japanese");
   });
+
+  checkNoCspViolations(app);
 });

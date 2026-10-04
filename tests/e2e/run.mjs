@@ -19,7 +19,14 @@
 // Windows と macOS では流さない (macOS の WKWebView には WebDriver が無い。docs/testing.md#実機の-e2e-テスト)。
 
 import { spawn, spawnSync } from "node:child_process";
-import { copyFileSync, createWriteStream, existsSync, mkdirSync, rmSync } from "node:fs";
+import {
+  copyFileSync,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
@@ -121,16 +128,39 @@ for (const app of only) {
 
 // --- 画面 ---
 
-/** @type {import("node:child_process").ChildProcess | null} */
-let xvfb = null;
-let display = process.env.DISPLAY;
-if (!headed) {
-  // 番号は Xvfb に選ばせず (-displayfd だけだと、WSLg のように今の画面がロックファイルを作らない環境で :0 を選び、
-  // 今の画面とぶつかる)、ロックファイルもソケットも無い番号を 99 から探す。
-  // -nolisten unix: /tmp/.X11-unix にソケットを作らない (WSLg では書けない)。Linux のクライアントは抽象ソケットでつなぐ。
-  let number = 99;
-  while (existsSync(`/tmp/.X${number}-lock`) || existsSync(`/tmp/.X11-unix/X${number}`)) number++;
-  xvfb = spawn(
+/**
+ * X の画面の番号 `number` が使われていそうか。ロックファイル (/tmp/.X<n>-lock)・ファイルのソケット (/tmp/.X11-unix/X<n>)・
+ * 抽象ソケット (@/tmp/.X11-unix/X<n>。/proc/net/unix に出る) のどれかがあれば使われている。
+ * 抽象ソケットはネットワークの名前空間で共有され、/tmp を別に持つサンドボックスや WSLg の画面からはロックファイルが見えないことがある。
+ */
+function displayInUse(number, abstractSockets) {
+  return (
+    existsSync(`/tmp/.X${number}-lock`) ||
+    existsSync(`/tmp/.X11-unix/X${number}`) ||
+    abstractSockets.has(`@/tmp/.X11-unix/X${number}`)
+  );
+}
+
+/** /proc/net/unix に出ている抽象ソケットの名前 (`@` 始まり)。読めなければ空。 */
+function abstractUnixSockets() {
+  try {
+    return new Set(
+      readFileSync("/proc/net/unix", "utf8")
+        .split("\n")
+        .map((line) => line.trim().split(/\s+/)[7])
+        .filter((name) => name?.startsWith("@")),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * Xvfb を番号 `number` で起動する。準備ができたら (-displayfd に番号が書かれたら) プロセスを、
+ * 起動できなければ (番号を同時に選んだ別の Xvfb に取られたなど) Xvfb の標準エラーを持つ Error を返す。
+ */
+function startXvfb(number) {
+  const child = spawn(
     tools.xvfb,
     [
       `:${number}`,
@@ -147,18 +177,46 @@ if (!headed) {
     { stdio: ["ignore", "ignore", "pipe", "pipe"] },
   );
   let stderr = "";
-  xvfb.stderr.on("data", (chunk) => {
+  child.stderr.on("data", (chunk) => {
     stderr += chunk;
   });
-  // -displayfd: 準備ができたら番号を書く
-  display = await new Promise((resolveDisplay, reject) => {
+  return new Promise((resolveChild, reject) => {
     let text = "";
-    xvfb.stdio[3].on("data", (chunk) => {
+    child.stdio[3].on("data", (chunk) => {
       text += chunk;
-      if (text.includes("\n")) resolveDisplay(`:${text.trim()}`);
+      if (text.includes("\n")) resolveChild(child);
     });
-    xvfb.on("exit", (code) => reject(new Error(`Xvfb exited (${code}):\n${stderr.slice(-2000)}`)));
+    child.on("error", reject);
+    child.on("exit", (code) =>
+      reject(new Error(`Xvfb :${number} exited (${code}):\n${stderr.slice(-2000)}`)),
+    );
   });
+}
+
+/** @type {import("node:child_process").ChildProcess | null} */
+let xvfb = null;
+let display = process.env.DISPLAY;
+if (!headed) {
+  // 番号は Xvfb に選ばせず (-displayfd だけだと、WSLg のように今の画面がロックファイルを作らない環境で :0 を選び、
+  // 今の画面とぶつかる)、使われていない番号を探す。同じ機械で並行に流すと (並列のエージェントなど) 2 つが同じ番号を選びうるので、
+  // 始める番号をプロセスごとにずらし、起動できなければ次の番号で試し直す (先にロックファイルとソケットを取った方が使い、もう一方は起動に失敗して終わる)。
+  // -nolisten unix: /tmp/.X11-unix にソケットを作らない (WSLg では書けない)。Linux のクライアントは抽象ソケットでつなぐ。
+  let number = 99 + (process.pid % 400);
+  let lastError = null;
+  for (let attempt = 0; attempt < 20 && xvfb === null; attempt++, number++) {
+    const sockets = abstractUnixSockets();
+    while (displayInUse(number, sockets)) number++;
+    try {
+      xvfb = await startXvfb(number);
+      display = `:${number}`;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  if (xvfb === null) {
+    console.error(`could not start Xvfb: ${lastError?.message}`);
+    process.exit(1);
+  }
   console.log(`\nXvfb on ${display}`);
 }
 /** 動いている tauri-driver (dbus-run-session ごとのプロセスグループ)。 */

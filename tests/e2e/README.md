@@ -32,10 +32,21 @@ CI では `.github/workflows/e2e.yml` が流す ([docs/testing.md](../../docs/te
 
 1. アプリを `tauri build --debug --no-bundle` でビルドする。フロントエンドを埋め込んだデバッグビルドなので、Vite の開発サーバは要らない
    (配布物と同じ読み込み方)。できた実行ファイルは `target/e2e/bin/` に写す。
-2. Xvfb を起動する (空いている番号を選ぶ)。利用者の画面にはウィンドウを出さない。
+2. Xvfb を起動する (空いている番号を選ぶ。下の「Xvfb の番号」)。利用者の画面にはウィンドウを出さない。
 3. アプリごとに、新しい D-Bus のセッション (`dbus-run-session`) の中で tauri-driver を起動し、`specs/<アプリ>.test.mjs` を
    node:test で流す。tauri-driver は WebKitWebDriver に中継し、WebKitWebDriver がアプリを起動する。
 4. 結果をまとめて表示する。どれかが失敗すれば終了コード 1。
+
+### Xvfb の番号
+
+同じ機械で並行に流しても (並列のエージェントなど) ぶつからないように、run.mjs は使われていない番号を探して Xvfb を起動する (T0022)。
+
+- ロックファイル (`/tmp/.X<n>-lock`)・ソケット (`/tmp/.X11-unix/X<n>`)・抽象ソケット (`@/tmp/.X11-unix/X<n>`。`/proc/net/unix`) の
+  どれかがある番号は使わない。抽象ソケットはネットワークの名前空間で共有されるので、`/tmp` を別に持つサンドボックスで動く Xvfb もここに見える。
+- 探し始める番号はプロセスごとに変え (99 から 498)、2 つが同じ番号を同時に選んで片方が起動できなければ
+  (`SocketCreateListener() failed`・`Server is already active`)、次の番号で試し直す (20 回まで)。
+  前は 99 から順に探して試し直さなかったので、並行に流すと同じ番号を選んで片方が起動できなかった (T0820)。
+- Xvfb に番号を選ばせる (`-displayfd` だけ) のは使わない。WSLg のように今の画面がロックファイルを作らない環境では `:0` を選び、今の画面とぶつかる。
 
 ### 利用者の環境を汚さない
 
@@ -56,7 +67,7 @@ CI では `.github/workflows/e2e.yml` が流す ([docs/testing.md](../../docs/te
 target/e2e/
   bin/                          ビルドした実行ファイル
   <アプリ>/driver.log            tauri-driver・WebKitWebDriver・アプリの標準出力と標準エラー
-  <アプリ>/<アプリ>.console.json  終わったときの、各ウィンドウのページの console (起動の直後から)
+  <アプリ>/<アプリ>.console.json  終わったときの、各ウィンドウのページの console (起動の直後から) と CSP が止めたもの
   <アプリ>/shots/                途中のスクリーンショット (成功したときも見返せるように)
   <アプリ>/failures/<手順>/       失敗したとき: 各ウィンドウのスクリーンショット・画面全体 (screen.png)・console.json
   studio/tracking.json          重い検出の下でのトラッキングの測定 (set_tracking の回数と応答の時間・AngleX の推移)
@@ -68,9 +79,9 @@ CI では失敗したときに `target/e2e` (実行ファイルを除く) を成
 
 | アプリ | 手順 |
 | --- | --- |
-| エディタ (`specs/editor.test.mjs`) | 起動 → 「Open Sample…」で見本のプロジェクトを書き出して開く → パラメータ (AngleX) の値を入力する → メタデータの Version を変えて保存し、ファイルに書かれ未保存の印が消える → 設定で日本語に切り替え、読み込み直しても日本語のまま |
-| ビューア (`specs/viewer.test.mjs`) | 起動 → 「Samples」のメニューから見本を開く → トラッキングの記録を流し、AngleX が動く → 設定を開いて閉じる |
-| スタジオ (`specs/studio.test.mjs`) | 起動 → 見本のプロファイルを開く → シーンをクリックで切り替える → 出力ウィンドウを出し、フレームが届く → 重い検出の下でトラッキングが操作ウィンドウと出力に届く (T0812 の回帰) → 出力ウィンドウを隠してもフレームが届き続ける → 操作 API のクライアントを承認し、シーンを切り替える → ブラウザソースのページとフレームが届く → シーンを足すとプロファイルに自動で保存され、開き直しても残る |
+| エディタ (`specs/editor.test.mjs`) | 起動 → 「Open Sample…」で見本のプロジェクトを書き出して開き、ビューポートが描ける → パラメータ (AngleX) の値を入力する → メタデータの Version を変えて保存し、ファイルに書かれ未保存の印が消える → 設定で日本語に切り替え、読み込み直しても日本語のまま → CSP の違反が無い |
+| ビューア (`specs/viewer.test.mjs`) | 起動 → 「Samples」のメニューから見本を開く → トラッキングの記録を流し、AngleX が動く → 設定を開いて閉じる → CSP の違反が無い |
+| スタジオ (`specs/studio.test.mjs`) | 起動 → 見本のプロファイルを開く → シーンをクリックで切り替える → 出力ウィンドウを出し、フレームが届く → 重い検出の下でトラッキングが操作ウィンドウと出力に届く (T0812 の回帰) → 出力ウィンドウを隠してもフレームが届き続ける → 操作 API のクライアントを承認し、シーンを切り替える → ブラウザソースのページとフレームが届く → シーンを足すとプロファイルに自動で保存され、開き直しても残る → CSP の違反が無い |
 
 画面の操作はできるだけ WebDriver の入力 (クリック・キー) で行う。次のものだけは OS のものなので、テストが代わりをする。
 
@@ -89,10 +100,37 @@ CI では失敗したときに `target/e2e` (実行ファイルを除く) を成
 刻みの処理の中で重くなるので、T0812 の不具合 (刻みが溜まり `set_tracking` の応答が何秒も遅れる) がそのまま起きる。
 スタジオの筋書きは、10 秒の間に `set_tracking` が 10 回以上届き、応答の中央値が 1 秒未満で、操作ウィンドウの AngleX が動くことを確かめる。
 
+### CSP の違反
+
+3 つのアプリは CSP を持つ (エディタ T0686・ビューア T0727・スタジオ T0820)。CSP が wasm・Worker・blob の画像・IPC などを止めても、
+画面の一部が静かに動かなくなるだけでほかの手順では気づけないので、各アプリの筋書きの最後の手順 `has no CSP violations`
+(`lib/harness.mjs` の `checkNoCspViolations`) が、すべてのウィンドウで CSP が止めたものが 0 件であることを確かめる (T0022)。
+
+集め方 (`lib/harness.mjs` の `CAPTURE_LOG`。起動の直後と、新しいウィンドウを開いたときの `captureLogs` で入れる):
+
+- `securitypolicyviolation` のイベント。
+- `ReportingObserver` の `csp-violation` の報告 (WebView が対応していれば。`buffered` で、入れる前の読み込みの途中のものも受け取る)。
+- 文に "Content Security Policy" を含む例外・console の出力。WebKitGTK は wasm のコンパイルを止めても (`'wasm-unsafe-eval'` が無い)
+  イベントを出さず、`CompileError` を投げるだけなので、これが要る。
+- 最後の手順で、画面に出ている文のうち "Content Security Policy" を含むもの。集める仕掛けを入れる前 (起動の直後) に wasm が止まり、
+  アプリがエラーを画面に出すだけのとき (エディタのビューポート) のため。
+
+見逃すもの: 起動の直後に起きて、イベントも報告も画面の文も残らないもの・アプリが握りつぶした例外・Worker の中の違反 (Worker に届く)。
+主な機能が動くこと (エディタのビューポートが wasm を読んで描ける、など) は、それぞれの手順でも確かめる。
+
+わざと CSP に止めさせる手順 (スタジオの出力ウィンドウで `new Function` が止まることを確かめる) は、止まったことを
+`takeCspViolations` で確かめて取り除く (最後の手順で数えないように)。
+
+`script-src` から `'wasm-unsafe-eval'` を外したビルドで、3 つのアプリとも失敗することを確かめた (T0022)。設定のファイルを書き換えずに
+試すには、`{"app":{"security":{"csp":{"script-src":"'self'"}}}}` を書いた JSON を作り、
+`pnpm --filter @ugoe/viewer tauri build --debug --no-bundle --config <その JSON>` でビルドして `target/debug/` の実行ファイルを
+`<out>/bin/` に写し、`just e2e --no-build --only viewer --out <out>` で流す。
+
 ## 筋書きを足す
 
 - `specs/<アプリ>.test.mjs` に `step(app, "名前", async () => { ... })` を足す。`step` は失敗したときの記録を残す (`lib/harness.mjs`)。
   1 つのアプリは 1 回だけ起動し、手順は上から順に同じウィンドウで進む (前の手順が失敗すると後の手順も失敗しやすい)。
+  最後の手順は `checkNoCspViolations(app)` のままにする (上の「CSP の違反」)。
 - 部品は表示の文字 (英語) と `@ugoe/ui` の部品のクラス・ARIA の属性で探す (`lib/page.mjs` の `window.__e2e`)。
   表示の文字を変えたら筋書きも直す。
 - 待つときは決まった時間眠らず、`waitFor` で条件を待つ。
