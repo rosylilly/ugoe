@@ -1,11 +1,11 @@
 ---
 id: T0547
 title: AI: リグの値の問い直しで、AI の値の誤りとテンプレートの失敗を分ける
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-ai, ugoe-mcp, docs]
 depends_on: [T0528]
-assignee:
+assignee: claude-worker-T0547
 ---
 
 # T0547: AI: リグの値の問い直しで、AI の値の誤りとテンプレートの失敗を分ける
