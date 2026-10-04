@@ -34,7 +34,7 @@ function translatable(code: string): boolean {
 }
 
 /** 値が英語の識別子 (要素の種類など) になる引数。値はカタログの `errorArgs.<値>` で訳す。 */
-const IDENTIFIER_ARGS = new Set(["kind", "what", "expected", "actual", "target_kind"]);
+const IDENTIFIER_ARGS = new Set(["kind", "what", "expected", "actual", "target_kind", "template"]);
 
 /**
  * 引数の値。要素の種類などの英語の識別子 (`kind` の `mesh` など) は、カタログの `errorArgs.<値>` があれば訳す。

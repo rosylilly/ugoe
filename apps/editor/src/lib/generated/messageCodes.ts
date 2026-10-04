@@ -47,6 +47,10 @@ export const messageCodes: Record<string, readonly string[]> = {
     "category"
   ],
   "ai.send_disabled": [],
+  "ai.template": [
+    "detail",
+    "template"
+  ],
   "ai.time_limit": [
     "minutes"
   ],

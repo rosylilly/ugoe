@@ -48,8 +48,9 @@ use crate::classify::{Label, LabelCategory, LayerLabel, Side};
 use crate::instructions::Instructions;
 use crate::rig::hair::{self, Sway};
 use crate::rig::{
-    Answered, MeshPart, Rect, RejectedAnswer, Rig, ask_until_valid, mesh_bounds, mesh_name,
-    mesh_parts_where, push_rejected, range_errors, revision_rules, template, values_schema,
+    Answered, MeshPart, Rect, RejectedAnswer, Rig, RigTemplate, ask_until_valid, mesh_bounds,
+    mesh_name, mesh_parts_where, push_rejected, range_errors, revision_rules, template,
+    values_schema,
 };
 use crate::turn::Builder;
 use crate::{AiError, Proposal, Provider, ProviderRequest};
@@ -327,7 +328,7 @@ impl ModuleLayout {
 }
 
 /// 衣装のメッシュのうち、取り付け先の直下のもの (自分で組んだデフォーマの中のものは変えない。`skipped` に書く)。
-/// なければ [`AiError::InvalidRequest`]。
+/// なければ [`AiError::Template`]。
 fn costume_meshes(
     model: &Model,
     context: &ModuleContext,
@@ -350,7 +351,8 @@ fn costume_meshes(
         }
     }
     if top.is_empty() {
-        return Err(AiError::InvalidRequest(
+        return Err(template(
+            RigTemplate::Module,
             "the module has no meshes directly under the slot's anchor; import the costume PSD first"
                 .into(),
         ));
@@ -433,7 +435,7 @@ fn group_of(groups: &mut Vec<Group>, followed: Option<Followed>) -> Result<&mut 
     };
     groups
         .get_mut(index)
-        .ok_or_else(|| template("no group".into()))
+        .ok_or_else(|| template(RigTemplate::Module, "no group".into()))
 }
 
 /// 揺れるラベルの衣装のメッシュ `id` を、まとまり `group` の揺れ (ラベルと左右ごと) に加える。
@@ -688,8 +690,12 @@ fn candidates(
             })
             .collect();
         axes.sort_by(|a, b| a.0.cmp(&b.0));
-        let world = ParentWorld::new(model, Some(&deformer.id))
-            .map_err(|e| template(format!("deformer `{}`: {e}", deformer.id)))?;
+        let world = ParentWorld::new(model, Some(&deformer.id)).map_err(|e| {
+            template(
+                RigTemplate::Module,
+                format!("deformer `{}`: {e}", deformer.id),
+            )
+        })?;
         let samples: Vec<Vec2> = (0..=4)
             .flat_map(|j| (0..=4).map(move |i| Vec2::new(i as f32 / 4.0, j as f32 / 4.0)))
             .collect();
@@ -736,7 +742,7 @@ fn fresh_id<'a>(
 /// `doc` はモジュールのプロジェクトの作業用のドキュメント、`parts` は衣装のメッシュの意味ラベル
 /// ([`module_mesh_parts`] でレイヤーの分類から作れる。ラベルのないメッシュは追従だけ)、`options` は組み方
 /// (追従の形・衝突体・ポーズ)。返す提案は `doc` に `Command::Batch` として適用でき、パラメータを足さず本体を
-/// 変えない。組むものがなければ [`AiError::InvalidRequest`]。
+/// 変えない。組むものがなければ [`AiError::Template`]。
 pub fn propose_module_rig(
     doc: &Document,
     parts: &BTreeMap<MeshId, MeshPart>,
@@ -762,6 +768,7 @@ fn build(
         .ok_or_else(|| AiError::InvalidRequest("the document is not a module project".into()))?;
     let mut rig = Rig {
         b: Builder::from_document(doc),
+        template: RigTemplate::Module,
     };
     let anchor_name = layout
         .anchor
@@ -800,15 +807,18 @@ fn build(
                     .into(),
             ));
         }
-        return Err(AiError::InvalidRequest(format!(
-            "nothing to rig: the costume already follows the slot's anchor, no base warp or mesh under it moves \
+        return Err(template(
+            RigTemplate::Module,
+            format!(
+                "nothing to rig: the costume already follows the slot's anchor, no base warp or mesh under it moves \
              the costume, no costume part is labeled to sway, and no costume parts are variants{}",
-            if layout.skipped.is_empty() {
-                String::new()
-            } else {
-                format!(" ({})", layout.skipped.join("; "))
-            }
-        )));
+                if layout.skipped.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({})", layout.skipped.join("; "))
+                }
+            ),
+        ));
     }
     rationale.extend(layout.skipped.iter().map(|s| format!("Not rigged: {s}")));
     rig.b.validate()?;
@@ -886,7 +896,7 @@ fn rig_group(
     if sways {
         let frame = frame
             .as_ref()
-            .ok_or_else(|| template("no frame for the sway".into()))?;
+            .ok_or_else(|| template(RigTemplate::Module, "no frame for the sway".into()))?;
         for sway in &group.sways {
             rig_sway(
                 rig, context, layout, frame, sway, params, options, rationale,
@@ -1020,12 +1030,19 @@ fn follow_keyforms(rig: &mut Rig, follow: &DeformerId, followed: &Followed) -> R
     }
     let (rest_local, ..) = rig.keyform_at(&target, &[])?;
     let rest = rig.canvas_points(&target)?;
-    let mut world = ParentWorld::new(rig.model(), Some(&followed.deformer))
-        .map_err(|e| template(format!("deformer `{}`: {e}", followed.deformer)))?;
+    let mut world = ParentWorld::new(rig.model(), Some(&followed.deformer)).map_err(|e| {
+        template(
+            RigTemplate::Module,
+            format!("deformer `{}`: {e}", followed.deformer),
+        )
+    })?;
     let guesses: Vec<Vec2> = rest.iter().map(|p| followed.region.normalize(*p)).collect();
-    let inner = world
-        .from_canvas(&rest, &guesses)
-        .map_err(|e| template(format!("deformer `{}`: {e}", followed.deformer)))?;
+    let inner = world.from_canvas(&rest, &guesses).map_err(|e| {
+        template(
+            RigTemplate::Module,
+            format!("deformer `{}`: {e}", followed.deformer),
+        )
+    })?;
     let defaults = defaults_of(rig.model(), &followed.axes);
     for cell in cells(&followed.axes) {
         if cell == defaults {
@@ -1040,7 +1057,7 @@ fn follow_keyforms(rig: &mut Rig, follow: &DeformerId, followed: &Followed) -> R
         world.set_pose(values.iter().map(|(p, v)| (p.as_str(), *v)));
         let moved = world.to_canvas(&inner);
         let points = canvas_to_local(rig.model(), &target, &values, &moved, &rest_local)
-            .map_err(|e| template(format!("{target}: {e}")))?;
+            .map_err(|e| template(RigTemplate::Module, format!("{target}: {e}")))?;
         let named: Vec<(&str, f32)> = followed
             .axes
             .iter()
@@ -1054,7 +1071,10 @@ fn follow_keyforms(rig: &mut Rig, follow: &DeformerId, followed: &Followed) -> R
                     ..keyform
                 }))
             }
-            _ => Err(template(format!("{target} is not a warp deformer"))),
+            _ => Err(template(
+                RigTemplate::Module,
+                format!("{target} is not a warp deformer"),
+            )),
         })?;
     }
     Ok(())
@@ -1092,9 +1112,12 @@ fn mesh_keyforms(
     }
     let count = crate::grid::cell_count(axes.iter().map(|(_, k)| k.len()));
     if axes.is_empty() || count > MAX_MESH_CELLS {
-        return Err(AiError::InvalidRequest(format!(
-            "mesh `{mesh}` would need {count} keyforms to follow the base, which is too many"
-        )));
+        return Err(template(
+            RigTemplate::Module,
+            format!(
+                "mesh `{mesh}` would need {count} keyforms to follow the base, which is too many"
+            ),
+        ));
     }
     for (parameter, keys) in &axes {
         rig.add_keys(&target, parameter.as_str(), keys)?;
@@ -1145,7 +1168,7 @@ fn mesh_keyforms(
         frame.set_pose(&pose);
         let points = frame.canvas_of(&moved);
         let local = canvas_to_local(rig.model(), &target, &values, &points, &rest_local)
-            .map_err(|e| template(format!("{target}: {e}")))?;
+            .map_err(|e| template(RigTemplate::Module, format!("{target}: {e}")))?;
         let named: Vec<(&str, f32)> = axes
             .iter()
             .zip(&cell)
@@ -1158,7 +1181,10 @@ fn mesh_keyforms(
                     ..keyform
                 }))
             }
-            _ => Err(template(format!("{target} is not a mesh"))),
+            _ => Err(template(
+                RigTemplate::Module,
+                format!("{target} is not a mesh"),
+            )),
         })?;
     }
     Ok(())
@@ -1193,9 +1219,12 @@ fn rig_sway(
     options: &ModuleRigOptions,
     rationale: &mut Vec<String>,
 ) -> Result<(), AiError> {
-    let rect = layout
-        .union(&group.meshes)
-        .ok_or_else(|| template(format!("{} has no bounds", group.label)))?;
+    let rect = layout.union(&group.meshes).ok_or_else(|| {
+        template(
+            RigTemplate::Module,
+            format!("{} has no bounds", group.label),
+        )
+    })?;
     let side = match group.side {
         Side::Left => "_l",
         Side::Right => "_r",
@@ -1298,8 +1327,12 @@ fn sway_colliders(
         }
         let mut settings = settings.clone();
         settings.rigs.push(candidate);
-        let found = rest_pose_collisions(rig.model(), &settings)
-            .map_err(|e| template(format!("the physics cannot be checked: {e}")))?;
+        let found = rest_pose_collisions(rig.model(), &settings).map_err(|e| {
+            template(
+                RigTemplate::Module,
+                format!("the physics cannot be checked: {e}"),
+            )
+        })?;
         Ok(found
             .into_iter()
             .filter(|c| c.rig == physics.id)

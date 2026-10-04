@@ -48,6 +48,20 @@ describe("backend errors", () => {
     expect(errorText(invalid(2))).toContain("2 problems:");
   });
 
+  it("names the template that cannot rig the model", () => {
+    const template = {
+      code: "ai.template",
+      args: { template: "module", detail: "nothing to rig" },
+      message: "the module template cannot rig this model: nothing to rig",
+    };
+    setLocale("ja");
+    expect(errorText(template)).toBe(
+      "このモデルはモジュールのテンプレートで組めません (nothing to rig)。",
+    );
+    setLocale("en");
+    expect(errorText(template)).toBe("The module template cannot rig this model (nothing to rig).");
+  });
+
   it("appends the cause", () => {
     const rejected: Message = {
       code: "proposal.rejected",

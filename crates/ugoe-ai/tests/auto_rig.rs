@@ -20,8 +20,8 @@ use ugoe_ai::depth::DepthMap;
 use ugoe_ai::instructions::Instructions;
 use ugoe_ai::openai::{OPENAI_BASE_URL, OpenAiConfig, OpenAiProvider};
 use ugoe_ai::rig::{
-    MeshPart, PreviousRig, RigGuidance, RigOptions, RigParams, TurnDepth, mesh_parts, propose_rig,
-    propose_rig_with_ai, propose_rig_with_ai_guided, rig_request, rig_request_guided,
+    MeshPart, PreviousRig, RigGuidance, RigOptions, RigParams, RigTemplate, TurnDepth, mesh_parts,
+    propose_rig, propose_rig_with_ai, propose_rig_with_ai_guided, rig_request, rig_request_guided,
 };
 use ugoe_ai::transport::{Cassette, ReplayTransport};
 use ugoe_ai::{AiError, FakeProvider, Proposal};
@@ -423,7 +423,10 @@ fn a_model_without_a_face_is_not_sent_to_the_ai() {
         3,
     )
     .unwrap_err();
-    assert!(matches!(error, AiError::InvalidRequest(_)), "{error}");
+    assert!(
+        matches!(&error, AiError::Template { template: RigTemplate::Character, reason } if reason.contains("`face`")),
+        "{error}"
+    );
     assert!(fake.calls().is_empty());
 }
 

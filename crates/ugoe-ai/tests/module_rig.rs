@@ -25,7 +25,7 @@ use ugoe_ai::module_rig::{
     module_rig_request_guided, propose_module_rig, propose_module_rig_with_ai,
     propose_module_rig_with_ai_guided,
 };
-use ugoe_ai::rig::{RigOptions, RigParams, mesh_parts, propose_rig};
+use ugoe_ai::rig::{RigOptions, RigParams, RigTemplate, mesh_parts, propose_rig};
 use ugoe_ai::transport::{Cassette, ReplayTransport};
 use ugoe_ai::{AiError, FakeProvider, Proposal};
 use ugoe_core::Vec2;
@@ -383,7 +383,7 @@ fn nothing_to_rig_is_reported() {
     )
     .unwrap_err();
     assert!(
-        matches!(&err, AiError::InvalidRequest(m) if m.contains("nothing to rig")),
+        matches!(&err, AiError::Template { template: RigTemplate::Module, reason } if reason.contains("nothing to rig")),
         "{err}"
     );
     let all = module_mesh_parts(&doc, &classify_by_name(&costume()));

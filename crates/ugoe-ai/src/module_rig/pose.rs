@@ -461,7 +461,10 @@ pub(super) fn propose(
 fn mesh_part(rig: &mut Rig, context: &ModuleContext, mesh: &MeshId) -> Result<PartId, AiError> {
     let model = rig.model();
     let Some(found) = model.meshes.iter().find(|m| &m.id == mesh) else {
-        return Err(crate::rig::template(format!("no mesh `{mesh}`")));
+        return Err(crate::rig::template(
+            crate::rig::RigTemplate::Module,
+            format!("no mesh `{mesh}`"),
+        ));
     };
     let (name, parent) = (found.name.clone(), found.part.clone());
     let hidden = mesh_hidden(&found.keyforms);

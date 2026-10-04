@@ -2070,6 +2070,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `ai.api_error` | `status`・`kind`・`detail` |
 | `ai.rate_limited` | `retry_after` (秒。切り上げ。分からなければ無い) |
 | `ai.refused` | `category` (分からなければ無い) |
+| `ai.template` | `template` (組めなかった自動リギングのテンプレート。`character`・`module`)・`detail` (足りないもの・解けなかったもの。英語) |
 | `ai.time_limit` | `minutes` (1 回の提案の時間の上限。分。切り上げ) |
 | `ai.invalid_time_limit` | `min`・`max` (選べる範囲。分) |
 | `mcp.invalid_port` / `mcp.no_binary` / `mcp.unsupported_platform` / `mcp.not_mcpb_file` | なし |

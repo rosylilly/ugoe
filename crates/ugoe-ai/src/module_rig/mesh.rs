@@ -19,7 +19,7 @@ use ugoe_runtime::{CompiledModel, ModelInstance};
 
 use super::{MAX_FOLLOW_CELLS, cells, find as find_deformer, grid_axes};
 use crate::AiError;
-use crate::rig::{Rect, template};
+use crate::rig::{Rect, RigTemplate, template};
 
 /// 衣装の頂点のうち、本体のメッシュの三角形の中 (か [`NEAR`] 以内) にあるべき割合。
 const MIN_INSIDE: f32 = 0.5;
@@ -41,8 +41,8 @@ pub(super) struct Frame {
 
 impl Frame {
     pub(super) fn new(model: &Model, id: Option<&DeformerId>) -> Result<Self, AiError> {
-        let world =
-            ParentWorld::new(model, id).map_err(|e| template(format!("frame {id:?}: {e}")))?;
+        let world = ParentWorld::new(model, id)
+            .map_err(|e| template(RigTemplate::Module, format!("frame {id:?}: {e}")))?;
         let is_warp = id
             .and_then(|id| find_deformer(model, id))
             .is_some_and(|d| matches!(d.kind, DeformerKind::Warp(_)));
@@ -95,7 +95,7 @@ impl Frame {
         };
         self.world
             .from_canvas(points, guesses)
-            .map_err(|e| template(format!("frame {:?}: {e}", self.id)))
+            .map_err(|e| template(RigTemplate::Module, format!("frame {:?}: {e}", self.id)))
     }
 }
 

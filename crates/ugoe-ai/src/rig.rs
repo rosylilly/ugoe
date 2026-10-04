@@ -431,7 +431,10 @@ impl Layout {
         let bounds = mesh_bounds(model)?;
         let labeled = Labeled::new(model, parts, &bounds);
         let face = union_of(&bounds, &labeled.with(|l| l == Label::Face)).ok_or_else(|| {
-            AiError::InvalidRequest("no mesh is labeled `face`; cannot place the head".into())
+            template(
+                RigTemplate::Character,
+                "no mesh is labeled `face`; cannot place the head".into(),
+            )
         })?;
         let head = labeled.with(is_head);
         let body = body_meshes(model, parts, &bounds);
@@ -679,6 +682,7 @@ fn build(
     }
     let mut rig = Rig {
         b: Builder::new(model),
+        template: RigTemplate::Character,
     };
     let mut rationale = Vec::new();
     // 体のワープを先に作り、頭の回転デフォーマをその中に入れる (呼吸で頭も持ち上がる)。
@@ -743,6 +747,8 @@ fn dome_depth(model: &Model, face: Rect) -> Result<DepthMap, AiError> {
 /// 組み立て中のドキュメントと、要素の探索・形の編集の補助 (`crates/ugoe-cli/src/sample.rs` の見本と同じ方法)。
 pub(crate) struct Rig {
     pub(crate) b: Builder,
+    /// 組んでいるテンプレート (組めないときのエラー [`AiError::Template`] に書く)。
+    pub(crate) template: RigTemplate,
 }
 
 impl Rig {
@@ -811,17 +817,18 @@ impl Rig {
         fn find<T: Clone>(
             grid: &KeyformGrid<T>,
             values: &BTreeMap<ParamId, f32>,
+            kind: RigTemplate,
         ) -> Result<(T, KeyformCell), AiError> {
             let (index, cell) =
                 grid::cell_index(&grid.bindings, |p| values.get(p).copied().unwrap_or(0.0))
                     .map_err(|(parameter, value)| {
-                        template(format!("axis {parameter} has no key {value}"))
+                        template(kind, format!("axis {parameter} has no key {value}"))
                     })?;
             let keyform = grid
                 .keyforms
                 .get(index)
                 .cloned()
-                .ok_or_else(|| template(format!("cell {index} is missing")))?;
+                .ok_or_else(|| template(kind, format!("cell {index} is missing")))?;
             Ok((keyform, cell))
         }
         match target {
@@ -830,8 +837,8 @@ impl Rig {
                     .meshes
                     .iter()
                     .find(|m| m.id == *id)
-                    .ok_or_else(|| template(format!("no mesh `{id}`")))?;
-                let (keyform, cell) = find(&mesh.keyforms, &values)?;
+                    .ok_or_else(|| template(self.template, format!("no mesh `{id}`")))?;
+                let (keyform, cell) = find(&mesh.keyforms, &values, self.template)?;
                 Ok((keyform.positions.clone(), Keyform::Mesh(keyform), cell))
             }
             KeyformTarget::Deformer(id) => {
@@ -839,22 +846,26 @@ impl Rig {
                     .deformers
                     .iter()
                     .find(|d| d.id == *id)
-                    .ok_or_else(|| template(format!("no deformer `{id}`")))?;
+                    .ok_or_else(|| template(self.template, format!("no deformer `{id}`")))?;
                 match &deformer.kind {
                     DeformerKind::Warp(warp) => {
-                        let (keyform, cell) = find(&warp.keyforms, &values)?;
+                        let (keyform, cell) = find(&warp.keyforms, &values, self.template)?;
                         Ok((keyform.points.clone(), Keyform::Warp(keyform), cell))
                     }
                     DeformerKind::Rotation(rotation) => {
-                        let (keyform, cell) = find(&rotation.keyforms, &values)?;
+                        let (keyform, cell) = find(&rotation.keyforms, &values, self.template)?;
                         Ok((vec![keyform.origin], Keyform::Rotation(keyform), cell))
                     }
-                    DeformerKind::Unknown => {
-                        Err(template(format!("deformer `{id}` has an unknown kind")))
-                    }
+                    DeformerKind::Unknown => Err(template(
+                        self.template,
+                        format!("deformer `{id}` has an unknown kind"),
+                    )),
                 }
             }
-            _ => Err(template(format!("{target} is not supported"))),
+            _ => Err(template(
+                self.template,
+                format!("{target} is not supported"),
+            )),
         }
     }
 
@@ -909,8 +920,9 @@ impl Rig {
         let (local, ..) = self.keyform_at(target, &[])?;
         let values = ParameterValues::new();
         let canvas = local_to_canvas(self.model(), target, &values, &local)
-            .map_err(|e| template(format!("{target}: {e}")))?;
-        let rect = Rect::of(&canvas).ok_or_else(|| template(format!("{target} has no points")))?;
+            .map_err(|e| template(self.template, format!("{target}: {e}")))?;
+        let rect = Rect::of(&canvas)
+            .ok_or_else(|| template(self.template, format!("{target} has no points")))?;
         let moved: Vec<Vec2> = canvas
             .iter()
             .map(|p| *p + offset(*p, rect.normalize(*p)))
@@ -921,16 +933,18 @@ impl Rig {
             )));
         }
         let points = canvas_to_local(self.model(), target, &values, &moved, &local)
-            .map_err(|e| template(format!("{target}: {e}")))?;
+            .map_err(|e| template(self.template, format!("{target}: {e}")))?;
+        let kind = self.template;
         self.set_cell(target, cell, |base| match base {
             Keyform::Mesh(keyform) => Ok(Keyform::Mesh(MeshKeyform {
                 positions: points,
                 ..keyform
             })),
             Keyform::Warp(keyform) => Ok(Keyform::Warp(WarpKeyform { points, ..keyform })),
-            _ => Err(template(format!(
-                "{target} is not a mesh or a warp deformer"
-            ))),
+            _ => Err(template(
+                kind,
+                format!("{target} is not a mesh or a warp deformer"),
+            )),
         })
     }
 
@@ -940,13 +954,14 @@ impl Rig {
         let target = KeyformTarget::Mesh(id.clone());
         let values: Vec<f32> = keys.iter().map(|(key, _)| *key).collect();
         self.add_keys(&target, parameter, &values)?;
+        let kind = self.template;
         for (key, opacity) in keys {
             self.set_cell(&target, &[(parameter, *key)], |base| match base {
                 Keyform::Mesh(keyform) => Ok(Keyform::Mesh(MeshKeyform {
                     opacity: *opacity,
                     ..keyform
                 })),
-                _ => Err(template(format!("{target} is not a mesh"))),
+                _ => Err(template(kind, format!("{target} is not a mesh"))),
             })?;
         }
         Ok(())
@@ -977,13 +992,17 @@ impl Rig {
         })?;
         let target = KeyformTarget::Deformer(head.clone());
         self.add_keys(&target, standard::ANGLE_Z, &[-30.0, 30.0])?;
+        let kind = self.template;
         for value in [-30.0, 30.0] {
             self.set_cell(&target, &[(standard::ANGLE_Z, value)], |base| match base {
                 Keyform::Rotation(keyform) => Ok(Keyform::Rotation(RotationKeyform {
                     angle: value * HEAD_TILT,
                     ..keyform
                 })),
-                _ => Err(template(format!("{target} is not a rotation deformer"))),
+                _ => Err(template(
+                    kind,
+                    format!("{target} is not a rotation deformer"),
+                )),
             })?;
         }
 
@@ -1051,7 +1070,7 @@ impl Rig {
         let side = if eye.side == Side::Left { "L" } else { "R" };
         let rect = layout
             .union(&eye.open)
-            .ok_or_else(|| template(format!("eye {side} has no bounds")))?;
+            .ok_or_else(|| template(self.template, format!("eye {side} has no bounds")))?;
         let h = rect.size().y;
         let closed = layout.union(&eye.closed);
         // 閉じる線: 閉じた目の絵があればその中心の高さ、なければ AI が決めた高さ。
@@ -1123,10 +1142,10 @@ impl Rig {
         let parameter = standard::MOUTH_OPEN_Y;
         let open_rect = layout
             .union(open)
-            .ok_or_else(|| template("the open mouth has no bounds".into()))?;
+            .ok_or_else(|| template(self.template, "the open mouth has no bounds".into()))?;
         let closed_rect = layout
             .union(closed)
-            .ok_or_else(|| template("the closed mouth has no bounds".into()))?;
+            .ok_or_else(|| template(self.template, "the closed mouth has no bounds".into()))?;
         // 細い隙間: 閉じた口の横幅・高さの半分で、閉じた口の中心に置く。
         let slit = Vec2::new(
             closed_rect.size().x / open_rect.size().x.max(f32::EPSILON),
@@ -1162,7 +1181,7 @@ impl Rig {
     ) -> Result<(), AiError> {
         let rect = layout
             .union(ids)
-            .ok_or_else(|| template("the mouth has no bounds".into()))?;
+            .ok_or_else(|| template(self.template, "the mouth has no bounds".into()))?;
         let width = rect.size().x;
         let warp = self.create_warp("MouthWarp", "Mouth warp", ids, 2, 2, None)?;
         let target = KeyformTarget::Deformer(warp);
@@ -1179,7 +1198,7 @@ impl Rig {
     pub(crate) fn canvas_points(&self, target: &KeyformTarget) -> Result<Vec<Vec2>, AiError> {
         let (local, ..) = self.keyform_at(target, &[])?;
         local_to_canvas(self.model(), target, &ParameterValues::new(), &local)
-            .map_err(|e| template(format!("{target}: {e}")))
+            .map_err(|e| template(self.template, format!("{target}: {e}")))
     }
 
     /// 呼吸: すべてのメッシュを包む体のワープを、`Breath` = 1 で上 (頭の側) ほど大きく持ち上げる。
@@ -1220,7 +1239,7 @@ impl Rig {
         for group in &layout.hair {
             let rect = layout
                 .union(&group.meshes)
-                .ok_or_else(|| template("the hair has no bounds".into()))?;
+                .ok_or_else(|| template(self.template, "the hair has no bounds".into()))?;
             let (kind, side) = (
                 match group.label {
                     Label::HairFront => "Front",
@@ -1313,7 +1332,7 @@ impl Rig {
             &[root],
             &[root],
         )
-        .map_err(|e| template(format!("the root of {id}: {e}")))?[0];
+        .map_err(|e| template(self.template, format!("the root of {id}: {e}")))?[0];
         let mut particles = vec![PhysicsParticle {
             position: local,
             mobility: 1.0,
@@ -1424,10 +1443,35 @@ impl Rig {
     }
 }
 
-/// テンプレートの内部の失敗 (座標変換が解けない、など)。AI の値を変えても直らないので、問い直さない
-/// [`AiError::InvalidRequest`] にする ([`ask_until_valid`])。
-pub(crate) fn template(message: String) -> AiError {
-    AiError::InvalidRequest(format!("the template cannot rig this model: {message}"))
+/// 自動リギングのテンプレート ([`AiError::Template`] で、どれが組めなかったかを示す)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RigTemplate {
+    /// 1 枚絵のキャラクターのテンプレート ([`propose_rig`])。
+    Character,
+    /// 着せ替えのモジュールのテンプレート ([`crate::module_rig::propose_module_rig`])。
+    Module,
+}
+
+impl RigTemplate {
+    /// 識別子 (`character`・`module`)。エラーの文言とエディタの文言の引数に使う。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Character => "character",
+            Self::Module => "module",
+        }
+    }
+}
+
+impl std::fmt::Display for RigTemplate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// テンプレートがモデルを組めない失敗 (足りないもの・座標変換が解けない、など)。AI の値を変えても直らないので、
+/// 問い直さない [`AiError::Template`] にする ([`ask_until_valid`])。
+pub(crate) fn template(template: RigTemplate, reason: String) -> AiError {
+    AiError::Template { template, reason }
 }
 
 /// [`propose_rig_with_ai`] の結果。
@@ -1740,7 +1784,7 @@ fn request(
 ///   `max_attempts` 回で通らなければ [`AiError::InvalidProposal`] を返す (呼び出し側は
 ///   [`propose_rig`] と既定値に戻せる)。
 /// - 形式の合わない答え (JSON が読めない) も同じく問い直す。それ以外のエラー (送信の失敗・値を変えても
-///   直らないテンプレートの失敗 ([`AiError::InvalidRequest`]) など) はそのまま返す。
+///   直らないテンプレートの失敗 ([`AiError::Template`]) など) はそのまま返す。
 /// - `max_attempts` が 0 なら、問い合わせずに [`AiError::InvalidRequest`] を返す。
 pub fn propose_rig_with_ai(
     provider: &dyn Provider,
@@ -1824,7 +1868,7 @@ pub(crate) struct Answered<P> {
 /// `request` は捨てた答えを添えたリクエスト、`parse` は答えを値と理由に読む、`build` は値で提案を組む。
 /// 形の合わない答え (`parse` の失敗) と、AI の値が原因で組めない答え (`build` の [`AiError::InvalidProposal`]。
 /// 範囲の外・適用や検証を通らない・組むものがなくなる値) は答えとエラーを添えて問い直す。それ以外のエラー
-/// (テンプレートの内部の失敗 ([`template`]) は [`AiError::InvalidRequest`]) はそのまま返す。`max_attempts` 回で
+/// (テンプレートの内部の失敗 ([`template`]) は [`AiError::Template`]) はそのまま返す。`max_attempts` 回で
 /// 通らなければ [`AiError::InvalidProposal`]。`max_attempts` が 0 なら問い合わせずに [`AiError::InvalidRequest`]。
 pub(crate) fn ask_until_valid<P>(
     provider: &dyn Provider,
@@ -1967,12 +2011,21 @@ mod tests {
     fn a_template_failure_is_not_asked_again() {
         let fake = crate::FakeProvider::new();
         fake.push(json!({ "v": 1.0 })).push(json!({ "v": 1.0 }));
-        let err = ask(&fake, 3, |_| Err(template("axis A has no key 1".into())))
-            .map(|a| a.params)
-            .unwrap_err();
+        let err = ask(&fake, 3, |_| {
+            Err(template(
+                RigTemplate::Character,
+                "axis A has no key 1".into(),
+            ))
+        })
+        .map(|a| a.params)
+        .unwrap_err();
         assert!(
-            matches!(&err, AiError::InvalidRequest(m) if m.contains("the template cannot rig this model: axis A has no key 1")),
+            matches!(&err, AiError::Template { template: RigTemplate::Character, reason } if reason == "axis A has no key 1"),
             "{err}"
+        );
+        assert_eq!(
+            err.to_string(),
+            "the character template cannot rig this model: axis A has no key 1"
         );
         assert_eq!(fake.calls().len(), 1);
     }

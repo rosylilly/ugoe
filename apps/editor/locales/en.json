@@ -2095,6 +2095,7 @@
       "invalid_proposal": "The model returned a proposal that cannot be used ({{detail}}).",
       "missing_api_key": "The API key is not configured ({{detail}}).",
       "invalid_request": "The request cannot be sent ({{detail}}).",
+      "template": "The {{template}} template cannot rig this model ({{detail}}).",
       "network": "A network error occurred ({{detail}}).",
       "invalid_response": "The response could not be read ({{detail}}).",
       "api_error": "The API returned error {{status}} ({{kind}}: {{detail}}).",
@@ -2144,7 +2145,9 @@
     "project": "project",
     "preview cache": "preview cache",
     "finite": "a finite number",
-    "finite and > 0": "a finite number greater than 0"
+    "finite and > 0": "a finite number greater than 0",
+    "character": "character",
+    "module": "module"
   },
   "inspector": {
     "title": "Inspector",

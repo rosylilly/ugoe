@@ -52,10 +52,19 @@ pub enum AiError {
     /// API キーが見つからない・空である。
     #[error("API key is not configured: {0}")]
     MissingApiKey(String),
-    /// 入力の誤りで、AI の答えを変えても直らないもの (画像が PNG でない・テンプレートがそのモデルを組めない、など)。
-    /// 問い直さない。
+    /// 入力の誤りで、AI の答えを変えても直らないもの (画像が PNG でない・上限が 0、など)。
+    /// テンプレートがそのモデルを組めないものは [`AiError::Template`]。問い直さない。
     #[error("invalid request: {0}")]
     InvalidRequest(String),
+    /// 自動リギングのテンプレートがそのモデルを組めない (`face` のラベルのメッシュがない・座標変換が解けない、など)。
+    /// AI の答えを変えても直らないので、問い直さない。理由の文は AI に送らない。
+    #[error("the {template} template cannot rig this model: {reason}")]
+    Template {
+        /// 組めなかったテンプレート。
+        template: rig::RigTemplate,
+        /// 足りないもの・解けなかったもの (英語)。
+        reason: String,
+    },
     /// API がエラーを返した (再試行しても直らないか、再試行の上限に達した)。
     #[error("API error {status} ({kind}): {message}")]
     Api {

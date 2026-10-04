@@ -13,6 +13,7 @@ use ugoe_ai::classify::classify_by_name;
 use ugoe_ai::module_rig::{
     FollowMode, ModuleRigOptions, ModuleRigParams, module_mesh_parts, propose_module_rig,
 };
+use ugoe_ai::rig::RigTemplate;
 use ugoe_ai::{AiError, Proposal};
 use ugoe_core::Vec2;
 use ugoe_editor_core::import::layer_tree_command;
@@ -432,7 +433,16 @@ fn variants_become_poses() {
         &off,
     )
     .unwrap_err();
-    assert!(matches!(err, AiError::InvalidRequest(_)), "{err}");
+    assert!(
+        matches!(
+            err,
+            AiError::Template {
+                template: RigTemplate::Module,
+                ..
+            }
+        ),
+        "{err}"
+    );
 }
 
 /// 点 `p` を含む三角形の重心座標で、`from` の点を `to` の点へ写す (三角形の外なら `None`)。
@@ -800,7 +810,7 @@ fn ai_variant_hints_become_poses() {
     )
     .unwrap_err();
     assert!(
-        matches!(&err, AiError::InvalidRequest(m) if m.contains("no costume parts are variants")),
+        matches!(&err, AiError::Template { reason, .. } if reason.contains("no costume parts are variants")),
         "{err}"
     );
     for label in &mut labels {

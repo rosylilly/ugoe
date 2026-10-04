@@ -6,6 +6,7 @@
 use std::path::Path;
 
 use ugoe_ai::AiError;
+use ugoe_ai::rig::RigTemplate;
 use ugoe_editor_core::{Coded, Message, MessageArgs, message_args};
 
 /// IPC コマンドの戻り値。
@@ -348,6 +349,10 @@ pub fn message_samples() -> Vec<Message> {
         EditorError::Ai(AiError::InvalidProposal(detail())),
         EditorError::Ai(AiError::MissingApiKey(detail())),
         EditorError::Ai(AiError::InvalidRequest(detail())),
+        EditorError::Ai(AiError::Template {
+            template: RigTemplate::Character,
+            reason: detail(),
+        }),
         EditorError::Ai(AiError::Api {
             status: 400,
             kind: "invalid_request_error".to_owned(),
@@ -395,6 +400,7 @@ fn ai_code(error: &AiError) -> &'static str {
         AiError::InvalidProposal(_) => "ai.invalid_proposal",
         AiError::MissingApiKey(_) => "ai.missing_api_key",
         AiError::InvalidRequest(_) => "ai.invalid_request",
+        AiError::Template { .. } => "ai.template",
         AiError::Api { .. } => "ai.api_error",
         AiError::RateLimited { .. } => "ai.rate_limited",
         AiError::Network(_) => "ai.network",
@@ -420,6 +426,9 @@ fn ai_args(error: &AiError) -> MessageArgs {
             kind,
             message,
         } => message_args! { "status" => *status, "kind" => kind, "detail" => message },
+        AiError::Template { template, reason } => {
+            message_args! { "template" => template.as_str(), "detail" => reason }
+        }
         AiError::RateLimited {
             retry_after: Some(after),
         } => message_args! { "retry_after" => ugoe_ai::secs_rounded_up(*after) },
@@ -500,6 +509,22 @@ mod tests {
         assert_eq!(
             message.args,
             message_args! { "status" => 400u16, "kind" => "invalid_request_error", "detail" => "bad" }
+        );
+
+        // テンプレートで組めない失敗は、どのテンプレートかと足りないものを引数に持つ (T0555)
+        let message = EditorError::Ai(AiError::Template {
+            template: RigTemplate::Module,
+            reason: "nothing to rig".into(),
+        })
+        .to_message();
+        assert_eq!(message.code, "ai.template");
+        assert_eq!(
+            message.args,
+            message_args! { "template" => "module", "detail" => "nothing to rig" }
+        );
+        assert_eq!(
+            message.message,
+            "the module template cannot rig this model: nothing to rig"
         );
     }
 
