@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // `<ugoe-avatar>` の作成・読み込み・作り直しの順序。wasm は使わず、`WebPuppet` の代わりの偽物を作る (runtime.js を差し替える)。
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import type { WebPuppet } from "./wasm/ugoe_wasm.js";
 
 /** `WebPuppet` の偽物。`<ugoe-avatar>` が呼ぶメソッドだけを持つ。 */
@@ -9,6 +9,8 @@ class FakePuppet {
   freed = false;
   lost = false;
   model: unknown = null;
+  /** `load_warnings_json()` が返す警告の構造。 */
+  warningDetails: unknown[] = [];
   values = new Map<string, number>();
   readonly canvas: HTMLCanvasElement;
   readonly backendName: string;
@@ -51,6 +53,12 @@ class FakePuppet {
   parameters_json() {
     return JSON.stringify({ parameters: [] });
   }
+  load_warnings_json() {
+    return JSON.stringify(this.warningDetails);
+  }
+  set_expression(_name: string) {
+    throw new Error("no expression");
+  }
   stop_expressions() {}
   stop_motions() {}
 }
@@ -84,10 +92,10 @@ vi.mock("./runtime.js", () => ({
 const { defineUgoeAvatar } = await import("./avatar.js");
 defineUgoeAvatar();
 type Avatar = import("./avatar.js").UgoeAvatarElement;
+type UgoeAvatarLoadDetail = import("./avatar.js").UgoeAvatarLoadDetail;
+type UgoeAvatarErrorDetail = import("./avatar.js").UgoeAvatarErrorDetail;
 
 const fake = (p: WebPuppet | null) => p as unknown as FakePuppet;
-// `error` は HTMLElement の型では ErrorEvent になるので、CustomEvent として読む (T0438)
-const errorOf = (e: Event) => (e as unknown as CustomEvent<{ error: Error }>).detail.error;
 /** マイクロタスクと rAF (happy-dom はタイマーで回す) を流す。 */
 const flush = () => new Promise((r) => setTimeout(r, 30));
 
@@ -125,6 +133,43 @@ afterEach(() => {
 });
 
 describe("<ugoe-avatar>", () => {
+  it("types the detail of load and error events", async () => {
+    const avatar = newAvatar();
+    const loads: UgoeAvatarLoadDetail[] = [];
+    const errors: Error[] = [];
+    const onLoad = (e: CustomEvent<UgoeAvatarLoadDetail>) => loads.push(e.detail);
+    avatar.addEventListener("load", onLoad);
+    avatar.addEventListener("error", function (e) {
+      expectTypeOf(this).toEqualTypeOf<Avatar>();
+      expectTypeOf(e).toEqualTypeOf<CustomEvent<UgoeAvatarErrorDetail>>();
+      errors.push(e.detail.error);
+    });
+    // HTMLElement のほかのイベントの型は変わらない
+    avatar.addEventListener("keydown", (e) => expectTypeOf(e).toEqualTypeOf<KeyboardEvent>());
+    // @ts-expect-error `load` の detail に `error` は無い
+    avatar.addEventListener("load", (e) => e.detail.error);
+    avatar.addEventListener("x-custom", (e) => expectTypeOf(e).toEqualTypeOf<Event>());
+    document.body.append(avatar);
+    const puppet = fake(await avatar.ready);
+    puppet.warningDetails = [{ code: "texture_ktx2", warning: "w", texture: 0 }];
+    await avatar.load("model-a");
+    await expect(avatar.load(runtime.badModel)).rejects.toThrow("invalid model");
+    avatar.setAttribute("expression", "missing");
+    expect(loads).toEqual([
+      {
+        warnings: [],
+        warningDetails: [{ code: "texture_ktx2", warning: "w", texture: 0 }],
+        backend: "webgl2",
+      },
+    ]);
+    expect(avatar.warningDetails).toEqual(loads[0]?.warningDetails);
+    expect(errors.map((e) => e.message)).toEqual(["no expression"]);
+
+    avatar.removeEventListener("load", onLoad);
+    await avatar.load("model-b");
+    expect(loads).toHaveLength(1);
+  });
+
   it("creates a puppet when connected and frees it when disconnected", async () => {
     const avatar = newAvatar();
     document.body.append(avatar);
@@ -158,7 +203,7 @@ describe("<ugoe-avatar>", () => {
     vi.spyOn(performance, "now").mockImplementation(() => now);
     const errors: unknown[] = [];
     const avatar = newAvatar({ backend: "webgl2" });
-    avatar.addEventListener("error", (e) => errors.push(errorOf(e)));
+    avatar.addEventListener("error", (e) => errors.push(e.detail.error));
     document.body.append(avatar);
     await avatar.ready;
     for (let i = 0; i < 5; i++) {
@@ -176,7 +221,7 @@ describe("<ugoe-avatar>", () => {
   it("gives up when the context is lost repeatedly in a short time", async () => {
     const errors: Error[] = [];
     const avatar = newAvatar({ backend: "webgl2" });
-    avatar.addEventListener("error", (e) => errors.push(errorOf(e)));
+    avatar.addEventListener("error", (e) => errors.push(e.detail.error));
     document.body.append(avatar);
     await avatar.ready;
     for (let i = 0; i < 4 && avatar.puppet; i++) {
@@ -212,7 +257,7 @@ describe("<ugoe-avatar>", () => {
   it("does not reload a model that failed to load when the puppet is recreated", async () => {
     const errors: unknown[] = [];
     const avatar = newAvatar();
-    avatar.addEventListener("error", (e) => errors.push(errorOf(e)));
+    avatar.addEventListener("error", (e) => errors.push(e.detail.error));
     document.body.append(avatar);
     await avatar.load("model-a");
     await expect(avatar.load(runtime.badModel)).rejects.toThrow("invalid model");

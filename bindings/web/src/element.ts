@@ -3,6 +3,12 @@
 
 import { defineUgoeAvatar } from "./avatar.js";
 
-export { defineUgoeAvatar, UgoeAvatarElement, type UgoeAvatarLoadDetail } from "./avatar.js";
+export {
+  defineUgoeAvatar,
+  UgoeAvatarElement,
+  type UgoeAvatarElementEventMap,
+  type UgoeAvatarErrorDetail,
+  type UgoeAvatarLoadDetail,
+} from "./avatar.js";
 
 defineUgoeAvatar();

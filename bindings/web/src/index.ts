@@ -3,7 +3,7 @@
 // - `WebPuppet` などは ugoe-wasm (crates/ugoe-wasm) の JS バインディングそのもの。使い方は crates/ugoe-wasm/README.md。
 // - ここでは初期化 (`initRuntime`)・作成 (`createPuppet`)・モデルの読み込み (`loadModel`) の薄い補助と、
 //   Web Component の `<ugoe-avatar>` (`./element.ts`)、フェイストラッキングの入力の変換 (`./tracking.ts`) と
-//   平滑化・キャリブレーション (`./tracking-filter.ts`) を足す。
+//   平滑化・キャリブレーション (`./tracking-filter.ts`)、読み込みの警告と着せ替えの例外の型 (`./warnings.ts`) を足す。
 // - 配布の方針は `docs/adr/0017-single-runtime-distribution.md`、ライセンスと置き場所は
 //   `docs/adr/0025-web-runtime-package.md`。
 
@@ -17,6 +17,8 @@ export {
 export {
   defineUgoeAvatar,
   UgoeAvatarElement,
+  type UgoeAvatarElementEventMap,
+  type UgoeAvatarErrorDetail,
   type UgoeAvatarLoadDetail,
   type UgoeParameterDefinition,
 } from "./avatar.js";
@@ -47,4 +49,22 @@ export {
   type TrackingFilterOptions,
   type TrackingNeutral,
 } from "./tracking-filter.js";
+export {
+  detachedModules,
+  isDressUpError,
+  isKnownLoadWarning,
+  loadWarnings,
+  type UgoeDressUpError,
+  type UgoeDressUpErrorCode,
+  type UgoeDressUpErrorFields,
+  type UgoeDressUpErrorInfo,
+  type UgoeKnownLoadWarning,
+  type UgoeLoadWarning,
+  type UgoeModuleDetachedWarning,
+  type UgoePhysicsRemovedWarning,
+  type UgoeTextureLoadWarning,
+  type UgoeUnknownLoadWarning,
+  type UgoeUnknownOptionalFeatureWarning,
+  type UgoeUnknownValueWarning,
+} from "./warnings.js";
 export { type InitInput, sample_motion_json, version, WebPuppet } from "./wasm/ugoe_wasm.js";

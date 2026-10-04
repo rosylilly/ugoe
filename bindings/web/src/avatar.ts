@@ -17,14 +17,32 @@
 import { parseBackend, parseIdList, parseMotionPriority, parseParameters } from "./attributes.js";
 import { createPuppet, loadModel } from "./runtime.js";
 import { type TrackingInput, trackingArguments } from "./tracking.js";
+import { loadWarnings, type UgoeLoadWarning } from "./warnings.js";
 import type { WebPuppet } from "./wasm/ugoe_wasm.js";
 
 /** `load` イベントの `detail`。 */
 export interface UgoeAvatarLoadDetail {
-  /** 読み込みの警告の文 (英語)。構造は `puppet.load_warnings_json()`。 */
+  /** 読み込みの警告の文 (英語)。ログに出すだけならこれを使う。 */
   warnings: string[];
+  /** `warnings` と同じ順・同じ数の構造 (`loadWarnings(puppet)`)。利用者向けに言い換えるときは `code` を使う。 */
+  warningDetails: UgoeLoadWarning[];
   /** 描画に使っている API (`"webgpu"` | `"webgl2"`)。 */
   backend: string;
+}
+
+/** `error` イベントの `detail`。 */
+export interface UgoeAvatarErrorDetail {
+  /** 作成・取得・読み込み・表情やモーションの適用・描画の失敗。着せ替えの失敗は `isDressUpError` で見分ける。 */
+  error: Error;
+}
+
+/**
+ * `<ugoe-avatar>` が送るイベント。`addEventListener("load", (e) => e.detail.backend)` のように `detail` が型付けされる。
+ * HTMLElement の `load` (`Event`)・`error` (`ErrorEvent`) を `CustomEvent` に置き換えたもの。
+ */
+export interface UgoeAvatarElementEventMap extends Omit<HTMLElementEventMap, "load" | "error"> {
+  load: CustomEvent<UgoeAvatarLoadDetail>;
+  error: CustomEvent<UgoeAvatarErrorDetail>;
 }
 
 /** モデルのパラメータの定義 (`WebPuppet.parameters_json()` の要素。モデルの JSON 形式と同じ)。 */
@@ -116,6 +134,7 @@ export class UgoeAvatarElement extends BaseElement {
   /** `WebPuppet` ができる前に呼ばれた `load` の結果を待つもの。 */
   #loadWaiters: LoadWaiter[] = [];
   #warnings: string[] = [];
+  #warningDetails: UgoeLoadWarning[] = [];
   /** 作り直す前のパラメータの値。作り直した後の読み込みで戻す (`backend` の変更・GPU を失ったとき)。 */
   #carry: Record<string, number> | null = null;
   /** 描画バッファの大きさ (画素)。 */
@@ -182,6 +201,11 @@ export class UgoeAvatarElement extends BaseElement {
   /** 最後の読み込みの警告の文。 */
   get warnings(): readonly string[] {
     return this.#warnings;
+  }
+
+  /** 最後の読み込みの警告の構造 (`warnings` と同じ順・同じ数)。 */
+  get warningDetails(): readonly UgoeLoadWarning[] {
+    return this.#warningDetails;
   }
 
   /** パラメータの定義 (値域・既定値)。モデルが無ければ空。 */
@@ -272,6 +296,43 @@ export class UgoeAvatarElement extends BaseElement {
     if (this.#puppet) return this.#applyModelOrThrow(data);
     this.#pendingModel = data;
     return new Promise((resolve, reject) => this.#loadWaiters.push({ resolve, reject }));
+  }
+
+  // `load`・`error` の `detail` を型付けするための重ね定義 (動作は HTMLElement のまま)。
+  addEventListener<K extends keyof UgoeAvatarElementEventMap>(
+    type: K,
+    listener: (this: UgoeAvatarElement, ev: UgoeAvatarElementEventMap[K]) => unknown,
+    options?: boolean | AddEventListenerOptions,
+  ): void;
+  addEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | AddEventListenerOptions,
+  ): void;
+  addEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | AddEventListenerOptions,
+  ): void {
+    super.addEventListener(type, listener, options);
+  }
+
+  removeEventListener<K extends keyof UgoeAvatarElementEventMap>(
+    type: K,
+    listener: (this: UgoeAvatarElement, ev: UgoeAvatarElementEventMap[K]) => unknown,
+    options?: boolean | EventListenerOptions,
+  ): void;
+  removeEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | EventListenerOptions,
+  ): void;
+  removeEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | EventListenerOptions,
+  ): void {
+    super.removeEventListener(type, listener, options);
   }
 
   /** 次のフレームで描き直す (`puppet` を直接操作したとき用)。 */
@@ -504,8 +565,10 @@ export class UgoeAvatarElement extends BaseElement {
     const puppet = this.#puppet;
     if (!puppet) return [];
     const warnings = loadModel(puppet, model);
+    const warningDetails = loadWarnings(puppet);
     this.#model = model;
     this.#warnings = warnings;
+    this.#warningDetails = warningDetails;
     puppet.fit();
     this.#applyParameters();
     if (this.#carry) this.parameters = this.#carry;
@@ -517,7 +580,7 @@ export class UgoeAvatarElement extends BaseElement {
     this.requestRender();
     this.dispatchEvent(
       new CustomEvent<UgoeAvatarLoadDetail>("load", {
-        detail: { warnings, backend: puppet.backend() },
+        detail: { warnings, warningDetails, backend: puppet.backend() },
       }),
     );
     return warnings;
@@ -640,7 +703,7 @@ export class UgoeAvatarElement extends BaseElement {
 
   #dispatchError(e: unknown): void {
     const error = e instanceof Error ? e : new Error(String(e));
-    this.dispatchEvent(new CustomEvent("error", { detail: { error } }));
+    this.dispatchEvent(new CustomEvent<UgoeAvatarErrorDetail>("error", { detail: { error } }));
   }
 }
 

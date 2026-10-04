@@ -36,16 +36,26 @@ WebGPU が使えれば WebGPU、使えなければ WebGL2 で描きます。ラ�
 
 パラメータの ID は大文字と小文字を区別します (HTML の属性名は小文字になるので、パラメータごとの属性にはしていません)。
 
-```js
-const avatar = document.querySelector("ugoe-avatar");
-avatar.addEventListener("load", (e) => console.log(e.detail.backend, e.detail.warnings));
-avatar.addEventListener("error", (e) => console.error(e.detail.error));
+```ts
+import "@ugoe/runtime/element";
+
+const avatar = document.querySelector("ugoe-avatar")!; // UgoeAvatarElement (HTMLElementTagNameMap に登録済み)
+avatar.addEventListener("load", (e) => {
+  // e は CustomEvent<UgoeAvatarLoadDetail>
+  console.log(e.detail.backend, e.detail.warnings); // warnings: 文の警告 (英語)
+  for (const w of e.detail.warningDetails) console.log(w.code); // 同じ警告の構造 (下の「読み込みの警告」)
+});
+avatar.addEventListener("error", (e) => {
+  // e は CustomEvent<UgoeAvatarErrorDetail> (HTMLElement の ErrorEvent ではない)
+  console.error(e.detail.error);
+});
 
 avatar.setParameter("AngleX", -20);       // 値域にクランプ。ID が無ければ false
 avatar.parameters = { AngleY: 10, BodyAngleX: 5 };
 avatar.parameters;                         // { AngleX: -20, AngleY: 10, ... } (今の値)
 avatar.parameterDefinitions;               // [{ id, name, min, max, default, ... }]
-await avatar.load(bytesOrJsonString);      // src の代わりに直接読み込む。戻り値は警告
+await avatar.load(bytesOrJsonString);      // src の代わりに直接読み込む。戻り値は文の警告
+avatar.warningDetails;                     // 最後の読み込みの警告の構造 (avatar.warnings と同じ順)
 const puppet = await avatar.ready;         // WebPuppet そのもの (下)
 puppet.set_lighting_json(JSON.stringify({ ambient: [0.5, 0.5, 0.5] }));
 avatar.requestRender();                    // puppet を直接操作したら描き直しを頼む
@@ -61,6 +71,9 @@ avatar.clearTracking();
 - ページから外すと GPU の資源を捨て、戻すと作り直します。取得中の `src` は外しても続け、戻したらその結果を読み込みます。
 - 読み込めなかったモデル (`load` の reject・`src` の `error`) は覚えず、作り直したときは最後に読み込めたモデルを読み直します。
 - 別の名前で登録するなら、`@ugoe/runtime/element` の代わりに `defineUgoeAvatar("my-avatar")` を呼びます。
+- イベントの型は `UgoeAvatarElementEventMap` (`load`: `CustomEvent<UgoeAvatarLoadDetail>`、`error`: `CustomEvent<UgoeAvatarErrorDetail>`)。
+  `UgoeAvatarElement` の `addEventListener` / `removeEventListener` はこれで `e.detail` を型付けします
+  (要素を `HTMLElement` として持っているときは `UgoeAvatarElement` にしてから呼びます)。
 
 ## フェイストラッキング
 
@@ -198,6 +211,57 @@ requestAnimationFrame(function frame(now) {
 
 `WebPuppet` の API (物理・モーション・表情・トラッキング・ライティング・着せ替えなど) は
 [crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md) を見てください。
+
+### 読み込みの警告と着せ替えの失敗の型 (T0438)
+
+`load_warnings_json()` と着せ替えの `DressUpError` は、このパッケージの型と補助で読めます
+(`code` と補足の値の一覧は [crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md#読み込みの警告-t0125) の表)。
+
+```ts
+import {
+  detachedModules,
+  fetchModel,
+  isDressUpError,
+  isKnownLoadWarning,
+  loadWarnings,
+  type UgoeLoadWarning,
+} from "@ugoe/runtime";
+
+function describe(w: UgoeLoadWarning): string {
+  // 新しい版のランタイムは知らない code を返しうるので、先に絞る (絞らないと code で補足の値の型が決まらない)
+  if (!isKnownLoadWarning(w)) return w.warning;
+  switch (w.code) {
+    case "texture_ktx2":
+    case "texture_missing":
+    case "normal_map_ktx2":
+      return `テクスチャ ${w.texture} を代用しました`;
+    case "physics_removed":
+      return "物理を外しました";
+    case "module_detached":
+      return `${w.module} を外しました (${w.error.code})`;
+    case "unknown_optional_feature":
+    case "unknown_value":
+      return w.warning;
+  }
+}
+
+const warnings = await fetchModel(puppet, "avatar.ugoe"); // 文の警告 (ログ用)
+const details = loadWarnings(puppet);                     // 同じ順・同じ数の構造 (UgoeLoadWarning[])
+detachedModules(puppet);                                  // 付け直せずに外したモジュールだけ (UgoeModuleDetachedWarning[])
+
+try {
+  puppet.attach_module("Hat");
+} catch (e) {
+  if (!isDressUpError(e)) throw e;
+  // e.code: UgoeDressUpErrorCode ("slot_occupied" など。知らない値もありうる)
+  // 補足の値: e.module・e.slot・e.parameter・e.mesh・e.attached (無ければ undefined)
+  if (e.code === "slot_occupied") console.warn(`${e.slot} には ${e.attached} が付いています`);
+}
+```
+
+- `isKnownLoadWarning` で絞らずに `code` の文字列で比べることもできます (補足の値は `unknown` になる)。
+- `<ugoe-avatar>` の `load` イベントの `detail.warningDetails` と `avatar.warningDetails` は `loadWarnings(puppet)` と同じものです。
+- `isDressUpError` は `name` が `"DressUpError"` で `code` が文字列の `Error` を受けます。`message` は英語の文で、安定した値ではありません。
 
 ### 届いた値で動かす (受け手)
 

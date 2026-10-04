@@ -274,6 +274,8 @@ JSON.parse(puppet.load_warnings_json());           // 同じ警告の構造 (同
 - `.ugoemod` の読み込み (`load_module`) の警告 (テクスチャの代用) は `modules_json()` の各要素の `warnings` (文) と
   `warning_details` (同じ順の構造。`code` と補足の値は上と同じ) にある。
 - 使う側: ビューアは日本語 (`packages/player/src/loadWarnings.ts`)、エディタのプレビューは英語 (`apps/editor/src/lib/preview/loadWarnings.ts`)。
+- TypeScript の型と読む補助は npm の `@ugoe/runtime` にある (`UgoeLoadWarning`・`loadWarnings`・`UgoeDressUpError`・`isDressUpError`。
+  `bindings/web/src/warnings.ts`、T0438)。`code` や補足の値を増やしたら、そちらの和型も同じ PR で直す。
 - `code` と補足の値は SDK の `ugoe::LoadWarning` (`code()`・`fields()`) が決め、C ABI の `ugoe_puppet_load_warning_*` と同じ (T0412)。
   `unknown_optional_feature`・`unknown_value` は読み込みの報告 (`read_bundle_with_report` / `read_module_with_report`) の警告で、
   一覧の先頭 (テクスチャの警告より前) に並ぶ。`.ugoemod` でも出る。
