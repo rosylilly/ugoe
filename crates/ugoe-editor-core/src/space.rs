@@ -112,7 +112,7 @@ fn parent_world(
         KeyformTarget::Glue(id) => {
             return Err(SpaceError::NoSpace {
                 kind: "glue",
-                id: id.clone(),
+                id: id.to_string(),
             });
         }
     };

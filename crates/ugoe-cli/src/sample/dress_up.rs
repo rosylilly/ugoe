@@ -720,7 +720,7 @@ fn base() -> Bundle {
             // 長い後ろ髪を体の奥に見せるため、肌を反転マスクに使える。
             mask_sources: vec!["Skin".into()],
             // 揺れる髪が肩に当たるよう、本体の肩の衝突体を使える。
-            colliders: vec![SHOULDERS.to_owned()],
+            colliders: vec![SHOULDERS.into()],
             ..slot("Hair", "HeadWarp", HAIR_RANGE, "Head")
         },
         slot("Headwear", "HeadWarp", HEADWEAR_RANGE, "Head"),
@@ -749,11 +749,11 @@ fn base() -> Bundle {
         textures: textures.refs,
         hit_areas: vec![
             HitArea {
-                id: HIT_AREA_HEAD.to_owned(),
+                id: HIT_AREA_HEAD.into(),
                 mesh: "Face".into(),
             },
             HitArea {
-                id: HIT_AREA_BODY.to_owned(),
+                id: HIT_AREA_BODY.into(),
                 mesh: "Skin".into(),
             },
         ],
@@ -786,7 +786,7 @@ fn base_physics() -> PhysicsSettings {
     PhysicsSettings {
         rigs: vec![pendulum("HairSway", 120.0, 6.0, 0.4)],
         colliders: vec![PhysicsCollider {
-            id: SHOULDERS.to_owned(),
+            id: SHOULDERS.into(),
             name: SHOULDERS.to_owned(),
             attach: Some("BodyWarp".into()),
             shape: ColliderShape::Capsule {
@@ -830,10 +830,10 @@ fn avatar_profile(slots: &[Slot]) -> AvatarProfile {
         hit_areas: [HIT_AREA_HEAD, HIT_AREA_BODY]
             .map(|name| AvatarHitArea {
                 name: name.to_owned(),
-                hit_area: name.to_owned(),
+                hit_area: name.into(),
             })
             .to_vec(),
-        slots: slots.iter().map(|s| s.id.to_string()).collect(),
+        slots: slots.iter().map(|s| s.id.clone()).collect(),
         ..AvatarProfile::default()
     }
 }
@@ -1140,7 +1140,7 @@ fn pendulum(deformer: &str, length: f32, shift: f32, scale: f32) -> PhysicsRig {
         max: r,
     };
     PhysicsRig {
-        id: deformer.to_owned(),
+        id: deformer.into(),
         name: deformer.to_owned(),
         inputs: vec![PhysicsInput {
             parameter: sp::ANGLE_X.into(),
@@ -1306,7 +1306,7 @@ fn twin_tails() -> ModuleFile {
         );
         // 房は肩のすぐ外に垂れる (静止姿勢では当たらない) ので、内側へ振れたときに肩に当てる。
         let mut rig = pendulum(&deformer, 280.0, 10.0, 1.0);
-        rig.colliders = vec![SHOULDERS.to_owned()];
+        rig.colliders = vec![SHOULDERS.into()];
         builder.module.physics.rigs.push(rig);
     }
 
@@ -1468,7 +1468,10 @@ mod tests {
         assert!(report.issues.is_empty(), "{:?}", report.issues);
         assert_eq!((report.claimed, report.satisfied), (Some(2), 2));
         let avatar = model.avatar.as_ref().unwrap();
-        assert_eq!(avatar.slots, ["Hair", "Headwear", "Outfit"]);
+        assert_eq!(
+            avatar.slots,
+            ["Hair", "Headwear", "Outfit"].map(ugoe_model::SlotId::from)
+        );
         assert_eq!(avatar.hit_areas.len(), 2);
     }
 
@@ -1843,8 +1846,8 @@ mod tests {
             .iter()
             .find(|s| s.id.as_str() == "Hair")
             .unwrap();
-        assert_eq!(hair.colliders, [SHOULDERS]);
-        assert!(physics.colliders.iter().any(|c| c.id == SHOULDERS));
+        assert_eq!(hair.colliders, [SHOULDERS.into()]);
+        assert!(physics.colliders.iter().any(|c| c.id.as_str() == SHOULDERS));
         // 肩は胴の上の辺 (頭の下) にあり、体と一緒に動く。
         let ColliderShape::Capsule { a, b, .. } = physics.colliders[0].shape else {
             panic!("{:?}", physics.colliders[0].shape);
@@ -1864,7 +1867,7 @@ mod tests {
                 .physics
                 .rigs
                 .iter()
-                .all(|r| r.colliders == [SHOULDERS])
+                .all(|r| r.colliders == [SHOULDERS.into()])
         );
         let long_hair = sample.modules[0].module.clone();
         assert!(
@@ -1880,7 +1883,7 @@ mod tests {
         let shoulders = rigs
             .rigs
             .iter()
-            .filter(|r| r.colliders == [SHOULDERS])
+            .filter(|r| r.colliders == [SHOULDERS.into()])
             .count();
         assert_eq!(shoulders, 2);
 
@@ -1891,7 +1894,12 @@ mod tests {
                 .with_physics(physics.clone());
             with_physics.attach_module(module.clone()).unwrap();
             let settings = with_physics.physics().unwrap().settings();
-            assert!(settings.colliders.iter().any(|c| c.id == SHOULDERS));
+            assert!(
+                settings
+                    .colliders
+                    .iter()
+                    .any(|c| c.id.as_str() == SHOULDERS)
+            );
             let mut model_only = ugoe::Puppet::new(model.clone()).unwrap();
             model_only.attach_module(module).unwrap();
             let settings = model_only.physics().unwrap().settings();
@@ -1979,7 +1987,7 @@ mod tests {
         let tails = sample.modules[1].module.clone();
         assert_eq!(rest_hits(&tails), []);
         let mut long_hair = sample.modules[0].module.clone();
-        long_hair.physics.rigs[0].colliders = vec![SHOULDERS.to_owned()];
+        long_hair.physics.rigs[0].colliders = vec![SHOULDERS.into()];
         assert_eq!(rest_hits(&long_hair).len(), 1);
 
         let ColliderShape::Capsule { a, b, radius } = physics.colliders[0].shape else {
@@ -2008,7 +2016,7 @@ mod tests {
                 .settings()
                 .rigs
                 .iter()
-                .position(|r| r.id == "TwinTails/TailR")
+                .position(|r| r.id.as_str() == "TwinTails/TailR")
                 .unwrap();
             let parameters = puppet.instance().parameters();
             let (head, body) = (

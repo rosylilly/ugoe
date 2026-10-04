@@ -11,8 +11,8 @@ use ugoe_core::Vec2;
 use ugoe_model::deformer::DeformerKind;
 use ugoe_model::physics::{
     ColliderShape, NormalizationRange, PhysicsBlend, PhysicsCollider, PhysicsInput,
-    PhysicsNormalization, PhysicsOutput, PhysicsParticle, PhysicsRig, PhysicsSettings,
-    PhysicsSource, PhysicsTarget, VertexOwner,
+    PhysicsNormalization, PhysicsOutput, PhysicsParticle, PhysicsRig, PhysicsRigId,
+    PhysicsSettings, PhysicsSource, PhysicsTarget, VertexOwner,
 };
 use ugoe_model::{DeformerId, MeshId, Model};
 
@@ -59,7 +59,7 @@ fn rig_mut<'a>(
 ) -> Result<&'a mut PhysicsRig, EditError> {
     physics
         .as_mut()
-        .and_then(|p| p.rigs.iter_mut().find(|r| r.id == id))
+        .and_then(|p| p.rigs.iter_mut().find(|r| r.id.as_str() == id))
         .ok_or_else(|| rig_not_found(id))
 }
 
@@ -91,54 +91,54 @@ pub(crate) fn apply(
             add_rig(physics, rig)?;
         }
         Command::RemovePhysicsRig { id } => {
-            let settings = physics.as_mut().ok_or_else(|| rig_not_found(&id))?;
+            let settings = physics.as_mut().ok_or_else(|| rig_not_found(id.as_str()))?;
             let index = settings
                 .rigs
                 .iter()
                 .position(|r| r.id == id)
-                .ok_or_else(|| rig_not_found(&id))?;
+                .ok_or_else(|| rig_not_found(id.as_str()))?;
             settings.rigs.remove(index);
         }
-        Command::RenamePhysicsRig { id, name } => rig_mut(physics, &id)?.name = name,
+        Command::RenamePhysicsRig { id, name } => rig_mut(physics, id.as_str())?.name = name,
         Command::SetPhysicsInputs { rig, inputs } => {
             inputs.iter().try_for_each(check_input)?;
-            rig_mut(physics, &rig)?.inputs = inputs;
+            rig_mut(physics, rig.as_str())?.inputs = inputs;
         }
         Command::SetPhysicsOutputs { rig, outputs } => {
             outputs.iter().try_for_each(check_output)?;
-            rig_mut(physics, &rig)?.outputs = outputs;
+            rig_mut(physics, rig.as_str())?.outputs = outputs;
         }
         Command::SetPhysicsParticles { rig, particles } => {
             check_particles(&particles)?;
-            rig_mut(physics, &rig)?.particles = particles;
+            rig_mut(physics, rig.as_str())?.particles = particles;
         }
         Command::SetPhysicsNormalization { rig, normalization } => {
             check_normalization(&normalization)?;
-            rig_mut(physics, &rig)?.normalization = normalization;
+            rig_mut(physics, rig.as_str())?.normalization = normalization;
         }
         Command::SetPhysicsRigColliders { rig, colliders } => {
             let mut seen = HashSet::new();
             if let Some(dup) = colliders.iter().find(|c| !seen.insert(c.as_str())) {
                 return Err(invalid(format!("collider `{dup}` is listed twice")));
             }
-            rig_mut(physics, &rig)?.colliders = colliders;
+            rig_mut(physics, rig.as_str())?.colliders = colliders;
         }
-        Command::SetPhysicsFrame { rig, frame } => rig_mut(physics, &rig)?.frame = frame,
+        Command::SetPhysicsFrame { rig, frame } => rig_mut(physics, rig.as_str())?.frame = frame,
         Command::AddPhysicsCollider { collider } => {
             let settings = physics.get_or_insert_with(default_settings);
             if settings.colliders.iter().any(|c| c.id == collider.id) {
                 return Err(EditError::DuplicateId {
                     kind: "physics collider",
-                    id: collider.id,
+                    id: collider.id.to_string(),
                 });
             }
-            check_collider_id(&collider.id)?;
+            check_collider_id(collider.id.as_str())?;
             settings.colliders.push(collider);
         }
         Command::RemovePhysicsCollider { id } => {
             let not_found = || EditError::NotFound {
                 kind: "physics collider",
-                id: id.clone(),
+                id: id.to_string(),
             };
             let settings = physics.as_mut().ok_or_else(not_found)?;
             let index = settings
@@ -157,11 +157,13 @@ pub(crate) fn apply(
                 .and_then(|p| p.colliders.iter_mut().find(|c| c.id == collider.id))
                 .ok_or_else(|| EditError::NotFound {
                     kind: "physics collider",
-                    id: collider.id.clone(),
+                    id: collider.id.to_string(),
                 })?;
             *existing = collider;
         }
-        Command::ReorderPhysicsRig { id, before } => reorder_rig(physics, &id, before.as_deref())?,
+        Command::ReorderPhysicsRig { id, before } => {
+            reorder_rig(physics, id.as_str(), before.as_ref().map(|b| b.as_str()))?
+        }
         // 物理のコマンドでない。
         _ => {}
     }
@@ -173,10 +175,10 @@ fn add_rig(physics: &mut Option<PhysicsSettings>, rig: PhysicsRig) -> Result<(),
     if settings.rigs.iter().any(|r| r.id == rig.id) {
         return Err(EditError::DuplicateId {
             kind: "physics rig",
-            id: rig.id,
+            id: rig.id.to_string(),
         });
     }
-    if rig.id.is_empty() {
+    if rig.id.as_str().is_empty() {
         return Err(invalid("physics rig id must not be empty"));
     }
     rig.inputs.iter().try_for_each(check_input)?;
@@ -204,16 +206,16 @@ fn reorder_rig(
     let from = settings
         .rigs
         .iter()
-        .position(|r| r.id == id)
+        .position(|r| r.id.as_str() == id)
         .ok_or_else(|| rig_not_found(id))?;
     if let Some(before) = before
-        && !settings.rigs.iter().any(|r| r.id == before)
+        && !settings.rigs.iter().any(|r| r.id.as_str() == before)
     {
         return Err(rig_not_found(before));
     }
     let moved = settings.rigs.remove(from);
     let to = before
-        .and_then(|before| settings.rigs.iter().position(|r| r.id == before))
+        .and_then(|before| settings.rigs.iter().position(|r| r.id.as_str() == before))
         .unwrap_or(settings.rigs.len());
     settings.rigs.insert(to, moved);
     Ok(())
@@ -321,7 +323,7 @@ fn check_normalization(normalization: &PhysicsNormalization) -> Result<(), EditE
 fn chain_rig(
     model: &Model,
     physics: Option<&PhysicsSettings>,
-    id: Option<String>,
+    id: Option<PhysicsRigId>,
     name: String,
     deformers: &[DeformerId],
 ) -> Result<PhysicsRig, EditError> {
@@ -424,8 +426,10 @@ fn chain_rig(
         .unwrap_or_default();
     let id = match id {
         Some(id) => id,
-        None if name.chars().any(|c| c.is_ascii_alphanumeric()) => ids::unique_id(&name, existing),
-        None => ids::unique_id(&format!("Physics{first}"), existing),
+        None if name.chars().any(|c| c.is_ascii_alphanumeric()) => {
+            PhysicsRigId::new(ids::unique_id(&name, existing))
+        }
+        None => PhysicsRigId::new(ids::unique_id(&format!("Physics{first}"), existing)),
     };
     let range = NormalizationRange {
         min: -10.0,

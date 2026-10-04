@@ -392,7 +392,7 @@ fn neck_follow_targets_a_rotation_deformer() {
     ))
     .unwrap();
     let rig = &doc.physics().unwrap().rigs[0];
-    assert_eq!(rig.id, "NeckFollow");
+    assert_eq!(rig.id.as_str(), "NeckFollow");
     assert_eq!(
         rig.outputs[0].target,
         PhysicsTarget::DeformerAngle {

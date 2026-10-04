@@ -225,9 +225,11 @@ pub(crate) fn module_status_of(document: &Document) -> Option<ModuleStatus> {
             .map(|m| m.id.to_string())
             .collect(),
         base_textures: base.textures.iter().map(|t| t.name.clone()).collect(),
-        base_rigs: physics.map_or_else(Vec::new, |p| p.rigs.iter().map(|r| r.id.clone()).collect()),
+        base_rigs: physics.map_or_else(Vec::new, |p| {
+            p.rigs.iter().map(|r| r.id.to_string()).collect()
+        }),
         base_colliders: physics.map_or_else(Vec::new, |p| {
-            p.colliders.iter().map(|c| c.id.clone()).collect()
+            p.colliders.iter().map(|c| c.id.to_string()).collect()
         }),
         unavailable_colliders: context.unavailable_colliders(),
         requires: context.requires().clone(),

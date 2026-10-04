@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use ugoe_core::Id;
 
 pub type ParamId = Id<Parameter>;
+pub type ParameterGroupId = Id<ParameterGroup>;
 
 /// モデルを動かす入力スカラー値 (例: 顔の角度 X, 目の開閉)。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -19,8 +20,9 @@ pub struct Parameter {
     /// 左右ペア (例: EyeLOpen ↔ EyeROpen)。エディタのミラー機能・AI 自動設定で使う。
     #[serde(default)]
     pub mirror: Option<ParamId>,
+    /// 所属する `ParameterGroup` の ID。
     #[serde(default)]
-    pub group: Option<String>,
+    pub group: Option<ParameterGroupId>,
     /// 中継用 (内部) のパラメータか。物理のリグの間で値を受け渡すためのもので
     /// (`docs/spec/physics.md#リグの順序と中継`)、トラッキングは書き込まず、
     /// ビューアなどのアプリの一覧では既定で隠す (`docs/spec/model.md#パラメータ`)。省略時は `false`。
@@ -60,7 +62,7 @@ impl ParameterKind {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ParameterGroup {
-    pub id: String,
+    pub id: ParameterGroupId,
     pub name: String,
 }
 

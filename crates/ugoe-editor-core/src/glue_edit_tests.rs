@@ -53,7 +53,7 @@ fn pair(a: u16, b: u16, weight: f32) -> GluePair {
 fn create_pairs_vertices_within_the_distance() {
     let after = applied(&unglued(), create(15.0));
     let glue = &after.glues[0];
-    assert_eq!(glue.id, "Glue_Left_Right");
+    assert_eq!(glue.id.as_str(), "Glue_Left_Right");
     // Right の頂点 0 (110,0) と 3 (110,100) が、Left の頂点 1 (100,0) と 2 (100,100) につながる。
     assert_eq!(glue.pairs, vec![pair(1, 0, 0.5), pair(2, 3, 0.5)]);
     assert_eq!(
@@ -63,7 +63,7 @@ fn create_pairs_vertices_within_the_distance() {
 
     // 同じ両端でもう 1 つ作ると、ID は重ならない。
     let twice = applied(&after, create(15.0));
-    assert_eq!(twice.glues[1].id, "Glue_Left_Right_2");
+    assert_eq!(twice.glues[1].id.as_str(), "Glue_Left_Right_2");
 }
 
 #[test]
@@ -125,7 +125,7 @@ fn create_names_module_meshes_without_the_prefix() {
             distance: 15.0,
         },
     );
-    assert_eq!(after.glues[0].id, "Glue_Left_Right");
+    assert_eq!(after.glues[0].id.as_str(), "Glue_Left_Right");
 }
 
 #[test]
@@ -207,7 +207,7 @@ fn remove_deletes_the_glue() {
     let model = fixtures::glued_quads();
     let after = applied(&model, Command::RemoveGlue { id: "Seam".into() });
     assert_eq!(after.glues.len(), 1);
-    assert_eq!(after.glues[0].id, "Pull");
+    assert_eq!(after.glues[0].id.as_str(), "Pull");
     assert!(matches!(
         rejected(&model, Command::RemoveGlue { id: "Nope".into() }),
         EditError::NotFound { kind: "glue", .. }

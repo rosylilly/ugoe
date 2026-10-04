@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use ugoe::format::module_file;
-use ugoe::model::module::{Module, ModuleRequirements, Slot};
+use ugoe::model::module::{Module, ModuleRequirements, Slot, SlotId};
 use ugoe::{DressUpChange, DressUpError, Puppet, TextureSource};
 
 use crate::load::{self, LoadError, LoadWarning, Rgba8};
@@ -361,7 +361,7 @@ pub fn slots(puppet: &Puppet) -> &[Slot] {
 
 /// 本体のアバタープロファイルがアプリに公開するスロットの ID (`avatar.slots`)。プロファイルが無ければ `None`
 /// (公開の区別が無い)。`docs/spec/avatar-profile.md#アプリ向けの情報`
-pub fn published_slots(puppet: &Puppet) -> Option<&[String]> {
+pub fn published_slots(puppet: &Puppet) -> Option<&[SlotId]> {
     puppet
         .base_model()
         .avatar

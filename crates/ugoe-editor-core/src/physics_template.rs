@@ -14,7 +14,7 @@ use ugoe_core::Vec2;
 use ugoe_model::deformer::DeformerKind;
 use ugoe_model::physics::{
     NormalizationRange, PhysicsBlend, PhysicsInput, PhysicsNormalization, PhysicsOutput,
-    PhysicsParticle, PhysicsRig, PhysicsSettings, PhysicsSource, PhysicsTarget,
+    PhysicsParticle, PhysicsRig, PhysicsRigId, PhysicsSettings, PhysicsSource, PhysicsTarget,
 };
 use ugoe_model::standard::{
     ANGLE_X, ANGLE_Y, ANGLE_Z, BODY_ANGLE_X, BODY_ANGLE_Y, BODY_ANGLE_Z, range,
@@ -190,7 +190,7 @@ fn rig(
     angle: NormalizationRange,
 ) -> PhysicsRig {
     PhysicsRig {
-        id: id.to_owned(),
+        id: id.into(),
         name: name.to_owned(),
         inputs,
         outputs,
@@ -429,7 +429,7 @@ pub fn commands(
 
     // 並びを追いながら、置き換え・追加・並べ替えを積む。
     let mut order: Vec<PhysicsRig> = physics.map(|p| p.rigs.clone()).unwrap_or_default();
-    let template_ids: HashSet<String> = rigs.iter().map(|r| r.id.clone()).collect();
+    let template_ids: HashSet<PhysicsRigId> = rigs.iter().map(|r| r.id.clone()).collect();
     for rig in rigs {
         if let Some(existing) = order.iter_mut().find(|r| r.id == rig.id) {
             out.extend(replace(existing, &rig));

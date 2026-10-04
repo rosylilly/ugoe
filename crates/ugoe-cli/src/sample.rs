@@ -208,11 +208,11 @@ pub fn build_avatar(psd: &[u8]) -> anyhow::Result<Project> {
     rig.apply(Command::SetHitAreas {
         hit_areas: vec![
             HitArea {
-                id: HIT_AREA_HEAD.to_owned(),
+                id: HIT_AREA_HEAD.into(),
                 mesh: face,
             },
             HitArea {
-                id: HIT_AREA_BODY.to_owned(),
+                id: HIT_AREA_BODY.into(),
                 mesh: body,
             },
         ],
@@ -257,11 +257,11 @@ fn avatar_profile() -> AvatarProfile {
         hit_areas: vec![
             AvatarHitArea {
                 name: HIT_AREA_HEAD.to_owned(),
-                hit_area: HIT_AREA_HEAD.to_owned(),
+                hit_area: HIT_AREA_HEAD.into(),
             },
             AvatarHitArea {
                 name: HIT_AREA_BODY.to_owned(),
-                hit_area: HIT_AREA_BODY.to_owned(),
+                hit_area: HIT_AREA_BODY.into(),
             },
         ],
         ..AvatarProfile::default()
@@ -896,7 +896,7 @@ impl Rig {
         }
         self.apply(Command::AddPhysicsRig {
             rig: PhysicsRig {
-                id: id.to_owned(),
+                id: id.into(),
                 name: name.to_owned(),
                 inputs: vec![PhysicsInput {
                     parameter: ParamId::new(sp::ANGLE_X),

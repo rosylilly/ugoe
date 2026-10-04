@@ -12,7 +12,7 @@ use ugoe_model::avatar::{
     AvatarHitArea, AvatarMeta, AvatarPermission, AvatarProfile, CommercialUsage, CreditNotation,
     LookAt, MAX_LEVEL, Modification, TrackingOverride, TrackingSource,
 };
-use ugoe_model::{HitArea, Model};
+use ugoe_model::{HitArea, Model, SlotId};
 
 use crate::EditError;
 use crate::message::{Coded, Message};
@@ -26,7 +26,7 @@ pub(crate) struct ProfileUpdate {
     /// `Some(None)` で外す (既定の `EyeBallX` / `EyeBallY` に戻す)。
     pub look_at: Option<Option<LookAt>>,
     pub hit_areas: Option<Vec<AvatarHitArea>>,
-    pub slots: Option<Vec<String>>,
+    pub slots: Option<Vec<SlotId>>,
 }
 
 /// [`crate::Command::SetAvatarProfile`]。
@@ -81,7 +81,7 @@ pub(crate) fn update_profile(model: &mut Model, update: ProfileUpdate) -> Result
 /// [`crate::Command::SetHitAreas`]。ID の重複とメッシュの参照は適用後の検証 (`validate`) が調べる。
 /// なくなった当たり判定を指すプロファイルの標準の当たり判定は外す。
 pub(crate) fn set_hit_areas(model: &mut Model, hit_areas: Vec<HitArea>) -> Result<(), EditError> {
-    if let Some(empty) = hit_areas.iter().find(|h| h.id.trim().is_empty()) {
+    if let Some(empty) = hit_areas.iter().find(|h| h.id.as_str().trim().is_empty()) {
         return Err(invalid(format!(
             "hit area id must not be empty (mesh `{}`)",
             empty.mesh

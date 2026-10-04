@@ -24,7 +24,7 @@ fn kind_and_id(target: &KeyformTarget) -> (&'static str, &str) {
         KeyformTarget::Part(id) => ("part", id.as_str()),
         KeyformTarget::Deformer(id) => ("deformer", id.as_str()),
         KeyformTarget::Mesh(id) => ("mesh", id.as_str()),
-        KeyformTarget::Glue(id) => ("glue", id),
+        KeyformTarget::Glue(id) => ("glue", id.as_str()),
     }
 }
 

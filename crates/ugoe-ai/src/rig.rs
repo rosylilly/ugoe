@@ -1334,7 +1334,7 @@ impl Rig {
             });
         }
         Ok(PhysicsRig {
-            id: id.to_owned(),
+            id: id.into(),
             name: name.to_owned(),
             inputs: vec![PhysicsInput {
                 parameter: ParamId::new(input),

@@ -116,7 +116,7 @@ fn create_copies_topology_and_glues_every_vertex() {
     assert_eq!(index(&after, "Sleeve_Clone"), index(&after, "Sleeve") + 1);
     // グルーは末尾で、全頂点を weight 0・強さ 1 で張る。
     let glue = after.glues.last().unwrap();
-    assert_eq!(glue.id, "DrawClone_Sleeve_Clone");
+    assert_eq!(glue.id.as_str(), "DrawClone_Sleeve_Clone");
     assert_eq!(glue.mesh_a.as_str(), "Sleeve");
     assert_eq!(glue.mesh_b.as_str(), "Sleeve_Clone");
     assert_eq!(glue.pairs.len(), original.uvs.len());
@@ -146,7 +146,12 @@ fn create_uses_given_id_and_name_and_numbers_default_ids() {
         },
     );
     assert_eq!(mesh(&after, "PalmFront").name, "手のひら (前)");
-    assert!(after.glues.iter().any(|g| g.id == "DrawClone_PalmFront"));
+    assert!(
+        after
+            .glues
+            .iter()
+            .any(|g| g.id.as_str() == "DrawClone_PalmFront")
+    );
 
     let twice = applied(&applied(&model, create("Palm")), create("Palm"));
     assert!(twice.meshes.iter().any(|m| m.id.as_str() == "Palm_Clone"));

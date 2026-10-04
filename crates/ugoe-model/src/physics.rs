@@ -2,9 +2,12 @@
 
 use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
-use ugoe_core::Vec2;
+use ugoe_core::{Id, Vec2};
 
 use crate::{DeformerId, MeshId, ParamId};
+
+pub type PhysicsRigId = Id<PhysicsRig>;
+pub type ColliderId = Id<PhysicsCollider>;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -29,7 +32,7 @@ pub struct PhysicsSettings {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PhysicsRig {
-    pub id: String,
+    pub id: PhysicsRigId,
     pub name: String,
     pub inputs: Vec<PhysicsInput>,
     pub outputs: Vec<PhysicsOutput>,
@@ -37,7 +40,7 @@ pub struct PhysicsRig {
     pub normalization: PhysicsNormalization,
     /// このリグの粒子と衝突する衝突体 (`PhysicsCollider::id`)。省略時はなし。
     #[serde(default)]
-    pub colliders: Vec<String>,
+    pub colliders: Vec<ColliderId>,
     /// 重力と風を解釈する座標系の基準のデフォーマ。`None` ならキャンバスの座標系
     /// (`docs/spec/physics.md#重力と風の基準`)。
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -222,7 +225,7 @@ pub enum VertexOwner {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PhysicsCollider {
-    pub id: String,
+    pub id: ColliderId,
     pub name: String,
     /// 取り付け先のデフォーマ。形状の位置はこのデフォーマの局所座標系で表し、
     /// そのワールド変換で動く。`None` ならキャンバスに固定する。

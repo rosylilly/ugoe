@@ -1064,7 +1064,7 @@ fn base_physics_survives_dress_up() {
     ok(unsafe { ugoe_puppet_attach_module(p.0, dress.0) });
     let composed = parse(&physics_json(&p));
     assert_eq!(composed.wind, windy.wind);
-    assert_eq!(composed.rigs[0].id, "LongHair/Sway");
+    assert_eq!(composed.rigs[0].id.as_str(), "LongHair/Sway");
 
     // 検査を通らない設定と読めない JSON は、何も変えずに失敗する。
     let mut bad = windy.clone();

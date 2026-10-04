@@ -111,7 +111,7 @@ fn grid_view<'a>(model: &'a mut Model, target: &KeyformTarget) -> Result<GridVie
             KeyformTarget::Part(id) => id.to_string(),
             KeyformTarget::Mesh(id) => id.to_string(),
             KeyformTarget::Deformer(id) => id.to_string(),
-            KeyformTarget::Glue(id) => id.clone(),
+            KeyformTarget::Glue(id) => id.to_string(),
         },
     };
     match target {
@@ -581,7 +581,7 @@ fn dependents(model: &mut Model, source: &KeyformTarget) -> Vec<KeyformTarget> {
             .glues
             .iter()
             .filter(|g| depends(g.keyforms.mirror_source.as_ref()))
-            .map(|g| g.id.clone())
+            .map(|g| g.id.to_string())
             .collect(),
     };
     ids.into_iter()
@@ -643,7 +643,7 @@ fn element_id(target: &KeyformTarget) -> String {
         KeyformTarget::Part(id) => id.to_string(),
         KeyformTarget::Mesh(id) => id.to_string(),
         KeyformTarget::Deformer(id) => id.to_string(),
-        KeyformTarget::Glue(id) => id.clone(),
+        KeyformTarget::Glue(id) => id.to_string(),
     }
 }
 
@@ -653,7 +653,7 @@ fn same_kind(target: &KeyformTarget, id: &str) -> KeyformTarget {
         KeyformTarget::Part(_) => KeyformTarget::Part(id.into()),
         KeyformTarget::Mesh(_) => KeyformTarget::Mesh(id.into()),
         KeyformTarget::Deformer(_) => KeyformTarget::Deformer(id.into()),
-        KeyformTarget::Glue(_) => KeyformTarget::Glue(id.to_owned()),
+        KeyformTarget::Glue(_) => KeyformTarget::Glue(id.into()),
     }
 }
 

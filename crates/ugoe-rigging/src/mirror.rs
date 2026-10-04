@@ -506,7 +506,7 @@ fn record<T>(
         KeyformTarget::Part(id) => id.to_string(),
         KeyformTarget::Mesh(id) => id.to_string(),
         KeyformTarget::Deformer(id) => id.to_string(),
-        KeyformTarget::Glue(id) => id.clone(),
+        KeyformTarget::Glue(id) => id.to_string(),
     };
     grid.mirror_source = Some(MirrorSource {
         id,

@@ -324,7 +324,7 @@ fn check_hit_areas(model: &Model, avatar: &AvatarProfile, issues: &mut Vec<Profi
             issues.push(ProfileIssue::UnknownReference {
                 field: format!("avatar.hit_areas[{index}].hit_area"),
                 target_kind: "hit area",
-                target: entry.hit_area.clone(),
+                target: entry.hit_area.to_string(),
             });
         }
     }
@@ -333,11 +333,11 @@ fn check_hit_areas(model: &Model, avatar: &AvatarProfile, issues: &mut Vec<Profi
 /// 公開するスロットが `Model::slots` にあること。
 fn check_slots(model: &Model, avatar: &AvatarProfile, issues: &mut Vec<ProfileIssue>) {
     for (index, slot) in avatar.slots.iter().enumerate() {
-        if !model.slots.iter().any(|s| s.id.as_str() == slot) {
+        if !model.slots.iter().any(|s| s.id == *slot) {
             issues.push(ProfileIssue::UnknownReference {
                 field: format!("avatar.slots[{index}]"),
                 target_kind: "slot",
-                target: slot.clone(),
+                target: slot.to_string(),
             });
         }
     }

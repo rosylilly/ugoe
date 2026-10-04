@@ -13,12 +13,14 @@ use ugoe_model::module::{ModuleRequirements, Slot, SlotId};
 use ugoe_model::motion::{Curve, CurveTarget, Motion, MotionEvent, Point};
 use ugoe_model::part::PartKeyform;
 use ugoe_model::physics::{
-    PhysicsCollider, PhysicsInput, PhysicsNormalization, PhysicsOutput, PhysicsParticle, PhysicsRig,
+    ColliderId, PhysicsCollider, PhysicsInput, PhysicsNormalization, PhysicsOutput,
+    PhysicsParticle, PhysicsRig, PhysicsRigId,
 };
 use ugoe_model::pose::Pose;
 use ugoe_model::{
-    BlendMode, Deformer, DeformerId, HitArea, KeyformGrid, KeyformInference, KeyformInterpolation,
-    MaskMode, MaskRef, Mesh, MeshId, ParamId, Parameter, Part, PartId,
+    BlendMode, Deformer, DeformerId, GlueId, HitArea, KeyformGrid, KeyformInference,
+    KeyformInterpolation, MaskMode, MaskRef, Mesh, MeshId, ParamId, Parameter, ParameterGroupId,
+    Part, PartId,
 };
 
 use crate::automesh::AutoMeshOptions;
@@ -77,7 +79,7 @@ pub enum Command {
     /// パラメータグループを設定する (`None` で外す)。グループは `parameter_groups` に存在すること。
     SetParameterGroup {
         id: ParamId,
-        group: Option<String>,
+        group: Option<ParameterGroupId>,
     },
     /// 左右で対になるパラメータを設定する (`None` で外す)。対は双方向に張り、`id` と `mirror` の
     /// どちらかと対になっていたパラメータの対は外す (`SetMirrorPair` と同じ)。
@@ -535,48 +537,48 @@ pub enum Command {
     /// `id` を省略すると名前 (英数字を含まなければ最初のデフォーマの ID) から作る。
     CreatePhysicsRig {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        id: Option<String>,
+        id: Option<PhysicsRigId>,
         #[serde(default)]
         name: String,
         deformers: Vec<DeformerId>,
     },
     /// 物理のリグを削除する。
     RemovePhysicsRig {
-        id: String,
+        id: PhysicsRigId,
     },
     /// 物理のリグの表示名を変える (ID は変えない)。
     RenamePhysicsRig {
-        id: String,
+        id: PhysicsRigId,
         name: String,
     },
     /// リグの入力を置き換える。入力・出力・粒子は ID を持たないので、並びごと置き換える。
     SetPhysicsInputs {
-        rig: String,
+        rig: PhysicsRigId,
         inputs: Vec<PhysicsInput>,
     },
     /// リグの出力を置き換える。
     SetPhysicsOutputs {
-        rig: String,
+        rig: PhysicsRigId,
         outputs: Vec<PhysicsOutput>,
     },
     /// リグの粒子の鎖 (位置と係数) を置き換える。粒子は 1 つ以上。
     SetPhysicsParticles {
-        rig: String,
+        rig: PhysicsRigId,
         particles: Vec<PhysicsParticle>,
     },
     /// リグの入力の正規化の範囲を置き換える。
     SetPhysicsNormalization {
-        rig: String,
+        rig: PhysicsRigId,
         normalization: PhysicsNormalization,
     },
     /// リグの粒子と衝突する衝突体 (`PhysicsCollider::id`) を置き換える。
     SetPhysicsRigColliders {
-        rig: String,
-        colliders: Vec<String>,
+        rig: PhysicsRigId,
+        colliders: Vec<ColliderId>,
     },
     /// リグの重力と風の基準のデフォーマを設定する (`None` でキャンバス)。
     SetPhysicsFrame {
-        rig: String,
+        rig: PhysicsRigId,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         frame: Option<DeformerId>,
     },
@@ -586,7 +588,7 @@ pub enum Command {
     },
     /// 衝突体を削除し、リグの `colliders` からも外す。
     RemovePhysicsCollider {
-        id: String,
+        id: ColliderId,
     },
     /// 衝突体 (`collider.id` のもの) の名前・取り付け先・形状を置き換える。
     SetPhysicsCollider {
@@ -606,8 +608,8 @@ pub enum Command {
     /// 物理のリグを `before` の直前へ移す (`None` なら末尾)。リグは並びの順に処理するので、
     /// 前のリグの出力を入力に読むリグ (中継) の結果が変わる。
     ReorderPhysicsRig {
-        id: String,
-        before: Option<String>,
+        id: PhysicsRigId,
+        before: Option<PhysicsRigId>,
     },
     /// パラメータを中継用 (内部) にする・戻す (`Parameter::internal`、`docs/spec/model.md#パラメータ`)。
     SetParameterInternal {
@@ -667,7 +669,7 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hit_areas: Option<Vec<AvatarHitArea>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        slots: Option<Vec<String>>,
+        slots: Option<Vec<SlotId>>,
     },
     /// 当たり判定 (`Model::hit_areas`) を丸ごと置き換える。なくなった当たり判定を指す、
     /// アバタープロファイルの標準の当たり判定 (`avatar.hit_areas`) は外す。
@@ -749,7 +751,7 @@ pub enum Command {
     /// `Glue_<A>_<B>` (モジュールのプロジェクトのメッシュは接頭辞を除いた ID) から作る。
     CreateGlue {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        id: Option<String>,
+        id: Option<GlueId>,
         mesh_a: MeshId,
         mesh_b: MeshId,
         distance: f32,
@@ -764,7 +766,7 @@ pub enum Command {
     },
     /// グルーを消す。
     RemoveGlue {
-        id: String,
+        id: GlueId,
     },
 }
 
@@ -787,8 +789,7 @@ pub enum KeyformTarget {
     Mesh(MeshId),
     /// ワープデフォーマまたは回転デフォーマ。
     Deformer(DeformerId),
-    /// グルー (`Glue::id`)。
-    Glue(String),
+    Glue(GlueId),
 }
 
 impl From<&KeyformTarget> for ugoe_rigging::KeyformTarget {

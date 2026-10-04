@@ -270,7 +270,7 @@ fn swaying_parts_collide_with_the_exposed_colliders() {
     apply(&mut doc, &proposal);
     let physics = doc.physics().unwrap();
     let rig = physics.rigs.last().unwrap();
-    assert_eq!(rig.colliders, vec!["Shoulder".to_owned()]);
+    assert_eq!(rig.colliders, vec!["Shoulder".into()]);
     // `Neck` を外せば、粒子に衝突の半径を付けても静止姿勢で当たらない。
     assert!(
         rig.particles[1..].iter().all(|p| p.collision_radius > 0.0),

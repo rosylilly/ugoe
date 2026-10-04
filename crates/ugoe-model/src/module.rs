@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use ugoe_core::Id;
 
 use crate::deformer::DeformerKind;
-use crate::physics::{PhysicsCollider, PhysicsRig, PhysicsTarget};
+use crate::physics::{ColliderId, PhysicsCollider, PhysicsRig, PhysicsTarget};
 use crate::pose::{PoseEntry, PoseGroup};
 use crate::{
     Canvas, Deformer, DeformerId, Effects, Glue, Mesh, MeshId, Model, ModelMeta, ParamId,
@@ -47,7 +47,7 @@ pub struct Slot {
     pub part: Option<PartId>,
     /// このスロットのモジュールの物理のリグが衝突してよい本体の衝突体 (`PhysicsCollider::id`)。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub colliders: Vec<String>,
+    pub colliders: Vec<ColliderId>,
     /// このスロットのモジュールがパーツを追従 (`PoseEntry::links`) させてよい、本体のポーズの要素のパーツ。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pose_parts: Vec<PartId>,

@@ -1157,10 +1157,10 @@ fn exposed_colliders_need_the_base_physics() {
         .iter_mut()
         .find(|s| s.id.as_str() == "Hair")
         .unwrap();
-    hair.colliders = vec!["Shoulders".to_owned()];
+    hair.colliders = vec!["Shoulders".into()];
     let mut module = long_hair_module();
-    module.physics.rigs[0].colliders = vec!["Shoulders".to_owned()];
-    let rig = module.physics.rigs[0].id.clone();
+    module.physics.rigs[0].colliders = vec!["Shoulders".into()];
+    let rig = module.physics.rigs[0].id.to_string();
     let context = |base: &ModuleBase| {
         ModuleContext::new(
             base.clone(),
@@ -1175,7 +1175,7 @@ fn exposed_colliders_need_the_base_physics() {
     assert_eq!(without.unavailable_colliders(), ["Shoulders"]);
     // 確かめてから外すと開ける (外したものを返す。モジュール自身の衝突体への参照は残す。T0661)。
     let mut dropped = module.clone();
-    dropped.physics.rigs[0].colliders = vec!["Shoulders".to_owned(), "Own".to_owned()];
+    dropped.physics.rigs[0].colliders = vec!["Shoulders".into(), "Own".into()];
     dropped
         .physics
         .colliders
@@ -1195,7 +1195,7 @@ fn exposed_colliders_need_the_base_physics() {
             collider: "Shoulders".into(),
         }]
     );
-    assert_eq!(dropped.physics.rigs[0].colliders, ["Own"]);
+    assert_eq!(dropped.physics.rigs[0].colliders, ["Own".into()]);
     without.workspace(&dropped, &images(&dropped)).unwrap();
     assert!(without.drop_unavailable_colliders(&mut dropped).is_empty());
     let error = without.workspace(&module, &images(&module)).unwrap_err();
@@ -1212,7 +1212,7 @@ fn exposed_colliders_need_the_base_physics() {
         "{error}"
     );
     // スロットが公開していない衝突体は、今までどおり合成のエラー。
-    module.physics.rigs[0].colliders = vec!["Elsewhere".to_owned()];
+    module.physics.rigs[0].colliders = vec!["Elsewhere".into()];
     assert!(matches!(
         without.workspace(&module, &images(&module)),
         Err(ModuleError::Compose(
@@ -1220,7 +1220,7 @@ fn exposed_colliders_need_the_base_physics() {
         ))
     ));
 
-    module.physics.rigs[0].colliders = vec!["Shoulders".to_owned()];
+    module.physics.rigs[0].colliders = vec!["Shoulders".into()];
     let mut physics = crate::physics_edit::default_settings();
     physics
         .colliders
@@ -1238,7 +1238,12 @@ fn exposed_colliders_need_the_base_physics() {
     assert!(with.unavailable_colliders().is_empty());
     let workspace = with.workspace(&module, &images(&module)).unwrap();
     let physics = workspace.physics.unwrap();
-    assert!(physics.rigs.iter().any(|r| r.colliders == ["Shoulders"]));
+    assert!(
+        physics
+            .rigs
+            .iter()
+            .any(|r| r.colliders == ["Shoulders".into()])
+    );
 }
 
 /// 物理の無い本体で開けないモジュールのプロジェクトを、衝突体の参照を外して開く (T0661)。外さずには開けず、
@@ -1253,7 +1258,7 @@ fn module_project_opens_without_unavailable_colliders() {
         .iter_mut()
         .find(|s| s.id.as_str() == "Hair")
         .unwrap();
-    hair.colliders = vec!["Shoulders".to_owned()];
+    hair.colliders = vec!["Shoulders".into()];
     let base_path = temp.0.join("avatar.ugoeproj");
     Project::new(ProjectMeta::new("avatar"), base.model, base.textures)
         .save(&base_path)
@@ -1264,8 +1269,8 @@ fn module_project_opens_without_unavailable_colliders() {
         .save(&dir)
         .unwrap();
     let mut module = long_hair_module();
-    module.physics.rigs[0].colliders = vec!["Shoulders".to_owned()];
-    let rig = module.physics.rigs[0].id.clone();
+    module.physics.rigs[0].colliders = vec!["Shoulders".into()];
+    let rig = module.physics.rigs[0].id.to_string();
     std::fs::write(
         dir.join("module.json"),
         ugoe_format::module_to_json(&module).unwrap(),
@@ -1297,7 +1302,12 @@ fn module_project_opens_without_unavailable_colliders() {
     let saved =
         ugoe_format::module_from_json(&std::fs::read_to_string(dir.join("module.json")).unwrap())
             .unwrap();
-    let saved_rig = saved.physics.rigs.iter().find(|r| r.id == rig).unwrap();
+    let saved_rig = saved
+        .physics
+        .rigs
+        .iter()
+        .find(|r| r.id.as_str() == rig)
+        .unwrap();
     assert!(saved_rig.colliders.is_empty());
     Project::load(&dir).unwrap();
 }

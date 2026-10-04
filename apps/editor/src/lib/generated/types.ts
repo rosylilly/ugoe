@@ -1071,6 +1071,9 @@ export type MirrorSource = {
 /**
  * ミラー元の要素の ID。格子を持つ要素と同じ種類 (メッシュならメッシュ、デフォーマならデフォーマ)。
  * 自分自身の ID なら、左右対称な 1 つの要素の中で写し合ったセル。
+ *
+ * 格子を持つ要素はメッシュとデフォーマの 2 種類で、どちらを指すかは格子の持ち主で決まるため、
+ * `Id<T>` ではなく `String` にしている (`docs/spec/model.md#ID`)。
  */
 id: string, 
 /**
@@ -1427,7 +1430,11 @@ kind: ParameterKind,
 /**
  * 左右ペア (例: EyeLOpen ↔ EyeROpen)。エディタのミラー機能・AI 自動設定で使う。
  */
-mirror: string | null, group: string | null, 
+mirror: string | null, 
+/**
+ * 所属する `ParameterGroup` の ID。
+ */
+group: string | null, 
 /**
  * 中継用 (内部) のパラメータか。物理のリグの間で値を受け渡すためのもので
  * (`docs/spec/physics.md#リグの順序と中継`)、トラッキングは書き込まず、

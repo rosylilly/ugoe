@@ -153,7 +153,7 @@ mod tests {
         assert!(
             colliding.module.physics.rigs[0]
                 .colliders
-                .contains(&"Shoulders".to_owned())
+                .contains(&"Shoulders".into())
         );
         let plain = ugoe_format::read_module(MODULES[0]).unwrap();
         assert!(
@@ -198,8 +198,8 @@ mod tests {
             .physics
             .rigs
             .iter()
-            .filter(|r| r.colliders.contains(&"Shoulders".to_owned()))
-            .map(|r| r.id.clone())
+            .filter(|r| r.colliders.contains(&"Shoulders".into()))
+            .map(|r| r.id.to_string())
             .collect();
         assert_eq!(rigs.len(), 2);
         let found_rigs: Vec<_> = found

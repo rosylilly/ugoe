@@ -190,10 +190,10 @@ pub fn element(doc: &Document, kind: &str, id: &str) -> Option<Result<Value, ser
         "part" => find(&model.parts, |p| p.id.to_string(), id),
         "deformer" => find(&model.deformers, |d| d.id.to_string(), id),
         "mesh" => find(&model.meshes, |m| m.id.to_string(), id),
-        "glue" => find(&model.glues, |g| g.id.clone(), id),
+        "glue" => find(&model.glues, |g| g.id.to_string(), id),
         "physics_rig" => find(
             doc.physics().map(|p| p.rigs.as_slice()).unwrap_or_default(),
-            |r| r.id.clone(),
+            |r| r.id.to_string(),
             id,
         ),
         "slot" => find(&model.slots, |s| s.id.to_string(), id),

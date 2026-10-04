@@ -5,7 +5,7 @@
 
 use ugoe_core::Vec2;
 use ugoe_model::mesh::{Glue, GlueKeyform, GluePair};
-use ugoe_model::{KeyformGrid, MeshId, Model};
+use ugoe_model::{GlueId, KeyformGrid, MeshId, Model};
 use ugoe_runtime::{CompiledModel, ModelInstance};
 
 use crate::EditError;
@@ -18,15 +18,18 @@ pub const DEFAULT_GLUE_WEIGHT: f32 = 0.5;
 /// 重みは [`DEFAULT_GLUE_WEIGHT`]、強さは 1 (パラメータに依存しない 1 つのキーフォーム)。
 pub(crate) fn create(
     model: &mut Model,
-    id: Option<String>,
+    id: Option<GlueId>,
     mesh_a: MeshId,
     mesh_b: MeshId,
     distance: f32,
-) -> Result<String, EditError> {
+) -> Result<GlueId, EditError> {
     let id = match id {
         Some(id) => {
             if model.glues.iter().any(|g| g.id == id) {
-                return Err(EditError::DuplicateId { kind: "glue", id });
+                return Err(EditError::DuplicateId {
+                    kind: "glue",
+                    id: id.to_string(),
+                });
             }
             id
         }
@@ -34,7 +37,10 @@ pub(crate) fn create(
             // モジュールのプロジェクトのメッシュ (`<モジュール>/<ID>`) は、接頭辞を除いた ID から作る。
             let short = |m: &MeshId| m.as_str().rsplit('/').next().unwrap_or("").to_owned();
             let base = format!("Glue_{}_{}", short(&mesh_a), short(&mesh_b));
-            ids::unique_id(&base, model.glues.iter().map(|g| g.id.as_str()))
+            GlueId::new(ids::unique_id(
+                &base,
+                model.glues.iter().map(|g| g.id.as_str()),
+            ))
         }
     };
     let pairs = pair_vertices(model, &mesh_a, &mesh_b, distance, DEFAULT_GLUE_WEIGHT)?;
@@ -55,14 +61,14 @@ pub(crate) fn set(
     mut glue: Glue,
     distance: Option<f32>,
 ) -> Result<(), EditError> {
-    let index = position(model, &glue.id)?;
+    let index = position(model, glue.id.as_str())?;
     if let Some(distance) = distance {
         let weight = glue.pairs.first().map_or(DEFAULT_GLUE_WEIGHT, |p| p.weight);
         glue.pairs = pair_vertices(model, &glue.mesh_a, &glue.mesh_b, distance, weight)?;
     }
     if let Some(pair) = glue.pairs.iter().find(|p| !p.weight.is_finite()) {
         return Err(invalid(
-            &glue.id,
+            glue.id.as_str(),
             format!("weight {} is not finite", pair.weight),
         ));
     }
@@ -152,7 +158,7 @@ fn position(model: &Model, id: &str) -> Result<usize, EditError> {
     model
         .glues
         .iter()
-        .position(|g| g.id == id)
+        .position(|g| g.id.as_str() == id)
         .ok_or_else(|| EditError::NotFound {
             kind: "glue",
             id: id.to_owned(),

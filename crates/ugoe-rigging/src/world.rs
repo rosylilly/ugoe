@@ -187,7 +187,7 @@ mod tests {
         let mut model = dress_up_base();
         assert!(model.slots.iter().any(|s| s.anchor == Some("Torso".into())));
         model.avatar = Some(ugoe_model::AvatarProfile {
-            slots: model.slots.iter().map(|s| s.id.to_string()).collect(),
+            slots: model.slots.iter().map(|s| s.id.clone()).collect(),
             ..Default::default()
         });
         let world = ParentWorld::new(&model, Some(&"Head".into())).unwrap();

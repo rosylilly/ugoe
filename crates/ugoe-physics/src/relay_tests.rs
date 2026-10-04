@@ -288,5 +288,5 @@ fn rest_pose_collisions_read_earlier_rest_outputs() {
     instance.parameters_mut().set(index, 30.0);
     let found = physics.rest_pose_collisions(&mut instance);
     assert_eq!(found.len(), 1, "{found:?}");
-    assert_eq!(found[0].rig, "Hair");
+    assert_eq!(found[0].rig.as_str(), "Hair");
 }

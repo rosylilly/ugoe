@@ -608,17 +608,17 @@ fn element_ids(snapshot: &Snapshot) -> BTreeSet<String> {
     let m = &snapshot.model;
     let mut ids = BTreeSet::new();
     ids.extend(m.parameters.iter().map(|p| p.id.to_string()));
-    ids.extend(m.parameter_groups.iter().map(|g| g.id.clone()));
+    ids.extend(m.parameter_groups.iter().map(|g| g.id.to_string()));
     ids.extend(m.parts.iter().map(|p| p.id.to_string()));
     ids.extend(m.deformers.iter().map(|d| d.id.to_string()));
     ids.extend(m.meshes.iter().map(|x| x.id.to_string()));
-    ids.extend(m.glues.iter().map(|g| g.id.clone()));
+    ids.extend(m.glues.iter().map(|g| g.id.to_string()));
     ids.extend(m.textures.iter().map(|t| t.name.clone()));
-    ids.extend(m.hit_areas.iter().map(|h| h.id.clone()));
+    ids.extend(m.hit_areas.iter().map(|h| h.id.to_string()));
     ids.extend(m.slots.iter().map(|s| s.id.to_string()));
     if let Some(physics) = &snapshot.physics {
-        ids.extend(physics.rigs.iter().map(|r| r.id.clone()));
-        ids.extend(physics.colliders.iter().map(|c| c.id.clone()));
+        ids.extend(physics.rigs.iter().map(|r| r.id.to_string()));
+        ids.extend(physics.colliders.iter().map(|c| c.id.to_string()));
     }
     ids.extend(snapshot.animations.motions.iter().map(|x| x.name.clone()));
     ids.extend(
@@ -1184,7 +1184,7 @@ fn apply_to(
         }
         Command::SetGlue { glue, distance } => glue_edit::set(model, glue, distance)?,
         Command::RemoveGlue { id } => {
-            glue_edit::remove(model, &id)?;
+            glue_edit::remove(model, id.as_str())?;
             inference::forget_missing_mirror_sources(model);
         }
         Command::AddSlot { slot } => slot_edit::add(model, physics.as_ref(), slot)?,

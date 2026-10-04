@@ -296,7 +296,8 @@ impl ModuleContext {
         compose_physics(&self.base.model, &self.expected_physics, &[module]).map_err(|error| {
             match error {
                 ComposeError::UnknownCollider { rig, collider, .. }
-                    if self.base.physics.is_none() && self.slot.colliders.contains(&collider) =>
+                    if self.base.physics.is_none()
+                        && self.slot.colliders.iter().any(|c| c.as_str() == collider) =>
                 {
                     ModuleError::ColliderNeedsBasePhysics {
                         rig,
@@ -317,7 +318,7 @@ impl ModuleContext {
             .colliders
             .iter()
             .filter(|id| !base.is_some_and(|p| p.colliders.iter().any(|c| &c.id == *id)))
-            .cloned()
+            .map(ToString::to_string)
             .collect()
     }
 
@@ -326,20 +327,21 @@ impl ModuleContext {
     /// 物理の無い本体でモジュールのプロジェクトを開くとき、利用者が外すことを確かめてから使う (黙って外さない。T0655・T0661)。
     pub fn drop_unavailable_colliders(&self, module: &mut Module) -> Vec<ColliderReference> {
         let unavailable = self.unavailable_colliders();
-        let own: HashSet<String> = module
+        let own: HashSet<&str> = module
             .physics
             .colliders
             .iter()
-            .map(|c| c.id.clone())
+            .map(|c| c.id.as_str())
             .collect();
         let mut dropped = Vec::new();
         for rig in &mut module.physics.rigs {
             rig.colliders.retain(|collider| {
-                let drop = !own.contains(collider) && unavailable.contains(collider);
+                let collider = collider.as_str();
+                let drop = !own.contains(collider) && unavailable.iter().any(|u| u == collider);
                 if drop {
                     dropped.push(ColliderReference {
-                        rig: rig.id.clone(),
-                        collider: collider.clone(),
+                        rig: rig.id.to_string(),
+                        collider: collider.to_owned(),
                     });
                 }
                 !drop
@@ -537,7 +539,7 @@ impl ModuleContext {
                         .rigs
                         .iter()
                         .find(|b| !now.rigs.contains(b))
-                        .map_or_else(String::new, |r| r.id.clone());
+                        .map_or_else(String::new, |r| r.id.to_string());
                     return Err(read_only(format!("physics rig `{id}`")));
                 }
                 let base_colliders: Vec<_> = now
@@ -555,7 +557,7 @@ impl ModuleContext {
                         .colliders
                         .iter()
                         .find(|b| !now.colliders.contains(b))
-                        .map_or_else(String::new, |c| c.id.clone());
+                        .map_or_else(String::new, |c| c.id.to_string());
                     return Err(read_only(format!("physics collider `{id}`")));
                 }
             }
@@ -663,7 +665,7 @@ fn first_difference(expected: &Model, actual: &Model) -> String {
             "parameter group",
             &expected.parameter_groups,
             &actual.parameter_groups,
-            |g| g.id.clone(),
+            |g| g.id.to_string(),
         )
     })
     .or_else(|| by_id("part", &expected.parts, &actual.parts, |p| p.id.to_string()))
@@ -677,7 +679,7 @@ fn first_difference(expected: &Model, actual: &Model) -> String {
             m.id.to_string()
         })
     })
-    .or_else(|| by_id("glue", &expected.glues, &actual.glues, |g| g.id.clone()))
+    .or_else(|| by_id("glue", &expected.glues, &actual.glues, |g| g.id.to_string()))
     .or_else(|| {
         by_id("texture", &expected.textures, &actual.textures, |t| {
             t.name.clone()
@@ -685,7 +687,7 @@ fn first_difference(expected: &Model, actual: &Model) -> String {
     })
     .or_else(|| {
         by_id("hit area", &expected.hit_areas, &actual.hit_areas, |h| {
-            h.id.clone()
+            h.id.to_string()
         })
     })
     .or_else(|| by_id("slot", &expected.slots, &actual.slots, |s| s.id.to_string()))
@@ -889,7 +891,7 @@ impl<'a> Splitter<'a> {
         for glue in glues {
             let what = format!("glue `{}`", glue.id);
             let mut glue = glue.clone();
-            glue.id = glue_ids[&glue.id].clone();
+            glue.id = glue_ids[glue.id.as_str()].as_str().into();
             glue.mesh_a = self.mesh(&glue.mesh_a, &what)?;
             glue.mesh_b = self.mesh(&glue.mesh_b, &what)?;
             self.grid(&mut glue.keyforms, &BTreeMap::new(), &what)?;
@@ -989,7 +991,7 @@ impl<'a> Splitter<'a> {
         for rig in rigs {
             let what = format!("physics rig `{}`", rig.id);
             let mut rig = rig.clone();
-            rig.id = rig_ids[&rig.id].clone();
+            rig.id = rig_ids[rig.id.as_str()].as_str().into();
             rig.frame = match &rig.frame {
                 Some(f) => Some(self.deformer(f, &what)?),
                 None => None,
@@ -997,7 +999,7 @@ impl<'a> Splitter<'a> {
             // 本体の衝突体への参照はそのまま残す (スロットの `colliders` かは合成が検査する)。
             for collider in &mut rig.colliders {
                 if let Some(own) = collider_ids.get(collider.as_str()) {
-                    collider.clone_from(own);
+                    *collider = own.as_str().into();
                 }
             }
             for output in &mut rig.outputs {
@@ -1018,7 +1020,7 @@ impl<'a> Splitter<'a> {
         for collider in colliders {
             let what = format!("physics collider `{}`", collider.id);
             let mut collider = collider.clone();
-            collider.id = collider_ids[&collider.id].clone();
+            collider.id = collider_ids[collider.id.as_str()].as_str().into();
             collider.attach = self.parent(collider.attach.as_ref(), &what)?;
             module.physics.colliders.push(collider);
         }

@@ -348,7 +348,7 @@ fn sample_commands() -> Vec<Command> {
         },
         Command::MirrorKeyforms {
             source: KeyformTarget::Deformer(deformers[0].id.clone()),
-            target: KeyformTarget::Glue("Glue".to_owned()),
+            target: KeyformTarget::Glue("Glue".into()),
             axis: None,
             tolerance: None,
             overwrite_authored: false,
@@ -739,7 +739,7 @@ pub(crate) fn draw_clone_samples() -> Vec<Command> {
 /// グルーのコマンドの見本 (`docs/editor.md#グルーの編集`)。
 pub(crate) fn glue_samples() -> Vec<Command> {
     let glue = ugoe_model::mesh::Glue {
-        id: "Glue_Front_Back".to_owned(),
+        id: "Glue_Front_Back".into(),
         mesh_a: "Front".into(),
         mesh_b: "Back".into(),
         pairs: vec![ugoe_model::mesh::GluePair {
@@ -789,7 +789,7 @@ pub(crate) fn avatar_samples() -> Vec<Command> {
             look_at: Some(Some(LookAt::default())),
             hit_areas: Some(vec![AvatarHitArea {
                 name: HIT_AREA_HEAD.to_owned(),
-                hit_area: "Head".to_owned(),
+                hit_area: "Head".into(),
             }]),
             slots: Some(Vec::new()),
         },
@@ -803,7 +803,7 @@ pub(crate) fn avatar_samples() -> Vec<Command> {
         },
         Command::SetHitAreas {
             hit_areas: vec![HitArea {
-                id: "Head".to_owned(),
+                id: "Head".into(),
                 mesh: "Quad".into(),
             }],
         },
@@ -896,7 +896,7 @@ fn keyform_cell_samples(mesh_id: &MeshId, mesh_cell: &KeyformCell) -> Vec<Comman
         Keyform::Part(model.parts[0].keyforms.keyforms[0]),
     ));
     keyforms.push((
-        KeyformTarget::Glue("Glue".to_owned()),
+        KeyformTarget::Glue("Glue".into()),
         KeyformCell::new(),
         Keyform::Glue(ugoe_model::mesh::GlueKeyform { intensity: 0.5 }),
     ));

@@ -1,6 +1,6 @@
 //! 要素の ID から格子を引いて推定する。エディタのコマンド (T0611) から使う。
 
-use ugoe_model::{DeformerId, DeformerKind, MeshId, Model, PartId};
+use ugoe_model::{DeformerId, DeformerKind, GlueId, MeshId, Model, PartId};
 
 use crate::additive::infer_additive_with;
 use crate::{InferError, InferReport, InferScope};
@@ -12,8 +12,7 @@ pub enum KeyformTarget {
     Mesh(MeshId),
     /// ワープデフォーマまたは回転デフォーマ。
     Deformer(DeformerId),
-    /// グルー (`Glue::id`)。
-    Glue(String),
+    Glue(GlueId),
 }
 
 /// `target` の要素の格子の `derived` のセルを加算合成で作り直す ([`crate::infer_additive`])。

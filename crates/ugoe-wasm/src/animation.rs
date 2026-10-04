@@ -707,7 +707,7 @@ mod tests {
         assert_eq!(base_physics_json(&puppet).unwrap(), Some(json));
         let composed = puppet.physics().unwrap().settings();
         assert_eq!(composed.wind, windy.wind);
-        assert_eq!(composed.rigs[0].id, "LongHair/Sway");
+        assert_eq!(composed.rigs[0].id.as_str(), "LongHair/Sway");
 
         let mut bad = windy.clone();
         bad.colliders.push(ugoe::model::physics::PhysicsCollider {

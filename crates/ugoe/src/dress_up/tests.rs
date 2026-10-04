@@ -20,6 +20,11 @@ fn set_param(puppet: &mut Puppet, id: &str, value: f32) {
     p.set(i, value);
 }
 
+/// ID の並びを文字列の並びにする (比べるため)。
+fn ids<T>(ids: &[ugoe_core::Id<T>]) -> Vec<&str> {
+    ids.iter().map(ugoe_core::Id::as_str).collect()
+}
+
 fn names(puppet: &Puppet) -> Vec<&str> {
     puppet.modules().iter().map(|m| m.name.as_str()).collect()
 }
@@ -180,7 +185,7 @@ fn module_physics_is_added_and_removed() {
     // 本体に物理が無くても、モジュールのリグは既定の設定に加わる。
     puppet.attach_module(Arc::new(long_hair_module())).unwrap();
     let physics = puppet.physics().unwrap();
-    assert_eq!(physics.settings().rigs[0].id, "LongHair/Sway");
+    assert_eq!(physics.settings().rigs[0].id.as_str(), "LongHair/Sway");
     assert_eq!(physics.settings().gravity, ugoe_core::Vec2::new(0.0, 1.0));
     assert!(puppet.base_physics().is_none());
     set_param(&mut puppet, standard::ANGLE_X, 20.0);
@@ -213,7 +218,10 @@ fn base_physics_is_kept_and_collides_through_the_slot() {
     hair.physics.rigs[0].colliders.push("Chest".into());
     puppet.attach_module(Arc::new(hair)).unwrap();
     let composed = puppet.physics().unwrap().settings();
-    assert_eq!(composed.rigs[0].colliders, ["LongHair/Collar", "Chest"]);
+    assert_eq!(
+        ids(&composed.rigs[0].colliders),
+        ["LongHair/Collar", "Chest"]
+    );
     assert_eq!(puppet.base_physics(), Some(&settings));
     puppet.update(DT);
 
@@ -264,7 +272,10 @@ fn base_physics_replaced_while_dressed_survives_dress_up() {
     assert_eq!(puppet.base_physics(), Some(&windy));
     let composed = puppet.physics().unwrap().settings();
     assert_eq!(composed.wind, windy.wind);
-    assert_eq!(composed.rigs[0].colliders, ["LongHair/Collar", "Chest"]);
+    assert_eq!(
+        ids(&composed.rigs[0].colliders),
+        ["LongHair/Collar", "Chest"]
+    );
     // モデルは変わらないので、パラメータもそのまま。
     assert_eq!(param(&puppet, standard::ANGLE_X), 20.0);
     puppet.update(DT);
@@ -292,12 +303,16 @@ fn base_physics_toggles_exposed_colliders_while_dressed() {
     let rig_colliders = |puppet: &Puppet| {
         puppet.physics().unwrap().settings().rigs[0]
             .colliders
-            .clone()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
     };
     let slot_colliders = |puppet: &Puppet| {
         puppet.instance().compiled().model().slots[0]
             .colliders
-            .clone()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
     };
     assert_eq!(rig_colliders(&puppet), ["LongHair/Collar"]);
     assert!(slot_colliders(&puppet).is_empty());
@@ -349,10 +364,10 @@ fn exposed_colliders_are_ignored_without_base_physics() {
     hair.physics.rigs[0].colliders.push("Chest".into());
     puppet.attach_module(Arc::new(hair)).unwrap();
     let composed = puppet.physics().unwrap().settings();
-    assert_eq!(composed.rigs[0].colliders, ["LongHair/Collar"]);
+    assert_eq!(ids(&composed.rigs[0].colliders), ["LongHair/Collar"]);
     assert!(puppet.base_physics().is_none());
     // 本体として覚えたモデルのスロットは変えない (後から物理を持つ本体として使える)。
-    assert_eq!(puppet.base_model().slots[0].colliders, ["Chest"]);
+    assert_eq!(ids(&puppet.base_model().slots[0].colliders), ["Chest"]);
     set_param(&mut puppet, standard::ANGLE_X, 20.0);
     for _ in 0..10 {
         puppet.update(DT);

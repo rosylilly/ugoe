@@ -112,7 +112,7 @@ fn create_rig_from_deformer_chain() {
     let rig = &p.rigs[0];
     // 名前は最初のデフォーマの名前、ID は名前から。
     assert_eq!(rig.name, "Hair1");
-    assert_eq!(rig.id, "Hair1");
+    assert_eq!(rig.id.as_str(), "Hair1");
     // 原点は (148,100)・(148,130)・(148,160)。先端は Hair3 から真下に、Strand (Hair3 の局所 (-3,0)〜(3,30))
     // の最も深い点まで。
     let positions: Vec<Vec2> = rig.particles.iter().map(|p| p.position).collect();
@@ -153,7 +153,7 @@ fn create_rig_from_deformer_chain() {
         deformers: vec!["Hair1".into()],
     })
     .unwrap();
-    assert_eq!(physics(&doc).rigs[1].id, "Hair1_2");
+    assert_eq!(physics(&doc).rigs[1].id.as_str(), "Hair1_2");
     // 1 つのデフォーマでも、先端は子孫の点。
     let single = &physics(&doc).rigs[1];
     assert_eq!(single.particles.len(), 2);
@@ -462,7 +462,7 @@ fn collider_add_edit_remove() {
         id: "HeadBall".into(),
     })
     .unwrap();
-    assert_eq!(physics(&doc).rigs[0].colliders, vec!["Shoulder".to_owned()]);
+    assert_eq!(physics(&doc).rigs[0].colliders, vec!["Shoulder".into()]);
     assert_eq!(physics(&doc).colliders.len(), 1);
     // Undo で戻る。
     assert!(doc.undo());
@@ -524,7 +524,7 @@ fn removing_the_attached_deformer_keeps_the_collider_in_place() {
     })
     .unwrap();
     let p = physics(&doc);
-    let tip = p.colliders.iter().find(|c| c.id == "Tip").unwrap();
+    let tip = p.colliders.iter().find(|c| c.id.as_str() == "Tip").unwrap();
     assert_eq!(tip.attach, None);
     // Hair3 の原点はキャンバスの (148,160)、角度 0。
     let ColliderShape::Circle { center, .. } = tip.shape else {

@@ -8,7 +8,7 @@ pub mod check;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ParamId, standard};
+use crate::{HitAreaId, ParamId, SlotId, standard};
 
 /// このクレートが知っているプロファイルのバージョン (`AvatarProfile::profile_version`)。
 pub const PROFILE_VERSION: u32 = 0;
@@ -175,7 +175,7 @@ pub struct AvatarProfile {
     /// 標準の当たり判定の名前と `Model::hit_areas` の対応。
     pub hit_areas: Vec<AvatarHitArea>,
     /// アプリに公開する着せ替えのスロットの ID (`docs/spec/modules.md`)。
-    pub slots: Vec<String>,
+    pub slots: Vec<SlotId>,
 }
 
 impl Default for AvatarProfile {
@@ -435,7 +435,7 @@ pub struct AvatarHitArea {
     /// 標準の名前 ([`HIT_AREA_HEAD`]、[`HIT_AREA_BODY`])。
     pub name: String,
     /// `Model::hit_areas` の ID。
-    pub hit_area: String,
+    pub hit_area: HitAreaId,
 }
 
 #[cfg(test)]

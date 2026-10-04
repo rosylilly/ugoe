@@ -41,7 +41,7 @@ pub fn validate_physics(physics: &PhysicsSettings, model: &Model) -> Vec<Validat
     for rig in &physics.rigs {
         let refs = Refs {
             kind: "physics rig",
-            id: &rig.id,
+            id: rig.id.as_str(),
         };
         let path = format!("rigs[{}]", rig.id);
         for input in &rig.inputs {
@@ -95,7 +95,7 @@ pub fn validate_physics(physics: &PhysicsSettings, model: &Model) -> Vec<Validat
                     };
                     if let Some(expected) = expected.filter(|&e| e != weights.len()) {
                         errors.push(ValidationError::WeightCount {
-                            rig: rig.id.clone(),
+                            rig: rig.id.to_string(),
                             output: index,
                             expected,
                             actual: weights.len(),
@@ -142,7 +142,7 @@ pub fn validate_physics(physics: &PhysicsSettings, model: &Model) -> Vec<Validat
     for collider in &physics.colliders {
         let refs = Refs {
             kind: "physics collider",
-            id: &collider.id,
+            id: collider.id.as_str(),
         };
         if let Some(attach) = &collider.attach {
             refs.check(&deformers, "attach", "deformer", attach, &mut errors);

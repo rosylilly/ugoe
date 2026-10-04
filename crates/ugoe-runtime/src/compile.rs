@@ -327,7 +327,10 @@ impl CompiledModel {
 
     /// ID が `id` の当たり判定の添字 (`Model::hit_areas` のインデックス)。
     pub fn hit_area_index(&self, id: &str) -> Option<usize> {
-        self.model.hit_areas.iter().position(|h| h.id == id)
+        self.model
+            .hit_areas
+            .iter()
+            .position(|h| h.id.as_str() == id)
     }
 
     /// 当たり判定 `hit_area` の判定に使うメッシュ (`Model::meshes` のインデックス)。

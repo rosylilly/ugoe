@@ -43,14 +43,14 @@ fn collect(doc: &Document) -> Elements {
         p.id.to_string()
     });
     add(&mut out, "parameter_groups", &model.parameter_groups, |g| {
-        g.id.clone()
+        g.id.to_string()
     });
     add(&mut out, "parts", &model.parts, |p| p.id.to_string());
     add(&mut out, "deformers", &model.deformers, |d| {
         d.id.to_string()
     });
     add(&mut out, "meshes", &model.meshes, |m| m.id.to_string());
-    add(&mut out, "glues", &model.glues, |g| g.id.clone());
+    add(&mut out, "glues", &model.glues, |g| g.id.to_string());
     // テクスチャは寸法などの `TextureRef` に画像の指紋を添える (同じ大きさの画像への差し替えも変化にする)。
     let textures = out.entry("textures").or_default();
     for texture in &model.textures {
@@ -60,14 +60,16 @@ fn collect(doc: &Document) -> Elements {
             json!({ "ref": to_json(texture), "png": png }),
         );
     }
-    add(&mut out, "hit_areas", &model.hit_areas, |h| h.id.clone());
+    add(&mut out, "hit_areas", &model.hit_areas, |h| {
+        h.id.to_string()
+    });
     add(&mut out, "slots", &model.slots, |s| s.id.to_string());
     add(&mut out, "motions", doc.motions(), |m| m.name.clone());
     add(&mut out, "expressions", doc.expressions(), |e| {
         e.name.clone()
     });
     let rigs = doc.physics().map(|p| p.rigs.as_slice()).unwrap_or_default();
-    add(&mut out, "physics_rigs", rigs, |r| r.id.clone());
+    add(&mut out, "physics_rigs", rigs, |r| r.id.to_string());
     // 集まりでないもの (キャンバス・ポーズ・エフェクト・物理の全体の設定など) は 1 つの要素として比べる。
     let whole = out.entry("model").or_default();
     whole.insert("meta".to_owned(), to_json(&model.meta));

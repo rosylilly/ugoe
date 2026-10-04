@@ -123,7 +123,7 @@ fn physics(wf: &mut Workflow) {
         deformers: vec!["Hair1".into(), "Hair2".into(), "Hair3".into()],
     });
     let rig = &wf.physics().rigs[0];
-    assert_eq!(rig.id, HAIR);
+    assert_eq!(rig.id.as_str(), HAIR);
     // 根元と各デフォーマの原点、先端 (Strand の下端) の 4 粒子。
     assert_eq!(rig.particles.len(), 4);
     assert_eq!(rig.outputs.len(), 3);
@@ -154,7 +154,7 @@ fn physics(wf: &mut Workflow) {
     });
     let physics = wf.physics();
     assert_eq!(physics.colliders.len(), 1);
-    assert_eq!(physics.rigs[0].colliders, vec![SHOULDER.to_owned()]);
+    assert_eq!(physics.rigs[0].colliders, vec![SHOULDER.into()]);
 }
 
 pub fn angle_x() -> CurveTarget {

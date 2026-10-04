@@ -350,7 +350,7 @@ fn reloading_keeps_the_base_physics_not_the_composed_one() {
         )
         .unwrap();
     assert_eq!(
-        reloaded.physics().unwrap().settings().rigs[0].id,
+        reloaded.physics().unwrap().settings().rigs[0].id.as_str(),
         "LongHair/Sway"
     );
 }
@@ -364,7 +364,7 @@ fn published_slots_come_from_the_base_avatar_profile() {
     let puppet = Puppet::new(model.clone()).unwrap();
     assert_eq!(published_slots(&puppet), None);
 
-    let first = model.slots[0].id.to_string();
+    let first = model.slots[0].id.clone();
     model.avatar = Some(ugoe::model::AvatarProfile {
         slots: vec![first.clone()],
         ..ugoe::model::AvatarProfile::default()

@@ -120,6 +120,7 @@
       "type": "object",
       "properties": {
         "group": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
           "type": [
             "string",
             "null"
@@ -1848,6 +1849,7 @@
           }
         },
         "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
           "type": [
             "string",
             "null"
@@ -1872,6 +1874,7 @@
       "type": "object",
       "properties": {
         "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
           "type": "string"
         },
         "op": {
@@ -1889,6 +1892,7 @@
       "type": "object",
       "properties": {
         "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
           "type": "string"
         },
         "name": {
@@ -1920,6 +1924,7 @@
           "const": "set_physics_inputs"
         },
         "rig": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
           "type": "string"
         }
       },
@@ -1944,6 +1949,7 @@
           }
         },
         "rig": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
           "type": "string"
         }
       },
@@ -1968,6 +1974,7 @@
           }
         },
         "rig": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
           "type": "string"
         }
       },
@@ -1989,6 +1996,7 @@
           "const": "set_physics_normalization"
         },
         "rig": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
           "type": "string"
         }
       },
@@ -2005,6 +2013,7 @@
         "colliders": {
           "type": "array",
           "items": {
+            "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
             "type": "string"
           }
         },
@@ -2013,6 +2022,7 @@
           "const": "set_physics_rig_colliders"
         },
         "rig": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
           "type": "string"
         }
       },
@@ -2038,6 +2048,7 @@
           "const": "set_physics_frame"
         },
         "rig": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
           "type": "string"
         }
       },
@@ -2068,6 +2079,7 @@
       "type": "object",
       "properties": {
         "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
           "type": "string"
         },
         "op": {
@@ -2130,12 +2142,14 @@
       "type": "object",
       "properties": {
         "before": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
           "type": [
             "string",
             "null"
           ]
         },
         "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
           "type": "string"
         },
         "op": {
@@ -2317,6 +2331,7 @@
             "null"
           ],
           "items": {
+            "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
             "type": "string"
           }
         },
@@ -2537,6 +2552,7 @@
           "format": "float"
         },
         "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
           "type": [
             "string",
             "null"
@@ -2591,6 +2607,7 @@
       "type": "object",
       "properties": {
         "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
           "type": "string"
         },
         "op": {
@@ -2858,6 +2875,7 @@
           "type": "array",
           "default": [],
           "items": {
+            "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
             "type": "string"
           }
         },
@@ -3492,6 +3510,7 @@
       "type": "object",
       "properties": {
         "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
           "type": "string"
         },
         "keyforms": {
@@ -3564,6 +3583,7 @@
       "type": "object",
       "properties": {
         "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
           "type": "string"
         },
         "mesh": {
@@ -4130,10 +4150,10 @@
           ]
         },
         {
-          "description": "グルー (`Glue::id`)。",
           "type": "object",
           "properties": {
             "id": {
+              "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
               "type": "string"
             },
             "kind": {
@@ -4401,7 +4421,7 @@
           "format": "float"
         },
         "id": {
-          "description": "ミラー元の要素の ID。格子を持つ要素と同じ種類 (メッシュならメッシュ、デフォーマならデフォーマ)。\n自分自身の ID なら、左右対称な 1 つの要素の中で写し合ったセル。",
+          "description": "ミラー元の要素の ID。格子を持つ要素と同じ種類 (メッシュならメッシュ、デフォーマならデフォーマ)。\n自分自身の ID なら、左右対称な 1 つの要素の中で写し合ったセル。\n\n格子を持つ要素はメッシュとデフォーマの 2 種類で、どちらを指すかは格子の持ち主で決まるため、\n`Id<T>` ではなく `String` にしている (`docs/spec/model.md#ID`)。",
           "type": "string"
         },
         "tolerance": {
@@ -4561,6 +4581,7 @@
           "format": "float"
         },
         "group": {
+          "description": "所属する `ParameterGroup` の ID。",
           "type": [
             "string",
             "null"
@@ -4686,6 +4707,7 @@
           ]
         },
         "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
           "type": "string"
         },
         "name": {
@@ -4831,6 +4853,7 @@
           "type": "array",
           "default": [],
           "items": {
+            "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
             "type": "string"
           }
         },
@@ -4842,6 +4865,7 @@
           ]
         },
         "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
           "type": "string"
         },
         "inputs": {
@@ -5348,6 +5372,7 @@
           "description": "このスロットのモジュールの物理のリグが衝突してよい本体の衝突体 (`PhysicsCollider::id`)。",
           "type": "array",
           "items": {
+            "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
             "type": "string"
           }
         },

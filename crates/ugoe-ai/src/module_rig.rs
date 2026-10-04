@@ -37,7 +37,7 @@ use ugoe_editor_core::space::{ParameterValues, canvas_to_local};
 use ugoe_editor_core::{Command, Document, KeyformTarget, ModuleContext};
 use ugoe_model::deformer::WarpKeyform;
 use ugoe_model::mesh::MeshKeyform;
-use ugoe_model::physics::{PhysicsRig, VertexOwner};
+use ugoe_model::physics::{ColliderId, PhysicsRig, VertexOwner};
 use ugoe_model::{
     Deformer, DeformerId, DeformerKind, KeyformGrid, KeyformInterpolation, MeshId, Model, ParamId,
     standard,
@@ -259,7 +259,7 @@ struct ModuleLayout {
     /// 本体のメッシュのキーフォームに従う衣装のメッシュ (目の開閉など)。
     mesh_follows: MeshFollows,
     /// 揺れのリグが当たってよい本体の衝突体 (スロットが公開し、本体の物理にあるもの)。
-    colliders: Vec<String>,
+    colliders: Vec<ColliderId>,
     /// 衣装の差分 (ポーズにする候補)。
     variants: Vec<pose::Variants>,
     /// 組めなかったもの (提案の理由に書く)。
@@ -1143,7 +1143,7 @@ fn rig_sway(
         .b
         .doc
         .physics()
-        .map(|p| p.rigs.iter().map(|r| r.id.clone()).collect())
+        .map(|p| p.rigs.iter().map(|r| r.id.to_string()).collect())
         .unwrap_or_default();
     let rig_id = fresh_id(context, &base, existing.iter().map(String::as_str));
     let mut physics = rig.pendulum(
@@ -1190,7 +1190,7 @@ const COLLISION_RADIUS: f32 = 0.1;
 fn sway_colliders(
     rig: &Rig,
     physics: &mut PhysicsRig,
-    colliders: &[String],
+    colliders: &[ColliderId],
     rect: Rect,
 ) -> Result<Option<String>, AiError> {
     let Some(settings) = rig.b.doc.physics() else {
@@ -1199,7 +1199,7 @@ fn sway_colliders(
     if colliders.is_empty() {
         return Ok(None);
     }
-    let hits = |colliders: &[String], radius: f32| -> Result<Vec<String>, AiError> {
+    let hits = |colliders: &[ColliderId], radius: f32| -> Result<Vec<ColliderId>, AiError> {
         let mut candidate = physics.clone();
         candidate.colliders = colliders.to_vec();
         for particle in candidate.particles.iter_mut().skip(1) {
@@ -1217,7 +1217,7 @@ fn sway_colliders(
     };
     // 半径 0 でも当たる衝突体は外し、残りに半径を付けても当たらなければ半径を付ける。
     let dropped = hits(colliders, 0.0)?;
-    let used: Vec<String> = colliders
+    let used: Vec<ColliderId> = colliders
         .iter()
         .filter(|c| !dropped.contains(c))
         .cloned()
@@ -1228,7 +1228,7 @@ fn sway_colliders(
     } else {
         0.0
     };
-    let list = |ids: &[String]| {
+    let list = |ids: &[ColliderId]| {
         ids.iter()
             .map(|c| format!("`{c}`"))
             .collect::<Vec<_>>()

@@ -13,8 +13,8 @@ use std::sync::Arc;
 
 use ugoe_core::{Vec2, lerp};
 use ugoe_model::physics::{
-    NormalizationRange, PhysicsBlend, PhysicsOutput, PhysicsRig, PhysicsSettings, PhysicsSource,
-    PhysicsTarget, VertexOwner,
+    ColliderId, NormalizationRange, PhysicsBlend, PhysicsOutput, PhysicsRig, PhysicsRigId,
+    PhysicsSettings, PhysicsSource, PhysicsTarget, VertexOwner,
 };
 use ugoe_model::{DeformerKind, ParamId};
 use ugoe_runtime::{CompiledModel, ModelInstance, ParamIndex, ParameterValues};
@@ -62,11 +62,11 @@ pub struct PhysicsSystem {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RestPoseCollision {
     /// リグの ID。
-    pub rig: String,
+    pub rig: PhysicsRigId,
     /// 当たっている区間の、子の粒子の添字 (区間は粒子 `particle - 1` → `particle`)。
     pub particle: usize,
     /// 衝突体の ID。
-    pub collider: String,
+    pub collider: ColliderId,
 }
 
 /// 物理リグ 1 つ分の実行時状態。

@@ -11,7 +11,7 @@ use ugoe_model::deformer::DeformerKind;
 use ugoe_model::keyform::KeyformGrid;
 use ugoe_model::module::DrawOrderRange;
 use ugoe_model::part::PartKeyform;
-use ugoe_model::physics::{PhysicsSettings, PhysicsTarget, VertexOwner};
+use ugoe_model::physics::{ColliderId, PhysicsSettings, PhysicsTarget, VertexOwner};
 use ugoe_model::pose::{PoseEntry, PoseGroup};
 use ugoe_model::validate::{ValidationError, validate};
 use ugoe_model::{DeformerId, Model, Module, Part, PartId, Slot, standard};
@@ -158,7 +158,7 @@ pub fn compose(base: &Model, modules: &[&Module]) -> Result<Model, ComposeError>
         }
         for glue in &module.glues {
             let mut glue = glue.clone();
-            glue.id = rename.string(&glue.id);
+            glue.id = rename.id(&glue.id);
             glue.mesh_a = rename.id(&glue.mesh_a);
             glue.mesh_b = rename.id(&glue.mesh_b);
             rename.grid(&mut glue.keyforms);
@@ -223,7 +223,7 @@ fn compose_physics_with(
 ) -> Result<PhysicsSettings, ComposeError> {
     let attachments = attach(base, modules)?;
     let mut physics = physics.clone();
-    let base_ids: HashSet<String> = physics.colliders.iter().map(|c| c.id.clone()).collect();
+    let base_ids: HashSet<ColliderId> = physics.colliders.iter().map(|c| c.id.clone()).collect();
     for Attachment { module, slot } in attachments {
         let rename = Renamer::new(&module.name);
         let own_colliders: HashSet<&str> = module
@@ -235,12 +235,12 @@ fn compose_physics_with(
         for rig in &module.physics.rigs {
             let mut rig = rig.clone();
             let original = rig.id.clone();
-            rig.id = rename.string(&rig.id);
+            rig.id = rename.id(&rig.id);
             rig.frame = rig.frame.as_ref().map(|f| rename.id(f));
             let mut colliders = Vec::with_capacity(rig.colliders.len());
             for collider in &rig.colliders {
                 if own_colliders.contains(collider.as_str()) {
-                    colliders.push(rename.string(collider));
+                    colliders.push(rename.id(collider));
                 } else if slot.colliders.contains(collider)
                     && (!base_colliders || base_ids.contains(collider))
                 {
@@ -251,8 +251,8 @@ fn compose_physics_with(
                 } else {
                     return Err(ComposeError::UnknownCollider {
                         module: module.name.clone(),
-                        rig: original.clone(),
-                        collider: collider.clone(),
+                        rig: original.to_string(),
+                        collider: collider.to_string(),
                     });
                 }
             }
@@ -272,7 +272,7 @@ fn compose_physics_with(
         }
         for collider in &module.physics.colliders {
             let mut collider = collider.clone();
-            collider.id = rename.string(&collider.id);
+            collider.id = rename.id(&collider.id);
             collider.attach = rename.parent(collider.attach.as_ref(), slot);
             physics.colliders.push(collider);
         }
@@ -668,15 +668,15 @@ mod tests {
         let modules = [&long_hair_module(), &dress_module()];
         let physics = compose_physics(&base, &empty, &modules).unwrap();
         let rig = &physics.rigs[0];
-        assert_eq!(rig.id, "LongHair/Sway");
-        assert_eq!(rig.colliders, ["LongHair/Collar"]);
+        assert_eq!(rig.id.as_str(), "LongHair/Sway");
+        assert_eq!(rig.colliders, [ColliderId::new("LongHair/Collar")]);
         assert_eq!(
             rig.outputs[0].target,
             PhysicsTarget::DeformerAngle {
                 deformer: "LongHair/Sway".into()
             }
         );
-        assert_eq!(physics.colliders[0].id, "LongHair/Collar");
+        assert_eq!(physics.colliders[0].id.as_str(), "LongHair/Collar");
         assert_eq!(
             physics.colliders[0].attach.as_ref().unwrap().as_str(),
             "Head"
@@ -814,12 +814,15 @@ mod tests {
         let mut hair = long_hair_module();
         // 本体の `Collar` と同じ ID の衝突体がモジュールにあれば、モジュールのものを指す。
         let composed = compose_physics(&base, &physics, &[&hair]).unwrap();
-        assert_eq!(composed.rigs[0].colliders, ["LongHair/Collar"]);
+        assert_eq!(
+            composed.rigs[0].colliders,
+            [ColliderId::new("LongHair/Collar")]
+        );
 
         // モジュールに無ければ、スロットが公開する本体の衝突体を指す (付け替えない)。
         hair.physics.colliders.clear();
         let composed = compose_physics(&base, &physics, &[&hair]).unwrap();
-        assert_eq!(composed.rigs[0].colliders, ["Collar"]);
+        assert_eq!(composed.rigs[0].colliders, [ColliderId::new("Collar")]);
         let model = compose(&base, &[&hair]).unwrap();
         assert_eq!(validate_physics(&composed, &model), vec![]);
 
@@ -856,7 +859,7 @@ mod tests {
         assert!(!validate_physics(&empty, &model).is_empty());
 
         let physics = compose_physics_without_base(&base, &mut model, &empty, &[&hair]).unwrap();
-        assert_eq!(physics.rigs[0].id, "LongHair/Sway");
+        assert_eq!(physics.rigs[0].id.as_str(), "LongHair/Sway");
         assert!(physics.rigs[0].colliders.is_empty());
         assert!(model.slots.iter().all(|s| s.colliders.is_empty()));
         assert_eq!(validate_physics(&physics, &model), vec![]);
@@ -865,7 +868,10 @@ mod tests {
         let hair = long_hair_module();
         let mut model = compose(&base, &[&hair]).unwrap();
         let physics = compose_physics_without_base(&base, &mut model, &empty, &[&hair]).unwrap();
-        assert_eq!(physics.rigs[0].colliders, ["LongHair/Collar"]);
+        assert_eq!(
+            physics.rigs[0].colliders,
+            [ColliderId::new("LongHair/Collar")]
+        );
 
         // スロットが公開していない衝突体はエラーのまま。
         base.slots[0].colliders.clear();

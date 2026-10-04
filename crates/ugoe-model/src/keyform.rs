@@ -214,6 +214,9 @@ impl KeyformOrigin {
 pub struct MirrorSource {
     /// ミラー元の要素の ID。格子を持つ要素と同じ種類 (メッシュならメッシュ、デフォーマならデフォーマ)。
     /// 自分自身の ID なら、左右対称な 1 つの要素の中で写し合ったセル。
+    ///
+    /// 格子を持つ要素はメッシュとデフォーマの 2 種類で、どちらを指すかは格子の持ち主で決まるため、
+    /// `Id<T>` ではなく `String` にしている (`docs/spec/model.md#ID`)。
     pub id: String,
     /// 対称軸 `x = a` の `a` を明示した場合の値。`None` なら元の要素の `mirror_axis` (または既定値)。
     #[serde(default, skip_serializing_if = "Option::is_none")]

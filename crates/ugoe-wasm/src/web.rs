@@ -572,7 +572,7 @@ impl WebPuppet {
             .as_ref()
             .map(|p| {
                 let model = p.instance().compiled().model();
-                model.hit_areas.iter().map(|h| h.id.clone()).collect()
+                model.hit_areas.iter().map(|h| h.id.to_string()).collect()
             })
             .unwrap_or_default()
     }

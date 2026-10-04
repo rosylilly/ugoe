@@ -6,7 +6,7 @@
 use serde::Serialize;
 use ts_rs::TS;
 use ugoe_model::Model;
-use ugoe_model::physics::PhysicsSettings;
+use ugoe_model::physics::{ColliderId, PhysicsRigId, PhysicsSettings};
 use ugoe_physics::PhysicsSystem;
 use ugoe_runtime::{CompileError, CompiledModel, ModelInstance};
 
@@ -17,9 +17,9 @@ use ugoe_runtime::{CompileError, CompiledModel, ModelInstance};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 pub struct RestPoseCollision {
     /// リグの ID。
-    pub rig: String,
+    pub rig: PhysicsRigId,
     /// 衝突体の ID。
-    pub collider: String,
+    pub collider: ColliderId,
     /// 当たっている区間の、子の粒子の添字 (昇順。区間は粒子 `i - 1` → `i`)。
     pub particles: Vec<u32>,
 }

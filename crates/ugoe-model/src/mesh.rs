@@ -4,6 +4,7 @@ use ugoe_core::{Id, Rgb, Vec2};
 use crate::{DeformerId, KeyformGrid, PartId};
 
 pub type MeshId = Id<Mesh>;
+pub type GlueId = Id<Glue>;
 
 /// 描画単位となるテクスチャ付き三角形メッシュ。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -186,7 +187,7 @@ impl BlendMode {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Glue {
-    pub id: String,
+    pub id: GlueId,
     pub mesh_a: MeshId,
     pub mesh_b: MeshId,
     pub pairs: Vec<GluePair>,

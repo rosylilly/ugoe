@@ -405,11 +405,11 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
     for glue in &model.glues {
         let refs = Refs {
             kind: "glue",
-            id: &glue.id,
+            id: glue.id.as_str(),
         };
         let a = refs.check(&meshes, "mesh_a", "mesh", &glue.mesh_a, &mut errors);
         let b = refs.check(&meshes, "mesh_b", "mesh", &glue.mesh_b, &mut errors);
-        let exists = |id: &str| glues.contains_key(&id.to_owned());
+        let exists = |id: &str| glues.contains_key(&crate::GlueId::new(id));
         check_grid(&refs, &params, &exists, &glue.keyforms, &mut errors);
         let kinds = Kinds::new(&params, &model.parameters, false);
         check_blend_shapes(&refs, &kinds, &exists, &glue.keyforms, &mut errors);
@@ -429,7 +429,7 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
             let vertices = model.meshes[mesh_index].uvs.len();
             if let Some(&index) = indices.iter().find(|&&i| usize::from(i) >= vertices) {
                 errors.push(ValidationError::GlueVertexOutOfRange {
-                    id: glue.id.clone(),
+                    id: glue.id.to_string(),
                     mesh: mesh_id.to_string(),
                     index,
                     vertices,
@@ -441,7 +441,7 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
     for hit_area in &model.hit_areas {
         let refs = Refs {
             kind: "hit area",
-            id: &hit_area.id,
+            id: hit_area.id.as_str(),
         };
         refs.check(&meshes, "mesh", "mesh", &hit_area.mesh, &mut errors);
     }

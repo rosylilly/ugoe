@@ -351,14 +351,14 @@ fn physics_differences_tell_what_changed() {
     let rig = physics
         .rigs
         .iter_mut()
-        .find(|r| r.id == "LongHair/Sway")
+        .find(|r| r.id.as_str() == "LongHair/Sway")
         .unwrap();
     rig.particles[1].mobility = 0.5;
     rig.colliders.clear();
     let collider = physics
         .colliders
         .iter_mut()
-        .find(|c| c.id == "LongHair/Collar")
+        .find(|c| c.id.as_str() == "LongHair/Collar")
         .unwrap();
     collider.shape = ColliderShape::Circle {
         center: Vec2::new(0.0, 40.0),
@@ -432,7 +432,7 @@ fn glue_differences_tell_what_changed() {
     let bytes = export_module(&project).unwrap().bytes;
     let mut changed = project.clone();
     let glue = &mut changed.model.glues[0];
-    assert_eq!(glue.id, "LongHair/Seam");
+    assert_eq!(glue.id.as_str(), "LongHair/Seam");
     glue.pairs[0].weight = 0.25;
     glue.keyforms.keyforms[0].intensity = 0.5;
     let differences = compare_with_module_file(&changed, &bytes).unwrap();

@@ -6,7 +6,7 @@
 //! ここでは ID の形式と重複、衝突体の参照、ほかのスロットとの描画順の範囲の重なりを検査する。
 
 use ugoe_model::module::{DrawOrderRange, Slot, SlotId};
-use ugoe_model::physics::PhysicsSettings;
+use ugoe_model::physics::{ColliderId, PhysicsSettings};
 use ugoe_model::{DeformerId, Model, PartId};
 
 use crate::document::EditError;
@@ -58,8 +58,8 @@ pub(crate) fn set(
         && let Some(avatar) = &mut model.avatar
     {
         for exposed in &mut avatar.slots {
-            if exposed == id.as_str() {
-                *exposed = slot.id.to_string();
+            if exposed == id {
+                *exposed = slot.id.clone();
             }
         }
     }
@@ -76,7 +76,7 @@ pub(crate) fn remove(model: &mut Model, id: &SlotId) -> Result<(), EditError> {
         .ok_or_else(|| not_found(id))?;
     model.slots.remove(index);
     if let Some(avatar) = &mut model.avatar {
-        avatar.slots.retain(|s| s != id.as_str());
+        avatar.slots.retain(|s| s != id);
     }
     Ok(())
 }
@@ -114,7 +114,7 @@ fn check_colliders(physics: Option<&PhysicsSettings>, slot: &Slot) -> Result<(),
         if !exists {
             return Err(EditError::NotFound {
                 kind: "physics collider",
-                id: collider.clone(),
+                id: collider.to_string(),
             });
         }
     }
@@ -181,8 +181,8 @@ pub(crate) fn forget_removed_colliders(
     let Some(before) = before else {
         return;
     };
-    let exists = |id: &String| after.is_some_and(|p| p.colliders.iter().any(|c| &c.id == id));
-    let removed: Vec<&String> = before
+    let exists = |id: &ColliderId| after.is_some_and(|p| p.colliders.iter().any(|c| &c.id == id));
+    let removed: Vec<&ColliderId> = before
         .colliders
         .iter()
         .map(|c| &c.id)

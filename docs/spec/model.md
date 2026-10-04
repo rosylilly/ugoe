@@ -46,6 +46,12 @@
 ## ID
 
 - すべての要素は **文字列 ID** (`Id<T>`) で参照します。ID はモデル内で種類ごとに一意です。
+- Rust では、ID を持つ要素の `id` とそれを指す参照を、どれも要素の種類ごとの `Id<T>` の別名で表します
+  (`ParamId`・`ParameterGroupId`・`PartId`・`DeformerId`・`MeshId`・`GlueId`・`HitAreaId`・`SlotId`・
+  `physics::PhysicsRigId`・`physics::ColliderId`)。種類の違う ID を取り違えるとコンパイルエラーになります。
+  JSON と TypeScript ではどれも文字列で、形は変わりません。
+  - 例外は、指す先の種類が文脈で決まる参照です。キーフォームのミラー元 (`MirrorSource::id`) は格子の持ち主と同じ種類
+    (メッシュかデフォーマ) を指すので、`String` のままにします。
 - ID は `[A-Za-z0-9_]+` で書くことを推奨します。エディタは新しい要素にこの形式の ID を振ります。
 - ランタイムはロード時に ID を連番インデックスに変換します (`CompiledModel`)。評価中に文字列の比較は行いません。
 - 配列中の順序には意味があります。

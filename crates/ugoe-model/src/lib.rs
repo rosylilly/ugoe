@@ -24,10 +24,10 @@ pub mod unknown;
 pub mod validate;
 
 use serde::{Deserialize, Serialize};
-use ugoe_core::Vec2;
 /// `Vec2` のフィールドの生成用の型 (`#[ts(as = "crate::Vec2Repr")]` などで使う)。
 #[cfg(any(feature = "ts", feature = "schema"))]
 use ugoe_core::codegen::Vec2Repr;
+use ugoe_core::{Id, Vec2};
 
 pub use avatar::AvatarProfile;
 pub use deformer::{Deformer, DeformerId, DeformerKind};
@@ -36,11 +36,11 @@ pub use keyform::{
     DepthRotation, KeyformBinding, KeyformGrid, KeyformInference, KeyformInterpolation,
     KeyformOrigin, MirrorSource,
 };
-pub use mesh::{BlendMode, Glue, MaskMode, MaskRef, Mesh, MeshId};
+pub use mesh::{BlendMode, Glue, GlueId, MaskMode, MaskRef, Mesh, MeshId};
 pub use module::{
     DrawOrderRange, Module, ModulePhysics, ModulePose, ModuleRequirements, Slot, SlotId,
 };
-pub use parameter::{ParamId, Parameter, ParameterGroup};
+pub use parameter::{ParamId, Parameter, ParameterGroup, ParameterGroupId};
 pub use part::{Part, PartId};
 pub use pose::Pose;
 
@@ -121,11 +121,13 @@ pub struct TextureRef {
     pub normal_map: Option<String>,
 }
 
+pub type HitAreaId = Id<HitArea>;
+
 /// 当たり判定領域。メッシュの変形後形状で判定する。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct HitArea {
-    pub id: String,
+    pub id: HitAreaId,
     pub mesh: MeshId,
 }

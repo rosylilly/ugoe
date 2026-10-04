@@ -1,7 +1,7 @@
 //! スロットのコマンド (`AddSlot`・`SetSlot`・`RemoveSlot`) と、削除の連鎖のテスト。
 //! 規則は `docs/editor.md#スロットの編集`。
 
-use ugoe_model::module::{DrawOrderRange, Slot};
+use ugoe_model::module::{DrawOrderRange, Slot, SlotId};
 use ugoe_model::physics::PhysicsSettings;
 use ugoe_model::pose::{PoseEntry, PoseGroup};
 use ugoe_model::validate::{ValidationError, validate};
@@ -167,7 +167,7 @@ fn add_slot_checks_colliders_against_physics() {
         Some(physics_with_collar()),
         Command::AddSlot { slot: hat.clone() },
     );
-    assert_eq!(find(&after, "Hat").colliders, ["Collar"]);
+    assert_eq!(find(&after, "Hat").colliders, ["Collar".into()]);
     hat.colliders = vec!["Nope".into()];
     assert_eq!(
         rejected_with(
@@ -277,7 +277,10 @@ fn set_slot_rename_follows_avatar_profile() {
         },
     );
     assert_eq!(after.slots[0].id.as_str(), "Hairstyle");
-    assert_eq!(after.avatar.unwrap().slots, ["Hairstyle", "Outfit"]);
+    assert_eq!(
+        after.avatar.unwrap().slots,
+        [SlotId::from("Hairstyle"), "Outfit".into()]
+    );
 
     let mut hair = find(&base, "Hair").clone();
     hair.id = "Outfit".into();
@@ -344,7 +347,7 @@ fn remove_slot_drops_it_from_the_avatar_profile() {
     let base = with_profile();
     let after = applied(&base, Command::RemoveSlot { id: "Hair".into() });
     assert_eq!(after.slots.len(), 1);
-    assert_eq!(after.avatar.unwrap().slots, ["Outfit"]);
+    assert_eq!(after.avatar.unwrap().slots, ["Outfit".into()]);
     assert_eq!(
         rejected(&base, Command::RemoveSlot { id: "Hair2".into() }),
         EditError::NotFound {

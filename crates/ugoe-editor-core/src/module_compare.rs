@@ -21,7 +21,9 @@ use ugoe_core::Vec2;
 use ugoe_format::ModuleFile;
 use ugoe_model::mesh::MeshKeyform;
 use ugoe_model::module::ModulePose;
-use ugoe_model::physics::{ColliderShape, PhysicsCollider, PhysicsRig, PhysicsTarget, VertexOwner};
+use ugoe_model::physics::{
+    ColliderId, ColliderShape, PhysicsCollider, PhysicsRig, PhysicsTarget, VertexOwner,
+};
 use ugoe_model::pose::{PoseEntry, PoseGroup};
 use ugoe_model::{
     Deformer, DeformerKind, Glue, KeyformGrid, Mesh, Module, Part, PartId, TextureRef,
@@ -155,23 +157,24 @@ fn workspace_id(
         DifferenceKind::Glue => model
             .glues
             .iter()
-            .find(|g| !base.model.glues.iter().any(|b| b.id == g.id) && own(&g.id))
-            .map(|g| g.id.clone()),
+            .find(|g| !base.model.glues.iter().any(|b| b.id == g.id) && own(g.id.as_str()))
+            .map(|g| g.id.to_string()),
         DifferenceKind::PhysicsRig => physics?
             .rigs
             .iter()
             .find(|r| {
-                !base_physics.is_some_and(|b| b.rigs.iter().any(|b| b.id == r.id)) && own(&r.id)
+                !base_physics.is_some_and(|b| b.rigs.iter().any(|b| b.id == r.id))
+                    && own(r.id.as_str())
             })
-            .map(|r| r.id.clone()),
+            .map(|r| r.id.to_string()),
         DifferenceKind::Collider => physics?
             .colliders
             .iter()
             .find(|c| {
                 !base_physics.is_some_and(|b| b.colliders.iter().any(|b| b.id == c.id))
-                    && own(&c.id)
+                    && own(c.id.as_str())
             })
-            .map(|c| c.id.clone()),
+            .map(|c| c.id.to_string()),
         // [`compare_with_module_file`] がパーツから選ぶ。
         DifferenceKind::PoseGroup | DifferenceKind::PoseFollow => None,
     }
@@ -232,8 +235,8 @@ pub fn module_differences(
         &mut lines,
         "Glues",
         DifferenceKind::Glue,
-        &keyed(&old.glues, |g| g.id.clone()),
-        &keyed(&module.glues, |g| g.id.clone()),
+        &keyed(&old.glues, |g| g.id.to_string()),
+        &keyed(&module.glues, |g| g.id.to_string()),
         glue_changes,
     );
     textures(&mut lines, &view, module, images);
@@ -271,16 +274,16 @@ pub fn module_differences(
         &mut lines,
         "Physics rigs",
         DifferenceKind::PhysicsRig,
-        &keyed(&old.physics.rigs, |r| r.id.clone()),
-        &keyed(&module.physics.rigs, |r| r.id.clone()),
+        &keyed(&old.physics.rigs, |r| r.id.to_string()),
+        &keyed(&module.physics.rigs, |r| r.id.to_string()),
         rig_changes,
     );
     elements(
         &mut lines,
         "Colliders",
         DifferenceKind::Collider,
-        &keyed(&old.physics.colliders, |c| c.id.clone()),
-        &keyed(&module.physics.colliders, |c| c.id.clone()),
+        &keyed(&old.physics.colliders, |c| c.id.to_string()),
+        &keyed(&module.physics.colliders, |c| c.id.to_string()),
         collider_changes,
     );
     pose_differences(&mut lines, &old.pose, &module.pose);
@@ -603,11 +606,11 @@ fn rig_changes(old: &PhysicsRig, new: &PhysicsRig) -> Vec<String> {
     if old.normalization != new.normalization {
         out.push("normalization".to_owned());
     }
-    let colliders = |c: &[String]| c.iter().cloned().collect::<BTreeSet<String>>();
+    let colliders = |c: &[ColliderId]| c.iter().cloned().collect::<BTreeSet<ColliderId>>();
     let (a, b) = (colliders(&old.colliders), colliders(&new.colliders));
     if a != b {
-        let added: Vec<&str> = b.difference(&a).map(String::as_str).collect();
-        let removed: Vec<&str> = a.difference(&b).map(String::as_str).collect();
+        let added: Vec<&str> = b.difference(&a).map(ColliderId::as_str).collect();
+        let removed: Vec<&str> = a.difference(&b).map(ColliderId::as_str).collect();
         if let Some(details) = details(&added, &removed, &[], "changed") {
             out.push(format!("colliders ({details})"));
         }
@@ -849,13 +852,13 @@ fn highlighted_meshes(kind: DifferenceKind, id: &str, modules: &[&Module]) -> Ve
                 }
             }
             DifferenceKind::Glue => {
-                if let Some(glue) = module.glues.iter().find(|g| g.id == id) {
+                if let Some(glue) = module.glues.iter().find(|g| g.id.as_str() == id) {
                     push(glue.mesh_a.as_str());
                     push(glue.mesh_b.as_str());
                 }
             }
             DifferenceKind::PhysicsRig => {
-                let Some(rig) = module.physics.rigs.iter().find(|r| r.id == id) else {
+                let Some(rig) = module.physics.rigs.iter().find(|r| r.id.as_str() == id) else {
                     continue;
                 };
                 for output in &rig.outputs {

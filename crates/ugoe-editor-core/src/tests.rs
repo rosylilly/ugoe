@@ -375,7 +375,10 @@ fn set_parameter_group() {
             group: Some("Face".into()),
         },
     );
-    assert_eq!(after.parameters[0].group.as_deref(), Some("Face"));
+    assert_eq!(
+        after.parameters[0].group.as_ref().map(|g| g.as_str()),
+        Some("Face")
+    );
     let cleared = applied(
         &after,
         Command::SetParameterGroup {

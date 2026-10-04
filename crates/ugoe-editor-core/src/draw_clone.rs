@@ -7,7 +7,7 @@
 
 use ugoe_model::mesh::MeshKeyform;
 use ugoe_model::mesh::{Glue, GlueKeyform, GluePair};
-use ugoe_model::{KeyformGrid, Mesh, MeshId, Model};
+use ugoe_model::{GlueId, KeyformGrid, Mesh, MeshId, Model};
 
 use crate::grid;
 use crate::keyform::parameter_defaults;
@@ -17,8 +17,8 @@ use crate::{EditError, ids};
 pub const GLUE_PREFIX: &str = "DrawClone_";
 
 /// 複製 `clone` と元をつなぐグルーの ID (`DrawClone_<複製の ID>`)。
-pub fn glue_id(clone: &MeshId) -> String {
-    format!("{GLUE_PREFIX}{clone}")
+pub fn glue_id(clone: &MeshId) -> GlueId {
+    GlueId::new(format!("{GLUE_PREFIX}{clone}"))
 }
 
 /// `glue` が描画用の複製のグルー (ID が `mesh_b` の [`glue_id`]) か。
@@ -139,38 +139,37 @@ pub(crate) fn create(
         .position(|m| m.id == original_id)
         .ok_or_else(|| not_found(source))?;
     let original = &model.meshes[index];
-    let id = match id {
-        Some(id) => {
-            if find(model, &id).is_some() {
-                return Err(EditError::DuplicateId {
-                    kind: "mesh",
-                    id: id.to_string(),
-                });
+    let id =
+        match id {
+            Some(id) => {
+                if find(model, &id).is_some() {
+                    return Err(EditError::DuplicateId {
+                        kind: "mesh",
+                        id: id.to_string(),
+                    });
+                }
+                id
             }
-            id
-        }
-        None => {
-            // メッシュとグルーの両方で空いている ID。
-            let base = format!("{original_id}_Clone");
-            let taken: Vec<String> = model
-                .meshes
-                .iter()
-                .map(|m| m.id.to_string())
-                .chain(
+            None => {
+                // メッシュとグルーの両方で空いている ID。
+                let base = format!("{original_id}_Clone");
+                let taken: Vec<String> =
                     model
-                        .glues
+                        .meshes
                         .iter()
-                        .filter_map(|g| g.id.strip_prefix(GLUE_PREFIX).map(str::to_owned)),
-                )
-                .collect();
-            MeshId::new(ids::unique_id(&base, taken.iter().map(String::as_str)))
-        }
-    };
+                        .map(|m| m.id.to_string())
+                        .chain(model.glues.iter().filter_map(|g| {
+                            g.id.as_str().strip_prefix(GLUE_PREFIX).map(str::to_owned)
+                        }))
+                        .collect();
+                MeshId::new(ids::unique_id(&base, taken.iter().map(String::as_str)))
+            }
+        };
     let glue = glue_id(&id);
     if model.glues.iter().any(|g| g.id == glue) {
         return Err(EditError::DuplicateId {
             kind: "glue",
-            id: glue,
+            id: glue.to_string(),
         });
     }
     let name = if name.is_empty() {
