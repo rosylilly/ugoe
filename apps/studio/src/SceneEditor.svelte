@@ -227,7 +227,7 @@ async function chooseImage() {
   <fieldset class="editor__group">
     <legend>{t("editor.background")}</legend>
     <SegmentedControl
-      ariaLabel={t("editor.backgroundKind")}
+      aria-label={t("editor.backgroundKind")}
       value={scene.background.kind}
       options={backgroundOptions}
       {disabled}

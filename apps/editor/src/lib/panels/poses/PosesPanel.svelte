@@ -226,7 +226,7 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
         decimals={3}
         value={pose.fade_duration}
         disabled={module !== null}
-        describedby="{ids}-fade"
+        aria-describedby="{ids}-fade"
         onchange={setFade}
       />
     {/key}
@@ -238,7 +238,7 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
       label={t("poses.preview.label")}
       checked={shown !== null}
       disabled={pose.groups.length === 0}
-      describedby="{ids}-preview"
+      aria-describedby="{ids}-preview"
       onchange={(on) => viewport.setPosePreview(on ? [] : null)}
     />
   </div>
@@ -254,7 +254,7 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
         <h3 id="{ids}-group-{gi}">{t("poses.group.title", { index: gi + 1 })}</h3>
         {#if base}
           <Tooltip text={t("poses.group.base.tooltip")}>
-            {#snippet children(attrs)}<span {...attrs} class="tag">{t("poses.group.base.label")}</span>{/snippet}
+            {#snippet trigger(attrs)}<span {...attrs} class="tag">{t("poses.group.base.label")}</span>{/snippet}
           </Tooltip>
         {/if}
         <span class="remove">
@@ -303,7 +303,7 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
               onpointerdown={(e) => entryPointerDown(e, gi, ei, group.entries.length)}
             >
               <Tooltip text={t("poses.entry.select.tooltip")}>
-                {#snippet children(attrs)}
+                {#snippet trigger(attrs)}
                   <button
                     {...attrs}
                     class="name"
@@ -317,7 +317,7 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
               </Tooltip>
               {#if ei === 0}
                 <Tooltip text={t("poses.entry.first.tooltip")}>
-                  {#snippet children(attrs)}<span {...attrs} class="tag">{t("poses.entry.first.label")}</span>{/snippet}
+                  {#snippet trigger(attrs)}<span {...attrs} class="tag">{t("poses.entry.first.label")}</span>{/snippet}
                 </Tooltip>
               {/if}
               <span class="buttons">
@@ -378,7 +378,7 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
         <div class="row">
           <span class="pick">
             <Select
-              ariaLabel={t("poses.entry.add.aria", { index: gi + 1 })}
+              aria-label={t("poses.entry.add.aria", { index: gi + 1 })}
               value={pickOf(gi)}
               options={freeOptions}
               disabled={free.length === 0}
@@ -406,7 +406,7 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
       <div class="row">
         <span class="pick">
           <Select
-            ariaLabel={t("poses.newGroup.first.aria")}
+            aria-label={t("poses.newGroup.first.aria")}
             value={pickOf(-1)}
             options={freeOptions}
             onchange={(v) => (picks[-1] = v)}

@@ -16,7 +16,7 @@ interface Props {
   /** フォームで送るときの名前。 */
   name?: string;
   /** 補足の説明を持つ要素の id。 */
-  describedby?: string;
+  "aria-describedby"?: string;
   onchange?: (checked: boolean) => void;
 }
 
@@ -26,7 +26,7 @@ let {
   label,
   disabled = false,
   name,
-  describedby,
+  "aria-describedby": describedby,
   onchange,
 }: Props = $props();
 

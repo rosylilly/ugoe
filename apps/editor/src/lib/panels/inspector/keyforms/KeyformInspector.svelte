@@ -162,7 +162,7 @@ async function removeKey(parameter: string, key: number) {
     origin: originTitle(origin, element?.grid.inference, element?.grid.mirror_source),
   })}
   <Tooltip text={tip}>
-    {#snippet children(attrs)}
+    {#snippet trigger(attrs)}
       <button
         {...withClick(attrs, (event) => onCell(event, cell))}
         class="cell"
@@ -219,7 +219,7 @@ async function removeKey(parameter: string, key: number) {
                   onclick={() => viewport.setParameter(b.parameter, key)}>{key}</button
                 >
                 <Tooltip text={removeTip}>
-                  {#snippet children(attrs)}
+                  {#snippet trigger(attrs)}
                     <button
                       {...withClick(attrs, () => removeKey(b.parameter, key))}
                       class="remove"
@@ -248,7 +248,7 @@ async function removeKey(parameter: string, key: number) {
         <Checkbox
           label={t("inspector.keyforms.smooth.label")}
           checked={interpolation === "smooth"}
-          describedby="{ids}-smooth"
+          aria-describedby="{ids}-smooth"
           onchange={(v) => setSmooth(v)}
         />
         {#if interpolation === "unknown"}<span class="muted">{t("inspector.keyforms.smooth.unknown")}</span>{/if}
@@ -259,7 +259,7 @@ async function removeKey(parameter: string, key: number) {
     {#if unbound.length > 0}
       <span class="add-axis">
         <Select
-          ariaLabel={t("inspector.keyforms.newAxis.aria")}
+          aria-label={t("inspector.keyforms.newAxis.aria")}
           placeholder={t("inspector.keyforms.newAxis.placeholder")}
           bind:value={newAxis}
           options={axisOptions}

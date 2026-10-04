@@ -95,7 +95,7 @@ async function setCell(field: "opacity" | "draw_order", value: number | null): P
       <div class="row">
         <span id="{ids}-opacity">{t("inspector.drawClone.opacity")}</span>
         <NumberField
-          labelledby="{ids}-opacity"
+          aria-labelledby="{ids}-opacity"
           min={0}
           max={1}
           step={0.05}
@@ -107,7 +107,7 @@ async function setCell(field: "opacity" | "draw_order", value: number | null): P
       <div class="row">
         <span id="{ids}-draw-order">{t("inspector.drawClone.drawOrder")}</span>
         <NumberField
-          labelledby="{ids}-draw-order"
+          aria-labelledby="{ids}-draw-order"
           step={10}
           disabled={!keyform}
           value={keyform?.draw_order ?? 0}

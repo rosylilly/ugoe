@@ -14,12 +14,12 @@ import Popover from "./Popover.svelte";
 interface Props {
   /** 色 (`#rrggbb`)。 */
   value?: string;
-  /** 見えるラベル。`labelledby` か `ariaLabel` を渡すときは省ける。 */
+  /** 見えるラベル。`aria-labelledby` か `aria-label` を渡すときは省ける。 */
   label?: string;
   /** 見えるラベルを別の要素に置くときの、その要素の id。 */
-  labelledby?: string;
+  "aria-labelledby"?: string;
   /** 見えるラベルを置けないときの読み上げの名前。 */
-  ariaLabel?: string;
+  "aria-label"?: string;
   disabled?: boolean;
   /** 選ぶ枠 (Popover) が開いているか。 */
   open?: boolean;
@@ -30,8 +30,8 @@ interface Props {
 let {
   value = $bindable("#000000"),
   label,
-  labelledby,
-  ariaLabel,
+  "aria-labelledby": labelledby,
+  "aria-label": ariaLabel,
   disabled = false,
   open = $bindable(false),
   onchange,

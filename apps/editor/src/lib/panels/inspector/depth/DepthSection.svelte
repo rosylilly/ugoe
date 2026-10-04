@@ -100,7 +100,7 @@ function applyPoints(): void {
       <div class="field">
         <span id="{ids}-uniform">{t("inspector.depth.uniform.label")}</span>
         <span class="row">
-          <NumberField labelledby="{ids}-uniform" size={4} bind:value={uniform} />
+          <NumberField aria-labelledby="{ids}-uniform" size={4} bind:value={uniform} />
           <Button small disabled={busy || finiteValue(uniform) === null} onclick={applyUniform}
             >{t("inspector.depth.uniform.apply")}</Button
           >
@@ -109,7 +109,7 @@ function applyPoints(): void {
       <div class="field">
         <span id="{ids}-peak">{t("inspector.depth.dome.label")}</span>
         <span class="row">
-          <NumberField labelledby="{ids}-peak" size={4} bind:value={peak} />
+          <NumberField aria-labelledby="{ids}-peak" size={4} bind:value={peak} />
           <TipButton
             small
             disabled={busy || finiteValue(peak) === null}
@@ -121,7 +121,7 @@ function applyPoints(): void {
       <div class="field">
         <span id="{ids}-points">{t("inspector.depth.selected.label", { count: picked.length })}</span>
         <span class="row">
-          <NumberField labelledby="{ids}-points" size={4} bind:value={pointValue} />
+          <NumberField aria-labelledby="{ids}-points" size={4} bind:value={pointValue} />
           <Button
             small
             disabled={busy || picked.length === 0 || finiteValue(pointValue) === null}

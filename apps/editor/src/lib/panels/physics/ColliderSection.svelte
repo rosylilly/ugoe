@@ -191,12 +191,12 @@ const ids = $props.id();
       </div>
       <div class="ed-field">
         <span id="{ids}-attach">{t("physics.colliders.attach.label")}</span>
-        <Select labelledby="{ids}-attach" value={collider.attach ?? CANVAS} options={attachOptions}
+        <Select aria-labelledby="{ids}-attach" value={collider.attach ?? CANVAS} options={attachOptions}
           onchange={(v) => setAttach(v === CANVAS ? "" : v)} />
       </div>
       <div class="ed-field">
         <span id="{ids}-shape">{t("physics.colliders.shape")}</span>
-        <Select labelledby="{ids}-shape" value={collider.shape.type} options={shapeOptions}
+        <Select aria-labelledby="{ids}-shape" value={collider.shape.type} options={shapeOptions}
           onchange={(v) => setKind(v)} />
       </div>
       {#each points as pt (pt.key)}
@@ -204,9 +204,9 @@ const ids = $props.id();
           <span id="{ids}-{pt.key}">{pt.label}</span>
           <span class="pair">
             <NumberField value={pt.p[0]} step={1} decimals={4} size={5}
-              labelledby="{ids}-{pt.key} {ids}-x" onchange={(v) => setPoint(pt.key, 0, v)} />
+              aria-labelledby="{ids}-{pt.key} {ids}-x" onchange={(v) => setPoint(pt.key, 0, v)} />
             <NumberField value={pt.p[1]} step={1} decimals={4} size={5}
-              labelledby="{ids}-{pt.key} {ids}-y" onchange={(v) => setPoint(pt.key, 1, v)} />
+              aria-labelledby="{ids}-{pt.key} {ids}-y" onchange={(v) => setPoint(pt.key, 1, v)} />
           </span>
         </div>
       {/each}
@@ -214,7 +214,7 @@ const ids = $props.id();
         <span id="{ids}-radius">{t("physics.colliders.radius")}</span>
         <span class="pair">
           <NumberField value={collider.shape.radius} step={1} min={0} decimals={4} size={5}
-            labelledby="{ids}-radius" onchange={(v) => setRadius(v)} />
+            aria-labelledby="{ids}-radius" onchange={(v) => setRadius(v)} />
         </span>
       </div>
       <p class="ed-hint">{t("physics.colliders.hint")}</p>

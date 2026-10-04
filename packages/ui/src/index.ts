@@ -1,8 +1,8 @@
 // @ugoe/ui: エディタ・ビューア・スタジオで共有する UI の部品 (docs/ui.md、ADR 0029)。
 // トークンは別に読む: `import "@ugoe/ui/tokens.css";`
 // アプリは Bits UI を直接 import せず、ここから出す部品だけを使う。
+// 出すのは部品と、アプリやほかのパッケージが使う関数と型だけ (名前で出す。部品の内部の関数は出さない。T0920)。
 
-export * from "./color";
 export { numberFieldCommit } from "./commit";
 export { default as AlertDialog } from "./components/AlertDialog.svelte";
 export { default as Button } from "./components/Button.svelte";
@@ -28,18 +28,9 @@ export { default as Toggle } from "./components/Toggle.svelte";
 export { default as Toolbar } from "./components/Toolbar.svelte";
 export { default as Tooltip } from "./components/Tooltip.svelte";
 export { default as TooltipProvider } from "./components/TooltipProvider.svelte";
-export * from "./files";
-export * from "./number";
 export { mergeAttributes, type TriggerAttributes } from "./props";
-export * from "./shortcut";
-export * from "./theme.svelte";
-export {
-  dismissToast,
-  showToast,
-  type ToastItem,
-  type ToastOptions,
-  toasts,
-} from "./toast.svelte";
+export { currentTheme, initTheme, type Theme } from "./theme.svelte";
+export { showToast, type ToastOptions } from "./toast.svelte";
 export type {
   ButtonBaseProps,
   ButtonVariant,

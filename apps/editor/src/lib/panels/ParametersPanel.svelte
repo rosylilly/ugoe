@@ -233,7 +233,7 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
             ? t("parameters.edit.tooltipRelay", { id: p.id })
             : t("parameters.edit.tooltip", { id: p.id })}
         >
-          {#snippet children(attrs)}
+          {#snippet trigger(attrs)}
             <button
               {...attrs}
               class="name"
@@ -248,7 +248,7 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
         </Tooltip>
         <span class="row">
           <Tooltip text={t("parameters.value.tooltip", { min: p.min, max: p.max })}>
-            {#snippet children(attrs)}
+            {#snippet trigger(attrs)}
               <input
                 {...attrs}
                 class="value"
@@ -284,7 +284,7 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
         />
         {#each keys as key (key)}
           <Tooltip text={t("parameters.key.marker", { key })}>
-            {#snippet children(attrs)}
+            {#snippet trigger(attrs)}
               <button
                 {...attrs}
                 class="marker"
@@ -328,7 +328,7 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
             <ParameterMirror {doc} parameter={p} {parameters} />
             <Checkbox
               label={t("parameters.relay.label")}
-              describedby="{ids}-relay-{p.id}"
+              aria-describedby="{ids}-relay-{p.id}"
               checked={p.internal ?? false}
               onchange={(v) => setInternal(p, v)}
             />

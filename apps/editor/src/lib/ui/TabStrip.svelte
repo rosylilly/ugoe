@@ -74,7 +74,7 @@ function onkeydown(e: KeyboardEvent) {
     {/snippet}
     {#if tab.tooltip}
       <Tooltip text={tab.tooltip}>
-        {#snippet children(attrs)}{@render button(attrs)}{/snippet}
+        {#snippet trigger(attrs)}{@render button(attrs)}{/snippet}
       </Tooltip>
     {:else}
       {@render button({})}

@@ -10,10 +10,10 @@ interface Props {
   value?: T | "";
   /** 選択肢。`label` は翻訳を通した文言。 */
   options: Option<T>[];
-  /** まとまりの見えるラベル。`ariaLabel` を渡すときは省ける。 */
+  /** まとまりの見えるラベル。`aria-label` を渡すときは省ける。 */
   label?: string;
   /** 見えるラベルを置けないときの読み上げの名前。 */
-  ariaLabel?: string;
+  "aria-label"?: string;
   disabled?: boolean;
   onchange?: (value: T) => void;
 }
@@ -22,7 +22,7 @@ let {
   value = $bindable(""),
   options,
   label,
-  ariaLabel,
+  "aria-label": ariaLabel,
   disabled = false,
   onchange,
 }: Props = $props();

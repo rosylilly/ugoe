@@ -165,7 +165,7 @@ onMount(() => {
           <span class="slot-id">{row.id}</span>
           {#if !row.published}
             <Tooltip text={t("preview.dressUp.slots.authorsOnly.tooltip")}>
-              {#snippet children(attrs)}
+              {#snippet trigger(attrs)}
                 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
                 <span {...attrs} class="badge authors" tabindex="0">{t("preview.dressUp.slots.authorsOnly.label")}</span>
               {/snippet}
@@ -173,7 +173,7 @@ onMount(() => {
           {/if}
         </span>
         <Select
-          ariaLabel={t("preview.dressUp.slots.aria", { slot: row.id })}
+          aria-label={t("preview.dressUp.slots.aria", { slot: row.id })}
           value={row.attached ?? NONE}
           options={slotOptions(row.candidates)}
           disabled={row.candidates.length === 0 || dressUp.busy}
@@ -200,7 +200,7 @@ onMount(() => {
               />
               {#if entry.own}
                 <Tooltip text={t("preview.dressUp.modules.editing.tooltip")}>
-                  {#snippet children(attrs)}
+                  {#snippet trigger(attrs)}
                     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
                     <span {...attrs} class="badge" tabindex="0">{t("preview.dressUp.modules.editing.label")}</span>
                   {/snippet}
@@ -258,7 +258,7 @@ onMount(() => {
                                 ? t("preview.dressUp.differences.unhighlight", { id: item.id })
                                 : t("preview.dressUp.differences.highlight", { id: item.id })}
                             >
-                              {#snippet children(attrs)}
+                              {#snippet trigger(attrs)}
                                 <button
                                   {...attrs}
                                   class="link"

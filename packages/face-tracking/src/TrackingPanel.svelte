@@ -120,7 +120,7 @@ let cameraOptions = $derived(
       <!-- 一覧を開く前に機器を数え直す (つないだばかりのカメラを出す) -->
       <div class="camera" onfocusin={() => void tracker.refreshCameras()}>
         <Select
-          ariaLabel={t("camera.select.tooltip")}
+          aria-label={t("camera.select.tooltip")}
           value={tracker.cameraId}
           options={cameraOptions}
           disabled={tracker.running}
@@ -279,7 +279,7 @@ let cameraOptions = $derived(
 <!-- 説明付きの小さなボタン (`title` 属性の代わりに Tooltip。無効のときは説明が出ない) -->
 {#snippet tip(label: string, tooltip: string, onclick: () => void, disabled = false)}
   <Tooltip text={tooltip} {disabled}>
-    {#snippet children(attrs)}
+    {#snippet trigger(attrs)}
       <Button {...attrs as ButtonBaseProps} small {disabled} onclick={(e: MouseEvent) => {
           (attrs.onclick as ((e: MouseEvent) => void) | undefined)?.(e);
           onclick();

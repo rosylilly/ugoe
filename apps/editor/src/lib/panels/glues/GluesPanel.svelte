@@ -225,7 +225,7 @@ const axisKeyValue = $derived(
             {label}
             step={0.1}
             decimals={4}
-            describedby="glue-intensity-hint"
+            aria-describedby="glue-intensity-hint"
             value={glue.keyforms.keyforms[i]?.intensity ?? 0}
             disabled={locked}
             onchange={(v) => updateGlue(glue.id, (g) => withIntensity(g, i, v))}
@@ -282,7 +282,7 @@ const axisKeyValue = $derived(
             <div class="row">
               <span class="grow">
                 <Select
-                  ariaLabel={t("glues.axisParameter.aria")}
+                  aria-label={t("glues.axisParameter.aria")}
                   value={axisChoice?.id ?? ""}
                   options={axisOptions}
                   disabled={locked}
@@ -372,7 +372,7 @@ const axisKeyValue = $derived(
         min={0}
         step={1}
         size={4}
-        describedby="glue-distance-hint"
+        aria-describedby="glue-distance-hint"
         bind:value={distance}
       />
       <p class="ed-hint help" id="glue-distance-hint">{t("glues.new.distance.description")}</p>
@@ -392,7 +392,7 @@ const axisKeyValue = $derived(
 
 {#snippet tag(text: string, tooltip: string)}
   <Tooltip text={tooltip}>
-    {#snippet children(attrs)}
+    {#snippet trigger(attrs)}
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
       <span {...attrs} class="tag" tabindex="0">{text}</span>
     {/snippet}

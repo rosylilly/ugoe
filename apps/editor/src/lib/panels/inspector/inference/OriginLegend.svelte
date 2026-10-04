@@ -9,7 +9,7 @@ import { LEGEND_ORIGINS, originStyle } from "./inference";
     {@const style = originStyle(origin)}
     <li>
       <Tooltip text={style.description}>
-        {#snippet children(attrs)}
+        {#snippet trigger(attrs)}
           <!-- 説明をキーボードでも出せるように、項目にフォーカスを受けさせる -->
           <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
           <span class="item" tabindex="0" {...attrs}>

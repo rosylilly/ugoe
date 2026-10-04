@@ -226,7 +226,7 @@ function keyPlaceholder(s: AiSettings): string {
           <div class="ed-field">
             <span id={`${id}-service`}>{t("settings.ai.service.label")}</span>
             <Select
-              labelledby={`${id}-service`}
+              aria-labelledby={`${id}-service`}
               value={preset?.base_url ?? OTHER}
               options={serviceOptions}
               onchange={choosePreset}
@@ -257,7 +257,7 @@ function keyPlaceholder(s: AiSettings): string {
           <div class="ed-field">
             <span id={`${id}-output`}>{t("settings.ai.output.label")}</span>
             <Select
-              labelledby={`${id}-output`}
+              aria-labelledby={`${id}-output`}
               value={draft.openai.output}
               options={outputOptions}
               onchange={(v) => draft && (draft.openai.output = v)}

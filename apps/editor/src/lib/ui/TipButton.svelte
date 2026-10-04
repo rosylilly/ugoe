@@ -20,7 +20,7 @@ let { tooltip, shortcut, onclick, children, ...rest }: Props = $props();
 
 {#if tooltip}
   <Tooltip text={tooltip} {shortcut}>
-    {#snippet children(attrs)}
+    {#snippet trigger(attrs)}
       <Button {...mergeAttributes(attrs, rest, { onclick }) as ButtonBaseProps}>{@render label()}</Button>
     {/snippet}
   </Tooltip>

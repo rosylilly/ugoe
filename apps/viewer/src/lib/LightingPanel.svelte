@@ -76,7 +76,7 @@ type Scale = 1 | 100;
 )}
   <div class="color-row">
     <ColorPicker
-      ariaLabel={t("lighting.color.aria", { light: label })}
+      aria-label={t("lighting.color.aria", { light: label })}
       value={light.color}
       disabled={disabled || !s.enabled}
       onchange={(color) =>

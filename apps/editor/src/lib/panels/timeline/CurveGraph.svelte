@@ -255,7 +255,7 @@ async function removeCurve() {
               decimals={4}
               size={5}
               value={selectedPoint.t}
-              labelledby="{ids}-t"
+              aria-labelledby="{ids}-t"
               onchange={(v) => setKeyField("t", v)}
             /></span
           >
@@ -265,7 +265,7 @@ async function removeCurve() {
               decimals={4}
               size={5}
               value={selectedPoint.v}
-              labelledby="{ids}-v"
+              aria-labelledby="{ids}-v"
               onchange={(v) => setKeyField("v", v)}
             /></span
           >

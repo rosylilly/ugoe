@@ -92,7 +92,7 @@ function removeMask(index: number): void {
     <div class="ed-field">
       <span id="{ids}-texture">{t("inspector.mesh.texture.label")}</span>
       <Select
-        labelledby="{ids}-texture"
+        aria-labelledby="{ids}-texture"
         value={model.textures[mesh.texture] ?? ""}
         options={textureOptions}
         onchange={(v) => set({ texture_name: v })}
@@ -101,7 +101,7 @@ function removeMask(index: number): void {
     <div class="ed-field">
       <span id="{ids}-blend">{t("inspector.mesh.blend.label")}</span>
       <Select
-        labelledby="{ids}-blend"
+        aria-labelledby="{ids}-blend"
         value={mesh.blend}
         options={blendOptions}
         onchange={(v) => set({ blend: v })}
@@ -132,7 +132,7 @@ function removeMask(index: number): void {
       <div class="ed-field">
         <span id="{ids}-combine">{t("inspector.mesh.maskMode.label")}</span>
         <Select
-          labelledby="{ids}-combine"
+          aria-labelledby="{ids}-combine"
           value={mesh.maskMode}
           options={maskModeOptions}
           onchange={(v) => set({ mask_mode: v })}
@@ -143,7 +143,7 @@ function removeMask(index: number): void {
       {#each mesh.masks as mask, i (i)}
         <li class="mask">
           <Select
-            ariaLabel={t("inspector.mesh.masks.mesh.aria", { index: i + 1 })}
+            aria-label={t("inspector.mesh.masks.mesh.aria", { index: i + 1 })}
             value={mask.mesh}
             options={maskOptions}
             onchange={(v) => setMask(i, { mesh: v })}

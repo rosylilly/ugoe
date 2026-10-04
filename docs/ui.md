@@ -184,6 +184,11 @@ Bits UI を包むときの約束:
 - Bits UI の部品の `class` と `data-*` 属性 (`data-state`・`data-disabled` など) にトークンを当てて装います。Bits UI の既定の見た目には頼りません (持たない)。
 - 読み上げの名前・閉じるボタンの名前など、部品の中の文言は `@ugoe/i18n` から引いて渡します。日付を扱う部品を使うときは `locale` に今の言語を渡します。
 - `@ugoe/ui` の部品の props は ugoe の言葉で決め、Bits UI の props をそのまま外に出しません (Bits UI の破壊的な変更を `@ugoe/ui` の中で吸収するため)。
+- 読み上げの名前と説明の props は、HTML の属性と同じ名前 (`aria-label`・`aria-labelledby`・`aria-describedby`) で受けます。
+  `Button`・`IconButton` はトリガーの属性を広げて受けるので、ほかの部品もこれに合わせます (T0920。`ariaLabel`・`labelledby`・`describedby` とは書かない)。
+- トリガーを呼び手が描く部品 (`Tooltip`・`Popover`・`Menu`) は、そのスニペットを `trigger` と呼び、受け取った属性をフォーカスを受ける要素に広げます。
+- `index.ts` は部品と、アプリやほかのパッケージが使う関数・型だけを名前で出します (`export *` は使わない)。部品の内部の関数
+  (数値の欄の解釈・ファイルの選り分け・テーマの読み書き・Toast の列など) は出さず、アプリで要るものになったら名前を足します。
 - Bits UI の版は `@ugoe/ui` で完全に固定し、人が更新します (ADR 0029 の 5)。
 
 使い分けの約束:

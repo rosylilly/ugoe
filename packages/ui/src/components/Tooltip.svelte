@@ -3,10 +3,10 @@
   (ポインタを乗せる・フォーカスで出る、Esc とポインタの押下で消える)。
   `title` 属性の代わりに使う。中に操作できるものは置かない (置くなら Popover)。
 
-  トリガーは `children` のスニペットで描き、受け取った属性を、フォーカスを受ける要素 (ボタンなど) に広げる:
+  トリガーは `trigger` のスニペットで描き、受け取った属性を、フォーカスを受ける要素 (ボタンなど) に広げる:
 
     <Tooltip text={t("view.fit.tooltip")}>
-      {#snippet children(attrs)}<button {...attrs}>…</button>{/snippet}
+      {#snippet trigger(attrs)}<button {...attrs}>…</button>{/snippet}
     </Tooltip>
 
   開いている間、トリガーの aria-describedby が説明を指す (IconButton は説明がラベルと同じなので外す)。
@@ -34,10 +34,10 @@ interface Props {
   /** 出るまでの時間 (ミリ秒)。省くと TooltipProvider の値 (無ければ 500)。 */
   delay?: number;
   /** トリガー。受け取った属性を、フォーカスを受ける要素に広げる。 */
-  children: Snippet<[TriggerAttributes]>;
+  trigger: Snippet<[TriggerAttributes]>;
 }
 
-let { text, shortcut, side = "bottom", disabled = false, id, delay, children }: Props = $props();
+let { text, shortcut, side = "bottom", disabled = false, id, delay, trigger }: Props = $props();
 
 const inProvider = isInTooltipProvider();
 </script>
@@ -46,7 +46,7 @@ const inProvider = isInTooltipProvider();
   <Tooltip.Root {disabled} delayDuration={delay}>
     <Tooltip.Trigger {id} {disabled}>
       {#snippet child({ props })}
-        {@render children(props)}
+        {@render trigger(props)}
       {/snippet}
     </Tooltip.Trigger>
     <Tooltip.Portal>

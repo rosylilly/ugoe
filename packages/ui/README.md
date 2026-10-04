@@ -9,7 +9,7 @@
 
 ```
 src/tokens.css          デザイントークン (CSS 変数)。ライト・ダーク (data-theme)、compact・comfortable (data-density)
-src/index.ts            公開する部品と関数
+src/index.ts            公開する部品と関数 (アプリとほかのパッケージが使うものだけを名前で出す)
 src/components/         部品 (Button・IconButton・Checkbox・Toggle・Slider・NumberField・Select・SegmentedControl・
                         Tabs・Section・Toolbar・Dialog・AlertDialog・Notice・Toaster・Tooltip・TooltipProvider・
                         Menu・ContextMenu・Popover・ColorPicker・DropZone・Kbd・ThemeSetting)
@@ -18,8 +18,8 @@ src/commit.ts           数値の欄の確定の印 (numberFieldCommit。同じ�
 src/shortcut.ts         ショートカットの表記 (Mod → ⌘ / Ctrl)・aria-keyshortcuts
 src/color.ts            色 (#rrggbb) と RGB
 src/files.ts            DropZone の accept による選り分け
-src/toast.svelte.ts     Toast の列 (showToast・dismissToast)
-src/theme.svelte.ts     テーマの設定 (initTheme・setThemePreference・currentTheme。ThemeSetting が使う)
+src/toast.svelte.ts     Toast の列 (showToast を出す。列と閉じる関数は Toaster が使う)
+src/theme.svelte.ts     テーマの設定 (initTheme・currentTheme を出す。設定の読み書きは ThemeSetting が使う)
 src/props.ts            Bits UI のトリガーの属性と ugoe の props を重ねる (mergeAttributes。自前のトリガーを作るときに使う)
 src/i18n.ts             部品の既定の文言 (@ugoe/i18n の名前空間 `ui`。カタログは locales/)
 src/context.ts          部品の間の context (Toolbar の中の Button を Bits UI の Toolbar.Button で出す)
@@ -60,6 +60,18 @@ import "@ugoe/ui/tokens.css";
 - `IconButton` の `label` は必須で、空だとコンソールにエラーを出す。`title` 属性は付けず、同じ文言を `Tooltip` で出す
   (`tooltip={false}` で消せる。`shortcut="Mod+Z"` でツールチップにショートカットを出し、`aria-keyshortcuts` を付ける)。
 - `Select` の一覧は body に出す (Portal) ので、`data-theme`・`data-density` は `<html>` に付ける。
+- **読み上げの props は HTML の属性の名前で渡す:** `aria-label` (見えるラベルを置けないとき)・`aria-labelledby` (見えるラベルが別の要素に
+  あるとき)・`aria-describedby` (補足の説明)。`Button` と同じ書き方で、`Checkbox`・`Toggle`・`NumberField`・`Select`・`SegmentedControl`・
+  `ColorPicker`・`Tabs` も同じ名前で受ける。
+
+  ```svelte
+  <span id="{ids}-gravity">{t("physics.gravity.label")}</span>
+  <NumberField aria-labelledby="{ids}-gravity" bind:value={gravity} />
+  <Select aria-label={t("camera.select.aria")} {options} bind:value={camera} />
+  <Toggle label={t("view.mirror.label")} aria-describedby="{ids}-mirror-note" bind:checked={mirror} />
+  ```
+- **公開の範囲:** `index.ts` は部品と、アプリやほかのパッケージが使う関数 (`initTheme`・`currentTheme`・`showToast`・`numberFieldCommit`・
+  `mergeAttributes`) と型だけを出す。部品の内部の関数 (`number.ts`・`files.ts`・`shortcut.ts` など) は出さない。アプリで要るものになったら名前を足す。
 ## 重ねて出す部品 (T0903)
 
 ```svelte
@@ -90,12 +102,18 @@ showToast(t("file.saved"), { tone: "success" }); // 既定で 5 秒。ポイン�
   閉じるボタンは並びの最後に置くので、開くと最初の入力欄やボタンにフォーカスが行く。
 - **AlertDialog:** 取り消せない操作の確認。開くとフォーカスは取り消し側。決定は既定で `danger`。
 - **Notice** は残る知らせ (`role="status"`、`danger` は `role="alert"`)、**Toast** はすぐ消えてよい知らせ。種類は印と読み上げの言葉でも示す。
-- **Tooltip・Popover・Menu の `trigger`:** 自前の要素をトリガーにするときは、スニペットが受け取る属性をフォーカスを受ける要素に広げる。
-  ugoe の `Button` に広げてよい (`<Button {...attrs as ButtonBaseProps}>`)。
+- **Tooltip・Popover・Menu の `trigger`:** 自前の要素をトリガーにするときは、`trigger` のスニペットが受け取る属性をフォーカスを受ける要素に広げる
+  (3 つとも同じ名前。Menu は省くと ugoe の `Button` を出す)。ugoe の `Button` に広げてよい (`<Button {...attrs as ButtonBaseProps}>`)。
+
+  ```svelte
+  <Tooltip text={t("view.fit.tooltip")}>
+    {#snippet trigger(attrs)}<Button {...attrs as ButtonBaseProps} onclick={fit}>{t("view.fit.label")}</Button>{/snippet}
+  </Tooltip>
+  ```
 - **ContextMenu** の `label` は一覧の読み上げの名前。右クリックでしかできない操作は作らない。
 - **DropZone:** 同じことができる「ファイルを選ぶ…」のボタンを必ず出す。Tauri のように WebView の外でドロップを受けるアプリは、
   `active` で見た目を変え、`onbrowse` で自前のダイアログを開く。
-- **Kbd:** `keys="Mod+Shift+Z"`。macOS は ⌘⇧Z、ほかは Ctrl+Shift+Z。`formatShortcut()`・`ariaKeyShortcuts()` も出している。
+- **Kbd:** `keys="Mod+Shift+Z"`。macOS は ⌘⇧Z、ほかは Ctrl+Shift+Z。
 - Bits UI 2.19.4 が付けないので、`@ugoe/ui` で足しているもの: Tooltip の `role="tooltip"`、Menu・ContextMenu の一覧の `aria-label`。
 
 ## テーマ (T0909)

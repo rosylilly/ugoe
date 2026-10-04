@@ -108,7 +108,7 @@ function set(next: number, commit: boolean) {
       decimals={digits}
       {unit}
       {disabled}
-      labelledby={`${id}-label`}
+      aria-labelledby={`${id}-label`}
       onchange={(v) => {
         set(v, true);
       }}

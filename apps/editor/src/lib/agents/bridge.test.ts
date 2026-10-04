@@ -1,9 +1,10 @@
-import { dismissToast, toasts } from "@ugoe/ui";
+import { showToast } from "@ugoe/ui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ApprovalRequest } from "../ipc";
 import { AgentBridge } from "./bridge.svelte";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => true) }));
+vi.mock("@ugoe/ui", () => ({ showToast: vi.fn() }));
 
 function request(id: number): ApprovalRequest {
   return {
@@ -20,7 +21,7 @@ function request(id: number): ApprovalRequest {
 
 describe("AgentBridge", () => {
   afterEach(() => {
-    for (const item of [...toasts()]) dismissToast(item.id);
+    vi.mocked(showToast).mockClear();
   });
 
   it("queues approvals and drops them when they close or are answered", async () => {
@@ -35,7 +36,7 @@ describe("AgentBridge", () => {
     await bridge.answer(2, true);
     expect(bridge.approvals).toEqual([]);
     bridge.handle({ kind: "approval_closed", id: 2, outcome: "approved" }, hooks);
-    expect(toasts()).toEqual([]);
+    expect(showToast).not.toHaveBeenCalled();
   });
 
   it("tells the user when the agent cancels a request it is waiting on", () => {
@@ -49,13 +50,16 @@ describe("AgentBridge", () => {
     bridge.handle({ kind: "approval_closed", id: 1, outcome: "cancelled" }, hooks);
     bridge.handle({ kind: "approval_closed", id: 2, outcome: "cancelled" }, hooks);
     expect(bridge.approvals).toEqual([]);
-    expect(toasts().map((t) => [t.message, t.tone])).toEqual([
-      ["claude-code cancelled its request to apply a proposal. Nothing was applied.", "warning"],
-      ["An agent cancelled its request to save. Nothing was saved.", "warning"],
+    expect(vi.mocked(showToast).mock.calls).toEqual([
+      [
+        "claude-code cancelled its request to apply a proposal. Nothing was applied.",
+        { tone: "warning" },
+      ],
+      ["An agent cancelled its request to save. Nothing was saved.", { tone: "warning" }],
     ]);
     // 閉じた後の知らせ (答えた後など) は重ねて出さない。
     bridge.handle({ kind: "approval_closed", id: 1, outcome: "cancelled" }, hooks);
-    expect(toasts()).toHaveLength(2);
+    expect(showToast).toHaveBeenCalledTimes(2);
   });
 
   it("does not report declines or timeouts as cancellations", () => {
@@ -66,7 +70,7 @@ describe("AgentBridge", () => {
     bridge.handle({ kind: "approval_closed", id: 1, outcome: "declined" }, hooks);
     bridge.handle({ kind: "approval_closed", id: 2, outcome: "timed_out" }, hooks);
     expect(bridge.approvals).toEqual([]);
-    expect(toasts()).toEqual([]);
+    expect(showToast).not.toHaveBeenCalled();
   });
 
   it("remembers when each approval arrived (the queued ones count down from then)", async () => {

@@ -14,7 +14,7 @@ interface Props {
   label: string;
   disabled?: boolean;
   /** 補足の説明を持つ要素の id。 */
-  describedby?: string;
+  "aria-describedby"?: string;
   /** スイッチに出す説明 (Tooltip。翻訳を通した文言)。`title` 属性の代わり。 */
   tooltip?: string;
   onchange?: (checked: boolean) => void;
@@ -24,7 +24,7 @@ let {
   checked = $bindable(false),
   label,
   disabled = false,
-  describedby,
+  "aria-describedby": describedby,
   tooltip,
   onchange,
 }: Props = $props();
@@ -49,7 +49,7 @@ const id = $props.id();
 <span class="ugoe-toggle" data-disabled={disabled ? "" : undefined}>
   {#if tooltip}
     <Tooltip text={tooltip} id={`${id}-switch`} {disabled}>
-      {#snippet children(attrs)}{@render root(attrs)}{/snippet}
+      {#snippet trigger(attrs)}{@render root(attrs)}{/snippet}
     </Tooltip>
   {:else}
     {@render root({})}

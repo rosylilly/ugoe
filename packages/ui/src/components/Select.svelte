@@ -12,12 +12,12 @@ interface Props {
   value?: T | "";
   /** 選択肢。`label` は翻訳を通した文言。 */
   options: Option<T>[];
-  /** 見えるラベル。`labelledby` か `ariaLabel` を渡すときは省ける。 */
+  /** 見えるラベル。`aria-labelledby` か `aria-label` を渡すときは省ける。 */
   label?: string;
   /** 見えるラベルを別の要素に置くときの、その要素の id。 */
-  labelledby?: string;
+  "aria-labelledby"?: string;
   /** 見えるラベルを置けないときの読み上げの名前。 */
-  ariaLabel?: string;
+  "aria-label"?: string;
   /** 何も選んでいないときに出す文言。 */
   placeholder?: string;
   disabled?: boolean;
@@ -28,8 +28,8 @@ let {
   value = $bindable(""),
   options,
   label,
-  labelledby,
-  ariaLabel,
+  "aria-labelledby": labelledby,
+  "aria-label": ariaLabel,
   placeholder = "",
   disabled = false,
   onchange,

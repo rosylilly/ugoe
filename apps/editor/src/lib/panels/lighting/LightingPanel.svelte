@@ -116,12 +116,12 @@ const selectedCount = $derived(selection.items.filter((r) => r.kind === "mesh").
           </button>
           {#if base}
             <Tooltip text={t("lighting.meshes.base.tooltip")}>
-              {#snippet children(attrs)}<span {...attrs} class="badge">{t("lighting.meshes.base.label")}</span>{/snippet}
+              {#snippet trigger(attrs)}<span {...attrs} class="badge">{t("lighting.meshes.base.label")}</span>{/snippet}
             </Tooltip>
           {/if}
           {#if model.textures[mesh.texture]?.normal_map}
             <Tooltip text={t("lighting.meshes.normalMap.tooltip")}>
-              {#snippet children(attrs)}<span {...attrs} class="badge"
+              {#snippet trigger(attrs)}<span {...attrs} class="badge"
                   >{t("lighting.meshes.normalMap.label")}</span
                 >{/snippet}
             </Tooltip>

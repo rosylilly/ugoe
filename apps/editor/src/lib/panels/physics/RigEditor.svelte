@@ -258,7 +258,7 @@ const rangeFields = $derived([
   </div>
   <div class="ed-field">
     <span id="{ids}-frame" title={t("physics.rig.frame.tooltip")}>{t("physics.rig.frame.label")}</span>
-    <Select labelledby="{ids}-frame" value={rig.frame ?? CANVAS} options={frameOptions}
+    <Select aria-labelledby="{ids}-frame" value={rig.frame ?? CANVAS} options={frameOptions}
       onchange={(v) => setFrame(v === CANVAS ? "" : v)} />
   </div>
   <div class="ed-buttons row">
@@ -280,7 +280,7 @@ const rangeFields = $derived([
             <span id="{ids}-p{i}-{f.field}">{f.label()}</span>
             <NumberField value={particleValue(p, f.field)} step={f.step} decimals={4} size={4}
               {...PARTICLE_BOUNDS[f.field]}
-              labelledby="{ids}-p{i} {ids}-p{i}-{f.field}"
+              aria-labelledby="{ids}-p{i} {ids}-p{i}-{f.field}"
               onchange={(v) => setParticle(i, f.field, v)} />
           </span>
         {/if}
@@ -309,13 +309,13 @@ const rangeFields = $derived([
   {#each rig.inputs as input, i (i)}
     <div class="card">
       <span hidden id="{ids}-in{i}">{t("physics.inputs.aria", { index: i })}</span>
-      <Select labelledby="{ids}-in{i} {ids}-in-parameter" value={input.parameter} options={parameterOptions}
+      <Select aria-labelledby="{ids}-in{i} {ids}-in-parameter" value={input.parameter} options={parameterOptions}
         onchange={(v) => patchInput(i, { parameter: v })} />
-      <Select labelledby="{ids}-in{i} {ids}-in-source" value={input.source} options={sourceOptions}
+      <Select aria-labelledby="{ids}-in{i} {ids}-in-source" value={input.source} options={sourceOptions}
         onchange={(v) => patchInput(i, { source: v })} />
       <span title={t("physics.inputs.weight.tooltip")}>
         <NumberField value={input.weight} step={5} decimals={4} size={4} unit="%"
-          labelledby="{ids}-in{i} {ids}-in-weight"
+          aria-labelledby="{ids}-in{i} {ids}-in-weight"
           onchange={(v) => {
             const w = finiteValue(v);
             if (w !== null) patchInput(i, { weight: w });
@@ -350,26 +350,26 @@ const rangeFields = $derived([
     {@const kind = targetKind(output.target)}
     <div class="card">
       <span hidden id="{ids}-out{i}">{t("physics.outputs.aria", { index: i })}</span>
-      <Select labelledby="{ids}-out{i} {ids}-out-kind" value={kind} options={kindOptions}
+      <Select aria-labelledby="{ids}-out{i} {ids}-out-kind" value={kind} options={kindOptions}
         onchange={(v) => setOutputKind(i, v)} />
-      <Select labelledby="{ids}-out{i} {ids}-out-target" value={targetRef(output.target)}
+      <Select aria-labelledby="{ids}-out{i} {ids}-out-target" value={targetRef(output.target)}
         options={targetCandidates(model, kind).map((c) => ({ value: c.id, label: elementLabel(c.name, c.id) }))}
         onchange={(v) => setOutputRef(i, v)} />
       <span class="labelled" title={t("physics.outputs.particle.tooltip")}>
         <span aria-hidden="true">{t("physics.outputs.particle.label")}</span>
         <NumberField value={output.particle} min={1} max={rig.particles.length - 1} step={1} size={3}
-          labelledby="{ids}-out{i} {ids}-out-particle"
+          aria-labelledby="{ids}-out{i} {ids}-out-particle"
           onchange={(v) => {
             const n = finiteValue(v);
             if (n !== null && n >= 1) patchOutput(i, { particle: Math.round(n) });
           }} />
       </span>
-      <Select labelledby="{ids}-out{i} {ids}-out-source" value={output.source} options={sourceOptions}
+      <Select aria-labelledby="{ids}-out{i} {ids}-out-source" value={output.source} options={sourceOptions}
         onchange={(v) => patchOutput(i, { source: v })} />
       <span class="labelled" title={t("physics.outputs.scale.tooltip")}>
         <span aria-hidden="true">×</span>
         <NumberField value={output.scale} step={0.1} decimals={4} size={4}
-          labelledby="{ids}-out{i} {ids}-out-scale"
+          aria-labelledby="{ids}-out{i} {ids}-out-scale"
           onchange={(v) => {
             const n = finiteValue(v);
             if (n !== null) patchOutput(i, { scale: n });
@@ -377,7 +377,7 @@ const rangeFields = $derived([
       </span>
       <span title={t("physics.outputs.weight.tooltip")}>
         <NumberField value={output.weight} step={5} decimals={4} size={4} unit="%"
-          labelledby="{ids}-out{i} {ids}-out-weight"
+          aria-labelledby="{ids}-out{i} {ids}-out-weight"
           onchange={(v) => {
             const n = finiteValue(v);
             if (n !== null) patchOutput(i, { weight: n });
@@ -387,7 +387,7 @@ const rangeFields = $derived([
         onchange={(on) => patchOutput(i, { reflect: on })} />
       {#if hasBlend(output)}
         <span title={t("physics.outputs.blend.tooltip")}>
-          <Select labelledby="{ids}-out{i} {ids}-out-blend" value={outputBlend(output)} options={blendOptions}
+          <Select aria-labelledby="{ids}-out{i} {ids}-out-blend" value={outputBlend(output)} options={blendOptions}
             onchange={(v) => patchOutput(i, { blend: v })} />
         </span>
       {/if}
@@ -435,7 +435,7 @@ const rangeFields = $derived([
           <span title={f.label}>
             <NumberField value={rig.normalization[which][f.field]} step={1} decimals={4} size={4}
               {...normalizationBounds(rig.normalization[which], f.field)}
-              labelledby="{ids}-range-{which} {ids}-range-{f.field}"
+              aria-labelledby="{ids}-range-{which} {ids}-range-{f.field}"
               onchange={(v) => setNormalization(which, f.field, v)} />
           </span>
         {/each}

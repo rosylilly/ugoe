@@ -79,7 +79,7 @@ $effect(() => {
       {#if fixes.includes("choose_slot")}
         <span class="slot">
           <Select
-            ariaLabel={t("moduleProblem.slot.aria")}
+            aria-label={t("moduleProblem.slot.aria")}
             bind:value={slot}
             options={slotOptions}
             disabled={busy || !canReopen}

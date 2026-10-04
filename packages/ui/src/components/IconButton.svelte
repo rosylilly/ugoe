@@ -64,7 +64,7 @@ function attributes(trigger: TriggerAttributes): ButtonBaseProps {
 
 {#if tip}
   <Tooltip text={tip} {shortcut} side={tooltipSide} id={rest.id} disabled={rest.disabled}>
-    {#snippet children(trigger)}{@render button(trigger)}{/snippet}
+    {#snippet trigger(attrs)}{@render button(attrs)}{/snippet}
   </Tooltip>
 {:else}
   {@render button({})}

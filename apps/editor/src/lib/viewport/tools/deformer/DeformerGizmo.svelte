@@ -400,7 +400,7 @@ function onKeyDown(e: KeyboardEvent): void {
       <Button small onclick={selectAll}>{t("viewport.cell.selectAll")}</Button>
     {:else if element?.kind === "rotation"}
       <Tooltip text={t("viewport.gizmo.originAllCells.tooltip")}>
-        {#snippet children(attrs)}
+        {#snippet trigger(attrs)}
           <span class="check" {...attrs}>
             <Checkbox label={t("viewport.gizmo.originAllCells.label")} bind:checked={originAllCells} />
           </span>

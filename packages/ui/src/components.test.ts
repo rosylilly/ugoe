@@ -113,7 +113,7 @@ describe("Toggle with a tooltip", () => {
     const root = render(Toggle, {
       label: "Mirror",
       tooltip: "Mirror the view",
-      describedby: "mirror-note",
+      "aria-describedby": "mirror-note",
     });
     const sw = get(root, '[role="switch"]');
     expect(get<HTMLLabelElement>(root, "label").htmlFor).toBe(sw.id);
@@ -399,7 +399,7 @@ describe("Select", () => {
   });
 
   it("shows the placeholder when nothing is selected", () => {
-    const root = render(Select, { ariaLabel: "Camera", options, placeholder: "Choose…" });
+    const root = render(Select, { "aria-label": "Camera", options, placeholder: "Choose…" });
     const trigger = get(root, '[aria-haspopup="listbox"]');
     expect(trigger.getAttribute("aria-label")).toBe("Camera");
     expect(trigger.textContent?.trim()).toBe("Choose…");
@@ -453,7 +453,7 @@ describe("Tabs", () => {
     const panel = createRawSnippet((value: () => string) => ({
       render: () => `<p>panel ${value()}</p>`,
     }));
-    const root = render(Tabs, { tabs: options.slice(0, 2), ariaLabel: "Panels", panel });
+    const root = render(Tabs, { tabs: options.slice(0, 2), "aria-label": "Panels", panel });
     const list = get(root, '[role="tablist"]');
     expect(list.getAttribute("aria-label")).toBe("Panels");
     const tabs = [...root.querySelectorAll<HTMLElement>('[role="tab"]')];
@@ -519,5 +519,31 @@ describe("Toolbar", () => {
     press(buttons[0] as HTMLElement, "ArrowRight");
     expect(document.activeElement).toBe(buttons[1]);
     await vi.waitFor(() => expect(buttons.map((b) => b.tabIndex)).toEqual([-1, 0, -1]));
+  });
+});
+
+// 読み上げの props は HTML の属性と同じ名前で受ける (Button と同じ。T0920)
+describe("aria props", () => {
+  it("are taken by their attribute names", () => {
+    const checkbox = render(Checkbox, { label: "Loop", "aria-describedby": "loop-note" });
+    expect(get(checkbox, '[role="checkbox"]').getAttribute("aria-describedby")).toBe("loop-note");
+
+    const field = render(NumberField, {
+      value: 1,
+      "aria-labelledby": "angle-label",
+      "aria-describedby": "angle-note",
+    });
+    const input = get(field, "input");
+    expect(input.getAttribute("aria-labelledby")).toBe("angle-label");
+    expect(input.getAttribute("aria-describedby")).toBe("angle-note");
+
+    const select = render(Select, { "aria-labelledby": "camera-label", options });
+    expect(get(select, "button").getAttribute("aria-labelledby")).toBe("camera-label");
+
+    const segmented = render(SegmentedControl, {
+      "aria-label": "Fit",
+      options: options.slice(0, 2),
+    });
+    expect(get(segmented, '[role="radiogroup"]').getAttribute("aria-label")).toBe("Fit");
   });
 });

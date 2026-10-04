@@ -256,7 +256,7 @@ function problemText(problem: HotkeyProblem): string {
               <span class="hotkeys__hint">{t("hotkeys.kinds.unknown")}</span>
             {:else}
               <Select
-                ariaLabel={t("hotkeys.action")}
+                aria-label={t("hotkeys.action")}
                 value={action.kind}
                 options={kindOptions}
                 {disabled}
@@ -268,7 +268,7 @@ function problemText(problem: HotkeyProblem): string {
         </div>
         {#if action.kind === "scene"}
           <Select
-            ariaLabel={t("hotkeys.scene")}
+            aria-label={t("hotkeys.scene")}
             value={action.scene}
             options={sceneChoices(action.scene)}
             {disabled}
@@ -276,7 +276,7 @@ function problemText(problem: HotkeyProblem): string {
           />
         {:else if action.kind === "expression"}
           <Select
-            ariaLabel={t("hotkeys.expression")}
+            aria-label={t("hotkeys.expression")}
             value={action.expression}
             options={choices(expressions, action.expression)}
             placeholder={t("hotkeys.noExpressions")}
@@ -284,7 +284,7 @@ function problemText(problem: HotkeyProblem): string {
             onchange={(expression) => setAction(index, { ...action, expression })}
           />
           <SegmentedControl
-            ariaLabel={t("hotkeys.expressionMode")}
+            aria-label={t("hotkeys.expressionMode")}
             value={action.mode}
             options={modeOptions}
             {disabled}
@@ -292,7 +292,7 @@ function problemText(problem: HotkeyProblem): string {
           />
         {:else if action.kind === "motion"}
           <Select
-            ariaLabel={t("hotkeys.motion")}
+            aria-label={t("hotkeys.motion")}
             value={action.motion}
             options={choices(motions, action.motion)}
             placeholder={t("hotkeys.noMotions")}
@@ -300,7 +300,7 @@ function problemText(problem: HotkeyProblem): string {
             onchange={(motion) => setAction(index, { ...action, motion })}
           />
           <SegmentedControl
-            ariaLabel={t("hotkeys.priority")}
+            aria-label={t("hotkeys.priority")}
             value={action.priority}
             options={priorityOptions}
             {disabled}
@@ -308,7 +308,7 @@ function problemText(problem: HotkeyProblem): string {
           />
         {:else if action.kind === "dressUp"}
           <SegmentedControl
-            ariaLabel={t("hotkeys.dressMode")}
+            aria-label={t("hotkeys.dressMode")}
             value={action.module === null ? "remove" : "attach"}
             options={dressOptions}
             {disabled}
@@ -325,7 +325,7 @@ function problemText(problem: HotkeyProblem): string {
             <p class="hotkeys__hint">{t("hotkeys.slotOf", { slot: action.slot })}</p>
           {:else}
             <Select
-              ariaLabel={t("hotkeys.slot")}
+              aria-label={t("hotkeys.slot")}
               value={action.slot}
               options={choices(slots, action.slot)}
               placeholder={t("hotkeys.noSlots")}

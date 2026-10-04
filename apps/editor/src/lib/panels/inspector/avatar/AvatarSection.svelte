@@ -133,7 +133,7 @@ const ids = $props.id();
       <div class="row">
         <span id="{ids}-level">{t("inspector.avatar.level")}</span>
         <Select
-          labelledby="{ids}-level"
+          aria-labelledby="{ids}-level"
           value={String(profile.level)}
           options={levelOptions}
           onchange={(v) => apply({ op: "update_avatar_profile", level: Number(v) })}
@@ -183,7 +183,7 @@ const ids = $props.id();
       <div class="row">
         <span id="{ids}-thumbnail">{t("inspector.avatar.meta.thumbnail")}</span>
         <Select
-          labelledby="{ids}-thumbnail"
+          aria-labelledby="{ids}-thumbnail"
           value={meta.thumbnail === null ? "" : String(meta.thumbnail)}
           options={thumbnailOptions}
           onchange={(v) => setMeta({ thumbnail: v === "" ? null : Number(v) })}
@@ -194,7 +194,7 @@ const ids = $props.id();
       <div class="row">
         <span id="{ids}-avatar-permission">{t("inspector.avatar.permissions.avatar")}</span>
         <Select
-          labelledby="{ids}-avatar-permission"
+          aria-labelledby="{ids}-avatar-permission"
           value={meta.avatar_permission}
           options={avatarPermissions()}
           onchange={(v) => setMeta({ avatar_permission: v })}
@@ -203,7 +203,7 @@ const ids = $props.id();
       <div class="row">
         <span id="{ids}-commercial">{t("inspector.avatar.permissions.commercial")}</span>
         <Select
-          labelledby="{ids}-commercial"
+          aria-labelledby="{ids}-commercial"
           value={meta.commercial_usage}
           options={commercialUsages()}
           onchange={(v) => setMeta({ commercial_usage: v })}
@@ -212,7 +212,7 @@ const ids = $props.id();
       <div class="row">
         <span id="{ids}-credit">{t("inspector.avatar.permissions.credit")}</span>
         <Select
-          labelledby="{ids}-credit"
+          aria-labelledby="{ids}-credit"
           value={meta.credit_notation}
           options={creditNotations()}
           onchange={(v) => setMeta({ credit_notation: v })}
@@ -221,7 +221,7 @@ const ids = $props.id();
       <div class="row">
         <span id="{ids}-modification">{t("inspector.avatar.permissions.modification")}</span>
         <Select
-          labelledby="{ids}-modification"
+          aria-labelledby="{ids}-modification"
           value={meta.modification}
           options={modifications()}
           onchange={(v) => setMeta({ modification: v })}
@@ -257,7 +257,7 @@ const ids = $props.id();
           <div class="row">
             <span id="{ids}-hit-{name}">{name}</span>
             <Select
-              labelledby="{ids}-hit-{name}"
+              aria-labelledby="{ids}-hit-{name}"
               value={profile.hit_areas.find((a) => a.name === name)?.hit_area ?? ""}
               options={hitAreaOptions}
               onchange={(v) => apply(hitAreaCommand(profile.hit_areas, name, v === "" ? null : v))}

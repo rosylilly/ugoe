@@ -52,7 +52,7 @@ async function change(limit: number): Promise<void> {
         size={5}
         value={doc.history.undo_limit}
         disabled={busy}
-        describedby={`${id}-note`}
+        aria-describedby={`${id}-note`}
         onchange={change}
       />
     {/key}

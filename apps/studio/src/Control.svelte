@@ -920,7 +920,7 @@ onMount(() => {
 <!-- ツールバーの印。説明は Tooltip で出す (キーボードでも出せるよう、印をフォーカスできるようにする) -->
 {#snippet badge(label: string, tooltip: string)}
   <Tooltip text={tooltip}>
-    {#snippet children(attrs)}
+    {#snippet trigger(attrs)}
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
       <span {...attrs} class="studio__api" tabindex="0">{label}</span>
     {/snippet}

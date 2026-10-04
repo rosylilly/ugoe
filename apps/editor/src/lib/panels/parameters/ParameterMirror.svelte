@@ -45,11 +45,11 @@ function set(value: string): void {
 </script>
 
 <Tooltip text={t("parameters.mirror.tooltip")}>
-  {#snippet children(attrs)}
+  {#snippet trigger(attrs)}
     <span class="mirror" {...attrs}>
       <span id="{id}-label">{t("parameters.mirror.label")}</span>
       <Select
-        labelledby="{id}-label"
+        aria-labelledby="{id}-label"
         value={current || NONE}
         {options}
         onchange={(v) => set(v === NONE ? "" : v)}

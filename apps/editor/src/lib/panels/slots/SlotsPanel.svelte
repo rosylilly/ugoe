@@ -166,12 +166,12 @@ const ids = $props.id();
             <span class="muted">· {s.draw_order.min}–{s.draw_order.max}{s.anchor ? ` · ${s.anchor}` : ""}</span>
             {#if exposed?.includes(s.id)}
               <Tooltip text={t("slots.tag.app.tooltip")}>
-                {#snippet children(attrs)}<span {...attrs} class="tag">{t("slots.tag.app.label")}</span>{/snippet}
+                {#snippet trigger(attrs)}<span {...attrs} class="tag">{t("slots.tag.app.label")}</span>{/snippet}
               </Tooltip>
             {/if}
             {#if overlaps.length > 0}
               <Tooltip text={t("slots.tag.overlap.tooltip", { slots: formatList(overlaps) })}>
-                {#snippet children(attrs)}<span {...attrs} class="tag bad"
+                {#snippet trigger(attrs)}<span {...attrs} class="tag bad"
                     >{t("slots.tag.overlap.label")}</span
                   >{/snippet}
               </Tooltip>
@@ -202,7 +202,7 @@ const ids = $props.id();
           <span id="{ids}-anchor">{t("slots.anchor.label")}</span>
           <span class="control">
             <Select
-              labelledby="{ids}-anchor"
+              aria-labelledby="{ids}-anchor"
               value={slot.anchor ?? NONE}
               options={anchorOptions}
               disabled={busy}
@@ -216,7 +216,7 @@ const ids = $props.id();
           <span id="{ids}-part">{t("slots.part.label")}</span>
           <span class="control">
             <Select
-              labelledby="{ids}-part"
+              aria-labelledby="{ids}-part"
               value={slot.part ?? NONE}
               options={partOptions}
               disabled={busy}
@@ -233,7 +233,7 @@ const ids = $props.id();
               <span class="ugoe-visually-hidden" id="{ids}-from">{t("slots.drawOrder.from.aria")}</span>
               <span class="ugoe-visually-hidden" id="{ids}-to">{t("slots.drawOrder.to.aria")}</span>
               <NumberField
-                labelledby="{ids}-from"
+                aria-labelledby="{ids}-from"
                 step={1}
                 size={5}
                 value={slot.draw_order.min}
@@ -242,7 +242,7 @@ const ids = $props.id();
               />
               –
               <NumberField
-                labelledby="{ids}-to"
+                aria-labelledby="{ids}-to"
                 step={1}
                 size={5}
                 value={slot.draw_order.max}

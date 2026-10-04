@@ -251,7 +251,7 @@ const swatches = [
         <Toggle label={s.autoBlink} bind:checked={autoBlink} />
         <Toggle label={s.disabled} disabled />
         <Select label={s.camera} options={cameraOptions} bind:value={camera} />
-        <Select ariaLabel={s.camera} options={cameraOptions} placeholder={s.chooseCamera} />
+        <Select aria-label={s.camera} options={cameraOptions} placeholder={s.chooseCamera} />
         <SegmentedControl label={s.fit} options={fitOptions} bind:value={fit} />
       </div>
     </section>
@@ -283,7 +283,7 @@ const swatches = [
 
     <section class="gallery__card">
       <h2>{s.tabs}</h2>
-      <Tabs tabs={tabOptions} ariaLabel={s.panels} bind:value={tab}>
+      <Tabs tabs={tabOptions} aria-label={s.panels} bind:value={tab}>
         {#snippet panel(value)}
           <p>{s.panelText(s.tabNames[Number(value)] ?? "")}</p>
         {/snippet}

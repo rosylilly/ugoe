@@ -22,12 +22,12 @@ interface Props {
   decimals?: number;
   /** 後ろに出す単位 (翻訳を通した文言)。 */
   unit?: string;
-  /** 見えるラベル。`labelledby` を渡すときは省ける。 */
+  /** 見えるラベル。`aria-labelledby` を渡すときは省ける。 */
   label?: string;
   /** 見えるラベルを別の要素に置くときの、その要素の id (Slider と組み合わせるときなど)。 */
-  labelledby?: string;
+  "aria-labelledby"?: string;
   /** 補足の説明を持つ要素の id。 */
-  describedby?: string;
+  "aria-describedby"?: string;
   disabled?: boolean;
   /** 欄の幅 (文字数)。既定は 6。 */
   size?: number;
@@ -43,8 +43,8 @@ let {
   decimals,
   unit,
   label,
-  labelledby,
-  describedby,
+  "aria-labelledby": labelledby,
+  "aria-describedby": describedby,
   disabled = false,
   size = 6,
   onchange,

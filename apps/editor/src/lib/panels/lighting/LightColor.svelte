@@ -43,7 +43,7 @@ function change(hex: string): void {
 
 <!-- 行が狭いので、色の値 (#rrggbb) は見せずに見本の色だけを出す (読み上げの名前には値が入る)。 -->
 <span class="light-color">
-  <ColorPicker value={rgbToHex(value)} {ariaLabel} bind:open onchange={change} />
+  <ColorPicker value={rgbToHex(value)} aria-label={ariaLabel} bind:open onchange={change} />
 </span>
 
 <style>

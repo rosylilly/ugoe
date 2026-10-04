@@ -165,14 +165,14 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
       <Checkbox
         bind:checked={view.moduleOptions.direct}
         label={t("proposals.module.options.direct.label")}
-        describedby={`${uid}-direct`}
+        aria-describedby={`${uid}-direct`}
         disabled={busy}
       />
       <p id={`${uid}-direct`} class="ed-hint option-hint">{t("proposals.module.options.direct.description")}</p>
       <Checkbox
         bind:checked={view.moduleOptions.colliders}
         label={t("proposals.module.options.colliders.label")}
-        describedby={`${uid}-colliders`}
+        aria-describedby={`${uid}-colliders`}
         disabled={busy}
       />
       <p id={`${uid}-colliders`} class="ed-hint option-hint">
@@ -181,7 +181,7 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
       <Checkbox
         bind:checked={view.moduleOptions.poses}
         label={t("proposals.module.options.poses.label")}
-        describedby={`${uid}-poses`}
+        aria-describedby={`${uid}-poses`}
         disabled={busy}
       />
       <p id={`${uid}-poses`} class="ed-hint option-hint">{t("proposals.module.options.poses.description")}</p>
@@ -201,7 +201,7 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
     label={aiLocal
       ? t("proposals.useAi.labelLocal", { name: aiName })
       : t("proposals.useAi.label", { name: aiName })}
-    describedby={aiBlocked && aiSettings.value ? `${uid}-blocked` : undefined}
+    aria-describedby={aiBlocked && aiSettings.value ? `${uid}-blocked` : undefined}
   />
   {#if aiBlocked && aiSettings.value}
     <p class="ed-hint" id={`${uid}-blocked`}>
@@ -563,7 +563,7 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
 
 {#snippet badge(kind: "source" | "warn", text: string, tooltip: string)}
   <Tooltip text={tooltip}>
-    {#snippet children(attrs)}
+    {#snippet trigger(attrs)}
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
       <span {...attrs} class={kind} tabindex="0">{text}</span>
     {/snippet}

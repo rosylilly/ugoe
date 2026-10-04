@@ -218,7 +218,7 @@ const expressionOptions = $derived([
       <p class="ed-hint">{t("preview.expressions.empty")}</p>
     {:else}
       <Select
-        ariaLabel={t("preview.expressions.title")}
+        aria-label={t("preview.expressions.title")}
         value={preview.expression ?? NO_EXPRESSION}
         options={expressionOptions}
         onchange={(v) => preview.setExpression(v === NO_EXPRESSION ? null : v)}

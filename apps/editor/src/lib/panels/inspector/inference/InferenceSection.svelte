@@ -195,7 +195,7 @@ function finiteOrNull(value: number | null): number | null {
       <div class="ed-field">
         <span id="{ids}-method">{t("inspector.inference.method.label")}</span>
         <Select
-          labelledby="{ids}-method"
+          aria-labelledby="{ids}-method"
           value={form.method}
           options={methodOptions}
           onchange={(v) => (form.method = v)}
@@ -204,24 +204,24 @@ function finiteOrNull(value: number | null): number | null {
       {#if form.method === "depth_rotation"}
         <div class="ed-field">
           <span id="{ids}-scale">{t("inspector.inference.angleScale.label")}</span>
-          <NumberField labelledby="{ids}-scale" step={0.1} decimals={4} bind:value={form.angleScale} />
+          <NumberField aria-labelledby="{ids}-scale" step={0.1} decimals={4} bind:value={form.angleScale} />
         </div>
         <div class="ed-field">
           <span id="{ids}-px">{t("inspector.inference.pivotX.label")}</span>
-          <NumberField labelledby="{ids}-px" step={1} decimals={4} bind:value={form.pivotX} />
+          <NumberField aria-labelledby="{ids}-px" step={1} decimals={4} bind:value={form.pivotX} />
         </div>
         <div class="ed-field">
           <span id="{ids}-py">{t("inspector.inference.pivotY.label")}</span>
-          <NumberField labelledby="{ids}-py" step={1} decimals={4} bind:value={form.pivotY} />
+          <NumberField aria-labelledby="{ids}-py" step={1} decimals={4} bind:value={form.pivotY} />
         </div>
         <div class="ed-field">
           <span id="{ids}-pd">{t("inspector.inference.pivotDepth.label")}</span>
-          <NumberField labelledby="{ids}-pd" step={0.1} decimals={4} bind:value={form.pivotDepth} />
+          <NumberField aria-labelledby="{ids}-pd" step={0.1} decimals={4} bind:value={form.pivotDepth} />
         </div>
         <div class="ed-field">
           <span id="{ids}-yaw">{t("inspector.inference.yaw.label")}</span>
           <Select
-            labelledby="{ids}-yaw"
+            aria-labelledby="{ids}-yaw"
             value={form.yaw || NONE}
             options={axisOptions}
             onchange={(v) => (form.yaw = v === NONE ? "" : v)}
@@ -230,7 +230,7 @@ function finiteOrNull(value: number | null): number | null {
         <div class="ed-field">
           <span id="{ids}-pitch">{t("inspector.inference.pitch.label")}</span>
           <Select
-            labelledby="{ids}-pitch"
+            aria-labelledby="{ids}-pitch"
             value={form.pitch || NONE}
             options={axisOptions}
             onchange={(v) => (form.pitch = v === NONE ? "" : v)}
@@ -300,7 +300,7 @@ function finiteOrNull(value: number | null): number | null {
         <div class="ed-field">
           <span id="{ids}-from">{t("inspector.inference.mirror.from.label")}</span>
           <Select
-            labelledby="{ids}-from"
+            aria-labelledby="{ids}-from"
             value={String(mirrorFrom)}
             options={choiceOptions}
             onchange={(v) => (mirrorFrom = Number(v))}
@@ -358,7 +358,7 @@ function finiteOrNull(value: number | null): number | null {
         <div class="ed-field">
           <span id="{ids}-partner">{t("inspector.inference.partner.label")}</span>
           <Select
-            labelledby="{ids}-partner"
+            aria-labelledby="{ids}-partner"
             value={partnerInput || NONE}
             options={partnerOptions}
             onchange={(v) => (partnerInput = v === NONE ? "" : v)}

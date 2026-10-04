@@ -209,7 +209,7 @@ function onKeyDown(e: KeyboardEvent) {
   <div class="app">
     <header class="toolbar">
       <Tooltip text={t("toolbar.open.tooltip")} shortcut="Mod+O">
-        {#snippet children(attrs)}
+        {#snippet trigger(attrs)}
           <Button {...attrs as ButtonBaseProps} variant="primary" onclick={openDialog}
             >{t("toolbar.open.label")}</Button
           >
@@ -217,7 +217,7 @@ function onKeyDown(e: KeyboardEvent) {
       </Tooltip>
       <Menu label={t("toolbar.samples.label")} entries={sampleEntries} />
       <Tooltip text={t("toolbar.remembered.tooltip")}>
-        {#snippet children(attrs)}
+        {#snippet trigger(attrs)}
           <Button {...attrs as ButtonBaseProps} onclick={() => memoryDialog?.open()}
             >{t("toolbar.remembered.label")}</Button
           >
@@ -258,7 +258,7 @@ function onKeyDown(e: KeyboardEvent) {
         onchange={(on) => player.setBackground(player.background, on)}
       />
       <Tooltip text={t("toolbar.screenshot.tooltip")}>
-        {#snippet children(attrs)}
+        {#snippet trigger(attrs)}
           <Button
             {...attrs as ButtonBaseProps}
             onclick={() => void saveScreenshot()}

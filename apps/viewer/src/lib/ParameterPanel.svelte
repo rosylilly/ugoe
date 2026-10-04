@@ -38,7 +38,7 @@ let sections = $derived(visibleSections(player.sections, filter, showInternal));
       <div class="internal-toggle">
         <Toggle
           label={t("parameters.showInternal.label", { count: hidden })}
-          describedby={internalHintId}
+          aria-describedby={internalHintId}
           bind:checked={showInternal}
         />
         <p class="hint" id={internalHintId}>{t("parameters.showInternal.description")}</p>

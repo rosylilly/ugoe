@@ -106,7 +106,7 @@ flow.refresh();
       ? t("fileMenu.project.tooltip", { name: flow.status.name, path: flow.status.path })
       : t("fileMenu.project.tooltipUnsaved", { name: flow.status?.name ?? "…" })}
   >
-    {#snippet children(attrs)}
+    {#snippet trigger(attrs)}
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
       <span {...attrs} class="project" tabindex="0">
         <span class="name">{flow.status?.name ?? "…"}</span>{#if flow.status?.modified}<span

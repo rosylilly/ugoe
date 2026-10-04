@@ -333,7 +333,7 @@ function label(m: Motion): string {
 <div class="motion-editor" onkeydown={onPanelKey}>
   <div class="bar">
     <Select
-      ariaLabel={t("timeline.motion.select.aria")}
+      aria-label={t("timeline.motion.select.aria")}
       value={timeline.motionName ?? ""}
       options={motionOptions}
       placeholder={t("timeline.motion.select.empty")}
@@ -407,7 +407,7 @@ function label(m: Motion): string {
                   step={0.1}
                   decimals={3}
                   value={ev.t}
-                  labelledby="{ids}-event-{i}"
+                  aria-labelledby="{ids}-event-{i}"
                   onchange={(v) => editEvent(i, { t: v })}
                 />
                 <input
@@ -444,7 +444,7 @@ function label(m: Motion): string {
       <span class="ugoe-visually-hidden" id="{ids}-repeat">{t("timeline.motion.repeat.description")}</span>
       <Checkbox
         label={t("timeline.motion.repeat.label")}
-        describedby="{ids}-repeat"
+        aria-describedby="{ids}-repeat"
         bind:checked={timeline.repeat}
       />
       <IconButton
@@ -461,7 +461,7 @@ function label(m: Motion): string {
         decimals={3}
         size={5}
         value={roundTime(timeline.time)}
-        labelledby="{ids}-time"
+        aria-labelledby="{ids}-time"
         onchange={(v) => timeline.seek(v)}
       />
       <span class="ugoe-visually-hidden" id="{ids}-time">{t("timeline.motion.time.aria")}</span>

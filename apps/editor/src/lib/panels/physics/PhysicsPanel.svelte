@@ -159,18 +159,18 @@ function togglePreview(): void {
       <span id="{ids}-gravity">{t("physics.world.gravity")}</span>
       <span class="pair">
         <NumberField value={world.gravity[0]} step={0.1} decimals={4} size={5}
-          labelledby="{ids}-gravity {ids}-x" onchange={(v) => setWorld("gx", v)} />
+          aria-labelledby="{ids}-gravity {ids}-x" onchange={(v) => setWorld("gx", v)} />
         <NumberField value={world.gravity[1]} step={0.1} decimals={4} size={5}
-          labelledby="{ids}-gravity {ids}-y" onchange={(v) => setWorld("gy", v)} />
+          aria-labelledby="{ids}-gravity {ids}-y" onchange={(v) => setWorld("gy", v)} />
       </span>
     </div>
     <div class="ed-field">
       <span id="{ids}-wind">{t("physics.world.wind")}</span>
       <span class="pair">
         <NumberField value={world.wind[0]} step={0.1} decimals={4} size={5}
-          labelledby="{ids}-wind {ids}-x" onchange={(v) => setWorld("wx", v)} />
+          aria-labelledby="{ids}-wind {ids}-x" onchange={(v) => setWorld("wx", v)} />
         <NumberField value={world.wind[1]} step={0.1} decimals={4} size={5}
-          labelledby="{ids}-wind {ids}-y" onchange={(v) => setWorld("wy", v)} />
+          aria-labelledby="{ids}-wind {ids}-y" onchange={(v) => setWorld("wy", v)} />
       </span>
     </div>
     <div class="ed-field">
@@ -178,7 +178,7 @@ function togglePreview(): void {
       <span class="pair">
         <span hidden id="{ids}-fps">{t("physics.world.fps.aria")}</span>
         <NumberField value={world.fps} step={1} min={1} decimals={4} size={5}
-          labelledby="{ids}-fps" onchange={(v) => setWorld("fps", v)} />
+          aria-labelledby="{ids}-fps" onchange={(v) => setWorld("fps", v)} />
       </span>
     </div>
   </BaseLock>

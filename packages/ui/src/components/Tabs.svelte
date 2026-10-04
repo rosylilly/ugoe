@@ -13,13 +13,13 @@ interface Props {
   /** タブ。`label` は翻訳を通した文言。 */
   tabs: Option<T>[];
   /** タブの並びの読み上げの名前。 */
-  ariaLabel?: string;
+  "aria-label"?: string;
   /** 中身。選んでいるタブの値を受け取る。 */
   panel: Snippet<[T]>;
   onchange?: (value: T) => void;
 }
 
-let { value = $bindable(), tabs, ariaLabel, panel, onchange }: Props = $props();
+let { value = $bindable(), tabs, "aria-label": ariaLabel, panel, onchange }: Props = $props();
 
 const current = $derived(value ?? tabs[0]?.value);
 </script>

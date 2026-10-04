@@ -175,7 +175,7 @@ function label(e: Expression): string {
 <div class="expressions">
   <div class="bar">
     <Select
-      ariaLabel={t("timeline.expression.select.aria")}
+      aria-label={t("timeline.expression.select.aria")}
       value={selectedName ?? ""}
       options={expressionOptions}
       placeholder={t("timeline.expression.select.empty")}
@@ -184,7 +184,7 @@ function label(e: Expression): string {
     <TipButton small onclick={createFromSliders} tooltip={t("timeline.expression.new.tooltip")}
       >{t("timeline.expression.new.label")}</TipButton
     >
-    <Select ariaLabel={t("timeline.expression.newOp.aria")} bind:value={newOp} options={ops} />
+    <Select aria-label={t("timeline.expression.newOp.aria")} bind:value={newOp} options={ops} />
     {#if selected}
       <span class="sep"></span>
       <TipButton
@@ -245,7 +245,7 @@ function label(e: Expression): string {
               <td id="{ids}-row-{i}">{paramLabel(row.parameter)}</td>
               <td>
                 <Select
-                  ariaLabel={t("timeline.expression.row.op.aria", { parameter: row.parameter })}
+                  aria-label={t("timeline.expression.row.op.aria", { parameter: row.parameter })}
                   value={row.op}
                   options={ops}
                   onchange={(op) => editRow(i, { op })}
@@ -257,7 +257,7 @@ function label(e: Expression): string {
                   decimals={4}
                   size={8}
                   value={row.value}
-                  labelledby="{ids}-row-{i} {ids}-value"
+                  aria-labelledby="{ids}-row-{i} {ids}-value"
                   onchange={(value) => editRow(i, { value })}
                 />
               </td>
@@ -277,7 +277,7 @@ function label(e: Expression): string {
       </table>
       <div class="bar">
         <Select
-          ariaLabel={t("timeline.expression.add.aria")}
+          aria-label={t("timeline.expression.add.aria")}
           bind:value={adding}
           options={unusedOptions}
           placeholder={t("timeline.expression.add.placeholder")}
