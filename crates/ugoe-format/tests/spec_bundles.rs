@@ -72,6 +72,8 @@ struct ExpectedChunk {
     compressed: bool,
     /// 知らないチャンクのペイロード (UTF-8)。
     payload: Option<String>,
+    /// 長さ 0 のペイロードの `offset`。
+    offset: Option<usize>,
 }
 
 #[derive(Deserialize)]
@@ -303,6 +305,14 @@ fn check_chunk_table(
                 "chunk {i} {}: payload {:?} != {payload:?}",
                 expected.tag,
                 String::from_utf8_lossy(chunk.payload(bytes))
+            ));
+        }
+        if let Some(offset) = expected.offset
+            && (chunk.offset, chunk.length) != (offset, 0)
+        {
+            failures.push(format!(
+                "chunk {i} {}: (offset, length) ({}, {}) != ({offset}, 0)",
+                expected.tag, chunk.offset, chunk.length
             ));
         }
     }

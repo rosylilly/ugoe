@@ -11,7 +11,6 @@ import {
   ReadError,
   type ReadErrorKind,
   readBundle,
-  readChunkTable,
   readJsonDocument,
   readModelJson,
   readModuleFile,
@@ -65,7 +64,8 @@ export interface FileEntry {
   file: string;
   summary: string;
   style: "minimal" | "explicit";
-  chunks: { tag: string; compressed?: boolean; payload?: string }[];
+  /** `offset` は長さ 0 の知らないチャンクに書く offset (無ければ任意の正しい位置)。 */
+  chunks: { tag: string; compressed?: boolean; payload?: string; offset?: number }[];
   payload_order?: number[];
   features?: FeatureDecl[];
   result: "ok" | "error";
@@ -131,6 +131,7 @@ export function buildFile(dir: string, e: FileEntry): Uint8Array {
       data: new TextEncoder().encode(c.payload ?? ""),
       // 知らないチャンクの中身はそのまま置き、flags だけを立てる
       flags: c.compressed ? 1 : 0,
+      offset: c.offset,
     }));
   const options = {
     style: e.style === "explicit" ? EXPLICIT : MINIMAL,
@@ -177,16 +178,41 @@ function compareImage(where: string, image: Image, spec: ImageSpec): string[] {
   return [];
 }
 
+/** 格納されたチャンクの表 (spec/bundle.md#chunk-table)。位置や重なりは検査しない。 */
+export function storedTable(
+  bytes: Uint8Array,
+): { tag: string; flags: number; offset: number; length: number }[] {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const count = bytes.length >= 16 ? view.getUint32(12, true) : 0;
+  const entries = [];
+  for (let i = 0; i < count && 16 + 24 * (i + 1) <= bytes.length; i++) {
+    const at = 16 + 24 * i;
+    entries.push({
+      tag: String.fromCharCode(...bytes.subarray(at, at + 4)),
+      flags: view.getUint32(at + 4, true),
+      offset: Number(view.getBigUint64(at + 8, true)),
+      length: Number(view.getBigUint64(at + 16, true)),
+    });
+  }
+  return entries;
+}
+
 /** ファイルを読み、目録の項目と食い違うところを返す。 */
 export function checkFile(dir: string, e: FileEntry, bytes: Uint8Array): string[] {
   const failures: string[] = [];
   const fail = (m: string) => failures.push(`${e.file}: ${m}`);
 
-  const table = readChunkTable(bytes).map((c) => ({
+  // 表を拒むファイルもあるので、検査せずに格納された表を読む
+  const table = storedTable(bytes).map((c, i) => ({
     tag: c.tag,
     compressed: (c.flags & 1) === 1,
+    ...(e.chunks[i]?.offset !== undefined ? { offset: c.offset } : {}),
   }));
-  const expectedTable = e.chunks.map((c) => ({ tag: c.tag, compressed: c.compressed ?? false }));
+  const expectedTable = e.chunks.map((c) => ({
+    tag: c.tag,
+    compressed: c.compressed ?? false,
+    ...(c.offset !== undefined ? { offset: c.offset } : {}),
+  }));
   if (!isDeepStrictEqual(table, expectedTable)) {
     fail(`chunk table ${JSON.stringify(table)}, expected ${JSON.stringify(expectedTable)}`);
   }

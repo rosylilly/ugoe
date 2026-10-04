@@ -717,6 +717,11 @@ export interface ChunkSpec {
   compress?: boolean;
   /** そのまま書く flags (試験用。`compress` より優先する)。 */
   flags?: number;
+  /**
+   * そのまま書く offset (試験用)。長さ 0 のペイロードだけに付けられる。バイトを占めないので、
+   * ほかのペイロードの置き場所は変わらない。
+   */
+  offset?: number;
 }
 
 export interface ContainerOptions {
@@ -735,13 +740,19 @@ export function writeContainer(chunks: ChunkSpec[], options: ContainerOptions = 
   const stored = chunks.map((c) =>
     c.compress && c.flags === undefined ? new Uint8Array(zstdCompressSync(c.data)) : c.data,
   );
+  chunks.forEach((c, i) => {
+    if (c.offset !== undefined && stored[i].length > 0) {
+      throw new WriteError(`chunk ${c.tag}: an explicit offset needs a payload of length 0`);
+    }
+  });
   const order = options.payloadOrder ?? chunks.map((_, i) => i);
   if ([...order].sort((a, b) => a - b).join() !== chunks.map((_, i) => i).join()) {
     throw new WriteError("payloadOrder is not a permutation of the chunks");
   }
-  const offsets = new Array<number>(chunks.length);
+  const offsets = chunks.map((c) => c.offset ?? 0);
   let at = align16(16 + 24 * chunks.length);
   for (const i of order) {
+    if (chunks[i].offset !== undefined) continue;
     offsets[i] = at;
     at = align16(at + stored[i].length);
   }

@@ -209,6 +209,27 @@ test("コンテナ: 16 バイト境界、詰め物は 0、ペイロードの順�
   }
 });
 
+test("コンテナ: 長さ 0 のチャンクの offset はそのまま書き (AAAA の中でもよい)、ほかの置き場所を変えない", () => {
+  const bytes = writeContainer([
+    { tag: "AAAA", data: new Uint8Array(40).fill(1) },
+    { tag: "BBBB", data: new Uint8Array(0), offset: 112 },
+    { tag: "CCCC", data: new Uint8Array([2]) },
+  ]);
+  assert.deepEqual(
+    readChunkTable(bytes).map((c) => [c.tag, Number(c.offset), Number(c.length)]),
+    [
+      ["AAAA", 96, 40],
+      ["BBBB", 112, 0],
+      ["CCCC", 144, 1],
+    ],
+  );
+  // 長さのあるペイロードには付けられない
+  assert.throws(
+    () => writeContainer([{ tag: "AAAA", data: new Uint8Array([1]), offset: 96 }]),
+    WriteError,
+  );
+});
+
 test("u64 の seed を正確に往復させる", () => {
   const m = singleQuad();
   m.effects.eye_blink.seed = 2n ** 64n - 1n;

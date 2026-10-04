@@ -7,8 +7,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { zstdDecompressSync } from "node:zlib";
-import { readChunkTable } from "../src/bundle.ts";
-import { buildFile, checkFile, loadManifest } from "../src/bundles.ts";
+import { buildFile, checkFile, loadManifest, storedTable } from "../src/bundles.ts";
 import { SPEC_EXAMPLES } from "./paths.ts";
 
 const dir = join(SPEC_EXAMPLES, "bundles");
@@ -16,10 +15,13 @@ const manifest = loadManifest(dir);
 
 const KNOWN = new Set(["FEAT", "MODL", "MODU", "PHYS", "MOTN", "EXPR", "META", "TEXR", "NRML"]);
 
-/** 表の順の (タグ, flags, 展開したペイロード)。知らないチャンクは格納されたまま。 */
+/**
+ * 表の順の (タグ, flags, 展開したペイロード)。知らないチャンクは格納されたまま。
+ * 表を拒むファイルもあるので、表は検査せずに読む。
+ */
 function contents(bytes: Uint8Array) {
-  return readChunkTable(bytes).map((c) => {
-    const raw = bytes.subarray(Number(c.offset), Number(c.offset + c.length));
+  return storedTable(bytes).map((c) => {
+    const raw = bytes.subarray(c.offset, c.offset + c.length);
     const data = (c.flags & 1) === 1 && KNOWN.has(c.tag) ? zstdDecompressSync(raw) : raw;
     return { tag: c.tag, flags: c.flags, data: Buffer.from(data).toString("hex") };
   });

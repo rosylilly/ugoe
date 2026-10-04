@@ -315,6 +315,8 @@ container of [bundle.md](../bundle.md):
 | `single-quad.ugoe` | A model and its texture; no compression; fields with default values and fields without a value omitted. |
 | `single-quad-zstd.ugoe` | The same model with a zstd-compressed `MODL` chunk; every field with a default value written, fields without a value written as nil. |
 | `layout.ugoe` | Payloads stored in the reverse order of the chunk table; metadata; an unknown chunk flagged as compressed whose payload is not a zstd frame (skipped without decompressing it) and an unknown chunk of length 0. |
+| `empty-chunk-inside.ugoe` | An unknown chunk of length 0 whose `offset` points into the payload of another chunk: it overlaps nothing, so the file is read. |
+| `empty-chunk-header.ugoe` | An unknown chunk of length 0 whose `offset` points into the header: the file is refused. |
 | `physics-pendulum.ugoe` | Physics settings; compressed `MODL` and `PHYS`. |
 | `motion-crossfade.ugoe` | Two motions in table order. |
 | `expressions.ugoe` | Three compressed expressions and metadata. |
@@ -348,7 +350,7 @@ The directory also holds the JSON documents of the files that are not taken from
 | `file` | The file, relative to `bundles.json`. Files ending in `.ugoemod` are module files; the others are bundles. |
 | `summary` | A description of the file. |
 | `style` | Informative. How the file writes fields that have their default value and nullable fields without a value: `minimal` omits them, `explicit` writes them (the value, or nil). [Authoring data](../model.md#authoring-data) with its default value is omitted in both. A reader obtains the same data from both. |
-| `chunks` | The chunk table in order: `tag`, and `compressed` (bit 0 of the flags; `false` if absent). For unknown chunks, `payload` is the stored payload as a UTF-8 string. |
+| `chunks` | The chunk table in order: `tag`, and `compressed` (bit 0 of the flags; `false` if absent). For unknown chunks, `payload` is the stored payload as a UTF-8 string, and `offset` (optional, only with a payload of length 0) is the stored `offset`; absent, any valid position. |
 | `payload_order` | Optional. The order in which the payloads are stored in the file, as indices into `chunks`. Absent: table order. |
 | `features` | Optional. The content of the `FEAT` chunk. |
 | `result` | `ok`: a reader reads the file. `error`: a reader refuses it. |
@@ -371,7 +373,7 @@ Values of `error`, named after the steps of [Reading](../bundle.md#reading):
 | `counts` | 6. Counts |
 | `validation` | 7. Validation |
 
-The examples of this version use only `feature_declarations`. A reader that checks in another order
+The examples of this version use only `chunk_table` and `feature_declarations`. A reader that checks in another order
 than the one recommended may report a different step for a file that breaks several rules; the
 examples break only one.
 

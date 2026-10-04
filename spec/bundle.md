@@ -69,8 +69,9 @@ The chunk table immediately follows the header. Each entry is 24 bytes:
 
 - The payload of an entry occupies the bytes `[offset, offset + length)`, which MUST lie within the
   file and MUST NOT overlap the header, the chunk table or the payload of another entry. A payload
-  of length 0 is allowed; it occupies no bytes and overlaps nothing, but its `offset` is still
-  subject to the alignment rule and MUST NOT be greater than the length of the file.
+  of length 0 is allowed; it occupies no bytes and overlaps nothing (its `offset` may point into
+  the payload of another entry), but its `offset` is still subject to the alignment rule, MUST NOT
+  be less than the end of the chunk table and MUST NOT be greater than the length of the file.
 - Bytes that belong to no payload (alignment padding and gaps) have no meaning. Writers SHOULD fill
   padding with zeros; readers MUST NOT interpret it.
 - The order of entries in the table is significant for chunks of the same tag (for example, the

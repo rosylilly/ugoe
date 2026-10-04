@@ -106,6 +106,71 @@
       ]
     },
     {
+      "file": "empty-chunk-inside.ugoe",
+      "summary": "The same model with an unknown chunk of length 0 whose offset points into the middle of the MODL payload, at a multiple of 16. A payload of length 0 overlaps nothing, so a reader reads the file.",
+      "style": "minimal",
+      "chunks": [
+        {
+          "tag": "MODL"
+        },
+        {
+          "tag": "TEXR"
+        },
+        {
+          "tag": "Xnul",
+          "payload": "",
+          "offset": 112
+        }
+      ],
+      "result": "ok",
+      "model": "../single-quad/model.json",
+      "textures": [
+        {
+          "width": 1,
+          "height": 1,
+          "rgba": [
+            255,
+            255,
+            255,
+            255
+          ]
+        }
+      ]
+    },
+    {
+      "file": "empty-chunk-header.ugoe",
+      "summary": "The same model with an unknown chunk of length 0 whose offset is 0, inside the header. A payload, even of length 0, starts at or after the end of the chunk table, so a reader refuses the file.",
+      "style": "minimal",
+      "chunks": [
+        {
+          "tag": "MODL"
+        },
+        {
+          "tag": "TEXR"
+        },
+        {
+          "tag": "Xnul",
+          "payload": "",
+          "offset": 0
+        }
+      ],
+      "result": "error",
+      "error": "chunk_table",
+      "model": "../single-quad/model.json",
+      "textures": [
+        {
+          "width": 1,
+          "height": 1,
+          "rgba": [
+            255,
+            255,
+            255,
+            255
+          ]
+        }
+      ]
+    },
+    {
       "file": "physics-pendulum.ugoe",
       "summary": "A model with physics settings; MODL and PHYS are compressed.",
       "style": "minimal",
