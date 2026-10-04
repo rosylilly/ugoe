@@ -1,11 +1,11 @@
 ---
 id: T0459
 title: "Godot: 読み込みの上限を指定する口・attach_module の 2 度読み・口の入力をやめる口"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/godot, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0459
 ---
 
 # T0459: Godot: 読み込みの上限を指定する口・attach_module の 2 度読み・口の入力をやめる口
