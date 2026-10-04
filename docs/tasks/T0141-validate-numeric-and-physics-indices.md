@@ -1,11 +1,11 @@
 ---
 id: T0141
 title: 検証の漏れ: 数値の有限性と物理の粒子の添字・周波数
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-model, ugoe-physics, docs, spec]
 depends_on: [T0136, T0137, T0316]
-assignee:
+assignee: claude-worker-T0141
 ---
 
 # T0141: 検証の漏れ: 数値の有限性と物理の粒子の添字・周波数

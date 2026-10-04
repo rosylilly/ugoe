@@ -1,11 +1,11 @@
 ---
 id: T0439
 title: npm: <ugoe-avatar> の作成の失敗と、作り直しを諦めた後の扱い (ready・やり直し)
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/web, docs]
 depends_on: [T0425]
-assignee:
+assignee: claude-worker-T0439
 ---
 
 # T0439: <ugoe-avatar> の作成の失敗と、諦めた後の扱い

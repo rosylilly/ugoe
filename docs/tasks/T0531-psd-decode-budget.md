@@ -1,11 +1,11 @@
 ---
 id: T0531
 title: ugoe-psd の展開後の大きさに上限を設ける (ZIP の展開爆発)
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-psd, docs]
 depends_on: [T0525]
-assignee:
+assignee: claude-worker-T0531
 ---
 
 # T0531: ugoe-psd の展開後の大きさに上限を設ける (ZIP の展開爆発)

@@ -1,11 +1,11 @@
 ---
 id: T0014
 title: "editor-core: 要素の削除と ID の書き換えで、参照の後始末を 1 か所にまとめる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0014
 ---
 
 # T0014: editor-core: 要素の削除と ID の書き換えで、参照の後始末を 1 か所にまとめる
