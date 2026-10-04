@@ -1,11 +1,11 @@
 ---
 id: T0819
 title: "スタジオ: ファイルを読むコマンドをメインのスレッドと舞台のロックの外へ"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, docs]
 depends_on: [T0814]
-assignee:
+assignee: claude-worker-T0819
 ---
 
 # T0819: スタジオ: ファイルを読むコマンドをメインのスレッドと舞台のロックの外へ
