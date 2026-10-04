@@ -1,11 +1,11 @@
 ---
 id: T0834
 title: "スタジオ: ホットキーと外部 API のシーンの切り替えで、読み込みを舞台のロックの外で行う"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, docs]
 depends_on: [T0833]
-assignee:
+assignee: claude-worker-T0834
 ---
 
 # T0834: スタジオ: ホットキーと外部 API のシーンの切り替えで、読み込みを舞台のロックの外で行う
