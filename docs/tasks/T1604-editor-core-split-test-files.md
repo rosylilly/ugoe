@@ -1,11 +1,11 @@
 ---
 id: T1604
 title: "editor-core: 1000 行を超えるテストのファイルを機能ごとに分ける"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core]
 depends_on: []
-assignee:
+assignee: claude-worker-T1604
 ---
 
 # T1604: editor-core: 1000 行を超えるテストのファイルを機能ごとに分ける
