@@ -1,11 +1,11 @@
 ---
 id: T0455
 title: "Unity: 受け手の口 (follow) を足し、適合テストの *-follow の skip をなくす"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/unity, tests/conformance, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0455
 ---
 
 # T0455: Unity: 受け手の口 (follow) を足し、適合テストの *-follow の skip をなくす
