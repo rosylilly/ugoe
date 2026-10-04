@@ -118,6 +118,12 @@ mod tests {
             .collect()
     }
 
+    /// `tauri.conf.json` の `app.security` (CSP と、Tauri に書き換えさせない指示)。
+    fn security(config: &str) -> serde_json::Value {
+        let config: serde_json::Value = serde_json::from_str(config).unwrap();
+        config["app"]["security"].clone()
+    }
+
     #[test]
     fn commands_match_the_invoke_handler() {
         // 載せ漏らしたコマンドはどのウィンドウからも呼べなくなる
@@ -144,9 +150,8 @@ mod tests {
 
     #[test]
     fn content_security_policy_allows_wasm_and_ipc_only_from_the_app() {
-        let config: serde_json::Value =
-            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
-        let csp = &config["app"]["security"]["csp"];
+        let security = security(include_str!("../tauri.conf.json"));
+        let csp = &security["csp"];
         let directive = |name: &str| csp[name].as_str().unwrap_or_default().to_owned();
         assert_eq!(directive("default-src"), "'self'");
         assert!(directive("script-src").contains("'wasm-unsafe-eval'"));
@@ -156,5 +161,20 @@ mod tests {
         assert!(directive("connect-src").contains("http://ipc.localhost"));
         assert!(directive("img-src").contains("blob:"));
         assert_eq!(directive("object-src"), "'none'");
+        assert_eq!(directive("frame-ancestors"), "'none'");
+    }
+
+    #[test]
+    fn content_security_policy_is_the_same_in_every_app() {
+        // 3 つのアプリは同じ CSP を使う (docs/architecture.md#webview-の-csp-とコマンドの許可)
+        let own = security(include_str!("../tauri.conf.json"));
+        assert_eq!(
+            own,
+            security(include_str!("../../../editor/src-tauri/tauri.conf.json"))
+        );
+        assert_eq!(
+            own,
+            security(include_str!("../../../viewer/src-tauri/tauri.conf.json"))
+        );
     }
 }

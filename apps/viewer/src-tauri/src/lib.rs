@@ -1,6 +1,9 @@
 //! ビューアのバックエンド。モデルの描画とパラメータの操作はすべて webview の wasm (`ugoe-wasm`) で行い、
 //! ここはファイルの読み書きとカメラの許可など、webview だけではできないことに限る (`apps/viewer/README.md`)。
 
+// コマンドの許可の表 (build.rs が読む)。ここではその検査だけを行う (T0024)。
+#[cfg(test)]
+mod acl;
 mod atomic_write;
 mod error;
 mod read_file;

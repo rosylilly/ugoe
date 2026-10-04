@@ -159,7 +159,9 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
   (`OUTPUT_COMMANDS`: 上の表の「出力」) だけ、操作ウィンドウ (`control.json`) はそれ以外のすべてを許す。コマンドを足したら
   `generate_handler!`・`COMMANDS`・どちらかの capability の 3 か所に書く (`src/acl.rs` のテストが食い違いを検査する)。
 - CSP (`tauri.conf.json` の `app.security.csp`): 同梱したものだけを読む (`default-src 'self'`)。wasm (`'wasm-unsafe-eval'`)・
-  Tauri の IPC (`ipc:`・`http://ipc.localhost`)・blob の画像と動画 (背景・トラッキングのファイル)・カメラ (`mediastream:`) を許す。
+  Tauri の IPC (`ipc:`・`http://ipc.localhost`)・blob の画像と動画 (背景・トラッキングのファイル) を許し、ほかのページの枠には入れさせない
+  (`frame-ancestors 'none'`)。カメラ (`srcObject` の MediaStream) は CSP の対象外。値はエディタ・ビューアと同じ (T0024。
+  [docs/architecture.md](../../docs/architecture.md#webview-の-csp-とコマンドの許可)。`src/acl.rs` のテストが 3 つの一致を検査する)。
   Svelte が書く `style` 属性のため `style-src` は `'unsafe-inline'` にし、Tauri が `style-src` に hash を足さないようにする
   (`dangerousDisableAssetCspModification`。hash があると `'unsafe-inline'` が効かなくなる)。
   カメラとマイクは、バックエンドの `on_permission_request` が操作ウィンドウの要求だけを許す (macOS は `Info.plist` と `Entitlements.plist`)。
