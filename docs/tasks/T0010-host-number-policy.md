@@ -1,11 +1,11 @@
 ---
 id: T0010
 title: ホストから来る数 (NaN・無限大・負の dt) の扱いを入口ごとの表にして公開仕様に書く
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-runtime, ugoe, ugoe-ffi, ugoe-wasm, bindings/godot, bindings/unity, bindings/web, docs, spec]
 depends_on: [T0433]
-assignee:
+assignee: claude-worker-T0010
 ---
 
 # T0010: ホストから来る数 (NaN・無限大・負の dt) の扱いを入口ごとの表にして公開仕様に書く
