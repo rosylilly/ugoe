@@ -1,11 +1,11 @@
 ---
 id: T0835
 title: "スタジオ: コマンドのエラーを { code, args, message } の形にそろえる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0835
 ---
 
 # T0835: スタジオ: コマンドのエラーを { code, args, message } の形にそろえる
