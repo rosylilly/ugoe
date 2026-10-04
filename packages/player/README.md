@@ -46,6 +46,10 @@ await player.load(file, modules); // モデル (と一緒に開くモジュー�
 - **wasm はアプリが渡す。** 生成物の置き場所と読み込み方 (ビューアは `apps/viewer/src/lib/wasm/load.ts` の `import.meta.glob`) は
   アプリが決める。`src/wasm.ts` の `WebPuppet` は Player が使うメソッドだけを書いた構造の型で、アプリの生成物
   (`ugoe_wasm.d.ts`) がそれを満たすかはアプリの型検査で確かめる。Player が新しいメソッドを使うときは `src/wasm.ts` に足す。
+- `attach` は前の `attach` を先に `detach` する。WebPuppet を作っている間に `detach` か次の `attach` があれば、遅れて
+  できた WebPuppet は捨てる (アンマウントと再マウントが重なっても資源が残らない)。GPU を失ったら (WebGPU は `is_lost`、
+  WebGL2 は canvas の `webglcontextlost`) canvas ごと作り直してモデルを読み直す。devicePixelRatio だけが変わったときも
+  描画バッファの大きさを合わせ直す (アプリの ResizeObserver は知らせないため)。
 - `Player` は `@ugoe/face-tracking` の `TrackingTarget` を満たす (`new FaceTracker(player, …)`)。
 - 画像の保存は `capture()` で RGBA を受け取り、PNG にして書くのはアプリ。
 - 覚えるもの (光源・着せ替えの組・待機モーションなど) の `localStorage` のキーは、いまはビューアの名前 (`ugoe-viewer.*`) のまま。

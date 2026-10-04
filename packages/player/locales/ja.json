@@ -84,7 +84,8 @@
   "errors": {
     "wasmMissing": "ugoe-wasm がビルドされていません",
     "notModel": "{{name}}: .ugoe・JSON のモデルか .ugoemod のモジュールではありません",
-    "renderStart": "描画を始められません: {{message}}"
+    "renderStart": "描画を始められません: {{message}}",
+    "noFollowerApi": "ugoe-wasm に受け手の口 (WebPuppet.follow) がありません。ugoe-wasm をビルドし直してください"
   },
   "remembered": {
     "noDate": "日時なし",

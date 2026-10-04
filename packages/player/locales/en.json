@@ -84,7 +84,8 @@
   "errors": {
     "wasmMissing": "ugoe-wasm is not built.",
     "notModel": "{{name}}: this is not a .ugoe or JSON model or a .ugoemod module.",
-    "renderStart": "Cannot start drawing: {{message}}"
+    "renderStart": "Cannot start drawing: {{message}}",
+    "noFollowerApi": "ugoe-wasm has no follower API (WebPuppet.follow). Rebuild ugoe-wasm."
   },
   "remembered": {
     "noDate": "No date",

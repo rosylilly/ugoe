@@ -229,6 +229,10 @@ export class Player {
   #frame = 0;
   #lastTime: number | null = null;
   #recovering = false;
+  /** devicePixelRatio の変化を聞いている問い合わせ (`#watchPixelRatio`)。 */
+  #pixelRatioQuery: MediaQueryList | null = null;
+  /** `attach`・`detach` のたびに増える。WebPuppet を作っている間に変わったら、作ったものを捨てる。 */
+  #attachToken = 0;
   /** 次のフレームで渡すトラッキングの入力 (渡したら `null`)。 */
   #pendingTracking: TrackingFrame | null = null;
   #lastTracking: TrackingFrame | null = null;
@@ -266,22 +270,36 @@ export class Player {
   }
 
   /** `container` の中に canvas を作り、描画を始める。 */
+  /**
+   * `container` の中に canvas を作り、描画を始める。前に `attach` していれば、先に `detach` する。
+   * 待っている間に `detach` か次の `attach` があれば、作った WebPuppet は捨てる。
+   */
   async attach(container: HTMLElement): Promise<void> {
+    this.detach();
+    const token = this.#attachToken;
     this.#container = container;
-    this.#wasm = await this.#host.loadWasm();
-    if (this.#wasm === null) {
+    const wasm = await this.#host.loadWasm();
+    if (token !== this.#attachToken) return;
+    this.#wasm = wasm;
+    if (wasm === null) {
       this.status = "unavailable";
       this.error = this.#host.wasmMissingMessage ?? t("errors.wasmMissing");
       return;
     }
-    await this.#createPuppet();
+    await this.#createPuppet(token);
+    if (token !== this.#attachToken) return;
+    this.#watchPixelRatio();
     this.#frame = requestAnimationFrame(this.#tick);
   }
 
   detach(): void {
+    this.#attachToken++;
+    this.#pixelRatioQuery?.removeEventListener("change", this.#onPixelRatio);
+    this.#pixelRatioQuery = null;
     cancelAnimationFrame(this.#frame);
     this.#destroyPuppet();
     this.#container = null;
+    this.#lastTime = null;
   }
 
   /**
@@ -299,17 +317,17 @@ export class Player {
       this.loadModule(file);
       return;
     }
+    if (kind === null) {
+      this.error = t("errors.notModel", { name: file.name });
+      return;
+    }
     // ドラッグの途中の光源は、前のモデルの設定として覚えてから開く。
     this.commitLighting();
-    this.#file = file;
     const puppet = this.#puppet;
     // まだ描画の準備中なら、準備ができたときに読む (#createPuppet)。
     if (puppet === null) {
+      this.#file = file;
       this.#pendingModules.push(...modules);
-      return;
-    }
-    if (kind === null) {
-      this.error = t("errors.notModel", { name: file.name });
       return;
     }
     const identity = modelIdentity(file);
@@ -332,10 +350,11 @@ export class Player {
         );
       } catch (e) {
         this.error = `${file.name}: ${message(e)}`;
-        // 前のモデルが残るので、除いたモジュールを戻す。
+        // 前のモデルが残るので、除いたモジュールを戻す。GPU を作り直したときも前のモデルを読み直す (`#file` は変えない)。
         if (previous !== null) this.#reloadModules(previous.files, previous.attached);
         return;
       }
+      this.#file = file;
       this.#model = identity;
       this.dressUpRemembered = remembered !== null;
       this.#recallLighting(identity);
@@ -1195,7 +1214,7 @@ export class Player {
   #follow(puppet: WebPuppet, queue: FrameQueue): void {
     const { follow, reset_physics } = puppet;
     if (follow === undefined || reset_physics === undefined) {
-      this.error = "ugoe-wasm has no follower API (WebPuppet.follow)";
+      this.error = t("errors.noFollowerApi");
       return;
     }
     const follower = {
@@ -1259,7 +1278,7 @@ export class Player {
    * canvas と WebPuppet を作る。WebGPU で作れなければ、新しい canvas で WebGL2 を試す
    * (1 つの canvas は WebGPU と WebGL2 を併用できない)。
    */
-  async #createPuppet(): Promise<void> {
+  async #createPuppet(token: number): Promise<void> {
     const wasm = this.#wasm;
     const container = this.#container;
     if (wasm === null || container === null) return;
@@ -1269,12 +1288,21 @@ export class Player {
       canvas.className = "viewport-canvas";
       container.prepend(canvas);
       try {
-        this.#puppet = await wasm.WebPuppet.create(canvas, backend);
+        const created = await wasm.WebPuppet.create(canvas, backend);
+        if (token !== this.#attachToken) {
+          // 作っている間に detach か次の attach があった。
+          created.free();
+          canvas.remove();
+          return;
+        }
+        this.#puppet = created;
         this.#canvas = canvas;
+        canvas.addEventListener("webglcontextlost", this.#onContextLost);
         break;
       } catch (e) {
-        lastError = e;
         canvas.remove();
+        if (token !== this.#attachToken) return;
+        lastError = e;
       }
     }
     const puppet = this.#puppet;
@@ -1308,6 +1336,7 @@ export class Player {
   #destroyPuppet(): void {
     this.#puppet?.free();
     this.#puppet = null;
+    this.#canvas?.removeEventListener("webglcontextlost", this.#onContextLost);
     this.#canvas?.remove();
     this.#canvas = null;
     // 作り直した WebPuppet は既定 (`false` と空) から始まる。
@@ -1315,15 +1344,45 @@ export class Player {
     this.#keptDirty = true;
   }
 
+  /**
+   * WebGL2 のコンテキストを失った (GPU のリセット・ドライバの更新など)。wgpu の GL のバックエンドはこれを
+   * `is_lost` で知らせず、描画も失敗しない (何も描かれない) ので、WebGPU の喪失と同じく canvas ごと作り直す。
+   */
+  #onContextLost = (event: Event): void => {
+    if (event.target !== this.#canvas) return;
+    void this.#recover();
+  };
+
+  /**
+   * devicePixelRatio だけが変わったとき (倍率の違う画面へウィンドウを移したなど) は、アプリの ResizeObserver が
+   * 知らせないので、今の倍率から外れたら描画バッファの大きさを合わせ直す (ぼやけないように)。
+   */
+  #watchPixelRatio(): void {
+    if (typeof matchMedia !== "function") return;
+    this.#pixelRatioQuery = matchMedia(`(resolution: ${devicePixelRatio || 1}dppx)`);
+    this.#pixelRatioQuery.addEventListener("change", this.#onPixelRatio, { once: true });
+  }
+
+  #onPixelRatio = (): void => {
+    this.resize(...this.#cssSize);
+    this.#watchPixelRatio();
+  };
+
   /** GPU を失った (GPU プロセスのクラッシュなど)。作り直して、開いていたモデルを読み直す。 */
   async #recover(): Promise<void> {
     if (this.#recovering) return;
     this.#recovering = true;
+    const token = this.#attachToken;
     const values = { ...this.values };
-    this.#destroyPuppet();
-    await this.#createPuppet();
-    for (const [id, value] of Object.entries(values)) this.#puppet?.set_parameter(id, value);
-    this.#syncValues();
-    this.#recovering = false;
+    try {
+      this.#destroyPuppet();
+      await this.#createPuppet(token);
+      // 作り直している間に detach された。
+      if (token !== this.#attachToken) return;
+      for (const [id, value] of Object.entries(values)) this.#puppet?.set_parameter(id, value);
+      this.#syncValues();
+    } finally {
+      this.#recovering = false;
+    }
   }
 }
