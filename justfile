@@ -198,6 +198,13 @@ sdk-no-render-check:
 wasm out="apps/editor/src/lib/viewport/generated":
     @node scripts/wasm.mjs build {{quote(out)}}
 
+# ugoe-wasm の手書きの型の写し (bindings/web/stub/ugoe_wasm.d.ts と @ugoe/player・@ugoe/face-tracking の interface) を
+# `just wasm` の生成物と比べ、メソッドの抜けと型の違いを報告する (scripts/check-wasm-types.mjs)。
+# 生成物が無ければ、一部の写しを bindings/web のスタブと比べる (`just ci` の web-check は引数なしで実行する)
+wasm-types generated="":
+    @node --test --test-reporter=dot scripts/check-wasm-types.test.mjs
+    @node scripts/check-wasm-types.mjs {{generated}}
+
 # npm パッケージ @ugoe/runtime (bindings/web) をビルドする: wasm の生成・tsc・dist/ への出力 (ADR 0025)。
 # ローカルで入れるには、続けて `cd bindings/web && pnpm pack --out ugoe-runtime.tgz` (bindings/web/README.md)。
 web-runtime:
@@ -215,7 +222,7 @@ wasm-bindgen-version:
     @node scripts/wasm.mjs version
 
 # フロントエンドの lint / 型検査 / 単体テスト (Vitest)
-web-check:
+web-check: wasm-types
     pnpm biome check .
     pnpm --filter '@ugoe/editor' check
     pnpm --filter '@ugoe/editor' test

@@ -2,7 +2,7 @@
 //
 // 生成物は gitignore しているので、無くてもフロントエンドのビルドと型検査は通るようにする:
 // - 実行時は import.meta.glob で探し、無ければ null を返す (ビューポートは案内を表示する)。
-// - 型は tsconfig.json の paths で generated/ を優先し、無ければ ugoe-wasm-stub.d.ts を使う。
+// - 型は tsconfig.json の paths で generated/ を優先し、無ければ bindings/web/stub/ugoe_wasm.d.ts を使う。
 import type * as UgoeWasm from "ugoe-wasm";
 
 export type { WebPuppet } from "ugoe-wasm";

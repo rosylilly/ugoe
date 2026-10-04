@@ -9,9 +9,9 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "types": ["vite/client", "node"],
-    // `pnpm wasm` で生成した型があればそれを、無ければ手書きの宣言 (src/lib/wasm/stub.d.ts) を使う
+    // `pnpm wasm` で生成した型があればそれを、無ければ @ugoe/runtime の手書きの型の写し (bindings/web/stub/ugoe_wasm.d.ts) を使う
     "paths": {
-      "ugoe-wasm": ["./src/lib/wasm/generated/ugoe_wasm", "./src/lib/wasm/stub"]
+      "ugoe-wasm": ["./src/lib/wasm/generated/ugoe_wasm", "../../bindings/web/stub/ugoe_wasm"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.svelte", "vite.config.ts"]

@@ -9,9 +9,9 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "types": ["vite/client", "node"],
-    // `just wasm` の生成物を優先し、無ければ手書きの型を使う (src/lib/viewport/wasm.ts)
+    // `just wasm` の生成物を優先し、無ければ @ugoe/runtime の手書きの型の写しを使う (src/lib/viewport/wasm.ts)
     "paths": {
-      "ugoe-wasm": ["./src/lib/viewport/generated/ugoe_wasm", "./src/lib/viewport/ugoe-wasm-stub"]
+      "ugoe-wasm": ["./src/lib/viewport/generated/ugoe_wasm", "../../bindings/web/stub/ugoe_wasm"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.svelte", "vite.config.ts"]
