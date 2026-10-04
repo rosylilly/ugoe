@@ -44,8 +44,7 @@ pub fn resolve_textures(
     (0..count)
         .map(|i| {
             if let Some((_, path)) = overrides.iter().rev().find(|(j, _)| *j as usize == i) {
-                let bytes = std::fs::read(path)
-                    .map_err(Error::io(format!("reading {}", path.display())))?;
+                let bytes = crate::read_file(path)?;
                 return image::decode_png_premultiplied(&bytes).map_err(|e| Error::Texture {
                     context: format!("decoding texture {i} from {}", path.display()),
                     source: Box::new(e),
@@ -137,6 +136,17 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("only 1 texture"), "{err}");
+    }
+
+    /// `--texture` のパスも通常のファイルだけを読む (`/dev/zero` を読み続けないように)。
+    #[cfg(unix)]
+    #[test]
+    fn refuses_texture_overrides_that_are_not_regular_files() {
+        let model = ugoe_model::fixtures::single_quad();
+        let err =
+            resolve_textures(&model, &[], &[(0, "/dev/null".into())], &mut Vec::new()).unwrap_err();
+        let err = format!("{err}: {}", std::error::Error::source(&err).unwrap());
+        assert!(err.contains("not a regular file"), "{err}");
     }
 
     #[test]

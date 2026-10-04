@@ -27,7 +27,7 @@ gpu.leak();                                // 破棄しない (下の「GPU」)
 | `args` | 文字列の引数を読む (`ID=VALUE`・`WxH`・色・`INDEX=PATH`・秒数・fps・光の色・光源)。clap の `value_parser` にそのまま渡せる |
 | `view` | 出力の大きさ (`output_size`) とキャンバスを収めるビュー (`fit_view`・`Fit`) |
 | `textures` | テクスチャを揃える (`--texture` の差し替え → バンドルの PNG → 不透明な白 1x1)・バンドルの法線マップをデコードする |
-| `animate` | パラメータの書き込みと、`ugoe::Puppet` で時間を進める処理 |
+| `animate` | パラメータの書き込みと、`ugoe::Puppet` で時間を進める処理 (`update` は `MAX_UPDATES` 回 = 60 fps で 1 時間まで) |
 | `gpu` | ヘッドレスの `Gpu` (アダプタとデバイス)・描いて読み戻す・`stats_json` |
 | `resident` | 常駐の描画の口 `Resident` (毎フレーム描き続ける。下の「常駐の描画」) |
 | `yuv` | 画素の形 `PixelFormat` (RGBA8・NV12・YUY2) と、RGBA からの変換の CPU の参照実装 |

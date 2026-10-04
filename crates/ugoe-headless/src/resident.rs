@@ -177,10 +177,12 @@ impl Resident {
         })
     }
 
+    /// 出力の大きさ (画素)。
     pub fn size(&self) -> (u32, u32) {
         self.size
     }
 
+    /// 読み戻す画素の形。
     pub fn format(&self) -> PixelFormat {
         self.format
     }

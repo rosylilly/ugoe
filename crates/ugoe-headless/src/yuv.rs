@@ -80,10 +80,16 @@ fn average(pixels: &[[f32; 3]]) -> [f32; 3] {
     sum.map(|c| c / n)
 }
 
-/// RGBA8 を `format` に変換する。`Rgba8` ならそのまま写す。
+/// RGBA8 を `format` に変換する。`Rgba8` ならそのまま写す。画素の数が大きさと合わなければエラー。
 pub fn convert(image: &Rgba8, format: PixelFormat) -> Result<Vec<u8>, Error> {
     let (w, h) = (image.width, image.height);
     format.check_size(w, h)?;
+    if image.pixels.len() != PixelFormat::Rgba8.frame_bytes(w, h) {
+        bail!(
+            "the image is {w}x{h} but has {} bytes of pixels",
+            image.pixels.len()
+        );
+    }
     let mut out = Vec::with_capacity(format.frame_bytes(w, h));
     match format {
         PixelFormat::Rgba8 => out.extend_from_slice(&image.pixels),
@@ -161,6 +167,17 @@ mod tests {
         // BT.709 の赤: Y = 63、Cb = 102、Cr = 240。
         let red = convert(&solid(4, 2, [255, 0, 0, 255]), PixelFormat::Nv12).unwrap();
         assert_eq!((red[0], red[8], red[9]), (63, 102, 240));
+    }
+
+    /// 画素の数が大きさと合わなければ、添字の範囲外で止まらずにエラーにする。
+    #[test]
+    fn rejects_pixels_that_do_not_match_the_size() {
+        let mut image = solid(4, 2, [0, 0, 0, 255]);
+        image.pixels.truncate(4);
+        for format in [PixelFormat::Rgba8, PixelFormat::Nv12, PixelFormat::Yuy2] {
+            let err = convert(&image, format).unwrap_err().to_string();
+            assert!(err.contains("4x2"), "{format:?}: {err}");
+        }
     }
 
     #[test]

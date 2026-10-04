@@ -22,7 +22,7 @@ pub enum Fit {
 /// 出力サイズを決める。
 ///
 /// `size` があればそれ。`width` / `height` の片方だけならキャンバスの縦横比から他方を決める。
-/// どちらも無ければキャンバスの大きさ × `scale`。
+/// どちらも無ければキャンバスの大きさ × `scale`。どの一辺も 1..=[`MAX_SIZE`] でなければエラー。
 pub fn output_size(
     canvas: (f32, f32),
     size: Option<(u32, u32)>,
@@ -41,11 +41,18 @@ pub fn output_size(
         }
         Ok(n as u32)
     };
+    // 明示した大きさも確かめる (`args` を通さずに値を渡す呼び出し側がある。MCP サーバの `render_png`)。
+    let given = |n: u32| -> Result<u32, Error> {
+        if n == 0 || n > MAX_SIZE {
+            bail!("output size {n} is out of range 1..={MAX_SIZE}");
+        }
+        Ok(n)
+    };
     Ok(match (size, width, height) {
-        (Some(s), _, _) => s,
-        (None, Some(w), Some(h)) => (w, h),
-        (None, Some(w), None) => (w, dim(w as f32 * ch / cw)?),
-        (None, None, Some(h)) => (dim(h as f32 * cw / ch)?, h),
+        (Some((w, h)), _, _) => (given(w)?, given(h)?),
+        (None, Some(w), Some(h)) => (given(w)?, given(h)?),
+        (None, Some(w), None) => (given(w)?, dim(w as f32 * ch / cw)?),
+        (None, None, Some(h)) => (dim(h as f32 * cw / ch)?, given(h)?),
         (None, None, None) => {
             if !(scale > 0.0 && scale.is_finite()) {
                 bail!("--scale must be positive, got {scale}");
@@ -102,6 +109,22 @@ mod tests {
         assert!(output_size(c, None, None, None, 0.0).is_err());
         assert!(output_size(c, None, None, None, 1000.0).is_err());
         assert!(output_size((0.0, 1.0), None, None, None, 1.0).is_err());
+    }
+
+    /// 明示した大きさも 1..=MAX_SIZE に入っているかを確かめる (MCP サーバは `args` を通さずに値を渡す)。
+    #[test]
+    fn explicit_sizes_are_checked() {
+        let c = (256.0, 128.0);
+        assert!(output_size(c, Some((0, 6)), None, None, 1.0).is_err());
+        assert!(output_size(c, Some((5, MAX_SIZE + 1)), None, None, 1.0).is_err());
+        assert!(output_size(c, None, Some(0), Some(20), 1.0).is_err());
+        assert!(output_size(c, None, Some(10), Some(MAX_SIZE + 1), 1.0).is_err());
+        assert!(output_size(c, None, Some(0), None, 1.0).is_err());
+        assert!(output_size(c, None, None, Some(u32::MAX), 1.0).is_err());
+        assert_eq!(
+            output_size(c, Some((MAX_SIZE, 1)), None, None, 1.0).unwrap(),
+            (MAX_SIZE, 1)
+        );
     }
 
     fn apply(view: &View, (x, y): (f32, f32)) -> (f32, f32) {

@@ -21,7 +21,7 @@ mod textures;
 mod view;
 pub mod yuv;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use ugoe::Puppet;
 use ugoe_format::TextureData;
@@ -42,24 +42,28 @@ pub enum Error {
     /// 引数やモデルの誤り (描画を始める前に分かるもの)。
     #[error("{0}")]
     Invalid(String),
+    /// ファイルの読み込みの失敗 (通常のファイルでないものも含む)。`context` はどのファイルか。
     #[error("{context}")]
     Io {
         context: String,
         #[source]
         source: std::io::Error,
     },
+    /// モーション・表情・物理の JSON の読み込みの失敗。
     #[error("{context}")]
     Format {
         context: String,
         #[source]
         source: ugoe_format::FormatError,
     },
+    /// PNG のデコードの失敗。
     #[error("{context}")]
     PngDecode {
         context: &'static str,
         #[source]
         source: png::DecodingError,
     },
+    /// PNG のエンコードの失敗。
     #[error("{context}")]
     PngEncode {
         context: &'static str,
@@ -73,13 +77,16 @@ pub enum Error {
         #[source]
         source: Box<Error>,
     },
+    /// モデルの検査 (コンパイル) の失敗。
     #[error("compiling model")]
     Compile(#[source] ugoe_runtime::CompileError),
+    /// アダプタを選べない (GPU もソフトウェアのラスタライザも無い)。
     #[error(
         "no GPU adapter available ({0}). Rendering needs a GPU or a software rasterizer such as \
          Mesa lavapipe (Vulkan) or llvmpipe (GL); try --backend gl or WGPU_BACKEND=vulkan"
     )]
     NoAdapter(wgpu::RequestAdapterError),
+    /// デバイスを作れない。
     #[error("requesting GPU device")]
     Device(#[source] wgpu::RequestDeviceError),
     /// 描画中の GPU の失敗 (検証エラー・メモリ不足・読み戻しの失敗など)。
@@ -88,20 +95,41 @@ pub enum Error {
         context: &'static str,
         detail: String,
     },
+    /// レンダラが受け付けない入力 (テクスチャの大きさと画素の数の食い違いなど)。
     #[error(transparent)]
     Render(#[from] ugoe_render::RenderError),
 }
 
 impl Error {
-    fn io(context: impl Into<String>) -> impl FnOnce(std::io::Error) -> Self {
-        let context = context.into();
-        move |source| Self::Io { context, source }
-    }
-
     fn format(context: impl Into<String>) -> impl FnOnce(ugoe_format::FormatError) -> Self {
         let context = context.into();
         move |source| Self::Format { context, source }
     }
+}
+
+/// 外から渡されたパスのファイルを読む。通常のファイルでなければ (装置・FIFO・ディレクトリ) 読まずにエラーにする
+/// (`/dev/zero` や FIFO を読み続けてメモリを使い果たしたり、止まったりしないように。MCP サーバではエージェントがパスを渡す)。
+pub(crate) fn read_file(path: &Path) -> Result<Vec<u8>, Error> {
+    let error = |source| Error::Io {
+        context: format!("reading {}", path.display()),
+        source,
+    };
+    let metadata = std::fs::metadata(path).map_err(error)?;
+    if !metadata.is_file() {
+        return Err(error(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "not a regular file",
+        )));
+    }
+    std::fs::read(path).map_err(error)
+}
+
+/// [`read_file`] で読み、UTF-8 の文字列にする。
+pub(crate) fn read_text(path: &Path) -> Result<String, Error> {
+    String::from_utf8(read_file(path)?).map_err(|e| Error::Io {
+        context: format!("reading {}", path.display()),
+        source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.utf8_error()),
+    })
 }
 
 /// `Invalid` のエラーを返す。
@@ -167,6 +195,7 @@ pub struct RenderOptions {
     pub height: Option<u32>,
     /// 大きさを指定しないときの、キャンバスに対する倍率 (`--scale`)。
     pub scale: f32,
+    /// キャンバスを出力にどう収めるか (`--fit`)。
     pub fit: Fit,
     /// 背景色 (ストレートアルファの RGBA8。`--background`)。
     pub background: [u8; 4],
@@ -235,6 +264,7 @@ pub struct Shading {
 /// GPU で描く直前の状態 ([`prepare`] の結果)。
 #[derive(Debug)]
 pub struct Prepared {
+    /// パラメータを書き込み、必要なら時間を進めたモデル。
     pub puppet: Puppet,
     /// 描画に使うテクスチャ (乗算済み RGBA8、番号順)。
     pub textures: Vec<Rgba8>,
@@ -242,7 +272,9 @@ pub struct Prepared {
     pub shading: Shading,
     /// 出力の大きさ。
     pub size: (u32, u32),
+    /// キャンバスを出力に収めるビュー ([`fit_view`])。
     pub view: ugoe_render::View,
+    /// 背景色 (ストレートアルファの RGBA8)。
     pub background: [u8; 4],
     /// 時間を進めたなら、その秒数と `update` の回数。
     pub advanced: Option<Advanced>,
@@ -267,14 +299,17 @@ pub fn prepare(scene: Scene, options: &RenderOptions) -> Result<Prepared, Error>
         options.scale,
     )?;
     let view = fit_view(canvas, size, options.fit);
+    // モデルの検査 (コンパイル) を先に行う。テクスチャの枚数はメッシュが参照する番号から決まるので、
+    // 検査の前に揃えると範囲の外の番号 (`u32::MAX` など) の数だけ仮のテクスチャを作ってしまう。
+    let (mut puppet, param_warnings) = animate::puppet(model, &options.params)?;
+    let model = puppet.instance().compiled().model();
     let mut warnings = Vec::new();
-    let textures = resolve_textures(&model, &textures, &options.texture_overrides, &mut warnings)?;
+    let textures = resolve_textures(model, &textures, &options.texture_overrides, &mut warnings)?;
     let shading = Shading {
         normal_maps: resolve_normal_maps(&normal_maps, &mut warnings)?,
         lighting: options.lighting.clone(),
     };
-    let (mut puppet, w) = animate::puppet(model, &options.params)?;
-    warnings.extend(w);
+    warnings.extend(param_warnings);
     let mut advanced = None;
     if options.time.is_some() || options.motion.is_some() || options.expression.is_some() {
         let physics = match (&options.physics, options.no_physics) {
@@ -331,5 +366,92 @@ impl Prepared {
             &self.view,
             self.background,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ugoe_model::fixtures;
+
+    use super::*;
+
+    /// モデルの検査 (コンパイル) をテクスチャを揃える前に行う。範囲の外のテクスチャの番号
+    /// (`u32::MAX` なら 40 億枚の仮のテクスチャ) を作り始めないように。
+    #[test]
+    fn rejects_invalid_models_before_resolving_textures() {
+        let mut model = fixtures::single_quad();
+        model.meshes[0].texture = 1;
+        let options = RenderOptions {
+            texture_overrides: vec![(1, "does-not-exist.png".into())],
+            ..Default::default()
+        };
+        let err = prepare(Scene::from_model(model.clone()), &options).unwrap_err();
+        assert!(matches!(err, Error::Compile(_)), "{err:?}");
+
+        model.meshes[0].texture = u32::MAX;
+        let err = prepare(Scene::from_model(model), &RenderOptions::default()).unwrap_err();
+        assert!(matches!(err, Error::Compile(_)), "{err:?}");
+    }
+
+    #[test]
+    fn prepares_without_advancing_time_by_default() {
+        let prepared = prepare(
+            Scene::from_model(fixtures::single_quad()),
+            &RenderOptions {
+                params: vec![("X".into(), 2.0)],
+                width: Some(64),
+                no_physics: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(prepared.size, (64, 64));
+        assert_eq!(prepared.textures, vec![placeholder_texture()]);
+        assert_eq!(prepared.advanced, None);
+        // クランプの警告と、時間を進めないときの `--no-physics` の警告。
+        assert_eq!(prepared.warnings.len(), 2, "{:?}", prepared.warnings);
+        assert!(
+            prepared.warnings[0].contains("clamped"),
+            "{:?}",
+            prepared.warnings
+        );
+        assert!(
+            prepared.warnings[1].contains("only apply"),
+            "{:?}",
+            prepared.warnings
+        );
+    }
+
+    #[test]
+    fn advances_time_when_asked() {
+        let prepared = prepare(
+            Scene::from_model(fixtures::single_quad()),
+            &RenderOptions {
+                time: Some(0.5),
+                fps: 10.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            prepared.advanced,
+            Some(Advanced {
+                time: 0.5,
+                updates: 5
+            })
+        );
+        assert!(prepared.warnings.is_empty(), "{:?}", prepared.warnings);
+
+        // fps は時間を進めるときだけ確かめる。
+        let err = prepare(
+            Scene::from_model(fixtures::single_quad()),
+            &RenderOptions {
+                time: Some(1.0),
+                fps: 0.0,
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("fps"), "{err}");
     }
 }

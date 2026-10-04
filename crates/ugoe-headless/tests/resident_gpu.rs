@@ -140,3 +140,29 @@ fn readbacks_do_not_wait_and_the_newest_wins() {
     let white = resident.poll(gpu(), Wait::All).unwrap().unwrap();
     assert_eq!(white.bytes[0], 235);
 }
+
+#[test]
+fn backdrop_replaces_the_clear_color_until_removed() {
+    let prepared = prepared();
+    let mut resident = resident(&prepared, PixelFormat::Rgba8, 2);
+    let color = [200, 100, 50, 255];
+    let backdrop = Rgba8 {
+        width: SIZE.0,
+        height: SIZE.1,
+        pixels: color.repeat(SIZE.0 as usize * SIZE.1 as usize),
+    };
+    resident.set_backdrop(gpu(), Some(&backdrop)).unwrap();
+    // 隅はモデルの外なので、背景の画像の色になる。
+    assert_eq!(&render_once(&mut resident, &prepared)[..4], &color);
+    // 外すとクリアの色に戻る。
+    resident.set_backdrop(gpu(), None).unwrap();
+    assert_eq!(&render_once(&mut resident, &prepared)[..4], &BACKGROUND);
+    // 大きさの違う画像は置かない。
+    let small = Rgba8 {
+        width: 1,
+        height: 1,
+        pixels: color.to_vec(),
+    };
+    let err = resident.set_backdrop(gpu(), Some(&small)).unwrap_err();
+    assert!(err.to_string().contains("backdrop is 1x1"), "{err}");
+}

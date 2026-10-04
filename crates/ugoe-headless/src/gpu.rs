@@ -333,3 +333,16 @@ pub(crate) fn gpu_error<E: std::fmt::Display>(context: &'static str) -> impl FnO
         detail: e.to_string(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 知らないバックエンドの名前は、インスタンスを作る前にエラーにする (GPU が無くても確かめられる)。
+    #[test]
+    fn rejects_unknown_backends() {
+        let err = Gpu::new(Some("nope")).unwrap_err();
+        assert!(matches!(err, Error::Invalid(_)), "{err:?}");
+        assert!(err.to_string().contains("unknown backend `nope`"), "{err}");
+    }
+}

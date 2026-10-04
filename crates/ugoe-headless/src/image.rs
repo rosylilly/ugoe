@@ -4,7 +4,7 @@
 
 use std::io::Cursor;
 
-use crate::{Error, bail};
+use crate::{Error, MAX_SIZE, bail};
 
 /// RGBA8 の画像。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,7 +16,7 @@ pub struct Rgba8 {
 
 /// PNG をデコードして、乗算済みアルファの RGBA8 にする。
 ///
-/// グレースケール・パレット・16bit は 8bit RGBA に展開する。
+/// グレースケール・パレット・16bit は 8bit RGBA に展開する。一辺が [`MAX_SIZE`] を超える画像はエラー。
 pub fn decode_png_premultiplied(bytes: &[u8]) -> Result<Rgba8, Error> {
     let mut image = decode_png(bytes)?;
     premultiply(&mut image.pixels);
@@ -25,13 +25,19 @@ pub fn decode_png_premultiplied(bytes: &[u8]) -> Result<Rgba8, Error> {
 
 /// PNG をデコードして、アルファを掛けない RGBA8 にする (法線マップ用。アルファは使わない)。
 ///
-/// グレースケール・パレット・16bit は 8bit RGBA に展開する。
+/// グレースケール・パレット・16bit は 8bit RGBA に展開する。一辺が [`MAX_SIZE`] を超える画像はエラー。
 pub fn decode_png(bytes: &[u8]) -> Result<Rgba8, Error> {
     let mut decoder = png::Decoder::new(Cursor::new(bytes));
     decoder.set_transformations(png::Transformations::normalize_to_color8());
     let mut reader = decoder
         .read_info()
         .map_err(png_decode("reading PNG header"))?;
+    // 見出しの大きさだけで確保すると、小さなファイルで数 GB を求められる。テクスチャの一辺の上限は
+    // 出力と同じ [`MAX_SIZE`] (wgpu の 2D テクスチャの上限より大きいデバイスは少ない)。
+    let (width, height) = (reader.info().width, reader.info().height);
+    if width > MAX_SIZE || height > MAX_SIZE {
+        bail!("PNG image is {width}x{height}, larger than the limit {MAX_SIZE}x{MAX_SIZE}");
+    }
     let Some(size) = reader.output_buffer_size() else {
         bail!("PNG image is too large");
     };
@@ -282,6 +288,26 @@ mod tests {
         writer.finish().unwrap();
         assert_eq!(decode_png(&out).unwrap().pixels, vec![128, 200, 255, 0]);
         assert_eq!(decode_png_premultiplied(&out).unwrap().pixels, vec![0; 4]);
+    }
+
+    /// IHDR が 65535x65535 で、画素のデータが zlib の見出しだけの小さな PNG。
+    fn huge_png_header() -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut encoder = png::Encoder::new(&mut out, 65535, 65535);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().unwrap();
+        writer.write_chunk(png::chunk::IDAT, &[0x78, 0x9c]).unwrap();
+        // 残りの画素は書かない (`finish` も呼ばない)。
+        std::mem::forget(writer);
+        out
+    }
+
+    /// 見出しの大きさを確かめてから確保する (外から来た PNG で数 GB を確保して落ちないように)。
+    #[test]
+    fn rejects_images_larger_than_the_limit_before_allocating() {
+        let err = decode_png(&huge_png_header()).unwrap_err().to_string();
+        assert!(err.contains("65535x65535"), "{err}");
     }
 
     #[test]

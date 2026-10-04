@@ -18,6 +18,9 @@ use ugoe_runtime::ModelInstance;
 
 use crate::{Error, bail};
 
+/// [`advance`] の `update` の回数の上限 (60 fps で 1 時間)。大きな `time` で止まり続けないように。
+pub const MAX_UPDATES: u32 = 60 * 60 * 60;
+
 /// バンドルに入っている物理・モーション・表情 (JSON とフィクスチャでは空)。
 #[derive(Debug, Default)]
 pub struct Animation {
@@ -46,7 +49,7 @@ fn is_path(arg: &str) -> bool {
 }
 
 fn read(path: &str) -> Result<String, Error> {
-    std::fs::read_to_string(path).map_err(Error::io(format!("reading {path}")))
+    crate::read_text(Path::new(path))
 }
 
 /// `--motion`: バンドルのモーションの名前か、`.motion.json` のパス。
@@ -81,8 +84,7 @@ pub fn resolve_expression(arg: &str, expressions: &[Expression]) -> Result<Expre
 
 /// `--physics`: 物理の設定の JSON のパス。
 pub fn read_physics(path: &Path) -> Result<PhysicsSettings, Error> {
-    let json =
-        std::fs::read_to_string(path).map_err(Error::io(format!("reading {}", path.display())))?;
+    let json = crate::read_text(path)?;
     ugoe_format::physics_from_json(&json)
         .map_err(Error::format(format!("parsing {}", path.display())))
 }
@@ -148,7 +150,17 @@ pub fn puppet(model: Model, params: &[(String, f32)]) -> Result<(Puppet, Vec<Str
 ///
 /// `1 / fps` 秒の `update` を `floor(time * fps)` 回行い、余りがあればもう 1 回その長さで行う。
 /// `time` が 0 なら `update(0)` を 1 回行う (物理は静止姿勢、モーションは 0 秒の値)。
+/// `floor(time * fps)` が [`MAX_UPDATES`] を超えればエラー。
 pub fn advance(puppet: &mut Puppet, playback: Playback) -> Result<u32, Error> {
+    let steps = playback.time * playback.fps;
+    if steps.is_nan() || steps > MAX_UPDATES as f32 {
+        bail!(
+            "too many updates: {}s at {} fps needs {steps} updates (the limit is {MAX_UPDATES}, \
+             one hour at 60 fps)",
+            playback.time,
+            playback.fps
+        );
+    }
     if let Some(physics) = playback.physics {
         puppet.set_physics(Some(physics)).map_err(|errors| {
             let errors: Vec<String> = errors.iter().map(ToString::to_string).collect();
@@ -290,6 +302,33 @@ mod tests {
         assert_eq!(breathing(false), 0.0);
     }
 
+    /// `time * fps` の回数に上限がある (MCP サーバに大きな `time` を渡されても止まり続けない)。
+    #[test]
+    fn rejects_too_many_updates() {
+        let err = play(
+            fixtures::single_quad(),
+            &[],
+            Playback {
+                fps: 60.0,
+                ..playback(3601.0)
+            },
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("too many updates"), "{err}");
+        let err = play(
+            fixtures::single_quad(),
+            &[],
+            Playback {
+                fps: 1e30,
+                ..playback(1.0)
+            },
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("too many updates"), "{err}");
+    }
+
     #[test]
     fn rejects_physics_that_does_not_match_the_model() {
         let err = play(
@@ -313,6 +352,22 @@ mod tests {
         assert!(err.contains("known: Ramp"), "{err}");
         let err = resolve_expression("Smile", &[]).unwrap_err().to_string();
         assert!(err.contains("known: none"), "{err}");
+    }
+
+    /// 通常のファイルでないもの (`/dev/zero` のような終わらない装置・FIFO・ディレクトリ) は読まない
+    /// (MCP サーバではエージェントがパスを渡す。読み続けてメモリを使い果たさないように)。
+    #[cfg(unix)]
+    #[test]
+    fn refuses_to_read_files_that_are_not_regular() {
+        let chain = |e: Error| format!("{e}: {}", std::error::Error::source(&e).unwrap());
+        let err = chain(read_physics(Path::new("/dev/null")).unwrap_err());
+        assert!(err.contains("not a regular file"), "{err}");
+        let err = chain(read_physics(&std::env::temp_dir()).unwrap_err());
+        assert!(err.contains("not a regular file"), "{err}");
+        let err = resolve_motion("/dev/null.json", &[])
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("reading /dev/null.json"), "{err}");
     }
 
     fn single_quad_instance() -> ModelInstance {
