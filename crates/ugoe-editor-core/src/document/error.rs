@@ -166,6 +166,8 @@ pub enum EditError {
     #[error(transparent)]
     Module(ModuleError),
     /// テクスチャの画像の一辺が、デコードの上限 (`ugoe_format::image::ImageLimits`) を超える。
+    /// テクスチャと法線マップの追加・差し替え (`AddTexture`・`SetTextureImage`・`SetNormalMap`) は置く前に、
+    /// メッシュの作り直しは画素を確保する前に返す (T0560)。
     #[error("texture `{texture}` is {width}x{height}, larger than the limit {max}x{max}")]
     TextureTooLarge {
         texture: String,

@@ -84,8 +84,14 @@ pub fn decode_rgba_png(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
 /// IHDR が 65535x65535 で、画素のデータが zlib の見出しだけの小さな PNG。
 #[cfg(test)]
 pub(crate) fn huge_png_header() -> Vec<u8> {
+    png_header(65535, 65535)
+}
+
+/// IHDR が `width`x`height` で、画素のデータが zlib の見出しだけの小さな PNG (寸法だけを見る処理のテスト用)。
+#[cfg(test)]
+pub(crate) fn png_header(width: u32, height: u32) -> Vec<u8> {
     let mut out = Vec::new();
-    let mut encoder = png::Encoder::new(&mut out, 65535, 65535);
+    let mut encoder = png::Encoder::new(&mut out, width, height);
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
     let mut writer = encoder.write_header().unwrap();

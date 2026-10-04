@@ -12,7 +12,7 @@ AI プロバイダの抽象 (`Provider`) と、自動リギングのパイプラ
 
 ## 構成
 
-- `lib.rs`: `Provider` トレイト、`ProviderRequest`、`Proposal`、`Disclosure` (外部に送る内容の要約)、エラー `AiError` (テンプレートで組めない失敗は `AiError::Template` で、どのテンプレート (`rig::RigTemplate`) で何が足りないかを持つ) と、待ち時間を秒に切り上げる `secs_rounded_up` (エラーの文言とエディタの表示で共通)
+- `lib.rs`: `Provider` トレイト、`ProviderRequest`、`Proposal`、`Disclosure` (外部に送る内容の要約)、エラー `AiError` (テンプレートで組めない失敗は `AiError::Template` で、どのテンプレート (`rig::RigTemplate`) で何が足りないかを持つ。テクスチャの画像の一辺がデコードの上限を超えるものは `AiError::TextureTooLarge` で、読めない画像と分ける) と、待ち時間を秒に切り上げる `secs_rounded_up` (エラーの文言とエディタの表示で共通)
 - `api_key.rs`: プロバイダと深度推定で共通の API キー (`ugoe_ai::ApiKey`。`Debug` は伏せ字。環境変数からは `ApiKey::from_env(claude::API_KEY_ENV)` などで読む)
 - `claude.rs`: Claude API のプロバイダ (`ClaudeProvider`・`ClaudeConfig`)
 - `openai.rs`: OpenAI 互換の API (Chat Completions) のプロバイダ (`OpenAiProvider`・`OpenAiConfig`・`StructuredOutput`)。OpenAI・OpenRouter・Gemini・Ollama・LM Studio・vLLM など

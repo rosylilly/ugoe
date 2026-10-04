@@ -648,7 +648,7 @@
       ]
     },
     {
-      "description": "テクスチャ (PNG) を `Model::textures` の末尾に追加する。寸法は PNG の IHDR から読む。\n名前は `[A-Za-z0-9_.-]` (`.` 始まりは不可) で、大文字小文字を区別せずに一意。\n`png` は JSON では数値の配列になるので、主にバックエンド内 (PSD 取り込みなど) から使う。",
+      "description": "テクスチャ (PNG) を `Model::textures` の末尾に追加する。寸法は PNG の IHDR から読む。\n名前は `[A-Za-z0-9_.-]` (`.` 始まりは不可) で、大文字小文字を区別せずに一意。\n`png` は JSON では数値の配列になるので、主にバックエンド内 (PSD 取り込みなど) から使う。\n一辺がデコードの上限 (既定 16384 画素) を超える PNG は `EditError::TextureTooLarge` で拒む。",
       "type": "object",
       "properties": {
         "name": {
@@ -675,7 +675,7 @@
       ]
     },
     {
-      "description": "テクスチャの画像を差し替える。`TextureRef` の寸法も PNG に合わせる。",
+      "description": "テクスチャの画像を差し替える。`TextureRef` の寸法も PNG に合わせる。\n一辺がデコードの上限を超える PNG は `AddTexture` と同じく拒む。",
       "type": "object",
       "properties": {
         "name": {
@@ -2369,7 +2369,7 @@
       ]
     },
     {
-      "description": "テクスチャ `texture` の法線マップ (`TextureRef::normal_map`) を設定・差し替え・外す\n(`docs/editor.md#法線マップ`)。法線マップの画像はテクスチャと同じ表に `normal_map` の名前で置く。\n- `normal_map` と `png`: 画像を `normal_map` の名前で置く (すでにあれば差し替える。その画像を\n  指すほかのテクスチャにも効く)。名前はテクスチャの名前と同じ規則で、テクスチャの名前と\n  (大文字小文字を区別せずに) 重ならないこと。\n- `normal_map` だけ: ほかのテクスチャがすでに指している法線マップの画像を共有する。\n- どちらもなし: 法線マップを外す。\n\nどのテクスチャからも指されなくなった法線マップの画像は表から除く。",
+      "description": "テクスチャ `texture` の法線マップ (`TextureRef::normal_map`) を設定・差し替え・外す\n(`docs/editor.md#法線マップ`)。法線マップの画像はテクスチャと同じ表に `normal_map` の名前で置く。\n- `normal_map` と `png`: 画像を `normal_map` の名前で置く (すでにあれば差し替える。その画像を\n  指すほかのテクスチャにも効く)。名前はテクスチャの名前と同じ規則で、テクスチャの名前と\n  (大文字小文字を区別せずに) 重ならないこと。一辺がデコードの上限を超える画像は `EditError::TextureTooLarge`。\n- `normal_map` だけ: ほかのテクスチャがすでに指している法線マップの画像を共有する。\n- どちらもなし: 法線マップを外す。\n\nどのテクスチャからも指されなくなった法線マップの画像は表から除く。",
       "type": "object",
       "properties": {
         "normal_map": {

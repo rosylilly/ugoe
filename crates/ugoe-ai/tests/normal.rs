@@ -18,7 +18,9 @@ use ugoe_ai::normal::{
 };
 use ugoe_ai::{AiError, Proposal};
 use ugoe_core::Vec2;
-use ugoe_editor_core::texture::{Textures, decode_rgba_png, encode_rgba_png};
+use ugoe_editor_core::texture::{
+    DEFAULT_MAX_IMAGE_SIDE, Textures, decode_rgba_png, encode_rgba_png,
+};
 use ugoe_editor_core::{Command, Document, Project, PsdImportOptions, import_psd};
 use ugoe_model::{Model, TextureRef, fixtures};
 use ugoe_rigging::{BulgeOptions, decode_normal};
@@ -197,6 +199,47 @@ fn unknown_textures_are_rejected() {
         propose_bulge_normal_maps(doc.model(), doc.textures(), &BTreeMap::new(), &options),
         Err(AiError::InvalidRequest(_))
     ));
+}
+
+/// IHDR が 65535x65535 で、画素のデータが zlib の見出しだけの小さな PNG。
+fn huge_png_header() -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut encoder = png::Encoder::new(&mut out, 65535, 65535);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().unwrap();
+    writer.write_chunk(png::chunk::IDAT, &[0x78, 0x9c]).unwrap();
+    // 残りの画素は書かない (`finish` も呼ばない)。
+    std::mem::forget(writer);
+    out
+}
+
+/// 一辺がデコードの上限を超えるテクスチャは、読めない画像と分けて `AiError::TextureTooLarge` で拒む (T0560)。
+#[test]
+fn textures_larger_than_the_limit_are_rejected_apart_from_unreadable_ones() {
+    let doc = bustup();
+    let texture = doc.model().textures[0].name.clone();
+    let options = BulgeNormalMapOptions {
+        textures: vec![texture.clone()],
+        ..Default::default()
+    };
+    let with_image = |png: Vec<u8>| {
+        let mut textures = doc.textures().clone();
+        textures.insert(texture.clone(), Arc::from(png));
+        propose_bulge_normal_maps(doc.model(), &textures, &BTreeMap::new(), &options)
+    };
+
+    let err = with_image(huge_png_header()).unwrap_err();
+    assert!(
+        matches!(
+            &err,
+            AiError::TextureTooLarge { texture: t, width: 65535, height: 65535, max: DEFAULT_MAX_IMAGE_SIDE }
+                if *t == texture
+        ),
+        "{err:?}"
+    );
+    let err = with_image(b"not a png".to_vec()).unwrap_err();
+    assert!(matches!(err, AiError::InvalidRequest(_)), "{err:?}");
 }
 
 /// メッシュ `mesh` の、キャンバスの点 `p` での法線 (取り込んだままのメッシュはテクスチャを等倍で置いている)。

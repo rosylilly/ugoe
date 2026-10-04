@@ -51,6 +51,12 @@ export const messageCodes: Record<string, readonly string[]> = {
     "detail",
     "template"
   ],
+  "ai.texture_too_large": [
+    "height",
+    "max",
+    "texture",
+    "width"
+  ],
   "ai.time_limit": [
     "minutes"
   ],

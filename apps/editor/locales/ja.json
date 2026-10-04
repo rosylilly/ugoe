@@ -2054,6 +2054,7 @@
       "missing_api_key": "API キーが設定されていません ({{detail}})。",
       "invalid_request": "リクエストを送れません ({{detail}})。",
       "template": "このモデルは{{template}}のテンプレートで組めません ({{detail}})。",
+      "texture_too_large": "テクスチャ {{texture}} の画像 ({{width}}×{{height}}) が大きすぎます。一辺は {{max}} 画素までです。",
       "network": "ネットワークのエラーが起きました ({{detail}})。",
       "invalid_response": "応答を読めません ({{detail}})。",
       "api_error": "API がエラー {{status}} を返しました ({{kind}}: {{detail}})。",

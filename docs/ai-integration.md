@@ -274,6 +274,9 @@ AI が決める値 (`ModuleRigParams`。`propose_module_rig_with_ai`・`_guided`
 - **パーツごとの設定:** アルファの形からは `BulgeNormalMapOptions { default, per_group, per_texture, textures, replace_existing }` で、まとまりごと (`per_group`) か
   テクスチャの名前ごと (`per_texture`。そのテクスチャはまとまりから外して単独でふくらませる) に設定を置き換えます ([まとまりでふくらませる](#まとまりでふくらませる))。
   深度推定からは `NormalMapOptions { default, per_texture, textures, replace_existing }` の `per_texture` で、テクスチャの名前ごとに置き換えます。
+- **読めない画像:** テクスチャの画像は `ugoe_format::image::decode_png` (既定の `ImageLimits`) でデコードします。一辺が上限 (既定 16384 画素) を超える画像は、
+  画素を確保する前に `AiError::TextureTooLarge { texture, width, height, max }` (エディタのコード `ai.texture_too_large`) で止め、PNG として読めない画像
+  (`InvalidRequest`) と分けます (T0560)。
 - 法線マップの大きさはテクスチャと同じです。深度推定からは、形 (アルファがしきい値以上の画素) の外を平ら (`(0, 0, 1)`) にします。
   アルファの形からは、形の外の 4 画素まで隣の形の中の法線を広げます (形の外は透明で見えないが、描画の双線形の補間で輪郭に混ざり、正面向きのままだと重なった部位の輪郭に細い線が見えるため)。
 

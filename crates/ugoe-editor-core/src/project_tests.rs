@@ -10,7 +10,8 @@ use ugoe_model::motion::Motion;
 use ugoe_model::physics::{PhysicsSettings, PhysicsTarget, VertexOwner};
 use ugoe_model::{Model, fixtures};
 
-use crate::texture::solid_png;
+use crate::message::Coded;
+use crate::texture::{DEFAULT_MAX_IMAGE_SIDE, huge_png_header, png_header, solid_png};
 use crate::{Command, Document, EditError, Project, ProjectError, ProjectMeta, Textures};
 
 /// テスト用の一時ディレクトリ。`path()` はまだ作っていないパスで、破棄時に親ごと消す。
@@ -809,6 +810,53 @@ fn set_texture_image_updates_size() {
             ..
         })
     ));
+}
+
+/// テクスチャと法線マップの追加・差し替えは、一辺がデコードの上限を超える PNG を置く前に拒む (T0560)。
+/// 上限ちょうどの画像は受け入れる。
+#[test]
+fn texture_commands_reject_images_larger_than_the_limit() {
+    let mut doc = Document::new(fixtures::single_quad());
+    let before = doc.model().clone();
+    let too_large = |texture: &str, width, height| EditError::TextureTooLarge {
+        texture: texture.into(),
+        width,
+        height,
+        max: DEFAULT_MAX_IMAGE_SIDE,
+    };
+    let wide = DEFAULT_MAX_IMAGE_SIDE + 1;
+
+    let err = doc
+        .apply(Command::AddTexture {
+            name: "huge".into(),
+            png: png_header(wide, 1),
+        })
+        .unwrap_err();
+    assert_eq!(err, too_large("huge", wide, 1));
+    assert_eq!(err.to_message().code, "edit.texture_too_large");
+    let err = doc
+        .apply(Command::SetTextureImage {
+            name: "white".into(),
+            png: png_header(1, wide),
+        })
+        .unwrap_err();
+    assert_eq!(err, too_large("white", 1, wide));
+    let err = doc
+        .apply(set_normal_map("white", Some("n"), Some(huge_png_header())))
+        .unwrap_err();
+    assert_eq!(err, too_large("n", 65535, 65535));
+    assert_eq!(doc.model(), &before);
+    assert_eq!(doc.texture("huge"), None);
+    assert_eq!(doc.texture("n"), None);
+
+    let max = DEFAULT_MAX_IMAGE_SIDE;
+    doc.apply(Command::SetTextureImage {
+        name: "white".into(),
+        png: png_header(max, max),
+    })
+    .unwrap();
+    let texture = &doc.model().textures[0];
+    assert_eq!((texture.width, texture.height), (max, max));
 }
 
 #[test]

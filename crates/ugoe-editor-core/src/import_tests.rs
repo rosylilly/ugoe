@@ -1,6 +1,7 @@
 //! PSD の取り込み (`import`) とメッシュの再生成 (`RegenerateMesh`) のテスト。
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use ugoe_core::Vec2;
 use ugoe_mesher::{GeneratedMesh, MeshError, MeshOptions};
@@ -608,14 +609,13 @@ fn regenerate_mesh_uses_texture_and_keeps_placement() {
 }
 
 /// テクスチャの画像がデコードの上限を超えるなら、画素を確保せずにコードつきのエラーで拒む。
+/// 差し替えのコマンドは上限を超える画像を拒む (T0560) ので、そうした画像を持つプロジェクトを開いた状態を作る。
 #[test]
 fn regenerate_mesh_rejects_textures_larger_than_the_limit() {
-    let (mut doc, _) = imported();
-    doc.apply(Command::SetTextureImage {
-        name: "Layer1".into(),
-        png: huge_png_header(),
-    })
-    .unwrap();
+    let (imported, _) = imported();
+    let mut textures = imported.textures().clone();
+    textures.insert("Layer1".into(), Arc::from(huge_png_header()));
+    let mut doc = Document::with_textures(imported.model().clone(), textures);
     let before = mesh(doc.model(), "Layer1").clone();
     let err = doc
         .apply(Command::RegenerateMesh {

@@ -56,6 +56,19 @@ pub enum AiError {
     /// テンプレートがそのモデルを組めないものは [`AiError::Template`]。問い直さない。
     #[error("invalid request: {0}")]
     InvalidRequest(String),
+    /// テクスチャの画像の一辺が、デコードの上限 (`ugoe_editor_core::texture::ImageLimits` の既定) を超える (T0560)。
+    /// 画像を変えない限り直らないので、問い直さない。読めない画像 ([`AiError::InvalidRequest`]) とは分ける。
+    #[error("texture `{texture}` is {width}x{height}, larger than the limit {max}x{max}")]
+    TextureTooLarge {
+        /// テクスチャの名前。
+        texture: String,
+        /// 画像の幅 (画素)。
+        width: u32,
+        /// 画像の高さ (画素)。
+        height: u32,
+        /// 一辺の上限 (画素)。
+        max: u32,
+    },
     /// 自動リギングのテンプレートがそのモデルを組めない (`face` のラベルのメッシュがない・座標変換が解けない、など)。
     /// AI の答えを変えても直らないので、問い直さない。理由の文は AI に送らない。
     #[error("the {template} template cannot rig this model: {reason}")]

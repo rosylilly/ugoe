@@ -202,11 +202,13 @@ pub enum Command {
     /// テクスチャ (PNG) を `Model::textures` の末尾に追加する。寸法は PNG の IHDR から読む。
     /// 名前は `[A-Za-z0-9_.-]` (`.` 始まりは不可) で、大文字小文字を区別せずに一意。
     /// `png` は JSON では数値の配列になるので、主にバックエンド内 (PSD 取り込みなど) から使う。
+    /// 一辺がデコードの上限 (既定 16384 画素) を超える PNG は `EditError::TextureTooLarge` で拒む。
     AddTexture {
         name: String,
         png: Vec<u8>,
     },
     /// テクスチャの画像を差し替える。`TextureRef` の寸法も PNG に合わせる。
+    /// 一辺がデコードの上限を超える PNG は `AddTexture` と同じく拒む。
     SetTextureImage {
         name: String,
         png: Vec<u8>,
@@ -687,7 +689,7 @@ pub enum Command {
     /// (`docs/editor.md#法線マップ`)。法線マップの画像はテクスチャと同じ表に `normal_map` の名前で置く。
     /// - `normal_map` と `png`: 画像を `normal_map` の名前で置く (すでにあれば差し替える。その画像を
     ///   指すほかのテクスチャにも効く)。名前はテクスチャの名前と同じ規則で、テクスチャの名前と
-    ///   (大文字小文字を区別せずに) 重ならないこと。
+    ///   (大文字小文字を区別せずに) 重ならないこと。一辺がデコードの上限を超える画像は `EditError::TextureTooLarge`。
     /// - `normal_map` だけ: ほかのテクスチャがすでに指している法線マップの画像を共有する。
     /// - どちらもなし: 法線マップを外す。
     ///

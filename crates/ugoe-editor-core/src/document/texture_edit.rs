@@ -6,13 +6,27 @@ use ugoe_model::{Model, TextureRef};
 
 use super::EditError;
 use super::lookup::{ensure_no_children, find_mut};
-use crate::texture::{Textures, is_valid_texture_name, png_size};
+use crate::texture::{ImageLimits, Textures, is_valid_texture_name, png_size};
 
-/// PNG の寸法を読む。PNG でなければ [`EditError::NotPng`]。
+/// PNG の寸法を読む。PNG でなければ [`EditError::NotPng`]、一辺がデコードの上限 ([`ImageLimits`] の既定) を
+/// 超えるなら [`EditError::TextureTooLarge`] (T0560)。
+///
+/// 上限を超える画像は、ビューポート・ランタイム・画素が要る処理 (メッシュの作り直し・アトラス化など) のどれも
+/// 読めないので、置く前に拒む。IHDR しか見ないので、画素は確保しない。
 fn png_dimensions(name: &str, png: &[u8]) -> Result<(u32, u32), EditError> {
-    png_size(png).ok_or_else(|| EditError::NotPng {
+    let (width, height) = png_size(png).ok_or_else(|| EditError::NotPng {
         name: name.to_owned(),
-    })
+    })?;
+    let max = ImageLimits::default().max_side;
+    if width > max || height > max {
+        return Err(EditError::TextureTooLarge {
+            texture: name.to_owned(),
+            width,
+            height,
+            max,
+        });
+    }
+    Ok((width, height))
 }
 
 /// テクスチャを `Model::textures` の末尾に追加する。寸法は PNG から読む。

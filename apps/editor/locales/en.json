@@ -2105,6 +2105,7 @@
       "missing_api_key": "The API key is not configured ({{detail}}).",
       "invalid_request": "The request cannot be sent ({{detail}}).",
       "template": "The {{template}} template cannot rig this model ({{detail}}).",
+      "texture_too_large": "The image of the texture {{texture}} ({{width}}×{{height}}) is too large. Each side must be at most {{max}} pixels.",
       "network": "A network error occurred ({{detail}}).",
       "invalid_response": "The response could not be read ({{detail}}).",
       "api_error": "The API returned error {{status}} ({{kind}}: {{detail}}).",

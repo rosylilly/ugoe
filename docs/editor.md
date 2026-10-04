@@ -1172,6 +1172,9 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 - テクスチャ名は `textures/<name>.png` のファイル名になるので、`[A-Za-z0-9_.-]` だけからなり `.` で始まらないものに限り、大文字と小文字を区別せずに一意にします ([ファイル形式](spec/file-formats.md#名前と読み込み))。
 - `png` は JSON では数値の配列になります。大きな画像をフロントエンドから送ることは想定しておらず、バックエンドの中 (取り込み処理) から使います。
 - 画素が要る処理 (メッシュの作り直し・法線マップ・アトラス化) は、PNG を `ugoe_format::image` でデコードします (ランタイムと同じ展開と上限。`texture::decode_png`)。一辺が上限 (既定 16384 画素。[読み込みの上限](spec/file-formats.md#読み込みの上限)) を超える画像は、画素を確保する前に `*.texture_too_large` / `lighting.normal_map_too_large` のエラーで拒みます (T0162)。
+- テクスチャと法線マップの画像を置くコマンド (`add_texture`・`set_texture_image`・`set_normal_map` の `png`) は、一辺が同じ上限を超える PNG を置く前に `edit.texture_too_large` で拒みます (T0560。IHDR の寸法だけを見るので画素は確保しません)。
+  上限を超える画像はビューポート (`ugoe-wasm`)・ランタイム・画素が要る処理のどれも読めないので、置けても使えないからです。PSD の取り込みも `add_texture` を通るので、上限を超えるレイヤーがあると取り込み全体がこのエラーになります。
+  プロジェクトを開くときは画像を確かめないので、以前に置いた上限を超える画像を持つプロジェクトも開けます (使う処理がそれぞれのエラーを返します)。
 
 ### 法線マップ
 
@@ -2003,7 +2006,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `edit.read_only_base` | `element` |
 | `edit.not_module` | なし |
 | `module.*` (モジュールのプロジェクトで作業用のモデルを作り直せない。`EditError::Module`) | 中の `ModuleError` のコードと引数 (下の「プロジェクト・モジュール」の表。本体の要素の編集は `edit.read_only_base`、モジュールとして表せないものは `edit.module_shape`、モジュールでないものは `edit.not_module`) |
-| `edit.texture_too_large` (メッシュの作り直しで、テクスチャの画像の一辺がデコードの上限を超える) | `texture`・`width`・`height`・`max` (画素) |
+| `edit.texture_too_large` (テクスチャ・法線マップの追加・差し替えとメッシュの作り直しで、画像の一辺がデコードの上限を超える。`texture` は法線マップならその画像の名前) | `texture`・`width`・`height`・`max` (画素) |
 | `edit.conflicting_texture` (`set_mesh_properties` でテクスチャを `texture_name` と非推奨の `texture` の両方で指定した) | `id` (メッシュ) |
 
 **キーフォームのセル (`CellError`)**
@@ -2203,6 +2206,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `ai.api_error` | `status`・`kind`・`detail` |
 | `ai.rate_limited` | `retry_after` (秒。切り上げ。分からなければ無い) |
 | `ai.refused` | `category` (分からなければ無い) |
+| `ai.texture_too_large` (法線マップの提案で、テクスチャの画像の一辺がデコードの上限を超える。読めない画像は `ai.invalid_request`) | `texture`・`width`・`height`・`max` (画素) |
 | `ai.template` | `template` (組めなかった自動リギングのテンプレート。`character`・`module`)・`detail` (足りないもの・解けなかったもの。英語) |
 | `ai.time_limit` | `minutes` (1 回の提案の時間の上限。分。切り上げ) |
 | `ai.invalid_time_limit` | `min`・`max` (選べる範囲。分) |

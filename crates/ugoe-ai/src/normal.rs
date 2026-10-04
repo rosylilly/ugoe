@@ -19,7 +19,8 @@ use serde::{Deserialize, Serialize};
 use ugoe_core::Vec2;
 use ugoe_editor_core::Command;
 use ugoe_editor_core::texture::{
-    MAX_TEXTURE_NAME_LEN, Textures, decode_rgba_png, encode_rgba_png, png_size,
+    ImageError, ImageLimits, MAX_TEXTURE_NAME_LEN, Rgba8, Textures, decode_png, encode_rgba_png,
+    png_size,
 };
 use ugoe_model::{MeshId, Model};
 use ugoe_rigging::{
@@ -826,8 +827,19 @@ fn decode(textures: &Textures, name: &str) -> Result<Image, AiError> {
     let png = textures
         .get(name)
         .ok_or_else(|| invalid(format!("texture `{name}` has no image")))?;
-    let (width, height, rgba) = decode_rgba_png(png)
-        .ok_or_else(|| invalid(format!("texture `{name}` is not a readable PNG")))?;
+    let Rgba8 {
+        width,
+        height,
+        pixels: rgba,
+    } = decode_png(png, ImageLimits::default()).map_err(|error| match error {
+        ImageError::TooLarge { width, height, max } => AiError::TextureTooLarge {
+            texture: name.to_owned(),
+            width,
+            height,
+            max,
+        },
+        _ => invalid(format!("texture `{name}` is not a readable PNG")),
+    })?;
     Ok(Image {
         width,
         height,

@@ -353,6 +353,12 @@ pub fn message_samples() -> Vec<Message> {
             template: RigTemplate::Character,
             reason: detail(),
         }),
+        EditorError::Ai(AiError::TextureTooLarge {
+            texture: "body".to_owned(),
+            width: 20000,
+            height: 1024,
+            max: 16384,
+        }),
         EditorError::Ai(AiError::Api {
             status: 400,
             kind: "invalid_request_error".to_owned(),
@@ -401,6 +407,7 @@ fn ai_code(error: &AiError) -> &'static str {
         AiError::MissingApiKey(_) => "ai.missing_api_key",
         AiError::InvalidRequest(_) => "ai.invalid_request",
         AiError::Template { .. } => "ai.template",
+        AiError::TextureTooLarge { .. } => "ai.texture_too_large",
         AiError::Api { .. } => "ai.api_error",
         AiError::RateLimited { .. } => "ai.rate_limited",
         AiError::Network(_) => "ai.network",
@@ -428,6 +435,14 @@ fn ai_args(error: &AiError) -> MessageArgs {
         } => message_args! { "status" => *status, "kind" => kind, "detail" => message },
         AiError::Template { template, reason } => {
             message_args! { "template" => template.as_str(), "detail" => reason }
+        }
+        AiError::TextureTooLarge {
+            texture,
+            width,
+            height,
+            max,
+        } => {
+            message_args! { "texture" => texture, "width" => *width, "height" => *height, "max" => *max }
         }
         AiError::RateLimited {
             retry_after: Some(after),
