@@ -1530,8 +1530,10 @@ PSD の取り込みから「レイヤーの分類 → リギングの提案」�
     `RigParams::default`) で、何も送りません。キーがなくても使えます。
   - 深度推定 (T0505) の実際の推定器はまだないので、顔の振り向きは深度マップなし (顔の外接矩形に内接する楕円体。
     `TurnDepth::Rules`) で組みます。推定器ができたら、同じ流れに「深度を推定する」段階を足します。
-  - 分類とその PSD はプロジェクトを開いている間だけ持ちます (ファイルには残さない)。確からしさの低いレイヤー
-    (`needs_review`) は、パネルと提案の理由の末尾に出します。分類の結果を画面で直す機能はまだありません。
+  - 分類とその PSD はプロジェクトを開いている間だけ持ちます (ファイルには残さない)。確からしさの低いレイヤーと、
+    AI の分類が名前の規則の確からしい答えと食い違うレイヤー (`needs_review`。食い違いは `LayerLabelView.name_disagreement` に
+    名前の規則のラベルか左右。T0546、[ai-integration.md](ai-integration.md#レイヤーの意味分類)) は、パネルと提案の理由の末尾に
+    出します (食い違いには「名前では eye_white / キャラクターの右」のように名前の規則の答えを並べる)。分類の結果を画面で直す機能はまだありません。
     AI が同じ部品の別の絵 (差分) とした組 (`LayerLabelView.variant`。[ai-integration.md](ai-integration.md#レイヤーの意味分類))
     は、パネルの「Labels」の中に「Alternative drawings of the same part」として並べます (T0523)。
 - **外部に送るとき:** 送る IPC コマンド (`classify_psd_layers`・`propose_rig_from_psd`) は、[送る前の確認](#ai-の設定と送信の同意)を
@@ -1571,7 +1573,7 @@ PSD の取り込みから「レイヤーの分類 → リギングの提案」�
 
 | コマンド | 内容 |
 | --- | --- |
-| `get_proposals` | `ProposalState { proposals, psd, classification, regenerable, sections, stale_rigs }` (一覧・元にする PSD・最後の分類 (レイヤーごとの `LayerLabelView { path, label, side, confidence, needs_review, variant }`)・作り直せる提案・コマンドの区切り・作り直しの知らせ) |
+| `get_proposals` | `ProposalState { proposals, psd, classification, regenerable, sections, stale_rigs }` (一覧・元にする PSD・最後の分類 (レイヤーごとの `LayerLabelView { path, label, side, confidence, needs_review, variant, name_disagreement }`)・作り直せる提案・コマンドの区切り・作り直しの知らせ) |
 | `classify_psd_layers(psd?, use_ai, instructions?, revise, consent?)` | 分類して覚える。`AiReply<Classification>`。`psd` を省くと取り込んだ PSD。`revise` なら今の分類を前の答えとして送る |
 | `propose_rig_from_psd(use_ai, instructions?, consent?, module_options?)` | 分類からリグを提案し、一覧に置く。`AiReply<ProposalView>`。`module_options` はモジュールのプロジェクトの組み方 (`ModuleRigChoice`。省略すると既定) |
 | `regenerate_rig_proposal(id, instructions?, consent?, module_options?)` | 提案を前の答えと注文を添えて作り直し、後ろに並べる (いつも AI)。`AiReply<ProposalView>` |

@@ -492,6 +492,7 @@ mod tests {
             side: ugoe_ai::classify::Side::Center,
             confidence: 1.0,
             variant: None,
+            name_disagreement: None,
         }];
         let view = normal_map_group_in(&doc, Some(&layers), &neck).unwrap();
         assert_eq!(view.group.as_deref(), Some("hair_front"));
@@ -510,6 +511,7 @@ mod tests {
             side: ugoe_ai::classify::Side::Left,
             confidence: 1.0,
             variant: None,
+            name_disagreement: None,
         }];
         let view = normal_map_group_in(&doc, Some(&layers), &eye).unwrap();
         assert_eq!(view.group.as_deref(), Some("face"));

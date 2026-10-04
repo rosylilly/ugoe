@@ -122,6 +122,18 @@ function classifiedText(layers: number, byAi: boolean, instructed: boolean): str
     : t("proposals.summary.byName", { count: layers });
 }
 
+/** 分類の左右 (`left`・`right`・`center`。キャラクター自身の左右) の表示。 */
+function sideText(side: string): string {
+  switch (side) {
+    case "left":
+      return t("proposals.summary.side.left");
+    case "right":
+      return t("proposals.summary.side.right");
+    default:
+      return t("proposals.summary.side.center");
+  }
+}
+
 /** まとまりのテクスチャの数 (法線マップを持つもの・向きだけのものも)。 */
 function groupCounts(textures: number, mapped: number, oriented: number): string {
   const parts = [t("proposals.normal.counts.textures", { count: textures })];
@@ -273,10 +285,19 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
         </ul>
       {/if}
       {#if review.length > 0}
-        <p class="ed-hint">{t("proposals.summary.lowConfidence")}</p>
+        <p class="ed-hint">{t("proposals.summary.toReview")}</p>
         <ul class="labels">
           {#each review as layer, i (i)}
-            <li>{layer.path.join(" / ")} → <code>{layer.label}</code> ({Math.round(layer.confidence * 100)}%)</li>
+            <li>
+              {layer.path.join(" / ")} → <code>{layer.label}</code> / {sideText(layer.side)} ({Math.round(layer.confidence * 100)}%)
+              {#if layer.name_disagreement}
+                {@const byName = layer.name_disagreement}
+                {" · "}<span class="warn">{t("proposals.summary.nameSays", {
+                  label: byName.label ?? layer.label,
+                  side: sideText(byName.side ?? layer.side),
+                })}</span>
+              {/if}
+            </li>
           {/each}
         </ul>
       {/if}

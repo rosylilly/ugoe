@@ -337,6 +337,7 @@ fn layer_labels_are_matched_to_meshes_by_name() {
         side: Side::Center,
         confidence: 0.9,
         variant: None,
+        name_disagreement: None,
     };
     let layers = [
         layer(&["Head", "Skin"], Label::Face),

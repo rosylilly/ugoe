@@ -29,7 +29,8 @@ use serde_json::{Value, json};
 use ugoe_ai::AiError;
 use ugoe_ai::classify::{
     ClassifyOptions, Label, LayerLabel, apply_answer, classification_instructions,
-    classify_by_name, layer_thumbnail_png, layers, output_schema, overview_png,
+    classify_by_name, layer_thumbnail_png, layers, mark_name_disagreements, output_schema,
+    overview_png,
 };
 use ugoe_ai::module_rig::{
     FollowMode, ModuleRigGuidance, ModuleRigOptions, ModuleRigParams, module_mesh_parts,
@@ -235,7 +236,9 @@ pub(crate) fn tools() -> Vec<Value> {
                  そのレイヤーの画像が続く。既定で 1 回に {DEFAULT_COUNT} 枚 (count で {per_call} 枚まで): \
                  next_start / start で続きを、indices で特定のレイヤーを見る。最初のページには分類の指示と語彙 (instructions) が付く。\
                  分類は名前の規則による案 (set_by=rules) が入っているので、画像を見て直すものを \
-                 set_layer_labels で渡す。",
+                 set_layer_labels で渡す。name_disagreement は、渡した分類が名前の規則の確からしい答えと \
+                 食い違うときの名前の規則のラベル (label) か左右 (side) で、needs_review になる \
+                 (画像で確かめ、名前が正しければ直す)。",
                 options.overview_max_side, options.thumbnail_max_side
             ),
             object_schema(
@@ -272,8 +275,9 @@ pub(crate) fn tools() -> Vec<Value> {
              variant_sets には同じ部品の別の絵 (一度に 1 つだけ見せる袖 A / B・同じ所にかぶる帽子と \
              キャップ) のレイヤーの番号の組を渡す (渡すと前の組をすべて置き換える。影・線画のように \
              重ねて描く絵と、目や口の開閉は組にしない)。layers と variant_sets の少なくとも一方を渡す。\
-             モデルは変えない。結果はメッシュとの対応・差分の組・確かめたほうがよいレイヤー・リグを組めるか \
-             (rig.ready)。左右はキャラクター自身の左右 (正面を向いたキャラクターの左目は画像の右側)。",
+             モデルは変えない。結果はメッシュとの対応・差分の組・確かめたほうがよいレイヤー・名前の規則の \
+             確からしい答えと食い違うレイヤー (name_disagreements。左右の取り違えは目の開閉などを入れ替える) \
+             ・リグを組めるか (rig.ready)。左右はキャラクター自身の左右 (正面を向いたキャラクターの左目は画像の右側)。",
             object_schema(
                 json!({
                     "path": path_property(),
@@ -530,6 +534,7 @@ pub(crate) fn get_psd_layers(
             "confidence": (f64::from(label.confidence) * 100.0).round() / 100.0,
             "set_by": if source.by_agent.contains(&i) { "agent" } else { "rules" },
             "needs_review": label.needs_review(&options),
+            "name_disagreement": label.name_disagreement,
             "variant": label.variant,
         }));
     }
@@ -599,6 +604,7 @@ pub(crate) fn set_layer_labels(
         answer["variant_sets"] = sets;
     }
     let updated = apply_answer(&mut labels, answer).map_err(ai_error)?;
+    mark_name_disagreements(&source.tree, &mut labels).map_err(ai_error)?;
     source.labels = labels;
     if args.reset {
         source.by_agent.clear();
@@ -609,7 +615,8 @@ pub(crate) fn set_layer_labels(
     Ok(value.into())
 }
 
-/// 分類の要約: メッシュとの対応・対応しないレイヤー・確かめたほうがよいレイヤー・リグを組めるか。
+/// 分類の要約: メッシュとの対応・対応しないレイヤー・確かめたほうがよいレイヤー・名前の規則と食い違うレイヤー・
+/// リグを組めるか。
 fn labels_summary(doc: &Document, source: &PsdSource) -> Value {
     let model = doc.model();
     let parts = mesh_parts(model, &source.labels);
@@ -630,6 +637,7 @@ fn labels_summary(doc: &Document, source: &PsdSource) -> Value {
         .collect();
     let mut unmatched = Vec::new();
     let mut review = Vec::new();
+    let mut disagreements = Vec::new();
     for (i, label) in source.labels.iter().enumerate() {
         let name = label.layer_path.last().map(String::as_str).unwrap_or("");
         if label.label != Label::Other && !matched.contains(name) {
@@ -637,6 +645,15 @@ fn labels_summary(doc: &Document, source: &PsdSource) -> Value {
         }
         if label.needs_review(&options) {
             review.push(i);
+        }
+        if let Some(by_name) = label.name_disagreement {
+            disagreements.push(json!({
+                "index": i,
+                "path": label.layer_path,
+                "label": label.label,
+                "side": label.side,
+                "by_name": by_name,
+            }));
         }
     }
     // モジュールのプロジェクトでは、モジュールのリグを組めるか (衣装のメッシュが取り付け先の下にあるか)。
@@ -662,6 +679,7 @@ fn labels_summary(doc: &Document, source: &PsdSource) -> Value {
         "variant_sets": variant_sets(&source.labels),
         "unmatched_layers": unmatched,
         "needs_review": review,
+        "name_disagreements": disagreements,
         "rig": rig,
     })
 }

@@ -17,10 +17,10 @@ use std::sync::Arc;
 use serde_json::json;
 use ugoe_ai::ApiKey;
 use ugoe_ai::classify::{
-    ClassifyGuidance, ClassifyOptions, Label, LayerLabel, Side, apply_answer,
+    ClassifyGuidance, ClassifyOptions, Label, LayerLabel, NameDisagreement, Side, apply_answer,
     classification_instructions, classification_requests, classification_requests_guided,
     classify_by_name, classify_layers, classify_layers_guided, layer_thumbnail_png, layers,
-    output_schema,
+    mark_name_disagreements, output_schema,
 };
 use ugoe_ai::claude::{ClaudeConfig, ClaudeProvider};
 use ugoe_ai::instructions::Instructions;
@@ -347,6 +347,171 @@ fn provider_answers_override_names_and_gaps_fall_back() {
     // 画素のない `empty` は送らない: 合成画像 + 5 枚
     assert_eq!(request.images.len(), 6);
     assert!(!request.prompt.contains("empty"));
+}
+
+/// 名前の規則が確からしく当たるレイヤーと、当たらない (受け継ぐ・分からない) レイヤーの木 (T0546)。顔の中心は x = 50。
+fn named_eyes_tree() -> LayerTree {
+    LayerTree {
+        width: 200,
+        height: 100,
+        root: vec![
+            layer("face", 20.0, 60),
+            // 名前に左右がある
+            layer("eyewhite-r", 25.0, 10),
+            // 名前に左右がない (位置からキャラクターの左)
+            layer("eyewhite", 60.0, 10),
+            // グループから受け継ぐ (確からしさが低い)
+            group("目", vec![layer("レイヤー 1", 60.0, 10)]),
+            layer("効果", 0.0, 200),
+        ],
+        warnings: Vec::new(),
+    }
+}
+
+fn classify_with(tree: &LayerTree, answer: serde_json::Value) -> Vec<LayerLabel> {
+    let fake = FakeProvider::new();
+    fake.push(answer);
+    classify_layers(&fake, tree, &ClassifyOptions::default()).unwrap()
+}
+
+fn disagreement(label: Option<Label>, side: Option<Side>) -> Option<NameDisagreement> {
+    Some(NameDisagreement { label, side })
+}
+
+/// T0546: 名前の規則が確からしく決めたラベル・左右を AI が変えたら印を付け、確からしさによらず確認に回す。
+#[test]
+fn disagreements_with_confident_names_are_marked_for_review() {
+    let tree = named_eyes_tree();
+    let names = classify_by_name(&tree);
+    assert!(names.iter().all(|l| l.name_disagreement.is_none()));
+    let labels = classify_with(
+        &tree,
+        json!({ "layers": [
+            { "index": 0, "label": "face", "side": "center", "confidence": 0.95 },
+            // ラベルが違う (左右は同じ)
+            { "index": 1, "label": "iris", "side": "right", "confidence": 0.95 },
+            // 左右が違う (位置から決めた左右)
+            { "index": 2, "label": "eye_white", "side": "right", "confidence": 0.9 },
+            // 名前の規則が受け継いだだけのラベルと位置の左右は比べない
+            { "index": 3, "label": "iris", "side": "right", "confidence": 0.9 },
+            { "index": 4, "label": "cheek", "side": "center", "confidence": 0.9 }
+        ]}),
+    );
+    let marks: Vec<Option<NameDisagreement>> = labels.iter().map(|l| l.name_disagreement).collect();
+    assert_eq!(
+        marks,
+        [
+            None,
+            disagreement(Some(EyeWhite), None),
+            disagreement(None, Some(L)),
+            None,
+            None,
+        ]
+    );
+    let options = ClassifyOptions::default();
+    let review: Vec<usize> = (0..labels.len())
+        .filter(|&i| labels[i].needs_review(&options))
+        .collect();
+    assert_eq!(review, [1, 2]);
+    // 答えはそのまま使う (確からしさも下げない)。
+    assert_eq!((labels[1].label, labels[1].confidence), (Iris, 0.95));
+    assert_eq!(
+        serde_json::to_value(&labels[1]).unwrap()["name_disagreement"],
+        json!({ "label": "eye_white" })
+    );
+    assert!(
+        serde_json::to_value(&labels[0])
+            .unwrap()
+            .get("name_disagreement")
+            .is_none()
+    );
+
+    // 名前に書いた左右を逆にしたもの。ラベルも左右も違えば両方。位置から決めた左右は、ラベルが違えば比べない。
+    let labels = classify_with(
+        &tree,
+        json!({ "layers": [
+            { "index": 1, "label": "eye_white", "side": "left", "confidence": 0.9 },
+            { "index": 2, "label": "iris", "side": "right", "confidence": 0.9 }
+        ]}),
+    );
+    assert_eq!(labels[1].name_disagreement, disagreement(None, Some(R)));
+    assert_eq!(
+        labels[2].name_disagreement,
+        disagreement(Some(EyeWhite), None)
+    );
+    let labels = classify_with(
+        &tree,
+        json!({ "layers": [
+            { "index": 1, "label": "iris", "side": "left", "confidence": 0.9 }
+        ]}),
+    );
+    assert_eq!(
+        labels[1].name_disagreement,
+        disagreement(Some(EyeWhite), Some(R))
+    );
+}
+
+/// T0546: AI が名前の規則と同じに答えれば印はなく、確認は確からしさだけで決まる。
+#[test]
+fn agreeing_answers_are_not_marked() {
+    let tree = named_eyes_tree();
+    let labels = classify_with(
+        &tree,
+        json!({ "layers": [
+            { "index": 0, "label": "face", "side": "center", "confidence": 0.95 },
+            { "index": 1, "label": "eye_white", "side": "right", "confidence": 0.9 },
+            { "index": 2, "label": "eye_white", "side": "left", "confidence": 0.4 },
+            { "index": 3, "label": "eye", "side": "left", "confidence": 0.9 },
+            { "index": 4, "label": "other", "side": "center", "confidence": 0.9 }
+        ]}),
+    );
+    assert!(labels.iter().all(|l| l.name_disagreement.is_none()));
+    let options = ClassifyOptions::default();
+    let review: Vec<usize> = (0..labels.len())
+        .filter(|&i| labels[i].needs_review(&options))
+        .collect();
+    assert_eq!(review, [2]);
+    // 録画の答えも名前の規則と食い違わない (`replays_a_recorded_claude_answer_for_the_bustup_psd`)。
+}
+
+/// T0546: 作り直しで AI が直したら印は消え、外部のエージェントの答え (`apply_answer`) にも同じ印を付けられる。
+#[test]
+fn marks_follow_revisions_and_external_answers() {
+    let tree = named_eyes_tree();
+    let wrong = classify_with(
+        &tree,
+        json!({ "layers": [{ "index": 1, "label": "eye_white", "side": "left", "confidence": 0.9 }] }),
+    );
+    assert!(wrong[1].name_disagreement.is_some());
+    let fake = FakeProvider::new();
+    fake.push(json!({ "layers": [
+        { "index": 1, "label": "eye_white", "side": "right", "confidence": 0.9 }
+    ]}));
+    let revised = classify_layers_guided(
+        &fake,
+        &tree,
+        &ClassifyOptions::default(),
+        &ClassifyGuidance {
+            instructions: None,
+            previous: Some(wrong.clone()),
+        },
+    )
+    .unwrap();
+    assert!(revised.iter().all(|l| l.name_disagreement.is_none()));
+
+    let mut labels = classify_by_name(&tree);
+    apply_answer(
+        &mut labels,
+        json!({ "layers": [{ "index": 0, "label": "body", "side": "center", "confidence": 1 }] }),
+    )
+    .unwrap();
+    assert!(labels[0].name_disagreement.is_none());
+    mark_name_disagreements(&tree, &mut labels).unwrap();
+    assert_eq!(labels[0].name_disagreement, disagreement(Some(Face), None));
+    assert_eq!(labels[0].label, Body);
+
+    let err = mark_name_disagreements(&tree, &mut labels[..2]).unwrap_err();
+    assert!(matches!(err, AiError::InvalidRequest(_)), "{err}");
 }
 
 #[test]

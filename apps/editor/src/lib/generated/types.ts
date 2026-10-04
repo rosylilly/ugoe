@@ -1125,13 +1125,18 @@ label: string,
  */
 side: string, confidence: number, 
 /**
- * 確からしさが低く、人間が確かめたほうがよい。
+ * 確からしさが低いか名前の規則と食い違い、人間が確かめたほうがよい。
  */
 needs_review: boolean, 
 /**
  * AI が同じ部品の別の絵 (差分) とみなしたレイヤーの組の番号 (`LayerLabel::variant`)。なければ `null`。
  */
-variant: number | null, };
+variant: number | null, 
+/**
+ * AI の分類が名前の規則の確からしい答えと食い違うときの、名前の規則の答え
+ * (`LayerLabel::name_disagreement`)。なければ `null`。
+ */
+name_disagreement: NameDisagreementView | null, };
 
 /**
  * リップシンク。外部から与えた音量 (0〜1) を対象パラメータに書き込む。
@@ -1689,6 +1694,19 @@ t: number,
  * イベントの値 (アプリが解釈する任意の文字列)。
  */
 value: string, };
+
+/**
+ * 名前の規則と AI の分類の食い違い (`ugoe_ai::classify::NameDisagreement`)。食い違う項目にだけ名前の規則の答えが入る。
+ */
+export type NameDisagreementView = { 
+/**
+ * 名前の規則のラベル。ラベルが同じなら `null`。
+ */
+label: string | null, 
+/**
+ * 名前の規則の左右 (`left`・`right`・`center`)。左右が同じなら `null`。
+ */
+side: string | null, };
 
 /**
  * AI タブで選んだ、法線マップを提案する 1 つのまとまりと設定 (`propose_normal_maps` の引数)。

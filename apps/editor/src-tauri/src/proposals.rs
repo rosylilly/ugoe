@@ -278,10 +278,22 @@ pub struct LayerLabelView {
     /// `left`・`right`・`center` (キャラクター自身の左右)。
     pub side: String,
     pub confidence: f32,
-    /// 確からしさが低く、人間が確かめたほうがよい。
+    /// 確からしさが低いか名前の規則と食い違い、人間が確かめたほうがよい。
     pub needs_review: bool,
     /// AI が同じ部品の別の絵 (差分) とみなしたレイヤーの組の番号 (`LayerLabel::variant`)。なければ `null`。
     pub variant: Option<u32>,
+    /// AI の分類が名前の規則の確からしい答えと食い違うときの、名前の規則の答え
+    /// (`LayerLabel::name_disagreement`)。なければ `null`。
+    pub name_disagreement: Option<NameDisagreementView>,
+}
+
+/// 名前の規則と AI の分類の食い違い (`ugoe_ai::classify::NameDisagreement`)。食い違う項目にだけ名前の規則の答えが入る。
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+pub struct NameDisagreementView {
+    /// 名前の規則のラベル。ラベルが同じなら `null`。
+    pub label: Option<String>,
+    /// 名前の規則の左右 (`left`・`right`・`center`)。左右が同じなら `null`。
+    pub side: Option<String>,
 }
 
 /// PSD のレイヤーの分類の結果。
@@ -313,6 +325,10 @@ impl Classified {
                     confidence: l.confidence,
                     needs_review: l.needs_review(&options),
                     variant: l.variant,
+                    name_disagreement: l.name_disagreement.map(|d| NameDisagreementView {
+                        label: d.label.map(|l| l.as_str().to_owned()),
+                        side: d.side.map(|s| s.as_str().to_owned()),
+                    }),
                 })
                 .collect(),
         }
@@ -632,17 +648,26 @@ fn module_rig(
     })
 }
 
-/// 提案の理由に添える、分類の要約 (確からしさが低いレイヤー)。
+/// 提案の理由に添える、分類の要約 (確からしさが低いか、名前の規則と食い違うレイヤー)。
 fn labels_note(labels: &[LayerLabel]) -> String {
     let options = ClassifyOptions::default();
     let review: Vec<String> = labels
         .iter()
         .filter(|l| l.needs_review(&options))
         .map(|l| {
+            let by_name = l
+                .name_disagreement
+                .map(|d| {
+                    let label = d.label.unwrap_or(l.label).as_str();
+                    let side = d.side.unwrap_or(l.side).as_str();
+                    format!("; the name says {label} {side}")
+                })
+                .unwrap_or_default();
             format!(
-                "{} ({})",
+                "{} ({} {}{by_name})",
                 l.layer_path.last().map_or("?", String::as_str),
-                l.label.as_str()
+                l.label.as_str(),
+                l.side.as_str()
             )
         })
         .collect();
@@ -650,7 +675,8 @@ fn labels_note(labels: &[LayerLabel]) -> String {
         return String::new();
     }
     format!(
-        "\nLayers classified with low confidence ({}; check them before adopting): {}",
+        "\nLayers classified with low confidence or against their names ({}; check them before \
+         adopting): {}",
         review.len(),
         review.join(", ")
     )

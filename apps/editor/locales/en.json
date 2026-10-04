@@ -1732,7 +1732,13 @@
       "instructionsTooltip": "With instructions: {{instructions}}",
       "labels": "Labels",
       "variants": "Alternative drawings of the same part (one shows at a time; costume rigs make pose groups):",
-      "lowConfidence": "Low confidence (check these before adopting):"
+      "toReview": "Low confidence, or the AI disagrees with the layer name (check these before adopting; a swapped side swaps the eye blinks and similar):",
+      "nameSays": "the name says {{label}} / {{side}}",
+      "side": {
+        "left": "character's left",
+        "right": "character's right",
+        "center": "center"
+      }
     },
     "groups": {
       "face": "Face, eyes, nose, mouth, brows",

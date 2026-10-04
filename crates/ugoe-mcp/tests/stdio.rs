@@ -700,6 +700,44 @@ fn agent_driven_auto_rig_from_psd() {
     assert_eq!(summary["needs_review"], json!([]));
     assert!(summary["meshes"].as_array().unwrap().len() > 10);
     assert_eq!(summary["variant_sets"], json!([]));
+    assert_eq!(summary["name_disagreements"], json!([]));
+
+    // 名前に右と書いた白目を左にすると、名前の規則との食い違いとして確認に回る (T0546)。
+    let eye = all
+        .iter()
+        .find(|l| l["path"].as_array().unwrap().last().unwrap() == "eyewhite-r")
+        .unwrap()["index"]
+        .clone();
+    let summary = client.call_ok(
+        "set_layer_labels",
+        json!({ "path": path, "layers": [{ "index": eye, "label": "eye_white", "side": "left", "confidence": 0.9 }] }),
+    );
+    assert_eq!(summary["needs_review"], json!([eye]));
+    assert_eq!(
+        summary["name_disagreements"],
+        json!([{
+            "index": eye,
+            "path": ["face", "eye-r", "eyewhite-r"],
+            "label": "eye_white",
+            "side": "left",
+            "by_name": { "side": "right" },
+        }])
+    );
+    let page = client.call_ok(
+        "get_psd_layers",
+        json!({ "path": path, "indices": [eye], "images": false }),
+    );
+    assert_eq!(
+        page["layers"][0]["name_disagreement"],
+        json!({ "side": "right" })
+    );
+    assert_eq!(page["layers"][0]["needs_review"], true);
+    // 名前のとおりに直せば消える。
+    let summary = client.call_ok(
+        "set_layer_labels",
+        json!({ "path": path, "layers": [{ "index": eye, "label": "eye_white", "side": "right", "confidence": 0.9 }] }),
+    );
+    assert_eq!(summary["name_disagreements"], json!([]));
 
     // 差分の組 (同じ部品の別の絵) だけを渡す。分類は変わらず、組は一覧にも出る。
     let sets = schema_of("set_layer_labels")["properties"]["variant_sets"].clone();

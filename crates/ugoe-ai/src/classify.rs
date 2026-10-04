@@ -9,6 +9,9 @@
 //!   レイヤー名を送り、[`output_schema`] に沿った JSON で分類させる。モデルが答えなかった
 //!   レイヤーは名前の規則で補う。利用者の注文と前の分類を添えるなら [`classify_layers_guided`]
 //!   ([`ClassifyGuidance`]、`docs/ai-integration.md#利用者の注文`)。
+//!
+//! AI の分類が、名前の規則が確からしく決めたラベルや左右と食い違うレイヤーには印を付け
+//! ([`LayerLabel::name_disagreement`]・[`mark_name_disagreements`])、確認に回す。
 
 use std::collections::HashSet;
 use std::fmt;
@@ -333,13 +336,30 @@ pub struct LayerLabel {
     /// (`crate::module_rig`)。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variant: Option<u32>,
+    /// 名前の規則が確からしく決めたラベルか左右と、この分類が食い違うときの、名前の規則の答え
+    /// ([`mark_name_disagreements`])。名前の規則では付けない。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name_disagreement: Option<NameDisagreement>,
 }
 
 impl LayerLabel {
-    /// 確認が要るほど確からしさが低いか ([`ClassifyOptions::review_below`] 未満)。
+    /// 人間の確認が要るか: 確からしさが低い ([`ClassifyOptions::review_below`] 未満) か、名前の規則と食い違う
+    /// ([`LayerLabel::name_disagreement`])。
     pub fn needs_review(&self, options: &ClassifyOptions) -> bool {
-        self.confidence < options.review_below
+        self.confidence < options.review_below || self.name_disagreement.is_some()
     }
+}
+
+/// 名前の規則と分類 (AI の答え) の食い違い。食い違う項目にだけ、名前の規則の答えを入れる
+/// (`docs/ai-integration.md#レイヤーの意味分類`)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NameDisagreement {
+    /// 名前の規則のラベル (分類のラベルと違うとき)。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<Label>,
+    /// 名前の規則の左右 (分類の左右と違うとき)。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side: Option<Side>,
 }
 
 /// 分類の設定。送る画像の大きさと枚数の上限を決める。
@@ -481,6 +501,7 @@ fn label_target_by_name(target: &Target<'_>) -> LayerLabel {
         side,
         confidence,
         variant: None,
+        name_disagreement: None,
     }
 }
 
@@ -873,7 +894,8 @@ struct OutputLayer {
 /// [`Provider`] で分類する。
 ///
 /// 結果の並びは [`classify_by_name`] と同じ。モデルが答えなかったレイヤー (画素のない
-/// レイヤーを含む) は名前の規則の結果を使う。モデルがリクエストにない番号を返したり、
+/// レイヤーを含む) は名前の規則の結果を使う。名前の規則との食い違いには印を付ける
+/// ([`mark_name_disagreements`])。モデルがリクエストにない番号を返したり、
 /// 同じレイヤーに 2 度答えたりしたら [`AiError::InvalidResponse`] を返す。
 pub fn classify_layers(
     provider: &dyn Provider,
@@ -914,7 +936,49 @@ pub fn classify_layers_guided(
             |index| format!("layer {index} was not in the request"),
         )?;
     }
+    mark_name_disagreements(tree, &mut labels)?;
     Ok(labels)
+}
+
+/// 名前の規則のラベルを「確からしく当たった」とみなす確からしさの下限 (レイヤー自身の名前で具体的な規則が
+/// 当たったもの。グループから受け継いだもの・あいまいなキーワードは含めない)。
+const DISAGREEMENT_FROM: f32 = 0.8;
+
+/// 分類 (AI の答え・外部のエージェントの答え・前の分類) を名前の規則と比べ、食い違いを
+/// [`LayerLabel::name_disagreement`] に書く (前の印は書き直す)。
+///
+/// - ラベル: 名前の規則の確からしさが高い (レイヤー自身の名前で具体的な規則が当たった) のに、ラベルが違う。
+/// - 左右: 名前 (レイヤーかグループ) に左右が書いてあるか、名前の規則が確からしく当てた左右の対の部位
+///   ([`Label::is_paired`]) で同じラベルなのに位置から決めた左右が違う。
+///
+/// 左右の取り違えは目の開閉などのパラメータを入れ替えるので、食い違うものは確からしさによらず
+/// 確認に回す ([`LayerLabel::needs_review`])。[`classify_layers_guided`] は自分で呼ぶ。[`apply_answer`] で
+/// 書き込んだら呼ぶ。`labels` は [`classify_by_name`] と同じ並びで、長さが違えば [`AiError::InvalidRequest`]。
+pub fn mark_name_disagreements(tree: &LayerTree, labels: &mut [LayerLabel]) -> Result<(), AiError> {
+    let rules = classify_by_name(tree);
+    if rules.len() != labels.len() {
+        return Err(AiError::InvalidRequest(format!(
+            "the classification has {} layers, but the PSD has {}",
+            labels.len(),
+            rules.len()
+        )));
+    }
+    for (label, rule) in labels.iter_mut().zip(&rules) {
+        let confident = rule.confidence >= DISAGREEMENT_FROM;
+        let side_written = rule
+            .layer_path
+            .iter()
+            .any(|n| rules::side_from_name(n).is_some());
+        let side_known =
+            side_written || (confident && rule.label.is_paired() && label.label == rule.label);
+        let disagreement = NameDisagreement {
+            label: (confident && label.label != rule.label).then_some(rule.label),
+            side: (side_known && label.side != rule.side).then_some(rule.side),
+        };
+        label.name_disagreement =
+            (disagreement.label.is_some() || disagreement.side.is_some()).then_some(disagreement);
+    }
+    Ok(())
 }
 
 /// [`output_schema`] の形の答え (外部のエージェントが決めた分類) を `labels` に書き込む。
@@ -922,7 +986,8 @@ pub fn classify_layers_guided(
 /// `labels` は [`classify_by_name`] の結果など、すべてのレイヤーを同じ並びで持つもの。答えにない
 /// レイヤーはそのまま。番号が範囲の外・同じレイヤーに 2 度答えた・形が違うものは
 /// [`AiError::InvalidResponse`] で、そのときは `labels` を変えない。`confidence` は 0..=1 に丸める。
-/// 書き込んだレイヤーの数を返す。
+/// 書き込んだレイヤーの数を返す。名前の規則との食い違いの印は付けないので、PSD があれば続けて
+/// [`mark_name_disagreements`] を呼ぶ。
 pub fn apply_answer(
     labels: &mut [LayerLabel],
     answer: serde_json::Value,

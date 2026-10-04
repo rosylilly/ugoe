@@ -240,6 +240,44 @@ fn ai_rig_notes_retries() {
     );
 }
 
+/// T0546: AI の分類が名前の規則と食い違うレイヤー (名前に右と書いた白目を左にした) は、確からしさが高くても
+/// 画面の分類で確かめるよう示し、提案の理由にも名前の規則の答えを添える。
+#[test]
+fn name_disagreements_reach_the_view_and_the_rationale() {
+    let tree = read_tree(&bustup_path()).unwrap();
+    let eye = ugoe_ai::classify::classify_by_name(&tree)
+        .iter()
+        .position(|l| l.layer_path.last().unwrap() == "eyewhite-r")
+        .unwrap();
+    let fake = FakeProvider::new();
+    fake.push(json!({ "layers": [
+        { "index": eye, "label": "eye_white", "side": "left", "confidence": 0.95 }
+    ]}));
+    let labels = classify(&tree, Some(&fake), &ClassifyGuidance::default()).unwrap();
+    let view = Classified {
+        psd: bustup_path(),
+        labels: labels.clone(),
+        by_ai: true,
+        instructions: None,
+    }
+    .view();
+    let layer = &view.layers[eye];
+    assert!(layer.needs_review);
+    assert_eq!(
+        layer.name_disagreement,
+        Some(NameDisagreementView {
+            label: None,
+            side: Some("right".into()),
+        })
+    );
+    assert_eq!(view.layers.iter().filter(|l| l.needs_review).count(), 1);
+    let note = labels_note(&labels);
+    assert!(
+        note.contains("eyewhite-r (eye_white left; the name says eye_white right)"),
+        "{note}"
+    );
+}
+
 /// ADR 0022: 分類とリギングの提案は、選んだプロバイダ (ここでは OpenAI 互換の API の録画) でも同じ流れで動く。
 #[test]
 fn an_openai_compatible_provider_classifies_and_rigs() {

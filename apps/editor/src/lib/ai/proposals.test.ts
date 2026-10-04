@@ -95,6 +95,7 @@ describe("classificationSummary", () => {
       confidence: needs_review ? 0.3 : 0.9,
       needs_review,
       variant: null as number | null,
+      name_disagreement: null,
     });
     const c: Classification = {
       psd: "/a.psd",
@@ -121,6 +122,7 @@ describe("classificationSummary", () => {
       confidence: 0.9,
       needs_review: false,
       variant,
+      name_disagreement: null,
     });
     const c: Classification = {
       psd: "/a.psd",
