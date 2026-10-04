@@ -258,6 +258,8 @@ claude mcp add --scope user ugoe-editor -- ugoe-mcp --editor
 | macOS | `~/Library/Application Support/app.ugoe.editor/editor-mcp.json` |
 | Linux | `$XDG_STATE_HOME/app.ugoe.editor/editor-mcp.json` (無ければ `~/.local/state/…`) |
 
+中継は、`endpoint` が `/` で始まる URL のパス (`@`・`?`・`#` などを含まない) で、`port` が 0 でないファイルだけを読む
+(ほかのホストへトークンを送らないように)。
 環境変数 `UGOE_MCP_DISCOVERY` でファイルのパスを変えられる (エディタと中継の両方が見る)。エディタを 2 つ起動すると、
 後から有効にしたほうが書く (中継は後のほうにつなぐ)。
 
@@ -278,7 +280,7 @@ claude mcp add --scope user ugoe-editor -- /mnt/c/Users/<名前>/AppData/Local/u
   `/mnt/c/…` で起動するなら `--wsl-distro` が要る (無ければ `/home/…` のパスを変えられない)。
 - **Linux 版でもつなげる:** WSL の中の Linux 版の `ugoe-mcp --editor` は、Linux の場所に発見用のファイルが無ければ、
   Windows の `%LOCALAPPDATA%` (相互運用の `cmd.exe` で尋ねる。相互運用が無効なら `/mnt/<ドライブ>/Users/*/AppData/Local`
-  の下を探す) の発見用のファイルを読み、パスを変換して `127.0.0.1` へつなぐ。WSL のネットワークが「ミラー」
+  の下を探す。ほかの利用者も書ける `Public`・`Default` などの共有のプロファイルは見ない) の発見用のファイルを読み、パスを変換して `127.0.0.1` へつなぐ。WSL のネットワークが「ミラー」
   (`%UserProfile%\.wslconfig` の `networkingMode=mirrored`) のときだけ Windows のループバックに届く。NAT のときは
   つながらず、そう案内するエラーを返す (Windows 版を使うか、ミラーにする)。
 
@@ -379,7 +381,8 @@ Claude Code に次のように頼む:
    ]
    ```
 
-   結果は提案の ID (`p1`)・`report` (警告)・`changes` (`{"parameters": {"added": ["AngleX"]}, "meshes": {"changed": ["Face"]}}`)。
+   結果は提案の ID (`p1`)・`report` (警告)・`changes` (`{"parameters": {"added": ["AngleX"]}, "meshes": {"changed": ["Face"]}}`。
+   種類ごとに `added`・`removed`・`changed`、並べ替え (`reorder_mesh` など) なら `"reordered": true`。テクスチャは同じ大きさの画像への差し替えも `changed`)。
    モデルはまだ変わらない。
 3. ユーザーが差分を見て承認すると `apply_proposal { "proposal": "p1" }` (Claude Code は呼ぶ前に許可を求める)
 4. キーのセルの形を変える (`set_mesh_keyform` など) 提案を同じように出し、`render_png { "params": { "AngleX": 30 } }` で見た目を確かめる
@@ -488,7 +491,10 @@ Claude Code に次のように頼む:
   パスはその下に限る。
   サーバは開いたプロジェクトをパスごとにメモリに持ち、`save_project` まで書かない。
 - 失敗 (検証を通らない提案、未知の ID、引数の誤り) はツールの実行エラー (`isError: true`) で返し、
-  エージェントが読んで直せるようにする。
+  エージェントが読んで直せるようにする。ツールや持ち主の不具合で panic したときは、サーバを落とさずに JSON-RPC の
+  `-32603` (internal error) で答える (stdio のサーバごと落ちて未保存の変更を失わないように)。
+- PSD (`import_psd`・`get_psd_layers` の `psd`) は通常のファイルだけを読む (`/dev/zero` のような装置・FIFO・ディレクトリは
+  エラー。終わらない読み込みでメモリを使い果たさないように)。
 - 提案はエディタと同じ `ugoe_editor_core::Proposals` に置く。提案は作ったときのモデルの状態に対するもので、
   モデルが変わると適用できない (Undo で同じ状態に戻れば、また使える)。
 - 自動リギングのツール (`src/autorig.rs`) の入力の型 (分類の語彙と左右、リグの値) は `ugoe_ai` の JSON Schema

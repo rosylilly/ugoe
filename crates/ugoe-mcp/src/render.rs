@@ -164,7 +164,8 @@ fn scene(project: &Project) -> Result<Scene, RenderError> {
     Ok(Scene::from_bundle(bundle))
 }
 
-fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+/// panic の値の文 (`&str` か `String`。ほかは「unknown panic」)。
+pub(crate) fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
     if let Some(s) = payload.downcast_ref::<&str>() {
         (*s).to_owned()
     } else if let Some(s) = payload.downcast_ref::<String>() {

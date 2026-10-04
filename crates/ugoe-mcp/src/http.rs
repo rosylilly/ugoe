@@ -262,14 +262,24 @@ impl HttpServer {
                 continue;
             }
             let endpoint = Arc::clone(&self.endpoint);
-            let connections = Arc::clone(&self.connections);
+            let slot = ConnectionSlot(Arc::clone(&self.connections));
             let limits = self.limits;
             std::thread::spawn(move || {
+                // 接続のスレッドが panic しても枠を返すように、捨てるときに数を戻す。
+                let _slot = slot;
                 serve_connection(&endpoint, stream, &limits);
-                connections.fetch_sub(1, Ordering::SeqCst);
             });
         }
         Ok(())
+    }
+}
+
+/// 同時の接続の枠 1 つ。捨てると (スレッドが panic で終わっても) 数を戻す。
+struct ConnectionSlot(Arc<AtomicUsize>);
+
+impl Drop for ConnectionSlot {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -496,19 +506,20 @@ fn read_request(
         .header("connection")
         .unwrap_or("")
         .to_ascii_lowercase();
-    let keep_alive = if http10 {
+    let mut keep_alive = if http10 {
         connection.contains("keep-alive")
     } else {
         !connection.contains("close")
     };
 
     if let Some(encoding) = request.header("transfer-encoding") {
-        if !encoding
-            .to_ascii_lowercase()
-            .trim_end()
-            .ends_with("chunked")
-        {
+        // 解けるのは `chunked` だけ (`gzip, chunked` などは本文を解けない)。
+        if !encoding.trim().eq_ignore_ascii_case("chunked") {
             return Err(ReadError::Bad(501, "unsupported transfer encoding"));
+        }
+        // `Content-Length` もあれば `chunked` で読み、答えたら閉じる (RFC 9112 6.1)。
+        if request.header("content-length").is_some() {
+            keep_alive = false;
         }
         continue_if_expected(&request, writer)?;
         request.body = read_chunked(reader, limits)?;
@@ -647,7 +658,11 @@ impl Endpoint {
             .map_or(request.target.as_str(), |(path, _)| path);
         let path_token = match path.strip_prefix(ENDPOINT) {
             Some("" | "/") => None,
-            Some(rest) if self.options.token.is_some() && rest.len() > 1 => rest.strip_prefix('/'),
+            Some(rest)
+                if self.options.token.is_some() && rest.len() > 1 && rest.starts_with('/') =>
+            {
+                rest.strip_prefix('/')
+            }
             _ => {
                 return Response::text(404, &format!("not found: the MCP endpoint is {ENDPOINT}"));
             }
@@ -1251,6 +1266,11 @@ mod tests {
             200
         );
         assert_eq!(e.respond(&post("/mcp/wrong", &tunnel, &ping())).status, 401);
+        // `/mcp` で始まるだけの別のパスはエンドポイントでない (トークンがあっても)。
+        for path in ["/mcpextra", "/mcpx/y"] {
+            let r = e.respond(&post(path, &[("Authorization", &bearer)], &ping()));
+            assert_eq!(r.status, 404, "{path}");
+        }
         // トークンがあっても Origin は確かめる。
         let r = e.respond(&post(
             "/mcp",
@@ -1327,7 +1347,22 @@ mod tests {
             Ok(None)
         ));
 
+        // `Transfer-Encoding` と `Content-Length` の両方があれば `chunked` で読み、答えたら閉じる
+        // (RFC 9112 6.1。要求の境界の食い違いを次の要求に持ち越さない)。
+        let raw = b"POST /mcp HTTP/1.1\r\nContent-Length: 1\r\nTransfer-Encoding: chunked\r\n\r\n\
+                    2\r\n{}\r\n0\r\n\r\n";
+        let mut reader = BufReader::new(&raw[..]);
+        let Ok(Some((both, keep))) = read_request(&mut reader, &mut Vec::new(), &Limits::default())
+        else {
+            panic!("request with both framings");
+        };
+        assert_eq!(both.body, b"{}");
+        assert!(!keep);
         for (raw, status) in [
+            (
+                &b"POST /mcp HTTP/1.1\r\nTransfer-Encoding: gzip, chunked\r\n\r\n"[..],
+                501,
+            ),
             (&b"GET /mcp HTTP/2\r\n\r\n"[..], 505),
             (b"GET /mcp\r\n\r\n", 400),
             (
@@ -1531,5 +1566,47 @@ mod tests {
             std::thread::sleep(Duration::from_millis(20));
         }
         assert!(ok);
+    }
+
+    #[test]
+    fn panics_in_tools_do_not_use_up_the_connections() {
+        let server = Server::with_host(Options::default(), Arc::new(crate::host::PanickingHost));
+        let server = HttpServer::bind("127.0.0.1:0", server, HttpOptions::default())
+            .unwrap()
+            .with_limits(Limits {
+                max_body: 4096,
+                max_connections: 2,
+                request_timeout: Duration::from_secs(10),
+                ..small_limits()
+            });
+        let addr = server.local_addr().unwrap();
+        std::thread::spawn(move || server.serve());
+        let request = |body: &str| {
+            format!(
+                "POST /mcp HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
+                body.len()
+            )
+        };
+        let call = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_model_summary","arguments":{"path":"x.ugoeproj"}}}"#;
+        // 上限より多く panic させても、接続の枠は戻る (`503` にならない)。
+        for _ in 0..4 {
+            let mut stream = TcpStream::connect(addr).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
+            stream.write_all(request(call).as_bytes()).unwrap();
+            let mut response = Vec::new();
+            let _ = stream.read_to_end(&mut response);
+        }
+        let ping = r#"{"jsonrpc":"2.0","id":2,"method":"ping"}"#;
+        let mut status = 0;
+        for _ in 0..50 {
+            status = exchange(addr, request(ping).as_bytes());
+            if status == 200 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(status, 200);
     }
 }

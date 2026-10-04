@@ -131,7 +131,7 @@ impl Root {
 }
 
 /// 存在する最も深い祖先を正規化し、無い部分を結合する。
-fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
+pub(crate) fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
     let mut existing = path.to_path_buf();
     let mut missing: Vec<std::ffi::OsString> = Vec::new();
     loop {

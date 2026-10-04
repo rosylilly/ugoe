@@ -443,7 +443,8 @@ impl Tools {
             return root.resolve(path);
         }
         let path = std::path::absolute(path).map_err(|e| format!("invalid path `{path}`: {e}"))?;
-        Ok(path.canonicalize().unwrap_or(path))
+        // まだ無いパスも、ある祖先を正規化して結合する (作って保存した後も同じ鍵になるように)。
+        Ok(crate::root::canonicalize_lenient(&path).unwrap_or(path))
     }
 
     /// 持ち主からプロジェクト `key` を借りて `f` を呼ぶ (開いていなければ持ち主が開くか断る。
@@ -1000,4 +1001,29 @@ struct RenderArgs {
     motion: Option<String>,
     expression: Option<String>,
     time: Option<f32>,
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+
+    /// `--root` が無いとき、まだ無いプロジェクト (作って保存する前) のパスも、ある祖先のシンボリックリンクを
+    /// 解いて鍵にする (保存の前後で鍵が変わり、開いている文書が 2 つに分かれないように。macOS の `/tmp` など)。
+    #[cfg(unix)]
+    #[test]
+    fn a_new_project_keeps_its_key_after_it_is_created() {
+        let dir = std::env::temp_dir().join(format!("ugoe-mcp-tools-key-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("real")).unwrap();
+        std::os::unix::fs::symlink(dir.join("real"), dir.join("link")).unwrap();
+        let tools = Tools::new(Options::default());
+        let path = dir.join("link/new.ugoeproj");
+        let before = tools.resolve(path.to_str().unwrap()).unwrap();
+        std::fs::create_dir_all(&path).unwrap();
+        let after = tools.resolve(path.to_str().unwrap()).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(before, after);
+    }
 }

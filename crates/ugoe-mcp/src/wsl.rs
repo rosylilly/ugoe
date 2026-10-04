@@ -17,7 +17,8 @@
 //!    `cmd.exe` は `PATH` (appendWindowsPath) か `<mount>/c/Windows/System32/cmd.exe` から探す。作業
 //!    ディレクトリを `<mount>/c` にする (Linux のディレクトリだと UNC の警告が出るので)。
 //! 2. 相互運用が無効 (`/etc/wsl.conf` の `[interop] enabled=false`) か失敗したら、
-//!    `<mount>/<ドライブ>/Users/*/AppData/Local/app.ugoe.editor/editor-mcp.json` を探す。
+//!    `<mount>/<ドライブ>/Users/*/AppData/Local/app.ugoe.editor/editor-mcp.json` を探す。ほかの利用者も
+//!    書ける共有のプロファイル (`Public`・`Default`・`Default User`・`All Users`) は見ない。
 //!
 //! `<mount>` は `/etc/wsl.conf` の `[automount] root` (既定 `/mnt/`)。
 //!
@@ -38,6 +39,8 @@ use std::process::{Command, Stdio};
 
 use crate::discovery::{APP_DIR, FILE_NAME};
 
+/// Windows の `Users` の下の、利用者のものでないプロファイル (`Public` はどの利用者も書ける)。
+const SHARED_PROFILES: &[&str] = &["Public", "Default", "Default User", "All Users"];
 /// 自動マウントの根の既定。
 const DEFAULT_MOUNT_ROOT: &str = "/mnt/";
 
@@ -253,8 +256,13 @@ pub fn windows_discovery_candidates(paths: &WslPaths) -> Vec<PathBuf> {
     if let Some(dir) = windows_local_app_data(paths) {
         return vec![dir.join(APP_DIR).join(FILE_NAME)];
     }
+    scan_user_profiles(Path::new(&paths.mount_root))
+}
+
+/// `<mount>/<ドライブ>/Users/*/AppData/Local` の下の発見用のファイル。
+fn scan_user_profiles(mount_root: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
-    let Ok(drives) = std::fs::read_dir(&paths.mount_root) else {
+    let Ok(drives) = std::fs::read_dir(mount_root) else {
         return found;
     };
     for drive in drives.flatten() {
@@ -262,6 +270,14 @@ pub fn windows_discovery_candidates(paths: &WslPaths) -> Vec<PathBuf> {
             continue;
         };
         for user in users.flatten() {
+            // 共有のプロファイルには、ほかの利用者も発見用のファイルを置けるので見ない。
+            let name = user.file_name();
+            if SHARED_PROFILES
+                .iter()
+                .any(|shared| name.to_string_lossy().eq_ignore_ascii_case(shared))
+            {
+                continue;
+            }
             let candidate = user
                 .path()
                 .join("AppData")
@@ -371,6 +387,37 @@ mod tests {
             Some("\\\\wsl.localhost\\Ubuntu\\home\\a")
         );
         assert_eq!(WslPaths::new("U", "/windir").mount_root(), "/windir/");
+    }
+
+    /// どの利用者も書ける共有のプロファイル (`Public`・`Default` など) の発見用のファイルは、ほかの利用者が
+    /// 置けるので読まない (偽のエディタにつながらないように)。
+    #[test]
+    fn scans_only_personal_profiles() {
+        let mount = std::env::temp_dir().join(format!("ugoe-mcp-wsl-scan-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&mount);
+        let plant = |user: &str| {
+            let dir = mount
+                .join("c/Users")
+                .join(user)
+                .join("AppData/Local")
+                .join(APP_DIR);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join(FILE_NAME), b"{}").unwrap();
+        };
+        for user in [
+            "alice",
+            "Public",
+            "Default",
+            "Default User",
+            "All Users",
+            "public",
+        ] {
+            plant(user);
+        }
+        let found = scan_user_profiles(&mount);
+        std::fs::remove_dir_all(&mount).unwrap();
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[0].to_string_lossy().contains("alice"), "{found:?}");
     }
 
     #[test]

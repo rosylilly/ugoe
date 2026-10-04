@@ -408,6 +408,54 @@ fn propose_apply_undo_and_save() {
     client.call_ok("close_project", json!({ "path": path }));
 }
 
+/// `exclude` で一部のコマンドを外して適用する。外したコマンドに頼るコマンドが残れば拒否する。
+#[test]
+fn apply_part_of_a_proposal() {
+    let tmp = TempDir::new("exclude");
+    let project = save_fixture_project(&tmp.0);
+    let path = project.to_str().unwrap();
+    let mut client = Client::spawn(&[]);
+    client.initialize();
+    let proposal = client.call_ok(
+        "propose_edit",
+        json!({
+            "path": path,
+            "title": "Add angles",
+            "commands": [
+                { "op": "add_parameter", "parameter": { "id": "AngleX", "name": "Angle X", "min": -30.0, "default": 0.0, "max": 30.0 } },
+                { "op": "add_parameter", "parameter": { "id": "AngleY", "name": "Angle Y", "min": -30.0, "default": 0.0, "max": 30.0 } },
+                { "op": "add_keyform_key", "target": { "kind": "mesh", "id": "Quad" }, "parameter": "AngleY", "key": 30.0 },
+            ],
+        }),
+    );
+    let id = proposal["proposal"].as_str().unwrap().to_owned();
+    // AngleY を外すと、AngleY のキーを足すコマンドが残るので適用できない。
+    let err = client.call_err(
+        "apply_proposal",
+        json!({ "path": path, "proposal": id, "exclude": [1] }),
+    );
+    assert!(err.contains("rejected"), "{err}");
+    let summary = client.call_ok("get_model_summary", json!({ "path": path }));
+    assert_eq!(parameter_ids(&summary), ["X"]);
+
+    let applied = client.call_ok(
+        "apply_proposal",
+        json!({ "path": path, "proposal": id, "exclude": [1, 2] }),
+    );
+    assert_eq!(applied["excluded"], json!([1, 2]));
+    // 差分は外したコマンドを除いたもの。
+    assert_eq!(
+        applied["changes"],
+        json!({ "parameters": { "added": ["AngleX"] } })
+    );
+    let summary = client.call_ok("get_model_summary", json!({ "path": path }));
+    assert_eq!(parameter_ids(&summary), ["X", "AngleX"]);
+    // 1 回の undo で戻る。
+    client.call_ok("undo", json!({ "path": path }));
+    let summary = client.call_ok("get_model_summary", json!({ "path": path }));
+    assert_eq!(parameter_ids(&summary), ["X"]);
+}
+
 #[test]
 fn create_new_project() {
     let tmp = TempDir::new("create");

@@ -167,7 +167,25 @@ pub fn read(path: &Path) -> Result<Discovery, DiscoveryError> {
                 .to_owned(),
         });
     }
-    serde_json::from_value(value).map_err(|e| invalid(e.to_string()))
+    let discovery: Discovery = serde_json::from_value(value).map_err(|e| invalid(e.to_string()))?;
+    if discovery.port == 0 {
+        return Err(invalid("\"port\" must not be 0".to_owned()));
+    }
+    // `url` はループバックの URL にパスを足すだけなので、`@` (利用者情報になり、ほかのホストへつなぐ)・
+    // `//`・`?`・`#` などを含まない、`/` で始まるパスに限る。
+    let endpoint_is_path = discovery.endpoint.starts_with('/')
+        && !discovery.endpoint.starts_with("//")
+        && discovery
+            .endpoint
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'-' | b'_' | b'.' | b'~'));
+    if !endpoint_is_path {
+        return Err(invalid(format!(
+            "\"endpoint\" {:?} is not a URL path",
+            discovery.endpoint
+        )));
+    }
+    Ok(discovery)
 }
 
 /// 発見用のファイルが `ours` のまま (ほかのエディタが上書きしていない) なら消す。消したら `true`。
@@ -278,6 +296,41 @@ mod tests {
             read(&dir.join("missing.json")),
             Err(DiscoveryError::Read { .. })
         ));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// エンドポイントはループバックの URL のパスにしかならない (`@` で URL の利用者情報にして、トークンを
+    /// ほかのホストへ送らせない)。
+    #[test]
+    fn rejects_endpoints_that_leave_the_loopback() {
+        let dir = temp_dir("endpoint");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(FILE_NAME);
+        for endpoint in [
+            "@evil.example/mcp",
+            "mcp",
+            "/mcp#x",
+            "/mcp?x",
+            "//evil.example/mcp",
+            "/m cp",
+            "/mcp\\x",
+        ] {
+            let mut discovery = Discovery::new(40000, "t".repeat(64));
+            discovery.endpoint = endpoint.to_owned();
+            write(&path, &discovery).unwrap();
+            let err = read(&path).unwrap_err();
+            assert!(
+                matches!(err, DiscoveryError::Invalid { .. }),
+                "{endpoint}: {err}"
+            );
+        }
+        let mut zero = Discovery::new(0, "t".repeat(64));
+        write(&path, &zero).unwrap();
+        assert!(matches!(read(&path), Err(DiscoveryError::Invalid { .. })));
+        zero.port = 1;
+        zero.endpoint = "/mcp/sub-path_1.x~".to_owned();
+        write(&path, &zero).unwrap();
+        assert_eq!(read(&path).unwrap(), zero);
         fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -393,7 +393,7 @@ T0518 (方法は T0707 の見本 `ugoe sample avatar --lit` から)。テクス�
 
 ADR 0006 は「AI は提案だけを行い、適用は人間が承認する」と決めています。MCP サーバでは、これを **提案と適用のツールを分けること** で守ります。
 
-- `propose_edit` は `Command` の列 (`ugoe_ai::Proposal` と同じ `title`・`rationale`・`commands`) を受け取り、ドキュメントの複製に `Batch` として適用して、検証の結果・`ApplyReport`・変わる要素の ID を返します。元のドキュメントは変えません (読むだけのツール)。成功すると提案の ID を返します。
+- `propose_edit` は `Command` の列 (`ugoe_ai::Proposal` と同じ `title`・`rationale`・`commands`) を受け取り、ドキュメントの複製に `Batch` として適用して、検証の結果・`ApplyReport`・変わる要素の ID (種類ごとの `added`・`removed`・`changed` と、並べ替えなら `reordered`。テクスチャは画像の差し替えも `changed`) を返します。元のドキュメントは変えません (読むだけのツール)。成功すると提案の ID を返します。
 - `apply_proposal` は提案の ID だけを受け取り、`Document::apply` で適用します (1 回の Undo で戻せます)。提案の後にドキュメントが変わっていたら拒否します (承認した差分と違う結果にならないように。Undo で提案を作った状態に戻れば、また使えます)。
 - 提案の置き場はエディタと同じ `ugoe_editor_core::Proposals` です (T0637)。提案の結果にはコマンドごとの要約と依存 (`requires`) を付け、`apply_proposal` の `exclude` でコマンドの一部を外して適用できます (外した列も複製で確かめ、通らなければ適用しません)。
 - **承認するのは MCP クライアントの確認です。** Claude Code は、許可していないツールを呼ぶ前にユーザーに確認を求めます。ユーザーは `propose_edit` の差分を見て、`apply_proposal` の呼び出しを許します。`propose_edit`・`get_*`・`render_png` は読むだけ (`readOnlyHint`) なので常に許してよく、`apply_proposal` と `save_project` は常に許す設定にしないことを勧めます。常に許すことは ADR 0006 の「すべての提案を自動で採用する」設定にあたります。

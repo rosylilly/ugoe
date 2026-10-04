@@ -4,11 +4,13 @@
 //! 旧来の `initialize` の握手をする版 (2025-11-25 以前) と、要求ごとに `_meta` で版を示す版
 //! (2026-07-28) の両方に応じる。仕様: https://modelcontextprotocol.io/specification/
 
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 
 use serde_json::{Map, Value, json};
 
 use crate::host::DocumentHost;
+use crate::render::panic_message;
 use crate::tools::{Options, Tools};
 
 /// 要求ごとに `_meta` で版を示す版 (握手をしない)。
@@ -26,6 +28,7 @@ pub(crate) const PARSE_ERROR: i64 = -32700;
 pub(crate) const INVALID_REQUEST: i64 = -32600;
 pub(crate) const METHOD_NOT_FOUND: i64 = -32601;
 const INVALID_PARAMS: i64 = -32602;
+const INTERNAL_ERROR: i64 = -32603;
 pub(crate) const UNSUPPORTED_PROTOCOL_VERSION: i64 = -32022;
 
 /// サーバがエージェントに示す使い方。
@@ -198,9 +201,20 @@ impl Server {
             .get("arguments")
             .cloned()
             .unwrap_or_else(|| json!({}));
-        self.tools
-            .call(name, arguments)
-            .ok_or_else(|| (INVALID_PARAMS, format!("unknown tool: {name}")))
+        // ツールや持ち主の不具合で panic しても、サーバ (stdio では唯一のスレッド) ごと落とさずにエラーで
+        // 答える (開いている未保存の変更を失わないように)。錠は毒されても使い続ける (`tools::lock`)。
+        let called = catch_unwind(AssertUnwindSafe(|| self.tools.call(name, arguments))).map_err(
+            |payload| {
+                (
+                    INTERNAL_ERROR,
+                    format!(
+                        "internal error in tool `{name}`: {}",
+                        panic_message(payload.as_ref())
+                    ),
+                )
+            },
+        )?;
+        called.ok_or_else(|| (INVALID_PARAMS, format!("unknown tool: {name}")))
     }
 }
 
@@ -258,4 +272,32 @@ pub(crate) fn error_with_data(id: Value, code: i64, message: &str, data: Option<
         err.insert("data".to_owned(), data);
     }
     json!({ "jsonrpc": "2.0", "id": id, "error": err })
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+    use crate::host::PanickingHost;
+
+    #[test]
+    fn a_panicking_tool_answers_with_an_internal_error() {
+        let server = Server::with_host(Options::default(), Arc::new(PanickingHost));
+        let call = json!({
+            "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+            "params": { "name": "get_model_summary", "arguments": { "path": "x.ugoeproj" } },
+        });
+        // stdio のサーバ (要求を順に処理する 1 つのスレッド) ごと落ちずに、エラーで答える。
+        let reply = server.handle(call).unwrap();
+        assert_eq!(reply["id"], 3);
+        assert_eq!(reply["error"]["code"], INTERNAL_ERROR);
+        let message = reply["error"]["message"].as_str().unwrap();
+        assert!(message.contains("get_model_summary"), "{message}");
+        assert!(message.contains("the host is broken"), "{message}");
+        let ping = server
+            .handle(json!({ "jsonrpc": "2.0", "id": 4, "method": "ping" }))
+            .unwrap();
+        assert_eq!(ping["result"], json!({}));
+    }
 }

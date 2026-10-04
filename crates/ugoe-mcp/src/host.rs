@@ -393,6 +393,29 @@ impl Approvals {
     }
 }
 
+/// 文書を貸そうとすると panic する持ち主 (持ち主やツールの不具合の代わり。テスト用)。
+#[cfg(test)]
+pub(crate) struct PanickingHost;
+
+#[cfg(test)]
+impl DocumentHost for PanickingHost {
+    fn with_project(&self, _: &Path, _: &mut dyn FnMut(Lent<'_>)) -> Result<(), HostError> {
+        panic!("the host is broken");
+    }
+
+    fn open(&self, _: &Path, _: Opening, _: bool) -> Result<(), HostError> {
+        Ok(())
+    }
+
+    fn close(&self, _: &Path, _: bool) -> Result<(), HostError> {
+        Ok(())
+    }
+
+    fn save(&self, _: &Path, _: Option<&Path>) -> Result<(), HostError> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;

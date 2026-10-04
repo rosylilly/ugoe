@@ -88,6 +88,11 @@ impl fmt::Debug for PsdSource {
 
 impl PsdSource {
     fn load(path: PathBuf) -> Result<Self, String> {
+        // 装置 (`/dev/zero`)・FIFO・ディレクトリは読まない (終わらない読み込みでメモリを使い果たさないように)。
+        let metadata = std::fs::metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        if !metadata.is_file() {
+            return Err(format!("{}: not a regular file", path.display()));
+        }
         let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         let tree = ugoe_psd::import(&bytes).map_err(|e| format!("{}: {e}", path.display()))?;
         Ok(Self {
@@ -472,7 +477,7 @@ pub(crate) fn get_psd_layers(
                 ));
             }
             let count = args.count.unwrap_or(DEFAULT_COUNT).clamp(1, per_call);
-            (args.start..(args.start + count).min(total)).collect()
+            (args.start..args.start.saturating_add(count).min(total)).collect()
         }
     };
     let size = args
@@ -858,4 +863,50 @@ pub(crate) fn propose_module_rig(
         commands: proposal.commands,
         extra: json!({ "params": params, "options": options }),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+
+    /// 通常のファイルでないもの (`/dev/zero` のような終わらない装置・FIFO) は読まない
+    /// (読み続けてメモリを使い果たし、エディタごと落ちないように)。
+    #[cfg(unix)]
+    #[test]
+    fn refuses_to_read_a_psd_that_is_not_a_regular_file() {
+        let err = PsdSource::load(PathBuf::from("/dev/null")).unwrap_err();
+        assert!(err.contains("not a regular file"), "{err}");
+        let err = PsdSource::load(std::env::temp_dir()).unwrap_err();
+        assert!(err.contains("not a regular file"), "{err}");
+    }
+
+    #[test]
+    fn a_start_past_an_empty_psd_does_not_overflow() {
+        let tree = LayerTree {
+            width: 1,
+            height: 1,
+            root: Vec::new(),
+            warnings: Vec::new(),
+        };
+        let mut slot = Some(PsdSource {
+            path: PathBuf::from("empty.psd"),
+            labels: classify_by_name(&tree),
+            by_agent: BTreeSet::new(),
+            tree,
+        });
+        let args: LayersArgs =
+            serde_json::from_value(json!({ "path": "x", "start": usize::MAX, "images": false }))
+                .unwrap();
+        let page = get_psd_layers(
+            &Document::new(ugoe_model::fixtures::single_quad()),
+            &mut slot,
+            args,
+            None,
+        )
+        .unwrap();
+        assert_eq!(page.value["layers"], json!([]));
+        assert_eq!(page.value["total"], 0);
+    }
 }
