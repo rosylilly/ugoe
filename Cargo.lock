@@ -5410,6 +5410,7 @@ dependencies = [
  "ugoe-core",
  "ugoe-format",
  "ugoe-model",
+ "ugoe-physics",
  "ugoe-runtime",
 ]
 

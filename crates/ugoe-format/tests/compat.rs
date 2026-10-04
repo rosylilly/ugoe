@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use serde_json::{Value, json};
+use ugoe_core::Vec2;
 use ugoe_format::{
     Bundle, FeatureDecl, FormatError, ModuleFile, ReadWarning, TextureData, TextureFormat,
     WriteOptions, read_bundle_with_report, read_module_with_report, write_bundle,
@@ -21,8 +22,10 @@ use ugoe_format::{
 };
 use ugoe_model::expression::{Expression, ExpressionOp, ExpressionParameter};
 use ugoe_model::motion::{Curve, CurveTarget, Motion, Point, Segment};
+use ugoe_model::physics::{PhysicsSettings, PhysicsTarget, VertexOwner};
 use ugoe_model::{BlendMode, DeformerKind, MaskMode, Model, TextureRef, fixtures, standard};
-use ugoe_runtime::{CompiledModel, DrawableState, ModelInstance, compose};
+use ugoe_physics::PhysicsSystem;
+use ugoe_runtime::{CompiledModel, DrawableState, ModelInstance, compose, compose_physics};
 
 /// 資料を作り直すときに立てる環境変数。
 const REGENERATE: &str = "UGOE_UPDATE_FIXTURES";
@@ -358,6 +361,16 @@ fn future_optional_module() -> Vec<u8> {
     let rig = &mut module["physics"]["rigs"][0];
     rig["inputs"][0]["source"] = json!("acceleration");
     rig["future_damping"] = json!(0.25);
+    // 頂点への出力で、頂点の持ち主が知らない種類のもの (中身のある種類と、中身の無い種類)。
+    let outputs = rig["outputs"].as_array_mut().expect("outputs");
+    for owner in [
+        json!({ "bone": { "id": "Spine", "segment": 2 } }),
+        json!("lattice"),
+    ] {
+        let mut output = outputs[0].clone();
+        output["target"] = json!({ "type": "vertices", "owner": owner, "weights": [0.5, 1.0] });
+        outputs.push(output);
+    }
 
     let mut chunks = vec![
         (b"FEAT", 0, feat(&[FeatureDecl::optional(FUTURE_OPTIONAL)])),
@@ -657,15 +670,72 @@ fn unknown_optional_features_in_modules_fall_back() {
             "unknown value at MODU: deformers[Bend].kind".into(),
             "unknown value at MODU: meshes[Back].blend".into(),
             "unknown value at MODU: physics.rigs[Sway].inputs[0].source".into(),
+            "unknown value at MODU: physics.rigs[Sway].outputs[1].target.owner".into(),
+            "unknown value at MODU: physics.rigs[Sway].outputs[2].target.owner".into(),
         ]
     );
+    let owners: Vec<_> = file.module.physics.rigs[0]
+        .outputs
+        .iter()
+        .filter_map(|output| match &output.target {
+            PhysicsTarget::Vertices { owner, .. } => Some(owner.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(owners, [VertexOwner::Unknown, VertexOwner::Unknown]);
 
     let (dev, _) = read_module_with_report(&dev_file("long-hair.ugoemod")).expect("dev module");
     let (base, _) = read_bundle_with_report(&dev_file(MODULE_BASE)).expect("dev base");
     let future_model = compose(&base.model, &[&file.module]).expect("compose future module");
     let dev_model = compose(&base.model, &[&dev.module]).expect("compose dev module");
-    assert_drawables_eq(&evaluate(future_model), &evaluate(dev_model));
+    assert_drawables_eq(&evaluate(future_model.clone()), &evaluate(dev_model));
     assert_eq!(file.textures, dev.textures);
+
+    // 物理: 未知の持ち主への出力は合成で残り、物理はその出力を無視する (docs/spec/physics.md)。
+    // 入力の種類も未知 (`acceleration`) なので元のモジュールとは動きが違う。未知の出力を除いた設定と比べる。
+    let physics = compose_physics(&base.model, &empty_physics(), &[&file.module])
+        .expect("compose future physics");
+    assert_eq!(physics.rigs[0].outputs.len(), 3);
+    let mut known_outputs = physics.clone();
+    known_outputs.rigs[0].outputs.truncate(1);
+    let simulated = simulate(future_model.clone(), physics);
+    // 知っている出力 (`Sway` の角度) は髪を動かす (比べる意味があることを確かめる)。
+    let moved = simulated
+        .iter()
+        .zip(&evaluate(future_model.clone()))
+        .flat_map(|(a, e)| a.positions.iter().zip(&e.positions))
+        .any(|(a, e)| (*a - *e).length() > 1e-2);
+    assert!(moved, "physics did not move the hair");
+    assert_drawables_eq(&simulated, &simulate(future_model, known_outputs));
+}
+
+/// 本体の物理が無いときに、モジュールの物理を加える先の設定。
+fn empty_physics() -> PhysicsSettings {
+    PhysicsSettings {
+        gravity: Vec2::new(0.0, 1.0),
+        wind: Vec2::ZERO,
+        fps: 60.0,
+        rigs: Vec::new(),
+        colliders: Vec::new(),
+    }
+}
+
+/// 頭を振りながら物理を 1 秒進めた後の描画可能要素。
+fn simulate(model: Model, physics: PhysicsSettings) -> Vec<DrawableState> {
+    let compiled = CompiledModel::compile(model).expect("compile");
+    let mut instance = ModelInstance::new(compiled);
+    let mut system = PhysicsSystem::new(physics);
+    let angle = instance
+        .parameters()
+        .index_of(standard::ANGLE_X)
+        .expect("AngleX");
+    for frame in 0..60 {
+        let value = if frame < 30 { 30.0 } else { -30.0 };
+        instance.parameters_mut().set(angle, value);
+        system.update_instance(&mut instance, 1.0 / 60.0);
+        instance.update();
+    }
+    instance.drawables().to_vec()
 }
 
 /// 知らない必須の機能を宣言したファイルは、足りない機能の ID を示して拒否する。
