@@ -25,7 +25,7 @@ use ugoe::runtime::{DrawableChanges, DrawableState};
 
 use crate::model::{
     AtlasLayout, LightUniforms, LoadedModel, MaskArea, MaskShrink, MaskTable, bounds, front_facing,
-    premultiply,
+    ktx2_as_stored, premultiply,
 };
 use crate::shader::{self, ShaderKind};
 
@@ -123,13 +123,16 @@ fn vec2(p: UVec2) -> Vector2 {
     Vector2::new(p.x, p.y)
 }
 
-/// 画像をデコードする。読めなければ `None`。
+/// 画像をデコードする。読めなければ `None`。KTX2 は保存された値のまま読む ([`ktx2_as_stored`])。
 fn decode(data: &TextureData, what: &str) -> Option<Gd<Image>> {
     let mut image = Image::new_gd();
     let bytes = PackedByteArray::from(data.bytes.as_slice());
     let err = match data.format {
         TextureFormat::Png => image.load_png_from_buffer(&bytes),
-        TextureFormat::Ktx2 => image.load_ktx_from_buffer(&bytes),
+        TextureFormat::Ktx2 => match ktx2_as_stored(&data.bytes) {
+            Some(patched) => image.load_ktx_from_buffer(&PackedByteArray::from(patched.as_slice())),
+            None => image.load_ktx_from_buffer(&bytes),
+        },
     };
     if err != godot::global::Error::OK || image.is_empty() {
         godot_warn!("ugoe: failed to decode a {what} ({:?})", data.format);
@@ -138,25 +141,34 @@ fn decode(data: &TextureData, what: &str) -> Option<Gd<Image>> {
     Some(image)
 }
 
-/// 画像を Godot のテクスチャにする。PNG は乗算済みアルファに変換する。読めなければ `None` (白で描く)。
+/// 画像を Godot のテクスチャにする。読めなければ `None` (白で描く)。
+///
+/// PNG も KTX2 も乗算していないアルファなので、RGBA8 にして乗算済みにする (`docs/spec/rendering.md#前提`)。
+/// 圧縮した KTX2 は展開してから乗算する。展開できなければ警告を出し、乗算せずにそのまま使う。
 fn load_texture(data: &TextureData) -> Option<Gd<ImageTexture>> {
     let mut image = decode(data, "texture")?;
-    // TODO(T0448): KTX2 は乗算済みかどうかを確かめずにそのまま使っている (仕様が決まっていない)。
-    if data.format == TextureFormat::Png {
-        if image.get_format() != Format::RGBA8 {
-            image.convert(Format::RGBA8);
-        }
-        let mut rgba = image.get_data().to_vec();
-        premultiply(&mut rgba);
-        let (w, h) = (image.get_width(), image.get_height());
-        image.set_data(
-            w,
-            h,
-            false,
-            Format::RGBA8,
-            &PackedByteArray::from(rgba.as_slice()),
+    if image.is_compressed() && image.decompress() != godot::global::Error::OK {
+        godot_warn!(
+            "ugoe: cannot decompress a KTX2 texture ({:?}); drawing it without premultiplying",
+            image.get_format()
         );
+        return ImageTexture::create_from_image(&image);
     }
+    // ミップマップは使わない (`docs/spec/rendering.md#前提`)。
+    image.clear_mipmaps();
+    if image.get_format() != Format::RGBA8 {
+        image.convert(Format::RGBA8);
+    }
+    let mut rgba = image.get_data().to_vec();
+    premultiply(&mut rgba);
+    let (w, h) = (image.get_width(), image.get_height());
+    image.set_data(
+        w,
+        h,
+        false,
+        Format::RGBA8,
+        &PackedByteArray::from(rgba.as_slice()),
+    );
     ImageTexture::create_from_image(&image)
 }
 

@@ -56,6 +56,9 @@ cargo clippy --manifest-path bindings/godot/Cargo.toml --all-targets -- -D warni
   裏面カリング、1 つの要素が 12 個のマスクを読む `masks-many`)、アニメーション中のマスク (`before` のあるケース: 値を変えた
   **直後のフレーム** を比べる。`masks-moving`・`avatar-moving`。入れ子のマスクが 1 フレーム遅れると合わない)、時間を進めた物理と目パチ・呼吸、
   バンドルの例、公開仕様の評価の例 (モデルの JSON。`load_model_from_json` で読み、テクスチャが無いので白で描く)。
+- `--conformance` は続けて `example/tests/ktx2.gd` を実行する (`--only` のときは飛ばす)。見本のモデルのテクスチャを、同じ画素の
+  KTX2 (`R8G8B8A8_SRGB`・`R8G8B8A8_UNORM`、Godot の `Image.compress` で作る `BC3_UNORM_BLOCK`) に差し替えたバンドルを描き、
+  PNG のバンドル (BC3 は展開した画素の PNG) の画像と画素ごとに比べる (適合テストの参照の `ugoe render` は KTX2 を読めないため)。
 - これらは `just ci` に含まれない (ルートのワークスペースの外にあるため)。CI では別のジョブ (`.github/workflows/ci.yml` の
   `godot`) が、版を固定した Godot (4.7.1) と Xvfb の上で `just godot-check` を実行する。
 
@@ -189,6 +192,16 @@ Godot の `XRFaceTracker` は Unified Expressions (`BlendShapeEntry` の 143 個
 - 評価 (`ugoe::Puppet::update`) の結果を、描画可能要素ごとのキャンバスアイテム (`RenderingServer`) と `ShaderMaterial` で描く。
   描画順は draw index で決め、頂点位置は変わった要素だけ送り直す。
 - テクスチャは読み込み時に乗算済みアルファに変換する (法線マップは変換しない)。式・合成モードの表し方は `src/shader.rs` の冒頭を参照。
+- KTX2 は Godot の `Image.load_ktx_from_buffer` で読み、PNG と同じく乗算する ([docs/spec/rendering.md#前提](../../docs/spec/rendering.md#前提))。
+  - Godot 4.7 は `R8G8B8(A8)_SRGB` をリニアに変換して読み (8 ビットのまま。戻せない)、`R8G8B8(A8)_UNORM` は読めず、
+    転送関数が sRGB の Basis Universal は RGBA8 に展開してリニアに変換する。仕様では値をそのまま使うので、読む前にヘッダを
+    書き換える (`src/model.rs` の `ktx2_as_stored`。8 ビットの非圧縮の形式は同じ大きさの `*_UINT` に、転送関数は linear に)。
+    法線マップも同じ。Godot の挙動は [modules/ktx/texture_loader_ktx.cpp](https://github.com/godotengine/godot/blob/4.7.1-stable/modules/ktx/texture_loader_ktx.cpp) で調べた。
+  - 圧縮した形式は `Image.decompress` で展開してから乗算する (GPU では圧縮しないで持つ)。展開できない形式は警告を出し、
+    乗算せずにそのまま描く。Godot が読めない形式 (`B8G8R8A8_*` など) は、PNG と同じく警告を出して白で描く。
+  - ミップマップは捨てて最初の段だけを使う。
+  - 確かめたもの: `example/tests/ktx2.gd` (下の「検査」) で `R8G8B8A8_SRGB`・`R8G8B8A8_UNORM`・`BC3_UNORM_BLOCK`。
+    Basis Universal と ETC2・ASTC は確かめていない (テストで作る道具が無い)。
   ライティングは参照レンダラ (`crates/ugoe-render/src/shaders/drawable.wgsl`) と同じ式で、法線は画面での微分から求めたヤコビ行列で回す。
 - マスクは、マスクとして参照されるメッシュのカバレッジを 1 枚のアトラス (`SubViewport`) に並べて描き、要素はキャンバス座標から読む
   (ノードの変形に左右されない)。どのカバレッジがアトラスのどこにあるか・要素がどのマスクを読むかは浮動小数点のテクスチャの表

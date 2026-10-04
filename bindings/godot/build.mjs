@@ -10,6 +10,7 @@
 //       # ビルドして、配布物の適合テスト (tests/conformance/README.md) を Godot で実行する
 //       # (= node tests/conformance/run.mjs --only godot。実行器は example/tests/conformance.gd)。
 //       # 描画に画面が要る。DISPLAY が無ければ xvfb-run を使う。`--only` で計画のケースを絞る (複数可)。
+//       # 続けて example/tests/ktx2.gd (KTX2 のテクスチャを PNG と同じに描くか) を実行する (`--only` のときは飛ばす)。
 //
 // ライブラリを example/addons/ugoe/bin/ に、見本のモデル (assets/samples/ の .ugoe と着せ替えの .ugoemod) を example/models/ に写す。
 // Godot の実行ファイルは環境変数 GODOT (既定は `godot`) で指定する。
@@ -135,5 +136,15 @@ if (conformance) {
     );
   } catch {
     process.exitCode = 1;
+  }
+  if (only.length === 0) {
+    try {
+      runGodot(
+        ["--path", example, "--rendering-driver", "opengl3", "--script", "res://tests/ktx2.gd"],
+        { display: true },
+      );
+    } catch {
+      process.exitCode = 1;
+    }
   }
 }

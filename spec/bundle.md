@@ -181,7 +181,9 @@ ignores them; a stricter reader that rejects them is also conforming.
   | KTX2 | `AB 4B 54 58 20 32 30 BB 0D 0A 1A 0A` |
 
   A payload with neither signature makes the file invalid.
-- The pixel data of textures is non-premultiplied RGBA. The encoding of normals in normal maps is
+- The pixel data of textures is non-premultiplied RGBA in both formats; how renderers treat KTX2
+  data (premultiplied flag, transfer function, compression) is defined in
+  [rendering.md](rendering.md#textures). The encoding of normals in normal maps is
   defined in [rendering.md](rendering.md#normals).
 
 ## Metadata

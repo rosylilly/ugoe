@@ -65,6 +65,17 @@ results within the tolerances of [Conformance](#conformance).
   them to premultiplied alpha before sampling. *Informative:* the reference implementation converts
   8-bit images as `c' = (c × a + 127) div 255` (integer arithmetic, `div` rounding down) per color
   channel.
+- KTX2 texture images ([bundle.md](bundle.md#textures-and-normal-maps)) are non-premultiplied as
+  well. A renderer:
+  - ignores `KHR_DF_FLAG_ALPHA_PREMULTIPLIED` in the KTX2 data format descriptor (writers do not
+    set it);
+  - uses the stored texel values as they are, whatever the format's `_SRGB` / `_UNORM` suffix or
+    transfer function says: they are not converted from sRGB to linear (see
+    [Color values](#color-values)). A GPU renderer does not sample them through an sRGB format;
+  - decodes block-compressed and supercompressed data (BCn, ETC2, ASTC, Basis Universal and so on)
+    and premultiplies the decoded texels. Sampling the compressed data and premultiplying
+    afterwards does not meet the bilinear filtering of premultiplied values below;
+  - uses only the base level (level 0) of a file with mipmaps.
 - Textures are sampled at the interpolated texture coordinates of the pixel with **bilinear
   filtering** of the premultiplied values and **clamp-to-edge** addressing, without mipmaps.
   Renderers SHOULD sample this way; other filtering changes edge pixels and may exceed the
