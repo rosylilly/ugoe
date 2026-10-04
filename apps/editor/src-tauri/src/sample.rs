@@ -96,19 +96,13 @@ fn write_projects(dir: &Path) -> IpcResult<Vec<PathBuf>> {
 mod tests {
     use super::*;
 
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("ugoe-editor-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
     /// 書き出した見本を開ける: 本体は見本の本体と同じモデル・物理・モーション・表情、モジュールのプロジェクトは
     /// 本体を参照し、書き出す (Export Module) と埋め込んだ `.ugoemod` とバイト列で同じになる。
     #[test]
     fn sample_projects_open_and_export_the_same_modules() {
-        let dir = temp_dir("sample");
-        let written = write_projects(&dir).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        let written = write_projects(dir).unwrap();
         assert_eq!(written.len(), 1 + MODULES.len());
 
         let bundle = ugoe_format::read_bundle(BASE).unwrap();
@@ -145,7 +139,6 @@ mod tests {
                 path.display()
             );
         }
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// 見本のスロット `Hair` は本体の肩の衝突体を公開する。本体から物理を外すと、モジュールのプロジェクトの
@@ -155,7 +148,8 @@ mod tests {
     fn exposed_colliders_without_base_physics_are_explained() {
         use crate::module::{ModuleProblemKind, module_status_of, open_problem};
 
-        let dir = temp_dir("sample-colliders");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let bundle = ugoe_format::read_bundle(BASE).unwrap();
         // `TwinTails` の房は肩に当たり、`LongHair` は当たらない (T0662)。
         let colliding = ugoe_format::read_module(MODULES[1]).unwrap();
@@ -174,7 +168,7 @@ mod tests {
                 .all(|r| r.colliders.is_empty())
         );
         let written =
-            save_bundle_projects(&dir, BASE_PROJECT, &bundle, &[colliding, plain]).unwrap();
+            save_bundle_projects(dir, BASE_PROJECT, &bundle, &[colliding, plain]).unwrap();
         let open = |path: &Path| {
             let (_, document) = ProjectSession::from_project(Project::load(path).unwrap(), None);
             module_status_of(&document).unwrap()
@@ -235,20 +229,19 @@ mod tests {
         );
         assert!(problem(&written[2]).is_none());
         assert_eq!(open(&written[2]).unavailable_colliders, ["Shoulders"]);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// 書き出すフォルダーは毎回新しく作り、前の見本を上書きしない。
     #[test]
     fn sample_folders_do_not_overwrite_earlier_ones() {
-        let dir = temp_dir("sample-folders");
-        let first = new_folder(&dir).unwrap();
-        let second = new_folder(&dir).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        let first = new_folder(dir).unwrap();
+        let second = new_folder(dir).unwrap();
         assert_eq!(first.file_name().unwrap(), FOLDER);
         assert_eq!(
             second.file_name().unwrap().to_string_lossy(),
             format!("{FOLDER}-2")
         );
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -170,9 +170,8 @@ mod tests {
     /// `.ugoemod` の名前でも、通常のファイルでなければ読まない (T0011)。
     #[test]
     fn reads_only_regular_module_files() {
-        let dir =
-            std::env::temp_dir().join(format!("ugoe-editor-read-module-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let file = dir.join("hair.ugoemod");
         let folder = dir.join("folder.ugoemod");
         std::fs::create_dir_all(&folder).unwrap();
@@ -190,7 +189,6 @@ mod tests {
             read_module(&other.display().to_string()).unwrap_err().code,
             "editor.not_module_file"
         );
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     fn module(path: &str, attached: bool) -> PreviewModule {
@@ -240,8 +238,8 @@ mod tests {
         use tauri::async_runtime::block_on;
         assert!(is_module_path(Path::new("Hair.UGOEMOD")));
         assert!(!is_module_path(Path::new("avatar.ugoe")));
-        let dir = std::env::temp_dir().join(format!("ugoe-editor-dress-up-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let text = dir.join("notes.txt");
         std::fs::write(&text, "x").unwrap();
         assert!(block_on(read_module_file(text.display().to_string())).is_err());
@@ -255,6 +253,5 @@ mod tests {
         let file = dir.join("hair.ugoemod");
         std::fs::write(&file, [1, 2, 3]).unwrap();
         assert!(block_on(read_module_file(file.display().to_string())).is_ok());
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

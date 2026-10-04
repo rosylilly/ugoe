@@ -43,8 +43,8 @@ mod tests {
     fn writes_json_files_only() {
         assert!(is_json_path(Path::new("tracking.JSON")));
         assert!(!is_json_path(Path::new("tracking.txt")));
-        let dir = std::env::temp_dir().join(format!("ugoe-editor-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let path = dir.join("rec.json");
         write_json_file(path.to_string_lossy().into_owned(), "{}".into()).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "{}");
@@ -59,7 +59,6 @@ mod tests {
         let err = write_json_file("ugoe-editor-rec.json".into(), "{}".into()).unwrap_err();
         assert_eq!(err.code, "editor.relative_path");
         assert!(!Path::new("ugoe-editor-rec.json").exists());
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

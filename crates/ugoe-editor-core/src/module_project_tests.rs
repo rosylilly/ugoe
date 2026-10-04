@@ -103,26 +103,6 @@ fn assert_same_module(actual: &Module, expected: &Module) {
 
 // ---- プロジェクト ----
 
-/// テスト用の一時ディレクトリ。破棄時に消す。
-struct TempDir(std::path::PathBuf);
-
-impl TempDir {
-    fn new(name: &str) -> Self {
-        let path = std::env::temp_dir().join(format!(
-            "ugoe-editor-core-module-{}-{name}",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&path);
-        Self(path)
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
-
 /// 本体のプロジェクトを `dir/avatar.ugoeproj` に保存する。
 fn save_base(dir: &std::path::Path) -> std::path::PathBuf {
     let base = base();

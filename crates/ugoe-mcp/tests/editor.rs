@@ -21,22 +21,17 @@ use ugoe_mcp::host::{Action, Approvals, Change, HostError, Lent, Opening};
 use ugoe_mcp::{BridgeOptions, DocumentHost, EditorBridge};
 use ugoe_model::fixtures;
 
-/// テスト用の一時ディレクトリ。破棄時に消す。
-struct TempDir(PathBuf);
-
-impl TempDir {
-    fn new(name: &str) -> Self {
-        let path =
-            std::env::temp_dir().join(format!("ugoe-mcp-editor-{}-{name}", std::process::id()));
-        let _ = fs::remove_dir_all(&path);
-        fs::create_dir_all(&path).unwrap();
-        Self(path.canonicalize().unwrap())
-    }
+/// テスト用の一時ディレクトリ。`path` は正規化したパスで、破棄時に消す。
+struct TempDir {
+    path: PathBuf,
+    _dir: tempfile::TempDir,
 }
 
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
+impl TempDir {
+    fn new() -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().canonicalize().unwrap();
+        Self { path, _dir: dir }
     }
 }
 
@@ -378,13 +373,13 @@ fn add_angle(path: &str) -> Value {
 
 #[test]
 fn relays_the_tools_to_a_running_editor() {
-    let tmp = TempDir::new("flow");
-    let project = save_fixture_project(&tmp.0);
+    let tmp = TempDir::new();
+    let project = save_fixture_project(&tmp.path);
     let path = project.to_str().unwrap().to_owned();
-    let discovery_file = tmp.0.join("state").join("editor-mcp.json");
+    let discovery_file = tmp.path.join("state").join("editor-mcp.json");
     let (editor, _asked) = FakeEditor::open(&project);
     // 中継はエディタより先に起動してよい (要求のたびに発見用のファイルを探す)。
-    let mut relay = Relay::spawn(&discovery_file, &tmp.0);
+    let mut relay = Relay::spawn(&discovery_file, &tmp.path);
 
     let missing = relay.request("initialize", json!({ "protocolVersion": "2025-11-25" }));
     let message = missing["error"]["message"].as_str().unwrap();
@@ -425,8 +420,8 @@ fn relays_the_tools_to_a_running_editor() {
     assert_eq!(opened["name"], "quad");
     // 相対パスは中継の作業ディレクトリ (エージェントの作業ディレクトリ) から解決する。
     relay.call_ok("open_project", json!({ "path": "quad.ugoeproj" }));
-    fs::create_dir_all(tmp.0.join("other")).unwrap();
-    let other = save_fixture_project(&tmp.0.join("other"));
+    fs::create_dir_all(tmp.path.join("other")).unwrap();
+    let other = save_fixture_project(&tmp.path.join("other"));
     let err = relay.call_err("open_project", json!({ "path": other }));
     assert!(err.contains("cannot open other projects"), "{err}");
     let err = relay.call_err("get_model_summary", json!({ "path": other }));
@@ -435,7 +430,7 @@ fn relays_the_tools_to_a_running_editor() {
     assert!(err.contains("not allowed"), "{err}");
     let err = relay.call_err(
         "open_project",
-        json!({ "path": tmp.0.join("new.ugoeproj"), "create": true }),
+        json!({ "path": tmp.path.join("new.ugoeproj"), "create": true }),
     );
     assert!(err.contains("not allowed"), "{err}");
 
@@ -480,7 +475,7 @@ fn relays_the_tools_to_a_running_editor() {
     relay.call_ok("redo", json!({ "path": path }));
     assert_eq!(editor.parameter_ids(), ["X", "AngleX"]);
 
-    let bundle = tmp.0.join("quad.ugoe");
+    let bundle = tmp.path.join("quad.ugoe");
     let saved = relay.call_ok("save_project", json!({ "path": path, "bundle": bundle }));
     assert_eq!(saved["modified"], false);
     assert!(bundle.is_file());
@@ -526,10 +521,10 @@ fn relays_the_tools_to_a_running_editor() {
 
 #[test]
 fn other_requests_proceed_while_an_approval_waits() {
-    let tmp = TempDir::new("concurrent");
-    let project = save_fixture_project(&tmp.0);
+    let tmp = TempDir::new();
+    let project = save_fixture_project(&tmp.path);
     let path = project.to_str().unwrap().to_owned();
-    let discovery_file = tmp.0.join("editor-mcp.json");
+    let discovery_file = tmp.path.join("editor-mcp.json");
     let (editor, asked) = FakeEditor::open(&project);
     let editor = {
         // 確認を長く待てるようにする。
@@ -540,7 +535,7 @@ fn other_requests_proceed_while_an_approval_waits() {
     editor.set_policy(Policy::Manual);
     let _bridge = start(&editor, &discovery_file);
 
-    let mut agent = Relay::spawn(&discovery_file, &tmp.0);
+    let mut agent = Relay::spawn(&discovery_file, &tmp.path);
     agent.initialize();
     let proposal = agent.call_ok("propose_edit", add_angle(&path));
     let id = proposal["proposal"].as_str().unwrap().to_owned();
@@ -553,7 +548,7 @@ fn other_requests_proceed_while_an_approval_waits() {
     });
     let (question, what) = asked.recv_timeout(Duration::from_secs(10)).unwrap();
     assert_eq!(what, format!("apply {id} Add AngleX"));
-    let mut other = Relay::spawn(&discovery_file, &tmp.0);
+    let mut other = Relay::spawn(&discovery_file, &tmp.path);
     other.initialize();
     let listed = other.call_ok("list_proposals", json!({ "path": path }));
     assert_eq!(listed["proposals"][0]["proposal"], id);
@@ -578,9 +573,9 @@ struct Waiting {
 
 /// 確認を長く待つ偽のエディタ (画面の答えはテストが出す) を、中継につないで提案を 1 つ置く。
 fn waiting_editor(tmp: &TempDir) -> Waiting {
-    let project = save_fixture_project(&tmp.0);
+    let project = save_fixture_project(&tmp.path);
     let path = project.to_str().unwrap().to_owned();
-    let discovery_file = tmp.0.join("editor-mcp.json");
+    let discovery_file = tmp.path.join("editor-mcp.json");
     let (editor, asked) = FakeEditor::open(&project);
     let editor = {
         let mut editor = Arc::try_unwrap(editor).ok().unwrap();
@@ -589,7 +584,7 @@ fn waiting_editor(tmp: &TempDir) -> Waiting {
     };
     editor.set_policy(Policy::Manual);
     let bridge = start(&editor, &discovery_file);
-    let mut agent = Relay::spawn(&discovery_file, &tmp.0);
+    let mut agent = Relay::spawn(&discovery_file, &tmp.path);
     agent.initialize();
     let proposal = agent.call_ok("propose_edit", add_angle(&path))["proposal"]
         .as_str()
@@ -616,7 +611,7 @@ fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
 
 #[test]
 fn the_relay_answers_other_requests_while_an_approval_waits() {
-    let tmp = TempDir::new("relay-concurrent");
+    let tmp = TempDir::new();
     let Waiting {
         editor,
         asked,
@@ -661,7 +656,7 @@ fn the_relay_answers_other_requests_while_an_approval_waits() {
 
 #[test]
 fn a_cancelled_apply_is_declined_in_the_editor() {
-    let tmp = TempDir::new("relay-cancel");
+    let tmp = TempDir::new();
     let Waiting {
         editor,
         asked,
@@ -696,7 +691,7 @@ fn a_cancelled_apply_is_declined_in_the_editor() {
 
 #[test]
 fn closing_stdin_cancels_the_waiting_approvals() {
-    let tmp = TempDir::new("relay-eof");
+    let tmp = TempDir::new();
     let Waiting {
         editor,
         asked,
@@ -722,7 +717,7 @@ fn closing_stdin_cancels_the_waiting_approvals() {
 
 #[test]
 fn an_http_client_disconnecting_cancels_its_approval() {
-    let tmp = TempDir::new("http-disconnect");
+    let tmp = TempDir::new();
     let Waiting {
         editor,
         asked,
@@ -760,10 +755,10 @@ fn an_http_client_disconnecting_cancels_its_approval() {
 
 #[test]
 fn a_changed_model_during_the_approval_rejects_the_stale_proposal() {
-    let tmp = TempDir::new("stale");
-    let project = save_fixture_project(&tmp.0);
+    let tmp = TempDir::new();
+    let project = save_fixture_project(&tmp.path);
     let path = project.to_str().unwrap().to_owned();
-    let discovery_file = tmp.0.join("editor-mcp.json");
+    let discovery_file = tmp.path.join("editor-mcp.json");
     let (editor, asked) = FakeEditor::open(&project);
     let editor = {
         let mut editor = Arc::try_unwrap(editor).ok().unwrap();
@@ -772,7 +767,7 @@ fn a_changed_model_during_the_approval_rejects_the_stale_proposal() {
     };
     editor.set_policy(Policy::Manual);
     let _bridge = start(&editor, &discovery_file);
-    let mut agent = Relay::spawn(&discovery_file, &tmp.0);
+    let mut agent = Relay::spawn(&discovery_file, &tmp.path);
     agent.initialize();
     let id = agent.call_ok("propose_edit", add_angle(&path))["proposal"]
         .as_str()
@@ -811,9 +806,9 @@ fn a_changed_model_during_the_approval_rejects_the_stale_proposal() {
 
 #[test]
 fn the_bridge_requires_the_token_and_loopback() {
-    let tmp = TempDir::new("token");
-    let project = save_fixture_project(&tmp.0);
-    let discovery_file = tmp.0.join("editor-mcp.json");
+    let tmp = TempDir::new();
+    let project = save_fixture_project(&tmp.path);
+    let discovery_file = tmp.path.join("editor-mcp.json");
     let (editor, _asked) = FakeEditor::open(&project);
     let bridge = start(&editor, &discovery_file);
     assert!(bridge.local_addr().unwrap().ip().is_loopback());
@@ -1025,14 +1020,14 @@ fn check_manifest(manifest: &Value, files: &[&str]) {
 
 #[test]
 fn the_mcp_bundle_relays_to_a_running_editor() {
-    let tmp = TempDir::new("mcpb");
-    let project = save_fixture_project(&tmp.0);
+    let tmp = TempDir::new();
+    let project = save_fixture_project(&tmp.path);
     let path = project.to_str().unwrap().to_owned();
-    let icon = tmp.0.join("icon.png");
+    let icon = tmp.path.join("icon.png");
     fs::write(&icon, solid_png(512, 512, [40, 120, 220, 255])).unwrap();
 
     // `ugoe-mcp --mcpb` がこの実行ファイルを包む。
-    let bundle = tmp.0.join("ugoe-editor.mcpb");
+    let bundle = tmp.path.join("ugoe-editor.mcpb");
     let status = Command::new(env!("CARGO_BIN_EXE_ugoe-mcp"))
         .arg("--mcpb")
         .arg(&bundle)
@@ -1077,7 +1072,7 @@ fn the_mcp_bundle_relays_to_a_running_editor() {
     assert_eq!(packed_icon.data, fs::read(&icon).unwrap());
 
     // Claude Desktop のように展開し、manifest のコマンドを起動する (`${__dirname}` は展開したディレクトリ)。
-    let dir = tmp.0.join("installed");
+    let dir = tmp.path.join("installed");
     for e in &entries {
         let file = dir.join(&e.name);
         fs::create_dir_all(file.parent().unwrap()).unwrap();
@@ -1110,10 +1105,10 @@ fn the_mcp_bundle_relays_to_a_running_editor() {
         command.arg(arg.as_str().unwrap().replace("${__dirname}", dirname));
     }
     // 発見用のファイルは既定の場所の代わりにテストのディレクトリ (manifest には書かない)。
-    let discovery_file = tmp.0.join("state").join("editor-mcp.json");
+    let discovery_file = tmp.path.join("state").join("editor-mcp.json");
     command
         .env(DISCOVERY_ENV, &discovery_file)
-        .current_dir(&tmp.0);
+        .current_dir(&tmp.path);
 
     let (editor, _asked) = FakeEditor::open(&project);
     let _bridge = start(&editor, &discovery_file);

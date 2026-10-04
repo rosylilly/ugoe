@@ -76,9 +76,8 @@ fn validate_warns_about_rest_pose_collisions() {
     use ugoe_model::fixtures;
     use ugoe_model::physics::ColliderShape;
 
-    let tmp = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("validate-physics-{}", std::process::id()));
-    std::fs::create_dir_all(&tmp).expect("create output dir");
+    let temp = tempfile::tempdir().expect("create output dir");
+    let tmp = temp.path();
     let write = |name: &str, json: String| {
         let path = tmp.join(name);
         std::fs::write(&path, json).expect("write json");
@@ -136,9 +135,8 @@ fn validate_warns_about_rest_pose_collisions() {
 fn validate_lists_physics_errors_in_a_bundle() {
     use ugoe_model::fixtures;
 
-    let tmp = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("validate-bundle-physics-{}", std::process::id()));
-    std::fs::create_dir_all(&tmp).expect("create output dir");
+    let temp = tempfile::tempdir().expect("create output dir");
+    let tmp = temp.path();
     let mut settings = fixtures::dynamic_hair_settings();
     settings.rigs[0].colliders = vec!["Missing".into()];
     let mut bundle = ugoe_format::Bundle::new(fixtures::dynamic_hair());
@@ -177,9 +175,8 @@ fn validate_lists_physics_errors_in_a_bundle() {
 fn validate_checks_motions_in_a_bundle() {
     use ugoe_model::motion::{Curve, CurveTarget, Motion, Point, Segment};
 
-    let tmp = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("validate-bundle-motion-{}", std::process::id()));
-    std::fs::create_dir_all(&tmp).expect("create output dir");
+    let temp = tempfile::tempdir().expect("create output dir");
+    let tmp = temp.path();
     let write = |name: &str, motion: Motion| {
         let mut bundle = ugoe_format::Bundle::new(ugoe_model::fixtures::single_quad());
         bundle.textures = vec![
@@ -306,10 +303,10 @@ fn render_rejects_bad_size() {
 fn import_psd_writes_project_and_bundle() {
     let psd = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../assets/fixtures/layers.psd");
-    let tmp = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
+    let temp = tempfile::tempdir().expect("create output dir");
+    let tmp = temp.path();
     let project = tmp.join("layers-import.ugoeproj");
     let bundle = tmp.join("layers-import.ugoe");
-    let _ = std::fs::remove_dir_all(&project);
     let output = ugoe(&[
         "import-psd",
         psd.to_str().expect("utf-8 path"),
@@ -374,10 +371,8 @@ fn build_packs_textures_into_an_atlas() {
     let psd = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../assets/fixtures/layers.psd");
     // 同時に走る別のテストの実行と重ならないように、プロセスごとのディレクトリに書く。
-    let tmp = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("build-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&tmp);
-    std::fs::create_dir_all(&tmp).expect("create output dir");
+    let temp = tempfile::tempdir().expect("create output dir");
+    let tmp = temp.path();
     let project = tmp.join("layers-build.ugoeproj");
     let plain = tmp.join("layers-build.ugoe");
     let atlased = tmp.join("layers-build-atlas.ugoe");
@@ -440,10 +435,8 @@ fn build_packs_textures_into_an_atlas() {
 #[test]
 fn build_round_trips_every_compat_file() {
     let dev = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/compat/dev");
-    let tmp = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("build-compat-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&tmp);
-    std::fs::create_dir_all(&tmp).expect("create output dir");
+    let temp = tempfile::tempdir().expect("create output dir");
+    let tmp = temp.path();
     let mut inputs: Vec<_> = std::fs::read_dir(&dev)
         .expect("read assets/compat/dev")
         .map(|e| e.expect("dir entry").path())
@@ -558,10 +551,8 @@ fn info_describes_modules() {
 fn build_packs_module_textures_into_an_atlas() {
     let samples =
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/samples/dress-up");
-    let tmp = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("build-module-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&tmp);
-    std::fs::create_dir_all(&tmp).expect("create output dir");
+    let temp = tempfile::tempdir().expect("create output dir");
+    let tmp = temp.path();
     let path = |p: &std::path::Path| p.to_str().expect("utf-8 path").to_owned();
     let (base, module, atlased) = (
         samples.join("dress-up.ugoe"),

@@ -21,6 +21,9 @@ ugoe-render.workspace = true
 ugoe-runtime.workspace = true
 wgpu.workspace = true
 
+[dev-dependencies]
+tempfile.workspace = true
+
 [lints]
 workspace = true
 

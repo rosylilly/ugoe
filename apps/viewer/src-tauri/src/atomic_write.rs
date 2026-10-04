@@ -61,14 +61,6 @@ fn temp_path(path: &Path) -> std::io::Result<PathBuf> {
 mod tests {
     use super::*;
 
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("ugoe-viewer-atomic-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
     fn names(dir: &Path) -> Vec<String> {
         let mut names: Vec<_> = std::fs::read_dir(dir)
             .unwrap()
@@ -80,27 +72,28 @@ mod tests {
 
     #[test]
     fn replaces_the_file_through_a_temporary_file() {
-        let dir = temp_dir("replace");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let path = dir.join("rec.json");
         write_atomic(&path, b"new file").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"new file");
         write_atomic(&path, b"{}").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"{}");
-        assert_eq!(names(&dir), ["rec.json"]);
+        assert_eq!(names(dir), ["rec.json"]);
         let temp = temp_path(&path).unwrap();
-        assert_eq!(temp.parent(), Some(dir.as_path()));
+        assert_eq!(temp.parent(), Some(dir));
         assert!(
             temp.file_name()
                 .unwrap()
                 .to_string_lossy()
                 .starts_with(".rec.json.")
         );
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn keeps_the_previous_file_when_writing_fails() {
-        let dir = temp_dir("write-fails");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let path = dir.join("shot.png");
         std::fs::write(&path, b"previous").unwrap();
         let err = write_atomic_with(&path, |file| {
@@ -111,22 +104,21 @@ mod tests {
         .unwrap_err();
         assert_eq!(err.to_string(), "disk full");
         assert_eq!(std::fs::read(&path).unwrap(), b"previous");
-        assert_eq!(names(&dir), ["shot.png"]);
-        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(names(dir), ["shot.png"]);
     }
 
     #[test]
     fn removes_the_temporary_file_when_replacing_fails() {
-        let dir = temp_dir("rename-fails");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         // 行き先が中身のあるディレクトリだと、名前を変えて置き換えられない。
         let path = dir.join("rec.json");
         std::fs::create_dir_all(path.join("inside")).unwrap();
         assert!(write_atomic(&path, b"{}").is_err());
         assert!(path.join("inside").is_dir());
-        assert_eq!(names(&dir), ["rec.json"]);
+        assert_eq!(names(dir), ["rec.json"]);
         // 行き先のディレクトリが無ければ、一時ファイルも作れずに失敗する。
         assert!(write_atomic(&dir.join("missing/rec.json"), b"{}").is_err());
-        assert_eq!(names(&dir), ["rec.json"]);
-        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(names(dir), ["rec.json"]);
     }
 }

@@ -106,7 +106,7 @@ fn exposed_colliders_need_the_base_physics() {
 /// 外して開いたものを保存すると `module.json` から参照が消える。
 #[test]
 fn module_project_opens_without_unavailable_colliders() {
-    let temp = TempDir::new("colliders");
+    let temp = tempfile::tempdir().unwrap();
     let mut base = base();
     let hair = base
         .model
@@ -115,11 +115,11 @@ fn module_project_opens_without_unavailable_colliders() {
         .find(|s| s.id.as_str() == "Hair")
         .unwrap();
     hair.colliders = vec!["Shoulders".into()];
-    let base_path = temp.0.join("avatar.ugoeproj");
+    let base_path = temp.path().join("avatar.ugoeproj");
     Project::new(ProjectMeta::new("avatar"), base.model, base.textures)
         .save(&base_path)
         .unwrap();
-    let dir = temp.0.join("hair.ugoeproj");
+    let dir = temp.path().join("hair.ugoeproj");
     Project::new_module("LongHair", &base_path, &"Hair".into())
         .unwrap()
         .save(&dir)

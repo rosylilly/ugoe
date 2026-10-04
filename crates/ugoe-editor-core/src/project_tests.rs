@@ -13,29 +13,25 @@ use ugoe_model::{Model, fixtures};
 use crate::texture::solid_png;
 use crate::{Command, Document, EditError, Project, ProjectError, ProjectMeta, Textures};
 
-/// テスト用の一時ディレクトリ。破棄時に消す。
-struct TempDir(PathBuf);
+/// テスト用の一時ディレクトリ。`path()` はまだ作っていないパスで、破棄時に親ごと消す。
+struct TempDir {
+    _root: tempfile::TempDir,
+    path: PathBuf,
+}
 
 impl TempDir {
     fn new(name: &str) -> Self {
-        let path =
-            std::env::temp_dir().join(format!("ugoe-editor-core-{}-{name}", std::process::id()));
-        let _ = fs::remove_dir_all(&path);
-        Self(path)
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join(name);
+        Self { _root: root, path }
     }
 
     fn path(&self) -> &Path {
-        &self.0
+        &self.path
     }
 
     fn project(&self) -> PathBuf {
-        self.0.join("character.ugoeproj")
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
+        self.path.join("character.ugoeproj")
     }
 }
 

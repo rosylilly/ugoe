@@ -287,12 +287,12 @@ fn imagemagick_agrees_on_masks_zip_and_16_bit() {
             ..common::Layer::raster(&format!("layer {compression}"), 1, 2, 9, 7)
         })
         .collect();
-    let dir = std::env::temp_dir();
+    let dir = tempfile::tempdir().unwrap();
     for (depth, bytes) in [
         (8, common::write_psd(12, 10, &layers)),
         (16, common::write_psd16(12, 10, &layers)),
     ] {
-        let path = dir.join(format!("ugoe-psd-{}-{depth}.psd", std::process::id()));
+        let path = dir.path().join(format!("{depth}.psd"));
         std::fs::write(&path, &bytes).unwrap();
         let tree = import(&bytes).unwrap();
         assert!(tree.warnings.is_empty());
@@ -323,6 +323,5 @@ fn imagemagick_agrees_on_masks_zip_and_16_bit() {
                 }
             }
         }
-        std::fs::remove_file(&path).unwrap();
     }
 }

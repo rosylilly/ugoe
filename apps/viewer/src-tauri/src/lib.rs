@@ -453,8 +453,8 @@ mod tests {
     fn writes_json_files_only() {
         assert!(is_json_path(Path::new("tracking.JSON")));
         assert!(!is_json_path(Path::new("tracking.txt")));
-        let dir = std::env::temp_dir().join(format!("ugoe-viewer-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let path = dir.join("rec.json");
         write_json(&path, "{}").unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "{}");
@@ -463,13 +463,12 @@ mod tests {
             "file.not_json"
         );
         assert!(!dir.join("rec.sh").exists());
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn reads_model_files_within_the_limit() {
-        let dir = std::env::temp_dir().join(format!("ugoe-viewer-read-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let path = dir.join("model.ugoe");
         std::fs::write(&path, b"UGOE1234").unwrap();
         assert_eq!(read_model(&path, 8).unwrap(), b"UGOE1234");
@@ -487,7 +486,6 @@ mod tests {
         let folder = dir.join("folder.ugoe");
         std::fs::create_dir_all(&folder).unwrap();
         assert_eq!(read_model(&folder, 8).unwrap_err().code, "file.read_failed");
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -520,8 +518,8 @@ mod tests {
 
     #[test]
     fn writes_png_files_only() {
-        let dir = std::env::temp_dir().join(format!("ugoe-viewer-png-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let png = [PNG_SIGNATURE, b"rest"].concat();
         let path = dir.join("shot.PNG");
         write_png(&path, &png).unwrap();
@@ -537,7 +535,6 @@ mod tests {
             "request.not_png_data"
         );
         assert!(!dir.join("other.png").exists());
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -569,7 +566,8 @@ mod tests {
 
     #[test]
     fn remembers_readable_files_across_sessions() {
-        let dir = std::env::temp_dir().join(format!("ugoe-viewer-grants-{}", std::process::id()));
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("grants");
         let store = dir.join("data").join(READABLE_FILES_STORE);
         let access = FileAccess::load(Some(store.clone()));
         access.grant_readable([PathBuf::from("/a.ugoe"), PathBuf::from("/b.ugoemod")]);
@@ -581,7 +579,6 @@ mod tests {
         std::fs::write(&store, b"not json").unwrap();
         let broken = FileAccess::load(Some(store));
         assert!(broken.check_readable(Path::new("/a.ugoe")).is_err());
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// 覚えるファイルを読めない (ここでは権限が無い) ときは、選んだファイルを読めるが、覚えるファイルは書き換えない。
@@ -589,11 +586,8 @@ mod tests {
     #[test]
     fn does_not_overwrite_an_unreadable_store() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!(
-            "ugoe-viewer-unreadable-grants-{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let store = dir.join(READABLE_FILES_STORE);
         std::fs::write(&store, br#"["/kept.ugoe"]"#).unwrap();
         std::fs::set_permissions(&store, std::fs::Permissions::from_mode(0o000)).unwrap();
@@ -605,7 +599,6 @@ mod tests {
             std::fs::set_permissions(&store, std::fs::Permissions::from_mode(0o600)).unwrap();
             assert_eq!(std::fs::read(&store).unwrap(), br#"["/kept.ugoe"]"#);
         }
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

@@ -5304,6 +5304,7 @@ dependencies = [
  "clap",
  "png 0.18.1",
  "serde_json",
+ "tempfile",
  "ugoe",
  "ugoe-core",
  "ugoe-editor-core",
@@ -5353,6 +5354,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
  "tauri-plugin-os",
+ "tempfile",
  "thiserror 2.0.21",
  "ts-rs",
  "ugoe-ai",
@@ -5372,6 +5374,7 @@ dependencies = [
  "schemars 1.2.2",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
  "ts-rs",
  "ugoe",
@@ -5419,6 +5422,7 @@ dependencies = [
  "pollster",
  "ruzstd",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
  "ugoe",
  "ugoe-format",
@@ -5439,6 +5443,7 @@ dependencies = [
  "miniz_oxide 0.9.1",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
  "ugoe-ai",
  "ugoe-editor-core",
@@ -5495,6 +5500,7 @@ version = "0.0.0"
 dependencies = [
  "encoding_rs",
  "miniz_oxide 0.9.1",
+ "tempfile",
  "thiserror 2.0.21",
  "ugoe-core",
 ]
@@ -5555,6 +5561,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-global-shortcut",
  "tauri-plugin-os",
+ "tempfile",
  "thiserror 2.0.21",
  "tungstenite",
  "ugoe",
@@ -5591,6 +5598,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-os",
+ "tempfile",
 ]
 
 [[package]]

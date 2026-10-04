@@ -39,5 +39,8 @@ zune-jpeg.workspace = true
 # GPU で描くテスト (`just test-gpu`。仮想カメラの受け手の画)。
 gpu-tests = []
 
+[dev-dependencies]
+tempfile.workspace = true
+
 [lints]
 workspace = true

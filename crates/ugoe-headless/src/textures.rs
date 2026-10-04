@@ -184,9 +184,8 @@ mod tests {
     #[test]
     fn texture_overrides_may_be_ktx2() {
         let model = ugoe_model::fixtures::single_quad();
-        let dir = std::env::temp_dir().join(format!("ugoe-headless-ktx2-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("t.ktx2");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.ktx2");
         let red = Rgba8 {
             width: 1,
             height: 1,
@@ -199,7 +198,6 @@ mod tests {
         .unwrap();
         let textures = resolve_textures(&model, &[], &[(0, path)], &mut Vec::new()).unwrap();
         assert_eq!(textures, vec![red]);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// 読めない形式の KTX2 (ブロック圧縮など) と壊れた KTX2 はエラー。

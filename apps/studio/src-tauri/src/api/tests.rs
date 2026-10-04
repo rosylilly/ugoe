@@ -123,16 +123,12 @@ fn assert_conforms(message: &Value, method: Option<&str>) {
 
 const TOKEN: &str = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
 
-/// テスト用のファイルを置く場所 (テストごとに分ける)。
-struct Dir(PathBuf);
+/// テスト用のファイルを置く場所 (テストごとの一時ディレクトリ。破棄時に消す)。
+struct Dir(tempfile::TempDir);
 
 impl Dir {
-    fn new(name: &str) -> Self {
-        let dir =
-            std::env::temp_dir().join(format!("ugoe-studio-api-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        Self(dir)
+    fn new() -> Self {
+        Self(tempfile::tempdir().unwrap())
     }
 
     /// 着せ替えのできるモデル (`.ugoe`) に、モーション `Wave` (`BodySway`。始まりと終わりにイベント) と表情 `Smile`・`Angry` (`Secret`) を入れて書く。
@@ -172,13 +168,13 @@ impl Dir {
             };
             bundle.model.textures.len()
         ];
-        let path = self.0.join("avatar.ugoe");
+        let path = self.0.path().join("avatar.ugoe");
         std::fs::write(&path, ugoe::format::write_bundle(&bundle).unwrap()).unwrap();
         path
     }
 
     fn module(&self, name: &str, module: ugoe::model::module::Module) -> PathBuf {
-        let path = self.0.join(name);
+        let path = self.0.path().join(name);
         let mut file = ugoe::format::ModuleFile::new(module);
         file.textures = vec![
             ugoe::format::TextureData {
@@ -189,12 +185,6 @@ impl Dir {
         ];
         std::fs::write(&path, ugoe::format::write_module(&file).unwrap()).unwrap();
         path
-    }
-}
-
-impl Drop for Dir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
     }
 }
 
@@ -497,7 +487,7 @@ fn the_user_can_deny_disconnect_and_rotate_the_token() {
 
 #[test]
 fn operates_scenes_expressions_motions_and_parameters() {
-    let dir = Dir::new("operate");
+    let dir = Dir::new();
     let model = dir.model();
     let studio = studio();
     let (chat, game) = stage_scenes(&studio, &model, &[]);
@@ -648,7 +638,7 @@ fn operates_scenes_expressions_motions_and_parameters() {
 
 #[test]
 fn dresses_up_only_with_modules_from_the_profile() {
-    let dir = Dir::new("dressup");
+    let dir = Dir::new();
     let model = dir.model();
     let hair = dir.module("hair.ugoemod", fixtures::long_hair_module());
     let dress = dir.module("dress.ugoemod", fixtures::dress_module());
@@ -711,7 +701,7 @@ fn dresses_up_only_with_modules_from_the_profile() {
 /// `dressup.list` は付けていないモジュールを、舞台と指揮役のロックを放してから読む (シーンの切り替えを待たせない。T0819)。
 #[test]
 fn lists_the_wardrobe_without_holding_the_stage() {
-    let dir = Dir::new("dressup-unlocked");
+    let dir = Dir::new();
     let model = dir.model();
     let hair = dir.module("hair.ugoemod", fixtures::long_hair_module());
     let studio = studio();
@@ -740,9 +730,9 @@ fn lists_the_wardrobe_without_holding_the_stage() {
 /// 読んでいる間に次の切り替えが来たら、先の切り替えは捨てる (T0834)。
 #[test]
 fn answers_while_a_scene_loads_and_keeps_the_later_switch() {
-    let dir = Dir::new("load-unlocked");
+    let dir = Dir::new();
     let model = dir.model();
-    let other = dir.0.join("other.ugoe");
+    let other = dir.0.path().join("other.ugoe");
     std::fs::copy(&model, &other).unwrap();
     let studio = studio();
     let (chat, game) = stage_scenes(&studio, &model, &[]);
@@ -808,7 +798,7 @@ fn answers_while_a_scene_loads_and_keeps_the_later_switch() {
 /// `dressup.list` は付けていないモジュールの概要を覚え、ファイルの時刻と大きさが変わらなければ読み直さない (T0833)。
 #[test]
 fn remembers_the_wardrobe_until_the_file_changes() {
-    let dir = Dir::new("dressup-cache");
+    let dir = Dir::new();
     let model = dir.model();
     let hair = dir.module("hair.ugoemod", fixtures::long_hair_module());
     let studio = studio();
@@ -851,13 +841,13 @@ fn remembers_the_wardrobe_until_the_file_changes() {
 /// 覚える概要の数には上限があり、着せ替えに使えなくなったモジュールは忘れる (T0833)。
 #[test]
 fn remembers_a_bounded_wardrobe() {
-    let dir = Dir::new("dressup-bound");
+    let dir = Dir::new();
     let model = dir.model();
     let studio = studio();
     let count = MAX_MODULE_SUMMARIES + 8;
     let paths: Vec<PathBuf> = (0..count)
         .map(|i| {
-            let path = dir.0.join(format!("m{i}.ugoemod"));
+            let path = dir.0.path().join(format!("m{i}.ugoemod"));
             std::fs::write(&path, b"x").unwrap();
             path
         })
@@ -881,7 +871,7 @@ fn remembers_a_bounded_wardrobe() {
 
 #[test]
 fn notifies_subscribed_events_only() {
-    let dir = Dir::new("events");
+    let dir = Dir::new();
     let model = dir.model();
     let studio = studio();
     let (chat, game) = stage_scenes(&studio, &model, &[]);
@@ -974,7 +964,7 @@ fn drain(client: &mut Client) -> Vec<(String, Value)> {
 /// 終わりで発火したイベントは、そのモーションの名前で、終わりの知らせより先に届く。
 #[test]
 fn motion_notifications_cover_restarts_and_events_at_the_end() {
-    let dir = Dir::new("motion-events");
+    let dir = Dir::new();
     let model = dir.model();
     let studio = studio();
     stage_scenes(&studio, &model, &[]);
@@ -1029,7 +1019,7 @@ fn motion_notifications_cover_restarts_and_events_at_the_end() {
 /// 新しいモーションに替えた後、フェードアウト中のモーションが発火したイベントは、そのモーションの名前で送る (T0821)。
 #[test]
 fn events_of_a_motion_fading_out_carry_its_name() {
-    let dir = Dir::new("motion-fade-out-events");
+    let dir = Dir::new();
     let model = dir.model();
     let studio = studio();
     stage_scenes(&studio, &model, &[]);
@@ -1086,7 +1076,7 @@ fn events_of_a_motion_fading_out_carry_its_name() {
 /// シーンを切り替えて付けているモジュールが変わったら、`scene.changed` に加えて `dressup.changed` も送る。
 #[test]
 fn switching_to_a_scene_with_other_modules_reports_the_dress_up() {
-    let dir = Dir::new("switch-dressup");
+    let dir = Dir::new();
     let model = dir.model();
     let hair = dir.module("hair.ugoemod", fixtures::long_hair_module());
     let studio = studio();
@@ -1387,8 +1377,8 @@ fn the_listener_checks_requests_and_speaks_websocket() {
 
 #[test]
 fn turning_the_api_on_saves_the_choice_and_listens() {
-    let dir = Dir::new("toggle");
-    let path = dir.0.join(SETTINGS_FILE);
+    let dir = Dir::new();
+    let path = dir.0.path().join(SETTINGS_FILE);
     let studio = Arc::new(Studio::default());
     studio.load_api(Some(path.clone()));
     let view = studio.api_view();
@@ -1442,8 +1432,8 @@ fn turning_the_api_on_saves_the_choice_and_listens() {
 /// (承認したクライアントの鍵を黙って失わない。利用者が設定を変えたときに初めて書く)。
 #[test]
 fn an_unreadable_settings_file_is_not_overwritten_at_startup() {
-    let dir = Dir::new("unreadable");
-    let path = dir.0.join(SETTINGS_FILE);
+    let dir = Dir::new();
+    let path = dir.0.path().join(SETTINGS_FILE);
     for text in [
         "{",
         r#"{"format":"ugoe-studio-api","version":99,"clients":[]}"#,
@@ -1692,7 +1682,7 @@ fn the_browser_source_has_its_own_switch_and_token() {
 
 #[test]
 fn the_browser_source_serves_the_scene_and_streams_frames() {
-    let dir = Dir::new("source");
+    let dir = Dir::new();
     let model = dir.model();
     let (studio, port, token) = source_studio();
     let (_, game) = stage_scenes(&studio, &model, &[]);
@@ -1814,7 +1804,7 @@ fn the_browser_source_serves_the_scene_and_streams_frames() {
 /// 受け手が読めなかったことは、今のシーンのものだけを受け、次のシーンに移ったら捨てる (T0825)。
 #[test]
 fn load_failures_are_kept_for_the_current_scene_only() {
-    let dir = Dir::new("load-failure");
+    let dir = Dir::new();
     let model = dir.model();
     let studio = studio();
     let (_, game) = stage_scenes(&studio, &model, &[]);

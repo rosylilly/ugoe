@@ -15,22 +15,17 @@ use ugoe_model::fixtures;
 use super::*;
 use crate::project::ProjectSession;
 
-/// テスト用の一時ディレクトリ。破棄時に消す。
-struct TempDir(PathBuf);
-
-impl TempDir {
-    fn new(name: &str) -> Self {
-        let path =
-            std::env::temp_dir().join(format!("ugoe-editor-mcp-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&path);
-        std::fs::create_dir_all(&path).unwrap();
-        Self(path.canonicalize().unwrap())
-    }
+/// テスト用の一時ディレクトリ。`path` は正規化したパスで、破棄時に消す。
+struct TempDir {
+    path: PathBuf,
+    _dir: tempfile::TempDir,
 }
 
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
+impl TempDir {
+    fn new() -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().canonicalize().unwrap();
+        Self { path, _dir: dir }
     }
 }
 
@@ -208,10 +203,10 @@ fn add_angle(path: &str) -> Value {
 /// 提案が再び出る → 保存 (外の変更と取り違えない)。
 #[test]
 fn agents_propose_and_the_user_approves_in_the_editor() {
-    let tmp = TempDir::new("flow");
-    let project = save_fixture_project(&tmp.0);
+    let tmp = TempDir::new();
+    let project = save_fixture_project(&tmp.path);
     let path = project.display().to_string();
-    let discovery = tmp.0.join("state").join("editor-mcp.json");
+    let discovery = tmp.path.join("state").join("editor-mcp.json");
     let app = TestApp::open(Some(&project), &discovery);
     let mut client = Client::new(&discovery);
 
@@ -320,7 +315,7 @@ fn agents_propose_and_the_user_approves_in_the_editor() {
     assert_eq!(app.parameter_ids(), vec!["X", "AngleX"]);
 
     // 保存と書き出し: エディタの保存と同じく、自分の保存は外の変更と取り違えない。
-    let bundle = tmp.0.join("quad.ugoe");
+    let bundle = tmp.path.join("quad.ugoe");
     let saved = client.ok(
         "save_project",
         json!({ "path": path, "bundle": bundle.display().to_string() }),
@@ -356,10 +351,10 @@ fn agents_propose_and_the_user_approves_in_the_editor() {
 /// エージェントが要求を取り消すと (`notifications/cancelled`)、確認は閉じ、取り消しとして画面に知らせる (T1603)。
 #[test]
 fn cancelled_requests_close_the_approval_as_cancelled() {
-    let tmp = TempDir::new("cancel");
-    let project = save_fixture_project(&tmp.0);
+    let tmp = TempDir::new();
+    let project = save_fixture_project(&tmp.path);
     let path = project.display().to_string();
-    let discovery = tmp.0.join("state").join("editor-mcp.json");
+    let discovery = tmp.path.join("state").join("editor-mcp.json");
     // 取り消しが時間切れより先に届くように、時間は長くする。
     let app = TestApp::open_with_timeout(Some(&project), &discovery, Duration::from_secs(30));
     app.enable();
@@ -416,10 +411,10 @@ fn cancelled_requests_close_the_approval_as_cancelled() {
 /// 保存と一緒の `.ugoe` の書き出しは一時ファイルを経る: 書けなければ前のファイルを残し、一時ファイルも残さない (T0687)。
 #[test]
 fn saving_with_a_bundle_keeps_the_previous_bundle_when_it_fails() {
-    let tmp = TempDir::new("bundle-fails");
-    let project = save_fixture_project(&tmp.0);
+    let tmp = TempDir::new();
+    let project = save_fixture_project(&tmp.path);
     let path = project.display().to_string();
-    let discovery = tmp.0.join("editor-mcp.json");
+    let discovery = tmp.path.join("editor-mcp.json");
     let app = TestApp::open(Some(&project), &discovery);
     let mut client = Client::new(&discovery);
     app.enable();
@@ -434,7 +429,7 @@ fn saving_with_a_bundle_keeps_the_previous_bundle_when_it_fails() {
     };
 
     // 書き出した後に書き直しても、行き先には一時ファイルを残さない。
-    let out = tmp.0.join("out");
+    let out = tmp.path.join("out");
     std::fs::create_dir_all(&out).unwrap();
     let bundle = out.join("quad.ugoe");
     for _ in 0..2 {
@@ -468,12 +463,12 @@ fn saving_with_a_bundle_keeps_the_previous_bundle_when_it_fails() {
 /// ほかのプロジェクト・作る・閉じる・PSD から作るはできない。開いているプロジェクトの open_project は状態を返すだけ。
 #[test]
 fn agents_cannot_switch_the_editor_project() {
-    let tmp = TempDir::new("switch");
-    let project = save_fixture_project(&tmp.0);
+    let tmp = TempDir::new();
+    let project = save_fixture_project(&tmp.path);
     let path = project.display().to_string();
-    std::fs::create_dir_all(tmp.0.join("other")).unwrap();
-    let other = save_fixture_project(&tmp.0.join("other"));
-    let discovery = tmp.0.join("editor-mcp.json");
+    std::fs::create_dir_all(tmp.path.join("other")).unwrap();
+    let other = save_fixture_project(&tmp.path.join("other"));
+    let discovery = tmp.path.join("editor-mcp.json");
     let app = TestApp::open(Some(&project), &discovery);
     app.enable();
     let mut client = Client::new(&discovery);
@@ -494,13 +489,13 @@ fn agents_cannot_switch_the_editor_project() {
         ),
         (
             "open_project",
-            json!({ "path": tmp.0.join("new.ugoeproj"), "create": true }),
+            json!({ "path": tmp.path.join("new.ugoeproj"), "create": true }),
             "cannot create projects",
         ),
         ("close_project", json!({ "path": path }), "cannot close"),
         (
             "import_psd",
-            json!({ "path": tmp.0.join("psd.ugoeproj"), "psd": tmp.0.join("a.psd") }),
+            json!({ "path": tmp.path.join("psd.ugoeproj"), "psd": tmp.path.join("a.psd") }),
             "New from PSD",
         ),
     ] {
@@ -513,8 +508,8 @@ fn agents_cannot_switch_the_editor_project() {
 /// 未保存のプロジェクトはパスで指せないので、保存を促す。
 #[test]
 fn unsaved_projects_ask_the_user_to_save() {
-    let tmp = TempDir::new("unsaved");
-    let discovery = tmp.0.join("editor-mcp.json");
+    let tmp = TempDir::new();
+    let discovery = tmp.path.join("editor-mcp.json");
     let app = TestApp::open(None, &discovery);
     app.enable();
     assert_eq!(app.status().project, None);
@@ -524,7 +519,7 @@ fn unsaved_projects_ask_the_user_to_save() {
     assert!(instructions.contains("not been saved"), "{instructions}");
     let err = client.err(
         "get_model_summary",
-        json!({ "path": tmp.0.join("x.ugoeproj") }),
+        json!({ "path": tmp.path.join("x.ugoeproj") }),
     );
     assert!(err.to_string().contains("Save As"), "{err}");
 }
@@ -532,10 +527,10 @@ fn unsaved_projects_ask_the_user_to_save() {
 /// 読めない設定は、起動しただけでは書き換えない (始めもしない)。利用者が設定を変えたときに初めて書く (T0011)。
 #[test]
 fn an_unreadable_settings_file_is_not_overwritten_at_startup() {
-    let tmp = TempDir::new("unreadable-settings");
-    let discovery = tmp.0.join("editor-mcp.json");
+    let tmp = TempDir::new();
+    let discovery = tmp.path.join("editor-mcp.json");
     let app = TestApp::open(None, &discovery);
-    let config = tmp.0.join("config");
+    let config = tmp.path.join("config");
     std::fs::create_dir_all(&config).unwrap();
     let file = config.join(SETTINGS_FILE);
     std::fs::write(&file, "{").unwrap();
@@ -549,12 +544,12 @@ fn an_unreadable_settings_file_is_not_overwritten_at_startup() {
 /// 設定はファイルに残り (トークンを含むので利用者だけが読める)、トークンを作り直すと始め直す。
 #[test]
 fn settings_are_kept_and_the_token_can_be_regenerated() {
-    let tmp = TempDir::new("settings");
-    let discovery = tmp.0.join("editor-mcp.json");
+    let tmp = TempDir::new();
+    let discovery = tmp.path.join("editor-mcp.json");
     let app = TestApp::open(None, &discovery);
-    app.state.mcp.load(tmp.0.join("config")).unwrap();
+    app.state.mcp.load(tmp.path.join("config")).unwrap();
     app.enable();
-    let file = tmp.0.join("config").join(SETTINGS_FILE);
+    let file = tmp.path.join("config").join(SETTINGS_FILE);
     let stored: StoredSettings =
         serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
     assert!(stored.enabled);
@@ -579,7 +574,7 @@ fn settings_are_kept_and_the_token_can_be_regenerated() {
 
     // 読み直すと同じ設定 (有効・トークン)。
     let reloaded = McpBridge::default();
-    reloaded.load(tmp.0.join("config")).unwrap();
+    reloaded.load(tmp.path.join("config")).unwrap();
     assert!(lock(&reloaded.settings).enabled);
     assert_eq!(reloaded.token().unwrap(), renewed);
 
@@ -608,10 +603,10 @@ fn sidecar_is_looked_up_next_to_the_editor_and_in_the_target_dir() {
 
 #[test]
 fn the_claude_desktop_bundle_wraps_the_sidecar_with_the_editor_icon() {
-    let tmp = TempDir::new("mcpb");
-    let binary = tmp.0.join("ugoe-mcp");
+    let tmp = TempDir::new();
+    let binary = tmp.path.join("ugoe-mcp");
     std::fs::write(&binary, b"relay").unwrap();
-    let out = tmp.0.join("nested").join("ugoe-editor.mcpb");
+    let out = tmp.path.join("nested").join("ugoe-editor.mcpb");
     write_claude_desktop_bundle(Some(binary), &out).unwrap();
     let bytes = std::fs::read(&out).unwrap();
     assert!(bytes.starts_with(b"PK\x03\x04"));
@@ -627,7 +622,7 @@ fn the_claude_desktop_bundle_wraps_the_sidecar_with_the_editor_icon() {
         tauri::async_runtime::block_on(save_claude_desktop_bundle("x.mcpb".into())).unwrap_err();
     assert_eq!(err.code, "editor.relative_path");
 
-    let err = write_claude_desktop_bundle(None, &tmp.0.join("x.mcpb")).unwrap_err();
+    let err = write_claude_desktop_bundle(None, &tmp.path.join("x.mcpb")).unwrap_err();
     assert!(
         err.to_string()
             .contains("cargo build --release -p ugoe-mcp"),

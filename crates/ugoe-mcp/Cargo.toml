@@ -26,6 +26,9 @@ ugoe-psd.workspace = true
 # `--editor` の中継がエディタへ送る HTTP のクライアント (ugoe-ai が使っているもので、新しい依存ではない)。
 ureq.workspace = true
 
+[dev-dependencies]
+tempfile.workspace = true
+
 [lints]
 workspace = true
 

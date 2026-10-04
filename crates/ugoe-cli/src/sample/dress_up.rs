@@ -1484,8 +1484,8 @@ mod tests {
     #[test]
     fn projects_open_in_the_editor_core() {
         let sample = build_dress_up().unwrap();
-        let dir = std::env::temp_dir().join(format!("ugoe-cli-dress-up-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("projects");
         let written = sample.save_projects(&dir).unwrap();
         let names: Vec<String> = written
             .iter()
@@ -1534,7 +1534,6 @@ mod tests {
                 file.module.name
             );
         }
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// コミットした見本のファイル (エディタの File > Open Sample… が埋め込むもの) から書いたプロジェクトは、
@@ -1542,9 +1541,8 @@ mod tests {
     #[test]
     fn projects_from_committed_files_match_the_generator() {
         let sample = build_dress_up().unwrap();
-        let root =
-            std::env::temp_dir().join(format!("ugoe-cli-dress-up-same-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
         let (generated, committed) = (root.join("generated"), root.join("committed"));
         sample.save_projects(&generated).unwrap();
 
@@ -1563,7 +1561,6 @@ mod tests {
         let generated_files = files_under(&generated);
         assert!(generated_files.len() > 10, "{generated_files:?}");
         assert_eq!(generated_files, files_under(&committed));
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     /// `dir` の下のファイル (相対パス → 中身)。
@@ -1593,9 +1590,8 @@ mod tests {
         use ugoe_editor_core::space::{ParameterValues, canvas_to_local, local_to_canvas};
 
         let sample = build_dress_up().unwrap();
-        let dir =
-            std::env::temp_dir().join(format!("ugoe-cli-dress-up-space-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("projects");
         let written = sample.save_projects(&dir).unwrap();
         let values = ParameterValues::new();
         for path in &written[1..] {
@@ -1636,7 +1632,6 @@ mod tests {
             }
             assert!(checked >= 2, "{}", path.display());
         }
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

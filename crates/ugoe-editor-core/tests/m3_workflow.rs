@@ -6,8 +6,6 @@
 
 mod m3;
 
-use std::path::PathBuf;
-
 use m3::{COLLISION_RADIUS, SHAKE, SHAKE_DURATION, SHOULDER_RADIUS, TILT};
 use ugoe::motion::Priority;
 use ugoe::motion::curve::evaluate;
@@ -69,8 +67,8 @@ fn every_step_undoes_and_redoes_exactly() {
 #[test]
 fn saved_and_exported_bundle_plays_in_puppet() {
     let mut wf = m3::run();
-    let dir = TempDir::new("project");
-    let project_dir = dir.path.join("m3.ugoeproj");
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let project_dir = dir.path().join("m3.ugoeproj");
     let project = Project::from_document(ProjectMeta::new("m3"), &wf.doc);
     project.save(&project_dir).expect("save project");
     wf.doc.mark_saved();
@@ -84,7 +82,7 @@ fn saved_and_exported_bundle_plays_in_puppet() {
         m3::Snapshot::of(&wf.doc)
     );
 
-    let bundle_path = dir.path.join("m3.ugoe");
+    let bundle_path = dir.path().join("m3.ugoe");
     std::fs::write(&bundle_path, export_bundle(&loaded).expect("export")).expect("write");
     let bundle = ugoe::format::read_bundle(&std::fs::read(&bundle_path).unwrap()).expect("read");
     assert_eq!(bundle.physics.as_ref(), wf.doc.physics());
@@ -161,25 +159,4 @@ fn saved_and_exported_bundle_plays_in_puppet() {
         puppet.instance().dynamic_offsets().unwrap().angle(hair1),
         0.0
     );
-}
-
-/// テストごとの一時ディレクトリ (リポジトリの外)。終わると消す。
-struct TempDir {
-    path: PathBuf,
-}
-
-impl TempDir {
-    fn new(name: &str) -> Self {
-        let path =
-            std::env::temp_dir().join(format!("ugoe-m3-workflow-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&path);
-        std::fs::create_dir_all(&path).expect("create temp dir");
-        Self { path }
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.path);
-    }
 }

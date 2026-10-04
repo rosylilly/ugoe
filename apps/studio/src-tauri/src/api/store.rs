@@ -242,17 +242,10 @@ mod tests {
 
     use super::*;
 
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("ugoe-studio-api-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
     #[test]
     fn starts_disabled_with_a_fresh_token() {
-        let dir = temp_dir("fresh");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let (settings, problem) = ApiSettings::read(&dir.join("studio-api.json"));
         assert!(problem.is_none());
         assert!(!settings.enabled);
@@ -267,7 +260,8 @@ mod tests {
 
     #[test]
     fn writes_and_reads_back() {
-        let dir = temp_dir("roundtrip");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let path = dir.join("nested").join("studio-api.json");
         let (mut settings, _) = ApiSettings::read(&path);
         settings.enabled = true;
@@ -297,7 +291,8 @@ mod tests {
 
     #[test]
     fn broken_files_and_weak_secrets_are_replaced() {
-        let dir = temp_dir("broken");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let path = dir.join("studio-api.json");
         std::fs::write(&path, "{").unwrap();
         let (settings, problem) = ApiSettings::read(&path);

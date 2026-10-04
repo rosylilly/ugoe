@@ -123,14 +123,6 @@ fn temp_path(path: &Path) -> std::io::Result<PathBuf> {
 mod tests {
     use super::*;
 
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("ugoe-editor-atomic-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
     fn names(dir: &Path) -> Vec<String> {
         let mut names: Vec<_> = std::fs::read_dir(dir)
             .unwrap()
@@ -142,24 +134,25 @@ mod tests {
 
     #[test]
     fn replaces_the_file_through_a_temporary_file() {
-        let dir = temp_dir("replace");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let path = dir.join("model.ugoe");
         write_atomic(&path, b"new file").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"new file");
         write_atomic(&path, b"next").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"next");
-        assert_eq!(names(&dir), ["model.ugoe"]);
+        assert_eq!(names(dir), ["model.ugoe"]);
         let temp = temp_path(&path).unwrap();
-        assert_eq!(temp.parent(), Some(dir.as_path()));
+        assert_eq!(temp.parent(), Some(dir));
         let temp_name = temp.file_name().unwrap().to_string_lossy().into_owned();
         assert!(temp_name.starts_with(&format!(".model.ugoe.{}.", std::process::id())));
         assert!(temp_name.ends_with(".tmp"));
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn keeps_the_previous_file_when_writing_fails() {
-        let dir = temp_dir("write-fails");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let path = dir.join("model.ugoe");
         std::fs::write(&path, b"previous").unwrap();
         let err = StagedFile::write_with(&path, Access::Default, |file| {
@@ -171,51 +164,51 @@ mod tests {
         .unwrap();
         assert_eq!(err.to_string(), "disk full");
         assert_eq!(std::fs::read(&path).unwrap(), b"previous");
-        assert_eq!(names(&dir), ["model.ugoe"]);
-        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(names(dir), ["model.ugoe"]);
     }
 
     #[test]
     fn removes_the_temporary_file_when_replacing_fails() {
-        let dir = temp_dir("rename-fails");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         // 行き先が中身のあるディレクトリだと、名前を変えて置き換えられない。
         let path = dir.join("model.ugoe");
         std::fs::create_dir_all(path.join("inside")).unwrap();
         assert!(write_atomic(&path, b"bundle").is_err());
         assert!(path.join("inside").is_dir());
-        assert_eq!(names(&dir), ["model.ugoe"]);
+        assert_eq!(names(dir), ["model.ugoe"]);
         // 行き先のディレクトリが無ければ、一時ファイルも作れずに失敗する。
         assert!(write_atomic(&dir.join("missing/model.ugoe"), b"bundle").is_err());
-        assert_eq!(names(&dir), ["model.ugoe"]);
-        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(names(dir), ["model.ugoe"]);
     }
 
     #[test]
     fn dropping_a_staged_file_keeps_the_previous_file() {
-        let dir = temp_dir("drop");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let path = dir.join("model.ugoe");
         std::fs::write(&path, b"previous").unwrap();
         let staged = StagedFile::write(&path, b"next", Access::Default).unwrap();
         assert_eq!(staged.target(), path);
-        assert_eq!(names(&dir).len(), 2);
+        assert_eq!(names(dir).len(), 2);
         drop(staged);
         assert_eq!(std::fs::read(&path).unwrap(), b"previous");
-        assert_eq!(names(&dir), ["model.ugoe"]);
-        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(names(dir), ["model.ugoe"]);
     }
 
     #[cfg(unix)]
     #[test]
     fn private_files_are_readable_only_by_the_user() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = temp_dir("private");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let path = dir.join("mcp-bridge.json");
         std::fs::write(&path, b"{}").unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
         let staged = StagedFile::write(&path, b"{\"token\":1}", Access::Private).unwrap();
         // 名前を変える前の一時ファイルも、利用者だけが読める。
         let temp = dir.join(
-            names(&dir)
+            names(dir)
                 .into_iter()
                 .find(|n| n.ends_with(".tmp"))
                 .unwrap(),
@@ -225,7 +218,6 @@ mod tests {
         staged.commit().unwrap();
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
-        assert_eq!(names(&dir), ["mcp-bridge.json"]);
-        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(names(dir), ["mcp-bridge.json"]);
     }
 }

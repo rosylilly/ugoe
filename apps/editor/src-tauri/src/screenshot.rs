@@ -95,8 +95,8 @@ mod tests {
 
     #[test]
     fn writes_png_files_only() {
-        let dir = std::env::temp_dir().join(format!("ugoe-editor-png-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let png = [PNG_SIGNATURE, b"rest"].concat();
         let path = dir.join("shot.PNG");
         write_png(path.to_str().unwrap(), &png).unwrap();
@@ -106,6 +106,5 @@ mod tests {
         assert!(!dir.join("other.png").exists());
         let err = write_png("shot.png", &png).unwrap_err();
         assert!(err.to_string().contains("must be absolute"), "{err}");
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

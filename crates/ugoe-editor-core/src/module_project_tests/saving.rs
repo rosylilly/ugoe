@@ -4,8 +4,8 @@ use super::*;
 
 #[test]
 fn module_project_saves_only_the_module() {
-    let temp = TempDir::new("save");
-    let base_path = save_base(&temp.0);
+    let temp = tempfile::tempdir().unwrap();
+    let base_path = save_base(temp.path());
     let project = Project::new_module("LongHair", &base_path, &"Hair".into()).unwrap();
     let mut document = project.document();
     let module = long_hair_module();
@@ -41,7 +41,7 @@ fn module_project_saves_only_the_module() {
         })
         .unwrap();
 
-    let dir = temp.0.join("hair.ugoeproj");
+    let dir = temp.path().join("hair.ugoeproj");
     let meta = project.meta.clone();
     Project::from_document(meta, &document).save(&dir).unwrap();
     assert!(dir.join("module.json").is_file());
@@ -86,18 +86,18 @@ fn module_project_saves_only_the_module() {
 
 #[test]
 fn missing_base_and_slot_are_reported() {
-    let temp = TempDir::new("missing");
-    let base_path = save_base(&temp.0);
+    let temp = tempfile::tempdir().unwrap();
+    let base_path = save_base(temp.path());
     let project = Project::new_module("Hat", &base_path, &"Hair".into()).unwrap();
-    let dir = temp.0.join("hat.ugoeproj");
+    let dir = temp.path().join("hat.ugoeproj");
     project.save(&dir).unwrap();
-    std::fs::rename(&base_path, temp.0.join("moved.ugoeproj")).unwrap();
+    std::fs::rename(&base_path, temp.path().join("moved.ugoeproj")).unwrap();
     assert!(matches!(
         Project::load(&dir),
         Err(ProjectError::BaseNotFound { .. })
     ));
     assert!(matches!(
-        Project::new_module("Hat", &temp.0.join("moved.ugoeproj"), &"Nope".into()),
+        Project::new_module("Hat", &temp.path().join("moved.ugoeproj"), &"Nope".into()),
         Err(ProjectError::Module(ModuleError::UnknownSlot(_)))
     ));
     // 本体にモジュールのプロジェクトは選べない。その本体 (ここでは見つからない) までは読みに行かない。
@@ -112,9 +112,9 @@ fn missing_base_and_slot_are_reported() {
 fn base_check_runs_before_the_base_is_read() {
     use std::cell::RefCell;
 
-    let temp = TempDir::new("check");
-    let base_path = save_base(&temp.0);
-    let dir = temp.0.join("mods/hat.ugoeproj");
+    let temp = tempfile::tempdir().unwrap();
+    let base_path = save_base(temp.path());
+    let dir = temp.path().join("mods/hat.ugoeproj");
     Project::new_module("Hat", &base_path, &"Hair".into())
         .unwrap()
         .save(&dir)
@@ -133,7 +133,7 @@ fn base_check_runs_before_the_base_is_read() {
     );
     assert_eq!(*seen.borrow(), vec![base_path.clone()]);
     // 本体が無くても、確かめるのは開く前 (見つからないことは確かめた後で分かる)。
-    let moved = temp.0.join("moved.ugoeproj");
+    let moved = temp.path().join("moved.ugoeproj");
     std::fs::rename(&base_path, &moved).unwrap();
     assert!(matches!(
         Project::load_checking_base(&dir, &refuse),
@@ -155,15 +155,15 @@ fn base_check_runs_before_the_base_is_read() {
 
 #[test]
 fn base_can_be_a_bundle() {
-    let temp = TempDir::new("bundle");
-    let base_path = save_base(&temp.0);
+    let temp = tempfile::tempdir().unwrap();
+    let base_path = save_base(temp.path());
     let bytes = export_bundle(&Project::load(&base_path).unwrap()).unwrap();
-    std::fs::create_dir_all(&temp.0).unwrap();
-    let bundle = temp.0.join("avatar.ugoe");
+    std::fs::create_dir_all(temp.path()).unwrap();
+    let bundle = temp.path().join("avatar.ugoe");
     std::fs::write(&bundle, bytes).unwrap();
     let project = Project::new_module("Hat", &bundle, &"Outfit".into()).unwrap();
     assert_eq!(project.model.meshes.len(), dress_up_base().meshes.len());
-    let dir = temp.0.join("mods/hat.ugoeproj");
+    let dir = temp.path().join("mods/hat.ugoeproj");
     project.save(&dir).unwrap();
     let meta: serde_json::Value =
         serde_json::from_slice(&std::fs::read(dir.join("project.json")).unwrap()).unwrap();
@@ -209,8 +209,8 @@ fn base_revision_changes_only_with_the_base() {
 /// プレビュー用に名前を替えて書き出すと、名前のほかは書き出しと同じ。使えない名前は拒否する。
 #[test]
 fn module_can_be_exported_under_another_name() {
-    let temp = TempDir::new("export-as");
-    let base_path = save_base(&temp.0);
+    let temp = tempfile::tempdir().unwrap();
+    let base_path = save_base(temp.path());
     let project = Project::new_module("Hat", &base_path, &"Hair".into()).unwrap();
     let read = |bytes: Vec<u8>| ugoe_format::read_module(&bytes).unwrap().module;
     let plain = read(export_module(&project).unwrap().bytes);
@@ -226,9 +226,9 @@ fn module_can_be_exported_under_another_name() {
 
 #[test]
 fn base_bundle_fingerprint_follows_the_file() {
-    let temp = TempDir::new("bundle-fingerprint");
-    std::fs::create_dir_all(&temp.0).unwrap();
-    let path = temp.0.join("avatar.ugoe");
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(temp.path()).unwrap();
+    let path = temp.path().join("avatar.ugoe");
     std::fs::write(&path, b"one").unwrap();
     let before = crate::ProjectFingerprint::read_base(&path).unwrap();
     assert_eq!(before, before.reread_base(&path).unwrap());

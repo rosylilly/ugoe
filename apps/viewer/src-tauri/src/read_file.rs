@@ -85,20 +85,10 @@ pub(crate) fn read_regular_file(path: &Path, max: u64) -> Result<Vec<u8>, ReadEr
 mod tests {
     use super::*;
 
-    fn temp_dir(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "ugoe-read-file-{name}-{}-{}",
-            env!("CARGO_PKG_NAME"),
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
     #[test]
     fn reads_regular_files_up_to_the_limit() {
-        let dir = temp_dir("regular");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let path = dir.join("a.bin");
         std::fs::write(&path, b"12345").unwrap();
         assert_eq!(read_regular_file(&path, 5).unwrap(), b"12345");
@@ -111,18 +101,17 @@ mod tests {
             matches!(&missing, ReadError::Io(e) if e.kind() == std::io::ErrorKind::NotFound),
             "{missing}"
         );
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn refuses_directories() {
-        let dir = temp_dir("directory");
-        let error = read_regular_file(&dir, 1024).unwrap_err();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        let error = read_regular_file(dir, 1024).unwrap_err();
         assert!(
             matches!(&error, ReadError::Io(e) if e.kind() == std::io::ErrorKind::InvalidInput),
             "{error}"
         );
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// 装置 (`/dev/zero` は終わらない) と FIFO (開くだけで止まる) は、開かずにエラーにする。
@@ -134,7 +123,8 @@ mod tests {
             matches!(&error, ReadError::Io(e) if e.kind() == std::io::ErrorKind::InvalidInput),
             "{error}"
         );
-        let dir = temp_dir("fifo");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let fifo = dir.join("model.ugoe");
         let status = std::process::Command::new("mkfifo")
             .arg(&fifo)
@@ -152,6 +142,5 @@ mod tests {
         let link = dir.join("link.ugoe");
         std::os::unix::fs::symlink(&target, &link).unwrap();
         assert_eq!(read_regular_file(&link, 1024).unwrap(), b"ok");
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

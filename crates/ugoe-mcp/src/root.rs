@@ -175,40 +175,35 @@ pub(crate) fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
 mod tests {
     use super::*;
 
-    /// テスト用の一時ディレクトリ。破棄時に消す。
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new(name: &str) -> Self {
-            let path =
-                std::env::temp_dir().join(format!("ugoe-mcp-root-{}-{name}", std::process::id()));
-            let _ = fs::remove_dir_all(&path);
-            fs::create_dir_all(&path).unwrap();
-            Self(path.canonicalize().unwrap())
-        }
+    /// テスト用の一時ディレクトリ。`path` は正規化したパスで、破棄時に消す。
+    struct TempDir {
+        path: PathBuf,
+        _dir: tempfile::TempDir,
     }
 
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
+    impl TempDir {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().canonicalize().unwrap();
+            Self { path, _dir: dir }
         }
     }
 
     /// `<tmp>/root/{a.ugoeproj/, sub/}` と、root の外の `<tmp>/outside/`。
-    fn layout(name: &str) -> (TempDir, Root) {
-        let tmp = TempDir::new(name);
-        fs::create_dir_all(tmp.0.join("root/a.ugoeproj")).unwrap();
-        fs::create_dir_all(tmp.0.join("root/sub")).unwrap();
-        fs::create_dir_all(tmp.0.join("outside")).unwrap();
-        fs::write(tmp.0.join("outside/secret.psd"), b"x").unwrap();
-        let root = Root::new(&tmp.0.join("root")).unwrap();
+    fn layout() -> (TempDir, Root) {
+        let tmp = TempDir::new();
+        fs::create_dir_all(tmp.path.join("root/a.ugoeproj")).unwrap();
+        fs::create_dir_all(tmp.path.join("root/sub")).unwrap();
+        fs::create_dir_all(tmp.path.join("outside")).unwrap();
+        fs::write(tmp.path.join("outside/secret.psd"), b"x").unwrap();
+        let root = Root::new(&tmp.path.join("root")).unwrap();
         (tmp, root)
     }
 
     #[test]
     fn resolves_paths_under_the_root() {
-        let (tmp, root) = layout("inside");
-        let dir = tmp.0.join("root");
+        let (tmp, root) = layout();
+        let dir = tmp.path.join("root");
         assert_eq!(root.resolve("a.ugoeproj").unwrap(), dir.join("a.ugoeproj"));
         assert_eq!(
             root.resolve("./sub/../a.ugoeproj").unwrap(),
@@ -231,7 +226,7 @@ mod tests {
 
     #[test]
     fn rejects_paths_outside_the_root() {
-        let (tmp, root) = layout("outside");
+        let (tmp, root) = layout();
         for path in [
             "..",
             "../outside/secret.psd",
@@ -242,12 +237,12 @@ mod tests {
             let err = root.resolve(path).unwrap_err();
             assert!(err.contains("outside the root"), "{path}: {err}");
         }
-        let absolute = tmp.0.join("outside/secret.psd");
+        let absolute = tmp.path.join("outside/secret.psd");
         let err = root.resolve(absolute.to_str().unwrap()).unwrap_err();
         assert!(err.contains("outside the root"), "{err}");
         // 名前が root で始まるだけの隣のディレクトリ (`root-other`) は外。
-        fs::create_dir_all(tmp.0.join("root-other")).unwrap();
-        let sibling = tmp.0.join("root-other");
+        fs::create_dir_all(tmp.path.join("root-other")).unwrap();
+        let sibling = tmp.path.join("root-other");
         assert!(root.resolve(sibling.to_str().unwrap()).is_err());
         assert!(root.resolve("../root-other").is_err());
         assert!(root.resolve("").is_err());
@@ -256,7 +251,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn rejects_dot_dot_in_the_missing_part() {
-        let (_tmp, root) = layout("missing");
+        let (_tmp, root) = layout();
         // `nope` は無いので、その後の `..` の意味を決められない。
         let err = root.resolve("nope/../a.ugoeproj").unwrap_err();
         assert!(err.contains("`..`"), "{err}");
@@ -269,7 +264,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn resolves_dot_dot_in_the_missing_part_lexically() {
-        let (_tmp, root) = layout("missing");
+        let (_tmp, root) = layout();
         let inside = root.resolve("nope/../a.ugoeproj").unwrap();
         assert_eq!(inside, root.dir().join("a.ugoeproj"));
         let err = root.resolve("nope/../../outside").unwrap_err();
@@ -281,20 +276,20 @@ mod tests {
     fn follows_symbolic_links_before_judging() {
         use std::os::unix::fs::symlink;
 
-        let (tmp, root) = layout("symlink");
-        let dir = tmp.0.join("root");
+        let (tmp, root) = layout();
+        let dir = tmp.path.join("root");
         // root の外を指すリンク (ディレクトリ・ファイル)。
-        symlink(tmp.0.join("outside"), dir.join("escape")).unwrap();
-        symlink(tmp.0.join("outside/secret.psd"), dir.join("secret.psd")).unwrap();
+        symlink(tmp.path.join("outside"), dir.join("escape")).unwrap();
+        symlink(tmp.path.join("outside/secret.psd"), dir.join("secret.psd")).unwrap();
         // root の中を指すリンクは受ける。
         symlink(dir.join("a.ugoeproj"), dir.join("alias.ugoeproj")).unwrap();
         // 行き先の無いリンク (書くと外に作られる)。
         symlink(
-            tmp.0.join("outside/planted.ugoe"),
+            tmp.path.join("outside/planted.ugoe"),
             dir.join("dangling.ugoe"),
         )
         .unwrap();
-        symlink(tmp.0.join("outside/nodir"), dir.join("dangling-dir")).unwrap();
+        symlink(tmp.path.join("outside/nodir"), dir.join("dangling-dir")).unwrap();
 
         for path in [
             "escape",
@@ -317,8 +312,8 @@ mod tests {
         assert!(root.contains_existing(&dir.join("escape")).is_err());
 
         // root 自体がリンクでも、正規化した先で判定する。
-        symlink(&dir, tmp.0.join("root-link")).unwrap();
-        let linked = Root::new(&tmp.0.join("root-link")).unwrap();
+        symlink(&dir, tmp.path.join("root-link")).unwrap();
+        let linked = Root::new(&tmp.path.join("root-link")).unwrap();
         assert_eq!(linked.dir(), dir);
         assert!(linked.resolve("a.ugoeproj").is_ok());
         assert!(linked.resolve("../outside").is_err());
@@ -326,16 +321,16 @@ mod tests {
 
     #[test]
     fn root_must_be_an_existing_directory() {
-        let (tmp, _root) = layout("new");
-        assert!(Root::new(&tmp.0.join("missing")).is_err());
-        let err = Root::new(&tmp.0.join("outside/secret.psd")).unwrap_err();
+        let (tmp, _root) = layout();
+        assert!(Root::new(&tmp.path.join("missing")).is_err());
+        let err = Root::new(&tmp.path.join("outside/secret.psd")).unwrap_err();
         assert!(err.to_string().contains("not a directory"), "{err}");
     }
 
     #[cfg(windows)]
     #[test]
     fn rejects_other_drives_and_unc_paths() {
-        let (_tmp, root) = layout("windows");
+        let (_tmp, root) = layout();
         for path in [
             r"C:\Windows\win.ini",
             r"C:Windows",

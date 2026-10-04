@@ -241,16 +241,10 @@ fn create_private_file(path: &Path) -> io::Result<fs::File> {
 mod tests {
     use super::*;
 
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("ugoe-mcp-discovery-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        dir
-    }
-
     #[test]
     fn writes_reads_and_removes() {
-        let dir = temp_dir("roundtrip");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let path = dir.join("nested").join(FILE_NAME);
         let ours = Discovery::new(40000, "t".repeat(64));
         write(&path, &ours).unwrap();
@@ -273,13 +267,12 @@ mod tests {
         assert!(remove_if_ours(&path, &newer).unwrap());
         assert!(!path.exists());
         assert!(!remove_if_ours(&path, &newer).unwrap());
-        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn rejects_other_formats_and_broken_files() {
-        let dir = temp_dir("format");
-        fs::create_dir_all(&dir).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let path = dir.join(FILE_NAME);
         fs::write(&path, r#"{"format": 2, "version": "9.0.0", "port": 1}"#).unwrap();
         let err = read(&path).unwrap_err();
@@ -296,15 +289,14 @@ mod tests {
             read(&dir.join("missing.json")),
             Err(DiscoveryError::Read { .. })
         ));
-        fs::remove_dir_all(&dir).unwrap();
     }
 
     /// エンドポイントはループバックの URL のパスにしかならない (`@` で URL の利用者情報にして、トークンを
     /// ほかのホストへ送らせない)。
     #[test]
     fn rejects_endpoints_that_leave_the_loopback() {
-        let dir = temp_dir("endpoint");
-        fs::create_dir_all(&dir).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let path = dir.join(FILE_NAME);
         for endpoint in [
             "@evil.example/mcp",
@@ -331,6 +323,5 @@ mod tests {
         zero.endpoint = "/mcp/sub-path_1.x~".to_owned();
         write(&path, &zero).unwrap();
         assert_eq!(read(&path).unwrap(), zero);
-        fs::remove_dir_all(&dir).unwrap();
     }
 }

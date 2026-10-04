@@ -1,7 +1,5 @@
 //! バンドルとモジュールからのプロジェクト (`crate::bundle_project`) のテスト。
 
-use std::path::PathBuf;
-
 use ugoe_format::{Bundle, ModuleFile, TextureData, TextureFormat};
 use ugoe_model::fixtures::{dress_module, dress_up_base, long_hair_module};
 
@@ -39,16 +37,6 @@ fn modules() -> Vec<ModuleFile> {
     vec![hair, dress]
 }
 
-fn temp_dir(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "ugoe-editor-core-bundle-project-{name}-{}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
-}
-
 #[test]
 fn module_project_names_are_kebab_case() {
     assert_eq!(module_project_name("LongHair"), "long-hair.ugoeproj");
@@ -58,10 +46,11 @@ fn module_project_names_are_kebab_case() {
 /// 書いた本体はバンドルと同じ中身で開け、モジュールのプロジェクトを書き出すと元の `.ugoemod` とバイト列で同じになる。
 #[test]
 fn saved_projects_open_and_export_the_same_modules() {
-    let dir = temp_dir("save");
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path();
     let bundle = bundle();
     let modules = modules();
-    let written = save_bundle_projects(&dir, "base.ugoeproj", &bundle, &modules).unwrap();
+    let written = save_bundle_projects(dir, "base.ugoeproj", &bundle, &modules).unwrap();
     assert_eq!(
         written,
         [
@@ -87,7 +76,6 @@ fn saved_projects_open_and_export_the_same_modules() {
             file.module.name
         );
     }
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]

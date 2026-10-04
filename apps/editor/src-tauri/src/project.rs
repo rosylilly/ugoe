@@ -620,8 +620,8 @@ mod tests {
     fn export_settings_are_saved_with_the_project() {
         let (session, document, _) =
             from_psd(&character_psd(), &PsdImportOptions::new("character")).unwrap();
-        let dir = std::env::temp_dir().join(format!("t0639-{}.ugoeproj", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("project.ugoeproj");
         session.to_project(&document).save(&dir).unwrap();
         let (project, disk) = Project::load_tracked(&dir).unwrap();
         let (mut session, document) =
@@ -644,7 +644,6 @@ mod tests {
         assert_eq!(report.after.textures, 1, "{report:?}");
         assert!(report.after.state_changes <= report.before.state_changes);
         assert_eq!(report.bytes, bytes.len());
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// 外での書き換えに気づき、自分の保存は外の変更と取り違えない (`docs/editor.md#外での書き換え`)。
@@ -652,8 +651,8 @@ mod tests {
     fn external_changes_are_detected_but_own_saves_are_not() {
         let (session, document, _) =
             from_psd(&character_psd(), &PsdImportOptions::new("character")).unwrap();
-        let dir = std::env::temp_dir().join(format!("t0641-{}.ugoeproj", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("project.ugoeproj");
         session.to_project(&document).save(&dir).unwrap();
         let (project, disk) = Project::load_tracked(&dir).unwrap();
         let (mut session, mut document) =
@@ -709,8 +708,8 @@ mod tests {
     /// (前の保存先からの相対パスで残したものも)。
     #[test]
     fn save_as_keeps_the_dress_up_modules() {
-        let root = std::env::temp_dir().join(format!("t0669-save-as-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("save-as");
         let (mut session, mut document) = initial_state();
         save_as(&mut document, &mut session, root.join("work/a.ugoeproj")).unwrap();
         let hair = root.join("work/mods/hair.ugoemod").display().to_string();
@@ -732,7 +731,6 @@ mod tests {
         let path = session.path().unwrap().to_path_buf();
         let (reopened, _) = ProjectSession::from_project(project, Some((path, disk)));
         assert_eq!(crate::dress_up::modules(&reopened), modules);
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     fn character_psd() -> Vec<u8> {

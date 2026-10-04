@@ -14,28 +14,22 @@ use ugoe_model::physics::PhysicsSettings;
 use crate::texture::solid_png;
 use crate::{Command, Project, ProjectError, ProjectFingerprint, ProjectMeta, Textures};
 
-/// テスト用のプロジェクトのディレクトリ。破棄時に消す。
-struct TempProject(PathBuf);
+/// テスト用のプロジェクトのディレクトリ。破棄時に親の一時ディレクトリごと消す。
+struct TempProject {
+    _root: tempfile::TempDir,
+    path: PathBuf,
+}
 
 impl TempProject {
     fn new(name: &str) -> Self {
-        let path = std::env::temp_dir().join(format!(
-            "ugoe-editor-core-fp-{}-{name}.ugoeproj",
-            std::process::id()
-        ));
-        let _ = fs::remove_dir_all(&path);
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join(format!("{name}.ugoeproj"));
         sample_project().save(&path).unwrap();
-        Self(path)
+        Self { _root: root, path }
     }
 
     fn dir(&self) -> &Path {
-        &self.0
-    }
-}
-
-impl Drop for TempProject {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
+        &self.path
     }
 }
 

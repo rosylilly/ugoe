@@ -726,8 +726,8 @@ mod tests {
 
     #[test]
     fn writes_and_reads_files() {
-        let dir = std::env::temp_dir().join(format!("ugoe-studio-profile-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let path = dir.join("p.json");
         let profile = Profile::new();
         profile.write(&path).unwrap();
@@ -744,7 +744,6 @@ mod tests {
             Profile::read(&folder),
             Err(ProfileError::Io { .. })
         ));
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

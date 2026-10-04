@@ -3,8 +3,6 @@
 
 mod m2;
 
-use std::path::PathBuf;
-
 use m2::{ANGLE_X, ANGLE_Y, FACE, FACE_TURN, evaluate};
 use ugoe_editor_core::{Project, ProjectMeta, export_bundle};
 use ugoe_model::validate::validate;
@@ -60,8 +58,8 @@ fn every_step_undoes_and_redoes_exactly() {
 #[test]
 fn saves_loads_exports_and_evaluates_bundle() {
     let mut wf = m2::run();
-    let dir = TempDir::new("project");
-    let project_dir = dir.path.join("m2.ugoeproj");
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let project_dir = dir.path().join("m2.ugoeproj");
     let project = Project::from_document(ProjectMeta::new("m2"), &wf.doc);
     project.save(&project_dir).expect("save project");
     wf.doc.mark_saved();
@@ -77,7 +75,7 @@ fn saves_loads_exports_and_evaluates_bundle() {
     assert!(reopened.textures() == wf.doc.textures());
 
     let bytes = export_bundle(&loaded).expect("export bundle");
-    let bundle_path = dir.path.join("m2.ugoe");
+    let bundle_path = dir.path().join("m2.ugoe");
     std::fs::write(&bundle_path, &bytes).expect("write bundle");
     let bundle =
         ugoe_format::read_bundle(&std::fs::read(&bundle_path).unwrap()).expect("read bundle");
@@ -123,25 +121,4 @@ fn mesh_index(model: &ugoe_model::Model, id: &str) -> usize {
         .iter()
         .position(|m| m.id.as_str() == id)
         .unwrap_or_else(|| panic!("mesh {id}"))
-}
-
-/// テストごとの一時ディレクトリ (リポジトリの外)。終わると消す。
-struct TempDir {
-    path: PathBuf,
-}
-
-impl TempDir {
-    fn new(name: &str) -> Self {
-        let path =
-            std::env::temp_dir().join(format!("ugoe-m2-workflow-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&path);
-        std::fs::create_dir_all(&path).expect("create temp dir");
-        Self { path }
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.path);
-    }
 }

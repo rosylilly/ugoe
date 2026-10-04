@@ -15,24 +15,6 @@ use ugoe_editor_core::texture::solid_png;
 use ugoe_editor_core::{Project, ProjectMeta, Textures};
 use ugoe_model::fixtures;
 
-/// テスト用の一時ディレクトリ。破棄時に消す。
-struct TempDir(PathBuf);
-
-impl TempDir {
-    fn new(name: &str) -> Self {
-        let path = std::env::temp_dir().join(format!("ugoe-mcp-{}-{name}", std::process::id()));
-        let _ = fs::remove_dir_all(&path);
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
-
 /// `single_quad` (メッシュ `Quad`、パラメータ `X`) のプロジェクトを保存する。
 fn save_fixture_project(dir: &Path) -> PathBuf {
     let model = fixtures::single_quad();
@@ -282,8 +264,8 @@ fn protocol_errors() {
 /// パラメータを作り、メッシュの格子にその軸のキーを加える。提案 → 適用 → Undo/Redo → 保存。
 #[test]
 fn propose_apply_undo_and_save() {
-    let tmp = TempDir::new("edit");
-    let project = save_fixture_project(&tmp.0);
+    let tmp = tempfile::tempdir().unwrap();
+    let project = save_fixture_project(tmp.path());
     let path = project.to_str().unwrap();
     let mut client = Client::spawn(&[]);
     client.initialize();
@@ -390,7 +372,7 @@ fn propose_apply_undo_and_save() {
     client.call_err("close_project", json!({ "path": path }));
 
     // 書き出し先に書けなければ、何も保存しない。
-    let unwritable = tmp.0.join("missing").join("quad.ugoe");
+    let unwritable = tmp.path().join("missing").join("quad.ugoe");
     let error = client.call_err(
         "save_project",
         json!({ "path": path, "bundle": unwritable.to_str().unwrap() }),
@@ -398,9 +380,9 @@ fn propose_apply_undo_and_save() {
     assert!(error.ends_with("nothing was saved"), "{error}");
     let listed = client.call_ok("list_proposals", json!({ "path": path }));
     assert_eq!(listed["project"]["modified"], true);
-    assert!(!tmp.0.join("missing").exists());
+    assert!(!tmp.path().join("missing").exists());
 
-    let bundle = tmp.0.join("quad.ugoe");
+    let bundle = tmp.path().join("quad.ugoe");
     let saved = client.call_ok(
         "save_project",
         json!({ "path": path, "bundle": bundle.to_str().unwrap() }),
@@ -422,8 +404,8 @@ fn propose_apply_undo_and_save() {
 /// `exclude` で一部のコマンドを外して適用する。外したコマンドに頼るコマンドが残れば拒否する。
 #[test]
 fn apply_part_of_a_proposal() {
-    let tmp = TempDir::new("exclude");
-    let project = save_fixture_project(&tmp.0);
+    let tmp = tempfile::tempdir().unwrap();
+    let project = save_fixture_project(tmp.path());
     let path = project.to_str().unwrap();
     let mut client = Client::spawn(&[]);
     client.initialize();
@@ -469,8 +451,8 @@ fn apply_part_of_a_proposal() {
 
 #[test]
 fn create_new_project() {
-    let tmp = TempDir::new("create");
-    let project = tmp.0.join("new.ugoeproj");
+    let tmp = tempfile::tempdir().unwrap();
+    let project = tmp.path().join("new.ugoeproj");
     let path = project.to_str().unwrap();
     let mut client = Client::spawn(&[]);
     client.initialize();
@@ -509,8 +491,8 @@ fn create_new_project() {
 
 #[test]
 fn read_only_hides_edit_tools() {
-    let tmp = TempDir::new("read-only");
-    let project = save_fixture_project(&tmp.0);
+    let tmp = tempfile::tempdir().unwrap();
+    let project = save_fixture_project(tmp.path());
     let path = project.to_str().unwrap();
     let mut client = Client::spawn(&["--read-only"]);
     client.initialize();
@@ -537,8 +519,8 @@ fn read_only_hides_edit_tools() {
 
 #[test]
 fn render_reports_bad_arguments_before_touching_the_gpu() {
-    let tmp = TempDir::new("render");
-    let project = save_fixture_project(&tmp.0);
+    let tmp = tempfile::tempdir().unwrap();
+    let project = save_fixture_project(tmp.path());
     let path = project.to_str().unwrap();
     let mut client = Client::spawn(&[]);
     client.initialize();
@@ -579,8 +561,8 @@ fn png_size(content: &Value) -> (u32, u32) {
 /// 値を渡して提案 (範囲の外なら直して呼び直す) → 適用 → 保存。
 #[test]
 fn agent_driven_auto_rig_from_psd() {
-    let tmp = TempDir::new("auto-rig");
-    let project = tmp.0.join("bustup.ugoeproj");
+    let tmp = tempfile::tempdir().unwrap();
+    let project = tmp.path().join("bustup.ugoeproj");
     let path = project.to_str().unwrap();
     let psd = bustup_psd();
     let mut client = Client::spawn(&[]);
@@ -851,7 +833,7 @@ fn agent_driven_auto_rig_from_psd() {
     let summary = client.call_ok("get_model_summary", json!({ "path": path }));
     assert!(parameter_ids(&summary).contains(&"EyeLOpen".to_owned()));
 
-    let bundle = tmp.0.join("bustup.ugoe");
+    let bundle = tmp.path().join("bustup.ugoe");
     let saved = client.call_ok(
         "save_project",
         json!({ "path": path, "bundle": bundle.to_str().unwrap() }),
@@ -887,8 +869,8 @@ fn dress_up_base() -> PathBuf {
 /// (`variant_sets`) を渡して、ポーズを含むリグを提案 → 適用 → 保存する。パラメータは足さない。
 #[test]
 fn agent_driven_module_rig_from_psd() {
-    let tmp = TempDir::new("module-rig");
-    let project = tmp.0.join("costume.ugoeproj");
+    let tmp = tempfile::tempdir().unwrap();
+    let project = tmp.path().join("costume.ugoeproj");
     let path = project.to_str().unwrap();
     let psd = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/fixtures/character.psd");
     let psd = psd.to_str().unwrap();
@@ -1034,7 +1016,7 @@ fn agent_driven_module_rig_from_psd() {
     assert!(on_disk.module.is_some());
 
     // モジュールのプロジェクトでなければ、本体向けのツールへ案内する。
-    let quad = save_fixture_project(&tmp.0);
+    let quad = save_fixture_project(tmp.path());
     let err = client.call_err(
         "get_module_rig_guide",
         json!({ "path": quad.to_str().unwrap() }),
@@ -1046,9 +1028,9 @@ fn agent_driven_module_rig_from_psd() {
 /// `..`・root の外の絶対パス・外を指すシンボリックリンクは拒否する (読む・作る・書き出す・描く)。
 #[test]
 fn root_confines_tool_paths() {
-    let tmp = TempDir::new("root");
-    let root = tmp.0.join("root");
-    let outside = tmp.0.join("outside");
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("root");
+    let outside = tmp.path().join("outside");
     fs::create_dir_all(root.join("sub")).unwrap();
     fs::create_dir_all(&outside).unwrap();
     save_fixture_project(&root);
@@ -1180,9 +1162,9 @@ fn save_module_project(dir: &Path, base: &Path, reference: &str) -> PathBuf {
 /// ツールと `import_psd` の `base` で、外を指す参照 (相対・絶対・リンク・中のリンク) を本体を読まずに断る。
 #[test]
 fn root_confines_module_bases() {
-    let tmp = TempDir::new("root-module");
-    let root = tmp.0.join("root");
-    let outside = tmp.0.join("outside");
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("root");
+    let outside = tmp.path().join("outside");
     fs::create_dir_all(&root).unwrap();
     fs::create_dir_all(&outside).unwrap();
     let inside_base = root.join("dress-up.ugoe");
@@ -1305,8 +1287,8 @@ fn root_confines_module_bases() {
 fn renders_png_without_the_cli() {
     use base64::Engine;
 
-    let tmp = TempDir::new("render-gpu");
-    let project = save_fixture_project(&tmp.0);
+    let tmp = tempfile::tempdir().unwrap();
+    let project = save_fixture_project(tmp.path());
     let path = project.to_str().unwrap();
     // PATH を空にして、子プロセスの `ugoe` を探せないようにする。
     let mut client = Client::spawn_with(

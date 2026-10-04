@@ -385,13 +385,12 @@ mod tests {
 
     #[test]
     fn rejects_an_icon_that_is_not_png() {
-        let dir = std::env::temp_dir().join(format!("ugoe-mcpb-unit-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let binary = dir.join("ugoe-mcp");
         std::fs::write(&binary, b"binary").unwrap();
         let mut bundle = Bundle::new(&binary, Platform::Linux);
         bundle.icon = Some(b"GIF89a".to_vec());
         assert!(matches!(bundle.to_bytes(), Err(McpbError::IconNotPng)));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

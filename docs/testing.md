@@ -126,6 +126,24 @@ ubuntu では見つからないので、`rust (windows)` (`windows-latest`) と 
 - 新しい機能には新しいフィクスチャ関数を追加します。**既存のフィクスチャの挙動は変えない** でください。他のエージェントのテストが壊れます。
 - 画像や PSD のように、どうしてもファイルが必要な場合は `assets/fixtures/` に置きます。1 ファイル 1MB 以下にし、出所とライセンスを `assets/fixtures/README.md` に書きます。
 
+## 一時ディレクトリ
+
+ファイルを読み書きするテストは、[`tempfile`](https://docs.rs/tempfile) (dev-dependency) の一時ディレクトリを使います。
+
+```rust
+let tmp = tempfile::tempdir().unwrap();
+let dir = tmp.path(); // 作ってある空のディレクトリ
+let project = dir.join("a.ugoeproj"); // まだ無いパスが要るときは、中の名前を join する
+```
+
+- 名前は毎回違うので、並行のテスト (`just ci` を複数の worktree で流すときも) と重ならず、`TempDir` を落とすと (失敗して panic しても) 消えます。
+  `std::env::temp_dir()` とプロセス ID で名前を作る補助を手で書かないでください (名前が重なり、失敗すると残る)。
+- `TempDir` はテストの終わりまで変数に持っておきます (`tempfile::tempdir().unwrap().path()` と書くと、すぐに消えます)。
+  正規化したパス (`canonicalize`) が要るなど、ファイルの中で何度も使う形があれば、`tempfile::TempDir` を持つ小さな構造体をそのファイルに書きます
+  (例: `crates/ugoe-mcp/tests/editor.rs` の `TempDir`)。
+- クレートで使うには、`[dev-dependencies]` に `tempfile.workspace = true` を足します。ランタイム層のクレートの通常の依存には入れません。
+- 目で確かめるために絵を残す描画テスト (`crates/ugoe-cli/tests/*render_gpu.rs`) は、決まった名前のディレクトリ (一時ディレクトリか `CARGO_TARGET_TMPDIR` の下) に書いて残します (例外)。
+
 ## 互換性テスト
 
 ADR 0013 の「新しいファイルを古いランタイムで劣化させて読める」「古いファイルを新しいランタイムで読める」ことを、

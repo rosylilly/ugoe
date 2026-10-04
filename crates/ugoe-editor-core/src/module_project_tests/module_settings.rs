@@ -117,10 +117,10 @@ fn read_only_message_points_to_the_base_project() {
 
 #[test]
 fn rebase_keeps_unsaved_module_edits() {
-    let temp = TempDir::new("rebase");
-    let base_path = save_base(&temp.0);
+    let temp = tempfile::tempdir().unwrap();
+    let base_path = save_base(temp.path());
     let project = Project::new_module("Hat", &base_path, &"Hair".into()).unwrap();
-    let dir = temp.0.join("hat.ugoeproj");
+    let dir = temp.path().join("hat.ugoeproj");
     project.save(&dir).unwrap();
     let before = crate::ProjectFingerprint::read_base(&base_path).unwrap();
     let mut document = Project::load(&dir).unwrap().document();

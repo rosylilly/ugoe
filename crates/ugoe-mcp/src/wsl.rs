@@ -393,8 +393,8 @@ mod tests {
     /// 置けるので読まない (偽のエディタにつながらないように)。
     #[test]
     fn scans_only_personal_profiles() {
-        let mount = std::env::temp_dir().join(format!("ugoe-mcp-wsl-scan-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&mount);
+        let tmp = tempfile::tempdir().unwrap();
+        let mount = tmp.path();
         let plant = |user: &str| {
             let dir = mount
                 .join("c/Users")
@@ -414,8 +414,7 @@ mod tests {
         ] {
             plant(user);
         }
-        let found = scan_user_profiles(&mount);
-        std::fs::remove_dir_all(&mount).unwrap();
+        let found = scan_user_profiles(mount);
         assert_eq!(found.len(), 1, "{found:?}");
         assert!(found[0].to_string_lossy().contains("alice"), "{found:?}");
     }

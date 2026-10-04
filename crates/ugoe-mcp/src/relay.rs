@@ -1001,8 +1001,8 @@ mod tests {
 
     #[test]
     fn locates_the_named_discovery_file() {
-        let dir = std::env::temp_dir().join(format!("ugoe-mcp-relay-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let file = dir.join("editor-mcp.json");
         let relay = Relay::new(RelayOptions {
             discovery: Some(file.clone()),
@@ -1014,6 +1014,5 @@ mod tests {
         let target = relay.locate().unwrap();
         assert_eq!(target.discovery, discovery);
         assert!(!target.windows_from_wsl);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -1014,8 +1014,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_new_project_keeps_its_key_after_it_is_created() {
-        let dir = std::env::temp_dir().join(format!("ugoe-mcp-tools-key-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         std::fs::create_dir_all(dir.join("real")).unwrap();
         std::os::unix::fs::symlink(dir.join("real"), dir.join("link")).unwrap();
         let tools = Tools::new(Options::default());
@@ -1023,7 +1023,6 @@ mod tests {
         let before = tools.resolve(path.to_str().unwrap()).unwrap();
         std::fs::create_dir_all(&path).unwrap();
         let after = tools.resolve(path.to_str().unwrap()).unwrap();
-        std::fs::remove_dir_all(&dir).unwrap();
         assert_eq!(before, after);
     }
 }

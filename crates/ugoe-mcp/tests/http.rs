@@ -4,7 +4,6 @@
 
 #![allow(clippy::unwrap_used)]
 
-use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
@@ -18,25 +17,6 @@ use ugoe_model::fixtures;
 
 const TOKEN: &str = "test-token-0123456789abcdef0123456789abcdef";
 const MODERN: &str = "2026-07-28";
-
-/// テスト用の一時ディレクトリ。破棄時に消す。
-struct TempDir(PathBuf);
-
-impl TempDir {
-    fn new(name: &str) -> Self {
-        let path =
-            std::env::temp_dir().join(format!("ugoe-mcp-http-{}-{name}", std::process::id()));
-        let _ = fs::remove_dir_all(&path);
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 /// `single_quad` (メッシュ `Quad`、パラメータ `X`) のプロジェクトを保存する。
 fn save_fixture_project(dir: &Path) -> PathBuf {
@@ -257,11 +237,11 @@ fn raw_request(stream: &mut TcpStream, head: &str, body: &str) -> (u16, String) 
 /// 旧来の握手 (initialize) → ツールの一覧 → 提案・適用・保存。版を示す要求も同じ状態を見る。
 #[test]
 fn legacy_and_modern_clients_call_tools_over_http() {
-    let tmp = TempDir::new("flow");
-    let project = save_fixture_project(&tmp.0);
+    let tmp = tempfile::tempdir().unwrap();
+    let project = save_fixture_project(tmp.path());
     // ツールが触れるパスを一時ディレクトリの下に限る。相対パスはそこから解決する。
     let path = "quad.ugoeproj";
-    let server = HttpServer::spawn(&["--root", tmp.0.to_str().unwrap()], None);
+    let server = HttpServer::spawn(&["--root", tmp.path().to_str().unwrap()], None);
     let mut client = Client::new(&server.url);
 
     let init = client.request(
@@ -529,18 +509,18 @@ fn http_requires_root_or_allow_any_path() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(stderr.contains("--http needs --root"), "{args:?}: {stderr}");
     }
-    let tmp = TempDir::new("no-root");
-    let missing = tmp.0.join("missing");
+    let tmp = tempfile::tempdir().unwrap();
+    let missing = tmp.path().join("missing");
     let output = run(&["--root", missing.to_str().unwrap()]);
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("invalid --root"), "{stderr}");
     // 両方は付けられない。
-    let output = run(&["--root", tmp.0.to_str().unwrap(), "--allow-any-path"]);
+    let output = run(&["--root", tmp.path().to_str().unwrap(), "--allow-any-path"]);
     assert!(!output.status.success());
 
     // --root を付ければ起動する (最初の行に限る先を書く)。
-    let server = HttpServer::spawn(&["--root", tmp.0.to_str().unwrap()], None);
+    let server = HttpServer::spawn(&["--root", tmp.path().to_str().unwrap()], None);
     let mut client = Client::new(&server.url);
     assert_eq!(client.request("ping", json!({}), &[]).status, 200);
 }

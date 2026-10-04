@@ -654,32 +654,27 @@ mod tests {
 
     use ugoe_editor_core::Command;
 
-    /// テスト用の一時ディレクトリ。破棄時に消す。
-    struct TempDir(PathBuf);
+    /// テスト用の一時ディレクトリ。`path` は正規化したパスで、破棄時に消す。
+    struct TempDir {
+        path: PathBuf,
+        _dir: tempfile::TempDir,
+    }
 
     impl TempDir {
-        fn new(name: &str) -> Self {
-            let path =
-                std::env::temp_dir().join(format!("ugoe-mcp-host-{}-{name}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&path);
-            std::fs::create_dir_all(&path).unwrap();
-            Self(path.canonicalize().unwrap())
+        fn new() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().canonicalize().unwrap();
+            Self { path, _dir: dir }
         }
 
         /// 中の名前 (一時ファイルが残っていないかを見る)。
         fn names(&self) -> Vec<String> {
-            let mut names: Vec<String> = std::fs::read_dir(&self.0)
+            let mut names: Vec<String> = std::fs::read_dir(&self.path)
                 .unwrap()
                 .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
                 .collect();
             names.sort();
             names
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
         }
     }
 
@@ -722,8 +717,8 @@ mod tests {
 
     #[test]
     fn a_busy_project_does_not_block_other_projects() {
-        let tmp = TempDir::new("busy");
-        let (a, b) = (tmp.0.join("a.ugoeproj"), tmp.0.join("b.ugoeproj"));
+        let tmp = TempDir::new();
+        let (a, b) = (tmp.path.join("a.ugoeproj"), tmp.path.join("b.ugoeproj"));
         save_quad(&a);
         save_quad(&b);
         let host = Arc::new(FileHost::new(None));
@@ -747,7 +742,7 @@ mod tests {
         let (done, done_rx) = mpsc::channel();
         let other = {
             let host = Arc::clone(&host);
-            let bundle = tmp.0.join("b.ugoe");
+            let bundle = tmp.path.join("b.ugoe");
             std::thread::spawn(move || {
                 edit(&host, &b, "B");
                 host.save(&b, Some(&bundle)).unwrap();
@@ -761,14 +756,14 @@ mod tests {
         busy.join().unwrap().unwrap();
         other.join().unwrap();
         assert!(finished.is_ok(), "b waited for a");
-        assert!(tmp.0.join("b.ugoe").is_file());
+        assert!(tmp.path.join("b.ugoe").is_file());
     }
 
     #[test]
     fn opening_the_same_project_at_once_makes_one_document() {
         const THREADS: usize = 8;
-        let tmp = TempDir::new("same");
-        let project = tmp.0.join("a.ugoeproj");
+        let tmp = TempDir::new();
+        let project = tmp.path.join("a.ugoeproj");
         save_quad(&project);
         let host = Arc::new(FileHost::new(None));
         let barrier = Arc::new(Barrier::new(THREADS));
@@ -820,15 +815,15 @@ mod tests {
 
     #[test]
     fn a_bundle_that_cannot_be_written_saves_nothing() {
-        let tmp = TempDir::new("bundle-early");
-        let project = tmp.0.join("a.ugoeproj");
+        let tmp = TempDir::new();
+        let project = tmp.path.join("a.ugoeproj");
         save_quad(&project);
         let before = std::fs::read(project.join("project.json")).unwrap();
         let host = FileHost::new(None);
         edit(&host, &project, "Renamed");
         // 書き出し先のディレクトリが無い: 保存の前に一時ファイルが書けない。
         let err = host
-            .save(&project, Some(&tmp.0.join("missing/a.ugoe")))
+            .save(&project, Some(&tmp.path.join("missing/a.ugoe")))
             .unwrap_err();
         assert!(
             matches!(&err, HostError::Failed(m) if m.contains("nothing was saved")),
@@ -841,11 +836,11 @@ mod tests {
 
     #[test]
     fn a_bundle_is_replaced_whole_or_left_as_it_was() {
-        let tmp = TempDir::new("bundle-replace");
-        let project = tmp.0.join("a.ugoeproj");
+        let tmp = TempDir::new();
+        let project = tmp.path.join("a.ugoeproj");
         save_quad(&project);
         let host = FileHost::new(None);
-        let bundle = tmp.0.join("a.ugoe");
+        let bundle = tmp.path.join("a.ugoe");
         std::fs::write(&bundle, b"old").unwrap();
         edit(&host, &project, "First");
         host.save(&project, Some(&bundle)).unwrap();
@@ -855,7 +850,7 @@ mod tests {
 
         // 名前を変えて置き換えられない (行き先が空でないディレクトリ): プロジェクトは保存済みになり、
         // 行き先は前のまま、一時ファイルは残らない。
-        let blocked = tmp.0.join("blocked.ugoe");
+        let blocked = tmp.path.join("blocked.ugoe");
         std::fs::create_dir(&blocked).unwrap();
         std::fs::write(blocked.join("keep"), b"keep").unwrap();
         edit(&host, &project, "Second");

@@ -547,16 +547,11 @@ mod tests {
 
     use super::*;
 
-    fn temp(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("t0648-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        dir
-    }
-
     /// 本体を保存し、そのスロットに付けるモジュールのプロジェクトを作って書き出す。
     #[test]
     fn new_module_project_can_be_exported() {
-        let dir = temp("export");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("export");
         let base_dir = dir.join("avatar.ugoeproj");
         let model = ugoe_model::fixtures::dress_up_base();
         let textures = model
@@ -590,7 +585,6 @@ mod tests {
         let export = ugoe_editor_core::export_module(&session.to_project(&document)).unwrap();
         let file = ugoe_format::read_module(&export.bytes).unwrap();
         assert_eq!(file.module.slot.as_str(), "Hair");
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     fn save_base(dir: &Path) -> std::path::PathBuf {
@@ -613,7 +607,8 @@ mod tests {
     /// 本体が変わったことに気づき、読み直せる。スロットがなくなれば、直し方を選べる問題になる。
     #[test]
     fn base_changes_are_detected_and_diagnosed() {
-        let dir = temp("base-change");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("base-change");
         let base_dir = save_base(&dir);
         let module_dir = dir.join("hat.ugoeproj");
         Project::new_module("Hat", &base_dir, &"Hair".into())
@@ -711,14 +706,14 @@ mod tests {
                 .any(|p| p.id.as_str() == "Hat/Brim")
         );
         assert_eq!(session.base_change(&document).unwrap(), None);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// 本体だけの `.ugoe` は、本体の版が同じか、同じ本体を開き直したときは作り直さない。本体のファイルが
     /// 変わって読み直したときだけ作り直す (T0654)。
     #[test]
     fn preview_base_bundle_is_kept_in_the_session() {
-        let dir = temp("preview-base");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("preview-base");
         let base_dir = save_base(&dir);
         let module_dir = dir.join("hat.ugoeproj");
         Project::new_module("Hat", &base_dir, &"Hair".into())
@@ -755,13 +750,13 @@ mod tests {
         assert!(!Arc::ptr_eq(&first, &second));
         let bundle = ugoe_format::read_bundle(&second).unwrap();
         assert_eq!(bundle.model.meta.name, "changed");
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// 今の編集と、書き出したファイルの違いを文字にする。
     #[test]
     fn preview_module_is_compared_with_the_exported_file() {
-        let dir = temp("compare");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("compare");
         let base_dir = save_base(&dir);
         let project = Project::new_module("Hat", &base_dir, &"Hair".into()).unwrap();
         let (session, document) = ProjectSession::from_project(project, None);
@@ -770,6 +765,5 @@ mod tests {
             .bytes;
         assert_eq!(compare(&document, &session, &bytes).unwrap(), vec![]);
         assert!(compare(&document, &session, b"nope").is_err());
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

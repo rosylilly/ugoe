@@ -716,11 +716,10 @@ fn motions_and_expressions_are_saved_and_exported_from_the_document() {
     assert_eq!(project.motions, doc.motions());
     assert_eq!(project.expressions, doc.expressions());
 
-    let dir = std::env::temp_dir().join(format!("ugoe-motion-edit-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("p.ugoeproj");
     project.save(&dir).unwrap();
     let loaded = Project::load(&dir).unwrap();
-    std::fs::remove_dir_all(&dir).unwrap();
     let reopened = loaded.document();
     assert!(!reopened.is_modified());
     assert_eq!(reopened.motions(), doc.motions());

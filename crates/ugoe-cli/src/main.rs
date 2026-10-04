@@ -1215,10 +1215,8 @@ mod tests {
     #[test]
     fn render_adds_module_rigs_to_the_physics_file() {
         let sample = sample::dress_up::build_dress_up().unwrap();
-        let tmp =
-            std::env::temp_dir().join(format!("ugoe-cli-render-physics-{}", std::process::id()));
-        std::fs::create_dir_all(&tmp).unwrap();
-        let path = |name: &str| tmp.join(name).to_str().unwrap().to_owned();
+        let tmp = tempfile::tempdir().unwrap();
+        let path = |name: &str| tmp.path().join(name).to_str().unwrap().to_owned();
         let physics = sample.base.physics.clone().unwrap();
         std::fs::write(
             path("base.physics.json"),
@@ -1256,7 +1254,6 @@ mod tests {
             .collect();
         assert!(rigs.contains(&"HairSway"), "{rigs:?}");
         assert!(rigs.contains(&"LongHair/Sway"), "{rigs:?}");
-        std::fs::remove_dir_all(&tmp).unwrap();
     }
 
     #[test]
@@ -1310,12 +1307,11 @@ mod tests {
     /// 大きさを指定しないとき、上限 (16384) を超えるキャンバスは縮めて描く (`render_png` と同じ規則)。
     #[test]
     fn render_shrinks_a_canvas_larger_than_the_limit() {
-        let tmp = std::env::temp_dir().join(format!("ugoe-cli-shrink-{}", std::process::id()));
-        std::fs::create_dir_all(&tmp).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
         let mut model = ugoe_model::fixtures::single_quad();
         model.meta.canvas.width = 40000.0;
         model.meta.canvas.height = 10000.0;
-        let path = tmp.join("big.json");
+        let path = tmp.path().join("big.json");
         std::fs::write(&path, ugoe_format::model_to_json(&model).unwrap()).unwrap();
         let path = path.to_str().unwrap();
 
@@ -1338,7 +1334,6 @@ mod tests {
         let prepared = render(&["--width", "100"]).unwrap();
         assert_eq!(prepared.size, (100, 25));
         assert!(prepared.warnings.is_empty(), "{:?}", prepared.warnings);
-        std::fs::remove_dir_all(&tmp).unwrap();
     }
 
     #[test]

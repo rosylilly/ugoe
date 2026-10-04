@@ -986,26 +986,22 @@ mod tests {
     use super::*;
     use crate::profile::Transform;
 
-    /// テスト用のファイルを置く場所 (テストごとに分ける)。
-    struct Dir(PathBuf);
+    /// テスト用のファイルを置く場所 (テストごとの一時ディレクトリ。破棄時に消す)。
+    struct Dir(tempfile::TempDir);
 
     impl Dir {
-        fn new(name: &str) -> Self {
-            let dir = std::env::temp_dir()
-                .join(format!("ugoe-studio-stage-{name}-{}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&dir);
-            std::fs::create_dir_all(&dir).unwrap();
-            Self(dir)
+        fn new() -> Self {
+            Self(tempfile::tempdir().unwrap())
         }
 
         fn model(&self, name: &str, model: ugoe::model::Model) -> PathBuf {
-            let path = self.0.join(name);
+            let path = self.0.path().join(name);
             std::fs::write(&path, ugoe::format::model_to_json(&model).unwrap()).unwrap();
             path
         }
 
         fn module(&self, name: &str, module: Module) -> PathBuf {
-            let path = self.0.join(name);
+            let path = self.0.path().join(name);
             // 書き出しはテクスチャの数と先頭のシグネチャだけを確かめる (中身はデコードしない)。
             let mut file = ModuleFile::new(module);
             file.textures = vec![
@@ -1018,12 +1014,6 @@ mod tests {
             let bytes = ugoe::format::write_module(&file).unwrap();
             std::fs::write(&path, bytes).unwrap();
             path
-        }
-    }
-
-    impl Drop for Dir {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
         }
     }
 
@@ -1061,8 +1051,8 @@ mod tests {
     /// 刻みの速さと仮想カメラの設定はプロファイルに持ち、変えたら未保存にする (T0827)。
     #[test]
     fn keeps_the_tick_rate_and_the_virtual_camera_in_the_profile() {
-        let dir = Dir::new("output");
-        let path = dir.0.join("p.json");
+        let dir = Dir::new();
+        let path = dir.0.path().join("p.json");
         let mut stage = Stage::new(None);
         let mut conductor = Conductor::new();
         stage.set_tick_rate(TickRate::DEFAULT);
@@ -1095,7 +1085,7 @@ mod tests {
 
     #[test]
     fn switches_scenes_and_keeps_the_model_when_it_is_the_same() {
-        let dir = Dir::new("switch");
+        let dir = Dir::new();
         let base = dir.model("base.json", fixtures::dress_up_base());
         let hair = dir.module("hair.ugoemod", fixtures::long_hair_module());
         let mut stage = Stage::new(None);
@@ -1142,7 +1132,7 @@ mod tests {
 
     #[test]
     fn dressing_up_swaps_the_module_in_the_slot() {
-        let dir = Dir::new("dress-up");
+        let dir = Dir::new();
         let base = dir.model("base.json", fixtures::dress_up_base());
         let long = fixtures::long_hair_module();
         let slot = long.slot.as_str().to_owned();
@@ -1172,19 +1162,23 @@ mod tests {
         assert!(stage.dirty());
 
         // 読めないモジュールなら元のまま。
-        let error = stage.dress_up(&slot, Some(&dir.0.join("gone.ugoemod")), &mut conductor);
+        let error = stage.dress_up(
+            &slot,
+            Some(&dir.0.path().join("gone.ugoemod")),
+            &mut conductor,
+        );
         assert!(matches!(error, Err(SceneError::Missing { .. })));
         assert_eq!(modules(&stage), [dress]);
     }
 
     #[test]
     fn a_missing_model_leaves_the_live_scene_alone() {
-        let dir = Dir::new("missing");
+        let dir = Dir::new();
         let base = dir.model("base.json", fixtures::dress_up_base());
         let mut stage = Stage::new(None);
         let mut conductor = Conductor::new();
         let good = scene(&mut stage, Some(&base), &[]);
-        let gone = scene(&mut stage, Some(&dir.0.join("gone.ugoe")), &[]);
+        let gone = scene(&mut stage, Some(&dir.0.path().join("gone.ugoe")), &[]);
         stage.update_scene(good.clone(), &mut conductor).unwrap();
         stage.update_scene(gone.clone(), &mut conductor).unwrap();
         stage.activate(&good.id, &mut conductor).unwrap();
@@ -1207,7 +1201,7 @@ mod tests {
 
         // 出しているシーンの編集で出せなくなったら、元の設定に戻す。
         let mut broken = good.clone();
-        broken.modules = vec![dir.0.join("nope.ugoemod")];
+        broken.modules = vec![dir.0.path().join("nope.ugoemod")];
         assert!(stage.update_scene(broken, &mut conductor).is_err());
         assert_eq!(stage.profile().scene(&good.id).unwrap(), &good);
         assert_eq!(stage.live(), Some(good.id.as_str()));
@@ -1230,7 +1224,7 @@ mod tests {
     /// 読んでいる間に後から始めた切り替えがあれば、先に始めた方は読み終えた順によらず捨てる (T0834)。
     #[test]
     fn a_later_switch_discards_the_earlier_one() {
-        let dir = Dir::new("superseded");
+        let dir = Dir::new();
         let base = dir.model("base.json", fixtures::dress_up_base());
         let lone = dir.model("lone.json", fixtures::single_quad());
         let mut stage = Stage::new(None);
@@ -1287,7 +1281,7 @@ mod tests {
     /// 読んでいる間にシーンの設定が変わったら、切り替えは今の設定で読み直す。出しているシーンの編集は、後の切り替えに捨てられても設定は残す (T0834)。
     #[test]
     fn a_scene_edited_while_loading_is_read_again() {
-        let dir = Dir::new("edited");
+        let dir = Dir::new();
         let base = dir.model("base.json", fixtures::dress_up_base());
         let lone = dir.model("lone.json", fixtures::single_quad());
         let hair = dir.module("hair.ugoemod", fixtures::long_hair_module());
@@ -1328,10 +1322,10 @@ mod tests {
 
     #[test]
     fn checks_file_types() {
-        let dir = Dir::new("types");
+        let dir = Dir::new();
         let mut stage = Stage::new(None);
         let mut conductor = Conductor::new();
-        let text = dir.0.join("notes.txt");
+        let text = dir.0.path().join("notes.txt");
         std::fs::write(&text, "hi").unwrap();
         let s = scene(&mut stage, Some(&text), &[]);
         stage.update_scene(s.clone(), &mut conductor).unwrap();
@@ -1339,7 +1333,7 @@ mod tests {
             stage.activate(&s.id, &mut conductor),
             Err(SceneError::WrongType { .. })
         ));
-        let not_model = dir.0.join("x.json");
+        let not_model = dir.0.path().join("x.json");
         std::fs::write(&not_model, "{}").unwrap();
         let s2 = scene(&mut stage, Some(&not_model), &[]);
         stage.update_scene(s2.clone(), &mut conductor).unwrap();
@@ -1352,14 +1346,14 @@ mod tests {
     /// 名前がモデル・画像でも、通常のファイルでなければ (ディレクトリ・装置・FIFO) 読まない (T0011)。
     #[test]
     fn reads_only_regular_files() {
-        let dir = Dir::new("regular");
-        let folder = dir.0.join("model.ugoe");
+        let dir = Dir::new();
+        let folder = dir.0.path().join("model.ugoe");
         std::fs::create_dir_all(&folder).unwrap();
         assert!(matches!(
             read_asset(Asset::Model, &folder, MODEL_EXTENSIONS, MAX_MODEL_BYTES),
             Err(SceneError::Unreadable { .. })
         ));
-        let image = dir.0.join("bg.png");
+        let image = dir.0.path().join("bg.png");
         std::fs::write(&image, b"12345").unwrap();
         assert!(matches!(
             read_asset(Asset::Background, &image, IMAGE_EXTENSIONS, 4),
@@ -1373,7 +1367,7 @@ mod tests {
         {
             let zero = std::path::Path::new("/dev/zero");
             // 拡張子の検査を通すため、`/dev/zero` へのリンクを `.png` の名前で置く。
-            let link = dir.0.join("zero.png");
+            let link = dir.0.path().join("zero.png");
             std::os::unix::fs::symlink(zero, &link).unwrap();
             assert!(matches!(
                 read_asset(Asset::Background, &link, IMAGE_EXTENSIONS, MAX_IMAGE_BYTES),
@@ -1384,9 +1378,9 @@ mod tests {
 
     #[test]
     fn a_missing_background_falls_back_to_transparent() {
-        let dir = Dir::new("background");
+        let dir = Dir::new();
         let base = dir.model("base.json", fixtures::dress_up_base());
-        let image = dir.0.join("bg.png");
+        let image = dir.0.path().join("bg.png");
         std::fs::write(&image, b"\x89PNG\r\n\x1a\n").unwrap();
         let mut stage = Stage::new(None);
         let mut conductor = Conductor::new();
@@ -1400,7 +1394,7 @@ mod tests {
         assert!(stage.background_image().is_some());
 
         s.background = Background::Image {
-            path: dir.0.join("gone.png"),
+            path: dir.0.path().join("gone.png"),
         };
         stage.update_scene(s.clone(), &mut conductor).unwrap();
         assert_eq!(
@@ -1412,7 +1406,7 @@ mod tests {
 
     #[test]
     fn a_scene_without_a_model_clears_the_conductor() {
-        let dir = Dir::new("empty");
+        let dir = Dir::new();
         let base = dir.model("base.json", fixtures::dress_up_base());
         let mut stage = Stage::new(None);
         let mut conductor = Conductor::new();
@@ -1430,9 +1424,9 @@ mod tests {
 
     #[test]
     fn opens_saves_and_remembers_profiles() {
-        let dir = Dir::new("profiles");
+        let dir = Dir::new();
         let base = dir.model("base.json", fixtures::dress_up_base());
-        let recent = dir.0.join("data/recent-profiles.json");
+        let recent = dir.0.path().join("data/recent-profiles.json");
         let mut stage = Stage::new(Some(recent.clone()));
         let mut conductor = Conductor::new();
         let s = scene(&mut stage, Some(&base), &[]);
@@ -1440,7 +1434,7 @@ mod tests {
         stage.activate(&s.id, &mut conductor).unwrap();
         // 保存先が無ければ何もしない。
         assert_eq!(stage.save_profile(None).unwrap(), None);
-        let path = dir.0.join("profile.json");
+        let path = dir.0.path().join("profile.json");
         assert_eq!(stage.save_profile(Some(&path)).unwrap(), Some(path.clone()));
         assert!(!stage.dirty());
         assert_eq!(stage.recent(), std::slice::from_ref(&path));
@@ -1458,7 +1452,7 @@ mod tests {
         assert_eq!(conductor.scene().unwrap().model_name, "base.json");
 
         // 未来の版は開かない。
-        let future = dir.0.join("future.json");
+        let future = dir.0.path().join("future.json");
         std::fs::write(
             &future,
             r#"{"format": "ugoe-studio-profile", "version": 99}"#,
@@ -1479,10 +1473,10 @@ mod tests {
 
     #[test]
     fn opening_a_profile_with_a_missing_model_still_opens_it() {
-        let dir = Dir::new("open-missing");
+        let dir = Dir::new();
         let mut profile = Profile::new();
-        profile.scenes[0].model = Some(dir.0.join("gone.ugoe"));
-        let path = dir.0.join("p.json");
+        profile.scenes[0].model = Some(dir.0.path().join("gone.ugoe"));
+        let path = dir.0.path().join("p.json");
         profile.write(&path).unwrap();
         let mut stage = Stage::new(None);
         let mut conductor = Conductor::new();

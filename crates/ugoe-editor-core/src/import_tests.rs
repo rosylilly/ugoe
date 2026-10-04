@@ -294,15 +294,11 @@ fn undo_removes_everything() {
 #[test]
 fn project_round_trip_keeps_textures() {
     let (doc, _) = imported();
-    let dir = std::env::temp_dir().join(format!(
-        "ugoe-editor-core-{}-psd-import.ugoeproj",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("psd-import.ugoeproj");
     let project = Project::from_document(ProjectMeta::new("layers"), &doc);
     project.save(&dir).unwrap();
     let loaded = Project::load(&dir).unwrap();
-    let _ = std::fs::remove_dir_all(&dir);
     let reopened = loaded.document();
     assert_eq!(reopened.model(), doc.model());
     assert_eq!(reopened.textures(), doc.textures());

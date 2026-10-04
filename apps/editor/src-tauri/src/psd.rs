@@ -80,8 +80,8 @@ mod tests {
     /// 通常のファイルでなければ (ディレクトリ・装置・FIFO) 読まない (T0011)。
     #[test]
     fn reads_only_regular_files() {
-        let dir = std::env::temp_dir().join(format!("ugoe-editor-read-psd-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let folder = dir.join("folder.psd");
         std::fs::create_dir_all(&folder).unwrap();
         let error = read_psd(&folder.display().to_string(), None).unwrap_err();
@@ -105,6 +105,5 @@ mod tests {
         let (bytes, options) = read_psd(&file.display().to_string(), None).unwrap();
         assert_eq!(bytes, b"8BPS");
         assert_eq!(options.name, "character");
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
