@@ -319,6 +319,7 @@ pub(crate) fn state(secret: Option<&str>) -> AppState {
     AppState {
         document: Mutex::new(document),
         project: Mutex::new(session),
+        saving: Mutex::new(()),
         api_keys: keys(secrets, no_env),
         ai_jobs: AiJobs::default(),
         ai_provider: ProviderStore::default(),

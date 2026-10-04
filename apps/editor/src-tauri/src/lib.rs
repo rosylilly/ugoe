@@ -38,6 +38,9 @@ pub struct AppState {
     pub document: Mutex<Document>,
     /// 開いているプロジェクトの保存先・メタ情報など (`Document` の外のもの)。
     pub project: Mutex<project::ProjectSession>,
+    /// 保存の書き込みを 1 つずつにする (ロックの外で書く保存が重ならず、書きかけのファイルを外の変更と取り違えない
+    /// ように。`project::ProjectSession::begin_save`)。ロックの順序は `saving` → `document` → `project`。
+    pub saving: Mutex<()>,
     /// AI の API キー (OS の資格情報の保存先と環境変数)。
     pub api_keys: ai::ApiKeys,
     /// 実行中の AI の送信の取り消しの印 (`ai::cancel_ai_requests`)。
@@ -57,6 +60,7 @@ pub fn run() {
     let state = AppState {
         document: Mutex::new(document),
         project: Mutex::new(session),
+        saving: Mutex::new(()),
         api_keys: ai::ApiKeys::default(),
         ai_jobs: ai::AiJobs::default(),
         ai_provider: ai_provider::ProviderStore::default(),

@@ -12,7 +12,7 @@
 //! - Claude Desktop には、同梱の `ugoe-mcp` を `--editor` で動かす MCP Bundle (`.mcpb`) を、その場で作って渡す
 //!   ([`open_claude_desktop_bundle`]・[`save_claude_desktop_bundle`]。`ugoe_mcp::mcpb`)。
 //! - ブリッジの編集はエディタの文書に入るので、外での書き換え (`docs/editor.md#外での書き換え`) にはならない。
-//!   保存はエディタの保存と同じ処理 ([`crate::project::ProjectSession::save_to`]) で、指紋も取り直す。
+//!   保存はエディタの保存と同じ処理 ([`crate::project::ProjectSession::begin_save`]。ロックの外で書く) で、指紋も取り直す。
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
@@ -218,6 +218,9 @@ struct Shared {
     pending: Mutex<Vec<ApprovalRequest>>,
     clients: Mutex<Vec<BridgeClient>>,
     timeout: Duration,
+    /// テストで、保存の写しを取った後 (書く前) に止める: 着いたら前を送り、後を受け取るまで待つ。
+    #[cfg(test)]
+    pause_saving: Mutex<Option<(std::sync::mpsc::Sender<()>, std::sync::mpsc::Receiver<()>)>>,
 }
 
 impl Default for Shared {
@@ -227,6 +230,8 @@ impl Default for Shared {
             pending: Mutex::default(),
             clients: Mutex::default(),
             timeout: APPROVAL_TIMEOUT,
+            #[cfg(test)]
+            pause_saving: Mutex::default(),
         }
     }
 }
@@ -658,30 +663,43 @@ impl DocumentHost for EditorHost {
         ))
     }
 
+    /// ロックの中では写しを取るだけで、書き出しと書き込みはロックの外で行う (書いている間もほかのツールと画面は
+    /// 待たない)。書けたらロックを取り直して保存の印を付ける。書いている間の編集は未保存のまま残る
+    /// (`ProjectSession::begin_save`)。
     fn save(&self, project: &Path, bundle: Option<&Path>) -> Result<(), HostError> {
-        let (mut document, mut session) = self.lock_both()?;
-        let dir = Self::check(&session, project)?;
-        if session.external_change().map_err(failed)?.is_some() {
-            return Err(HostError::Denied(
-                "the project files were changed outside the editor after it was opened; ask the \
-                 user to reload or save it from the editor"
-                    .into(),
-            ));
+        let state = self.app.state();
+        let _saving = crate::project::lock_saving(state);
+        let (pending, settings) = {
+            let (mut document, session) = self.lock_both()?;
+            let dir = Self::check(&session, project)?;
+            if session.external_change().map_err(failed)?.is_some() {
+                return Err(HostError::Denied(
+                    "the project files were changed outside the editor after it was opened; ask the \
+                     user to reload or save it from the editor"
+                        .into(),
+                ));
+            }
+            (
+                session.begin_save(&mut document, dir),
+                session.export_settings(),
+            )
+        };
+        #[cfg(test)]
+        if let Some((reached, resume)) = lock(&self.shared.pause_saving).take() {
+            let _ = reached.send(());
+            let _ = resume.recv();
         }
         // `.ugoe` は先に一時ファイルへ書いておき、プロジェクトを保存できてから置き換える (`ugoe-mcp` の
         // `StagedFile` と同じ順)。どこで失敗しても、前に書き出した `.ugoe` は残る。
         let staged = match bundle {
             Some(bundle) => {
-                let (bytes, _) = export_bundle_with_settings(
-                    &session.to_project(&document),
-                    &session.export_settings(),
-                )
-                .map_err(|e| {
-                    format!(
-                        "failed to export `{}`: {e}; nothing was saved",
-                        bundle.display()
-                    )
-                })?;
+                let (bytes, _) = export_bundle_with_settings(pending.project(), &settings)
+                    .map_err(|e| {
+                        format!(
+                            "failed to export `{}`: {e}; nothing was saved",
+                            bundle.display()
+                        )
+                    })?;
                 let staged = StagedFile::write(bundle, &bytes, Access::Default).map_err(|e| {
                     format!(
                         "failed to write `{}`: {e}; nothing was saved",
@@ -693,7 +711,11 @@ impl DocumentHost for EditorHost {
             None => None,
         };
         // 失敗すれば、書いておいた一時ファイルは捨てる (`StagedFile` の drop)。
-        session.save_to(&mut document, dir).map_err(failed)?;
+        let written = pending.write().map_err(failed)?;
+        {
+            let (mut document, mut session) = self.lock_both()?;
+            written.finish(&mut session, &mut document);
+        }
         if let Some(staged) = staged {
             let target = staged.target().to_path_buf();
             staged.commit().map_err(|e| {

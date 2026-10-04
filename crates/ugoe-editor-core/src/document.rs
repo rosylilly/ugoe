@@ -204,9 +204,24 @@ impl Document {
 
     /// 現在の状態を「保存済み」にする。
     pub fn mark_saved(&mut self) {
-        self.saved = Some(self.current.state);
-        // 保存した状態に Undo で戻れるよう、まとめを切る。
+        let state = self.begin_save();
+        self.mark_saved_state(state);
+    }
+
+    /// これから保存する現在の状態の番号を返す。ファイルへの書き込みをドキュメントの外 (ロックの外) で行う保存の始めに、
+    /// 写しを取るのと一緒に呼び、書けたら [`Document::mark_saved_state`] に渡す。
+    ///
+    /// 保存する状態に Undo で戻れるよう、まとめ ([`Document::apply_coalescing`]) を切る (書いている間の数値の欄の
+    /// 押し続けが、保存する状態をまとめて消さないように)。
+    pub fn begin_save(&mut self) -> u64 {
         self.coalescing = None;
+        self.current.state
+    }
+
+    /// 状態 `state` ([`Document::begin_save`] で受け取った番号) を「保存済み」にする。書いている間に状態が
+    /// 変わっていれば、変更ありのまま (Undo で `state` に戻れば変更なしになる)。
+    pub fn mark_saved_state(&mut self, state: u64) {
+        self.saved = Some(state);
     }
 
     /// 現在の状態の番号。状態ごとに一意で、Undo / Redo で戻れば同じ番号に戻る

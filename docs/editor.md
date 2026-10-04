@@ -1376,7 +1376,13 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
 - **比べ方:** 開いた (保存した) ときの指紋を `ProjectSession` が覚え、`ProjectFingerprint::reread` で取り直して比べる。中身が同じなら更新日時が変わっても
   変更としない (`touch`・同じ内容の書き直し)。JSON は毎回読んでハッシュし、PNG は大きさと更新日時が前と同じなら前のハッシュを使い回す
   (大きな画像を 5 秒ごとに読まないため。大きさも日時も同じまま PNG の中身だけを変えられると気づかない)。ハッシュは `std` の `DefaultHasher` で、ファイルには残さない。
-- **自分の保存を外の変更と取り違えない:** 保存の直後に指紋を取り直す (`ProjectSession::save_to`)。確かめる処理は保存と同じロックを持って行う。
+- **自分の保存を外の変更と取り違えない:** 保存の直後に指紋を取り直す (`ProjectSession::save_to`)。確かめる処理 (`check_external_change`)・開き直し・保存は
+  保存の順番の印 (`AppState::saving`) を取ってから行うので、書きかけのファイルを外の変更として見ない。
+- **保存はロックの外で書く (T0025):** `save_project` とブリッジの `save_project` は、ドキュメントのロックの中では写しを取るだけで
+  (`ProjectSession::begin_save`・`Document::begin_save`)、ファイル (と `.ugoe`) はロックの外で書き、書けたらロックを取り直して書いた状態に保存の印を付ける
+  (`Document::mark_saved_state`)。書いている間も画面とほかのツールは待たない。書いている間の編集・設定の変更は未保存のまま残り、Undo で保存した状態に
+  戻れば変更なしになる。書いている間にプロジェクトを替えたら (開く・新規)、新しいプロジェクトには印を付けない。`save_project_as` は名前と保存先を
+  変えるので、ロックを持ったまま書く。
   開くときの指紋は読み込みの **前** に取る (`Project::load_tracked`)。読み込みの途中で書き換えられたら、次に確かめたときに変更として見える (見逃すより開き直しを促す)。
 - **応じ方 (`src/lib/externalChange.ts`、Vitest):** 変わっていれば `ExternalChangeDialog` を出す。未保存の変更がなければ「Reload」・「Later」、
   未保存の変更がある (または保存しようとした) ときは「Reload and discard my changes」・「Overwrite with my version」・「Save As…」・「Later」、

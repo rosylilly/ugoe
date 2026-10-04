@@ -3,8 +3,8 @@
 //! 引数・戻り値の型を変えたら `apps/editor/src/lib/ipc.ts` も同じ PR で更新すること。
 
 use std::path::{Path, PathBuf};
-use std::sync::MutexGuard;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{MutexGuard, PoisonError};
 
 use serde::Serialize;
 use tauri::{AppHandle, State};
@@ -208,21 +208,98 @@ impl ProjectSession {
     }
 
     /// `dir` に保存し、保存先と指紋を覚え直す (自分の保存を外の変更と取り違えないよう、書いた直後に取る)。
+    /// ロックを持ったまま書く。ロックの外で書くなら [`ProjectSession::begin_save`]。
     pub(crate) fn save_to(&mut self, document: &mut Document, dir: PathBuf) -> IpcResult<()> {
-        self.to_project(document).save(&dir)?;
-        let known = match (&self.path, &self.disk) {
-            // PNG のハッシュを使い回すため、同じ場所なら前の指紋から取り直す
-            (Some(path), Some(disk)) if *path == dir => disk.reread(&dir),
-            _ => ProjectFingerprint::read(&dir),
+        self.begin_save(document, dir)
+            .write()?
+            .finish(self, document);
+        Ok(())
+    }
+
+    /// `dir` への保存の写しを取る (ロックの中)。書くのはロックの外 ([`PendingSave::write`]) で、書けたら
+    /// ロックを取り直して [`WrittenSave::finish`] で保存の印を付ける。書いている間の編集は未保存のまま残る。
+    ///
+    /// 同じプロジェクトへの書き込みが重ならないよう、写しを取る前から印を付け終えるまで [`AppState::saving`] を持つこと。
+    pub(crate) fn begin_save(&self, document: &mut Document, dir: PathBuf) -> PendingSave {
+        // PNG のハッシュを使い回すため、同じ場所なら前の指紋から取り直す
+        let disk = match (&self.path, &self.disk) {
+            (Some(path), Some(disk)) if *path == dir => Some(disk.clone()),
+            _ => None,
+        };
+        PendingSave {
+            session: self.id,
+            state: document.begin_save(),
+            meta: self.meta.clone(),
+            project: self.to_project(document),
+            dir,
+            disk,
+        }
+    }
+}
+
+/// ロックの外で書く保存の写し ([`ProjectSession::begin_save`])。
+pub(crate) struct PendingSave {
+    /// 写しを取ったセッションの番号 (書いている間に開き直したら印を付けない)。
+    session: u64,
+    /// 保存するドキュメントの状態の番号 (`Document::begin_save`)。
+    state: u64,
+    /// 保存するメタ情報 (書いている間に変われば未保存の印を残す)。
+    meta: ProjectMeta,
+    project: Project,
+    dir: PathBuf,
+    /// 同じ場所への保存なら、前の指紋。
+    disk: Option<ProjectFingerprint>,
+}
+
+impl PendingSave {
+    /// 保存するプロジェクト (`.ugoe` を一緒に書き出すときに使う)。
+    pub(crate) fn project(&self) -> &Project {
+        &self.project
+    }
+
+    /// プロジェクトを書き、指紋を取る (ロックの外で呼ぶ)。
+    pub(crate) fn write(self) -> IpcResult<WrittenSave> {
+        self.project.save(&self.dir)?;
+        let known = match &self.disk {
+            Some(disk) => disk.reread(&self.dir),
+            None => ProjectFingerprint::read(&self.dir),
         };
         // 保存はできたので、指紋が取れなくても保存したことにする (外での書き換えには気づけなくなる)
-        self.disk = known
+        let disk = known
             .inspect_err(|e| eprintln!("could not fingerprint the saved project: {e}"))
             .ok();
-        self.path = Some(dir);
-        self.meta_modified = false;
-        document.mark_saved();
-        Ok(())
+        Ok(WrittenSave {
+            session: self.session,
+            state: self.state,
+            meta: self.meta,
+            dir: self.dir,
+            disk,
+        })
+    }
+}
+
+/// 書き終えた保存。[`WrittenSave::finish`] で保存の印を付ける。
+pub(crate) struct WrittenSave {
+    session: u64,
+    state: u64,
+    meta: ProjectMeta,
+    dir: PathBuf,
+    disk: Option<ProjectFingerprint>,
+}
+
+impl WrittenSave {
+    /// 保存先と指紋を覚え直し、書いた状態を保存済みにする (ロックを取り直して呼ぶ)。書いている間にプロジェクトを
+    /// 替えていれば何もしない。書いている間に変えたもの (ドキュメント・メタ情報) は未保存の印が残る。
+    pub(crate) fn finish(self, session: &mut ProjectSession, document: &mut Document) {
+        if session.id != self.session {
+            return;
+        }
+        session.disk = self.disk;
+        session.path = Some(self.dir);
+        if session.meta == self.meta {
+            session.meta_modified = false;
+        }
+        document.mark_saved_state(self.state);
     }
 }
 
@@ -296,6 +373,12 @@ pub(crate) fn status(session: &ProjectSession, document: &Document) -> ProjectSt
         path: session.path.as_ref().map(|p| p.display().to_string()),
         modified: document.is_modified() || session.meta_modified,
     }
+}
+
+/// 保存の書き込みの順番を待つ ([`AppState::saving`])。`document`・`project` より先に取る。
+/// 中身のない印なので、ほかのスレッドが持ったまま panic しても使い続ける。
+pub(crate) fn lock_saving(state: &AppState) -> MutexGuard<'_, ()> {
+    state.saving.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// ロックの順序は常に `document` → `project`。
@@ -407,6 +490,8 @@ pub async fn open_project(app: AppHandle, path: String) -> IpcResult<ProjectStat
 #[tauri::command]
 pub async fn reload_project(app: AppHandle) -> IpcResult<ProjectStatus> {
     blocking(app, |state| {
+        // 書きかけのプロジェクトを読まないよう、保存が終わるのを待つ
+        let _saving = lock_saving(state);
         let (mut document, mut session) = lock_both(state)?;
         let dir = session.path.clone().ok_or(EditorError::NotSaved)?;
         let (project, disk) = Project::load_tracked(&dir)?;
@@ -427,7 +512,9 @@ pub async fn reload_project(app: AppHandle) -> IpcResult<ProjectStatus> {
 #[tauri::command]
 pub async fn check_external_change(app: AppHandle) -> IpcResult<Option<ExternalChange>> {
     blocking(app, |state| {
-        // 保存とぶつからないよう、ロックを持ったまま比べる (保存は `document` → `project` の順にロックする)
+        // 書きかけのファイルを外の変更と取り違えないよう、保存が終わるのを待ってから比べる
+        // (保存はロックの外で書き、書き終えてから指紋を覚え直す。`ProjectSession::begin_save`)
+        let _saving = lock_saving(state);
         crate::ai::lock_project(state)?.external_change()
     })
     .await
@@ -435,18 +522,30 @@ pub async fn check_external_change(app: AppHandle) -> IpcResult<Option<ExternalC
 
 /// 開いたときの (または前回保存した) 場所に保存する。開いた後で外で書き換えられていたら、
 /// `overwrite` が真でない限り書かずに [`EditorError::ExternalChange`] を返す。
+/// ロックの中では写しを取るだけで、ファイルはロックの外で書く (`ProjectSession::begin_save`)。
 #[tauri::command]
 pub async fn save_project(app: AppHandle, overwrite: Option<bool>) -> IpcResult<ProjectStatus> {
     blocking(app, move |state| {
-        let (mut document, mut session) = lock_both(state)?;
-        let dir = session.path.clone().ok_or(EditorError::NotSavedUseSaveAs)?;
-        if !overwrite.unwrap_or(false) && session.external_change()?.is_some() {
-            return Err(EditorError::ExternalChange.into());
-        }
-        session.save_to(&mut document, dir)?;
-        Ok(status(&session, &document))
+        save_current(state, overwrite.unwrap_or(false))
     })
     .await
+}
+
+/// [`save_project`] の中身 (テストから呼ぶ)。
+fn save_current(state: &AppState, overwrite: bool) -> IpcResult<ProjectStatus> {
+    let _saving = lock_saving(state);
+    let pending = {
+        let (mut document, session) = lock_both(state)?;
+        let dir = session.path.clone().ok_or(EditorError::NotSavedUseSaveAs)?;
+        if !overwrite && session.external_change()?.is_some() {
+            return Err(EditorError::ExternalChange.into());
+        }
+        session.begin_save(&mut document, dir)
+    };
+    let written = pending.write()?;
+    let (mut document, mut session) = lock_both(state)?;
+    written.finish(&mut session, &mut document);
+    Ok(status(&session, &document))
 }
 
 /// 別の場所に保存し、以後の保存先をそこにする。拡張子 `.ugoeproj` がなければ付ける。
@@ -455,6 +554,8 @@ pub async fn save_project(app: AppHandle, overwrite: Option<bool>) -> IpcResult<
 pub async fn save_project_as(app: AppHandle, path: String) -> IpcResult<ProjectStatus> {
     blocking(app, move |state| {
         let dir = project_dir(&path)?;
+        // 名前と保存先を変えるので、ロックを持ったまま書く (ほかの保存とは重ねない)
+        let _saving = lock_saving(state);
         let (mut document, mut session) = lock_both(state)?;
         save_as(&mut document, &mut session, dir)?;
         Ok(status(&session, &document))
@@ -644,6 +745,47 @@ mod tests {
         assert_eq!(report.after.textures, 1, "{report:?}");
         assert!(report.after.state_changes <= report.before.state_changes);
         assert_eq!(report.bytes, bytes.len());
+    }
+
+    /// ロックの外で書く保存: 書いている間に変えたメタ情報は未保存の印が残り、書いている間にプロジェクトを替えたら
+    /// 新しいプロジェクトに保存の印を付けない (T0025)。
+    #[test]
+    fn saving_outside_the_lock_keeps_changes_made_while_writing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("project.ugoeproj");
+        let (mut session, mut document) = initial_state();
+        session.save_to(&mut document, dir.clone()).unwrap();
+        assert!(!status(&session, &document).modified);
+
+        session.set_editor_value("note", Some(serde_json::json!(1)));
+        let written = session
+            .begin_save(&mut document, dir.clone())
+            .write()
+            .unwrap();
+        session.set_editor_value("note", Some(serde_json::json!(2)));
+        written.finish(&mut session, &mut document);
+        assert!(status(&session, &document).modified);
+        assert_eq!(session.external_change().unwrap(), None);
+        let saved = Project::load(&dir).unwrap();
+        assert_eq!(saved.meta.editor.get("note"), Some(&serde_json::json!(1)));
+
+        let written = session
+            .begin_save(&mut document, dir.clone())
+            .write()
+            .unwrap();
+        replace_document(
+            &mut session,
+            &mut document,
+            ProjectSession::from_project(Project::empty("next"), None),
+        );
+        document
+            .apply(ugoe_editor_core::Command::AddParameter {
+                parameter: ugoe_model::fixtures::single_quad().parameters[0].clone(),
+            })
+            .unwrap();
+        written.finish(&mut session, &mut document);
+        assert_eq!(session.path(), None);
+        assert!(document.is_modified());
     }
 
     /// 外での書き換えに気づき、自分の保存は外の変更と取り違えない (`docs/editor.md#外での書き換え`)。

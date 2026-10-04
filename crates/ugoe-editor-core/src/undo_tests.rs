@@ -281,6 +281,30 @@ fn undo_redo_and_save_break_the_group() {
     assert!(!doc.is_modified());
 }
 
+/// 書き込みをドキュメントの外で行う保存: 書いている間の編集は変更ありのまま残り、保存した状態には Undo で戻れる (T0025)。
+#[test]
+fn saving_a_copy_keeps_edits_made_while_writing() {
+    let mut doc = Document::new(fixtures::single_quad());
+    let start = Instant::now();
+    doc.apply_coalescing(set_default(0.1), field("x", start, 0))
+        .unwrap();
+    let saving = doc.begin_save();
+    assert_eq!(saving, doc.state_id());
+    // 書いている間の押し続けは、保存する状態とまとめない。
+    doc.apply_coalescing(set_default(0.2), field("x", start, 10))
+        .unwrap();
+    doc.mark_saved_state(saving);
+    assert!(doc.is_modified());
+    assert!(doc.undo());
+    assert!(!doc.is_modified());
+    assert_eq!(default_of(&doc), 0.1);
+
+    // 書いている間に変わらなければ、変更なしになる。
+    let saving = doc.begin_save();
+    doc.mark_saved_state(saving);
+    assert!(!doc.is_modified());
+}
+
 #[test]
 fn a_rejected_edit_keeps_the_group() {
     let mut doc = Document::new(fixtures::single_quad());

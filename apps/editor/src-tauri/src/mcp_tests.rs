@@ -460,6 +460,70 @@ fn saving_with_a_bundle_keeps_the_previous_bundle_when_it_fails() {
     assert_eq!(names(&out), ["blocked.ugoe", "quad.ugoe"]);
 }
 
+/// 保存はドキュメントのロックの外で書く: 書いている間もほかのクライアントの読むだけのツールが答え、
+/// 書いている間の編集は未保存のまま残る (T0025)。
+#[test]
+fn saving_writes_the_files_outside_the_document_lock() {
+    let tmp = TempDir::new();
+    let project = save_fixture_project(&tmp.path);
+    let path = project.display().to_string();
+    let discovery = tmp.path.join("editor-mcp.json");
+    let app = TestApp::open(Some(&project), &discovery);
+    app.enable();
+    let mut client = Client::new(&discovery);
+    client.initialize();
+    client.ok("propose_edit", add_angle(&path));
+    client.ok("apply_proposal", json!({ "path": path, "proposal": "p1" }));
+
+    let saved = std::thread::scope(|scope| {
+        // 写しを取った後で止める。止めている間に失敗しても、`resume` を捨てれば保存は続く。
+        let (reached_tx, reached) = std::sync::mpsc::channel();
+        let (resume, resume_rx) = std::sync::mpsc::channel();
+        *app.state.mcp.shared.pause_saving.lock().unwrap() = Some((reached_tx, resume_rx));
+        let saving = scope.spawn(|| client.ok("save_project", json!({ "path": path })));
+        reached.recv_timeout(Duration::from_secs(10)).unwrap();
+
+        let (answered_tx, answered) = std::sync::mpsc::channel();
+        let (discovery, path) = (&discovery, &path);
+        scope.spawn(move || {
+            let mut other = Client::new(discovery);
+            other.initialize();
+            let summary = other.ok("get_model_summary", json!({ "path": path }));
+            answered_tx.send(summary).unwrap();
+        });
+        let summary = answered
+            .recv_timeout(Duration::from_secs(10))
+            .expect("a read-only tool waited for the save to finish writing");
+        assert!(!summary.is_null());
+        // 書いている間の画面の編集。
+        app.state
+            .document
+            .lock()
+            .unwrap()
+            .apply(ugoe_editor_core::Command::AddParameter {
+                parameter: ugoe_model::Parameter {
+                    id: "AngleY".into(),
+                    ..fixtures::single_quad().parameters[0].clone()
+                },
+            })
+            .unwrap();
+
+        resume.send(()).unwrap();
+        saving.join().unwrap()
+    });
+    // 書いたのは写しを取ったときの姿で、その後の編集は未保存のまま。
+    assert_eq!(saved["modified"], true);
+    assert_eq!(Project::load(&project).unwrap().model.parameters.len(), 2);
+    assert_eq!(app.parameter_ids(), vec!["X", "AngleX", "AngleY"]);
+    let mut document = app.state.document.lock().unwrap();
+    let session = app.state.project.lock().unwrap();
+    assert!(document.is_modified());
+    assert_eq!(session.external_change().unwrap(), None);
+    // 保存した状態に Undo で戻れば、変更なしになる。
+    assert!(document.undo());
+    assert!(!document.is_modified());
+}
+
 /// ほかのプロジェクト・作る・閉じる・PSD から作るはできない。開いているプロジェクトの open_project は状態を返すだけ。
 #[test]
 fn agents_cannot_switch_the_editor_project() {
