@@ -64,6 +64,7 @@ src-tauri/                    バックエンド (Rust クレート `ugoe-studio
   src/lighting.rs               シーンの光源 (LightingSettings の JSON) をレンダラの光源にする (@ugoe/player と同じ規則。仮想カメラが使う)
   src/virtual_camera.rs         仮想カメラの受け手 (Feed: 受け手 + ugoe-headless の常駐の描画) とスレッド (T0807)
   src/lib.rs                    刻みのスレッド・Tauri のコマンド・出力ウィンドウの操作
+  src/acl.rs                    コマンドの名前と出力ウィンドウが呼べるもの (build.rs が読む。capabilities/ との一致のテスト。T0820)
   src/api/                      操作 API (T0805。docs/studio.md#外部-api、英語のリファレンスは docs/studio-api.md)
     mod.rs                        接続ごとの状態 (名乗る前・承認待ち・使える)・承認と取り消し・通知
     methods.rs                    メソッド (指揮役と舞台に入れる。ホットキーと同じ口)
@@ -147,6 +148,14 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
 
 - 出力ウィンドウは閉じる操作で隠すだけにする (受け手を作り直さない)。操作ウィンドウを閉じるとアプリを終える (仮想カメラも止める)。
 - 権限 (`src-tauri/capabilities/`): 操作ウィンドウはファイルを開く・保存先を選ぶダイアログと OS の言語、出力ウィンドウはウィンドウのドラッグだけ。
+  アプリのコマンドも、ウィンドウごとに呼べるものを絞る (T0820): `build.rs` が `src/acl.rs` の `COMMANDS` を
+  `tauri_build::AppManifest::commands` に渡して `allow-<コマンド>` の許可を作り、出力ウィンドウ (`output.json`) は受け手のコマンド
+  (`OUTPUT_COMMANDS`: 上の表の「出力」) だけ、操作ウィンドウ (`control.json`) はそれ以外のすべてを許す。コマンドを足したら
+  `generate_handler!`・`COMMANDS`・どちらかの capability の 3 か所に書く (`src/acl.rs` のテストが食い違いを検査する)。
+- CSP (`tauri.conf.json` の `app.security.csp`): 同梱したものだけを読む (`default-src 'self'`)。wasm (`'wasm-unsafe-eval'`)・
+  Tauri の IPC (`ipc:`・`http://ipc.localhost`)・blob の画像と動画 (背景・トラッキングのファイル)・カメラ (`mediastream:`) を許す。
+  Svelte が書く `style` 属性のため `style-src` は `'unsafe-inline'` にし、Tauri が `style-src` に hash を足さないようにする
+  (`dangerousDisableAssetCspModification`。hash があると `'unsafe-inline'` が効かなくなる)。
   カメラとマイクは、バックエンドの `on_permission_request` が操作ウィンドウの要求だけを許す (macOS は `Info.plist` と `Entitlements.plist`)。
   ホットキーはバックエンドが `tauri-plugin-global-shortcut` で登録する (JS の口は使わないので、プラグインの権限は付けない)。
 - 操作ウィンドウへの通知には、ほかに `animation` (モーション・表情・トラッキングの様子)・`hotkeys` (登録できなかった割り当て)・

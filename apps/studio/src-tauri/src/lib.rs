@@ -16,6 +16,9 @@
 //!
 //! 出力ウィンドウとブラウザソースの描画はしない (出力ウィンドウの WebView の wasm が受け手として描く)。
 
+// コマンドの許可の表 (build.rs が読む)。ここではその検査だけを行う (T0820)。
+#[cfg(test)]
+mod acl;
 pub mod animation;
 pub mod api;
 pub mod conductor;

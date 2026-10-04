@@ -182,7 +182,20 @@ describe("studio", () => {
       message: "the model in the output window",
     });
     await shot(s, "studio-output");
+    // 出力ウィンドウは受け手のコマンドしか呼べず、CSP が掛かっている (T0820)
+    const denied = await s.run(() =>
+      window.__TAURI_INTERNALS__.invoke("api_token").then(
+        () => null,
+        (e) => String(e),
+      ),
+    );
+    // CSP は応答のヘッダで付く (ページからは読めない) ので、`'unsafe-eval'` を許していないことで確かめる
+    const evaluated = await s.execute(
+      "try { return new Function('return true')(); } catch (e) { return String(e); }",
+    );
     await switchToTauriWindow(s, "main");
+    assert.match(denied ?? "", /not allowed/, "the output window could read the API token");
+    assert.notEqual(evaluated, true, "the output window has no CSP");
   });
 
   step(

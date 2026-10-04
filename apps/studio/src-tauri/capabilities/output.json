@@ -1,7 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "output",
-  "description": "出力ウィンドウの権限 (枠が無いので、ドラッグでウィンドウを動かす)",
-  "windows": ["output"],
-  "permissions": ["core:default", "core:window:allow-start-dragging"]
+  "description": "出力ウィンドウ (受け手) の権限 (枠が無いので、ドラッグでウィンドウを動かす。アプリのコマンドは配信を受け取り、描画の負荷を返すものだけ。src/acl.rs の OUTPUT_COMMANDS、T0820)",
+  "windows": [
+    "output"
+  ],
+  "permissions": [
+    "core:window:allow-start-dragging",
+    "allow-subscribe-frames",
+    "allow-scene-model",
+    "allow-scene-module",
+    "allow-scene-background",
+    "allow-report-render-stats"
+  ]
 }
