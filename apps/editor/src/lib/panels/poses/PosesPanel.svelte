@@ -2,7 +2,7 @@
   ポーズのパネル (docs/editor.md#ポーズの編集)。右の列の「Poses」タブ。
   操作はすべて、ポーズを丸ごと置き換える set_pose を送るだけで、組み立ては poses.ts にある。
 
-  - グループの一覧。グループの要素のうち表示されるのは 1 つで、先頭の要素が最初に表示される (ドラッグか ▲▼ で並べ替える)。
+  - グループの一覧。グループの要素のうち表示されるのは 1 つで、先頭の要素が最初に表示される (ドラッグか ▲▼ で並べ替える。ドラッグはポインタのイベントで作る)。
     要素の `links` (要素と一緒に切り替わるパーツ。腕の差分に付く袖など) は要素ごとに選ぶ。
   - 「+ Group」「+ Entry」で、ポーズでまだ使っていないパーツを足す。「+ Group from selection」は、ツリーで選んだパーツで
     グループを作る。要素の名前を押すとそのパーツを選ぶ。
@@ -29,6 +29,7 @@ import {
   addEntry,
   addGroup,
   canLinkTo,
+  dropIndex,
   editableLinks,
   fadeSeconds,
   freeParts,
@@ -58,41 +59,86 @@ const shown = $derived(viewport.posePreview);
 // タブを離れたら、編集中のビューポートはすべての要素が見える姿に戻す。
 onDestroy(() => viewport.setPosePreview(null));
 
+// ---- 要素の並べ替えのドラッグ ----
+// Tauri のファイルのドロップ (着せ替えのプレビュー) を有効にしていると、Windows (WebView2) では HTML5 の DnD が
+// ウィンドウに届かないので、ツリー (TreePanel.svelte) と同じくポインタで実装する。並べ替えは落としたときに 1 回だけ送る。
+// ポインタの取り消し (pointercancel・取り込みを失う) と Esc では何も送らずに元へ戻す。
+
+/** 押した要素 (動かして初めてドラッグになる)。 */
+let press: {
+  group: number;
+  entry: number;
+  x: number;
+  y: number;
+  pointer: number;
+  list: HTMLElement;
+} | null = null;
 /** ドラッグ中の要素 (グループと要素の番号) と、落とす先 (その要素の前。要素の数なら末尾)。 */
 let dragging = $state<{ group: number; entry: number } | null>(null);
 let dropAt = $state<{ group: number; index: number } | null>(null);
+/** ドラッグを離した直後のクリック (要素の名前を押したことになる) を捨てる。 */
+let suppressClick = false;
 
-function dragStart(event: DragEvent, group: number, entry: number): void {
-  dragging = { group, entry };
-  if (event.dataTransfer) {
-    event.dataTransfer.effectAllowed = "move";
-    // Firefox はデータがないとドラッグを始めない。
-    event.dataTransfer.setData("text/plain", String(entry));
+function entryPointerDown(event: PointerEvent, group: number, entry: number, count: number): void {
+  if (event.button !== 0 || busy || count < 2 || isBaseGroup(module, group)) return;
+  // ボタン (Show・▲▼・✕) はドラッグを始めずにそのまま押せる。
+  if ((event.target as Element).closest(".buttons")) return;
+  const list = (event.currentTarget as HTMLElement).closest<HTMLElement>("ol");
+  if (!list) return;
+  press = { group, entry, x: event.clientX, y: event.clientY, pointer: event.pointerId, list };
+}
+
+/** ポインタの下の要素と、その要素の中の位置から落とす先を決める (別のグループの上なら null)。 */
+function dropIndexAt(list: HTMLElement, x: number, y: number): number | null {
+  const el = document.elementFromPoint(x, y)?.closest<HTMLElement>("li[data-entry]");
+  if (!el || el.parentElement !== list) return null;
+  const box = el.getBoundingClientRect();
+  return dropIndex(Number(el.dataset.entry), box.top, box.height, y);
+}
+
+function dragMove(event: PointerEvent): void {
+  if (!press || event.pointerId !== press.pointer) return;
+  // 動かす前にリストの外で離していた (pointerup が届いていない)。
+  if ((event.buttons & 1) === 0) {
+    cancelDrag();
+    return;
   }
+  if (!dragging) {
+    if (Math.hypot(event.clientX - press.x, event.clientY - press.y) < 5) return;
+    dragging = { group: press.group, entry: press.entry };
+    press.list.setPointerCapture(event.pointerId);
+  }
+  const index = dropIndexAt(press.list, event.clientX, event.clientY);
+  dropAt = index === null ? null : { group: press.group, index };
 }
 
-function dragOver(event: DragEvent, group: number, entry: number): void {
-  if (!dragging || dragging.group !== group) return;
-  event.preventDefault();
-  const target = event.currentTarget as HTMLElement;
-  const box = target.getBoundingClientRect();
-  const after = event.clientY > box.top + box.height / 2;
-  dropAt = { group, index: after ? entry + 1 : entry };
-}
-
-function drop(event: DragEvent): void {
-  event.preventDefault();
+function dragEnd(event: PointerEvent): void {
+  if (!press || event.pointerId !== press.pointer) return;
   const from = dragging;
   const to = dropAt;
-  dragEnd();
-  if (!pose || !from || !to || from.group !== to.group) return;
+  cancelDrag();
+  if (!from) return;
+  suppressClick = true;
+  // クリックが起きない場合 (取り込んだ要素の外で離したとき) に備えて戻す。
+  setTimeout(() => {
+    suppressClick = false;
+  });
+  if (!pose || !to || from.group !== to.group) return;
   const next = moveEntryTo(pose, from.group, from.entry, to.index);
   if (next.groups[from.group] !== pose.groups[from.group]) void send(next);
 }
 
-function dragEnd(): void {
+function cancelDrag(): void {
+  press = null;
   dragging = null;
   dropAt = null;
+}
+
+function dragKeydown(event: KeyboardEvent): void {
+  if (dragging && event.key === "Escape") {
+    event.preventDefault();
+    cancelDrag();
+  }
 }
 
 const model = $derived.by((): Model | null => {
@@ -161,6 +207,8 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
 }
 </script>
 
+<svelte:window onkeydown={dragKeydown} />
+
 <h2>{t("poses.title")}</h2>
 <p class="help intro">{t("poses.intro")}</p>
 {#if module}
@@ -223,21 +271,37 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
       {:else if group.entries.length > 1}
         <p class="help">{t("poses.entry.dragHint")}</p>
       {/if}
-      <ol class="entries">
+      <ol
+        class="entries"
+        onpointermove={dragMove}
+        onpointerup={dragEnd}
+        onpointercancel={cancelDrag}
+        onlostpointercapture={() => {
+          if (dragging) cancelDrag();
+        }}
+        onclickcapture={(e) => {
+          if (!suppressClick) return;
+          suppressClick = false;
+          e.stopPropagation();
+          e.preventDefault();
+        }}
+      >
         {#each group.entries as entry, ei (entry.part)}
           {@const linkable = !base || canLinkTo(module, entry.part)}
           {@const isShown = shown !== null && shownEntry(group, shown) === ei}
           <li
-            draggable={!base && !busy && group.entries.length > 1}
+            data-entry={ei}
             class:dragging={dragging?.group === gi && dragging.entry === ei}
             class:drop-before={dropAt?.group === gi && dropAt.index === ei}
             class:drop-after={dropAt?.group === gi && dropAt.index === ei + 1 && ei === group.entries.length - 1}
-            ondragstart={(e) => dragStart(e, gi, ei)}
-            ondragover={(e) => dragOver(e, gi, ei)}
-            ondrop={drop}
-            ondragend={dragEnd}
           >
-            <div class="entry">
+            <!-- ドラッグはポインタだけの近道。キーボードでは ▲▼ で並べ替える。 -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="entry"
+              class:grab={!base && !busy && group.entries.length > 1}
+              onpointerdown={(e) => entryPointerDown(e, gi, ei, group.entries.length)}
+            >
               <Tooltip text={t("poses.entry.select.tooltip")}>
                 {#snippet children(attrs)}
                   <button
@@ -429,8 +493,13 @@ h3 {
   border-bottom: 2px solid transparent;
 }
 
-.entries li[draggable="true"] {
+.entries .entry.grab {
   cursor: grab;
+}
+
+.entries li.dragging,
+.entries li.dragging .entry {
+  cursor: grabbing;
 }
 
 .entries li.dragging {

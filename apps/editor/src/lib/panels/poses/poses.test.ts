@@ -4,6 +4,7 @@ import {
   addEntry,
   addGroup,
   canLinkTo,
+  dropIndex,
   editableLinks,
   fadeSeconds,
   freeParts,
@@ -116,6 +117,13 @@ describe("poses", () => {
     expect(order(moveEntryTo(three, 0, 1, 2))).toEqual(["A", "B", "C"]);
     expect(order(moveEntryTo(three, 0, 5, 0))).toEqual(["A", "B", "C"]);
     expect(order(moveEntryTo(three, 0, 0, 9))).toEqual(["A", "B", "C"]);
+  });
+
+  it("drops before the entry in its upper half and after it in its lower half", () => {
+    expect(dropIndex(1, 100, 40, 110)).toBe(1);
+    expect(dropIndex(1, 100, 40, 120)).toBe(1);
+    expect(dropIndex(1, 100, 40, 121)).toBe(2);
+    expect(dropIndex(1, 100, 40, 139)).toBe(2);
   });
 
   it("switches the entry shown in the viewport per group", () => {

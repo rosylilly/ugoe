@@ -1207,7 +1207,7 @@
       }
     },
     "entry": {
-      "dragHint": "Drag entries to reorder (the first entry shows at start).",
+      "dragHint": "Drag entries or use ▲▼ to reorder (the first entry shows at start). Esc cancels a drag.",
       "select": {
         "tooltip": "Select the part"
       },

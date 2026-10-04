@@ -106,6 +106,14 @@ export function moveEntryTo(pose: Pose, group: number, from: number, to: number)
 }
 
 /**
+ * ドラッグで落とす先 (`moveEntryTo` の `to`): ポインタ (`y`) が要素 `entry` (画面の上端 `top`・高さ `height`) の
+ * 上半分にあればその要素の前、下半分なら後ろ。
+ */
+export function dropIndex(entry: number, top: number, height: number, y: number): number {
+  return y > top + height / 2 ? entry + 1 : entry;
+}
+
+/**
  * ビューポートでポーズを見ているとき (`shown` は表示する要素のパーツ。ViewportController.posePreview)、
  * グループで表示される要素の番号 (挙げたパーツがなければ最初の要素)。
  */
