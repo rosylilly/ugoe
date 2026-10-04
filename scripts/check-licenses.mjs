@@ -10,7 +10,7 @@
 //   (docs/adr/0025-web-runtime-package.md)。
 // - npm のアプリ (apps/*) と共有パッケージ (packages/*) は GPL-3.0-only で、実行時の依存 (推移的な依存を含む) は
 //   GPL-3.0 と両立するライセンスに限る (docs/adr/0029-shared-ui-and-i18n.md)。package.json に SPDX の式が無い
-//   依存は NPM_EXCEPTIONS に、確かめた版と理由を付けて登録する。版が変わったら例外は外れ、確かめ直す。
+//   依存は scripts/lib/npm-license-exceptions.mjs に、確かめた版と理由を付けて登録する。版が変わったら例外は外れ、確かめ直す。
 // - 公開仕様 (spec/) は CC BY 4.0 (docs/adr/0021-public-specification.md)。spec/LICENSE が
 //   CC BY 4.0 の条文であることを確かめる。
 // - Godot のバインディング (bindings/godot) はルートのワークスペースの外にあり、`--godot` を付けたときだけ
@@ -22,6 +22,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { NPM_LICENSE_EXCEPTIONS } from "./lib/npm-license-exceptions.mjs";
 
 const EDITOR_CRATES = new Set(["ugoe-editor", "ugoe-viewer", "ugoe-studio", "ugoe-studio-vcam"]);
 const EXPECTED = { mit: "MIT", editor: "GPL-3.0-only" };
@@ -59,17 +60,6 @@ const GPL_COMPATIBLE = new Set([
 const EXCEPTIONS_OK = new Set(["LLVM-exception"]);
 // SPDX の式を持たない依存 (名前 -> 理由)
 const EXCEPTIONS = {};
-// npm の依存で、package.json に SPDX の式を持たないもの (名前 -> 確かめた版・実際のライセンス・確かめ方)。
-// 版が変わったら検査が失敗するので、同じ方法で確かめ直して版を書き換える。
-// アプリのバンドルに入るものは、scripts/third-party-notices.mjs の LICENSE_OVERRIDES にも同じライセンスを書く。
-const NPM_EXCEPTIONS = {
-  "svelte-toolbelt": {
-    version: "0.10.6",
-    license: "MIT",
-    reason:
-      "package.json に license の欄が無い。npm の tarball の LICENSE が MIT の条文 (Hunter Johnston・Thomas G. Lopes) であることを読んで確かめた (2026-10-02、ADR 0029)",
-  },
-};
 // MPL-2.0 を認める godot-rust のクレート (--godot のときだけ。gdextension-api は Godot の API の定義を収めたクレート)
 const GODOT_RUST = new Set([
   "gdextension-api",
@@ -266,18 +256,18 @@ function checkNpmDeps(dir, allowed, kind) {
       const dep = JSON.parse(readFileSync(join(depDir, "package.json"), "utf8"));
       const where = `${[...path, `${dep.name} ${dep.version}`].join(" -> ")}`;
       const license = npmLicense(dep);
-      const exception = NPM_EXCEPTIONS[dep.name];
+      const exception = NPM_LICENSE_EXCEPTIONS[dep.name];
       if (exception && !license) {
         if (exception.version !== dep.version) {
           errors.push(
-            `${where}: NPM_EXCEPTIONS は ${exception.version} で確かめたもの。この版のライセンスを確かめ直して版を書き換える`,
+            `${where}: scripts/lib/npm-license-exceptions.mjs の例外は ${exception.version} で確かめたもの。この版のライセンスを確かめ直して版を書き換える`,
           );
         } else if (!satisfies(exception.license, allowed)) {
           errors.push(`${where}: ${exception.license} は${kind}`);
         }
       } else if (!license) {
         errors.push(
-          `${where}: ライセンスの式がない (確かめて NPM_EXCEPTIONS に登録するか依存をやめる)`,
+          `${where}: ライセンスの式がない (確かめて scripts/lib/npm-license-exceptions.mjs に登録するか依存をやめる)`,
         );
       } else if (!satisfies(license, allowed)) {
         errors.push(`${where}: ${license} は${kind}`);

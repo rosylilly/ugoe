@@ -153,7 +153,7 @@ initTheme("ugoe-viewer.theme");
 1. 変更の記録を読む。
 2. `package.json` の版を書き換えて `pnpm install`。
 3. `pnpm --filter @ugoe/ui test`・`pnpm --filter @ugoe/ui check`・`just licenses` を通す。
-   `svelte-toolbelt` の版が変わったら、tarball の `LICENSE` を読んで `scripts/check-licenses.mjs` の `NPM_EXCEPTIONS` を書き換える。
+   `svelte-toolbelt` の版が変わったら、tarball の `LICENSE` を読んで `scripts/lib/npm-license-exceptions.mjs` の版を書き換える (`scripts/check-licenses.mjs` と `scripts/third-party-notices.mjs` の両方が読む)。
 4. `just ui-shots <出力先>` で更新前と後を撮り、見比べる。
 
 ## コマンド

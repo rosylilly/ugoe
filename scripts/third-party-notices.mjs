@@ -16,6 +16,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { NPM_LICENSE_EXCEPTIONS } from "./lib/npm-license-exceptions.mjs";
 
 const root = join(import.meta.dirname, "..");
 
@@ -34,12 +35,6 @@ const FACE_TRACKING_NOTICES = "packages/face-tracking/third-party-notices.txt";
 
 /** MediaPipe の節が扱うので、JS のライブラリの節に載せないパッケージ。 */
 export const COVERED = new Set(["@mediapipe/tasks-vision"]);
-
-/**
- * package.json に license の欄が無いパッケージの、確かめたライセンス
- * (scripts/check-licenses.mjs の NPM_EXCEPTIONS と同じもの。版が変われば向こうの検査が失敗する)。
- */
-const LICENSE_OVERRIDES = { "svelte-toolbelt": "MIT" };
 
 /** 区切りの線。 */
 const RULE = "=".repeat(78);
@@ -110,7 +105,9 @@ export function licenseOf(manifest) {
   if (Array.isArray(licenses) && licenses.length > 0) {
     return licenses.map((l) => (typeof l === "string" ? l : l.type)).join(" OR ");
   }
-  return LICENSE_OVERRIDES[manifest.name];
+  // package.json に license の欄が無いパッケージは、確かめたライセンスを使う
+  // (版の確かめは scripts/check-licenses.mjs が行う。版が変われば向こうの検査が失敗する)
+  return NPM_LICENSE_EXCEPTIONS[manifest.name]?.license;
 }
 
 /**
