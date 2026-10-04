@@ -1,11 +1,11 @@
 ---
 id: T0931
 title: "@ugoe/player: Player の振る舞いのテストを足す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [packages, docs]
 depends_on: [T0914]
-assignee:
+assignee: claude-worker-T0931
 ---
 
 # T0931: @ugoe/player: Player の振る舞いのテストを足す
