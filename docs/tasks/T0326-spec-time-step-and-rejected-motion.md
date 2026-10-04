@@ -1,11 +1,11 @@
 ---
 id: T0326
 title: "公開仕様の小さな直し: 物理の時間を進める手順の剰余と、検証で拒まれるモーションの例"
-status: todo
+status: in-progress
 milestone: M9
 crates: [spec, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0326
 ---
 
 # T0326: 公開仕様の小さな直し: 物理の時間を進める手順の剰余と、検証で拒まれるモーションの例

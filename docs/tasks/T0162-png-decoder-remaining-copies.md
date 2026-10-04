@@ -1,11 +1,11 @@
 ---
 id: T0162
 title: PNG のデコードの残りの写しを ugoe_format::image に寄せる (editor-core とテスト)
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core, ugoe-format, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0162
 ---
 
 # T0162: PNG のデコードの残りの写しを ugoe_format::image に寄せる (editor-core とテスト)

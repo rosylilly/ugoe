@@ -1,11 +1,11 @@
 ---
 id: T0451
 title: "wasm: カーブの値を返す API でもセグメントの索引 (SegmentIndex) を使う"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-wasm]
 depends_on: []
-assignee:
+assignee: claude-worker-T0451
 ---
 
 # T0451: wasm: カーブの値を返す API でもセグメントの索引 (SegmentIndex) を使う
