@@ -349,9 +349,11 @@
       "macosTooOld": "The virtual camera needs macOS 12.3 or later.",
       "needsApproval": "Allow the ugoe studio camera extension in System Settings, then turn the virtual camera on again.",
       "notInApplications": "Move ugoe studio to the Applications folder, open it from there, and turn the virtual camera on again.",
+      "needsRestart": "Restart the Mac to finish turning on the camera extension, then turn the virtual camera on again.",
       "extensionFailed": "The camera extension could not be turned on.",
       "notRegistered": "The virtual camera driver is not installed.",
       "noDevice": "No v4l2loopback device was found.",
+      "noPermission": "The studio has no permission to open the video devices (/dev/video*).",
       "busy": "Every v4l2loopback device is in use by another program.",
       "invalidConfig": "This resolution or frame rate is not supported.",
       "gpu": "No GPU is available for drawing the camera image.",
@@ -364,6 +366,11 @@
         "install": "# Debian / Ubuntu\nsudo apt install v4l2loopback-dkms\n# Fedora (RPM Fusion)\nsudo dnf install v4l2loopback\n# Arch Linux\nsudo pacman -S v4l2loopback-dkms",
         "load": "sudo modprobe v4l2loopback devices=1 video_nr=10 card_label=\"ugoe studio\" exclusive_caps=1",
         "after": "Then turn the virtual camera on again. To load it at every boot, put “v4l2loopback” in /etc/modules-load.d/ and the options above in /etc/modprobe.d/."
+      },
+      "videoGroup": {
+        "intro": "Add yourself to the “video” group, which can open the video devices.",
+        "command": "sudo usermod -aG video \"$USER\"",
+        "after": "Then log out and back in (or restart the computer) and turn the virtual camera on again."
       },
       "windows": "On Windows 10, capture the output window in OBS Studio and use OBS's “Start Virtual Camera” instead.",
       "reinstall": "Run the studio installer again. Registering the camera needs administrator rights."

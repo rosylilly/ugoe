@@ -191,12 +191,18 @@ fn video_devices() -> Vec<PathBuf> {
     devices.into_iter().map(|(_, path)| path).collect()
 }
 
-/// v4l2loopback の機器を探す。書ける機器が無ければ、loopback の機器があるかで [`Error::Busy`] か [`Error::NoDevice`]。
+/// v4l2loopback の機器を探す。書ける機器が無ければ、[`not_found`] で理由を選ぶ。
 fn find_device() -> Result<(PathBuf, File), Error> {
     let mut busy = false;
+    let mut denied = false;
     for path in video_devices() {
-        let Ok(file) = OpenOptions::new().read(true).write(true).open(&path) else {
-            continue;
+        let file = match OpenOptions::new().read(true).write(true).open(&path) {
+            Ok(file) => file,
+            Err(e) => {
+                // `EACCES` (と `EPERM`)。開けないので loopback の機器かは分からない。
+                denied |= e.kind() == std::io::ErrorKind::PermissionDenied;
+                continue;
+            }
         };
         let Ok(cap) = query_capability(&file) else {
             continue;
@@ -209,12 +215,29 @@ fn find_device() -> Result<(PathBuf, File), Error> {
         }
         busy = true;
     }
-    Err(if busy { Error::Busy } else { Error::NoDevice })
+    Err(not_found(busy, denied, module_loaded()))
+}
+
+/// 書ける loopback の機器が無かった理由。loopback の機器が書かれていれば [`Error::Busy`]。権限が無くて開けない機器があり、
+/// v4l2loopback が読み込まれていれば (その機器が loopback のものかもしれない) [`Error::NoPermission`]。ほかは [`Error::NoDevice`]。
+fn not_found(busy: bool, denied: bool, module_loaded: bool) -> Error {
+    if busy {
+        Error::Busy
+    } else if denied && module_loaded {
+        Error::NoPermission
+    } else {
+        Error::NoDevice
+    }
+}
+
+/// v4l2loopback のモジュールが読み込まれているか。
+fn module_loaded() -> bool {
+    Path::new("/sys/module/v4l2loopback").exists()
 }
 
 /// 機器を開かずに、v4l2loopback の機器がありそうかを確かめる (モジュールが読み込まれているか)。
 pub(crate) fn availability() -> Result<(), Error> {
-    if Path::new("/sys/module/v4l2loopback").exists() {
+    if module_loaded() {
         Ok(())
     } else {
         Err(Error::NoDevice)
@@ -312,6 +335,18 @@ mod tests {
         }
         assert_eq!(VIDIOC_QUERYCAP, 0x8068_5600);
         assert_eq!(VIDIOC_S_PARM, 0xc0cc_5616);
+    }
+
+    #[test]
+    fn the_reason_tells_a_missing_permission_from_a_missing_module() {
+        assert_eq!(not_found(false, false, false).code(), "noDevice");
+        assert_eq!(not_found(false, false, true).code(), "noDevice");
+        // 開けない機器があっても、v4l2loopback が無ければ入れ方を案内する。
+        assert_eq!(not_found(false, true, false).code(), "noDevice");
+        assert_eq!(not_found(false, true, true).code(), "noPermission");
+        // 書かれている loopback の機器を開けたなら、権限ではなくほかのアプリのせい。
+        assert_eq!(not_found(true, true, true).code(), "busy");
+        assert_eq!(not_found(true, false, true).code(), "busy");
     }
 
     #[test]

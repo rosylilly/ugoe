@@ -461,6 +461,8 @@ enum Activation {
     NeedsApproval,
     /// 有効になった。
     Done,
+    /// Mac を再起動した後で有効になる (再起動までは求め直しても変わらないので、求め直さない)。
+    NeedsRestart,
     /// 失敗した (次に始めるときに求め直す)。
     Failed(Failure),
 }
@@ -492,7 +494,7 @@ fn activate(again: bool) -> Result<bool, Error> {
     let submit = match *state {
         Activation::Idle | Activation::Failed(_) => true,
         Activation::Done => again,
-        Activation::Pending | Activation::NeedsApproval => false,
+        Activation::Pending | Activation::NeedsApproval | Activation::NeedsRestart => false,
     };
     if submit {
         *state = Activation::Pending;
@@ -514,6 +516,7 @@ fn activate(again: bool) -> Result<bool, Error> {
     match &*state {
         Activation::Done => Ok(submit),
         Activation::NeedsApproval => Err(Error::NeedsApproval),
+        Activation::NeedsRestart => Err(Error::NeedsRestart),
         Activation::Failed(Failure::NotInApplications) => Err(Error::NotInApplications),
         Activation::Failed(Failure::Other(detail)) => Err(Error::ExtensionFailed(detail.clone())),
         Activation::Idle | Activation::Pending => Err(Error::os("activation", "unexpected state")),
@@ -569,10 +572,8 @@ define_class!(
             set_activation(if result == OSSystemExtensionRequestResult::Completed {
                 Activation::Done
             } else {
-                // 再起動の後に有効になる (前の版を外すのに再起動が要るとき)。
-                Activation::Failed(Failure::Other(
-                    "the camera extension will be activated after a restart".to_owned(),
-                ))
+                // `WillCompleteAfterReboot`: 再起動の後に有効になる (前の版を外すのに再起動が要るとき)。
+                Activation::NeedsRestart
             });
         }
 

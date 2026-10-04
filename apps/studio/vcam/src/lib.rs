@@ -91,6 +91,9 @@ pub enum Error {
     /// macOS で、アプリが「アプリケーション」フォルダに無いので Camera Extension を有効にできない。
     #[error("move ugoe studio to the Applications folder to use the virtual camera")]
     NotInApplications,
+    /// macOS で、Camera Extension は Mac を再起動した後で有効になる (前の版を外すのに再起動が要るとき)。
+    #[error("restart the Mac to finish turning on the camera extension")]
+    NeedsRestart,
     /// macOS で、Camera Extension を有効にできなかった・機器が現れなかった。
     #[error("the camera extension could not be activated: {0}")]
     ExtensionFailed(String),
@@ -100,6 +103,9 @@ pub enum Error {
     /// v4l2loopback の機器が無い (入れ方を案内する)。
     #[error("no v4l2loopback device was found")]
     NoDevice,
+    /// v4l2loopback は読み込まれているが、`/dev/video*` を開く権限が無い (`video` のグループに入る案内をする)。
+    #[error("no permission to open the video devices; join the video group")]
+    NoPermission,
     /// v4l2loopback の機器はあるが、どれもほかのアプリが書いている。
     #[error("every v4l2loopback device is in use by another program")]
     Busy,
@@ -126,9 +132,11 @@ impl Error {
             Self::MacosTooOld => "macosTooOld",
             Self::NeedsApproval => "needsApproval",
             Self::NotInApplications => "notInApplications",
+            Self::NeedsRestart => "needsRestart",
             Self::ExtensionFailed(_) => "extensionFailed",
             Self::NotRegistered => "notRegistered",
             Self::NoDevice => "noDevice",
+            Self::NoPermission => "noPermission",
             Self::Busy => "busy",
             Self::InvalidConfig(_) => "invalidConfig",
             Self::FrameSize { .. } | Self::Os { .. } => "os",
@@ -316,10 +324,18 @@ mod tests {
         assert_eq!(Error::MacosTooOld.code(), "macosTooOld");
         assert_eq!(Error::NeedsApproval.code(), "needsApproval");
         assert_eq!(Error::NotInApplications.code(), "notInApplications");
+        assert_eq!(Error::NeedsRestart.code(), "needsRestart");
         assert_eq!(
             Error::ExtensionFailed("x".to_owned()).code(),
             "extensionFailed"
         );
+    }
+
+    #[test]
+    fn linux_reasons_have_their_own_codes() {
+        assert_eq!(Error::NoDevice.code(), "noDevice");
+        assert_eq!(Error::NoPermission.code(), "noPermission");
+        assert_eq!(Error::Busy.code(), "busy");
     }
 
     #[test]

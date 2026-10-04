@@ -111,9 +111,11 @@ function errorText(code: string): string {
     case "macosTooOld":
     case "needsApproval":
     case "notInApplications":
+    case "needsRestart":
     case "extensionFailed":
     case "notRegistered":
     case "noDevice":
+    case "noPermission":
     case "busy":
     case "invalidConfig":
     case "gpu":
@@ -194,6 +196,10 @@ function guideOf(notice: CameraNotice): CameraGuide | null {
 
 {t("virtualCamera.guide.linux.load")}</pre>
         <p class="camera__text">{t("virtualCamera.guide.linux.after")}</p>
+      {:else if guideOf(notice) === "videoGroup"}
+        <p class="camera__text">{t("virtualCamera.guide.videoGroup.intro")}</p>
+        <pre class="camera__code ugoe-selectable">{t("virtualCamera.guide.videoGroup.command")}</pre>
+        <p class="camera__text">{t("virtualCamera.guide.videoGroup.after")}</p>
       {:else if guideOf(notice) === "windows"}
         <p class="camera__text">{t("virtualCamera.guide.windows")}</p>
       {:else if guideOf(notice) === "reinstall"}

@@ -347,9 +347,11 @@
       "macosTooOld": "仮想カメラには macOS 12.3 以降が要ります。",
       "needsApproval": "「システム設定」で ugoe studio のカメラ機能拡張を許可してから、もう一度仮想カメラを入れてください。",
       "notInApplications": "ugoe studio を「アプリケーション」フォルダに移し、そこから開いてから、もう一度仮想カメラを入れてください。",
+      "needsRestart": "カメラ機能拡張は Mac を再起動すると有効になります。再起動してから、もう一度仮想カメラを入れてください。",
       "extensionFailed": "カメラ機能拡張を有効にできませんでした。",
       "notRegistered": "仮想カメラのドライバが入っていません。",
       "noDevice": "v4l2loopback の機器が見つかりません。",
+      "noPermission": "映像の機器 (/dev/video*) を開く権限がありません。",
       "busy": "v4l2loopback の機器は、どれもほかのアプリが使っています。",
       "invalidConfig": "この解像度かフレームレートは選べません。",
       "gpu": "カメラの画を描く GPU がありません。",
@@ -362,6 +364,11 @@
         "install": "# Debian / Ubuntu\nsudo apt install v4l2loopback-dkms\n# Fedora (RPM Fusion)\nsudo dnf install v4l2loopback\n# Arch Linux\nsudo pacman -S v4l2loopback-dkms",
         "load": "sudo modprobe v4l2loopback devices=1 video_nr=10 card_label=\"ugoe studio\" exclusive_caps=1",
         "after": "その後で、もう一度仮想カメラを入れてください。起動のたびに読み込むには、/etc/modules-load.d/ に「v4l2loopback」を、/etc/modprobe.d/ に上のオプションを書きます。"
+      },
+      "videoGroup": {
+        "intro": "映像の機器を開ける「video」のグループに、自分を入れてください。",
+        "command": "sudo usermod -aG video \"$USER\"",
+        "after": "その後で、ログインし直す (かコンピュータを再起動する) と効きます。それから、もう一度仮想カメラを入れてください。"
       },
       "windows": "Windows 10 では、OBS Studio で出力ウィンドウを取り込み、OBS の「仮想カメラ開始」を使ってください。",
       "reinstall": "スタジオのインストーラをもう一度実行してください。カメラの登録には管理者の権限が要ります。"

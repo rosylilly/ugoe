@@ -16,6 +16,8 @@ describe("notices", () => {
     ]);
     expect(guideFor("windowsTooOld")).toBe("windows");
     expect(guideFor("notRegistered")).toBe("reinstall");
+    expect(guideFor("noPermission")).toBe("videoGroup");
+    expect(guideFor("needsRestart")).toBeNull();
     expect(guideFor("os")).toBeNull();
   });
 

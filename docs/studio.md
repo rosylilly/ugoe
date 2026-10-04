@@ -573,11 +573,13 @@ OS の部品の扱いと `unsafe` の例外は [ADR 0028 の 8.](adr/0028-studio
   | 知らせ | いつ |
   | --- | --- |
   | 使えません (注意) | 始める前から分かる理由: Windows 11 でない・ドライバが登録されていない・v4l2loopback が読み込まれていない・macOS 12.3 より前・macOS で拡張を入れていない束 |
-  | 止まりました (エラー) | 始められなかった・途中で失敗した (機器が無い・ほかのアプリが使っている・GPU が無い・OS のエラー・macOS で拡張の許可を待っている / 有効にできない) |
+  | 止まりました (エラー) | 始められなかった・途中で失敗した (機器が無い・機器を開く権限が無い・ほかのアプリが使っている・GPU が無い・OS のエラー・macOS で拡張の許可を待っている / 再起動が要る / 有効にできない) |
   | カメラを使っているアプリがありません (案内) | Windows と macOS で、カメラを開いているアプリが無い (Linux では分からないので出さない) |
   | 遅れています (注意) | 直近 1 秒に描けた回数が、フレームレートの 95% を下回った |
 
-  理由に合わせて、v4l2loopback の入れ方 (Linux)・OBS の仮想カメラを使う手順 (Windows 10)・インストーラでの入れ直し (登録が無い) を案内する。
+  理由に合わせて、v4l2loopback の入れ方 (Linux)・`video` のグループへの入り方 (Linux で機器を開く権限が無い)・OBS の仮想カメラを使う手順
+  (Windows 10)・インストーラでの入れ直し (登録が無い) を案内する (`apps/studio/src/lib/virtualCamera.ts` の `guideFor`)。
+  理由のコードは `ugoe_studio_vcam::Error::code` で、文言は `apps/studio/locales/*.json` の `virtualCamera.errors.*` (ADR 0029 の 4.)。
   負荷の表示 (「フレームレートと負荷」) にも「仮想カメラ」の行が出る (描いた回数・1 回の時間・描かなかった画の数。目標は仮想カメラのフレームレート)。
 
 ### 描き方
@@ -682,6 +684,11 @@ echo 'options v4l2loopback devices=1 video_nr=10 card_label="ugoe studio" exclus
 - スタジオは `/dev/video*` を番号順に調べ、ドライバが `v4l2 loopback` で書き込みを受ける最初の機器を使う。`VIDIOC_S_FMT` で YUYV と大きさ
   (BT.709・限定範囲) を決め、`VIDIOC_S_PARM` でフレームレートを伝え、1 枚ずつ `write` する (`apps/studio/vcam/src/v4l2.rs`)。
 - loopback の機器があってもほかのアプリが書いている (`exclusive_caps=1` の機器は書き込みを 1 つしか受けない) なら「ほかのアプリが使っています」。
+- 書ける loopback の機器が無く、権限が無くて開けない (`EACCES`・`EPERM`) 機器があり、v4l2loopback が読み込まれていれば、「機器を開く権限が
+  ありません」(`noPermission`) と、`video` のグループに入る手順 (`sudo usermod -aG video "$USER"` の後でログインし直す) を案内する。
+  開けない機器が loopback のものかは開かないと分からないので、モジュールが読み込まれていることで判断する (読み込まれていなければ
+  入れ方を案内する)。`/dev/video*` は多くのディストリビューションで `root:video` の `0660` で、画面の前でログインした利用者には
+  systemd-logind が ACL を足す (udev の `uaccess`)。ACL が付かない (リモートのセッション・logind を使わない環境など) ときに起こる。
 - 「使えません」の判断は `/sys/module/v4l2loopback` があるか (モジュールが読み込まれているか) だけで行い、機器は開始したときに開く。
 - Secure Boot を使っていると、DKMS で作ったモジュールに署名が要ることがある (ディストリビューションの手順に従う)。
 - 受け取るアプリがあるかは分からない (v4l2loopback は知らせない) ので、「カメラを使っているアプリがありません」は出さない。
@@ -692,6 +699,8 @@ echo 'options v4l2loopback devices=1 video_nr=10 card_label="ugoe studio" exclus
 2. `ffplay /dev/video10` (または `v4l2-ctl --device /dev/video10 --all`) で、YUYV・選んだ大きさで映る。
 3. Chrome (Google Meet)・OBS (映像キャプチャデバイス (V4L2))・Zoom で「ugoe studio」を選ぶと映り、色が正しい。
 4. v4l2loopback を読み込んでいないと「使えません」と入れ方が出る。ほかのアプリが同じ機器に書いていると「ほかのアプリが使っています」。
+5. `video` のグループに入っていない利用者 (`sudo chmod 0660 /dev/video10` と `sudo setfacl -b /dev/video10` で ACL を外して試せる) で
+   入れると、「機器を開く権限がありません」と `video` のグループの手順が出る。グループに入ってログインし直すと入る。
 
 ### macOS (Camera Extension)
 
@@ -714,6 +723,8 @@ macOS 12.3 以降の CoreMediaIO の Camera Extension (System Extension) で、�
   - 拡張はアプリの束の `Contents/Library/SystemExtensions/app.ugoe.studio.camera.systemextension` に入れる。スタジオは、プロセスで
     最初に仮想カメラを入れるときに `OSSystemExtensionRequest` で拡張を有効にする (すでに有効ならすぐ終わり、版が違えば入れ替える)。
     初回は macOS が許可を求めるので、「システム設定」で許可してもらい (操作ウィンドウに「許可してください」を出す)、もう一度入れてもらう。
+    求めが「再起動の後に終わる」(`OSSystemExtensionRequestResult.willCompleteAfterReboot`。前の版を外すのに再起動が要るとき) で終われば、
+    「Mac を再起動してください」(`needsRestart`) を出す。再起動まではプロセスの中で求め直さない (結果は変わらないため)。
   - 有効になった拡張は OS (CoreMediaIO) が動かし、スタジオが動いていない間も機器は残る (画は黒)。拡張は別の利用者
     (`_cmiodalassistants`) のサンドボックスで動くので、Windows のような名前付きの共有メモリは使わず、CoreMediaIO の受ける側の
     ストリーム (Apple が推奨する、アプリから Camera Extension へ画を渡す方法) を使う。
@@ -726,7 +737,8 @@ macOS 12.3 以降の CoreMediaIO の Camera Extension (System Extension) で、�
     2 秒続けば「カメラを使っているアプリがありません」を出す (Windows と同じ知らせと同じ長さ。アプリが選んだフレームレートが
     スタジオより低いと 1 枚ごとには埋まることがあるので、1 枚ごとには決めない)。
   - 始められない理由: macOS 12.3 より前 (`macosTooOld`)・許可を待っている (`needsApproval`)・アプリが「アプリケーション」フォルダに無い
-    (`notInApplications`。System Extension は「アプリケーション」フォルダのアプリからしか有効にできない)・有効にできない / 機器が現れない
+    (`notInApplications`。System Extension は「アプリケーション」フォルダのアプリからしか有効にできない)・再起動の後に有効になる
+    (`needsRestart`)・有効にできない / 機器が現れない
     (`extensionFailed`。署名の誤りなど。詳細を添える)。
 - **コード:** Rust 側は `apps/studio/vcam/src/cmio.rs` (objc2 の束縛で SystemExtensions・CoreMediaIO・CoreMedia・CoreVideo を呼ぶ。
   `unsafe` は ADR 0028 の 8. の例外のクレートの中)。拡張は `apps/studio/vcam/macos/` (`Extension/Camera.swift`・`main.swift`・
@@ -766,7 +778,8 @@ macOS 12.3 以降の CoreMediaIO の Camera Extension (System Extension) で、�
    `NSCameraUsageDescription` の文言 (いまはフェイストラッキングの説明) を仮想カメラにも合う文言にする。
 6. 「アプリケーション」フォルダの外から開くと「アプリケーション フォルダに移して」が出る。macOS 12.3 より前では「macOS 12.3 以降が要ります」。
 7. tauri の署名 (`bundle.macOS.signingIdentity`) が、中の拡張の署名を壊さない (`codesign --verify --deep --strict` が通る)。公証が通る。
-8. スタジオを更新した (拡張の版が変わった) ときに、拡張が入れ替わる。
+8. スタジオを更新した (拡張の版が変わった) ときに、拡張が入れ替わる。入れ替えに再起動が要るときは「Mac を再起動してください」が出て、
+   再起動の後にもう一度入れると入る。
 9. スタジオは受ける側のストリームの書式 (既定は 0 番の 1280×720) を変えずに、設定の大きさ (1920×1080 も) の画を積む。
    1920×1080 を選んでも受ける側が画を受け取り、出す側に映る (受けなければ、スタジオが受ける側の書式を設定に合わせる)。
 

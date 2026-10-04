@@ -62,7 +62,8 @@ export function isCameraActive(status: VirtualCameraStatus): boolean {
 
 /**
  * 操作ウィンドウに出す知らせ。文言は呼び手が翻訳する (`virtualCamera.notices.<kind>`・`virtualCamera.errors.<code>`)。
- * `guide` は案内を出す OS の手順 (`linux` = v4l2loopback の入れ方、`windows` = Windows 11 と OBS の代わりの手順)。
+ * `guide` は案内を出す OS の手順 (`linux` = v4l2loopback の入れ方、`videoGroup` = `video` のグループへの入り方、
+ * `windows` = Windows 11 と OBS の代わりの手順、`reinstall` = インストーラでの入れ直し)。
  */
 export type CameraNotice =
   | { kind: "unavailable"; tone: "warning"; code: string; guide: CameraGuide | null }
@@ -70,7 +71,7 @@ export type CameraNotice =
   | { kind: "noConsumer"; tone: "info" }
   | { kind: "late"; tone: "warning" };
 
-export type CameraGuide = "linux" | "windows" | "reinstall";
+export type CameraGuide = "linux" | "videoGroup" | "windows" | "reinstall";
 
 /** 理由のコードに合う案内。 */
 export function guideFor(code: string): CameraGuide | null {
@@ -78,6 +79,8 @@ export function guideFor(code: string): CameraGuide | null {
     case "noDevice":
     case "busy":
       return "linux";
+    case "noPermission":
+      return "videoGroup";
     case "windowsTooOld":
       return "windows";
     case "notRegistered":
