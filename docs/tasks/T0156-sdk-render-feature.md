@@ -1,11 +1,11 @@
 ---
 id: T0156
 title: ugoe クレートの参照レンダラを feature で外せるようにする
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe, ugoe-ffi, ugoe-wasm, ugoe-headless, docs]
 depends_on: [T0139]
-assignee:
+assignee: claude-worker-T0156
 ---
 
 # T0156: ugoe クレートの参照レンダラを feature で外せるようにする
