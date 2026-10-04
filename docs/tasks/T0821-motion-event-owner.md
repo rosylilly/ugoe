@@ -1,11 +1,11 @@
 ---
 id: T0821
 title: "モーションのイベントに、発火したモーションを載せる (スタジオの motion.event の名前)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-motion, ugoe, apps/studio, docs]
 depends_on: [T0814]
-assignee:
+assignee: claude-worker-T0821
 ---
 
 # T0821: モーションのイベントに、発火したモーションを載せる
