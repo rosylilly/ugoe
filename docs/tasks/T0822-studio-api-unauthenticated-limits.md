@@ -1,11 +1,11 @@
 ---
 id: T0822
 title: "スタジオの操作 API: 名乗らない接続と遅い要求の時間の上限"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, docs]
 depends_on: [T0814]
-assignee:
+assignee: claude-worker-T0822
 ---
 
 # T0822: スタジオの操作 API: 名乗らない接続と遅い要求の時間の上限
