@@ -327,6 +327,89 @@ fn zip_bomb_layers_stop_at_the_total_limit() {
     assert_eq!(layer(&tree.root[3]).rgba, vec![0; 1024 * 1024 * 4]);
 }
 
+/// PackBits のチャンネルで `width` × `height` の 0 になるレイヤー。各行を `row` バイトで書く。
+/// `row` が `2 * ceil(width / 128)` なら最も縮めた正しいデータ (128 バイトの繰り返しを並べる) になり、
+/// それより短ければ行の長さの嘘になる。画素は用意しない。
+fn packbits_bomb(name: &str, width: u32, height: u32, row: u16) -> W {
+    let mut data = vec![0, 1];
+    for _ in 0..height {
+        data.extend_from_slice(&row.to_be_bytes());
+    }
+    let mut left = width;
+    let mut written = 0;
+    while written < row {
+        // 128 バイト (と端の残り) の 0 の繰り返し。幅を書き終えたら -128 (何もしない) で埋める。
+        let run = left.min(128);
+        left -= run;
+        match run {
+            0 => data.extend_from_slice(&[0x80, 0x80]),
+            1 => data.extend_from_slice(&[0, 0]),
+            n => data.extend_from_slice(&[(1 - n as i16) as u8, 0]),
+        }
+        written += 2;
+    }
+    let rows = data.split_off(2 + 2 * height as usize);
+    for _ in 0..height {
+        data.extend_from_slice(&rows);
+    }
+    W {
+        width,
+        height,
+        compression: 1,
+        channel_data: Some(data),
+        ..W::new(name)
+    }
+}
+
+#[test]
+fn packbits_bomb_layers_stop_at_the_total_limit() {
+    // 最も縮めた PackBits (2 バイトが 128 バイトに伸びる) は入力の約 64 倍に展開される。
+    // 16 レイヤー × 4 チャンネル × 1 MiB = 64 MiB を、約 1.2 MiB の PSD で宣言する。
+    let layers: Vec<W> = (0..16)
+        .map(|i| packbits_bomb(&format!("bomb {i}"), 1024, 1024, 16))
+        .collect();
+    let bytes = write_psd(4, 4, &layers);
+    assert!(bytes.len() < 1280 * 1024, "{}", bytes.len());
+    let limits = ImportLimits::default().with_max_total_decompressed(16 * 1024 * 1024);
+    assert_over_limit(import_with(&bytes, limits));
+    // 4 レイヤー分 (16 MiB) ちょうどなら読める (正しいデータで、上限のほかに止めるものはない)。
+    let tree = import_with(&write_psd(4, 4, &layers[..4]), limits).unwrap();
+    assert_eq!(layer(&tree.root[3]).rgba, vec![0; 1024 * 1024 * 4]);
+}
+
+#[test]
+fn packbits_channel_larger_than_the_limit_is_rejected_before_decoding() {
+    // 40000 × 40000 = 1.6 GB のチャンネルを宣言した、行の長さが足りない小さな PSD。既定の上限 (1 GiB) を
+    // 超えるので、行を読む前 (確保する前) に止まる。
+    let bytes = write_psd(4, 4, &[packbits_bomb("bomb", 40_000, 40_000, 2)]);
+    assert!(bytes.len() < 1024 * 1024, "{}", bytes.len());
+    assert_over_limit(import(&bytes));
+    // 上限を上げても、行が PackBits で書ける最も短い長さに足りないので、確保せずに壊れた入力になる。
+    let limits = ImportLimits::default()
+        .with_max_channel_decompressed(u64::MAX)
+        .with_max_total_decompressed(u64::MAX);
+    let err = import_with(&bytes, limits).unwrap_err();
+    assert!(
+        matches!(&err, PsdError::Invalid(m) if m.contains("too short")),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn packbits_rows_too_short_for_the_width_are_invalid() {
+    // 上限 (1 GiB) に収まる 30000 × 30000 (約 858 MiB) を宣言し、1 行 2 バイトしか書かない。
+    // 1 行には少なくとも 2 * ceil(30000 / 128) = 470 バイト要るので、確保せずに壊れた入力にする。
+    let bytes = write_psd(4, 4, &[packbits_bomb("bomb", 30_000, 30_000, 2)]);
+    let err = import(&bytes).unwrap_err();
+    assert!(
+        matches!(&err, PsdError::Invalid(m) if m.contains("too short")),
+        "{err:?}"
+    );
+    // 最も短い長さちょうどなら正しいデータとして読める (小さな矩形で確かめる)。
+    let tree = import(&write_psd(4, 4, &[packbits_bomb("ok", 300, 2, 6)])).unwrap();
+    assert_eq!(layer(&tree.root[0]).rgba, vec![0; 300 * 2 * 4]);
+}
+
 #[test]
 fn import_limits_count_decompressed_bytes_of_every_compression() {
     let limits = |channel: u64, total: u64| {

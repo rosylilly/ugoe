@@ -731,6 +731,10 @@ fn to_8bit(data: Vec<u8>, depth: u16) -> Vec<u8> {
 
 /// PackBits で圧縮された `planes` 枚の平面を読む。先頭に全行のバイト数の表がある。
 /// `width` は 1 行のバイト数 (16 ビットでは画素数の 2 倍)。
+///
+/// 確保する大きさ (`width` × 行数) は矩形から決まり、呼ぶ側が先に上限 (`Budget`) と比べてある。
+/// ここでは、どの行も PackBits で書ける最も短いバイト数を持つことを確かめてから確保する
+/// (確保は入力の 64 倍を超えない。crates/ugoe-psd/README.md の「PackBits」)。
 fn decode_rle(
     r: &mut Reader<'_>,
     width: usize,
@@ -738,6 +742,10 @@ fn decode_rle(
     planes: u16,
 ) -> Result<Vec<u8>, PsdError> {
     let rows = height as usize * usize::from(planes);
+    // 表は 1 行 2 バイト。入力より大きな表を確保しない。
+    if rows.saturating_mul(2) > r.remaining() {
+        return Err(truncated("rle byte counts"));
+    }
     let mut counts = Vec::with_capacity(rows);
     for _ in 0..rows {
         counts.push(usize::from(r.u16("rle byte counts")?));
@@ -746,9 +754,11 @@ fn decode_rle(
     if total > r.remaining() {
         return Err(truncated("rle data"));
     }
-    // 2 バイトで最大 128 バイトに伸びる。これを超える大きさは嘘なので、確保する前に弾く。
-    if rows.saturating_mul(width) > total.saturating_mul(64) {
-        return Err(invalid("rle data is too short for the image size"));
+    // 2 バイト (繰り返しの見出しと値) で最大 128 バイトに伸びるので、1 行には少なくとも
+    // `2 * ceil(width / 128)` バイト要る。これより短い行は嘘なので、確保する前に弾く。
+    let min_row = width.div_ceil(128) * 2;
+    if counts.iter().any(|&count| count < min_row) {
+        return Err(invalid("rle row is too short for the row width"));
     }
     let mut out = Vec::with_capacity(rows * width);
     for count in counts {
@@ -846,6 +856,44 @@ mod tests {
         // リテラル 3 バイト、繰り返し 4 回、何もしない -128。
         unpack_bits(&[2, 1, 2, 3, 0xfd, 9, 0x80], 7, &mut out).unwrap();
         assert_eq!(out, [1, 2, 3, 9, 9, 9, 9]);
+    }
+
+    /// 1 行 `count` バイトの表と、その中身 (0 で埋めたもの) を持つ PackBits のデータ。
+    fn rle_data(counts: &[u16]) -> Vec<u8> {
+        let mut data: Vec<u8> = counts.iter().flat_map(|c| c.to_be_bytes()).collect();
+        data.resize(
+            data.len() + counts.iter().map(|&c| usize::from(c)).sum::<usize>(),
+            0,
+        );
+        data
+    }
+
+    #[test]
+    fn rle_rows_shorter_than_the_densest_packing_are_rejected() {
+        // 幅 256 の行は、最も縮めても 128 バイトの繰り返しが 2 つ (4 バイト)。
+        let mut data = rle_data(&[4, 4]);
+        for row in data[4..].chunks_mut(2) {
+            row[0] = 0x81;
+        }
+        let out = decode_rle(&mut Reader::new(&data), 256, 2, 1).unwrap();
+        assert_eq!(out, vec![0; 512]);
+        // 合計は足りていても (64 倍の目安を満たしても)、1 行でも短ければ展開せずに弾く。
+        let data = rle_data(&[7, 3]);
+        let err = decode_rle(&mut Reader::new(&data), 256, 2, 1).unwrap_err();
+        assert!(
+            matches!(&err, PsdError::Invalid(m) if m.contains("too short")),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn rle_count_table_longer_than_the_input_is_truncated() {
+        // 30000 行 × 56 枚の表 (約 3.4 MB) を、4 バイトの入力から確保しない。
+        let err = decode_rle(&mut Reader::new(&[0, 2, 0, 2]), 1, 30_000, 56).unwrap_err();
+        assert!(
+            matches!(&err, PsdError::Invalid(m) if m.contains("rle byte counts")),
+            "{err:?}"
+        );
     }
 
     #[test]
