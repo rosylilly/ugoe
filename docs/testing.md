@@ -36,6 +36,7 @@ C ABI の検査はワークスペースの外のツール (cbindgen) と C コ�
 | `rust (assets)` | `ugoe-psd`・`ugoe-mesher`・`ugoe-rigging`・`ugoe-headless` の clippy とテスト |
 | `rust (tools)` | `ugoe-editor-core`・`ugoe-ai`・`ugoe-cli`・`ugoe-mcp` の clippy とテスト |
 | `rust (apps)` | エディタ・ビューア・スタジオ (Tauri) の clippy とテスト、生成物の検査 (`just gen && git diff --exit-code`)。Tauri のシステムの依存はこのジョブでだけ入れる |
+| `rust (cross)` | 手元の OS 以外のターゲットでの clippy (`just cross-check`)。下の「別のターゲットの検査」 |
 | `rust` | 上の全ジョブの結果をまとめる (ブランチの保護で必須にする検査の名前を、グループが増えても変えないため) |
 
 - 手元では `just lint-group <グループ>` と `just test-group <グループ>` で、CI の 1 つのジョブと同じ clippy とテストを走らせられます。`just ci` は今までどおりワークスペース全体を検査します。
@@ -53,6 +54,20 @@ C ABI の検査はワークスペースの外のツール (cbindgen) と C コ�
 | assets | 約 0.7GB |
 | tools | 約 1.4GB |
 | apps | 約 2.7GB (`just gen` を足して約 2.8GB) |
+
+### 別のターゲットの検査
+
+`#[cfg(windows)]`・`#[cfg(target_os = "macos")]` の中のコードは、ubuntu の `rust-group` のジョブと Linux の手元ではコンパイルされず、
+clippy の拒否 (仮想カメラの `clippy::undocumented_unsafe_blocks` など) も効きません。そこで `rust (cross)` のジョブが、ubuntu のまま
+`--target` を変えて `cargo clippy --all-targets -- -D warnings` を流します (T0829)。リンクはしないので、ターゲットの標準ライブラリ
+(`rustup target add`) だけがあればよく、Windows や macOS の SDK は要りません。テストは動かせません。
+
+- 定義の正は `scripts/cross-check.mjs` の `CHECKS` (検査の名前・クレート・ターゲット)。CI のジョブは `CHECKS` が要るターゲットを
+  `node scripts/cross-check.mjs targets` で足し、すべての検査を流します。
+- 手元では `just cross-check` (すべて) か `just cross-check <名前>`。仮想カメラは `just vcam-check`
+  (`ugoe-studio-vcam` を `x86_64-pc-windows-msvc` と `aarch64-apple-darwin` で)。ターゲットが入っていなければ `rustup target add …` の
+  入れ方を出して止まります。`just ci` には含めないので、cfg で OS を分けたコードを触ったら実行してください。
+- 検査を足すときは `CHECKS` に書くだけでジョブに入ります。定義のクレートがワークスペースにあるかは `just groups` が検査します。
 
 ### クレートを足したとき
 

@@ -51,10 +51,12 @@ lint:
 test *args:
     cargo test --workspace {{args}}
 
-# CI のジョブのまとまり (グループ) の検査: すべてのクレートがどれか 1 つのグループに入っているか (scripts/ci-groups.mjs)
+# CI のジョブのまとまり (グループ) の検査: すべてのクレートがどれか 1 つのグループに入っているか (scripts/ci-groups.mjs)。
+# 別のターゲットの検査 (scripts/cross-check.mjs) の定義のクレートがワークスペースにあるかも見る
 groups:
-    @node --test --test-reporter=dot scripts/ci-groups.test.mjs
+    @node --test --test-reporter=dot scripts/ci-groups.test.mjs scripts/cross-check.test.mjs
     @node scripts/ci-groups.mjs check
+    @node scripts/cross-check.mjs check
 
 # グループの一覧は `node scripts/ci-groups.mjs list`。CI の rust (<グループ>) ジョブと同じ検査。
 # lint-group と test-group は bash の構文を使うので、Windows では Git Bash か WSL で実行する。
@@ -157,6 +159,15 @@ unity-build *args:
 # Unity のパッケージの検査 (.meta・Runtime/Core の dotnet test・Unity の部分のスタブでの型検査を netstandard2.1 と net48 で)
 unity-check *args:
     node bindings/unity/build.mjs --check {{args}}
+
+# 手元の OS 以外のターゲットでの clippy (`#[cfg(windows)]` などの中のコード。定義は scripts/cross-check.mjs の CHECKS)。
+# 名前を省けばすべて: `just cross-check`、`just cross-check vcam`。ターゲットが無ければ `rustup target add` の入れ方を出して止まる。
+# `just ci` には含めない (CI では rust (cross) のジョブ)。cfg で OS を分けたコードを触ったら実行する
+cross-check *names:
+    @node scripts/cross-check.mjs run {{names}}
+
+# 仮想カメラ (apps/studio/vcam) の Windows と macOS のコードの clippy (x86_64-pc-windows-msvc・aarch64-apple-darwin)
+vcam-check: (cross-check "vcam")
 
 # wasm ターゲットでビルドできるか (ブラウザ専用のコード `src/web.rs` も clippy で検査する)
 wasm-check:

@@ -149,10 +149,36 @@ jobs:
           df -h /
           du -sh target || true
 
+  # 手元の OS 以外のターゲットでの clippy (`just cross-check`、定義は scripts/cross-check.mjs の CHECKS)。
+  # `#[cfg(windows)]`・`#[cfg(target_os = "macos")]` の中のコード (仮想カメラの unsafe など) は rust-group (ubuntu) では
+  # コンパイルされないので、ubuntu のまま --target を変えて検査する。リンクしないので、ターゲットの標準ライブラリだけを足す
+  cross:
+    name: rust (cross)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust toolchain (rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .tool-versions
+      - name: Install Rust targets
+        run: node scripts/cross-check.mjs targets | xargs rustup target add
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: cross
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: extractions/setup-just@v4
+      - name: Clippy
+        run: just cross-check
+
   # Rust の全ジョブの結果を 1 つにまとめる (ブランチの保護で必須にする検査の名前を、グループが増えても変えないため)
   rust:
     if: always()
-    needs: [rust-checks, rust-groups, rust-group]
+    needs: [rust-checks, rust-groups, rust-group, cross]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -164,6 +190,7 @@ jobs:
           echo "rust-checks: ${{ needs.rust-checks.result }}"
           echo "rust-groups: ${{ needs.rust-groups.result }}"
           echo "rust-group: ${{ needs.rust-group.result }}"
+          echo "cross: ${{ needs.cross.result }}"
           exit 1
 
   # 描画テスト (`just test-gpu`)。GPU のないランナーで Mesa のソフトウェア実装を使う。

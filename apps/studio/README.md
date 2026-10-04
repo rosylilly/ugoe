@@ -181,8 +181,11 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
     Cargo のビルドには入らない (`pnpm vcam:macos` が作る)。
   - **`unsafe` を許す** (ADR 0028 の 8.)。ワークスペースの lint を `Cargo.toml` で写して `unsafe_code` だけを許し、
     `clippy::undocumented_unsafe_blocks` (どの `unsafe` にも `// SAFETY:`) と `unsafe_op_in_unsafe_fn` を拒否にしている。
-- Windows のコードは Linux からも `cargo clippy -p ugoe-studio-vcam --target x86_64-pc-windows-msvc` で検査できる (リンクまでは `cargo xwin build`)。
-  macOS の Rust のコードも `--target aarch64-apple-darwin` で検査できる (Swift の拡張は macOS でしか作れない)。
+- Windows と macOS の Rust のコードは、Linux からも `just vcam-check` で検査できる (`cargo clippy -p ugoe-studio-vcam --all-targets -- -D warnings` を
+  `--target x86_64-pc-windows-msvc` と `aarch64-apple-darwin` で。ターゲットが無ければ `rustup target add` の入れ方を出す)。
+  CI でも `rust (cross)` のジョブが同じ検査を流す ([docs/testing.md#別のターゲットの検査](../../docs/testing.md#別のターゲットの検査))。
+  `just ci` には含まれないので、`src/mf/`・`src/cmio.rs` を触ったら実行する。リンクまでは `cargo xwin build` (Windows)、
+  Swift の拡張は macOS でしか作れない。
 
 ## ブラウザソースの画を確かめる
 

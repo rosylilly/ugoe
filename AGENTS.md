@@ -82,6 +82,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 | `just licenses` | 依存するクレートと npm パッケージのライセンスを検査 (MIT のクレートにコピーレフトを入れない。アプリと packages/ の npm の依存は GPL-3.0 と両立するもの) |
 | `just publish-check` | crates.io に公開するクレートの準備を検査 (メタデータ・LICENSE の写し・内部の依存の版。[docs/release.md](docs/release.md#cratesio)) |
 | `just wasm-check` | wasm32 でビルドできるか (ランタイム層を触ったら実行) |
+| `just cross-check` / `just vcam-check` | 手元の OS 以外のターゲット (Windows・macOS) で clippy (`#[cfg(windows)]` などのコードを触ったら実行。[docs/testing.md](docs/testing.md#別のターゲットの検査)) |
 | `just wt-add <ID>` / `just wt-remove <ID>` | タスク用 worktree の作成・削除 (mbx が無効なら main の `target/` をコピーしてビルドを省く。[docs/workflow/build-cache.md](docs/workflow/build-cache.md)) |
 | `just editor` | エディタを開発モードで起動 |
 | `just viewer` | ビューアを開発モードで起動 |
