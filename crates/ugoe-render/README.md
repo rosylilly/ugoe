@@ -27,5 +27,8 @@ wgpu による参照レンダラと参照シェーダ (WGSL)。
 - T0201 (`docs/tasks/T0201-*.md`)
 - T0202 (`docs/tasks/T0202-*.md`)
 - T0203 (`docs/tasks/T0203-*.md`)
+- T0205 (`docs/tasks/T0205-*.md`): マスクの意味論 (ADR 0009)
+- T0206 (`docs/tasks/T0206-*.md`): マスクアトラスの縮小
+- T0207 (`docs/tasks/T0207-*.md`): 転送の省略
 - T0208 (`docs/tasks/T0208-*.md`): 描画の統合
 - T0209 (`docs/tasks/T0209-*.md`): ライティング (法線マップと光源)

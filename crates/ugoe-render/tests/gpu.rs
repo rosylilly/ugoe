@@ -1580,6 +1580,32 @@ fn batching_matches_per_drawable_drawing() {
 }
 
 #[test]
+fn unmasked_drawable_between_atlases_counts_the_atlas_change() {
+    // C0..C2 はアトラス 0、C3・C4 はアトラス 1 を読む (一辺 16)。その間にマスクを読まない要素を挟む。
+    // まとめるかどうかによらず、アトラス 0 → 1 の切り替えを 1 回と数える。
+    let scene = || {
+        let mut scene = five_mask_sets();
+        scene.options = shrinking_options(16);
+        for k in 0..5 {
+            edit_keyforms(&mut scene.model, &format!("C{k}"), |kf| {
+                kf.draw_order = 500.0 + k as f32;
+            });
+        }
+        let mut free = quad("Free", [0.0, 224.0, 32.0, 256.0]);
+        for kf in &mut free.keyforms.keyforms {
+            kf.draw_order = 502.5;
+        }
+        scene.model.meshes.push(free);
+        scene
+    };
+    let (batched, _) = render_with_and_without_batching(scene);
+    assert_eq!(batched.stats.mask_atlases, 2);
+    // M0..M4 (乗算合成) → C0..C2 と Free (アトラス 0) → C3・C4 (アトラス 1)。
+    assert_eq!(batched.stats.draw_calls, 3);
+    assert_eq!(batched.stats.state_changes, 2);
+}
+
+#[test]
 fn adjacent_drawables_with_the_same_state_share_one_draw() {
     // 描画順: M1, M2 (乗算合成) → A..D (通常の合成。マスクは同じアトラス)。
     let band = |i: f32| [64.0, 64.0 + 32.0 * i, 192.0, 96.0 + 32.0 * i];

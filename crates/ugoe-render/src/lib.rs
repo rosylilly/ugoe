@@ -27,10 +27,14 @@ use crate::upload::{IndexUploads, PositionUploads, SlotUploads};
 /// 参照シェーダの WGSL ソース。
 pub const DRAWABLE_WGSL: &str = include_str!("shaders/drawable.wgsl");
 
+/// [`Renderer`] のエラー。
 #[derive(Debug, thiserror::Error)]
 pub enum RenderError {
+    /// 描く要素 (またはそのマスク用メッシュ) が使うテクスチャの番号が登録されていない。
     #[error("texture index {0} is not uploaded")]
     MissingTexture(u32),
+    /// 登録しようとした RGBA8 のデータの大きさが、幅と高さに合わない (幅か高さが 0 の場合も)。
+    /// `expected` は `width × height × 4` (`usize` であふれるなら `usize::MAX`)。
     #[error("texture data is {actual} bytes, expected {expected} bytes for {width}x{height} RGBA8")]
     InvalidTextureData {
         width: u32,
@@ -382,10 +386,12 @@ pub struct Renderer {
 }
 
 impl Renderer {
+    /// 既定の設定 ([`RendererOptions::default`]) で作る。`target_format` は描画先 (`encode` の `target`) の形式。
     pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self {
         Self::with_options(device, target_format, RendererOptions::default())
     }
 
+    /// 設定を指定して作る。`target_format` は描画先 (`encode` の `target`) の形式。
     pub fn with_options(
         device: &wgpu::Device,
         target_format: wgpu::TextureFormat,
@@ -548,6 +554,7 @@ impl Renderer {
         }
     }
 
+    /// 作るときに指定した描画先の形式。
     pub fn target_format(&self) -> wgpu::TextureFormat {
         self.target_format
     }
@@ -570,15 +577,7 @@ impl Renderer {
         height: u32,
         rgba_premultiplied: &[u8],
     ) -> Result<(), RenderError> {
-        let expected = width as usize * height as usize * 4;
-        if width == 0 || height == 0 || rgba_premultiplied.len() != expected {
-            return Err(RenderError::InvalidTextureData {
-                width,
-                height,
-                expected,
-                actual: rgba_premultiplied.len(),
-            });
-        }
+        check_rgba8(width, height, rgba_premultiplied)?;
         let texture = device.create_texture_with_data(
             queue,
             &texture_descriptor("ugoe model texture", width, height),
@@ -611,15 +610,7 @@ impl Renderer {
         height: u32,
         rgba: &[u8],
     ) -> Result<(), RenderError> {
-        let expected = width as usize * height as usize * 4;
-        if width == 0 || height == 0 || rgba.len() != expected {
-            return Err(RenderError::InvalidTextureData {
-                width,
-                height,
-                expected,
-                actual: rgba.len(),
-            });
-        }
+        check_rgba8(width, height, rgba)?;
         let normal_map = device.create_texture_with_data(
             queue,
             &texture_descriptor("ugoe normal map", width, height),
@@ -707,6 +698,7 @@ impl Renderer {
     /// エラーを返し、何も積まない。
     ///
     /// マスクの解像度は `target` のテクスチャの大きさ (画素) から決める (`docs/spec/rendering.md` の「精度」)。
+    /// `target` は [`Renderer::target_format`] の形式で、テクスチャの mip 0 全体を指すビューであること。
     pub fn encode(
         &mut self,
         device: &wgpu::Device,
@@ -1103,6 +1095,9 @@ impl Renderer {
         self.indices_scratch.clear();
         let mut calls: Vec<DrawCall> = Vec::new();
         let mut state_changes = 0;
+        // まとめた場合の今の描画の状態。`state_changes` はまとめるかどうかによらずこれで数える
+        // (まとめないときに直前の要素の状態と比べると、マスクを読まない要素を挟んだアトラスの切り替えを数え損なう)。
+        let mut run: Option<DrawState> = None;
         for &(i, key) in &draws {
             let mesh = geometry.meshes[i];
             let state = DrawState {
@@ -1116,14 +1111,15 @@ impl Renderer {
             let first_index = self.indices_scratch.len() as u32;
             self.indices_scratch
                 .extend_from_slice(&geometry.index_data[mesh.indices_usize()]);
-            let merged = calls.last().and_then(|last| last.state.merge(state));
+            let merged = run.and_then(|run| run.merge(state));
+            if run.is_some() && merged.is_none() {
+                state_changes += 1;
+            }
+            run = Some(merged.unwrap_or(state));
             if let (Some(last), Some(merged), true) = (calls.last_mut(), merged, self.batch_draws) {
                 last.state = merged;
                 last.index_count += mesh.index_count;
                 continue;
-            }
-            if merged.is_none() && !calls.is_empty() {
-                state_changes += 1;
             }
             calls.push(DrawCall {
                 state,
@@ -1511,6 +1507,23 @@ fn screen_uv(m: &[[f32; 3]; 3], [x, y]: [f32; 2]) -> [f32; 2] {
     [cx * 0.5 + 0.5, 0.5 - cy * 0.5]
 }
 
+/// `rgba` が `width × height` の RGBA8 のデータか確かめる (幅と高さは 1 以上)。
+fn check_rgba8(width: u32, height: u32, rgba: &[u8]) -> Result<(), RenderError> {
+    // wasm32 では usize が 32 ビットなので、掛け算があふれうる。
+    let expected = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|n| n.checked_mul(4));
+    if width == 0 || height == 0 || expected != Some(rgba.len()) {
+        return Err(RenderError::InvalidTextureData {
+            width,
+            height,
+            expected: expected.unwrap_or(usize::MAX),
+            actual: rgba.len(),
+        });
+    }
+    Ok(())
+}
+
 fn texture_descriptor(label: &str, width: u32, height: u32) -> wgpu::TextureDescriptor<'_> {
     wgpu::TextureDescriptor {
         label: Some(label),
@@ -1553,6 +1566,25 @@ fn texture_bind_group(
 
 #[cfg(test)]
 mod tests {
+    use super::{RenderError, check_rgba8};
+
+    #[test]
+    fn rgba8_data_must_match_the_size() {
+        assert!(check_rgba8(1, 1, &[0; 4]).is_ok());
+        assert!(check_rgba8(2, 3, &[0; 24]).is_ok());
+        assert!(matches!(
+            check_rgba8(2, 1, &[0; 4]),
+            Err(RenderError::InvalidTextureData {
+                expected: 8,
+                actual: 4,
+                ..
+            })
+        ));
+        // 大きさ 0 のテクスチャは作れない。
+        assert!(check_rgba8(0, 1, &[]).is_err());
+        assert!(check_rgba8(1, 0, &[]).is_err());
+    }
+
     #[test]
     fn reference_shader_is_valid_wgsl() {
         let module = naga::front::wgsl::parse_str(super::DRAWABLE_WGSL).expect("parse");

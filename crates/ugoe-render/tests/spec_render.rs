@@ -169,7 +169,9 @@ fn examples_dir() -> PathBuf {
 
 /// 乗算していない RGBA8 を乗算済みにする (`spec/rendering.md` はテクスチャを乗算済みとして合成する)。
 fn premultiply(rgba: &[u8]) -> Vec<u8> {
-    rgba.chunks_exact(4)
+    rgba.as_chunks::<4>()
+        .0
+        .iter()
         .flat_map(|p| {
             let a = f32::from(p[3]) / 255.0;
             let c = |v: u8| (f32::from(v) * a).round() as u8;

@@ -89,9 +89,14 @@ impl LightRaw {
     fn new(light: &Light) -> Option<Self> {
         match *light {
             Light::Directional { direction, color } => {
-                let [x, y, z] = direction;
+                // 最大の成分で割ってから長さを求める (2 乗があふれたり 0 に潰れたりしないように)。
+                let scale = direction.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+                if !(scale.is_finite() && scale > 0.0) || direction.iter().any(|v| v.is_nan()) {
+                    return None;
+                }
+                let [x, y, z] = direction.map(|v| v / scale);
                 let length = (x * x + y * y + z * z).sqrt();
-                (length.is_finite() && length > 0.0).then(|| Self {
+                Some(Self {
                     vector: [-x / length, -y / length, -z / length, 0.0],
                     color: rgba(color, 0.0),
                 })
@@ -131,6 +136,28 @@ mod tests {
         assert_eq!(raw.ambient, [0.1, 0.2, 0.3, 0.0]);
         assert_eq!(raw.count[0], 1);
         assert_eq!(raw.lights[0].vector, [0.0, 0.0, 1.0, 0.0]);
+    }
+
+    #[test]
+    fn extreme_finite_directions_are_usable() {
+        // 有限で 0 でない向きは、成分の 2 乗が f32 であふれても (または 0 に潰れても) 使う。
+        let raw = LightingRaw::new(&Lighting {
+            ambient: Rgb::BLACK,
+            lights: vec![
+                Light::Directional {
+                    direction: [3e37, 0.0, -4e37],
+                    color: Rgb::WHITE,
+                },
+                Light::Directional {
+                    direction: [0.0, 1e-30, 0.0],
+                    color: Rgb::WHITE,
+                },
+            ],
+        });
+        assert_eq!(raw.count[0], 2);
+        let close = |a: [f32; 4], b: [f32; 4]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-6);
+        assert!(close(raw.lights[0].vector, [-0.6, 0.0, 0.8, 0.0]));
+        assert!(close(raw.lights[1].vector, [0.0, -1.0, 0.0, 0.0]));
     }
 
     #[test]
