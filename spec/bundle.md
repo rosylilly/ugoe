@@ -256,9 +256,10 @@ feature check is designed to happen before any payload is decoded:
 6. **Counts.** The required chunk (`MODL` or `MODU`) is present; the numbers of `TEXR` and `NRML`
    chunks match the textures ([Textures and normal maps](#textures-and-normal-maps)); every image has
    a PNG or KTX2 signature.
-7. **Validation.** The model satisfies the [model validation rules](model.md#model-validation), and the
-   physics settings, if any, the [physics validation rules](model.md#physics-validation). A module
-   satisfies the [module validation rules](model.md#module-validation).
+7. **Validation.** The model satisfies the [model validation rules](model.md#model-validation), the
+   physics settings, if any, the [physics validation rules](model.md#physics-validation), and every
+   motion and expression the [motion and expression validation rules](model.md#motion-and-expression-validation).
+   A module satisfies the [module validation rules](model.md#module-validation).
 8. **Warnings.** The reader SHOULD report unknown optional features and the locations of
    [unknown values](model.md#unknown-values) to the caller.
 
@@ -412,6 +413,7 @@ Physics settings, motions and expressions may also be stored as standalone JSON 
   apply. JSON documents carry no feature declarations.
 - A reader of a model or module JSON document MUST check `schema_version` as for a bundle. It
   SHOULD validate the data before evaluating it; physics settings can only be validated together
-  with the model they belong to.
+  with the model they belong to. A reader of a motion or expression JSON document MUST reject it
+  if it breaks the [motion and expression validation rules](model.md#motion-and-expression-validation).
 - Writers SHOULD produce stable output (for example, fixed field order and indentation), so that
   documents kept in version control show meaningful differences.

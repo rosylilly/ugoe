@@ -64,8 +64,8 @@ Field tables in this document use the following types.
   MessagePack).
 - Unless a field says otherwise, `f32` values MUST be finite. JSON cannot represent NaN or
   infinity (a JSON number too large for `f32`, such as `1e39`, converts to infinity). The
-  [validation rules](#validation) check every `f32` of a model and of physics settings; a reader
-  MAY reject other non-finite values (for example in motions and expressions).
+  [validation rules](#validation) check every `f32` of a model, of physics settings, of motions and
+  of expressions.
 - Integer fields MUST be integers in the range of their type. A reader MUST reject a float where an
   integer is required.
   - In MessagePack, an integer is a value of one of the integer types; a float 32 or float 64 is a
@@ -1264,8 +1264,9 @@ from a file written for a later version of the format.
 
 ## Validation
 
-A reader MUST reject a model that breaks any rule in this section, because the evaluation of such a
-model is undefined (for example, an index out of range). Readers SHOULD report all violations, not
+A reader MUST reject a model, physics settings, a motion or an expression that breaks any rule in
+this section, because the evaluation of such data is undefined (for example, an index out of range
+or a non-finite value). Readers SHOULD report all violations, not
 only the first. Unknown values are never violations. The avatar profile is not checked here; its
 conformance rules are defined by [avatar-profile.md](avatar-profile.md#conformance-checks).
 
@@ -1350,6 +1351,23 @@ modules are attached).
 not less than the number of particles (it has no effect, [physics.md](physics.md#output-values));
 a rig without particles (none of its outputs has an effect); an output `weight` outside 0 to 100
 (it is clamped).
+
+### Motion and expression validation
+
+Motions and expressions are validated on their own, not against a model.
+
+1. Motions: `duration` is finite and at least 0; `fade_in`, `fade_out` and the `fade_in` and
+   `fade_out` of every curve (if present) are finite; both components (`t` and `v`) of every point
+   of every segment (`p`, `to`, and the `c1` and `c2` of `bezier`) are finite; the `t` of every
+   event is finite.
+2. Expressions: `fade_in`, `fade_out` and the `value` of every adjustment (including adjustments
+   with an unknown `op`) are finite.
+
+*Informative:* the following are not invalid, because playback defines their result
+([motion.md](motion.md)): a negative fade time (no fade); a control point outside its segment
+(clamped when evaluated); events and points outside `0..duration`; points whose times decrease
+(a segment that does not move forward in time has its end value). Readers SHOULD warn about
+decreasing times, since writers SHOULD NOT produce them ([Motions](#motions)).
 
 ### Module validation
 

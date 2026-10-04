@@ -98,6 +98,18 @@ pub enum FormatError {
     /// 物理の設定が `validate_physics` の検査に通らない。
     #[error("physics settings failed validation with {} error(s)", .0.len())]
     InvalidPhysics(Vec<ValidationError>),
+    /// モーション (`MOTN` か `*.motion.json`) が `validate_motion` の検査に通らない。`name` はモーションの名前。
+    #[error("motion `{name}` failed validation with {} error(s)", .errors.len())]
+    InvalidMotion {
+        name: String,
+        errors: Vec<ValidationError>,
+    },
+    /// 表情 (`EXPR` か `*.expression.json`) が `validate_expression` の検査に通らない。`name` は表情の名前。
+    #[error("expression `{name}` failed validation with {} error(s)", .errors.len())]
+    InvalidExpression {
+        name: String,
+        errors: Vec<ValidationError>,
+    },
     /// 知らない必須の機能を宣言している (`docs/spec/file-formats.md#機能の宣言`)。
     #[error("unsupported required features: {}", .0.join(", "))]
     UnsupportedFeatures(Vec<String>),
@@ -173,13 +185,48 @@ pub fn physics_to_json(physics: &PhysicsSettings) -> Result<String, FormatError>
 }
 
 /// モーション (`*.motion.json`) を JSON 表現から読み込む。
+///
+/// 数値を `ugoe_model::validate::validate_motion` で検査し、通らなければ [`FormatError::InvalidMotion`]
+/// (`docs/spec/model.md#モーションと表情の検証`)。
 pub fn motion_from_json(json: &str) -> Result<Motion, FormatError> {
-    Ok(serde_json::from_str(json)?)
+    let motion: Motion = serde_json::from_str(json)?;
+    check_motion(&motion)?;
+    Ok(motion)
 }
 
 /// 表情 (`*.expression.json`) を JSON 表現から読み込む。
+///
+/// 数値を `ugoe_model::validate::validate_expression` で検査し、通らなければ [`FormatError::InvalidExpression`]。
 pub fn expression_from_json(json: &str) -> Result<Expression, FormatError> {
-    Ok(serde_json::from_str(json)?)
+    let expression: Expression = serde_json::from_str(json)?;
+    check_expression(&expression)?;
+    Ok(expression)
+}
+
+/// モーションの数値の検査 (JSON とバンドルで共通)。
+fn check_motion(motion: &Motion) -> Result<(), FormatError> {
+    let errors = ugoe_model::validate::validate_motion(motion);
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(FormatError::InvalidMotion {
+            name: motion.name.clone(),
+            errors,
+        })
+    }
+}
+
+/// 表情の数値の検査 (JSON とバンドルで共通)。
+fn check_expression(expression: &Expression) -> Result<(), FormatError> {
+    let errors = ugoe_model::validate::validate_expression(expression);
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(FormatError::InvalidExpression {
+            name: expression.name.clone(),
+            errors,
+        })
+    }
 }
 
 /// スキーマのバージョンが読める範囲か検査する (`docs/spec/file-formats.md` のバージョニング)。
@@ -220,6 +267,38 @@ mod tests {
         let model = ugoe_model::fixtures::single_quad();
         let back = model_from_json(&model_to_json(&model).unwrap()).unwrap();
         assert_eq!(model, back);
+    }
+
+    #[test]
+    fn motion_and_expression_json_are_validated() {
+        let motion = |duration: &str, v: &str| {
+            motion_from_json(&format!(
+                r#"{{ "name": "nod", "duration": {duration}, "curves": [ {{
+                    "target": {{ "kind": "parameter", "id": "AngleY" }},
+                    "segments": [ {{ "type": "start", "p": {{ "t": 0, "v": {v} }} }} ] }} ] }}"#
+            ))
+        };
+        assert!(motion("1.0", "0").is_ok());
+        // `1e39` は `f32` では無限大になる。
+        assert!(matches!(
+            motion("1.0", "1e39"),
+            Err(FormatError::InvalidMotion { name, errors }) if name == "nod" && errors.len() == 1
+        ));
+        assert!(matches!(
+            motion("-1.0", "0"),
+            Err(FormatError::InvalidMotion { errors, .. }) if errors.len() == 1
+        ));
+
+        let expression = |value: &str| {
+            expression_from_json(&format!(
+                r#"{{ "name": "smile", "parameters": [ {{ "parameter": "X", "value": {value}, "op": "add" }} ] }}"#
+            ))
+        };
+        assert!(expression("0.5").is_ok());
+        assert!(matches!(
+            expression("-1e39"),
+            Err(FormatError::InvalidExpression { name, errors }) if name == "smile" && errors.len() == 1
+        ));
     }
 
     #[test]

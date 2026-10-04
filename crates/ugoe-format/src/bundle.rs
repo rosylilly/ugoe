@@ -556,6 +556,13 @@ pub(crate) fn read_with_known(
             return Err(FormatError::InvalidPhysics(errors));
         }
     }
+    // モーションと表情の数値 (`docs/spec/model.md#モーションと表情の検証`)。最初に通らなかったものを返す。
+    for motion in &motions {
+        crate::check_motion(motion)?;
+    }
+    for expression in &expressions {
+        crate::check_expression(expression)?;
+    }
 
     let bundle = Bundle {
         model,
@@ -1884,6 +1891,29 @@ pub(crate) mod tests {
         assert_err(
             &write_bundle(&bundle).unwrap(),
             |e| matches!(e, FormatError::InvalidPhysics(errors) if !errors.is_empty()),
+        );
+    }
+
+    #[test]
+    fn rejects_non_finite_motion_and_expression() {
+        // MessagePack は NaN と無限大を書ける。読み込みの検査で弾く。
+        let mut bundle = model_only();
+        let mut bad = motion();
+        bad.name = "broken".into();
+        bad.duration = f32::NAN;
+        bundle.motions = vec![motion(), bad];
+        assert_err(
+            &write_bundle(&bundle).unwrap(),
+            |e| matches!(e, FormatError::InvalidMotion { name, errors } if name == "broken" && errors.len() == 1),
+        );
+
+        let mut bundle = model_only();
+        let mut bad = expression();
+        bad.parameters[0].value = f32::INFINITY;
+        bundle.expressions = vec![bad];
+        assert_err(
+            &write_bundle(&bundle).unwrap(),
+            |e| matches!(e, FormatError::InvalidExpression { name, errors } if name == "smile" && errors.len() == 1),
         );
     }
 

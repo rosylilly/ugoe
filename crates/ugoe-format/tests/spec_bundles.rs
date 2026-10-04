@@ -614,7 +614,11 @@ fn reading_step(error: &FormatError, bytes: &[u8]) -> &'static str {
         | E::NormalMapCountMismatch { .. }
         | E::UnknownNormalMapFormat { .. }
         | E::NormalMapFormatMismatch { .. } => "counts",
-        E::Invalid(_) | E::InvalidModule(_) | E::InvalidPhysics(_) => "validation",
+        E::Invalid(_)
+        | E::InvalidModule(_)
+        | E::InvalidPhysics(_)
+        | E::InvalidMotion { .. }
+        | E::InvalidExpression { .. } => "validation",
         E::UnknownValues(_) | E::MsgPackEncode(_) => "(not a reading error)",
     }
 }

@@ -13,9 +13,11 @@ use crate::parameter::ParameterKind;
 use crate::{KeyformGrid, KeyformInference, Model, Parameter};
 
 mod module;
+mod motion;
 mod physics;
 
 pub use module::validate_module;
+pub use motion::{MotionWarning, motion_warnings, validate_expression, validate_motion};
 pub use physics::validate_physics;
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]

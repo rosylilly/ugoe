@@ -338,7 +338,7 @@ JSON は NaN と無限大を書けませんが、MessagePack (`.ugoe`) は書け
   出力の `weight` (0〜100 にクランプ)、入力の `weight` (クランプしない)
 
 アバタープロファイル ([avatar-profile.md#準拠の検査](avatar-profile.md#準拠の検査)) の数値はこの検証の対象外です。
-モーションと表情の数値は T0323 でこの方針にそろえて検証します。
+モーションと表情の数値も同じ方針で検証します ([モーションと表情の検証](#モーションと表情の検証))。
 
 検査項目:
 
@@ -378,6 +378,44 @@ JSON は NaN と無限大を書けませんが、MessagePack (`.ugoe`) は書け
 - 同じパーツがポーズ全体で 2 回以上現れないこと (`part` と `links` を合わせて数える)
 - スロット: ID が一意で、`anchor` (デフォーマ)・`replaces` (パーツ)・`parameters` (パラメータ)・`mask_sources` (メッシュ)・`part` (パーツ)・`pose_parts` (ポーズの要素のパーツ。`target_kind` は `pose entry`) の参照先が存在し (`UnknownReference`、`kind` は `slot`)、`draw_order` の `min` と `max` が有限値で `min <= max` であること
 - 時間と周期の値: ポーズの `fade_duration` と目パチの `closing` / `closed` / `opening` は 0 以上、目パチの `interval` と呼吸の `cycle` は 0 より大きいこと (いずれも有限値)。呼吸の `offset`・`peak`・`weight` は有限値
+
+### モーションと表情の検証
+
+モーションと表情はモデルと照らさずに、数値だけを検査します (T0323)。対象が存在しないカーブと項目は効かないだけです。
+`ugoe_model::validate::validate_motion(&motion)`・`validate_expression(&expression)` が `InvalidValue` を返します。
+`field` はモーション・表情の中の場所 (`duration`、`curves[0].segments[1].c1.t`、`events[0].t`、`parameters[2].value`) です。
+
+- モーション: `duration` が 0 以上の有限値、`fade_in`・`fade_out`・カーブの `fade_in` / `fade_out` (指定があれば)・
+  セグメントの点 (`start` の `p`、`to`、ベジェの `c1`・`c2` の `t` と `v`)・イベントの `t` が有限値であること。
+  セグメントの点は、有限でない値の最初の 1 つだけをカーブごとに報告する
+- 表情: `fade_in`・`fade_out`・各項目の `value` が有限値であること (`op` が未知の項目も検査する)
+- 未知のセグメント・対象・`op` はエラーにしない。未知のセグメントには点がないので、数値の検査もない
+
+エラーにしないもの ([数値の検証の方針](#数値の検証の方針)。ランタイムの扱いが [motion.md](motion.md) で決まっている):
+
+- 負のフェード (`fade_in` / `fade_out` が 0 以下ならフェードなし)、区間の外のベジェの制御点の時刻 (評価で区間へクランプ)、
+  モーションの長さの外や負の時刻のイベント・点 (発火しない・最初や最後の点の値を使う)
+- **時刻が減る点:** カーブの点 (各セグメントの終点) の時刻が直前の点より小さくても、評価は決まっている
+  (`to.t <= p0.t` の区間は終点の値。[motion.md#カーブ](motion.md#カーブ))。書き出し側は減らさないことが望ましい (公開仕様の SHOULD NOT) ので、
+  `ugoe_model::validate::motion_warnings` が警告 (`MotionWarning::DecreasingTime`) として返す。
+  `start` から数え直し、未知のセグメントを含むカーブ (全体を無視する) と有限でない時刻は見ない。ベジェの制御点は見ない
+
+呼ぶ場所:
+
+- バンドルの読み込み (`read_bundle`): `MOTN`・`EXPR` のそれぞれを検査し、最初に通らなかったものを
+  `FormatError::InvalidMotion { name, errors }`・`InvalidExpression { name, errors }` で返す (モデル・物理の後に検査する)
+- 単体の JSON (`motion_from_json`・`expression_from_json`): 読んだ後に検査し、同じエラーを返す。
+  JSON は NaN を書けないが、`1e39` などは `f32` で無限大になる。モデルの JSON (`model_from_json`) と違い呼び出し側に任せないのは、
+  ビューア・wasm・C ABI・`ugoe render --motion` が読んだモーションをそのまま再生するため
+- `ugoe validate`: バンドルの読み込みで検査したエラーを `error: <名前>: ...` で書く。時刻が減る点は ``warning: motion `<名前>`: ...`` で書く (失敗にしない)
+- `Puppet` (モーションを渡すとき) は検査しない。ファイルから読んだモーションは上で検査済みで、プログラムで作るホストは
+  `validate_motion` を呼べる。検査しないモーションでも、`ugoe-motion` は NaN の長さや巨大な `dt` で止まらない (T0317) が、
+  NaN の点の値はパラメータに入る
+
+前方互換 ([ADR 0013](../adr/0013-forward-compatibility.md)) との関係: 有限値の規則と `duration` が 0 以上であることは、
+公開仕様の `f32` の規則 (有限値 MUST) と長さの意味から決まり、新しい版でも変えません。新しい版で増えるのは未知のセグメント・対象・`op` で、
+これらは検査しない (点がない、または `value` が有限値の `f32` のまま) ので、新しい版のファイルを読み込みで拒むことはありません。
+負の長さや有限でない値に意味を持たせる拡張は、知らないランタイムでの扱いを定められないので必須の機能として宣言することになります。
 
 ### 物理の検証
 

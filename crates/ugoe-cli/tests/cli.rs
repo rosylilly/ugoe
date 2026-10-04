@@ -168,6 +168,80 @@ fn validate_lists_physics_errors_in_a_bundle() {
     );
 }
 
+/// `ugoe validate <bundle>`: 数値の壊れたモーションは各エラーを書いて失敗し、時刻が減る点は警告だけ書く。
+#[test]
+fn validate_checks_motions_in_a_bundle() {
+    use ugoe_model::motion::{Curve, CurveTarget, Motion, Point, Segment};
+
+    let tmp = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("validate-bundle-motion-{}", std::process::id()));
+    std::fs::create_dir_all(&tmp).expect("create output dir");
+    let write = |name: &str, motion: Motion| {
+        let mut bundle = ugoe_format::Bundle::new(ugoe_model::fixtures::single_quad());
+        bundle.textures = vec![
+            ugoe_format::TextureData {
+                format: ugoe_format::TextureFormat::Png,
+                bytes: ugoe_editor_core::texture::encode_rgba_png(1, 1, &[255; 4]),
+            };
+            bundle.model.textures.len()
+        ];
+        bundle.motions = vec![motion];
+        let path = tmp.join(name);
+        std::fs::write(
+            &path,
+            ugoe_format::write_bundle(&bundle).expect("write bundle"),
+        )
+        .expect("write bundle file");
+        path
+    };
+    let motion = |second: f32, value: f32| Motion {
+        name: "nod".to_owned(),
+        duration: 1.0,
+        looping: false,
+        fade_in: 0.0,
+        fade_out: 0.0,
+        curves: vec![Curve {
+            target: CurveTarget::Parameter("X".into()),
+            segments: vec![
+                Segment::Start {
+                    p: Point { t: 0.5, v: 0.0 },
+                },
+                Segment::Linear {
+                    to: Point {
+                        t: second,
+                        v: value,
+                    },
+                },
+            ],
+            fade_in: None,
+            fade_out: None,
+        }],
+        events: Vec::new(),
+    };
+
+    let broken = write("broken-motion.ugoe", motion(1.0, f32::NAN));
+    let output = ugoe(&["validate", broken.to_str().expect("utf-8 path")]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr
+            .lines()
+            .any(|l| l == "error: nod: curves[0].segments[1].to.v = NaN must be finite"),
+        "{stderr}"
+    );
+
+    let decreasing = write("decreasing-motion.ugoe", motion(0.25, 1.0));
+    let output = ugoe(&["validate", decreasing.to_str().expect("utf-8 path")]);
+    assert_eq!(stdout(&output).trim(), "ok");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr
+            .lines()
+            .any(|l| l.starts_with("warning: motion `nod`: curves[0].segments[1].to.t")),
+        "{stderr}"
+    );
+}
+
 #[test]
 fn standard_params_include_extended_parameters() {
     let out = stdout(&ugoe(&["standard-params"]));

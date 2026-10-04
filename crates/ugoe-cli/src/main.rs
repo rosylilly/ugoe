@@ -287,6 +287,12 @@ fn main() -> anyhow::Result<()> {
             for e in &errors {
                 eprintln!("error: {e}");
             }
+            // モーションの数値は読み込みで検査した。時刻が減る点はエラーにせず警告する。
+            for motion in &animation.motions {
+                for w in ugoe_model::validate::motion_warnings(motion) {
+                    eprintln!("warning: motion `{}`: {w}", motion.name);
+                }
+            }
             // 物理の警告はモデルを評価して調べるので、エラーがないときだけ。
             if let Some(settings) = settings.as_ref()
                 && errors.is_empty()
@@ -813,7 +819,7 @@ enum Container {
 
 /// `.ugoe` バンドルか `.ugoemod` モジュールを読む。どちらも同じコンテナなので、拡張子ではなく中身で判別する
 /// (バンドルとして読んで `MODU` チャンクがあればモジュールとして読み直す)。
-/// モデル・モジュール・バンドルの物理が検証に通らなければ、各エラーを標準エラーに `error: ...` で書いてから失敗する。
+/// モデル・モジュール・バンドルの物理・モーション・表情が検証に通らなければ、各エラーを標準エラーに `error: ...` で書いてから失敗する。
 fn read_container(path: &Path, bytes: &[u8]) -> anyhow::Result<Container> {
     use ugoe_format::{ChunkTag, FormatError};
 
@@ -833,6 +839,16 @@ fn read_container(path: &Path, bytes: &[u8]) -> anyhow::Result<Container> {
     {
         for error in errors {
             eprintln!("error: {error}");
+        }
+    }
+    if let Err(e) = &result
+        && let Some(
+            FormatError::InvalidMotion { name, errors }
+            | FormatError::InvalidExpression { name, errors },
+        ) = e.downcast_ref::<FormatError>()
+    {
+        for error in errors {
+            eprintln!("error: {name}: {error}");
         }
     }
     result

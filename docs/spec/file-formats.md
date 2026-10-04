@@ -213,6 +213,7 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 - ペイロードの展開・デコードの失敗、読み込みの上限を超える展開 (`ReadLimitExceeded`。[読み込みの上限](#読み込みの上限))
 - `ugoe_model::validate::validate` がエラーを返すモデル (下流の変形・描画で範囲外アクセスを起こさないため、ここで弾く)
 - `PHYS` があり、`ugoe_model::validate::validate_physics` がエラーを返す物理の設定 (`InvalidPhysics`)
+- `ugoe_model::validate::validate_motion` / `validate_expression` がエラーを返すモーション・表情 (`InvalidMotion`・`InvalidExpression`。最初に通らなかったもの。[model.md#モーションと表情の検証](model.md#モーションと表情の検証))
 
 ### API (`ugoe-format`)
 
@@ -227,7 +228,7 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
   `ReadReport { features, warnings }` の `features` は `FEAT` の宣言のまま、`warnings` は
   `ReadWarning::UnknownOptionalFeature(id)` (知らない任意の機能) と `ReadWarning::UnknownValue(場所)` (未知の値。場所は `MODL: meshes[Face].blend` や `MOTN#0: curves[1].target`) です。
 - 機能の一覧は `features::FEATURES` (`Feature { id, description, fallback, baseline }`)。下の表と一致することをテストで検査します。
-- 単体の JSON: `physics_from_json` / `physics_to_json`・`motion_from_json`・`expression_from_json` (`model_from_json` / `model_to_json` と並ぶ)。物理の参照先の検査は、組み合わせるモデルが決まってから呼び出し側で行います。
+- 単体の JSON: `physics_from_json` / `physics_to_json`・`motion_from_json`・`expression_from_json` (`model_from_json` / `model_to_json` と並ぶ)。物理の参照先の検査は、組み合わせるモデルが決まってから呼び出し側で行います。モーションと表情は読み込みで数値を検査します (`InvalidMotion`・`InvalidExpression`)。
 - ファイルシステムには触れません。読み書きはバイト列で行います。
 
 - 単体の JSON: `module_to_json` / `module_from_json` (着せ替えのモジュール。`schema_version` だけを検査し、検証は呼び出し側で行う)。

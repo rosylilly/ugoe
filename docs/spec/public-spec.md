@@ -39,6 +39,7 @@
 | [Unknown values](../../spec/model.md#unknown-values) | [model.md#未知の値](model.md#未知の値)、[file-formats.md#未知の値の読み込み](file-formats.md#未知の値の読み込み) | |
 | [Model validation](../../spec/model.md#model-validation) | [model.md#検証](model.md#検証) | |
 | [Physics validation](../../spec/model.md#physics-validation) | [model.md#物理の検証](model.md#物理の検証) | |
+| [Motion and expression validation](../../spec/model.md#motion-and-expression-validation) | [model.md#モーションと表情の検証](model.md#モーションと表情の検証) | 呼ぶ場所 (`Puppet` は検査しない) と前方互換との関係は日本語版だけ |
 | [Module validation](../../spec/model.md#module-validation) | [modules.md#検証](modules.md#検証) | |
 
 ## バンドル (`spec/bundle.md`)
