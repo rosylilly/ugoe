@@ -1,11 +1,11 @@
 ---
 id: T0698
 title: エディタのモデルの JSON を 1 回だけ解析して共有する
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, docs]
 depends_on: [T0672, T0671]
-assignee:
+assignee: claude-worker-T0698
 ---
 
 # T0698: エディタのモデルの JSON を 1 回だけ解析して共有する
