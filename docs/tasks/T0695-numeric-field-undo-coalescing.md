@@ -1,11 +1,11 @@
 ---
 id: T0695
 title: 数値の欄の続けての確定で Undo の履歴が積み上がるのをまとめる
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core, apps/editor, packages/ui, docs]
 depends_on: [T0671]
-assignee:
+assignee: claude-worker-T0695
 ---
 
 # T0695: 数値の欄の続けての確定で Undo の履歴が積み上がるのをまとめる
