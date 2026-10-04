@@ -119,6 +119,7 @@ function errorText(code: string): string {
     case "busy":
     case "invalidConfig":
     case "gpu":
+    case "gpuTimeout":
     case "model":
       return t(`virtualCamera.errors.${code}`);
     default:

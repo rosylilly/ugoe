@@ -9,12 +9,13 @@
 //!   (透過のところは設定の色で埋める)、モデルが無い間は背景だけを出す。
 //! - 光源はシーンの光源を出力ウィンドウと同じ規則でレンダラに渡し ([`crate::lighting`])、モデルとモジュールの法線マップも渡す (T0808)。
 //! - 止めている間は、このスレッドも受け手も作らない (GPU を使わない)。GPU (`Gpu`) は一度作ったら破棄しない
-//!   (`crates/ugoe-headless/README.md#gpu`)。
+//!   (`crates/ugoe-headless/README.md#gpu`)。GPU を待つ時間の上限を超えたら (止めるときの待ち・動いている間に読み戻しが
+//!   [`STALL_LIMIT`] 来ない)、その GPU を手放して次の開始で作り直す (T0832)。
 //! - OS の部品 (`VirtualCamera`) は、作ったスレッドで使って落とす (Windows の COM)。
 
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -44,6 +45,9 @@ pub const DEFAULT_BACKGROUND: [u8; 3] = [0xf0, 0xf0, 0xf0];
 const LATE_SHARE: f32 = 0.95;
 /// 負荷と状態をまとめる長さ。
 const REPORT_INTERVAL: Duration = Duration::from_secs(1);
+/// 動いている間に、待っている読み戻しがこの長さ来なければ GPU が止まったとみなす (`gpuTimeout` で止める)。
+/// ふつうの GPU は 1 枚を数十ミリ秒で描くので、追いつかない (「遅れています」) と取り違えない長さにしてある。
+pub const STALL_LIMIT: Duration = Duration::from_secs(10);
 
 /// 操作ウィンドウで選ぶ設定。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -99,7 +103,8 @@ pub enum Status {
         /// 描画が仮想カメラのフレームレートに追いついていない。
         late: bool,
     },
-    /// 止まった (始められなかった・途中で失敗した)。`code` は `ugoe_studio_vcam::Error::code` か `gpu`・`model`。
+    /// 止まった (始められなかった・途中で失敗した)。`code` は `ugoe_studio_vcam::Error::code` か
+    /// `gpu`・`gpuTimeout` (GPU が止まった)・`model`・`os`。
     #[serde(rename = "failed", rename_all = "camelCase")]
     Failed {
         settings: Settings,
@@ -161,12 +166,37 @@ pub fn pixel_format() -> PixelFormat {
     }
 }
 
-/// 描画に使う GPU。一度作ったら破棄しない (失敗も覚える)。
-fn gpu() -> Result<&'static Gpu, String> {
-    static GPU: OnceLock<Result<Gpu, String>> = OnceLock::new();
-    GPU.get_or_init(|| Gpu::new(None).map_err(|e| e.to_string()))
-        .as_ref()
-        .map_err(Clone::clone)
+/// 描画に使う GPU。
+static GPU: GpuCell<Gpu> = GpuCell::new();
+
+/// 描画に使う GPU の置き場。作った GPU は破棄しない (`Box::leak`。`crates/ugoe-headless/README.md#gpu`)。作れなかったことも覚える。
+/// 待つ時間の上限を超えた GPU は [`GpuCell::discard`] で手放し、次の [`GpuCell::get`] で作り直す。
+#[derive(Debug)]
+struct GpuCell<T: 'static> {
+    slot: Mutex<Option<Result<&'static T, String>>>,
+}
+
+impl<T> GpuCell<T> {
+    const fn new() -> Self {
+        Self {
+            slot: Mutex::new(None),
+        }
+    }
+
+    /// 今の GPU。無ければ `make` で作る。
+    fn get(&self, make: impl FnOnce() -> Result<T, String>) -> Result<&'static T, String> {
+        let mut slot = self.slot.lock().unwrap_or_else(PoisonError::into_inner);
+        slot.get_or_insert_with(|| make().map(|gpu| &*Box::leak(Box::new(gpu))))
+            .clone()
+    }
+
+    /// `gpu` を手放す (破棄はしない)。すでに作り直していれば何もしない。
+    fn discard(&self, gpu: &T) {
+        let mut slot = self.slot.lock().unwrap_or_else(PoisonError::into_inner);
+        if matches!(*slot, Some(Ok(current)) if std::ptr::eq(current, gpu)) {
+            *slot = None;
+        }
+    }
 }
 
 /// 受け手と常駐の描画 (OS の部品を除いた部分。GPU のテストからも使う)。
@@ -419,13 +449,11 @@ impl Feed {
 
     /// 今の形を描いて読み戻しを頼む (待たない)。GPU が追いついていなければ描かずに `false`。
     /// モデルが無ければ何もせず `true`。
-    pub fn render(&mut self, gpu: &Gpu) -> Result<bool, String> {
+    pub fn render(&mut self, gpu: &Gpu) -> Result<bool, ugoe_headless::Error> {
         let (Some(resident), Some(puppet)) = (&mut self.resident, self.follower.puppet()) else {
             return Ok(true);
         };
-        let submitted = resident
-            .submit(gpu, puppet.instance(), self.last_seq.unwrap_or(0))
-            .map_err(|e| e.to_string())?;
+        let submitted = resident.submit(gpu, puppet.instance(), self.last_seq.unwrap_or(0))?;
         if !submitted {
             self.skipped += 1;
         }
@@ -433,14 +461,20 @@ impl Feed {
     }
 
     /// 読み戻しの終わった最新の画。モデルが無ければ背景の色だけの画。
-    pub fn poll(&mut self, gpu: &Gpu, wait: Wait) -> Result<Option<Vec<u8>>, String> {
+    ///
+    /// [`Wait::All`] で GPU を待つ時間の上限を超えたら、そのエラー ([`ugoe_headless::Error::is_gpu_wait_timeout`]) を返す。
+    pub fn poll(&mut self, gpu: &Gpu, wait: Wait) -> Result<Option<Vec<u8>>, ugoe_headless::Error> {
         match &mut self.resident {
             Some(resident) => Ok(resident
-                .poll(gpu, wait)
-                .map_err(|e| e.to_string())?
+                .poll(gpu, wait)?
                 .map(|Readback { bytes, .. }| bytes)),
             None => self.blank_frame().map(Some),
         }
+    }
+
+    /// 読み戻しを待っているものがあるか。
+    pub fn waiting(&self) -> bool {
+        self.resident.as_ref().is_some_and(|r| r.in_flight() > 0)
     }
 
     /// 描かずに捨てた数と、読み戻したが新しい画があったので使わなかった数の合計。
@@ -448,7 +482,7 @@ impl Feed {
         self.skipped + self.resident.as_ref().map_or(0, Resident::superseded)
     }
 
-    fn blank_frame(&mut self) -> Result<Vec<u8>, String> {
+    fn blank_frame(&mut self) -> Result<Vec<u8>, ugoe_headless::Error> {
         if self.blank.is_none() {
             let (width, height) = self.size;
             let rgba = self.backdrop.clone().unwrap_or_else(|| Rgba8 {
@@ -456,7 +490,7 @@ impl Feed {
                 height,
                 pixels: self.clear_color().repeat(width as usize * height as usize),
             });
-            self.blank = Some(yuv::convert(&rgba, self.format).map_err(|e| e.to_string())?);
+            self.blank = Some(yuv::convert(&rgba, self.format)?);
         }
         Ok(self.blank.clone().unwrap_or_default())
     }
@@ -666,6 +700,45 @@ impl Meter {
     }
 }
 
+/// 動いている間に、待っている読み戻しが来ない長さを見る (GPU が止まったか)。
+#[derive(Debug, Default)]
+struct Stall {
+    /// 待っているのに読み戻しが来なくなった時刻。
+    since: Option<Instant>,
+}
+
+impl Stall {
+    /// 描いて読み戻しを見るたびに呼ぶ。`waiting` は読み戻しを待っているものがあるか、`received` はこの回に読み戻しが来たか。
+    /// 待っているのに来ない長さが `limit` に達したら `true`。
+    fn check(&mut self, now: Instant, waiting: bool, received: bool, limit: Duration) -> bool {
+        if received || !waiting {
+            self.since = None;
+            return false;
+        }
+        now.duration_since(*self.since.get_or_insert(now)) >= limit
+    }
+}
+
+/// 止めるときに、頼んだ読み戻しを待ち終える (`wait`)。時間切れならログに書いて GPU を手放し (次の開始で作り直す)、`true` を返す。
+fn drain<T>(
+    cell: &GpuCell<T>,
+    gpu: &T,
+    wait: impl FnOnce() -> Result<(), ugoe_headless::Error>,
+) -> bool {
+    match wait() {
+        Ok(()) => false,
+        Err(e) if e.is_gpu_wait_timeout() => {
+            eprintln!("virtual camera: {e}; the GPU will be recreated on the next start");
+            cell.discard(gpu);
+            true
+        }
+        Err(e) => {
+            eprintln!("virtual camera: waiting for the last readbacks failed: {e}");
+            false
+        }
+    }
+}
+
 /// 知らせを 1 つ適用する。止めるなら `Ok(false)`。
 fn apply(feed: &mut Feed, gpu: &Gpu, command: Command) -> Result<bool, (&'static str, String)> {
     match command {
@@ -696,7 +769,7 @@ pub fn run(settings: Settings, commands: Receiver<Command>, events: impl Fn(Even
         Ok(camera) => camera,
         Err(e) => return failed(e.code(), e.to_string()),
     };
-    let gpu = match gpu() {
+    let gpu = match GPU.get(|| Gpu::new(None).map_err(|e| e.to_string())) {
         Ok(gpu) => gpu,
         Err(e) => return failed("gpu", e),
     };
@@ -707,6 +780,7 @@ pub fn run(settings: Settings, commands: Receiver<Command>, events: impl Fn(Even
     let mut meter = Meter::new(next);
     let mut consumer = true;
     let mut late = false;
+    let mut stall = Stall::default();
     let mut reported: Option<Status> = None;
     let report = |status: Status, reported: &mut Option<Status>| {
         if reported.as_ref() != Some(&status) {
@@ -746,10 +820,23 @@ pub fn run(settings: Settings, commands: Receiver<Command>, events: impl Fn(Even
         let sent = feed
             .render(gpu)
             .and_then(|_| feed.poll(gpu, Wait::No))
+            .map_err(|e| e.to_string())
             .and_then(|frame| match frame {
                 Some(frame) => camera.send(&frame).map(Some).map_err(|e| e.to_string()),
                 None => Ok(None),
             });
+        let received = matches!(sent, Ok(Some(_)));
+        if stall.check(Instant::now(), feed.waiting(), received, STALL_LIMIT) {
+            // 止まったかもしれない GPU で作ったものは使い回さず、破棄もしない (`Gpu::wait_timeout`)。
+            GPU.discard(gpu);
+            std::mem::forget(feed);
+            return failed(
+                "gpuTimeout",
+                format!(
+                    "no frame came back from the GPU for {STALL_LIMIT:?}; the device may be hung"
+                ),
+            );
+        }
         match sent {
             Ok(Some(delivery)) => {
                 consumer = delivery == Delivery::Delivered;
@@ -783,7 +870,9 @@ pub fn run(settings: Settings, commands: Receiver<Command>, events: impl Fn(Even
         );
     }
     // 読み戻しを待ち終えてから落とす (バッファを使ったまま捨てない)。
-    let _ = feed.poll(gpu, Wait::All);
+    if drain(&GPU, gpu, || feed.poll(gpu, Wait::All).map(drop)) {
+        std::mem::forget(feed);
+    }
     drop(camera);
     events(Event::Status(Status::Stopped {
         unavailable: unavailable(),
@@ -981,6 +1070,60 @@ mod tests {
             PixelFormat::Yuy2
         };
         assert_eq!(pixel_format(), expected);
+    }
+
+    #[test]
+    fn a_hung_gpu_is_recreated_on_the_next_start() {
+        let cell = GpuCell::<u32>::new();
+        let first = cell.get(|| Ok(1)).unwrap();
+        // 待ち終えたら手放さない。
+        assert!(!drain(&cell, first, || Ok(())));
+        assert!(std::ptr::eq(cell.get(|| Ok(2)).unwrap(), first));
+        // 時間切れでないエラーでも手放さない。
+        let other = ugoe_headless::Error::Gpu {
+            context: "mapping the readback buffer",
+            detail: String::new(),
+        };
+        assert!(!drain(&cell, first, || Err(other)));
+        assert_eq!(*cell.get(|| Ok(2)).unwrap(), 1);
+        // 時間切れなら手放し、次は作り直す。
+        assert!(drain(&cell, first, || Err(
+            ugoe_headless::Error::gpu_wait_timeout(Duration::ZERO)
+        )));
+        let second = cell.get(|| Ok(2)).unwrap();
+        assert_eq!(*second, 2);
+        // 前の GPU を手放しても、作り直したものはそのまま。
+        cell.discard(first);
+        assert!(std::ptr::eq(cell.get(|| Ok(3)).unwrap(), second));
+    }
+
+    #[test]
+    fn a_failed_gpu_is_remembered() {
+        let cell = GpuCell::<u32>::new();
+        assert_eq!(
+            cell.get(|| Err("no adapter".into())),
+            Err("no adapter".into())
+        );
+        assert_eq!(cell.get(|| Ok(1)), Err("no adapter".into()));
+    }
+
+    #[test]
+    fn a_stall_is_readbacks_not_coming_back_for_the_limit() {
+        let limit = Duration::from_secs(10);
+        let t0 = Instant::now();
+        let at = |s: u64| t0 + Duration::from_secs(s);
+        let mut stall = Stall::default();
+        // 待っているものが無ければ、来なくても止まっていない。
+        assert!(!stall.check(at(0), false, false, limit));
+        assert!(!stall.check(at(20), false, false, limit));
+        // 待っているのに来ない。上限の手前までは止まっていない。
+        assert!(!stall.check(at(21), true, false, limit));
+        assert!(!stall.check(at(30), true, false, limit));
+        // 来たら数え直す (遅いだけの GPU)。
+        assert!(!stall.check(at(30), true, true, limit));
+        assert!(!stall.check(at(31), true, false, limit));
+        assert!(!stall.check(at(40), true, false, limit));
+        assert!(stall.check(at(41), true, false, limit));
     }
 
     /// 仮想カメラが始められない環境 (CI・WSL) では、失敗を知らせて止まる (GPU を使わない)。
