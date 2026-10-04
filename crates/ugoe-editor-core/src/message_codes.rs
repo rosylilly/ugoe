@@ -5,6 +5,7 @@
 //! `detail` (`details`) の引数で渡す。
 
 use ugoe_format::{FormatError, ReadLimit};
+use ugoe_model::KeyformInterpolation;
 use ugoe_model::avatar::check::ProfileIssue;
 use ugoe_model::validate::ValidationError;
 use ugoe_runtime::CompileError;
@@ -31,6 +32,15 @@ fn validation_args(errors: &[ValidationError]) -> MessageArgs {
         .collect::<Vec<_>>()
         .join("; ");
     args! { "count" => errors.len(), "details" => details }
+}
+
+/// 補間の種類の JSON の名前 (`linear`・`smooth`)。未知の値は `unknown`。
+fn interpolation_name(interpolation: KeyformInterpolation) -> &'static str {
+    match interpolation {
+        KeyformInterpolation::Linear => "linear",
+        KeyformInterpolation::Smooth => "smooth",
+        KeyformInterpolation::Unknown => "unknown",
+    }
 }
 
 impl Coded for EditError {
@@ -136,7 +146,9 @@ impl Coded for EditError {
             Self::UnsupportedInterpolation {
                 target,
                 interpolation,
-            } => args! { "target" => target, "interpolation" => format!("{interpolation:?}") },
+            } => {
+                args! { "target" => target, "interpolation" => interpolation_name(*interpolation) }
+            }
             Self::DeformerEdit { reason }
             | Self::InvalidPhysics { reason }
             | Self::InvalidAvatarProfile { reason }

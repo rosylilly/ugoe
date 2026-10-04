@@ -271,6 +271,100 @@ impl Coded for EditorError {
     }
 }
 
+/// エディタのバックエンドが出すすべてのコードの見本 (`ugoe_editor_core::message_catalog::message_samples` の
+/// 続き)。引数の値に意味はない。翻訳のカタログの検査に使う (`bindings.rs`。コードを足したらここにも足す)。
+pub fn message_samples() -> Vec<Message> {
+    let detail = || "detail".to_owned();
+    let path = || "/work/a.png".to_owned();
+    let errors = [
+        EditorError::LockPoisoned { what: "document" },
+        EditorError::Io {
+            path: path(),
+            detail: detail(),
+        },
+        EditorError::Internal(detail()),
+        EditorError::Task(detail()),
+        EditorError::EmptyPath,
+        EditorError::RelativePath(path()),
+        EditorError::NotSaved,
+        EditorError::NotSavedUseSaveAs,
+        EditorError::ExternalChange,
+        EditorError::NotAModule,
+        EditorError::ExpectedModuleBytes,
+        EditorError::ExpectedPngBytes,
+        EditorError::NotModuleFile(path()),
+        EditorError::NotPngFile(path()),
+        EditorError::NotPngData,
+        EditorError::NotJsonFile(path()),
+        EditorError::MissingHeader("x-path"),
+        EditorError::InvalidHeader {
+            header: "x-path",
+            detail: detail(),
+        },
+        EditorError::InvalidPercentEncoding(detail()),
+        EditorError::CreateFolder {
+            path: path(),
+            detail: detail(),
+        },
+        EditorError::TooManySampleFolders(path()),
+        EditorError::PsdRead {
+            path: path(),
+            detail: detail(),
+        },
+        EditorError::NormalMapsModelOnly,
+        EditorError::NoGroupChosen,
+        EditorError::UnknownGroup("Body".to_owned()),
+        EditorError::EmptyGroup("Body".to_owned()),
+        EditorError::ImageNotFound("body.png".to_owned()),
+        EditorError::ClaudeModelMissing,
+        EditorError::InvalidBaseUrl,
+        EditorError::ModelMissing,
+        EditorError::ApiKeyRequired,
+        EditorError::PlainHttpApiKey,
+        EditorError::EmptyApiKey,
+        EditorError::CredentialStore(detail()),
+        EditorError::MixedDestinations,
+        EditorError::SendDisabled,
+        EditorError::Ai(AiError::Provider(detail())),
+        EditorError::Ai(AiError::InvalidProposal(detail())),
+        EditorError::Ai(AiError::MissingApiKey(detail())),
+        EditorError::Ai(AiError::InvalidRequest(detail())),
+        EditorError::Ai(AiError::Api {
+            status: 400,
+            kind: "invalid_request_error".to_owned(),
+            message: detail(),
+        }),
+        EditorError::Ai(AiError::RateLimited { retry_after: None }),
+        EditorError::Ai(AiError::RateLimited {
+            retry_after: Some(std::time::Duration::from_secs(30)),
+        }),
+        EditorError::Ai(AiError::Network(detail())),
+        EditorError::Ai(AiError::Refused { category: None }),
+        EditorError::Ai(AiError::Refused {
+            category: Some("cyber".to_owned()),
+        }),
+        EditorError::Ai(AiError::Truncated),
+        EditorError::Ai(AiError::InvalidResponse(detail())),
+        EditorError::ProposalModelChanged,
+        EditorError::NoPsd,
+        EditorError::NotClassified,
+        EditorError::NotRegenerable(3),
+        EditorError::ProposalDisappeared,
+        EditorError::NoPreview,
+        EditorError::InvalidPort,
+        EditorError::BridgeStart(detail()),
+        EditorError::NoMcpBinary,
+        EditorError::UnsupportedPlatform,
+        EditorError::BundleWrite(detail()),
+        EditorError::OpenFailed {
+            path: path(),
+            detail: detail(),
+        },
+        EditorError::NotMcpbFile,
+    ];
+    errors.iter().map(Coded::to_message).collect()
+}
+
 /// AI のプロバイダのエラーのコード。
 fn ai_code(error: &AiError) -> &'static str {
     match error {
@@ -317,6 +411,7 @@ fn ai_args(error: &AiError) -> MessageArgs {
 mod tests {
     #![allow(clippy::unwrap_used)]
 
+    use std::collections::BTreeSet;
     use std::time::Duration;
 
     use super::*;
@@ -364,23 +459,27 @@ mod tests {
         );
     }
 
-    /// すべてのコードが `docs/editor.md#エラーと警告のコード` の一覧にある。
-    #[test]
-    fn every_code_is_documented() {
-        let docs = include_str!("../../../../docs/editor.md");
-        let source = include_str!("error.rs");
-        let codes: Vec<&str> = source
+    /// ソースに書いたコード (`"area.name"` の文字列)。
+    fn codes_in_source() -> BTreeSet<&'static str> {
+        include_str!("error.rs")
             .split('"')
             .skip(1)
             .step_by(2)
             .filter(|s| {
                 ["editor.", "ai.", "mcp.", "psd.", "lighting.", "proposal."]
                     .iter()
-                    .any(|a| s.starts_with(a))
+                    .any(|a| s.starts_with(a) && s.len() > a.len())
                     && s.chars()
                         .all(|c| c.is_ascii_lowercase() || c == '_' || c == '.')
             })
-            .collect();
+            .collect()
+    }
+
+    /// すべてのコードが `docs/editor.md#エラーと警告のコード` の一覧にある。
+    #[test]
+    fn every_code_is_documented() {
+        let docs = include_str!("../../../../docs/editor.md");
+        let codes = codes_in_source();
         assert!(codes.len() > 40, "{}", codes.len());
         for code in codes {
             assert!(
@@ -388,6 +487,14 @@ mod tests {
                 "{code} is not in docs/editor.md"
             );
         }
+    }
+
+    /// ソースに書いたすべてのコードに見本があり (`message_samples`)、見本にソースに無いコードが無い。
+    #[test]
+    fn every_code_has_a_sample() {
+        let samples = message_samples();
+        let sampled: BTreeSet<&str> = samples.iter().map(|m| m.code.as_str()).collect();
+        assert_eq!(codes_in_source(), sampled);
     }
 
     #[test]

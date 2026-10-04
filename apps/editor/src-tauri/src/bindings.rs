@@ -1,12 +1,16 @@
-//! Rust から生成してリポジトリに置くファイル (フロントエンドの型と `Command` の JSON Schema)。
+//! Rust から生成してリポジトリに置くファイル (フロントエンドの型と `Command` の JSON Schema、
+//! エラーと警告のコードの一覧)。
 //! `just gen` (`examples/gen.rs`) が書き出し、テストが最新かどうかを確かめる。
 //! 手順は `docs/editor.md#型の生成`。
 
 use std::path::{Path, PathBuf};
 
 use ugoe_editor_core::avatar::AvatarCheck;
-use ugoe_editor_core::codegen::{TsBindings, command_schema_json, typescript_samples};
+use ugoe_editor_core::codegen::{
+    GENERATED_HEADER, TsBindings, command_schema_json, typescript_samples,
+};
 use ugoe_editor_core::lighting::{BulgeSettings, PreviewLighting};
+use ugoe_editor_core::message_catalog::{message_codes, message_samples};
 use ugoe_editor_core::overflow::{ElementOverflow, OverflowReport};
 use ugoe_editor_core::physics_check::RestPoseCollision;
 use ugoe_editor_core::{
@@ -18,6 +22,7 @@ use crate::ai::{AiReply, AiSettings, ConsentAnswer};
 use crate::ai_provider::ProviderSettings;
 use crate::commands::{AnimationData, AppInfo};
 use crate::dress_up::PreviewModule;
+use crate::error;
 use crate::lighting::{NormalMapGroupChoice, NormalMapGroupView};
 use crate::mcp::{BridgeEvent, McpBridgeStatus};
 use crate::module::{
@@ -83,10 +88,32 @@ pub fn generated_files() -> Result<Vec<(&'static str, String)>, serde_json::Erro
             typescript_samples("./types")?,
         ),
         (
+            "apps/editor/src/lib/generated/messageCodes.ts",
+            typescript_message_codes()?,
+        ),
+        (
             "crates/ugoe-editor-core/schema/command.schema.json",
             command_schema_json()?,
         ),
     ])
+}
+
+/// バックエンド (editor-core とエディタ) が画面に出すエラー・警告のコードと引数の名前の一覧。
+/// 翻訳のカタログ (`locales/<言語>.json` の `errors`) の検査 (`src/lib/messageCodes.test.ts`) が読む。
+fn typescript_message_codes() -> Result<String, serde_json::Error> {
+    let codes = message_codes(
+        message_samples()
+            .into_iter()
+            .chain(error::message_samples()),
+    );
+    let mut out = GENERATED_HEADER.to_owned();
+    out.push_str(
+        "// バックエンドが画面に出すエラー・警告のコード → 引数の名前 (docs/editor.md#エラーと警告のコード)。\n\n\
+         export const messageCodes: Record<string, readonly string[]> = ",
+    );
+    out.push_str(&serde_json::to_string_pretty(&codes)?);
+    out.push_str(";\n");
+    Ok(out)
 }
 
 #[cfg(test)]

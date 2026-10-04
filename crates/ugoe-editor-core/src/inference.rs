@@ -46,7 +46,11 @@ pub struct RederiveWarning {
 
 impl RederiveWarning {
     /// ミラーし直せなかったことの警告。`error` は失敗の理由。
-    fn mirror_failed(target: KeyformTarget, source: KeyformTarget, error: impl ToString) -> Self {
+    pub(crate) fn mirror_failed(
+        target: KeyformTarget,
+        source: KeyformTarget,
+        error: impl ToString,
+    ) -> Self {
         let message = error.to_string();
         Self {
             code: "inference.mirror_failed".to_owned(),

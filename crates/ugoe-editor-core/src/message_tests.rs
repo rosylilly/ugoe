@@ -1,8 +1,10 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use serde_json::json;
 
 use crate::message::{Coded, Message, MessageArg};
+use crate::message_catalog::{message_codes, message_samples};
 use crate::project::ProjectError;
 use crate::proposal::ProposalError;
 use crate::{CellError, EditError, ModuleError, message_args};
@@ -204,4 +206,83 @@ fn every_code_is_documented() {
             "{code} is not in docs/editor.md"
         );
     }
+}
+
+/// ソースに書いたすべてのコードに見本があり (`message_catalog`)、見本にソースに無いコードが無い。
+#[test]
+fn every_code_has_a_sample() {
+    let sources = [
+        include_str!("message_codes.rs"),
+        include_str!("import.rs"),
+        include_str!("inference.rs"),
+        include_str!("project.rs"),
+    ];
+    let mut in_source: BTreeSet<String> = sources.iter().flat_map(|s| codes_in(s)).collect();
+    // `codes_in` はファイル名 (`.json`) を除くので、ファイル名と同じ綴りのコードを足す。
+    in_source.insert("project.json".to_owned());
+    let sampled: BTreeSet<String> = message_codes(message_samples()).into_keys().collect();
+    let missing: Vec<_> = in_source.difference(&sampled).collect();
+    assert!(
+        missing.is_empty(),
+        "no sample in message_catalog.rs: {missing:?}"
+    );
+    let extra: Vec<_> = sampled.difference(&in_source).collect();
+    assert!(extra.is_empty(), "not in the sources: {extra:?}");
+}
+
+/// コードの直後に `message_args! { … }` を書いた箇所 (その場で出す警告) の、コード → 引数の名前。
+fn inline_args(source: &str) -> BTreeMap<String, BTreeSet<String>> {
+    let mut out = BTreeMap::new();
+    for code in codes_in(source).into_iter().collect::<BTreeSet<_>>() {
+        for (start, _) in source.match_indices(&format!("\"{code}\"")) {
+            let after = source[start + code.len() + 2..].trim_start();
+            let Some(after) = after.strip_prefix(',') else {
+                continue;
+            };
+            let after = after.trim_start();
+            let after = after.strip_prefix("crate::").unwrap_or(after);
+            let Some(body) = after.strip_prefix("message_args! {") else {
+                continue;
+            };
+            let close = body.find('}').unwrap();
+            let names: BTreeSet<String> = body[..close]
+                .split('"')
+                .skip(1)
+                .step_by(2)
+                .map(str::to_owned)
+                .collect();
+            out.insert(code.clone(), names);
+        }
+    }
+    out
+}
+
+/// 手で書いた警告の見本の引数が、ソースで警告を出す箇所の引数と同じ。
+#[test]
+fn inline_warning_samples_match_the_source() {
+    let inline: BTreeMap<String, BTreeSet<String>> =
+        [include_str!("import.rs"), include_str!("project.rs")]
+            .iter()
+            .flat_map(|s| inline_args(s))
+            .collect();
+    assert!(inline.len() >= 10, "{inline:?}");
+    assert!(inline.contains_key("module.draw_order_outside_slot"));
+    let codes = message_codes(message_samples());
+    for (code, names) in inline {
+        assert_eq!(codes.get(&code), Some(&names), "{code}");
+    }
+}
+
+/// 補間の種類の引数は JSON の名前 (`smooth`) で渡す (Rust の表記 `Smooth` ではない)。
+#[test]
+fn interpolation_is_passed_by_its_json_name() {
+    let message = EditError::UnsupportedInterpolation {
+        target: "mesh `Face`".into(),
+        interpolation: ugoe_model::KeyformInterpolation::Smooth,
+    }
+    .to_message();
+    assert_eq!(
+        message.args,
+        message_args! { "target" => "mesh `Face`", "interpolation" => "smooth" }
+    );
 }

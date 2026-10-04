@@ -94,7 +94,7 @@ pub enum PsdImportError {
 }
 
 /// `ugoe-psd` の読み込みの警告のコードと引数。
-fn psd_warning_code(kind: &WarningKind) -> (&'static str, MessageArgs) {
+pub(crate) fn psd_warning_code(kind: &WarningKind) -> (&'static str, MessageArgs) {
     match kind {
         WarningKind::AdjustmentLayer { key } => {
             ("psd.adjustment_layer", message_args! { "key" => key })

@@ -26,6 +26,7 @@ pub mod keyform;
 pub mod lighting;
 mod mesh_edit;
 pub mod message;
+pub mod message_catalog;
 mod message_codes;
 pub mod module_compare;
 pub mod module_project;

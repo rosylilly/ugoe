@@ -1757,6 +1757,13 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
   `actual`・`target_kind`。`mesh`・`parameter` など) は、`errorArgs.<値>` があれば訳してから差し込みます。`cause` があれば `errorCause` の形
   (「… 原因: …」) で原因の文を後ろに付けます。`count` を持つコードは複数形のキー (`_one`・`_other`) です。
   **コードを足したら、`en.json` と `ja.json` の `errors` にも足します** (無くても `message` が出るので壊れはしない)。
+- **カタログの検査 (T0681):** コードと引数の名前の一覧は、各コードの見本の値 (editor-core は `src/message_catalog.rs`、
+  エディタのバックエンドは `src-tauri/src/error.rs` の `message_samples`) から `just gen` で `src/lib/generated/messageCodes.ts` に
+  書き出します。見本は本物のエラーの `to_message()` なので、引数の名前は `Coded::args` と一致します (その場でコードと引数を
+  書く警告は、テストがソースの引数と照らし合わせる)。ソースに書いたコードに見本が無いと Rust のテスト
+  (`every_code_has_a_sample`) が失敗し、エディタの Vitest (`src/lib/messageCodes.test.ts`) は、すべてのコードの文が
+  `en.json` と `ja.json` の `errors` にあり、文の引数 (`{{name}}`) がそのコードの引数の名前に含まれることを確かめます。
+  カタログは MIT のクレートからは読みません。
 - **警告・問題:** `PsdImportWarning`・`RederiveWarning` は `code`・`args`・`message` のフィールドを持ちます。`ModuleProblem` は `Message` のフィールドを平らに含みます (`kind` は直し方を選ぶ分類、`code` は元のエラー)。`AvatarCheck` の `errors`・`warnings`、`.ugoemod` の書き出しの `warnings`、エージェントの接続の状態の `error` は `Message` です。
 - **実装:** editor-core のエラーは `ugoe_editor_core::Coded` を実装し (`src/message_codes.rs`)、`?` で `Message` に変わります。Tauri だけで起きるエラーは `src-tauri/src/error.rs` の `EditorError` にまとめます。ほかのクレートのエラー (検証・合成・推定・自動メッシュ・PSD の読み込み・AI のプロバイダなど) を含むものは、いまはその英語の文を `detail` (検証の一覧は `count` と `details`) で渡します。
 - 自由な文の引数 (`reason`・`detail`・`details`) は英語のままです。訳すには、その元のエラーにもコードを付ける必要があります (後続)。
@@ -1786,7 +1793,7 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 | `edit.invalid_model` | `count`・`details` |
 | `edit.inference_failed` | `target`・`detail` |
 | `edit.unsupported_inference` / `edit.mirror_pair_not_supported` | `target` |
-| `edit.unsupported_interpolation` | `target`・`interpolation` |
+| `edit.unsupported_interpolation` | `target`・`interpolation` (JSON の名前。`linear`・`smooth`・未知の値は `unknown`) |
 | `edit.deformer_edit_failed` / `edit.invalid_physics` / `edit.invalid_avatar_profile` / `edit.module_shape` | `reason` |
 | `edit.depth_length` | `target`・`expected`・`actual` |
 | `edit.non_finite_depth` | `target`・`value` |
@@ -1937,6 +1944,7 @@ Rust の型を正として、次のファイルを生成します。**生成物�
 | --- | --- | --- |
 | `apps/editor/src/lib/generated/types.ts` | `Command`・`Model`・`Motion`・`Expression`・`PhysicsSettings` (とそれらが参照する型)、IPC の戻り値 (`AppInfo`・`ProjectStatus`・`AnimationData` など) | フロントエンド (`ipc.ts` が再エクスポート) |
 | `apps/editor/src/lib/generated/samples.ts` | フィクスチャのモデルと、全バリアントのコマンドを serde で書き出した JSON | 型検査だけ (生成した型と serde の JSON が合うことを `svelte-check` で確かめる) |
+| `apps/editor/src/lib/generated/messageCodes.ts` | バックエンドが出すエラー・警告のコード → 引数の名前 (`ugoe_editor_core::message_catalog` と `src-tauri/src/error.rs` の見本) | 翻訳のカタログの検査 (`src/lib/messageCodes.test.ts`。[エラーと警告のコード](#エラーと警告のコード)) |
 | `crates/ugoe-editor-core/schema/command.schema.json` | `Command` の JSON Schema (draft 2020-12) | AI のツール定義 (`ugoe_editor_core::codegen::COMMAND_SCHEMA_JSON`、`command_schema()`) |
 | `spec/schema/*.schema.json` | `Model`・`Module`・`PhysicsSettings`・`Motion`・`Expression` の JSON Schema (draft 2020-12、`ugoe_model::spec_files`) | 公開仕様 ([spec/schema/README.md](../spec/schema/README.md)。CC BY 4.0) |
 

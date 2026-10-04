@@ -9,7 +9,7 @@
 - UI・Tauri・GPU に依存しない
 - すべての編集は `Command` を通す。`Document::apply` は失敗時にモデルを変更しない
 - `Command` のバリアントは末尾に追加する
-- 画面に出すエラー・警告には `Coded` (`src/message_codes.rs`) で安定したコードと引数を付け、`Message` で渡す。**コードは名前を変えない**。足したら `docs/editor.md#エラーと警告のコード` の一覧にも書く ([ADR 0029](../../docs/adr/0029-shared-ui-and-i18n.md))
+- 画面に出すエラー・警告には `Coded` (`src/message_codes.rs`) で安定したコードと引数を付け、`Message` で渡す。**コードは名前を変えない**。足したら `docs/editor.md#エラーと警告のコード` の一覧と、見本 (`src/message_catalog.rs`。翻訳のカタログの検査に使う) にも書く ([ADR 0029](../../docs/adr/0029-shared-ui-and-i18n.md))
 - `Command` やモデルの型を変えたら `just gen` で生成物 (TS の型・`schema/command.schema.json`) を作り直す ([型の生成](../../docs/editor.md#型の生成))
 
 ## 仕様
