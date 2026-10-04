@@ -1,11 +1,11 @@
 ---
 id: T0925
 title: i18n: 言語の設定の保存と OS の言語の取得を @ugoe/i18n にまとめる
-status: todo
+status: in-progress
 milestone: M9
 crates: [packages, apps/editor, apps/viewer, apps/studio, docs]
 depends_on: [T0913]
-assignee:
+assignee: claude-worker-T0925
 ---
 
 # T0925: i18n: 言語の設定の保存と OS の言語の取得を @ugoe/i18n にまとめる
