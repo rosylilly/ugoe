@@ -1,11 +1,11 @@
 ---
 id: T0453
 title: "Unity: UgoePuppet の描き直しの印と LateUpdate の順を Core に出してテストする"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/unity]
 depends_on: []
-assignee:
+assignee: claude-worker-T0453
 ---
 
 # T0453: Unity: UgoePuppet の描き直しの印と LateUpdate の順を Core に出してテストする
