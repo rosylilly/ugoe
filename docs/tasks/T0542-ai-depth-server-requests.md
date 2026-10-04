@@ -1,11 +1,11 @@
 ---
 id: T0542
 title: 深度推定サーバへのリクエストの再試行・認証・エラーの種類
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-ai, docs]
 depends_on: [T0527]
-assignee:
+assignee: claude-worker-T0542
 ---
 
 # T0542: 深度推定サーバへのリクエストの再試行・認証・エラーの種類
