@@ -1,11 +1,11 @@
 ---
 id: T0915
 title: UI 品質: 基準の見直しと、繰り返せる監査の道具
-status: todo
+status: in-progress
 milestone: M10
 crates: [docs, scripts, tests, justfile, packages, apps/editor, apps/viewer, apps/studio, package.json, pnpm-lock.yaml]
 depends_on: []
-assignee:
+assignee: claude-worker-T0915
 ---
 
 # T0915: UI 品質: 基準の見直しと、繰り返せる監査の道具
