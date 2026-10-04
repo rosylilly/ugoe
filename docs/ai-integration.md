@@ -433,6 +433,8 @@ ADR 0006 は「AI は提案だけを行い、適用は人間が承認する」�
 
 - `propose_edit` は `Command` の列 (`ugoe_ai::Proposal` と同じ `title`・`rationale`・`commands`) を受け取り、ドキュメントの複製に `Batch` として適用して、検証の結果・`ApplyReport`・変わる要素の ID (種類ごとの `added`・`removed`・`changed` と、並べ替えなら `reordered`。テクスチャは画像の差し替えも `changed`) を返します。元のドキュメントは変えません (読むだけのツール)。成功すると提案の ID を返します。
 - `apply_proposal` は提案の ID だけを受け取り、`Document::apply` で適用します (1 回の Undo で戻せます)。提案の後にドキュメントが変わっていたら拒否します (承認した差分と違う結果にならないように。Undo で提案を作った状態に戻れば、また使えます)。
+- **状態:** プロジェクトを指すツールの結果は、プロジェクトの状態 (`modified`・`revision`・`can_undo`・`can_redo` など) を返します。`can_undo`・`can_redo` は持ち主の文書の履歴から求めるので、エージェントは戻せない (`can_undo: false`) のに `undo` を求めて利用者に確認を出させずに済みます (T0557)。
+- **エラーのコード:** ツールの実行エラー (`isError`) は文で理由を返し、コードの分かるもの (`proposal.*`・`psd.*`・持ち主の拒否 `host.denied`・時間切れ `host.timed_out`・取り消し `host.cancelled` など) は `structuredContent` にもエディタのメッセージと同じ形 (`code`・`args`・`message`・`cause`・`items`) で載せます (T0557)。文は今までと同じで、結果の形は足しただけです (コードの無いエラーは `structuredContent` を持ちません)。一覧は [crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md)。
 - 提案の置き場はエディタと同じ `ugoe_editor_core::Proposals` です (T0637)。提案の結果にはコマンドごとの要約と依存 (`requires`) を付け、`apply_proposal` の `exclude` でコマンドの一部を外して適用できます (外した列も複製で確かめ、通らなければ適用しません)。
 - **承認するのは MCP クライアントの確認です。** Claude Code は、許可していないツールを呼ぶ前にユーザーに確認を求めます。ユーザーは `propose_edit` の差分を見て、`apply_proposal` の呼び出しを許します。`propose_edit`・`get_*`・`render_png` は読むだけ (`readOnlyHint`) なので常に許してよく、`apply_proposal` と `save_project` は常に許す設定にしないことを勧めます。常に許すことは ADR 0006 の「すべての提案を自動で採用する」設定にあたります。
 - 適用してもディスクには書きません。`save_project` を呼んで初めて書きます (`destructiveHint`)。
@@ -457,7 +459,7 @@ ADR 0022 の「外部のエージェントに判断を任せる経路」(T0513)�
 - **1 回に返す画像:** MCP クライアントは画像を含む結果の大きさに上限を設けることがある (Claude Code は既定で 25,000 トークン) ので、`get_psd_layers` は既定で 8 枚ずつ返し、`count` (32 枚まで)・`thumbnail_size`・`indices` で調整できます。サムネイルごとに `layer N: 名前` の文を直前に置き、画像と番号の対応が分かるようにします。
 - **PSD を読めないとき:** `import_psd`・`get_psd_layers` の PSD が読み込みの上限を超えるなど読めなければ、ツールの実行エラーの文の
   末尾にエラーのコードを `(code: psd.channel_limit_exceeded)` の形で付けます (T0554。コードは [docs/editor.md](editor.md#エラーと警告のコード)
-  と同じ)。上限は既定の値で、MCP から変える引数はありません (エディタと同じ。[読み込みの上限](editor.md#読み込みの上限))。
+  と同じ)。コードと引数は結果の `structuredContent` にも載ります (下の「エラーのコード」)。上限は既定の値で、MCP から変える引数はありません (エディタと同じ。[読み込みの上限](editor.md#読み込みの上限))。
   作業用の格子が大きすぎて飛ばしたレイヤーは、`import_psd` の結果の `warnings` に `psd.layer_too_large` で、画像がテクスチャの上限を超えて飛ばしたレイヤーは `psd.layer_texture_too_large` で出ます。
 - **覚えておくもの:** PSD のパスと分類は、サーバが開いているプロジェクトごとにメモリに持ちます (エディタと同じく、プロジェクトには保存しません)。開き直したら `get_psd_layers` に `psd` を渡します。
 - **深度:** 深度推定器は使わず、顔に内接する楕円体 (`TurnDepth::Rules`) で振り向かせます。
@@ -549,8 +551,8 @@ T0516 (`ugoe-mcp` の側)、T0642 (エディタの側)、T0643 (Claude Desktop �
   プレビュー・一部だけの採用・Undo がそのまま使えます。適用・Undo・Redo・保存は画面の確認 (120 秒で時間切れ) を通します。
   確認が閉じると、画面へのイベント `approval_closed` が終わり方 (`outcome`: `approved`・`declined`・`timed_out`・`cancelled`) を
   添えます。エージェントが要求を取り消して閉じた (`cancelled`) ときは、画面は「エージェントが取り消した。何もしていない」と
-  知らせ (Toast)、時間切れ・利用者の拒否と区別します (T1603)。`ugoe_mcp::host::Approvals::request` は取り消しを拒否
-  (`HostError::Denied`) として返すので、エディタは拒否の文が自分の渡した文 (`DECLINED`) でないことで取り消しと見分けます。
+  知らせ (Toast)、時間切れ・利用者の拒否と区別します (T1603)。`ugoe_mcp::host::Approvals::request` は取り消しを
+  `HostError::Cancelled` で返し、エディタは拒否 (`Denied`)・時間切れ (`TimedOut`) と種類で見分けます (T0557。拒否の文には頼らない)。
   `ugoe-mcp` はエディタのサイドカーとして同梱し、「Connect agents」の画面が各クライアントの登録のコマンドにそのパスを埋めます。
   詳細は [docs/editor.md#エージェントをつなぐ](editor.md#エージェントをつなぐ)、操作は [操作マニュアル](manual/mcp.md)。
 - **Claude Desktop (T0643):** 中継を MCP Bundle (`.mcpb`) に包み、Claude Desktop に拡張機能として入れます

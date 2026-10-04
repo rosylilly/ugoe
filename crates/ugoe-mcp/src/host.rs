@@ -24,7 +24,7 @@
 //!
 //! クライアントが要求を取り消すと (`notifications/cancelled`、HTTP では答えを待たずに接続を閉じる)、
 //! [`crate::Server`] はその要求を処理しているスレッドに取り消しの印を立てる。[`Approvals::request`] は
-//! 待つ間にその印を見て、確認を拒否で終える (持ち主は何もしなくてよい。画面の確認は、ほかの終わり方と
+//! 待つ間にその印を見て、確認を [`HostError::Cancelled`] で終える (持ち主は何もしなくてよい。画面の確認は、ほかの終わり方と
 //! 同じく `request` から戻ったときに閉じる)。印は要求を処理するスレッドに付く
 //! ([`Approvals::request`] を要求のスレッドの外で呼ぶと、取り消しは届かない)。
 
@@ -51,6 +51,9 @@ pub enum HostError {
     /// 利用者の答えを待つうちに時間が切れた。
     #[error("the user did not answer in time; ask them to check the editor and try again")]
     TimedOut,
+    /// 利用者の答えを待つうちに、クライアントが要求を取り消した (モジュールの説明の「取り消し」)。
+    #[error("the client cancelled the request")]
+    Cancelled,
     /// 読み書きの失敗など。
     #[error("{0}")]
     Failed(String),
@@ -465,8 +468,6 @@ impl Drop for StagedFile {
     }
 }
 
-/// 取り消された要求の確認を拒否するときの文 (クライアントはふつう読まない)。
-const CANCELLED: &str = "the client cancelled the request";
 /// 確認を待つ間に取り消しを確かめる間隔。
 const CANCEL_POLL: Duration = Duration::from_millis(50);
 
@@ -555,9 +556,10 @@ impl Approvals {
     }
 
     /// 確認の番号を作って `ask` に渡し (`ask` は画面に確認を出すだけで待たない)、答えか時間切れまで待つ。
-    /// 拒否は [`HostError::Denied`] (`denied` の文)、時間切れは [`HostError::TimedOut`]。
+    /// 拒否は [`HostError::Denied`] (`denied` の文)、時間切れは [`HostError::TimedOut`]、
+    /// 取り消しは [`HostError::Cancelled`]。
     ///
-    /// クライアントが要求を取り消したら (モジュールの説明の「取り消し」)、答えを待たずに拒否で終える
+    /// クライアントが要求を取り消したら (モジュールの説明の「取り消し」)、答えを待たずに [`HostError::Cancelled`] で終える
     /// (待つ前に取り消されていれば `ask` を呼ばない)。
     pub fn request(
         &self,
@@ -568,7 +570,7 @@ impl Approvals {
         let cancellation = Cancellation::current();
         let cancelled = || cancellation.as_ref().is_some_and(|c| c.is_cancelled());
         if cancelled() {
-            return Err(HostError::Denied(CANCELLED.to_owned()));
+            return Err(HostError::Cancelled);
         }
         let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
         let (sender, receiver) = mpsc::sync_channel(1);
@@ -597,7 +599,7 @@ impl Approvals {
                 Err(HostError::Denied(denied.to_owned()))
             }
             Some(Err(RecvTimeoutError::Timeout)) => Err(HostError::TimedOut),
-            None => Err(HostError::Denied(CANCELLED.to_owned())),
+            None => Err(HostError::Cancelled),
         }
     }
 
@@ -917,7 +919,7 @@ mod tests {
             std::thread::yield_now();
         }
         cancellation.cancel();
-        assert!(matches!(waiting.join().unwrap(), Err(HostError::Denied(m)) if m == CANCELLED));
+        assert!(matches!(waiting.join().unwrap(), Err(HostError::Cancelled)));
         assert!(approvals.pending().is_empty());
 
         // 待つ前に取り消されていれば、確認を出さない。接続が閉じていれば取り消す。
@@ -925,7 +927,7 @@ mod tests {
         let mut asked = false;
         let result =
             closed.scope(|| approvals.request(Duration::from_secs(10), "no", |_| asked = true));
-        assert!(matches!(result, Err(HostError::Denied(m)) if m == CANCELLED));
+        assert!(matches!(result, Err(HostError::Cancelled)));
         assert!(!asked);
         // 印はスコープの外に残らない。
         assert!(Cancellation::current().is_none());

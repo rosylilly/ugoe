@@ -365,7 +365,8 @@ let bridge = EditorBridge::start(host, BridgeOptions::default())?; // 127.0.0.1 
 - **スレッド:** ツールは HTTP の接続ごとのスレッドで同期に動く (Tauri のイベントループの外)。確認を待つ間も、ほかの要求と
   エディタの編集は進む。止めるときは `Approvals::deny_all` で待っている確認を終わらせてから `bridge.stop()` する。
 - **取り消し:** クライアントが要求を取り消すと (`notifications/cancelled`、HTTP の接続を閉じる)、`Approvals::request` は
-  答えを待たずに `HostError::Denied` で戻る (持ち主は何もしなくてよい。`request` から戻ったら画面の確認を閉じる)。
+  答えを待たずに `HostError::Cancelled` で戻る (持ち主は何もしなくてよい。`request` から戻ったら画面の確認を閉じる)。
+  終わり方は `HostError` の種類で見分ける (拒否 `Denied`・時間切れ `TimedOut`・取り消し `Cancelled`。T0557。拒否の文には頼らない)。
   取り消しは要求を処理するスレッドに付くので、`request` は `authorize` のスレッドで呼ぶ。
 - **守り:** 待ち受けは `127.0.0.1` だけで、トークンは必須。パスの制限 (`--root` 相当) は `BridgeOptions::options.root` で
   決める。既定は限らない (ほかのプロジェクトは開けず、書く操作は利用者が確認するので)。読むだけのツール (PSD・モーションの
@@ -517,8 +518,26 @@ Claude Code に次のように頼む:
   | 保存の後の置き換え (行き先がディレクトリなど) | プロジェクトは保存済み (`modified: false`)、`.ugoe` は前のまま | `` saved the project, but failed to write `…`: …; the previous file is left as it was `` |
 
   プロジェクトの保存そのもの (`Project::save`) に失敗したときは、一時ファイルを消し、`.ugoe` も書かない。
+- プロジェクトを指すツールの結果には、プロジェクトの状態 (`apply_proposal`・`list_proposals`・`get_model_summary`・
+  `propose_*` は `project` の中、`open_project`・`import_psd`・`undo`・`redo`・`save_project` は結果そのもの) を載せる:
+  `path`・`revision` (ツールが変えた回数)・`modified` (未保存の変更があるか)・`on_disk`・`can_undo`・`can_redo`
+  (`undo`・`redo` で戻せる・進められるか。持ち主の文書の履歴から。エディタなら利用者の編集も含む。T0557)。
+  `can_undo` が `false` なら `undo` を呼んでも何も変わらない (エディタにつないでいても確認を出す前に分かる)。
 - 失敗 (検証を通らない提案、未知の ID、引数の誤り) はツールの実行エラー (`isError: true`) で返し、
-  エージェントが読んで直せるようにする。ツールや持ち主の不具合で panic したときは、サーバを落とさずに JSON-RPC の
+  エージェントが読んで直せるようにする。コードの分かる失敗は、文 (`content` の text。今までと同じ) に加えて
+  `structuredContent` にエディタのメッセージと同じ形 (`code`・`args`・`message`・省略できる `cause`・`items`。
+  [docs/editor.md](../../docs/editor.md#エラーと警告のコード)) で載せる (T0557)。`message` は `content` の文と同じ。
+  コードの無い失敗 (引数の誤りなど) は今までどおり文だけ (`structuredContent` を持たない)。
+
+  | コード | いつ | `args` |
+  | --- | --- | --- |
+  | `proposal.not_found` / `proposal.stale` / `proposal.rejected` (`cause` は `edit.*` など) / … | 提案の置き・適用 | エディタと同じ |
+  | `psd.*` / `project.*` / `module.*` / `edit.*` | PSD の読み込み・取り込み (`import_psd`・`get_psd_layers`) | エディタと同じ |
+  | `host.denied` | 持ち主が断った (利用者が拒否した・エディタではできない操作) | なし |
+  | `host.timed_out` | 利用者が時間内に答えなかった | なし |
+  | `host.cancelled` | 確認を待つ間にクライアントが要求を取り消した (ふつうクライアントには届かない) | なし |
+
+  `host.*` は MCP だけのコードで、エディタの画面のカタログには無い。ツールや持ち主の不具合で panic したときは、サーバを落とさずに JSON-RPC の
   `-32603` (internal error) で答える (stdio のサーバごと落ちて未保存の変更を失わないように)。
 - PSD (`import_psd`・`get_psd_layers` の `psd`) は通常のファイルだけを読む (`/dev/zero` のような装置・FIFO・ディレクトリは
   エラー。終わらない読み込みでメモリを使い果たさないように)。
@@ -586,7 +605,7 @@ Claude Code に次のように頼む:
 - メソッド: `initialize`・`server/discover`・`ping`・`tools/list`・`tools/call`。通知は受け取って無視する
   (`notifications/cancelled` を除く)。
 - 取り消し ([仕様](https://modelcontextprotocol.io/specification/draft/basic/utilities/cancellation)): 待つのは
-  持ち主の確認 (`host::Approvals`。エディタだけ) なので、取り消しで止まるのは確認だけ (拒否で終わる)。ほかのツールは
+  持ち主の確認 (`host::Approvals`。エディタだけ) なので、取り消しで止まるのは確認だけ (`HostError::Cancelled` で終わる)。ほかのツールは
   すぐ終わるので、取り消しが届く前に答える。
   - `notifications/cancelled` は、処理中の要求のうち `requestId` を持つものが 1 つだけなら取り消す。HTTP はセッションを
     持たないので、複数のクライアントが同じ id で同時に要求していれば、どれのことか分からないので無視する
@@ -648,3 +667,4 @@ GPU を使わないテストでは、GPU に触る前に引数の誤り (未知�
 - T0516 (`docs/tasks/T0516-mcp-document-host.md`): 文書の持ち主の抽象化・エディタに組み込む API・`--editor` の中継と WSL
 - T0643 (`docs/tasks/T0643-editor-claude-desktop-mcpb.md`): Claude Desktop 用の MCP Bundle (`--mcpb`・`src/mcpb.rs`)
 - T0551 (`docs/tasks/T0551-mcp-relay-concurrency.md`): `--editor` の中継で要求を並行に送り、取り消しを伝える
+- T0557 (`docs/tasks/T0557-mcp-structured-results-and-cancel-kind.md`): エラーのコードを `structuredContent` で返す・状態の `can_undo`・`can_redo`・`HostError::Cancelled`

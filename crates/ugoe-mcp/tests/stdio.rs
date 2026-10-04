@@ -273,6 +273,9 @@ fn propose_apply_undo_and_save() {
     let opened = client.call_ok("open_project", json!({ "path": path }));
     assert_eq!(opened["counts"]["meshes"], 1);
     assert_eq!(opened["on_disk"], true);
+    // 開いたばかりの文書は戻せない・進められない。
+    assert_eq!(opened["can_undo"], false);
+    assert_eq!(opened["can_redo"], false);
 
     let summary = client.call_ok("get_model_summary", json!({ "path": path }));
     assert_eq!(parameter_ids(&summary), ["X"]);
@@ -319,6 +322,8 @@ fn propose_apply_undo_and_save() {
 
     let applied = client.call_ok("apply_proposal", json!({ "path": path, "proposal": id }));
     assert_eq!(applied["project"]["modified"], true);
+    assert_eq!(applied["project"]["can_undo"], true);
+    assert_eq!(applied["project"]["can_redo"], false);
     let summary = client.call_ok("get_model_summary", json!({ "path": path }));
     assert_eq!(parameter_ids(&summary), ["X", "AngleX"]);
     let axes = summary["meshes"][0]["keyforms"]["axes"].as_array().unwrap();
@@ -330,6 +335,20 @@ fn propose_apply_undo_and_save() {
     assert!(err.contains("the model changed"), "{err}");
     let err = client.call_err("apply_proposal", json!({ "path": path, "proposal": "p99" }));
     assert!(err.contains("not found"), "{err}");
+    // コードの分かるエラーは、文に加えて `structuredContent` にコードと引数を載せる。
+    let stale = client.call("apply_proposal", json!({ "path": path, "proposal": id }));
+    assert_eq!(stale["isError"], true, "{stale}");
+    assert_eq!(stale["structuredContent"]["code"], "proposal.stale");
+    assert_eq!(
+        stale["structuredContent"]["message"],
+        stale["content"][0]["text"]
+    );
+    let missing = client.call("apply_proposal", json!({ "path": path, "proposal": "p99" }));
+    assert_eq!(missing["structuredContent"]["code"], "proposal.not_found");
+    assert_eq!(missing["structuredContent"]["args"]["id"], 99.0);
+    let missing = client.call("apply_proposal", json!({ "path": path, "proposal": "x" }));
+    assert_eq!(missing["structuredContent"]["code"], "proposal.not_found");
+    assert_eq!(missing["structuredContent"]["args"]["id"], "x");
 
     // 検証を通らない提案は拒否され、ID を返さない。
     let err = client.call_err(
@@ -341,11 +360,31 @@ fn propose_apply_undo_and_save() {
         }),
     );
     assert!(err.contains("rejected"), "{err}");
+    let rejected = client.call(
+        "propose_edit",
+        json!({
+            "path": path,
+            "title": "bad",
+            "commands": [{ "op": "add_keyform_key", "target": { "kind": "mesh", "id": "Nope" }, "parameter": "AngleX", "key": 1.0 }],
+        }),
+    );
+    assert_eq!(rejected["structuredContent"]["code"], "proposal.rejected");
+    assert_eq!(
+        rejected["structuredContent"]["cause"]["code"],
+        "edit.not_found"
+    );
     let err = client.call_err(
         "propose_edit",
         json!({ "path": path, "title": "bad", "commands": [{ "op": "no_such_op" }] }),
     );
     assert!(err.contains("invalid arguments"), "{err}");
+    // コードの無いエラーは今までどおり文だけ。
+    let invalid = client.call(
+        "propose_edit",
+        json!({ "path": path, "title": "bad", "commands": [{ "op": "no_such_op" }] }),
+    );
+    assert_eq!(invalid["isError"], true, "{invalid}");
+    assert!(invalid.get("structuredContent").is_none(), "{invalid}");
 
     // 提案の後にモデルが変わったら、その提案は適用できない。
     let stale = client.call_ok(
@@ -359,6 +398,8 @@ fn propose_apply_undo_and_save() {
     let undone = client.call_ok("undo", json!({ "path": path }));
     assert_eq!(undone["undone"], true);
     assert_eq!(undone["modified"], false);
+    assert_eq!(undone["can_undo"], false);
+    assert_eq!(undone["can_redo"], true);
     let summary = client.call_ok("get_model_summary", json!({ "path": path }));
     assert_eq!(parameter_ids(&summary), ["X"]);
     client.call_err(
@@ -367,6 +408,8 @@ fn propose_apply_undo_and_save() {
     );
     let redone = client.call_ok("redo", json!({ "path": path }));
     assert_eq!(redone["redone"], true);
+    assert_eq!(redone["can_undo"], true);
+    assert_eq!(redone["can_redo"], false);
 
     // 未保存の変更があれば閉じられない。
     client.call_err("close_project", json!({ "path": path }));

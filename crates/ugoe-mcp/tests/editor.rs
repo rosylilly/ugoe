@@ -453,11 +453,16 @@ fn relays_the_tools_to_a_running_editor() {
 
     // 利用者が拒否・時間切れなら適用しない。
     editor.set_policy(Policy::Decline);
-    let err = relay.call_err("apply_proposal", json!({ "path": path, "proposal": id }));
+    let declined = relay.call("apply_proposal", json!({ "path": path, "proposal": id }));
+    assert_eq!(declined["isError"], true, "{declined}");
+    let err = declined["content"][0]["text"].as_str().unwrap();
     assert!(err.contains("declined"), "{err}");
+    assert_eq!(declined["structuredContent"]["code"], "host.denied");
     editor.set_policy(Policy::Ignore);
-    let err = relay.call_err("apply_proposal", json!({ "path": path, "proposal": id }));
+    let ignored = relay.call("apply_proposal", json!({ "path": path, "proposal": id }));
+    let err = ignored["content"][0]["text"].as_str().unwrap();
     assert!(err.contains("did not answer"), "{err}");
+    assert_eq!(ignored["structuredContent"]["code"], "host.timed_out");
     assert_eq!(editor.parameter_ids(), ["X"]);
     // 適用できない提案では確認を出さない。
     let err = relay.call_err("apply_proposal", json!({ "path": path, "proposal": "p99" }));
@@ -468,11 +473,18 @@ fn relays_the_tools_to_a_running_editor() {
     let applied = relay.call_ok("apply_proposal", json!({ "path": path, "proposal": id }));
     assert_eq!(applied["changes"]["parameters"]["added"], json!(["AngleX"]));
     assert_eq!(applied["project"]["modified"], true);
+    // 戻せるか・進められるかはエディタの文書の履歴から。
+    assert_eq!(applied["project"]["can_undo"], true);
+    assert_eq!(applied["project"]["can_redo"], false);
     assert_eq!(editor.parameter_ids(), ["X", "AngleX"]);
     let undone = relay.call_ok("undo", json!({ "path": path }));
     assert_eq!(undone["undone"], true);
+    assert_eq!(undone["can_undo"], false);
+    assert_eq!(undone["can_redo"], true);
     assert_eq!(editor.parameter_ids(), ["X"]);
-    relay.call_ok("redo", json!({ "path": path }));
+    let redone = relay.call_ok("redo", json!({ "path": path }));
+    assert_eq!(redone["can_undo"], true);
+    assert_eq!(redone["can_redo"], false);
     assert_eq!(editor.parameter_ids(), ["X", "AngleX"]);
 
     let bundle = tmp.path.join("quad.ugoe");

@@ -18,7 +18,8 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use base64::Engine;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use ugoe_editor_core::{Command, Document, Project, ProposalError, ProposalView};
+use ugoe_editor_core::message::{Coded, Message, MessageArgs};
+use ugoe_editor_core::{Command, Document, Project, ProposalError, ProposalView, message_args};
 
 use crate::autorig::{self, PsdSource};
 use crate::diff;
@@ -103,7 +104,49 @@ impl From<Value> for Output {
     }
 }
 
-pub(crate) type ToolResult = Result<Output, String>;
+pub(crate) type ToolResult = Result<Output, ToolError>;
+
+/// ツールの失敗。`message` は結果の文 (`content` の text)。コードの分かる失敗は `detail` を持ち、
+/// 結果の `structuredContent` にエディタの [`Message`] の形 (`code`・`args`・`message`・`cause`・`items`) で載せる
+/// (エージェントが文を読まずに見分けられるように。`docs/ai-integration.md`)。
+#[derive(Debug)]
+pub(crate) struct ToolError {
+    pub(crate) message: String,
+    /// 大きいので箱に入れる (`Result` の `Err` を小さく保つ)。
+    pub(crate) detail: Option<Box<Message>>,
+}
+
+impl ToolError {
+    /// 文 `message` とコード・引数 (`detail`。その `message` は `message` に置き換える) の失敗。
+    pub(crate) fn coded(message: String, mut detail: Message) -> Self {
+        detail.message.clone_from(&message);
+        Self {
+            message,
+            detail: Some(Box::new(detail)),
+        }
+    }
+}
+
+impl fmt::Display for ToolError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl From<String> for ToolError {
+    fn from(message: String) -> Self {
+        Self {
+            message,
+            detail: None,
+        }
+    }
+}
+
+impl From<&str> for ToolError {
+    fn from(message: &str) -> Self {
+        message.to_owned().into()
+    }
+}
 
 /// ツールの注釈 (MCP の `ToolAnnotations`)。クライアントが確認を求めるかの判断に使う。
 #[derive(Clone, Copy)]
@@ -167,8 +210,16 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-fn host_error(e: HostError) -> String {
-    e.to_string()
+/// 持ち主の失敗。断った・時間切れ・取り消しはコード (`host.denied`・`host.timed_out`・`host.cancelled`) を付ける。
+fn host_error(e: HostError) -> ToolError {
+    let code = match &e {
+        HostError::Denied(_) => "host.denied",
+        HostError::TimedOut => "host.timed_out",
+        HostError::Cancelled => "host.cancelled",
+        HostError::Failed(_) => return e.to_string().into(),
+    };
+    let message = e.to_string();
+    ToolError::coded(message, Message::new(code, MessageArgs::new(), ""))
 }
 
 impl Tools {
@@ -427,9 +478,9 @@ impl Tools {
                 let draft = autorig::propose_module_rig(&doc, &lock(&slot), a)?;
                 self.add_proposal(&key, draft)
             }),
-            _ if edit_tool && self.options.read_only => Err(format!(
-                "`{name}` is disabled (the server runs with --read-only)"
-            )),
+            _ if edit_tool && self.options.read_only => {
+                Err(format!("`{name}` is disabled (the server runs with --read-only)").into())
+            }
             "apply_proposal" => parse(arguments).and_then(|a| self.apply_proposal(a)),
             "undo" => parse(arguments).and_then(|a| self.undo(a, true)),
             "redo" => parse(arguments).and_then(|a| self.undo(a, false)),
@@ -453,7 +504,7 @@ impl Tools {
     /// 持ち主からプロジェクト `key` を借りて `f` を呼ぶ (開いていなければ持ち主が開くか断る。
     /// `FileHost` はディスクから読む。要求ごとに状態を渡す MCP の流儀に合わせ、パスだけで
     /// プロジェクトを指せるようにする)。`f` は持ち主の錠の中で動くので、短くし、ほかの錠を取らない。
-    fn with<R>(&self, key: &Path, f: impl FnOnce(Lent<'_>) -> R) -> Result<R, String> {
+    fn with<R>(&self, key: &Path, f: impl FnOnce(Lent<'_>) -> R) -> Result<R, ToolError> {
         let mut f = Some(f);
         let mut out = None;
         self.host
@@ -463,10 +514,10 @@ impl Tools {
                 }
             })
             .map_err(host_error)?;
-        out.ok_or_else(|| format!("project `{}` is not open", key.display()))
+        out.ok_or_else(|| format!("project `{}` is not open", key.display()).into())
     }
 
-    fn authorize(&self, action: Action<'_>) -> Result<(), String> {
+    fn authorize(&self, action: Action<'_>) -> Result<(), ToolError> {
         self.host.authorize(&action).map_err(host_error)
     }
 
@@ -485,13 +536,16 @@ impl Tools {
         self.extras().remove(key);
     }
 
-    /// プロジェクトの状態 (`modified` は借りたときの文書から)。
-    fn status(&self, key: &Path, modified: bool) -> Value {
+    /// プロジェクトの状態 (`modified`・`can_undo`・`can_redo` は借りたときの文書から)。
+    fn status(&self, key: &Path, state: DocState) -> Value {
         let revision = self.extras().get(key).map_or(0, |e| e.revision);
         json!({
             "path": key,
             "revision": revision,
-            "modified": modified,
+            "modified": state.modified,
+            // `undo`・`redo` で戻せる・進められるか (false なら確認を求めても何も変わらない)。
+            "can_undo": state.can_undo,
+            "can_redo": state.can_redo,
             // create で作ってまだ保存していなければ false。
             "on_disk": key.join("project.json").is_file(),
         })
@@ -499,7 +553,7 @@ impl Tools {
 
     /// 自動リギングのツールの入力: 文書の複製と、覚えている PSD。PSD の画像は重いので、持ち主の錠の
     /// 外で扱う。
-    fn for_autorig(&self, key: &Path) -> Result<(Document, PsdSlot), String> {
+    fn for_autorig(&self, key: &Path) -> Result<(Document, PsdSlot), ToolError> {
         let doc = self.with(key, |lent| lent.document.detached())?;
         let slot = Arc::clone(&self.extras().entry(key.to_path_buf()).or_default().psd);
         Ok((doc, slot))
@@ -511,7 +565,8 @@ impl Tools {
             return Err(format!(
                 "`{}` is already a project; open it without create",
                 key.display()
-            ));
+            )
+            .into());
         }
         self.authorize(Action::Open {
             project: &key,
@@ -537,10 +592,10 @@ impl Tools {
             .map_err(host_error)?;
         self.forget(&key);
         self.host.changed(&Change::Opened { project: &key });
-        let (modified, name, counts) = self.with(&key, |lent| {
+        let (state, name, counts) = self.with(&key, |lent| {
             let model = lent.document.model();
             (
-                lent.document.is_modified(),
+                DocState::of(lent.document),
                 lent.meta.name.clone(),
                 json!({
                     "parameters": model.parameters.len(),
@@ -550,7 +605,7 @@ impl Tools {
                 }),
             )
         })?;
-        let mut status = self.status(&key, modified);
+        let mut status = self.status(&key, state);
         status["name"] = json!(name);
         status["counts"] = counts;
         Ok(status.into())
@@ -572,10 +627,10 @@ impl Tools {
 
     fn get_model_summary(&self, args: PathArgs) -> ToolResult {
         let key = self.resolve(&args.path)?;
-        let (mut summary, modified) = self.with(&key, |lent| {
-            (model_summary(lent.document), lent.document.is_modified())
+        let (mut summary, state) = self.with(&key, |lent| {
+            (model_summary(lent.document), DocState::of(lent.document))
         })?;
-        summary["project"] = self.status(&key, modified);
+        summary["project"] = self.status(&key, state);
         Ok(summary.into())
     }
 
@@ -590,8 +645,9 @@ impl Tools {
                 "unknown kind `{}` (expected one of {})",
                 args.kind,
                 ELEMENT_KINDS.join(", ")
-            )),
-            None => Err(format!("{} `{}` not found", args.kind, args.id)),
+            )
+            .into()),
+            None => Err(format!("{} `{}` not found", args.kind, args.id).into()),
         }
     }
 
@@ -610,36 +666,39 @@ impl Tools {
 
     fn list_proposals(&self, args: PathArgs) -> ToolResult {
         let key = self.resolve(&args.path)?;
-        let (proposals, modified) = self.with(&key, |lent| {
+        let (proposals, state) = self.with(&key, |lent| {
             let proposals: Vec<Value> = lent
                 .proposals
                 .views(lent.document)
                 .iter()
                 .map(proposal_json)
                 .collect();
-            (proposals, lent.document.is_modified())
+            (proposals, DocState::of(lent.document))
         })?;
-        Ok(json!({ "proposals": proposals, "project": self.status(&key, modified) }).into())
+        Ok(json!({ "proposals": proposals, "project": self.status(&key, state) }).into())
     }
 
     fn apply_proposal(&self, args: ApplyArgs) -> ToolResult {
         let key = self.resolve(&args.path)?;
         let id = proposal_number(&args.proposal)?;
-        let explain = |e: ProposalError| match e {
-            ProposalError::Stale => format!(
-                "proposal `{}` cannot be applied: the model changed after it was proposed (or the \
-                 proposal was already applied); undo those changes or propose again",
-                args.proposal
-            ),
-            ProposalError::NotFound(_) => format!("proposal `{}` not found", args.proposal),
-            e => format!("the proposal was rejected: {e}"),
+        let explain = |e: ProposalError| {
+            let message = match &e {
+                ProposalError::Stale => format!(
+                    "proposal `{}` cannot be applied: the model changed after it was proposed (or the \
+                     proposal was already applied); undo those changes or propose again",
+                    args.proposal
+                ),
+                ProposalError::NotFound(_) => format!("proposal `{}` not found", args.proposal),
+                e => format!("the proposal was rejected: {e}"),
+            };
+            ToolError::coded(message, e.to_message())
         };
         // 確認を求める前に、適用できる提案かを確かめる (適用できない提案で利用者に尋ねないように)。
         let title = self.with(&key, |lent| {
             lent.proposals
                 .preview(lent.document, id, &args.exclude)
                 .map_err(explain)?;
-            Ok::<_, String>(
+            Ok::<_, ToolError>(
                 lent.proposals
                     .views(lent.document)
                     .into_iter()
@@ -656,7 +715,7 @@ impl Tools {
             excluded: &args.exclude,
         })?;
         // 確認の間にモデルが変わっていれば、提案が古いというエラーになる (承認した差分と違う結果にしない)。
-        let (report, changes, modified) = self.with(&key, |lent| {
+        let (report, changes, state) = self.with(&key, |lent| {
             // 差分は、外したコマンドを除いた列を複製に適用して求める (承認した人が見るものと同じ)。
             let (after, _) = lent
                 .proposals
@@ -667,7 +726,7 @@ impl Tools {
                 .proposals
                 .adopt(lent.document, id, &args.exclude)
                 .map_err(explain)?;
-            Ok::<_, String>((report, changes, lent.document.is_modified()))
+            Ok::<_, ToolError>((report, changes, DocState::of(lent.document)))
         })??;
         self.edited(&key);
         Ok(json!({
@@ -676,7 +735,7 @@ impl Tools {
             "excluded": args.exclude,
             "report": report,
             "changes": changes,
-            "project": self.status(&key, modified),
+            "project": self.status(&key, state),
         })
         .into())
     }
@@ -687,7 +746,8 @@ impl Tools {
             return Err(format!(
                 "`{}` is already a project; open it and pass `psd` to get_psd_layers instead",
                 key.display()
-            ));
+            )
+            .into());
         }
         let psd = self.resolve(&args.psd)?;
         let base = args.base.as_deref().map(|b| self.resolve(b)).transpose()?;
@@ -716,8 +776,8 @@ impl Tools {
         self.forget(&key);
         *lock(&self.extras().entry(key.clone()).or_default().psd) = Some(imported.source);
         self.host.changed(&Change::Opened { project: &key });
-        let modified = self.with(&key, |lent| lent.document.is_modified())?;
-        let mut status = self.status(&key, modified);
+        let state = self.with(&key, |lent| DocState::of(lent.document))?;
+        let mut status = self.status(&key, state);
         if let (Value::Object(status), Value::Object(value)) = (&mut status, imported.value) {
             status.extend(value);
         }
@@ -731,18 +791,18 @@ impl Tools {
         } else {
             Action::Redo { project: &key }
         })?;
-        let (done, modified) = self.with(&key, |lent| {
+        let (done, state) = self.with(&key, |lent| {
             let done = if undo {
                 lent.document.undo()
             } else {
                 lent.document.redo()
             };
-            (done, lent.document.is_modified())
+            (done, DocState::of(lent.document))
         })?;
         if done {
             self.edited(&key);
         }
-        let mut status = self.status(&key, modified);
+        let mut status = self.status(&key, state);
         status[if undo { "undone" } else { "redone" }] = json!(done);
         Ok(status.into())
     }
@@ -763,8 +823,8 @@ impl Tools {
             .save(&key, bundle.as_deref())
             .map_err(host_error)?;
         self.host.changed(&Change::Saved { project: &key });
-        let modified = self.with(&key, |lent| lent.document.is_modified())?;
-        let mut status = self.status(&key, modified);
+        let state = self.with(&key, |lent| DocState::of(lent.document))?;
+        let mut status = self.status(&key, state);
         if let Some(bundle) = bundle {
             status["bundle"] = json!(bundle);
         }
@@ -831,8 +891,10 @@ impl Tools {
     /// 提案を置き (複製に適用して検証する)、提案の ID・検証の結果・差分・コマンドの要約を返す。
     /// モデルは変えない。
     fn add_proposal(&self, key: &Path, draft: Draft) -> ToolResult {
-        let rejected = |e: ProposalError| format!("the proposal was rejected: {e}");
-        let (mut value, modified) = self.with(key, |lent| {
+        let rejected = |e: ProposalError| {
+            ToolError::coded(format!("the proposal was rejected: {e}"), e.to_message())
+        };
+        let (mut value, state) = self.with(key, |lent| {
             let view = lent
                 .proposals
                 .add(lent.document, draft.title, draft.rationale, draft.commands)
@@ -844,9 +906,9 @@ impl Tools {
             let mut value = proposal_json(&view);
             value["report"] = json!(report);
             value["changes"] = diff::diff(lent.document, &after);
-            Ok::<_, String>((value, lent.document.is_modified()))
+            Ok::<_, ToolError>((value, DocState::of(lent.document)))
         })??;
-        value["project"] = self.status(key, modified);
+        value["project"] = self.status(key, state);
         value["next"] = json!(
             "ユーザーに提案 (題・理由・差分) を示し、承認を得てから apply_proposal で適用する"
         );
@@ -868,6 +930,24 @@ impl Tools {
     }
 }
 
+/// 借りたときの文書の状態 ([`Tools::status`] に載せる)。
+#[derive(Clone, Copy)]
+struct DocState {
+    modified: bool,
+    can_undo: bool,
+    can_redo: bool,
+}
+
+impl DocState {
+    fn of(document: &Document) -> Self {
+        Self {
+            modified: document.is_modified(),
+            can_undo: document.can_undo(),
+            can_redo: document.can_redo(),
+        }
+    }
+}
+
 /// 置く前の提案。
 pub(crate) struct Draft {
     pub(crate) title: String,
@@ -883,11 +963,13 @@ fn proposal_id(id: u32) -> String {
 }
 
 /// 提案の ID の文字列から番号を読む (`p3` か `3`)。
-fn proposal_number(id: &str) -> Result<u32, String> {
-    id.strip_prefix('p')
-        .unwrap_or(id)
-        .parse()
-        .map_err(|_| format!("proposal `{id}` not found (proposal IDs look like `p1`)"))
+fn proposal_number(id: &str) -> Result<u32, ToolError> {
+    id.strip_prefix('p').unwrap_or(id).parse().map_err(|_| {
+        ToolError::coded(
+            format!("proposal `{id}` not found (proposal IDs look like `p1`)"),
+            Message::new("proposal.not_found", message_args! { "id" => id }, ""),
+        )
+    })
 }
 
 fn proposal_json(view: &ProposalView) -> Value {
@@ -922,15 +1004,21 @@ fn tool_result(result: ToolResult) -> Value {
                 "isError": false,
             })
         }
-        Err(message) => json!({
-            "content": [{ "type": "text", "text": message }],
-            "isError": true,
-        }),
+        Err(ToolError { message, detail }) => {
+            let mut result = json!({
+                "content": [{ "type": "text", "text": message }],
+                "isError": true,
+            });
+            if let Some(detail) = detail {
+                result["structuredContent"] = json!(detail);
+            }
+            result
+        }
     }
 }
 
-fn parse<T: for<'de> Deserialize<'de>>(arguments: Value) -> Result<T, String> {
-    serde_json::from_value(arguments).map_err(|e| format!("invalid arguments: {e}"))
+fn parse<T: for<'de> Deserialize<'de>>(arguments: Value) -> Result<T, ToolError> {
+    serde_json::from_value(arguments).map_err(|e| format!("invalid arguments: {e}").into())
 }
 
 #[derive(Deserialize)]

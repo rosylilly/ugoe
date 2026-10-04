@@ -47,7 +47,9 @@ use ugoe_model::SlotId;
 use ugoe_psd::{ImportLimits, LayerTree};
 
 use crate::schema::object_schema;
-use crate::tools::{Content, Draft, Kind, Output, PATH_NOTE, ToolResult, path_property, tool_def};
+use crate::tools::{
+    Content, Draft, Kind, Output, PATH_NOTE, ToolError, ToolResult, path_property, tool_def,
+};
 
 /// PSD がまだ分からないときの断りの文。
 const NO_PSD: &str = "no PSD is associated with this project: call import_psd, or pass `psd` \
@@ -88,21 +90,26 @@ impl fmt::Debug for PsdSource {
 }
 
 impl PsdSource {
-    fn load(path: PathBuf) -> Result<Self, String> {
+    fn load(path: PathBuf) -> Result<Self, ToolError> {
         Self::load_with(path, ImportLimits::default())
     }
 
     /// PSD を展開の上限 `limits` で読む。読めなければ、エラーのコード (`psd.total_limit_exceeded` など。
-    /// `docs/editor.md#エラーと警告のコード`) を文の後ろに付けて返す (どの上限を超えたかをエージェントが見分けられるように)。
-    fn load_with(path: PathBuf, limits: ImportLimits) -> Result<Self, String> {
+    /// `docs/editor.md#エラーと警告のコード`) を文の後ろに付け、コードと引数 ([`ToolError::coded`]) も添えて返す
+    /// (どの上限を超えたかをエージェントが見分けられるように)。
+    fn load_with(path: PathBuf, limits: ImportLimits) -> Result<Self, ToolError> {
         // 装置 (`/dev/zero`)・FIFO・ディレクトリは読まない (終わらない読み込みでメモリを使い果たさないように)。
         let metadata = std::fs::metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         if !metadata.is_file() {
-            return Err(format!("{}: not a regular file", path.display()));
+            return Err(format!("{}: not a regular file", path.display()).into());
         }
         let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-        let tree = read_layer_tree(&bytes, limits)
-            .map_err(|e| format!("{}: {e} (code: {})", path.display(), e.code()))?;
+        let tree = read_layer_tree(&bytes, limits).map_err(|e| {
+            ToolError::coded(
+                format!("{}: {e} (code: {})", path.display(), e.code()),
+                e.to_message(),
+            )
+        })?;
         Ok(Self {
             labels: classify_by_name(&tree),
             by_agent: BTreeSet::new(),
@@ -387,7 +394,7 @@ pub(crate) fn import_psd(
     args: ImportArgs,
     psd: PathBuf,
     base: Option<PathBuf>,
-) -> Result<Imported, String> {
+) -> Result<Imported, ToolError> {
     let name = args.name.unwrap_or_else(|| {
         psd.file_stem()
             .map(|s| s.to_string_lossy().into_owned())
@@ -396,7 +403,12 @@ pub(crate) fn import_psd(
     let project = match (&base, &args.slot) {
         (None, None) => Project::empty(name.clone()),
         (Some(base), Some(slot)) => Project::new_module(&name, base, &SlotId::from(slot.as_str()))
-            .map_err(|e| format!("the module project could not be created: {e}"))?,
+            .map_err(|e| {
+                ToolError::coded(
+                    format!("the module project could not be created: {e}"),
+                    e.to_message(),
+                )
+            })?,
         _ => return Err("pass `base` and `slot` together to create a module project".into()),
     };
     let source = PsdSource::load(psd.clone())?;
@@ -406,13 +418,16 @@ pub(crate) fn import_psd(
         &source.tree,
         &PsdImportOptions::new(name.clone()),
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| ToolError::coded(e.to_string(), e.to_message()))?;
     if let Some(context) = document.module() {
         context.map_new_meshes(&mut import.command);
     }
-    document
-        .apply(import.command)
-        .map_err(|e| format!("the PSD could not be imported: {e}"))?;
+    document.apply(import.command).map_err(|e| {
+        ToolError::coded(
+            format!("the PSD could not be imported: {e}"),
+            e.to_message(),
+        )
+    })?;
     let module = document
         .module()
         .map(|context| json!({ "base": context.base().path, "slot": context.slot().id }));
@@ -445,13 +460,13 @@ pub(crate) fn import_psd(
 }
 
 /// 覚えている PSD。`psd` (解決したパス) を渡されたら (違う PSD なら) 読み直し、分類を名前の規則の案に戻す。
-fn source(slot: &mut Option<PsdSource>, psd: Option<PathBuf>) -> Result<&mut PsdSource, String> {
+fn source(slot: &mut Option<PsdSource>, psd: Option<PathBuf>) -> Result<&mut PsdSource, ToolError> {
     if let Some(path) = psd
         && slot.as_ref().is_none_or(|s| s.path != path)
     {
         *slot = Some(PsdSource::load(path)?);
     }
-    slot.as_mut().ok_or_else(|| NO_PSD.to_owned())
+    slot.as_mut().ok_or_else(|| NO_PSD.into())
 }
 
 /// `doc` はプロジェクトの文書 (の複製)、`slot` は覚えている PSD、`psd` は `args.psd` を解決したパス
@@ -471,12 +486,13 @@ pub(crate) fn get_psd_layers(
     let selected: Vec<usize> = match &args.indices {
         Some(indices) => {
             if indices.len() > per_call {
-                return Err(format!("at most {per_call} layers per call"));
+                return Err(format!("at most {per_call} layers per call").into());
             }
             if let Some(i) = indices.iter().find(|&&i| i >= total) {
                 return Err(format!(
                     "layer {i} does not exist (there are {total} layers, numbered from 0)"
-                ));
+                )
+                .into());
             }
             indices.clone()
         }
@@ -485,7 +501,8 @@ pub(crate) fn get_psd_layers(
                 return Err(format!(
                     "start {} is past the last layer (there are {total} layers, numbered from 0)",
                     args.start
-                ));
+                )
+                .into());
             }
             let count = args.count.unwrap_or(DEFAULT_COUNT).clamp(1, per_call);
             (args.start..args.start.saturating_add(count).min(total)).collect()
@@ -902,9 +919,9 @@ mod tests {
     #[test]
     fn refuses_to_read_a_psd_that_is_not_a_regular_file() {
         let err = PsdSource::load(PathBuf::from("/dev/null")).unwrap_err();
-        assert!(err.contains("not a regular file"), "{err}");
+        assert!(err.message.contains("not a regular file"), "{err}");
         let err = PsdSource::load(std::env::temp_dir()).unwrap_err();
-        assert!(err.contains("not a regular file"), "{err}");
+        assert!(err.message.contains("not a regular file"), "{err}");
     }
 
     #[test]
@@ -914,7 +931,7 @@ mod tests {
         let limits = ImportLimits::default().with_max_channel_decompressed(100);
         let err = PsdSource::load_with(psd.clone(), limits).unwrap_err();
         assert!(
-            err.ends_with(
+            err.message.ends_with(
                 "a PSD channel decompresses to more than the import limit of 100 bytes \
                  (code: psd.channel_limit_exceeded)"
             ),
@@ -922,7 +939,15 @@ mod tests {
         );
         let limits = ImportLimits::default().with_max_total_decompressed(5000);
         let err = PsdSource::load_with(psd.clone(), limits).unwrap_err();
-        assert!(err.ends_with("(code: psd.total_limit_exceeded)"), "{err}");
+        assert!(
+            err.message.ends_with("(code: psd.total_limit_exceeded)"),
+            "{err}"
+        );
+        // コードと引数は構造でも返す (`structuredContent`)。
+        let detail = err.detail.unwrap();
+        assert_eq!(detail.code, "psd.total_limit_exceeded");
+        assert_eq!(detail.args["max"], 5000u32.into());
+        assert_eq!(detail.message, err.message);
         PsdSource::load(psd).unwrap();
     }
 

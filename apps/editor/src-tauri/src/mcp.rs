@@ -81,15 +81,13 @@ pub enum ApprovalOutcome {
 }
 
 impl ApprovalOutcome {
-    /// [`Approvals::request`] の結果から。拒否の文が [`DECLINED`] でなければ、`ugoe_mcp` が取り消しで拒否した
-    /// (`request` が `denied` の文以外で拒否するのは取り消しだけ)。
+    /// [`Approvals::request`] の結果から (取り消しは [`HostError::Cancelled`] で見分ける。拒否の文には頼らない)。
     fn of(result: &Result<(), HostError>) -> Self {
         match result {
             Ok(()) => Self::Approved,
-            Err(HostError::Denied(message)) if message == DECLINED => Self::Declined,
-            Err(HostError::Denied(_)) => Self::Cancelled,
+            Err(HostError::Denied(_) | HostError::Failed(_)) => Self::Declined,
             Err(HostError::TimedOut) => Self::TimedOut,
-            Err(HostError::Failed(_)) => Self::Declined,
+            Err(HostError::Cancelled) => Self::Cancelled,
         }
     }
 }

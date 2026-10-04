@@ -408,6 +408,31 @@ fn cancelled_requests_close_the_approval_as_cancelled() {
     assert_eq!(app.parameter_ids(), vec!["X"]);
 }
 
+/// 確認の終わり方は `HostError` の種類で見分ける。拒否の文が何であっても取り消しにはならない (T0557)。
+#[test]
+fn approval_outcomes_follow_the_error_kind() {
+    assert_eq!(ApprovalOutcome::of(&Ok(())), ApprovalOutcome::Approved);
+    for denied in [DECLINED, "the client cancelled the request", "stopped"] {
+        assert_eq!(
+            ApprovalOutcome::of(&Err(HostError::Denied(denied.to_owned()))),
+            ApprovalOutcome::Declined,
+            "{denied}"
+        );
+    }
+    assert_eq!(
+        ApprovalOutcome::of(&Err(HostError::Failed("io".to_owned()))),
+        ApprovalOutcome::Declined
+    );
+    assert_eq!(
+        ApprovalOutcome::of(&Err(HostError::TimedOut)),
+        ApprovalOutcome::TimedOut
+    );
+    assert_eq!(
+        ApprovalOutcome::of(&Err(HostError::Cancelled)),
+        ApprovalOutcome::Cancelled
+    );
+}
+
 /// 保存と一緒の `.ugoe` の書き出しは一時ファイルを経る: 書けなければ前のファイルを残し、一時ファイルも残さない (T0687)。
 #[test]
 fn saving_with_a_bundle_keeps_the_previous_bundle_when_it_fails() {
