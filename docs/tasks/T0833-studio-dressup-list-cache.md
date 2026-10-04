@@ -1,11 +1,11 @@
 ---
 id: T0833
 title: "スタジオ: dressup.list で付けていないモジュールを毎回読み直さない"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0833
 ---
 
 # T0833: スタジオ: dressup.list で付けていないモジュールを毎回読み直さない
