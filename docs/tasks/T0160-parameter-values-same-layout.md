@@ -1,11 +1,11 @@
 ---
 id: T0160
 title: ParameterValues の並びが同じかを定数時間で見分ける口
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-runtime, ugoe-physics, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0160
 ---
 
 # T0160: ParameterValues の並びが同じかを定数時間で見分ける口
