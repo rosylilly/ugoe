@@ -35,6 +35,10 @@ function isFiniteNumber(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
 }
 
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
 /** JSON の文字列を読む。形式が違えば例外を投げる。 */
 export function parseRecording(text: string): Recording {
   const data: unknown = JSON.parse(text);
@@ -48,12 +52,12 @@ export function parseRecording(text: string): Recording {
   const frames: RecordedFrame[] = [];
   let last = -Infinity;
   for (const [i, raw] of obj.frames.entries()) {
-    const f = raw as Record<string, unknown>;
-    const head = f.head as Record<string, unknown> | undefined;
+    const f: Record<string, unknown> = isObject(raw) ? raw : {};
+    const head = f.head;
     if (
       !isFiniteNumber(f.t) ||
       f.t < last ||
-      head === undefined ||
+      !isObject(head) ||
       !isFiniteNumber(head.yaw) ||
       !isFiniteNumber(head.pitch) ||
       !isFiniteNumber(head.roll) ||

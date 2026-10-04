@@ -117,6 +117,10 @@ export function checkLocales(localesDir, { languages = LANGUAGES, sources } = {}
       errors.push(`${path}: JSON として読めない (${e.message})`);
       continue;
     }
+    if (json === null || typeof json !== "object" || Array.isArray(json)) {
+      errors.push(`${path}: カタログは JSON のオブジェクトにする`);
+      continue;
+    }
     catalogs.set(tag, group(flatten(json, errors, path)));
   }
   const source = catalogs.get(languages.source);

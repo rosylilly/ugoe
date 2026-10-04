@@ -3,7 +3,7 @@ Third-party software and models used for face tracking
 
 This file is copied next to the MediaPipe files (mediapipe/third-party-notices.txt)
 by the ugoe face tracking package (@ugoe/face-tracking, GPL-3.0-only), which the
-ugoe editor and the ugoe viewer use. It lists the components that are
+ugoe editor, the ugoe viewer and ugoe studio use. It lists the components that are
 distributed with the application under other licenses.
 
 

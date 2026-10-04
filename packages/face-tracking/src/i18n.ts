@@ -1,5 +1,5 @@
 // 画面の文言 (@ugoe/i18n の名前空間 `face-tracking`)。カタログは locales/<言語>.json で、原文は英語。
-// 言語はアプリが @ugoe/i18n で決める (エディタは英語、ビューアは日本語)。
+// 言語はアプリが @ugoe/i18n で決める (どのアプリも設定の言語。既定は OS に合わせる)。
 import { registerCatalogs, translator } from "@ugoe/i18n";
 import en from "../locales/en.json";
 import ja from "../locales/ja.json";

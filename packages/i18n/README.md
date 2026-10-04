@@ -74,7 +74,7 @@ Tauri の WebView で確かめたこと (2026-10-02):
 | WKWebView (macOS) | OS の言語に従うという報告と、アプリのローカライズ (Info.plist の `CFBundleLocalizations`) との重なりに制限されるという報告がある | 未確認 (手元に Mac が無い)。[Apple Developer Forums](https://developer.apple.com/forums/thread/750119) |
 
 どの WebView でも、OS の優先する言語の **一覧** は取れない (取れても 1 つ)。正確にするには、アプリの Rust 側で OS の言語を取り
-(`sys-locale` クレートなど)、`setSystemLanguages()` に渡す。これは後続のタスク (言語の切り替えの画面) で行う。
+(`sys-locale` クレートなど)、`setSystemLanguages()` に渡す。エディタ・ビューア・スタジオは tauri-plugin-os の `locale()` で取って渡している。
 
 ## カタログの検査 (`just i18n`)
 

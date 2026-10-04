@@ -86,7 +86,7 @@ applyLocale();
 
 /**
  * 名前空間 `ns` のカタログを登録する。パッケージは自分の `locales/*.json` を読み込む所で 1 回呼ぶ。
- * 同じ名前空間を登録し直すと、後のカタログで置き換える。
+ * 同じ名前空間を登録し直すと、後のカタログの値で上書きする (後のカタログに無いキーは前のまま残る)。
  */
 export function registerCatalogs(ns: string, catalogs: LocaleCatalogs): void {
   for (const [locale, catalog] of Object.entries(catalogs)) {

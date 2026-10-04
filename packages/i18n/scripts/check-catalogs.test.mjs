@@ -83,6 +83,13 @@ describe("checkLocales", () => {
     ]);
   });
 
+  it("reports a catalog that is not an object", () => {
+    expect(check({ en, ja: null, fr: [] }, USE_ALL)).toEqual([
+      "locales/fr.json: カタログは JSON のオブジェクトにする",
+      "locales/ja.json: カタログは JSON のオブジェクトにする",
+    ]);
+  });
+
   it("requires the source catalog and known languages", () => {
     expect(check({ ja, de: {} }, "")).toEqual([
       "locales/de.json: 対応する言語ではない (packages/i18n/src/languages.json に無い)",

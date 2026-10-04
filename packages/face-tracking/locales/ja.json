@@ -88,6 +88,7 @@
     },
     "modelMissing": "MediaPipe のモデルが同梱されていません (アプリのディレクトリで `pnpm mediapipe` を実行してください)",
     "poseModelMissing": "体のトラッキングのモデルが同梱されていません (アプリのディレクトリで `pnpm mediapipe` を実行してください)。顔だけをトラッキングします",
+    "recordingInvalid": "記録を読めません",
     "saveFailed": "保存できません"
   }
 }

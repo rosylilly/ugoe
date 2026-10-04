@@ -101,6 +101,35 @@ function cameraError(e: unknown): string {
   return `${reason}: ${message(e)}`;
 }
 
+/**
+ * 1 回の開始で開いた入力の資源。開き終えるまでは `#start` が持ち、途中で止められた・失敗したときはこれだけを解放する
+ * (後から始めた入力の資源を巻き込まない)。
+ */
+interface OpenedMedia {
+  stream?: MediaStream;
+  video?: HTMLVideoElement;
+  image?: HTMLImageElement;
+  objectUrl?: string;
+  replay?: Recording;
+}
+
+function releaseMedia(media: OpenedMedia): void {
+  for (const track of media.stream?.getTracks() ?? []) track.stop();
+  if (media.video) {
+    media.video.pause();
+    media.video.srcObject = null;
+    media.video.removeAttribute("src");
+  }
+  if (media.objectUrl) URL.revokeObjectURL(media.objectUrl);
+}
+
+function newVideo(): HTMLVideoElement {
+  const video = document.createElement("video");
+  video.muted = true;
+  video.playsInline = true;
+  return video;
+}
+
 /** ブラウザのダウンロードで保存する。 */
 async function downloadJson(name: string, text: string): Promise<boolean> {
   const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
@@ -160,6 +189,8 @@ export class FaceTracker {
   readonly #schedule: TrackerSchedule;
   /** 入力の処理を止める (回していなければ `null`)。 */
   #cancel: (() => void) | null = null;
+  /** 止めるたびに増やす。始める途中で止められた (・次を始めた) ことを、待った後に知るため。 */
+  #generation = 0;
   #landmarker: FaceLandmarker | null = null;
   #landmarkerLoading: Promise<FaceLandmarker> | null = null;
   #pose: PoseLandmarker | null = null;
@@ -225,7 +256,7 @@ export class FaceTracker {
 
   /** 選んでいるカメラで始める。 */
   async startCamera(): Promise<void> {
-    await this.#start(async () => {
+    await this.#start(async (media) => {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error(t("errors.noMediaDevices"));
       }
@@ -237,8 +268,9 @@ export class FaceTracker {
         .catch((e: unknown) => {
           throw new Error(cameraError(e));
         });
-      this.#stream = stream;
-      const video = this.#newVideo();
+      media.stream = stream;
+      const video = newVideo();
+      media.video = video;
       video.srcObject = stream;
       await video.play();
       await this.refreshCameras();
@@ -253,21 +285,25 @@ export class FaceTracker {
   async startFile(file: File): Promise<void> {
     const name = file.name;
     if (file.type === "application/json" || name.toLowerCase().endsWith(".json")) {
+      const generation = this.#generation;
       const text = await file.text();
+      // 読んでいる間にほかの入力を始めた・止めたなら、それを優先する。
+      if (generation !== this.#generation) return;
       await this.startReplay(text, name);
       return;
     }
-    await this.#start(async () => {
+    await this.#start(async (media) => {
       const url = URL.createObjectURL(file);
-      this.#objectUrl = url;
+      media.objectUrl = url;
       if (file.type.startsWith("image/")) {
         const image = new Image();
         image.src = url;
         await image.decode();
-        this.#image = image;
+        media.image = image;
         return { kind: "image", label: name };
       }
-      const video = this.#newVideo();
+      const video = newVideo();
+      media.video = video;
       video.loop = true;
       video.src = url;
       await video.play();
@@ -277,14 +313,18 @@ export class FaceTracker {
 
   /** 記録した値の列 (JSON のテキスト) を繰り返し再生する。MediaPipe は使わない。 */
   async startReplay(text: string, label = t("recording.defaultName")): Promise<void> {
-    await this.#start(async () => {
-      this.#replay = parseRecording(text);
-      this.replayDuration = recordingDuration(this.#replay);
+    await this.#start(async (media) => {
+      try {
+        media.replay = parseRecording(text);
+      } catch (e) {
+        throw new Error(`${t("errors.recordingInvalid")}: ${message(e)}`);
+      }
       return { kind: "replay", label };
     }, false);
   }
 
   stop(): void {
+    this.#generation++;
     this.#cancel?.();
     this.#cancel = null;
     if (this.recording) this.stopRecording();
@@ -364,22 +404,46 @@ export class FaceTracker {
 
   // --- 内部 ---
 
-  async #start(open: () => Promise<TrackerSource>, useLandmarker = true): Promise<void> {
+  /**
+   * 前の入力を止め、`open` で入力を開いて回し始める。待っている間に止められた (・次を始めた) ら、開いた資源を
+   * 解放して何もしない。
+   */
+  async #start(
+    open: (media: OpenedMedia) => Promise<TrackerSource>,
+    useLandmarker = true,
+  ): Promise<void> {
     this.stop();
+    const generation = this.#generation;
+    const current = () => generation === this.#generation;
     this.error = null;
     this.status = "loading";
+    const media: OpenedMedia = {};
+    let source: TrackerSource;
     try {
       if (useLandmarker) {
         await this.#loadLandmarker();
-        if (this.trackBody) await this.#loadPose();
+        if (current() && this.trackBody) await this.#loadPose();
+        if (!current()) return;
       }
-      this.source = await open();
+      source = await open(media);
     } catch (e) {
-      this.#releaseSource();
+      releaseMedia(media);
+      if (!current()) return;
       this.status = "error";
       this.error = message(e);
       return;
     }
+    if (!current()) {
+      releaseMedia(media);
+      return;
+    }
+    this.#stream = media.stream ?? null;
+    this.#video = media.video ?? null;
+    this.#image = media.image ?? null;
+    this.#objectUrl = media.objectUrl ?? null;
+    this.#replay = media.replay ?? null;
+    this.replayDuration = this.#replay ? recordingDuration(this.#replay) : 0;
+    this.source = source;
     this.#smoother.reset();
     this.#recent = [];
     this.#lastNow = null;
@@ -392,25 +456,15 @@ export class FaceTracker {
     this.#cancel = this.#schedule(this.#tick);
   }
 
-  #newVideo(): HTMLVideoElement {
-    const video = document.createElement("video");
-    video.muted = true;
-    video.playsInline = true;
-    this.#video = video;
-    return video;
-  }
-
   #releaseSource(): void {
-    for (const track of this.#stream?.getTracks() ?? []) track.stop();
+    releaseMedia({
+      stream: this.#stream ?? undefined,
+      video: this.#video ?? undefined,
+      objectUrl: this.#objectUrl ?? undefined,
+    });
     this.#stream = null;
-    if (this.#video) {
-      this.#video.pause();
-      this.#video.srcObject = null;
-      this.#video.removeAttribute("src");
-    }
     this.#video = null;
     this.#image = null;
-    if (this.#objectUrl) URL.revokeObjectURL(this.#objectUrl);
     this.#objectUrl = null;
     this.#replay = null;
     this.replayDuration = 0;

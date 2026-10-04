@@ -27,7 +27,7 @@ scripts/mediapipe-assets.mjs  `ugoe-mediapipe-assets <出力先> [--optional]`: 
 - `new FaceTracker(target, { saveJson, schedule })`。`saveJson` を省くとブラウザのダウンロードで保存する。
   `schedule` は入力の処理を繰り返し呼ぶ仕組み (止める関数を返す)。省くと `requestAnimationFrame` (`animationFrames`) で、ページが隠れると止まる。
   スタジオは最小化しても止まらないように、バックエンドの刻みで回す (T0803、docs/studio.md#入力)。
-- 文言の言語は、アプリが `@ugoe/i18n` の `setLocale()` で決める (エディタは英語、ビューアは日本語)。
+- 文言の言語は、アプリが `@ugoe/i18n` の `setLocale()` で決める (どのアプリも設定の言語。既定は OS に合わせる)。
   パネルの文言は言語の切り替えに追従する。エラーの文は起きた時の言語のまま。
 - パネルは `import { TrackingPanel } from "@ugoe/face-tracking"` (`index.ts` から。サブパスで import すると
   svelte-check が同じ型を別物として扱うため)。パネルの部品と見た目は `@ugoe/ui` (Section・Select・Toggle・Slider・Button・Tooltip。T0907)。

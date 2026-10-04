@@ -26,6 +26,15 @@ describe("recording", () => {
     expect(() => parseRecording(reversed)).toThrow();
   });
 
+  it("names the broken frame for null frames and heads", () => {
+    const wrap = (frame: string) =>
+      `{"format":"ugoe-face-tracking","version":2,"frames":[${frame}]}`;
+    expect(() => parseRecording(wrap("null"))).toThrow("frames[0] is invalid");
+    expect(() => parseRecording(wrap('{"t":0,"head":null,"blendShapes":{}}'))).toThrow(
+      "frames[0] is invalid",
+    );
+  });
+
   it("holds the last frame at or before t", () => {
     const rec = parseRecording(serializeRecording(frames));
     expect(frameAt(rec, -1)?.head.yaw).toBe(1);

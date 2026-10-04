@@ -88,6 +88,7 @@
     },
     "modelMissing": "The MediaPipe model is not bundled (run `pnpm mediapipe` in the app's directory)",
     "poseModelMissing": "The body tracking model is not bundled (run `pnpm mediapipe` in the app's directory). Tracking the face only",
+    "recordingInvalid": "Cannot read the recording",
     "saveFailed": "Cannot save"
   }
 }
