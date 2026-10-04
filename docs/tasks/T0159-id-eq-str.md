@@ -1,11 +1,11 @@
 ---
 id: T0159
 title: ugoe-core の Id<T> を文字列と比べられるようにする
-status: blocked
+status: todo
 milestone: M9
-crates: [ugoe-core, docs]
+crates: [ugoe-core, ugoe-rigging, ugoe-editor-core, ugoe-cli, ugoe-ai, ugoe-mcp, ugoe-model, ugoe-runtime, apps/editor, docs]
 depends_on: []
-assignee: claude-worker-T0159
+assignee:
 ---
 
 # T0159: ugoe-core の Id<T> を文字列と比べられるようにする
@@ -65,3 +65,5 @@ T0142 で文字列のままの ID の参照を `Id<T>` にそろえた結果、�
 B でも実害はない (今の書き方のまま)。
 
 実装の差分 (A を選んだときの出発点): ugoe-core の 4 つの impl とテスト、ugoe-rigging/src/depth.rs の型注釈。
+
+- **判断 (2026-10-05、利用者の判断):** 案 A。impl を入れ、型推論が壊れる 35 か所 (rigging 16・editor-core 15・cli 4・ai 2、ほか見つかれば) を同じタスクで機械的に直す。`id.as_str() == "..."` も置き換える。実装の差分は以前のワーカーが残したパッチ (scratchpad の t0159-impl.patch) を参考にしてよい。

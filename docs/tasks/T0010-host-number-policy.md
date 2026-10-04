@@ -81,3 +81,5 @@ C ABI は拒む、wasm は無視する、SDK の `follow` は誤り、`update` �
     見逃す。`validate` にエフェクトの検査があれば通すとよい。
   - AGENTS.md の「NaN と無限大」の項から `docs/portability.md#ホストから来る数` へリンクする (AGENTS.md はこのタスクの範囲の外なので触っていない)。
 
+
+- **判断 (2026-10-05、利用者の判断):** `Puppet::start_motion` と `set_expression` では数値を検査しない (案 A、今のまま)。

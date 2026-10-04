@@ -43,3 +43,5 @@ T0018 で mbx を入れて `target/` のコピーはやめたが、ワークス�
 - やらなかったこと: macOS・Windows では確かめていない (`split-debuginfo` の既定が違う。macOS は `unpacked` が既定)。
 - 起票の候補:
   - ルートの `[profile.dev]` を `line-tables-only` にするか (全員のデバッガの体験が変わるので、利用者の判断が要る)。
+
+- **判断 (2026-10-05、利用者の判断):** デバッグ情報を line-tables-only にするのは worktree だけ。ルートの [profile.dev] は変えない。

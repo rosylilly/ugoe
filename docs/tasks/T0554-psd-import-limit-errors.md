@@ -69,3 +69,5 @@ assignee: claude-worker-T0554
 - `ugoe-psd` の `PsdError` に上限の超過の変種 (`LimitExceeded { limit, size, max }` など。`ugoe-format` の `ReadLimitExceeded` と同じ形) を足し、
   editor-core の文での見分け (`PsdImportError::from_psd`) をやめる。チャンネルの実際の大きさも引数に出せる。
 - MCP のツールのエラーを文だけでなく構造 (`structuredContent` の `code`・`args`) でも返すか (いまは文の末尾の `(code: ...)`)。
+
+- **判断 (2026-10-05、利用者の判断):** エディタに PSD の読み込みの上限を変える設定は出さない (今のまま)。SDK (ugoe-psd の ImportLimits) では変えられる。

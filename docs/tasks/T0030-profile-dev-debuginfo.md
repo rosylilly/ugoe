@@ -1,7 +1,7 @@
 ---
 id: T0030
 title: ルートの [profile.dev] のデバッグ情報を line-tables-only にするか決める (判断が要る)
-status: todo
+status: done
 milestone: M9
 crates: [Cargo.toml, docs]
 depends_on: []
@@ -31,3 +31,5 @@ T0021 で、`.worktrees/` の下の worktree だけ `debug = "line-tables-only"`
 ## メモ
 
 - T0026 で起票した (元の候補: T0021)。
+
+- **閉じた (2026-10-05、利用者の判断):** ルートの [profile.dev] は変えない (worktree だけ T0021 で line-tables-only)。

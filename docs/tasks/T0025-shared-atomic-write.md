@@ -1,11 +1,11 @@
 ---
 id: T0025
 title: 一時ファイルを経た置き換えを 1 か所にまとめ、MCP の保存の書き込みをロックの外へ出す
-status: blocked
+status: todo
 milestone: M9
-crates: [ugoe-editor-core, ugoe-mcp, apps/editor, apps/viewer, apps/studio, docs]
+crates: [ugoe-fs, ugoe-editor-core, ugoe-mcp, apps/editor, apps/viewer, apps/studio, Cargo.toml, Cargo.lock, scripts, commitlint.config.mjs, AGENTS.md, docs]
 depends_on: [T0687]
-assignee: claude-worker-T0025
+assignee:
 ---
 
 # T0025: 一時ファイルを経た置き換えを 1 か所にまとめ、MCP の保存の書き込みをロックの外へ出す
@@ -84,3 +84,5 @@ assignee: claude-worker-T0025
     → 上の案 (c) にあたる。(b) に決まれば `atomic_write.rs` は `ugoe-fs` (仮) へ移り、`write_png_file` の中身だけが残る。
   - T0011: 3 つのアプリの Rust で共有する小さなクレート (一時ファイル経由の保存・通常のファイルの読み込み・パスの許可) を作るか → 上の案 (b) に `read_file.rs` を含める話と同じ。
     editor-core の読み込みを通常のファイルに絞るのは T1607 で起票した (置き場所が決まれば共有の補助を使う)。
+
+- **判断 (2026-10-05、利用者の判断):** 案 (b)。ツール層に、ほかの ugoe クレートに依存しない MIT の小さなクレート `ugoe-fs` を新しく作り (publish = false、依存は std だけ)、一時ファイル経由の書き込みと通常のファイルの読み込みをまとめる。エディタ・ビューア・スタジオ・ugoe-mcp・ugoe-editor-core から使う。`scripts/check-layers.mjs`・`scripts/ci-groups.mjs`・`commitlint.config.mjs` の SCOPES (`fs`)・AGENTS.md のリポジトリ構成に登録する。
