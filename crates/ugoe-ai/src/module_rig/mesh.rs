@@ -308,7 +308,7 @@ fn follow(
 ) -> Result<Option<MeshFollow>, AiError> {
     let mesh = candidate.mesh;
     let axes = &candidate.axes;
-    let count: usize = axes.iter().map(|(_, k)| k.len()).product();
+    let count = crate::grid::cell_count(axes.iter().map(|(_, k)| k.len()));
     if count > MAX_FOLLOW_CELLS {
         return Ok(None);
     }

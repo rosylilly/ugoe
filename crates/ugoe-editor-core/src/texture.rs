@@ -90,7 +90,10 @@ pub fn decode_rgba_png(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
         // `normalize_to_color8` はパレットを展開するので、ここには来ない。
         png::ColorType::Indexed => return None,
     };
-    let expected = info.width as usize * info.height as usize * 4;
+    // 寸法はファイルから来るので積は checked で求める (デコードできた画素の数なので実際には収まる。T0012)。
+    let expected = (info.width as usize)
+        .checked_mul(info.height as usize)?
+        .checked_mul(4)?;
     (rgba.len() == expected).then_some((info.width, info.height, rgba))
 }
 

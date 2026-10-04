@@ -259,6 +259,7 @@ fn grid<T>(axes: &[(&str, &[f32])], f: impl Fn(&[f32]) -> T) -> KeyformGrid<T> {
             keys: keys.to_vec(),
         })
         .collect();
+    // `axes` はサンプルが自分で決めた軸なので、積はあふれない (T0012)。
     let count: usize = axes.iter().map(|(_, keys)| keys.len()).product();
     let keyforms = (0..count)
         .map(|mut index| {

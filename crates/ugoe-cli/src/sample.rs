@@ -380,6 +380,7 @@ impl Rig {
             grid: &KeyformGrid<T>,
             values: &BTreeMap<ParamId, f32>,
         ) -> anyhow::Result<(T, KeyformCell)> {
+            // サンプルが自分で作った (軸の少ない) 格子だけを引くので、積はあふれない (T0012)。
             let mut index = 0;
             let mut stride = 1;
             let mut cell = KeyformCell::new();

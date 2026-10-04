@@ -59,10 +59,10 @@ fn nearest_key(keys: &[f32], value: f32) -> Option<usize> {
 
 /// 軸 `axis` のインデックスが `key` であるセルを `true` にしたマスク (長さはキーフォーム数)。
 fn slice_mask<T>(grid: &KeyformGrid<T>, axis: usize, key: usize) -> Vec<bool> {
-    let stride: usize = grid.bindings[..axis]
+    // 読み込んだままの (検証していない) 格子では積があふれうるので飽和させる (T0012)。
+    let stride = grid.bindings[..axis]
         .iter()
-        .map(|b| b.keys.len().max(1))
-        .product();
+        .fold(1usize, |s, b| s.saturating_mul(b.keys.len().max(1)));
     let len = grid.bindings[axis].keys.len();
     (0..grid.keyforms.len())
         .map(|i| (i / stride) % len == key)
@@ -160,6 +160,7 @@ pub(crate) fn add_key<T: KeyformValues>(
     let n = keys.len();
     // 曲線補間の格子では、新しいセルの形の値を曲線の上に置く (キーを足しても見た目がなるべく変わらないように)。
     let smooth = smooth_axis_weights(grid.interpolation, &keys, key);
+    // `check_count` を通ったので、軸のキー数の積 (キーフォーム数) はあふれない。
     let stride: usize = grid.bindings[..axis].iter().map(|b| b.keys.len()).product();
     let outer = grid.keyforms.len() / (stride * n).max(1);
     let mut after = grid.bindings.clone();
@@ -265,16 +266,27 @@ pub(crate) fn rest_cell_index<T>(
     grid: &KeyformGrid<T>,
     default_of: impl Fn(&ParamId) -> Option<f32>,
 ) -> usize {
-    let mut index = 0;
-    let mut stride = 1;
-    for binding in &grid.bindings {
-        let key = default_of(&binding.parameter)
+    let keys = grid.bindings.iter().map(|binding| {
+        default_of(&binding.parameter)
             .and_then(|default| nearest_key(&binding.keys, default))
-            .unwrap_or(0);
-        index += key * stride;
-        stride *= binding.keys.len().max(1);
-    }
+            .unwrap_or(0)
+    });
+    let index = linear_index(&grid.bindings, keys);
     index.min(grid.keyforms.len().saturating_sub(1))
+}
+
+/// 軸ごとのキーのインデックス `keys` のセルの線形インデックス (最初の軸が最も速く変わる)。
+///
+/// 読み込んだままの (検証していない) 格子では積があふれうるので飽和させる (T0012)。
+/// 飽和した値は本当の値以上なので、キーフォーム数との比べ (範囲の外か) は正しいまま。
+fn linear_index(bindings: &[KeyformBinding], keys: impl IntoIterator<Item = usize>) -> usize {
+    let mut index = 0usize;
+    let mut stride = 1usize;
+    for (binding, key) in bindings.iter().zip(keys) {
+        index = index.saturating_add(key.saturating_mul(stride));
+        stride = stride.saturating_mul(binding.keys.len().max(1));
+    }
+    index
 }
 
 /// 未編集のセル: 由来が `authored` で、基準のセル (すべての軸が中立のキーのセル) ではなく、値が
@@ -288,12 +300,7 @@ pub(crate) fn unedited_cells<T: KeyformValues + PartialEq>(
     let Some(neutral) = neutral_keys(&grid.bindings, default_of) else {
         return Vec::new();
     };
-    let mut base = 0;
-    let mut stride = 1;
-    for (binding, &z) in grid.bindings.iter().zip(&neutral) {
-        base += z * stride;
-        stride *= binding.keys.len().max(1);
-    }
+    let base = linear_index(&grid.bindings, neutral);
     let Some(rest) = grid.keyforms.get(base) else {
         return Vec::new();
     };
@@ -582,23 +589,23 @@ pub(crate) fn cell_index_in(
     {
         return Err(CellError::UnknownAxis(unknown.to_string()));
     }
-    let mut index = 0;
-    let mut stride = 1;
-    for binding in bindings {
-        let value = *cell
-            .get(&binding.parameter)
-            .ok_or_else(|| CellError::MissingAxis(binding.parameter.to_string()))?;
-        let key = binding
-            .keys
-            .iter()
-            .position(|&k| k == value)
-            .ok_or_else(|| CellError::UnknownKey {
-                parameter: binding.parameter.to_string(),
-                value,
-            })?;
-        index += key * stride;
-        stride *= binding.keys.len();
-    }
+    let keys = bindings
+        .iter()
+        .map(|binding| {
+            let value = *cell
+                .get(&binding.parameter)
+                .ok_or_else(|| CellError::MissingAxis(binding.parameter.to_string()))?;
+            binding
+                .keys
+                .iter()
+                .position(|&k| k == value)
+                .ok_or_else(|| CellError::UnknownKey {
+                    parameter: binding.parameter.to_string(),
+                    value,
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let index = linear_index(bindings, keys);
     if index >= len {
         return Err(CellError::OutOfRange { index, len });
     }
@@ -714,5 +721,49 @@ mod tests {
             cell_index(&KeyformGrid::constant(0), &KeyformCell::new()),
             Ok(0)
         );
+    }
+
+    /// キー 2 つの軸が 70 本 (セル数 2^70 は usize を超える) で、キーフォームが 1 つの不正な格子。
+    /// エディタは読み込んだファイルを検証しないので、こうした格子でもパニックしない (T0012)。
+    fn huge_grid<T: Clone>(keyform: T) -> KeyformGrid<T> {
+        let mut grid = KeyformGrid::constant(keyform);
+        grid.bindings = (0..70)
+            .map(|i| KeyformBinding {
+                parameter: format!("P{i}").as_str().into(),
+                keys: vec![0.0, 1.0],
+            })
+            .collect();
+        grid
+    }
+
+    #[test]
+    fn grids_whose_cell_count_overflows_do_not_panic() {
+        let last: ParamId = "P69".into();
+        let mut g = huge_grid(0u32);
+        collapse_axis(&mut g, &last, 1.0);
+        assert_eq!(g.bindings.len(), 69);
+
+        let g = huge_grid(0u32);
+        assert_eq!(rest_cell_index(&g, |_| Some(1.0)), 0);
+        let far: KeyformCell = g
+            .bindings
+            .iter()
+            .map(|b| (b.parameter.clone(), 1.0))
+            .collect();
+        assert_eq!(
+            cell_index(&g, &far),
+            Err(CellError::OutOfRange {
+                index: usize::MAX,
+                len: 1
+            })
+        );
+        let part = ugoe_model::part::PartKeyform { opacity: 1.0 };
+        assert!(matches!(
+            add_key(&mut huge_grid(part), &last, 0.5, |_| Some(0.0)),
+            Err(CellError::KeyformCount { .. })
+        ));
+
+        let g = huge_grid(part);
+        assert!(unedited_cells(&g, |_| Some(1.0)).is_empty());
     }
 }

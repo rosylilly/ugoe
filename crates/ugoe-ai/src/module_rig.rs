@@ -696,7 +696,7 @@ fn candidates(
         let Some(region) = Rect::of(&world.to_canvas(&samples)) else {
             continue;
         };
-        let cells: usize = axes.iter().map(|(_, k)| k.len()).product();
+        let cells = crate::grid::cell_count(axes.iter().map(|(_, k)| k.len()));
         if cells > MAX_FOLLOW_CELLS {
             // 衣装と重なるものだけ理由に書く。
             if costume.iter().any(|r| overlap(*r, region) >= MIN_OVERLAP) {
@@ -1090,7 +1090,7 @@ fn mesh_keyforms(
             None => axes.push((parameter.clone(), keys.clone())),
         }
     }
-    let count: usize = axes.iter().map(|(_, k)| k.len()).product();
+    let count = crate::grid::cell_count(axes.iter().map(|(_, k)| k.len()));
     if axes.is_empty() || count > MAX_MESH_CELLS {
         return Err(AiError::InvalidRequest(format!(
             "mesh `{mesh}` would need {count} keyforms to follow the base, which is too many"

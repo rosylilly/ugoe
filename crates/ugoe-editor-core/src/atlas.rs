@@ -300,6 +300,7 @@ fn pack_textures(
             }
         };
         let (aw, ah) = (packing.width, packing.height);
+        // アトラスは詰めた画像 (どれもデコードできた PNG) を覆う程度の大きさなので、積はあふれない (T0012)。
         let mut rgba = vec![0u8; aw as usize * ah as usize * 4];
         let index = u32::try_from(new_refs.len()).unwrap_or(u32::MAX);
         for (&t, &(x, y)) in members.iter().zip(&packing.positions) {

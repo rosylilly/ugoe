@@ -106,6 +106,8 @@ pub(crate) struct RawLayer {
 impl RawLayer {
     /// 読んだチャンネルを RGBA に並べ直してマスクを掛け、`rgba` に入れる。チャンネルの画素は捨てる。
     fn assemble(&mut self) {
+        // レイヤーの矩形は一辺 `2 * MAX_DIMENSION` までなので、画素の数とその 4 倍 (`interleave`) は
+        // usize (64 ビット) に収まる。チャンネルの展開は `Budget` が先に止める (T0012)。
         let pixel_count = self.width as usize * self.height as usize;
         self.rgba = if self.unsupported_compression.is_some() {
             None
@@ -804,6 +806,7 @@ fn parse_composite(
             "rgb image needs 3 channels, found {channels}"
         )));
     }
+    // 幅・高さは `MAX_DIMENSION` までなので、`plane * 4` は 32 ビットの usize にも収まる (T0012)。
     let plane = width as usize * height as usize;
     let row = width as usize * usize::from(depth / 8);
     for _ in 0..channels {

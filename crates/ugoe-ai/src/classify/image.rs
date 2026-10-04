@@ -37,6 +37,7 @@ impl Rgb {
 ///
 /// ブレンドモード・クリッピングは無視する (分類に使う目安の画像なので)。
 fn composite_rgba(tree: &LayerTree) -> Vec<f32> {
+    // キャンバスは `ugoe-psd` が一辺 30000 までに限るので、積はあふれない (T0012)。
     let (w, h) = (tree.width as usize, tree.height as usize);
     // 乗算済みの RGBA で重ねる
     let mut acc = vec![0.0f32; w * h * 4];
@@ -111,7 +112,7 @@ pub(super) fn overview(tree: &LayerTree, max_side: u32) -> (Rgb, f32) {
 pub(super) fn thumbnail(layer: &Layer, max_side: u32, min_side: u32) -> Option<Rgb> {
     // 画素の数は usize で数える (u32 ではあふれる大きさのレイヤーもある)。
     let texels = layer.width as usize * layer.height as usize;
-    if texels == 0 || layer.rgba.len() != texels * 4 {
+    if texels == 0 || texels.checked_mul(4) != Some(layer.rgba.len()) {
         return None;
     }
     let premul: Vec<f32> = layer
@@ -227,6 +228,9 @@ mod tests {
         // 画素の数を u32 で数えるとあふれる大きさ (PSD のレイヤーは一辺 60000 まで)。
         let mut huge = layer(0, 0, [0; 4]);
         (huge.width, huge.height) = (60_000, 60_000);
+        assert!(thumbnail(&huge, 200, 64).is_none());
+        // usize でも 4 倍 (バイトの数) があふれる大きさ (T0012)。
+        (huge.width, huge.height) = (u32::MAX, u32::MAX);
         assert!(thumbnail(&huge, 200, 64).is_none());
     }
 

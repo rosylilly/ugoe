@@ -184,7 +184,7 @@ impl Layer {
             origin,
             width,
             height,
-            pixels: vec![[0.0; 4]; (width * height) as usize],
+            pixels: vec![[0.0; 4]; width as usize * height as usize],
         }
     }
 

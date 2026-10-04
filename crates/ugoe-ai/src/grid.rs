@@ -50,20 +50,28 @@ pub(crate) fn axis_keys<'a>(model: &'a Model, target: &KeyformTarget, id: &Param
         .map_or(&[], |b| b.keys.as_slice())
 }
 
+/// キー数 `lens` の軸の格子のセル数 (キー数の積)。usize に収まらなければ `usize::MAX` に飽和させる
+/// (読み込んだモデルの格子は検証していないことがあり、軸の多い格子で積があふれうる。T0012)。
+pub(crate) fn cell_count(lens: impl IntoIterator<Item = usize>) -> usize {
+    lens.into_iter().fold(1, usize::saturating_mul)
+}
+
 /// 各軸の値を `value_of` で決めたセルの線形インデックスと、格子のキーで書いたセル。
 /// 値と等しいキーのない軸があれば、その軸と値を `Err` で返す。
+///
+/// インデックスは飽和させて求める (飽和した値は本当の値以上なので、キーフォーム数との比べは正しいまま)。
 pub(crate) fn cell_index(
     bindings: &[KeyformBinding],
     value_of: impl Fn(&ParamId) -> f32,
 ) -> Result<(usize, KeyformCell), (ParamId, f32)> {
-    let mut index = 0;
-    let mut stride = 1;
+    let mut index = 0usize;
+    let mut stride = 1usize;
     let mut cell = KeyformCell::new();
     for binding in bindings {
         let value = value_of(&binding.parameter);
         let key = key_position(&binding.keys, value).ok_or((binding.parameter.clone(), value))?;
-        index += key * stride;
-        stride *= binding.keys.len();
+        index = index.saturating_add(key.saturating_mul(stride));
+        stride = stride.saturating_mul(binding.keys.len());
         cell.insert(binding.parameter.clone(), binding.keys[key]);
     }
     Ok((index, cell))
@@ -123,6 +131,22 @@ mod tests {
             cell_index(&bindings, |_| 0.5),
             Err((ParamId::new("A"), 0.5))
         );
+    }
+
+    #[test]
+    fn cell_counts_and_indices_saturate() {
+        // セル数 2^70 は usize を超える (読み込んだモデルの格子は検証していないことがある。T0012)。
+        let bindings: Vec<_> = (0..70)
+            .map(|i| binding(&format!("P{i}"), &[0.0, 1.0]))
+            .collect();
+        assert_eq!(
+            cell_count(bindings.iter().map(|b| b.keys.len())),
+            usize::MAX
+        );
+        assert_eq!(cell_count([3, 2]), 6);
+        assert_eq!(cell_count([]), 1);
+        let (index, _) = cell_index(&bindings, |_| 1.0).unwrap();
+        assert_eq!(index, usize::MAX);
     }
 
     #[test]
