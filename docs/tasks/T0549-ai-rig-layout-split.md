@@ -1,11 +1,11 @@
 ---
 id: T0549
 title: AI: rig.rs・module_rig.rs の大きな関数を分け、キーフォームの格子の補助を 1 つにする
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-ai]
 depends_on: [T0528]
-assignee:
+assignee: claude-worker-T0549
 ---
 
 # T0549: AI: rig.rs・module_rig.rs の大きな関数を分け、キーフォームの格子の補助を 1 つにする
