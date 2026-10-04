@@ -8,11 +8,15 @@
 //! 平滑化・キャリブレーション (中立の姿勢の差し引き)・トラッキングが途切れたときのフェードは
 //! 行わない。カメラやトラッカーごとに適切な処理が違うので、入力を作るホスト側で行う。
 
+use std::sync::Mutex;
 use ugoe_model::avatar::{
     ARKIT_BLEND_SHAPES, AvatarProfile, HEAD_PITCH, HEAD_ROLL, HEAD_YAW, TrackingSource,
 };
 use ugoe_model::{Model, standard};
+
 use ugoe_runtime::{ParamIndex, ParameterLayout, ParameterValues};
+
+use crate::resolve::ResolvedParams;
 
 /// ARKit のブレンドシェイプの数 ([`ARKIT_BLEND_SHAPES`] の長さ)。
 pub const BLEND_SHAPE_COUNT: usize = ARKIT_BLEND_SHAPES.len();
@@ -387,8 +391,10 @@ struct Mapping {
 /// [`TrackingMap::apply`] は文字列を比べず、メモリも確保しない。
 ///
 /// 作ったときと並びの違う `ParameterValues` に書くときは、添字を ID で引き直して同じ ID のパラメータに
-/// 書く (T0325。並びが同じかは定数時間で見分け、違うときだけ書き込み先ごとに引き直す)。
-#[derive(Debug, Clone, Default)]
+/// 書く (T0325。並びが同じかは定数時間で見分ける)。引き直した添字は控えておき、同じ並びが続けば
+/// 2 回目からは引き直さない (T0327)。控えは内部で取り替えるので `apply` は `&self` のままで、
+/// 複数のスレッドから同時に呼ばれて控えを取れないときは、そのフレームだけ書き込み先ごとに引き直す。
+#[derive(Debug, Default)]
 pub struct TrackingMap {
     /// 上書きされていない標準の対応。
     standard: Vec<(Formula, ParamIndex)>,
@@ -398,6 +404,21 @@ pub struct TrackingMap {
     groups: Vec<(ParamIndex, usize, usize)>,
     /// 添字を解決したときのパラメータの並び。
     layout: Option<ParameterLayout>,
+    /// `layout` と違う並びで引き直した添字の控え (`standard` の後に `groups` の順)。
+    relayout: Mutex<ResolvedParams>,
+}
+
+/// 引き直した添字の控えは写さない (次に並びの違うものを受けたときに引き直す)。
+impl Clone for TrackingMap {
+    fn clone(&self) -> Self {
+        Self {
+            standard: self.standard.clone(),
+            overrides: self.overrides.clone(),
+            groups: self.groups.clone(),
+            layout: self.layout.clone(),
+            relayout: Mutex::default(),
+        }
+    }
 }
 
 /// 対応が同じか。並びは手札でなく ID の列で比べる。
@@ -473,6 +494,7 @@ impl TrackingMap {
             overrides,
             groups,
             layout: Some(parameters.layout()),
+            relayout: Mutex::default(),
         }
     }
 
@@ -520,29 +542,57 @@ impl TrackingMap {
         &self,
         input: &TrackingInput,
         parameters: &mut ParameterValues,
-        mut filter: impl FnMut(ParamIndex) -> bool,
+        filter: impl FnMut(ParamIndex) -> bool,
     ) {
-        // 作ったときと並びが違えば、添字を ID で引き直す。
-        let moved = self
+        let Some(layout) = self
             .layout
             .as_ref()
-            .filter(|layout| !parameters.has_layout(layout));
-        let target = |parameters: &ParameterValues, index: ParamIndex| match moved {
-            Some(layout) => layout
-                .ids()
-                .get(index.0 as usize)
-                .and_then(|id| parameters.index_of(id.as_str())),
-            None => Some(index),
+            .filter(|layout| !parameters.has_layout(layout))
+        else {
+            return self.write_all(input, parameters, |_, _, index| Some(index), filter);
         };
-        for (formula, index) in &self.standard {
-            if let Some(index) = target(parameters, *index)
+        // 作ったときと並びが違えば、添字を ID で引き直す。
+        let id_of = |index: ParamIndex| layout.ids().get(index.0 as usize).map(|id| id.as_str());
+        let Ok(mut relayout) = self.relayout.try_lock() else {
+            // 控えを使えなければ、書き込み先ごとに引き直す。
+            let lookup = |parameters: &ParameterValues, _, index| {
+                id_of(index).and_then(|id| parameters.index_of(id))
+            };
+            return self.write_all(input, parameters, lookup, filter);
+        };
+        let ids = self
+            .standard
+            .iter()
+            .map(|(_, index)| id_of(*index))
+            .chain(self.groups.iter().map(|(index, _, _)| id_of(*index)));
+        let indices = relayout.get(parameters, ids);
+        self.write_all(
+            input,
+            parameters,
+            |_, k, _| indices.get(k).copied().flatten(),
+            filter,
+        );
+    }
+
+    /// 書き込み先を `target` で解決しながら書き込む。`target` には、`standard` の後に `groups` を並べた
+    /// 何番目かと、作ったときの添字を渡し、`parameters` の並びの添字を受け取る。
+    fn write_all(
+        &self,
+        input: &TrackingInput,
+        parameters: &mut ParameterValues,
+        target: impl Fn(&ParameterValues, usize, ParamIndex) -> Option<ParamIndex>,
+        mut filter: impl FnMut(ParamIndex) -> bool,
+    ) {
+        for (k, (formula, index)) in self.standard.iter().enumerate() {
+            if let Some(index) = target(parameters, k, *index)
                 && filter(index)
             {
                 write(parameters, index, formula.eval(input));
             }
         }
-        for (index, start, end) in &self.groups {
-            let Some(index) = target(parameters, *index).filter(|&i| filter(i)) else {
+        let offset = self.standard.len();
+        for (k, (index, start, end)) in self.groups.iter().enumerate() {
+            let Some(index) = target(parameters, offset + k, *index).filter(|&i| filter(i)) else {
                 continue;
             };
             let value = self.overrides[*start..*end]
@@ -1259,5 +1309,62 @@ mod tests {
             };
             assert_eq!(value(&filtered, id), want, "{id}");
         }
+    }
+
+    /// T0327: 並びの違う `ParameterValues` を続けて渡しても、引き直すのは並びが変わったときだけ。
+    #[test]
+    fn keeps_indices_resolved_for_a_different_layout() {
+        let mut model = fixtures::avatar_profile();
+        model.avatar.as_mut().unwrap().tracking = vec![over(
+            TrackingSource::BlendShape,
+            "jawLeft",
+            Some(standard::MOUTH_X),
+        )];
+        let original = ParameterValues::from_model(&model);
+        let map = TrackingMap::for_model(&model, &original);
+        let input = input(&[("jawLeft", 0.5), ("eyeBlinkLeft", 0.25)]);
+        let resolved = |map: &TrackingMap| map.relayout.lock().unwrap().layout_for_test();
+
+        // 作ったときと同じ並びなら控えを作らない。
+        let mut same = original.clone();
+        map.apply(&input, &mut same);
+        assert!(resolved(&map).is_none());
+
+        model.parameters.reverse();
+        let mut reversed = ParameterValues::from_model(&model);
+        map.apply(&input, &mut reversed);
+        let first = resolved(&map).unwrap();
+        assert!(reversed.has_layout(&first));
+        // 2 回目は控えをそのまま使う (解決し直さないので、控えの手札も取り替わらない)。
+        let mut again = reversed.clone();
+        map.apply(&input, &mut again);
+        assert!(again.has_layout(&resolved(&map).unwrap()));
+        assert_eq!(
+            value(&again, standard::MOUTH_X),
+            value(&reversed, standard::MOUTH_X)
+        );
+        assert!(close(value(&again, standard::MOUTH_X), 0.5));
+        // 元の並びに戻しても控えは使わず、作ったときの添字で書く。
+        let mut back = original.clone();
+        map.apply(&input, &mut back);
+        assert!(close(value(&back, standard::MOUTH_X), 0.5));
+        assert!(reversed.has_layout(&resolved(&map).unwrap()));
+
+        // 控えを使えないとき (ほかのスレッドが使っている) も、書き込み先ごとに引き直して同じ値を書く。
+        let guard = map.relayout.lock().unwrap();
+        let mut busy = ParameterValues::from_model(&model);
+        map.apply(&input, &mut busy);
+        drop(guard);
+        for id in busy.ids() {
+            let id = id.as_str();
+            assert_eq!(value(&busy, id), value(&reversed, id), "{id}");
+        }
+
+        // 写しは控えを持たない。
+        assert!(resolved(&map.clone()).is_none());
+        assert_eq!(map.clone(), map);
+        // 控えを内部に持っても、スレッドをまたいで共有できる。
+        fn send_sync<T: Send + Sync>() {}
+        send_sync::<TrackingMap>();
     }
 }
