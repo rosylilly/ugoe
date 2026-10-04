@@ -247,6 +247,7 @@ fn edit_errors() -> Vec<EditError> {
             height: 10,
             max: 16384,
         },
+        EditError::ConflictingTexture { id: id() },
     ]
 }
 

@@ -533,13 +533,12 @@
             "null"
           ]
         },
-        "texture": {
+        "texture_name": {
+          "description": "テクスチャを名前 (`TextureRef::name`) で指定する。非推奨の番号 (`texture`) と同時には指定できない。",
           "type": [
-            "integer",
+            "string",
             "null"
-          ],
-          "format": "uint32",
-          "minimum": 0
+          ]
         }
       },
       "required": [

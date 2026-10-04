@@ -5176,7 +5176,7 @@ export const commands: Command[] = [
     "op": "set_mesh_properties",
     "id": "EyeL",
     "part": "Root",
-    "texture": 0,
+    "texture_name": "face.png",
     "blend": "multiply",
     "culling": true,
     "masks": [

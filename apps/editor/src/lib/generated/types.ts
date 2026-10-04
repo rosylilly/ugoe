@@ -487,7 +487,17 @@ radius: number, };
  *
  * 削除時の連鎖 (カスケード) と拒否の規則は `docs/editor.md#コマンド` にある。
  */
-export type Command = { "op": "add_parameter", parameter: Parameter, } | { "op": "remove_parameter", id: string, } | { "op": "set_parameter_range", id: string, min: number, default: number, max: number, } | { "op": "batch", label: string, commands: Array<Command>, } | { "op": "rename_parameter", id: string, name: string, } | { "op": "set_parameter_group", id: string, group: string | null, } | { "op": "set_parameter_mirror", id: string, mirror: string | null, } | { "op": "add_part", part: Part, } | { "op": "remove_part", id: string, } | { "op": "rename_part", id: string, name: string, } | { "op": "set_part_parent", id: string, parent: string | null, } | { "op": "set_part_keyforms", id: string, keyforms: KeyformGrid<PartKeyform>, } | { "op": "add_deformer", deformer: Deformer, } | { "op": "remove_deformer", id: string, } | { "op": "rename_deformer", id: string, name: string, } | { "op": "set_deformer_parent", id: string, parent: string | null, } | { "op": "set_deformer_part", id: string, part: string, } | { "op": "set_warp_keyforms", id: string, keyforms: KeyformGrid<WarpKeyform>, } | { "op": "set_rotation_keyforms", id: string, keyforms: KeyformGrid<RotationKeyform>, } | { "op": "add_mesh", mesh: Mesh, } | { "op": "remove_mesh", id: string, } | { "op": "rename_mesh", id: string, name: string, } | { "op": "set_mesh_properties", id: string, part?: string | null, texture?: number | null, blend?: BlendMode | null, culling?: boolean | null, masks?: Array<MaskRef> | null, mask_mode?: MaskMode | null, mask_only?: boolean | null, 
+export type Command = { "op": "add_parameter", parameter: Parameter, } | { "op": "remove_parameter", id: string, } | { "op": "set_parameter_range", id: string, min: number, default: number, max: number, } | { "op": "batch", label: string, commands: Array<Command>, } | { "op": "rename_parameter", id: string, name: string, } | { "op": "set_parameter_group", id: string, group: string | null, } | { "op": "set_parameter_mirror", id: string, mirror: string | null, } | { "op": "add_part", part: Part, } | { "op": "remove_part", id: string, } | { "op": "rename_part", id: string, name: string, } | { "op": "set_part_parent", id: string, parent: string | null, } | { "op": "set_part_keyforms", id: string, keyforms: KeyformGrid<PartKeyform>, } | { "op": "add_deformer", deformer: Deformer, } | { "op": "remove_deformer", id: string, } | { "op": "rename_deformer", id: string, name: string, } | { "op": "set_deformer_parent", id: string, parent: string | null, } | { "op": "set_deformer_part", id: string, part: string, } | { "op": "set_warp_keyforms", id: string, keyforms: KeyformGrid<WarpKeyform>, } | { "op": "set_rotation_keyforms", id: string, keyforms: KeyformGrid<RotationKeyform>, } | { "op": "add_mesh", mesh: Mesh, } | { "op": "remove_mesh", id: string, } | { "op": "rename_mesh", id: string, name: string, } | { "op": "set_mesh_properties", id: string, part?: string | null, 
+/**
+ * 非推奨: テクスチャの番号 (`Model::textures` のインデックス)。古い形で書かれた提案を読むために残す。
+ * `remove_texture` で番号が詰まると別のテクスチャを指すので、送り手は `texture_name` を使う。
+ * AI・MCP のツール定義 (JSON Schema) には出さない (`docs/editor.md#コマンド一覧`)。
+ */
+texture?: number | null, 
+/**
+ * テクスチャを名前 (`TextureRef::name`) で指定する。非推奨の番号 (`texture`) と同時には指定できない。
+ */
+texture_name?: string | null, blend?: BlendMode | null, culling?: boolean | null, masks?: Array<MaskRef> | null, mask_mode?: MaskMode | null, mask_only?: boolean | null, 
 /**
  * ライティングを受けるか (`Mesh::lit`、`docs/editor.md#ライティングの画面`)。
  */

@@ -491,6 +491,7 @@ fn mesh_part(rig: &mut Rig, context: &ModuleContext, mesh: &MeshId) -> Result<Pa
         id: mesh.clone(),
         part: Some(id.clone()),
         texture: None,
+        texture_name: None,
         blend: None,
         culling: None,
         masks: None,

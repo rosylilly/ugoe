@@ -1078,6 +1078,7 @@ impl Rig {
             id: iris.clone(),
             part: None,
             texture: None,
+            texture_name: None,
             blend: None,
             culling: None,
             masks: Some(vec![MaskRef::normal(white)]),

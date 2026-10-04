@@ -127,6 +127,7 @@ impl Coded for EditError {
             Self::NotModule => "edit.not_module",
             Self::Module(error) => error.code(),
             Self::TextureTooLarge { .. } => "edit.texture_too_large",
+            Self::ConflictingTexture { .. } => "edit.conflicting_texture",
         }
     }
 
@@ -234,6 +235,7 @@ impl Coded for EditError {
             } => {
                 args! { "texture" => texture, "width" => *width, "height" => *height, "max" => *max }
             }
+            Self::ConflictingTexture { id } => args! { "id" => id },
         }
     }
 

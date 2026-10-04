@@ -385,6 +385,7 @@ fn clone_keeps_its_own_draw_order_masks_and_opacity() {
             id: "Palm_Clone".into(),
             part: None,
             texture: None,
+            texture_name: None,
             blend: None,
             culling: None,
             masks: Some(vec![ugoe_model::MaskRef::inverted("Sleeve")]),

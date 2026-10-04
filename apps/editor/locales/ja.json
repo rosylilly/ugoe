@@ -1851,7 +1851,8 @@
       "invalid_glue": "グルー {{id}} を設定できません ({{reason}})。",
       "read_only_base": "{{element}} は本体のモデルの要素なので、ここでは編集できません。本体のプロジェクトで編集してください。",
       "not_module": "このプロジェクトはモジュールのプロジェクトではありません。",
-      "texture_too_large": "テクスチャ {{texture}} の画像 ({{width}}×{{height}}) が大きすぎます。一辺は {{max}} 画素までです。"
+      "texture_too_large": "テクスチャ {{texture}} の画像 ({{width}}×{{height}}) が大きすぎます。一辺は {{max}} 画素までです。",
+      "conflicting_texture": "メッシュ {{id}} のテクスチャが、名前と古い番号の両方で指定されています。名前だけで指定してください。"
     },
     "cell": {
       "missing_axis": "セルに軸 {{parameter}} の値が指定されていません。",

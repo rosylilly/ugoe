@@ -268,6 +268,7 @@ fn sample_commands() -> Vec<Command> {
             id: mid.clone(),
             part: None,
             texture: None,
+            texture_name: None,
             blend: None,
             culling: None,
             masks: None,
@@ -278,7 +279,8 @@ fn sample_commands() -> Vec<Command> {
         Command::SetMeshProperties {
             id: mid.clone(),
             part: Some(part_id),
-            texture: Some(0),
+            texture: None,
+            texture_name: Some("face.png".into()),
             blend: Some(BlendMode::Multiply),
             culling: Some(true),
             masks: Some(vec![MaskRef::inverted(mid.clone())]),

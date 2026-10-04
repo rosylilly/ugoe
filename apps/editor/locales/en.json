@@ -1895,7 +1895,8 @@
       "invalid_glue": "The glue {{id}} cannot be set ({{reason}}).",
       "read_only_base": "The base model's {{element}} cannot be edited here. Edit it in the base project.",
       "not_module": "This is not a module project.",
-      "texture_too_large": "The image of the texture {{texture}} ({{width}}×{{height}}) is too large. Each side must be at most {{max}} pixels."
+      "texture_too_large": "The image of the texture {{texture}} ({{width}}×{{height}}) is too large. Each side must be at most {{max}} pixels.",
+      "conflicting_texture": "The texture of the mesh {{id}} was given both by name and by the old number. Give it by name only."
     },
     "cell": {
       "missing_axis": "The cell does not specify the axis {{parameter}}.",

@@ -58,6 +58,7 @@ fn invalid_document_accepts_commands_that_add_no_new_errors() {
         id: "Quad".into(),
         part: None,
         texture: Some(0),
+        texture_name: None,
         blend: None,
         culling: None,
         masks: None,

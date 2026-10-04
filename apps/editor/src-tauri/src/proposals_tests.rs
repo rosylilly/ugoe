@@ -909,6 +909,7 @@ fn editing_a_rigged_costume_mesh_asks_to_propose_again() {
             id: hat.clone(),
             part: None,
             texture: None,
+            texture_name: None,
             blend: None,
             culling: Some(true),
             masks: None,

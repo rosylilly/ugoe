@@ -201,7 +201,8 @@ fn json_samples() -> Vec<Command> {
         Command::SetMeshProperties {
             id: "Quad".into(),
             part: None,
-            texture: Some(0),
+            texture: None,
+            texture_name: Some("white".into()),
             blend: Some(BlendMode::Additive),
             culling: None,
             masks: Some(vec![MaskRef::inverted("Other")]),

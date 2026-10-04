@@ -836,7 +836,8 @@ fn remove_texture_rejects_used_and_shifts_indices() {
     doc.apply(Command::SetMeshProperties {
         id: "Quad".into(),
         part: None,
-        texture: Some(1),
+        texture: None,
+        texture_name: Some("Extra-2".into()),
         blend: None,
         culling: None,
         masks: None,
@@ -853,6 +854,38 @@ fn remove_texture_rejects_used_and_shifts_indices() {
     assert_eq!(doc.model().textures[0].name, "Extra-2");
     assert_eq!(doc.texture("white"), None);
     assert!(ugoe_model::validate::validate(doc.model()).is_empty());
+}
+
+#[test]
+fn texture_by_name_survives_removing_an_earlier_texture() {
+    let mut doc = sample_project().document();
+    doc.apply(Command::AddTexture {
+        name: "Third".into(),
+        png: solid_png(1, 1, [0, 0, 255, 255]),
+    })
+    .unwrap();
+    // 提案は今の状態で作る (`Third` は 3 番目、番号 2)。
+    let proposal: Command =
+        serde_json::from_str(r#"{"op":"set_mesh_properties","id":"Quad","texture_name":"Third"}"#)
+            .unwrap();
+    let by_index: Command =
+        serde_json::from_str(r#"{"op":"set_mesh_properties","id":"Quad","texture":2}"#).unwrap();
+
+    // 提案を適用する前に、前のテクスチャを消して番号が詰まる。
+    doc.apply(Command::RemoveTexture {
+        name: "Extra-2".into(),
+    })
+    .unwrap();
+    doc.apply(proposal).unwrap();
+    let quad = &doc.model().meshes[0];
+    assert_eq!(doc.model().textures[quad.texture as usize].name, "Third");
+
+    // 番号の形 (非推奨) は詰まった後の番号を指してしまう (ここでは範囲外で検証に拒否される)。
+    assert!(matches!(
+        doc.apply(by_index),
+        Err(EditError::Invalid(errors))
+            if errors.iter().any(|e| matches!(e, ugoe_model::validate::ValidationError::TextureOutOfRange { .. }))
+    ));
 }
 
 // ---- 法線マップのコマンド ----
@@ -992,7 +1025,8 @@ fn remove_texture_drops_its_unused_normal_map() {
     doc.apply(Command::SetMeshProperties {
         id: "Quad".into(),
         part: None,
-        texture: Some(1),
+        texture: None,
+        texture_name: Some("Extra-2".into()),
         blend: None,
         culling: None,
         masks: None,

@@ -155,8 +155,15 @@ pub enum Command {
         id: MeshId,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         part: Option<PartId>,
+        /// 非推奨: テクスチャの番号 (`Model::textures` のインデックス)。古い形で書かれた提案を読むために残す。
+        /// `remove_texture` で番号が詰まると別のテクスチャを指すので、送り手は `texture_name` を使う。
+        /// AI・MCP のツール定義 (JSON Schema) には出さない (`docs/editor.md#コマンド一覧`)。
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(skip)]
         texture: Option<u32>,
+        /// テクスチャを名前 (`TextureRef::name`) で指定する。非推奨の番号 (`texture`) と同時には指定できない。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        texture_name: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         blend: Option<BlendMode>,
         #[serde(default, skip_serializing_if = "Option::is_none")]

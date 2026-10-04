@@ -173,6 +173,11 @@ pub enum EditError {
         height: u32,
         max: u32,
     },
+    /// `set_mesh_properties` で、テクスチャを名前 (`texture_name`) と非推奨の番号 (`texture`) の両方で指定した。
+    #[error(
+        "mesh `{id}`: give the texture by `texture_name` only, not together with the deprecated `texture` index"
+    )]
+    ConflictingTexture { id: String },
 }
 
 fn join(errors: &[ValidationError]) -> String {

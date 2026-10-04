@@ -234,6 +234,9 @@ export const messageCodes: Record<string, readonly string[]> = {
     "id",
     "reason"
   ],
+  "edit.conflicting_texture": [
+    "id"
+  ],
   "edit.deformer_edit_failed": [
     "reason"
   ],

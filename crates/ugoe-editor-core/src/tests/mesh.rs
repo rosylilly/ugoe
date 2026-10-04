@@ -122,7 +122,8 @@ fn set_mesh_properties_changes_only_given_fields() {
         Command::SetMeshProperties {
             id: "Pupil".into(),
             part: Some("Eye".into()),
-            texture: Some(0),
+            texture: None,
+            texture_name: Some("white".into()),
             blend: Some(BlendMode::Multiply),
             culling: Some(true),
             masks: Some(vec![MaskRef::inverted("Sclera")]),
@@ -146,6 +147,7 @@ fn set_mesh_properties_rejects_invalid_results() {
         id: "Sclera".into(),
         part: None,
         texture,
+        texture_name: None,
         blend: None,
         culling: None,
         masks,
@@ -168,6 +170,7 @@ fn set_mesh_properties_rejects_invalid_results() {
                 id: "Nope".into(),
                 part: None,
                 texture: None,
+                texture_name: None,
                 blend: None,
                 culling: None,
                 masks: None,
@@ -177,6 +180,62 @@ fn set_mesh_properties_rejects_invalid_results() {
             },
         ),
         not_found("mesh", "Nope")
+    );
+}
+
+/// `texture_name` だけを指定した `set_mesh_properties`。
+fn set_texture(id: &str, name: &str) -> Command {
+    serde_json::from_value(serde_json::json!({
+        "op": "set_mesh_properties",
+        "id": id,
+        "texture_name": name,
+    }))
+    .unwrap()
+}
+
+#[test]
+fn set_mesh_properties_gives_the_texture_by_name() {
+    let mut model = fixtures::nested_masks();
+    let mut second = model.textures[0].clone();
+    second.name = "second".into();
+    model.textures.push(second);
+
+    let after = applied(&model, set_texture("Sclera", "second"));
+    assert_eq!(after.meshes[2].id.as_str(), "Sclera");
+    assert_eq!(after.meshes[2].texture, 1);
+
+    assert_eq!(
+        rejected(&model, set_texture("Sclera", "missing")),
+        not_found("texture", "missing")
+    );
+    // 名前は大文字小文字まで一致させる (`TextureRef::name` と同じ)。
+    assert_eq!(
+        rejected(&model, set_texture("Sclera", "Second")),
+        not_found("texture", "Second")
+    );
+}
+
+#[test]
+fn set_mesh_properties_still_reads_the_deprecated_texture_index() {
+    let mut model = fixtures::nested_masks();
+    let mut second = model.textures[0].clone();
+    second.name = "second".into();
+    model.textures.push(second);
+
+    // 以前の形 (番号) で書かれたコマンドも読めて、その番号を設定する。
+    let old: Command =
+        serde_json::from_str(r#"{"op":"set_mesh_properties","id":"Sclera","texture":1}"#).unwrap();
+    assert_eq!(applied(&model, old).meshes[2].texture, 1);
+
+    let both: Command = serde_json::from_str(
+        r#"{"op":"set_mesh_properties","id":"Sclera","texture":1,"texture_name":"second"}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        rejected(&model, both),
+        EditError::ConflictingTexture {
+            id: "Sclera".into()
+        }
     );
 }
 

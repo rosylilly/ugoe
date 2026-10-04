@@ -655,6 +655,7 @@ fn apply_to(
             id,
             part,
             texture,
+            texture_name,
             blend,
             culling,
             masks,
@@ -662,6 +663,14 @@ fn apply_to(
             mask_only,
             lit,
         } => {
+            let texture = match (texture, texture_name) {
+                (Some(_), Some(_)) => {
+                    return Err(EditError::ConflictingTexture { id: id.to_string() });
+                }
+                (Some(index), None) => Some(index),
+                (None, Some(name)) => Some(texture_edit::texture_index(model, &name)?),
+                (None, None) => None,
+            };
             let m = mesh(model, &id)?;
             if let Some(part) = part {
                 m.part = part;

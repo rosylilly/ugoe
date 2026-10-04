@@ -64,6 +64,19 @@ pub(super) fn set_texture_image(
     Ok(())
 }
 
+/// 名前 (`TextureRef::name`) のテクスチャの番号 (`Mesh::texture` の値)。なければ [`EditError::NotFound`]。
+pub(super) fn texture_index(model: &Model, name: &str) -> Result<u32, EditError> {
+    model
+        .textures
+        .iter()
+        .position(|t| t.name == name)
+        .and_then(|i| u32::try_from(i).ok())
+        .ok_or_else(|| EditError::NotFound {
+            kind: "texture",
+            id: name.to_owned(),
+        })
+}
+
 /// テクスチャを削除する。使っているメッシュがあれば拒否する。
 /// 後ろのテクスチャを指すメッシュの `texture` (インデックス) は 1 つ詰める。
 pub(super) fn remove_texture(

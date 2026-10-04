@@ -46,7 +46,10 @@ function set(changes: Changes): void {
   if (mesh) doc.apply({ op: "set_mesh_properties", id: mesh.id, ...changes });
 }
 
-const textureOptions = $derived(textureLabels.map((label, i) => ({ value: String(i), label })));
+// テクスチャは名前で送る (番号は `remove_texture` で詰まるので使わない。docs/editor.md#コマンド一覧)。
+const textureOptions = $derived(
+  textureLabels.map((label, i) => ({ value: model.textures[i] ?? "", label })),
+);
 const blendOptions = $derived<{ value: BlendMode; label: string }[]>([
   { value: "normal", label: t("inspector.mesh.blend.normal") },
   { value: "additive", label: t("inspector.mesh.blend.additive") },
@@ -90,9 +93,9 @@ function removeMask(index: number): void {
       <span id="{ids}-texture">{t("inspector.mesh.texture.label")}</span>
       <Select
         labelledby="{ids}-texture"
-        value={String(mesh.texture)}
+        value={model.textures[mesh.texture] ?? ""}
         options={textureOptions}
-        onchange={(v) => set({ texture: Number(v) })}
+        onchange={(v) => set({ texture_name: v })}
       />
     </div>
     <div class="ed-field">

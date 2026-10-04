@@ -64,7 +64,9 @@
 | 物理 | `set_physics_world`、`add_physics_rig`、`create_physics_rig`、`remove_physics_rig`、`rename_physics_rig`、`set_physics_inputs`、`set_physics_outputs`、`set_physics_particles`、`set_physics_normalization`、`set_physics_rig_colliders`、`set_physics_frame`、`add_physics_collider`、`remove_physics_collider`、`set_physics_collider`、`reorder_physics_rig`、`apply_physics_template` ([物理の編集](#物理の編集)・[物理のテンプレート](#物理のテンプレート)) |
 | その他 | `batch` |
 
-- `set_mesh_properties` は `part`・`texture`・`blend`・`culling`・`masks`・`mask_mode`・`mask_only` のうち、指定したフィールドだけを変えます。
+- `set_mesh_properties` は `part`・`texture_name`・`blend`・`culling`・`masks`・`mask_mode`・`mask_only`・`lit` のうち、指定したフィールドだけを変えます。
+  - テクスチャは名前 (`texture_name`、`TextureRef::name`) で指定します。ない名前は `NotFound` で拒否します。`remove_texture` は後ろのテクスチャの番号を詰めるので、名前で指定すれば、古い状態で作った提案を後で適用しても別のテクスチャを指しません (T0679)。
+  - **互換:** 以前の形の `texture` (`Model::textures` の番号) も読み、その番号をそのまま設定します (`.ugoeproj` に保存された提案など、古い形で書かれたコマンドを開けるように)。番号は非推奨で、エディタ・AI・MCP の送り手は使いません。AI・MCP のツール定義 (`command.schema.json`) には出しません。`texture_name` と同時に指定すると `edit.conflicting_texture` で拒否します。番号は古い提案が作られた後にテクスチャを消すと別のテクスチャを指しうるので、番号を使うコマンドは名前で作り直すのが安全です。
 - `set_mesh_keyform` は格子の 1 セルを置き換え、そのセルの由来を `authored` にします。セルは「軸のパラメータ ID → キーの値」の対応で指定します (例: `"cell": {"AngleX": 30, "AngleY": 0}`)。格子のすべての軸を指定し、値はキーと完全に一致させます。軸のない格子は `{}` です。
 - `reorder_mesh` は `meshes` の中でメッシュを `before` の直前 (`null` なら末尾) に移します。描画順 (`draw_order`) が同じメッシュの前後関係が変わります。
 - `set_deformer_parent` と `set_mesh_parent` は親を付け替えるだけで、座標は変えません (子の座標は新しい親の局所座標として解釈されるので、見た目は変わりうる)。見た目を保つ付け替えは `reparent_preserving_look` です ([デフォーマの編集](#デフォーマの編集))。
@@ -1980,6 +1982,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `edit.not_module` | なし |
 | `module.*` (モジュールのプロジェクトで作業用のモデルを作り直せない。`EditError::Module`) | 中の `ModuleError` のコードと引数 (下の「プロジェクト・モジュール」の表。本体の要素の編集は `edit.read_only_base`、モジュールとして表せないものは `edit.module_shape`、モジュールでないものは `edit.not_module`) |
 | `edit.texture_too_large` (メッシュの作り直しで、テクスチャの画像の一辺がデコードの上限を超える) | `texture`・`width`・`height`・`max` (画素) |
+| `edit.conflicting_texture` (`set_mesh_properties` でテクスチャを `texture_name` と非推奨の `texture` の両方で指定した) | `id` (メッシュ) |
 
 **キーフォームのセル (`CellError`)**
 

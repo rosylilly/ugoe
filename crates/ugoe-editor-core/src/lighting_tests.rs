@@ -47,6 +47,7 @@ fn lit(id: &str, lit: bool) -> Command {
         id: id.into(),
         part: None,
         texture: None,
+        texture_name: None,
         blend: None,
         culling: None,
         masks: None,
