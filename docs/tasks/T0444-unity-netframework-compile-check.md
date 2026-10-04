@@ -1,11 +1,11 @@
 ---
 id: T0444
 title: Unity: スタブでの型検査を .NET Framework の API 互換レベルでも行う
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/unity, docs]
 depends_on: [T0426]
-assignee:
+assignee: claude-worker-T0444
 ---
 
 # T0444: Unity: .NET Framework の API 互換レベルでの型検査

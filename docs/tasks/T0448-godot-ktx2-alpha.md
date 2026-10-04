@@ -1,11 +1,11 @@
 ---
 id: T0448
 title: "Godot: KTX2 のテクスチャのアルファの扱いを決めて合わせる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/godot, docs]
 depends_on: [T0427]
-assignee:
+assignee: claude-worker-T0448
 ---
 
 # T0448: Godot: KTX2 のテクスチャのアルファの扱いを決めて合わせる
