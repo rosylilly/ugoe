@@ -1,11 +1,11 @@
 ---
 id: T0536
 title: 法線マップの生成で、大きすぎる格子と長さの合わない入力を拒む
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-rigging, ugoe-ai, docs]
 depends_on: [T0526]
-assignee:
+assignee: claude-worker-T0536
 ---
 
 # T0536: 法線マップの生成で、大きすぎる格子と長さの合わない入力を拒む

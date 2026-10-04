@@ -1,11 +1,11 @@
 ---
 id: T0681
 title: エラーと警告のコードと翻訳のカタログの対応を自動で検査する
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, packages/i18n, docs]
 depends_on: [T0668]
-assignee:
+assignee: claude-worker-T0681
 ---
 
 # T0681: エラーと警告のコードと翻訳のカタログの対応を自動で検査する

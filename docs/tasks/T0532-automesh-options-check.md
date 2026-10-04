@@ -1,11 +1,11 @@
 ---
 id: T0532
 title: AutoMeshOptions::check を ugoe-mesher の検証と揃える
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-mesher, ugoe-editor-core, docs]
 depends_on: [T0525]
-assignee:
+assignee: claude-worker-T0532
 ---
 
 # T0532: AutoMeshOptions::check を ugoe-mesher の検証と揃える

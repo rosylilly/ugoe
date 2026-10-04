@@ -1,11 +1,11 @@
 ---
 id: T0446
 title: Unity: UgoePuppet の状態の扱いを Unity 無しでテストできるようにする
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/unity, docs]
 depends_on: [T0426]
-assignee:
+assignee: claude-worker-T0446
 ---
 
 # T0446: Unity: コンポーネントの状態の扱いのテスト

@@ -1,11 +1,11 @@
 ---
 id: T0551
 title: "MCP: --editor の中継で要求を並行に送り、取り消しを伝える"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-mcp]
 depends_on: [T0529]
-assignee:
+assignee: claude-worker-T0551
 ---
 
 # T0551: MCP: --editor の中継で要求を並行に送り、取り消しを伝える

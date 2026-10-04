@@ -1,11 +1,11 @@
 ---
 id: T0449
 title: "Godot: SDK (ugoe::Puppet) にあって UgoePuppet2D に無い機能を足す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/godot, docs]
 depends_on: [T0427]
-assignee:
+assignee: claude-worker-T0449
 ---
 
 # T0449: Godot: SDK (ugoe::Puppet) にあって UgoePuppet2D に無い機能を足す

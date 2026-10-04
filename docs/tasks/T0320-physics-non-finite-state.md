@@ -1,11 +1,11 @@
 ---
 id: T0320
 title: 物理の状態が有限でなくなったときの扱いを決める
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-physics, docs]
 depends_on: [T0316, T0318]
-assignee:
+assignee: claude-worker-T0320
 ---
 
 # T0320: 物理の状態が有限でなくなったときの扱いを決める

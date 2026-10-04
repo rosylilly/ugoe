@@ -1,11 +1,11 @@
 ---
 id: T0440
 title: npm: <ugoe-avatar> を本物のブラウザと wasm で確かめるテスト (コンテキストの喪失・切り離し)
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/web, tests/conformance, docs]
 depends_on: [T0425]
-assignee:
+assignee: claude-worker-T0440
 ---
 
 # T0440: <ugoe-avatar> のブラウザのテスト
