@@ -1,11 +1,11 @@
 ---
 id: T0824
 title: スタジオ: 続けて変えたプロファイルの設定を、通知を待たずに積み重ねる
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, docs]
 depends_on: [T0815]
-assignee:
+assignee: claude-worker-T0824
 ---
 
 # T0824: スタジオ: 続けて変えたプロファイルの設定を、通知を待たずに積み重ねる
