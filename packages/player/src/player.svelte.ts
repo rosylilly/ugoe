@@ -40,6 +40,7 @@ import {
   needsRestore,
   planRestore,
   type RememberedModule,
+  sameAttached,
   saveAutoRestore,
 } from "./dressUpMemory";
 import { DriverSet } from "./drivers";
@@ -309,7 +310,8 @@ export class Player {
    * モデルなら、`modules` (見本やドロップでモデルと一緒に開くモジュール) を読み込んだ後で、そのモデルに前に付けていた
    * 組 (dressUpMemory.ts) と比べ、違えば戻すか尋ねる (`autoRestore` なら戻す)。別のモデルを開くときは、読み込んでいた
    * モジュールを一覧から除く (前のモデルの組として覚えてある)。同じモデル (modelMemory.ts の `sameModel`) を
-   * 開き直すときは残し、wasm が付け直す (`modules` が無ければ比べず、いまの組を覚える)。
+   * 開き直すときは残し、wasm が付け直す (`modules` が無ければ比べない。付けられずに外れたものがあれば、いまの組を覚え直す。
+   * 組が変わらなければ覚えている組はそのまま (戻すか尋ねている・戻さなかった・戻せなかった組を、空の組で上書きしない))。
    */
   async load(file: ModelFile, modules: readonly ModuleToOpen[] = []): Promise<void> {
     const kind = detectModelKind(file);
@@ -334,6 +336,7 @@ export class Player {
     const switching = this.#model === null || !sameModel(this.#model, identity);
     // 一緒に開くモジュールが組を変えるので、覚えている組は先に読んでおく。受け手は覚えた組を使わない (組は指揮役が決める)。
     const remembered = this.#follower === null ? this.#memory.get(identity) : null;
+    const attachedBefore = [...this.#attached];
     this.#quiet++;
     try {
       // モデルを開く前に読み込んだモジュールは、どのモデルの組でもないので残す。
@@ -374,6 +377,8 @@ export class Player {
         else this.restoreOffer = remembered;
         return;
       }
+    } else if (sameAttached(attachedBefore, this.#attached)) {
+      return;
     }
     this.#remember();
   }
