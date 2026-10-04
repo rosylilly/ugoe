@@ -1,11 +1,11 @@
 ---
 id: T0728
 title: ビューアの保存を、一時ファイルに書いてから置き換える形にする
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/viewer]
 depends_on: [T0724]
-assignee:
+assignee: claude-worker-T0728
 ---
 
 # T0728: ビューアの保存を、一時ファイルに書いてから置き換える形にする
