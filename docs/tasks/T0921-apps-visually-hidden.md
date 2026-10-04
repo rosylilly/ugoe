@@ -1,11 +1,11 @@
 ---
 id: T0921
 title: アプリの自前の .visually-hidden を @ugoe/ui の .ugoe-visually-hidden に置き換える
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, apps/viewer, docs]
 depends_on: [T0912]
-assignee:
+assignee: claude-worker-T0921
 ---
 
 # T0921: アプリの自前の .visually-hidden を @ugoe/ui の .ugoe-visually-hidden に置き換える
