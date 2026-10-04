@@ -13,6 +13,7 @@ use ugoe::format::{Bundle, FormatError, TextureData};
 use ugoe::model::expression::Expression;
 use ugoe::model::module::Module;
 use ugoe::model::motion::Motion;
+use ugoe::model::physics::PhysicsSettings;
 use ugoe::model::{MaskMode, Model};
 use ugoe::render::{Light, Lighting, MAX_LIGHTS};
 use ugoe::runtime::{CompileError, CompiledModel};
@@ -229,6 +230,23 @@ impl LoadedModel {
         self.modules = modules;
         self.refresh();
         Ok(change)
+    }
+
+    /// 本体の物理の設定を差し替える (`Puppet::set_base_physics`。`None` で外す)。失敗したら何も変えない。
+    ///
+    /// 着せ替えのモジュールを付けていて、本体の物理の有無で合成したモデルが変わったときは、描画の情報を作り直して
+    /// true を返す (呼ぶ側はレンダラを作り直す)。物理だけを差し替えたなら false。
+    pub fn set_base_physics(
+        &mut self,
+        settings: Option<PhysicsSettings>,
+    ) -> Result<bool, DressUpError> {
+        let before = Arc::clone(self.puppet.instance().compiled());
+        self.puppet.set_base_physics(settings)?;
+        let swapped = !Arc::ptr_eq(&before, self.puppet.instance().compiled());
+        if swapped {
+            self.refresh();
+        }
+        Ok(swapped)
     }
 
     /// モデルが変わったあとに、テクスチャの出どころと描画の情報を作り直す。
@@ -1111,6 +1129,31 @@ mod tests {
         assert_eq!(change.texture_count as usize, base_count);
         assert!(loaded.modules().is_empty());
         assert_eq!(loaded.drawables.len(), base.meshes.len());
+    }
+
+    #[test]
+    fn base_physics_is_replaced_and_validated() {
+        let mut loaded =
+            LoadedModel::from_bundle_bytes(&bundle_bytes(fixtures::physics_hair())).expect("load");
+        assert!(loaded.puppet.physics().is_none());
+        let swapped = loaded
+            .set_base_physics(Some(fixtures::physics_hair_settings()))
+            .expect("valid settings");
+        assert!(!swapped);
+        assert!(loaded.puppet.physics().is_some());
+        assert!(loaded.puppet.base_physics().is_some());
+        // モデルに合わない設定 (別のモデルのリグ) は拒み、今の設定を保つ。
+        let mut loaded_quad =
+            LoadedModel::from_bundle_bytes(&bundle_bytes(fixtures::single_quad())).expect("load");
+        assert!(
+            loaded_quad
+                .set_base_physics(Some(fixtures::physics_hair_settings()))
+                .is_err()
+        );
+        assert!(loaded_quad.puppet.physics().is_none());
+        assert!(!loaded.set_base_physics(None).expect("remove"));
+        assert!(loaded.puppet.physics().is_none());
+        assert_eq!(loaded.drawables.len(), loaded.model().meshes.len());
     }
 
     #[test]

@@ -55,6 +55,7 @@ cargo clippy --manifest-path bindings/godot/Cargo.toml --all-targets -- -D warni
   適合テストが `ugoe_model::fixtures` から作るモデル (入れ子・反転・共通部分のマスク、3 つの合成モード、乗算色とスクリーン色、
   裏面カリング、1 つの要素が 12 個のマスクを読む `masks-many`)、アニメーション中のマスク (`before` のあるケース: 値を変えた
   **直後のフレーム** を比べる。`masks-moving`・`avatar-moving`。入れ子のマスクが 1 フレーム遅れると合わない)、時間を進めた物理と目パチ・呼吸、
+  受け手として進めるケース (`*-follow`。`advance` の代わりに `follow` を呼ぶ。T0449)、
   バンドルの例、公開仕様の評価の例 (モデルの JSON。`load_model_from_json` で読み、テクスチャが無いので白で描く)。
 - `--conformance` は続けて `example/tests/ktx2.gd` を実行する (`--only` のときは飛ばす)。見本のモデルのテクスチャを、同じ画素の
   KTX2 (`R8G8B8A8_SRGB`・`R8G8B8A8_UNORM`、Godot の `Image.compress` で作る `BC3_UNORM_BLOCK`) に差し替えたバンドルを描き、
@@ -105,19 +106,27 @@ puppet.xr_face_tracker = &"/user/face_tracker"
 | `modules` | 取り付ける着せ替えのモジュール (`UgoeModule` の配列、合成の順)。シーンに保存される。モデルを読むときに付ける |
 | `ambient_light` / `lights` | 環境光 (既定は白) / 光源の辞書の配列 (`{ "type": "directional", "direction": Vector3, "color": Color }` か `{ "type": "point", "position": Vector3, "color": Color, "range": float }`)。シーンに保存される |
 | `use_scene_lights` / `get_scene_lights()` | シーンの `Light2D` も光源にする (`lights` の後ろに足す。下の「Light2D から取る光源」) / それから求めた今の光源 (`lights` と同じ形の辞書) |
+| `motion_over_tracking` / `tracking_kept` | トラッキング中に、再生中のモーションが動かすパラメータではモーションを優先するか (既定は false。[docs/spec/motion.md#トラッキング中のモーションの優先](../../docs/spec/motion.md#トラッキング中のモーションの優先)) / それでもトラッキングのままにするパラメータの ID (`PackedStringArray`。目など。モデルに無い ID は無視)。シーンに保存され、モデルを読み直しても保つ |
 | `xr_face_tracker` | トラッキングの入力にする `XRFaceTracker` の名前 (`XRServer` に登録した名前、標準は `/user/face_tracker`)。空なら使わない。毎フレーム読み、見つからない間は前の値を保つ |
 | `parameters/<ID>` | インスペクタに出るパラメータ (シーンに保存される) |
 | `load_model(path)` / `load_model_from_buffer(bytes)` / `load_model_from_json(text)` | 読み込む (`load_model` は `model` を設定する。`from_buffer` と `from_json` は `model` を null にする)。`from_json` はモデルの JSON (テクスチャ・物理・モーションは無く、テクスチャは不透明な白で描く) |
 | `get_parameter_ids()` / `get_parameter_info(id)` / `get_parameter(id)` / `set_parameter(id, value)` / `reset_parameters()` | パラメータ |
+| `get_load_warnings()` | 直前に読み込んだモデルの読み込みの警告 (`{ "code", "warning", "texture"? / "feature"? / "path"? }` の配列)。`code` と補足のキーは wasm の `load_warnings_json`・C ABI の `ugoe_puppet_load_warning_*` と同じ ([crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md#読み込みの警告-t0125))。`warning` は英語の文で、安定した値ではない |
 | `get_motion_names()` / `start_motion(name, priority)` / `stop_motions()` / `is_motion_playing()` | モーション |
-| `get_expression_names()` / `set_expression(name)` | 表情 |
+| `get_expression_names()` / `set_expression(name)` / `stop_expressions()` | 表情 (`stop_expressions` はフェードアウトをかけてすべて止める) |
 | `set_lip_sync_level(level)` / `clear_lip_sync_level()` / `reset_physics()` | リップシンク・物理 |
+| `set_effects_json(json)` | 目パチ・呼吸・リップシンクの設定をモデルの `effects` と同じ形の JSON で差し替える (再生の状態は初めから、リップシンクの音量は保つ。[docs/spec/motion.md#エフェクト設定の差し替え](../../docs/spec/motion.md#エフェクト設定の差し替え))。読めなければ false |
+| `set_physics_json(json)` / `set_base_physics_json(json)` / `get_physics_json()` / `get_base_physics_json()` | 物理の設定を `.ugoe` の物理と同じ形の JSON で差し替える (空の文字列で外す) / 読む (無ければ空)。`base` は本体の設定で、着せ替えのモジュールを付けている間も保ち、付け外しのたびにこれと合成する ([docs/spec/modules.md#puppet-での着せ替え](../../docs/spec/modules.md#puppet-での着せ替え))。`set_physics_json` の設定は次の付け外しで失われる。モデルに合わなければ false (何も変えない) |
+| `get_parameter_values()` / `set_base_values(values)` / `follow(values, delta, lip_sync_level, lip_sync_strength, part_opacities)` | 受け手 ([docs/spec/motion.md#受け手として進める](../../docs/spec/motion.md#受け手として進める))。値は `get_parameter_ids()` の順の `PackedFloat32Array`。`follow` は指揮役の値を基準値にして、物理 → リップシンク (`lip_sync_level` が負なら当てない) → パーツの不透明度 (`part_opacities` は `{ "part": get_part_ids() の番号, "value", "weight" }` の配列) → 評価の順に進めて描く。受け手のノードは `playing` を false にして毎フレーム `follow` を呼ぶ (ノードは読み込みの直後に 1 度評価して物理の粒子を置くので、指揮役と同じ形から始めるなら最初の `follow` の前に `reset_physics()` を呼ぶ。適合テストの `*-follow` のケースで C ABI と同じ値になることを確かめている)。失敗したら false (何も変えない) |
+| `get_part_ids()` / `get_part_opacity(id)` / `get_part_evaluated_opacity(id)` / `show_pose(part)` | パーツの ID (モデルの順) / 直前の評価でパーツに書いた不透明度の上書き (`{ "value", "weight" }`。モーションのカーブとポーズの結果) / 祖先を掛けた評価後の不透明度 / ポーズで `part` を持つ要素を表示する (フェードで切り替わる。ポーズの要素のパーツでなければ false) |
 | `set_stage_enabled(stage, enabled)` / `is_stage_enabled(stage)` | `update` の段 (`"physics"`・`"eye_blink"`・`"breath"`・`"lip_sync"`・`"pose"`) を動かすか (既定はすべて動かす)。モデルを読み直しても保つので、読み込む前に設定すれば読み込みの直後の評価から効く。未知の名前は false |
 | `attach_module(module)` / `detach_module(name)` / `clear_modules()` / `get_module_names()` | 着せ替え。付けられなければエラーを出して false (何も変えない)。`get_module_names` は、モデルを読み込んでいれば実際に付いているものだけを返す (読み込むときに付けられなかったモジュールは `modules` に残るが、ここには出ない) |
 | `uses_lighting()` / `add_directional_light(direction, color)` / `add_point_light(position, color, range)` / `clear_lights()` | ライティング (光源は先頭の 8 個まで) |
 | `set_tracking_from_xr_face_tracker(tracker)` | `XRFaceTracker` のブレンドシェイプを ARKit の形に直して設定する (下の「XRFaceTracker との対応」)。頭の回転は変えない。`XRFaceTracker` でなければ false |
 | `set_tracking_head(rotation)` / `set_tracking_body(dict)` / `set_tracking_blend_shapes(dict)` / `set_tracking_blend_shape(name, value)` / `clear_tracking()` / `is_tracking()` / `get_tracking_blend_shape_names()` | トラッキング。頭は度で `x` = ヨー・`y` = ピッチ・`z` = ロール。体は `yaw` `pitch` `roll` `shoulder_left` `shoulder_right` (無いキーは省略)。ブレンドシェイプは ARKit の 52 個の名前 (MediaPipe の名前もそのまま渡せる)。平滑化はホストが行う |
 | `hit_test(id, local_position)` / `get_hit_areas_at(local_position)` | 当たり判定 (ノードの座標で渡す) |
+| `get_standard_hit_area(name)` / `hit_test_standard(name, local_position)` / `get_standard_hit_areas_at(local_position)` | 標準の当たり判定 (`"Head"`・`"Body"`。`Model.avatar.hit_areas`、[docs/spec/avatar-profile.md#アプリ向けの情報](../../docs/spec/avatar-profile.md#アプリ向けの情報))。対応する ID (無ければ空) / 含むか / 含む標準の名前を手前から |
+| `get_slot_ids()` / `get_tracking_targets()` | 本体のモデルの着せ替えのスロットの ID (`UgoeModule` のスロットと比べる) / トラッキングが書き込むパラメータの ID (モデルの `avatar.tracking` から決まる) |
 | `get_canvas_size()` / `get_canvas_origin()` | キャンバスの大きさと原点 |
 | `get_drawable_ids()` / `get_drawable_positions(index)` / `get_drawable_state(index)` / `get_render_order()` | 直前の評価の結果の読み戻し (`docs/spec/evaluation.md#8-出力`。適合テストで使う)。番号は `get_drawable_ids()` の順 (モデルのメッシュの順)。位置は **キャンバス座標** (ノードの座標は `get_canvas_origin()` を引く)。`get_drawable_state` は `{ "opacity", "draw_order", "multiply_color" (Color), "screen_color" (Color), "mask_strength", "visible" }`。`get_render_order` は奥から手前への番号。範囲の外の番号は空 |
 | シグナル `model_loaded` / `motion_event(value)` | 読み込み / モーションのイベント |
@@ -125,8 +134,12 @@ puppet.xr_face_tracker = &"/user/face_tracker"
 有限でない値 (GDScript の `NAN`・`INF`) は C ABI と同じく受け付けない: `advance(delta)` と `speed` は有限で負でない値、
 `set_parameter`・`set_lip_sync_level` は NaN 以外 (無限大は値域にクランプ)、`set_tracking_head` と `mask_scale` は有限、
 `set_tracking_body` は NaN のキーを省略とみなし無限大を拒む、ブレンドシェイプは有限でない値を無視する、環境光と光源の色は有限で負でない値
-(それ以外の光源は警告を出して使わない)。拒んだ値はエラーを出して捨て、前の値を保つ。
-読み込みの警告 (知らない任意の機能・未知の値 (ADR 0013)・画像の無いテクスチャ) は Godot の警告として出す。
+(それ以外の光源は警告を出して使わない)、`set_base_values` と `follow` の値は NaN 以外 (無限大は値域にクランプ)、`follow` の `delta` は
+有限で負でない値、リップシンクの音量 (当てるとき) と強さ・パーツの不透明度の値と重みは有限 (`ugoe_puppet_follow` と同じ)。
+拒んだ値はエラーを出して捨て、前の値を保つ。
+`set_effects_json`・`set_physics_json`・`set_base_physics_json` と `show_pose` で変えたものは、モデルを読み直すとモデルの設定に戻る。
+読み込みの警告 (知らない任意の機能・未知の値 (ADR 0013)・画像の無いテクスチャ) は Godot の警告として出し、`get_load_warnings()` でも読める
+(着せ替えのモジュールの警告は Godot の警告として出すだけ)。
 木の外で `model` を変えたときは、木に戻ったときに読み込む (外す)。
 
 ノードの原点にキャンバスの原点 (`canvas.origin`) が来る。座標はキャンバスのピクセル単位で、Godot の 2D と同じく Y 下向き。
@@ -246,6 +259,10 @@ Godot の `XRFaceTracker` は Unified Expressions (`BlendShapeEntry` の 143 個
 - 画面のある Godot のエディタでの操作、Forward+ / Mobile のレンダラ (Vulkan) での見た目、Windows・macOS でのビルドは確かめていない
   (比べ合わせは Compatibility (OpenGL) の Xvfb だけ)。
 - `Light2D` から取る光源は、テクスチャの形・影・合成のモードを使わない (上の「Light2D から取る光源」)。
+- 指揮役の側の値 (`ugoe::Puppet::values_before_physics`・`lip_sync_applied`・`part_opacities_applied`) は出していない
+  (C ABI・wasm にも無い)。Godot のノードを指揮役にして別のノードを `follow` で動かすには、これらを足す必要がある
+  (`get_parameter_values()` は物理の後の値なので、それを渡しても物理を持つモデルでは指揮役と同じ形にならない)。
+- 着せ替えのモジュールの読み込みの警告は、スクリプトから読む口が無い (`UgoeModule` は GDScript のリソースのため。Godot の警告には出る)。
 - 当たり判定・パラメータなどの Godot の API の自動テストは、ヘッドレスの Godot で動く `example/tests/smoke.gd` だけ。
 - Godot 4.7.1 で、GDExtension のクラスを持つプロジェクトの初回の `--import` の終わりに異常終了することがある
   (godot-rust の最小のクラスでも起き、2 回目からは起きない)。`build.mjs` は 1 回だけやり直す。

@@ -105,10 +105,10 @@ CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just confor
    `steps` があれば、目パチと呼吸を `effects` のとおりにし、ほかの段は動かして、`steps` の `dt` で順に `update` する
    (`ugoe render --time` と同じ列。実行器では `dt` を計算しない)。
    計画に `follow` (各フレームの、指揮役の物理の段に入る直前のパラメータの値。モデルの定義順で `steps` と同じ数) があれば、
-   `update(steps[i])` の代わりに受け手の口 (C ABI の `ugoe_puppet_follow`・wasm の `follow`) で、`follow[i]` と
+   `update(steps[i])` の代わりに受け手の口 (C ABI の `ugoe_puppet_follow`・wasm の `follow`・Godot の `follow`) で、`follow[i]` と
    `follow_lip_sync[i]` (リップシンクの `[音量, 強さ]`。無いか `null` なら当てない) と `follow_part_opacities[i]`
    (モーションのパーツの不透明度のカーブ `[パーツの番号, 値, 重み]` の並び。無ければ空) と `steps[i]` を渡す (`plan.txt` では
-   `follow <dt> <音量 (無ければ -1)> <強さ> <パーツの数 k> (<番号> <値> <重み>) × k <値> ...` の行。T0133・T0134・T0135)。このケースの `effects` は常に `false`。受け手の口を持たないバインディング (今は Unity と Godot) は、
+   `follow <dt> <音量 (無ければ -1)> <強さ> <パーツの数 k> (<番号> <値> <重み>) × k <値> ...` の行。T0133・T0134・T0135)。このケースの `effects` は常に `false`。受け手の口を持たないバインディング (今は Unity) は、
    比べ合わせ (`src/main.rs` の `FOLLOW_BINDINGS`) が `skip` にする。
    `before` があるとき、値を変えてから描画に反映するまでにフレームの遅れが入りうる実行器 (Godot) は、先に `before` の値で
    数フレーム描き、次のフレームで `parameters` にして上の評価をし、その直後のフレームを結果にする。同期して評価・描画する実行器

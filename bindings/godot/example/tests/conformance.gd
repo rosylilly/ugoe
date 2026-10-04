@@ -11,7 +11,7 @@ extends SceneTree
 ##
 ## - 計画のとおり、読み込む前にパラメータ・段の有効無効・モジュールを設定する (ノードは読み込みの直後に 1 度評価する)。
 ##   `steps` が空ならすべての段を止め、あれば目パチと呼吸を `effects` のとおりにして、`playing = false` のまま
-##   `advance(dt)` を `steps` の順に呼ぶ。
+##   `advance(dt)` を `steps` の順に呼ぶ。計画に `follow` があれば、`advance` の代わりに受け手の口 `follow` を呼ぶ (T0449)。
 ## - `before` があれば、まずその値で数フレーム描き、次のフレームで `parameters` に変えて、その直後のフレームを書く
 ##   (アニメーション中にマスクが 1 フレーム遅れないかを確かめる)。
 ## - モデルは `.ugoe` バンドルなら `load_model_from_buffer`、違えば (モデルの JSON) `load_model_from_json` で読む。
@@ -153,13 +153,33 @@ func _setup() -> bool:
 	return true
 
 
-## 計画の `steps` のとおりに時間を進める (空なら時間を進めずに 1 度評価する)。
+## 計画の `steps` のとおりに時間を進める (空なら時間を進めずに 1 度評価する)。`follow` があれば受け手として進める。
 func _advance() -> void:
 	var steps: Array = _case["steps"]
 	if steps.is_empty():
 		_puppet.advance(0.0)
-	for dt in steps:
-		_puppet.advance(dt)
+	var follow: Array = _case.get("follow", [])
+	var lip_sync: Array = _case.get("follow_lip_sync", [])
+	var parts: Array = _case.get("follow_part_opacities", [])
+	if not follow.is_empty():
+		# ノードは読み込みの直後に 1 度評価して物理の粒子を置くので、置き直して最初の `follow` の値から始める
+		# (参照と C ABI は作ったばかりの `Puppet` で `follow` を呼ぶ)。
+		_puppet.reset_physics()
+	for i in steps.size():
+		if follow.is_empty():
+			_puppet.advance(steps[i])
+			continue
+		var level := -1.0
+		var strength := 0.0
+		if i < lip_sync.size() and lip_sync[i] is Array:
+			level = lip_sync[i][0]
+			strength = lip_sync[i][1]
+		var opacities := []
+		if i < parts.size():
+			for p: Array in parts[i]:
+				opacities.append({"part": int(p[0]), "value": p[1], "weight": p[2]})
+		if not _puppet.follow(PackedFloat32Array(follow[i]), steps[i], level, strength, opacities):
+			printerr("%s: follow failed at frame %d" % [_case["name"], i])
 
 
 func _process(_delta: float) -> bool:

@@ -29,6 +29,158 @@ func _finite(puppet: Node2D) -> bool:
 	return true
 
 
+## リポジトリの中のファイルのパス (example/ から 3 つ上がリポジトリのルート)。
+func _repo(path: String) -> String:
+	return ProjectSettings.globalize_path("res://").path_join("../../..").path_join(path)
+
+
+## SDK (ugoe::Puppet) と C ABI にある機能 (T0449)。
+func _sdk_features(puppet: Node2D) -> void:
+	# 読み込みの警告: 見本には無く、未来の版を模したファイルでは知らない任意の機能
+	_check(puppet.load_model("res://models/avatar.ugoe"), "load avatar for the SDK features")
+	_check(puppet.get_load_warnings().is_empty(), "avatar has no load warnings")
+	var future := FileAccess.get_file_as_bytes(_repo("assets/compat/future/optional-feature.ugoe"))
+	_check(puppet.load_model_from_buffer(future), "load a file from a future version")
+	var codes := []
+	for w: Dictionary in puppet.get_load_warnings():
+		codes.append(w["code"])
+		if w["code"] == "unknown_optional_feature":
+			_check(w.has("feature") and w["warning"] is String, "a warning has its fields (%s)" % w)
+	_check(codes.has("unknown_optional_feature"), "load warnings %s" % [codes])
+
+	# トラッキングの対象とスロット
+	_check(puppet.load_model("res://models/avatar.ugoe"), "reload avatar")
+	_check(puppet.get_tracking_targets().has("AngleX"), "tracking targets %s" % puppet.get_tracking_targets())
+	_check(puppet.get_slot_ids().is_empty(), "avatar has no slots")
+
+	# 受け手: 指揮役の値を基準値にして、物理より後の段だけを進める
+	var receiver: Node2D = ClassDB.instantiate("UgoePuppet2D")
+	receiver.playing = false
+	root.add_child(receiver)
+	receiver.model = load("res://models/avatar.ugoe")
+	puppet.set_parameter("AngleX", 20.0)
+	puppet.advance(1.0 / 60.0)
+	var values: PackedFloat32Array = puppet.get_parameter_values()
+	var angle_x: int = puppet.get_parameter_ids().find("AngleX")
+	_check(values.size() == puppet.get_parameter_ids().size(), "get_parameter_values (%d)" % values.size())
+	_check(receiver.follow(values, 1.0 / 60.0, -1.0, 0.0, []), "follow")
+	_check(is_equal_approx(receiver.get_parameter("AngleX"), values[angle_x]), "follow writes the base values (%f)" % receiver.get_parameter("AngleX"))
+	_check(receiver.follow(values, 1.0 / 60.0, 0.5, 1.0, [{"part": 0, "value": 0.5, "weight": 1.0}]), "follow with lip sync and part opacities")
+	_check(receiver.set_base_values(values), "set_base_values")
+	# 数が違う・NaN・負か有限でない時間・有限でない音量・形の違うパーツの不透明度は拒む (C ABI と同じ)
+	_check(not receiver.set_base_values(PackedFloat32Array([1.0])), "set_base_values rejects a wrong count")
+	var broken := values.duplicate()
+	broken[angle_x] = NAN
+	_check(not receiver.set_base_values(broken), "set_base_values rejects NAN")
+	_check(not receiver.follow(broken, 1.0 / 60.0, -1.0, 0.0, []), "follow rejects NAN values")
+	_check(not receiver.follow(values, NAN, -1.0, 0.0, []), "follow rejects a NAN delta")
+	_check(not receiver.follow(values, -1.0, -1.0, 0.0, []), "follow rejects a negative delta")
+	_check(not receiver.follow(values, 1.0 / 60.0, INF, 1.0, []), "follow rejects an infinite lip sync level")
+	_check(not receiver.follow(values, 1.0 / 60.0, NAN, 1.0, []), "follow rejects a NAN lip sync level")
+	_check(not receiver.follow(values, 1.0 / 60.0, 0.5, INF, []), "follow rejects an infinite lip sync strength")
+	_check(not receiver.follow(values, 1.0 / 60.0, -1.0, 0.0, [{"part": -1, "value": 1.0, "weight": 1.0}]), "follow rejects a negative part")
+	_check(not receiver.follow(values, 1.0 / 60.0, -1.0, 0.0, [{"part": 0, "value": INF, "weight": 1.0}]), "follow rejects an infinite part opacity")
+	_check(not receiver.follow(values, 1.0 / 60.0, -1.0, 0.0, [1]), "follow rejects a malformed part opacity")
+	_check(_finite(receiver), "rejected input keeps the receiver finite")
+	receiver.queue_free()
+
+	# トラッキング中のモーションの優先 (モデルを読み直しても保つ)
+	puppet.motion_over_tracking = true
+	puppet.tracking_kept = PackedStringArray(["EyeLOpen"])
+	_check(puppet.load_model("res://models/avatar.ugoe"), "reload with motion_over_tracking")
+	_check(puppet.motion_over_tracking and puppet.tracking_kept == PackedStringArray(["EyeLOpen"]), "motion over tracking is kept across reloads")
+	for over in [false, true]:
+		puppet.motion_over_tracking = over
+		_check(puppet.load_model("res://models/avatar.ugoe"), "reload for motion over tracking %s" % over)
+		puppet.set_tracking_head(Vector3(-20.0, 0.0, 0.0))
+		puppet.start_motion("shake", 2)
+		for i in 24:
+			puppet.advance(1.0 / 60.0)
+		var x: float = puppet.get_parameter("AngleX")
+		_check((x > 0.0) == over, "motion_over_tracking %s gives AngleX %f" % [over, x])
+		puppet.clear_tracking()
+	puppet.motion_over_tracking = false
+	puppet.tracking_kept = PackedStringArray()
+
+	# 表情を止める
+	_check(puppet.load_model("res://models/avatar.ugoe"), "reload for stop_expressions")
+	_check(puppet.set_expression("smile"), "set smile")
+	for i in 60:
+		puppet.advance(1.0 / 60.0)
+	_check(puppet.get_parameter("EyeLSmile") > 0.9, "smile is shown (%f)" % puppet.get_parameter("EyeLSmile"))
+	puppet.stop_expressions()
+	for i in 120:
+		puppet.advance(1.0 / 60.0)
+	_check(puppet.get_parameter("EyeLSmile") < 0.1, "stop_expressions (%f)" % puppet.get_parameter("EyeLSmile"))
+
+	# 標準の当たり判定 (dress-up は Head と Body を持つ)
+	_check(puppet.load_model("res://models/dress-up.ugoe"), "load dress-up for standard hit areas")
+	_check(not puppet.get_slot_ids().is_empty(), "dress-up has slots %s" % puppet.get_slot_ids())
+	var head: String = puppet.get_standard_hit_area("Head")
+	_check(head != "", "standard hit area Head (%s)" % head)
+	_check(puppet.get_standard_hit_area("Tail") == "", "an unknown standard name has no hit area")
+	var size: Vector2 = puppet.get_canvas_size()
+	var origin: Vector2 = puppet.get_canvas_origin()
+	var inside := Vector2.INF
+	for gy in 32:
+		for gx in 32:
+			var p := Vector2(gx + 0.5, gy + 0.5) * size / 32.0 - origin
+			if puppet.hit_test(head, p):
+				inside = p
+				break
+		if inside != Vector2.INF:
+			break
+	_check(inside != Vector2.INF, "a point inside the head")
+	if inside != Vector2.INF:
+		_check(puppet.hit_test_standard("Head", inside), "hit_test_standard")
+		_check(puppet.get_standard_hit_areas_at(inside).has("Head"), "get_standard_hit_areas_at %s" % puppet.get_standard_hit_areas_at(inside))
+	_check(not puppet.hit_test_standard("Tail", Vector2.ZERO), "hit_test_standard with an unknown name")
+
+	# パーツとポーズ (公開仕様の例 pose-select)
+	_check(puppet.load_model_from_json(FileAccess.get_file_as_string(_repo("spec/examples/pose-select/model.json"))), "load pose-select")
+	_check(puppet.get_part_ids() == PackedStringArray(["Root", "ArmA", "ArmB", "SleeveB", "Hat"]), "part ids %s" % puppet.get_part_ids())
+	puppet.advance(0.0)
+	_check(is_equal_approx(puppet.get_part_evaluated_opacity("ArmA"), 1.0), "the first pose entry is shown")
+	_check(puppet.get_part_opacity("ArmB")["weight"] > 0.0, "pose overrides ArmB (%s)" % puppet.get_part_opacity("ArmB"))
+	_check(puppet.get_part_opacity("missing").is_empty(), "an unknown part has no opacity")
+	_check(puppet.show_pose("ArmB"), "show_pose")
+	_check(not puppet.show_pose("Hat"), "show_pose for a part outside the pose")
+	for i in 60:
+		puppet.advance(1.0 / 60.0)
+	_check(is_equal_approx(puppet.get_part_evaluated_opacity("ArmB"), 1.0), "ArmB fades in (%f)" % puppet.get_part_evaluated_opacity("ArmB"))
+	_check(is_zero_approx(puppet.get_part_evaluated_opacity("ArmA")), "ArmA fades out (%f)" % puppet.get_part_evaluated_opacity("ArmA"))
+
+	# 目パチ・呼吸・リップシンクの設定の差し替え (公開仕様の例 effects-replace)
+	_check(puppet.load_model_from_json(FileAccess.get_file_as_string(_repo("spec/examples/effects-replace/model.json"))), "load effects-replace")
+	puppet.set_lip_sync_level(0.6)
+	puppet.advance(0.1)
+	_check(is_equal_approx(puppet.get_parameter("Mouth"), 0.6), "lip sync moves Mouth")
+	_check(puppet.set_effects_json('{"lip_sync": {"parameters": ["Mouth2"]}}'), "set_effects_json")
+	puppet.advance(0.1)
+	_check(is_equal_approx(puppet.get_parameter("Mouth2"), 0.6), "replaced lip sync moves Mouth2 (%f)" % puppet.get_parameter("Mouth2"))
+	_check(not puppet.set_effects_json("{"), "broken effects JSON fails")
+	puppet.clear_lip_sync_level()
+
+	# 物理の設定の差し替え (公開仕様の例 physics-pendulum)
+	var physics := FileAccess.get_file_as_string(_repo("spec/examples/physics-pendulum/model.physics.json"))
+	_check(puppet.load_model_from_json(FileAccess.get_file_as_string(_repo("spec/examples/physics-pendulum/model.json"))), "load physics-pendulum")
+	_check(puppet.get_physics_json() == "", "a model JSON has no physics")
+	_check(puppet.set_physics_json(physics), "set_physics_json")
+	_check(puppet.get_physics_json().contains("\"Hair\""), "get_physics_json")
+	_check(not puppet.set_physics_json("{"), "broken physics JSON fails")
+	_check(puppet.get_physics_json() != "", "a failed set keeps the physics")
+	_check(puppet.set_physics_json(""), "an empty physics JSON removes the physics")
+	_check(puppet.get_physics_json() == "", "physics removed")
+	_check(puppet.set_base_physics_json(physics), "set_base_physics_json")
+	_check(puppet.get_base_physics_json().contains("\"Hair\""), "get_base_physics_json")
+	for i in 30:
+		puppet.advance(1.0 / 60.0)
+	_check(_finite(puppet), "physics keeps values finite")
+	_check(puppet.load_model_from_json(FileAccess.get_file_as_string(_repo("spec/examples/single-quad/model.json"))), "load single-quad")
+	_check(not puppet.set_physics_json(physics), "physics that does not fit the model fails")
+	_check(not puppet.set_base_physics_json(physics), "base physics that does not fit the model fails")
+
+
 # 木の中で試すため、最初のフレームで始める (`_initialize` の間は root がまだ木に入っていない)。
 func _process(_delta: float) -> bool:
 	if not _started:
@@ -328,6 +480,8 @@ func _run() -> void:
 	_check(puppet.get_render_order() == PackedInt32Array([0]), "render order")
 	_check(not puppet.load_model_from_json("{"), "broken JSON fails")
 	_check(not puppet.attach_module(UgoeModule.from_buffer(PackedByteArray([1, 2, 3]))), "broken module fails")
+
+	_sdk_features(puppet)
 
 	puppet.queue_free()
 	print("smoke: %s" % ("FAILED" if _failures > 0 else "ok"))

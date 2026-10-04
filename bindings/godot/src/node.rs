@@ -23,6 +23,7 @@ use crate::render::{Renderer, TextureCache};
 use crate::xr::arkit_from_unified;
 
 mod readback;
+mod sdk;
 
 /// インスペクタに出すパラメータのプロパティ名の接頭辞 (`parameters/<ID>`)。
 const PARAMETER_PREFIX: &str = "parameters/";
@@ -77,6 +78,16 @@ pub(crate) struct UgoePuppet2D {
     #[export_group(name = "Tracking")]
     #[export]
     xr_face_tracker: StringName,
+    /// トラッキング中に、再生中のモーションが動かすパラメータではモーションを優先するか
+    /// (`docs/spec/motion.md#トラッキング中のモーションの優先`)。既定は false。モデルを読み直しても保つ。
+    #[export]
+    #[var(set = set_motion_over_tracking)]
+    motion_over_tracking: bool,
+    /// `motion_over_tracking` でも、トラッキングのままにするパラメータの ID (目など)。モデルに無い ID は無視する。
+    /// モデルを読み直しても保つ。
+    #[export]
+    #[var(set = set_tracking_kept)]
+    tracking_kept: PackedStringArray,
 
     loaded: Option<LoadedModel>,
     /// 木の外で `model` を変えたので、木に戻ったときに読み込み直す (`ready` は最初の 1 回しか呼ばれないため)。
@@ -129,6 +140,8 @@ impl INode2D for UgoePuppet2D {
             lights: VarArray::new(),
             use_scene_lights: false,
             xr_face_tracker: StringName::default(),
+            motion_over_tracking: false,
+            tracking_kept: PackedStringArray::new(),
             loaded: None,
             model_pending: false,
             manual_lights: Vec::new(),
@@ -851,6 +864,24 @@ impl UgoePuppet2D {
             .collect()
     }
 
+    /// トラッキング中に、再生中のモーションが動かすパラメータではモーションを優先するかを設定する (T0722)。
+    /// true の間はトラッキングの値をモーションの前に書き、モーションがフェードの重みでその上に重なる。
+    #[func]
+    pub fn set_motion_over_tracking(&mut self, enabled: bool) {
+        self.motion_over_tracking = enabled;
+        if let Some(loaded) = &mut self.loaded {
+            loaded.puppet.set_motion_over_tracking(enabled);
+            self.dirty = true;
+        }
+    }
+
+    /// `motion_over_tracking` でも、トラッキングのままにするパラメータの ID を設定する (空なら無し)。
+    #[func]
+    pub fn set_tracking_kept(&mut self, ids: PackedStringArray) {
+        self.tracking_kept = ids;
+        self.push_tracking_kept();
+    }
+
     /// `XRFaceTracker` (Unified Expressions) のブレンドシェイプを、ARKit の 52 ブレンドシェイプに直して設定する
     /// (対応は `src/xr.rs` と README の表)。頭の回転は `XRFaceTracker` に無いので変えない (`set_tracking_head` で渡す)。
     /// トラッキングを始める。`XRFaceTracker` でなければ false。
@@ -1032,7 +1063,11 @@ impl UgoePuppet2D {
             });
         loaded.puppet.set_tracking(self.tracking);
         loaded.puppet.set_toggles(self.toggles);
+        loaded
+            .puppet
+            .set_motion_over_tracking(self.motion_over_tracking);
         self.loaded = Some(loaded);
+        self.push_tracking_kept();
         let modules = self.module_resources();
         if !modules.is_empty() && !self.apply_modules(modules) {
             godot_warn!("ugoe: showing the model without the modules");
@@ -1325,7 +1360,38 @@ impl UgoePuppet2D {
         }
     }
 
+    fn push_tracking_kept(&mut self) {
+        let ids: Vec<String> = self
+            .tracking_kept
+            .as_slice()
+            .iter()
+            .map(GString::to_string)
+            .collect();
+        if let Some(loaded) = &mut self.loaded {
+            loaded.puppet.set_tracking_kept(ids);
+            self.dirty = true;
+        }
+    }
+
     fn step(&mut self, dt: f32) {
+        let Some(loaded) = &mut self.loaded else {
+            return;
+        };
+        loaded.puppet.update(dt);
+        let events: Vec<GString> = loaded
+            .puppet
+            .motion_events()
+            .iter()
+            .map(|e| GString::from(e.value.as_str()))
+            .collect();
+        self.draw();
+        for value in events {
+            self.signals().motion_event().emit(&value);
+        }
+    }
+
+    /// 直前の評価の結果を描く (`update` か `follow` の後)。
+    fn draw(&mut self) {
         // マスクは画面上の大きさ (ビューポートの画素) に合わせた解像度で描く。
         let screen_scale = if self.base().is_inside_tree() {
             let s = self.base().get_global_transform_with_canvas().scale();
@@ -1334,22 +1400,9 @@ impl UgoePuppet2D {
             1.0
         };
         let mask_scale = self.mask_scale * screen_scale;
-        let Some(loaded) = &mut self.loaded else {
-            return;
-        };
-        loaded.puppet.update(dt);
         self.dirty = false;
-        let events: Vec<GString> = loaded
-            .puppet
-            .motion_events()
-            .iter()
-            .map(|e| GString::from(e.value.as_str()))
-            .collect();
-        if let Some(renderer) = &mut self.renderer {
+        if let (Some(loaded), Some(renderer)) = (&self.loaded, &mut self.renderer) {
             renderer.draw(loaded, mask_scale);
-        }
-        for value in events {
-            self.signals().motion_event().emit(&value);
         }
     }
 }

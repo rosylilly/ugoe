@@ -1041,6 +1041,7 @@ name = "ugoe-godot"
 version = "0.0.0"
 dependencies = [
  "godot",
+ "serde_json",
  "thiserror",
  "ugoe",
 ]
