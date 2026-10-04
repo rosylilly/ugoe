@@ -1,11 +1,11 @@
 ---
 id: T0832
 title: "スタジオ: 仮想カメラの GPU の待ちの時間切れを見て、受け手の GPU を作り直す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0832
 ---
 
 # T0832: スタジオ: 仮想カメラの GPU の待ちの時間切れを見て、受け手の GPU を作り直す
