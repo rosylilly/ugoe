@@ -99,7 +99,7 @@ impl CommandError {
         .path(path)
     }
 
-    /// 読もうとしたファイルを、利用者が選んでいない (ダイアログ・ドロップ・起動時の引数のどれでもない。T0727)。
+    /// 読もうとしたファイルを、利用者が選んでいない (ダイアログ・ドロップ・OS から渡されたもののどれでもない。T0727)。
     pub(crate) fn not_chosen(path: &Path) -> Self {
         Self::new(
             "file.not_chosen",

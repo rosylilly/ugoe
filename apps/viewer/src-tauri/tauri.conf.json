@@ -49,6 +49,32 @@
     ],
     "macOS": {
       "entitlements": "Entitlements.plist"
-    }
+    },
+    "fileAssociations": [
+      {
+        "ext": ["ugoe"],
+        "name": "ugoe model",
+        "description": "ugoe model",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "application/x-ugoe",
+        "exportedType": {
+          "identifier": "app.ugoe.model",
+          "conformsTo": ["public.data"]
+        }
+      },
+      {
+        "ext": ["ugoemod"],
+        "name": "ugoe module",
+        "description": "ugoe dress-up module",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "application/x-ugoe-module",
+        "exportedType": {
+          "identifier": "app.ugoe.module",
+          "conformsTo": ["public.data"]
+        }
+      }
+    ]
   }
 }

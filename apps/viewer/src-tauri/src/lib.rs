@@ -9,12 +9,13 @@ mod error;
 mod read_file;
 
 use std::collections::HashSet;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
 use tauri::ipc::Response;
 use tauri::webview::{PermissionKind, PermissionResponse};
-use tauri::{DragDropEvent, Manager, State, WebviewEvent, WebviewWindow};
+use tauri::{DragDropEvent, Emitter, Manager, State, WebviewEvent, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
 use atomic_write::write_atomic;
@@ -53,7 +54,7 @@ async fn blocking<T: Send + 'static>(
 
 /// モデルかモジュールのファイルを読み、バイト列をそのまま返す (JS では `ArrayBuffer`)。
 /// 形式の判別と読み込みはフロントエンドの wasm が行う。読めるのは、利用者が渡したパス
-/// (ダイアログ・ドロップ・起動時の引数。前に渡したものも覚えている) だけ (`FileAccess`)。
+/// (ダイアログ・ドロップ・OS から渡されたもの。前に渡したものも覚えている) だけ (`FileAccess`)。
 #[tauri::command]
 async fn read_model_file(
     access: State<'_, FileAccess>,
@@ -174,14 +175,14 @@ fn permission_response(kind: PermissionKind) -> PermissionResponse {
     }
 }
 
-/// 起動時の引数で渡されたモデルのパス (`ugoe-viewer model.ugoe`、OS の「このアプリで開く」)。読めるパスに加える。
+/// OS から渡されたファイルのパス (起動時の引数・macOS の「このアプリで開く」) のうち、画面がまだ受け取っていないもの。
+/// 画面は読み込みを終えたらこれを 1 回呼び、その後に届いたものはイベント `OPEN_FILES_EVENT` で受け取る
+/// (`OpenedFiles`。画面はこれを呼ぶ前にイベントを待ち受ける)。パスは受け取ったときに読めるパスに加えてある。
 #[tauri::command]
-fn initial_file(access: State<'_, FileAccess>) -> Option<String> {
-    let path = std::env::args()
-        .skip(1)
-        .find(|a| !a.starts_with('-') && is_model_path(Path::new(a)))?;
-    access.grant_readable([PathBuf::from(&path)]);
-    Some(path)
+fn initial_files(opened: State<'_, OpenedFiles>, access: State<'_, FileAccess>) -> Vec<String> {
+    let paths = opened.take_initial();
+    access.grant_readable(paths.iter().cloned());
+    paths.into_iter().map(path_string).collect()
 }
 
 /// 開くダイアログを開き、選ばれたファイルのパスを返す (取り消したら空)。選ばれたパスは読めるパスに加える。
@@ -290,9 +291,9 @@ const MAX_READABLE_PATHS: usize = 1000;
 /// webview に読み書きを許したパス (T0727)。webview で思わぬスクリプトが動いても、利用者が選んでいない
 /// ファイルを読み書きできないようにする。
 ///
-/// - 読める: 開くダイアログで選んだ・ウィンドウにドロップした・起動時の引数のファイル。覚えた場所 (`path:`) から
-///   読み直せるよう、アプリのデータのディレクトリの `readable-files.json` に覚える (新しいものから
-///   `MAX_READABLE_PATHS` 件)。
+/// - 読める: 開くダイアログで選んだ・ウィンドウにドロップした・OS から渡された (起動時の引数・macOS の `Opened`。
+///   `OpenedFiles`) ファイル。覚えた場所 (`path:`) から読み直せるよう、アプリのデータのディレクトリの `readable-files.json` に
+///   覚える (新しいものから `MAX_READABLE_PATHS` 件)。
 /// - 書ける: 保存のダイアログで選んだパス。1 回書いたら忘れる (覚えない)。
 #[derive(Default)]
 struct FileAccess {
@@ -397,6 +398,98 @@ fn on_webview_event(webview: &tauri::Webview, event: &WebviewEvent) {
     }
 }
 
+/// OS から渡されたファイルを、起動中に画面へ送るイベント (中身はパスの文字列の配列。`host.ts` の `OPEN_FILES_EVENT`)。
+const OPEN_FILES_EVENT: &str = "open-files";
+
+/// OS から渡されたファイル (T0732)。起動時の引数 (コマンドラインと、Windows・Linux の「このアプリで開く」) と、
+/// macOS の `RunEvent::Opened` (macOS は起動時も起動中も、ファイルを引数ではなくこのイベントで渡す) で届く。
+/// 画面が `initial_files` で受け取るまでは溜めておき、受け取った後に届いたものはイベント `OPEN_FILES_EVENT` ですぐ送る。
+/// 画面は届いたファイルをドロップと同じに開く (README の「OS から開く」)。
+#[derive(Default)]
+struct OpenedFiles {
+    state: Mutex<OpenedState>,
+}
+
+#[derive(Default)]
+struct OpenedState {
+    pending: Vec<PathBuf>,
+    delivered: bool,
+}
+
+impl OpenedFiles {
+    /// 届いたパスを受け付ける。画面がまだ受け取っていなければ溜めて空を返し、受け取った後なら (送る) パスをそのまま返す。
+    fn arrive(&self, paths: Vec<PathBuf>) -> Vec<PathBuf> {
+        let mut state = lock(&self.state);
+        if state.delivered {
+            paths
+        } else {
+            state.pending.extend(paths);
+            Vec::new()
+        }
+    }
+
+    /// 溜めたパスを返し、以後に届いたものは送るようにする。2 回目からは空 (画面を読み込み直したときに、また開かない)。
+    fn take_initial(&self) -> Vec<PathBuf> {
+        let mut state = lock(&self.state);
+        state.delivered = true;
+        std::mem::take(&mut state.pending)
+    }
+}
+
+/// 起動時の引数から、開くファイルのパスを選ぶ (`-` で始まるものと、読めない拡張子のものは除く)。相対パスは今のディレクトリからの
+/// 絶対パスにする (覚えた場所 `path:` から、別のディレクトリで起動した後も読み直せるように)。
+fn paths_from_args(args: impl IntoIterator<Item = OsString>) -> Vec<PathBuf> {
+    args.into_iter()
+        .filter(|a| !a.as_encoded_bytes().starts_with(b"-"))
+        .map(PathBuf::from)
+        .filter(|p| is_readable_path(p))
+        .map(|p| std::path::absolute(&p).unwrap_or(p))
+        .collect()
+}
+
+/// macOS の `RunEvent::Opened` の URL から、開くファイルのパスを選ぶ (`file:` の URL で、読める拡張子のものだけ)。
+#[cfg(any(target_os = "macos", test))]
+fn paths_from_urls(urls: &[tauri::Url]) -> Vec<PathBuf> {
+    urls.iter()
+        .filter(|u| u.scheme() == "file")
+        .filter_map(|u| u.to_file_path().ok())
+        .filter(|p| is_readable_path(p))
+        .collect()
+}
+
+/// OS から渡されたパスを画面へ渡す (`OpenedFiles`)。画面が受け取った後なら、読めるパスに加えてイベントで送る
+/// (受け取る前のものは `initial_files` が加える)。パスは画面に渡す文字列から作り直す (`path_string`)。
+fn open_from_os<R: tauri::Runtime>(app: &tauri::AppHandle<R>, paths: Vec<PathBuf>) {
+    let paths: Vec<PathBuf> = paths
+        .into_iter()
+        .map(path_string)
+        .map(PathBuf::from)
+        .collect();
+    if paths.is_empty() {
+        return;
+    }
+    let send = app.state::<OpenedFiles>().arrive(paths);
+    if send.is_empty() {
+        return;
+    }
+    if let Some(access) = app.try_state::<FileAccess>() {
+        access.grant_readable(send.iter().cloned());
+    }
+    let send: Vec<String> = send.into_iter().map(path_string).collect();
+    if let Err(e) = app.emit(OPEN_FILES_EVENT, send) {
+        eprintln!("could not send the opened files: {e}");
+    }
+}
+
+/// アプリのイベント。macOS では、OS の「このアプリで開く」のファイルが起動時も起動中も `Opened` で届く。
+#[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
+fn on_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
+    #[cfg(target_os = "macos")]
+    if let tauri::RunEvent::Opened { urls } = event {
+        open_from_os(app, paths_from_urls(&urls));
+    }
+}
+
 /// 読めるパスを覚えるファイル (アプリのデータのディレクトリ)。
 const READABLE_FILES_STORE: &str = "readable-files.json";
 
@@ -406,6 +499,8 @@ const MAX_READABLE_FILES_STORE_BYTES: u64 = 16 * 1024 * 1024;
 pub fn run() {
     #[allow(clippy::expect_used)]
     tauri::Builder::default()
+        // `Opened` が `setup` より先に届いても受けられるよう、ここで置く。
+        .manage(OpenedFiles::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
         .setup(|app| {
@@ -415,20 +510,22 @@ pub fn run() {
                 .ok()
                 .map(|d| d.join(READABLE_FILES_STORE));
             app.manage(FileAccess::load(store));
+            open_from_os(app.handle(), paths_from_args(std::env::args_os().skip(1)));
             Ok(())
         })
         .on_permission_request(|_, kind| permission_response(kind))
         .on_webview_event(on_webview_event)
         .invoke_handler(tauri::generate_handler![
-            initial_file,
+            initial_files,
             open_file_dialog,
             read_model_file,
             save_file_dialog,
             write_json_file,
             write_png_file
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running the ugoe viewer");
+        .build(tauri::generate_context!())
+        .expect("error while building the ugoe viewer")
+        .run(on_run_event);
 }
 
 #[cfg(test)]
@@ -648,6 +745,80 @@ mod tests {
         assert_eq!(
             with_extension(PathBuf::from("/a/shot.png.txt"), "png"),
             PathBuf::from("/a/shot.png.txt.png")
+        );
+    }
+
+    #[test]
+    fn holds_files_from_the_os_until_the_page_takes_them() {
+        let opened = OpenedFiles::default();
+        // 画面が受け取る前に届いたもの (起動時の引数・macOS の起動時の `Opened`) は溜める。
+        assert!(opened.arrive(vec![PathBuf::from("/a.ugoe")]).is_empty());
+        assert!(opened.arrive(vec![PathBuf::from("/b.ugoemod")]).is_empty());
+        assert_eq!(
+            opened.take_initial(),
+            [PathBuf::from("/a.ugoe"), PathBuf::from("/b.ugoemod")]
+        );
+        // 受け取った後 (起動中に開いた) はすぐ送る。画面を読み込み直しても、前のものはまた開かない。
+        assert_eq!(
+            opened.arrive(vec![PathBuf::from("/c.ugoe")]),
+            [PathBuf::from("/c.ugoe")]
+        );
+        assert!(opened.take_initial().is_empty());
+    }
+
+    #[test]
+    fn opens_models_and_modules_from_the_arguments() {
+        let tmp = tempfile::tempdir().unwrap();
+        let model = tmp.path().join("model.UGOE");
+        let module = tmp.path().join("hair.ugoemod");
+        let args = [
+            OsString::from("--flag"),
+            model.clone().into_os_string(),
+            OsString::from("notes.txt"),
+            module.clone().into_os_string(),
+            OsString::from("project.ugoeproj"),
+        ];
+        assert_eq!(paths_from_args(args), [model, module]);
+        // 相対パスは今のディレクトリからの絶対パスにする。
+        let relative = paths_from_args([OsString::from("models/a.json")]);
+        assert_eq!(
+            relative,
+            [std::env::current_dir().unwrap().join("models/a.json")]
+        );
+        assert!(relative[0].is_absolute());
+    }
+
+    #[test]
+    fn opens_file_urls_from_macos() {
+        let tmp = tempfile::tempdir().unwrap();
+        let model = tmp.path().join("a b.ugoe");
+        let module = tmp.path().join("hat.ugoemod");
+        let urls = [
+            tauri::Url::from_file_path(&model).unwrap(),
+            tauri::Url::parse("https://example.com/c.ugoe").unwrap(),
+            tauri::Url::from_file_path(tmp.path().join("notes.txt")).unwrap(),
+            tauri::Url::from_file_path(&module).unwrap(),
+        ];
+        assert_eq!(paths_from_urls(&urls), [model, module]);
+    }
+
+    /// OS に登録する種類 (`bundle.fileAssociations`) は、モデルのバンドルとモジュール。どちらもビューアが読める拡張子。
+    /// JSON のモデルは、ほかのアプリの JSON も開いてしまうので登録しない (起動時の引数やドロップでは開ける)。
+    #[test]
+    fn registers_bundles_and_modules_with_the_os() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let exts: Vec<&str> = config["bundle"]["fileAssociations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|a| a["ext"].as_array().unwrap())
+            .map(|e| e.as_str().unwrap())
+            .collect();
+        assert_eq!(exts, ["ugoe", "ugoemod"]);
+        assert!(
+            exts.iter()
+                .all(|e| is_readable_path(Path::new(&format!("a.{e}"))))
         );
     }
 

@@ -6,7 +6,7 @@
   "permissions": [
     "core:default",
     "os:allow-locale",
-    "allow-initial-file",
+    "allow-initial-files",
     "allow-open-file-dialog",
     "allow-read-model-file",
     "allow-save-file-dialog",

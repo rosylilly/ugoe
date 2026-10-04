@@ -160,7 +160,7 @@ export interface DragItemInfo {
 export function classifyDragType(type: string): "open" | "skip" | "unknown" {
   const t = type.trim().toLowerCase();
   if (t === "" || t === "application/octet-stream") return "unknown";
-  // OS に登録した種類 (いまは登録していない) でも開けるものとみなす。
+  // OS に登録した種類 (ビューアのアプリが登録する `application/x-ugoe`・`application/x-ugoe-module`。T0732) も開けるものとみなす。
   if (t === "application/json" || t === "text/json" || t.endsWith("+json") || t.includes("ugoe"))
     return "open";
   return "skip";

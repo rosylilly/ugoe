@@ -7,7 +7,7 @@
 
 /// アプリのコマンドの名前 (`lib.rs` の `generate_handler!` と同じものを同じ順に)。
 pub const COMMANDS: &[&str] = &[
-    "initial_file",
+    "initial_files",
     "open_file_dialog",
     "read_model_file",
     "save_file_dialog",

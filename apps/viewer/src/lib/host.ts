@@ -3,7 +3,8 @@
 // 実行する場所ごとに実装を切り替える:
 // - Tauri の中: OS のダイアログをバックエンド (`open_file_dialog`・`save_file_dialog`) で開き、
 //   バックエンドの `read_model_file` で読み、`write_json_file`・`write_png_file` で書く。バックエンドは、
-//   利用者がダイアログで選んだ・ドロップした・起動時に渡したパスしか読み書きしない (T0727。README の「ファイルの読み書きの範囲」)。
+//   利用者がダイアログで選んだ・ドロップした・OS から渡された (起動時の引数・「このアプリで開く」。T0732) パスしか
+//   読み書きしない (T0727。README の「ファイルの読み書きの範囲」)。
 // - ふつうのブラウザ (`pnpm dev` を直接開いたとき): `<input type="file">` で選ぶ。
 //   `?model=<URL>` を付けると、起動時にその URL のモデルを開く。
 // - ヘッドレスのブラウザでの確認: `window.__UGOE_VIEWER_HOST__` に `ViewerHost` を置くと、それを使う。
@@ -12,6 +13,7 @@
 // (`listenFileDrop`。パスから読むので、起動し直した後も読み直せる。T0713)。ブラウザでは HTML の File API で読むので、
 // ここを通らず、場所は分からない。
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { locale } from "@tauri-apps/plugin-os";
 import {
@@ -30,8 +32,10 @@ export interface ViewerHost {
   pickModelFile(): Promise<ModelFile | null>;
   /** 着せ替えのモジュール (`.ugoemod`) を選んで読む (複数選べる)。取り消したら空。 */
   pickModuleFiles(): Promise<ModelFile[]>;
-  /** 起動時に開くモデル (コマンドライン引数など)。無ければ `null`。 */
-  initialModelFile(): Promise<ModelFile | null>;
+  /**
+   * 起動時に開くモデル (ブラウザの `?model=<URL>`)。無ければ `null`。省いてよい (Tauri は `listenOpenedFiles` で受け取る)。
+   */
+  initialModelFile?(): Promise<ModelFile | null>;
   /**
    * JSON のテキストを保存する (トラッキングの記録など)。`name` は既定のファイル名。
    * 保存したら `true`、取り消したら `false`。省くとブラウザのダウンロードで保存する。
@@ -52,6 +56,12 @@ export interface ViewerHost {
    * 無ければ HTML のドロップ (File API) で受け取る (場所は分からない)。
    */
   listenFileDrop?(listener: (event: FileDropEvent) => void): Promise<() => void>;
+  /**
+   * OS から渡されたファイル (起動時の引数・OS の「このアプリで開く」) を、パス (絶対パス。`readPath` で読む) で受け取る (Tauri、T0732)。
+   * 起動時に渡されたものがあれば、受け取りを始めたときに 1 回呼び、起動中に渡されたもの (macOS) はその都度呼ぶ。
+   * 返すのは受け取りをやめる関数。画面はドロップと同じに開く。
+   */
+  listenOpenedFiles?(listener: (paths: string[]) => void): Promise<() => void>;
   /**
    * OS の言語 (BCP 47 のタグ。Tauri は tauri-plugin-os の `locale()`)。取れなければ `null`。
    * 無ければ WebView の `navigator.languages` を使う (@ugoe/i18n の既定)。
@@ -86,6 +96,9 @@ async function command<T>(...args: Parameters<typeof invoke>): Promise<T> {
     throw commandFailure(e);
   }
 }
+
+/** OS から渡されたファイルを、起動中にバックエンドが送るイベント (`lib.rs` の `OPEN_FILES_EVENT`)。 */
+const OPEN_FILES_EVENT = "open-files";
 
 async function readTauriFile(path: string): Promise<ModelFile> {
   const buffer = await command<ArrayBuffer>("read_model_file", { path });
@@ -134,9 +147,17 @@ const tauriHost: ViewerHost = {
     );
     return Promise.all(paths.map(readTauriFile));
   },
-  async initialModelFile() {
-    const path = await command<string | null>("initial_file");
-    return path === null ? null : readTauriFile(path);
+  async listenOpenedFiles(listener) {
+    // 起動中に渡されたものを取りこぼさないよう、先に待ち受けてから起動時のものを受け取る (バックエンドの `OpenedFiles`)。
+    const unlisten = await listen<string[]>(OPEN_FILES_EVENT, ({ payload }) => listener(payload));
+    try {
+      const paths = await command<string[]>("initial_files");
+      if (paths.length > 0) listener(paths);
+    } catch (e) {
+      unlisten();
+      throw e;
+    }
+    return unlisten;
   },
   async saveJsonFile(name, text) {
     const path = await saveFileDialog(

@@ -123,35 +123,52 @@ function openDialog() {
 }
 
 onMount(() => {
-  void openWith(() => viewerHost().initialModelFile());
   const host = viewerHost();
-  if (host.listenFileDrop === undefined) return;
-  nativeDrop = true;
-  let unlisten: (() => void) | null = null;
+  const initial = host.initialModelFile;
+  if (initial !== undefined) void openWith(() => initial.call(host));
+  const stops: (() => void)[] = [];
   let disposed = false;
-  void host
-    .listenFileDrop((event) => {
-      if (event.type === "hover") {
-        dropping = event.active;
-        dropPreview = event.active && event.paths ? describeDropPaths(event.paths) : null;
-      } else {
-        dropping = false;
-        dropPreview = null;
-        // パスから読むので `path:` の場所が付き、起動し直した後も覚えた組や光源を戻せる (T0713)。
-        void openDropped(
-          event.paths.map((path) => ({ name: path, read: () => readFileAt(`path:${path}`) })),
-        );
-      }
-    })
-    .then((f) => {
-      if (disposed) f();
-      else unlisten = f;
-    });
+  /** 受け取りを始め、やめる関数を覚える (先に画面が消えていたらすぐやめる)。 */
+  const keep = (started: Promise<() => void>) =>
+    void started.then(
+      (stop) => {
+        if (disposed) stop();
+        else stops.push(stop);
+      },
+      (e) => {
+        player.error = errorText(e);
+      },
+    );
+  // OS から渡されたファイル (起動時の引数・「このアプリで開く」。T0732) は、ドロップと同じに開く。
+  if (host.listenOpenedFiles !== undefined) keep(host.listenOpenedFiles(openPaths));
+  if (host.listenFileDrop !== undefined) {
+    nativeDrop = true;
+    keep(
+      host.listenFileDrop((event) => {
+        if (event.type === "hover") {
+          dropping = event.active;
+          dropPreview = event.active && event.paths ? describeDropPaths(event.paths) : null;
+        } else {
+          dropping = false;
+          dropPreview = null;
+          openPaths(event.paths);
+        }
+      }),
+    );
+  }
   return () => {
     disposed = true;
-    unlisten?.();
+    for (const stop of stops) stop();
   };
 });
+
+/**
+ * パスのファイルを、ドロップと同じに開く (モデルを開き、`.ugoemod` は付ける)。パスから読むので `path:` の場所が付き、
+ * 起動し直した後も覚えた組や光源を戻せる (T0713)。
+ */
+function openPaths(paths: readonly string[]) {
+  void openDropped(paths.map((path) => ({ name: path, read: () => readFileAt(`path:${path}`) })));
+}
 
 function onDragOver(e: DragEvent) {
   if (nativeDrop || !e.dataTransfer?.types.includes("Files")) return;
