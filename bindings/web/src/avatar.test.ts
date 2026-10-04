@@ -99,13 +99,15 @@ const fake = (p: WebPuppet | null) => p as unknown as FakePuppet;
 /** マイクロタスクと rAF (happy-dom はタイマーで回す) を流す。 */
 const flush = () => new Promise((r) => setTimeout(r, 30));
 
-/** 解決を外から決める `fetch` の偽物。 */
-function controlledFetch() {
+/** 解決を外から決める `fetch` の偽物。`requests` に呼ばれた順の設定を残す。 */
+function controlledFetch(requests: { key: string; init: RequestInit | undefined }[] = []) {
   const pending = new Map<string, (body: string) => void>();
-  vi.stubGlobal("fetch", (url: URL) => {
+  vi.stubGlobal("fetch", (url: URL, init?: RequestInit) => {
     const key = url.pathname.slice(1);
-    return new Promise<Response>((resolve) => {
+    requests.push({ key, init });
+    return new Promise<Response>((resolve, reject) => {
       pending.set(key, (body) => resolve(new Response(body)));
+      init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
     });
   });
   return (key: string, body: string) => {
@@ -282,5 +284,147 @@ describe("<ugoe-avatar>", () => {
     const loading = avatar.load("model-a");
     document.body.append(avatar);
     await expect(loading).rejects.toThrow("no GPU");
+  });
+
+  it("rejects ready when the puppet cannot be created", async () => {
+    runtime.createError = new Error("no GPU");
+    const errors: Error[] = [];
+    const avatar = newAvatar({ backend: "webgpu" });
+    avatar.addEventListener("error", (e) => errors.push(e.detail.error));
+    document.body.append(avatar);
+    await expect(avatar.ready).rejects.toThrow("no GPU");
+    expect(errors.map((e) => e.message)).toEqual(["no GPU"]);
+    // 作成に失敗した後の `load` は待たせずに reject する
+    await expect(avatar.load("model-a")).rejects.toThrow("no GPU");
+  });
+
+  it("restarts after the puppet could not be created", async () => {
+    const respond = controlledFetch();
+    runtime.createError = new Error("no GPU");
+    const avatar = newAvatar({ backend: "webgpu", src: "a" });
+    avatar.addEventListener("error", () => {});
+    document.body.append(avatar);
+    await expect(avatar.ready).rejects.toThrow("no GPU");
+    avatar.restart();
+    const puppet = fake(await avatar.ready);
+    expect(avatar.puppet).toBe(puppet);
+    await flush();
+    respond("a", "model-a");
+    await flush();
+    expect(puppet.model).toBe("model-a");
+  });
+
+  /** コンテキストを続けて失わせて、作り直しを諦めさせる。 */
+  async function loseRepeatedly(avatar: Avatar) {
+    for (let i = 0; i < 4 && avatar.puppet; i++) {
+      const canvas = fake(avatar.puppet).canvas;
+      canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+      canvas.dispatchEvent(new Event("webglcontextrestored"));
+      await flush();
+    }
+  }
+
+  it("rejects ready after giving up and restarts with the last model", async () => {
+    const avatar = newAvatar({ backend: "webgl2" });
+    avatar.addEventListener("error", () => {});
+    document.body.append(avatar);
+    await avatar.load("model-a");
+    avatar.setParameter("AngleX", 15);
+    await loseRepeatedly(avatar);
+    expect(avatar.puppet).toBeNull();
+    await expect(avatar.ready).rejects.toThrow("the GPU device was lost repeatedly");
+
+    avatar.restart();
+    const puppet = fake(await avatar.ready);
+    await flush();
+    expect(puppet.model).toBe("model-a");
+    // 諦めたときのパラメータの値も引き継ぐ
+    expect(puppet.values.get("AngleX")).toBe(15);
+    // 作り直しの回数も数え直す (もう一度失っても作り直す)
+    const canvas = puppet.canvas;
+    canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    canvas.dispatchEvent(new Event("webglcontextrestored"));
+    const next = fake(await avatar.ready);
+    expect(next).not.toBe(puppet);
+  });
+
+  it("recreates the puppet when the backend changes after giving up", async () => {
+    const avatar = newAvatar({ backend: "webgl2" });
+    avatar.addEventListener("error", () => {});
+    document.body.append(avatar);
+    await avatar.load("model-a");
+    await loseRepeatedly(avatar);
+    await expect(avatar.ready).rejects.toThrow();
+    avatar.setAttribute("backend", "webgpu");
+    const puppet = fake(await avatar.ready);
+    expect(puppet.backend()).toBe("webgpu");
+    await flush();
+    expect(puppet.model).toBe("model-a");
+  });
+
+  it("does nothing on restart while disconnected", async () => {
+    const avatar = newAvatar();
+    avatar.restart();
+    await flush();
+    expect(avatar.puppet).toBeNull();
+    document.body.append(avatar);
+    await avatar.ready;
+    avatar.remove();
+    avatar.restart();
+    await flush();
+    expect(avatar.puppet).toBeNull();
+  });
+
+  it("fetches src with credentials chosen by crossorigin", async () => {
+    const requests: { key: string; init: RequestInit | undefined }[] = [];
+    const respond = controlledFetch(requests);
+    const avatar = newAvatar({ src: "a" });
+    document.body.append(avatar);
+    await flush();
+    respond("a", "model-a");
+    avatar.crossOrigin = "use-credentials";
+    expect(avatar.getAttribute("crossorigin")).toBe("use-credentials");
+    avatar.setAttribute("src", "b");
+    await flush();
+    respond("b", "model-b");
+    avatar.crossOrigin = "anonymous";
+    avatar.setAttribute("src", "c");
+    await flush();
+    expect(requests.map((r) => [r.key, r.init?.credentials])).toEqual([
+      ["a", "same-origin"],
+      ["b", "include"],
+      ["c", "same-origin"],
+    ]);
+    avatar.crossOrigin = null;
+    expect(avatar.hasAttribute("crossorigin")).toBe(false);
+  });
+
+  it("aborts a fetch that is superseded", async () => {
+    const requests: { key: string; init: RequestInit | undefined }[] = [];
+    const respond = controlledFetch(requests);
+    const errors: unknown[] = [];
+    const avatar = newAvatar({ src: "a" });
+    avatar.addEventListener("error", (e) => errors.push(e.detail.error));
+    document.body.append(avatar);
+    await flush();
+    avatar.setAttribute("src", "b");
+    expect(requests[0]?.init?.signal?.aborted).toBe(true);
+    await avatar.load("model-c");
+    expect(requests[1]?.init?.signal?.aborted).toBe(true);
+    avatar.setAttribute("src", "d");
+    avatar.removeAttribute("src");
+    expect(requests[2]?.init?.signal?.aborted).toBe(true);
+    await flush();
+    expect(errors).toEqual([]);
+    // 外しても取得は続ける (戻したら結果を読む)
+    avatar.setAttribute("src", "e");
+    await flush();
+    avatar.remove();
+    expect(requests[3]?.init?.signal?.aborted).toBe(false);
+    document.body.append(avatar);
+    await avatar.ready;
+    respond("e", "model-e");
+    await flush();
+    expect(fake(avatar.puppet).model).toBe("model-e");
   });
 });

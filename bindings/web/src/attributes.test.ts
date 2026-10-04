@@ -3,10 +3,21 @@ import {
   formatParameters,
   isBundle,
   parseBackend,
+  parseCrossOrigin,
   parseIdList,
   parseMotionPriority,
   parseParameters,
 } from "./attributes.js";
+
+describe("parseCrossOrigin", () => {
+  it("sends credentials to other origins only for use-credentials", () => {
+    expect(parseCrossOrigin(" Use-Credentials ")).toBe("include");
+    expect(parseCrossOrigin("anonymous")).toBe("same-origin");
+    expect(parseCrossOrigin("")).toBe("same-origin");
+    expect(parseCrossOrigin("other")).toBe("same-origin");
+    expect(parseCrossOrigin(null)).toBe("same-origin");
+  });
+});
 
 describe("parseIdList", () => {
   it("splits ids on spaces, commas and semicolons and drops duplicates", () => {

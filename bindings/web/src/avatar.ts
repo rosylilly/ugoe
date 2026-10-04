@@ -9,12 +9,21 @@
 // - `motion-over-tracking` (+ `tracking-kept`): トラッキング中も、再生中のモーションが動かすパラメータではモーションを
 //   優先する (`WebPuppet.set_motion_over_tracking`)。`tracking-kept` に並べた ID はトラッキングのまま (T0722)
 // - `paused`: 時間を止める (`update(dt)` を呼ばない。パラメータを変えたときだけ描き直す)
+// - `crossorigin`: `src` の取得の資格情報 (`use-credentials` で別のオリジンにも送る。次の取得から効く)
 //
-// JS からは `setParameter` / `parameters` / `load` / `setTracking` と、ugoe-wasm の `WebPuppet` そのもの (`puppet`) を使う。
+// JS からは `setParameter` / `parameters` / `load` / `setTracking` / `restart` と、ugoe-wasm の `WebPuppet` そのもの (`puppet`) を使う。
+// 作成に失敗したときと GPU を続けて失って諦めたときは、`error` を送って `ready` を reject する。`restart()`・`backend` の変更・
+// 繋ぎ直しで作り直す。
 // フェイストラッキングはホストが入力を渡す口だけを持つ (トラッカーは持たない。ADR 0025)。
 // 画面外 (IntersectionObserver) と `paused` の間は requestAnimationFrame を回さない。
 
-import { parseBackend, parseIdList, parseMotionPriority, parseParameters } from "./attributes.js";
+import {
+  parseBackend,
+  parseCrossOrigin,
+  parseIdList,
+  parseMotionPriority,
+  parseParameters,
+} from "./attributes.js";
 import { createPuppet, loadModel } from "./runtime.js";
 import { type TrackingInput, trackingArguments } from "./tracking.js";
 import { loadWarnings, type UgoeLoadWarning } from "./warnings.js";
@@ -84,20 +93,29 @@ interface LoadWaiter {
 interface Deferred<T> {
   promise: Promise<T>;
   resolve(value: T): void;
+  reject(error: unknown): void;
   settled: boolean;
 }
 
 function deferred<T>(): Deferred<T> {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((r) => {
-    resolve = r;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
   });
+  // 誰も待っていない reject を unhandledrejection にしない (失敗は `error` イベントでも知らせる)
+  promise.catch(() => {});
   const d: Deferred<T> = {
     promise,
     settled: false,
     resolve(value) {
       d.settled = true;
       resolve(value);
+    },
+    reject(error) {
+      d.settled = true;
+      reject(error);
     },
   };
   return d;
@@ -121,10 +139,16 @@ export class UgoeAvatarElement extends BaseElement {
   #canvas: HTMLCanvasElement | null = null;
   #puppet: WebPuppet | null = null;
   #ready = deferred<WebPuppet>();
+  /** 接続している (`connectedCallback` から `disconnectedCallback` まで)。 */
+  #connected = false;
+  /** 作成の失敗か、GPU を続けて失って諦めた理由。作り直しを始めるか切断するまで持つ。 */
+  #failure: Error | null = null;
   /** 接続・切断のたびに増やす。古い非同期の処理の結果を捨てるため。 */
   #session = 0;
   /** `src` の取得のたびに増やす。古い取得の結果を捨てるため。 */
   #fetch = 0;
+  /** 今の `src` の取得を中断するもの。置き換わったら中断する (切断では中断しない)。 */
+  #fetchAbort: AbortController | null = null;
   /** `src` を取得している (切断しても続ける。繋ぎ直したら、古いモデルではなく取得の結果を読む)。 */
   #fetching = false;
   /** 最後に読み込めたモデル。作り直したときに読み直す (読み込めなかったものは覚えない)。 */
@@ -175,6 +199,15 @@ export class UgoeAvatarElement extends BaseElement {
     this.setAttribute("src", value);
   }
 
+  /** `src` の取得の資格情報 (`crossorigin` 属性。`"use-credentials"` で別のオリジンにも送る)。`null` で属性を消す。 */
+  get crossOrigin(): string | null {
+    return this.getAttribute("crossorigin");
+  }
+  set crossOrigin(value: string | null) {
+    if (value === null) this.removeAttribute("crossorigin");
+    else this.setAttribute("crossorigin", value);
+  }
+
   /** 時間を止めているか (`paused` 属性)。 */
   get paused(): boolean {
     return this.hasAttribute("paused");
@@ -188,7 +221,11 @@ export class UgoeAvatarElement extends BaseElement {
     return this.#puppet;
   }
 
-  /** `WebPuppet` ができたら解決する。切断して繋ぎ直すと新しい `WebPuppet` を待つ Promise に変わる。 */
+  /**
+   * `WebPuppet` ができたら解決する。作成に失敗したときと、GPU を続けて失って作り直しを諦めたときは、その理由で reject する
+   * (`error` イベントも送る)。作り直し (`restart()`・`backend` の変更・GPU の喪失) や切断で、新しい `WebPuppet` を待つ
+   * Promise に変わる (前の Promise が解決か reject していたとき)。
+   */
   get ready(): Promise<WebPuppet> {
     return this.#ready.promise;
   }
@@ -288,12 +325,15 @@ export class UgoeAvatarElement extends BaseElement {
   /**
    * モデルを読み込む (`src` 属性の代わりに、バイト列や JSON の文字列を渡す)。戻り値は警告の文。
    * 接続前に呼ぶと、`WebPuppet` ができてから読み込む (作成や読み込みに失敗したら reject する。
-   * その前に `src` を変えると `AbortError` で reject する)。読み込めなかったモデルは、作り直したときにも読み直さない。
+   * その前に `src` を変えると `AbortError` で reject する)。作成に失敗した後や諦めた後 (`ready` が reject した後) は、
+   * 待たずにその理由で reject する (`restart()` してから呼び直す)。読み込めなかったモデルは、作り直したときにも読み直さない。
    */
   async load(data: ModelData): Promise<string[]> {
     this.#fetch++; // 取得中の `src` があっても、こちらを優先する
     this.#fetching = false;
+    this.#abortFetch();
     if (this.#puppet) return this.#applyModelOrThrow(data);
+    if (this.#failure) throw this.#failure;
     this.#pendingModel = data;
     return new Promise((resolve, reject) => this.#loadWaiters.push({ resolve, reject }));
   }
@@ -335,6 +375,17 @@ export class UgoeAvatarElement extends BaseElement {
     super.removeEventListener(type, listener, options);
   }
 
+  /**
+   * `WebPuppet` を作り直す。作成に失敗した後や、GPU を続けて失って諦めた後のやり直しに使う (作り直しの回数も数え直す)。
+   * 最後に読み込めたモデル (取得中の `src` があればその結果) を読み直し、パラメータの値は引き継ぐ。接続していなければ何もしない。
+   */
+  restart(): void {
+    if (!this.#connected) return;
+    this.#restarts = 0;
+    this.#restartedAt = null;
+    this.#recreate();
+  }
+
   /** 次のフレームで描き直す (`puppet` を直接操作したとき用)。 */
   requestRender(): void {
     this.#needsRender = true;
@@ -342,16 +393,20 @@ export class UgoeAvatarElement extends BaseElement {
   }
 
   connectedCallback(): void {
+    this.#connected = true;
     void this.#start();
   }
 
   disconnectedCallback(): void {
+    this.#connected = false;
+    this.#failure = null;
     this.#stop();
   }
 
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void {
     // 開始前 (パーサーが作った要素の昇格など) は `#start` がまとめて適用する。
-    if (oldValue === newValue || !this.#canvas) return;
+    // 作成に失敗した後や諦めた後も、属性は覚えておき (`src` は取得する)、`backend` の変更なら作り直す。
+    if (oldValue === newValue || !this.#connected) return;
     switch (name) {
       case "src":
         void this.#fetchSrc();
@@ -385,15 +440,13 @@ export class UgoeAvatarElement extends BaseElement {
   async #start(): Promise<void> {
     if (this.#canvas) return;
     const session = ++this.#session;
+    this.#failure = null;
     this.#observe();
     let puppet: WebPuppet;
     try {
       puppet = await this.#create(session);
     } catch (e) {
-      if (session === this.#session) {
-        this.#rejectLoads(e);
-        this.#dispatchError(e);
-      }
+      if (session === this.#session) this.#fail(e);
       return;
     }
     if (session !== this.#session) {
@@ -454,7 +507,7 @@ export class UgoeAvatarElement extends BaseElement {
     });
     canvas.addEventListener("webglcontextrestored", () => {
       // wgpu の資源は戻らないので、新しい canvas で作り直す
-      if (canvas === this.#canvas) this.#restart();
+      if (canvas === this.#canvas) this.#onLost();
     });
     this.#resizeObserver?.disconnect();
     this.#resizeObserver?.observe(canvas);
@@ -513,25 +566,38 @@ export class UgoeAvatarElement extends BaseElement {
     void this.#start();
   }
 
-  /** GPU を失ったので作り直す。 */
-  #restart(): void {
+  /** GPU を失ったので作り直す。続けて失ったら諦める (`restart()` までは作らない)。 */
+  #onLost(): void {
     const now = performance.now();
     if (this.#restartedAt !== null && now - this.#restartedAt > RESTART_WINDOW_MS)
       this.#restarts = 0;
     this.#restartedAt = now;
     if (this.#restarts >= MAX_RESTARTS) {
+      // `restart()` で作り直したときに戻せるように、パラメータの値は覚えておく
+      if (this.#puppet?.has_model()) this.#carry = this.parameters;
       this.#stop();
-      this.#dispatchError(new Error("the GPU device was lost repeatedly"));
+      this.#fail(new Error("the GPU device was lost repeatedly"));
       return;
     }
     this.#restarts++;
     this.#recreate();
   }
 
+  /** 作成の失敗・諦めたことを知らせる (`ready` と作成を待つ `load` を reject し、`error` を送る)。 */
+  #fail(e: unknown): void {
+    const error = e instanceof Error ? e : new Error(String(e));
+    this.#failure = error;
+    this.#rejectLoads(error);
+    if (this.#ready.settled) this.#ready = deferred();
+    this.#ready.reject(error);
+    this.#dispatchError(error);
+  }
+
   // --- モデル ---
 
   async #fetchSrc(): Promise<void> {
     const token = ++this.#fetch;
+    this.#abortFetch();
     // 作成を待っている `load` は、こちらで置き換わる
     this.#rejectLoads(new DOMException("the load was superseded by src", "AbortError"));
     const src = this.src;
@@ -544,8 +610,13 @@ export class UgoeAvatarElement extends BaseElement {
       return;
     }
     this.#fetching = true;
+    const abort = new AbortController();
+    this.#fetchAbort = abort;
     try {
-      const response = await fetch(new URL(src, document.baseURI));
+      const response = await fetch(new URL(src, document.baseURI), {
+        credentials: parseCrossOrigin(this.getAttribute("crossorigin")),
+        signal: abort.signal,
+      });
       if (!response.ok) {
         throw new Error(`failed to fetch ${src}: ${response.status} ${response.statusText}`);
       }
@@ -557,7 +628,14 @@ export class UgoeAvatarElement extends BaseElement {
       if (token === this.#fetch) this.#dispatchError(e);
     } finally {
       if (token === this.#fetch) this.#fetching = false;
+      if (this.#fetchAbort === abort) this.#fetchAbort = null;
     }
+  }
+
+  /** 取得中の `src` を中断する (結果は `#fetch` の番号で捨てる)。 */
+  #abortFetch(): void {
+    this.#fetchAbort?.abort();
+    this.#fetchAbort = null;
   }
 
   /** `model` を読み込み、属性の状態 (パラメータ・表情・モーション) を適用して `load` を送る。 */
@@ -663,7 +741,7 @@ export class UgoeAvatarElement extends BaseElement {
     const puppet = this.#puppet;
     if (!puppet) return;
     if (puppet.is_lost()) {
-      this.#restart();
+      this.#onLost();
       return;
     }
     if (this.#animating()) {
@@ -682,7 +760,7 @@ export class UgoeAvatarElement extends BaseElement {
       puppet.render();
     } catch (e) {
       if (puppet.is_lost()) {
-        this.#restart();
+        this.#onLost();
         return;
       }
       this.#dispatchError(e);

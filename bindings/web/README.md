@@ -33,6 +33,7 @@ WebGPU が使えれば WebGPU、使えなければ WebGL2 で描きます。ラ�
 | `motion-over-tracking` | 付けると、トラッキング中も、再生中のモーションが動かすパラメータではモーションを優先する (下の「[フェイストラッキング](#フェイストラッキング)」。T0722) |
 | `tracking-kept` | `motion-over-tracking` でもトラッキングのままにするパラメータの ID (`"EyeLOpen EyeROpen"`。区切りは空白・`,`・`;`) |
 | `paused` | 時間を止める (物理・モーション・目パチ・呼吸を進めない)。パラメータを変えたときだけ描き直す |
+| `crossorigin` | `src` の取得の資格情報 (`<img crossorigin>` と同じ対応)。`use-credentials` なら別のオリジンにも Cookie などを送る (`credentials: "include"`)。省略・`anonymous` は同じオリジンにだけ送る (`fetch` の既定)。次の取得から効く (変えただけでは取り直さない)。プロパティは `crossOrigin` |
 
 パラメータの ID は大文字と小文字を区別します (HTML の属性名は小文字になるので、パラメータごとの属性にはしていません)。
 
@@ -56,7 +57,7 @@ avatar.parameters;                         // { AngleX: -20, AngleY: 10, ... } (
 avatar.parameterDefinitions;               // [{ id, name, min, max, default, ... }]
 await avatar.load(bytesOrJsonString);      // src の代わりに直接読み込む。戻り値は文の警告
 avatar.warningDetails;                     // 最後の読み込みの警告の構造 (avatar.warnings と同じ順)
-const puppet = await avatar.ready;         // WebPuppet そのもの (下)
+const puppet = await avatar.ready;         // WebPuppet そのもの (下)。作成に失敗したら reject (下の「失敗とやり直し」)
 puppet.set_lighting_json(JSON.stringify({ ambient: [0.5, 0.5, 0.5] }));
 avatar.requestRender();                    // puppet を直接操作したら描き直しを頼む
 avatar.setTracking({ blendshapes: { jawOpen: 0.4 }, head: { yaw: 10, pitch: 0, roll: 0 } }); // 下の「フェイストラッキング」
@@ -69,7 +70,25 @@ avatar.clearTracking();
   WebGL2 では、canvas の `webglcontextlost` で描くのを止め、`webglcontextrestored` を待ってから作り直します
   (wgpu は WebGL2 の喪失を `puppet.is_lost()` で知らせないため)。前の作り直しから 1 分以内に失うことが続き、4 回目になったら、作り直さずに `error` を送ります。
 - ページから外すと GPU の資源を捨て、戻すと作り直します。取得中の `src` は外しても続け、戻したらその結果を読み込みます。
+  `src` を変えたり `load()` を呼んだりして置き換わった取得は中断します (`AbortController`)。
 - 読み込めなかったモデル (`load` の reject・`src` の `error`) は覚えず、作り直したときは最後に読み込めたモデルを読み直します。
+- 失敗とやり直し:
+  - `WebPuppet` の作成に失敗したとき (`auto` なら WebGL2 でも失敗したとき) と、GPU を続けて失って作り直しを諦めたとき
+    (`the GPU device was lost repeatedly`) は、`error` を送り、`ready` をその理由で reject します。
+    誰も `ready` を待っていなくても unhandledrejection にはなりません。
+  - その状態では、作成を待つ `load()` も reject し、後から呼んだ `load()` も待たずに reject します。`src` などの属性は覚えておきます。
+  - やり直すには `avatar.restart()` を呼ぶか、`backend` を変えるか、ページから外して戻します。最後に読み込めたモデル
+    (取得中の `src` があればその結果) を読み直し、パラメータの値は引き継ぎます。`restart()` は作り直しの回数も数え直します。
+  - 作り直しを始めると、`ready` は新しい `WebPuppet` を待つ Promise に変わります (`await avatar.ready` は作り直すたびに取り直す)。
+
+  ```ts
+  try {
+    await avatar.ready;
+  } catch (e) {
+    showRetryButton(() => avatar.restart()); // GPU が戻ったら利用者に押してもらう、など
+  }
+  ```
+
 - 別の名前で登録するなら、`@ugoe/runtime/element` の代わりに `defineUgoeAvatar("my-avatar")` を呼びます。
 - イベントの型は `UgoeAvatarElementEventMap` (`load`: `CustomEvent<UgoeAvatarLoadDetail>`、`error`: `CustomEvent<UgoeAvatarErrorDetail>`)。
   `UgoeAvatarElement` の `addEventListener` / `removeEventListener` はこれで `e.detail` を型付けします

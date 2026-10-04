@@ -59,3 +59,12 @@ export function parseMotionPriority(value: string | null | undefined): MotionPri
   const v = value?.trim().toLowerCase();
   return v === "normal" || v === "force" ? v : "idle";
 }
+
+/**
+ * `crossorigin` 属性の値を `src` の取得の資格情報にする (`<img crossorigin>` と同じ対応)。
+ * `use-credentials` は `"include"` (別のオリジンにも Cookie などを送る)。省略・`anonymous`・知らない値は
+ * `"same-origin"` (`fetch` の既定。同じオリジンにだけ送る)。
+ */
+export function parseCrossOrigin(value: string | null | undefined): RequestCredentials {
+  return value?.trim().toLowerCase() === "use-credentials" ? "include" : "same-origin";
+}
