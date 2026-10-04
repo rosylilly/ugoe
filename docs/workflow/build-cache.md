@@ -58,9 +58,10 @@ mbx doctor                   # 確認する。`cargo on PATH` が shim を指し
   ハードリンクで、読み取り専用になる (`mbx doctor` の `restore ... cannot clone; restores hard link` の行)。mbx はコンパイラが書き直す前に
   リンクを外すが、mbx を通さない cargo が同じ `target` でそれを書き直そうとすると `output file ... is not writeable` で失敗しうる。
   `mbx clean` か `cargo clean` で直す。btrfs・XFS・APFS ではコピーオンライトの複製になるので起きない。
-- **incremental のコンパイルは共有の置き場を通らない。** ワークスペースのクレートの dev のビルドは各 worktree で作られる
-  (依存クレートだけが置き場から戻る)。テストの実行ファイルのリンクも worktree ごとに行われるので、worktree ごとの managed target には
-  なお 15GB ほどの固有の成果物が溜まる (T0018 の計測)。
+- **worktree ごとに固有の成果物が残る。** テストの実行ファイルのリンクなどは worktree ごとに行われるので、worktree ごとの
+  managed target には固有の成果物が溜まる。既定のデバッグ情報 (`debug = true`) では `just ci` の後で 12〜15GB になる (T0018・T0021 の計測)。
+  .worktrees/ の下の worktree ではデバッグ情報を減らして小さくする ([下](#worktree-のデバッグ情報))。
+  mbx を通したビルドでは、incremental の状態は `target/debug/incremental` ではなく `~/.cache/mbx/incremental/` に置かれ、1 つ数 MB だった。
 
 ## 計測 (T0018、Linux・ext4・WSL2、mbx 1.22.0)
 
@@ -72,6 +73,46 @@ mbx doctor                   # 確認する。`cargo on PATH` が shim を指し
 | 新しい worktree で最初の `just ci` (別の worktree で一度通した後) | 195 秒 | clippy 744 hits / 31 misses、test 675 hits / 35 misses |
 
 `just ci` は前の worktree で通っていない状態からだと 297 秒でした (置き場にあったのは main で一度ビルドした分だけ)。
+
+## worktree のデバッグ情報
+
+`just wt-add` は `.worktrees/.cargo/config.toml` を書き、**.worktrees/ の下の worktree だけ** dev のデバッグ情報を行の表だけ
+(`debug = "line-tables-only"`) にする (`scripts/lib/worktree-cargo-config.mjs`。T0021)。mbx が無効なときは書かない
+(コピーする main の `target/` は `debug = true` の成果物なので、設定が違うと使われずに作り直しになる)。
+
+- cargo は実行したディレクトリから上へ `.cargo/config.toml` を探すので、この設定は worktree で動くすべての cargo
+  (just のレシピ・lefthook の pre-push・rust-analyzer) に効き、main の作業ツリーには効かない。.worktrees/ は gitignore されているので、
+  どのチェックアウトにも未追跡のファイルは増えない。just のレシピだけに環境変数を足す方法は採らない (pre-push など just を通らない cargo と
+  設定が食い違うと、別の成果物として両方が溜まり、かえって大きくなる)。
+- **残るもの:** パニックのバックトレースのファイルと行 (`at ./tests/foo.rs:4:18`)。テストの失敗の場所はこれまでどおり分かる。
+- **失うもの:** デバッガで変数・引数・型を見ること (行の表しか無いので、ブレークポイントとステップ実行はできるが値は見えない)。
+  必要なら、その場で `CARGO_PROFILE_DEV_DEBUG=true` を付けて cargo を呼ぶ (環境変数は設定ファイルより強い)。ただし別の成果物として
+  ビルドし直すので、終わったら `mbx clean` で片付けるとよい。ずっと要るなら `.worktrees/.cargo/config.toml` の 1 行目を消して手で直す
+  (1 行目のしるしが無いファイルは `just wt-add` が書き直さない)。
+- **ワークスペースの `Cargo.toml` の `[profile.dev]` は変えない。** main の作業ツリーや、worktree を使わない開発者のデバッグの体験は
+  今のまま (`debug = true`) にする。1 つのチェックアウトだけで作業する機械では、成果物の大きさは問題になりにくい。
+- 設定を変えた後の最初のビルドは、依存クレートも含めて作り直す (rustc の引数が変わり、mbx の置き場に当たらない)。
+  既存の worktree では古い設定の成果物も残るので、`mbx clean` してからビルドすると小さくなる。
+
+### 計測 (T0021)
+
+1 つの worktree で `mbx clean` してから `just ci` を流し、`target/` (managed target) の大きさを測った。
+「固有」はリンクの数が 1 のファイル (mbx の置き場へのハードリンクでないもの) の合計で、worktree ごとに増える分。
+Linux・ext4・WSL2・24 コア・mbx 1.22.0。**ほかに 7 つ前後のワーカーが並行してビルドしていた** (load average 7〜33) ので、時間は ±数十% の幅で見る。
+`just ci` は無関係な vitest の失敗 (web-check) で止まったので、時間は fmt-check から web-check までの分 (Rust の検査はすべて含む)。
+
+| 設定 | target 全体 | 固有 | `just ci` | 備考 |
+| --- | --- | --- | --- | --- |
+| `debug = true` (今の既定)、1 回目 | 21.0GiB | 11.9GiB | 324 秒 | 依存クレートは置き場から |
+| `debug = true`、2 回目 | 21.0GiB | 14.3GiB | 275 秒 | 間に置き場の gc があり 96 misses |
+| `debug = "line-tables-only"`、1 回目 | 9.8GiB | 8.0GiB | 459 秒 | 置き場に無く、依存クレートも作り直した |
+| **`debug = "line-tables-only"`、2 回目 (採る)** | **9.8GiB** | **2.7GiB** | **138 秒** | test 724 hits / 1 miss |
+| `split-debuginfo = "unpacked"` (`debug = true`)、1 回目 | 11.8GiB | 10.2GiB | 372 秒 | mbx が 121 件を置き場に入れられない (bypassed) |
+| `debug = 0`、1 回目 | 4.9GiB | 3.9GiB | 359 秒 | バックトレースにファイルと行が出ない |
+
+- `debug = 0` は最も小さいが、バックトレースに関数の名前しか出ず、テストの失敗の場所を追いにくくなるので採らない。
+- `split-debuginfo = "unpacked"` は .dwo を分けるだけで合計はあまり減らず、mbx が分けたファイルを置き場に入れられない。
+- 時間は、2 回目どうしで `line-tables-only` が `debug = true` の半分ほどだった。ただし `debug = true` の 2 回目は置き場の gc で misses が出ており、負荷も違うので、差は割り引いて見る。遅くならないことは言える。
 
 ## CI には入れない
 

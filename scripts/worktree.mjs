@@ -13,11 +13,24 @@
 // - 更新時刻を保つ (cargo は更新時刻で再ビルドの要否を判断するため)
 // - reflink に対応したファイルシステム (btrfs / XFS / APFS) ではコピーオンライトで一瞬で終わる
 // node_modules は pnpm のストアからハードリンクされるので、`pnpm install --offline` で十分速い。
+//
+// add では、mbx が有効なら .worktrees/ の下の worktree だけに効く cargo の設定 `.worktrees/.cargo/config.toml` も書く
+// (dev のデバッグ情報を行の表だけにする。scripts/lib/worktree-cargo-config.mjs)。
 
 import { execFileSync } from "node:child_process";
-import { constants, cpSync, existsSync, lstatSync, readdirSync } from "node:fs";
+import {
+  constants,
+  cpSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { mbxEnabled } from "./lib/mbx.mjs";
+import { CARGO_CONFIG, cargoConfigAction } from "./lib/worktree-cargo-config.mjs";
 
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { stdio: "inherit", ...opts });
 const capture = (cmd, args, opts = {}) =>
@@ -55,9 +68,26 @@ function add(id, slug = taskSlug(id)) {
   }
   run("git", ["worktree", "add", path, "-b", branch, "main"], { cwd: root });
 
+  // mbx が無効なときは書かない。コピーする main の target/ は `debug = true` なので、設定が違うと使われない
+  if (mbxEnabled()) writeCargoConfig();
   copyTarget(path);
   run("pnpm", ["install", "--offline"], { cwd: path });
   console.log(`\nready: ${relative(root, path)} (branch ${branch})`);
+}
+
+// .worktrees/.cargo/config.toml を書く。手で書いたものは上書きしない
+function writeCargoConfig() {
+  const dir = join(root, ".worktrees", ".cargo");
+  const file = join(dir, "config.toml");
+  const current = existsSync(file) ? readFileSync(file, "utf8") : undefined;
+  const action = cargoConfigAction(current);
+  if (action === "write") {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(file, CARGO_CONFIG);
+    console.log(`wrote ${relative(root, file)} (dev のデバッグ情報を行の表だけにする)`);
+  } else if (action === "skip") {
+    console.log(`${relative(root, file)} は手で書かれているので書き直しません`);
+  }
 }
 
 function copyTarget(path) {

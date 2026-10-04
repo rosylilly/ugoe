@@ -45,6 +45,7 @@ cd .worktrees/T0104
 - `git worktree add .worktrees/<ID> -b task/<ID>-<slug> main`
 - mbx (ビルドのキャッシュ。[build-cache.md](build-cache.md)) が有効なら、`target/` はコピーしない。依存クレートの成果物は mbx の置き場から戻る (実測: 新しい worktree で最初の `just crate ugoe-runtime` が 3〜14 秒、`just ci` が約 200 秒)
 - mbx が無効なら、main の作業ツリーの `target/` をコピーする。ワークスペースのクレートの incremental キャッシュは除き、更新時刻は保つ。これにより依存クレートのビルドを省ける (実測: 最初からビルドすると約 120 秒、コピーすると約 20 秒。ただしコピーそのものに 1 つ 2〜5 分・約 30GB かかる)
+- mbx が有効なら `.worktrees/.cargo/config.toml` を書き、.worktrees/ の下の worktree だけ dev のデバッグ情報を行の表だけにする (成果物を 1 つ約 21GB から約 10GB に。パニックのファイルと行は残る。[build-cache.md](build-cache.md#worktree-のデバッグ情報))
 - `pnpm install --offline` を実行する (Git フックが worktree 内の `node_modules` を使うため。pnpm のストアからハードリンクされるので約 1 秒)
 
 mbx が無効のとき、コピー元になる main の `target/` は、ツールチェインの更新などで古い成果物が溜まると大きくなり、コピーが遅くなります。肥大化したら main で `cargo clean` してから `just ci` で作り直してください。多くの worktree を並行して作る機械では、mbx を入れることを推奨します ([build-cache.md](build-cache.md))。
