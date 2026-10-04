@@ -22,7 +22,7 @@ use crate::inference::{MirrorReport, RederiveWarning};
 use crate::module_project::{ModuleBase, ModuleContext, ModuleError};
 use crate::motion_edit::{self, Animations};
 use crate::texture::{Textures, is_valid_texture_name, png_size};
-use crate::{Command, automesh, avatar, inference, keyform};
+use crate::{Command, automesh, avatar, cleanup, inference, keyform};
 use crate::{
     deformer_edit, depth, draw_clone, glue_edit, mesh_edit, physics_edit, physics_template,
     slot_edit,
@@ -418,6 +418,12 @@ impl Document {
             &mut mirrored,
             &mut next.physics,
         )?;
+        cleanup::forget_removed(
+            &self.current.model,
+            self.current.physics.as_ref(),
+            &mut next.model,
+            &mut next.physics,
+        );
         if let Some(context) = &next.module {
             context.normalize(&mut next.model, &mut touched)?;
         }
@@ -425,12 +431,6 @@ impl Document {
         draw_clone::follow(&self.current.model, &mut next.model)?;
         let mut warnings = inference::rederive(&mut next.model, &touched)?;
         inference::check_reparented_pairs(&self.current.model, &next.model, &mut warnings);
-        physics_edit::forget_removed(&self.current.model, &next.model, &mut next.physics);
-        slot_edit::forget_removed_colliders(
-            self.current.physics.as_ref(),
-            next.physics.as_ref(),
-            &mut next.model,
-        );
         let before = validate(&self.current.model);
         let mut introduced: Vec<_> = validate(&next.model)
             .into_iter()
@@ -777,10 +777,7 @@ fn apply_to(
             ensure_new(&model.parts, "part", &part.id, |p| &p.id)?;
             model.parts.push(part);
         }
-        Command::RemovePart { id } => {
-            remove_part(model, &id)?;
-            inference::forget_missing_mirror_sources(model);
-        }
+        Command::RemovePart { id } => remove_part(model, &id)?,
         Command::RenamePart { id, name } => part(model, &id)?.name = name,
         Command::SetPartParent { id, parent } => part(model, &id)?.parent = parent,
         Command::SetPartKeyforms { id, keyforms } => {
@@ -791,10 +788,7 @@ fn apply_to(
             ensure_new(&model.deformers, "deformer", &deformer.id, |d| &d.id)?;
             model.deformers.push(deformer);
         }
-        Command::RemoveDeformer { id } => {
-            remove_deformer(model, &id)?;
-            inference::forget_missing_mirror_sources(model);
-        }
+        Command::RemoveDeformer { id } => remove_deformer(model, &id)?,
         Command::RenameDeformer { id, name } => deformer(model, &id)?.name = name,
         Command::SetDeformerParent { id, parent } => deformer(model, &id)?.parent = parent,
         Command::SetDeformerPart { id, part } => deformer(model, &id)?.part = part,
@@ -826,10 +820,7 @@ fn apply_to(
             ensure_new(&model.meshes, "mesh", &mesh.id, |m| &m.id)?;
             model.meshes.push(mesh);
         }
-        Command::RemoveMesh { id } => {
-            remove_mesh(model, &id)?;
-            inference::forget_missing_mirror_sources(model);
-        }
+        Command::RemoveMesh { id } => remove_mesh(model, &id)?,
         Command::RenameMesh { id, name } => mesh(model, &id)?.name = name,
         Command::SetMeshProperties {
             id,
@@ -1059,7 +1050,6 @@ fn apply_to(
         Command::UnwrapDeformer { id } => {
             deformer_edit::unwrap(model, &id, touched)?;
             remove_deformer(model, &id)?;
-            inference::forget_missing_mirror_sources(model);
         }
         Command::AddMotion { motion } => motion_edit::add_motion(anim, model, motion)?,
         Command::RemoveMotion { name } => motion_edit::remove_motion(anim, &name)?,
@@ -1183,10 +1173,7 @@ fn apply_to(
             glue_edit::create(model, id, mesh_a, mesh_b, distance)?;
         }
         Command::SetGlue { glue, distance } => glue_edit::set(model, glue, distance)?,
-        Command::RemoveGlue { id } => {
-            glue_edit::remove(model, id.as_str())?;
-            inference::forget_missing_mirror_sources(model);
-        }
+        Command::RemoveGlue { id } => glue_edit::remove(model, id.as_str())?,
         Command::AddSlot { slot } => slot_edit::add(model, physics.as_ref(), slot)?,
         Command::SetSlot { id, slot } => slot_edit::set(model, physics.as_ref(), &id, slot)?,
         Command::RemoveSlot { id } => slot_edit::remove(model, &id)?,
@@ -1296,8 +1283,8 @@ fn pair<T, K: PartialEq + Clone + Display>(
     Ok(changed)
 }
 
-/// パラメータを削除し、参照を外す: キーフォーム格子の軸は既定値の断面に畳み、
-/// 他のパラメータの `mirror` とエフェクトの対象からは取り除く。
+/// パラメータを削除し、キーフォーム格子の軸を既定値の断面に畳む。
+/// 他の要素からの参照は適用の後に [`cleanup::forget_removed`] が外す。
 fn remove_parameter(model: &mut Model, id: &ParamId) -> Result<(), EditError> {
     let index = model
         .parameters
@@ -1329,23 +1316,11 @@ fn remove_parameter(model: &mut Model, id: &ParamId) -> Result<(), EditError> {
     for glue in &mut model.glues {
         grid::collapse_axis(&mut glue.keyforms, id, default);
     }
-
-    for param in &mut model.parameters {
-        if param.mirror.as_ref() == Some(id) {
-            param.mirror = None;
-        }
-    }
-    let effects = &mut model.effects;
-    effects.eye_blink.parameters.retain(|p| p != id);
-    effects.breath.parameters.retain(|b| &b.parameter != id);
-    effects.lip_sync.parameters.retain(|p| p != id);
-    for slot in &mut model.slots {
-        slot.parameters.retain(|p| p != id);
-    }
     Ok(())
 }
 
-/// パーツを削除する。子パーツ・所属する要素があれば拒否し、ポーズからは取り除く。
+/// パーツを削除する。子パーツ・所属する要素があれば拒否する。
+/// ポーズなどからの参照は適用の後に [`cleanup::forget_removed`] が外す。
 fn remove_part(model: &mut Model, id: &PartId) -> Result<(), EditError> {
     let index = model
         .parts
@@ -1378,22 +1353,11 @@ fn remove_part(model: &mut Model, id: &PartId) -> Result<(), EditError> {
         .collect();
     ensure_no_children("part", id, children)?;
     model.parts.remove(index);
-    for slot in &mut model.slots {
-        slot.replaces.retain(|p| p != id);
-        slot.pose_parts.retain(|p| p != id);
-    }
-
-    for group in &mut model.pose.groups {
-        group.entries.retain(|e| &e.part != id);
-        for entry in &mut group.entries {
-            entry.links.retain(|l| l != id);
-        }
-    }
-    model.pose.groups.retain(|g| !g.entries.is_empty());
     Ok(())
 }
 
 /// デフォーマを削除する。子デフォーマ・子メッシュがあれば拒否する。
+/// 他の要素からの参照は適用の後に [`cleanup::forget_removed`] が外す。
 fn remove_deformer(model: &mut Model, id: &DeformerId) -> Result<(), EditError> {
     let index = model
         .deformers
@@ -1419,16 +1383,11 @@ fn remove_deformer(model: &mut Model, id: &DeformerId) -> Result<(), EditError> 
         .collect();
     ensure_no_children("deformer", id, children)?;
     model.deformers.remove(index);
-    for deformer in &mut model.deformers {
-        if deformer.mirror.as_ref() == Some(id) {
-            deformer.mirror = None;
-        }
-    }
     Ok(())
 }
 
-/// メッシュを削除する。マスクの参照から外し、このメッシュを使うグルーと当たり判定を削除する
-/// (その当たり判定を指すアバタープロファイルの標準の当たり判定も外す)。
+/// メッシュを削除し、このメッシュを使うグルーと当たり判定も削除する。
+/// マスク・対などからの参照は適用の後に [`cleanup::forget_removed`] が外す。
 fn remove_mesh(model: &mut Model, id: &MeshId) -> Result<(), EditError> {
     let index = model
         .meshes
@@ -1439,20 +1398,8 @@ fn remove_mesh(model: &mut Model, id: &MeshId) -> Result<(), EditError> {
             id: id.to_string(),
         })?;
     model.meshes.remove(index);
-    for mesh in &mut model.meshes {
-        mesh.masks.retain(|m| &m.mesh != id);
-    }
     model.glues.retain(|g| &g.mesh_a != id && &g.mesh_b != id);
     model.hit_areas.retain(|h| &h.mesh != id);
-    avatar::forget_removed_hit_areas(model);
-    for slot in &mut model.slots {
-        slot.mask_sources.retain(|m| m != id);
-    }
-    for mesh in &mut model.meshes {
-        if mesh.mirror.as_ref() == Some(id) {
-            mesh.mirror = None;
-        }
-    }
     Ok(())
 }
 

@@ -6,7 +6,7 @@
 //! ここでは ID の形式と重複、衝突体の参照、ほかのスロットとの描画順の範囲の重なりを検査する。
 
 use ugoe_model::module::{DrawOrderRange, Slot, SlotId};
-use ugoe_model::physics::{ColliderId, PhysicsSettings};
+use ugoe_model::physics::PhysicsSettings;
 use ugoe_model::{DeformerId, Model, PartId};
 
 use crate::document::EditError;
@@ -67,7 +67,8 @@ pub(crate) fn set(
     Ok(())
 }
 
-/// [`crate::Command::RemoveSlot`]。スロットを消し、アバタープロファイルの `slots` からも外す。
+/// [`crate::Command::RemoveSlot`]。スロットを消す。アバタープロファイルの `slots` からは、
+/// 適用の後に `cleanup::forget_removed` が外す。
 pub(crate) fn remove(model: &mut Model, id: &SlotId) -> Result<(), EditError> {
     let index = model
         .slots
@@ -75,9 +76,6 @@ pub(crate) fn remove(model: &mut Model, id: &SlotId) -> Result<(), EditError> {
         .position(|s| &s.id == id)
         .ok_or_else(|| not_found(id))?;
     model.slots.remove(index);
-    if let Some(avatar) = &mut model.avatar {
-        avatar.slots.retain(|s| s != id);
-    }
     Ok(())
 }
 
@@ -170,28 +168,4 @@ pub(crate) fn parented_to(model: &Model, id: &PartId) -> Vec<String> {
         .filter(|s| s.part.as_ref() == Some(id))
         .map(|s| format!("slot `{}`", s.id))
         .collect()
-}
-
-/// 物理の設定から消えた衝突体を、スロットの `colliders` から外す (`remove_physics_collider` の連鎖)。
-pub(crate) fn forget_removed_colliders(
-    before: Option<&PhysicsSettings>,
-    after: Option<&PhysicsSettings>,
-    model: &mut Model,
-) {
-    let Some(before) = before else {
-        return;
-    };
-    let exists = |id: &ColliderId| after.is_some_and(|p| p.colliders.iter().any(|c| &c.id == id));
-    let removed: Vec<&ColliderId> = before
-        .colliders
-        .iter()
-        .map(|c| &c.id)
-        .filter(|id| !exists(id))
-        .collect();
-    if removed.is_empty() {
-        return;
-    }
-    for slot in &mut model.slots {
-        slot.colliders.retain(|c| !removed.contains(&c));
-    }
 }

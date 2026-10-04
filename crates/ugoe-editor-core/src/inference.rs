@@ -590,53 +590,6 @@ fn dependents(model: &mut Model, source: &KeyformTarget) -> Vec<KeyformTarget> {
         .collect()
 }
 
-/// 削除などで存在しなくなった要素をミラー元にしている格子から、ミラー元の記録を外す。
-/// その格子のミラーのセルは作り直せなくなるので `authored` にする (値は変えない)。
-pub(crate) fn forget_missing_mirror_sources(model: &mut Model) {
-    let targets: Vec<KeyformTarget> = model
-        .parts
-        .iter()
-        .map(|p| KeyformTarget::Part(p.id.clone()))
-        .chain(
-            model
-                .meshes
-                .iter()
-                .map(|m| KeyformTarget::Mesh(m.id.clone())),
-        )
-        .chain(
-            model
-                .deformers
-                .iter()
-                .map(|d| KeyformTarget::Deformer(d.id.clone())),
-        )
-        .chain(
-            model
-                .glues
-                .iter()
-                .map(|g| KeyformTarget::Glue(g.id.clone())),
-        )
-        .collect();
-    for target in targets {
-        let Some(source) = grid_view(model, &target)
-            .ok()
-            .and_then(|view| view.mirror_source.clone())
-        else {
-            continue;
-        };
-        if Snapshot::of(model, &same_kind(&target, &source.id)).is_some() {
-            continue;
-        }
-        if let Ok(view) = grid_view(model, &target) {
-            *view.mirror_source = None;
-            for origin in view.origins.iter_mut() {
-                if *origin == KeyformOrigin::Mirror {
-                    *origin = KeyformOrigin::Authored;
-                }
-            }
-        }
-    }
-}
-
 /// 要素の ID の文字列。
 fn element_id(target: &KeyformTarget) -> String {
     match target {

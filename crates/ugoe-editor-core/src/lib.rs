@@ -8,6 +8,7 @@ pub mod atlas;
 pub mod automesh;
 pub mod avatar;
 pub mod bundle_project;
+mod cleanup;
 pub mod codegen;
 pub mod command;
 mod deformer_edit;
@@ -75,6 +76,8 @@ mod blend_shape_tests;
 #[cfg(test)]
 mod bundle_project_tests;
 #[cfg(test)]
+mod cleanup_tests;
+#[cfg(test)]
 mod deformer_edit_tests;
 #[cfg(test)]
 mod depth_tests;
@@ -96,6 +99,8 @@ mod interpolation_tests;
 mod keyform_tests;
 #[cfg(test)]
 mod lighting_tests;
+#[cfg(test)]
+mod malformed_tests;
 #[cfg(test)]
 mod mesh_edit_tests;
 #[cfg(test)]

@@ -146,10 +146,8 @@ pub(crate) fn apply(
                 .iter()
                 .position(|c| c.id == id)
                 .ok_or_else(not_found)?;
+            // リグとスロットの `colliders` からは、適用の後に `cleanup::forget_removed` が外す。
             settings.colliders.remove(index);
-            for rig in &mut settings.rigs {
-                rig.colliders.retain(|c| c != &id);
-            }
         }
         Command::SetPhysicsCollider { collider } => {
             let existing = physics

@@ -450,6 +450,32 @@ fn sync_repairs_a_drifted_clone() {
     }
 }
 
+// 複製はブレンドシェイプ格子を写さない (基準の形の 1 セル)。複製が持つブレンドシェイプ格子のセルも、
+// 合わせ直しで元の基準の形にする。
+#[test]
+fn sync_rewrites_blend_shape_cells_of_the_clone() {
+    let model = fixtures::blend_shapes();
+    let mut after = applied(&model, create("Mouth"));
+    assert!(mesh(&after, "Mouth_Clone").keyforms.blend_shapes.is_empty());
+    assert_follows_parameters(&after, "Mouth", "Mouth_Clone");
+
+    let shapes = mesh(&model, "Mouth").keyforms.blend_shapes.clone();
+    let index = index(&after, "Mouth_Clone");
+    after.meshes[index].keyforms.blend_shapes = shapes;
+    assert_eq!(validate(&after), vec![]);
+    let synced = applied(
+        &after,
+        Command::SyncDrawClone {
+            id: "Mouth_Clone".into(),
+        },
+    );
+    let rest = &mesh(&synced, "Mouth_Clone").keyforms.keyforms[0].positions;
+    let clone = &mesh(&synced, "Mouth_Clone").keyforms;
+    assert_eq!(clone.blend_shapes.len(), 2);
+    assert!(clone.all_keyforms().all(|k| &k.positions == rest));
+    assert_follows_parameters(&synced, "Mouth", "Mouth_Clone");
+}
+
 #[test]
 fn sync_rejects_meshes_without_clones() {
     let model = fixtures::rotation_chain();

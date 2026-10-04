@@ -33,3 +33,4 @@
 - T0653 (`keep_look` での衝突体の写し直し・本体の版 `ModuleContext::base_revision`・名前を替えた書き出し `export_module_as`)
 - T0654 (今の編集と書き出した `.ugoemod` の違い `compare_with_module_file`。`src/module_compare.rs`・アトラス化を選べるモジュールの書き出し `export_module_with_settings`)
 - T0666 (エラー・警告のコードと引数 `Message`・`Coded`。`src/message.rs`・`src/message_codes.rs`)
+- T0014 (削除の後の参照の後始末を 1 か所にまとめた `src/cleanup.rs`・不正だが読み込めるデータへの編集のテスト `src/malformed_tests.rs`)

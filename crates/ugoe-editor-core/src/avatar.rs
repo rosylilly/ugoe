@@ -79,7 +79,7 @@ pub(crate) fn update_profile(model: &mut Model, update: ProfileUpdate) -> Result
 }
 
 /// [`crate::Command::SetHitAreas`]。ID の重複とメッシュの参照は適用後の検証 (`validate`) が調べる。
-/// なくなった当たり判定を指すプロファイルの標準の当たり判定は外す。
+/// なくなった当たり判定を指すプロファイルの標準の当たり判定は、適用の後に `cleanup::forget_removed` が外す。
 pub(crate) fn set_hit_areas(model: &mut Model, hit_areas: Vec<HitArea>) -> Result<(), EditError> {
     if let Some(empty) = hit_areas.iter().find(|h| h.id.as_str().trim().is_empty()) {
         return Err(invalid(format!(
@@ -88,19 +88,7 @@ pub(crate) fn set_hit_areas(model: &mut Model, hit_areas: Vec<HitArea>) -> Resul
         )));
     }
     model.hit_areas = hit_areas;
-    forget_removed_hit_areas(model);
     Ok(())
-}
-
-/// `Model::hit_areas` にない当たり判定を指す、プロファイルの標準の当たり判定を外す
-/// (`remove_mesh` と `set_hit_areas` の連鎖)。
-pub(crate) fn forget_removed_hit_areas(model: &mut Model) {
-    let Some(avatar) = &mut model.avatar else {
-        return;
-    };
-    avatar
-        .hit_areas
-        .retain(|a| model.hit_areas.iter().any(|h| h.id == a.hit_area));
 }
 
 fn invalid(reason: String) -> EditError {

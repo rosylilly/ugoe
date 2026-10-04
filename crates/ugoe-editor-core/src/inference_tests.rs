@@ -325,6 +325,50 @@ fn mirror_keyforms_passes_options() {
     assert_eq!(mesh(&after, "EyeR").keyforms.origins, vec![Mirror; 9]);
 }
 
+// ミラーは通常の格子だけを書き換え、ブレンドシェイプ格子 (と、そのミラー元の記録) は変えない
+// (`docs/spec/keyform-inference.md`)。
+#[test]
+fn mirror_keeps_blend_shape_grids() {
+    let mut model = mirror_model();
+    model.parameters.push(ugoe_model::Parameter {
+        id: "Smile".into(),
+        name: "Smile".into(),
+        min: 0.0,
+        default: 0.0,
+        max: 30.0,
+        kind: ugoe_model::parameter::ParameterKind::BlendShape,
+        mirror: None,
+        group: None,
+        internal: false,
+    });
+    for (id, dx) in [("EyeL", -0.01), ("EyeR", 0.02)] {
+        let eye = mesh_mut(&mut model, id);
+        let base = eye.keyforms.keyforms[0].clone();
+        let mut shape = KeyformGrid::new(
+            vec![binding("Smile", &[0.0, 30.0])],
+            vec![base.clone(), shifted(&base, dx, 0.0)],
+        );
+        shape.mirror_source = (id == "EyeR").then(|| ugoe_model::MirrorSource {
+            id: "EyeL".into(),
+            axis: None,
+            tolerance: None,
+        });
+        eye.keyforms.blend_shapes = vec![shape];
+    }
+    let after = applied(&model, mirror_eyes(false));
+    for id in ["EyeL", "EyeR"] {
+        assert_eq!(
+            mesh(&after, id).keyforms.blend_shapes,
+            mesh(&model, id).keyforms.blend_shapes,
+            "{id}"
+        );
+    }
+    assert_ne!(
+        mesh(&after, "EyeR").keyforms.keyforms,
+        mesh(&model, "EyeR").keyforms.keyforms
+    );
+}
+
 /// [`mirror_model`] の `EyeR` のセルをすべて `authored` にしたモデル (キーを追加しただけの格子)。
 /// `edited` のセルだけは基準から動かしてある。
 fn authored_target_model(edited: &[(f32, f32)]) -> Model {

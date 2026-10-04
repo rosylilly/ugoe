@@ -7,7 +7,10 @@ use ugoe_core::Vec2;
 use ugoe_model::fixtures::{dress_module, dress_up_base, long_hair_module};
 use ugoe_model::mesh::MeshKeyform;
 use ugoe_model::module::ModuleRequirements;
-use ugoe_model::{KeyformGrid, Mesh, Module, Part, PartId};
+use ugoe_model::parameter::ParameterKind;
+use ugoe_model::{
+    KeyformBinding, KeyformGrid, Mesh, MirrorSource, Module, Parameter, Part, PartId,
+};
 
 use crate::module_project::{ColliderReference, ModuleBase, ModuleContext, ModuleError};
 use crate::texture::{Textures, solid_png};
@@ -112,6 +115,71 @@ fn workspace_splits_back_into_the_module() {
             assert!(images.contains_key(&texture.name));
         }
     }
+}
+
+// 合成で接頭辞を付け、分けるときに外すミラー元 (`mirror_source`) は、ブレンドシェイプ格子のものも付け替える。
+#[test]
+fn blend_shape_mirror_sources_are_renamed_both_ways() {
+    let mut module = long_hair_module();
+    let front = &mut module.meshes[1];
+    let rest = front.keyforms.keyforms[0].clone();
+    let mut shape = KeyformGrid::new(
+        vec![KeyformBinding {
+            parameter: "Smile".into(),
+            keys: vec![0.0, 1.0],
+        }],
+        vec![rest.clone(), rest],
+    );
+    shape.mirror_source = Some(MirrorSource {
+        id: "Back".into(),
+        axis: None,
+        tolerance: None,
+    });
+    front.keyforms.mirror_source = shape.mirror_source.clone();
+    front.keyforms.blend_shapes = vec![shape];
+
+    // 本体にブレンドシェイプのパラメータ `Smile` を足し、スロット `Hair` で使えるようにする。
+    let mut base = base();
+    base.model.parameters.push(Parameter {
+        id: "Smile".into(),
+        name: "Smile".into(),
+        min: 0.0,
+        default: 0.0,
+        max: 1.0,
+        kind: ParameterKind::BlendShape,
+        mirror: None,
+        group: None,
+        internal: false,
+    });
+    let slot = base
+        .model
+        .slots
+        .iter_mut()
+        .find(|s| s.id == module.slot)
+        .unwrap();
+    slot.parameters.push("Smile".into());
+    let context = ModuleContext::new(
+        base,
+        &module.slot,
+        module.name.clone(),
+        module.requires.clone(),
+    )
+    .unwrap();
+    let context = Arc::new(context);
+    let workspace = context.workspace(&module, &images(&module)).unwrap();
+    let document = Document::with_textures(workspace.model, workspace.textures)
+        .with_physics(workspace.physics)
+        .with_module(context);
+    let workspace = document
+        .model()
+        .meshes
+        .iter()
+        .find(|m| m.id.as_str() == "LongHair/Front")
+        .unwrap();
+    let source = |grid: &KeyformGrid<MeshKeyform>| grid.mirror_source.clone().unwrap().id;
+    assert_eq!(source(&workspace.keyforms), "LongHair/Back");
+    assert_eq!(source(&workspace.keyforms.blend_shapes[0]), "LongHair/Back");
+    assert_same_module(&split(&document), &module);
 }
 
 #[test]
