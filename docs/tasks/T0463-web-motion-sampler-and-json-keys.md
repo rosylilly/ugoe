@@ -1,11 +1,11 @@
 ---
 id: T0463
 title: "@ugoe/runtime: MotionSampler を出すかと、本物の wasm で *_json() の出力のキーを型と比べる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/web, tests/conformance, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0463
 ---
 
 # T0463: @ugoe/runtime: MotionSampler を出すかと、本物の wasm で *_json() の出力のキーを型と比べる
