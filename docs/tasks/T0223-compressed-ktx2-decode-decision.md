@@ -1,11 +1,11 @@
 ---
 id: T0223
 title: 参照 (ugoe render) と wasm で圧縮した KTX2 をデコードするか決める (依存の選定と ADR。判断が要る)
-status: todo
+status: in-progress
 milestone: M9
 crates: [docs/adr, ugoe-format, ugoe-headless, ugoe-wasm, tests/conformance]
 depends_on: []
-assignee:
+assignee: claude-worker-T0223
 ---
 
 # T0223: 参照 (ugoe render) と wasm で圧縮した KTX2 をデコードするか決める (依存の選定と ADR。判断が要る)
