@@ -1,11 +1,11 @@
 ---
 id: T0678
 title: モジュールのエラーをコードを保って EditError と ProjectError に渡す
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core, ugoe-mcp, apps/editor, docs]
 depends_on: [T0667]
-assignee:
+assignee: claude-worker-T0678
 ---
 
 # T0678: モジュールのエラーをコードを保って EditError と ProjectError に渡す
