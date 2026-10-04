@@ -10,7 +10,22 @@
 - 壊れた入力でパニックしない
 - 外から来る入力で資源を使い切らない。展開の上限は形式でなく読む側の設定 (`ReadLimits`。既定は 1 チャンク 256 MiB・合計 1 GiB)。超えたら展開の途中でやめてエラーにする
 - ファイルシステムに触れない (バイト列と `Read`/`Write` を扱う)
+- PNG のデコードの上限も読む側の設定 (`ImageLimits`。既定は一辺 16384)。見出しの大きさだけで確保しない
 - 知らない必須の機能は拒否する (`features` モジュール)。未知の値 (`Unknown`) は警告にして読み、書き出さない (`ugoe_model::unknown`)
+
+## feature
+
+- `png` (既定で無効): テクスチャの PNG のデコード `image` モジュール。ヘッドレス描画 (`ugoe-headless`) と WebAssembly (`ugoe-wasm`) が共有する
+  (`docs/spec/file-formats.md#読み込みの上限`)。
+
+```rust
+use ugoe_format::image::{ImageLimits, decode_png_premultiplied};
+
+// 8bit RGBA に正規化し (グレースケール・パレット・16bit を展開)、アルファを乗算する。
+let texture = decode_png_premultiplied(&bytes, ImageLimits::default())?;
+// 上限は読む側が決める。一辺が上限を超えると、画素を確保する前に ImageError::TooLarge。
+let small = decode_png_premultiplied(&bytes, ImageLimits::default().with_max_side(4096))?;
+```
 
 ## 仕様
 
@@ -23,3 +38,4 @@
 - T0113 (着せ替えのモジュールのファイル形式)
 - T0115 (互換性テストの資料 `assets/compat/` と `tests/compat.rs`。手順は `docs/testing.md#互換性テスト`)
 - T0150 (読み込みの上限 `ReadLimits`。`docs/spec/file-formats.md#読み込みの上限`)
+- T0009 (PNG のデコードと上限 `ImageLimits` を ugoe-headless と ugoe-wasm から 1 か所にまとめた `image`)

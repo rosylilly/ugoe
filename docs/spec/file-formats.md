@@ -193,6 +193,11 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
   - 合計に数えるのは、圧縮したチャンクを展開したバイトだけです。圧縮していないチャンクは入力のバイト列そのもので、大きさは呼び出し側が分かる入力の長さで抑えられるので数えません。展開に失敗したチャンクと、読み飛ばす未知のタグのチャンクも数えません。
   - エディタなどの画面に出すときのコードは `format.chunk_limit_exceeded` / `format.total_limit_exceeded` です ([editor.md](../editor.md#エラーと警告のコード))。ファイルが壊れているとは限らないので、`format.corrupt` と分けています。
   - SDK・C ABI・wasm・バインディングから上限を指定する口は T0152 で足します。
+- テクスチャと法線マップの PNG は、コンテナの読み込み (`read_bundle` など) ではデコードしません (バイト列のまま返します)。
+  デコードする側のための関数は `ugoe_format::image` (feature `png`) の `decode_png(bytes, ImageLimits)` / `decode_png_premultiplied` で、
+  `ugoe-headless` と `ugoe-wasm` がこれを使います (T0009)。グレースケール・パレット・16 ビットは 8 ビットの RGBA に展開します。
+  見出し (IHDR) の大きさだけで確保すると小さなファイルで数 GB を求められるので、一辺が `ImageLimits::max_side`
+  (既定 16384。`ImageLimits::default().with_max_side(n)` で変えられる) を超える画像は、画素を確保する前に `ImageError::TooLarge` で止めます。
 
 ### 読み込み時の検査
 

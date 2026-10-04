@@ -20,7 +20,8 @@ import { execFileSync } from "node:child_process";
  * @type {Record<string, { crates: string[], features?: string[], tauri?: boolean }>}
  */
 export const GROUPS = {
-  // ランタイム層 (crates.io に公開するクレート)。ワークスペースでは ugoe-editor-core が schema と ts を有効にする
+  // ランタイム層 (crates.io に公開するクレート)。ワークスペースでは ugoe-editor-core が schema と ts を、
+  // ugoe-headless と ugoe-wasm が ugoe-format の png を有効にする
   runtime: {
     crates: [
       "ugoe-core",
@@ -32,7 +33,7 @@ export const GROUPS = {
       "ugoe-render",
       "ugoe",
     ],
-    features: ["ugoe-model/schema", "ugoe-model/ts"],
+    features: ["ugoe-format/png", "ugoe-model/schema", "ugoe-model/ts"],
   },
   // バインディングと配布物の適合テスト。CI では wasm32 と C ABI の検査もこのジョブで行う
   bindings: {

@@ -2,76 +2,29 @@
 //!
 //! 色の値はリニア化しない (`docs/spec/rendering.md` の「前提」)。PNG の 8bit 値をそのまま使う。
 
-use std::io::Cursor;
+use crate::Error;
 
-use crate::{Error, MAX_SIZE, bail};
-
-/// RGBA8 の画像。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Rgba8 {
-    pub width: u32,
-    pub height: u32,
-    pub pixels: Vec<u8>,
-}
+pub use ugoe_format::image::{ImageLimits, Rgba8, premultiply};
 
 /// PNG をデコードして、乗算済みアルファの RGBA8 にする。
 ///
-/// グレースケール・パレット・16bit は 8bit RGBA に展開する。一辺が [`MAX_SIZE`] を超える画像はエラー。
+/// デコードは `ugoe_format::image` (ugoe-wasm と共有)。グレースケール・パレット・16bit は 8bit RGBA に展開する。
+/// 一辺が既定の上限 ([`ugoe_format::image::DEFAULT_MAX_IMAGE_SIDE`] = 出力の [`crate::MAX_SIZE`] と同じ) を超える画像はエラー。
 pub fn decode_png_premultiplied(bytes: &[u8]) -> Result<Rgba8, Error> {
-    let mut image = decode_png(bytes)?;
-    premultiply(&mut image.pixels);
-    Ok(image)
+    Ok(ugoe_format::image::decode_png_premultiplied(
+        bytes,
+        ImageLimits::default(),
+    )?)
 }
 
 /// PNG をデコードして、アルファを掛けない RGBA8 にする (法線マップ用。アルファは使わない)。
 ///
-/// グレースケール・パレット・16bit は 8bit RGBA に展開する。一辺が [`MAX_SIZE`] を超える画像はエラー。
+/// 展開と上限は [`decode_png_premultiplied`] と同じ。
 pub fn decode_png(bytes: &[u8]) -> Result<Rgba8, Error> {
-    let mut decoder = png::Decoder::new(Cursor::new(bytes));
-    decoder.set_transformations(png::Transformations::normalize_to_color8());
-    let mut reader = decoder
-        .read_info()
-        .map_err(png_decode("reading PNG header"))?;
-    // 見出しの大きさだけで確保すると、小さなファイルで数 GB を求められる。テクスチャの一辺の上限は
-    // 出力と同じ [`MAX_SIZE`] (wgpu の 2D テクスチャの上限より大きいデバイスは少ない)。
-    let (width, height) = (reader.info().width, reader.info().height);
-    if width > MAX_SIZE || height > MAX_SIZE {
-        bail!("PNG image is {width}x{height}, larger than the limit {MAX_SIZE}x{MAX_SIZE}");
-    }
-    let Some(size) = reader.output_buffer_size() else {
-        bail!("PNG image is too large");
-    };
-    let mut buf = vec![0; size];
-    let info = reader
-        .next_frame(&mut buf)
-        .map_err(png_decode("decoding PNG"))?;
-    buf.truncate(info.buffer_size());
-    let pixel_count = info.width as usize * info.height as usize;
-    let mut pixels = Vec::with_capacity(pixel_count * 4);
-    match info.color_type {
-        png::ColorType::Rgba => pixels = buf,
-        png::ColorType::Rgb => {
-            for p in buf.as_chunks::<3>().0 {
-                pixels.extend_from_slice(&[p[0], p[1], p[2], 255]);
-            }
-        }
-        png::ColorType::GrayscaleAlpha => {
-            for p in buf.as_chunks::<2>().0 {
-                pixels.extend_from_slice(&[p[0], p[0], p[0], p[1]]);
-            }
-        }
-        png::ColorType::Grayscale => {
-            for &g in &buf {
-                pixels.extend_from_slice(&[g, g, g, 255]);
-            }
-        }
-        png::ColorType::Indexed => bail!("indexed PNG was not expanded"),
-    }
-    Ok(Rgba8 {
-        width: info.width,
-        height: info.height,
-        pixels,
-    })
+    Ok(ugoe_format::image::decode_png(
+        bytes,
+        ImageLimits::default(),
+    )?)
 }
 
 /// 乗算済みアルファの RGBA8 を、ストレートアルファの PNG にエンコードする。
@@ -154,16 +107,6 @@ pub fn over_color(image: &mut Rgba8, rgb: [u8; 3]) {
     }
 }
 
-/// ストレートアルファを乗算済みにする。
-pub fn premultiply(rgba: &mut [u8]) {
-    for p in rgba.as_chunks_mut::<4>().0 {
-        let a = u32::from(p[3]);
-        for c in &mut p[..3] {
-            *c = ((u32::from(*c) * a + 127) / 255) as u8;
-        }
-    }
-}
-
 /// 乗算済みから戻す。アルファ 0 の画素は黒にする。
 pub fn unpremultiply(rgba: &mut [u8]) {
     for p in rgba.as_chunks_mut::<4>().0 {
@@ -174,10 +117,6 @@ pub fn unpremultiply(rgba: &mut [u8]) {
                 .map_or(0, |v| v.min(255) as u8);
         }
     }
-}
-
-fn png_decode(context: &'static str) -> impl FnOnce(png::DecodingError) -> Error {
-    move |source| Error::PngDecode { context, source }
 }
 
 fn png_encode(context: &'static str) -> impl FnOnce(png::EncodingError) -> Error {
@@ -290,24 +229,21 @@ mod tests {
         assert_eq!(decode_png_premultiplied(&out).unwrap().pixels, vec![0; 4]);
     }
 
-    /// IHDR が 65535x65535 で、画素のデータが zlib の見出しだけの小さな PNG。
-    fn huge_png_header() -> Vec<u8> {
+    /// 上限と展開の規則は `ugoe_format::image` のテストが確かめる。ここでは既定の上限が出力の上限と同じことと、
+    /// エラーがそのまま伝わることだけを確かめる。
+    #[test]
+    fn uses_the_shared_decoder_with_the_output_limit() {
+        assert_eq!(ugoe_format::image::DEFAULT_MAX_IMAGE_SIDE, crate::MAX_SIZE);
         let mut out = Vec::new();
-        let mut encoder = png::Encoder::new(&mut out, 65535, 65535);
+        let mut encoder = png::Encoder::new(&mut out, crate::MAX_SIZE + 1, 1);
         encoder.set_color(png::ColorType::Rgba);
         encoder.set_depth(png::BitDepth::Eight);
         let mut writer = encoder.write_header().unwrap();
         writer.write_chunk(png::chunk::IDAT, &[0x78, 0x9c]).unwrap();
-        // 残りの画素は書かない (`finish` も呼ばない)。
+        // 残りの画素は書かない (見出しで止まる)。
         std::mem::forget(writer);
-        out
-    }
-
-    /// 見出しの大きさを確かめてから確保する (外から来た PNG で数 GB を確保して落ちないように)。
-    #[test]
-    fn rejects_images_larger_than_the_limit_before_allocating() {
-        let err = decode_png(&huge_png_header()).unwrap_err().to_string();
-        assert!(err.contains("65535x65535"), "{err}");
+        let err = decode_png(&out).unwrap_err().to_string();
+        assert!(err.contains("16385x1, larger than the limit"), "{err}");
     }
 
     #[test]

@@ -3,11 +3,14 @@
 //! - `.ugoe` : ランタイムバンドル (ヘッダ + チャンク表 + チャンク)。バイナリ。[`bundle`] を参照。
 //! - `.ugoemod` : 着せ替えのモジュール。バンドルと同じコンテナ。[`module_file`] を参照。
 //! - `*.motion.json` / `*.expression.json` / `*.physics.json` : JSON。
+//! - テクスチャの PNG のデコード (上限つき): `image` (feature `png`)。
 //!
 //! 読み込みは **常に** スキーマバージョンを検査し、未知の新しい版は明示的なエラーにする。
 
 pub mod bundle;
 pub mod features;
+#[cfg(feature = "png")]
+pub mod image;
 pub mod module_file;
 
 use ugoe_model::Model;

@@ -8,11 +8,11 @@ publish.workspace = true
 license.workspace = true
 
 [dependencies]
-png.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 ugoe.workspace = true
+ugoe-format = { workspace = true, features = ["png"] }
 ugoe-render = { workspace = true, features = ["webgl"] }
 wasm-bindgen.workspace = true
 wgpu.workspace = true
@@ -23,6 +23,9 @@ console_error_panic_hook.workspace = true
 js-sys.workspace = true
 wasm-bindgen-futures.workspace = true
 web-sys = { workspace = true, features = ["HtmlCanvasElement", "console"] }
+
+[dev-dependencies]
+png.workspace = true
 
 [lints]
 workspace = true

@@ -5600,6 +5600,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "ugoe",
+ "ugoe-format",
  "ugoe-render",
  "wasm-bindgen",
  "wasm-bindgen-futures",

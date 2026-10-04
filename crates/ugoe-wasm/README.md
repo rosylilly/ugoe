@@ -16,7 +16,7 @@ npm のパッケージ `@ugoe/runtime` (と `<ugoe-avatar>`) は `bindings/web/`
 | モジュール | 内容 |
 | --- | --- |
 | `web` | JS に公開する `WebPuppet`。canvas に wgpu のサーフェスを作り、クリアと描画を行う |
-| `load` | JSON / `.ugoe` バンドルの読み込み、PNG のデコード (乗算済みアルファへ)、パラメータ値の引き継ぎ |
+| `load` | JSON / `.ugoe` バンドルの読み込み、PNG のデコード (乗算済みアルファへ。`ugoe_format::image` を ugoe-headless と共有)、パラメータ値の引き継ぎ |
 | `view` | フィット・ズーム・パンと、キャンバス座標 ↔ 画面座標の変換 |
 | `tracking` | フェイストラッキングの入力 (ブレンドシェイプの名前と値・頭の回転) から `TrackingInput` を作る。JS への公開は `web/tracking.rs` |
 | `hit` | 評価済みの要素の外接矩形とヒットテスト (エディタの選択用。三角形の判定は `ModelInstance::mesh_contains`) |

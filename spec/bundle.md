@@ -152,6 +152,11 @@ chunks of a file to 1 GiB (1,073,741,824 bytes) in total, and its user can chang
 only the bytes of compressed chunks after decompressing them; uncompressed payloads are part of the
 input, whose size the caller already knows.
 
+*Informative:* the same applies to decoding the images of `TEXR` and `NRML` chunks, whose headers
+can state a size far larger than the image data. The reference implementation's PNG decoder checks
+the width and height against a limit set by its user (16,384 pixels by default) before allocating
+the pixels.
+
 ### MessagePack limits
 
 A reader MAY limit the nesting depth of MessagePack payloads to protect itself. A limit MUST be at

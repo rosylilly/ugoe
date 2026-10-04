@@ -14,7 +14,7 @@ pollster.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 ugoe.workspace = true
-ugoe-format.workspace = true
+ugoe-format = { workspace = true, features = ["png"] }
 ugoe-model.workspace = true
 ugoe-render.workspace = true
 ugoe-runtime.workspace = true

@@ -56,13 +56,9 @@ pub enum Error {
         #[source]
         source: ugoe_format::FormatError,
     },
-    /// PNG のデコードの失敗。
-    #[error("{context}")]
-    PngDecode {
-        context: &'static str,
-        #[source]
-        source: png::DecodingError,
-    },
+    /// PNG のデコードの失敗 (壊れている・一辺が上限を超える。`ugoe_format::image`)。
+    #[error(transparent)]
+    PngDecode(#[from] ugoe_format::image::ImageError),
     /// PNG のエンコードの失敗。
     #[error("{context}")]
     PngEncode {

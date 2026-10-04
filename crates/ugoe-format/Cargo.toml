@@ -13,6 +13,7 @@ keywords = ["ugoe", "animation", "rigging", "file-format", "2d"]
 categories = ["graphics", "game-development", "encoding", "parser-implementations"]
 
 [dependencies]
+png = { workspace = true, optional = true }
 rmp-serde.workspace = true
 ruzstd.workspace = true
 serde.workspace = true
@@ -24,6 +25,10 @@ ugoe-model.workspace = true
 png.workspace = true
 ugoe-core.workspace = true
 ugoe-runtime.workspace = true
+
+[features]
+# テクスチャの PNG のデコード (`image` モジュール)。
+png = ["dep:png"]
 
 [lints]
 workspace = true

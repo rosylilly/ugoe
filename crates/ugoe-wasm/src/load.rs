@@ -4,12 +4,11 @@
 //! (`docs/spec/rendering.md` の「前提」: 色の値はリニア化しない)。
 //! ブラウザのデコーダは色空間の変換やアルファの扱いが実装ごとに異なるので使わない。
 
-use std::io::Cursor;
-
 use serde::Serialize;
 use ugoe::FieldValue;
 use ugoe::format::{Bundle, TextureData, TextureFormat};
 use ugoe::model::physics::PhysicsSettings;
+use ugoe_format::image::ImageLimits;
 
 use crate::animation::Library;
 use ugoe::model::{Model, Parameter, ParameterGroup};
@@ -27,22 +26,15 @@ pub enum LoadError {
     NormalMap { index: usize, message: String },
 }
 
-/// 乗算済みアルファの RGBA8 画像。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Rgba8 {
-    pub width: u32,
-    pub height: u32,
-    pub pixels: Vec<u8>,
-}
+/// RGBA8 の画像 (`ugoe_format::image` と共有。テクスチャは乗算済み、法線マップはアルファを掛けない)。
+pub use ugoe_format::image::Rgba8;
 
-impl Rgba8 {
-    /// テクスチャが無いときに使う 1x1 の不透明な白 (`ugoe render` と同じ)。
-    pub fn placeholder() -> Self {
-        Self {
-            width: 1,
-            height: 1,
-            pixels: vec![255; 4],
-        }
+/// テクスチャが無いときに使う 1x1 の不透明な白 (`ugoe render` と同じ)。
+pub fn placeholder() -> Rgba8 {
+    Rgba8 {
+        width: 1,
+        height: 1,
+        pixels: vec![255; 4],
     }
 }
 
@@ -105,7 +97,7 @@ pub struct BundleAnimation {
 /// JSON のモデルを読む。テクスチャは持たないので、すべて白のプレースホルダにする。
 pub fn from_json(json: &str) -> Result<LoadedModel, LoadError> {
     let model = ugoe::format::model_from_json(json)?;
-    let textures = vec![Rgba8::placeholder(); texture_count(&model)];
+    let textures = vec![placeholder(); texture_count(&model)];
     Ok(LoadedModel {
         model,
         animation: None,
@@ -169,12 +161,12 @@ pub(crate) fn decode_textures<'a>(
             }) => {
                 // KTX2 のデコードは未対応 (`ugoe render` と同じ)。表示は止めずに白で代用する。
                 warnings.push(LoadWarning::TextureKtx2 { texture: index });
-                Ok(Rgba8::placeholder())
+                Ok(placeholder())
             }
             // 読み込み (`read_bundle` / `read_module`) がテクスチャの数を検証するので、通常は起きない。
             None => {
                 warnings.push(LoadWarning::TextureMissing { texture: index });
-                Ok(Rgba8::placeholder())
+                Ok(placeholder())
             }
         })
         .collect()
@@ -266,70 +258,23 @@ pub fn set_parameter(instance: &mut ModelInstance, id: &str, value: f32) -> bool
     true
 }
 
-/// デコードする画像の一辺の上限 (`ugoe_headless` の `MAX_SIZE` と同じ。これより大きな 2D テクスチャを扱えるデバイスは少ない)。
-pub const MAX_IMAGE_SIZE: u32 = 16384;
+/// デコードする画像の一辺の上限 (`ugoe_format::image::DEFAULT_MAX_IMAGE_SIDE`。`ugoe_headless` の `MAX_SIZE` と同じ)。
+pub use ugoe_format::image::DEFAULT_MAX_IMAGE_SIDE as MAX_IMAGE_SIZE;
 
-/// PNG をデコードして、乗算済みアルファの RGBA8 にする。
+/// PNG をデコードして、乗算済みアルファの RGBA8 にする (`ugoe_format::image::decode_png_premultiplied`)。
 ///
-/// グレースケール・パレット・16bit は 8bit RGBA に展開する。一辺が [`MAX_IMAGE_SIZE`] を超える画像はエラー。
+/// グレースケール・パレット・16bit は 8bit RGBA に展開する。一辺が [`MAX_IMAGE_SIZE`] を超える画像は確保の前にエラー
+/// (デバイスの上限との比較 `check_texture_sizes` はデコードの後なので、ここで先に止める)。
 pub fn decode_png_premultiplied(bytes: &[u8]) -> Result<Rgba8, String> {
-    let mut image = decode_png(bytes)?;
-    for p in image.pixels.as_chunks_mut::<4>().0 {
-        let a = u32::from(p[3]);
-        for c in &mut p[..3] {
-            *c = ((u32::from(*c) * a + 127) / 255) as u8;
-        }
-    }
-    Ok(image)
+    ugoe_format::image::decode_png_premultiplied(bytes, ImageLimits::default())
+        .map_err(|e| e.to_string())
 }
 
-/// PNG をデコードして、アルファを掛けない RGBA8 にする (法線マップ用。アルファは使わない)。
+/// PNG をデコードして、アルファを掛けない RGBA8 にする (法線マップ用。`ugoe_format::image::decode_png`)。
 ///
-/// グレースケール・パレット・16bit は 8bit RGBA に展開する。一辺が [`MAX_IMAGE_SIZE`] を超える画像はエラー。
+/// 展開と上限は [`decode_png_premultiplied`] と同じ。
 pub fn decode_png(bytes: &[u8]) -> Result<Rgba8, String> {
-    let mut decoder = png::Decoder::new(Cursor::new(bytes));
-    decoder.set_transformations(png::Transformations::normalize_to_color8());
-    let mut reader = decoder.read_info().map_err(|e| e.to_string())?;
-    // 見出しの大きさだけで確保すると、小さなファイルで数 GB を求められる (png の `Limits` はデコーダの中の
-    // バッファにしか効かない)。デバイスの上限との比較 (`check_texture_sizes`) はデコードの後なので、ここで先に止める。
-    let (width, height) = (reader.info().width, reader.info().height);
-    if width > MAX_IMAGE_SIZE || height > MAX_IMAGE_SIZE {
-        return Err(format!(
-            "PNG image is {width}x{height}, larger than the limit {MAX_IMAGE_SIZE}x{MAX_IMAGE_SIZE}"
-        ));
-    }
-    let size = reader
-        .output_buffer_size()
-        .ok_or_else(|| "PNG image is too large".to_owned())?;
-    let mut buf = vec![0; size];
-    let info = reader.next_frame(&mut buf).map_err(|e| e.to_string())?;
-    buf.truncate(info.buffer_size());
-    let pixel_count = info.width as usize * info.height as usize;
-    let mut pixels = Vec::with_capacity(pixel_count * 4);
-    match info.color_type {
-        png::ColorType::Rgba => pixels = buf,
-        png::ColorType::Rgb => {
-            for p in buf.as_chunks::<3>().0 {
-                pixels.extend_from_slice(&[p[0], p[1], p[2], 255]);
-            }
-        }
-        png::ColorType::GrayscaleAlpha => {
-            for p in buf.as_chunks::<2>().0 {
-                pixels.extend_from_slice(&[p[0], p[0], p[0], p[1]]);
-            }
-        }
-        png::ColorType::Grayscale => {
-            for &g in &buf {
-                pixels.extend_from_slice(&[g, g, g, 255]);
-            }
-        }
-        png::ColorType::Indexed => return Err("indexed PNG was not expanded".to_owned()),
-    }
-    Ok(Rgba8 {
-        width: info.width,
-        height: info.height,
-        pixels,
-    })
+    ugoe_format::image::decode_png(bytes, ImageLimits::default()).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -355,7 +300,7 @@ mod tests {
     fn json_models_get_white_placeholders() {
         let json = ugoe::format::model_to_json(&fixtures::single_quad()).unwrap();
         let loaded = from_json(&json).unwrap();
-        assert_eq!(loaded.textures, vec![Rgba8::placeholder()]);
+        assert_eq!(loaded.textures, vec![placeholder()]);
         assert!(loaded.warnings.is_empty());
     }
 
@@ -409,7 +354,7 @@ mod tests {
         bundle.textures = vec![ktx2.clone()];
         bundle.normal_maps = vec![ktx2];
         let loaded = from_bundle(&write_bundle(&bundle).unwrap()).unwrap();
-        assert_eq!(loaded.textures, vec![Rgba8::placeholder()]);
+        assert_eq!(loaded.textures, vec![placeholder()]);
         assert_eq!(loaded.normal_maps, vec![None]);
         assert_eq!(
             loaded.warnings,
@@ -485,7 +430,7 @@ mod tests {
     fn missing_textures_and_removed_physics_have_codes() {
         let mut warnings = Vec::new();
         let textures = decode_textures(2, |_| None, &mut warnings).unwrap();
-        assert_eq!(textures, vec![Rgba8::placeholder(); 2]);
+        assert_eq!(textures, vec![placeholder(); 2]);
         warnings.push(LoadWarning::PhysicsRemoved {
             reason: "bad rig".into(),
         });

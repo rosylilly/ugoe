@@ -31,7 +31,7 @@ gpu.leak();                                // 破棄しない (下の「GPU」)
 | `gpu` | ヘッドレスの `Gpu` (アダプタとデバイス)・描いて読み戻す・`stats_json` |
 | `resident` | 常駐の描画の口 `Resident` (毎フレーム描き続ける。下の「常駐の描画」) |
 | `yuv` | 画素の形 `PixelFormat` (RGBA8・NV12・YUY2) と、RGBA からの変換の CPU の参照実装 |
-| `image` | PNG の読み書きと乗算済みアルファの変換 |
+| `image` | PNG の読み書きと乗算済みアルファの変換 (デコードと一辺の上限は `ugoe_format::image` を ugoe-wasm と共有) |
 
 - **ライティング:** `Scene::from_bundle` がバンドルの法線マップを持ち、`prepare` がデコードして `Prepared::shading` に入れる。
   光源は `RenderOptions::lighting` (`None` ならレンダラに渡さないので、出力は法線マップが無いのと同じ)。

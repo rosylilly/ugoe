@@ -328,7 +328,7 @@ impl Wardrobe {
             };
             let loaded = self.find(module)?;
             let index = *index as usize;
-            let placeholder = Rgba8::placeholder();
+            let placeholder = load::placeholder();
             let texture = loaded.textures.get(index).unwrap_or(&placeholder);
             let normal_map = loaded.normal_maps.get(index).and_then(Option::as_ref);
             sink.set_texture(i, texture).map_err(texture_error)?;
@@ -336,7 +336,7 @@ impl Wardrobe {
         }
         let count = change.texture_count.max(self.base_slots);
         if count < self.slots {
-            let placeholder = Rgba8::placeholder();
+            let placeholder = load::placeholder();
             for i in count..self.slots {
                 sink.set_texture(i, &placeholder).map_err(texture_error)?;
                 sink.set_normal_map(i, None).map_err(texture_error)?;
