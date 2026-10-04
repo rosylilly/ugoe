@@ -1,11 +1,11 @@
 ---
 id: T0820
 title: "スタジオ: WebView の CSP とウィンドウごとのコマンドの許可を絞る"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, docs]
 depends_on: [T0814]
-assignee:
+assignee: claude-worker-T0820
 ---
 
 # T0820: スタジオ: WebView の CSP とウィンドウごとのコマンドの許可を絞る
