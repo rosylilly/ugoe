@@ -9,12 +9,14 @@ use std::marker::PhantomData;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+/// 種類 `T` の文字列 ID。比較・ハッシュは文字列だけで行い、シリアライズでは文字列そのものになる。
 pub struct Id<T> {
     value: String,
     _kind: PhantomData<fn() -> T>,
 }
 
 impl<T> Id<T> {
+    /// 文字列から作る。中身の検査はしない (空文字列も通る)。
     pub fn new(value: impl Into<String>) -> Self {
         Self {
             value: value.into(),
@@ -22,6 +24,7 @@ impl<T> Id<T> {
         }
     }
 
+    /// ID の文字列。
     pub fn as_str(&self) -> &str {
         &self.value
     }

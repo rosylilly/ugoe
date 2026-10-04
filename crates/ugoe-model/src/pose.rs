@@ -17,6 +17,7 @@ pub const DEFAULT_FADE_DURATION: f32 = 0.5;
 pub struct Pose {
     /// 表示パーツを切り替えるときのクロスフェード時間 (秒)。0 以上。
     pub fade_duration: f32,
+    /// 排他的なパーツの組。
     pub groups: Vec<PoseGroup>,
 }
 
@@ -34,6 +35,7 @@ impl Default for Pose {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PoseGroup {
+    /// 組の要素。最初は先頭の要素を表示する (`docs/spec/motion.md#ポーズ`)。
     pub entries: Vec<PoseEntry>,
 }
 
@@ -42,6 +44,7 @@ pub struct PoseGroup {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PoseEntry {
+    /// グループの要素となるパーツ。
     pub part: PartId,
     /// `part` と同じ不透明度に追従するパーツ (例: 腕に付属する袖)。
     #[serde(default)]

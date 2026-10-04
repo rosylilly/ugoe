@@ -25,65 +25,124 @@ pub enum Severity {
 /// 準拠の検査で見つけた問題。`field` は値の場所 (`avatar.tracking[0].parameter` など)。
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ProfileIssue {
+    /// モデルにアバタープロファイル (`avatar`) が無い。
     #[error("model has no avatar profile (`avatar`)")]
     MissingProfile,
+    /// プロファイルのバージョンがこのクレートの知る版より新しい。知らない検査項目は調べられない。
     #[error(
         "avatar.profile_version {version} is newer than the supported version {supported}; \
          the checks may be incomplete"
     )]
-    NewerProfileVersion { version: u32, supported: u32 },
+    NewerProfileVersion {
+        /// モデルの `avatar.profile_version`。
+        version: u32,
+        /// このクレートが対応する版 ([`PROFILE_VERSION`])。
+        supported: u32,
+    },
+    /// 主張したレベル (`avatar.level`) が 1〜[`MAX_LEVEL`] の外。
     #[error("avatar.level {level} must be between 1 and {max}")]
-    InvalidLevel { level: u8, max: u8 },
+    InvalidLevel {
+        /// モデルの `avatar.level`。
+        level: u8,
+        /// 主張できる最大のレベル ([`MAX_LEVEL`])。
+        max: u8,
+    },
+    /// 必須のメタデータ (`name`・`authors`) が無いか空。
     #[error("avatar.meta.{field} is required")]
-    MissingMetadata { field: &'static str },
+    MissingMetadata {
+        /// `avatar.meta` のフィールド名。
+        field: &'static str,
+    },
+    /// 主張したレベルに必要な標準パラメータがモデルに無い。
     #[error("level {level} requires parameter `{id}`")]
-    MissingParameter { level: u8, id: &'static str },
+    MissingParameter {
+        /// そのパラメータを必要とするレベル。
+        level: u8,
+        /// 足りないパラメータの ID。
+        id: &'static str,
+    },
+    /// レベル 3 に必要な数の拡張パラメータ ([`crate::standard::EXTENDED`]) が無い。
     #[error("level 3 requires at least {required} extended parameters, found {found}")]
-    TooFewExtendedParameters { required: usize, found: usize },
+    TooFewExtendedParameters {
+        /// 必要な数 ([`LEVEL_3_EXTENDED_COUNT`])。
+        required: usize,
+        /// モデルにある拡張パラメータの数。
+        found: usize,
+    },
     /// 標準・拡張パラメータの値域が仕様と違う。
     #[error(
         "parameter `{id}`: range {min} / {default} / {max} differs from the profile's \
          {} / {} / {}", expected.0, expected.1, expected.2
     )]
     ParameterRange {
+        /// パラメータの ID。
         id: String,
+        /// モデルの最小値。
         min: f32,
+        /// モデルの既定値。
         default: f32,
+        /// モデルの最大値。
         max: f32,
         /// 仕様の `(min, default, max)`。
         expected: (f32, f32, f32),
     },
+    /// 参照先 (パラメータ・当たり判定・スロット・テクスチャ) がモデルに無い。
     #[error("{field} refers to unknown {target_kind} `{target}`")]
     UnknownReference {
+        /// 参照を持つ値の場所。
         field: String,
+        /// 参照先の種類 (`parameter`・`hit area`・`slot`・`texture`)。
         target_kind: &'static str,
+        /// 参照先の ID かインデックス。
         target: String,
     },
     /// トラッキングの上書きの `input` が、`source` の種類の入力として知られていない。
     #[error("{field}: `{input}` is not a known {kind} input")]
     UnknownTrackingInput {
+        /// `input` の場所。
         field: String,
+        /// `source` の種類 (`standard`・`blend_shape`・`head`)。
         kind: &'static str,
+        /// 知られていない入力の名前。
         input: String,
     },
     /// `standard` 以外のトラッキングの上書きに `parameter` が無い。
     #[error("{field}: `parameter` is required unless the source is `standard`")]
-    MissingTrackingTarget { field: String },
+    MissingTrackingTarget {
+        /// 上書きの場所 (`avatar.tracking[0]` など)。
+        field: String,
+    },
+    /// 標準の当たり判定の名前が `avatar.hit_areas` に 2 回以上ある。
     #[error("avatar.hit_areas: name `{name}` appears more than once")]
-    DuplicateHitAreaName { name: String },
+    DuplicateHitAreaName {
+        /// 重複した名前。
+        name: String,
+    },
     /// 新しい版のファイルの未知の値。フォールバックを適用して扱う。
     #[error("{field} has an unknown value from a newer file; its fallback is used")]
-    UnknownValue { field: String },
+    UnknownValue {
+        /// 未知の値の場所。
+        field: String,
+    },
+    /// 数値が許される範囲の外 (有限でない・正でないなど)。
     #[error("{field} = {value} must be {expected}")]
     InvalidValue {
+        /// 値の場所。
         field: String,
+        /// 実際の値。
         value: f32,
+        /// 満たすべき条件 (`finite and > 0` など)。
         expected: &'static str,
     },
     /// トラッキング・視線の対象が中継用 (`internal`) のパラメータ。トラッキングはこのパラメータに書き込まない
     /// (`docs/spec/model.md#パラメータ`)。
     #[error("{field}: parameter `{id}` is internal, so tracking does not write it")]
-    InternalTrackingTarget { field: String, id: String },
+    InternalTrackingTarget {
+        /// 対象を指す値の場所。
+        field: String,
+        /// 中継用のパラメータの ID。
+        id: String,
+    },
 }
 
 impl ProfileIssue {

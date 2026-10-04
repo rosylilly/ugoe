@@ -315,11 +315,15 @@
       "oneOf": [
         {
           "type": "string",
-          "enum": [
-            "x",
-            "y",
-            "angle"
-          ]
+          "const": "x"
+        },
+        {
+          "type": "string",
+          "const": "y"
+        },
+        {
+          "type": "string",
+          "const": "angle"
         }
       ]
     },

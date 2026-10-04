@@ -113,7 +113,7 @@ M9 の 32 のレビューで、複数の場所に同じ形で見つかったも�
 | 不安定なテスト (重い import の `beforeAll`・固定のポート)・テストの一時ディレクトリ | T0211・T0528・T0667・T0669・T0670・T0672 | 直した (`tracking.test.ts` は T0672、スタジオの API のテストは空きのポート)。一時ディレクトリの補助は **T0016** |
 | 部品とホストに依存する部分のテストの下地 | T0426・T0670・T0815 | スタジオに下地を足した (T0815)。エディタは T0699、Unity は T0446、Godot は見送り (Godot の層は SDK を薄く包むだけ) |
 | 文書の見出しへの参照の切れ | T0316 | **`just refs` の `scripts/check-doc-refs.mjs` で、コードのコメントから `docs/`・`spec/` の見出しへの参照を検査するようにし、切れていた 7 か所を直した** (Markdown のリンクは `just spec` の `check-md-links.mjs`) |
-| doc コメントの不足 (`missing_docs`) | T0139 | `ugoe` は直した。crates.io に出すほかのクレートは **T0017** |
+| doc コメントの不足 (`missing_docs`) | T0139 | `ugoe` は直した。crates.io に出すほかのクレートも **T0017** で直し、`just publish-check` が lint の有無を確かめる |
 | 秘密とネットワーク (転送で独自のヘッダ・本文の上限・接続の数え方・長く動くサーバの panic・keepalive) | T0527・T0529・T0814 | 直した (ai・mcp)。MCP の中継 (`ugoe-mcp/src/relay.rs`) は秘密を `Authorization` だけで送りループバックへつなぐので、転送の漏れは無いことを確かめた。スタジオの API は T0822。観点に足した |
 | 未知の値の書き出し | T0667 | `physics_to_json` は `unknown::in_physics` で調べるようになっていることを確かめた |
 | ID の型・公開の範囲・「最初の 1 つだけ報告」の扱い | T0136・T0316・T0912 | ID は T0142、`@ugoe/ui` の props は T0920。公開の範囲の見直し (物理の `Chain` など) は 1.0 の範囲を決めるときに行う (見送り)。報告の扱いは doc に書いてあるので見送り |

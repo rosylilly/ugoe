@@ -12,6 +12,7 @@
 // - `publish = true` のクレートが PUBLISHED と一致する (公開の範囲を広げるときは ADR とこの一覧を直す)。
 // - 公開するクレートの license・description・repository・readme・keywords・categories が揃い、
 //   クレートのディレクトリの LICENSE がルートの LICENSE と同じ内容である。
+// - 公開するクレートの lib.rs が `#![warn(missing_docs)]` (か deny・forbid) で doc コメントの不足を検査している。
 // - 公開するクレートが (dev 以外で) 依存する内部のクレートも公開され、version が指定されている。
 // - [workspace.dependencies] の公開するクレートの version が [workspace.package] の version と同じ。
 
@@ -32,6 +33,9 @@ export const PUBLISHED = [
   "ugoe-render",
   "ugoe",
 ];
+
+/** クレートの属性で `missing_docs` を検査しているか (`#![warn(missing_docs)]`・`#![deny(..)]`・`#![forbid(..)]`)。 */
+const MISSING_DOCS = /^\s*#!\[(?:warn|deny|forbid)\((?:[^)]*[\s,])?missing_docs\s*[,)]/m;
 
 // crates.io の制限: keywords は 5 個まで、1 つ 20 文字まで (https://doc.rust-lang.org/cargo/reference/manifest.html#the-keywords-field)
 const MAX_KEYWORDS = 5;
@@ -158,6 +162,14 @@ export function problems({ metadata, toml, license, readFile, tag, published = P
     } catch {}
     if (copy !== license) {
       out.push(`${name}: ${join(dir, "LICENSE")} must be a copy of the root LICENSE`);
+    }
+    const lib = p.targets?.find((t) => t.kind.includes("lib"))?.src_path ?? join(dir, "src/lib.rs");
+    let source = "";
+    try {
+      source = readFile(lib);
+    } catch {}
+    if (!MISSING_DOCS.test(source)) {
+      out.push(`${name}: ${lib} must have #![warn(missing_docs)]`);
     }
     for (const d of p.dependencies) {
       if (!internal.has(d.name) || d.kind === "dev") continue;

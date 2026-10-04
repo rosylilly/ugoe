@@ -198,11 +198,23 @@ export type AvatarMeta = {
 /**
  * アバターの名前 (必須)。
  */
-name: string, version: string | null, 
+name: string, 
+/**
+ * アバターのバージョン。
+ */
+version: string | null, 
 /**
  * 作者の一覧 (必須。1 人以上)。
  */
-authors: Array<string>, copyright: string | null, contact: string | null, 
+authors: Array<string>, 
+/**
+ * 著作権の表示。
+ */
+copyright: string | null, 
+/**
+ * 連絡先。
+ */
+contact: string | null, 
 /**
  * 原作・参考元。
  */
@@ -214,7 +226,43 @@ thumbnail: number | null,
 /**
  * 利用規約の URL。
  */
-license_url: string | null, avatar_permission: AvatarPermission, commercial_usage: CommercialUsage, allow_violent_usage: boolean, allow_sexual_usage: boolean, allow_political_or_religious_usage: boolean, allow_antisocial_or_hate_usage: boolean, credit_notation: CreditNotation, allow_redistribution: boolean, modification: Modification, 
+license_url: string | null, 
+/**
+ * アバターとして使ってよい人。
+ */
+avatar_permission: AvatarPermission, 
+/**
+ * 商用利用の範囲。
+ */
+commercial_usage: CommercialUsage, 
+/**
+ * 過度に暴力的な表現での利用を許すか。
+ */
+allow_violent_usage: boolean, 
+/**
+ * 過度に性的な表現での利用を許すか。
+ */
+allow_sexual_usage: boolean, 
+/**
+ * 政治・宗教の目的での利用を許すか。
+ */
+allow_political_or_religious_usage: boolean, 
+/**
+ * 反社会的・差別的な目的での利用を許すか。
+ */
+allow_antisocial_or_hate_usage: boolean, 
+/**
+ * クレジット表記が要るか。
+ */
+credit_notation: CreditNotation, 
+/**
+ * 改変していないモデル (ファイル) の再配布を許すか。
+ */
+allow_redistribution: boolean, 
+/**
+ * 改変の許諾。
+ */
+modification: Modification, 
 /**
  * 素材などの第三者のライセンス表記。
  */
@@ -238,7 +286,11 @@ profile_version: number,
 /**
  * 準拠を主張するレベル (1〜[`MAX_LEVEL`])。既定は 1。
  */
-level: number, meta: AvatarMeta, 
+level: number, 
+/**
+ * メタデータと利用許諾。
+ */
+meta: AvatarMeta, 
 /**
  * トラッキングの対応の上書きと追加。
  */
@@ -278,9 +330,20 @@ export type BlendMode = "normal" | "additive" | "multiply";
 /**
  * 呼吸。各パラメータに `weight * (offset + peak * sin(2π t / cycle))` を加算する。
  */
-export type Breath = { parameters: Array<BreathParameter>, };
+export type Breath = { 
+/**
+ * 呼吸で動かすパラメータと、それぞれの波。
+ */
+parameters: Array<BreathParameter>, };
 
-export type BreathParameter = { parameter: string, 
+/**
+ * 呼吸で動かす 1 つのパラメータの波。
+ */
+export type BreathParameter = { 
+/**
+ * 対象のパラメータ。
+ */
+parameter: string, 
 /**
  * 波の中心値。
  */
@@ -333,7 +396,15 @@ smoothing: number, };
  * キャンバス。モデル座標系は「キャンバス左上原点・ピクセル単位・Y 下向き」。
  * 表示時の正規化 (高さ 2.0 の NDC 相当など) は描画側の責務。
  */
-export type Canvas = { width: number, height: number, 
+export type Canvas = { 
+/**
+ * キャンバスの幅 (ピクセル)。
+ */
+width: number, 
+/**
+ * キャンバスの高さ (ピクセル)。
+ */
+height: number, 
 /**
  * 表示時の原点 (通常は足元中央など)。
  */
@@ -380,7 +451,27 @@ export type ColliderReference = { rig: string, collider: string, };
 /**
  * 衝突体の形状。半径はキャンバスのピクセル単位。
  */
-export type ColliderShape = { "type": "circle", center: Vec2, radius: number, } | { "type": "capsule", a: Vec2, b: Vec2, radius: number, };
+export type ColliderShape = { "type": "circle", 
+/**
+ * 円の中心 (`attach` の局所座標系、無ければキャンバス座標)。
+ */
+center: Vec2, 
+/**
+ * 円の半径 (ピクセル)。
+ */
+radius: number, } | { "type": "capsule", 
+/**
+ * 線分の一端 (`attach` の局所座標系、無ければキャンバス座標)。
+ */
+a: Vec2, 
+/**
+ * 線分のもう一端 (`a` と同じ座標系)。
+ */
+b: Vec2, 
+/**
+ * 線分からの距離で表す半径 (ピクセル)。
+ */
+radius: number, };
 
 /**
  * 編集操作。JSON で表現でき、AI エージェントのツール呼び出しにそのまま対応する。
@@ -459,11 +550,26 @@ remember: boolean, };
  */
 export type CreditNotation = "required" | "unnecessary";
 
-export type Curve = { target: CurveTarget, segments: Array<Segment>, 
+/**
+ * 1 つの対象の値を時間で動かすカーブ (`docs/spec/motion.md#カーブ`)。
+ */
+export type Curve = { 
+/**
+ * カーブが動かす対象。
+ */
+target: CurveTarget, 
+/**
+ * カーブの形。最初は必ず [`Segment::Start`] で、以降の各セグメントの始点は直前のセグメントの終点。
+ */
+segments: Array<Segment>, 
 /**
  * カーブ個別のフェード (未指定ならモーション全体の値)。
  */
-fade_in: number | null, fade_out: number | null, };
+fade_in: number | null, 
+/**
+ * カーブ個別のフェードアウトの秒数 (未指定ならモーション全体の値)。終了時刻はモーションのものを使う。
+ */
+fade_out: number | null, };
 
 /**
  * カーブの対象。JSON では `{"kind": "parameter", "id": "ParamAngleX"}` と書く。
@@ -477,11 +583,27 @@ export type CurveTarget = { "kind": "parameter", "id": string } | { "kind": "par
  * デフォーマ: 子 (デフォーマ / メッシュ) の頂点を変形する。
  * 子の頂点座標は **親デフォーマの局所座標系** で表現される (`docs/spec/evaluation.md`)。
  */
-export type Deformer = { id: string, name: string, part: string, 
+export type Deformer = { 
+/**
+ * モデルの中で一意な ID。
+ */
+id: string, 
+/**
+ * 表示名 (エディタ用)。
+ */
+name: string, 
+/**
+ * 所属するパーツ。パーツの不透明度が子に掛かる。
+ */
+part: string, 
 /**
  * `None` ならキャンバス座標直下。
  */
-parent: string | null, kind: DeformerKind, 
+parent: string | null, 
+/**
+ * 変形の種類と、種類ごとのキーフォーム。
+ */
+kind: DeformerKind, 
 /**
  * ミラーで対にするデフォーマ (オーサリング用)。`None` と自分自身は「自分と対応する」。
  * 対は双方向に張る (`docs/spec/keyform-inference.md#ミラー`)。
@@ -493,6 +615,9 @@ mirror?: string | null,
  */
 mirror_axis?: number | null, };
 
+/**
+ * デフォーマの種類。
+ */
 export type DeformerKind = { "type": "warp" } & WarpDeformer | { "type": "rotation" } & RotationDeformer;
 
 /**
@@ -623,12 +748,32 @@ state_changes: number, };
 /**
  * 描画順の範囲 `[min, max]` (`min <= max`)。
  */
-export type DrawOrderRange = { min: number, max: number, };
+export type DrawOrderRange = { 
+/**
+ * 範囲の下限。
+ */
+min: number, 
+/**
+ * 範囲の上限。
+ */
+max: number, };
 
 /**
  * エフェクト設定一式。
  */
-export type Effects = { eye_blink: EyeBlink, breath: Breath, lip_sync: LipSync, };
+export type Effects = { 
+/**
+ * 目パチ。
+ */
+eye_blink: EyeBlink, 
+/**
+ * 呼吸。
+ */
+breath: Breath, 
+/**
+ * リップシンク。
+ */
+lip_sync: LipSync, };
 
 /**
  * 1 つの要素の、はみ出した点。
@@ -685,11 +830,45 @@ atlas_padding: number, };
 /**
  * 表情: モーションの上に重ねるパラメータ差分。
  */
-export type Expression = { name: string, fade_in: number, fade_out: number, parameters: Array<ExpressionParameter>, };
+export type Expression = { 
+/**
+ * 表情の名前。ホストはこの名前で表情を止める。
+ */
+name: string, 
+/**
+ * フェードインの時間 (秒)。0 以下ならフェードなし。
+ */
+fade_in: number, 
+/**
+ * 止めてからフェードアウトする時間 (秒)。0 以下ならフェードなし。
+ */
+fade_out: number, 
+/**
+ * 重ねるパラメータの値。
+ */
+parameters: Array<ExpressionParameter>, };
 
+/**
+ * 表情の値の合成の方法。`v` は現在の値、`w` はフェードの重み (`docs/spec/motion.md#表情`)。
+ */
 export type ExpressionOp = "add" | "multiply" | "overwrite";
 
-export type ExpressionParameter = { parameter: string, value: number, op: ExpressionOp, };
+/**
+ * 表情が 1 つのパラメータに重ねる値。
+ */
+export type ExpressionParameter = { 
+/**
+ * 対象のパラメータ。
+ */
+parameter: string, 
+/**
+ * `op` で現在の値と合成する値。
+ */
+value: number, 
+/**
+ * 現在の値との合成の方法。
+ */
+op: ExpressionOp, };
 
 /**
  * 開いているプロジェクトのファイルが、エディタの外で変わったこと (`docs/editor.md#外での書き換え`)。
@@ -740,11 +919,49 @@ seed: number, };
 /**
  * 2 つのメッシュの頂点同士を引き寄せて継ぎ目を防ぐ「接着」。
  */
-export type Glue = { id: string, mesh_a: string, mesh_b: string, pairs: Array<GluePair>, keyforms: KeyformGrid<GlueKeyform>, };
+export type Glue = { 
+/**
+ * モデルの中で一意な ID。
+ */
+id: string, 
+/**
+ * 接着する一方のメッシュ (`GluePair::a` の頂点を持つ)。
+ */
+mesh_a: string, 
+/**
+ * 接着するもう一方のメッシュ (`GluePair::b` の頂点を持つ)。
+ */
+mesh_b: string, 
+/**
+ * 引き寄せる頂点のペア。この順に適用する。
+ */
+pairs: Array<GluePair>, 
+/**
+ * 引き寄せの強さのキーフォーム。
+ */
+keyforms: KeyformGrid<GlueKeyform>, };
 
-export type GlueKeyform = { intensity: number, };
+/**
+ * グルーの 1 つのキーフォーム。
+ */
+export type GlueKeyform = { 
+/**
+ * 引き寄せの強さ (0 なら引き寄せない、1 なら `weight` の位置に一致させる)。補間後の値はクランプしない。
+ */
+intensity: number, };
 
-export type GluePair = { a: number, b: number, 
+/**
+ * グルーで引き寄せる頂点のペア。
+ */
+export type GluePair = { 
+/**
+ * `Glue::mesh_a` の頂点のインデックス。
+ */
+a: number, 
+/**
+ * `Glue::mesh_b` の頂点のインデックス。
+ */
+b: number, 
 /**
  * 0.0 なら a 側に、1.0 なら b 側に寄せる。
  */
@@ -753,7 +970,15 @@ weight: number, };
 /**
  * 当たり判定領域。メッシュの変形後形状で判定する。
  */
-export type HitArea = { id: string, mesh: string, };
+export type HitArea = { 
+/**
+ * モデルの中で一意な ID。ホストはこの ID で当たり判定を参照する。
+ */
+id: string, 
+/**
+ * 判定に使うメッシュ。
+ */
+mesh: string, };
 
 /**
  * [`Command::InferKeyforms`] の推定の方法。
@@ -779,7 +1004,15 @@ export type Keyform = { "kind": "part" } & PartKeyform | { "kind": "warp" } & Wa
 /**
  * 1 本のパラメータ軸と、その軸上のキー位置 (昇順・重複なし)。
  */
-export type KeyformBinding = { parameter: string, keys: Array<number>, };
+export type KeyformBinding = { 
+/**
+ * 軸にするパラメータ。
+ */
+parameter: string, 
+/**
+ * 軸上のキー位置 (パラメータの値)。
+ */
+keys: Array<number>, };
 
 /**
  * N 本のパラメータ軸の直積格子上に並んだキーフォーム。
@@ -794,7 +1027,15 @@ export type KeyformBinding = { parameter: string, keys: Array<number>, };
  * `blend_shapes` はブレンドシェイプ格子の列で、この格子の補間結果に差分を加算する
  * (`docs/spec/evaluation.md#6-ブレンドシェイプ`)。
  */
-export type KeyformGrid<T> = { bindings: Array<KeyformBinding>, keyforms: Array<T>, 
+export type KeyformGrid<T> = { 
+/**
+ * パラメータ軸。空ならキーフォームは 1 つで、パラメータに依存しない。
+ */
+bindings: Array<KeyformBinding>, 
+/**
+ * 格子点ごとのキーフォーム。並びは上記の列優先の順。
+ */
+keyforms: Array<T>, 
 /**
  * キーの間の補間の種類 (`docs/spec/evaluation.md#曲線補間`)。既定は線形。
  */
@@ -905,7 +1146,11 @@ export type MaskMode = "union" | "intersection";
 /**
  * マスクとして使うメッシュへの参照。
  */
-export type MaskRef = { mesh: string, 
+export type MaskRef = { 
+/**
+ * マスクにするメッシュ。
+ */
+mesh: string, 
 /**
  * `true` なら反転マスク (メッシュの内側を隠す)。
  */
@@ -947,7 +1192,19 @@ project: string | null, sidecar: Sidecar, };
 /**
  * 描画単位となるテクスチャ付き三角形メッシュ。
  */
-export type Mesh = { id: string, name: string, part: string, 
+export type Mesh = { 
+/**
+ * モデルの中で一意な ID。
+ */
+id: string, 
+/**
+ * 表示名 (エディタ用)。
+ */
+name: string, 
+/**
+ * 所属するパーツ。パーツの不透明度が掛かる。
+ */
+part: string, 
 /**
  * `None` ならキャンバス座標直下。
  */
@@ -963,7 +1220,11 @@ uvs: Array<Vec2>,
 /**
  * 三角形インデックス (3 の倍数)。
  */
-indices: Array<number>, blend: BlendMode, 
+indices: Array<number>, 
+/**
+ * 合成モード。
+ */
+blend: BlendMode, 
 /**
  * 裏面カリングするか。
  */
@@ -979,7 +1240,11 @@ mask_mode: MaskMode,
 /**
  * `true` なら色としては描画せず、マスクとしてだけ働く。
  */
-mask_only: boolean, keyforms: KeyformGrid<MeshKeyform>, 
+mask_only: boolean, 
+/**
+ * 頂点位置・不透明度・描画順・色のキーフォーム。
+ */
+keyforms: KeyformGrid<MeshKeyform>, 
 /**
  * ミラーで対にするメッシュ (オーサリング用)。`None` と自分自身は「自分と対応する」。
  * 対は双方向に張る (`docs/spec/keyform-inference.md#ミラー`)。
@@ -1000,15 +1265,30 @@ depth?: Array<number> | null,
  */
 lit?: boolean, };
 
+/**
+ * メッシュの 1 つのキーフォーム。
+ */
 export type MeshKeyform = { 
 /**
  * 親座標系での頂点位置。長さは `uvs` と同じ。
  */
-positions: Array<Vec2>, opacity: number, 
+positions: Array<Vec2>, 
+/**
+ * 不透明度 (0〜1)。
+ */
+opacity: number, 
 /**
  * 描画順 (大きいほど手前)。同値はモデル内の宣言順で解決。
  */
-draw_order: number, multiply_color: Rgb, screen_color: Rgb, 
+draw_order: number, 
+/**
+ * 乗算色 (既定は白 = 変化なし)。式は `docs/spec/rendering.md`。
+ */
+multiply_color: Rgb, 
+/**
+ * スクリーン色 (既定は黒 = 変化なし)。式は `docs/spec/rendering.md`。
+ */
+screen_color: Rgb, 
 /**
  * マスクの効き具合 (0〜1、既定 1)。範囲外の値はランタイムがクランプする。
  */
@@ -1093,7 +1373,47 @@ tolerance?: number | null, };
 /**
  * 1 体のリグ付きモデル全体。
  */
-export type Model = { schema_version: number, meta: ModelMeta, parameters: Array<Parameter>, parameter_groups: Array<ParameterGroup>, parts: Array<Part>, deformers: Array<Deformer>, meshes: Array<Mesh>, glues: Array<Glue>, textures: Array<TextureRef>, hit_areas: Array<HitArea>, 
+export type Model = { 
+/**
+ * このデータのスキーマバージョン ([`SCHEMA_VERSION`])。
+ */
+schema_version: number, 
+/**
+ * 名前とキャンバス。
+ */
+meta: ModelMeta, 
+/**
+ * パラメータ。キーフォーム・モーション・物理などが ID で参照する。
+ */
+parameters: Array<Parameter>, 
+/**
+ * エディタ表示用のパラメータグループ。
+ */
+parameter_groups: Array<ParameterGroup>, 
+/**
+ * パーツ。階層は各パーツの `parent` で表す。
+ */
+parts: Array<Part>, 
+/**
+ * デフォーマ。評価は親が先の順で、結果は配列の順序に依存しない (`docs/spec/evaluation.md`)。
+ */
+deformers: Array<Deformer>, 
+/**
+ * メッシュ。
+ */
+meshes: Array<Mesh>, 
+/**
+ * メッシュの頂点同士の接着。配列の順に適用する (`docs/spec/evaluation.md#5-グルー`)。
+ */
+glues: Array<Glue>, 
+/**
+ * テクスチャの参照。メッシュの `texture` はこの列のインデックス。
+ */
+textures: Array<TextureRef>, 
+/**
+ * 当たり判定。ホストがクリック・タップされた部位を調べるのに使う。
+ */
+hit_areas: Array<HitArea>, 
 /**
  * 排他的なパーツ切り替え。省略時はグループなし (`docs/spec/model.md#ポーズ`)。
  */
@@ -1116,7 +1436,18 @@ slots?: Array<Slot>,
  */
 lighting?: boolean, };
 
-export type ModelMeta = { name: string, canvas: Canvas, };
+/**
+ * モデルのメタデータ。
+ */
+export type ModelMeta = { 
+/**
+ * モデルの名前。
+ */
+name: string, 
+/**
+ * キャンバス (モデル座標系の範囲)。
+ */
+canvas: Canvas, };
 
 /**
  * 改変の許諾。
@@ -1287,13 +1618,52 @@ base_revision: number,
  */
 base_pose_groups: number, };
 
-export type Motion = { name: string, 
+/**
+ * モーション (`*.motion.json`)。パラメータ・パーツの不透明度などを時間で動かすカーブの集まり (`docs/spec/motion.md#モーション`)。
+ */
+export type Motion = { 
+/**
+ * モーションの名前 (表示・選択に使う)。
+ */
+name: string, 
 /**
  * 秒。
  */
-duration: number, looping: boolean, fade_in: number, fade_out: number, curves: Array<Curve>, events: Array<MotionEvent>, };
+duration: number, 
+/**
+ * `duration` で折り返して繰り返すか。ループの境目ではフェードをかけない。
+ */
+looping: boolean, 
+/**
+ * フェードインの秒数。0 以下ならフェードインしない。
+ */
+fade_in: number, 
+/**
+ * フェードアウトの秒数。ループしないモーションは終わりのこの秒数前から、ループするものは止めてから
+ * この秒数でフェードアウトする。0 以下ならフェードしない。
+ */
+fade_out: number, 
+/**
+ * 時間で値を動かすカーブ。
+ */
+curves: Array<Curve>, 
+/**
+ * 再生時刻が通過したフレームで発火するイベント。
+ */
+events: Array<MotionEvent>, };
 
-export type MotionEvent = { t: number, value: string, };
+/**
+ * モーションの中の時刻に置くイベント。再生時刻がこの時刻を通過したフレームで発火する。
+ */
+export type MotionEvent = { 
+/**
+ * 発火する時刻 (秒)。
+ */
+t: number, 
+/**
+ * イベントの値 (アプリが解釈する任意の文字列)。
+ */
+value: string, };
 
 /**
  * AI タブで選んだ、法線マップを提案する 1 つのまとまりと設定 (`propose_normal_maps` の引数)。
@@ -1348,7 +1718,23 @@ canvas_per_pixel: number | null,
  */
 from_classification: boolean, };
 
-export type NormalizationRange = { min: number, default: number, max: number, };
+/**
+ * 正規化の写し先の範囲。パラメータの `min` / `default` / `max` をそれぞれここの値に写し、
+ * その間は default の両側で別々に線形補間する。
+ */
+export type NormalizationRange = { 
+/**
+ * パラメータの `min` を写した値。
+ */
+min: number, 
+/**
+ * パラメータの `default` を写した値。
+ */
+default: number, 
+/**
+ * パラメータの `max` を写した値。
+ */
+max: number, };
 
 /**
  * OpenAI 互換の API の設定。
@@ -1427,7 +1813,27 @@ truncated: Array<KeyformTarget>, };
 /**
  * モデルを動かす入力スカラー値 (例: 顔の角度 X, 目の開閉)。
  */
-export type Parameter = { id: string, name: string, min: number, max: number, default: number, 
+export type Parameter = { 
+/**
+ * モデルの中で一意な ID。モーション・キーフォームなどはこの ID で参照する。
+ */
+id: string, 
+/**
+ * 表示名 (エディタ用)。
+ */
+name: string, 
+/**
+ * 値の下限。値はこの範囲に切り詰める。
+ */
+min: number, 
+/**
+ * 値の上限 (`min` 以上)。
+ */
+max: number, 
+/**
+ * 既定値 (`min..=max` の中)。
+ */
+default: number, 
 /**
  * ブレンドシェイプ用パラメータか (加算変形。`docs/spec/model.md`)。
  */
@@ -1450,16 +1856,50 @@ internal?: boolean, };
 /**
  * エディタ表示用のパラメータグループ。ランタイムの挙動には影響しない。
  */
-export type ParameterGroup = { id: string, name: string, };
+export type ParameterGroup = { 
+/**
+ * モデルの中で一意な ID。
+ */
+id: string, 
+/**
+ * 表示名。
+ */
+name: string, };
 
+/**
+ * パラメータの種類 (`docs/spec/model.md#ブレンドシェイプ`)。
+ */
 export type ParameterKind = "normal" | "blend_shape";
 
 /**
  * パーツ: メッシュ・デフォーマをまとめる論理グループ。不透明度は親子で乗算される。
  */
-export type Part = { id: string, name: string, parent: string | null, keyforms: KeyformGrid<PartKeyform>, };
+export type Part = { 
+/**
+ * モデルの中で一意な ID。
+ */
+id: string, 
+/**
+ * 表示名 (エディタ用)。
+ */
+name: string, 
+/**
+ * 親のパーツ。`None` なら最上位。
+ */
+parent: string | null, 
+/**
+ * 不透明度のキーフォーム。
+ */
+keyforms: KeyformGrid<PartKeyform>, };
 
-export type PartKeyform = { opacity: number, };
+/**
+ * パーツの 1 つのキーフォーム。
+ */
+export type PartKeyform = { 
+/**
+ * 不透明度 (0〜1)。子のパーツ・デフォーマ・メッシュに乗算される。
+ */
+opacity: number, };
 
 /**
  * 物理の出力をパラメータへ合成する方法 (`docs/spec/physics.md#合成の方法`)。
@@ -1469,20 +1909,58 @@ export type PhysicsBlend = "overwrite" | "add";
 /**
  * 衝突体 (`docs/spec/physics.md#衝突体`)。
  */
-export type PhysicsCollider = { id: string, name: string, 
+export type PhysicsCollider = { 
+/**
+ * 衝突体の ID。リグは [`PhysicsRig::colliders`] でこの ID を選ぶ。
+ */
+id: string, 
+/**
+ * 表示名 (エディタ用。評価には使わない)。
+ */
+name: string, 
 /**
  * 取り付け先のデフォーマ。形状の位置はこのデフォーマの局所座標系で表し、
  * そのワールド変換で動く。`None` ならキャンバスに固定する。
  */
-attach?: string | null, shape: ColliderShape, };
+attach?: string | null, 
+/**
+ * 形状。位置は `attach` のデフォーマの局所座標系 (無ければキャンバス座標) で表す。
+ */
+shape: ColliderShape, };
 
-export type PhysicsInput = { parameter: string, source: PhysicsSource, 
+/**
+ * 物理の入力。パラメータの値を正規化し、重みを掛けて根元の姿勢に足す (`docs/spec/physics.md#入力`)。
+ */
+export type PhysicsInput = { 
+/**
+ * 入力元のパラメータ。存在しなければその入力を無視する。
+ */
+parameter: string, 
+/**
+ * パラメータの値を根元のどの量 (平行移動の x / y、回転) に足すか。
+ */
+source: PhysicsSource, 
 /**
  * 0..=100 (%)。
  */
-weight: number, reflect: boolean, };
+weight: number, 
+/**
+ * 正規化した値の符号を反転するか。
+ */
+reflect: boolean, };
 
-export type PhysicsNormalization = { position: NormalizationRange, angle: NormalizationRange, };
+/**
+ * 入力のパラメータの値を物理空間の量に写す範囲 (`docs/spec/physics.md#入力`)。
+ */
+export type PhysicsNormalization = { 
+/**
+ * 平行移動 (`source` が `x` / `y` の入力) の範囲。
+ */
+position: NormalizationRange, 
+/**
+ * 角度 (`source` が `angle` の入力) の範囲 (度)。
+ */
+angle: NormalizationRange, };
 
 /**
  * 物理の出力。
@@ -1498,18 +1976,50 @@ target: PhysicsTarget,
 /**
  * 出力元となる粒子インデックス (その粒子と 1 つ前の粒子の成す角を使う)。
  */
-particle: number, source: PhysicsSource, scale: number, weight: number, reflect: boolean, 
+particle: number, 
+/**
+ * 粒子のどの量 (相対位置の x / y、区間の角度) を出力するか。
+ */
+source: PhysicsSource, 
+/**
+ * 出力する値に掛ける倍率。
+ */
+scale: number, 
+/**
+ * 0..=100 (%)。パラメータへは現在の値とのブレンドの割合、動的物理では加算量に掛ける割合。
+ * 0〜1 にクランプして使う。
+ */
+weight: number, 
+/**
+ * 出力する値の符号を反転するか。
+ */
+reflect: boolean, 
 /**
  * パラメータへの合成の方法 (`docs/spec/physics.md#合成の方法`)。省略時は `overwrite`。
  * パラメータ以外の出力先では使わない (常に加算量として足す)。
  */
 blend?: PhysicsBlend, };
 
+/**
+ * 振り子チェーンの粒子 1 つ。係数の意味は `docs/spec/physics.md#係数の意味`。
+ */
 export type PhysicsParticle = { 
 /**
  * 初期位置 (根元からの相対)。
  */
-position: Vec2, mobility: number, delay: number, acceleration: number, 
+position: Vec2, 
+/**
+ * 基準フレーム (1/30 秒) あたりに残す速度の割合 (0..=1)。1 で減衰なし、小さいほど揺れがすぐ止まる。
+ */
+mobility: number, 
+/**
+ * 時間の進み方の倍率。1 で等速、大きいほど入力に機敏に反応して速く揺れる。
+ */
+delay: number, 
+/**
+ * 重力の倍率。大きいほど元の向きに戻ろうとする力が強く、揺れが速く収まる。風には掛からない。
+ */
+acceleration: number, 
 /**
  * 1 つ前の粒子との距離 (区間の長さ)。衝突には使わない。
  */
@@ -1519,7 +2029,34 @@ radius: number,
  */
 collision_radius: number, };
 
-export type PhysicsRig = { id: string, name: string, inputs: Array<PhysicsInput>, outputs: Array<PhysicsOutput>, particles: Array<PhysicsParticle>, normalization: PhysicsNormalization, 
+/**
+ * 物理リグ。入力 → 振り子チェーン → 出力 の 1 組 (`docs/spec/physics.md#概要`)。
+ */
+export type PhysicsRig = { 
+/**
+ * リグの ID。
+ */
+id: string, 
+/**
+ * 表示名 (エディタ用。評価には使わない)。
+ */
+name: string, 
+/**
+ * チェーンの根元の平行移動と回転を作る入力。
+ */
+inputs: Array<PhysicsInput>, 
+/**
+ * 粒子の位置・角度を書き込む出力。
+ */
+outputs: Array<PhysicsOutput>, 
+/**
+ * 振り子チェーンの粒子。先頭 (0 番) が根元で、根元から順に並ぶ。
+ */
+particles: Array<PhysicsParticle>, 
+/**
+ * 入力のパラメータの値を物理空間の位置・角度に写す範囲。
+ */
+normalization: PhysicsNormalization, 
 /**
  * このリグの粒子と衝突する衝突体 (`PhysicsCollider::id`)。省略時はなし。
  */
@@ -1530,24 +2067,60 @@ colliders: Array<string>,
  */
 frame?: string | null, };
 
-export type PhysicsSettings = { gravity: Vec2, wind: Vec2, 
+/**
+ * モデル 1 体分の物理の設定 (`*.physics.json`)。全リグに共通の重力・風・ステップの周波数と、リグ・衝突体の一覧。
+ */
+export type PhysicsSettings = { 
+/**
+ * 重力のベクトル。物理空間は y 軸下向きで、既定は `(0, 1)` (真下)。
+ * リグの `acceleration` を掛けて使う。
+ */
+gravity: Vec2, 
+/**
+ * 風のベクトル。重力と違い `acceleration` は掛からず、入力の角度でも回さない。
+ */
+wind: Vec2, 
 /**
  * 固定ステップ実行の周波数 (Hz)。
  */
-fps: number, rigs: Array<PhysicsRig>, 
+fps: number, 
+/**
+ * 物理リグ。この並びの順に処理し、前のリグがパラメータに書いた出力を後ろのリグの入力が読める
+ * (`docs/spec/physics.md#リグの順序と中継`)。
+ */
+rigs: Array<PhysicsRig>, 
 /**
  * 衝突体。どのリグと衝突するかは `PhysicsRig::colliders` で選ぶ
  * (`docs/spec/physics.md#衝突体`)。省略時はなし。
  */
 colliders: Array<PhysicsCollider>, };
 
+/**
+ * 物理の入力・出力で使う量。
+ */
 export type PhysicsSource = "x" | "y" | "angle";
 
 /**
  * 物理の出力先。JSON では `{"type": "deformer_angle", "deformer": "HairFront1"}` と書く。
  * パラメータ以外の出力先は動的物理 (`docs/spec/physics.md#動的物理-揺れ用パラメータのいらない物理`)。
  */
-export type PhysicsTarget = { "type": "parameter", id: string, } | { "type": "deformer_angle", deformer: string, } | { "type": "deformer_offset", deformer: string, } | { "type": "vertices", owner: VertexOwner, 
+export type PhysicsTarget = { "type": "parameter", 
+/**
+ * 書き込む先のパラメータ。
+ */
+id: string, } | { "type": "deformer_angle", 
+/**
+ * 角度を足す回転デフォーマ。
+ */
+deformer: string, } | { "type": "deformer_offset", 
+/**
+ * 原点をずらす回転デフォーマ。
+ */
+deformer: string, } | { "type": "vertices", 
+/**
+ * 動かす頂点の持ち主 (メッシュまたはワープデフォーマ)。
+ */
+owner: VertexOwner, 
 /**
  * 頂点 (制御点) ごとの重み (0..=1)。並びと長さは、メッシュなら `Mesh::uvs`、
  * ワープなら `WarpKeyform::points` と同じ。
@@ -1582,7 +2155,15 @@ neck?: string | null, };
 /**
  * 点 (time, value)。
  */
-export type Point = { t: number, v: number, };
+export type Point = { 
+/**
+ * 時刻 (秒)。
+ */
+t: number, 
+/**
+ * その時刻での対象の値 (パラメータの値・不透明度など)。
+ */
+v: number, };
 
 /**
  * ポーズ設定。グループごとに、表示中のパーツを 1 つに保つ。
@@ -1593,12 +2174,20 @@ export type Pose = {
 /**
  * 表示パーツを切り替えるときのクロスフェード時間 (秒)。0 以上。
  */
-fade_duration: number, groups: Array<PoseGroup>, };
+fade_duration: number, 
+/**
+ * 排他的なパーツの組。
+ */
+groups: Array<PoseGroup>, };
 
 /**
  * ポーズグループの 1 要素。
  */
-export type PoseEntry = { part: string, 
+export type PoseEntry = { 
+/**
+ * グループの要素となるパーツ。
+ */
+part: string, 
 /**
  * `part` と同じ不透明度に追従するパーツ (例: 腕に付属する袖)。
  */
@@ -1607,7 +2196,11 @@ links: Array<string>, };
 /**
  * 互いに排他的なパーツの組 (例: 腕の差分 A / B)。
  */
-export type PoseGroup = { entries: Array<PoseEntry>, };
+export type PoseGroup = { 
+/**
+ * 組の要素。最初は先頭の要素を表示する (`docs/spec/motion.md#ポーズ`)。
+ */
+entries: Array<PoseEntry>, };
 
 /**
  * プレビューの光源 1 つ (`docs/spec/rendering.md#ライティング`)。
@@ -1844,14 +2437,33 @@ particles: Array<number>, };
 /**
  * リニアではなく sRGB 値の RGB (0.0..=1.0)。乗算色・スクリーン色に使う。
  */
-export type Rgb = { r: number, g: number, b: number, };
+export type Rgb = { 
+/**
+ * 赤 (0.0..=1.0)。
+ */
+r: number, 
+/**
+ * 緑 (0.0..=1.0)。
+ */
+g: number, 
+/**
+ * 青 (0.0..=1.0)。
+ */
+b: number, };
 
 /**
  * 回転デフォーマ: 原点まわりの回転・拡縮・反転。
  * 子の局所座標は原点を (0,0) とした回転前の座標 (単位はキャンバスピクセル)。
  */
-export type RotationDeformer = { keyforms: KeyformGrid<RotationKeyform>, };
+export type RotationDeformer = { 
+/**
+ * 原点・角度・拡大率・反転・不透明度のキーフォーム。
+ */
+keyforms: KeyformGrid<RotationKeyform>, };
 
+/**
+ * 回転デフォーマの 1 つのキーフォーム。変換の式は `docs/spec/evaluation.md`。
+ */
 export type RotationKeyform = { 
 /**
  * 親座標系での原点。
@@ -1860,12 +2472,56 @@ origin: Vec2,
 /**
  * 度数法、時計回り正 (Y 下向き座標系)。
  */
-angle: number, scale: number, reflect_x: boolean, reflect_y: boolean, opacity: number, };
+angle: number, 
+/**
+ * 拡大率 (1 で等倍)。
+ */
+scale: number, 
+/**
+ * `true` なら局所座標の x を反転する。
+ */
+reflect_x: boolean, 
+/**
+ * `true` なら局所座標の y を反転する。
+ */
+reflect_y: boolean, 
+/**
+ * 子に掛ける不透明度 (0〜1)。
+ */
+opacity: number, };
 
 /**
  * 連続するセグメント列。各セグメントの始点は直前セグメントの終点。
  */
-export type Segment = { "type": "start", p: Point, } | { "type": "linear", to: Point, } | { "type": "bezier", c1: Point, c2: Point, to: Point, } | { "type": "stepped", to: Point, } | { "type": "inverse_stepped", to: Point, };
+export type Segment = { "type": "start", 
+/**
+ * 最初の点。
+ */
+p: Point, } | { "type": "linear", 
+/**
+ * 区間の終点。
+ */
+to: Point, } | { "type": "bezier", 
+/**
+ * 始点側の制御点。
+ */
+c1: Point, 
+/**
+ * 終点側の制御点。
+ */
+c2: Point, 
+/**
+ * 区間の終点。
+ */
+to: Point, } | { "type": "stepped", 
+/**
+ * 区間の終点。
+ */
+to: Point, } | { "type": "inverse_stepped", 
+/**
+ * 区間の終点。
+ */
+to: Point, };
 
 /**
  * [`crate::Command::SetMotionSegment`] で設定する区間の種類。
@@ -1974,7 +2630,19 @@ export type StaleRig = { mesh: string, name: string, };
 /**
  * テクスチャ参照。実データはコンテナ (`ugoe-format`) 側が保持する。
  */
-export type TextureRef = { name: string, width: number, height: number, 
+export type TextureRef = { 
+/**
+ * テクスチャの画像の名前。コンテナの中の画像を指す。
+ */
+name: string, 
+/**
+ * 画像の幅 (ピクセル)。
+ */
+width: number, 
+/**
+ * 画像の高さ (ピクセル)。
+ */
+height: number, 
 /**
  * 法線マップの画像の名前。`None` なら法線マップなし (法線は `(0, 0, 1)`)。
  * 画像は同じ UV 空間の接空間法線で、バンドルでは `NRML` チャンクに入る
@@ -1987,7 +2655,11 @@ normal_map?: string | null, };
  *
  * 入力の値 `v` から `v * scale + offset` を `parameter` に書き込む (値域へのクランプはその後)。
  */
-export type TrackingOverride = { source: TrackingSource, 
+export type TrackingOverride = { 
+/**
+ * 入力の種類。`input` の名前の解釈を決める。
+ */
+source: TrackingSource, 
 /**
  * 入力の名前。`source` によって、標準の対応表のパラメータ ID ([`TRACKED_PARAMETERS`])、
  * ARKit のブレンドシェイプ名 ([`ARKIT_BLEND_SHAPES`])、頭の回転 ([`HEAD_INPUTS`]) のいずれか。
@@ -1996,7 +2668,15 @@ input: string,
 /**
  * 書き込むパラメータ。`source` が `standard` なら省略でき、省略すると `input` と同じ ID。
  */
-parameter?: string | null, scale: number, offset: number, };
+parameter?: string | null, 
+/**
+ * 入力の値に掛ける倍率。既定は 1。
+ */
+scale: number, 
+/**
+ * 倍率を掛けた後に足す値。既定は 0。
+ */
+offset: number, };
 
 /**
  * トラッキングの入力の種類。
@@ -2034,15 +2714,34 @@ export type VertexOwner = { "mesh": string } | { "warp": string };
  * ワープデフォーマ: (rows+1)×(cols+1) 個の制御点を持つ格子による自由変形。
  * 子の局所座標は格子全体を [0,1]² に正規化した UV 空間。
  */
-export type WarpDeformer = { rows: number, cols: number, keyforms: KeyformGrid<WarpKeyform>, 
+export type WarpDeformer = { 
+/**
+ * 格子の行数 (縦の分割数)。制御点は縦に `rows + 1` 個。
+ */
+rows: number, 
+/**
+ * 格子の列数 (横の分割数)。制御点は横に `cols + 1` 個。
+ */
+cols: number, 
+/**
+ * 制御点と不透明度のキーフォーム。
+ */
+keyforms: KeyformGrid<WarpKeyform>, 
 /**
  * 制御点ごとの深度 (キャンバスのピクセル単位、手前が正。オーサリング用)。
  * 並びは `WarpKeyform::points` と同じで、長さ `(rows+1)*(cols+1)`。
  */
 depth?: Array<number> | null, };
 
+/**
+ * ワープデフォーマの 1 つのキーフォーム。
+ */
 export type WarpKeyform = { 
 /**
  * 行優先 (x が速い) の制御点。長さ `(rows+1)*(cols+1)`。親座標系。
  */
-points: Array<Vec2>, opacity: number, };
+points: Array<Vec2>, 
+/**
+ * 子に掛ける不透明度 (0〜1)。
+ */
+opacity: number, };

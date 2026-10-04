@@ -3,6 +3,7 @@ use ugoe_core::{Id, Vec2};
 
 use crate::{KeyformGrid, PartId};
 
+/// デフォーマの ID。モデルの中で一意。
 pub type DeformerId = Id<Deformer>;
 
 /// デフォーマ: 子 (デフォーマ / メッシュ) の頂点を変形する。
@@ -11,11 +12,15 @@ pub type DeformerId = Id<Deformer>;
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Deformer {
+    /// モデルの中で一意な ID。
     pub id: DeformerId,
+    /// 表示名 (エディタ用)。
     pub name: String,
+    /// 所属するパーツ。パーツの不透明度が子に掛かる。
     pub part: PartId,
     /// `None` ならキャンバス座標直下。
     pub parent: Option<DeformerId>,
+    /// 変形の種類と、種類ごとのキーフォーム。
     pub kind: DeformerKind,
     /// ミラーで対にするデフォーマ (オーサリング用)。`None` と自分自身は「自分と対応する」。
     /// 対は双方向に張る (`docs/spec/keyform-inference.md#ミラー`)。
@@ -27,12 +32,15 @@ pub struct Deformer {
     pub mirror_axis: Option<f32>,
 }
 
+/// デフォーマの種類。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum DeformerKind {
+    /// 格子による自由変形。
     Warp(WarpDeformer),
+    /// 原点まわりの回転・拡縮・反転。
     Rotation(RotationDeformer),
     /// 未知の値 (新しい版のファイル)。恒等変換として扱う (子は親の変換だけを受ける)。
     /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
@@ -48,8 +56,11 @@ pub enum DeformerKind {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct WarpDeformer {
+    /// 格子の行数 (縦の分割数)。制御点は縦に `rows + 1` 個。
     pub rows: u16,
+    /// 格子の列数 (横の分割数)。制御点は横に `cols + 1` 個。
     pub cols: u16,
+    /// 制御点と不透明度のキーフォーム。
     pub keyforms: KeyformGrid<WarpKeyform>,
     /// 制御点ごとの深度 (キャンバスのピクセル単位、手前が正。オーサリング用)。
     /// 並びは `WarpKeyform::points` と同じで、長さ `(rows+1)*(cols+1)`。
@@ -57,6 +68,7 @@ pub struct WarpDeformer {
     pub depth: Option<Vec<f32>>,
 }
 
+/// ワープデフォーマの 1 つのキーフォーム。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -65,6 +77,7 @@ pub struct WarpKeyform {
     #[cfg_attr(feature = "ts", ts(as = "Vec<crate::Vec2Repr>"))]
     #[cfg_attr(feature = "schema", schemars(with = "Vec<crate::Vec2Repr>"))]
     pub points: Vec<Vec2>,
+    /// 子に掛ける不透明度 (0〜1)。
     pub opacity: f32,
 }
 
@@ -74,9 +87,11 @@ pub struct WarpKeyform {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RotationDeformer {
+    /// 原点・角度・拡大率・反転・不透明度のキーフォーム。
     pub keyforms: KeyformGrid<RotationKeyform>,
 }
 
+/// 回転デフォーマの 1 つのキーフォーム。変換の式は `docs/spec/evaluation.md`。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -87,10 +102,14 @@ pub struct RotationKeyform {
     pub origin: Vec2,
     /// 度数法、時計回り正 (Y 下向き座標系)。
     pub angle: f32,
+    /// 拡大率 (1 で等倍)。
     pub scale: f32,
+    /// `true` なら局所座標の x を反転する。
     #[serde(default)]
     pub reflect_x: bool,
+    /// `true` なら局所座標の y を反転する。
     #[serde(default)]
     pub reflect_y: bool,
+    /// 子に掛ける不透明度 (0〜1)。
     pub opacity: f32,
 }

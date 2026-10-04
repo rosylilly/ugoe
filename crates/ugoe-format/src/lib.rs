@@ -7,6 +7,8 @@
 //!
 //! 読み込みは **常に** スキーマバージョンを検査し、未知の新しい版は明示的なエラーにする。
 
+#![warn(missing_docs)]
+
 pub mod bundle;
 pub mod features;
 #[cfg(feature = "png")]
@@ -37,46 +39,110 @@ pub const MAGIC: [u8; 4] = *b"UGOE";
 /// 読み書きのエラー。読み込みは壊れた入力でパニックせず、このエラーを返す。
 #[derive(Debug, thiserror::Error)]
 pub enum FormatError {
+    /// 先頭のマジックバイトが [`MAGIC`] でない (ugoe のファイルではない)。
     #[error("not a ugoe file")]
     BadMagic,
+    /// スキーマバージョンがこのクレートの読める版より新しい。
     #[error("unsupported schema version {found} (supported up to {supported})")]
-    UnsupportedVersion { found: u32, supported: u32 },
+    UnsupportedVersion {
+        /// ファイルに書かれた版。
+        found: u32,
+        /// 読める最も新しい版 ([`ugoe_model::SCHEMA_VERSION`])。
+        supported: u32,
+    },
+    /// ヘッダのコンテナの版 (ヘッダ・チャンク表の形の版) が知らないもの。
     #[error("unsupported container version {found} (supported {supported})")]
-    UnsupportedContainerVersion { found: u32, supported: u32 },
+    UnsupportedContainerVersion {
+        /// ファイルに書かれた版。
+        found: u32,
+        /// 読める版。
+        supported: u32,
+    },
+    /// ヘッダのフラグに知らないビットが立っている。中身はフラグの値。
     #[error("unsupported header flags {0:#x}")]
     UnsupportedFlags(u32),
+    /// チャンク表の項目のフラグに知らないビットが立っている。
     #[error("chunk {tag}: unsupported flags {flags:#x}")]
-    UnsupportedChunkFlags { tag: ChunkTag, flags: u32 },
+    UnsupportedChunkFlags {
+        /// チャンクの種類。
+        tag: ChunkTag,
+        /// フラグの値。
+        flags: u32,
+    },
+    /// ヘッダかチャンク表が途中で切れている。
     #[error("unexpected end of input")]
     Truncated,
+    /// チャンク表の範囲 (オフセットと長さ) がファイルの外を指す。
     #[error("chunk {tag}: offset or length out of bounds")]
-    ChunkOutOfBounds { tag: ChunkTag },
+    ChunkOutOfBounds {
+        /// チャンクの種類。
+        tag: ChunkTag,
+    },
+    /// チャンクのオフセットが 16 バイト境界に揃っていない。
     #[error("chunk {tag}: offset {offset} is not aligned to 16 bytes")]
-    MisalignedChunk { tag: ChunkTag, offset: u64 },
+    MisalignedChunk {
+        /// チャンクの種類。
+        tag: ChunkTag,
+        /// ファイルの先頭からのオフセット (バイト)。
+        offset: u64,
+    },
+    /// チャンクの範囲が、ヘッダ・チャンク表・ほかのチャンクと重なる。
     #[error("chunk {tag} overlaps the header, the chunk table or another chunk")]
-    OverlappingChunks { tag: ChunkTag },
+    OverlappingChunks {
+        /// 重なりが見つかったチャンクの種類。
+        tag: ChunkTag,
+    },
     /// このファイルの種類には置けないチャンク (`.ugoe` の `MODU`、`.ugoemod` の `MODL` など)。
     /// バンドルとモジュールのファイルを取り違えたときに返す。
     #[error("chunk {0} is not allowed in this kind of file")]
     UnexpectedChunk(ChunkTag),
+    /// 必須のチャンク (`MODL` など) が無い。
     #[error("required chunk {0} is missing")]
     MissingChunk(ChunkTag),
+    /// 1 つまでしか置けないチャンクが 2 つ以上ある。
     #[error("chunk {0} must appear at most once")]
     DuplicateChunk(ChunkTag),
+    /// `TEXR` チャンクの数が、モデルの `textures` の数と一致しない。
     #[error("texture count {actual} does not match model textures {expected}")]
-    TextureCountMismatch { expected: usize, actual: usize },
+    TextureCountMismatch {
+        /// モデルの `textures` の数。
+        expected: usize,
+        /// `TEXR` チャンクの数。
+        actual: usize,
+    },
+    /// テクスチャのバイト列の先頭が PNG・KTX2 のどちらのシグネチャでもない。
     #[error("texture #{index}: not a PNG or KTX2 image")]
-    UnknownTextureFormat { index: usize },
+    UnknownTextureFormat {
+        /// テクスチャの番号 (`TEXR` チャンクの順番)。
+        index: usize,
+    },
+    /// 書き出すテクスチャのバイト列が、[`TextureData::format`](bundle::TextureData::format) の形式と食い違う。
     #[error("texture #{index}: bytes do not match the declared format")]
-    TextureFormatMismatch { index: usize },
+    TextureFormatMismatch {
+        /// テクスチャの番号。
+        index: usize,
+    },
     /// `NRML` の数が、`normal_map` を持つテクスチャの数と一致しない。
     #[error("normal map count {actual} does not match textures with a normal map {expected}")]
-    NormalMapCountMismatch { expected: usize, actual: usize },
-    /// `index` は `NRML` チャンクの順番。
+    NormalMapCountMismatch {
+        /// `normal_map` を持つテクスチャの数。
+        expected: usize,
+        /// `NRML` チャンクの数。
+        actual: usize,
+    },
+    /// 法線マップのバイト列の先頭が PNG・KTX2 のどちらのシグネチャでもない。
     #[error("normal map #{index}: not a PNG or KTX2 image")]
-    UnknownNormalMapFormat { index: usize },
+    UnknownNormalMapFormat {
+        /// `NRML` チャンクの順番。
+        index: usize,
+    },
+    /// 書き出す法線マップのバイト列が、宣言した形式と食い違う。
     #[error("normal map #{index}: bytes do not match the declared format")]
-    NormalMapFormatMismatch { index: usize },
+    NormalMapFormatMismatch {
+        /// 法線マップの順番 (`NRML` チャンクの順番)。
+        index: usize,
+    },
+    /// 圧縮されたチャンクを展開できない。中身は展開のライブラリのメッセージ。
     #[error("chunk decompression failed: {0}")]
     Decompress(String),
     /// 読み込みの上限 ([`ReadLimits`]) を超えたので、チャンク `tag` の展開を途中でやめた。
@@ -84,10 +150,14 @@ pub enum FormatError {
     /// (上限を上げれば読めることがある。`docs/spec/file-formats.md#読み込みの上限`)。
     #[error("chunk {tag}: {limit} exceeds the read limit of {max} bytes")]
     ReadLimitExceeded {
+        /// 展開をやめたチャンクの種類。
         tag: ChunkTag,
+        /// 超えた上限の種類。
         limit: ReadLimit,
+        /// その上限の値 (バイト)。
         max: u64,
     },
+    /// 書き出すバンドルが大きすぎて、チャンクの数やオフセットがヘッダ・チャンク表の整数に収まらない。
     #[error("bundle is too large")]
     TooLarge,
     /// モデルが `validate` の検査に通らない。文の形は `docs/spec/model.md#検証エラーの文`。
@@ -102,13 +172,17 @@ pub enum FormatError {
     /// モーション (`MOTN` か `*.motion.json`) が `validate_motion` の検査に通らない。`name` はモーションの名前。
     #[error("{}", describe_errors(&format!("motion `{name}`"), .errors))]
     InvalidMotion {
+        /// モーションの名前。
         name: String,
+        /// 見つかったエラーのすべて。
         errors: Vec<ValidationError>,
     },
     /// 表情 (`EXPR` か `*.expression.json`) が `validate_expression` の検査に通らない。`name` は表情の名前。
     #[error("{}", describe_errors(&format!("expression `{name}`"), .errors))]
     InvalidExpression {
+        /// 表情の名前。
         name: String,
+        /// 見つかったエラーのすべて。
         errors: Vec<ValidationError>,
     },
     /// 知らない必須の機能を宣言している (`docs/spec/file-formats.md#機能の宣言`)。
@@ -117,10 +191,13 @@ pub enum FormatError {
     /// 未知の値 (新しい版で増えた enum の値) は書き出せない。値の場所の一覧。
     #[error("cannot write unknown values: {}", .0.join(", "))]
     UnknownValues(Vec<String>),
+    /// JSON の読み書きに失敗した (JSON の構文・型が合わないなど)。
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+    /// チャンクの MessagePack への書き出しに失敗した。
     #[error(transparent)]
     MsgPackEncode(#[from] rmp_serde::encode::Error),
+    /// チャンクの MessagePack を読めない (形が合わないなど)。
     #[error(transparent)]
     MsgPackDecode(#[from] rmp_serde::decode::Error),
 }

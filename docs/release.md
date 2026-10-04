@@ -25,7 +25,13 @@ node scripts/crates.mjs order
 ### 公開の準備の検査
 
 - `just publish-check` (`just ci` に含む): 公開するクレートのメタデータ (`description`・`readme`・`keywords`・`categories` など)、
-  各クレートの `LICENSE` がルートの `LICENSE` の写しであること、内部の依存の版が揃っていること。
+  各クレートの `LICENSE` がルートの `LICENSE` の写しであること、内部の依存の版が揃っていること、
+  各クレートの `lib.rs` に `#![warn(missing_docs)]` があること。
+- doc コメントの不足: 公開するクレートは `#![warn(missing_docs)]` で、公開する項目 (型・関数・フィールド・enum の値・モジュール)
+  に doc コメントが無いと警告を出します。CI の clippy は `-D warnings` なので、不足があると通りません。公開するクレートを
+  増やしたら、その `lib.rs` にも入れます (`just publish-check` が確かめます)。doc コメントは中身のあるものにし、
+  名前を言い換えただけの doc で埋めません。`ugoe-model` の型の doc コメントはエディタの TypeScript の型と JSON Schema
+  にも入るので、変えたら `just gen` で生成物を作り直します。
 - `just publish-dry-run`: `cargo publish --workspace --dry-run`。パッケージを作り、crates.io の代わりに一時的なレジストリに置いて
   ビルドします (公開はしません)。crates.io の索引を読むのでネットワークが要り、時間もかかるので `just ci` には含めません。
   パッケージに入るファイルは `cargo package -p <クレート> --list` で確かめられます。

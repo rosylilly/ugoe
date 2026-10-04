@@ -34,13 +34,21 @@ impl Default for Lighting {
 pub enum Light {
     /// 平行光源。`direction` は光が進む向き (長さは問わない)。
     /// 例: 左上の手前から照らすなら `[1.0, 1.0, -1.0]`。長さが 0 か有限でなければ使わない。
-    Directional { direction: [f32; 3], color: Rgb },
+    Directional {
+        /// 光が進む向き (x, y, z)。
+        direction: [f32; 3],
+        /// 光の色 (強さを兼ねる)。
+        color: Rgb,
+    },
     /// 点光源。`position` の位置から全方向を照らし、距離 `range` で 0 になるように減衰する
     /// (`(1 − d / range)²`)。`range` が `f32::INFINITY` なら減衰しない。
     /// `range` が正でない (NaN を含む) か、位置が有限でなければ使わない。
     Point {
+        /// 光源の位置 (x, y, z)。
         position: [f32; 3],
+        /// 光の色 (強さを兼ねる)。
         color: Rgb,
+        /// 光が届く距離 (キャンバスのピクセル単位)。
         range: f32,
     },
 }

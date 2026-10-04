@@ -42,15 +42,18 @@ pub const LEVEL_2_PARAMETERS: &[&str] = &[
 /// レベル 3 (表情) で、レベル 2 に加えて必要な拡張パラメータ ([`standard::EXTENDED`]) の数。
 pub const LEVEL_3_EXTENDED_COUNT: usize = 8;
 
-/// 頭の回転の入力 (度)。[`TrackingSource::Head`] の `input` に書く。
+/// 頭の左右の回転の入力 (度)。頭の回転の入力は [`TrackingSource::Head`] の `input` に書く。
 pub const HEAD_YAW: &str = "yaw";
+/// 頭の上下の回転の入力 (度)。
 pub const HEAD_PITCH: &str = "pitch";
+/// 頭の傾きの入力 (度)。
 pub const HEAD_ROLL: &str = "roll";
 /// 頭の回転の入力の一覧。
 pub const HEAD_INPUTS: &[&str] = &[HEAD_YAW, HEAD_PITCH, HEAD_ROLL];
 
-/// 標準の当たり判定の名前 (`AvatarHitArea::name`)。
+/// 頭の標準の当たり判定の名前 (`AvatarHitArea::name`)。
 pub const HIT_AREA_HEAD: &str = "Head";
+/// 体の標準の当たり判定の名前 (`AvatarHitArea::name`)。
 pub const HIT_AREA_BODY: &str = "Body";
 
 /// トラッキングの標準の対応表で値が決まるパラメータ ([`TrackingSource::Standard`] の `input` に書ける ID)。
@@ -165,6 +168,7 @@ pub struct AvatarProfile {
     pub profile_version: u32,
     /// 準拠を主張するレベル (1〜[`MAX_LEVEL`])。既定は 1。
     pub level: u8,
+    /// メタデータと利用許諾。
     pub meta: AvatarMeta,
     /// トラッキングの対応の上書きと追加。
     pub tracking: Vec<TrackingOverride>,
@@ -200,10 +204,13 @@ impl Default for AvatarProfile {
 pub struct AvatarMeta {
     /// アバターの名前 (必須)。
     pub name: String,
+    /// アバターのバージョン。
     pub version: Option<String>,
     /// 作者の一覧 (必須。1 人以上)。
     pub authors: Vec<String>,
+    /// 著作権の表示。
     pub copyright: Option<String>,
+    /// 連絡先。
     pub contact: Option<String>,
     /// 原作・参考元。
     pub references: Vec<String>,
@@ -211,14 +218,23 @@ pub struct AvatarMeta {
     pub thumbnail: Option<u32>,
     /// 利用規約の URL。
     pub license_url: Option<String>,
+    /// アバターとして使ってよい人。
     pub avatar_permission: AvatarPermission,
+    /// 商用利用の範囲。
     pub commercial_usage: CommercialUsage,
+    /// 過度に暴力的な表現での利用を許すか。
     pub allow_violent_usage: bool,
+    /// 過度に性的な表現での利用を許すか。
     pub allow_sexual_usage: bool,
+    /// 政治・宗教の目的での利用を許すか。
     pub allow_political_or_religious_usage: bool,
+    /// 反社会的・差別的な目的での利用を許すか。
     pub allow_antisocial_or_hate_usage: bool,
+    /// クレジット表記が要るか。
     pub credit_notation: CreditNotation,
+    /// 改変していないモデル (ファイル) の再配布を許すか。
     pub allow_redistribution: bool,
+    /// 改変の許諾。
     pub modification: Modification,
     /// 素材などの第三者のライセンス表記。
     pub third_party_licenses: Option<String>,
@@ -292,8 +308,10 @@ impl CommercialUsage {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CreditNotation {
+    /// クレジットの表記が要る。
     #[default]
     Required,
+    /// クレジットの表記は要らない。
     Unnecessary,
     /// 未知の値 (新しい版のファイル)。最も制限の強い `Required` として扱う。
     /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
@@ -351,6 +369,7 @@ impl Modification {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TrackingOverride {
+    /// 入力の種類。`input` の名前の解釈を決める。
     pub source: TrackingSource,
     /// 入力の名前。`source` によって、標準の対応表のパラメータ ID ([`TRACKED_PARAMETERS`])、
     /// ARKit のブレンドシェイプ名 ([`ARKIT_BLEND_SHAPES`])、頭の回転 ([`HEAD_INPUTS`]) のいずれか。
@@ -358,8 +377,10 @@ pub struct TrackingOverride {
     /// 書き込むパラメータ。`source` が `standard` なら省略でき、省略すると `input` と同じ ID。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parameter: Option<ParamId>,
+    /// 入力の値に掛ける倍率。既定は 1。
     #[serde(default = "one")]
     pub scale: f32,
+    /// 倍率を掛けた後に足す値。既定は 0。
     #[serde(default)]
     pub offset: f32,
 }

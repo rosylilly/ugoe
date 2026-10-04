@@ -26,6 +26,13 @@ const TOML = [
 ].join("\n");
 
 const LICENSE = "MIT License\n";
+const LIB = "//! crate docs\n\n#![warn(missing_docs)]\n\npub mod a;\n";
+
+/** LICENSE には `license`、lib.rs には `lib` を返す readFile。 */
+const files =
+  ({ license = LICENSE, lib = LIB } = {}) =>
+  (path) =>
+    path.endsWith("/LICENSE") ? license : lib;
 
 function pkg(name, overrides = {}) {
   return {
@@ -98,7 +105,7 @@ describe("crates", () => {
       ]),
       toml,
       license: LICENSE,
-      readFile: () => LICENSE,
+      readFile: files(),
       tag: "v0.2.0",
       published: ["a", "b"],
     });
@@ -114,7 +121,10 @@ describe("crates", () => {
       ]),
       toml: TOML,
       license: LICENSE,
-      readFile: (path) => (path.includes("/a/") ? LICENSE : "other"),
+      readFile: (path) =>
+        path.includes("/a/")
+          ? files()(path)
+          : files({ license: "other", lib: "pub mod b;\n" })(path),
       tag: "v0.3.0",
       published: ["a", "b"],
     });
@@ -127,8 +137,29 @@ describe("crates", () => {
     has(/^a: missing readme/);
     has(/^a: at most 5 keywords/);
     has(/^b: .*LICENSE must be a copy/);
+    has(/^b: .*lib\.rs must have #!\[warn\(missing_docs\)\]/);
+    assert.ok(!found.some((p) => /^a: .*missing_docs/.test(p)));
     has(/^b depends on tool, which is not published/);
     has(/^\[workspace\.dependencies\] b version 0\.1\.0 differs/);
     has(/^tag v0\.3\.0 does not match/);
+  });
+
+  it("finds the missing_docs lint in the lib target", () => {
+    const check = (lib, targets) =>
+      problems({
+        metadata: meta([pkg("a", targets ? { targets } : {})]),
+        toml: syncVersions(TOML, "0.2.0", ["a"]),
+        license: LICENSE,
+        readFile: files({ lib }),
+        published: ["a"],
+      });
+    assert.deepEqual(check("#![deny(missing_docs)]\n"), []);
+    assert.deepEqual(check("#![warn(unused, missing_docs)]\n"), []);
+    assert.deepEqual(check("#![forbid(missing_docs)]\n"), []);
+    assert.equal(check("// #![warn(missing_docs)]\n").length, 1);
+    assert.equal(check("#![allow(missing_docs)]\n").length, 1);
+    assert.equal(check("#![warn(missing_docs_in_private_items)]\n").length, 1);
+    const targets = [{ kind: ["lib"], src_path: "/r/crates/a/src/root.rs" }];
+    assert.match(check("", targets)[0], /\/r\/crates\/a\/src\/root\.rs must have/);
   });
 });

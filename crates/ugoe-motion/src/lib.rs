@@ -5,6 +5,8 @@
 //!
 //! フェイストラッキングの対応付け ([`tracking`]) もここに置く (`docs/spec/avatar-profile.md`)。
 
+#![warn(missing_docs)]
+
 pub mod curve;
 mod effects;
 mod expression;

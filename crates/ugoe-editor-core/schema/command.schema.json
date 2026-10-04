@@ -2684,22 +2684,27 @@
       "type": "object",
       "properties": {
         "allow_antisocial_or_hate_usage": {
+          "description": "反社会的・差別的な目的での利用を許すか。",
           "type": "boolean",
           "default": false
         },
         "allow_political_or_religious_usage": {
+          "description": "政治・宗教の目的での利用を許すか。",
           "type": "boolean",
           "default": false
         },
         "allow_redistribution": {
+          "description": "改変していないモデル (ファイル) の再配布を許すか。",
           "type": "boolean",
           "default": false
         },
         "allow_sexual_usage": {
+          "description": "過度に性的な表現での利用を許すか。",
           "type": "boolean",
           "default": false
         },
         "allow_violent_usage": {
+          "description": "過度に暴力的な表現での利用を許すか。",
           "type": "boolean",
           "default": false
         },
@@ -2712,14 +2717,17 @@
           }
         },
         "avatar_permission": {
+          "description": "アバターとして使ってよい人。",
           "$ref": "#/$defs/AvatarPermission",
           "default": "only_author"
         },
         "commercial_usage": {
+          "description": "商用利用の範囲。",
           "$ref": "#/$defs/CommercialUsage",
           "default": "personal_non_profit"
         },
         "contact": {
+          "description": "連絡先。",
           "type": [
             "string",
             "null"
@@ -2727,6 +2735,7 @@
           "default": null
         },
         "copyright": {
+          "description": "著作権の表示。",
           "type": [
             "string",
             "null"
@@ -2734,6 +2743,7 @@
           "default": null
         },
         "credit_notation": {
+          "description": "クレジット表記が要るか。",
           "$ref": "#/$defs/CreditNotation",
           "default": "required"
         },
@@ -2746,6 +2756,7 @@
           "default": null
         },
         "modification": {
+          "description": "改変の許諾。",
           "$ref": "#/$defs/Modification",
           "default": "prohibited"
         },
@@ -2781,6 +2792,7 @@
           "minimum": 0
         },
         "version": {
+          "description": "アバターのバージョン。",
           "type": [
             "string",
             "null"
@@ -2841,6 +2853,7 @@
           ]
         },
         "meta": {
+          "description": "メタデータと利用許諾。",
           "$ref": "#/$defs/AvatarMeta",
           "default": {
             "allow_antisocial_or_hate_usage": false,
@@ -2893,12 +2906,19 @@
       "description": "合成モード。式は `docs/spec/rendering.md`。",
       "oneOf": [
         {
+          "description": "通常の合成 (`src + dst * (1 - src.a)`)。",
           "type": "string",
-          "enum": [
-            "normal",
-            "additive",
-            "multiply"
-          ]
+          "const": "normal"
+        },
+        {
+          "description": "加算合成。",
+          "type": "string",
+          "const": "additive"
+        },
+        {
+          "description": "乗算合成。",
+          "type": "string",
+          "const": "multiply"
         }
       ]
     },
@@ -2907,6 +2927,7 @@
       "type": "object",
       "properties": {
         "parameters": {
+          "description": "呼吸で動かすパラメータと、それぞれの波。",
           "type": "array",
           "default": [],
           "items": {
@@ -2916,6 +2937,7 @@
       }
     },
     "BreathParameter": {
+      "description": "呼吸で動かす 1 つのパラメータの波。",
       "type": "object",
       "properties": {
         "cycle": {
@@ -2929,7 +2951,7 @@
           "format": "float"
         },
         "parameter": {
-          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "description": "対象のパラメータ。",
           "type": "string"
         },
         "peak": {
@@ -2994,12 +3016,15 @@
       "description": "衝突体の形状。半径はキャンバスのピクセル単位。",
       "oneOf": [
         {
+          "description": "`center` から `radius` 以内の円の領域。",
           "type": "object",
           "properties": {
             "center": {
+              "description": "円の中心 (`attach` の局所座標系、無ければキャンバス座標)。",
               "$ref": "#/$defs/Vec2"
             },
             "radius": {
+              "description": "円の半径 (ピクセル)。",
               "type": "number",
               "format": "float"
             },
@@ -3019,12 +3044,15 @@
           "type": "object",
           "properties": {
             "a": {
+              "description": "線分の一端 (`attach` の局所座標系、無ければキャンバス座標)。",
               "$ref": "#/$defs/Vec2"
             },
             "b": {
+              "description": "線分のもう一端 (`a` と同じ座標系)。",
               "$ref": "#/$defs/Vec2"
             },
             "radius": {
+              "description": "線分からの距離で表す半径 (ピクセル)。",
               "type": "number",
               "format": "float"
             },
@@ -3066,15 +3094,19 @@
       "description": "クレジット表記。",
       "oneOf": [
         {
+          "description": "クレジットの表記が要る。",
           "type": "string",
-          "enum": [
-            "required",
-            "unnecessary"
-          ]
+          "const": "required"
+        },
+        {
+          "description": "クレジットの表記は要らない。",
+          "type": "string",
+          "const": "unnecessary"
         }
       ]
     },
     "Curve": {
+      "description": "1 つの対象の値を時間で動かすカーブ (`docs/spec/motion.md#カーブ`)。",
       "type": "object",
       "properties": {
         "fade_in": {
@@ -3087,6 +3119,7 @@
           "default": null
         },
         "fade_out": {
+          "description": "カーブ個別のフェードアウトの秒数 (未指定ならモーション全体の値)。終了時刻はモーションのものを使う。",
           "type": [
             "number",
             "null"
@@ -3095,12 +3128,14 @@
           "default": null
         },
         "segments": {
+          "description": "カーブの形。最初は必ず [`Segment::Start`] で、以降の各セグメントの始点は直前のセグメントの終点。",
           "type": "array",
           "items": {
             "$ref": "#/$defs/Segment"
           }
         },
         "target": {
+          "description": "カーブが動かす対象。",
           "$ref": "#/$defs/CurveTarget"
         }
       },
@@ -3113,6 +3148,7 @@
       "description": "カーブの対象。JSON では `{\"kind\": \"parameter\", \"id\": \"ParamAngleX\"}` と書く。\n\n隣接タグ付きの表現では `#[serde(other)]` が中身 (`id`) を読めないので、\n読み込みは手で書く ([`CurveTarget::deserialize`])。",
       "oneOf": [
         {
+          "description": "パラメータの値。",
           "type": "object",
           "properties": {
             "id": {
@@ -3130,6 +3166,7 @@
           ]
         },
         {
+          "description": "パーツの不透明度を上書きする。",
           "type": "object",
           "properties": {
             "id": {
@@ -3170,10 +3207,11 @@
       "type": "object",
       "properties": {
         "id": {
-          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "description": "モデルの中で一意な ID。",
           "type": "string"
         },
         "kind": {
+          "description": "変形の種類と、種類ごとのキーフォーム。",
           "$ref": "#/$defs/DeformerKind"
         },
         "mirror": {
@@ -3192,6 +3230,7 @@
           "format": "float"
         },
         "name": {
+          "description": "表示名 (エディタ用)。",
           "type": "string"
         },
         "parent": {
@@ -3202,7 +3241,7 @@
           ]
         },
         "part": {
-          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "description": "所属するパーツ。パーツの不透明度が子に掛かる。",
           "type": "string"
         }
       },
@@ -3214,8 +3253,10 @@
       ]
     },
     "DeformerKind": {
+      "description": "デフォーマの種類。",
       "oneOf": [
         {
+          "description": "格子による自由変形。",
           "type": "object",
           "properties": {
             "type": {
@@ -3229,6 +3270,7 @@
           ]
         },
         {
+          "description": "原点まわりの回転・拡縮・反転。",
           "type": "object",
           "properties": {
             "type": {
@@ -3355,10 +3397,12 @@
       "type": "object",
       "properties": {
         "max": {
+          "description": "範囲の上限。",
           "type": "number",
           "format": "float"
         },
         "min": {
+          "description": "範囲の下限。",
           "type": "number",
           "format": "float"
         }
@@ -3373,12 +3417,14 @@
       "type": "object",
       "properties": {
         "breath": {
+          "description": "呼吸。",
           "$ref": "#/$defs/Breath",
           "default": {
             "parameters": []
           }
         },
         "eye_blink": {
+          "description": "目パチ。",
           "$ref": "#/$defs/EyeBlink",
           "default": {
             "closed": 0.05000000074505806,
@@ -3390,6 +3436,7 @@
           }
         },
         "lip_sync": {
+          "description": "リップシンク。",
           "$ref": "#/$defs/LipSync",
           "default": {
             "parameters": []
@@ -3402,19 +3449,23 @@
       "type": "object",
       "properties": {
         "fade_in": {
+          "description": "フェードインの時間 (秒)。0 以下ならフェードなし。",
           "type": "number",
           "format": "float",
           "default": 0.0
         },
         "fade_out": {
+          "description": "止めてからフェードアウトする時間 (秒)。0 以下ならフェードなし。",
           "type": "number",
           "format": "float",
           "default": 0.0
         },
         "name": {
+          "description": "表情の名前。ホストはこの名前で表情を止める。",
           "type": "string"
         },
         "parameters": {
+          "description": "重ねるパラメータの値。",
           "type": "array",
           "items": {
             "$ref": "#/$defs/ExpressionParameter"
@@ -3427,28 +3478,39 @@
       ]
     },
     "ExpressionOp": {
+      "description": "表情の値の合成の方法。`v` は現在の値、`w` はフェードの重み (`docs/spec/motion.md#表情`)。",
       "oneOf": [
         {
+          "description": "加算: `v + value * w`。",
           "type": "string",
-          "enum": [
-            "add",
-            "multiply",
-            "overwrite"
-          ]
+          "const": "add"
+        },
+        {
+          "description": "乗算: `v * lerp(1, value, w)`。",
+          "type": "string",
+          "const": "multiply"
+        },
+        {
+          "description": "上書き: `lerp(v, value, w)`。",
+          "type": "string",
+          "const": "overwrite"
         }
       ]
     },
     "ExpressionParameter": {
+      "description": "表情が 1 つのパラメータに重ねる値。",
       "type": "object",
       "properties": {
         "op": {
+          "description": "現在の値との合成の方法。",
           "$ref": "#/$defs/ExpressionOp"
         },
         "parameter": {
-          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "description": "対象のパラメータ。",
           "type": "string"
         },
         "value": {
+          "description": "`op` で現在の値と合成する値。",
           "type": "number",
           "format": "float"
         }
@@ -3510,21 +3572,23 @@
       "type": "object",
       "properties": {
         "id": {
-          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "description": "モデルの中で一意な ID。",
           "type": "string"
         },
         "keyforms": {
+          "description": "引き寄せの強さのキーフォーム。",
           "$ref": "#/$defs/KeyformGrid5"
         },
         "mesh_a": {
-          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "description": "接着する一方のメッシュ (`GluePair::a` の頂点を持つ)。",
           "type": "string"
         },
         "mesh_b": {
-          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "description": "接着するもう一方のメッシュ (`GluePair::b` の頂点を持つ)。",
           "type": "string"
         },
         "pairs": {
+          "description": "引き寄せる頂点のペア。この順に適用する。",
           "type": "array",
           "items": {
             "$ref": "#/$defs/GluePair"
@@ -3540,9 +3604,11 @@
       ]
     },
     "GlueKeyform": {
+      "description": "グルーの 1 つのキーフォーム。",
       "type": "object",
       "properties": {
         "intensity": {
+          "description": "引き寄せの強さ (0 なら引き寄せない、1 なら `weight` の位置に一致させる)。補間後の値はクランプしない。",
           "type": "number",
           "format": "float"
         }
@@ -3552,15 +3618,18 @@
       ]
     },
     "GluePair": {
+      "description": "グルーで引き寄せる頂点のペア。",
       "type": "object",
       "properties": {
         "a": {
+          "description": "`Glue::mesh_a` の頂点のインデックス。",
           "type": "integer",
           "format": "uint16",
           "maximum": 65535,
           "minimum": 0
         },
         "b": {
+          "description": "`Glue::mesh_b` の頂点のインデックス。",
           "type": "integer",
           "format": "uint16",
           "maximum": 65535,
@@ -3583,11 +3652,11 @@
       "type": "object",
       "properties": {
         "id": {
-          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "description": "モデルの中で一意な ID。ホストはこの ID で当たり判定を参照する。",
           "type": "string"
         },
         "mesh": {
-          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "description": "判定に使うメッシュ。",
           "type": "string"
         }
       },
@@ -3691,6 +3760,7 @@
       "type": "object",
       "properties": {
         "keys": {
+          "description": "軸上のキー位置 (パラメータの値)。",
           "type": "array",
           "items": {
             "type": "number",
@@ -3698,7 +3768,7 @@
           }
         },
         "parameter": {
-          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "description": "軸にするパラメータ。",
           "type": "string"
         }
       },
@@ -3712,6 +3782,7 @@
       "type": "object",
       "properties": {
         "bindings": {
+          "description": "パラメータ軸。空ならキーフォームは 1 つで、パラメータに依存しない。",
           "type": "array",
           "default": [],
           "items": {
@@ -3741,6 +3812,7 @@
           "$ref": "#/$defs/KeyformInterpolation"
         },
         "keyforms": {
+          "description": "格子点ごとのキーフォーム。並びは上記の列優先の順。",
           "type": "array",
           "items": {
             "$ref": "#/$defs/PartKeyform"
@@ -3774,6 +3846,7 @@
       "type": "object",
       "properties": {
         "bindings": {
+          "description": "パラメータ軸。空ならキーフォームは 1 つで、パラメータに依存しない。",
           "type": "array",
           "default": [],
           "items": {
@@ -3803,6 +3876,7 @@
           "$ref": "#/$defs/KeyformInterpolation"
         },
         "keyforms": {
+          "description": "格子点ごとのキーフォーム。並びは上記の列優先の順。",
           "type": "array",
           "items": {
             "$ref": "#/$defs/WarpKeyform"
@@ -3836,6 +3910,7 @@
       "type": "object",
       "properties": {
         "bindings": {
+          "description": "パラメータ軸。空ならキーフォームは 1 つで、パラメータに依存しない。",
           "type": "array",
           "default": [],
           "items": {
@@ -3865,6 +3940,7 @@
           "$ref": "#/$defs/KeyformInterpolation"
         },
         "keyforms": {
+          "description": "格子点ごとのキーフォーム。並びは上記の列優先の順。",
           "type": "array",
           "items": {
             "$ref": "#/$defs/RotationKeyform"
@@ -3898,6 +3974,7 @@
       "type": "object",
       "properties": {
         "bindings": {
+          "description": "パラメータ軸。空ならキーフォームは 1 つで、パラメータに依存しない。",
           "type": "array",
           "default": [],
           "items": {
@@ -3927,6 +4004,7 @@
           "$ref": "#/$defs/KeyformInterpolation"
         },
         "keyforms": {
+          "description": "格子点ごとのキーフォーム。並びは上記の列優先の順。",
           "type": "array",
           "items": {
             "$ref": "#/$defs/MeshKeyform"
@@ -3960,6 +4038,7 @@
       "type": "object",
       "properties": {
         "bindings": {
+          "description": "パラメータ軸。空ならキーフォームは 1 つで、パラメータに依存しない。",
           "type": "array",
           "default": [],
           "items": {
@@ -3989,6 +4068,7 @@
           "$ref": "#/$defs/KeyformInterpolation"
         },
         "keyforms": {
+          "description": "格子点ごとのキーフォーム。並びは上記の列優先の順。",
           "type": "array",
           "items": {
             "$ref": "#/$defs/GlueKeyform"
@@ -4236,7 +4316,7 @@
           "default": false
         },
         "mesh": {
-          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "description": "マスクにするメッシュ。",
           "type": "string"
         }
       },
@@ -4249,6 +4329,7 @@
       "type": "object",
       "properties": {
         "blend": {
+          "description": "合成モード。",
           "$ref": "#/$defs/BlendMode",
           "default": "normal"
         },
@@ -4269,7 +4350,7 @@
           }
         },
         "id": {
-          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "description": "モデルの中で一意な ID。",
           "type": "string"
         },
         "indices": {
@@ -4283,6 +4364,7 @@
           }
         },
         "keyforms": {
+          "description": "頂点位置・不透明度・描画順・色のキーフォーム。",
           "$ref": "#/$defs/KeyformGrid4"
         },
         "lit": {
@@ -4323,6 +4405,7 @@
           "format": "float"
         },
         "name": {
+          "description": "表示名 (エディタ用)。",
           "type": "string"
         },
         "parent": {
@@ -4333,7 +4416,7 @@
           ]
         },
         "part": {
-          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "description": "所属するパーツ。パーツの不透明度が掛かる。",
           "type": "string"
         },
         "texture": {
@@ -4361,6 +4444,7 @@
       ]
     },
     "MeshKeyform": {
+      "description": "メッシュの 1 つのキーフォーム。",
       "type": "object",
       "properties": {
         "draw_order": {
@@ -4375,6 +4459,7 @@
           "default": 1.0
         },
         "multiply_color": {
+          "description": "乗算色 (既定は白 = 変化なし)。式は `docs/spec/rendering.md`。",
           "$ref": "#/$defs/Rgb",
           "default": {
             "b": 1.0,
@@ -4383,6 +4468,7 @@
           }
         },
         "opacity": {
+          "description": "不透明度 (0〜1)。",
           "type": "number",
           "format": "float"
         },
@@ -4394,6 +4480,7 @@
           }
         },
         "screen_color": {
+          "description": "スクリーン色 (既定は黒 = 変化なし)。式は `docs/spec/rendering.md`。",
           "$ref": "#/$defs/Rgb",
           "default": {
             "b": 0.0,
@@ -4490,9 +4577,11 @@
       }
     },
     "Motion": {
+      "description": "モーション (`*.motion.json`)。パラメータ・パーツの不透明度などを時間で動かすカーブの集まり (`docs/spec/motion.md#モーション`)。",
       "type": "object",
       "properties": {
         "curves": {
+          "description": "時間で値を動かすカーブ。",
           "type": "array",
           "items": {
             "$ref": "#/$defs/Curve"
@@ -4504,6 +4593,7 @@
           "format": "float"
         },
         "events": {
+          "description": "再生時刻が通過したフレームで発火するイベント。",
           "type": "array",
           "default": [],
           "items": {
@@ -4511,20 +4601,24 @@
           }
         },
         "fade_in": {
+          "description": "フェードインの秒数。0 以下ならフェードインしない。",
           "type": "number",
           "format": "float",
           "default": 0.0
         },
         "fade_out": {
+          "description": "フェードアウトの秒数。ループしないモーションは終わりのこの秒数前から、ループするものは止めてから\nこの秒数でフェードアウトする。0 以下ならフェードしない。",
           "type": "number",
           "format": "float",
           "default": 0.0
         },
         "looping": {
+          "description": "`duration` で折り返して繰り返すか。ループの境目ではフェードをかけない。",
           "type": "boolean",
           "default": false
         },
         "name": {
+          "description": "モーションの名前 (表示・選択に使う)。",
           "type": "string"
         }
       },
@@ -4535,13 +4629,16 @@
       ]
     },
     "MotionEvent": {
+      "description": "モーションの中の時刻に置くイベント。再生時刻がこの時刻を通過したフレームで発火する。",
       "type": "object",
       "properties": {
         "t": {
+          "description": "発火する時刻 (秒)。",
           "type": "number",
           "format": "float"
         },
         "value": {
+          "description": "イベントの値 (アプリが解釈する任意の文字列)。",
           "type": "string"
         }
       },
@@ -4551,17 +4648,21 @@
       ]
     },
     "NormalizationRange": {
+      "description": "正規化の写し先の範囲。パラメータの `min` / `default` / `max` をそれぞれここの値に写し、\nその間は default の両側で別々に線形補間する。",
       "type": "object",
       "properties": {
         "default": {
+          "description": "パラメータの `default` を写した値。",
           "type": "number",
           "format": "float"
         },
         "max": {
+          "description": "パラメータの `max` を写した値。",
           "type": "number",
           "format": "float"
         },
         "min": {
+          "description": "パラメータの `min` を写した値。",
           "type": "number",
           "format": "float"
         }
@@ -4577,6 +4678,7 @@
       "type": "object",
       "properties": {
         "default": {
+          "description": "既定値 (`min..=max` の中)。",
           "type": "number",
           "format": "float"
         },
@@ -4589,7 +4691,7 @@
           "default": null
         },
         "id": {
-          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "description": "モデルの中で一意な ID。モーション・キーフォームなどはこの ID で参照する。",
           "type": "string"
         },
         "internal": {
@@ -4602,10 +4704,12 @@
           "default": "normal"
         },
         "max": {
+          "description": "値の上限 (`min` 以上)。",
           "type": "number",
           "format": "float"
         },
         "min": {
+          "description": "値の下限。値はこの範囲に切り詰める。",
           "type": "number",
           "format": "float"
         },
@@ -4618,6 +4722,7 @@
           "default": null
         },
         "name": {
+          "description": "表示名 (エディタ用)。",
           "type": "string"
         }
       },
@@ -4630,13 +4735,17 @@
       ]
     },
     "ParameterKind": {
+      "description": "パラメータの種類 (`docs/spec/model.md#ブレンドシェイプ`)。",
       "oneOf": [
         {
+          "description": "通常のパラメータ。キーフォームの補間に使う。",
           "type": "string",
-          "enum": [
-            "normal",
-            "blend_shape"
-          ]
+          "const": "normal"
+        },
+        {
+          "description": "ブレンドシェイプのパラメータ。補間結果に差分を加算する格子の軸に使う。",
+          "type": "string",
+          "const": "blend_shape"
         }
       ]
     },
@@ -4645,17 +4754,19 @@
       "type": "object",
       "properties": {
         "id": {
-          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "description": "モデルの中で一意な ID。",
           "type": "string"
         },
         "keyforms": {
+          "description": "不透明度のキーフォーム。",
           "$ref": "#/$defs/KeyformGrid"
         },
         "name": {
+          "description": "表示名 (エディタ用)。",
           "type": "string"
         },
         "parent": {
-          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "description": "親のパーツ。`None` なら最上位。",
           "type": [
             "string",
             "null"
@@ -4669,9 +4780,11 @@
       ]
     },
     "PartKeyform": {
+      "description": "パーツの 1 つのキーフォーム。",
       "type": "object",
       "properties": {
         "opacity": {
+          "description": "不透明度 (0〜1)。子のパーツ・デフォーマ・メッシュに乗算される。",
           "type": "number",
           "format": "float"
         }
@@ -4707,13 +4820,15 @@
           ]
         },
         "id": {
-          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "description": "衝突体の ID。リグは [`PhysicsRig::colliders`] でこの ID を選ぶ。",
           "type": "string"
         },
         "name": {
+          "description": "表示名 (エディタ用。評価には使わない)。",
           "type": "string"
         },
         "shape": {
+          "description": "形状。位置は `attach` のデフォーマの局所座標系 (無ければキャンバス座標) で表す。",
           "$ref": "#/$defs/ColliderShape"
         }
       },
@@ -4724,17 +4839,20 @@
       ]
     },
     "PhysicsInput": {
+      "description": "物理の入力。パラメータの値を正規化し、重みを掛けて根元の姿勢に足す (`docs/spec/physics.md#入力`)。",
       "type": "object",
       "properties": {
         "parameter": {
-          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "description": "入力元のパラメータ。存在しなければその入力を無視する。",
           "type": "string"
         },
         "reflect": {
+          "description": "正規化した値の符号を反転するか。",
           "type": "boolean",
           "default": false
         },
         "source": {
+          "description": "パラメータの値を根元のどの量 (平行移動の x / y、回転) に足すか。",
           "$ref": "#/$defs/PhysicsSource"
         },
         "weight": {
@@ -4750,12 +4868,15 @@
       ]
     },
     "PhysicsNormalization": {
+      "description": "入力のパラメータの値を物理空間の量に写す範囲 (`docs/spec/physics.md#入力`)。",
       "type": "object",
       "properties": {
         "angle": {
+          "description": "角度 (`source` が `angle` の入力) の範囲 (度)。",
           "$ref": "#/$defs/NormalizationRange"
         },
         "position": {
+          "description": "平行移動 (`source` が `x` / `y` の入力) の範囲。",
           "$ref": "#/$defs/NormalizationRange"
         }
       },
@@ -4779,14 +4900,17 @@
           "minimum": 0
         },
         "reflect": {
+          "description": "出力する値の符号を反転するか。",
           "type": "boolean",
           "default": false
         },
         "scale": {
+          "description": "出力する値に掛ける倍率。",
           "type": "number",
           "format": "float"
         },
         "source": {
+          "description": "粒子のどの量 (相対位置の x / y、区間の角度) を出力するか。",
           "$ref": "#/$defs/PhysicsSource"
         },
         "target": {
@@ -4794,6 +4918,7 @@
           "$ref": "#/$defs/PhysicsTarget"
         },
         "weight": {
+          "description": "0..=100 (%)。パラメータへは現在の値とのブレンドの割合、動的物理では加算量に掛ける割合。\n0〜1 にクランプして使う。",
           "type": "number",
           "format": "float"
         }
@@ -4807,9 +4932,11 @@
       ]
     },
     "PhysicsParticle": {
+      "description": "振り子チェーンの粒子 1 つ。係数の意味は `docs/spec/physics.md#係数の意味`。",
       "type": "object",
       "properties": {
         "acceleration": {
+          "description": "重力の倍率。大きいほど元の向きに戻ろうとする力が強く、揺れが速く収まる。風には掛からない。",
           "type": "number",
           "format": "float"
         },
@@ -4820,10 +4947,12 @@
           "default": 0.0
         },
         "delay": {
+          "description": "時間の進み方の倍率。1 で等速、大きいほど入力に機敏に反応して速く揺れる。",
           "type": "number",
           "format": "float"
         },
         "mobility": {
+          "description": "基準フレーム (1/30 秒) あたりに残す速度の割合 (0..=1)。1 で減衰なし、小さいほど揺れがすぐ止まる。",
           "type": "number",
           "format": "float"
         },
@@ -4846,6 +4975,7 @@
       ]
     },
     "PhysicsRig": {
+      "description": "物理リグ。入力 → 振り子チェーン → 出力 の 1 組 (`docs/spec/physics.md#概要`)。",
       "type": "object",
       "properties": {
         "colliders": {
@@ -4865,28 +4995,33 @@
           ]
         },
         "id": {
-          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "description": "リグの ID。",
           "type": "string"
         },
         "inputs": {
+          "description": "チェーンの根元の平行移動と回転を作る入力。",
           "type": "array",
           "items": {
             "$ref": "#/$defs/PhysicsInput"
           }
         },
         "name": {
+          "description": "表示名 (エディタ用。評価には使わない)。",
           "type": "string"
         },
         "normalization": {
+          "description": "入力のパラメータの値を物理空間の位置・角度に写す範囲。",
           "$ref": "#/$defs/PhysicsNormalization"
         },
         "outputs": {
+          "description": "粒子の位置・角度を書き込む出力。",
           "type": "array",
           "items": {
             "$ref": "#/$defs/PhysicsOutput"
           }
         },
         "particles": {
+          "description": "振り子チェーンの粒子。先頭 (0 番) が根元で、根元から順に並ぶ。",
           "type": "array",
           "items": {
             "$ref": "#/$defs/PhysicsParticle"
@@ -4903,14 +5038,22 @@
       ]
     },
     "PhysicsSource": {
+      "description": "物理の入力・出力で使う量。",
       "oneOf": [
         {
+          "description": "x 成分。入力では根元の平行移動の x、出力では 1 つ前の粒子からの相対位置の x。",
           "type": "string",
-          "enum": [
-            "x",
-            "y",
-            "angle"
-          ]
+          "const": "x"
+        },
+        {
+          "description": "y 成分。入力では根元の平行移動の y、出力では 1 つ前の粒子からの相対位置の y。",
+          "type": "string",
+          "const": "y"
+        },
+        {
+          "description": "角度 (度、時計回りが正)。入力では根元の回転、出力では 1 つ前の区間からの区間の角度。",
+          "type": "string",
+          "const": "angle"
         }
       ]
     },
@@ -4922,7 +5065,7 @@
           "type": "object",
           "properties": {
             "id": {
-              "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+              "description": "書き込む先のパラメータ。",
               "type": "string"
             },
             "type": {
@@ -4940,7 +5083,7 @@
           "type": "object",
           "properties": {
             "deformer": {
-              "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+              "description": "角度を足す回転デフォーマ。",
               "type": "string"
             },
             "type": {
@@ -4958,7 +5101,7 @@
           "type": "object",
           "properties": {
             "deformer": {
-              "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+              "description": "原点をずらす回転デフォーマ。",
               "type": "string"
             },
             "type": {
@@ -4976,6 +5119,7 @@
           "type": "object",
           "properties": {
             "owner": {
+              "description": "動かす頂点の持ち主 (メッシュまたはワープデフォーマ)。",
               "$ref": "#/$defs/VertexOwner"
             },
             "type": {
@@ -5047,10 +5191,12 @@
       "type": "object",
       "properties": {
         "t": {
+          "description": "時刻 (秒)。",
           "type": "number",
           "format": "float"
         },
         "v": {
+          "description": "その時刻での対象の値 (パラメータの値・不透明度など)。",
           "type": "number",
           "format": "float"
         }
@@ -5071,6 +5217,7 @@
           "default": 0.5
         },
         "groups": {
+          "description": "排他的なパーツの組。",
           "type": "array",
           "default": [],
           "items": {
@@ -5093,7 +5240,7 @@
           }
         },
         "part": {
-          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "description": "グループの要素となるパーツ。",
           "type": "string"
         }
       },
@@ -5106,6 +5253,7 @@
       "type": "object",
       "properties": {
         "entries": {
+          "description": "組の要素。最初は先頭の要素を表示する (`docs/spec/motion.md#ポーズ`)。",
           "type": "array",
           "items": {
             "$ref": "#/$defs/PoseEntry"
@@ -5121,14 +5269,17 @@
       "type": "object",
       "properties": {
         "b": {
+          "description": "青 (0.0..=1.0)。",
           "type": "number",
           "format": "float"
         },
         "g": {
+          "description": "緑 (0.0..=1.0)。",
           "type": "number",
           "format": "float"
         },
         "r": {
+          "description": "赤 (0.0..=1.0)。",
           "type": "number",
           "format": "float"
         }
@@ -5144,6 +5295,7 @@
       "type": "object",
       "properties": {
         "keyforms": {
+          "description": "原点・角度・拡大率・反転・不透明度のキーフォーム。",
           "$ref": "#/$defs/KeyformGrid3"
         }
       },
@@ -5152,6 +5304,7 @@
       ]
     },
     "RotationKeyform": {
+      "description": "回転デフォーマの 1 つのキーフォーム。変換の式は `docs/spec/evaluation.md`。",
       "type": "object",
       "properties": {
         "angle": {
@@ -5160,6 +5313,7 @@
           "format": "float"
         },
         "opacity": {
+          "description": "子に掛ける不透明度 (0〜1)。",
           "type": "number",
           "format": "float"
         },
@@ -5168,14 +5322,17 @@
           "$ref": "#/$defs/Vec2"
         },
         "reflect_x": {
+          "description": "`true` なら局所座標の x を反転する。",
           "type": "boolean",
           "default": false
         },
         "reflect_y": {
+          "description": "`true` なら局所座標の y を反転する。",
           "type": "boolean",
           "default": false
         },
         "scale": {
+          "description": "拡大率 (1 で等倍)。",
           "type": "number",
           "format": "float"
         }
@@ -5195,6 +5352,7 @@
           "type": "object",
           "properties": {
             "p": {
+              "description": "最初の点。",
               "$ref": "#/$defs/Point"
             },
             "type": {
@@ -5208,9 +5366,11 @@
           ]
         },
         {
+          "description": "始点から `to` まで線形補間する。",
           "type": "object",
           "properties": {
             "to": {
+              "description": "区間の終点。",
               "$ref": "#/$defs/Point"
             },
             "type": {
@@ -5224,15 +5384,19 @@
           ]
         },
         {
+          "description": "始点・`c1`・`c2`・`to` の 3 次ベジェ。制御点の時刻は区間内にあるものとする\n(範囲外は評価時にクランプする)。",
           "type": "object",
           "properties": {
             "c1": {
+              "description": "始点側の制御点。",
               "$ref": "#/$defs/Point"
             },
             "c2": {
+              "description": "終点側の制御点。",
               "$ref": "#/$defs/Point"
             },
             "to": {
+              "description": "区間の終点。",
               "$ref": "#/$defs/Point"
             },
             "type": {
@@ -5252,6 +5416,7 @@
           "type": "object",
           "properties": {
             "to": {
+              "description": "区間の終点。",
               "$ref": "#/$defs/Point"
             },
             "type": {
@@ -5269,6 +5434,7 @@
           "type": "object",
           "properties": {
             "to": {
+              "description": "区間の終点。",
               "$ref": "#/$defs/Point"
             },
             "type": {
@@ -5438,6 +5604,7 @@
           "type": "string"
         },
         "offset": {
+          "description": "倍率を掛けた後に足す値。既定は 0。",
           "type": "number",
           "format": "float",
           "default": 0.0
@@ -5450,11 +5617,13 @@
           ]
         },
         "scale": {
+          "description": "入力の値に掛ける倍率。既定は 1。",
           "type": "number",
           "format": "float",
           "default": 1.0
         },
         "source": {
+          "description": "入力の種類。`input` の名前の解釈を決める。",
           "$ref": "#/$defs/TrackingSource"
         }
       },
@@ -5558,6 +5727,7 @@
       "type": "object",
       "properties": {
         "cols": {
+          "description": "格子の列数 (横の分割数)。制御点は横に `cols + 1` 個。",
           "type": "integer",
           "format": "uint16",
           "maximum": 65535,
@@ -5575,9 +5745,11 @@
           }
         },
         "keyforms": {
+          "description": "制御点と不透明度のキーフォーム。",
           "$ref": "#/$defs/KeyformGrid2"
         },
         "rows": {
+          "description": "格子の行数 (縦の分割数)。制御点は縦に `rows + 1` 個。",
           "type": "integer",
           "format": "uint16",
           "maximum": 65535,
@@ -5591,9 +5763,11 @@
       ]
     },
     "WarpKeyform": {
+      "description": "ワープデフォーマの 1 つのキーフォーム。",
       "type": "object",
       "properties": {
         "opacity": {
+          "description": "子に掛ける不透明度 (0〜1)。",
           "type": "number",
           "format": "float"
         },

@@ -4,16 +4,23 @@
 //! 「どう動かすか」(補間・変形・物理・モーション再生) は下流クレートが担う。
 //! 仕様は `docs/spec/model.md` を正とする。型を変更したら仕様書も同じ PR で更新すること。
 
+#![warn(missing_docs)]
+
 pub mod avatar;
+/// デフォーマ (ワープ・回転)。
 pub mod deformer;
 pub mod effects;
+/// 表情。
 pub mod expression;
 pub mod fixtures;
 pub mod keyform;
+/// メッシュ・マスク・合成モード・グルー。
 pub mod mesh;
 pub mod module;
 pub mod motion;
+/// パラメータとパラメータグループ。
 pub mod parameter;
+/// パーツ。
 pub mod part;
 pub mod physics;
 pub mod pose;
@@ -52,18 +59,28 @@ pub const SCHEMA_VERSION: u32 = 0;
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Model {
+    /// このデータのスキーマバージョン ([`SCHEMA_VERSION`])。
     pub schema_version: u32,
+    /// 名前とキャンバス。
     pub meta: ModelMeta,
+    /// パラメータ。キーフォーム・モーション・物理などが ID で参照する。
     pub parameters: Vec<Parameter>,
+    /// エディタ表示用のパラメータグループ。
     #[serde(default)]
     pub parameter_groups: Vec<ParameterGroup>,
+    /// パーツ。階層は各パーツの `parent` で表す。
     pub parts: Vec<Part>,
+    /// デフォーマ。評価は親が先の順で、結果は配列の順序に依存しない (`docs/spec/evaluation.md`)。
     #[serde(default)]
     pub deformers: Vec<Deformer>,
+    /// メッシュ。
     pub meshes: Vec<Mesh>,
+    /// メッシュの頂点同士の接着。配列の順に適用する (`docs/spec/evaluation.md#5-グルー`)。
     #[serde(default)]
     pub glues: Vec<Glue>,
+    /// テクスチャの参照。メッシュの `texture` はこの列のインデックス。
     pub textures: Vec<TextureRef>,
+    /// 当たり判定。ホストがクリック・タップされた部位を調べるのに使う。
     #[serde(default)]
     pub hit_areas: Vec<HitArea>,
     /// 排他的なパーツ切り替え。省略時はグループなし (`docs/spec/model.md#ポーズ`)。
@@ -84,11 +101,14 @@ pub struct Model {
     pub lighting: bool,
 }
 
+/// モデルのメタデータ。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ModelMeta {
+    /// モデルの名前。
     pub name: String,
+    /// キャンバス (モデル座標系の範囲)。
     pub canvas: Canvas,
 }
 
@@ -98,7 +118,9 @@ pub struct ModelMeta {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Canvas {
+    /// キャンバスの幅 (ピクセル)。
     pub width: f32,
+    /// キャンバスの高さ (ピクセル)。
     pub height: f32,
     /// 表示時の原点 (通常は足元中央など)。
     #[cfg_attr(feature = "ts", ts(as = "crate::Vec2Repr"))]
@@ -111,8 +133,11 @@ pub struct Canvas {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TextureRef {
+    /// テクスチャの画像の名前。コンテナの中の画像を指す。
     pub name: String,
+    /// 画像の幅 (ピクセル)。
     pub width: u32,
+    /// 画像の高さ (ピクセル)。
     pub height: u32,
     /// 法線マップの画像の名前。`None` なら法線マップなし (法線は `(0, 0, 1)`)。
     /// 画像は同じ UV 空間の接空間法線で、バンドルでは `NRML` チャンクに入る
@@ -121,6 +146,7 @@ pub struct TextureRef {
     pub normal_map: Option<String>,
 }
 
+/// 当たり判定の ID。モデルの中で一意。
 pub type HitAreaId = Id<HitArea>;
 
 /// 当たり判定領域。メッシュの変形後形状で判定する。
@@ -128,6 +154,8 @@ pub type HitAreaId = Id<HitArea>;
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct HitArea {
+    /// モデルの中で一意な ID。ホストはこの ID で当たり判定を参照する。
     pub id: HitAreaId,
+    /// 判定に使うメッシュ。
     pub mesh: MeshId,
 }

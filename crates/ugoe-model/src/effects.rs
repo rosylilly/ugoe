@@ -19,8 +19,11 @@ pub const LIP_SYNC_GROUP: &str = "LipSync";
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct Effects {
+    /// 目パチ。
     pub eye_blink: EyeBlink,
+    /// 呼吸。
     pub breath: Breath,
+    /// リップシンク。
     pub lip_sync: LipSync,
 }
 
@@ -84,6 +87,7 @@ impl EyeBlink {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct Breath {
+    /// 呼吸で動かすパラメータと、それぞれの波。
     pub parameters: Vec<BreathParameter>,
 }
 
@@ -109,10 +113,12 @@ impl Breath {
     }
 }
 
+/// 呼吸で動かす 1 つのパラメータの波。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct BreathParameter {
+    /// 対象のパラメータ。
     pub parameter: ParamId,
     /// 波の中心値。
     pub offset: f32,

@@ -22,131 +22,227 @@ pub use module::validate_module;
 pub use motion::{MotionWarning, motion_warnings, validate_expression, validate_motion};
 pub use physics::validate_physics;
 
+/// モデルの構造の検証で見つけたエラー (`docs/spec/model.md#検証`)。
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ValidationError {
+    /// 同じ種類の要素で ID が重複している。
     #[error("duplicate {kind} id `{id}`")]
-    DuplicateId { kind: &'static str, id: String },
+    DuplicateId {
+        /// 要素の種類 (`parameter`・`part`・`deformer`・`mesh` など)。
+        kind: &'static str,
+        /// 重複した ID。
+        id: String,
+    },
+    /// キーフォーム数が、格子の各軸のキー数の積と違う。
     #[error("{kind} `{id}`: keyform count {actual} != expected {expected}")]
     KeyformCount {
+        /// 要素の種類 (`mesh`・`deformer`・`part` など)。
         kind: &'static str,
+        /// 要素の ID。
         id: String,
+        /// 各軸のキー数の積。
         expected: usize,
+        /// 実際のキーフォーム数。
         actual: usize,
     },
+    /// パラメータの結び付けのキーが狭義の昇順でない。
     #[error("{kind} `{id}`: keys of parameter `{parameter}` are not strictly ascending: {keys:?}")]
     KeysNotAscending {
+        /// 要素の種類 (`mesh`・`deformer`・`part` など)。
         kind: &'static str,
+        /// 要素の ID。
         id: String,
+        /// パラメータの ID。
         parameter: String,
+        /// 結び付けのキー。
         keys: Vec<f32>,
     },
+    /// パラメータの結び付けにキーが無い。
     #[error("{kind} `{id}`: binding of parameter `{parameter}` has no keys")]
     EmptyKeys {
+        /// 要素の種類 (`mesh`・`deformer`・`part` など)。
         kind: &'static str,
+        /// 要素の ID。
         id: String,
+        /// パラメータの ID。
         parameter: String,
     },
+    /// 1 つの格子で同じパラメータを 2 回以上結び付けている。
     #[error("{kind} `{id}`: parameter `{parameter}` is bound more than once")]
     DuplicateBinding {
+        /// 要素の種類 (`mesh`・`deformer`・`part` など)。
         kind: &'static str,
+        /// 要素の ID。
         id: String,
+        /// パラメータの ID。
         parameter: String,
     },
+    /// メッシュの `indices` の長さが 3 の倍数でない。
     #[error("mesh `{id}`: indices length {len} is not a multiple of 3")]
-    IndicesNotTriangles { id: String, len: usize },
+    IndicesNotTriangles {
+        /// メッシュの ID。
+        id: String,
+        /// `indices` の長さ。
+        len: usize,
+    },
+    /// メッシュの `indices` が頂点数の外を指す。
     #[error("mesh `{id}`: index {index} out of range (vertices = {vertices})")]
     IndexOutOfRange {
+        /// メッシュの ID。
         id: String,
+        /// 範囲外の頂点のインデックス。
         index: u16,
+        /// メッシュの頂点数。
         vertices: usize,
     },
+    /// メッシュのキーフォームの頂点数が `uvs` の数と違う。
     #[error("mesh `{id}`: keyform has {actual} positions, expected {expected}")]
     VertexCount {
+        /// メッシュの ID。
         id: String,
+        /// メッシュの頂点数 (`uvs` の数)。
         expected: usize,
+        /// キーフォームの頂点の数。
         actual: usize,
     },
+    /// ワープデフォーマのキーフォームの制御点の数が `(rows + 1) * (cols + 1)` と違う。
     #[error("warp deformer `{id}`: keyform has {actual} control points, expected {expected}")]
     WarpPointCount {
+        /// ワープデフォーマの ID。
         id: String,
+        /// 格子から決まる制御点の数。
         expected: usize,
+        /// キーフォームの制御点の数。
         actual: usize,
     },
+    /// ワープデフォーマの `rows` か `cols` が 0。
     #[error("warp deformer `{id}`: rows ({rows}) and cols ({cols}) must both be at least 1")]
-    EmptyWarpGrid { id: String, rows: u16, cols: u16 },
+    EmptyWarpGrid {
+        /// ワープデフォーマの ID。
+        id: String,
+        /// 格子の行数。
+        rows: u16,
+        /// 格子の列数。
+        cols: u16,
+    },
     /// `field` は参照元のフィールド名 (`part`, `parent`, `masks` など)。
     #[error("{kind} `{id}`: {field} refers to unknown {target_kind} `{target}`")]
     UnknownReference {
+        /// 参照元の要素の種類。
         kind: &'static str,
+        /// 参照元の要素の ID。
         id: String,
+        /// 参照元のフィールド名。
         field: &'static str,
+        /// 参照先の要素の種類。
         target_kind: &'static str,
+        /// 参照先の ID。
         target: String,
     },
+    /// メッシュのテクスチャのインデックスが `Model::textures` の外。
     #[error("mesh `{id}`: texture index {texture} out of range (textures = {textures})")]
     TextureOutOfRange {
+        /// メッシュの ID。
         id: String,
+        /// 範囲外のテクスチャのインデックス。
         texture: u32,
+        /// モデルのテクスチャの数。
         textures: usize,
     },
+    /// グルーの頂点のインデックスが、メッシュの頂点数の外。
     #[error("glue `{id}`: vertex {index} of mesh `{mesh}` out of range (vertices = {vertices})")]
     GlueVertexOutOfRange {
+        /// グルーの ID。
         id: String,
+        /// 頂点を持つメッシュの ID。
         mesh: String,
+        /// 範囲外の頂点のインデックス。
         index: u16,
+        /// メッシュの頂点数。
         vertices: usize,
     },
     /// `cycle` は循環を構成する要素の ID (子 → 親の順)。
     #[error("{kind} parent chain has a cycle: {cycle:?}")]
     ParentCycle {
+        /// 循環した要素の種類 (`part` か `deformer`)。
         kind: &'static str,
+        /// 循環を構成する要素の ID (子 → 親の順)。
         cycle: Vec<String>,
     },
     /// `cycle` は循環を構成するメッシュの ID (マスクされる側 → マスクの順)。
     #[error("mesh masks have a cycle: {cycle:?}")]
-    MaskCycle { cycle: Vec<String> },
+    MaskCycle {
+        /// 循環を構成するメッシュの ID (マスクされる側 → マスクの順)。
+        cycle: Vec<String>,
+    },
+    /// パラメータが `min <= default <= max` を満たさない。
     #[error("parameter `{id}`: expected min <= default <= max, got {min} / {default} / {max}")]
     ParameterRange {
+        /// パラメータの ID。
         id: String,
+        /// 最小値。
         min: f32,
+        /// 既定値。
         default: f32,
+        /// 最大値。
         max: f32,
     },
     /// 同じパーツがポーズ全体 (全グループの `part` と `links`) で 2 回以上現れた。
     #[error("part `{part}` appears more than once in pose groups")]
-    DuplicatePosePart { part: String },
+    DuplicatePosePart {
+        /// 重複したパーツの ID。
+        part: String,
+    },
     /// モジュールの名前が空、`/` を含む、または `#` で始まる (`docs/spec/modules.md#モジュール`)。
     #[error("module name `{name}` must be non-empty, contain no `/` and not start with `#`")]
-    InvalidModuleName { name: String },
+    InvalidModuleName {
+        /// 不正なモジュールの名前。
+        name: String,
+    },
     /// `origins` が空でなく、長さがキーフォーム数と違う。
     #[error("{kind} `{id}`: keyform origins length {actual} != keyform count {expected}")]
     OriginCount {
+        /// 要素の種類 (`mesh`・`deformer`・`part` など)。
         kind: &'static str,
+        /// 要素の ID。
         id: String,
+        /// キーフォーム数。
         expected: usize,
+        /// `origins` の長さ。
         actual: usize,
     },
     /// 深度からの回転の `yaw` / `pitch` のパラメータが、格子の軸になっていない。
     #[error("{kind} `{id}`: inference parameter `{parameter}` is not a keyform binding")]
     UnboundInferenceParameter {
+        /// 要素の種類 (`mesh`・`deformer`・`part` など)。
         kind: &'static str,
+        /// 要素の ID。
         id: String,
+        /// 格子の軸にないパラメータの ID。
         parameter: String,
     },
     /// `mirror` の対が双方向でない (`id` → `mirror` なのに、`mirror` の `mirror` が `back`)。
     #[error("{kind} `{id}`: mirror `{mirror}` does not mirror back (its mirror is {back:?})")]
     AsymmetricMirror {
+        /// 要素の種類 (`mesh`・`deformer`・`part` など)。
         kind: &'static str,
+        /// 要素の ID。
         id: String,
+        /// `id` の `mirror` が指す要素の ID。
         mirror: String,
+        /// `mirror` の要素の `mirror` (無ければ `None`)。
         back: Option<String>,
     },
     /// 深度の長さが頂点数 (メッシュ) または制御点数 (ワープ) と違う。
     #[error("{kind} `{id}`: depth has {actual} values, expected {expected}")]
     DepthCount {
+        /// 要素の種類 (`mesh`・`deformer`・`part` など)。
         kind: &'static str,
+        /// 要素の ID。
         id: String,
+        /// 頂点数 (メッシュ) または制御点数 (ワープ)。
         expected: usize,
+        /// 深度の値の数。
         actual: usize,
     },
     /// 参照先のデフォーマの種類が、参照元の求める種類 (`expected`) と違う。
@@ -154,18 +250,27 @@ pub enum ValidationError {
         "{kind} `{id}`: {field} refers to deformer `{deformer}`, which is not a {expected} deformer"
     )]
     DeformerKindMismatch {
+        /// 参照元の要素の種類。
         kind: &'static str,
+        /// 参照元の要素の ID。
         id: String,
+        /// 参照元のフィールド名。
         field: &'static str,
+        /// 参照先のデフォーマの ID。
         deformer: String,
+        /// 求めるデフォーマの種類 (`warp` か `rotation`)。
         expected: &'static str,
     },
     /// 物理の頂点への出力の重みの数が、頂点数 (メッシュ) または制御点数 (ワープ) と違う。
     #[error("physics rig `{rig}`: outputs[{output}] has {actual} weights, expected {expected}")]
     WeightCount {
+        /// 物理のリグの ID。
         rig: String,
+        /// リグの `outputs` のインデックス。
         output: usize,
+        /// 出力先の頂点数 (メッシュ) または制御点数 (ワープ)。
         expected: usize,
+        /// 重みの数。
         actual: usize,
     },
     /// 格子の軸のパラメータの種類が、格子の種類と合わない。通常の格子の軸は `blend_shape` 以外、
@@ -174,24 +279,35 @@ pub enum ValidationError {
         "{kind} `{id}`: parameter `{parameter}` of a keyform binding must be of kind {expected}"
     )]
     ParameterKindMismatch {
+        /// 要素の種類 (`mesh`・`deformer`・`part` など)。
         kind: &'static str,
+        /// 要素の ID。
         id: String,
+        /// パラメータの ID。
         parameter: String,
+        /// 軸に求めるパラメータの種類。
         expected: &'static str,
     },
     /// ブレンドシェイプ格子 (`keyforms.blend_shapes[index]`) の不正。`reason` は理由。
     #[error("{kind} `{id}`: keyforms.blend_shapes[{index}] {reason}")]
     InvalidBlendShape {
+        /// 要素の種類 (`mesh`・`deformer`・`part` など)。
         kind: &'static str,
+        /// 要素の ID。
         id: String,
+        /// `keyforms.blend_shapes` のインデックス。
         index: usize,
+        /// 不正の理由。
         reason: &'static str,
     },
     /// `field` は値の場所 (`pose.fade_duration`、`effects.breath[0].cycle` など)。
     #[error("{field} = {value} must be {expected}")]
     InvalidValue {
+        /// 値の場所 (`pose.fade_duration`、`effects.breath[0].cycle` など)。
         field: String,
+        /// 実際の値。
         value: f32,
+        /// 満たすべき条件 (`finite`・`finite and >= 0` など)。
         expected: &'static str,
     },
 }

@@ -7,6 +7,8 @@
 //! - ネイティブ (Vulkan/Metal/DX12/GL) と Web (WebGPU/WebGL2) の双方で動くこと。
 //!   WebGL2 で使えない機能 (storage buffer・compute 等) には必ずフォールバックを用意する。
 
+#![warn(missing_docs)]
+
 mod lighting;
 mod mask;
 mod pipeline;
@@ -45,9 +47,13 @@ pub enum RenderError {
     /// `expected` は `width × height × 4` (`usize` であふれるなら `usize::MAX`)。
     #[error("texture data is {actual} bytes, expected {expected} bytes for {width}x{height} RGBA8")]
     InvalidTextureData {
+        /// 渡した幅 (画素)。
         width: u32,
+        /// 渡した高さ (画素)。
         height: u32,
+        /// 幅と高さから求めたバイト数。
         expected: usize,
+        /// 渡したデータのバイト数。
         actual: usize,
     },
     /// テクスチャか法線マップの番号が [`MAX_TEXTURES`] 以上。
@@ -56,9 +62,13 @@ pub enum RenderError {
     /// テクスチャの幅か高さが、デバイスの `max_texture_dimension_2d` (`max`) を超える。
     #[error("texture {index} is {width}x{height}, which exceeds the device limit {max}")]
     TextureTooLarge {
+        /// テクスチャの番号。
         index: u32,
+        /// テクスチャの幅 (画素)。
         width: u32,
+        /// テクスチャの高さ (画素)。
         height: u32,
+        /// デバイスの一辺の上限 (画素)。
         max: u32,
     },
     /// 法線マップの幅か高さが、デバイスの `max_texture_dimension_2d` (`max`) を超える。
@@ -66,9 +76,13 @@ pub enum RenderError {
         "the normal map of texture {index} is {width}x{height}, which exceeds the device limit {max}"
     )]
     NormalMapTooLarge {
+        /// 法線マップを持つテクスチャの番号。
         index: u32,
+        /// 法線マップの幅 (画素)。
         width: u32,
+        /// 法線マップの高さ (画素)。
         height: u32,
+        /// デバイスの一辺の上限 (画素)。
         max: u32,
     },
 }

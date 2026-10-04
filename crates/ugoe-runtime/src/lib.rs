@@ -8,6 +8,8 @@
 //!
 //! このクレートは GPU・I/O・スレッドに依存しない。決定的 (同入力 → 同出力) であること。
 
+#![warn(missing_docs)]
+
 mod blend_shape;
 pub mod compile;
 pub mod compose;
@@ -15,8 +17,10 @@ mod deform;
 pub mod dynamic;
 mod hit;
 mod id_index;
+/// 1 体分の評価の状態 ([`ModelInstance`]) と、描画要素の評価結果 ([`DrawableState`])。
 pub mod instance;
 pub mod keyform;
+/// パラメータの値 ([`ParameterValues`]) と、ID からインデックスへの対応 ([`ParameterLayout`])。
 pub mod parameters;
 
 pub use compile::{CompileError, CompiledModel, ResolvedMaskRef};

@@ -93,6 +93,7 @@ pub fn find(id: &str) -> Option<&'static Feature> {
 /// `FEAT` チャンクの 1 項目: バンドルが使う機能の宣言。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureDecl {
+    /// 機能の ID。このランタイムが知っている機能は [`FEATURES`] にある (知らない ID もそのまま読む)。
     pub id: String,
     /// `true` なら、知らないランタイムは読み込みを拒否する。`false` ならフォールバックを適用して読む。
     #[serde(default)]

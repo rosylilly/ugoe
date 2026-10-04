@@ -6,6 +6,8 @@
 //! 動的物理 (`docs/spec/physics.md#動的物理-揺れ用パラメータのいらない物理`) を使う設定では、
 //! [`PhysicsSystem::update_instance`] がモデルの 1 段目の評価を読み、デフォーマ・頂点に出力する。
 
+#![warn(missing_docs)]
+
 pub mod chain;
 pub mod collider;
 

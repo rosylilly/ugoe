@@ -331,11 +331,15 @@
       "oneOf": [
         {
           "type": "string",
-          "enum": [
-            "normal",
-            "additive",
-            "multiply"
-          ]
+          "const": "normal"
+        },
+        {
+          "type": "string",
+          "const": "additive"
+        },
+        {
+          "type": "string",
+          "const": "multiply"
         }
       ]
     },
@@ -423,10 +427,11 @@
       "oneOf": [
         {
           "type": "string",
-          "enum": [
-            "required",
-            "unnecessary"
-          ]
+          "const": "required"
+        },
+        {
+          "type": "string",
+          "const": "unnecessary"
         }
       ]
     },
@@ -1399,10 +1404,11 @@
       "oneOf": [
         {
           "type": "string",
-          "enum": [
-            "normal",
-            "blend_shape"
-          ]
+          "const": "normal"
+        },
+        {
+          "type": "string",
+          "const": "blend_shape"
         }
       ]
     },

@@ -73,11 +73,15 @@
       "oneOf": [
         {
           "type": "string",
-          "enum": [
-            "normal",
-            "additive",
-            "multiply"
-          ]
+          "const": "normal"
+        },
+        {
+          "type": "string",
+          "const": "additive"
+        },
+        {
+          "type": "string",
+          "const": "multiply"
         }
       ]
     },
@@ -1194,11 +1198,15 @@
       "oneOf": [
         {
           "type": "string",
-          "enum": [
-            "x",
-            "y",
-            "angle"
-          ]
+          "const": "x"
+        },
+        {
+          "type": "string",
+          "const": "y"
+        },
+        {
+          "type": "string",
+          "const": "angle"
         }
       ]
     },

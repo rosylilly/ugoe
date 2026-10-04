@@ -174,7 +174,9 @@ impl fmt::Debug for ChunkTag {
 /// テクスチャ画像の形式。`TEXR` チャンクの先頭のシグネチャで判別する。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextureFormat {
+    /// PNG。
     Png,
+    /// KTX2 (GPU 向けの圧縮テクスチャを入れられる)。
     Ktx2,
 }
 
@@ -199,6 +201,7 @@ impl TextureFormat {
 /// テクスチャ 1 枚分の画像ファイルのバイト列 (デコードはしない)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextureData {
+    /// `bytes` の画像の形式。
     pub format: TextureFormat,
     /// PNG または KTX2 ファイルの中身そのもの。
     pub bytes: Vec<u8>,
@@ -207,7 +210,9 @@ pub struct TextureData {
 /// `.ugoe` バンドル 1 つ分の中身。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bundle {
+    /// モデル (`MODL` チャンク)。
     pub model: Model,
+    /// 物理の設定 (`PHYS` チャンク)。物理を使わないモデルでは `None`。
     pub physics: Option<PhysicsSettings>,
     /// チャンク表の順に並ぶ。名前は `Motion::name`。
     pub motions: Vec<Motion>,

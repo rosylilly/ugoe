@@ -20,6 +20,7 @@ use crate::{FormatError, check_schema_version};
 /// `.ugoemod` ファイル 1 つ分の中身: 着せ替えのモジュールと、その画像。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleFile {
+    /// 着せ替えのモジュール (`MODU` チャンク)。
     pub module: Module,
     /// `module.textures` と同じ数・同じ順。
     pub textures: Vec<TextureData>,

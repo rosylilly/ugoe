@@ -104,7 +104,7 @@ tasks *args:
 licenses:
     @node scripts/check-licenses.mjs
 
-# crates.io に公開するクレートの準備の検査 (メタデータ・LICENSE の写し・内部の依存の版。docs/release.md#cratesio)
+# crates.io に公開するクレートの準備の検査 (メタデータ・LICENSE の写し・内部の依存の版・missing_docs。docs/release.md#cratesio)
 publish-check:
     @node --test --test-reporter=dot scripts/crates.test.mjs
     @node scripts/crates.mjs check

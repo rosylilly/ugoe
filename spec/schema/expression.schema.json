@@ -34,11 +34,15 @@
       "oneOf": [
         {
           "type": "string",
-          "enum": [
-            "add",
-            "multiply",
-            "overwrite"
-          ]
+          "const": "add"
+        },
+        {
+          "type": "string",
+          "const": "multiply"
+        },
+        {
+          "type": "string",
+          "const": "overwrite"
         }
       ]
     },

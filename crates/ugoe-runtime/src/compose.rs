@@ -20,62 +20,107 @@ use ugoe_model::{DeformerId, Model, Module, Part, PartId, Slot, standard};
 /// モジュールの名前は `#` で始まれないので、モジュールの要素の ID とは衝突しない。
 pub const REPLACED_PART_PREFIX: &str = "#replaced/";
 
+/// 合成 ([`compose`]) の失敗。モジュールが本体に取り付けられない理由。
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ComposeError {
+    /// モジュールの名前が空か、`/` を含むか、`#` で始まる。中身はモジュールの名前。
     #[error("module name `{0}` must be non-empty, contain no `/` and not start with `#`")]
     InvalidModuleName(String),
+    /// 同じ名前のモジュールを 2 つ以上取り付けようとした。中身はモジュールの名前。
     #[error("module name `{0}` is used more than once")]
     DuplicateModule(String),
+    /// モジュールの取り付け先のスロットが本体に無い。
     #[error("module `{module}`: slot `{slot}` does not exist in the base model")]
-    UnknownSlot { module: String, slot: String },
+    UnknownSlot {
+        /// モジュールの名前。
+        module: String,
+        /// 取り付け先のスロットの ID。
+        slot: String,
+    },
+    /// 1 つのスロットに 2 つのモジュールを取り付けようとした。
     #[error("slot `{slot}` already has module `{first}`, cannot also attach `{second}`")]
     SlotOccupied {
+        /// スロットの ID。
         slot: String,
+        /// 先にそのスロットに付いたモジュールの名前。
         first: String,
+        /// 後から付けようとしたモジュールの名前。
         second: String,
     },
+    /// 本体のアバタープロファイルのレベルが、モジュールの求めるレベルに届かない。
     #[error("module `{module}` requires avatar profile level {required}, base has {actual:?}")]
     AvatarLevel {
+        /// モジュールの名前。
         module: String,
+        /// モジュールが求めるレベル (`requires.avatar_level`)。
         required: u8,
+        /// 本体のレベル。本体がアバタープロファイルを持たなければ `None`。
         actual: Option<u8>,
     },
+    /// モジュールが求めるスロット (`requires.slots`) が本体に無い。
     #[error("module `{module}` requires slot `{slot}`, which the base model does not have")]
-    MissingSlot { module: String, slot: String },
+    MissingSlot {
+        /// モジュールの名前。
+        module: String,
+        /// 無いスロットの ID。
+        slot: String,
+    },
+    /// モジュールが求める、または使うパラメータが本体に無い。
     #[error("module `{module}` uses parameter `{parameter}`, which the base model does not have")]
-    MissingParameter { module: String, parameter: String },
+    MissingParameter {
+        /// モジュールの名前。
+        module: String,
+        /// 無いパラメータの ID。
+        parameter: String,
+    },
     /// 標準パラメータでも、スロットが公開するパラメータでもない。
     #[error("module `{module}`: parameter `{parameter}` is not exposed by slot `{slot}`")]
     ParameterNotExposed {
+        /// モジュールの名前。
         module: String,
+        /// モジュールの取り付け先のスロットの ID。
         slot: String,
+        /// 使えないパラメータの ID。
         parameter: String,
     },
     /// マスクの参照先が、モジュールのメッシュでも、スロットの `mask_sources` でもない。
     #[error("module `{module}`: mesh `{mesh}` masks with `{mask}`, which is not available")]
     UnknownMask {
+        /// モジュールの名前。
         module: String,
+        /// マスクを使うメッシュの ID。
         mesh: String,
+        /// 参照できないマスクのメッシュの ID。
         mask: String,
     },
+    /// メッシュのテクスチャの番号が、モジュールの `textures` の範囲の外。
     #[error("module `{module}`: mesh `{mesh}` has texture {texture} out of range")]
     TextureOutOfRange {
+        /// モジュールの名前。
         module: String,
+        /// メッシュの ID。
         mesh: String,
+        /// メッシュのテクスチャの番号 (モジュールの `textures` の中の番号)。
         texture: u32,
     },
     /// リグの衝突体が、モジュールの衝突体でも、スロットの `colliders` にある本体の衝突体でもない。
     #[error("module `{module}`: rig `{rig}` collides with `{collider}`, which is not available")]
     UnknownCollider {
+        /// モジュールの名前。
         module: String,
+        /// 物理のリグの ID。
         rig: String,
+        /// 参照できない衝突体の ID。
         collider: String,
     },
     /// ポーズの追従先が、スロットの `pose_parts` にある本体のポーズの要素ではない。
     #[error("module `{module}`: pose entry `{part}` is not exposed by slot `{slot}`")]
     PoseNotExposed {
+        /// モジュールの名前。
         module: String,
+        /// モジュールの取り付け先のスロットの ID。
         slot: String,
+        /// 追従先として指定した本体のパーツの ID。
         part: String,
     },
     /// 合成したモデルが検証を通らない (モジュール自体の不整合など)。

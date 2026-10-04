@@ -52,8 +52,11 @@ impl ImageLimits {
 /// アルファが乗算済みかどうかは作った関数で決まる ([`decode_png`] はストレート、[`decode_png_premultiplied`] は乗算済み)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rgba8 {
+    /// 幅 (画素)。
     pub width: u32,
+    /// 高さ (画素)。
     pub height: u32,
+    /// 画素。1 画素 4 バイト (R・G・B・A)、左上から行の順。
     pub pixels: Vec<u8>,
 }
 
@@ -63,7 +66,14 @@ pub struct Rgba8 {
 pub enum ImageError {
     /// 一辺が上限 ([`ImageLimits::max_side`]) を超える。画素は確保していない。
     #[error("PNG image is {width}x{height}, larger than the limit {max}x{max}")]
-    TooLarge { width: u32, height: u32, max: u32 },
+    TooLarge {
+        /// 画像の幅 (画素)。
+        width: u32,
+        /// 画像の高さ (画素)。
+        height: u32,
+        /// 一辺の上限 (画素)。
+        max: u32,
+    },
     /// PNG として読めない (壊れている・切り詰め・対応しない形)。中身は png クレートのメッセージ。
     #[error("decoding PNG: {0}")]
     Decode(String),

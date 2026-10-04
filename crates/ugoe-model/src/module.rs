@@ -17,6 +17,7 @@ use crate::{
     Parameter, Part, PartId, Pose, TextureRef,
 };
 
+/// スロットの ID (スロットの名前)。
 pub type SlotId = Id<Slot>;
 
 /// 着せ替えのスロット: モジュールの取り付け位置 (`docs/spec/modules.md#スロット`)。
@@ -58,7 +59,9 @@ pub struct Slot {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DrawOrderRange {
+    /// 範囲の下限。
     pub min: f32,
+    /// 範囲の上限。
     pub max: f32,
 }
 
@@ -70,6 +73,7 @@ pub struct DrawOrderRange {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Module {
+    /// このデータのスキーマバージョン (`crate::SCHEMA_VERSION`)。
     pub schema_version: u32,
     /// モジュールの名前。ID の付け替えに使うので、合成するモジュールの間で一意にする。
     /// 空でなく、`/` を含まず、`#` で始まらないこと。
@@ -79,12 +83,16 @@ pub struct Module {
     /// 対応する本体の条件。
     #[serde(default)]
     pub requires: ModuleRequirements,
+    /// モジュールのパーツ。
     #[serde(default)]
     pub parts: Vec<Part>,
+    /// モジュールのデフォーマ。
     #[serde(default)]
     pub deformers: Vec<Deformer>,
+    /// モジュールのメッシュ。
     #[serde(default)]
     pub meshes: Vec<Mesh>,
+    /// モジュールのグルー。
     #[serde(default)]
     pub glues: Vec<Glue>,
     /// テクスチャの参照。メッシュの `texture` はこの列のインデックス。
@@ -121,12 +129,14 @@ pub struct ModuleRequirements {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct ModulePhysics {
+    /// 物理のリグ。
     pub rigs: Vec<PhysicsRig>,
     /// 衝突体。モジュールのリグは、モジュールの衝突体だけを参照できる。
     pub colliders: Vec<PhysicsCollider>,
 }
 
 impl ModulePhysics {
+    /// リグも衝突体も無いか (書き出しで省略する)。
     pub fn is_empty(&self) -> bool {
         self.rigs.is_empty() && self.colliders.is_empty()
     }
@@ -150,6 +160,7 @@ pub struct ModulePose {
 }
 
 impl ModulePose {
+    /// グループも追従も無いか (書き出しで省略する)。
     pub fn is_empty(&self) -> bool {
         self.groups.is_empty() && self.links.is_empty()
     }

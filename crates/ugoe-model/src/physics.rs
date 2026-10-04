@@ -6,21 +6,29 @@ use ugoe_core::{Id, Vec2};
 
 use crate::{DeformerId, MeshId, ParamId};
 
+/// 物理リグ ([`PhysicsRig`]) の ID。
 pub type PhysicsRigId = Id<PhysicsRig>;
+/// 衝突体 ([`PhysicsCollider`]) の ID。
 pub type ColliderId = Id<PhysicsCollider>;
 
+/// モデル 1 体分の物理の設定 (`*.physics.json`)。全リグに共通の重力・風・ステップの周波数と、リグ・衝突体の一覧。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PhysicsSettings {
+    /// 重力のベクトル。物理空間は y 軸下向きで、既定は `(0, 1)` (真下)。
+    /// リグの `acceleration` を掛けて使う。
     #[cfg_attr(feature = "ts", ts(as = "crate::Vec2Repr"))]
     #[cfg_attr(feature = "schema", schemars(with = "crate::Vec2Repr"))]
     pub gravity: Vec2,
+    /// 風のベクトル。重力と違い `acceleration` は掛からず、入力の角度でも回さない。
     #[cfg_attr(feature = "ts", ts(as = "crate::Vec2Repr"))]
     #[cfg_attr(feature = "schema", schemars(with = "crate::Vec2Repr"))]
     pub wind: Vec2,
     /// 固定ステップ実行の周波数 (Hz)。
     pub fps: f32,
+    /// 物理リグ。この並びの順に処理し、前のリグがパラメータに書いた出力を後ろのリグの入力が読める
+    /// (`docs/spec/physics.md#リグの順序と中継`)。
     pub rigs: Vec<PhysicsRig>,
     /// 衝突体。どのリグと衝突するかは `PhysicsRig::colliders` で選ぶ
     /// (`docs/spec/physics.md#衝突体`)。省略時はなし。
@@ -28,15 +36,22 @@ pub struct PhysicsSettings {
     pub colliders: Vec<PhysicsCollider>,
 }
 
+/// 物理リグ。入力 → 振り子チェーン → 出力 の 1 組 (`docs/spec/physics.md#概要`)。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PhysicsRig {
+    /// リグの ID。
     pub id: PhysicsRigId,
+    /// 表示名 (エディタ用。評価には使わない)。
     pub name: String,
+    /// チェーンの根元の平行移動と回転を作る入力。
     pub inputs: Vec<PhysicsInput>,
+    /// 粒子の位置・角度を書き込む出力。
     pub outputs: Vec<PhysicsOutput>,
+    /// 振り子チェーンの粒子。先頭 (0 番) が根元で、根元から順に並ぶ。
     pub particles: Vec<PhysicsParticle>,
+    /// 入力のパラメータの値を物理空間の位置・角度に写す範囲。
     pub normalization: PhysicsNormalization,
     /// このリグの粒子と衝突する衝突体 (`PhysicsCollider::id`)。省略時はなし。
     #[serde(default)]
@@ -47,13 +62,17 @@ pub struct PhysicsRig {
     pub frame: Option<DeformerId>,
 }
 
+/// 物理の入力・出力で使う量。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum PhysicsSource {
+    /// x 成分。入力では根元の平行移動の x、出力では 1 つ前の粒子からの相対位置の x。
     X,
+    /// y 成分。入力では根元の平行移動の y、出力では 1 つ前の粒子からの相対位置の y。
     Y,
+    /// 角度 (度、時計回りが正)。入力では根元の回転、出力では 1 つ前の区間からの区間の角度。
     Angle,
     /// 未知の値 (新しい版のファイル)。その入力・出力を無視する。
     /// 書き出せない (`docs/spec/file-formats.md#未知の値の読み込み`)。
@@ -63,14 +82,18 @@ pub enum PhysicsSource {
     Unknown,
 }
 
+/// 物理の入力。パラメータの値を正規化し、重みを掛けて根元の姿勢に足す (`docs/spec/physics.md#入力`)。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PhysicsInput {
+    /// 入力元のパラメータ。存在しなければその入力を無視する。
     pub parameter: ParamId,
+    /// パラメータの値を根元のどの量 (平行移動の x / y、回転) に足すか。
     pub source: PhysicsSource,
     /// 0..=100 (%)。
     pub weight: f32,
+    /// 正規化した値の符号を反転するか。
     #[serde(default)]
     pub reflect: bool,
 }
@@ -87,9 +110,14 @@ pub struct PhysicsOutput {
     pub target: PhysicsTarget,
     /// 出力元となる粒子インデックス (その粒子と 1 つ前の粒子の成す角を使う)。
     pub particle: u32,
+    /// 粒子のどの量 (相対位置の x / y、区間の角度) を出力するか。
     pub source: PhysicsSource,
+    /// 出力する値に掛ける倍率。
     pub scale: f32,
+    /// 0..=100 (%)。パラメータへは現在の値とのブレンドの割合、動的物理では加算量に掛ける割合。
+    /// 0〜1 にクランプして使う。
     pub weight: f32,
+    /// 出力する値の符号を反転するか。
     #[serde(default)]
     pub reflect: bool,
     /// パラメータへの合成の方法 (`docs/spec/physics.md#合成の方法`)。省略時は `overwrite`。
@@ -188,13 +216,23 @@ impl PhysicsBlend {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PhysicsTarget {
     /// パラメータに書き込む (従来の出力)。
-    Parameter { id: ParamId },
+    Parameter {
+        /// 書き込む先のパラメータ。
+        id: ParamId,
+    },
     /// 回転デフォーマの角度に足す。
-    DeformerAngle { deformer: DeformerId },
+    DeformerAngle {
+        /// 角度を足す回転デフォーマ。
+        deformer: DeformerId,
+    },
     /// 回転デフォーマの原点をずらす。
-    DeformerOffset { deformer: DeformerId },
+    DeformerOffset {
+        /// 原点をずらす回転デフォーマ。
+        deformer: DeformerId,
+    },
     /// ワープデフォーマの制御点、またはメッシュの頂点を、重み付きで粒子の変位に追従させる。
     Vertices {
+        /// 動かす頂点の持ち主 (メッシュまたはワープデフォーマ)。
         owner: VertexOwner,
         /// 頂点 (制御点) ごとの重み (0..=1)。並びと長さは、メッシュなら `Mesh::uvs`、
         /// ワープなら `WarpKeyform::points` と同じ。
@@ -225,12 +263,15 @@ pub enum VertexOwner {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PhysicsCollider {
+    /// 衝突体の ID。リグは [`PhysicsRig::colliders`] でこの ID を選ぶ。
     pub id: ColliderId,
+    /// 表示名 (エディタ用。評価には使わない)。
     pub name: String,
     /// 取り付け先のデフォーマ。形状の位置はこのデフォーマの局所座標系で表し、
     /// そのワールド変換で動く。`None` ならキャンバスに固定する。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attach: Option<DeformerId>,
+    /// 形状。位置は `attach` のデフォーマの局所座標系 (無ければキャンバス座標) で表す。
     pub shape: ColliderShape,
 }
 
@@ -240,20 +281,26 @@ pub struct PhysicsCollider {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ColliderShape {
+    /// `center` から `radius` 以内の円の領域。
     Circle {
+        /// 円の中心 (`attach` の局所座標系、無ければキャンバス座標)。
         #[cfg_attr(feature = "ts", ts(as = "crate::Vec2Repr"))]
         #[cfg_attr(feature = "schema", schemars(with = "crate::Vec2Repr"))]
         center: Vec2,
+        /// 円の半径 (ピクセル)。
         radius: f32,
     },
     /// 線分 `a`–`b` から `radius` 以内の領域。
     Capsule {
+        /// 線分の一端 (`attach` の局所座標系、無ければキャンバス座標)。
         #[cfg_attr(feature = "ts", ts(as = "crate::Vec2Repr"))]
         #[cfg_attr(feature = "schema", schemars(with = "crate::Vec2Repr"))]
         a: Vec2,
+        /// 線分のもう一端 (`a` と同じ座標系)。
         #[cfg_attr(feature = "ts", ts(as = "crate::Vec2Repr"))]
         #[cfg_attr(feature = "schema", schemars(with = "crate::Vec2Repr"))]
         b: Vec2,
+        /// 線分からの距離で表す半径 (ピクセル)。
         radius: f32,
     },
     /// 未知の値 (新しい版のファイル)。その衝突体を無視する。
@@ -264,6 +311,7 @@ pub enum ColliderShape {
     Unknown,
 }
 
+/// 振り子チェーンの粒子 1 つ。係数の意味は `docs/spec/physics.md#係数の意味`。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -272,8 +320,11 @@ pub struct PhysicsParticle {
     #[cfg_attr(feature = "ts", ts(as = "crate::Vec2Repr"))]
     #[cfg_attr(feature = "schema", schemars(with = "crate::Vec2Repr"))]
     pub position: Vec2,
+    /// 基準フレーム (1/30 秒) あたりに残す速度の割合 (0..=1)。1 で減衰なし、小さいほど揺れがすぐ止まる。
     pub mobility: f32,
+    /// 時間の進み方の倍率。1 で等速、大きいほど入力に機敏に反応して速く揺れる。
     pub delay: f32,
+    /// 重力の倍率。大きいほど元の向きに戻ろうとする力が強く、揺れが速く収まる。風には掛からない。
     pub acceleration: f32,
     /// 1 つ前の粒子との距離 (区間の長さ)。衝突には使わない。
     pub radius: f32,
@@ -282,20 +333,28 @@ pub struct PhysicsParticle {
     pub collision_radius: f32,
 }
 
+/// 入力のパラメータの値を物理空間の量に写す範囲 (`docs/spec/physics.md#入力`)。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PhysicsNormalization {
+    /// 平行移動 (`source` が `x` / `y` の入力) の範囲。
     pub position: NormalizationRange,
+    /// 角度 (`source` が `angle` の入力) の範囲 (度)。
     pub angle: NormalizationRange,
 }
 
+/// 正規化の写し先の範囲。パラメータの `min` / `default` / `max` をそれぞれここの値に写し、
+/// その間は default の両側で別々に線形補間する。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct NormalizationRange {
+    /// パラメータの `min` を写した値。
     pub min: f32,
+    /// パラメータの `default` を写した値。
     pub default: f32,
+    /// パラメータの `max` を写した値。
     pub max: f32,
 }
 

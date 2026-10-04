@@ -1210,6 +1210,7 @@ pub fn physics_relay() -> Model {
 
 /// [`physics_relay`] の中継用のパラメータ。
 pub const RELAY_FOLLOW: &str = "PhysBodyFollow";
+/// [`physics_relay`] の中継用のパラメータ (弾み)。
 pub const RELAY_BOUNCE: &str = "PhysBodyBounce";
 
 /// [`physics_relay`] 用の物理設定。体の追従 → 弾み → 角度の 3 つのリグを、この順に連鎖させる。

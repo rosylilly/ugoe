@@ -12,7 +12,9 @@ use crate::ParamId;
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct KeyformBinding {
+    /// 軸にするパラメータ。
     pub parameter: ParamId,
+    /// 軸上のキー位置 (パラメータの値)。
     pub keys: Vec<f32>,
 }
 
@@ -33,8 +35,10 @@ pub struct KeyformBinding {
 // `blend_shapes` の `default` が既定で求める境界 (`T: Default`) を外す。
 #[serde(bound(deserialize = "T: Deserialize<'de>"))]
 pub struct KeyformGrid<T> {
+    /// パラメータ軸。空ならキーフォームは 1 つで、パラメータに依存しない。
     #[serde(default)]
     pub bindings: Vec<KeyformBinding>,
+    /// 格子点ごとのキーフォーム。並びは上記の列優先の順。
     pub keyforms: Vec<T>,
     /// キーの間の補間の種類 (`docs/spec/evaluation.md#曲線補間`)。既定は線形。
     #[serde(default, skip_serializing_if = "KeyformInterpolation::is_linear")]

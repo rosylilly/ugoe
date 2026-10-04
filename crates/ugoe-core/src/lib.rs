@@ -6,8 +6,11 @@
 //! 例外として、コード生成 (TypeScript の型と JSON Schema) のための実装を feature `ts` /
 //! `schema` の裏に置く。ランタイムはこれらを有効にしない (`docs/editor.md#型の生成`)。
 
+#![warn(missing_docs)]
+
 #[cfg(any(feature = "ts", feature = "schema"))]
 pub mod codegen;
+/// 色 ([`Rgb`])。
 pub mod color;
 pub mod id;
 

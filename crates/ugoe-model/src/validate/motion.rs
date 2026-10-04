@@ -66,8 +66,11 @@ pub enum MotionWarning {
     /// カーブの点の時刻が、直前の点より前に戻る (書き出しの規則では減らないことが望ましい)。
     #[error("{field} = {time} is earlier than the previous point ({previous})")]
     DecreasingTime {
+        /// 点の時刻の場所。
         field: String,
+        /// 点の時刻 (秒)。
         time: f32,
+        /// 直前の点の時刻 (秒)。
         previous: f32,
     },
 }
