@@ -83,6 +83,13 @@ impl Chain {
         &self.particles
     }
 
+    /// すべての粒子の位置・直前の位置・速度が有限値か (`docs/spec/physics.md#有限でない状態`)。
+    pub fn is_finite(&self) -> bool {
+        self.particles.iter().all(|p| {
+            p.position.is_finite() && p.last_position.is_finite() && p.velocity.is_finite()
+        })
+    }
+
     /// 粒子を、各区間が力 (`gravity * acceleration + wind`) の向きに垂れた静止姿勢に置く。
     ///
     /// 読み込み直後やリセット後に、初期姿勢から揺れ始めないようにするために使う。

@@ -1,7 +1,7 @@
 ---
 id: T0320
 title: 物理の状態が有限でなくなったときの扱いを決める
-status: in-progress
+status: done
 milestone: M9
 crates: [ugoe-physics, docs]
 depends_on: [T0316, T0318]
@@ -19,10 +19,10 @@ assignee: claude-worker-T0320
 
 ## 受け入れ条件
 
-- [ ] 次のどれにするかを決めて `docs/spec/physics.md` と英語の公開仕様に書く: ステップの後に有限でない粒子があればそのリグを静止姿勢に置き直す /
+- [x] 次のどれにするかを決めて `docs/spec/physics.md` と英語の公開仕様に書く: ステップの後に有限でない粒子があればそのリグを静止姿勢に置き直す /
       有限でない出力値を捨てる (前の値を使う・0 にする) / 何もしない (検査に任せる)
-- [ ] 決めた扱いを実装し、NaN を作る設定 (`gravity` が NaN・`radius` が無限大など) でテストする
-- [ ] `just ci` と `just wasm-check` が通る
+- [x] 決めた扱いを実装し、NaN を作る設定 (`gravity` が NaN・`radius` が無限大など) でテストする
+- [x] `just ci` と `just wasm-check` が通る
 
 ## 参考
 
@@ -30,3 +30,16 @@ assignee: claude-worker-T0320
 - `docs/spec/physics.md#時間の進め方`、`spec/physics.md`
 
 ## メモ
+
+- **決めたこと:** 「静止姿勢に置き直す」と「有限でない出力を捨てる」を組み合わせた (`docs/spec/physics.md#有限でない状態`・`spec/physics.md#non-finite-state`)。
+  T0141 の方針 (有限でない設定は検証で拒み、範囲の外はランタイムのフォールバック) から、検証を通る有限の設定でもあふれる場合のランタイムの扱いとして決めた。
+  - ステップの後、リグの粒子 (位置・直前の位置・速度) に有限でないものがあれば、そのリグをそのステップの入力の静止姿勢 (衝突体あり) に置き直す。入力が戻れば `reset` なしで戻る。
+  - 出力の値が有限でなければそのステップの値を持たない (パラメータは前の値のまま、加算量は 0、中継の写しにも書かない)。補間した値が有限でないときも書かない。静止姿勢そのものが有限でない設定 (`radius` が無限大) はこれで止まる。
+  - 前のステップの根元の姿勢・基準の回転が有限でなければ、補間せず今の姿勢から始める (無限大からの補間は NaN になり、置き直しても毎フレーム NaN に戻るため。テストで見つけた)。
+  - 「何もしない」案は有限の設定でもあふれるので採らず、「出力を捨てるだけ」の案は鎖が NaN のまま戻らないので置き直しと組み合わせた。どれも有限の状態では何もしないので、`golden_tests` (ビット単位) は変わらない。
+- **実装:** `Chain::is_finite` を足した (公開 API の追加)。`src/lib.rs` の `advance`・`outputs`・`write_instance`・`write_parameters`。
+- **テスト:** `src/non_finite_tests.rs`。`gravity` が NaN・`wind` が無限大・`radius` が無限大・`delay` が NaN・`scale` が無限大・`radius` が `f32::MAX` (有限) で、パラメータ・動的物理の加算量・描画の頂点が有限のままであること。入力の `weight` が `f32::MAX` で根元が無限大になった後、入力が戻ると鎖が有限に戻ること (修正前は失敗することを確かめた)。
+- **範囲:** `crates:` は `ugoe-physics`・`docs` だが、AGENTS.md の「仕様とコードの同期」に従い英語の公開仕様 `spec/physics.md` も直した。
+- **やらなかったこと:** 動的物理の頂点の重み (`Vertices::weights`) が有限でない場合は検証 (0〜1) に任せた (掛けた後の値は確かめない)。英語の公開仕様の「Advancing time」の手順 3 が `accumulator −= whole × step` のままで、T0316 の剰余の修正 (上限を超えたときは `rem_euclid`) が反映されていない (この T0320 の範囲外なので触っていない)。
+- **起票の候補:** `spec/physics.md` の Advancing time の手順 3 を、上限を超えたときの剰余の扱い (T0316) に合わせる。
+- `just ci` と `just wasm-check` は通った (main は eabd73b)。

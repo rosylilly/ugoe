@@ -22,6 +22,7 @@ frames. The data is defined in [model.md](model.md#physics-settings).
 - [Dynamic physics](#dynamic-physics)
 - [Evaluation with dynamic physics](#evaluation-with-dynamic-physics)
 - [Unknown values and invalid references](#unknown-values-and-invalid-references)
+- [Non-finite state](#non-finite-state)
 - [Determinism](#determinism)
 - [Conformance](#conformance)
 
@@ -86,7 +87,8 @@ An **update** by `dt` seconds with the current parameter values does the followi
        target_r = root_pose(r, parameters, excluding relay inputs)       (Inputs)
        target_r.translation += anchor_r                                   (Dynamic physics; 0 otherwise)
        fa = frame_angle_r                                                 (Dynamic physics; 0 otherwise)
-       if initialized: fa = pose_r.frame_angle + wrap(fa − pose_r.frame_angle)
+       if initialized and pose_r.frame_angle is finite:
+           fa = pose_r.frame_angle + wrap(fa − pose_r.frame_angle)
        target_r.angle += fa
        target_r.frame_angle = fa
    wrap(x) maps x to (−180, 180] degrees.
@@ -104,12 +106,14 @@ An **update** by `dt` seconds with the current parameter values does the followi
    accumulator −= whole × step
    n = min(whole, 8)                                                     (the rest of the time is dropped)
 
-4. Let start_r = external_r for every rig. For k = 1 … n:
+4. Let start_r = external_r for every rig (target_r if external_r is not finite). For k = 1 … n:
        for each rig r in array order:
            external = lerp(start_r, target_r, k / n)                     (translation, angle and frame_angle)
            pose = external + relay inputs of r
            advance the chain one step with root pose `pose`              (Pendulum step)
              and rotation_delta = pose.angle − pose_r.angle
+           if any particle is not finite:
+               place the chain in its rest pose for `pose`                (Non-finite state)
            pose_r = pose; external_r = external
            previous_r = current_r; current_r = outputs of r
 
@@ -253,7 +257,8 @@ For an output to a parameter with `blend = add`, the same quantity computed on t
 For outputs to `deformer_offset` and `vertices` targets, see
 [Displacement outputs](#displacement-outputs).
 
-Finally `value = s × scale`, negated if `reflect` is `true`.
+Finally `value = s × scale`, negated if `reflect` is `true`. If `value` is not finite, the output
+has no value in that step ([Non-finite state](#non-finite-state)).
 
 ### Writing to parameters
 
@@ -507,6 +512,28 @@ The second stage of evaluation then uses the final parameter values and the offs
 | Output whose `particle` is 0 or out of range | Ignored. |
 | Unknown `blend` | `overwrite`. |
 | Collider with an unknown `shape`, or whose `attach` does not exist | Ignored. |
+
+## Non-finite state
+
+Settings with non-finite numbers are rejected by validation
+([model.md](model.md#physics-validation)). Finite but extreme settings (or settings a host builds
+without validating them) can still overflow single precision, so a runtime MUST keep non-finite
+values from reaching parameters and dynamic offsets. None of the rules below has any effect while
+every value is finite.
+
+- **Re-placing a chain.** After a rig advances one step, if the position, last position or velocity
+  of any of its particles is not finite, the chain is placed in its [rest pose](#rest-pose) for the
+  pose of that step (with colliders, as in the first update). The outputs are then computed from the
+  re-placed particles. Other rigs are not affected. A chain therefore recovers without a reset once
+  its input is finite again.
+- **Dropping outputs.** An output whose value is not finite has no value in that step, like an
+  output whose `particle` is out of range: it is not written to parameters, to the relay copy, or to
+  dynamic offsets. In step 5 of [Advancing time](#advancing-time), an interpolated value that is not
+  finite is not written either. If the rest pose itself is not finite (for example an infinite
+  `radius`), the chain is re-placed in every step and its outputs are never written.
+- **Interpolating the pose.** If the root pose of the previous step (`external_r`, or the previous
+  frame angle) is not finite, the update starts from the current pose instead of interpolating from
+  it.
 
 ## Determinism
 

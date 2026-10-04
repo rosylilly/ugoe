@@ -126,6 +126,7 @@
 | [Dynamic physics](../../spec/physics.md#dynamic-physics) | [physics.md#動的物理-揺れ用パラメータのいらない物理](physics.md#動的物理-揺れ用パラメータのいらない物理) | 衝突体の掃引も擬似コードで書く。`rest_pose_collisions` の API は含めない |
 | [Evaluation with dynamic physics](../../spec/physics.md#evaluation-with-dynamic-physics) | [physics.md#評価との関係](physics.md#評価との関係) | |
 | [Unknown values and invalid references](../../spec/physics.md#unknown-values-and-invalid-references) | [physics.md#旧ランタイムでの扱い](physics.md#旧ランタイムでの扱い) | |
+| [Non-finite state](../../spec/physics.md#non-finite-state) | [physics.md#有限でない状態](physics.md#有限でない状態) | |
 | [Determinism](../../spec/physics.md#determinism)・[Conformance](../../spec/physics.md#conformance) | [physics.md#決定性](physics.md#決定性)、[physics.md#互換の基準](physics.md#互換の基準) | |
 
 ## モーション (`spec/motion.md`)

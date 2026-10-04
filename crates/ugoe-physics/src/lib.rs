@@ -107,6 +107,10 @@ impl RootPose {
         self
     }
 
+    fn is_finite(&self) -> bool {
+        self.translation.is_finite() && self.angle.is_finite() && self.frame_angle.is_finite()
+    }
+
     fn lerp(self, other: Self, t: f32) -> Self {
         Self {
             translation: self.translation.lerp(other.translation, t),
@@ -613,8 +617,9 @@ impl PhysicsSystem {
                 });
                 pose.translation += frame.anchor;
                 // 基準の回転は、前のステップから近い側に回ったとみなす (±180 度をまたいでも跳ばない)。
-                let frame_angle = if initialized {
-                    let prev = state.pose.frame_angle;
+                // 前の角度が有限でなければ (あふれた後)、今の角度から始め直す。
+                let prev = state.pose.frame_angle;
+                let frame_angle = if initialized && prev.is_finite() {
                     prev + wrap_degrees(frame.frame_angle - prev)
                 } else {
                     frame.frame_angle
@@ -689,7 +694,14 @@ impl PhysicsSystem {
         if steps > 0 {
             let starts = &mut self.starts;
             starts.clear();
-            starts.extend(self.rigs.iter().map(|s| s.external));
+            // 前の姿勢が有限でなければ (根元があふれた後)、補間すると NaN になるので今の姿勢から始める。
+            starts.extend(self.rigs.iter().zip(targets).map(|(s, t)| {
+                if s.external.is_finite() {
+                    s.external
+                } else {
+                    *t
+                }
+            }));
             for k in 1..=steps {
                 if let Some(r) = &mut relay {
                     r.restore();
@@ -708,6 +720,17 @@ impl PhysicsSystem {
                     state.chain.step(&rig.particles, &input, |s, p| {
                         collide(&frame.colliders, rig, s, p);
                     });
+                    if !state.chain.is_finite() {
+                        // あふれた鎖は速度が NaN のまま戻らないので、このステップの入力の静止姿勢に
+                        // 置き直す (`docs/spec/physics.md#有限でない状態`)。
+                        state.chain.settle(
+                            &rig.particles,
+                            pose.translation,
+                            input.gravity,
+                            input.wind,
+                            |s, p| collide(&frame.colliders, rig, s, p),
+                        );
+                    }
                     state.pose = pose;
                     state.external = external;
                     std::mem::swap(&mut state.previous, &mut state.current);
@@ -746,6 +769,10 @@ impl PhysicsSystem {
                     continue;
                 };
                 let value = previous.lerp(current, alpha);
+                // 有限の 2 つの値の補間も、差があふれると有限でなくなる。
+                if !value.is_finite() {
+                    continue;
+                }
                 let weight = (output.weight / 100.0).clamp(0.0, 1.0);
                 match rb.outputs[o] {
                     Target::Ignore => {}
@@ -1003,7 +1030,10 @@ fn outputs(
                 }
             };
             let value = value * output.scale;
-            Some(if output.reflect { -value } else { value })
+            // 有限でない値は捨てる (`docs/spec/physics.md#有限でない状態`)。
+            value
+                .is_finite()
+                .then_some(if output.reflect { -value } else { value })
         });
     for (slot, value) in out.iter_mut().zip(values) {
         *slot = value;
@@ -1066,6 +1096,9 @@ fn write_parameters(
             continue;
         };
         let value = lerp(previous.x, current.x, alpha);
+        if !value.is_finite() {
+            continue;
+        }
         blend_parameter(
             parameters,
             index,
@@ -1090,3 +1123,6 @@ mod additive_tests;
 
 #[cfg(test)]
 mod golden_tests;
+
+#[cfg(test)]
+mod non_finite_tests;
