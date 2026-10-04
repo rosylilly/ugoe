@@ -501,6 +501,8 @@ MediaPipe の wasm とモデルはアプリに同梱する (`pnpm mediapipe`。�
   演技の様子 (`AnimationView`) を配るときの前の様子との差、`motion.event` は刻みで発火したモーションのイベント。要求が起こした通知は、
   その要求の応答より先に届くことがある。同じモーションを始め直したときも `motion.finished` と `motion.started` を送り、`motion.event` は
   そのモーションの `motion.started` の後・`motion.finished` の前に送る (終わりで発火したイベントも、終わったモーションの名前で)。
+  `motion.event` の `motion` は、イベントを発火したモーションの名前 (`Puppet::motion_event_sources`)。別のモーションに替えた後に
+  フェードアウトしながら発火したイベントも、新しいモーションではなく替えられたモーションの名前で送る (T0821)。
   シーンを切り替えて付けているモジュールが変わったときは、`scene.changed` に続けて `dressup.changed` も送る。
 - **WebSocket:** HTTP の要求の読み取り・検査・経路は自前で行い、`/api` の Upgrade のときだけ、握手の応答の鍵とフレームの読み書きを
   tungstenite (同期版。`derive_accept_key` と `WebSocket::from_raw_socket` の仲間) に任せる (利用者の決定、2026-10-02。`ws.rs`)。

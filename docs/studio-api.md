@@ -250,7 +250,7 @@ Notifications have the form `{"jsonrpc":"2.0","method":"<event>","params":{…}}
 | `expression.changed` | `{active}` | The active expressions changed |
 | `motion.started` | `{motion, priority}` | A motion started (including the idle motion, and a motion started again while it plays) |
 | `motion.finished` | `{motion}` | A motion ended or was replaced |
-| `motion.event` | `{motion, value, time}` | A motion reached one of its events (`value` as authored, `time` in seconds). Sent after the motion's `motion.started` and before its `motion.finished` |
+| `motion.event` | `{motion, value, time}` | A motion reached one of its events (`value` as authored, `time` in seconds). `motion` is the motion that fired the event, also when it is fading out after another motion was started (then the event comes after its `motion.finished`). Otherwise sent after the motion's `motion.started` and before its `motion.finished` |
 | `dressup.changed` | `{modules}` (`[{id, name, slot}]`) | The worn modules of the scene on air changed (also after `scene.changed` when the new scene wears other modules) |
 | `tracking.changed` | `{tracking, trackingPaused, lipSyncPaused}` | Face tracking started or stopped, or tracking / lip sync was paused or resumed |
 

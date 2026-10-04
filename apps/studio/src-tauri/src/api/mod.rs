@@ -762,17 +762,13 @@ impl Studio {
             None => Vec::new(),
         };
         if !fired.is_empty() && self.api_listening_for("motion.event") {
-            // 今も再生しているモーション (始めた番号)。終わったモーションのイベントは、その終わりの前に送る。
-            let current = lock(&self.api.0)
-                .animation
-                .as_ref()
-                .and_then(|v| v.current.as_ref().map(|_| v.motion_start));
+            // 終わった (替えられた) モーションのイベントは、その終わりの前に送る。
             let finished = events.iter().position(|(e, _)| *e == "motion.finished");
             let mut ended = Vec::new();
             for f in fired {
                 let params =
                     json!({ "motion": f.motion, "value": f.event.value, "time": f.event.t });
-                if Some(f.start) != current && f.motion.is_some() {
+                if !f.current {
                     ended.push(("motion.event", params));
                 } else {
                     events.push(("motion.event", params));

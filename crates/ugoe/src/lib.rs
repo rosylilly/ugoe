@@ -51,7 +51,7 @@ use ugoe_model::physics::PhysicsSettings;
 use ugoe_model::pose::Pose;
 use ugoe_model::validate::ValidationError;
 use ugoe_motion::{
-    BreathPlayer, ExpressionManager, EyeBlinkPlayer, LipSyncPlayer, MotionManager,
+    BreathPlayer, EventSource, ExpressionManager, EyeBlinkPlayer, LipSyncPlayer, MotionManager,
     PartOpacityBuffer, PosePlayer, Priority, TrackingInput, TrackingMap,
 };
 use ugoe_runtime::{CompileError, CompiledModel, ModelInstance, ParamIndex};
@@ -294,6 +294,14 @@ impl Puppet {
     /// 直前の [`Puppet::update`] で発火したモーションのイベント。
     pub fn motion_events(&self) -> &[MotionEvent] {
         self.motions.fired_events()
+    }
+
+    /// [`Puppet::motion_events`] の各イベントを発火したモーション (同じ並び)。
+    ///
+    /// 新しいモーションに替えた後も、フェードアウト中のモーションのイベントはそのモーションを指す。
+    /// 番号は [`MotionManager::current_motion_number`] と比べられる。
+    pub fn motion_event_sources(&self) -> &[EventSource] {
+        self.motions.fired_event_sources()
     }
 
     /// 表情を `expression` だけにする (使用中の表情はフェードアウトする)。
@@ -988,6 +996,7 @@ mod tests {
         assert!(puppet.motion_events().is_empty());
         puppet.update(0.5);
         assert_eq!(puppet.motion_events()[0].value, "hello");
+        assert_eq!(puppet.motion_event_sources()[0].number, 1);
     }
 
     /// 負や有限でない `dt` は 0 とみなし、再生の状態を壊さない (NaN が基準値や時刻に残らない)。

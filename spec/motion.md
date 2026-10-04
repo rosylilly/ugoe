@@ -185,6 +185,9 @@ motions SHOULD behave the same way.*
   cross-fade from the old to the new. When the most recently started motion has finished, there is
   no current motion. Finished motions are removed.
 - Events are collected per motion, in the order the motions were started.
+- *Informative:* the reference runtime also reports which motion fired each event (the order in
+  which it was started, and its name), so that an event of a motion fading out after another motion
+  was started is not taken for an event of the new motion.
 - *Informative:* a looping idle motion never finishes; start it with `idle` so that `normal` requests
   can replace it.
 

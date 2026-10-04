@@ -147,6 +147,12 @@ impl Dir {
                      "events": [{ "t": 0.0, "value": "wave-start" }, { "t": 0.5, "value": "wave-end" }] }"#,
             )
             .unwrap(),
+            // 替えられた後もフェードアウトしながらイベントを発火する (T0821)。
+            ugoe::format::motion_from_json(
+                r#"{ "name": "Bow", "duration": 1.0, "looping": false, "fade_in": 0.0, "fade_out": 0.5,
+                     "curves": [], "events": [{ "t": 0.25, "value": "bow-late" }] }"#,
+            )
+            .unwrap(),
         ];
         bundle.expressions = ["Smile", "Angry"]
             .iter()
@@ -1018,6 +1024,63 @@ fn motion_notifications_cover_restarts_and_events_at_the_end() {
         tail.extend(drain(&mut client));
     }
     assert_eq!(tail, [event("wave-end", 0.5), finished]);
+}
+
+/// 新しいモーションに替えた後、フェードアウト中のモーションが発火したイベントは、そのモーションの名前で送る (T0821)。
+#[test]
+fn events_of_a_motion_fading_out_carry_its_name() {
+    let dir = Dir::new("motion-fade-out-events");
+    let model = dir.model();
+    let studio = studio();
+    stage_scenes(&studio, &model, &[]);
+    let mut client = Client::connect(&studio);
+    client.approved(Permission::Control);
+    client.call(
+        "events.subscribe",
+        json!({ "events": ["motion.started", "motion.finished", "motion.event"] }),
+    );
+    let note = |method: &str, params: Value| (method.to_owned(), params);
+    client.call(
+        "motion.play",
+        json!({ "motion": "Bow", "priority": "force" }),
+    );
+    studio.tick(0.02, false);
+    client.call(
+        "motion.play",
+        json!({ "motion": "Wave", "priority": "force" }),
+    );
+    let mut notes = drain(&mut client);
+    for _ in 0..40 {
+        studio.tick(0.02, false);
+        notes.extend(drain(&mut client));
+    }
+    assert_eq!(
+        notes,
+        [
+            note(
+                "motion.started",
+                json!({ "motion": "Bow", "priority": "force" })
+            ),
+            note("motion.finished", json!({ "motion": "Bow" })),
+            note(
+                "motion.started",
+                json!({ "motion": "Wave", "priority": "force" })
+            ),
+            note(
+                "motion.event",
+                json!({ "motion": "Wave", "value": "wave-start", "time": 0.0 })
+            ),
+            note(
+                "motion.event",
+                json!({ "motion": "Bow", "value": "bow-late", "time": 0.25 })
+            ),
+            note(
+                "motion.event",
+                json!({ "motion": "Wave", "value": "wave-end", "time": 0.5 })
+            ),
+            note("motion.finished", json!({ "motion": "Wave" })),
+        ]
+    );
 }
 
 /// シーンを切り替えて付けているモジュールが変わったら、`scene.changed` に加えて `dressup.changed` も送る。

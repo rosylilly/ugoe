@@ -18,6 +18,15 @@ pub enum Priority {
     Force,
 }
 
+/// 発火したイベントを発火したモーション ([`MotionManager::fired_event_sources`])。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EventSource {
+    /// モーションを始めた番号 ([`MotionManager::motion_numbers`])。
+    pub number: u64,
+    /// モーションの名前 ([`Motion::name`])。
+    pub name: String,
+}
+
 /// 優先度とクロスフェードを持つモーションの再生管理。
 ///
 /// 新しいモーションを開始すると、再生中のモーションは [`MotionPlayer::stop`] で自身の `fade_out`
@@ -27,10 +36,16 @@ pub enum Priority {
 pub struct MotionManager {
     /// 再生中のプレイヤー (フェードアウト中のものを含む)。開始した順。
     players: Vec<MotionPlayer>,
+    /// `players` の各モーションを始めた番号 (`players` と同じ並び)。
+    numbers: Vec<u64>,
+    /// これまでに始めたモーションの数 (最後に始めたモーションの番号)。
+    started: u64,
     /// 現在のモーション (最後に開始し、止めていないもの) の優先度。なければ `None`。
     priority: Option<Priority>,
     /// 直前の [`update`](Self::update) で発火したイベント。
     events: Vec<MotionEvent>,
+    /// `events` の各イベントを発火したモーション (`events` と同じ並び)。
+    sources: Vec<EventSource>,
 }
 
 impl MotionManager {
@@ -48,6 +63,8 @@ impl MotionManager {
             player.stop();
         }
         self.players.push(MotionPlayer::new(motion));
+        self.started += 1;
+        self.numbers.push(self.started);
         self.priority = Some(priority);
         true
     }
@@ -75,23 +92,52 @@ impl MotionManager {
         &self.players
     }
 
+    /// [`players`](Self::players) の各モーションを始めた番号 (同じ並び)。
+    ///
+    /// 番号は [`start`](Self::start) で始めるたびに 1 から 1 ずつ上がる (始めなかった要求では上がらない)。
+    /// 同じモーションを始め直したことや、イベントを発火したモーションを見分けるのに使う。
+    pub fn motion_numbers(&self) -> &[u64] {
+        &self.numbers
+    }
+
+    /// 現在のモーション (最後に開始し、止めていないもの) を始めた番号。なければ `None`。
+    pub fn current_motion_number(&self) -> Option<u64> {
+        self.priority.and(self.numbers.last().copied())
+    }
+
     /// `dt` 秒進め、開始した順にパラメータへ適用する。終わったプレイヤーは取り除く。
     pub fn update(&mut self, parameters: &mut ParameterValues, dt: f32) {
         self.events.clear();
-        for player in &mut self.players {
+        self.sources.clear();
+        for (player, &number) in self.players.iter_mut().zip(&self.numbers) {
             player.advance(dt);
-            self.events.extend(player.fired_events().cloned());
+            for event in player.fired_events() {
+                self.events.push(event.clone());
+                self.sources.push(EventSource {
+                    number,
+                    name: player.motion().name.clone(),
+                });
+            }
             player.apply(parameters, 1.0);
         }
         if self.players.last().is_some_and(MotionPlayer::is_finished) {
             self.priority = None;
         }
+        let mut finished = self.players.iter().map(MotionPlayer::is_finished);
+        self.numbers.retain(|_| finished.next() != Some(true));
         self.players.retain(|p| !p.is_finished());
     }
 
     /// 直前の [`update`](Self::update) で発火したイベント。開始した順のプレイヤーごとに、発火した順に並ぶ。
     pub fn fired_events(&self) -> &[MotionEvent] {
         &self.events
+    }
+
+    /// [`fired_events`](Self::fired_events) の各イベントを発火したモーション (同じ並び)。
+    ///
+    /// フェードアウト中のモーションや、この `update` で終わったモーションのイベントも、そのモーションを指す。
+    pub fn fired_event_sources(&self) -> &[EventSource] {
+        &self.sources
     }
 
     /// エフェクトグループ `name` の強さ (`docs/spec/motion.md#エフェクトグループ`)。
@@ -316,6 +362,70 @@ mod tests {
         assert_eq!(names, ["a", "b"]);
         m.update(&mut params(), 0.1);
         assert!(m.fired_events().is_empty());
+    }
+
+    /// フェードアウト中のモーションのイベントは、新しいモーションではなく発火したモーションを指す。
+    #[test]
+    fn event_sources_name_the_motion_that_fired() {
+        let event = |value: &str| MotionEvent {
+            t: 0.5,
+            value: value.into(),
+        };
+        let mut a = motion("a", 0.0, 1.0);
+        a.events = vec![event("from a")];
+        let mut b = motion("b", 0.0, 1.0);
+        b.events = vec![event("from b")];
+        let mut m = MotionManager::new();
+        assert!(m.start(a, Priority::Normal));
+        m.update(&mut params(), 0.1);
+        // b を始めて a をフェードアウトさせる。次の update で、フェードアウト中の a と b のイベントが発火する。
+        assert!(m.start(b, Priority::Normal));
+        assert_eq!(m.motion_numbers(), [1, 2]);
+        assert_eq!(m.current_motion_number(), Some(2));
+        m.update(&mut params(), 0.5);
+        let fired: Vec<_> = m
+            .fired_event_sources()
+            .iter()
+            .zip(m.fired_events())
+            .map(|(s, e)| (s.number, s.name.as_str(), e.value.as_str()))
+            .collect();
+        assert_eq!(fired, [(1, "a", "from a"), (2, "b", "from b")]);
+        m.update(&mut params(), 0.1);
+        assert!(m.fired_event_sources().is_empty());
+    }
+
+    /// 終わったモーションの番号は取り除き、同じモーションを始め直すと番号が上がる。
+    #[test]
+    fn motion_numbers_follow_the_players() {
+        let mut once = motion("once", 0.0, 0.0);
+        once.looping = false;
+        once.duration = 1.0;
+        once.events = vec![MotionEvent {
+            t: 1.0,
+            value: "end".into(),
+        }];
+        let mut m = MotionManager::new();
+        assert_eq!(m.current_motion_number(), None);
+        m.start(once.clone(), Priority::Normal);
+        assert!(!m.start(once.clone(), Priority::Idle));
+        m.start(once.clone(), Priority::Normal);
+        assert_eq!(m.motion_numbers(), [1, 2]);
+        // 1 は止めた (fade_out 0) ので次の update で終わる。2 は終わりのイベントを発火して終わる。
+        m.update(&mut params(), 1.0);
+        assert!(m.motion_numbers().is_empty());
+        assert_eq!(m.current_motion_number(), None);
+        assert_eq!(
+            m.fired_event_sources(),
+            [EventSource {
+                number: 2,
+                name: "once".into()
+            }]
+        );
+        m.start(once, Priority::Normal);
+        assert_eq!(m.motion_numbers(), [3]);
+        m.stop_all();
+        assert_eq!(m.current_motion_number(), None);
+        assert_eq!(m.motion_numbers(), [3]);
     }
 
     #[test]

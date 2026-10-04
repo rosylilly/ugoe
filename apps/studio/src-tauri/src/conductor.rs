@@ -77,13 +77,14 @@ pub struct Conductor {
     motion_events: Vec<FiredEvent>,
 }
 
-/// 刻みで発火したモーションのイベントと、その刻みを始めたときのモーション (外部 API の `motion.event`)。
+/// 刻みで発火したモーションのイベントと、それを発火したモーション (外部 API の `motion.event`)。
 #[derive(Debug, Clone, PartialEq)]
 pub struct FiredEvent {
-    /// 刻みを始めたときに再生していたモーションの名前 (この刻みで終わったものを含む)。
-    pub motion: Option<String>,
-    /// そのモーションを始めた番号 ([`crate::animation::Animation::motion_start`])。
-    pub start: u64,
+    /// イベントを発火したモーションの名前 (替えられてフェードアウトしているものや、この刻みで終わったものを含む)。
+    pub motion: String,
+    /// 発火したモーションが、刻みの後も今のモーションか。そうでなければ、終わったか替えられたモーション
+    /// (その `motion.finished` は送り済みか、この刻みで送る)。
+    pub current: bool,
     pub event: MotionEvent,
 }
 
@@ -363,17 +364,21 @@ impl Conductor {
             0.0
         };
         self.animation.before_update(puppet);
-        // イベントは、この刻みで終わるモーションのものでもある (終わった後の名前で知らせない)。
-        let motion = self.animation.current_motion().map(str::to_owned);
-        let start = self.animation.motion_start();
         puppet.update(dt);
         self.animation.after_update(puppet);
-        self.motion_events
-            .extend(puppet.motion_events().iter().map(|event| FiredEvent {
-                motion: motion.clone(),
-                start,
-                event: event.clone(),
-            }));
+        // イベントは、発火したモーションの名前で知らせる (フェードアウト中のもの・この刻みで終わったものも、今のモーションの名前にしない)。
+        let current = puppet.motions().current_motion_number();
+        self.motion_events.extend(
+            puppet
+                .motion_event_sources()
+                .iter()
+                .zip(puppet.motion_events())
+                .map(|(source, event)| FiredEvent {
+                    motion: source.name.clone(),
+                    current: Some(source.number) == current,
+                    event: event.clone(),
+                }),
+        );
         let mut values = puppet.values_before_physics().to_vec();
         for o in &mut self.overrides {
             if let Some(v) = values.get_mut(o.index) {
