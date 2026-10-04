@@ -110,7 +110,7 @@ puppet.xr_face_tracker = &"/user/face_tracker"
 | `get_expression_names()` / `set_expression(name)` | 表情 |
 | `set_lip_sync_level(level)` / `clear_lip_sync_level()` / `reset_physics()` | リップシンク・物理 |
 | `set_stage_enabled(stage, enabled)` / `is_stage_enabled(stage)` | `update` の段 (`"physics"`・`"eye_blink"`・`"breath"`・`"lip_sync"`・`"pose"`) を動かすか (既定はすべて動かす)。モデルを読み直しても保つので、読み込む前に設定すれば読み込みの直後の評価から効く。未知の名前は false |
-| `attach_module(module)` / `detach_module(name)` / `clear_modules()` / `get_module_names()` | 着せ替え。付けられなければエラーを出して false (何も変えない) |
+| `attach_module(module)` / `detach_module(name)` / `clear_modules()` / `get_module_names()` | 着せ替え。付けられなければエラーを出して false (何も変えない)。`get_module_names` は、モデルを読み込んでいれば実際に付いているものだけを返す (読み込むときに付けられなかったモジュールは `modules` に残るが、ここには出ない) |
 | `uses_lighting()` / `add_directional_light(direction, color)` / `add_point_light(position, color, range)` / `clear_lights()` | ライティング (光源は先頭の 8 個まで) |
 | `set_tracking_from_xr_face_tracker(tracker)` | `XRFaceTracker` のブレンドシェイプを ARKit の形に直して設定する (下の「XRFaceTracker との対応」)。頭の回転は変えない。`XRFaceTracker` でなければ false |
 | `set_tracking_head(rotation)` / `set_tracking_body(dict)` / `set_tracking_blend_shapes(dict)` / `set_tracking_blend_shape(name, value)` / `clear_tracking()` / `is_tracking()` / `get_tracking_blend_shape_names()` | トラッキング。頭は度で `x` = ヨー・`y` = ピッチ・`z` = ロール。体は `yaw` `pitch` `roll` `shoulder_left` `shoulder_right` (無いキーは省略)。ブレンドシェイプは ARKit の 52 個の名前 (MediaPipe の名前もそのまま渡せる)。平滑化はホストが行う |
@@ -118,6 +118,13 @@ puppet.xr_face_tracker = &"/user/face_tracker"
 | `get_canvas_size()` / `get_canvas_origin()` | キャンバスの大きさと原点 |
 | `get_drawable_ids()` / `get_drawable_positions(index)` / `get_drawable_state(index)` / `get_render_order()` | 直前の評価の結果の読み戻し (`docs/spec/evaluation.md#8-出力`。適合テストで使う)。番号は `get_drawable_ids()` の順 (モデルのメッシュの順)。位置は **キャンバス座標** (ノードの座標は `get_canvas_origin()` を引く)。`get_drawable_state` は `{ "opacity", "draw_order", "multiply_color" (Color), "screen_color" (Color), "mask_strength", "visible" }`。`get_render_order` は奥から手前への番号。範囲の外の番号は空 |
 | シグナル `model_loaded` / `motion_event(value)` | 読み込み / モーションのイベント |
+
+有限でない値 (GDScript の `NAN`・`INF`) は C ABI と同じく受け付けない: `advance(delta)` と `speed` は有限で負でない値、
+`set_parameter`・`set_lip_sync_level` は NaN 以外 (無限大は値域にクランプ)、`set_tracking_head` と `mask_scale` は有限、
+`set_tracking_body` は NaN のキーを省略とみなし無限大を拒む、ブレンドシェイプは有限でない値を無視する、環境光と光源の色は有限で負でない値
+(それ以外の光源は警告を出して使わない)。拒んだ値はエラーを出して捨て、前の値を保つ。
+読み込みの警告 (知らない任意の機能・未知の値 (ADR 0013)・画像の無いテクスチャ) は Godot の警告として出す。
+木の外で `model` を変えたときは、木に戻ったときに読み込む (外す)。
 
 ノードの原点にキャンバスの原点 (`canvas.origin`) が来る。座標はキャンバスのピクセル単位で、Godot の 2D と同じく Y 下向き。
 光源の位置はキャンバス座標 (ノードの座標 + `get_canvas_origin()`) で、ノードの変形は陰影に影響しない。ノードの `modulate` は色に掛かる。

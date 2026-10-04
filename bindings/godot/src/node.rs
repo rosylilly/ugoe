@@ -18,7 +18,7 @@ use ugoe::render::{Light, Lighting};
 use ugoe::runtime::ParamIndex;
 use ugoe::{DressUpChange, Toggles};
 
-use crate::model::{LightUniforms, LoadedModel, ModuleData, directional_from_light2d};
+use crate::model::{LightUniforms, LoadedModel, ModuleData, directional_from_light2d, valid_color};
 use crate::render::{Renderer, TextureCache};
 use crate::xr::arkit_from_unified;
 
@@ -42,8 +42,9 @@ pub(crate) struct UgoePuppet2D {
     /// 時間を進めるか。止めている間もパラメータの変更は反映する。
     #[export]
     playing: bool,
-    /// 時間の進む速さ。
+    /// 時間の進む速さ。有限で負でない値だけを受け付ける。
     #[export(range = (0.0, 4.0, 0.01, or_greater))]
+    #[var(set = set_speed)]
     speed: f32,
     /// エディタの中でも時間を進めるか (目パチ・呼吸・物理)。
     #[export]
@@ -78,6 +79,8 @@ pub(crate) struct UgoePuppet2D {
     xr_face_tracker: StringName,
 
     loaded: Option<LoadedModel>,
+    /// 木の外で `model` を変えたので、木に戻ったときに読み込み直す (`ready` は最初の 1 回しか呼ばれないため)。
+    model_pending: bool,
     /// `lights` を読んだもの (読めない要素は除く)。
     manual_lights: Vec<Light>,
     /// シーンの光源のノード (`use_scene_lights` のとき)。
@@ -127,6 +130,7 @@ impl INode2D for UgoePuppet2D {
             use_scene_lights: false,
             xr_face_tracker: StringName::default(),
             loaded: None,
+            model_pending: false,
             manual_lights: Vec::new(),
             scene_lights: Vec::new(),
             scene_changed: Rc::new(Cell::new(true)),
@@ -146,6 +150,10 @@ impl INode2D for UgoePuppet2D {
         if self.use_scene_lights {
             self.watch_tree(true);
         }
+        // 最初に木に入るときは `ready` で読む。木から出て戻ったときは `ready` が呼ばれないので、ここで読む。
+        if self.model_pending && self.base().is_node_ready() {
+            self.apply_model();
+        }
     }
 
     fn exit_tree(&mut self) {
@@ -153,6 +161,7 @@ impl INode2D for UgoePuppet2D {
     }
 
     fn ready(&mut self) {
+        self.model_pending = false;
         if self.loaded.is_none() && self.model.is_some() {
             self.load_resource();
         }
@@ -243,17 +252,29 @@ impl UgoePuppet2D {
     pub fn set_model(&mut self, model: Option<Gd<Resource>>) {
         self.model = model;
         if !self.base().is_inside_tree() {
+            self.model_pending = true;
             return;
         }
-        if self.model.is_some() {
-            self.load_resource();
-        } else {
-            self.unload();
-        }
+        self.apply_model();
     }
 
+    /// 時間の進む速さを変える。有限で負でない値でなければ、エラーを出して変えない。
+    #[func]
+    pub fn set_speed(&mut self, speed: f32) {
+        if !(speed.is_finite() && speed >= 0.0) {
+            godot_error!("ugoe: speed must be a finite non-negative number (got {speed})");
+            return;
+        }
+        self.speed = speed;
+    }
+
+    /// マスクの解像度の倍率を変える (0.01 より小さければ 0.01)。有限でなければ、エラーを出して変えない。
     #[func]
     pub fn set_mask_scale(&mut self, scale: f32) {
+        if !scale.is_finite() {
+            godot_error!("ugoe: mask_scale must be finite (got {scale})");
+            return;
+        }
         self.mask_scale = scale.max(0.01);
         self.dirty = true;
     }
@@ -279,9 +300,9 @@ impl UgoePuppet2D {
     }
 
     /// `.ugoe` のバイト列から読み込む。成功したら true。
-    #[func]
     ///
     /// `model` は null になる (シーンには保存されない)。保存したければ `UgoeModel.from_buffer()` を `model` に設定する。
+    #[func]
     pub fn load_model_from_buffer(&mut self, bytes: PackedByteArray) -> bool {
         self.model = None;
         self.load_bytes(&bytes, "(buffer)")
@@ -341,9 +362,14 @@ impl UgoePuppet2D {
     }
 
     /// パラメータの値を設定する (値域にクランプする)。モーションなどはこの値を基準にして重ねる。
+    /// NaN と、読み込んだモデルに無い ID は、エラーか警告を出して無視する。
     #[func]
     pub fn set_parameter(&mut self, id: GString, value: f32) {
         let id = id.to_string();
+        if value.is_nan() {
+            godot_error!("ugoe: parameter `{id}` cannot be NaN");
+            return;
+        }
         let index = self.parameter_index(&id);
         if let (Some(loaded), Some(i)) = (&mut self.loaded, index) {
             let params = loaded.puppet.instance_mut().parameters_mut();
@@ -355,6 +381,8 @@ impl UgoePuppet2D {
                 self.parameters.insert(id, value);
             }
             self.dirty = true;
+        } else if self.loaded.is_some() {
+            godot_warn!("ugoe: parameter `{id}` not found");
         } else {
             // 読み込む前 (シーンの読み込み中など) は覚えておき、読み込んだときに当てる。
             self.parameters.insert(id, value);
@@ -472,9 +500,13 @@ impl UgoePuppet2D {
         true
     }
 
-    /// リップシンクの音量 (0〜1) を設定する。
+    /// リップシンクの音量 (0〜1) を設定する。NaN ならエラーを出して変えない。
     #[func]
     pub fn set_lip_sync_level(&mut self, level: f32) {
+        if level.is_nan() {
+            godot_error!("ugoe: lip sync level cannot be NaN");
+            return;
+        }
         if let Some(loaded) = &mut self.loaded {
             loaded.puppet.set_lip_sync_level(Some(level));
         }
@@ -608,9 +640,17 @@ impl UgoePuppet2D {
         self.apply_modules(Vec::new());
     }
 
-    /// 取り付けているモジュールの名前 (合成の順)。
+    /// 取り付けているモジュールの名前 (合成の順)。モデルを読み込んでいれば、実際に付いているものだけ
+    /// (読み込むときに付けられなかったモジュールは `modules` に残るが、ここには出ない)。
     #[func]
     pub fn get_module_names(&self) -> PackedStringArray {
+        if let Some(loaded) = &self.loaded {
+            return loaded
+                .modules()
+                .iter()
+                .map(|d| GString::from(d.name()))
+                .collect();
+        }
         self.module_resources()
             .iter()
             .filter_map(|r| self.parse_module(r))
@@ -629,8 +669,13 @@ impl UgoePuppet2D {
             .is_some_and(|l| l.puppet.uses_lighting())
     }
 
+    /// 環境光を変える。色が有限で負でない値でなければ、エラーを出して変えない。
     #[func]
     pub fn set_ambient_light(&mut self, color: Color) {
+        if !valid_color(Rgb::new(color.r, color.g, color.b)) {
+            godot_error!("ugoe: ambient_light must be finite and non-negative (got {color})");
+            return;
+        }
         self.ambient_light = color;
         self.update_lighting();
     }
@@ -704,9 +749,13 @@ impl UgoePuppet2D {
     // --- トラッキング (docs/spec/avatar-profile.md#フェイストラッキングとの対応)
 
     /// 頭の回転 (度) を設定する。`x` = ヨー (キャラクターから見て左が正)、`y` = ピッチ (上が正)、
-    /// `z` = ロール (時計回りが正)。トラッキングを始める。
+    /// `z` = ロール (時計回りが正)。トラッキングを始める。有限でなければ、エラーを出して変えない。
     #[func]
     pub fn set_tracking_head(&mut self, rotation: Vector3) {
+        if !rotation.is_finite() {
+            godot_error!("ugoe: the head rotation must be finite (got {rotation})");
+            return;
+        }
         self.tracking_mut().head = Rotation {
             yaw: rotation.x,
             pitch: rotation.y,
@@ -716,22 +765,39 @@ impl UgoePuppet2D {
     }
 
     /// 体の入力を設定する。キーは `yaw` `pitch` `roll` (度) と `shoulder_left` `shoulder_right`
-    /// (0 が中立、1 ですくめる)。無いキーは省略 (体の回転は頭の回転から、肩は書き込まない)。
+    /// (0 が中立、1 ですくめる)。無いキーと NaN は省略 (体の回転は頭の回転から、肩は書き込まない)。
+    /// 無限大があれば、エラーを出して変えない。
     #[func]
     pub fn set_tracking_body(&mut self, body: VarDictionary) {
-        let get = |key: &str| body.get(key).and_then(|v| v.try_to::<f32>().ok());
-        self.tracking_mut().body = BodyInput {
+        let get = |key: &str| {
+            body.get(key)
+                .and_then(|v| v.try_to::<f32>().ok())
+                .filter(|v| !v.is_nan())
+        };
+        let input = BodyInput {
             yaw: get("yaw"),
             pitch: get("pitch"),
             roll: get("roll"),
             shoulder_left: get("shoulder_left"),
             shoulder_right: get("shoulder_right"),
         };
+        let values = [
+            input.yaw,
+            input.pitch,
+            input.roll,
+            input.shoulder_left,
+            input.shoulder_right,
+        ];
+        if values.iter().flatten().any(|v| v.is_infinite()) {
+            godot_error!("ugoe: the body input must be finite ({body})");
+            return;
+        }
+        self.tracking_mut().body = input;
         self.push_tracking();
     }
 
     /// ARKit のブレンドシェイプの値 (0〜1) を名前で設定する (`{ "jawOpen": 0.5, ... }`)。
-    /// MediaPipe Face Landmarker のカテゴリ名もそのまま渡せる。知らない名前は無視し、設定した数を返す。
+    /// MediaPipe Face Landmarker のカテゴリ名もそのまま渡せる。知らない名前と有限でない値は無視し、設定した数を返す。
     #[func]
     pub fn set_tracking_blend_shapes(&mut self, values: VarDictionary) -> i32 {
         let input = self.tracking_mut();
@@ -740,6 +806,9 @@ impl UgoePuppet2D {
             let (Ok(name), Ok(value)) = (key.try_to::<GString>(), value.try_to::<f32>()) else {
                 continue;
             };
+            if !value.is_finite() {
+                continue;
+            }
             if input.set_blend_shape(&name.to_string(), value) {
                 count += 1;
             }
@@ -748,9 +817,12 @@ impl UgoePuppet2D {
         count
     }
 
-    /// ARKit のブレンドシェイプの値を 1 つ設定する。知らない名前なら false。
+    /// ARKit のブレンドシェイプの値を 1 つ設定する。知らない名前か有限でない値なら false。
     #[func]
     pub fn set_tracking_blend_shape(&mut self, name: GString, value: f32) -> bool {
+        if !value.is_finite() {
+            return false;
+        }
         let ok = self
             .tracking_mut()
             .set_blend_shape(&name.to_string(), value);
@@ -804,8 +876,13 @@ impl UgoePuppet2D {
     }
 
     /// 時間を `delta` 秒進めて描く (`playing` が false のときに手で進める用)。
+    /// `delta` が有限で負でない値でなければ、エラーを出して何もしない。
     #[func]
     pub fn advance(&mut self, delta: f32) {
+        if !(delta.is_finite() && delta >= 0.0) {
+            godot_error!("ugoe: delta must be a finite non-negative number (got {delta})");
+            return;
+        }
         self.step(delta);
     }
 }
@@ -847,6 +924,9 @@ fn light_from_dictionary(d: &VarDictionary) -> Option<Light> {
         .map_or(Ok(Color::WHITE), |v| v.try_to::<Color>())
         .ok()?;
     let color = Rgb::new(color.r, color.g, color.b);
+    if !valid_color(color) {
+        return None;
+    }
     let vector = |key: &str| {
         let v = d.get(key)?.try_to::<Vector3>().ok()?;
         Some([v.x, v.y, v.z])
@@ -895,6 +975,16 @@ impl UgoePuppet2D {
         Some(loaded.puppet.instance().parameters().default_value(i))
     }
 
+    /// `model` を当てる: あれば読み込み、null ならモデルを外す。
+    fn apply_model(&mut self) {
+        self.model_pending = false;
+        if self.model.is_some() {
+            self.load_resource();
+        } else {
+            self.unload();
+        }
+    }
+
     /// `model` のリソースから読み込む。
     fn load_resource(&mut self) -> bool {
         let Some(model) = &self.model else {
@@ -927,6 +1017,9 @@ impl UgoePuppet2D {
 
     fn install(&mut self, mut loaded: LoadedModel) {
         self.unload();
+        for warning in &loaded.warnings {
+            godot_warn!("ugoe: {warning}");
+        }
         // 覚えているパラメータを当てる (モデルに無い ID は捨てる)。
         let params = loaded.puppet.instance_mut().parameters_mut();
         self.parameters
@@ -951,6 +1044,7 @@ impl UgoePuppet2D {
     }
 
     fn unload(&mut self) {
+        self.model_pending = false;
         if let Some(mut renderer) = self.renderer.take() {
             renderer.remove_viewports();
         }
@@ -992,7 +1086,12 @@ impl UgoePuppet2D {
             return None;
         };
         match ModuleData::from_bytes(bytes.as_slice()) {
-            Ok(data) => Some(Arc::new(data)),
+            Ok(data) => {
+                for warning in &data.warnings {
+                    godot_warn!("ugoe: module `{path}`: {warning}");
+                }
+                Some(Arc::new(data))
+            }
             Err(e) => {
                 godot_error!("ugoe: module `{path}`: {e}");
                 None

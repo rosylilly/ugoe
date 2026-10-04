@@ -141,7 +141,7 @@ fn decode(data: &TextureData, what: &str) -> Option<Gd<Image>> {
 /// 画像を Godot のテクスチャにする。PNG は乗算済みアルファに変換する。読めなければ `None` (白で描く)。
 fn load_texture(data: &TextureData) -> Option<Gd<ImageTexture>> {
     let mut image = decode(data, "texture")?;
-    // TODO(T0406): KTX2 が圧縮形式なら、乗算済みかどうかを確かめずにそのまま使っている。
+    // TODO(T0448): KTX2 は乗算済みかどうかを確かめずにそのまま使っている (仕様が決まっていない)。
     if data.format == TextureFormat::Png {
         if image.get_format() != Format::RGBA8 {
             image.convert(Format::RGBA8);

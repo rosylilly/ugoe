@@ -15,6 +15,20 @@ func _check(ok: bool, what: String) -> void:
 		printerr("FAILED: ", what)
 
 
+## パラメータの値と、すべての描画可能要素の頂点位置が有限か。
+func _finite(puppet: Node2D) -> bool:
+	for id in puppet.get_parameter_ids():
+		if not is_finite(puppet.get_parameter(id)):
+			printerr("parameter %s is %f" % [id, puppet.get_parameter(id)])
+			return false
+	for i in puppet.get_drawable_ids().size():
+		for p: Vector2 in puppet.get_drawable_positions(i):
+			if not p.is_finite():
+				printerr("drawable %d has %s" % [i, p])
+				return false
+	return true
+
+
 # 木の中で試すため、最初のフレームで始める (`_initialize` の間は root がまだ木に入っていない)。
 func _process(_delta: float) -> bool:
 	if not _started:
@@ -246,6 +260,58 @@ func _run() -> void:
 	puppet.mask_scale = 1.0
 	puppet.advance(1.0 / 60.0)
 	_check(puppet.get_mask_resolution_factor() == 1.0, "mask resolution factor after mask_scale 1")
+
+	# 有限でない値 (GDScript の NAN・INF) と負の時間は受け付けず、パラメータと頂点を有限に保つ
+	_check(puppet.load_model("res://models/avatar.ugoe"), "load avatar for non-finite input")
+	puppet.set_parameter("AngleX", NAN)
+	puppet.set("parameters/AngleY", NAN)
+	puppet.set_lip_sync_level(NAN)
+	puppet.set_tracking_head(Vector3(NAN, INF, 0.0))
+	puppet.set_tracking_body({"yaw": INF, "roll": NAN})
+	_check(puppet.set_tracking_blend_shapes({"jawOpen": NAN, "eyeBlinkLeft": INF}) == 0, "non-finite blend shapes are ignored")
+	_check(not puppet.set_tracking_blend_shape("jawOpen", INF), "a non-finite blend shape is rejected")
+	puppet.advance(1.0 / 60.0)
+	puppet.advance(NAN)
+	puppet.advance(INF)
+	puppet.advance(-1.0)
+	_check(_finite(puppet), "non-finite input keeps parameters and vertices finite")
+	puppet.clear_tracking()
+	puppet.clear_lip_sync_level()
+	var speed: float = puppet.speed
+	puppet.speed = INF
+	puppet.speed = -1.0
+	_check(puppet.speed == speed, "speed rejects non-finite and negative values (%f)" % puppet.speed)
+	var mask_scale: float = puppet.mask_scale
+	puppet.mask_scale = INF
+	_check(puppet.mask_scale == mask_scale, "mask_scale rejects INF (%f)" % puppet.mask_scale)
+	var ambient: Color = puppet.ambient_light
+	puppet.ambient_light = Color(NAN, 0.0, 0.0)
+	_check(puppet.ambient_light == ambient, "ambient_light rejects NAN")
+	puppet.lights = [{"type": "point", "position": Vector3.ZERO, "color": Color(INF, 1, 1)}]
+	puppet.advance(1.0 / 60.0)
+	puppet.clear_lights()
+
+	# 木の外で設定したモデルは、木に戻ったときに読む (`_ready` は最初の 1 回だけなので、それに頼らない)
+	var outside: Node2D = ClassDB.instantiate("UgoePuppet2D")
+	root.add_child(outside)
+	root.remove_child(outside)
+	outside.model = load("res://models/avatar.ugoe")
+	root.add_child(outside)
+	_check(outside.is_model_loaded(), "a model set outside the tree is loaded on re-entering")
+	root.remove_child(outside)
+	outside.model = null
+	root.add_child(outside)
+	_check(not outside.is_model_loaded(), "a model cleared outside the tree is unloaded on re-entering")
+	outside.queue_free()
+
+	# 読み込みのときに付けられなかったモジュールは、付いているものとして返さない
+	_check(puppet.load_model("res://models/dress-up.ugoe"), "load dress-up before a model that does not fit")
+	puppet.modules = [hair]
+	_check(puppet.get_module_names().size() == 1, "the module is attached to dress-up")
+	_check(puppet.load_model("res://models/avatar.ugoe"), "load avatar with a module that does not fit")
+	_check(puppet.modules.size() == 1, "the module stays in the modules property")
+	_check(puppet.get_module_names().is_empty(), "modules that failed to attach are not reported (%s)" % puppet.get_module_names())
+	puppet.modules = []
 
 	_check(not puppet.load_model("res://models/missing.ugoe"), "missing file fails")
 	_check(not puppet.is_model_loaded(), "unloaded after failure")

@@ -7,8 +7,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use ugoe::core::Vec2;
-use ugoe::format::module_file::read_module;
+use ugoe::core::{Rgb, Vec2};
+use ugoe::format::module_file::read_module_with_report;
 use ugoe::format::{Bundle, FormatError, TextureData};
 use ugoe::model::expression::Expression;
 use ugoe::model::module::Module;
@@ -16,7 +16,7 @@ use ugoe::model::motion::Motion;
 use ugoe::model::{MaskMode, Model};
 use ugoe::render::{Light, Lighting, MAX_LIGHTS};
 use ugoe::runtime::{CompileError, CompiledModel};
-use ugoe::{DressUpChange, DressUpError, Puppet, TextureSource};
+use ugoe::{DressUpChange, DressUpError, LoadWarning, Puppet, TextureSource};
 
 /// 読み込みの失敗。
 #[derive(Debug, thiserror::Error)]
@@ -76,12 +76,14 @@ pub struct ModuleData {
     textures: Vec<TextureData>,
     /// `module.textures` と同じ順の法線マップ (無ければ `None`)。
     normal_maps: Vec<Option<TextureData>>,
+    /// 読み込みの警告 (知らない任意の機能・未知の値。ADR 0013)。
+    pub warnings: Vec<LoadWarning>,
 }
 
 impl ModuleData {
     /// `.ugoemod` のバイト列から読む。
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, FormatError> {
-        let file = read_module(bytes)?;
+        let (file, report) = read_module_with_report(bytes)?;
         let normal_maps = (0..file.module.textures.len())
             .map(|i| file.normal_map(i).cloned())
             .collect();
@@ -89,6 +91,7 @@ impl ModuleData {
             module: Arc::new(file.module),
             textures: file.textures,
             normal_maps,
+            warnings: report.warnings.iter().map(LoadWarning::from).collect(),
         })
     }
 
@@ -113,15 +116,22 @@ pub struct LoadedModel {
     sources: Vec<TextureSource>,
     pub drawables: Vec<DrawableInfo>,
     pub masks: MaskPlan,
+    /// 読み込みの警告 (知らない任意の機能・未知の値 (ADR 0013)・画像の無いテクスチャ)。
+    pub warnings: Vec<LoadWarning>,
 }
 
 impl LoadedModel {
     /// `.ugoe` バンドルのバイト列から読み込む。
     pub fn from_bundle_bytes(bytes: &[u8]) -> Result<Self, LoadError> {
-        Self::from_bundle(ugoe::format::read_bundle(bytes)?)
+        let (bundle, report) = ugoe::format::read_bundle_with_report(bytes)?;
+        let mut loaded = Self::from_bundle(bundle)?;
+        let read = report.warnings.iter().map(LoadWarning::from);
+        loaded.warnings.splice(0..0, read);
+        Ok(loaded)
     }
 
     /// 読み込んだバンドルから作る。物理・モーション・表情・テクスチャ・法線マップも使う。
+    /// 画像の無いテクスチャ (白で描く) は警告にする (モデルの JSON から作ったときは画像が無いのが前提なので、呼ぶ側が捨てる)。
     pub fn from_bundle(bundle: Bundle) -> Result<Self, LoadError> {
         let count = texture_count(&bundle.model);
         let base_normal_maps = (0..count).map(|i| bundle.normal_map(i).cloned()).collect();
@@ -141,6 +151,12 @@ impl LoadedModel {
         }
         let mut base_textures: Vec<Option<TextureData>> = textures.into_iter().map(Some).collect();
         base_textures.resize(count, None);
+        let warnings = base_textures
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.is_none())
+            .map(|(texture, _)| LoadWarning::TextureMissing { texture })
+            .collect();
         let mut loaded = Self {
             puppet,
             motions,
@@ -151,6 +167,7 @@ impl LoadedModel {
             sources: Vec::new(),
             drawables: Vec::new(),
             masks: MaskPlan::default(),
+            warnings,
         };
         loaded.refresh();
         Ok(loaded)
@@ -223,15 +240,12 @@ impl LoadedModel {
     }
 }
 
-/// 描画に使うテクスチャの枚数。`model.textures` と、メッシュが参照する番号の大きい方。
+/// 描画に使うテクスチャの枚数 (`model.textures` の数)。
+///
+/// メッシュの `texture` の番号からは数えない: 検証 (`TextureOutOfRange`) の前に呼ぶので、壊れた番号
+/// (`u32::MAX` など) から巨大な数を確保しないため。検証を通ったモデルでは番号はこの数より小さい。
 fn texture_count(model: &Model) -> usize {
-    model
-        .meshes
-        .iter()
-        .map(|m| m.texture as usize + 1)
-        .max()
-        .unwrap_or(0)
-        .max(model.textures.len())
+    model.textures.len()
 }
 
 /// メッシュごとの描画の情報と、マスクの段取りを作る。
@@ -380,11 +394,22 @@ impl MaskArea {
     ///
     /// `current` が十分に大きく、大きすぎない (面積の 4 倍以下) ならその大きさを使い回す
     /// (テクスチャを毎フレーム作り直さないため)。大きさが上限を超えるなら `scale` を下げる。
+    /// 有限でない外接矩形 (頂点が NaN など) は大きさ 0 に、有限でない `scale` は 1 にする。
     pub fn fit(min: Vec2, max: Vec2, scale: f32, current: Option<(u32, u32)>) -> Self {
+        let finite = |v: Vec2| v.x.is_finite() && v.y.is_finite();
+        let (min, max) = if finite(min) && finite(max) {
+            (min, max)
+        } else {
+            (Vec2::ZERO, Vec2::ZERO)
+        };
         let size = (max - min).max(Vec2::ZERO);
         let pad = Self::PADDING as f32;
         let limit = (Self::MAX_SIZE - 2 * Self::PADDING) as f32;
-        let mut scale = scale.max(1e-3);
+        let mut scale = if scale.is_finite() {
+            scale.max(1e-3)
+        } else {
+            1.0
+        };
         let largest = size.x.max(size.y) * scale;
         if largest > limit {
             scale *= limit / largest;
@@ -392,7 +417,11 @@ impl MaskArea {
         // 画素の格子をキャンバスの `1 / scale` 単位の格子に揃える (倍率 1 で画面の画素と重なり、縁がぼけない)。
         let lo = (min * scale).floor();
         let hi = (max * scale).ceil().max(lo);
-        let need = |len: f32| (len as u32 + 2 * Self::PADDING).min(Self::MAX_SIZE);
+        let need = |len: f32| {
+            (len as u32)
+                .saturating_add(2 * Self::PADDING)
+                .min(Self::MAX_SIZE)
+        };
         let (need_w, need_h) = (need(hi.x - lo.x), need(hi.y - lo.y));
         let (width, height) = match current {
             Some((w, h))
@@ -645,7 +674,8 @@ pub struct LightUniforms {
 }
 
 impl LightUniforms {
-    /// 使えない光源 (向きが 0・有限でない値・`range` が正でない) を除き、先頭の [`MAX_LIGHTS`] 個を使う。
+    /// 使えない光源 (向きが 0・有限でない値・`range` が正でない・色が有限で負でない値でない) を除き、
+    /// 先頭の [`MAX_LIGHTS`] 個を使う (C ABI の `ugoe-ffi` の検査と同じ条件)。
     pub fn new(lighting: &Lighting) -> Self {
         let a = lighting.ambient;
         let mut out = Self {
@@ -678,11 +708,19 @@ impl LightUniforms {
                     ([x, y, z, 1.0], color, 1.0 / range)
                 }
             };
+            if !valid_color(color) {
+                continue;
+            }
             out.vectors.push(vector);
             out.colors.push([color.r, color.g, color.b, inv_range]);
         }
         out
     }
+}
+
+/// 光の色 (環境光と光源) として使えるか: どのチャンネルも有限で負でない。
+pub fn valid_color(c: Rgb) -> bool {
+    [c.r, c.g, c.b].iter().all(|v| v.is_finite() && *v >= 0.0)
 }
 
 /// Godot の `DirectionalLight2D` の向きから、光が進む向き (キャンバス座標 + 奥行き、手前が正) を求める。
@@ -752,6 +790,39 @@ mod tests {
         loaded.puppet.update(1.0 / 60.0);
         let state = &loaded.puppet.instance().drawables()[0];
         assert_eq!(state.positions.len(), loaded.drawables[0].uvs.len());
+    }
+
+    #[test]
+    fn reports_read_warnings() {
+        // 知らない任意の機能を宣言したファイル (docs/testing.md#互換性テスト)。
+        let bytes = include_bytes!("../../../assets/compat/future/optional-feature.ugoe");
+        let loaded = LoadedModel::from_bundle_bytes(bytes).expect("load");
+        assert!(
+            loaded
+                .warnings
+                .iter()
+                .any(|w| w.code() == "unknown_optional_feature"),
+            "{:?}",
+            loaded.warnings
+        );
+        let bytes = include_bytes!("../../../assets/compat/future/optional-feature.ugoemod");
+        let module = ModuleData::from_bytes(bytes).expect("module");
+        assert!(!module.warnings.is_empty());
+        // 警告の無いバンドル
+        let loaded =
+            LoadedModel::from_bundle_bytes(&bundle_bytes(fixtures::single_quad())).expect("load");
+        assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
+    }
+
+    #[test]
+    fn rejects_out_of_range_textures_before_allocating() {
+        // 検証の前にメッシュのテクスチャの番号からテクスチャの数を決めると、約 43 億枚分を確保しようとする。
+        let mut model = fixtures::single_quad();
+        model.meshes[0].texture = u32::MAX;
+        assert!(matches!(
+            LoadedModel::from_bundle(Bundle::new(model)),
+            Err(LoadError::Compile(_))
+        ));
     }
 
     #[test]
@@ -890,7 +961,6 @@ mod tests {
 
     #[test]
     fn lights_follow_the_reference_renderer() {
-        use ugoe::core::Rgb;
         let lighting = Lighting {
             ambient: Rgb::new(0.2, 0.3, 0.4),
             lights: vec![
@@ -1039,6 +1109,49 @@ mod tests {
         let d = MaskArea::fit(Vec2::ZERO, Vec2::new(10000.0, 100.0), 1.0, None);
         assert_eq!(d.width, MaskArea::MAX_SIZE);
         assert!(d.scale < 1.0);
+    }
+
+    #[test]
+    fn mask_area_survives_non_finite_input() {
+        // 無限大の解像度や NaN の外接矩形でも、あふれずに上限の中の大きさになる。
+        for (min, max, scale) in [
+            (Vec2::ZERO, Vec2::new(10.0, 10.0), f32::INFINITY),
+            (Vec2::new(1.0, 1.0), Vec2::new(10.0, 10.0), f32::INFINITY),
+            (Vec2::ZERO, Vec2::new(10.0, 10.0), f32::NAN),
+            (Vec2::splat(f32::NAN), Vec2::new(10.0, 10.0), 1.0),
+            (Vec2::ZERO, Vec2::splat(f32::INFINITY), 1.0),
+        ] {
+            let a = MaskArea::fit(min, max, scale, None);
+            assert!(
+                a.width <= MaskArea::MAX_SIZE && a.height <= MaskArea::MAX_SIZE,
+                "{min:?} {max:?} {scale}: {a:?}"
+            );
+            assert!(a.scale.is_finite() && a.scale > 0.0, "{a:?}");
+        }
+    }
+
+    #[test]
+    fn lights_with_non_finite_colors_are_dropped() {
+        let lighting = Lighting {
+            ambient: Rgb::WHITE,
+            lights: vec![
+                Light::Directional {
+                    direction: [0.0, 0.0, -1.0],
+                    color: Rgb::new(f32::NAN, 1.0, 1.0),
+                },
+                Light::Point {
+                    position: [0.0; 3],
+                    color: Rgb::new(f32::INFINITY, 1.0, 1.0),
+                    range: 1.0,
+                },
+                Light::Point {
+                    position: [0.0; 3],
+                    color: Rgb::new(-1.0, 1.0, 1.0),
+                    range: 1.0,
+                },
+            ],
+        };
+        assert!(LightUniforms::new(&lighting).vectors.is_empty());
     }
 
     #[test]

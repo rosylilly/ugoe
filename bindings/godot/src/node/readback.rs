@@ -106,7 +106,10 @@ impl UgoePuppet2D {
 fn load_json(json: &str) -> Result<LoadedModel, String> {
     let model = ugoe::format::model_from_json(json)
         .map_err(|e| format!("failed to read the model JSON: {e}"))?;
-    LoadedModel::from_bundle(Bundle::new(model)).map_err(|e| e.to_string())
+    let mut loaded = LoadedModel::from_bundle(Bundle::new(model)).map_err(|e| e.to_string())?;
+    // テクスチャが無いのは前提なので、画像の無いテクスチャの警告は出さない。
+    loaded.warnings.clear();
+    Ok(loaded)
 }
 
 #[cfg(test)]
@@ -120,6 +123,7 @@ mod tests {
         let mut loaded = load_json(&json).expect("load");
         assert_eq!(loaded.drawables.len(), 1);
         assert!(loaded.texture(0).is_none());
+        assert!(loaded.warnings.is_empty());
         loaded.puppet.update(0.0);
         assert_eq!(loaded.puppet.instance().render_order(), [0]);
     }
