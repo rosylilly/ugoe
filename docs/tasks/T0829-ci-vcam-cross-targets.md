@@ -1,11 +1,11 @@
 ---
 id: T0829
 title: CI で仮想カメラの Windows と macOS のコードを検査する
-status: todo
+status: in-progress
 milestone: M9
 crates: [justfile, scripts, .github/workflows, docs]
 depends_on: [T0816]
-assignee:
+assignee: claude-worker-T0829
 ---
 
 # T0829: CI で仮想カメラの Windows と macOS のコードを検査する
