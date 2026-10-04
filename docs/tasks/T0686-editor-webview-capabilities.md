@@ -1,11 +1,11 @@
 ---
 id: T0686
 title: "エディタ: WebView の CSP とコマンドの許可を絞る"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, docs]
 depends_on: [T0669]
-assignee:
+assignee: claude-worker-T0686
 ---
 
 # T0686: エディタ: WebView の CSP とコマンドの許可を絞る
