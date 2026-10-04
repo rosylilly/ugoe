@@ -1006,7 +1006,8 @@ struct RenderArgs {
     time: Option<f32>,
 }
 
-#[cfg(test)]
+// シンボリックリンクを作るテストだけなので unix に限る (Windows で `use super::*` が使われない警告にならないように)。
+#[cfg(all(test, unix))]
 mod tests {
     #![allow(clippy::unwrap_used)]
 
@@ -1014,7 +1015,6 @@ mod tests {
 
     /// `--root` が無いとき、まだ無いプロジェクト (作って保存する前) のパスも、ある祖先のシンボリックリンクを
     /// 解いて鍵にする (保存の前後で鍵が変わり、開いている文書が 2 つに分かれないように。macOS の `/tmp` など)。
-    #[cfg(unix)]
     #[test]
     fn a_new_project_keeps_its_key_after_it_is_created() {
         let tmp = tempfile::tempdir().unwrap();

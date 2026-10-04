@@ -25,10 +25,12 @@
 //! HTTP/1.1 の処理は std の `TcpListener` の上に自分で書いた (接続ごとのスレッド・keep-alive・
 //! `Content-Length` と `chunked` の本文)。非同期ランタイムを持ち込まないため。外から届く口なので、
 //! 本文の大きさ・ヘッダの数と大きさ・読み込みの時間・同時の接続の数に上限を設け ([`Limits`])、
-//! 超えたら `413`・`431`・`408`・`503` で答えて接続を閉じる。
+//! 超えたら `413`・`431`・`408`・`503` で答えて接続を閉じる。要求を読み終える前の誤りの答え (`408`・`413`・
+//! `431`・`400` など) の後は、書く側を閉じてから相手の残りを上限まで読み捨てて閉じる (lingering close。
+//! 読み残しのまま閉じると RST になり、Windows のクライアントが答えを失う。T0556)。
 
 use std::io::{self, BufRead, BufReader, Read, Write};
-use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
+use std::net::{IpAddr, Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread::JoinHandle;
@@ -75,6 +77,10 @@ pub(crate) struct Limits {
     /// 1 つの要求を読み終えるまでの時間の上限 (keep-alive で次の要求を待つ時間を含む。超えたら
     /// `408`)。少しずつ送り続けて接続を握り続ける相手 (slowloris) も、この時間で切る。
     pub(crate) request_timeout: Duration,
+    /// 誤りの答えの後に、相手が送り続ける残りを読み捨てる時間の上限 (lingering close)。
+    pub(crate) linger_timeout: Duration,
+    /// 誤りの答えの後に読み捨てる量の上限。
+    pub(crate) max_linger_bytes: usize,
 }
 
 impl Default for Limits {
@@ -85,6 +91,8 @@ impl Default for Limits {
             max_headers: 100,
             max_connections: 32,
             request_timeout: Duration::from_secs(60),
+            linger_timeout: Duration::from_secs(2),
+            max_linger_bytes: 1024 * 1024,
         }
     }
 }
@@ -343,13 +351,36 @@ fn serve_connection(endpoint: &Endpoint, stream: TcpStream, limits: &Limits) {
             Ok(None) | Err(ReadError::Io) => break,
             Err(ReadError::Timeout) => {
                 let response = Response::text(408, "request timeout");
-                let _ = write_response(&mut writer, &response, false);
+                if write_response(&mut writer, &response, false).is_ok() {
+                    linger(&mut reader, &writer, limits);
+                }
                 break;
             }
             Err(ReadError::Bad(status, message)) => {
-                let _ = write_response(&mut writer, &Response::text(status, message), false);
+                let response = Response::text(status, message);
+                if write_response(&mut writer, &response, false).is_ok() {
+                    linger(&mut reader, &writer, limits);
+                }
                 break;
             }
+        }
+    }
+}
+
+/// 要求を読み終える前に誤りの答えを書いたあと、すぐには閉じずに書く側だけを閉じ、相手が送り続ける残りを
+/// 時間と量の上限まで読み捨てる (lingering close)。読み残しのあるまま閉じると RST が送られ、Windows の
+/// クライアントは受け取り済みの答えを捨てる。相手が書く側を閉じるか、上限に達したら戻る (呼び手が閉じる)。
+fn linger(reader: &mut BufReader<TimedStream>, writer: &TcpStream, limits: &Limits) {
+    if writer.shutdown(Shutdown::Write).is_err() {
+        return;
+    }
+    reader.get_mut().deadline = Instant::now() + limits.linger_timeout;
+    let mut discarded = 0;
+    let mut buf = [0u8; 8192];
+    while discarded < limits.max_linger_bytes {
+        match reader.read(&mut buf) {
+            Ok(0) | Err(_) => return,
+            Ok(n) => discarded += n,
         }
     }
 }
@@ -1493,6 +1524,8 @@ mod tests {
             max_headers: 8,
             max_connections: 4,
             request_timeout: Duration::from_millis(300),
+            linger_timeout: Duration::from_millis(500),
+            max_linger_bytes: 4096,
         }
     }
 
@@ -1555,19 +1588,111 @@ mod tests {
         // 要求の途中で止まる (残りを送らない)。
         assert_eq!(exchange(addr, b"POST /mcp HTTP/1.1\r\nHost: local"), 408);
         // 少しずつ送り続けても、要求ごとの上限で切る。
+        // 送りながら答えを読む (送り終えてから読むと、閉じたサーバへの書き込みで RST が返り、Windows では
+        // 受け取り済みの答えが捨てられる)。
         let mut stream = TcpStream::connect(addr).unwrap();
         stream
             .set_read_timeout(Some(Duration::from_secs(10)))
             .unwrap();
-        for byte in b"POST /mcp HTTP/1.1\r\nHost: localhost\r\n" {
-            // サーバが切ったら書けなくなる。
-            if stream.write_all(&[*byte]).is_err() {
+        let mut sender = stream.try_clone().unwrap();
+        let sending = std::thread::spawn(move || {
+            for byte in b"POST /mcp HTTP/1.1\r\nHost: localhost\r\n" {
+                // サーバが切ったら書けなくなる。
+                if sender.write_all(&[*byte]).is_err() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        });
+        assert_eq!(status_of(&mut stream), 408);
+        sending.join().unwrap();
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    /// 要求の途中で答えを読み、その後も送り続けるクライアント。答えの状態コードと、答えの後に送れたかを返す
+    /// (サーバが読み捨てずに閉じれば、送った残りで RST が返り、次の書き込みが失敗する)。
+    fn read_early_then_send(addr: SocketAddr, head: &[u8], rest: &[u8]) -> (u16, bool) {
+        let mut stream = TcpStream::connect(addr).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        stream.write_all(head).unwrap();
+        // サーバは答えを書いて書く側を閉じるので、読み残しを送る前に答えを読み終えられる。
+        let status = status_of(&mut stream);
+        let mut sent = true;
+        for chunk in rest.chunks(rest.len().div_ceil(4).max(1)) {
+            std::thread::sleep(Duration::from_millis(30));
+            if stream.write_all(chunk).is_err() {
+                sent = false;
                 break;
             }
-            std::thread::sleep(Duration::from_millis(50));
         }
-        assert_eq!(status_of(&mut stream), 408);
-        assert!(started.elapsed() < Duration::from_secs(5));
+        (status, sent)
+    }
+
+    #[test]
+    fn error_responses_reach_clients_that_are_still_sending() {
+        let addr = spawn_limited(small_limits());
+        let body = "x".repeat(200);
+        // 本文を送る前に 413 を読む。
+        let head = "POST /mcp HTTP/1.1\r\nHost: localhost\r\nContent-Length: 200\r\n\r\n";
+        assert_eq!(
+            read_early_then_send(addr, head.as_bytes(), body.as_bytes()),
+            (413, true)
+        );
+        // ヘッダを送り終える前に 431 を読む。
+        let head = format!(
+            "POST /mcp HTTP/1.1\r\nHost: localhost\r\nX-Large: {}",
+            "y".repeat(600)
+        );
+        assert_eq!(
+            read_early_then_send(addr, head.as_bytes(), b"yyyyyyyy\r\n\r\n"),
+            (431, true)
+        );
+        // 要求の途中で止まって 408 を読み、その後に残りを送る。
+        assert_eq!(
+            read_early_then_send(addr, b"POST /mcp HTTP/1.1\r\nHost: local", b"host\r\n\r\n"),
+            (408, true)
+        );
+    }
+
+    #[test]
+    fn lingering_close_is_bounded() {
+        // 時間: 送り続ける相手でも、読み捨ての上限の時間で閉じる。
+        let addr = spawn_limited(small_limits());
+        let mut stream = TcpStream::connect(addr).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        stream
+            .write_all(b"POST /mcp HTTP/1.1\r\nHost: localhost\r\nContent-Length: 1000\r\n\r\n")
+            .unwrap();
+        assert_eq!(status_of(&mut stream), 413);
+        let started = Instant::now();
+        while stream.write_all(b"x").is_ok() {
+            assert!(started.elapsed() < Duration::from_secs(5));
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(started.elapsed() >= small_limits().linger_timeout / 2);
+
+        // 量: 時間の上限が長くても、読み捨ての上限の量を超えたら閉じる。
+        let addr = spawn_limited(Limits {
+            linger_timeout: Duration::from_secs(30),
+            ..small_limits()
+        });
+        let mut stream = TcpStream::connect(addr).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        stream
+            .write_all(b"POST /mcp HTTP/1.1\r\nHost: localhost\r\nContent-Length: 99999999\r\n\r\n")
+            .unwrap();
+        assert_eq!(status_of(&mut stream), 413);
+        let started = Instant::now();
+        let chunk = [b'x'; 1024];
+        while stream.write_all(&chunk).is_ok() {
+            assert!(started.elapsed() < Duration::from_secs(10));
+        }
     }
 
     #[test]
