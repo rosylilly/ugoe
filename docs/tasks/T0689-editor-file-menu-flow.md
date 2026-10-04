@@ -1,11 +1,11 @@
 ---
 id: T0689
 title: エディタのファイルメニューの非同期の操作の排他と、流れのテスト
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, docs]
 depends_on: [T0670]
-assignee:
+assignee: claude-worker-T0689
 ---
 
 # T0689: エディタのファイルメニューの非同期の操作の排他と、流れのテスト
