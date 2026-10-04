@@ -33,15 +33,22 @@ use crate::texture::{Textures, is_valid_texture_name, png_size};
 mod files;
 mod module;
 mod paths;
+mod read;
 
 pub(crate) use files::{io_error, list_files};
 use files::{
     known, read_json, read_json_dir, remove_if_exists, remove_stale, to_json, with_newline,
     write_if_changed,
 };
-pub use module::{BaseCheck, load_base, load_base_checked, read_module_link};
+pub use module::{
+    BaseCheck, load_base, load_base_checked, load_base_with_limits, read_module_link,
+};
 use module::{module_meta_with, unchecked};
 use paths::{absolute, normalize_path, relative_path};
+pub use read::{
+    DEFAULT_MAX_BUNDLE_BYTES, DEFAULT_MAX_IMAGE_BYTES, DEFAULT_MAX_JSON_BYTES, ProjectReadLimits,
+};
+pub(crate) use read::{check_regular, read_regular_file, read_regular_file_as};
 
 /// `project.json` の `format_version` の現在の値。プロジェクトのディレクトリ構成を変えたら上げる。
 /// モデルのスキーマのバージョン (`ugoe_model::SCHEMA_VERSION`) とは別。
@@ -73,6 +80,13 @@ pub enum ProjectError {
         path: PathBuf,
         source: std::io::Error,
     },
+    /// 通常のファイルでない (FIFO・装置・ディレクトリ)。開かずに拒む (T1607。`docs/editor.md#読むファイルの種類と大きさ`)。
+    #[error("{}: not a regular file", path.display())]
+    NotRegularFile { path: PathBuf },
+    /// 大きさが読む側の上限 ([`ProjectReadLimits`]) を超える。読まずに拒む (T1607)。`len` は分かった大きさ
+    /// (読みながら超えたときは読んだバイト数)。
+    #[error("{}: file is too large ({len} bytes; the limit is {max} bytes)", path.display())]
+    FileTooLarge { path: PathBuf, len: u64, max: u64 },
     #[error("{}: {source}", path.display())]
     Json {
         path: PathBuf,
@@ -418,13 +432,26 @@ impl Project {
     /// 返したパスから読む (T0524)。`check` がエラーを返したら本体を読まずに [`ProjectError::BaseRefused`]。
     /// モデルのプロジェクトでは `check` を呼ばない。
     pub fn load_checking_base(dir: &Path, check: BaseCheck<'_>) -> Result<Self, ProjectError> {
+        Self::load_with_limits(dir, check, ProjectReadLimits::default())
+    }
+
+    /// [`Self::load_checking_base`] と同じだが、ファイル 1 つの大きさの上限を `limits` にする (T1607)。
+    /// 上限のない読み込みはない: ほかの `load*` は既定の上限 ([`ProjectReadLimits::default`]) で読む。
+    /// どれも通常のファイルでないもの (FIFO・装置) は開かずに [`ProjectError::NotRegularFile`]、上限を超えるものは
+    /// 読まずに [`ProjectError::FileTooLarge`] (`docs/editor.md#読むファイルの種類と大きさ`)。
+    pub fn load_with_limits(
+        dir: &Path,
+        check: BaseCheck<'_>,
+        limits: ProjectReadLimits,
+    ) -> Result<Self, ProjectError> {
         let meta_path = dir.join(PROJECT_JSON);
-        if !meta_path.is_file() {
+        // FIFO などは「プロジェクトでない」ではなく、読むところで `NotRegularFile` にする。
+        if !meta_path.exists() {
             return Err(ProjectError::NotAProject {
                 path: dir.to_path_buf(),
             });
         }
-        let meta: ProjectMeta = read_json(&meta_path)?;
+        let meta: ProjectMeta = read_json(&meta_path, limits.max_json)?;
         if meta.format_version > PROJECT_FORMAT_VERSION {
             return Err(ProjectError::UnsupportedVersion {
                 found: meta.format_version,
@@ -432,11 +459,16 @@ impl Project {
             });
         }
         if meta.kind == ProjectKind::Module {
-            return Self::load_module(dir, meta, None, false, check).map(|(project, _)| project);
+            return Self::load_module(dir, meta, None, false, check, limits)
+                .map(|(project, _)| project);
         }
 
         let model_path = dir.join(MODEL_JSON);
-        let model_json = fs::read_to_string(&model_path).map_err(io_error(&model_path))?;
+        let model_json = read_regular_file(&model_path, limits.max_json)?;
+        let model_json = String::from_utf8(model_json).map_err(|e| ProjectError::Io {
+            path: model_path.clone(),
+            source: std::io::Error::new(std::io::ErrorKind::InvalidData, e),
+        })?;
         let model =
             ugoe_format::model_from_json(&model_json).map_err(|source| ProjectError::Format {
                 path: model_path.clone(),
@@ -445,19 +477,25 @@ impl Project {
 
         let physics_path = dir.join(PHYSICS_JSON);
         let physics = if physics_path.exists() {
-            Some(read_json(&physics_path)?)
+            Some(read_json(&physics_path, limits.max_json)?)
         } else {
             None
         };
         // 書き出したバンドルを読み直すと拒まれる値は、プロジェクトの読み込みでも拒む (T1606)。
-        let motions = read_json_dir(&dir.join(MOTIONS_DIR), MOTION_SUFFIX, check_motion)?;
+        let motions = read_json_dir(
+            &dir.join(MOTIONS_DIR),
+            MOTION_SUFFIX,
+            limits.max_json,
+            check_motion,
+        )?;
         let expressions = read_json_dir(
             &dir.join(EXPRESSIONS_DIR),
             EXPRESSION_SUFFIX,
+            limits.max_json,
             check_expression,
         )?;
 
-        let textures = read_images(dir, &model.textures)?;
+        let textures = read_images(dir, &model.textures, limits.max_image)?;
 
         Ok(Self {
             meta,
@@ -484,8 +522,9 @@ impl Project {
         base: Option<&Path>,
         slot: Option<&SlotId>,
     ) -> Result<Self, ProjectError> {
-        let meta = module_meta_with(dir, slot)?;
-        Self::load_module(dir, meta, base, false, &unchecked).map(|(project, _)| project)
+        let limits = ProjectReadLimits::default();
+        let meta = module_meta_with(dir, slot, limits.max_json)?;
+        Self::load_module(dir, meta, base, false, &unchecked, limits).map(|(project, _)| project)
     }
 
     /// [`Self::load_module_with`] と同じだが、本体に無い (本体に物理が無い) スロットの公開する衝突体へのリグの
@@ -496,8 +535,9 @@ impl Project {
         base: Option<&Path>,
         slot: Option<&SlotId>,
     ) -> Result<(Self, Vec<ColliderReference>), ProjectError> {
-        let meta = module_meta_with(dir, slot)?;
-        Self::load_module(dir, meta, base, true, &unchecked)
+        let limits = ProjectReadLimits::default();
+        let meta = module_meta_with(dir, slot, limits.max_json)?;
+        Self::load_module(dir, meta, base, true, &unchecked, limits)
     }
 
     /// [`Self::load`] と、読み込む直前のファイルの指紋 (外での書き換えに気づくため、`docs/editor.md#外での書き換え`)。
@@ -833,18 +873,18 @@ fn image_names(textures: &[TextureRef]) -> Vec<&str> {
     names
 }
 
-/// `textures` のすべての画像 (テクスチャと法線マップ) を `dir/textures/` から読む。
-fn read_images(dir: &Path, textures: &[TextureRef]) -> Result<Textures, ProjectError> {
+/// `textures` のすべての画像 (テクスチャと法線マップ) を `dir/textures/` から読む。1 つの大きさの上限は `max`。
+fn read_images(dir: &Path, textures: &[TextureRef], max: u64) -> Result<Textures, ProjectError> {
     let mut images = Textures::new();
     for name in image_names(textures) {
         check_name("texture", name)?;
         let path = texture_path(dir, name);
-        if !path.is_file() {
+        if !path.exists() {
             return Err(ProjectError::MissingTexture {
                 name: name.to_owned(),
             });
         }
-        let png = fs::read(&path).map_err(io_error(&path))?;
+        let png = read_regular_file(&path, max)?;
         if png_size(&png).is_none() {
             return Err(ProjectError::NotPng { path });
         }

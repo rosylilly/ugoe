@@ -1362,6 +1362,29 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
   ビューポートの中央とツリーに「File > New from PSD… で始める」案内を出します。
 - 空のプロジェクトも保存・書き出しできます (メッシュのない `.ugoe` になる)。
 
+### 読むファイルの種類と大きさ
+
+プロジェクト (`Project::load*`)・モジュールのプロジェクトの本体 (`load_base*`)・指紋 (`ProjectFingerprint`) は、プロジェクトの中のファイルを
+**通常のファイルのときだけ、大きさの上限までで** 読みます (T1607。`crates/ugoe-editor-core/src/project/read.rs`)。
+プロジェクトの中のファイルは外 (`ugoe-mcp`・手での編集・受け取ったプロジェクト) が置くので、`model.json` という名前の FIFO や
+`/dev/zero` へのリンクがありえます。FIFO は開くだけで書き手を待って止まり、装置は終わらずにメモリを使い果たします。
+
+- 通常のファイルでないもの (FIFO・装置・ディレクトリ。リンクは辿って先を見る) は、開かずに `project.not_regular_file` で拒みます。
+  ディレクトリの中から集めるもの (`motions/`・`expressions/`・`textures/`) は、前から通常のファイルだけを数えます。
+- 上限を超えるファイルは、読まずに `project.file_too_large` で拒みます。見てから読むまでの間に大きくなっても、上限 + 1 バイトまでしか読みません。
+- 上限は **読む側の設定** (`ugoe_editor_core::ProjectReadLimits`) で、既定の値を持ちます。`Project::load_with_limits`・`load_base_with_limits`・
+  `ProjectFingerprint::reread_with_limits`・`reread_base_with_limits` で変えられ、ほかの関数は既定の値で読みます。エディタ・CLI・MCP サーバは既定の値を使います。
+
+| 対象 | 既定の上限 | 理由 |
+| --- | --- | --- |
+| JSON 1 つ (`project.json`・`model.json`・`module.json`・`physics.json`・モーション・表情) | 256 MiB (`DEFAULT_MAX_JSON_BYTES`) | 大きなメッシュを持つモデルでも数十 MiB に収まる。JSON は読んだ後に何倍ものメモリで値に直すので、画像より小さくする |
+| 画像 1 つ (`textures/*.png`) | 512 MiB (`DEFAULT_MAX_IMAGE_BYTES`) | 一辺の上限 (16384 画素、[読み込みの上限](spec/file-formats.md#読み込みの上限)) の RGBA は展開して 1 GiB。圧縮した PNG はふつうその半分を大きく下回る |
+| 本体の `.ugoe` | 512 MiB (`DEFAULT_MAX_BUNDLE_BYTES`) | ビューア・スタジオが開く `.ugoe` の上限 (512 MiB) と揃える |
+
+- 保存 (`Project::save`) で今のファイルと中身を比べるのも、通常のファイルで書く中身と同じ大きさのときだけです (比べられなければ置き換える)。
+- 3 つのアプリの `read_regular_file` (T0011) と同じ形の写しです。T0025 で作る共有のクレート (`ugoe-fs`) に寄せる予定です。
+- 見てから開くまでの間に FIFO へ差し替えられると、開くところで止まりえます (その窓は小さいので受け入れています)。
+
 ### 外での書き換え
 
 `ugoe-mcp` (ファイルを直接扱う形)・別のエディタ・手での編集が、開いているプロジェクトを書き換えたことに気づき、黙って上書きしない
@@ -2025,6 +2048,8 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | --- | --- |
 | `project.io` / `project.json` | `path`・`detail` |
 | `project.format` | `path` (原因は `format.*`) |
+| `project.not_regular_file` (プロジェクト・本体の中の読むファイルが通常のファイルでない。[読むファイルの種類と大きさ](#読むファイルの種類と大きさ)) | `path` |
+| `project.file_too_large` (読むファイルが上限より大きい) | `path`・`size`・`max` (バイト) |
 | `project.not_a_project` / `project.not_empty` / `project.not_png` / `project.base_not_found` / `project.base_is_module` | `path` |
 | `project.base_unreadable` | `path` (原因は本体を読んだときの `project.*` など) |
 | `project.base_refused` | `path`・`reason` |

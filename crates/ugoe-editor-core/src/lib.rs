@@ -62,8 +62,8 @@ pub use module_project::{ColliderReference, ModuleBase, ModuleContext, ModuleErr
 pub use motion_edit::{Animations, SegmentShape};
 pub use physics_template::{PhysicsTemplate, PhysicsTemplateOptions};
 pub use project::{
-    ModuleExport, ModuleLink, Project, ProjectError, ProjectKind, ProjectMeta, export_base_bundle,
-    export_bundle, export_module, export_module_as,
+    ModuleExport, ModuleLink, Project, ProjectError, ProjectKind, ProjectMeta, ProjectReadLimits,
+    export_base_bundle, export_bundle, export_module, export_module_as,
 };
 pub use proposal::{ProposalCommand, ProposalError, ProposalOrigin, ProposalView, Proposals};
 pub use texture::Textures;
@@ -124,6 +124,8 @@ mod physics_template_tests;
 mod project_tests;
 #[cfg(test)]
 mod proposal_tests;
+#[cfg(test)]
+mod read_limits_tests;
 #[cfg(test)]
 mod slot_tests;
 #[cfg(test)]

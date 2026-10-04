@@ -320,6 +320,8 @@ impl Coded for ProjectError {
     fn code(&self) -> &'static str {
         match self {
             Self::Io { .. } => "project.io",
+            Self::NotRegularFile { .. } => "project.not_regular_file",
+            Self::FileTooLarge { .. } => "project.file_too_large",
             Self::Json { .. } => "project.json",
             Self::Format { .. } => "project.format",
             Self::NotAProject { .. } => "project.not_a_project",
@@ -357,9 +359,13 @@ impl Coded for ProjectError {
             | Self::NotAProject { path: p }
             | Self::NotEmpty { path: p }
             | Self::NotPng { path: p }
+            | Self::NotRegularFile { path: p }
             | Self::BaseNotFound { path: p }
             | Self::Base { path: p, .. }
             | Self::BaseIsModule { path: p } => args! { "path" => path(p) },
+            Self::FileTooLarge { path: p, len, max } => {
+                args! { "path" => path(p), "size" => *len, "max" => *max }
+            }
             Self::UnsupportedVersion { found, supported } => {
                 args! { "found" => *found, "supported" => *supported }
             }

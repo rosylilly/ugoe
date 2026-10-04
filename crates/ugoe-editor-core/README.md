@@ -41,3 +41,4 @@
 - T0560 (テクスチャと法線マップの追加・差し替えのコマンドが、一辺が上限を超える PNG を置く前に `edit.texture_too_large` で拒む。`src/document/texture_edit.rs` の `png_dimensions`)
 - T1605 (`Document::can_undo`・`can_redo`・`undo_count`・`redo_count`。エディタの Undo のボタンと上限の設定が使う)
 - T1600 (エラー型の ID は文字列のまま、`ColliderReference` の ID を型付きにした)
+- T1607 (プロジェクト・本体・指紋が、通常のファイルだけを大きさの上限付きで読む。`src/project/read.rs` の `ProjectReadLimits` (既定は JSON 256 MiB・画像 512 MiB・本体の `.ugoe` 512 MiB。値と理由は [docs/editor.md#読むファイルの種類と大きさ](../../docs/editor.md#読むファイルの種類と大きさ))。拒んだら `project.not_regular_file`・`project.file_too_large`)

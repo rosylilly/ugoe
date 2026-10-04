@@ -11,6 +11,9 @@
 //! - PNG は大きいので、大きさと更新日時が前の指紋と同じなら前のハッシュを使い回す ([`ProjectFingerprint::reread`])。
 //!   JSON は毎回読んでハッシュする (更新日時の刻みが粗いファイルシステムでも、編集を見逃さないため)。
 //! - ハッシュは `std` の `DefaultHasher` で、同じプロセスの中で比べるだけ (ファイルには残さない)。
+//! - 読み込みと同じく、通常のファイルでないもの (FIFO・装置) は開かずに [`ProjectError::NotRegularFile`]、
+//!   上限 ([`ProjectReadLimits`]) を超えるものは読まずに [`ProjectError::FileTooLarge`] にする (T1607)。
+//!   ディレクトリの中のモーション・表情・画像は、読み込みと同じく通常のファイルだけを数える。
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -20,7 +23,8 @@ use std::time::SystemTime;
 
 use crate::project::{
     EXPRESSION_SUFFIX, EXPRESSIONS_DIR, MODEL_JSON, MODULE_JSON, MOTION_SUFFIX, MOTIONS_DIR,
-    PHYSICS_JSON, PROJECT_JSON, ProjectError, TEXTURE_SUFFIX, TEXTURES_DIR, io_error, list_files,
+    PHYSICS_JSON, PROJECT_JSON, ProjectError, ProjectReadLimits, TEXTURE_SUFFIX, TEXTURES_DIR,
+    check_regular, io_error, list_files, read_regular_file,
 };
 
 /// プロジェクトのファイルの指紋 (プロジェクトからの相対パス → 中身のハッシュ)。
@@ -61,12 +65,22 @@ impl ProjectFingerprint {
 
     /// 本体の指紋を取り直す ([`ProjectFingerprint::reread`] と同じく、変わっていない大きなファイルは読まない)。
     pub fn reread_base(&self, path: &Path) -> Result<Self, ProjectError> {
+        self.reread_base_with_limits(path, ProjectReadLimits::default())
+    }
+
+    /// [`ProjectFingerprint::reread_base`] と同じだが、ファイル 1 つの大きさの上限を `limits` にする
+    /// (`.ugoe` は [`ProjectReadLimits::max_bundle`])。
+    pub fn reread_base_with_limits(
+        &self,
+        path: &Path,
+        limits: ProjectReadLimits,
+    ) -> Result<Self, ProjectError> {
         if path.is_dir() {
-            return self.reread(path);
+            return self.reread_with_limits(path, limits);
         }
         let name = PathBuf::from(path.file_name().unwrap_or(path.as_os_str()));
         let mut files = BTreeMap::new();
-        if let Some(stamp) = stamp(path, self.files.get(&name))? {
+        if let Some(stamp) = stamp(path, self.files.get(&name), limits.max_bundle)? {
             files.insert(name, stamp);
         }
         Ok(Self { files })
@@ -74,7 +88,18 @@ impl ProjectFingerprint {
 
     /// `dir` の指紋を取り直す。PNG は大きさと更新日時が `self` と同じなら、読まずに `self` のハッシュを使う。
     pub fn reread(&self, dir: &Path) -> Result<Self, ProjectError> {
-        if !dir.join(PROJECT_JSON).is_file() {
+        self.reread_with_limits(dir, ProjectReadLimits::default())
+    }
+
+    /// [`ProjectFingerprint::reread`] と同じだが、ファイル 1 つの大きさの上限を `limits` にする
+    /// (`Project::load_with_limits` と同じ上限で取る)。
+    pub fn reread_with_limits(
+        &self,
+        dir: &Path,
+        limits: ProjectReadLimits,
+    ) -> Result<Self, ProjectError> {
+        // `Project::load` と同じく、FIFO などは「プロジェクトでない」ではなく `NotRegularFile` にする。
+        if !dir.join(PROJECT_JSON).exists() {
             return Err(ProjectError::NotAProject {
                 path: dir.to_path_buf(),
             });
@@ -94,12 +119,12 @@ impl ProjectFingerprint {
         let mut files = BTreeMap::new();
         for (i, path) in paths.iter().enumerate() {
             let relative = path.strip_prefix(dir).unwrap_or(path).to_path_buf();
-            let reuse = if i >= first_texture {
-                self.files.get(&relative)
+            let (reuse, max) = if i >= first_texture {
+                (self.files.get(&relative), limits.max_image)
             } else {
-                None
+                (None, limits.max_json)
             };
-            if let Some(stamp) = stamp(path, reuse)? {
+            if let Some(stamp) = stamp(path, reuse, max)? {
                 files.insert(relative, stamp);
             }
         }
@@ -133,14 +158,19 @@ impl ProjectFingerprint {
     }
 }
 
-/// ファイル 1 つの指紋。ファイルがなければ (読む間に消されたときも) `None`。
-fn stamp(path: &Path, reuse: Option<&FileStamp>) -> Result<Option<FileStamp>, ProjectError> {
+/// ファイル 1 つの指紋。ファイルがなければ (読む間に消されたときも) `None`。通常のファイルでなければ
+/// [`ProjectError::NotRegularFile`]、`max` バイトより大きければ [`ProjectError::FileTooLarge`]。
+fn stamp(
+    path: &Path,
+    reuse: Option<&FileStamp>,
+    max: u64,
+) -> Result<Option<FileStamp>, ProjectError> {
     let metadata = match fs::metadata(path) {
-        Ok(m) if m.is_file() => m,
-        Ok(_) => return Ok(None),
+        Ok(m) => m,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(io_error(path)(e)),
     };
+    check_regular(path, &metadata, max)?;
     let modified = metadata.modified().ok();
     if let Some(old) = reuse
         && old.modified.is_some()
@@ -149,10 +179,12 @@ fn stamp(path: &Path, reuse: Option<&FileStamp>) -> Result<Option<FileStamp>, Pr
     {
         return Ok(Some(*old));
     }
-    let bytes = match fs::read(path) {
+    let bytes = match read_regular_file(path, max) {
         Ok(bytes) => bytes,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(io_error(path)(e)),
+        Err(ProjectError::Io { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(None);
+        }
+        Err(e) => return Err(e),
     };
     let mut hasher = DefaultHasher::new();
     bytes.hash(&mut hasher);

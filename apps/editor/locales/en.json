@@ -1917,6 +1917,8 @@
       "not_a_project": "There is no ugoe project at {{path}} (project.json is missing).",
       "not_empty": "The folder {{path}} is not empty and is not a ugoe project, so it cannot be used.",
       "not_png": "The file {{path}} is not a PNG image.",
+      "not_regular_file": "{{path}} is not a regular file (such as a pipe or a device), so it was not read.",
+      "file_too_large": "The file {{path}} is too large ({{size}} bytes; the limit is {{max}} bytes), so it was not read.",
       "base_not_found": "The base model was not found at {{path}}.",
       "base_is_module": "The base {{path}} is a module project. Choose a model project or a .ugoe bundle as the base.",
       "base_unreadable": "Could not read the base model {{path}}.",

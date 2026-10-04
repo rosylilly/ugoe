@@ -296,6 +296,12 @@ fn project_errors() -> Vec<ProjectError> {
             path: path(),
             source: std::io::Error::other("disk full"),
         },
+        ProjectError::NotRegularFile { path: path() },
+        ProjectError::FileTooLarge {
+            path: path(),
+            len: 300 * 1024 * 1024,
+            max: 256 * 1024 * 1024,
+        },
         ProjectError::Json {
             path: path(),
             source: json_error(),

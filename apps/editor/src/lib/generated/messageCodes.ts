@@ -715,6 +715,11 @@ export const messageCodes: Record<string, readonly string[]> = {
     "name"
   ],
   "project.export_failed": [],
+  "project.file_too_large": [
+    "max",
+    "path",
+    "size"
+  ],
   "project.format": [
     "path"
   ],
@@ -747,6 +752,9 @@ export const messageCodes: Record<string, readonly string[]> = {
     "path"
   ],
   "project.not_png": [
+    "path"
+  ],
+  "project.not_regular_file": [
     "path"
   ],
   "project.unsupported_base_texture": [

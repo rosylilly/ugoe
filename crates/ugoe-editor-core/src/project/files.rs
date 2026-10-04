@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use ugoe_format::FormatError;
 
-use super::{ProjectError, TEMP_SUFFIX};
+use super::{ProjectError, TEMP_SUFFIX, read_regular_file};
 
 pub(crate) fn io_error(path: &Path) -> impl FnOnce(std::io::Error) -> ProjectError + '_ {
     move |source| ProjectError::Io {
@@ -45,8 +45,9 @@ pub(super) fn with_newline(mut json: String) -> Vec<u8> {
     json.into_bytes()
 }
 
-pub(super) fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T, ProjectError> {
-    let bytes = fs::read(path).map_err(io_error(path))?;
+/// `path` の JSON を読む。通常のファイルで `max` バイト以下のときだけ読む ([`read_regular_file`])。
+pub(super) fn read_json<T: DeserializeOwned>(path: &Path, max: u64) -> Result<T, ProjectError> {
+    let bytes = read_regular_file(path, max)?;
     serde_json::from_slice(&bytes).map_err(|source| ProjectError::Json {
         path: path.to_path_buf(),
         source,
@@ -56,15 +57,17 @@ pub(super) fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T, ProjectEr
 /// `dir` の中の `*<suffix>` を、ファイル名の順に読む。`dir` がなければ空。
 ///
 /// 読んだ値はそれぞれ `check` で検査し、通らなければ [`ProjectError::Format`] (場所はそのファイル)。
+/// ファイル 1 つの大きさの上限は `max` ([`read_json`])。
 pub(super) fn read_json_dir<T: DeserializeOwned>(
     dir: &Path,
     suffix: &str,
+    max: u64,
     check: impl Fn(&T) -> Result<(), FormatError>,
 ) -> Result<Vec<T>, ProjectError> {
     list_files(dir, suffix)?
         .iter()
         .map(|path| {
-            let value = read_json(path)?;
+            let value = read_json(path, max)?;
             check(&value).map_err(|source| ProjectError::Format {
                 path: path.clone(),
                 source,
@@ -132,8 +135,12 @@ pub(super) fn remove_if_exists(path: &Path) -> Result<(), ProjectError> {
 }
 
 /// 中身が変わるときだけ、一時ファイルに書いてから名前を変えて置き換える。
+///
+/// 今のファイルは、通常のファイルで書く中身と同じ大きさのときだけ読んで比べる (FIFO・装置を読んで止まらないように。T1607)。
+/// それ以外は比べずに置き換える。
 pub(super) fn write_if_changed(path: &Path, bytes: &[u8]) -> Result<(), ProjectError> {
-    if fs::read(path).is_ok_and(|old| old == bytes) {
+    let same_len = fs::metadata(path).is_ok_and(|m| m.is_file() && m.len() == bytes.len() as u64);
+    if same_len && read_regular_file(path, bytes.len() as u64).is_ok_and(|old| old == bytes) {
         return Ok(());
     }
     if let Some(parent) = path.parent() {

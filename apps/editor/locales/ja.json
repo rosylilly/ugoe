@@ -1873,6 +1873,8 @@
       "not_a_project": "{{path}} は ugoe のプロジェクトではありません (project.json がありません)。",
       "not_empty": "フォルダ {{path}} は空でなく、ugoe のプロジェクトでもないので使えません。",
       "not_png": "{{path}} は PNG の画像ではありません。",
+      "not_regular_file": "{{path}} は通常のファイルではない (パイプや装置など) ので、読みませんでした。",
+      "file_too_large": "ファイル {{path}} が大きすぎるので読みませんでした ({{size}} バイト。上限は {{max}} バイト)。",
       "base_not_found": "{{path}} に本体のモデルが見つかりません。",
       "base_is_module": "本体 {{path}} はモジュールのプロジェクトです。本体にはモデルのプロジェクトか .ugoe のバンドルを選んでください。",
       "base_unreadable": "本体のモデル {{path}} を読めません。",

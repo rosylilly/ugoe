@@ -1,6 +1,5 @@
 //! モジュールのプロジェクトの読み書きと、その本体の読み込み (`docs/editor.md#モジュールのプロジェクト`)。
 
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use ugoe_model::SlotId;
@@ -8,36 +7,42 @@ use ugoe_model::SlotId;
 use super::paths::{normalize_path, resolve_base};
 use super::{
     GITIGNORE, GITIGNORE_CONTENT, MODULE_JSON, PROJECT_JSON, Project, ProjectError, ProjectKind,
-    ProjectMeta, TEXTURE_SUFFIX, TEXTURES_DIR, check_names, image_names, io_error, read_images,
-    read_json, with_newline,
+    ProjectMeta, ProjectReadLimits, TEXTURE_SUFFIX, TEXTURES_DIR, check_names, image_names,
+    read_images, read_json, read_regular_file, read_regular_file_as, with_newline,
 };
 use crate::module_project::{ColliderReference, ModuleBase, ModuleContext};
 
 impl Project {
     /// モジュールのプロジェクトを読む: `module.json` と画像を読み、本体を読んで作業用のモデルを作る。
     /// `base` があれば `project.json` の参照の代わりにそれを本体にする。`drop_colliders` なら、本体に無い衝突体への
-    /// リグの参照を外し、外したものを返す (でなければ空)。本体は `check` で確かめてから読む ([`load_base_checked`])。
+    /// リグの参照を外し、外したものを返す (でなければ空)。本体は `check` で確かめてから読む ([`load_base_with_limits`])。
+    /// ファイル 1 つの大きさの上限は `limits` (本体にも同じ上限を使う)。
     pub(super) fn load_module(
         dir: &Path,
         meta: ProjectMeta,
         base: Option<&Path>,
         drop_colliders: bool,
         check: BaseCheck<'_>,
+        limits: ProjectReadLimits,
     ) -> Result<(Self, Vec<ColliderReference>), ProjectError> {
         let link = meta.module.clone().ok_or(ProjectError::MissingModuleLink)?;
         let module_path = dir.join(MODULE_JSON);
-        let json = fs::read_to_string(&module_path).map_err(io_error(&module_path))?;
+        let json = read_regular_file(&module_path, limits.max_json)?;
+        let json = String::from_utf8(json).map_err(|e| ProjectError::Io {
+            path: module_path.clone(),
+            source: std::io::Error::new(std::io::ErrorKind::InvalidData, e),
+        })?;
         let mut module =
             ugoe_format::module_from_json(&json).map_err(|source| ProjectError::Format {
                 path: module_path.clone(),
                 source,
             })?;
-        let images = read_images(dir, &module.textures)?;
+        let images = read_images(dir, &module.textures, limits.max_image)?;
         let base_path = match base {
             Some(base) => normalize_path(base),
             None => resolve_base(dir, &link.base),
         };
-        let base = load_base_checked(&base_path, check)?;
+        let base = load_base_with_limits(&base_path, check, limits)?;
         let context = ModuleContext::new(
             base,
             &link.slot,
@@ -83,26 +88,27 @@ impl Project {
 }
 
 /// モジュールのプロジェクト `dir` の `project.json` を読み、`slot` があればスロットを替える
-/// (モジュールのプロジェクトでなければ [`ProjectError::NotAModule`])。
+/// (モジュールのプロジェクトでなければ [`ProjectError::NotAModule`])。`max` は `project.json` の大きさの上限。
 pub(super) fn module_meta_with(
     dir: &Path,
     slot: Option<&SlotId>,
+    max: u64,
 ) -> Result<ProjectMeta, ProjectError> {
-    let mut meta = read_module_meta(dir)?;
+    let mut meta = read_module_meta(dir, max)?;
     if let (Some(link), Some(slot)) = (&mut meta.module, slot) {
         link.slot = slot.clone();
     }
     Ok(meta)
 }
 
-fn read_module_meta(dir: &Path) -> Result<ProjectMeta, ProjectError> {
+fn read_module_meta(dir: &Path, max: u64) -> Result<ProjectMeta, ProjectError> {
     let meta_path = dir.join(PROJECT_JSON);
-    if !meta_path.is_file() {
+    if !meta_path.exists() {
         return Err(ProjectError::NotAProject {
             path: dir.to_path_buf(),
         });
     }
-    let meta: ProjectMeta = read_json(&meta_path)?;
+    let meta: ProjectMeta = read_json(&meta_path, max)?;
     if meta.kind != ProjectKind::Module {
         return Err(ProjectError::NotAModule);
     }
@@ -112,7 +118,7 @@ fn read_module_meta(dir: &Path) -> Result<ProjectMeta, ProjectError> {
 /// モジュールのプロジェクト `dir` が参照する本体 (絶対パスに解決したもの) とスロット。開けなかったときに
 /// 直し方を選ぶために使う (本体を読まない)。
 pub fn read_module_link(dir: &Path) -> Result<(PathBuf, SlotId), ProjectError> {
-    let meta = read_module_meta(dir)?;
+    let meta = read_module_meta(dir, ProjectReadLimits::default().max_json)?;
     let link = meta.module.ok_or(ProjectError::MissingModuleLink)?;
     Ok((resolve_base(dir, &link.base), link.slot))
 }
@@ -135,6 +141,17 @@ pub fn load_base(path: &Path) -> Result<ModuleBase, ProjectError> {
 /// [`load_base`] と同じだが、読む前に `path` を `check` に渡し、返したパスから読む。`check` がエラーなら
 /// 何も開かずに [`ProjectError::BaseRefused`]。[`ModuleBase::path`] (保存する参照の元) は `path` のまま。
 pub fn load_base_checked(path: &Path, check: BaseCheck<'_>) -> Result<ModuleBase, ProjectError> {
+    load_base_with_limits(path, check, ProjectReadLimits::default())
+}
+
+/// [`load_base_checked`] と同じだが、ファイル 1 つの大きさの上限を `limits` にする (T1607)。本体が `.ugoe` なら
+/// [`ProjectReadLimits::max_bundle`]、プロジェクトなら [`Project::load_with_limits`] と同じ上限で読む。
+/// 通常のファイルでない本体 (FIFO・装置) は開かずに [`ProjectError::NotRegularFile`]。
+pub fn load_base_with_limits(
+    path: &Path,
+    check: BaseCheck<'_>,
+    limits: ProjectReadLimits,
+) -> Result<ModuleBase, ProjectError> {
     let wrap = |source: ProjectError| ProjectError::Base {
         path: path.to_path_buf(),
         source: Box::new(source),
@@ -152,13 +169,16 @@ pub fn load_base_checked(path: &Path, check: BaseCheck<'_>) -> Result<ModuleBase
         // 本体がモジュールなら、その本体まで読みに行かないように、読む前に種類を見る。
         let meta_path = read.join(PROJECT_JSON);
         if meta_path.is_file()
-            && read_json::<ProjectMeta>(&meta_path).map_err(wrap)?.kind == ProjectKind::Module
+            && read_json::<ProjectMeta>(&meta_path, limits.max_json)
+                .map_err(wrap)?
+                .kind
+                == ProjectKind::Module
         {
             return Err(ProjectError::BaseIsModule {
                 path: path.to_path_buf(),
             });
         }
-        let project = Project::load(&read).map_err(wrap)?;
+        let project = Project::load_with_limits(&read, &unchecked, limits).map_err(wrap)?;
         return Ok(ModuleBase {
             path: path.to_path_buf(),
             model: project.model,
@@ -166,7 +186,7 @@ pub fn load_base_checked(path: &Path, check: BaseCheck<'_>) -> Result<ModuleBase
             textures: project.textures,
         });
     }
-    let bytes = fs::read(&read).map_err(io_error(path))?;
+    let bytes = read_regular_file_as(&read, path, limits.max_bundle)?;
     let bundle = ugoe_format::read_bundle(&bytes).map_err(|source| {
         wrap(ProjectError::Format {
             path: path.to_path_buf(),
