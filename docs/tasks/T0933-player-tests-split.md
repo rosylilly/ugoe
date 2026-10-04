@@ -1,11 +1,11 @@
 ---
 id: T0933
 title: "@ugoe/player: player.test.ts を流れごとに分け、偽の WebPuppet をテスト用の部品にする"
-status: todo
+status: in-progress
 milestone: M9
 crates: [packages]
 depends_on: [T0930]
-assignee:
+assignee: claude-worker-T0933
 ---
 
 # T0933: @ugoe/player: player.test.ts を流れごとに分け、偽の WebPuppet をテスト用の部品にする
