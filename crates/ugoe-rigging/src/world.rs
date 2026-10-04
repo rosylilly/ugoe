@@ -26,6 +26,18 @@ pub enum WorldError {
     NotConverged { index: usize, residual: f32 },
 }
 
+impl WorldError {
+    /// 機械が読む種類 (`"singular"` など。バリアントの名前の `snake_case`)。値は **変えない**。
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Evaluate(_) => "evaluate",
+            Self::LengthMismatch { .. } => "length_mismatch",
+            Self::Singular { .. } => "singular",
+            Self::NotConverged { .. } => "not_converged",
+        }
+    }
+}
+
 /// ニュートン法の反復の上限。
 const MAX_ITERATIONS: usize = 24;
 
@@ -180,6 +192,31 @@ mod tests {
     use ugoe_model::fixtures::dress_up_base;
 
     use super::*;
+
+    #[test]
+    fn codes_are_fixed() {
+        let cases = [
+            (WorldError::Evaluate(String::new()), "evaluate"),
+            (
+                WorldError::LengthMismatch {
+                    points: 1,
+                    guesses: 0,
+                },
+                "length_mismatch",
+            ),
+            (WorldError::Singular { index: 0 }, "singular"),
+            (
+                WorldError::NotConverged {
+                    index: 0,
+                    residual: 1.0,
+                },
+                "not_converged",
+            ),
+        ];
+        for (error, code) in cases {
+            assert_eq!(error.code(), code, "{error:?}");
+        }
+    }
 
     /// 親の祖先でないデフォーマを取り付け先にするスロットがあっても、写像を作れる。
     #[test]

@@ -1344,7 +1344,12 @@ message: string,
 /**
  * 原因になったエラー (`proposal.rejected` の中の `edit.*` など)。`message` は原因の文も含む。
  */
-cause?: Message, };
+cause?: Message, 
+/**
+ * 一覧の中身 (検証のエラーの列 `validation.*` など)。並べるのは引数 `details` と同じく先頭の
+ * `DESCRIBED_ERRORS_MAX` 件までで、全件の数は引数 `count`。画面は各項目を訳して `details` の代わりに差し込む。
+ */
+items?: Array<Message>, };
 
 /**
  * 文に差し込む値。
@@ -1551,7 +1556,12 @@ message: string,
 /**
  * 原因になったエラー (`proposal.rejected` の中の `edit.*` など)。`message` は原因の文も含む。
  */
-cause?: Message, };
+cause?: Message, 
+/**
+ * 一覧の中身 (検証のエラーの列 `validation.*` など)。並べるのは引数 `details` と同じく先頭の
+ * `DESCRIBED_ERRORS_MAX` 件までで、全件の数は引数 `count`。画面は各項目を訳して `details` の代わりに差し込む。
+ */
+items?: Array<Message>, };
 
 /**
  * モジュールのプロジェクトが本体の問題で開けない・読み直せないときの、問題の種類 (直し方を選ぶ)。
@@ -2456,7 +2466,11 @@ args: { [key in string]: MessageArg },
 /**
  * 失敗の理由 (`ugoe_rigging::InferError` の表記)。
  */
-message: string, };
+message: string, 
+/**
+ * 失敗の理由のコードと引数 (`infer.*`)。画面はこれを訳して `detail` の代わりに使う (T0163)。
+ */
+cause?: Message, };
 
 /**
  * 衝突体を考えない静止姿勢で、リグの鎖が衝突体に当たっている (`docs/spec/physics.md#静止姿勢で衝突体に入っている場合`)。

@@ -12,6 +12,7 @@ use crate::deformer::DeformerKind;
 use crate::parameter::ParameterKind;
 use crate::{KeyformGrid, KeyformInference, Model, Parameter};
 
+mod code;
 mod describe;
 mod module;
 mod motion;

@@ -212,7 +212,7 @@ fn motion_and_expression_validation_errors_have_their_own_codes() {
 
 /// ソースに書いたコード (`"area.name"` の文字列) を取り出す。
 fn codes_in(source: &str) -> Vec<String> {
-    const AREAS: [&str; 15] = [
+    const AREAS: [&str; 20] = [
         "edit.",
         "cell.",
         "proposal.",
@@ -228,6 +228,11 @@ fn codes_in(source: &str) -> Vec<String> {
         "avatar.",
         "compile.",
         "inference.",
+        "validation.",
+        "infer.",
+        "world.",
+        "normal_map.",
+        "compose.",
     ];
     source
         .split('"')
@@ -340,5 +345,119 @@ fn interpolation_is_passed_by_its_json_name() {
     assert_eq!(
         message.args,
         message_args! { "target" => "mesh `Face`", "interpolation" => "smooth" }
+    );
+}
+
+/// 検証・推定・写像・法線マップのエラーのコードは、元のエラーのコード (`ValidationError::code` など) に
+/// 領域の名前を付けたもの (元のクレートでコードを固定し、ここはそれに揃える)。
+#[test]
+fn source_error_codes_follow_the_crate_codes() {
+    use crate::message_catalog::{infer_errors, validation_errors};
+    for error in validation_errors() {
+        assert_eq!(
+            Coded::code(&error),
+            format!("validation.{}", error.code()),
+            "{error:?}"
+        );
+    }
+    for error in infer_errors() {
+        assert_eq!(
+            Coded::code(&error),
+            format!("infer.{}", error.code()),
+            "{error:?}"
+        );
+    }
+    let world = ugoe_rigging::WorldError::NotConverged {
+        index: 0,
+        residual: 1.0,
+    };
+    assert_eq!(Coded::code(&world), format!("world.{}", world.code()));
+    let normal = ugoe_rigging::NormalMapError::GridTooLarge {
+        width: 1.0,
+        height: 1.0,
+        max: 1,
+    };
+    assert_eq!(
+        Coded::code(&normal),
+        format!("normal_map.{}", normal.code())
+    );
+}
+
+/// 検証のエラーの一覧は、`count`・`details` に加えて、先頭の 10 件を訳せる形 (`items`) で渡す。
+#[test]
+fn validation_lists_carry_coded_items() {
+    let errors: Vec<_> = (0..12)
+        .map(|i| ugoe_model::validate::ValidationError::DuplicateId {
+            kind: "part",
+            id: format!("P{i}"),
+        })
+        .collect();
+    let message = EditError::Invalid(errors).to_message();
+    assert_eq!(message.code, "edit.invalid_model");
+    assert_eq!(message.args["count"], MessageArg::Number(12.0));
+    assert_eq!(message.items.len(), 10);
+    assert_eq!(message.items[0].code, "validation.duplicate_id");
+    assert_eq!(
+        message.items[0].args,
+        message_args! { "kind" => "part", "id" => "P0" }
+    );
+    assert_eq!(message.items[0].message, "duplicate part id `P0`");
+    let json = serde_json::to_value(&message).unwrap();
+    assert_eq!(json["items"][9]["args"]["id"], "P9");
+    // 一覧の無いメッセージは `items` を書かない。
+    let plain = serde_json::to_value(EditError::NotModule.to_message()).unwrap();
+    assert!(plain.get("items").is_none(), "{plain}");
+}
+
+/// 推定・合成・法線マップの失敗は、`detail` の英語の文に加えて、元のエラーを原因に載せる。
+#[test]
+fn source_errors_are_carried_as_causes() {
+    let inference = EditError::Inference {
+        target: "mesh `EyeL`".into(),
+        error: ugoe_rigging::InferError::MissingNeutralKey {
+            parameter: "AngleX".into(),
+            default: 0.0,
+        },
+    }
+    .to_message();
+    assert_eq!(inference.code, "edit.inference_failed");
+    assert!(inference.args.contains_key("detail"));
+    let cause = inference.cause.as_deref().unwrap();
+    assert_eq!(cause.code, "infer.missing_neutral_key");
+    assert_eq!(
+        cause.args,
+        message_args! { "parameter" => "AngleX", "default" => 0.0f32 }
+    );
+
+    let compose = ModuleError::Compose(ugoe_runtime::ComposeError::SlotOccupied {
+        slot: "head".into(),
+        first: "cap".into(),
+        second: "hat".into(),
+    })
+    .to_message();
+    assert_eq!(compose.code, "module.compose_failed");
+    let cause = compose.cause.as_deref().unwrap();
+    assert_eq!(cause.code, "compose.slot_occupied");
+    assert_eq!(
+        cause.args,
+        message_args! { "slot" => "head", "module" => "hat", "attached" => "cap" }
+    );
+
+    // 推定の中の写像の失敗は、さらにその原因に載る。
+    let parent =
+        ugoe_rigging::InferError::ParentTransform(ugoe_rigging::WorldError::Singular { index: 3 })
+            .to_message();
+    assert_eq!(parent.cause.as_deref().unwrap().code, "world.singular");
+
+    let lighting =
+        crate::lighting::LightingError::Generate(ugoe_rigging::NormalMapError::EmptyImage {
+            width: 0,
+            height: 2,
+        })
+        .to_message();
+    assert_eq!(lighting.code, "lighting.generate_failed");
+    assert_eq!(
+        lighting.cause.as_deref().unwrap().code,
+        "normal_map.empty_image"
     );
 }

@@ -58,6 +58,18 @@ pub enum NormalMapError {
     GridTooLarge { width: f64, height: f64, max: usize },
 }
 
+impl NormalMapError {
+    /// 機械が読む種類 (`"empty_image"` など。バリアントの名前の `snake_case`)。値は **変えない**。
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::EmptyImage { .. } => "empty_image",
+            Self::SizeMismatch { .. } => "size_mismatch",
+            Self::InvalidOption { .. } => "invalid_option",
+            Self::GridTooLarge { .. } => "grid_too_large",
+        }
+    }
+}
+
 /// ふくらみの設定。パーツ (テクスチャ) ごとに変えられる。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BulgeOptions {
@@ -644,6 +656,46 @@ fn gaussian_blur(values: &mut [f32], w: usize, h: usize, sigma: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn codes_are_fixed() {
+        let cases = [
+            (
+                NormalMapError::EmptyImage {
+                    width: 0,
+                    height: 1,
+                },
+                "empty_image",
+            ),
+            (
+                NormalMapError::SizeMismatch {
+                    width: 1,
+                    height: 1,
+                    expected: 1,
+                    found: 0,
+                },
+                "size_mismatch",
+            ),
+            (
+                NormalMapError::InvalidOption {
+                    field: "strength",
+                    value: -1.0,
+                },
+                "invalid_option",
+            ),
+            (
+                NormalMapError::GridTooLarge {
+                    width: 1e9,
+                    height: 1e9,
+                    max: 1,
+                },
+                "grid_too_large",
+            ),
+        ];
+        for (error, code) in cases {
+            assert_eq!(error.code(), code, "{error:?}");
+        }
+    }
 
     #[test]
     fn one_dimensional_transform_finds_nearest_zero() {

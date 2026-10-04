@@ -1852,6 +1852,7 @@
     "cancelled": "Cancelled."
   },
   "errorCause": "{{message}} Cause: {{cause}}",
+  "errorListMore": "and {{count}} more",
   "errors": {
     "edit": {
       "duplicate_id": "The {{kind}} {{id}} already exists.",
@@ -2118,6 +2119,92 @@
       "bridge_start_failed": "Could not start the agent connection ({{detail}}).",
       "bundle_write_failed": "Could not write the .mcpb file ({{detail}}).",
       "open_failed": "Could not open {{path}} ({{detail}})."
+    },
+    "validation": {
+      "duplicate_id": "the {{kind}} ID {{id}} is used more than once",
+      "keyform_count": "the {{kind}} {{id}} has {{actual}} keyforms, but its grid needs {{expected}}",
+      "keys_not_ascending": "the keys of the parameter {{parameter}} on the {{kind}} {{id}} are not strictly ascending ({{keys}})",
+      "empty_keys": "the parameter {{parameter}} on the {{kind}} {{id}} has no keys",
+      "duplicate_binding": "the parameter {{parameter}} is bound more than once on the {{kind}} {{id}}",
+      "indices_not_triangles": "the triangle indices of the mesh {{id}} ({{len}}) are not a multiple of 3",
+      "index_out_of_range": "the mesh {{id}} refers to vertex {{index}}, but it has {{vertices}} vertices",
+      "vertex_count": "a keyform of the mesh {{id}} has {{actual}} vertices, but the mesh has {{expected}}",
+      "warp_point_count": "a keyform of the warp deformer {{id}} has {{actual}} control points, but its grid needs {{expected}}",
+      "empty_warp_grid": "the warp deformer {{id}} needs at least 1 row and 1 column (rows {{rows}}, columns {{cols}})",
+      "unknown_reference": "the {{field}} of the {{kind}} {{id}} refers to the {{target_kind}} {{target}}, which does not exist",
+      "texture_out_of_range": "the mesh {{id}} uses texture {{texture}}, but there are {{textures}} textures",
+      "glue_vertex_out_of_range": "the glue {{id}} uses vertex {{index}} of the mesh {{mesh}}, which has {{vertices}} vertices",
+      "parent_cycle": "the parents of the {{kind}} elements form a cycle ({{cycle}})",
+      "mask_cycle": "the mesh masks form a cycle ({{cycle}})",
+      "parameter_range": "the parameter {{id}} must satisfy min ≤ default ≤ max (min {{min}}, default {{default}}, max {{max}})",
+      "duplicate_pose_part": "the part {{part}} appears more than once in the pose groups",
+      "invalid_module_name": "the module name {{name}} must not be empty, contain /, or start with #",
+      "origin_count": "the {{kind}} {{id}} records the origin of {{actual}} cells, but it has {{expected}} keyforms",
+      "unbound_inference_parameter": "the inference of the {{kind}} {{id}} uses the parameter {{parameter}}, which is not an axis of its grid",
+      "asymmetric_mirror": "the mirror of the {{kind}} {{id}} is {{mirror}}, but {{mirror}} does not mirror it back",
+      "depth_count": "the {{kind}} {{id}} has {{actual}} depth values, but needs {{expected}}",
+      "deformer_kind_mismatch": "the {{field}} of the {{kind}} {{id}} refers to the deformer {{deformer}}, which is not a {{expected}} deformer",
+      "weight_count": "output {{output}} of the physics rig {{rig}} has {{actual}} weights, but needs {{expected}}",
+      "parameter_kind_mismatch": "the parameter {{parameter}} on the {{kind}} {{id}} must be of the kind {{expected}}",
+      "invalid_blend_shape": "blend shape grid {{index}} of the {{kind}} {{id}} is invalid ({{reason}})",
+      "invalid_value": "{{field}} is {{value}}, but it must be {{expected}}"
+    },
+    "infer": {
+      "unknown_parameter": "the axis parameter {{parameter}} does not exist in the model",
+      "missing_neutral_key": "the axis {{parameter}} has no key at its default value {{default}}",
+      "duplicate_axis": "the parameter {{parameter}} is bound to more than one axis",
+      "non_finite_key": "the axis {{parameter}} has a key that is not a finite number ({{key}})",
+      "keys_not_ascending": "the keys of the axis {{parameter}} are not strictly ascending ({{keys}})",
+      "too_many_axes": "the grid has {{axes}} axes, but at most {{max}} are allowed",
+      "grid_too_large": "the grid is too large",
+      "grid_size_mismatch": "the grid has {{found}} keyforms, but needs {{expected}}",
+      "origins_length_mismatch": "the grid records the origin of {{found}} cells, but has {{expected}} keyforms",
+      "base_not_authored": "the base cell {{cell}} must be authored by hand",
+      "shape_mismatch": "cell {{cell}} has {{found}} points, but the base cell has {{expected}}",
+      "unknown_target": "{{target}} does not exist in the model",
+      "unsupported_target": "{{target}} has no keyform grid for this inference",
+      "unknown_parent": "the parent deformer {{deformer}} does not exist in the model",
+      "unsupported_parent": "the kind of the parent deformer {{deformer}} is not supported",
+      "parent_cycle": "the deformer parents form a cycle through {{deformer}}",
+      "not_mirror_pair": "{{to}} is not the mirror of {{from}}",
+      "incompatible_mirror": "{{to}} cannot be mirrored from {{from}} (different kind or warp size)",
+      "mirror_axis_mismatch": "the axis {{parameter}} has no matching mirrored axis in the other grid",
+      "missing_mirror_key": "the source axis {{parameter}} has no key {{key}}, which the mirror needs",
+      "unmatched_vertices": "the vertices {{vertices}} have no mirrored source vertex within {{tolerance}} px",
+      "parent_transform": "the points cannot be mapped through the parent deformers",
+      "not_depth_rotation": "{{target}} is not set up for rotation from depth",
+      "missing_depth": "{{target}} has no depth",
+      "depth_length_mismatch": "there are {{found}} depth values, but {{expected}} are needed",
+      "missing_rotation_axis": "the rotation parameter {{parameter}} is not an axis of the grid",
+      "non_affine_parent": "{{target}} is under a warp deformer, so it cannot be rotated from depth"
+    },
+    "world": {
+      "evaluate": "the parent deformers cannot be evaluated ({{detail}})",
+      "length_mismatch": "there are {{points}} points but {{guesses}} initial guesses",
+      "singular": "the parent transform is degenerate near point {{index}}",
+      "not_converged": "point {{index}} could not be solved (residual {{residual}} px)"
+    },
+    "normal_map": {
+      "empty_image": "the image is empty ({{width}} × {{height}})",
+      "size_mismatch": "the {{width}} × {{height}} image has {{found}} values, but needs {{expected}}",
+      "invalid_option": "the setting {{field}} = {{value}} cannot be used",
+      "grid_too_large": "the group spans {{width}} × {{height}} cells, more than the limit of {{max}}"
+    },
+    "compose": {
+      "invalid_module_name": "the module name {{module}} must not be empty, contain /, or start with #",
+      "duplicate_module": "the module name {{module}} is used more than once",
+      "unknown_slot": "the base model has no slot {{slot}} for the module {{module}}",
+      "slot_occupied": "the slot {{slot}} already has the module {{attached}}, so {{module}} cannot be attached",
+      "avatar_level": "the module {{module}} needs avatar profile level {{required}} on the base model",
+      "missing_slot": "the module {{module}} needs the slot {{slot}}, which the base model does not have",
+      "missing_parameter": "the module {{module}} uses the parameter {{parameter}}, which the base model does not have",
+      "parameter_not_exposed": "the module {{module}} uses the parameter {{parameter}}, which the slot {{slot}} does not expose",
+      "unknown_mask": "the mesh {{mesh}} of the module {{module}} is masked by {{mask}}, which is not available",
+      "texture_out_of_range": "the mesh {{mesh}} of the module {{module}} uses texture {{texture}}, which the module does not have",
+      "unknown_collider": "the rig {{rig}} of the module {{module}} collides with {{collider}}, which is not available",
+      "pose_not_exposed": "the module {{module}} follows the pose entry {{part}}, which the slot {{slot}} does not expose",
+      "invalid_composition_one": "the combined model did not pass validation ({{count}} problem: {{details}})",
+      "invalid_composition_other": "the combined model did not pass validation ({{count}} problems: {{details}})"
     }
   },
   "errorArgs": {
@@ -2152,7 +2239,10 @@
     "finite": "a finite number",
     "finite and > 0": "a finite number greater than 0",
     "character": "character",
-    "module": "module"
+    "module": "module",
+    "finite and >= 0": "a finite number ≥ 0",
+    "between min and max": "between min and max",
+    "normal": "normal"
   },
   "inspector": {
     "title": "Inspector",

@@ -276,6 +276,22 @@ describe("re-derivation warnings", () => {
     );
   });
 
+  it("translates the coded reason when there is one", () => {
+    const coded: RederiveWarning = {
+      ...warning("target vertices [0] have no mirrored source vertex within 1"),
+      cause: {
+        code: "infer.unmatched_vertices",
+        args: { vertices: "0", tolerance: 1 },
+        message: "target vertices [0] have no mirrored source vertex within 1",
+      },
+    };
+    expect(describeWarning(coded)).toBe(
+      "Could not re-mirror mesh EyeR from mesh EyeL: " +
+        "the vertices 0 have no mirrored source vertex within 1 px. " +
+        "Its mirrored cells keep their previous values.",
+    );
+  });
+
   it("keeps one warning per grid and source, the newest", () => {
     const other: RederiveWarning = {
       target: eyeL,

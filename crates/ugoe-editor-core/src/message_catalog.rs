@@ -15,8 +15,9 @@ use ugoe_format::{ChunkTag, FormatError, ReadLimit};
 use ugoe_mesher::MeshError;
 use ugoe_model::KeyformInterpolation;
 use ugoe_model::avatar::check::ProfileIssue;
+use ugoe_model::validate::ValidationError;
 use ugoe_psd::{PsdError, WarningKind};
-use ugoe_rigging::{InferError, NormalMapError};
+use ugoe_rigging::{InferError, NormalMapError, WorldError};
 use ugoe_runtime::{CompileError, ComposeError};
 
 use crate::atlas::AtlasError;
@@ -38,7 +39,7 @@ use crate::space::SpaceError;
 /// コード → 引数の名前。同じコードの見本が複数あれば、引数の名前を合わせたもの。
 pub type MessageCodes = BTreeMap<String, BTreeSet<String>>;
 
-/// 見本の一覧から、コードと引数の名前の一覧を作る。原因 (`cause`) のコードも含める。
+/// 見本の一覧から、コードと引数の名前の一覧を作る。原因 (`cause`) と一覧の中身 (`items`) のコードも含める。
 pub fn message_codes(messages: impl IntoIterator<Item = Message>) -> MessageCodes {
     let mut codes = MessageCodes::new();
     let mut pending: Vec<Message> = messages.into_iter().collect();
@@ -50,6 +51,7 @@ pub fn message_codes(messages: impl IntoIterator<Item = Message>) -> MessageCode
         if let Some(cause) = message.cause {
             pending.push(*cause);
         }
+        pending.extend(message.items);
     }
     codes
 }
@@ -71,13 +73,23 @@ pub fn message_samples() -> Vec<Message> {
     out.extend(format_errors().iter().map(Coded::to_message));
     out.extend(profile_issues().iter().map(Coded::to_message));
     out.extend(compile_errors().iter().map(Coded::to_message));
+    out.extend(validation_errors().iter().map(Coded::to_message));
+    out.extend(infer_errors().iter().map(Coded::to_message));
+    out.extend(world_errors().iter().map(Coded::to_message));
+    out.extend(normal_map_errors().iter().map(Coded::to_message));
+    out.extend(compose_errors().iter().map(Coded::to_message));
     out.extend(warnings());
     let mirror = RederiveWarning::mirror_failed(
         KeyformTarget::Mesh("EyeR".into()),
         KeyformTarget::Mesh("EyeL".into()),
-        "no mirrored vertex",
+        &InferError::UnmatchedVertices {
+            vertices: vec![0],
+            tolerance: 1.0,
+        },
     );
-    out.push(Message::new(&mirror.code, mirror.args, mirror.message));
+    let mut message = Message::new(&mirror.code, mirror.args, mirror.message);
+    message.cause = mirror.cause.map(Box::new);
+    out.push(message);
     out
 }
 
@@ -597,4 +609,342 @@ fn warnings() -> Vec<Message> {
             .map(|(code, args)| Message::new(code, args, code)),
     );
     out
+}
+
+/// モデルの検証のエラー (`validation.*`)。省けるもの (`back`) は、ある見本と無い見本の両方。
+pub(crate) fn validation_errors() -> Vec<ValidationError> {
+    vec![
+        ValidationError::DuplicateId {
+            kind: "part",
+            id: id(),
+        },
+        ValidationError::KeyformCount {
+            kind: "mesh",
+            id: id(),
+            expected: 2,
+            actual: 1,
+        },
+        ValidationError::KeysNotAscending {
+            kind: "mesh",
+            id: id(),
+            parameter: "AngleX".into(),
+            keys: vec![1.0, 0.0],
+        },
+        ValidationError::EmptyKeys {
+            kind: "mesh",
+            id: id(),
+            parameter: "AngleX".into(),
+        },
+        ValidationError::DuplicateBinding {
+            kind: "mesh",
+            id: id(),
+            parameter: "AngleX".into(),
+        },
+        ValidationError::IndicesNotTriangles { id: id(), len: 4 },
+        ValidationError::IndexOutOfRange {
+            id: id(),
+            index: 9,
+            vertices: 3,
+        },
+        ValidationError::VertexCount {
+            id: id(),
+            expected: 3,
+            actual: 2,
+        },
+        ValidationError::WarpPointCount {
+            id: id(),
+            expected: 4,
+            actual: 3,
+        },
+        ValidationError::EmptyWarpGrid {
+            id: id(),
+            rows: 0,
+            cols: 1,
+        },
+        ValidationError::UnknownReference {
+            kind: "mesh",
+            id: id(),
+            field: "part",
+            target_kind: "part",
+            target: "Body".into(),
+        },
+        ValidationError::TextureOutOfRange {
+            id: id(),
+            texture: 1,
+            textures: 1,
+        },
+        ValidationError::GlueVertexOutOfRange {
+            id: "Neck".into(),
+            mesh: id(),
+            index: 9,
+            vertices: 3,
+        },
+        ValidationError::ParentCycle {
+            kind: "part",
+            cycle: vec!["A".into(), "B".into()],
+        },
+        ValidationError::MaskCycle {
+            cycle: vec!["A".into(), "B".into()],
+        },
+        ValidationError::ParameterRange {
+            id: "AngleX".into(),
+            min: 1.0,
+            default: 0.0,
+            max: 2.0,
+        },
+        ValidationError::DuplicatePosePart {
+            part: "ArmL".into(),
+        },
+        ValidationError::InvalidModuleName { name: "a/b".into() },
+        ValidationError::OriginCount {
+            kind: "mesh",
+            id: id(),
+            expected: 2,
+            actual: 1,
+        },
+        ValidationError::UnboundInferenceParameter {
+            kind: "mesh",
+            id: id(),
+            parameter: "AngleX".into(),
+        },
+        ValidationError::AsymmetricMirror {
+            kind: "mesh",
+            id: "EyeL".into(),
+            mirror: "EyeR".into(),
+            back: None,
+        },
+        ValidationError::AsymmetricMirror {
+            kind: "mesh",
+            id: "EyeL".into(),
+            mirror: "EyeR".into(),
+            back: Some("BrowR".into()),
+        },
+        ValidationError::DepthCount {
+            kind: "mesh",
+            id: id(),
+            expected: 3,
+            actual: 2,
+        },
+        ValidationError::DeformerKindMismatch {
+            kind: "mesh",
+            id: id(),
+            field: "deformer",
+            deformer: "Head".into(),
+            expected: "warp",
+        },
+        ValidationError::WeightCount {
+            rig: "Hair".into(),
+            output: 0,
+            expected: 3,
+            actual: 2,
+        },
+        ValidationError::ParameterKindMismatch {
+            kind: "mesh",
+            id: id(),
+            parameter: "Smile".into(),
+            expected: "blend_shape",
+        },
+        ValidationError::InvalidBlendShape {
+            kind: "mesh",
+            id: id(),
+            index: 0,
+            reason: "has no bindings",
+        },
+        ValidationError::InvalidValue {
+            field: "pose.fade_duration".into(),
+            value: -1.0,
+            expected: "finite and >= 0",
+        },
+    ]
+}
+
+/// キーフォームの推定のエラー (`infer.*`)。
+pub(crate) fn infer_errors() -> Vec<InferError> {
+    let parameter = || ugoe_model::ParamId::new("AngleX");
+    let deformer = || ugoe_model::DeformerId::new("Head");
+    let target = || ugoe_rigging::KeyformTarget::Mesh("EyeL".into());
+    let other = || ugoe_rigging::KeyformTarget::Mesh("EyeR".into());
+    vec![
+        InferError::UnknownParameter {
+            parameter: parameter(),
+        },
+        InferError::MissingNeutralKey {
+            parameter: parameter(),
+            default: 0.0,
+        },
+        InferError::DuplicateAxis {
+            parameter: parameter(),
+        },
+        InferError::NonFiniteKey {
+            parameter: parameter(),
+            key: f32::NAN,
+        },
+        InferError::KeysNotAscending {
+            parameter: parameter(),
+            keys: vec![1.0, 0.0],
+        },
+        InferError::TooManyAxes { count: 65 },
+        InferError::GridTooLarge,
+        InferError::GridSizeMismatch {
+            expected: 2,
+            found: 1,
+        },
+        InferError::OriginsLengthMismatch {
+            expected: 2,
+            found: 1,
+        },
+        InferError::BaseNotAuthored { cell: 0 },
+        InferError::ShapeMismatch {
+            cell: 1,
+            expected: 4,
+            found: 3,
+        },
+        InferError::UnknownTarget(target()),
+        InferError::UnsupportedTarget(target()),
+        InferError::UnknownParent {
+            deformer: deformer(),
+        },
+        InferError::UnsupportedParent {
+            deformer: deformer(),
+        },
+        InferError::ParentCycle {
+            deformer: deformer(),
+        },
+        InferError::NotMirrorPair {
+            from: target(),
+            to: other(),
+        },
+        InferError::IncompatibleMirror {
+            from: target(),
+            to: other(),
+        },
+        InferError::MirrorAxisMismatch {
+            parameter: parameter(),
+        },
+        InferError::MissingMirrorKey {
+            parameter: parameter(),
+            key: -30.0,
+        },
+        InferError::UnmatchedVertices {
+            vertices: vec![0, 2],
+            tolerance: 1.0,
+        },
+        InferError::ParentTransform(WorldError::Singular { index: 0 }),
+        InferError::NotDepthRotation(target()),
+        InferError::MissingDepth(target()),
+        InferError::DepthLengthMismatch {
+            expected: 4,
+            found: 3,
+        },
+        InferError::MissingRotationAxis {
+            parameter: parameter(),
+        },
+        InferError::NonAffineParent(target()),
+    ]
+}
+
+/// 親の座標系とキャンバス座標の写像のエラー (`world.*`)。
+fn world_errors() -> Vec<WorldError> {
+    vec![
+        WorldError::Evaluate("detail".into()),
+        WorldError::LengthMismatch {
+            points: 2,
+            guesses: 1,
+        },
+        WorldError::Singular { index: 0 },
+        WorldError::NotConverged {
+            index: 0,
+            residual: 0.5,
+        },
+    ]
+}
+
+/// 法線マップの生成のエラー (`normal_map.*`)。
+fn normal_map_errors() -> Vec<NormalMapError> {
+    vec![
+        NormalMapError::EmptyImage {
+            width: 0,
+            height: 4,
+        },
+        NormalMapError::SizeMismatch {
+            width: 2,
+            height: 2,
+            expected: 4,
+            found: 3,
+        },
+        NormalMapError::InvalidOption {
+            field: "strength",
+            value: -1.0,
+        },
+        NormalMapError::GridTooLarge {
+            width: 1e6,
+            height: 1e6,
+            max: 1 << 24,
+        },
+    ]
+}
+
+/// モジュールの合成のエラー (`compose.*`)。省けるもの (`actual`) は、ある見本と無い見本の両方。
+fn compose_errors() -> Vec<ComposeError> {
+    let module = || "hat".to_owned();
+    vec![
+        ComposeError::InvalidModuleName("a/b".into()),
+        ComposeError::DuplicateModule(module()),
+        ComposeError::UnknownSlot {
+            module: module(),
+            slot: "head".into(),
+        },
+        ComposeError::SlotOccupied {
+            slot: "head".into(),
+            first: "cap".into(),
+            second: module(),
+        },
+        ComposeError::AvatarLevel {
+            module: module(),
+            required: 2,
+            actual: None,
+        },
+        ComposeError::AvatarLevel {
+            module: module(),
+            required: 2,
+            actual: Some(1),
+        },
+        ComposeError::MissingSlot {
+            module: module(),
+            slot: "head".into(),
+        },
+        ComposeError::MissingParameter {
+            module: module(),
+            parameter: "AngleX".into(),
+        },
+        ComposeError::ParameterNotExposed {
+            module: module(),
+            slot: "head".into(),
+            parameter: "Blush".into(),
+        },
+        ComposeError::UnknownMask {
+            module: module(),
+            mesh: "Brim".into(),
+            mask: "Face".into(),
+        },
+        ComposeError::TextureOutOfRange {
+            module: module(),
+            mesh: "Brim".into(),
+            texture: 3,
+        },
+        ComposeError::UnknownCollider {
+            module: module(),
+            rig: "Ribbon".into(),
+            collider: "Head".into(),
+        },
+        ComposeError::PoseNotExposed {
+            module: module(),
+            slot: "head".into(),
+            part: "ArmL".into(),
+        },
+        ComposeError::Invalid(vec![ValidationError::DuplicateId {
+            kind: "mesh",
+            id: id(),
+        }]),
+    ]
 }

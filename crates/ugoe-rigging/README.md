@@ -13,6 +13,8 @@
   形に加えず向きだけを受けるテクスチャ (顔の上の眼鏡) も扱う `group_bulge_normal_maps_oriented` もある。
   まとまりの格子の升目の数は `MAX_GROUP_CELLS` までで、超えれば確保の前に `NormalMapError::GridTooLarge` を返す。
   高さの場 (`HeightField`) は `ugoe-ai` の深度推定からの法線マップでも使う ([docs/ai-integration.md#法線マップの生成](../../docs/ai-integration.md#法線マップの生成))
+- エラー (`InferError`・`WorldError`・`NormalMapError`) は機械が読む種類 `code()` (バリアントの名前の `snake_case`) を持つ。
+  エディタはこれを翻訳のコード (`infer.*` など) に使うので、値を変えない (T0163)
 
 目視確認用に、深度からの回転とミラーで振り向きの顔を作る例がある
 (`cargo run -p ugoe-rigging --example depth_face -- <out.json>` のあと `ugoe render <out.json> --param AngleX=30 -o <png>`)。

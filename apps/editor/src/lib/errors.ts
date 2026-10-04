@@ -46,17 +46,34 @@ function argText(name: string, value: MessageArg): MessageArg {
   return hasTranslation("editor", key) ? lookup(key) : value;
 }
 
+/** 一覧の中身 (`items`) の訳を `; ` でつないだ文。全件 (`count`) が項目より多ければ残りの件数を足す。 */
+function itemsText(message: Message, items: Message[]): string {
+  const texts = items.map(messageText);
+  const count = message.args.count;
+  const rest = typeof count === "number" ? count - items.length : 0;
+  if (rest > 0) texts.push(t("errorListMore", { count: rest }));
+  return texts.join("; ");
+}
+
 /**
- * `Message` (エラー・警告・問題) の今の言語の文。原因 (`cause`) があれば、原因の文を後ろに付ける。
- * カタログに無いコードは英語の文 (`message`。原因の文も含む) をそのまま出す。
+ * `Message` (エラー・警告・問題) の今の言語の文。カタログに無いコードは英語の文 (`message`。原因の文も含む) をそのまま出す。
+ *
+ * - 原因 (`cause`) は、引数 `detail` を持つコードなら原因の訳を `detail` の代わりに差し込み、そうでなければ原因の文を後ろに付ける。
+ * - 一覧の中身 (`items`) は、各項目の訳を `details` の代わりに差し込む (T0163)。
  */
 export function messageText(message: Message): string {
   if (!translatable(message.code)) return message.message;
-  const args = Object.fromEntries(
+  const args: Record<string, MessageArg> = Object.fromEntries(
     Object.entries(message.args).map(([name, value]) => [name, argText(name, value)]),
   );
+  let cause = message.cause;
+  if (cause && "detail" in args) {
+    args.detail = messageText(cause);
+    cause = undefined;
+  }
+  if (message.items && message.items.length > 0 && "details" in args) {
+    args.details = itemsText(message, message.items);
+  }
   const text = lookup(`errors.${message.code}`, args);
-  return message.cause
-    ? t("errorCause", { message: text, cause: messageText(message.cause) })
-    : text;
+  return cause ? t("errorCause", { message: text, cause: messageText(cause) }) : text;
 }

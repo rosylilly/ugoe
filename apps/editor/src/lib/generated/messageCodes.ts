@@ -169,6 +169,63 @@ export const messageCodes: Record<string, readonly string[]> = {
   "compile.unsupported": [
     "feature"
   ],
+  "compose.avatar_level": [
+    "actual",
+    "module",
+    "required"
+  ],
+  "compose.duplicate_module": [
+    "module"
+  ],
+  "compose.invalid_composition": [
+    "count",
+    "details"
+  ],
+  "compose.invalid_module_name": [
+    "module"
+  ],
+  "compose.missing_parameter": [
+    "module",
+    "parameter"
+  ],
+  "compose.missing_slot": [
+    "module",
+    "slot"
+  ],
+  "compose.parameter_not_exposed": [
+    "module",
+    "parameter",
+    "slot"
+  ],
+  "compose.pose_not_exposed": [
+    "module",
+    "part",
+    "slot"
+  ],
+  "compose.slot_occupied": [
+    "attached",
+    "module",
+    "slot"
+  ],
+  "compose.texture_out_of_range": [
+    "mesh",
+    "module",
+    "texture"
+  ],
+  "compose.unknown_collider": [
+    "collider",
+    "module",
+    "rig"
+  ],
+  "compose.unknown_mask": [
+    "mask",
+    "mesh",
+    "module"
+  ],
+  "compose.unknown_slot": [
+    "module",
+    "slot"
+  ],
   "edit.automesh_failed": [
     "detail",
     "id"
@@ -437,6 +494,96 @@ export const messageCodes: Record<string, readonly string[]> = {
     "found",
     "supported"
   ],
+  "infer.base_not_authored": [
+    "cell"
+  ],
+  "infer.depth_length_mismatch": [
+    "expected",
+    "found"
+  ],
+  "infer.duplicate_axis": [
+    "parameter"
+  ],
+  "infer.grid_size_mismatch": [
+    "expected",
+    "found"
+  ],
+  "infer.grid_too_large": [],
+  "infer.incompatible_mirror": [
+    "from",
+    "to"
+  ],
+  "infer.keys_not_ascending": [
+    "keys",
+    "parameter"
+  ],
+  "infer.mirror_axis_mismatch": [
+    "parameter"
+  ],
+  "infer.missing_depth": [
+    "target"
+  ],
+  "infer.missing_mirror_key": [
+    "key",
+    "parameter"
+  ],
+  "infer.missing_neutral_key": [
+    "default",
+    "parameter"
+  ],
+  "infer.missing_rotation_axis": [
+    "parameter"
+  ],
+  "infer.non_affine_parent": [
+    "target"
+  ],
+  "infer.non_finite_key": [
+    "key",
+    "parameter"
+  ],
+  "infer.not_depth_rotation": [
+    "target"
+  ],
+  "infer.not_mirror_pair": [
+    "from",
+    "to"
+  ],
+  "infer.origins_length_mismatch": [
+    "expected",
+    "found"
+  ],
+  "infer.parent_cycle": [
+    "deformer"
+  ],
+  "infer.parent_transform": [],
+  "infer.shape_mismatch": [
+    "cell",
+    "expected",
+    "found"
+  ],
+  "infer.too_many_axes": [
+    "axes",
+    "max"
+  ],
+  "infer.unknown_parameter": [
+    "parameter"
+  ],
+  "infer.unknown_parent": [
+    "deformer"
+  ],
+  "infer.unknown_target": [
+    "target"
+  ],
+  "infer.unmatched_vertices": [
+    "tolerance",
+    "vertices"
+  ],
+  "infer.unsupported_parent": [
+    "deformer"
+  ],
+  "infer.unsupported_target": [
+    "target"
+  ],
   "inference.mirror_failed": [
     "detail",
     "source",
@@ -517,6 +664,25 @@ export const messageCodes: Record<string, readonly string[]> = {
   ],
   "module.unknown_slot": [
     "slot"
+  ],
+  "normal_map.empty_image": [
+    "height",
+    "width"
+  ],
+  "normal_map.grid_too_large": [
+    "height",
+    "max",
+    "width"
+  ],
+  "normal_map.invalid_option": [
+    "field",
+    "value"
+  ],
+  "normal_map.size_mismatch": [
+    "expected",
+    "found",
+    "height",
+    "width"
   ],
   "overflow.unknown_parameter": [
     "parameter",
@@ -674,6 +840,160 @@ export const messageCodes: Record<string, readonly string[]> = {
     "kind"
   ],
   "space.singular": [
+    "index"
+  ],
+  "validation.asymmetric_mirror": [
+    "back",
+    "id",
+    "kind",
+    "mirror"
+  ],
+  "validation.deformer_kind_mismatch": [
+    "deformer",
+    "expected",
+    "field",
+    "id",
+    "kind"
+  ],
+  "validation.depth_count": [
+    "actual",
+    "expected",
+    "id",
+    "kind"
+  ],
+  "validation.duplicate_binding": [
+    "id",
+    "kind",
+    "parameter"
+  ],
+  "validation.duplicate_id": [
+    "id",
+    "kind"
+  ],
+  "validation.duplicate_pose_part": [
+    "part"
+  ],
+  "validation.empty_keys": [
+    "id",
+    "kind",
+    "parameter"
+  ],
+  "validation.empty_warp_grid": [
+    "cols",
+    "id",
+    "rows"
+  ],
+  "validation.glue_vertex_out_of_range": [
+    "id",
+    "index",
+    "mesh",
+    "vertices"
+  ],
+  "validation.index_out_of_range": [
+    "id",
+    "index",
+    "vertices"
+  ],
+  "validation.indices_not_triangles": [
+    "id",
+    "len"
+  ],
+  "validation.invalid_blend_shape": [
+    "id",
+    "index",
+    "kind",
+    "reason"
+  ],
+  "validation.invalid_module_name": [
+    "name"
+  ],
+  "validation.invalid_value": [
+    "expected",
+    "field",
+    "value"
+  ],
+  "validation.keyform_count": [
+    "actual",
+    "expected",
+    "id",
+    "kind"
+  ],
+  "validation.keys_not_ascending": [
+    "id",
+    "keys",
+    "kind",
+    "parameter"
+  ],
+  "validation.mask_cycle": [
+    "cycle"
+  ],
+  "validation.origin_count": [
+    "actual",
+    "expected",
+    "id",
+    "kind"
+  ],
+  "validation.parameter_kind_mismatch": [
+    "expected",
+    "id",
+    "kind",
+    "parameter"
+  ],
+  "validation.parameter_range": [
+    "default",
+    "id",
+    "max",
+    "min"
+  ],
+  "validation.parent_cycle": [
+    "cycle",
+    "kind"
+  ],
+  "validation.texture_out_of_range": [
+    "id",
+    "texture",
+    "textures"
+  ],
+  "validation.unbound_inference_parameter": [
+    "id",
+    "kind",
+    "parameter"
+  ],
+  "validation.unknown_reference": [
+    "field",
+    "id",
+    "kind",
+    "target",
+    "target_kind"
+  ],
+  "validation.vertex_count": [
+    "actual",
+    "expected",
+    "id"
+  ],
+  "validation.warp_point_count": [
+    "actual",
+    "expected",
+    "id"
+  ],
+  "validation.weight_count": [
+    "actual",
+    "expected",
+    "output",
+    "rig"
+  ],
+  "world.evaluate": [
+    "detail"
+  ],
+  "world.length_mismatch": [
+    "guesses",
+    "points"
+  ],
+  "world.not_converged": [
+    "index",
+    "residual"
+  ],
+  "world.singular": [
     "index"
   ]
 };

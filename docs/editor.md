@@ -1902,11 +1902,14 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 - `args` は文に差し込む値 (文字列か数値)。パス・名前・ID はそのまま渡し、単位や書式は画面で付けます。NaN と無限大は文字列 (`NaN`・`inf`) です。
 - `message` は英語の文で、エラーの `Display` と同じです。ログ・MCP・CLI・開発者向けの表示で使い、**文言は前と変えていません** (MCP と CLI は今も文を返す)。
 - `cause` (省略できる) は原因になったエラーです (`proposal.rejected` の中の `edit.*`、`edit.invalid_cell` の中の `cell.*` など)。`message` は原因の文も含みます。
+- `items` (省略できる) は一覧の中身です。検証のエラーの列 (引数 `count`・`details` を持つコード) で、`details` に並べたのと同じ先頭の 10 件の
+  `validation.*` を入れます (T0163)。
 - **IPC コマンドの失敗:** Tauri のコマンドは失敗すると `Message` で reject します (`ipc.ts` の `IpcError`)。画面は `src/lib/errors.ts` の `errorText`・`errorCode` で読みます。
 - **画面の文 (T0663):** `errorText` (`Message` には `messageText`) は、カタログ (`apps/editor/locales/<言語>.json`) の `errors.<code>` を `args` で引きます。
   カタログに無いコード (新しいバックエンドと古い画面の組み合わせなど) は `message` を出します。値が英語の識別子になる引数 (`kind`・`what`・`expected`・
   `actual`・`target_kind`。`mesh`・`parameter` など) は、`errorArgs.<値>` があれば訳してから差し込みます。`cause` があれば `errorCause` の形
-  (「… 原因: …」) で原因の文を後ろに付けます。`count` を持つコードは複数形のキー (`_one`・`_other`) です。
+  (「… 原因: …」) で原因の文を後ろに付けます。ただし引数 `detail` を持つコードは、原因の訳を `detail` の代わりに差し込み、後ろには付けません。
+  `items` があれば、各項目の訳を `; ` でつないで `details` の代わりに差し込みます (`count` が項目より多ければ `errorListMore` で残りの件数を足す)。`count` を持つコードは複数形のキー (`_one`・`_other`) です。
   **コードを足したら、`en.json` と `ja.json` の `errors` にも足します** (無くても `message` が出るので壊れはしない)。
 - **カタログの検査 (T0681):** コードと引数の名前の一覧は、各コードの見本の値 (editor-core は `src/message_catalog.rs`、
   エディタのバックエンドは `src-tauri/src/error.rs` の `message_samples`) から `just gen` で `src/lib/generated/messageCodes.ts` に
@@ -1916,8 +1919,13 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
   `en.json` と `ja.json` の `errors` にあり、文の引数 (`{{name}}`) がそのコードの引数の名前に含まれることを確かめます。
   カタログは MIT のクレートからは読みません。
 - **警告・問題:** `PsdImportWarning`・`RederiveWarning` は `code`・`args`・`message` のフィールドを持ちます。`ModuleProblem` は `Message` のフィールドを平らに含みます (`kind` は直し方を選ぶ分類、`code` は元のエラー)。`AvatarCheck` の `errors`・`warnings`、`.ugoemod` の書き出しの `warnings`、エージェントの接続の状態の `error` は `Message` です。
-- **実装:** editor-core のエラーは `ugoe_editor_core::Coded` を実装し (`src/message_codes.rs`)、`?` で `Message` に変わります。Tauri だけで起きるエラーは `src-tauri/src/error.rs` の `EditorError` にまとめます。ほかのクレートのエラー (検証・合成・推定・自動メッシュ・PSD の読み込み・AI のプロバイダなど) を含むものは、いまはその英語の文を `detail` (検証の一覧は `count` と `details`。`details` は先頭の 10 件 (`DESCRIBED_ERRORS_MAX`) までを `; ` でつなぎ、残りは `; and {残り} more` にまとめる) で渡します。
-- 自由な文の引数 (`reason`・`detail`・`details`) は英語のままです。訳すには、その元のエラーにもコードを付ける必要があります (後続)。
+- **実装:** editor-core のエラーは `ugoe_editor_core::Coded` を実装し (`src/message_codes.rs`)、`?` で `Message` に変わります。Tauri だけで起きるエラーは `src-tauri/src/error.rs` の `EditorError` にまとめます。ほかのクレートのエラー (検証・合成・推定・自動メッシュ・PSD の読み込み・AI のプロバイダなど) を含むものは、その英語の文を `detail` (検証の一覧は `count` と `details`。`details` は先頭の 10 件 (`DESCRIBED_ERRORS_MAX`) までを `; ` でつなぎ、残りは `; and {残り} more` にまとめる) で渡します。
+- **元のエラーのコード (T0163):** 検証 (`ValidationError::code`)・推定 (`InferError::code`・`WorldError::code`)・法線マップ (`NormalMapError::code`) は
+  元のクレートが機械の読むコードを持ち、editor-core はそれに領域の名前を付けたコード (`validation.*`・`infer.*`・`world.*`・`normal_map.*`) で
+  `cause` (検証の一覧は `items`) に載せます。合成 (`ComposeError`) は `ugoe-runtime` にコードが無いので、editor-core が SDK の `DressUpError::code` と
+  同じ名前で `compose.*` を付けます。`detail`・`details` の英語の文は互換のために残します (MCP・CLI・古い画面)。
+- 自由な文の引数のうち、editor-core が自分で組む理由 (`edit.invalid_physics`・`edit.invalid_motion`・`edit.deformer_edit_failed` などの `reason`)、
+  自動メッシュ (`edit.automesh_failed`・`psd.automesh_failed`)・PSD の読み込み・AI のプロバイダの `detail` はまだ英語のままです。
 
 ### コードの一覧
 
@@ -1941,8 +1949,8 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `edit.too_few_vertices` | `id`・`remaining` |
 | `edit.invalid_draw_order` | `id`・`draw_order` |
 | `edit.keyform_kind_mismatch` | `kind`・`id`・`expected`・`actual` |
-| `edit.invalid_model` | `count`・`details` |
-| `edit.inference_failed` | `target`・`detail` |
+| `edit.invalid_model` | `count`・`details` (一覧の中身 `items` は `validation.*`) |
+| `edit.inference_failed` | `target`・`detail` (原因は `infer.*`) |
 | `edit.unsupported_inference` / `edit.mirror_pair_not_supported` | `target` |
 | `edit.unsupported_interpolation` | `target`・`interpolation` (JSON の名前。`linear`・`smooth`・未知の値は `unknown`) |
 | `edit.deformer_edit_failed` / `edit.invalid_physics` / `edit.invalid_avatar_profile` / `edit.module_shape` | `reason` |
@@ -1988,7 +1996,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `project.invalid_module` | `count`・`details` |
 | `module.invalid_name` | `name` |
 | `module.unknown_slot` | `slot` |
-| `module.compose_failed` | `detail` |
+| `module.compose_failed` | `detail` (原因は `compose.*`) |
 | `module.collider_needs_base_physics` | `rig`・`collider`・`slot` |
 | `module.read_only_base` | `element` |
 | `module.shape` | `reason` |
@@ -2029,7 +2037,8 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `proposal.not_regenerable` | `id` |
 | `lighting.texture_not_found` / `lighting.unreadable_texture` | `texture` |
 | `lighting.unreadable_normal_map` / `lighting.normal_maps_model_only` / `lighting.no_group_chosen` | なし |
-| `lighting.generate_failed` / `lighting.invalid_settings` | `detail` |
+| `lighting.generate_failed` | `detail` (原因は `normal_map.*`) |
+| `lighting.invalid_settings` | `detail` |
 | `lighting.invalid_preview` | `reason` |
 | `lighting.unknown_group` / `lighting.empty_group` | `group` |
 | `lighting.image_not_found` | `name` |
@@ -2062,7 +2071,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 
 | コード | 引数 |
 | --- | --- |
-| `inference.mirror_failed` | `target`・`source`・`detail` |
+| `inference.mirror_failed` | `target`・`source`・`detail` (原因は警告の `cause` の `infer.*`) |
 | `avatar.missing_profile` | なし |
 | `avatar.newer_profile_version` | `version`・`supported` |
 | `avatar.invalid_level` | `level`・`max` |
@@ -2076,6 +2085,69 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `avatar.duplicate_hit_area_name` | `name` |
 | `avatar.invalid_value` | `field`・`value`・`expected` |
 | `avatar.internal_tracking_target` | `field`・`id` |
+
+**元のエラー (T0163。原因 `cause` と一覧の中身 `items` に載る)**
+
+`count`・`details` を持つコード (`edit.invalid_model`・`project.invalid_module`・`format.invalid_*`・`compile.invalid_model`・
+`compose.invalid_composition`) の `items` は `validation.*` です。数の並び (`keys`・`vertices`) と ID の並び (`cycle`) は `, ` でつないだ文です。
+
+| コード | 引数 |
+| --- | --- |
+| `validation.duplicate_id` | `kind`・`id` |
+| `validation.keyform_count` / `validation.origin_count` / `validation.depth_count` | `kind`・`id`・`expected`・`actual` |
+| `validation.keys_not_ascending` | `kind`・`id`・`parameter`・`keys` |
+| `validation.empty_keys` / `validation.duplicate_binding` / `validation.unbound_inference_parameter` | `kind`・`id`・`parameter` |
+| `validation.indices_not_triangles` | `id`・`len` |
+| `validation.index_out_of_range` | `id`・`index`・`vertices` |
+| `validation.vertex_count` / `validation.warp_point_count` | `id`・`expected`・`actual` |
+| `validation.empty_warp_grid` | `id`・`rows`・`cols` |
+| `validation.unknown_reference` | `kind`・`id`・`field`・`target_kind`・`target` |
+| `validation.texture_out_of_range` | `id`・`texture`・`textures` |
+| `validation.glue_vertex_out_of_range` | `id`・`mesh`・`index`・`vertices` |
+| `validation.parent_cycle` | `kind`・`cycle` |
+| `validation.mask_cycle` | `cycle` |
+| `validation.parameter_range` | `id`・`min`・`default`・`max` |
+| `validation.duplicate_pose_part` | `part` |
+| `validation.invalid_module_name` | `name` |
+| `validation.asymmetric_mirror` | `kind`・`id`・`mirror`・`back` (指し返す先。無ければ無い) |
+| `validation.deformer_kind_mismatch` | `kind`・`id`・`field`・`deformer`・`expected` |
+| `validation.weight_count` | `rig`・`output`・`expected`・`actual` |
+| `validation.parameter_kind_mismatch` | `kind`・`id`・`parameter`・`expected` (`normal`・`blend_shape`) |
+| `validation.invalid_blend_shape` | `kind`・`id`・`index`・`reason` (英語の短い文) |
+| `validation.invalid_value` | `field`・`value`・`expected` (`finite`・`finite and >= 0` などの条件) |
+| `infer.unknown_parameter` / `infer.duplicate_axis` / `infer.mirror_axis_mismatch` / `infer.missing_rotation_axis` | `parameter` |
+| `infer.missing_neutral_key` | `parameter`・`default` |
+| `infer.non_finite_key` / `infer.missing_mirror_key` | `parameter`・`key` |
+| `infer.keys_not_ascending` | `parameter`・`keys` |
+| `infer.too_many_axes` | `axes`・`max` |
+| `infer.grid_too_large` | なし |
+| `infer.grid_size_mismatch` / `infer.origins_length_mismatch` / `infer.depth_length_mismatch` | `expected`・`found` |
+| `infer.base_not_authored` | `cell` |
+| `infer.shape_mismatch` | `cell`・`expected`・`found` |
+| `infer.unknown_target` / `infer.unsupported_target` / `infer.not_depth_rotation` / `infer.missing_depth` / `infer.non_affine_parent` | `target` |
+| `infer.unknown_parent` / `infer.unsupported_parent` / `infer.parent_cycle` | `deformer` |
+| `infer.not_mirror_pair` / `infer.incompatible_mirror` | `from`・`to` |
+| `infer.unmatched_vertices` | `vertices`・`tolerance` |
+| `infer.parent_transform` | なし (原因は `world.*`) |
+| `world.evaluate` | `detail` |
+| `world.length_mismatch` | `points`・`guesses` |
+| `world.singular` | `index` |
+| `world.not_converged` | `index`・`residual` |
+| `normal_map.empty_image` | `width`・`height` |
+| `normal_map.size_mismatch` | `width`・`height`・`expected`・`found` |
+| `normal_map.invalid_option` | `field`・`value` |
+| `normal_map.grid_too_large` | `width`・`height` (升目の数)・`max` |
+| `compose.invalid_module_name` / `compose.duplicate_module` | `module` |
+| `compose.unknown_slot` / `compose.missing_slot` | `module`・`slot` |
+| `compose.slot_occupied` | `slot`・`module` (付けようとしたモジュール)・`attached` (付いていたモジュール) |
+| `compose.avatar_level` | `module`・`required`・`actual` (本体のレベル。プロファイルが無ければ無い) |
+| `compose.missing_parameter` | `module`・`parameter` |
+| `compose.parameter_not_exposed` | `module`・`slot`・`parameter` |
+| `compose.unknown_mask` | `module`・`mesh`・`mask` |
+| `compose.texture_out_of_range` | `module`・`mesh`・`texture` |
+| `compose.unknown_collider` | `module`・`rig`・`collider` |
+| `compose.pose_not_exposed` | `module`・`slot`・`part` |
+| `compose.invalid_composition` | `count`・`details` |
 
 **エディタのバックエンド (`EditorError`。`src-tauri/src/error.rs`)**
 

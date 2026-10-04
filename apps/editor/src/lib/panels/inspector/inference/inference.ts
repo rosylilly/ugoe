@@ -1,5 +1,7 @@
 // 推定の操作と由来の表示の補助 (docs/editor.md#推定とミラー)。DOM や IPC に依存しない純粋な関数だけを置く
 // (inference.test.ts で検査する)。コマンドは ugoe_editor_core::Command の JSON を組み立てるだけで、送るのは呼び出し側。
+
+import { messageText } from "../../../errors";
 import type {
   Command,
   KeyformInference,
@@ -479,7 +481,8 @@ export function describeWarning(warning: RederiveWarning): string {
   return t("inspector.rederive.warning", {
     target: targetLabel(warning.target),
     source: targetLabel(warning.source),
-    detail: warning.message,
+    // 失敗の理由のコード (`cause`) があれば訳す (T0163)。
+    detail: warning.cause ? messageText(warning.cause) : warning.message,
   });
 }
 

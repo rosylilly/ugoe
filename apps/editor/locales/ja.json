@@ -1809,6 +1809,7 @@
     "cancelled": "取り消しました。"
   },
   "errorCause": "{{message}} 原因: {{cause}}",
+  "errorListMore": "ほか {{count}} 件",
   "errors": {
     "edit": {
       "duplicate_id": "{{kind}} {{id}} はすでにあります。",
@@ -2067,6 +2068,91 @@
       "bridge_start_failed": "エージェントの接続を始められません ({{detail}})。",
       "bundle_write_failed": ".mcpb のファイルを書けません ({{detail}})。",
       "open_failed": "{{path}} を開けません ({{detail}})。"
+    },
+    "validation": {
+      "duplicate_id": "{{kind}} の ID {{id}} が重複しています",
+      "keyform_count": "{{kind}} {{id}} のキーフォームは {{actual}} 個ですが、格子には {{expected}} 個が要ります",
+      "keys_not_ascending": "{{kind}} {{id}} のパラメータ {{parameter}} のキーが小さい順に並んでいません ({{keys}})",
+      "empty_keys": "{{kind}} {{id}} のパラメータ {{parameter}} にキーがありません",
+      "duplicate_binding": "{{kind}} {{id}} にパラメータ {{parameter}} が 2 回以上結び付いています",
+      "indices_not_triangles": "メッシュ {{id}} の三角形の添字の数 ({{len}}) が 3 の倍数ではありません",
+      "index_out_of_range": "メッシュ {{id}} が頂点 {{index}} を指していますが、頂点は {{vertices}} 個です",
+      "vertex_count": "メッシュ {{id}} のキーフォームの頂点は {{actual}} 個ですが、メッシュの頂点は {{expected}} 個です",
+      "warp_point_count": "ワープデフォーマ {{id}} のキーフォームの制御点は {{actual}} 個ですが、格子には {{expected}} 個が要ります",
+      "empty_warp_grid": "ワープデフォーマ {{id}} の格子は 1 行 1 列以上にしてください (行 {{rows}}、列 {{cols}})",
+      "unknown_reference": "{{kind}} {{id}} の {{field}} が指す {{target_kind}} {{target}} がありません",
+      "texture_out_of_range": "メッシュ {{id}} がテクスチャ {{texture}} を使っていますが、テクスチャは {{textures}} 枚です",
+      "glue_vertex_out_of_range": "グルー {{id}} がメッシュ {{mesh}} の頂点 {{index}} を使っていますが、頂点は {{vertices}} 個です",
+      "parent_cycle": "{{kind}} の親が循環しています ({{cycle}})",
+      "mask_cycle": "メッシュのマスクが循環しています ({{cycle}})",
+      "parameter_range": "パラメータ {{id}} は 最小 ≤ 既定 ≤ 最大 を満たす必要があります (最小 {{min}}、既定 {{default}}、最大 {{max}})",
+      "duplicate_pose_part": "パーツ {{part}} がポーズのグループに 2 回以上現れます",
+      "invalid_module_name": "モジュールの名前 {{name}} は、空でなく、/ を含まず、# で始まらない名前にしてください",
+      "origin_count": "{{kind}} {{id}} のセルの由来は {{actual}} 個ですが、キーフォームは {{expected}} 個です",
+      "unbound_inference_parameter": "{{kind}} {{id}} の推定が使うパラメータ {{parameter}} が格子の軸にありません",
+      "asymmetric_mirror": "{{kind}} {{id}} の左右の対は {{mirror}} ですが、{{mirror}} の対が {{id}} を指していません",
+      "depth_count": "{{kind}} {{id}} の深度の値は {{actual}} 個ですが、{{expected}} 個が要ります",
+      "deformer_kind_mismatch": "{{kind}} {{id}} の {{field}} が指すデフォーマ {{deformer}} は {{expected}} デフォーマではありません",
+      "weight_count": "物理のリグ {{rig}} の出力 {{output}} の重みは {{actual}} 個ですが、{{expected}} 個が要ります",
+      "parameter_kind_mismatch": "{{kind}} {{id}} のパラメータ {{parameter}} は種類が {{expected}} である必要があります",
+      "invalid_blend_shape": "{{kind}} {{id}} のブレンドシェイプの格子 {{index}} が正しくありません ({{reason}})",
+      "invalid_value": "{{field}} の値 {{value}} は {{expected}} である必要があります"
+    },
+    "infer": {
+      "unknown_parameter": "軸のパラメータ {{parameter}} がモデルにありません",
+      "missing_neutral_key": "軸 {{parameter}} に既定値 {{default}} のキーがありません",
+      "duplicate_axis": "パラメータ {{parameter}} が 2 本以上の軸に結び付いています",
+      "non_finite_key": "軸 {{parameter}} に有限の数でないキー ({{key}}) があります",
+      "keys_not_ascending": "軸 {{parameter}} のキーが小さい順に並んでいません ({{keys}})",
+      "too_many_axes": "格子の軸が {{axes}} 本あります。{{max}} 本までです",
+      "grid_too_large": "格子が大きすぎます",
+      "grid_size_mismatch": "格子のキーフォームは {{found}} 個ですが、{{expected}} 個が要ります",
+      "origins_length_mismatch": "格子のセルの由来は {{found}} 個ですが、キーフォームは {{expected}} 個です",
+      "base_not_authored": "基準のセル {{cell}} は手で作ったセルである必要があります",
+      "shape_mismatch": "セル {{cell}} の点は {{found}} 個ですが、基準のセルは {{expected}} 個です",
+      "unknown_target": "{{target}} がモデルにありません",
+      "unsupported_target": "{{target}} にはこの推定に使える格子がありません",
+      "unknown_parent": "親のデフォーマ {{deformer}} がモデルにありません",
+      "unsupported_parent": "親のデフォーマ {{deformer}} の種類に対応していません",
+      "parent_cycle": "デフォーマの親が {{deformer}} を通って循環しています",
+      "not_mirror_pair": "{{to}} は {{from}} の左右の対ではありません",
+      "incompatible_mirror": "{{from}} から {{to}} へはミラーできません (種類かワープの大きさが違います)",
+      "mirror_axis_mismatch": "軸 {{parameter}} にミラーで対応する軸が相手の格子にありません",
+      "missing_mirror_key": "ミラーに要るキー {{key}} が元の軸 {{parameter}} にありません",
+      "unmatched_vertices": "頂点 {{vertices}} の {{tolerance}} px 以内に、反転した元の頂点がありません",
+      "parent_transform": "親のデフォーマを通して点を写せません",
+      "not_depth_rotation": "{{target}} は深度からの回転の設定になっていません",
+      "missing_depth": "{{target}} に深度がありません",
+      "depth_length_mismatch": "深度の値は {{found}} 個ですが、{{expected}} 個が要ります",
+      "missing_rotation_axis": "回転のパラメータ {{parameter}} が格子の軸にありません",
+      "non_affine_parent": "{{target}} はワープデフォーマの下にあるので、深度から回転できません"
+    },
+    "world": {
+      "evaluate": "親のデフォーマを評価できません ({{detail}})",
+      "length_mismatch": "点は {{points}} 個ですが、初期値は {{guesses}} 個です",
+      "singular": "点 {{index}} の近くで親の変換が潰れています",
+      "not_converged": "点 {{index}} を解けませんでした (残差 {{residual}} px)"
+    },
+    "normal_map": {
+      "empty_image": "画像が空です ({{width}} × {{height}})",
+      "size_mismatch": "{{width}} × {{height}} の画像の値は {{found}} 個ですが、{{expected}} 個が要ります",
+      "invalid_option": "設定 {{field}} = {{value}} は使えません",
+      "grid_too_large": "グループの格子 ({{width}} × {{height}} 升) が上限の {{max}} 升を超えます"
+    },
+    "compose": {
+      "invalid_module_name": "モジュールの名前 {{module}} は、空でなく、/ を含まず、# で始まらない名前にしてください",
+      "duplicate_module": "モジュールの名前 {{module}} が 2 回以上使われています",
+      "unknown_slot": "モジュール {{module}} の取り付け先のスロット {{slot}} が本体のモデルにありません",
+      "slot_occupied": "スロット {{slot}} にはモジュール {{attached}} が付いているので、{{module}} を付けられません",
+      "avatar_level": "モジュール {{module}} には、本体のモデルのアバタープロファイルのレベル {{required}} 以上が要ります",
+      "missing_slot": "モジュール {{module}} が求めるスロット {{slot}} が本体のモデルにありません",
+      "missing_parameter": "モジュール {{module}} が使うパラメータ {{parameter}} が本体のモデルにありません",
+      "parameter_not_exposed": "モジュール {{module}} が使うパラメータ {{parameter}} を、スロット {{slot}} は公開していません",
+      "unknown_mask": "モジュール {{module}} のメッシュ {{mesh}} のマスク {{mask}} は使えません",
+      "texture_out_of_range": "モジュール {{module}} のメッシュ {{mesh}} が使うテクスチャ {{texture}} がモジュールにありません",
+      "unknown_collider": "モジュール {{module}} のリグ {{rig}} が当たる衝突体 {{collider}} は使えません",
+      "pose_not_exposed": "モジュール {{module}} が追従するポーズの要素 {{part}} を、スロット {{slot}} は公開していません",
+      "invalid_composition_other": "合成したモデルが検証を通りません ({{count}} 件: {{details}})"
     }
   },
   "errorArgs": {
@@ -2101,7 +2187,10 @@
     "finite": "有限の数",
     "finite and > 0": "0 より大きい有限の数",
     "character": "キャラクター",
-    "module": "モジュール"
+    "module": "モジュール",
+    "finite and >= 0": "0 以上の有限の数",
+    "between min and max": "最小と最大の間",
+    "normal": "通常"
   },
   "inspector": {
     "title": "インスペクタ",

@@ -102,3 +102,189 @@ pub enum InferError {
     #[error("target {0:?} is under a warp deformer; depth rotation needs an affine parent space")]
     NonAffineParent(KeyformTarget),
 }
+
+impl InferError {
+    /// 機械が読む種類 (`"missing_neutral_key"` など。バリアントの名前の `snake_case`)。
+    /// 補足の値はバリアントのフィールドそのもの。値は組み込み先 (エディタの翻訳など) が照らし合わせるので **変えない**。
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::UnknownParameter { .. } => "unknown_parameter",
+            Self::MissingNeutralKey { .. } => "missing_neutral_key",
+            Self::DuplicateAxis { .. } => "duplicate_axis",
+            Self::NonFiniteKey { .. } => "non_finite_key",
+            Self::KeysNotAscending { .. } => "keys_not_ascending",
+            Self::TooManyAxes { .. } => "too_many_axes",
+            Self::GridTooLarge => "grid_too_large",
+            Self::GridSizeMismatch { .. } => "grid_size_mismatch",
+            Self::OriginsLengthMismatch { .. } => "origins_length_mismatch",
+            Self::BaseNotAuthored { .. } => "base_not_authored",
+            Self::ShapeMismatch { .. } => "shape_mismatch",
+            Self::UnknownTarget(_) => "unknown_target",
+            Self::UnsupportedTarget(_) => "unsupported_target",
+            Self::UnknownParent { .. } => "unknown_parent",
+            Self::UnsupportedParent { .. } => "unsupported_parent",
+            Self::ParentCycle { .. } => "parent_cycle",
+            Self::NotMirrorPair { .. } => "not_mirror_pair",
+            Self::IncompatibleMirror { .. } => "incompatible_mirror",
+            Self::MirrorAxisMismatch { .. } => "mirror_axis_mismatch",
+            Self::MissingMirrorKey { .. } => "missing_mirror_key",
+            Self::UnmatchedVertices { .. } => "unmatched_vertices",
+            Self::ParentTransform(_) => "parent_transform",
+            Self::NotDepthRotation(_) => "not_depth_rotation",
+            Self::MissingDepth(_) => "missing_depth",
+            Self::DepthLengthMismatch { .. } => "depth_length_mismatch",
+            Self::MissingRotationAxis { .. } => "missing_rotation_axis",
+            Self::NonAffineParent(_) => "non_affine_parent",
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn codes_are_fixed() {
+        let parameter = ParamId::new("ParamAngleX");
+        let deformer = DeformerId::new("Face");
+        let target = || KeyformTarget::Mesh("EyeL".into());
+        let cases = [
+            (
+                InferError::UnknownParameter {
+                    parameter: parameter.clone(),
+                },
+                "unknown_parameter",
+            ),
+            (
+                InferError::MissingNeutralKey {
+                    parameter: parameter.clone(),
+                    default: 0.0,
+                },
+                "missing_neutral_key",
+            ),
+            (
+                InferError::DuplicateAxis {
+                    parameter: parameter.clone(),
+                },
+                "duplicate_axis",
+            ),
+            (
+                InferError::NonFiniteKey {
+                    parameter: parameter.clone(),
+                    key: f32::NAN,
+                },
+                "non_finite_key",
+            ),
+            (
+                InferError::KeysNotAscending {
+                    parameter: parameter.clone(),
+                    keys: vec![1.0, 0.0],
+                },
+                "keys_not_ascending",
+            ),
+            (InferError::TooManyAxes { count: 65 }, "too_many_axes"),
+            (InferError::GridTooLarge, "grid_too_large"),
+            (
+                InferError::GridSizeMismatch {
+                    expected: 2,
+                    found: 1,
+                },
+                "grid_size_mismatch",
+            ),
+            (
+                InferError::OriginsLengthMismatch {
+                    expected: 2,
+                    found: 1,
+                },
+                "origins_length_mismatch",
+            ),
+            (InferError::BaseNotAuthored { cell: 0 }, "base_not_authored"),
+            (
+                InferError::ShapeMismatch {
+                    cell: 1,
+                    expected: 4,
+                    found: 3,
+                },
+                "shape_mismatch",
+            ),
+            (InferError::UnknownTarget(target()), "unknown_target"),
+            (
+                InferError::UnsupportedTarget(target()),
+                "unsupported_target",
+            ),
+            (
+                InferError::UnknownParent {
+                    deformer: deformer.clone(),
+                },
+                "unknown_parent",
+            ),
+            (
+                InferError::UnsupportedParent {
+                    deformer: deformer.clone(),
+                },
+                "unsupported_parent",
+            ),
+            (
+                InferError::ParentCycle {
+                    deformer: deformer.clone(),
+                },
+                "parent_cycle",
+            ),
+            (
+                InferError::NotMirrorPair {
+                    from: target(),
+                    to: target(),
+                },
+                "not_mirror_pair",
+            ),
+            (
+                InferError::IncompatibleMirror {
+                    from: target(),
+                    to: target(),
+                },
+                "incompatible_mirror",
+            ),
+            (
+                InferError::MirrorAxisMismatch {
+                    parameter: parameter.clone(),
+                },
+                "mirror_axis_mismatch",
+            ),
+            (
+                InferError::MissingMirrorKey {
+                    parameter: parameter.clone(),
+                    key: 1.0,
+                },
+                "missing_mirror_key",
+            ),
+            (
+                InferError::UnmatchedVertices {
+                    vertices: vec![0],
+                    tolerance: 1.0,
+                },
+                "unmatched_vertices",
+            ),
+            (
+                InferError::ParentTransform(WorldError::Singular { index: 0 }),
+                "parent_transform",
+            ),
+            (InferError::NotDepthRotation(target()), "not_depth_rotation"),
+            (InferError::MissingDepth(target()), "missing_depth"),
+            (
+                InferError::DepthLengthMismatch {
+                    expected: 4,
+                    found: 3,
+                },
+                "depth_length_mismatch",
+            ),
+            (
+                InferError::MissingRotationAxis { parameter },
+                "missing_rotation_axis",
+            ),
+            (InferError::NonAffineParent(target()), "non_affine_parent"),
+        ];
+        for (error, code) in cases {
+            assert_eq!(error.code(), code, "{error:?}");
+        }
+    }
+}

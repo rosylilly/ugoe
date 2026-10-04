@@ -345,6 +345,20 @@ ARKit のブレンドシェイプ (52 種) のように、互いに独立した�
 - 文は人が読むためのもので、安定した値として扱わない。機械はエラーの列そのもの (`FormatError::validation_errors` など) を読む
 - `ugoe validate` (CLI) は上限なしにすべてのエラーを 1 行ずつ `error: ...` で書き、最後に件数だけを書く (CLI の README)
 
+### 検証エラーのコード
+
+`ValidationError::code()` は機械が読む種類を返します (T0163)。値はバリアントの名前の `snake_case`
+(`duplicate_id`・`keyform_count`・`keys_not_ascending`・`empty_keys`・`duplicate_binding`・`indices_not_triangles`・
+`index_out_of_range`・`vertex_count`・`warp_point_count`・`empty_warp_grid`・`unknown_reference`・`texture_out_of_range`・
+`glue_vertex_out_of_range`・`parent_cycle`・`mask_cycle`・`parameter_range`・`duplicate_pose_part`・`invalid_module_name`・
+`origin_count`・`unbound_inference_parameter`・`asymmetric_mirror`・`depth_count`・`deformer_kind_mismatch`・`weight_count`・
+`parameter_kind_mismatch`・`invalid_blend_shape`・`invalid_value`) です。
+
+- 補足の値はバリアントのフィールドそのものです (別の口は設けない)。
+- 文と違い、コードは組み込み先 (エディタの翻訳 `validation.<コード>` など。[editor.md#エラーと警告のコード](../editor.md#エラーと警告のコード)) が
+  照らし合わせるので **名前を変えません**。新しいバリアントには新しいコードを付けます。名前の付け方は SDK の `DressUpError::code`・`LoadWarning::code` と同じです。
+- 公開仕様 (`spec/`) には書きません (Rust の API なので。検証の項目そのものは [Model validation](../../spec/model.md#model-validation))。
+
 ### 数値の検証の方針
 
 モデルと物理の設定の `f32` は、すべて **有限値でなければ検証エラー** (`InvalidValue`) にします (T0141)。

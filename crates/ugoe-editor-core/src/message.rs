@@ -109,6 +109,10 @@ pub struct Message {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub cause: Option<Box<Message>>,
+    /// 一覧の中身 (検証のエラーの列 `validation.*` など)。並べるのは引数 `details` と同じく先頭の
+    /// `DESCRIBED_ERRORS_MAX` 件までで、全件の数は引数 `count`。画面は各項目を訳して `details` の代わりに差し込む。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub items: Vec<Message>,
 }
 
 impl Message {
@@ -119,6 +123,7 @@ impl Message {
             args,
             message: message.into(),
             cause: None,
+            items: Vec::new(),
         }
     }
 }
@@ -144,6 +149,11 @@ pub trait Coded: fmt::Display {
         None
     }
 
+    /// 一覧の中身 ([`Message::items`])。
+    fn items(&self) -> Vec<Message> {
+        Vec::new()
+    }
+
     /// 画面に渡す形にする。
     fn to_message(&self) -> Message {
         Message {
@@ -151,6 +161,7 @@ pub trait Coded: fmt::Display {
             args: self.args(),
             message: self.to_string(),
             cause: self.cause().map(Box::new),
+            items: self.items(),
         }
     }
 }

@@ -1,14 +1,16 @@
 //! エラーのコードと引数 ([`Coded`]) の実装。コードの一覧は `docs/editor.md#エラーと警告のコード`。
 //! **コードは公開の約束なので名前を変えない** (ADR 0029)。新しいバリアントには新しいコードを付ける。
 //!
-//! ほかのクレートのエラー (検証・合成・推定・自動メッシュなど) を含むものは、いまはその英語の文を
-//! `detail` (`details`) の引数で渡す。
+//! ほかのクレートのエラーを含むものは、その英語の文を `detail` (`details`) の引数で渡す。検証・合成・推定・法線マップの
+//! エラーは、それに加えて元のエラーを原因 (`cause`。検証の一覧は `items`) に載せ、画面はそれを訳して `detail`
+//! (`details`) の代わりに差し込む (T0163)。自動メッシュなどはまだ英語の文だけ。
 
 use ugoe_format::{FormatError, ReadLimit};
 use ugoe_model::KeyformInterpolation;
 use ugoe_model::avatar::check::ProfileIssue;
 use ugoe_model::validate::{DESCRIBED_ERRORS_MAX, ValidationError};
-use ugoe_runtime::CompileError;
+use ugoe_rigging::{InferError, KeyformTarget, NormalMapError, WorldError};
+use ugoe_runtime::{CompileError, ComposeError};
 
 use crate::atlas::AtlasError;
 use crate::document::EditError;
@@ -41,6 +43,35 @@ fn validation_args(errors: &[ValidationError]) -> MessageArgs {
         details.push_str(&format!("; and {rest} more"));
     }
     args! { "count" => errors.len(), "details" => details }
+}
+
+/// 検証のエラーの一覧の中身 ([`Message::items`])。`details` と同じく先頭の [`DESCRIBED_ERRORS_MAX`] 件まで。
+fn validation_items(errors: &[ValidationError]) -> Vec<Message> {
+    errors
+        .iter()
+        .take(DESCRIBED_ERRORS_MAX)
+        .map(Coded::to_message)
+        .collect()
+}
+
+/// 数の並びの引数 (`, ` でつなぐ)。
+fn join<T: ToString>(values: &[T]) -> String {
+    values
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// 推定の対象の表記 (``mesh `EyeL` ``。[`crate::command::KeyformTarget`] の表記と同じ)。
+fn target_text(target: &KeyformTarget) -> String {
+    let (kind, id) = match target {
+        KeyformTarget::Part(id) => ("part", id.as_str()),
+        KeyformTarget::Mesh(id) => ("mesh", id.as_str()),
+        KeyformTarget::Deformer(id) => ("deformer", id.as_str()),
+        KeyformTarget::Glue(id) => ("glue", id.as_str()),
+    };
+    format!("{kind} `{id}`")
 }
 
 /// 補間の種類の JSON の名前 (`linear`・`smooth`)。未知の値は `unknown`。
@@ -209,8 +240,17 @@ impl Coded for EditError {
     fn cause(&self) -> Option<Message> {
         match self {
             Self::InvalidCell { error, .. } => Some(error.to_message()),
+            Self::Inference { error, .. } => Some(error.to_message()),
             Self::Module(error) => error.cause(),
             _ => None,
+        }
+    }
+
+    fn items(&self) -> Vec<Message> {
+        match self {
+            Self::Invalid(errors) => validation_items(errors),
+            Self::Module(error) => error.items(),
+            _ => Vec::new(),
         }
     }
 }
@@ -349,6 +389,14 @@ impl Coded for ProjectError {
             _ => None,
         }
     }
+
+    fn items(&self) -> Vec<Message> {
+        match self {
+            Self::InvalidModule(errors) => validation_items(errors),
+            Self::Module(error) => error.items(),
+            _ => Vec::new(),
+        }
+    }
 }
 
 impl Coded for ModuleError {
@@ -377,6 +425,13 @@ impl Coded for ModuleError {
             Self::ReadOnlyBase { element } => args! { "element" => element },
             Self::Shape { reason } => args! { "reason" => reason },
             Self::NotModule => args! {},
+        }
+    }
+
+    fn cause(&self) -> Option<Message> {
+        match self {
+            Self::Compose(error) => Some(error.to_message()),
+            _ => None,
         }
     }
 }
@@ -411,6 +466,13 @@ impl Coded for ExportError {
             Self::Atlas(error) => error.cause(),
             Self::Project(error) => error.cause(),
             _ => None,
+        }
+    }
+
+    fn items(&self) -> Vec<Message> {
+        match self {
+            Self::Project(error) => error.items(),
+            _ => Vec::new(),
         }
     }
 }
@@ -493,6 +555,13 @@ impl Coded for LightingError {
             Self::NormalMapTooLarge { width, height, max } => {
                 args! { "width" => *width, "height" => *height, "max" => *max }
             }
+        }
+    }
+
+    fn cause(&self) -> Option<Message> {
+        match self {
+            Self::Generate(error) => Some(error.to_message()),
+            _ => None,
         }
     }
 }
@@ -602,6 +671,12 @@ impl Coded for FormatError {
             other => args! { "detail" => other.to_string() },
         }
     }
+
+    fn items(&self) -> Vec<Message> {
+        self.validation_errors()
+            .map(validation_items)
+            .unwrap_or_default()
+    }
 }
 
 /// アバタープロファイルの検査の問題 (`avatar.*`。[`crate::avatar::AvatarCheck`])。
@@ -689,6 +764,454 @@ impl Coded for CompileError {
             Self::Invalid(errors) => validation_args(errors),
             Self::UnknownParameter(parameter) => args! { "parameter" => parameter },
             Self::Unsupported(feature) => args! { "feature" => *feature },
+        }
+    }
+
+    fn items(&self) -> Vec<Message> {
+        match self {
+            Self::Invalid(errors) => validation_items(errors),
+            _ => Vec::new(),
+        }
+    }
+}
+
+/// モデルの検証のエラー (`validation.*`)。コードは `validation.` と [`ValidationError::code`] をつないだもの、
+/// 引数はバリアントのフィールド (並びは `, ` でつなぐ)。
+impl Coded for ValidationError {
+    fn code(&self) -> &'static str {
+        match self {
+            Self::DuplicateId { .. } => "validation.duplicate_id",
+            Self::KeyformCount { .. } => "validation.keyform_count",
+            Self::KeysNotAscending { .. } => "validation.keys_not_ascending",
+            Self::EmptyKeys { .. } => "validation.empty_keys",
+            Self::DuplicateBinding { .. } => "validation.duplicate_binding",
+            Self::IndicesNotTriangles { .. } => "validation.indices_not_triangles",
+            Self::IndexOutOfRange { .. } => "validation.index_out_of_range",
+            Self::VertexCount { .. } => "validation.vertex_count",
+            Self::WarpPointCount { .. } => "validation.warp_point_count",
+            Self::EmptyWarpGrid { .. } => "validation.empty_warp_grid",
+            Self::UnknownReference { .. } => "validation.unknown_reference",
+            Self::TextureOutOfRange { .. } => "validation.texture_out_of_range",
+            Self::GlueVertexOutOfRange { .. } => "validation.glue_vertex_out_of_range",
+            Self::ParentCycle { .. } => "validation.parent_cycle",
+            Self::MaskCycle { .. } => "validation.mask_cycle",
+            Self::ParameterRange { .. } => "validation.parameter_range",
+            Self::DuplicatePosePart { .. } => "validation.duplicate_pose_part",
+            Self::InvalidModuleName { .. } => "validation.invalid_module_name",
+            Self::OriginCount { .. } => "validation.origin_count",
+            Self::UnboundInferenceParameter { .. } => "validation.unbound_inference_parameter",
+            Self::AsymmetricMirror { .. } => "validation.asymmetric_mirror",
+            Self::DepthCount { .. } => "validation.depth_count",
+            Self::DeformerKindMismatch { .. } => "validation.deformer_kind_mismatch",
+            Self::WeightCount { .. } => "validation.weight_count",
+            Self::ParameterKindMismatch { .. } => "validation.parameter_kind_mismatch",
+            Self::InvalidBlendShape { .. } => "validation.invalid_blend_shape",
+            Self::InvalidValue { .. } => "validation.invalid_value",
+        }
+    }
+
+    fn args(&self) -> MessageArgs {
+        match self {
+            Self::DuplicateId { kind, id } => args! { "kind" => *kind, "id" => id },
+            Self::KeyformCount {
+                kind,
+                id,
+                expected,
+                actual,
+            }
+            | Self::OriginCount {
+                kind,
+                id,
+                expected,
+                actual,
+            }
+            | Self::DepthCount {
+                kind,
+                id,
+                expected,
+                actual,
+            } => args! {
+                "kind" => *kind,
+                "id" => id,
+                "expected" => *expected,
+                "actual" => *actual,
+            },
+            Self::KeysNotAscending {
+                kind,
+                id,
+                parameter,
+                keys,
+            } => args! {
+                "kind" => *kind,
+                "id" => id,
+                "parameter" => parameter,
+                "keys" => join(keys),
+            },
+            Self::EmptyKeys {
+                kind,
+                id,
+                parameter,
+            }
+            | Self::DuplicateBinding {
+                kind,
+                id,
+                parameter,
+            }
+            | Self::UnboundInferenceParameter {
+                kind,
+                id,
+                parameter,
+            } => args! { "kind" => *kind, "id" => id, "parameter" => parameter },
+            Self::IndicesNotTriangles { id, len } => args! { "id" => id, "len" => *len },
+            Self::IndexOutOfRange {
+                id,
+                index,
+                vertices,
+            } => args! { "id" => id, "index" => *index, "vertices" => *vertices },
+            Self::VertexCount {
+                id,
+                expected,
+                actual,
+            }
+            | Self::WarpPointCount {
+                id,
+                expected,
+                actual,
+            } => args! { "id" => id, "expected" => *expected, "actual" => *actual },
+            Self::EmptyWarpGrid { id, rows, cols } => {
+                args! { "id" => id, "rows" => *rows, "cols" => *cols }
+            }
+            Self::UnknownReference {
+                kind,
+                id,
+                field,
+                target_kind,
+                target,
+            } => args! {
+                "kind" => *kind,
+                "id" => id,
+                "field" => *field,
+                "target_kind" => *target_kind,
+                "target" => target,
+            },
+            Self::TextureOutOfRange {
+                id,
+                texture,
+                textures,
+            } => args! { "id" => id, "texture" => *texture, "textures" => *textures },
+            Self::GlueVertexOutOfRange {
+                id,
+                mesh,
+                index,
+                vertices,
+            } => args! {
+                "id" => id,
+                "mesh" => mesh,
+                "index" => *index,
+                "vertices" => *vertices,
+            },
+            Self::ParentCycle { kind, cycle } => {
+                args! { "kind" => *kind, "cycle" => cycle.join(", ") }
+            }
+            Self::MaskCycle { cycle } => args! { "cycle" => cycle.join(", ") },
+            Self::ParameterRange {
+                id,
+                min,
+                default,
+                max,
+            } => args! { "id" => id, "min" => *min, "default" => *default, "max" => *max },
+            Self::DuplicatePosePart { part } => args! { "part" => part },
+            Self::InvalidModuleName { name } => args! { "name" => name },
+            Self::AsymmetricMirror {
+                kind,
+                id,
+                mirror,
+                back,
+            } => {
+                let mut out = args! { "kind" => *kind, "id" => id, "mirror" => mirror };
+                // 指し返す先が無ければ `back` は渡さない。
+                if let Some(back) = back {
+                    out.extend(args! { "back" => back });
+                }
+                out
+            }
+            Self::DeformerKindMismatch {
+                kind,
+                id,
+                field,
+                deformer,
+                expected,
+            } => args! {
+                "kind" => *kind,
+                "id" => id,
+                "field" => *field,
+                "deformer" => deformer,
+                "expected" => *expected,
+            },
+            Self::WeightCount {
+                rig,
+                output,
+                expected,
+                actual,
+            } => args! {
+                "rig" => rig,
+                "output" => *output,
+                "expected" => *expected,
+                "actual" => *actual,
+            },
+            Self::ParameterKindMismatch {
+                kind,
+                id,
+                parameter,
+                expected,
+            } => args! {
+                "kind" => *kind,
+                "id" => id,
+                "parameter" => parameter,
+                "expected" => *expected,
+            },
+            Self::InvalidBlendShape {
+                kind,
+                id,
+                index,
+                reason,
+            } => args! { "kind" => *kind, "id" => id, "index" => *index, "reason" => *reason },
+            Self::InvalidValue {
+                field,
+                value,
+                expected,
+            } => args! { "field" => field, "value" => *value, "expected" => *expected },
+        }
+    }
+}
+
+/// キーフォームの推定のエラー (`infer.*`。[`InferError::code`])。
+impl Coded for InferError {
+    fn code(&self) -> &'static str {
+        match self {
+            Self::UnknownParameter { .. } => "infer.unknown_parameter",
+            Self::MissingNeutralKey { .. } => "infer.missing_neutral_key",
+            Self::DuplicateAxis { .. } => "infer.duplicate_axis",
+            Self::NonFiniteKey { .. } => "infer.non_finite_key",
+            Self::KeysNotAscending { .. } => "infer.keys_not_ascending",
+            Self::TooManyAxes { .. } => "infer.too_many_axes",
+            Self::GridTooLarge => "infer.grid_too_large",
+            Self::GridSizeMismatch { .. } => "infer.grid_size_mismatch",
+            Self::OriginsLengthMismatch { .. } => "infer.origins_length_mismatch",
+            Self::BaseNotAuthored { .. } => "infer.base_not_authored",
+            Self::ShapeMismatch { .. } => "infer.shape_mismatch",
+            Self::UnknownTarget(_) => "infer.unknown_target",
+            Self::UnsupportedTarget(_) => "infer.unsupported_target",
+            Self::UnknownParent { .. } => "infer.unknown_parent",
+            Self::UnsupportedParent { .. } => "infer.unsupported_parent",
+            Self::ParentCycle { .. } => "infer.parent_cycle",
+            Self::NotMirrorPair { .. } => "infer.not_mirror_pair",
+            Self::IncompatibleMirror { .. } => "infer.incompatible_mirror",
+            Self::MirrorAxisMismatch { .. } => "infer.mirror_axis_mismatch",
+            Self::MissingMirrorKey { .. } => "infer.missing_mirror_key",
+            Self::UnmatchedVertices { .. } => "infer.unmatched_vertices",
+            Self::ParentTransform(_) => "infer.parent_transform",
+            Self::NotDepthRotation(_) => "infer.not_depth_rotation",
+            Self::MissingDepth(_) => "infer.missing_depth",
+            Self::DepthLengthMismatch { .. } => "infer.depth_length_mismatch",
+            Self::MissingRotationAxis { .. } => "infer.missing_rotation_axis",
+            Self::NonAffineParent(_) => "infer.non_affine_parent",
+        }
+    }
+
+    fn args(&self) -> MessageArgs {
+        match self {
+            Self::UnknownParameter { parameter }
+            | Self::DuplicateAxis { parameter }
+            | Self::MirrorAxisMismatch { parameter }
+            | Self::MissingRotationAxis { parameter } => {
+                args! { "parameter" => parameter.as_str() }
+            }
+            Self::MissingNeutralKey { parameter, default } => {
+                args! { "parameter" => parameter.as_str(), "default" => *default }
+            }
+            Self::NonFiniteKey { parameter, key } | Self::MissingMirrorKey { parameter, key } => {
+                args! { "parameter" => parameter.as_str(), "key" => *key }
+            }
+            Self::KeysNotAscending { parameter, keys } => {
+                args! { "parameter" => parameter.as_str(), "keys" => join(keys) }
+            }
+            Self::TooManyAxes { count } => args! { "axes" => *count, "max" => 64u32 },
+            Self::GridTooLarge | Self::ParentTransform(_) => args! {},
+            Self::GridSizeMismatch { expected, found }
+            | Self::OriginsLengthMismatch { expected, found }
+            | Self::DepthLengthMismatch { expected, found } => {
+                args! { "expected" => *expected, "found" => *found }
+            }
+            Self::BaseNotAuthored { cell } => args! { "cell" => *cell },
+            Self::ShapeMismatch {
+                cell,
+                expected,
+                found,
+            } => args! { "cell" => *cell, "expected" => *expected, "found" => *found },
+            Self::UnknownTarget(target)
+            | Self::UnsupportedTarget(target)
+            | Self::NotDepthRotation(target)
+            | Self::MissingDepth(target)
+            | Self::NonAffineParent(target) => args! { "target" => target_text(target) },
+            Self::UnknownParent { deformer }
+            | Self::UnsupportedParent { deformer }
+            | Self::ParentCycle { deformer } => args! { "deformer" => deformer.as_str() },
+            Self::NotMirrorPair { from, to } | Self::IncompatibleMirror { from, to } => {
+                args! { "from" => target_text(from), "to" => target_text(to) }
+            }
+            Self::UnmatchedVertices {
+                vertices,
+                tolerance,
+            } => args! { "vertices" => join(vertices), "tolerance" => *tolerance },
+        }
+    }
+
+    fn cause(&self) -> Option<Message> {
+        match self {
+            Self::ParentTransform(error) => Some(error.to_message()),
+            _ => None,
+        }
+    }
+}
+
+/// 親の座標系とキャンバス座標の写像のエラー (`world.*`。[`WorldError::code`])。
+impl Coded for WorldError {
+    fn code(&self) -> &'static str {
+        match self {
+            Self::Evaluate(_) => "world.evaluate",
+            Self::LengthMismatch { .. } => "world.length_mismatch",
+            Self::Singular { .. } => "world.singular",
+            Self::NotConverged { .. } => "world.not_converged",
+        }
+    }
+
+    fn args(&self) -> MessageArgs {
+        match self {
+            Self::Evaluate(detail) => args! { "detail" => detail },
+            Self::LengthMismatch { points, guesses } => {
+                args! { "points" => *points, "guesses" => *guesses }
+            }
+            Self::Singular { index } => args! { "index" => *index },
+            Self::NotConverged { index, residual } => {
+                args! { "index" => *index, "residual" => *residual }
+            }
+        }
+    }
+}
+
+/// 法線マップの生成のエラー (`normal_map.*`。[`NormalMapError::code`])。
+impl Coded for NormalMapError {
+    fn code(&self) -> &'static str {
+        match self {
+            Self::EmptyImage { .. } => "normal_map.empty_image",
+            Self::SizeMismatch { .. } => "normal_map.size_mismatch",
+            Self::InvalidOption { .. } => "normal_map.invalid_option",
+            Self::GridTooLarge { .. } => "normal_map.grid_too_large",
+        }
+    }
+
+    fn args(&self) -> MessageArgs {
+        match self {
+            Self::EmptyImage { width, height } => {
+                args! { "width" => *width, "height" => *height }
+            }
+            Self::SizeMismatch {
+                width,
+                height,
+                expected,
+                found,
+            } => args! {
+                "width" => *width,
+                "height" => *height,
+                "expected" => *expected,
+                "found" => *found,
+            },
+            Self::InvalidOption { field, value } => args! { "field" => *field, "value" => *value },
+            Self::GridTooLarge { width, height, max } => {
+                args! { "width" => *width, "height" => *height, "max" => *max }
+            }
+        }
+    }
+}
+
+/// モジュールの合成のエラー (`compose.*`)。コードの後ろの部分と引数の名前は SDK の `DressUpError::code`・`fields` と同じ。
+impl Coded for ComposeError {
+    fn code(&self) -> &'static str {
+        match self {
+            Self::InvalidModuleName(_) => "compose.invalid_module_name",
+            Self::DuplicateModule(_) => "compose.duplicate_module",
+            Self::UnknownSlot { .. } => "compose.unknown_slot",
+            Self::SlotOccupied { .. } => "compose.slot_occupied",
+            Self::AvatarLevel { .. } => "compose.avatar_level",
+            Self::MissingSlot { .. } => "compose.missing_slot",
+            Self::MissingParameter { .. } => "compose.missing_parameter",
+            Self::ParameterNotExposed { .. } => "compose.parameter_not_exposed",
+            Self::UnknownMask { .. } => "compose.unknown_mask",
+            Self::TextureOutOfRange { .. } => "compose.texture_out_of_range",
+            Self::UnknownCollider { .. } => "compose.unknown_collider",
+            Self::PoseNotExposed { .. } => "compose.pose_not_exposed",
+            Self::Invalid(_) => "compose.invalid_composition",
+        }
+    }
+
+    fn args(&self) -> MessageArgs {
+        match self {
+            Self::InvalidModuleName(module) | Self::DuplicateModule(module) => {
+                args! { "module" => module }
+            }
+            Self::UnknownSlot { module, slot } | Self::MissingSlot { module, slot } => {
+                args! { "module" => module, "slot" => slot }
+            }
+            Self::SlotOccupied {
+                slot,
+                first,
+                second,
+            } => args! { "slot" => slot, "module" => second, "attached" => first },
+            Self::AvatarLevel {
+                module,
+                required,
+                actual,
+            } => {
+                let mut out = args! { "module" => module, "required" => *required };
+                // 本体がアバタープロファイルを持たなければ `actual` は渡さない。
+                if let Some(actual) = actual {
+                    out.extend(args! { "actual" => *actual });
+                }
+                out
+            }
+            Self::MissingParameter { module, parameter } => {
+                args! { "module" => module, "parameter" => parameter }
+            }
+            Self::ParameterNotExposed {
+                module,
+                slot,
+                parameter,
+            } => args! { "module" => module, "slot" => slot, "parameter" => parameter },
+            Self::UnknownMask { module, mesh, mask } => {
+                args! { "module" => module, "mesh" => mesh, "mask" => mask }
+            }
+            Self::TextureOutOfRange {
+                module,
+                mesh,
+                texture,
+            } => args! { "module" => module, "mesh" => mesh, "texture" => *texture },
+            Self::UnknownCollider {
+                module,
+                rig,
+                collider,
+            } => args! { "module" => module, "rig" => rig, "collider" => collider },
+            Self::PoseNotExposed { module, slot, part } => {
+                args! { "module" => module, "slot" => slot, "part" => part }
+            }
+            Self::Invalid(errors) => validation_args(errors),
+        }
+    }
+
+    fn items(&self) -> Vec<Message> {
+        match self {
+            Self::Invalid(errors) => validation_items(errors),
+            _ => Vec::new(),
         }
     }
 }

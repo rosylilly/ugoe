@@ -74,6 +74,61 @@ describe("backend errors", () => {
     );
   });
 
+  it("translates the source error in place of the English detail", () => {
+    const inference: Message = {
+      code: "edit.inference_failed",
+      args: { target: "mesh `EyeL`", detail: "axis AngleX has no neutral key" },
+      message: "mesh `EyeL`: keyform inference failed: axis AngleX has no neutral key",
+      cause: {
+        code: "infer.missing_neutral_key",
+        args: { parameter: "AngleX", default: 0 },
+        message: "axis AngleX has no neutral key (default 0 is not among its keys)",
+      },
+    };
+    expect(messageText(inference)).toBe(
+      "Keyform inference failed for mesh `EyeL` (the axis AngleX has no key at its default value 0).",
+    );
+    setLocale("ja");
+    expect(messageText(inference)).toBe(
+      "mesh `EyeL` のキーフォームの推定に失敗しました (軸 AngleX に既定値 0 のキーがありません)。",
+    );
+  });
+
+  it("keeps the English detail when the source error is unknown", () => {
+    const compose: Message = {
+      code: "module.compose_failed",
+      args: { detail: "something new" },
+      message: "cannot compose: something new",
+      cause: { code: "compose.future", args: {}, message: "something new" },
+    };
+    expect(messageText(compose)).toBe(
+      "Could not combine the module with the base model (something new).",
+    );
+  });
+
+  it("translates the listed validation errors and counts the rest", () => {
+    const item = (id: string): Message => ({
+      code: "validation.duplicate_id",
+      args: { kind: "part", id },
+      message: `duplicate part id \`${id}\``,
+    });
+    const invalid: Message = {
+      code: "edit.invalid_model",
+      args: { count: 3, details: "duplicate part id `A`; duplicate part id `B`; and 1 more" },
+      message: "model failed validation with 3 error(s): ...",
+      items: [item("A"), item("B")],
+    };
+    expect(messageText(invalid)).toBe(
+      "The command would make the model invalid (3 problems: the part ID A is used more than once; " +
+        "the part ID B is used more than once; and 1 more).",
+    );
+    setLocale("ja");
+    expect(messageText(invalid)).toBe(
+      "このコマンドを適用すると、モデルが検証を通らなくなります (3 件: パーツ の ID A が重複しています; " +
+        "パーツ の ID B が重複しています; ほか 1 件)。",
+    );
+  });
+
   it("falls back to the text of other errors", () => {
     expect(isMessage("disk full")).toBe(false);
     expect(errorCode("disk full")).toBeNull();
