@@ -54,7 +54,7 @@ pub const COMMANDS: &[&str] = &[
     "virtual_camera_state",
     "start_virtual_camera",
     "stop_virtual_camera",
-    "set_virtual_camera_background",
+    "set_virtual_camera_settings",
     "api_state",
     "set_api_enabled",
     "set_api_port",

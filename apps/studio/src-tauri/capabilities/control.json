@@ -51,7 +51,7 @@
     "allow-virtual-camera-state",
     "allow-start-virtual-camera",
     "allow-stop-virtual-camera",
-    "allow-set-virtual-camera-background",
+    "allow-set-virtual-camera-settings",
     "allow-api-state",
     "allow-set-api-enabled",
     "allow-set-api-port",

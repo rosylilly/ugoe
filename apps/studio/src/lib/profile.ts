@@ -2,6 +2,7 @@
 // 画面で使う小さな関数 (シーンの表示名・エラーの文・背景や配置の既定値)。
 import { defaultLighting, type LightingSettings, sanitizeLighting } from "@ugoe/player";
 import type { Hotkey, InputSettings, MotionSettings } from "./inputs";
+import type { VirtualCameraProfile } from "./virtualCamera";
 
 /** モデルの位置と大きさと回転 (profile.rs の `Transform`)。位置は出力の大きさに対する割合。 */
 export interface Transform {
@@ -35,13 +36,23 @@ export interface SceneSettings {
   background: Background;
 }
 
+/** 出力の設定 (profile.rs の `OutputSettings`)。 */
+export interface OutputSettings {
+  /** 出力ウィンドウの大きさのプリセット (lib/settings.ts の `OutputSizePreset`)。 */
+  size: string;
+  /** 刻みの速さ (回/秒。30 / 60 / 120。T0827)。 */
+  tickRate: number;
+  /** 仮想カメラの設定 (T0827)。 */
+  virtualCamera: VirtualCameraProfile;
+}
+
 /** プロファイル (profile.rs の `Profile`)。 */
 export interface Profile {
   format: "ugoe-studio-profile";
   version: number;
   scenes: SceneSettings[];
   activeScene: string | null;
-  output: { size: string };
+  output: OutputSettings;
   /** ホットキーの割り当て (T0803)。 */
   hotkeys: Hotkey[];
   /** 入力の機器と調整 (T0803)。 */

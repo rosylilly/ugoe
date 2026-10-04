@@ -52,7 +52,7 @@ use crate::conductor::Conductor;
 use crate::hotkeys::{ExpressionMode, Hotkey, HotkeyAction, HotkeyProblem, MotionPriority};
 use crate::input::{InputSettings, MotionSettings, TrackingFrame};
 use crate::pacing::{Measured, Pacer, RateMeter, TickRate};
-use crate::profile::{ProfileError, SceneSettings};
+use crate::profile::{ProfileError, SceneSettings, VirtualCameraSettings};
 use crate::stage::{ProfileView, SceneError, Stage};
 use crate::stream::{Frame, Scene};
 use crate::virtual_camera::{
@@ -305,7 +305,7 @@ struct Studio {
     monitors: Subscribers,
     /// 直近の 1 刻みにかかった時間 (ナノ秒)。
     tick_nanos: AtomicU64,
-    /// 刻みの速さ (回/秒。0 は既定)。刻みのスレッドが刻みごとに読む。
+    /// 刻みの速さ (回/秒。0 は既定)。刻みのスレッドが刻みごとに読む。プロファイルの `output.tickRate` の写し (`with_stage` で合わせる)。
     tick_rate: AtomicU32,
     /// 実際の刻みの速さと揺れ (刻みのスレッドが書く)。
     measured: Mutex<Option<Measured>>,
@@ -364,6 +364,8 @@ struct Reported {
 struct CameraThread {
     commands: Sender<CameraCommand>,
     thread: JoinHandle<()>,
+    /// 今の設定 (プロファイルの設定と比べて、変わったら効かせる。`sync_camera`)。
+    settings: CameraSettings,
 }
 
 impl Studio {
@@ -508,6 +510,8 @@ impl Studio {
         self.api_stage_changed(&snapshot, &api::StageSnapshot::of(&stage));
         self.send_profile(&stage);
         self.sync_hotkeys(&stage.profile().hotkeys, false);
+        self.tick_rate
+            .store(stage.profile().output.tick_rate().hz(), Ordering::Relaxed);
         result
     }
 
@@ -786,8 +790,11 @@ async fn restore_profile(studio: tauri::State<'_, Arc<Studio>>) -> Result<(), Co
     .await?
 }
 
-fn open_profile_at(studio: &Studio, path: &Path) -> Result<(), CommandError> {
-    match studio.with_stage(|stage, conductor| stage.open_profile(path, conductor))? {
+fn open_profile_at(studio: &Arc<Studio>, path: &Path) -> Result<(), CommandError> {
+    let error = studio.with_stage(|stage, conductor| stage.open_profile(path, conductor))?;
+    // 仮想カメラの設定もプロファイルのものにする (仮想カメラを始められなくても、プロファイルは開いている)。
+    let _ = sync_camera(studio);
+    match error {
         Some(error) => Err(error.into()),
         None => Ok(()),
     }
@@ -795,8 +802,14 @@ fn open_profile_at(studio: &Studio, path: &Path) -> Result<(), CommandError> {
 
 /// 新しいプロファイルにする (空のシーンを 1 つ)。
 #[tauri::command]
-fn new_profile(studio: tauri::State<'_, Arc<Studio>>) {
-    studio.with_stage(Stage::new_profile);
+async fn new_profile(studio: tauri::State<'_, Arc<Studio>>) -> Result<(), CommandError> {
+    // 仮想カメラを始め直すことがある (スレッドの終わりを待つ) ので、メインのスレッドの外で行う。
+    blocking(&studio, |studio| {
+        studio.with_stage(Stage::new_profile);
+        let _ = sync_camera(studio);
+    })
+    .await?;
+    Ok(())
 }
 
 /// プロファイルを開き、最後に使ったシーンにする。シーンを出せなくてもプロファイルは開く (エラーは返す)。
@@ -1168,11 +1181,11 @@ fn tick_rate(studio: tauri::State<'_, Arc<Studio>>) -> u32 {
     studio.tick_rate().hz()
 }
 
-/// 刻みの速さを 30 / 60 / 120 から選ぶ (次の刻みから)。
+/// 刻みの速さを 30 / 60 / 120 から選ぶ (プロファイルに持つ。次の刻みから)。
 #[tauri::command]
 fn set_tick_rate(studio: tauri::State<'_, Arc<Studio>>, rate: u32) -> Result<u32, String> {
     let rate = TickRate::from_hz(rate).ok_or_else(|| format!("unsupported tick rate: {rate}"))?;
-    studio.tick_rate.store(rate.hz(), Ordering::Relaxed);
+    studio.with_stage(|stage, _| stage.set_tick_rate(rate));
     Ok(rate.hz())
 }
 
@@ -1214,16 +1227,76 @@ fn virtual_camera_state(studio: tauri::State<'_, Arc<Studio>>) -> virtual_camera
     studio.camera_status()
 }
 
-/// 仮想カメラを始める (動いていれば止めてから、新しい設定で始め直す)。状態の変化は操作ウィンドウへの通知で届く。
+/// 仮想カメラを、プロファイルの設定で始める (動いていれば止めてから始め直す)。状態の変化は操作ウィンドウへの通知で届く。
+/// `settings` を渡すと、先にプロファイルの設定にする。
 #[tauri::command]
 async fn start_virtual_camera(
     studio: tauri::State<'_, Arc<Studio>>,
-    settings: CameraSettings,
+    settings: Option<CameraSettings>,
 ) -> Result<(), String> {
     // 動いている仮想カメラのスレッドの終わりを待つので、メインのスレッドの外で行う。
-    blocking(&studio, move |studio| start_camera(studio, settings))
-        .await
-        .map_err(|e| e.to_string())?
+    blocking(&studio, move |studio| {
+        if let Some(settings) = settings {
+            settings.config().validate().map_err(|e| e.to_string())?;
+            studio.with_stage(|stage, _| {
+                stage.set_virtual_camera(VirtualCameraSettings::from_settings(settings));
+            });
+        }
+        let settings = lock(&studio.stage)
+            .profile()
+            .output
+            .virtual_camera
+            .settings();
+        start_camera(studio, settings)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 仮想カメラの設定を変える (プロファイルに持つ)。動いていれば効かせる (`sync_camera`)。
+#[tauri::command]
+async fn set_virtual_camera_settings(
+    studio: tauri::State<'_, Arc<Studio>>,
+    settings: VirtualCameraSettings,
+) -> Result<(), String> {
+    // 仮想カメラを始め直すことがある (スレッドの終わりを待つ) ので、メインのスレッドの外で行う。
+    blocking(&studio, move |studio| {
+        studio.with_stage(|stage, _| stage.set_virtual_camera(settings));
+        sync_camera(studio)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// プロファイルの仮想カメラの設定を、動いている仮想カメラに効かせる。解像度かフレームレートが変われば始め直し
+/// (OS のカメラの形が変わるため)、色だけなら次の画から変える。止まった (失敗した) 仮想カメラは始め直さない。
+fn sync_camera(studio: &Arc<Studio>) -> Result<(), String> {
+    let wanted = lock(&studio.stage)
+        .profile()
+        .output
+        .virtual_camera
+        .settings();
+    let active = matches!(
+        studio.camera_status(),
+        virtual_camera::Status::Starting { .. } | virtual_camera::Status::Running { .. }
+    );
+    {
+        let mut camera = lock(&studio.camera);
+        let Some(running) = camera.as_mut() else {
+            return Ok(());
+        };
+        if running.settings == wanted {
+            return Ok(());
+        }
+        if running.settings.config() == wanted.config() || !active {
+            let _ = running
+                .commands
+                .send(CameraCommand::Background(wanted.background));
+            running.settings.background = wanted.background;
+            return Ok(());
+        }
+    }
+    start_camera(studio, wanted)
 }
 
 fn start_camera(studio: &Arc<Studio>, settings: CameraSettings) -> Result<(), String> {
@@ -1248,6 +1321,7 @@ fn start_camera(studio: &Arc<Studio>, settings: CameraSettings) -> Result<(), St
     *lock(&studio.camera) = Some(CameraThread {
         commands: tx,
         thread,
+        settings,
     });
     drop(conductor);
     drop(stage);
@@ -1261,14 +1335,6 @@ async fn stop_virtual_camera(studio: tauri::State<'_, Arc<Studio>>) -> Result<()
     blocking(&studio, |studio| studio.stop_camera())
         .await
         .map_err(|e| e.to_string())
-}
-
-/// 透過のところを埋める色を変える (動いていれば次の画から)。
-#[tauri::command]
-fn set_virtual_camera_background(studio: tauri::State<'_, Arc<Studio>>, background: [u8; 3]) {
-    if let Some(camera) = &*lock(&studio.camera) {
-        let _ = camera.commands.send(CameraCommand::Background(background));
-    }
 }
 
 fn output_window(app: &AppHandle) -> Result<WebviewWindow, String> {
@@ -1467,7 +1533,7 @@ pub fn run() {
             virtual_camera_state,
             start_virtual_camera,
             stop_virtual_camera,
-            set_virtual_camera_background,
+            set_virtual_camera_settings,
             api::commands::api_state,
             api::commands::set_api_enabled,
             api::commands::set_api_port,
@@ -1678,6 +1744,81 @@ mod tests {
         assert_eq!(studio.tick_rate(), TickRate::Fps120);
         studio.tick_rate.store(75, Ordering::Relaxed);
         assert_eq!(studio.tick_rate(), TickRate::DEFAULT);
+    }
+
+    /// 刻みの速さはプロファイルに持ち、プロファイルを変えると刻みのスレッドが読む値も変わる (T0827)。
+    #[test]
+    fn the_tick_rate_follows_the_profile() {
+        let studio = Studio::default();
+        studio.with_stage(|stage, _| stage.set_tick_rate(TickRate::Fps120));
+        assert_eq!(studio.tick_rate(), TickRate::Fps120);
+        assert!(lock(&studio.stage).dirty());
+        studio.with_stage(Stage::new_profile);
+        assert_eq!(studio.tick_rate(), TickRate::DEFAULT);
+    }
+
+    /// プロファイルの仮想カメラの設定を、動いている仮想カメラに効かせる (色はその場で。T0827)。
+    #[test]
+    fn camera_settings_reach_the_running_camera() {
+        let studio = Arc::new(Studio::default());
+        // 止めている間は何もしない。
+        studio.with_stage(|stage, _| {
+            stage.set_virtual_camera(profile::VirtualCameraSettings {
+                background: "#00ff00".into(),
+                ..Default::default()
+            });
+        });
+        assert_eq!(sync_camera(&studio), Ok(()));
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let settings = CameraSettings::default();
+        *lock(&studio.camera) = Some(CameraThread {
+            commands: tx,
+            thread: std::thread::spawn(|| {}),
+            settings,
+        });
+        *lock(&studio.camera_status) = Some(virtual_camera::Status::Running {
+            settings,
+            device: "/dev/video10".into(),
+            consumer: true,
+            late: false,
+        });
+        assert_eq!(sync_camera(&studio), Ok(()));
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(CameraCommand::Background([0, 255, 0]))
+        ));
+        assert_eq!(
+            lock(&studio.camera).as_ref().unwrap().settings.background,
+            [0, 255, 0]
+        );
+        // 変わっていなければ送らない。
+        assert_eq!(sync_camera(&studio), Ok(()));
+        assert!(rx.try_recv().is_err());
+
+        // 止まった (失敗した) 仮想カメラは、解像度が変わっても始め直さない (色だけ渡す)。
+        *lock(&studio.camera_status) = Some(virtual_camera::Status::Failed {
+            settings,
+            code: "noDevice".into(),
+            detail: String::new(),
+        });
+        studio.with_stage(|stage, _| {
+            stage.set_virtual_camera(profile::VirtualCameraSettings {
+                width: 1920,
+                height: 1080,
+                background: "#0000ff".into(),
+                ..Default::default()
+            });
+        });
+        assert_eq!(sync_camera(&studio), Ok(()));
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(CameraCommand::Background([0, 0, 255]))
+        ));
+        assert_eq!(
+            lock(&studio.camera).as_ref().unwrap().settings.config(),
+            settings.config()
+        );
     }
 
     #[test]

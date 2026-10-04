@@ -2,20 +2,15 @@
   仮想カメラ (docs/studio.md#仮想カメラ、T0807・T0809)。開始と停止・解像度・フレームレート・透過を埋める色を選び、
   止まった (始められない・途中で失敗した)・遅れた・受け取るアプリがいないことを知らせる。始められない理由に合わせて、
   v4l2loopback の入れ方 (Linux)・OBS の仮想カメラを使う手順 (Windows 10)・入れ直し (登録が無い) を案内する。
+  設定はプロファイルに持つ (T0827)。変えたらバックエンドへ送り、動いていればバックエンドが効かせる
+  (解像度とフレームレートは始め直し、色は次の画から)。
 -->
 <script lang="ts">
 import { formatNumber } from "@ugoe/i18n";
-import {
-  ColorPicker,
-  hexToRgb,
-  Notice,
-  rgbToHex,
-  SegmentedControl,
-  Select,
-  Toggle,
-} from "@ugoe/ui";
+import { ColorPicker, Notice, SegmentedControl, Select, Toggle } from "@ugoe/ui";
 import type { StudioHost } from "./lib/host";
 import { t } from "./lib/i18n";
+import { PendingEdit } from "./lib/pendingEdit.svelte";
 import {
   CAMERA_FRAME_RATES,
   CAMERA_RESOLUTIONS,
@@ -23,9 +18,7 @@ import {
   type CameraNotice,
   cameraNotices,
   isCameraActive,
-  loadCameraSettings,
-  saveCameraSettings,
-  type VirtualCameraSettings,
+  type VirtualCameraProfile,
   type VirtualCameraStatus,
 } from "./lib/virtualCamera";
 
@@ -33,12 +26,18 @@ interface Props {
   host: StudioHost | null;
   /** バックエンドからの最新の状態 (取れるまでは `null`)。 */
   status: VirtualCameraStatus | null;
+  /** プロファイルの設定 (`output.virtualCamera`)。 */
+  settings: VirtualCameraProfile;
 }
 
-let { host, status }: Props = $props();
+let { host, status, settings: confirmed }: Props = $props();
 
-let settings = $state<VirtualCameraSettings>(loadCameraSettings());
 let error = $state<string | null>(null);
+/** 送っている途中の設定 (通知の前に続けて変えても、前の変更を消さない。T0824)。 */
+const edit = new PendingEdit<VirtualCameraProfile>((next) =>
+  run((h) => h.setVirtualCameraSettings(next)),
+);
+const settings = $derived(edit.current(confirmed));
 
 const active = $derived(status !== null && isCameraActive(status));
 const notices = $derived(status === null ? [] : cameraNotices(status));
@@ -83,16 +82,12 @@ async function run(action: (host: StudioHost) => Promise<void>) {
   }
 }
 
-function update(patch: Partial<VirtualCameraSettings>) {
-  settings = { ...settings, ...patch };
-  saveCameraSettings(settings);
-  // 解像度とフレームレートは、動いていれば始め直して効かせる (OS のカメラの形が変わるため)。
-  if (active && ("width" in patch || "fps" in patch))
-    void run((h) => h.startVirtualCamera(settings));
+function update(patch: Partial<VirtualCameraProfile>) {
+  void edit.submit({ ...settings, ...patch });
 }
 
 function toggle(on: boolean) {
-  void run((h) => (on ? h.startVirtualCamera(settings) : h.stopVirtualCamera()));
+  void run((h) => (on ? h.startVirtualCamera() : h.stopVirtualCamera()));
 }
 
 function changeResolution(value: string) {
@@ -106,9 +101,7 @@ function changeRate(value: string) {
 }
 
 function changeBackground(hex: string) {
-  const { r, g, b } = hexToRgb(hex);
-  update({ background: [r, g, b] });
-  if (active) void run((h) => h.setVirtualCameraBackground([r, g, b]));
+  update({ background: hex.toLowerCase() });
 }
 
 function errorText(code: string): string {
@@ -173,7 +166,7 @@ function guideOf(notice: CameraNotice): CameraGuide | null {
   />
   <ColorPicker
     label={t("virtualCamera.background")}
-    value={rgbToHex({ r: settings.background[0], g: settings.background[1], b: settings.background[2] })}
+    value={settings.background}
     disabled={host === null}
     onchange={changeBackground}
   />

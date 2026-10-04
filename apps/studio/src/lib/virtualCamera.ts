@@ -1,7 +1,7 @@
 // 仮想カメラの設定と状態 (docs/studio.md#仮想カメラ、src-tauri/src/virtual_camera.rs)。
-// 設定は localStorage に覚える (プロファイル (T0802) ができたらそちらへ移す)。
+// 設定はプロファイルの `output.virtualCamera` に持つ (T0827。lib/profile.ts)。
 
-/** 仮想カメラの設定 (virtual_camera.rs の `Settings`)。 */
+/** 仮想カメラの設定 (virtual_camera.rs の `Settings`。状態の通知に載る)。 */
 export interface VirtualCameraSettings {
   width: number;
   height: number;
@@ -37,47 +37,23 @@ export const CAMERA_RESOLUTIONS: readonly (readonly [number, number])[] = [
 /** 選べるフレームレート (ugoe-studio-vcam の `FRAME_RATES`)。 */
 export const CAMERA_FRAME_RATES: readonly number[] = [30, 60];
 
+/** プロファイルに持つ設定 (profile.rs の `VirtualCameraSettings`。色は `#rrggbb`)。 */
+export interface VirtualCameraProfile {
+  width: number;
+  height: number;
+  /** フレームレート (30 / 60)。 */
+  fps: number;
+  /** 透過のところを埋める色 (`#rrggbb`)。 */
+  background: string;
+}
+
 /** 既定の設定 (virtual_camera.rs の `Settings::default`)。 */
-export const DEFAULT_CAMERA_SETTINGS: VirtualCameraSettings = {
+export const DEFAULT_CAMERA_PROFILE: VirtualCameraProfile = {
   width: 1280,
   height: 720,
   fps: 30,
-  background: [240, 240, 240],
+  background: "#f0f0f0",
 };
-
-/** 設定を覚えるキー。 */
-export const CAMERA_STORAGE_KEY = "ugoe-studio.virtual-camera";
-
-/** 選べる設定か。 */
-export function isValidCameraSettings(value: unknown): value is VirtualCameraSettings {
-  if (typeof value !== "object" || value === null) return false;
-  const v = value as Partial<VirtualCameraSettings>;
-  return (
-    CAMERA_RESOLUTIONS.some(([w, h]) => w === v.width && h === v.height) &&
-    CAMERA_FRAME_RATES.includes(v.fps ?? 0) &&
-    Array.isArray(v.background) &&
-    v.background.length === 3 &&
-    v.background.every((c) => Number.isInteger(c) && c >= 0 && c <= 255)
-  );
-}
-
-export function loadCameraSettings(): VirtualCameraSettings {
-  try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(CAMERA_STORAGE_KEY) ?? "null");
-    if (isValidCameraSettings(parsed)) return parsed;
-  } catch {
-    // 読めなければ既定に戻す。
-  }
-  return { ...DEFAULT_CAMERA_SETTINGS, background: [...DEFAULT_CAMERA_SETTINGS.background] };
-}
-
-export function saveCameraSettings(value: VirtualCameraSettings): void {
-  try {
-    localStorage.setItem(CAMERA_STORAGE_KEY, JSON.stringify(value));
-  } catch {
-    // 覚えられなくても動く。
-  }
-}
 
 /** 動いている (始めている途中を含む) か。 */
 export function isCameraActive(status: VirtualCameraStatus): boolean {

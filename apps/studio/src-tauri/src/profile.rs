@@ -2,7 +2,8 @@
 //!
 //! アプリの設定であって、モデルのファイル形式 (`docs/spec/file-formats.md`) ではない。読み込みでは `format` と `version` を
 //! 確かめ、未来の版は [`ProfileError::FutureVersion`] にする (黙って読み落とさない)。値の範囲を外れたものは収め直す
-//! ([`Profile::sanitize`])。ホットキー・入力・モーションの設定 (T0803) は同じ版のまま、省略できる項目として足した。
+//! ([`Profile::sanitize`])。ホットキー・入力・モーションの設定 (T0803) と、出力の刻みの速さ・仮想カメラの設定 (T0827) は
+//! 同じ版のまま、省略できる項目として足した。
 
 use std::path::{Path, PathBuf};
 
@@ -10,6 +11,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::hotkeys::{self, Hotkey};
 use crate::input::{InputSettings, MotionSettings};
+use crate::pacing::TickRate;
+use crate::virtual_camera;
 
 /// `format` の値 (ほかの JSON、たとえば JSON のモデルを開いたときに分かるように)。
 pub const PROFILE_FORMAT: &str = "ugoe-studio-profile";
@@ -116,18 +119,99 @@ pub enum Background {
     Image { path: PathBuf },
 }
 
-/// 出力の設定。刻みの速さなどは T0804 で足す。
+/// 出力の設定。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct OutputSettings {
     /// 出力ウィンドウの大きさのプリセット (`1920x1080` など。`free` は大きさを変えない)。
     pub size: String,
+    /// 刻みの速さ (回/秒。30・60・120。T0827)。選べない値は読むときに既定 (60) にする。
+    pub tick_rate: u32,
+    /// 仮想カメラの設定 (T0827)。
+    pub virtual_camera: VirtualCameraSettings,
 }
 
 impl Default for OutputSettings {
     fn default() -> Self {
         Self {
             size: "1920x1080".to_owned(),
+            tick_rate: TickRate::DEFAULT.hz(),
+            virtual_camera: VirtualCameraSettings::default(),
+        }
+    }
+}
+
+impl OutputSettings {
+    /// 選べない刻みの速さと仮想カメラの設定を既定に戻す。
+    pub fn sanitize(&mut self) {
+        if TickRate::from_hz(self.tick_rate).is_none() {
+            self.tick_rate = TickRate::DEFAULT.hz();
+        }
+        self.virtual_camera.sanitize();
+    }
+
+    /// 刻みの速さ。
+    pub fn tick_rate(&self) -> TickRate {
+        TickRate::from_hz(self.tick_rate).unwrap_or(TickRate::DEFAULT)
+    }
+}
+
+/// プロファイルに持つ仮想カメラの設定 (`virtual_camera.rs` の `Settings` と同じ値。色はほかの項目と同じく `#rrggbb` で持つ)。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct VirtualCameraSettings {
+    /// 解像度 (1920×1080・1280×720)。
+    pub width: u32,
+    pub height: u32,
+    /// フレームレート (30・60)。
+    pub fps: u32,
+    /// 透過のところを埋める色 (`#rrggbb`)。
+    pub background: String,
+}
+
+impl Default for VirtualCameraSettings {
+    fn default() -> Self {
+        Self::from_settings(virtual_camera::Settings::default())
+    }
+}
+
+impl VirtualCameraSettings {
+    pub fn from_settings(settings: virtual_camera::Settings) -> Self {
+        let [r, g, b] = settings.background;
+        Self {
+            width: settings.width,
+            height: settings.height,
+            fps: settings.fps,
+            background: format!("#{r:02x}{g:02x}{b:02x}"),
+        }
+    }
+
+    /// 仮想カメラに渡す設定 ([`Self::sanitize`] の後に呼ぶ。色を読めなければ既定の色)。
+    pub fn settings(&self) -> virtual_camera::Settings {
+        let background =
+            parse_hex_color(&self.background).unwrap_or(virtual_camera::DEFAULT_BACKGROUND);
+        virtual_camera::Settings {
+            width: self.width,
+            height: self.height,
+            fps: self.fps,
+            background,
+        }
+    }
+
+    /// 選べない解像度・フレームレート・形の違う色を、それぞれ既定に戻す。
+    pub fn sanitize(&mut self) {
+        let default = virtual_camera::Settings::default();
+        if !ugoe_studio_vcam::RESOLUTIONS.contains(&(self.width, self.height)) {
+            self.width = default.width;
+            self.height = default.height;
+        }
+        if !ugoe_studio_vcam::FRAME_RATES.contains(&self.fps) {
+            self.fps = default.fps;
+        }
+        if is_hex_color(&self.background) {
+            self.background.make_ascii_lowercase();
+        } else {
+            self.background = Self::from_settings(default).background;
         }
     }
 }
@@ -277,6 +361,7 @@ impl Profile {
         {
             self.active_scene = self.scenes.first().map(|s| s.id.clone());
         }
+        self.output.sanitize();
         hotkeys::sanitize(&mut self.hotkeys);
         self.input.sanitize();
         self.motion.sanitize();
@@ -362,6 +447,15 @@ pub fn is_hex_color(s: &str) -> bool {
     s.len() == 7 && s.starts_with('#') && s[1..].bytes().all(|b| b.is_ascii_hexdigit())
 }
 
+/// `#rrggbb` の RGB。形が違えば `None`。
+pub fn parse_hex_color(s: &str) -> Option<[u8; 3]> {
+    if !is_hex_color(s) {
+        return None;
+    }
+    let channel = |i: usize| u8::from_str_radix(&s[i..i + 2], 16).ok();
+    Some([channel(1)?, channel(3)?, channel(5)?])
+}
+
 /// 最近のプロファイル (新しいものが先頭)。アプリのデータの場所の `recent-profiles.json` に置く。
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -431,7 +525,76 @@ mod tests {
             path: "/m/bg.png".into(),
         };
         profile.output.size = "1280x720".into();
+        profile.output.tick_rate = 120;
+        profile.output.virtual_camera = VirtualCameraSettings {
+            width: 1920,
+            height: 1080,
+            fps: 60,
+            background: "#00ff80".into(),
+        };
         assert_eq!(read(&profile.to_json()).unwrap(), profile);
+    }
+
+    /// 刻みの速さと仮想カメラの設定 (T0827) が無い、前のプロファイルは既定の値で読む。
+    #[test]
+    fn reads_profiles_without_the_output_settings_as_defaults() {
+        let profile = read(
+            r#"{"format": "ugoe-studio-profile", "version": 1, "output": {"size": "1280x720"}}"#,
+        )
+        .unwrap();
+        assert_eq!(profile.output.size, "1280x720");
+        assert_eq!(profile.output.tick_rate, 60);
+        assert_eq!(
+            profile.output.virtual_camera.settings(),
+            virtual_camera::Settings::default()
+        );
+        assert_eq!(profile.output.virtual_camera.background, "#f0f0f0");
+        let profile = read(r#"{"format": "ugoe-studio-profile", "version": 1}"#).unwrap();
+        assert_eq!(profile.output, OutputSettings::default());
+    }
+
+    /// 後の版で `output` に足した項目は読み飛ばす (前の版のスタジオも同じく読み飛ばす)。
+    #[test]
+    fn ignores_unknown_output_settings() {
+        let profile = read(
+            r#"{"format": "ugoe-studio-profile", "version": 1,
+                "output": {"tickRate": 30, "future": true, "virtualCamera": {"fps": 60, "future": 1}}}"#,
+        )
+        .unwrap();
+        assert_eq!(profile.output.tick_rate(), TickRate::Fps30);
+        assert_eq!(profile.output.virtual_camera.fps, 60);
+        assert_eq!(profile.output.virtual_camera.width, 1280);
+    }
+
+    #[test]
+    fn sanitizes_the_output_settings() {
+        let profile = read(
+            r##"{"format": "ugoe-studio-profile", "version": 1, "output": {"tickRate": 144,
+                "virtualCamera": {"width": 640, "height": 480, "fps": 25, "background": "green"}}}"##,
+        )
+        .unwrap();
+        assert_eq!(profile.output.tick_rate, 60);
+        let camera = &profile.output.virtual_camera;
+        assert_eq!((camera.width, camera.height, camera.fps), (1280, 720, 30));
+        assert_eq!(camera.background, "#f0f0f0");
+        let profile = read(
+            r##"{"format": "ugoe-studio-profile", "version": 1,
+                "output": {"virtualCamera": {"width": 1920, "height": 720, "background": "#00FF00"}}}"##,
+        )
+        .unwrap();
+        let camera = &profile.output.virtual_camera;
+        assert_eq!((camera.width, camera.height), (1280, 720));
+        assert_eq!(camera.background, "#00ff00");
+        assert_eq!(camera.settings().background, [0, 255, 0]);
+    }
+
+    #[test]
+    fn parses_hex_colors() {
+        assert_eq!(parse_hex_color("#0080ff"), Some([0, 128, 255]));
+        assert_eq!(parse_hex_color("#0080FF"), Some([0, 128, 255]));
+        assert_eq!(parse_hex_color("0080ff"), None);
+        assert_eq!(parse_hex_color("#0080f"), None);
+        assert_eq!(parse_hex_color("#ｆｆ"), None);
     }
 
     #[test]
@@ -459,11 +622,16 @@ mod tests {
                 }
               ],
               "activeScene": "scene-1",
-              "output": { "size": "1920x1080" }
+              "output": {
+                "size": "1920x1080",
+                "tickRate": 60,
+                "virtualCamera": { "width": 1280, "height": 720, "fps": 30, "background": "#f0f0f0" }
+              }
             }"##,
         )
         .unwrap();
         assert_eq!(profile.scenes.len(), 2);
+        assert_eq!(profile.output, OutputSettings::default());
         assert_eq!(profile.scenes[0].transform.scale, 1.2);
         assert_eq!(profile.scenes[1].transform, Transform::default());
         assert!(profile.scenes[1].modules.is_empty());

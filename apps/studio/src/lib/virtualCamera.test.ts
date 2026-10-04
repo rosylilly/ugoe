@@ -1,53 +1,12 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
-  CAMERA_STORAGE_KEY,
   cameraNotices,
-  DEFAULT_CAMERA_SETTINGS,
   guideFor,
   isCameraActive,
-  isValidCameraSettings,
-  loadCameraSettings,
-  saveCameraSettings,
   type VirtualCameraSettings,
 } from "./virtualCamera";
 
-class MemoryStorage {
-  #items = new Map<string, string>();
-  getItem(key: string) {
-    return this.#items.get(key) ?? null;
-  }
-  setItem(key: string, value: string) {
-    this.#items.set(key, value);
-  }
-}
-
-beforeEach(() => {
-  Object.defineProperty(globalThis, "localStorage", {
-    value: new MemoryStorage(),
-    configurable: true,
-  });
-});
-
 const hd: VirtualCameraSettings = { width: 1920, height: 1080, fps: 60, background: [0, 128, 255] };
-
-describe("settings", () => {
-  it("accepts the presets only", () => {
-    expect(isValidCameraSettings(hd)).toBe(true);
-    expect(isValidCameraSettings(DEFAULT_CAMERA_SETTINGS)).toBe(true);
-    expect(isValidCameraSettings({ ...hd, width: 640, height: 480 })).toBe(false);
-    expect(isValidCameraSettings({ ...hd, fps: 120 })).toBe(false);
-    expect(isValidCameraSettings({ ...hd, background: [0, 0, 256] })).toBe(false);
-    expect(isValidCameraSettings(null)).toBe(false);
-  });
-
-  it("remembers the settings and falls back to the default", () => {
-    expect(loadCameraSettings()).toEqual(DEFAULT_CAMERA_SETTINGS);
-    saveCameraSettings(hd);
-    expect(loadCameraSettings()).toEqual(hd);
-    localStorage.setItem(CAMERA_STORAGE_KEY, "{broken");
-    expect(loadCameraSettings()).toEqual(DEFAULT_CAMERA_SETTINGS);
-  });
-});
 
 describe("notices", () => {
   it("explains why the camera cannot start", () => {

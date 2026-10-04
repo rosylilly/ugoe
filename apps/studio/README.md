@@ -126,7 +126,7 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
 | `subscribe_status(channel)` | 操作 | プロファイル・シーン・値・負荷・出力ウィンドウの状態・受け手が読めなかったことを受け取る |
 | `set_parameter(id, value)` / `reset_parameters()` | 操作 | 指揮役のパラメータを書き換える |
 | `output_state()` / `set_output_visible(visible)` / `set_output_on_top(onTop)` / `set_output_size(width, height)` | 操作 | 出力ウィンドウ |
-| `tick_rate()` / `set_tick_rate(rate)` | 操作 | 刻みの速さ (30 / 60 / 120。ほかの値はエラー) |
+| `tick_rate()` / `set_tick_rate(rate)` | 操作 | 刻みの速さ (30 / 60 / 120。ほかの値はエラー)。プロファイルの `output.tickRate` に持つ |
 | `subscribe_pulse(channel)` | 操作 | 刻みごとに入力の処理を促すメッセージを受け取る (カメラとマイクの処理。最小化しても止まらない) |
 | `set_tracking(frame)` / `set_tracking_paused(paused)` / `set_auto_eye_blink(enabled)` | 操作 | トラッキングの入力 (`null` で外す)・一時停止・自動の目パチ |
 | `set_lip_sync_level(level)` / `set_lip_sync_paused(paused)` | 操作 | マイクの口を開く量 (0〜1、`null` で止める)・一時停止 |
@@ -144,8 +144,8 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
 | `report_render_stats(stats)` | 出力 | 描画の負荷 (回/秒・1 回の時間の平均と最大・捨てたフレーム) を約 1 秒ごとに送る。操作ウィンドウに出す |
 | `report_load_failure(failure)` | 出力 | 今のシーンのモデル・モジュール・背景を読めなかったこと (版・何を・理由のコード) を送る。操作ウィンドウに出す (`subscribe_status` の `loadFailures`。docs/studio.md#受け手が読めなかったとき) |
 | `virtual_camera_state()` | 操作 | 仮想カメラの状態 (止めている・始めている・動いている・止まった。始められない理由も) |
-| `start_virtual_camera(settings)` / `stop_virtual_camera()` | 操作 | 仮想カメラを始める (動いていれば始め直す)・止める。状態の変化は `subscribe_status` の `virtualCamera` で届く |
-| `set_virtual_camera_background(background)` | 操作 | 透過を埋める色 (RGB) を変える |
+| `start_virtual_camera(settings?)` / `stop_virtual_camera()` | 操作 | 仮想カメラをプロファイルの設定で始める (動いていれば始め直す。`settings` (色は RGB の配列) を渡すと先にプロファイルの設定にする)・止める。状態の変化は `subscribe_status` の `virtualCamera` で届く |
+| `set_virtual_camera_settings(settings)` | 操作 | プロファイルの `output.virtualCamera` を変える (色は `#rrggbb`)。動いていれば効かせる (解像度とフレームレートは始め直し、色は次の画から) |
 
 - プロファイルとシーンのコマンドのエラーは `{ code, ... }` の形 (`profile.rs` の `ProfileError`・`stage.rs` の `SceneError`)。画面は `code` で文言を選ぶ。
 

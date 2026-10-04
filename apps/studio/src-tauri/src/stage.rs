@@ -13,7 +13,10 @@ use ugoe::model::module::Module;
 use crate::conductor::{self, Conductor, NewModel};
 use crate::hotkeys::{self, Hotkey};
 use crate::input::{InputSettings, MotionSettings};
-use crate::profile::{Background, Profile, ProfileError, RecentProfiles, SceneSettings};
+use crate::pacing::TickRate;
+use crate::profile::{
+    Background, Profile, ProfileError, RecentProfiles, SceneSettings, VirtualCameraSettings,
+};
 use crate::stream::Look;
 
 /// モデルとモジュールのファイルの大きさの上限 (誤って巨大なファイルを選んだときにメモリを使い果たさないため)。
@@ -230,6 +233,23 @@ impl Stage {
     pub fn set_output_size(&mut self, size: &str) {
         if self.profile.output.size != size {
             self.profile.output.size = size.to_owned();
+            self.dirty = true;
+        }
+    }
+
+    /// 刻みの速さを変える (T0827)。
+    pub fn set_tick_rate(&mut self, rate: TickRate) {
+        if self.profile.output.tick_rate != rate.hz() {
+            self.profile.output.tick_rate = rate.hz();
+            self.dirty = true;
+        }
+    }
+
+    /// 仮想カメラの設定を置き換える (T0827。選べない値は既定に戻す)。
+    pub fn set_virtual_camera(&mut self, mut settings: VirtualCameraSettings) {
+        settings.sanitize();
+        if self.profile.output.virtual_camera != settings {
+            self.profile.output.virtual_camera = settings;
             self.dirty = true;
         }
     }
@@ -667,6 +687,41 @@ mod tests {
             stage.remove_scene("nope"),
             Err(SceneError::UnknownScene { .. })
         ));
+    }
+
+    /// 刻みの速さと仮想カメラの設定はプロファイルに持ち、変えたら未保存にする (T0827)。
+    #[test]
+    fn keeps_the_tick_rate_and_the_virtual_camera_in_the_profile() {
+        let dir = Dir::new("output");
+        let path = dir.0.join("p.json");
+        let mut stage = Stage::new(None);
+        let mut conductor = Conductor::new();
+        stage.set_tick_rate(TickRate::DEFAULT);
+        assert!(!stage.dirty());
+        stage.set_tick_rate(TickRate::Fps120);
+        assert!(stage.dirty());
+        stage.set_virtual_camera(VirtualCameraSettings {
+            width: 1920,
+            height: 1080,
+            fps: 60,
+            background: "#00FF00".into(),
+        });
+        let camera = stage.profile().output.virtual_camera.clone();
+        assert_eq!(camera.background, "#00ff00");
+        stage.save_profile(Some(&path)).unwrap();
+        // 選べない値は既定に戻す。
+        stage.set_virtual_camera(VirtualCameraSettings {
+            fps: 24,
+            ..camera.clone()
+        });
+        assert_eq!(stage.profile().output.virtual_camera.fps, 30);
+        assert!(stage.dirty());
+
+        stage.new_profile(&mut conductor);
+        assert_eq!(stage.profile().output.tick_rate(), TickRate::DEFAULT);
+        stage.open_profile(&path, &mut conductor).unwrap();
+        assert_eq!(stage.profile().output.tick_rate(), TickRate::Fps120);
+        assert_eq!(stage.profile().output.virtual_camera, camera);
     }
 
     #[test]

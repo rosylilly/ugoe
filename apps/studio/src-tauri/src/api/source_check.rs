@@ -101,6 +101,7 @@ fn serves_a_frozen_scene_for_a_browser_check() {
     *lock(&studio.camera) = Some(CameraThread {
         commands: tx,
         thread: std::thread::spawn(|| {}),
+        settings: Settings::default(),
     });
     lock(&studio.api.0).settings.source.token = store::generate_secret().unwrap();
     let port = std::env::var("UGOE_STUDIO_CHECK_PORT")

@@ -1,13 +1,16 @@
-// 操作ウィンドウが覚える設定 (localStorage。言語・テーマ・刻みの速さ) と、出力ウィンドウの大きさのプリセット (docs/studio.md#出力ウィンドウ)。
-// 出力の大きさはプロファイル (lib/profile.ts の `Profile.output`) に持つ (T0802)。刻みの速さもプロファイルへ移すのは後続の候補。
+// 操作ウィンドウが覚える設定 (localStorage。言語・テーマ) と、出力ウィンドウの大きさのプリセットと刻みの速さ (docs/studio.md#出力ウィンドウ)。
+// 出力の大きさと刻みの速さはプロファイル (lib/profile.ts の `Profile.output`) に持つ (T0802・T0827)。
 import { isLocale, type LocalePreference } from "@ugoe/i18n";
 
 /** 画面の言語の設定のキー。 */
 export const LOCALE_STORAGE_KEY = "ugoe-studio.locale";
 /** テーマの設定のキー (@ugoe/ui の initTheme に渡す。index.html の <head> のスクリプトも同じキーを読む)。出力ウィンドウには効かせない。 */
 export const THEME_STORAGE_KEY = "ugoe-studio.theme";
-/** 刻みの速さのキー。 */
-export const TICK_RATE_STORAGE_KEY = "ugoe-studio.tick-rate";
+/**
+ * プロファイルへ移す前に localStorage に覚えていた設定のキー (刻みの速さと仮想カメラ)。引き継がずに消す
+ * (T0827。docs/studio.md#プロファイルの形式)。
+ */
+export const LEGACY_STORAGE_KEYS = ["ugoe-studio.tick-rate", "ugoe-studio.virtual-camera"] as const;
 
 /** 刻みの速さ (回/秒。ADR 0028 の 3.)。出力のフレームレートになる。 */
 export type TickRate = 30 | 60 | 120;
@@ -73,11 +76,18 @@ export function parseOutputSize(value: string | null | undefined): OutputSizePre
   return OUTPUT_SIZE_PRESETS.find((p) => p === value) ?? DEFAULT_OUTPUT_SIZE;
 }
 
-export function loadTickRate(): TickRate {
-  const v = Number(read(TICK_RATE_STORAGE_KEY));
-  return TICK_RATES.find((r) => r === v) ?? DEFAULT_TICK_RATE;
+/** プロファイルに書いた刻みの速さを読む。選べない値なら既定。 */
+export function parseTickRate(value: number | null | undefined): TickRate {
+  return TICK_RATES.find((r) => r === value) ?? DEFAULT_TICK_RATE;
 }
 
-export function saveTickRate(value: TickRate): void {
-  write(TICK_RATE_STORAGE_KEY, String(value));
+/** プロファイルへ移す前の設定を消す (`LEGACY_STORAGE_KEYS`)。 */
+export function forgetLegacySettings(): void {
+  for (const key of LEGACY_STORAGE_KEYS) {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // 消せなくても読まないので害は無い。
+    }
+  }
 }

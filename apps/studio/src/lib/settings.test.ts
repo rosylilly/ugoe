@@ -2,15 +2,15 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   DEFAULT_OUTPUT_SIZE,
   DEFAULT_TICK_RATE,
+  forgetLegacySettings,
+  LEGACY_STORAGE_KEYS,
   LOCALE_STORAGE_KEY,
   loadLocalePreference,
-  loadTickRate,
   parseOutputSize,
+  parseTickRate,
   presetOf,
   presetSize,
   saveLocalePreference,
-  saveTickRate,
-  TICK_RATE_STORAGE_KEY,
 } from "./settings";
 
 class MemoryStorage {
@@ -20,6 +20,9 @@ class MemoryStorage {
   }
   setItem(key: string, value: string) {
     this.#items.set(key, value);
+  }
+  removeItem(key: string) {
+    this.#items.delete(key);
   }
 }
 
@@ -56,11 +59,20 @@ describe("locale preference", () => {
 });
 
 describe("tick rate", () => {
-  it("defaults to 60 and remembers 30 / 60 / 120 only", () => {
-    expect(loadTickRate()).toBe(DEFAULT_TICK_RATE);
-    saveTickRate(120);
-    expect(loadTickRate()).toBe(120);
-    localStorage.setItem(TICK_RATE_STORAGE_KEY, "144");
-    expect(loadTickRate()).toBe(DEFAULT_TICK_RATE);
+  it("reads 30 / 60 / 120 from the profile and defaults to 60", () => {
+    expect(parseTickRate(120)).toBe(120);
+    expect(parseTickRate(144)).toBe(DEFAULT_TICK_RATE);
+    expect(parseTickRate(undefined)).toBe(DEFAULT_TICK_RATE);
+  });
+});
+
+describe("legacy settings", () => {
+  it("forgets the tick rate and the virtual camera kept before the profile had them", () => {
+    localStorage.setItem("ugoe-studio.tick-rate", "120");
+    localStorage.setItem("ugoe-studio.virtual-camera", "{}");
+    saveLocalePreference("ja");
+    forgetLegacySettings();
+    for (const key of LEGACY_STORAGE_KEYS) expect(localStorage.getItem(key)).toBeNull();
+    expect(loadLocalePreference()).toBe("ja");
   });
 });

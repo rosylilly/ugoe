@@ -13,7 +13,7 @@ import type {
   MotionSettings,
 } from "./inputs";
 import type { Background, ProfileView, SceneSettings, StudioError, Transform } from "./profile";
-import type { VirtualCameraSettings, VirtualCameraStatus } from "./virtualCamera";
+import type { VirtualCameraProfile, VirtualCameraStatus } from "./virtualCamera";
 
 /** 操作ウィンドウに出すパラメータの定義 (lib.rs の `ParameterInfo`)。 */
 export interface ParameterInfo {
@@ -182,7 +182,7 @@ export interface StudioHost {
   setOutputSize(width: number, height: number): Promise<OutputState>;
   /** 刻みの速さ (30 / 60 / 120 回/秒)。 */
   tickRate(): Promise<number>;
-  /** 刻みの速さを選ぶ。選べない値なら例外。 */
+  /** 刻みの速さを選ぶ (プロファイルに持つ)。選べない値なら例外。 */
   setTickRate(rate: number): Promise<number>;
   /** OS の言語 (BCP 47)。取れなければ `null`。 */
   systemLocale(): Promise<string | null>;
@@ -212,11 +212,14 @@ export interface StudioHost {
   moduleSlot(path: string): Promise<string>;
   /** 仮想カメラの今の状態 (以後の変化は `subscribeStatus` の `virtualCamera` で届く)。 */
   virtualCameraState(): Promise<VirtualCameraStatus>;
-  /** 仮想カメラを始める (動いていれば新しい設定で始め直す)。選べない設定なら例外。 */
-  startVirtualCamera(settings: VirtualCameraSettings): Promise<void>;
+  /** 仮想カメラを、プロファイルの設定で始める (動いていれば始め直す)。 */
+  startVirtualCamera(): Promise<void>;
   stopVirtualCamera(): Promise<void>;
-  /** 透過のところを埋める色を変える (動いていれば次の画から)。 */
-  setVirtualCameraBackground(background: [number, number, number]): Promise<void>;
+  /**
+   * 仮想カメラの設定を変える (プロファイルに持つ)。動いていれば効かせる
+   * (解像度とフレームレートは始め直し、色は次の画から)。
+   */
+  setVirtualCameraSettings(settings: VirtualCameraProfile): Promise<void>;
   // 操作 API (T0805。様子は `api` の通知でも届く)
   apiState(): Promise<ApiView>;
   /** 待ち受けを始める・止める (覚える)。 */
@@ -331,10 +334,9 @@ async function tauriHost(): Promise<StudioHost> {
     suspendHotkeys: (suspended) => invoke("suspend_hotkeys", { suspended }),
     moduleSlot: (path) => invoke("module_slot", { path }),
     virtualCameraState: () => invoke("virtual_camera_state"),
-    startVirtualCamera: (settings) => invoke("start_virtual_camera", { settings }),
+    startVirtualCamera: () => invoke("start_virtual_camera"),
     stopVirtualCamera: () => invoke("stop_virtual_camera"),
-    setVirtualCameraBackground: (background) =>
-      invoke("set_virtual_camera_background", { background }),
+    setVirtualCameraSettings: (settings) => invoke("set_virtual_camera_settings", { settings }),
     apiState: () => invoke("api_state"),
     setApiEnabled: (enabled) => invoke("set_api_enabled", { enabled }),
     setApiPort: (port) => invoke("set_api_port", { port }),

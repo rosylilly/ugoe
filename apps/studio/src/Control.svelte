@@ -57,20 +57,21 @@ import {
 import { sceneLabel } from "./lib/labels";
 import { latestOnly } from "./lib/latest";
 import { Microphone } from "./lib/microphone.svelte";
+import { PendingEdit } from "./lib/pendingEdit.svelte";
 import { fileName, isStudioError, type ProfileView, type SceneSettings } from "./lib/profile";
 import { Pulse } from "./lib/pulse";
 import { describeLoadFailure } from "./lib/receivers";
 import {
-  loadTickRate,
+  forgetLegacySettings,
   OUTPUT_SIZE_PRESETS,
   type OutputSizePreset,
   parseOutputSize,
+  parseTickRate,
   presetOf,
   presetSize,
-  saveTickRate,
   type TickRate,
 } from "./lib/settings";
-import type { VirtualCameraStatus } from "./lib/virtualCamera";
+import { DEFAULT_CAMERA_PROFILE, type VirtualCameraStatus } from "./lib/virtualCamera";
 import MotionPanel from "./MotionPanel.svelte";
 import SceneEditor from "./SceneEditor.svelte";
 import ScenesPanel from "./ScenesPanel.svelte";
@@ -102,7 +103,9 @@ let seq = $state<number | null>(null);
 let tickMs = $state<number | null>(null);
 let receivers = $state(0);
 let output = $state<OutputState | null>(null);
-let tickRate = $state<TickRate>(loadTickRate());
+/** 送っている途中の刻みの速さ (プロファイルに持つ。T0827)。 */
+const tickRateEdit = new PendingEdit<TickRate>((rate) => run((h) => h.setTickRate(rate)));
+const tickRate = $derived(tickRateEdit.current(parseTickRate(profile?.profile.output.tickRate)));
 /** 最新の値と負荷 (負荷の表示に使う)。 */
 let status = $state<StatusMessage | null>(null);
 /** 受け手が今のシーンで読めなかったこと (T0825。シーンが変わると空になって届く)。 */
@@ -527,10 +530,8 @@ async function applyWindowSize(preset: OutputSizePreset) {
   output = (await run((h) => h.setOutputSize(size[0], size[1]))) ?? output;
 }
 
-async function changeTickRate(rate: TickRate) {
-  tickRate = rate;
-  saveTickRate(rate);
-  await run((h) => h.setTickRate(rate));
+function changeTickRate(rate: TickRate) {
+  void tickRateEdit.submit(rate);
 }
 
 /** パラメータのスライダーの刻み。 */
@@ -553,6 +554,8 @@ async function resetParameters() {
 let stopMicrophoneSteps: (() => void) | null = null;
 
 onMount(() => {
+  // 刻みの速さと仮想カメラの設定はプロファイルに持つ (T0827)。前に localStorage に覚えていたものは引き継がない。
+  forgetLegacySettings();
   void (async () => {
     try {
       host = await studioHost();
@@ -562,7 +565,6 @@ onMount(() => {
     }
     output = (await run((h) => h.outputState())) ?? null;
     camera = (await run((h) => h.virtualCameraState())) ?? null;
-    await run((h) => h.setTickRate(tickRate));
     await run((h) => h.subscribeStatus(onMonitor));
     // 入力の処理はバックエンドの刻みで回す (受け取れなければ requestAnimationFrame のまま)。
     try {
@@ -844,7 +846,11 @@ onMount(() => {
       </Section>
 
       <Section title={t("virtualCamera.heading")}>
-        <VirtualCameraPanel {host} status={camera} />
+        <VirtualCameraPanel
+          {host}
+          status={camera}
+          settings={profile?.profile.output.virtualCamera ?? DEFAULT_CAMERA_PROFILE}
+        />
       </Section>
 
       <Section title={t("source.heading")}>
