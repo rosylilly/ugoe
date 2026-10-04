@@ -6,6 +6,7 @@ use std::sync::Arc;
 use super::ApiView;
 use super::store::Permission;
 use crate::Studio;
+use crate::error::CommandError;
 
 /// 今の様子。
 #[tauri::command]
@@ -25,7 +26,7 @@ pub(crate) fn set_api_enabled(studio: tauri::State<'_, Arc<Studio>>, enabled: bo
 pub(crate) fn set_api_port(
     studio: tauri::State<'_, Arc<Studio>>,
     port: u16,
-) -> Result<ApiView, String> {
+) -> Result<ApiView, CommandError> {
     studio.set_api_port(port)?;
     Ok(studio.api_view())
 }
@@ -40,7 +41,7 @@ pub(crate) fn api_token(studio: tauri::State<'_, Arc<Studio>>) -> String {
 #[tauri::command]
 pub(crate) fn regenerate_api_token(
     studio: tauri::State<'_, Arc<Studio>>,
-) -> Result<String, String> {
+) -> Result<String, CommandError> {
     studio.regenerate_api_token()
 }
 
@@ -50,7 +51,7 @@ pub(crate) fn approve_api_client(
     studio: tauri::State<'_, Arc<Studio>>,
     id: String,
     permission: Permission,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     studio.approve_api_client(&id, permission)
 }
 
@@ -89,6 +90,6 @@ pub(crate) fn source_url(studio: tauri::State<'_, Arc<Studio>>) -> String {
 #[tauri::command]
 pub(crate) fn regenerate_source_token(
     studio: tauri::State<'_, Arc<Studio>>,
-) -> Result<String, String> {
+) -> Result<String, CommandError> {
     studio.regenerate_source_token()
 }

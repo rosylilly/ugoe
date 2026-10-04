@@ -35,7 +35,7 @@ src/lib/feed.ts               受け手の配信の口 (OutputFeed)。ブラウ�
 src/lib/host.ts               バックエンドとの口 (StudioHost)。Tauri の外では window.__UGOE_STUDIO_HOST__ を使う
 src/lib/settings.ts           覚える設定 (言語・刻みの速さ。localStorage) と出力の大きさのプリセット
 src/lib/load.ts               負荷の注意の判断 (刻みが遅れた・揺れた・描画が重い・フレームを捨てた・描いていない)
-src/lib/profile.ts            プロファイルとシーンの形 (profile.rs と同じ)・エラーの形・背景や配置の既定値
+src/lib/profile.ts            プロファイルとシーンの形 (profile.rs と同じ)・背景や配置の既定値
 src/lib/inputs.ts             入力・モーション・ホットキーの設定と演技の様子の形 (input.rs・hotkeys.rs・animation.rs と同じ)
 src/lib/api.ts                操作 API とブラウザソースの様子の形 (mod.rs の ApiView・SourceView と同じ)・接続先・ポートの範囲・URL のトークンを伏せる
 src/lib/hotkeys.ts            ホットキーのキーの書き方 (押したキー → `Ctrl+Shift+KeyA`、Kbd の表記)
@@ -46,7 +46,8 @@ src/lib/pulse.ts              入力の処理を回す刻み (バックエンド
 src/lib/channel.ts            Tauri の Channel の受け取りを、例外を外へ出さない形に包む (投げると以後のメッセージが止まるため)
 src/lib/latest.ts             送っている間に届いた値は最後のものだけを次に送る (トラッキングと口パクの IPC)
 src/lib/outputLayout.ts       受け手がシーンの通知ですること (planScene)・配置を舞台とビューと CSS の回転に分ける計算
-src/lib/errors.ts             バックエンドのエラー (code) を文にする
+src/lib/errors.ts             バックエンドのコマンドのエラー (コードと引数) を今の言語の文にする (下の「コマンドのエラー」)
+src/lib/commandMessage.ts     コマンドのエラーの形と英語の文 (@ugoe/i18n を読まない出力ウィンドウとブラウザソースも使う)
 src/lib/labels.ts             シーンの表示名
 src/lib/receivers.ts          受け手の表示名と、受け手が読めなかったこと (T0825) の文
 src/lib/virtualCamera.ts      仮想カメラの設定 (localStorage) と状態・知らせの判断
@@ -65,6 +66,7 @@ src-tauri/                    バックエンド (Rust クレート `ugoe-studio
   src/lighting.rs               シーンの光源 (LightingSettings の JSON) をレンダラの光源にする (@ugoe/player と同じ規則。仮想カメラが使う)
   src/virtual_camera.rs         仮想カメラの受け手 (Feed: 受け手 + ugoe-headless の常駐の描画) とスレッド (T0807)
   src/lib.rs                    刻みのスレッド・Tauri のコマンド・出力ウィンドウの操作
+  src/error.rs                  コマンドのエラー (`{ code, args, message }`。下の「コマンドのエラー」。T0835)
   src/load_failure.rs           受け手が今のシーンのファイルを読めなかったことの報告 (今のシーンのものだけを受け、操作ウィンドウに配る。T0825)
   src/acl.rs                    コマンドの名前と出力ウィンドウが呼べるもの (build.rs が読む。capabilities/ との一致のテスト。T0820)
   src/api/                      操作 API (T0805。docs/studio.md#外部-api、英語のリファレンスは docs/studio-api.md)
@@ -147,7 +149,7 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
 | `start_virtual_camera(settings?)` / `stop_virtual_camera()` | 操作 | 仮想カメラをプロファイルの設定で始める (動いていれば始め直す。`settings` (色は RGB の配列) を渡すと先にプロファイルの設定にする)・止める。状態の変化は `subscribe_status` の `virtualCamera` で届く |
 | `set_virtual_camera_settings(settings)` | 操作 | プロファイルの `output.virtualCamera` を変える (色は `#rrggbb`)。動いていれば効かせる (解像度とフレームレートは始め直し、色は次の画から) |
 
-- プロファイルとシーンのコマンドのエラーは `{ code, ... }` の形 (`profile.rs` の `ProfileError`・`stage.rs` の `SceneError`)。画面は `code` で文言を選ぶ。
+- コマンドのエラーは `{ code, args, message }` の形 (下の「コマンドのエラー」)。
 
 - 出力ウィンドウは閉じる操作で隠すだけにする (受け手を作り直さない)。操作ウィンドウを閉じるとアプリを終える (仮想カメラも止める)。
 - 権限 (`src-tauri/capabilities/`): 操作ウィンドウはファイルを開く・保存先を選ぶダイアログと OS の言語、出力ウィンドウはウィンドウのドラッグだけ。
@@ -165,6 +167,59 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
   `hotkey` (押されたホットキー。キャリブレーションと、行えなかったときの理由。操作 API の `tracking.calibrate` も同じ通知を使う)・
   `api` (操作 API の様子。待ち受け・承認したアプリ・承認を待つアプリ) がある。
 - 出力ウィンドウの背景の透過は、macOS では `macOSPrivateApi` (tauri の `macos-private-api` feature) が要る (Mac App Store では配布できなくなる)。
+
+### コマンドのエラー (T0835)
+
+コマンドは失敗すると、[ADR 0029](../../docs/adr/0029-shared-ui-and-i18n.md) の形 `{ code, args, message }` で reject する
+(`src-tauri/src/error.rs` の `CommandError`。エディタ・ビューアと同じ形)。`message` は英語の文 (ログ・訳の無い画面の向け)。
+ホットキーを行えなかった知らせ (`subscribe_status` の `hotkey` の `error`) も同じ形。
+操作ウィンドウは reject された値をそのまま受け、`src/lib/errors.ts` の `describeError` でカタログの `errors.<code>` を `args` で
+引いた今の言語の文にする (カタログに無いコードは `message`。数の引数は今の言語の書式)。コードが `scene.` で始まるエラーは、
+そのシーンに出す (`scene.model_missing` なら選び直すボタンも)。文言を出さない出力ウィンドウとブラウザソースは、同じ形を
+`src/lib/commandMessage.ts` で英語の文にする (@ugoe/i18n を読まないため)。Rust に訳のカタログは置かない。
+
+コードは公開の約束として扱い、名前を変えない (意味が変わるなら新しいコードにする)。`path` はパスの文字列、`reason` は英語の文
+(OS やパーサの誤り)、`asset` はシーンのファイルの種類 (`model`・`module`・`background`)。
+
+| コード | 引数 | いつ |
+| --- | --- | --- |
+| `internal` | `reason` | 別のスレッドの処理が終わらなかった (パニックした)・スレッドを作れなかった。ビューアと同じコード |
+| `profile.io` | `path`・`reason` | プロファイルを読み書きできない |
+| `profile.too_large` | `path`・`size` (バイト) | プロファイルが大きすぎる (16 MiB まで) |
+| `profile.not_json` | `path`・`reason` | JSON でない |
+| `profile.not_profile` | `path` | スタジオのプロファイルでない (`format` が違う) |
+| `profile.future_version` | `path`・`version`・`supported` | このスタジオより新しい版のプロファイル |
+| `profile.invalid` | `path`・`reason` | 形が壊れている |
+| `scene.unknown` | `id` | そのシーンが無い |
+| `scene.model_missing` / `scene.module_missing` / `scene.background_missing` | `asset`・`path` | シーンのモデル・モジュール・背景の画像が見つからない |
+| `scene.unreadable` | `asset`・`path`・`reason` | シーンのファイルを読めない |
+| `scene.wrong_type` | `asset`・`path` | 拡張子が違う |
+| `scene.too_large` | `asset`・`path`・`size` (バイト) | シーンのファイルが大きすぎる |
+| `scene.dress_up` | `reason` | モジュールを付けられない (スロットが無いなど) |
+| `scene_file.not_current` / `scene_file.not_found` | `revision` | 受け手が取ろうとしたファイル: 今のシーンでない・そのファイルが無い |
+| `animation.no_model` | | 出しているモデルが無い |
+| `animation.unknown_motion` / `animation.unknown_expression` | `name` | その名前のモーション・表情がモデルに無い |
+| `animation.motion_rejected` | | 再生中のモーションより優先度が低くて始まらなかった (ホットキーの知らせだけ) |
+| `tick_rate.unsupported` | `rate` | 刻みの速さが 30 / 60 / 120 でない |
+| `render_stats.invalid` | | 出力の報告した描画の負荷が数でない・負 |
+| `output_window.missing` | | 出力ウィンドウが無い |
+| `output_window.failed` | `reason` | 出力ウィンドウの表示・最前面・大きさを変えられない |
+| `output_window.unsupported_size` | `width`・`height` | 出力の大きさが 16〜8192 の外 |
+| `virtual_camera.invalid_config` | `width`・`height`・`fps` | 仮想カメラに選べない解像度・フレームレート |
+| `api.unsupported_port` | `port`・`min` | 操作 API のポートが 1024 未満 |
+| `api.unknown_pending_client` | `id` | 承認を待つクライアントにその ID が無い (もう切れた・断った) |
+| `api.too_many_clients` | `max` | 承認したクライアントが多すぎる |
+| `api.random_failed` | `reason` | OS の乱数を取れず、トークン・鍵を作れない |
+
+仮想カメラの止まった理由 (`virtual_camera::Status` の `code`。`virtualCamera.errors.*`) と、受け手が読めなかった理由
+(`loadFailures` の `code`) は、コマンドのエラーではなく状態の一部なので、この形にしない。
+
+**操作 API との関係:** 操作 API ([docs/studio-api.md](../../docs/studio-api.md)) の `-32010` の `error.data` は、
+`ProfileError`・`SceneError`・`AnimationError` をそのまま書いた別の形 (`{ code: "unknownScene", id: … }` のように引数が平らで、
+コードも camelCase の別の名前) にしている。外のツールとの公開の約束で、同じ版のバックエンドと画面がいつも一緒に配られる
+コマンドのエラーとは事情が違うため、名前と形は変えない (`error.message` が英語の文で、`message` に当たる)。
+同じエラーから両方を作るので、意味は対応する (`unknownScene` ↔ `scene.unknown`、`missing` ↔ `scene.<asset>_missing`、
+`noModel` ↔ `animation.no_model` など。対応は `src-tauri/src/error.rs` の `From` の実装)。
 
 ## 仮想カメラ
 

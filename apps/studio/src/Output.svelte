@@ -15,6 +15,7 @@
 <script lang="ts">
 import { decodeFrame, type ModelFile, Player } from "@ugoe/player";
 import { onMount } from "svelte";
+import { englishErrorText } from "./lib/commandMessage";
 import type { OutputFeed } from "./lib/feed";
 import type { LoadFailure, StudioScene } from "./lib/host";
 import {
@@ -79,7 +80,7 @@ function onScene(scene: StudioScene) {
   queue = queue
     .then(() => applyScene(scene))
     .catch((e: unknown) => {
-      player.error = e instanceof Error ? e.message : String(e);
+      player.error = englishErrorText(e);
     });
 }
 

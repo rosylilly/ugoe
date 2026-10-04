@@ -26,25 +26,56 @@
     "profileName": "profile.json"
   },
   "errors": {
-    "io": "Could not read or write {{path}}: {{message}}",
-    "tooLarge": "{{path}} is too large.",
-    "notJson": "{{path}} is not a JSON file.",
-    "notProfile": "{{path}} is not an ugoe studio profile.",
-    "futureVersion": "{{path}} was saved by a newer studio (profile version {{version}}; this studio reads up to version {{supported}}). Update the studio to open it.",
-    "invalid": "{{path}} is broken: {{message}}",
-    "unknownScene": "The scene no longer exists.",
-    "missingModel": "The model was not found: {{path}}",
-    "missingModule": "The dress-up module was not found: {{path}}",
-    "missingBackground": "The background image was not found: {{path}}",
-    "unreadable": "Could not read {{path}}: {{message}}",
-    "wrongType": "{{path}} is not a supported file.",
-    "dressUp": "Could not attach the dress-up modules: {{message}}",
+    "internal": "Something went wrong in the studio: {{reason}}",
     "chooseAgain": "Choose again…",
-    "noModel": "No model is on air.",
-    "unknownMotion": "The model has no motion named {{name}}.",
-    "unknownExpression": "The model has no expression named {{name}}.",
-    "motionRejected": "The motion did not start because a motion with a higher priority is playing.",
-    "internal": "Something went wrong in the studio: {{message}}"
+    "profile": {
+      "io": "Could not read or write {{path}}: {{reason}}",
+      "too_large": "{{path}} is too large ({{size}} bytes).",
+      "not_json": "{{path}} is not a JSON file.",
+      "not_profile": "{{path}} is not an ugoe studio profile.",
+      "future_version": "{{path}} was saved by a newer studio (profile version {{version}}; this studio reads up to version {{supported}}). Update the studio to open it.",
+      "invalid": "{{path}} is broken: {{reason}}"
+    },
+    "scene": {
+      "unknown": "The scene no longer exists.",
+      "model_missing": "The model was not found: {{path}}",
+      "module_missing": "The dress-up module was not found: {{path}}",
+      "background_missing": "The background image was not found: {{path}}",
+      "unreadable": "Could not read {{path}}: {{reason}}",
+      "wrong_type": "{{path}} is not a supported file.",
+      "too_large": "{{path}} is too large ({{size}} bytes).",
+      "dress_up": "Could not attach the dress-up modules: {{reason}}"
+    },
+    "scene_file": {
+      "not_current": "Scene {{revision}} is no longer on air.",
+      "not_found": "Scene {{revision}} has no such file."
+    },
+    "animation": {
+      "no_model": "No model is on air.",
+      "unknown_motion": "The model has no motion named {{name}}.",
+      "unknown_expression": "The model has no expression named {{name}}.",
+      "motion_rejected": "The motion did not start because a motion with a higher priority is playing."
+    },
+    "tick_rate": {
+      "unsupported": "{{rate}} ticks per second is not supported (choose 30, 60 or 120)."
+    },
+    "render_stats": {
+      "invalid": "The output reported invalid render statistics."
+    },
+    "output_window": {
+      "missing": "The output window is missing.",
+      "failed": "Could not change the output window: {{reason}}",
+      "unsupported_size": "{{width}}×{{height}} is not a supported output size."
+    },
+    "virtual_camera": {
+      "invalid_config": "{{width}}×{{height}} at {{fps}} fps is not a supported virtual camera setting."
+    },
+    "api": {
+      "unsupported_port": "Port {{port}} cannot be used (choose {{min}} or higher).",
+      "unknown_pending_client": "The app is no longer waiting for approval.",
+      "too_many_clients": "Too many apps are approved (up to {{max}}). Revoke one first.",
+      "random_failed": "Could not create a secret: {{reason}}"
+    }
   },
   "state": {
     "heading": "Now",

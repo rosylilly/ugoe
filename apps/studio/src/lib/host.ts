@@ -4,6 +4,7 @@ import type { TrackingFrame } from "@ugoe/face-tracking";
 import type { LightingSettings, MotionPriority, SceneMessage } from "@ugoe/player";
 import type { ApiPermission, ApiView } from "./api";
 import { safeChannelHandler } from "./channel";
+import type { CommandMessage } from "./commandMessage";
 import type {
   AnimationView,
   Hotkey,
@@ -12,7 +13,7 @@ import type {
   InputSettings,
   MotionSettings,
 } from "./inputs";
-import type { Background, ProfileView, SceneSettings, StudioError, Transform } from "./profile";
+import type { Background, ProfileView, SceneSettings, Transform } from "./profile";
 import type { VirtualCameraProfile, VirtualCameraStatus } from "./virtualCamera";
 
 /** 操作ウィンドウに出すパラメータの定義 (lib.rs の `ParameterInfo`)。 */
@@ -129,7 +130,7 @@ export type MonitorMessage =
       /** Wayland のセッション (アプリが前面に無いとホットキーを受けられない)。 */
       wayland: boolean;
     }
-  | { kind: "hotkey"; action: HotkeyAction; error: StudioError | null }
+  | { kind: "hotkey"; action: HotkeyAction; error: CommandMessage | null }
   | ({ kind: "virtualCamera" } & VirtualCameraStatus)
   | ({ kind: "api" } & ApiView)
   | {
@@ -158,7 +159,7 @@ export interface StudioHost {
   pickFile(kind: FileKind, filterName: string): Promise<string | null>;
   /** OS のダイアログで保存先を選ぶ (プロファイル)。やめたら `null`。 */
   pickSavePath(filterName: string, defaultName: string): Promise<string | null>;
-  // プロファイル (エラーは profile.ts の `StudioError` を投げる)
+  // プロファイル (コマンドはどれも、失敗すると commandMessage.ts の `CommandMessage` を投げる)
   restoreProfile(): Promise<void>;
   newProfile(): Promise<void>;
   openProfile(path: string): Promise<void>;
@@ -186,7 +187,7 @@ export interface StudioHost {
   setTickRate(rate: number): Promise<number>;
   /** OS の言語 (BCP 47)。取れなければ `null`。 */
   systemLocale(): Promise<string | null>;
-  // 入力 (T0803。エラーは profile.ts の `StudioError` を投げる)
+  // 入力 (T0803)
   /** 刻みごとに `onPulse` を呼ぶ (入力の処理。ウィンドウが隠れても止まらない)。 */
   subscribePulse(onPulse: () => void): Promise<void>;
   /** トラッキングの入力 (`null` で外す)。 */

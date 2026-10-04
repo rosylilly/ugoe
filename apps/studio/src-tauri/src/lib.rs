@@ -22,6 +22,7 @@ mod acl;
 pub mod animation;
 pub mod api;
 pub mod conductor;
+mod error;
 pub mod follower;
 pub mod hotkeys;
 pub mod input;
@@ -49,10 +50,11 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 use crate::animation::{AnimationError, AnimationView};
 use crate::conductor::Conductor;
+use crate::error::CommandError;
 use crate::hotkeys::{ExpressionMode, Hotkey, HotkeyAction, HotkeyProblem, MotionPriority};
 use crate::input::{InputSettings, MotionSettings, TrackingFrame};
 use crate::pacing::{Measured, Pacer, RateMeter, TickRate};
-use crate::profile::{Profile, ProfileError, SceneSettings, VirtualCameraSettings};
+use crate::profile::{Profile, SceneSettings, VirtualCameraSettings};
 use crate::stage::{Finish, Pending, ProfileView, ReadAsset, SceneError, Stage};
 use crate::stream::{Frame, Scene};
 use crate::virtual_camera::{
@@ -138,7 +140,7 @@ enum Monitor<'a> {
     #[serde(rename = "hotkey")]
     Hotkey {
         action: &'a HotkeyAction,
-        error: Option<HotkeyError>,
+        error: Option<CommandError>,
     },
     /// 仮想カメラの状態が変わった (T0807)。
     #[serde(rename = "virtualCamera")]
@@ -151,61 +153,6 @@ enum Monitor<'a> {
     LoadFailures {
         failures: Vec<load_failure::ReceiverFailure>,
     },
-}
-
-/// ホットキーの操作を行えなかった理由。画面は `code` で文言を選ぶ。
-#[derive(Debug, Clone, Serialize)]
-#[serde(untagged)]
-enum HotkeyError {
-    Scene(SceneError),
-    Animation(AnimationError),
-    /// 再生中のモーションより優先度が低くて始まらなかった。
-    Rejected {
-        code: &'static str,
-    },
-}
-
-/// コマンドのエラー。画面は `code` で文言を選ぶ (ADR 0029 の 4.)。
-#[derive(Debug, Clone, Serialize)]
-#[serde(untagged)]
-enum CommandError {
-    Profile(ProfileError),
-    Scene(SceneError),
-    Animation(AnimationError),
-    Internal(InternalError),
-}
-
-/// 別のスレッドで行った処理が終わらなかった (パニックした)。
-#[derive(Debug, Clone, Serialize)]
-#[serde(tag = "code", rename = "internal")]
-struct InternalError {
-    message: String,
-}
-
-impl From<ProfileError> for CommandError {
-    fn from(e: ProfileError) -> Self {
-        Self::Profile(e)
-    }
-}
-
-impl From<SceneError> for CommandError {
-    fn from(e: SceneError) -> Self {
-        Self::Scene(e)
-    }
-}
-
-impl From<AnimationError> for CommandError {
-    fn from(e: AnimationError) -> Self {
-        Self::Animation(e)
-    }
-}
-
-impl From<tauri::Error> for CommandError {
-    fn from(e: tauri::Error) -> Self {
-        Self::Internal(InternalError {
-            message: e.to_string(),
-        })
-    }
 }
 
 /// ファイルを読む・スレッドを待つ処理を、メインのスレッド (イベントループ) と非同期の実行器のワーカーの外で行う
@@ -622,7 +569,7 @@ impl Studio {
         }
     }
 
-    fn perform_hotkey(&self, action: &HotkeyAction) -> Option<HotkeyError> {
+    fn perform_hotkey(&self, action: &HotkeyAction) -> Option<CommandError> {
         let animate = |f: &dyn Fn(
             &mut crate::animation::Animation,
             &mut ugoe::Puppet,
@@ -639,7 +586,7 @@ impl Studio {
                         stage.begin_activate(scene, conductor).map(Some)
                     })
                     .err()
-                    .map(HotkeyError::Scene);
+                    .map(CommandError::from);
             }
             HotkeyAction::DressUp { slot, module } => {
                 return self
@@ -647,7 +594,7 @@ impl Studio {
                         stage.begin_dress_up(slot, module.as_deref(), conductor)
                     })
                     .err()
-                    .map(HotkeyError::Scene);
+                    .map(CommandError::from);
             }
             HotkeyAction::Expression { expression, mode } => animate(&|animation, puppet| {
                 match mode {
@@ -688,10 +635,8 @@ impl Studio {
         };
         match result {
             Ok(true) => None,
-            Ok(false) => Some(HotkeyError::Rejected {
-                code: "motionRejected",
-            }),
-            Err(e) => Some(HotkeyError::Animation(e)),
+            Ok(false) => Some(CommandError::motion_rejected()),
+            Err(e) => Some(e.into()),
         }
     }
 
@@ -706,13 +651,13 @@ impl Studio {
         &self,
         revision: u32,
         pick: impl FnOnce(&Stage) -> Option<Arc<Vec<u8>>>,
-    ) -> Result<Arc<Vec<u8>>, String> {
+    ) -> Result<Arc<Vec<u8>>, CommandError> {
         let stage = lock(&self.stage);
         let current = lock(&self.conductor).scene().map(|s| s.revision);
         if current != Some(revision) {
-            return Err(format!("scene {revision} is not the current scene"));
+            return Err(CommandError::scene_not_current(revision));
         }
-        pick(&stage).ok_or_else(|| format!("scene {revision} has no such file"))
+        pick(&stage).ok_or_else(|| CommandError::scene_no_file(revision))
     }
 
     /// 仮想カメラに渡す今のシーン (シーンの通知と、受け手が `scene_model` などで取るファイル)。
@@ -978,14 +923,13 @@ async fn scene_file(
     studio: &Arc<Studio>,
     revision: u32,
     pick: impl FnOnce(&Stage) -> Option<Arc<Vec<u8>>> + Send + 'static,
-) -> Result<Response, String> {
+) -> Result<Response, CommandError> {
     blocking(studio, move |studio| {
         studio
             .scene_bytes(revision, pick)
             .map(|bytes| Response::new(bytes.to_vec()))
     })
-    .await
-    .map_err(|e| e.to_string())?
+    .await?
 }
 
 /// シーン `revision` のモデルのバイト列。
@@ -993,7 +937,7 @@ async fn scene_file(
 async fn scene_model(
     studio: tauri::State<'_, Arc<Studio>>,
     revision: u32,
-) -> Result<Response, String> {
+) -> Result<Response, CommandError> {
     scene_file(&studio, revision, Stage::model_bytes).await
 }
 
@@ -1003,7 +947,7 @@ async fn scene_module(
     studio: tauri::State<'_, Arc<Studio>>,
     revision: u32,
     index: usize,
-) -> Result<Response, String> {
+) -> Result<Response, CommandError> {
     scene_file(&studio, revision, move |stage| stage.module_bytes(index)).await
 }
 
@@ -1012,7 +956,7 @@ async fn scene_module(
 async fn scene_background(
     studio: tauri::State<'_, Arc<Studio>>,
     revision: u32,
-) -> Result<Response, String> {
+) -> Result<Response, CommandError> {
     scene_file(&studio, revision, Stage::background_image).await
 }
 
@@ -1239,8 +1183,8 @@ fn tick_rate(studio: tauri::State<'_, Arc<Studio>>) -> u32 {
 
 /// 刻みの速さを 30 / 60 / 120 から選ぶ (プロファイルに持つ。次の刻みから)。
 #[tauri::command]
-fn set_tick_rate(studio: tauri::State<'_, Arc<Studio>>, rate: u32) -> Result<u32, String> {
-    let rate = TickRate::from_hz(rate).ok_or_else(|| format!("unsupported tick rate: {rate}"))?;
+fn set_tick_rate(studio: tauri::State<'_, Arc<Studio>>, rate: u32) -> Result<u32, CommandError> {
+    let rate = TickRate::from_hz(rate).ok_or(CommandError::unsupported_tick_rate(rate))?;
     studio.with_stage(|stage, _| stage.set_tick_rate(rate));
     Ok(rate.hz())
 }
@@ -1251,9 +1195,9 @@ fn report_render_stats(
     studio: tauri::State<'_, Arc<Studio>>,
     webview: tauri::Webview,
     stats: RenderStats,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     if !stats.is_valid() {
-        return Err("invalid render stats".to_owned());
+        return Err(CommandError::invalid_render_stats());
     }
     lock(&studio.renders).insert(
         webview.label().to_owned(),
@@ -1289,11 +1233,11 @@ fn virtual_camera_state(studio: tauri::State<'_, Arc<Studio>>) -> virtual_camera
 async fn start_virtual_camera(
     studio: tauri::State<'_, Arc<Studio>>,
     settings: Option<CameraSettings>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     // 動いている仮想カメラのスレッドの終わりを待つので、メインのスレッドの外で行う。
     blocking(&studio, move |studio| {
         if let Some(settings) = settings {
-            settings.config().validate().map_err(|e| e.to_string())?;
+            validate_camera(settings)?;
             studio.with_stage(|stage, _| {
                 stage.set_virtual_camera(VirtualCameraSettings::from_settings(settings));
             });
@@ -1305,8 +1249,7 @@ async fn start_virtual_camera(
             .settings();
         start_camera(studio, settings)
     })
-    .await
-    .map_err(|e| e.to_string())?
+    .await?
 }
 
 /// 仮想カメラの設定を変える (プロファイルに持つ)。動いていれば効かせる (`sync_camera`)。
@@ -1314,19 +1257,18 @@ async fn start_virtual_camera(
 async fn set_virtual_camera_settings(
     studio: tauri::State<'_, Arc<Studio>>,
     settings: VirtualCameraSettings,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     // 仮想カメラを始め直すことがある (スレッドの終わりを待つ) ので、メインのスレッドの外で行う。
     blocking(&studio, move |studio| {
         studio.with_stage(|stage, _| stage.set_virtual_camera(settings));
         sync_camera(studio)
     })
-    .await
-    .map_err(|e| e.to_string())?
+    .await?
 }
 
 /// プロファイルの仮想カメラの設定を、動いている仮想カメラに効かせる。解像度かフレームレートが変われば始め直し
 /// (OS のカメラの形が変わるため)、色だけなら次の画から変える。止まった (失敗した) 仮想カメラは始め直さない。
-fn sync_camera(studio: &Arc<Studio>) -> Result<(), String> {
+fn sync_camera(studio: &Arc<Studio>) -> Result<(), CommandError> {
     let wanted = lock(&studio.stage)
         .profile()
         .output
@@ -1355,8 +1297,16 @@ fn sync_camera(studio: &Arc<Studio>) -> Result<(), String> {
     start_camera(studio, wanted)
 }
 
-fn start_camera(studio: &Arc<Studio>, settings: CameraSettings) -> Result<(), String> {
-    settings.config().validate().map_err(|e| e.to_string())?;
+/// 選べない解像度・フレームレートなら `virtual_camera.invalid_config`。
+fn validate_camera(settings: CameraSettings) -> Result<(), CommandError> {
+    let config = settings.config();
+    config
+        .validate()
+        .map_err(|_| CommandError::invalid_camera_config(config))
+}
+
+fn start_camera(studio: &Arc<Studio>, settings: CameraSettings) -> Result<(), CommandError> {
+    validate_camera(settings)?;
     studio.stop_camera();
     let (tx, rx) = std::sync::mpsc::channel();
     // 刻みのスレッドより先にシーンが届くよう、舞台と指揮役を (この順に) 握ったままシーンを送り、送り先を置く。
@@ -1373,7 +1323,7 @@ fn start_camera(studio: &Arc<Studio>, settings: CameraSettings) -> Result<(), St
                 events.camera_event(event, settings.fps)
             });
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(CommandError::internal)?;
     *lock(&studio.camera) = Some(CameraThread {
         commands: tx,
         thread,
@@ -1386,23 +1336,27 @@ fn start_camera(studio: &Arc<Studio>, settings: CameraSettings) -> Result<(), St
 
 /// 仮想カメラを止める (受け手と GPU の描画も止める)。
 #[tauri::command]
-async fn stop_virtual_camera(studio: tauri::State<'_, Arc<Studio>>) -> Result<(), String> {
+async fn stop_virtual_camera(studio: tauri::State<'_, Arc<Studio>>) -> Result<(), CommandError> {
     // 仮想カメラのスレッドの終わりを待つので、メインのスレッドの外で行う。
-    blocking(&studio, |studio| studio.stop_camera())
-        .await
-        .map_err(|e| e.to_string())
+    Ok(blocking(&studio, |studio| studio.stop_camera()).await?)
 }
 
-fn output_window(app: &AppHandle) -> Result<WebviewWindow, String> {
+fn output_window(app: &AppHandle) -> Result<WebviewWindow, CommandError> {
     app.get_webview_window(OUTPUT)
-        .ok_or_else(|| "the output window is missing".to_owned())
+        .ok_or_else(CommandError::output_window_missing)
 }
 
-fn read_output_state(window: &WebviewWindow) -> Result<OutputState, String> {
-    let size = window.inner_size().map_err(|e| e.to_string())?;
+fn read_output_state(window: &WebviewWindow) -> Result<OutputState, CommandError> {
+    let size = window
+        .inner_size()
+        .map_err(CommandError::output_window_failed)?;
     Ok(OutputState {
-        visible: window.is_visible().map_err(|e| e.to_string())?,
-        on_top: window.is_always_on_top().map_err(|e| e.to_string())?,
+        visible: window
+            .is_visible()
+            .map_err(CommandError::output_window_failed)?,
+        on_top: window
+            .is_always_on_top()
+            .map_err(CommandError::output_window_failed)?,
         width: size.width,
         height: size.height,
     })
@@ -1410,18 +1364,18 @@ fn read_output_state(window: &WebviewWindow) -> Result<OutputState, String> {
 
 /// 出力ウィンドウの状態。
 #[tauri::command]
-fn output_state(app: AppHandle) -> Result<OutputState, String> {
+fn output_state(app: AppHandle) -> Result<OutputState, CommandError> {
     read_output_state(&output_window(&app)?)
 }
 
 /// 出力ウィンドウを表示する・隠す (隠しても受け手は動き続ける)。
 #[tauri::command]
-fn set_output_visible(app: AppHandle, visible: bool) -> Result<OutputState, String> {
+fn set_output_visible(app: AppHandle, visible: bool) -> Result<OutputState, CommandError> {
     let window = output_window(&app)?;
     if visible {
-        window.show().map_err(|e| e.to_string())?;
+        window.show().map_err(CommandError::output_window_failed)?;
     } else {
-        window.hide().map_err(|e| e.to_string())?;
+        window.hide().map_err(CommandError::output_window_failed)?;
     }
     // Linux (tao) はウィンドウの操作をイベントループへ送ってから行うので、直後の `is_visible` はまだ前の値を返す
     // (操作ウィンドウのボタンが切り替わらなかった。T0006 の実機のテストで見つけた)。頼んだ値を返す。
@@ -1433,11 +1387,11 @@ fn set_output_visible(app: AppHandle, visible: bool) -> Result<OutputState, Stri
 
 /// 出力ウィンドウを最前面にする・戻す。
 #[tauri::command]
-fn set_output_on_top(app: AppHandle, on_top: bool) -> Result<OutputState, String> {
+fn set_output_on_top(app: AppHandle, on_top: bool) -> Result<OutputState, CommandError> {
     let window = output_window(&app)?;
     window
         .set_always_on_top(on_top)
-        .map_err(|e| e.to_string())?;
+        .map_err(CommandError::output_window_failed)?;
     // `set_output_visible` と同じく、直後に読むと前の値のことがあるので、頼んだ値を返す。
     Ok(OutputState {
         on_top,
@@ -1447,14 +1401,14 @@ fn set_output_on_top(app: AppHandle, on_top: bool) -> Result<OutputState, String
 
 /// 出力ウィンドウの中身の大きさを物理ピクセルで決める (配信ソフトが取り込む大きさ。1920×1080 など)。
 #[tauri::command]
-fn set_output_size(app: AppHandle, width: u32, height: u32) -> Result<OutputState, String> {
+fn set_output_size(app: AppHandle, width: u32, height: u32) -> Result<OutputState, CommandError> {
     if !(16..=8192).contains(&width) || !(16..=8192).contains(&height) {
-        return Err(format!("unsupported output size: {width}x{height}"));
+        return Err(CommandError::unsupported_output_size(width, height));
     }
     let window = output_window(&app)?;
     window
         .set_size(PhysicalSize::new(width, height))
-        .map_err(|e| e.to_string())?;
+        .map_err(CommandError::output_window_failed)?;
     read_output_state(&window)
 }
 
@@ -1720,15 +1674,17 @@ mod tests {
         assert_eq!(
             serde_json::to_value(Monitor::Hotkey {
                 action: &action,
-                error: Some(HotkeyError::Rejected {
-                    code: "motionRejected"
-                }),
+                error: Some(CommandError::motion_rejected()),
             })
             .unwrap(),
             serde_json::json!({
                 "kind": "hotkey",
                 "action": { "kind": "trackingCalibrate" },
-                "error": { "code": "motionRejected" }
+                "error": {
+                    "code": "animation.motion_rejected",
+                    "args": {},
+                    "message": "the motion did not start because a motion with a higher priority is playing",
+                }
             })
         );
         let problems = [(1, HotkeyProblem::Unassigned)];
@@ -1784,10 +1740,10 @@ mod tests {
         studio.sync_hotkeys(&list, true);
         let id = hotkeys::parse_keys("Ctrl+KeyA").unwrap().id();
         assert!(lock(&studio.hotkeys).bindings.contains_key(&id));
-        assert!(matches!(
+        assert_eq!(
             studio.perform_hotkey(&HotkeyAction::StopMotions),
-            Some(HotkeyError::Animation(AnimationError::NoModel))
-        ));
+            Some(AnimationError::NoModel.into())
+        );
         assert!(studio.perform_hotkey(&HotkeyAction::LipSyncPause).is_none());
         assert!(lock(&studio.conductor).animation_view().lip_sync_paused);
     }

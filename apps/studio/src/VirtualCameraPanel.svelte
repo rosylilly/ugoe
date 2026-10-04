@@ -8,6 +8,7 @@
 <script lang="ts">
 import { formatNumber } from "@ugoe/i18n";
 import { ColorPicker, Notice, SegmentedControl, Select, Toggle } from "@ugoe/ui";
+import { describeError } from "./lib/errors";
 import type { StudioHost } from "./lib/host";
 import { t } from "./lib/i18n";
 import { PendingEdit } from "./lib/pendingEdit.svelte";
@@ -78,7 +79,7 @@ async function run(action: (host: StudioHost) => Promise<void>) {
   try {
     await action(host);
   } catch (e) {
-    error = e instanceof Error ? e.message : String(e);
+    error = describeError(e);
   }
 }
 

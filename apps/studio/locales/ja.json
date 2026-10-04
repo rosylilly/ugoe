@@ -26,25 +26,56 @@
     "profileName": "profile.json"
   },
   "errors": {
-    "io": "{{path}} を読み書きできません: {{message}}",
-    "tooLarge": "{{path}} は大きすぎます。",
-    "notJson": "{{path}} は JSON のファイルではありません。",
-    "notProfile": "{{path}} は ugoe スタジオのプロファイルではありません。",
-    "futureVersion": "{{path}} は新しいスタジオで保存されています (プロファイルの版 {{version}}。このスタジオが読めるのは版 {{supported}} まで)。スタジオを更新してから開いてください。",
-    "invalid": "{{path}} は壊れています: {{message}}",
-    "unknownScene": "シーンはもうありません。",
-    "missingModel": "モデルが見つかりません: {{path}}",
-    "missingModule": "着せ替えのモジュールが見つかりません: {{path}}",
-    "missingBackground": "背景の画像が見つかりません: {{path}}",
-    "unreadable": "{{path}} を読めません: {{message}}",
-    "wrongType": "{{path}} は使えないファイルです。",
-    "dressUp": "着せ替えのモジュールを付けられません: {{message}}",
+    "internal": "スタジオの中で処理が失敗しました: {{reason}}",
     "chooseAgain": "選び直す…",
-    "noModel": "配信しているモデルがありません。",
-    "unknownMotion": "モデルに {{name}} というモーションがありません。",
-    "unknownExpression": "モデルに {{name}} という表情がありません。",
-    "motionRejected": "優先度の高いモーションを再生しているので、始まりませんでした。",
-    "internal": "スタジオの中で処理が失敗しました: {{message}}"
+    "profile": {
+      "io": "{{path}} を読み書きできません: {{reason}}",
+      "too_large": "{{path}} は大きすぎます ({{size}} バイト)。",
+      "not_json": "{{path}} は JSON のファイルではありません。",
+      "not_profile": "{{path}} は ugoe スタジオのプロファイルではありません。",
+      "future_version": "{{path}} は新しいスタジオで保存されています (プロファイルの版 {{version}}。このスタジオが読めるのは版 {{supported}} まで)。スタジオを更新してから開いてください。",
+      "invalid": "{{path}} は壊れています: {{reason}}"
+    },
+    "scene": {
+      "unknown": "シーンはもうありません。",
+      "model_missing": "モデルが見つかりません: {{path}}",
+      "module_missing": "着せ替えのモジュールが見つかりません: {{path}}",
+      "background_missing": "背景の画像が見つかりません: {{path}}",
+      "unreadable": "{{path}} を読めません: {{reason}}",
+      "wrong_type": "{{path}} は使えないファイルです。",
+      "too_large": "{{path}} は大きすぎます ({{size}} バイト)。",
+      "dress_up": "着せ替えのモジュールを付けられません: {{reason}}"
+    },
+    "scene_file": {
+      "not_current": "シーン {{revision}} はもう出していません。",
+      "not_found": "シーン {{revision}} にそのファイルはありません。"
+    },
+    "animation": {
+      "no_model": "配信しているモデルがありません。",
+      "unknown_motion": "モデルに {{name}} というモーションがありません。",
+      "unknown_expression": "モデルに {{name}} という表情がありません。",
+      "motion_rejected": "優先度の高いモーションを再生しているので、始まりませんでした。"
+    },
+    "tick_rate": {
+      "unsupported": "刻みの速さ {{rate}} 回/秒は選べません (30・60・120 から選びます)。"
+    },
+    "render_stats": {
+      "invalid": "出力が報告した描画の負荷の値が正しくありません。"
+    },
+    "output_window": {
+      "missing": "出力ウィンドウがありません。",
+      "failed": "出力ウィンドウを変えられません: {{reason}}",
+      "unsupported_size": "{{width}}×{{height}} は出力の大きさに選べません。"
+    },
+    "virtual_camera": {
+      "invalid_config": "{{width}}×{{height}}・{{fps}} fps は仮想カメラの設定に選べません。"
+    },
+    "api": {
+      "unsupported_port": "ポート {{port}} は使えません ({{min}} 以上を選びます)。",
+      "unknown_pending_client": "そのアプリはもう承認を待っていません。",
+      "too_many_clients": "承認したアプリが多すぎます ({{max}} まで)。先にどれかを取り消してください。",
+      "random_failed": "秘密の値を作れません: {{reason}}"
+    }
   },
   "state": {
     "heading": "いまの状態",

@@ -32,6 +32,7 @@ use serde_json::{Map, Value, json};
 
 use crate::animation::AnimationView;
 use crate::conductor::FiredEvent;
+use crate::error::CommandError;
 use crate::stage::Stage;
 use crate::{Monitor, Studio, lock};
 use rpc::{Id, RpcError};
@@ -360,9 +361,9 @@ impl Studio {
         self.sync_listener(false);
     }
 
-    pub(crate) fn set_api_port(self: &Arc<Self>, port: u16) -> Result<(), String> {
+    pub(crate) fn set_api_port(self: &Arc<Self>, port: u16) -> Result<(), CommandError> {
         if port < store::MIN_PORT {
-            return Err(format!("unsupported port: {port}"));
+            return Err(CommandError::unsupported_api_port(port, store::MIN_PORT));
         }
         {
             let mut state = lock(&self.api.0);
@@ -381,8 +382,8 @@ impl Studio {
     }
 
     /// トークンを作り直す (古いトークンでは初めての接続ができなくなる。承認したクライアントの鍵はそのまま)。
-    pub(crate) fn regenerate_api_token(&self) -> Result<String, String> {
-        let token = store::generate_secret()?;
+    pub(crate) fn regenerate_api_token(&self) -> Result<String, CommandError> {
+        let token = store::generate_secret().map_err(CommandError::random_failed)?;
         let mut state = lock(&self.api.0);
         state.settings.token.clone_from(&token);
         state.save();
@@ -394,18 +395,18 @@ impl Studio {
         &self,
         id: &str,
         permission: Permission,
-    ) -> Result<(), String> {
+    ) -> Result<(), CommandError> {
         let mut state = lock(&self.api.0);
         let index = state
             .pending
             .iter()
             .position(|p| p.id == id)
-            .ok_or_else(|| format!("no pending client `{id}`"))?;
+            .ok_or_else(|| CommandError::unknown_pending_client(id))?;
         if state.settings.clients.len() >= store::MAX_CLIENTS {
-            return Err("too many approved clients; revoke one first".to_owned());
+            return Err(CommandError::too_many_api_clients(store::MAX_CLIENTS));
         }
-        let key = store::generate_secret()?;
-        let client = store::generate_id()?;
+        let key = store::generate_secret().map_err(CommandError::random_failed)?;
+        let client = store::generate_id().map_err(CommandError::random_failed)?;
         let pending = state.pending.remove(index);
         let now = now_secs();
         state.settings.clients.push(ClientRecord {

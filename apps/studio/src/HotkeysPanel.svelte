@@ -7,6 +7,7 @@
 import { MOTION_PRIORITIES, type MotionPriority } from "@ugoe/player";
 import { Button, Kbd, Notice, SegmentedControl, Select } from "@ugoe/ui";
 import { onDestroy } from "svelte";
+import { describeError } from "./lib/errors";
 import {
   defaultAction,
   displayKeys,
@@ -197,7 +198,7 @@ async function pickModule(index: number) {
     const slot = await moduleSlot(path);
     setAction(index, { kind: "dressUp", slot, module: path });
   } catch (e) {
-    pickError = e instanceof Error ? e.message : String(e);
+    pickError = describeError(e);
   }
 }
 

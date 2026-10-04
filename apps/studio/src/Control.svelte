@@ -31,7 +31,7 @@ import HotkeysPanel from "./HotkeysPanel.svelte";
 import InputPanel from "./InputPanel.svelte";
 import LoadPanel from "./LoadPanel.svelte";
 import { type ApiView, apiUrl, EMPTY_API, pendingToShow } from "./lib/api";
-import { describeError } from "./lib/errors";
+import { describeError, isSceneError } from "./lib/errors";
 import type {
   FileKind,
   MonitorMessage,
@@ -58,7 +58,7 @@ import { sceneLabel } from "./lib/labels";
 import { latestOnly } from "./lib/latest";
 import { Microphone } from "./lib/microphone.svelte";
 import { PendingEdit } from "./lib/pendingEdit.svelte";
-import { fileName, isStudioError, type ProfileView, type SceneSettings } from "./lib/profile";
+import { fileName, type ProfileView, type SceneSettings } from "./lib/profile";
 import { Pulse } from "./lib/pulse";
 import { describeLoadFailure } from "./lib/receivers";
 import {
@@ -310,7 +310,7 @@ function onExpression(op: "set" | "add" | "remove" | "clear", name?: string) {
 
 async function playMotion(name: string, priority: MotionPriority) {
   const started = await run((h) => h.playMotion(name, priority));
-  if (started === false) hotkeyError = t("errors.motionRejected");
+  if (started === false) hotkeyError = t("errors.animation.motion_rejected");
 }
 
 function onProfile(view: ProfileView) {
@@ -373,21 +373,17 @@ async function saveProfile(saveAs: boolean) {
   await run((h) => h.saveProfile(path));
 }
 
-/** シーンを出せないエラー (stage.rs の `SceneError`)。ほかはプロファイルのエラー。 */
-const SCENE_CODES = new Set(["unknownScene", "missing", "unreadable", "wrongType", "dressUp"]);
-
 /**
- * エラーを出す。シーンを出せないエラーは、そのシーンを選んで知らせる (モデルが見つからなければ、選び直すボタンを出す)。
- * プロファイルのエラーは上の帯に出す。
+ * エラーを出す。シーンを出せないエラー (コードが `scene.` で始まる) は、そのシーンを選んで知らせる
+ * (モデルが見つからなければ、選び直すボタンを出す)。プロファイルのエラーなどは上の帯に出す。
  */
 function reportError(e: unknown, id: string | null) {
   const message = describeError(e);
-  const sceneScoped = isStudioError(e) && (SCENE_CODES.has(e.code) || "asset" in e);
-  if (isStudioError(e) && sceneScoped && id !== null) {
+  if (isSceneError(e) && id !== null) {
     sceneError = {
       id,
       message,
-      missingModel: e.code === "missing" && e.asset === "model",
+      missingModel: e.code === "scene.model_missing",
     };
     selected = id;
   } else {
@@ -560,7 +556,7 @@ onMount(() => {
     try {
       host = await studioHost();
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = describeError(e);
       return;
     }
     output = (await run((h) => h.outputState())) ?? null;

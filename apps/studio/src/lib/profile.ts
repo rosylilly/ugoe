@@ -74,58 +74,6 @@ export interface ProfileView {
   recent: string[];
 }
 
-/** シーンのファイルの種類 (stage.rs の `Asset`)。 */
-export type Asset = "model" | "module" | "background";
-
-/** バックエンドのエラー (profile.rs の `ProfileError`・stage.rs の `SceneError`)。`code` で文言を選ぶ。 */
-export type StudioError =
-  | { code: "io"; path: string; message: string }
-  | { code: "tooLarge"; path: string; bytes: number; asset?: Asset }
-  | { code: "notJson"; path: string; message: string }
-  | { code: "notProfile"; path: string }
-  | { code: "futureVersion"; path: string; version: number; supported: number }
-  | { code: "invalid"; path: string; message: string }
-  | { code: "unknownScene"; id: string }
-  | { code: "missing"; asset: Asset; path: string }
-  | { code: "unreadable"; asset: Asset; path: string; message: string }
-  | { code: "wrongType"; asset: Asset; path: string }
-  | { code: "dressUp"; message: string }
-  | { code: "noModel" }
-  | { code: "unknownMotion"; name: string }
-  | { code: "unknownExpression"; name: string }
-  | { code: "motionRejected" }
-  | { code: "internal"; message: string };
-
-const CODES = new Set<string>([
-  "io",
-  "tooLarge",
-  "notJson",
-  "notProfile",
-  "futureVersion",
-  "invalid",
-  "unknownScene",
-  "missing",
-  "unreadable",
-  "wrongType",
-  "dressUp",
-  "noModel",
-  "unknownMotion",
-  "unknownExpression",
-  "motionRejected",
-  "internal",
-]);
-
-/** バックエンドのエラーか (Tauri の invoke はエラーの値をそのまま投げる)。 */
-export function isStudioError(value: unknown): value is StudioError {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "code" in value &&
-    typeof value.code === "string" &&
-    CODES.has(value.code)
-  );
-}
-
 /** 位置の範囲 (出力の大きさに対する割合。profile.rs の `POSITION_LIMIT`)。 */
 export const POSITION_LIMIT = 2;
 /** 大きさの範囲 (profile.rs の `SCALE_RANGE`)。 */

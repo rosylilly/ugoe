@@ -31,6 +31,7 @@ use tungstenite::protocol::{Message, Role, WebSocket};
 use super::http::{self, Reject, RequestHead};
 use super::server::{Keepalive, Liveness};
 use super::{store, ws};
+use crate::error::CommandError;
 use crate::load_failure::LoadFailure;
 use crate::{RenderStats, Reported, Studio, lock};
 
@@ -294,8 +295,8 @@ impl Studio {
     }
 
     /// トークンを作り直す (古い URL のページは閉じ、以後は `404`)。新しい URL を返す。
-    pub(crate) fn regenerate_source_token(&self) -> Result<String, String> {
-        let token = store::generate_secret()?;
+    pub(crate) fn regenerate_source_token(&self) -> Result<String, CommandError> {
+        let token = store::generate_secret().map_err(CommandError::random_failed)?;
         let url = {
             let mut state = lock(&self.api.0);
             state.settings.source.token.clone_from(&token);
