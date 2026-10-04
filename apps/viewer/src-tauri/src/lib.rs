@@ -1,6 +1,8 @@
 //! ビューアのバックエンド。モデルの描画とパラメータの操作はすべて webview の wasm (`ugoe-wasm`) で行い、
 //! ここはファイルの読み書きとカメラの許可など、webview だけではできないことに限る (`apps/viewer/README.md`)。
 
+mod atomic_write;
+
 use std::collections::HashSet;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -10,6 +12,8 @@ use tauri::ipc::Response;
 use tauri::webview::{PermissionKind, PermissionResponse};
 use tauri::{DragDropEvent, Manager, State, WebviewEvent, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
+
+use atomic_write::write_atomic;
 
 /// 読み込むファイルの大きさの上限 (誤って巨大なファイルを選んだときにメモリを使い果たさないため)。
 const MAX_FILE_BYTES: u64 = 512 * 1024 * 1024;
@@ -82,6 +86,7 @@ fn read_model(path: &Path, max: u64) -> Result<Vec<u8>, String> {
 }
 
 /// JSON のファイル (トラッキングの記録など) を書く。パスは `save_file_dialog` で利用者が選んだもの (1 回だけ書ける)。
+/// 一時ファイルを経て置き換えるので、失敗しても前のファイルは残る (`atomic_write`)。
 #[tauri::command]
 async fn write_json_file(
     access: State<'_, FileAccess>,
@@ -97,7 +102,7 @@ fn write_json(path: &Path, contents: &str) -> Result<(), String> {
     if !is_json_path(path) {
         return Err(format!("not a JSON file: {}", path.display()));
     }
-    std::fs::write(path, contents).map_err(|e| format!("{}: {e}", path.display()))
+    write_atomic(path, contents.as_bytes()).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 fn is_json_path(path: &Path) -> bool {
@@ -113,6 +118,7 @@ const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 
 /// スクリーンショット (T0420) の PNG を書く。本文は PNG のバイト列、パスはヘッダー `x-ugoe-path`
 /// (`save_file_dialog` で利用者が選んだもの。1 回だけ書ける)。拡張子が `.png` で、中身が PNG のものだけを書く。
+/// 一時ファイルを経て置き換えるので、失敗しても前のファイルは残る (`atomic_write`)。
 #[tauri::command]
 async fn write_png_file(
     access: State<'_, FileAccess>,
@@ -141,7 +147,7 @@ fn write_png(path: &Path, bytes: &[u8]) -> Result<(), String> {
     if !bytes.starts_with(PNG_SIGNATURE) {
         return Err("the data is not a PNG image".into());
     }
-    std::fs::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))
+    write_atomic(path, bytes).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// `encodeURIComponent` で符号化した文字列を戻す (`%XX` を 1 バイトに。結果は UTF-8)。
@@ -363,7 +369,7 @@ fn save_paths(store: &Path, paths: &[PathBuf]) -> Result<(), String> {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
     let json = serde_json::to_vec(paths).map_err(|e| e.to_string())?;
-    std::fs::write(store, json).map_err(|e| e.to_string())
+    write_atomic(store, &json).map_err(|e| e.to_string())
 }
 
 /// ロックを取る。ほかのスレッドがロック中に panic していても、中身 (パスの一覧) はそのまま使う。
