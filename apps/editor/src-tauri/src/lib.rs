@@ -1,6 +1,9 @@
 //! エディタのバックエンド。ここは **薄い IPC 層** に保ち、編集ロジックは `ugoe-editor-core` に置く。
 //! 設計: `docs/editor.md`。
 
+// コマンドの許可の表 (build.rs が読む)。ここではその検査だけを行う (T0686)。
+#[cfg(test)]
+mod acl;
 pub(crate) mod ai;
 mod ai_provider;
 mod avatar;

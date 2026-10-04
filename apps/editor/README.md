@@ -11,6 +11,7 @@ src-tauri/        バックエンド (Rust クレート `ugoe-editor`)
   src/commands.rs   IPC コマンド。薄く保ち、編集ロジックは ugoe-editor-core に置く
   src/tracking.rs   フェイストラッキングのカメラの許可と記録の保存。Info.plist・Entitlements.plist は macOS のカメラ
   src/mcp.rs        エディタの中の MCP サーバ (エージェントをつなぐ。docs/editor.md#エージェントをつなぐ)
+  src/acl.rs        コマンドの名前 (build.rs が読み、コマンドごとの許可を作る)。capabilities/ と CSP の検査 (docs/editor.md#webview-の-csp-とコマンドの許可)
   tauri.bundle.conf.json  インストーラを作るときに重ねる設定 (ugoe-mcp のサイドカー)
 scripts/sidecar.mjs 同梱する ugoe-mcp をビルドして src-tauri/binaries/ に置く (`pnpm sidecar`)
 ```
@@ -18,7 +19,8 @@ scripts/sidecar.mjs 同梱する ugoe-mcp をビルドして src-tauri/binaries/
 ## 守ること
 
 - 編集ロジックを書かない。ユーザーの入力を `Command` に変換して `apply_command` を呼ぶ。
-- IPC コマンドを変えたら、同じ PR で `src/lib/ipc.ts` を更新する。
+- IPC コマンドを変えたら、同じ PR で `src/lib/ipc.ts` を更新する。コマンドを足したら `src-tauri/src/acl.rs` の `COMMANDS` と
+  `src-tauri/capabilities/default.json` にも書く (書かないと呼べない。テストが検査する)。
 - Svelte 5 の runes を使う。状態管理のライブラリは入れない。
 
 ## コマンド
