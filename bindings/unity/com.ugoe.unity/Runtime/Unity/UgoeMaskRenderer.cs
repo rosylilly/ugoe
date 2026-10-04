@@ -41,6 +41,8 @@ namespace Ugoe.Unity
         private readonly int[] pageOf;
         private readonly CanvasRect[] bounds;
         private readonly int[] depths;
+        // 内容の数と深さは plan で決まるので、毎フレームこの配置を並べ直して使い回す (確保しない)。
+        private MaskAtlasLayout layout;
         private readonly MaterialPropertyBlock block = new MaterialPropertyBlock();
         private Mesh quad;
 
@@ -136,7 +138,8 @@ namespace Ugoe.Unity
                 foreach (var reader in plan.Contents[ci].Readers) b = CanvasRect.Union(b, sync.Positions[reader]);
                 bounds[ci] = b;
             }
-            var layout = MaskAtlasLayout.Build(bounds, depths, scale);
+            if (layout == null) layout = MaskAtlasLayout.Build(bounds, depths, scale);
+            else layout.Update(bounds, depths, scale);
             var changed = false;
             if (pages.Length != layout.PageSizes.Length)
             {

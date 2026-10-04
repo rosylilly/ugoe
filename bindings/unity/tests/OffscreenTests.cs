@@ -80,6 +80,65 @@ namespace Ugoe.Tests
             Assert.That(layout.PageSizes[0].Height, Is.LessThanOrEqualTo(4096));
         }
 
+        // 並べ直した配置は、同じ引数で作った配置と同じになる (前の内容の大きさ・ページの数に左右されない)。
+        [Test]
+        public void UpdatedMaskAtlasMatchesAFreshBuild()
+        {
+            var frames = new[]
+            {
+                (new[]
+                {
+                    new CanvasRect(0, 0, 100, 50), new CanvasRect(-20, 30, 60, 300), new CanvasRect(500, 500, 510, 505),
+                    new CanvasRect(0, 0, 40, 40), new CanvasRect(10, 10, 30, 30),
+                }, new[] { 0, 0, 0, 1, 1 }, 1f),
+                // 高さの順が入れ替わる。
+                (new[]
+                {
+                    new CanvasRect(0, 0, 100, 400), new CanvasRect(-20, 30, 60, 40), new CanvasRect(500, 500, 700, 505),
+                    new CanvasRect(0, 0, 4, 90), new CanvasRect(10, 10, 300, 30),
+                }, new[] { 0, 0, 0, 1, 1 }, 1f),
+                // ページに収まらず倍率を下げる。
+                (Enumerable.Range(0, 5).Select(_ => new CanvasRect(0, 0, 3000, 3000)).ToArray(), new[] { 0, 0, 0, 0, 1 }, 1f),
+                // ページの数と内容の数が変わる。
+                (new[] { new CanvasRect(0, 0, 10, 10), new CanvasRect(5, 5, 25, 15) }, new[] { 0, 2 }, 2f),
+                (new[] { new CanvasRect(0, 0, 10, 10), new CanvasRect(5, 5, 25, 15), new CanvasRect(-5, 0, 0, 5) }, new[] { 1, 0, 0 }, 0.5f),
+            };
+            var layout = MaskAtlasLayout.Build(frames[0].Item1, frames[0].Item2, frames[0].Item3, 4096);
+            foreach (var (bounds, depths, scale) in frames)
+            {
+                layout.Update(bounds, depths, scale, 4096);
+                var fresh = MaskAtlasLayout.Build(bounds, depths, scale, 4096);
+                Assert.That(layout.Regions, Is.EqualTo(fresh.Regions));
+                Assert.That(layout.PageOf, Is.EqualTo(fresh.PageOf));
+                Assert.That(layout.PageSizes, Is.EqualTo(fresh.PageSizes));
+            }
+        }
+
+        // 内容の数と深さが変わらない間、並べ直しは配列を作り直さず、何も確保しない (UgoeMaskRenderer.Render が毎フレーム呼ぶ)。
+        [Test]
+        public void UpdatingMaskAtlasDoesNotAllocate()
+        {
+            var bounds = new[]
+            {
+                new CanvasRect(0, 0, 100, 50), new CanvasRect(-20, 30, 60, 300), new CanvasRect(500, 500, 510, 505),
+                new CanvasRect(0, 0, 40, 40), new CanvasRect(10, 10, 30, 30),
+            };
+            var depths = new[] { 0, 0, 0, 1, 1 };
+            var layout = MaskAtlasLayout.Build(bounds, depths, 1);
+            var (regions, pageOf, sizes) = (layout.Regions, layout.PageOf, layout.PageSizes);
+            layout.Update(bounds, depths, 1);
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            for (var frame = 0; frame < 100; frame++)
+            {
+                bounds[1] = new CanvasRect(-20 - frame, 30, 60, 300 + frame);
+                layout.Update(bounds, depths, 1);
+            }
+            Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.Zero);
+            Assert.That(layout.Regions, Is.SameAs(regions));
+            Assert.That(layout.PageOf, Is.SameAs(pageOf));
+            Assert.That(layout.PageSizes, Is.SameAs(sizes));
+        }
+
         // Linear の色空間の書き込み先は、シェーダの出力 (線形) を sRGB に直して 8 ビットに丸める。合成のシェーダは
         // 中間のテクスチャの値を線形に直して書くので、不透明な画素はすべての値で元に戻る。
         [Test]

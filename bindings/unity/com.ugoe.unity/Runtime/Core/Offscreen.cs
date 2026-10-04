@@ -112,6 +112,8 @@ namespace Ugoe
     /// 同じページの内容を読む要素は、読む内容が違っても 1 回の描画にまとめられる (<see cref="DrawBatchPlan"/>)。
     /// 入れ子のマスク (マスク用メッシュが自身のマスクを読む) は浅いページを読みながら深いページに描くので、
     /// 書き込み先のテクスチャを同時に読むことはない。
+    /// 毎フレーム並べ直すときは、<see cref="Build"/> で作った配置を <see cref="Update"/> で並べ直す
+    /// (内容の数とページの数が変わらない間は、配列を作り直さない)。
     /// </remarks>
     public sealed class MaskAtlasLayout
     {
@@ -120,19 +122,21 @@ namespace Ugoe
         /// <summary>内容と内容の間の空き (画素)。バイリニアのサンプリングが隣の内容を読まないように。</summary>
         public const int Gap = 2;
 
-        /// <summary>内容ごとの領域 (<see cref="MaskPlan.Contents"/> と同じ並び)。</summary>
-        public CanvasRegion[] Regions { get; }
+        /// <summary>
+        /// 内容ごとの領域 (<see cref="MaskPlan.Contents"/> と同じ並び)。<see cref="Update"/> は内容の数が変わらなければ同じ配列に書き直す。
+        /// </summary>
+        public CanvasRegion[] Regions { get; private set; } = new CanvasRegion[0];
         /// <summary>内容ごとのページの番号 (= 入れ子の深さ)。</summary>
-        public int[] PageOf { get; }
-        /// <summary>ページごとの、使う大きさ (画素)。</summary>
-        public (int Width, int Height)[] PageSizes { get; }
+        public int[] PageOf { get; private set; } = new int[0];
+        /// <summary>ページごとの、使う大きさ (画素)。<see cref="Update"/> はページの数が変わらなければ同じ配列に書き直す。</summary>
+        public (int Width, int Height)[] PageSizes { get; private set; } = new (int, int)[0];
 
-        private MaskAtlasLayout(CanvasRegion[] regions, int[] pageOf, (int, int)[] sizes)
-        {
-            Regions = regions;
-            PageOf = pageOf;
-            PageSizes = sizes;
-        }
+        // 詰めるときの作業用 (内容の数の大きさ。ページごとに先頭から使う)。
+        private int[] members = new int[0];
+        private CanvasRegion[] fitted = new CanvasRegion[0];
+        private int[] order = new int[0];
+
+        private MaskAtlasLayout() { }
 
         /// <summary>
         /// 内容ごとの外接矩形 <paramref name="bounds"/> (キャンバス座標) を、深さ <paramref name="depths"/> のページに詰める。
@@ -142,46 +146,63 @@ namespace Ugoe
         public static MaskAtlasLayout Build(IReadOnlyList<CanvasRect> bounds, IReadOnlyList<int> depths, float scale,
             int maxSize = MaxSize)
         {
+            var layout = new MaskAtlasLayout();
+            layout.Update(bounds, depths, scale, maxSize);
+            return layout;
+        }
+
+        /// <summary>
+        /// この配置を、<see cref="Build"/> と同じ規則で並べ直す (結果は同じ引数の <see cref="Build"/> と同じ)。
+        /// 内容の数とページの数 (最も深い深さ + 1) が前と同じなら、<see cref="Regions"/>・<see cref="PageOf"/>・
+        /// <see cref="PageSizes"/> と作業用の配列を使い回し、何も確保しない。
+        /// </summary>
+        /// <param name="scale">キャンバスの 1 ピクセルあたりの画素数。</param>
+        public void Update(IReadOnlyList<CanvasRect> bounds, IReadOnlyList<int> depths, float scale, int maxSize = MaxSize)
+        {
             var count = bounds.Count;
-            var regions = new CanvasRegion[count];
-            var pageOf = new int[count];
+            if (Regions.Length != count)
+            {
+                Regions = new CanvasRegion[count];
+                PageOf = new int[count];
+                members = new int[count];
+                fitted = new CanvasRegion[count];
+                order = new int[count];
+            }
             var pages = 0;
             for (var i = 0; i < count; i++)
             {
-                pageOf[i] = depths[i];
+                PageOf[i] = depths[i];
                 pages = Math.Max(pages, depths[i] + 1);
             }
-            var sizes = new (int, int)[pages];
+            if (PageSizes.Length != pages) PageSizes = new (int, int)[pages];
             for (var page = 0; page < pages; page++)
             {
-                var members = new List<int>();
+                var n = 0;
                 for (var i = 0; i < count; i++)
                 {
-                    if (pageOf[i] == page) members.Add(i);
+                    if (PageOf[i] == page) members[n++] = i;
                 }
                 var s = scale;
+                PageSizes[page] = default;
                 for (var attempt = 0; attempt < 64; attempt++)
                 {
-                    if (TryPack(members, bounds, s, maxSize, regions, out var size))
+                    if (TryPack(n, bounds, s, maxSize, out var size))
                     {
-                        sizes[page] = size;
+                        PageSizes[page] = size;
                         break;
                     }
                     s *= 0.8f;
                 }
             }
-            return new MaskAtlasLayout(regions, pageOf, sizes);
         }
 
-        // 高い順に棚 (shelf) に並べる。幅は最も幅の広い内容と、面積から決める目安の大きい方。
-        private static bool TryPack(List<int> members, IReadOnlyList<CanvasRect> bounds, float scale, int maxSize,
-            CanvasRegion[] regions, out (int, int) size)
+        // members の先頭 n 個を、高い順に棚 (shelf) に並べる。幅は最も幅の広い内容と、面積から決める目安の大きい方。
+        private bool TryPack(int n, IReadOnlyList<CanvasRect> bounds, float scale, int maxSize, out (int, int) size)
         {
             size = (1, 1);
-            var fitted = new CanvasRegion[members.Count];
             long area = 0;
             var widest = 1;
-            for (var k = 0; k < members.Count; k++)
+            for (var k = 0; k < n; k++)
             {
                 fitted[k] = CanvasRegion.Fit(bounds[members[k]], scale, maxSize);
                 if (fitted[k].Scale < scale) return false;
@@ -189,12 +210,21 @@ namespace Ugoe
                 widest = Math.Max(widest, fitted[k].Width);
             }
             var rowWidth = Math.Min(maxSize, Math.Max(widest, (int)Math.Ceiling(Math.Sqrt(area))));
-            var order = new List<int>();
-            for (var k = 0; k < members.Count; k++) order.Add(k);
-            order.Sort((a, b) => fitted[a].Height != fitted[b].Height ? fitted[b].Height.CompareTo(fitted[a].Height) : a.CompareTo(b));
-            int x = 0, y = 0, shelf = 0, width = 1;
-            foreach (var k in order)
+            // 高い順、同じ高さなら元の順 (全順序なので並べ方によらず同じ結果)。比較の関数を作らないように挿入ソートで並べる。
+            for (var k = 0; k < n; k++)
             {
+                var j = k;
+                while (j > 0 && fitted[order[j - 1]].Height < fitted[k].Height)
+                {
+                    order[j] = order[j - 1];
+                    j--;
+                }
+                order[j] = k;
+            }
+            int x = 0, y = 0, shelf = 0, width = 1;
+            for (var o = 0; o < n; o++)
+            {
+                var k = order[o];
                 var f = fitted[k];
                 if (x > 0 && x + f.Width > rowWidth)
                 {
@@ -203,7 +233,7 @@ namespace Ugoe
                     shelf = 0;
                 }
                 if (y + f.Height > maxSize) return false;
-                regions[members[k]] = new CanvasRegion(x, y, f.Width, f.Height, f.X0, f.Y0, f.Scale);
+                Regions[members[k]] = new CanvasRegion(x, y, f.Width, f.Height, f.X0, f.Y0, f.Scale);
                 width = Math.Max(width, x + f.Width);
                 x += f.Width + Gap;
                 shelf = Math.Max(shelf, f.Height);
