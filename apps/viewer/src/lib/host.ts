@@ -21,7 +21,7 @@ import {
   type ModelFile,
 } from "@ugoe/player";
 import { t } from "./i18n";
-import { PNG_PATH_HEADER, withPngExtension } from "./screenshot";
+import { PNG_PATH_HEADER } from "./screenshot";
 
 export interface ViewerHost {
   /** モデル (か着せ替えのモジュール) のファイルを選んで読む。取り消したら `null`。 */
@@ -113,7 +113,8 @@ const tauriHost: ViewerHost = {
       filters: [{ name: "JSON", extensions: ["json"] }],
     });
     if (path === null) return false;
-    await invoke("write_json_file", { path, contents: text });
+    // バックエンドは `.json` のパスしか書かない (Linux のダイアログは拡張子を付けずに返すことがある)。
+    await invoke("write_json_file", { path: withExtension(path, "json"), contents: text });
     return true;
   },
   async savePngFile(name, bytes) {
@@ -123,7 +124,7 @@ const tauriHost: ViewerHost = {
       filters: [{ name: t("files.savePng.filter"), extensions: ["png"] }],
     });
     if (picked === null) return null;
-    const path = withPngExtension(picked);
+    const path = withExtension(picked, "png");
     // バイト列は本文でそのまま送り、パスはヘッダーで渡す (ヘッダーは ASCII だけなので URI の形に符号化する)。
     await invoke("write_png_file", bytes, {
       headers: { [PNG_PATH_HEADER]: encodeURIComponent(path) },
@@ -148,6 +149,11 @@ const tauriHost: ViewerHost = {
     });
   },
 };
+
+/** 拡張子 (大文字小文字は区別しない) が無ければ付け足す (保存のダイアログで拡張子を消されたとき)。 */
+export function withExtension(path: string, extension: string): string {
+  return path.toLowerCase().endsWith(`.${extension.toLowerCase()}`) ? path : `${path}.${extension}`;
+}
 
 /** ブラウザのダウンロードで保存する。 */
 function downloadJson(name: string, text: string): void {

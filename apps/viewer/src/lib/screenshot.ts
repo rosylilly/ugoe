@@ -8,6 +8,7 @@
 // PNG への変換はブラウザの 2D canvas の `toBlob` で行う (新しい依存を入れない)。ここの関数は DOM に直接触れず、
 // canvas を作る関数を受け取る (screenshot.test.ts で偽物を渡す)。
 import type { Screenshot } from "@ugoe/player";
+import { t } from "./i18n";
 
 /** 読み戻した画像 (@ugoe/player の `Player.capture`)。 */
 export type { Screenshot };
@@ -31,14 +32,19 @@ export interface PngImage {
   readonly data: Uint8ClampedArray;
 }
 
-/** 画素の数と大きさが合っているかを調べる。合わなければ例外。 */
+/** 画素の数と大きさが合っているかを調べる。合わなければ例外 (文は今の言語。画面にそのまま出す)。 */
 export function checkScreenshot(shot: Screenshot): void {
   const { width, height, pixels } = shot;
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1)
-    throw new Error(`画像の大きさが正しくありません (${width}×${height})`);
+    throw new Error(t("screenshot.invalidSize", { width, height }));
   if (pixels.length !== width * height * 4)
     throw new Error(
-      `画素の数が大きさと合いません (${pixels.length} バイト、${width}×${height} の RGBA は ${width * height * 4} バイト)`,
+      t("screenshot.pixelCount", {
+        bytes: pixels.length,
+        width,
+        height,
+        expected: width * height * 4,
+      }),
     );
 }
 
@@ -52,13 +58,13 @@ export async function encodePng(
   canvas.width = shot.width;
   canvas.height = shot.height;
   const context = canvas.getContext("2d");
-  if (context === null) throw new Error("PNG に変換できません (2D の canvas を使えません)");
+  if (context === null) throw new Error(t("screenshot.noCanvas"));
   // putImageData はストレートアルファの値を受け取る (read_pixels と同じ)。
   const image = context.createImageData(shot.width, shot.height);
   image.data.set(shot.pixels);
   context.putImageData(image, 0, 0);
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
-  if (blob === null) throw new Error("PNG に変換できません");
+  if (blob === null) throw new Error(t("screenshot.encodeFailed"));
   return new Uint8Array(await blob.arrayBuffer());
 }
 
@@ -83,11 +89,6 @@ export function screenshotFileName(modelName: string | null, now: Date): string 
   const date = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
   const time = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
   return `${base}-${date}-${time}.png`;
-}
-
-/** 拡張子 `.png` (大文字小文字は区別しない) がなければ付け足す (保存のダイアログで拡張子を消されたとき)。 */
-export function withPngExtension(path: string): string {
-  return /\.png$/i.test(path) ? path : `${path}.png`;
 }
 
 /** バックエンドの `write_png_file` に保存先のパスを渡すヘッダー (src-tauri/src/lib.rs の `PNG_PATH_HEADER` と同じ)。 */

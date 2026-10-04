@@ -1,13 +1,11 @@
-import { describe, expect, it } from "vitest";
-import {
-  checkScreenshot,
-  encodePng,
-  type PngCanvas,
-  screenshotFileName,
-  withPngExtension,
-} from "./screenshot";
+import { setLocale } from "@ugoe/i18n";
+import { beforeEach, describe, expect, it } from "vitest";
+import { checkScreenshot, encodePng, type PngCanvas, screenshotFileName } from "./screenshot";
 
 const NOW = new Date(2026, 9, 2, 9, 5, 7);
+
+// 例外の文は画面に出る (`screenshot.error`) ので、今の言語で書く。ここでは日本語の訳で確かめる。
+beforeEach(() => setLocale("ja"));
 
 describe("screenshotFileName", () => {
   it("モデルの名前と地方時から作る", () => {
@@ -88,10 +86,18 @@ describe("encodePng", () => {
   });
 });
 
-describe("withPngExtension", () => {
-  it("拡張子が無ければ付ける", () => {
-    expect(withPngExtension("/a/shot")).toBe("/a/shot.png");
-    expect(withPngExtension("C:\\a\\shot.PNG")).toBe("C:\\a\\shot.PNG");
-    expect(withPngExtension("/a/shot.png.txt")).toBe("/a/shot.png.txt.png");
+describe("messages", () => {
+  it("speaks the current language", async () => {
+    setLocale("en");
+    expect(() => checkScreenshot({ width: 0, height: 1, pixels: new Uint8Array(0) })).toThrow(
+      "The image size is invalid (0×1)",
+    );
+    expect(() => checkScreenshot({ width: 1, height: 1, pixels: new Uint8Array(3) })).toThrow(
+      "The pixel data does not match the size (3 bytes; 1×1 RGBA needs 4 bytes)",
+    );
+    const { canvas } = fakeCanvas(null);
+    await expect(
+      encodePng({ width: 1, height: 1, pixels: new Uint8Array(4) }, () => canvas),
+    ).rejects.toThrow("Cannot convert the image to PNG");
   });
 });

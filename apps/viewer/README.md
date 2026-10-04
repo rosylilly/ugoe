@@ -56,7 +56,7 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
   [ADR 0003](../../docs/adr/0003-editor-viewport-in-webview.md))。WebGPU が無ければ WebGL2 で描く。
 - バックエンドは webview だけではできないことに限る: モデルとモジュールのファイルをバイト列で読む (`read_model_file`。
   拡張子が `.ugoe`・`.json`・`.ugoemod` のものだけ) こと、
-  トラッキングの記録を JSON で書く (`write_json_file`。保存のダイアログで選んだ `.json` だけ) こと、
+  トラッキングの記録を JSON で書く (`write_json_file`。保存のダイアログで選んだ `.json` だけ。拡張子が無ければ画面が `.json` を付ける) こと、
   画像 (スクリーンショット) を PNG で書く (`write_png_file`。本文が PNG のバイト列、パスはヘッダー `x-ugoe-path`。保存のダイアログで選んだ `.png` で、中身が PNG のものだけ) こと、
   起動時の引数のパスを返す (`initial_file`) こと、webview からのカメラの許可の要求に応じること、OS の言語を返すこと
   (tauri-plugin-os の `locale()`。権限は `os:allow-locale` だけ)。依存してよいのはランタイム層のクレートだけ (`scripts/check-layers.mjs`)。
