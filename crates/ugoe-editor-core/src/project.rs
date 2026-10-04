@@ -9,11 +9,9 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use ugoe_core::Vec2;
 use ugoe_format::{Bundle, FormatError, TextureData, TextureFormat};
@@ -29,8 +27,21 @@ use ugoe_model::{
 use crate::Document;
 use crate::fingerprint::ProjectFingerprint;
 use crate::message::Message;
-use crate::module_project::{ColliderReference, ModuleBase, ModuleContext, ModuleError, Workspace};
+use crate::module_project::{ColliderReference, ModuleContext, ModuleError, Workspace};
 use crate::texture::{Textures, is_valid_texture_name, png_size};
+
+mod files;
+mod module;
+mod paths;
+
+pub(crate) use files::{io_error, list_files};
+use files::{
+    known, read_json, read_json_dir, remove_if_exists, remove_stale, to_json, with_newline,
+    write_if_changed,
+};
+pub use module::{BaseCheck, load_base, load_base_checked, read_module_link};
+use module::{module_meta_with, unchecked};
+use paths::{absolute, normalize_path, relative_path};
 
 /// `project.json` の `format_version` の現在の値。プロジェクトのディレクトリ構成を変えたら上げる。
 /// モデルのスキーマのバージョン (`ugoe_model::SCHEMA_VERSION`) とは別。
@@ -470,73 +481,6 @@ impl Project {
         Self::load_module(dir, meta, base, true, &unchecked)
     }
 
-    /// モジュールのプロジェクトを読む: `module.json` と画像を読み、本体を読んで作業用のモデルを作る。
-    /// `base` があれば `project.json` の参照の代わりにそれを本体にする。`drop_colliders` なら、本体に無い衝突体への
-    /// リグの参照を外し、外したものを返す (でなければ空)。本体は `check` で確かめてから読む ([`load_base_checked`])。
-    fn load_module(
-        dir: &Path,
-        meta: ProjectMeta,
-        base: Option<&Path>,
-        drop_colliders: bool,
-        check: BaseCheck<'_>,
-    ) -> Result<(Self, Vec<ColliderReference>), ProjectError> {
-        let link = meta.module.clone().ok_or(ProjectError::MissingModuleLink)?;
-        let module_path = dir.join(MODULE_JSON);
-        let json = fs::read_to_string(&module_path).map_err(io_error(&module_path))?;
-        let mut module =
-            ugoe_format::module_from_json(&json).map_err(|source| ProjectError::Format {
-                path: module_path.clone(),
-                source,
-            })?;
-        let images = read_images(dir, &module.textures)?;
-        let base_path = match base {
-            Some(base) => normalize_path(base),
-            None => resolve_base(dir, &link.base),
-        };
-        let base = load_base_checked(&base_path, check)?;
-        let context = ModuleContext::new(
-            base,
-            &link.slot,
-            module.name.clone(),
-            module.requires.clone(),
-        )?;
-        let dropped = if drop_colliders {
-            context.drop_unavailable_colliders(&mut module)
-        } else {
-            Vec::new()
-        };
-        let workspace = context.workspace(&module, &images)?;
-        Ok((Self::from_workspace(meta, workspace, context), dropped))
-    }
-
-    /// モジュールのプロジェクトで保存するファイル (`module.json` と画像)。
-    fn module_files(
-        &self,
-        context: &ModuleContext,
-    ) -> Result<Vec<(PathBuf, Vec<u8>)>, ProjectError> {
-        let (module, images) = context.split(&self.model, self.physics.as_ref(), &self.textures)?;
-        let json = ugoe_format::module_to_json(&module).map_err(|source| ProjectError::Format {
-            path: PathBuf::from(MODULE_JSON),
-            source,
-        })?;
-        let mut files = vec![
-            (PathBuf::from(GITIGNORE), GITIGNORE_CONTENT.into()),
-            (PathBuf::from(MODULE_JSON), with_newline(json)),
-        ];
-        let names = image_names(&module.textures);
-        check_names("texture", names.iter().copied())?;
-        for name in names {
-            let png = images
-                .get(name)
-                .ok_or_else(|| ProjectError::MissingTexture {
-                    name: name.to_owned(),
-                })?;
-            let path = Path::new(TEXTURES_DIR).join(format!("{name}{TEXTURE_SUFFIX}"));
-            files.push((path, png.to_vec()));
-        }
-        Ok(files)
-    }
-
     /// [`Self::load`] と、読み込む直前のファイルの指紋 (外での書き換えに気づくため、`docs/editor.md#外での書き換え`)。
     ///
     /// 指紋は読み込みの前に取る。読み込みの間に外で書き換えられたら、次に比べたときに変更として見える
@@ -865,299 +809,7 @@ fn read_images(dir: &Path, textures: &[TextureRef]) -> Result<Textures, ProjectE
     Ok(images)
 }
 
-/// モジュールのプロジェクト `dir` の `project.json` を読み、`slot` があればスロットを替える
-/// (モジュールのプロジェクトでなければ [`ProjectError::NotAModule`])。
-fn module_meta_with(dir: &Path, slot: Option<&SlotId>) -> Result<ProjectMeta, ProjectError> {
-    let mut meta = read_module_meta(dir)?;
-    if let (Some(link), Some(slot)) = (&mut meta.module, slot) {
-        link.slot = slot.clone();
-    }
-    Ok(meta)
-}
-
-fn read_module_meta(dir: &Path) -> Result<ProjectMeta, ProjectError> {
-    let meta_path = dir.join(PROJECT_JSON);
-    if !meta_path.is_file() {
-        return Err(ProjectError::NotAProject {
-            path: dir.to_path_buf(),
-        });
-    }
-    let meta: ProjectMeta = read_json(&meta_path)?;
-    if meta.kind != ProjectKind::Module {
-        return Err(ProjectError::NotAModule);
-    }
-    Ok(meta)
-}
-
-/// モジュールのプロジェクト `dir` が参照する本体 (絶対パスに解決したもの) とスロット。開けなかったときに
-/// 直し方を選ぶために使う (本体を読まない)。
-pub fn read_module_link(dir: &Path) -> Result<(PathBuf, SlotId), ProjectError> {
-    let meta = read_module_meta(dir)?;
-    let link = meta.module.ok_or(ProjectError::MissingModuleLink)?;
-    Ok((resolve_base(dir, &link.base), link.slot))
-}
-
-/// 本体を読む前に、解決した本体のパス (絶対パス) を確かめる関数 (T0524)。読んでよければ読むパス (正規化した
-/// ものなど) を、だめなら理由を返す。本体を開く前に一度だけ呼ぶ。MCP の `--root` が本体を root の下に限るのに使う
-/// (editor-core はパスの規則を持たない)。
-pub type BaseCheck<'a> = &'a dyn Fn(&Path) -> Result<PathBuf, String>;
-
-/// 確かめずにそのまま読む [`BaseCheck`]。
-fn unchecked(path: &Path) -> Result<PathBuf, String> {
-    Ok(path.to_path_buf())
-}
-
-/// モジュールのプロジェクトの本体を読む。`path` は `.ugoeproj` のディレクトリか `.ugoe`。
-pub fn load_base(path: &Path) -> Result<ModuleBase, ProjectError> {
-    load_base_checked(path, &unchecked)
-}
-
-/// [`load_base`] と同じだが、読む前に `path` を `check` に渡し、返したパスから読む。`check` がエラーなら
-/// 何も開かずに [`ProjectError::BaseRefused`]。[`ModuleBase::path`] (保存する参照の元) は `path` のまま。
-pub fn load_base_checked(path: &Path, check: BaseCheck<'_>) -> Result<ModuleBase, ProjectError> {
-    let wrap = |source: ProjectError| ProjectError::Base {
-        path: path.to_path_buf(),
-        source: Box::new(source),
-    };
-    let read = check(path).map_err(|reason| ProjectError::BaseRefused {
-        path: path.to_path_buf(),
-        reason,
-    })?;
-    if !read.exists() {
-        return Err(ProjectError::BaseNotFound {
-            path: path.to_path_buf(),
-        });
-    }
-    if read.is_dir() {
-        // 本体がモジュールなら、その本体まで読みに行かないように、読む前に種類を見る。
-        let meta_path = read.join(PROJECT_JSON);
-        if meta_path.is_file()
-            && read_json::<ProjectMeta>(&meta_path).map_err(wrap)?.kind == ProjectKind::Module
-        {
-            return Err(ProjectError::BaseIsModule {
-                path: path.to_path_buf(),
-            });
-        }
-        let project = Project::load(&read).map_err(wrap)?;
-        return Ok(ModuleBase {
-            path: path.to_path_buf(),
-            model: project.model,
-            physics: project.physics,
-            textures: project.textures,
-        });
-    }
-    let bytes = fs::read(&read).map_err(io_error(path))?;
-    let bundle = ugoe_format::read_bundle(&bytes).map_err(|source| {
-        wrap(ProjectError::Format {
-            path: path.to_path_buf(),
-            source,
-        })
-    })?;
-    let textures = crate::bundle_project::images(
-        &bundle.model.textures,
-        &bundle.textures,
-        &bundle.normal_maps,
-        |name| ProjectError::UnsupportedBaseTexture { name },
-    )?;
-    Ok(ModuleBase {
-        path: path.to_path_buf(),
-        model: bundle.model,
-        physics: bundle.physics,
-        textures,
-    })
-}
-
-/// `project.json` に書いた本体の参照を、プロジェクトのディレクトリ `dir` から解決する。
-fn resolve_base(dir: &Path, base: &str) -> PathBuf {
-    let base = Path::new(base);
-    if base.is_absolute() {
-        normalize_path(base)
-    } else {
-        normalize_path(&absolute(dir).join(base))
-    }
-}
-
-/// 絶対パスにする (今の作業ディレクトリから)。取れなければそのまま。
-fn absolute(path: &Path) -> PathBuf {
-    std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf())
-}
-
-/// `.` と `..` を字面の上で取り除く (ファイルシステムは見ない)。
-fn normalize_path(path: &Path) -> PathBuf {
-    use std::path::Component;
-    let mut out = PathBuf::new();
-    for component in absolute(path).components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                out.pop();
-            }
-            other => out.push(other),
-        }
-    }
-    out
-}
-
-/// `from` (ディレクトリ) から `to` への相対パス (`/` 区切り)。根が違えば `to` の絶対パス。
-fn relative_path(from: &Path, to: &Path) -> String {
-    let from: Vec<_> = from.components().collect();
-    let to_components: Vec<_> = to.components().collect();
-    let common = from
-        .iter()
-        .zip(&to_components)
-        .take_while(|(a, b)| a == b)
-        .count();
-    if common == 0 {
-        return to.display().to_string();
-    }
-    let mut parts: Vec<String> = vec!["..".to_owned(); from.len() - common];
-    parts.extend(
-        to_components[common..]
-            .iter()
-            .map(|c| c.as_os_str().to_string_lossy().into_owned()),
-    );
-    if parts.is_empty() {
-        ".".to_owned()
-    } else {
-        parts.join("/")
-    }
-}
-
 fn texture_path(dir: &Path, name: &str) -> PathBuf {
     dir.join(TEXTURES_DIR)
         .join(format!("{name}{TEXTURE_SUFFIX}"))
-}
-
-pub(crate) fn io_error(path: &Path) -> impl FnOnce(std::io::Error) -> ProjectError + '_ {
-    move |source| ProjectError::Io {
-        path: path.to_path_buf(),
-        source,
-    }
-}
-
-/// 2 スペースで整形した JSON (末尾に改行)。フィールドは型定義の順になる。
-/// `path` は書き込み先 (エラーの表示用。プロジェクトからの相対パス)。
-fn to_json<T: Serialize>(path: &Path, value: &T) -> Result<Vec<u8>, ProjectError> {
-    serde_json::to_string_pretty(value)
-        .map(with_newline)
-        .map_err(|source| ProjectError::Json {
-            path: path.to_path_buf(),
-            source,
-        })
-}
-
-/// 未知の値 (新しい版のファイルから読んだ `Unknown`) は書けないので、`model.json` と同じく
-/// [`FormatError::UnknownValues`] で拒否する。`unknown` はその場所の一覧。
-fn known(path: &Path, unknown: Vec<String>) -> Result<(), ProjectError> {
-    if unknown.is_empty() {
-        return Ok(());
-    }
-    Err(ProjectError::Format {
-        path: path.to_path_buf(),
-        source: FormatError::UnknownValues(unknown),
-    })
-}
-
-fn with_newline(mut json: String) -> Vec<u8> {
-    json.push('\n');
-    json.into_bytes()
-}
-
-fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T, ProjectError> {
-    let bytes = fs::read(path).map_err(io_error(path))?;
-    serde_json::from_slice(&bytes).map_err(|source| ProjectError::Json {
-        path: path.to_path_buf(),
-        source,
-    })
-}
-
-/// `dir` の中の `*<suffix>` を、ファイル名の順に読む。`dir` がなければ空。
-fn read_json_dir<T: DeserializeOwned>(dir: &Path, suffix: &str) -> Result<Vec<T>, ProjectError> {
-    list_files(dir, suffix)?
-        .iter()
-        .map(|path| read_json(path))
-        .collect()
-}
-
-/// `dir` の中の、名前が `suffix` で終わるファイルをファイル名の順に返す。`dir` がなければ空。
-pub(crate) fn list_files(dir: &Path, suffix: &str) -> Result<Vec<PathBuf>, ProjectError> {
-    if !dir.is_dir() {
-        return Ok(Vec::new());
-    }
-    let mut paths = Vec::new();
-    for entry in fs::read_dir(dir).map_err(io_error(dir))? {
-        let entry = entry.map_err(io_error(dir))?;
-        let path = entry.path();
-        let matches = entry
-            .file_name()
-            .to_str()
-            .is_some_and(|name| name.ends_with(suffix) && !name.starts_with('.'));
-        if matches && path.is_file() {
-            paths.push(path);
-        }
-    }
-    paths.sort();
-    Ok(paths)
-}
-
-/// `dir/sub` の中の `*<suffix>` のうち、今回書いたもの (`files`) 以外を消す。
-///
-/// 大文字小文字だけが違う名前で書いたファイル (`idle` から `Idle` への名前の変更など) は、大文字小文字を
-/// 区別しないファイルシステム (Windows・macOS) では今消したファイルと同じものなので、消した後に書き直す
-/// (区別するファイルシステムでは中身が同じなので書き直さない)。
-fn remove_stale(
-    dir: &Path,
-    sub: &str,
-    suffix: &str,
-    files: &[(PathBuf, Vec<u8>)],
-) -> Result<(), ProjectError> {
-    let folded = |path: &Path| path.to_string_lossy().to_ascii_lowercase();
-    for path in list_files(&dir.join(sub), suffix)? {
-        let relative = path.strip_prefix(dir).unwrap_or(&path);
-        if files.iter().any(|(p, _)| p == relative) {
-            continue;
-        }
-        remove_if_exists(&path)?;
-        let same_name = files.iter().find(|(p, _)| folded(p) == folded(relative));
-        if let Some((written, bytes)) = same_name {
-            write_if_changed(&dir.join(written), bytes)?;
-        }
-    }
-    Ok(())
-}
-
-fn remove_if_exists(path: &Path) -> Result<(), ProjectError> {
-    match fs::remove_file(path) {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(ProjectError::Io {
-            path: path.to_path_buf(),
-            source: e,
-        }),
-        _ => Ok(()),
-    }
-}
-
-/// 中身が変わるときだけ、一時ファイルに書いてから名前を変えて置き換える。
-fn write_if_changed(path: &Path, bytes: &[u8]) -> Result<(), ProjectError> {
-    if fs::read(path).is_ok_and(|old| old == bytes) {
-        return Ok(());
-    }
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(io_error(parent))?;
-    }
-    let mut temp = path.as_os_str().to_owned();
-    temp.push(TEMP_SUFFIX);
-    let temp = PathBuf::from(temp);
-    let result = (|| {
-        let mut file = fs::File::create(&temp)?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        fs::rename(&temp, path)
-    })();
-    result.map_err(|source| {
-        let _ = fs::remove_file(&temp);
-        ProjectError::Io {
-            path: path.to_path_buf(),
-            source,
-        }
-    })
 }

@@ -1,7 +1,7 @@
 ---
 id: T0677
 title: ugoe-editor-core の 1000 行を超えるファイルを分ける
-status: in-progress
+status: done
 milestone: M9
 crates: [ugoe-editor-core, docs]
 depends_on: [T0667]
@@ -28,10 +28,10 @@ T0667 のレビューで、範囲の 4 つのファイルが 1000 行を超え�
 
 ## 受け入れ条件
 
-- [ ] 4 つのファイルがそれぞれ 1000 行以下になる
-- [ ] 公開 API (`lib.rs` の `pub use` と `pub mod` の中の公開の項目) が変わらない (`just gen` の生成物に差分がない)
-- [ ] テストを変えずに通る (移した関数のテストの置き場所を変えるのはよい)
-- [ ] `just ci` が通る
+- [x] 4 つのファイルがそれぞれ 1000 行以下になる
+- [x] 公開 API (`lib.rs` の `pub use` と `pub mod` の中の公開の項目) が変わらない (`just gen` の生成物に差分がない)
+- [x] テストを変えずに通る (移した関数のテストの置き場所を変えるのはよい)
+- [x] `just ci` が通る
 
 ## 参考
 
@@ -39,3 +39,21 @@ T0667 のレビューで、範囲の 4 つのファイルが 1000 行を超え�
 - T0667 のメモ
 
 ## メモ
+
+- やったこと (振る舞いを変えない移動だけ。ファイルごとにコミットを分けた):
+  - `document.rs` 1615 → 964 行。`document/` に `error.rs` (`EditError`)・`lookup.rs` (`find_mut`・`ensure_new`・`ensure_no_children`・
+    要素を ID で引く補助)・`pair.rs` (`set_mirror_pair`・`pair`)・`remove.rs` (削除の連鎖)・`reorder.rs` (`reorder_mesh`)・
+    `texture_edit.rs` (テクスチャと法線マップのコマンド) を分けた。案の 4 つだけでは約 1000 行で残るので、`lookup.rs` と `reorder.rs` も分けた。
+    `EditError` は `document.rs` の `pub use` で `crate::document::EditError` のまま。
+  - `module_compare.rs` 1569 → 737 行。`module_compare/atlas.rs` (`FileView`・`Finder`・`Rgba`) と `module_compare/changes.rs`
+    (`part_changes`〜`mesh_changes` と補助) に分けた。
+  - `project.rs` 1163 → 815 行。`project/module.rs` (`load_module`・`module_files`・`load_base*`・`read_module_link`・`BaseCheck`)・
+    `project/paths.rs` (`resolve_base`・`normalize_path`・`relative_path`・`absolute`)・`project/files.rs` (`write_if_changed`・
+    `remove_stale`・`list_files`・JSON の読み書き・`io_error`) に分けた。公開の項目は `project.rs` の `pub use` で同じパスのまま。
+  - `module_project.rs` 1051 → 698 行。`Splitter` と、それだけが使う `ModuleContext::renames` を `module_project/split.rs` に移した。
+- 確かめたこと: `just gen` の生成物に差分なし。テストは変えていない (465 件が通る)。`message_tests.rs` が `include_str!("project.rs")` で
+  コードを集めるが、移した部分にコードの文字列が無いことを確かめた (集まるコードは変わらない)。`cargo doc` の警告は移す前からのもの
+  (`overflow.rs`・`proposal.rs`・`module_project.rs` のモジュールの doc) だけで、移した部分に壊れたリンクはない。`just ci` が通る。
+- やらなかったこと: テストのファイル (`tests.rs`・`inference_tests.rs`・`module_project_tests.rs`・`deformer_edit_tests.rs` も 1000 行を超える) は範囲外として分けていない。
+- 起票の候補: テストのファイルで 1000 行を超えるもの (`inference_tests.rs` 1800・`tests.rs` 1731・`module_project_tests.rs` 1381・
+  `deformer_edit_tests.rs` 1010) を対象の機能ごとに分ける。
