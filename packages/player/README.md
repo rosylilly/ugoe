@@ -27,6 +27,7 @@ src/modelMemory.ts       モデルを見分ける鍵と、モデルごとの値�
 src/rememberedModels.ts  モデルごとに覚えたものを 1 モデル 1 行にまとめる (T0714)
 src/screenshot.ts        スクリーンショットの画素の検査・RGBA から PNG への変換・既定の名前の日時・パスのヘッダー (エディタとも共有。T0730)
 src/storage.ts           覚えるものの localStorage の読み書き (PlayerStorage: 接頭辞と Storage の組。T0930)
+src/testing/              テスト用の部品 (偽の WebPuppet・Player を動かす準備・localStorage の代わり。T0933)。index.ts から出さない
 ```
 
 画面の部品 (パラメータ・ライティング・着せ替え・モーションのパネル、ビューポート、覚えたものの一覧) は、いまはビューアに

@@ -9,28 +9,7 @@ import {
   sameModel,
 } from "./modelMemory";
 import { PlayerStorage, STORAGE_NAMES } from "./storage";
-
-class MemoryStorage implements Storage {
-  #items = new Map<string, string>();
-  get length() {
-    return this.#items.size;
-  }
-  clear() {
-    this.#items.clear();
-  }
-  getItem(key: string) {
-    return this.#items.get(key) ?? null;
-  }
-  key(index: number) {
-    return [...this.#items.keys()][index] ?? null;
-  }
-  removeItem(key: string) {
-    this.#items.delete(key);
-  }
-  setItem(key: string, value: string) {
-    this.#items.set(key, value);
-  }
-}
+import { MemoryStorage } from "./testing/memoryStorage";
 
 const bytes = (...b: number[]) => new Uint8Array(b);
 const file = (name: string, content: Uint8Array, location?: ModelFile["location"]): ModelFile =>

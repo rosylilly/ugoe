@@ -13,34 +13,13 @@ import {
 } from "./dressUpMemory";
 import type { ModelFile } from "./modelFile";
 import { PlayerStorage } from "./storage";
+import { MemoryStorage } from "./testing/memoryStorage";
 
 // 文言は日本語の訳で確かめる (英語の原文を確かめる it は、その中で言語を切り替える)。
 beforeEach(() => setLocale("ja"));
 
 /** 前からのビューアの接頭辞で `storage` に覚える入れ物。 */
 const store = (storage: Storage) => new PlayerStorage(undefined, storage);
-
-class MemoryStorage implements Storage {
-  #items = new Map<string, string>();
-  get length() {
-    return this.#items.size;
-  }
-  clear() {
-    this.#items.clear();
-  }
-  getItem(key: string) {
-    return this.#items.get(key) ?? null;
-  }
-  key(index: number) {
-    return [...this.#items.keys()][index] ?? null;
-  }
-  removeItem(key: string) {
-    this.#items.delete(key);
-  }
-  setItem(key: string, value: string) {
-    this.#items.set(key, value);
-  }
-}
 
 const set: DressUpSet = {
   modules: [
