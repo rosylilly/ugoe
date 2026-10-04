@@ -31,6 +31,11 @@ const MAX_MARGIN: f32 = 1024.0;
 /// 内部点の候補にする六角格子の点の数の上限。これを超える間隔の小さい格子は、点を数え上げる前に
 /// 間隔を広げてやり直す (極端に小さい `interior_spacing` で処理が終わらなくならないように)。
 const MAX_GRID_POINTS: f64 = 256.0 * MAX_VERTICES as f64;
+/// 作業用の格子 (中身の外接矩形に `margin` の余白を付けたもの) のセル数の上限 (16384 x 16384)。
+/// 1 セルあたり 20 バイトほど確保するので、これで約 5 GB に抑える。
+/// 輪郭の辺 ID (`contour.rs`、セルあたり 2 つの `u32`) があふれないことも、これで保証する。
+pub const MAX_GRID_CELLS: usize = 1 << 28;
+const _: () = assert!(2 * MAX_GRID_CELLS < u32::MAX as usize);
 
 /// [`generate`] のオプション。既定値と範囲はクレートの README の「オプション」。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -84,10 +89,16 @@ pub enum MeshError {
     /// 間隔を広げてやり直しても、頂点数が [`MAX_VERTICES`] に収まらない。
     #[error("shape is too complex to fit in 65535 vertices")]
     TooComplex,
+    /// 中身の外接矩形に `margin` の余白を付けた作業用の格子 (`width` x `height` セル) が
+    /// [`MAX_GRID_CELLS`] を超える。
+    #[error("working grid {width}x{height} exceeds {MAX_GRID_CELLS} cells")]
+    TooLarge { width: u64, height: u64 },
 }
 
 /// 非乗算 RGBA8 画像からメッシュを生成する。
 ///
+/// 作業用の格子は中身 (`alpha_threshold` 以上の画素) の外接矩形に `margin` の余白を付けた
+/// 大きさで、[`MAX_GRID_CELLS`] を超えるなら [`MeshError::TooLarge`] を返す。
 /// 同じ入力からは常に同じメッシュを返す。`min_island_area` で捨てた島を除き、
 /// アルファが `alpha_threshold` 以上のすべての画素の中心は、いずれかの三角形に含まれる。
 pub fn generate(
@@ -105,18 +116,33 @@ pub fn generate(
         });
     }
     options.validate()?;
+    let rect =
+        Rect::of_content(rgba, width, height, options.alpha_threshold).ok_or(MeshError::Empty)?;
+    generate_in(rgba, width, options, rect)
+}
+
+/// `rect` (中身をすべて含む画像の矩形) に余白を付けた格子でメッシュを作る。出力は `rect` によらない。
+fn generate_in(
+    rgba: &[u8],
+    width: u32,
+    options: &MeshOptions,
+    rect: Rect,
+) -> Result<GeneratedMesh, MeshError> {
     let margin = f64::from(options.margin);
     let edge_spacing = f64::from(options.edge_spacing);
     let interior_spacing = f64::from(options.interior_spacing);
 
-    // 1. 二値化。膨張した領域が収まるよう周囲に余白を付けた格子で扱う。
+    // 1. 二値化。中身の矩形に、膨張した領域が収まる余白を付けた格子で扱う。
+    // `margin` は検証済みで 1024 以下
     let pad = margin.ceil() as usize + 2;
-    let (w, h) = (width as usize, height as usize);
-    let mut opaque = Mask::new(w + 2 * pad, h + 2 * pad);
-    for y in 0..h {
-        for x in 0..w {
-            opaque.cells[(y + pad) * opaque.width + x + pad] =
-                rgba[(y * w + x) * 4 + 3] >= options.alpha_threshold;
+    let (gw, gh) = grid_size(&rect, pad)?;
+    let mut opaque = Mask::new(gw, gh);
+    let w = width as usize;
+    for y in 0..rect.height {
+        let src = (rect.y + y) * w + rect.x;
+        let dst = (y + pad) * gw + pad;
+        for x in 0..rect.width {
+            opaque.cells[dst + x] = rgba[(src + x) * 4 + 3] >= options.alpha_threshold;
         }
     }
     opaque.remove_small_islands(options.min_island_area);
@@ -141,9 +167,9 @@ pub fn generate(
         .map(|&d| d.sqrt() as f32)
         .collect();
 
-    // 3. 輪郭 (格子座標 → 画像座標は -pad)
-    let offset = -(pad as f64);
-    let loops = contour::extract(&region, [offset, offset]);
+    // 3. 輪郭 (格子座標 → 画像座標は矩形の左上 - pad)
+    let offset = [rect.x as f64 - pad as f64, rect.y as f64 - pad as f64];
+    let loops = contour::extract(&region, offset);
 
     // 中身の画素の中心から膨張後の輪郭までの最短距離の下限。簡略化で輪郭が内側に入る量は
     // 許容誤差の最大 2 倍なので、許容誤差をこの半分未満に抑えれば画素の中心は輪郭の内側に残る。
@@ -223,6 +249,55 @@ impl MeshOptions {
     }
 }
 
+/// 画像の画素の矩形 (左上と大きさ、画素単位)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Rect {
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+}
+
+impl Rect {
+    /// アルファが `threshold` 以上の画素の外接矩形。そのような画素がなければ `None`。
+    fn of_content(rgba: &[u8], width: u32, height: u32, threshold: u8) -> Option<Self> {
+        let (w, h) = (width as usize, height as usize);
+        let (mut x0, mut y0, mut x1, mut y1) = (usize::MAX, usize::MAX, 0, 0);
+        for y in 0..h {
+            let row = rgba[y * w * 4..(y + 1) * w * 4].as_chunks::<4>().0;
+            let is_content = |p: &[u8; 4]| p[3] >= threshold;
+            let Some(first) = row.iter().position(is_content) else {
+                continue;
+            };
+            let last = row.iter().rposition(is_content).unwrap_or(first);
+            x0 = x0.min(first);
+            x1 = x1.max(last);
+            y0 = y0.min(y);
+            y1 = y;
+        }
+        (y0 <= y1).then(|| Self {
+            x: x0,
+            y: y0,
+            width: x1 - x0 + 1,
+            height: y1 - y0 + 1,
+        })
+    }
+}
+
+/// `rect` の周りに `pad` の余白を付けた格子の大きさ。[`MAX_GRID_CELLS`] を超えるなら
+/// [`MeshError::TooLarge`]。
+fn grid_size(rect: &Rect, pad: usize) -> Result<(usize, usize), MeshError> {
+    let (width, height) = (
+        rect.width as u64 + 2 * pad as u64,
+        rect.height as u64 + 2 * pad as u64,
+    );
+    if width.saturating_mul(height) > MAX_GRID_CELLS as u64 {
+        return Err(MeshError::TooLarge { width, height });
+    }
+    // 上限より小さいので usize に収まる
+    Ok((width as usize, height as usize))
+}
+
 /// 領域の画素の中心を囲む矩形 (画像座標)。
 #[derive(Debug, Clone, Copy)]
 struct Bounds {
@@ -231,13 +306,13 @@ struct Bounds {
 }
 
 impl Bounds {
-    fn of(mask: &Mask, offset: f64) -> Self {
+    fn of(mask: &Mask, offset: P) -> Self {
         let mut min = [f64::INFINITY; 2];
         let mut max = [f64::NEG_INFINITY; 2];
         for y in 0..mask.height {
             for x in 0..mask.width {
                 if mask.get(x, y) {
-                    let p = [x as f64 + 0.5 + offset, y as f64 + 0.5 + offset];
+                    let p = [x as f64 + 0.5 + offset[0], y as f64 + 0.5 + offset[1]];
                     min = [min[0].min(p[0]), min[1].min(p[1])];
                     max = [max[0].max(p[0]), max[1].max(p[1])];
                 }
@@ -262,7 +337,7 @@ impl Bounds {
 fn interior_points(
     region: &Mask,
     depth: &[f32],
-    offset: f64,
+    offset: P,
     spacing: f64,
     keep_out: f64,
     bounds: &Bounds,
@@ -285,7 +360,7 @@ fn interior_points(
         let shift = if row % 2 == 0 { 0.0 } else { spacing / 2.0 };
         for col in -cols..=cols {
             let x = center[0] + shift + col as f64 * spacing;
-            let (gx, gy) = ((x - offset).floor(), (y - offset).floor());
+            let (gx, gy) = ((x - offset[0]).floor(), (y - offset[1]).floor());
             if gx < 0.0 || gy < 0.0 {
                 continue;
             }

@@ -17,6 +17,8 @@ pub(crate) fn extract(mask: &Mask, offset: P) -> Vec<Vec<P>> {
         return Vec::new();
     }
     // 辺の ID: (x, y) から右へ伸びる辺は 2 * (y * w + x)、下へ伸びる辺はそれ + 1。
+    // 格子のセル数は `MAX_GRID_CELLS` 以下なので、ID は u32 に収まり NONE と重ならない。
+    debug_assert!(w * h <= crate::MAX_GRID_CELLS);
     // next[a] = b は「辺 a の中点から辺 b の中点へ向かう線分」がある (中身が左手側) ことを表す。
     const NONE: u32 = u32::MAX;
     let mut next = vec![NONE; 2 * w * h];

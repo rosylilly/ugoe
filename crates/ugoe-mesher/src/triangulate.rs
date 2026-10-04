@@ -20,7 +20,7 @@ pub(crate) fn build(
     interior: &[P],
     guard: &[P; 4],
     opaque: &Mask,
-    offset: f64,
+    offset: P,
 ) -> GeneratedMesh {
     let mut cdt = Cdt::new();
     let insert = |cdt: &mut Cdt, p: P| -> Option<FixedVertexHandle> {
@@ -83,7 +83,7 @@ pub(crate) fn build(
 }
 
 /// 中身の画素の中心を含む三角形を残す。
-fn force_cover(cdt: &Cdt, opaque: &Mask, offset: f64, keep: &mut [bool]) {
+fn force_cover(cdt: &Cdt, opaque: &Mask, offset: P, keep: &mut [bool]) {
     let Some(first) = cdt.vertices().next() else {
         return;
     };
@@ -94,7 +94,7 @@ fn force_cover(cdt: &Cdt, opaque: &Mask, offset: f64, keep: &mut [bool]) {
             if !opaque.get(x, y) {
                 continue;
             }
-            let p = Point2::new(x as f64 + 0.5 + offset, y as f64 + 0.5 + offset);
+            let p = Point2::new(x as f64 + 0.5 + offset[0], y as f64 + 0.5 + offset[1]);
             faces.clear();
             match cdt.locate_with_hint(p, hint) {
                 PositionInTriangulation::OnFace(f) => {

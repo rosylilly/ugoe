@@ -21,8 +21,9 @@ let mesh = ugoe_mesher::generate(&rgba, width, height, &MeshOptions::default())?
 
 ## アルゴリズム
 
-1. **二値化:** アルファが `alpha_threshold` 以上の画素を中身とする。`min_island_area` 未満の島
-   (8 近傍連結) を捨てる。
+1. **二値化:** アルファが `alpha_threshold` 以上の画素を中身とする。作業用の格子は中身の
+   外接矩形に `margin` + 2 px の余白を付けた大きさで、画像全体ではない (出力は画像全体の格子で
+   処理したときと同じ)。`min_island_area` 未満の島 (8 近傍連結) を捨てる。
 2. **膨張:** 中身の画素の中心から `margin` 以内に中心がある画素を「領域」とする (厳密な
    ユークリッド距離変換、Felzenszwalb & Huttenlocher)。輪郭が外に広がり、穴は縮み、
    近い島どうしはつながる。
@@ -68,11 +69,16 @@ let mesh = ugoe_mesher::generate(&rgba, width, height, &MeshOptions::default())?
   出力の f32 座標でも向きは変わらない。
 - 参照されない頂点はない。インデックスはすべて頂点数未満。
 - 中身が 1 画素もなければ `MeshError::Empty`。
+- 作業用の格子 (中身の外接矩形と余白) が `MAX_GRID_CELLS` (2^28 = 16384 x 16384 セル) を超えるなら、
+  確保の前に `MeshError::TooLarge`。1 セルあたり 20 バイトほど確保するので、確保は約 5 GB までに収まる。
+  この上限で、輪郭の辺 ID (`u32`、セルあたり 2 つ) があふれないことも保証する。
 
 ## 性能の目安
 
 1024x1024 のレイヤー (半径 420px 前後の波打つ円に穴と小島、既定のオプション) で、
-リリースビルドで約 70ms (453 頂点)。
+リリースビルドで約 50〜70ms (453 頂点)。同じ中身を 4096x4096 の透明なキャンバスに置いても
+ほぼ同じ時間 (画像全体を 1 回なめて外接矩形を求める分だけ増える)。
+時間と確保は画像の大きさではなく、中身の外接矩形 (と `margin`) の大きさで決まる。
 `cargo test -p ugoe-mesher --release -- --ignored --nocapture` で測れる。
 
 ## 仕様

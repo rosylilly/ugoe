@@ -430,6 +430,121 @@ fn alpha_threshold_is_respected() {
     assert!(!covers(&mesh, Vec2::new(20.0, 16.0)));
 }
 
+#[test]
+fn content_rect_is_tight() {
+    let mut rgba = vec![0u8; 10 * 6 * 4];
+    for &(x, y) in &[(3usize, 1usize), (7, 2), (5, 4)] {
+        rgba[(y * 10 + x) * 4 + 3] = 255;
+    }
+    // しきい値未満の画素は数えない
+    rgba[(5 * 10 + 9) * 4 + 3] = 7;
+    assert_eq!(
+        Rect::of_content(&rgba, 10, 6, 8),
+        Some(Rect {
+            x: 3,
+            y: 1,
+            width: 5,
+            height: 4
+        })
+    );
+    assert_eq!(Rect::of_content(&rgba, 10, 6, 0).map(|r| r.width), Some(10));
+    assert_eq!(Rect::of_content(&vec![0; 10 * 6 * 4], 10, 6, 1), None);
+}
+
+/// 中身の矩形だけの格子で作っても、画像全体の格子で作ったときと同じ出力になること。
+#[test]
+fn cropping_to_content_keeps_the_output() {
+    let (w, h) = (300u32, 220u32);
+    let shapes: [Box<dyn Fn(f32, f32) -> bool>; 4] = [
+        // 中央の輪と離れた小島
+        Box::new(|x, y| {
+            let r = (x - 150.0).hypot(y - 100.0);
+            (20.0..50.0).contains(&r) || (x - 230.0).hypot(y - 170.0) < 6.0
+        }),
+        // 隅に寄った形 (矩形の左上が 0 にならない向きと、画像の端に接する向き)
+        Box::new(|x, y| x > 260.0 && y > 190.0 || (x - 270.0).hypot(y - 30.0) < 15.0),
+        Box::new(|x, y| x < 40.0 && y < 25.0 && (x + y) as i32 % 7 != 0),
+        // ばらついた点
+        Box::new(|x, y| {
+            (60.0..200.0).contains(&x)
+                && (40.0..120.0).contains(&y)
+                && ((x * 12.9898 + y * 78.233).sin() * 43758.545).fract().abs() > 0.8
+        }),
+    ];
+    let options = [
+        MeshOptions::default(),
+        MeshOptions {
+            margin: 0.0,
+            ..MeshOptions::default()
+        },
+        MeshOptions {
+            margin: 30.0,
+            edge_spacing: 6.0,
+            interior_spacing: 10.0,
+            min_island_area: 20,
+            ..MeshOptions::default()
+        },
+    ];
+    let full = Rect {
+        x: 0,
+        y: 0,
+        width: w as usize,
+        height: h as usize,
+    };
+    for (i, shape) in shapes.iter().enumerate() {
+        let rgba = image(w, h, shape);
+        let rect = Rect::of_content(&rgba, w, h, 8).expect("content");
+        assert_ne!(rect, full, "shape {i}");
+        for (j, options) in options.iter().enumerate() {
+            let cropped = generate(&rgba, w, h, options).expect("mesh");
+            let whole = generate_in(&rgba, w, options, full).expect("mesh");
+            assert_eq!(cropped, whole, "shape {i}, options {j}");
+        }
+    }
+}
+
+#[test]
+fn grid_size_is_limited() {
+    let rect = |width, height| Rect {
+        x: 0,
+        y: 0,
+        width,
+        height,
+    };
+    // 16384 x 16384 ちょうどまでは受け付ける
+    assert_eq!(grid_size(&rect(16380, 16380), 2).ok(), Some((16384, 16384)));
+    assert!(matches!(
+        grid_size(&rect(16381, 16380), 2),
+        Err(MeshError::TooLarge {
+            width: 16385,
+            height: 16384
+        })
+    ));
+    // 細長くても数は同じ
+    assert!(grid_size(&rect(MAX_GRID_CELLS - 4, 1), 2).is_err());
+    // 余白を足しても掛けてもあふれない
+    let huge = u32::MAX as usize;
+    assert!(matches!(
+        grid_size(&rect(huge, huge), 1026),
+        Err(MeshError::TooLarge { .. })
+    ));
+}
+
+/// 大きな透明のキャンバスに小さな中身があっても、格子は中身の範囲で作る
+/// (画像全体の格子なら 20 バイト x 1600 万セルほどを確保する)。
+#[test]
+fn large_transparent_canvas_is_cheap() {
+    let (w, h) = (4000u32, 4000u32);
+    let mut rgba = vec![0u8; (w * h * 4) as usize];
+    for y in 2000..2010 {
+        for x in 3000..3020 {
+            rgba[(y * w as usize + x) * 4 + 3] = 255;
+        }
+    }
+    let mesh = generate(&rgba, w, h, &MeshOptions::default()).expect("mesh");
+    assert!(mesh.vertices.iter().all(|v| v.x > 2990.0 && v.y > 1990.0));
+}
+
 /// 1024x1024 のレイヤーでの所要時間の目安: `cargo test -p ugoe-mesher --release -- --ignored --nocapture`
 #[test]
 #[ignore = "benchmark"]
@@ -448,5 +563,20 @@ fn bench_1024_layer() {
         start.elapsed(),
         mesh.vertices.len(),
         mesh.indices.len() / 3
+    );
+    // 同じ中身を 4096x4096 の透明なキャンバスに置く (格子は中身の範囲だけなので、ほぼ同じ時間)
+    let (w, x0, y0) = (4096usize, 2000usize, 1500usize);
+    let mut canvas = vec![0u8; w * w * 4];
+    for y in 0..1024 {
+        let src = &rgba[y * 1024 * 4..(y + 1) * 1024 * 4];
+        let dst = ((y0 + y) * w + x0) * 4;
+        canvas[dst..dst + 1024 * 4].copy_from_slice(src);
+    }
+    let start = std::time::Instant::now();
+    let mesh = generate(&canvas, w as u32, w as u32, &options).expect("mesh");
+    eprintln!(
+        "1024x1024 in 4096x4096: {:?}, {} vertices",
+        start.elapsed(),
+        mesh.vertices.len()
     );
 }
