@@ -9,6 +9,7 @@
 //! - クリアの色 (`background`) はストレートアルファ。仮想カメラでは不透明な色を渡す (透過は単色で埋める)。
 //!   背景の画像 ([`Resident::set_backdrop`]) を置くと、クリアの代わりに毎フレームその画を描画先に写してから描く (GPU の中の写し)。
 //! - 描画中の wgpu のエラーは [`Error::Gpu`] にする ([`Gpu::render`] と同じ)。
+//! - [`Wait::All`] で待つのは [`Gpu::wait_timeout`] まで ([`Gpu::render`] と同じ)。
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -66,7 +67,8 @@ pub struct Readback {
 pub enum Wait {
     /// 終わっているものだけを受け取る (待たない)。
     No,
-    /// 頼んだものがすべて終わるまで待つ (テストと、止めるときの後片付け)。
+    /// 頼んだものがすべて終わるまで待つ (テストと、止めるときの後片付け)。待つのは [`Gpu::wait_timeout`] までで、
+    /// 超えたら [`Error::Gpu`] を返す ([`Error::is_gpu_wait_timeout`])。そのときは `Gpu` とこの `Resident` を使い回さない。
     All,
 }
 
@@ -330,13 +332,14 @@ impl Resident {
     /// 読み戻しの終わったものから、最も新しい 1 枚を返す (古いものは捨てて [`Resident::superseded`] に数える)。
     /// 終わったものが無ければ `None`。
     pub fn poll(&mut self, gpu: &Gpu, wait: Wait) -> Result<Option<Readback>, Error> {
-        let poll = match wait {
-            Wait::No => wgpu::PollType::Poll,
-            Wait::All => wgpu::PollType::wait_indefinitely(),
-        };
-        gpu.device
-            .poll(poll)
-            .map_err(gpu_error("waiting for the GPU"))?;
+        match wait {
+            Wait::No => {
+                gpu.device
+                    .poll(wgpu::PollType::Poll)
+                    .map_err(gpu_error("waiting for the GPU"))?;
+            }
+            Wait::All => gpu.wait()?,
+        }
         let mut newest: Option<usize> = None;
         let mut failed = false;
         for (i, slot) in self.slots.iter().enumerate() {

@@ -29,7 +29,7 @@ use ugoe_model::Model;
 use ugoe_render::FrameStats;
 
 pub use animate::Animation;
-pub use gpu::{Gpu, stats_json};
+pub use gpu::{DEFAULT_WAIT_TIMEOUT, Gpu, stats_json};
 pub use image::Rgba8;
 pub use resident::{DEFAULT_SLOTS, Readback, Resident, ResidentOptions, Wait};
 pub use textures::{placeholder_texture, resolve_normal_maps, resolve_textures, texture_count};
@@ -89,7 +89,8 @@ pub enum Error {
     /// デバイスを作れない。
     #[error("requesting GPU device")]
     Device(#[source] wgpu::RequestDeviceError),
-    /// 描画中の GPU の失敗 (検証エラー・メモリ不足・読み戻しの失敗など)。
+    /// 描画中の GPU の失敗 (検証エラー・メモリ不足・読み戻しの失敗・待つ時間の上限を超えたなど)。
+    /// 上限を超えたかは [`Error::is_gpu_wait_timeout`] で見分ける。
     #[error("{context}: {detail}")]
     Gpu {
         context: &'static str,
@@ -101,6 +102,20 @@ pub enum Error {
 }
 
 impl Error {
+    /// GPU を待つ時間の上限 `timeout` を超えたときのエラー ([`Gpu::wait_timeout`])。
+    pub fn gpu_wait_timeout(timeout: std::time::Duration) -> Self {
+        Self::Gpu {
+            context: gpu::WAIT_TIMED_OUT,
+            detail: format!("gave up after waiting {timeout:?}; the device may be hung"),
+        }
+    }
+
+    /// GPU を待つ時間の上限を超えたエラーか。`true` なら、そのデバイスは止まっているかもしれないので
+    /// 使い回さない ([`Gpu::wait_timeout`])。
+    pub fn is_gpu_wait_timeout(&self) -> bool {
+        matches!(self, Self::Gpu { context, .. } if *context == gpu::WAIT_TIMED_OUT)
+    }
+
     fn format(context: impl Into<String>) -> impl FnOnce(ugoe_format::FormatError) -> Self {
         let context = context.into();
         move |source| Self::Format { context, source }

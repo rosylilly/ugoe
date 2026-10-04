@@ -72,6 +72,12 @@ if let Some(frame) = resident.poll(&gpu, Wait::No)? { /* frame.bytes は NV12 */
   CLI は描いたあと `Gpu::leak` で手放してすぐ終了し、MCP サーバは 1 つの `Gpu` を使い回して破棄しない。
 - **エラースコープ:** `Gpu::render` は描画中の wgpu のエラー (検証・メモリ不足・内部) をエラースコープで受け取り、
   `Error::Gpu` にして返す (wgpu の既定では panic になる)。
+- **待つ時間の上限:** `Gpu::render` と `Resident::poll(Wait::All)` は、読み戻しを `Gpu::wait_timeout` (既定は
+  `DEFAULT_WAIT_TIMEOUT` = 30 秒。ソフトウェアのラスタライザでも 1 枚は数秒かからないので、十分に余裕を持たせた長さ) までしか待たず、超えたら
+  `Error::Gpu` を返す (`Error::is_gpu_wait_timeout` が `true`)。ドライバが止まっても呼び出したスレッドが戻らなくならないように。
+  上限は `Gpu::set_wait_timeout` で変えられる (`Duration::MAX` なら上限なし)。上限を超えた `Gpu` (とそれで作った `Resident`) は
+  止まっているかもしれないので使い回さず、破棄もせずに手放して作り直す (MCP サーバがそうする)。
+  wgpu の GL のバックエンドは 1 回の待ちを約 2.1 秒で打ち切るので、1 秒ずつ待ち直して上限まで待つ。
 
 ## テスト
 

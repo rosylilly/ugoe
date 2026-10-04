@@ -9,6 +9,8 @@
 //! - 描画中の wgpu のエラー (検証・メモリ不足) は `ugoe_headless` がエラースコープで受けてエラーにする。
 //! - それでも panic したら受け止めてツールのエラーにし、その GPU を捨てて (破棄せずに手放して)、
 //!   次の呼び出しで作り直す。
+//! - 読み戻しは `Gpu::wait_timeout` (既定 30 秒) までしか待たない。ドライバが止まって上限を超えたら、
+//!   panic のときと同じくツールのエラーにして GPU を捨てる (止まったデバイスを使い回さない。描画の錠も手放される)。
 //!
 //! ドライバの中の SIGSEGV のように、プロセスごと落ちる不調は防げない。そのときは MCP クライアントが
 //! サーバを起動し直す (開いていたプロジェクトの未保存の変更は失われる)。
@@ -59,6 +61,11 @@ pub enum RenderError {
          next call"
     )]
     Panicked(String),
+    #[error(
+        "{}; the GPU device was discarded and will be recreated on the next call",
+        error_chain(.0)
+    )]
+    TimedOut(ugoe_headless::Error),
 }
 
 /// 原因をたどって `: ` でつなぐ (`anyhow` の `{:#}` と同じ形。エージェントが原因まで読めるように)。
@@ -110,12 +117,26 @@ impl Renderer {
         };
         let scene = scene(project)?;
         match catch_unwind(AssertUnwindSafe(|| self.render_scene(scene, &options))) {
-            Ok(result) => result,
+            Ok(result) => self.discard_hung_gpu(result),
             Err(payload) => {
                 // 不調のデバイスは使い回さない。破棄もしない (ManuallyDrop のまま手放す)。
                 self.gpu = None;
                 Err(RenderError::Panicked(panic_message(payload.as_ref())))
             }
+        }
+    }
+
+    /// GPU を待つ時間の上限を超えたら、その GPU を使い回さない (破棄もしない。ManuallyDrop のまま手放す)。
+    fn discard_hung_gpu(
+        &mut self,
+        result: Result<Rendered, RenderError>,
+    ) -> Result<Rendered, RenderError> {
+        match result {
+            Err(RenderError::Headless(e)) if e.is_gpu_wait_timeout() => {
+                self.gpu = None;
+                Err(RenderError::TimedOut(e))
+            }
+            result => result,
         }
     }
 
@@ -234,6 +255,49 @@ mod tests {
             .to_string();
         assert!(err.contains("no motion named `Idle`"), "{err}");
         assert!(renderer.gpu.is_none());
+    }
+
+    fn wait_timeout() -> RenderError {
+        ugoe_headless::Error::gpu_wait_timeout(std::time::Duration::from_secs(30)).into()
+    }
+
+    /// GPU を待つ時間の上限を超えたら、GPU を捨てたことをエラーに書く。ほかのエラーはそのまま。
+    #[test]
+    fn reports_a_wait_timeout() {
+        let mut renderer = Renderer::default();
+        let other = ugoe_headless::Error::Invalid("bad".into());
+        let err = renderer.discard_hung_gpu(Err(other.into())).unwrap_err();
+        assert_eq!(err.to_string(), "bad");
+
+        let err = renderer.discard_hung_gpu(Err(wait_timeout())).unwrap_err();
+        assert!(matches!(err, RenderError::TimedOut(_)), "{err:?}");
+        let err = err.to_string();
+        assert!(err.contains("the GPU did not finish in time"), "{err}");
+        assert!(err.contains("will be recreated on the next call"), "{err}");
+    }
+
+    /// 上限を超えた GPU は使い回さない。ほかのエラーでは捨てない。
+    #[cfg(feature = "gpu-tests")]
+    #[test]
+    fn discards_the_gpu_after_a_wait_timeout() {
+        let mut renderer = Renderer::default();
+        let project = quad_project();
+        renderer
+            .render(&project, &RenderRequest::default())
+            .unwrap();
+        assert!(renderer.gpu.is_some());
+
+        let other = ugoe_headless::Error::Invalid("bad".into());
+        let _ = renderer.discard_hung_gpu(Err(other.into()));
+        assert!(renderer.gpu.is_some());
+
+        let _ = renderer.discard_hung_gpu(Err(wait_timeout()));
+        assert!(renderer.gpu.is_none());
+        // 次の呼び出しで作り直す。
+        renderer
+            .render(&project, &RenderRequest::default())
+            .unwrap();
+        assert!(renderer.gpu.is_some());
     }
 
     #[test]

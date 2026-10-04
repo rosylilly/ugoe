@@ -4,6 +4,10 @@
 //!   ([`crate::image::encode_png_unpremultiplied`])。
 //! - 描画中の wgpu のエラー (検証・メモリ不足・内部) はエラースコープで受け取り、[`Error::Gpu`] にする
 //!   (wgpu の既定では panic になる)。
+//! - 読み戻しは時間の上限 ([`Gpu::wait_timeout`]) まで待ち、超えたら [`Error::Gpu`] を返す
+//!   ([`Error::is_gpu_wait_timeout`])。ドライバが止まっても呼び出したスレッドが戻らなくならないように。
+
+use std::time::{Duration, Instant};
 
 use ugoe_render::{FrameStats, Renderer, View};
 use ugoe_runtime::ModelInstance;
@@ -13,6 +17,22 @@ use crate::{Error, Shading, bail};
 
 /// 描画先の形式。レンダラの前提 (リニア化しない) に合わせて sRGB 形式にしない。
 pub(crate) const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+
+/// GPU を待つ時間の上限の既定 (30 秒)。
+///
+/// 1 枚の描画 ([`Gpu::render`]) と [`crate::Resident::poll`] の [`crate::Wait::All`] が、1 回の呼び出しで
+/// 読み戻しを待つ時間の合計の上限。ソフトウェアのラスタライザ (lavapipe・llvmpipe) でも 1 枚は数秒かからないので、
+/// 十分に余裕を持たせた長さにしてある (ふつうの描画が上限に当たらないように)。変えるときは [`Gpu::set_wait_timeout`]。
+pub const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// 1 回の `Device::poll` で待つ長さの上限。上限 ([`Gpu::wait_timeout`]) までこの刻みで待ち直す。
+///
+/// wgpu の GL のバックエンドは 1 回の待ちを約 2.1 秒 (`i32::MAX` ナノ秒) で打ち切るので、
+/// 刻んで待ち直さないと、どのバックエンドでも同じ上限にならない。
+const WAIT_STEP: Duration = Duration::from_secs(1);
+
+/// [`Error::is_gpu_wait_timeout`] で見分ける、待つ時間の上限を超えたときの `context`。
+pub(crate) const WAIT_TIMED_OUT: &str = "the GPU did not finish in time";
 
 /// ヘッドレスの GPU。
 #[derive(Debug)]
@@ -24,6 +44,8 @@ pub struct Gpu {
     pub adapter_info: wgpu::AdapterInfo,
     /// アダプタが WebGPU の全機能を持たないときに、使える機能 (計算シェーダの有無など)。
     downlevel: wgpu::DownlevelCapabilities,
+    /// 読み戻しを待つ時間の上限 ([`Gpu::wait_timeout`])。
+    wait_timeout: Duration,
 }
 
 impl Gpu {
@@ -76,6 +98,34 @@ impl Gpu {
             queue,
             adapter_info,
             downlevel,
+            wait_timeout: DEFAULT_WAIT_TIMEOUT,
+        })
+    }
+
+    /// GPU を待つ時間の上限 (既定は [`DEFAULT_WAIT_TIMEOUT`])。
+    ///
+    /// [`Gpu::render`] と [`crate::Resident::poll`] の [`crate::Wait::All`] は、読み戻しをこの長さまで待ち、
+    /// 超えたら [`Error::Gpu`] を返す ([`Error::is_gpu_wait_timeout`] が `true`)。上限を超えたデバイスは
+    /// 止まっているかもしれないので、長く動くプロセスはその `Gpu` (と、それで作った `Resident`) を使い回さずに
+    /// 手放して作り直す (破棄はしない。[`Gpu::leak`])。
+    pub fn wait_timeout(&self) -> Duration {
+        self.wait_timeout
+    }
+
+    /// GPU を待つ時間の上限を変える ([`Gpu::wait_timeout`])。`Duration::MAX` なら上限なしで待つ。
+    pub fn set_wait_timeout(&mut self, timeout: Duration) {
+        self.wait_timeout = timeout;
+    }
+
+    /// 頼んだ GPU の仕事がすべて終わるまで、上限 ([`Gpu::wait_timeout`]) まで待つ。
+    pub(crate) fn wait(&self) -> Result<(), Error> {
+        wait_with(self.wait_timeout, |step| {
+            self.device
+                .poll(wgpu::PollType::Wait {
+                    submission_index: None,
+                    timeout: Some(step),
+                })
+                .map(drop)
         })
     }
 
@@ -186,10 +236,9 @@ impl Gpu {
         readback.map_async(wgpu::MapMode::Read, .., move |r| {
             let _ = tx.send(r);
         });
-        device
-            .poll(wgpu::PollType::wait_indefinitely())
-            .map_err(gpu_error("waiting for the GPU"))?;
-        rx.recv()
+        self.wait()?;
+        // 待ち終わればコールバックは呼ばれている。`recv` で待つと、呼ばれなかったときに止まり続ける。
+        rx.try_recv()
             .map_err(gpu_error("readback callback was not called"))?
             .map_err(gpu_error("mapping the readback buffer"))?;
         let mapped = readback
@@ -327,6 +376,26 @@ pub fn stats_json(stats: &FrameStats) -> serde_json::Value {
     })
 }
 
+/// `poll` を [`WAIT_STEP`] 以下の刻みで呼び、`timeout` を超えたら [`Error::Gpu`] を返す。
+/// `poll` は渡された長さまで待ち、終われば `Ok`、終わらなければ `PollError::Timeout` を返す。
+fn wait_with(
+    timeout: Duration,
+    mut poll: impl FnMut(Duration) -> Result<(), wgpu::PollError>,
+) -> Result<(), Error> {
+    // 上限が大きすぎて時刻にできなければ、上限なしで待つ。
+    let deadline = Instant::now().checked_add(timeout);
+    loop {
+        let remaining = deadline.map_or(WAIT_STEP, |d| d.saturating_duration_since(Instant::now()));
+        match poll(remaining.min(WAIT_STEP)) {
+            Ok(()) => return Ok(()),
+            // 残りがあれば待ち直す。残りが 0 の最後の確かめでも終わっていなければ上限を超えた。
+            Err(wgpu::PollError::Timeout) if !remaining.is_zero() => {}
+            Err(wgpu::PollError::Timeout) => return Err(Error::gpu_wait_timeout(timeout)),
+            Err(e) => return Err(gpu_error("waiting for the GPU")(e)),
+        }
+    }
+}
+
 pub(crate) fn gpu_error<E: std::fmt::Display>(context: &'static str) -> impl FnOnce(E) -> Error {
     move |e| Error::Gpu {
         context,
@@ -344,5 +413,61 @@ mod tests {
         let err = Gpu::new(Some("nope")).unwrap_err();
         assert!(matches!(err, Error::Invalid(_)), "{err:?}");
         assert!(err.to_string().contains("unknown backend `nope`"), "{err}");
+    }
+
+    /// GPU が終わらなければ、上限を超えたところでエラーを返す (止まり続けない)。1 回の待ちは刻みを超えない。
+    #[test]
+    fn wait_gives_up_after_the_timeout() {
+        let timeout = Duration::from_millis(30);
+        let started = Instant::now();
+        let mut steps = Vec::new();
+        let err = wait_with(timeout, |step| {
+            steps.push(step);
+            std::thread::sleep(step);
+            Err(wgpu::PollError::Timeout)
+        })
+        .unwrap_err();
+        assert!(err.is_gpu_wait_timeout(), "{err:?}");
+        assert!(matches!(err, Error::Gpu { .. }), "{err:?}");
+        assert!(err.to_string().contains("30ms"), "{err}");
+        assert!(started.elapsed() >= timeout);
+        assert!(steps.iter().all(|&s| s <= WAIT_STEP), "{steps:?}");
+        // 最後は残りが 0 の確かめ。
+        assert_eq!(steps.last(), Some(&Duration::ZERO));
+    }
+
+    /// 1 回の待ちが打ち切られても (GL のバックエンド)、上限の中なら待ち直す。
+    #[test]
+    fn wait_retries_within_the_timeout() {
+        let mut calls = 0;
+        wait_with(DEFAULT_WAIT_TIMEOUT, |step| {
+            assert!(step <= WAIT_STEP && !step.is_zero(), "{step:?}");
+            calls += 1;
+            if calls < 3 {
+                Err(wgpu::PollError::Timeout)
+            } else {
+                Ok(())
+            }
+        })
+        .unwrap();
+        assert_eq!(calls, 3);
+    }
+
+    /// 上限なし (`Duration::MAX`) でも刻んで待つ。上限を超えたのでない失敗は、上限のエラーにしない。
+    #[test]
+    fn wait_without_a_limit_and_other_errors() {
+        let mut calls = 0;
+        let err = wait_with(Duration::MAX, |step| {
+            assert_eq!(step, WAIT_STEP);
+            calls += 1;
+            if calls < 2 {
+                Err(wgpu::PollError::Timeout)
+            } else {
+                Err(wgpu::PollError::WrongSubmissionIndex(2, 1))
+            }
+        })
+        .unwrap_err();
+        assert!(!err.is_gpu_wait_timeout(), "{err:?}");
+        assert!(err.to_string().starts_with("waiting for the GPU"), "{err}");
     }
 }
