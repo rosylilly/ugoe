@@ -769,6 +769,26 @@ pub(crate) fn create(
             children.push(child);
         }
     }
+    // 子に指定したデフォーマの下にある子は、そのデフォーマごと移るので付け替えない (パーツを包むときと同じ)。
+    let wrapped: Vec<&DeformerId> = children
+        .iter()
+        .filter_map(|c| match c {
+            ChildRef::Deformer(id) => Some(id),
+            ChildRef::Mesh(_) => None,
+        })
+        .collect();
+    let nested: Vec<ChildRef> = children
+        .iter()
+        .filter(|child| {
+            let parent = parent_of(model, child).ok().flatten();
+            deformer_chain(model, parent.as_ref())
+                .iter()
+                .flatten()
+                .any(|d| wrapped.contains(&d))
+        })
+        .cloned()
+        .collect();
+    children.retain(|child| !nested.contains(child));
     let children = &children[..];
     if children.is_empty() {
         return Err(failed(if parts.is_empty() {

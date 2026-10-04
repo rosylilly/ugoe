@@ -6,7 +6,7 @@
 use ugoe_core::Vec2;
 use ugoe_model::deformer::{DeformerKind, RotationKeyform};
 use ugoe_model::validate::validate;
-use ugoe_model::{Deformer, KeyformOrigin, Model, fixtures};
+use ugoe_model::{Deformer, KeyformOrigin, MirrorSource, Model, fixtures};
 use ugoe_runtime::{CompiledModel, ModelInstance};
 
 use crate::{ChildRef, Command, Document, EditError};
@@ -250,6 +250,20 @@ fn create_warp_with_children_under_different_parents_uses_common_ancestor() {
         &after,
         &[REST, &[("Angle", -30.0)], &[("Angle", 20.0)]],
     );
+}
+
+#[test]
+fn create_warp_keeps_children_given_with_their_parent_deformer() {
+    // Palm の親 Hand も子に指定した。Palm は Hand ごと移るので、Hand の下に残る
+    // (パーツを包むときと同じ。Palm を新しいワープへ直接付け替えると Hand の反転に追従しなくなる)。
+    let model = fixtures::rotation_chain();
+    let after = applied(&model, warp(vec![def("Hand"), mesh("Palm")], 2, 2));
+    assert_eq!(mesh_parent(&after, "Palm").as_deref(), Some("Hand"));
+    assert_eq!(
+        deformer(&after, "Hand").parent.as_ref().unwrap().as_str(),
+        "New"
+    );
+    assert_same_look(&model, &after, &[REST, &[("Flip", 1.0)]]);
 }
 
 #[test]
@@ -922,4 +936,22 @@ fn unwrap_clears_mirror_pairs_and_rejects_unknown_ids() {
         rejected(&model, unwrap("Nope")),
         EditError::NotFound { .. }
     ));
+}
+
+#[test]
+fn unwrap_forgets_the_deformer_as_a_mirror_source() {
+    // Arm の格子のミラー元が Hand。Hand を外すと、削除 (`remove_deformer`) と同じくミラー元の記録を外す。
+    let mut model = fixtures::rotation_chain();
+    if let DeformerKind::Rotation(r) = &mut model.deformers[0].kind {
+        r.keyforms.mirror_source = Some(MirrorSource {
+            id: "Hand".into(),
+            axis: None,
+            tolerance: None,
+        });
+    }
+    let after = applied(&model, unwrap("Hand"));
+    match &deformer(&after, "Arm").kind {
+        DeformerKind::Rotation(r) => assert_eq!(r.keyforms.mirror_source, None),
+        _ => panic!("Arm is a rotation deformer"),
+    }
 }

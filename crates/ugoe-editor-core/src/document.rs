@@ -1183,7 +1183,10 @@ fn apply_to(
             glue_edit::create(model, id, mesh_a, mesh_b, distance)?;
         }
         Command::SetGlue { glue, distance } => glue_edit::set(model, glue, distance)?,
-        Command::RemoveGlue { id } => glue_edit::remove(model, &id)?,
+        Command::RemoveGlue { id } => {
+            glue_edit::remove(model, &id)?;
+            inference::forget_missing_mirror_sources(model);
+        }
         Command::AddSlot { slot } => slot_edit::add(model, physics.as_ref(), slot)?,
         Command::SetSlot { id, slot } => slot_edit::set(model, physics.as_ref(), &id, slot)?,
         Command::RemoveSlot { id } => slot_edit::remove(model, &id)?,

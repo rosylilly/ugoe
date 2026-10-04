@@ -548,6 +548,27 @@ fn edits_of_invalid_loaded_motions_do_not_add_problems() {
 }
 
 #[test]
+fn keying_a_loaded_curve_without_segments_starts_it() {
+    // 点のないカーブ (読み込んだファイルなど) にキーを打つと、そのキーが始点になる (止まらない)。
+    let mut m = motion("Idle");
+    m.curves.push(Curve {
+        target: x(),
+        segments: Vec::new(),
+        fade_in: None,
+        fade_out: None,
+    });
+    let mut project = Project::new(
+        ProjectMeta::new("p"),
+        fixtures::single_quad(),
+        Default::default(),
+    );
+    project.motions.push(m);
+    let mut doc = project.document();
+    key(&mut doc, 0.5, 1.0).unwrap();
+    assert_eq!(segments(&doc), vec![Segment::Start { p: p(0.5, 1.0) }]);
+}
+
+#[test]
 fn a_batch_of_keys_is_one_undo_step() {
     let mut doc = doc();
     doc.apply(Command::Batch {

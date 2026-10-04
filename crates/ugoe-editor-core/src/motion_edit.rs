@@ -765,9 +765,14 @@ fn clamp_handle(c: &mut Point, lo: f32, hi: f32) {
 /// - 最後のキーより後: 最後の区間と同じ種類で加える (ベジェは既定の取っ手。区間がなければ直線)。
 /// - 区間の中: 区間を同じ種類の 2 つに分ける。ベジェは de Casteljau で分け、新しいキーの側の取っ手を
 ///   値の差だけずらすので、今のカーブの上に打つと形が変わらない。
+/// - キーがない (読み込んだ不正なカーブ): 新しい `start` にする。
 fn insert_point(segments: &mut Vec<Segment>, point: Point) {
     let points = points(segments);
-    let first = points[0];
+    // 点のないカーブ (読み込んだ不正なファイル) なら、そのキーを始点にする。
+    let Some(&first) = points.first() else {
+        segments.push(Segment::Start { p: point });
+        return;
+    };
     if point.t < first.t {
         let next = segments
             .get(1)
