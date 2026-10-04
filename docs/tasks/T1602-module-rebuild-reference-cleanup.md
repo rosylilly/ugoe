@@ -1,11 +1,11 @@
 ---
 id: T1602
 title: "editor-core: モジュールの設定の変更と本体の付け替えでも参照の後始末を確かめる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1602
 ---
 
 # T1602: editor-core: モジュールの設定の変更と本体の付け替えでも参照の後始末を確かめる
