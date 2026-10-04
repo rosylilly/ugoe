@@ -1,11 +1,11 @@
 ---
 id: T0152
 title: SDK とバインディングから読み込みの上限を指定できるようにする (C ABI・wasm・@ugoe/runtime)
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe, ugoe-ffi, ugoe-wasm, bindings/web, docs]
 depends_on: [T0150]
-assignee:
+assignee: claude-worker-T0152
 ---
 
 # T0152: SDK とバインディングから読み込みの上限を指定できるようにする (C ABI・wasm・@ugoe/runtime)
