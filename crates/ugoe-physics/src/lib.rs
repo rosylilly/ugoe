@@ -12,12 +12,12 @@ pub mod collider;
 use std::sync::Arc;
 
 use ugoe_core::{Vec2, lerp};
+use ugoe_model::DeformerKind;
 use ugoe_model::physics::{
     ColliderId, NormalizationRange, PhysicsBlend, PhysicsOutput, PhysicsRig, PhysicsRigId,
     PhysicsSettings, PhysicsSource, PhysicsTarget, VertexOwner,
 };
-use ugoe_model::{DeformerKind, ParamId};
-use ugoe_runtime::{CompiledModel, ModelInstance, ParamIndex, ParameterValues};
+use ugoe_runtime::{CompiledModel, ModelInstance, ParamIndex, ParameterLayout, ParameterValues};
 
 pub use chain::{Chain, Particle, Segment, StepInput};
 pub use collider::WorldCollider;
@@ -46,8 +46,8 @@ pub struct PhysicsSystem {
     /// モデルの要素への参照を解決したもの (動的物理でだけ使う)。
     binding: Option<Binding>,
     /// 入力と出力のパラメータの添字 ([`RigState::input_params`]・[`RigState::output_params`]) を
-    /// 解決したときの、パラメータの ID の並び。渡された `ParameterValues` の並びが違えば解決し直す。
-    resolved_ids: Option<Vec<ParamId>>,
+    /// 解決したときの、パラメータの並びの手札。渡された `ParameterValues` の並びが違えば解決し直す。
+    resolved_layout: Option<ParameterLayout>,
     /// 中継のための、ステップの中でリグの出力を書き込むパラメータの写し (中継があるときだけ)。
     /// フレームごとに作らず使い回す。
     relay_buffer: Option<Relay>,
@@ -222,7 +222,7 @@ impl PhysicsSystem {
             dynamic,
             relay,
             binding: None,
-            resolved_ids: None,
+            resolved_layout: None,
             relay_buffer: None,
             frames: Vec::new(),
             world_colliders: Vec::new(),
@@ -315,9 +315,18 @@ impl PhysicsSystem {
 
     /// 入力と出力のパラメータの添字を `parameters` の並びで解決する。前に解決したときと並びが
     /// 同じなら何もしない (名前の探索はパラメータの並びが変わったときだけ)。
+    ///
+    /// 並びの手札が同じなら定数時間で済む。手札が違っても ID の列が同じ (`from_model` で作り直したなど)
+    /// なら、解決し直さずに手札だけ取り替える。
     fn resolve_parameters(&mut self, parameters: &ParameterValues) {
-        if self.resolved_ids.as_deref() == Some(parameters.ids()) {
-            return;
+        if let Some(layout) = &self.resolved_layout {
+            if parameters.has_layout(layout) {
+                return;
+            }
+            if layout.ids() == parameters.ids() {
+                self.resolved_layout = Some(parameters.layout());
+                return;
+            }
         }
         for (state, rig) in self.rigs.iter_mut().zip(&self.settings.rigs) {
             state.input_params.clear();
@@ -342,9 +351,7 @@ impl PhysicsSystem {
                 .map(|&index| (index, parameters.get(index)))
                 .collect(),
         });
-        let ids = self.resolved_ids.get_or_insert_with(Vec::new);
-        ids.clear();
-        ids.extend_from_slice(parameters.ids());
+        self.resolved_layout = Some(parameters.layout());
     }
 
     /// 動的物理の出力先・衝突体・基準のデフォーマを、`instance` のモデルの要素に解決する。

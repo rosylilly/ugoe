@@ -354,3 +354,36 @@ fn output_reflect_weight_clamp_and_unknown_source() {
     assert_close(settle(&|o| o.weight = -50.0), 0.3, 1e-6);
     assert_close(settle(&|o| o.source = PhysicsSource::Unknown), 0.3, 1e-6);
 }
+
+// T0160: 並びの違う `ParameterValues` を渡すと添字を解決し直す。並びの手札が違っても ID の列が同じなら
+// 解決し直さずに手札だけ取り替える。
+#[test]
+fn resolves_parameters_again_when_layout_changes() {
+    let (mut physics, mut params) = setup();
+    physics.update(&mut params, STEP);
+    assert!(params.has_layout(physics.resolved_layout.as_ref().unwrap()));
+    let input = physics.rigs[0].input_params[0].unwrap();
+    assert_eq!(params.ids()[input.0 as usize].as_str(), ANGLE_X);
+
+    // 複製は同じ並び。
+    let mut copy = params.clone();
+    physics.update(&mut copy, STEP);
+    assert!(params.has_layout(physics.resolved_layout.as_ref().unwrap()));
+
+    // 並びを逆にしたもの: 解決し直し、添字は新しい並びの ANGLE_X を指す。
+    let mut model = physics_hair();
+    model.parameters.reverse();
+    let mut reversed = ParameterValues::from_model(&model);
+    reversed.carry_over(&params);
+    physics.update(&mut reversed, STEP);
+    assert!(reversed.has_layout(physics.resolved_layout.as_ref().unwrap()));
+    let input = physics.rigs[0].input_params[0].unwrap();
+    assert_eq!(reversed.ids()[input.0 as usize].as_str(), ANGLE_X);
+    assert_eq!(input, reversed.index_of(ANGLE_X).unwrap());
+
+    // 作り直した同じ並び: 手札だけ取り替える。
+    let mut fresh = ParameterValues::from_model(&model);
+    physics.update(&mut fresh, STEP);
+    assert!(fresh.has_layout(physics.resolved_layout.as_ref().unwrap()));
+    assert_eq!(physics.rigs[0].input_params[0], Some(input));
+}

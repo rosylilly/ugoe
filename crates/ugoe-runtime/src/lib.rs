@@ -23,4 +23,4 @@ pub use compile::{CompileError, CompiledModel, ResolvedMaskRef};
 pub use compose::{ComposeError, compose, compose_physics, compose_physics_without_base};
 pub use dynamic::DynamicOffsets;
 pub use instance::{DrawableChanges, DrawableState, ModelInstance, WorldTransform};
-pub use parameters::{ParamIndex, ParameterValues};
+pub use parameters::{ParamIndex, ParameterLayout, ParameterValues};

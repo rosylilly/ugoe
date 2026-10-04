@@ -33,6 +33,22 @@ struct Layout {
     index: IdIndex,
 }
 
+/// [`ParameterValues`] の並び (ID の列) の手札。[`ParameterValues::layout`] で得る。
+///
+/// 連番 ([`ParamIndex`]) を解決して持つ側 (物理・モーションなど) が、解決したときの手札を控えておき、
+/// 次のフレームで [`ParameterValues::has_layout`] により並びが同じかを定数時間で確かめる (T0160)。
+/// 手札は並びを共有して持ち続けるので、複製は ID を複製しない。並びが解放されて別の並びが同じ
+/// アドレスに作られる取り違えも起きない。
+#[derive(Debug, Clone)]
+pub struct ParameterLayout(Arc<Layout>);
+
+impl ParameterLayout {
+    /// パラメータの ID の列 (`ParamIndex` の順)。
+    pub fn ids(&self) -> &[ParamId] {
+        &self.0.ids
+    }
+}
+
 impl Clone for ParameterValues {
     fn clone(&self) -> Self {
         Self {
@@ -78,9 +94,25 @@ impl ParameterValues {
 
     /// パラメータの ID の列 (`ParamIndex` の順)。
     ///
-    /// 連番を解決して持つ側 (物理など) が、並びが変わっていないかを確かめるのに使う。
+    /// 連番を解決して持つ側が並びの変化を確かめるには、まず [`Self::has_layout`] (定数時間) を使う。
     pub fn ids(&self) -> &[ParamId] {
         &self.layout.ids
+    }
+
+    /// 並びの手札。控えておき、後で [`Self::has_layout`] で並びが同じかを確かめる。
+    /// `Arc` の複製だけで、ID は複製しない。
+    pub fn layout(&self) -> ParameterLayout {
+        ParameterLayout(Arc::clone(&self.layout))
+    }
+
+    /// 並びが `layout` と同じであることを定数時間で確かめる (ポインタの比較)。
+    ///
+    /// `true` なら ID の列は `layout.ids()` と同じで、`layout` を得たときに解決した連番はそのまま使える。
+    /// 並びは複製 (`clone`・`clone_from`) のあいだで共有されるので、同じ値から複製したもの同士は `true`。
+    /// 別々に作った (`from_model` を呼び直した) ものは、ID の列が同じでも `false` を返す。
+    /// 呼び出し側は `false` のとき ID の列を比べるか、解決し直す。
+    pub fn has_layout(&self, layout: &ParameterLayout) -> bool {
+        Arc::ptr_eq(&self.layout, &layout.0)
     }
 
     /// パラメータの数。
@@ -203,6 +235,32 @@ mod tests {
             other.index_of(model.parameters[0].id.as_str()),
             Some(ParamIndex(0))
         );
+    }
+
+    // T0160: 並びの手札は、同じ値から複製したものと同じ・並びを変えたものと違う。
+    #[test]
+    fn has_layout_follows_shared_layout() {
+        let hair = ugoe_model::fixtures::physics_hair();
+        let params = ParameterValues::from_model(&hair);
+        let layout = params.layout();
+        assert!(params.has_layout(&layout));
+        assert_eq!(layout.ids(), params.ids());
+        assert!(params.clone().has_layout(&layout));
+        let mut copy = ParameterValues::from_model(&ugoe_model::fixtures::single_quad());
+        assert!(!copy.has_layout(&layout));
+        copy.clone_from(&params);
+        assert!(copy.has_layout(&layout));
+        // 値を書き換えても並びは変わらない。
+        copy.set(ParamIndex(0), 1.0);
+        assert!(copy.has_layout(&layout));
+        // 並びを変えたものは違う。
+        let mut reversed = hair.clone();
+        reversed.parameters.reverse();
+        assert!(!ParameterValues::from_model(&reversed).has_layout(&layout));
+        // 別々に作ったものは、ID の列が同じでも違う (ポインタの比較)。
+        let fresh = ParameterValues::from_model(&hair);
+        assert!(!fresh.has_layout(&layout));
+        assert_eq!(fresh.ids(), layout.ids());
     }
 
     #[test]
