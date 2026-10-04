@@ -57,6 +57,7 @@ impl WebPuppet {
         }
     }
 
+    /// 止めていないモーションが再生中か (`stop_motions` の後のフェードアウト中は `false`)。
     pub fn is_motion_playing(&self) -> bool {
         self.puppet
             .as_ref()
@@ -223,6 +224,7 @@ impl WebPuppet {
         }
     }
 
+    /// 物理の設定があるか (`set_enabled("physics", false)` で止めていても `true`)。
     pub fn has_physics(&self) -> bool {
         self.puppet.as_ref().is_some_and(|p| p.physics().is_some())
     }

@@ -74,6 +74,7 @@ impl WebPuppet {
         }
     }
 
+    /// `set_motion_over_tracking` で設定した値。
     pub fn is_motion_over_tracking(&self) -> bool {
         self.motion_over_tracking
     }

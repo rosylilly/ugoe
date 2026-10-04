@@ -91,7 +91,7 @@ impl ViewState {
     /// ズームを `factor` 倍する。画面座標 `anchor` の下にあるキャンバスの点は動かさない
     /// (マウスホイールでカーソルの位置を中心に拡大縮小する用)。
     pub fn zoom_at(&mut self, factor: f32, anchor: [f32; 2], canvas: [f32; 2], surface: [u32; 2]) {
-        if !(factor.is_finite() && factor > 0.0) {
+        if !(factor.is_finite() && factor > 0.0 && anchor.iter().all(|v| v.is_finite())) {
             return;
         }
         let point = self.transform(canvas, surface).screen_to_canvas(anchor);
@@ -105,6 +105,27 @@ impl ViewState {
         let moved = t.canvas_to_screen(point);
         self.pan = [anchor[0] - moved[0], anchor[1] - moved[1]];
     }
+}
+
+/// 描画先の大きさ (画素)。どちらの辺も `1..=max` (デバイスのテクスチャの上限) に収める。
+pub fn surface_size(width: u32, height: u32, max: u32) -> (u32, u32) {
+    let max = max.max(1);
+    (width.clamp(1, max), height.clamp(1, max))
+}
+
+/// 背景色 (ストレートアルファ、各成分 0..1) を乗算済みアルファのクリア色にする。範囲の外はクランプする。
+/// NaN を含めば `None` (呼び出し側は前の色のままにする。NaN のクリア色は描画の結果が決まらない)。
+pub fn background_color(r: f64, g: f64, b: f64, a: f64) -> Option<wgpu::Color> {
+    if [r, g, b, a].iter().any(|v| v.is_nan()) {
+        return None;
+    }
+    let a = a.clamp(0.0, 1.0);
+    Some(wgpu::Color {
+        r: r.clamp(0.0, 1.0) * a,
+        g: g.clamp(0.0, 1.0) * a,
+        b: b.clamp(0.0, 1.0) * a,
+        a,
+    })
 }
 
 #[cfg(test)]
@@ -148,6 +169,39 @@ mod tests {
         assert_eq!(v.zoom, 3.0);
         v.zoom_at(1e9, anchor, canvas, surface);
         assert_eq!(v.zoom, MAX_ZOOM);
+    }
+
+    /// 有限でない位置を中心にしたズームは何も変えない (パンが NaN になって戻らなくなっていた)。
+    #[test]
+    fn zoom_at_ignores_non_finite_anchors() {
+        let (canvas, surface) = ([256.0, 256.0], [300, 200]);
+        let mut v = ViewState {
+            zoom: 2.0,
+            pan: [5.0, -3.0],
+        };
+        let before = v;
+        for anchor in [[f32::NAN, 10.0], [10.0, f32::INFINITY]] {
+            v.zoom_at(2.0, anchor, canvas, surface);
+            assert_eq!(v, before, "{anchor:?}");
+        }
+    }
+
+    #[test]
+    fn surface_size_stays_within_the_device_limit() {
+        assert_eq!(surface_size(0, 0, 8192), (1, 1));
+        assert_eq!(surface_size(640, 480, 8192), (640, 480));
+        assert_eq!(surface_size(10_000, 300, 8192), (8192, 300));
+        assert_eq!(surface_size(10, 10, 0), (1, 1));
+    }
+
+    #[test]
+    fn background_color_is_premultiplied_and_ignores_nan() {
+        let c = background_color(1.0, 0.5, 2.0, 0.5).unwrap();
+        assert_eq!((c.r, c.g, c.b, c.a), (0.5, 0.25, 0.5, 0.5));
+        let c = background_color(-1.0, 0.0, 0.0, f64::INFINITY).unwrap();
+        assert_eq!((c.r, c.g, c.b, c.a), (0.0, 0.0, 0.0, 1.0));
+        assert!(background_color(f64::NAN, 0.0, 0.0, 1.0).is_none());
+        assert!(background_color(0.0, 0.0, 0.0, f64::NAN).is_none());
     }
 
     #[test]

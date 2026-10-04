@@ -207,15 +207,12 @@ pub(crate) fn decode_normal_maps<'a>(
         .collect()
 }
 
-/// 描画に使うテクスチャの枚数。`model.textures` と、メッシュが参照する番号の大きい方。
+/// 描画に使うテクスチャの枚数 (`model.textures` の数)。
+///
+/// メッシュが参照する番号は数えない。範囲外の番号はモデルの検証 (`Puppet::new`) が誤りにするが、
+/// テクスチャはその前に用意するので、番号で数えると JSON の `"texture": 4294967295` のような値で巨大な確保になる。
 pub fn texture_count(model: &Model) -> usize {
-    model
-        .meshes
-        .iter()
-        .map(|m| m.texture as usize + 1)
-        .max()
-        .unwrap_or(0)
-        .max(model.textures.len())
+    model.textures.len()
 }
 
 /// パラメータとパラメータグループの定義 (スライダーの一覧を作るため)。
@@ -256,9 +253,12 @@ pub fn carry_over_parameters(from: &ModelInstance, to: &mut ModelInstance) {
     to.update();
 }
 
+/// デコードする画像の一辺の上限 (`ugoe_headless` の `MAX_SIZE` と同じ。これより大きな 2D テクスチャを扱えるデバイスは少ない)。
+pub const MAX_IMAGE_SIZE: u32 = 16384;
+
 /// PNG をデコードして、乗算済みアルファの RGBA8 にする。
 ///
-/// グレースケール・パレット・16bit は 8bit RGBA に展開する。
+/// グレースケール・パレット・16bit は 8bit RGBA に展開する。一辺が [`MAX_IMAGE_SIZE`] を超える画像はエラー。
 pub fn decode_png_premultiplied(bytes: &[u8]) -> Result<Rgba8, String> {
     let mut image = decode_png(bytes)?;
     for p in image.pixels.as_chunks_mut::<4>().0 {
@@ -272,11 +272,19 @@ pub fn decode_png_premultiplied(bytes: &[u8]) -> Result<Rgba8, String> {
 
 /// PNG をデコードして、アルファを掛けない RGBA8 にする (法線マップ用。アルファは使わない)。
 ///
-/// グレースケール・パレット・16bit は 8bit RGBA に展開する。
+/// グレースケール・パレット・16bit は 8bit RGBA に展開する。一辺が [`MAX_IMAGE_SIZE`] を超える画像はエラー。
 pub fn decode_png(bytes: &[u8]) -> Result<Rgba8, String> {
     let mut decoder = png::Decoder::new(Cursor::new(bytes));
     decoder.set_transformations(png::Transformations::normalize_to_color8());
     let mut reader = decoder.read_info().map_err(|e| e.to_string())?;
+    // 見出しの大きさだけで確保すると、小さなファイルで数 GB を求められる (png の `Limits` はデコーダの中の
+    // バッファにしか効かない)。デバイスの上限との比較 (`check_texture_sizes`) はデコードの後なので、ここで先に止める。
+    let (width, height) = (reader.info().width, reader.info().height);
+    if width > MAX_IMAGE_SIZE || height > MAX_IMAGE_SIZE {
+        return Err(format!(
+            "PNG image is {width}x{height}, larger than the limit {MAX_IMAGE_SIZE}x{MAX_IMAGE_SIZE}"
+        ));
+    }
     let size = reader
         .output_buffer_size()
         .ok_or_else(|| "PNG image is too large".to_owned())?;
@@ -483,6 +491,38 @@ mod tests {
                 "reason": "bad rig",
             })
         );
+    }
+
+    /// テクスチャはモデルの検証の前に用意するので、メッシュの範囲外の番号で確保を大きくしない。
+    #[test]
+    fn out_of_range_mesh_textures_do_not_grow_the_textures() {
+        let mut model = fixtures::single_quad();
+        model.meshes[0].texture = u32::MAX;
+        assert_eq!(texture_count(&model), model.textures.len());
+        let loaded = from_json(&ugoe::format::model_to_json(&model).unwrap()).unwrap();
+        assert_eq!(loaded.textures.len(), model.textures.len());
+        // 範囲外の番号は読み込み (`Puppet::new`) で誤りになる。
+        assert!(ugoe::Puppet::new(loaded.model).is_err());
+    }
+
+    /// IHDR が 65535x65535 で、画素のデータが zlib の見出しだけの小さな PNG。
+    fn huge_png_header() -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut encoder = png::Encoder::new(&mut out, 65535, 65535);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().unwrap();
+        writer.write_chunk(png::chunk::IDAT, &[0x78, 0x9c]).unwrap();
+        // 残りの画素は書かない (`finish` も呼ばない)。
+        std::mem::forget(writer);
+        out
+    }
+
+    /// 見出しの大きさを確かめてから確保する (外から来た PNG で約 17GB を確保しようとして落ちないように)。
+    #[test]
+    fn rejects_images_larger_than_the_limit_before_allocating() {
+        let err = decode_png(&huge_png_header()).unwrap_err();
+        assert!(err.contains("65535x65535"), "{err}");
     }
 
     #[test]

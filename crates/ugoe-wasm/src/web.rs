@@ -114,7 +114,6 @@ impl WebPuppet {
         desc.backends = backends;
         let instance = wgpu::Instance::new(desc);
 
-        let (width, height) = (canvas.width().max(1), canvas.height().max(1));
         let surface = instance
             .create_surface(wgpu::SurfaceTarget::Canvas(canvas.clone()))
             .map_err(js_error)?;
@@ -135,6 +134,17 @@ impl WebPuppet {
             })
             .await
             .map_err(js_error)?;
+        // canvas がデバイスの扱える大きさを超えていれば、`resize` と同じく上限に収める
+        // (超えたままではサーフェスを作れない)。
+        let (width, height) = view::surface_size(
+            canvas.width(),
+            canvas.height(),
+            device.limits().max_texture_dimension_2d,
+        );
+        if (width, height) != (canvas.width(), canvas.height()) {
+            canvas.set_width(width);
+            canvas.set_height(height);
+        }
         // 既定の処理はパニックするので、コンソールに出すだけにする。
         device.on_uncaptured_error(Arc::new(|e| {
             web_sys::console::error_1(&format!("ugoe: GPU error: {e}").into());
@@ -265,6 +275,7 @@ impl WebPuppet {
         self.active_expressions.clear();
     }
 
+    /// モデルを読み込んでいるか。
     pub fn has_model(&self) -> bool {
         self.puppet.is_some()
     }
@@ -338,7 +349,7 @@ impl WebPuppet {
     /// 描画先の大きさ (画素) を変える。canvas 要素の `width` / `height` も書き換える。
     pub fn resize(&mut self, width: u32, height: u32) {
         let max = self.device.limits().max_texture_dimension_2d;
-        let (width, height) = (width.clamp(1, max), height.clamp(1, max));
+        let (width, height) = view::surface_size(width, height, max);
         if (width, height) == (self.config.width, self.config.height) {
             return;
         }
@@ -349,23 +360,21 @@ impl WebPuppet {
         self.surface.configure(&self.device, &self.config);
     }
 
+    /// 描画先の幅 (画素)。
     pub fn width(&self) -> u32 {
         self.config.width
     }
 
+    /// 描画先の高さ (画素)。
     pub fn height(&self) -> u32 {
         self.config.height
     }
 
-    /// 背景色 (ストレートアルファ、各成分 0..1)。既定は透明。
+    /// 背景色 (ストレートアルファ、各成分 0..1。範囲の外はクランプする)。既定は透明。NaN を含めば何も変えない。
     pub fn set_background(&mut self, r: f64, g: f64, b: f64, a: f64) {
-        let a = a.clamp(0.0, 1.0);
-        self.background = wgpu::Color {
-            r: r.clamp(0.0, 1.0) * a,
-            g: g.clamp(0.0, 1.0) * a,
-            b: b.clamp(0.0, 1.0) * a,
-            a,
-        };
+        if let Some(color) = view::background_color(r, g, b, a) {
+            self.background = color;
+        }
     }
 
     /// 現在の状態を canvas に描く。
@@ -445,19 +454,22 @@ impl WebPuppet {
         }
     }
 
+    /// ズーム (フィットに対する倍率)。
     pub fn zoom(&self) -> f32 {
         self.view.zoom
     }
 
+    /// パンの x (フィットの位置からのずれ、画面座標の画素)。
     pub fn pan_x(&self) -> f32 {
         self.view.pan[0]
     }
 
+    /// パンの y (フィットの位置からのずれ、画面座標の画素)。
     pub fn pan_y(&self) -> f32 {
         self.view.pan[1]
     }
 
-    /// 画面座標 `(x, y)` を中心にズームを `factor` 倍する。
+    /// 画面座標 `(x, y)` を中心にズームを `factor` 倍する。`factor` が正の有限値でないか、位置が有限でなければ何も変えない。
     pub fn zoom_at(&mut self, factor: f32, x: f32, y: f32) {
         if let Some(canvas) = self.canvas_extent() {
             let surface = [self.config.width, self.config.height];
