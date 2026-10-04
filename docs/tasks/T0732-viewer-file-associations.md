@@ -1,11 +1,11 @@
 ---
 id: T0732
 title: ビューアを OS の「このアプリで開く」に対応させる (fileAssociations と macOS の RunEvent::Opened)
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/viewer, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0732
 ---
 
 # T0732: ビューアを OS の「このアプリで開く」に対応させる (fileAssociations と macOS の RunEvent::Opened)
