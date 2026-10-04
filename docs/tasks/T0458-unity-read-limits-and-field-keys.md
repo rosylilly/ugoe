@@ -1,11 +1,11 @@
 ---
 id: T0458
 title: "Unity: 読み込みの上限を指定する口と、エラーの補足の値のキーを C ABI に揃える"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/unity, scripts, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0458
 ---
 
 # T0458: Unity: 読み込みの上限を指定する口と、エラーの補足の値のキーを C ABI に揃える
