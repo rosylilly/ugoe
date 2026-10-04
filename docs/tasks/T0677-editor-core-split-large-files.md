@@ -1,11 +1,11 @@
 ---
 id: T0677
 title: ugoe-editor-core の 1000 行を超えるファイルを分ける
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core, docs]
 depends_on: [T0667]
-assignee:
+assignee: claude-worker-T0677
 ---
 
 # T0677: ugoe-editor-core の 1000 行を超えるファイルを分ける
