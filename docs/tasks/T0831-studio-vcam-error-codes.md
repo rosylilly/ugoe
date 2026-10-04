@@ -1,11 +1,11 @@
 ---
 id: T0831
 title: 仮想カメラの止まった理由に、再起動が要る・機器を開く権限が無いを足す
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, docs]
 depends_on: [T0816]
-assignee:
+assignee: claude-worker-T0831
 ---
 
 # T0831: 仮想カメラの止まった理由に、再起動が要る・機器を開く権限が無いを足す
