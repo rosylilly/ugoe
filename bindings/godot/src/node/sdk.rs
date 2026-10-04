@@ -1,13 +1,13 @@
 //! `UgoePuppet2D` の、SDK (`ugoe::Puppet`) と C ABI にある機能のうち、ノードの基本の操作から分けたもの (T0449)。
 //!
-//! 読み込みの警告・受け手 (`follow`)・標準の当たり判定・表情を止める・パーツの不透明度とポーズ・効果と物理の設定の差し替え・
+//! 読み込みの警告 (着せ替えのモジュールの分は T0456)・受け手 (`follow`)・標準の当たり判定・表情を止める・パーツの不透明度とポーズ・効果と物理の設定の差し替え・
 //! スロットとトラッキングの対象の一覧。有限でない値の扱いは C ABI (`crates/ugoe-ffi`) と同じ。
 
 use godot::prelude::*;
 use ugoe::model::physics::PhysicsSettings;
 use ugoe::model::validate::ValidationError;
 use ugoe::motion::TrackingMap;
-use ugoe::{DressUpError, FieldValue, LipSyncInput, PartOpacityInput};
+use ugoe::{DressUpError, FieldValue, LipSyncInput, LoadWarning, PartOpacityInput};
 
 use super::{UgoePuppet2D, to_canvas};
 
@@ -21,25 +21,30 @@ impl UgoePuppet2D {
     /// `warning` は英語の文 (安定した値として扱わない)。テクスチャの番号は整数。モデルが無ければ空。
     #[func]
     pub fn get_load_warnings(&self) -> Array<VarDictionary> {
-        let Some(loaded) = &self.loaded else {
-            return Array::new();
+        self.loaded
+            .as_ref()
+            .map(|l| warning_dictionaries(&l.warnings))
+            .unwrap_or_default()
+    }
+
+    /// 取り付けている名前が `name` の着せ替えのモジュール (`.ugoemod`) の読み込みの警告 (T0456)。要素の形は
+    /// `get_load_warnings()` と同じで、wasm の `modules_json()` の `warning_details` と C ABI の `ugoe_module_warning_*` に揃える。
+    /// 付けているモジュールの探し方は `get_module_names()` と同じ (モデルを読み込んでいれば実際に付いているものだけ)。
+    /// そのモジュールが付いていなければ空。
+    #[func]
+    pub fn get_module_load_warnings(&self, name: GString) -> Array<VarDictionary> {
+        let name = name.to_string();
+        let found = match &self.loaded {
+            Some(loaded) => loaded.modules().iter().find(|d| d.name() == name),
+            None => self
+                .attached
+                .iter()
+                .map(|(_, d)| d)
+                .find(|d| d.name() == name),
         };
-        loaded
-            .warnings
-            .iter()
-            .map(|w| {
-                let mut d = VarDictionary::new();
-                d.set("code", w.code());
-                d.set("warning", &GString::from(&w.to_string()));
-                for (key, value) in w.fields() {
-                    match value {
-                        FieldValue::Index(i) => d.set(key, i as i64),
-                        FieldValue::Text(t) => d.set(key, t),
-                    }
-                }
-                d
-            })
-            .collect()
+        found
+            .map(|d| warning_dictionaries(&d.warnings))
+            .unwrap_or_default()
     }
 
     // --- 受け手 (docs/spec/motion.md#受け手として進める)
@@ -429,4 +434,23 @@ fn physics_json(settings: Option<&PhysicsSettings>) -> GString {
             GString::new()
         }
     }
+}
+
+/// 読み込みの警告を GDScript の辞書の配列にする: `{ "code", "warning", ... }`。補足のキーは `LoadWarning::fields`。
+fn warning_dictionaries(warnings: &[LoadWarning]) -> Array<VarDictionary> {
+    warnings
+        .iter()
+        .map(|w| {
+            let mut d = VarDictionary::new();
+            d.set("code", w.code());
+            d.set("warning", &GString::from(&w.to_string()));
+            for (key, value) in w.fields() {
+                match value {
+                    FieldValue::Index(i) => d.set(key, i as i64),
+                    FieldValue::Text(t) => d.set(key, t),
+                }
+            }
+            d
+        })
+        .collect()
 }

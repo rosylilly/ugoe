@@ -48,6 +48,27 @@ func _sdk_features(puppet: Node2D) -> void:
 			_check(w.has("feature") and w["warning"] is String, "a warning has its fields (%s)" % w)
 	_check(codes.has("unknown_optional_feature"), "load warnings %s" % [codes])
 
+	# 着せ替えのモジュールの読み込みの警告 (T0456): 未来の版を模したモジュールでは知らない任意の機能
+	# (未来の版のモジュールは assets/compat/dev/long-hair.ugoemod を元にしたもので、dress-up-base.ugoe に付く)
+	var base := FileAccess.get_file_as_bytes(_repo("assets/compat/dev/dress-up-base.ugoe"))
+	_check(puppet.load_model_from_buffer(base), "load dress-up-base for the module warnings")
+	var dev_module := UgoeModule.from_buffer(FileAccess.get_file_as_bytes(_repo("assets/compat/dev/long-hair.ugoemod")))
+	_check(puppet.attach_module(dev_module), "attach the dev long-hair")
+	_check(puppet.get_module_load_warnings(puppet.get_module_names()[0]).is_empty(), "the dev long-hair has no load warnings")
+	var future_module := UgoeModule.from_buffer(FileAccess.get_file_as_bytes(_repo("assets/compat/future/optional-feature.ugoemod")))
+	_check(puppet.attach_module(future_module), "attach a module from a future version")
+	var module_names: PackedStringArray = puppet.get_module_names()
+	_check(module_names.size() == 1, "the future module replaces the dev long-hair %s" % module_names)
+	var module_codes := []
+	for w: Dictionary in puppet.get_module_load_warnings(module_names[0]):
+		module_codes.append(w["code"])
+		if w["code"] == "unknown_optional_feature":
+			_check(w.has("feature") and w["warning"] is String, "a module warning has its fields (%s)" % w)
+	_check(module_codes.has("unknown_optional_feature"), "module load warnings %s" % [module_codes])
+	_check(puppet.get_module_load_warnings("missing").is_empty(), "a missing module has no warnings")
+	puppet.clear_modules()
+	_check(puppet.get_module_load_warnings(module_names[0]).is_empty(), "a detached module has no warnings")
+
 	# トラッキングの対象とスロット
 	_check(puppet.load_model("res://models/avatar.ugoe"), "reload avatar")
 	_check(puppet.get_tracking_targets().has("AngleX"), "tracking targets %s" % puppet.get_tracking_targets())

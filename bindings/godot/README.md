@@ -115,6 +115,7 @@ puppet.xr_face_tracker = &"/user/face_tracker"
 | `load_model(path)` / `load_model_from_buffer(bytes)` / `load_model_from_json(text)` | 読み込む (`load_model` は `model` を設定する。`from_buffer` と `from_json` は `model` を null にする)。`from_json` はモデルの JSON (テクスチャ・物理・モーションは無く、テクスチャは不透明な白で描く) |
 | `get_parameter_ids()` / `get_parameter_info(id)` / `get_parameter(id)` / `set_parameter(id, value)` / `reset_parameters()` | パラメータ |
 | `get_load_warnings()` | 直前に読み込んだモデルの読み込みの警告 (`{ "code", "warning", "texture"? / "feature"? / "path"? }` の配列)。`code` と補足のキーは wasm の `load_warnings_json`・C ABI の `ugoe_puppet_load_warning_*` と同じ ([crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md#読み込みの警告-t0125))。`warning` は英語の文で、安定した値ではない |
+| `get_module_load_warnings(name)` | 取り付けている名前が `name` の着せ替えのモジュール (`.ugoemod`) の読み込みの警告 (T0456)。要素の形は `get_load_warnings()` と同じで、wasm の `modules_json()` の `warning_details`・C ABI の `ugoe_module_warning_*` に揃える。付いているモジュールの探し方は `get_module_names()` と同じで、付いていなければ空 |
 | `get_motion_names()` / `start_motion(name, priority)` / `stop_motions()` / `is_motion_playing()` | モーション |
 | `get_expression_names()` / `set_expression(name)` / `stop_expressions()` | 表情 (`stop_expressions` はフェードアウトをかけてすべて止める) |
 | `set_lip_sync_level(level)` / `clear_lip_sync_level()` / `reset_physics()` | リップシンク・物理 |
@@ -142,7 +143,7 @@ puppet.xr_face_tracker = &"/user/face_tracker"
 拒んだ値はエラーを出して捨て、前の値を保つ。
 `set_effects_json`・`set_physics_json`・`set_base_physics_json` と `show_pose` で変えたものは、モデルを読み直すとモデルの設定に戻る。
 読み込みの警告 (知らない任意の機能・未知の値 (ADR 0013)・画像の無いテクスチャ) は Godot の警告として出し、`get_load_warnings()` でも読める
-(着せ替えのモジュールの警告は Godot の警告として出すだけ)。
+(着せ替えのモジュールの警告も Godot の警告として出し、付けている間は `get_module_load_warnings(name)` で読める)。
 木の外で `model` を変えたときは、木に戻ったときに読み込む (外す)。
 
 ノードの原点にキャンバスの原点 (`canvas.origin`) が来る。座標はキャンバスのピクセル単位で、Godot の 2D と同じく Y 下向き。
@@ -265,7 +266,8 @@ Godot の `XRFaceTracker` は Unified Expressions (`BlendShapeEntry` の 143 個
 - 指揮役の側の値 (`ugoe::Puppet::values_before_physics`・`lip_sync_applied`・`part_opacities_applied`) は出していない
   (C ABI・wasm にも無い)。Godot のノードを指揮役にして別のノードを `follow` で動かすには、これらを足す必要がある
   (`get_parameter_values()` は物理の後の値なので、それを渡しても物理を持つモデルでは指揮役と同じ形にならない)。
-- 着せ替えのモジュールの読み込みの警告は、スクリプトから読む口が無い (`UgoeModule` は GDScript のリソースのため。Godot の警告には出る)。
+- 着せ替えのモジュールの読み込みの警告は、取り付けている間だけ読める (`get_module_load_warnings(name)`。`UgoeModule` は
+  GDScript のリソースで中身を読まないため、付ける前のモジュールからは読めない)。
 - 当たり判定・パラメータなどの Godot の API の自動テストは、ヘッドレスの Godot で動く `example/tests/smoke.gd` だけ。
 - Godot 4.7.1 で、GDExtension のクラスを持つプロジェクトの初回の `--import` の終わりに異常終了することがある
   (godot-rust の最小のクラスでも起き、2 回目からは起きない)。`build.mjs` は 1 回だけやり直す。
