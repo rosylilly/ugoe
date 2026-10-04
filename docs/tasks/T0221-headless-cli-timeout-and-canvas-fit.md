@@ -1,11 +1,11 @@
 ---
 id: T0221
 title: "ヘッドレス描画の残り: ugoe render の GPU の待ちの上限と、render_png の大きなキャンバスの縮小"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-headless, ugoe-cli, ugoe-mcp, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0221
 ---
 
 # T0221: ヘッドレス描画の残り: ugoe render の GPU の待ちの上限と、render_png の大きなキャンバスの縮小
