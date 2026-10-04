@@ -3,6 +3,12 @@
 //! 名前を語に分け (区切り文字・camelCase・数字)、連続する 1〜3 語をつないだ文字列を
 //! キーワードと比べる。日本語の名前は部分文字列で比べる。規則は具体的なものから順に並び、
 //! 最初に当たったものを採る (`eyewhite` を `eye` より先に、`handwear` を `hand` より先に)。
+//!
+//! 並びだけでは決まらない語は、部位の語との組み合わせで決める。
+//! - 「リボン」は首・胸・襟の語があれば `neckwear`、なければ `headwear`。
+//! - 部位の語のないハイライト (`highlight`・`hl`・「ハイライト」) は、ほかの部位の語があればその部位
+//!   (`顔ハイライト` は `face`)、目の語 (`目`・`iris`・`eye`) だけか部位の語がなければ `eye_highlight`。
+//! - `top` だけは服の語として最後に見る (`hair top` は髪、`top lip` は口)。
 
 use super::{Label, Side};
 
@@ -16,6 +22,9 @@ struct Rule {
     label: Label,
     words: &'static [&'static str],
     kanji: &'static [&'static str],
+    /// 空でなければ、`near_words` か `near_kanji` のどれかも名前にあるときだけ当たる。
+    near_words: &'static [&'static str],
+    near_kanji: &'static [&'static str],
     confidence: f32,
 }
 
@@ -28,6 +37,26 @@ const fn rule(
         label,
         words,
         kanji,
+        near_words: &[],
+        near_kanji: &[],
+        confidence: NAME_CONFIDENCE,
+    }
+}
+
+/// 部位の語 (`near_words`・`near_kanji`) と一緒に書かれたときだけ当たる規則。
+const fn with_part(
+    label: Label,
+    words: &'static [&'static str],
+    kanji: &'static [&'static str],
+    near_words: &'static [&'static str],
+    near_kanji: &'static [&'static str],
+) -> Rule {
+    Rule {
+        label,
+        words,
+        kanji,
+        near_words,
+        near_kanji,
         confidence: NAME_CONFIDENCE,
     }
 }
@@ -41,9 +70,14 @@ const fn vague(
         label,
         words,
         kanji,
+        near_words: &[],
+        near_kanji: &[],
         confidence: VAGUE_CONFIDENCE,
     }
 }
+
+/// 部位の語のないハイライトの規則 (`RULES` の中の位置)。当たったら、後ろの規則で部位を探す。
+const HIGHLIGHT: usize = 17;
 
 /// 規則の表。上にあるものほど優先する。
 const RULES: &[Rule] = &[
@@ -72,6 +106,14 @@ const RULES: &[Rule] = &[
         ],
         &["眼鏡", "メガネ", "めがね", "ゴーグル"],
     ),
+    // 首・胸のリボンは首の飾り (頭のリボンより先に見る)
+    with_part(
+        Label::Neckwear,
+        &["ribbon", "ribbons", "bow"],
+        &["リボン"],
+        &["neck", "chest", "collar", "breast", "bust"],
+        &["首", "胸", "襟"],
+    ),
     rule(
         Label::Headwear,
         &[
@@ -83,6 +125,7 @@ const RULES: &[Rule] = &[
             "hairpin",
             "hairclip",
             "hairband",
+            "hairtie",
             "headband",
             "ribbon",
             "headdress",
@@ -104,7 +147,16 @@ const RULES: &[Rule] = &[
     rule(
         Label::Neckwear,
         &[
-            "neckwear", "collar", "necktie", "tie", "choker", "scarf", "necklace", "bowtie",
+            "neckwear",
+            "collar",
+            "necktie",
+            "tie",
+            "choker",
+            "scarf",
+            "necklace",
+            "bowtie",
+            "neckribbon",
+            "chestribbon",
         ],
         &[
             "襟",
@@ -159,7 +211,7 @@ const RULES: &[Rule] = &[
         Label::Topwear,
         &[
             "topwear", "shirt", "tshirt", "blouse", "jacket", "coat", "sweater", "hoodie", "vest",
-            "dress", "uniform", "clothes", "clothing", "outfit", "top",
+            "dress", "uniform", "clothes", "clothing", "outfit", "tanktop", "croptop",
         ],
         &[
             "服",
@@ -235,12 +287,17 @@ const RULES: &[Rule] = &[
         Label::EyeHighlight,
         &[
             "eyehighlight",
-            "highlight",
-            "highlights",
+            "eyehighlights",
+            "eyehl",
             "eyelight",
             "catchlight",
-            "hl",
         ],
+        &["目ハイライト", "瞳ハイライト"],
+    ),
+    // 部位の語のないハイライト (`HIGHLIGHT` の位置。動かしたら直す)
+    rule(
+        Label::EyeHighlight,
+        &["highlight", "highlights", "hl"],
         &["ハイライト"],
     ),
     rule(
@@ -350,6 +407,8 @@ const RULES: &[Rule] = &[
         &["body", "torso", "chest", "waist", "skin", "bust"],
         &["体", "胴", "胸", "腰", "身体"],
     ),
+    // `top` は部位の語がなければ服 (`hair top`・`top lip` を服にしない)
+    rule(Label::Topwear, &["top", "tops"], &[]),
     // その他
     rule(
         Label::Accessory,
@@ -417,16 +476,31 @@ fn phrases(tokens: &[String]) -> Vec<String> {
 /// レイヤー (またはグループ) の名前からラベルを決める。当たらなければ `None`。
 pub(super) fn label_from_name(name: &str) -> Option<NameMatch> {
     let phrases = phrases(&tokens(name));
-    RULES
-        .iter()
-        .find(|r| {
-            r.words.iter().any(|w| phrases.iter().any(|p| p == w))
-                || r.kanji.iter().any(|k| name.contains(k))
-        })
-        .map(|r| NameMatch {
-            label: r.label,
-            confidence: r.confidence,
-        })
+    let has = |words: &[&str], kanji: &[&str]| {
+        words.iter().any(|w| phrases.iter().any(|p| p == w))
+            || kanji.iter().any(|k| name.contains(k))
+    };
+    let matches = |r: &Rule| {
+        has(r.words, r.kanji)
+            && (r.near_words.is_empty() && r.near_kanji.is_empty()
+                || has(r.near_words, r.near_kanji))
+    };
+    let found = |r: &Rule| NameMatch {
+        label: r.label,
+        confidence: r.confidence,
+    };
+    let i = RULES.iter().position(matches)?;
+    if i == HIGHLIGHT {
+        // 部位の語のないハイライト: ほかの部位の語があればその部位のハイライトとみなす。
+        // 目の語 (目・瞳) は目のハイライトのまま。
+        let part = RULES[i + 1..].iter().find(|r| matches(r));
+        if let Some(r) = part
+            && !matches!(r.label, Label::Eye | Label::Iris)
+        {
+            return Some(found(r));
+        }
+    }
+    Some(found(&RULES[i]))
 }
 
 /// 名前から左右を決める (キャラクター自身の左右)。書かれていなければ `None`。
@@ -493,6 +567,61 @@ mod tests {
         assert_eq!(label("目ハイライト"), Some(Label::EyeHighlight));
         // 触角 (顔の横に垂れる房) は横髪。
         assert_eq!(label("触角"), Some(Label::HairSide));
+    }
+
+    #[test]
+    fn highlight_index_points_at_the_bare_highlight_rule() {
+        assert_eq!(RULES[HIGHLIGHT].words, ["highlight", "highlights", "hl"]);
+    }
+
+    #[test]
+    fn highlights_take_the_part_they_are_on() {
+        // 顔・頬・口・服のハイライトは目のハイライトにしない (目の開閉でつぶれる)。
+        assert_eq!(label("顔ハイライト"), Some(Label::Face));
+        assert_eq!(label("face highlight"), Some(Label::Face));
+        assert_eq!(label("cheek hl"), Some(Label::Cheek));
+        assert_eq!(label("頬ハイライト"), Some(Label::Cheek));
+        assert_eq!(label("lip hl"), Some(Label::Mouth));
+        assert_eq!(label("服ハイライト"), Some(Label::Topwear));
+        assert_eq!(label("skirt highlight"), Some(Label::Bottomwear));
+        assert_eq!(label("skin hl"), Some(Label::Body));
+        // 目の語と一緒なら、部位の語がなければ目のハイライト。
+        assert_eq!(label("瞳ハイライト"), Some(Label::EyeHighlight));
+        assert_eq!(label("iris hl L"), Some(Label::EyeHighlight));
+        assert_eq!(label("eye hl"), Some(Label::EyeHighlight));
+        assert_eq!(label("ハイライト右"), Some(Label::EyeHighlight));
+        assert_eq!(label("hl"), Some(Label::EyeHighlight));
+        assert_eq!(label("catchlight"), Some(Label::EyeHighlight));
+        // 確からしさは当たった部位の規則のもの。
+        let m = label_from_name("cheek hl").unwrap();
+        assert_eq!(m.confidence, NAME_CONFIDENCE);
+    }
+
+    #[test]
+    fn ribbons_on_the_neck_are_neckwear() {
+        assert_eq!(label("neck ribbon"), Some(Label::Neckwear));
+        assert_eq!(label("neckRibbon"), Some(Label::Neckwear));
+        assert_eq!(label("chest_ribbon"), Some(Label::Neckwear));
+        assert_eq!(label("胸リボン"), Some(Label::Neckwear));
+        assert_eq!(label("首リボン"), Some(Label::Neckwear));
+        assert_eq!(label("襟のリボン"), Some(Label::Neckwear));
+        // 部位の語がなければ頭のリボン。
+        assert_eq!(label("ribbon"), Some(Label::Headwear));
+        assert_eq!(label("リボン_左"), Some(Label::Headwear));
+        assert_eq!(label("hair ribbon"), Some(Label::Headwear));
+        assert_eq!(label("hair tie"), Some(Label::Headwear));
+        assert_eq!(label("tie"), Some(Label::Neckwear));
+    }
+
+    #[test]
+    fn top_is_clothing_only_without_a_part() {
+        assert_eq!(label("hair top"), Some(Label::HairFront));
+        assert_eq!(label("top hair"), Some(Label::HairFront));
+        assert_eq!(label("top front hair"), Some(Label::HairFront));
+        assert_eq!(label("top lip"), Some(Label::Mouth));
+        assert_eq!(label("top"), Some(Label::Topwear));
+        assert_eq!(label("tops 2"), Some(Label::Topwear));
+        assert_eq!(label("tank top"), Some(Label::Topwear));
     }
 
     #[test]
