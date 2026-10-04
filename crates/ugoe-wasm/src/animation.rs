@@ -8,7 +8,7 @@ use ugoe::Toggles;
 use ugoe::model::expression::{Expression, ExpressionOp};
 use ugoe::model::motion::{CurveTarget, Motion};
 use ugoe::model::physics::PhysicsSettings;
-use ugoe::model::validate::ValidationError;
+use ugoe::model::validate::{ValidationError, describe_errors};
 use ugoe::motion::Priority;
 use ugoe::motion::curve::SegmentIndex;
 
@@ -20,7 +20,7 @@ pub enum AnimationError {
     Format(#[from] ugoe::format::FormatError),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
-    #[error("{}", validation_message("physics settings", .0))]
+    #[error("{}", describe_errors("physics settings", .0))]
     InvalidPhysics(Vec<ValidationError>),
     /// 本体の物理の設定を、付けているモジュールと合成できなかった (`set_base_physics_json`)。
     #[error(transparent)]
@@ -33,11 +33,6 @@ pub enum AnimationError {
     UnknownPriority(String),
     #[error("unknown stage `{0}` (expected physics, eye_blink, breath, lip_sync or pose)")]
     UnknownStage(String),
-}
-
-fn validation_message(what: &str, errors: &[ValidationError]) -> String {
-    let list: Vec<String> = errors.iter().map(ToString::to_string).collect();
-    format!("{what} failed validation: {}", list.join("; "))
 }
 
 /// バンドルに入っていたモーションと表情 (名前で再生するため)。
@@ -891,10 +886,12 @@ mod tests {
             },
         });
         let bad = ugoe::format::physics_to_json(&bad).unwrap();
-        assert!(matches!(
-            set_base_physics_json(&mut puppet, Some(&bad)),
-            Err(AnimationError::InvalidPhysics(_))
-        ));
+        let err = set_base_physics_json(&mut puppet, Some(&bad)).unwrap_err();
+        let AnimationError::InvalidPhysics(errors) = &err else {
+            panic!("not invalid physics: {err}");
+        };
+        // 文は検証エラーの列の共通の形 (T0015。`docs/spec/model.md#検証エラーの文`)。
+        assert_eq!(err.to_string(), describe_errors("physics settings", errors));
         assert!(set_base_physics_json(&mut puppet, Some("{")).is_err());
         assert_eq!(puppet.base_physics(), Some(&windy));
 

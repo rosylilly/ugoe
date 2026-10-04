@@ -913,6 +913,12 @@ fn physics_settings_can_be_replaced() {
         set_physics(&p, &ugoe::format::physics_to_json(&bad).unwrap()),
         UGOE_ERROR_INVALID_MODEL
     );
+    // 文は検証エラーの列の共通の形 (T0015。`docs/spec/model.md#検証エラーの文`)。
+    let errors = ugoe::model::validate::validate_physics(&bad, &fixtures::physics_hair());
+    assert_eq!(
+        text(ugoe_last_error()),
+        ugoe::model::validate::describe_errors("physics settings", &errors)
+    );
     assert!(text(ugoe_last_error()).contains("Missing"));
     assert_eq!(set_physics(&p, "{"), UGOE_ERROR_FORMAT);
     assert_eq!(

@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use ugoe::DressUpError;
 use ugoe::model::physics::PhysicsSettings;
-use ugoe::model::validate::ValidationError;
+use ugoe::model::validate::{ValidationError, describe_errors};
 
 use crate::dress_up::dress_up_error;
 use crate::error::{
@@ -174,10 +174,9 @@ unsafe fn read_physics(json: *const u8, len: usize) -> Result<Option<PhysicsSett
 }
 
 fn invalid_physics(errors: &[ValidationError]) -> Error {
-    let list: Vec<String> = errors.iter().map(ToString::to_string).collect();
     Error::new(
         UGOE_ERROR_INVALID_MODEL,
-        format!("physics settings failed validation: {}", list.join("; ")),
+        describe_errors("physics settings", errors),
     )
 }
 

@@ -257,6 +257,25 @@ mod tests {
         Project::new(ProjectMeta::new("quad"), model, textures)
     }
 
+    // T0015: 検証に通らないモデルは、検証エラーの列の共通の形 (`docs/spec/model.md#検証エラーの文`) で伝える。
+    #[test]
+    fn reports_validation_errors_in_the_shared_form() {
+        let mut project = quad_project();
+        project.model.parameters[0].default = 99.0;
+        let errors = ugoe_model::validate::validate(&project.model);
+        assert!(!errors.is_empty());
+        let mut renderer = Renderer::default();
+        let err = renderer
+            .render(&project, &RenderRequest::default())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.ends_with(&ugoe_model::validate::describe_errors("model", &errors)),
+            "{err}"
+        );
+        assert!(renderer.gpu.is_none());
+    }
+
     #[test]
     fn reports_bad_arguments_before_touching_the_gpu() {
         let mut renderer = Renderer::default();

@@ -341,6 +341,15 @@ fn invalid_base_physics_changes_nothing() {
     // スロットが公開する `Chest` が無い。
     let err = puppet.set_base_physics(Some(empty_physics())).unwrap_err();
     assert_eq!(err.code(), "invalid_physics");
+    // 文は検証エラーの列の共通の形 (T0015。Debug の表記ではない)。
+    let DressUpError::Physics(errors) = &err else {
+        panic!("not physics: {err}");
+    };
+    assert_eq!(
+        err.to_string(),
+        ugoe_model::validate::describe_errors("physics settings", errors)
+    );
+    assert!(!errors.is_empty() && !err.to_string().contains("UnknownReference"));
     assert!(puppet.physics().is_none());
     puppet.set_base_physics(Some(settings.clone())).unwrap();
     assert_eq!(puppet.physics().unwrap().settings(), &settings);

@@ -831,25 +831,22 @@ fn read_container(path: &Path, bytes: &[u8]) -> anyhow::Result<Container> {
         Err(e) => Err(e).with_context(|| format!("reading bundle {}", path.display())),
     };
     if let Err(e) = &result
-        && let Some(
-            FormatError::Invalid(errors)
-            | FormatError::InvalidModule(errors)
-            | FormatError::InvalidPhysics(errors),
-        ) = e.downcast_ref::<FormatError>()
+        && let Some(format_error) = e.downcast_ref::<FormatError>()
+        && let Some(errors) = format_error.validation_errors()
     {
+        // モーションと表情のエラーは名前を前に付ける。
+        let prefix = match format_error {
+            FormatError::InvalidMotion { name, .. }
+            | FormatError::InvalidExpression { name, .. } => {
+                format!("{name}: ")
+            }
+            _ => String::new(),
+        };
         for error in errors {
-            eprintln!("error: {error}");
+            eprintln!("error: {prefix}{error}");
         }
-    }
-    if let Err(e) = &result
-        && let Some(
-            FormatError::InvalidMotion { name, errors }
-            | FormatError::InvalidExpression { name, errors },
-        ) = e.downcast_ref::<FormatError>()
-    {
-        for error in errors {
-            eprintln!("error: {name}: {error}");
-        }
+        // 各エラーは上で上限なしに書いたので、最後の文は件数だけにする (`validate` のモデルの検査と同じ形)。
+        bail!("{}: {} validation error(s)", path.display(), errors.len());
     }
     result
 }

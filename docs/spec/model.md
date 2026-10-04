@@ -319,6 +319,23 @@ ARKit のブレンドシェイプ (52 種) のように、互いに独立した�
 
 `ugoe_model::validate::validate` は構造の整合性を検査し、見つけたエラーをすべて返します。ランタイムのコンパイル、ファイルの読み込み、AI の提案の受け入れ時に必ず呼びます。
 
+### 検証エラーの文
+
+検証エラーの列 (`Vec<ValidationError>`) を 1 つの文で見せるときは、どの層も `ugoe_model::validate::describe_errors(subject, &errors)` で
+同じ形にします (T0015)。
+
+```text
+{subject} failed validation with {件数} error(s): {1 件目}; {2 件目}; …; {10 件目}; and {残り} more
+```
+
+- 各エラーは `ValidationError` の `Display` の文で、`; ` で区切る。並べるのは先頭の `DESCRIBED_ERRORS_MAX` (10) 件までで、
+  超えた分は `; and {残り} more` にまとめる。列が空なら `: ` 以降を書かない
+- `subject` は何を検査したか (`model`・`module`・`physics settings`・``motion `<名前>` ``・``expression `<名前>` ``・`composed model`)
+- 使う場所: `FormatError` の `Invalid`・`InvalidModule`・`InvalidPhysics`・`InvalidMotion`・`InvalidExpression`、`ugoe-runtime` の
+  `CompileError::Invalid`・`ComposeError::Invalid`、SDK の `DressUpError::Physics`、C ABI と wasm の物理の設定の検査、`ugoe-headless` の物理の設定の検査
+- 文は人が読むためのもので、安定した値として扱わない。機械はエラーの列そのもの (`FormatError::validation_errors` など) を読む
+- `ugoe validate` (CLI) は上限なしにすべてのエラーを 1 行ずつ `error: ...` で書き、最後に件数だけを書く (CLI の README)
+
 ### 数値の検証の方針
 
 モデルと物理の設定の `f32` は、すべて **有限値でなければ検証エラー** (`InvalidValue`) にします (T0141)。

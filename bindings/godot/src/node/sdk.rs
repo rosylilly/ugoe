@@ -5,7 +5,7 @@
 
 use godot::prelude::*;
 use ugoe::model::physics::PhysicsSettings;
-use ugoe::model::validate::ValidationError;
+use ugoe::model::validate::{ValidationError, describe_errors};
 use ugoe::motion::TrackingMap;
 use ugoe::{DressUpError, FieldValue, LipSyncInput, LoadWarning, PartOpacityInput};
 
@@ -417,10 +417,10 @@ fn read_physics(json: &GString) -> Option<Option<PhysicsSettings>> {
     }
 }
 
-/// 物理の設定の検査の結果を 1 行の文にする (C ABI の `UGOE_ERROR_INVALID_MODEL` の文と同じ形)。
+/// 物理の設定の検査の結果を 1 行の文にする (C ABI の `UGOE_ERROR_INVALID_MODEL` の文と同じ形。
+/// `docs/spec/model.md#検証エラーの文`)。
 fn invalid_physics(errors: &[ValidationError]) -> String {
-    let list: Vec<String> = errors.iter().map(ToString::to_string).collect();
-    format!("physics settings failed validation: {}", list.join("; "))
+    describe_errors("physics settings", errors)
 }
 
 fn physics_json(settings: Option<&PhysicsSettings>) -> GString {

@@ -79,7 +79,7 @@ pub enum ComposeError {
         part: String,
     },
     /// 合成したモデルが検証を通らない (モジュール自体の不整合など)。
-    #[error("composed model failed validation: {}", crate::compile::join_errors(.0))]
+    #[error("{}", ugoe_model::validate::describe_errors("composed model", .0))]
     Invalid(Vec<ValidationError>),
 }
 

@@ -12,10 +12,12 @@ use crate::deformer::DeformerKind;
 use crate::parameter::ParameterKind;
 use crate::{KeyformGrid, KeyformInference, Model, Parameter};
 
+mod describe;
 mod module;
 mod motion;
 mod physics;
 
+pub use describe::{DESCRIBED_ERRORS_MAX, describe_errors};
 pub use module::validate_module;
 pub use motion::{MotionWarning, motion_warnings, validate_expression, validate_motion};
 pub use physics::validate_physics;

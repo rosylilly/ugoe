@@ -18,7 +18,7 @@ use ugoe_model::expression::Expression;
 use ugoe_model::module::Module;
 use ugoe_model::motion::Motion;
 use ugoe_model::physics::PhysicsSettings;
-use ugoe_model::validate::ValidationError;
+use ugoe_model::validate::{ValidationError, describe_errors};
 
 pub use bundle::{
     Bundle, ChunkTag, ReadLimit, ReadLimits, ReadReport, ReadWarning, TextureData, TextureFormat,
@@ -90,22 +90,23 @@ pub enum FormatError {
     },
     #[error("bundle is too large")]
     TooLarge,
-    #[error("model failed validation with {} error(s)", .0.len())]
+    /// モデルが `validate` の検査に通らない。文の形は `docs/spec/model.md#検証エラーの文`。
+    #[error("{}", describe_errors("model", .0))]
     Invalid(Vec<ValidationError>),
     /// 着せ替えのモジュールが `validate_module` の検査に通らない。
-    #[error("module failed validation with {} error(s)", .0.len())]
+    #[error("{}", describe_errors("module", .0))]
     InvalidModule(Vec<ValidationError>),
     /// 物理の設定が `validate_physics` の検査に通らない。
-    #[error("physics settings failed validation with {} error(s)", .0.len())]
+    #[error("{}", describe_errors("physics settings", .0))]
     InvalidPhysics(Vec<ValidationError>),
     /// モーション (`MOTN` か `*.motion.json`) が `validate_motion` の検査に通らない。`name` はモーションの名前。
-    #[error("motion `{name}` failed validation with {} error(s)", .errors.len())]
+    #[error("{}", describe_errors(&format!("motion `{name}`"), .errors))]
     InvalidMotion {
         name: String,
         errors: Vec<ValidationError>,
     },
     /// 表情 (`EXPR` か `*.expression.json`) が `validate_expression` の検査に通らない。`name` は表情の名前。
-    #[error("expression `{name}` failed validation with {} error(s)", .errors.len())]
+    #[error("{}", describe_errors(&format!("expression `{name}`"), .errors))]
     InvalidExpression {
         name: String,
         errors: Vec<ValidationError>,
@@ -122,6 +123,24 @@ pub enum FormatError {
     MsgPackEncode(#[from] rmp_serde::encode::Error),
     #[error(transparent)]
     MsgPackDecode(#[from] rmp_serde::decode::Error),
+}
+
+impl FormatError {
+    /// 検証エラーの列を持つ種類 (`Invalid`・`InvalidModule`・`InvalidPhysics`・`InvalidMotion`・`InvalidExpression`)
+    /// なら、その列。ほかの種類は `None`。
+    ///
+    /// 読む側 (CLI・エディタ・ビューア・MCP) は種類ごとに展開せずにこれを使う (種類が増えても取りこぼさない)。
+    /// モーションと表情の名前は `Display` の文に入る。
+    pub fn validation_errors(&self) -> Option<&[ValidationError]> {
+        match self {
+            Self::Invalid(errors)
+            | Self::InvalidModule(errors)
+            | Self::InvalidPhysics(errors)
+            | Self::InvalidMotion { errors, .. }
+            | Self::InvalidExpression { errors, .. } => Some(errors),
+            _ => None,
+        }
+    }
 }
 
 /// モデルを JSON 表現で書き出す (デバッグ・差分確認・AI 入出力用)。
@@ -299,6 +318,49 @@ mod tests {
             expression("-1e39"),
             Err(FormatError::InvalidExpression { name, errors }) if name == "smile" && errors.len() == 1
         ));
+    }
+
+    // T0015: 検証エラーの列を持つ種類はすべて `validation_errors` で列を返し、文はすべてのエラーを並べる。
+    #[test]
+    fn validation_errors_cover_every_list_variant() {
+        let error = |field: &str| ValidationError::InvalidValue {
+            field: field.into(),
+            value: -1.0,
+            expected: ">= 0",
+        };
+        let errors = vec![error("a"), error("b")];
+        let cases = [
+            (FormatError::Invalid(errors.clone()), "model"),
+            (FormatError::InvalidModule(errors.clone()), "module"),
+            (
+                FormatError::InvalidPhysics(errors.clone()),
+                "physics settings",
+            ),
+            (
+                FormatError::InvalidMotion {
+                    name: "nod".into(),
+                    errors: errors.clone(),
+                },
+                "motion `nod`",
+            ),
+            (
+                FormatError::InvalidExpression {
+                    name: "smile".into(),
+                    errors: errors.clone(),
+                },
+                "expression `smile`",
+            ),
+        ];
+        for (e, subject) in cases {
+            assert_eq!(e.validation_errors(), Some(errors.as_slice()), "{e}");
+            assert_eq!(
+                e.to_string(),
+                format!(
+                    "{subject} failed validation with 2 error(s): a = -1 must be >= 0; b = -1 must be >= 0"
+                )
+            );
+        }
+        assert_eq!(FormatError::TooLarge.validation_errors(), None);
     }
 
     #[test]

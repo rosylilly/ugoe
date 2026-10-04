@@ -166,6 +166,10 @@ fn validate_lists_physics_errors_in_a_bundle() {
             .any(|l| l.starts_with("error: ") && l.contains("Missing")),
         "{stderr}"
     );
+    // T0015: 各エラーを 1 行ずつ書いたので、最後の文は列を繰り返さずに件数だけ。
+    let last = stderr.lines().last().unwrap_or_default();
+    assert!(last.ends_with("1 validation error(s)"), "{stderr}");
+    assert_eq!(stderr.matches("Missing").count(), 1, "{stderr}");
 }
 
 /// `ugoe validate <bundle>`: 数値の壊れたモーションは各エラーを書いて失敗し、時刻が減る点は警告だけ書く。

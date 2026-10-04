@@ -163,8 +163,10 @@ pub fn advance(puppet: &mut Puppet, playback: Playback) -> Result<u32, Error> {
     }
     if let Some(physics) = playback.physics {
         puppet.set_physics(Some(physics)).map_err(|errors| {
-            let errors: Vec<String> = errors.iter().map(ToString::to_string).collect();
-            Error::Invalid(format!("invalid physics settings: {}", errors.join("; ")))
+            Error::Invalid(ugoe_model::validate::describe_errors(
+                "physics settings",
+                &errors,
+            ))
         })?;
     }
     puppet.set_toggles(Toggles {
@@ -341,7 +343,11 @@ mod tests {
         )
         .unwrap_err()
         .to_string();
-        assert!(err.contains("invalid physics"), "{err}");
+        // 文は検証エラーの列の共通の形 (T0015。`docs/spec/model.md#検証エラーの文`)。
+        assert!(
+            err.starts_with("physics settings failed validation with "),
+            "{err}"
+        );
     }
 
     #[test]

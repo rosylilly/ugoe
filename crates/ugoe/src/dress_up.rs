@@ -9,7 +9,7 @@ use std::sync::Arc;
 use ugoe_model::Model;
 use ugoe_model::module::Module;
 use ugoe_model::physics::PhysicsSettings;
-use ugoe_model::validate::{ValidationError, validate_physics};
+use ugoe_model::validate::{ValidationError, describe_errors, validate_physics};
 use ugoe_runtime::{
     CompileError, CompiledModel, ComposeError, ModelInstance, ParamIndex, ParameterValues, compose,
     compose_physics, compose_physics_without_base,
@@ -59,8 +59,8 @@ pub enum DressUpError {
     /// 合成したモデルをコンパイルできない。
     #[error(transparent)]
     Compile(#[from] CompileError),
-    /// 合成した物理の設定が、合成したモデルに対する検証を通らない。
-    #[error("composed physics failed validation: {0:?}")]
+    /// 物理の設定が検証を通らない (本体の設定と本体のモデル、または合成した設定と合成したモデル)。
+    #[error("{}", describe_errors("physics settings", .0))]
     Physics(Vec<ValidationError>),
     /// 外そうとした名前のモジュールが付いていない。
     #[error("module `{0}` is not attached")]

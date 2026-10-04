@@ -38,6 +38,7 @@ use ugoe_model::physics::{
     PhysicsSource, PhysicsTarget,
 };
 use ugoe_model::standard as sp;
+use ugoe_model::validate::describe_errors;
 use ugoe_model::{
     AvatarProfile, BlendMode, Canvas, Deformer, DeformerKind, Effects, HitArea, KeyformBinding,
     KeyformGrid, MaskMode, MaskRef, Mesh, Model, ModelMeta, Module, ModulePhysics, ModulePose,
@@ -156,11 +157,11 @@ pub fn build_dress_up() -> anyhow::Result<DressUpSample> {
 fn check(base: &Model, physics: &PhysicsSettings, modules: &[ModuleFile]) -> anyhow::Result<()> {
     let errors = ugoe_model::validate::validate(base);
     if !errors.is_empty() {
-        bail!("the base model is invalid: {errors:?}");
+        bail!("{}", describe_errors("the base model", &errors));
     }
     let errors = ugoe_model::validate::validate_physics(physics, base);
     if !errors.is_empty() {
-        bail!("the base physics is invalid: {errors:?}");
+        bail!("{}", describe_errors("the base physics", &errors));
     }
     // 警告 (値域の違いなど) も見本には残さない。
     let report = ugoe_model::avatar::check::check_profile(base);
@@ -173,7 +174,8 @@ fn check(base: &Model, physics: &PhysicsSettings, modules: &[ModuleFile]) -> any
     for file in modules {
         let errors = ugoe_model::validate::validate_module(&file.module);
         if !errors.is_empty() {
-            bail!("module `{}` is invalid: {errors:?}", file.module.name);
+            let subject = format!("module `{}`", file.module.name);
+            bail!("{}", describe_errors(&subject, &errors));
         }
     }
     for hair in ["LongHair", "TwinTails"] {
@@ -190,7 +192,8 @@ fn check(base: &Model, physics: &PhysicsSettings, modules: &[ModuleFile]) -> any
                 .with_context(|| format!("composing the physics of {:?}", names(modules)))?;
             let errors = ugoe_model::validate::validate_physics(&composed, &model);
             if !errors.is_empty() {
-                bail!("the physics of {:?} is invalid: {errors:?}", names(modules));
+                let subject = format!("the physics of {:?}", names(modules));
+                bail!("{}", describe_errors(&subject, &errors));
             }
         }
     }

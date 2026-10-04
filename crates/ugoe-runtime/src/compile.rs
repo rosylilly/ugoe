@@ -13,7 +13,7 @@ use crate::{ParamIndex, ParameterValues};
 #[derive(Debug, thiserror::Error)]
 pub enum CompileError {
     /// モデルが検証 (`ugoe_model::validate::validate`) を通らない。
-    #[error("model failed validation: {}", join_errors(.0))]
+    #[error("{}", ugoe_model::validate::describe_errors("model", .0))]
     Invalid(Vec<ugoe_model::validate::ValidationError>),
     /// キーフォームの軸が、モデルにないパラメータを指す (検証済みなら起きない)。
     #[error("unknown parameter `{0}`")]
@@ -21,12 +21,6 @@ pub enum CompileError {
     /// 評価できない構造 (行か列が 0 のワープなど)。
     #[error("unsupported feature: {0}")]
     Unsupported(&'static str),
-}
-
-/// 検証エラーの一覧を、利用者に見せる 1 行の文言にする (`; ` で区切る)。
-pub(crate) fn join_errors(errors: &[ugoe_model::validate::ValidationError]) -> String {
-    let list: Vec<String> = errors.iter().map(ToString::to_string).collect();
-    list.join("; ")
 }
 
 /// 評価用に前処理したモデル。複数インスタンスで共有できる (不変)。
@@ -489,7 +483,7 @@ mod tests {
         };
         assert_eq!(
             err.to_string(),
-            format!("model failed validation: {}", errors[0])
+            format!("model failed validation with 1 error(s): {}", errors[0])
         );
     }
 
