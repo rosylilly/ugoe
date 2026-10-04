@@ -276,12 +276,17 @@ try {
 } catch (e) {
   if (!isDressUpError(e)) throw e;
   // e.code: UgoeDressUpErrorCode ("slot_occupied" など。知らない値もありうる)
-  // 補足の値: e.module・e.slot・e.parameter・e.mesh・e.attached (無ければ undefined)
+  // 補足の値 (無ければ undefined): e.module・e.slot・e.parameter・e.mesh・e.attached (slot_occupied)・e.mask (unknown_mask)・
+  // e.rig・e.collider (unknown_collider)・e.part (pose_not_exposed)・e.texture (texture_out_of_range。数)・
+  // e.required・e.actual (avatar_level。数)・e.errors (invalid_physics・invalid_composition の検査のエラーの数)
   if (e.code === "slot_occupied") console.warn(`${e.slot} には ${e.attached} が付いています`);
 }
 ```
 
 - `isKnownLoadWarning` で絞らずに `code` の文字列で比べることもできます (補足の値は `unknown` になる)。
+- このパッケージが知っている `code` の一覧は、配列 `LOAD_WARNING_CODES`・`DRESS_UP_ERROR_CODES`・`LOAD_ERROR_CODES` でも読めます
+  (訳の表が全種類を持つかのテストなどに。型 `UgoeDressUpErrorCode`・`UgoeLoadErrorCode` はこの配列の要素)。
+  ランタイムの `code` との突き合わせは下の「開発」。
 - `<ugoe-avatar>` の `load` イベントの `detail.warningDetails` と `avatar.warningDetails` は `loadWarnings(puppet)` と同じものです。
 - `isDressUpError` は `name` が `"DressUpError"` で `code` が文字列の `Error` を受けます。`message` は英語の文で、安定した値ではありません。
 
@@ -339,6 +344,45 @@ try {
 - 一覧と意味は [crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md#読み込みの失敗-t0434)。型は `UgoeLoadError`・`UgoeLoadErrorCode`。
   新しい版のランタイムは知らない `code` を返しうるので、知らないものは `message` を出してください。
 - 失敗したときは何も変えません (前のモデルのまま)。
+
+### 問い合わせの JSON の型 (T0452)
+
+`WebPuppet` の `*_json()` は JSON の文字列を返します。このパッケージの補助は `JSON.parse` して型を付けます
+(形は [crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md) の各節)。
+
+```ts
+import {
+  avatarSlots,
+  currentPose,
+  drawableStates,
+  expressionInfos,
+  moduleInfos,
+  motionInfos,
+  parameterDefinitions,
+  sampleMotion,
+  slotDefinitions,
+} from "@ugoe/runtime";
+
+parameterDefinitions(puppet); // parameters_json():       { parameters: UgoeParameterDefinition[], groups: UgoeParameterGroup[] }
+motionInfos(puppet);          // motions_json():          UgoeMotionInfo[] (name・duration・looping・fade_in・fade_out・parameters・events)
+expressionInfos(puppet);      // expressions_json():      UgoeExpressionInfo[] (name・fade_in・fade_out・parameters: [{ parameter, value, op }])
+moduleInfos(puppet);          // modules_json():          UgoeModuleInfo[] (warning_details は UgoeLoadWarning[])
+slotDefinitions(puppet);      // slots_json():            UgoeSlot[] (空の一覧と無い値はキーごと無い)
+avatarSlots(puppet);          // avatar_slots_json():     string[] | null (アバタープロファイルが無ければ null)
+drawableStates(puppet);       // drawable_states_json():  UgoeDrawableState[] (drawable_ids() の順)
+currentPose(puppet);          // pose_json():             UgoePose | undefined (モデルが無ければ undefined)
+sampleMotion(motionJson, t);  // sample_motion_json():    UgoeCurveValue[] ({ target: { kind, id }, value })。wasm の初期化の後に呼ぶ
+```
+
+| `*_json()` | 型と補助 |
+| --- | --- |
+| `load_warnings_json`・`detached_modules_json` | `loadWarnings`・`detachedModules` (上の「読み込みの警告と着せ替えの失敗の型」) |
+| `parameters_json`・`motions_json`・`expressions_json`・`modules_json`・`slots_json`・`avatar_slots_json`・`drawable_states_json`・`pose_json`・`sample_motion_json` | 上の例 |
+| `physics_json`・`base_physics_json` | **型を出さない。** 中身は `*.physics.json` の形 (リグ・粒子・入力・出力・衝突体などモデルの JSON 形式の大きな一部。[spec/schema/physics.schema.json](../../spec/schema/physics.schema.json)) で、主な使い道は保存して `set_physics_json`・`set_base_physics_json` に戻すこと。中を読むなら JSON Schema から型を作ってください |
+| `MotionSampler.sample` | 形は `sample_motion_json` と同じ (`UgoeCurveValue[]`)。`MotionSampler` はこのパッケージの入口から出していない (`@ugoe/runtime/wasm` から使う) |
+
+- 要素がモデルの JSON 形式と同じもの (パラメータ・スロット・ポーズ) は、新しい版のランタイムがキーを足しうります。知らないキーは無視してください。
+- 新しい `*_json()` を足したら、ここに型と補助を足すか、この表に足さない理由を書きます。
 
 ### 届いた値で動かす (受け手)
 
@@ -514,11 +558,18 @@ npm への公開は、パッケージを使う人 (このリポジトリを持�
 | --- | --- |
 | `pnpm --filter @ugoe/runtime build` | = `just web-runtime`。wasm のビルド (`src/wasm/` に生成、gitignore 済み)・`tsc`・`dist/` への出力 |
 | `pnpm --filter @ugoe/runtime check` | 型検査。`src/wasm/` に生成物 (`ugoe_wasm_bg.wasm`) が無ければ、手書きの型 `stub/ugoe_wasm.d.ts` を `src/wasm/` に写し直して検査する (写しは毎回作り直すので、スタブを直せばそのまま反映される) |
-| `pnpm --filter @ugoe/runtime test` | 属性の解釈・トラッキングの変換と平滑化・`<ugoe-avatar>` の作成と読み込みの順序 (happy-dom と `WebPuppet` の偽物)・スタブの型のずれの単体テスト (Vitest) |
+| `pnpm --filter @ugoe/runtime test` | 属性の解釈・トラッキングの変換と平滑化・`<ugoe-avatar>` の作成と読み込みの順序 (happy-dom と `WebPuppet` の偽物)・問い合わせの JSON の補助・スタブの型のずれ・`code` の一覧と Rust の突き合わせの単体テスト (Vitest) |
 | `just conformance --only wasm,wasm-webgpu,avatar` | 配布物の適合テスト (`tests/conformance/README.md`)。`WebPuppet` の評価の結果と画像を参照と比べ (`wasm`・`wasm-webgpu`)、`<ugoe-avatar>` の作成・切り離しと再接続・`backend` の変更・WebGL2 のコンテキストの喪失からの作り直しを、本物の wasm とヘッドレスの Chrome で確かめる (`avatar`)。Chrome と wasm-bindgen-cli が要る |
 
 - `crates/ugoe-wasm` の公開 API を変えたら、`stub/ugoe_wasm.d.ts` を生成物 (`src/wasm/ugoe_wasm.d.ts`) から作り直します。
   メソッドと関数の名前がクレートとずれていると、単体テスト (`stub/ugoe_wasm.test.mjs`) が失敗します。
+- **`code` の突き合わせ (T0452):** 読み込みの警告・着せ替えの失敗・読み込みの失敗の `code` と補足の値のキーの一覧は
+  `crates/ugoe-wasm/codes.json` にあります。ugoe-wasm のテスト (`src/codes.rs`。`just ci` の Rust のテスト) がすべての種類の見本から作った一覧と、
+  このパッケージのテスト (`src/codes.test.ts`。`just ci` の `web-check`) が `LOAD_WARNING_CODES`・`DRESS_UP_ERROR_CODES`・`LOAD_ERROR_CODES` と
+  補足の値の型 (`UgoeDressUpErrorFields`・`UgoeLoadErrorFields`・`UgoeKnownLoadWarning` の各型) と比べます。Rust で種類やキーを足したら
+  `UGOE_UPDATE_CODES=1 cargo test -p ugoe-wasm codes` で `codes.json` を書き直し、`src/warnings.ts`・`src/limits.ts` も同じ PR で直します
+  (片方だけでは、どちらかのテストが落ちる)。
 - このパッケージは MIT です。`apps/`・`packages/` (GPL-3.0-only) のコードを import したり写したりしないでください ([ADR 0025](../../docs/adr/0025-web-runtime-package.md))。
 - 構成: `src/index.ts` (入口)・`src/runtime.ts` (初期化・作成・読み込み)・`src/avatar.ts` (`<ugoe-avatar>`)・
+  `src/queries.ts` (問い合わせの JSON の型)・`src/warnings.ts`・`src/limits.ts` (警告と例外の型)・
   `src/element.ts` (登録するだけの入口)・`src/attributes.ts` (属性の解釈。DOM と wasm に触れない)。

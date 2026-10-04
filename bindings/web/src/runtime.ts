@@ -2,7 +2,8 @@
 
 import { type Backend, isBundle } from "./attributes.js";
 import { type LoadLimits, limitsJson } from "./limits.js";
-import init, { type InitInput, WebPuppet } from "./wasm/ugoe_wasm.js";
+import type { UgoeCurveValue } from "./queries.js";
+import init, { type InitInput, sample_motion_json, WebPuppet } from "./wasm/ugoe_wasm.js";
 
 /** `initRuntime` の設定。 */
 export interface InitOptions {
@@ -88,4 +89,12 @@ export async function fetchModel(
   if (!response.ok)
     throw new Error(`failed to fetch ${url}: ${response.status} ${response.statusText}`);
   return loadModel(puppet, await response.arrayBuffer(), options);
+}
+
+/**
+ * モーション (`*.motion.json` の形の JSON) の各カーブを時刻 `t` (秒) で評価した値 (フェードなし。`sample_motion_json`)。
+ * 値の無いカーブ (未知の対象など) は含めない。wasm を初期化 (`initRuntime`) してから呼ぶ。読めない JSON は例外。
+ */
+export function sampleMotion(json: string, t: number): UgoeCurveValue[] {
+  return JSON.parse(sample_motion_json(json, t)) as UgoeCurveValue[];
 }

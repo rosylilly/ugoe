@@ -68,20 +68,25 @@ export function isLimitError(e: unknown): e is UgoeLimitError {
 }
 
 /**
- * 読み込み (`load_json` / `load_bundle`。`loadModel`・`fetchModel`) の失敗の種類 (`LoadError` の `code`)。
- * 一覧と意味は crates/ugoe-wasm/README.md#読み込みの失敗-t0434。
+ * このパッケージが知っている読み込みの失敗の種類 (`LoadError` の `code`)。意味は crates/ugoe-wasm/README.md#読み込みの失敗-t0434、
+ * 一覧は crates/ugoe-wasm/codes.json の `load_error` と同じ (`codes.test.ts` が比べる)。
  */
-export type UgoeLoadErrorCode =
-  | "invalid_file"
-  | "unsupported_version"
-  | "unsupported_features"
-  | "invalid_model"
-  | "compile"
-  | UgoeLimitErrorCode
-  | "invalid_texture"
-  | "texture_too_large"
-  | "texture"
-  | "device_lost";
+export const LOAD_ERROR_CODES = [
+  "invalid_file",
+  "unsupported_version",
+  "unsupported_features",
+  "invalid_model",
+  "compile",
+  "read_limit_exceeded",
+  "image_limit_exceeded",
+  "invalid_texture",
+  "texture_too_large",
+  "texture",
+  "device_lost",
+] as const;
+
+/** 読み込み (`load_json` / `load_bundle`。`loadModel`・`fetchModel`) の失敗の種類 (`LoadError` の `code`)。 */
+export type UgoeLoadErrorCode = (typeof LOAD_ERROR_CODES)[number];
 
 /** 読み込みの失敗の補足の値 (種類によって、あるものだけを持つ)。上限を超えたときの値は `UgoeLimitErrorFields`。 */
 export interface UgoeLoadErrorFields extends UgoeLimitErrorFields {

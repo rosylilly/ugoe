@@ -10,6 +10,8 @@
 //! ビルド: `just wasm` (wasm-bindgen-cli が必要。README を参照)。
 
 pub mod animation;
+#[cfg(test)]
+mod codes;
 pub mod dress_up;
 pub mod gizmo;
 pub mod hit;

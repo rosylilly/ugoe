@@ -4,36 +4,47 @@
 // (crates/ugoe-wasm/README.md#読み込みの警告-t0125、#着せ替え-t0123)。新しい版のランタイムは知らない `code` を返しうるので、
 // 型は知らない `code` も受ける。
 
+import type { UgoeLimitErrorFields } from "./limits.js";
 import type { WebPuppet } from "./wasm/ugoe_wasm.js";
 
-/** 着せ替えの失敗の種類 (`DressUpError` の `code`)。 */
-export type UgoeDressUpErrorCode =
-  | "unknown_slot"
-  | "missing_slot"
-  | "missing_parameter"
-  | "parameter_not_exposed"
-  | "avatar_level"
-  | "slot_occupied"
-  | "unknown_mask"
-  | "unknown_collider"
-  | "pose_not_exposed"
-  | "texture_out_of_range"
-  | "invalid_composition"
-  | "invalid_module_name"
-  | "duplicate_module"
-  | "compile"
-  | "invalid_physics"
-  | "not_attached"
-  | "not_loaded"
-  | "no_model"
-  | "invalid_file"
-  | "texture"
+/**
+ * このパッケージが知っている着せ替えの失敗の種類 (`DressUpError` の `code`)。一覧は crates/ugoe-wasm/codes.json の
+ * `dress_up_error` と同じ (`codes.test.ts` が比べる)。
+ */
+export const DRESS_UP_ERROR_CODES = [
+  "unknown_slot",
+  "missing_slot",
+  "missing_parameter",
+  "parameter_not_exposed",
+  "avatar_level",
+  "slot_occupied",
+  "unknown_mask",
+  "unknown_collider",
+  "pose_not_exposed",
+  "texture_out_of_range",
+  "invalid_composition",
+  "invalid_module_name",
+  "duplicate_module",
+  "compile",
+  "invalid_physics",
+  "not_attached",
+  "not_loaded",
+  "no_model",
+  "invalid_file",
+  "texture",
   // `load_module` が読み込みの上限を超えたとき (T0152)。補足の値は `UgoeLimitErrorFields` (`isLimitError` で絞る)。
-  | "read_limit_exceeded"
-  | "image_limit_exceeded";
+  "read_limit_exceeded",
+  "image_limit_exceeded",
+] as const;
 
-/** 着せ替えの失敗の補足の値 (種類によって、あるものだけを持つ)。 */
-export interface UgoeDressUpErrorFields {
+/** 着せ替えの失敗の種類 (`DressUpError` の `code`)。 */
+export type UgoeDressUpErrorCode = (typeof DRESS_UP_ERROR_CODES)[number];
+
+/**
+ * 着せ替えの失敗の補足の値 (種類によって、あるものだけを持つ)。ID・名前は文字列、番号・数は数 (T0157)。
+ * キーの意味は crates/ugoe/README.md#着せ替えの失敗の補足の値。`load_module` が上限を超えたときの値は `UgoeLimitErrorFields`。
+ */
+export interface UgoeDressUpErrorFields extends UgoeLimitErrorFields {
   /** モジュールの名前。 */
   module?: string;
   /** スロットの ID。 */
@@ -44,6 +55,25 @@ export interface UgoeDressUpErrorFields {
   mesh?: string;
   /** `slot_occupied` で、スロットに付いているモジュールの名前。 */
   attached?: string;
+  /** `unknown_mask` で、参照できないマスクのメッシュの ID。 */
+  mask?: string;
+  /** `unknown_collider` で、物理のリグの ID。 */
+  rig?: string;
+  /** `unknown_collider` で、参照できない衝突体の ID。 */
+  collider?: string;
+  /** `pose_not_exposed` で、追従先として指定した本体のパーツの ID。 */
+  part?: string;
+  /**
+   * `texture_out_of_range` で、メッシュのテクスチャの番号 (モジュールの `textures` の添字)。
+   * `image_limit_exceeded` ではテクスチャの番号。
+   */
+  texture?: number;
+  /** `avatar_level` で、モジュールが求めるアバタープロファイルのレベル。 */
+  required?: number;
+  /** `avatar_level` で、本体のレベル。本体がアバタープロファイルを持たなければ無い。 */
+  actual?: number;
+  /** `invalid_physics`・`invalid_composition` で、検査のエラーの数 (個々のエラーは `message` にだけある)。 */
+  errors?: number;
 }
 
 /**
@@ -133,7 +163,11 @@ export interface UgoeUnknownLoadWarning extends LoadWarningBase {
  */
 export type UgoeLoadWarning = UgoeKnownLoadWarning | UgoeUnknownLoadWarning;
 
-const KNOWN_LOAD_WARNING_CODES: ReadonlySet<string> = new Set<UgoeKnownLoadWarning["code"]>([
+/**
+ * このパッケージが知っている読み込みの警告の種類 (`UgoeKnownLoadWarning` の `code`)。一覧は crates/ugoe-wasm/codes.json の
+ * `load_warning` と同じ (`codes.test.ts` が比べる)。
+ */
+export const LOAD_WARNING_CODES = [
   "texture_ktx2",
   "texture_missing",
   "normal_map_ktx2",
@@ -141,7 +175,9 @@ const KNOWN_LOAD_WARNING_CODES: ReadonlySet<string> = new Set<UgoeKnownLoadWarni
   "module_detached",
   "unknown_optional_feature",
   "unknown_value",
-]);
+] as const satisfies readonly UgoeKnownLoadWarning["code"][];
+
+const KNOWN_LOAD_WARNING_CODES: ReadonlySet<string> = new Set(LOAD_WARNING_CODES);
 
 /** `warning` がこのパッケージの知っている種類か。 */
 export function isKnownLoadWarning(warning: UgoeLoadWarning): warning is UgoeKnownLoadWarning {

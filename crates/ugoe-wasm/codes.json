@@ -1,0 +1,149 @@
+{
+  "dress_up_error": {
+    "avatar_level": [
+      "actual",
+      "module",
+      "required"
+    ],
+    "compile": [],
+    "duplicate_module": [
+      "module"
+    ],
+    "image_limit_exceeded": [
+      "height",
+      "image",
+      "max",
+      "texture",
+      "width"
+    ],
+    "invalid_composition": [
+      "errors"
+    ],
+    "invalid_file": [],
+    "invalid_module_name": [
+      "module"
+    ],
+    "invalid_physics": [
+      "errors"
+    ],
+    "missing_parameter": [
+      "module",
+      "parameter"
+    ],
+    "missing_slot": [
+      "module",
+      "slot"
+    ],
+    "no_model": [],
+    "not_attached": [
+      "module"
+    ],
+    "not_loaded": [
+      "module"
+    ],
+    "parameter_not_exposed": [
+      "module",
+      "parameter",
+      "slot"
+    ],
+    "pose_not_exposed": [
+      "module",
+      "part",
+      "slot"
+    ],
+    "read_limit_exceeded": [
+      "chunk",
+      "limit",
+      "max"
+    ],
+    "slot_occupied": [
+      "attached",
+      "module",
+      "slot"
+    ],
+    "texture": [],
+    "texture_out_of_range": [
+      "mesh",
+      "module",
+      "texture"
+    ],
+    "unknown_collider": [
+      "collider",
+      "module",
+      "rig"
+    ],
+    "unknown_mask": [
+      "mask",
+      "mesh",
+      "module"
+    ],
+    "unknown_slot": [
+      "module",
+      "slot"
+    ]
+  },
+  "load_error": {
+    "compile": [],
+    "device_lost": [],
+    "image_limit_exceeded": [
+      "height",
+      "image",
+      "max",
+      "texture",
+      "width"
+    ],
+    "invalid_file": [],
+    "invalid_model": [
+      "errors"
+    ],
+    "invalid_texture": [
+      "image",
+      "texture"
+    ],
+    "read_limit_exceeded": [
+      "chunk",
+      "limit",
+      "max"
+    ],
+    "texture": [],
+    "texture_too_large": [
+      "height",
+      "image",
+      "max",
+      "texture",
+      "width"
+    ],
+    "unsupported_features": [
+      "features"
+    ],
+    "unsupported_version": [
+      "found",
+      "supported"
+    ]
+  },
+  "load_warning": {
+    "module_detached": [
+      "error",
+      "module",
+      "slot"
+    ],
+    "normal_map_ktx2": [
+      "texture"
+    ],
+    "physics_removed": [
+      "reason"
+    ],
+    "texture_ktx2": [
+      "texture"
+    ],
+    "texture_missing": [
+      "texture"
+    ],
+    "unknown_optional_feature": [
+      "feature"
+    ],
+    "unknown_value": [
+      "path"
+    ]
+  }
+}

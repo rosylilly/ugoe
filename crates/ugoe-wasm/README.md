@@ -227,6 +227,7 @@ try {
   // e.mask (unknown_mask)・e.rig・e.collider (unknown_collider)・e.part (pose_not_exposed)・
   // e.texture (texture_out_of_range。数)・e.required・e.actual (avatar_level。数。本体がプロファイルを持たなければ actual は無い)・
   // e.errors (invalid_physics・invalid_composition の検査のエラーの数)。キーの意味は crates/ugoe/README.md#着せ替えの失敗の補足の値 (T0157)
+  // TypeScript の型は @ugoe/runtime の UgoeDressUpError・isDressUpError (一覧の検査は下の「code の一覧」)
 }
 ```
 
@@ -280,7 +281,7 @@ JSON.parse(puppet.load_warnings_json());           // 同じ警告の構造 (同
   `warning_details` (同じ順の構造。`code` と補足の値は上と同じ) にある。
 - 使う側: ビューアは日本語 (`packages/player/src/loadWarnings.ts`)、エディタのプレビューは英語 (`apps/editor/src/lib/preview/loadWarnings.ts`)。
 - TypeScript の型と読む補助は npm の `@ugoe/runtime` にある (`UgoeLoadWarning`・`loadWarnings`・`UgoeDressUpError`・`isDressUpError`。
-  `bindings/web/src/warnings.ts`、T0438)。`code` や補足の値を増やしたら、そちらの和型も同じ PR で直す。
+  `bindings/web/src/warnings.ts`、T0438)。`code` や補足の値を増やしたら、そちらの和型も同じ PR で直す ([`code` の一覧](#code-の一覧-t0452) の検査が落ちる)。
 - `code` と補足の値は SDK の `ugoe::LoadWarning` (`code()`・`fields()`) が決め、C ABI の `ugoe_puppet_load_warning_*` と同じ (T0412)。
   `unknown_optional_feature`・`unknown_value` は読み込みの報告 (`read_bundle_with_report` / `read_module_with_report`) の警告で、
   一覧の先頭 (テクスチャの警告より前) に並ぶ。`.ugoemod` でも出る。
@@ -356,6 +357,18 @@ try {
 - 上限の JSON の形の誤り (`invalid limits: ...`) と、`WebPuppet.create` の失敗は `code` を持たない `Error` (組み込みの誤りで、利用者に見せる文ではない)。
 - 使う側: ビューアとスタジオは `@ugoe/player` が今の言語に訳す (`packages/player/src/loadError.ts`)。TypeScript の型は npm の
   `@ugoe/runtime` の `UgoeLoadError`・`isLoadError` (`bindings/web/src/limits.ts`)。コードを増やしたら、どちらも同じ PR で直す。
+
+### `code` の一覧 (T0452)
+
+読み込みの警告 (`load_warning`)・着せ替えの失敗 (`dress_up_error`)・読み込みの失敗 (`load_error`) の `code` と、種類ごとの補足の値のキーの
+一覧を `codes.json` に置く。`src/codes.rs` のテストが、すべての種類の見本 (`LoadWarning`・`WardrobeError`・`LoadError` と、その中の
+`DressUpError`・`ComposeError`・`CompileError`) から一覧を作って比べる。種類を足すと、テストの網羅の `match` (`guard`) がコンパイルできなくなるので、
+見本を足してから `UGOE_UPDATE_CODES=1 cargo test -p ugoe-wasm codes` で書き直す。
+
+`@ugoe/runtime` のテスト (`bindings/web/src/codes.test.ts`) は同じ `codes.json` を TS の `code` の配列と補足の値の型と比べるので、
+Rust と TS の片方だけに種類やキーを足すと、どちらかのテストが落ちる (どちらも `just ci` で流れる)。
+`FormatError`・`RenderError` の種類は網羅しない (ほかは `invalid_file`・`texture` にまとまる)。`format_error_info`・`LoadError::info` で
+新しい `code` を割り当てたら、`src/codes.rs` に見本を足す。
 
 ## ビルド
 

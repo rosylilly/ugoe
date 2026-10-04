@@ -25,6 +25,7 @@ import {
   parseParameters,
 } from "./attributes.js";
 import type { LoadLimits } from "./limits.js";
+import { parameterDefinitions, type UgoeParameterDefinition } from "./queries.js";
 import { createPuppet, loadModel } from "./runtime.js";
 import { type TrackingInput, trackingArguments } from "./tracking.js";
 import { loadWarnings, type UgoeLoadWarning } from "./warnings.js";
@@ -53,18 +54,6 @@ export interface UgoeAvatarErrorDetail {
 export interface UgoeAvatarElementEventMap extends Omit<HTMLElementEventMap, "load" | "error"> {
   load: CustomEvent<UgoeAvatarLoadDetail>;
   error: CustomEvent<UgoeAvatarErrorDetail>;
-}
-
-/** モデルのパラメータの定義 (`WebPuppet.parameters_json()` の要素。モデルの JSON 形式と同じ)。 */
-export interface UgoeParameterDefinition {
-  id: string;
-  name: string;
-  /** 中継用 (内部) のパラメータ (docs/spec/model.md#パラメータ)。 */
-  internal?: boolean;
-  min: number;
-  max: number;
-  default: number;
-  [key: string]: unknown;
 }
 
 type ModelData = ArrayBuffer | Uint8Array | string;
@@ -261,8 +250,7 @@ export class UgoeAvatarElement extends BaseElement {
   /** パラメータの定義 (値域・既定値)。モデルが無ければ空。 */
   get parameterDefinitions(): UgoeParameterDefinition[] {
     if (!this.#puppet) return [];
-    return (JSON.parse(this.#puppet.parameters_json()) as { parameters: UgoeParameterDefinition[] })
-      .parameters;
+    return parameterDefinitions(this.#puppet).parameters;
   }
 
   /** パラメータの今の値 (ID → 値)。代入すると、含まれるパラメータだけを設定する。 */
