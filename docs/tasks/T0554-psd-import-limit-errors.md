@@ -1,11 +1,11 @@
 ---
 id: T0554
 title: PSD の取り込みで、上限の超過と大きすぎるレイヤーを分かりやすく扱う
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core, ugoe-mcp, ugoe-mesher, apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0554
 ---
 
 # T0554: PSD の取り込みで、上限の超過と大きすぎるレイヤーを分かりやすく扱う
