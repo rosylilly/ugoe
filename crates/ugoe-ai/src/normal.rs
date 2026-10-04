@@ -572,7 +572,8 @@ impl<'a> GroupPlanner<'a> {
                 .map_err(|e| invalid(format!("texture `{name}`: {e}")))?;
             field.smooth(group.options.smoothing);
             let mut map = field.to_normal_map();
-            map.extend_edges(&field.mask, EDGE_PASSES);
+            map.extend_edges(field.mask(), EDGE_PASSES)
+                .map_err(|e| invalid(format!("texture `{name}`: {e}")))?;
             return Ok(vec![map]);
         }
         for &i in group
@@ -773,18 +774,10 @@ pub fn plan_depth_normal_maps(
             .iter()
             .map(|p| p.map(|p| normalize(map.sample(p.x / canvas.x, p.y / canvas.y)) * relief))
             .collect();
-        let values = fill_missing(
-            depth,
-            &layer.mask,
-            image.width as usize,
-            image.height as usize,
-        );
-        let mut field = HeightField {
-            width: image.width,
-            height: image.height,
-            values,
-            mask: layer.mask,
-        };
+        let values = fill_missing(depth, &layer.mask, image.width, image.height)
+            .map_err(|e| invalid(format!("texture `{name}`: {e}")))?;
+        let mut field = HeightField::new(image.width, image.height, values, layer.mask)
+            .map_err(|e| invalid(format!("texture `{name}`: {e}")))?;
         if o.rim > 0.0 {
             let rim = bulge_height(
                 image.width,

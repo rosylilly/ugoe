@@ -22,6 +22,11 @@ use super::{
 pub const EDGE_PASSES: usize = 4;
 /// 値のない形の中の画素に、隣の値を広げる回数の上限 ([`fill_missing`])。
 const FILL_PASSES: usize = 64;
+/// まとまりの格子の升目の数の上限 (8192 × 4096)。超えれば確保の前に [`NormalMapError::GridTooLarge`] にする。
+///
+/// 遠く離れた位置 (キャンバスの外に置いた隠しパーツの頂点など) や極端に小さい `canvas_per_texel` で、
+/// 格子が確保できないほど大きくならないように。ふくらませる間は 1 升あたりおよそ 40 バイトを使う。
+pub const MAX_GROUP_CELLS: usize = 1 << 25;
 
 /// まとまりの 1 枚のテクスチャと、その画素の基準の姿のキャンバスでの位置。
 #[derive(Debug, Clone, Copy)]
@@ -163,8 +168,19 @@ impl GroupField {
             (min.x / cell).floor() * cell - cell,
             (min.y / cell).floor() * cell - cell,
         );
-        let w = ((max.x - origin.x) / cell).ceil() as usize + 1;
-        let h = ((max.y - origin.y) / cell).ceil() as usize + 1;
+        // 升目の数は f64 で数えて、上限を超えれば (無限大・NaN も) 確保の前に拒む。
+        let w = f64::from(((max.x - origin.x) / cell).ceil()) + 1.0;
+        let h = f64::from(((max.y - origin.y) / cell).ceil()) + 1.0;
+        let cells = w * h;
+        if cells.is_nan() || cells > MAX_GROUP_CELLS as f64 {
+            return Err(NormalMapError::GridTooLarge {
+                width: w,
+                height: h,
+                max: MAX_GROUP_CELLS,
+            });
+        }
+        // 上限の内なので、どちらの辺も u32 と usize に収まる。
+        let (w, h) = (w as usize, h as usize);
 
         // 形: 画素の正方形が中心を含む升目 (少なくとも画素の中心を含む升目)。
         let mut mask = vec![false; w * h];
@@ -251,7 +267,7 @@ impl GroupField {
             .zip(&mask)
             .map(|(v, &m)| m && v.is_some())
             .collect();
-        let values = fill_missing(values, &mask, t.width as usize, t.height as usize);
+        let values = fill_missing(values, &mask, t.width, t.height)?;
         let field = HeightField {
             width: t.width,
             height: t.height,
@@ -263,14 +279,14 @@ impl GroupField {
             // 形の外の画素は、高さの勾配ではなく、隣の形の中の画素の向きを受ける (輪郭で折れない)。
             // 広げた高さの勾配は、形の縁の高さの違いを傾きとして持ち出してしまう。
             let mut outside = map.clone();
-            outside.extend_edges(&on_shape, FILL_PASSES);
+            outside.extend_edges(&on_shape, FILL_PASSES)?;
             for (i, &m) in field.mask.iter().enumerate() {
                 if m && !on_shape[i] {
                     map.rgba[i * 4..i * 4 + 4].copy_from_slice(&outside.rgba[i * 4..i * 4 + 4]);
                 }
             }
         }
-        map.extend_edges(&field.mask, EDGE_PASSES);
+        map.extend_edges(&field.mask, EDGE_PASSES)?;
         Ok(map)
     }
 }
@@ -285,7 +301,17 @@ fn flat_map(t: &PlacedTexture<'_>, threshold: u8) -> Result<NormalMap, NormalMap
 
 /// 値のない形の中の画素に、隣 (上下左右) の値の平均を広げる (64 回まで)。それでも値のない画素は、
 /// 値のある画素の最小値 (なければ 0) にする。形の外は 0。
-pub fn fill_missing(mut values: Vec<Option<f32>>, mask: &[bool], w: usize, h: usize) -> Vec<f32> {
+///
+/// `values`・`mask` の長さが `width × height` でなければ [`NormalMapError::SizeMismatch`]。
+pub fn fill_missing(
+    mut values: Vec<Option<f32>>,
+    mask: &[bool],
+    width: u32,
+    height: u32,
+) -> Result<Vec<f32>, NormalMapError> {
+    super::check_len(width, height, values.len())?;
+    super::check_len(width, height, mask.len())?;
+    let (w, h) = (width as usize, height as usize);
     for _ in 0..FILL_PASSES {
         let mut next = values.clone();
         let mut changed = false;
@@ -323,11 +349,11 @@ pub fn fill_missing(mut values: Vec<Option<f32>>, mask: &[bool], w: usize, h: us
         .copied()
         .fold(f32::INFINITY, f32::min);
     let floor = if floor.is_finite() { floor } else { 0.0 };
-    values
+    Ok(values
         .into_iter()
         .zip(mask)
         .map(|(v, &m)| if m { v.unwrap_or(floor) } else { 0.0 })
-        .collect()
+        .collect())
 }
 
 impl NormalMap {
@@ -335,7 +361,19 @@ impl NormalMap {
     ///
     /// 形の外は透明で見えないが、縮小や描画の双線形の補間で輪郭の画素に混ざるので、正面向き `(0, 0, 1)` のままだと、
     /// 重なった部位の輪郭 (肩の上の腕など) に細い線が見える (T0707)。
-    pub fn extend_edges(&mut self, mask: &[bool], passes: usize) {
+    ///
+    /// `mask` の長さが `width × height`、`rgba` の長さがその 4 倍でなければ [`NormalMapError::SizeMismatch`]
+    /// (何も変えない)。
+    pub fn extend_edges(&mut self, mask: &[bool], passes: usize) -> Result<(), NormalMapError> {
+        let n = super::check_len(self.width, self.height, mask.len())?;
+        if self.rgba.len() != n * 4 {
+            return Err(NormalMapError::SizeMismatch {
+                width: self.width,
+                height: self.height,
+                expected: n * 4,
+                found: self.rgba.len(),
+            });
+        }
         let (w, h) = (self.width as usize, self.height as usize);
         let mut filled = mask.to_vec();
         for _ in 0..passes {
@@ -372,6 +410,7 @@ impl NormalMap {
             self.rgba = rgba;
             filled = next;
         }
+        Ok(())
     }
 
     /// `factor` 分の 1 の解像度にする (`factor × factor` 画素の法線の平均を正規化。端は切り上げ)。
@@ -412,12 +451,113 @@ mod tests {
     fn fill_spreads_values_into_uncovered_pixels() {
         let values = vec![Some(1.0), None, None, None];
         let mask = [true, true, true, false];
-        assert_eq!(fill_missing(values, &mask, 4, 1), vec![1.0, 1.0, 1.0, 0.0]);
+        assert_eq!(
+            fill_missing(values, &mask, 4, 1),
+            Ok(vec![1.0, 1.0, 1.0, 0.0])
+        );
         // 何も覆っていなければ 0。
         assert_eq!(
             fill_missing(vec![None; 2], &[true, true], 2, 1),
-            vec![0.0, 0.0]
+            Ok(vec![0.0, 0.0])
         );
+    }
+
+    /// 長さが大きさと合わなければ、添字を引く前にエラー。
+    #[test]
+    fn fill_rejects_mismatched_lengths() {
+        assert!(matches!(
+            fill_missing(vec![None; 3], &[true; 4], 2, 2),
+            Err(NormalMapError::SizeMismatch { found: 3, .. })
+        ));
+        assert!(matches!(
+            fill_missing(vec![None; 4], &[true; 2], 2, 2),
+            Err(NormalMapError::SizeMismatch { found: 2, .. })
+        ));
+    }
+
+    #[test]
+    fn extend_edges_rejects_mismatched_lengths() {
+        let mut map = NormalMap {
+            width: 2,
+            height: 2,
+            rgba: vec![128; 16],
+        };
+        let before = map.clone();
+        assert!(matches!(
+            map.extend_edges(&[true], 1),
+            Err(NormalMapError::SizeMismatch { found: 1, .. })
+        ));
+        map.rgba.truncate(8);
+        assert!(matches!(
+            map.extend_edges(&[true; 4], 1),
+            Err(NormalMapError::SizeMismatch { found: 8, .. })
+        ));
+        map.rgba = before.rgba.clone();
+        assert_eq!(map, before);
+    }
+
+    fn opaque_square(size: u32) -> Vec<u8> {
+        vec![255; (size * size * 4) as usize]
+    }
+
+    fn positions(size: u32, at: impl Fn(u32, u32) -> Vec2) -> Vec<Option<Vec2>> {
+        (0..size * size)
+            .map(|i| Some(at(i % size, i / size)))
+            .collect()
+    }
+
+    /// 遠く離れた位置 (キャンバスの外の隠しパーツ) があっても、巨大な格子を確保せずにエラーになる。
+    #[test]
+    fn far_apart_positions_are_rejected_before_allocating() {
+        let rgba = opaque_square(2);
+        let near = positions(2, |x, y| Vec2::new(x as f32 + 0.5, y as f32 + 0.5));
+        let far = positions(2, |x, y| Vec2::new(x as f32 + 1e7, y as f32 + 1e7));
+        let texture = |positions| PlacedTexture {
+            width: 2,
+            height: 2,
+            rgba: &rgba,
+            positions,
+            canvas_per_texel: 1.0,
+        };
+        let result = group_bulge_normal_maps(
+            &[texture(&near)],
+            &[texture(&far)],
+            &BulgeOptions::default(),
+        );
+        assert!(
+            matches!(
+                result,
+                Err(NormalMapError::GridTooLarge {
+                    max: MAX_GROUP_CELLS,
+                    ..
+                })
+            ),
+            "{result:?}"
+        );
+    }
+
+    /// 極端に小さい `canvas_per_texel` (升目が細かすぎる) もエラー。升目の数が f32 であふれても (無限大) 同じ。
+    #[test]
+    fn tiny_canvas_per_texel_is_rejected() {
+        let rgba = opaque_square(2);
+        let placed = positions(2, |x, y| Vec2::new(x as f32 * 100.0, y as f32 * 100.0));
+        for canvas_per_texel in [1e-3, f32::MIN_POSITIVE] {
+            let result = group_bulge_normal_maps(
+                &[PlacedTexture {
+                    width: 2,
+                    height: 2,
+                    rgba: &rgba,
+                    positions: &placed,
+                    canvas_per_texel,
+                }],
+                &[],
+                &BulgeOptions::default(),
+            );
+            assert!(
+                matches!(result, Err(NormalMapError::GridTooLarge { .. })),
+                "{canvas_per_texel}: {result:?}"
+            );
+        }
     }
 
     #[test]
@@ -432,7 +572,7 @@ mod tests {
             ]
             .concat(),
         };
-        map.extend_edges(&[true, false, false], 1);
+        map.extend_edges(&[true, false, false], 1).unwrap();
         assert_eq!(map.rgba[4..8], encode_normal([1.0, 0.0, 1.0]));
         assert_eq!(map.rgba[8..12], [128, 128, 255, 255]);
     }

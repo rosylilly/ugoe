@@ -26,9 +26,9 @@ pub use depth::infer_depth_rotation;
 pub use error::InferError;
 pub use mirror::{MirrorOptions, check_mirror, mirror_keyforms};
 pub use normal::{
-    BulgeOptions, EDGE_PASSES, GroupNormalMaps, HeightField, NormalMap, NormalMapError,
-    PlacedTexture, bulge_height, bulge_normal_map, decode_normal, encode_normal, fill_missing,
-    group_bulge_normal_maps, group_bulge_normal_maps_oriented,
+    BulgeOptions, EDGE_PASSES, GroupNormalMaps, HeightField, MAX_GROUP_CELLS, NormalMap,
+    NormalMapError, PlacedTexture, bulge_height, bulge_normal_map, decode_normal, encode_normal,
+    fill_missing, group_bulge_normal_maps, group_bulge_normal_maps_oriented,
 };
 pub use target::{KeyformTarget, infer_additive_target};
 pub use values::KeyformValues;

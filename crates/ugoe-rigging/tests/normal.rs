@@ -76,7 +76,7 @@ fn strength_scales_the_bulge() {
             strength,
             ..Default::default()
         };
-        bulge_height(size, size, &rgba, &options).unwrap().values[32 * 64 + 32]
+        bulge_height(size, size, &rgba, &options).unwrap().values()[32 * 64 + 32]
     };
     assert!((height(0.5) * 2.0 - height(1.0)).abs() < 1e-4);
 }
@@ -192,7 +192,7 @@ fn ragged_shapes_match_the_reference_solution() {
         let reference = reference_inflate(&mask, w, h, 1500);
         let peak = reference.iter().fold(0.0f32, |a, &b| a.max(b)).sqrt();
         let error = field
-            .values
+            .values()
             .iter()
             .zip(&reference)
             .map(|(v, r)| (v - r.max(0.0).sqrt()).abs())

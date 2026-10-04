@@ -20,8 +20,8 @@
 mod group;
 
 pub use group::{
-    EDGE_PASSES, GroupNormalMaps, PlacedTexture, fill_missing, group_bulge_normal_maps,
-    group_bulge_normal_maps_oriented,
+    EDGE_PASSES, GroupNormalMaps, MAX_GROUP_CELLS, PlacedTexture, fill_missing,
+    group_bulge_normal_maps, group_bulge_normal_maps_oriented,
 };
 
 /// ふくらみの方程式を解くマルチグリッドの V サイクルの回数。
@@ -52,6 +52,10 @@ pub enum NormalMapError {
     /// 設定の値が範囲の外 (`field` はフィールドの名前)。
     #[error("invalid option {field} = {value}")]
     InvalidOption { field: &'static str, value: f32 },
+    /// まとまりの格子の升目の数 (`width × height`) が [`MAX_GROUP_CELLS`] を超える
+    /// (遠く離れた位置や、極端に小さい `canvas_per_texel`)。`width`・`height` は升目の数 (無限大もありうる)。
+    #[error("group grid of {width}x{height} cells exceeds the limit of {max} cells")]
+    GridTooLarge { width: f64, height: f64, max: usize },
 }
 
 /// ふくらみの設定。パーツ (テクスチャ) ごとに変えられる。
@@ -98,16 +102,37 @@ impl BulgeOptions {
 }
 
 /// 画素ごとの高さ (画素単位、手前が正) と、形 (法線を作る画素) の印。並びは行優先 (x が速い)。
+///
+/// `values`・`mask` の長さはどちらも `width × height` (0 より大きい)。コンストラクタ ([`HeightField::new`]・
+/// [`HeightField::flat`]・[`bulge_height`]) が検査し、フィールドは公開しない (長さの合わない場で添字があふれないように)。
 #[derive(Debug, Clone, PartialEq)]
 pub struct HeightField {
-    pub width: u32,
-    pub height: u32,
-    pub values: Vec<f32>,
+    width: u32,
+    height: u32,
+    values: Vec<f32>,
     /// 形の中の画素か。形の外の法線は `(0, 0, 1)` にする。
-    pub mask: Vec<bool>,
+    mask: Vec<bool>,
 }
 
 impl HeightField {
+    /// 高さと形から場を作る。大きさが 0 なら [`NormalMapError::EmptyImage`]、`values`・`mask` の長さが
+    /// `width × height` でなければ [`NormalMapError::SizeMismatch`]。
+    pub fn new(
+        width: u32,
+        height: u32,
+        values: Vec<f32>,
+        mask: Vec<bool>,
+    ) -> Result<Self, NormalMapError> {
+        pixel_count(width, height, values.len())?;
+        pixel_count(width, height, mask.len())?;
+        Ok(Self {
+            width,
+            height,
+            values,
+            mask,
+        })
+    }
+
     /// 高さ 0 の平らな場。
     pub fn flat(width: u32, height: u32, mask: Vec<bool>) -> Result<Self, NormalMapError> {
         let n = pixel_count(width, height, mask.len())?;
@@ -117,6 +142,26 @@ impl HeightField {
             values: vec![0.0; n],
             mask,
         })
+    }
+
+    /// 幅 (画素)。
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    /// 高さ (画素)。
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    /// 画素ごとの高さ (長さ `width × height`)。
+    pub fn values(&self) -> &[f32] {
+        &self.values
+    }
+
+    /// 画素ごとの形の印 (長さ `width × height`)。
+    pub fn mask(&self) -> &[bool] {
+        &self.mask
     }
 
     /// 高さを画素ごとに足す (大きさが同じこと)。
@@ -314,7 +359,12 @@ fn pixel_count(width: u32, height: u32, found: usize) -> Result<usize, NormalMap
     if width == 0 || height == 0 {
         return Err(NormalMapError::EmptyImage { width, height });
     }
-    let expected = width as usize * height as usize;
+    check_len(width, height, found)
+}
+
+/// `width × height` (0 でもよい) が `found` と同じか。違えば (`usize` にあふれる場合も) [`NormalMapError::SizeMismatch`]。
+fn check_len(width: u32, height: u32, found: usize) -> Result<usize, NormalMapError> {
+    let expected = (width as usize).saturating_mul(height as usize);
     if found != expected {
         return Err(NormalMapError::SizeMismatch {
             width,
@@ -657,6 +707,39 @@ mod tests {
         assert_eq!(encode_normal([2.0, 0.0, 0.0]), [255, 128, 128, 255]);
         let n = decode_normal([255, 128, 128]);
         assert!((n[0] - 1.0).abs() < 1e-2 && n[1].abs() < 1e-2, "{n:?}");
+    }
+
+    #[test]
+    fn height_field_rejects_mismatched_lengths() {
+        assert!(matches!(
+            HeightField::new(2, 2, vec![0.0; 3], vec![true; 4]),
+            Err(NormalMapError::SizeMismatch { found: 3, .. })
+        ));
+        assert!(matches!(
+            HeightField::new(2, 2, vec![0.0; 4], vec![true; 5]),
+            Err(NormalMapError::SizeMismatch { found: 5, .. })
+        ));
+        assert!(matches!(
+            HeightField::new(0, 2, vec![], vec![]),
+            Err(NormalMapError::EmptyImage { .. })
+        ));
+        // 通った場は、ならしと法線で添字があふれない。
+        let mut field = HeightField::new(2, 1, vec![0.0, 1.0], vec![true, true]).unwrap();
+        field.smooth(1.0);
+        assert_eq!(field.to_normal_map().rgba.len(), 8);
+    }
+
+    #[test]
+    fn adding_fields_of_other_sizes_fails() {
+        let mut a = HeightField::flat(2, 1, vec![true; 2]).unwrap();
+        let b = HeightField::flat(1, 2, vec![true; 2]).unwrap();
+        assert!(matches!(
+            a.add(&b),
+            Err(NormalMapError::SizeMismatch { .. })
+        ));
+        let c = HeightField::new(2, 1, vec![1.0, 2.0], vec![true; 2]).unwrap();
+        a.add(&c).unwrap();
+        assert_eq!(a.values(), &[1.0, 2.0]);
     }
 
     #[test]

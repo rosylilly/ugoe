@@ -11,6 +11,7 @@
 - 法線マップの生成 (`normal.rs`): アルファの形からふくらみの高さを作り、勾配を法線にする (`bulge_normal_map`、設定は `BulgeOptions`)。
   部位のまとまりのテクスチャを基準の姿のキャンバスに並べて 1 つの形としてふくらませる `group_bulge_normal_maps` (`PlacedTexture`、`normal/group.rs`) と、
   形に加えず向きだけを受けるテクスチャ (顔の上の眼鏡) も扱う `group_bulge_normal_maps_oriented` もある。
+  まとまりの格子の升目の数は `MAX_GROUP_CELLS` までで、超えれば確保の前に `NormalMapError::GridTooLarge` を返す。
   高さの場 (`HeightField`) は `ugoe-ai` の深度推定からの法線マップでも使う ([docs/ai-integration.md#法線マップの生成](../../docs/ai-integration.md#法線マップの生成))
 
 目視確認用に、深度からの回転とミラーで振り向きの顔を作る例がある
