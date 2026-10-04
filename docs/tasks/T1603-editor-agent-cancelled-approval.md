@@ -1,11 +1,11 @@
 ---
 id: T1603
 title: エディタの確認のダイアログで、エージェントが要求を取り消したことを知らせる
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1603
 ---
 
 # T1603: エディタの確認のダイアログで、エージェントが要求を取り消したことを知らせる
