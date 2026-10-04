@@ -5,8 +5,10 @@
   - 編集のための数値なので、桁の区切りを付けず小数点は "." に固定する。
   - onchange は利用者の操作 (キー・入力の確定) で値が変わったときだけ呼ぶ。外から渡した値が `decimals` の桁に乗らなくても、
     欄を書き換えずにフォーカスを外したり Enter を押したりしただけでは呼ばない (docs/ui.md#数値の部品と-onchange)。
+  - onchange を呼んでいる間は、`numberFieldCommit()` が欄ごとに一意な印を返す (同じ欄の続けての確定をまとめるため)。
 -->
 <script lang="ts">
+import { withNumberFieldCommit } from "../commit";
 import { clamp, decimalsOf, formatEditable, parseEditable, roundTo, stepValue } from "../number";
 
 interface Props {
@@ -72,7 +74,7 @@ function commit(next: number) {
   text = formatEditable(v, digits);
   if (v !== value) {
     value = v;
-    onchange?.(v);
+    if (onchange) withNumberFieldCommit(id, () => onchange(v));
   }
 }
 

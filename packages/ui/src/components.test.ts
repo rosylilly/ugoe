@@ -3,6 +3,7 @@
 import { setLocale } from "@ugoe/i18n";
 import { createRawSnippet, flushSync } from "svelte";
 import { describe, expect, it, vi } from "vitest";
+import { numberFieldCommit } from "./commit";
 import Button from "./components/Button.svelte";
 import Checkbox from "./components/Checkbox.svelte";
 import IconButton from "./components/IconButton.svelte";
@@ -197,6 +198,21 @@ describe("NumberField", () => {
     flushSync();
     expect(input.value).toBe("1");
     expect(onchange).not.toHaveBeenCalled();
+  });
+
+  it("marks its commits with a per-field token only while onchange runs", () => {
+    const seen: (string | null)[] = [];
+    const record = () => seen.push(numberFieldCommit());
+    const a = setup({ onchange: record }).input;
+    const b = setup({ onchange: record }).input;
+    press(a, "ArrowUp");
+    press(a, "ArrowUp");
+    press(b, "ArrowUp");
+    const [first, second, other] = seen;
+    expect(first).toEqual(expect.any(String));
+    expect(second).toBe(first);
+    expect(other).not.toBe(first);
+    expect(numberFieldCommit()).toBeNull();
   });
 
   it("steps from a number when the value is not one", () => {

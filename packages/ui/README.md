@@ -14,6 +14,7 @@ src/components/         部品 (Button・IconButton・Checkbox・Toggle・Slider
                         Tabs・Section・Toolbar・Dialog・AlertDialog・Notice・Toaster・Tooltip・TooltipProvider・
                         Menu・ContextMenu・Popover・ColorPicker・DropZone・Kbd・ThemeSetting)
 src/number.ts           数値の欄の解釈・書式・増減 (純粋な関数)
+src/commit.ts           数値の欄の確定の印 (numberFieldCommit。同じ欄の続けての確定を受け手がまとめるため)
 src/shortcut.ts         ショートカットの表記 (Mod → ⌘ / Ctrl)・aria-keyshortcuts
 src/color.ts            色 (#rrggbb) と RGB
 src/files.ts            DropZone の accept による選り分け
@@ -47,6 +48,7 @@ import "@ugoe/ui/tokens.css";
 
 - テーマと密度は `<html data-theme="light|dark" data-density="compact|comfortable">` で決める。省くと OS のテーマと `compact`。
 - `Slider` と `NumberField` の `onchange` は利用者の操作のときだけ呼ばれる。外から渡した値が刻みに乗らなくても呼ばれない ([docs/ui.md](../../docs/ui.md#数値の部品と-onchange))。
+  `NumberField` の `onchange` の中では `numberFieldCommit()` が欄ごとの印を返す (同じ欄の続けての確定をまとめるため)。
 - **アプリと、ほかのパッケージは `bits-ui` を直接 import しない。** 部品の props は ugoe の言葉で決めてあり、Bits UI の props は外に出さない
   (Bits UI の破壊的な変更をこのパッケージの中で吸収するため)。
 - **見えるラベル・読み上げの名前・選択肢の名前は、翻訳を通した文言を props で渡す。** 部品が既定で出す文言

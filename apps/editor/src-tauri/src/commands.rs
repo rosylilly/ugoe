@@ -1,10 +1,12 @@
 //! Tauri IPC コマンド。フロントエンドからは `invoke("<name>", args)` で呼ぶ。
 //! 引数・戻り値の型を変えたら `apps/editor/src/lib/ipc.ts` も同じ PR で更新すること。
 
+use std::time::Instant;
+
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 use ts_rs::TS;
-use ugoe_editor_core::{ApplyReport, Command, Message};
+use ugoe_editor_core::{ApplyReport, Coalesce, Command, Message};
 use ugoe_model::expression::Expression;
 use ugoe_model::motion::Motion;
 
@@ -25,11 +27,20 @@ pub fn app_info() -> AppInfo {
 
 /// 編集コマンドを適用する。JSON 形式は `ugoe_editor_core::Command` を参照。
 /// 適用はしたが知らせたいこと (自動のミラーのやり直しの失敗) を返す。
+/// `coalesce` (数値の欄の確定の印) があれば、同じ印の続けての確定を 1 つの Undo にまとめる
+/// (`Document::apply_coalescing`。docs/editor.md#undo)。
 #[tauri::command]
-pub fn apply_command(state: State<'_, AppState>, command: Command) -> IpcResult<ApplyReport> {
-    lock(&state)?
-        .apply_with_report(command)
-        .map_err(Message::from)
+pub fn apply_command(
+    state: State<'_, AppState>,
+    command: Command,
+    coalesce: Option<String>,
+) -> IpcResult<ApplyReport> {
+    let mut document = lock(&state)?;
+    match coalesce {
+        Some(key) => document.apply_coalescing(command, Coalesce::new(key, Instant::now())),
+        None => document.apply_with_report(command),
+    }
+    .map_err(Message::from)
 }
 
 #[tauri::command]

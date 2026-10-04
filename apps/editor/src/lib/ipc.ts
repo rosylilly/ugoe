@@ -60,8 +60,12 @@ export type EditCommand = Command;
 
 export const ipc = {
   appInfo: () => invoke<AppInfo>("app_info"),
-  /** 適用はしたが知らせたいこと (自動のミラーのやり直しの失敗) を返す。 */
-  applyCommand: (command: Command) => invoke<ApplyReport>("apply_command", { command }),
+  /**
+   * 適用はしたが知らせたいこと (自動のミラーのやり直しの失敗) を返す。`coalesce` (数値の欄の確定の印) を渡すと、
+   * 同じ印の続けての確定を 1 つの Undo にまとめる (docs/editor.md#undo)。
+   */
+  applyCommand: (command: Command, coalesce?: string) =>
+    invoke<ApplyReport>("apply_command", { command, coalesce: coalesce ?? null }),
   /** ugoe_model::Model の JSON (JSON.parse すると `Model`)。 */
   getModelJson: () => invoke<string>("get_model_json"),
   /** ドキュメントのモーションと表情 (タイムラインの表示用。編集は applyCommand)。 */

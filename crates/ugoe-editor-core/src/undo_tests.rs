@@ -1,9 +1,11 @@
-//! Undo の履歴の上限と、適用前の状態の検証の結果の記憶のテスト (`docs/editor.md#undo`)。
+//! Undo の履歴の上限・続けての確定のまとめ・適用前の状態の検証の結果の記憶のテスト (`docs/editor.md#undo`)。
+
+use std::time::{Duration, Instant};
 
 use ugoe_model::fixtures;
 
 use crate::document::{DEFAULT_UNDO_LIMIT, checks};
-use crate::{Command, Document, EditError};
+use crate::{COALESCE_WINDOW, Coalesce, Command, Document, EditError};
 
 /// `X` の既定値を `default` にするコマンド (状態ごとに違うモデルを作るため)。
 fn set_default(default: f32) -> Command {
@@ -192,4 +194,112 @@ fn a_state_is_validated_once() {
         assert!(matches!(err, EditError::Invalid(_)), "{err:?}");
     }
     assert_eq!(checks() - start, 7);
+}
+
+/// `start` から `ms` ミリ秒後に、欄 `key` で確定した印。
+fn field(key: &str, start: Instant, ms: u64) -> Coalesce {
+    Coalesce::new(key, start + Duration::from_millis(ms))
+}
+
+#[test]
+fn holding_an_arrow_key_makes_one_undo() {
+    let mut doc = Document::new(fixtures::single_quad());
+    let start = Instant::now();
+    // 矢印キーの押し続け (30 ms ごとに 50 回。全体では COALESCE_WINDOW より長い)。
+    for i in 1..=50 {
+        doc.apply_coalescing(set_default(i as f32 * 0.01), field("x", start, i * 30))
+            .unwrap();
+    }
+    assert!((default_of(&doc) - 0.5).abs() < 1e-6);
+    assert_eq!(doc.undo_count(), 1);
+    assert!(doc.undo());
+    assert_eq!(default_of(&doc), 0.0);
+    assert!(!doc.is_modified());
+    // Redo はまとめた最後の値へ進む。
+    assert!(doc.redo());
+    assert!((default_of(&doc) - 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn a_pause_longer_than_the_window_starts_a_new_undo() {
+    let mut doc = Document::new(fixtures::single_quad());
+    let start = Instant::now();
+    let window = COALESCE_WINDOW.as_millis() as u64;
+    doc.apply_coalescing(set_default(0.1), field("x", start, 0))
+        .unwrap();
+    doc.apply_coalescing(set_default(0.2), field("x", start, window))
+        .unwrap();
+    assert_eq!(doc.undo_count(), 1);
+    doc.apply_coalescing(set_default(0.3), field("x", start, 2 * window + 1))
+        .unwrap();
+    assert_eq!(doc.undo_count(), 2);
+    assert!(doc.undo());
+    assert!((default_of(&doc) - 0.2).abs() < 1e-6);
+}
+
+#[test]
+fn another_field_or_edit_breaks_the_group() {
+    let mut doc = Document::new(fixtures::single_quad());
+    let start = Instant::now();
+    doc.apply_coalescing(set_default(0.1), field("x", start, 0))
+        .unwrap();
+    // 別の欄はまとめない。
+    doc.apply_coalescing(set_default(0.2), field("y", start, 10))
+        .unwrap();
+    assert_eq!(doc.undo_count(), 2);
+    // まとめない適用を挟むと、同じ欄でもまとめない。
+    doc.apply(set_default(0.3)).unwrap();
+    doc.apply_coalescing(set_default(0.4), field("y", start, 20))
+        .unwrap();
+    assert_eq!(doc.undo_count(), 4);
+    // 時刻が戻った印 (別の時計) はまとめない。
+    doc.apply_coalescing(set_default(0.5), Coalesce::new("y", start))
+        .unwrap();
+    assert_eq!(doc.undo_count(), 5);
+}
+
+#[test]
+fn undo_redo_and_save_break_the_group() {
+    let mut doc = Document::new(fixtures::single_quad());
+    let start = Instant::now();
+    doc.apply_coalescing(set_default(0.1), field("x", start, 0))
+        .unwrap();
+    doc.apply_coalescing(set_default(0.2), field("x", start, 10))
+        .unwrap();
+    // Undo と Redo で同じ状態に戻っても、続けてはまとめない。
+    assert!(doc.undo());
+    assert!(doc.redo());
+    doc.apply_coalescing(set_default(0.3), field("x", start, 20))
+        .unwrap();
+    assert_eq!(doc.undo_count(), 2);
+    // 保存した状態には Undo で戻れる。
+    doc.mark_saved();
+    doc.apply_coalescing(set_default(0.4), field("x", start, 30))
+        .unwrap();
+    assert_eq!(doc.undo_count(), 3);
+    assert!(doc.undo());
+    assert!(!doc.is_modified());
+}
+
+#[test]
+fn a_rejected_edit_keeps_the_group() {
+    let mut doc = Document::new(fixtures::single_quad());
+    let start = Instant::now();
+    doc.apply_coalescing(set_default(0.1), field("x", start, 0))
+        .unwrap();
+    let err = doc
+        .apply_coalescing(
+            Command::SetParameterRange {
+                id: "missing".into(),
+                min: -1.0,
+                default: 0.0,
+                max: 1.0,
+            },
+            field("x", start, 10),
+        )
+        .unwrap_err();
+    assert!(matches!(err, EditError::NotFound { .. }), "{err:?}");
+    doc.apply_coalescing(set_default(0.2), field("x", start, 20))
+        .unwrap();
+    assert_eq!(doc.undo_count(), 1);
 }

@@ -3,6 +3,7 @@
 // アプリは Bits UI を直接 import せず、ここから出す部品だけを使う。
 
 export * from "./color";
+export { numberFieldCommit } from "./commit";
 export { default as AlertDialog } from "./components/AlertDialog.svelte";
 export { default as Button } from "./components/Button.svelte";
 export { default as Checkbox } from "./components/Checkbox.svelte";

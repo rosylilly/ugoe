@@ -33,9 +33,9 @@ mod reorder;
 mod texture_edit;
 
 pub use error::EditError;
-pub use history::DEFAULT_UNDO_LIMIT;
 #[cfg(test)]
 pub(crate) use history::checks;
+pub use history::{COALESCE_WINDOW, Coalesce, DEFAULT_UNDO_LIMIT};
 use history::{History, Problems};
 use lookup::{deformer, ensure_new, mesh, parameter, part};
 use pair::{pair, set_mirror_pair};
@@ -67,6 +67,9 @@ pub struct Document {
     next_state: u64,
     /// 最後に保存した状態の番号 (未保存なら `None`)。
     saved: Option<u64>,
+    /// 最後のまとめる適用 ([`Document::apply_coalescing`]) の印と、それで作った状態の番号。
+    /// その状態のまま次のまとめる適用が来たら、Undo を積まずにまとめる。
+    coalescing: Option<(Coalesce, u64)>,
 }
 
 /// ある時点のドキュメントの状態。`state` は状態ごとに一意な番号 (変更の有無の判定に使う)。
@@ -123,6 +126,7 @@ impl Document {
             history: History::new(DEFAULT_UNDO_LIMIT),
             next_state: 1,
             saved: Some(0),
+            coalescing: None,
         }
     }
 
@@ -201,6 +205,8 @@ impl Document {
     /// 現在の状態を「保存済み」にする。
     pub fn mark_saved(&mut self) {
         self.saved = Some(self.current.state);
+        // 保存した状態に Undo で戻れるよう、まとめを切る。
+        self.coalescing = None;
     }
 
     /// 現在の状態の番号。状態ごとに一意で、Undo / Redo で戻れば同じ番号に戻る
@@ -216,6 +222,7 @@ impl Document {
             history: History::new(self.history.limit()),
             next_state: self.next_state,
             saved: None,
+            coalescing: None,
         }
     }
 
@@ -264,6 +271,31 @@ impl Document {
     /// [`Document::apply`] と同じく適用し、拒否しなかった問題 (ミラーのやり直しの失敗と、親を変えた
     /// ことでミラーし直せなくなった左右の対) を返す。
     pub fn apply_with_report(&mut self, command: Command) -> Result<ApplyReport, EditError> {
+        self.apply_inner(command, false)
+    }
+
+    /// [`Document::apply_with_report`] と同じく適用するが、同じ印 (`coalesce.key`) のまとめる適用に続けて
+    /// [`COALESCE_WINDOW`] の内に来たなら、Undo を積まずに前の適用とまとめる (数値の欄の矢印キーの押し続けなど。
+    /// `docs/editor.md#undo`)。まとめた適用は 1 回の Undo で、まとまりの最初の適用の前に戻る。
+    ///
+    /// 前のまとめる適用の後に、ほかの適用・Undo・Redo・保存・本体の読み直しがあればまとめない (状態の番号で確かめる)。
+    /// [`Command::SetModuleSettings`] はまとめない。拒否したときはまとまりを切らない。
+    pub fn apply_coalescing(
+        &mut self,
+        command: Command,
+        coalesce: Coalesce,
+    ) -> Result<ApplyReport, EditError> {
+        let merge =
+            self.coalescing.as_ref().is_some_and(|(prev, state)| {
+                *state == self.current.state && coalesce.continues(prev)
+            }) && !matches!(command, Command::SetModuleSettings { .. });
+        let report = self.apply_inner(command, merge)?;
+        self.coalescing = Some((coalesce, self.current.state));
+        Ok(report)
+    }
+
+    /// 適用の本体。`merge` なら前の状態を Undo に積まずに捨てる (直前の適用とまとめる)。
+    fn apply_inner(&mut self, command: Command, merge: bool) -> Result<ApplyReport, EditError> {
         if let Command::SetModuleSettings {
             name,
             slot,
@@ -331,8 +363,10 @@ impl Document {
         next.problems = OnceLock::from(after);
         next.state = self.next_state;
         self.next_state += 1;
-        self.history
-            .record(std::mem::replace(&mut self.current, next));
+        let prev = std::mem::replace(&mut self.current, next);
+        if !merge {
+            self.history.record(prev);
+        }
         Ok(ApplyReport { warnings, mirrored })
     }
 
@@ -448,17 +482,20 @@ impl Document {
         };
         self.next_state += 1;
         self.history.clear();
+        self.coalescing = None;
         self.saved = saved.then_some(self.current.state);
         Ok(())
     }
 
     /// 1 つ前の状態に戻す。戻れなければ (履歴がない・上限を超えて捨てた) `false`。
     pub fn undo(&mut self) -> bool {
+        self.coalescing = None;
         self.history.undo(&mut self.current)
     }
 
     /// Undo した状態を 1 つやり直す。やり直せなければ `false`。
     pub fn redo(&mut self) -> bool {
+        self.coalescing = None;
         self.history.redo(&mut self.current)
     }
 

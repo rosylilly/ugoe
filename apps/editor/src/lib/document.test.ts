@@ -4,6 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EditorDocument, parseModelJson } from "./document.svelte";
 import { type Command, type HistoryStatus, ipc } from "./ipc";
 
+/** `numberFieldCommit` が返す印 (数値の欄の onchange の中を真似る)。 */
+let committing: string | null = null;
+
+vi.mock("@ugoe/ui", () => ({ numberFieldCommit: () => committing }));
+
 /** 呼ばれるたびに `get_model_json` が返すもの (先頭から順に使う)。 */
 let jsons: Promise<string>[] = [];
 
@@ -57,6 +62,7 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 
 beforeEach(() => {
   jsons = [];
+  committing = null;
   backendHistory = historyOf(0, 0);
 });
 
@@ -206,6 +212,61 @@ describe("EditorDocument.send", () => {
     backend.release();
     await Promise.all([edit, undo]);
     expect(order).toEqual(["undo after 1"]);
+  });
+
+  /** 数値の欄 `field` の onchange の中で `send` を呼ぶ。 */
+  function commit(doc: EditorDocument, field: string, id: string): Promise<unknown> {
+    committing = field;
+    try {
+      return doc.send(() => ({ op: "remove_parameter", id }));
+    } finally {
+      committing = null;
+    }
+  }
+
+  it("folds the waiting commits of one number field into one send that the backend coalesces", async () => {
+    const backend = counter();
+    vi.mocked(ipc.applyCommand).mockClear();
+    const doc = new EditorDocument();
+    const first = doc.send(() => ({ op: "remove_parameter", id: "before" }));
+    // 適用中に同じ欄で 3 回確定する (矢印キーの押し続け)。
+    const steps = ["1", "2", "3"].map((id) => commit(doc, "field-a", id));
+    expect(doc.pending).toBe(2);
+    backend.release();
+    await first;
+    const results = await Promise.all(steps);
+    expect(results[0]).not.toBeNull();
+    expect(results[1]).toBe(results[0]);
+    expect(results[2]).toBe(results[0]);
+    // 待っている間の確定は最後のものだけを送り、欄と種類の印を付ける。
+    expect(backend.applied).toEqual([
+      { op: "remove_parameter", id: "before" },
+      { op: "remove_parameter", id: "3" },
+    ]);
+    expect(vi.mocked(ipc.applyCommand).mock.calls.map((c) => c[1])).toEqual([
+      undefined,
+      "field-a:remove_parameter",
+    ]);
+    expect(doc.pending).toBe(0);
+  });
+
+  it("does not fold commits across another edit or another field", async () => {
+    const backend = counter();
+    const doc = new EditorDocument();
+    const edits = [
+      commit(doc, "field-a", "1"),
+      doc.send(() => ({ op: "remove_parameter", id: "other" })),
+      commit(doc, "field-a", "2"),
+      commit(doc, "field-b", "3"),
+    ];
+    backend.release();
+    await Promise.all(edits);
+    expect(backend.applied.map((c) => (c.op === "remove_parameter" ? c.id : c.op))).toEqual([
+      "1",
+      "other",
+      "2",
+      "3",
+    ]);
   });
 
   it("sends nothing when the builder returns null", async () => {

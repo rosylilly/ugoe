@@ -45,7 +45,7 @@ pub use atlas::{AtlasOptions, AtlasReport, build_atlas, build_module_atlas};
 pub use automesh::AutoMeshOptions;
 pub use command::{ChildRef, Command, InferMethod, KeyformCell, KeyformTarget, VertexMove};
 pub use depth::DepthPreset;
-pub use document::{ApplyReport, Document, EditError};
+pub use document::{ApplyReport, COALESCE_WINDOW, Coalesce, Document, EditError};
 pub use export::{
     ExportReport, ExportSettings, export_bundle_with_settings, export_module_with_settings,
 };

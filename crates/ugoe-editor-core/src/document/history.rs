@@ -1,6 +1,7 @@
 //! Undo / Redo の履歴と、状態ごとの検証の結果 (`docs/editor.md#undo`)。
 
 use std::collections::VecDeque;
+use std::time::{Duration, Instant};
 
 use ugoe_model::Model;
 use ugoe_model::physics::PhysicsSettings;
@@ -8,6 +9,37 @@ use ugoe_model::validate::{ValidationError, validate, validate_physics};
 
 /// [`crate::Document`] が覚える Undo の数の既定の上限。超えると古いものから捨てる。
 pub const DEFAULT_UNDO_LIMIT: usize = 100;
+
+/// 続けての確定を 1 つの Undo にまとめる間隔。前のまとめる適用からこれより長く空いたら、新しい Undo を積む
+/// (`docs/editor.md#undo`)。
+pub const COALESCE_WINDOW: Duration = Duration::from_secs(1);
+
+/// [`crate::Document::apply_coalescing`] に渡す、続けての確定をまとめるための印 (`docs/editor.md#undo`)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Coalesce {
+    /// まとめる単位 (エディタでは、確定した数値の欄とコマンドの種類)。同じものだけをまとめる。
+    pub key: String,
+    /// 確定した時刻。
+    pub at: Instant,
+}
+
+impl Coalesce {
+    pub fn new(key: impl Into<String>, at: Instant) -> Self {
+        Self {
+            key: key.into(),
+            at,
+        }
+    }
+
+    /// 前のまとめる適用 `prev` に続けてまとめてよいか (同じ印で、[`COALESCE_WINDOW`] の内)。
+    pub(super) fn continues(&self, prev: &Coalesce) -> bool {
+        self.key == prev.key
+            && self
+                .at
+                .checked_duration_since(prev.at)
+                .is_some_and(|gap| gap <= COALESCE_WINDOW)
+    }
+}
 
 /// Undo と Redo の積み (`T` は状態)。Undo と Redo を合わせて `limit` 個までしか持たない。
 #[derive(Debug)]
