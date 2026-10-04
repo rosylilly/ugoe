@@ -1,11 +1,11 @@
 ---
 id: T0151
 title: 公開仕様のファイルの例に、ほかのチャンクの中を指す長さ 0 のチャンクを足す
-status: todo
+status: in-progress
 milestone: M9
 crates: [spec, ugoe-format]
 depends_on: [T0138]
-assignee:
+assignee: claude-worker-T0151
 ---
 
 # T0151: 公開仕様のファイルの例に、ほかのチャンクの中を指す長さ 0 のチャンクを足す
