@@ -4,7 +4,7 @@
 use ugoe_model::motion::{Curve, CurveTarget, Motion, MotionEvent};
 use ugoe_runtime::{ParamIndex, ParameterValues};
 
-use crate::curve;
+use crate::curve::SegmentIndex;
 
 /// 1 回の [`MotionPlayer::advance`] で扱うループの周回の上限。巨大な `dt` や極端に短い長さで止まらないようにする。
 pub(crate) const MAX_LAPS_PER_ADVANCE: u32 = 1000;
@@ -89,6 +89,8 @@ pub struct MotionPlayer {
     motion: Motion,
     /// `motion.events` の添字を時刻の順に並べたもの。
     event_order: Vec<usize>,
+    /// 各カーブのセグメントの探索の前処理 (`motion.curves` と同じ順)。毎フレーム先頭から探さないため。
+    segment_indices: Vec<SegmentIndex>,
     /// 各カーブの対象パラメータの添字 (初回の適用時に解決する)。
     param_indices: Option<Vec<Option<ParamIndex>>>,
     time: f32,
@@ -109,9 +111,15 @@ impl MotionPlayer {
         let mut event_order: Vec<usize> = (0..motion.events.len()).collect();
         event_order.sort_by(|&a, &b| motion.events[a].t.total_cmp(&motion.events[b].t));
         let end = (!motion.looping).then_some(f64::from(motion.duration.max(0.0)));
+        let segment_indices = motion
+            .curves
+            .iter()
+            .map(|c| SegmentIndex::new(&c.segments))
+            .collect();
         Self {
             motion,
             event_order,
+            segment_indices,
             param_indices: None,
             time: 0.0,
             elapsed: 0.0,
@@ -239,9 +247,15 @@ impl MotionPlayer {
                 })
                 .collect()
         });
-        for (curve, index) in self.motion.curves.iter().zip(indices.iter()) {
+        for ((curve, index), lookup) in self
+            .motion
+            .curves
+            .iter()
+            .zip(indices.iter())
+            .zip(&self.segment_indices)
+        {
             let Some(index) = *index else { continue };
-            let Some(value) = curve::evaluate(&curve.segments, self.time) else {
+            let Some(value) = lookup.evaluate(&curve.segments, self.time) else {
                 continue;
             };
             let w = weight * curve_fade_weight(&self.motion, curve, self.elapsed, self.end);
@@ -266,9 +280,10 @@ impl MotionPlayer {
         self.motion
             .curves
             .iter()
-            .filter(move |c| !finished && filter(&c.target))
-            .filter_map(|c| {
-                let value = curve::evaluate(&c.segments, self.time)?;
+            .zip(&self.segment_indices)
+            .filter(move |(c, _)| !finished && filter(&c.target))
+            .filter_map(|(c, lookup)| {
+                let value = lookup.evaluate(&c.segments, self.time)?;
                 let w = curve_fade_weight(&self.motion, c, self.elapsed, self.end);
                 Some((&c.target, value, w))
             })

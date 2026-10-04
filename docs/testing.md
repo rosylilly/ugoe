@@ -163,6 +163,16 @@ cargo test -p ugoe-format --test compat   # 作り直した資料で、もう一
 - 仕様書の式に対応するテストには、テスト名かコメントで仕様書の節を示します。
 - 評価の出力全体を `insta` の JSON スナップショットにしてよいですが、スナップショットを更新するときは、PR 本文に「なぜ値が変わったのか」を書きます。
 
+## 性能の計測
+
+性能の目標 ([roadmap.md](roadmap.md) の「1 体を 1ms 以内」) に響く処理は、各クレートの `examples/` に計測用のプログラムを置きます。
+時間は機械と負荷で大きく変わるので `just ci` には入れず、手元で `--release` を付けて動かし、改善の前後をタスクファイルのメモに書きます。
+
+| 計測 | コマンド | 内容 |
+| --- | --- | --- |
+| 着せ替えの合成とコンパイル | `cargo run --release -p ugoe-runtime --example compose_timing` | 中規模の本体にモジュール 4 つを取り付ける ([modules.md](spec/modules.md#性能)) |
+| モーションのカーブの評価 | `cargo run --release -p ugoe-motion --example curve_timing` | フレームごとにキーを打った長いカーブ (300 セグメント × 100 本) を、線形の探索と前処理した探索 (`SegmentIndex`) で比べる |
+
 ## 描画テスト
 
 - `ugoe-render` の描画テストは、オフスクリーンのテクスチャに描画して画素を読み戻し、期待する画像と比較します (許容誤差付き)。

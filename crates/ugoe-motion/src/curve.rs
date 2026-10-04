@@ -11,6 +11,8 @@ const BEZIER_MAX_ITERATIONS: u32 = 40;
 ///
 /// 未知のセグメント (`Segment::Unknown`) を含むカーブは、全体を無視する
 /// (`docs/spec/file-formats.md#未知の値の読み込み`)。
+///
+/// 先頭からセグメントを線形に探す。同じカーブを何度も評価するなら [`SegmentIndex`] を使う。
 pub fn evaluate(segments: &[Segment], t: f32) -> Option<f32> {
     if segments.contains(&Segment::Unknown) {
         return None;
@@ -31,34 +33,135 @@ pub fn evaluate(segments: &[Segment], t: f32) -> Option<f32> {
             | Segment::InverseStepped { to } => *to,
         };
         if t <= to.t {
-            let u = if to.t > prev.t {
-                (t - prev.t) / (to.t - prev.t)
-            } else {
-                1.0
-            };
-            return Some(match seg {
-                Segment::Linear { .. } => prev.v + (to.v - prev.v) * u,
-                Segment::Bezier { c1, c2, .. } => bezier(prev, *c1, *c2, to, t),
-                Segment::Stepped { .. } => {
-                    if u < 1.0 {
-                        prev.v
-                    } else {
-                        to.v
-                    }
-                }
-                Segment::InverseStepped { .. } => {
-                    if u > 0.0 {
-                        to.v
-                    } else {
-                        prev.v
-                    }
-                }
-                Segment::Start { .. } | Segment::Unknown => unreachable!(),
-            });
+            return Some(segment_value(prev, seg, to, t));
         }
         prev = to;
     }
     Some(prev.v)
+}
+
+/// カーブ 1 本のセグメントを二分探索で探すための前処理。
+///
+/// [`evaluate`] は毎回先頭から線形に探すが、こちらは未知のセグメントの有無・2 つ目の `start` の位置・
+/// 区間の終わりの時刻を前もって調べておき、`O(log n)` で区間を探す。結果は [`evaluate`] と同じ
+/// (時刻が減るセグメントを含む、書き出しの規則に反するカーブでも同じ)。
+///
+/// 作ったときのセグメント列と組にして使う ([`evaluate`](Self::evaluate) に同じ列を渡す)。
+#[derive(Debug, Clone, PartialEq)]
+pub struct SegmentIndex {
+    /// カーブが値を持つか (セグメントがある・最初が `start`・未知のセグメントがない)。
+    valid: bool,
+    /// 評価に使うセグメントの数。2 つ目の `start` があればその位置、なければセグメントの数。
+    len: usize,
+    /// `segments[1..len]` の区間の終わりの時刻の累積最大値 (NaN は飛ばす)。
+    ///
+    /// 線形の探索は「`t <= to.t` となる最初の区間」を選ぶ。その区間より前の終わりの時刻はすべて `t` 未満なので、
+    /// 累積最大値が初めて `t` 以上になる位置と一致する。累積最大値は単調なので二分探索できる。
+    max_ends: Vec<f32>,
+}
+
+impl SegmentIndex {
+    /// `segments` を前処理する。
+    pub fn new(segments: &[Segment]) -> Self {
+        let valid = matches!(segments.first(), Some(Segment::Start { .. }))
+            && !segments.contains(&Segment::Unknown);
+        if !valid {
+            return Self {
+                valid,
+                len: 0,
+                max_ends: Vec::new(),
+            };
+        }
+        let len = segments[1..]
+            .iter()
+            .position(|s| matches!(s, Segment::Start { .. }))
+            .map_or(segments.len(), |i| i + 1);
+        let mut max = f32::NEG_INFINITY;
+        let max_ends = segments[1..len]
+            .iter()
+            .map(|s| {
+                // `f32::max` は NaN を捨てる。線形の探索でも NaN の終わりの時刻は選ばれない。
+                max = max.max(end_point(s).t);
+                max
+            })
+            .collect();
+        Self {
+            valid,
+            len,
+            max_ends,
+        }
+    }
+
+    /// カーブを時刻 `t` で評価する。結果は [`evaluate`](crate::curve::evaluate) と同じ。
+    ///
+    /// `segments` は [`new`](Self::new) に渡したものと同じ列でなければならない。
+    pub fn evaluate(&self, segments: &[Segment], t: f32) -> Option<f32> {
+        if !self.valid {
+            return None;
+        }
+        debug_assert!(self.len <= segments.len());
+        let first = end_point(segments.first()?);
+        if t <= first.t {
+            return Some(first.v);
+        }
+        // `t <= m` を満たさない (NaN の `t` を含む) 間は探し続ける。
+        let i = self.max_ends.partition_point(|&m| m < t || t.is_nan());
+        if i == self.max_ends.len() {
+            // どの区間にも入らない。2 つ目の `start` で終わるカーブは値を持たない。
+            if self.len < segments.len() {
+                return None;
+            }
+            return Some(end_point(segments.get(self.len - 1)?).v);
+        }
+        let prev = end_point(segments.get(i)?);
+        let seg = segments.get(i + 1)?;
+        Some(segment_value(prev, seg, end_point(seg), t))
+    }
+}
+
+/// セグメントの終点 (`start` ならその点)。未知のセグメントは呼び出し側で除いておく。
+fn end_point(seg: &Segment) -> Point {
+    match seg {
+        Segment::Start { p } => *p,
+        Segment::Linear { to }
+        | Segment::Bezier { to, .. }
+        | Segment::Stepped { to }
+        | Segment::InverseStepped { to } => *to,
+        Segment::Unknown => Point {
+            t: f32::NAN,
+            v: f32::NAN,
+        },
+    }
+}
+
+/// 始点 `prev`・終点 `to` のセグメント `seg` の、時刻 `t` (`t <= to.t`) での値。
+fn segment_value(prev: Point, seg: &Segment, to: Point, t: f32) -> f32 {
+    let u = if to.t > prev.t {
+        (t - prev.t) / (to.t - prev.t)
+    } else {
+        1.0
+    };
+    match seg {
+        Segment::Bezier { c1, c2, .. } => bezier(prev, *c1, *c2, to, t),
+        Segment::Stepped { .. } => {
+            if u < 1.0 {
+                prev.v
+            } else {
+                to.v
+            }
+        }
+        Segment::InverseStepped { .. } => {
+            if u > 0.0 {
+                to.v
+            } else {
+                prev.v
+            }
+        }
+        // `start` と未知のセグメントは区間にならない (呼び出し側で除く)。直線として扱っておく。
+        Segment::Linear { .. } | Segment::Start { .. } | Segment::Unknown => {
+            prev.v + (to.v - prev.v) * u
+        }
+    }
 }
 
 /// 3 次ベジェ区間 `p0, c1, c2, p3` を時刻 `t` (`p0.t < t <= p3.t`) で評価する。
@@ -312,5 +415,146 @@ mod tests {
         ];
         assert_eq!(evaluate(&segs, 1.0), Some(0.0));
         assert_eq!(evaluate(&segs, 1.5), Some(4.0));
+    }
+
+    /// 線形の探索と前処理した探索の結果が、ビット単位で同じ (NaN どうしも同じとみなす)。
+    fn assert_same(segs: &[Segment], t: f32) {
+        let index = SegmentIndex::new(segs);
+        let (a, b) = (evaluate(segs, t), index.evaluate(segs, t));
+        assert_eq!(
+            a.map(f32::to_bits),
+            b.map(f32::to_bits),
+            "t={t} linear={a:?} indexed={b:?} segs={segs:?}"
+        );
+    }
+
+    /// 既存のテストのカーブで、前処理した探索が線形の探索と一致する。
+    #[test]
+    fn index_matches_linear_on_examples() {
+        let curves: Vec<Vec<Segment>> = vec![
+            vec![],
+            vec![Segment::Linear { to: p(1.0, 1.0) }],
+            vec![Segment::Start { p: p(0.5, 2.0) }],
+            vec![
+                Segment::Start { p: p(0.0, 0.0) },
+                Segment::Linear { to: p(1.0, 10.0) },
+                Segment::Stepped { to: p(2.0, 0.0) },
+                Segment::InverseStepped { to: p(3.0, 4.0) },
+            ],
+            vec![
+                Segment::Start { p: p(0.0, 0.0) },
+                Segment::Linear { to: p(1.0, 10.0) },
+                Segment::Unknown,
+            ],
+            vec![
+                Segment::Start { p: p(0.0, 0.0) },
+                Segment::Linear { to: p(1.0, 1.0) },
+                Segment::Start { p: p(2.0, 5.0) },
+                Segment::Linear { to: p(3.0, 6.0) },
+            ],
+            vec![
+                Segment::Start { p: p(1.0, 0.0) },
+                Segment::Bezier {
+                    c1: p(1.0, 0.0),
+                    c2: p(1.0, 0.0),
+                    to: p(1.0, 4.0),
+                },
+                Segment::Linear { to: p(2.0, 4.0) },
+            ],
+        ];
+        for segs in &curves {
+            for i in -10..=40 {
+                assert_same(segs, i as f32 * 0.1);
+            }
+            for t in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+                assert_same(segs, t);
+            }
+        }
+    }
+
+    /// 時刻が減るセグメント (書き出しの規則に反する) を含むカーブでも、線形の探索と同じ区間を選ぶ。
+    #[test]
+    fn index_matches_linear_with_decreasing_times() {
+        let segs = [
+            Segment::Start { p: p(0.0, 0.0) },
+            Segment::Linear { to: p(2.0, 2.0) },
+            Segment::Linear { to: p(1.0, 5.0) },
+            Segment::Stepped { to: p(3.0, 7.0) },
+            Segment::Linear { to: p(2.5, 1.0) },
+        ];
+        // t = 1.5 は 1 つ目の区間 (終わりが 2) に入り、時刻が戻った 2 つ目の区間は選ばない。
+        assert_eq!(SegmentIndex::new(&segs).evaluate(&segs, 1.5), Some(1.5));
+        assert_eq!(SegmentIndex::new(&segs).evaluate(&segs, 2.75), Some(5.0));
+        assert_eq!(SegmentIndex::new(&segs).evaluate(&segs, 9.0), Some(1.0));
+        for i in -5..=40 {
+            assert_same(&segs, i as f32 * 0.1);
+        }
+    }
+
+    /// 乱数で作ったカーブ (時刻が前後する・NaN の点・2 つ目の `start`・未知のセグメントを含む) で、
+    /// 前処理した探索が線形の探索と一致する。
+    #[test]
+    fn index_matches_linear_on_random_curves() {
+        // SplitMix64。テストを決定的にするため固定のシードを使う。
+        let mut state = 0x5eed_u64;
+        let mut next = move || {
+            state = state.wrapping_add(0x9e37_79b9_7f4a_7c15);
+            let mut z = state;
+            z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+            z ^ (z >> 31)
+        };
+        let mut unit = move || (next() >> 40) as f32 / (1u64 << 24) as f32;
+        for _ in 0..500 {
+            let n = (unit() * 12.0) as usize;
+            let mut t = unit() * 2.0 - 1.0;
+            let mut point = |unit: &mut dyn FnMut() -> f32| {
+                // おおむね増えるが、ときどき戻る。まれに NaN にする。
+                t += unit() * 1.2 - 0.2;
+                let pt = if unit() < 0.03 { f32::NAN } else { t };
+                p(pt, unit() * 10.0 - 5.0)
+            };
+            let mut segs = vec![Segment::Start {
+                p: point(&mut unit),
+            }];
+            for _ in 0..n {
+                let kind = unit();
+                segs.push(if kind < 0.02 {
+                    Segment::Unknown
+                } else if kind < 0.06 {
+                    Segment::Start {
+                        p: point(&mut unit),
+                    }
+                } else if kind < 0.35 {
+                    Segment::Linear {
+                        to: point(&mut unit),
+                    }
+                } else if kind < 0.6 {
+                    let (c1, c2) = (point(&mut unit), point(&mut unit));
+                    Segment::Bezier {
+                        c1,
+                        c2,
+                        to: point(&mut unit),
+                    }
+                } else if kind < 0.8 {
+                    Segment::Stepped {
+                        to: point(&mut unit),
+                    }
+                } else {
+                    Segment::InverseStepped {
+                        to: point(&mut unit),
+                    }
+                });
+            }
+            for i in -20..=200 {
+                assert_same(&segs, i as f32 * 0.05);
+            }
+            // 点の時刻ちょうども試す。
+            for seg in &segs[..] {
+                if *seg != Segment::Unknown {
+                    assert_same(&segs, end_point(seg).t);
+                }
+            }
+        }
     }
 }
