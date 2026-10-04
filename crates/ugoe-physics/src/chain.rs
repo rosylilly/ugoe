@@ -7,12 +7,13 @@
 use ugoe_core::Vec2;
 use ugoe_model::physics::PhysicsParticle;
 
-/// 根元の回転に、子の粒子が引きずられる割合 (`docs/spec/physics.md#根元の回転`)。
+/// 根元の回転に、子の粒子が引きずられる割合 (`docs/spec/physics.md#係数の意味`)。
 pub const ROOT_ROTATION_FOLLOW: f32 = 0.2;
 
 /// 粒子 1 つの実行時状態。座標は物理空間 (y 軸下向き)。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Particle {
+    /// 位置。
     pub position: Vec2,
     /// 直前のステップの開始時の位置。
     pub last_position: Vec2,
@@ -58,6 +59,9 @@ pub struct StepInput {
 }
 
 /// 振り子チェーン 1 本の実行時状態。
+///
+/// [`Chain::settle`]・[`Chain::step`] に渡す粒子の定義 `defs` は、[`Chain::new`] に渡したものと同じ
+/// (少なくとも同じ長さ) でなければならない (短いと添字が範囲外になる)。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Chain {
     particles: Vec<Particle>,
@@ -74,6 +78,7 @@ impl Chain {
         }
     }
 
+    /// 粒子の実行時状態 (粒子 0 が根元)。
     pub fn particles(&self) -> &[Particle] {
         &self.particles
     }

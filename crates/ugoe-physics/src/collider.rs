@@ -7,14 +7,20 @@ use ugoe_runtime::WorldTransform;
 /// キャンバス座標に置いた衝突体の形状。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum WorldCollider {
+    /// 円。
     Circle {
+        /// 中心 (キャンバス座標)。
         center: Vec2,
+        /// 半径 (ピクセル)。
         radius: f32,
     },
     /// 線分 `a`–`b` から `radius` 以内の領域。
     Capsule {
+        /// 芯の線分の端 (キャンバス座標)。
         a: Vec2,
+        /// 芯の線分のもう一方の端 (キャンバス座標)。
         b: Vec2,
+        /// 半径 (ピクセル)。
         radius: f32,
     },
 }

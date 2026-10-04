@@ -143,7 +143,7 @@ struct Binding {
 
 #[derive(Debug)]
 struct RigBinding {
-    /// 根元を取り付けるデフォーマ (`docs/spec/physics.md#根元の取り付け先`)。
+    /// 根元を取り付けるデフォーマ (`docs/spec/physics.md#物理空間と根元の取り付け先`)。
     anchor: Option<usize>,
     /// 重力と風の基準のデフォーマ。
     frame: Option<usize>,
@@ -165,6 +165,9 @@ enum Target {
 }
 
 impl PhysicsSystem {
+    /// 設定から作る。粒子は最初の [`Self::update`] (または [`Self::update_instance`]) で静止姿勢に置く。
+    ///
+    /// 設定の検査 (`ugoe_model::validate::validate_physics`) はしない。参照先が見つからない入力・出力・衝突体は実行時に無視する。
     pub fn new(settings: PhysicsSettings) -> Self {
         let rigs: Vec<RigState> = settings
             .rigs
@@ -192,6 +195,7 @@ impl PhysicsSystem {
         }
     }
 
+    /// 作るときに渡した設定。
     pub fn settings(&self) -> &PhysicsSettings {
         &self.settings
     }
@@ -386,7 +390,8 @@ impl PhysicsSystem {
     /// 衝突体を考えない静止姿勢で、衝突体に当たっている区間を調べる (`docs/spec/physics.md#衝突体`)。
     ///
     /// `instance` の今のパラメータ (ふつうは既定値) で 1 段目の評価を行い、各リグの鎖を、その入力と
-    /// 重力・風に対する静止姿勢 (衝突体を考えない) に置いて、区間 (粒子 i-1 → i) が
+    /// 重力・風に対する静止姿勢 (衝突体を考えない。中継の入力は最初の `update` と同じく、前のリグの
+    /// 静止姿勢の出力を読む) に置いて、区間 (粒子 i-1 → i) が
     /// [`WorldCollider::blocks`] で衝突体に当たるものを返す。当たっている区間は、最初の `update` で
     /// 衝突体の外の最も近い向きへ回され、髪は衝突体に沿って置かれる。作者が意図しない姿勢になりやすいので、
     /// 取り込みやエディタで警告に使う。物理の状態 (粒子) は変えない。動的物理を使わない設定では空。
@@ -398,18 +403,30 @@ impl PhysicsSystem {
         instance.update_first_stage();
         let frames = self.rig_frames(instance);
         let settings = &self.settings;
+        let parameters = instance.parameters();
+        // 最初の `update` と同じく、中継の入力は前のリグの静止姿勢の出力から読む。
+        let mut relay = self.relay.then(|| Relay::new(&settings.rigs, parameters));
         let mut found = Vec::new();
-        for (rig, frame) in settings.rigs.iter().zip(&frames) {
-            if frame.colliders.is_empty() {
-                continue;
-            }
-            let mut pose = root_pose(rig, instance.parameters(), |_| true);
+        for ((rig, frame), state) in settings.rigs.iter().zip(&frames).zip(&self.rigs) {
+            let mut pose = root_pose(rig, parameters, |i| !state.relay_inputs[i]);
             pose.translation += frame.anchor;
             pose.angle += frame.frame_angle;
+            pose.frame_angle = frame.frame_angle;
+            let pose = with_relay(pose, rig, state, relay.as_ref());
             let gravity = rotate_deg(settings.gravity, pose.angle);
-            let wind = rotate_deg(settings.wind, frame.frame_angle);
+            let wind = rotate_deg(settings.wind, pose.frame_angle);
             let mut chain = Chain::new(&rig.particles, Vec2::ZERO);
             chain.settle(&rig.particles, pose.translation, gravity, wind, |_, _| {});
+            if let Some(r) = &mut relay {
+                let input = StepInput {
+                    root: pose.translation,
+                    rotation_delta: 0.0,
+                    gravity,
+                    wind,
+                    time_scale: 0.0,
+                };
+                r.write(rig, &outputs(rig, &chain, &input, &frame.references));
+            }
             let particles = chain.particles();
             for i in 1..particles.len() {
                 let margin = rig.particles[i].collision_radius.max(0.0);
@@ -542,15 +559,6 @@ impl PhysicsSystem {
         };
         // 中継があるときだけ、ステップの中の出力を書き込むパラメータの写しを持つ。
         let mut relay = self.relay.then(|| Relay::new(&settings.rigs, parameters));
-        // 中継の入力を足した姿勢。中継の入力がないリグでは `pose` のまま (結果を変えない)。
-        let with_relay =
-            |pose: RootPose, rig: &PhysicsRig, state: &RigState, relay: &Option<Relay>| match relay
-            {
-                Some(r) if state.relay_inputs.contains(&true) => {
-                    pose.with_relay(root_pose(rig, &r.values, |i| state.relay_inputs[i]))
-                }
-                _ => pose,
-            };
 
         if !self.initialized {
             self.initialized = true;
@@ -562,7 +570,7 @@ impl PhysicsSystem {
                 .zip(&targets)
                 .zip(frames)
             {
-                let pose = with_relay(*target, rig, state, &relay);
+                let pose = with_relay(*target, rig, state, relay.as_ref());
                 let input = step_input(pose, 0.0);
                 state.chain.settle(
                     &rig.particles,
@@ -585,8 +593,13 @@ impl PhysicsSystem {
             self.accumulator += dt;
         }
         let whole = (self.accumulator / step).floor();
-        self.accumulator -= whole * step;
-        // ステップ数の上限を超えた分の時間は捨てる。
+        if whole > MAX_STEPS_PER_UPDATE as f32 {
+            // ステップ数の上限を超えた分の時間は捨てる。巨大な `dt` から `whole * step` を引くと
+            // 桁落ちする (無限大にもなる) ので、余りは剰余で求めて [0, step) に収める。
+            self.accumulator = self.accumulator.rem_euclid(step);
+        } else {
+            self.accumulator -= whole * step;
+        }
         let steps = (whole as u32).min(MAX_STEPS_PER_UPDATE);
 
         if steps > 0 {
@@ -604,7 +617,7 @@ impl PhysicsSystem {
                 {
                     // 入力はフレームの間で線形補間して、ステップごとに少しずつ動かす。
                     let external = start.lerp(*target, k as f32 / steps as f32);
-                    let pose = with_relay(external, rig, state, &relay);
+                    let pose = with_relay(external, rig, state, relay.as_ref());
                     let input = step_input(pose, pose.angle - state.pose.angle);
                     state.chain.step(&rig.particles, &input, |s, p| {
                         collide(&frame.colliders, rig, s, p);
@@ -700,6 +713,21 @@ fn relay_inputs(earlier: &[PhysicsRig], rig: &PhysicsRig) -> Vec<bool> {
                 .any(|o| o.parameter() == Some(&input.parameter))
         })
         .collect()
+}
+
+/// 中継の入力を足した姿勢。中継の入力がないリグでは `pose` のまま (結果を変えない)。
+fn with_relay(
+    pose: RootPose,
+    rig: &PhysicsRig,
+    state: &RigState,
+    relay: Option<&Relay>,
+) -> RootPose {
+    match relay {
+        Some(r) if state.relay_inputs.contains(&true) => {
+            pose.with_relay(root_pose(rig, &r.values, |i| state.relay_inputs[i]))
+        }
+        _ => pose,
+    }
 }
 
 /// 中継のための、ステップの中でリグの出力を書き込むパラメータの写し。

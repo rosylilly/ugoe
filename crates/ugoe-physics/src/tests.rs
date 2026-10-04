@@ -267,3 +267,48 @@ fn output_weight_blends_with_current_value() {
     // (1.0 + 0.6) / 2
     assert_close(get(&params, HAIR_FRONT), 0.8, 1e-4);
 }
+
+/// `dt` が巨大でも (一時停止の後など)、余りの時間は 1 ステップ未満に収まり、その後も固定ステップで進む。
+/// 上限を超えた時間を引き算で捨てると桁落ちし、`f32::MAX` では余りが負の無限大になって止まっていた。
+#[test]
+fn huge_dt_keeps_the_accumulator_within_a_step() {
+    for dt in [1e5, 666_039.0, 1e20, 1e37, f32::MAX] {
+        let (mut physics, mut params) = setup();
+        physics.update(&mut params, 0.0);
+        physics.update(&mut params, dt);
+        let accumulator = physics.accumulator;
+        assert!(
+            (0.0..STEP).contains(&accumulator),
+            "dt {dt}: accumulator {accumulator}"
+        );
+        set(&mut params, ANGLE_X, 30.0);
+        let before = positions(&physics);
+        physics.update(&mut params, STEP);
+        assert_ne!(
+            positions(&physics),
+            before,
+            "dt {dt}: no step after the spike"
+        );
+    }
+}
+
+/// `docs/spec/physics.md#出力`: `reflect` は符号を反転し、重みは 0〜1 にクランプし、
+/// 未知の `source` の出力は無視する。
+#[test]
+fn output_reflect_weight_clamp_and_unknown_source() {
+    let settle = |edit: &dyn Fn(&mut PhysicsOutput)| {
+        let mut settings = physics_hair_settings();
+        edit(&mut settings.rigs[0].outputs[0]);
+        let mut physics = PhysicsSystem::new(settings);
+        let mut params = ParameterValues::from_model(&physics_hair());
+        set(&mut params, ANGLE_Z, 30.0);
+        set(&mut params, HAIR_FRONT, 0.3);
+        physics.update(&mut params, 0.0);
+        get(&params, HAIR_FRONT)
+    };
+    assert_close(settle(&|_| {}), 0.6, 1e-4);
+    assert_close(settle(&|o| o.reflect = true), -0.6, 1e-4);
+    assert_close(settle(&|o| o.weight = 250.0), 0.6, 1e-4);
+    assert_close(settle(&|o| o.weight = -50.0), 0.3, 1e-6);
+    assert_close(settle(&|o| o.source = PhysicsSource::Unknown), 0.3, 1e-6);
+}

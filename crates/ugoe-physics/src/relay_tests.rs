@@ -233,3 +233,60 @@ fn relay_drives_dynamic_rig() {
         .fold(0.0, f32::max);
     assert!(diff > 1e-3, "max difference {diff}");
 }
+
+/// 静止姿勢の当たりの検査も、最初の `update` と同じく、中継の入力に前のリグの静止姿勢の出力を読む
+/// (`docs/spec/physics.md#リグの順序と中継`)。
+#[test]
+fn rest_pose_collisions_read_earlier_rest_outputs() {
+    let (sway, lean) = ("HairSway", "HairLean");
+    let mut model = dynamic_hair();
+    for id in [sway, lean] {
+        model.parameters.push(Parameter {
+            id: id.into(),
+            internal: true,
+            ..model.parameters[0].clone()
+        });
+    }
+    let mut instance = ModelInstance::new(CompiledModel::compile(model).unwrap());
+    // `HairLean` の分だけ傾いて垂れ、静止姿勢でも 0 でない x を中継パラメータに出すリグ。
+    let mut rig = physics_relay_settings().rigs.remove(0);
+    rig.id = "Sway".into();
+    rig.inputs[0].parameter = lean.into();
+    rig.inputs[0].source = PhysicsSource::Angle;
+    rig.outputs[0] = PhysicsOutput {
+        target: PhysicsTarget::Parameter { id: sway.into() },
+        scale: 10.0,
+        ..rig.outputs[0].clone()
+    };
+    let mut settings = dynamic_hair_settings();
+    settings.rigs[0].inputs.push(PhysicsInput {
+        parameter: sway.into(),
+        source: PhysicsSource::X,
+        weight: 500.0,
+        reflect: false,
+    });
+    settings.rigs.insert(0, rig);
+    // 中継で左右どちらかにずれた髪にだけ当たる円 (ずれない髪は x = 148 に垂れる)。
+    settings.colliders = [("Left", -29.0), ("Right", 29.0)]
+        .into_iter()
+        .map(|(id, dx)| ugoe_model::physics::PhysicsCollider {
+            id: id.into(),
+            name: id.into(),
+            attach: None,
+            shape: ugoe_model::physics::ColliderShape::Circle {
+                center: Vec2::new(148.0 + dx, 160.0),
+                radius: 4.0,
+            },
+        })
+        .collect();
+    settings.rigs[1].colliders = vec!["Left".into(), "Right".into()];
+    let mut physics = PhysicsSystem::new(settings);
+    assert!(physics.has_relay());
+
+    assert_eq!(physics.rest_pose_collisions(&mut instance), vec![]);
+    let index = instance.parameters().index_of(lean).unwrap();
+    instance.parameters_mut().set(index, 30.0);
+    let found = physics.rest_pose_collisions(&mut instance);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].rig, "Hair");
+}
