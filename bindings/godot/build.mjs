@@ -17,9 +17,10 @@
 // このクレートはルートのワークスペースの外にある (docs/adr/0026-godot-binding.md)。
 
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync } from "node:fs";
+import { copyFileSync, lstatSync, mkdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { cargoEnvWithMbx } from "../../scripts/lib/mbx.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
@@ -30,14 +31,35 @@ const conformance = args.includes("--conformance");
 const importProject = args.includes("--import");
 const only = args.flatMap((a, i) => (args[i - 1] === "--only" ? [a] : []));
 
+// mbx (ビルドのキャッシュ。docs/workflow/build-cache.md) の shim が入っていれば、justfile と同じく cargo を mbx に通す
+// (just を通らずに呼ばれても PATH に shim を足す)。
+const cargo = cargoEnvWithMbx(process.env);
 // target/ はリポジトリのルートと共有する (ugoe のクレートのビルド済みの成果物を使い回す)。
-const targetDir = process.env.CARGO_TARGET_DIR ?? join(root, "target");
+// ただし mbx を通さない (`MBX_DISABLE`) のに mbx が入っているか、ルートの target/ が mbx の managed target (シンボリックリンク)
+// なら、共有の target/ には mbx の置き場からの読み取り専用のハードリンクがあり、素の cargo は書き直せずに失敗する
+// (`output file ... is not writeable`)。そのときは bindings/godot/target/ に分けてビルドする。
+const sharedTarget = join(root, "target");
+let targetDir = process.env.CARGO_TARGET_DIR ?? sharedTarget;
+if (
+  process.env.CARGO_TARGET_DIR === undefined &&
+  !cargo.viaMbx &&
+  (cargo.installed || isSymlink(sharedTarget))
+) {
+  targetDir = join(here, "target");
+  console.log(`mbx を通さないので、mbx と共有しない ${targetDir} でビルドする`);
+}
 const cargoArgs = ["build", "--locked", "--manifest-path", join(here, "Cargo.toml")];
 if (release) cargoArgs.push("--release");
-execFileSync("cargo", cargoArgs, {
-  stdio: "inherit",
-  env: { ...process.env, CARGO_TARGET_DIR: targetDir },
-});
+const cargoEnv = { ...cargo.env, CARGO_TARGET_DIR: targetDir };
+execFileSync("cargo", cargoArgs, { stdio: "inherit", env: cargoEnv });
+
+function isSymlink(path) {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
 
 const lib = {
   linux: "libugoe_godot.so",
@@ -132,7 +154,8 @@ if (conformance) {
         "--no-godot-build",
         ...cases,
       ],
-      { stdio: "inherit" },
+      // 参照を描く ugoe のクレートも、上の cargo と同じ環境と target でビルドする。
+      { stdio: "inherit", env: cargoEnv },
     );
   } catch {
     process.exitCode = 1;

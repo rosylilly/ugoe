@@ -9,7 +9,8 @@
 // mise の `[wrappers.cargo]` や `mr_boxington` で包んだ場合は判定できず、無効とみなす (従来どおりの動きになるだけで、壊れはしない)。
 
 import { existsSync, statSync } from "node:fs";
-import { delimiter, join } from "node:path";
+import { homedir } from "node:os";
+import { delimiter, isAbsolute, join } from "node:path";
 
 /** `MBX_DISABLE` の値が mbx を無効にするか (mbx の `mbx_disabled_value` と同じ規則)。 */
 export function mbxDisabledValue(value) {
@@ -38,4 +39,43 @@ function defaultIsFile(path) {
 
 function cargoNames() {
   return process.platform === "win32" ? ["cargo.exe", "cargo.cmd", "cargo"] : ["cargo"];
+}
+
+/**
+ * `mbx setup` が cargo の shim を入れるディレクトリ。justfile の `mbx_shim_dir` (`data_local_directory()/mbx/bin`) と同じ場所。
+ * Linux は `$XDG_DATA_HOME` (絶対パスのとき) か `~/.local/share`、macOS は `~/Library/Application Support`。
+ * Windows では justfile と同じく扱わない (undefined)。
+ */
+export function mbxShimDir(
+  env = process.env,
+  { platform = process.platform, home = homedir() } = {},
+) {
+  if (platform === "win32") return undefined;
+  if (platform === "darwin") return join(home, "Library", "Application Support", "mbx", "bin");
+  const xdg = env.XDG_DATA_HOME;
+  const base = xdg && isAbsolute(xdg) ? xdg : join(home, ".local", "share");
+  return join(base, "mbx", "bin");
+}
+
+/**
+ * just を通らずに cargo を呼ぶスクリプト (bindings/godot/build.mjs など) のための環境。
+ * PATH の cargo が mbx でなくても、shim が入っていて `MBX_DISABLE` が無ければ、justfile と同じく shim を PATH の先頭に足す。
+ *
+ * 返す値: `env` (cargo に渡す環境)、`viaMbx` (その環境の cargo が mbx を通るか)、
+ * `installed` (shim が入っているか。`viaMbx` が false でも、入っていれば共有の target に mbx の読み取り専用のハードリンクがありうる)。
+ */
+export function cargoEnvWithMbx(
+  env = process.env,
+  { isFile = defaultIsFile, platform = process.platform, home = homedir() } = {},
+) {
+  const shim = mbxShimDir(env, { platform, home });
+  const installed =
+    shim !== undefined && isFile(join(shim, "cargo")) && isFile(join(shim, "mbx-target"));
+  if (mbxEnabled(env, { isFile })) return { env, viaMbx: true, installed };
+  if (installed && !mbxDisabledValue(env.MBX_DISABLE)) {
+    const current = env.PATH ?? "";
+    const next = { ...env, PATH: current ? `${shim}${delimiter}${current}` : shim };
+    return { env: next, viaMbx: true, installed };
+  }
+  return { env, viaMbx: false, installed };
 }

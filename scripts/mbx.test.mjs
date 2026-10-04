@@ -2,7 +2,13 @@
 import assert from "node:assert/strict";
 import { delimiter, join } from "node:path";
 import { describe, it } from "node:test";
-import { findCargoDir, mbxDisabledValue, mbxEnabled } from "./lib/mbx.mjs";
+import {
+  cargoEnvWithMbx,
+  findCargoDir,
+  mbxDisabledValue,
+  mbxEnabled,
+  mbxShimDir,
+} from "./lib/mbx.mjs";
 
 const SHIM = join("/home", "me", ".local", "share", "mbx", "bin");
 const RUSTUP = join("/home", "me", ".cargo", "bin");
@@ -57,5 +63,58 @@ describe("mbxEnabled", () => {
   it("mbx-target の無い cargo (shim でないもの) は無効", () => {
     const isFile = files(join(SHIM, "cargo"));
     assert.equal(mbxEnabled({ PATH: path(SHIM) }, { isFile }), false);
+  });
+});
+
+describe("mbxShimDir", () => {
+  const home = join("/home", "me");
+
+  it("Linux は XDG_DATA_HOME (絶対パスのとき) か ~/.local/share の下", () => {
+    assert.equal(mbxShimDir({}, { platform: "linux", home }), SHIM);
+    assert.equal(
+      mbxShimDir({ XDG_DATA_HOME: "/data" }, { platform: "linux", home }),
+      join("/data", "mbx", "bin"),
+    );
+    assert.equal(mbxShimDir({ XDG_DATA_HOME: "rel" }, { platform: "linux", home }), SHIM);
+  });
+
+  it("macOS は ~/Library/Application Support の下、Windows は扱わない", () => {
+    assert.equal(
+      mbxShimDir({}, { platform: "darwin", home }),
+      join(home, "Library", "Application Support", "mbx", "bin"),
+    );
+    assert.equal(mbxShimDir({}, { platform: "win32", home }), undefined);
+  });
+});
+
+describe("cargoEnvWithMbx", () => {
+  const opts = { isFile: withShim, platform: "linux", home: join("/home", "me") };
+
+  it("PATH の cargo がすでに shim ならそのまま", () => {
+    const env = { PATH: path(SHIM, RUSTUP) };
+    assert.deepEqual(cargoEnvWithMbx(env, opts), { env, viaMbx: true, installed: true });
+  });
+
+  it("shim が PATH に無ければ先頭に足す", () => {
+    const { env, viaMbx, installed } = cargoEnvWithMbx({ PATH: path(RUSTUP), HOME: "x" }, opts);
+    assert.equal(env.PATH, path(SHIM, RUSTUP));
+    assert.equal(env.HOME, "x");
+    assert.equal(viaMbx, true);
+    assert.equal(installed, true);
+  });
+
+  it("MBX_DISABLE があれば PATH を変えず、mbx を通らない", () => {
+    const env = { PATH: path(RUSTUP), MBX_DISABLE: "1" };
+    assert.deepEqual(cargoEnvWithMbx(env, opts), { env, viaMbx: false, installed: true });
+  });
+
+  it("shim が入っていなければ PATH を変えない", () => {
+    const env = { PATH: path(RUSTUP) };
+    const isFile = files(join(RUSTUP, "cargo"));
+    assert.deepEqual(cargoEnvWithMbx(env, { ...opts, isFile }), {
+      env,
+      viaMbx: false,
+      installed: false,
+    });
   });
 });
