@@ -85,7 +85,7 @@
 | `set_keyform_inference` | `target` の格子の推定の設定 (`inference`、[`KeyformInference`](spec/keyform-inference.md#回転と投影)) を置き換える。省略 (`null`) なら加算合成。方法を記録していない `derived` のセルを新しい設定で作り直す (`depth_rotation` のセルも、設定が深度からの回転なら作り直す)。未知の方法は `UnsupportedInference`、`yaw` / `pitch` が格子の軸でなければ検証エラーで拒否する |
 | `set_mirror_pair` | メッシュ・デフォーマの左右の対 (`mirror`、相手の ID。省略で対を外す) と `target` の対称軸 (`axis` → `mirror_axis`。省略で親で決まる既定値) を設定する。対は双方向に張り、`target` と相手のどちらかと対になっていた要素の対は外す。パーツ・グルーは `MirrorPairNotSupported`。対が変わった要素をミラー元にする格子はミラーし直す (失敗すれば下の警告) |
 
-- 推定のエラー (中立のキーがない、基準のセルが `derived`、ミラーの対でない、など) は `EditError::Inference` で拒否し、モデルは変えません。
+- 推定のエラー (中立のキーがない、キーが昇順でない、基準のセルが `derived`、ミラーの対でない、など) は `EditError::Inference` で拒否し、モデルは変えません。
 - **自動の作り直し:** 格子のセル (値や由来) を変えたコマンドの後、`Document::apply` はその格子の `derived` のセルを **セルに記録した推定の方法で** 作り直し、その格子をミラー元 (`mirror_source`) にする格子のミラーのセルもミラーし直します。同じ Undo 単位に含まれ、`batch` では全体を適用した後にまとめて行います。加算合成・深度からの回転で作り直せなければコマンドを拒否します (ミラーのやり直しの失敗は、ミラーのセルをそのままにして続ける)。規則は [spec/keyform-inference.md#自動の作り直し](spec/keyform-inference.md#自動の作り直し)。
   - 対象は `set_*_keyforms`・`set_mesh_keyform`・`set_keyform_cell`・`mark_keyform_*`・`infer_keyforms`・`mirror_keyforms`・`set_keyform_inference`・`set_mirror_pair`・頂点の編集 (`move_mesh_vertices` など)・深度の編集 (`set_depth`・`apply_depth_preset`) です。新しいコマンドは、格子のセルを変えたら `apply_to` の `touched` に要素を積むことで対象になります (`crates/ugoe-editor-core/src/document.rs`)。
   - 推定のコマンドも積みます。作り直しはセルごとの方法で行うので推定の結果を別の方法で上書きせず、その格子をミラー元にする格子へ変化を伝えます。

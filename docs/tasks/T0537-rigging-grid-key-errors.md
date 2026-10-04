@@ -1,7 +1,7 @@
 ---
 id: T0537
 title: 推定の格子の検査を検証 (validate) に頼らないようにする
-status: in-progress
+status: done
 milestone: M9
 crates: [ugoe-rigging, ugoe-editor-core, docs]
 depends_on: [T0526]
@@ -26,10 +26,10 @@ T0526 (ugoe-rigging のコードレビュー) で見つかった、キーフォ�
 
 ## 受け入れ条件
 
-- [ ] 昇順でない・重複した・有限でないキー、重複した軸の格子がエラーになり、格子を変えないテストがある
-- [ ] 大きすぎる格子が専用のエラーになる
-- [ ] エディタのエラーの扱いと仕様書を合わせて直した
-- [ ] `just ci` が通る
+- [x] 昇順でない・重複した・有限でないキー、重複した軸の格子がエラーになり、格子を変えないテストがある
+- [x] 大きすぎる格子が専用のエラーになる
+- [x] エディタのエラーの扱いと仕様書を合わせて直した
+- [x] `just ci` が通る
 
 ## 参考
 
@@ -37,3 +37,18 @@ T0526 (ugoe-rigging のコードレビュー) で見つかった、キーフォ�
 - docs/spec/keyform-inference.md#記法、docs/workflow/code-review.md
 
 ## メモ
+
+- やったこと:
+  - `InferError` に `DuplicateAxis { parameter }`・`NonFiniteKey { parameter, key }`・`KeysNotAscending { parameter, keys }`
+    (降順の箇所と重複したキー。`ugoe_model::ValidationError::KeysNotAscending` と同じ区切り)・`GridTooLarge` を足した。
+    `GridSizeMismatch` の `usize::MAX` の流用はやめた。
+  - `grid.rs` の `Layout::new` が、軸ごとに パラメータ → 軸の重複 → キーの有限 → 狭義の昇順 → 中立のキー の順に検査する。
+    加算合成・深度からの回転・ミラー・親の座標系 (`space.rs`) は、すべて `Layout::new` を通るので同じ検査を受ける。
+  - テスト: `tests/additive.rs` の `malformed_keys_and_axes_are_errors` (エラーの種類と、格子を変えないこと)、
+    `oversized_and_overlong_grids_are_errors` を `GridTooLarge` に。エディタは `EditError::Inference` が `InferError` を包むだけで
+    表示は `to_string` (`edit.inference_failed` の `detail`) なので、コードの変更はなく、`inference_tests.rs` の
+    `infer_keyforms_rejects_invalid_targets` に昇順でないキー・重複した軸の拒否 (モデルを変えない) を足した。
+  - 仕様: `docs/spec/keyform-inference.md#記法` に推定が確かめる格子の条件とエラーの種類を、`docs/editor.md#推定とミラー` の例に追記。
+    推定のアルゴリズムは英語の公開仕様に含めない (`docs/spec/public-spec.md`) ので `spec/` は変えていない。
+- やらなかったこと: 空のキーの軸は従来どおり `MissingNeutralKey` (中立のキーがない) のまま。
+- 起票の候補: なし。

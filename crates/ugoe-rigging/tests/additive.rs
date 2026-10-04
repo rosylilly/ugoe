@@ -667,7 +667,7 @@ fn own_scope_keeps_cells_of_other_methods_as_sources() {
     assert_eq!(report.written, vec![0, 2, 6, 8]);
 }
 
-/// 軸のキー数の積が `usize` に収まらない格子は、パニックせずに大きさの不一致のエラーになる。
+/// 軸のキー数の積が `usize` に収まらない格子は、パニックせずに専用のエラーになる。
 /// 軸は 64 本までなので、2 キーの軸が 64 本 (2⁶⁴ セル) は軸の数の検査を通る。
 #[test]
 fn oversized_and_overlong_grids_are_errors() {
@@ -682,10 +682,7 @@ fn oversized_and_overlong_grids_are_errors() {
     let mut grid = KeyformGrid::new(bindings(64), Vec::<RotationKeyform>::new());
     assert_eq!(
         infer_additive(&model, &mut grid, InferScope::AllDerived),
-        Err(InferError::GridSizeMismatch {
-            expected: usize::MAX,
-            found: 0
-        })
+        Err(InferError::GridTooLarge)
     );
 
     let mut grid = KeyformGrid::new(bindings(65), Vec::<RotationKeyform>::new());
@@ -693,4 +690,57 @@ fn oversized_and_overlong_grids_are_errors() {
         infer_additive(&model, &mut grid, InferScope::AllDerived),
         Err(InferError::TooManyAxes { count: 65 })
     );
+}
+
+/// 検証 (`validate`) の前のモデルの格子: 昇順でない・重複した・有限でないキーと、同じパラメータの
+/// 2 本の軸はエラーになり、格子を変えない (1 軸の補間で誤った値や NaN を作らない)。
+#[test]
+fn malformed_keys_and_axes_are_errors() {
+    let model = model();
+    let not_ascending = |keys: &[f32]| InferError::KeysNotAscending {
+        parameter: "A".into(),
+        keys: keys.to_vec(),
+    };
+    let cases: Vec<(Vec<KeyformBinding>, InferError)> = vec![
+        (
+            vec![binding("A", &[0.0, 2.0, 1.0])],
+            not_ascending(&[0.0, 2.0, 1.0]),
+        ),
+        (
+            vec![binding("A", &[0.0, 1.0, 1.0])],
+            not_ascending(&[0.0, 1.0, 1.0]),
+        ),
+        (
+            vec![binding("A", &[0.0, 1.0, f32::INFINITY])],
+            InferError::NonFiniteKey {
+                parameter: "A".into(),
+                key: f32::INFINITY,
+            },
+        ),
+        (
+            vec![binding("A", &[0.0, 1.0]), binding("A", &[0.0, 2.0])],
+            InferError::DuplicateAxis {
+                parameter: "A".into(),
+            },
+        ),
+    ];
+    for (bindings, expected) in cases {
+        let mut grid = angle_grid(bindings, &[(0, 0.0), (1, 10.0)]);
+        let before = grid.clone();
+        let err = infer_additive(&model, &mut grid, InferScope::AllDerived).unwrap_err();
+        assert_eq!(err, expected);
+        assert_eq!(grid, before);
+    }
+
+    // NaN のキーは `PartialEq` で比べられないので、種類だけを見る。
+    let mut grid = angle_grid(vec![binding("A", &[0.0, f32::NAN])], &[(0, 0.0)]);
+    let before = grid.clone();
+    let err = infer_additive(&model, &mut grid, InferScope::AllDerived).unwrap_err();
+    assert!(
+        matches!(&err, InferError::NonFiniteKey { parameter, key } if parameter.as_str() == "A" && key.is_nan()),
+        "{err:?}"
+    );
+    assert_eq!(grid.bindings[0].keys.len(), before.bindings[0].keys.len());
+    assert_eq!(grid.keyforms, before.keyforms);
+    assert_eq!(grid.origins, before.origins);
 }

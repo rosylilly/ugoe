@@ -227,6 +227,45 @@ fn infer_keyforms_rejects_invalid_targets() {
         inference_error(&target("EyeL"), InferError::BaseNotAuthored { cell: 4 })
     );
 
+    // 検証の前の格子 (キーが昇順でない・同じパラメータの軸が 2 本) も推定のエラーで拒否する。
+    let mut unsorted = model.clone();
+    mesh_mut(&mut unsorted, "EyeL").keyforms.bindings[0].keys = vec![30.0, 0.0, -30.0];
+    assert_eq!(
+        rejected(
+            &unsorted,
+            Command::InferKeyforms {
+                target: target("EyeL"),
+                method: InferMethod::Additive,
+                overwrite_derived: false,
+            },
+        ),
+        inference_error(
+            &target("EyeL"),
+            InferError::KeysNotAscending {
+                parameter: "AngleX".into(),
+                keys: vec![30.0, 0.0, -30.0],
+            }
+        )
+    );
+    let mut duplicate = model.clone();
+    mesh_mut(&mut duplicate, "EyeL").keyforms.bindings[1].parameter = "AngleX".into();
+    assert_eq!(
+        rejected(
+            &duplicate,
+            Command::InferKeyforms {
+                target: target("EyeL"),
+                method: InferMethod::Additive,
+                overwrite_derived: false,
+            },
+        ),
+        inference_error(
+            &target("EyeL"),
+            InferError::DuplicateAxis {
+                parameter: "AngleX".into(),
+            }
+        )
+    );
+
     let mut unknown = model.clone();
     mesh_mut(&mut unknown, "EyeL").keyforms.inference = Some(KeyformInference::Unknown);
     assert_eq!(

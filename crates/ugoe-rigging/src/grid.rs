@@ -1,6 +1,6 @@
 //! 格子の軸と、セルの座標・インデックスの変換 (`docs/spec/keyform-inference.md#記法`)。
 
-use ugoe_model::{KeyformGrid, KeyformOrigin, Parameter};
+use ugoe_model::{KeyformBinding, KeyformGrid, KeyformOrigin, Parameter};
 
 use crate::{InferError, InferReport, InferScope, KeyformValues};
 
@@ -26,9 +26,9 @@ pub(crate) struct Layout<'a> {
 
 impl<'a> Layout<'a> {
     /// 格子の軸を `parameters` から引いて作る。
-    /// 軸の数・パラメータ・中立のキー・`keyforms` と `origins` の長さを検査する。
-    /// セルの数 (軸のキー数の積) が `usize` に収まらなければ、`expected` が `usize::MAX` の
-    /// [`InferError::GridSizeMismatch`] にする。
+    /// 軸の数・パラメータ・軸の重複・キーの並び (有限で狭義の昇順)・中立のキー・セルの数・
+    /// `keyforms` と `origins` の長さを検査する。`ugoe_model::validate` の前のモデルでも、
+    /// 誤った値や NaN を作らずにエラーにする。
     pub fn new<T>(
         parameters: &'a [Parameter],
         grid: &'a KeyformGrid<T>,
@@ -40,7 +40,7 @@ impl<'a> Layout<'a> {
         }
         // 積があふれたら `None` (`KeyformGrid::expected_len` は検査せずに掛ける)。
         let mut stride = Some(1usize);
-        let mut axes = Vec::with_capacity(grid.bindings.len());
+        let mut axes: Vec<Axis<'a>> = Vec::with_capacity(grid.bindings.len());
         for binding in &grid.bindings {
             let parameter = parameters
                 .iter()
@@ -48,6 +48,12 @@ impl<'a> Layout<'a> {
                 .ok_or_else(|| InferError::UnknownParameter {
                     parameter: binding.parameter.clone(),
                 })?;
+            if axes.iter().any(|a| a.parameter.id == binding.parameter) {
+                return Err(InferError::DuplicateAxis {
+                    parameter: binding.parameter.clone(),
+                });
+            }
+            check_keys(binding)?;
             let neutral = binding
                 .keys
                 .iter()
@@ -65,8 +71,8 @@ impl<'a> Layout<'a> {
             stride = stride.and_then(|s| s.checked_mul(binding.keys.len()));
         }
 
-        let len = stride.unwrap_or(usize::MAX);
-        if stride.is_none() || grid.keyforms.len() != len {
+        let len = stride.ok_or(InferError::GridTooLarge)?;
+        if grid.keyforms.len() != len {
             return Err(InferError::GridSizeMismatch {
                 expected: len,
                 found: grid.keyforms.len(),
@@ -134,6 +140,24 @@ impl<'a> Layout<'a> {
         let axis = &self.axes[k];
         axis.keys[coords[k]] - axis.parameter.default
     }
+}
+
+/// 軸のキーが有限で、狭義の昇順 (重複がない) であることを検査する。1 軸の補間 (`additive.rs` の `line`) は
+/// 添字の順を値の順とみなし、重複したキーでは区間の幅が 0 になる。
+fn check_keys(binding: &KeyformBinding) -> Result<(), InferError> {
+    if let Some(&key) = binding.keys.iter().find(|k| !k.is_finite()) {
+        return Err(InferError::NonFiniteKey {
+            parameter: binding.parameter.clone(),
+            key,
+        });
+    }
+    if binding.keys.windows(2).any(|w| w[0] >= w[1]) {
+        return Err(InferError::KeysNotAscending {
+            parameter: binding.parameter.clone(),
+            keys: binding.keys.clone(),
+        });
+    }
+    Ok(())
 }
 
 /// セル `index` を、方法 `method` (由来 `additive` / `depth_rotation` / `mirror`) の推定で

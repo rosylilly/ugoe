@@ -11,10 +11,22 @@ pub enum InferError {
     /// 軸のキーにパラメータの `default` と等しいもの (中立のキー) がない。
     #[error("axis {parameter} has no neutral key (default {default} is not among its keys)")]
     MissingNeutralKey { parameter: ParamId, default: f32 },
+    /// 同じパラメータの軸が格子に 2 本以上ある。
+    #[error("parameter {parameter} is bound to more than one axis")]
+    DuplicateAxis { parameter: ParamId },
+    /// 軸のキーに有限でない値 (NaN・無限大) がある。
+    #[error("axis {parameter} has a non-finite key {key}")]
+    NonFiniteKey { parameter: ParamId, key: f32 },
+    /// 軸のキーが狭義の昇順でない (降順の箇所や、重複したキーがある)。
+    #[error("keys of axis {parameter} are not strictly ascending: {keys:?}")]
+    KeysNotAscending { parameter: ParamId, keys: Vec<f32> },
     /// 軸が多すぎる (64 本まで)。
     #[error("too many axes ({count}, at most 64)")]
     TooManyAxes { count: usize },
-    /// `keyforms` の数が軸のキー数の積と合わない。積が `usize` に収まらなければ `expected` は `usize::MAX`。
+    /// セルの数 (軸のキー数の積) が `usize` に収まらない。
+    #[error("grid is too large (the product of the axis key counts overflows)")]
+    GridTooLarge,
+    /// `keyforms` の数が軸のキー数の積と合わない。
     #[error("grid has {found} keyforms, expected {expected}")]
     GridSizeMismatch { expected: usize, found: usize },
     /// `origins` が空でなく、長さが `keyforms` と合わない。
