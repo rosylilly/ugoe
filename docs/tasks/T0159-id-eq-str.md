@@ -1,11 +1,11 @@
 ---
 id: T0159
 title: ugoe-core の Id<T> を文字列と比べられるようにする
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-core, ugoe-rigging, ugoe-editor-core, ugoe-cli, ugoe-ai, ugoe-mcp, ugoe-model, ugoe-runtime, apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0159
 ---
 
 # T0159: ugoe-core の Id<T> を文字列と比べられるようにする
