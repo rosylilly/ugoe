@@ -1,11 +1,11 @@
 ---
 id: T0024
 title: 3 つのアプリの CSP と許可の細部を揃え、ビューアのコマンドの一覧を acl.rs にする
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, apps/viewer, apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0024
 ---
 
 # T0024: 3 つのアプリの CSP と許可の細部を揃え、ビューアのコマンドの一覧を acl.rs にする
