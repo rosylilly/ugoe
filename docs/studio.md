@@ -825,6 +825,8 @@ WebView は、隠れたり最小化されたりしたページの `requestAnimat
   (`start_virtual_camera`・`stop_virtual_camera`。仮想カメラを始め直すことのある `set_virtual_camera_settings`・`new_profile` も) コマンドは `async fn` にし、中身を `spawn_blocking` で行う (`lib.rs` の `blocking`)。
   ロックは `spawn_blocking` の中で取って放す (`.await` をまたいで握らない)。ホットキーの経路も同じく `spawn_blocking` で行う。
   外部 API の `dressup.list` は、付けていないモジュールを舞台のロックを放してから読む。
+  読んだ概要 (ID・名前・スロット) はパス・更新時刻・大きさで覚え、変わっていなければ読み直さない (T0833。`methods.rs` の `ModuleSummaries`)。
+  ファイルが消えたら一覧から外して忘れ、着せ替えに使えなくなったモジュールも忘れる。覚える数は 256 まで (超えた分は毎回読む)。
 
 ### 刻みの速さと正確さ
 

@@ -327,6 +327,8 @@ struct Studio {
     api: api::Api,
     /// ブラウザソースのページの接続 (T0808。待ち受けは操作 API と共有する)。
     sources: api::source::Sources,
+    /// `dressup.list` が読んだ付けていないモジュールの概要 (T0833)。ほかのロックを握らずに取る。
+    module_summaries: Mutex<api::ModuleSummaries>,
 }
 
 /// 登録しているホットキー。

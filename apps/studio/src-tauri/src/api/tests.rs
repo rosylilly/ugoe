@@ -718,12 +718,90 @@ fn lists_the_wardrobe_without_holding_the_stage() {
             studio.conductor.try_lock().is_ok(),
             "the conductor is locked"
         );
+        assert!(
+            studio.module_summaries.try_lock().is_ok(),
+            "the summaries are locked"
+        );
         read.push(path.to_owned());
         methods::read_module_value(path)
     });
     assert_eq!(read, std::slice::from_ref(&hair));
     assert_eq!(list["modules"][0]["id"], hair.to_str().unwrap());
     assert_eq!(list["modules"][0]["slot"], "Hair");
+}
+
+/// `dressup.list` は付けていないモジュールの概要を覚え、ファイルの時刻と大きさが変わらなければ読み直さない (T0833)。
+#[test]
+fn remembers_the_wardrobe_until_the_file_changes() {
+    let dir = Dir::new("dressup-cache");
+    let model = dir.model();
+    let hair = dir.module("hair.ugoemod", fixtures::long_hair_module());
+    let studio = studio();
+    stage_scenes(&studio, &model, std::slice::from_ref(&hair));
+    // 読んだ回数を数える。
+    let list = |studio: &Studio| {
+        let mut reads = 0;
+        let value = methods::dressup_list_with(studio, |path| {
+            reads += 1;
+            methods::read_module_value(path)
+        });
+        (value, reads)
+    };
+    let (first, reads) = list(&studio);
+    assert_eq!(reads, 1);
+    assert_eq!(first["modules"][0]["id"], hair.to_str().unwrap());
+    assert_eq!(list(&studio), (first.clone(), 0));
+    assert_eq!(list(&studio), (first, 0));
+
+    // 書き換えた (時刻が変わった) ら読み直す。
+    let mut module = fixtures::long_hair_module();
+    module.name = "Braid".into();
+    dir.module("hair.ugoemod", module);
+    let file = std::fs::File::options().write(true).open(&hair).unwrap();
+    file.set_modified(std::time::SystemTime::now() + Duration::from_secs(60))
+        .unwrap();
+    drop(file);
+    let (changed, reads) = list(&studio);
+    assert_eq!(reads, 1, "read again");
+    assert_eq!(changed["modules"][0]["name"], "Braid");
+    assert_eq!(list(&studio).1, 0);
+
+    // 消えたら一覧から外し、忘れる。
+    std::fs::remove_file(&hair).unwrap();
+    let gone = methods::dressup_list_with(&studio, |_| panic!("read a missing file"));
+    assert_eq!(gone["modules"], json!([]));
+    assert!(lock(&studio.module_summaries).is_empty());
+}
+
+/// 覚える概要の数には上限があり、着せ替えに使えなくなったモジュールは忘れる (T0833)。
+#[test]
+fn remembers_a_bounded_wardrobe() {
+    let dir = Dir::new("dressup-bound");
+    let model = dir.model();
+    let studio = studio();
+    let count = MAX_MODULE_SUMMARIES + 8;
+    let paths: Vec<PathBuf> = (0..count)
+        .map(|i| {
+            let path = dir.0.join(format!("m{i}.ugoemod"));
+            std::fs::write(&path, b"x").unwrap();
+            path
+        })
+        .collect();
+    // Game のシーンが全部を付ける (出しているのは Chat なので読まれない)。
+    let (_, game) = stage_scenes(&studio, &model, &paths);
+    let fake =
+        |path: &Path| Some(json!({ "id": path.to_string_lossy(), "name": "m", "slot": "Hair" }));
+    let list = methods::dressup_list_with(&studio, fake);
+    assert_eq!(list["modules"].as_array().unwrap().len(), count);
+    assert_eq!(lock(&studio.module_summaries).len(), MAX_MODULE_SUMMARIES);
+
+    studio.with_stage(|stage, conductor| {
+        let mut scene = stage.profile().scene(&game).unwrap().clone();
+        scene.modules.truncate(2);
+        stage.update_scene(scene, conductor).unwrap();
+    });
+    methods::dressup_list_with(&studio, fake);
+    assert_eq!(lock(&studio.module_summaries).len(), 2);
 }
 
 #[test]

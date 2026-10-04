@@ -2,7 +2,9 @@
 //!
 //! `session.hello` と `events.*` は接続の状態を触るので `mod.rs` が行う。
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -359,7 +361,8 @@ fn dressup_list(studio: &Studio) -> Value {
 }
 
 /// `dressup.list` の中身。付けていないモジュールは `read` で読む (舞台と指揮役のロックを放してから。
-/// 読む間にシーンの切り替えを待たせない。T0819)。
+/// 読む間にシーンの切り替えを待たせない。T0819)。読んだ概要はパス・更新時刻・大きさで覚え、変わっていなければ読み直さない
+/// ([`ModuleSummaries`]。T0833)。
 pub fn dressup_list_with(studio: &Studio, mut read: impl FnMut(&Path) -> Option<Value>) -> Value {
     let (slots, worn, closet) = {
         let stage = lock(&studio.stage);
@@ -380,6 +383,8 @@ pub fn dressup_list_with(studio: &Studio, mut read: impl FnMut(&Path) -> Option<
             json!({ "slot": slot, "module": module })
         })
         .collect();
+    // 一覧に無くなったモジュールは忘れる。
+    lock(&studio.module_summaries).retain(&closet);
     let mut modules = Vec::new();
     for path in closet {
         // 付けているものは読み直さない。読めないものは出さない。
@@ -387,13 +392,96 @@ pub fn dressup_list_with(studio: &Studio, mut read: impl FnMut(&Path) -> Option<
             .iter()
             .find(|(p, _)| *p == path)
             .map(|(_, value)| value.clone());
-        if let Some(value) = found.or_else(|| read(&path))
+        let value = match found {
+            Some(value) => Some(value),
+            None => summary(studio, &path, &mut read),
+        };
+        if let Some(value) = value
             && slots.iter().any(|s| value["slot"] == s.as_str())
         {
             modules.push(value);
         }
     }
     json!({ "slots": slot_list, "modules": modules })
+}
+
+/// 付けていないモジュールの概要。覚えていて更新時刻と大きさが変わっていなければ読まない。
+/// 覚えの表のロックは読む間は握らない。ファイルが無ければ忘れて `None`。
+fn summary(
+    studio: &Studio,
+    path: &Path,
+    read: &mut impl FnMut(&Path) -> Option<Value>,
+) -> Option<Value> {
+    let Some(stamp) = Stamp::of(path) else {
+        lock(&studio.module_summaries).forget(path);
+        return None;
+    };
+    if let Some(value) = lock(&studio.module_summaries).get(path, stamp) {
+        return value;
+    }
+    // 読む前に調べた時刻と大きさで覚える (読む間に変わっても、次の呼び出しで読み直す)。
+    let value = read(path);
+    lock(&studio.module_summaries).insert(path, stamp, value.clone());
+    value
+}
+
+/// `dressup.list` が覚えるモジュールの概要の数の上限 (概要は小さい。数で抑える)。
+pub const MAX_MODULE_SUMMARIES: usize = 256;
+
+/// ファイルの更新時刻と大きさ (変わったかを見る)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Stamp {
+    modified: SystemTime,
+    len: u64,
+}
+
+impl Stamp {
+    /// ファイルの時刻と大きさ。ファイルが無い・時刻を取れないなら `None` (覚えない)。
+    fn of(path: &Path) -> Option<Self> {
+        let metadata = std::fs::metadata(path).ok()?;
+        Some(Self {
+            modified: metadata.modified().ok()?,
+            len: metadata.len(),
+        })
+    }
+}
+
+/// `dressup.list` が読んだ付けていないモジュールの概要 (パス → 時刻・大きさ・概要。読めなかったものは `None` を覚える)。T0833。
+/// 着せ替えに使えるモジュール ([`wardrobe`]) に無くなったものは忘れ、[`MAX_MODULE_SUMMARIES`] を超えては覚えない。
+#[derive(Debug, Default)]
+pub struct ModuleSummaries(HashMap<PathBuf, (Stamp, Option<Value>)>);
+
+impl ModuleSummaries {
+    fn get(&self, path: &Path, stamp: Stamp) -> Option<Option<Value>> {
+        self.0
+            .get(path)
+            .filter(|(s, _)| *s == stamp)
+            .map(|(_, value)| value.clone())
+    }
+
+    fn insert(&mut self, path: &Path, stamp: Stamp, value: Option<Value>) {
+        if self.0.len() < MAX_MODULE_SUMMARIES || self.0.contains_key(path) {
+            self.0.insert(path.to_owned(), (stamp, value));
+        }
+    }
+
+    fn forget(&mut self, path: &Path) {
+        self.0.remove(path);
+    }
+
+    fn retain(&mut self, closet: &[PathBuf]) {
+        self.0.retain(|path, _| closet.contains(path));
+    }
+
+    /// 覚えている数。
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// 何も覚えていないか。
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 /// モジュールのファイルを読み、`dressup.list` に出す値にする (読めなければ `None`)。

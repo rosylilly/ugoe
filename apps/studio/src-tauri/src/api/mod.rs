@@ -14,6 +14,7 @@
 pub mod commands;
 pub mod http;
 mod methods;
+pub use methods::{MAX_MODULE_SUMMARIES, ModuleSummaries};
 pub mod rpc;
 pub mod server;
 pub mod source;
