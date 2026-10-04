@@ -445,6 +445,7 @@ model: string, };
 /**
  * モジュールの物理のリグが参照する、スロットの公開する本体の衝突体 1 つ (本体に物理が無いと当たれない。
  * [`ModuleContext::drop_unavailable_colliders`] が外したもの。T0661)。ID はモジュールの中のもの。
+ * エラー型と違い、呼び出し側へデータとして返すので ID は型付きで持つ (TS ではどちらも `string`。T1600)。
  */
 export type ColliderReference = { rig: string, collider: string, };
 

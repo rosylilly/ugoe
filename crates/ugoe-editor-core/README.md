@@ -10,6 +10,7 @@
 - すべての編集は `Command` を通す。`Document::apply` は失敗時にモデルを変更しない
 - `Command` のバリアントは末尾に追加する
 - 画面に出すエラー・警告には `Coded` (`src/message_codes.rs`) で安定したコードと引数を付け、`Message` で渡す。**コードは名前を変えない**。足したら `docs/editor.md#エラーと警告のコード` の一覧と、見本 (`src/message_catalog.rs`。翻訳のカタログの検査に使う) にも書く ([ADR 0029](../../docs/adr/0029-shared-ui-and-i18n.md))
+- エラー型 (`EditError`・`ModuleError` など) の ID は `String` のまま、データとして返す型の ID は `Id<T>` で持つ (理由は [docs/spec/model.md#ID](../../docs/spec/model.md#id)。T1600)
 - `Command` やモデルの型を変えたら `just gen` で生成物 (TS の型・`schema/command.schema.json`) を作り直す ([型の生成](../../docs/editor.md#型の生成))
 
 ## 仕様
@@ -38,3 +39,4 @@
 - T0680 (Undo の履歴の上限と、状態ごとの検証の結果の記憶。`src/document/history.rs`・テスト `src/undo_tests.rs`)
 - T0162 (テクスチャの PNG のデコードを `ugoe_format::image` に寄せた。`src/texture.rs` の `decode_png`。上限を超える画像は `*.texture_too_large` で拒む)
 - T1605 (`Document::can_undo`・`can_redo`・`undo_count`・`redo_count`。エディタの Undo のボタンと上限の設定が使う)
+- T1600 (エラー型の ID は文字列のまま、`ColliderReference` の ID を型付きにした)

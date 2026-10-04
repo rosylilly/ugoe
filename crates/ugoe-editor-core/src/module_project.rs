@@ -19,7 +19,7 @@ use serde::Serialize;
 use ts_rs::TS;
 use ugoe_core::Vec2;
 use ugoe_model::module::{DrawOrderRange, ModulePhysics, ModulePose, ModuleRequirements};
-use ugoe_model::physics::{ColliderShape, PhysicsSettings};
+use ugoe_model::physics::{ColliderId, ColliderShape, PhysicsRigId, PhysicsSettings};
 use ugoe_model::{DeformerId, MeshId, Model, Module, PartId, SCHEMA_VERSION, Slot, SlotId};
 use ugoe_runtime::{ComposeError, compose, compose_physics};
 
@@ -70,10 +70,11 @@ pub enum ModuleError {
 
 /// モジュールの物理のリグが参照する、スロットの公開する本体の衝突体 1 つ (本体に物理が無いと当たれない。
 /// [`ModuleContext::drop_unavailable_colliders`] が外したもの。T0661)。ID はモジュールの中のもの。
+/// エラー型と違い、呼び出し側へデータとして返すので ID は型付きで持つ (TS ではどちらも `string`。T1600)。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 pub struct ColliderReference {
-    pub rig: String,
-    pub collider: String,
+    pub rig: PhysicsRigId,
+    pub collider: ColliderId,
 }
 
 /// 編集の側に同じ意味の種類があるもの (読み取り専用の本体・モジュールとして表せない・モジュールでない) はそれに、
@@ -343,12 +344,12 @@ impl ModuleContext {
         let mut dropped = Vec::new();
         for rig in &mut module.physics.rigs {
             rig.colliders.retain(|collider| {
-                let collider = collider.as_str();
-                let drop = !own.contains(collider) && unavailable.iter().any(|u| u == collider);
+                let id = collider.as_str();
+                let drop = !own.contains(id) && unavailable.iter().any(|u| u == id);
                 if drop {
                     dropped.push(ColliderReference {
-                        rig: rig.id.to_string(),
-                        collider: collider.to_owned(),
+                        rig: rig.id.clone(),
+                        collider: collider.clone(),
                     });
                 }
                 !drop

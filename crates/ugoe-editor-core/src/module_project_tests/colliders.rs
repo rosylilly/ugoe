@@ -47,7 +47,7 @@ fn exposed_colliders_need_the_base_physics() {
     assert_eq!(
         without.drop_unavailable_colliders(&mut dropped),
         [ColliderReference {
-            rig: rig.clone(),
+            rig: rig.as_str().into(),
             collider: "Shoulders".into(),
         }]
     );
@@ -150,7 +150,7 @@ fn module_project_opens_without_unavailable_colliders() {
     assert_eq!(
         dropped,
         [ColliderReference {
-            rig: rig.clone(),
+            rig: rig.as_str().into(),
             collider: "Shoulders".into(),
         }]
     );
@@ -166,4 +166,17 @@ fn module_project_opens_without_unavailable_colliders() {
         .unwrap();
     assert!(saved_rig.colliders.is_empty());
     Project::load(&dir).unwrap();
+}
+
+/// 外した参照は ID を型付きで持つが、IPC へ渡す JSON は文字列の ID のまま (T1600)。
+#[test]
+fn collider_reference_serializes_ids_as_strings() {
+    let reference = ColliderReference {
+        rig: "Sway".into(),
+        collider: "Shoulders".into(),
+    };
+    assert_eq!(
+        serde_json::to_value(&reference).unwrap(),
+        serde_json::json!({ "rig": "Sway", "collider": "Shoulders" })
+    );
 }

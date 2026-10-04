@@ -208,7 +208,7 @@ mod tests {
             .rigs
             .iter()
             .filter(|r| r.colliders.contains(&"Shoulders".into()))
-            .map(|r| r.id.to_string())
+            .map(|r| r.id.clone())
             .collect();
         assert_eq!(rigs.len(), 2);
         let found_rigs: Vec<_> = found
@@ -221,7 +221,7 @@ mod tests {
             found
                 .collider_references
                 .iter()
-                .all(|c| c.collider == "Shoulders")
+                .all(|c| c.collider.as_str() == "Shoulders")
         );
         let (reopened, _) =
             Project::load_module_without_unavailable_colliders(&written[1], None, None).unwrap();
