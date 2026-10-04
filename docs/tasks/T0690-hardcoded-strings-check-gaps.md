@@ -1,11 +1,11 @@
 ---
 id: T0690
 title: 直書きの文言の検査の見落とし (テンプレート文字列・例外の文・ファイルのフィルタの名前)
-status: todo
+status: in-progress
 milestone: M9
 crates: [scripts, apps/editor, apps/viewer, apps/studio, packages, docs]
 depends_on: [T0670]
-assignee:
+assignee: claude-worker-T0690
 ---
 
 # T0690: 直書きの文言の検査の見落とし (テンプレート文字列・例外の文・ファイルのフィルタの名前)
