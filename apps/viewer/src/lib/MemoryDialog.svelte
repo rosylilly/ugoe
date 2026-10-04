@@ -24,8 +24,11 @@ let { player }: { player: Player } = $props();
 
 let shown = $state(false);
 let rows = $state<RememberedModel[]>([]);
-/** 並び (覚えた日時の新しい順か名前の順。T0717)。開いているモデルはどちらでも先頭。選択は覚える (T0718)。 */
-let order = $state<RememberedOrder>(loadRememberedOrder());
+/**
+ * 並び (覚えた日時の新しい順か名前の順。T0717)。開いているモデルはどちらでも先頭。選択は覚え (T0718)、`open` で
+ * Player の接頭辞のキーから読む。
+ */
+let order = $state<RememberedOrder>("recent");
 /** 「すべて忘れる…」を押して、確かめている間。 */
 let confirming = $state(false);
 
@@ -36,7 +39,7 @@ let orderOptions = $derived([
 
 export function open(): void {
   // ほかのウィンドウ (タブ) で選び直した並びも拾う。
-  order = loadRememberedOrder();
+  order = loadRememberedOrder(player.storage);
   refresh();
   confirming = false;
   shown = true;
@@ -48,7 +51,7 @@ function refresh() {
 
 function changeOrder(value: RememberedOrder) {
   order = value;
-  saveRememberedOrder(order);
+  saveRememberedOrder(order, player.storage);
   refresh();
 }
 

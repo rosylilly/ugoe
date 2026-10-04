@@ -5,6 +5,7 @@
 import { parseHexColor } from "./color";
 import { t } from "./i18n";
 import { ModelMemory } from "./modelMemory";
+import { type PlayerStorage, STORAGE_NAMES } from "./storage";
 
 /** 色と強さ。渡す色は `color × intensity` (1 を超えてよい)。 */
 export interface LightColor {
@@ -203,7 +204,7 @@ export function toLightingJson(
 
 // --- 保存 ---
 
-const STORAGE_KEY = "ugoe-viewer.lighting";
+/** 最後に使った設定の保存の形の版。 */
 const STORAGE_VERSION = 1;
 
 function clamp(value: unknown, [min, max]: readonly [number, number], fallback: number): number {
@@ -260,35 +261,19 @@ export function sanitizeLighting(value: unknown): LightingSettings {
 }
 
 /** 保存した設定を読む。無い・読めない (壊れた JSON、使えない localStorage) なら既定の設定。 */
-export function loadLighting(storage?: Storage): LightingSettings {
-  try {
-    // localStorage を読むだけで例外になる環境 (保存を禁止したブラウザ) もあるので、try の中で引く。
-    const text = (storage ?? globalThis.localStorage)?.getItem(STORAGE_KEY);
-    if (text == null) return defaultLighting();
-    const saved = record(JSON.parse(text));
-    if (saved.version !== STORAGE_VERSION) return defaultLighting();
-    return sanitizeLighting(saved.settings);
-  } catch {
-    return defaultLighting();
-  }
+export function loadLighting(store: PlayerStorage): LightingSettings {
+  const saved = record(store.getJson(STORAGE_NAMES.lighting));
+  if (saved.version !== STORAGE_VERSION) return defaultLighting();
+  return sanitizeLighting(saved.settings);
 }
 
 /** 設定を保存する。保存できなくても (容量・無効な localStorage) 無視する。 */
-export function saveLighting(settings: LightingSettings, storage?: Storage): void {
-  try {
-    (storage ?? globalThis.localStorage)?.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ version: STORAGE_VERSION, settings }),
-    );
-  } catch {
-    // 覚えられないだけで、表示には影響しない。
-  }
+export function saveLighting(settings: LightingSettings, store: PlayerStorage): void {
+  store.setJson(STORAGE_NAMES.lighting, { version: STORAGE_VERSION, settings });
 }
 
 // --- モデルごとの設定 (T0709) ---
 
-/** モデルごとの光源の設定の localStorage のキー。入れ物は modelMemory.ts の `ModelMemory`。 */
-export const MODEL_LIGHTING_STORAGE_KEY = "ugoe-viewer.lighting.models";
 /** 光源の設定を覚えるモデルの数の上限 (1 体で 1 KB 足らず)。超えたら最も長く開いていないものから消す。 */
 export const MAX_LIGHTING_MODELS = 50;
 
@@ -299,11 +284,10 @@ export function parseModelLighting(value: unknown): LightingSettings | null {
     : null;
 }
 
-/** モデルごとの光源の設定の入れ物。 */
-export function lightingMemory(storage?: Storage): ModelMemory<LightingSettings> {
-  return new ModelMemory(MODEL_LIGHTING_STORAGE_KEY, parseModelLighting, {
+/** モデルごとの光源の設定の入れ物 (modelMemory.ts の `ModelMemory`)。 */
+export function lightingMemory(store: PlayerStorage): ModelMemory<LightingSettings> {
+  return new ModelMemory(store, STORAGE_NAMES.modelLighting, parseModelLighting, {
     limit: MAX_LIGHTING_MODELS,
-    storage,
   });
 }
 
@@ -621,24 +605,4 @@ export function stepMarker(
 export function wheelPointZ(p: PointSettings, delta: number): number {
   const step = MARKER_STEPS.z[0];
   return round3(clamp(p.z + (delta < 0 ? step : delta > 0 ? -step : 0), LIMITS.z, p.z));
-}
-
-const MARKERS_STORAGE_KEY = "ugoe-viewer.lighting.markers";
-
-/** ビューポートに光源の印を出すか (既定は出す)。読めなければ既定。 */
-export function loadLightMarkers(storage?: Storage): boolean {
-  try {
-    return (storage ?? globalThis.localStorage)?.getItem(MARKERS_STORAGE_KEY) !== "off";
-  } catch {
-    return true;
-  }
-}
-
-/** 光源の印を出すかを覚える。覚えられなくても無視する。 */
-export function saveLightMarkers(show: boolean, storage?: Storage): void {
-  try {
-    (storage ?? globalThis.localStorage)?.setItem(MARKERS_STORAGE_KEY, show ? "on" : "off");
-  } catch {
-    // 覚えられないだけで、表示には影響しない。
-  }
 }

@@ -10,9 +10,7 @@ import {
   lightingLabel,
   lightingMemory,
   loadLighting,
-  loadLightMarkers,
   MAX_LIGHTING_MODELS,
-  MODEL_LIGHTING_STORAGE_KEY,
   PRESETS,
   padFromAngles,
   pointFromScreen,
@@ -25,13 +23,16 @@ import {
   sameLighting,
   sanitizeLighting,
   saveLighting,
-  saveLightMarkers,
   stepMarker,
   toLightingJson,
   towardLight,
   wheelPointZ,
 } from "./lighting";
 import { type ModelIdentity, modelIdentity } from "./modelMemory";
+import { PlayerStorage } from "./storage";
+
+/** 前からのビューアの接頭辞で `storage` に覚える入れ物。 */
+const store = (storage: Storage) => new PlayerStorage(undefined, storage);
 
 // 文言は日本語の訳で確かめる (英語の原文を確かめる it は、その中で言語を切り替える)。
 beforeEach(() => setLocale("ja"));
@@ -172,19 +173,19 @@ describe("loadLighting / saveLighting", () => {
     const storage = new MemoryStorage();
     const s: LightingSettings = structuredClone(PRESETS[2]?.settings) as LightingSettings;
     s.point.x = 0.9;
-    saveLighting(s, storage);
-    const loaded = loadLighting(storage);
+    saveLighting(s, store(storage));
+    const loaded = loadLighting(store(storage));
     expect(loaded).toEqual(sanitizeLighting(s));
     expect(sameLighting(loaded, s)).toBe(true);
   });
 
   it("falls back to the default for broken or foreign data", () => {
     const storage = new MemoryStorage();
-    expect(loadLighting(storage)).toEqual(defaultLighting());
+    expect(loadLighting(store(storage))).toEqual(defaultLighting());
     storage.setItem("ugoe-viewer.lighting", "{not json");
-    expect(loadLighting(storage)).toEqual(defaultLighting());
+    expect(loadLighting(store(storage))).toEqual(defaultLighting());
     storage.setItem("ugoe-viewer.lighting", JSON.stringify({ version: 99, settings: {} }));
-    expect(loadLighting(storage)).toEqual(defaultLighting());
+    expect(loadLighting(store(storage))).toEqual(defaultLighting());
   });
 
   it("survives a storage that throws", () => {
@@ -195,8 +196,8 @@ describe("loadLighting / saveLighting", () => {
     storage.setItem = () => {
       throw new Error("quota");
     };
-    expect(loadLighting(storage)).toEqual(defaultLighting());
-    expect(() => saveLighting(defaultLighting(), storage)).not.toThrow();
+    expect(loadLighting(store(storage))).toEqual(defaultLighting());
+    expect(() => saveLighting(defaultLighting(), store(storage))).not.toThrow();
   });
 });
 
@@ -211,7 +212,7 @@ describe("lightingMemory", () => {
 
   it("remembers settings per model and forgets them", () => {
     const storage = new MemoryStorage();
-    const memory = lightingMemory(storage);
+    const memory = lightingMemory(store(storage));
     memory.set(model(1), sunset());
     expect(memory.get(model(1))).toEqual(sanitizeLighting(sunset()));
     expect(memory.get(model(2))).toBeNull();
@@ -225,7 +226,7 @@ describe("lightingMemory", () => {
 
   it("keeps only the most recently used models", () => {
     const storage = new MemoryStorage();
-    const memory = lightingMemory(storage);
+    const memory = lightingMemory(store(storage));
     for (let n = 0; n <= MAX_LIGHTING_MODELS; n++) memory.set(model(n), sunset());
     expect(memory.models()).toHaveLength(MAX_LIGHTING_MODELS);
     expect(memory.get(model(0))).toBeNull();
@@ -236,7 +237,7 @@ describe("lightingMemory", () => {
     const storage = new MemoryStorage();
     const m = model(1);
     storage.setItem(
-      MODEL_LIGHTING_STORAGE_KEY,
+      "ugoe-viewer.lighting.models",
       JSON.stringify({
         version: 1,
         entries: [
@@ -246,22 +247,22 @@ describe("lightingMemory", () => {
         ],
       }),
     );
-    const memory = lightingMemory(storage);
+    const memory = lightingMemory(store(storage));
     expect(memory.get(model(2))).toBeNull();
     expect(memory.get(model(3))).toBeNull();
     const repaired = memory.get(m);
     expect(repaired?.ambient).toEqual(defaultLighting().ambient);
     expect(repaired?.point.x).toBe(1.5);
-    storage.setItem(MODEL_LIGHTING_STORAGE_KEY, "{not json");
+    storage.setItem("ugoe-viewer.lighting.models", "{not json");
     expect(memory.get(m)).toBeNull();
     expect(() => memory.set(m, defaultLighting())).not.toThrow();
   });
 
   it("does not touch the last used settings", () => {
     const storage = new MemoryStorage();
-    saveLighting(sunset(), storage);
-    lightingMemory(storage).set(model(1), defaultLighting());
-    expect(sameLighting(loadLighting(storage), sunset())).toBe(true);
+    saveLighting(sunset(), store(storage));
+    lightingMemory(store(storage)).set(model(1), defaultLighting());
+    expect(sameLighting(loadLighting(store(storage)), sunset())).toBe(true);
   });
 });
 
@@ -477,20 +478,5 @@ describe("ビューポートの光源の印", () => {
     expect(wheelPointZ(p, 100)).toBeCloseTo(0.38, 6);
     expect(wheelPointZ(p, 0)).toBe(0.4);
     expect(wheelPointZ({ ...p, z: 2 }, -1)).toBe(2);
-  });
-
-  it("印を出すかを覚える (既定は出す。読めなければ出す)", () => {
-    const storage = new MemoryStorage();
-    expect(loadLightMarkers(storage)).toBe(true);
-    saveLightMarkers(false, storage);
-    expect(loadLightMarkers(storage)).toBe(false);
-    saveLightMarkers(true, storage);
-    expect(loadLightMarkers(storage)).toBe(true);
-    const broken = {
-      getItem() {
-        throw new Error("denied");
-      },
-    } as unknown as Storage;
-    expect(loadLightMarkers(broken)).toBe(true);
   });
 });

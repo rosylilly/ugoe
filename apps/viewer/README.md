@@ -316,6 +316,8 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
 | 光源の設定 (`lighting.ts` の `lightingMemory`) | `ugoe-viewer.lighting.models` | 50 体 | 「覚えたもの」の一覧 (T0714。T0709 ではパネルの「既定に戻す」だった) |
 | 待機モーションの選択 (`animation.ts` の `idleMemory`) | `ugoe-viewer.idle-motion.models` | 50 体 | モーションのパネルの「覚えた選択を忘れる」、「覚えたもの」の一覧 (T0722) |
 
+キーの接頭辞 `ugoe-viewer` は @ugoe/player の既定 (`PlayerHost.storagePrefix` を省いたとき。`packages/player/src/storage.ts`、T0930)。
+ビューアは接頭辞を渡さない (前から覚えたものを読み続けるため)。
 
 - **モデルの鍵 (`ModelIdentity`):** `{ name, fingerprint, location? }`。
   - `location` (`FileLocation`) は後から読み直せる場所: `path:<絶対パス>` (Tauri のダイアログ・ドロップ・起動時の引数)、
@@ -326,7 +328,7 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
 - **同じモデル (`sameModel`):** 場所が同じか、指紋が同じ。場所が同じなら中身が変わっても (書き出し直し) 同じモデル。ブラウザでの
   ドロップで場所が分からなくても、中身が同じなら同じモデル。`ModelMemory.get` は場所が同じ項目を優先し、無ければ指紋が同じ項目を返す。
   `set` は同じモデルの古い項目を消して新しい鍵で覚える (ブラウザでドロップして覚えたモデルを、場所の分かる開き方で開くと、場所が付く)。
-- **入れ物 (`ModelMemory<T>`):** `new ModelMemory(key, parse, { limit })`。localStorage の 1 つのキーに
+- **入れ物 (`ModelMemory<T>`):** `new ModelMemory(store, name, parse, { limit })`。`store` (`PlayerStorage`) の接頭辞と `name` の localStorage の 1 つのキーに
   `{"version": 1, "entries": [{"model": ModelIdentity, "value": T}]}` を最近使った順に置き、`limit` を超えたら古いものから消す。
   `get`・`set`・`delete`・`models`・`entries`・`clear` (後の 2 つは覚えたものの一覧、T0714)。値は `parse` (unknown → `T | null`) が確かめ、読めない項目・例外を出した項目・
   壊れた JSON・違う版・使えない localStorage では、何も覚えていないものとして動き、例外を出さない。
@@ -340,7 +342,7 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
 ツールバーの「覚えたもの」(とライティングのパネルの「覚えたもの…」) で、モデルごとに覚えたもの (光源の設定・着せ替えの組・待機モーションの選択 (T0722)) を
 一覧にする (`MemoryDialog.svelte`)。3 つの入れ物の項目を同じモデル (`sameModel`) ごとに 1 行にまとめ (`rememberedModels.ts` の
 `mergeRemembered`)、開いているモデルを先頭に、あとは「並び」で選んだ順に並べる。既定は覚えた日時の新しい順で、名前の順も選べる (T0717)。選んだ並びは localStorage の
-`ugoe-viewer.remembered-order` に覚え (`loadRememberedOrder`・`saveRememberedOrder`)、次に一覧を開いたときも使う
+`ugoe-viewer.remembered-order` に覚え (`loadRememberedOrder`・`saveRememberedOrder` に `player.storage` を渡す)、次に一覧を開いたときも使う
 (T0718。知らない値・読めないときは新しい順)。
 
 - **覚えた日時 (T0717):** `ModelMemory` の項目に `at` (最後に覚えた日時、ミリ秒) を持たせた。`set` のたびに今の時刻にする

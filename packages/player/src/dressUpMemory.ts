@@ -5,11 +5,8 @@
 import { t } from "./i18n";
 import type { FileLocation, ModelFile } from "./modelFile";
 import { type ModelIdentity, ModelMemory, parseIdentity } from "./modelMemory";
+import { type PlayerStorage, STORAGE_NAMES } from "./storage";
 
-/** localStorage のキー。 */
-export const DRESS_UP_STORAGE_KEY = "ugoe-viewer.dress-up";
-/** 自動で戻すかの設定の localStorage のキー。 */
-export const AUTO_RESTORE_STORAGE_KEY = "ugoe-viewer.dress-up.auto-restore";
 /** 覚えるモデルの数の上限。 */
 export const MAX_MODELS = 20;
 /** 1 つのモデルで覚えるモジュールの数の上限 (壊れた値で大きな一覧を読まないため)。 */
@@ -71,8 +68,8 @@ export function needsRestore(
 }
 
 /** モデルごとの組の入れ物。 */
-export function dressUpMemory(storage?: Storage): ModelMemory<DressUpSet> {
-  return new ModelMemory(DRESS_UP_STORAGE_KEY, parseDressUpSet, { limit: MAX_MODELS, storage });
+export function dressUpMemory(store: PlayerStorage): ModelMemory<DressUpSet> {
+  return new ModelMemory(store, STORAGE_NAMES.dressUp, parseDressUpSet, { limit: MAX_MODELS });
 }
 
 /** 戻すときに、モジュールのファイルをどこから得るか。 */
@@ -113,20 +110,15 @@ export function describeRestoreFailure(module: RememberedModule, reason?: string
     : t("dressUp.restore.unreadable", { ...args, reason });
 }
 
-/** 開いたときに自動で戻すか (既定は尋ねる)。読めなければ `false`。 */
-export function loadAutoRestore(storage?: Storage): boolean {
-  try {
-    return (storage ?? globalThis.localStorage)?.getItem(AUTO_RESTORE_STORAGE_KEY) === "true";
-  } catch {
-    return false;
-  }
+/**
+ * 開いたときに自動で戻すか (既定は尋ねる)。読めなければ `false`。
+ * 値は `"true"`・`"false"` (ほかのオン・オフの `"on"`・`"off"` より前からの形のまま)。
+ */
+export function loadAutoRestore(store: PlayerStorage): boolean {
+  return store.get(STORAGE_NAMES.autoRestore) === "true";
 }
 
 /** 自動で戻すかを覚える。覚えられなくても無視する。 */
-export function saveAutoRestore(enabled: boolean, storage?: Storage): void {
-  try {
-    (storage ?? globalThis.localStorage)?.setItem(AUTO_RESTORE_STORAGE_KEY, String(enabled));
-  } catch {
-    // 覚えられないだけで、今回の設定は効く。
-  }
+export function saveAutoRestore(enabled: boolean, store: PlayerStorage): void {
+  store.set(STORAGE_NAMES.autoRestore, String(enabled));
 }

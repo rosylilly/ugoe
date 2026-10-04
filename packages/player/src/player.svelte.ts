@@ -6,20 +6,17 @@
 // wasm の読み込みとファイルの読み直しはアプリが `PlayerHost` で渡す。
 import { setPuppetTracking, type TrackingFrame } from "@ugoe/face-tracking";
 import {
-  AUTO_IDLE_STORAGE_KEY,
   describeRejectedMotion,
   type ExpressionInfo,
+  type IdleChoice,
   idleMemory,
   initialIdleMotion,
-  loadToggle,
   loadTrackingKept,
-  MOTION_OVER_TRACKING_STORAGE_KEY,
   type MotionInfo,
   type MotionPriority,
   motionOverTrackingActive,
   parseExpressions,
   parseMotions,
-  saveToggle,
   saveTrackingKept,
 } from "./animation";
 import { parseHexColor } from "./color";
@@ -51,16 +48,14 @@ import {
   type LightingSettings,
   lightingMemory,
   loadLighting,
-  loadLightMarkers,
   type ScreenTransform,
   saveLighting,
-  saveLightMarkers,
   toLightingJson,
 } from "./lighting";
 import { describeLoadError } from "./loadError";
 import { parseLoadWarnings } from "./loadWarnings";
 import { detectModelKind, type FileLocation, type ModelFile, type ModuleToOpen } from "./modelFile";
-import { type ModelIdentity, modelIdentity, sameModel } from "./modelMemory";
+import { type ModelIdentity, type ModelMemory, modelIdentity, sameModel } from "./modelMemory";
 import {
   groupParameters,
   type ParameterDef,
@@ -69,6 +64,7 @@ import {
 } from "./parameters";
 import { mergeRemembered, type RememberedModel, type RememberedOrder } from "./rememberedModels";
 import type { Screenshot } from "./screenshot";
+import { PlayerStorage, STORAGE_NAMES } from "./storage";
 import type { UgoeWasmModule, WebPuppet } from "./wasm";
 
 /** プレーヤーを使うアプリが渡すもの (wasm の読み込みとファイルの読み直し)。 */
@@ -79,6 +75,13 @@ export interface PlayerHost {
   readFile(location: FileLocation): Promise<ModelFile>;
   /** `loadWasm` が `null` を返したときに `error` に出す文。 */
   wasmMissingMessage?: string;
+  /**
+   * 覚えるもの (光源・着せ替えの組・待機モーションなど) の localStorage のキーの接頭辞 (storage.ts。T0930)。
+   * 省くとビューアの `ugoe-viewer` (`DEFAULT_STORAGE_PREFIX`)。
+   */
+  storagePrefix?: string;
+  /** 覚える先。省くと `localStorage` (テストで差し替える)。 */
+  storage?: Storage;
 }
 
 export type PlayerStatus =
@@ -133,11 +136,11 @@ export class Player {
    * 光源の設定 (lighting.ts)。モデルごとに覚え (T0709)、覚えていないモデルを開いたときは、最後に使った設定を保つ。
    * 最後に使った設定も localStorage に覚える (起動し直したときに、覚えていないモデルで使う)。
    */
-  lighting = $state<LightingSettings>(loadLighting());
+  lighting = $state<LightingSettings>(defaultLighting());
   /** 開いているモデルの光源の設定を覚えているか (覚えたものの一覧で忘れる)。 */
   lightingRemembered = $state(false);
   /** ビューポートに光源の印を出すか (T0708)。localStorage に覚える。 */
-  lightMarkers = $state(loadLightMarkers());
+  lightMarkers = $state(true);
   /** 開いているモデルのキャンバスの大きさ `[幅, 高さ]`。モデルが無ければ `null`。 */
   canvasSize = $state<[number, number] | null>(null);
   /** ビューポート (canvas 要素) の大きさ `[幅, 高さ]` (CSS ピクセル。画面の外の印を端に寄せるため、T0714)。 */
@@ -161,7 +164,7 @@ export class Player {
    */
   restoreOffer = $state<DressUpSet | null>(null);
   /** モデルを開いたとき、前に付けていた組を尋ねずに戻すか。localStorage に覚える。 */
-  autoRestore = $state(loadAutoRestore());
+  autoRestore = $state(false);
   /** 開いているモデルに付けていた組を覚えているか (「覚えた組を忘れる」で忘れる)。 */
   dressUpRemembered = $state(false);
   /** 開いているモデル (バンドル) のモーション (T0720)。 */
@@ -184,7 +187,7 @@ export class Player {
    * 待機モーションを自動で流す (T0721)。モデルを開いたときと、ほかのモーションが終わったとき (止めたときも) に
    * `idleMotion` を待機の優先度で始める。localStorage に覚える。
    */
-  autoIdle = $state(loadToggle(AUTO_IDLE_STORAGE_KEY, true));
+  autoIdle = $state(true);
   /**
    * 自動で流す待機モーション (開いているモデルのモーションの名前)。選ぶとモデルごとに覚え (T0722)、モデルを開くと
    * 覚えた選択、無ければ既定 (`defaultIdleMotion`) になる (animation.ts の `initialIdleMotion`)。
@@ -196,12 +199,12 @@ export class Player {
    * トラッキング中も、待機以外のモーションが動かすパラメータではモーションを優先する (T0721)。localStorage に覚える。
    * 切ると仕様の適用順のまま (トラッキングがモーションの値を置き換える)。
    */
-  motionOverTracking = $state(loadToggle(MOTION_OVER_TRACKING_STORAGE_KEY, true));
+  motionOverTracking = $state(true);
   /**
    * モーションを優先しても、トラッキングのままにするパラメータの ID (T0722。目は除く、など)。localStorage に覚える
    * (モデルによらない)。WebPuppet の `set_tracking_kept` に渡す。
    */
-  trackingKept = $state<string[]>(loadTrackingKept());
+  trackingKept = $state<string[]>([]);
 
   /** パラメータを毎フレーム外から動かすもの (drivers.ts)。 */
   readonly drivers = new DriverSet();
@@ -241,11 +244,11 @@ export class Player {
   /** 開いているモデルの鍵 (modelMemory.ts)。 */
   #model: ModelIdentity | null = null;
   /** モデルごとに覚えた着せ替えの組。 */
-  #memory = dressUpMemory();
+  readonly #memory: ModelMemory<DressUpSet>;
   /** モデルごとに覚えた光源の設定 (T0709)。 */
-  #lightingMemory = lightingMemory();
+  readonly #lightingMemory: ModelMemory<LightingSettings>;
   /** モデルごとに覚えた待機モーションの選択 (T0722)。 */
-  #idleMemory = idleMemory();
+  readonly #idleMemory: ModelMemory<IdleChoice>;
   /** このセッションで読んだモジュールの中身 (指紋ごと。古いものから捨てる)。 */
   #sessionFiles = new Map<string, ModelFile>();
   /** 0 より大きい間は、着せ替えの変化を利用者の操作とみなさない (組を覚えず、尋ねているのを取り消さない)。 */
@@ -260,9 +263,25 @@ export class Player {
   #keptDirty = true;
 
   readonly #host: PlayerHost;
+  /**
+   * 覚えるものの読み書き (`PlayerHost.storagePrefix` の接頭辞。storage.ts)。アプリが Player の外で覚えるもの
+   * (覚えたものの一覧の並びなど) も、これを渡して同じ接頭辞で覚える。
+   */
+  readonly storage: PlayerStorage;
 
   constructor(host: PlayerHost) {
     this.#host = host;
+    const store = new PlayerStorage(host.storagePrefix, host.storage);
+    this.storage = store;
+    this.#memory = dressUpMemory(store);
+    this.#lightingMemory = lightingMemory(store);
+    this.#idleMemory = idleMemory(store);
+    this.lighting = loadLighting(store);
+    this.lightMarkers = store.getToggle(STORAGE_NAMES.lightMarkers, true);
+    this.autoRestore = loadAutoRestore(store);
+    this.autoIdle = store.getToggle(STORAGE_NAMES.autoIdle, true);
+    this.motionOverTracking = store.getToggle(STORAGE_NAMES.motionOverTracking, true);
+    this.trackingKept = loadTrackingKept(store);
   }
 
   /** `container` の中に canvas を作り、描画を始める。 */
@@ -477,7 +496,7 @@ export class Player {
   /** モデルを開いたときに、前に付けていた組を尋ねずに戻すか。 */
   setAutoRestore(enabled: boolean): void {
     this.autoRestore = enabled;
-    saveAutoRestore(enabled);
+    saveAutoRestore(enabled, this.storage);
   }
 
   // --- 着せ替え (T0706)。付け外しの規則は docs/spec/modules.md#puppet-での着せ替え ---
@@ -645,7 +664,7 @@ export class Player {
   /** 待機モーションの自動再生を切り替える。入れたら (何も再生していなければ) 待機を始め、切ったら流している待機を止める。 */
   setAutoIdle(enabled: boolean): void {
     this.autoIdle = enabled;
-    saveToggle(AUTO_IDLE_STORAGE_KEY, enabled);
+    this.storage.setToggle(STORAGE_NAMES.autoIdle, enabled);
     if (enabled) {
       if (this.currentMotion === null) this.#startIdle();
     } else if (this.currentMotion !== null && this.currentMotion === this.idleMotion) {
@@ -675,13 +694,13 @@ export class Player {
 
   setMotionOverTracking(enabled: boolean): void {
     this.motionOverTracking = enabled;
-    saveToggle(MOTION_OVER_TRACKING_STORAGE_KEY, enabled);
+    this.storage.setToggle(STORAGE_NAMES.motionOverTracking, enabled);
   }
 
   /** モーションを優先しても、トラッキングのままにするパラメータを `ids` にする (覚える。次のフレームから効く)。 */
   setTrackingKept(ids: readonly string[]): void {
     this.trackingKept = [...new Set(ids)];
-    saveTrackingKept(this.trackingKept);
+    saveTrackingKept(this.trackingKept, this.storage);
     this.#keptDirty = true;
   }
 
@@ -875,7 +894,7 @@ export class Player {
       this.#applyLighting();
       return;
     }
-    saveLighting(settings);
+    saveLighting(settings, this.storage);
     const model = this.#model;
     if (model !== null) {
       this.#lightingMemory.set(model, settings);
@@ -969,7 +988,7 @@ export class Player {
   /** ビューポートに光源の印を出すかを変える (覚える)。 */
   setLightMarkers(show: boolean): void {
     this.lightMarkers = show;
-    saveLightMarkers(show);
+    this.storage.setToggle(STORAGE_NAMES.lightMarkers, show);
   }
 
   // --- 内部 ---
@@ -1050,7 +1069,7 @@ export class Player {
     if (saved === null) return;
     this.#lightingMemory.set(model, saved);
     this.lighting = saved;
-    saveLighting(saved);
+    saveLighting(saved, this.storage);
   }
 
   /** 付け外しを 1 つ行い、一覧を読み直す。失敗したら (wasm は何も変えない) 理由を `dressUpError` に入れる。 */
@@ -1090,9 +1109,14 @@ export class Player {
 
   /**
    * 開いているモデルの待機モーションを、覚えた選択か既定にする (T0722)。覚えた選択は最近使ったものにし、鍵も新しくする
-   * (光源の `#recallLighting` と同じ)。
+   * (光源の `#recallLighting` と同じ)。受け手は待機モーションを使わないので、覚えた選択を読まず書き直さない。
    */
   #recallIdleMotion(): void {
+    if (this.#follower !== null) {
+      this.idleRemembered = false;
+      this.idleMotion = null;
+      return;
+    }
     const model = this.#model;
     const saved = model === null ? null : this.#idleMemory.get(model);
     this.idleRemembered = saved !== null;

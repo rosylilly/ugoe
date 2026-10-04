@@ -8,6 +8,7 @@ import {
   parseIdentity,
   sameModel,
 } from "./modelMemory";
+import { PlayerStorage, STORAGE_NAMES } from "./storage";
 
 class MemoryStorage implements Storage {
   #items = new Map<string, string>();
@@ -75,6 +76,9 @@ describe("model identity", () => {
 });
 
 describe("ModelMemory", () => {
+  const NAME = STORAGE_NAMES.dressUp;
+  const KEY = "p.dress-up";
+  const store = (storage: Storage) => new PlayerStorage("p", storage);
   const id = (n: number, location?: string): ModelIdentity =>
     location === undefined
       ? { name: `m${n}`, fingerprint: `fp${n}` }
@@ -82,7 +86,7 @@ describe("ModelMemory", () => {
 
   it("remembers values per model, most recent first, up to the limit", () => {
     const storage = new MemoryStorage();
-    const memory = new ModelMemory("k", numberValue, { limit: 3, storage });
+    const memory = new ModelMemory(store(storage), NAME, numberValue, { limit: 3 });
     for (let i = 1; i <= 4; i++) memory.set(id(i), i * 10);
     expect(memory.get(id(1))).toBeNull();
     expect(memory.get(id(2))).toBe(20);
@@ -93,13 +97,16 @@ describe("ModelMemory", () => {
     memory.delete(id(2));
     expect(memory.get(id(2))).toBeNull();
     // 別の入れ物からも読める (localStorage に書いている)。
-    expect(new ModelMemory("k", numberValue, { limit: 3, storage }).get(id(5))).toBe(50);
+    expect(new ModelMemory(store(storage), NAME, numberValue, { limit: 3 }).get(id(5))).toBe(50);
   });
 
   it("lists entries and forgets everything (T0714)", () => {
     const storage = new MemoryStorage();
     let now = 1000;
-    const memory = new ModelMemory("k", numberValue, { limit: 3, storage, now: () => now++ });
+    const memory = new ModelMemory(store(storage), NAME, numberValue, {
+      limit: 3,
+      now: () => now++,
+    });
     memory.set(id(1), 10);
     memory.set(id(2, "/b.ugoe"), 20);
     storage.setItem("other", "keep");
@@ -109,7 +116,7 @@ describe("ModelMemory", () => {
     ]);
     memory.clear();
     expect(memory.entries()).toEqual([]);
-    expect(storage.getItem("k")).toBeNull();
+    expect(storage.getItem(KEY)).toBeNull();
     // ほかのキーには触らない。
     expect(storage.getItem("other")).toBe("keep");
   });
@@ -118,7 +125,7 @@ describe("ModelMemory", () => {
     const storage = new MemoryStorage();
     // T0717 より前の保存値 (日時なし) と、壊れた日時。
     storage.setItem(
-      "k",
+      KEY,
       JSON.stringify({
         version: 1,
         entries: [
@@ -127,7 +134,10 @@ describe("ModelMemory", () => {
         ],
       }),
     );
-    const memory = new ModelMemory("k", numberValue, { limit: 10, storage, now: () => 5000 });
+    const memory = new ModelMemory(store(storage), NAME, numberValue, {
+      limit: 10,
+      now: () => 5000,
+    });
     expect(memory.entries()).toEqual([
       { model: id(1), value: 10 },
       { model: id(2), value: 20 },
@@ -142,7 +152,7 @@ describe("ModelMemory", () => {
   });
 
   it("prefers the entry with the same location, then the same fingerprint", () => {
-    const memory = new ModelMemory("k", numberValue, { limit: 10, storage: new MemoryStorage() });
+    const memory = new ModelMemory(store(new MemoryStorage()), NAME, numberValue, { limit: 10 });
     memory.set(id(1), 1);
     memory.set(id(2, "/x.ugoe"), 2);
     // 場所が /x.ugoe で中身が 1 と同じ: 場所の方を優先する。
@@ -156,13 +166,13 @@ describe("ModelMemory", () => {
 
   it("survives broken or foreign values", () => {
     const storage = new MemoryStorage();
-    const memory = new ModelMemory("k", numberValue, { limit: 10, storage });
+    const memory = new ModelMemory(store(storage), NAME, numberValue, { limit: 10 });
     for (const text of ["{not json", "null", "[]", '{"version":99,"entries":[]}']) {
-      storage.setItem("k", text);
+      storage.setItem(KEY, text);
       expect(memory.get(id(1))).toBeNull();
     }
     storage.setItem(
-      "k",
+      KEY,
       JSON.stringify({
         version: 1,
         entries: [
@@ -182,15 +192,16 @@ describe("ModelMemory", () => {
   it("skips entries whose parser throws", () => {
     const storage = new MemoryStorage();
     const throwing = new ModelMemory(
-      "k",
+      store(storage),
+      NAME,
       (v) => {
         if (v === 1) throw new Error("bad");
         return numberValue(v);
       },
-      { limit: 10, storage },
+      { limit: 10 },
     );
     storage.setItem(
-      "k",
+      KEY,
       JSON.stringify({
         version: 1,
         entries: [
@@ -211,7 +222,7 @@ describe("ModelMemory", () => {
     storage.setItem = () => {
       throw new Error("quota");
     };
-    const memory = new ModelMemory("k", numberValue, { limit: 10, storage });
+    const memory = new ModelMemory(store(storage), NAME, numberValue, { limit: 10 });
     expect(() => memory.set(id(1), 1)).not.toThrow();
     expect(memory.get(id(1))).toBeNull();
     expect(() => memory.delete(id(1))).not.toThrow();

@@ -6,10 +6,8 @@ import {
   describeMotion,
   describeRejectedMotion,
   groupTrackingParameters,
-  IDLE_MOTION_STORAGE_KEY,
   idleMemory,
   initialIdleMotion,
-  loadToggle,
   loadTrackingKept,
   type MotionInfo,
   motionOverTrackingActive,
@@ -17,12 +15,11 @@ import {
   parseExpressions,
   parseIdleChoice,
   parseMotions,
-  saveToggle,
   saveTrackingKept,
-  TRACKING_KEPT_STORAGE_KEY,
   trackingGroup,
   trackingWins,
 } from "./animation";
+import { PlayerStorage } from "./storage";
 
 // 文言は日本語の訳で確かめる (英語の原文を確かめる it は、その中で言語を切り替える)。
 beforeEach(() => setLocale("ja"));
@@ -160,15 +157,16 @@ describe("idle motion memory (T0722)", () => {
       getItem: (k: string) => items.get(k) ?? null,
       setItem: (k: string, v: string) => void items.set(k, v),
     } as unknown as Storage;
-    const memory = idleMemory(storage);
+    const store = new PlayerStorage(undefined, storage);
+    const memory = idleMemory(store);
     const a = { name: "a.ugoe", fingerprint: "fa" };
     memory.set(a, { motion: "tilt" });
     memory.set({ name: "b.ugoe", fingerprint: "fb" }, { motion: null });
-    expect(idleMemory(storage).get(a)).toEqual({ motion: "tilt" });
-    expect(idleMemory(storage).get({ name: "b.ugoe", fingerprint: "fb" })).toEqual({
+    expect(idleMemory(store).get(a)).toEqual({ motion: "tilt" });
+    expect(idleMemory(store).get({ name: "b.ugoe", fingerprint: "fb" })).toEqual({
       motion: null,
     });
-    expect(items.has(IDLE_MOTION_STORAGE_KEY)).toBe(true);
+    expect(items.has("ugoe-viewer.idle-motion.models")).toBe(true);
   });
 });
 
@@ -207,13 +205,15 @@ describe("motion over tracking per parameter (T0722)", () => {
       getItem: (k: string) => items.get(k) ?? null,
       setItem: (k: string, v: string) => void items.set(k, v),
     } as unknown as Storage;
-    expect(loadTrackingKept(storage)).toEqual([]);
-    saveTrackingKept(["EyeLOpen", "EyeROpen"], storage);
-    expect(loadTrackingKept(storage)).toEqual(["EyeLOpen", "EyeROpen"]);
-    items.set(TRACKING_KEPT_STORAGE_KEY, '["A", 3, "A"]');
-    expect(loadTrackingKept(storage)).toEqual(["A"]);
-    items.set(TRACKING_KEPT_STORAGE_KEY, "{broken");
-    expect(loadTrackingKept(storage)).toEqual([]);
+    const store = new PlayerStorage(undefined, storage);
+    expect(loadTrackingKept(store)).toEqual([]);
+    saveTrackingKept(["EyeLOpen", "EyeROpen"], store);
+    expect(loadTrackingKept(store)).toEqual(["EyeLOpen", "EyeROpen"]);
+    const key = "ugoe-viewer.motion-over-tracking.kept";
+    items.set(key, '["A", 3, "A"]');
+    expect(loadTrackingKept(store)).toEqual(["A"]);
+    items.set(key, "{broken");
+    expect(loadTrackingKept(store)).toEqual([]);
   });
 });
 
@@ -225,42 +225,5 @@ describe("motionOverTrackingActive", () => {
     expect(motionOverTrackingActive(true, true, null, "normal")).toBe(false);
     expect(motionOverTrackingActive(true, false, "nod", "normal")).toBe(false);
     expect(motionOverTrackingActive(false, true, "nod", "normal")).toBe(false);
-  });
-});
-
-describe("loadToggle / saveToggle", () => {
-  function memoryStorage(): Storage {
-    const map = new Map<string, string>();
-    return {
-      getItem: (k) => map.get(k) ?? null,
-      setItem: (k, v) => void map.set(k, v),
-      removeItem: (k) => void map.delete(k),
-      clear: () => map.clear(),
-      key: () => null,
-      get length() {
-        return map.size;
-      },
-    };
-  }
-
-  it("remembers on and off and falls back otherwise", () => {
-    const storage = memoryStorage();
-    expect(loadToggle("k", true, storage)).toBe(true);
-    saveToggle("k", false, storage);
-    expect(loadToggle("k", true, storage)).toBe(false);
-    saveToggle("k", true, storage);
-    expect(loadToggle("k", false, storage)).toBe(true);
-    storage.setItem("k", "maybe");
-    expect(loadToggle("k", false, storage)).toBe(false);
-    const broken = {
-      getItem: () => {
-        throw new Error("denied");
-      },
-      setItem: () => {
-        throw new Error("denied");
-      },
-    } as unknown as Storage;
-    expect(loadToggle("k", true, broken)).toBe(true);
-    expect(() => saveToggle("k", true, broken)).not.toThrow();
   });
 });

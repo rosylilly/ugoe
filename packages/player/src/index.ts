@@ -15,4 +15,5 @@ export * from "./parameters";
 export * from "./player.svelte";
 export * from "./rememberedModels";
 export * from "./screenshot";
+export * from "./storage";
 export type * from "./wasm";

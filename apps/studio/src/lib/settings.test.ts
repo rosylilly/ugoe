@@ -6,6 +6,7 @@ import {
   LEGACY_STORAGE_KEYS,
   LOCALE_STORAGE_KEY,
   loadLocalePreference,
+  PLAYER_STORAGE_PREFIX,
   parseOutputSize,
   parseTickRate,
   presetOf,
@@ -74,5 +75,15 @@ describe("legacy settings", () => {
     forgetLegacySettings();
     for (const key of LEGACY_STORAGE_KEYS) expect(localStorage.getItem(key)).toBeNull();
     expect(loadLocalePreference()).toBe("ja");
+  });
+
+  it("forgets what the output window's player kept under the viewer's prefix (T0930)", () => {
+    localStorage.setItem("ugoe-viewer.idle-motion.models", "{}");
+    localStorage.setItem("ugoe-viewer.lighting", "{}");
+    localStorage.setItem(`${PLAYER_STORAGE_PREFIX}.lighting`, "{}");
+    forgetLegacySettings();
+    expect(localStorage.getItem("ugoe-viewer.idle-motion.models")).toBeNull();
+    expect(localStorage.getItem("ugoe-viewer.lighting")).toBeNull();
+    expect(localStorage.getItem(`${PLAYER_STORAGE_PREFIX}.lighting`)).toBe("{}");
   });
 });

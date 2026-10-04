@@ -9,10 +9,13 @@ import {
   describeRememberedAt,
   loadRememberedOrder,
   mergeRemembered,
-  REMEMBERED_ORDER_STORAGE_KEY,
   rememberedCount,
   saveRememberedOrder,
 } from "./rememberedModels";
+import { PlayerStorage } from "./storage";
+
+/** 前からのビューアの接頭辞で `storage` に覚える入れ物。 */
+const store = (storage: Storage) => new PlayerStorage(undefined, storage);
 
 // 文言は日本語の訳で確かめる (英語の原文を確かめる it は、その中で言語を切り替える)。
 beforeEach(() => setLocale("ja"));
@@ -161,15 +164,17 @@ describe("remembered order", () => {
 
   it("remembers the chosen order (T0718)", () => {
     const s = storage();
-    expect(loadRememberedOrder(s)).toBe("recent");
-    saveRememberedOrder("name", s);
-    expect(loadRememberedOrder(s)).toBe("name");
-    saveRememberedOrder("recent", s);
-    expect(loadRememberedOrder(s)).toBe("recent");
+    expect(loadRememberedOrder(store(s))).toBe("recent");
+    saveRememberedOrder("name", store(s));
+    expect(loadRememberedOrder(store(s))).toBe("name");
+    saveRememberedOrder("recent", store(s));
+    expect(loadRememberedOrder(store(s))).toBe("recent");
   });
 
   it("falls back to the newest first for unknown values and a broken storage", () => {
-    expect(loadRememberedOrder(storage({ [REMEMBERED_ORDER_STORAGE_KEY]: "size" }))).toBe("recent");
+    expect(loadRememberedOrder(store(storage({ "ugoe-viewer.remembered-order": "size" })))).toBe(
+      "recent",
+    );
     const broken = {
       getItem: () => {
         throw new Error("denied");
@@ -178,7 +183,7 @@ describe("remembered order", () => {
         throw new Error("quota");
       },
     } as unknown as Storage;
-    expect(loadRememberedOrder(broken)).toBe("recent");
-    expect(() => saveRememberedOrder("name", broken)).not.toThrow();
+    expect(loadRememberedOrder(store(broken))).toBe("recent");
+    expect(() => saveRememberedOrder("name", store(broken))).not.toThrow();
   });
 });

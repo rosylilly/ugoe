@@ -4,6 +4,7 @@
 // 決まりもここに置く。モデルごとに覚える待機モーションの選択 (T0722) の入れ物は modelMemory.ts の `ModelMemory`。
 import { t } from "./i18n";
 import { ModelMemory } from "./modelMemory";
+import { type PlayerStorage, STORAGE_NAMES } from "./storage";
 
 /** モーションの優先度 (docs/spec/motion.md#モーションマネージャ)。WebPuppet の `start_motion` に渡す文字列。 */
 export type MotionPriority = "idle" | "normal" | "force";
@@ -169,8 +170,6 @@ export interface IdleChoice {
   motion: string | null;
 }
 
-/** 待機モーションの選択の localStorage のキー。 */
-export const IDLE_MOTION_STORAGE_KEY = "ugoe-viewer.idle-motion.models";
 /** 待機モーションの選択を覚えるモデルの数の上限 (1 体で数十バイト)。 */
 export const MAX_IDLE_MODELS = 50;
 
@@ -182,10 +181,9 @@ export function parseIdleChoice(value: unknown): IdleChoice | null {
 }
 
 /** モデルごとの待機モーションの選択の入れ物。 */
-export function idleMemory(storage?: Storage): ModelMemory<IdleChoice> {
-  return new ModelMemory(IDLE_MOTION_STORAGE_KEY, parseIdleChoice, {
+export function idleMemory(store: PlayerStorage): ModelMemory<IdleChoice> {
+  return new ModelMemory(store, STORAGE_NAMES.idleMotion, parseIdleChoice, {
     limit: MAX_IDLE_MODELS,
-    storage,
   });
 }
 
@@ -269,30 +267,16 @@ export function groupTrackingParameters(
 }
 
 /**
- * 「トラッキング中もモーションを優先」でも、トラッキングのままにするパラメータの ID の localStorage のキー (T0722)。
+ * 覚えた「トラッキングのままにする」パラメータ (T0722)。覚えていない・読めなければ空 (すべてモーションを優先)。
  * 標準のパラメータの ID はモデルによらないので、モデルごとではなく 1 つだけ覚える。
  */
-export const TRACKING_KEPT_STORAGE_KEY = "ugoe-viewer.motion-over-tracking.kept";
-
-/** 覚えた「トラッキングのままにする」パラメータ。覚えていない・読めなければ空 (すべてモーションを優先)。 */
-export function loadTrackingKept(storage?: Storage): string[] {
-  try {
-    const text = (storage ?? globalThis.localStorage)?.getItem(TRACKING_KEPT_STORAGE_KEY);
-    if (text == null) return [];
-    const value: unknown = JSON.parse(text);
-    return [...new Set(strings(value))];
-  } catch {
-    return [];
-  }
+export function loadTrackingKept(store: PlayerStorage): string[] {
+  return [...new Set(strings(store.getJson(STORAGE_NAMES.trackingKept)))];
 }
 
 /** 「トラッキングのままにする」パラメータを覚える。覚えられなくても無視する。 */
-export function saveTrackingKept(ids: readonly string[], storage?: Storage): void {
-  try {
-    (storage ?? globalThis.localStorage)?.setItem(TRACKING_KEPT_STORAGE_KEY, JSON.stringify(ids));
-  } catch {
-    // 覚えられないだけで、今回の設定は効く。
-  }
+export function saveTrackingKept(ids: readonly string[], store: PlayerStorage): void {
+  store.setJson(STORAGE_NAMES.trackingKept, ids);
 }
 
 /**
@@ -305,27 +289,4 @@ export function trackingWins(
   kept: readonly string[],
 ): ReadonlySet<string> {
   return over ? new Set(kept.filter((id) => tracked.has(id))) : tracked;
-}
-
-/** 設定 (オン・オフ) の localStorage のキー (T0721)。 */
-export const AUTO_IDLE_STORAGE_KEY = "ugoe-viewer.auto-idle";
-export const MOTION_OVER_TRACKING_STORAGE_KEY = "ugoe-viewer.motion-over-tracking";
-
-/** 覚えたオン・オフ。覚えていない・読めなければ `fallback`。 */
-export function loadToggle(key: string, fallback: boolean, storage?: Storage): boolean {
-  try {
-    const value = (storage ?? globalThis.localStorage)?.getItem(key);
-    return value === "on" ? true : value === "off" ? false : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-/** オン・オフを覚える。覚えられなくても無視する (今回の設定は効く)。 */
-export function saveToggle(key: string, value: boolean, storage?: Storage): void {
-  try {
-    (storage ?? globalThis.localStorage)?.setItem(key, value ? "on" : "off");
-  } catch {
-    // 覚えられないだけで、今回の設定は効く。
-  }
 }

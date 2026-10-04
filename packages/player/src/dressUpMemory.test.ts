@@ -12,9 +12,13 @@ import {
   saveAutoRestore,
 } from "./dressUpMemory";
 import type { ModelFile } from "./modelFile";
+import { PlayerStorage } from "./storage";
 
 // 文言は日本語の訳で確かめる (英語の原文を確かめる it は、その中で言語を切り替える)。
 beforeEach(() => setLocale("ja"));
+
+/** 前からのビューアの接頭辞で `storage` に覚える入れ物。 */
+const store = (storage: Storage) => new PlayerStorage(undefined, storage);
 
 class MemoryStorage implements Storage {
   #items = new Map<string, string>();
@@ -61,14 +65,14 @@ const set: DressUpSet = {
 describe("dress-up memory", () => {
   it("round-trips a set through storage", () => {
     const storage = new MemoryStorage();
-    const memory = dressUpMemory(storage);
+    const memory = dressUpMemory(store(storage));
     const model = {
       name: "dress-up.ugoe",
       fingerprint: "m",
       location: "sample:dress-up/dress-up.ugoe",
     } as const;
     memory.set(model, set);
-    expect(dressUpMemory(storage).get({ name: "", fingerprint: "m" })).toEqual(set);
+    expect(dressUpMemory(store(storage)).get({ name: "", fingerprint: "m" })).toEqual(set);
   });
 
   it("drops malformed modules and attached names that were not loaded", () => {
@@ -132,16 +136,16 @@ describe("dress-up memory", () => {
 
   it("remembers the auto-restore choice and survives a broken storage", () => {
     const storage = new MemoryStorage();
-    expect(loadAutoRestore(storage)).toBe(false);
-    saveAutoRestore(true, storage);
-    expect(loadAutoRestore(storage)).toBe(true);
+    expect(loadAutoRestore(store(storage))).toBe(false);
+    saveAutoRestore(true, store(storage));
+    expect(loadAutoRestore(store(storage))).toBe(true);
     storage.getItem = () => {
       throw new Error("denied");
     };
     storage.setItem = () => {
       throw new Error("quota");
     };
-    expect(loadAutoRestore(storage)).toBe(false);
-    expect(() => saveAutoRestore(true, storage)).not.toThrow();
+    expect(loadAutoRestore(store(storage))).toBe(false);
+    expect(() => saveAutoRestore(true, store(storage))).not.toThrow();
   });
 });

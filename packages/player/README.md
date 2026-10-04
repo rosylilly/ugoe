@@ -26,6 +26,7 @@ src/modelFile.ts         開くファイル (ModelFile) と場所 (FileLocation)
 src/modelMemory.ts       モデルを見分ける鍵と、モデルごとの値を上限付きで localStorage に覚える入れ物 (T0711)
 src/rememberedModels.ts  モデルごとに覚えたものを 1 モデル 1 行にまとめる (T0714)
 src/screenshot.ts        スクリーンショットの画素の検査・RGBA から PNG への変換・既定の名前の日時・パスのヘッダー (エディタとも共有。T0730)
+src/storage.ts           覚えるものの localStorage の読み書き (PlayerStorage: 接頭辞と Storage の組。T0930)
 ```
 
 画面の部品 (パラメータ・ライティング・着せ替え・モーションのパネル、ビューポート、覚えたものの一覧) は、いまはビューアに
@@ -56,8 +57,27 @@ await player.load(file, modules); // モデル (と一緒に開くモジュー�
 - 画像の保存は `capture()` で RGBA を受け取り、`encodePng` (`src/screenshot.ts`) で PNG にする。保存のダイアログと書き込みはアプリ。
   `src/screenshot.ts` はエディタのビューポート (`ViewportController.capture`) も使う (T0730。エディタが `@ugoe/player` から import するのは
   これだけ)。例外の文はカタログの `screenshot.*`。
-- 覚えるもの (光源・着せ替えの組・待機モーションなど) の `localStorage` のキーは、いまはビューアの名前 (`ugoe-viewer.*`) のまま。
-  スタジオで使うときに、キーの接頭辞をアプリが渡せるようにする。
+- 覚えるもの (光源・着せ替えの組・待機モーションなど) の `localStorage` のキーは「接頭辞 + `.` + 名前」(`src/storage.ts`。T0930)。
+  接頭辞は `PlayerHost.storagePrefix` で渡し、省くとビューアの `ugoe-viewer` (前から覚えたものを失わない)。スタジオの出力ウィンドウは
+  `ugoe-studio.player`。名前の一覧は `STORAGE_NAMES` (下の表)。`PlayerHost.storage` で覚える先 (`Storage`) も差し替えられる (テスト)。
+  - 読み書きはすべて `PlayerStorage` (`player.storage`) を通す。localStorage を引くだけで例外になる環境・壊れた JSON・容量の超過では、
+    覚えていないものとして動き、例外を出さない。`load*`・`save*` の関数と `ModelMemory` はこれを受け取る。
+  - Player の外で覚えるもの (ビューアの「覚えたもの」の一覧の並び `loadRememberedOrder`・`saveRememberedOrder`) も
+    `player.storage` を渡して同じ接頭辞で覚える。
+  - `PlayerStorage.clear()` はその接頭辞で覚えたものをすべて消す (アプリが古い値を捨てるとき)。
+
+  | 名前 (`STORAGE_NAMES`) | キーの名前の部分 | 値 |
+  | --- | --- | --- |
+  | `lighting` | `lighting` | 最後に使った光源の設定 (`{version, settings}`) |
+  | `modelLighting` | `lighting.models` | モデルごとの光源の設定 (`ModelMemory`) |
+  | `lightMarkers` | `lighting.markers` | 光源の印を出すか (`on`・`off`) |
+  | `dressUp` | `dress-up` | モデルごとの着せ替えの組 (`ModelMemory`) |
+  | `autoRestore` | `dress-up.auto-restore` | 組を尋ねずに戻すか (`true`・`false`) |
+  | `idleMotion` | `idle-motion.models` | モデルごとの待機モーションの選択 (`ModelMemory`) |
+  | `autoIdle` | `auto-idle` | 待機モーションを自動で流すか (`on`・`off`) |
+  | `motionOverTracking` | `motion-over-tracking` | トラッキング中もモーションを優先するか (`on`・`off`) |
+  | `trackingKept` | `motion-over-tracking.kept` | トラッキングのままにするパラメータ (JSON の文字列の配列) |
+  | `rememberedOrder` | `remembered-order` | 覚えたものの一覧の並び (`recent`・`name`) |
 - 文言は `@ugoe/i18n` の名前空間 `player` (`locales/`。T0723)。言語はアプリが `setLocale()` で決める。
   `describe*`・`lightingLabel` などの関数と、`MOTION_PRIORITIES`・`TRACKING_GROUPS`・`PRESETS` の `label`・`title`・`name` (読むたびに引く) は、
   呼んだときの言語の文を返すので、画面のテンプレートや `$derived` の中で使えば言語の切り替えに追従する。
@@ -94,7 +114,8 @@ player.pushFrame(decodeFrame(buffer));
   溢れたときも) 物理をリセットしてから続ける。
 - モデルを読み直さずに次のシーンへ移るとき (スタジオで見せ方や着せ替えだけが変わった。T0802) は `continueScene(revision)`。
   前のシーンのフレームも捨てずに順に適用し、`seq` の続きも保つ (受け手ごとに物理の刻みが抜けないように)。
-- 受け手のモードでは、光源の設定と着せ替えの組を覚えず、覚えたものも使わない (どちらもシーンが決める)。
+- 受け手のモードでは、光源の設定と着せ替えの組を覚えず、覚えたものも使わない (どちらもシーンが決める)。待機モーションの選択も
+  読まず書き直さない (受け手は待機モーションを流さない。T0930)。
 - `WebPuppet.follow` を呼ぶのは `src/follower.ts` の `applyFrame` だけ (`follow` の引数が変わったら、こことフレームの形を合わせる)。
 - `src/wasm.ts` の `follow`・`reset_physics` は省ける (受け手のモードを使わないビューアの型の宣言に無くてよいように)。
   受け手のモードで無ければ `error` に書いて進めない。

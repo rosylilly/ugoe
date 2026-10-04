@@ -6,6 +6,7 @@ import type { DressUpSet } from "./dressUpMemory";
 import { t } from "./i18n";
 import type { LightingSettings } from "./lighting";
 import { type MemoryEntry, type ModelIdentity, sameModel } from "./modelMemory";
+import { type PlayerStorage, STORAGE_NAMES } from "./storage";
 
 /** 一覧の 1 行 (1 つのモデル)。覚えていないものは `null`。 */
 export interface RememberedModel {
@@ -26,26 +27,14 @@ export interface RememberedModel {
 /** 一覧の並び。`recent` は覚えた日時の新しい順 (日時なしは最後に名前の順)、`name` は名前の順。 */
 export type RememberedOrder = "recent" | "name";
 
-/** 一覧の並びの選択の localStorage のキー (T0718)。 */
-export const REMEMBERED_ORDER_STORAGE_KEY = "ugoe-viewer.remembered-order";
-
-/** 覚えた並びの選択。覚えていない・読めない・知らない値なら既定の `recent`。 */
-export function loadRememberedOrder(storage?: Storage): RememberedOrder {
-  try {
-    const value = (storage ?? globalThis.localStorage)?.getItem(REMEMBERED_ORDER_STORAGE_KEY);
-    return value === "name" ? "name" : "recent";
-  } catch {
-    return "recent";
-  }
+/** 覚えた並びの選択 (T0718)。覚えていない・読めない・知らない値なら既定の `recent`。 */
+export function loadRememberedOrder(store: PlayerStorage): RememberedOrder {
+  return store.get(STORAGE_NAMES.rememberedOrder) === "name" ? "name" : "recent";
 }
 
 /** 並びの選択を覚える。覚えられなくても無視する (今回の並びは効く)。 */
-export function saveRememberedOrder(order: RememberedOrder, storage?: Storage): void {
-  try {
-    (storage ?? globalThis.localStorage)?.setItem(REMEMBERED_ORDER_STORAGE_KEY, order);
-  } catch {
-    // 覚えられないだけで、今回の並びは効く。
-  }
+export function saveRememberedOrder(order: RememberedOrder, store: PlayerStorage): void {
+  store.set(STORAGE_NAMES.rememberedOrder, order);
 }
 
 /** 一覧にまとめる入れ物ごとの項目。 */

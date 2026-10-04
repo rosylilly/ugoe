@@ -33,7 +33,8 @@ src/Output.svelte             出力ウィンドウとブラウザソースの�
                               配信の口 (`feed`) を受け取る。出力ウィンドウではドラッグで動かす
 src/lib/feed.ts               受け手の配信の口 (OutputFeed)。ブラウザソースは WebSocket とファイルの HTTP (`sourceFeed`。切れたらつなぎ直す)
 src/lib/host.ts               バックエンドとの口 (StudioHost)。Tauri の外では window.__UGOE_STUDIO_HOST__ を使う
-src/lib/settings.ts           覚える設定 (言語・刻みの速さ。localStorage) と出力の大きさのプリセット
+src/lib/settings.ts           覚える設定 (言語・刻みの速さ。localStorage) と出力の大きさのプリセット。出力ウィンドウの Player のキーの接頭辞
+                              (`ugoe-studio.player`。T0930 より前にビューアの接頭辞で覚えたものは操作ウィンドウを開いたときに消す)
 src/lib/load.ts               負荷の注意の判断 (刻みが遅れた・揺れた・描画が重い・フレームを捨てた・描いていない)
 src/lib/profile.ts            プロファイルとシーンの形 (profile.rs と同じ)・背景や配置の既定値
 src/lib/inputs.ts             入力・モーション・ホットキーの設定と演技の様子の形 (input.rs・hotkeys.rs・animation.rs と同じ)

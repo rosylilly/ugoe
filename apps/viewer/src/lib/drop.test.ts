@@ -7,6 +7,7 @@ import {
   type ModelFile,
   type ModuleToOpen,
   modelIdentity,
+  PlayerStorage,
   planRestore,
 } from "@ugoe/player";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -181,7 +182,7 @@ describe("dropped files", () => {
   });
 
   it("restores the set and the lighting for a dropped model after a restart", async () => {
-    const storage = new MemoryStorage();
+    const storage = new PlayerStorage(undefined, new MemoryStorage());
     const target = new Target();
     await dropPaths([MODEL, HAIR, HAT], target);
     const [call] = target.calls;

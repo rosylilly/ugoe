@@ -7,6 +7,7 @@
 //   (同じファイルをダイアログで開いてもドロップしても同じモデルになる)。
 // 名前は表示だけに使い、比べない (`model.ugoe` のような同じ名前の別のモデルがよくあるため)。
 import { type FileLocation, isFileLocation, type ModelFile } from "./modelFile";
+import type { PlayerStorage, StorageName } from "./storage";
 
 /** モデル (やモジュール) のファイルを見分ける鍵。 */
 export interface ModelIdentity {
@@ -63,8 +64,6 @@ export function parseIdentity(v: unknown): ModelIdentity | null {
 export interface ModelMemoryOptions {
   /** 覚えるモデルの数の上限。超えたら最も長く使っていないものから消す。 */
   limit: number;
-  /** 省くと `localStorage`。 */
-  storage?: Storage;
   /** 覚えた日時に使う今の時刻 (ミリ秒)。省くと `Date.now`。 */
   now?: () => number;
 }
@@ -82,23 +81,28 @@ export interface MemoryEntry<T> {
 type Entry<T> = MemoryEntry<T>;
 
 /**
- * モデルごとの値を localStorage の 1 つのキーに覚える。値の形は `parse` が確かめる (形の違う項目は読み飛ばす)。
+ * モデルごとの値を localStorage の 1 つのキー (`store` の `name`) に覚える。値の形は `parse` が確かめる (形の違う項目は読み飛ばす)。
  * 保存の形は `{"version": 1, "entries": [{"model": ModelIdentity, "value": T, "at": number}]}` で、最近使った順。
  * `at` (覚えた日時、T0717) は後から足したので無くてもよい (版は変えない。無い項目は日時なしとして読む)。
  * localStorage が使えない・壊れた値・版の違いでは、何も覚えていないものとして動き、例外を出さない。
  */
 export class ModelMemory<T> {
-  readonly #key: string;
+  readonly #store: PlayerStorage;
+  readonly #name: StorageName;
   readonly #parse: (value: unknown) => T | null;
   readonly #limit: number;
-  readonly #storage: Storage | undefined;
   readonly #now: () => number;
 
-  constructor(key: string, parse: (value: unknown) => T | null, options: ModelMemoryOptions) {
-    this.#key = key;
+  constructor(
+    store: PlayerStorage,
+    name: StorageName,
+    parse: (value: unknown) => T | null,
+    options: ModelMemoryOptions,
+  ) {
+    this.#store = store;
+    this.#name = name;
     this.#parse = parse;
     this.#limit = Math.max(1, Math.floor(options.limit));
-    this.#storage = options.storage;
     this.#now = options.now ?? Date.now;
   }
 
@@ -137,38 +141,27 @@ export class ModelMemory<T> {
 
   /** すべて忘れる。 */
   clear(): void {
-    try {
-      (this.#storage ?? globalThis.localStorage)?.removeItem(this.#key);
-    } catch {
-      // 忘れられないだけで、表示には影響しない。
-    }
+    this.#store.remove(this.#name);
   }
 
   #read(): Entry<T>[] {
-    try {
-      // localStorage を引くだけで例外になる環境 (保存を禁止したブラウザ) もあるので、try の中で引く。
-      const text = (this.#storage ?? globalThis.localStorage)?.getItem(this.#key);
-      if (text == null) return [];
-      const saved: unknown = JSON.parse(text);
-      if (typeof saved !== "object" || saved === null) return [];
-      const { version, entries } = saved as Record<string, unknown>;
-      if (version !== STORAGE_VERSION || !Array.isArray(entries)) return [];
-      return entries
-        .flatMap((item): Entry<T>[] => {
-          if (typeof item !== "object" || item === null) return [];
-          const r = item as Record<string, unknown>;
-          const model = parseIdentity(r.model);
-          if (model === null) return [];
-          const value = this.#parseValue(r.value);
-          if (value === null) return [];
-          const entry: Entry<T> = { model, value };
-          if (typeof r.at === "number" && Number.isFinite(r.at)) entry.at = r.at;
-          return [entry];
-        })
-        .slice(0, this.#limit);
-    } catch {
-      return [];
-    }
+    const saved = this.#store.getJson(this.#name);
+    if (typeof saved !== "object" || saved === null) return [];
+    const { version, entries } = saved as Record<string, unknown>;
+    if (version !== STORAGE_VERSION || !Array.isArray(entries)) return [];
+    return entries
+      .flatMap((item): Entry<T>[] => {
+        if (typeof item !== "object" || item === null) return [];
+        const r = item as Record<string, unknown>;
+        const model = parseIdentity(r.model);
+        if (model === null) return [];
+        const value = this.#parseValue(r.value);
+        if (value === null) return [];
+        const entry: Entry<T> = { model, value };
+        if (typeof r.at === "number" && Number.isFinite(r.at)) entry.at = r.at;
+        return [entry];
+      })
+      .slice(0, this.#limit);
   }
 
   /** 値を読む。`parse` が例外を出しても、その項目だけを読み飛ばす。 */
@@ -181,13 +174,6 @@ export class ModelMemory<T> {
   }
 
   #write(entries: Entry<T>[]): void {
-    try {
-      (this.#storage ?? globalThis.localStorage)?.setItem(
-        this.#key,
-        JSON.stringify({ version: STORAGE_VERSION, entries }),
-      );
-    } catch {
-      // 覚えられないだけで、表示には影響しない。
-    }
+    this.#store.setJson(this.#name, { version: STORAGE_VERSION, entries });
   }
 }

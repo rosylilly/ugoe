@@ -2,11 +2,13 @@
 // 作成と破棄 (attach・detach・GPU を失ったときの作り直し。T0914) と、着せ替えの組・モーション・ドライバとトラッキング・
 // 受け手のモード・光源のドラッグを Player を通して確かめる (T0931)。
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { idleMemory } from "./animation";
 import type { FollowFrame, FollowRenderStats } from "./follower";
 import { t } from "./i18n";
 import type { FileLocation, ModelFile } from "./modelFile";
 import { modelIdentity } from "./modelMemory";
 import type { PlayerHost, Player as PlayerType } from "./player.svelte";
+import { PlayerStorage } from "./storage";
 import type { UgoeWasmModule, WebPuppet } from "./wasm";
 
 /** `setPuppetTracking` に渡したトラッキングの入力。 */
@@ -910,6 +912,29 @@ describe("Player follower mode", () => {
     expect(localStorage.getItem("ugoe-viewer.lighting")).toBe(lighting);
   });
 
+  it("writes nothing to the storage, not even the remembered idle motion (T0930)", async () => {
+    const storage = new MemoryStorage();
+    const store = new PlayerStorage("ugoe-studio.player", storage as unknown as Storage);
+    idleMemory(store).set(modelIdentity(first), { motion: "idle" });
+    const writes: string[] = [];
+    const setItem = storage.setItem.bind(storage);
+    storage.setItem = (key, value) => {
+      writes.push(key);
+      setItem(key, value);
+    };
+    const { p } = await ready(
+      { motions: [{ name: "idle", looping: true, parameters: [] }] },
+      { storagePrefix: "ugoe-studio.player", storage: storage as unknown as Storage },
+    );
+    p.startFollowing();
+    await p.load(first);
+    p.followScene(1);
+    p.pushFrame(followFrame(1, 1, 1));
+    p.commitLighting();
+    expect(writes).toEqual([]);
+    expect(localStorage.length).toBe(0);
+  });
+
   it("reports a missing follower API instead of applying frames", async () => {
     const { p, log } = await ready({ follower: false });
     p.startFollowing();
@@ -925,6 +950,34 @@ describe("Player lighting", () => {
   const model = bundle("a.ugoe", 1, "path:/a.ugoe");
   const other = bundle("b.ugoe", 2, "path:/b.ugoe");
   const LAST = "ugoe-viewer.lighting";
+
+  it("remembers under the key prefix the app passes and reads only its own values (T0930)", async () => {
+    localStorage.setItem(
+      LAST,
+      JSON.stringify({ version: 1, settings: { ambient: { color: "#ffffff", intensity: 3 } } }),
+    );
+    localStorage.setItem("ugoe-viewer.auto-idle", "off");
+    const { p } = await ready({}, { storagePrefix: "ugoe-studio.player" });
+    expect(p.storage.prefix).toBe("ugoe-studio.player");
+    expect(p.lighting.ambient.intensity).not.toBe(3);
+    expect(p.autoIdle).toBe(true);
+    await p.load(model);
+    p.updateLighting((s) => {
+      s.ambient.intensity = 2;
+    });
+    p.setAutoIdle(false);
+    expect(localStorage.getItem("ugoe-studio.player.auto-idle")).toBe("off");
+    const saved = JSON.parse(localStorage.getItem("ugoe-studio.player.lighting") ?? "null");
+    expect(saved?.settings?.ambient?.intensity).toBe(2);
+    expect(localStorage.getItem("ugoe-studio.player.lighting.models")).not.toBeNull();
+    expect(JSON.parse(localStorage.getItem(LAST) ?? "null")?.settings?.ambient?.intensity).toBe(3);
+
+    // 省くとビューアの接頭辞で、前から覚えていた値を読む。
+    const { p: viewer } = await ready();
+    expect(viewer.storage.prefix).toBe("ugoe-viewer");
+    expect(viewer.lighting.ambient.intensity).toBe(3);
+    expect(viewer.autoIdle).toBe(false);
+  });
 
   it("draws a dragged light without remembering it until it is committed", async () => {
     const { p, state } = await ready();

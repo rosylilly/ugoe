@@ -27,6 +27,7 @@ import {
 } from "./lib/outputLayout";
 import { sceneLighting } from "./lib/profile";
 import { RenderStatsWindow } from "./lib/renderStats";
+import { PLAYER_STORAGE_PREFIX } from "./lib/settings";
 import { loadWasm } from "./lib/wasm/load";
 
 interface Props {
@@ -43,6 +44,7 @@ const player = new Player({
   loadWasm,
   // 着せ替えの組を戻す経路は使わない (モデルとモジュールは指揮役のシーンから取る)。
   readFile: () => Promise.reject(new Error("the output window reads models from the scene only")),
+  storagePrefix: PLAYER_STORAGE_PREFIX,
 });
 const renderStats = new RenderStatsWindow();
 player.startFollowing(({ at, renderMs, dropped }) => {
