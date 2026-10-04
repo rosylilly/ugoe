@@ -28,6 +28,9 @@ use ugoe_editor_core::Command;
 
 pub use fake::FakeProvider;
 
+/// PNG の署名。プロバイダは送る前に画像が PNG であることを確かめる。
+pub(crate) const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
+
 #[derive(Debug, thiserror::Error)]
 pub enum AiError {
     #[error("provider error: {0}")]

@@ -334,9 +334,9 @@ T0518 (方法は T0707 の見本 `ugoe sample avatar --lit` から)。テクス�
 
 - **入力と出力:** `ProviderRequest` の画像 (PNG) を base64 の画像ブロックとして、プロンプトをテキストのブロックとして 1 つのユーザーメッセージに入れて送ります。出力は構造化出力 (`output_config.format` に `{"type": "json_schema", "schema": ...}`) で、呼び出し側の JSON Schema に沿った JSON を受け取ります。スキーマのオブジェクトには `additionalProperties: false` を書きます (構造化出力の制約。`minimum` などの数値の制約や再帰するスキーマは使えません)。
 - **設定 (`ClaudeConfig`):** モデル (既定は `claude-opus-5-5`)、`max_tokens` (既定は 16000。考える分を含む)、考える量 `effort` (既定は API の既定)、API の URL、1 回のリクエストの時間の上限 (既定は 600 秒)、再試行の方針。
-- **応答の扱い:** テキストのブロックだけをつないで JSON として読みます (`thinking` のブロックは読み飛ばします)。`stop_reason` が `refusal` なら `AiError::Refused`、`max_tokens` なら `AiError::Truncated` を返します。
+- **応答の扱い:** テキストのブロックだけをつないで JSON として読みます (`thinking` のブロックは読み飛ばします)。`stop_reason` が `refusal` なら `AiError::Refused`、`max_tokens` か `model_context_window_exceeded` (文脈の窓の上限) なら `AiError::Truncated` を返します。エラーの本文が JSON でない (プロキシの HTML のページなど) ときは、先頭の 500 文字だけを文言にします。
 - **再試行:** HTTP 408・409・429・5xx (529 overloaded を含む)・接続の失敗・タイムアウトは、指数バックオフ (0.5 秒から倍々、上限 8 秒) で 2 回まで再試行します。`retry-after` ヘッダがあればその秒数を待ち、長すぎる (既定で 60 秒を超える) ときは待たずに `AiError::RateLimited` を返します。400・401・403・404 などは再試行しません。再試行の規則 (`transport::RetryPolicy`) は OpenAI 互換の API と共通です。
-- **HTTP クライアント:** 同期の `ureq` (TLS は rustls) を使い、`Transport` トレイトの裏に隠します。
+- **HTTP クライアント:** 同期の `ureq` (TLS は rustls) を使い、`Transport` トレイトの裏に隠します。転送 (3xx) には従わず、そのまま `AiError::Api` にします (ureq は転送のときに `Authorization` しか外さず、`x-api-key` を転送先のホストへ送ってしまうため)。応答の本文は 256 MiB まで読みます (深度マップの JSON は ureq の既定の 10 MB を超えることがあるため)。`retry-after` が `Duration` に収まらないほど長いときは、長すぎるものとして諦めます。
 
 ## OpenAI 互換の API
 
@@ -369,7 +369,7 @@ T0518 (方法は T0707 の見本 `ugoe sample avatar --lit` から)。テクス�
 
 - 録画は往復の列で、リクエストは method・URL・本文 (JSON)、応答は状態コード・一部のヘッダ (`content-type`・`request-id`・`x-request-id`・`retry-after`)・本文を持ちます。応答の代わりに通信の失敗 (`timeout`・`connect`) も書けます。
 - 録画のリクエストに本文が書いてあれば、再生のときに送った本文と一致するかを確かめます。
-- 録画には画像のデータ (base64 のブロックと data URL) を残さず、長さだけにします。
+- 録画には画像のデータ (base64 のブロックと data URL) を残さず、長さだけにします。URL の利用者の部分 (`https://user:pass@host/...`) は `<redacted>` に置き換えます。
 - `RecordingTransport` で実際の通信を包むと録画を作れます (`tests/claude_replay.rs`・`tests/openai_replay.rs` の `record_live`。既定では動かしません)。
 
 ## MCP サーバ

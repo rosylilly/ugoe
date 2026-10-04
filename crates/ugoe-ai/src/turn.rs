@@ -388,7 +388,7 @@ fn proposal_from_plans(model: &Model, plans: &[TurnPlan]) -> Result<Proposal, Ai
         .collect::<Result<Vec<_>, _>>()?;
     b.validate()?;
     Ok(Proposal {
-        title: "Head turn from estimated depth".into(),
+        title: proposal_title(plans),
         rationale: format!(
             "Samples the depth estimated from the artwork at the warp control points, corrects it with the part labels, and makes the turn keyforms by rotating the depth.\n{}",
             rationale.join("\n")
@@ -645,12 +645,18 @@ fn covers(region: &Region, p: Vec2) -> bool {
     })
 }
 
+/// 点が三角形の内側 (辺の上を含む) にあるか。向きは問わない。面積のない三角形と NaN を含むものは
+/// 何も覆わない (符号が付かないので、そのままではどの点も内側と判定してしまう)。
 fn in_triangle(p: Vec2, a: Vec2, b: Vec2, c: Vec2) -> bool {
     let cross = |o: Vec2, u: Vec2, v: Vec2| (u.x - o.x) * (v.y - o.y) - (u.y - o.y) * (v.x - o.x);
+    let area = cross(a, b, c);
+    if area == 0.0 || !area.is_finite() {
+        return false;
+    }
     let (d1, d2, d3) = (cross(a, b, p), cross(b, c, p), cross(c, a, p));
-    let negative = d1 < 0.0 || d2 < 0.0 || d3 < 0.0;
-    let positive = d1 > 0.0 || d2 > 0.0 || d3 > 0.0;
-    !(negative && positive)
+    let inside_ccw = d1 >= 0.0 && d2 >= 0.0 && d3 >= 0.0;
+    let inside_cw = d1 <= 0.0 && d2 <= 0.0 && d3 <= 0.0;
+    inside_ccw || inside_cw
 }
 
 fn bounds(points: impl Iterator<Item = Vec2>) -> (Vec2, Vec2) {
@@ -669,6 +675,17 @@ pub(crate) fn percentiles(mut values: Vec<f32>, q: f32) -> (f32, f32) {
     let last = values.len() - 1;
     let at = |t: f32| values[((last as f32 * t).round() as usize).min(last)];
     (at(q), at(1.0 - q))
+}
+
+/// 提案の題。振り向かせる部位を書く。
+fn proposal_title(plans: &[TurnPlan]) -> String {
+    let has = |role| plans.iter().any(|p| p.role == role);
+    let parts = match (has(TurnRole::Head), has(TurnRole::Body)) {
+        (true, true) => "Head and body",
+        (false, true) => "Body",
+        _ => "Head",
+    };
+    format!("{parts} turn from estimated depth")
 }
 
 fn invalid(message: String) -> AiError {
@@ -713,5 +730,56 @@ mod tests {
         assert!(!in_triangle(Vec2::new(6.0, 6.0), a, b, c));
         // 向きによらない。
         assert!(in_triangle(Vec2::new(1.0, 1.0), a, c, b));
+    }
+
+    #[test]
+    fn degenerate_triangles_cover_nothing() {
+        // 1 点につぶれた三角形や NaN の頂点は、どの点も覆わない (覆うと最も手前の部位を取り違える)
+        let a = Vec2::new(5.0, 5.0);
+        assert!(!in_triangle(Vec2::new(100.0, -40.0), a, a, a));
+        assert!(!in_triangle(a, a, a, a));
+        let nan = Vec2::new(f32::NAN, 0.0);
+        assert!(!in_triangle(
+            Vec2::new(1.0, 1.0),
+            nan,
+            a,
+            Vec2::new(0.0, 9.0)
+        ));
+        assert!(!in_triangle(
+            nan,
+            Vec2::ZERO,
+            Vec2::new(10.0, 0.0),
+            Vec2::new(0.0, 10.0)
+        ));
+    }
+
+    #[test]
+    fn the_title_names_the_turned_parts() {
+        let plan = |role| TurnPlan {
+            deformer: "W".into(),
+            role,
+            depth: vec![],
+            relief: 0.0,
+            rotation: DepthRotation {
+                angle_scale: 1.0,
+                pivot: Vec2::ZERO,
+                pivot_depth: 0.0,
+                yaw: None,
+                pitch: None,
+            },
+            labels: vec![],
+        };
+        assert_eq!(
+            proposal_title(&[plan(TurnRole::Head)]),
+            "Head turn from estimated depth"
+        );
+        assert_eq!(
+            proposal_title(&[plan(TurnRole::Body)]),
+            "Body turn from estimated depth"
+        );
+        assert_eq!(
+            proposal_title(&[plan(TurnRole::Body), plan(TurnRole::Head)]),
+            "Head and body turn from estimated depth"
+        );
     }
 }

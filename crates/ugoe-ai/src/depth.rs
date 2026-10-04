@@ -14,10 +14,8 @@ use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::transport::{HttpRequest, Transport, UreqTransport, is_loopback_url};
-use crate::{AiError, Destination, Disclosure};
-
-const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
+use crate::transport::{HttpRequest, Transport, UreqTransport, error_excerpt, is_loopback_url};
+use crate::{AiError, Destination, Disclosure, PNG_SIGNATURE};
 
 /// 画素ごとの相対的な深度。値が大きいほど手前 (視差・逆深度と同じ向き)。
 ///
@@ -75,8 +73,11 @@ impl DepthMap {
     }
 
     /// 画像全体を `0..1` とした座標 `(u, v)` の値を、画素の中心を結ぶ双線形補間で求める。
-    /// 端の外は端の画素の値にする。
+    /// 端の外は端の画素の値にする。空の深度マップ ([`Self::check`] を通らないもの) は 0。
     pub fn sample(&self, u: f32, v: f32) -> f32 {
+        if self.width == 0 || self.height == 0 {
+            return 0.0;
+        }
         let axis = |t: f32, n: u32| {
             let x = (t * n as f32 - 0.5).clamp(0.0, (n - 1) as f32);
             let i = (x.floor() as u32).min(n.saturating_sub(2));
@@ -257,10 +258,7 @@ impl DepthEstimator for HttpDepthEstimator {
             return Err(AiError::Api {
                 status: response.status,
                 kind: "depth_server_error".into(),
-                message: String::from_utf8_lossy(&response.body)
-                    .chars()
-                    .take(500)
-                    .collect(),
+                message: error_excerpt(&response.body),
             });
         }
         let parsed: DepthResponse = serde_json::from_slice(&response.body)
@@ -315,6 +313,13 @@ mod tests {
         assert!((map.sample(2.0, 0.75) - 3.0).abs() < 1e-6);
         let one = DepthMap::new(1, 1, vec![5.0]).unwrap();
         assert!((one.sample(0.3, 0.9) - 5.0).abs() < 1e-6);
+        // フィールドを直接埋めた空の深度マップでも止まらない
+        let empty = DepthMap {
+            width: 0,
+            height: 0,
+            values: vec![],
+        };
+        assert_eq!(empty.sample(0.5, 0.5), 0.0);
     }
 
     #[test]

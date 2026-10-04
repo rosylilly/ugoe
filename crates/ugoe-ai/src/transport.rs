@@ -19,6 +19,8 @@ const SENSITIVE_HEADERS: &[&str] = &["x-api-key", "authorization"];
 /// 録画に残す応答ヘッダ (小文字)。再試行の判断と調査に使うものだけ。
 const RECORDED_RESPONSE_HEADERS: &[&str] =
     &["content-type", "request-id", "retry-after", "x-request-id"];
+/// 応答の本文の上限。深度マップは JSON で ureq の既定 (10 MB) を超えることがある。
+const MAX_RESPONSE_BYTES: u64 = 256 * 1024 * 1024;
 
 /// 送る HTTP リクエスト。
 #[derive(Clone)]
@@ -51,7 +53,7 @@ impl fmt::Debug for HttpRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HttpRequest")
             .field("method", &self.method)
-            .field("url", &self.url)
+            .field("url", &redact_url(&self.url))
             .field("headers", &self.redacted_headers())
             .field("body_len", &self.body.len())
             .finish()
@@ -139,6 +141,9 @@ impl UreqTransport {
             .timeout_connect(Some(timeout.min(Duration::from_secs(30))))
             // 4xx/5xx も応答として受け取り、状態コードで判断する
             .http_status_as_error(false)
+            // 転送に従わない。ureq は転送のときに `authorization` しか外さず、`x-api-key` を
+            // 別のホストへ送ってしまう。API が転送を返すことはないので、3xx はそのまま失敗にする
+            .max_redirects(0)
             .build()
             .into();
         Self { agent }
@@ -174,7 +179,12 @@ impl Transport for UreqTransport {
                 Some((k.as_str().to_ascii_lowercase(), v.to_str().ok()?.to_owned()))
             })
             .collect();
-        let body = response.body_mut().read_to_vec().map_err(map_ureq_error)?;
+        let body = response
+            .body_mut()
+            .with_config()
+            .limit(MAX_RESPONSE_BYTES)
+            .read_to_vec()
+            .map_err(map_ureq_error)?;
         Ok(HttpResponse {
             status,
             headers,
@@ -223,7 +233,7 @@ impl RecordedRequest {
         });
         Self {
             method: request.method.clone(),
-            url: request.url.clone(),
+            url: redact_url(&request.url),
             body,
         }
     }
@@ -325,7 +335,7 @@ pub struct ReplayTransport {
     received: Mutex<Vec<ReceivedRequest>>,
 }
 
-/// [`ReplayTransport`] が受け取ったリクエスト (秘密のヘッダは伏せてある)。
+/// [`ReplayTransport`] が受け取ったリクエスト (秘密のヘッダと URL の利用者の部分は伏せてある)。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReceivedRequest {
     pub method: String,
@@ -359,7 +369,7 @@ impl Transport for ReplayTransport {
         let recorded = RecordedRequest::from_request(request);
         lock(&self.received).push(ReceivedRequest {
             method: request.method.clone(),
-            url: request.url.clone(),
+            url: recorded.url.clone(),
             headers: request.redacted_headers(),
             body: recorded.body.clone(),
         });
@@ -521,10 +531,23 @@ pub(crate) fn is_retryable_status(status: u16) -> bool {
     matches!(status, 408 | 409 | 429) || status >= 500
 }
 
-/// `retry-after` ヘッダ (秒)。
+/// エラーの応答の本文を文言にするときの長さの上限 (文字数)。
+const ERROR_EXCERPT_CHARS: usize = 500;
+
+/// JSON として読めないエラーの応答の本文を、文言に入れる長さに切る (プロキシの HTML のページなど)。
+pub(crate) fn error_excerpt(body: &[u8]) -> String {
+    String::from_utf8_lossy(body)
+        .chars()
+        .take(ERROR_EXCERPT_CHARS)
+        .collect()
+}
+
+/// `retry-after` ヘッダ (秒)。`Duration` に収まらないほど長い値は [`Duration::MAX`] にする
+/// (`max_retry_after` を超えるので諦める)。
 fn retry_after(response: &HttpResponse) -> Option<Duration> {
     let secs: f64 = response.header("retry-after")?.trim().parse().ok()?;
-    (secs.is_finite() && secs >= 0.0).then(|| Duration::from_secs_f64(secs))
+    (secs.is_finite() && secs >= 0.0)
+        .then(|| Duration::try_from_secs_f64(secs).unwrap_or(Duration::MAX))
 }
 
 /// URL のホスト名 (小文字。IPv6 は角括弧を除く)。スキームがなくてもよい。
@@ -551,6 +574,17 @@ pub fn is_loopback_url(url: &str) -> bool {
     // `127.x.y.z` (数字 4 つ)。`127.example.com` のような名前は含めない
     let octets: Vec<&str> = host.split('.').collect();
     octets.len() == 4 && octets[0] == "127" && octets.iter().all(|o| o.parse::<u8>().is_ok())
+}
+
+/// URL の利用者の部分 (`user:pass@`) を伏せる。
+fn redact_url(url: &str) -> String {
+    let (scheme, rest) = url.split_once("://").map_or(("", url), |(s, r)| (s, r));
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let Some(at) = rest[..end].rfind('@') else {
+        return url.to_owned();
+    };
+    let sep = if scheme.is_empty() { "" } else { "://" };
+    format!("{scheme}{sep}<redacted>{}", &rest[at..])
 }
 
 fn is_sensitive(header: &str) -> bool {
@@ -708,6 +742,136 @@ mod tests {
                 .unwrap_err()
                 .message
                 .contains("mismatch")
+        );
+    }
+
+    /// ループバックで `responses` を 1 つずつ返す HTTP サーバ。受け取ったリクエストの頭 (要求行とヘッダ) を返す。
+    fn serve(responses: Vec<Vec<u8>>) -> (String, std::thread::JoinHandle<Vec<String>>) {
+        use std::io::{BufRead, BufReader, Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let handle = std::thread::spawn(move || {
+            let mut heads = Vec::new();
+            for response in responses {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut head = String::new();
+                let mut length = 0;
+                loop {
+                    let mut line = String::new();
+                    reader.read_line(&mut line).unwrap();
+                    if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        length = v.trim().parse().unwrap();
+                    }
+                    if line == "\r\n" || line.is_empty() {
+                        break;
+                    }
+                    head.push_str(&line);
+                }
+                reader.read_exact(&mut vec![0; length]).unwrap();
+                heads.push(head);
+                stream.write_all(&response).unwrap();
+            }
+            heads
+        });
+        (url, handle)
+    }
+
+    fn http_response(status: &str, headers: &str, body: &[u8]) -> Vec<u8> {
+        let mut r = format!(
+            "HTTP/1.1 {status}\r\n{headers}content-length: {}\r\nconnection: close\r\n\r\n",
+            body.len()
+        )
+        .into_bytes();
+        r.extend_from_slice(body);
+        r
+    }
+
+    #[test]
+    fn ureq_does_not_follow_redirects_with_the_api_key() {
+        // 転送先に秘密のヘッダ (`x-api-key` は ureq が転送のときに外さない) を送らず、3xx をそのまま返す
+        let (other, other_handle) = serve(vec![http_response("200 OK", "", b"{}")]);
+        let (url, handle) = serve(vec![http_response(
+            "302 Found",
+            &format!("location: {other}/stolen\r\n"),
+            b"",
+        )]);
+        let t = UreqTransport::new(Duration::from_secs(10));
+        let mut req = request(json!({}));
+        req.url = format!("{url}/v1/messages");
+        let response = t.send(&req).unwrap();
+        assert_eq!(response.status, 302);
+        assert!(handle.join().unwrap()[0].contains("x-api-key: sk-secret"));
+        // 転送先のサーバを止める (呼ばれていれば、ここで受け取ったリクエストに秘密がある)
+        let _ = t.send(&HttpRequest {
+            url: other.clone(),
+            headers: vec![],
+            ..request(json!({}))
+        });
+        let heads = other_handle.join().unwrap();
+        assert!(!heads[0].contains("sk-secret"), "{heads:?}");
+        assert!(!heads[0].contains("/stolen"), "{heads:?}");
+    }
+
+    #[test]
+    fn ureq_reads_large_responses() {
+        // 深度マップは JSON で 10 MB (ureq の既定の上限) を超えることがある
+        let body = vec![b' '; 12 * 1024 * 1024];
+        let (url, handle) = serve(vec![http_response("200 OK", "", &body)]);
+        let t = UreqTransport::new(Duration::from_secs(30));
+        let mut req = request(json!({}));
+        req.url = url;
+        let response = t.send(&req).unwrap();
+        assert_eq!(response.body.len(), body.len());
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn huge_retry_after_gives_up_instead_of_panicking() {
+        let mut cassette = Cassette::default();
+        cassette.interactions.push(Interaction {
+            request: RecordedRequest {
+                method: "POST".into(),
+                url: "https://example.test/v1/messages".into(),
+                body: None,
+            },
+            outcome: RecordedOutcome::Response(RecordedResponse {
+                status: 429,
+                headers: BTreeMap::from([("retry-after".into(), "1e30".into())]),
+                body: None,
+                body_text: None,
+            }),
+        });
+        let t = ReplayTransport::new(cassette);
+        let result = send_with_retry(
+            &t,
+            &RetryPolicy::default(),
+            &|_| panic!("must not wait"),
+            &request(json!({})),
+            |r| is_retryable_status(r.status),
+        );
+        assert!(matches!(
+            result,
+            Err(SendFailure::Status {
+                retry_after: Some(d),
+                ..
+            }) if d > RetryPolicy::default().max_retry_after
+        ));
+    }
+
+    #[test]
+    fn recording_and_debug_hide_credentials_in_the_url() {
+        let mut r = request(json!({}));
+        r.url = "https://user:hunter2@llm.example.test/v1/chat/completions".into();
+        assert!(!format!("{r:?}").contains("hunter2"));
+        let recorded = RecordedRequest::from_request(&r);
+        assert_eq!(
+            recorded.url,
+            "https://<redacted>@llm.example.test/v1/chat/completions"
+        );
+        assert_eq!(
+            redact_url("http://localhost:11434/v1?next=a@b"),
+            "http://localhost:11434/v1?next=a@b"
         );
     }
 

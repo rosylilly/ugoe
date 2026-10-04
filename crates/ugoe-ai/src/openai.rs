@@ -27,16 +27,15 @@ use serde_json::{Value, json};
 
 use crate::claude::ApiKey;
 use crate::transport::{
-    HttpRequest, HttpResponse, RetryPolicy, SendFailure, Transport, UreqTransport, is_loopback_url,
-    is_retryable_status, send_with_retry, url_host,
+    HttpRequest, HttpResponse, RetryPolicy, SendFailure, Transport, UreqTransport, error_excerpt,
+    is_loopback_url, is_retryable_status, send_with_retry, url_host,
 };
-use crate::{AiError, Destination, Disclosure, Provider, ProviderRequest};
+use crate::{AiError, Destination, Disclosure, PNG_SIGNATURE, Provider, ProviderRequest};
 
 /// OpenAI の API の URL (`/chat/completions` の手前まで)。
 pub const OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 /// OpenAI の API キーを読む環境変数 (送り先が OpenAI のときだけ使う)。
 pub const API_KEY_ENV: &str = "OPENAI_API_KEY";
-const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 /// 構造化出力のスキーマの名前 (`response_format.json_schema.name`)。
 const SCHEMA_NAME: &str = "ugoe_response";
 
@@ -398,15 +397,7 @@ fn error_detail(response: &HttpResponse) -> (String, String) {
     let message = [&error["message"], error, &body["message"]]
         .iter()
         .find_map(|v| v.as_str())
-        .map_or_else(
-            || {
-                String::from_utf8_lossy(&response.body)
-                    .chars()
-                    .take(500)
-                    .collect()
-            },
-            str::to_owned,
-        );
+        .map_or_else(|| error_excerpt(&response.body), str::to_owned);
     (kind, message)
 }
 

@@ -20,9 +20,9 @@ use serde_json::json;
 pub use crate::transport::RetryPolicy;
 use crate::transport::{
     HttpRequest, HttpResponse, SendFailure, Transport, TransportError, UreqTransport,
-    is_retryable_status, send_with_retry,
+    error_excerpt, is_retryable_status, send_with_retry,
 };
-use crate::{AiError, Destination, Disclosure, Provider, ProviderRequest};
+use crate::{AiError, Destination, Disclosure, PNG_SIGNATURE, Provider, ProviderRequest};
 
 /// 既定のモデル。
 pub const DEFAULT_MODEL: &str = "claude-opus-5-5";
@@ -32,7 +32,6 @@ pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 pub const API_KEY_ENV: &str = "ANTHROPIC_API_KEY";
 /// 送る `anthropic-version` ヘッダ。
 const ANTHROPIC_VERSION: &str = "2023-06-01";
-const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 
 /// API キー。値は `Debug` やエラーに出ない。
 ///
@@ -243,10 +242,7 @@ impl ClaudeProvider {
         let parsed: Option<ErrorBody> = serde_json::from_slice(&response.body).ok();
         let (kind, message) = match parsed {
             Some(b) => (b.error.kind, b.error.message),
-            None => (
-                "unknown".to_owned(),
-                String::from_utf8_lossy(&response.body).into_owned(),
-            ),
+            None => ("unknown".to_owned(), error_excerpt(&response.body)),
         };
         AiError::Api {
             status: response.status,
@@ -281,7 +277,8 @@ impl Provider for ClaudeProvider {
                     category: message.stop_details.and_then(|d| d.category),
                 });
             }
-            Some("max_tokens") => return Err(AiError::Truncated),
+            // 文脈の窓の上限で切れたときも、途中で切れた答えになる
+            Some("max_tokens" | "model_context_window_exceeded") => return Err(AiError::Truncated),
             _ => {}
         }
         // 考えた内容 (`thinking`) などは読み飛ばし、テキストのブロックだけをつなぐ
@@ -351,6 +348,53 @@ mod tests {
         assert!(matches!(ApiKey::new("  "), Err(AiError::MissingApiKey(_))));
         let key = ApiKey::new("sk-ant-hidden").unwrap();
         assert_eq!(format!("{key:?}"), "ApiKey(<redacted>)");
+    }
+
+    /// 1 つの応答を返すプロバイダ。
+    fn replying(status: u16, body: &str) -> ClaudeProvider {
+        let json = serde_json::to_string(&json!({"interactions": [{
+            "request": {"method": "POST", "url": "https://api.anthropic.com/v1/messages"},
+            "response": {"status": status, "body_text": body},
+        }]}))
+        .unwrap();
+        let transport = crate::transport::ReplayTransport::new(
+            crate::transport::Cassette::from_json(&json).unwrap(),
+        );
+        ClaudeProvider::with_transport(
+            ClaudeConfig::default(),
+            ApiKey::new("sk-ant-hidden").unwrap(),
+            transport,
+        )
+        .with_sleeper(|_| {})
+    }
+
+    fn complete(p: &ClaudeProvider) -> Result<serde_json::Value, AiError> {
+        p.complete_json(&ProviderRequest::default(), &json!({}))
+    }
+
+    #[test]
+    fn long_non_json_error_bodies_are_cut() {
+        // プロキシなどが返す HTML のページを、そのままエラーの文言にしない
+        let page = format!("<html>{}</html>", "x".repeat(10_000));
+        let e = complete(&replying(400, &page)).unwrap_err();
+        let AiError::Api {
+            status, message, ..
+        } = e
+        else {
+            panic!("{e:?}");
+        };
+        assert_eq!(status, 400);
+        assert_eq!(message.chars().count(), 500);
+    }
+
+    #[test]
+    fn context_window_overflow_is_truncation() {
+        let body = json!({
+            "content": [{"type": "text", "text": "{\"label\": \"ir"}],
+            "stop_reason": "model_context_window_exceeded",
+        });
+        let e = complete(&replying(200, &body.to_string())).unwrap_err();
+        assert!(matches!(e, AiError::Truncated), "{e:?}");
     }
 
     #[test]
