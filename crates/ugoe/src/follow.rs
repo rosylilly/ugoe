@@ -44,16 +44,27 @@ pub struct PartOpacityInput {
 pub enum ParameterValuesError {
     /// 値の数がパラメータの数と違う。
     #[error("expected {expected} parameter values, got {actual}")]
-    Count { expected: usize, actual: usize },
+    Count {
+        /// パラメータの数。
+        expected: usize,
+        /// 渡した値の数。
+        actual: usize,
+    },
     /// `index` 番目の値が NaN。
     #[error("parameter value {index} is NaN")]
-    NaN { index: usize },
-    /// リップシンクの音量か強さが NaN。
-    #[error("the lip sync level or strength is NaN")]
+    NaN {
+        /// 値の添字 (パラメータの定義順)。
+        index: usize,
+    },
+    /// リップシンクの音量か強さが有限でない (NaN か無限大)。
+    #[error("the lip sync level or strength is not finite")]
     LipSyncNaN,
-    /// `index` 番目のパーツの不透明度の入力の値か重みが NaN。
-    #[error("part opacity input {index} is NaN")]
-    PartOpacityNaN { index: usize },
+    /// `index` 番目のパーツの不透明度の入力の値か重みが有限でない (NaN か無限大)。
+    #[error("part opacity input {index} is not finite")]
+    PartOpacityNaN {
+        /// 渡した並びの中の添字。
+        index: usize,
+    },
 }
 
 impl Puppet {
@@ -132,7 +143,9 @@ impl Puppet {
     /// それらは値を作った側 (指揮役) で済んでいるため。物理・リップシンク・ポーズは [`Puppet::set_toggles`] に従う。
     ///
     /// 同じ `values`・`lip_sync`・`part_opacities`・`dt` の列を与えた `Puppet` は、物理を含めて同じ形になる (決定的)。
-    /// 数が違うか、値・リップシンク・パーツの不透明度の入力が NaN を含むときは、何も変えずにエラーを返す (時間も進めない)。
+    /// 数が違うか、値が NaN を含むか、リップシンク・パーツの不透明度の入力が有限でない (NaN か無限大) ときは、何も変えずに
+    /// エラーを返す (時間も進めない。値の無限大は値域にクランプするので受け付ける)。
+    /// `dt` が負か有限でなければ、[`Puppet::update`] と同じく 0 とみなす。
     pub fn follow(
         &mut self,
         values: &[f32],
@@ -140,16 +153,17 @@ impl Puppet {
         part_opacities: &[PartOpacityInput],
         dt: f32,
     ) -> Result<(), ParameterValuesError> {
-        if lip_sync.is_some_and(|l| l.level.is_nan() || l.strength.is_nan()) {
+        if lip_sync.is_some_and(|l| !l.level.is_finite() || !l.strength.is_finite()) {
             return Err(ParameterValuesError::LipSyncNaN);
         }
         if let Some(index) = part_opacities
             .iter()
-            .position(|p| p.value.is_nan() || p.weight.is_nan())
+            .position(|p| !p.value.is_finite() || !p.weight.is_finite())
         {
             return Err(ParameterValuesError::PartOpacityNaN { index });
         }
         self.set_base_values(values)?;
+        let dt = crate::sanitize_dt(dt);
         self.before_physics
             .copy_from_slice(self.instance.parameters().as_slice());
         // 8. 物理 (動的物理を使う設定では、ここで 1 段目の評価を行う)
@@ -550,6 +564,41 @@ mod tests {
             puppet.follow(&sent, Some(nan), &[], DT),
             Err(ParameterValuesError::LipSyncNaN)
         );
+    }
+
+    /// 有限でないリップシンクの音量・強さ、パーツの不透明度の値・重みは NaN と同じく拒み、何も変えない
+    /// (強さが無限大で音量と今の値が等しいと `0 * inf` で NaN を書いてしまうため)。
+    #[test]
+    fn follow_rejects_non_finite_inputs() {
+        let mut puppet = Puppet::new(fixtures::pose_and_effects()).unwrap();
+        let sent = values(&puppet);
+        let count = puppet.instance().update_count();
+        for (level, strength) in [
+            (0.0, f32::INFINITY),
+            (0.5, f32::NEG_INFINITY),
+            (f32::INFINITY, 1.0),
+        ] {
+            let lip_sync = Some(LipSyncInput { level, strength });
+            assert_eq!(
+                puppet.follow(&sent, lip_sync, &[], DT),
+                Err(ParameterValuesError::LipSyncNaN),
+                "{level} {strength}"
+            );
+        }
+        for (value, weight) in [(f32::INFINITY, 1.0), (0.5, f32::INFINITY)] {
+            let part = PartOpacityInput {
+                part: 0,
+                value,
+                weight,
+            };
+            assert_eq!(
+                puppet.follow(&sent, None, &[part], DT),
+                Err(ParameterValuesError::PartOpacityNaN { index: 0 }),
+                "{value} {weight}"
+            );
+        }
+        assert_eq!(puppet.instance().update_count(), count);
+        assert!(values(&puppet).iter().all(|v| v.is_finite()));
     }
 
     /// `update` は物理の段の直前の値を覚える (物理の出力やリップシンクの前の値)。

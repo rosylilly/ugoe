@@ -13,26 +13,44 @@ use ugoe_format::ReadWarning;
 pub enum LoadWarning {
     /// テクスチャが KTX2 (未対応) なので、白のプレースホルダで代用した。
     #[error("texture {texture} is KTX2, which is not supported yet; using a white placeholder")]
-    TextureKtx2 { texture: usize },
+    TextureKtx2 {
+        /// テクスチャの番号。
+        texture: usize,
+    },
     /// テクスチャの画像が無いので、白のプレースホルダで代用した。
     #[error("no data for texture {texture}; using a white placeholder")]
-    TextureMissing { texture: usize },
+    TextureMissing {
+        /// テクスチャの番号。
+        texture: usize,
+    },
     /// 法線マップが KTX2 (未対応) なので、法線マップなしで描く。
     #[error(
         "the normal map of texture {texture} is KTX2, which is not supported yet; drawing without it"
     )]
-    NormalMapKtx2 { texture: usize },
+    NormalMapKtx2 {
+        /// 法線マップを持つテクスチャの番号。
+        texture: usize,
+    },
     /// 読み直す前の物理の設定が新しいモデルと合わないので外した。`reason` は検査の結果 (英語)。
     #[error("physics settings were removed: {reason}")]
-    PhysicsRemoved { reason: String },
+    PhysicsRemoved {
+        /// 検査の結果 (英語)。
+        reason: String,
+    },
     /// 知らない任意の機能を宣言したファイル。仕様の定めるフォールバックで読んだ
     /// (`ugoe_format::ReadWarning::UnknownOptionalFeature`)。
     #[error("unknown optional feature {feature}")]
-    UnknownOptionalFeature { feature: String },
+    UnknownOptionalFeature {
+        /// 機能の名前。
+        feature: String,
+    },
     /// 知らない列挙の値をフォールバックで読んだ。`path` はチャンクとその中の場所
     /// (`ugoe_format::ReadWarning::UnknownValue`)。
     #[error("unknown value at {path}")]
-    UnknownValue { path: String },
+    UnknownValue {
+        /// チャンクとその中の場所。
+        path: String,
+    },
 }
 
 /// 警告の補足の値。
@@ -40,6 +58,7 @@ pub enum LoadWarning {
 pub enum FieldValue<'a> {
     /// 番号 (テクスチャの番号など)。
     Index(usize),
+    /// 文 (理由・機能の名前・場所など)。
     Text(&'a str),
 }
 

@@ -2,7 +2,9 @@
 //!
 //! [`Puppet`] が 1 体分の「モデル + 物理 + モーション + 常時エフェクト」をまとめ、
 //! `update(dt)` 1 回で 1 フレーム分のパラメータ更新と変形評価を行う。
-//! 描画は `render` feature 相当の [`ugoe_render`] か、エンジン独自のレンダラで行う。
+//! 描画は参照レンダラ [`ugoe_render`] (`ugoe::render` として再エクスポート) か、エンジン独自のレンダラで行う。
+
+#![warn(missing_docs)]
 
 use std::sync::Arc;
 
@@ -53,10 +55,15 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// エディタのプレビューで、物理やエフェクトを切って確かめるために使う。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Toggles {
+    /// 8. 物理 (動的物理を含む)。
     pub physics: bool,
+    /// 6. 目パチ。
     pub eye_blink: bool,
+    /// 7. 呼吸。
     pub breath: bool,
+    /// 9. リップシンク。
     pub lip_sync: bool,
+    /// 10. ポーズ (止めるとモーションのパーツの不透明度のカーブをそのまま上書きにする)。
     pub pose: bool,
 }
 
@@ -115,10 +122,15 @@ pub struct Puppet {
 }
 
 impl Puppet {
+    /// `model` をコンパイルして作る。物理は持たない ([`Puppet::with_physics`] / [`Puppet::set_physics`] で付ける)。
+    ///
+    /// モデルが評価できない (コンパイルに失敗する) ときは [`CompileError`] を返す。
     pub fn new(model: ugoe_model::Model) -> Result<Self, CompileError> {
         Ok(Self::from_compiled(CompiledModel::compile(model)?))
     }
 
+    /// コンパイル済みのモデルから作る (同じモデルの `Puppet` を複数作るときにコンパイルを共有する)。
+    /// エフェクトとポーズはモデルのものを読み込み、物理は持たない。
     pub fn from_compiled(compiled: Arc<CompiledModel>) -> Self {
         let model = compiled.model();
         let effects = model.effects.clone();
@@ -215,6 +227,7 @@ impl Puppet {
         }
     }
 
+    /// 各段を動かすか ([`Puppet::set_toggles`])。
     pub fn toggles(&self) -> Toggles {
         self.toggles
     }
@@ -230,10 +243,13 @@ impl Puppet {
         self.toggles = toggles;
     }
 
+    /// モデルの評価の状態 (パラメータの値・描画の要素・当たり判定など)。
     pub fn instance(&self) -> &ModelInstance {
         &self.instance
     }
 
+    /// モデルの評価の状態を書き換える。`update` の合間に `parameters_mut()` で書いた値は基準値になる
+    /// (`docs/spec/motion.md#フレーム内の適用順` の 1.)。パーツの不透明度の上書きは `update` が毎フレーム作り直す。
     pub fn instance_mut(&mut self) -> &mut ModelInstance {
         &mut self.instance
     }
@@ -244,10 +260,12 @@ impl Puppet {
         self.motions.start(motion, priority)
     }
 
+    /// モーションの再生の状態。
     pub fn motions(&self) -> &MotionManager {
         &self.motions
     }
 
+    /// モーションの再生を操作する (止める・優先度を見るなど)。
     pub fn motions_mut(&mut self) -> &mut MotionManager {
         &mut self.motions
     }
@@ -262,6 +280,7 @@ impl Puppet {
         self.expressions.set(expression);
     }
 
+    /// 表情を操作する (重ねる・止めるなど)。
     pub fn expressions_mut(&mut self) -> &mut ExpressionManager {
         &mut self.expressions
     }
@@ -292,6 +311,7 @@ impl Puppet {
         self.tracking = input;
     }
 
+    /// フェイストラッキングの入力 ([`Puppet::set_tracking`])。
     pub fn tracking(&self) -> Option<&TrackingInput> {
         self.tracking.as_ref()
     }
@@ -305,6 +325,7 @@ impl Puppet {
         self.motion_over_tracking = enabled;
     }
 
+    /// トラッキング中にモーションを優先するか ([`Puppet::set_motion_over_tracking`])。
     pub fn motion_over_tracking(&self) -> bool {
         self.motion_over_tracking
     }
@@ -347,10 +368,12 @@ impl Puppet {
             .collect();
     }
 
+    /// ポーズの状態 (各グループの表示中の要素と不透明度)。
     pub fn pose(&self) -> &PosePlayer {
         &self.pose
     }
 
+    /// ポーズを操作する (`PosePlayer::show` で表示する要素を選ぶなど。`docs/spec/motion.md#ポーズ`)。
     pub fn pose_mut(&mut self) -> &mut PosePlayer {
         &mut self.pose
     }
@@ -362,7 +385,10 @@ impl Puppet {
     ///
     /// 動的物理を使う設定では、物理の段で 1 段目の評価を行い、最後の `ModelInstance::update()` が
     /// 2 段目になる (動的物理を使わなければ評価は 1 回)。
+    ///
+    /// `dt` (秒) が負か有限でなければ 0 とみなす (時間は進めずに各段を当て、評価する。[`sanitize_dt`])。
     pub fn update(&mut self, dt: f32) {
+        let dt = sanitize_dt(dt);
         let params = self.instance.parameters_mut();
 
         // 1. 基準値に戻す。前フレームの出力から変わっている値はホストが書き換えたので、基準値にする。
@@ -523,6 +549,12 @@ impl Puppet {
             })
             .collect()
     }
+}
+
+/// 負か有限でない `dt` を 0 にする。NaN が再生の時刻に入ると、モーション・目パチ・呼吸の状態が戻らなくなるため
+/// (物理は `docs/spec/physics.md` のとおり自分でも 0 とみなす)。
+fn sanitize_dt(dt: f32) -> f32 {
+    if dt.is_finite() && dt > 0.0 { dt } else { 0.0 }
 }
 
 #[cfg(test)]
@@ -863,6 +895,33 @@ mod tests {
         assert!(puppet.motion_events().is_empty());
         puppet.update(0.5);
         assert_eq!(puppet.motion_events()[0].value, "hello");
+    }
+
+    /// 負や有限でない `dt` は 0 とみなし、再生の状態を壊さない (NaN が基準値や時刻に残らない)。
+    #[test]
+    fn invalid_dt_is_treated_as_zero() {
+        let run = |bad: Option<f32>| {
+            let mut puppet = Puppet::new(fixtures::pose_and_effects()).unwrap();
+            puppet.start_motion(
+                motion(10.0, true, vec![param_curve(standard::ANGLE_Z, 5.0)]),
+                Priority::Normal,
+            );
+            let mut trace = Vec::new();
+            for frame in 0..120 {
+                if let Some(dt) = bad.filter(|_| frame % 10 == 5) {
+                    puppet.update(dt);
+                }
+                puppet.update(DT);
+                trace.extend_from_slice(puppet.instance().parameters().as_slice());
+            }
+            trace
+        };
+        let expected = run(None);
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, -1.0] {
+            let actual = run(Some(bad));
+            assert!(actual.iter().all(|v| v.is_finite()), "dt {bad}");
+            assert_eq!(actual, expected, "dt {bad}");
+        }
     }
 
     /// 同じ入力列からは同じ出力になる (目パチの乱数もシードで決まる)。

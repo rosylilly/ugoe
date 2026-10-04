@@ -26,7 +26,12 @@ pub enum TextureSource {
     /// 本体の `Model::textures` の添字 (バンドルの画像と同じ順)。
     Base(u32),
     /// モジュール `module` の `Module::textures` の添字 (`ugoe_format::module_file::ModuleFile::textures` と同じ順)。
-    Module { module: String, index: u32 },
+    Module {
+        /// モジュールの名前 (`Module::name`)。
+        module: String,
+        /// モジュールの `Module::textures` の添字。
+        index: u32,
+    },
 }
 
 /// 付け外しで変わったもの。レンダラの利用者は、これを見てテクスチャを設定し直す。
@@ -43,15 +48,21 @@ pub struct DressUpChange {
     pub texture_count: u32,
 }
 
+/// 着せ替え (付け外し・本体の物理の差し替え) の失敗。失敗したときは何も変えていない。
+///
+/// 組み込み先は [`DressUpError::code`] と [`DressUpError::fields`] で種類と補足の値を読む (`Display` の文は安定した値として扱わない)。
 #[derive(Debug, thiserror::Error)]
 pub enum DressUpError {
+    /// 本体とモジュールを合成できない (スロットが無い・埋まっているなど)。
     #[error(transparent)]
     Compose(#[from] ComposeError),
+    /// 合成したモデルをコンパイルできない。
     #[error(transparent)]
     Compile(#[from] CompileError),
     /// 合成した物理の設定が、合成したモデルに対する検証を通らない。
     #[error("composed physics failed validation: {0:?}")]
     Physics(Vec<ValidationError>),
+    /// 外そうとした名前のモジュールが付いていない。
     #[error("module `{0}` is not attached")]
     NotAttached(String),
 }
@@ -221,7 +232,9 @@ impl Puppet {
         &mut self,
         modules: Vec<Arc<Module>>,
     ) -> Result<DressUpChange, DressUpError> {
-        let wardrobe = &*self.wardrobe.get_or_insert_with(|| {
+        // 本体は組み替えに成功したときに覚える (失敗したら何も変えない。覚えた後は `set_physics` が本体の設定を変えなくなる)。
+        let dressed = self.wardrobe.is_some();
+        let mut wardrobe = self.wardrobe.take().unwrap_or_else(|| {
             let base = self.instance.compiled().model().clone();
             Wardrobe {
                 textures: texture_sources(&base, &[]),
@@ -230,20 +243,27 @@ impl Puppet {
                 modules: Vec::new(),
             }
         });
-        let base = &wardrobe.base;
-        let (model, physics) = compose_all(base, wardrobe.base_physics.as_ref(), &modules)?;
-        let textures = texture_sources(base, &modules);
-        let compiled = CompiledModel::compile(model)?;
-
+        let Composed {
+            compiled,
+            physics,
+            textures,
+        } = match wardrobe.compose(&modules) {
+            Ok(composed) => composed,
+            Err(e) => {
+                if dressed {
+                    self.wardrobe = Some(wardrobe);
+                }
+                return Err(e);
+            }
+        };
         let change = texture_change(
             (&wardrobe.textures, &wardrobe.modules),
             (&textures, &modules),
         );
+        wardrobe.modules = modules;
+        wardrobe.textures = textures;
         self.swap_model(compiled, physics);
-        if let Some(wardrobe) = &mut self.wardrobe {
-            wardrobe.modules = modules;
-            wardrobe.textures = textures;
-        }
+        self.wardrobe = Some(wardrobe);
         Ok(change)
     }
 
@@ -309,6 +329,25 @@ impl Puppet {
         let curves = self.motions.part_opacities();
         self.apply_part_opacities(0.0, curves);
         self.instance.update();
+    }
+}
+
+/// 本体にモジュールの組を合成した結果 ([`Wardrobe::compose`])。
+struct Composed {
+    compiled: Arc<CompiledModel>,
+    physics: Option<PhysicsSettings>,
+    textures: Vec<TextureSource>,
+}
+
+impl Wardrobe {
+    /// 本体に `modules` を合成してコンパイルし、合成した物理の設定とテクスチャの出どころと合わせて返す。
+    fn compose(&self, modules: &[Arc<Module>]) -> Result<Composed, DressUpError> {
+        let (model, physics) = compose_all(&self.base, self.base_physics.as_ref(), modules)?;
+        Ok(Composed {
+            compiled: CompiledModel::compile(model)?,
+            physics,
+            textures: texture_sources(&self.base, modules),
+        })
     }
 }
 

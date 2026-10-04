@@ -130,6 +130,28 @@ fn failed_attach_changes_nothing() {
     assert_eq!(names(&puppet), ["LongHair"]);
 }
 
+/// モジュールを付けたことのない Puppet で付けるのに失敗しても、本体を覚えない (`set_physics` の設定が本体の設定のまま)。
+#[test]
+fn failed_first_attach_does_not_freeze_the_base() {
+    let mut puppet = Puppet::new(dress_up_base()).unwrap();
+    let mut hat = dress_module();
+    hat.slot = "Hat".into();
+    assert!(puppet.attach_module(Arc::new(hat)).is_err());
+    assert!(puppet.base_physics().is_none());
+
+    let (_, settings) = chest_base();
+    let settings = PhysicsSettings {
+        colliders: Vec::new(),
+        ..settings
+    };
+    puppet.set_physics(Some(settings.clone())).unwrap();
+    assert_eq!(puppet.base_physics(), Some(&settings));
+    puppet.attach_module(Arc::new(dress_module())).unwrap();
+    assert_eq!(puppet.base_physics(), Some(&settings));
+    puppet.set_modules(Vec::new()).unwrap();
+    assert_eq!(puppet.physics().unwrap().settings(), &settings);
+}
+
 #[test]
 fn parameters_carry_over_and_keep_their_base_values() {
     let mut puppet = Puppet::new(dress_up_base()).unwrap();
@@ -418,4 +440,141 @@ fn errors_have_stable_codes_and_fields() {
             ("attached", "LongHair"),
         ]
     );
+}
+
+/// `code` と `fields` のキーは組み込み先が照らし合わせる値なので、すべての種類を固定する (T0412)。
+#[test]
+fn every_error_kind_has_a_fixed_code_and_fields() {
+    let s = |v: &str| v.to_owned();
+    type Fields = Vec<(&'static str, &'static str)>;
+    let cases: Vec<(DressUpError, &str, Fields)> = vec![
+        (
+            DressUpError::NotAttached(s("m")),
+            "not_attached",
+            vec![("module", "m")],
+        ),
+        (
+            CompileError::UnknownParameter(s("p")).into(),
+            "compile",
+            vec![],
+        ),
+        (DressUpError::Physics(Vec::new()), "invalid_physics", vec![]),
+        (
+            ComposeError::InvalidModuleName(s("m")).into(),
+            "invalid_module_name",
+            vec![("module", "m")],
+        ),
+        (
+            ComposeError::DuplicateModule(s("m")).into(),
+            "duplicate_module",
+            vec![("module", "m")],
+        ),
+        (
+            ComposeError::UnknownSlot {
+                module: s("m"),
+                slot: s("s"),
+            }
+            .into(),
+            "unknown_slot",
+            vec![("module", "m"), ("slot", "s")],
+        ),
+        (
+            ComposeError::SlotOccupied {
+                slot: s("s"),
+                first: s("a"),
+                second: s("m"),
+            }
+            .into(),
+            "slot_occupied",
+            vec![("slot", "s"), ("module", "m"), ("attached", "a")],
+        ),
+        (
+            ComposeError::AvatarLevel {
+                module: s("m"),
+                required: 2,
+                actual: None,
+            }
+            .into(),
+            "avatar_level",
+            vec![("module", "m")],
+        ),
+        (
+            ComposeError::MissingSlot {
+                module: s("m"),
+                slot: s("s"),
+            }
+            .into(),
+            "missing_slot",
+            vec![("module", "m"), ("slot", "s")],
+        ),
+        (
+            ComposeError::MissingParameter {
+                module: s("m"),
+                parameter: s("p"),
+            }
+            .into(),
+            "missing_parameter",
+            vec![("module", "m"), ("parameter", "p")],
+        ),
+        (
+            ComposeError::ParameterNotExposed {
+                module: s("m"),
+                slot: s("s"),
+                parameter: s("p"),
+            }
+            .into(),
+            "parameter_not_exposed",
+            vec![("module", "m"), ("slot", "s"), ("parameter", "p")],
+        ),
+        (
+            ComposeError::UnknownMask {
+                module: s("m"),
+                mesh: s("x"),
+                mask: s("k"),
+            }
+            .into(),
+            "unknown_mask",
+            vec![("module", "m"), ("mesh", "x")],
+        ),
+        (
+            ComposeError::TextureOutOfRange {
+                module: s("m"),
+                mesh: s("x"),
+                texture: 3,
+            }
+            .into(),
+            "texture_out_of_range",
+            vec![("module", "m"), ("mesh", "x")],
+        ),
+        (
+            ComposeError::UnknownCollider {
+                module: s("m"),
+                rig: s("r"),
+                collider: s("c"),
+            }
+            .into(),
+            "unknown_collider",
+            vec![("module", "m")],
+        ),
+        (
+            ComposeError::PoseNotExposed {
+                module: s("m"),
+                slot: s("s"),
+                part: s("p"),
+            }
+            .into(),
+            "pose_not_exposed",
+            vec![("module", "m"), ("slot", "s")],
+        ),
+        (
+            ComposeError::Invalid(Vec::new()).into(),
+            "invalid_composition",
+            vec![],
+        ),
+    ];
+    for (error, code, fields) in &cases {
+        assert_eq!(error.code(), *code);
+        assert_eq!(&error.fields(), fields, "{code}");
+    }
+    assert_eq!(DressUpError::INVALID_FILE, "invalid_file");
 }
