@@ -1,11 +1,11 @@
 ---
 id: T0027
 title: CI に入っていない検査を足す (script-check・cargo doc の警告・ugoe-ai と ugoe-mcp の windows-gnu の clippy)
-status: todo
+status: in-progress
 milestone: M9
 crates: [.github/workflows, justfile, scripts, ugoe-model, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0027
 ---
 
 # T0027: CI に入っていない検査を足す (script-check・cargo doc の警告・ugoe-ai と ugoe-mcp の windows-gnu の clippy)

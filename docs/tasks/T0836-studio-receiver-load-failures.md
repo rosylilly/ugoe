@@ -1,11 +1,11 @@
 ---
 id: T0836
 title: "スタジオ: 受け手の読み込みの失敗を残らず知らせる (仮想カメラ・背景の画像・KTX2・GPU のエラーの理由)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0836
 ---
 
 # T0836: スタジオ: 受け手の読み込みの失敗を残らず知らせる (仮想カメラ・背景の画像・KTX2・GPU のエラーの理由)

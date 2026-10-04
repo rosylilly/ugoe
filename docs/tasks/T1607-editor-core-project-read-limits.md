@@ -1,11 +1,11 @@
 ---
 id: T1607
 title: "editor-core: プロジェクトとモジュールの読み込み・指紋でも、通常のファイルだけを大きさの上限付きで読む"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1607
 ---
 
 # T1607: editor-core: プロジェクトとモジュールの読み込み・指紋でも、通常のファイルだけを大きさの上限付きで読む

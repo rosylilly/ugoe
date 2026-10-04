@@ -1,11 +1,11 @@
 ---
 id: T1617
 title: PSD の取り込みで、上限を超える画像のレイヤーを飛ばして警告し、取り込み全体を失敗させない
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core, apps/editor, docs]
 depends_on: [T0560]
-assignee:
+assignee: claude-worker-T1617
 ---
 
 # T1617: PSD の取り込みで、上限を超える画像のレイヤーを飛ばして警告し、取り込み全体を失敗させない

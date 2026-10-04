@@ -1,11 +1,11 @@
 ---
 id: T0460
 title: "Godot: 描画を頂点だけの書き換え (mesh_surface_update_vertex_region) にするかを測って決める"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/godot, docs]
 depends_on: [T0459]
-assignee:
+assignee: claude-worker-T0460
 ---
 
 # T0460: Godot: 描画を頂点だけの書き換え (mesh_surface_update_vertex_region) にするかを測って決める

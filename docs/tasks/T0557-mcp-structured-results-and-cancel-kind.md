@@ -1,11 +1,11 @@
 ---
 id: T0557
 title: "ugoe-mcp: ツールのエラーの構造 (code・args)・Undo の可否・確認の取り消しの種類を出す (判断が要る)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-mcp, apps/editor, docs]
 depends_on: [T0556]
-assignee:
+assignee: claude-worker-T0557
 ---
 
 # T0557: ugoe-mcp: ツールのエラーの構造 (code・args)・Undo の可否・確認の取り消しの種類を出す (判断が要る)
