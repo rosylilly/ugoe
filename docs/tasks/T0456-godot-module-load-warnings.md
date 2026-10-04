@@ -1,11 +1,11 @@
 ---
 id: T0456
 title: "Godot: 着せ替えのモジュールの読み込みの警告をスクリプトから読む"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/godot, docs]
 depends_on: [T0450]
-assignee:
+assignee: claude-worker-T0456
 ---
 
 # T0456: Godot: 着せ替えのモジュールの読み込みの警告をスクリプトから読む
