@@ -1,11 +1,11 @@
 ---
 id: T0827
 title: スタジオ: 仮想カメラの設定と刻みの速さをプロファイルに持つ
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, docs]
 depends_on: [T0815]
-assignee:
+assignee: claude-worker-T0827
 ---
 
 # T0827: スタジオ: 仮想カメラの設定と刻みの速さをプロファイルに持つ
