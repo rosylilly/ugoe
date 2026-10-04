@@ -1,11 +1,11 @@
 ---
 id: T0450
 title: "Godot: 毎フレームの確保を減らし、マスクのビューポートの作り損ねを後始末する"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/godot]
 depends_on: [T0427]
-assignee:
+assignee: claude-worker-T0450
 ---
 
 # T0450: Godot: 毎フレームの確保を減らし、マスクのビューポートの作り損ねを後始末する
