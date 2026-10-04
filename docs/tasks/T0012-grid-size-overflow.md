@@ -1,11 +1,11 @@
 ---
 id: T0012
 title: 検証していない格子の大きさと画素の数の積のあふれを塞ぐ (editor-core ほか)
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core, ugoe-ai, ugoe-cli, ugoe-psd, ugoe-mesher, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0012
 ---
 
 # T0012: 検証していない格子の大きさと画素の数の積のあふれを塞ぐ (editor-core ほか)
