@@ -29,6 +29,7 @@ pub use module_file::{
 /// `.ugoe` ファイル先頭のマジックバイト。
 pub const MAGIC: [u8; 4] = *b"UGOE";
 
+/// 読み書きのエラー。読み込みは壊れた入力でパニックせず、このエラーを返す。
 #[derive(Debug, thiserror::Error)]
 pub enum FormatError {
     #[error("not a ugoe file")]
@@ -112,7 +113,11 @@ pub fn model_to_json(model: &Model) -> Result<String, FormatError> {
 
 /// JSON 表現からモデルを読み込む。未知の値は `Unknown` として読む
 /// (場所は `ugoe_model::unknown::in_model` で調べられる)。
+///
+/// スキーマのバージョンだけを検査する。[`read_bundle`] と違い、`ugoe_model::validate::validate` は
+/// 呼び出し側で行う。
 pub fn model_from_json(json: &str) -> Result<Model, FormatError> {
+    check_json_schema_version_first(json)?;
     let model: Model = serde_json::from_str(json)?;
     check_schema_version(model.schema_version)?;
     Ok(model)
@@ -132,6 +137,7 @@ pub fn module_to_json(module: &Module) -> Result<String, FormatError> {
 /// JSON 表現から着せ替えのモジュールを読み込む。スキーマのバージョンだけを検査する
 /// (検証は `ugoe_model::validate::validate_module` を呼び出し側で行う)。
 pub fn module_from_json(json: &str) -> Result<Module, FormatError> {
+    check_json_schema_version_first(json)?;
     let module: Module = serde_json::from_str(json)?;
     check_schema_version(module.schema_version)?;
     Ok(module)
@@ -144,7 +150,13 @@ pub fn physics_from_json(json: &str) -> Result<PhysicsSettings, FormatError> {
 }
 
 /// 物理の設定を JSON 表現で書き出す。
+///
+/// 未知の値 (`Unknown`) を含む物理の設定は [`FormatError::UnknownValues`] で拒否する。
 pub fn physics_to_json(physics: &PhysicsSettings) -> Result<String, FormatError> {
+    let unknown = ugoe_model::unknown::in_physics(physics);
+    if !unknown.is_empty() {
+        return Err(FormatError::UnknownValues(unknown));
+    }
     Ok(serde_json::to_string_pretty(physics)?)
 }
 
@@ -167,6 +179,24 @@ fn check_schema_version(version: u32) -> Result<(), FormatError> {
         });
     }
     Ok(())
+}
+
+/// JSON のオブジェクトから `schema_version` だけを先に読んで検査する。
+///
+/// 形の変わった新しい版の JSON が、デコードのエラーでなく [`FormatError::UnsupportedVersion`] になるようにするため
+/// (バンドルの [`bundle::peek_schema_version`] と同じ。`docs/spec/file-formats.md#バージョニング`)。
+/// 先読みできなければここではエラーにせず、全体のデコードに任せる。
+fn check_json_schema_version_first(json: &str) -> Result<(), FormatError> {
+    #[derive(serde::Deserialize)]
+    struct Versioned {
+        schema_version: Option<u32>,
+    }
+    match serde_json::from_str::<Versioned>(json) {
+        Ok(Versioned {
+            schema_version: Some(version),
+        }) => check_schema_version(version),
+        _ => Ok(()),
+    }
 }
 
 #[cfg(test)]
@@ -195,10 +225,43 @@ mod tests {
         ));
     }
 
+    /// 形の変わった新しい版の JSON も、デコードのエラーでなく版のエラーになる (バンドルと同じ)。
+    #[test]
+    fn newer_schema_json_is_rejected_before_decoding() {
+        let newer = serde_json::json!({
+            "nodes": [{ "id": "Root" }],
+            "schema_version": ugoe_model::SCHEMA_VERSION + 1,
+        })
+        .to_string();
+        for result in [
+            model_from_json(&newer).map(drop),
+            module_from_json(&newer).map(drop),
+        ] {
+            assert!(
+                matches!(result, Err(FormatError::UnsupportedVersion { found, .. }) if found == ugoe_model::SCHEMA_VERSION + 1),
+                "{result:?}"
+            );
+        }
+        // 同じ版なら今までどおりデコードのエラー。
+        let same = serde_json::json!({ "schema_version": ugoe_model::SCHEMA_VERSION }).to_string();
+        assert!(matches!(model_from_json(&same), Err(FormatError::Json(_))));
+    }
+
     #[test]
     fn physics_json_roundtrip() {
         let physics = ugoe_model::fixtures::physics_hair_settings();
         let back = physics_from_json(&physics_to_json(&physics).unwrap()).unwrap();
         assert_eq!(physics, back);
+    }
+
+    /// 未知の値を含む物理は、モデルと同じく場所を示して書き出しを拒否する。
+    #[test]
+    fn physics_with_unknown_values_is_not_written() {
+        let mut physics = ugoe_model::fixtures::physics_hair_settings();
+        physics.rigs[0].outputs[0].source = ugoe_model::physics::PhysicsSource::Unknown;
+        match physics_to_json(&physics) {
+            Err(FormatError::UnknownValues(paths)) => assert_eq!(paths.len(), 1),
+            other => panic!("unexpected result: {other:?}"),
+        }
     }
 }

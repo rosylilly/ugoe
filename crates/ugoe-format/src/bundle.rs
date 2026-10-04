@@ -176,6 +176,7 @@ pub(crate) fn normal_map_of<'a>(
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct WriteOptions {
     /// `TEXR` と `NRML` 以外のチャンクを zstd で圧縮する。画像は既に圧縮済みなので対象外。
+    /// 展開後が [`MAX_DECOMPRESSED_CHUNK_LEN`] を超えるチャンクも圧縮しない。
     pub compress: bool,
 }
 
@@ -230,6 +231,8 @@ pub(crate) fn write_with_features(
 /// チャンクを集めてコンテナを組み立てる (バンドルとモジュールで共通)。
 pub(crate) struct ChunkWriter<'a> {
     options: WriteOptions,
+    /// これより大きいペイロードは圧縮しない ([`MAX_DECOMPRESSED_CHUNK_LEN`]。試験では小さくする)。
+    compress_limit: usize,
     chunks: Vec<(ChunkTag, u32, Cow<'a, [u8]>)>,
 }
 
@@ -241,6 +244,7 @@ impl<'a> ChunkWriter<'a> {
     ) -> Result<Self, FormatError> {
         let mut writer = Self {
             options,
+            compress_limit: MAX_DECOMPRESSED_CHUNK_LEN,
             chunks: Vec::new(),
         };
         if !declared.is_empty() {
@@ -253,8 +257,11 @@ impl<'a> ChunkWriter<'a> {
     }
 
     /// エンコード済みのペイロードを加える。設定に従って圧縮する。
+    ///
+    /// 展開後の上限 ([`MAX_DECOMPRESSED_CHUNK_LEN`]) を超えるペイロードは、圧縮すると読み込みで
+    /// 拒否されるので、設定によらず圧縮せずに置く (`docs/spec/file-formats.md#ペイロードのエンコード`)。
     pub(crate) fn push_encoded(&mut self, tag: ChunkTag, raw: Vec<u8>) {
-        if self.options.compress {
+        if self.options.compress && raw.len() <= self.compress_limit {
             let compressed = ruzstd::encoding::compress_to_vec(
                 raw.as_slice(),
                 ruzstd::encoding::CompressionLevel::Fastest,
@@ -582,6 +589,15 @@ pub(crate) struct Entry {
 impl Entry {
     /// ペイロードを取り出す (圧縮されていれば展開する)。範囲は `read_table` で検査済み。
     pub(crate) fn payload<'a>(&self, bytes: &'a [u8]) -> Result<Cow<'a, [u8]>, FormatError> {
+        self.payload_within(bytes, MAX_DECOMPRESSED_CHUNK_LEN)
+    }
+
+    /// 展開後の上限 `limit` を指定してペイロードを取り出す (試験で小さな上限を使うため)。
+    fn payload_within<'a>(
+        &self,
+        bytes: &'a [u8],
+        limit: usize,
+    ) -> Result<Cow<'a, [u8]>, FormatError> {
         let raw = bytes
             .get(self.start..self.end)
             .ok_or(FormatError::ChunkOutOfBounds { tag: self.tag })?;
@@ -592,10 +608,10 @@ impl Entry {
             .map_err(|e| FormatError::Decompress(e.to_string()))?;
         let mut out = Vec::new();
         decoder
-            .take(MAX_DECOMPRESSED_CHUNK_LEN as u64 + 1)
+            .take(limit as u64 + 1)
             .read_to_end(&mut out)
             .map_err(|e| FormatError::Decompress(e.to_string()))?;
-        if out.len() > MAX_DECOMPRESSED_CHUNK_LEN {
+        if out.len() > limit {
             return Err(FormatError::DecompressedTooLarge { tag: self.tag });
         }
         Ok(Cow::Owned(out))
@@ -660,8 +676,12 @@ pub(crate) fn read_table(bytes: &[u8]) -> Result<Vec<Entry>, FormatError> {
     }
 
     // チャンク同士の重なりを検査する (表の順序は保ったまま、位置順に並べた写しで調べる)。
-    let mut ranges: Vec<(usize, usize, ChunkTag)> =
-        entries.iter().map(|e| (e.start, e.end, e.tag)).collect();
+    // 長さ 0 のチャンクはどのバイトも占めないので、何とも重ならない。
+    let mut ranges: Vec<(usize, usize, ChunkTag)> = entries
+        .iter()
+        .filter(|e| e.start < e.end)
+        .map(|e| (e.start, e.end, e.tag))
+        .collect();
     ranges.sort_unstable_by_key(|&(start, end, _)| (start, end));
     for pair in ranges.windows(2) {
         if let [(_, prev_end, _), (start, _, tag)] = pair
@@ -1140,6 +1160,36 @@ pub(crate) mod tests {
         assert_eq!(crate::model_from_json(&json).unwrap(), bundle.model);
     }
 
+    /// 展開後の大きさが上限を超えるチャンクは、展開しきらずに拒否する。
+    #[test]
+    fn rejects_payloads_over_the_decompressed_limit() {
+        let compressed = ruzstd::encoding::compress_to_vec(
+            [7u8; 64].as_slice(),
+            ruzstd::encoding::CompressionLevel::Fastest,
+        );
+        let bytes = assemble(&[(ChunkTag::META, CHUNK_FLAG_ZSTD, compressed)]);
+        let entry = &read_table(&bytes).unwrap()[0];
+        assert_eq!(&*entry.payload_within(&bytes, 64).unwrap(), [7u8; 64]);
+        assert!(matches!(
+            entry.payload_within(&bytes, 63),
+            Err(FormatError::DecompressedTooLarge {
+                tag: ChunkTag::META
+            })
+        ));
+    }
+
+    /// 展開後の上限を超えるペイロードは圧縮しない (読み込みで拒否されるファイルを作らないため)。
+    #[test]
+    fn oversized_payloads_are_not_compressed() {
+        let mut writer = ChunkWriter::new(WriteOptions { compress: true }, &[]).unwrap();
+        writer.compress_limit = 8;
+        writer.push_encoded(ChunkTag::META, b"12345678".to_vec());
+        writer.push_encoded(ChunkTag::META, b"123456789".to_vec());
+        let flags: Vec<u32> = writer.chunks.iter().map(|&(_, flags, _)| flags).collect();
+        assert_eq!(flags, [CHUNK_FLAG_ZSTD, 0]);
+        assert_eq!(&*writer.chunks[1].2, b"123456789");
+    }
+
     #[test]
     fn written_layout_follows_spec() {
         let bytes = write_bundle(&full_bundle()).unwrap();
@@ -1273,6 +1323,44 @@ pub(crate) mod tests {
         });
     }
 
+    /// 長さ 0 のチャンクは何とも重ならない。ほかのチャンクの中を指していても読める
+    /// (`docs/spec/file-formats.md#読み込み時の検査`)。
+    #[test]
+    fn empty_chunks_overlap_nothing() {
+        let model = ugoe_model::fixtures::single_quad();
+        let good = assemble(&[
+            model_chunk(&model),
+            (ChunkTag(*b"XTRA"), 0, Vec::new()),
+            texture_chunk(),
+        ]);
+        let entries = read_table(&good).unwrap();
+        // 空のチャンクを、MODL のペイロードの中 (16 バイト境界) と、TEXR の先頭に置く。
+        for offset in [entries[0].start + CHUNK_ALIGN, entries[2].start] {
+            let mut bytes = good.clone();
+            patch_u64(&mut bytes, 1, 8, offset as u64);
+            assert_eq!(
+                read_bundle(&bytes).unwrap(),
+                model_only(),
+                "offset {offset}"
+            );
+        }
+        // 境界・チャンク表より後ろであること・ファイルの長さの検査は受ける。
+        let mut bytes = good.clone();
+        patch_u64(&mut bytes, 1, 8, 0);
+        assert_err(&bytes, |e| {
+            matches!(e, FormatError::OverlappingChunks { .. })
+        });
+        let mut bytes = good.clone();
+        patch_u64(&mut bytes, 1, 8, entries[0].start as u64 + 1);
+        assert_err(&bytes, |e| matches!(e, FormatError::MisalignedChunk { .. }));
+        let mut bytes = good;
+        let past_end = align_up(bytes.len() + 1).unwrap() as u64;
+        patch_u64(&mut bytes, 1, 8, past_end);
+        assert_err(&bytes, |e| {
+            matches!(e, FormatError::ChunkOutOfBounds { .. })
+        });
+    }
+
     #[test]
     fn rejects_missing_and_duplicate_chunks() {
         let model = ugoe_model::fixtures::single_quad();
@@ -1282,6 +1370,11 @@ pub(crate) mod tests {
         assert_err(
             &assemble(&[model_chunk(&model), model_chunk(&model), texture_chunk()]),
             |e| matches!(e, FormatError::DuplicateChunk(ChunkTag::MODL)),
+        );
+        let meta = (ChunkTag::META, 0, b"{}".to_vec());
+        assert_err(
+            &assemble(&[model_chunk(&model), meta.clone(), meta, texture_chunk()]),
+            |e| matches!(e, FormatError::DuplicateChunk(ChunkTag::META)),
         );
         let phys = (ChunkTag::PHYS, 0, encode(&physics()).unwrap());
         assert_err(

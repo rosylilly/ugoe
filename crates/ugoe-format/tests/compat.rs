@@ -484,6 +484,27 @@ fn corpus_is_up_to_date() {
     );
 }
 
+/// 今の書き出しで作ったファイルは、読んで書き直すと同じバイト列になる (往復で何も失わない)。
+#[test]
+fn dev_corpus_roundtrips_byte_for_byte() {
+    for (name, bytes) in dev_corpus() {
+        let rewritten: Vec<Vec<u8>> = [false, true]
+            .into_iter()
+            .map(|compress| {
+                let options = WriteOptions { compress };
+                if name.ends_with(".ugoemod") {
+                    let file = read_module_with_report(&bytes).expect(name).0;
+                    write_module_with(&file, options).expect(name)
+                } else {
+                    let bundle = read_bundle_with_report(&bytes).expect(name).0;
+                    write_bundle_with(&bundle, options).expect(name)
+                }
+            })
+            .collect();
+        assert!(rewritten.contains(&bytes), "{name}");
+    }
+}
+
 // --- どの版のファイルも読める -------------------------------------------------------------------
 
 fn evaluate(model: Model) -> Vec<DrawableState> {

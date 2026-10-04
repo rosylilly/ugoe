@@ -5,6 +5,8 @@
 //! - バンドルは `FEAT` チャンクで、基準の機能以外に使っている機能を宣言する ([`FeatureDecl`])。
 //! - 読み込みでは、知らない必須の機能があれば拒否し、知らない任意の機能は警告にする。
 
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{Bundle, ModuleFile};
@@ -152,16 +154,23 @@ pub(crate) fn check(
     declared: &[FeatureDecl],
     known: impl Fn(&str) -> bool,
 ) -> Result<Vec<String>, Vec<String>> {
+    // 宣言は外から来るので、数が多くても 2 乗の時間をかけないように集合で調べる。
+    let required: HashSet<&str> = declared
+        .iter()
+        .filter(|d| d.required)
+        .map(|d| d.id.as_str())
+        .collect();
+    let mut seen: HashSet<&str> = HashSet::new();
     let mut missing: Vec<String> = Vec::new();
     let mut optional: Vec<String> = Vec::new();
     for decl in declared.iter().filter(|d| !known(&d.id)) {
-        let list = if declared.iter().any(|d| d.id == decl.id && d.required) {
-            &mut missing
+        if !seen.insert(decl.id.as_str()) {
+            continue;
+        }
+        if required.contains(decl.id.as_str()) {
+            missing.push(decl.id.clone());
         } else {
-            &mut optional
-        };
-        if !list.contains(&decl.id) {
-            list.push(decl.id.clone());
+            optional.push(decl.id.clone());
         }
     }
     if missing.is_empty() {
@@ -272,5 +281,20 @@ mod tests {
             check(&declared, known),
             Err(vec!["test.required".into(), "test.both".into()])
         );
+    }
+
+    /// 宣言の数に対して 2 乗の時間をかけない (`FEAT` は外から来るので、巨大な宣言で止まらないため)。
+    #[test]
+    fn check_handles_many_declarations() {
+        const COUNT: usize = 200_000;
+        let mut declared: Vec<FeatureDecl> = (0..COUNT)
+            .map(|i| FeatureDecl::optional(format!("test.{i}")))
+            .collect();
+        let optional = check(&declared, |_| false).unwrap();
+        assert_eq!(optional.len(), COUNT);
+        assert_eq!(optional[COUNT - 1], format!("test.{}", COUNT - 1));
+
+        declared.push(FeatureDecl::required("test.0"));
+        assert_eq!(check(&declared, |_| false), Err(vec!["test.0".into()]));
     }
 }
