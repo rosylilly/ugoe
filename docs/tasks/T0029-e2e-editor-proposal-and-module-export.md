@@ -1,11 +1,11 @@
 ---
 id: T0029
 title: "e2e: エディタの提案のプレビューと「Export Module…」の筋書き、見本を開く手順の時間切れの調査"
-status: todo
+status: in-progress
 milestone: M9
 crates: [tests/e2e, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0029
 ---
 
 # T0029: e2e: エディタの提案のプレビューと「Export Module…」の筋書き、見本を開く手順の時間切れの調査

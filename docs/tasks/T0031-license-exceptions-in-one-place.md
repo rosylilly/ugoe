@@ -1,11 +1,11 @@
 ---
 id: T0031
 title: npm のライセンスの例外 (NPM_EXCEPTIONS と LICENSE_OVERRIDES) を 1 か所にまとめる
-status: todo
+status: in-progress
 milestone: M9
 crates: [scripts]
 depends_on: []
-assignee:
+assignee: claude-worker-T0031
 ---
 
 # T0031: npm のライセンスの例外 (NPM_EXCEPTIONS と LICENSE_OVERRIDES) を 1 か所にまとめる

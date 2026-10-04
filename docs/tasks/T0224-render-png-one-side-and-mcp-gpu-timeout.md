@@ -1,11 +1,11 @@
 ---
 id: T0224
 title: render_png で片方だけ大きさを指定したときの上限と、ugoe mcp の --gpu-timeout (判断が要る)
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-mcp, ugoe-headless, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0224
 ---
 
 # T0224: render_png で片方だけ大きさを指定したときの上限と、ugoe mcp の --gpu-timeout (判断が要る)

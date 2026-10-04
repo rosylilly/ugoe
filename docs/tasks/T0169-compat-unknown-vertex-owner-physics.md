@@ -1,11 +1,11 @@
 ---
 id: T0169
 title: assets/compat の未来の版のファイルに、未知の VertexOwner を含む物理を足す
-status: todo
+status: in-progress
 milestone: M9
 crates: [assets/compat, ugoe-format, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0169
 ---
 
 # T0169: assets/compat の未来の版のファイルに、未知の VertexOwner を含む物理を足す

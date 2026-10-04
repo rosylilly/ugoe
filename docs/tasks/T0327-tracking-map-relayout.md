@@ -1,11 +1,11 @@
 ---
 id: T0327
 title: TrackingMap が並びの違う ParameterValues を受け続けるときの毎フレームの引き直しをなくす (判断が要る)
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-motion, ugoe, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0327
 ---
 
 # T0327: TrackingMap が並びの違う ParameterValues を受け続けるときの毎フレームの引き直しをなくす (判断が要る)

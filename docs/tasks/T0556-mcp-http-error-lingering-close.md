@@ -1,11 +1,11 @@
 ---
 id: T0556
 title: "ugoe-mcp: HTTP の誤りの答え (408・413・431) の後に接続をすぐ閉じず、Windows のクライアントが答えを失わないようにする"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-mcp]
 depends_on: []
-assignee:
+assignee: claude-worker-T0556
 ---
 
 # T0556: ugoe-mcp: HTTP の誤りの答え (408・413・431) の後に接続をすぐ閉じず、Windows のクライアントが答えを失わないようにする

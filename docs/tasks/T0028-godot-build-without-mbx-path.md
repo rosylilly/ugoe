@@ -1,11 +1,11 @@
 ---
 id: T0028
 title: bindings/godot の build.mjs を mbx の PATH なしで流しても target/ に書けるようにする
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/godot, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0028
 ---
 
 # T0028: bindings/godot の build.mjs を mbx の PATH なしで流しても target/ に書けるようにする
