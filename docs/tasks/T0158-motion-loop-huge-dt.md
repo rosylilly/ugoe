@@ -1,11 +1,11 @@
 ---
 id: T0158
 title: ループするモーションが無限大や巨大な dt で止まらない
-status: todo
+status: done
 milestone: M9
 crates: [ugoe-motion, docs]
 depends_on: [T0139]
-assignee:
+assignee: claude-orchestrator
 ---
 
 # T0158: ループするモーションが無限大や巨大な dt で止まらない
@@ -38,3 +38,4 @@ assignee:
 - T0317 (ugoe-motion のレビュー。重なる所見があればそちらと合わせる)
 
 ## メモ
+- **閉じた (M9 のマージ):** T0317 (ugoe-motion のレビュー) で直した。ループするモーションは 1 回の advance の周回に上限を持ち、有限でない dt では何もしない。SDK の update も T0139 で不正な dt を 0 とみなす。

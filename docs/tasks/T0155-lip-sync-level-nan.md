@@ -1,11 +1,11 @@
 ---
 id: T0155
 title: リップシンクの音量の NaN を受け付けない
-status: todo
+status: done
 milestone: M9
 crates: [ugoe-motion, ugoe, docs]
 depends_on: [T0139]
-assignee:
+assignee: claude-orchestrator
 ---
 
 # T0155: リップシンクの音量の NaN を受け付けない
@@ -33,3 +33,4 @@ assignee:
 - crates/ugoe/src/follow.rs (`Puppet::follow` の NaN の検査)
 
 ## メモ
+- **閉じた (M9 のマージ):** T0317 (ugoe-motion のレビュー) で直した。LipSyncPlayer::set_level は NaN を「音量なし」として扱う。

@@ -27,7 +27,7 @@ bindings/unity (UPM パッケージ) のコードを読み直し、誤り・規�
 - [x] 直すと決めた所見を直し、バグの修正には先に失敗するテストを足した
 - [x] 直さない所見を起票した (milestone は M9。公開 API・設計・範囲の外・半日を超えるもの)
 - [x] 「メモ」に所見の表 (重大度・場所・内容・対応) と「横断」の所見を書いた
-- [ ] `just ci` が通る
+- [x] `just ci` が通る
 
 ## 参考
 
@@ -91,3 +91,4 @@ bindings/unity (UPM パッケージ) のコードを読み直し、誤り・規�
   そのファイルだけなら 8.3 秒で 7 件通り、load average が 21 に下がってから `pnpm --filter '@ugoe/editor' test` を流し直すと 44 ファイル 349 件すべて通った。
   `web-check` の残り (viewer・studio・face-tracking・player・i18n・runtime・ui の check と test)・`i18n`・`app-build-check` も個別に流して通った。
   `web-check` より前の段 (fmt-check・lint・test・layers・groups・licenses・publish-check・spec) は 1 回目で通っている。
+- **マージの後 (オーケストレーター):** 時間切れの `tracking.test.ts` は T0672 で軽くした。32 本をまとめたものと main の `just ci` で通ったので、上の受け入れ条件を埋めた。

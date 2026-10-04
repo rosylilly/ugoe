@@ -1,11 +1,11 @@
 ---
 id: T0430
 title: Unity のバインディングで、C ABI の新しい関数 (受け手・トラッキング優先・本体の物理など) を使えるようにする
-status: todo
+status: done
 milestone: M9
 crates: [bindings/unity, docs]
 depends_on: [T0423]
-assignee:
+assignee: claude-orchestrator
 ---
 
 # T0430: Unity のバインディングで、C ABI の新しい関数を使えるようにする
@@ -35,3 +35,4 @@ T0423 (ugoe-ffi のレビュー) で、`include/ugoe.h` と `bindings/unity/com.
 - T0426 (Unity のバインディングのレビュー。重なっていればそちらで扱う)
 
 ## メモ
+- **閉じた (M9 のマージ):** T0426 (Unity のレビュー) で 9 関数のうち 8 つを宣言し、残る ugoe_puppet_positions は C# では不要として README に理由を書いた。

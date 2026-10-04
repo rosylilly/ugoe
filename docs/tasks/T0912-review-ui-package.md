@@ -26,7 +26,7 @@ assignee: claude-worker-T0912
 - [x] 直すと決めた所見を直し、バグの修正には先に失敗するテストを足した
 - [x] 直さない所見を起票した (milestone は M9。公開 API・設計・範囲の外・半日を超えるもの)
 - [x] 「メモ」に所見の表 (重大度・場所・内容・対応) と「横断」の所見を書いた
-- [ ] `just ci` が通る
+- [x] `just ci` が通る
 
 ## 参考
 
@@ -75,3 +75,4 @@ Bits UI の包み方 (props は ugoe の言葉、Bits UI の props は外に出�
 並行のビルドで負荷が高い (load average 33〜81) ための時間切れで、この変更とは関係ない: 同じテストは main (05c82cf) の作業ツリーでも同じく落ち、
 `--hookTimeout=120000` を付けるとこのブランチで 7 件とも通る。`web-check` の残り (viewer・studio・face-tracking・player・i18n・runtime・ui の check と test、editor の check) と
 `i18n`・`app-build-check` は個別に流して通った。
+- **マージの後 (オーケストレーター):** 時間切れの `tracking.test.ts` は T0672 で軽くした。32 本をまとめたものと main の `just ci` で通ったので、上の受け入れ条件を埋めた。

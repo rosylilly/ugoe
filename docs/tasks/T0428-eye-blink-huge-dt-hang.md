@@ -1,11 +1,11 @@
 ---
 id: T0428
 title: 目パチが巨大な dt で止まらない (EyeBlinkPlayer::advance の無限ループ)
-status: todo
+status: done
 milestone: M9
 crates: [ugoe-motion, docs]
 depends_on: [T0423]
-assignee:
+assignee: claude-orchestrator
 ---
 
 # T0428: 目パチが巨大な dt で止まらない (EyeBlinkPlayer::advance の無限ループ)
@@ -34,3 +34,4 @@ C ABI の検査を通り、`fixtures::pose_and_effects` で返ってこない (6
 - T0317 (ugoe-motion のレビュー。重なっていればそちらで直してこのタスクを閉じる)
 
 ## メモ
+- **閉じた (M9 のマージ):** T0317 (ugoe-motion のレビュー) で直した。EyeBlinkPlayer::advance は 1 回の段階の数に上限を持ち、有限でない dt では何もしない (テスト eye_blink_advance_terminates_for_extreme_values)。

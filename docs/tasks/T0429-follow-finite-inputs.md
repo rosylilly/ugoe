@@ -1,11 +1,11 @@
 ---
 id: T0429
 title: 受け手の follow で無限大のリップシンクの強さとパーツの不透明度を拒む (SDK と wasm)
-status: todo
+status: done
 milestone: M9
 crates: [ugoe, ugoe-wasm, docs]
 depends_on: [T0423]
-assignee:
+assignee: claude-orchestrator
 ---
 
 # T0429: 受け手の follow で無限大のリップシンクの強さとパーツの不透明度を拒む (SDK と wasm)
@@ -34,3 +34,4 @@ C ABI の検査は SDK に寄せてよい。
 - T0139 (SDK のレビュー)・T0424 (wasm のレビュー)。重なっていればそちらで直してこのタスクを閉じる
 
 ## メモ
+- **閉じた (M9 のマージ):** T0139 (SDK) で Puppet::follow が有限でない強さ・不透明度の値と重みを拒むようにした。wasm の follow は SDK を通るので同じく例外になる (T0424 で確認)。入口ごとの扱いを揃えて書くのは T0433。

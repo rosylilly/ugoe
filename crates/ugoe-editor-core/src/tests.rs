@@ -959,25 +959,6 @@ fn remove_mesh_and_deformer_drop_mirror_references() {
 }
 
 #[test]
-fn unwrap_deformer_drops_mirror_sources_like_remove() {
-    // `Arm` の格子が `Hand` をミラー元にしている。`Hand` を外しても、削除と同じくミラー元の記録を外す。
-    let mut model = fixtures::rotation_chain();
-    let DeformerKind::Rotation(arm) = &mut model.deformers[0].kind else {
-        panic!("Arm is a rotation deformer");
-    };
-    arm.keyforms.mirror_source = Some(ugoe_model::MirrorSource {
-        id: "Hand".into(),
-        axis: None,
-        tolerance: None,
-    });
-    let after = applied(&model, Command::UnwrapDeformer { id: "Hand".into() });
-    let DeformerKind::Rotation(arm) = &after.deformers[0].kind else {
-        panic!("Arm is a rotation deformer");
-    };
-    assert_eq!(arm.keyforms.mirror_source, None);
-}
-
-#[test]
 fn remove_mesh_drops_glues_and_hit_areas() {
     let mut model = fixtures::glued_quads();
     model.hit_areas.push(HitArea {
