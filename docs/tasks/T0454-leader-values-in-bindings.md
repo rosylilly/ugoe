@@ -1,11 +1,11 @@
 ---
 id: T0454
 title: 指揮役の側の値 (物理の直前の値・当てたリップシンク・パーツの不透明度) を C ABI・wasm・Godot から読む
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-ffi, ugoe-wasm, bindings/godot, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0454
 ---
 
 # T0454: 指揮役の側の値 (物理の直前の値・当てたリップシンク・パーツの不透明度) を C ABI・wasm・Godot から読む
